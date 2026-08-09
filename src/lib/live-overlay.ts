@@ -6,7 +6,7 @@ import { parseYouTubeVideoId } from "./track-duration";
 import type { QueueEntry, QueueSourceType } from "./queue-types";
 import type { LiveOverlayPlaybackState, LiveOverlayStateInput, LiveOverlayPlayerSync, LiveOverlayYouTubeSync, OverlayMode, ResolvedLiveOverlayScene, ResolvedWheelCeremonyTrack, WheelCeremonyStatus, WheelOverlayStatus } from "./live-overlay-resolver";
 
-export type { LiveOverlayPlaybackState, LiveOverlayPlayerSync, LiveOverlayTikTokSync, LiveOverlayYouTubeSync, OverlayMode, ResolvedLiveOverlayScene, ResolvedWheelCeremonyTrack, WheelCeremonyStatus, WheelOverlayStatus } from "./live-overlay-resolver";
+export type { LiveOverlayAudioSync, LiveOverlayPlaybackState, LiveOverlayPlayerSync, LiveOverlayTikTokSync, LiveOverlayYouTubeSync, OverlayMode, ResolvedLiveOverlayScene, ResolvedWheelCeremonyTrack, WheelCeremonyStatus, WheelOverlayStatus } from "./live-overlay-resolver";
 
 export interface LiveOverlayState extends LiveOverlayStateInput {
   mode: OverlayMode;
@@ -309,17 +309,19 @@ function normalizePlaybackState(value: unknown): LiveOverlayPlaybackState {
 function normalizePlayerSync(input: unknown, receivedAt?: Date): LiveOverlayPlayerSync | null {
   const raw = input as Partial<LiveOverlayPlayerSync> | null;
   if (!raw || typeof raw !== "object") return null;
-  if (raw.provider === "tiktok") return serverStampLiveOverlayPlayerSync(raw, receivedAt ?? (typeof raw.updatedAt === "string" ? new Date(raw.updatedAt) : new Date()));
+  if (raw.provider === "tiktok" || raw.provider === "audio") return serverStampLiveOverlayPlayerSync(raw, receivedAt ?? (typeof raw.updatedAt === "string" ? new Date(raw.updatedAt) : new Date()));
   if (raw.provider !== "youtube") return null;
   const videoId = typeof raw.videoId === "string" && parseYouTubeVideoId(`https://www.youtube.com/watch?v=${raw.videoId}`) ? raw.videoId : null;
   if (!videoId) return null;
   const currentTimeSeconds = typeof raw.currentTimeSeconds === "number" && Number.isFinite(raw.currentTimeSeconds) ? Math.max(0, raw.currentTimeSeconds) : 0;
+  const durationSeconds = typeof raw.durationSeconds === "number" && Number.isFinite(raw.durationSeconds) && raw.durationSeconds > 0 ? raw.durationSeconds : undefined;
   return {
     provider: "youtube",
     videoId,
     trackId: cleanText(raw.trackId),
     playbackState: normalizePlaybackState(raw.playbackState),
     currentTimeSeconds,
+    durationSeconds,
     updatedAt: receivedAt ? receivedAt.toISOString() : typeof raw.updatedAt === "string" ? raw.updatedAt : new Date().toISOString(),
     muted: true,
     correctionReason: normalizeLiveOverlaySyncCorrectionReason(raw.correctionReason),

@@ -5,6 +5,7 @@
 import { Redis } from "@upstash/redis";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createProviderFetchBudget, fetchProviderJson } from "./provider-fetch";
+import { pacificDateString } from "./pacific-time";
 import { parseIso8601DurationToSeconds, parseSpotifyTrackId, parseYouTubeVideoId as parseTrackDurationYouTubeVideoId } from "./track-duration";
 import {
   INTERNAL_BUFFER_DURATION_SECONDS,
@@ -51,6 +52,7 @@ const MUTATION_LOCK_WAIT_MS = 5_000;
 const DEFAULT_QUEUE_CAPACITY = 44;
 const DEFAULT_SUBMISSION_COOLDOWN_SECONDS = 5 * 60;
 const MAX_SUBMISSION_COOLDOWN_SECONDS = 60 * 60;
+const SPONSOR_BREAK_SECONDS = 10 * 60 + 30;
 const DEFAULT_PRIORITY_UPGRADE_LABEL = "Priority Signal Upgrade";
 const DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS = "Priority Signal Upgrade is being prepared. No payment has been processed.";
 const DEFAULT_PRIORITY_UPGRADE_PRICE_CENTS = 1000;
@@ -125,7 +127,7 @@ function getRedis(): Redis | null {
 }
 
 function todayDate(): string {
-  return new Date().toISOString().slice(0, 10);
+  return pacificDateString();
 }
 
 function makeSessionId(): string {
@@ -645,6 +647,25 @@ function acceptedTrackCountForSession(
   return ids.size;
 }
 
+function completedCountedTrackCountForSession(session: Pick<QueueSession, "completed" | "removed">): number {
+  const removedIds = new Set(session.removed.map((entry) => entry.id));
+  return new Set(session.completed.filter((entry) => !removedIds.has(entry.id) && !isSimulationTrack(entry) && (entry.status === "completed" || entry.status === "played")).map((entry) => entry.id)).size;
+}
+
+function applySponsorBreakDueState(session: QueueSession): void {
+  if (session.sponsorBreakStatus === "running" || session.sponsorBreakStatus === "completed" || session.sponsorBreakStatus === "skipped") return;
+  const acceptedCount = acceptedTrackCountForSession(session);
+  if (acceptedCount <= 0) return;
+  const currentThreshold = Math.ceil(acceptedCount / 2);
+  const latchedThreshold = typeof session.sponsorBreakDueAfterPlayableCount === "number" && Number.isFinite(session.sponsorBreakDueAfterPlayableCount)
+    ? Math.max(1, Math.floor(session.sponsorBreakDueAfterPlayableCount))
+    : null;
+  const threshold = latchedThreshold ?? currentThreshold;
+  if (completedCountedTrackCountForSession(session) < threshold && session.sponsorBreakStatus !== "due") return;
+  session.sponsorBreakStatus = "due";
+  session.sponsorBreakDueAfterPlayableCount = threshold;
+}
+
 function normalizeSubmissionClosureReason(value: unknown): QueueSubmissionClosureReason {
   if (value === "manual" || value === "capacity" || value === "ended" || value === "archived") return value;
   return null;
@@ -741,11 +762,11 @@ function summarizeSession(session: QueueSession): QueueSessionSummary {
     nextInLineTrackId: session.nextInLineTrackId ?? session.nextInLineTrack?.id ?? null,
     nextInLineHoldTrackId: session.nextInLineHoldTrackId ?? null,
     loadedTrackId: session.loadedTrackId ?? session.loadedTrack?.id ?? null,
-    completedCount: session.completed.length,
+    completedCount: completedCountedTrackCountForSession(session),
     removedCount: session.removed.length,
     spotlightCount: session.spotlight.length,
     estimatedActiveRuntimeSeconds: publicStatus.estimatedRuntimeSeconds,
-    completedRuntimeSeconds: session.completed.reduce((sum, entry) => sum + getTrackRuntimeSeconds(entry), 0),
+    completedRuntimeSeconds: session.completed.filter((entry) => !isSimulationTrack(entry)).reduce((sum, entry) => sum + getTrackRuntimeSeconds(entry), 0),
     nextNonPriorityLane: session.nextNonPriorityLane ?? "wheel",
     showStarted: session.showStarted === true,
     preShowEndsAt: session.preShowEndsAt ?? null,
@@ -758,12 +779,13 @@ function summarizeSession(session: QueueSession): QueueSessionSummary {
     priorityUpgradePriceCents: normalizePriceCents(session.priorityUpgradePriceCents),
     priorityUpgradeCurrency: normalizeCurrency(session.priorityUpgradeCurrency),
     priorityUpgradePaymentsEnabled: normalizePaidPriorityEnabled(session),
-    sponsorBreakSeconds: session.sponsorBreakSeconds ?? 630,
+    sponsorBreakSeconds: SPONSOR_BREAK_SECONDS,
     sponsorBreakMode: session.sponsorBreakMode ?? "mid_show",
     sponsorBreakStatus: session.sponsorBreakStatus ?? "not_due",
     sponsorBreakStartedAt: session.sponsorBreakStartedAt ?? null,
     sponsorBreakCompletedAt: session.sponsorBreakCompletedAt ?? null,
     sponsorBreakCompletedAfterPlayableCount: session.sponsorBreakCompletedAfterPlayableCount ?? null,
+    sponsorBreakDueAfterPlayableCount: session.sponsorBreakDueAfterPlayableCount ?? null,
     sponsorBreakManualNote: session.sponsorBreakManualNote ?? null,
   };
 }
@@ -792,13 +814,13 @@ function applyCommercialBreakTimer(session: QueueSession, now = new Date()): boo
   if (!session.sponsorBreakStartedAt) return false;
   const startedAt = Date.parse(session.sponsorBreakStartedAt);
   if (!Number.isFinite(startedAt)) return false;
-  const breakSeconds = session.sponsorBreakSeconds ?? 630;
+  const breakSeconds = SPONSOR_BREAK_SECONDS;
   const completedAtMs = startedAt + breakSeconds * 1000;
   if (now.getTime() < completedAtMs) return false;
   const completedAtIso = new Date(completedAtMs).toISOString();
   session.sponsorBreakStatus = "completed";
   session.sponsorBreakCompletedAt = session.sponsorBreakCompletedAt ?? completedAtIso;
-  session.sponsorBreakCompletedAfterPlayableCount = session.sponsorBreakCompletedAfterPlayableCount ?? session.completed.length;
+  session.sponsorBreakCompletedAfterPlayableCount = session.sponsorBreakCompletedAfterPlayableCount ?? completedCountedTrackCountForSession(session);
   session.sponsorBreakManualNote = "Commercial break auto-completed after 10m 30s.";
   session.updatedAt = now.toISOString();
   return true;
@@ -964,12 +986,13 @@ function normalizeSession(raw: Partial<QueueSession> & { sessionId: string; titl
     priorityUpgradePriceCents: normalizePriceCents(raw.priorityUpgradePriceCents),
     priorityUpgradeCurrency: normalizeCurrency(raw.priorityUpgradeCurrency),
     priorityUpgradePaymentsEnabled: normalizePaidPriorityEnabled(raw),
-    sponsorBreakSeconds: typeof raw.sponsorBreakSeconds === "number" && Number.isFinite(raw.sponsorBreakSeconds) && raw.sponsorBreakSeconds >= 0 ? Math.round(raw.sponsorBreakSeconds) : 630,
+    sponsorBreakSeconds: SPONSOR_BREAK_SECONDS,
     sponsorBreakMode: raw.sponsorBreakMode === "mid_show" ? raw.sponsorBreakMode : "mid_show",
     sponsorBreakStatus: raw.sponsorBreakStatus === "due" || raw.sponsorBreakStatus === "running" || raw.sponsorBreakStatus === "completed" || raw.sponsorBreakStatus === "skipped" || raw.sponsorBreakStatus === "not_due" ? raw.sponsorBreakStatus : undefined,
     sponsorBreakStartedAt: typeof raw.sponsorBreakStartedAt === "string" && raw.sponsorBreakStartedAt ? raw.sponsorBreakStartedAt : null,
     sponsorBreakCompletedAt: typeof raw.sponsorBreakCompletedAt === "string" && raw.sponsorBreakCompletedAt ? raw.sponsorBreakCompletedAt : null,
     sponsorBreakCompletedAfterPlayableCount: typeof raw.sponsorBreakCompletedAfterPlayableCount === "number" && Number.isFinite(raw.sponsorBreakCompletedAfterPlayableCount) ? Math.max(0, Math.floor(raw.sponsorBreakCompletedAfterPlayableCount)) : null,
+    sponsorBreakDueAfterPlayableCount: typeof raw.sponsorBreakDueAfterPlayableCount === "number" && Number.isFinite(raw.sponsorBreakDueAfterPlayableCount) ? Math.max(1, Math.floor(raw.sponsorBreakDueAfterPlayableCount)) : null,
     sponsorBreakManualNote: typeof raw.sponsorBreakManualNote === "string" && raw.sponsorBreakManualNote.trim() ? raw.sponsorBreakManualNote.trim() : null,
     currentTrackPreviousLane: raw.currentTrackPreviousLane ?? raw.nextInLineTrack?.lane ?? null,
     currentTrackPreviousIndex: typeof raw.currentTrackPreviousIndex === "number" ? raw.currentTrackPreviousIndex : null,
@@ -979,6 +1002,7 @@ function normalizeSession(raw: Partial<QueueSession> & { sessionId: string; titl
     spotlight: (raw.spotlight ?? []).map(normalizeEntry),
   } as QueueSession;
   applySubmissionAcceptanceState(session, raw.submissionClosureReason);
+  applySponsorBreakDueState(session);
   const summary = summarizeSession(session);
   return { ...session, ...summary, publicStatus: publicStatusForSession(session) };
 }
@@ -1135,7 +1159,9 @@ function getSession(store: QueueStore, sessionId?: string): QueueSession {
 }
 
 function replaceSession(store: QueueStore, session: QueueSession): QueueStore {
-  return { ...store, sessions: store.sessions.map((item) => item.sessionId === session.sessionId ? normalizeSession({ ...session, updatedAt: new Date().toISOString() }) : item) };
+  const nextSession = { ...session };
+  applyCommercialBreakTimer(nextSession);
+  return { ...store, sessions: store.sessions.map((item) => item.sessionId === nextSession.sessionId ? normalizeSession({ ...nextSession, updatedAt: new Date().toISOString() }) : item) };
 }
 
 function parseFilenameMetadata(fileName?: string | null): { artist: string | null; title: string | null; providerTitle: string | null } {
@@ -1717,7 +1743,7 @@ function queueStateFromSession(session: QueueSession, store: QueueStore, viewedS
     nowPlaying: getLoadedTrack(normalized),
     queue: normalized.queue,
     history: normalized.completed,
-    totalPlayed: normalized.completed.length,
+    totalPlayed: completedCountedTrackCountForSession(normalized),
     streamStatus: normalized.status !== "archived" && (normalized.queueOpen || normalized.showStarted) ? "online" : "offline",
     removed: normalized.removed,
     spotlight: normalized.spotlight,
@@ -1793,6 +1819,7 @@ export function toPublicQueueTrack(entry: QueueEntry): QueuePublicTrack {
     tiktokHandle: normalized.tiktokHandle ?? null,
     priorityUpgradeRequested: normalized.priorityUpgradeRequested === true,
     priorityUpgradeStatus: normalized.priorityUpgradeStatus ?? "none",
+    isSimulation: isSimulationTrack(normalized),
   };
 }
 
@@ -2132,7 +2159,7 @@ export async function getQueueSessionSubmissionsCsv(sessionId?: string): Promise
   const { session, rows } = await getQueueSessionSubmitterList(sessionId);
   const headers = ["sessionId", "session title", "show date", "submitted artist / submitter artist", "public/display artist credit", "song title", "TikTok handle", "email/contact", "source link", "source type", "submitted timestamp", "current status", "current lane", "spotlight"];
   const body = rows.map((row) => [row.sessionId, row.sessionTitle, row.showDate, row.submitterArtistName, row.submittedArtistName, row.submittedSongTitle, row.tiktokHandle, row.contactEmail, row.sourceLink, row.sourceType, row.submittedAt, row.status, row.lane, row.spotlight].map(csvEscape).join(","));
-  const safeDate = session.showDate || new Date().toISOString().slice(0, 10);
+  const safeDate = session.showDate || pacificDateString();
   return { filename: `barcode-radio-session-${safeDate}-submissions.csv`, csv: [headers.map(csvEscape).join(","), ...body].join("\n") };
 }
 
@@ -2166,8 +2193,10 @@ async function updateSponsorBreakStateMutation(action: "start" | "complete" | "s
   const store = await readStore();
   const session = getSession(store);
   if (session.status === "archived") return queueStateFromSession(session, store);
+  applySponsorBreakDueState(session);
   const now = new Date().toISOString();
-  const completedPlayable = session.completed.length;
+  const completedPlayable = completedCountedTrackCountForSession(session);
+  if (action === "start" && session.sponsorBreakStatus !== "due") return queueStateFromSession(session, store);
   if (action === "start" && (session.sponsorBreakStatus === "running" || session.sponsorBreakStatus === "completed" || session.sponsorBreakStatus === "skipped")) {
     return queueStateFromSession(session, store);
   }
@@ -2177,6 +2206,7 @@ async function updateSponsorBreakStateMutation(action: "start" | "complete" | "s
     sponsorBreakStartedAt: action === "start" ? now : action === "reset" ? null : session.sponsorBreakStartedAt ?? null,
     sponsorBreakCompletedAt: action === "complete" || action === "skip" ? now : action === "reset" ? null : session.sponsorBreakCompletedAt ?? null,
     sponsorBreakCompletedAfterPlayableCount: action === "complete" || action === "skip" ? completedPlayable : action === "reset" ? null : session.sponsorBreakCompletedAfterPlayableCount ?? null,
+    sponsorBreakDueAfterPlayableCount: action === "reset" ? null : session.sponsorBreakDueAfterPlayableCount ?? null,
     sponsorBreakManualNote: action === "start" ? "Commercial break started by admin." : action === "complete" ? "Commercial break completed by admin." : action === "skip" ? "Commercial break skipped by admin." : null,
     updatedAt: now,
   });

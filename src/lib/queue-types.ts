@@ -17,7 +17,26 @@ export type PriorityUpgradeStatus = "none" | "requested" | "manual" | "checkout_
 export type PriorityUpgradeSource = "admin" | "public_placeholder" | "future_payment" | "stripe";
 export type SponsorBreakMode = "mid_show";
 export type SponsorBreakStatus = "not_due" | "due" | "running" | "completed" | "skipped";
+export type QueuePlaybackState = "playing" | "paused" | "stopped";
+export type QueueWheelTimingStatus = "idle" | "ready" | "reencrypting" | "spinning" | "result_pending" | "confirmed" | "cancelled" | "signal_lost";
 export type UploadedFileDeletionStatus = "pending" | "deleted" | "error";
+
+export interface QueuePlaybackTiming {
+  trackId: string;
+  playbackState: QueuePlaybackState;
+  currentTimeSeconds: number;
+  durationSeconds: number | null;
+  observedAt: string;
+  source: "player_sync" | "loaded_clock";
+}
+
+export interface QueueWheelTiming {
+  status: QueueWheelTimingStatus;
+  startedAt: string | null;
+  observedAt: string;
+  remainingSeconds: number;
+  spinsOwed: number;
+}
 
 export const PUBLIC_QUEUE_LEGAL_TERMS_VERSION = "1.0";
 export const PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION = "1.0";
@@ -284,6 +303,7 @@ export interface QueueSessionSummary {
   sponsorBreakStartedAt?: string | null;
   sponsorBreakCompletedAt?: string | null;
   sponsorBreakCompletedAfterPlayableCount?: number | null;
+  sponsorBreakDueAfterPlayableCount?: number | null;
   sponsorBreakManualNote?: string | null;
 }
 
@@ -327,6 +347,7 @@ export interface QueuePublicTrack {
   tiktokHandle?: string | null;
   priorityUpgradeRequested?: boolean;
   priorityUpgradeStatus?: PriorityUpgradeStatus;
+  isSimulation?: boolean;
 }
 
 export interface QueuePublicSubmitterStatus {
@@ -339,13 +360,15 @@ export interface QueuePublicSubmitterStatus {
 
 export interface QueuePublicSnapshot {
   revision: number;
-  session: Pick<QueueSessionSummary, "sessionId" | "title" | "showDate" | "status" | "description" | "completedCount" | "completedRuntimeSeconds" | "activeCount" | "acceptedCount" | "submissionClosureReason" | "removedCount" | "submissionCooldownSeconds" | "queueOpen" | "showStarted" | "preShowEndsAt" | "broadcastPhase" | "broadcastStartedAt" | "nextInLineTrackId" | "loadedTrackId" | "wheelSpinsOwed" | "priorityUpgradesEnabled" | "priorityUpgradeLabel" | "priorityUpgradeInstructions" | "priorityUpgradePriceCents" | "priorityUpgradeCurrency" | "priorityUpgradePaymentsEnabled" | "sponsorBreakSeconds" | "sponsorBreakMode" | "sponsorBreakStatus" | "sponsorBreakStartedAt" | "sponsorBreakCompletedAt" | "sponsorBreakCompletedAfterPlayableCount" | "sponsorBreakManualNote">;
+  session: Pick<QueueSessionSummary, "sessionId" | "title" | "showDate" | "status" | "description" | "completedCount" | "completedRuntimeSeconds" | "activeCount" | "acceptedCount" | "submissionClosureReason" | "removedCount" | "submissionCooldownSeconds" | "queueOpen" | "showStarted" | "preShowEndsAt" | "broadcastPhase" | "broadcastStartedAt" | "nextInLineTrackId" | "loadedTrackId" | "wheelSpinsOwed" | "priorityUpgradesEnabled" | "priorityUpgradeLabel" | "priorityUpgradeInstructions" | "priorityUpgradePriceCents" | "priorityUpgradeCurrency" | "priorityUpgradePaymentsEnabled" | "sponsorBreakSeconds" | "sponsorBreakMode" | "sponsorBreakStatus" | "sponsorBreakStartedAt" | "sponsorBreakCompletedAt" | "sponsorBreakCompletedAfterPlayableCount" | "sponsorBreakDueAfterPlayableCount" | "sponsorBreakManualNote">;
   status: QueuePublicStatus;
   queue: QueuePublicTrack[];
   completed: QueuePublicTrack[];
   nowPlaying?: QueuePublicTrack | null;
   upNext?: QueuePublicTrack | null;
   submitterStatus?: QueuePublicSubmitterStatus | null;
+  playbackTiming?: QueuePlaybackTiming | null;
+  wheelTiming?: QueueWheelTiming | null;
 }
 
 export interface QueueWheelArtistOption {
@@ -375,6 +398,8 @@ export interface QueueState {
   autoRoutingPaused?: boolean;
   nextNonPriorityLane?: QueueNonPriorityLane;
   wheelEligibleArtists?: QueueWheelArtistOption[];
+  playbackTiming?: QueuePlaybackTiming | null;
+  wheelTiming?: QueueWheelTiming | null;
 }
 
 

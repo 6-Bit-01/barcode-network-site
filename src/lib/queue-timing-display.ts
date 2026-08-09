@@ -1,6 +1,5 @@
 import {
   DEFAULT_SPONSOR_BREAK_SECONDS,
-  DEFAULT_SPONSOR_BREAK_MIN_ELAPSED_SECONDS,
   estimateExistingTrackTiming,
   estimateNewSubmissionTiming,
   estimatePriorityImpact,
@@ -12,6 +11,7 @@ import {
   type QueueTimingTargetStatus,
 } from "./queue-timing";
 import { formatRuntime, getTrackRuntimeSeconds, type QueueDurationSource, type QueueEntry, type QueuePublicSnapshot, type QueuePublicTrack, type QueueSessionSummary, type QueueTrackStatus } from "./queue-types";
+import { pacificClockLabel } from "./pacific-time";
 
 export type TimingDisplayTrack = Partial<Omit<QueueEntry, "tiktokHandle">> & Partial<QueuePublicTrack> & { id: string };
 export type PublicTimingNote = "sponsor" | "wheel";
@@ -47,6 +47,14 @@ export interface QueueTimingDisplaySummary {
     notes: string[];
     knownDurationCount: number;
     unknownDurationCount: number;
+    confidenceLabel: string;
+    elapsedLabel: string;
+    remainingLabel: string;
+    estimatedEndLabel: string;
+    completedRemainingLabel: string;
+    talkRoomLabel: string;
+    warningRoomLabel: string;
+    talkPerTrackLabel: string;
   };
   sponsorBreakSummary: {
     status: string;
@@ -54,14 +62,12 @@ export interface QueueTimingDisplaySummary {
     diagnosticLabel: string;
     dueAfterTracks: number | null;
     durationLabel: string;
-    minElapsedLabel: string;
     completedPlayableCount: number;
     totalPlayableNonRemovedCount: number | null;
     included: boolean;
     dueNow: boolean;
     includedInProjection: boolean;
     midpointReached: boolean | null;
-    twoHourGateReached: boolean | null;
     compactLabel: string;
   };
   wheelTimingSummary: {
@@ -97,10 +103,12 @@ export function queueTimingInputFromPublicSnapshot(snapshot: QueuePublicSnapshot
     session: sessionTimingFields(snapshot.session),
     completedRuntimeSeconds: snapshot.session.completedRuntimeSeconds ?? null,
     wheelSpinsOwed: snapshot.session.wheelSpinsOwed ?? 0,
+    playbackTiming: snapshot.playbackTiming ?? null,
+    wheelTiming: snapshot.wheelTiming ?? null,
   };
 }
 
-export function queueTimingInputFromAdminState(state: { nowPlaying?: QueueEntry | null; nextInLine?: QueueEntry | null; queue?: QueueEntry[] | null; history?: QueueEntry[] | null; removed?: QueueEntry[] | null; session?: QueueSessionSummary | null } | null): QueueTimingInput {
+export function queueTimingInputFromAdminState(state: { nowPlaying?: QueueEntry | null; nextInLine?: QueueEntry | null; queue?: QueueEntry[] | null; history?: QueueEntry[] | null; removed?: QueueEntry[] | null; session?: QueueSessionSummary | null; playbackTiming?: QueuePublicSnapshot["playbackTiming"]; wheelTiming?: QueuePublicSnapshot["wheelTiming"] } | null): QueueTimingInput {
   if (!state) return {};
   return {
     nowPlaying: state.nowPlaying ? timingTrack(state.nowPlaying, "playing") : null,
@@ -112,6 +120,8 @@ export function queueTimingInputFromAdminState(state: { nowPlaying?: QueueEntry 
     session: state.session ? sessionTimingFields(state.session) : null,
     completedRuntimeSeconds: state.session?.completedRuntimeSeconds ?? null,
     wheelSpinsOwed: state.session?.wheelSpinsOwed ?? 0,
+    playbackTiming: state.playbackTiming ?? null,
+    wheelTiming: state.wheelTiming ?? null,
   };
 }
 
@@ -135,6 +145,7 @@ function sessionTimingFields(session: QueuePublicSnapshot["session"] | QueueSess
     estimatedActiveRuntimeSeconds: "estimatedActiveRuntimeSeconds" in session ? session.estimatedActiveRuntimeSeconds : undefined,
     wheelSpinsOwed: session.wheelSpinsOwed,
     activeCount: session.activeCount,
+    acceptedCount: session.acceptedCount,
     sponsorBreakSeconds: session.sponsorBreakSeconds,
     sponsorBreakMode: session.sponsorBreakMode,
     sponsorBreakStatus: session.sponsorBreakStatus,
@@ -142,16 +153,18 @@ function sessionTimingFields(session: QueuePublicSnapshot["session"] | QueueSess
     sponsorBreakStartedAt: session.sponsorBreakStartedAt,
     sponsorBreakCompletedAt: session.sponsorBreakCompletedAt,
     sponsorBreakCompletedAfterPlayableCount: session.sponsorBreakCompletedAfterPlayableCount,
+    sponsorBreakDueAfterPlayableCount: session.sponsorBreakDueAfterPlayableCount,
     sponsorBreakManualNote: session.sponsorBreakManualNote,
     showStarted: session.showStarted,
     broadcastPhase: session.broadcastPhase,
   };
 }
 
-export function buildQueueTimingDisplay(input: QueueTimingInput, options: { priorityEligible?: boolean; personalTrackId?: string | null } = {}): QueueTimingDisplaySummary {
-  const snapshot = buildQueueTimingSnapshot(input);
-  const free = estimateNewSubmissionTiming(input);
-  const priorityImpact = options.priorityEligible === false ? null : estimatePriorityImpact(input);
+export function buildQueueTimingDisplay(input: QueueTimingInput, options: { priorityEligible?: boolean; personalTrackId?: string | null; now?: Date } = {}): QueueTimingDisplaySummary {
+  const timingOptions = { now: options.now };
+  const snapshot = buildQueueTimingSnapshot(input, timingOptions);
+  const free = estimateNewSubmissionTiming(input, timingOptions);
+  const priorityImpact = options.priorityEligible === false ? null : estimatePriorityImpact(input, null, timingOptions);
   const priorityEstimate = priorityImpact?.priorityEligible ? displayEstimate(priorityImpact.priorityEstimate as NewSubmissionTimingEstimate | ExistingTrackTimingEstimate) : null;
   const publicNotes = publicNotesFor(free.sponsorBreakIncluded, free.wheelCeremonySecondsIncluded > 0);
   const pressureSummary = buildPressureSummary(snapshot, input.session ?? null);
@@ -160,32 +173,38 @@ export function buildQueueTimingDisplay(input: QueueTimingInput, options: { prio
     submitNowFreeEstimate: displayEstimate(free),
     submitNowPriorityEstimate: priorityEstimate,
     priorityImpactEstimate: priorityImpact,
-    personalClosestTrackEstimate: options.personalTrackId ? estimateExistingTrackTiming(input, options.personalTrackId) : null,
+    personalClosestTrackEstimate: options.personalTrackId ? estimateExistingTrackTiming(input, options.personalTrackId, timingOptions) : null,
     showRuntimeSummary: {
       projectedLabel: `${formatHoursMinutes(snapshot.projectedTotalShowSeconds)} projected`,
       publicProjectedLabel: publicProjectedShowTimeLabel(snapshot.projectedTotalShowSeconds, snapshot.targetStatus),
-      targetLabel: "4h goal · 5h warning ceiling",
+      targetLabel: "4h goal · 5h pressure ceiling",
       publicTargetLabel: "4h goal",
       targetStatus: snapshot.targetStatus,
       targetStatusLabel: targetStatusLabel(snapshot.targetStatus),
       notes: snapshot.notes,
       knownDurationCount: snapshot.knownDurationCount,
       unknownDurationCount: snapshot.unknownDurationCount,
+      confidenceLabel: `${snapshot.confidence[0].toUpperCase()}${snapshot.confidence.slice(1)} confidence`,
+      elapsedLabel: typeof snapshot.broadcastElapsedSeconds === "number" ? `${formatHoursMinutes(snapshot.broadcastElapsedSeconds)} elapsed` : "Not started",
+      remainingLabel: `${formatHoursMinutes(snapshot.projectedRemainingShowSeconds)} projected remaining`,
+      estimatedEndLabel: pacificClockLabel(snapshot.projectedEndAt, options.now) ?? "Available after broadcast starts",
+      completedRemainingLabel: `${snapshot.completedPlayableCount} completed · ${snapshot.remainingPlayableCount} remaining`,
+      talkRoomLabel: talkBudgetLabel(snapshot.talkBudgetToTargetSeconds, "4h goal"),
+      warningRoomLabel: talkBudgetLabel(snapshot.talkBudgetToWarningSeconds, "5h ceiling"),
+      talkPerTrackLabel: talkPerTrackLabel(snapshot.talkSecondsPerRemainingTrackToTarget),
     },
     sponsorBreakSummary: {
       status: snapshot.sponsorBreakStatus,
       statusLabel: sponsorStatusLabel(snapshot.sponsorBreakStatus),
       diagnosticLabel: sponsorDiagnosticLabel(snapshot.sponsorBreak),
       dueAfterTracks: snapshot.sponsorBreak.sponsorBreakThreshold,
-      durationLabel: formatHoursMinutes(snapshot.sponsorBreak.sponsorBreakSeconds || DEFAULT_SPONSOR_BREAK_SECONDS),
-      minElapsedLabel: formatHoursMinutes(snapshot.sponsorBreak.sponsorBreakMinElapsedSeconds || DEFAULT_SPONSOR_BREAK_MIN_ELAPSED_SECONDS),
+      durationLabel: formatMinutesSeconds(snapshot.sponsorBreak.sponsorBreakSeconds || DEFAULT_SPONSOR_BREAK_SECONDS),
       completedPlayableCount: snapshot.sponsorBreak.completedPlayableCount,
       totalPlayableNonRemovedCount: snapshot.sponsorBreak.totalPlayableNonRemovedCount,
       included: snapshot.sponsorBreakSecondsIncluded > 0,
       dueNow: isSponsorDueNowNow(snapshot.sponsorBreak),
       includedInProjection: snapshot.sponsorBreakSecondsIncluded > 0,
       midpointReached: currentMidpointReached(snapshot.sponsorBreak),
-      twoHourGateReached: currentTwoHourGateReached(snapshot.sponsorBreak),
       compactLabel: sponsorCompactLabel(snapshot.sponsorBreak),
     },
     wheelTimingSummary: {
@@ -254,7 +273,7 @@ export function lineFitCopy(status: QueueTimingTargetStatus): string {
   if (status === "comfortable") return "Looks playable tonight.";
   if (status === "tight") return "Line is getting tight tonight.";
   if (status === "over_target") return "This may run late.";
-  if (status === "warning_ceiling") return "Some late submissions may not fit tonight.";
+  if (status === "warning_ceiling") return "Show is under strong time pressure; playback continues.";
   return "Timing updates as the line changes.";
 }
 
@@ -266,16 +285,13 @@ export function targetStatusLabel(status: QueueTimingTargetStatus): string {
   return "Unknown";
 }
 
-export function sponsorDiagnosticLabel(sponsor: { sponsorBreakStatus?: string | null; midpointReached?: boolean | null; minElapsedGateReached?: boolean | null; secondsUntilMinElapsedGate?: number | null; sponsorBreakIncluded?: boolean | null; broadcastStartedAt?: string | null; sponsorBreakSecondsRemaining?: number | null }): string {
+export function sponsorDiagnosticLabel(sponsor: { sponsorBreakStatus?: string | null; midpointReached?: boolean | null; sponsorBreakIncluded?: boolean | null; sponsorBreakThreshold?: number | null; completedPlayableCount?: number | null; sponsorBreakSecondsRemaining?: number | null }): string {
   if (sponsor.sponsorBreakStatus === "completed") return "Completed";
   if (sponsor.sponsorBreakStatus === "skipped") return "Skipped";
-  if (sponsor.sponsorBreakStatus === "running") return `Running${typeof sponsor.sponsorBreakSecondsRemaining === "number" ? ` · ${formatHoursMinutes(sponsor.sponsorBreakSecondsRemaining)} remaining` : ""}`;
-  if (sponsor.sponsorBreakIncluded || (sponsor.midpointReached === true && sponsor.minElapsedGateReached === true)) return "Due now";
-  if (!sponsor.broadcastStartedAt || sponsor.minElapsedGateReached === null) return "Waiting for playback start";
-  if (sponsor.midpointReached === true && sponsor.minElapsedGateReached === false) return "Midpoint reached · waiting for 2h mark";
-  if (sponsor.midpointReached === false && sponsor.minElapsedGateReached === true) return "2h mark reached · waiting for midpoint";
-  const remaining = typeof sponsor.secondsUntilMinElapsedGate === "number" ? ` · ${formatHoursMinutes(sponsor.secondsUntilMinElapsedGate)} until 2h mark` : "";
-  return `Not eligible yet${remaining}`;
+  if (sponsor.sponsorBreakStatus === "running") return `Running${typeof sponsor.sponsorBreakSecondsRemaining === "number" ? ` · ${formatMinutesSeconds(sponsor.sponsorBreakSecondsRemaining)} remaining` : ""}`;
+  if (sponsor.sponsorBreakStatus === "due" || sponsor.midpointReached === true) return "Due now";
+  if (typeof sponsor.sponsorBreakThreshold === "number") return `Due at midpoint · ${sponsor.completedPlayableCount ?? 0}/${sponsor.sponsorBreakThreshold} completed`;
+  return "Waiting for counted midpoint";
 }
 
 export function sponsorStatusLabel(status?: string | null): string {
@@ -291,27 +307,17 @@ function currentMidpointReached(sponsor: { sponsorBreakThreshold?: number | null
   return (sponsor.completedPlayableCount ?? 0) >= sponsor.sponsorBreakThreshold;
 }
 
-function currentTwoHourGateReached(sponsor: { broadcastElapsedSeconds?: number | null; sponsorBreakMinElapsedSeconds?: number | null }): boolean | null {
-  if (typeof sponsor.broadcastElapsedSeconds !== "number") return null;
-  return sponsor.broadcastElapsedSeconds >= (sponsor.sponsorBreakMinElapsedSeconds ?? DEFAULT_SPONSOR_BREAK_MIN_ELAPSED_SECONDS);
-}
-
-function isSponsorDueNowNow(sponsor: { sponsorBreakStatus?: string | null; sponsorBreakThreshold?: number | null; completedPlayableCount?: number | null; broadcastElapsedSeconds?: number | null; sponsorBreakMinElapsedSeconds?: number | null }): boolean {
+function isSponsorDueNowNow(sponsor: { sponsorBreakStatus?: string | null }): boolean {
   if (sponsor.sponsorBreakStatus === "completed" || sponsor.sponsorBreakStatus === "skipped" || sponsor.sponsorBreakStatus === "running") return false;
-  return currentMidpointReached(sponsor) === true && currentTwoHourGateReached(sponsor) === true;
+  return sponsor.sponsorBreakStatus === "due";
 }
 
-function sponsorCompactLabel(sponsor: { sponsorBreakStatus?: string | null; sponsorBreakThreshold?: number | null; completedPlayableCount?: number | null; broadcastElapsedSeconds?: number | null; sponsorBreakMinElapsedSeconds?: number | null; broadcastStartedAt?: string | null; sponsorBreakSecondsRemaining?: number | null }): string {
+function sponsorCompactLabel(sponsor: { sponsorBreakStatus?: string | null; sponsorBreakThreshold?: number | null; completedPlayableCount?: number | null; sponsorBreakSecondsRemaining?: number | null }): string {
   if (sponsor.sponsorBreakStatus === "completed") return "Done";
   if (sponsor.sponsorBreakStatus === "skipped") return "Skipped";
-  if (sponsor.sponsorBreakStatus === "running") return `Running ${formatHoursMinutes(sponsor.sponsorBreakSecondsRemaining ?? 0)}`;
-  const midpointReached = currentMidpointReached(sponsor);
-  const twoHourGateReached = currentTwoHourGateReached(sponsor);
-  if (!sponsor.broadcastStartedAt || twoHourGateReached === null) return "Pre-show";
-  if (midpointReached === true && twoHourGateReached === false) return "Waiting 2h";
-  if (midpointReached === false && twoHourGateReached === true) return "Waiting midpoint";
+  if (sponsor.sponsorBreakStatus === "running") return `Running ${formatMinutesSeconds(sponsor.sponsorBreakSecondsRemaining ?? 0)}`;
   if (isSponsorDueNowNow(sponsor)) return "Due";
-  return "Not due";
+  return typeof sponsor.sponsorBreakThreshold === "number" ? `Midpoint ${sponsor.completedPlayableCount ?? 0}/${sponsor.sponsorBreakThreshold}` : "Not due";
 }
 
 function buildPressureSummary(snapshot: ReturnType<typeof buildQueueTimingSnapshot>, session: QueueTimingInput["session"] | null) {
@@ -321,13 +327,11 @@ function buildPressureSummary(snapshot: ReturnType<typeof buildQueueTimingSnapsh
   const mode: "pre_show" | "live" | "ended" | "unknown" = isEnded ? "ended" : (hasBroadcastStart || showStarted) ? "live" : "pre_show";
 
   if (mode !== "live") {
-    const preScore = Math.max(10, Math.min(70, Math.round((snapshot.projectedTotalShowSeconds / snapshot.targetShowSeconds) * 45)));
     const preFactors: string[] = [];
     if (snapshot.projectedTotalShowSeconds > snapshot.targetShowSeconds) preFactors.push("Projected runtime is over the 4h target.");
-    if (snapshot.unknownDurationCount > 0) preFactors.push(`${snapshot.unknownDurationCount} tracks still use unknown 5:00 runtime estimates.`);
-    if (snapshot.wheelCeremony.wheelSpinsOwedIncluded > 0) preFactors.push(`Wheel spins owed add ${formatHoursMinutes(snapshot.wheelCeremonySecondsIncluded)} ceremony overhead.`);
+    if (snapshot.unknownDurationCount > 0) preFactors.push(`${snapshot.unknownDurationCount} track durations are estimated; this changes confidence, not pressure by itself.`);
     return {
-      score: preScore,
+      score: 10,
       level: "low" as const,
       label: mode === "ended" ? "ENDED" : "PRE-SHOW",
       description: mode === "ended" ? "Broadcast is ended/archived." : "Pre-show projection only. Live pressure is inactive.",
@@ -339,65 +343,60 @@ function buildPressureSummary(snapshot: ReturnType<typeof buildQueueTimingSnapsh
   }
 
   const factors: string[] = [];
-  const projected = snapshot.projectedTotalShowSeconds;
-  const projectedRatio = projected / snapshot.targetShowSeconds;
-  let score = Math.round(Math.max(0, Math.min(100, projectedRatio * 55)));
-  if (projected >= snapshot.warningShowSeconds) {
-    score = Math.max(score, 92);
-    factors.push("Projected runtime is at/over the 5h warning ceiling.");
-  } else if (projected > snapshot.targetShowSeconds) {
-    score += 18;
-    factors.push("Projected runtime is over the 4h target.");
-  } else if (projected < snapshot.targetShowSeconds * 0.82) {
-    score -= 10;
-    factors.push("Projected runtime is comfortably under the 4h target.");
-  }
-  const unknownPenalty = Math.min(12, snapshot.unknownDurationCount * 2);
-  if (unknownPenalty > 0) factors.push(`${snapshot.unknownDurationCount} tracks still use unknown 5:00 runtime estimates.`);
-  score += unknownPenalty;
-  if (snapshot.wheelCeremony.wheelSpinsOwedIncluded > 0) {
-    score += Math.min(12, snapshot.wheelCeremony.wheelSpinsOwedIncluded * 3);
-    factors.push(`Wheel spins owed add ${formatHoursMinutes(snapshot.wheelCeremonySecondsIncluded)} ceremony overhead.`);
-  }
-  if (!snapshot.sponsorBreak.sponsorBreakAlreadyCompleted) {
-    score += snapshot.sponsorBreak.sponsorBreakIncluded ? 8 : 4;
-    factors.push("Commercial break is still owed/running and remains in the projection.");
-  } else {
-    score -= 4;
-  }
-  if (snapshot.completedPlayableCount >= 4 && snapshot.completedRuntimeSeconds && snapshot.sponsorBreak.broadcastElapsedSeconds) {
-    const expectedElapsed = snapshot.completedRuntimeSeconds + (snapshot.sponsorBreak.sponsorBreakStatus === "running" ? snapshot.sponsorBreak.sponsorBreakSecondsIncluded : 0);
-    const drift = snapshot.sponsorBreak.broadcastElapsedSeconds - expectedElapsed;
-    if (drift > 20 * 60) {
-      score += 14;
-      factors.push("Pace is slower than expected from completed tracks; transitions may be stretching.");
-    } else if (drift < -10 * 60) {
-      score -= 6;
-      factors.push("Pace is ahead of projected slot timing so far.");
-    }
-  }
-  if (snapshot.removedCount && snapshot.removedCount > 0) {
-    score -= Math.min(10, snapshot.removedCount);
-    factors.push("Removed/no-show tracks reduced active runtime load.");
-  }
-  score = Math.max(0, Math.min(100, Math.round(score)));
-  const level: "low" | "medium" | "high" | "critical" = score >= 85 ? "critical" : score >= 65 ? "high" : score >= 40 ? "medium" : "low";
+  const targetPerTrack = snapshot.talkSecondsPerRemainingTrackToTarget ?? 0;
+  const warningPerTrack = snapshot.talkSecondsPerRemainingTrackToWarning ?? 0;
+  const warningBudget = snapshot.talkBudgetToWarningSeconds ?? 0;
+  const critical = warningBudget < 0 || warningPerTrack < 10;
+  let score: number;
+  if (critical) score = Math.min(100, 92 + Math.ceil(Math.min(8, Math.abs(Math.min(0, warningBudget)) / 300)));
+  else if (targetPerTrack >= 60) score = Math.max(10, Math.round(30 - Math.min(20, (targetPerTrack - 60) / 3)));
+  else if (targetPerTrack >= 30) score = Math.round(50 - ((targetPerTrack - 30) / 30) * 10);
+  else if (targetPerTrack >= 0) score = Math.round(65 - (targetPerTrack / 30) * 15);
+  else score = Math.round(80 - Math.min(10, Math.max(0, warningPerTrack - 10) / 5));
+  score = Math.max(0, Math.min(100, score));
+  const level: "low" | "medium" | "high" | "critical" = critical ? "critical" : score >= 65 ? "high" : score >= 40 ? "medium" : "low";
   const label = level === "critical" ? "CRITICAL" : level === "high" ? "HIGH" : level === "medium" ? "MEDIUM" : "LOW";
+  factors.push(`${formatHoursMinutes(snapshot.fixedWorkloadRemainingSeconds)} of fixed song, wheel, and sponsor work remains.`);
+  factors.push(talkBudgetLabel(snapshot.talkBudgetToTargetSeconds, "4h goal"));
+  factors.push(talkBudgetLabel(snapshot.talkBudgetToWarningSeconds, "5h ceiling"));
+  if (snapshot.unknownDurationCount > 0) factors.push(`${snapshot.unknownDurationCount} track durations are estimated; timing confidence is ${snapshot.confidence}.`);
   const recommendation = snapshot.sponsorBreak.sponsorBreakStatus === "due"
-    ? "Commercial break due. Run it now, then keep transitions tight."
+    ? "SPONSOR BREAK DUE · start the 10:30 break."
     : level === "critical"
-      ? "Keep transitions tight and remove absent artists quickly."
+      ? "MOVE NOW · use only necessary transitions."
       : level === "high"
-        ? "Keep transitions tight."
-        : "You are on pace.";
+        ? "KEEP COMMENTS SHORT · protect the 5h ceiling."
+        : level === "medium"
+          ? "KEEP COMMENTS FOCUSED · pacing is usable but not loose."
+          : "ROOM TO TALK · the current workload supports normal conversation.";
   const description = level === "critical"
-    ? "Show is near/over the warning ceiling."
+    ? "Fixed remaining work has consumed the usable 5h pacing room. The show continues, but there is no cutoff or talk cushion."
     : level === "high"
-      ? "Show is likely to run past target."
+      ? "The 4h goal is tight or already spent, with some room still available before 5h."
       : level === "medium"
-        ? "Watch pacing and pending overhead."
-        : "Projection is currently manageable.";
+        ? "There is limited room for host talk while staying near the 4h goal."
+        : "There is room for host talk at the current completed-versus-remaining pace.";
   return { score, level, label, description, recommendation, factors, mode: "live" as const, isLive: true };
+}
+
+function talkBudgetLabel(seconds: number | null, boundary: string): string {
+  if (seconds === null || !Number.isFinite(seconds)) return `Talk room to ${boundary} is unavailable`;
+  if (seconds >= 0) return `${formatHoursMinutes(seconds)} total talk room to ${boundary}`;
+  return `${formatHoursMinutes(Math.abs(seconds))} beyond ${boundary} before additional talk`;
+}
+
+function talkPerTrackLabel(seconds: number | null): string {
+  if (seconds === null || !Number.isFinite(seconds)) return "No remaining-track talk rate";
+  if (seconds < 0) return `4h goal already spent by ${formatMinutesSeconds(Math.abs(seconds))} per remaining track`;
+  return `${formatMinutesSeconds(seconds)} talk room per remaining track to 4h`;
+}
+
+export function formatMinutesSeconds(seconds: number): string {
+  const safe = Math.max(0, Math.round(seconds));
+  const minutes = Math.floor(safe / 60);
+  const remaining = safe % 60;
+  if (minutes === 0) return `${remaining}s`;
+  return remaining ? `${minutes}m ${remaining}s` : `${minutes}m`;
 }
 
 export function formatHoursMinutes(seconds: number): string {

@@ -113,12 +113,13 @@ function detectedLabel(entry: QueueEntry): string | null {
   return `${entry.detectedArtistName || "Unknown artist"} — ${entry.detectedSongTitle || entry.providerTitle || "Unknown title"}`;
 }
 type OverlayYouTubeTrackInput = { id: string; link: string; sourceType: QueueEntry["sourceType"]; videoId: string | null };
-function buildOverlayYouTubeSync(track: OverlayYouTubeTrackInput, playbackState: LiveOverlayPlaybackState, currentTimeSeconds = 0, correctionReason?: LiveOverlaySyncCorrectionReason) {
+function buildOverlayYouTubeSync(track: OverlayYouTubeTrackInput, playbackState: LiveOverlayPlaybackState, currentTimeSeconds = 0, durationSeconds?: number, correctionReason?: LiveOverlaySyncCorrectionReason) {
   if (track.sourceType !== "youtube" || !track.videoId) return null;
-  return { provider: "youtube" as const, videoId: track.videoId, trackId: track.id, playbackState, currentTimeSeconds: Math.max(0, currentTimeSeconds), updatedAt: new Date().toISOString(), muted: true, correctionReason };
+  const duration = typeof durationSeconds === "number" && Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : undefined;
+  return { provider: "youtube" as const, videoId: track.videoId, trackId: track.id, playbackState, currentTimeSeconds: Math.max(0, currentTimeSeconds), durationSeconds: duration, updatedAt: new Date().toISOString(), muted: true, correctionReason };
 }
-async function publishOverlayYouTubeSync(track: OverlayYouTubeTrackInput, playbackState: LiveOverlayPlaybackState, currentTimeSeconds = 0, correctionReason?: LiveOverlaySyncCorrectionReason) {
-  const sync = buildOverlayYouTubeSync(track, playbackState, currentTimeSeconds, correctionReason);
+async function publishOverlayYouTubeSync(track: OverlayYouTubeTrackInput, playbackState: LiveOverlayPlaybackState, currentTimeSeconds = 0, durationSeconds?: number, correctionReason?: LiveOverlaySyncCorrectionReason) {
+  const sync = buildOverlayYouTubeSync(track, playbackState, currentTimeSeconds, durationSeconds, correctionReason);
   if (!sync) return null;
   return postOverlayPlayerSync(sync);
 }
@@ -169,6 +170,7 @@ export function AdminRadioQueueControl() {
   const [railMinimized, setRailMinimized] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [clockNow, setClockNow] = useState(() => Date.now());
   const [endConfirmOpen, setEndConfirmOpen] = useState(false);
   const [endingSession, setEndingSession] = useState(false);
   const [sessionOptionsOpen, setSessionOptionsOpen] = useState(false);
@@ -194,7 +196,7 @@ export function AdminRadioQueueControl() {
   function applyMutationState(next: QueueState, epoch: number): void {
     if (epoch < latestAppliedMutationEpochRef.current) return;
     latestAppliedMutationEpochRef.current = epoch;
-    setState(next);
+    setState((current) => ({ ...next, playbackTiming: next.playbackTiming ?? current?.playbackTiming ?? null, wheelTiming: next.wheelTiming ?? current?.wheelTiming ?? null }));
   }
 
   function applyPollingStateIfFresh(next: QueueState, requestEpoch: number): void {
@@ -224,6 +226,11 @@ export function AdminRadioQueueControl() {
     load(sessionId);
     const interval = setInterval(() => load(initialSessionIdFromUrl()), 5_000);
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setClockNow(Date.now()), 1_000);
+    return () => window.clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -302,7 +309,7 @@ export function AdminRadioQueueControl() {
     const updated = await action(id, next);
     if (isClearingAction) {
       const clearingTarget = state?.nowPlaying?.id === id ? state.nowPlaying : null;
-      if (clearingTarget?.sourceType === "youtube" || clearingTarget?.sourceType === "tiktok") await clearOverlayPlayerSync();
+      if (clearingTarget?.sourceType === "youtube" || clearingTarget?.sourceType === "tiktok" || clearingTarget?.sourceType === "upload") await clearOverlayPlayerSync();
       if (!updated) setLoadingPlayerId(null);
     }
     setPlayerActionPending(false);
@@ -409,7 +416,7 @@ export function AdminRadioQueueControl() {
   const resolverOverrideBlocked = nextInLineHasActivePriority || queuedActivePriorityExists;
   const canPullWheelChosen = !resolverOverrideBlocked && (state?.queue ?? []).some((entry) => entry.lane === "wheel" && entry.status === "queued");
   const canPullFreeTransmission = !resolverOverrideBlocked && (state?.queue ?? []).some((entry) => (!entry.lane || entry.lane === "regular") && entry.status === "queued");
-  const timingSummary = buildQueueTimingDisplay(queueTimingInputFromAdminState(state));
+  const timingSummary = buildQueueTimingDisplay(queueTimingInputFromAdminState(state), { now: new Date(clockNow) });
   const topPressure = timingSummary.pressureSummary;
   const requestedCount = (state?.queue ?? []).filter((entry) => (entry.priorityUpgradeStatus ?? "none") === "requested").length;
   const checkoutPendingCount = (state?.queue ?? []).filter((entry) => (entry.priorityUpgradeStatus ?? "none") === "checkout_pending").length;
@@ -418,16 +425,17 @@ export function AdminRadioQueueControl() {
   const wheelOverlayReady = wheelSpinsUnlocked > 0;
   const wheelOverlayStatusLabel = "Wheel spin ready";
   const activeTrackIds = new Set<string>();
-  if (state?.nowPlaying?.id) activeTrackIds.add(state.nowPlaying.id);
-  if (nextInLine?.id) activeTrackIds.add(nextInLine.id);
+  if (state?.nowPlaying?.id && !state.nowPlaying.isTestTrack) activeTrackIds.add(state.nowPlaying.id);
+  if (nextInLine?.id && !nextInLine.isTestTrack) activeTrackIds.add(nextInLine.id);
   for (const entry of state?.queue ?? []) {
-    if (entry.status === "queued") activeTrackIds.add(entry.id);
+    if (entry.status === "queued" && !entry.isTestTrack) activeTrackIds.add(entry.id);
   }
   const activeTrackCount = activeTrackIds.size;
   const acceptedTrackCount = state?.publicStatus?.acceptedCount ?? state?.session?.acceptedCount ?? activeTrackCount;
   const projectedRuntimeLabel = timingSummary.showRuntimeSummary.publicProjectedLabel ?? timingSummary.showRuntimeSummary.projectedLabel ?? "—";
   const capacityCount = state?.publicStatus?.capacity ?? state?.session?.queueCapacity ?? null;
   const acceptedCapacityLabel = capacityCount ? `${acceptedTrackCount} / ${capacityCount}` : `${acceptedTrackCount}`;
+  const completedActiveAcceptedLabel = `${state?.session?.completedCount ?? 0} / ${activeTrackCount} / ${acceptedTrackCount}`;
   const openWheelPanel = () => {
     setActiveUtilityPanel("overlay");
     setOverlayWheelFocusTick((value) => value + 1);
@@ -471,6 +479,10 @@ export function AdminRadioQueueControl() {
           <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Phase: {phaseLabel}</span>
           <span className={`border px-2 py-1 uppercase tracking-widest ${state?.publicStatus?.isOpen ? "border-accent/50 text-accent" : "border-danger/50 text-danger"}`}>Submissions: {state?.publicStatus?.isOpen ? "Open" : "Closed"}</span>
           <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Accepted / Capacity: {acceptedCapacityLabel}</span>
+          <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Completed / Active / Accepted: {completedActiveAcceptedLabel}</span>
+          <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Elapsed: {timingSummary.showRuntimeSummary.elapsedLabel}</span>
+          <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Remaining: {timingSummary.showRuntimeSummary.remainingLabel}</span>
+          <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">End: {timingSummary.showRuntimeSummary.estimatedEndLabel}</span>
           <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Projected: {projectedRuntimeLabel}</span>
           <TopBarCommercialChip summary={timingSummary.sponsorBreakSummary} />
           <TopBarPressureChip pressure={topPressure} minimized />
@@ -484,6 +496,10 @@ export function AdminRadioQueueControl() {
           <div><p className="text-[10px] uppercase tracking-widest text-muted">Show Phase</p><p className="mt-1 font-bold text-foreground">{phaseLabel}</p></div>
           <div><p className="text-[10px] uppercase tracking-widest text-muted">Submissions</p><p className={`mt-1 font-bold ${state?.publicStatus?.isOpen ? "text-accent" : "text-danger"}`}>{state?.publicStatus?.isOpen ? "Open" : "Closed"}</p></div>
           <div><p className="text-[10px] uppercase tracking-widest text-muted">Accepted / Capacity</p><p className="mt-1 font-bold text-foreground">{acceptedCapacityLabel}</p></div>
+          <div><p className="text-[10px] uppercase tracking-widest text-muted">Completed / Active / Accepted</p><p className="mt-1 font-bold text-foreground">{completedActiveAcceptedLabel}</p></div>
+          <div><p className="text-[10px] uppercase tracking-widest text-muted">Elapsed</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.elapsedLabel}</p></div>
+          <div><p className="text-[10px] uppercase tracking-widest text-muted">Projected Remaining</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.remainingLabel}</p></div>
+          <div><p className="text-[10px] uppercase tracking-widest text-muted">Estimated End</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.estimatedEndLabel}</p></div>
           <div><p className="text-[10px] uppercase tracking-widest text-muted">Projected Runtime</p><p className="mt-1 font-bold text-foreground">{projectedRuntimeLabel}</p></div>
           <TopBarCommercialChip summary={timingSummary.sponsorBreakSummary} />
           <TopBarPressureChip pressure={topPressure} />
@@ -634,6 +650,7 @@ type AdminYTPlayer = {
   stopVideo: () => void;
   seekTo: (seconds: number, allowSeekAhead: boolean) => void;
   getCurrentTime: () => number;
+  getDuration?: () => number;
   getVideoData?: () => { video_id?: string };
   mute: () => void;
   destroy?: () => void;
@@ -673,7 +690,7 @@ function AdminYouTubePlayer({ entry }: { entry: QueueEntry }) {
   const previousObservedTimeRef = useRef<number | null>(null);
   const previousObservedAtRef = useRef<number | null>(null);
   const youtubeGenerationActiveRef = useRef(true);
-  const [diagnostics, setDiagnostics] = useState<{ provider: string; videoId: string; trackId: string; playbackState: "playing" | "paused" | "stopped"; currentTimeSeconds: number; updatedAt: string; status: "Fresh" | "Stale" | "Missing" | "Mismatch" | "Error"; ready: boolean; errorCode?: number; publishStatus?: "success" | "failed" } | null>(null);
+  const [diagnostics, setDiagnostics] = useState<{ provider: string; videoId: string; trackId: string; playbackState: "playing" | "paused" | "stopped"; currentTimeSeconds: number; durationSeconds?: number; updatedAt: string; status: "Fresh" | "Stale" | "Missing" | "Mismatch" | "Error"; ready: boolean; errorCode?: number; publishStatus?: "success" | "failed" } | null>(null);
   const [outboundTransitDiagnosticMs, setOutboundTransitDiagnosticMs] = useState<number | null>(null);
   const [diagnosticsNow, setDiagnosticsNow] = useState(() => Date.now());
   const trackId = entry.id;
@@ -699,8 +716,15 @@ function AdminYouTubePlayer({ entry }: { entry: QueueEntry }) {
     }
     const outboundTransitSeconds = playbackState === "playing" ? (outboundTransitEstimateMsRef.current ?? 0) / 1000 : 0;
     const publishTime = Math.max(0, currentTimeSeconds + outboundTransitSeconds);
+    let durationSeconds: number | undefined;
     try {
-      const { sync, outboundTransitMs } = await publishOverlayYouTubeSync(trackSyncInput, playbackState, publishTime, correctionReason) ?? { sync: null, outboundTransitMs: 0 };
+      const duration = playerRef.current?.getDuration?.();
+      durationSeconds = typeof duration === "number" && Number.isFinite(duration) && duration > 0 ? duration : undefined;
+    } catch {
+      durationSeconds = undefined;
+    }
+    try {
+      const { sync, outboundTransitMs } = await publishOverlayYouTubeSync(trackSyncInput, playbackState, publishTime, durationSeconds, correctionReason) ?? { sync: null, outboundTransitMs: 0 };
       outboundTransitEstimateMsRef.current = updateTransitEstimateMs(outboundTransitEstimateMsRef.current, outboundTransitMs);
       setOutboundTransitDiagnosticMs(Math.round(outboundTransitEstimateMsRef.current));
       if (sync) setDiagnostics({ ...sync, currentTimeSeconds: publishTime, status: "Fresh", ready: Boolean(playerRef.current), publishStatus: "success" });
@@ -1033,6 +1057,38 @@ function AdminTikTokPlayer({ entry }: { entry: QueueEntry }) {
   return <div className="space-y-2"><div className="mx-auto max-h-[62vh] min-h-[360px] w-full max-w-[420px] overflow-hidden border border-border bg-black"><iframe ref={iframeRef} title={`TikTok player for ${submittedArtist(entry)} — ${submittedTitle(entry)}`} src={src} className="h-[62vh] min-h-[360px] max-h-[620px] w-full" allow="fullscreen; autoplay; encrypted-media; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" /></div>{status === "loading" && <p className="text-xs text-muted">Loading TikTok player… Open Link and Copy Link remain available.</p>}{status === "ready" && <p className="text-xs text-muted">TikTok player ready. Use the native controls.</p>}{notice && <p className="border border-accent/40 bg-accent/10 p-2 text-xs text-accent">{notice}</p>}{status === "error" && <p className="border border-danger/40 bg-danger/10 p-2 text-xs text-danger">{errorLabel ?? "TikTok player unavailable."} Use Open Link or Copy Link.</p>}<div className="grid gap-1 border border-border/60 bg-surface/80 p-2 text-[10px] uppercase tracking-widest text-muted sm:grid-cols-3"><span>Provider: {diagnostics?.provider ?? "tiktok"}</span><span>Post ID: {diagnostics?.postId ?? parsedPostId ?? "—"}</span><span>Track ID: {diagnostics?.trackId ?? entry.id}</span><span>Ready: {diagnostics?.ready ? "yes" : "no"}</span><span>State: {diagnostics?.playbackState ?? "Missing"}</span><span>Host time: {Math.round(diagnostics?.currentTimeSeconds ?? 0)}s</span><span>Duration: {diagnostics?.durationSeconds ? `${Math.round(diagnostics.durationSeconds)}s` : "—"}</span><span>Sync: {diagnostics?.status ?? "Missing"}{diagnostics?.syncAgeSeconds !== null && diagnostics?.syncAgeSeconds !== undefined ? ` · ${diagnostics.syncAgeSeconds}s` : ""}</span><span>Publish: {diagnostics?.publishStatus ?? "—"}</span><span>Outbound transit: {outboundTransitDiagnosticMs !== null ? `${outboundTransitDiagnosticMs}ms` : "—"}</span></div></div>;
 }
 
+function AdminAudioPlayer({ entry }: { entry: QueueEntry }) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const playbackState = (): LiveOverlayPlaybackState => audio.ended ? "stopped" : audio.paused ? (audio.currentTime > 0 ? "paused" : "stopped") : "playing";
+    const publish = (correctionReason: LiveOverlaySyncCorrectionReason) => {
+      const durationSeconds = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : undefined;
+      void postOverlayPlayerSync({ provider: "audio" as const, trackId: entry.id, playbackState: playbackState(), currentTimeSeconds: Math.max(0, audio.currentTime || 0), durationSeconds, updatedAt: new Date().toISOString(), muted: audio.muted, correctionReason }).catch(() => undefined);
+    };
+    const stateChange = () => publish("state_change");
+    const seek = () => publish("seek");
+    audio.addEventListener("play", stateChange);
+    audio.addEventListener("pause", stateChange);
+    audio.addEventListener("ended", stateChange);
+    audio.addEventListener("loadedmetadata", stateChange);
+    audio.addEventListener("seeked", seek);
+    const interval = window.setInterval(() => {
+      if (!audio.paused || audio.currentTime > 0) publish("heartbeat");
+    }, YOUTUBE_SYNC_HEARTBEAT_MS);
+    return () => {
+      window.clearInterval(interval);
+      audio.removeEventListener("play", stateChange);
+      audio.removeEventListener("pause", stateChange);
+      audio.removeEventListener("ended", stateChange);
+      audio.removeEventListener("loadedmetadata", stateChange);
+      audio.removeEventListener("seeked", seek);
+    };
+  }, [entry.id]);
+  return <audio ref={audioRef} key={`${entry.id}-${adminAudioUrl(entry)}`} src={adminAudioUrl(entry)} controls className="w-full" />;
+}
+
 function PlayerDock({ player, minimized, setMinimized, readOnly, actionPending, onAction, onCopy }: { player: QueueEntry; minimized: boolean; setMinimized: (value: boolean) => void; readOnly: boolean; actionPending: boolean; onAction: (id: string, action: AdminQueueAction) => void; onCopy: () => void }) {
   const embedded = embedUrl(player);
   return (
@@ -1053,7 +1109,7 @@ function PlayerDock({ player, minimized, setMinimized, readOnly, actionPending, 
         </div>
         <div className={`${minimized ? "h-0 overflow-hidden opacity-0" : "mt-3 opacity-100"} grid w-full items-end gap-3 xl:grid-cols-[minmax(0,1fr)_auto]`} aria-hidden={minimized}>
           <div className="w-full min-w-0">
-            {player.sourceType === "upload" && player.fileUrl && <audio key={`${player.id}-${adminAudioUrl(player)}`} src={adminAudioUrl(player)} controls className="w-full" />}
+            {player.sourceType === "upload" && player.fileUrl && <AdminAudioPlayer entry={player} />}
             {player.sourceType === "youtube" && <AdminYouTubePlayer key={player.id} entry={player} />}
             {player.sourceType === "tiktok" && <AdminTikTokPlayer key={player.id} entry={player} />}
             {player.sourceType !== "upload" && player.sourceType !== "youtube" && player.sourceType !== "tiktok" && embedded && <iframe key={`${player.id}-${embedded}`} title="Queue preview" src={embedded} className="h-56 w-full border border-border" allow="clipboard-write; encrypted-media; picture-in-picture" />}
@@ -1111,14 +1167,16 @@ function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction }:
   const pressure = timingSummary.pressureSummary;
   const needleDeg = -90 + (pressure.score / 100) * 180;
   const pressureHeading = pressure.mode === "live" ? "Live Pressure" : pressure.mode === "ended" ? "Ended" : "Pre-show Projection";
-  const sponsorStartDisabled = sponsor.status === "running" || sponsor.status === "completed" || sponsor.status === "skipped";
+  const sponsorStartDisabled = !sponsor.dueNow || sponsor.status === "running" || sponsor.status === "completed" || sponsor.status === "skipped";
   const sponsorStartLabel = sponsor.status === "running"
     ? `Commercial Break Running${sponsor.diagnosticLabel.includes("remaining") ? ` · ${sponsor.diagnosticLabel.split("·")[1]?.trim().replace("remaining", "").trim()}` : ""}`
     : sponsor.status === "completed"
       ? "Commercial Break Done"
       : sponsor.status === "skipped"
         ? "Commercial Break Skipped"
-        : "Mark Commercial Break Started";
+        : sponsor.dueNow
+          ? "Start Sponsor Break"
+          : "Sponsor Break Available at Midpoint";
   return (
     <section className="space-y-3 border border-accent/30 bg-background/40 p-4 text-xs">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -1128,8 +1186,11 @@ function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction }:
         </div>
         {canControl && <div className="flex flex-wrap gap-2"><button type="button" disabled={sponsorStartDisabled} onClick={() => !sponsorStartDisabled && onSponsorAction("start")} className={`px-3 py-1.5 uppercase tracking-widest ${sponsorStartDisabled ? "cursor-not-allowed border border-border text-muted opacity-70" : "border border-[#ffaa00]/50 text-[#ffaa00]"}`}>{sponsorStartLabel}</button><button type="button" onClick={() => onSponsorAction("reset")} className="border border-border px-3 py-1.5 uppercase tracking-widest text-muted">Reset Commercial Break State</button></div>}
       </div>
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-4 lg:grid-cols-7">
         <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Projected Show Time</p><p className="mt-1 text-lg font-bold text-foreground">{timingSummary.showRuntimeSummary.projectedLabel}</p></div>
+        <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Elapsed</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.elapsedLabel}</p></div>
+        <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Projected Remaining</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.remainingLabel}</p></div>
+        <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Estimated End</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.estimatedEndLabel}</p></div>
         <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Target</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.targetLabel}</p></div>
         <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Target Status</p><p className="mt-1 font-bold text-accent">{timingSummary.showRuntimeSummary.targetStatusLabel}</p></div>
         <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Line Fit</p><p className="mt-1 font-bold text-foreground">{timingSummary.lineFitCopy}</p></div>
@@ -1155,12 +1216,13 @@ function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction }:
         <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Pressure Factors</p><p className="mt-1 font-bold text-foreground">{pressure.description}</p><ul className="mt-2 list-disc space-y-1 pl-5 text-muted">{pressure.factors.map((factor) => <li key={factor}>{factor}</li>)}</ul></div>
       </div>
       <div className="grid gap-3 md:grid-cols-4">
-        <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Commercial Break</p><p className="mt-1 font-bold text-foreground">{sponsor.diagnosticLabel}</p><p className="mt-1 text-muted">{sponsor.durationLabel} duration · {sponsor.minElapsedLabel} minimum · midpoint {sponsor.completedPlayableCount}/{sponsor.totalPlayableNonRemovedCount ?? "—"} playable</p></div>
+        <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Sponsor Break</p><p className="mt-1 font-bold text-foreground">{sponsor.diagnosticLabel}</p><p className="mt-1 text-muted">Exactly {sponsor.durationLabel} · due at counted midpoint {sponsor.dueAfterTracks ?? "—"} · completed {sponsor.completedPlayableCount}</p></div>
         <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Wheel Timing</p><p className="mt-1 font-bold text-foreground">{wheel.owed} wheel spins owed</p><p className="mt-1 text-muted">{wheel.overheadLabel} ceremony overhead included</p></div>
         <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Unknown Durations</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.unknownDurationCount}</p><p className="mt-1 text-muted">Tracks using est. 5:00</p></div>
         <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Known Durations</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.knownDurationCount}</p><p className="mt-1 text-muted">Detected/provider/upload durations</p></div>
       </div>
-      <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Current Runtime Notes</p><p className="mt-1 text-muted">Commercial: {sponsor.diagnosticLabel} · Wheel overhead: {formatHoursMinutes(wheel.overheadSeconds)} · {timingSummary.showRuntimeSummary.notes[0] ?? "No projection warnings."}</p></div>
+      <div className="grid gap-3 md:grid-cols-3"><div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Talk Room to 4h</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.talkRoomLabel}</p><p className="mt-1 text-muted">{timingSummary.showRuntimeSummary.talkPerTrackLabel}</p></div><div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Room to 5h</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.warningRoomLabel}</p><p className="mt-1 text-muted">Pressure ceiling only; the show continues past it.</p></div><div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Runtime Confidence</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.confidenceLabel}</p><p className="mt-1 text-muted">Unknown durations widen timing uncertainty without adding a pressure penalty.</p></div></div>
+      <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Current Runtime Notes</p><p className="mt-1 text-muted">Sponsor: {sponsor.diagnosticLabel} · Wheel overhead: {formatHoursMinutes(wheel.overheadSeconds)} · {timingSummary.showRuntimeSummary.notes[0] ?? "No projection warnings."}</p></div>
     </section>
   );
 }

@@ -79,12 +79,27 @@ export interface QueueWheelTiming {
   spinsOwed: number;
 }
 
-export const PUBLIC_QUEUE_LEGAL_TERMS_VERSION = "1.0";
-export const PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION = "1.0";
+export const PUBLIC_QUEUE_LEGAL_TERMS_VERSION = "1.1";
+export const PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION = "1.1";
 export const PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION = "1.0";
 export const PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT = "I agree to the BARCODE Network Terms, Queue Submission Terms, and Privacy Policy. I confirm I am 13+ and, if under 18, have parent/guardian permission. I confirm I have the rights to submit this track, and I understand uploads are temporary and may be used for BARCODE Radio/live show-related playback, clips, recaps, platform replays, and related BARCODE Network features as described in the terms.";
-export const PRIORITY_TERMS_VERSION = "1.0";
+export const PRIORITY_TERMS_VERSION = "1.1";
 export const PRIORITY_DISCLOSURE_TEXT = "Priority Signal moves an eligible submission closer to the front after payment clears. It does not guarantee approval, airplay, promotion, review, a specific stream time, permanent placement, or interruption of the track currently playing. By continuing to checkout, I confirm that I am at least 18 years old or have permission from a parent or legal guardian to make this payment.";
+export const PRIORITY_GIFT_ATTRIBUTION_VERSION = "1.0";
+export const PRIORITY_GIFT_ATTRIBUTION_DISCLOSURE_TEXT = "For a skip sent to someone else, the public name you enter—or Anonymous if you leave it blank—will appear with the recipient artist on the public queue and broadcast overlay after payment clears.";
+export const PRIORITY_GIFT_ANONYMOUS_NAME = "Anonymous";
+export const PRIORITY_GIFT_NAME_MAX_LENGTH = 48;
+
+export function normalizePriorityGiftDisplayName(value: unknown, fallback: string): string {
+  const normalized = typeof value === "string"
+    ? value
+      .normalize("NFKC")
+      .replace(/[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+    : "";
+  return Array.from(normalized || fallback).slice(0, PRIORITY_GIFT_NAME_MAX_LENGTH).join("");
+}
 
 export const QUEUE_SESSION_PURPOSES = [
   "unknown",
@@ -216,6 +231,21 @@ export interface PriorityLegalAcceptanceInput {
   priorityDisclosureText: string;
 }
 
+export interface PriorityGiftAttributionInput {
+  attributionVersion: string;
+  attributionDisclosureText: string;
+  supporterName?: string | null;
+}
+
+export interface PriorityGiftAttribution {
+  version: typeof PRIORITY_GIFT_ATTRIBUTION_VERSION;
+  supporterName: string;
+  recipientName: string;
+  capturedAt: string;
+}
+
+export type PriorityGiftPublicAttribution = Pick<PriorityGiftAttribution, "version" | "supporterName" | "recipientName">;
+
 export interface QueueEntry {
   id: string;
   artist: string;
@@ -283,6 +313,7 @@ export interface QueueEntry {
   priorityUpgradeCheckoutExpiresAt?: string | null;
   priorityUpgradeAmountCents?: number | null;
   priorityUpgradeCurrency?: string | null;
+  priorityGiftAttribution?: PriorityGiftAttribution | null;
   displacedFromNextInLineAt?: string | null;
   stagedAsFallbackForLane?: QueueNonPriorityLane | null;
   priorityPausedAt?: string | null;
@@ -395,6 +426,7 @@ export interface QueuePublicTrack {
   tiktokHandle?: string | null;
   priorityUpgradeRequested?: boolean;
   priorityUpgradeStatus?: PriorityUpgradeStatus;
+  priorityGiftAttribution?: PriorityGiftPublicAttribution | null;
   isSimulation?: boolean;
 }
 

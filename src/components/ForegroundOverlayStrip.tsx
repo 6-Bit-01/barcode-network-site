@@ -151,6 +151,7 @@ export function ForegroundOverlayStrip({
   const identity = phase === "artist" ? artistName : trackTitle;
   const phaseDurationMs = phase === "artist" ? FOREGROUND_ARTIST_HOLD_MS : FOREGROUND_TRACK_HOLD_MS;
   const safeWheelCount = Math.max(0, Math.min(99, Math.trunc(wheelSpinsOwed)));
+  const priorityPopup = actionId?.startsWith("priority-") === true;
 
   return (
     <section
@@ -171,9 +172,9 @@ export function ForegroundOverlayStrip({
         </div>
 
         <div key={actionId ?? `${actionLabel}:${actionMessage}`} className={`foreground-strip-action-row foreground-strip-action-row--${actionTone}`}>
-          <span className={`foreground-strip-intake foreground-strip-intake--${submissionsOpen ? "open" : "closed"}`}>
+          {!priorityPopup && <span className={`foreground-strip-intake foreground-strip-intake--${submissionsOpen ? "open" : "closed"}`}>
             {submissionsOpen ? "OPEN" : "CLOSED"}
-          </span>
+          </span>}
           <span className="foreground-strip-action-label" data-text={actionLabel}>{actionLabel}</span>
           <span className="foreground-strip-action-message" data-text={actionMessage} title={actionMessage}>{actionMessage}</span>
         </div>

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { markPriorityUpgradePaidFromStripe } from "@/lib/queue";
+import { PRIORITY_GIFT_ANONYMOUS_NAME, PRIORITY_GIFT_ATTRIBUTION_VERSION, normalizePriorityGiftDisplayName } from "@/lib/queue-types";
+import type { PriorityGiftAttribution } from "@/lib/queue-types";
 import { constructWebhookEvent, isPrioritySignalCheckoutSession } from "@/lib/stripe";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +14,19 @@ function metadataText(value: unknown): string {
 
 function paymentIdForSession(session: Stripe.Checkout.Session): string {
   return typeof session.payment_intent === "string" ? session.payment_intent : session.id;
+}
+
+function priorityGiftAttributionForSession(session: Stripe.Checkout.Session, fallbackCapturedAt: string): PriorityGiftAttribution | null {
+  if (metadataText(session.metadata?.priorityGiftAttributionVersion) !== PRIORITY_GIFT_ATTRIBUTION_VERSION) return null;
+  const recipientName = normalizePriorityGiftDisplayName(session.metadata?.priorityGiftRecipientName, "");
+  if (!recipientName) return null;
+  const capturedAt = metadataText(session.metadata?.priorityGiftCapturedAt);
+  return {
+    version: PRIORITY_GIFT_ATTRIBUTION_VERSION,
+    supporterName: normalizePriorityGiftDisplayName(session.metadata?.priorityGiftSupporterName, PRIORITY_GIFT_ANONYMOUS_NAME),
+    recipientName,
+    capturedAt: Number.isFinite(Date.parse(capturedAt)) ? capturedAt : fallbackCapturedAt,
+  };
 }
 
 export async function POST(req: Request) {
@@ -39,11 +54,14 @@ export async function POST(req: Request) {
 
   const amountCents = typeof session.amount_total === "number" ? session.amount_total : 0;
   const currency = metadataText(session.currency) || "usd";
+  const paidAt = new Date((event.created || Math.floor(Date.now() / 1000)) * 1000).toISOString();
   const result = await markPriorityUpgradePaidFromStripe(trackId, queueSessionId, {
     paymentId: paymentIdForSession(session),
     amountCents,
     currency,
-    paidAt: new Date((session.created || Math.floor(Date.now() / 1000)) * 1000).toISOString(),
+    paidAt,
+    checkoutSessionId: session.id,
+    giftAttribution: priorityGiftAttributionForSession(session, paidAt),
   });
 
   return NextResponse.json({ received: true, result });

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createPrioritySignalCheckoutSession } from "@/lib/stripe";
-import { markPriorityUpgradeCheckoutPending, requestPriorityCheckout } from "@/lib/queue";
+import { createPriorityGiftAttribution, markPriorityUpgradeCheckoutPending, requestPriorityCheckout } from "@/lib/queue";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -43,6 +43,17 @@ export async function POST(req: Request) {
     }
     if (checkoutRequest.session.activeCount < MIN_PRIORITY_ACTIVE_DEPTH) return NextResponse.json({ error: PRIORITY_DEPTH_UNAVAILABLE_MESSAGE }, { status: 409 });
 
+    const submitterToken = cleanText(body.submitterToken).slice(0, 120);
+    const requesterOwnsTrack = Boolean(submitterToken && checkoutRequest.track.submitterToken && submitterToken === checkoutRequest.track.submitterToken);
+    if (!requesterOwnsTrack && body.priorityGift !== true) throw new Error("Gifted Priority attribution disclosure is required for another artist's track. Refresh the queue and try again.");
+    const priorityGiftAttribution = !requesterOwnsTrack
+      ? createPriorityGiftAttribution({
+        attributionVersion: cleanText(body.priorityGiftAttributionVersion),
+        attributionDisclosureText: cleanText(body.priorityGiftAttributionDisclosureText),
+        supporterName: cleanText(body.priorityGiftSupporterName),
+      }, checkoutRequest.track.submittedArtistName ?? checkoutRequest.track.artist)
+      : null;
+
     const checkout = await createPrioritySignalCheckoutSession({
       trackId,
       queueSessionId: checkoutRequest.session.sessionId,
@@ -51,8 +62,9 @@ export async function POST(req: Request) {
       amountCents: checkoutRequest.amountCents,
       currency: checkoutRequest.currency,
       label: checkoutRequest.label,
+      priorityGiftAttribution,
     });
-    await markPriorityUpgradeCheckoutPending(trackId, checkoutRequest.session.sessionId, { provider: "stripe", checkoutSessionId: checkout.sessionId, checkoutUrl: checkout.url, checkoutCreatedAt: checkout.createdAt, checkoutExpiresAt: checkout.expiresAt, priorityAcceptance });
+    await markPriorityUpgradeCheckoutPending(trackId, checkoutRequest.session.sessionId, { provider: "stripe", checkoutSessionId: checkout.sessionId, checkoutUrl: checkout.url, checkoutCreatedAt: checkout.createdAt, checkoutExpiresAt: checkout.expiresAt, priorityAcceptance, priorityGiftAttribution });
     return NextResponse.json({ url: checkout.url, sessionId: checkout.sessionId, message: "Payment confirmation may take a moment." });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Priority Signal checkout is unavailable.";

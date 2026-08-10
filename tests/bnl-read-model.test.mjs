@@ -58,6 +58,7 @@ const forbiddenKeys = [
   "priorityUpgradePaymentId",
   "priorityUpgradeCheckoutUrl",
   "priorityLegalAcceptance",
+  "priorityGiftAttribution",
   "fileUrl",
   "fileName",
   "fileSize",
@@ -149,6 +150,7 @@ async function addTrack(label, options = {}) {
     priorityUpgradePaymentId: "pi_private_test",
     priorityUpgradeCheckoutUrl: "https://checkout.example.test/private",
     priorityLegalAcceptance: { acceptedAt: new Date().toISOString(), priorityTermsVersion: "1.0", priorityDisclosureText: "private acknowledgement", source: "priority_checkout" },
+    priorityGiftAttribution: options.priorityGiftAttribution ?? null,
   });
 }
 
@@ -808,9 +810,18 @@ test("BNL read model excludes simulation/test tracks from all public semantic su
   assert.equal(json.includes("Glass Circuit"), false);
 });
 
-test("BNL read model excludes private queue/payment/upload keys", async () => {
+test("BNL read model excludes private queue/payment/upload keys and gifted Priority attribution", async () => {
   await freshReadModelSession();
-  await addTrack("Private Fields", { artist: "Private Artist", stripeSessionId: "cs_private_test" });
+  await addTrack("Private Fields", {
+    artist: "Private Artist",
+    stripeSessionId: "cs_private_test",
+    priorityGiftAttribution: {
+      version: "1.0",
+      supporterName: "BNL Must Not Receive This Supporter",
+      recipientName: "BNL Must Not Receive This Recipient",
+      capturedAt: new Date().toISOString(),
+    },
+  });
   await queue.addToQueue({
     artist: "Private Upload Artist",
     title: "Private Upload Track",
@@ -836,6 +847,7 @@ test("BNL read model excludes private queue/payment/upload keys", async () => {
   assert.deepEqual(findForbiddenKeys(model), []);
   assert.deepEqual(findForbiddenStringValues(model), []);
   assert.equal(JSON.stringify(model).includes("private.blob.vercel-storage.com"), false);
+  assert.equal(JSON.stringify(model).includes("BNL Must Not Receive"), false);
 });
 
 test("BNL read model keeps normal queue items out of broadcast memory candidates", async () => {

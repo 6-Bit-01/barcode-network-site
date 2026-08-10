@@ -121,6 +121,12 @@ function LaneStatusBadge({ entry }: { entry: QueueEntry }) {
   const visual = queueTrackVisual(entry);
   return <p className={`mt-2 inline-flex px-2 py-1 text-[10px] uppercase tracking-widest ${visual.badgeClass}`}>{visual.label}</p>;
 }
+function AdminPriorityGiftBanner({ entry, compact = false }: { entry: QueueEntry; compact?: boolean }) {
+  const gift = entry.priorityGiftAttribution;
+  if (!gift) return null;
+  const confirmed = entry.priorityUpgradeStatus === "paid" || entry.priorityUpgradeStatus === "paid_needs_attention";
+  return <p className={`${compact ? "mt-1 text-[10px]" : "mt-3 text-xs"} border border-[#ffaa00]/70 bg-[#ffaa00]/15 px-3 py-2 font-black uppercase tracking-widest text-[#ffaa00]`}>{confirmed ? "GIFTED PRIORITY CONFIRMED" : "GIFTED PRIORITY CHECKOUT"} · FROM {gift.supporterName} · FOR {gift.recipientName}</p>;
+}
 function durationLabel(entry: QueueEntry): string {
   const duration = formatRuntime(getTrackRuntimeSeconds(entry));
   return entry.durationIsEstimate ? `${duration} estimated / pending · ${durationSourceLabel(entry)}` : `${duration} detected · ${durationSourceLabel(entry)}`;
@@ -730,7 +736,7 @@ function TopBarCommercialChip({ summary, minimized = false }: { summary: ReturnT
 
 function NextInLineBox({ entry, playerOccupied, readOnly, onAction, onPlayer, onCopy }: { entry: QueueEntry | null; playerOccupied: boolean; readOnly: boolean; onAction: (id: string, action: AdminQueueAction) => void; onPlayer: (entry: QueueEntry) => void; onCopy: (entry: QueueEntry) => void }) {
   const visual = entry ? queueTrackVisual(entry) : null;
-  return <section className={`p-5 space-y-4 ${visual?.sectionClass ?? "border border-accent/60 bg-accent/5"}`}><div><p className="text-xs uppercase tracking-[0.4em] text-accent">Next in Line</p>{!entry ? <p className="mt-3 text-lg text-muted">No Next In Line — Pull Next Track when ready.</p> : <><div className="mt-3"><LaneStatusBadge entry={entry} /></div><h2 className="mt-3 text-2xl font-bold text-foreground">{submittedArtist(entry)} — {submittedTitle(entry)}</h2><p className="text-sm text-muted mt-1">Lane: {LANE_LABELS[entryLane(entry)]} · Source: {sourceLabel(entry)} · Duration: {durationLabel(entry)}</p>{detectedLabel(entry) && <p className="text-xs text-muted mt-1">Detected / Provider: {detectedLabel(entry)}</p>}</>}</div>{entry && <TrackActions entry={entry} mode="next" playerOccupied={playerOccupied} readOnly={readOnly} onAction={onAction} onPlayer={onPlayer} onCopy={onCopy} />}</section>;
+  return <section className={`p-5 space-y-4 ${visual?.sectionClass ?? "border border-accent/60 bg-accent/5"}`}><div><p className="text-xs uppercase tracking-[0.4em] text-accent">Next in Line</p>{!entry ? <p className="mt-3 text-lg text-muted">No Next In Line — Pull Next Track when ready.</p> : <><div className="mt-3"><LaneStatusBadge entry={entry} /></div><AdminPriorityGiftBanner entry={entry} /><h2 className="mt-3 text-2xl font-bold text-foreground">{submittedArtist(entry)} — {submittedTitle(entry)}</h2><p className="text-sm text-muted mt-1">Lane: {LANE_LABELS[entryLane(entry)]} · Source: {sourceLabel(entry)} · Duration: {durationLabel(entry)}</p>{detectedLabel(entry) && <p className="text-xs text-muted mt-1">Detected / Provider: {detectedLabel(entry)}</p>}</>}</div>{entry && <TrackActions entry={entry} mode="next" playerOccupied={playerOccupied} readOnly={readOnly} onAction={onAction} onPlayer={onPlayer} onCopy={onCopy} />}</section>;
 }
 
 type AdminYTPlayer = {
@@ -1323,7 +1329,7 @@ function PlayerDock({ player, sessionId, playbackDiagnostics, minimized, setMini
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.35em] text-accent">{minimized ? "Queue Player Dock" : "Command Deck Player"}</p>
-            <h3 className="text-lg font-bold">{submittedArtist(player)} — {submittedTitle(player)}</h3><LaneStatusBadge entry={player} />
+            <h3 className="text-lg font-bold">{submittedArtist(player)} — {submittedTitle(player)}</h3><LaneStatusBadge entry={player} /><AdminPriorityGiftBanner entry={player} compact />
             {detectedLabel(player) && <p className="text-xs text-muted mt-1">Detected / Provider: {detectedLabel(player)}</p>}
             <p className="text-xs text-muted mt-1">{sourceLabel(player)} · {durationLabel(player)}</p>
           </div>
@@ -1374,6 +1380,7 @@ function AdminTrackMetadata({ entry }: { entry: QueueEntry }) {
         {entry.contactEmail && <p className="mt-1 text-muted">Contact: {entry.contactEmail}</p>}
         {entry.submitterArtistName && <p className="mt-1 text-muted">Submitted by: {entry.submitterArtistName}</p>}
         <LaneStatusBadge entry={entry} />
+        <AdminPriorityGiftBanner entry={entry} />
       </div>
       <div className="border border-border/60 p-3">
         <span className="block text-muted uppercase tracking-widest">Detected source</span>

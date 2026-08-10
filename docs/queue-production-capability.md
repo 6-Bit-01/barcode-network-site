@@ -61,6 +61,14 @@ Uploaded MP3/WAV playback is admin-authenticated and private. The delivery route
 
 Playback lifecycle history is bounded per queue session and uses the existing serialized queue mutation owner. The admin diagnostic export is built from an explicit safe projection: it can include queue/session identifiers, submitted artist/title, media category, durations, lifecycle events, and explicit outcomes, but excludes raw source/upload URLs, contact fields, legal acceptance text, admin notes, payment state/identifiers, and private storage locations. Playback diagnostics are not part of the public queue snapshot or BNL queue projection.
 
+## Gifted Priority attribution
+
+When a viewer starts Priority Signal checkout for somebody else’s track, the queue modal offers one prominent optional public-name field. Blank means `Anonymous`; Stripe customer, billing, email, or payment identity is never used as a substitute. The server sanitizes and versions the chosen supporter name, snapshots the recipient artist, binds both values to the created Stripe checkout, and preserves the first confirmed attribution across webhook retries.
+
+Gift attribution remains admin-only while checkout is pending. After the verified webhook confirms payment, the existing public track projection exposes only the safe `from`/`for` display values. Queue cards, Now Playing/Next In Line, and host player surfaces use that same stored attribution. Manual Priority moves and ordinary self-upgrades do not create gift attribution.
+
+The foreground owner may replace its action row with the confirmed `from`/`for` thank-you for exactly three seconds using absolute server timestamps. It then resumes the live action rail; polling, refresh, and reconnect cannot restart the full interval. The safe public attribution is not added to the BNL queue projection, memory, dossiers, payment read models, or any new publication path.
+
 ## Session provenance and BNL publication
 
 Native queue visibility, payment, playback, and operator controls remain independent from BNL publication. Every session has:

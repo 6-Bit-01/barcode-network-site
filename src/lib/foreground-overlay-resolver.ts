@@ -5,7 +5,7 @@ export const FOREGROUND_ARTIST_HOLD_MS = 12_000;
 export const FOREGROUND_TRACK_HOLD_MS = 6_000;
 export const FOREGROUND_IDENTITY_CYCLE_MS = FOREGROUND_ARTIST_HOLD_MS + FOREGROUND_TRACK_HOLD_MS;
 export const FOREGROUND_ACTION_HOLD_MS = 7_000;
-export const FOREGROUND_CONFIRMED_SKIP_VISIBLE_MS = 3 * 60_000;
+export const FOREGROUND_PRIORITY_POPUP_MS = 3_000;
 export const FOREGROUND_SHOW_START_VISIBLE_MS = 4 * 60_000;
 
 export type ForegroundIdentityPhase = "artist" | "track";
@@ -19,6 +19,7 @@ export interface ForegroundOverlayAction {
   tone: ForegroundOverlayActionTone;
   source: ForegroundOverlayActionSource;
   occurredAt: string | null;
+  expiresAt?: string | null;
 }
 
 export interface ForegroundOverlaySnapshot {
@@ -84,10 +85,6 @@ function uniqueEntries(entries: Array<QueueEntry | null | undefined>): QueueEntr
   });
 }
 
-function activeQueueEntries(state: QueueState): QueueEntry[] {
-  return uniqueEntries([state.nowPlaying, state.loadedTrack, state.nextInLine, ...state.queue]).filter((entry) => !entry.isTestTrack);
-}
-
 function allQueueEntries(state: QueueState): QueueEntry[] {
   return uniqueEntries([
     state.nowPlaying,
@@ -108,46 +105,22 @@ function priorityEventAt(entry: QueueEntry): string | null {
 }
 
 function priorityAction(state: QueueState, nowMs: number): ForegroundOverlayAction | null {
-  const activeIds = new Set(activeQueueEntries(state).map((entry) => entry.id));
   const candidates = allQueueEntries(state).flatMap((entry) => {
     const status = entry.priorityUpgradeStatus;
+    if (status !== "paid" && status !== "paid_needs_attention" && status !== "manual") return [];
     const occurredAt = priorityEventAt(entry);
     const occurredAtMs = timeMs(occurredAt);
-    const isActive = activeIds.has(entry.id);
-
-    if (status === "paid_needs_attention" && isActive) {
-      return [{
-        id: `priority-received:${entry.id}:${occurredAt ?? "active"}`,
-        label: "SKIP RECEIVED",
-        message: actionTrackMessage(entry),
-        tone: "skip" as const,
-        source: "priority" as const,
-        occurredAt,
-        sortTime: occurredAtMs ?? 0,
-      }];
-    }
-
-    if (status === "checkout_pending" && isActive) {
-      return [{
-        id: `priority-sent:${entry.id}:${occurredAt ?? "active"}`,
-        label: "SKIP SENT",
-        message: actionTrackMessage(entry),
-        tone: "skip" as const,
-        source: "priority" as const,
-        occurredAt,
-        sortTime: occurredAtMs ?? 0,
-      }];
-    }
-
     const eventAgeMs = occurredAtMs === null ? null : nowMs - occurredAtMs;
-    if ((status === "paid" || status === "manual") && eventAgeMs !== null && eventAgeMs >= 0 && eventAgeMs <= FOREGROUND_CONFIRMED_SKIP_VISIBLE_MS) {
+    if (occurredAtMs !== null && eventAgeMs !== null && eventAgeMs >= 0 && eventAgeMs < FOREGROUND_PRIORITY_POPUP_MS) {
+      const gift = status !== "manual" ? entry.priorityGiftAttribution : null;
       return [{
-        id: `priority-confirmed:${entry.id}:${occurredAt}`,
-        label: "SKIP CONFIRMED",
-        message: actionTrackMessage(entry),
+        id: `${gift ? "priority-gift" : "priority-confirmed"}:${entry.id}:${occurredAt}`,
+        label: gift ? "GIFTED PRIORITY" : "SKIP CONFIRMED",
+        message: gift ? `FROM ${cleanText(gift.supporterName, "ANONYMOUS", 24)} // FOR ${cleanText(gift.recipientName, displayArtist(entry), 24)} // THANK YOU FOR THE SKIP` : actionTrackMessage(entry),
         tone: "skip" as const,
         source: "priority" as const,
         occurredAt,
+        expiresAt: new Date(occurredAtMs + FOREGROUND_PRIORITY_POPUP_MS).toISOString(),
         sortTime: occurredAtMs ?? 0,
       }];
     }
@@ -164,6 +137,7 @@ function priorityAction(state: QueueState, nowMs: number): ForegroundOverlayActi
     tone: latest.tone,
     source: latest.source,
     occurredAt: latest.occurredAt,
+    expiresAt: latest.expiresAt,
   };
 }
 
@@ -448,6 +422,15 @@ export function foregroundActionAt(actions: ForegroundOverlayAction[], cycleStar
   return available[index] ?? available[0];
 }
 
+export function foregroundActionWithExpiryAt(actions: ForegroundOverlayAction[], cycleStartedAt: string | number | Date | null | undefined, nowMs = Date.now()): ForegroundOverlayAction {
+  const primary = actions[0];
+  const expiresAtMs = timeMs(primary?.expiresAt);
+  if (primary && expiresAtMs !== null && nowMs >= expiresAtMs) {
+    return foregroundActionAt(actions.slice(1), expiresAtMs, nowMs);
+  }
+  return foregroundActionAt(actions, cycleStartedAt, nowMs);
+}
+
 export function resolveForegroundOverlaySnapshot(input: ResolveForegroundOverlaySnapshotInput, now = new Date()): ForegroundOverlaySnapshot {
   const { queueState, scene } = input;
   const nowMs = now.getTime();
@@ -455,8 +438,18 @@ export function resolveForegroundOverlaySnapshot(input: ResolveForegroundOverlay
   const currentTrack = queueState.nowPlaying ?? queueState.loadedTrack ?? null;
   const sceneOverride = sceneAction(scene);
   const skipAction = priorityAction(queueState, nowMs);
-  const actions = sceneOverride ? [sceneOverride] : skipAction ? [skipAction] : operationalActions(queueState, scene, nowMs);
-  const actionCycleStartedAt = sceneOverride?.occurredAt ?? skipAction?.occurredAt ?? session?.updatedAt ?? scene.updatedAt ?? now.toISOString();
+  const operational = operationalActions(queueState, scene, nowMs);
+  const giftedSkipOverridesScene = skipAction?.id.startsWith("priority-gift:") === true;
+  const actions = giftedSkipOverridesScene && skipAction
+    ? [skipAction, ...(sceneOverride ? [sceneOverride] : operational)]
+    : sceneOverride
+      ? [sceneOverride]
+      : skipAction
+        ? [skipAction, ...operational]
+        : operational;
+  const actionCycleStartedAt = skipAction && (!sceneOverride || giftedSkipOverridesScene)
+    ? skipAction.occurredAt ?? now.toISOString()
+    : sceneOverride?.occurredAt ?? session?.updatedAt ?? scene.updatedAt ?? now.toISOString();
 
   return {
     schemaVersion: "foreground_overlay_v1",

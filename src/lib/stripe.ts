@@ -4,7 +4,7 @@
 
 import Stripe from "stripe";
 import { TIERS } from "./queue-types";
-import type { QueueTier } from "./queue-types";
+import type { PriorityGiftAttribution, QueueTier } from "./queue-types";
 
 function getStripe(): Stripe {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -33,6 +33,7 @@ export async function createPrioritySignalCheckoutSession({
   amountCents,
   currency,
   label,
+  priorityGiftAttribution,
 }: {
   trackId: string;
   queueSessionId: string;
@@ -41,10 +42,21 @@ export async function createPrioritySignalCheckoutSession({
   amountCents: number;
   currency: string;
   label: string;
+  priorityGiftAttribution?: PriorityGiftAttribution | null;
 }): Promise<{ url: string; sessionId: string; createdAt: string; expiresAt: string | null }> {
   const stripe = getStripe();
   const origin = getSiteUrl();
-  const metadata = { trackId, queueSessionId, source: PRIORITY_SIGNAL_SOURCE };
+  const metadata = {
+    trackId,
+    queueSessionId,
+    source: PRIORITY_SIGNAL_SOURCE,
+    ...(priorityGiftAttribution ? {
+      priorityGiftAttributionVersion: priorityGiftAttribution.version,
+      priorityGiftSupporterName: priorityGiftAttribution.supporterName,
+      priorityGiftRecipientName: priorityGiftAttribution.recipientName,
+      priorityGiftCapturedAt: priorityGiftAttribution.capturedAt,
+    } : {}),
+  };
 
   const session = await stripe.checkout.sessions.create({
     mode: "payment",

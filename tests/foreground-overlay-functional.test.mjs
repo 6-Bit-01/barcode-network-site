@@ -150,7 +150,7 @@ test("foreground snapshot exposes only safe track identity and live queue state"
   assert.doesNotMatch(JSON.stringify(snapshot), /private@example|pi_private|checkout\.example|contactEmail|paymentId/i);
 });
 
-test("pending and newly confirmed Priority skips become safe action-rail events", () => {
+test("pending Priority stays off the rail and confirmed gifted Priority owns exactly three seconds", () => {
   const pending = entry("pending", {
     submittedArtistName: "Artist One",
     submittedSongTitle: "Signal One",
@@ -160,22 +160,32 @@ test("pending and newly confirmed Priority skips become safe action-rail events"
     priorityUpgradePaymentId: "pi_do_not_show",
   });
   const pendingSnapshot = foreground.resolveForegroundOverlaySnapshot({ queueState: queueState({ queue: [pending] }), scene: scene() }, new Date("2026-08-09T03:01:00.000Z"));
-  assert.equal(pendingSnapshot.action.label, "SKIP SENT");
-  assert.equal(pendingSnapshot.action.message, "Artist One — Signal One // FOR @artistone");
-  assert.doesNotMatch(JSON.stringify(pendingSnapshot.action), /pi_do_not_show/);
+  assert.notEqual(pendingSnapshot.action.source, "priority");
+  assert.doesNotMatch(JSON.stringify(pendingSnapshot), /SKIP SENT|pi_do_not_show/);
 
   const confirmed = entry("confirmed", {
     submittedArtistName: "Artist Two",
     submittedSongTitle: "Signal Two",
     priorityUpgradeStatus: "paid",
     priorityUpgradePaidAt: "2026-08-09T03:00:45.000Z",
+    priorityGiftAttribution: {
+      version: "1.0",
+      supporterName: "Signal Friend",
+      recipientName: "Artist Two",
+      capturedAt: "2026-08-09T03:00:30.000Z",
+    },
   });
-  const confirmedSnapshot = foreground.resolveForegroundOverlaySnapshot({ queueState: queueState({ queue: [confirmed] }), scene: scene() }, new Date("2026-08-09T03:01:00.000Z"));
-  assert.equal(confirmedSnapshot.action.label, "SKIP CONFIRMED");
-  assert.match(confirmedSnapshot.action.message, /Artist Two — Signal Two/);
+  const confirmedSnapshot = foreground.resolveForegroundOverlaySnapshot({ queueState: queueState({ queue: [confirmed] }), scene: scene("wheel_spinning", { message: "Wheel still owns the fallback." }) }, new Date("2026-08-09T03:00:46.000Z"));
+  assert.equal(confirmedSnapshot.action.label, "GIFTED PRIORITY");
+  assert.equal(confirmedSnapshot.action.message, "FROM Signal Friend // FOR Artist Two // THANK YOU FOR THE SKIP");
+  assert.equal(confirmedSnapshot.action.expiresAt, "2026-08-09T03:00:48.000Z");
+  assert.equal(confirmedSnapshot.actions[1].label, "WHEEL SPINNING");
+  assert.equal(foreground.foregroundActionWithExpiryAt(confirmedSnapshot.actions, confirmedSnapshot.actionCycleStartedAt, Date.parse("2026-08-09T03:00:47.999Z")).label, "GIFTED PRIORITY");
+  assert.equal(foreground.foregroundActionWithExpiryAt(confirmedSnapshot.actions, confirmedSnapshot.actionCycleStartedAt, Date.parse("2026-08-09T03:00:48.000Z")).label, "WHEEL SPINNING");
+  assert.equal(foreground.foregroundActionWithExpiryAt(confirmedSnapshot.actions, confirmedSnapshot.actionCycleStartedAt, Date.parse("2026-08-09T03:01:48.000Z")).label, "WHEEL SPINNING", "reconnects must not replay the popup");
 
   const oldConfirmation = foreground.resolveForegroundOverlaySnapshot({ queueState: queueState({ queue: [confirmed] }), scene: scene() }, new Date("2026-08-09T03:05:00.000Z"));
-  assert.notEqual(oldConfirmation.action.label, "BNL");
+  assert.notEqual(oldConfirmation.action.source, "priority");
   assert.ok(oldConfirmation.actions.length >= 3);
 });
 
@@ -246,7 +256,7 @@ test("Wheel, sponsor, and system scenes stay partnered with live-overlay priorit
   assert.equal(system.action.message, "Transmission received.");
 });
 
-test("one chained show simulation updates track, skip, Wheel, sponsor, and intake state without stale owners", () => {
+test("one chained show simulation updates track, gifted skip, Wheel, sponsor, and intake state without stale owners", () => {
   const playing = entry("playing", { status: "playing", playedAt: "2026-08-09T03:00:00.000Z", submittedArtistName: "Live Artist", submittedSongTitle: "Live Track" });
   const priority = entry("priority", { priorityUpgradeStatus: "checkout_pending", priorityUpgradeCheckoutCreatedAt: "2026-08-09T03:01:00.000Z" });
   const baseSession = { ...queueState().session, activeCount: 2, wheelSpinsOwed: 1 };
@@ -256,17 +266,18 @@ test("one chained show simulation updates track, skip, Wheel, sponsor, and intak
     scene: scene("now_playing", { wheelSpinsOwed: 1 }),
   }, new Date("2026-08-09T03:01:30.000Z"));
   assert.equal(sent.track.id, "playing");
-  assert.equal(sent.action.label, "SKIP SENT");
+  assert.equal(sent.action.label, "WHEEL UNLOCKED");
   assert.equal(sent.wheelSpinsOwed, 1);
   assert.equal(sent.submissionsOpen, true);
 
-  const confirmedPriority = { ...priority, priorityUpgradeStatus: "paid", priorityUpgradePaidAt: "2026-08-09T03:01:45.000Z" };
+  const confirmedPriority = { ...priority, priorityUpgradeStatus: "paid", priorityUpgradePaidAt: "2026-08-09T03:01:45.000Z", priorityGiftAttribution: { version: "1.0", supporterName: "Anonymous", recipientName: "Submitted Artist", capturedAt: "2026-08-09T03:01:00.000Z" } };
   const wheel = foreground.resolveForegroundOverlaySnapshot({
     queueState: queueState({ nowPlaying: playing, loadedTrack: playing, queue: [confirmedPriority], session: baseSession }),
     scene: scene("wheel_ready", { wheelSpinsOwed: 1, wheelOverlayActive: true, message: "Candidates standing by." }),
-  }, new Date("2026-08-09T03:02:00.000Z"));
-  assert.equal(wheel.action.label, "WHEEL READY");
-  assert.equal(wheel.action.message, "Candidates standing by.");
+  }, new Date("2026-08-09T03:01:46.000Z"));
+  assert.equal(wheel.action.label, "GIFTED PRIORITY");
+  assert.equal(wheel.actions[1].label, "WHEEL READY");
+  assert.equal(foreground.foregroundActionWithExpiryAt(wheel.actions, wheel.actionCycleStartedAt, Date.parse("2026-08-09T03:01:48.000Z")).label, "WHEEL READY");
 
   const sponsorSession = { ...baseSession, sponsorBreakStatus: "running", sponsorBreakStartedAt: "2026-08-09T03:02:00.000Z" };
   const sponsor = foreground.resolveForegroundOverlaySnapshot({
@@ -283,7 +294,7 @@ test("one chained show simulation updates track, skip, Wheel, sponsor, and intak
   }, new Date("2026-08-09T03:03:15.000Z"));
   assert.equal(closed.submissionsOpen, false);
   assert.equal(closed.sponsorEndsAt, null);
-  assert.equal(closed.action.label, "SKIP CONFIRMED");
+  assert.equal(closed.action.label, "WHEEL UNLOCKED");
 });
 
 test("functional receiver is exact-source, reconnect-aware, and opened beside the live overlay", () => {
@@ -315,7 +326,7 @@ test("functional receiver is exact-source, reconnect-aware, and opened beside th
   assert.match(admin, /\/api\/admin\/overlay\/foreground-access/);
   assert.match(receiver, /new URLSearchParams\(window\.location\.hash\.replace/);
   assert.match(receiver, /Authorization: `Bearer \$\{accessToken\}`/);
-  assert.match(receiver, /foregroundActionAt/);
+  assert.match(receiver, /foregroundActionWithExpiryAt/);
   assert.doesNotMatch(foregroundSource, /resolveBNLCurrentView/);
   assert.match(strip, /useRef<number \| null>\(null\)/);
   assert.match(strip, /previousCount === null/);

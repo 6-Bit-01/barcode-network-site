@@ -13,7 +13,7 @@ import {
 import { formatRuntime, getTrackRuntimeSeconds, type QueueDurationSource, type QueueEntry, type QueuePublicSnapshot, type QueuePublicTrack, type QueueSessionSummary, type QueueTrackStatus } from "./queue-types";
 import { pacificClockLabel } from "./pacific-time";
 
-export type TimingDisplayTrack = Partial<Omit<QueueEntry, "tiktokHandle">> & Partial<QueuePublicTrack> & { id: string };
+export type TimingDisplayTrack = Partial<Omit<QueueEntry, "tiktokHandle" | "priorityGiftAttribution">> & Partial<QueuePublicTrack> & { id: string };
 export type PublicTimingNote = "sponsor" | "wheel";
 
 export interface TimingDisplayEstimate {

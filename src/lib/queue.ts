@@ -17,6 +17,9 @@ import { parseIso8601DurationToSeconds, parseSpotifyTrackId, parseYouTubeVideoId
 import {
   INTERNAL_BUFFER_DURATION_SECONDS,
   PRIORITY_DISCLOSURE_TEXT,
+  PRIORITY_GIFT_ANONYMOUS_NAME,
+  PRIORITY_GIFT_ATTRIBUTION_DISCLOSURE_TEXT,
+  PRIORITY_GIFT_ATTRIBUTION_VERSION,
   PRIORITY_TERMS_VERSION,
   detectQueueSourceType,
   generateQueueId,
@@ -25,6 +28,7 @@ import {
   getTrackArtworkUrl,
   normalizeQueueSessionBnlPublicationStatus,
   normalizeQueueSessionPurpose,
+  normalizePriorityGiftDisplayName,
   normalizeTier,
   parseTikTokVideoUrl,
 } from "./queue-types";
@@ -38,6 +42,8 @@ import type {
   QueuePublicSnapshot,
   QueuePublicStatus,
   QueuePublicTrack,
+  PriorityGiftAttribution,
+  PriorityGiftAttributionInput,
   PriorityLegalAcceptanceInput,
   QueueSession,
   QueueSessionBnlPublicationStatus,
@@ -904,6 +910,21 @@ function normalizePriorityUpgradeSource(source: unknown): QueueEntry["priorityUp
   return null;
 }
 
+function normalizePriorityGiftAttribution(value: unknown, fallbackCapturedAt: string): PriorityGiftAttribution | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Partial<PriorityGiftAttribution>;
+  if (candidate.version !== PRIORITY_GIFT_ATTRIBUTION_VERSION) return null;
+  const recipientName = normalizePriorityGiftDisplayName(candidate.recipientName, "");
+  if (!recipientName) return null;
+  const parsedCapturedAt = typeof candidate.capturedAt === "string" ? Date.parse(candidate.capturedAt) : Number.NaN;
+  return {
+    version: PRIORITY_GIFT_ATTRIBUTION_VERSION,
+    supporterName: normalizePriorityGiftDisplayName(candidate.supporterName, PRIORITY_GIFT_ANONYMOUS_NAME),
+    recipientName,
+    capturedAt: Number.isFinite(parsedCapturedAt) ? candidate.capturedAt! : fallbackCapturedAt,
+  };
+}
+
 function isBarcodeQueueUploadUrl(value?: string | null): boolean {
   if (!value) return false;
   try {
@@ -985,6 +1006,7 @@ function normalizeEntry(entry: QueueEntry): QueueEntry {
     priorityUpgradeCheckoutExpiresAt: entry.priorityUpgradeCheckoutExpiresAt ?? null,
     priorityUpgradeAmountCents: typeof entry.priorityUpgradeAmountCents === "number" ? Math.max(0, Math.round(entry.priorityUpgradeAmountCents)) : null,
     priorityUpgradeCurrency: entry.priorityUpgradeCurrency ? normalizeCurrency(entry.priorityUpgradeCurrency) : null,
+    priorityGiftAttribution: normalizePriorityGiftAttribution(entry.priorityGiftAttribution, entry.priorityUpgradeCheckoutCreatedAt ?? entry.priorityUpgradePaidAt ?? entry.createdAt),
     displacedFromNextInLineAt: entry.displacedFromNextInLineAt ?? legacyDisplacedFromNextInLineAt ?? null,
     stagedAsFallbackForLane: entry.stagedAsFallbackForLane === "regular" || entry.stagedAsFallbackForLane === "wheel" ? entry.stagedAsFallbackForLane : null,
     priorityPausedAt: entry.priorityPausedAt ?? null,
@@ -1622,6 +1644,7 @@ export async function createQueueTrack(input: {
     priorityUpgradeCheckoutExpiresAt: null,
     priorityUpgradeAmountCents: null,
     priorityUpgradeCurrency: null,
+    priorityGiftAttribution: null,
     displacedFromNextInLineAt: null,
     priorityPausedAt: null,
     priorityResumedAt: null,
@@ -1870,6 +1893,14 @@ function publicArtworkUrlForTrack(entry: QueueEntry): string | null {
 export function toPublicQueueTrack(entry: QueueEntry): QueuePublicTrack {
   const normalized = normalizeEntry(entry);
   const isUpload = (normalized.sourceType ?? "other") === "upload";
+  const publicGiftAttribution = normalized.priorityGiftAttribution
+    && (normalized.priorityUpgradeStatus === "paid" || normalized.priorityUpgradeStatus === "paid_needs_attention")
+    ? {
+      version: normalized.priorityGiftAttribution.version,
+      supporterName: normalized.priorityGiftAttribution.supporterName,
+      recipientName: normalized.priorityGiftAttribution.recipientName,
+    }
+    : null;
   return {
     id: normalized.id,
     submittedArtistName: normalized.submittedArtistName ?? normalized.artist,
@@ -1889,6 +1920,7 @@ export function toPublicQueueTrack(entry: QueueEntry): QueuePublicTrack {
     tiktokHandle: normalized.tiktokHandle ?? null,
     priorityUpgradeRequested: normalized.priorityUpgradeRequested === true,
     priorityUpgradeStatus: normalized.priorityUpgradeStatus ?? "none",
+    priorityGiftAttribution: publicGiftAttribution,
     isSimulation: isSimulationTrack(normalized),
   };
 }
@@ -2027,6 +2059,8 @@ export interface StripePriorityPaymentMetadata {
   amountCents: number;
   currency: string;
   paidAt?: string;
+  checkoutSessionId?: string;
+  giftAttribution?: PriorityGiftAttribution | null;
 }
 
 function normalizePriorityLegalAcceptance(input?: PriorityLegalAcceptanceInput): QueueEntry["priorityLegalAcceptance"] {
@@ -2034,6 +2068,22 @@ function normalizePriorityLegalAcceptance(input?: PriorityLegalAcceptanceInput):
     throw new Error("Priority Signal checkout requires acknowledgement of the Priority Signal disclosure.");
   }
   return { acceptedAt: new Date().toISOString(), priorityTermsVersion: PRIORITY_TERMS_VERSION, priorityDisclosureText: PRIORITY_DISCLOSURE_TEXT, source: "priority_checkout" };
+}
+
+export function createPriorityGiftAttribution(
+  input: PriorityGiftAttributionInput,
+  recipientName: string,
+  capturedAt = new Date().toISOString(),
+): PriorityGiftAttribution {
+  if (input.attributionVersion !== PRIORITY_GIFT_ATTRIBUTION_VERSION || input.attributionDisclosureText !== PRIORITY_GIFT_ATTRIBUTION_DISCLOSURE_TEXT) {
+    throw new Error("Gifted Priority attribution disclosure mismatch. Refresh the queue and try again.");
+  }
+  return {
+    version: PRIORITY_GIFT_ATTRIBUTION_VERSION,
+    supporterName: normalizePriorityGiftDisplayName(input.supporterName, PRIORITY_GIFT_ANONYMOUS_NAME),
+    recipientName: normalizePriorityGiftDisplayName(recipientName, "Unknown artist"),
+    capturedAt,
+  };
 }
 
 export async function requestPriorityCheckout(trackId: string, queueSessionId: string, priorityAcceptance?: PriorityLegalAcceptanceInput): Promise<PriorityCheckoutRequestResult> {
@@ -2051,12 +2101,15 @@ export async function requestPriorityCheckout(trackId: string, queueSessionId: s
   return { session: summarizeSession(session), track, amountCents, currency: normalizeCurrency(session.priorityUpgradeCurrency), label: session.priorityUpgradeLabel || DEFAULT_PRIORITY_UPGRADE_LABEL };
 }
 
-async function markPriorityUpgradeCheckoutPendingMutation(trackId: string, queueSessionId: string, metadata: { provider?: string; checkoutSessionId?: string; checkoutUrl?: string; checkoutCreatedAt?: string | null; checkoutExpiresAt?: string | null; priorityAcceptance?: PriorityLegalAcceptanceInput } = {}): Promise<QueuePublicTrack | null> {
+async function markPriorityUpgradeCheckoutPendingMutation(trackId: string, queueSessionId: string, metadata: { provider?: string; checkoutSessionId?: string; checkoutUrl?: string; checkoutCreatedAt?: string | null; checkoutExpiresAt?: string | null; priorityAcceptance?: PriorityLegalAcceptanceInput; priorityGiftAttribution?: PriorityGiftAttribution | null } = {}): Promise<QueuePublicTrack | null> {
   const store = await readStore();
   const session = getSession(store, queueSessionId);
   if (session.sessionId !== store.activeSessionId || session.status === "archived") return null;
   const now = new Date().toISOString();
   const priorityLegalAcceptance = metadata.priorityAcceptance ? normalizePriorityLegalAcceptance(metadata.priorityAcceptance) : null;
+  const priorityGiftAttribution = metadata.priorityGiftAttribution === undefined
+    ? undefined
+    : normalizePriorityGiftAttribution(metadata.priorityGiftAttribution, metadata.checkoutCreatedAt ?? now);
   const update = (entry: QueueEntry): QueueEntry => normalizeEntry({
     ...entry,
     priorityUpgradeRequested: true,
@@ -2072,6 +2125,7 @@ async function markPriorityUpgradeCheckoutPendingMutation(trackId: string, queue
     priorityUpgradeCheckoutCreatedAt: metadata.checkoutCreatedAt ?? entry.priorityUpgradeCheckoutCreatedAt ?? now,
     priorityUpgradeCheckoutExpiresAt: metadata.checkoutExpiresAt ?? entry.priorityUpgradeCheckoutExpiresAt ?? null,
     priorityLegalAcceptance: priorityLegalAcceptance ?? entry.priorityLegalAcceptance ?? null,
+    priorityGiftAttribution: priorityGiftAttribution === undefined ? entry.priorityGiftAttribution ?? null : priorityGiftAttribution,
   });
   const index = session.queue.findIndex((entry) => entry.id === trackId);
   if (index < 0) return null;
@@ -2080,7 +2134,7 @@ async function markPriorityUpgradeCheckoutPendingMutation(trackId: string, queue
   return toPublicQueueTrack(session.queue[index]);
 }
 
-export async function markPriorityUpgradeCheckoutPending(trackId: string, queueSessionId: string, metadata: { provider?: string; checkoutSessionId?: string; checkoutUrl?: string; checkoutCreatedAt?: string | null; checkoutExpiresAt?: string | null; priorityAcceptance?: PriorityLegalAcceptanceInput } = {}): Promise<QueuePublicTrack | null> {
+export async function markPriorityUpgradeCheckoutPending(trackId: string, queueSessionId: string, metadata: { provider?: string; checkoutSessionId?: string; checkoutUrl?: string; checkoutCreatedAt?: string | null; checkoutExpiresAt?: string | null; priorityAcceptance?: PriorityLegalAcceptanceInput; priorityGiftAttribution?: PriorityGiftAttribution | null } = {}): Promise<QueuePublicTrack | null> {
   return withQueueMutation(() => markPriorityUpgradeCheckoutPendingMutation(trackId, queueSessionId, metadata));
 }
 
@@ -2092,7 +2146,7 @@ async function markPriorityUpgradePaidFromStripeMutation(trackId: string, queueS
   if (normalized.status === "archived") return { updated: false, reason: "archived_session" };
   const canMoveIntoPriority = normalized.sessionId === store.activeSessionId && normalized.status === "open";
   const now = payment.paidAt ?? new Date().toISOString();
-  const paidFields = (status: QueueEntry["priorityUpgradeStatus"]): Partial<QueueEntry> => ({
+  const paidFields = (entry: QueueEntry, status: QueueEntry["priorityUpgradeStatus"]): Partial<QueueEntry> => ({
     priorityUpgradeRequested: true,
     priorityUpgradeStatus: status,
     priorityUpgradeSource: "stripe",
@@ -2111,18 +2165,22 @@ async function markPriorityUpgradePaidFromStripeMutation(trackId: string, queueS
     priorityUpgradeCheckoutExpiresAt: null,
     priorityUpgradeAmountCents: normalizePriceCents(payment.amountCents),
     priorityUpgradeCurrency: normalizeCurrency(payment.currency),
+    priorityGiftAttribution: payment.giftAttribution
+      ? normalizePriorityGiftAttribution(payment.giftAttribution, now)
+      : entry.priorityGiftAttribution ?? null,
     ...(status === "paid" ? { displacedFromNextInLineAt: null } : {}),
   });
   const markPaid = (entry: QueueEntry, moveToPriority: boolean): QueueEntry => normalizeEntry({
     ...entry,
-    ...paidFields(moveToPriority ? "paid" : "paid_needs_attention"),
+    ...paidFields(entry, moveToPriority ? "paid" : "paid_needs_attention"),
     ...(moveToPriority ? { lane: "priority" as QueueLane, tier: "fastlane" as QueueTier, status: "queued" as const } : {}),
   });
+  const alreadyPaid = (entry: QueueEntry): boolean => entry.priorityUpgradeStatus === "paid" || entry.priorityUpgradeStatus === "paid_needs_attention";
 
   const queueIndex = normalized.queue.findIndex((entry) => entry.id === trackId);
   if (queueIndex >= 0) {
     const existing = normalized.queue[queueIndex];
-    if (existing.priorityUpgradeStatus === "paid" || existing.priorityUpgradeStatus === "paid_needs_attention") return { updated: false, reason: "already_paid", track: existing };
+    if (alreadyPaid(existing)) return { updated: false, reason: "already_paid", track: existing };
     normalized.queue.splice(queueIndex, 1);
     const alreadyQueued = normalized.queue.some((entry) => entry.id === trackId);
     const updated = markPaid(existing, canMoveIntoPriority);
@@ -2134,6 +2192,7 @@ async function markPriorityUpgradePaidFromStripeMutation(trackId: string, queueS
   }
 
   if (normalized.nextInLineTrack?.id === trackId) {
+    if (alreadyPaid(normalized.nextInLineTrack)) return { updated: false, reason: "already_paid", track: normalized.nextInLineTrack };
     normalized.nextInLineTrack = markPaid(normalized.nextInLineTrack, false);
     resolveNextInLine(normalized);
     await writeStore(replaceSession(store, normalized));
@@ -2141,6 +2200,7 @@ async function markPriorityUpgradePaidFromStripeMutation(trackId: string, queueS
   }
 
   if (normalized.loadedTrack?.id === trackId) {
+    if (alreadyPaid(normalized.loadedTrack)) return { updated: false, reason: "already_paid", track: normalized.loadedTrack };
     normalized.loadedTrack = markPaid(normalized.loadedTrack, false);
     await writeStore(replaceSession(store, normalized));
     return { updated: true, track: normalized.loadedTrack };
@@ -2148,6 +2208,7 @@ async function markPriorityUpgradePaidFromStripeMutation(trackId: string, queueS
 
   const completedIndex = normalized.completed.findIndex((entry) => entry.id === trackId);
   if (completedIndex >= 0) {
+    if (alreadyPaid(normalized.completed[completedIndex])) return { updated: false, reason: "already_paid", track: normalized.completed[completedIndex] };
     normalized.completed[completedIndex] = markPaid(normalized.completed[completedIndex], false);
     await writeStore(replaceSession(store, normalized));
     return { updated: true, reason: "completed_track_recorded", track: normalized.completed[completedIndex] };
@@ -2155,6 +2216,7 @@ async function markPriorityUpgradePaidFromStripeMutation(trackId: string, queueS
 
   const removedIndex = normalized.removed.findIndex((entry) => entry.id === trackId);
   if (removedIndex >= 0) {
+    if (alreadyPaid(normalized.removed[removedIndex])) return { updated: false, reason: "already_paid", track: normalized.removed[removedIndex] };
     normalized.removed[removedIndex] = markPaid(normalized.removed[removedIndex], false);
     await writeStore(replaceSession(store, normalized));
     return { updated: true, reason: "removed_track_recorded", track: normalized.removed[removedIndex] };
@@ -2633,6 +2695,7 @@ function simulationTrackBase(session: QueueSession): QueueEntry {
     priorityUpgradeCheckoutExpiresAt: null,
     priorityUpgradeAmountCents: null,
     priorityUpgradeCurrency: null,
+    priorityGiftAttribution: null,
     displacedFromNextInLineAt: null,
     priorityPausedAt: null,
     priorityResumedAt: null,

@@ -1,8 +1,8 @@
 # BARCODE Network Legal Center
 
 **Effective Date:** June 13, 2026  
-**Last Updated:** June 13, 2026  
-**Version:** 1.0
+**Last Updated:** August 9, 2026
+**Version:** 1.1
 
 This Legal Center applies to BARCODE Network, including barcode-network.com, BARCODE Radio, the BARCODE Radio queue, music submission tools, stream tools, relay features, BNL-related systems, public database/dossier features, community features, payment features, uploads, and related services.
 
@@ -344,11 +344,13 @@ Queue estimates are estimates only. Live shows can change.
 
 Your submission may be publicly visible on the site, stream overlay, queue display, social media, Discord-related features, clips, recaps, or other BARCODE Network displays.
 
-Publicly visible information may include artist name, handle, song title, queue position, priority status, source type, and stream appearance.
+Publicly visible information may include artist name, handle, song title, queue position, priority status, source type, stream appearance, and a supporter name intentionally entered for a gifted Priority Signal.
 
 ## 10. Private Fields
 
 Contact email, raw upload URL, raw file metadata, payment IDs, admin notes, legal acceptance records, private logs, and internal moderation details are not intended for public display.
+
+Payment-provider identity, billing identity, and customer email are never substituted for a public gifted-Priority supporter name. Only the optional public name entered in the BARCODE queue flow may be displayed; leaving it blank displays “Anonymous.”
 
 BARCODE Network may still store those private fields for operations, security, payment handling, legal compliance, abuse prevention, and support.
 
@@ -435,7 +437,15 @@ Priority Signal becomes active only after payment clears and the system confirms
 
 If checkout is cancelled, fails, expires, or remains incomplete, the submission stays in the free queue if it is still active.
 
-## 5. Queue Movement
+## 5. Gifted Priority Signal Attribution
+
+You may purchase Priority Signal for another artist’s eligible track. The checkout flow may offer an optional public supporter-name field.
+
+If you enter a public name, that exact sanitized display name may appear with the recipient artist on the public queue, host controls, and broadcast overlay after payment clears. If you leave the field blank, the public attribution displays “Anonymous.” BARCODE Network does not substitute Stripe identity, billing identity, customer email, or other private payment information for this field.
+
+Gift attribution is attached to the specific checkout and confirmed payment. Retried payment events do not authorize a different name to replace the confirmed attribution.
+
+## 6. Queue Movement
 
 Priority Signal may move an eligible submission closer to the front of the queue, but it may not override every queue rule.
 
@@ -443,7 +453,7 @@ Priority Signal does not interrupt the track currently playing.
 
 Priority Signal may be affected by moderation, technical issues, stream timing, queue closure, show ending, removed submissions, duplicate submissions, payment delays, or other live-show conditions.
 
-## 6. Refunds
+## 7. Refunds
 
 Unless otherwise stated or required by law, Priority Signal payments are generally not refundable once the priority placement has been applied.
 
@@ -453,13 +463,13 @@ Refund requests can be sent to:
 
 thebarcodenetwork@gmail.com
 
-## 7. Chargebacks and Abuse
+## 8. Chargebacks and Abuse
 
 Do not use chargebacks, false disputes, duplicate payments, fake payment claims, or refund abuse to manipulate the queue.
 
 BARCODE Network may remove submissions, block access, preserve records, or contest disputes when needed.
 
-## 8. Priority Signal Checkout Disclosure
+## 9. Priority Signal Checkout Disclosure
 
 The Priority Signal checkout flow should display this disclosure near the payment action:
 
@@ -490,6 +500,7 @@ BARCODE Network may collect information you provide directly, including:
 - Queue activity.
 - Queue status.
 - Priority Signal status.
+- Optional public supporter name and recipient artist for a gifted Priority Signal.
 - Payment-related transaction metadata.
 - Messages sent to BARCODE Network.
 - Takedown requests.
@@ -566,6 +577,7 @@ BARCODE Network may use information to:
 - Temporarily process uploaded files for queue and broadcast use.
 - Process Priority Signal payments.
 - Display public queue status.
+- Display confirmed gifted Priority Signal attribution using only the optional public supporter name supplied for that checkout, or “Anonymous” when blank.
 - Run stream overlays and stream tools.
 - Create timestamps.
 - Cut clips from stream moments.

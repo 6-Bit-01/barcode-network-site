@@ -40,7 +40,15 @@ Module._extensions[".ts"] = function loadTypeScript(module, filename) {
 
 const require = createRequire(import.meta.url);
 const queue = require("../src/lib/queue.ts");
-const { PRIORITY_DISCLOSURE_TEXT, PRIORITY_TERMS_VERSION } = require("../src/lib/queue-types.ts");
+const {
+  PRIORITY_DISCLOSURE_TEXT,
+  PRIORITY_GIFT_ANONYMOUS_NAME,
+  PRIORITY_GIFT_ATTRIBUTION_DISCLOSURE_TEXT,
+  PRIORITY_GIFT_ATTRIBUTION_VERSION,
+  PRIORITY_GIFT_NAME_MAX_LENGTH,
+  PRIORITY_TERMS_VERSION,
+  normalizePriorityGiftDisplayName,
+} = require("../src/lib/queue-types.ts");
 const priorityAcceptance = { acceptedPriorityTerms: true, priorityTermsVersion: PRIORITY_TERMS_VERSION, priorityDisclosureText: PRIORITY_DISCLOSURE_TEXT };
 const overlay = require("../src/lib/live-overlay.ts");
 const publicOverlayRoute = require("../src/app/api/overlay/live/route.ts");
@@ -125,6 +133,14 @@ async function payPriority(track, sessionId) {
 
 function queuedTrack(state, id) {
   return state.queue.find((entry) => entry.id === id) ?? null;
+}
+
+function activeTrack(state, id) {
+  return [state.nowPlaying, state.loadedTrack, state.nextInLine, ...state.queue].find((entry) => entry?.id === id) ?? null;
+}
+
+function publicTrack(snapshot, id) {
+  return [snapshot.nowPlaying, snapshot.upNext, ...snapshot.queue, ...snapshot.completed].find((entry) => entry?.id === id) ?? null;
 }
 
 function completedTrack(state, id) {
@@ -1763,6 +1779,116 @@ test("markPriorityUpgradeCheckoutPending preserves existing track data", async (
   assert.ok(updated?.priorityLegalAcceptance?.acceptedAt);
   const snapshot = await queue.getPublicQueueSnapshot(sessionId);
   assert.equal("priorityLegalAcceptance" in snapshot.queue.find((entry) => entry.id === track.id), false);
+});
+
+test("gifted Priority attribution is sanitized, payment-bound, public only after confirmation, and immutable on retries", async () => {
+  const sessionId = await freshOpenSession("gifted priority attribution", { showStarted: false });
+  const track = await addTrack("Gift Recipient", { artist: "Recipient Artist" });
+  const capturedAt = "2026-08-09T03:00:00.000Z";
+  const gift = queue.createPriorityGiftAttribution({
+    attributionVersion: PRIORITY_GIFT_ATTRIBUTION_VERSION,
+    attributionDisclosureText: PRIORITY_GIFT_ATTRIBUTION_DISCLOSURE_TEXT,
+    supporterName: "  Signal\u0000   Friend\u202e  ",
+  }, track.submittedArtistName ?? track.artist, capturedAt);
+
+  assert.deepEqual(gift, {
+    version: PRIORITY_GIFT_ATTRIBUTION_VERSION,
+    supporterName: "Signal Friend",
+    recipientName: "Recipient Artist",
+    capturedAt,
+  });
+  assert.equal(queue.createPriorityGiftAttribution({
+    attributionVersion: PRIORITY_GIFT_ATTRIBUTION_VERSION,
+    attributionDisclosureText: PRIORITY_GIFT_ATTRIBUTION_DISCLOSURE_TEXT,
+    supporterName: "   ",
+  }, "Recipient Artist", capturedAt).supporterName, PRIORITY_GIFT_ANONYMOUS_NAME);
+  assert.equal(Array.from(normalizePriorityGiftDisplayName("🎁".repeat(PRIORITY_GIFT_NAME_MAX_LENGTH + 5), "")).length, PRIORITY_GIFT_NAME_MAX_LENGTH, "emoji truncation must not split surrogate pairs");
+  assert.throws(() => queue.createPriorityGiftAttribution({
+    attributionVersion: PRIORITY_GIFT_ATTRIBUTION_VERSION,
+    attributionDisclosureText: "stale disclosure",
+    supporterName: "Signal Friend",
+  }, "Recipient Artist", capturedAt), /disclosure mismatch/);
+
+  await queue.markPriorityUpgradeCheckoutPending(track.id, sessionId, {
+    provider: "stripe",
+    checkoutSessionId: "cs_gift_first",
+    checkoutUrl: "https://example.com/gift-checkout",
+    checkoutCreatedAt: capturedAt,
+    checkoutExpiresAt: "2026-08-09T03:30:00.000Z",
+    priorityAcceptance,
+    priorityGiftAttribution: gift,
+  });
+  let state = await queue.getRadioQueueState();
+  assert.deepEqual(queuedTrack(state, track.id)?.priorityGiftAttribution, gift, "admin state keeps checkout-bound attribution");
+  let publicSnapshot = await queue.getPublicQueueSnapshot(sessionId);
+  const publicPending = publicSnapshot.queue.find((entry) => entry.id === track.id);
+  assert.equal(publicPending?.priorityGiftAttribution, null);
+  assert.doesNotMatch(JSON.stringify(publicPending), /Signal Friend/);
+
+  const paid = await queue.markPriorityUpgradePaidFromStripe(track.id, sessionId, {
+    paymentId: "pi_gift_first",
+    checkoutSessionId: "cs_gift_first",
+    amountCents: 1000,
+    currency: "usd",
+    paidAt: "2026-08-09T03:01:00.000Z",
+    giftAttribution: gift,
+  });
+  assert.equal(paid.updated, true);
+  publicSnapshot = await queue.getPublicQueueSnapshot(sessionId);
+  assert.deepEqual(publicTrack(publicSnapshot, track.id)?.priorityGiftAttribution, {
+    version: PRIORITY_GIFT_ATTRIBUTION_VERSION,
+    supporterName: "Signal Friend",
+    recipientName: "Recipient Artist",
+  });
+
+  const replacementGift = queue.createPriorityGiftAttribution({
+    attributionVersion: PRIORITY_GIFT_ATTRIBUTION_VERSION,
+    attributionDisclosureText: PRIORITY_GIFT_ATTRIBUTION_DISCLOSURE_TEXT,
+    supporterName: "Webhook Retry Replacement",
+  }, "Different Recipient", "2026-08-09T03:02:00.000Z");
+  const retry = await queue.markPriorityUpgradePaidFromStripe(track.id, sessionId, {
+    paymentId: "pi_gift_retry",
+    checkoutSessionId: "cs_gift_retry",
+    amountCents: 1000,
+    currency: "usd",
+    paidAt: "2026-08-09T03:02:00.000Z",
+    giftAttribution: replacementGift,
+  });
+  assert.equal(retry.updated, false);
+  assert.equal(retry.reason, "already_paid");
+  state = await queue.getRadioQueueState();
+  assert.equal(activeTrack(state, track.id)?.priorityUpgradePaymentId, "pi_gift_first");
+  assert.deepEqual(activeTrack(state, track.id)?.priorityGiftAttribution, gift);
+});
+
+test("self and manual Priority paths do not invent gifted attribution", async () => {
+  const sessionId = await freshOpenSession("non gifted priority", { showStarted: false });
+  const selfUpgrade = await addTrack("Self Priority");
+  await queue.markPriorityUpgradeCheckoutPending(selfUpgrade.id, sessionId, {
+    provider: "stripe",
+    checkoutSessionId: "cs_self",
+    checkoutUrl: "https://example.com/self-checkout",
+    checkoutCreatedAt: "2026-08-09T04:00:00.000Z",
+    checkoutExpiresAt: "2026-08-09T04:30:00.000Z",
+    priorityAcceptance,
+    priorityGiftAttribution: null,
+  });
+  await queue.markPriorityUpgradePaidFromStripe(selfUpgrade.id, sessionId, {
+    paymentId: "pi_self",
+    checkoutSessionId: "cs_self",
+    amountCents: 1000,
+    currency: "usd",
+    paidAt: "2026-08-09T04:01:00.000Z",
+    giftAttribution: null,
+  });
+  const manual = await addTrack("Manual Priority");
+  const state = await queue.updateRadioTrack(manual.id, "priority");
+  assert.equal(activeTrack(state, selfUpgrade.id)?.priorityGiftAttribution, null);
+  assert.equal(activeTrack(state, manual.id)?.priorityUpgradeStatus, "manual");
+  assert.equal(activeTrack(state, manual.id)?.priorityGiftAttribution, null);
+  const publicSnapshot = await queue.getPublicQueueSnapshot(sessionId);
+  assert.equal(publicTrack(publicSnapshot, selfUpgrade.id)?.priorityGiftAttribution, null);
+  assert.equal(publicTrack(publicSnapshot, manual.id)?.priorityGiftAttribution, null);
 });
 
 test("resolvePaidPriority promotes safe queued paid_needs_attention without duplicating or clearing payment metadata", async () => {

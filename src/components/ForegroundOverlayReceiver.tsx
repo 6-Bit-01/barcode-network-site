@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { ForegroundOverlayStrip } from "@/components/ForegroundOverlayStrip";
-import { foregroundActionAt } from "@/lib/foreground-overlay-resolver";
+import { foregroundActionWithExpiryAt } from "@/lib/foreground-overlay-resolver";
 import type { ForegroundOverlayAction, ForegroundOverlaySnapshot } from "@/lib/foreground-overlay-resolver";
 
 const POLL_INTERVAL_MS = 1_500;
@@ -80,7 +80,7 @@ function actionAtClock(snapshot: ForegroundOverlaySnapshot | null, clockNowMs: n
     ? serverNowMs + Math.max(0, clockNowMs - lastSuccessAtMs)
     : clockNowMs;
   const actions = Array.isArray(snapshot.actions) && snapshot.actions.length > 0 ? snapshot.actions : [snapshot.action];
-  const action = foregroundActionAt(actions, snapshot.actionCycleStartedAt ?? snapshot.serverNow, anchoredNowMs);
+  const action = foregroundActionWithExpiryAt(actions, snapshot.actionCycleStartedAt ?? snapshot.serverNow, anchoredNowMs);
   if (action.source !== "sponsor" || !snapshot.sponsorEndsAt) return action;
   const sponsorEndsAtMs = Date.parse(snapshot.sponsorEndsAt);
   const remainingSeconds = Number.isFinite(sponsorEndsAtMs) ? (sponsorEndsAtMs - anchoredNowMs) / 1000 : 0;

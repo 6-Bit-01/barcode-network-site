@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { authenticateBNLJournalRequest } from "@/lib/bnl-journal-contract";
 import {
+  buildJournalEntryControlSnapshot,
   claimJournalRunRequest,
   getJournalControlRedis,
   readJournalControlState,
@@ -37,9 +38,9 @@ export async function GET(req: Request) {
   if (!redis) return unavailable();
   try {
     const state = await readJournalControlState(redis);
-    const memoryExcludedEntryIds = state.entryControls
-      .filter((control) => !control.memoryEligible)
-      .map((control) => control.entryId);
+    const controlSnapshot = buildJournalEntryControlSnapshot(
+      state.entryControls,
+    );
     return json({
       contractVersion: 1,
       ...state.config,
@@ -47,7 +48,7 @@ export async function GET(req: Request) {
       runRequests: state.runRequests,
       telemetry: state.telemetry,
       recentRuns: state.recentRuns,
-      memoryExcludedEntryIds,
+      ...controlSnapshot,
       persisted: true,
     });
   } catch (error) {

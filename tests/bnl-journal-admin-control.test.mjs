@@ -19,7 +19,10 @@ function loadTs(file, mocks = {}) {
   const localRequire = (id) => {
     if (Object.hasOwn(mocks, id)) return mocks[id];
     if (id === "crypto")
-      return { randomUUID: () => "00000000-0000-4000-8000-000000000001" };
+      return {
+        createHash: require("node:crypto").createHash,
+        randomUUID: () => "00000000-0000-4000-8000-000000000001",
+      };
     return require(id);
   };
   vm.runInNewContext(
@@ -481,7 +484,42 @@ test("Journal control routes return 401 without auth and 503 without Redis", asy
   );
 });
 
-test("bot control GET exposes only memory-ineligible entry ids", async () => {
+test("Journal entry control snapshot is deterministic and independently excludes public and memory reuse", () => {
+  const snapshot = store.buildJournalEntryControlSnapshot(
+    [
+      {
+        entryId: "journal-memory-excluded",
+        publicVisible: true,
+        memoryEligible: false,
+        updatedAt: "2026-08-10T08:00:00.000Z",
+        updatedBy: "website-admin",
+      },
+      {
+        entryId: "journal-hidden",
+        publicVisible: false,
+        memoryEligible: false,
+        updatedAt: "2026-08-10T08:01:00.000Z",
+        updatedBy: "website-admin",
+      },
+    ],
+    "2026-08-10T08:02:00.000Z",
+  );
+  assert.equal(snapshot.controlSnapshotVersion, 1);
+  assert.equal(snapshot.controlRevision, "2026-08-10T08:01:00.000Z");
+  assert.match(snapshot.controlDigest, /^[a-f0-9]{64}$/);
+  assert.equal(snapshot.controlObservedAt, "2026-08-10T08:02:00.000Z");
+  assert.equal(snapshot.controlFreshUntil, "2026-08-10T08:04:00.000Z");
+  assert.equal(snapshot.controlFreshForSeconds, 120);
+  assert.deepEqual(Array.from(snapshot.publicExcludedEntryIds), [
+    "journal-hidden",
+  ]);
+  assert.deepEqual(Array.from(snapshot.memoryExcludedEntryIds), [
+    "journal-hidden",
+    "journal-memory-excluded",
+  ]);
+});
+
+test("bot control GET exposes a content-free visibility and reuse snapshot", async () => {
   const nextServer = {
     NextResponse: {
       json: (body, init = {}) =>
@@ -497,6 +535,8 @@ test("bot control GET exposes only memory-ineligible entry ids", async () => {
       authenticateBNLJournalRequest: () => true,
     },
     "@/lib/bnl-journal-control-store": {
+      buildJournalEntryControlSnapshot:
+        store.buildJournalEntryControlSnapshot,
       getJournalControlRedis: () => ({}),
       readJournalControlState: async () => ({
         config: {
@@ -508,8 +548,27 @@ test("bot control GET exposes only memory-ineligible entry ids", async () => {
         telemetry: null,
         recentRuns: [],
         entryControls: [
-          { entryId: "journal-visible", memoryEligible: true },
-          { entryId: "journal-excluded", memoryEligible: false },
+          {
+            entryId: "journal-visible",
+            publicVisible: true,
+            memoryEligible: true,
+            updatedAt: "2026-08-10T08:00:00.000Z",
+            updatedBy: "website-admin",
+          },
+          {
+            entryId: "journal-memory-excluded",
+            publicVisible: true,
+            memoryEligible: false,
+            updatedAt: "2026-08-10T08:01:00.000Z",
+            updatedBy: "website-admin",
+          },
+          {
+            entryId: "journal-hidden",
+            publicVisible: false,
+            memoryEligible: false,
+            updatedAt: "2026-08-10T08:02:00.000Z",
+            updatedBy: "website-admin",
+          },
         ],
       }),
     },
@@ -520,7 +579,18 @@ test("bot control GET exposes only memory-ineligible entry ids", async () => {
   );
   const body = await response.json();
   assert.equal(response.status, 200);
-  assert.deepEqual(body.memoryExcludedEntryIds, ["journal-excluded"]);
+  assert.equal(body.contractVersion, 1);
+  assert.equal(body.controlSnapshotVersion, 1);
+  assert.equal(body.controlRevision, "2026-08-10T08:02:00.000Z");
+  assert.match(body.controlDigest, /^[a-f0-9]{64}$/);
+  assert.match(body.controlObservedAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.match(body.controlFreshUntil, /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(body.controlFreshForSeconds, 120);
+  assert.deepEqual(body.publicExcludedEntryIds, ["journal-hidden"]);
+  assert.deepEqual(body.memoryExcludedEntryIds, [
+    "journal-hidden",
+    "journal-memory-excluded",
+  ]);
   assert.equal(body.entryControls, undefined);
 });
 

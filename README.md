@@ -15,7 +15,7 @@ Production: <https://www.barcode-network.com>
 | Priority payments | Stripe checkout and webhook routes |
 | Queue, BNL, Journal, and dossier persistence | Upstash Redis |
 | BNL public/admin state | Presence/Relay v2 routes and stores under `src/app/api/bnl/` and `src/lib/` |
-| BNL Journal | Public `/journal`, admin `/admin/journal`, and Journal API/store modules |
+| BNL Journal | Public `/journal`, admin `/admin/journal`, Journal API/store modules, and the [authenticated control snapshot](docs/bnl-journal-control-snapshot-v1.md) |
 | Internal dossier workflow | Admin dossier routes and `dossier-workflow*` modules |
 | Public dossier rendering | Static entries adapted through `dossier-page-view-model.ts` into `DossierPageView.tsx` |
 

@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import {
   getBNLJournalRedis,
   listJournalEntryControls,
@@ -64,6 +64,17 @@ export type JournalControlState = {
   recentRuns: JournalRunRecord[];
 };
 
+export type JournalEntryControlSnapshot = {
+  controlSnapshotVersion: 1;
+  controlRevision: string;
+  controlDigest: string;
+  controlObservedAt: string;
+  controlFreshUntil: string;
+  controlFreshForSeconds: number;
+  publicExcludedEntryIds: string[];
+  memoryExcludedEntryIds: string[];
+};
+
 export const BNL_FLAGS_KEY = "bnl:flags";
 export const BNL_JOURNAL_RUN_REQUESTS_KEY =
   "barcode:bnl-journal:v1:automation:run-requests";
@@ -81,6 +92,8 @@ export const DEFAULT_JOURNAL_AUTOMATION_CONFIG: JournalAutomationConfig = {
 const MAX_PENDING_REQUESTS = 20;
 const MAX_RECENT_RUNS = 20;
 const MAX_DETAIL_LENGTH = 280;
+export const JOURNAL_ENTRY_CONTROL_FRESH_FOR_SECONDS = 120;
+const EMPTY_CONTROL_REVISION = "1970-01-01T00:00:00.000Z";
 export const JOURNAL_CLAIM_LEASE_MS = 30 * 60 * 1000;
 const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 const ID = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{2,119}$/;
@@ -99,6 +112,54 @@ function validIso(value: unknown): value is string {
     ISO_UTC.test(value) &&
     Number.isFinite(Date.parse(value))
   );
+}
+
+export function buildJournalEntryControlSnapshot(
+  entryControls: readonly JournalEntryControl[],
+  observedAt = new Date().toISOString(),
+): JournalEntryControlSnapshot {
+  if (!validIso(observedAt))
+    throw new Error("Journal control observation time must be UTC ISO-8601.");
+  const controls = [...entryControls].sort((a, b) =>
+    a.entryId.localeCompare(b.entryId),
+  );
+  const controlDigest = createHash("sha256")
+    .update(
+      JSON.stringify(
+        controls.map((control) => [
+          control.entryId,
+          control.publicVisible,
+          control.memoryEligible,
+          control.updatedAt,
+        ]),
+      ),
+      "utf8",
+    )
+    .digest("hex");
+  const controlRevision = controls.reduce(
+    (latest, control) =>
+      control.updatedAt.localeCompare(latest) > 0
+        ? control.updatedAt
+        : latest,
+    EMPTY_CONTROL_REVISION,
+  );
+  const controlFreshUntil = new Date(
+    Date.parse(observedAt) + JOURNAL_ENTRY_CONTROL_FRESH_FOR_SECONDS * 1000,
+  ).toISOString();
+  return {
+    controlSnapshotVersion: 1,
+    controlRevision,
+    controlDigest,
+    controlObservedAt: observedAt,
+    controlFreshUntil,
+    controlFreshForSeconds: JOURNAL_ENTRY_CONTROL_FRESH_FOR_SECONDS,
+    publicExcludedEntryIds: controls
+      .filter((control) => !control.publicVisible)
+      .map((control) => control.entryId),
+    memoryExcludedEntryIds: controls
+      .filter((control) => !control.memoryEligible)
+      .map((control) => control.entryId),
+  };
 }
 
 function bounded(value: unknown, max: number): string | undefined {

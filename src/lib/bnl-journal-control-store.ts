@@ -64,6 +64,10 @@ export type JournalControlState = {
   recentRuns: JournalRunRecord[];
 };
 
+export type JournalControlStateReadOptions = {
+  strictEntryControls?: boolean;
+};
+
 export type JournalEntryControlSnapshot = {
   controlSnapshotVersion: 1;
   controlRevision: string;
@@ -325,13 +329,16 @@ export function getJournalControlRedis(): JournalControlRedis | null {
 
 export async function readJournalControlState(
   redis: JournalControlRedis,
+  options: JournalControlStateReadOptions = {},
 ): Promise<JournalControlState> {
   const [rawFlags, rawRequests, rawTelemetry, rawRuns, entryControls] = await Promise.all([
     redis.get<unknown>(BNL_FLAGS_KEY),
     redis.get<unknown>(BNL_JOURNAL_RUN_REQUESTS_KEY),
     redis.get<unknown>(BNL_JOURNAL_TELEMETRY_KEY),
     redis.get<unknown>(BNL_JOURNAL_RECENT_RUNS_KEY),
-    listJournalEntryControls(redis),
+    listJournalEntryControls(redis, {
+      failOnInvalid: options.strictEntryControls === true,
+    }),
   ]);
   return {
     config: sanitizeJournalAutomationConfig(rawFlags),

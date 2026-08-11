@@ -686,6 +686,38 @@ test("archive filters paginate over matching entries and constrain neighbors", a
   assert.equal(redis.calls.filter((call) => call[0] === "zrange").length, 2);
 });
 
+test("strict entry-control reads reject malformed or mismatched stored records", async () => {
+  const invalidMaps = [
+    {
+      "journal-hidden": {
+        entryId: "journal-hidden",
+        publicVisible: false,
+        memoryEligible: "false",
+        updatedAt: "2026-08-10T08:00:00.000Z",
+        updatedBy: "website-admin",
+      },
+    },
+    {
+      "journal-stored-key": {
+        entryId: "journal-different-key",
+        publicVisible: false,
+        memoryEligible: false,
+        updatedAt: "2026-08-10T08:00:00.000Z",
+        updatedBy: "website-admin",
+      },
+    },
+    ["not", "a", "control", "map"],
+  ];
+  for (const raw of invalidMaps) {
+    const redis = new FakeRedis();
+    redis.kv.set(store.BNL_JOURNAL_ENTRY_CONTROLS_KEY, raw);
+    await assert.rejects(
+      store.listJournalEntryControls(redis, { failOnInvalid: true }),
+      /invalid_journal_entry_control/,
+    );
+  }
+});
+
 test("entry controls hide immediately, remain recoverable, and keep memory eligibility separate", async () => {
   const redis = new FakeRedis();
   const entry = makeEntry({

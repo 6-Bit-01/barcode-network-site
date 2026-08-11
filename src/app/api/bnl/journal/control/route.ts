@@ -37,7 +37,9 @@ export async function GET(req: Request) {
   const redis = getJournalControlRedis();
   if (!redis) return unavailable();
   try {
-    const state = await readJournalControlState(redis);
+    const state = await readJournalControlState(redis, {
+      strictEntryControls: true,
+    });
     const controlSnapshot = buildJournalEntryControlSnapshot(
       state.entryControls,
     );

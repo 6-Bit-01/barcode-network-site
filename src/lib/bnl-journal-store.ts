@@ -568,10 +568,26 @@ function sanitizeJournalEntryControlAudit(
 
 export async function listJournalEntryControls(
   redis: Pick<RedisLike, "get"> | null = asRedisLike(getBNLJournalRedis()),
+  options: { failOnInvalid?: boolean } = {},
 ): Promise<JournalEntryControl[]> {
   if (!redis) return [];
   const raw = await redis.get<unknown>(BNL_JOURNAL_ENTRY_CONTROLS_KEY);
-  if (!isRecord(raw)) return [];
+  if (raw == null) return [];
+  if (!isRecord(raw)) {
+    if (options.failOnInvalid)
+      throw new Error("invalid_journal_entry_control_map");
+    return [];
+  }
+  if (options.failOnInvalid) {
+    const controls: JournalEntryControl[] = [];
+    for (const [storedEntryId, value] of Object.entries(raw)) {
+      const control = sanitizeJournalEntryControl(value);
+      if (!control || control.entryId !== storedEntryId)
+        throw new Error("invalid_journal_entry_control_record");
+      controls.push(control);
+    }
+    return controls.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
   return Object.values(raw)
     .map(sanitizeJournalEntryControl)
     .filter((item): item is JournalEntryControl => Boolean(item))

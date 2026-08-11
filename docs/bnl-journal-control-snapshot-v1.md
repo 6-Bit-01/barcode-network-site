@@ -24,6 +24,9 @@ publication. Missing, malformed, stale, or unavailable control state must fail
 closed in the consumer.
 
 The endpoint remains API-key authenticated, Redis-required, and `no-store`.
+Its snapshot read validates the complete raw entry-control map. A malformed
+map, invalid record, or stored key/`entryId` mismatch returns `503`; the route
+never drops a bad record and emits a fresh-looking partial snapshot.
 It does not expose the full control records, administrator identity, Journal
 content, run details beyond the existing contract, or a new publication store.
 Changing these fields does not publish, hide, amend, regenerate, or schedule a

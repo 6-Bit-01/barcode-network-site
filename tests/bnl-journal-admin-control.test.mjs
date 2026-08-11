@@ -538,39 +538,42 @@ test("bot control GET exposes a content-free visibility and reuse snapshot", asy
       buildJournalEntryControlSnapshot:
         store.buildJournalEntryControlSnapshot,
       getJournalControlRedis: () => ({}),
-      readJournalControlState: async () => ({
-        config: {
-          journalAutoPublishEnabled: true,
-          journalDailyEnabled: true,
-          journalWeeklyEnabled: true,
-        },
-        runRequests: [],
-        telemetry: null,
-        recentRuns: [],
-        entryControls: [
-          {
-            entryId: "journal-visible",
-            publicVisible: true,
-            memoryEligible: true,
-            updatedAt: "2026-08-10T08:00:00.000Z",
-            updatedBy: "website-admin",
+      readJournalControlState: async (_redis, options) => {
+        assert.equal(options.strictEntryControls, true);
+        return {
+          config: {
+            journalAutoPublishEnabled: true,
+            journalDailyEnabled: true,
+            journalWeeklyEnabled: true,
           },
-          {
-            entryId: "journal-memory-excluded",
-            publicVisible: true,
-            memoryEligible: false,
-            updatedAt: "2026-08-10T08:01:00.000Z",
-            updatedBy: "website-admin",
-          },
-          {
-            entryId: "journal-hidden",
-            publicVisible: false,
-            memoryEligible: false,
-            updatedAt: "2026-08-10T08:02:00.000Z",
-            updatedBy: "website-admin",
-          },
-        ],
-      }),
+          runRequests: [],
+          telemetry: null,
+          recentRuns: [],
+          entryControls: [
+            {
+              entryId: "journal-visible",
+              publicVisible: true,
+              memoryEligible: true,
+              updatedAt: "2026-08-10T08:00:00.000Z",
+              updatedBy: "website-admin",
+            },
+            {
+              entryId: "journal-memory-excluded",
+              publicVisible: true,
+              memoryEligible: false,
+              updatedAt: "2026-08-10T08:01:00.000Z",
+              updatedBy: "website-admin",
+            },
+            {
+              entryId: "journal-hidden",
+              publicVisible: false,
+              memoryEligible: false,
+              updatedAt: "2026-08-10T08:02:00.000Z",
+              updatedBy: "website-admin",
+            },
+          ],
+        };
+      },
     },
   });
 
@@ -592,6 +595,37 @@ test("bot control GET exposes a content-free visibility and reuse snapshot", asy
     "journal-memory-excluded",
   ]);
   assert.equal(body.entryControls, undefined);
+});
+
+test("bot control GET returns 503 instead of a partial malformed snapshot", async () => {
+  const route = loadTs("src/app/api/bnl/journal/control/route.ts", {
+    "next/server": {
+      NextResponse: {
+        json: (body, init = {}) =>
+          new Response(JSON.stringify(body), {
+            status: init.status ?? 200,
+            headers: init.headers,
+          }),
+      },
+    },
+    "@/lib/bnl-journal-contract": {
+      authenticateBNLJournalRequest: () => true,
+    },
+    "@/lib/bnl-journal-control-store": {
+      getJournalControlRedis: () => ({}),
+      readJournalControlState: async () => {
+        throw new Error("invalid_journal_entry_control_record");
+      },
+    },
+  });
+
+  const response = await route.GET(
+    new Request("https://example.test/api/bnl/journal/control"),
+  );
+  const body = await response.json();
+  assert.equal(response.status, 503);
+  assert.equal(body.reason, "persistence_unavailable");
+  assert.equal(body.controlSnapshotVersion, undefined);
 });
 
 test("legacy control mutation cannot write Journal automation fields", () => {

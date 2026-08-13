@@ -5,13 +5,12 @@ import { readFile } from "node:fs/promises";
 const gameFiles = [
   "middleware.ts",
   "src/app/world/playtest/page.tsx",
-  "src/components/FracturedGatePrototype.tsx",
-  "src/components/FracturedGatePrototype.module.css",
-  "src/lib/barcode-world/constants.mjs",
-  "src/lib/barcode-world/fractured-gate-engine.mjs",
+  "src/components/BarcodeWorldCardBattle.tsx",
+  "src/components/BarcodeWorldCardBattle.module.css",
+  "src/lib/barcode-world/card-battle-engine.mjs",
 ];
 
-test("Fractured Gate is production-gated, unlinked, local-only, and has no live-system dependency", async () => {
+test("card battle is production-gated, unlinked, local-only, and has no live-system dependency", async () => {
   const contents = await Promise.all(
     gameFiles.map(async (path) => [path, await readFile(path, "utf8")]),
   );
@@ -26,11 +25,11 @@ test("Fractured Gate is production-gated, unlinked, local-only, and has no live-
   );
   assert.match(
     contents.find(([path]) => path.endsWith("page.tsx"))[1],
-    /FracturedGatePrototype/,
+    /BarcodeWorldCardBattle/,
   );
   assert.doesNotMatch(
     contents.find(([path]) => path.endsWith("page.tsx"))[1],
-    /BarcodeWorldGreybox/,
+    /FracturedGatePrototype|BarcodeWorldGreybox/,
   );
   const middleware = contents.find(([path]) => path === "middleware.ts")[1];
   assert.match(middleware, /pathname === "\/world\/playtest"/);
@@ -63,38 +62,38 @@ test("Fractured Gate is production-gated, unlinked, local-only, and has no live-
   assert.doesNotMatch(publicShell, /\/world\/playtest/);
 });
 
-test("Fractured Gate preserves semantic input, focus, non-color cues, touch targets, and reduced motion", async () => {
+test("card battle preserves semantic input, focus, non-color cues, touch targets, and reduced motion", async () => {
   const component = await readFile(
-    "src/components/FracturedGatePrototype.tsx",
+    "src/components/BarcodeWorldCardBattle.tsx",
     "utf8",
   );
   const css = await readFile(
-    "src/components/FracturedGatePrototype.module.css",
+    "src/components/BarcodeWorldCardBattle.module.css",
     "utf8",
   );
-  assert.match(component, /aria-label="The Fractured Gate tactical board"/);
-  assert.match(component, /aria-label="Current battle phase"/);
-  assert.match(component, /MOVE RANGE/);
-  assert.match(component, /ENEMY PRESSURE/);
-  assert.match(component, /CURRENT BUILD LINE/);
-  assert.match(component, /PRIMARY COMMITMENT/);
-  assert.match(component, /SUPPORT ACTION/);
-  assert.doesNotMatch(component, /COMMAND/);
-  assert.doesNotMatch(component, /PIVOT/);
-  assert.match(component, /data-terrain=/);
+  assert.match(component, /aria-label="Four lane card battle"/);
+  assert.match(component, /aria-label="Pressure track"/);
+  assert.match(component, /ENEMY PREVIEW/);
+  assert.match(component, /NO PLACEMENT LOCKED/);
+  assert.doesNotMatch(component, /NO LEGAL PLAY/);
+  assert.match(component, /if \(game\.phase !== "player-action"\) return null/);
+  assert.match(component, /LOCKED/);
+  assert.match(component, /BATTLE \/ EXPLORATION/);
+  assert.match(component, /BREACHER/);
+  assert.doesNotMatch(component, /Fractured Gate|MOVE RANGE|FAST \/ STANDARD \/ SLOW|PIVOT/);
+  assert.match(component, /data-scene-cue=/);
   assert.match(component, /type="button"/);
-  assert.match(component, /TARGET/);
-  assert.match(component, /CONFIRMED/);
+  assert.match(component, /OPEN LANE/);
+  assert.match(component, /Resolve Round/);
+  assert.match(component, /Reset · Same State/);
+  assert.match(component, /Reset · New Shuffle/);
   assert.match(component, /Reduce motion/);
   assert.match(css, /:focus-visible/);
   assert.match(css, /touch-action:\s*manipulation/);
   assert.match(css, /min-height:\s*max\(2\.75rem,\s*44px\)/);
   assert.match(css, /min-width:\s*44px/);
-  assert.match(
-    css,
-    /clip-path:\s*polygon\(50% 0,\s*100% 50%,\s*50% 100%,\s*0 50%\)/,
-  );
-  assert.match(css, /\.movementPassThrough/);
+  assert.match(css, /\[data-state="open"\]/);
+  assert.match(css, /\[data-scene-cue/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
   assert.match(css, /animation-duration:\s*0\.001ms/);
 });
@@ -149,15 +148,15 @@ function contrast(foreground, background) {
   return (brighter + 0.05) / (darker + 0.05);
 }
 
-test("Fractured Gate core text color pairs clear WCAG AA normal-text contrast", () => {
+test("card battle core text color pairs clear WCAG AA normal-text contrast", () => {
   const pairs = [
-    ["#f1f7f3", "#0b1117", "primary text"],
-    ["#a8b8bd", "#0b1117", "muted text"],
-    ["#61dcff", "#0b1117", "cyan labels"],
-    ["#ffd166", "#0b1117", "amber labels"],
-    ["#07130c", "#63ff9f", "primary action"],
-    ["#171000", "#ffd166", "target cue"],
-    ["#9da5a8", "#11171b", "disabled explanation"],
+    ["#f2f8f5", "#080d12", "primary text"],
+    ["#a9bbc0", "#080d12", "muted text"],
+    ["#79e7ff", "#080d12", "cyan labels"],
+    ["#ffd36a", "#080d12", "amber labels"],
+    ["#06130d", "#71f7aa", "primary action"],
+    ["#171000", "#ffd36a", "selected cue"],
+    ["#aeb8bb", "#12191f", "disabled explanation"],
   ];
   for (const [foreground, background, label] of pairs) {
     assert.ok(

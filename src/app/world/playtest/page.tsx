@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { FracturedGatePrototype } from "@/components/FracturedGatePrototype";
+import { BarcodeWorldCardBattle } from "@/components/BarcodeWorldCardBattle";
 
 export const dynamic = "force-dynamic";
 
@@ -17,9 +17,9 @@ export function generateMetadata(): Metadata {
     };
   }
   return {
-    title: "The Fractured Gate · Private BARCODE World Battle Mode Proof",
+    title: "Four-Lane Card Battle · Private BARCODE World Battle Mode Proof",
     description:
-      "Private, deterministic, resettable, noncanonical BARCODE World Battle Mode prototype.",
+      "Private, deterministic, resettable, noncanonical BARCODE World card-battle prototype.",
     robots: {
       index: false,
       follow: false,
@@ -34,5 +34,5 @@ export default function BarcodeWorldPlaytestPage() {
     notFound();
   }
 
-  return <FracturedGatePrototype />;
+  return <BarcodeWorldCardBattle />;
 }

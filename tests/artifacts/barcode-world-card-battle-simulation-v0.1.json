@@ -1,0 +1,36 @@
+{
+  "artifact": "BARCODE World four-lane card-battle v0.1 deterministic simulation",
+  "evidenceClass": "machine balance smoke; not owner comprehension, accessibility, balance, fun, or replay evidence",
+  "engineSource": "src/lib/barcode-world/card-battle-engine.mjs",
+  "run": {
+    "battles": 1000,
+    "seedPrefix": "BW-CARD-SIM",
+    "maxRounds": 40
+  },
+  "enemyAiTuning": {
+    "contestOccupiedLane": 5,
+    "openLanePressurePerPower": 1.4,
+    "lethalContest": 2,
+    "replaceActivePenalty": 2.25,
+    "powerWeight": 0.9,
+    "healthWeight": 0.35,
+    "commandEfficiencyWeight": 0.2,
+    "normalPlacementLimit": 1,
+    "behindPlacementLimit": 2,
+    "aheadPlacementLimit": 0
+  },
+  "playerPolicy": "Defend the strongest unopposed enemy preview or active lane with the cheapest affordable card, then fill open friendly lanes with the cheapest affordable attacker; use deterministic stat and instance-ID tie breaks; never use Outflank.",
+  "summary": {
+    "version": "0.1",
+    "battles": 1000,
+    "maxRounds": 40,
+    "playerWins": 530,
+    "enemyWins": 469,
+    "unfinished": 1,
+    "breaks": 1237,
+    "averageRounds": 7.06,
+    "minRounds": 2,
+    "maxRoundsObserved": 40
+  },
+  "roundsChecksum": 2826174217
+}

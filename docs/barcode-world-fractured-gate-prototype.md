@@ -1,6 +1,11 @@
 # BARCODE World Battle Mode: The Fractured Gate
 
-Status: **IMPLEMENTED ON A PRIVATE OWNER-REVIEW BRANCH**
+Status: **HISTORICAL TACTICAL IMPLEMENTATION — SUPERSEDED AS THE ACTIVE PRIVATE ROUTE**
+
+The deterministic and accessibility patterns remain implementation evidence,
+but the Fractured Gate rules and interface no longer control Battle Mode. The
+active `/world/playtest` target is the four-lane card-battle v0.1 described in
+`docs/barcode-world-card-battle-v0.1.md`.
 
 Controlling direction:
 `BARCODE_WORLD_BATTLE_MODE_BREACHFLOW_OWNER_LOCK_2026-07-31`

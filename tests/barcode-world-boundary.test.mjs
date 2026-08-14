@@ -192,6 +192,12 @@ test("card battle keeps cards primary, lane signals contextual, and resolution r
   assert.doesNotMatch(component, /shownProjection\s*=\s*candidateProjection/);
   assert.match(component, /OLD CARD WITHDRAWS · NO DESTROY TRIGGER/);
   assert.match(component, /your active \$\{playerActive\.name\}/);
+  assert.match(component, /ACTIVE · REPLACED IF YOU CHOOSE THIS LANE/);
+  assert.ok(
+    component.indexOf('if (selectedCard) actionLabel') <
+      component.indexOf('else if (pendingPlayerCard) actionLabel'),
+    "a selected replacement must override the staged-card return label",
+  );
   const choiceSignal = component.slice(
     component.indexOf("function LaneChoiceSignal"),
     component.indexOf("function Board"),

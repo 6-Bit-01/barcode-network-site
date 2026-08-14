@@ -635,9 +635,9 @@ function Board({
             let actionLabel = playerActive
               ? `Lane ${lane + 1}, your active ${playerActive.name}, Power ${effectiveShownPower(playerActive)}, Health ${playerActive.currentHealth} of ${playerActive.maxHealth}. Effect: ${playerActive.ability}`
               : `Open player Lane ${lane + 1}`;
-            if (pendingPlayerCard) actionLabel = `Return ${playerActive?.name} from Lane ${lane + 1} to hand`;
+            if (selectedCard) actionLabel = `${playerActive ? "Replace with" : "Play"} ${selectedCard.name} in Lane ${lane + 1}`;
+            else if (pendingPlayerCard) actionLabel = `Return ${playerActive?.name} from Lane ${lane + 1} to hand`;
             else if (pendingOutflank) actionLabel = `Cancel Outflank for ${playerActive?.name}`;
-            else if (selectedCard) actionLabel = `${playerActive ? "Replace with" : "Play"} ${selectedCard.name} in Lane ${lane + 1}`;
             else if (selectingSource && eligibleSource) actionLabel = `Choose ${playerActive?.name} in Lane ${lane + 1} to Outflank`;
             else if (eligibleDestination) actionLabel = `Outflank into open Lane ${lane + 1}`;
             const candidateProjection = laneChoiceProjections[lane];
@@ -690,7 +690,7 @@ function Board({
                     <CardFace
                       card={playerActive}
                       side="player"
-                      stateLabel={pendingPlayerCard ? "PLAYED THIS ROUND · TAP TO RETURN" : pendingOutflank ? "OUTFLANKED · TAP TO CANCEL" : outflankFrom === lane ? "OUTFLANK SOURCE" : `ACTIVE · ROUND ${playerActive.enteredRound}`}
+                      stateLabel={selectedCard ? "ACTIVE · REPLACED IF YOU CHOOSE THIS LANE" : pendingPlayerCard ? "PLAYED THIS ROUND · TAP TO RETURN" : pendingOutflank ? "OUTFLANKED · TAP TO CANCEL" : outflankFrom === lane ? "OUTFLANK SOURCE" : `ACTIVE · ROUND ${playerActive.enteredRound}`}
                       selected={pendingPlayerCard || pendingOutflank || outflankFrom === lane}
                     />
                   ) : (

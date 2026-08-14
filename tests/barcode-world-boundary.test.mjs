@@ -117,7 +117,7 @@ test("only local development and the exact card-battle PR preview can render the
   );
 });
 
-test("card battle preserves strategic clarity, causal review, semantic input, focus, touch targets, and reduced motion", async () => {
+test("card battle keeps cards primary, lane signals contextual, and resolution review causal", async () => {
   const component = await readFile(
     "src/components/BarcodeWorldCardBattle.tsx",
     "utf8",
@@ -128,16 +128,43 @@ test("card battle preserves strategic clarity, causal review, semantic input, fo
   );
   assert.match(component, /aria-label="Four lane card battle"/);
   assert.match(component, /aria-label="Pressure track"/);
-  assert.match(component, /BREACHER'S LOCKED PLAN/);
-  assert.match(component, /IF YOU RESOLVE NOW/);
+  assert.match(component, /CARD EFFECTS FIRST/);
+  assert.match(component, /const CARD_READS/);
+  assert.match(component, /effect:\s*string/);
+  assert.match(component, /horizon:\s*"IMMEDIATE" \| "LATER" \| "CONDITIONAL" \| "STATE"/);
+  assert.match(component, /tradeoff:\s*string/);
+  assert.match(component, /trigger:\s*string/);
+  assert.match(component, /\{read\.horizon\} · \{read\.trigger\}/);
+  assert.match(component, /\{read\.effect\}/);
+  assert.match(component, /TRADEOFF/);
+  assert.match(component, /function cardReadFor/);
+  assert.match(component, /damageReductionAvailable/);
+  assert.match(component, /REDUCTION READY/);
+  assert.match(component, /REDUCTION SPENT/);
+  assert.match(component, /BASE OPEN POWER 1/);
+  assert.match(component, /BASE BLOCKED POWER 2/);
+  assert.match(component, /LOCKED ENEMY INTENT/);
   assert.match(component, /IF PLACED HERE/);
   assert.match(component, /IF OUTFLANKED HERE/);
+  assert.match(component, /IMMEDIATE PRESSURE SWING/);
+  assert.match(component, /VS CURRENT PLAN/);
+  assert.match(component, /const swing = candidate\.pressureAfter - baseline\.pressureAfter/);
+  assert.match(component, /TOWARD BREACHER NOW/);
+  assert.match(component, /NO IMMEDIATE PRESSURE SWING/);
+  assert.match(component, /TOWARD YOU NOW/);
+  assert.match(
+    component,
+    /Color shows only what this placement changes at the next Resolve\. It is not a move grade\./,
+  );
+  assert.match(component, /LATER/);
+  assert.match(component, /CONDITIONAL/);
+  assert.doesNotMatch(component, /\b(?:GOOD|BAD|BEST)\b/i);
+  assert.doesNotMatch(component, /function EnemyPreview/);
   assert.match(component, /LEAVES LANE/);
   assert.match(component, /WHAT JUST HAPPENED/);
   assert.match(component, /WHY PRESSURE MOVED/);
   assert.match(component, /ALL FOUR LANES AT ONCE/);
   assert.match(component, /Round details/);
-  assert.match(component, /NO PLACEMENT LOCKED/);
   assert.doesNotMatch(component, /NO LEGAL PLAY/);
   assert.match(component, /if \(game\.phase !== "player-action"\) return null/);
   assert.match(component, /LOCKED/);
@@ -154,18 +181,52 @@ test("card battle preserves strategic clarity, causal review, semantic input, fo
   assert.match(component, /role="meter"/);
   assert.match(component, /aria-describedby/);
   assert.match(component, /resolveRound\(placePlayerCard/);
+  assert.match(component, /resolveRound\(applyOutflank/);
+  assert.match(component, /const hasChoiceSignals = laneChoiceProjections\.some\(Boolean\)/);
+  assert.match(component, /candidateProjection\s*&&/);
+  assert.match(
+    component,
+    /data-choice=\{candidateProjection \? "shown" : "quiet"\}/,
+  );
+  assert.doesNotMatch(component, /candidateProjection\s*\?\?\s*currentProjection/);
+  assert.doesNotMatch(component, /shownProjection\s*=\s*candidateProjection/);
+  assert.match(component, /OLD CARD WITHDRAWS · NO DESTROY TRIGGER/);
+  assert.match(component, /your active \$\{playerActive\.name\}/);
+  const choiceSignal = component.slice(
+    component.indexOf("function LaneChoiceSignal"),
+    component.indexOf("function Board"),
+  );
+  assert.doesNotMatch(choiceSignal, /CARD_READS|selectedCard/);
   assert.match(component, /identity stays hidden until Resolve/);
   assert.equal(component.match(/aria-live=/g)?.length, 1);
   assert.doesNotMatch(component, /aria-live="assertive"/);
   assert.match(component, /Reset · Same State/);
   assert.match(component, /Reset · New Shuffle/);
   assert.match(component, /Reduce motion/);
+  assert.match(component, /const reducedMotionRef = useRef\(reducedMotion\)/);
+  const renderedBattle = component.slice(
+    component.indexOf("export function BarcodeWorldCardBattle"),
+  );
+  assert.doesNotMatch(renderedBattle, /<PlanningSummary/);
+  assert.ok(
+    renderedBattle.indexOf("<Board") < renderedBattle.indexOf("<Hand"),
+    "the four-lane board must render before the hand",
+  );
+  assert.match(component, /<details className=\{styles\.historyDetails\}>/);
+  assert.match(component, /function ExactResolveDetails/);
+  assert.match(component, /<details className=\{styles\.planningDetails\}>/);
+  assert.doesNotMatch(component, /<details[^>]*\sopen(?:=|\s|>)/);
   assert.match(css, /:focus-visible/);
+  assert.match(css, /\.boardPanel:focus-visible/);
   assert.match(css, /touch-action:\s*manipulation/);
   assert.match(css, /min-height:\s*max\(2\.75rem,\s*44px\)/);
   assert.match(css, /min-width:\s*44px/);
   assert.match(css, /\[data-state="open"\]/);
   assert.match(css, /\[data-scene-cue/);
+  assert.match(
+    css,
+    /linear-gradient\([^;]*var\(--danger\)[^;]*var\(--amber\)[^;]*var\(--green\)[^;]*\)/s,
+  );
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
   assert.match(css, /animation-duration:\s*0\.001ms/);
 });

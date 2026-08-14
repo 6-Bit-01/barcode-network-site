@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type RefObject,
+} from "react";
 import {
   createCardBattleState,
   cancelOutflank,
@@ -22,6 +29,105 @@ import styles from "./BarcodeWorldCardBattle.module.css";
 
 const PRESSURE_VALUES = Array.from({ length: 11 }, (_, index) => index - 5);
 const LANES = Array.from({ length: 4 }, (_, index) => index);
+
+type CardRead = {
+  effect: string;
+  horizon: "IMMEDIATE" | "LATER" | "CONDITIONAL" | "STATE";
+  tradeoff: string;
+  trigger: string;
+};
+
+const CARD_READS: Record<string, CardRead> = {
+  "hold-ground": {
+    effect: "+1 POWER",
+    horizon: "CONDITIONAL",
+    tradeoff: "BASE OPEN POWER 1",
+    trigger: "WHILE BLOCKED",
+  },
+  "scout-route": {
+    effect: "DRAW 1",
+    horizon: "LATER",
+    tradeoff: "1 POWER · 2 HEALTH",
+    trigger: "WHEN DESTROYED",
+  },
+  intercept: {
+    effect: "+1 HEALTH",
+    horizon: "IMMEDIATE",
+    tradeoff: "BONUS REQUIRES A LOCKED ENTRY",
+    trigger: "PLAYED VS LOCKED ENTRY",
+  },
+  flank: {
+    effect: "+1 POWER",
+    horizon: "CONDITIONAL",
+    tradeoff: "BASE BLOCKED POWER 2",
+    trigger: "WHILE UNBLOCKED",
+  },
+  linebreaker: {
+    effect: "+1 PRESSURE",
+    horizon: "CONDITIONAL",
+    tradeoff: "COSTS 3 COMMAND",
+    trigger: "WHEN IT DESTROYS AN ENEMY",
+  },
+  "last-opening": {
+    effect: "+1 POWER · +1 HEALTH",
+    horizon: "IMMEDIATE",
+    tradeoff: "ENTRY BONUS ONLY IF PLAYED TRAILING",
+    trigger: "PLAYED WHILE TRAILING",
+  },
+  rush: {
+    effect: "+1 POWER",
+    horizon: "CONDITIONAL",
+    tradeoff: "1 HEALTH",
+    trigger: "WHILE UNBLOCKED",
+  },
+  brace: {
+    effect: "+1 HEALTH",
+    horizon: "IMMEDIATE",
+    tradeoff: "NO BONUS INTO AN OPEN LANE",
+    trigger: "OPPOSED WHEN IT ENTERS",
+  },
+  bruiser: {
+    effect: "+1 POWER",
+    horizon: "CONDITIONAL",
+    tradeoff: "BASE OPEN POWER 2",
+    trigger: "WHILE BLOCKED",
+  },
+  breaker: {
+    effect: "+1 CARD DAMAGE",
+    horizon: "CONDITIONAL",
+    tradeoff: "NO BONUS WHILE UNBLOCKED",
+    trigger: "WHEN OPPOSED",
+  },
+  enforcer: {
+    effect: "REDUCE DAMAGE BY 1",
+    horizon: "CONDITIONAL",
+    tradeoff: "FIRST HIT ONLY",
+    trigger: "FIRST TIME DAMAGED",
+  },
+  "last-push": {
+    effect: "+1 POWER · +1 HEALTH",
+    horizon: "IMMEDIATE",
+    tradeoff: "ENTRY BONUS ONLY IF PLAYED TRAILING",
+    trigger: "PLAYED WHILE TRAILING",
+  },
+};
+
+function cardReadFor(card: CardInstance | ActiveCard) {
+  const read = CARD_READS[card.designId];
+  if (!read || !isActive(card) || card.designId !== "enforcer") return read;
+  return card.damageReductionAvailable
+    ? {
+      ...read,
+      effect: "REDUCTION READY · NEXT DAMAGE -1",
+      trigger: "FIRST-HIT STATE",
+    }
+    : {
+      ...read,
+      effect: "REDUCTION SPENT",
+      horizon: "STATE" as const,
+      trigger: "FIRST HIT ALREADY USED",
+    };
+}
 
 function cx(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
@@ -49,6 +155,7 @@ function CardFace({
 }) {
   const active = isActive(card);
   const health = active ? `${card.currentHealth}/${card.maxHealth}` : String(card.health);
+  const read = cardReadFor(card);
   return (
     <div
       className={cx(styles.card, side === "enemy" && styles.enemyCard)}
@@ -67,7 +174,20 @@ function CardFace({
           Health {health}
         </span>
       </div>
-      <p className={styles.ability}>{card.ability}</p>
+      {read ? (
+        <div className={styles.cardEffect}>
+          <span>{read.horizon} · {read.trigger}</span>
+          <strong>{read.effect}</strong>
+        </div>
+      ) : (
+        <p className={styles.ability}>{card.ability}</p>
+      )}
+      {read && (
+        <p className={styles.cardTradeoff}>
+          <span>TRADEOFF</span>
+          {read.tradeoff}
+        </p>
+      )}
       <span className={styles.cardState}>{stateLabel}</span>
     </div>
   );
@@ -199,13 +319,7 @@ function previewAt(game: CardBattleState, lane: number) {
   return game.enemyPreview.placements.find((placement) => placement.lane === lane) ?? null;
 }
 
-function BattleScene({
-  game,
-  projection,
-}: {
-  game: CardBattleState;
-  projection: RoundReview | null;
-}) {
+function BattleScene({ game }: { game: CardBattleState }) {
   return (
     <section className={styles.scene} aria-labelledby="battle-scene-title">
       <div className={styles.sceneHeader}>
@@ -221,8 +335,10 @@ function BattleScene({
             const preview = previewAt(game, lane);
             const enemyCard = preview?.card ?? game.enemy.lanes[lane];
             const playerCard = game.player.lanes[lane];
-            const reaction = primaryLaneEvent(game, lane, projection);
-            const story = laneStory(game.currentReview ?? projection, lane);
+            const reaction = game.currentReview
+              ? primaryLaneEvent(game, lane, game.currentReview)
+              : null;
+            const story = laneStory(game.currentReview, lane);
             return (
               <div
                 className={styles.sceneLane}
@@ -250,7 +366,13 @@ function BattleScene({
                   {playerCard?.name ?? "WAYFINDER READY"}
                 </span>
                 <span className={styles.reaction}>
-                  {story.action ? story.label : reaction?.title ?? (preview ? "ENEMY STANCE LOCKED" : "READING THE LINE")}
+                  {game.currentReview && story.action
+                    ? story.label
+                    : reaction?.title ?? (preview
+                      ? "LOCKED ENEMY ENTRY"
+                      : enemyCard
+                        ? "ENEMY ACTIVE"
+                        : "READING THE LINE")}
                 </span>
               </div>
             );
@@ -360,55 +482,81 @@ function PressureTrack({ game }: { game: CardBattleState }) {
   );
 }
 
-function EnemyPreview({
-  game,
-  projection,
+function LaneChoiceSignal({
+  baseline,
+  candidate,
+  id,
+  label,
+  lane,
+  outflankFrom,
+  replacing,
 }: {
-  game: CardBattleState;
-  projection: RoundReview;
+  baseline: RoundReview;
+  candidate: RoundReview;
+  id: string;
+  label: string;
+  lane: number;
+  outflankFrom: number | null;
+  replacing: ActiveCard | null;
 }) {
+  const story = laneStory(candidate, lane);
+  const swing = candidate.pressureAfter - baseline.pressureAfter;
+  const boundedSwing = Math.max(-4, Math.min(4, swing));
+  const markerPosition = ((boundedSwing + 4) / 8) * 100;
+  const direction = swing > 0 ? "you" : swing < 0 ? "breacher" : "neutral";
+  const directionLabel = swing > 0
+    ? "TOWARD YOU NOW"
+    : swing < 0
+      ? "TOWARD BREACHER NOW"
+      : "NO IMMEDIATE PRESSURE SWING";
+  const sourceStory = outflankFrom === null ? null : laneStory(candidate, outflankFrom);
+  const specialConclusion = candidate.winner || candidate.breakTriggered ||
+    candidate.events.some((entry) => entry.type === "break-rearm")
+    ? projectionConclusion(candidate)
+    : null;
+
   return (
-    <section className={styles.previewPanel} aria-labelledby="enemy-preview-title">
-      <div className={styles.panelHeader}>
-        <div>
-          <p className={styles.sectionLabel}>ENEMY PREVIEW</p>
-          <strong id="enemy-preview-title">{"BREACHER'S LOCKED PLAN"}</strong>
-        </div>
-        <span className={styles.locked}>◆ LOCKED</span>
+    <div className={styles.laneChoiceSignal} data-direction={direction} id={id}>
+      <span className={styles.choiceEyebrow}>{label}</span>
+      <strong>{directionLabel}</strong>
+      <div
+        aria-hidden="true"
+        className={styles.choiceScale}
+        style={{ "--choice-position": `${markerPosition}%` } as CSSProperties}
+      >
+        <span className={styles.choiceMarker} />
       </div>
-      <p className={styles.instructions}>Every Breacher card that will act is shown here—new entries and cards already on the line.</p>
-      {game.enemyPreview.placements.length === 0 && (
-        <p className={styles.previewNotice}><strong>NO PLACEMENT LOCKED.</strong> The Breacher banks Command, but its existing cards still attack.</p>
+      <div aria-hidden="true" className={styles.choiceScaleLabels}>
+        <span>BREACHER</span>
+        <span>NO SWING</span>
+        <span>YOU</span>
+      </div>
+      <p className={styles.choicePressure}>
+        Pressure {signed(candidate.pressureBefore)} → {signed(candidate.pressureAfter)} · {signed(swing)} VS CURRENT PLAN
+      </p>
+      <p className={styles.choiceResult}><b>{story.label}.</b> {story.detail}</p>
+      {story.consequences.map((entry) => (
+        <small className={styles.choiceEffect} key={entry.id}>
+          <b>{entry.sceneCue === "scout-draw" ? "LATER" : "THIS RESOLVE"}:</b> {displayedEventDetail(entry, true)}
+        </small>
+      ))}
+      {sourceStory && outflankFrom !== null && (
+        <small className={styles.choiceEffect}>
+          <b>LEAVES LANE {outflankFrom + 1}:</b> {sourceStory.label}. {sourceStory.detail}
+        </small>
       )}
-      <div className={styles.previewCards}>
-        {LANES.map((lane) => {
-          const placement = previewAt(game, lane);
-          const active = game.enemy.lanes[lane];
-          const actingCard = placement?.card ?? active;
-          const story = laneStory(projection, lane);
-          return (
-            <article className={styles.previewCard} data-tone={story.tone} key={lane}>
-              <span>LANE {lane + 1} · {placement ? "ENTERS THIS ROUND" : active ? "REMAINS ACTIVE" : "NO BREACHER CARD"}</span>
-              <strong>{actingCard?.name ?? "OPEN BREACHER LANE"}</strong>
-              {actingCard && (
-                <small>
-                  {isActive(actingCard) ? "CURRENT" : "PRINTED"} {effectiveShownPower(actingCard)} Power · {isActive(actingCard) ? `${actingCard.currentHealth}/${actingCard.maxHealth}` : actingCard.health} Health
-                </small>
-              )}
-              {actingCard && <small>{actingCard.ability}</small>}
-              {placement?.replacesCardId && active && <small>REPLACES {active.name}</small>}
-              <span className={styles.previewOutcome}>IF RESOLVED NOW · {story.label}</span>
-              <small>{story.detail}</small>
-              {story.consequences.map((entry) => <small key={entry.id}><b>{entry.title}.</b> {displayedEventDetail(entry, true)}</small>)}
-            </article>
-          );
-        })}
-      </div>
-    </section>
+      {replacing && (
+        <small className={styles.choiceEffect}>
+          <b>REPLACES {replacing.name}:</b> it is discarded; destroy effects do not trigger.
+        </small>
+      )}
+      {specialConclusion && <small className={styles.choiceException}>{specialConclusion}</small>}
+    </div>
   );
 }
 
 function Board({
+  boardRef,
   game,
   selectedCard,
   currentProjection,
@@ -417,6 +565,7 @@ function Board({
   outflankFrom,
   onLane,
 }: {
+  boardRef: RefObject<HTMLElement | null>;
   game: CardBattleState;
   selectedCard: CardInstance | null;
   currentProjection: RoundReview | null;
@@ -426,24 +575,46 @@ function Board({
   onLane: (lane: number) => void;
 }) {
   const actionable = game.phase === "player-action" && Boolean(selectedCard || outflankMode);
+  const hasChoiceSignals = laneChoiceProjections.some(Boolean);
   const selectedInstruction = selectedCard
-    ? `SELECTED: ${selectedCard.name} — choose where it fights or presses.`
+    ? `SELECTED: ${selectedCard.name} — each lane now shows only what this placement changes.`
     : outflankMode
       ? outflankFrom === null
         ? "OUTFLANK READY — choose a friendly survivor."
         : `OUTFLANK SOURCE: LANE ${outflankFrom + 1} — choose an open destination.`
-      : "SELECT A CARD ABOVE, THEN COMPARE WHAT EACH LANE WILL DO.";
+      : null;
   return (
-    <section className={styles.boardPanel} aria-label="Four lane card battle">
+    <section
+      aria-label="Four lane card battle"
+      className={styles.boardPanel}
+      ref={boardRef}
+      tabIndex={-1}
+    >
       <div className={styles.boardHeader}>
         <div>
-          <p className={styles.sectionLabel}>Four fixed lanes</p>
-          <strong>{game.phase === "player-action" ? "CHOOSE WHERE THIS CARD ACTS" : "BOARD AFTER RESOLUTION"}</strong>
+          <p className={styles.sectionLabel}>
+            {game.phase === "player-action" ? "LOCKED ENEMY INTENT" : "FOUR FIXED LANES"}
+          </p>
+          <strong>{game.phase === "player-action" ? "BREACHER'S LOCKED PLAN" : "BOARD AFTER RESOLUTION"}</strong>
         </div>
-        <span className={styles.microLabel}>ALL LANES RESOLVE SIMULTANEOUSLY</span>
+        <span className={styles.locked}>{game.phase === "player-action" ? "◆ LOCKED" : "ALL LANES RESOLVED"}</span>
       </div>
-      {game.phase === "player-action" && <p className={styles.selectedBanner}>{selectedInstruction}</p>}
-      {game.phase === "player-action" && <p className={styles.instructions}>Forecast damage and Pressure already include blocked, unblocked, entry, and printed card abilities.</p>}
+      {game.phase === "player-action" && (
+        <p className={styles.instructions}>
+          Enemy cards are fixed. Read the cards, then choose one below; lane context appears only after selection.
+        </p>
+      )}
+      {game.phase === "player-action" && game.enemyPreview.placements.length === 0 && (
+        <p className={styles.previewNotice}>
+          <strong>NO NEW CARD LOCKED.</strong> Existing Breacher cards still act.
+        </p>
+      )}
+      {selectedInstruction && <p className={styles.selectedBanner}>{selectedInstruction}</p>}
+      {hasChoiceSignals && (
+        <p className={styles.scaleLegend}>
+          <strong>IMMEDIATE PRESSURE SWING.</strong> Color shows only what this placement changes at the next Resolve. It is not a move grade.
+        </p>
+      )}
       <p className={styles.swipeCue}>SWIPE LANES →</p>
       <div className={styles.boardScroller}>
         <div className={styles.board}>
@@ -461,25 +632,20 @@ function Board({
               pendingPlayerCard || pendingOutflank ||
               (actionable && (Boolean(selectedCard) || (selectingSource ? eligibleSource : eligibleDestination)))
             );
-            let actionLabel = "OPEN LANE";
+            let actionLabel = playerActive
+              ? `Lane ${lane + 1}, your active ${playerActive.name}, Power ${effectiveShownPower(playerActive)}, Health ${playerActive.currentHealth} of ${playerActive.maxHealth}. Effect: ${playerActive.ability}`
+              : `Open player Lane ${lane + 1}`;
             if (pendingPlayerCard) actionLabel = `Return ${playerActive?.name} from Lane ${lane + 1} to hand`;
             else if (pendingOutflank) actionLabel = `Cancel Outflank for ${playerActive?.name}`;
             else if (selectedCard) actionLabel = `${playerActive ? "Replace with" : "Play"} ${selectedCard.name} in Lane ${lane + 1}`;
             else if (selectingSource && eligibleSource) actionLabel = `Choose ${playerActive?.name} in Lane ${lane + 1} to Outflank`;
             else if (eligibleDestination) actionLabel = `Outflank into open Lane ${lane + 1}`;
             const candidateProjection = laneChoiceProjections[lane];
-            const shownProjection = candidateProjection ?? currentProjection;
-            const story = laneStory(shownProjection, lane);
             const forecastId = `lane-${lane + 1}-forecast`;
             const outflankProjection = Boolean(candidateProjection && !selectedCard && outflankFrom !== null);
-            const sourceStory = outflankProjection && outflankFrom !== null
-              ? laneStory(candidateProjection, outflankFrom)
-              : null;
-            const forecastLabel = candidateProjection
-              ? outflankProjection ? "IF OUTFLANKED HERE" : "IF PLACED HERE"
-              : "IF RESOLVED NOW";
+            const forecastLabel = outflankProjection ? "IF OUTFLANKED HERE" : "IF PLACED HERE";
             return (
-              <article className={styles.lane} key={lane}>
+              <article className={styles.lane} data-choice={candidateProjection ? "shown" : "quiet"} key={lane}>
                 <div className={styles.laneHeading}>
                   <span>LANE {lane + 1}</span>
                   <span>{preview ? "ENEMY ENTERING" : enemyActive ? "ENEMY ACTIVE" : "NO ENEMY"}</span>
@@ -487,31 +653,32 @@ function Board({
                 <div className={styles.slot} data-state={preview || enemyActive ? "occupied" : "open"}>
                   {preview ? (
                     <>
-                      <CardFace card={preview.card} side="enemy" stateLabel="LOCKED PREVIEW · PRINTED STATS" />
-                      {enemyActive && <span className={styles.cardState}>ACTIVE UNDER PREVIEW: {enemyActive.name} {enemyActive.currentHealth}/{enemyActive.maxHealth}</span>}
+                      <CardFace card={preview.card} side="enemy" stateLabel="LOCKED ENTRY · PRINTED STATS" />
+                      {preview.replacesCardId && enemyActive && (
+                        <span className={styles.cardState}>
+                          REPLACES {enemyActive.name} · OLD CARD WITHDRAWS · NO DESTROY TRIGGER
+                        </span>
+                      )}
                     </>
                   ) : enemyActive ? (
                     <CardFace card={enemyActive} side="enemy" stateLabel={`ACTIVE · CURRENT STATS · ROUND ${enemyActive.enteredRound}`} />
                   ) : "OPEN ENEMY LANE"}
                 </div>
-                <div className={styles.laneForecast} data-tone={story.tone} id={forecastId}>
-                  <span>{forecastLabel}</span>
-                  <strong>{story.label}</strong>
-                  <p>{story.detail}</p>
-                  {story.consequences.map((entry) => <small key={entry.id}><b>{entry.title}.</b> {displayedEventDetail(entry, true)}</small>)}
-                  {selectedCard && <small><b>YOUR ABILITY:</b> {selectedCard.ability}</small>}
-                  {sourceStory && outflankFrom !== null && (
-                    <small><b>LEAVES LANE {outflankFrom + 1}:</b> {sourceStory.label}. {sourceStory.detail}</small>
-                  )}
-                  {candidateProjection && (
-                    <small>
-                      Pressure {signed(candidateProjection.pressureBefore)} → {signed(candidateProjection.pressureAfter)} ({signed(candidateProjection.pressureDelta)}). {projectionConclusion(candidateProjection)}
-                    </small>
-                  )}
-                  {selectedCard && playerActive && <small>Playing here replaces {playerActive.name}.</small>}
-                </div>
+                {candidateProjection && currentProjection ? (
+                  <LaneChoiceSignal
+                    baseline={currentProjection}
+                    candidate={candidateProjection}
+                    id={forecastId}
+                    label={forecastLabel}
+                    lane={lane}
+                    outflankFrom={outflankProjection ? outflankFrom : null}
+                    replacing={selectedCard ? playerActive : null}
+                  />
+                ) : (
+                  <div aria-hidden="true" className={styles.laneChannel}>VS</div>
+                )}
                 <button
-                  aria-describedby={forecastId}
+                  aria-describedby={candidateProjection ? forecastId : undefined}
                   aria-label={actionLabel}
                   className={styles.laneTarget}
                   data-state={playerActive ? "occupied" : "open"}
@@ -553,19 +720,22 @@ function Hand({
       <div className={styles.handHeader}>
         <div>
           <p className={styles.sectionLabel}>Your hand</p>
-          <strong id="hand-title">SELECT A CARD → SELECT A LANE</strong>
+          <strong id="hand-title">CARD EFFECTS FIRST · SELECT ONE</strong>
         </div>
         <span className={styles.microLabel}>{game.player.hand.length} CARDS · NO HAND LIMIT</span>
       </div>
-      <p className={styles.instructions}>Every card shows Command cost, Power, Health, and one ability. Occupied friendly lanes may be replaced.</p>
+      <p className={styles.instructions}>
+        Cost, Power, Health, effect timing, and tradeoff belong to the card. Select one to reveal how each lane changes this Resolve.
+      </p>
       <div className={styles.hand}>
         {game.player.hand.map((card) => {
           const affordable = card.cost <= game.player.command;
           const selected = card.id === selectedCardId;
+          const read = CARD_READS[card.designId];
           return (
             <button
               aria-disabled={!affordable}
-              aria-label={`${selected ? "Deselect" : "Select"} ${card.name}, cost ${card.cost}, Power ${card.power}, Health ${card.health}`}
+              aria-label={`${selected ? "Deselect" : "Select"} ${card.name}, cost ${card.cost}, Power ${card.power}, Health ${card.health}. Effect: ${card.ability}${read ? ` Tradeoff: ${read.tradeoff}.` : ""}`}
               aria-pressed={selected}
               className={styles.handButton}
               data-affordable={affordable ? "true" : "false"}
@@ -623,7 +793,7 @@ function LaneOutcomeRows({
   );
 }
 
-function PlanningSummary({
+function ExactResolveDetails({
   game,
   review,
 }: {
@@ -631,21 +801,23 @@ function PlanningSummary({
   review: RoundReview;
 }) {
   return (
-    <section className={styles.planningPanel} aria-labelledby="planning-summary-title">
-      <div className={styles.reviewHeader}>
-        <div>
-          <p className={styles.sectionLabel}>Current battle forecast</p>
-          <strong id="planning-summary-title">IF YOU RESOLVE NOW</strong>
+    <details className={styles.planningDetails}>
+      <summary>
+        <span>
+          <b>IF YOU RESOLVE NOW</b>
+          <small>Exact resolve details</small>
+        </span>
+        <strong>{pressureOutcome(review)} · {signed(review.pressureBefore)} → {signed(review.pressureAfter)}</strong>
+      </summary>
+      <div className={styles.planningDetailsBody}>
+        <div className={styles.outcomeLead} data-tone={review.pressureDelta > 0 ? "player" : review.pressureDelta < 0 ? "enemy" : "neutral"}>
+          <strong>{pressureOutcome(review)}</strong>
+          <span>Pressure {signed(review.pressureBefore)} → {signed(review.pressureAfter)} ({signed(review.pressureDelta)})</span>
         </div>
-        <span className={styles.microLabel}>EXACT · ALL FOUR LANES</span>
+        <LaneOutcomeRows battleState={game} projected review={review} />
+        <p className={styles.conclusion}>{projectionConclusion(review)}</p>
       </div>
-      <div className={styles.outcomeLead} data-tone={review.pressureDelta > 0 ? "player" : review.pressureDelta < 0 ? "enemy" : "neutral"}>
-        <strong>{pressureOutcome(review)}</strong>
-        <span>Pressure {signed(review.pressureBefore)} → {signed(review.pressureAfter)} ({signed(review.pressureDelta)})</span>
-      </div>
-      <LaneOutcomeRows battleState={game} projected review={review} />
-      <p className={styles.conclusion}>{projectionConclusion(review)}</p>
-    </section>
+    </details>
   );
 }
 
@@ -777,6 +949,8 @@ export function BarcodeWorldCardBattle() {
   const [outflankFrom, setOutflankFrom] = useState<number | null>(null);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [resolvedSetup, setResolvedSetup] = useState<CardBattleState | null>(null);
+  const boardRef = useRef<HTMLElement>(null);
+  const reducedMotionRef = useRef(reducedMotion);
   const resolutionRef = useRef<HTMLElement>(null);
   const selectedCard = game.player.hand.find((card) => card.id === selectedCardId) ?? null;
   const currentProjection = useMemo(() => (
@@ -794,6 +968,10 @@ export function BarcodeWorldCardBattle() {
   }), [game, outflankFrom, outflankMode, selectedCard]);
 
   useEffect(() => {
+    reducedMotionRef.current = reducedMotion;
+  }, [reducedMotion]);
+
+  useEffect(() => {
     if (!game.currentReview || !["round-review", "result"].includes(game.phase)) return;
     const target = resolutionRef.current;
     if (!target) return;
@@ -801,12 +979,27 @@ export function BarcodeWorldCardBattle() {
       const osReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       target.focus({ preventScroll: true });
       target.scrollIntoView({
-        behavior: reducedMotion || osReducedMotion ? "auto" : "smooth",
+        behavior: reducedMotionRef.current || osReducedMotion ? "auto" : "smooth",
         block: "start",
       });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [game.currentReview, game.phase, reducedMotion]);
+  }, [game.currentReview, game.phase]);
+
+  useEffect(() => {
+    if (game.phase !== "player-action" || (!selectedCardId && !outflankMode)) return;
+    const target = boardRef.current;
+    if (!target) return;
+    const frame = window.requestAnimationFrame(() => {
+      const osReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      target.focus({ preventScroll: true });
+      target.scrollIntoView({
+        behavior: reducedMotionRef.current || osReducedMotion ? "auto" : "smooth",
+        block: "start",
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [game.phase, outflankMode, selectedCardId]);
 
   function clearSelection() {
     setSelectedCardId(null);
@@ -869,12 +1062,10 @@ export function BarcodeWorldCardBattle() {
         </header>
 
         <div className={styles.topGrid}>
-          <BattleScene game={game} projection={currentProjection} />
+          <BattleScene game={game} />
           <StatusPanel game={game} onReducedMotion={setReducedMotion} reducedMotion={reducedMotion} />
         </div>
         <PressureTrack game={game} />
-        {game.phase === "player-action" && currentProjection && <EnemyPreview game={game} projection={currentProjection} />}
-        {game.phase === "player-action" && currentProjection && <PlanningSummary game={game} review={currentProjection} />}
         {game.currentReview && (
           <RoundResolution
             game={game}
@@ -893,8 +1084,8 @@ export function BarcodeWorldCardBattle() {
           onNew={() => resetWith(replayNewShuffle(game))}
           onSame={() => resetWith(replaySameState(game))}
         />
-        {game.phase === "player-action" && <Hand game={game} onSelect={selectCard} selectedCardId={selectedCardId} />}
         <Board
+          boardRef={boardRef}
           currentProjection={currentProjection}
           game={game}
           laneChoiceProjections={laneChoiceProjections}
@@ -903,6 +1094,10 @@ export function BarcodeWorldCardBattle() {
           outflankMode={outflankMode}
           selectedCard={selectedCard}
         />
+        {game.phase === "player-action" && <Hand game={game} onSelect={selectCard} selectedCardId={selectedCardId} />}
+        {game.phase === "player-action" && currentProjection && (
+          <ExactResolveDetails game={game} review={currentProjection} />
+        )}
 
         {game.phase === "player-action" && (
           <div className={styles.controlRail} id="card-battle-controls">

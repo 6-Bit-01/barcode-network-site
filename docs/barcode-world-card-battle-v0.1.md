@@ -128,12 +128,39 @@ The same play exposed two blocking clarity failures:
   clash were not clear after Resolve. The visible experience was primarily the
   Pressure meter moving without a readable explanation of what caused it.
 
-This is bounded owner evidence for a clarity pass, not approval of the current
-rules or balance. It does not establish durable fun, comprehension, replay
-value, or final mobile accessibility. No rule changes, balance changes, or
-unique lane properties have been approved or added. The next review must first
-test whether the complete locked enemy plan, exact lane consequences, and
-focused causal resolution make the existing rules strategically legible.
+The first clarity pass made the locked plan and exact resolution inspectable,
+but the follow-up owner review identified a player-facing hierarchy problem:
+
+- The four lanes should remain above the hand. That arrangement made the board
+  and the act of placing a card easy to understand on mobile.
+- Breacher intent belongs inside the affected lane, but complete card-action
+  explanations should not occupy every lane all the time. Idle lanes should
+  remain quiet.
+- A card must explain its own cost, Power, Health, exact ability timing, and
+  printed advantage or tradeoff first. Selecting a lane then reveals how that
+  specific placement changes the immediate clash. The player-facing hierarchy
+  is `CARD EFFECTS FIRST`, then lane context.
+- A red-to-yellow-to-green signal can make those placement differences quick to
+  scan, but it must describe only the immediate Pressure swing relative to
+  resolving the current plan without the proposed placement. It must never
+  label a move, card, or strategy as objectively good, bad, or best.
+- A modifier, sacrifice, draw effect, survivor, or other setup may lose
+  Pressure immediately and still create useful later value. `LATER` and
+  `CONDITIONAL` consequences therefore remain separate from the immediate
+  Pressure signal instead of being collapsed into its color.
+- The reference quality is Inscryption's player-facing economy: simple play and
+  readable cards on the surface, with deterministic complexity underneath.
+  This is an experience principle, not approval to copy unrelated mechanics.
+
+This is bounded owner evidence for a second clarity pass, not approval of the
+current rules or balance. It does not establish durable fun, comprehension,
+replay value, or final mobile accessibility. No rule changes, balance changes,
+or unique lane properties have been approved or added. The signal compares two
+results from the existing resolver: the selected placement and the same current
+plan without that candidate. It is explanatory information, not a
+recommendation engine. The next review must test whether card-first truth,
+quiet lanes, selection-only signals, and the existing focused causal recap make
+the rules strategically legible without solving the player's strategy for them.
 
 ## Exact owner review
 
@@ -158,34 +185,50 @@ Open `http://127.0.0.1:3000/world/playtest`.
    `IN MEMORY`, and shows the exact seed.
 2. Confirm the upper scene depicts the Wayfinder and Breacher confronting each
    other rather than sitting at a card table.
-3. Read `BREACHER'S LOCKED PLAN` before selecting a card. Confirm it accounts
-   for all four lanes: the starting Bruiser and other active cards, every exact
-   locked placement or replacement, and every lane where the Breacher will make
-   no new play. Confirm the plan cannot change after the player acts.
-4. Read `IF YOU RESOLVE NOW`. Without placing anything, confirm every lane
-   states the consequence of the current board and the complete forecast names
-   the expected net Pressure movement.
-5. Confirm every hand card shows cost, Power, Health, and one short ability.
-   Select a card and inspect `IF PLACED HERE` on each legal lane before
-   committing. Confirm each forecast names the player card, Breacher card or
-   open lane, damage or unblocked Pressure, destruction/survival, relevant
-   ability effects, replacement cost, and predicted net Pressure.
-6. Place the card in a lane whose forecast you understand. Confirm
-   `IF YOU RESOLVE NOW` updates to include that exact commitment. Repeat while
-   Command allows and verify the forecasts make the tradeoffs between lanes
-   meaningfully different without inventing unique lane bonuses.
-7. Activate `RESOLVE ALL FOUR LANES`. Confirm focus moves to
+3. Confirm the four-lane board appears above `YOUR HAND` and identifies its
+   embedded plan as `LOCKED ENEMY INTENT`. Each lane embeds the Breacher card
+   that will act there, including a locked new entry or replacement and any
+   already-active card. A lane with no Breacher play says so compactly. There is
+   no separate permanent enemy-plan card wall.
+4. Before selecting a card or Outflank destination, confirm the lanes stay
+   quiet: they show the cards, current state, and locked Breacher intent, but no
+   placement signal, full action forecast, or repeated resolve explanation.
+5. Confirm `CARD EFFECTS FIRST`: every hand card owns its base truth—Command
+   cost, Power, Health, exact trigger, effect, tradeoff, and ready/needs-
+   Command state. Conditional and delayed value must be readable from the card
+   before choosing a lane.
+6. Select a card. Confirm only then that every legal lane reveals a compact
+   placement signal and exact consequence. The signal's signed value is the
+   selected placement's immediate Pressure delta minus the exact Pressure delta
+   from resolving the current plan without that candidate.
+7. Compare several lanes. Confirm the signal moves along a red-to-yellow-to-green
+   scale and is also expressed with signed numbers and non-color text. Confirm
+   it is labeled `IMMEDIATE PRESSURE SWING` and `VS CURRENT PLAN`. Confirm the
+   legend says exactly: `Color shows only what this placement changes at the
+   next Resolve. It is not a move grade.` Confirm the interface never labels a
+   choice `GOOD`, `BAD`, or `BEST`.
+8. Find a placement with a destroy draw, persistent survivor, printed condition,
+   replacement, or Outflank source-lane consequence. Confirm immediate Pressure
+   remains in the immediate signal while future or uncertain value is stated
+   separately as `LATER` or `CONDITIONAL`. A red immediate signal must not hide
+   or negate that later value.
+9. Place the card and repeat while Command allows. Confirm committed cards retain
+   their exact card text, idle lanes become quiet again when no candidate is
+   selected, and the same four lanes remain above the hand without inventing
+   unique lane bonuses.
+10. Activate `RESOLVE ALL FOUR LANES`. Confirm focus moves to
    `WHAT JUST HAPPENED`, and that the visual treatment and text make clear all
    four lanes resolved simultaneously rather than one after another.
-8. Under `WHY PRESSURE MOVED`, account for every signed lane or card-effect
-   contribution, its net, and the exact before-to-after Pressure value. Expand
-   `Round details` only when the full event history is needed.
-9. Continue until a Break. Verify `WHAT JUST HAPPENED` explains that the clash
+11. Under `WHY PRESSURE MOVED`, account for every signed lane or card-effect
+   contribution, its net, and the exact before-to-after Pressure value. Confirm
+   exact per-lane resolution and the full event history stay collapsed under
+   `Round details` until requested.
+12. Continue until a Break. Verify `WHAT JUST HAPPENED` explains that the clash
    completed, all active cards withdrew, Pressure remained, and the next round
    starts on an empty board.
-10. Use Outflank on a card that survived a prior round. Verify it moves to an
+13. Use Outflank on a card that survived a prior round. Verify it moves to an
    open lane, the angle changes, and its temporary +1 Power is named in review.
-11. Complete a battle and inspect Results. Replay Same State and verify the seed,
+14. Complete a battle and inspect Results. Replay Same State and verify the seed,
    deck order, enemy decisions, and opening return exactly. Try New Shuffle and
    verify a new seed and opening.
 
@@ -194,13 +237,16 @@ Open `http://127.0.0.1:3000/world/playtest`.
 1. Complete one round with pointer controls and one with Tab plus Enter/Space.
 2. At `390 x 844` CSS pixels, repeat card selection, lane placement, Outflank,
    `RESOLVE ALL FOUR LANES`, focused review, and replay with touch-equivalent
-   controls. Confirm the locked plan, forecasts, and causal summary are readable
+   controls. Confirm the board-before-hand order, embedded locked intent,
+   card-first text, selection-only signals, and causal summary are readable
    without precision taps or losing the active lane context.
 3. After Resolve, confirm focus and the viewport arrive at `WHAT JUST HAPPENED`
    rather than leaving the explanation above or below the visible mobile area.
    Confirm `Round details` can be expanded and collapsed by keyboard and touch.
 4. Confirm visible focus never disappears and state uses explicit actor names,
-   signed values, text labels, borders, shapes, and icons in addition to color.
+   signed values, `IMMEDIATE`, `LATER`, and `CONDITIONAL` text labels, borders,
+   shapes, and icons in addition to the red-yellow-green scale. Confirm the same
+   placement meaning remains available when color cannot be perceived.
 5. With a screen reader, confirm the Pressure control exposes meter semantics,
    current value, minimum, maximum, and its described Break/side meaning. Confirm
    the focused round summary announces once rather than each lane competing in
@@ -223,9 +269,11 @@ The focused suites cover exact decks and zones, seeded shuffles and reshuffles,
 opening/draw rules, Command banking, legal placements and replacement,
 on-entry abilities, simultaneous damage, persistent Health, Pressure and
 Linebreaker effects, victory-before-Break, Break clearing/rearming, Outflank,
-legal locked hand-blind enemy previews, exact replay, causal scene cues,
-production isolation, semantic controls, focus, touch targets, non-color cues,
-reduced motion, and protected-system boundaries.
+legal locked hand-blind enemy previews, card-first printed truth, board-before-
+hand order, embedded intent, candidate-only placement signals, exact resolver
+reuse, separated later/conditional value, collapsed resolution detail, exact
+replay, causal scene cues, production isolation, semantic controls, focus, touch
+targets, non-color cues, reduced motion, and protected-system boundaries.
 
 These are implementation checks, not player evidence. They do not establish
 comprehension, balance, fun, accessibility, or replay value.

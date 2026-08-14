@@ -1004,6 +1004,7 @@ function normalizeEntry(entry: QueueEntry): QueueEntry {
     priorityUpgradeCheckoutUrl: entry.priorityUpgradeCheckoutUrl ?? null,
     priorityUpgradeCheckoutCreatedAt: entry.priorityUpgradeCheckoutCreatedAt ?? null,
     priorityUpgradeCheckoutExpiresAt: entry.priorityUpgradeCheckoutExpiresAt ?? null,
+    priorityUpgradeCheckoutOwnerTokenHash: entry.priorityUpgradeCheckoutOwnerTokenHash ?? null,
     priorityUpgradeAmountCents: typeof entry.priorityUpgradeAmountCents === "number" ? Math.max(0, Math.round(entry.priorityUpgradeAmountCents)) : null,
     priorityUpgradeCurrency: entry.priorityUpgradeCurrency ? normalizeCurrency(entry.priorityUpgradeCurrency) : null,
     priorityGiftAttribution: normalizePriorityGiftAttribution(entry.priorityGiftAttribution, entry.priorityUpgradeCheckoutCreatedAt ?? entry.priorityUpgradePaidAt ?? entry.createdAt),
@@ -1642,6 +1643,7 @@ export async function createQueueTrack(input: {
     priorityUpgradeCheckoutUrl: null,
     priorityUpgradeCheckoutCreatedAt: null,
     priorityUpgradeCheckoutExpiresAt: null,
+    priorityUpgradeCheckoutOwnerTokenHash: null,
     priorityUpgradeAmountCents: null,
     priorityUpgradeCurrency: null,
     priorityGiftAttribution: null,
@@ -2090,7 +2092,8 @@ export async function requestPriorityCheckout(trackId: string, queueSessionId: s
   normalizePriorityLegalAcceptance(priorityAcceptance);
   const store = await readStore();
   const session = getSession(store, queueSessionId);
-  if (session.sessionId !== store.activeSessionId || session.status !== "open" || !session.queueOpen) throw new Error("Priority Signal upgrades are available only while this broadcast queue is open.");
+  const priorityWindowOpen = session.queueOpen || session.submissionClosureReason === "capacity";
+  if (session.sessionId !== store.activeSessionId || session.status !== "open" || !priorityWindowOpen) throw new Error("Priority Signal upgrades are available only while this broadcast session is active.");
   if (!session.priorityUpgradesEnabled || !session.priorityUpgradePaymentsEnabled) throw new Error("Priority Signal upgrades are unavailable for this broadcast.");
   const amountCents = normalizePriceCents(session.priorityUpgradePriceCents);
   if (amountCents <= 0) throw new Error("Priority Signal upgrade price is not configured yet.");
@@ -2101,7 +2104,9 @@ export async function requestPriorityCheckout(trackId: string, queueSessionId: s
   return { session: summarizeSession(session), track, amountCents, currency: normalizeCurrency(session.priorityUpgradeCurrency), label: session.priorityUpgradeLabel || DEFAULT_PRIORITY_UPGRADE_LABEL };
 }
 
-async function markPriorityUpgradeCheckoutPendingMutation(trackId: string, queueSessionId: string, metadata: { provider?: string; checkoutSessionId?: string; checkoutUrl?: string; checkoutCreatedAt?: string | null; checkoutExpiresAt?: string | null; priorityAcceptance?: PriorityLegalAcceptanceInput; priorityGiftAttribution?: PriorityGiftAttribution | null } = {}): Promise<QueuePublicTrack | null> {
+type PriorityCheckoutPendingMetadata = { provider?: string; checkoutSessionId?: string; checkoutUrl?: string; checkoutCreatedAt?: string | null; checkoutExpiresAt?: string | null; checkoutOwnerTokenHash?: string | null; priorityAcceptance?: PriorityLegalAcceptanceInput; priorityGiftAttribution?: PriorityGiftAttribution | null };
+
+async function markPriorityUpgradeCheckoutPendingMutation(trackId: string, queueSessionId: string, metadata: PriorityCheckoutPendingMetadata = {}): Promise<QueuePublicTrack | null> {
   const store = await readStore();
   const session = getSession(store, queueSessionId);
   if (session.sessionId !== store.activeSessionId || session.status === "archived") return null;
@@ -2124,6 +2129,7 @@ async function markPriorityUpgradeCheckoutPendingMutation(trackId: string, queue
     priorityUpgradeCheckoutUrl: metadata.checkoutUrl ?? entry.priorityUpgradeCheckoutUrl ?? null,
     priorityUpgradeCheckoutCreatedAt: metadata.checkoutCreatedAt ?? entry.priorityUpgradeCheckoutCreatedAt ?? now,
     priorityUpgradeCheckoutExpiresAt: metadata.checkoutExpiresAt ?? entry.priorityUpgradeCheckoutExpiresAt ?? null,
+    priorityUpgradeCheckoutOwnerTokenHash: metadata.checkoutOwnerTokenHash ?? entry.priorityUpgradeCheckoutOwnerTokenHash ?? null,
     priorityLegalAcceptance: priorityLegalAcceptance ?? entry.priorityLegalAcceptance ?? null,
     priorityGiftAttribution: priorityGiftAttribution === undefined ? entry.priorityGiftAttribution ?? null : priorityGiftAttribution,
   });
@@ -2134,7 +2140,7 @@ async function markPriorityUpgradeCheckoutPendingMutation(trackId: string, queue
   return toPublicQueueTrack(session.queue[index]);
 }
 
-export async function markPriorityUpgradeCheckoutPending(trackId: string, queueSessionId: string, metadata: { provider?: string; checkoutSessionId?: string; checkoutUrl?: string; checkoutCreatedAt?: string | null; checkoutExpiresAt?: string | null; priorityAcceptance?: PriorityLegalAcceptanceInput; priorityGiftAttribution?: PriorityGiftAttribution | null } = {}): Promise<QueuePublicTrack | null> {
+export async function markPriorityUpgradeCheckoutPending(trackId: string, queueSessionId: string, metadata: PriorityCheckoutPendingMetadata = {}): Promise<QueuePublicTrack | null> {
   return withQueueMutation(() => markPriorityUpgradeCheckoutPendingMutation(trackId, queueSessionId, metadata));
 }
 
@@ -2163,6 +2169,7 @@ async function markPriorityUpgradePaidFromStripeMutation(trackId: string, queueS
     priorityUpgradeCheckoutUrl: null,
     priorityUpgradeCheckoutCreatedAt: null,
     priorityUpgradeCheckoutExpiresAt: null,
+    priorityUpgradeCheckoutOwnerTokenHash: null,
     priorityUpgradeAmountCents: normalizePriceCents(payment.amountCents),
     priorityUpgradeCurrency: normalizeCurrency(payment.currency),
     priorityGiftAttribution: payment.giftAttribution
@@ -2693,6 +2700,7 @@ function simulationTrackBase(session: QueueSession): QueueEntry {
     priorityUpgradeCheckoutUrl: null,
     priorityUpgradeCheckoutCreatedAt: null,
     priorityUpgradeCheckoutExpiresAt: null,
+    priorityUpgradeCheckoutOwnerTokenHash: null,
     priorityUpgradeAmountCents: null,
     priorityUpgradeCurrency: null,
     priorityGiftAttribution: null,
@@ -2767,6 +2775,7 @@ function addSimulationTrack(session: QueueSession, action: QueueAdminAction): bo
       priorityUpgradeCheckoutUrl: "https://example.com/sim-checkout-pending",
       priorityUpgradeCheckoutCreatedAt: now,
       priorityUpgradeCheckoutExpiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+      priorityUpgradeCheckoutOwnerTokenHash: null,
     }));
     return true;
   }

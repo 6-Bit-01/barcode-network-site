@@ -57,6 +57,7 @@ const forbiddenKeys = [
   "stripeSessionId",
   "priorityUpgradePaymentId",
   "priorityUpgradeCheckoutUrl",
+  "priorityUpgradeCheckoutOwnerTokenHash",
   "priorityLegalAcceptance",
   "priorityGiftAttribution",
   "fileUrl",
@@ -149,6 +150,7 @@ async function addTrack(label, options = {}) {
     suspiciousFlags: ["test-only"],
     priorityUpgradePaymentId: "pi_private_test",
     priorityUpgradeCheckoutUrl: "https://checkout.example.test/private",
+    priorityUpgradeCheckoutOwnerTokenHash: "c".repeat(64),
     priorityLegalAcceptance: { acceptedAt: new Date().toISOString(), priorityTermsVersion: "1.0", priorityDisclosureText: "private acknowledgement", source: "priority_checkout" },
     priorityGiftAttribution: options.priorityGiftAttribution ?? null,
   });
@@ -193,7 +195,7 @@ function countBy(entries, key) {
 
 function findForbiddenStringValues(value, pathName = "$", found = []) {
   if (typeof value === "string") {
-    if (/contactEmail|submitterToken|stripeSessionId|priorityUpgradePaymentId|priorityUpgradeCheckoutUrl|fileUrl|fileName|fileSize|mimeType|suspiciousFlags|adminNote|discordUserId|discordId|privateSeed|r&d|internalNote|privateNotes|adminOnly/i.test(value)) {
+    if (/contactEmail|submitterToken|stripeSessionId|priorityUpgradePaymentId|priorityUpgradeCheckoutUrl|priorityUpgradeCheckoutOwnerTokenHash|fileUrl|fileName|fileSize|mimeType|suspiciousFlags|adminNote|discordUserId|discordId|privateSeed|r&d|internalNote|privateNotes|adminOnly/i.test(value)) {
       found.push(`${pathName}: ${value}`);
     }
     return found;

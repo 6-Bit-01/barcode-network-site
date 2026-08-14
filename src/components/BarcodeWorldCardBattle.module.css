@@ -146,8 +146,8 @@
   gap: 0.55rem;
   align-items: center;
   justify-content: flex-end;
-  margin-top: 0.85rem;
-  padding-top: 0.85rem;
+  margin-top: 0.65rem;
+  padding-top: 0.65rem;
   border-top: 1px solid var(--line);
 }
 
@@ -303,7 +303,7 @@
   max-width: calc(100% - 0.5rem);
   overflow: hidden;
   color: #dbe7e8;
-  font-size: 0.58rem;
+  font-size: 0.66rem;
   font-weight: 800;
   letter-spacing: 0.06em;
   text-overflow: ellipsis;
@@ -330,7 +330,7 @@
   border-block: 1px solid rgb(121 231 255 / 35%);
   color: var(--cyan);
   background: rgb(4 9 12 / 82%);
-  font-size: 0.6rem;
+  font-size: 0.66rem;
   font-weight: 850;
   letter-spacing: 0.08em;
   text-align: center;
@@ -577,8 +577,8 @@
 .planningDetails,
 .reviewPanel,
 .resultPanel {
-  margin-top: 0.85rem;
-  padding: 0.85rem;
+  margin-top: 0.65rem;
+  padding: 0.7rem;
 }
 
 .locked {
@@ -664,27 +664,27 @@
 }
 
 .selectedBanner {
-  margin: 0.65rem 0 0;
-  padding: 0.65rem 0.75rem;
+  margin: 0.45rem 0 0;
+  padding: 0.45rem 0.55rem;
   border: 1px solid #806b35;
   color: #fff2c5;
   background:
     linear-gradient(90deg, rgb(255 211 106 / 13%), transparent 72%),
     #111710;
-  font-size: 0.84rem;
+  font-size: 0.76rem;
   font-weight: 850;
-  line-height: 1.4;
+  line-height: 1.32;
   letter-spacing: 0.03em;
 }
 
 .scaleLegend {
-  margin: 0.55rem 0 0;
-  padding: 0.55rem 0.65rem;
+  margin: 0.4rem 0 0;
+  padding: 0.42rem 0.5rem;
   border: 1px solid #4d4a35;
   color: #d8d2b7;
   background: rgb(255 211 106 / 5%);
-  font-size: 0.78rem;
-  line-height: 1.45;
+  font-size: 0.74rem;
+  line-height: 1.32;
 }
 
 .scaleLegend strong {
@@ -693,7 +693,7 @@
 
 .swipeCue {
   display: none;
-  margin: 0.55rem 0 0;
+  margin: 0.4rem 0 0;
   color: var(--cyan);
   font-size: 0.72rem;
   font-weight: 850;
@@ -704,8 +704,8 @@
 .boardScroller {
   overflow-x: auto;
   overscroll-behavior-inline: contain;
-  margin-top: 0.65rem;
-  padding-bottom: 0.35rem;
+  margin-top: 0.45rem;
+  padding-bottom: 0.25rem;
   scroll-padding-inline: 0.5rem;
   scroll-snap-type: x mandatory;
   scrollbar-color: var(--cyan) #071016;
@@ -714,15 +714,15 @@
 .board {
   display: grid;
   grid-template-columns: repeat(4, minmax(12rem, 1fr));
-  gap: 0.55rem;
+  gap: 0.4rem;
   min-width: 51rem;
 }
 
 .lane {
   display: grid;
-  grid-template-rows: auto minmax(12rem, auto) auto minmax(12rem, auto);
-  gap: 0.35rem;
-  padding: 0.5rem;
+  grid-template-rows: auto minmax(9.5rem, auto) auto minmax(9.5rem, auto);
+  gap: 0.25rem;
+  padding: 0.4rem;
   border: 1px solid #31444c;
   background: #0a1116;
   scroll-snap-align: start;
@@ -756,7 +756,7 @@
 .laneTarget[data-state="open"] {
   display: grid;
   place-items: center;
-  min-height: 12rem;
+  min-height: 9.5rem;
   color: #aeb8bb;
   font-size: 0.72rem;
   font-weight: 800;
@@ -766,7 +766,7 @@
 
 .laneChannel {
   display: grid;
-  min-height: 2.5rem;
+  min-height: 1.75rem;
   place-items: center;
   color: #5f7076;
   font-size: 0.65rem;
@@ -849,8 +849,8 @@
 }
 
 .laneChoiceSignal {
-  min-height: 11.5rem;
-  padding: 0.65rem;
+  min-height: 7.25rem;
+  padding: 0.48rem;
   border: 1px solid #53656b;
   background:
     linear-gradient(180deg, rgb(255 255 255 / 3%), transparent 38%),
@@ -860,7 +860,7 @@
 .choiceEyebrow {
   display: block;
   color: var(--cyan);
-  font-size: 0.66rem;
+  font-size: 0.64rem;
   font-weight: 850;
   letter-spacing: 0.09em;
   text-transform: uppercase;
@@ -868,17 +868,17 @@
 
 .laneChoiceSignal > strong {
   display: block;
-  margin-top: 0.22rem;
+  margin-top: 0.12rem;
   color: var(--ink);
-  font-size: 0.82rem;
-  line-height: 1.3;
+  font-size: 0.8rem;
+  line-height: 1.25;
 }
 
 .choiceScale {
   --choice-position: 50%;
   position: relative;
-  height: 0.5rem;
-  margin-top: 0.7rem;
+  height: 0.4rem;
+  margin-top: 0.45rem;
   border: 1px solid rgb(255 255 255 / 24%);
   border-radius: 999px;
   background: linear-gradient(90deg, var(--danger) 0%, var(--amber) 50%, var(--green) 100%);
@@ -888,8 +888,8 @@
   position: absolute;
   top: 50%;
   left: var(--choice-position);
-  width: 0.92rem;
-  height: 0.92rem;
+  width: 0.8rem;
+  height: 0.8rem;
   border: 3px solid #fff;
   border-radius: 50%;
   translate: -50% -50%;
@@ -902,9 +902,9 @@
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
   gap: 0.2rem;
-  margin-top: 0.28rem;
+  margin-top: 0.2rem;
   color: var(--muted);
-  font-size: 0.53rem;
+  font-size: 0.65rem;
   font-weight: 800;
   letter-spacing: 0.04em;
 }
@@ -919,10 +919,10 @@
 
 .choicePressure,
 .choiceResult {
-  margin: 0.45rem 0 0;
+  margin: 0.3rem 0 0;
   color: #dce8e9;
-  font-size: 0.78rem;
-  line-height: 1.4;
+  font-size: 0.74rem;
+  line-height: 1.3;
 }
 
 .choicePressure {
@@ -940,13 +940,13 @@
 .choiceEffect,
 .choiceException {
   display: block;
-  margin-top: 0.42rem;
-  padding: 0.38rem 0.45rem;
+  margin-top: 0.28rem;
+  padding: 0.28rem 0.35rem;
   border-left: 3px solid var(--cyan);
   color: #c6d9dc;
   background: rgb(121 231 255 / 5%);
-  font-size: 0.72rem;
-  line-height: 1.4;
+  font-size: 0.68rem;
+  line-height: 1.3;
 }
 
 .choiceEffect b {
@@ -962,11 +962,11 @@
 
 .card {
   position: relative;
-  display: grid;
-  grid-template-rows: auto auto auto auto 1fr;
-  gap: 0.4rem;
-  min-height: 12rem;
-  padding: 0.62rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  min-height: 9.5rem;
+  padding: 0.5rem;
   border: 1px solid #44616b;
   background: linear-gradient(145deg, #12252b, #10171c 68%);
   text-align: left;
@@ -991,7 +991,7 @@
 }
 
 .cardName {
-  font-size: 0.88rem;
+  font-size: 0.84rem;
   font-weight: 850;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -999,9 +999,9 @@
 
 .cost {
   display: grid;
-  flex: 0 0 1.65rem;
-  width: 1.65rem;
-  height: 1.65rem;
+  flex: 0 0 1.5rem;
+  width: 1.5rem;
+  height: 1.5rem;
   place-items: center;
   border: 1px solid var(--cyan);
   border-radius: 50%;
@@ -1011,15 +1011,15 @@
 
 .stats {
   display: flex;
-  gap: 0.4rem;
+  gap: 0.3rem;
   color: #d9e7e7;
-  font-size: 0.68rem;
+  font-size: 0.66rem;
   font-weight: 800;
   text-transform: uppercase;
 }
 
 .stats span {
-  padding: 0.22rem 0.35rem;
+  padding: 0.16rem 0.27rem;
   border: 1px solid #34474f;
   background: #0a1115;
 }
@@ -1027,12 +1027,12 @@
 .ability {
   margin: 0;
   color: var(--muted);
-  font-size: 0.72rem;
-  line-height: 1.35;
+  font-size: 0.7rem;
+  line-height: 1.3;
 }
 
 .cardEffect {
-  padding: 0.45rem 0.5rem;
+  padding: 0.32rem 0.4rem;
   border: 1px solid #3a5962;
   background: rgb(121 231 255 / 6%);
 }
@@ -1052,9 +1052,9 @@
 }
 
 .cardEffect strong {
-  margin-top: 0.16rem;
+  margin-top: 0.1rem;
   color: var(--ink);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   line-height: 1.25;
 }
 
@@ -1070,8 +1070,8 @@
 .cardTradeoff {
   margin: 0;
   color: #c1cdd0;
-  font-size: 0.66rem;
-  line-height: 1.35;
+  font-size: 0.64rem;
+  line-height: 1.28;
 }
 
 .cardTradeoff span {
@@ -1084,8 +1084,9 @@
 }
 
 .cardState {
+  margin-top: auto;
   color: var(--cyan);
-  font-size: 0.6rem;
+  font-size: 0.65rem;
   font-weight: 850;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1097,15 +1098,15 @@
 
 .hand {
   display: flex;
-  gap: 0.55rem;
+  gap: 0.4rem;
   overflow-x: auto;
-  margin-top: 0.65rem;
-  padding: 0.2rem 0.15rem 0.65rem;
+  margin-top: 0.45rem;
+  padding: 0.15rem 0.1rem 0.45rem;
   scrollbar-color: var(--green) #071016;
 }
 
 .handButton {
-  flex: 0 0 min(14rem, 72vw);
+  flex: 0 0 min(12.5rem, 68vw);
   padding: 0;
   border: 0;
   background: transparent;
@@ -1124,10 +1125,10 @@
 }
 
 .instructions {
-  margin: 0.55rem 0 0;
+  margin: 0.4rem 0 0;
   color: var(--muted);
-  font-size: 0.78rem;
-  line-height: 1.45;
+  font-size: 0.74rem;
+  line-height: 1.35;
 }
 
 .planningPanel {
@@ -1138,6 +1139,7 @@
 
 .planningDetails {
   overflow: hidden;
+  padding: 0;
   background:
     linear-gradient(135deg, rgb(121 231 255 / 4%), transparent 42%),
     rgb(11 17 22 / 92%);
@@ -1145,11 +1147,11 @@
 
 .planningDetails > summary {
   display: flex;
-  gap: 0.75rem;
+  gap: 0.5rem;
   align-items: center;
   justify-content: space-between;
   min-height: 44px;
-  padding: 0.7rem 0.8rem;
+  padding: 0.48rem 0.65rem;
   cursor: pointer;
   list-style-position: inside;
 }
@@ -1162,14 +1164,14 @@
 .planningDetails > summary b,
 .planningDetails > summary strong {
   color: var(--ink);
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   letter-spacing: 0.04em;
   line-height: 1.35;
 }
 
 .planningDetails > summary small {
   color: var(--muted);
-  font-size: 0.66rem;
+  font-size: 0.64rem;
 }
 
 .planningDetails > summary > strong {
@@ -1178,18 +1180,18 @@
 }
 
 .planningDetailsBody {
-  padding: 0 0.8rem 0.8rem;
+  padding: 0 0.65rem 0.65rem;
   border-top: 1px solid #2f4148;
 }
 
 .outcomeLead {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem 1rem;
+  gap: 0.25rem 0.75rem;
   align-items: baseline;
   justify-content: space-between;
-  margin-top: 0.7rem;
-  padding: 0.75rem;
+  margin-top: 0.45rem;
+  padding: 0.55rem;
   border: 1px solid #3d555e;
   border-left: 4px solid var(--cyan);
   background: #0b151a;
@@ -1209,7 +1211,7 @@
 
 .outcomeLead > strong {
   color: var(--ink);
-  font-size: clamp(0.95rem, 2vw, 1.2rem);
+  font-size: clamp(0.9rem, 2vw, 1.05rem);
   line-height: 1.2;
   letter-spacing: 0.04em;
 }
@@ -1224,22 +1226,22 @@
 
 .outcomeLead > span {
   color: #d8e5e6;
-  font-size: 0.82rem;
+  font-size: 0.75rem;
   font-weight: 800;
 }
 
 .outcomeLanes {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.5rem;
-  margin: 0.65rem 0 0;
+  gap: 0.35rem;
+  margin: 0.45rem 0 0;
   padding: 0;
   list-style: none;
 }
 
 .outcomeLane {
   min-width: 0;
-  padding: 0.65rem;
+  padding: 0.45rem;
   border: 1px solid #344951;
   border-top: 3px solid var(--cyan);
   background: #0a1217;
@@ -1260,16 +1262,16 @@
 .outcomeLane > span {
   display: block;
   color: var(--cyan);
-  font-size: 0.68rem;
+  font-size: 0.66rem;
   font-weight: 850;
   letter-spacing: 0.1em;
 }
 
 .outcomeLane strong {
   display: block;
-  margin-top: 0.25rem;
-  font-size: 0.82rem;
-  line-height: 1.3;
+  margin-top: 0.15rem;
+  font-size: 0.8rem;
+  line-height: 1.25;
 }
 
 .outcomeLane[data-tone="player"] strong {
@@ -1283,10 +1285,10 @@
 .outcomeLane p,
 .outcomeLane small {
   display: block;
-  margin: 0.28rem 0 0;
+  margin: 0.18rem 0 0;
   color: #c0ced1;
-  font-size: 0.78rem;
-  line-height: 1.42;
+  font-size: 0.74rem;
+  line-height: 1.32;
 }
 
 .outcomeLane small {
@@ -1298,23 +1300,23 @@
 }
 
 .pressureMath {
-  margin-top: 0.65rem;
-  padding: 0.7rem;
+  margin-top: 0.45rem;
+  padding: 0.5rem;
   border: 1px solid #3b5058;
   background: #091116;
 }
 
 .pressureMath > p:not(.sectionLabel) {
-  margin: 0.5rem 0 0;
+  margin: 0.35rem 0 0;
   color: #c8d5d7;
-  font-size: 0.8rem;
-  line-height: 1.45;
+  font-size: 0.76rem;
+  line-height: 1.35;
 }
 
 .pressureMath ul {
   display: grid;
-  gap: 0.4rem;
-  margin: 0.55rem 0 0;
+  gap: 0.25rem;
+  margin: 0.35rem 0 0;
   padding: 0;
   list-style: none;
 }
@@ -1322,16 +1324,16 @@
 .pressureMath li {
   display: grid;
   grid-template-columns: minmax(10rem, 0.4fr) minmax(0, 1fr);
-  gap: 0.65rem;
-  padding: 0.5rem 0.6rem;
+  gap: 0.4rem;
+  padding: 0.35rem 0.45rem;
   border-left: 3px solid #4a636c;
   background: #0d181e;
 }
 
 .pressureMath li strong,
 .pressureMath li span {
-  font-size: 0.78rem;
-  line-height: 1.4;
+  font-size: 0.74rem;
+  line-height: 1.32;
 }
 
 .pressureMath li strong {
@@ -1344,23 +1346,23 @@
 
 .netPressure {
   display: block;
-  margin-top: 0.6rem;
-  padding-top: 0.55rem;
+  margin-top: 0.4rem;
+  padding-top: 0.35rem;
   border-top: 1px solid #32444c;
   color: var(--amber);
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   letter-spacing: 0.04em;
 }
 
 .conclusion {
-  margin: 0.65rem 0;
-  padding: 0.6rem 0.7rem;
+  margin: 0.45rem 0;
+  padding: 0.4rem 0.5rem;
   border-left: 3px solid var(--amber);
   color: #f3e6bd;
   background: rgb(255 211 106 / 7%);
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   font-weight: 750;
-  line-height: 1.45;
+  line-height: 1.35;
 }
 
 .srOnly {
@@ -1384,8 +1386,8 @@
   flex-wrap: wrap;
   gap: 0.45rem;
   align-items: center;
-  margin-top: 0.85rem;
-  padding: 0.65rem;
+  margin-top: 0.65rem;
+  padding: 0.5rem;
   border: 1px solid #39515a;
   background: rgb(8 13 18 / 96%);
   box-shadow: 0 -0.75rem 2rem rgb(0 0 0 / 38%);
@@ -1467,8 +1469,8 @@
 
 .reviewList {
   display: grid;
-  gap: 0.4rem;
-  margin: 0.65rem 0 0;
+  gap: 0.28rem;
+  margin: 0.45rem 0 0;
   padding: 0;
   list-style: none;
 }
@@ -1476,8 +1478,8 @@
 .reviewEvent {
   display: grid;
   grid-template-columns: minmax(6.5rem, 0.28fr) minmax(0, 1fr);
-  gap: 0.7rem;
-  padding: 0.55rem 0.65rem;
+  gap: 0.45rem;
+  padding: 0.4rem 0.5rem;
   border-left: 3px solid var(--cyan);
   background: #0b1318;
 }
@@ -1492,20 +1494,20 @@
 
 .reviewEvent strong {
   display: block;
-  font-size: 0.78rem;
+  font-size: 0.76rem;
 }
 
 .reviewEvent p {
   margin: 0.18rem 0 0;
   color: var(--muted);
-  font-size: 0.72rem;
-  line-height: 1.4;
+  font-size: 0.7rem;
+  line-height: 1.32;
 }
 
 .historyDetails {
-  margin-top: 0.65rem;
+  margin-top: 0.45rem;
   border-top: 1px solid #2a3940;
-  padding-top: 0.65rem;
+  padding-top: 0.45rem;
 }
 
 .historyDetails summary {

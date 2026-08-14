@@ -1,11 +1,11 @@
 # BARCODE World: four-lane card-battle v0.1
 
-Status: **PRIVATE OWNER-REVIEW RESEARCH PROTOTYPE**
+Status: **UNLISTED OWNER-REVIEW RESEARCH PROTOTYPE**
 
 Controlling direction:
 `BARCODE_WORLD_CARD_BATTLE_TRANSITION_AND_WORK_HANDOFF_2026-08-12_REV1`
 
-Private development route: `/world/playtest`
+Owner-review route: `/world/playtest`
 
 This is a bounded Battle Mode proof inside the larger website-based BARCODE
 World persistent shared-world MMORPG / sandbox RPG. Cards are the player's
@@ -16,16 +16,19 @@ The characters are not literally playing a tabletop card game.
 ## Hard boundary
 
 - Solo, deterministic, resettable, noncanonical, and held only in memory.
-- Production middleware returns an empty, no-store 404 before page metadata or
-  client-chunk references are emitted; the page retains a `notFound()` fallback.
+- The exact card-battle PR branch may render on its unlisted Vercel Preview URL
+  for owner review. The real production site and every other production build
+  return an empty, no-store 404 before page metadata or client-chunk references
+  are emitted; the page retains a `notFound()` fallback.
 - The route remains absent from public navigation and the sitemap.
 - Public chrome and shared live/BNL polling remain inert on this exact route.
 - No API, account, profile, database, inventory, reward, economy, progression,
   queue, BNL, Relay, Journal, Memory, moderation, multiplayer, canon, or
   shared-world dependency.
 - No prototype state survives Reset, reload, or navigation.
-- This branch does not authorize merge, deployment, persistence, or public
-  exposure.
+- The preview is unlinked, noindex, noncanonical, and nonpersistent. It is not
+  an access-controlled secret: the repository source and anyone-given-the-URL
+  preview remain visible. No merge or production deployment is authorized.
 
 The Loose Signal and Fractured Gate implementations remain historical mechanics
 references only. Their tactical tiles, pathing, movement, ranges, collision,
@@ -105,7 +108,13 @@ declared deterministic player policy. It is a reproducibility and gross
 deadlock/snowball smoke check only. It is not comprehension, accessibility,
 balance, fun, or desire-to-replay evidence.
 
-## Exact private owner review
+## Exact owner review
+
+Open the current PR preview directly:
+
+<https://barcode-network-site-cpps-git-agent-barc-521e00-6-bits-projects.vercel.app/world/playtest>
+
+The same review can also be run locally.
 
 Requirements: Node 20.9 or newer and npm.
 
@@ -118,7 +127,7 @@ Open `http://127.0.0.1:3000/world/playtest`.
 
 ### First-read check
 
-1. Confirm the page says `PRIVATE`, `SOLO`, `RESETTABLE`, `NONCANONICAL`, and
+1. Confirm the page says `UNLISTED PREVIEW`, `SOLO`, `RESETTABLE`, `NONCANONICAL`, and
    `IN MEMORY`, and shows the exact seed.
 2. Confirm the upper scene depicts the Wayfinder and Breacher confronting each
    other rather than sitting at a card table.

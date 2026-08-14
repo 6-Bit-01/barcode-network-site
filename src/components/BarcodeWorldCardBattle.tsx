@@ -536,7 +536,7 @@ export function BarcodeWorldCardBattle() {
             <p className={styles.subtitle}>Cards direct the Wayfinder. The scene performs the real confrontation. Four lanes, one shared line, no tactical grid.</p>
           </div>
           <div className={styles.badges} aria-label="Prototype boundaries">
-            {["PRIVATE", "SOLO", "RESETTABLE", "NONCANONICAL", "IN MEMORY"].map((badge) => <span className={styles.badge} key={badge}>{badge}</span>)}
+            {["UNLISTED PREVIEW", "SOLO", "RESETTABLE", "NONCANONICAL", "IN MEMORY"].map((badge) => <span className={styles.badge} key={badge}>{badge}</span>)}
           </div>
         </header>
 

@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { BarcodeWorldCardBattle } from "@/components/BarcodeWorldCardBattle";
+import { shouldHideBarcodeWorldPlaytest } from "@/lib/barcode-world/playtest-access.mjs";
 
 export const dynamic = "force-dynamic";
 
 export function generateMetadata(): Metadata {
-  if (process.env.NODE_ENV === "production") {
+  if (shouldHideBarcodeWorldPlaytest()) {
     return {
       title: "Not Found",
       robots: {
@@ -30,7 +31,7 @@ export function generateMetadata(): Metadata {
 }
 
 export default function BarcodeWorldPlaytestPage() {
-  if (process.env.NODE_ENV === "production") {
+  if (shouldHideBarcodeWorldPlaytest()) {
     notFound();
   }
 

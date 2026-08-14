@@ -2,22 +2,30 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
+import {
+  BARCODE_WORLD_OWNER_PREVIEW_BRANCH,
+  canServeBarcodeWorldPlaytest,
+  isBarcodeWorldOwnerPreview,
+  shouldHideBarcodeWorldPlaytest,
+} from "../src/lib/barcode-world/playtest-access.mjs";
+
 const gameFiles = [
   "middleware.ts",
   "src/app/world/playtest/page.tsx",
   "src/components/BarcodeWorldCardBattle.tsx",
   "src/components/BarcodeWorldCardBattle.module.css",
   "src/lib/barcode-world/card-battle-engine.mjs",
+  "src/lib/barcode-world/playtest-access.mjs",
 ];
 
-test("card battle is production-gated, unlinked, local-only, and has no live-system dependency", async () => {
+test("card battle is production-gated, unlinked, owner-preview-only, and has no live-system dependency", async () => {
   const contents = await Promise.all(
     gameFiles.map(async (path) => [path, await readFile(path, "utf8")]),
   );
   const combined = contents.map(([, source]) => source).join("\n");
   assert.match(
     contents.find(([path]) => path.endsWith("page.tsx"))[1],
-    /process\.env\.NODE_ENV === "production"/,
+    /shouldHideBarcodeWorldPlaytest\(\)/,
   );
   assert.match(
     contents.find(([path]) => path.endsWith("page.tsx"))[1],
@@ -33,10 +41,12 @@ test("card battle is production-gated, unlinked, local-only, and has no live-sys
   );
   const middleware = contents.find(([path]) => path === "middleware.ts")[1];
   assert.match(middleware, /pathname === "\/world\/playtest"/);
-  assert.match(middleware, /process\.env\.NODE_ENV === "production"/);
+  assert.match(middleware, /shouldHideBarcodeWorldPlaytest\(\)/);
   assert.match(middleware, /status:\s*404/);
   assert.match(middleware, /Cache-Control/);
   assert.match(middleware, /X-Robots-Tag/);
+  assert.match(middleware, /private, no-store, max-age=0/);
+  assert.match(middleware, /noindex, nofollow, noarchive, noimageindex/);
   assert.doesNotMatch(
     combined,
     /\b(fetch|XMLHttpRequest|WebSocket|EventSource)\s*\(/,
@@ -62,6 +72,51 @@ test("card battle is production-gated, unlinked, local-only, and has no live-sys
   assert.doesNotMatch(publicShell, /\/world\/playtest/);
 });
 
+test("only local development and the exact card-battle PR preview can render the playtest", () => {
+  const ownerPreview = {
+    NODE_ENV: "production",
+    VERCEL_ENV: "preview",
+    VERCEL_GIT_COMMIT_REF: BARCODE_WORLD_OWNER_PREVIEW_BRANCH,
+  };
+  assert.equal(isBarcodeWorldOwnerPreview(ownerPreview), true);
+  assert.equal(canServeBarcodeWorldPlaytest(ownerPreview), true);
+  assert.equal(shouldHideBarcodeWorldPlaytest(ownerPreview), false);
+
+  assert.equal(
+    shouldHideBarcodeWorldPlaytest({
+      ...ownerPreview,
+      VERCEL_GIT_COMMIT_REF: "agent/unrelated-preview",
+    }),
+    true,
+  );
+  assert.equal(
+    shouldHideBarcodeWorldPlaytest({
+      ...ownerPreview,
+      VERCEL_ENV: "production",
+    }),
+    true,
+  );
+  assert.equal(
+    shouldHideBarcodeWorldPlaytest({ NODE_ENV: "production" }),
+    true,
+  );
+  assert.equal(
+    shouldHideBarcodeWorldPlaytest({ NODE_ENV: "development" }),
+    false,
+  );
+  assert.equal(
+    shouldHideBarcodeWorldPlaytest({ NODE_ENV: "test" }),
+    true,
+  );
+  assert.equal(
+    shouldHideBarcodeWorldPlaytest({
+      ...ownerPreview,
+      VERCEL_ENV: "staging",
+    }),
+    true,
+  );
+});
+
 test("card battle preserves semantic input, focus, non-color cues, touch targets, and reduced motion", async () => {
   const component = await readFile(
     "src/components/BarcodeWorldCardBattle.tsx",
@@ -80,6 +135,7 @@ test("card battle preserves semantic input, focus, non-color cues, touch targets
   assert.match(component, /LOCKED/);
   assert.match(component, /BATTLE \/ EXPLORATION/);
   assert.match(component, /BREACHER/);
+  assert.match(component, /UNLISTED PREVIEW/);
   assert.doesNotMatch(component, /Fractured Gate|MOVE RANGE|FAST \/ STANDARD \/ SLOW|PIVOT/);
   assert.match(component, /data-scene-cue=/);
   assert.match(component, /type="button"/);

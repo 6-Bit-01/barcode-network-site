@@ -117,7 +117,7 @@ test("only local development and the exact card-battle PR preview can render the
   );
 });
 
-test("card battle preserves semantic input, focus, non-color cues, touch targets, and reduced motion", async () => {
+test("card battle preserves strategic clarity, causal review, semantic input, focus, touch targets, and reduced motion", async () => {
   const component = await readFile(
     "src/components/BarcodeWorldCardBattle.tsx",
     "utf8",
@@ -128,7 +128,15 @@ test("card battle preserves semantic input, focus, non-color cues, touch targets
   );
   assert.match(component, /aria-label="Four lane card battle"/);
   assert.match(component, /aria-label="Pressure track"/);
-  assert.match(component, /ENEMY PREVIEW/);
+  assert.match(component, /BREACHER'S LOCKED PLAN/);
+  assert.match(component, /IF YOU RESOLVE NOW/);
+  assert.match(component, /IF PLACED HERE/);
+  assert.match(component, /IF OUTFLANKED HERE/);
+  assert.match(component, /LEAVES LANE/);
+  assert.match(component, /WHAT JUST HAPPENED/);
+  assert.match(component, /WHY PRESSURE MOVED/);
+  assert.match(component, /ALL FOUR LANES AT ONCE/);
+  assert.match(component, /Round details/);
   assert.match(component, /NO PLACEMENT LOCKED/);
   assert.doesNotMatch(component, /NO LEGAL PLAY/);
   assert.match(component, /if \(game\.phase !== "player-action"\) return null/);
@@ -140,7 +148,15 @@ test("card battle preserves semantic input, focus, non-color cues, touch targets
   assert.match(component, /data-scene-cue=/);
   assert.match(component, /type="button"/);
   assert.match(component, /OPEN LANE/);
-  assert.match(component, /Resolve Round/);
+  assert.match(component, /RESOLVE ALL FOUR LANES/);
+  assert.match(component, /scrollIntoView/);
+  assert.match(component, /prefers-reduced-motion/);
+  assert.match(component, /role="meter"/);
+  assert.match(component, /aria-describedby/);
+  assert.match(component, /resolveRound\(placePlayerCard/);
+  assert.match(component, /identity stays hidden until Resolve/);
+  assert.equal(component.match(/aria-live=/g)?.length, 1);
+  assert.doesNotMatch(component, /aria-live="assertive"/);
   assert.match(component, /Reset · Same State/);
   assert.match(component, /Reset · New Shuffle/);
   assert.match(component, /Reduce motion/);

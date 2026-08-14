@@ -108,6 +108,33 @@ declared deterministic player policy. It is a reproducibility and gross
 deadlock/snowball smoke check only. It is not comprehension, accessibility,
 balance, fun, or desire-to-replay evidence.
 
+## Owner play evidence — 2026-08-14
+
+The first owner play established three useful player-facing results:
+
+- The card-battle concept feels substantially better than the superseded
+  tactical prototype and showed a credible fun concept.
+- The presentation looked good on mobile, which validates the prototype's
+  basic mobile direction.
+- The four-lane structure itself was appealing enough to continue testing.
+
+The same play exposed two blocking clarity failures:
+
+- **Strategic legibility failed.** Lane placement felt random because the
+  benefit or disadvantage of each available lane was not clear before the
+  owner committed a card. That prevented deliberate strategy and a sense of
+  control.
+- **Causal resolution failed.** The Breacher's actions and the result of each
+  clash were not clear after Resolve. The visible experience was primarily the
+  Pressure meter moving without a readable explanation of what caused it.
+
+This is bounded owner evidence for a clarity pass, not approval of the current
+rules or balance. It does not establish durable fun, comprehension, replay
+value, or final mobile accessibility. No rule changes, balance changes, or
+unique lane properties have been approved or added. The next review must first
+test whether the complete locked enemy plan, exact lane consequences, and
+focused causal resolution make the existing rules strategically legible.
+
 ## Exact owner review
 
 Open the current PR preview directly:
@@ -131,19 +158,34 @@ Open `http://127.0.0.1:3000/world/playtest`.
    `IN MEMORY`, and shows the exact seed.
 2. Confirm the upper scene depicts the Wayfinder and Breacher confronting each
    other rather than sitting at a card table.
-3. Confirm one Bruiser begins active, both sides gained 3 Command, the Breacher
-   preview is already locked, its remaining bank reflects any preview spend,
-   and the four lanes are readable without opening instructions.
-4. Confirm every hand card shows cost, Power, Health, and one short ability.
-5. Select a card, then a legal lane. Verify the matching upper-scene actor and
-   stance appear. Repeat while Command allows.
-6. Resolve. Verify opposed cards visibly clash, unblocked cards visibly press,
-   damage remains on survivors, and the Pressure movement names its causal lane.
-7. Continue until a Break. Verify the complete clash is reported, all active
-   cards withdraw, Pressure remains, and the next round starts on an empty board.
-8. Use Outflank on a card that survived a prior round. Verify it moves to an
+3. Read `BREACHER'S LOCKED PLAN` before selecting a card. Confirm it accounts
+   for all four lanes: the starting Bruiser and other active cards, every exact
+   locked placement or replacement, and every lane where the Breacher will make
+   no new play. Confirm the plan cannot change after the player acts.
+4. Read `IF YOU RESOLVE NOW`. Without placing anything, confirm every lane
+   states the consequence of the current board and the complete forecast names
+   the expected net Pressure movement.
+5. Confirm every hand card shows cost, Power, Health, and one short ability.
+   Select a card and inspect `IF PLACED HERE` on each legal lane before
+   committing. Confirm each forecast names the player card, Breacher card or
+   open lane, damage or unblocked Pressure, destruction/survival, relevant
+   ability effects, replacement cost, and predicted net Pressure.
+6. Place the card in a lane whose forecast you understand. Confirm
+   `IF YOU RESOLVE NOW` updates to include that exact commitment. Repeat while
+   Command allows and verify the forecasts make the tradeoffs between lanes
+   meaningfully different without inventing unique lane bonuses.
+7. Activate `RESOLVE ALL FOUR LANES`. Confirm focus moves to
+   `WHAT JUST HAPPENED`, and that the visual treatment and text make clear all
+   four lanes resolved simultaneously rather than one after another.
+8. Under `WHY PRESSURE MOVED`, account for every signed lane or card-effect
+   contribution, its net, and the exact before-to-after Pressure value. Expand
+   `Round details` only when the full event history is needed.
+9. Continue until a Break. Verify `WHAT JUST HAPPENED` explains that the clash
+   completed, all active cards withdrew, Pressure remained, and the next round
+   starts on an empty board.
+10. Use Outflank on a card that survived a prior round. Verify it moves to an
    open lane, the angle changes, and its temporary +1 Power is named in review.
-9. Complete a battle and inspect Results. Replay Same State and verify the seed,
+11. Complete a battle and inspect Results. Replay Same State and verify the seed,
    deck order, enemy decisions, and opening return exactly. Try New Shuffle and
    verify a new seed and opening.
 
@@ -151,11 +193,22 @@ Open `http://127.0.0.1:3000/world/playtest`.
 
 1. Complete one round with pointer controls and one with Tab plus Enter/Space.
 2. At `390 x 844` CSS pixels, repeat card selection, lane placement, Outflank,
-   Resolve, review, and replay with touch-equivalent controls.
-3. Confirm visible focus never disappears and state uses text labels, borders,
-   shapes, and icons in addition to color.
-4. Enable Reduce motion. Confirm animation stops while stance, lane, clash,
-   Pressure, destruction, and Break causes remain readable.
+   `RESOLVE ALL FOUR LANES`, focused review, and replay with touch-equivalent
+   controls. Confirm the locked plan, forecasts, and causal summary are readable
+   without precision taps or losing the active lane context.
+3. After Resolve, confirm focus and the viewport arrive at `WHAT JUST HAPPENED`
+   rather than leaving the explanation above or below the visible mobile area.
+   Confirm `Round details` can be expanded and collapsed by keyboard and touch.
+4. Confirm visible focus never disappears and state uses explicit actor names,
+   signed values, text labels, borders, shapes, and icons in addition to color.
+5. With a screen reader, confirm the Pressure control exposes meter semantics,
+   current value, minimum, maximum, and its described Break/side meaning. Confirm
+   the focused round summary announces once rather than each lane competing in
+   separate live regions.
+6. Enable Reduce motion and also test the operating-system reduced-motion
+   preference. Confirm animation and smooth focus scrolling stop while stance,
+   lane, clash, Pressure, destruction, Break, `WHAT JUST HAPPENED`, and
+   `WHY PRESSURE MOVED` remain complete and readable.
 
 ## Automated validation
 

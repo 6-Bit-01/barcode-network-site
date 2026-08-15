@@ -141,6 +141,16 @@ for i = 1, 3 do
   if redis.call("PTTL", KEYS[1 + i]) ~= tonumber(payload.indexPttls[i]) then
     return fail("index_ttl_changed", i)
   end
+  local currentMembers = redis.call("ZRANGE", KEYS[1 + i], 0, -1)
+  local expectedMembers = payload.indexMembers[i]
+  if #currentMembers ~= #expectedMembers then
+    return fail("index_members_changed", i)
+  end
+  for j = 1, #currentMembers do
+    if currentMembers[j] ~= expectedMembers[j] then
+      return fail("index_members_changed", i)
+    end
+  end
 end
 local currentControls = redis.call("GET", KEYS[1])
 if payload.controlsExists then
@@ -607,6 +617,7 @@ def main() -> None:
         "controlsExists": controls_raw is not False,
         "controlsRaw": "" if controls_raw is False else controls_raw,
         "indexPttls": [int(value) for value in index_pttls],
+        "indexMembers": actual_members,
         "records": record_replacements,
         "latest": latest_replacements,
         "entries": entry_repairs,
@@ -668,6 +679,12 @@ def main() -> None:
         die("post-repair record verification failed; preserve the rollback snapshot")
     if verify.get("latest") != [item["newRaw"] for item in latest_replacements]:
         die("post-repair latest-record verification failed; preserve the rollback snapshot")
+    verified_members = verify.get("indexMembers", [])
+    if len(verified_members) != 3 or any(
+        set(map(str, verified_members[position])) != expected_members[position]
+        for position in range(3)
+    ):
+        die("post-repair index-membership verification failed; preserve the rollback snapshot")
     for index, item in enumerate(entry_repairs):
         scores = verify["scores"][index]
         expected_positions = [item["visible"], item["visible"] and item["entryKind"] == "daily", item["visible"] and item["entryKind"] == "weekly"]

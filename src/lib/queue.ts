@@ -1471,8 +1471,10 @@ export async function getQueueRecoveryStatus(): Promise<QueueRecoveryStatus> {
     redisFailureReason = "configuration_error";
   }
   if (redisConfig) {
-    const redis = new Redis({ url: redisConfig.url, token: redisConfig.token });
     try {
+      // Client construction validates provider configuration and can throw
+      // before the first request. Keep it inside the diagnostic boundary.
+      const redis = new Redis({ url: redisConfig.url, token: redisConfig.token });
       const [raw, revisionValue] = await Promise.all([
         redis.get<QueueStore | string>(STATE_KEY),
         redis.get<number | string>(MUTATION_REVISION_KEY),

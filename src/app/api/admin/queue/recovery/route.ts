@@ -23,7 +23,17 @@ function failureReason(error: unknown): { message: string; status: number } {
 
 export async function GET() {
   if (!(await assertAdmin())) return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: NO_STORE_HEADERS });
-  return NextResponse.json(await getQueueRecoveryStatus(), { headers: NO_STORE_HEADERS });
+  try {
+    return NextResponse.json(await getQueueRecoveryStatus(), { headers: NO_STORE_HEADERS });
+  } catch {
+    // This endpoint is the last-resort read-only incident diagnostic. Never
+    // replace dependency evidence with a framework-generated blank 500 page.
+    return NextResponse.json({
+      error: "Queue recovery status could not be collected.",
+      reason: "diagnostic_unavailable",
+      readOnly: true,
+    }, { status: 503, headers: NO_STORE_HEADERS });
+  }
 }
 
 export async function POST(req: Request) {

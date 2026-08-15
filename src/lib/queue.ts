@@ -1386,6 +1386,7 @@ export interface QueueRecoveryStatus {
   durable: {
     configured: boolean;
     available: boolean;
+    failureReason: "not_configured" | "snapshot_not_found" | "unavailable" | null;
     revision: number | null;
     activeSessionId: string | null;
     sessionCount: number;
@@ -1393,13 +1394,14 @@ export interface QueueRecoveryStatus {
   };
   redis: {
     configured: boolean;
+    configurationStatus: "dedicated" | "shared_fallback" | "partial_dedicated" | "partial_shared" | "missing";
     dedicated: boolean;
     available: boolean;
     revision: number | null;
     activeSessionId: string | null;
     sessionCount: number;
     trackRecordCount: number;
-    failureReason: "request_quota_exceeded" | "unavailable" | null;
+    failureReason: "configuration_error" | "request_quota_exceeded" | "unavailable" | null;
   };
   alignment: "aligned" | "durable_ahead" | "redis_ahead" | "different_at_same_revision" | "durable_only" | "redis_only" | "unavailable";
   requiredConfirmation: string | null;
@@ -1436,17 +1438,38 @@ function storesMatch(left: QueueStore, right: QueueStore): boolean {
 
 export async function getQueueRecoveryStatus(): Promise<QueueRecoveryStatus> {
   let durable: QueueStore | null = null;
+  let durableFailureReason: QueueRecoveryStatus["durable"]["failureReason"] = null;
+  const durableConfigured = isQueueDurableSnapshotConfigured();
   try {
     const raw = await readQueueDurableSnapshot<QueueStore>();
     if (raw) durable = normalizeStore(raw);
+    else durableFailureReason = durableConfigured ? "snapshot_not_found" : "not_configured";
   } catch {
     durable = null;
+    durableFailureReason = "unavailable";
   }
 
-  const redisConfig = getQueueRedisConfig();
+  const dedicatedUrlPresent = Boolean(process.env.QUEUE_REDIS_REST_URL?.trim());
+  const dedicatedTokenPresent = Boolean(process.env.QUEUE_REDIS_REST_TOKEN?.trim());
+  const sharedUrlPresent = Boolean(process.env.UPSTASH_REDIS_REST_URL?.trim());
+  const sharedTokenPresent = Boolean(process.env.UPSTASH_REDIS_REST_TOKEN?.trim());
+  const redisConfigurationStatus: QueueRecoveryStatus["redis"]["configurationStatus"] = dedicatedUrlPresent || dedicatedTokenPresent
+    ? dedicatedUrlPresent && dedicatedTokenPresent ? "dedicated" : "partial_dedicated"
+    : sharedUrlPresent || sharedTokenPresent
+      ? sharedUrlPresent && sharedTokenPresent ? "shared_fallback" : "partial_shared"
+      : "missing";
+  let redisConfig: ReturnType<typeof getQueueRedisConfig> = null;
   let redisStore: QueueStore | null = null;
   let redisRevision: number | null = null;
-  let redisFailureReason: "request_quota_exceeded" | "unavailable" | null = null;
+  let redisFailureReason: QueueRecoveryStatus["redis"]["failureReason"] = null;
+  try {
+    redisConfig = getQueueRedisConfig();
+    if (redisConfigurationStatus === "partial_shared") redisFailureReason = "configuration_error";
+  } catch {
+    // Recovery diagnostics must remain readable when an environment-variable
+    // rollout is incomplete. Mutations still fail closed in getQueueRedisConfig.
+    redisFailureReason = "configuration_error";
+  }
   if (redisConfig) {
     const redis = new Redis({ url: redisConfig.url, token: redisConfig.token });
     try {
@@ -1472,15 +1495,17 @@ export async function getQueueRecoveryStatus(): Promise<QueueRecoveryStatus> {
 
   return {
     durable: {
-      configured: isQueueDurableSnapshotConfigured(),
+      configured: durableConfigured,
       available: Boolean(durable),
+      failureReason: durable ? null : durableFailureReason,
       revision: durable?.revision ?? null,
       activeSessionId: durable?.activeSessionId ?? null,
       sessionCount: durable?.sessions.length ?? 0,
       trackRecordCount: durable ? queueStoreTrackRecordCount(durable) : 0,
     },
     redis: {
-      configured: Boolean(redisConfig),
+      configured: Boolean(redisConfig) || redisConfigurationStatus === "partial_dedicated" || redisConfigurationStatus === "partial_shared",
+      configurationStatus: redisConfigurationStatus,
       dedicated: redisConfig?.dedicated ?? false,
       available: Boolean(redisStore) && !redisFailureReason,
       revision: redisRevision,

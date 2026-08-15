@@ -521,3 +521,57 @@ test("the reviewed restore dry-runs and copies a verified snapshot into an empty
     delete process.env.QUEUE_REDIS_REST_TOKEN;
   }
 });
+
+test("recovery diagnostics report a partial dedicated Redis configuration without throwing or mutating", async () => {
+  FakeRedis.values.clear();
+  FakeRedis.calls.length = 0;
+  FakeBlob.values.clear();
+  FakeBlob.calls.length = 0;
+  delete process.env.BLOB_READ_WRITE_TOKEN;
+  process.env.UPSTASH_REDIS_REST_URL = "https://old-shared-redis.example.test";
+  process.env.UPSTASH_REDIS_REST_TOKEN = "old-token";
+  process.env.QUEUE_REDIS_REST_URL = "https://incomplete-owned-queue.example.test";
+  delete process.env.QUEUE_REDIS_REST_TOKEN;
+
+  try {
+    const { first: recoveryWorker } = loadIndependentQueueModules();
+    const status = await recoveryWorker.getQueueRecoveryStatus();
+
+    assert.equal(status.alignment, "unavailable");
+    assert.equal(status.durable.failureReason, "not_configured");
+    assert.equal(status.redis.configured, true);
+    assert.equal(status.redis.configurationStatus, "partial_dedicated");
+    assert.equal(status.redis.available, false);
+    assert.equal(status.redis.failureReason, "configuration_error");
+    assert.equal(FakeRedis.calls.length, 0, "a partial configuration must not issue Redis commands");
+  } finally {
+    delete process.env.QUEUE_REDIS_REST_URL;
+    delete process.env.QUEUE_REDIS_REST_TOKEN;
+  }
+});
+
+test("recovery diagnostics report a partial shared Redis fallback without throwing or mutating", async () => {
+  FakeRedis.values.clear();
+  FakeRedis.calls.length = 0;
+  FakeBlob.values.clear();
+  FakeBlob.calls.length = 0;
+  delete process.env.BLOB_READ_WRITE_TOKEN;
+  process.env.UPSTASH_REDIS_REST_URL = "https://incomplete-shared-redis.example.test";
+  delete process.env.UPSTASH_REDIS_REST_TOKEN;
+  delete process.env.QUEUE_REDIS_REST_URL;
+  delete process.env.QUEUE_REDIS_REST_TOKEN;
+
+  try {
+    const { first: recoveryWorker } = loadIndependentQueueModules();
+    const status = await recoveryWorker.getQueueRecoveryStatus();
+
+    assert.equal(status.redis.configured, true);
+    assert.equal(status.redis.configurationStatus, "partial_shared");
+    assert.equal(status.redis.available, false);
+    assert.equal(status.redis.failureReason, "configuration_error");
+    assert.equal(FakeRedis.calls.length, 0, "a partial shared fallback must not issue Redis commands");
+  } finally {
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+  }
+});

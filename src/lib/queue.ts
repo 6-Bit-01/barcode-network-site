@@ -1401,7 +1401,9 @@ export interface QueueRecoveryStatus {
     activeSessionId: string | null;
     sessionCount: number;
     trackRecordCount: number;
-    failureReason: "configuration_error" | "request_quota_exceeded" | "unavailable" | null;
+    failureReason: "configuration_error" | "request_quota_exceeded" | "authentication_failed" | "network_unavailable" | "provider_error" | "unavailable" | null;
+    failureStage: "configuration" | "client_initialization" | "state_read" | "state_validation" | null;
+    failureDetail: string | null;
   };
   alignment: "aligned" | "durable_ahead" | "redis_ahead" | "different_at_same_revision" | "durable_only" | "redis_only" | "unavailable";
   requiredConfirmation: string | null;
@@ -1427,9 +1429,56 @@ function queueStoreTrackRecordCount(store: QueueStore): number {
     + (session.loadedTrack ? 1 : 0), 0);
 }
 
-function redisRecoveryFailureReason(error: unknown): "request_quota_exceeded" | "unavailable" {
-  const message = error instanceof Error ? error.message : String(error);
-  return /max requests limit exceeded/i.test(message) ? "request_quota_exceeded" : "unavailable";
+function redisRecoveryErrorMessages(error: unknown): string[] {
+  const messages: string[] = [];
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+  for (let depth = 0; depth < 4 && current !== undefined && current !== null && !seen.has(current); depth += 1) {
+    seen.add(current);
+    if (typeof current === "string") {
+      messages.push(current);
+      break;
+    }
+    if (typeof current !== "object") {
+      messages.push(String(current));
+      break;
+    }
+    const record = current as { message?: unknown; cause?: unknown };
+    if (typeof record.message === "string" && record.message.trim()) messages.push(record.message.trim());
+    current = record.cause;
+  }
+  return messages.length > 0 ? messages : ["Unknown Redis error"];
+}
+
+function sanitizeRedisRecoveryFailureDetail(messages: string[]): string {
+  return messages.join(": ")
+    .replace(/(?:https?|redis):\/\/[^\s,)'"\\]+/gi, "[redacted-endpoint]")
+    .replace(/\b(?:[a-z0-9-]+\.)+(?:app|cloud|com|dev|io|net|org)\b/gi, "[redacted-host]")
+    .replace(/\b(?:bearer\s+)?[a-z0-9_-]{32,}\b/gi, "[redacted-value]")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 240);
+}
+
+function redisRecoveryFailure(error: unknown): {
+  reason: Exclude<QueueRecoveryStatus["redis"]["failureReason"], null>;
+  detail: string;
+} {
+  const messages = redisRecoveryErrorMessages(error);
+  const combined = messages.join(" ");
+  let reason: Exclude<QueueRecoveryStatus["redis"]["failureReason"], null> = "unavailable";
+  if (/max requests limit exceeded|(?:request|command) quota.*(?:exceeded|limit)|monthly request limit/i.test(combined)) {
+    reason = "request_quota_exceeded";
+  } else if (/wrongpass|unauthori[sz]ed|forbidden|authentication|invalid (?:auth|token|credential)|expired token|\b(?:401|403)\b/i.test(combined)) {
+    reason = "authentication_failed";
+  } else if (/invalid url|url.*(?:invalid|missing)|unsupported protocol|absolute url|initialized without (?:a )?url|client url|malformed/i.test(combined)) {
+    reason = "configuration_error";
+  } else if (/fetch failed|network|econn(?:refused|reset|aborted)|enotfound|eai_again|dns|socket|timed? ?out|timeout|tls|certificate/i.test(combined)) {
+    reason = "network_unavailable";
+  } else if (/upstash|redis|command failed|command was|http(?: status)?\s*\d{3}/i.test(combined)) {
+    reason = "provider_error";
+  }
+  return { reason, detail: sanitizeRedisRecoveryFailureDetail(messages) };
 }
 
 function storesMatch(left: QueueStore, right: QueueStore): boolean {
@@ -1462,28 +1511,45 @@ export async function getQueueRecoveryStatus(): Promise<QueueRecoveryStatus> {
   let redisStore: QueueStore | null = null;
   let redisRevision: number | null = null;
   let redisFailureReason: QueueRecoveryStatus["redis"]["failureReason"] = null;
+  let redisFailureStage: QueueRecoveryStatus["redis"]["failureStage"] = null;
+  let redisFailureDetail: string | null = null;
   try {
     redisConfig = getQueueRedisConfig();
-    if (redisConfigurationStatus === "partial_shared") redisFailureReason = "configuration_error";
-  } catch {
+    if (redisConfigurationStatus === "partial_shared") {
+      redisFailureReason = "configuration_error";
+      redisFailureStage = "configuration";
+      redisFailureDetail = "Shared Redis fallback URL and token must both be configured.";
+    }
+  } catch (error) {
     // Recovery diagnostics must remain readable when an environment-variable
     // rollout is incomplete. Mutations still fail closed in getQueueRedisConfig.
     redisFailureReason = "configuration_error";
+    redisFailureStage = "configuration";
+    redisFailureDetail = sanitizeRedisRecoveryFailureDetail(redisRecoveryErrorMessages(error));
   }
   if (redisConfig) {
+    let currentStage: NonNullable<QueueRecoveryStatus["redis"]["failureStage"]> = "client_initialization";
     try {
       // Client construction validates provider configuration and can throw
       // before the first request. Keep it inside the diagnostic boundary.
       const redis = new Redis({ url: redisConfig.url, token: redisConfig.token });
+      currentStage = "state_read";
       const [raw, revisionValue] = await Promise.all([
         redis.get<QueueStore | string>(STATE_KEY),
         redis.get<number | string>(MUTATION_REVISION_KEY),
       ]);
       if (raw) redisStore = normalizeStore(typeof raw === "string" ? JSON.parse(raw) : raw);
       redisRevision = mutationRevision(revisionValue ?? redisStore?.revision ?? 0);
-      if (redisStore && redisStore.revision !== redisRevision) redisFailureReason = "unavailable";
+      if (redisStore && redisStore.revision !== redisRevision) {
+        redisFailureReason = "provider_error";
+        redisFailureStage = "state_validation";
+        redisFailureDetail = "Redis queue state and mutation revision are inconsistent.";
+      }
     } catch (error) {
-      redisFailureReason = redisRecoveryFailureReason(error);
+      const failure = redisRecoveryFailure(error);
+      redisFailureReason = failure.reason;
+      redisFailureStage = currentStage;
+      redisFailureDetail = failure.detail;
     }
   }
 
@@ -1515,6 +1581,8 @@ export async function getQueueRecoveryStatus(): Promise<QueueRecoveryStatus> {
       sessionCount: redisStore?.sessions.length ?? 0,
       trackRecordCount: redisStore ? queueStoreTrackRecordCount(redisStore) : 0,
       failureReason: redisFailureReason,
+      failureStage: redisFailureStage,
+      failureDetail: redisFailureDetail,
     },
     alignment,
     requiredConfirmation: durable ? `RESTORE DURABLE QUEUE REVISION ${durable.revision}` : null,

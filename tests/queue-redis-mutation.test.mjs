@@ -14,6 +14,7 @@ class FakeRedis {
   static failGets = false;
   static failAllCommands = false;
   static failOnConstruct = false;
+  static getFailure = null;
 
   constructor() {
     if (FakeRedis.failOnConstruct) throw new Error("Redis client URL is invalid");
@@ -25,6 +26,7 @@ class FakeRedis {
 
   async get(key) {
     FakeRedis.calls.push(["get", key]);
+    if (FakeRedis.getFailure) throw FakeRedis.getFailure;
     if (FakeRedis.failAllCommands || FakeRedis.failGets) throw FakeRedis.quotaError();
     return FakeRedis.values.get(key) ?? null;
   }
@@ -394,6 +396,11 @@ test("a fresh worker preserves and displays the complete queue from private Blob
     assert.equal(recoveredEntries.find((entry) => entry.sourceType === "upload")?.fileName, "Recovery Artist - Recovery Proof.mp3");
     assert.equal(recoveredEntries.find((entry) => entry.sourceType === "upload")?.fileSize, 4_096);
 
+    const recoveryStatus = await freshWorker.getQueueRecoveryStatus();
+    assert.equal(recoveryStatus.redis.failureReason, "request_quota_exceeded");
+    assert.equal(recoveryStatus.redis.failureStage, "state_read");
+    assert.match(recoveryStatus.redis.failureDetail, /max requests limit exceeded/i);
+
     const snapshotBeforeBlockedMutation = FakeBlob.values.get(currentPath).body;
     await assert.rejects(
       () => freshWorker.setQueueOpen(false),
@@ -417,6 +424,7 @@ test("a fresh worker preserves and displays the complete queue from private Blob
   } finally {
     FakeRedis.failGets = false;
     FakeRedis.failAllCommands = false;
+    FakeRedis.getFailure = null;
     delete process.env.BLOB_READ_WRITE_TOKEN;
     delete process.env.QUEUE_REDIS_REST_URL;
     delete process.env.QUEUE_REDIS_REST_TOKEN;
@@ -548,6 +556,7 @@ test("recovery diagnostics report a partial dedicated Redis configuration withou
     assert.equal(status.redis.configurationStatus, "partial_dedicated");
     assert.equal(status.redis.available, false);
     assert.equal(status.redis.failureReason, "configuration_error");
+    assert.equal(status.redis.failureStage, "configuration");
     assert.equal(FakeRedis.calls.length, 0, "a partial configuration must not issue Redis commands");
   } finally {
     delete process.env.QUEUE_REDIS_REST_URL;
@@ -574,6 +583,7 @@ test("recovery diagnostics report a partial shared Redis fallback without throwi
     assert.equal(status.redis.configurationStatus, "partial_shared");
     assert.equal(status.redis.available, false);
     assert.equal(status.redis.failureReason, "configuration_error");
+    assert.equal(status.redis.failureStage, "configuration");
     assert.equal(FakeRedis.calls.length, 0, "a partial shared fallback must not issue Redis commands");
   } finally {
     delete process.env.UPSTASH_REDIS_REST_URL;
@@ -599,11 +609,44 @@ test("recovery diagnostics catch Redis client construction failures without touc
 
     assert.equal(status.redis.configurationStatus, "shared_fallback");
     assert.equal(status.redis.available, false);
-    assert.equal(status.redis.failureReason, "unavailable");
+    assert.equal(status.redis.failureReason, "configuration_error");
+    assert.equal(status.redis.failureStage, "client_initialization");
+    assert.equal(status.redis.failureDetail, "Redis client URL is invalid");
     assert.equal(FakeRedis.calls.length, 0, "client construction failure must issue no commands");
     assert.equal(FakeRedis.values.size, 0, "client construction failure must not mutate Redis state");
   } finally {
     FakeRedis.failOnConstruct = false;
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+  }
+});
+
+test("recovery diagnostics identify a rejected Redis credential without exposing it or mutating state", async () => {
+  FakeRedis.values.clear();
+  FakeRedis.calls.length = 0;
+  FakeBlob.values.clear();
+  FakeBlob.calls.length = 0;
+  FakeRedis.getFailure = new Error("WRONGPASS invalid or expired token for https://private-redis.example.test");
+  delete process.env.BLOB_READ_WRITE_TOKEN;
+  process.env.UPSTASH_REDIS_REST_URL = "https://private-redis.example.test";
+  process.env.UPSTASH_REDIS_REST_TOKEN = "credential-that-must-never-appear-in-diagnostics";
+  delete process.env.QUEUE_REDIS_REST_URL;
+  delete process.env.QUEUE_REDIS_REST_TOKEN;
+
+  try {
+    const { first: recoveryWorker } = loadIndependentQueueModules();
+    const status = await recoveryWorker.getQueueRecoveryStatus();
+
+    assert.equal(status.redis.configurationStatus, "shared_fallback");
+    assert.equal(status.redis.available, false);
+    assert.equal(status.redis.failureReason, "authentication_failed");
+    assert.equal(status.redis.failureStage, "state_read");
+    assert.match(status.redis.failureDetail, /WRONGPASS invalid or expired token/i);
+    assert.match(status.redis.failureDetail, /\[redacted-endpoint\]/);
+    assert.doesNotMatch(status.redis.failureDetail, /private-redis\.example\.test|credential-that-must-never/i);
+    assert.equal(FakeRedis.values.size, 0, "credential diagnostics must not mutate Redis state");
+  } finally {
+    FakeRedis.getFailure = null;
     delete process.env.UPSTASH_REDIS_REST_URL;
     delete process.env.UPSTASH_REDIS_REST_TOKEN;
   }

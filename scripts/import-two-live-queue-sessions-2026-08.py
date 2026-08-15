@@ -16,6 +16,7 @@ import base64
 import datetime
 import getpass
 import hashlib
+import io
 import json
 import os
 import re
@@ -25,13 +26,20 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from http.cookiejar import CookieJar
+from zoneinfo import ZoneInfo
 
 
 BASE_URL = "https://barcode-network-site-cpps.vercel.app"
 SOURCE_BASE_URL = "https://barcode-network-site-cpps-fg7a9jcmf-6-bits-projects.vercel.app"
 SOURCE_COMMIT = "a1537f611db69e5a1c3d74ebb941d06d68ad49ff"
-CAPTURE_SCHEMA = "barcode_queue_two_session_source_capture_v1"
+CAPTURE_SCHEMA = "barcode_queue_two_session_source_capture_v2"
 TARGET_DATES = ("2026-08-07", "2026-08-14")
+AUGUST_7_SOURCE_DATE = "2026-08-08"
+AUGUST_7_SESSION_ID = "session_msjmzqjk_w1rkj"
+AUGUST_7_EXPORT_SHA256 = "49c950556a9662f98fa402beb84a7e579120afff8da9cc5c70077f4b46cd6c2e"
+AUGUST_7_DATE_RULE = "legacy_utc_rollover_to_pacific_broadcast_date"
+EXACT_DATE_RULE = "exact_source_show_date"
+PACIFIC_TIME_ZONE = "America/Los_Angeles"
 OUTPUT_DIR = "/home/ubuntu/barcode-queue-recovery"
 CAPTURE_NAME_RE = re.compile(
     r"^queue-sessions-2026-08-07_2026-08-14-source-\d{8}T\d{6}Z\.json$"
@@ -266,12 +274,117 @@ def decoded_source_response(captured, label):
     return raw, require_dict(parse_json_bytes(raw, label + " embedded response"), label + " response")
 
 
-def validate_capture_session(captured, expected_revision, label):
+def pacific_date_for_iso(value, label):
+    text = require_string(value, label)
+    try:
+        parsed = datetime.datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ImportErrorSafe("%s must be an ISO timestamp." % label) from error
+    if parsed.tzinfo is None:
+        raise ImportErrorSafe("%s must include a timezone." % label)
+    return parsed.astimezone(ZoneInfo(PACIFIC_TIME_ZONE)).date().isoformat()
+
+
+def is_simulation_track(track):
+    note = track.get("note")
+    return (
+        track.get("isTestTrack") is True
+        or (isinstance(note, str) and "[QUEUE SIMULATION TRACK]" in note)
+        or track["artist"].startswith("SIM ")
+        or track["title"].startswith("SIM ")
+    )
+
+
+def expected_applied_normalizations(canonical_show_date, source_show_date, session):
+    result = []
+    if canonical_show_date != source_show_date:
+        result.append("source_show_date_to_canonical_pacific_show_date")
+    if session.get("status") != "archived":
+        result.append("source_status_to_archived")
+    if session.get("queueOpen") is not False:
+        result.append("queue_closed_for_historical_archive")
+    if session.get("showStarted") is True:
+        result.append("show_stopped_for_historical_archive")
+    if session.get("broadcastPhase") != "ended":
+        result.append("broadcast_phase_ended_for_historical_archive")
+    return result
+
+
+def source_roster_identity(value, label):
+    summary = require_dict(value, label)
+    return {
+        field: require_string(summary.get(field), label + "." + field)
+        for field in (
+            "sessionId",
+            "title",
+            "status",
+            "purpose",
+            "bnlPublicationStatus",
+            "showDate",
+            "createdAt",
+            "updatedAt",
+        )
+    }
+
+
+def validate_source_roster(
+    response,
+    expected_count,
+    expected_sha256,
+    source_active_session_id,
+    selected_session,
+    label,
+):
+    raw_roster = require_list(response.get("sessions"), label + ".sessions")
+    if len(raw_roster) != expected_count:
+        raise ImportErrorSafe("%s roster count does not match capture consistency." % label)
+    identities = []
+    by_id = {}
+    for index, raw_summary in enumerate(raw_roster):
+        identity = source_roster_identity(
+            raw_summary, "%s.sessions[%d]" % (label, index)
+        )
+        session_id = identity["sessionId"]
+        if session_id in by_id:
+            raise ImportErrorSafe("%s roster repeats a session ID." % label)
+        by_id[session_id] = identity
+        identities.append(identity)
+    identities.sort(key=lambda item: item["sessionId"])
+    actual_sha256 = hashlib.sha256(canonical_json_bytes(identities)).hexdigest()
+    if actual_sha256 != expected_sha256:
+        raise ImportErrorSafe("%s roster SHA-256 does not match capture consistency." % label)
+    if source_active_session_id not in by_id:
+        raise ImportErrorSafe("%s roster does not contain the source active session." % label)
+    selected_identity = source_roster_identity(selected_session, label + ".session")
+    if by_id.get(selected_identity["sessionId"]) != selected_identity:
+        raise ImportErrorSafe("%s selected session identity does not match its roster." % label)
+
+
+def validate_capture_session(
+    captured,
+    expected_revision,
+    expected_date_normalization,
+    expected_roster_count,
+    expected_roster_sha256,
+    source_active_session_id,
+    label,
+):
     item = require_dict(captured, label)
     if "state" in item:
         raise ImportErrorSafe("%s contains the obsolete duplicated state field." % label)
-    show_date = require_string(item.get("showDate"), label + ".showDate")
+    canonical_show_date = require_string(
+        item.get("canonicalShowDate"), label + ".canonicalShowDate"
+    )
+    source_show_date = require_string(
+        item.get("sourceShowDate"), label + ".sourceShowDate"
+    )
     session_id = require_string(item.get("sessionId"), label + ".sessionId")
+    if (
+        canonical_show_date != expected_date_normalization["canonicalShowDate"]
+        or source_show_date != expected_date_normalization["sourceShowDate"]
+        or session_id != expected_date_normalization["sessionId"]
+    ):
+        raise ImportErrorSafe("%s does not match its source-date normalization." % label)
     revision = require_nonnegative_integer(item.get("revision"), label + ".revision")
     if revision != expected_revision:
         raise ImportErrorSafe("%s revision does not match capture consistency." % label)
@@ -281,19 +394,32 @@ def validate_capture_session(captured, expected_revision, label):
     if response.get("viewedSessionId") != session_id:
         raise ImportErrorSafe("%s viewedSessionId does not match." % label)
     session = require_dict(response.get("session"), label + ".response.session")
-    if session.get("sessionId") != session_id or session.get("showDate") != show_date:
+    if session.get("sessionId") != session_id or session.get("showDate") != source_show_date:
         raise ImportErrorSafe("%s source response identity does not match." % label)
-    if session.get("status") != "archived":
-        raise ImportErrorSafe("%s source session is not archived." % label)
+    validate_source_roster(
+        response,
+        expected_roster_count,
+        expected_roster_sha256,
+        source_active_session_id,
+        session,
+        label + ".response",
+    )
+    source_status = session.get("status")
+    if source_status not in ("open", "closed", "archived"):
+        raise ImportErrorSafe("%s source session status is not recoverable." % label)
+    if canonical_show_date == "2026-08-07" and source_status not in ("closed", "archived"):
+        raise ImportErrorSafe("August 7 source session must be closed or archived.")
     purpose = require_string(session.get("purpose"), label + ".response.session.purpose")
-    if show_date == "2026-08-07" and purpose not in ("unknown", "live_broadcast"):
+    if canonical_show_date == "2026-08-07" and purpose not in ("unknown", "live_broadcast"):
         raise ImportErrorSafe("August 7 source session purpose is not allowed.")
-    if show_date == "2026-08-14" and purpose != "live_broadcast":
+    if canonical_show_date == "2026-08-14" and purpose != "live_broadcast":
         raise ImportErrorSafe("August 14 source session is not a live broadcast.")
+    title = require_string(session.get("title"), label + ".response.session.title")
 
     summary_at_start = require_dict(item.get("summaryAtStart"), label + ".summaryAtStart")
     for field in (
-        "sessionId", "showDate", "status", "purpose", "bnlPublicationStatus", "createdAt", "updatedAt"
+        "sessionId", "showDate", "status", "purpose", "bnlPublicationStatus",
+        "createdAt", "updatedAt", "queueOpen", "showStarted", "broadcastStartedAt",
     ):
         if summary_at_start.get(field) != session.get(field):
             raise ImportErrorSafe("%s summaryAtStart.%s does not match." % (label, field))
@@ -321,19 +447,107 @@ def validate_capture_session(captured, expected_revision, label):
         primary_ids.append(response["loadedTrack"]["id"])
     if len(primary_ids) != len(set(primary_ids)):
         raise ImportErrorSafe("%s repeats a primary lifecycle track ID." % label)
+    primary_records = (
+        response["queue"]
+        + response["history"]
+        + response["removed"]
+        + ([response["nextInLine"]] if response.get("nextInLine") is not None else [])
+        + ([response["loadedTrack"]] if response.get("loadedTrack") is not None else [])
+    )
+    removed_ids = {entry["id"] for entry in response["removed"]}
+    accepted_ids = set()
+
+    def count_accepted(entry, allowed_statuses):
+        if entry is None or entry["id"] in removed_ids or is_simulation_track(entry):
+            return
+        if entry.get("status") in allowed_statuses:
+            accepted_ids.add(entry["id"])
+
+    for entry in response["queue"]:
+        count_accepted(entry, ("queued", "playing"))
+    count_accepted(response.get("nextInLine"), ("queued", "next", "playing"))
+    count_accepted(response.get("loadedTrack"), ("queued", "next", "playing"))
+    for entry in response["history"]:
+        count_accepted(entry, ("completed", "played"))
+    completed_ids = {
+        entry["id"]
+        for entry in response["history"]
+        if entry["id"] not in removed_ids
+        and not is_simulation_track(entry)
+        and entry.get("status") in ("completed", "played")
+    }
     lifecycle.update({
         "nextInLine": 1 if response.get("nextInLine") is not None else 0,
         "loadedTrack": 1 if response.get("loadedTrack") is not None else 0,
         "primaryUnique": len(primary_ids),
+        "nonSimulationPrimary": sum(
+            1 for entry in primary_records if not is_simulation_track(entry)
+        ),
+        "activeCount": sum(
+            1
+            for entry in response["queue"]
+            if entry.get("status") in ("queued", "playing")
+        )
+        + (1 if response.get("nextInLine") is not None else 0)
+        + (1 if response.get("loadedTrack") is not None else 0),
+        "acceptedCount": len(accepted_ids),
+        "completedCount": len(completed_ids),
+        "removedCount": len(response["removed"]),
+        "spotlightCount": len(response["spotlight"]),
     })
     recorded_counts = require_dict(item.get("trackCounts"), label + ".trackCounts")
     for field, actual in lifecycle.items():
         if require_nonnegative_integer(recorded_counts.get(field), label + ".trackCounts." + field) != actual:
             raise ImportErrorSafe("%s trackCounts.%s does not match." % (label, field))
+    for field in (
+        "activeCount", "acceptedCount", "completedCount", "removedCount", "spotlightCount"
+    ):
+        if require_nonnegative_integer(
+            session.get(field), label + ".response.session." + field
+        ) != lifecycle[field]:
+            raise ImportErrorSafe(
+                "%s response.session.%s disagrees with lifecycle records."
+                % (label, field)
+            )
+    if require_nonnegative_integer(
+        response.get("totalPlayed"), label + ".response.totalPlayed"
+    ) != lifecycle["completedCount"]:
+        raise ImportErrorSafe("%s response.totalPlayed disagrees with completedCount." % label)
+
+    if canonical_show_date == "2026-08-07":
+        removed = response["removed"]
+        august_7_primary_records = response["history"] + removed
+        if (
+            session_id != AUGUST_7_SESSION_ID
+            or source_show_date != AUGUST_7_SOURCE_DATE
+            or lifecycle["queue"] != 0
+            or lifecycle["history"] != 40
+            or lifecycle["removed"] != 1
+            or lifecycle["spotlight"] != 0
+            or lifecycle["nextInLine"] != 0
+            or lifecycle["loadedTrack"] != 0
+            or lifecycle["primaryUnique"] != 41
+            or any(is_simulation_track(track) for track in august_7_primary_records)
+            or removed[0].get("artist") != "MagicSZN"
+            or removed[0].get("title") != "HighFive"
+        ):
+            raise ImportErrorSafe("August 7 source does not match the verified 40 played / 1 removed live export.")
+    else:
+        if pacific_date_for_iso(session.get("createdAt"), label + ".response.session.createdAt") != "2026-08-14":
+            raise ImportErrorSafe("August 14 source session was not created on August 14 Pacific time.")
+        if not any(not is_simulation_track(track) for track in primary_records):
+            raise ImportErrorSafe("August 14 source session contains no real queue records.")
+
     return {
-        "showDate": show_date,
+        "showDate": canonical_show_date,
+        "sourceShowDate": source_show_date,
         "sessionId": session_id,
         "status": "archived",
+        "sourceStatus": source_status,
+        "appliedNormalizations": expected_applied_normalizations(
+            canonical_show_date, source_show_date, session
+        ),
+        "title": title,
         "purpose": purpose,
         "queueCount": lifecycle["queue"],
         "completedCount": lifecycle["history"],
@@ -342,6 +556,69 @@ def validate_capture_session(captured, expected_revision, label):
         "hasNextInLine": lifecycle["nextInLine"] == 1,
         "hasLoadedTrack": lifecycle["loadedTrack"] == 1,
     }
+
+
+def validate_source_date_normalizations(scope):
+    canonical_dates = require_list(
+        scope.get("canonicalShowDates"), "capture.scope.canonicalShowDates"
+    )
+    if (
+        any(not isinstance(item, str) for item in canonical_dates)
+        or sorted(canonical_dates) != sorted(TARGET_DATES)
+    ):
+        raise ImportErrorSafe("Capture scope has the wrong canonical show dates.")
+    records = require_list(
+        scope.get("sourceDateNormalization"),
+        "capture.scope.sourceDateNormalization",
+    )
+    if len(records) != 2:
+        raise ImportErrorSafe("Capture scope must contain exactly two date-normalization records.")
+    by_date = {}
+    session_ids = set()
+    for index, raw in enumerate(records):
+        label = "capture.scope.sourceDateNormalization[%d]" % index
+        record = require_dict(raw, label)
+        canonical_show_date = require_string(
+            record.get("canonicalShowDate"), label + ".canonicalShowDate"
+        )
+        source_show_date = require_string(
+            record.get("sourceShowDate"), label + ".sourceShowDate"
+        )
+        session_id = require_string(record.get("sessionId"), label + ".sessionId")
+        rule = require_string(record.get("rule"), label + ".rule")
+        provenance = require_dict(record.get("provenance"), label + ".provenance")
+        require_string(provenance.get("detail"), label + ".provenance.detail")
+        if canonical_show_date in by_date or session_id in session_ids:
+            raise ImportErrorSafe("Capture scope repeats a date or session ID.")
+        if canonical_show_date == "2026-08-07":
+            if (
+                source_show_date != AUGUST_7_SOURCE_DATE
+                or session_id != AUGUST_7_SESSION_ID
+                or rule != AUGUST_7_DATE_RULE
+                or provenance.get("kind") != "owner_supplied_export"
+                or require_sha256(
+                    provenance.get("sourceSha256"), label + ".provenance.sourceSha256"
+                ) != AUGUST_7_EXPORT_SHA256
+            ):
+                raise ImportErrorSafe("August 7 date-normalization provenance is invalid.")
+        elif canonical_show_date == "2026-08-14":
+            if (
+                source_show_date != "2026-08-14"
+                or rule != EXACT_DATE_RULE
+                or provenance.get("kind") != "authenticated_source_queue_state"
+            ):
+                raise ImportErrorSafe("August 14 date provenance is invalid.")
+        else:
+            raise ImportErrorSafe("Capture scope contains an unsupported canonical show date.")
+        by_date[canonical_show_date] = {
+            "canonicalShowDate": canonical_show_date,
+            "sourceShowDate": source_show_date,
+            "sessionId": session_id,
+        }
+        session_ids.add(session_id)
+    if set(by_date) != set(TARGET_DATES):
+        raise ImportErrorSafe("Capture scope date-normalization records are incomplete.")
+    return by_date
 
 
 def validate_capture(capture):
@@ -363,34 +640,62 @@ def validate_capture(capture):
         if source.get(field) != expected:
             raise ImportErrorSafe("Capture source provenance field %s is invalid." % field)
     scope = require_dict(value.get("scope"), "capture.scope")
-    exact_dates = require_list(scope.get("exactShowDates"), "capture.scope.exactShowDates")
-    if (
-        scope.get("sessionCount") != 2
-        or any(not isinstance(item, str) for item in exact_dates)
-        or sorted(exact_dates) != sorted(TARGET_DATES)
-    ):
+    if scope.get("sessionCount") != 2:
         raise ImportErrorSafe("Capture scope is not exactly August 7 and August 14.")
+    date_normalizations = validate_source_date_normalizations(scope)
     consistency = require_dict(value.get("consistency"), "capture.consistency")
     if consistency.get("startEndMatch") is not True:
         raise ImportErrorSafe("Capture does not prove start/end consistency.")
     source_revision = require_nonnegative_integer(
         consistency.get("revision"), "capture.consistency.revision"
     )
-    require_string(consistency.get("activeSessionId"), "capture.consistency.activeSessionId")
-    require_sha256(consistency.get("rosterSha256"), "capture.consistency.rosterSha256")
+    source_active_session_id = require_string(
+        consistency.get("activeSessionId"), "capture.consistency.activeSessionId"
+    )
+    roster_sha256 = require_sha256(
+        consistency.get("rosterSha256"), "capture.consistency.rosterSha256"
+    )
+    roster_count = require_nonnegative_integer(
+        consistency.get("rosterCount"), "capture.consistency.rosterCount"
+    )
+    if roster_count < 2:
+        raise ImportErrorSafe("Capture roster must contain both target sessions.")
     sessions = require_list(value.get("sessions"), "capture.sessions")
     if len(sessions) != 2:
         raise ImportErrorSafe("Capture must contain exactly two sessions.")
-    summaries = [
-        validate_capture_session(item, source_revision, "capture.sessions[%d]" % index)
-        for index, item in enumerate(sessions)
-    ]
+    summaries = []
+    for index, item in enumerate(sessions):
+        label = "capture.sessions[%d]" % index
+        captured = require_dict(item, label)
+        canonical_show_date = require_string(
+            captured.get("canonicalShowDate"), label + ".canonicalShowDate"
+        )
+        date_normalization = date_normalizations.get(canonical_show_date)
+        if date_normalization is None:
+            raise ImportErrorSafe(
+                "%s has no matching source-date normalization." % label
+            )
+        summaries.append(
+            validate_capture_session(
+                captured,
+                source_revision,
+                date_normalization,
+                roster_count,
+                roster_sha256,
+                source_active_session_id,
+                label,
+            )
+        )
     if sorted(item["showDate"] for item in summaries) != sorted(TARGET_DATES):
         raise ImportErrorSafe("Capture must contain one session for each target date.")
     if len({item["sessionId"] for item in summaries}) != 2:
         raise ImportErrorSafe("Capture repeats a session ID.")
     summaries.sort(key=lambda item: item["showDate"])
-    return {"sourceRevision": source_revision, "sessions": summaries}
+    return {
+        "sourceRevision": source_revision,
+        "sourceActiveSessionId": source_active_session_id,
+        "sessions": summaries,
+    }
 
 
 def read_limited(response, stage):
@@ -612,11 +917,15 @@ def validate_import_result(payload, capture_info, mode):
     if value.get("requiredConfirmation") != expected_confirmation:
         raise ImportErrorSafe("Historical import returned an invalid confirmation phrase.")
     source_active = require_string(value.get("sourceActiveSessionId"), "historical import sourceActiveSessionId")
+    if source_active != capture_info["summary"]["sourceActiveSessionId"]:
+        raise ImportErrorSafe(
+            "Historical import source active session does not match the verified capture."
+        )
     active_id = require_string(value.get("activeSessionId"), "historical import activeSessionId")
-    if value.get("activeSessionSelection") not in (
-        "source_active_session", "newest_imported_archived_session"
-    ):
-        raise ImportErrorSafe("Historical import active-session selection is invalid.")
+    if value.get("activeSessionSelection") != "newest_imported_archived_session":
+        raise ImportErrorSafe(
+            "Historical import must select the canonical August 14 archive session."
+        )
     sessions = require_list(value.get("sessions"), "historical import sessions")
     if len(sessions) != 2:
         raise ImportErrorSafe("Historical import plan does not contain exactly two sessions.")
@@ -639,17 +948,20 @@ def validate_import_result(payload, capture_info, mode):
         server = server_by_date[show_date]
         local = local_by_date[show_date]
         for field in (
-            "sessionId", "status", "queueCount", "completedCount", "removedCount",
-            "spotlightCount", "hasNextInLine", "hasLoadedTrack"
+            "sessionId", "sourceShowDate", "sourceStatus", "appliedNormalizations", "title",
+            "status", "queueCount", "completedCount", "removedCount",
+            "spotlightCount", "hasNextInLine", "hasLoadedTrack",
         ):
             if server.get(field) != local[field]:
                 raise ImportErrorSafe(
                     "Historical import %s field %s does not match the verified capture."
                     % (show_date, field)
                 )
-    target_ids = {item["sessionId"] for item in local_by_date.values()}
-    if active_id not in target_ids:
-        raise ImportErrorSafe("Historical import selected an unrelated active session.")
+    expected_active_id = local_by_date["2026-08-14"]["sessionId"]
+    if active_id != expected_active_id:
+        raise ImportErrorSafe(
+            "Historical import did not select the canonical August 14 archive session."
+        )
     losses = value.get("acceptedLosses")
     if losses != list(EXPECTED_ACCEPTED_LOSSES):
         raise ImportErrorSafe("Historical import accepted-loss contract changed.")
@@ -1099,13 +1411,20 @@ def main():
     for summary in capture_info["summary"]["sessions"]:
         print(
             "CAPTURED SESSION:",
-            summary["showDate"],
+            "canonical=" + summary["showDate"],
+            "source=" + summary["sourceShowDate"],
             "sessionId=" + summary["sessionId"],
-            "status=" + summary["status"],
+            "sourceStatus=" + summary["sourceStatus"],
+            "destinationStatus=" + summary["status"],
             "purpose=" + summary["purpose"],
+            "normalizations=" + ",".join(summary["appliedNormalizations"]),
         )
     try:
-        controlling_tty = open("/dev/tty", "r+", encoding="utf-8", buffering=1)
+        controlling_tty = io.TextIOWrapper(
+            io.FileIO(os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY), mode="w+"),
+            encoding="utf-8",
+            line_buffering=True,
+        )
     except OSError as error:
         raise ImportErrorSafe("A controlling TTY is required for password and confirmation prompts.") from error
     if not controlling_tty.isatty():

@@ -213,12 +213,209 @@ function submission(index, overrides = {}) {
   };
 }
 
-function projectionCapture(states, sourceActiveSessionId) {
+const historicalAugust7SessionId = "session_msjmzqjk_w1rkj";
+const historicalAugust7ExportSha256 = "49c950556a9662f98fa402beb84a7e579120afff8da9cc5c70077f4b46cd6c2e";
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value)
+      .filter((key) => value[key] !== undefined)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
+function historicalRosterIdentity(summary) {
+  return Object.fromEntries([
+    "sessionId",
+    "title",
+    "status",
+    "purpose",
+    "bnlPublicationStatus",
+    "showDate",
+    "createdAt",
+    "updatedAt",
+  ].map((field) => [field, summary[field]]));
+}
+
+function historicalTrack(index, overrides = {}) {
+  return {
+    id: `historical-track-${String(index).padStart(2, "0")}`,
+    ...legacyEntry(index, {
+      createdAt: `2026-08-08T${String(index % 24).padStart(2, "0")}:00:00.000Z`,
+      status: "played",
+      playedAt: `2026-08-08T${String(index % 24).padStart(2, "0")}:30:00.000Z`,
+      isTestTrack: false,
+    }),
+    ...overrides,
+  };
+}
+
+function historicalProjectionState(baseState, {
+  canonicalShowDate,
+  sessionId,
+  sourceShowDate,
+  sourceStatus,
+}) {
+  const state = structuredClone(baseState);
+  const august7 = canonicalShowDate === "2026-08-07";
+  const createdAt = august7 ? "2026-08-08T01:00:00.000Z" : "2026-08-14T19:00:00.000Z";
+  const history = august7
+    ? Array.from({ length: 40 }, (_, index) => historicalTrack(index + 1))
+    : [];
+  const removed = august7
+    ? [historicalTrack(41, {
+      artist: "MagicSZN",
+      title: "HighFive",
+      status: "removed",
+      playedAt: null,
+      removedAt: "2026-08-08T04:00:00.000Z",
+    })]
+    : [];
+  const queue = august7
+    ? []
+    : [historicalTrack(100, {
+      artist: "August Fourteen Artist",
+      title: "August Fourteen Live Track",
+      createdAt: "2026-08-14T20:00:00.000Z",
+      playedAt: null,
+      status: "queued",
+    })];
+
+  state.revision = 73;
+  state.viewedSessionId = sessionId;
+  state.queue = queue;
+  state.history = history;
+  state.removed = removed;
+  state.spotlight = [];
+  state.nextInLine = null;
+  state.loadedTrack = null;
+  state.nowPlaying = null;
+  state.totalPlayed = history.length;
+  state.session = {
+    ...state.session,
+    sessionId,
+    title: august7 ? "BARCODE Radio — August 7 live broadcast" : "BARCODE Radio — August 14 live broadcast",
+    showDate: sourceShowDate,
+    status: sourceStatus,
+    purpose: august7 ? "unknown" : "live_broadcast",
+    bnlPublicationStatus: "private",
+    createdAt,
+    updatedAt: "2026-08-15T18:00:00.000Z",
+    queueOpen: sourceStatus === "open",
+    submissionClosureReason: sourceStatus === "open" ? null : "manual",
+    showStarted: sourceStatus === "open",
+    broadcastStartedAt: sourceStatus === "open" ? "2026-08-14T21:00:00.000Z" : null,
+    broadcastPhase: sourceStatus === "open" ? "live" : "ended",
+    nextInLineTrackId: null,
+    loadedTrackId: null,
+    activeCount: queue.length,
+    acceptedCount: queue.length + history.length,
+    completedCount: history.length,
+    removedCount: removed.length,
+    spotlightCount: 0,
+  };
+  return state;
+}
+
+async function historicalCaptureFixture(sourceWorker, {
+  august7Status = "closed",
+  august14Status = "open",
+} = {}) {
+  const baseState = await sourceWorker.startNewQueueSession({
+    title: "Historical fixture base",
+    showDate: "2026-08-14",
+    purpose: "live_broadcast",
+  });
+  const august7 = historicalProjectionState(baseState, {
+    canonicalShowDate: "2026-08-07",
+    sessionId: historicalAugust7SessionId,
+    sourceShowDate: "2026-08-08",
+    sourceStatus: august7Status,
+  });
+  const august14 = historicalProjectionState(baseState, {
+    canonicalShowDate: "2026-08-14",
+    sessionId: "session_august14_live_verified",
+    sourceShowDate: "2026-08-14",
+    sourceStatus: august14Status,
+  });
+  const roster = [
+    historicalRosterIdentity(august7.session),
+    historicalRosterIdentity(august14.session),
+  ];
+  august7.sessions = structuredClone(roster);
+  august14.sessions = structuredClone(roster);
+  return {
+    august7,
+    august14,
+    capture: projectionCapture([
+      { canonicalShowDate: "2026-08-07", state: august7 },
+      { canonicalShowDate: "2026-08-14", state: august14 },
+    ], august7.session.sessionId),
+  };
+}
+
+function capturedTrackCounts(state) {
+  const primary = [
+    ...state.queue,
+    ...state.history,
+    ...state.removed,
+    ...(state.nextInLine ? [state.nextInLine] : []),
+    ...(state.loadedTrack ? [state.loadedTrack] : []),
+  ];
+  const isSimulation = (entry) => entry.isTestTrack === true
+    || entry.note?.includes("[QUEUE SIMULATION TRACK]")
+    || entry.artist.startsWith("SIM ")
+    || entry.title.startsWith("SIM ");
+  const removedIds = new Set(state.removed.map((entry) => entry.id));
+  const acceptedIds = new Set();
+  const countAccepted = (entry, allowedStatuses) => {
+    if (!entry || removedIds.has(entry.id) || isSimulation(entry)) return;
+    if (allowedStatuses.includes(entry.status)) acceptedIds.add(entry.id);
+  };
+  state.queue.forEach((entry) => countAccepted(entry, ["queued", "playing"]));
+  countAccepted(state.nextInLine, ["queued", "next", "playing"]);
+  countAccepted(state.loadedTrack, ["queued", "next", "playing"]);
+  state.history.forEach((entry) => countAccepted(entry, ["completed", "played"]));
+  const completedIds = new Set(state.history
+    .filter((entry) => !removedIds.has(entry.id)
+      && !isSimulation(entry)
+      && ["completed", "played"].includes(entry.status))
+    .map((entry) => entry.id));
+  return {
+    queue: state.queue.length,
+    history: state.history.length,
+    removed: state.removed.length,
+    spotlight: state.spotlight.length,
+    nextInLine: state.nextInLine ? 1 : 0,
+    loadedTrack: state.loadedTrack ? 1 : 0,
+    primaryUnique: new Set(primary.map((entry) => entry.id)).size,
+    nonSimulationPrimary: primary.filter((entry) => !isSimulation(entry)).length,
+    activeCount: state.queue.filter((entry) => ["queued", "playing"].includes(entry.status)).length
+      + (state.nextInLine ? 1 : 0) + (state.loadedTrack ? 1 : 0),
+    acceptedCount: acceptedIds.size,
+    completedCount: completedIds.size,
+    removedCount: state.removed.length,
+    spotlightCount: state.spotlight.length,
+  };
+}
+
+function projectionCapture(targets, sourceActiveSessionId) {
   const capturedAt = "2026-08-15T20:00:00.000Z";
-  const sessions = states.map((state) => {
+  const august14Target = targets.find((target) => target.canonicalShowDate === "2026-08-14");
+  assert.ok(august14Target, "the capture fixture requires an August 14 target");
+  const rosterIdentities = targets[0].state.sessions
+    .map((summary) => historicalRosterIdentity(summary))
+    .sort((left, right) => left.sessionId.localeCompare(right.sessionId));
+  const rosterSha256 = createHash("sha256").update(canonicalJson(rosterIdentities)).digest("hex");
+  const sessions = targets.map(({ canonicalShowDate, state }) => {
     const raw = Buffer.from(JSON.stringify(state), "utf8");
     return {
-      showDate: state.session.showDate,
+      canonicalShowDate,
+      sourceShowDate: state.session.showDate,
       sessionId: state.session.sessionId,
       revision: state.revision,
       sourceResponseSha256: createHash("sha256").update(raw).digest("hex"),
@@ -232,11 +429,15 @@ function projectionCapture(states, sourceActiveSessionId) {
         bnlPublicationStatus: state.session.bnlPublicationStatus,
         createdAt: state.session.createdAt,
         updatedAt: state.session.updatedAt,
+        queueOpen: state.session.queueOpen,
+        showStarted: state.session.showStarted,
+        broadcastStartedAt: state.session.broadcastStartedAt,
       },
+      trackCounts: capturedTrackCounts(state),
     };
   });
   return {
-    schema: "barcode_queue_two_session_source_capture_v1",
+    schema: "barcode_queue_two_session_source_capture_v2",
     capturedAt,
     source: {
       baseUrl: "https://barcode-network-site-cpps-fg7a9jcmf-6-bits-projects.vercel.app",
@@ -249,16 +450,39 @@ function projectionCapture(states, sourceActiveSessionId) {
       redirectsFollowed: 0,
     },
     scope: {
-      exactShowDates: ["2026-08-07", "2026-08-14"],
+      canonicalShowDates: ["2026-08-07", "2026-08-14"],
       sessionCount: 2,
+      sourceDateNormalization: [
+        {
+          canonicalShowDate: "2026-08-07",
+          sourceShowDate: "2026-08-08",
+          sessionId: historicalAugust7SessionId,
+          rule: "legacy_utc_rollover_to_pacific_broadcast_date",
+          provenance: {
+            kind: "owner_supplied_export",
+            sourceSha256: historicalAugust7ExportSha256,
+            detail: "Owner-supplied live export identifies this source session as the August 7 Pacific broadcast.",
+          },
+        },
+        {
+          canonicalShowDate: "2026-08-14",
+          sourceShowDate: "2026-08-14",
+          sessionId: august14Target.state.session.sessionId,
+          rule: "exact_source_show_date",
+          provenance: {
+            kind: "authenticated_source_queue_state",
+            detail: "Canonical date equals the authenticated source showDate.",
+          },
+        },
+      ],
     },
     consistency: {
       captureStartedAt: "2026-08-15T19:59:00.000Z",
       captureFinishedAt: capturedAt,
-      revision: states[0].revision,
+      revision: targets[0].state.revision,
       activeSessionId: sourceActiveSessionId,
-      rosterCount: 2,
-      rosterSha256: "a".repeat(64),
+      rosterCount: rosterIdentities.length,
+      rosterSha256,
       startSentinelResponseSha256: "b".repeat(64),
       startSentinelResponseBytes: 1,
       endSentinelResponseSha256: "c".repeat(64),
@@ -267,6 +491,18 @@ function projectionCapture(states, sourceActiveSessionId) {
     },
     sessions,
   };
+}
+
+function rewriteCapturedRaw(capture, canonicalShowDate, mutate, { refreshTrackCounts = true } = {}) {
+  const captured = capture.sessions.find((session) => session.canonicalShowDate === canonicalShowDate);
+  assert.ok(captured, `missing ${canonicalShowDate} capture fixture`);
+  const rawState = JSON.parse(Buffer.from(captured.sourceResponseBase64, "base64").toString("utf8"));
+  mutate(rawState);
+  const raw = Buffer.from(JSON.stringify(rawState), "utf8");
+  captured.sourceResponseBase64 = raw.toString("base64");
+  captured.sourceResponseBytes = raw.byteLength;
+  captured.sourceResponseSha256 = createHash("sha256").update(raw).digest("hex");
+  if (refreshTrackCounts) captured.trackCounts = capturedTrackCounts(rawState);
 }
 
 function resetQueueTestState() {
@@ -604,7 +840,7 @@ test("the reviewed restore dry-runs and copies a verified snapshot into an empty
   }
 });
 
-test("the guarded historical import moves only the archived August 7 and August 14 live sessions into aligned dedicated Redis and Blob", async () => {
+test("the guarded v2 historical import preserves source evidence while normalizing the verified August 7 and August 14 identities", async () => {
   resetQueueTestState();
   process.env.UPSTASH_REDIS_REST_URL = "https://shared-bnl.upstash.io";
   process.env.UPSTASH_REDIS_REST_TOKEN = "shared-bnl-token";
@@ -614,35 +850,11 @@ test("the guarded historical import moves only the archived August 7 and August 
 
   try {
     const { first: sourceWorker } = loadIndependentQueueModules();
-
-    let august7 = await sourceWorker.startNewQueueSession({
-      title: "BARCODE Radio — August 7 live broadcast",
-      showDate: "2026-08-07",
-      purpose: "unknown",
-      submissionCooldownSeconds: 0,
+    const { august14, capture } = await historicalCaptureFixture(sourceWorker, {
+      august7Status: "closed",
+      august14Status: "open",
     });
-    await sourceWorker.setQueueOpen(true);
-    await sourceWorker.addToQueue(legacyEntry(7, { artist: "August Seven Artist" }));
-    await sourceWorker.archiveCurrentQueueSession();
-    const august7SessionId = august7.session.sessionId;
-
-    let august14 = await sourceWorker.startNewQueueSession({
-      title: "BARCODE Radio — August 14 live broadcast",
-      showDate: "2026-08-14",
-      purpose: "live_broadcast",
-      submissionCooldownSeconds: 0,
-    });
-    await sourceWorker.setQueueOpen(true);
-    await sourceWorker.addToQueue(legacyEntry(14, { artist: "August Fourteen Artist" }));
-    await sourceWorker.archiveCurrentQueueSession();
-    const august14SessionId = august14.session.sessionId;
-    august7 = await sourceWorker.getRadioQueueState(august7SessionId);
-    august14 = await sourceWorker.getRadioQueueState(august14SessionId);
-
-    assert.equal(august7.session.status, "archived");
-    assert.equal(august14.session.status, "archived");
-    assert.equal(august7.revision, august14.revision);
-    const capture = projectionCapture([august7, august14], august14.session.sessionId);
+    const captureBeforeImport = JSON.stringify(capture);
 
     // Switch to a brand-new queue-only database and a brand-new recovery epoch.
     FakeRedis.values.clear();
@@ -666,8 +878,25 @@ test("the guarded historical import moves only the archived August 7 and August 
     assert.equal(dryRun.targetRevision, 1);
     assert.deepEqual(dryRun.sessions.map((session) => session.showDate).sort(), ["2026-08-07", "2026-08-14"]);
     assert.equal(dryRun.activeSessionId, august14.session.sessionId);
-    assert.equal(dryRun.activeSessionSelection, "source_active_session");
+    assert.equal(dryRun.sourceActiveSessionId, historicalAugust7SessionId);
+    assert.equal(dryRun.activeSessionSelection, "newest_imported_archived_session");
+    assert.equal(dryRun.sourceRevision, 73);
+    const august7Plan = dryRun.sessions.find((session) => session.showDate === "2026-08-07");
+    const august14Plan = dryRun.sessions.find((session) => session.showDate === "2026-08-14");
+    assert.equal(august7Plan.sessionId, historicalAugust7SessionId);
+    assert.equal(august7Plan.sourceShowDate, "2026-08-08");
+    assert.equal(august7Plan.sourceStatus, "closed");
+    assert.equal(august7Plan.status, "archived");
+    assert.equal(august7Plan.completedCount, 40);
+    assert.equal(august7Plan.removedCount, 1);
+    assert.ok(august7Plan.appliedNormalizations.includes("source_show_date_to_canonical_pacific_show_date"));
+    assert.ok(august7Plan.appliedNormalizations.includes("source_status_to_archived"));
+    assert.equal(august14Plan.sourceShowDate, "2026-08-14");
+    assert.equal(august14Plan.sourceStatus, "open");
+    assert.equal(august14Plan.status, "archived");
+    assert.ok(august14Plan.appliedNormalizations.includes("source_status_to_archived"));
     assert.match(dryRun.requiredConfirmation, /^IMPORT 2 HISTORICAL QUEUE SESSIONS [a-f0-9]{64} INTO REVISION 0$/);
+    assert.equal(JSON.stringify(capture), captureBeforeImport, "a dry-run must not alter the raw source evidence");
 
     const redisBeforeWrongConfirmation = FakeRedis.values.get("radioQueue:v2:sessions");
     await assert.rejects(
@@ -695,9 +924,47 @@ test("the guarded historical import moves only the archived August 7 and August 
     assert.equal(Number(FakeRedis.values.get("radioQueue:v2:sessions:mutation-revision")), 1);
     assert.equal(stored.sessions.length, 2);
     assert.deepEqual(stored.sessions.map((session) => session.showDate).sort(), ["2026-08-07", "2026-08-14"]);
-    assert.ok(stored.sessions.every((session) => session.status === "archived" && session.queueOpen === false));
-    assert.ok(stored.sessions.some((session) => session.queue.some((entry) => entry.artist === "August Seven Artist")));
+    assert.ok(stored.sessions.every((session) => session.status === "archived"
+      && session.queueOpen === false
+      && session.submissionClosureReason === "archived"
+      && session.showStarted === false
+      && session.broadcastPhase === "ended"));
     assert.ok(stored.sessions.some((session) => session.queue.some((entry) => entry.artist === "August Fourteen Artist")));
+    const storedAugust7 = stored.sessions.find((session) => session.sessionId === historicalAugust7SessionId);
+    const storedAugust14 = stored.sessions.find((session) => session.sessionId === august14.session.sessionId);
+    assert.equal(stored.activeSessionId, august14.session.sessionId);
+    assert.equal(storedAugust7.showDate, "2026-08-07");
+    assert.equal(storedAugust7.completed.length, 40);
+    assert.equal(storedAugust7.removed.length, 1);
+    assert.equal(storedAugust7.removed[0].artist, "MagicSZN");
+    assert.equal(storedAugust7.removed[0].title, "HighFive");
+    assert.deepEqual(storedAugust7.historicalRecoveryProvenance, {
+      schema: "barcode_queue_historical_recovery_provenance_v1",
+      sourceUrl: capture.source.baseUrl,
+      sourceCommit: capture.source.expectedGitCommit,
+      sourceRevision: 73,
+      sourceDigest: dryRun.sourceDigest,
+      sourceResponseSha256: capture.sessions.find((session) => session.canonicalShowDate === "2026-08-07").sourceResponseSha256,
+      sourceSessionId: historicalAugust7SessionId,
+      sourceStoredShowDate: "2026-08-08",
+      canonicalShowDate: "2026-08-07",
+      timeZone: "America/Los_Angeles",
+      sourceStatus: "closed",
+      appliedNormalizations: [
+        "source_show_date_to_canonical_pacific_show_date",
+        "source_status_to_archived",
+      ],
+    });
+    assert.equal(storedAugust14.historicalRecoveryProvenance.sourceStoredShowDate, "2026-08-14");
+    assert.equal(storedAugust14.historicalRecoveryProvenance.sourceStatus, "open");
+    assert.equal(storedAugust14.historicalRecoveryProvenance.sourceDigest, dryRun.sourceDigest);
+    assert.deepEqual(storedAugust14.historicalRecoveryProvenance.appliedNormalizations, [
+      "source_status_to_archived",
+      "queue_closed_for_historical_archive",
+      "show_stopped_for_historical_archive",
+      "broadcast_phase_ended_for_historical_archive",
+    ]);
+    assert.equal(JSON.stringify(capture), captureBeforeImport, "the import must preserve the capture's raw response bytes");
 
     const status = await destinationWorker.getQueueRecoveryStatus();
     assert.equal(status.alignment, "aligned");
@@ -708,14 +975,219 @@ test("the guarded historical import moves only the archived August 7 and August 
     assert.equal(status.redis.sessionCount, 2);
     assert.equal(status.durable.sessionCount, 2);
 
-    const fromBlob = await destinationWorker.getRadioQueueState(august7.session.sessionId);
+    const fromBlob = await destinationWorker.getRadioQueueState(historicalAugust7SessionId);
     assert.equal(fromBlob.session.showDate, "2026-08-07");
-    assert.ok(fromBlob.queue.some((entry) => entry.artist === "August Seven Artist"));
+    assert.equal(fromBlob.history.length, 40);
+    assert.equal(fromBlob.removed[0].artist, "MagicSZN");
 
     const retry = await destinationWorker.importHistoricalQueueSessions({ capture, dryRun: false });
     assert.equal(retry.imported, false);
     assert.equal(retry.alreadyPresent, true);
     assert.equal(retry.targetRevision, 1);
+  } finally {
+    resetQueueTestState();
+    delete process.env.BLOB_READ_WRITE_TOKEN;
+    delete process.env.QUEUE_REDIS_REST_URL;
+    delete process.env.QUEUE_REDIS_REST_TOKEN;
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+  }
+});
+
+test("historical v2 capture rejects stale schema and any weakened August 7 identity, date, export, roster, or raw evidence", async () => {
+  resetQueueTestState();
+  process.env.UPSTASH_REDIS_REST_URL = "https://shared-bnl.upstash.io";
+  process.env.UPSTASH_REDIS_REST_TOKEN = "shared-bnl-token";
+  process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
+  delete process.env.QUEUE_REDIS_REST_URL;
+  delete process.env.QUEUE_REDIS_REST_TOKEN;
+
+  try {
+    const { first: sourceWorker } = loadIndependentQueueModules();
+    const { capture } = await historicalCaptureFixture(sourceWorker);
+    const { capture: openAugust7Capture } = await historicalCaptureFixture(sourceWorker, {
+      august7Status: "open",
+    });
+
+    FakeRedis.values.clear();
+    FakeBlob.values.clear();
+    process.env.QUEUE_REDIS_REST_URL = "https://owned-queue-only.upstash.io";
+    process.env.QUEUE_REDIS_REST_TOKEN = "owned-queue-token";
+    const { first: destinationWorker } = loadIndependentQueueModules();
+    await destinationWorker.getRadioQueueState();
+    await destinationWorker.restoreQueueFromDurableSnapshot({
+      dryRun: false,
+      confirmation: "RESTORE DURABLE QUEUE REVISION 0",
+    });
+    const redisBefore = FakeRedis.values.get("radioQueue:v2:sessions");
+
+    const staleSchema = structuredClone(capture);
+    staleSchema.schema = "barcode_queue_two_session_source_capture_v1";
+    await assert.rejects(
+      () => destinationWorker.importHistoricalQueueSessions({ capture: staleSchema, dryRun: true }),
+      /schema must be .*_v2/i,
+    );
+
+    await assert.rejects(
+      () => destinationWorker.importHistoricalQueueSessions({ capture: openAugust7Capture, dryRun: true }),
+      /August 7 historical session must be closed or archived at the source/i,
+    );
+
+    const wrongSessionId = structuredClone(capture);
+    wrongSessionId.scope.sourceDateNormalization[0].sessionId = "session_wrong_august7";
+    await assert.rejects(
+      () => destinationWorker.importHistoricalQueueSessions({ capture: wrongSessionId, dryRun: true }),
+      /August 7 historical queue date-normalization provenance is invalid/i,
+    );
+
+    const wrongSourceDate = structuredClone(capture);
+    wrongSourceDate.scope.sourceDateNormalization[0].sourceShowDate = "2026-08-07";
+    await assert.rejects(
+      () => destinationWorker.importHistoricalQueueSessions({ capture: wrongSourceDate, dryRun: true }),
+      /August 7 historical queue date-normalization provenance is invalid/i,
+    );
+
+    const wrongExport = structuredClone(capture);
+    wrongExport.scope.sourceDateNormalization[0].provenance.sourceSha256 = "0".repeat(64);
+    await assert.rejects(
+      () => destinationWorker.importHistoricalQueueSessions({ capture: wrongExport, dryRun: true }),
+      /August 7 historical queue date-normalization provenance is invalid/i,
+    );
+
+    const missingProvenanceDetail = structuredClone(capture);
+    missingProvenanceDetail.scope.sourceDateNormalization[1].provenance.detail = "";
+    await assert.rejects(
+      () => destinationWorker.importHistoricalQueueSessions({ capture: missingProvenanceDetail, dryRun: true }),
+      /provenance\.detail is required/i,
+    );
+
+    const rosterDrift = structuredClone(capture);
+    rewriteCapturedRaw(rosterDrift, "2026-08-14", (state) => {
+      state.sessions[0].title = "Tampered roster title";
+    });
+    await assert.rejects(
+      () => destinationWorker.importHistoricalQueueSessions({ capture: rosterDrift, dryRun: true }),
+      /sessions does not match the captured roster SHA-256/i,
+    );
+
+    for (const missingField of ["removed", "spotlight"]) {
+      const missingLifecycleArray = structuredClone(capture);
+      rewriteCapturedRaw(missingLifecycleArray, "2026-08-14", (state) => {
+        delete state[missingField];
+      }, { refreshTrackCounts: false });
+      await assert.rejects(
+        () => destinationWorker.importHistoricalQueueSessions({ capture: missingLifecycleArray, dryRun: true }),
+        new RegExp(`${missingField} must be an array`, "i"),
+      );
+    }
+
+    const wrongCapturedAcceptedCount = structuredClone(capture);
+    wrongCapturedAcceptedCount.sessions
+      .find((session) => session.canonicalShowDate === "2026-08-14")
+      .trackCounts.acceptedCount += 1;
+    await assert.rejects(
+      () => destinationWorker.importHistoricalQueueSessions({ capture: wrongCapturedAcceptedCount, dryRun: true }),
+      /capture trackCounts\.acceptedCount does not match the raw response/i,
+    );
+
+    const missingTotalPlayed = structuredClone(capture);
+    rewriteCapturedRaw(missingTotalPlayed, "2026-08-14", (state) => {
+      delete state.totalPlayed;
+    });
+    await assert.rejects(
+      () => destinationWorker.importHistoricalQueueSessions({ capture: missingTotalPlayed, dryRun: true }),
+      /totalPlayed must be a non-negative integer/i,
+    );
+
+    const wrongCount = structuredClone(capture);
+    rewriteCapturedRaw(wrongCount, "2026-08-07", (state) => {
+      state.history.pop();
+      state.session.completedCount = state.history.length;
+      state.session.acceptedCount = state.history.length;
+      state.totalPlayed = state.history.length;
+    });
+    await assert.rejects(
+      () => destinationWorker.importHistoricalQueueSessions({ capture: wrongCount, dryRun: true }),
+      /40 played.*1 removed owner export/i,
+    );
+
+    const wrongRemovedIdentity = structuredClone(capture);
+    rewriteCapturedRaw(wrongRemovedIdentity, "2026-08-07", (state) => {
+      state.removed[0].title = "Not HighFive";
+    });
+    await assert.rejects(
+      () => destinationWorker.importHistoricalQueueSessions({ capture: wrongRemovedIdentity, dryRun: true }),
+      /August 7.*owner export|removed track/i,
+    );
+
+    const noRealAugust14Track = structuredClone(capture);
+    rewriteCapturedRaw(noRealAugust14Track, "2026-08-14", (state) => {
+      state.queue[0].isTestTrack = true;
+      state.session.acceptedCount = 0;
+    });
+    await assert.rejects(
+      () => destinationWorker.importHistoricalQueueSessions({ capture: noRealAugust14Track, dryRun: true }),
+      /August 14 historical session contains no real queue records/i,
+    );
+
+    const missingSession = structuredClone(capture);
+    missingSession.sessions.pop();
+    await assert.rejects(
+      () => destinationWorker.importHistoricalQueueSessions({ capture: missingSession, dryRun: true }),
+      /exactly two source session projections/i,
+    );
+
+    const alteredRawWithoutDigest = structuredClone(capture);
+    const august7Capture = alteredRawWithoutDigest.sessions.find((session) => session.canonicalShowDate === "2026-08-07");
+    const raw = Buffer.from(august7Capture.sourceResponseBase64, "base64");
+    raw[raw.length - 2] ^= 1;
+    august7Capture.sourceResponseBase64 = raw.toString("base64");
+    await assert.rejects(
+      () => destinationWorker.importHistoricalQueueSessions({ capture: alteredRawWithoutDigest, dryRun: true }),
+      /sourceResponseSha256 does not match|UTF-8 JSON response/i,
+    );
+
+    assert.equal(FakeRedis.values.get("radioQueue:v2:sessions"), redisBefore);
+    assert.equal(Number(FakeRedis.values.get("radioQueue:v2:sessions:mutation-revision")), 0);
+  } finally {
+    resetQueueTestState();
+    delete process.env.BLOB_READ_WRITE_TOKEN;
+    delete process.env.QUEUE_REDIS_REST_URL;
+    delete process.env.QUEUE_REDIS_REST_TOKEN;
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+  }
+});
+
+test("historical v2 source statuses closed and archived retain provenance while the destination remains archived", async () => {
+  try {
+    for (const august14Status of ["closed", "archived"]) {
+      resetQueueTestState();
+      process.env.UPSTASH_REDIS_REST_URL = "https://shared-bnl.upstash.io";
+      process.env.UPSTASH_REDIS_REST_TOKEN = "shared-bnl-token";
+      process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
+      delete process.env.QUEUE_REDIS_REST_URL;
+      delete process.env.QUEUE_REDIS_REST_TOKEN;
+
+      const { first: sourceWorker } = loadIndependentQueueModules();
+      const { capture } = await historicalCaptureFixture(sourceWorker, { august14Status });
+      FakeRedis.values.clear();
+      FakeBlob.values.clear();
+      process.env.QUEUE_REDIS_REST_URL = "https://owned-queue-only.upstash.io";
+      process.env.QUEUE_REDIS_REST_TOKEN = "owned-queue-token";
+      const { first: destinationWorker } = loadIndependentQueueModules();
+      await destinationWorker.getRadioQueueState();
+      await destinationWorker.restoreQueueFromDurableSnapshot({
+        dryRun: false,
+        confirmation: "RESTORE DURABLE QUEUE REVISION 0",
+      });
+
+      const dryRun = await destinationWorker.importHistoricalQueueSessions({ capture, dryRun: true });
+      const summary = dryRun.sessions.find((session) => session.showDate === "2026-08-14");
+      assert.equal(summary.sourceStatus, august14Status);
+      assert.equal(summary.status, "archived");
+      assert.equal(summary.appliedNormalizations.includes("source_status_to_archived"), august14Status !== "archived");
+    }
   } finally {
     resetQueueTestState();
     delete process.env.BLOB_READ_WRITE_TOKEN;
@@ -736,15 +1208,7 @@ test("historical import refuses the shared BNL endpoint and rolls Redis back if 
 
   try {
     const { first: sourceWorker } = loadIndependentQueueModules();
-    let august7 = await sourceWorker.startNewQueueSession({ title: "August 7", showDate: "2026-08-07", purpose: "unknown" });
-    await sourceWorker.archiveCurrentQueueSession();
-    const august7SessionId = august7.session.sessionId;
-    let august14 = await sourceWorker.startNewQueueSession({ title: "August 14", showDate: "2026-08-14", purpose: "live_broadcast" });
-    await sourceWorker.archiveCurrentQueueSession();
-    const august14SessionId = august14.session.sessionId;
-    august7 = await sourceWorker.getRadioQueueState(august7SessionId);
-    august14 = await sourceWorker.getRadioQueueState(august14SessionId);
-    const capture = projectionCapture([august7, august14], august14.session.sessionId);
+    const { capture } = await historicalCaptureFixture(sourceWorker);
 
     FakeRedis.values.clear();
     FakeBlob.values.clear();

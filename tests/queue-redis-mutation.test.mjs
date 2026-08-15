@@ -13,6 +13,11 @@ class FakeRedis {
   static calls = [];
   static failGets = false;
   static failAllCommands = false;
+  static failOnConstruct = false;
+
+  constructor() {
+    if (FakeRedis.failOnConstruct) throw new Error("Redis client URL is invalid");
+  }
 
   static quotaError() {
     return new Error("ERR max requests limit exceeded. Limit: 500000");
@@ -571,6 +576,34 @@ test("recovery diagnostics report a partial shared Redis fallback without throwi
     assert.equal(status.redis.failureReason, "configuration_error");
     assert.equal(FakeRedis.calls.length, 0, "a partial shared fallback must not issue Redis commands");
   } finally {
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+  }
+});
+
+test("recovery diagnostics catch Redis client construction failures without touching queue state", async () => {
+  FakeRedis.values.clear();
+  FakeRedis.calls.length = 0;
+  FakeBlob.values.clear();
+  FakeBlob.calls.length = 0;
+  FakeRedis.failOnConstruct = true;
+  delete process.env.BLOB_READ_WRITE_TOKEN;
+  process.env.UPSTASH_REDIS_REST_URL = "https://malformed-at-runtime.example.test";
+  process.env.UPSTASH_REDIS_REST_TOKEN = "configured-token";
+  delete process.env.QUEUE_REDIS_REST_URL;
+  delete process.env.QUEUE_REDIS_REST_TOKEN;
+
+  try {
+    const { first: recoveryWorker } = loadIndependentQueueModules();
+    const status = await recoveryWorker.getQueueRecoveryStatus();
+
+    assert.equal(status.redis.configurationStatus, "shared_fallback");
+    assert.equal(status.redis.available, false);
+    assert.equal(status.redis.failureReason, "unavailable");
+    assert.equal(FakeRedis.calls.length, 0, "client construction failure must issue no commands");
+    assert.equal(FakeRedis.values.size, 0, "client construction failure must not mutate Redis state");
+  } finally {
+    FakeRedis.failOnConstruct = false;
     delete process.env.UPSTASH_REDIS_REST_URL;
     delete process.env.UPSTASH_REDIS_REST_TOKEN;
   }

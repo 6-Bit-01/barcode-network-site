@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import Module, { createRequire } from "node:module";
 import path from "node:path";
@@ -210,6 +211,74 @@ function submission(index, overrides = {}) {
     sourceType: "other",
     ...overrides,
   };
+}
+
+function projectionCapture(states, sourceActiveSessionId) {
+  const capturedAt = "2026-08-15T20:00:00.000Z";
+  const sessions = states.map((state) => {
+    const raw = Buffer.from(JSON.stringify(state), "utf8");
+    return {
+      showDate: state.session.showDate,
+      sessionId: state.session.sessionId,
+      revision: state.revision,
+      sourceResponseSha256: createHash("sha256").update(raw).digest("hex"),
+      sourceResponseBytes: raw.byteLength,
+      sourceResponseBase64: raw.toString("base64"),
+      summaryAtStart: {
+        sessionId: state.session.sessionId,
+        showDate: state.session.showDate,
+        status: state.session.status,
+        purpose: state.session.purpose,
+        bnlPublicationStatus: state.session.bnlPublicationStatus,
+        createdAt: state.session.createdAt,
+        updatedAt: state.session.updatedAt,
+      },
+    };
+  });
+  return {
+    schema: "barcode_queue_two_session_source_capture_v1",
+    capturedAt,
+    source: {
+      baseUrl: "https://barcode-network-site-cpps-fg7a9jcmf-6-bits-projects.vercel.app",
+      expectedGitCommit: "a1537f611db69e5a1c3d74ebb941d06d68ad49ff",
+      route: "/api/admin/queue",
+      captureKind: "authenticated_admin_logical_session_state",
+      canonicalRawRedis: false,
+      remoteMutationRequests: 0,
+      automaticRetries: 0,
+      redirectsFollowed: 0,
+    },
+    scope: {
+      exactShowDates: ["2026-08-07", "2026-08-14"],
+      sessionCount: 2,
+    },
+    consistency: {
+      captureStartedAt: "2026-08-15T19:59:00.000Z",
+      captureFinishedAt: capturedAt,
+      revision: states[0].revision,
+      activeSessionId: sourceActiveSessionId,
+      rosterCount: 2,
+      rosterSha256: "a".repeat(64),
+      startSentinelResponseSha256: "b".repeat(64),
+      startSentinelResponseBytes: 1,
+      endSentinelResponseSha256: "c".repeat(64),
+      endSentinelResponseBytes: 1,
+      startEndMatch: true,
+    },
+    sessions,
+  };
+}
+
+function resetQueueTestState() {
+  FakeRedis.values.clear();
+  FakeRedis.calls.length = 0;
+  FakeRedis.failGets = false;
+  FakeRedis.failAllCommands = false;
+  FakeRedis.failOnConstruct = false;
+  FakeRedis.getFailure = null;
+  FakeBlob.values.clear();
+  FakeBlob.calls.length = 0;
+  FakeBlob.failPuts = false;
 }
 
 test("Redis fencing serializes independent queue workers without overfill, lost writes, or duplicate acceptance", async () => {
@@ -477,7 +546,7 @@ test("the reviewed restore dry-runs and copies a verified snapshot into an empty
   FakeBlob.values.clear();
   FakeBlob.calls.length = 0;
   FakeBlob.failPuts = false;
-  process.env.UPSTASH_REDIS_REST_URL = "https://old-shared-redis.example.test";
+  process.env.UPSTASH_REDIS_REST_URL = "https://old-shared-redis.upstash.io";
   process.env.UPSTASH_REDIS_REST_TOKEN = "old-token";
   process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
   delete process.env.QUEUE_REDIS_REST_URL;
@@ -491,7 +560,7 @@ test("the reviewed restore dry-runs and copies a verified snapshot into an empty
     const original = await oldWorker.getRadioQueueState();
 
     FakeRedis.values.clear();
-    process.env.QUEUE_REDIS_REST_URL = "https://owned-queue-redis.example.test";
+    process.env.QUEUE_REDIS_REST_URL = "https://owned-queue-redis.upstash.io";
     process.env.QUEUE_REDIS_REST_TOKEN = "owned-token";
     const { first: recoveryWorker } = loadIndependentQueueModules();
 
@@ -532,6 +601,194 @@ test("the reviewed restore dry-runs and copies a verified snapshot into an empty
     delete process.env.BLOB_READ_WRITE_TOKEN;
     delete process.env.QUEUE_REDIS_REST_URL;
     delete process.env.QUEUE_REDIS_REST_TOKEN;
+  }
+});
+
+test("the guarded historical import moves only the archived August 7 and August 14 live sessions into aligned dedicated Redis and Blob", async () => {
+  resetQueueTestState();
+  process.env.UPSTASH_REDIS_REST_URL = "https://shared-bnl.upstash.io";
+  process.env.UPSTASH_REDIS_REST_TOKEN = "shared-bnl-token";
+  process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
+  delete process.env.QUEUE_REDIS_REST_URL;
+  delete process.env.QUEUE_REDIS_REST_TOKEN;
+
+  try {
+    const { first: sourceWorker } = loadIndependentQueueModules();
+
+    let august7 = await sourceWorker.startNewQueueSession({
+      title: "BARCODE Radio — August 7 live broadcast",
+      showDate: "2026-08-07",
+      purpose: "unknown",
+      submissionCooldownSeconds: 0,
+    });
+    await sourceWorker.setQueueOpen(true);
+    await sourceWorker.addToQueue(legacyEntry(7, { artist: "August Seven Artist" }));
+    await sourceWorker.archiveCurrentQueueSession();
+    const august7SessionId = august7.session.sessionId;
+
+    let august14 = await sourceWorker.startNewQueueSession({
+      title: "BARCODE Radio — August 14 live broadcast",
+      showDate: "2026-08-14",
+      purpose: "live_broadcast",
+      submissionCooldownSeconds: 0,
+    });
+    await sourceWorker.setQueueOpen(true);
+    await sourceWorker.addToQueue(legacyEntry(14, { artist: "August Fourteen Artist" }));
+    await sourceWorker.archiveCurrentQueueSession();
+    const august14SessionId = august14.session.sessionId;
+    august7 = await sourceWorker.getRadioQueueState(august7SessionId);
+    august14 = await sourceWorker.getRadioQueueState(august14SessionId);
+
+    assert.equal(august7.session.status, "archived");
+    assert.equal(august14.session.status, "archived");
+    assert.equal(august7.revision, august14.revision);
+    const capture = projectionCapture([august7, august14], august14.session.sessionId);
+
+    // Switch to a brand-new queue-only database and a brand-new recovery epoch.
+    FakeRedis.values.clear();
+    FakeBlob.values.clear();
+    process.env.QUEUE_REDIS_REST_URL = "https://owned-queue-only.upstash.io";
+    process.env.QUEUE_REDIS_REST_TOKEN = "owned-queue-token";
+    const { first: destinationWorker } = loadIndependentQueueModules();
+
+    await destinationWorker.getRadioQueueState();
+    const restored = await destinationWorker.restoreQueueFromDurableSnapshot({
+      dryRun: false,
+      confirmation: "RESTORE DURABLE QUEUE REVISION 0",
+    });
+    assert.equal(restored.restored, true);
+    assert.equal(restored.revision, 0);
+
+    const dryRun = await destinationWorker.importHistoricalQueueSessions({ capture, dryRun: true });
+    assert.equal(dryRun.dryRun, true);
+    assert.equal(dryRun.imported, false);
+    assert.equal(dryRun.currentRevision, 0);
+    assert.equal(dryRun.targetRevision, 1);
+    assert.deepEqual(dryRun.sessions.map((session) => session.showDate).sort(), ["2026-08-07", "2026-08-14"]);
+    assert.equal(dryRun.activeSessionId, august14.session.sessionId);
+    assert.equal(dryRun.activeSessionSelection, "source_active_session");
+    assert.match(dryRun.requiredConfirmation, /^IMPORT 2 HISTORICAL QUEUE SESSIONS [a-f0-9]{64} INTO REVISION 0$/);
+
+    const redisBeforeWrongConfirmation = FakeRedis.values.get("radioQueue:v2:sessions");
+    await assert.rejects(
+      () => destinationWorker.importHistoricalQueueSessions({
+        capture,
+        dryRun: false,
+        confirmation: "IMPORT THE WRONG DATA",
+      }),
+      /confirmation must exactly match/i,
+    );
+    assert.equal(FakeRedis.values.get("radioQueue:v2:sessions"), redisBeforeWrongConfirmation);
+    assert.equal(Number(FakeRedis.values.get("radioQueue:v2:sessions:mutation-revision")), 0);
+
+    const imported = await destinationWorker.importHistoricalQueueSessions({
+      capture,
+      dryRun: false,
+      confirmation: dryRun.requiredConfirmation,
+    });
+    assert.equal(imported.imported, true);
+    assert.equal(imported.alreadyPresent, false);
+    assert.equal(imported.targetRevision, 1);
+
+    const stored = JSON.parse(FakeRedis.values.get("radioQueue:v2:sessions"));
+    assert.equal(stored.revision, 1);
+    assert.equal(Number(FakeRedis.values.get("radioQueue:v2:sessions:mutation-revision")), 1);
+    assert.equal(stored.sessions.length, 2);
+    assert.deepEqual(stored.sessions.map((session) => session.showDate).sort(), ["2026-08-07", "2026-08-14"]);
+    assert.ok(stored.sessions.every((session) => session.status === "archived" && session.queueOpen === false));
+    assert.ok(stored.sessions.some((session) => session.queue.some((entry) => entry.artist === "August Seven Artist")));
+    assert.ok(stored.sessions.some((session) => session.queue.some((entry) => entry.artist === "August Fourteen Artist")));
+
+    const status = await destinationWorker.getQueueRecoveryStatus();
+    assert.equal(status.alignment, "aligned");
+    assert.equal(status.redis.dedicated, true);
+    assert.equal(status.redis.isolatedFromShared, true);
+    assert.equal(status.redis.revision, 1);
+    assert.equal(status.durable.revision, 1);
+    assert.equal(status.redis.sessionCount, 2);
+    assert.equal(status.durable.sessionCount, 2);
+
+    const fromBlob = await destinationWorker.getRadioQueueState(august7.session.sessionId);
+    assert.equal(fromBlob.session.showDate, "2026-08-07");
+    assert.ok(fromBlob.queue.some((entry) => entry.artist === "August Seven Artist"));
+
+    const retry = await destinationWorker.importHistoricalQueueSessions({ capture, dryRun: false });
+    assert.equal(retry.imported, false);
+    assert.equal(retry.alreadyPresent, true);
+    assert.equal(retry.targetRevision, 1);
+  } finally {
+    resetQueueTestState();
+    delete process.env.BLOB_READ_WRITE_TOKEN;
+    delete process.env.QUEUE_REDIS_REST_URL;
+    delete process.env.QUEUE_REDIS_REST_TOKEN;
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+  }
+});
+
+test("historical import refuses the shared BNL endpoint and rolls Redis back if the durable revision cannot be written", async () => {
+  resetQueueTestState();
+  process.env.UPSTASH_REDIS_REST_URL = "https://shared-bnl.upstash.io";
+  process.env.UPSTASH_REDIS_REST_TOKEN = "shared-bnl-token";
+  process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
+  delete process.env.QUEUE_REDIS_REST_URL;
+  delete process.env.QUEUE_REDIS_REST_TOKEN;
+
+  try {
+    const { first: sourceWorker } = loadIndependentQueueModules();
+    let august7 = await sourceWorker.startNewQueueSession({ title: "August 7", showDate: "2026-08-07", purpose: "unknown" });
+    await sourceWorker.archiveCurrentQueueSession();
+    const august7SessionId = august7.session.sessionId;
+    let august14 = await sourceWorker.startNewQueueSession({ title: "August 14", showDate: "2026-08-14", purpose: "live_broadcast" });
+    await sourceWorker.archiveCurrentQueueSession();
+    const august14SessionId = august14.session.sessionId;
+    august7 = await sourceWorker.getRadioQueueState(august7SessionId);
+    august14 = await sourceWorker.getRadioQueueState(august14SessionId);
+    const capture = projectionCapture([august7, august14], august14.session.sessionId);
+
+    FakeRedis.values.clear();
+    FakeBlob.values.clear();
+    process.env.QUEUE_REDIS_REST_URL = "https://shared-bnl.upstash.io";
+    process.env.QUEUE_REDIS_REST_TOKEN = "another-token-for-the-same-endpoint";
+    const { first: unsafeDestinationWorker } = loadIndependentQueueModules();
+    const unsafeStatus = await unsafeDestinationWorker.getQueueRecoveryStatus();
+    assert.equal(unsafeStatus.redis.dedicated, true);
+    assert.equal(unsafeStatus.redis.isolatedFromShared, false);
+    await assert.rejects(
+      () => unsafeDestinationWorker.importHistoricalQueueSessions({ capture, dryRun: true }),
+      /same endpoint|shared.*endpoint|different Redis endpoint|distinct/i,
+    );
+    assert.equal(FakeRedis.values.has("radioQueue:v2:sessions"), false);
+
+    process.env.QUEUE_REDIS_REST_URL = "https://owned-queue-only.upstash.io";
+    process.env.QUEUE_REDIS_REST_TOKEN = "owned-queue-token";
+    const { first: destinationWorker } = loadIndependentQueueModules();
+    await destinationWorker.getRadioQueueState();
+    await destinationWorker.restoreQueueFromDurableSnapshot({
+      dryRun: false,
+      confirmation: "RESTORE DURABLE QUEUE REVISION 0",
+    });
+    const dryRun = await destinationWorker.importHistoricalQueueSessions({ capture, dryRun: true });
+    const redisBefore = FakeRedis.values.get("radioQueue:v2:sessions");
+
+    FakeBlob.failPuts = true;
+    await assert.rejects(
+      () => destinationWorker.importHistoricalQueueSessions({
+        capture,
+        dryRun: false,
+        confirmation: dryRun.requiredConfirmation,
+      }),
+      /Blob snapshot write failed/,
+    );
+    assert.equal(FakeRedis.values.get("radioQueue:v2:sessions"), redisBefore);
+    assert.equal(Number(FakeRedis.values.get("radioQueue:v2:sessions:mutation-revision")), 0);
+  } finally {
+    resetQueueTestState();
+    delete process.env.BLOB_READ_WRITE_TOKEN;
+    delete process.env.QUEUE_REDIS_REST_URL;
+    delete process.env.QUEUE_REDIS_REST_TOKEN;
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
   }
 });
 

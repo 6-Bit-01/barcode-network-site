@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { COOKIE_NAME, verifyAdminToken } from "@/lib/auth";
-import { getQueueRecoveryStatus, restoreQueueFromDurableSnapshot } from "@/lib/queue";
+import { getQueueRecoveryStatus, importHistoricalQueueSessions, restoreQueueFromDurableSnapshot } from "@/lib/queue";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -16,8 +16,13 @@ async function assertAdmin(): Promise<boolean> {
 function failureReason(error: unknown): { message: string; status: number } {
   const message = error instanceof Error ? error.message : "Queue recovery failed.";
   if (/confirmation/i.test(message)) return { message, status: 400 };
-  if (/newer revision|inconsistent|changed before restore/i.test(message)) return { message, status: 409 };
-  if (/not configured|no verified durable/i.test(message)) return { message, status: 503 };
+  if (/newer revision|inconsistent|changed before restore|aligned revision 0|must be aligned/i.test(message)) return { message, status: 409 };
+  if (/not configured|no verified durable|not a valid HTTPS Redis endpoint|must use a different Redis endpoint|queue recovery isolation checks/i.test(message)) {
+    return { message, status: 503 };
+  }
+  if (/historical queue capture|capture\.|admin queue state|show dates|repeats (?:a session|track)|conflicting loadedTrack|too many queue records/i.test(message)) {
+    return { message, status: 400 };
+  }
   return { message: "Queue recovery failed.", status: 500 };
 }
 
@@ -64,15 +69,23 @@ export async function GET() {
 export async function POST(req: Request) {
   if (!(await assertAdmin())) return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: NO_STORE_HEADERS });
   const body = await req.json().catch(() => ({}));
-  if (body.action !== "restoreDurableSnapshot") {
-    return NextResponse.json({ error: "Unknown queue recovery action." }, { status: 400, headers: NO_STORE_HEADERS });
-  }
   try {
-    const result = await restoreQueueFromDurableSnapshot({
-      dryRun: body.dryRun !== false,
-      confirmation: typeof body.confirmation === "string" ? body.confirmation : undefined,
-    });
-    return NextResponse.json(result, { headers: NO_STORE_HEADERS });
+    if (body.action === "restoreDurableSnapshot") {
+      const result = await restoreQueueFromDurableSnapshot({
+        dryRun: body.dryRun !== false,
+        confirmation: typeof body.confirmation === "string" ? body.confirmation : undefined,
+      });
+      return NextResponse.json(result, { headers: NO_STORE_HEADERS });
+    }
+    if (body.action === "importHistoricalSessions") {
+      const result = await importHistoricalQueueSessions({
+        capture: body.capture,
+        dryRun: body.dryRun !== false,
+        confirmation: typeof body.confirmation === "string" ? body.confirmation : undefined,
+      });
+      return NextResponse.json(result, { headers: NO_STORE_HEADERS });
+    }
+    return NextResponse.json({ error: "Unknown queue recovery action." }, { status: 400, headers: NO_STORE_HEADERS });
   } catch (error) {
     const failure = failureReason(error);
     return NextResponse.json({ error: failure.message }, { status: failure.status, headers: NO_STORE_HEADERS });

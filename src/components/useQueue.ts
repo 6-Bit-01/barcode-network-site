@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback } from "react";
 import type { QueueState } from "@/lib/queue-types";
+import { PUBLIC_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 
-const POLL_INTERVAL = 10_000; // 10 seconds
+const POLL_INTERVAL = PUBLIC_QUEUE_POLL_INTERVAL_MS;
 
 export function useQueue() {
   const [state, setState] = useState<QueueState | null>(null);

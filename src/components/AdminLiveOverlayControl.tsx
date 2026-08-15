@@ -3,6 +3,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { LiveOverlayAdminSnapshot } from "@/lib/live-overlay";
+import { ADMIN_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 
 function sceneLabel(mode?: string): string {
   return mode ? mode.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase()) : "Syncing";
@@ -27,7 +28,7 @@ export function AdminLiveOverlayControl({ focusWheelTick = 0 }: { focusWheelTick
 
   useEffect(() => {
     load();
-    const interval = window.setInterval(load, 5_000);
+    const interval = window.setInterval(load, ADMIN_QUEUE_POLL_INTERVAL_MS);
     return () => window.clearInterval(interval);
   }, []);
 

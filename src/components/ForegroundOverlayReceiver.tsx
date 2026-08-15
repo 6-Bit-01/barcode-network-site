@@ -5,8 +5,9 @@ import type { CSSProperties } from "react";
 import { ForegroundOverlayStrip } from "@/components/ForegroundOverlayStrip";
 import { foregroundActionWithExpiryAt } from "@/lib/foreground-overlay-resolver";
 import type { ForegroundOverlayAction, ForegroundOverlaySnapshot } from "@/lib/foreground-overlay-resolver";
+import { FOREGROUND_OVERLAY_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 
-const POLL_INTERVAL_MS = 1_500;
+const POLL_INTERVAL_MS = FOREGROUND_OVERLAY_POLL_INTERVAL_MS;
 const STALE_AFTER_MS = 10_000;
 
 const SOURCE_STYLE = {

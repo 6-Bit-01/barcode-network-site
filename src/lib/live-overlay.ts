@@ -394,12 +394,16 @@ async function writeLiveOverlayState(state: LiveOverlayState): Promise<LiveOverl
 export async function getLiveOverlayPlayerSync(): Promise<LiveOverlayPlayerSync | null> {
   const redis = getRedis();
   if (!redis) return normalizePlayerSync(memoryPlayerSync);
-  const raw = await redis.get<LiveOverlayPlayerSync | string>(PLAYER_SYNC_KEY);
-  if (!raw) return null;
   try {
-    return normalizePlayerSync(typeof raw === "string" ? JSON.parse(raw) : raw);
+    const raw = await redis.get<LiveOverlayPlayerSync | string>(PLAYER_SYNC_KEY);
+    if (!raw) {
+      memoryPlayerSync = null;
+      return null;
+    }
+    memoryPlayerSync = normalizePlayerSync(typeof raw === "string" ? JSON.parse(raw) : raw);
+    return normalizePlayerSync(memoryPlayerSync);
   } catch {
-    return null;
+    return normalizePlayerSync(memoryPlayerSync);
   }
 }
 
@@ -417,12 +421,14 @@ export async function setLiveOverlayPlayerSync(sync: LiveOverlayPlayerSync | nul
 export async function getStoredLiveOverlayState(): Promise<LiveOverlayState> {
   const redis = getRedis();
   if (!redis) return normalizeState(memoryOverlayState);
-  const raw = await redis.get<LiveOverlayState | string>(OVERLAY_STATE_KEY);
-  if (!raw) return defaultLiveOverlayState();
   try {
-    return normalizeState(typeof raw === "string" ? JSON.parse(raw) : raw);
+    const raw = await redis.get<LiveOverlayState | string>(OVERLAY_STATE_KEY);
+    memoryOverlayState = raw
+      ? normalizeState(typeof raw === "string" ? JSON.parse(raw) : raw)
+      : defaultLiveOverlayState();
+    return normalizeState(memoryOverlayState);
   } catch {
-    return defaultLiveOverlayState();
+    return normalizeState(memoryOverlayState);
   }
 }
 

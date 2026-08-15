@@ -4,6 +4,7 @@ import { createContext, useContext, useState, useEffect, useCallback, ReactNode 
 import { usePathname } from "next/navigation";
 import type { QueueBroadcastPhase, QueuePublicSnapshot } from "@/lib/queue-types";
 import { derivePublicShowState } from "@/lib/live-status-public";
+import { SITE_LIVE_STATUS_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 
 type SiteShowMode = "offline" | "intake_open" | "broadcast_live";
 
@@ -120,7 +121,7 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (isolatedPrototype) return;
     const initialFetchTimer = setTimeout(fetchStatus, 0);
-    const interval = setInterval(fetchStatus, 15_000);
+    const interval = setInterval(fetchStatus, SITE_LIVE_STATUS_POLL_INTERVAL_MS);
     return () => {
       clearTimeout(initialFetchTimer);
       clearInterval(interval);

@@ -11,6 +11,7 @@ import { formatRuntime, getTrackRuntimeSeconds, parseTikTokVideoUrl } from "@/li
 import { detectMaterialPlaybackSeek, estimateOneWayNetworkTransitMs, projectObservedPlaybackTime, updateTransitEstimateMs, YOUTUBE_SYNC_STALE_AFTER_MS } from "@/lib/live-overlay-resolver";
 import type { QueueEntry, QueueLane, QueuePlaybackDiagnostics, QueuePlaybackErrorCode, QueuePlaybackLifecycleEventInput, QueueState } from "@/lib/queue-types";
 import type { LiveOverlayPlaybackState, LiveOverlaySyncCorrectionReason } from "@/lib/live-overlay-resolver";
+import { ADMIN_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 
 type Tab = "active" | "completed" | "removed" | "spotlight";
 type AdminQueueAction = "pullNext" | "pullWheelChosen" | "pullFreeTransmission" | "startShow" | "addWheelSpinOwed" | "load" | "finish" | "skip" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "resolvePaidPriority" | "pausePriority" | "resumePriority";
@@ -247,7 +248,7 @@ export function AdminRadioQueueControl() {
     setMounted(true);
     const sessionId = initialSessionIdFromUrl();
     load(sessionId);
-    const interval = setInterval(() => load(initialSessionIdFromUrl()), 5_000);
+    const interval = setInterval(() => load(initialSessionIdFromUrl()), ADMIN_QUEUE_POLL_INTERVAL_MS);
     return () => clearInterval(interval);
   }, []);
 

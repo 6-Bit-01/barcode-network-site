@@ -11,9 +11,11 @@ const require = createRequire(import.meta.url);
 class FakeRedis {
   static values = new Map();
   static calls = [];
+  static failGets = false;
 
   async get(key) {
     FakeRedis.calls.push(["get", key]);
+    if (FakeRedis.failGets) throw new Error("ERR max requests limit exceeded");
     return FakeRedis.values.get(key) ?? null;
   }
 
@@ -111,6 +113,7 @@ function submission(index, overrides = {}) {
 test("Redis fencing serializes independent queue workers without overfill, lost writes, or duplicate acceptance", async () => {
   FakeRedis.values.clear();
   FakeRedis.calls.length = 0;
+  FakeRedis.failGets = false;
   process.env.UPSTASH_REDIS_REST_URL = "https://redis.example.test";
   process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
   const { first, second } = loadIndependentQueueModules();
@@ -177,4 +180,33 @@ test("Redis fencing serializes independent queue workers without overfill, lost 
   delete unfencedState.revision;
   FakeRedis.values.set(stateKey, JSON.stringify(unfencedState));
   await assert.rejects(() => second.setQueueOpen(false), /revision is inconsistent/i);
+});
+
+test("read-only queue snapshots retain the last confirmed Redis state while quota errors still block mutations", async () => {
+  FakeRedis.values.clear();
+  FakeRedis.calls.length = 0;
+  FakeRedis.failGets = false;
+  process.env.UPSTASH_REDIS_REST_URL = "https://quota-locked-redis.example.test";
+  process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
+  const { first } = loadIndependentQueueModules();
+
+  await first.startNewQueueSession({
+    title: "Preserved live queue",
+    queueCapacity: 44,
+    trackLimitPerArtist: 3,
+    submissionCooldownSeconds: 0,
+  });
+  await first.setQueueOpen(true);
+  await first.addToQueue(legacyEntry(1));
+
+  const confirmed = await first.getRadioQueueState();
+  assert.equal(confirmed.session.title, "Preserved live queue");
+  assert.equal(confirmed.queue.length, 1);
+
+  FakeRedis.failGets = true;
+  const retained = await first.getRadioQueueState();
+  assert.equal(retained.session.sessionId, confirmed.session.sessionId);
+  assert.deepEqual(retained.queue.map((entry) => entry.id), confirmed.queue.map((entry) => entry.id));
+  await assert.rejects(() => first.setQueueOpen(false), /max requests limit exceeded/i);
+  FakeRedis.failGets = false;
 });

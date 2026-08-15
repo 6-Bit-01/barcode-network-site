@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MutableRefObject } from "react";
 import { buildWheelSegments, estimateOneWayNetworkTransitMs, playbackCorrectionTarget, roundPlaybackDriftSeconds, serverRelativeSyncAgeSeconds, shouldCorrectPlaybackDrift, updateTransitEstimateMs, wheelFinalRotationForSegment, wheelUprightLabelRotationDegrees } from "@/lib/live-overlay-resolver";
 import type { LiveOverlayPlaybackState, LiveOverlayTikTokSync, LiveOverlayYouTubeSync, ResolvedLiveOverlayScene } from "@/lib/live-overlay";
+import { LIVE_OVERLAY_POLL_INTERVAL_MS, REDIS_POLL_ERROR_RETRY_INTERVAL_MS } from "@/lib/redis-polling-budget";
 
 type YTPlayer = {
   loadVideoById: (options: { videoId: string; startSeconds?: number }) => void;
@@ -88,7 +89,7 @@ function youtubeErrorLabel(code?: number | null): string {
   return code ? "YOUTUBE PLAYBACK ERROR" : "YOUTUBE PLAYER UNAVAILABLE";
 }
 
-const OVERLAY_POLL_DELAY_MS = 650;
+const OVERLAY_POLL_DELAY_MS = LIVE_OVERLAY_POLL_INTERVAL_MS;
 const YOUTUBE_OVERLAY_READY_TIMEOUT_MS = 9_000;
 const TIKTOK_IFRAME_LOAD_TIMEOUT_MS = 20_000;
 const TIKTOK_PLAYER_EVENT_TIMEOUT_MS = 12_000;
@@ -986,6 +987,7 @@ export function LiveOverlayReceiver() {
 
     async function poll() {
       if (cancelled) return;
+      let nextPollDelayMs = OVERLAY_POLL_DELAY_MS;
       const seq = requestSeq + 1;
       requestSeq = seq;
       activeController = new AbortController();
@@ -1013,10 +1015,11 @@ export function LiveOverlayReceiver() {
           setConnected(true);
         }
       } catch {
+        nextPollDelayMs = REDIS_POLL_ERROR_RETRY_INTERVAL_MS;
         if (!cancelled) setConnected(false);
       } finally {
         activeController = null;
-        if (!cancelled) timeoutId = window.setTimeout(poll, OVERLAY_POLL_DELAY_MS);
+        if (!cancelled) timeoutId = window.setTimeout(poll, nextPollDelayMs);
       }
     }
 

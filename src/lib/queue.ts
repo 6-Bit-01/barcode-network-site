@@ -253,6 +253,9 @@ const mem: QueueStore = (() => {
   return { revision: 0, activeSessionId: session.sessionId, sessions: [session] };
 })();
 
+let lastKnownGoodRedisStore: QueueStore | null = null;
+let lastKnownGoodRedisEndpoint: string | null = null;
+
 let mutationTail: Promise<void> = Promise.resolve();
 const mutationLeaseStorage = new AsyncLocalStorage<QueueMutationLease>();
 
@@ -1135,16 +1138,32 @@ function normalizeStore(input: unknown): QueueStore {
 
 async function readStoreFromRedis(redis: Redis): Promise<QueueStore> {
   const raw = await redis.get<QueueStore | string>(STATE_KEY);
-  if (raw) return normalizeStore(typeof raw === "string" ? JSON.parse(raw) : raw);
-  const legacy = await redis.get<unknown>(LEGACY_STATE_KEY);
-  return normalizeStore(typeof legacy === "string" ? JSON.parse(legacy) : legacy);
+  let store: QueueStore;
+  if (raw) {
+    store = normalizeStore(typeof raw === "string" ? JSON.parse(raw) : raw);
+  } else {
+    const legacy = await redis.get<unknown>(LEGACY_STATE_KEY);
+    store = normalizeStore(typeof legacy === "string" ? JSON.parse(legacy) : legacy);
+  }
+  lastKnownGoodRedisStore = store;
+  lastKnownGoodRedisEndpoint = process.env.UPSTASH_REDIS_REST_URL ?? null;
+  return store;
 }
 
 async function readStore(): Promise<QueueStore> {
   const lease = mutationLeaseStorage.getStore();
   if (lease) return normalizeStore(lease.store);
   const redis = getRedis();
-  return redis ? readStoreFromRedis(redis) : normalizeStore(mem);
+  if (!redis) return normalizeStore(mem);
+  try {
+    return await readStoreFromRedis(redis);
+  } catch (error) {
+    const endpoint = process.env.UPSTASH_REDIS_REST_URL ?? null;
+    if (lastKnownGoodRedisStore && endpoint && endpoint === lastKnownGoodRedisEndpoint) {
+      return normalizeStore(lastKnownGoodRedisStore);
+    }
+    throw error;
+  }
 }
 
 function mutationRevision(value: unknown): number {
@@ -1243,6 +1262,8 @@ async function writeStore(store: QueueStore): Promise<void> {
   lease.revision = nextRevision;
   lease.store = normalized;
   store.revision = nextRevision;
+  lastKnownGoodRedisStore = normalized;
+  lastKnownGoodRedisEndpoint = process.env.UPSTASH_REDIS_REST_URL ?? null;
 }
 
 function getSession(store: QueueStore, sessionId?: string): QueueSession {

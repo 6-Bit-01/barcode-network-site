@@ -311,6 +311,7 @@ export interface QueueEntry {
   priorityUpgradeCheckoutUrl?: string | null;
   priorityUpgradeCheckoutCreatedAt?: string | null;
   priorityUpgradeCheckoutExpiresAt?: string | null;
+  priorityUpgradeCheckoutOwnerTokenHash?: string | null;
   priorityUpgradeAmountCents?: number | null;
   priorityUpgradeCurrency?: string | null;
   priorityGiftAttribution?: PriorityGiftAttribution | null;

@@ -8,6 +8,7 @@ import { RadioQueueForm } from "@/components/RadioQueueForm";
 import { useLiveStatus } from "@/components/LiveStatusProvider";
 import { externalLinks } from "@/content";
 import { estimateExistingTrackTiming, estimatePriorityImpact } from "@/lib/queue-timing";
+import { clearPriorityCheckoutOwnerToken, getOrCreatePriorityCheckoutOwnerToken, getPriorityCheckoutOwnerToken } from "@/lib/priority-checkout-client";
 import { formatRuntime, PRIORITY_DISCLOSURE_TEXT, PRIORITY_GIFT_ATTRIBUTION_DISCLOSURE_TEXT, PRIORITY_GIFT_ATTRIBUTION_VERSION, PRIORITY_GIFT_NAME_MAX_LENGTH, PRIORITY_TERMS_VERSION } from "@/lib/queue-types";
 import { displayEstimate, buildQueueTimingDisplay, priorityDisplayFromImpact, publicTrackDurationLabel, queueTimingInputFromPublicSnapshot, type QueueTimingDisplaySummary, type PriorityTimingDisplay } from "@/lib/queue-timing-display";
 import type { QueuePublicSnapshot, QueuePublicTrack } from "@/lib/queue-types";
@@ -207,6 +208,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   const [priorityModalTrack, setPriorityModalTrack] = useState<QueuePublicTrack | null>(null);
   const [priorityRequestPending, setPriorityRequestPending] = useState(false);
   const [priorityRequestMessage, setPriorityRequestMessage] = useState<string | null>(null);
+  const [priorityCheckoutOwnerTrackIds, setPriorityCheckoutOwnerTrackIds] = useState<Set<string>>(() => new Set());
   const [checkoutNotice, setCheckoutNotice] = useState<string | null>(null);
   const [actionTransition, setActionTransition] = useState<PublicActionVariant | null>(null);
   const [activity, setActivity] = useState<QueueActivity[]>([]);
@@ -349,6 +351,15 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   useEffect(() => { load(); const interval = setInterval(load, 5_000); return () => clearInterval(interval); }, [sessionId, submitterToken]);
   useEffect(() => { const interval = window.setInterval(() => setClockNow(Date.now()), 1_000); return () => window.clearInterval(interval); }, []);
   useEffect(() => {
+    if (!snapshot) return;
+    const ownerTrackIds = new Set(
+      uniqueActiveTracks(snapshot)
+        .filter((track) => Boolean(getPriorityCheckoutOwnerToken(sessionId, track.id)))
+        .map((track) => track.id),
+    );
+    setPriorityCheckoutOwnerTrackIds(ownerTrackIds);
+  }, [sessionId, snapshot?.revision]);
+  useEffect(() => {
     if (!submitOpen || !intakeScrollLocked) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -406,7 +417,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
 
   function canResumePriorityPayment(track: QueuePublicTrack): boolean {
     if (!priorityPaymentsAvailable || isEnded || snapshot?.session.status !== "open") return false;
-    return track.priorityUpgradeStatus === "checkout_pending";
+    return track.priorityUpgradeStatus === "checkout_pending" && priorityCheckoutOwnerTrackIds.has(track.id);
   }
 
   function runPublicActionTransition(transition: PublicActionVariant, action: () => void, delay = 1200) {
@@ -439,14 +450,23 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
       return;
     }
     setPriorityRequestPending(true);
+    const checkoutOwnerToken = getOrCreatePriorityCheckoutOwnerToken(sessionId, track.id);
     const priorityGift = !viewerSubmittedTrackIds.has(track.id);
-    const res = await fetch("/api/queue/priority-checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trackId: track.id, sessionId, submitterToken, acceptedPriorityTerms: true, priorityTermsVersion: PRIORITY_TERMS_VERSION, priorityDisclosureText: PRIORITY_DISCLOSURE_TEXT, priorityGift, priorityGiftSupporterName: priorityGift ? priorityGiftSupporterName : "", priorityGiftAttributionVersion: PRIORITY_GIFT_ATTRIBUTION_VERSION, priorityGiftAttributionDisclosureText: PRIORITY_GIFT_ATTRIBUTION_DISCLOSURE_TEXT }) });
+    const res = await fetch("/api/queue/priority-checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trackId: track.id, sessionId, submitterToken, checkoutOwnerToken, acceptedPriorityTerms: true, priorityTermsVersion: PRIORITY_TERMS_VERSION, priorityDisclosureText: PRIORITY_DISCLOSURE_TEXT, priorityGift, priorityGiftSupporterName: priorityGift ? priorityGiftSupporterName : "", priorityGiftAttributionVersion: PRIORITY_GIFT_ATTRIBUTION_VERSION, priorityGiftAttributionDisclosureText: PRIORITY_GIFT_ATTRIBUTION_DISCLOSURE_TEXT }) });
     const payload = await res.json().catch(() => ({}));
     setPriorityRequestPending(false);
     if (res.ok && typeof payload.url === "string") {
       setPriorityRequestMessage(payload.message ?? "Checkout started. Skip is not active yet.");
       window.location.href = payload.url;
       return;
+    }
+    if (payload.code === "checkout_owned_elsewhere") {
+      clearPriorityCheckoutOwnerToken(sessionId, track.id);
+      setPriorityCheckoutOwnerTrackIds((current) => {
+        const next = new Set(current);
+        next.delete(track.id);
+        return next;
+      });
     }
     setPriorityRequestMessage(payload.error ?? "Priority Signal checkout is not available right now.");
     await load();

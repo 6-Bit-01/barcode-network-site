@@ -1754,6 +1754,27 @@ test("requestPriorityCheckout accepts eligible regular and wheel tracks and reje
   await assert.rejects(() => queue.requestPriorityCheckout(wheel.id, sessionId, priorityAcceptance), /not available/);
 });
 
+test("capacity closure blocks new songs but keeps Priority checkout available for an accepted track", async () => {
+  const sessionId = await freshOpenSession("priority checkout at capacity", { showStarted: false, queueCapacity: 2 });
+  await queue.updatePriorityUpgradeSettings({ enabled: true, paymentsEnabled: true, priceCents: 1000, currency: "usd" });
+  const first = await addTrack("Capacity Priority One");
+  await addTrack("Capacity Priority Two");
+
+  let state = await queue.getRadioQueueState();
+  assert.equal(state.session.acceptedCount, 2);
+  assert.equal(state.session.queueOpen, false);
+  assert.equal(state.session.submissionClosureReason, "capacity");
+  await assert.rejects(() => addTrack("Capacity Rejected Third"), /closed|full/i);
+
+  const checkout = await queue.requestPriorityCheckout(first.id, sessionId, priorityAcceptance);
+  assert.equal(checkout.track.id, first.id, "capacity closure must not block upgrading an accepted track");
+
+  await queue.setQueueOpen(false);
+  state = await queue.getRadioQueueState();
+  assert.equal(state.session.submissionClosureReason, "manual");
+  await assert.rejects(() => queue.requestPriorityCheckout(first.id, sessionId, priorityAcceptance), /broadcast session is active/);
+});
+
 test("markPriorityUpgradeCheckoutPending preserves existing track data", async () => {
   const sessionId = await freshOpenSession("priority checkout pending metadata", { showStarted: false });
   const track = await addTrack("Checkout Pending Metadata");
@@ -1765,6 +1786,7 @@ test("markPriorityUpgradeCheckoutPending preserves existing track data", async (
     checkoutUrl: "https://example.com/checkout",
     checkoutCreatedAt: new Date().toISOString(),
     checkoutExpiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
+    checkoutOwnerTokenHash: "a".repeat(64),
     priorityAcceptance,
   });
   const after = await queue.getRadioQueueState();
@@ -1773,12 +1795,15 @@ test("markPriorityUpgradeCheckoutPending preserves existing track data", async (
   assert.equal(updated?.title, existing?.title);
   assert.equal(updated?.priorityUpgradeStatus, "checkout_pending");
   assert.equal(updated?.priorityUpgradeCheckoutSessionId, "cs_test_123");
+  assert.equal(updated?.priorityUpgradeCheckoutOwnerTokenHash, "a".repeat(64));
   assert.equal(updated?.priorityLegalAcceptance?.priorityTermsVersion, PRIORITY_TERMS_VERSION);
   assert.equal(updated?.priorityLegalAcceptance?.priorityDisclosureText, PRIORITY_DISCLOSURE_TEXT);
   assert.equal(updated?.priorityLegalAcceptance?.source, "priority_checkout");
   assert.ok(updated?.priorityLegalAcceptance?.acceptedAt);
   const snapshot = await queue.getPublicQueueSnapshot(sessionId);
-  assert.equal("priorityLegalAcceptance" in snapshot.queue.find((entry) => entry.id === track.id), false);
+  const publicPending = snapshot.queue.find((entry) => entry.id === track.id);
+  assert.equal("priorityLegalAcceptance" in publicPending, false);
+  assert.equal("priorityUpgradeCheckoutOwnerTokenHash" in publicPending, false);
 });
 
 test("gifted Priority attribution is sanitized, payment-bound, public only after confirmation, and immutable on retries", async () => {
@@ -1870,6 +1895,7 @@ test("self and manual Priority paths do not invent gifted attribution", async ()
     checkoutUrl: "https://example.com/self-checkout",
     checkoutCreatedAt: "2026-08-09T04:00:00.000Z",
     checkoutExpiresAt: "2026-08-09T04:30:00.000Z",
+    checkoutOwnerTokenHash: "b".repeat(64),
     priorityAcceptance,
     priorityGiftAttribution: null,
   });
@@ -1883,6 +1909,7 @@ test("self and manual Priority paths do not invent gifted attribution", async ()
   });
   const manual = await addTrack("Manual Priority");
   const state = await queue.updateRadioTrack(manual.id, "priority");
+  assert.equal(activeTrack(state, selfUpgrade.id)?.priorityUpgradeCheckoutOwnerTokenHash, null);
   assert.equal(activeTrack(state, selfUpgrade.id)?.priorityGiftAttribution, null);
   assert.equal(activeTrack(state, manual.id)?.priorityUpgradeStatus, "manual");
   assert.equal(activeTrack(state, manual.id)?.priorityGiftAttribution, null);

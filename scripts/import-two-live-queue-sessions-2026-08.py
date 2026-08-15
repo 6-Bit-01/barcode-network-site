@@ -16,6 +16,7 @@ import base64
 import datetime
 import getpass
 import hashlib
+import io
 import json
 import os
 import re
@@ -1105,7 +1106,11 @@ def main():
             "purpose=" + summary["purpose"],
         )
     try:
-        controlling_tty = open("/dev/tty", "r+", encoding="utf-8", buffering=1)
+        controlling_tty = io.TextIOWrapper(
+            io.FileIO(os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY), mode="w+"),
+            encoding="utf-8",
+            line_buffering=True,
+        )
     except OSError as error:
         raise ImportErrorSafe("A controlling TTY is required for password and confirmation prompts.") from error
     if not controlling_tty.isatty():

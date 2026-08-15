@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { externalLinks } from "@/content";
 import { buildQueueTimingDisplay, queueTimingInputFromPublicSnapshot, type QueueTimingDisplaySummary } from "@/lib/queue-timing-display";
 import { formatRuntime, type QueuePublicSnapshot, type QueuePublicTrack } from "@/lib/queue-types";
+import { PUBLIC_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 
 type GatewayPhase = "syncing" | "archived" | "closed" | "open" | "liveOpen" | "liveClosed";
 
@@ -136,7 +137,7 @@ export function PublicQueueGateway() {
     setMounted(true);
     setNowMs(Date.now());
     load();
-    const interval = setInterval(() => { setNowMs(Date.now()); load(); }, 5_000);
+    const interval = setInterval(() => { setNowMs(Date.now()); load(); }, PUBLIC_QUEUE_POLL_INTERVAL_MS);
     return () => clearInterval(interval);
   }, []);
 

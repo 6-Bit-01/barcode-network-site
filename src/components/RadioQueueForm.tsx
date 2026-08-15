@@ -9,6 +9,7 @@ import { clearPriorityCheckoutOwnerToken, getOrCreatePriorityCheckoutOwnerToken 
 import { cooldownDeadlineFromRemaining, cooldownRemainingFromDeadline } from "@/lib/queue-cooldown";
 import { APPLE_MUSIC_QUEUE_UNSUPPORTED_MESSAGE, PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT, PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION, PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION, PUBLIC_QUEUE_LEGAL_TERMS_VERSION, formatRuntime, isAppleMusicUrl, PRIORITY_DISCLOSURE_TEXT, PRIORITY_TERMS_VERSION } from "@/lib/queue-types";
 import type { QueuePublicSnapshot, QueuePublicStatus, QueuePublicTrack } from "@/lib/queue-types";
+import { PUBLIC_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 
 type Mode = "link" | "upload";
 type ReadState = "idle" | "checking" | "reading" | "detected" | "pending" | "uploading";
@@ -192,7 +193,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
 
   useEffect(() => {
     loadStatus();
-    const interval = setInterval(loadStatus, 5_000);
+    const interval = setInterval(loadStatus, PUBLIC_QUEUE_POLL_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [submitterToken]);
 

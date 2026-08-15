@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import type { QueueState, QueueEntry, QueueTier } from "@/lib/queue-types";
 import { normalizeTier } from "@/lib/queue-types";
 import { isWithinBroadcastWindow } from "@/lib/broadcastSchedule";
+import { ADMIN_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 
 const LIVE_URL = "https://www.tiktok.com/@six.bit/live";
 
@@ -75,7 +76,7 @@ export function OBSOverlay() {
       } catch { /* silent */ }
     }
     poll();
-    const interval = setInterval(poll, 5_000);
+    const interval = setInterval(poll, ADMIN_QUEUE_POLL_INTERVAL_MS);
     return () => clearInterval(interval);
   }, []);
 

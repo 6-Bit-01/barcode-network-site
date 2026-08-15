@@ -24,7 +24,6 @@ from typing import Any
 DB_PATH = Path("/home/ubuntu/bnl01/bnl01_conversations.db")
 BACKUP_DIR = Path("/home/ubuntu/barcode-queue-recovery")
 EXPECTED_ROWS = 28
-EXPECTED_REDIS_HOST = "enabled-poodle-4219.upstash.io"
 
 CONTROLS_KEY = "barcode:bnl-journal:v1:entry-controls"
 INDEX_KEYS = (
@@ -456,12 +455,17 @@ def main() -> None:
     url = getpass.getpass("Current Upstash REST URL (hidden): ").strip().rstrip("/")
     token = getpass.getpass("Current Upstash REST token (hidden): ").strip()
     parsed_url = urllib.parse.urlparse(url)
+    hostname = (parsed_url.hostname or "").lower()
     if (
         parsed_url.scheme != "https"
-        or parsed_url.hostname != EXPECTED_REDIS_HOST
-        or parsed_url.netloc != EXPECTED_REDIS_HOST
+        or not hostname.endswith(".upstash.io")
+        or hostname == ".upstash.io"
+        or parsed_url.username
+        or parsed_url.password
+        or parsed_url.port is not None
+        or parsed_url.netloc.lower() != hostname
     ):
-        die(f"REST URL must be exactly https://{EXPECTED_REDIS_HOST}")
+        die("REST URL must be an exact HTTPS *.upstash.io database endpoint")
     if parsed_url.path not in ("", "/") or parsed_url.query or parsed_url.fragment or not token:
         die("invalid REST URL or empty token")
     if post_command(url, token, ["PING"], timeout=20) != "PONG":

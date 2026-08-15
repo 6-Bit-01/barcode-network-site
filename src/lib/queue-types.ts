@@ -386,6 +386,21 @@ export interface QueueSessionSummary {
   sponsorBreakManualNote?: string | null;
 }
 
+export interface QueueHistoricalRecoveryProvenance {
+  schema: "barcode_queue_historical_recovery_provenance_v1";
+  sourceUrl: string;
+  sourceCommit: string;
+  sourceRevision: number;
+  sourceDigest: string;
+  sourceResponseSha256: string;
+  sourceSessionId: string;
+  sourceStoredShowDate: string;
+  canonicalShowDate: string;
+  timeZone: "America/Los_Angeles";
+  sourceStatus: QueueSessionStatus;
+  appliedNormalizations: string[];
+}
+
 export interface QueueSession extends QueueSessionSummary {
   queue: QueueEntry[];
   spotlight: QueueEntry[];
@@ -406,6 +421,7 @@ export interface QueueSession extends QueueSessionSummary {
   nextInLineHoldTrackId?: string | null;
   autoRoutingPaused?: boolean;
   playbackDiagnostics?: QueuePlaybackDiagnostics;
+  historicalRecoveryProvenance?: QueueHistoricalRecoveryProvenance | null;
 }
 
 export interface QueuePublicTrack {

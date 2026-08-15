@@ -42,6 +42,7 @@ import {
 import type {
   QueueDurationSource,
   QueueEntry,
+  QueueHistoricalRecoveryProvenance,
   QueueLegalAcceptance,
   QueueLane,
   QueueNonPriorityLane,
@@ -1147,6 +1148,43 @@ function normalizeSessionStatus(status: unknown, queueOpen: boolean): QueueSessi
   return queueOpen ? "open" : "prepared";
 }
 
+function normalizeHistoricalRecoveryProvenance(value: unknown): QueueHistoricalRecoveryProvenance | null {
+  if (!isRecord(value)
+    || value.schema !== "barcode_queue_historical_recovery_provenance_v1"
+    || typeof value.sourceUrl !== "string"
+    || typeof value.sourceCommit !== "string"
+    || typeof value.sourceRevision !== "number"
+    || !Number.isInteger(value.sourceRevision)
+    || value.sourceRevision < 0
+    || typeof value.sourceDigest !== "string"
+    || !/^[a-f0-9]{64}$/.test(value.sourceDigest)
+    || typeof value.sourceResponseSha256 !== "string"
+    || !/^[a-f0-9]{64}$/.test(value.sourceResponseSha256)
+    || typeof value.sourceSessionId !== "string"
+    || typeof value.sourceStoredShowDate !== "string"
+    || typeof value.canonicalShowDate !== "string"
+    || value.timeZone !== "America/Los_Angeles"
+    || !["prepared", "open", "closed", "archived"].includes(String(value.sourceStatus))
+    || !Array.isArray(value.appliedNormalizations)
+    || value.appliedNormalizations.some((item) => typeof item !== "string" || !item)) {
+    return null;
+  }
+  return {
+    schema: "barcode_queue_historical_recovery_provenance_v1",
+    sourceUrl: value.sourceUrl,
+    sourceCommit: value.sourceCommit,
+    sourceRevision: value.sourceRevision,
+    sourceDigest: value.sourceDigest,
+    sourceResponseSha256: value.sourceResponseSha256,
+    sourceSessionId: value.sourceSessionId,
+    sourceStoredShowDate: value.sourceStoredShowDate,
+    canonicalShowDate: value.canonicalShowDate,
+    timeZone: "America/Los_Angeles",
+    sourceStatus: value.sourceStatus as QueueSessionStatus,
+    appliedNormalizations: [...value.appliedNormalizations],
+  };
+}
+
 function normalizeSession(raw: Partial<QueueSession> & { sessionId: string; title: string; status: QueueSessionStatus; showDate: string; createdAt: string; updatedAt: string; queueOpen: boolean }): QueueSession {
   const queueOpen = raw.queueOpen === true;
   const status = normalizeSessionStatus(raw.status, queueOpen);
@@ -1181,6 +1219,7 @@ function normalizeSession(raw: Partial<QueueSession> & { sessionId: string; titl
     loadedTrackFallbackForLane: raw.loadedTrackFallbackForLane === "regular" || raw.loadedTrackFallbackForLane === "wheel" ? raw.loadedTrackFallbackForLane : null,
     autoRoutingPaused: raw.autoRoutingPaused === true,
     playbackDiagnostics: normalizeQueuePlaybackDiagnostics(raw.playbackDiagnostics),
+    historicalRecoveryProvenance: normalizeHistoricalRecoveryProvenance(raw.historicalRecoveryProvenance),
     priorityUpgradesEnabled: normalizePaidPriorityEnabled(raw),
     priorityUpgradeLabel: raw.priorityUpgradeLabel?.trim() || DEFAULT_PRIORITY_UPGRADE_LABEL,
     priorityUpgradeInstructions: raw.priorityUpgradeInstructions?.trim() || DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS,
@@ -1474,10 +1513,15 @@ export interface QueueRecoveryResult {
   previousRedisRevision: number;
 }
 
-const HISTORICAL_QUEUE_IMPORT_SCHEMA_VERSION = "barcode_queue_two_session_source_capture_v1";
+const HISTORICAL_QUEUE_IMPORT_SCHEMA_VERSION = "barcode_queue_two_session_source_capture_v2";
 const HISTORICAL_QUEUE_IMPORT_SOURCE_URL = "https://barcode-network-site-cpps-fg7a9jcmf-6-bits-projects.vercel.app";
 const HISTORICAL_QUEUE_IMPORT_SOURCE_COMMIT = "a1537f611db69e5a1c3d74ebb941d06d68ad49ff";
 const HISTORICAL_QUEUE_IMPORT_DATES = ["2026-08-07", "2026-08-14"] as const;
+const HISTORICAL_QUEUE_AUGUST_7_SOURCE_DATE = "2026-08-08";
+const HISTORICAL_QUEUE_AUGUST_7_SESSION_ID = "session_msjmzqjk_w1rkj";
+const HISTORICAL_QUEUE_AUGUST_7_EXPORT_SHA256 = "49c950556a9662f98fa402beb84a7e579120afff8da9cc5c70077f4b46cd6c2e";
+const HISTORICAL_QUEUE_AUGUST_7_DATE_RULE = "legacy_utc_rollover_to_pacific_broadcast_date";
+const HISTORICAL_QUEUE_EXACT_DATE_RULE = "exact_source_show_date";
 const HISTORICAL_QUEUE_IMPORT_MAX_BYTES = 3_500_000;
 const HISTORICAL_QUEUE_IMPORT_MAX_SOURCE_RESPONSE_BYTES = 1_200_000;
 const HISTORICAL_QUEUE_IMPORT_MAX_RECORDS_PER_SESSION = 500;
@@ -1492,6 +1536,9 @@ const HISTORICAL_QUEUE_IMPORT_ACCEPTED_LOSSES = [
 export interface QueueHistoricalImportSessionSummary {
   sessionId: string;
   showDate: string;
+  sourceShowDate: string;
+  sourceStatus: QueueSessionStatus;
+  appliedNormalizations: string[];
   title: string;
   status: QueueSessionStatus;
   queueCount: number;
@@ -1583,7 +1630,9 @@ function sourceProjectionFromRawCapture(value: Record<string, unknown>, index: n
   }
   if (!isRecord(rawState)) throw new Error(`${label}.sourceResponseBase64 must contain an admin queue state.`);
   const projected = { ...rawState };
-  delete projected.sessions;
+  // Keep the complete source roster long enough to recompute and verify the
+  // start/end roster digest. queueSessionFromProjection ignores it when it
+  // reconstructs the destination session, so it is not persisted twice.
   delete projected.playbackTiming;
   delete projected.wheelTiming;
   return projected;
@@ -1638,40 +1687,48 @@ function exactSummaryTrackId(value: unknown, label: string): string | null {
   return requiredNonEmptyString(value, label);
 }
 
-function queueSessionFromProjection(value: unknown, index: number): QueueSession {
+function queueSessionFromProjection(
+  value: unknown,
+  index: number,
+  canonicalShowDate: string,
+  sourceShowDate: string,
+  sourceResponseSha256: string,
+  capturedTrackCounts: unknown,
+): QueueSession {
   const label = `capture.sessions[${index}].projectedState`;
   if (!isRecord(value)) throw new Error(`${label} must be an admin queue state.`);
   if (!isRecord(value.session)) throw new Error(`${label}.session is required.`);
   const summary = value.session;
   const sessionId = requiredNonEmptyString(summary.sessionId, `${label}.session.sessionId`);
   const showDate = requiredNonEmptyString(summary.showDate, `${label}.session.showDate`);
-  if (!(HISTORICAL_QUEUE_IMPORT_DATES as readonly string[]).includes(showDate)) {
+  if (showDate !== sourceShowDate) {
+    throw new Error(`${label}.session.showDate does not match the declared source show date.`);
+  }
+  if (!(HISTORICAL_QUEUE_IMPORT_DATES as readonly string[]).includes(canonicalShowDate)) {
     throw new Error(`Historical queue import only accepts show dates ${HISTORICAL_QUEUE_IMPORT_DATES.join(" and ")}.`);
   }
   requiredNonEmptyString(summary.title, `${label}.session.title`);
-  if (summary.status !== "archived") {
-    throw new Error(`${label}.session.status must be archived.`);
+  const sourceStatus = summary.status;
+  if (sourceStatus !== "open" && sourceStatus !== "closed" && sourceStatus !== "archived") {
+    throw new Error(`${label}.session.status must be open, closed, or archived.`);
+  }
+  if (canonicalShowDate === "2026-08-07" && sourceStatus !== "closed" && sourceStatus !== "archived") {
+    throw new Error("The August 7 historical session must be closed or archived at the source.");
   }
   const purpose = requiredNonEmptyString(summary.purpose, `${label}.session.purpose`);
-  if (showDate === "2026-08-07" && purpose !== "unknown" && purpose !== "live_broadcast") {
+  if (canonicalShowDate === "2026-08-07" && purpose !== "unknown" && purpose !== "live_broadcast") {
     throw new Error("The 2026-08-07 historical session purpose must be unknown or live_broadcast.");
   }
-  if (showDate === "2026-08-14" && purpose !== "live_broadcast") {
+  if (canonicalShowDate === "2026-08-14" && purpose !== "live_broadcast") {
     throw new Error("The 2026-08-14 historical session purpose must be live_broadcast.");
   }
   requireIsoTimestamp(summary.createdAt, `${label}.session.createdAt`);
   requireIsoTimestamp(summary.updatedAt, `${label}.session.updatedAt`);
-  if (summary.queueOpen !== false || summary.showStarted === true) {
-    throw new Error(`${label}.session must be archived with submissions and show state closed.`);
-  }
-  if (value.isCurrentSession !== false || value.readOnly !== true || value.streamStatus !== "offline") {
-    throw new Error(`${label} must be a read-only archived admin queue state.`);
-  }
 
   const queue = projectionEntries(value.queue, `${label}.queue`);
   const completed = projectionEntries(value.history, `${label}.history`);
-  const removed = optionalProjectionEntries(value.removed, `${label}.removed`);
-  const spotlight = optionalProjectionEntries(value.spotlight, `${label}.spotlight`);
+  const removed = projectionEntries(value.removed, `${label}.removed`);
+  const spotlight = projectionEntries(value.spotlight, `${label}.spotlight`);
   const nextInLineTrack = optionalProjectionEntry(value.nextInLine, `${label}.nextInLine`);
   if (!("loadedTrack" in value) || !("nowPlaying" in value)
     || canonicalJson(value.loadedTrack) !== canonicalJson(value.nowPlaying)) {
@@ -1694,11 +1751,86 @@ function queueSessionFromProjection(value: unknown, index: number): QueueSession
     { label: "loadedTrack", entries: [loadedTrack] },
   ]);
 
+  const primaryRecords = [
+    ...queue,
+    ...completed,
+    ...removed,
+    ...(nextInLineTrack ? [nextInLineTrack] : []),
+    ...(loadedTrack ? [loadedTrack] : []),
+  ];
+  const removedIds = new Set(removed.map((entry) => entry.id));
+  const acceptedIds = new Set<string>();
+  const countAccepted = (entry: QueueEntry | null, allowedStatuses: readonly string[]): void => {
+    if (!entry || removedIds.has(entry.id) || isSimulationTrack(entry)) return;
+    if (allowedStatuses.includes(entry.status)) acceptedIds.add(entry.id);
+  };
+  queue.forEach((entry) => countAccepted(entry, ["queued", "playing"]));
+  countAccepted(nextInLineTrack, ["queued", "next", "playing"]);
+  countAccepted(loadedTrack, ["queued", "next", "playing"]);
+  completed.forEach((entry) => countAccepted(entry, ["completed", "played"]));
+  const completedIds = new Set(completed
+    .filter((entry) => !removedIds.has(entry.id)
+      && !isSimulationTrack(entry)
+      && (entry.status === "completed" || entry.status === "played"))
+    .map((entry) => entry.id));
+  const counts: Record<string, number> = {
+    queue: queue.length,
+    history: completed.length,
+    removed: removed.length,
+    spotlight: spotlight.length,
+    nextInLine: nextInLineTrack ? 1 : 0,
+    loadedTrack: loadedTrack ? 1 : 0,
+    primaryUnique: primaryRecords.length,
+    nonSimulationPrimary: primaryRecords.filter((entry) => !isSimulationTrack(entry)).length,
+    activeCount: queue.filter((entry) => entry.status === "queued" || entry.status === "playing").length
+      + (nextInLineTrack ? 1 : 0)
+      + (loadedTrack ? 1 : 0),
+    acceptedCount: acceptedIds.size,
+    completedCount: completedIds.size,
+    removedCount: removed.length,
+    spotlightCount: spotlight.length,
+  };
+  if (!isRecord(capturedTrackCounts)) throw new Error(`${label} capture trackCounts are required.`);
+  for (const [field, actual] of Object.entries(counts)) {
+    if (requiredNonNegativeInteger(capturedTrackCounts[field], `${label}.capture.trackCounts.${field}`) !== actual) {
+      throw new Error(`${label} capture trackCounts.${field} does not match the raw response.`);
+    }
+  }
+  for (const field of ["activeCount", "acceptedCount", "completedCount", "removedCount", "spotlightCount"] as const) {
+    if (requiredNonNegativeInteger(summary[field], `${label}.session.${field}`) !== counts[field]) {
+      throw new Error(`${label}.session.${field} does not match the raw lifecycle records.`);
+    }
+  }
+  if (requiredNonNegativeInteger(value.totalPlayed, `${label}.totalPlayed`) !== counts.completedCount) {
+    throw new Error(`${label}.totalPlayed does not match the raw completed lifecycle records.`);
+  }
+
+  if (canonicalShowDate === "2026-08-14") {
+    if (pacificDateString(new Date(String(summary.createdAt))) !== "2026-08-14") {
+      throw new Error("The August 14 historical session was not created on August 14 Pacific time.");
+    }
+    if (!primaryRecords.some((entry) => !isSimulationTrack(entry))) {
+      throw new Error("The August 14 historical session contains no real queue records.");
+    }
+  }
+
   const loadedFallbackLane = loadedTrack?.stagedAsFallbackForLane === "regular" || loadedTrack?.stagedAsFallbackForLane === "wheel"
     ? loadedTrack.stagedAsFallbackForLane
     : null;
+  const sourceDescription = typeof summary.description === "string" ? summary.description : undefined;
+  const normalizedDescription = canonicalShowDate !== sourceShowDate
+    && (!sourceDescription || sourceDescription === sessionDescriptionFor(sourceShowDate))
+    ? sessionDescriptionFor(canonicalShowDate)
+    : sourceDescription;
   return normalizeSession({
     ...(summary as unknown as QueueSessionSummary),
+    showDate: canonicalShowDate,
+    description: normalizedDescription,
+    status: "archived",
+    queueOpen: false,
+    submissionClosureReason: "archived",
+    showStarted: false,
+    broadcastPhase: "ended",
     queue,
     completed,
     removed,
@@ -1716,6 +1848,26 @@ function queueSessionFromProjection(value: unknown, index: number): QueueSession
     autoRoutingPaused: value.autoRoutingPaused === true,
     nextNonPriorityLane: value.nextNonPriorityLane === "regular" ? "regular" : "wheel",
     playbackDiagnostics: normalizeQueuePlaybackDiagnostics(value.playbackDiagnostics),
+    historicalRecoveryProvenance: {
+      schema: "barcode_queue_historical_recovery_provenance_v1",
+      sourceUrl: HISTORICAL_QUEUE_IMPORT_SOURCE_URL,
+      sourceCommit: HISTORICAL_QUEUE_IMPORT_SOURCE_COMMIT,
+      sourceRevision: requiredNonNegativeInteger(value.revision, `${label}.revision`),
+      sourceDigest: "0".repeat(64),
+      sourceResponseSha256,
+      sourceSessionId: sessionId,
+      sourceStoredShowDate: sourceShowDate,
+      canonicalShowDate,
+      timeZone: "America/Los_Angeles",
+      sourceStatus,
+      appliedNormalizations: [
+        ...(canonicalShowDate === sourceShowDate ? [] : ["source_show_date_to_canonical_pacific_show_date"]),
+        ...(sourceStatus === "archived" ? [] : ["source_status_to_archived"]),
+        ...(summary.queueOpen === false ? [] : ["queue_closed_for_historical_archive"]),
+        ...(summary.showStarted === true ? ["show_stopped_for_historical_archive"] : []),
+        ...(summary.broadcastPhase === "ended" ? [] : ["broadcast_phase_ended_for_historical_archive"]),
+      ],
+    },
   } as QueueSession);
 }
 
@@ -1729,6 +1881,112 @@ function canonicalJson(value: unknown): string {
     return `{${entries.join(",")}}`;
   }
   return JSON.stringify(value) ?? "null";
+}
+
+function sourceRosterIdentity(value: unknown, label: string): Record<string, string> {
+  if (!isRecord(value)) throw new Error(`${label} must be a source session summary.`);
+  return Object.fromEntries([
+    "sessionId",
+    "title",
+    "status",
+    "purpose",
+    "bnlPublicationStatus",
+    "showDate",
+    "createdAt",
+    "updatedAt",
+  ].map((field) => [field, requiredNonEmptyString(value[field], `${label}.${field}`)]));
+}
+
+function validateSourceRoster(
+  state: Record<string, unknown>,
+  index: number,
+  expectedCount: number,
+  expectedSha256: string,
+  sourceActiveSessionId: string,
+): void {
+  const label = `capture.sessions[${index}].projectedState`;
+  if (!Array.isArray(state.sessions) || state.sessions.length !== expectedCount) {
+    throw new Error(`${label}.sessions does not match the captured roster count.`);
+  }
+  const identities = state.sessions.map((summary, rosterIndex) => sourceRosterIdentity(
+    summary,
+    `${label}.sessions[${rosterIndex}]`,
+  ));
+  const byId = new Map<string, Record<string, string>>();
+  for (const identity of identities) {
+    if (byId.has(identity.sessionId)) throw new Error(`${label}.sessions repeats a session ID.`);
+    byId.set(identity.sessionId, identity);
+  }
+  const rosterSha256 = createHash("sha256")
+    .update(canonicalJson([...identities].sort((left, right) => left.sessionId.localeCompare(right.sessionId))))
+    .digest("hex");
+  if (rosterSha256 !== expectedSha256) {
+    throw new Error(`${label}.sessions does not match the captured roster SHA-256.`);
+  }
+  if (!byId.has(sourceActiveSessionId)) {
+    throw new Error(`${label}.sessions does not contain the source active session.`);
+  }
+  const selectedIdentity = sourceRosterIdentity(state.session, `${label}.session`);
+  if (canonicalJson(byId.get(selectedIdentity.sessionId)) !== canonicalJson(selectedIdentity)) {
+    throw new Error(`${label}.session identity does not match its roster summary.`);
+  }
+}
+
+interface HistoricalQueueDateNormalization {
+  canonicalShowDate: string;
+  sourceShowDate: string;
+  sessionId: string;
+  rule: string;
+}
+
+function historicalQueueDateNormalizations(scope: Record<string, unknown>): Map<string, HistoricalQueueDateNormalization> {
+  if (!Array.isArray(scope.canonicalShowDates)
+    || canonicalJson([...scope.canonicalShowDates].sort()) !== canonicalJson([...HISTORICAL_QUEUE_IMPORT_DATES].sort())) {
+    throw new Error(`Historical queue capture scope must contain canonical show dates ${HISTORICAL_QUEUE_IMPORT_DATES.join(" and ")}.`);
+  }
+  if (!Array.isArray(scope.sourceDateNormalization) || scope.sourceDateNormalization.length !== HISTORICAL_QUEUE_IMPORT_DATES.length) {
+    throw new Error("Historical queue capture must declare exactly two source-date normalization records.");
+  }
+
+  const byCanonicalDate = new Map<string, HistoricalQueueDateNormalization>();
+  for (const [index, raw] of scope.sourceDateNormalization.entries()) {
+    const label = `capture.scope.sourceDateNormalization[${index}]`;
+    if (!isRecord(raw)) throw new Error(`${label} must be an object.`);
+    const canonicalShowDate = requiredNonEmptyString(raw.canonicalShowDate, `${label}.canonicalShowDate`);
+    const sourceShowDate = requiredNonEmptyString(raw.sourceShowDate, `${label}.sourceShowDate`);
+    const sessionId = requiredNonEmptyString(raw.sessionId, `${label}.sessionId`);
+    const rule = requiredNonEmptyString(raw.rule, `${label}.rule`);
+    if (byCanonicalDate.has(canonicalShowDate)) throw new Error("Historical queue capture repeats a canonical show date.");
+    if (!isRecord(raw.provenance)) throw new Error(`${label}.provenance must be an object.`);
+    requiredNonEmptyString(raw.provenance.detail, `${label}.provenance.detail`);
+
+    if (canonicalShowDate === "2026-08-07") {
+      if (sourceShowDate !== HISTORICAL_QUEUE_AUGUST_7_SOURCE_DATE
+        || sessionId !== HISTORICAL_QUEUE_AUGUST_7_SESSION_ID
+        || rule !== HISTORICAL_QUEUE_AUGUST_7_DATE_RULE
+        || raw.provenance.kind !== "owner_supplied_export"
+        || requireSha256(raw.provenance.sourceSha256, `${label}.provenance.sourceSha256`) !== HISTORICAL_QUEUE_AUGUST_7_EXPORT_SHA256) {
+        throw new Error("The August 7 historical queue date-normalization provenance is invalid.");
+      }
+    } else if (canonicalShowDate === "2026-08-14") {
+      if (sourceShowDate !== "2026-08-14"
+        || rule !== HISTORICAL_QUEUE_EXACT_DATE_RULE
+        || raw.provenance.kind !== "authenticated_source_queue_state") {
+        throw new Error("The August 14 historical queue date provenance is invalid.");
+      }
+    } else {
+      throw new Error(`Historical queue import only accepts show dates ${HISTORICAL_QUEUE_IMPORT_DATES.join(" and ")}.`);
+    }
+    byCanonicalDate.set(canonicalShowDate, { canonicalShowDate, sourceShowDate, sessionId, rule });
+  }
+  if (byCanonicalDate.size !== HISTORICAL_QUEUE_IMPORT_DATES.length
+    || HISTORICAL_QUEUE_IMPORT_DATES.some((date) => !byCanonicalDate.has(date))) {
+    throw new Error("Historical queue capture date-normalization scope is incomplete.");
+  }
+  if (new Set([...byCanonicalDate.values()].map((item) => item.sessionId)).size !== HISTORICAL_QUEUE_IMPORT_DATES.length) {
+    throw new Error("Historical queue capture date normalization repeats a session ID.");
+  }
+  return byCanonicalDate;
 }
 
 function historicalQueueImportPlan(capture: unknown): HistoricalQueueImportPlan {
@@ -1758,12 +2016,10 @@ function historicalQueueImportPlan(capture: unknown): HistoricalQueueImportPlan 
     || capture.source.redirectsFollowed !== 0) {
     throw new Error("Historical queue capture source provenance is invalid.");
   }
-  if (!isRecord(capture.scope)
-    || capture.scope.sessionCount !== HISTORICAL_QUEUE_IMPORT_DATES.length
-    || !Array.isArray(capture.scope.exactShowDates)
-    || canonicalJson([...capture.scope.exactShowDates].sort()) !== canonicalJson([...HISTORICAL_QUEUE_IMPORT_DATES].sort())) {
+  if (!isRecord(capture.scope) || capture.scope.sessionCount !== HISTORICAL_QUEUE_IMPORT_DATES.length) {
     throw new Error(`Historical queue capture scope must be exactly ${HISTORICAL_QUEUE_IMPORT_DATES.join(" and ")}.`);
   }
+  const dateNormalizations = historicalQueueDateNormalizations(capture.scope);
   if (!isRecord(capture.consistency) || capture.consistency.startEndMatch !== true) {
     throw new Error("Historical queue capture does not prove a stable start/end state.");
   }
@@ -1772,7 +2028,8 @@ function historicalQueueImportPlan(capture: unknown): HistoricalQueueImportPlan 
   const sourceRevision = requiredNonNegativeInteger(capture.consistency.revision, "capture.consistency.revision");
   const sourceActiveSessionId = requiredNonEmptyString(capture.consistency.activeSessionId, "capture.consistency.activeSessionId");
   const sourceRosterSha256 = requireSha256(capture.consistency.rosterSha256, "capture.consistency.rosterSha256");
-  if (requiredNonNegativeInteger(capture.consistency.rosterCount, "capture.consistency.rosterCount") < 2) {
+  const sourceRosterCount = requiredNonNegativeInteger(capture.consistency.rosterCount, "capture.consistency.rosterCount");
+  if (sourceRosterCount < 2) {
     throw new Error("Historical queue capture roster must contain both target sessions.");
   }
   requireSha256(capture.consistency.startSentinelResponseSha256, "capture.consistency.startSentinelResponseSha256");
@@ -1783,37 +2040,77 @@ function historicalQueueImportPlan(capture: unknown): HistoricalQueueImportPlan 
     throw new Error("Historical queue capture must contain exactly two source session projections.");
   }
 
-  const responseEvidence: Array<{ showDate: string; sessionId: string; responseSha256: string }> = [];
+  const responseEvidence: Array<{ canonicalShowDate: string; sourceShowDate: string; sessionId: string; responseSha256: string }> = [];
   const sessions = capture.sessions.map((capturedSession, index) => {
     const label = `capture.sessions[${index}]`;
     if (!isRecord(capturedSession)) throw new Error(`${label} must be a captured source session.`);
-    const showDate = requiredNonEmptyString(capturedSession.showDate, `${label}.showDate`);
+    const canonicalShowDate = requiredNonEmptyString(capturedSession.canonicalShowDate, `${label}.canonicalShowDate`);
+    const sourceShowDate = requiredNonEmptyString(capturedSession.sourceShowDate, `${label}.sourceShowDate`);
     const sessionId = requiredNonEmptyString(capturedSession.sessionId, `${label}.sessionId`);
+    const dateNormalization = dateNormalizations.get(canonicalShowDate);
+    if (!dateNormalization
+      || dateNormalization.sourceShowDate !== sourceShowDate
+      || dateNormalization.sessionId !== sessionId) {
+      throw new Error(`${label} does not match its declared source-date normalization.`);
+    }
     const revision = requiredNonNegativeInteger(capturedSession.revision, `${label}.revision`);
     if (revision !== sourceRevision) throw new Error("Historical queue capture contains states from different queue revisions.");
     const state = sourceProjectionFromRawCapture(capturedSession, index);
+    validateSourceRoster(state, index, sourceRosterCount, sourceRosterSha256, sourceActiveSessionId);
     const stateRevision = requiredNonNegativeInteger(state.revision, `${label}.projectedState.revision`);
     if (stateRevision !== sourceRevision) throw new Error("Historical queue capture contains states from different queue revisions.");
     if (!isRecord(state.session)
       || state.session.sessionId !== sessionId
-      || state.session.showDate !== showDate
+      || state.session.showDate !== sourceShowDate
       || state.viewedSessionId !== sessionId) {
       throw new Error(`${label} identity does not match its projected admin queue state.`);
     }
     if (!isRecord(capturedSession.summaryAtStart)) throw new Error(`${label}.summaryAtStart is required.`);
-    for (const field of ["sessionId", "showDate", "status", "purpose", "bnlPublicationStatus", "createdAt", "updatedAt"] as const) {
+    for (const field of [
+      "sessionId",
+      "showDate",
+      "status",
+      "purpose",
+      "bnlPublicationStatus",
+      "createdAt",
+      "updatedAt",
+      "queueOpen",
+      "showStarted",
+      "broadcastStartedAt",
+    ] as const) {
       if (capturedSession.summaryAtStart[field] !== state.session[field]) {
         throw new Error(`${label}.summaryAtStart.${field} does not match the projected session.`);
       }
     }
-    const session = queueSessionFromProjection(state, index);
-    if (session.sessionId !== sessionId || session.showDate !== showDate) {
+    const sourceResponseSha256 = requireSha256(capturedSession.sourceResponseSha256, `${label}.sourceResponseSha256`);
+    const session = queueSessionFromProjection(
+      state,
+      index,
+      canonicalShowDate,
+      sourceShowDate,
+      sourceResponseSha256,
+      capturedSession.trackCounts,
+    );
+    if (session.sessionId !== sessionId || session.showDate !== canonicalShowDate) {
       throw new Error(`${label} reconstructed the wrong historical session.`);
     }
+    if (canonicalShowDate === "2026-08-07"
+      && (session.queue.length !== 0
+        || session.completed.length !== 40
+        || session.removed.length !== 1
+        || session.spotlight.length !== 0
+        || session.nextInLineTrack !== null
+        || session.loadedTrack !== null
+        || [...session.completed, ...session.removed].some(isSimulationTrack)
+        || session.removed[0]?.artist !== "MagicSZN"
+        || session.removed[0]?.title !== "HighFive")) {
+      throw new Error("The known August 7 live session does not match its 40 played / 1 removed owner export.");
+    }
     responseEvidence.push({
-      showDate,
+      canonicalShowDate,
+      sourceShowDate,
       sessionId,
-      responseSha256: requireSha256(capturedSession.sourceResponseSha256, `${label}.sourceResponseSha256`),
+      responseSha256: sourceResponseSha256,
     });
     return session;
   }).sort((left, right) => right.showDate.localeCompare(left.showDate) || right.createdAt.localeCompare(left.createdAt));
@@ -1825,12 +2122,8 @@ function historicalQueueImportPlan(capture: unknown): HistoricalQueueImportPlan 
   if (new Set(sessions.map((session) => session.sessionId)).size !== sessions.length) {
     throw new Error("Historical queue capture repeats a session ID.");
   }
-  const sourceActiveSession = sessions.find((session) => session.sessionId === sourceActiveSessionId);
-  const activeSessionId = sourceActiveSession?.sessionId
-    ?? sessions.find((session) => session.showDate === "2026-08-14")!.sessionId;
-  const activeSessionSelection: QueueHistoricalImportResult["activeSessionSelection"] = sourceActiveSession
-    ? "source_active_session"
-    : "newest_imported_archived_session";
+  const activeSessionId = sessions.find((session) => session.showDate === "2026-08-14")!.sessionId;
+  const activeSessionSelection: QueueHistoricalImportResult["activeSessionSelection"] = "newest_imported_archived_session";
   const digestInput = {
     schema: HISTORICAL_QUEUE_IMPORT_SCHEMA_VERSION,
     capturedAt,
@@ -1839,16 +2132,27 @@ function historicalQueueImportPlan(capture: unknown): HistoricalQueueImportPlan 
     sourceRevision,
     sourceActiveSessionId,
     sourceRosterSha256,
-    responseEvidence: responseEvidence.sort((left, right) => left.showDate.localeCompare(right.showDate)),
+    august7OwnerExportSha256: HISTORICAL_QUEUE_AUGUST_7_EXPORT_SHA256,
+    dateNormalizations: [...dateNormalizations.values()].sort((left, right) => left.canonicalShowDate.localeCompare(right.canonicalShowDate)),
+    responseEvidence: responseEvidence.sort((left, right) => left.canonicalShowDate.localeCompare(right.canonicalShowDate)),
     activeSessionId,
     activeSessionSelection,
     sessions,
   };
   const sourceDigest = createHash("sha256").update(canonicalJson(digestInput)).digest("hex");
+  const finalizedSessions = sessions.map((session) => normalizeSession({
+    ...session,
+    historicalRecoveryProvenance: session.historicalRecoveryProvenance
+      ? { ...session.historicalRecoveryProvenance, sourceDigest }
+      : null,
+  }));
   const requiredConfirmation = `IMPORT 2 HISTORICAL QUEUE SESSIONS ${sourceDigest} INTO REVISION 0`;
-  const summaries = sessions.map((session) => ({
+  const summaries = finalizedSessions.map((session) => ({
     sessionId: session.sessionId,
     showDate: session.showDate,
+    sourceShowDate: session.historicalRecoveryProvenance!.sourceStoredShowDate,
+    sourceStatus: session.historicalRecoveryProvenance!.sourceStatus,
+    appliedNormalizations: [...session.historicalRecoveryProvenance!.appliedNormalizations],
     title: session.title,
     status: session.status,
     queueCount: session.queue.length,
@@ -1865,7 +2169,7 @@ function historicalQueueImportPlan(capture: unknown): HistoricalQueueImportPlan 
     sourceActiveSessionId,
     activeSessionId,
     activeSessionSelection,
-    sessions,
+    sessions: finalizedSessions,
     summaries,
   };
 }

@@ -10,6 +10,12 @@ ERR max requests limit exceeded. Limit: 500000
 
 The queue had been stored as one Redis value (`radioQueue:v2:sessions`). Public, admin, and OBS polling repeatedly read the same shared database. Once the monthly request allowance was exhausted, fresh server processes had no in-memory copy and queue endpoints returned HTTP 500 even though the queue value itself had not been deleted.
 
+## August 7 / August 14 source identity correction
+
+The August 7 Pacific live broadcast must not be selected by stored `showDate` alone. Its verified source session is `session_msjmzqjk_w1rkj`, but the legacy source stored `showDate=2026-08-08` because the date was derived in UTC. The owner export binds that identity with SHA-256 `49c950556a9662f98fa402beb84a7e579120afff8da9cc5c70077f4b46cd6c2e` and a lifecycle of 40 completed tracks plus the one removed `MagicSZN — HighFive` record.
+
+The corrected source capture records both the immutable source date/status and the canonical Pacific date. The import retains the raw source response checksum and writes private recovery provenance into the recovered Redis and Blob session. It deliberately normalizes both recovered sessions to closed, archived history. After the revision-one import is verified, use the normal authenticated admin workflow to create a new prepared session; the historical import itself does not reopen submissions.
+
 ## Permanent storage contract
 
 - Redis is the serialized mutation authority.
@@ -25,9 +31,9 @@ The queue had been stored as one Redis value (`radioQueue:v2:sessions`). Public,
 
 1. Keep the existing private `BLOB_READ_WRITE_TOKEN` connected to the Vercel project.
 2. Create a queue-only Redis database under an account with two verified administrators and recorded billing ownership.
-3. Set `QUEUE_REDIS_REST_URL` and `QUEUE_REDIS_REST_TOKEN` for Production, Preview, and Development. Never configure only one of the pair.
+3. Set `QUEUE_REDIS_REST_URL` and `QUEUE_REDIS_REST_TOKEN` together. Production must use the owned queue-only database. Preview and Development must use separate non-production Redis and Blob resources; do not share Production credentials and do not run mutating Preview workflows until that isolation exists.
 4. Use a paid or auto-upgrading database plan. Provider backup is additional protection; it does not replace the independent Blob snapshots.
-5. Preserve the shared `UPSTASH_REDIS_REST_*` variables for BNL/overlay migration, but do not point the dedicated queue variables at the same database.
+5. Preserve the shared `UPSTASH_REDIS_REST_*` variables for BNL/overlay, Journal, and dossier projection/control, but do not point the dedicated queue variables at the same database. Canonical BNL memory remains in the bot's owned SQLite database; it is not queue Redis data.
 
 ## Deployment and migration order
 
@@ -38,6 +44,8 @@ The queue had been stored as one Redis value (`radioQueue:v2:sessions`). Public,
 5. Redeploy, perform the focused tests below, and then leave the old database read-only until the recovery window closes.
 
 If the old database is quota-locked before the first durable snapshot exists, no application code can bypass the provider lock. Preserve the database and wait for its quota reset or restore provider access; do not create an empty queue over it. Uploaded files alone cannot reconstruct link submissions or all submitter metadata.
+
+When the historical database becomes readable, run only the checksum-pinned corrected capture. It issues read-only `viewSession` actions, binds the known August 7 session by ID, displays every eligible August 14 candidate for exact operator selection, and checkpoints each accepted response without automatic retries. Preserve the final capture artifact and checksum in at least one encrypted, versioned off-host backup before importing.
 
 ## Focused proof
 

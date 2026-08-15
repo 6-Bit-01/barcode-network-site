@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
-"""Read-only capture of the August 7 and August 14 queue sessions.
+"""Read-only capture of the August 7 and August 14 Pacific queue sessions.
 
 This utility is deliberately pinned to the immutable Vercel deployment built
-from a1537f6.  It discovers every August 7 and August 14 candidate, requires
-the operator to select two exact session IDs, and writes a private local
-evidence artifact.  Every bounded successful HTTP response is saved before it
-is interpreted (oversized responses retain a marked limit-detecting prefix),
-and accepted capture progress is checkpointed after each read so an
-intermittently unavailable historical Redis can be resumed without discarding
-earlier evidence.  It never calls a queue mutation route and never sends a
-Redis credential.
+from a1537f6.  The August 7 Pacific broadcast is bound to the known historical
+session ID from an owner-supplied export; that source record carries showDate
+2026-08-08 because of the legacy UTC rollover.  The utility discovers every
+exact August 14 source-date candidate, requires the operator to select one
+exact session ID, and writes a private local evidence artifact with both raw
+source dates and canonical Pacific broadcast dates.  Every bounded successful
+HTTP response is saved before it is interpreted (oversized responses retain a
+marked limit-detecting prefix), and accepted capture progress is checkpointed
+after each read so an intermittently unavailable historical Redis can be
+resumed without discarding earlier evidence.  It never calls a queue mutation
+route and never sends a Redis credential.
 
 The authenticated admin route exposes the complete logical QueueState for one
 session, but not the byte-for-byte QueueStore value held in Redis.  The
@@ -34,13 +37,25 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from http.cookiejar import CookieJar
+from zoneinfo import ZoneInfo
 
 
 BASE_URL = "https://barcode-network-site-cpps-fg7a9jcmf-6-bits-projects.vercel.app"
 EXPECTED_SOURCE_COMMIT = "a1537f611db69e5a1c3d74ebb941d06d68ad49ff"
-TARGET_DATES = ("2026-08-07", "2026-08-14")
+CANONICAL_SHOW_DATES = ("2026-08-07", "2026-08-14")
+KNOWN_AUGUST_7_SESSION_ID = "session_msjmzqjk_w1rkj"
+OWNER_EXPORT_SHA256 = "49c950556a9662f98fa402beb84a7e579120afff8da9cc5c70077f4b46cd6c2e"
+SOURCE_SHOW_DATE_BY_CANONICAL_DATE = {
+    "2026-08-07": "2026-08-08",
+    "2026-08-14": "2026-08-14",
+}
+ALLOWED_SOURCE_STATUSES_BY_CANONICAL_DATE = {
+    "2026-08-07": frozenset(("closed", "archived")),
+    "2026-08-14": frozenset(("open", "closed", "archived")),
+}
+PACIFIC_TIMEZONE = ZoneInfo("America/Los_Angeles")
 SENTINEL_SESSION_ID = "__bnl_queue_capture_reserved_sentinel_91a972c__"
-ALLOWED_PURPOSE_BY_DATE = {
+ALLOWED_PURPOSE_BY_CANONICAL_DATE = {
     # Session purpose/provenance was introduced on August 8 (88cafdb).  A
     # genuine August 7 live session therefore normalizes to "unknown" when its
     # stored record predates that field.
@@ -49,15 +64,18 @@ ALLOWED_PURPOSE_BY_DATE = {
 }
 OUTPUT_DIR = "/home/ubuntu/barcode-queue-recovery"
 WORK_DIR = os.path.join(OUTPUT_DIR, "two-live-queue-capture-work")
-PROGRESS_PATH = os.path.join(WORK_DIR, "progress.json")
+# Deliberately do not reuse or overwrite progress.json from the incompatible
+# date-selection capture.  Its evidence remains available for provenance, but
+# only this v3 checkpoint can drive the corrected v2 artifact.
+PROGRESS_PATH = os.path.join(WORK_DIR, "progress-v3.json")
 LOCK_PATH = os.path.join(WORK_DIR, "capture.lock")
 MAX_RESPONSE_BYTES = 1_200_000
 MAX_ARTIFACT_BYTES = 3_500_000
 MAX_PROGRESS_BYTES = 8_000_000
 MAX_EVIDENCE_BYTES = 2_000_000
 REQUEST_TIMEOUT_SECONDS = 30
-ARTIFACT_SCHEMA = "barcode_queue_two_session_source_capture_v1"
-PROGRESS_SCHEMA = "barcode_queue_two_session_capture_progress_v2"
+ARTIFACT_SCHEMA = "barcode_queue_two_session_source_capture_v2"
+PROGRESS_SCHEMA = "barcode_queue_two_session_capture_progress_v3"
 REQUEST_EVIDENCE_SCHEMA = "barcode_queue_capture_request_evidence_v1"
 
 
@@ -312,22 +330,32 @@ def parse_sentinel(payload, stage):
     if active["sessionId"] not in summaries_by_id:
         raise CaptureError("%s fallback active session is absent from the source roster." % stage)
 
-    candidates = {}
-    for target_date in TARGET_DATES:
-        matches = [
-            summary
-            for summary in summaries_by_id.values()
-            if summary.get("showDate") == target_date
-        ]
-        if not matches:
-            raise CaptureError(
-                "%s found no sessions with exact showDate %s."
-                % (stage, target_date)
-            )
-        candidates[target_date] = sorted(
-            matches,
-            key=lambda item: (str(item.get("createdAt")), str(item.get("sessionId"))),
+    august_7 = summaries_by_id.get(KNOWN_AUGUST_7_SESSION_ID)
+    if august_7 is None:
+        raise CaptureError(
+            "%s does not contain the owner-verified August 7 session ID %s."
+            % (stage, KNOWN_AUGUST_7_SESSION_ID)
         )
+    if august_7.get("showDate") != SOURCE_SHOW_DATE_BY_CANONICAL_DATE["2026-08-07"]:
+        raise CaptureError(
+            "%s owner-verified August 7 session has source showDate %r; expected 2026-08-08."
+            % (stage, august_7.get("showDate"))
+        )
+
+    august_14_candidates = [
+        summary
+        for summary in summaries_by_id.values()
+        if summary.get("showDate") == SOURCE_SHOW_DATE_BY_CANONICAL_DATE["2026-08-14"]
+    ]
+    if not august_14_candidates:
+        raise CaptureError("%s found no sessions with exact source showDate 2026-08-14." % stage)
+    candidates = {
+        "2026-08-07": [august_7],
+        "2026-08-14": sorted(
+            august_14_candidates,
+            key=lambda item: (str(item.get("createdAt")), str(item.get("sessionId"))),
+        ),
+    }
 
     ordered_identities = sorted(identities, key=lambda item: item["sessionId"])
     roster_sha256 = hashlib.sha256(canonical_json_bytes(ordered_identities)).hexdigest()
@@ -372,6 +400,7 @@ def require_count(value, label):
 
 def validate_track_shape(state, label):
     primary_ids = []
+    non_simulation_primary_ids = []
     counts = {}
     for field in ("queue", "history", "removed", "spotlight"):
         entries = state.get(field)
@@ -382,6 +411,9 @@ def validate_track_shape(state, label):
         counts[field] = len(entries)
         if field != "spotlight":
             primary_ids.extend(entry["id"] for entry in entries)
+            non_simulation_primary_ids.extend(
+                entry["id"] for entry in entries if not is_simulation_track(entry)
+            )
 
     for field in ("nextInLine", "loadedTrack", "nowPlaying"):
         entry = state.get(field)
@@ -395,18 +427,21 @@ def validate_track_shape(state, label):
 
     if state.get("nextInLine") is not None:
         primary_ids.append(state["nextInLine"]["id"])
+        if not is_simulation_track(state["nextInLine"]):
+            non_simulation_primary_ids.append(state["nextInLine"]["id"])
     if loaded is not None:
         primary_ids.append(loaded["id"])
+        if not is_simulation_track(loaded):
+            non_simulation_primary_ids.append(loaded["id"])
     if len(primary_ids) != len(set(primary_ids)):
         raise CaptureError("%s contains a duplicate track across primary lifecycle positions." % label)
 
     counts["nextInLine"] = 1 if state.get("nextInLine") is not None else 0
     counts["loadedTrack"] = 1 if loaded is not None else 0
     counts["primaryUnique"] = len(primary_ids)
+    counts["nonSimulationPrimary"] = len(non_simulation_primary_ids)
 
     summary = require_dict(state.get("session"), label + ".session")
-    if summary.get("status") != "archived":
-        raise CaptureError("%s.session.status must remain archived." % label)
     removed_ids = {entry["id"] for entry in state["removed"]}
     accepted_ids = set()
 
@@ -456,7 +491,7 @@ def validate_track_shape(state, label):
     return counts
 
 
-def validate_target_response(payload, expected_date, expected_summary, sentinel, stage):
+def validate_target_response(payload, canonical_show_date, expected_summary, sentinel, stage):
     state = require_dict(payload, stage)
     revision = require_revision(state.get("revision"), stage + ".revision")
     if revision != sentinel["revision"]:
@@ -466,13 +501,24 @@ def validate_target_response(payload, expected_date, expected_summary, sentinel,
         )
 
     expected_identity = stable_summary_identity(expected_summary, stage + ".expectedSummary")
-    actual_identity = stable_summary_identity(state.get("session"), stage + ".session")
+    actual_summary = require_dict(state.get("session"), stage + ".session")
+    actual_identity = stable_summary_identity(actual_summary, stage + ".session")
     if actual_identity != expected_identity:
         raise CaptureError("%s did not return the exact discovered session identity." % stage)
-    if actual_identity["showDate"] != expected_date:
-        raise CaptureError("%s returned the wrong showDate." % stage)
-    if actual_identity["status"] != "archived":
-        raise CaptureError("%s is not archived; capture refused." % stage)
+    for field in ("queueOpen", "showStarted", "broadcastStartedAt"):
+        if actual_summary.get(field) != expected_summary.get(field):
+            raise CaptureError("%s source session %s changed after the start sentinel." % (stage, field))
+    source_show_date = SOURCE_SHOW_DATE_BY_CANONICAL_DATE[canonical_show_date]
+    if actual_identity["showDate"] != source_show_date:
+        raise CaptureError(
+            "%s returned source showDate %r; expected %s for canonical %s."
+            % (stage, actual_identity["showDate"], source_show_date, canonical_show_date)
+        )
+    if actual_identity["status"] not in ALLOWED_SOURCE_STATUSES_BY_CANONICAL_DATE[canonical_show_date]:
+        raise CaptureError(
+            "%s source status %r is not allowed for canonical %s."
+            % (stage, actual_identity["status"], canonical_show_date)
+        )
     viewed_session_id = require_string(state.get("viewedSessionId"), stage + ".viewedSessionId")
     if viewed_session_id != expected_identity["sessionId"]:
         raise CaptureError("%s viewedSessionId does not match the requested session." % stage)
@@ -494,6 +540,42 @@ def validate_target_response(payload, expected_date, expected_summary, sentinel,
         raise CaptureError("%s session roster differs from the start sentinel." % stage)
 
     counts = validate_track_shape(state, stage)
+    if canonical_show_date == "2026-08-07":
+        # The owner-supplied export contains 41 submission rows: 40 played and
+        # one removed.  QueueState's acceptedCount intentionally excludes the
+        # removed row, so the lossless guard binds the lifecycle shape instead
+        # of incorrectly demanding acceptedCount == 41.
+        expected_counts = {
+            "queue": 0,
+            "history": 40,
+            "removed": 1,
+            "spotlight": 0,
+            "nextInLine": 0,
+            "loadedTrack": 0,
+            "primaryUnique": 41,
+            "nonSimulationPrimary": 41,
+            "activeCount": 0,
+            "completedCount": 40,
+            "removedCount": 1,
+            "spotlightCount": 0,
+        }
+        for field, expected in expected_counts.items():
+            if counts.get(field) != expected:
+                raise CaptureError(
+                    "%s.%s is %r; owner-supplied August 7 export evidence requires %d."
+                    % (stage, field, counts.get(field), expected)
+                )
+        removed = state["removed"]
+        if removed[0].get("artist") != "MagicSZN" or removed[0].get("title") != "HighFive":
+            raise CaptureError(
+                "%s removed track does not match the owner-supplied August 7 export."
+                % stage
+            )
+    elif counts["nonSimulationPrimary"] < 1:
+        raise CaptureError(
+            "%s has no non-simulation primary track record; August 14 capture refused."
+            % stage
+        )
     return counts
 
 
@@ -508,6 +590,9 @@ def public_target_summary(summary):
         "bnlPublicationStatus": value.get("bnlPublicationStatus"),
         "createdAt": value.get("createdAt"),
         "updatedAt": value.get("updatedAt"),
+        "queueOpen": value.get("queueOpen"),
+        "showStarted": value.get("showStarted"),
+        "broadcastStartedAt": value.get("broadcastStartedAt"),
     }
 
 
@@ -529,37 +614,69 @@ def candidate_summary(summary, active_session_id=None):
     return result
 
 
-def validate_selected_summary(summary, target_date, label):
+def validate_selected_summary(summary, canonical_show_date, label):
     value = require_dict(summary, label)
     identity = stable_summary_identity(value, label)
-    if identity["showDate"] != target_date:
-        raise CaptureError("%s has the wrong showDate." % label)
-    if identity["status"] != "archived":
+    source_show_date = SOURCE_SHOW_DATE_BY_CANONICAL_DATE[canonical_show_date]
+    if identity["showDate"] != source_show_date:
         raise CaptureError(
-            "%s has status %r; archived is required for a stable projection."
-            % (label, identity["status"])
+            "%s has source showDate %r; expected %s for canonical %s."
+            % (label, identity["showDate"], source_show_date, canonical_show_date)
         )
-    if identity["purpose"] not in ALLOWED_PURPOSE_BY_DATE[target_date]:
+    if (
+        canonical_show_date == "2026-08-07"
+        and identity["sessionId"] != KNOWN_AUGUST_7_SESSION_ID
+    ):
+        raise CaptureError(
+            "%s is not the owner-verified August 7 session ID %s."
+            % (label, KNOWN_AUGUST_7_SESSION_ID)
+        )
+    if identity["status"] not in ALLOWED_SOURCE_STATUSES_BY_CANONICAL_DATE[canonical_show_date]:
+        raise CaptureError(
+            "%s has source status %r; expected one of %s."
+            % (
+                label,
+                identity["status"],
+                sorted(ALLOWED_SOURCE_STATUSES_BY_CANONICAL_DATE[canonical_show_date]),
+            )
+        )
+    if identity["purpose"] not in ALLOWED_PURPOSE_BY_CANONICAL_DATE[canonical_show_date]:
         raise CaptureError(
             "%s has purpose %r; expected one of %s."
             % (
                 label,
                 identity["purpose"],
-                sorted(ALLOWED_PURPOSE_BY_DATE[target_date]),
+                sorted(ALLOWED_PURPOSE_BY_CANONICAL_DATE[canonical_show_date]),
             )
         )
+    for field in ("queueOpen", "showStarted"):
+        if not isinstance(value.get(field), bool):
+            raise CaptureError("%s.%s must be a boolean." % (label, field))
+    broadcast_started_at = value.get("broadcastStartedAt")
+    if broadcast_started_at is not None and not isinstance(broadcast_started_at, str):
+        raise CaptureError("%s.broadcastStartedAt must be a string or null." % label)
+    if canonical_show_date == "2026-08-14":
+        created_at = parse_iso_utc(identity["createdAt"], label + ".createdAt")
+        pacific_created_date = created_at.astimezone(PACIFIC_TIMEZONE).date().isoformat()
+        if pacific_created_date != "2026-08-14":
+            raise CaptureError(
+                "%s createdAt resolves to Pacific date %s; expected 2026-08-14."
+                % (label, pacific_created_date)
+            )
     return value
 
 
 def confirmation_text(revision, targets):
     return (
-        "CAPTURE revision=%d %s=%s %s=%s"
+        "CAPTURE revision=%d canonical=%s source=%s session=%s canonical=%s source=%s session=%s"
         % (
             revision,
-            TARGET_DATES[0],
-            targets[TARGET_DATES[0]]["sessionId"],
-            TARGET_DATES[1],
-            targets[TARGET_DATES[1]]["sessionId"],
+            CANONICAL_SHOW_DATES[0],
+            SOURCE_SHOW_DATE_BY_CANONICAL_DATE[CANONICAL_SHOW_DATES[0]],
+            targets[CANONICAL_SHOW_DATES[0]]["sessionId"],
+            CANONICAL_SHOW_DATES[1],
+            SOURCE_SHOW_DATE_BY_CANONICAL_DATE[CANONICAL_SHOW_DATES[1]],
+            targets[CANONICAL_SHOW_DATES[1]]["sessionId"],
         )
     )
 
@@ -925,6 +1042,10 @@ def progress_source():
         "readMethod": "POST",
         "readAction": "viewSession",
         "reservedSentinelSessionId": SENTINEL_SESSION_ID,
+        "canonicalShowDates": list(CANONICAL_SHOW_DATES),
+        "sourceShowDateByCanonicalDate": dict(SOURCE_SHOW_DATE_BY_CANONICAL_DATE),
+        "knownAugust7SessionId": KNOWN_AUGUST_7_SESSION_ID,
+        "ownerExportSha256": OWNER_EXPORT_SHA256,
         "remoteMutationRequests": 0,
     }
 
@@ -952,11 +1073,11 @@ def new_progress(start_event):
 
 def selected_targets(start, selection, label="capture selection"):
     value = require_dict(selection, label)
-    if set(value) != set(TARGET_DATES):
+    if set(value) != set(CANONICAL_SHOW_DATES):
         raise CaptureError("%s must name exactly August 7 and August 14." % label)
     targets = {}
     selected_ids = set()
-    for target_date in TARGET_DATES:
+    for target_date in CANONICAL_SHOW_DATES:
         session_id = require_string(value.get(target_date), label + "." + target_date)
         if session_id in selected_ids:
             raise CaptureError("%s repeats a session ID." % label)
@@ -980,11 +1101,12 @@ def selected_targets(start, selection, label="capture selection"):
 
 
 def make_captured_session(target_date, summary, start, event):
-    stage = "target session %s" % target_date
+    stage = "target session canonical %s" % target_date
     payload = parse_json_response(event["raw"], stage)
     counts = validate_target_response(payload, target_date, summary, start, stage)
     return {
-        "showDate": target_date,
+        "canonicalShowDate": target_date,
+        "sourceShowDate": summary["showDate"],
         "sessionId": summary["sessionId"],
         "revision": start["revision"],
         "sourceResponseSha256": event["responseSha256"],
@@ -999,7 +1121,11 @@ def make_captured_session(target_date, summary, start, event):
 
 def validate_captured_session(item, target_date, summary, start, events):
     value = require_dict(item, "saved target " + target_date)
-    if value.get("showDate") != target_date or value.get("sessionId") != summary["sessionId"]:
+    if (
+        value.get("canonicalShowDate") != target_date
+        or value.get("sourceShowDate") != SOURCE_SHOW_DATE_BY_CANONICAL_DATE[target_date]
+        or value.get("sessionId") != summary["sessionId"]
+    ):
         raise CaptureError("Saved target %s has the wrong identity." % target_date)
     if require_revision(value.get("revision"), "saved target revision") != start["revision"]:
         raise CaptureError("Saved target %s has the wrong revision." % target_date)
@@ -1039,7 +1165,7 @@ def validate_stable_end(end, start, targets, label):
         raise CaptureError("%s active session changed." % label)
     if end["rosterSha256"] != start["rosterSha256"]:
         raise CaptureError("%s session roster changed." % label)
-    for target_date in TARGET_DATES:
+    for target_date in CANONICAL_SHOW_DATES:
         session_id = targets[target_date]["sessionId"]
         if end["identitiesById"].get(session_id) != stable_summary_identity(
             targets[target_date],
@@ -1068,7 +1194,7 @@ def load_progress(events):
     selection = progress.get("selection")
     targets = None if selection is None else selected_targets(start, selection)
     sessions = require_dict(progress.get("sessions"), "capture progress.sessions")
-    if any(target_date not in TARGET_DATES for target_date in sessions):
+    if any(target_date not in CANONICAL_SHOW_DATES for target_date in sessions):
         raise CaptureError("Capture progress contains an unexpected saved target.")
     if sessions and targets is None:
         raise CaptureError("Capture progress has target data without a confirmed selection.")
@@ -1085,7 +1211,7 @@ def load_progress(events):
             captured_times.append(checkpoint["capturedAt"])
     end_value = progress.get("end")
     if end_value is not None:
-        if targets is None or set(sessions) != set(TARGET_DATES):
+        if targets is None or set(sessions) != set(CANONICAL_SHOW_DATES):
             raise CaptureError("Capture progress has an end sentinel before both targets.")
         end_checkpoint = decode_response_checkpoint(end_value, "capture progress.end")
         require_backing_evidence(
@@ -1158,40 +1284,64 @@ def prompt_for_selection(controlling_tty, start):
     print("SOURCE:", BASE_URL)
     print("EXPECTED SOURCE COMMIT:", EXPECTED_SOURCE_COMMIT)
     print("START REVISION:", start["revision"])
-    print("The source has multiple same-date records. Select by exact sessionId; date alone is not accepted.")
-    selection = {}
-    targets = {}
-    for target_date in TARGET_DATES:
-        print("CANDIDATES FOR", target_date + ":")
-        for summary in start["candidates"][target_date]:
-            display = candidate_summary(summary, start["activeSessionId"])
-            try:
-                validate_selected_summary(summary, target_date, "candidate")
-                display["eligibleForCapture"] = True
-            except CaptureError as error:
-                display["eligibleForCapture"] = False
-                display["ineligibleReason"] = str(error)
-            print(json.dumps(display, ensure_ascii=False, sort_keys=True, indent=2))
-        controlling_tty.write("Exact sessionId for %s: " % target_date)
-        controlling_tty.flush()
-        supplied_id = controlling_tty.readline().strip()
-        matches = [
-            summary
-            for summary in start["candidates"][target_date]
-            if summary.get("sessionId") == supplied_id
-        ]
-        if len(matches) != 1:
-            raise CaptureError(
-                "Selection for %s did not exactly match one displayed sessionId. Nothing was selected."
-                % target_date
-            )
-        targets[target_date] = validate_selected_summary(
-            matches[0],
-            target_date,
-            "selected %s session" % target_date,
+    print(
+        "August 7 Pacific is pinned by owner-supplied export evidence; its raw source showDate is 2026-08-08."
+    )
+    august_7_summary = start["candidates"]["2026-08-07"][0]
+    august_7_target = validate_selected_summary(
+        august_7_summary,
+        "2026-08-07",
+        "owner-verified August 7 session",
+    )
+    august_7_display = candidate_summary(august_7_summary, start["activeSessionId"])
+    august_7_display["canonicalShowDate"] = "2026-08-07"
+    august_7_display["sourceShowDate"] = august_7_display.pop("showDate")
+    august_7_display["pinnedByOwnerExportSha256"] = OWNER_EXPORT_SHA256
+    print("PINNED AUGUST 7 TARGET:")
+    print(json.dumps(august_7_display, ensure_ascii=False, sort_keys=True, indent=2))
+
+    target_date = "2026-08-14"
+    print(
+        "The source may have multiple exact August 14 records. Select by exact sessionId; date alone is not accepted."
+    )
+    print("CANDIDATES FOR CANONICAL/SOURCE 2026-08-14:")
+    for summary in start["candidates"][target_date]:
+        display = candidate_summary(summary, start["activeSessionId"])
+        display["canonicalShowDate"] = target_date
+        display["sourceShowDate"] = display.pop("showDate")
+        try:
+            validate_selected_summary(summary, target_date, "candidate")
+            display["eligibleForCapture"] = True
+        except CaptureError as error:
+            display["eligibleForCapture"] = False
+            display["ineligibleReason"] = str(error)
+        print(json.dumps(display, ensure_ascii=False, sort_keys=True, indent=2))
+    controlling_tty.write("Exact sessionId for 2026-08-14: ")
+    controlling_tty.flush()
+    supplied_id = controlling_tty.readline().strip()
+    matches = [
+        summary
+        for summary in start["candidates"][target_date]
+        if summary.get("sessionId") == supplied_id
+    ]
+    if len(matches) != 1:
+        raise CaptureError(
+            "Selection for 2026-08-14 did not exactly match one displayed sessionId. Nothing was selected."
         )
-        selection[target_date] = supplied_id
-    if len(set(selection.values())) != len(TARGET_DATES):
+    august_14_target = validate_selected_summary(
+        matches[0],
+        target_date,
+        "selected August 14 session",
+    )
+    selection = {
+        "2026-08-07": KNOWN_AUGUST_7_SESSION_ID,
+        "2026-08-14": supplied_id,
+    }
+    targets = {
+        "2026-08-07": august_7_target,
+        "2026-08-14": august_14_target,
+    }
+    if len(set(selection.values())) != len(CANONICAL_SHOW_DATES):
         raise CaptureError("The two dates cannot select the same session ID.")
 
     expected_confirmation = confirmation_text(start["revision"], targets)
@@ -1375,7 +1525,7 @@ def main():
 
         start_checkpoint = decode_response_checkpoint(progress["start"], "capture progress.start")
         sessions = require_dict(progress["sessions"], "capture progress.sessions")
-        for target_date in TARGET_DATES:
+        for target_date in CANONICAL_SHOW_DATES:
             if target_date in sessions:
                 print(
                     "REUSING CAPTURED TARGET:",
@@ -1421,7 +1571,7 @@ def main():
                 start,
                 events,
             )
-            for target_date in TARGET_DATES
+            for target_date in CANONICAL_SHOW_DATES
         ]
         latest_target_time = max(item["capturedAt"] for item in captured_checkpoints)
 
@@ -1450,12 +1600,13 @@ def main():
 
         end_checkpoint = decode_response_checkpoint(progress["end"], "capture progress.end")
         captured_sessions = []
-        for target_date in TARGET_DATES:
+        for target_date in CANONICAL_SHOW_DATES:
             item = sessions[target_date]
             captured_sessions.append({
                 key: item[key]
                 for key in (
-                    "showDate",
+                    "canonicalShowDate",
+                    "sourceShowDate",
                     "sessionId",
                     "revision",
                     "sourceResponseSha256",
@@ -1485,8 +1636,31 @@ def main():
                 "redirectsFollowed": 0,
             },
             "scope": {
-                "exactShowDates": list(TARGET_DATES),
+                "canonicalShowDates": list(CANONICAL_SHOW_DATES),
                 "sessionCount": len(captured_sessions),
+                "sourceDateNormalization": [
+                    {
+                        "canonicalShowDate": "2026-08-07",
+                        "sourceShowDate": "2026-08-08",
+                        "sessionId": KNOWN_AUGUST_7_SESSION_ID,
+                        "rule": "legacy_utc_rollover_to_pacific_broadcast_date",
+                        "provenance": {
+                            "kind": "owner_supplied_export",
+                            "sourceSha256": OWNER_EXPORT_SHA256,
+                            "detail": "Owner-supplied live export identifies this source session as the August 7 Pacific broadcast.",
+                        },
+                    },
+                    {
+                        "canonicalShowDate": "2026-08-14",
+                        "sourceShowDate": "2026-08-14",
+                        "sessionId": targets["2026-08-14"]["sessionId"],
+                        "rule": "exact_source_show_date",
+                        "provenance": {
+                            "kind": "authenticated_source_queue_state",
+                            "detail": "Canonical date equals the authenticated source showDate.",
+                        },
+                    },
+                ],
             },
             "consistency": {
                 "captureStartedAt": start_checkpoint["capturedAtText"],
@@ -1508,7 +1682,10 @@ def main():
                 "QueueState omits internal QueueSession lane-restoration fields that are not part of the admin response.",
                 "Exact raw target responses include unrelated session summaries and transient timing; the importer discards those fields when reconstructing each target session.",
                 "A legacy session may normalize to purpose=unknown even when the operator knows it was a live broadcast.",
-                "The operator selected exact session IDs after reviewing every same-date candidate; showDate alone was not used as identity.",
+                "The August 7 Pacific broadcast is bound to session_msjmzqjk_w1rkj by the pinned owner-export digest; its raw source showDate is 2026-08-08 and remains preserved.",
+                "QueueState acceptedCount excludes removed rows; the August 7 lossless guard therefore requires 40 history rows, one removed row, and 41 unique primary lifecycle records.",
+                "The operator selected the August 14 session ID after reviewing every exact source-date candidate; showDate alone was not used as identity.",
+                "Source status, queueOpen, showStarted, and broadcastStartedAt remain preserved in summaryAtStart and in each exact raw target response; destination archival is an import-time operation.",
                 "Each accepted response may have been captured in a separate invocation; equal revision, active fallback identity, and roster digest bind the resumed reads.",
             ],
         }
@@ -1525,7 +1702,8 @@ def main():
         for session in captured_sessions:
             print(
                 "CAPTURED:",
-                session["showDate"],
+                "canonical=" + session["canonicalShowDate"],
+                "source=" + session["sourceShowDate"],
                 "sessionId=" + session["sessionId"],
                 "primaryTracks=" + str(session["trackCounts"]["primaryUnique"]),
                 "spotlight=" + str(session["trackCounts"]["spotlight"]),

@@ -4,6 +4,7 @@
 
 import { Redis } from "@upstash/redis";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { createHash } from "node:crypto";
 import { createProviderFetchBudget, fetchProviderJson } from "./provider-fetch";
 import { pacificDateString } from "./pacific-time";
 import {
@@ -154,6 +155,59 @@ function getQueueRedisConfig(): { url: string; token: string; dedicated: boolean
   const token = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
   if (!url || !token) return null;
   return { url, token, dedicated: false };
+}
+
+function normalizedRedisEndpointHostname(value: string, label: string): string {
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "https:"
+      || parsed.username
+      || parsed.password
+      || parsed.port
+      || parsed.pathname !== "/"
+      || parsed.search
+      || parsed.hash) throw new Error("unsafe endpoint");
+    const hostname = parsed.hostname.toLowerCase().replace(/\.+$/, "");
+    if (!hostname.endsWith(".upstash.io")) throw new Error("invalid Upstash hostname");
+    return hostname;
+  } catch {
+    throw new Error(`${label} is not a valid HTTPS Redis endpoint.`);
+  }
+}
+
+function getDedicatedQueueRecoveryRedisConfig(): { url: string; token: string; dedicated: true } {
+  const config = getQueueRedisConfig();
+  if (!config?.dedicated) {
+    throw new Error("Dedicated QUEUE_REDIS_REST_URL and QUEUE_REDIS_REST_TOKEN are not configured. Queue recovery refused.");
+  }
+  const queueHostname = normalizedRedisEndpointHostname(config.url, "QUEUE_REDIS_REST_URL");
+  const sharedUrl = process.env.UPSTASH_REDIS_REST_URL?.trim();
+  const sharedToken = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
+  if (Boolean(sharedUrl) !== Boolean(sharedToken)) {
+    throw new Error("UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN must be configured together for queue recovery isolation checks.");
+  }
+  if (sharedUrl && sharedToken) {
+    const sharedHostname = normalizedRedisEndpointHostname(sharedUrl, "UPSTASH_REDIS_REST_URL");
+    if (queueHostname === sharedHostname) {
+      throw new Error("QUEUE_REDIS_REST_URL must use a different Redis endpoint from UPSTASH_REDIS_REST_URL. Queue recovery refused.");
+    }
+  }
+  return { ...config, dedicated: true };
+}
+
+function dedicatedQueueRecoveryIsolationStatus(): boolean | null {
+  try {
+    const config = getQueueRedisConfig();
+    if (!config?.dedicated) return null;
+    const queueHostname = normalizedRedisEndpointHostname(config.url, "QUEUE_REDIS_REST_URL");
+    const sharedUrl = process.env.UPSTASH_REDIS_REST_URL?.trim();
+    const sharedToken = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
+    if (Boolean(sharedUrl) !== Boolean(sharedToken)) return null;
+    if (!sharedUrl || !sharedToken) return true;
+    return queueHostname !== normalizedRedisEndpointHostname(sharedUrl, "UPSTASH_REDIS_REST_URL");
+  } catch {
+    return null;
+  }
 }
 
 function getQueueRedisEndpoint(): string | null {
@@ -1396,6 +1450,7 @@ export interface QueueRecoveryStatus {
     configured: boolean;
     configurationStatus: "dedicated" | "shared_fallback" | "partial_dedicated" | "partial_shared" | "missing";
     dedicated: boolean;
+    isolatedFromShared: boolean | null;
     available: boolean;
     revision: number | null;
     activeSessionId: string | null;
@@ -1417,6 +1472,536 @@ export interface QueueRecoveryResult {
   sessionCount: number;
   trackRecordCount: number;
   previousRedisRevision: number;
+}
+
+const HISTORICAL_QUEUE_IMPORT_SCHEMA_VERSION = "barcode_queue_two_session_source_capture_v1";
+const HISTORICAL_QUEUE_IMPORT_SOURCE_URL = "https://barcode-network-site-cpps-fg7a9jcmf-6-bits-projects.vercel.app";
+const HISTORICAL_QUEUE_IMPORT_SOURCE_COMMIT = "a1537f611db69e5a1c3d74ebb941d06d68ad49ff";
+const HISTORICAL_QUEUE_IMPORT_DATES = ["2026-08-07", "2026-08-14"] as const;
+const HISTORICAL_QUEUE_IMPORT_MAX_BYTES = 3_500_000;
+const HISTORICAL_QUEUE_IMPORT_MAX_SOURCE_RESPONSE_BYTES = 1_200_000;
+const HISTORICAL_QUEUE_IMPORT_MAX_RECORDS_PER_SESSION = 500;
+const HISTORICAL_QUEUE_IMPORT_ACCEPTED_LOSSES = [
+  "source_active_session_id_when_no_captured_session_is_current",
+  "current_track_previous_lane_and_index",
+  "loaded_track_previous_lane_and_index",
+  "loaded_track_was_next_in_line",
+  "loaded_track_fallback_lane_when_not_present_on_the_loaded_track",
+] as const;
+
+export interface QueueHistoricalImportSessionSummary {
+  sessionId: string;
+  showDate: string;
+  title: string;
+  status: QueueSessionStatus;
+  queueCount: number;
+  completedCount: number;
+  removedCount: number;
+  spotlightCount: number;
+  hasNextInLine: boolean;
+  hasLoadedTrack: boolean;
+}
+
+export interface QueueHistoricalImportResult {
+  dryRun: boolean;
+  imported: boolean;
+  alreadyPresent: boolean;
+  sourceRevision: number;
+  sourceDigest: string;
+  requiredConfirmation: string;
+  currentRevision: number;
+  targetRevision: number;
+  sourceActiveSessionId: string;
+  activeSessionId: string;
+  activeSessionSelection: "source_active_session" | "newest_imported_archived_session";
+  sessions: QueueHistoricalImportSessionSummary[];
+  acceptedLosses: readonly string[];
+}
+
+interface HistoricalQueueImportPlan {
+  sourceRevision: number;
+  sourceDigest: string;
+  requiredConfirmation: string;
+  sourceActiveSessionId: string;
+  activeSessionId: string;
+  activeSessionSelection: QueueHistoricalImportResult["activeSessionSelection"];
+  sessions: QueueSession[];
+  summaries: QueueHistoricalImportSessionSummary[];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function requiredNonEmptyString(value: unknown, label: string): string {
+  if (typeof value !== "string" || !value.trim()) throw new Error(`${label} is required.`);
+  return value;
+}
+
+function requiredNonNegativeInteger(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    throw new Error(`${label} must be a non-negative integer.`);
+  }
+  return value;
+}
+
+function requireIsoTimestamp(value: unknown, label: string): string {
+  const timestamp = requiredNonEmptyString(value, label);
+  if (!Number.isFinite(Date.parse(timestamp))) throw new Error(`${label} must be an ISO timestamp.`);
+  return timestamp;
+}
+
+function requireSha256(value: unknown, label: string): string {
+  const digest = requiredNonEmptyString(value, label).toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(digest)) throw new Error(`${label} must be a SHA-256 digest.`);
+  return digest;
+}
+
+function sourceProjectionFromRawCapture(value: Record<string, unknown>, index: number): Record<string, unknown> {
+  const label = `capture.sessions[${index}]`;
+  const encoded = requiredNonEmptyString(value.sourceResponseBase64, `${label}.sourceResponseBase64`);
+  if (encoded.length % 4 !== 0 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)) {
+    throw new Error(`${label}.sourceResponseBase64 must be canonical base64.`);
+  }
+  const raw = Buffer.from(encoded, "base64");
+  if (raw.toString("base64") !== encoded) throw new Error(`${label}.sourceResponseBase64 must be canonical base64.`);
+  const expectedBytes = requiredNonNegativeInteger(value.sourceResponseBytes, `${label}.sourceResponseBytes`);
+  if (expectedBytes > HISTORICAL_QUEUE_IMPORT_MAX_SOURCE_RESPONSE_BYTES) {
+    throw new Error(`${label}.sourceResponseBytes exceeds the import limit.`);
+  }
+  if (raw.byteLength !== expectedBytes) throw new Error(`${label}.sourceResponseBytes does not match the embedded response.`);
+  const expectedDigest = requireSha256(value.sourceResponseSha256, `${label}.sourceResponseSha256`);
+  const actualDigest = createHash("sha256").update(raw).digest("hex");
+  if (actualDigest !== expectedDigest) throw new Error(`${label}.sourceResponseSha256 does not match the embedded response.`);
+
+  let rawState: unknown;
+  try {
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(raw);
+    rawState = JSON.parse(text);
+  } catch {
+    throw new Error(`${label}.sourceResponseBase64 must decode to a UTF-8 JSON response.`);
+  }
+  if (!isRecord(rawState)) throw new Error(`${label}.sourceResponseBase64 must contain an admin queue state.`);
+  const projected = { ...rawState };
+  delete projected.sessions;
+  delete projected.playbackTiming;
+  delete projected.wheelTiming;
+  return projected;
+}
+
+function projectionEntry(value: unknown, label: string): QueueEntry {
+  if (!isRecord(value)) throw new Error(`${label} must be a queue record.`);
+  requiredNonEmptyString(value.id, `${label}.id`);
+  requiredNonEmptyString(value.artist, `${label}.artist`);
+  requiredNonEmptyString(value.title, `${label}.title`);
+  if (typeof value.link !== "string") throw new Error(`${label}.link must be a string.`);
+  requireIsoTimestamp(value.createdAt, `${label}.createdAt`);
+  return value as unknown as QueueEntry;
+}
+
+function projectionEntries(value: unknown, label: string): QueueEntry[] {
+  if (!Array.isArray(value)) throw new Error(`${label} must be an array.`);
+  if (value.length > HISTORICAL_QUEUE_IMPORT_MAX_RECORDS_PER_SESSION) {
+    throw new Error(`${label} contains too many queue records.`);
+  }
+  return value.map((entry, index) => projectionEntry(entry, `${label}[${index}]`));
+}
+
+function optionalProjectionEntries(value: unknown, label: string): QueueEntry[] {
+  return value === undefined ? [] : projectionEntries(value, label);
+}
+
+function optionalProjectionEntry(value: unknown, label: string): QueueEntry | null {
+  if (value === undefined || value === null) return null;
+  return projectionEntry(value, label);
+}
+
+function assertPrimaryTrackIdsAreUnique(
+  sessionId: string,
+  containers: Array<{ label: string; entries: Array<QueueEntry | null> }>,
+): void {
+  const locations = new Map<string, string>();
+  for (const container of containers) {
+    for (const entry of container.entries) {
+      if (!entry) continue;
+      const previous = locations.get(entry.id);
+      if (previous) {
+        throw new Error(`Historical session ${sessionId} repeats track ${entry.id} in ${previous} and ${container.label}.`);
+      }
+      locations.set(entry.id, container.label);
+    }
+  }
+}
+
+function exactSummaryTrackId(value: unknown, label: string): string | null {
+  if (value === null) return null;
+  return requiredNonEmptyString(value, label);
+}
+
+function queueSessionFromProjection(value: unknown, index: number): QueueSession {
+  const label = `capture.sessions[${index}].projectedState`;
+  if (!isRecord(value)) throw new Error(`${label} must be an admin queue state.`);
+  if (!isRecord(value.session)) throw new Error(`${label}.session is required.`);
+  const summary = value.session;
+  const sessionId = requiredNonEmptyString(summary.sessionId, `${label}.session.sessionId`);
+  const showDate = requiredNonEmptyString(summary.showDate, `${label}.session.showDate`);
+  if (!(HISTORICAL_QUEUE_IMPORT_DATES as readonly string[]).includes(showDate)) {
+    throw new Error(`Historical queue import only accepts show dates ${HISTORICAL_QUEUE_IMPORT_DATES.join(" and ")}.`);
+  }
+  requiredNonEmptyString(summary.title, `${label}.session.title`);
+  if (summary.status !== "archived") {
+    throw new Error(`${label}.session.status must be archived.`);
+  }
+  const purpose = requiredNonEmptyString(summary.purpose, `${label}.session.purpose`);
+  if (showDate === "2026-08-07" && purpose !== "unknown" && purpose !== "live_broadcast") {
+    throw new Error("The 2026-08-07 historical session purpose must be unknown or live_broadcast.");
+  }
+  if (showDate === "2026-08-14" && purpose !== "live_broadcast") {
+    throw new Error("The 2026-08-14 historical session purpose must be live_broadcast.");
+  }
+  requireIsoTimestamp(summary.createdAt, `${label}.session.createdAt`);
+  requireIsoTimestamp(summary.updatedAt, `${label}.session.updatedAt`);
+  if (summary.queueOpen !== false || summary.showStarted === true) {
+    throw new Error(`${label}.session must be archived with submissions and show state closed.`);
+  }
+  if (value.isCurrentSession !== false || value.readOnly !== true || value.streamStatus !== "offline") {
+    throw new Error(`${label} must be a read-only archived admin queue state.`);
+  }
+
+  const queue = projectionEntries(value.queue, `${label}.queue`);
+  const completed = projectionEntries(value.history, `${label}.history`);
+  const removed = optionalProjectionEntries(value.removed, `${label}.removed`);
+  const spotlight = optionalProjectionEntries(value.spotlight, `${label}.spotlight`);
+  const nextInLineTrack = optionalProjectionEntry(value.nextInLine, `${label}.nextInLine`);
+  if (!("loadedTrack" in value) || !("nowPlaying" in value)
+    || canonicalJson(value.loadedTrack) !== canonicalJson(value.nowPlaying)) {
+    throw new Error(`${label} has conflicting loadedTrack and nowPlaying records.`);
+  }
+  const loadedTrack = optionalProjectionEntry(value.loadedTrack, `${label}.loadedTrack`);
+  const summaryNextInLineTrackId = exactSummaryTrackId(summary.nextInLineTrackId, `${label}.session.nextInLineTrackId`);
+  const summaryLoadedTrackId = exactSummaryTrackId(summary.loadedTrackId, `${label}.session.loadedTrackId`);
+  if (summaryNextInLineTrackId !== (nextInLineTrack?.id ?? null)) {
+    throw new Error(`${label}.session.nextInLineTrackId does not match nextInLine.`);
+  }
+  if (summaryLoadedTrackId !== (loadedTrack?.id ?? null)) {
+    throw new Error(`${label}.session.loadedTrackId does not match loadedTrack.`);
+  }
+  assertPrimaryTrackIdsAreUnique(sessionId, [
+    { label: "queue", entries: queue },
+    { label: "history", entries: completed },
+    { label: "removed", entries: removed },
+    { label: "nextInLine", entries: [nextInLineTrack] },
+    { label: "loadedTrack", entries: [loadedTrack] },
+  ]);
+
+  const loadedFallbackLane = loadedTrack?.stagedAsFallbackForLane === "regular" || loadedTrack?.stagedAsFallbackForLane === "wheel"
+    ? loadedTrack.stagedAsFallbackForLane
+    : null;
+  return normalizeSession({
+    ...(summary as unknown as QueueSessionSummary),
+    queue,
+    completed,
+    removed,
+    spotlight,
+    nextInLineTrack,
+    nextInLineTrackId: summaryNextInLineTrackId,
+    loadedTrack,
+    loadedTrackId: summaryLoadedTrackId,
+    currentTrackPreviousLane: nextInLineTrack?.lane ?? null,
+    currentTrackPreviousIndex: null,
+    loadedTrackPreviousLane: loadedTrack?.lane ?? null,
+    loadedTrackPreviousIndex: null,
+    loadedTrackWasNextInLine: false,
+    loadedTrackFallbackForLane: loadedFallbackLane,
+    autoRoutingPaused: value.autoRoutingPaused === true,
+    nextNonPriorityLane: value.nextNonPriorityLane === "regular" ? "regular" : "wheel",
+    playbackDiagnostics: normalizeQueuePlaybackDiagnostics(value.playbackDiagnostics),
+  } as QueueSession);
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (isRecord(value)) {
+    const entries = Object.keys(value)
+      .filter((key) => value[key] !== undefined)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`);
+    return `{${entries.join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
+function historicalQueueImportPlan(capture: unknown): HistoricalQueueImportPlan {
+  let serialized: string;
+  try {
+    const candidate = JSON.stringify(capture);
+    if (candidate === undefined) throw new Error("not JSON");
+    serialized = candidate;
+  } catch {
+    throw new Error("Historical queue capture must be valid JSON.");
+  }
+  if (Buffer.byteLength(serialized, "utf8") > HISTORICAL_QUEUE_IMPORT_MAX_BYTES) {
+    throw new Error("Historical queue capture is too large.");
+  }
+  if (!isRecord(capture) || capture.schema !== HISTORICAL_QUEUE_IMPORT_SCHEMA_VERSION) {
+    throw new Error(`Historical queue capture schema must be ${HISTORICAL_QUEUE_IMPORT_SCHEMA_VERSION}.`);
+  }
+  const capturedAt = requireIsoTimestamp(capture.capturedAt, "capture.capturedAt");
+  if (!isRecord(capture.source)
+    || capture.source.baseUrl !== HISTORICAL_QUEUE_IMPORT_SOURCE_URL
+    || capture.source.expectedGitCommit !== HISTORICAL_QUEUE_IMPORT_SOURCE_COMMIT
+    || capture.source.route !== "/api/admin/queue"
+    || capture.source.captureKind !== "authenticated_admin_logical_session_state"
+    || capture.source.canonicalRawRedis !== false
+    || capture.source.remoteMutationRequests !== 0
+    || capture.source.automaticRetries !== 0
+    || capture.source.redirectsFollowed !== 0) {
+    throw new Error("Historical queue capture source provenance is invalid.");
+  }
+  if (!isRecord(capture.scope)
+    || capture.scope.sessionCount !== HISTORICAL_QUEUE_IMPORT_DATES.length
+    || !Array.isArray(capture.scope.exactShowDates)
+    || canonicalJson([...capture.scope.exactShowDates].sort()) !== canonicalJson([...HISTORICAL_QUEUE_IMPORT_DATES].sort())) {
+    throw new Error(`Historical queue capture scope must be exactly ${HISTORICAL_QUEUE_IMPORT_DATES.join(" and ")}.`);
+  }
+  if (!isRecord(capture.consistency) || capture.consistency.startEndMatch !== true) {
+    throw new Error("Historical queue capture does not prove a stable start/end state.");
+  }
+  requireIsoTimestamp(capture.consistency.captureStartedAt, "capture.consistency.captureStartedAt");
+  requireIsoTimestamp(capture.consistency.captureFinishedAt, "capture.consistency.captureFinishedAt");
+  const sourceRevision = requiredNonNegativeInteger(capture.consistency.revision, "capture.consistency.revision");
+  const sourceActiveSessionId = requiredNonEmptyString(capture.consistency.activeSessionId, "capture.consistency.activeSessionId");
+  const sourceRosterSha256 = requireSha256(capture.consistency.rosterSha256, "capture.consistency.rosterSha256");
+  if (requiredNonNegativeInteger(capture.consistency.rosterCount, "capture.consistency.rosterCount") < 2) {
+    throw new Error("Historical queue capture roster must contain both target sessions.");
+  }
+  requireSha256(capture.consistency.startSentinelResponseSha256, "capture.consistency.startSentinelResponseSha256");
+  requireSha256(capture.consistency.endSentinelResponseSha256, "capture.consistency.endSentinelResponseSha256");
+  requiredNonNegativeInteger(capture.consistency.startSentinelResponseBytes, "capture.consistency.startSentinelResponseBytes");
+  requiredNonNegativeInteger(capture.consistency.endSentinelResponseBytes, "capture.consistency.endSentinelResponseBytes");
+  if (!Array.isArray(capture.sessions) || capture.sessions.length !== HISTORICAL_QUEUE_IMPORT_DATES.length) {
+    throw new Error("Historical queue capture must contain exactly two source session projections.");
+  }
+
+  const responseEvidence: Array<{ showDate: string; sessionId: string; responseSha256: string }> = [];
+  const sessions = capture.sessions.map((capturedSession, index) => {
+    const label = `capture.sessions[${index}]`;
+    if (!isRecord(capturedSession)) throw new Error(`${label} must be a captured source session.`);
+    const showDate = requiredNonEmptyString(capturedSession.showDate, `${label}.showDate`);
+    const sessionId = requiredNonEmptyString(capturedSession.sessionId, `${label}.sessionId`);
+    const revision = requiredNonNegativeInteger(capturedSession.revision, `${label}.revision`);
+    if (revision !== sourceRevision) throw new Error("Historical queue capture contains states from different queue revisions.");
+    const state = sourceProjectionFromRawCapture(capturedSession, index);
+    const stateRevision = requiredNonNegativeInteger(state.revision, `${label}.projectedState.revision`);
+    if (stateRevision !== sourceRevision) throw new Error("Historical queue capture contains states from different queue revisions.");
+    if (!isRecord(state.session)
+      || state.session.sessionId !== sessionId
+      || state.session.showDate !== showDate
+      || state.viewedSessionId !== sessionId) {
+      throw new Error(`${label} identity does not match its projected admin queue state.`);
+    }
+    if (!isRecord(capturedSession.summaryAtStart)) throw new Error(`${label}.summaryAtStart is required.`);
+    for (const field of ["sessionId", "showDate", "status", "purpose", "bnlPublicationStatus", "createdAt", "updatedAt"] as const) {
+      if (capturedSession.summaryAtStart[field] !== state.session[field]) {
+        throw new Error(`${label}.summaryAtStart.${field} does not match the projected session.`);
+      }
+    }
+    const session = queueSessionFromProjection(state, index);
+    if (session.sessionId !== sessionId || session.showDate !== showDate) {
+      throw new Error(`${label} reconstructed the wrong historical session.`);
+    }
+    responseEvidence.push({
+      showDate,
+      sessionId,
+      responseSha256: requireSha256(capturedSession.sourceResponseSha256, `${label}.sourceResponseSha256`),
+    });
+    return session;
+  }).sort((left, right) => right.showDate.localeCompare(left.showDate) || right.createdAt.localeCompare(left.createdAt));
+
+  const dates = sessions.map((session) => session.showDate).sort();
+  if (dates.join("|") !== [...HISTORICAL_QUEUE_IMPORT_DATES].sort().join("|")) {
+    throw new Error(`Historical queue capture must contain one session for each of ${HISTORICAL_QUEUE_IMPORT_DATES.join(" and ")}.`);
+  }
+  if (new Set(sessions.map((session) => session.sessionId)).size !== sessions.length) {
+    throw new Error("Historical queue capture repeats a session ID.");
+  }
+  const sourceActiveSession = sessions.find((session) => session.sessionId === sourceActiveSessionId);
+  const activeSessionId = sourceActiveSession?.sessionId
+    ?? sessions.find((session) => session.showDate === "2026-08-14")!.sessionId;
+  const activeSessionSelection: QueueHistoricalImportResult["activeSessionSelection"] = sourceActiveSession
+    ? "source_active_session"
+    : "newest_imported_archived_session";
+  const digestInput = {
+    schema: HISTORICAL_QUEUE_IMPORT_SCHEMA_VERSION,
+    capturedAt,
+    sourceUrl: HISTORICAL_QUEUE_IMPORT_SOURCE_URL,
+    sourceCommit: HISTORICAL_QUEUE_IMPORT_SOURCE_COMMIT,
+    sourceRevision,
+    sourceActiveSessionId,
+    sourceRosterSha256,
+    responseEvidence: responseEvidence.sort((left, right) => left.showDate.localeCompare(right.showDate)),
+    activeSessionId,
+    activeSessionSelection,
+    sessions,
+  };
+  const sourceDigest = createHash("sha256").update(canonicalJson(digestInput)).digest("hex");
+  const requiredConfirmation = `IMPORT 2 HISTORICAL QUEUE SESSIONS ${sourceDigest} INTO REVISION 0`;
+  const summaries = sessions.map((session) => ({
+    sessionId: session.sessionId,
+    showDate: session.showDate,
+    title: session.title,
+    status: session.status,
+    queueCount: session.queue.length,
+    completedCount: session.completed.length,
+    removedCount: session.removed.length,
+    spotlightCount: session.spotlight.length,
+    hasNextInLine: Boolean(session.nextInLineTrack),
+    hasLoadedTrack: Boolean(session.loadedTrack),
+  }));
+  return {
+    sourceRevision,
+    sourceDigest,
+    requiredConfirmation,
+    sourceActiveSessionId,
+    activeSessionId,
+    activeSessionSelection,
+    sessions,
+    summaries,
+  };
+}
+
+function isEmptyRevisionZeroPlaceholder(store: QueueStore): boolean {
+  if (store.revision !== 0 || store.sessions.length !== 1 || queueStoreTrackRecordCount(store) !== 0) return false;
+  const session = store.sessions[0];
+  return store.activeSessionId === session.sessionId
+    && session.title === `BARCODE Radio — ${session.showDate}`
+    && session.description === sessionDescriptionFor(session.showDate)
+    && session.createdAt === session.updatedAt
+    && session.status === "prepared"
+    && session.purpose === "rehearsal"
+    && session.bnlPublicationStatus === "private"
+    && session.provenanceRevision === 1
+    && session.provenanceUpdatedAt === session.createdAt
+    && session.queueOpen === false
+    && session.submissionClosureReason === "manual"
+    && session.trackLimitPerArtist === 3
+    && session.queueCapacity === DEFAULT_QUEUE_CAPACITY
+    && session.skipGameTapTarget === 10000
+    && session.submissionCooldownSeconds === DEFAULT_SUBMISSION_COOLDOWN_SECONDS
+    && session.showStarted !== true
+    && !session.preShowEndsAt
+    && !session.broadcastStartedAt
+    && !session.nextInLineTrackId
+    && !session.loadedTrackId
+    && !session.nextInLineHoldTrackId
+    && !session.currentTrackPreviousLane
+    && session.currentTrackPreviousIndex === null
+    && !session.loadedTrackPreviousLane
+    && session.loadedTrackPreviousIndex === null
+    && session.loadedTrackWasNextInLine !== true
+    && !session.loadedTrackFallbackForLane
+    && session.autoRoutingPaused !== true
+    && session.nextNonPriorityLane === "wheel"
+    && (session.wheelSpinsOwed ?? 0) === 0
+    && session.priorityUpgradesEnabled === false
+    && session.priorityUpgradePaymentsEnabled === false
+    && session.priorityUpgradeLabel === DEFAULT_PRIORITY_UPGRADE_LABEL
+    && session.priorityUpgradeInstructions === DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS
+    && session.priorityUpgradePriceCents === DEFAULT_PRIORITY_UPGRADE_PRICE_CENTS
+    && session.priorityUpgradeCurrency === DEFAULT_PRIORITY_UPGRADE_CURRENCY
+    && session.sponsorBreakSeconds === SPONSOR_BREAK_SECONDS
+    && session.sponsorBreakMode === "mid_show"
+    && session.sponsorBreakStatus === "not_due"
+    && !session.sponsorBreakStartedAt
+    && !session.sponsorBreakCompletedAt
+    && !session.sponsorBreakCompletedAfterPlayableCount
+    && !session.sponsorBreakDueAfterPlayableCount
+    && !session.sponsorBreakManualNote
+    && canonicalJson(normalizeQueuePlaybackDiagnostics(session.playbackDiagnostics)) === canonicalJson(emptyQueuePlaybackDiagnostics());
+}
+
+function historicalQueueImportResult(
+  plan: HistoricalQueueImportPlan,
+  input: { dryRun: boolean; imported: boolean; alreadyPresent: boolean; currentRevision: number; targetRevision: number },
+): QueueHistoricalImportResult {
+  return {
+    ...input,
+    sourceRevision: plan.sourceRevision,
+    sourceDigest: plan.sourceDigest,
+    requiredConfirmation: plan.requiredConfirmation,
+    sourceActiveSessionId: plan.sourceActiveSessionId,
+    activeSessionId: plan.activeSessionId,
+    activeSessionSelection: plan.activeSessionSelection,
+    sessions: plan.summaries,
+    acceptedLosses: HISTORICAL_QUEUE_IMPORT_ACCEPTED_LOSSES,
+  };
+}
+
+export async function importHistoricalQueueSessions(input: {
+  capture: unknown;
+  dryRun?: boolean;
+  confirmation?: string;
+}): Promise<QueueHistoricalImportResult> {
+  const plan = historicalQueueImportPlan(input.capture);
+  getDedicatedQueueRecoveryRedisConfig();
+  if (!isQueueDurableSnapshotConfigured()) {
+    throw new Error("Durable queue snapshots are not configured. Historical import refused.");
+  }
+
+  return withQueueMutation(async () => {
+    const current = await readStore();
+    const rawDurable = await readQueueDurableSnapshot<QueueStore>();
+    if (!rawDurable) throw new Error("No verified durable queue snapshot is available. Historical import refused.");
+    const durable = normalizeStore(rawDurable);
+    if (durable.revision !== current.revision || !storesMatch(durable, current)) {
+      throw new Error("Queue Redis and the durable snapshot must be aligned before historical import.");
+    }
+
+    const intendedAtCurrentRevision: QueueStore = {
+      revision: current.revision,
+      activeSessionId: plan.activeSessionId,
+      sessions: plan.sessions,
+    };
+    if (current.revision === 1 && storesMatch(current, intendedAtCurrentRevision)) {
+      return historicalQueueImportResult(plan, {
+        dryRun: input.dryRun !== false,
+        imported: false,
+        alreadyPresent: true,
+        currentRevision: current.revision,
+        targetRevision: current.revision,
+      });
+    }
+    if (!isEmptyRevisionZeroPlaceholder(current)) {
+      throw new Error("Historical queue import requires one empty placeholder at aligned revision 0. Existing queue data was not changed.");
+    }
+
+    if (input.dryRun !== false) {
+      return historicalQueueImportResult(plan, {
+        dryRun: true,
+        imported: false,
+        alreadyPresent: false,
+        currentRevision: current.revision,
+        targetRevision: 1,
+      });
+    }
+    if (input.confirmation !== plan.requiredConfirmation) {
+      throw new Error(`Historical import confirmation must exactly match: ${plan.requiredConfirmation}`);
+    }
+
+    const nextStore: QueueStore = {
+      revision: current.revision,
+      activeSessionId: plan.activeSessionId,
+      sessions: plan.sessions,
+    };
+    await writeStore(nextStore);
+    return historicalQueueImportResult(plan, {
+      dryRun: false,
+      imported: true,
+      alreadyPresent: false,
+      currentRevision: current.revision,
+      targetRevision: nextStore.revision,
+    });
+  });
 }
 
 function queueStoreTrackRecordCount(store: QueueStore): number {
@@ -1507,6 +2092,9 @@ export async function getQueueRecoveryStatus(): Promise<QueueRecoveryStatus> {
     : sharedUrlPresent || sharedTokenPresent
       ? sharedUrlPresent && sharedTokenPresent ? "shared_fallback" : "partial_shared"
       : "missing";
+  const redisIsolatedFromShared = redisConfigurationStatus === "dedicated"
+    ? dedicatedQueueRecoveryIsolationStatus()
+    : null;
   let redisConfig: ReturnType<typeof getQueueRedisConfig> = null;
   let redisStore: QueueStore | null = null;
   let redisRevision: number | null = null;
@@ -1575,6 +2163,7 @@ export async function getQueueRecoveryStatus(): Promise<QueueRecoveryStatus> {
       configured: Boolean(redisConfig) || redisConfigurationStatus === "partial_dedicated" || redisConfigurationStatus === "partial_shared",
       configurationStatus: redisConfigurationStatus,
       dedicated: redisConfig?.dedicated ?? false,
+      isolatedFromShared: redisIsolatedFromShared,
       available: Boolean(redisStore) && !redisFailureReason,
       revision: redisRevision,
       activeSessionId: redisStore?.activeSessionId ?? null,
@@ -1593,8 +2182,8 @@ export async function restoreQueueFromDurableSnapshot(input: { dryRun?: boolean;
   const rawDurable = await readQueueDurableSnapshot<QueueStore>();
   if (!rawDurable) throw new Error("No verified durable queue snapshot is available.");
   const durable = normalizeStore(rawDurable);
-  const redis = getRedis();
-  if (!redis) throw new Error("Queue Redis is not configured.");
+  const config = getDedicatedQueueRecoveryRedisConfig();
+  const redis = new Redis({ url: config.url, token: config.token });
 
   return waitForLocalMutationTurn(async () => {
     const token = await acquireRedisMutationLock(redis);

@@ -1394,7 +1394,7 @@ export interface QueueRecoveryStatus {
   };
   redis: {
     configured: boolean;
-    configurationStatus: "dedicated" | "shared_fallback" | "partial_dedicated" | "missing";
+    configurationStatus: "dedicated" | "shared_fallback" | "partial_dedicated" | "partial_shared" | "missing";
     dedicated: boolean;
     available: boolean;
     revision: number | null;
@@ -1455,13 +1455,16 @@ export async function getQueueRecoveryStatus(): Promise<QueueRecoveryStatus> {
   const sharedTokenPresent = Boolean(process.env.UPSTASH_REDIS_REST_TOKEN?.trim());
   const redisConfigurationStatus: QueueRecoveryStatus["redis"]["configurationStatus"] = dedicatedUrlPresent || dedicatedTokenPresent
     ? dedicatedUrlPresent && dedicatedTokenPresent ? "dedicated" : "partial_dedicated"
-    : sharedUrlPresent && sharedTokenPresent ? "shared_fallback" : "missing";
+    : sharedUrlPresent || sharedTokenPresent
+      ? sharedUrlPresent && sharedTokenPresent ? "shared_fallback" : "partial_shared"
+      : "missing";
   let redisConfig: ReturnType<typeof getQueueRedisConfig> = null;
   let redisStore: QueueStore | null = null;
   let redisRevision: number | null = null;
   let redisFailureReason: QueueRecoveryStatus["redis"]["failureReason"] = null;
   try {
     redisConfig = getQueueRedisConfig();
+    if (redisConfigurationStatus === "partial_shared") redisFailureReason = "configuration_error";
   } catch {
     // Recovery diagnostics must remain readable when an environment-variable
     // rollout is incomplete. Mutations still fail closed in getQueueRedisConfig.
@@ -1501,7 +1504,7 @@ export async function getQueueRecoveryStatus(): Promise<QueueRecoveryStatus> {
       trackRecordCount: durable ? queueStoreTrackRecordCount(durable) : 0,
     },
     redis: {
-      configured: Boolean(redisConfig) || redisConfigurationStatus === "partial_dedicated",
+      configured: Boolean(redisConfig) || redisConfigurationStatus === "partial_dedicated" || redisConfigurationStatus === "partial_shared",
       configurationStatus: redisConfigurationStatus,
       dedicated: redisConfig?.dedicated ?? false,
       available: Boolean(redisStore) && !redisFailureReason,

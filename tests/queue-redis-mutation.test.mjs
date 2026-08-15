@@ -1117,7 +1117,7 @@ test("historical v2 capture rejects stale schema and any weakened August 7 ident
     });
     await assert.rejects(
       () => destinationWorker.importHistoricalQueueSessions({ capture: wrongRemovedIdentity, dryRun: true }),
-      /owner.*August 7 export|removed track/i,
+      /August 7.*owner export|removed track/i,
     );
 
     const noRealAugust14Track = structuredClone(capture);

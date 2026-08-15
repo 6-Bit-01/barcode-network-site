@@ -1087,7 +1087,7 @@ test("historical v2 capture rejects stale schema and any weakened August 7 ident
       .trackCounts.acceptedCount += 1;
     await assert.rejects(
       () => destinationWorker.importHistoricalQueueSessions({ capture: wrongCapturedAcceptedCount, dryRun: true }),
-      /capture\.trackCounts\.acceptedCount does not match the raw response/i,
+      /capture trackCounts\.acceptedCount does not match the raw response/i,
     );
 
     const missingTotalPlayed = structuredClone(capture);

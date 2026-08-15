@@ -2212,7 +2212,7 @@ test("upload submission without detected duration stays internal estimate and no
   assert.equal(track.durationSource, "internal_estimate");
 });
 
-test("uploaded MP3/WAV queue entries get private deletion metadata about 24 hours after creation", async () => {
+test("uploaded MP3/WAV queue entries retain private audio for at least 30 days", async () => {
   const created = new Date(Date.UTC(2026, 0, 2, 3, 4, 5));
   await freshOpenSession("upload deletion metadata", { showStarted: false });
 
@@ -2230,7 +2230,7 @@ test("uploaded MP3/WAV queue entries get private deletion metadata about 24 hour
 
   assert.equal(track.uploadedFileDeletionStatus, "pending");
   assert.equal(track.uploadedFileDeletedAt, null);
-  assert.equal(new Date(track.uploadedFileDeleteAfter).getTime(), created.getTime() + 24 * 60 * 60 * 1000);
+  assert.equal(new Date(track.uploadedFileDeleteAfter).getTime(), created.getTime() + 30 * 24 * 60 * 60 * 1000);
 });
 
 test("link-only submissions do not get raw upload deletion metadata", async () => {
@@ -2313,9 +2313,11 @@ test("cleanup deletes expired BARCODE upload files idempotently without removing
   });
   const deleted = [];
 
-  const first = await queue.cleanupExpiredQueueUploads({ now: new Date(Date.UTC(2026, 0, 3)), deleteBlob: async (url) => { deleted.push(url); } });
-  const second = await queue.cleanupExpiredQueueUploads({ now: new Date(Date.UTC(2026, 0, 3, 1)), deleteBlob: async (url) => { deleted.push(url); } });
-  const state = await queue.getRadioQueueState();
+  await withFakeNow(new Date(Date.UTC(2026, 0, 3)), () => queue.archiveCurrentQueueSession());
+
+  const first = await queue.cleanupExpiredQueueUploads({ now: new Date(Date.UTC(2026, 1, 3)), deleteBlob: async (url) => { deleted.push(url); } });
+  const second = await queue.cleanupExpiredQueueUploads({ now: new Date(Date.UTC(2026, 1, 3, 1)), deleteBlob: async (url) => { deleted.push(url); } });
+  const state = await queue.getRadioQueueState((await queue.getRadioQueueState()).sessions.find((session) => session.status === "archived").sessionId);
   const cleaned = state.queue.find((entry) => entry.id === upload.id);
   const link = state.queue.find((entry) => entry.id === linkOnly.id);
 
@@ -2324,7 +2326,7 @@ test("cleanup deletes expired BARCODE upload files idempotently without removing
   assert.deepEqual(deleted, [uploadUrl]);
   assert.ok(cleaned, "upload queue record should remain");
   assert.equal(cleaned.uploadedFileDeletionStatus, "deleted");
-  assert.equal(cleaned.uploadedFileDeletedAt, new Date(Date.UTC(2026, 0, 3)).toISOString());
+  assert.equal(cleaned.uploadedFileDeletedAt, new Date(Date.UTC(2026, 1, 3)).toISOString());
   assert.equal(cleaned.legalAcceptance.acceptedAt, legalAcceptance.acceptedAt);
   assert.equal(cleaned.priorityUpgradePaymentId, "pi_preserved");
   assert.equal(cleaned.stripeSessionId, "cs_preserved");
@@ -2354,16 +2356,18 @@ test("cleanup processes duplicate uploaded track appearances only once per run",
     createdAt: oldCreatedAt,
   });
   await queue.updateRadioTrack(upload.id, "spotlight");
+  await withFakeNow(new Date(Date.UTC(2026, 0, 3)), () => queue.archiveCurrentQueueSession());
 
   const deleted = [];
   const result = await queue.cleanupExpiredQueueUploads({
-    now: new Date(Date.UTC(2026, 0, 3)),
+    now: new Date(Date.UTC(2026, 1, 3)),
     deleteBlob: async (url) => {
       deleted.push(url);
       if (deleted.length > 1) throw new Error("duplicate delete should not run");
     },
   });
-  const state = await queue.getRadioQueueState();
+  const sessions = (await queue.getRadioQueueState()).sessions;
+  const state = await queue.getRadioQueueState(sessions.find((session) => session.status === "archived").sessionId);
   const queued = state.queue.find((entry) => entry.id === upload.id);
   const spotlight = state.spotlight.find((entry) => entry.id === upload.id);
 

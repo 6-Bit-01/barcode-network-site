@@ -7,6 +7,12 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createProviderFetchBudget, fetchProviderJson } from "./provider-fetch";
 import { pacificDateString } from "./pacific-time";
 import {
+  captureQueueDurableSnapshotIfNeeded,
+  isQueueDurableSnapshotConfigured,
+  persistQueueDurableSnapshot,
+  readQueueDurableSnapshot,
+} from "./queue-durable-snapshot";
+import {
   appendQueuePlaybackEvent,
   emptyQueuePlaybackDiagnostics,
   normalizeQueuePlaybackDiagnostics,
@@ -72,7 +78,9 @@ const DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS = "Priority Signal Upgrade is being 
 const DEFAULT_PRIORITY_UPGRADE_PRICE_CENTS = 1000;
 const DEFAULT_PRIORITY_UPGRADE_CURRENCY = "usd";
 const PRE_SHOW_ROUTING_DELAY_MS = (20 * 60 + 15) * 1000;
-const UPLOADED_FILE_RETENTION_MS = 24 * 60 * 60 * 1000;
+// Uploaded audio is part of the queue record, not disposable request scratch.
+// Keep it through the live session and for a recovery window after archival.
+const UPLOADED_FILE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const BARCODE_QUEUE_UPLOAD_HOST_SUFFIX = ".private.blob.vercel-storage.com";
 const BARCODE_QUEUE_UPLOAD_PATH_PREFIX = "/barcode-radio-queue/";
 
@@ -133,11 +141,28 @@ interface ProviderMetadata {
   artworkUrl?: string | null;
 }
 
-function getRedis(): Redis | null {
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+function getQueueRedisConfig(): { url: string; token: string; dedicated: boolean } | null {
+  const dedicatedUrl = process.env.QUEUE_REDIS_REST_URL?.trim();
+  const dedicatedToken = process.env.QUEUE_REDIS_REST_TOKEN?.trim();
+  if (dedicatedUrl || dedicatedToken) {
+    if (!dedicatedUrl || !dedicatedToken) {
+      throw new Error("QUEUE_REDIS_REST_URL and QUEUE_REDIS_REST_TOKEN must be configured together.");
+    }
+    return { url: dedicatedUrl, token: dedicatedToken, dedicated: true };
+  }
+  const url = process.env.UPSTASH_REDIS_REST_URL?.trim();
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
   if (!url || !token) return null;
-  return new Redis({ url, token });
+  return { url, token, dedicated: false };
+}
+
+function getQueueRedisEndpoint(): string | null {
+  return getQueueRedisConfig()?.url ?? null;
+}
+
+function getRedis(): Redis | null {
+  const config = getQueueRedisConfig();
+  return config ? new Redis({ url: config.url, token: config.token }) : null;
 }
 
 function todayDate(): string {
@@ -277,6 +302,33 @@ if redis.call("GET", KEYS[1]) == ARGV[1] then
   return redis.call("DEL", KEYS[1])
 end
 return 0
+`;
+
+const ROLLBACK_MUTATION_SCRIPT = `
+if redis.call("GET", KEYS[1]) ~= ARGV[1] then
+  return -1
+end
+local current_revision = redis.call("GET", KEYS[3])
+if not current_revision or tonumber(current_revision) ~= tonumber(ARGV[2]) then
+  return -2
+end
+redis.call("SET", KEYS[2], ARGV[3])
+redis.call("SET", KEYS[3], ARGV[4])
+return tonumber(ARGV[4])
+`;
+
+const RESTORE_DURABLE_SNAPSHOT_SCRIPT = `
+if redis.call("GET", KEYS[1]) ~= ARGV[1] then
+  return -1
+end
+local current_revision = redis.call("GET", KEYS[3])
+local normalized_revision = current_revision and tonumber(current_revision) or 0
+if normalized_revision ~= tonumber(ARGV[2]) then
+  return -2
+end
+redis.call("SET", KEYS[2], ARGV[3])
+redis.call("SET", KEYS[3], ARGV[4])
+return tonumber(ARGV[4])
 `;
 
 function laneRank(lane: QueueLane | undefined): number {
@@ -1146,19 +1198,44 @@ async function readStoreFromRedis(redis: Redis): Promise<QueueStore> {
     store = normalizeStore(typeof legacy === "string" ? JSON.parse(legacy) : legacy);
   }
   lastKnownGoodRedisStore = store;
-  lastKnownGoodRedisEndpoint = process.env.UPSTASH_REDIS_REST_URL ?? null;
+  lastKnownGoodRedisEndpoint = getQueueRedisEndpoint();
+  // Seed the independent recovery copy on the first successful Redis read in
+  // each process. This also captures the existing live queue automatically as
+  // soon as a quota-locked database becomes readable again.
+  try {
+    await captureQueueDurableSnapshotIfNeeded(store);
+  } catch {
+    // A recovery-store outage must not turn a healthy Redis read into downtime.
+    // Mutations enforce the durable write below before returning success.
+  }
   return store;
 }
 
 async function readStore(): Promise<QueueStore> {
   const lease = mutationLeaseStorage.getStore();
   if (lease) return normalizeStore(lease.store);
+  // Polling/read surfaces use the independent durable read model. This removes
+  // Redis commands from browser/OBS polling and prevents a read storm from
+  // exhausting the database that owns queue mutations.
+  try {
+    const durable = await readQueueDurableSnapshot<QueueStore>();
+    if (durable) {
+      const normalized = normalizeStore(durable);
+      const endpoint = getQueueRedisEndpoint();
+      if (lastKnownGoodRedisStore && endpoint && endpoint === lastKnownGoodRedisEndpoint && lastKnownGoodRedisStore.revision > normalized.revision) {
+        return normalizeStore(lastKnownGoodRedisStore);
+      }
+      return normalized;
+    }
+  } catch {
+    // Redis remains a migration/bootstrap fallback if Blob is unavailable.
+  }
   const redis = getRedis();
   if (!redis) return normalizeStore(mem);
   try {
     return await readStoreFromRedis(redis);
   } catch (error) {
-    const endpoint = process.env.UPSTASH_REDIS_REST_URL ?? null;
+    const endpoint = getQueueRedisEndpoint();
     if (lastKnownGoodRedisStore && endpoint && endpoint === lastKnownGoodRedisEndpoint) {
       return normalizeStore(lastKnownGoodRedisStore);
     }
@@ -1204,6 +1281,9 @@ async function releaseRedisMutationLock(redis: Redis, token: string): Promise<vo
 async function withQueueMutation<T>(operation: () => Promise<T>): Promise<T> {
   return waitForLocalMutationTurn(async () => {
     const redis = getRedis();
+    if (!redis && process.env.NODE_ENV === "production") {
+      throw new Error("Queue Redis is not configured. Mutation refused.");
+    }
     const token = redis ? await acquireRedisMutationLock(redis) : null;
     try {
       const [stored, revisionValue] = redis
@@ -1217,6 +1297,22 @@ async function withQueueMutation<T>(operation: () => Promise<T>): Promise<T> {
         throw new Error("Queue state revision is inconsistent. Mutation refused.");
       }
       const revision = Math.max(stored.revision, persistedRevision);
+      try {
+        const durableRaw = await readQueueDurableSnapshot<QueueStore>();
+        if (durableRaw) {
+          const durable = normalizeStore(durableRaw);
+          if (durable.revision > revision) {
+            throw new Error(`Durable queue revision ${durable.revision} is ahead of Redis revision ${revision}. Restore the durable snapshot before mutating.`);
+          }
+          if (durable.revision === revision && !storesMatch(durable, { ...stored, revision })) {
+            throw new Error("Queue Redis differs from the durable snapshot at the same revision. Mutation refused.");
+          }
+        }
+      } catch (error) {
+        if (error instanceof Error && (/ahead of Redis revision|differs from the durable snapshot/.test(error.message))) throw error;
+        // A transient read-model failure is handled by the mandatory durable
+        // write plus fenced rollback in writeStore.
+      }
       const lease: QueueMutationLease = {
         redis,
         token,
@@ -1248,9 +1344,11 @@ async function writeStore(store: QueueStore): Promise<void> {
     lease.revision = nextRevision;
     lease.store = normalized;
     store.revision = nextRevision;
+    await persistQueueDurableSnapshot(normalized);
     return;
   }
   if (!lease.token) throw new Error("Queue mutation lease is missing its fencing token.");
+  const previous = { ...normalizeStore(lease.store), revision: lease.revision };
   const committed = await lease.redis.eval<unknown[], number>(
     COMMIT_MUTATION_SCRIPT,
     [MUTATION_LOCK_KEY, STATE_KEY, MUTATION_REVISION_KEY],
@@ -1259,11 +1357,194 @@ async function writeStore(store: QueueStore): Promise<void> {
   if (committed !== nextRevision) {
     throw new Error("Queue state changed before this mutation could commit. Please retry.");
   }
+  try {
+    const persisted = await persistQueueDurableSnapshot(normalized);
+    if (process.env.NODE_ENV === "production" && !persisted) {
+      throw new Error("Durable queue snapshots are not configured.");
+    }
+  } catch (snapshotError) {
+    const rolledBack = await lease.redis.eval<unknown[], number>(
+      ROLLBACK_MUTATION_SCRIPT,
+      [MUTATION_LOCK_KEY, STATE_KEY, MUTATION_REVISION_KEY],
+      [lease.token, String(nextRevision), JSON.stringify(previous), String(lease.revision)],
+    );
+    if (rolledBack !== lease.revision) {
+      throw new Error("Queue recovery snapshot failed and the Redis mutation could not be rolled back safely.", { cause: snapshotError });
+    }
+    lastKnownGoodRedisStore = previous;
+    lastKnownGoodRedisEndpoint = getQueueRedisEndpoint();
+    throw snapshotError;
+  }
   lease.revision = nextRevision;
   lease.store = normalized;
   store.revision = nextRevision;
   lastKnownGoodRedisStore = normalized;
-  lastKnownGoodRedisEndpoint = process.env.UPSTASH_REDIS_REST_URL ?? null;
+  lastKnownGoodRedisEndpoint = getQueueRedisEndpoint();
+}
+
+export interface QueueRecoveryStatus {
+  durable: {
+    configured: boolean;
+    available: boolean;
+    revision: number | null;
+    activeSessionId: string | null;
+    sessionCount: number;
+    trackRecordCount: number;
+  };
+  redis: {
+    configured: boolean;
+    dedicated: boolean;
+    available: boolean;
+    revision: number | null;
+    activeSessionId: string | null;
+    sessionCount: number;
+    trackRecordCount: number;
+    failureReason: "request_quota_exceeded" | "unavailable" | null;
+  };
+  alignment: "aligned" | "durable_ahead" | "redis_ahead" | "different_at_same_revision" | "durable_only" | "redis_only" | "unavailable";
+  requiredConfirmation: string | null;
+}
+
+export interface QueueRecoveryResult {
+  dryRun: boolean;
+  restored: boolean;
+  revision: number;
+  activeSessionId: string;
+  sessionCount: number;
+  trackRecordCount: number;
+  previousRedisRevision: number;
+}
+
+function queueStoreTrackRecordCount(store: QueueStore): number {
+  return store.sessions.reduce((total, session) => total
+    + session.queue.length
+    + session.completed.length
+    + session.removed.length
+    + session.spotlight.length
+    + (session.nextInLineTrack ? 1 : 0)
+    + (session.loadedTrack ? 1 : 0), 0);
+}
+
+function redisRecoveryFailureReason(error: unknown): "request_quota_exceeded" | "unavailable" {
+  const message = error instanceof Error ? error.message : String(error);
+  return /max requests limit exceeded/i.test(message) ? "request_quota_exceeded" : "unavailable";
+}
+
+function storesMatch(left: QueueStore, right: QueueStore): boolean {
+  return JSON.stringify(normalizeStore(left)) === JSON.stringify(normalizeStore(right));
+}
+
+export async function getQueueRecoveryStatus(): Promise<QueueRecoveryStatus> {
+  let durable: QueueStore | null = null;
+  try {
+    const raw = await readQueueDurableSnapshot<QueueStore>();
+    if (raw) durable = normalizeStore(raw);
+  } catch {
+    durable = null;
+  }
+
+  const redisConfig = getQueueRedisConfig();
+  let redisStore: QueueStore | null = null;
+  let redisRevision: number | null = null;
+  let redisFailureReason: "request_quota_exceeded" | "unavailable" | null = null;
+  if (redisConfig) {
+    const redis = new Redis({ url: redisConfig.url, token: redisConfig.token });
+    try {
+      const [raw, revisionValue] = await Promise.all([
+        redis.get<QueueStore | string>(STATE_KEY),
+        redis.get<number | string>(MUTATION_REVISION_KEY),
+      ]);
+      if (raw) redisStore = normalizeStore(typeof raw === "string" ? JSON.parse(raw) : raw);
+      redisRevision = mutationRevision(revisionValue ?? redisStore?.revision ?? 0);
+      if (redisStore && redisStore.revision !== redisRevision) redisFailureReason = "unavailable";
+    } catch (error) {
+      redisFailureReason = redisRecoveryFailureReason(error);
+    }
+  }
+
+  let alignment: QueueRecoveryStatus["alignment"] = "unavailable";
+  if (durable && redisStore) {
+    if (durable.revision > (redisRevision ?? redisStore.revision)) alignment = "durable_ahead";
+    else if (durable.revision < (redisRevision ?? redisStore.revision)) alignment = "redis_ahead";
+    else alignment = storesMatch(durable, redisStore) ? "aligned" : "different_at_same_revision";
+  } else if (durable) alignment = "durable_only";
+  else if (redisStore) alignment = "redis_only";
+
+  return {
+    durable: {
+      configured: isQueueDurableSnapshotConfigured(),
+      available: Boolean(durable),
+      revision: durable?.revision ?? null,
+      activeSessionId: durable?.activeSessionId ?? null,
+      sessionCount: durable?.sessions.length ?? 0,
+      trackRecordCount: durable ? queueStoreTrackRecordCount(durable) : 0,
+    },
+    redis: {
+      configured: Boolean(redisConfig),
+      dedicated: redisConfig?.dedicated ?? false,
+      available: Boolean(redisStore) && !redisFailureReason,
+      revision: redisRevision,
+      activeSessionId: redisStore?.activeSessionId ?? null,
+      sessionCount: redisStore?.sessions.length ?? 0,
+      trackRecordCount: redisStore ? queueStoreTrackRecordCount(redisStore) : 0,
+      failureReason: redisFailureReason,
+    },
+    alignment,
+    requiredConfirmation: durable ? `RESTORE DURABLE QUEUE REVISION ${durable.revision}` : null,
+  };
+}
+
+export async function restoreQueueFromDurableSnapshot(input: { dryRun?: boolean; confirmation?: string } = {}): Promise<QueueRecoveryResult> {
+  const rawDurable = await readQueueDurableSnapshot<QueueStore>();
+  if (!rawDurable) throw new Error("No verified durable queue snapshot is available.");
+  const durable = normalizeStore(rawDurable);
+  const redis = getRedis();
+  if (!redis) throw new Error("Queue Redis is not configured.");
+
+  return waitForLocalMutationTurn(async () => {
+    const token = await acquireRedisMutationLock(redis);
+    try {
+      const [rawCurrent, revisionValue] = await Promise.all([
+        redis.get<QueueStore | string>(STATE_KEY),
+        redis.get<number | string>(MUTATION_REVISION_KEY),
+      ]);
+      const current = rawCurrent ? normalizeStore(typeof rawCurrent === "string" ? JSON.parse(rawCurrent) : rawCurrent) : null;
+      const currentRevision = mutationRevision(revisionValue ?? current?.revision ?? 0);
+      if (current && current.revision !== currentRevision) {
+        throw new Error("Queue Redis revision is inconsistent. Restore refused.");
+      }
+      if (currentRevision > durable.revision) {
+        throw new Error("Queue Redis contains a newer revision than the durable snapshot. Restore refused.");
+      }
+
+      const result: QueueRecoveryResult = {
+        dryRun: input.dryRun !== false,
+        restored: false,
+        revision: durable.revision,
+        activeSessionId: durable.activeSessionId,
+        sessionCount: durable.sessions.length,
+        trackRecordCount: queueStoreTrackRecordCount(durable),
+        previousRedisRevision: currentRevision,
+      };
+      if (input.dryRun !== false || (current && currentRevision === durable.revision && storesMatch(current, durable))) return result;
+
+      const expectedConfirmation = `RESTORE DURABLE QUEUE REVISION ${durable.revision}`;
+      if (input.confirmation !== expectedConfirmation) {
+        throw new Error(`Restore confirmation must exactly match: ${expectedConfirmation}`);
+      }
+      const restoredRevision = await redis.eval<unknown[], number>(
+        RESTORE_DURABLE_SNAPSHOT_SCRIPT,
+        [MUTATION_LOCK_KEY, STATE_KEY, MUTATION_REVISION_KEY],
+        [token, String(currentRevision), JSON.stringify(durable), String(durable.revision)],
+      );
+      if (restoredRevision !== durable.revision) throw new Error("Queue Redis changed before restore could commit. Restore refused.");
+      lastKnownGoodRedisStore = durable;
+      lastKnownGoodRedisEndpoint = getQueueRedisEndpoint();
+      return { ...result, dryRun: false, restored: true };
+    } finally {
+      try { await releaseRedisMutationLock(redis, token); } catch { /* fenced restore is already complete */ }
+    }
+  });
 }
 
 function getSession(store: QueueStore, sessionId?: string): QueueSession {
@@ -1743,6 +2024,13 @@ export async function cleanupExpiredQueueUploads(options: { now?: Date; deleteBl
     await del(url);
   });
   const store = await readStore();
+  // Never delete a queue upload unless the full queue record has first been
+  // captured independently of Redis. With no Blob token this is a no-op for
+  // local/test environments; production has the same private store as uploads.
+  const persistedSnapshot = await persistQueueDurableSnapshot(store);
+  if (process.env.NODE_ENV === "production" && (!isQueueDurableSnapshotConfigured() || !persistedSnapshot)) {
+    throw new Error("Queue upload cleanup refused: durable queue snapshots are not configured.");
+  }
   const result: QueueUploadCleanupResult = { scanned: 0, deleted: 0, skippedActive: 0, failed: 0 };
   const updates: Array<{
     candidate: { id: string; fileUrl: string };
@@ -1759,7 +2047,12 @@ export async function cleanupExpiredQueueUploads(options: { now?: Date; deleteBl
     for (const entry of entries) {
       const normalized = normalizeEntry(entry);
       if (!isUploadedAudioEntry(normalized) || normalized.uploadedFileDeletionStatus === "deleted" || !normalized.uploadedFileDeleteAfter || !normalized.fileUrl) continue;
-      const due = new Date(normalized.uploadedFileDeleteAfter).getTime();
+      // Never delete audio from a current/prepared/closed live session. For an
+      // archived session, retain it for at least the full recovery window after
+      // archival even when older records carry the legacy 24-hour deadline.
+      if (session.status !== "archived") continue;
+      const archiveRecoveryDue = new Date(session.updatedAt).getTime() + UPLOADED_FILE_RETENTION_MS;
+      const due = Math.max(new Date(normalized.uploadedFileDeleteAfter).getTime(), archiveRecoveryDue);
       if (!Number.isFinite(due) || due > now.getTime()) continue;
       const key = normalized.fileUrl;
       const existing = candidates.get(key) ?? candidatesByTrackId.get(normalized.id);

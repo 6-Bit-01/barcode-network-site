@@ -1292,14 +1292,12 @@ async function readStoreFromRedis(redis: Redis): Promise<QueueStore> {
   }
   lastKnownGoodRedisStore = store;
   lastKnownGoodRedisEndpoint = getQueueRedisEndpoint();
-  // Seed the independent recovery copy on the first successful Redis read in
-  // each process. This also captures the existing live queue automatically as
-  // soon as a quota-locked database becomes readable again.
+  // Seed or refresh the optional recovery copy after a healthy Redis read.
+  // Backup failure is deliberately ignored: Redis remains the live queue.
   try {
     await captureQueueDurableSnapshotIfNeeded(store);
   } catch {
-    // A recovery-store outage must not turn a healthy Redis read into downtime.
-    // Mutations enforce the durable write below before returning success.
+    // Best effort only.
   }
   return store;
 }
@@ -1307,9 +1305,8 @@ async function readStoreFromRedis(redis: Redis): Promise<QueueStore> {
 async function readStore(): Promise<QueueStore> {
   const lease = mutationLeaseStorage.getStore();
   if (lease) return normalizeStore(lease.store);
-  // Polling/read surfaces use the independent durable read model. This removes
-  // Redis commands from browser/OBS polling and prevents a read storm from
-  // exhausting the database that owns queue mutations.
+  // Use the recovery copy for polling when it is available, then fall back to
+  // Redis. Blob is never required for a healthy Redis read.
   try {
     const durable = await readQueueDurableSnapshot<QueueStore>();
     if (durable) {
@@ -1321,7 +1318,7 @@ async function readStore(): Promise<QueueStore> {
       return normalized;
     }
   } catch {
-    // Redis remains a migration/bootstrap fallback if Blob is unavailable.
+    // Redis remains available when the optional backup cannot be read.
   }
   const redis = getRedis();
   if (!redis) return normalizeStore(mem);
@@ -1403,8 +1400,7 @@ async function withQueueMutation<T>(operation: () => Promise<T>): Promise<T> {
         }
       } catch (error) {
         if (error instanceof Error && (/ahead of Redis revision|differs from the durable snapshot/.test(error.message))) throw error;
-        // A transient read-model failure is handled by the mandatory durable
-        // write plus fenced rollback in writeStore.
+        // Blob is optional during ordinary live operations.
       }
       const lease: QueueMutationLease = {
         redis,
@@ -1425,7 +1421,10 @@ async function withQueueMutation<T>(operation: () => Promise<T>): Promise<T> {
   });
 }
 
-async function writeStore(store: QueueStore): Promise<void> {
+async function writeStore(
+  store: QueueStore,
+  options: { requireDurableSnapshot?: boolean } = {},
+): Promise<void> {
   const lease = mutationLeaseStorage.getStore();
   if (!lease) throw new Error("Queue state writes require the serialized mutation boundary.");
   const nextRevision = lease.revision + 1;
@@ -1452,21 +1451,25 @@ async function writeStore(store: QueueStore): Promise<void> {
   }
   try {
     const persisted = await persistQueueDurableSnapshot(normalized);
-    if (process.env.NODE_ENV === "production" && !persisted) {
+    if (options.requireDurableSnapshot && !persisted) {
       throw new Error("Durable queue snapshots are not configured.");
     }
   } catch (snapshotError) {
-    const rolledBack = await lease.redis.eval<unknown[], number>(
-      ROLLBACK_MUTATION_SCRIPT,
-      [MUTATION_LOCK_KEY, STATE_KEY, MUTATION_REVISION_KEY],
-      [lease.token, String(nextRevision), JSON.stringify(previous), String(lease.revision)],
-    );
-    if (rolledBack !== lease.revision) {
-      throw new Error("Queue recovery snapshot failed and the Redis mutation could not be rolled back safely.", { cause: snapshotError });
+    if (options.requireDurableSnapshot) {
+      const rolledBack = await lease.redis.eval<unknown[], number>(
+        ROLLBACK_MUTATION_SCRIPT,
+        [MUTATION_LOCK_KEY, STATE_KEY, MUTATION_REVISION_KEY],
+        [lease.token, String(nextRevision), JSON.stringify(previous), String(lease.revision)],
+      );
+      if (rolledBack !== lease.revision) {
+        throw new Error("Queue recovery snapshot failed and the Redis mutation could not be rolled back safely.", { cause: snapshotError });
+      }
+      lastKnownGoodRedisStore = previous;
+      lastKnownGoodRedisEndpoint = getQueueRedisEndpoint();
+      throw snapshotError;
     }
-    lastKnownGoodRedisStore = previous;
-    lastKnownGoodRedisEndpoint = getQueueRedisEndpoint();
-    throw snapshotError;
+    // Ordinary queue operation succeeded in Redis. Backup failure is never a
+    // reason to stop or undo a live show.
   }
   lease.revision = nextRevision;
   lease.store = normalized;
@@ -2297,7 +2300,7 @@ export async function importHistoricalQueueSessions(input: {
       activeSessionId: plan.activeSessionId,
       sessions: plan.sessions,
     };
-    await writeStore(nextStore);
+    await writeStore(nextStore, { requireDurableSnapshot: true });
     return historicalQueueImportResult(plan, {
       dryRun: false,
       imported: true,

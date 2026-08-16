@@ -736,7 +736,7 @@ test("a fresh worker preserves and displays the complete queue from private Blob
   }
 });
 
-test("a failed durable snapshot rolls the fenced Redis mutation back instead of creating an unprotected queue change", async () => {
+test("Blob failure never blocks Start Broadcast, Live Now state, or End Broadcast in healthy Redis", async () => {
   FakeRedis.values.clear();
   FakeRedis.calls.length = 0;
   FakeRedis.failGets = false;
@@ -752,17 +752,25 @@ test("a failed durable snapshot rolls the fenced Redis mutation back instead of 
 
   try {
     const { first } = loadIndependentQueueModules();
-    await assert.rejects(
-      () => first.startNewQueueSession({ title: "Must not commit without recovery copy" }),
-      /Blob snapshot write failed/,
-    );
-    assert.equal(Number(FakeRedis.values.get("radioQueue:v2:sessions:mutation-revision")), 0);
+    const started = await first.startNewQueueSession({ title: "Redis remains the live queue" });
+    assert.equal(started.session.status, "prepared");
+
+    const live = await first.updateRadioTrack("", "startShow");
+    assert.equal(live.session.showStarted, true);
+    assert.equal(live.session.broadcastPhase, "broadcast_active");
+
+    const ended = await first.archiveCurrentQueueSession();
+    assert.equal(ended.session.status, "archived");
+    assert.equal(ended.session.broadcastPhase, "ended");
+
+    assert.equal(Number(FakeRedis.values.get("radioQueue:v2:sessions:mutation-revision")), 3);
     const stored = JSON.parse(FakeRedis.values.get("radioQueue:v2:sessions"));
-    assert.equal(stored.revision, 0);
-    assert.notEqual(stored.sessions[0].title, "Must not commit without recovery copy");
-    assert.ok(
-      FakeRedis.calls.filter(([operation, keys]) => operation === "eval" && keys?.includes("radioQueue:v2:sessions:mutation-revision")).length >= 2,
-      "the fenced commit must be followed by a fenced rollback",
+    assert.equal(stored.revision, 3);
+    assert.equal(stored.sessions.find((session) => session.sessionId === started.session.sessionId).status, "archived");
+    assert.equal(
+      FakeRedis.calls.filter(([operation, keys]) => operation === "eval" && keys?.includes("radioQueue:v2:sessions:mutation-revision")).length,
+      3,
+      "each show lifecycle action must commit once with no backup-driven rollback",
     );
   } finally {
     FakeBlob.failPuts = false;

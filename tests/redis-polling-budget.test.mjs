@@ -12,7 +12,7 @@ test("Redis-backed browser surfaces share a bounded polling budget", () => {
   assert.match(budget, /FOREGROUND_OVERLAY_POLL_INTERVAL_MS = 5_000/);
   assert.match(budget, /PUBLIC_QUEUE_POLL_INTERVAL_MS = 15_000/);
   assert.match(budget, /ADMIN_QUEUE_POLL_INTERVAL_MS = 10_000/);
-  assert.match(budget, /SITE_LIVE_STATUS_POLL_INTERVAL_MS = 60_000/);
+  assert.match(budget, /SITE_LIVE_STATUS_POLL_INTERVAL_MS = 15_000/);
   assert.match(budget, /REDIS_POLL_ERROR_RETRY_INTERVAL_MS = 30_000/);
 
   const liveOverlay = source("src/components/LiveOverlayReceiver.tsx");

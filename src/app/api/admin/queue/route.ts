@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { COOKIE_NAME, verifyAdminToken } from "@/lib/auth";
 import { getLiveOverlayPlayerSync, getStoredLiveOverlayState, resetWheelCeremonyStateForNewSession } from "@/lib/live-overlay";
 import { attachQueueLiveTiming } from "@/lib/queue-live-timing";
+import { resolveQueueArchiveSessionId } from "@/lib/queue-admin-session-target";
 import { archiveCurrentQueueSession, clearArchivedQueueSessions, getRadioQueueState, setQueueOpen, startNewQueueSession, activateQueueSession, updatePriorityUpgradeSettings, updateQueueSessionProvenance, updateRadioTrack, updateSponsorBreakState, updateSubmissionCooldownSettings } from "@/lib/queue";
 import { isQueueSessionBnlPublicationStatus, isQueueSessionPurpose } from "@/lib/queue-types";
 
@@ -111,7 +112,23 @@ export async function POST(req: Request) {
     }));
   }
   if (body.action === "updateSponsorBreakState" && ["start", "complete", "skip", "reset"].includes(body.sponsorAction)) return NextResponse.json(await updateSponsorBreakState(body.sponsorAction));
-  if (body.action === "archiveSession") return NextResponse.json(await archiveCurrentQueueSession());
+  if (body.action === "archiveSession") {
+    try {
+      const requestedSessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
+      const current = await getRadioQueueState(requestedSessionId || undefined);
+      const targetSessionId = resolveQueueArchiveSessionId(current, requestedSessionId || null);
+      if (!targetSessionId) return NextResponse.json(current);
+      if (!current.isCurrentSession || current.session?.sessionId !== targetSessionId) {
+        await activateQueueSession(targetSessionId);
+      }
+      return NextResponse.json(await archiveCurrentQueueSession());
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Broadcast session could not be ended." },
+        { status: 409 },
+      );
+    }
+  }
   if (body.action === "clearArchive") {
     if (body.confirmation !== "Delete the archive") {
       return NextResponse.json({ error: "Confirmation text must exactly match: Delete the archive" }, { status: 400 });

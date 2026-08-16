@@ -118,7 +118,7 @@ export async function POST(req: Request) {
       const current = await getRadioQueueState(requestedSessionId || undefined);
       const targetSessionId = resolveQueueArchiveSessionId(current, requestedSessionId || null);
       if (!targetSessionId) return NextResponse.json(current);
-      if (!current.isCurrentSession || current.session.sessionId !== targetSessionId) {
+      if (!current.isCurrentSession || current.session?.sessionId !== targetSessionId) {
         await activateQueueSession(targetSessionId);
       }
       return NextResponse.json(await archiveCurrentQueueSession());

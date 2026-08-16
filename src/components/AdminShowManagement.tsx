@@ -1,12 +1,14 @@
 /* eslint-disable react-hooks/set-state-in-effect, react/jsx-no-comment-textnodes */
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { AdminQueueSessionProvenance } from "@/components/AdminQueueSessionProvenance";
 import { formatRuntime } from "@/lib/queue-types";
 import { pacificDateString } from "@/lib/pacific-time";
+import { captureQueueEndTarget, queueAdminReadViewState, queuePollingResponseMayApply, queueResponseRequiresStateRevalidation, queueStateUsesDegradedCache, type QueueEndTarget } from "@/lib/queue-admin-safety";
+import { queuePollingRequestIsCurrent, queuePollingSnapshotMayApply } from "@/lib/queue-polling-safety";
 import type { QueueSessionBnlPublicationStatus, QueueSessionPurpose, QueueSessionSummary, QueueState } from "@/lib/queue-types";
 
 const SESSION_DESCRIPTION_OPTIONS = [
@@ -36,8 +38,14 @@ function todayDate(): string { return pacificDateString(); }
 function defaultDescription(date: string): string { return SESSION_DESCRIPTION_OPTIONS[[...date].reduce((sum, char) => sum + char.charCodeAt(0), 0) % SESSION_DESCRIPTION_OPTIONS.length]; }
 function exportHref(sessionId?: string): string { return `/api/admin/queue/export${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ""}`; }
 function formatPrice(cents: number, currency = "usd"): string { return `${new Intl.NumberFormat("en-US", { style: "currency", currency: currency.toUpperCase() }).format(Math.max(0, cents) / 100)} ${currency.toUpperCase()}`; }
+function responseErrorMessage(payload: unknown, fallback: string): string {
+  return payload && typeof payload === "object" && typeof (payload as { error?: unknown }).error === "string"
+    ? (payload as { error: string }).error
+    : fallback;
+}
 const FIXED_PRIORITY_LABEL = "Priority Signal Upgrade";
 const FIXED_PRIORITY_INSTRUCTIONS = "Moves this track into the Priority Signal lane after payment confirmation.";
+const DEGRADED_QUEUE_READ_MESSAGE = "Queue storage is temporarily unavailable. Showing a verified cached snapshot; refresh before making ordinary changes.";
 
 export function AdminShowManagement() {
   const [state, setState] = useState<QueueState | null>(null);
@@ -55,26 +63,126 @@ export function AdminShowManagement() {
   const [priorityStartError, setPriorityStartError] = useState<string | null>(null);
   const [priorityUpgradeCurrency] = useState("usd");
   const [endConfirmOpen, setEndConfirmOpen] = useState(false);
+  const [endTarget, setEndTarget] = useState<QueueEndTarget | null>(null);
   const [endingSession, setEndingSession] = useState(false);
+  const [operationError, setOperationError] = useState<string | null>(null);
+  const [operationNotice, setOperationNotice] = useState<string | null>(null);
+  const [lastConfirmedAt, setLastConfirmedAt] = useState<string | null>(null);
+  const startRequestIdRef = useRef<string | null>(null);
+  const mutationEpochRef = useRef(0);
+  const mutationInFlightRef = useRef(0);
+  const latestAppliedMutationEpochRef = useRef(0);
+  const pollRequestSequenceRef = useRef(0);
+  const latestAppliedRevisionRef = useRef(-1);
   const router = useRouter();
 
-  async function load(sessionId?: string) {
-    const suffix = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : "";
-    const res = await fetch(`/api/admin/queue${suffix}`, { cache: "no-store" });
-    if (!res.ok) {
-      setError(res.status === 401 ? "Admin authentication required. Log in at /admin first." : "Show management unavailable.");
-      return;
+  function applyMutationState(next: QueueState, epoch: number): void {
+    if (epoch < latestAppliedMutationEpochRef.current) return;
+    latestAppliedMutationEpochRef.current = epoch;
+    if (typeof next.revision === "number" && Number.isFinite(next.revision)) {
+      latestAppliedRevisionRef.current = Math.max(latestAppliedRevisionRef.current, next.revision);
     }
-    setError(null);
-    setState(await res.json());
+    setState(next);
   }
 
-  async function post(body: Record<string, unknown>): Promise<QueueState | null> {
-    const res = await fetch("/api/admin/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    if (!res.ok) return null;
-    const next = await res.json();
+  function applyPollingStateIfFresh(next: QueueState, requestEpoch: number, requestSequence: number): boolean {
+    if (typeof next.revision !== "number" || !Number.isFinite(next.revision)) return false;
+    if (!queuePollingResponseMayApply({
+      requestEpoch,
+      currentMutationEpoch: mutationEpochRef.current,
+      mutationsInFlight: mutationInFlightRef.current,
+      latestAppliedMutationEpoch: latestAppliedMutationEpochRef.current,
+    })) return false;
+    if (!queuePollingSnapshotMayApply({
+      requestSequence,
+      latestRequestSequence: pollRequestSequenceRef.current,
+      responseRevision: next.revision,
+      latestAppliedRevision: latestAppliedRevisionRef.current,
+    })) return false;
+    latestAppliedRevisionRef.current = next.revision;
     setState(next);
-    return next;
+    return true;
+  }
+
+  function pollingRequestStillCurrent(requestEpoch: number, requestSequence: number): boolean {
+    return queuePollingRequestIsCurrent({
+      requestSequence,
+      latestRequestSequence: pollRequestSequenceRef.current,
+    }) && queuePollingResponseMayApply({
+      requestEpoch,
+      currentMutationEpoch: mutationEpochRef.current,
+      mutationsInFlight: mutationInFlightRef.current,
+      latestAppliedMutationEpoch: latestAppliedMutationEpochRef.current,
+    });
+  }
+
+  async function load(sessionId?: string) {
+    const requestEpoch = mutationEpochRef.current;
+    const requestSequence = ++pollRequestSequenceRef.current;
+    try {
+      const suffix = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : "";
+      const res = await fetch(`/api/admin/queue${suffix}`, { cache: "no-store" });
+      if (!res.ok) {
+        if (!pollingRequestStillCurrent(requestEpoch, requestSequence)) return;
+        setError(res.status === 401 ? "Admin authentication required. Log in at /admin first." : "Show management unavailable.");
+        return;
+      }
+      const next = await res.json() as QueueState;
+      if (!applyPollingStateIfFresh(next, requestEpoch, requestSequence)) {
+        const nextRevision = typeof next.revision === "number" && Number.isFinite(next.revision) ? next.revision : null;
+        if (pollingRequestStillCurrent(requestEpoch, requestSequence)
+          && (nextRevision === null || nextRevision < latestAppliedRevisionRef.current)) {
+          setError(nextRevision === null
+            ? "Show management received a queue snapshot without a valid revision. The last confirmed state is preserved while live state is rechecked."
+            : "Show management received an older queue snapshot. The last confirmed state is preserved while live state is rechecked.");
+        }
+        return;
+      }
+      if (queueStateUsesDegradedCache(next)) {
+        setError(DEGRADED_QUEUE_READ_MESSAGE);
+        return;
+      }
+      setError(null);
+      setLastConfirmedAt(new Date().toISOString());
+    } catch {
+      if (!pollingRequestStillCurrent(requestEpoch, requestSequence)) return;
+      setError("Show management could not reach the queue service.");
+    }
+  }
+
+  async function post(body: Record<string, unknown>, options: { allowWhileStale?: boolean } = {}): Promise<QueueState | null> {
+    if (error && !options.allowWhileStale) {
+      setOperationError("Live queue state is stale. Refresh successfully before changing show settings.");
+      return null;
+    }
+    mutationEpochRef.current += 1;
+    const epoch = mutationEpochRef.current;
+    mutationInFlightRef.current += 1;
+    try {
+      const res = await fetch("/api/admin/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const payload = await res.json().catch(() => null);
+      if (!res.ok) {
+        setOperationError(responseErrorMessage(payload, "Queue operation failed."));
+        if (queueResponseRequiresStateRevalidation(payload)) setError("Show state is unconfirmed after the failed operation. Refresh before making another ordinary change.");
+        return null;
+      }
+      const next = payload as QueueState;
+      setOperationError(null);
+      applyMutationState(next, epoch);
+      if (queueStateUsesDegradedCache(next)) {
+        setError(DEGRADED_QUEUE_READ_MESSAGE);
+        return next;
+      }
+      setError(null);
+      setLastConfirmedAt(new Date().toISOString());
+      return next;
+    } catch {
+      setOperationError("The queue request could not reach the server. The operation outcome is unknown; check diagnostics before retrying.");
+      setError("Show state is unconfirmed because the operation response could not be reached. Refresh before making another ordinary change.");
+      return null;
+    } finally {
+      mutationInFlightRef.current = Math.max(0, mutationInFlightRef.current - 1);
+    }
   }
 
   async function startSession() {
@@ -85,35 +193,83 @@ export function AdminShowManagement() {
     }
     setPriorityStartError(null);
     const paidUpgradesEnabled = priorityUpgradesEnabled && priorityUpgradePriceCents > 0;
-    const next = await post({ action: "startSession", title, showDate, description, purpose, bnlPublicationStatus, trackLimitPerArtist, queueCapacity, submissionCooldownSeconds, priorityUpgradesEnabled: paidUpgradesEnabled, priorityUpgradeLabel: FIXED_PRIORITY_LABEL, priorityUpgradeInstructions: FIXED_PRIORITY_INSTRUCTIONS, priorityUpgradePriceCents, priorityUpgradeCurrency, priorityUpgradePaymentsEnabled: paidUpgradesEnabled });
-    if (next?.session?.sessionId) router.push(`/admin/queue?sessionId=${encodeURIComponent(next.session.sessionId)}`);
+    startRequestIdRef.current ??= typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `start-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const next = await post({ action: "startSession", requestId: startRequestIdRef.current, title, showDate, description, purpose, bnlPublicationStatus, trackLimitPerArtist, queueCapacity, submissionCooldownSeconds, priorityUpgradesEnabled: paidUpgradesEnabled, priorityUpgradeLabel: FIXED_PRIORITY_LABEL, priorityUpgradeInstructions: FIXED_PRIORITY_INSTRUCTIONS, priorityUpgradePriceCents, priorityUpgradeCurrency, priorityUpgradePaymentsEnabled: paidUpgradesEnabled });
+    if (next?.session?.sessionId) {
+      startRequestIdRef.current = null;
+      if (next.warnings?.length) {
+        setOperationNotice(`Session started. ${next.warnings.map((warning) => warning.message).join(" ")}`);
+        return;
+      }
+      setOperationNotice(null);
+      router.push(`/admin/queue?sessionId=${encodeURIComponent(next.session.sessionId)}`);
+    }
   }
 
   async function endSession() {
+    const sessionId = endTarget?.sessionId;
+    if (!sessionId) {
+      setOperationError("No broadcast was captured for this confirmation. Cancel and choose End Broadcast again.");
+      return;
+    }
     setEndingSession(true);
-    await post({ action: "archiveSession" });
+    try {
+      const next = await post({ action: "archiveSession", sessionId }, { allowWhileStale: true });
+      if (!next) return;
+      setEndConfirmOpen(false);
+      setEndTarget(null);
+      await load();
+    } finally {
+      setEndingSession(false);
+    }
+  }
+
+  function openEndConfirmation() {
+    const target = captureQueueEndTarget(state?.session);
+    if (!target) {
+      setOperationError("The displayed queue session is no longer available. Refresh before ending the broadcast.");
+      return;
+    }
+    setOperationError(null);
+    setEndTarget(target);
+    setEndConfirmOpen(true);
+  }
+
+  function cancelEndConfirmation() {
     setEndConfirmOpen(false);
-    setEndingSession(false);
-    await load();
+    setEndTarget(null);
   }
 
   useEffect(() => { load(); }, []);
 
-  if (error) return <div className="border border-danger/40 bg-danger/5 p-6 text-danger">{error}</div>;
+  const readViewState = queueAdminReadViewState(state, error);
+  if (readViewState === "unavailable") {
+      return <section role="alert" className="space-y-4 border border-danger/50 bg-danger/10 p-6"><p className="text-xs font-bold uppercase tracking-[0.3em] text-danger">SHOW STATE UNAVAILABLE</p><h2 className="text-2xl font-bold text-foreground">No confirmed show snapshot is available</h2><p className="text-sm text-muted">{error} This does not mean the session ended. Retry the read or open recovery diagnostics.</p><div className="flex flex-wrap gap-2"><button type="button" onClick={() => load()} className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent">Retry Show State</button><a href="/api/admin/queue/recovery" target="_blank" rel="noreferrer" className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted">Recovery Diagnostics</a></div></section>;
+  }
+  if (readViewState === "loading") {
+    return <section role="status" aria-live="polite" className="border border-border bg-surface p-6"><p className="text-xs uppercase tracking-[0.35em] text-muted">SYNCING SHOW STATE</p><h2 className="mt-3 text-2xl font-bold text-foreground">Loading the first confirmed snapshot</h2></section>;
+  }
+  if (!state) return null;
 
   const session = state?.session;
   const readOnly = Boolean(state?.readOnly || session?.status === "archived");
   const currentSession = session && state?.isCurrentSession && !readOnly ? session : null;
   const archiveCount = (state?.sessions ?? []).filter((item) => item.status === "archived").length;
-  const startLocked = Boolean(currentSession);
+  const stale = readViewState === "stale";
+  const startLocked = Boolean(currentSession) || stale;
   const queueIsOpen = Boolean(currentSession?.queueOpen);
 
   return (
     <div className="space-y-6">
-      <StartNewSession locked={startLocked} queueIsOpen={queueIsOpen} onCloseSubmissions={() => post({ action: "setOpen", isOpen: false })} onEnd={() => setEndConfirmOpen(true)} title={title} description={description} purpose={purpose} bnlPublicationStatus={bnlPublicationStatus} trackLimitPerArtist={trackLimitPerArtist} queueCapacity={queueCapacity} onTitle={setTitle} onDescription={setDescription} onPurpose={(value) => { setPurpose(value); if (value !== "live_broadcast") setBnlPublicationStatus("private"); }} onBnlPublicationStatus={setBnlPublicationStatus} onTrackLimit={setTrackLimitPerArtist} onCapacity={setQueueCapacity} submissionCooldownSeconds={submissionCooldownSeconds} onSubmissionCooldown={setSubmissionCooldownSeconds} priorityUpgradesEnabled={priorityUpgradesEnabled} priorityUpgradePriceCents={priorityUpgradePriceCents} priorityUpgradeCurrency={priorityUpgradeCurrency} priorityStartError={priorityStartError} onPriorityEnabled={setPriorityUpgradesEnabled} onPriorityPrice={(value) => { setPriorityUpgradePriceCents(value); if (value > 0) setPriorityStartError(null); }} onStart={startSession} sessionId={currentSession?.sessionId} />
-      <CurrentSession session={currentSession} onPost={post} onEnd={() => setEndConfirmOpen(true)} />
+      {error && <section role="alert" className="border border-[#ffaa00]/55 bg-[#ffaa00]/10 p-4 text-sm text-[#ffaa00]"><p className="font-bold uppercase tracking-widest">SHOW STATE STALE — LAST CONFIRMED SNAPSHOT PRESERVED</p><p className="mt-1 text-muted">{error} Ordinary mutations are paused until a fresh read succeeds. End Broadcast remains available for session {state.session?.sessionId ?? "unknown"} and will be revalidated by the server.</p>{lastConfirmedAt && <p className="mt-1 text-xs text-muted">Last confirmed: {new Date(lastConfirmedAt).toLocaleTimeString()}</p>}<div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => load()} className="border border-[#ffaa00]/70 px-3 py-2 text-xs uppercase tracking-widest text-[#ffaa00]">Retry Show State</button><a href="/api/admin/queue/recovery" target="_blank" rel="noreferrer" className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted">Recovery Diagnostics</a></div></section>}
+      {operationError && <div role="alert" className="border border-danger/50 bg-danger/10 p-4 text-sm text-danger">{operationError}</div>}
+      {operationNotice && <div role="status" className="border border-[#ffaa00]/50 bg-[#ffaa00]/10 p-4 text-sm text-[#ffaa00]">{operationNotice}</div>}
+      <StartNewSession locked={startLocked} queueIsOpen={queueIsOpen} onCloseSubmissions={() => post({ action: "setOpen", isOpen: false })} onEnd={openEndConfirmation} title={title} description={description} purpose={purpose} bnlPublicationStatus={bnlPublicationStatus} trackLimitPerArtist={trackLimitPerArtist} queueCapacity={queueCapacity} onTitle={setTitle} onDescription={setDescription} onPurpose={(value) => { setPurpose(value); if (value !== "live_broadcast") setBnlPublicationStatus("private"); }} onBnlPublicationStatus={setBnlPublicationStatus} onTrackLimit={setTrackLimitPerArtist} onCapacity={setQueueCapacity} submissionCooldownSeconds={submissionCooldownSeconds} onSubmissionCooldown={setSubmissionCooldownSeconds} priorityUpgradesEnabled={priorityUpgradesEnabled} priorityUpgradePriceCents={priorityUpgradePriceCents} priorityUpgradeCurrency={priorityUpgradeCurrency} priorityStartError={priorityStartError} onPriorityEnabled={setPriorityUpgradesEnabled} onPriorityPrice={(value) => { setPriorityUpgradePriceCents(value); if (value > 0) setPriorityStartError(null); }} onStart={startSession} sessionId={currentSession?.sessionId} />
+      <CurrentSession session={currentSession} controlsDisabled={stale} onPost={post} onEnd={openEndConfirmation} />
       <SessionData session={currentSession} />
-      {endConfirmOpen && createPortal(<EndSessionConfirm ending={endingSession} onCancel={() => setEndConfirmOpen(false)} onConfirm={endSession} />, document.body)}
+      {endConfirmOpen && endTarget && createPortal(<EndSessionConfirm target={endTarget} ending={endingSession} error={operationError} onCancel={cancelEndConfirmation} onConfirm={endSession} />, document.body)}
       <ArchivePanel archiveCount={archiveCount} />
     </div>
   );
@@ -178,7 +334,7 @@ function StartNewSession({ locked, queueIsOpen, onCloseSubmissions, onEnd, title
   );
 }
 
-function CurrentSession({ session, onPost, onEnd }: { session: QueueSessionSummary | null | undefined; onPost: (body: Record<string, unknown>) => Promise<QueueState | null>; onEnd: () => void }) {
+function CurrentSession({ session, controlsDisabled, onPost, onEnd }: { session: QueueSessionSummary | null | undefined; controlsDisabled: boolean; onPost: (body: Record<string, unknown>) => Promise<QueueState | null>; onEnd: () => void }) {
   const [priorityEnabled, setPriorityEnabled] = useState(false);
   const [priorityPriceCents, setPriorityPriceCents] = useState(0);
   const [priorityCurrency, setPriorityCurrency] = useState("usd");
@@ -198,6 +354,7 @@ function CurrentSession({ session, onPost, onEnd }: { session: QueueSessionSumma
   }, [session]);
 
   async function savePrioritySettings() {
+    if (controlsDisabled) return;
     const gatedPaymentsEnabled = priorityEnabled && priorityPriceCents > 0;
     setPrioritySaving(true);
     setPrioritySaveError(null);
@@ -236,12 +393,12 @@ function CurrentSession({ session, onPost, onEnd }: { session: QueueSessionSumma
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap lg:justify-end">
           <a href={`/admin/queue?sessionId=${encodeURIComponent(session.sessionId)}`} className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Open Queue Control</a>
-          <button onClick={() => onPost({ action: "setOpen", isOpen: !session.queueOpen })} className={`${session.queueOpen ? "border-danger text-danger hover:bg-danger" : "border-accent text-accent hover:bg-accent"} border px-4 py-2 text-xs uppercase tracking-widest hover:text-background`}>{session.queueOpen ? "Close Submissions" : "Open Submissions"}</button>
+          <button disabled={controlsDisabled} onClick={() => onPost({ action: "setOpen", isOpen: !session.queueOpen })} className={`${session.queueOpen ? "border-danger text-danger hover:bg-danger" : "border-accent text-accent hover:bg-accent"} border px-4 py-2 text-xs uppercase tracking-widest hover:text-background disabled:cursor-not-allowed disabled:opacity-40`}>{session.queueOpen ? "Close Submissions" : "Open Submissions"}</button>
           <button onClick={onEnd} className="border border-danger/60 px-4 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background">End Broadcast</button>
         </div>
       </div>
 
-      <AdminQueueSessionProvenance session={session} onSave={onPost} />
+      <fieldset disabled={controlsDisabled} className="contents"><AdminQueueSessionProvenance session={session} onSave={onPost} /></fieldset>
 
       {priorityEditing ? (
         <section className={`space-y-5 border bg-accent/5 p-5 transition-all duration-300 ${priorityJustSaved ? "border-accent shadow-[0_0_28px_rgba(255,0,0,0.28)]" : "border-accent/40"}`}>
@@ -251,15 +408,15 @@ function CurrentSession({ session, onPost, onEnd }: { session: QueueSessionSumma
             <p className="mt-1 text-sm text-muted">Configure session-level submission behavior and paid Priority Signal upgrades.</p>
           </div>
           <div className="grid gap-4 lg:grid-cols-2">
-            <label className="space-y-2 block lg:col-span-2"><span className="text-xs uppercase tracking-widest text-muted">Submission Delay</span><input type="number" min={0} max={3600} value={sessionCooldownSeconds} onChange={(event) => setSessionCooldownSeconds(Math.max(0, Math.min(3600, Number(event.target.value))))} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /><span className="block text-xs text-muted">Delay between accepted submissions from the same source. Set to 0 to disable during testing.</span></label>
-            <label className="flex items-center justify-between gap-3 border border-border bg-background/50 p-4 text-sm lg:col-span-2"><span><span className="block font-bold text-foreground">Priority Signal paid upgrades</span><span className="text-xs text-muted">Enables automated Stripe checkout when the price is greater than 0.</span></span><input type="checkbox" checked={priorityEnabled} onChange={(event) => setPriorityEnabled(event.target.checked)} /></label>
-            <label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Priority Signal price</span><input type="number" min={0} value={priorityPriceCents} onChange={(event) => setPriorityPriceCents(Math.max(0, Number(event.target.value)))} disabled={!priorityEnabled} className="w-full bg-background border border-border px-3 py-2.5 text-sm disabled:opacity-50" /><span className="block text-xs text-muted">Enter cents. Example: 1000 = $10.00.</span></label>
+            <label className="space-y-2 block lg:col-span-2"><span className="text-xs uppercase tracking-widest text-muted">Submission Delay</span><input disabled={controlsDisabled} type="number" min={0} max={3600} value={sessionCooldownSeconds} onChange={(event) => setSessionCooldownSeconds(Math.max(0, Math.min(3600, Number(event.target.value))))} className="w-full bg-background border border-border px-3 py-2.5 text-sm disabled:opacity-50" /><span className="block text-xs text-muted">Delay between accepted submissions from the same source. Set to 0 to disable during testing.</span></label>
+            <label className="flex items-center justify-between gap-3 border border-border bg-background/50 p-4 text-sm lg:col-span-2"><span><span className="block font-bold text-foreground">Priority Signal paid upgrades</span><span className="text-xs text-muted">Enables automated Stripe checkout when the price is greater than 0.</span></span><input disabled={controlsDisabled} type="checkbox" checked={priorityEnabled} onChange={(event) => setPriorityEnabled(event.target.checked)} /></label>
+            <label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Priority Signal price</span><input type="number" min={0} value={priorityPriceCents} onChange={(event) => setPriorityPriceCents(Math.max(0, Number(event.target.value)))} disabled={controlsDisabled || !priorityEnabled} className="w-full bg-background border border-border px-3 py-2.5 text-sm disabled:opacity-50" /><span className="block text-xs text-muted">Enter cents. Example: 1000 = $10.00.</span></label>
             <div className="border border-border bg-background/50 p-4"><p className="text-xs uppercase tracking-widest text-muted">Current display price</p><p className="mt-2 text-2xl font-bold text-foreground">{formatPrice(priorityPriceCents, priorityCurrency)}</p></div>
           </div>
           <p className="border border-border bg-background/50 p-3 text-sm text-muted">Saving paid upgrades with a zero price keeps checkout disabled. Only the verified Stripe webhook marks a track paid or moves it into Priority Signal.</p>
           {prioritySaveError && <p className="border border-danger/40 bg-danger/5 p-2 text-xs text-danger">{prioritySaveError}</p>}
           <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={savePrioritySettings} disabled={prioritySaving} className="border border-accent bg-accent/10 px-5 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{prioritySaving ? "Saving…" : "Save Session Options"}</button>
+            <button type="button" onClick={savePrioritySettings} disabled={prioritySaving || controlsDisabled} className="border border-accent bg-accent/10 px-5 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{prioritySaving ? "Saving…" : "Save Session Options"}</button>
             <button type="button" onClick={() => { setPrioritySaveError(null); setPriorityEditing(false); }} disabled={prioritySaving} className="border border-border px-5 py-3 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent disabled:opacity-50">Cancel</button>
           </div>
         </section>
@@ -271,7 +428,7 @@ function CurrentSession({ session, onPost, onEnd }: { session: QueueSessionSumma
               <h3 className="mt-2 text-xl font-bold text-foreground">Session Options</h3>
               {priorityJustSaved && <p className="mt-2 border border-accent/50 bg-accent/10 p-2 text-sm font-bold text-accent">Session options saved.</p>}
             </div>
-            <button type="button" onClick={() => { setPrioritySaveError(null); setPriorityEditing(true); }} className="border border-accent px-5 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Edit Session Options</button>
+            <button type="button" disabled={controlsDisabled} onClick={() => { setPrioritySaveError(null); setPriorityEditing(true); }} className="border border-accent px-5 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Edit Session Options</button>
           </div>
           <div className="grid gap-3 text-sm md:grid-cols-2">
             <div className="border border-border bg-surface p-4"><p className="text-xs uppercase tracking-widest text-muted">Submission Delay</p><p className="mt-2 text-lg font-bold text-foreground">{session.submissionCooldownSeconds === 0 ? "Disabled" : `${session.submissionCooldownSeconds}s`}</p></div>
@@ -297,8 +454,8 @@ function CurrentSession({ session, onPost, onEnd }: { session: QueueSessionSumma
   );
 }
 
-function EndSessionConfirm({ ending, onCancel, onConfirm }: { ending: boolean; onCancel: () => void; onConfirm: () => void }) {
-  return <div className="fixed inset-0 z-[10000] grid place-items-center bg-black/75 p-4 backdrop-blur-sm"><div className="w-full max-w-md border border-danger/50 bg-background p-5 shadow-[0_0_70px_rgba(255,0,0,0.24)]"><p className="text-xs uppercase tracking-[0.35em] text-danger">End Broadcast</p><h2 className="mt-3 text-2xl font-bold text-foreground">End this broadcast?</h2><p className="mt-2 text-sm text-muted">This stops routing, closes submissions, and moves the broadcast session to the archive.</p><div className="mt-5 flex flex-wrap justify-end gap-2"><a href="/admin/queue" className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Return to Queue Dashboard</a><button type="button" onClick={onCancel} disabled={ending} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted disabled:opacity-50">No, Cancel</button><button type="button" onClick={onConfirm} disabled={ending} className="border border-danger px-4 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background disabled:opacity-50">{ending ? "Ending…" : "Yes, End Broadcast"}</button></div></div></div>;
+function EndSessionConfirm({ target, ending, error, onCancel, onConfirm }: { target: { sessionId: string; title: string; showDate: string }; ending: boolean; error: string | null; onCancel: () => void; onConfirm: () => void }) {
+  return <div className="fixed inset-0 z-[10000] grid place-items-center bg-black/75 p-4 backdrop-blur-sm"><div role="dialog" aria-modal="true" aria-labelledby="show-end-session-confirm-title" className="w-full max-w-md border border-danger/50 bg-background p-5 shadow-[0_0_70px_rgba(255,0,0,0.24)]"><p className="text-xs uppercase tracking-[0.35em] text-danger">End Broadcast</p><h2 id="show-end-session-confirm-title" className="mt-3 text-2xl font-bold text-foreground">End this broadcast?</h2><p className="mt-2 text-sm text-muted">This stops routing, closes submissions, and moves the captured broadcast session to the archive.</p><p className="mt-3 border border-border bg-surface p-3 text-sm text-foreground"><span className="block font-bold">{target.title}</span><span className="block text-xs text-muted">{target.showDate} · {target.sessionId}</span></p>{error && <p role="alert" className="mt-4 border border-danger/50 bg-danger/10 p-3 text-sm text-danger">{error}</p>}<div className="mt-5 flex flex-wrap justify-end gap-2"><a href="/admin/queue" className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Return to Queue Dashboard</a><button type="button" onClick={onCancel} disabled={ending} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted disabled:opacity-50">No, Cancel</button><button type="button" onClick={onConfirm} disabled={ending} className="border border-danger px-4 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background disabled:opacity-50">{ending ? "Ending…" : "Yes, End Broadcast"}</button></div></div></div>;
 }
 
 

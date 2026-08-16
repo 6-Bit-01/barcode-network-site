@@ -7,6 +7,8 @@ import { createPortal } from "react-dom";
 import { buildQueueTimingDisplay, priorityDisplayFromImpact, queueTimingInputFromPublicSnapshot } from "@/lib/queue-timing-display";
 import { clearPriorityCheckoutOwnerToken, getOrCreatePriorityCheckoutOwnerToken } from "@/lib/priority-checkout-client";
 import { cooldownDeadlineFromRemaining, cooldownRemainingFromDeadline } from "@/lib/queue-cooldown";
+import { publicQueueResponseError, queuePublicSnapshotUsesDegradedCache } from "@/lib/queue-public-view-state";
+import { queuePollingRequestIsCurrent, queuePollingSnapshotMayApply } from "@/lib/queue-polling-safety";
 import { APPLE_MUSIC_QUEUE_UNSUPPORTED_MESSAGE, PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT, PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION, PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION, PUBLIC_QUEUE_LEGAL_TERMS_VERSION, formatRuntime, isAppleMusicUrl, PRIORITY_DISCLOSURE_TEXT, PRIORITY_TERMS_VERSION } from "@/lib/queue-types";
 import type { QueuePublicSnapshot, QueuePublicStatus, QueuePublicTrack } from "@/lib/queue-types";
 import { PUBLIC_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
@@ -26,6 +28,8 @@ const PRIORITY_DEPTH_UNAVAILABLE_MESSAGE = "Priority Signal opens when there are
 const SESSION_SYNC_REQUIRED_MESSAGE = "Session sync required. Refresh the queue and try again.";
 const SESSION_CHANGED_MESSAGE = "This session has changed. Re-enter the current BARCODE Radio queue and submit again.";
 const QUEUE_CONFIRMATION_FAILED_MESSAGE = "Submission could not be confirmed in the queue. Your info was kept. Please try again or contact the host.";
+const QUEUE_STATUS_UNAVAILABLE_MESSAGE = "Live queue state is not confirmed. Submission is paused until the queue refreshes.";
+const DEGRADED_PUBLIC_QUEUE_MESSAGE = "Queue storage is temporarily unavailable. Showing a verified cached snapshot; submission is paused until live state is confirmed.";
 const MIN_PRIORITY_ACTIVE_DEPTH = 2;
 function formatPrice(cents: number, currency = "usd"): string { return `${new Intl.NumberFormat("en-US", { style: "currency", currency: currency.toUpperCase() }).format(Math.max(0, cents) / 100)} ${currency.toUpperCase()}`; }
 
@@ -112,7 +116,7 @@ function publicTrackFromApi(track: { id: string; submittedArtistName?: string; s
   };
 }
 
-export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedReceipt }: { sessionId?: string; onSubmitted?: (trackId?: string, phase?: SubmitPhase, targetId?: string) => void; onCancel?: () => void; onAcceptedReceipt?: (receipt: AcceptedReceipt) => void } = {}) {
+export function RadioQueueForm({ sessionId, blockedByParentStale = false, onSubmitted, onCancel, onAcceptedReceipt }: { sessionId?: string; blockedByParentStale?: boolean; onSubmitted?: (trackId?: string, phase?: SubmitPhase, targetId?: string) => void; onCancel?: () => void; onAcceptedReceipt?: (receipt: AcceptedReceipt) => void } = {}) {
   const [status, setStatus] = useState<QueuePublicStatus | null>(null);
   const [publicQueue, setPublicQueue] = useState<QueuePublicTrack[]>([]);
   const [nowPlaying, setNowPlaying] = useState<QueuePublicTrack | null>(null);
@@ -143,11 +147,15 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
   const [acceptedLegal, setAcceptedLegal] = useState(false);
   const [legalError, setLegalError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [statusSyncError, setStatusSyncError] = useState<string | null>(null);
+  const [hasConfirmedStatus, setHasConfirmedStatus] = useState(false);
   const [transmissionState, setTransmissionState] = useState<TransmissionState>("idle");
   const [warpData, setWarpData] = useState<WarpData | null>(null);
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
   const [clockNow, setClockNow] = useState(() => Date.now());
   const cooldownDeadlineRef = useRef(0);
+  const latestStatusSnapshotRef = useRef<QueuePublicSnapshot | null>(null);
+  const statusRequestSequenceRef = useRef(0);
 
   function cooldownStorageKey(): string | null {
     return submitterToken ? `barcode-radio-cooldown:${sessionId ?? "active"}:${submitterToken}` : null;
@@ -167,35 +175,82 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
     setCooldownRemaining(cooldownRemainingFromDeadline(cooldownDeadlineRef.current));
   }
 
-  async function loadStatus() {
-    const params = new URLSearchParams();
-    if (sessionId) params.set("sessionId", sessionId);
-    if (submitterToken) params.set("submitterToken", submitterToken);
-    if (tiktokHandle.trim()) params.set("tiktokHandle", tiktokHandle.trim());
-    if (contactEmail.trim()) params.set("contactEmail", contactEmail.trim());
-    if (artist.trim()) params.set("artist", artist.trim());
-    const res = await fetch(`/api/queue${params.size ? `?${params.toString()}` : ""}`, { cache: "no-store" });
-    if (res.ok) {
-      const payload = await res.json();
-      setStatus(payload.status ?? null);
-      setSession(payload.session ?? null);
-      setSubmitterStatus(payload.submitterStatus ?? null);
-      setPublicQueue(Array.isArray(payload.queue) ? payload.queue : []);
-      setNowPlaying(payload.nowPlaying ?? null);
-      setUpNext(payload.upNext ?? null);
-      setPlaybackTiming(payload.playbackTiming ?? null);
-      setWheelTiming(payload.wheelTiming ?? null);
-      setAuthoritativeCooldown(payload.submitterStatus?.cooldownRemainingSeconds ?? 0);
-      return payload as QueuePublicSnapshot;
+  function applyStatusSnapshot(payload: QueuePublicSnapshot): void {
+    setStatus(payload.status ?? null);
+    setSession(payload.session ?? null);
+    setSubmitterStatus(payload.submitterStatus ?? null);
+    setPublicQueue(Array.isArray(payload.queue) ? payload.queue : []);
+    setNowPlaying(payload.nowPlaying ?? null);
+    setUpNext(payload.upNext ?? null);
+    setPlaybackTiming(payload.playbackTiming ?? null);
+    setWheelTiming(payload.wheelTiming ?? null);
+    setAuthoritativeCooldown(payload.submitterStatus?.cooldownRemainingSeconds ?? 0);
+  }
+
+  async function loadStatus(): Promise<QueuePublicSnapshot | null> {
+    const requestSequence = statusRequestSequenceRef.current + 1;
+    statusRequestSequenceRef.current = requestSequence;
+    try {
+      const params = new URLSearchParams();
+      if (sessionId) params.set("sessionId", sessionId);
+      if (submitterToken) params.set("submitterToken", submitterToken);
+      if (tiktokHandle.trim()) params.set("tiktokHandle", tiktokHandle.trim());
+      if (contactEmail.trim()) params.set("contactEmail", contactEmail.trim());
+      if (artist.trim()) params.set("artist", artist.trim());
+      const res = await fetch(`/api/queue${params.size ? `?${params.toString()}` : ""}`, { cache: "no-store" });
+      const payload = await res.json().catch(() => null);
+      if (!queuePollingRequestIsCurrent({ requestSequence, latestRequestSequence: statusRequestSequenceRef.current })) return null;
+      if (!res.ok) {
+        setStatusSyncError(publicQueueResponseError(payload, "The live queue could not be refreshed."));
+        return null;
+      }
+      if (!payload || typeof payload !== "object") {
+        setStatusSyncError("The live queue returned an invalid response.");
+        return null;
+      }
+      const next = payload as QueuePublicSnapshot;
+      if (!queuePollingSnapshotMayApply({
+        requestSequence,
+        latestRequestSequence: statusRequestSequenceRef.current,
+        responseRevision: next.revision,
+        latestAppliedRevision: latestStatusSnapshotRef.current?.revision ?? -1,
+      })) {
+        if (queuePollingRequestIsCurrent({ requestSequence, latestRequestSequence: statusRequestSequenceRef.current })) {
+          setStatusSyncError("The queue service returned an older snapshot. Submission remains paused while live state is rechecked.");
+        }
+        return null;
+      }
+      if (queuePublicSnapshotUsesDegradedCache(next)) {
+        const previous = latestStatusSnapshotRef.current;
+        if (!previous || next.revision > previous.revision) {
+          latestStatusSnapshotRef.current = next;
+          applyStatusSnapshot(next);
+        }
+        setHasConfirmedStatus(true);
+        setStatusSyncError(DEGRADED_PUBLIC_QUEUE_MESSAGE);
+        return null;
+      }
+      latestStatusSnapshotRef.current = next;
+      applyStatusSnapshot(next);
+      setHasConfirmedStatus(true);
+      setStatusSyncError(null);
+      return next;
+    } catch {
+      if (!queuePollingRequestIsCurrent({ requestSequence, latestRequestSequence: statusRequestSequenceRef.current })) return null;
+      setStatusSyncError("The live queue could not be reached. Retrying automatically.");
+      return null;
     }
-    return null;
   }
 
   useEffect(() => {
+    statusRequestSequenceRef.current += 1;
+    latestStatusSnapshotRef.current = null;
+    setHasConfirmedStatus(false);
+    setStatusSyncError(null);
     loadStatus();
     const interval = setInterval(loadStatus, PUBLIC_QUEUE_POLL_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [submitterToken]);
+  }, [sessionId, submitterToken]);
 
   useEffect(() => {
     if (!submitterToken) return;
@@ -417,6 +472,11 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
     finalSubmitIntent.current = false;
     setError(null);
     setLegalError(null);
+    if (intakeStateUnavailable) {
+      setError(QUEUE_STATUS_UNAVAILABLE_MESSAGE);
+      void loadStatus();
+      return;
+    }
     if (!acceptedLegal) {
       setLegalError("You must agree to the BARCODE Network Terms, Queue Submission Terms, and Privacy Policy before submitting.");
       return;
@@ -424,7 +484,8 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
     setSubmitting(true);
     try {
       const refreshedBeforeSubmit = await loadStatus();
-      const latestSessionId = refreshedBeforeSubmit?.session?.sessionId ?? session?.sessionId ?? sessionId;
+      if (!refreshedBeforeSubmit) throw new Error(QUEUE_STATUS_UNAVAILABLE_MESSAGE);
+      const latestSessionId = refreshedBeforeSubmit.session?.sessionId;
       if (!latestSessionId) throw new Error(SESSION_SYNC_REQUIRED_MESSAGE);
       const visibleSessionId = session?.sessionId ?? sessionId;
       if (visibleSessionId && latestSessionId !== visibleSessionId) throw new Error(SESSION_CHANGED_MESSAGE);
@@ -599,10 +660,12 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
   if (transmissionState !== "idle") return createPortal(<WarpSequence state={transmissionState} data={warpData} />, document.body);
 
   const effectiveCooldown = session?.submissionCooldownSeconds === 0 ? 0 : cooldownRemaining;
+  const intakeStateUnavailable = blockedByParentStale || !hasConfirmedStatus || Boolean(statusSyncError);
   const estimatedPosition = Math.min((status?.activeCount ?? publicQueue.length) + 1, status?.capacity ?? ((status?.activeCount ?? publicQueue.length) + 1));
 
   return (
     <form onSubmit={submit} className="space-y-3">
+      {(blockedByParentStale || statusSyncError || !hasConfirmedStatus) && <div role="alert" className="border border-[#ffaa00]/55 bg-[#ffaa00]/10 p-3 text-xs text-[#ffaa00]"><p className="font-bold uppercase tracking-widest">SUBMISSION PAUSED — LIVE QUEUE STATE NOT CONFIRMED</p><p className="mt-1 text-muted">{blockedByParentStale ? QUEUE_STATUS_UNAVAILABLE_MESSAGE : statusSyncError ?? "Loading the first confirmed queue snapshot."}</p><button type="button" onClick={() => void loadStatus()} className="mt-2 border border-[#ffaa00]/70 px-3 py-1.5 uppercase tracking-widest text-[#ffaa00]">Retry Queue State</button></div>}
       <div className="grid gap-2 border border-border bg-surface p-3 text-xs sm:grid-cols-4">
         <div><p className="text-[10px] uppercase tracking-widest text-muted">Session</p><p className="truncate text-foreground">{session?.title ?? "BARCODE Radio"}</p></div>
         <div><p className="text-[10px] uppercase tracking-widest text-muted">Queue</p><p className={status?.isOpen ? "text-accent" : "text-danger"}>{status?.isOpen ? "Open" : "Closed"}</p></div>
@@ -716,7 +779,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
             </div>
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
               <button type="button" onClick={() => setStep("track")} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted">Back</button>
-              <button type="submit" onClick={() => { finalSubmitIntent.current = true; }} disabled={submitting || readState === "uploading" || routingLockRemaining > 0 || effectiveCooldown > 0 || status?.isOpen === false || status?.isFull === true} className="border border-accent px-5 py-2.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{readState === "uploading" ? "Uploading audio…" : submitting ? "Submitting…" : routingLockRemaining > 0 ? `Submit lock: ${routingLockRemaining}` : effectiveCooldown > 0 ? `Next submission available in ${formatCooldown(effectiveCooldown)}` : status?.isFull ? "Queue Full" : selectedRoute === "priority" ? "Submit & Continue to Payment" : "Submit Free"}</button>
+              <button type="submit" onClick={() => { finalSubmitIntent.current = true; }} disabled={intakeStateUnavailable || submitting || readState === "uploading" || routingLockRemaining > 0 || effectiveCooldown > 0 || status?.isOpen !== true || status?.isFull === true} className="border border-accent px-5 py-2.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{intakeStateUnavailable ? "Waiting for Live Queue" : readState === "uploading" ? "Uploading audio…" : submitting ? "Submitting…" : routingLockRemaining > 0 ? `Submit lock: ${routingLockRemaining}` : effectiveCooldown > 0 ? `Next submission available in ${formatCooldown(effectiveCooldown)}` : status?.isFull ? "Queue Full" : selectedRoute === "priority" ? "Submit & Continue to Payment" : "Submit Free"}</button>
             </div>
           </div>
         )}

@@ -12,6 +12,8 @@ import { detectMaterialPlaybackSeek, estimateOneWayNetworkTransitMs, projectObse
 import type { QueueEntry, QueueLane, QueuePlaybackDiagnostics, QueuePlaybackErrorCode, QueuePlaybackLifecycleEventInput, QueueState } from "@/lib/queue-types";
 import type { LiveOverlayPlaybackState, LiveOverlaySyncCorrectionReason } from "@/lib/live-overlay-resolver";
 import { ADMIN_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
+import { captureQueueEndTarget, queueAdminReadViewState, queuePollingResponseMayApply, queueResponseRequiresStateRevalidation, queueStateUsesDegradedCache, type QueueEndTarget } from "@/lib/queue-admin-safety";
+import { queuePollingRequestIsCurrent, queuePollingSnapshotMayApply } from "@/lib/queue-polling-safety";
 
 type Tab = "active" | "completed" | "removed" | "spotlight";
 type AdminQueueAction = "pullNext" | "pullWheelChosen" | "pullFreeTransmission" | "startShow" | "addWheelSpinOwed" | "load" | "finish" | "skip" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "resolvePaidPriority" | "pausePriority" | "resumePriority";
@@ -21,6 +23,7 @@ type SimulationAction = "addSimulationFreeTrack" | "addSimulationPaidPriority" |
 const LANE_LABELS: Record<QueueLane, string> = { priority: "Priority Signal", wheel: "Wheel Winner", regular: "Regular Queue" };
 const FIXED_PRIORITY_LABEL = "Priority Signal Upgrade";
 const FIXED_PRIORITY_INSTRUCTIONS = "Moves this track into the Priority Signal lane after payment confirmation.";
+const DEGRADED_QUEUE_READ_MESSAGE = "Queue storage is temporarily unavailable. Showing a verified cached snapshot; refresh before making ordinary changes.";
 
 const YOUTUBE_SYNC_HEARTBEAT_MS = 1_000;
 const TIKTOK_SYNC_HEARTBEAT_MS = 1_000;
@@ -182,6 +185,11 @@ function initialSessionIdFromUrl(): string | undefined {
   if (typeof window === "undefined") return undefined;
   return new URLSearchParams(window.location.search).get("sessionId") ?? undefined;
 }
+function responseErrorMessage(payload: unknown, fallback: string): string {
+  return payload && typeof payload === "object" && typeof (payload as { error?: unknown }).error === "string"
+    ? (payload as { error: string }).error
+    : fallback;
+}
 
 export function AdminRadioQueueControl() {
   const [state, setState] = useState<QueueState | null>(null);
@@ -196,7 +204,10 @@ export function AdminRadioQueueControl() {
   const [mounted, setMounted] = useState(false);
   const [clockNow, setClockNow] = useState(() => Date.now());
   const [endConfirmOpen, setEndConfirmOpen] = useState(false);
+  const [endTarget, setEndTarget] = useState<QueueEndTarget | null>(null);
   const [endingSession, setEndingSession] = useState(false);
+  const [operationError, setOperationError] = useState<string | null>(null);
+  const [lastConfirmedAt, setLastConfirmedAt] = useState<string | null>(null);
   const [sessionOptionsOpen, setSessionOptionsOpen] = useState(false);
   const [priorityEnabled, setPriorityEnabled] = useState(false);
   const [priorityPriceCents, setPriorityPriceCents] = useState(0);
@@ -216,32 +227,81 @@ export function AdminRadioQueueControl() {
   const mutationEpochRef = useRef(0);
   const mutationInFlightRef = useRef(0);
   const latestAppliedMutationEpochRef = useRef(0);
+  const pollRequestSequenceRef = useRef(0);
+  const latestAppliedRevisionRef = useRef(-1);
 
   function applyMutationState(next: QueueState, epoch: number): void {
     if (epoch < latestAppliedMutationEpochRef.current) return;
     latestAppliedMutationEpochRef.current = epoch;
+    if (typeof next.revision === "number" && Number.isFinite(next.revision)) {
+      latestAppliedRevisionRef.current = Math.max(latestAppliedRevisionRef.current, next.revision);
+    }
     setState((current) => ({ ...next, playbackTiming: next.playbackTiming ?? current?.playbackTiming ?? null, wheelTiming: next.wheelTiming ?? current?.wheelTiming ?? null }));
   }
 
-  function applyPollingStateIfFresh(next: QueueState, requestEpoch: number): void {
-    if (mutationInFlightRef.current > 0) return;
-    if (requestEpoch !== mutationEpochRef.current) return;
-    if (requestEpoch < latestAppliedMutationEpochRef.current) return;
+  function applyPollingStateIfFresh(next: QueueState, requestEpoch: number, requestSequence: number): boolean {
+    if (typeof next.revision !== "number" || !Number.isFinite(next.revision)) return false;
+    if (!queuePollingResponseMayApply({
+      requestEpoch,
+      currentMutationEpoch: mutationEpochRef.current,
+      mutationsInFlight: mutationInFlightRef.current,
+      latestAppliedMutationEpoch: latestAppliedMutationEpochRef.current,
+    })) return false;
+    if (!queuePollingSnapshotMayApply({
+      requestSequence,
+      latestRequestSequence: pollRequestSequenceRef.current,
+      responseRevision: next.revision,
+      latestAppliedRevision: latestAppliedRevisionRef.current,
+    })) return false;
+    latestAppliedRevisionRef.current = next.revision;
     setState(next);
+    return true;
+  }
+
+  function pollingRequestStillCurrent(requestEpoch: number, requestSequence: number): boolean {
+    return queuePollingRequestIsCurrent({
+      requestSequence,
+      latestRequestSequence: pollRequestSequenceRef.current,
+    }) && queuePollingResponseMayApply({
+      requestEpoch,
+      currentMutationEpoch: mutationEpochRef.current,
+      mutationsInFlight: mutationInFlightRef.current,
+      latestAppliedMutationEpoch: latestAppliedMutationEpochRef.current,
+    });
   }
 
   async function load(sessionId?: string) {
     const requestEpoch = mutationEpochRef.current;
-    const suffix = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : "";
-    const res = await fetch(`/api/admin/queue${suffix}`, { cache: "no-store" });
-    if (!res.ok) {
-      if (mutationInFlightRef.current > 0) return;
-      if (requestEpoch !== mutationEpochRef.current) return;
-      setError(res.status === 401 ? "Admin authentication required. Log in at /admin first." : "Queue control unavailable.");
-      return;
+    const requestSequence = ++pollRequestSequenceRef.current;
+    try {
+      const suffix = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : "";
+      const res = await fetch(`/api/admin/queue${suffix}`, { cache: "no-store" });
+      if (!res.ok) {
+        if (!pollingRequestStillCurrent(requestEpoch, requestSequence)) return;
+        setError(res.status === 401 ? "Admin authentication required. Log in at /admin first." : "Queue control could not confirm live state.");
+        return;
+      }
+      const next = await res.json() as QueueState;
+      if (!applyPollingStateIfFresh(next, requestEpoch, requestSequence)) {
+        const nextRevision = typeof next.revision === "number" && Number.isFinite(next.revision) ? next.revision : null;
+        if (pollingRequestStillCurrent(requestEpoch, requestSequence)
+          && (nextRevision === null || nextRevision < latestAppliedRevisionRef.current)) {
+          setError(nextRevision === null
+            ? "Queue control received a queue snapshot without a valid revision. The last confirmed state is preserved while live state is rechecked."
+            : "Queue control received an older queue snapshot. The last confirmed state is preserved while live state is rechecked.");
+        }
+        return;
+      }
+      if (queueStateUsesDegradedCache(next)) {
+        setError(DEGRADED_QUEUE_READ_MESSAGE);
+        return;
+      }
+      setLastConfirmedAt(new Date().toISOString());
+      setError(null);
+    } catch {
+      if (!pollingRequestStillCurrent(requestEpoch, requestSequence)) return;
+      setError("Queue control could not reach the queue service.");
     }
-    setError(null);
-    applyPollingStateIfFresh(await res.json(), requestEpoch);
   }
 
   useEffect(() => {
@@ -270,16 +330,36 @@ export function AdminRadioQueueControl() {
     if (simulationTimerRef.current) window.clearTimeout(simulationTimerRef.current);
   }, []);
 
-  async function post(body: Record<string, unknown>): Promise<QueueState | null> {
+  async function post(body: Record<string, unknown>, options: { allowWhileStale?: boolean } = {}): Promise<QueueState | null> {
+    if (error && !options.allowWhileStale) {
+      setOperationError("Live queue state is stale. Refresh successfully before changing queue state.");
+      return null;
+    }
     mutationEpochRef.current += 1;
     const epoch = mutationEpochRef.current;
     mutationInFlightRef.current += 1;
-    const res = await fetch("/api/admin/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     try {
-      if (!res.ok) return null;
-      const next = await res.json();
+      const res = await fetch("/api/admin/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const payload = await res.json().catch(() => null);
+      if (!res.ok) {
+        setOperationError(responseErrorMessage(payload, "Queue operation failed."));
+        if (queueResponseRequiresStateRevalidation(payload)) setError("Queue state is unconfirmed after the failed operation. Refresh before making another ordinary change.");
+        return null;
+      }
+      const next = payload as QueueState;
+      setOperationError(null);
       applyMutationState(next, epoch);
+      if (queueStateUsesDegradedCache(next)) {
+        setError(DEGRADED_QUEUE_READ_MESSAGE);
+        return next;
+      }
+      setError(null);
+      setLastConfirmedAt(new Date().toISOString());
       return next;
+    } catch {
+      setOperationError("The queue request could not reach the server. The operation outcome is unknown; check diagnostics before retrying.");
+      setError("Queue state is unconfirmed because the operation response could not be reached. Refresh before making another ordinary change.");
+      return null;
     } finally {
       mutationInFlightRef.current = Math.max(0, mutationInFlightRef.current - 1);
     }
@@ -349,11 +429,35 @@ export function AdminRadioQueueControl() {
   }, [clearingPlayerId, state?.nowPlaying]);
 
   async function endCurrentSession() {
+    const sessionId = endTarget?.sessionId;
+    if (!sessionId) {
+      setOperationError("No broadcast was captured for this confirmation. Cancel and choose End Broadcast again.");
+      return;
+    }
     setEndingSession(true);
-    await post({ action: "archiveSession" });
+    try {
+      const next = await post({ action: "archiveSession", sessionId }, { allowWhileStale: true });
+      if (!next) return;
+      setEndConfirmOpen(false);
+      setEndTarget(null);
+      await load();
+    } finally {
+      setEndingSession(false);
+    }
+  }
+  function openEndConfirmation() {
+    const target = captureQueueEndTarget(state?.session);
+    if (!target) {
+      setOperationError("The displayed queue session is no longer available. Refresh before ending the broadcast.");
+      return;
+    }
+    setOperationError(null);
+    setEndTarget(target);
+    setEndConfirmOpen(true);
+  }
+  function cancelEndConfirmation() {
     setEndConfirmOpen(false);
-    setEndingSession(false);
-    await load();
+    setEndTarget(null);
   }
   async function toggleOpen(isOpen: boolean) { await post({ action: "setOpen", isOpen }); }
   async function copy(entry: QueueEntry) { await navigator.clipboard.writeText(openUrl(entry)); }
@@ -418,13 +522,22 @@ export function AdminRadioQueueControl() {
     };
   }, [state]);
 
-  if (error) return <div className="border border-danger/40 bg-danger/5 p-6 text-danger">{error}</div>;
-  const readOnly = state?.readOnly ?? false;
+  const readViewState = queueAdminReadViewState(state, error);
+  if (readViewState === "unavailable") {
+      return <section role="alert" className="space-y-4 border border-danger/50 bg-danger/10 p-6"><p className="text-xs font-bold uppercase tracking-[0.3em] text-danger">QUEUE STATE UNAVAILABLE</p><h2 className="text-2xl font-bold text-foreground">No confirmed queue snapshot is available</h2><p className="text-sm text-muted">{error} This does not mean the session ended. Retry the read or open recovery diagnostics.</p><div className="flex flex-wrap gap-2"><button type="button" onClick={() => load(initialSessionIdFromUrl())} className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent">Retry Queue State</button><a href="/api/admin/queue/recovery" target="_blank" rel="noreferrer" className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted">Recovery Diagnostics</a></div></section>;
+  }
+  if (readViewState === "loading") {
+    return <section role="status" aria-live="polite" className="border border-border bg-surface p-6"><p className="text-xs uppercase tracking-[0.35em] text-muted">SYNCING QUEUE STATE</p><h2 className="mt-3 text-2xl font-bold text-foreground">Loading the first confirmed snapshot</h2></section>;
+  }
+  if (!state) return null;
+  const stale = readViewState === "stale";
+  const serverReadOnly = state.readOnly ?? false;
+  const readOnly = serverReadOnly || stale;
   const hasSession = Boolean(state?.session);
-  const hasCurrentSession = Boolean(state?.session && state.isCurrentSession && state.session.status !== "archived" && !readOnly);
-  const simulationCreationAllowed = Boolean(hasCurrentSession && state?.session?.status === "open" && state?.session?.queueOpen);
-  const canControlSession = hasCurrentSession;
-  const isArchivedReview = Boolean(state?.session?.status === "archived" || readOnly);
+  const hasCurrentSession = Boolean(state.session && state.isCurrentSession && state.session.status !== "archived" && !serverReadOnly);
+  const canControlSession = hasCurrentSession && !stale;
+  const simulationCreationAllowed = Boolean(canControlSession && state.session?.status === "open" && state.session?.queueOpen);
+  const isArchivedReview = Boolean(state.session?.status === "archived" || serverReadOnly);
   const nextInLine = state?.nextInLine ?? null;
   const confirmedPlayer = state?.nowPlaying ?? null;
   const hasClearingTransition = Boolean(clearingPlayerId);
@@ -470,29 +583,32 @@ export function AdminRadioQueueControl() {
 
   return (
     <div className={`${playerPadding} ${topOverlayPaddingClass} space-y-2 xl:pr-[26rem]`}>
+      {error && <section role="alert" className="border border-[#ffaa00]/55 bg-[#ffaa00]/10 p-4 text-sm text-[#ffaa00]"><p className="font-bold uppercase tracking-widest">QUEUE STATE STALE — LAST CONFIRMED SNAPSHOT PRESERVED</p><p className="mt-1 text-muted">{error} Ordinary queue mutations are paused until a fresh read succeeds. End Broadcast remains available for session {state.session?.sessionId ?? "unknown"} and will be revalidated by the server.</p>{lastConfirmedAt && <p className="mt-1 text-xs text-muted">Last confirmed: {new Date(lastConfirmedAt).toLocaleTimeString()}</p>}<div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => load(initialSessionIdFromUrl())} className="border border-[#ffaa00]/70 px-3 py-2 text-xs uppercase tracking-widest text-[#ffaa00]">Retry Queue State</button><a href="/api/admin/queue/recovery" target="_blank" rel="noreferrer" className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted">Recovery Diagnostics</a></div></section>}
+      {operationError && <div role="alert" className="border border-danger/50 bg-danger/10 p-3 text-sm text-danger">{operationError}</div>}
       <section className="border border-border bg-surface p-1.5">
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => setActiveUtilityPanel((value) => value === "session" ? null : "session")} className="min-h-9 border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted">{activeUtilityPanel === "session" ? "Hide Session Setup" : "Session Setup"}</button>
           <button type="button" onClick={() => setActiveUtilityPanel((value) => value === "visuals" ? null : "visuals")} className="min-h-9 border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted">{activeUtilityPanel === "visuals" ? "Hide Diagnostics" : "Diagnostics"}</button>
           <button
             type="button"
+            disabled={!canControlSession}
             onClick={() => setActiveUtilityPanel((value) => value === "overlay" ? null : "overlay")}
-            className={`min-h-9 border px-3 py-1.5 text-xs uppercase tracking-widest ${wheelOverlayReady ? "border-cyan-300 bg-cyan-300/25 text-cyan-100 shadow-[0_0_20px_rgba(103,232,249,0.22)]" : "border-border text-muted"}`}
+            className={`min-h-9 border px-3 py-1.5 text-xs uppercase tracking-widest disabled:cursor-not-allowed disabled:opacity-40 ${wheelOverlayReady ? "border-cyan-300 bg-cyan-300/25 text-cyan-100 shadow-[0_0_20px_rgba(103,232,249,0.22)]" : "border-border text-muted"}`}
           >
             {activeUtilityPanel === "overlay" ? "Hide Live Overlay" : wheelOverlayReady ? "Live Overlay — Wheel Owed" : "Live Overlay"}
           </button>
         </div>
       </section>
 
-      {activeUtilityPanel === "session" && hasCurrentSession && <section className="border border-accent/40 bg-surface p-3 space-y-3"><div><p className="text-xs uppercase tracking-[0.4em] text-accent">Session Setup</p><h2 className="text-lg font-bold text-foreground mt-1">{state?.session?.title}</h2><p className="text-xs text-muted">{state?.session?.showDate} · {state?.session?.status}</p>{state?.session?.description && <p className="text-xs text-muted mt-2 max-w-2xl">{state.session.description}</p>}</div><div className="flex flex-wrap gap-2"><a href="/admin/show-management" className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Show Management</a><button type="button" onClick={openSessionOptions} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">{sessionOptionsOpen ? "Hide Session Options" : "Edit Session Options"}</button></div>{canControlSession && sessionOptionsOpen && <section className="space-y-3 border border-border bg-background/40 p-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div><p className="text-xs uppercase tracking-[0.3em] text-accent">Session Options</p><h3 className="mt-1 text-lg font-bold text-foreground">Session Options</h3><p className="mt-1 text-xs text-muted">Only the verified Stripe webhook marks a track paid or moves it into Priority Signal.</p></div><div className="border border-border bg-surface p-3 text-sm"><p className="text-xs uppercase tracking-widest text-muted">Submission Delay</p><p className="mt-1 font-bold text-foreground">{sessionCooldownSeconds === 0 ? "Disabled" : `${sessionCooldownSeconds}s`}</p></div><div className="border border-border bg-surface p-3 text-sm"><p className="text-xs uppercase tracking-widest text-muted">Display price</p><p className="mt-1 font-bold text-foreground">{formatPrice(priorityPriceCents, priorityCurrency)}</p></div></div><div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(10rem,0.35fr)]"><label className="space-y-2 block md:col-span-2"><span className="text-xs uppercase tracking-widest text-muted">Submission Delay</span><input type="number" min={0} max={3600} value={sessionCooldownSeconds} onChange={(event) => setSessionCooldownSeconds(Math.max(0, Math.min(3600, Number(event.target.value))))} className="w-full bg-background border border-border px-3 py-2 text-sm" /><span className="block text-xs text-muted">Delay between accepted submissions from the same source. Set to 0 to disable during testing.</span></label><label className="flex items-center justify-between gap-3 border border-border bg-surface p-3 text-sm"><span><span className="block font-bold text-foreground">Paid upgrades {priorityEnabled ? "enabled" : "disabled"}</span><span className="text-xs text-muted">Controls Stripe checkout availability for this session.</span></span><input type="checkbox" checked={priorityEnabled} onChange={(event) => setPriorityEnabled(event.target.checked)} /></label><label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Price</span><input type="number" min={0} value={priorityPriceCents} onChange={(event) => setPriorityPriceCents(Math.max(0, Number(event.target.value)))} className="w-full bg-background border border-border px-3 py-2 text-sm" /><span className="block text-xs text-muted">Enter cents. Example: 1000 = $10.00.</span></label></div>{prioritySaveError && <p className="border border-danger/40 bg-danger/10 p-2 text-sm text-danger">{prioritySaveError}</p>}{priorityMessage && <p className="border border-accent/50 bg-accent/10 p-2 text-sm font-bold text-accent">{priorityMessage}</p>}<div className="flex flex-wrap gap-2"><button type="button" onClick={savePrioritySettings} disabled={prioritySaving} className="border border-accent bg-accent/10 px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{prioritySaving ? "Saving…" : "Save Settings"}</button><button type="button" onClick={() => setSessionOptionsOpen(false)} disabled={prioritySaving} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent disabled:opacity-50">Close</button></div></section>}</section>}
+      {activeUtilityPanel === "session" && hasCurrentSession && <section className="border border-accent/40 bg-surface p-3 space-y-3"><div><p className="text-xs uppercase tracking-[0.4em] text-accent">Session Setup</p><h2 className="text-lg font-bold text-foreground mt-1">{state?.session?.title}</h2><p className="text-xs text-muted">{state?.session?.showDate} · {state?.session?.status}</p>{state?.session?.description && <p className="text-xs text-muted mt-2 max-w-2xl">{state.session.description}</p>}</div><div className="flex flex-wrap gap-2"><a href="/admin/show-management" className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Show Management</a><button type="button" disabled={!canControlSession} onClick={openSessionOptions} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-40">{sessionOptionsOpen ? "Hide Session Options" : "Edit Session Options"}</button></div>{canControlSession && sessionOptionsOpen && <section className="space-y-3 border border-border bg-background/40 p-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div><p className="text-xs uppercase tracking-[0.3em] text-accent">Session Options</p><h3 className="mt-1 text-lg font-bold text-foreground">Session Options</h3><p className="mt-1 text-xs text-muted">Only the verified Stripe webhook marks a track paid or moves it into Priority Signal.</p></div><div className="border border-border bg-surface p-3 text-sm"><p className="text-xs uppercase tracking-widest text-muted">Submission Delay</p><p className="mt-1 font-bold text-foreground">{sessionCooldownSeconds === 0 ? "Disabled" : `${sessionCooldownSeconds}s`}</p></div><div className="border border-border bg-surface p-3 text-sm"><p className="text-xs uppercase tracking-widest text-muted">Display price</p><p className="mt-1 font-bold text-foreground">{formatPrice(priorityPriceCents, priorityCurrency)}</p></div></div><div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(10rem,0.35fr)]"><label className="space-y-2 block md:col-span-2"><span className="text-xs uppercase tracking-widest text-muted">Submission Delay</span><input type="number" min={0} max={3600} value={sessionCooldownSeconds} onChange={(event) => setSessionCooldownSeconds(Math.max(0, Math.min(3600, Number(event.target.value))))} className="w-full bg-background border border-border px-3 py-2 text-sm" /><span className="block text-xs text-muted">Delay between accepted submissions from the same source. Set to 0 to disable during testing.</span></label><label className="flex items-center justify-between gap-3 border border-border bg-surface p-3 text-sm"><span><span className="block font-bold text-foreground">Paid upgrades {priorityEnabled ? "enabled" : "disabled"}</span><span className="text-xs text-muted">Controls Stripe checkout availability for this session.</span></span><input type="checkbox" checked={priorityEnabled} onChange={(event) => setPriorityEnabled(event.target.checked)} /></label><label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Price</span><input type="number" min={0} value={priorityPriceCents} onChange={(event) => setPriorityPriceCents(Math.max(0, Number(event.target.value)))} className="w-full bg-background border border-border px-3 py-2 text-sm" /><span className="block text-xs text-muted">Enter cents. Example: 1000 = $10.00.</span></label></div>{prioritySaveError && <p className="border border-danger/40 bg-danger/10 p-2 text-sm text-danger">{prioritySaveError}</p>}{priorityMessage && <p className="border border-accent/50 bg-accent/10 p-2 text-sm font-bold text-accent">{priorityMessage}</p>}<div className="flex flex-wrap gap-2"><button type="button" onClick={savePrioritySettings} disabled={prioritySaving} className="border border-accent bg-accent/10 px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{prioritySaving ? "Saving…" : "Save Settings"}</button><button type="button" onClick={() => setSessionOptionsOpen(false)} disabled={prioritySaving} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent disabled:opacity-50">Close</button></div></section>}</section>}
 
-      {activeUtilityPanel === "visuals" && canControlSession && <section className="border border-border/80 bg-surface/70 p-3"><AdminRuntimeDiagnostics timingSummary={timingSummary} canControl={canControlSession} onSponsorAction={updateSponsorBreakState} sessionId={state?.session?.sessionId ?? null} playbackDiagnostics={state?.playbackDiagnostics ?? null} /></section>}
+      {activeUtilityPanel === "visuals" && hasCurrentSession && <section className="border border-border/80 bg-surface/70 p-3"><AdminRuntimeDiagnostics timingSummary={timingSummary} canControl={canControlSession} onSponsorAction={updateSponsorBreakState} sessionId={state?.session?.sessionId ?? null} playbackDiagnostics={state?.playbackDiagnostics ?? null} /></section>}
 
       {activeUtilityPanel === "overlay" && canControlSession && <section className="border border-border/80 bg-surface/70 p-3"><AdminLiveOverlayControl focusWheelTick={overlayWheelFocusTick} /></section>}
 
       {isArchivedReview && hasSession && <div className="border border-danger/40 bg-danger/10 p-3 text-xs uppercase tracking-widest text-danger">ARCHIVED / READ ONLY — viewing {state?.session?.title ?? "finished session"}. Queue review actions are locked for this finished session.</div>}
 
-      {mounted && canControlSession && createPortal(<section className="fixed left-4 right-4 top-[calc(3.5rem+env(safe-area-inset-top))] z-[8500] space-y-1.5 border border-border bg-background/95 p-2.5 text-sm shadow-2xl backdrop-blur">
+      {mounted && hasCurrentSession && createPortal(<section className="fixed left-4 right-4 top-[calc(3.5rem+env(safe-area-inset-top))] z-[8500] space-y-1.5 border border-border bg-background/95 p-2.5 text-sm shadow-2xl backdrop-blur">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
             <p className="truncate text-[11px] uppercase tracking-[0.2em] text-muted">{state?.session?.title} · {state?.session?.showDate}</p>
@@ -512,7 +628,7 @@ export function AdminRadioQueueControl() {
           <TopBarPressureChip pressure={topPressure} minimized />
           {wheelSpinsUnlocked > 0 && <>
             <span className="border border-cyan-300/50 bg-cyan-300/10 px-2 py-1 uppercase tracking-widest text-cyan-200">Wheel: {wheelSpinsUnlocked} owed</span>
-            <button type="button" onClick={openWheelPanel} className="min-h-9 border border-cyan-300/70 bg-cyan-300/15 px-2.5 py-1 uppercase tracking-widest text-cyan-100 hover:bg-cyan-300 hover:text-background">Open Wheel</button>
+            <button type="button" disabled={!canControlSession} onClick={openWheelPanel} className="min-h-9 border border-cyan-300/70 bg-cyan-300/15 px-2.5 py-1 uppercase tracking-widest text-cyan-100 hover:bg-cyan-300 hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Open Wheel</button>
           </>}
           {nextInLine && <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Next: {submittedArtist(nextInLine)} — {submittedTitle(nextInLine)}</span>}
         </div> : <>
@@ -527,14 +643,14 @@ export function AdminRadioQueueControl() {
           <div><p className="text-[10px] uppercase tracking-widest text-muted">Projected Runtime</p><p className="mt-1 font-bold text-foreground">{projectedRuntimeLabel}</p></div>
           <TopBarCommercialChip summary={timingSummary.sponsorBreakSummary} />
           <TopBarPressureChip pressure={topPressure} />
-          {wheelSpinsUnlocked > 0 && <div className="space-y-1"><p className="text-[10px] uppercase tracking-widest text-muted">Wheel</p><p className="font-bold text-cyan-200">{wheelSpinsUnlocked} owed</p><button type="button" onClick={openWheelPanel} className="min-h-9 border border-cyan-300/70 bg-cyan-300/15 px-3 py-1 text-[10px] uppercase tracking-widest text-cyan-100 hover:bg-cyan-300 hover:text-background">Open Wheel Panel</button></div>}
+          {wheelSpinsUnlocked > 0 && <div className="space-y-1"><p className="text-[10px] uppercase tracking-widest text-muted">Wheel</p><p className="font-bold text-cyan-200">{wheelSpinsUnlocked} owed</p><button type="button" disabled={!canControlSession} onClick={openWheelPanel} className="min-h-9 border border-cyan-300/70 bg-cyan-300/15 px-3 py-1 text-[10px] uppercase tracking-widest text-cyan-100 hover:bg-cyan-300 hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Open Wheel Panel</button></div>}
         </div>
         <div className="flex flex-wrap gap-2">
-          <button onClick={() => toggleOpen(!state?.publicStatus?.isOpen)} className={`${state?.publicStatus?.isOpen ? "border-danger/50 text-danger hover:bg-danger" : "border-accent text-accent hover:bg-accent"} min-h-10 border px-3 py-2 uppercase tracking-widest hover:text-background`}>{state?.publicStatus?.isOpen ? "Close Submissions" : "Open Submissions"}</button>
-          {state?.session?.showStarted !== true && <button onClick={() => action("", "startShow")} className="min-h-10 border border-foreground/50 px-3 py-2 uppercase tracking-widest text-foreground hover:bg-foreground hover:text-background">Start Broadcast</button>}
-          <button onClick={() => action("", "addWheelSpinOwed")} className="min-h-10 border border-cyan-300/60 px-3 py-2 uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background">Add Wheel Spin</button>
-          <details className="group relative"><summary className="list-none cursor-pointer min-h-10 border border-border/80 px-3 py-2 uppercase tracking-widest text-muted hover:border-foreground/60 hover:text-foreground">Resolver Override ▾</summary><div className="absolute left-0 z-30 mt-2 w-64 space-y-2 border border-border bg-background p-3 shadow-xl"><p className="text-[10px] uppercase tracking-[0.2em] text-muted">Use for live manual correction. This does not count the current slot as played.</p><button type="button" onClick={() => action("", "pullWheelChosen")} disabled={!canPullWheelChosen} className="block w-full min-h-10 border border-cyan-300/60 px-3 py-2 text-left uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Pull Wheel Chosen</button><button type="button" onClick={() => action("", "pullFreeTransmission")} disabled={!canPullFreeTransmission} className="block w-full min-h-10 border border-foreground/40 px-3 py-2 text-left uppercase tracking-widest text-foreground hover:bg-foreground hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Pull Free Transmission</button>{resolverOverrideBlocked && <p className="text-[10px] uppercase tracking-[0.16em] text-[#ffaa00]">Blocked while active Priority owns the resolver.</p>}</div></details>
-          <button onClick={() => setEndConfirmOpen(true)} className="ml-auto min-h-10 border border-danger/60 px-3 py-2 text-sm uppercase tracking-widest text-danger hover:bg-danger hover:text-background">End Broadcast</button>
+          <button disabled={!canControlSession} onClick={() => toggleOpen(!state?.publicStatus?.isOpen)} className={`${state?.publicStatus?.isOpen ? "border-danger/50 text-danger hover:bg-danger" : "border-accent text-accent hover:bg-accent"} min-h-10 border px-3 py-2 uppercase tracking-widest hover:text-background disabled:cursor-not-allowed disabled:opacity-40`}>{state?.publicStatus?.isOpen ? "Close Submissions" : "Open Submissions"}</button>
+          {state?.session?.showStarted !== true && <button disabled={!canControlSession} onClick={() => action("", "startShow")} className="min-h-10 border border-foreground/50 px-3 py-2 uppercase tracking-widest text-foreground hover:bg-foreground hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Start Broadcast</button>}
+          <button disabled={!canControlSession} onClick={() => action("", "addWheelSpinOwed")} className="min-h-10 border border-cyan-300/60 px-3 py-2 uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Add Wheel Spin</button>
+          <details className="group relative"><summary className={`list-none min-h-10 border border-border/80 px-3 py-2 uppercase tracking-widest text-muted ${canControlSession ? "cursor-pointer hover:border-foreground/60 hover:text-foreground" : "cursor-not-allowed opacity-40"}`}>Resolver Override ▾</summary><div className="absolute left-0 z-30 mt-2 w-64 space-y-2 border border-border bg-background p-3 shadow-xl"><p className="text-[10px] uppercase tracking-[0.2em] text-muted">Use for live manual correction. This does not count the current slot as played.</p><button type="button" onClick={() => action("", "pullWheelChosen")} disabled={!canControlSession || !canPullWheelChosen} className="block w-full min-h-10 border border-cyan-300/60 px-3 py-2 text-left uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Pull Wheel Chosen</button><button type="button" onClick={() => action("", "pullFreeTransmission")} disabled={!canControlSession || !canPullFreeTransmission} className="block w-full min-h-10 border border-foreground/40 px-3 py-2 text-left uppercase tracking-widest text-foreground hover:bg-foreground hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Pull Free Transmission</button>{resolverOverrideBlocked && <p className="text-[10px] uppercase tracking-[0.16em] text-[#ffaa00]">Blocked while active Priority owns the resolver.</p>}</div></details>
+          <button onClick={openEndConfirmation} className="ml-auto min-h-10 border border-danger/60 px-3 py-2 text-sm uppercase tracking-widest text-danger hover:bg-danger hover:text-background">End Broadcast</button>
         </div>
         <div className="flex flex-wrap gap-2">
           <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Phase: {phaseLabel}</span>
@@ -548,9 +664,9 @@ export function AdminRadioQueueControl() {
         </>}
       </section>, document.body)}
 
-      {mounted && canControlSession && <AdminTimeBankToast timing={timingSummary.timeBankSummary} sessionId={state?.session?.sessionId ?? null} />}
+      {mounted && hasCurrentSession && <AdminTimeBankToast timing={timingSummary.timeBankSummary} sessionId={state?.session?.sessionId ?? null} />}
 
-      {mounted && endConfirmOpen && createPortal(<div className="fixed inset-0 z-[100000] grid place-items-center bg-black/80 p-4 backdrop-blur-sm"><div role="dialog" aria-modal="true" aria-labelledby="end-session-confirm-title" className="w-full max-w-md border border-danger/50 bg-background p-5 shadow-[0_0_70px_rgba(255,0,0,0.24)]"><p className="text-xs uppercase tracking-[0.35em] text-danger">End Broadcast</p><h2 id="end-session-confirm-title" className="mt-3 text-2xl font-bold text-foreground">End this broadcast?</h2><p className="mt-2 text-sm text-muted">This will stop routing, close submissions, and move the broadcast session to the archive.</p><div className="mt-5 flex flex-wrap justify-end gap-2"><a href="/admin/queue" className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Return to Queue Dashboard</a><button type="button" onClick={() => setEndConfirmOpen(false)} disabled={endingSession} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted disabled:opacity-50">No, Cancel</button><button type="button" onClick={endCurrentSession} disabled={endingSession} className="border border-danger px-4 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background disabled:opacity-50">{endingSession ? "Ending…" : "Yes, End Broadcast"}</button></div></div></div>, document.body)}
+      {mounted && endConfirmOpen && endTarget && createPortal(<div className="fixed inset-0 z-[100000] grid place-items-center bg-black/80 p-4 backdrop-blur-sm"><div role="dialog" aria-modal="true" aria-labelledby="end-session-confirm-title" className="w-full max-w-md border border-danger/50 bg-background p-5 shadow-[0_0_70px_rgba(255,0,0,0.24)]"><p className="text-xs uppercase tracking-[0.35em] text-danger">End Broadcast</p><h2 id="end-session-confirm-title" className="mt-3 text-2xl font-bold text-foreground">End this broadcast?</h2><p className="mt-2 text-sm text-muted">This will stop routing, close submissions, and move the captured broadcast session to the archive.</p><p className="mt-3 border border-border bg-surface p-3 text-sm text-foreground"><span className="block font-bold">{endTarget.title}</span><span className="block text-xs text-muted">{endTarget.showDate} · {endTarget.sessionId}</span></p>{operationError && <p role="alert" className="mt-4 border border-danger/50 bg-danger/10 p-3 text-sm text-danger">{operationError}</p>}<div className="mt-5 flex flex-wrap justify-end gap-2"><a href="/admin/queue" className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Return to Queue Dashboard</a><button type="button" onClick={cancelEndConfirmation} disabled={endingSession} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted disabled:opacity-50">No, Cancel</button><button type="button" onClick={endCurrentSession} disabled={endingSession} className="border border-danger px-4 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background disabled:opacity-50">{endingSession ? "Ending…" : "Yes, End Broadcast"}</button></div></div></div>, document.body)}
 
 
 
@@ -585,11 +701,11 @@ export function AdminRadioQueueControl() {
             <NextInLineBox entry={nextInLine} playerOccupied={Boolean(loadedPlayer)} readOnly={readOnly} onAction={action} onPlayer={loadPlayer} onCopy={copy} />
             <section className="border border-border bg-surface p-3 space-y-2">
               <p className="text-sm uppercase tracking-[0.24em] text-muted">Next In Line Actions</p>
-              {!nextInLine && <><p className="text-sm text-muted">No Next In Line — Pull Next Track when ready.</p><button onClick={() => action("", "pullNext")} className="min-h-10 border border-accent px-3 py-2 text-sm uppercase tracking-widest text-accent">Pull Next Track</button></>}
+              {!nextInLine && <><p className="text-sm text-muted">No Next In Line — Pull Next Track when ready.</p><button disabled={readOnly} onClick={() => action("", "pullNext")} className="min-h-10 border border-accent px-3 py-2 text-sm uppercase tracking-widest text-accent disabled:cursor-not-allowed disabled:opacity-40">Pull Next Track</button></>}
               <div className="flex flex-wrap gap-2"><span className="border border-cyan-300/30 bg-cyan-300/5 px-2 py-1 text-[10px] uppercase tracking-widest text-cyan-200">Wheel Spins Unlocked: {state?.session?.wheelSpinsOwed ?? 0}</span><span className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">Next Owed: {state?.nextNonPriorityLane === "regular" ? "Free" : "Wheel"}</span></div>
               {wheelOverlayReady && <div className="space-y-2 border border-cyan-300/50 bg-cyan-300/10 p-2.5 animate-pulse">
                 <p className="text-[10px] uppercase tracking-[0.2em] text-cyan-100">{wheelOverlayStatusLabel}</p>
-                <button type="button" onClick={openWheelPanel} className="min-h-10 w-full border border-cyan-300/70 bg-cyan-300/10 px-3 py-2 text-xs uppercase tracking-widest text-cyan-100 hover:bg-cyan-300 hover:text-background">Open Wheel Panel</button>
+                <button type="button" disabled={!canControlSession} onClick={openWheelPanel} className="min-h-10 w-full border border-cyan-300/70 bg-cyan-300/10 px-3 py-2 text-xs uppercase tracking-widest text-cyan-100 hover:bg-cyan-300 hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Open Wheel Panel</button>
               </div>}
               <div className="flex flex-wrap gap-2">{requestedCount > 0 && <span className="border border-[#c27803]/40 bg-[#c27803]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#c27803]">Payment Requested: {requestedCount}</span>}{checkoutPendingCount > 0 && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Checkout Pending: {checkoutPendingCount}</span>}{paidNeedsAttentionCount > 0 && <span className="border border-danger/60 bg-danger/15 px-2 py-1 text-[10px] uppercase tracking-widest text-danger">Paid Needs Attention: {paidNeedsAttentionCount}</span>}{heldPriorityCount > 0 && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Held Priority: {heldPriorityCount}</span>}{resolverOverrideBlocked && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Resolver Override Blocked</span>}{!nextInLine && <span className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">No Next In Line</span>}</div>
             </section>
@@ -606,7 +722,7 @@ export function AdminRadioQueueControl() {
       {mounted && !loadedPlayer && pendingPlayerLoad && createPortal(<section className="fixed bottom-5 left-4 right-4 z-[8600] border border-border bg-background/95 px-4 py-3 text-xs uppercase tracking-widest text-muted shadow-2xl backdrop-blur md:left-8 md:right-8 lg:left-auto lg:right-6 lg:w-[24rem]">Loading Player…</section>, document.body)}
       {mounted && !loadedPlayer && hasClearingTransition && !pendingPlayerLoad && createPortal(<section className="fixed bottom-5 left-4 right-4 z-[8600] border border-border bg-background/95 px-4 py-3 text-xs uppercase tracking-widest text-muted shadow-2xl backdrop-blur md:left-8 md:right-8 lg:left-auto lg:right-6 lg:w-[24rem]">Updating Player…</section>, document.body)}
 
-      {mounted && canControlSession && createPortal(<aside className={`hidden xl:block fixed right-4 top-[calc(10.25rem+env(safe-area-inset-top))] ${railBottomOffsetClass} max-h-[calc(100dvh-11rem)] w-[24rem] z-[8400] border border-border bg-background/95 shadow-2xl backdrop-blur overflow-y-auto p-3 space-y-3`}>
+      {mounted && hasCurrentSession && createPortal(<aside className={`hidden xl:block fixed right-4 top-[calc(10.25rem+env(safe-area-inset-top))] ${railBottomOffsetClass} max-h-[calc(100dvh-11rem)] w-[24rem] z-[8400] border border-border bg-background/95 shadow-2xl backdrop-blur overflow-y-auto p-3 space-y-3`}>
         <section className="border border-border bg-surface p-3 space-y-2">
           <div className="flex items-center justify-between">
             <p className="text-sm uppercase tracking-[0.24em] text-muted">Next In Line Rail</p>
@@ -1428,7 +1544,7 @@ function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction, s
           <p className="uppercase tracking-[0.28em] text-accent">Runtime Diagnostics</p>
           <p className="mt-1 text-sm text-muted">{pressure.mode === "live" ? "Live pressure from broadcast timing + queue state." : pressure.mode === "ended" ? "Broadcast has ended." : "Pre-show projection from queue state. Pressure activates when broadcast starts."}</p>
         </div>
-        {canControl && <div className="flex flex-wrap gap-2"><a href={playbackExportUrl} className="border border-accent/50 px-3 py-1.5 uppercase tracking-widest text-accent">Download Playback Diagnostics</a><button type="button" disabled={sponsorStartDisabled} onClick={() => !sponsorStartDisabled && onSponsorAction("start")} className={`px-3 py-1.5 uppercase tracking-widest ${sponsorStartDisabled ? "cursor-not-allowed border border-border text-muted opacity-70" : "border border-[#ffaa00]/50 text-[#ffaa00]"}`}>{sponsorStartLabel}</button><button type="button" onClick={() => onSponsorAction("reset")} className="border border-border px-3 py-1.5 uppercase tracking-widest text-muted">Reset Commercial Break State</button></div>}
+        <div className="flex flex-wrap gap-2"><a href={playbackExportUrl} className="border border-accent/50 px-3 py-1.5 uppercase tracking-widest text-accent">Download Playback Diagnostics</a>{canControl && <><button type="button" disabled={sponsorStartDisabled} onClick={() => !sponsorStartDisabled && onSponsorAction("start")} className={`px-3 py-1.5 uppercase tracking-widest ${sponsorStartDisabled ? "cursor-not-allowed border border-border text-muted opacity-70" : "border border-[#ffaa00]/50 text-[#ffaa00]"}`}>{sponsorStartLabel}</button><button type="button" onClick={() => onSponsorAction("reset")} className="border border-border px-3 py-1.5 uppercase tracking-widest text-muted">Reset Commercial Break State</button></>}</div>
       </div>
       <div className="grid gap-3 md:grid-cols-4 lg:grid-cols-7">
         <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Projected Show Time</p><p className="mt-1 text-lg font-bold text-foreground">{timingSummary.showRuntimeSummary.projectedLabel}</p></div>
@@ -1509,7 +1625,7 @@ function TrackActions({ entry, onAction, onPlayer, onCopy, mode, readOnly, playe
   const lane = entryLane(entry);
   return (
     <div className="flex flex-wrap gap-2">
-      {mode === "next" && <button type="button" onClick={() => onPlayer(entry)} disabled={playerOccupied} className="border border-accent px-3 py-1.5 text-xs text-accent disabled:cursor-not-allowed disabled:border-border disabled:text-muted">{playerOccupied ? "Player Occupied" : "Load in Player"}</button>}
+      {mode === "next" && <button type="button" onClick={() => onPlayer(entry)} disabled={readOnly || playerOccupied} className="border border-accent px-3 py-1.5 text-xs text-accent disabled:cursor-not-allowed disabled:border-border disabled:text-muted">{playerOccupied ? "Player Occupied" : readOnly ? "Player Locked" : "Load in Player"}</button>}
       <a href={openUrl(entry)} target="_blank" rel="noreferrer" className="border border-border px-3 py-1.5 text-xs text-muted">{entry.sourceType === "upload" ? "Open Admin Audio" : "Open Link"}</a>
       <button type="button" onClick={() => onCopy(entry)} className="border border-border px-3 py-1.5 text-xs text-muted">Copy {entry.sourceType === "upload" ? "Admin Audio Link" : "Link"}</button>
       {!readOnly && mode === "next" && <>{lane !== "priority" && <button type="button" onClick={() => onAction(entry.id, "moveBack")} className="border border-border px-3 py-1.5 text-xs text-muted">Return to Queue</button>}{canPausePriority(entry) && <button type="button" onClick={() => onAction(entry.id, "pausePriority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Pause Priority</button>}{canResumePriority(entry) && <button type="button" onClick={() => onAction(entry.id, "resumePriority")} className="border border-[#ffaa00] bg-[#ffaa00] px-3 py-1.5 text-xs text-background">Unpause Priority</button>}<button type="button" onClick={() => onAction(entry.id, "remove")} className="border border-danger/40 px-3 py-1.5 text-xs text-danger">Remove</button><button type="button" onClick={() => onAction(entry.id, "spotlight")} className="border border-foreground/40 px-3 py-1.5 text-xs text-foreground">Spotlight</button></>}

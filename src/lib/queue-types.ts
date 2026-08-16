@@ -402,6 +402,8 @@ export interface QueueHistoricalRecoveryProvenance {
 }
 
 export interface QueueSession extends QueueSessionSummary {
+  /** Opaque admin request identifier used only to make session creation idempotent. */
+  startRequestId?: string | null;
   queue: QueueEntry[];
   spotlight: QueueEntry[];
   completed: QueueEntry[];
@@ -457,7 +459,9 @@ export interface QueuePublicSubmitterStatus {
 
 export interface QueuePublicSnapshot {
   revision: number;
-  session: Pick<QueueSessionSummary, "sessionId" | "title" | "showDate" | "status" | "description" | "completedCount" | "completedRuntimeSeconds" | "activeCount" | "acceptedCount" | "submissionClosureReason" | "removedCount" | "submissionCooldownSeconds" | "queueOpen" | "showStarted" | "preShowEndsAt" | "broadcastPhase" | "broadcastStartedAt" | "nextInLineTrackId" | "loadedTrackId" | "wheelSpinsOwed" | "priorityUpgradesEnabled" | "priorityUpgradeLabel" | "priorityUpgradeInstructions" | "priorityUpgradePriceCents" | "priorityUpgradeCurrency" | "priorityUpgradePaymentsEnabled" | "sponsorBreakSeconds" | "sponsorBreakMode" | "sponsorBreakStatus" | "sponsorBreakStartedAt" | "sponsorBreakCompletedAt" | "sponsorBreakCompletedAfterPlayableCount" | "sponsorBreakDueAfterPlayableCount" | "sponsorBreakManualNote">;
+  /** Present when a verified in-process snapshot is serving a provider outage. */
+  storageAuthority?: "degraded_cached";
+  session: Pick<QueueSessionSummary, "sessionId" | "title" | "showDate" | "status" | "description" | "completedCount" | "completedRuntimeSeconds" | "activeCount" | "acceptedCount" | "submissionClosureReason" | "removedCount" | "submissionCooldownSeconds" | "queueOpen" | "showStarted" | "preShowEndsAt" | "broadcastPhase" | "broadcastStartedAt" | "nextInLineTrackId" | "loadedTrackId" | "wheelSpinsOwed" | "priorityUpgradesEnabled" | "priorityUpgradeLabel" | "priorityUpgradeInstructions" | "priorityUpgradePriceCents" | "priorityUpgradeCurrency" | "priorityUpgradePaymentsEnabled" | "sponsorBreakSeconds" | "sponsorBreakMode" | "sponsorBreakStatus" | "sponsorBreakStartedAt" | "sponsorBreakCompletedAt" | "sponsorBreakCompletedAfterPlayableCount" | "sponsorBreakDueAfterPlayableCount" | "sponsorBreakManualNote"> | null;
   status: QueuePublicStatus;
   queue: QueuePublicTrack[];
   completed: QueuePublicTrack[];
@@ -477,6 +481,8 @@ export interface QueueWheelArtistOption {
 
 export interface QueueState {
   revision?: number;
+  /** Present when a verified in-process snapshot is serving a provider outage. */
+  storageAuthority?: "degraded_cached";
   nowPlaying: QueueEntry | null;
   queue: QueueEntry[];
   history: QueueEntry[];
@@ -498,6 +504,9 @@ export interface QueueState {
   playbackTiming?: QueuePlaybackTiming | null;
   wheelTiming?: QueueWheelTiming | null;
   playbackDiagnostics?: QueuePlaybackDiagnostics;
+  warnings?: Array<{ code: string; message: string }>;
+  /** Admin-only mutation receipt; omitted from public queue projections. */
+  sessionCreated?: boolean;
 }
 
 

@@ -126,7 +126,10 @@ test("YouTube Music uses the normal YouTube API metadata path", { concurrency: f
 }));
 
 test("YouTube failure preserves submitted fields and one estimated queue entry", { concurrency: false }, async () => withProviderEnv({ YOUTUBE_API_KEY: "youtube-test" }, async () => {
-  await queue.setQueueOpen(false);
+  const current = await queue.getRadioQueueState();
+  if (current.session && current.session.status !== "archived") {
+    await queue.archiveQueueSession(current.session.sessionId);
+  }
   await queue.startNewQueueSession({ title: `Provider failure ${Date.now()}` });
   await queue.setQueueOpen(true);
   const track = await withFetch(async () => new Response("unavailable", { status: 503 }), () => queue.submitRadioTrack(trackInput("YTFail", "https://www.youtube.com/watch?v=failed_DEF45", "youtube")));

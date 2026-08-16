@@ -109,7 +109,7 @@ export interface QueueTimingDisplaySummary {
 }
 
 export function queueTimingInputFromPublicSnapshot(snapshot: QueuePublicSnapshot | null): QueueTimingInput {
-  if (!snapshot) return {};
+  if (!snapshot?.session) return {};
   return {
     nowPlaying: snapshot.nowPlaying ? timingTrack(snapshot.nowPlaying, "playing") : null,
     upNext: snapshot.upNext ? timingTrack(snapshot.upNext, "next") : null,
@@ -153,7 +153,7 @@ function timingTrack(track: TimingDisplayTrack, status: QueueTrackStatus): Timin
   };
 }
 
-function sessionTimingFields(session: QueuePublicSnapshot["session"] | QueueSessionSummary) {
+function sessionTimingFields(session: NonNullable<QueuePublicSnapshot["session"]> | QueueSessionSummary) {
   return {
     completedCount: session.completedCount,
     removedCount: session.removedCount,

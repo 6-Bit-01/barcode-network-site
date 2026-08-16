@@ -90,7 +90,10 @@ test("Apple Music intake boundary matches only the real Apple Music host", () =>
 });
 
 test("server rejects new Apple Music intake without mutating existing queue records", { concurrency: false }, async () => {
-  await queue.setQueueOpen(false);
+  const current = await queue.getRadioQueueState();
+  if (current.session && current.session.status !== "archived") {
+    await queue.archiveQueueSession(current.session.sessionId);
+  }
   const started = await queue.startNewQueueSession({
     title: `Apple boundary ${Date.now()}`,
     submissionCooldownSeconds: 0,

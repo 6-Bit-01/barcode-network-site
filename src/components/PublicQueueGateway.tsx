@@ -47,7 +47,7 @@ function terminalReadouts(snapshot: QueuePublicSnapshot | null, counts: ReturnTy
 
 type NavigationVariant = { label: string; detail: string; mode: string; kind: "monitor" };
 const ENTRY_STORAGE_PREFIX = "barcode-queue-entered:";
-const DEGRADED_PUBLIC_QUEUE_MESSAGE = "Queue storage is temporarily unavailable. Showing a verified cached snapshot; submissions are paused until live state is confirmed.";
+const DEGRADED_PUBLIC_QUEUE_MESSAGE = "Queue storage is degraded. Showing the available queue state without two-store confirmation; submissions are paused until storage is aligned.";
 
 function navigationVariant(snapshot: QueuePublicSnapshot | null, fallbackSeed: string): NavigationVariant {
   void fallbackSeed;

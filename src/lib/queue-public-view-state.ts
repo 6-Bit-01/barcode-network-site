@@ -7,7 +7,7 @@ export function queuePublicSnapshotIsArchived(snapshot: QueuePublicSnapshot | nu
 }
 
 export function queuePublicSnapshotUsesDegradedCache(snapshot: QueuePublicSnapshot | null | undefined): boolean {
-  return snapshot?.storageAuthority === "degraded_cached";
+  return Boolean(snapshot?.storageAuthority);
 }
 
 export function queuePublicViewState(

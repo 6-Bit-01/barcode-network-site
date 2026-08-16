@@ -23,8 +23,9 @@ The corrected source capture records both the immutable source date/status and t
 - Every proposed queue revision is stored privately in Vercel Blob at `barcode-radio-queue-state/v1/revisions/`. It becomes recoverable only after the matching append-only marker exists under `barcode-radio-queue-state/v1/commits/`.
 - `current.json` and `committed.json` are conditionally updated bounded heads, not commit authority. `pending.json` publishes the exact predecessor/target intent before Redis or a protocol migration can advance. An unmarked newer current or unresolved intent makes ordinary reads fail closed; full append-only marker scanning is reserved for explicit recovery/audit.
 - Snapshot envelopes contain the complete private queue store, revision, timestamp, and SHA-256 checksum.
-- Public/admin polling reads the durable Blob model first and does not consume Redis commands.
+- Public/admin polling reads the durable Blob model first. If Blob is unavailable or the existing Redis queue predates its first durable snapshot, the valid dedicated Redis state remains visible as `degraded_redis_only`; this temporary fallback consumes Redis reads and is never presented as fully aligned.
 - When Redis is unavailable or quota-locked, a fresh process returns the last verified durable revision. Mutations fail closed.
+- When Blob is unavailable, public submissions and ordinary admin mutations fail closed. Exact-ID **End Broadcast** remains available and performs one fenced Redis commit so an operator can always archive the displayed show; the result remains degraded until Blob is restored and alignment is verified.
 - The immutable target and pending intent are prepared before Redis commits. A preparation failure leaves Redis unchanged. A lost Redis acknowledgement is called refused only when one Lua operation proves the exact predecessor and revokes the token; otherwise the result stays explicitly ambiguous until exact recovery.
 - Uploaded audio is never deleted from an unarchived session. Archived audio is retained for at least 30 days, and cleanup refuses to run in production unless the current queue exactly matches a committed durable snapshot; cleanup itself never performs an unfenced snapshot promotion.
 
@@ -72,11 +73,13 @@ The quota-lock test seeds a real mixed queue, starts a completely fresh queue mo
 - a slow durable write renews and rechecks the Redis fencing lease;
 - the immutable revision and bounded pending intent are prepared before Redis commits, so a preparation failure leaves Redis unchanged and a post-commit crash is exactly recoverable.
 
+`tests/queue-redis-only-blob-outage-regression.test.mjs` separately recreates the deployed upgrade state: valid isolated Redis revision 14 with three sessions and one accepted track while Blob is either unreachable or has no snapshot. It proves the queue remains visible as degraded state, exact-ID End advances exactly once, and every ordinary mutation remains blocked.
+
 ## Post-deploy evidence
 
 1. Submit one controlled link track and one controlled uploaded-audio track in a private rehearsal session.
 2. Record the queue revision, session ID, ordered track IDs, and lane values from the authenticated admin response.
 3. Verify private Blob `current.json`, `committed.json`, the resolved `pending.json`, the same checksummed revision under `revisions/`, and its exact marker under `commits/` exist.
 4. Temporarily point a Preview deployment at a Redis credential that returns the quota error, or use the automated exact-error test; confirm `/api/queue` remains HTTP 200 with the recorded queue and admin mutations fail.
-5. Confirm an hour of public/admin/OBS polling does not increase queue Redis GET count.
+5. Confirm an hour of healthy public/admin/OBS polling does not increase queue Redis GET count. Then make Blob reads unavailable in Preview and confirm the same Redis revision/session/record counts remain visible with a degraded warning, ordinary changes are blocked, and exact-ID End remains available.
 6. Archive the rehearsal, run cleanup before 30 days, and confirm its uploaded audio still exists.

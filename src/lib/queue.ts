@@ -134,7 +134,7 @@ interface QueueStore {
   revision: number;
   activeSessionId: string | null;
   sessions: QueueSession[];
-  readAuthority?: "degraded_cached";
+  readAuthority?: "degraded_cached" | "degraded_redis_only";
 }
 
 interface QueueMutationLease {
@@ -148,6 +148,15 @@ interface QueueMutationLease {
   legacyStateExisted: boolean;
   legacyStatePayload: string | null;
   heartbeat: QueueMutationLockHeartbeat | null;
+  redisOnlyDurableOutage: boolean;
+}
+
+interface QueueMutationOptions {
+  /**
+   * Exact End must remain available when the dedicated Redis state is healthy
+   * but Blob cannot be reached. No other mutation receives this escape hatch.
+   */
+  allowRedisOnlyWhenDurableUnavailable?: boolean;
 }
 
 interface QueueMutationLockHeartbeat {
@@ -1589,11 +1598,21 @@ async function readStore(): Promise<QueueStore> {
       && durableScope === lastKnownGoodDurableScope) {
       return { ...normalizeStore(lastKnownGoodDurableStore), readAuthority: "degraded_cached" };
     }
-    throw new QueueOperationError(
-      "queue_state_unavailable",
-      "Queue state is temporarily unavailable.",
-      503,
-    );
+    // Blob is the polling/read model, but it is a fallback copy rather than a
+    // reason to hide a healthy dedicated QueueStore. This is the deployed
+    // upgrade path: existing Redis state can predate its first durable copy.
+    // Keep it visibly degraded so ordinary UI mutations remain gated.
+    try {
+      const redis = process.env.NODE_ENV === "production" ? getMutationRedis() : getRedis();
+      if (redis) {
+        const redisStore = await readValidatedStoreFromRedis(redis);
+        return { ...redisStore, readAuthority: "degraded_redis_only" };
+      }
+    } catch {
+      // The fixed safe error below covers a simultaneous Redis failure without
+      // leaking either provider's raw error.
+    }
+    throw new QueueOperationError("queue_state_unavailable", "Queue state is temporarily unavailable.", 503);
   }
   let redis: Redis | null;
   try {
@@ -1618,11 +1637,10 @@ async function readStore(): Promise<QueueStore> {
   try {
     const redisStore = await readValidatedStoreFromRedis(redis);
     if (durableConfigured && !isInitialEmptyQueueStore(redisStore, redisStore.revision)) {
-      throw new QueueOperationError(
-        "queue_state_unavailable",
-        "Queue state is temporarily unavailable.",
-        503,
-      );
+      // A configured-but-empty Blob store is a valid pre-migration state for
+      // an existing dedicated Redis queue. Keep that queue visible and mark it
+      // degraded instead of treating absence of a backup as absence of a show.
+      return { ...redisStore, readAuthority: "degraded_redis_only" };
     }
     const durableScope = getQueueDurableSnapshotScope();
     const durableCandidate = durableReadFailed
@@ -1865,7 +1883,10 @@ async function reconcileRedisAheadFromExactPreparedSnapshot(
   }
 }
 
-async function withQueueMutation<T>(operation: () => Promise<T>): Promise<T> {
+async function withQueueMutation<T>(
+  operation: () => Promise<T>,
+  options: QueueMutationOptions = {},
+): Promise<T> {
   try {
     return await waitForLocalMutationTurn(async () => {
       const redis = getMutationRedis();
@@ -1997,6 +2018,15 @@ async function withQueueMutation<T>(operation: () => Promise<T>): Promise<T> {
         }
 
         const durableRequired = process.env.NODE_ENV === "production" || isQueueDurableSnapshotConfigured();
+        const redisOnlyDurableOutage = Boolean(
+          options.allowRedisOnlyWhenDurableUnavailable
+          && !durable
+          && redis
+          && (durableReadFailed || (
+            isQueueDurableSnapshotConfigured()
+            && !isInitialEmptyQueueStore(normalizedStored, revision)
+          )),
+        );
         if (durableRequired && !isQueueDurableSnapshotConfigured()) {
           throw new QueueOperationError(
             "queue_storage_unavailable",
@@ -2004,7 +2034,7 @@ async function withQueueMutation<T>(operation: () => Promise<T>): Promise<T> {
             503,
           );
         }
-        if (durableRequired && redis && token && heartbeat) {
+        if (durableRequired && redis && token && heartbeat && !redisOnlyDurableOutage) {
           const exactLegacyBootstrap = !redisStateExisted
             && legacyStateExisted
             && (revisionValue === null || revisionValue === undefined)
@@ -2048,7 +2078,7 @@ async function withQueueMutation<T>(operation: () => Promise<T>): Promise<T> {
         }
         if (durable && durable.revision === revision && storesMatch(durable, normalizedStored)) {
           promoteLastKnownGoodRedisStore(normalizedStored);
-        } else if (!durableRequired) {
+        } else if (!durableRequired || redisOnlyDurableOutage) {
           // Local/test Redis without Blob still receives internal revision
           // validation, but production caches require durable equality.
           promoteLastKnownGoodRedisStore(normalizedStored);
@@ -2064,6 +2094,7 @@ async function withQueueMutation<T>(operation: () => Promise<T>): Promise<T> {
           legacyStateExisted,
           legacyStatePayload,
           heartbeat,
+          redisOnlyDurableOutage,
         };
         return await mutationLeaseStorage.run(lease, operation);
       } finally {
@@ -2191,6 +2222,25 @@ async function writeStore(store: QueueStore): Promise<void> {
     return;
   }
   if (!lease.token) throw new Error("Queue mutation lease is missing its fencing token.");
+  if (lease.redisOnlyDurableOutage) {
+    // Exact End is an operational safety action. If Blob is unreachable, keep
+    // the user's authoritative dedicated Redis queue usable and archive the
+    // captured session with the normal atomic/fenced Redis commit. The result
+    // stays explicitly degraded; Start and every ordinary mutation remain
+    // blocked until durable storage is healthy and aligned.
+    await commitRedisMutationWithReconciliation(lease, previous, normalized, nextRevision);
+    lease.revision = nextRevision;
+    lease.store = { ...normalized, readAuthority: "degraded_redis_only" };
+    lease.redisStateExisted = true;
+    lease.redisStatePayload = JSON.stringify(normalized);
+    lease.redisRevisionExisted = true;
+    lease.legacyStateExisted = false;
+    lease.legacyStatePayload = null;
+    store.revision = nextRevision;
+    store.readAuthority = "degraded_redis_only";
+    promoteLastKnownGoodRedisStore(normalized);
+    return;
+  }
   let durablePrepared = false;
   try {
     durablePrepared = await prepareQueueDurableSnapshot(normalized, {
@@ -4760,7 +4810,10 @@ export async function archiveQueueSession(sessionId: string): Promise<QueueState
   if (!normalizedSessionId) {
     throw new QueueOperationError("queue_session_not_found", "Queue session not found.", 404);
   }
-  return withQueueMutation(() => archiveQueueSessionMutation(normalizedSessionId));
+  return withQueueMutation(
+    () => archiveQueueSessionMutation(normalizedSessionId),
+    { allowRedisOnlyWhenDurableUnavailable: true },
+  );
 }
 
 export async function archiveCurrentQueueSession(): Promise<QueueState> {

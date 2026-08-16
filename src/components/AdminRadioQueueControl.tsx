@@ -23,7 +23,7 @@ type SimulationAction = "addSimulationFreeTrack" | "addSimulationPaidPriority" |
 const LANE_LABELS: Record<QueueLane, string> = { priority: "Priority Signal", wheel: "Wheel Winner", regular: "Regular Queue" };
 const FIXED_PRIORITY_LABEL = "Priority Signal Upgrade";
 const FIXED_PRIORITY_INSTRUCTIONS = "Moves this track into the Priority Signal lane after payment confirmation.";
-const DEGRADED_QUEUE_READ_MESSAGE = "Queue storage is temporarily unavailable. Showing a verified cached snapshot; refresh before making ordinary changes.";
+const DEGRADED_QUEUE_READ_MESSAGE = "Queue storage is degraded. Showing the available queue state without two-store confirmation; ordinary changes are paused. End Broadcast remains available.";
 
 const YOUTUBE_SYNC_HEARTBEAT_MS = 1_000;
 const TIKTOK_SYNC_HEARTBEAT_MS = 1_000;

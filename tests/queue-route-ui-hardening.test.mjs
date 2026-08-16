@@ -126,6 +126,8 @@ test("admin safety state is explicit, risky responses require revalidation, and 
   assert.equal(safety.queueAdminReadViewState(confirmed, "refresh failed"), "stale");
   assert.equal(safety.queueAdminReadViewState({ ...confirmed, storageAuthority: "degraded_cached" }, null), "stale");
   assert.equal(safety.queueStateUsesDegradedCache({ ...confirmed, storageAuthority: "degraded_cached" }), true);
+  assert.equal(safety.queueAdminReadViewState({ ...confirmed, storageAuthority: "degraded_redis_only" }, null), "stale");
+  assert.equal(safety.queueStateUsesDegradedCache({ ...confirmed, storageAuthority: "degraded_redis_only" }), true);
 
   for (const code of ["queue_storage_unavailable", "queue_state_unavailable", "queue_state_conflict", "queue_state_ambiguous"]) {
     assert.equal(safety.queueResponseRequiresStateRevalidation({ code }), true, `${code} must block ordinary mutations until a confirmed read`);

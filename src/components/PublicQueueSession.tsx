@@ -24,7 +24,7 @@ type PublicSubmissionReceipt = { artist: string; title: string; sessionTitle: st
 
 const PRIORITY_SIGNAL_LABEL = "Priority Signal";
 const MIN_PRIORITY_ACTIVE_DEPTH = 2;
-const DEGRADED_PUBLIC_QUEUE_MESSAGE = "Queue storage is temporarily unavailable. Showing a verified cached snapshot; submissions are paused until live state is confirmed.";
+const DEGRADED_PUBLIC_QUEUE_MESSAGE = "Queue storage is degraded. Showing the available queue state without two-store confirmation; submissions are paused until storage is aligned.";
 
 function stableHash(seed: string): number {
   let hash = 0;

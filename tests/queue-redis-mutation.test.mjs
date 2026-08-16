@@ -1985,7 +1985,7 @@ test("an unobservable Redis commit acknowledgement loss is recoverable only from
   assert.equal((await secondDurable.readQueueDurableSnapshot()).revision, 1);
 });
 
-test("a cold worker never blesses ambiguous Redis state while Blob authority is unavailable", async () => {
+test("a cold worker exposes an atomic Redis commit as degraded while Blob authority is unavailable", async () => {
   resetQueueTestState();
   configureDurableQueueTest("https://commit-cold-outage.example.test");
   FakeRedis.commitFailure = {
@@ -2002,11 +2002,10 @@ test("a cold worker never blesses ambiguous Redis state while Blob authority is 
   );
   FakeBlob.getFailure = new Error("Blob authority unavailable");
   const { first: coldWorker } = loadIndependentQueueModules();
-  await assertQueueOperationError(
-    () => coldWorker.getRadioQueueState(),
-    "queue_state_unavailable",
-    503,
-  );
+  const degraded = await coldWorker.getRadioQueueState();
+  assert.equal(degraded.storageAuthority, "degraded_redis_only");
+  assert.equal(degraded.revision, 1);
+  assert.equal(degraded.session.title, "Unconfirmed Redis");
 });
 
 test("a durable prepare failure is refused before any Redis commit or rollback", async () => {

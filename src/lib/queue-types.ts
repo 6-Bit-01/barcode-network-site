@@ -459,8 +459,8 @@ export interface QueuePublicSubmitterStatus {
 
 export interface QueuePublicSnapshot {
   revision: number;
-  /** Present when a verified in-process snapshot is serving a provider outage. */
-  storageAuthority?: "degraded_cached";
+  /** Present when the queue is readable but one persistence layer is unavailable. */
+  storageAuthority?: "degraded_cached" | "degraded_redis_only";
   session: Pick<QueueSessionSummary, "sessionId" | "title" | "showDate" | "status" | "description" | "completedCount" | "completedRuntimeSeconds" | "activeCount" | "acceptedCount" | "submissionClosureReason" | "removedCount" | "submissionCooldownSeconds" | "queueOpen" | "showStarted" | "preShowEndsAt" | "broadcastPhase" | "broadcastStartedAt" | "nextInLineTrackId" | "loadedTrackId" | "wheelSpinsOwed" | "priorityUpgradesEnabled" | "priorityUpgradeLabel" | "priorityUpgradeInstructions" | "priorityUpgradePriceCents" | "priorityUpgradeCurrency" | "priorityUpgradePaymentsEnabled" | "sponsorBreakSeconds" | "sponsorBreakMode" | "sponsorBreakStatus" | "sponsorBreakStartedAt" | "sponsorBreakCompletedAt" | "sponsorBreakCompletedAfterPlayableCount" | "sponsorBreakDueAfterPlayableCount" | "sponsorBreakManualNote"> | null;
   status: QueuePublicStatus;
   queue: QueuePublicTrack[];
@@ -481,8 +481,8 @@ export interface QueueWheelArtistOption {
 
 export interface QueueState {
   revision?: number;
-  /** Present when a verified in-process snapshot is serving a provider outage. */
-  storageAuthority?: "degraded_cached";
+  /** Present when the queue is readable but one persistence layer is unavailable. */
+  storageAuthority?: "degraded_cached" | "degraded_redis_only";
   nowPlaying: QueueEntry | null;
   queue: QueueEntry[];
   history: QueueEntry[];

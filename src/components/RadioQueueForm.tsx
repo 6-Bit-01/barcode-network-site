@@ -29,7 +29,7 @@ const SESSION_SYNC_REQUIRED_MESSAGE = "Session sync required. Refresh the queue 
 const SESSION_CHANGED_MESSAGE = "This session has changed. Re-enter the current BARCODE Radio queue and submit again.";
 const QUEUE_CONFIRMATION_FAILED_MESSAGE = "Submission could not be confirmed in the queue. Your info was kept. Please try again or contact the host.";
 const QUEUE_STATUS_UNAVAILABLE_MESSAGE = "Live queue state is not confirmed. Submission is paused until the queue refreshes.";
-const DEGRADED_PUBLIC_QUEUE_MESSAGE = "Queue storage is temporarily unavailable. Showing a verified cached snapshot; submission is paused until live state is confirmed.";
+const DEGRADED_PUBLIC_QUEUE_MESSAGE = "Queue storage is degraded. Showing the available queue state without two-store confirmation; submission is paused until storage is aligned.";
 const MIN_PRIORITY_ACTIVE_DEPTH = 2;
 function formatPrice(cents: number, currency = "usd"): string { return `${new Intl.NumberFormat("en-US", { style: "currency", currency: currency.toUpperCase() }).format(Math.max(0, cents) / 100)} ${currency.toUpperCase()}`; }
 

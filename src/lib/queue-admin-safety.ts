@@ -17,11 +17,11 @@ const QUEUE_STATE_REVALIDATION_CODES = new Set([
 
 export function queueAdminReadViewState(state: QueueState | null, error: string | null): QueueAdminReadViewState {
   if (!state) return error ? "unavailable" : "loading";
-  return error || state.storageAuthority === "degraded_cached" ? "stale" : "confirmed";
+  return error || Boolean(state.storageAuthority) ? "stale" : "confirmed";
 }
 
 export function queueStateUsesDegradedCache(state: QueueState | null | undefined): boolean {
-  return state?.storageAuthority === "degraded_cached";
+  return Boolean(state?.storageAuthority);
 }
 
 export function queuePollingResponseMayApply(input: {

@@ -1,6 +1,6 @@
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { NextResponse } from "next/server";
-import { getPublicQueueSnapshot, queueOperationErrorResponse } from "@/lib/queue";
+import { getPublicQueueSnapshot } from "@/lib/queue";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -9,16 +9,6 @@ const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 const AUDIO_MIME_TYPES = ["audio/mpeg", "audio/mp3", "audio/wav", "audio/wave", "audio/x-wav"];
 const UPLOAD_PREFIX = "barcode-radio-queue/";
 const SESSION_SYNC_MESSAGE = "This session has changed. Re-enter the current BARCODE Radio queue and submit again.";
-const SAFE_UPLOAD_ERRORS = new Set([
-  SESSION_SYNC_MESSAGE,
-  "This broadcast queue is closed.",
-  "This broadcast queue is full for new transmissions.",
-  "Invalid upload path.",
-  "Uploaded audio file name is missing.",
-  "Only MP3 and WAV uploads are accepted.",
-  "Uploaded audio file size is missing.",
-  "Uploads must be 100MB or less.",
-]);
 
 type ClientPayload = {
   sessionId?: string;
@@ -48,15 +38,15 @@ export function assertUploadSessionOpen(isOpen: boolean, isFull: boolean | undef
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
+  const body = (await request.json()) as HandleUploadBody;
+
   try {
-    const body = (await request.json()) as HandleUploadBody;
     const jsonResponse = await handleUpload({
       body,
       request,
       onBeforeGenerateToken: async (pathname, clientPayload) => {
         const payload = parseClientPayload(clientPayload);
         const snapshot = await getPublicQueueSnapshot();
-        if (!snapshot.session) throw new Error("This broadcast queue is closed.");
 
         assertCurrentUploadSession(payload.sessionId, snapshot.session.sessionId);
         assertUploadSessionOpen(snapshot.status.isOpen, snapshot.status.isFull, snapshot.status.acceptedCount ?? snapshot.status.activeCount, snapshot.status.capacity);
@@ -80,9 +70,7 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     return NextResponse.json(jsonResponse);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "";
-    if (SAFE_UPLOAD_ERRORS.has(message)) return NextResponse.json({ error: message }, { status: 400 });
-    const response = queueOperationErrorResponse(error, "Upload could not be completed.");
-    return NextResponse.json(response.payload, { status: response.status });
+    const message = error instanceof Error ? error.message : "Upload could not be completed.";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }

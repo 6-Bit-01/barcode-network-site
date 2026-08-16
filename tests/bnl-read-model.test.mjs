@@ -115,17 +115,10 @@ async function sourceFilesGet(query, token = "test-source-file-read-token") {
   );
 }
 
-async function startFreshQueueSession(options) {
-  const existing = await queue.getRadioQueueState();
-  if (existing.session && existing.session.status !== "archived") {
-    await queue.archiveQueueSession(existing.session.sessionId);
-  }
-  return queue.startNewQueueSession(options);
-}
-
 async function freshReadModelSession() {
   sequence += 1;
-  const state = await startFreshQueueSession({
+  await queue.setQueueOpen(false);
+  const state = await queue.startNewQueueSession({
     title: `BNL Read Model ${Date.now()} ${sequence}`,
     purpose: "live_broadcast",
     bnlPublicationStatus: "public_copy_approved",
@@ -246,7 +239,8 @@ test("legacy and unknown queue sessions fail closed at the BNL publication bound
 
 test("new rehearsal sessions remain publicly usable while every queue-derived BNL lane stays quarantined", async () => {
   sequence += 1;
-  const state = await startFreshQueueSession({
+  await queue.setQueueOpen(false);
+  const state = await queue.startNewQueueSession({
     title: `Quarantined rehearsal ${Date.now()} ${sequence}`,
   });
   assert.equal(state.session.purpose, "rehearsal");
@@ -301,7 +295,8 @@ test("new rehearsal sessions remain publicly usable while every queue-derived BN
 
 test("live-broadcast publication levels unlock only their approved queue-derived BNL lanes", async () => {
   sequence += 1;
-  const state = await startFreshQueueSession({
+  await queue.setQueueOpen(false);
+  const state = await queue.startNewQueueSession({
     title: `Publication levels ${Date.now()} ${sequence}`,
     purpose: "live_broadcast",
     bnlPublicationStatus: "runtime_only",

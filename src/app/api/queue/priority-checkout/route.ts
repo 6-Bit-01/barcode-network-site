@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createPrioritySignalCheckoutSession } from "@/lib/stripe";
-import { createPriorityGiftAttribution, markPriorityUpgradeCheckoutPending, queueOperationErrorResponse, requestPriorityCheckout } from "@/lib/queue";
+import { createPriorityGiftAttribution, markPriorityUpgradeCheckoutPending, requestPriorityCheckout } from "@/lib/queue";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -31,28 +31,6 @@ export function storedCheckoutBelongsToRequester(
 
 const PRIORITY_DEPTH_UNAVAILABLE_MESSAGE = "Priority Signal opens once the broadcast line has enough active transmissions to overtake.";
 const MIN_PRIORITY_ACTIVE_DEPTH = 2;
-const PRIORITY_CHECKOUT_UNAVAILABLE_MESSAGE = "Priority Signal checkout is temporarily unavailable. Please try again later.";
-const SAFE_PRIORITY_CHECKOUT_VALIDATION_ERRORS = new Map<string, number>([
-  ["Gifted Priority attribution disclosure is required for another artist's track. Refresh the queue and try again.", 400],
-  ["Priority Signal checkout requires acknowledgement of the Priority Signal disclosure.", 400],
-  ["Gifted Priority attribution disclosure mismatch. Refresh the queue and try again.", 400],
-  ["Priority Signal upgrades are available only while this broadcast session is active.", 409],
-  ["Priority Signal upgrades are unavailable for this broadcast.", 409],
-  ["Priority Signal upgrade price is not configured yet.", 409],
-  ["Priority Signal Upgrade is not available for this track.", 409],
-]);
-
-function priorityCheckoutDependencyUnavailable(error: unknown): boolean {
-  if (error instanceof TypeError) return true;
-  const candidate = error as { code?: unknown; statusCode?: unknown; type?: unknown };
-  const statusCode = typeof candidate?.statusCode === "number" ? candidate.statusCode : 0;
-  const code = typeof candidate?.code === "string" ? candidate.code.toUpperCase() : "";
-  const type = typeof candidate?.type === "string" ? candidate.type : "";
-  return statusCode === 429
-    || statusCode >= 500
-    || type.startsWith("Stripe")
-    || ["ECONNABORTED", "ECONNREFUSED", "ECONNRESET", "ENETUNREACH", "ENOTFOUND", "ETIMEDOUT"].includes(code);
-}
 
 function stripeReady(): boolean {
   return Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET);
@@ -68,7 +46,7 @@ function storedCheckoutStillUsable(track: { priorityUpgradeStatus?: string | nul
 
 export async function POST(req: Request) {
   try {
-    if (!stripeReady()) return NextResponse.json({ error: PRIORITY_CHECKOUT_UNAVAILABLE_MESSAGE }, { status: 503 });
+    if (!stripeReady()) return NextResponse.json({ error: "Priority Signal checkout is temporarily unavailable. Please try again later." }, { status: 503 });
     const body = await req.json().catch(() => ({}));
     const trackId = cleanText(body.trackId);
     const sessionId = cleanText(body.sessionId);
@@ -114,18 +92,8 @@ export async function POST(req: Request) {
     await markPriorityUpgradeCheckoutPending(trackId, checkoutRequest.session.sessionId, { provider: "stripe", checkoutSessionId: checkout.sessionId, checkoutUrl: checkout.url, checkoutCreatedAt: checkout.createdAt, checkoutExpiresAt: checkout.expiresAt, checkoutOwnerTokenHash: hashPriorityCheckoutOwnerToken(checkoutOwnerToken), priorityAcceptance, priorityGiftAttribution });
     return NextResponse.json({ url: checkout.url, sessionId: checkout.sessionId, message: "Payment confirmation may take a moment." });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "";
-    const validationStatus = SAFE_PRIORITY_CHECKOUT_VALIDATION_ERRORS.get(message);
-    if (validationStatus) return NextResponse.json({ error: message }, { status: validationStatus });
-
-    const queueFailure = queueOperationErrorResponse(error, PRIORITY_CHECKOUT_UNAVAILABLE_MESSAGE);
-    if (queueFailure.payload.code !== "queue_operation_failed") {
-      return NextResponse.json(queueFailure.payload, { status: queueFailure.status });
-    }
-
-    return NextResponse.json(
-      { error: PRIORITY_CHECKOUT_UNAVAILABLE_MESSAGE, code: "priority_checkout_unavailable" },
-      { status: priorityCheckoutDependencyUnavailable(error) ? 503 : 500 },
-    );
+    const message = error instanceof Error ? error.message : "Priority Signal checkout is unavailable.";
+    const status = message.includes("temporarily") ? 503 : 409;
+    return NextResponse.json({ error: message }, { status });
   }
 }

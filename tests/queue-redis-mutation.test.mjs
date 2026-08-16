@@ -16,8 +16,18 @@ class FakeRedis {
   static failAllCommands = false;
   static failOnConstruct = false;
   static getFailure = null;
+  static getFailuresRemaining = 0;
+  static commitFailure = null;
+  static rollbackFailure = null;
+  static delayedCommandResults = [];
+  static beforeCommit = null;
+  static commitRenewals = [];
+  static lockExpiries = new Map();
+  static commitRenewalDeadlines = [];
+  static constructorOptions = [];
 
-  constructor() {
+  constructor(options = {}) {
+    FakeRedis.constructorOptions.push(options);
     if (FakeRedis.failOnConstruct) throw new Error("Redis client URL is invalid");
   }
 
@@ -28,6 +38,10 @@ class FakeRedis {
   async get(key) {
     FakeRedis.calls.push(["get", key]);
     if (FakeRedis.getFailure) throw FakeRedis.getFailure;
+    if (FakeRedis.getFailuresRemaining > 0) {
+      FakeRedis.getFailuresRemaining -= 1;
+      throw new Error("Redis observation unavailable");
+    }
     if (FakeRedis.failAllCommands || FakeRedis.failGets) throw FakeRedis.quotaError();
     return FakeRedis.values.get(key) ?? null;
   }
@@ -37,26 +51,192 @@ class FakeRedis {
     if (FakeRedis.failAllCommands) throw FakeRedis.quotaError();
     if (options.nx && FakeRedis.values.has(key)) return null;
     FakeRedis.values.set(key, value);
+    if (Number.isFinite(options.px)) FakeRedis.lockExpiries.set(key, Date.now() + Number(options.px));
     return "OK";
   }
 
   async eval(script, keys, args) {
-    FakeRedis.calls.push(["eval", keys]);
+    const scriptKind = script.includes("commit_outcome")
+      ? "commit-reconcile"
+      : script.includes("commit_mutation")
+      ? "commit"
+      : script.includes("current_state")
+      ? "fence"
+      : script.includes("PEXPIRE")
+        ? "renew"
+        : script.includes("current_revision")
+          ? args.length >= 6 ? "rollback" : "commit"
+          : "release";
+    FakeRedis.calls.push(["eval", keys, scriptKind]);
     if (FakeRedis.failAllCommands) throw FakeRedis.quotaError();
-    if (script.includes("current_revision")) {
-      const [lockKey, stateKey, revisionKey] = keys;
-      const [token, expectedRevision, stateJson, nextRevision] = args;
+    if (script.includes("commit_outcome")) {
+      if (FakeRedis.getFailuresRemaining > 0) {
+        FakeRedis.getFailuresRemaining = 0;
+        throw new Error("Redis reconciliation unavailable");
+      }
+      const [lockKey, stateKey, revisionKey, legacyKey] = keys;
+      const [token, previousRevision, previousStateJson, previousStateExisted, previousRevisionExisted, nextRevision, nextStateJson, , previousLegacyJson, previousLegacyExisted, legacyCheck] = args;
+      if (FakeRedis.values.get(lockKey) !== token) return -1;
+      const currentState = FakeRedis.values.get(stateKey);
+      const currentRevision = FakeRedis.values.get(revisionKey);
+      if (currentState === nextStateJson && Number(currentRevision) === Number(nextRevision)) return 1;
+      const previousStateMatches = previousStateExisted === "1"
+        ? currentState === previousStateJson
+        : currentState === undefined;
+      const previousRevisionMatches = previousRevisionExisted === "1"
+        ? Number(currentRevision) === Number(previousRevision)
+        : currentRevision === undefined;
+      const currentLegacy = FakeRedis.values.get(legacyKey);
+      const previousLegacyMatches = legacyCheck !== "1"
+        || (previousLegacyExisted === "1" ? currentLegacy === previousLegacyJson : currentLegacy === undefined);
+      if (previousStateMatches && previousRevisionMatches && previousLegacyMatches) {
+        FakeRedis.values.delete(lockKey);
+        FakeRedis.lockExpiries.delete(lockKey);
+        return 0;
+      }
+      return -2;
+    }
+    if (script.includes("current_state") && !script.includes("commit_mutation")) {
+      const [lockKey, stateKey, revisionKey, legacyKey] = keys;
+      const [token, expectedRevision, stateJson, , stateExisted = "1", revisionExisted = "1", legacyJson = "", legacyExisted = "0", legacyCheck = "0"] = args;
       if (FakeRedis.values.get(lockKey) !== token) return -1;
       const currentRevision = FakeRedis.values.get(revisionKey);
-      if (currentRevision !== undefined && Number(currentRevision) !== Number(expectedRevision)) return -2;
-      FakeRedis.values.set(stateKey, stateJson);
-      FakeRedis.values.set(revisionKey, nextRevision);
+      const revisionMatches = revisionExisted === "1"
+        ? currentRevision !== undefined && Number(currentRevision) === Number(expectedRevision)
+        : currentRevision === undefined;
+      if (!revisionMatches) return -2;
+      const currentState = FakeRedis.values.get(stateKey);
+      const stateMatches = stateExisted === "1" ? currentState === stateJson : currentState === undefined;
+      if (!stateMatches) return -3;
+      if (legacyCheck === "1") {
+        const currentLegacy = FakeRedis.values.get(legacyKey);
+        const legacyMatches = legacyExisted === "1" ? currentLegacy === legacyJson : currentLegacy === undefined;
+        if (!legacyMatches) return -4;
+      }
+      return Number(expectedRevision);
+    }
+    if (script.includes("PEXPIRE") && !script.includes("commit_mutation")) {
+      const [lockKey] = keys;
+      const [token, ttlMs] = args;
+      if (FakeRedis.values.get(lockKey) !== token) return 0;
+      FakeRedis.lockExpiries.set(lockKey, Date.now() + Number(ttlMs));
+      return 1;
+    }
+    if (script.includes("current_revision") || script.includes("commit_mutation")) {
+      const [lockKey, stateKey, revisionKey, legacyKey] = keys;
+      const isCommit = script.includes("commit_mutation");
+      const isRollback = !isCommit && args.length >= 6;
+      const [token, expectedRevision] = args;
+      const previousStateJson = isCommit ? args[2] : null;
+      const previousStateExisted = isCommit ? args[3] : null;
+      const previousRevisionExisted = isCommit ? args[4] : null;
+      const previousLegacyJson = isCommit ? args[5] : null;
+      const previousLegacyExisted = isCommit ? args[6] : null;
+      const legacyCheck = isCommit ? args[7] : null;
+      const stateJson = isCommit ? args[8] : args[2];
+      const nextRevision = isCommit ? args[9] : args[3];
+      const ttlMs = isCommit ? args[10] : null;
+      const stateExisted = isCommit ? null : args[4];
+      const revisionExisted = isCommit ? null : args[5];
+      const configuredFailure = isRollback ? FakeRedis.rollbackFailure : FakeRedis.commitFailure;
+      if (!isRollback && configuredFailure?.when === "delayed-after-observation") {
+        FakeRedis.commitFailure = null;
+        const delayed = new Promise((resolve) => {
+          setImmediate(() => {
+            if (FakeRedis.values.get(lockKey) !== token) {
+              resolve(-1);
+              return;
+            }
+            const delayedState = FakeRedis.values.get(stateKey);
+            const delayedRevision = FakeRedis.values.get(revisionKey);
+            const delayedStateMatches = previousStateExisted === "1"
+              ? delayedState === previousStateJson
+              : delayedState === undefined;
+            const delayedRevisionMatches = previousRevisionExisted === "1"
+              ? delayedRevision !== undefined && Number(delayedRevision) === Number(expectedRevision)
+              : delayedRevision === undefined;
+            if (!delayedStateMatches || !delayedRevisionMatches) {
+              resolve(-2);
+              return;
+            }
+            if (legacyCheck === "1") {
+              const delayedLegacy = FakeRedis.values.get(legacyKey);
+              const delayedLegacyMatches = previousLegacyExisted === "1"
+                ? delayedLegacy === previousLegacyJson
+                : delayedLegacy === undefined;
+              if (!delayedLegacyMatches) {
+                resolve(-3);
+                return;
+              }
+            }
+            FakeRedis.values.set(stateKey, stateJson);
+            FakeRedis.values.set(revisionKey, nextRevision);
+            if (legacyCheck === "1") FakeRedis.values.delete(legacyKey);
+            FakeRedis.commitRenewals.push(Number(ttlMs));
+            resolve(Number(nextRevision));
+          });
+        });
+        FakeRedis.delayedCommandResults.push(delayed);
+        throw new Error(configuredFailure.message ?? "Redis acknowledgement unavailable before delayed execution");
+      }
+      if (configuredFailure?.when === "before") {
+        if (isRollback) FakeRedis.rollbackFailure = null;
+        else FakeRedis.commitFailure = null;
+        if (configuredFailure.observationFailures) FakeRedis.getFailuresRemaining = configuredFailure.observationFailures;
+        throw new Error(configuredFailure.message ?? "Redis acknowledgement unavailable");
+      }
+      if (isCommit && FakeRedis.beforeCommit) {
+        const beforeCommit = FakeRedis.beforeCommit;
+        FakeRedis.beforeCommit = null;
+        await beforeCommit({ lockKey, stateKey, revisionKey, token, expectedRevision, nextState: stateJson, nextRevision });
+      }
+      const lockExpiry = FakeRedis.lockExpiries.get(lockKey);
+      if (lockExpiry !== undefined && lockExpiry <= Date.now()) {
+        FakeRedis.values.delete(lockKey);
+        FakeRedis.lockExpiries.delete(lockKey);
+      }
+      if (FakeRedis.values.get(lockKey) !== token) return -1;
+      const currentRevision = FakeRedis.values.get(revisionKey);
+      if (isCommit) {
+        const currentState = FakeRedis.values.get(stateKey);
+        const stateMatches = previousStateExisted === "1"
+          ? currentState === previousStateJson
+          : currentState === undefined;
+        const revisionMatches = previousRevisionExisted === "1"
+          ? currentRevision !== undefined && Number(currentRevision) === Number(expectedRevision)
+          : currentRevision === undefined;
+        const currentLegacy = FakeRedis.values.get(legacyKey);
+        const legacyMatches = legacyCheck !== "1"
+          || (previousLegacyExisted === "1" ? currentLegacy === previousLegacyJson : currentLegacy === undefined);
+        if (!stateMatches || !revisionMatches || !legacyMatches) return -2;
+      } else if (currentRevision !== undefined && Number(currentRevision) !== Number(expectedRevision)) return -2;
+      if (isRollback) {
+        if (stateExisted === "1") FakeRedis.values.set(stateKey, stateJson);
+        else FakeRedis.values.delete(stateKey);
+        if (revisionExisted === "1") FakeRedis.values.set(revisionKey, nextRevision);
+        else FakeRedis.values.delete(revisionKey);
+      } else {
+        FakeRedis.values.set(stateKey, stateJson);
+        FakeRedis.values.set(revisionKey, nextRevision);
+        if (legacyCheck === "1") FakeRedis.values.delete(legacyKey);
+        FakeRedis.commitRenewals.push(Number(ttlMs));
+        const renewalDeadline = Date.now() + Number(ttlMs);
+        FakeRedis.lockExpiries.set(lockKey, renewalDeadline);
+        FakeRedis.commitRenewalDeadlines.push(renewalDeadline);
+      }
+      if (configuredFailure?.when === "after") {
+        if (isRollback) FakeRedis.rollbackFailure = null;
+        else FakeRedis.commitFailure = null;
+        if (configuredFailure.observationFailures) FakeRedis.getFailuresRemaining = configuredFailure.observationFailures;
+        throw new Error(configuredFailure.message ?? "Redis acknowledgement unavailable");
+      }
       return Number(nextRevision);
     }
     const [lockKey] = keys;
     const [token] = args;
     if (FakeRedis.values.get(lockKey) === token) {
       FakeRedis.values.delete(lockKey);
+      FakeRedis.lockExpiries.delete(lockKey);
       return 1;
     }
     return 0;
@@ -67,10 +247,36 @@ class FakeBlob {
   static values = new Map();
   static calls = [];
   static failPuts = false;
+  static getFailure = null;
+  static getFailurePaths = new Set();
+  static failPutPaths = new Set();
+  static failPutPrefixes = new Set();
+  static throwAfterPutPaths = new Set();
+  static putDelayMsByPath = new Map();
+  static beforePutByPath = new Map();
+  static putCountsByPath = new Map();
+  static failPutOccurrenceByPath = new Map();
 
   static async put(pathname, body, options = {}) {
     FakeBlob.calls.push(["put", pathname, options]);
-    if (FakeBlob.failPuts) throw new Error("Blob snapshot write failed");
+    const occurrence = (FakeBlob.putCountsByPath.get(pathname) ?? 0) + 1;
+    FakeBlob.putCountsByPath.set(pathname, occurrence);
+    const beforePut = FakeBlob.beforePutByPath.get(pathname);
+    if (beforePut) {
+      FakeBlob.beforePutByPath.delete(pathname);
+      await beforePut(pathname, body, options);
+    }
+    const delayMs = FakeBlob.putDelayMsByPath.get(pathname) ?? 0;
+    if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    if (FakeBlob.failPuts
+      || FakeBlob.failPutPaths.has(pathname)
+      || FakeBlob.failPutOccurrenceByPath.get(pathname) === occurrence
+      || [...FakeBlob.failPutPrefixes].some((prefix) => pathname.startsWith(prefix))) {
+      throw new Error("Blob snapshot write failed");
+    }
+    const current = FakeBlob.values.get(pathname);
+    if (options.ifMatch && current?.etag !== options.ifMatch) throw new Error("Blob precondition failed");
+    if (options.allowOverwrite === false && current) throw new Error("Blob already exists");
     const text = typeof body === "string" ? body : Buffer.from(body).toString("utf8");
     const stored = {
       body: text,
@@ -79,6 +285,10 @@ class FakeBlob {
       etag: `etag-${FakeBlob.calls.length}`,
     };
     FakeBlob.values.set(pathname, stored);
+    if (FakeBlob.throwAfterPutPaths.has(pathname)) {
+      FakeBlob.throwAfterPutPaths.delete(pathname);
+      throw new Error("Blob acknowledgement unavailable");
+    }
     return {
       url: `https://blob.example.test/${pathname}`,
       downloadUrl: `https://blob.example.test/${pathname}?download=1`,
@@ -91,6 +301,8 @@ class FakeBlob {
 
   static async get(pathname, options = {}) {
     FakeBlob.calls.push(["get", pathname, options]);
+    if (FakeBlob.getFailure) throw FakeBlob.getFailure;
+    if (FakeBlob.getFailurePaths.has(pathname)) throw new Error("Blob marker read unavailable");
     const stored = FakeBlob.values.get(pathname);
     if (!stored) return null;
     const body = new TextEncoder().encode(stored.body);
@@ -177,10 +389,12 @@ function loadIndependentQueueModules() {
     delete require.cache[queuePath];
     delete require.cache[durablePath];
     const first = require(queuePath);
+    const firstDurable = require(durablePath);
     delete require.cache[queuePath];
     delete require.cache[durablePath];
     const second = require(queuePath);
-    return { first, second };
+    const secondDurable = require(durablePath);
+    return { first, second, firstDurable, secondDurable };
   } finally {
     Module._load = originalLoad;
     restoreExtension();
@@ -512,10 +726,1556 @@ function resetQueueTestState() {
   FakeRedis.failAllCommands = false;
   FakeRedis.failOnConstruct = false;
   FakeRedis.getFailure = null;
+  FakeRedis.getFailuresRemaining = 0;
+  FakeRedis.commitFailure = null;
+  FakeRedis.rollbackFailure = null;
+  FakeRedis.delayedCommandResults.length = 0;
+  FakeRedis.beforeCommit = null;
+  FakeRedis.commitRenewals.length = 0;
+  FakeRedis.lockExpiries.clear();
+  FakeRedis.commitRenewalDeadlines.length = 0;
+  FakeRedis.constructorOptions.length = 0;
   FakeBlob.values.clear();
   FakeBlob.calls.length = 0;
   FakeBlob.failPuts = false;
+  FakeBlob.getFailure = null;
+  FakeBlob.getFailurePaths.clear();
+  FakeBlob.failPutPaths.clear();
+  FakeBlob.failPutPrefixes.clear();
+  FakeBlob.throwAfterPutPaths.clear();
+  FakeBlob.putDelayMsByPath.clear();
+  FakeBlob.beforePutByPath.clear();
+  FakeBlob.putCountsByPath.clear();
+  FakeBlob.failPutOccurrenceByPath.clear();
 }
+
+function durableSnapshotFixture(state, savedAt = "2026-08-16T12:00:00.000Z") {
+  const checksum = createHash("sha256")
+    .update(`${state.revision}\n${JSON.stringify(state)}`)
+    .digest("hex");
+  const revisionPath = `barcode-radio-queue-state/v1/revisions/${String(state.revision).padStart(12, "0")}-${checksum}.json`;
+  const commitPath = `barcode-radio-queue-state/v1/commits/${String(state.revision).padStart(12, "0")}-${checksum}.json`;
+  return {
+    envelope: {
+      schemaVersion: 1,
+      savedAt,
+      revision: state.revision,
+      checksum,
+      state,
+    },
+    marker: {
+      schemaVersion: 1,
+      committedAt: savedAt,
+      revision: state.revision,
+      checksum,
+      revisionPath,
+    },
+    revisionPath,
+    commitPath,
+  };
+}
+
+function configureDurableQueueTest(endpoint = "https://durable-queue.example.test") {
+  process.env.UPSTASH_REDIS_REST_URL = endpoint;
+  process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
+  process.env.BLOB_READ_WRITE_TOKEN = "test-blob-token";
+  delete process.env.QUEUE_REDIS_REST_URL;
+  delete process.env.QUEUE_REDIS_REST_TOKEN;
+}
+
+async function assertQueueOperationError(operation, code, status, causePattern) {
+  try {
+    await operation();
+    assert.fail(`Expected queue operation to fail with ${code}`);
+  } catch (error) {
+    const details = `${error?.stack ?? error}\ncause: ${error?.cause?.stack ?? error?.cause ?? ""}`;
+    assert.equal(error?.code, code, details);
+    assert.equal(error?.status, status, details);
+    if (causePattern) assert.match(String(error?.cause?.message ?? error?.cause ?? ""), causePattern);
+  }
+}
+
+test("empty queue reads and close no-ops never synthesize or persist a session", async () => {
+  resetQueueTestState();
+  delete process.env.BLOB_READ_WRITE_TOKEN;
+  delete process.env.QUEUE_REDIS_REST_URL;
+  delete process.env.QUEUE_REDIS_REST_TOKEN;
+  process.env.UPSTASH_REDIS_REST_URL = "https://empty-read.example.test";
+  process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
+  const { first } = loadIndependentQueueModules();
+
+  for (let index = 0; index < 100; index += 1) {
+    const state = await first.getRadioQueueState();
+    assert.equal(state.session, undefined);
+    assert.deepEqual(state.sessions, []);
+    assert.equal(state.revision, 0);
+  }
+  const publicSnapshot = await first.getPublicQueueSnapshot();
+  assert.equal(publicSnapshot.session, null);
+  assert.deepEqual(publicSnapshot.queue, []);
+
+  const commitsBeforeClose = FakeRedis.calls.filter(([operation, , kind]) => operation === "eval" && kind === "commit").length;
+  const closed = await first.setQueueOpen(false);
+  assert.equal(closed.isOpen, false);
+  assert.equal(
+    FakeRedis.calls.filter(([operation, , kind]) => operation === "eval" && kind === "commit").length,
+    commitsBeforeClose,
+    "Close must take the lock but must not persist an empty synthetic session",
+  );
+  assert.equal(FakeRedis.values.has("radioQueue:v2:sessions"), false);
+  assert.equal(FakeBlob.calls.some(([operation]) => operation === "put"), false);
+  await assertQueueOperationError(() => first.setQueueOpen(true), "queue_session_not_found", 404);
+});
+
+test("clearing the last archived session leaves explicit empty state and Start creates the only new session", async () => {
+  resetQueueTestState();
+  delete process.env.BLOB_READ_WRITE_TOKEN;
+  delete process.env.QUEUE_REDIS_REST_URL;
+  delete process.env.QUEUE_REDIS_REST_TOKEN;
+  process.env.UPSTASH_REDIS_REST_URL = "https://clear-empty.example.test";
+  process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
+  const { first } = loadIndependentQueueModules();
+
+  const started = await first.startNewQueueSession({ requestId: "clear-empty-start-1", title: "Archive then clear" });
+  const archived = await first.archiveQueueSession(started.session.sessionId);
+  assert.equal(archived.session.status, "archived");
+  const afterArchive = await first.getRadioQueueState();
+  assert.equal(afterArchive.session.sessionId, started.session.sessionId);
+  assert.equal(afterArchive.session.status, "archived");
+  assert.equal(afterArchive.isCurrentSession, false);
+  assert.equal(afterArchive.sessions.length, 1);
+  assert.equal(afterArchive.sessions[0].status, "archived");
+  assert.equal(JSON.parse(FakeRedis.values.get("radioQueue:v2:sessions")).activeSessionId, started.session.sessionId);
+  const cleared = await first.clearArchivedQueueSessions();
+  assert.equal(cleared.session, undefined);
+  assert.deepEqual(cleared.sessions, []);
+  const storedEmpty = JSON.parse(FakeRedis.values.get("radioQueue:v2:sessions"));
+  assert.equal(storedEmpty.activeSessionId, null);
+  assert.deepEqual(storedEmpty.sessions, []);
+
+  const restarted = await first.startNewQueueSession({ requestId: "clear-empty-start-2", title: "Only real replacement" });
+  assert.equal(restarted.sessions.length, 1);
+  assert.equal(restarted.session.title, "Only real replacement");
+});
+
+test("a closed selected show blocks Start until it is archived", async () => {
+  resetQueueTestState();
+  delete process.env.BLOB_READ_WRITE_TOKEN;
+  delete process.env.QUEUE_REDIS_REST_URL;
+  delete process.env.QUEUE_REDIS_REST_TOKEN;
+  process.env.UPSTASH_REDIS_REST_URL = "https://archive-null.example.test";
+  process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
+  const { first } = loadIndependentQueueModules();
+
+  const older = await first.startNewQueueSession({ requestId: "older-closed-1", title: "Older closed show" });
+  assert.equal(older.sessionCreated, true);
+  await first.setQueueOpen(true);
+  await first.setQueueOpen(false);
+  const revisionBeforeRetry = (await first.getRadioQueueState()).revision;
+  const blocked = await first.startNewQueueSession({ requestId: "blocked-by-closed-1", title: "Must not replace closed show" });
+  assert.equal(blocked.session.sessionId, older.session.sessionId);
+  assert.equal(blocked.sessionCreated, false);
+  assert.equal(blocked.revision, revisionBeforeRetry);
+  assert.equal(blocked.sessions.length, 1);
+
+  await first.archiveQueueSession(older.session.sessionId);
+  const current = await first.startNewQueueSession({ requestId: "current-archive-1", title: "Current show" });
+  assert.notEqual(current.session.sessionId, older.session.sessionId);
+  assert.equal(current.sessionCreated, true);
+
+  await first.archiveQueueSession(current.session.sessionId);
+  const afterArchive = await first.getRadioQueueState();
+  assert.equal(afterArchive.session.sessionId, current.session.sessionId);
+  assert.equal(afterArchive.session.status, "archived");
+  assert.equal(afterArchive.isCurrentSession, false);
+  assert.equal(JSON.parse(FakeRedis.values.get("radioQueue:v2:sessions")).activeSessionId, current.session.sessionId);
+
+  await first.clearArchivedQueueSessions();
+  const afterClear = await first.getRadioQueueState();
+  assert.equal(afterClear.session, undefined);
+  assert.equal(afterClear.sessions.length, 0);
+  assert.equal(JSON.parse(FakeRedis.values.get("radioQueue:v2:sessions")).activeSessionId, null);
+
+  const replacement = await first.startNewQueueSession({ requestId: "replacement-after-archive-1", title: "Replacement show" });
+  assert.notEqual(replacement.session.sessionId, older.session.sessionId);
+  assert.notEqual(replacement.session.sessionId, current.session.sessionId);
+  assert.equal(replacement.session.title, "Replacement show");
+});
+
+test("Start fails visibly when a non-archived legacy session is not the selected slot owner", async () => {
+  resetQueueTestState();
+  delete process.env.BLOB_READ_WRITE_TOKEN;
+  delete process.env.QUEUE_REDIS_REST_URL;
+  delete process.env.QUEUE_REDIS_REST_TOKEN;
+  process.env.UPSTASH_REDIS_REST_URL = "https://legacy-nonselected-show.example.test";
+  process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
+  const { first, second } = loadIndependentQueueModules();
+
+  const archived = await first.startNewQueueSession({ requestId: "legacy-selected-1", title: "Selected archive" });
+  await first.archiveQueueSession(archived.session.sessionId);
+  const residue = await first.startNewQueueSession({ requestId: "legacy-residue-1", title: "Closed residue" });
+  const raw = JSON.parse(FakeRedis.values.get("radioQueue:v2:sessions"));
+  raw.activeSessionId = archived.session.sessionId;
+  FakeRedis.values.set("radioQueue:v2:sessions", JSON.stringify(raw));
+  const revisionBefore = raw.revision;
+
+  const visible = await second.getRadioQueueState();
+  assert.equal(visible.session.sessionId, archived.session.sessionId);
+  assert.equal(visible.session.status, "archived");
+  await assertQueueOperationError(
+    () => second.startNewQueueSession({ requestId: "legacy-new-1", title: "Must not silently adopt" }),
+    "queue_state_conflict",
+    409,
+  );
+  assert.equal(Number(FakeRedis.values.get("radioQueue:v2:sessions:mutation-revision")), revisionBefore);
+  assert.equal(JSON.parse(FakeRedis.values.get("radioQueue:v2:sessions")).activeSessionId, archived.session.sessionId);
+  assert.equal(raw.sessions.some((session) => session.sessionId === residue.session.sessionId), true);
+});
+
+test("production reads never fall through to shared Redis without a verified durable snapshot", async () => {
+  resetQueueTestState();
+  const previousNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = "production";
+  delete process.env.BLOB_READ_WRITE_TOKEN;
+  delete process.env.QUEUE_REDIS_REST_URL;
+  delete process.env.QUEUE_REDIS_REST_TOKEN;
+  process.env.UPSTASH_REDIS_REST_URL = "https://shared-only.upstash.io";
+  process.env.UPSTASH_REDIS_REST_TOKEN = "shared-token";
+  try {
+    const { first } = loadIndependentQueueModules();
+    await assertQueueOperationError(
+      () => first.getRadioQueueState(),
+      "queue_storage_configuration_invalid",
+      503,
+    );
+    assert.equal(FakeRedis.calls.length, 0, "unsafe shared Redis must not be read as QueueStore");
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+  }
+});
+
+test("production dedicated empty Redis plus empty Blob reports no session without writes", async () => {
+  resetQueueTestState();
+  const previousNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = "production";
+  delete process.env.BLOB_READ_WRITE_TOKEN;
+  process.env.QUEUE_REDIS_REST_URL = "https://dedicated-empty.upstash.io";
+  process.env.QUEUE_REDIS_REST_TOKEN = "dedicated-token";
+  delete process.env.UPSTASH_REDIS_REST_URL;
+  delete process.env.UPSTASH_REDIS_REST_TOKEN;
+  try {
+    const { first } = loadIndependentQueueModules();
+    const state = await first.getRadioQueueState();
+    assert.equal(state.session, undefined);
+    assert.deepEqual(state.sessions, []);
+    assert.equal(FakeRedis.calls.some(([operation]) => operation === "set" || operation === "eval"), false);
+    assert.equal(FakeBlob.calls.some(([operation]) => operation === "put"), false);
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+  }
+});
+
+test("a warm worker serves its last verified durable snapshot when Blob and Redis both fail", async () => {
+  resetQueueTestState();
+  process.env.BLOB_READ_WRITE_TOKEN = "warm-fallback-blob-token";
+  delete process.env.QUEUE_REDIS_REST_URL;
+  delete process.env.QUEUE_REDIS_REST_TOKEN;
+  process.env.UPSTASH_REDIS_REST_URL = "https://warm-fallback.example.test";
+  process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
+  try {
+    const { first } = loadIndependentQueueModules();
+    const started = await first.startNewQueueSession({ requestId: "warm-fallback-start", title: "Warm verified queue" });
+    const confirmed = await first.getRadioQueueState();
+    assert.equal(confirmed.session.sessionId, started.session.sessionId);
+
+    FakeBlob.getFailure = new Error("Blob read unavailable");
+    FakeRedis.failAllCommands = true;
+    const retained = await first.getRadioQueueState();
+    assert.equal(retained.revision, confirmed.revision);
+    assert.equal(retained.session.sessionId, confirmed.session.sessionId);
+    assert.equal(retained.session.title, "Warm verified queue");
+    assert.equal(retained.storageAuthority, "degraded_cached");
+    const publicSnapshot = await first.getPublicQueueSnapshot();
+    assert.equal(publicSnapshot.storageAuthority, "degraded_cached");
+    assert.equal(publicSnapshot.session.sessionId, confirmed.session.sessionId);
+  } finally {
+    FakeBlob.getFailure = null;
+    FakeRedis.failAllCommands = false;
+    delete process.env.BLOB_READ_WRITE_TOKEN;
+  }
+});
+
+test("warm Redis and durable caches are never reused across a Blob resource change", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://cache-scope.example.test");
+  process.env.BLOB_READ_WRITE_TOKEN = "cache-scope-token-a";
+  const { first } = loadIndependentQueueModules();
+
+  await first.startNewQueueSession({ requestId: "cache-scope-start-1", title: "Old resource state" });
+  await first.getRadioQueueState();
+  process.env.BLOB_READ_WRITE_TOKEN = "cache-scope-token-b";
+  FakeBlob.getFailure = new Error("New Blob resource unavailable");
+  FakeRedis.failAllCommands = true;
+
+  await assertQueueOperationError(
+    () => first.getRadioQueueState(),
+    "queue_state_unavailable",
+    503,
+  );
+});
+
+test("Redis-ahead state without an exact prepared snapshot blocks even an idempotent Start retry", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://redis-ahead.example.test");
+  const { first, second, secondDurable } = loadIndependentQueueModules();
+
+  const started = await first.startNewQueueSession({ requestId: "redis-ahead-start-1", title: "Committed show" });
+  const committedRevision = started.revision;
+  const redisAhead = JSON.parse(FakeRedis.values.get("radioQueue:v2:sessions"));
+  redisAhead.revision = committedRevision + 1;
+  redisAhead.sessions[0].description = "Unverified Redis-only mutation";
+  FakeRedis.values.set("radioQueue:v2:sessions", JSON.stringify(redisAhead));
+  FakeRedis.values.set("radioQueue:v2:sessions:mutation-revision", committedRevision + 1);
+
+  await assertQueueOperationError(
+    () => second.startNewQueueSession({ requestId: "redis-ahead-start-1", title: "Committed show" }),
+    "queue_state_conflict",
+    409,
+    /ahead of the durable snapshot/i,
+  );
+  const durable = await secondDurable.readQueueDurableSnapshot();
+  assert.equal(durable.revision, committedRevision);
+  assert.equal(durable.sessions[0].description, started.session.description);
+});
+
+test("an exact immutable prepared snapshot can finish an interrupted Redis-ahead commit", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://prepared-reconcile.example.test");
+  const { first, second, secondDurable } = loadIndependentQueueModules();
+
+  const started = await first.startNewQueueSession({ requestId: "prepared-reconcile-start-1", title: "Prepared recovery" });
+  const prepared = JSON.parse(FakeRedis.values.get("radioQueue:v2:sessions"));
+  prepared.revision = started.revision + 1;
+  prepared.sessions[0].description = "Exact prepared Redis state";
+  FakeRedis.values.set("radioQueue:v2:sessions", JSON.stringify(prepared));
+  FakeRedis.values.set("radioQueue:v2:sessions:mutation-revision", prepared.revision);
+  const fixture = durableSnapshotFixture(prepared);
+  await FakeBlob.put(fixture.revisionPath, JSON.stringify(fixture.envelope));
+  await FakeBlob.put("barcode-radio-queue-state/v1/current.json", JSON.stringify(fixture.envelope));
+  assert.equal(FakeBlob.values.has(fixture.commitPath), false);
+
+  const replayed = await second.startNewQueueSession({ requestId: "prepared-reconcile-start-1", title: "Prepared recovery" });
+  assert.equal(replayed.sessionCreated, false);
+  assert.equal(replayed.revision, prepared.revision);
+  assert.equal(FakeBlob.values.has(fixture.commitPath), true);
+  const durable = await secondDurable.readQueueDurableSnapshot();
+  assert.equal(durable.revision, prepared.revision);
+  assert.equal(durable.sessions[0].description, "Exact prepared Redis state");
+});
+
+test("exact prepared Redis-ahead recovery fences the captured raw representation", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://prepared-raw-reconcile.example.test");
+  const { first, second, secondDurable } = loadIndependentQueueModules();
+  const started = await first.startNewQueueSession({ requestId: "prepared-raw-1", title: "Raw prepared recovery" });
+  const prepared = JSON.parse(FakeRedis.values.get("radioQueue:v2:sessions"));
+  prepared.revision = started.revision + 1;
+  prepared.sessions[0].description = "Canonical prepared payload";
+  const rawWithIgnoredField = JSON.stringify({ rollingDeployIgnoredField: "preserve bytes", ...prepared }, null, 2);
+  FakeRedis.values.set("radioQueue:v2:sessions", rawWithIgnoredField);
+  FakeRedis.values.set("radioQueue:v2:sessions:mutation-revision", prepared.revision);
+  const fixture = durableSnapshotFixture(prepared);
+  await FakeBlob.put(fixture.revisionPath, JSON.stringify(fixture.envelope));
+
+  const replayed = await second.startNewQueueSession({ requestId: "prepared-raw-1", title: "Raw prepared recovery" });
+  assert.equal(replayed.sessionCreated, false);
+  assert.equal(replayed.revision, prepared.revision);
+  assert.equal((await secondDurable.readQueueDurableSnapshot()).revision, prepared.revision);
+});
+
+test("exact immutable-only reconciliation promotes a bounded current head even when manifest repair fails", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://prepared-current-head.example.test");
+  const { first, second } = loadIndependentQueueModules();
+  const started = await first.startNewQueueSession({ requestId: "prepared-current-head-1", title: "Prepared recovery" });
+  const prepared = JSON.parse(FakeRedis.values.get("radioQueue:v2:sessions"));
+  prepared.revision = started.revision + 1;
+  prepared.sessions[0].description = "Immutable-only Redis state";
+  FakeRedis.values.set("radioQueue:v2:sessions", JSON.stringify(prepared));
+  FakeRedis.values.set("radioQueue:v2:sessions:mutation-revision", prepared.revision);
+  const fixture = durableSnapshotFixture(prepared);
+  await FakeBlob.put(fixture.revisionPath, JSON.stringify(fixture.envelope));
+  FakeBlob.failPutPaths.add("barcode-radio-queue-state/v1/committed.json");
+
+  await assertQueueOperationError(
+    () => second.startNewQueueSession({ requestId: "prepared-current-head-1", title: "Prepared recovery" }),
+    "queue_state_ambiguous",
+    409,
+    /baseline manifest could not be confirmed/i,
+  );
+  assert.equal(FakeBlob.values.has(fixture.commitPath), true);
+  const current = JSON.parse(FakeBlob.values.get("barcode-radio-queue-state/v1/current.json").body);
+  assert.equal(current.revision, prepared.revision);
+
+  const { firstDurable: coldDurable } = loadIndependentQueueModules();
+  const recovered = await coldDurable.readQueueDurableSnapshot();
+  assert.equal(recovered.revision, prepared.revision);
+  assert.equal(recovered.sessions[0].description, "Immutable-only Redis state");
+});
+
+test("hot recovery fails closed when an unmarked current pointer hides the bounded committed head", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://orphan-snapshot.example.test");
+  const { first, secondDurable } = loadIndependentQueueModules();
+
+  const started = await first.startNewQueueSession({ requestId: "orphan-start-1", title: "Last committed show" });
+  const orphan = JSON.parse(FakeRedis.values.get("radioQueue:v2:sessions"));
+  orphan.revision = started.revision + 1;
+  orphan.sessions[0].title = "Must never be recovered";
+  const fixture = durableSnapshotFixture(orphan);
+  await FakeBlob.put(fixture.revisionPath, JSON.stringify(fixture.envelope));
+  await FakeBlob.put("barcode-radio-queue-state/v1/current.json", JSON.stringify(fixture.envelope));
+  FakeBlob.values.delete("barcode-radio-queue-state/v1/committed.json");
+
+  await assert.rejects(
+    () => secondDurable.readQueueDurableSnapshot(),
+    { name: "QueueDurableSnapshotIntegrityError" },
+  );
+  assert.equal(FakeBlob.values.has(fixture.commitPath), false);
+});
+
+test("a valid newer commit marker with a missing immutable fails closed instead of rolling back", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://missing-immutable.example.test");
+  const { first, secondDurable } = loadIndependentQueueModules();
+
+  const started = await first.startNewQueueSession({ requestId: "missing-immutable-start-1", title: "Committed revision" });
+  const missing = JSON.parse(FakeRedis.values.get("radioQueue:v2:sessions"));
+  missing.revision = started.revision + 1;
+  missing.sessions[0].title = "Marker without immutable";
+  const fixture = durableSnapshotFixture(missing);
+  await FakeBlob.put(fixture.commitPath, JSON.stringify(fixture.marker));
+
+  await assert.rejects(
+    () => secondDurable.auditQueueDurableSnapshots(),
+    { name: "QueueDurableSnapshotIntegrityError", message: /revision 2 cannot be verified/i },
+  );
+});
+
+test("a valid committed manifest with a corrupt immutable fails closed", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://corrupt-manifest-immutable.example.test");
+  const { first, secondDurable } = loadIndependentQueueModules();
+
+  const started = await first.startNewQueueSession({ requestId: "corrupt-manifest-start-1", title: "Committed revision" });
+  const corrupt = JSON.parse(FakeRedis.values.get("radioQueue:v2:sessions"));
+  corrupt.revision = started.revision + 1;
+  corrupt.sessions[0].title = "Corrupt manifest target";
+  const fixture = durableSnapshotFixture(corrupt);
+  await FakeBlob.put(fixture.revisionPath, "{corrupt");
+  await FakeBlob.put("barcode-radio-queue-state/v1/committed.json", JSON.stringify(fixture.marker));
+
+  await assert.rejects(
+    () => secondDurable.auditQueueDurableSnapshots(),
+    { name: "QueueDurableSnapshotIntegrityError", message: /revision 2 cannot be verified/i },
+  );
+});
+
+test("a manifest and immutable cannot become authority without the canonical commit marker", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://manifest-without-commit.example.test");
+  const { firstDurable } = loadIndependentQueueModules();
+  const state = { revision: 1, activeSessionId: null, sessions: [] };
+  const fixture = durableSnapshotFixture(state);
+  await FakeBlob.put("barcode-radio-queue-state/v1/protocol-v2.json", JSON.stringify({
+    schemaVersion: 2,
+    protocol: "committed-revision-markers",
+  }));
+  await FakeBlob.put(fixture.revisionPath, JSON.stringify(fixture.envelope));
+  await FakeBlob.put("barcode-radio-queue-state/v1/committed.json", JSON.stringify(fixture.marker));
+
+  await assert.rejects(
+    () => firstDurable.readQueueDurableSnapshot(),
+    { name: "QueueDurableSnapshotIntegrityError", message: /Canonical commit marker .* cannot be verified/i },
+  );
+});
+
+test("an exact checksummed current pointer can prove a committed marker whose immutable is unavailable", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://current-proof.example.test");
+  const { first, secondDurable } = loadIndependentQueueModules();
+
+  const started = await first.startNewQueueSession({ requestId: "current-proof-start-1", title: "Committed revision" });
+  const proved = JSON.parse(FakeRedis.values.get("radioQueue:v2:sessions"));
+  proved.revision = started.revision + 1;
+  proved.sessions[0].title = "Exact current proof";
+  const fixture = durableSnapshotFixture(proved);
+  await FakeBlob.put("barcode-radio-queue-state/v1/current.json", JSON.stringify(fixture.envelope));
+  await FakeBlob.put(fixture.commitPath, JSON.stringify(fixture.marker));
+
+  const recovered = await secondDurable.readQueueDurableSnapshot();
+  assert.equal(recovered.revision, fixture.envelope.revision);
+  assert.equal(recovered.sessions[0].title, "Exact current proof");
+});
+
+test("a canonical commit blob with invalid or filename-mismatched content fails closed", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://canonical-marker-integrity.example.test");
+  const { first, secondDurable } = loadIndependentQueueModules();
+
+  const started = await first.startNewQueueSession({ requestId: "canonical-marker-start-1", title: "Committed revision" });
+  const next = JSON.parse(FakeRedis.values.get("radioQueue:v2:sessions"));
+  next.revision = started.revision + 1;
+  const nextFixture = durableSnapshotFixture(next);
+  const originalCurrent = JSON.parse(FakeBlob.values.get("barcode-radio-queue-state/v1/current.json").body);
+  const originalFixture = durableSnapshotFixture(originalCurrent.state, originalCurrent.savedAt);
+  await FakeBlob.put(nextFixture.commitPath, JSON.stringify(originalFixture.marker));
+
+  await assert.rejects(
+    () => secondDurable.auditQueueDurableSnapshots(),
+    { name: "QueueDurableSnapshotIntegrityError", message: /marker .* cannot be verified/i },
+  );
+});
+
+test("an unreadable listed canonical commit marker fails closed", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://unreadable-marker.example.test");
+  const { first, secondDurable } = loadIndependentQueueModules();
+  await first.startNewQueueSession({ requestId: "unreadable-marker-start-1", title: "Committed revision" });
+  const markerPath = [...FakeBlob.values.keys()].find((pathname) => (
+    pathname.startsWith("barcode-radio-queue-state/v1/commits/")
+  ));
+  assert.ok(markerPath);
+  FakeBlob.getFailurePaths.add(markerPath);
+
+  await assert.rejects(
+    () => secondDurable.auditQueueDurableSnapshots(),
+    { name: "QueueDurableSnapshotIntegrityError", message: /marker .* cannot be read/i },
+  );
+});
+
+test("noncanonical copied marker junk cannot influence numeric committed revision selection", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://numeric-marker-selection.example.test");
+  const { first, secondDurable } = loadIndependentQueueModules();
+
+  const started = await first.startNewQueueSession({ requestId: "numeric-marker-start-1", title: "Revision one" });
+  const revisionTwo = JSON.parse(FakeRedis.values.get("radioQueue:v2:sessions"));
+  revisionTwo.revision = started.revision + 1;
+  revisionTwo.sessions[0].title = "Numeric revision two";
+  const revisionTwoFixture = durableSnapshotFixture(revisionTwo);
+  await FakeBlob.put(revisionTwoFixture.revisionPath, JSON.stringify(revisionTwoFixture.envelope));
+  await FakeBlob.put(revisionTwoFixture.commitPath, JSON.stringify(revisionTwoFixture.marker));
+  const oldManifest = JSON.parse(FakeBlob.values.get("barcode-radio-queue-state/v1/committed.json").body);
+  await FakeBlob.put("barcode-radio-queue-state/v1/commits/zzzz-copied-marker.json", JSON.stringify(oldManifest));
+
+  const recovered = await secondDurable.auditQueueDurableSnapshots();
+  assert.equal(recovered.revision, revisionTwo.revision);
+  assert.equal(recovered.sessions[0].title, "Numeric revision two");
+});
+
+test("hot durable reads use a bounded Blob operation count independent of marker history", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://bounded-hot-read.example.test");
+  const { first, secondDurable } = loadIndependentQueueModules();
+  const started = await first.startNewQueueSession({ requestId: "bounded-read-start-1", title: "Bounded head" });
+
+  FakeBlob.calls.length = 0;
+  const initial = await secondDurable.readQueueDurableSnapshot();
+  const initialOperations = FakeBlob.calls.map(([operation]) => operation);
+  assert.equal(initial.revision, started.revision);
+  assert.equal(initialOperations.includes("list"), false);
+
+  const base = JSON.parse(FakeRedis.values.get("radioQueue:v2:sessions"));
+  for (let revision = 10; revision < 110; revision += 1) {
+    const historical = structuredClone(base);
+    historical.revision = revision;
+    historical.sessions[0].title = `Unheaded history ${revision}`;
+    const fixture = durableSnapshotFixture(historical);
+    await FakeBlob.put(fixture.revisionPath, JSON.stringify(fixture.envelope));
+    await FakeBlob.put(fixture.commitPath, JSON.stringify(fixture.marker));
+  }
+  FakeBlob.calls.length = 0;
+  const afterHistory = await secondDurable.readQueueDurableSnapshot();
+  const afterOperations = FakeBlob.calls.map(([operation]) => operation);
+  assert.equal(afterHistory.revision, started.revision, "hot reads follow bounded committed heads, not lifetime history");
+  assert.deepEqual(afterOperations, initialOperations);
+  assert.equal(afterOperations.includes("list"), false);
+});
+
+test("a present but invalid protocol marker cannot reactivate an uncommitted current pointer", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://invalid-protocol.example.test");
+  const { first, second, secondDurable } = loadIndependentQueueModules();
+
+  await first.startNewQueueSession({ requestId: "invalid-protocol-start-1", title: "Committed revision" });
+  const ambiguous = JSON.parse(FakeRedis.values.get("radioQueue:v2:sessions"));
+  ambiguous.revision += 1;
+  ambiguous.sessions[0].title = "Uncommitted pointer";
+  const fixture = durableSnapshotFixture(ambiguous);
+  await FakeBlob.put("barcode-radio-queue-state/v1/current.json", JSON.stringify(fixture.envelope));
+  await FakeBlob.put("barcode-radio-queue-state/v1/protocol-v2.json", "{corrupt");
+
+  await assert.rejects(
+    () => secondDurable.readQueueDurableSnapshot(),
+    { name: "QueueDurableSnapshotIntegrityError", message: /protocol marker is invalid/i },
+  );
+  await assertQueueOperationError(
+    () => second.getRadioQueueState(),
+    "queue_state_conflict",
+    409,
+    /protocol marker is invalid/i,
+  );
+});
+
+test("protocol v2 with only an uncommitted current pointer fails closed on fresh reads", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://v2-no-authority.example.test");
+  const { first, firstDurable } = loadIndependentQueueModules();
+  const uncommitted = { revision: 1, activeSessionId: null, sessions: [] };
+  const fixture = durableSnapshotFixture(uncommitted);
+  await FakeBlob.put("barcode-radio-queue-state/v1/protocol-v2.json", JSON.stringify({
+    schemaVersion: 2,
+    protocol: "committed-revision-markers",
+  }));
+  await FakeBlob.put("barcode-radio-queue-state/v1/current.json", JSON.stringify(fixture.envelope));
+
+  await assert.rejects(
+    () => firstDurable.readQueueDurableSnapshot(),
+    { name: "QueueDurableSnapshotIntegrityError", message: /No committed durable queue snapshot/i },
+  );
+  await assertQueueOperationError(
+    () => first.getRadioQueueState(),
+    "queue_state_conflict",
+    409,
+    /No committed durable queue snapshot/i,
+  );
+});
+
+test("legacy reads stay read-only and continue following current until a fenced mutation migrates", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://legacy-stale-marker.example.test");
+  const { firstDurable } = loadIndependentQueueModules();
+  const legacyOne = { revision: 1, activeSessionId: null, sessions: [] };
+  const firstFixture = durableSnapshotFixture(legacyOne);
+  await FakeBlob.put("barcode-radio-queue-state/v1/current.json", JSON.stringify(firstFixture.envelope));
+  assert.equal((await firstDurable.readQueueDurableSnapshot()).revision, 1);
+  assert.equal(FakeBlob.values.has(firstFixture.commitPath), false, "ordinary reads must not seed commit artifacts");
+  assert.equal(FakeBlob.values.has("barcode-radio-queue-state/v1/protocol-v2.json"), false);
+
+  const legacyTwo = { revision: 2, activeSessionId: null, sessions: [] };
+  const secondFixture = durableSnapshotFixture(legacyTwo);
+  await FakeBlob.put("barcode-radio-queue-state/v1/current.json", JSON.stringify(secondFixture.envelope));
+  assert.equal((await firstDurable.readQueueDurableSnapshot()).revision, 2);
+  assert.equal(FakeBlob.calls.some(([operation]) => operation === "put"), true, "fixture writes are recorded");
+  assert.equal(FakeBlob.values.has(firstFixture.commitPath), false);
+  assert.equal(FakeBlob.values.has(secondFixture.commitPath), false);
+});
+
+test("legacy Redis normalization is deterministic and a successful v2 commit retires the exact legacy key", async () => {
+  resetQueueTestState();
+  delete process.env.BLOB_READ_WRITE_TOKEN;
+  delete process.env.QUEUE_REDIS_REST_URL;
+  delete process.env.QUEUE_REDIS_REST_TOKEN;
+  process.env.UPSTASH_REDIS_REST_URL = "https://legacy-deterministic.example.test";
+  process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
+  const rawLegacy = JSON.stringify({
+    isOpen: true,
+    queue: [legacyEntry(1, { id: "legacy-deterministic-track" })],
+    completed: [],
+    removed: [],
+    spotlight: [],
+  });
+  FakeRedis.values.set("radioQueue:v1:state", rawLegacy);
+  const { first, second } = loadIndependentQueueModules();
+
+  const firstRead = await first.getRadioQueueState();
+  const secondRead = await second.getRadioQueueState();
+  assert.equal(firstRead.session.sessionId, secondRead.session.sessionId);
+  assert.equal(firstRead.session.createdAt, secondRead.session.createdAt);
+
+  await first.setQueueOpen(false);
+  assert.equal(FakeRedis.values.has("radioQueue:v1:state"), false);
+  assert.equal(FakeRedis.values.has("radioQueue:v2:sessions"), true);
+  assert.equal(Number(FakeRedis.values.get("radioQueue:v2:sessions:mutation-revision")), 1);
+});
+
+test("a legacy-only pending crash is abandoned deterministically and the exact retry commits once", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://legacy-pending-retry.example.test");
+  const rawLegacy = JSON.stringify({
+    isOpen: true,
+    queue: [legacyEntry(2, { id: "legacy-pending-track" })],
+    completed: [],
+    removed: [],
+    spotlight: [],
+  });
+  FakeRedis.values.set("radioQueue:v1:state", rawLegacy);
+  FakeRedis.commitFailure = {
+    when: "before",
+    observationFailures: 2,
+    message: "legacy commit acknowledgement unavailable",
+  };
+  const { first, second } = loadIndependentQueueModules();
+
+  await assertQueueOperationError(
+    () => first.setQueueOpen(false),
+    "queue_state_ambiguous",
+    409,
+    /Redis commit outcome is unavailable/i,
+  );
+  assert.equal(FakeRedis.values.get("radioQueue:v1:state"), rawLegacy);
+  assert.equal(FakeRedis.values.has("radioQueue:v2:sessions"), false);
+  assert.equal(JSON.parse(FakeBlob.values.get("barcode-radio-queue-state/v1/pending.json").body).status, "pending");
+
+  const retried = await second.setQueueOpen(false);
+  assert.equal(retried.isOpen, false);
+  assert.equal(FakeRedis.values.has("radioQueue:v1:state"), false);
+  assert.equal(Number(FakeRedis.values.get("radioQueue:v2:sessions:mutation-revision")), 1);
+  assert.equal(JSON.parse(FakeBlob.values.get("barcode-radio-queue-state/v1/pending.json").body).status, "resolved");
+});
+
+test("a concurrent legacy rewrite after durable prepare is never overwritten by the v2 commit", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://legacy-concurrent-write.example.test");
+  const originalLegacy = JSON.stringify({
+    isOpen: true,
+    queue: [legacyEntry(3, { id: "legacy-original-track" })],
+    completed: [],
+  });
+  const newerLegacy = JSON.stringify({
+    isOpen: true,
+    queue: [legacyEntry(4, { id: "legacy-newer-track" })],
+    completed: [],
+  });
+  FakeRedis.values.set("radioQueue:v1:state", originalLegacy);
+  FakeRedis.beforeCommit = async () => {
+    FakeRedis.values.set("radioQueue:v1:state", newerLegacy);
+  };
+  const { first } = loadIndependentQueueModules();
+
+  await assertQueueOperationError(() => first.setQueueOpen(false), "queue_state_conflict", 409);
+  assert.equal(FakeRedis.values.get("radioQueue:v1:state"), newerLegacy);
+  assert.equal(FakeRedis.values.has("radioQueue:v2:sessions"), false);
+  assert.equal(JSON.parse(FakeBlob.values.get("barcode-radio-queue-state/v1/pending.json").body).status, "pending");
+});
+
+test("losing the Redis fence during protocol migration cannot produce a clean stale durable read", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://migration-fence-loss.example.test");
+  const originalLegacy = JSON.stringify({
+    isOpen: true,
+    queue: [legacyEntry(5, { id: "migration-original-track" })],
+    completed: [],
+  });
+  const newerLegacy = JSON.stringify({
+    isOpen: true,
+    queue: [legacyEntry(6, { id: "migration-newer-track" })],
+    completed: [],
+  });
+  FakeRedis.values.set("radioQueue:v1:state", originalLegacy);
+  FakeBlob.beforePutByPath.set("barcode-radio-queue-state/v1/protocol-v2.json", async () => {
+    FakeRedis.values.delete("radioQueue:v2:sessions:mutation-lock");
+    FakeRedis.values.set("radioQueue:v1:state", newerLegacy);
+  });
+  const { first } = loadIndependentQueueModules();
+
+  await assertQueueOperationError(
+    () => first.setQueueOpen(false),
+    "queue_storage_unavailable",
+    503,
+    /fencing lease could not be confirmed/i,
+  );
+  assert.equal(FakeRedis.values.get("radioQueue:v1:state"), newerLegacy);
+  assert.equal(FakeRedis.values.has("radioQueue:v2:sessions"), false);
+  assert.equal(FakeBlob.values.has("barcode-radio-queue-state/v1/protocol-v2.json"), true);
+  assert.equal(JSON.parse(FakeBlob.values.get("barcode-radio-queue-state/v1/pending.json").body).status, "pending");
+  const { first: coldWorker } = loadIndependentQueueModules();
+  await assertQueueOperationError(() => coldWorker.getRadioQueueState(), "queue_state_conflict", 409);
+});
+
+test("a legacy rewrite during baseline manifest seeding remains visibly pending before protocol enable", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://migration-manifest-fence-loss.example.test");
+  const originalLegacy = JSON.stringify({
+    isOpen: true,
+    queue: [legacyEntry(7, { id: "manifest-original-track" })],
+    completed: [],
+  });
+  const newerLegacy = JSON.stringify({
+    isOpen: true,
+    queue: [legacyEntry(8, { id: "manifest-newer-track" })],
+    completed: [],
+  });
+  FakeRedis.values.set("radioQueue:v1:state", originalLegacy);
+  FakeBlob.beforePutByPath.set("barcode-radio-queue-state/v1/committed.json", () => {
+    FakeRedis.values.delete("radioQueue:v2:sessions:mutation-lock");
+    FakeRedis.values.set("radioQueue:v1:state", newerLegacy);
+  });
+  const { first } = loadIndependentQueueModules();
+
+  await assertQueueOperationError(
+    () => first.setQueueOpen(false),
+    "queue_storage_unavailable",
+    503,
+    /fencing lease could not be confirmed/i,
+  );
+  assert.equal(FakeRedis.values.get("radioQueue:v1:state"), newerLegacy);
+  assert.equal(FakeBlob.values.has("barcode-radio-queue-state/v1/protocol-v2.json"), false);
+  assert.equal(JSON.parse(FakeBlob.values.get("barcode-radio-queue-state/v1/pending.json").body).status, "pending");
+  const { first: coldWorker } = loadIndependentQueueModules();
+  await assertQueueOperationError(() => coldWorker.getRadioQueueState(), "queue_state_conflict", 409);
+});
+
+test("deleting the protocol marker cannot make an unmarked newer current look legacy", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://deleted-protocol.example.test");
+  const { first, secondDurable } = loadIndependentQueueModules();
+
+  const committed = await first.startNewQueueSession({ requestId: "deleted-protocol-start-1", title: "Committed revision" });
+  FakeBlob.values.delete("barcode-radio-queue-state/v1/protocol-v2.json");
+  const unmarked = JSON.parse(FakeRedis.values.get("radioQueue:v2:sessions"));
+  unmarked.revision = committed.revision + 1;
+  unmarked.sessions[0].title = "Unmarked prepared current";
+  const fixture = durableSnapshotFixture(unmarked);
+  await FakeBlob.put("barcode-radio-queue-state/v1/current.json", JSON.stringify(fixture.envelope));
+
+  await assert.rejects(
+    () => secondDurable.readQueueDurableSnapshot(),
+    { name: "QueueDurableSnapshotIntegrityError", message: /legacy current and committed queue snapshot artifacts do not match/i },
+  );
+});
+
+test("prepared reconciliation cannot enable protocol v2 when the legacy seed fails", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://legacy-seed-failure.example.test");
+  const { firstDurable } = loadIndependentQueueModules();
+  const legacy = { revision: 1, activeSessionId: null, sessions: [] };
+  const legacyFixture = durableSnapshotFixture(legacy);
+  await FakeBlob.put("barcode-radio-queue-state/v1/current.json", JSON.stringify(legacyFixture.envelope));
+  const prepared = { revision: 2, activeSessionId: null, sessions: [] };
+  const preparedFixture = durableSnapshotFixture(prepared);
+  await FakeBlob.put(preparedFixture.revisionPath, JSON.stringify(preparedFixture.envelope));
+  FakeBlob.failPutPaths.add(legacyFixture.commitPath);
+
+  await assert.rejects(() => firstDurable.commitPreparedQueueDurableSnapshotIfExact(prepared));
+  assert.equal(FakeBlob.values.has("barcode-radio-queue-state/v1/protocol-v2.json"), false);
+  assert.equal(JSON.parse(FakeBlob.values.get("barcode-radio-queue-state/v1/pending.json").body).status, "pending");
+  await assert.rejects(
+    () => firstDurable.readQueueDurableSnapshot(),
+    { name: "QueueDurableSnapshotIntegrityError", message: /pending commit resolution/i },
+  );
+  FakeBlob.failPutPaths.delete(legacyFixture.commitPath);
+  assert.equal(await firstDurable.commitPreparedQueueDurableSnapshotIfExact(prepared), true);
+  assert.equal((await firstDurable.readQueueDurableSnapshot()).revision, 2);
+});
+
+test("a failed first immutable prepare leaves protocol disabled and Start can retry from unchanged Redis", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://first-prepare-retry.example.test");
+  const { first, firstDurable } = loadIndependentQueueModules();
+  FakeBlob.failPutPrefixes.add("barcode-radio-queue-state/v1/revisions/000000000001-");
+
+  await assertQueueOperationError(
+    () => first.startNewQueueSession({ requestId: "first-prepare-retry-1", title: "Retryable first show" }),
+    "queue_storage_unavailable",
+    503,
+    /prepare could not be confirmed/i,
+  );
+  assert.equal(FakeRedis.values.has("radioQueue:v2:sessions"), false);
+  assert.equal(FakeRedis.values.has("radioQueue:v2:sessions:mutation-revision"), false);
+  assert.equal(await firstDurable.readQueueDurableSnapshot(), null);
+  assert.equal(FakeBlob.values.has("barcode-radio-queue-state/v1/protocol-v2.json"), false);
+  assert.equal(FakeBlob.values.has("barcode-radio-queue-state/v1/pending.json"), false);
+
+  FakeBlob.failPutPrefixes.clear();
+  const retried = await first.startNewQueueSession({ requestId: "first-prepare-retry-1", title: "Retryable first show" });
+  assert.equal(retried.sessionCreated, true);
+  assert.equal(retried.sessions.length, 1);
+  const committed = await firstDurable.readQueueDurableSnapshot();
+  assert.equal(committed.revision, retried.revision);
+  assert.equal(committed.sessions.length, 1);
+  assert.equal(committed.sessions[0].startRequestId, "first-prepare-retry-1");
+});
+
+test("a protocol PUT failure after baseline seeding remains recoverable and retryable", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://baseline-protocol-retry.example.test");
+  const { first, firstDurable } = loadIndependentQueueModules();
+  FakeBlob.failPutPaths.add("barcode-radio-queue-state/v1/protocol-v2.json");
+
+  await assertQueueOperationError(
+    () => first.startNewQueueSession({ requestId: "baseline-protocol-retry-1", title: "Retry after protocol failure" }),
+    "queue_storage_unavailable",
+    503,
+    /protocol could not be confirmed/i,
+  );
+  assert.equal(FakeRedis.values.has("radioQueue:v2:sessions"), false);
+  assert.equal(FakeBlob.values.has("barcode-radio-queue-state/v1/protocol-v2.json"), false);
+  await assert.rejects(
+    () => firstDurable.readQueueDurableSnapshot(),
+    { name: "QueueDurableSnapshotIntegrityError", message: /pending commit resolution/i },
+  );
+
+  FakeBlob.failPutPaths.delete("barcode-radio-queue-state/v1/protocol-v2.json");
+  const retried = await first.startNewQueueSession({
+    requestId: "baseline-protocol-retry-1",
+    title: "Retry after protocol failure",
+  });
+  assert.equal(retried.sessionCreated, true);
+  assert.equal(retried.sessions.length, 1);
+  assert.equal((await firstDurable.readQueueDurableSnapshot()).revision, retried.revision);
+});
+
+test("baseline manifest failure cannot enable protocol v2 or brick a later retry", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://baseline-manifest-retry.example.test");
+  const { first, firstDurable } = loadIndependentQueueModules();
+  FakeBlob.failPutPaths.add("barcode-radio-queue-state/v1/committed.json");
+
+  await assertQueueOperationError(
+    () => first.startNewQueueSession({ requestId: "baseline-manifest-retry-1", title: "Retry after head failure" }),
+    "queue_storage_unavailable",
+    503,
+    /baseline manifest could not be confirmed/i,
+  );
+  assert.equal(FakeRedis.values.has("radioQueue:v2:sessions"), false);
+  assert.equal(FakeBlob.values.has("barcode-radio-queue-state/v1/protocol-v2.json"), false);
+  await assert.rejects(
+    () => firstDurable.readQueueDurableSnapshot(),
+    { name: "QueueDurableSnapshotIntegrityError", message: /pending commit resolution/i },
+  );
+
+  FakeBlob.failPutPaths.delete("barcode-radio-queue-state/v1/committed.json");
+  const retried = await first.startNewQueueSession({
+    requestId: "baseline-manifest-retry-1",
+    title: "Retry after head failure",
+  });
+  assert.equal(retried.sessionCreated, true);
+  assert.equal((await firstDurable.readQueueDurableSnapshot()).revision, retried.revision);
+});
+
+test("the exported durable persist API refuses brand-new protocol initialization without a baseline", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://required-baseline.example.test");
+  const { firstDurable } = loadIndependentQueueModules();
+
+  await assert.rejects(
+    () => firstDurable.persistQueueDurableSnapshot({ revision: 1, activeSessionId: null, sessions: [] }),
+    { name: "QueueDurableSnapshotWriteError", message: /baseline is required/i },
+  );
+  assert.equal(FakeBlob.calls.some(([operation]) => operation === "put"), false);
+});
+
+test("append-only committed markers defeat regressed mutable Blob pointers", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://pointer-regression.example.test");
+  const { first, secondDurable } = loadIndependentQueueModules();
+
+  const started = await first.startNewQueueSession({ requestId: "pointer-regression-start-1", title: "Revision one" });
+  const revisionTwo = JSON.parse(FakeRedis.values.get("radioQueue:v2:sessions"));
+  revisionTwo.revision = started.revision + 1;
+  revisionTwo.sessions[0].title = "Newest committed revision";
+  const fixture = durableSnapshotFixture(revisionTwo);
+  await FakeBlob.put(fixture.revisionPath, JSON.stringify(fixture.envelope));
+  await FakeBlob.put(fixture.commitPath, JSON.stringify(fixture.marker));
+  // current.json and committed.json intentionally remain at revision one.
+
+  const recovered = await secondDurable.auditQueueDurableSnapshots();
+  assert.equal(recovered.revision, revisionTwo.revision);
+  assert.equal(recovered.sessions[0].title, "Newest committed revision");
+});
+
+test("conditional pointer promotion cannot overwrite a concurrently newer current.json", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://pointer-cas.example.test");
+  FakeBlob.beforePutByPath.set("barcode-radio-queue-state/v1/current.json", async (_pathname, body) => {
+    const proposed = JSON.parse(typeof body === "string" ? body : Buffer.from(body).toString("utf8"));
+    const newerState = structuredClone(proposed.state);
+    newerState.revision = proposed.revision + 1;
+    newerState.sessions[0].title = "Concurrent newer pointer";
+    const newer = durableSnapshotFixture(newerState);
+    await FakeBlob.put("barcode-radio-queue-state/v1/current.json", JSON.stringify(newer.envelope));
+  });
+  const { first } = loadIndependentQueueModules();
+
+  await assertQueueOperationError(
+    () => first.startNewQueueSession({ requestId: "pointer-cas-start-1", title: "Stale pointer writer" }),
+    "queue_state_ambiguous",
+    409,
+    /current pointer promotion could not be confirmed/i,
+  );
+  const current = JSON.parse(FakeBlob.values.get("barcode-radio-queue-state/v1/current.json").body);
+  assert.equal(current.revision, 2);
+  assert.equal(current.state.sessions[0].title, "Concurrent newer pointer");
+  assert.equal(
+    [...FakeBlob.values.keys()].some((pathname) => (
+      pathname.startsWith("barcode-radio-queue-state/v1/commits/")
+      && !pathname.includes("/000000000000-")
+    )),
+    false,
+  );
+});
+
+test("a lost Redis commit acknowledgement is reconciled only after exact state and fence verification", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://commit-ack.example.test");
+  FakeRedis.commitFailure = { when: "after", message: "Redis commit acknowledgement lost" };
+  const { first, firstDurable } = loadIndependentQueueModules();
+
+  const started = await first.startNewQueueSession({ requestId: "commit-ack-start-1", title: "Confirmed after ACK loss" });
+  assert.equal(started.sessionCreated, true);
+  assert.equal(Number(FakeRedis.values.get("radioQueue:v2:sessions:mutation-revision")), started.revision);
+  const durable = await firstDurable.readQueueDurableSnapshot();
+  assert.equal(durable.revision, started.revision);
+  assert.equal(durable.sessions[0].sessionId, started.session.sessionId);
+});
+
+test("a delayed Redis commit cannot land after an exact refused outcome is reported", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://commit-delayed.example.test");
+  FakeRedis.commitFailure = {
+    when: "delayed-after-observation",
+    message: "Redis transport failed before delayed execution",
+  };
+  const { first, firstDurable } = loadIndependentQueueModules();
+
+  await assertQueueOperationError(
+    () => first.startNewQueueSession({ requestId: "commit-delayed-start-1", title: "Must stay refused" }),
+    "queue_storage_unavailable",
+    503,
+    /transport failed before delayed execution/i,
+  );
+  const delayedResults = await Promise.all(FakeRedis.delayedCommandResults);
+  assert.deepEqual(delayedResults, [-1], "revoking the exact prior-state lock must fence the delayed EVAL");
+  assert.equal(FakeRedis.values.has("radioQueue:v2:sessions"), false);
+  assert.equal(FakeRedis.values.has("radioQueue:v2:sessions:mutation-revision"), false);
+  assert.equal(JSON.parse(FakeBlob.values.get("barcode-radio-queue-state/v1/pending.json").body).status, "resolved");
+  const durable = await firstDurable.readQueueDurableSnapshot();
+  assert.equal(durable.revision, 0);
+  assert.deepEqual(durable.sessions, []);
+});
+
+test("Redis commit refuses a same-revision raw state change that occurs after durable prepare", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://commit-exact-prior.example.test");
+  const { first } = loadIndependentQueueModules();
+  await first.startNewQueueSession({ requestId: "commit-exact-prior-1", title: "Exact prior state" });
+  let replacementRaw = "";
+  FakeRedis.beforeCommit = async ({ stateKey }) => {
+    const parsed = JSON.parse(FakeRedis.values.get(stateKey));
+    replacementRaw = JSON.stringify({ rollingDeployRepresentation: true, ...parsed });
+    FakeRedis.values.set(stateKey, replacementRaw);
+  };
+
+  await assertQueueOperationError(
+    () => first.setQueueOpen(true),
+    "queue_state_conflict",
+    409,
+  );
+  assert.equal(FakeRedis.values.get("radioQueue:v2:sessions"), replacementRaw);
+  assert.equal(Number(FakeRedis.values.get("radioQueue:v2:sessions:mutation-revision")), 1);
+  assert.equal(
+    [...FakeBlob.values.keys()].some((pathname) => pathname.includes("/commits/000000000002-")),
+    false,
+  );
+  assert.equal(JSON.parse(FakeBlob.values.get("barcode-radio-queue-state/v1/pending.json").body).status, "pending");
+  const { first: coldWorker } = loadIndependentQueueModules();
+  await assertQueueOperationError(
+    () => coldWorker.getRadioQueueState(),
+    "queue_state_conflict",
+    409,
+  );
+});
+
+test("mutation Redis preserves exact noncanonical JSON bytes for unchanged Lua fencing", async () => {
+  resetQueueTestState();
+  delete process.env.BLOB_READ_WRITE_TOKEN;
+  delete process.env.QUEUE_REDIS_REST_URL;
+  delete process.env.QUEUE_REDIS_REST_TOKEN;
+  process.env.UPSTASH_REDIS_REST_URL = "https://raw-json-fence.example.test";
+  process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
+  const { first, second } = loadIndependentQueueModules();
+  await first.startNewQueueSession({ requestId: "raw-json-fence-1", title: "Raw JSON" });
+  const noncanonicalRaw = JSON.stringify(JSON.parse(FakeRedis.values.get("radioQueue:v2:sessions")), null, 2);
+  FakeRedis.values.set("radioQueue:v2:sessions", noncanonicalRaw);
+
+  const opened = await second.setQueueOpen(true);
+  assert.equal(opened.isOpen, true);
+  assert.equal(Number(FakeRedis.values.get("radioQueue:v2:sessions:mutation-revision")), 2);
+  assert.ok(
+    FakeRedis.constructorOptions.every((options) => options.automaticDeserialization === false),
+    "all authoritative Redis clients must return the exact stored bytes",
+  );
+});
+
+test("Redis commit atomically renews a near-expiry mutation lease", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://commit-renewal.example.test");
+  const { first } = loadIndependentQueueModules();
+  FakeRedis.beforeCommit = async ({ lockKey }) => {
+    FakeRedis.lockExpiries.set(lockKey, Date.now() + 100);
+  };
+
+  await first.startNewQueueSession({ requestId: "commit-renewal-1", title: "Renew at commit" });
+  assert.deepEqual(FakeRedis.commitRenewals, [15_000]);
+  assert.ok(
+    FakeRedis.commitRenewalDeadlines[0] - Date.now() > 14_000,
+    "the atomic commit must extend the same lock token before durable promotion",
+  );
+});
+
+test("a direct commit conflict preserves pending intent when Redis already contains the exact target", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://commit-target-race.example.test");
+  const { first } = loadIndependentQueueModules();
+  await first.startNewQueueSession({ requestId: "commit-target-race-1", title: "Target race" });
+  FakeRedis.beforeCommit = async ({ stateKey, revisionKey, nextState, nextRevision }) => {
+    FakeRedis.values.set(stateKey, nextState);
+    FakeRedis.values.set(revisionKey, nextRevision);
+  };
+
+  await assertQueueOperationError(
+    () => first.setQueueOpen(true),
+    "queue_state_conflict",
+    409,
+  );
+  assert.equal(Number(FakeRedis.values.get("radioQueue:v2:sessions:mutation-revision")), 2);
+  assert.equal(JSON.parse(FakeBlob.values.get("barcode-radio-queue-state/v1/pending.json").body).status, "pending");
+  const { first: coldWorker } = loadIndependentQueueModules();
+  await assertQueueOperationError(() => coldWorker.getRadioQueueState(), "queue_state_conflict", 409);
+});
+
+test("a crash-equivalent refusal after durable prepare leaves only a harmless orphan and can retry", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://prepare-before-redis.example.test");
+  FakeRedis.commitFailure = { when: "before", message: "Redis commit refused after durable prepare" };
+  const { first, firstDurable } = loadIndependentQueueModules();
+
+  await assertQueueOperationError(
+    () => first.startNewQueueSession({ requestId: "prepare-before-redis-1", title: "Prepared before Redis" }),
+    "queue_storage_unavailable",
+    503,
+    /refused after durable prepare/i,
+  );
+  assert.equal(FakeRedis.values.has("radioQueue:v2:sessions"), false);
+  assert.equal(FakeRedis.values.has("radioQueue:v2:sessions:mutation-revision"), false);
+  assert.ok([...FakeBlob.values.keys()].some((pathname) => pathname.includes("/revisions/000000000001-")));
+  assert.equal([...FakeBlob.values.keys()].some((pathname) => pathname.includes("/commits/000000000001-")), false);
+  assert.equal((await firstDurable.readQueueDurableSnapshot()).revision, 0);
+
+  const retried = await first.startNewQueueSession({ requestId: "prepare-before-redis-1", title: "Prepared before Redis" });
+  assert.equal(retried.sessionCreated, true);
+  assert.equal(retried.sessions.length, 1);
+});
+
+test("a Redis commit followed by pre-current failure is exactly recoverable on retry", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://redis-before-current.example.test");
+  FakeBlob.failPutPaths.add("barcode-radio-queue-state/v1/current.json");
+  const { first, second, secondDurable } = loadIndependentQueueModules();
+
+  await assertQueueOperationError(
+    () => first.startNewQueueSession({ requestId: "redis-before-current-1", title: "Recover exact commit" }),
+    "queue_state_ambiguous",
+    409,
+    /current pointer promotion could not be confirmed/i,
+  );
+  assert.equal(Number(FakeRedis.values.get("radioQueue:v2:sessions:mutation-revision")), 1);
+  assert.ok([...FakeBlob.values.keys()].some((pathname) => pathname.includes("/revisions/000000000001-")));
+  assert.equal([...FakeBlob.values.keys()].some((pathname) => pathname.includes("/commits/000000000001-")), false);
+  const { first: coldReadWorker } = loadIndependentQueueModules();
+  await assertQueueOperationError(() => coldReadWorker.getRadioQueueState(), "queue_state_conflict", 409);
+
+  FakeBlob.failPutPaths.delete("barcode-radio-queue-state/v1/current.json");
+  const recovered = await second.startNewQueueSession({ requestId: "redis-before-current-1", title: "Recover exact commit" });
+  assert.equal(recovered.sessionCreated, false);
+  assert.equal(recovered.revision, 1);
+  assert.equal((await secondDurable.readQueueDurableSnapshot()).revision, 1);
+});
+
+test("a fully committed manifest remains readable if the final pending status flip is interrupted", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://pending-resolve-interrupted.example.test");
+  FakeBlob.failPutOccurrenceByPath.set("barcode-radio-queue-state/v1/pending.json", 2);
+  const { first, second } = loadIndependentQueueModules();
+
+  await assertQueueOperationError(
+    () => first.startNewQueueSession({ requestId: "pending-resolve-1", title: "Committed before resolve" }),
+    "queue_state_ambiguous",
+    409,
+    /pending intent resolution could not be confirmed/i,
+  );
+  const pending = JSON.parse(FakeBlob.values.get("barcode-radio-queue-state/v1/pending.json").body);
+  const manifest = JSON.parse(FakeBlob.values.get("barcode-radio-queue-state/v1/committed.json").body);
+  assert.equal(pending.status, "pending");
+  assert.equal(manifest.revision, 1);
+  assert.equal(manifest.checksum, pending.checksum);
+
+  const { first: coldWorker, firstDurable: coldDurable } = loadIndependentQueueModules();
+  assert.equal((await coldDurable.readQueueDurableSnapshot()).revision, 1);
+  const visible = await coldWorker.getRadioQueueState();
+  assert.equal(visible.revision, 1);
+  assert.equal(visible.session.title, "Committed before resolve");
+
+  await second.setQueueOpen(true);
+  assert.equal(JSON.parse(FakeBlob.values.get("barcode-radio-queue-state/v1/pending.json").body).status, "resolved");
+});
+
+test("a current plus canonical marker stays readable before manifest repair and protects the prior head on succession", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://bounded-head-succession.example.test");
+  FakeBlob.failPutOccurrenceByPath.set("barcode-radio-queue-state/v1/committed.json", 2);
+  const { first, second } = loadIndependentQueueModules();
+
+  await assertQueueOperationError(
+    () => first.startNewQueueSession({ requestId: "bounded-head-1", title: "Committed marker head" }),
+    "queue_state_ambiguous",
+    409,
+    /baseline manifest could not be confirmed/i,
+  );
+  const firstPending = JSON.parse(FakeBlob.values.get("barcode-radio-queue-state/v1/pending.json").body);
+  const firstManifest = JSON.parse(FakeBlob.values.get("barcode-radio-queue-state/v1/committed.json").body);
+  assert.equal(firstPending.status, "pending");
+  assert.equal(firstManifest.revision, 0);
+  const { firstDurable: coldDurable } = loadIndependentQueueModules();
+  assert.equal((await coldDurable.readQueueDurableSnapshot()).revision, 1);
+
+  FakeBlob.beforePutByPath.set("barcode-radio-queue-state/v1/current.json", () => {
+    FakeRedis.values.delete("radioQueue:v2:sessions:mutation-lock");
+  });
+  await assertQueueOperationError(
+    () => second.setQueueOpen(true),
+    "queue_state_ambiguous",
+    409,
+    /fencing lease could not be confirmed/i,
+  );
+  const repairedManifest = JSON.parse(FakeBlob.values.get("barcode-radio-queue-state/v1/committed.json").body);
+  assert.equal(repairedManifest.revision, 1, "the committed N head must be repaired before current is overwritten by N+1");
+  const { first: coldWorker } = loadIndependentQueueModules();
+  await assertQueueOperationError(() => coldWorker.getRadioQueueState(), "queue_state_conflict", 409);
+});
+
+test("an unobservable Redis commit acknowledgement loss is recoverable only from its exact prepared immutable", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://commit-ambiguous.example.test");
+  FakeRedis.commitFailure = {
+    when: "after",
+    observationFailures: 2,
+    message: "Redis commit acknowledgement lost",
+  };
+  const { first, second, secondDurable } = loadIndependentQueueModules();
+
+  await assertQueueOperationError(
+    () => first.startNewQueueSession({ requestId: "commit-ambiguous-start-1", title: "Ambiguous show" }),
+    "queue_state_ambiguous",
+    409,
+    /Redis commit outcome is unavailable/i,
+  );
+  assert.equal(Number(FakeRedis.values.get("radioQueue:v2:sessions:mutation-revision")), 1);
+  assert.equal(FakeBlob.values.has("barcode-radio-queue-state/v1/current.json"), false);
+  const recovered = await second.startNewQueueSession({
+    requestId: "commit-ambiguous-start-1",
+    title: "Ambiguous show",
+  });
+  assert.equal(recovered.sessionCreated, false);
+  assert.equal(recovered.revision, 1);
+  assert.equal((await secondDurable.readQueueDurableSnapshot()).revision, 1);
+});
+
+test("a cold worker exposes an atomic Redis commit as degraded while Blob authority is unavailable", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://commit-cold-outage.example.test");
+  FakeRedis.commitFailure = {
+    when: "after",
+    observationFailures: 2,
+    message: "Redis commit acknowledgement lost",
+  };
+  const { first } = loadIndependentQueueModules();
+  await assertQueueOperationError(
+    () => first.startNewQueueSession({ requestId: "commit-cold-outage-1", title: "Unconfirmed Redis" }),
+    "queue_state_ambiguous",
+    409,
+    /Redis commit outcome is unavailable/i,
+  );
+  FakeBlob.getFailure = new Error("Blob authority unavailable");
+  const { first: coldWorker } = loadIndependentQueueModules();
+  const degraded = await coldWorker.getRadioQueueState();
+  assert.equal(degraded.storageAuthority, "degraded_redis_only");
+  assert.equal(degraded.revision, 1);
+  assert.equal(degraded.session.title, "Unconfirmed Redis");
+});
+
+test("a durable prepare failure is refused before any Redis commit or rollback", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://rollback-ack.example.test");
+  FakeBlob.failPutPaths.add("barcode-radio-queue-state/v1/protocol-v2.json");
+  const { first } = loadIndependentQueueModules();
+
+  await assertQueueOperationError(
+    () => first.startNewQueueSession({ requestId: "rollback-ack-start-1", title: "Must roll back" }),
+    "queue_storage_unavailable",
+    503,
+    /Durable queue snapshot protocol could not be confirmed/i,
+  );
+  assert.equal(FakeRedis.values.has("radioQueue:v2:sessions"), false);
+  assert.equal(FakeRedis.values.has("radioQueue:v2:sessions:mutation-revision"), false);
+  assert.equal(FakeRedis.calls.some(([, , kind]) => kind === "commit" || kind === "rollback"), false);
+});
+
+test("an immutable prepare failure cannot expose a Redis-only next revision", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://prepare-immutable-refusal.example.test");
+  FakeBlob.failPutPrefixes.add("barcode-radio-queue-state/v1/revisions/000000000001-");
+  const { first } = loadIndependentQueueModules();
+
+  await assertQueueOperationError(
+    () => first.startNewQueueSession({ requestId: "prepare-immutable-refusal-1", title: "Never Redis-only" }),
+    "queue_storage_unavailable",
+    503,
+    /prepare could not be confirmed/i,
+  );
+  assert.equal(FakeRedis.values.has("radioQueue:v2:sessions"), false);
+  assert.equal(FakeRedis.values.has("radioQueue:v2:sessions:mutation-revision"), false);
+  assert.equal(FakeRedis.calls.some(([, , kind]) => kind === "commit" || kind === "rollback"), false);
+});
+
+test("conflicting committed snapshots at one revision fail closed instead of falling back to Redis", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://durable-conflict.example.test");
+  const { first, secondDurable } = loadIndependentQueueModules();
+
+  await first.startNewQueueSession({ requestId: "durable-conflict-start-1", title: "Original committed state" });
+  const divergent = JSON.parse(FakeRedis.values.get("radioQueue:v2:sessions"));
+  divergent.sessions[0].title = "Conflicting committed state";
+  const conflict = durableSnapshotFixture(divergent);
+  await FakeBlob.put(conflict.revisionPath, JSON.stringify(conflict.envelope));
+  await FakeBlob.put(conflict.commitPath, JSON.stringify(conflict.marker));
+
+  await assert.rejects(
+    () => secondDurable.auditQueueDurableSnapshots(),
+    { name: "QueueDurableSnapshotIntegrityError", message: /Conflicting committed queue snapshots/i },
+  );
+});
+
+test("verified durable cache wins a same-revision Redis mismatch during provider failure", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://cache-tie.example.test");
+  const { first } = loadIndependentQueueModules();
+
+  const started = await first.startNewQueueSession({ requestId: "cache-tie-start-1", title: "Verified durable title" });
+  await first.getRadioQueueState();
+  const divergent = JSON.parse(FakeRedis.values.get("radioQueue:v2:sessions"));
+  divergent.sessions[0].title = "Rejected Redis title";
+  FakeRedis.values.set("radioQueue:v2:sessions", JSON.stringify(divergent));
+  FakeBlob.getFailure = new Error("Blob temporarily unavailable");
+
+  const fallback = await first.getRadioQueueState();
+  assert.equal(fallback.revision, started.revision);
+  assert.equal(fallback.session.title, "Verified durable title");
+});
+
+test("the mutation lease is renewed while a slow durable pointer write is in flight", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://slow-durable.example.test");
+  FakeBlob.putDelayMsByPath.set("barcode-radio-queue-state/v1/current.json", 5300);
+  const { first, firstDurable } = loadIndependentQueueModules();
+
+  const started = await first.startNewQueueSession({ requestId: "slow-durable-start-1", title: "Lease stays fenced" });
+  const renewals = FakeRedis.calls.filter(([operation, , kind]) => operation === "eval" && kind === "renew").length;
+  assert.ok(renewals >= 4, `expected a periodic renewal in addition to fence renewals, saw ${renewals}`);
+  const durable = await firstDurable.readQueueDurableSnapshot();
+  assert.equal(durable.revision, started.revision);
+});
+
+test("cleanup releases its distributed lease between Blob candidates", async () => {
+  resetQueueTestState();
+  delete process.env.BLOB_READ_WRITE_TOKEN;
+  delete process.env.QUEUE_REDIS_REST_URL;
+  delete process.env.QUEUE_REDIS_REST_TOKEN;
+  process.env.UPSTASH_REDIS_REST_URL = "https://cleanup-race.example.test";
+  process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
+  const { first } = loadIndependentQueueModules();
+  const firstUrl = "https://store.private.blob.vercel-storage.com/barcode-radio-queue/cleanup-one.mp3";
+  const secondUrl = "https://store.private.blob.vercel-storage.com/barcode-radio-queue/cleanup-two.mp3";
+
+  await first.startNewQueueSession({ requestId: "cleanup-race-old", title: "Archived upload" });
+  for (const [index, fileUrl] of [firstUrl, secondUrl].entries()) {
+    await first.addToQueue({
+      artist: `Archived Artist ${index}`,
+      title: `Archived Upload ${index}`,
+      link: fileUrl,
+      fileUrl,
+      fileName: `cleanup-${index}.mp3`,
+      fileSize: 100 + index,
+      mimeType: "audio/mpeg",
+      sourceType: "upload",
+      createdAt: "2025-01-01T00:00:00.000Z",
+    });
+  }
+  await first.archiveCurrentQueueSession();
+  const lockTokens = [];
+  const result = await first.cleanupExpiredQueueUploads({
+    now: new Date("2027-01-01T00:00:00.000Z"),
+    deleteBlob: async () => {
+      lockTokens.push(FakeRedis.values.get("radioQueue:v2:sessions:mutation-lock"));
+    },
+  });
+  assert.deepEqual(result, { scanned: 2, deleted: 2, skippedActive: 0, failed: 0 });
+  assert.equal(lockTokens.length, 2);
+  assert.ok(lockTokens.every(Boolean));
+  assert.notEqual(lockTokens[0], lockTokens[1], "each external delete must use a separately acquired lease");
+});
+
+test("cleanup performs no external delete while any non-archived show exists", async () => {
+  resetQueueTestState();
+  delete process.env.BLOB_READ_WRITE_TOKEN;
+  delete process.env.QUEUE_REDIS_REST_URL;
+  delete process.env.QUEUE_REDIS_REST_TOKEN;
+  process.env.UPSTASH_REDIS_REST_URL = "https://cleanup-active-show.example.test";
+  process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
+  const { first } = loadIndependentQueueModules();
+  const uploadUrl = "https://store.private.blob.vercel-storage.com/barcode-radio-queue/cleanup-active.mp3";
+  await first.startNewQueueSession({ requestId: "cleanup-active-old", title: "Archived upload" });
+  await first.addToQueue({
+    artist: "Archived Artist",
+    title: "Archived Upload",
+    link: uploadUrl,
+    fileUrl: uploadUrl,
+    fileName: "cleanup-active.mp3",
+    fileSize: 100,
+    mimeType: "audio/mpeg",
+    sourceType: "upload",
+    createdAt: "2025-01-01T00:00:00.000Z",
+  });
+  await first.archiveCurrentQueueSession();
+  await first.startNewQueueSession({ requestId: "cleanup-active-current", title: "Current show" });
+  let deleteCalls = 0;
+
+  const result = await first.cleanupExpiredQueueUploads({
+    now: new Date("2027-01-01T00:00:00.000Z"),
+    deleteBlob: async () => { deleteCalls += 1; },
+  });
+  assert.deepEqual(result, { scanned: 1, deleted: 0, skippedActive: 1, failed: 0 });
+  assert.equal(deleteCalls, 0);
+});
+
+test("cleanup persists a redacted provider failure without leaking signed data", async () => {
+  resetQueueTestState();
+  delete process.env.BLOB_READ_WRITE_TOKEN;
+  delete process.env.QUEUE_REDIS_REST_URL;
+  delete process.env.QUEUE_REDIS_REST_TOKEN;
+  process.env.UPSTASH_REDIS_REST_URL = "https://cleanup-redaction.example.test";
+  process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
+  const { first } = loadIndependentQueueModules();
+  const uploadUrl = "https://store.private.blob.vercel-storage.com/barcode-radio-queue/cleanup-redaction.mp3";
+  const started = await first.startNewQueueSession({ requestId: "cleanup-redaction-old", title: "Archived upload" });
+  const uploaded = await first.addToQueue({
+    artist: "Archived Artist",
+    title: "Archived Upload",
+    link: uploadUrl,
+    fileUrl: uploadUrl,
+    fileName: "cleanup-redaction.mp3",
+    fileSize: 100,
+    mimeType: "audio/mpeg",
+    sourceType: "upload",
+    createdAt: "2025-01-01T00:00:00.000Z",
+  });
+  await first.archiveCurrentQueueSession();
+
+  const result = await first.cleanupExpiredQueueUploads({
+    now: new Date("2027-01-01T00:00:00.000Z"),
+    deleteBlob: async () => {
+      throw new Error("signed=https://secret.example/?token=SUPER_SECRET request=req_sensitive");
+    },
+  });
+  assert.deepEqual(result, { scanned: 1, deleted: 0, skippedActive: 0, failed: 1 });
+  const archived = await first.getRadioQueueState(started.session.sessionId);
+  const entry = archived.queue.find((item) => item.id === uploaded.id);
+  assert.equal(entry.uploadedFileDeletionError, "Upload deletion failed.");
+  assert.doesNotMatch(JSON.stringify(entry), /SUPER_SECRET|req_sensitive|secret\.example/i);
+});
+
+test("a post-delete queue write failure propagates without a second mutation attempt", async () => {
+  resetQueueTestState();
+  delete process.env.BLOB_READ_WRITE_TOKEN;
+  delete process.env.QUEUE_REDIS_REST_URL;
+  delete process.env.QUEUE_REDIS_REST_TOKEN;
+  process.env.UPSTASH_REDIS_REST_URL = "https://cleanup-write-failure.example.test";
+  process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
+  const { first } = loadIndependentQueueModules();
+  const uploadUrl = "https://store.private.blob.vercel-storage.com/barcode-radio-queue/cleanup-write-failure.mp3";
+  await first.startNewQueueSession({ requestId: "cleanup-write-failure-old", title: "Archived upload" });
+  await first.addToQueue({
+    artist: "Archived Artist",
+    title: "Archived Upload",
+    link: uploadUrl,
+    fileUrl: uploadUrl,
+    fileName: "cleanup-write-failure.mp3",
+    fileSize: 100,
+    mimeType: "audio/mpeg",
+    sourceType: "upload",
+    createdAt: "2025-01-01T00:00:00.000Z",
+  });
+  await first.archiveCurrentQueueSession();
+  const commitCallsBefore = FakeRedis.calls.filter(([operation, , kind]) => operation === "eval" && kind === "commit").length;
+  FakeRedis.commitFailure = { when: "before", message: "cleanup status commit transport failed" };
+  let deleteCalls = 0;
+
+  await assertQueueOperationError(
+    () => first.cleanupExpiredQueueUploads({
+      now: new Date("2027-01-01T00:00:00.000Z"),
+      deleteBlob: async () => { deleteCalls += 1; },
+    }),
+    "queue_storage_unavailable",
+    503,
+    /cleanup status commit transport failed/i,
+  );
+  const commitCallsAfter = FakeRedis.calls.filter(([operation, , kind]) => operation === "eval" && kind === "commit").length;
+  assert.equal(deleteCalls, 1);
+  assert.equal(commitCallsAfter - commitCallsBefore, 1, "cleanup must not attempt a second state write after deletion");
+});
+
+test("a lost fence after pointer upload leaves an uncommitted orphan and returns ambiguous", async () => {
+  resetQueueTestState();
+  configureDurableQueueTest("https://lost-fence.example.test");
+  FakeBlob.beforePutByPath.set("barcode-radio-queue-state/v1/current.json", () => {
+    FakeRedis.values.delete("radioQueue:v2:sessions:mutation-lock");
+  });
+  const { first, second, firstDurable } = loadIndependentQueueModules();
+
+  await assertQueueOperationError(
+    () => first.startNewQueueSession({ requestId: "lost-fence-start-1", title: "Fence interrupted" }),
+    "queue_state_ambiguous",
+    409,
+    /fencing lease could not be confirmed/i,
+  );
+  assert.equal(Number(FakeRedis.values.get("radioQueue:v2:sessions:mutation-revision")), 1);
+  assert.equal(
+    [...FakeBlob.values.keys()].some((pathname) => (
+      pathname.startsWith("barcode-radio-queue-state/v1/commits/")
+      && !pathname.includes("/000000000000-")
+    )),
+    false,
+  );
+  await assert.rejects(
+    () => firstDurable.readQueueDurableSnapshot(),
+    { name: "QueueDurableSnapshotIntegrityError", message: /pending commit resolution|without a commit marker/i },
+  );
+  await assertQueueOperationError(
+    () => first.getRadioQueueState(),
+    "queue_state_conflict",
+    409,
+  );
+
+  const reconciled = await second.startNewQueueSession({ requestId: "lost-fence-start-1", title: "Fence interrupted" });
+  assert.equal(reconciled.sessionCreated, false);
+  assert.equal(reconciled.revision, 1);
+  const durable = await firstDurable.readQueueDurableSnapshot();
+  assert.equal(durable.revision, 1);
+});
 
 test("Redis fencing serializes independent queue workers without overfill, lost writes, or duplicate acceptance", async () => {
   FakeRedis.values.clear();
@@ -560,6 +2320,7 @@ test("Redis fencing serializes independent queue workers without overfill, lost 
   assert.equal(state.session.submissionClosureReason, "capacity");
 
   await second.setQueueOpen(false);
+  await second.archiveQueueSession(state.session.sessionId);
   await second.startNewQueueSession({
     title: "Redis atomic duplicate",
     queueCapacity: 44,
@@ -590,7 +2351,12 @@ test("Redis fencing serializes independent queue workers without overfill, lost 
   const unfencedState = JSON.parse(FakeRedis.values.get(stateKey));
   delete unfencedState.revision;
   FakeRedis.values.set(stateKey, JSON.stringify(unfencedState));
-  await assert.rejects(() => second.setQueueOpen(false), /revision is inconsistent/i);
+  await assertQueueOperationError(
+    () => second.setQueueOpen(false),
+    "queue_state_conflict",
+    409,
+    /revision is inconsistent/i,
+  );
 });
 
 test("read-only queue snapshots retain the last confirmed Redis state while quota errors still block mutations", async () => {
@@ -622,7 +2388,12 @@ test("read-only queue snapshots retain the last confirmed Redis state while quot
   const retained = await first.getRadioQueueState();
   assert.equal(retained.session.sessionId, confirmed.session.sessionId);
   assert.deepEqual(retained.queue.map((entry) => entry.id), confirmed.queue.map((entry) => entry.id));
-  await assert.rejects(() => first.setQueueOpen(false), /max requests limit exceeded/i);
+  await assertQueueOperationError(
+    () => first.setQueueOpen(false),
+    "queue_storage_unavailable",
+    503,
+    /max requests limit exceeded/i,
+  );
   FakeRedis.failGets = false;
   FakeRedis.failAllCommands = false;
 });
@@ -707,8 +2478,10 @@ test("a fresh worker preserves and displays the complete queue from private Blob
     assert.match(recoveryStatus.redis.failureDetail, /max requests limit exceeded/i);
 
     const snapshotBeforeBlockedMutation = FakeBlob.values.get(currentPath).body;
-    await assert.rejects(
+    await assertQueueOperationError(
       () => freshWorker.setQueueOpen(false),
+      "queue_storage_unavailable",
+      503,
       /max requests limit exceeded\. Limit: 500000/i,
     );
     assert.equal(FakeBlob.values.get(currentPath).body, snapshotBeforeBlockedMutation);
@@ -736,7 +2509,7 @@ test("a fresh worker preserves and displays the complete queue from private Blob
   }
 });
 
-test("a failed durable snapshot rolls the fenced Redis mutation back instead of creating an unprotected queue change", async () => {
+test("a failed durable preparation leaves Redis unchanged instead of creating an unprotected queue change", async () => {
   FakeRedis.values.clear();
   FakeRedis.calls.length = 0;
   FakeRedis.failGets = false;
@@ -752,17 +2525,18 @@ test("a failed durable snapshot rolls the fenced Redis mutation back instead of 
 
   try {
     const { first } = loadIndependentQueueModules();
-    await assert.rejects(
+    await assertQueueOperationError(
       () => first.startNewQueueSession({ title: "Must not commit without recovery copy" }),
-      /Blob snapshot write failed/,
+      "queue_storage_unavailable",
+      503,
+      /Durable queue snapshot (?:prepare|protocol) could not be confirmed/i,
     );
-    assert.equal(Number(FakeRedis.values.get("radioQueue:v2:sessions:mutation-revision")), 0);
-    const stored = JSON.parse(FakeRedis.values.get("radioQueue:v2:sessions"));
-    assert.equal(stored.revision, 0);
-    assert.notEqual(stored.sessions[0].title, "Must not commit without recovery copy");
-    assert.ok(
-      FakeRedis.calls.filter(([operation, keys]) => operation === "eval" && keys?.includes("radioQueue:v2:sessions:mutation-revision")).length >= 2,
-      "the fenced commit must be followed by a fenced rollback",
+    assert.equal(FakeRedis.values.has("radioQueue:v2:sessions:mutation-revision"), false);
+    assert.equal(FakeRedis.values.has("radioQueue:v2:sessions"), false);
+    assert.equal(
+      FakeRedis.calls.some(([operation, , kind]) => operation === "eval" && (kind === "commit" || kind === "rollback")),
+      false,
+      "durable preparation must finish before Redis COMMIT is attempted",
     );
   } finally {
     FakeBlob.failPuts = false;
@@ -805,8 +2579,10 @@ test("the reviewed restore dry-runs and copies a verified snapshot into an empty
     assert.equal(statusBefore.durable.revision, original.revision);
     assert.equal(statusBefore.redis.dedicated, true);
     assert.equal(statusBefore.redis.revision, 0);
-    await assert.rejects(
+    await assertQueueOperationError(
       () => recoveryWorker.setQueueOpen(false),
+      "queue_state_conflict",
+      409,
       /durable queue revision .* is ahead of Redis revision 0/i,
     );
     assert.equal(FakeRedis.values.has("radioQueue:v2:sessions"), false);
@@ -863,13 +2639,10 @@ test("the guarded v2 historical import preserves source evidence while normalizi
     process.env.QUEUE_REDIS_REST_TOKEN = "owned-queue-token";
     const { first: destinationWorker } = loadIndependentQueueModules();
 
-    await destinationWorker.getRadioQueueState();
-    const restored = await destinationWorker.restoreQueueFromDurableSnapshot({
-      dryRun: false,
-      confirmation: "RESTORE DURABLE QUEUE REVISION 0",
-    });
-    assert.equal(restored.restored, true);
-    assert.equal(restored.revision, 0);
+    const empty = await destinationWorker.getRadioQueueState();
+    assert.equal(empty.session, undefined);
+    assert.equal(empty.revision, 0);
+    assert.equal(FakeRedis.values.has("radioQueue:v2:sessions"), false);
 
     const dryRun = await destinationWorker.importHistoricalQueueSessions({ capture, dryRun: true });
     assert.equal(dryRun.dryRun, true);
@@ -908,7 +2681,7 @@ test("the guarded v2 historical import preserves source evidence while normalizi
       /confirmation must exactly match/i,
     );
     assert.equal(FakeRedis.values.get("radioQueue:v2:sessions"), redisBeforeWrongConfirmation);
-    assert.equal(Number(FakeRedis.values.get("radioQueue:v2:sessions:mutation-revision")), 0);
+    assert.equal(FakeRedis.values.has("radioQueue:v2:sessions:mutation-revision"), false);
 
     const imported = await destinationWorker.importHistoricalQueueSessions({
       capture,
@@ -1014,11 +2787,9 @@ test("historical v2 capture rejects stale schema and any weakened August 7 ident
     process.env.QUEUE_REDIS_REST_URL = "https://owned-queue-only.upstash.io";
     process.env.QUEUE_REDIS_REST_TOKEN = "owned-queue-token";
     const { first: destinationWorker } = loadIndependentQueueModules();
-    await destinationWorker.getRadioQueueState();
-    await destinationWorker.restoreQueueFromDurableSnapshot({
-      dryRun: false,
-      confirmation: "RESTORE DURABLE QUEUE REVISION 0",
-    });
+    const empty = await destinationWorker.getRadioQueueState();
+    assert.equal(empty.session, undefined);
+    assert.equal(FakeRedis.values.has("radioQueue:v2:sessions"), false);
     const redisBefore = FakeRedis.values.get("radioQueue:v2:sessions");
 
     const staleSchema = structuredClone(capture);
@@ -1148,7 +2919,7 @@ test("historical v2 capture rejects stale schema and any weakened August 7 ident
     );
 
     assert.equal(FakeRedis.values.get("radioQueue:v2:sessions"), redisBefore);
-    assert.equal(Number(FakeRedis.values.get("radioQueue:v2:sessions:mutation-revision")), 0);
+    assert.equal(FakeRedis.values.has("radioQueue:v2:sessions:mutation-revision"), false);
   } finally {
     resetQueueTestState();
     delete process.env.BLOB_READ_WRITE_TOKEN;
@@ -1176,11 +2947,9 @@ test("historical v2 source statuses closed and archived retain provenance while 
       process.env.QUEUE_REDIS_REST_URL = "https://owned-queue-only.upstash.io";
       process.env.QUEUE_REDIS_REST_TOKEN = "owned-queue-token";
       const { first: destinationWorker } = loadIndependentQueueModules();
-      await destinationWorker.getRadioQueueState();
-      await destinationWorker.restoreQueueFromDurableSnapshot({
-        dryRun: false,
-        confirmation: "RESTORE DURABLE QUEUE REVISION 0",
-      });
+      const empty = await destinationWorker.getRadioQueueState();
+      assert.equal(empty.session, undefined);
+      assert.equal(FakeRedis.values.has("radioQueue:v2:sessions"), false);
 
       const dryRun = await destinationWorker.importHistoricalQueueSessions({ capture, dryRun: true });
       const summary = dryRun.sessions.find((session) => session.showDate === "2026-08-14");
@@ -1227,25 +2996,25 @@ test("historical import refuses the shared BNL endpoint and rolls Redis back if 
     process.env.QUEUE_REDIS_REST_URL = "https://owned-queue-only.upstash.io";
     process.env.QUEUE_REDIS_REST_TOKEN = "owned-queue-token";
     const { first: destinationWorker } = loadIndependentQueueModules();
-    await destinationWorker.getRadioQueueState();
-    await destinationWorker.restoreQueueFromDurableSnapshot({
-      dryRun: false,
-      confirmation: "RESTORE DURABLE QUEUE REVISION 0",
-    });
+    const empty = await destinationWorker.getRadioQueueState();
+    assert.equal(empty.session, undefined);
+    assert.equal(FakeRedis.values.has("radioQueue:v2:sessions"), false);
     const dryRun = await destinationWorker.importHistoricalQueueSessions({ capture, dryRun: true });
     const redisBefore = FakeRedis.values.get("radioQueue:v2:sessions");
 
     FakeBlob.failPuts = true;
-    await assert.rejects(
+    await assertQueueOperationError(
       () => destinationWorker.importHistoricalQueueSessions({
         capture,
         dryRun: false,
         confirmation: dryRun.requiredConfirmation,
       }),
-      /Blob snapshot write failed/,
+      "queue_storage_unavailable",
+      503,
+      /Durable queue snapshot (?:prepare|protocol) could not be confirmed/i,
     );
     assert.equal(FakeRedis.values.get("radioQueue:v2:sessions"), redisBefore);
-    assert.equal(Number(FakeRedis.values.get("radioQueue:v2:sessions:mutation-revision")), 0);
+    assert.equal(FakeRedis.values.has("radioQueue:v2:sessions:mutation-revision"), false);
   } finally {
     resetQueueTestState();
     delete process.env.BLOB_READ_WRITE_TOKEN;

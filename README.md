@@ -21,7 +21,7 @@ Production: <https://www.barcode-network.com>
 
 The native queue exists and is tested, but native presentation remains quarantined unless `BARCODE_QUEUE_PRODUCTION_ENABLED` is exactly `true`. Until the owner approves the native cutover, operational Radio submission links and copy continue to point to Auxchord. When enabled, the server-side capability moves the Radio page, Footer, Terminal, and BNL public source context to the native `/queue` route; historical Auxchord records remain intact. Queue-derived BNL context has an additional session-level boundary: only a session explicitly marked `live_broadcast` can opt into `runtime_only`, `recap_approved`, or `public_copy_approved`. New rehearsals and legacy/unknown sessions remain private by default even when the native queue is publicly usable.
 
-Queue acceptance uses 44 show slots by default. A slot remains occupied when a real track moves from queued to Next In Line, loaded/Now Playing, or completed/played; removal frees it, while simulations and failed or rejected attempts never consume one. Queue writes share one serialized, revisioned Redis mutation boundary. Every successful mutation is copied to a private, checksummed Blob revision; public/admin polling reads that durable model without spending Redis commands. Redis quota failures therefore leave the last committed queue visible while mutations fail closed.
+Queue acceptance uses 44 show slots by default. A slot remains occupied when a real track moves from queued to Next In Line, loaded/Now Playing, or completed/played; removal frees it, while simulations and failed or rejected attempts never consume one. Queue writes share one serialized, revisioned Redis mutation boundary. Every ordinary successful mutation is copied to a private, checksummed Blob revision; healthy public/admin polling reads that durable model without spending Redis commands. Redis quota failures therefore leave the last committed queue visible while mutations fail closed. If Blob is unavailable or has not received an existing queue's first snapshot, the valid dedicated Redis state remains visible with an explicit degraded warning; ordinary changes stay blocked, while exact-ID End Broadcast remains available as one fenced Redis commit.
 
 `stream-engine/`, `discord-bot/`, and `_archive/` are historical references. They are not production services and do not define current queue contracts.
 
@@ -46,7 +46,7 @@ Do not commit secrets. Configure only the integrations needed for the surface be
 | --- | --- |
 | Admin access | `ADMIN_PASSWORD`, `JWT_SECRET` |
 | Shared Redis | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` |
-| Dedicated queue Redis | `QUEUE_REDIS_REST_URL`, `QUEUE_REDIS_REST_TOKEN` (recommended; falls back to shared Redis only during migration) |
+| Dedicated queue Redis | `QUEUE_REDIS_REST_URL`, `QUEUE_REDIS_REST_TOKEN` (required together in Production and must identify a different database from shared Redis) |
 | Uploads | `BLOB_READ_WRITE_TOKEN` |
 | Payments | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `NEXT_PUBLIC_SITE_URL` |
 | Queue operations | `QUEUE_API_KEY`, `CRON_SECRET`, `BARCODE_QUEUE_PRODUCTION_ENABLED` |

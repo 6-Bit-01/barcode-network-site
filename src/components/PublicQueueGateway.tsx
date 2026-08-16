@@ -4,11 +4,13 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { externalLinks } from "@/content";
+import { publicQueueResponseError, queuePublicSnapshotUsesDegradedCache, queuePublicViewState, type QueuePublicViewState } from "@/lib/queue-public-view-state";
+import { queuePollingRequestIsCurrent, queuePollingSnapshotMayApply } from "@/lib/queue-polling-safety";
 import { buildQueueTimingDisplay, queueTimingInputFromPublicSnapshot, type QueueTimingDisplaySummary } from "@/lib/queue-timing-display";
 import { formatRuntime, type QueuePublicSnapshot, type QueuePublicTrack } from "@/lib/queue-types";
 import { PUBLIC_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 
-type GatewayPhase = "syncing" | "archived" | "closed" | "open" | "liveOpen" | "liveClosed";
+type GatewayPhase = "syncing" | "unavailable" | "stale" | "empty" | "archived" | "closed" | "open" | "liveOpen" | "liveClosed";
 
 function stableHash(seed: string): number {
   let hash = 0;
@@ -37,7 +39,7 @@ function terminalReadouts(snapshot: QueuePublicSnapshot | null, counts: ReturnTy
   if (counts.wheel > 0) lines.push("Wheel Chosen: picked from the 10K tap wheel.");
   if (counts.completed > 0) lines.push(`${counts.completed} songs already played.`);
   if (pressure === "high") lines.push("Archive pressure rising.");
-  const flavorSeed = `${snapshot?.session.sessionId ?? "sync"}:${counts.total}:${pressure}`;
+  const flavorSeed = `${snapshot?.session?.sessionId ?? "sync"}:${counts.total}:${pressure}`;
   const flavor = ["BNL-01 receiver trace stabilized.", "Host band interference cleared.", "Corridor alignment corrected.", "Signal anomaly contained."];
   if (stableHash(flavorSeed) % 13 === 0) lines.push(stableVariant(flavorSeed, flavor));
   return lines.slice(0, 5);
@@ -45,6 +47,7 @@ function terminalReadouts(snapshot: QueuePublicSnapshot | null, counts: ReturnTy
 
 type NavigationVariant = { label: string; detail: string; mode: string; kind: "monitor" };
 const ENTRY_STORAGE_PREFIX = "barcode-queue-entered:";
+const DEGRADED_PUBLIC_QUEUE_MESSAGE = "Queue storage is degraded. Showing the available queue state without two-store confirmation; submissions are paused until storage is aligned.";
 
 function navigationVariant(snapshot: QueuePublicSnapshot | null, fallbackSeed: string): NavigationVariant {
   void fallbackSeed;
@@ -55,19 +58,23 @@ function navigationVariant(snapshot: QueuePublicSnapshot | null, fallbackSeed: s
 }
 
 function isBroadcastActive(snapshot: QueuePublicSnapshot | null): boolean {
-  if (!snapshot) return false;
+  if (!snapshot?.session) return false;
   return Boolean(snapshot.nowPlaying || snapshot.session.broadcastPhase === "broadcast_active" || snapshot.session.showStarted);
 }
 
-function phaseForSnapshot(snapshot: QueuePublicSnapshot | null): GatewayPhase {
-  if (!snapshot) return "syncing";
-  if (snapshot.session.status === "archived" || snapshot.session.broadcastPhase === "ended") return "archived";
+function phaseForSnapshot(snapshot: QueuePublicSnapshot | null, viewState: QueuePublicViewState): GatewayPhase {
+  if (viewState === "loading") return "syncing";
+  if (viewState === "unavailable" || viewState === "stale" || viewState === "empty" || viewState === "archived") return viewState;
+  if (!snapshot?.session) return "empty";
   if (isBroadcastActive(snapshot)) return snapshot.status.isOpen ? "liveOpen" : "liveClosed";
   return snapshot.status.isOpen ? "open" : "closed";
 }
 
 function phaseCopy(phase: GatewayPhase) {
   if (phase === "syncing") return { eyebrow: "SYNCING PUBLIC SIGNAL", title: "QUEUE TERMINAL HANDSHAKE", body: "Reading the current BARCODE Radio queue before opening the monitor.", tone: "text-muted", border: "border-border", glow: "shadow-[0_0_36px_rgba(255,255,255,0.06)]", gate: "SIGNAL SEARCH" };
+  if (phase === "unavailable") return { eyebrow: "QUEUE SIGNAL UNAVAILABLE", title: "LIVE STATE NOT CONFIRMED", body: "The queue service could not be reached. Do not treat this as an ended or empty broadcast.", tone: "text-danger", border: "border-danger/45", glow: "shadow-[0_0_44px_rgba(255,0,0,0.14)]", gate: "RETRYING SIGNAL" };
+  if (phase === "stale") return { eyebrow: "QUEUE SIGNAL STALE", title: "SHOWING LAST CONFIRMED STATE", body: "Live refresh failed. The queue below is preserved for reference but may have changed.", tone: "text-[#ffaa00]", border: "border-[#ffaa00]/50", glow: "shadow-[0_0_44px_rgba(255,170,0,0.14)]", gate: "STALE SNAPSHOT" };
+  if (phase === "empty") return { eyebrow: "NO ACTIVE QUEUE", title: "RECEIVER STANDBY", body: "The queue service is online, but no BARCODE Radio session currently exists.", tone: "text-muted", border: "border-border", glow: "shadow-[0_0_36px_rgba(255,255,255,0.06)]", gate: "NO SESSION" };
   if (phase === "archived") return { eyebrow: "BROADCAST ENDED", title: "SESSION ARCHIVED", body: "SUBMISSIONS CLOSED. No active BARCODE Radio session is currently accepting songs.", tone: "text-danger", border: "border-danger/35", glow: "shadow-[0_0_44px_rgba(255,0,0,0.12)]", gate: "ARCHIVE SEAL" };
   if (phase === "closed") return { eyebrow: "BARCODE RECEIVER ONLINE", title: "SUBMISSION GATE CLOSED", body: "The underground receiver is powered and standing by. Stand by for intake access.", tone: "text-cyan-200", border: "border-cyan-200/30", glow: "shadow-[0_0_46px_rgba(103,232,249,0.10)]", gate: "GATE SEALED" };
   if (phase === "open") return { eyebrow: "INTAKE CORRIDOR OPEN", title: "BARCODE NETWORK ACCEPTING SONGS", body: "Free queue submissions are open. Priority Signal is a paid skip after payment clears.", tone: "text-accent", border: "border-accent/50", glow: "shadow-[0_0_64px_rgba(255,0,0,0.20)]", gate: "INTAKE UNLOCKED" };
@@ -76,7 +83,7 @@ function phaseCopy(phase: GatewayPhase) {
 }
 
 function uniqueActiveTracks(snapshot: QueuePublicSnapshot | null): QueuePublicTrack[] {
-  if (!snapshot || snapshot.session.status === "archived" || snapshot.session.broadcastPhase === "ended") return [];
+  if (!snapshot?.session || snapshot.session.status === "archived" || snapshot.session.broadcastPhase === "ended") return [];
   const seen = new Set<string>();
   return [snapshot.nowPlaying, snapshot.upNext, ...snapshot.queue].filter((track): track is QueuePublicTrack => {
     if (!track || seen.has(track.id)) return false;
@@ -87,8 +94,8 @@ function uniqueActiveTracks(snapshot: QueuePublicSnapshot | null): QueuePublicTr
 
 function publicCounts(snapshot: QueuePublicSnapshot | null) {
   const activeTracks = uniqueActiveTracks(snapshot);
-  const completed = snapshot?.session.completedCount ?? snapshot?.completed.length ?? 0;
-  const removed = snapshot?.session.removedCount ?? 0;
+  const completed = snapshot?.session?.completedCount ?? snapshot?.completed.length ?? 0;
+  const removed = snapshot?.session?.removedCount ?? 0;
   return {
     active: activeTracks.length,
     remaining: activeTracks.length,
@@ -103,6 +110,8 @@ function publicCounts(snapshot: QueuePublicSnapshot | null) {
 
 export function PublicQueueGateway() {
   const [snapshot, setSnapshot] = useState<QueuePublicSnapshot | null>(null);
+  const [hasConfirmedSnapshot, setHasConfirmedSnapshot] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [portalState, setPortalState] = useState<"sealed" | "opening" | "open">("sealed");
   const [transitionPulse, setTransitionPulse] = useState<GatewayPhase | null>(null);
   const [pendingNavigation, setPendingNavigation] = useState<(NavigationVariant & { href: string }) | null>(null);
@@ -110,13 +119,46 @@ export function PublicQueueGateway() {
   const [mounted, setMounted] = useState(false);
   const phaseRef = useRef<GatewayPhase>("syncing");
   const wasOpen = useRef(false);
+  const latestSnapshotRef = useRef<QueuePublicSnapshot | null>(null);
+  const pollRequestSequenceRef = useRef(0);
+  const latestAppliedRevisionRef = useRef(-1);
 
   async function load() {
-    const res = await fetch("/api/queue", { cache: "no-store" });
-    if (res.ok) {
-      const next = await res.json() as QueuePublicSnapshot;
+    const requestSequence = ++pollRequestSequenceRef.current;
+    try {
+      const res = await fetch("/api/queue", { cache: "no-store" });
+      const payload = await res.json().catch(() => null);
+      if (!res.ok) {
+        if (!queuePollingRequestIsCurrent({ requestSequence, latestRequestSequence: pollRequestSequenceRef.current })) return;
+        setSyncError(publicQueueResponseError(payload, "The live queue could not be refreshed."));
+        return;
+      }
+      const next = payload as QueuePublicSnapshot;
+      if (!queuePollingSnapshotMayApply({
+        requestSequence,
+        latestRequestSequence: pollRequestSequenceRef.current,
+        responseRevision: next.revision,
+        latestAppliedRevision: latestAppliedRevisionRef.current,
+      })) {
+        if (queuePollingRequestIsCurrent({ requestSequence, latestRequestSequence: pollRequestSequenceRef.current })
+          && next.revision < latestAppliedRevisionRef.current) {
+          setSyncError("The queue service returned an older snapshot. Showing the last confirmed state while the live signal is rechecked.");
+        }
+        return;
+      }
+      if (queuePublicSnapshotUsesDegradedCache(next)) {
+        const previous = latestSnapshotRef.current;
+        if (!previous || next.revision > previous.revision) {
+          latestSnapshotRef.current = next;
+          latestAppliedRevisionRef.current = next.revision;
+          setSnapshot(next);
+        }
+        setHasConfirmedSnapshot(true);
+        setSyncError(DEGRADED_PUBLIC_QUEUE_MESSAGE);
+        return;
+      }
       const nextOpen = Boolean(next.status?.isOpen);
-      const nextPhase = phaseForSnapshot(next);
+      const nextPhase = phaseForSnapshot(next, queuePublicViewState(next, true, null));
       if (phaseRef.current !== nextPhase) {
         phaseRef.current = nextPhase;
         setTransitionPulse(nextPhase);
@@ -129,7 +171,14 @@ export function PublicQueueGateway() {
         setPortalState("sealed");
       }
       wasOpen.current = nextOpen;
+      latestSnapshotRef.current = next;
+      latestAppliedRevisionRef.current = next.revision;
       setSnapshot(next);
+      setHasConfirmedSnapshot(true);
+      setSyncError(null);
+    } catch {
+      if (!queuePollingRequestIsCurrent({ requestSequence, latestRequestSequence: pollRequestSequenceRef.current })) return;
+      setSyncError("The live queue could not be reached. Retrying automatically.");
     }
   }
 
@@ -159,7 +208,8 @@ export function PublicQueueGateway() {
     window.setTimeout(() => { window.location.assign(href); }, 6000);
   }
 
-  const phase = phaseForSnapshot(snapshot);
+  const viewState = queuePublicViewState(snapshot, hasConfirmedSnapshot, syncError);
+  const phase = phaseForSnapshot(snapshot, viewState);
   const copy = phaseCopy(phase);
   const counts = publicCounts(snapshot);
   const session = snapshot?.session;
@@ -170,12 +220,13 @@ export function PublicQueueGateway() {
   const intakeWindowMs = session?.preShowEndsAt ? new Date(session.preShowEndsAt).getTime() - nowMs : 0;
   const intakeWindow = Number.isFinite(intakeWindowMs) && intakeWindowMs > 0 ? `${Math.floor(intakeWindowMs / 60000)}:${Math.floor((intakeWindowMs % 60000) / 1000).toString().padStart(2, "0")}` : null;
 
-  const hasActiveSession = Boolean(session && session.status !== "archived");
+  const hasActiveSession = Boolean(session && session.status !== "archived" && session.broadcastPhase !== "ended");
   const activeSessionId = hasActiveSession ? session?.sessionId ?? null : null;
   const queueHref = activeSessionId ? `/queue/${activeSessionId}` : null;
 
   return (
     <div className={`space-y-6 ${hasActiveSession ? "pb-24" : ""}`}>
+      {syncError && <section role="alert" className="border border-[#ffaa00]/55 bg-[#ffaa00]/10 p-4 text-sm text-[#ffaa00]"><p className="font-bold uppercase tracking-widest">{viewState === "stale" ? "Live queue refresh failed — showing last confirmed data" : "Live queue unavailable"}</p><p className="mt-1 text-muted">{syncError}</p></section>}
       {hasActiveSession ? <section className="border border-accent/60 bg-accent/10 p-5 shadow-[0_0_34px_rgba(255,0,0,0.12)]">
         <p className="text-xs uppercase tracking-[0.35em] text-accent">BARCODE Radio Queue</p>
         <h1 className="mt-2 text-2xl font-bold text-foreground">Current queue is online</h1>

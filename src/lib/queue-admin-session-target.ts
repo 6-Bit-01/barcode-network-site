@@ -6,7 +6,7 @@ type ArchiveSessionSummary = Pick<
 >;
 
 export interface QueueArchiveTargetState {
-  session: ArchiveSessionSummary;
+  session?: ArchiveSessionSummary | null;
   sessions: ArchiveSessionSummary[];
   isCurrentSession: boolean;
 }
@@ -46,7 +46,7 @@ export function resolveQueueArchiveSessionId(
     return target.status === "archived" ? null : target.sessionId;
   }
 
-  if (state.isCurrentSession && state.session.status !== "archived") {
+  if (state.isCurrentSession && state.session && state.session.status !== "archived") {
     return state.session.sessionId;
   }
 

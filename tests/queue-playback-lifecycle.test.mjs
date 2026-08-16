@@ -46,10 +46,7 @@ const diagnosticExport = require("../src/lib/queue-playback-diagnostics.ts");
 let sequence = 0;
 
 async function freshSession(label, options = {}) {
-  const existing = await queue.getRadioQueueState();
-  if (existing.session && existing.session.status !== "archived") {
-    await queue.archiveQueueSession(existing.session.sessionId);
-  }
+  await queue.setQueueOpen(false);
   const state = await queue.startNewQueueSession({
     title: `${label} ${Date.now()} ${sequence}`,
     queueCapacity: options.queueCapacity ?? 44,

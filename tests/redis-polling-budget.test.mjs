@@ -44,8 +44,7 @@ test("Redis-backed browser surfaces share a bounded polling budget", () => {
 test("quota failover is read-only and retains only a previously confirmed queue snapshot", () => {
   const queue = source("src/lib/queue.ts");
   assert.match(queue, /lastKnownGoodRedisStore/);
-  assert.match(queue, /normalizeStore\(lastKnownGoodRedisStore\)/);
-  assert.match(queue, /readAuthority: "degraded_cached"/);
+  assert.match(queue, /return normalizeStore\(lastKnownGoodRedisStore\)/);
   assert.match(queue, /throw error/);
   assert.doesNotMatch(queue, /writeStore\(lastKnownGoodRedisStore/);
 

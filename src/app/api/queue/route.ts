@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { APPLE_MUSIC_QUEUE_UNSUPPORTED_MESSAGE, PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT, PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION, PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION, PUBLIC_QUEUE_LEGAL_TERMS_VERSION, detectQueueSourceType, isAppleMusicUrl } from "@/lib/queue-types";
-import { getPublicQueueSnapshot, getRadioQueueState, isTrackPersistedInSessionQueue, normalizeQueueSourceKey, queueOperationErrorResponse, requestPriorityUpgradePlaceholder, submitRadioTrack, toPublicQueueTrack } from "@/lib/queue";
+import { getPublicQueueSnapshot, getRadioQueueState, isTrackPersistedInSessionQueue, normalizeQueueSourceKey, requestPriorityUpgradePlaceholder, submitRadioTrack, toPublicQueueTrack } from "@/lib/queue";
 import { getLiveOverlayPlayerSync, getStoredLiveOverlayState } from "@/lib/live-overlay";
 import { attachQueueLiveTiming } from "@/lib/queue-live-timing";
 import type { QueueEntry } from "@/lib/queue-types";
@@ -113,25 +113,20 @@ async function hasDuplicateUploadSubmission(fileName: string, fileSize: number, 
 }
 
 export async function GET(req: Request) {
-  try {
-    const params = new URL(req.url).searchParams;
-    const sessionId = params.get("sessionId") ?? undefined;
-    const now = new Date();
-    const [snapshot, playerSync, overlayState] = await Promise.all([
-      getPublicQueueSnapshot(sessionId, {
-        submitterToken: params.get("submitterToken"),
-        tiktokHandle: params.get("tiktokHandle"),
-        contactEmail: params.get("contactEmail"),
-        artist: params.get("artist"),
-      }),
-      getLiveOverlayPlayerSync(),
-      getStoredLiveOverlayState(),
-    ]);
-    return NextResponse.json(attachQueueLiveTiming(snapshot, playerSync, overlayState, now));
-  } catch (error) {
-    const response = queueOperationErrorResponse(error, "Queue state is unavailable.");
-    return NextResponse.json(response.payload, { status: response.status });
-  }
+  const params = new URL(req.url).searchParams;
+  const sessionId = params.get("sessionId") ?? undefined;
+  const now = new Date();
+  const [snapshot, playerSync, overlayState] = await Promise.all([
+    getPublicQueueSnapshot(sessionId, {
+      submitterToken: params.get("submitterToken"),
+      tiktokHandle: params.get("tiktokHandle"),
+      contactEmail: params.get("contactEmail"),
+      artist: params.get("artist"),
+    }),
+    getLiveOverlayPlayerSync(),
+    getStoredLiveOverlayState(),
+  ]);
+  return NextResponse.json(attachQueueLiveTiming(snapshot, playerSync, overlayState, now));
 }
 
 export async function POST(req: Request) {
@@ -160,10 +155,6 @@ export async function POST(req: Request) {
     const isQueueFull = message === "Queue is full for new transmissions.";
     const cooldownRemainingSeconds = typeof (error as { remainingSeconds?: unknown }).remainingSeconds === "number" ? (error as { remainingSeconds: number }).remainingSeconds : 0;
     if (code === "stale_session") return NextResponse.json({ error: SESSION_SYNC_MESSAGE, code: "stale_session" }, { status: 409 });
-    if (code?.startsWith("queue_")) {
-      const response = queueOperationErrorResponse(error, "Submission failed. Please try again.");
-      return NextResponse.json(response.payload, { status: response.status });
-    }
     if (isDuplicateBlock) return NextResponse.json({ error: DUPLICATE_TRANSMISSION_MESSAGE, code: "duplicate_transmission" }, { status: 409 });
     if (cooldownRemainingSeconds > 0) return NextResponse.json({ error: "Submission cooldown active.", cooldownRemainingSeconds }, { status: 429 });
     const publicMessage = isLimitBlock ? "Submission limit reached for this session." : message === "Queue is closed" ? "This broadcast queue is closed." : isQueueFull ? "This broadcast queue is full for new transmissions." : message === "Uploaded audio file is missing." || message === "Uploaded audio file is invalid." ? UPLOAD_FALLBACK_MESSAGE : message === "Only MP3 and WAV uploads are accepted." || message === "Uploads must be 100MB or less." || message === "Uploaded audio file name is missing." || message === "Uploaded audio file size is missing." ? message : "Submission failed. Please try again.";
@@ -215,7 +206,7 @@ export async function submitTrackFromBody(body: Record<string, unknown>): Promis
   }
 
   const active = await getPublicQueueSnapshot();
-  if (!active.session || active.session.sessionId !== sessionId) return NextResponse.json({ error: SESSION_SYNC_MESSAGE, code: "stale_session" }, { status: 409 });
+  if (active.session.sessionId !== sessionId) return NextResponse.json({ error: SESSION_SYNC_MESSAGE, code: "stale_session" }, { status: 409 });
   if (!active.status.isOpen) {
     return NextResponse.json({ error: active.status.isFull ? "This broadcast queue is full for new transmissions." : "This broadcast queue is closed." }, { status: 409 });
   }

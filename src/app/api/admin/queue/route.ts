@@ -4,7 +4,7 @@ import { COOKIE_NAME, verifyAdminToken } from "@/lib/auth";
 import { getLiveOverlayPlayerSync, getStoredLiveOverlayState, resetWheelCeremonyStateForNewSession } from "@/lib/live-overlay";
 import { attachQueueLiveTiming } from "@/lib/queue-live-timing";
 import { resolveQueueArchiveSessionId } from "@/lib/queue-admin-session-target";
-import { archiveQueueSession, clearArchivedQueueSessions, getRadioQueueState, queueOperationErrorResponse, setQueueOpen, startNewQueueSession, activateQueueSession, updatePriorityUpgradeSettings, updateQueueSessionProvenance, updateRadioTrack, updateSponsorBreakState, updateSubmissionCooldownSettings } from "@/lib/queue";
+import { archiveCurrentQueueSession, clearArchivedQueueSessions, getRadioQueueState, setQueueOpen, startNewQueueSession, activateQueueSession, updatePriorityUpgradeSettings, updateQueueSessionProvenance, updateRadioTrack, updateSponsorBreakState, updateSubmissionCooldownSettings } from "@/lib/queue";
 import { isQueueSessionBnlPublicationStatus, isQueueSessionPurpose } from "@/lib/queue-types";
 
 export const dynamic = "force-dynamic";
@@ -14,36 +14,22 @@ async function assertAdmin(): Promise<boolean> {
   return token ? verifyAdminToken(token) : false;
 }
 
-function queueFailureResponse(error: unknown, fallback: string): NextResponse {
-  const response = queueOperationErrorResponse(error, fallback);
-  return NextResponse.json(response.payload, { status: response.status });
-}
-
 export async function GET(req: Request) {
   if (!(await assertAdmin())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  try {
-    const sessionId = new URL(req.url).searchParams.get("sessionId") ?? undefined;
-    const now = new Date();
-    const [state, playerSync, overlayState] = await Promise.all([getRadioQueueState(sessionId), getLiveOverlayPlayerSync(), getStoredLiveOverlayState()]);
-    return NextResponse.json(attachQueueLiveTiming(state, playerSync, overlayState, now));
-  } catch (error) {
-    return queueFailureResponse(error, "Queue state is unavailable.");
-  }
+  const sessionId = new URL(req.url).searchParams.get("sessionId") ?? undefined;
+  const now = new Date();
+  const [state, playerSync, overlayState] = await Promise.all([getRadioQueueState(sessionId), getLiveOverlayPlayerSync(), getStoredLiveOverlayState()]);
+  return NextResponse.json(attachQueueLiveTiming(state, playerSync, overlayState, now));
 }
 
 export async function POST(req: Request) {
   if (!(await assertAdmin())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json().catch(() => ({}));
-  try {
   if (body.action === "setOpen") {
     await setQueueOpen(Boolean(body.isOpen));
     return NextResponse.json(await getRadioQueueState());
   }
   if (body.action === "startSession") {
-    const requestId = typeof body.requestId === "string" ? body.requestId.trim() : "";
-    if (!requestId || requestId.length > 120 || !/^[A-Za-z0-9._:-]+$/.test(requestId)) {
-      return NextResponse.json({ error: "A valid start request ID is required.", code: "invalid_start_request_id" }, { status: 400 });
-    }
     if (body.purpose !== undefined && !isQueueSessionPurpose(body.purpose)) {
       return NextResponse.json({ error: "Invalid queue session purpose." }, { status: 400 });
     }
@@ -62,7 +48,6 @@ export async function POST(req: Request) {
     const priorityPaidRequested = body.priorityUpgradesEnabled === true || body.priorityUpgradePaymentsEnabled === true;
     const priorityPaidEnabled = priorityPaidRequested && (safePriorityPriceCents ?? 0) > 0;
     const state = await startNewQueueSession({
-      requestId,
       title: typeof body.title === "string" ? body.title : undefined,
       showDate: typeof body.showDate === "string" ? body.showDate : undefined,
       description: typeof body.description === "string" ? body.description : undefined,
@@ -79,19 +64,7 @@ export async function POST(req: Request) {
       priorityUpgradeCurrency: typeof body.priorityUpgradeCurrency === "string" ? body.priorityUpgradeCurrency : undefined,
       priorityUpgradePaymentsEnabled: priorityPaidEnabled,
     });
-    if (state.sessionCreated === true) {
-      try {
-        await resetWheelCeremonyStateForNewSession();
-      } catch {
-        state.warnings = [
-          ...(state.warnings ?? []),
-          {
-            code: "overlay_reset_failed",
-            message: "The queue session started, but the Wheel overlay reset did not complete.",
-          },
-        ];
-      }
-    }
+    await resetWheelCeremonyStateForNewSession();
     return NextResponse.json(state);
   }
   if (body.action === "updateSubmissionCooldownSettings") {
@@ -118,7 +91,10 @@ export async function POST(req: Request) {
         bnlPublicationStatus: body.bnlPublicationStatus,
       }));
     } catch (error) {
-      return queueFailureResponse(error, "Queue session provenance could not be updated.");
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Queue session provenance could not be updated." },
+        { status: 404 },
+      );
     }
   }
   if (body.action === "updatePriorityUpgradeSettings") {
@@ -137,11 +113,21 @@ export async function POST(req: Request) {
   }
   if (body.action === "updateSponsorBreakState" && ["start", "complete", "skip", "reset"].includes(body.sponsorAction)) return NextResponse.json(await updateSponsorBreakState(body.sponsorAction));
   if (body.action === "archiveSession") {
-    const requestedSessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
-    const current = await getRadioQueueState(requestedSessionId || undefined);
-    const targetSessionId = resolveQueueArchiveSessionId(current, requestedSessionId || null);
-    if (!targetSessionId) return NextResponse.json(current);
-    return NextResponse.json(await archiveQueueSession(targetSessionId));
+    try {
+      const requestedSessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
+      const current = await getRadioQueueState(requestedSessionId || undefined);
+      const targetSessionId = resolveQueueArchiveSessionId(current, requestedSessionId || null);
+      if (!targetSessionId) return NextResponse.json(current);
+      if (!current.isCurrentSession || current.session?.sessionId !== targetSessionId) {
+        await activateQueueSession(targetSessionId);
+      }
+      return NextResponse.json(await archiveCurrentQueueSession());
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Broadcast session could not be ended." },
+        { status: 409 },
+      );
+    }
   }
   if (body.action === "clearArchive") {
     if (body.confirmation !== "Delete the archive") {
@@ -156,7 +142,4 @@ export async function POST(req: Request) {
     return NextResponse.json(await updateRadioTrack(body.id, body.action));
   }
   return NextResponse.json({ error: "Unknown queue action" }, { status: 400 });
-  } catch (error) {
-    return queueFailureResponse(error, "Queue operation failed.");
-  }
 }

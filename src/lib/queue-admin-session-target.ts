@@ -7,8 +7,8 @@ type ArchiveSessionSummary = Pick<
 
 export interface QueueArchiveTargetState {
   session?: ArchiveSessionSummary | null;
-  sessions: ArchiveSessionSummary[];
-  isCurrentSession: boolean;
+  sessions?: ArchiveSessionSummary[];
+  isCurrentSession?: boolean;
 }
 
 const STATUS_PRIORITY: Record<ArchiveSessionSummary["status"], number> = {
@@ -39,18 +39,19 @@ export function resolveQueueArchiveSessionId(
   state: QueueArchiveTargetState,
   requestedSessionId?: string | null,
 ): string | null {
+  const sessions = state.sessions ?? [];
   const requested = requestedSessionId?.trim() ?? "";
   if (requested) {
-    const target = state.sessions.find((session) => session.sessionId === requested);
+    const target = sessions.find((session) => session.sessionId === requested);
     if (!target) throw new Error("Queue session not found.");
     return target.status === "archived" ? null : target.sessionId;
   }
 
-  if (state.isCurrentSession && state.session && state.session.status !== "archived") {
+  if (state.isCurrentSession === true && state.session && state.session.status !== "archived") {
     return state.session.sessionId;
   }
 
-  return [...state.sessions]
+  return [...sessions]
     .filter((session) => session.status !== "archived")
     .sort((left, right) => targetPriority(left) - targetPriority(right) || newestFirst(left, right))[0]
     ?.sessionId ?? null;

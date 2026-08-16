@@ -193,6 +193,7 @@ export function AdminRadioQueueControl() {
   const [topBarMinimized, setTopBarMinimized] = useState(false);
   const [railMinimized, setRailMinimized] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const [clockNow, setClockNow] = useState(() => Date.now());
   const [endConfirmOpen, setEndConfirmOpen] = useState(false);
@@ -274,12 +275,19 @@ export function AdminRadioQueueControl() {
     mutationEpochRef.current += 1;
     const epoch = mutationEpochRef.current;
     mutationInFlightRef.current += 1;
-    const res = await fetch("/api/admin/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     try {
-      if (!res.ok) return null;
-      const next = await res.json();
-      applyMutationState(next, epoch);
-      return next;
+      const res = await fetch("/api/admin/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setActionError(typeof payload?.error === "string" ? payload.error : "Queue action failed. Please retry.");
+        return null;
+      }
+      setActionError(null);
+      applyMutationState(payload, epoch);
+      return payload;
+    } catch {
+      setActionError("Queue action could not reach the server. Please retry.");
+      return null;
     } finally {
       mutationInFlightRef.current = Math.max(0, mutationInFlightRef.current - 1);
     }
@@ -350,9 +358,10 @@ export function AdminRadioQueueControl() {
 
   async function endCurrentSession() {
     setEndingSession(true);
-    await post({ action: "archiveSession" });
-    setEndConfirmOpen(false);
+    const ended = await post({ action: "archiveSession", sessionId: state?.session?.sessionId });
     setEndingSession(false);
+    if (!ended) return;
+    setEndConfirmOpen(false);
     await load();
   }
   async function toggleOpen(isOpen: boolean) { await post({ action: "setOpen", isOpen }); }
@@ -470,6 +479,7 @@ export function AdminRadioQueueControl() {
 
   return (
     <div className={`${playerPadding} ${topOverlayPaddingClass} space-y-2 xl:pr-[26rem]`}>
+      {actionError && <div role="alert" className="border border-danger/50 bg-danger/10 p-3 text-sm text-danger">{actionError}</div>}
       <section className="border border-border bg-surface p-1.5">
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => setActiveUtilityPanel((value) => value === "session" ? null : "session")} className="min-h-9 border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted">{activeUtilityPanel === "session" ? "Hide Session Setup" : "Session Setup"}</button>

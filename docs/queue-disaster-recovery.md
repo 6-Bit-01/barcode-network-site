@@ -19,7 +19,7 @@ The corrected source capture records both the immutable source date/status and t
 ## Permanent storage contract
 
 - Redis is the serialized mutation authority.
-- `QUEUE_REDIS_REST_URL` and `QUEUE_REDIS_REST_TOKEN` select a queue-only Redis database. During migration only, the code falls back to the shared `UPSTASH_REDIS_REST_*` pair.
+- `QUEUE_REDIS_REST_URL` and `QUEUE_REDIS_REST_TOKEN` select a queue-only Redis database. Vercel Production refuses the shared `UPSTASH_REDIS_REST_*` fallback and refuses a dedicated URL that resolves to the shared Redis endpoint. Non-production migration workflows retain the fallback.
 - Every committed queue revision is stored privately in Vercel Blob at `barcode-radio-queue-state/v1/revisions/` and promoted to `barcode-radio-queue-state/v1/current.json`.
 - Snapshot envelopes contain the complete private queue store, revision, timestamp, and SHA-256 checksum.
 - Public/admin polling reads the durable Blob model first and does not consume Redis commands.
@@ -37,11 +37,10 @@ The corrected source capture records both the immutable source date/status and t
 
 ## Deployment and migration order
 
-1. Deploy this change while the old queue variables still point at the existing database.
-2. On the first successful Redis read, verify that the private `current.json` and a matching immutable revision appear in Blob. Do not remove the old Redis variables before this evidence exists.
-3. Create the owned queue-only Redis database and configure the two `QUEUE_REDIS_REST_*` variables.
-4. Call authenticated `GET /api/admin/queue/recovery` and verify `alignment`, both revisions, the active session ID, and record counts. If Redis is unavailable, use its redacted `failureReason`, `failureStage`, and `failureDetail` to distinguish quota, credential, configuration, network, and provider failures without issuing any write. Then call `POST /api/admin/queue/recovery` with `{"action":"restoreDurableSnapshot","dryRun":true}`. Review the dry-run result before repeating with `dryRun:false` and the exact `requiredConfirmation` string from the GET response.
-5. Redeploy, perform the focused tests below, and then leave the old database read-only until the recovery window closes.
+1. On the current deployment, verify that the private `current.json` and a matching immutable revision appear in Blob. Do not remove the old Redis variables before this evidence exists.
+2. Create the owned queue-only Redis database and configure the two `QUEUE_REDIS_REST_*` variables before deploying the production guard.
+3. Call authenticated `GET /api/admin/queue/recovery` and verify `alignment`, both revisions, the active session ID, and record counts. If Redis is unavailable, use its redacted `failureReason`, `failureStage`, and `failureDetail` to distinguish quota, credential, configuration, network, and provider failures without issuing any write. Then call `POST /api/admin/queue/recovery` with `{"action":"restoreDurableSnapshot","dryRun":true}`. Review the dry-run result before repeating with `dryRun:false` and the exact `requiredConfirmation` string from the GET response.
+4. Deploy the production guard, perform the focused tests below, and then leave the old database read-only until the recovery window closes.
 
 If the old database is quota-locked before the first durable snapshot exists, no application code can bypass the provider lock. Preserve the database and wait for its quota reset or restore provider access; do not create an empty queue over it. Uploaded files alone cannot reconstruct link submissions or all submitter metadata.
 

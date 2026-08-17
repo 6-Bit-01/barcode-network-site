@@ -46,7 +46,7 @@ Do not commit secrets. Configure only the integrations needed for the surface be
 | --- | --- |
 | Admin access | `ADMIN_PASSWORD`, `JWT_SECRET` |
 | Shared Redis | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` |
-| Dedicated queue Redis | `QUEUE_REDIS_REST_URL`, `QUEUE_REDIS_REST_TOKEN` (recommended; falls back to shared Redis only during migration) |
+| Dedicated queue Redis | `QUEUE_REDIS_REST_URL`, `QUEUE_REDIS_REST_TOKEN` (required in Vercel Production; non-production migration workflows may fall back to shared Redis) |
 | Uploads | `BLOB_READ_WRITE_TOKEN` |
 | Payments | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `NEXT_PUBLIC_SITE_URL` |
 | Queue operations | `QUEUE_API_KEY`, `CRON_SECRET`, `BARCODE_QUEUE_PRODUCTION_ENABLED` |

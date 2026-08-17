@@ -572,6 +572,49 @@ function seedDurableCurrentSnapshot(state) {
   });
 }
 
+test("Vercel Production requires an isolated dedicated queue Redis endpoint", async () => {
+  resetQueueTestState();
+  const previousVercelEnv = process.env.VERCEL_ENV;
+  process.env.VERCEL_ENV = "production";
+  delete process.env.BLOB_READ_WRITE_TOKEN;
+  delete process.env.QUEUE_REDIS_REST_URL;
+  delete process.env.QUEUE_REDIS_REST_TOKEN;
+  process.env.UPSTASH_REDIS_REST_URL = "https://shared-bnl.upstash.io";
+  process.env.UPSTASH_REDIS_REST_TOKEN = "shared-token";
+
+  try {
+    let worker = loadIndependentQueueModules().first;
+    await assert.rejects(
+      () => worker.startNewQueueSession({ title: "Shared Redis must fail closed" }),
+      /dedicated QUEUE_REDIS_REST_URL and QUEUE_REDIS_REST_TOKEN are required/i,
+    );
+    assert.equal(FakeRedis.calls.length, 0, "shared Redis must not receive production queue commands");
+
+    process.env.QUEUE_REDIS_REST_URL = "https://shared-bnl.upstash.io";
+    process.env.QUEUE_REDIS_REST_TOKEN = "different-token-same-endpoint";
+    worker = loadIndependentQueueModules().first;
+    await assert.rejects(
+      () => worker.startNewQueueSession({ title: "Same endpoint must fail closed" }),
+      /different Redis endpoint|not isolated/i,
+    );
+    assert.equal(FakeRedis.calls.length, 0, "same-endpoint credentials must fail before Redis construction");
+
+    process.env.QUEUE_REDIS_REST_URL = "https://owned-queue-only.upstash.io";
+    process.env.QUEUE_REDIS_REST_TOKEN = "owned-token";
+    worker = loadIndependentQueueModules().first;
+    const started = await worker.startNewQueueSession({ title: "Isolated production queue" });
+    assert.equal(started.session.title, "Isolated production queue");
+  } finally {
+    if (previousVercelEnv === undefined) delete process.env.VERCEL_ENV;
+    else process.env.VERCEL_ENV = previousVercelEnv;
+    delete process.env.BLOB_READ_WRITE_TOKEN;
+    delete process.env.QUEUE_REDIS_REST_URL;
+    delete process.env.QUEUE_REDIS_REST_TOKEN;
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+  }
+});
+
 test("Start New Session is idempotent until the existing show is archived", async () => {
   resetQueueTestState();
   delete process.env.BLOB_READ_WRITE_TOKEN;

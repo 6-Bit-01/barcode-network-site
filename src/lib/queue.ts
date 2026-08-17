@@ -150,7 +150,17 @@ function getQueueRedisConfig(): { url: string; token: string; dedicated: boolean
     if (!dedicatedUrl || !dedicatedToken) {
       throw new Error("QUEUE_REDIS_REST_URL and QUEUE_REDIS_REST_TOKEN must be configured together.");
     }
+    if (process.env.VERCEL_ENV === "production") {
+      const queueHostname = normalizedRedisEndpointHostname(dedicatedUrl, "QUEUE_REDIS_REST_URL");
+      const sharedUrl = process.env.UPSTASH_REDIS_REST_URL?.trim();
+      if (sharedUrl && queueHostname === normalizedRedisEndpointHostname(sharedUrl, "UPSTASH_REDIS_REST_URL")) {
+        throw new Error("QUEUE_REDIS_REST_URL must use a different Redis endpoint from UPSTASH_REDIS_REST_URL. Queue Redis is not isolated.");
+      }
+    }
     return { url: dedicatedUrl, token: dedicatedToken, dedicated: true };
+  }
+  if (process.env.VERCEL_ENV === "production") {
+    throw new Error("Dedicated QUEUE_REDIS_REST_URL and QUEUE_REDIS_REST_TOKEN are required in Vercel Production.");
   }
   const url = process.env.UPSTASH_REDIS_REST_URL?.trim();
   const token = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();

@@ -116,13 +116,16 @@ export async function GET(req: Request) {
   const params = new URL(req.url).searchParams;
   const sessionId = params.get("sessionId") ?? undefined;
   const now = new Date();
-  const [snapshot, playerSync, overlayState] = await Promise.all([
-    getPublicQueueSnapshot(sessionId, {
-      submitterToken: params.get("submitterToken"),
-      tiktokHandle: params.get("tiktokHandle"),
-      contactEmail: params.get("contactEmail"),
-      artist: params.get("artist"),
-    }),
+  const snapshot = await getPublicQueueSnapshot(sessionId, {
+    submitterToken: params.get("submitterToken"),
+    tiktokHandle: params.get("tiktokHandle"),
+    contactEmail: params.get("contactEmail"),
+    artist: params.get("artist"),
+  });
+  if (snapshot.sessionActive !== true) {
+    return NextResponse.json(attachQueueLiveTiming(snapshot, null, null, now));
+  }
+  const [playerSync, overlayState] = await Promise.all([
     getLiveOverlayPlayerSync(),
     getStoredLiveOverlayState(),
   ]);

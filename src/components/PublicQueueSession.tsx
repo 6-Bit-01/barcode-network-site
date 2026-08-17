@@ -13,6 +13,7 @@ import { formatRuntime, PRIORITY_DISCLOSURE_TEXT, PRIORITY_GIFT_ATTRIBUTION_DISC
 import { displayEstimate, buildQueueTimingDisplay, priorityDisplayFromImpact, publicTrackDurationLabel, queueTimingInputFromPublicSnapshot, type QueueTimingDisplaySummary, type PriorityTimingDisplay } from "@/lib/queue-timing-display";
 import type { QueuePublicSnapshot, QueuePublicTrack } from "@/lib/queue-types";
 import { PUBLIC_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
+import { hasActiveQueueSession, startSessionBoundPolling } from "@/lib/session-bound-polling";
 
 type QueueView = "active" | "recent";
 type ActivityTone = "red" | "amber" | "gold" | "cyan" | "archive" | "danger";
@@ -339,7 +340,9 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
       processSnapshotChanges(previousSnapshotRef.current, next);
       previousSnapshotRef.current = next;
       setSnapshot(next);
+      return hasActiveQueueSession(next);
     }
+    return null;
   }
 
   useEffect(() => {
@@ -349,7 +352,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
     if (priorityResult === "cancelled") setCheckoutNotice("Payment was not completed. Your song stays in the free queue if still active.");
     if (priorityResult === "processing") setCheckoutNotice("Checkout started. Skip is not active yet.");
   }, []);
-  useEffect(() => { load(); const interval = setInterval(load, PUBLIC_QUEUE_POLL_INTERVAL_MS); return () => clearInterval(interval); }, [sessionId, submitterToken]);
+  useEffect(() => startSessionBoundPolling({ intervalMs: PUBLIC_QUEUE_POLL_INTERVAL_MS, poll: load }), [sessionId, submitterToken]);
   useEffect(() => { const interval = window.setInterval(() => setClockNow(Date.now()), 1_000); return () => window.clearInterval(interval); }, []);
   useEffect(() => {
     if (!snapshot) return;

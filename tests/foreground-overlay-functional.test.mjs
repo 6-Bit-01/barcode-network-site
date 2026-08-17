@@ -299,6 +299,7 @@ test("one chained show simulation updates track, gifted skip, Wheel, sponsor, an
 
 test("functional receiver is exact-source, reconnect-aware, and opened beside the live overlay", () => {
   const receiver = fs.readFileSync(path.join(projectRoot, "src/components/ForegroundOverlayReceiver.tsx"), "utf8");
+  const sessionBoundPolling = fs.readFileSync(path.join(projectRoot, "src/lib/session-bound-polling.ts"), "utf8");
   const strip = fs.readFileSync(path.join(projectRoot, "src/components/ForegroundOverlayStrip.tsx"), "utf8");
   const foregroundSource = fs.readFileSync(path.join(projectRoot, "src/lib/foreground-overlay.ts"), "utf8");
   const css = fs.readFileSync(path.join(projectRoot, "src/app/overlay/foreground/calibration/foreground-calibration.css"), "utf8");
@@ -308,9 +309,10 @@ test("functional receiver is exact-source, reconnect-aware, and opened beside th
   const combined = `${receiver}\n${strip}`;
 
   assert.match(receiver, /fetch\("\/api\/overlay\/foreground"/);
-  assert.match(receiver, /visibilitychange/);
-  assert.match(receiver, /addEventListener\("focus"/);
-  assert.match(receiver, /addEventListener\("online"/);
+  assert.match(receiver, /startSessionBoundPolling\(\{ intervalMs: POLL_INTERVAL_MS, poll: load \}\)/);
+  assert.match(sessionBoundPolling, /visibilitychange/);
+  assert.match(sessionBoundPolling, /addEventListener\("focus"/);
+  assert.match(sessionBoundPolling, /addEventListener\("online"/);
   assert.match(receiver, /data-source-resolution="1080x1920"/);
   assert.match(receiver, /"--fg-key-color": "#0000ff"/);
   assert.match(css, /\.foreground-overlay-canvas > \.foreground-strip/);

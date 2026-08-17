@@ -12,6 +12,7 @@ import { detectMaterialPlaybackSeek, estimateOneWayNetworkTransitMs, projectObse
 import type { QueueEntry, QueueLane, QueuePlaybackDiagnostics, QueuePlaybackErrorCode, QueuePlaybackLifecycleEventInput, QueueState } from "@/lib/queue-types";
 import type { LiveOverlayPlaybackState, LiveOverlaySyncCorrectionReason } from "@/lib/live-overlay-resolver";
 import { ADMIN_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
+import { hasActiveQueueSession, notifyQueueSessionChanged, startSessionBoundPolling } from "@/lib/session-bound-polling";
 
 type Tab = "active" | "completed" | "removed" | "spotlight";
 type AdminQueueAction = "pullNext" | "pullWheelChosen" | "pullFreeTransmission" | "startShow" | "addWheelSpinOwed" | "load" | "finish" | "skip" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "resolvePaidPriority" | "pausePriority" | "resumePriority";
@@ -236,21 +237,23 @@ export function AdminRadioQueueControl() {
     const suffix = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : "";
     const res = await fetch(`/api/admin/queue${suffix}`, { cache: "no-store" });
     if (!res.ok) {
-      if (mutationInFlightRef.current > 0) return;
-      if (requestEpoch !== mutationEpochRef.current) return;
+      if (mutationInFlightRef.current > 0) return null;
+      if (requestEpoch !== mutationEpochRef.current) return null;
       setError(res.status === 401 ? "Admin authentication required. Log in at /admin first." : "Queue control unavailable.");
-      return;
+      return null;
     }
     setError(null);
-    applyPollingStateIfFresh(await res.json(), requestEpoch);
+    const next = await res.json() as QueueState;
+    applyPollingStateIfFresh(next, requestEpoch);
+    return hasActiveQueueSession(next);
   }
 
   useEffect(() => {
     setMounted(true);
-    const sessionId = initialSessionIdFromUrl();
-    load(sessionId);
-    const interval = setInterval(() => load(initialSessionIdFromUrl()), ADMIN_QUEUE_POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
+    return startSessionBoundPolling({
+      intervalMs: ADMIN_QUEUE_POLL_INTERVAL_MS,
+      poll: () => load(initialSessionIdFromUrl()),
+    });
   }, []);
 
   useEffect(() => {
@@ -361,6 +364,7 @@ export function AdminRadioQueueControl() {
     const ended = await post({ action: "archiveSession", sessionId: state?.session?.sessionId });
     setEndingSession(false);
     if (!ended) return;
+    notifyQueueSessionChanged();
     setEndConfirmOpen(false);
     await load();
   }

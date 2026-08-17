@@ -10,6 +10,7 @@ import { cooldownDeadlineFromRemaining, cooldownRemainingFromDeadline } from "@/
 import { APPLE_MUSIC_QUEUE_UNSUPPORTED_MESSAGE, PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT, PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION, PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION, PUBLIC_QUEUE_LEGAL_TERMS_VERSION, formatRuntime, isAppleMusicUrl, PRIORITY_DISCLOSURE_TEXT, PRIORITY_TERMS_VERSION } from "@/lib/queue-types";
 import type { QueuePublicSnapshot, QueuePublicStatus, QueuePublicTrack } from "@/lib/queue-types";
 import { PUBLIC_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
+import { hasActiveQueueSession, startSessionBoundPolling } from "@/lib/session-bound-polling";
 
 type Mode = "link" | "upload";
 type ReadState = "idle" | "checking" | "reading" | "detected" | "pending" | "uploading";
@@ -192,9 +193,13 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
   }
 
   useEffect(() => {
-    loadStatus();
-    const interval = setInterval(loadStatus, PUBLIC_QUEUE_POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
+    return startSessionBoundPolling({
+      intervalMs: PUBLIC_QUEUE_POLL_INTERVAL_MS,
+      poll: async () => {
+        const next = await loadStatus();
+        return next ? hasActiveQueueSession(next) : null;
+      },
+    });
   }, [submitterToken]);
 
   useEffect(() => {

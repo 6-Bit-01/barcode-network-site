@@ -24,6 +24,7 @@ export interface ForegroundOverlayAction {
 
 export interface ForegroundOverlaySnapshot {
   schemaVersion: "foreground_overlay_v1";
+  sessionActive: boolean;
   revision: number;
   serverNow: string;
   submissionsOpen: boolean;
@@ -453,6 +454,7 @@ export function resolveForegroundOverlaySnapshot(input: ResolveForegroundOverlay
 
   return {
     schemaVersion: "foreground_overlay_v1",
+    sessionActive: queueState.isCurrentSession !== false && Boolean(session && session.status !== "archived"),
     revision: Math.max(0, Math.floor(queueState.revision ?? 0)),
     serverNow: now.toISOString(),
     submissionsOpen: queueState.publicStatus?.isOpen ?? session?.queueOpen ?? false,

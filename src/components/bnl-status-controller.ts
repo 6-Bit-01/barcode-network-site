@@ -52,7 +52,7 @@ export class BNLStatusController {
   subscribe = (listener: Listener) => { this.listeners.add(listener); return () => this.listeners.delete(listener); };
   private emit() { for (const l of this.listeners) l(this.snapshot); }
   private set(next: Partial<BNLStatusSnapshot>) { this.snapshot = { ...this.snapshot, ...next }; this.emit(); }
-  start() { void this.refresh(); this.intervalId = setInterval(() => void this.refresh(), this.intervalMs); if (typeof window !== "undefined") window.addEventListener("focus", this.refreshOnEvent); if (typeof document !== "undefined") document.addEventListener("visibilitychange", this.refreshOnVisible); }
+  start() { void this.refreshOnVisible(); this.intervalId = setInterval(() => { if (typeof document === "undefined" || document.visibilityState === "visible") void this.refresh(); }, this.intervalMs); if (typeof window !== "undefined") window.addEventListener("focus", this.refreshOnEvent); if (typeof document !== "undefined") document.addEventListener("visibilitychange", this.refreshOnVisible); }
   stop() { if (this.intervalId) clearInterval(this.intervalId); this.intervalId = null; if (typeof window !== "undefined") window.removeEventListener("focus", this.refreshOnEvent); if (typeof document !== "undefined") document.removeEventListener("visibilitychange", this.refreshOnVisible); this.abort?.abort(); this.abort = null; this.inFlight = null; }
   refreshOnEvent = () => this.refresh();
   refreshOnVisible = () => (typeof document === "undefined" || document.visibilityState === "visible" ? this.refresh() : Promise.resolve());

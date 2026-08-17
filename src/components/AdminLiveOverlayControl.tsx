@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { LiveOverlayAdminSnapshot } from "@/lib/live-overlay";
 import { ADMIN_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
+import { hasActiveQueueSession, startSessionBoundPolling } from "@/lib/session-bound-polling";
 
 function sceneLabel(mode?: string): string {
   return mode ? mode.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase()) : "Syncing";
@@ -21,15 +22,15 @@ export function AdminLiveOverlayControl({ focusWheelTick = 0 }: { focusWheelTick
     const res = await fetch("/api/admin/overlay/live", { cache: "no-store" });
     if (!res.ok) {
       setStatus("Overlay controls require admin auth.");
-      return;
+      return null;
     }
-    setSnapshot(await res.json());
+    const next = await res.json() as LiveOverlayAdminSnapshot;
+    setSnapshot(next);
+    return hasActiveQueueSession(next.scene);
   }
 
   useEffect(() => {
-    load();
-    const interval = window.setInterval(load, ADMIN_QUEUE_POLL_INTERVAL_MS);
-    return () => window.clearInterval(interval);
+    return startSessionBoundPolling({ intervalMs: ADMIN_QUEUE_POLL_INTERVAL_MS, poll: load });
   }, []);
 
   async function post(body: Record<string, unknown>, successMessage: string) {

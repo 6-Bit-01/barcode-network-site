@@ -476,6 +476,9 @@ export function AdminRadioQueueControl() {
 
   const railBottomOffsetClass = loadedPlayer ? (minimized ? "bottom-24" : "bottom-[12.5rem]") : "bottom-5";
   const topOverlayPaddingClass = topBarMinimized ? "pt-[4.5rem] md:pt-[4.75rem]" : "pt-[7.25rem] md:pt-[7.5rem]";
+  const showLogSessionQuery = state?.session?.sessionId
+    ? `&sessionId=${encodeURIComponent(state.session.sessionId)}`
+    : "";
 
   return (
     <div className={`${playerPadding} ${topOverlayPaddingClass} space-y-2 xl:pr-[26rem]`}>
@@ -491,6 +494,8 @@ export function AdminRadioQueueControl() {
           >
             {activeUtilityPanel === "overlay" ? "Hide Live Overlay" : wheelOverlayReady ? "Live Overlay — Wheel Owed" : "Live Overlay"}
           </button>
+          {hasSession && <a href={`/api/admin/queue/show-log?format=csv${showLogSessionQuery}`} className="inline-flex min-h-9 items-center border border-accent/60 px-3 py-1.5 text-xs uppercase tracking-widest text-accent">Show Log CSV</a>}
+          {hasSession && <a href={`/api/admin/queue/show-log?format=json${showLogSessionQuery}`} className="inline-flex min-h-9 items-center border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted">Show Log JSON</a>}
         </div>
       </section>
 

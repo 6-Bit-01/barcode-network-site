@@ -23,6 +23,17 @@ test('pending force-pull polling stops after terminal result and manual refresh 
   assert.match(admin, /Pending outcomes were checked again if available/);
 });
 
+test('admin BNL refresh pauses while hidden and resumes once when visible or focused', () => {
+  assert.match(admin, /if \(cancelled \|\| document\.visibilityState !== "visible" \|\| inFlight\) return;/);
+  assert.match(admin, /const refreshWhenVisible = \(\) => \{/);
+  assert.match(admin, /window\.setInterval\(refreshWhenVisible, 15_000\)/);
+  assert.match(admin, /window\.addEventListener\("focus", refreshWhenVisible\)/);
+  assert.match(admin, /document\.addEventListener\("visibilitychange", refreshWhenVisible\)/);
+  assert.match(admin, /window\.removeEventListener\("focus", refreshWhenVisible\)/);
+  assert.match(admin, /document\.removeEventListener\("visibilitychange", refreshWhenVisible\)/);
+  assert.match(admin, /finally \{\n        inFlight = false;/);
+});
+
 test('force-pull duplicate return happens before clearing messages or entering finally', () => {
   const start = admin.indexOf('const requestForcePull = async () => {');
   const body = admin.slice(start, admin.indexOf('  const lastSeenAge', start));

@@ -145,21 +145,30 @@ function AdminContent({ isLive, toggleLive, setStreamUrl, isScheduled, manualOve
 
   useEffect(() => {
     let cancelled = false;
+    let inFlight = false;
     const load = async () => {
-      if (cancelled) return;
+      if (cancelled || document.visibilityState !== "visible" || inFlight) return;
+      inFlight = true;
       try {
         await loadBnl();
       } catch (error) {
         console.error("[admin] failed to refresh BNL state:", error);
+      } finally {
+        inFlight = false;
       }
     };
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void load();
+    };
     void load();
-    const interval = window.setInterval(() => {
-      void load();
-    }, 15_000);
+    const interval = window.setInterval(refreshWhenVisible, 15_000);
+    window.addEventListener("focus", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
       cancelled = true;
       window.clearInterval(interval);
+      window.removeEventListener("focus", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
   }, []);
 

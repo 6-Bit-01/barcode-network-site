@@ -5,8 +5,10 @@ import type { CSSProperties } from "react";
 import { ForegroundOverlayStrip } from "@/components/ForegroundOverlayStrip";
 import { foregroundActionWithExpiryAt } from "@/lib/foreground-overlay-resolver";
 import type { ForegroundOverlayAction, ForegroundOverlaySnapshot } from "@/lib/foreground-overlay-resolver";
+import { FOREGROUND_OVERLAY_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
+import { hasActiveQueueSession, startSessionBoundPolling } from "@/lib/session-bound-polling";
 
-const POLL_INTERVAL_MS = 1_500;
+const POLL_INTERVAL_MS = FOREGROUND_OVERLAY_POLL_INTERVAL_MS;
 const STALE_AFTER_MS = 10_000;
 
 const SOURCE_STYLE = {
@@ -38,6 +40,7 @@ function isForegroundSnapshot(value: unknown): value is ForegroundOverlaySnapsho
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<ForegroundOverlaySnapshot>;
   return candidate.schemaVersion === "foreground_overlay_v1"
+    && typeof candidate.sessionActive === "boolean"
     && typeof candidate.serverNow === "string"
     && typeof candidate.submissionsOpen === "boolean"
     && typeof candidate.wheelSpinsOwed === "number"
@@ -100,8 +103,8 @@ export function ForegroundOverlayReceiver() {
     let stopped = false;
     let inFlight = false;
 
-    const load = async () => {
-      if (inFlight || stopped) return;
+    const load = async (): Promise<boolean | null> => {
+      if (inFlight || stopped) return null;
       inFlight = true;
       try {
         const accessToken = foregroundAccessToken();
@@ -112,38 +115,29 @@ export function ForegroundOverlayReceiver() {
         if (!response.ok) throw new Error("Foreground overlay state unavailable.");
         const next = await response.json() as unknown;
         if (!isForegroundSnapshot(next)) throw new Error("Foreground overlay state invalid.");
-        if (stopped) return;
+        if (stopped) return null;
         const receivedAt = Date.now();
         setSnapshot(next);
         setLastSuccessAtMs(receivedAt);
         setClockNowMs(receivedAt);
         setSyncError(false);
+        return hasActiveQueueSession(next);
       } catch {
         if (!stopped) setSyncError(true);
+        return null;
       } finally {
         inFlight = false;
       }
     };
 
-    const refreshWhenVisible = () => {
-      if (document.visibilityState === "visible") void load();
-    };
-    const refreshNow = () => { void load(); };
     const markOffline = () => setSyncError(true);
 
-    void load();
-    const intervalId = window.setInterval(() => { void load(); }, POLL_INTERVAL_MS);
-    document.addEventListener("visibilitychange", refreshWhenVisible);
-    window.addEventListener("focus", refreshNow);
-    window.addEventListener("online", refreshNow);
+    const stopPolling = startSessionBoundPolling({ intervalMs: POLL_INTERVAL_MS, poll: load });
     window.addEventListener("offline", markOffline);
 
     return () => {
       stopped = true;
-      window.clearInterval(intervalId);
-      document.removeEventListener("visibilitychange", refreshWhenVisible);
-      window.removeEventListener("focus", refreshNow);
-      window.removeEventListener("online", refreshNow);
+      stopPolling();
       window.removeEventListener("offline", markOffline);
     };
   }, []);

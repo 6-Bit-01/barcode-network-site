@@ -34,6 +34,8 @@ The default session capacity is 44 accepted show slots. The accepted count is th
 
 Capacity closure is distinct from a manual close, ended broadcast, or archive. Reaching capacity closes intake with `submissionClosureReason=capacity` while the active session remains open for show operations. Removing a counted track reopens only a capacity-closed session. A manually closed, ended, or archived session stays closed after removal. Public status and admin/session summaries expose both `activeCount` for current queue depth and `acceptedCount` for capacity, plus the closure reason.
 
+Capacity governs admission, not upgrades: reaching 44 blocks a 45th song but does not block an eligible accepted track from starting or completing Priority Signal checkout. Manual closure, broadcast end, archive, and ordinary Priority eligibility rules still block checkout.
+
 Every persisted queue change—submission, admin action, session/settings update, upload cleanup metadata, Priority checkout/payment transition, and legacy queue helper—uses the same serialized mutation boundary. Redis-backed mutations acquire a bounded lease and commit the complete state with a fencing token and monotonic revision; in-process mutations use the same contract. Provider metadata lookup happens before admission enters the critical section, then the current session, capacity, duplicate identity, artist limit, and cooldown are re-read and revalidated inside it. Concurrent workers therefore cannot both claim the final slot or overwrite one another.
 
 Public and admin snapshot reads are non-persistent: polling may derive the current display state, but it does not write the queue or advance its revision. Apple Music host rejection, including terminal-dot host variants such as `music.apple.com.`, occurs before any queue snapshot read.
@@ -64,6 +66,8 @@ Playback lifecycle history is bounded per queue session and uses the existing se
 ## Gifted Priority attribution
 
 When a viewer starts Priority Signal checkout for somebody else’s track, the queue modal offers one prominent optional public-name field. Blank means `Anonymous`; Stripe customer, billing, email, or payment identity is never used as a substitute. The server sanitizes and versions the chosen supporter name, snapshots the recipient artist, binds both values to the created Stripe checkout, and preserves the first confirmed attribution across webhook retries.
+
+Resuming a pending checkout requires the opaque browser capability that initiated that exact session. Other viewers cannot receive the stored Stripe URL or pay through a checkout carrying somebody else’s gift attribution while that checkout is pending.
 
 Gift attribution remains admin-only while checkout is pending. After the verified webhook confirms payment, the existing public track projection exposes only the safe `from`/`for` display values. Queue cards, Now Playing/Next In Line, and host player surfaces use that same stored attribution. Manual Priority moves and ordinary self-upgrades do not create gift attribution.
 

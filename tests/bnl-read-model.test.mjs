@@ -57,6 +57,7 @@ const forbiddenKeys = [
   "stripeSessionId",
   "priorityUpgradePaymentId",
   "priorityUpgradeCheckoutUrl",
+  "priorityUpgradeCheckoutOwnerTokenHash",
   "priorityLegalAcceptance",
   "priorityGiftAttribution",
   "fileUrl",
@@ -78,6 +79,14 @@ const forbiddenKeys = [
 ];
 
 let sequence = 0;
+
+async function startFreshQueueSession(options) {
+  const current = await queue.getRadioQueueState();
+  if (current.revision !== 0 && current.session.status !== "archived") {
+    await queue.archiveCurrentQueueSession();
+  }
+  return queue.startNewQueueSession(options);
+}
 
 async function resetDossierWorkflowStore() {
   await workflowStore.saveDossierWorkflowState({
@@ -116,8 +125,7 @@ async function sourceFilesGet(query, token = "test-source-file-read-token") {
 
 async function freshReadModelSession() {
   sequence += 1;
-  await queue.setQueueOpen(false);
-  const state = await queue.startNewQueueSession({
+  const state = await startFreshQueueSession({
     title: `BNL Read Model ${Date.now()} ${sequence}`,
     purpose: "live_broadcast",
     bnlPublicationStatus: "public_copy_approved",
@@ -149,6 +157,7 @@ async function addTrack(label, options = {}) {
     suspiciousFlags: ["test-only"],
     priorityUpgradePaymentId: "pi_private_test",
     priorityUpgradeCheckoutUrl: "https://checkout.example.test/private",
+    priorityUpgradeCheckoutOwnerTokenHash: "c".repeat(64),
     priorityLegalAcceptance: { acceptedAt: new Date().toISOString(), priorityTermsVersion: "1.0", priorityDisclosureText: "private acknowledgement", source: "priority_checkout" },
     priorityGiftAttribution: options.priorityGiftAttribution ?? null,
   });
@@ -193,7 +202,7 @@ function countBy(entries, key) {
 
 function findForbiddenStringValues(value, pathName = "$", found = []) {
   if (typeof value === "string") {
-    if (/contactEmail|submitterToken|stripeSessionId|priorityUpgradePaymentId|priorityUpgradeCheckoutUrl|fileUrl|fileName|fileSize|mimeType|suspiciousFlags|adminNote|discordUserId|discordId|privateSeed|r&d|internalNote|privateNotes|adminOnly/i.test(value)) {
+    if (/contactEmail|submitterToken|stripeSessionId|priorityUpgradePaymentId|priorityUpgradeCheckoutUrl|priorityUpgradeCheckoutOwnerTokenHash|fileUrl|fileName|fileSize|mimeType|suspiciousFlags|adminNote|discordUserId|discordId|privateSeed|r&d|internalNote|privateNotes|adminOnly/i.test(value)) {
       found.push(`${pathName}: ${value}`);
     }
     return found;
@@ -237,8 +246,7 @@ test("legacy and unknown queue sessions fail closed at the BNL publication bound
 
 test("new rehearsal sessions remain publicly usable while every queue-derived BNL lane stays quarantined", async () => {
   sequence += 1;
-  await queue.setQueueOpen(false);
-  const state = await queue.startNewQueueSession({
+  const state = await startFreshQueueSession({
     title: `Quarantined rehearsal ${Date.now()} ${sequence}`,
   });
   assert.equal(state.session.purpose, "rehearsal");
@@ -293,8 +301,7 @@ test("new rehearsal sessions remain publicly usable while every queue-derived BN
 
 test("live-broadcast publication levels unlock only their approved queue-derived BNL lanes", async () => {
   sequence += 1;
-  await queue.setQueueOpen(false);
-  const state = await queue.startNewQueueSession({
+  const state = await startFreshQueueSession({
     title: `Publication levels ${Date.now()} ${sequence}`,
     purpose: "live_broadcast",
     bnlPublicationStatus: "runtime_only",

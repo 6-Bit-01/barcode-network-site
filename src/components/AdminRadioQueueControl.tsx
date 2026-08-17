@@ -11,6 +11,8 @@ import { formatRuntime, getTrackRuntimeSeconds, parseTikTokVideoUrl } from "@/li
 import { detectMaterialPlaybackSeek, estimateOneWayNetworkTransitMs, projectObservedPlaybackTime, updateTransitEstimateMs, YOUTUBE_SYNC_STALE_AFTER_MS } from "@/lib/live-overlay-resolver";
 import type { QueueEntry, QueueLane, QueuePlaybackDiagnostics, QueuePlaybackErrorCode, QueuePlaybackLifecycleEventInput, QueueState } from "@/lib/queue-types";
 import type { LiveOverlayPlaybackState, LiveOverlaySyncCorrectionReason } from "@/lib/live-overlay-resolver";
+import { ADMIN_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
+import { hasActiveQueueSession, notifyQueueSessionChanged, startSessionBoundPolling } from "@/lib/session-bound-polling";
 
 type Tab = "active" | "completed" | "removed" | "spotlight";
 type AdminQueueAction = "pullNext" | "pullWheelChosen" | "pullFreeTransmission" | "startShow" | "addWheelSpinOwed" | "load" | "finish" | "skip" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "resolvePaidPriority" | "pausePriority" | "resumePriority";
@@ -192,6 +194,7 @@ export function AdminRadioQueueControl() {
   const [topBarMinimized, setTopBarMinimized] = useState(false);
   const [railMinimized, setRailMinimized] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const [clockNow, setClockNow] = useState(() => Date.now());
   const [endConfirmOpen, setEndConfirmOpen] = useState(false);
@@ -234,21 +237,23 @@ export function AdminRadioQueueControl() {
     const suffix = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : "";
     const res = await fetch(`/api/admin/queue${suffix}`, { cache: "no-store" });
     if (!res.ok) {
-      if (mutationInFlightRef.current > 0) return;
-      if (requestEpoch !== mutationEpochRef.current) return;
+      if (mutationInFlightRef.current > 0) return null;
+      if (requestEpoch !== mutationEpochRef.current) return null;
       setError(res.status === 401 ? "Admin authentication required. Log in at /admin first." : "Queue control unavailable.");
-      return;
+      return null;
     }
     setError(null);
-    applyPollingStateIfFresh(await res.json(), requestEpoch);
+    const next = await res.json() as QueueState;
+    applyPollingStateIfFresh(next, requestEpoch);
+    return hasActiveQueueSession(next);
   }
 
   useEffect(() => {
     setMounted(true);
-    const sessionId = initialSessionIdFromUrl();
-    load(sessionId);
-    const interval = setInterval(() => load(initialSessionIdFromUrl()), 5_000);
-    return () => clearInterval(interval);
+    return startSessionBoundPolling({
+      intervalMs: ADMIN_QUEUE_POLL_INTERVAL_MS,
+      poll: () => load(initialSessionIdFromUrl()),
+    });
   }, []);
 
   useEffect(() => {
@@ -273,12 +278,19 @@ export function AdminRadioQueueControl() {
     mutationEpochRef.current += 1;
     const epoch = mutationEpochRef.current;
     mutationInFlightRef.current += 1;
-    const res = await fetch("/api/admin/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     try {
-      if (!res.ok) return null;
-      const next = await res.json();
-      applyMutationState(next, epoch);
-      return next;
+      const res = await fetch("/api/admin/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setActionError(typeof payload?.error === "string" ? payload.error : "Queue action failed. Please retry.");
+        return null;
+      }
+      setActionError(null);
+      applyMutationState(payload, epoch);
+      return payload;
+    } catch {
+      setActionError("Queue action could not reach the server. Please retry.");
+      return null;
     } finally {
       mutationInFlightRef.current = Math.max(0, mutationInFlightRef.current - 1);
     }
@@ -349,9 +361,11 @@ export function AdminRadioQueueControl() {
 
   async function endCurrentSession() {
     setEndingSession(true);
-    await post({ action: "archiveSession" });
-    setEndConfirmOpen(false);
+    const ended = await post({ action: "archiveSession", sessionId: state?.session?.sessionId });
     setEndingSession(false);
+    if (!ended) return;
+    notifyQueueSessionChanged();
+    setEndConfirmOpen(false);
     await load();
   }
   async function toggleOpen(isOpen: boolean) { await post({ action: "setOpen", isOpen }); }
@@ -466,9 +480,13 @@ export function AdminRadioQueueControl() {
 
   const railBottomOffsetClass = loadedPlayer ? (minimized ? "bottom-24" : "bottom-[12.5rem]") : "bottom-5";
   const topOverlayPaddingClass = topBarMinimized ? "pt-[4.5rem] md:pt-[4.75rem]" : "pt-[7.25rem] md:pt-[7.5rem]";
+  const showLogSessionQuery = state?.session?.sessionId
+    ? `&sessionId=${encodeURIComponent(state.session.sessionId)}`
+    : "";
 
   return (
     <div className={`${playerPadding} ${topOverlayPaddingClass} space-y-2 xl:pr-[26rem]`}>
+      {actionError && <div role="alert" className="border border-danger/50 bg-danger/10 p-3 text-sm text-danger">{actionError}</div>}
       <section className="border border-border bg-surface p-1.5">
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => setActiveUtilityPanel((value) => value === "session" ? null : "session")} className="min-h-9 border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted">{activeUtilityPanel === "session" ? "Hide Session Setup" : "Session Setup"}</button>
@@ -480,6 +498,8 @@ export function AdminRadioQueueControl() {
           >
             {activeUtilityPanel === "overlay" ? "Hide Live Overlay" : wheelOverlayReady ? "Live Overlay — Wheel Owed" : "Live Overlay"}
           </button>
+          {hasSession && <a href={`/api/admin/queue/show-log?format=csv${showLogSessionQuery}`} className="inline-flex min-h-9 items-center border border-accent/60 px-3 py-1.5 text-xs uppercase tracking-widest text-accent">Show Log CSV</a>}
+          {hasSession && <a href={`/api/admin/queue/show-log?format=json${showLogSessionQuery}`} className="inline-flex min-h-9 items-center border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted">Show Log JSON</a>}
         </div>
       </section>
 

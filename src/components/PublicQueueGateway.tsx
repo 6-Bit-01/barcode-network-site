@@ -6,8 +6,10 @@ import { createPortal } from "react-dom";
 import { externalLinks } from "@/content";
 import { buildQueueTimingDisplay, queueTimingInputFromPublicSnapshot, type QueueTimingDisplaySummary } from "@/lib/queue-timing-display";
 import { formatRuntime, type QueuePublicSnapshot, type QueuePublicTrack } from "@/lib/queue-types";
+import { PUBLIC_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
+import { hasActiveQueueSession, startSessionBoundPolling } from "@/lib/session-bound-polling";
 
-type GatewayPhase = "syncing" | "archived" | "closed" | "open" | "liveOpen" | "liveClosed";
+type GatewayPhase = "syncing" | "empty" | "archived" | "closed" | "open" | "liveOpen" | "liveClosed";
 
 function stableHash(seed: string): number {
   let hash = 0;
@@ -36,7 +38,7 @@ function terminalReadouts(snapshot: QueuePublicSnapshot | null, counts: ReturnTy
   if (counts.wheel > 0) lines.push("Wheel Chosen: picked from the 10K tap wheel.");
   if (counts.completed > 0) lines.push(`${counts.completed} songs already played.`);
   if (pressure === "high") lines.push("Archive pressure rising.");
-  const flavorSeed = `${snapshot?.session.sessionId ?? "sync"}:${counts.total}:${pressure}`;
+  const flavorSeed = `${snapshot?.session?.sessionId ?? "sync"}:${counts.total}:${pressure}`;
   const flavor = ["BNL-01 receiver trace stabilized.", "Host band interference cleared.", "Corridor alignment corrected.", "Signal anomaly contained."];
   if (stableHash(flavorSeed) % 13 === 0) lines.push(stableVariant(flavorSeed, flavor));
   return lines.slice(0, 5);
@@ -54,12 +56,13 @@ function navigationVariant(snapshot: QueuePublicSnapshot | null, fallbackSeed: s
 }
 
 function isBroadcastActive(snapshot: QueuePublicSnapshot | null): boolean {
-  if (!snapshot) return false;
+  if (!snapshot?.session) return false;
   return Boolean(snapshot.nowPlaying || snapshot.session.broadcastPhase === "broadcast_active" || snapshot.session.showStarted);
 }
 
 function phaseForSnapshot(snapshot: QueuePublicSnapshot | null): GatewayPhase {
   if (!snapshot) return "syncing";
+  if (!snapshot.session) return "empty";
   if (snapshot.session.status === "archived" || snapshot.session.broadcastPhase === "ended") return "archived";
   if (isBroadcastActive(snapshot)) return snapshot.status.isOpen ? "liveOpen" : "liveClosed";
   return snapshot.status.isOpen ? "open" : "closed";
@@ -67,6 +70,7 @@ function phaseForSnapshot(snapshot: QueuePublicSnapshot | null): GatewayPhase {
 
 function phaseCopy(phase: GatewayPhase) {
   if (phase === "syncing") return { eyebrow: "SYNCING PUBLIC SIGNAL", title: "QUEUE TERMINAL HANDSHAKE", body: "Reading the current BARCODE Radio queue before opening the monitor.", tone: "text-muted", border: "border-border", glow: "shadow-[0_0_36px_rgba(255,255,255,0.06)]", gate: "SIGNAL SEARCH" };
+  if (phase === "empty") return { eyebrow: "NO ACTIVE QUEUE", title: "RECEIVER STANDBY", body: "The queue service is online, but no BARCODE Radio session currently exists.", tone: "text-muted", border: "border-border", glow: "shadow-[0_0_36px_rgba(255,255,255,0.06)]", gate: "NO SESSION" };
   if (phase === "archived") return { eyebrow: "BROADCAST ENDED", title: "SESSION ARCHIVED", body: "SUBMISSIONS CLOSED. No active BARCODE Radio session is currently accepting songs.", tone: "text-danger", border: "border-danger/35", glow: "shadow-[0_0_44px_rgba(255,0,0,0.12)]", gate: "ARCHIVE SEAL" };
   if (phase === "closed") return { eyebrow: "BARCODE RECEIVER ONLINE", title: "SUBMISSION GATE CLOSED", body: "The underground receiver is powered and standing by. Stand by for intake access.", tone: "text-cyan-200", border: "border-cyan-200/30", glow: "shadow-[0_0_46px_rgba(103,232,249,0.10)]", gate: "GATE SEALED" };
   if (phase === "open") return { eyebrow: "INTAKE CORRIDOR OPEN", title: "BARCODE NETWORK ACCEPTING SONGS", body: "Free queue submissions are open. Priority Signal is a paid skip after payment clears.", tone: "text-accent", border: "border-accent/50", glow: "shadow-[0_0_64px_rgba(255,0,0,0.20)]", gate: "INTAKE UNLOCKED" };
@@ -75,7 +79,7 @@ function phaseCopy(phase: GatewayPhase) {
 }
 
 function uniqueActiveTracks(snapshot: QueuePublicSnapshot | null): QueuePublicTrack[] {
-  if (!snapshot || snapshot.session.status === "archived" || snapshot.session.broadcastPhase === "ended") return [];
+  if (!snapshot?.session || snapshot.session.status === "archived" || snapshot.session.broadcastPhase === "ended") return [];
   const seen = new Set<string>();
   return [snapshot.nowPlaying, snapshot.upNext, ...snapshot.queue].filter((track): track is QueuePublicTrack => {
     if (!track || seen.has(track.id)) return false;
@@ -86,8 +90,8 @@ function uniqueActiveTracks(snapshot: QueuePublicSnapshot | null): QueuePublicTr
 
 function publicCounts(snapshot: QueuePublicSnapshot | null) {
   const activeTracks = uniqueActiveTracks(snapshot);
-  const completed = snapshot?.session.completedCount ?? snapshot?.completed.length ?? 0;
-  const removed = snapshot?.session.removedCount ?? 0;
+  const completed = snapshot?.session?.completedCount ?? snapshot?.completed.length ?? 0;
+  const removed = snapshot?.session?.removedCount ?? 0;
   return {
     active: activeTracks.length,
     remaining: activeTracks.length,
@@ -129,15 +133,21 @@ export function PublicQueueGateway() {
       }
       wasOpen.current = nextOpen;
       setSnapshot(next);
+      return hasActiveQueueSession(next);
     }
+    return null;
   }
 
   useEffect(() => {
     setMounted(true);
     setNowMs(Date.now());
-    load();
-    const interval = setInterval(() => { setNowMs(Date.now()); load(); }, 5_000);
-    return () => clearInterval(interval);
+    return startSessionBoundPolling({
+      intervalMs: PUBLIC_QUEUE_POLL_INTERVAL_MS,
+      poll: async () => {
+        setNowMs(Date.now());
+        return load();
+      },
+    });
   }, []);
 
   function beginNavigation(event: React.MouseEvent<HTMLAnchorElement>, href: string, activeSessionId: string) {

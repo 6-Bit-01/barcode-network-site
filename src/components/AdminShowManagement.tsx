@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
+import { notifyQueueSessionChanged } from "@/lib/session-bound-polling";
 import { AdminQueueSessionProvenance } from "@/components/AdminQueueSessionProvenance";
 import { formatRuntime } from "@/lib/queue-types";
 import { pacificDateString } from "@/lib/pacific-time";
@@ -42,6 +43,7 @@ const FIXED_PRIORITY_INSTRUCTIONS = "Moves this track into the Priority Signal l
 export function AdminShowManagement() {
   const [state, setState] = useState<QueueState | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [showDate] = useState(todayDate());
   const [title, setTitle] = useState(`BARCODE Radio — ${todayDate()}`);
   const [description, setDescription] = useState(defaultDescription(todayDate()));
@@ -70,11 +72,20 @@ export function AdminShowManagement() {
   }
 
   async function post(body: Record<string, unknown>): Promise<QueueState | null> {
-    const res = await fetch("/api/admin/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    if (!res.ok) return null;
-    const next = await res.json();
-    setState(next);
-    return next;
+    try {
+      const res = await fetch("/api/admin/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setActionError(typeof payload?.error === "string" ? payload.error : "Queue action failed. Please retry.");
+        return null;
+      }
+      setActionError(null);
+      setState(payload);
+      return payload;
+    } catch {
+      setActionError("Queue action could not reach the server. Please retry.");
+      return null;
+    }
   }
 
   async function startSession() {
@@ -86,14 +97,19 @@ export function AdminShowManagement() {
     setPriorityStartError(null);
     const paidUpgradesEnabled = priorityUpgradesEnabled && priorityUpgradePriceCents > 0;
     const next = await post({ action: "startSession", title, showDate, description, purpose, bnlPublicationStatus, trackLimitPerArtist, queueCapacity, submissionCooldownSeconds, priorityUpgradesEnabled: paidUpgradesEnabled, priorityUpgradeLabel: FIXED_PRIORITY_LABEL, priorityUpgradeInstructions: FIXED_PRIORITY_INSTRUCTIONS, priorityUpgradePriceCents, priorityUpgradeCurrency, priorityUpgradePaymentsEnabled: paidUpgradesEnabled });
-    if (next?.session?.sessionId) router.push(`/admin/queue?sessionId=${encodeURIComponent(next.session.sessionId)}`);
+    if (next?.session?.sessionId) {
+      notifyQueueSessionChanged();
+      router.push(`/admin/queue?sessionId=${encodeURIComponent(next.session.sessionId)}`);
+    }
   }
 
   async function endSession() {
     setEndingSession(true);
-    await post({ action: "archiveSession" });
-    setEndConfirmOpen(false);
+    const ended = await post({ action: "archiveSession", sessionId: state?.session?.sessionId });
     setEndingSession(false);
+    if (!ended) return;
+    notifyQueueSessionChanged();
+    setEndConfirmOpen(false);
     await load();
   }
 
@@ -110,6 +126,7 @@ export function AdminShowManagement() {
 
   return (
     <div className="space-y-6">
+      {actionError && <div role="alert" className="border border-danger/50 bg-danger/10 p-3 text-sm text-danger">{actionError}</div>}
       <StartNewSession locked={startLocked} queueIsOpen={queueIsOpen} onCloseSubmissions={() => post({ action: "setOpen", isOpen: false })} onEnd={() => setEndConfirmOpen(true)} title={title} description={description} purpose={purpose} bnlPublicationStatus={bnlPublicationStatus} trackLimitPerArtist={trackLimitPerArtist} queueCapacity={queueCapacity} onTitle={setTitle} onDescription={setDescription} onPurpose={(value) => { setPurpose(value); if (value !== "live_broadcast") setBnlPublicationStatus("private"); }} onBnlPublicationStatus={setBnlPublicationStatus} onTrackLimit={setTrackLimitPerArtist} onCapacity={setQueueCapacity} submissionCooldownSeconds={submissionCooldownSeconds} onSubmissionCooldown={setSubmissionCooldownSeconds} priorityUpgradesEnabled={priorityUpgradesEnabled} priorityUpgradePriceCents={priorityUpgradePriceCents} priorityUpgradeCurrency={priorityUpgradeCurrency} priorityStartError={priorityStartError} onPriorityEnabled={setPriorityUpgradesEnabled} onPriorityPrice={(value) => { setPriorityUpgradePriceCents(value); if (value > 0) setPriorityStartError(null); }} onStart={startSession} sessionId={currentSession?.sessionId} />
       <CurrentSession session={currentSession} onPost={post} onEnd={() => setEndConfirmOpen(true)} />
       <SessionData session={currentSession} />

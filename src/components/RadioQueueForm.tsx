@@ -5,9 +5,12 @@ import { upload } from "@vercel/blob/client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { buildQueueTimingDisplay, priorityDisplayFromImpact, queueTimingInputFromPublicSnapshot } from "@/lib/queue-timing-display";
+import { clearPriorityCheckoutOwnerToken, getOrCreatePriorityCheckoutOwnerToken } from "@/lib/priority-checkout-client";
 import { cooldownDeadlineFromRemaining, cooldownRemainingFromDeadline } from "@/lib/queue-cooldown";
 import { APPLE_MUSIC_QUEUE_UNSUPPORTED_MESSAGE, PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT, PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION, PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION, PUBLIC_QUEUE_LEGAL_TERMS_VERSION, formatRuntime, isAppleMusicUrl, PRIORITY_DISCLOSURE_TEXT, PRIORITY_TERMS_VERSION } from "@/lib/queue-types";
 import type { QueuePublicSnapshot, QueuePublicStatus, QueuePublicTrack } from "@/lib/queue-types";
+import { PUBLIC_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
+import { hasActiveQueueSession, startSessionBoundPolling } from "@/lib/session-bound-polling";
 
 type Mode = "link" | "upload";
 type ReadState = "idle" | "checking" | "reading" | "detected" | "pending" | "uploading";
@@ -190,9 +193,13 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
   }
 
   useEffect(() => {
-    loadStatus();
-    const interval = setInterval(loadStatus, 5_000);
-    return () => clearInterval(interval);
+    return startSessionBoundPolling({
+      intervalMs: PUBLIC_QUEUE_POLL_INTERVAL_MS,
+      poll: async () => {
+        const next = await loadStatus();
+        return next ? hasActiveQueueSession(next) : null;
+      },
+    });
   }, [submitterToken]);
 
   useEffect(() => {
@@ -388,14 +395,16 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
   async function startPriorityCheckout(trackId: string): Promise<boolean> {
     const checkoutSessionId = sessionId ?? session?.sessionId;
     if (!checkoutSessionId) return false;
+    const checkoutOwnerToken = getOrCreatePriorityCheckoutOwnerToken(checkoutSessionId, trackId);
     setTransmissionState("priority_requested");
     await wait(650);
-    const res = await fetch("/api/queue/priority-checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trackId, sessionId: checkoutSessionId, acceptedPriorityTerms: true, priorityTermsVersion: PRIORITY_TERMS_VERSION, priorityDisclosureText: PRIORITY_DISCLOSURE_TEXT }) });
+    const res = await fetch("/api/queue/priority-checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trackId, sessionId: checkoutSessionId, submitterToken, checkoutOwnerToken, acceptedPriorityTerms: true, priorityTermsVersion: PRIORITY_TERMS_VERSION, priorityDisclosureText: PRIORITY_DISCLOSURE_TEXT }) });
     const payload = await res.json().catch(() => ({}));
     if (res.ok && typeof payload.url === "string") {
       window.location.href = payload.url;
       return true;
     }
+    if (payload.code === "checkout_owned_elsewhere") clearPriorityCheckoutOwnerToken(checkoutSessionId, trackId);
     setTransmissionState("idle");
     return false;
   }

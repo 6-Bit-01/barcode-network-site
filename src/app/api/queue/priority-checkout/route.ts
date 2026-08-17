@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { createPrioritySignalCheckoutSession } from "@/lib/stripe";
 import { createPriorityGiftAttribution, markPriorityUpgradeCheckoutPending, requestPriorityCheckout } from "@/lib/queue";
 
@@ -7,6 +8,25 @@ export const runtime = "nodejs";
 
 function cleanText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function cleanCheckoutOwnerToken(value: unknown): string {
+  const token = cleanText(value);
+  return /^[a-zA-Z0-9_-]{32,160}$/.test(token) ? token : "";
+}
+
+export function hashPriorityCheckoutOwnerToken(token: string): string {
+  return createHash("sha256").update(token, "utf8").digest("hex");
+}
+
+export function storedCheckoutBelongsToRequester(
+  track: { priorityUpgradeCheckoutOwnerTokenHash?: string | null },
+  checkoutOwnerToken: string,
+): boolean {
+  const storedHash = cleanText(track.priorityUpgradeCheckoutOwnerTokenHash).toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(storedHash) || !checkoutOwnerToken) return false;
+  const requesterHash = hashPriorityCheckoutOwnerToken(checkoutOwnerToken);
+  return timingSafeEqual(Buffer.from(storedHash, "hex"), Buffer.from(requesterHash, "hex"));
 }
 
 const PRIORITY_DEPTH_UNAVAILABLE_MESSAGE = "Priority Signal opens once the broadcast line has enough active transmissions to overtake.";
@@ -31,6 +51,8 @@ export async function POST(req: Request) {
     const trackId = cleanText(body.trackId);
     const sessionId = cleanText(body.sessionId);
     if (!trackId || !sessionId) return NextResponse.json({ error: "Priority Signal Upgrade is not available for this track." }, { status: 400 });
+    const checkoutOwnerToken = cleanCheckoutOwnerToken(body.checkoutOwnerToken);
+    if (!checkoutOwnerToken) return NextResponse.json({ error: "Priority Signal checkout ownership could not be verified. Refresh the queue and try again." }, { status: 400 });
     const priorityAcceptance = {
       acceptedPriorityTerms: body.acceptedPriorityTerms === true,
       priorityTermsVersion: cleanText(body.priorityTermsVersion),
@@ -38,14 +60,17 @@ export async function POST(req: Request) {
     };
 
     const checkoutRequest = await requestPriorityCheckout(trackId, sessionId, priorityAcceptance);
+    const submitterToken = cleanText(body.submitterToken).slice(0, 120);
+    const requesterOwnsTrack = Boolean(submitterToken && checkoutRequest.track.submitterToken && submitterToken === checkoutRequest.track.submitterToken);
+    if (!requesterOwnsTrack && body.priorityGift !== true) throw new Error("Gifted Priority attribution disclosure is required for another artist's track. Refresh the queue and try again.");
     if (storedCheckoutStillUsable(checkoutRequest.track)) {
+      if (!storedCheckoutBelongsToRequester(checkoutRequest.track, checkoutOwnerToken)) {
+        return NextResponse.json({ error: "Priority Signal checkout is already in progress for this track. Only the person who started it can resume it.", code: "checkout_owned_elsewhere" }, { status: 409 });
+      }
       return NextResponse.json({ url: checkoutRequest.track.priorityUpgradeCheckoutUrl, sessionId: checkoutRequest.track.priorityUpgradeCheckoutSessionId, message: "Payment confirmation may take a moment." });
     }
     if (checkoutRequest.session.activeCount < MIN_PRIORITY_ACTIVE_DEPTH) return NextResponse.json({ error: PRIORITY_DEPTH_UNAVAILABLE_MESSAGE }, { status: 409 });
 
-    const submitterToken = cleanText(body.submitterToken).slice(0, 120);
-    const requesterOwnsTrack = Boolean(submitterToken && checkoutRequest.track.submitterToken && submitterToken === checkoutRequest.track.submitterToken);
-    if (!requesterOwnsTrack && body.priorityGift !== true) throw new Error("Gifted Priority attribution disclosure is required for another artist's track. Refresh the queue and try again.");
     const priorityGiftAttribution = !requesterOwnsTrack
       ? createPriorityGiftAttribution({
         attributionVersion: cleanText(body.priorityGiftAttributionVersion),
@@ -64,7 +89,7 @@ export async function POST(req: Request) {
       label: checkoutRequest.label,
       priorityGiftAttribution,
     });
-    await markPriorityUpgradeCheckoutPending(trackId, checkoutRequest.session.sessionId, { provider: "stripe", checkoutSessionId: checkout.sessionId, checkoutUrl: checkout.url, checkoutCreatedAt: checkout.createdAt, checkoutExpiresAt: checkout.expiresAt, priorityAcceptance, priorityGiftAttribution });
+    await markPriorityUpgradeCheckoutPending(trackId, checkoutRequest.session.sessionId, { provider: "stripe", checkoutSessionId: checkout.sessionId, checkoutUrl: checkout.url, checkoutCreatedAt: checkout.createdAt, checkoutExpiresAt: checkout.expiresAt, checkoutOwnerTokenHash: hashPriorityCheckoutOwnerToken(checkoutOwnerToken), priorityAcceptance, priorityGiftAttribution });
     return NextResponse.json({ url: checkout.url, sessionId: checkout.sessionId, message: "Payment confirmation may take a moment." });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Priority Signal checkout is unavailable.";

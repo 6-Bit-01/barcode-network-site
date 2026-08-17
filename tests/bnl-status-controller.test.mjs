@@ -42,6 +42,33 @@ test('focus and visible-document refresh work while hidden-document event does n
   assert.equal(calls, 2);
 });
 
+test('the periodic BNL refresh skips hidden tabs', async () => {
+  const originalDocument = globalThis.document;
+  const originalSetInterval = globalThis.setInterval;
+  const originalClearInterval = globalThis.clearInterval;
+  let intervalCallback;
+  globalThis.document = { visibilityState: 'hidden', addEventListener() {}, removeEventListener() {} };
+  globalThis.setInterval = (callback) => { intervalCallback = callback; return 12; };
+  globalThis.clearInterval = () => {};
+  let calls = 0;
+  try {
+    const controller = new BNLStatusController(async () => { calls += 1; return { ok: true, status: 200, json: async () => good }; });
+    controller.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(calls, 0);
+    await intervalCallback();
+    assert.equal(calls, 0);
+    globalThis.document.visibilityState = 'visible';
+    await intervalCallback();
+    assert.equal(calls, 1);
+    controller.stop();
+  } finally {
+    globalThis.document = originalDocument;
+    globalThis.setInterval = originalSetInterval;
+    globalThis.clearInterval = originalClearInterval;
+  }
+});
+
 test('overlapping requests are prevented and last good status survives later error', async () => {
   const originalConsoleError = console.error;
   console.error = () => {};
@@ -143,4 +170,10 @@ test('provider-style browser fetch wrapper avoids controller receiver binding', 
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test('the global BNL provider is disabled on admin routes where its ticker is not rendered', () => {
+  const providerSource = readFileSync(resolve('src/components/BNLStatusProvider.tsx'), 'utf8');
+  assert.match(providerSource, /pathname === "\/admin" \|\| pathname\.startsWith\("\/admin\/"\)/);
+  assert.match(providerSource, /if \(disabled\) return/);
 });

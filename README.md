@@ -10,7 +10,7 @@ Production: <https://www.barcode-network.com>
 | --- | --- |
 | Public site | Next.js App Router under `src/app/` |
 | Shared content and public dossiers | `src/content.ts` |
-| Native Radio queue | `src/lib/queue.ts`, `/queue`, `/admin/queue`, and show-management routes |
+| Native Radio queue | Redis mutation authority plus private, revisioned Vercel Blob read/recovery snapshots in `src/lib/queue.ts` and `src/lib/queue-durable-snapshot.ts` |
 | Queue uploads | Vercel Blob through `/api/queue/upload` |
 | Priority payments | Stripe checkout and webhook routes |
 | Queue, BNL, Journal, and dossier persistence | Upstash Redis |
@@ -21,7 +21,7 @@ Production: <https://www.barcode-network.com>
 
 The native queue exists and is tested, but native presentation remains quarantined unless `BARCODE_QUEUE_PRODUCTION_ENABLED` is exactly `true`. Until the owner approves the native cutover, operational Radio submission links and copy continue to point to Auxchord. When enabled, the server-side capability moves the Radio page, Footer, Terminal, and BNL public source context to the native `/queue` route; historical Auxchord records remain intact. Queue-derived BNL context has an additional session-level boundary: only a session explicitly marked `live_broadcast` can opt into `runtime_only`, `recap_approved`, or `public_copy_approved`. New rehearsals and legacy/unknown sessions remain private by default even when the native queue is publicly usable.
 
-Queue acceptance uses 44 show slots by default. A slot remains occupied when a real track moves from queued to Next In Line, loaded/Now Playing, or completed/played; removal frees it, while simulations and failed or rejected attempts never consume one. Queue writes share one serialized, revisioned Redis mutation boundary, and public/admin polling is read-only.
+Queue acceptance uses 44 show slots by default. A slot remains occupied when a real track moves from queued to Next In Line, loaded/Now Playing, or completed/played; removal frees it, while simulations and failed or rejected attempts never consume one. Queue writes share one serialized, revisioned Redis mutation boundary. Every successful mutation is copied to a private, checksummed Blob revision; public/admin polling reads that durable model without spending Redis commands. Redis quota failures therefore leave the last committed queue visible while mutations fail closed.
 
 `stream-engine/`, `discord-bot/`, and `_archive/` are historical references. They are not production services and do not define current queue contracts.
 
@@ -45,7 +45,8 @@ Do not commit secrets. Configure only the integrations needed for the surface be
 | Group | Variables |
 | --- | --- |
 | Admin access | `ADMIN_PASSWORD`, `JWT_SECRET` |
-| Redis | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` |
+| Shared Redis | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` |
+| Dedicated queue Redis | `QUEUE_REDIS_REST_URL`, `QUEUE_REDIS_REST_TOKEN` (required in Vercel Production; non-production migration workflows may fall back to shared Redis) |
 | Uploads | `BLOB_READ_WRITE_TOKEN` |
 | Payments | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `NEXT_PUBLIC_SITE_URL` |
 | Queue operations | `QUEUE_API_KEY`, `CRON_SECRET`, `BARCODE_QUEUE_PRODUCTION_ENABLED` |
@@ -54,7 +55,7 @@ Do not commit secrets. Configure only the integrations needed for the surface be
 
 YouTube Music watch links use the same YouTube video-ID and Data API path as ordinary YouTube links. Provider metadata is optional and fail-soft: unavailable, slow, malformed, or oversized responses fall back to submitted track details and the queue's internal duration estimate instead of blocking intake. Apple Music is not accepted for BARCODE Radio intake because the host cannot reliably access the full submitted track. Apple Music links used elsewhere for releases, catalogs, dossiers, or historical records are unaffected.
 
-The queue production capability is fail-closed. The only enabled value is the lowercase string `true`; `1`, `yes`, missing, and malformed values remain disabled. See `docs/queue-production-capability.md`.
+The queue production capability is fail-closed. The only enabled value is the lowercase string `true`; `1`, `yes`, missing, and malformed values remain disabled. See `docs/queue-production-capability.md`. The queue recovery architecture, quota-lock test, deployment order, and evidence checklist are in `docs/queue-disaster-recovery.md`.
 
 ## Verification
 

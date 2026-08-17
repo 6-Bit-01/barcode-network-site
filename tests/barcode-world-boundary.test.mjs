@@ -244,10 +244,17 @@ test("shared live providers remain inert on the private prototype route", async 
   for (const source of [liveProvider, bnlProvider]) {
     assert.match(source, /usePathname/);
     assert.match(source, /pathname === "\/world\/playtest"/);
-    assert.match(source, /if \(isolatedPrototype\) return/);
   }
-  assert.match(liveProvider, /isLive:\s*isolatedPrototype \? false : isLive/);
-  assert.match(bnlProvider, /value=\{isolatedPrototype \? null : controller\}/);
+  assert.match(liveProvider, /if \(isolatedPrototype\) return/);
+  assert.match(bnlProvider, /if \(disabled\) return/);
+  assert.match(
+    liveProvider,
+    /isLive:\s*isolatedPrototype \? false : isLive/,
+  );
+  assert.match(
+    bnlProvider,
+    /value=\{disabled \? null : controller\}/,
+  );
   assert.match(siteChrome, /pathname === "\/world\/playtest"/);
   assert.match(siteChrome, /return children/);
 });

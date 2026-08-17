@@ -116,13 +116,16 @@ export async function GET(req: Request) {
   const params = new URL(req.url).searchParams;
   const sessionId = params.get("sessionId") ?? undefined;
   const now = new Date();
-  const [snapshot, playerSync, overlayState] = await Promise.all([
-    getPublicQueueSnapshot(sessionId, {
-      submitterToken: params.get("submitterToken"),
-      tiktokHandle: params.get("tiktokHandle"),
-      contactEmail: params.get("contactEmail"),
-      artist: params.get("artist"),
-    }),
+  const snapshot = await getPublicQueueSnapshot(sessionId, {
+    submitterToken: params.get("submitterToken"),
+    tiktokHandle: params.get("tiktokHandle"),
+    contactEmail: params.get("contactEmail"),
+    artist: params.get("artist"),
+  });
+  if (snapshot.sessionActive !== true) {
+    return NextResponse.json(attachQueueLiveTiming(snapshot, null, null, now));
+  }
+  const [playerSync, overlayState] = await Promise.all([
     getLiveOverlayPlayerSync(),
     getStoredLiveOverlayState(),
   ]);
@@ -206,7 +209,7 @@ export async function submitTrackFromBody(body: Record<string, unknown>): Promis
   }
 
   const active = await getPublicQueueSnapshot();
-  if (active.session.sessionId !== sessionId) return NextResponse.json({ error: SESSION_SYNC_MESSAGE, code: "stale_session" }, { status: 409 });
+  if (!active.session || active.session.sessionId !== sessionId) return NextResponse.json({ error: SESSION_SYNC_MESSAGE, code: "stale_session" }, { status: 409 });
   if (!active.status.isOpen) {
     return NextResponse.json({ error: active.status.isFull ? "This broadcast queue is full for new transmissions." : "This broadcast queue is closed." }, { status: 409 });
   }

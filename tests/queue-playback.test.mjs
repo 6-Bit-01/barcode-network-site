@@ -54,9 +54,17 @@ const overlay = require("../src/lib/live-overlay.ts");
 const publicOverlayRoute = require("../src/app/api/overlay/live/route.ts");
 
 let trackSequence = 0;
+
+async function startFreshQueueSession(options) {
+  const current = await queue.getRadioQueueState();
+  if (current.revision !== 0 && current.session.status !== "archived") {
+    await queue.archiveCurrentQueueSession();
+  }
+  return queue.startNewQueueSession(options);
+}
+
 async function freshOpenSession(label, options = {}) {
-  await queue.setQueueOpen(false);
-  const state = await queue.startNewQueueSession({
+  const state = await startFreshQueueSession({
     title: `${label} ${Date.now()} ${trackSequence}`,
     purpose: options.purpose,
     bnlPublicationStatus: options.bnlPublicationStatus,
@@ -161,8 +169,7 @@ function countTrackOccurrences(state, id) {
 }
 
 test("new active session begins in warmup before submissions open", async () => {
-  await queue.setQueueOpen(false);
-  await queue.startNewQueueSession({ title: `warmup start ${Date.now()} ${trackSequence}` });
+  await startFreshQueueSession({ title: `warmup start ${Date.now()} ${trackSequence}` });
   const free = await addTrack("Warmup Free");
 
   const state = await queue.updateRadioTrack("", "pullNext");
@@ -176,8 +183,7 @@ test("new active session begins in warmup before submissions open", async () => 
 });
 
 test("warmup rejects public submissions while submissions are closed", async () => {
-  await queue.setQueueOpen(false);
-  await queue.startNewQueueSession({ title: `warmup rejects ${Date.now()} ${trackSequence}` });
+  await startFreshQueueSession({ title: `warmup rejects ${Date.now()} ${trackSequence}` });
   const state = await queue.getRadioQueueState();
   assert.equal(state.session.broadcastPhase, "warmup");
   assert.equal(state.session.queueOpen, false);
@@ -186,8 +192,7 @@ test("warmup rejects public submissions while submissions are closed", async () 
 });
 
 test("opening submissions starts the pre-show routing timer without starting routing", async () => {
-  await queue.setQueueOpen(false);
-  await queue.startNewQueueSession({ title: `timer start ${Date.now()} ${trackSequence}` });
+  await startFreshQueueSession({ title: `timer start ${Date.now()} ${trackSequence}` });
   const beforeOpen = Date.now();
 
   await queue.setQueueOpen(true);
@@ -1077,8 +1082,7 @@ test("archived public snapshots neutralize active lanes while preserving the rea
 
 
 test("new sessions default queue capacity to 44", async () => {
-  await queue.setQueueOpen(false);
-  const state = await queue.startNewQueueSession({ title: `default capacity ${Date.now()} ${trackSequence}` });
+  const state = await startFreshQueueSession({ title: `default capacity ${Date.now()} ${trackSequence}` });
   assert.equal(state.session.queueCapacity, 44);
   assert.equal(state.session.acceptedCount, 0);
   assert.equal(state.session.submissionClosureReason, "manual");
@@ -1154,8 +1158,7 @@ test("concurrent duplicate and per-artist collisions are revalidated inside the 
   let state = await queue.getRadioQueueState();
   assert.equal(state.session.acceptedCount, 1);
 
-  await queue.setQueueOpen(false);
-  await queue.startNewQueueSession({
+  await startFreshQueueSession({
     title: `atomic artist collision ${Date.now()} ${trackSequence}`,
     queueCapacity: 44,
     trackLimitPerArtist: 1,
@@ -1285,7 +1288,7 @@ test("submission capacity surfaces use accepted show slots while timing keeps ac
 test("clear archive removes archived sessions and preserves active session", async () => {
   const activeSessionId = await freshOpenSession("clear archive preserve active");
   await queue.archiveCurrentQueueSession();
-  await queue.startNewQueueSession({ title: `active after archive ${Date.now()} ${trackSequence}` });
+  await startFreshQueueSession({ title: `active after archive ${Date.now()} ${trackSequence}` });
 
   const before = await queue.getRadioQueueState();
   assert.ok(before.sessions.some((session) => session.status === "archived"));
@@ -1377,8 +1380,7 @@ test("BNL read model excludes simulation tracks from queue and artists", async (
 });
 
 test("simulation free is blocked while submissions are closed", async () => {
-  await queue.setQueueOpen(false);
-  await queue.startNewQueueSession({ title: `sim free blocked ${Date.now()} ${trackSequence}` });
+  await startFreshQueueSession({ title: `sim free blocked ${Date.now()} ${trackSequence}` });
   const before = await queue.getRadioQueueState();
 
   const state = await queue.updateRadioTrack("", "addSimulationFreeTrack");
@@ -1388,8 +1390,7 @@ test("simulation free is blocked while submissions are closed", async () => {
 });
 
 test("simulation paid priority is blocked while submissions are closed", async () => {
-  await queue.setQueueOpen(false);
-  await queue.startNewQueueSession({ title: `sim paid blocked ${Date.now()} ${trackSequence}` });
+  await startFreshQueueSession({ title: `sim paid blocked ${Date.now()} ${trackSequence}` });
   const before = await queue.getRadioQueueState();
 
   const state = await queue.updateRadioTrack("", "addSimulationPaidPriority");
@@ -1399,8 +1400,7 @@ test("simulation paid priority is blocked while submissions are closed", async (
 });
 
 test("simulation checkout/failed/held creation actions are blocked while submissions are closed", async () => {
-  await queue.setQueueOpen(false);
-  await queue.startNewQueueSession({ title: `sim variants blocked ${Date.now()} ${trackSequence}` });
+  await startFreshQueueSession({ title: `sim variants blocked ${Date.now()} ${trackSequence}` });
   const before = await queue.getRadioQueueState();
   let state = await queue.updateRadioTrack("", "addSimulationCheckoutPending");
   state = await queue.updateRadioTrack("", "addSimulationPaymentFailed");
@@ -1754,6 +1754,27 @@ test("requestPriorityCheckout accepts eligible regular and wheel tracks and reje
   await assert.rejects(() => queue.requestPriorityCheckout(wheel.id, sessionId, priorityAcceptance), /not available/);
 });
 
+test("capacity closure blocks new songs but keeps Priority checkout available for an accepted track", async () => {
+  const sessionId = await freshOpenSession("priority checkout at capacity", { showStarted: false, queueCapacity: 2 });
+  await queue.updatePriorityUpgradeSettings({ enabled: true, paymentsEnabled: true, priceCents: 1000, currency: "usd" });
+  const first = await addTrack("Capacity Priority One");
+  await addTrack("Capacity Priority Two");
+
+  let state = await queue.getRadioQueueState();
+  assert.equal(state.session.acceptedCount, 2);
+  assert.equal(state.session.queueOpen, false);
+  assert.equal(state.session.submissionClosureReason, "capacity");
+  await assert.rejects(() => addTrack("Capacity Rejected Third"), /closed|full/i);
+
+  const checkout = await queue.requestPriorityCheckout(first.id, sessionId, priorityAcceptance);
+  assert.equal(checkout.track.id, first.id, "capacity closure must not block upgrading an accepted track");
+
+  await queue.setQueueOpen(false);
+  state = await queue.getRadioQueueState();
+  assert.equal(state.session.submissionClosureReason, "manual");
+  await assert.rejects(() => queue.requestPriorityCheckout(first.id, sessionId, priorityAcceptance), /broadcast session is active/);
+});
+
 test("markPriorityUpgradeCheckoutPending preserves existing track data", async () => {
   const sessionId = await freshOpenSession("priority checkout pending metadata", { showStarted: false });
   const track = await addTrack("Checkout Pending Metadata");
@@ -1765,6 +1786,7 @@ test("markPriorityUpgradeCheckoutPending preserves existing track data", async (
     checkoutUrl: "https://example.com/checkout",
     checkoutCreatedAt: new Date().toISOString(),
     checkoutExpiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
+    checkoutOwnerTokenHash: "a".repeat(64),
     priorityAcceptance,
   });
   const after = await queue.getRadioQueueState();
@@ -1773,12 +1795,15 @@ test("markPriorityUpgradeCheckoutPending preserves existing track data", async (
   assert.equal(updated?.title, existing?.title);
   assert.equal(updated?.priorityUpgradeStatus, "checkout_pending");
   assert.equal(updated?.priorityUpgradeCheckoutSessionId, "cs_test_123");
+  assert.equal(updated?.priorityUpgradeCheckoutOwnerTokenHash, "a".repeat(64));
   assert.equal(updated?.priorityLegalAcceptance?.priorityTermsVersion, PRIORITY_TERMS_VERSION);
   assert.equal(updated?.priorityLegalAcceptance?.priorityDisclosureText, PRIORITY_DISCLOSURE_TEXT);
   assert.equal(updated?.priorityLegalAcceptance?.source, "priority_checkout");
   assert.ok(updated?.priorityLegalAcceptance?.acceptedAt);
   const snapshot = await queue.getPublicQueueSnapshot(sessionId);
-  assert.equal("priorityLegalAcceptance" in snapshot.queue.find((entry) => entry.id === track.id), false);
+  const publicPending = snapshot.queue.find((entry) => entry.id === track.id);
+  assert.equal("priorityLegalAcceptance" in publicPending, false);
+  assert.equal("priorityUpgradeCheckoutOwnerTokenHash" in publicPending, false);
 });
 
 test("gifted Priority attribution is sanitized, payment-bound, public only after confirmation, and immutable on retries", async () => {
@@ -1870,6 +1895,7 @@ test("self and manual Priority paths do not invent gifted attribution", async ()
     checkoutUrl: "https://example.com/self-checkout",
     checkoutCreatedAt: "2026-08-09T04:00:00.000Z",
     checkoutExpiresAt: "2026-08-09T04:30:00.000Z",
+    checkoutOwnerTokenHash: "b".repeat(64),
     priorityAcceptance,
     priorityGiftAttribution: null,
   });
@@ -1883,6 +1909,7 @@ test("self and manual Priority paths do not invent gifted attribution", async ()
   });
   const manual = await addTrack("Manual Priority");
   const state = await queue.updateRadioTrack(manual.id, "priority");
+  assert.equal(activeTrack(state, selfUpgrade.id)?.priorityUpgradeCheckoutOwnerTokenHash, null);
   assert.equal(activeTrack(state, selfUpgrade.id)?.priorityGiftAttribution, null);
   assert.equal(activeTrack(state, manual.id)?.priorityUpgradeStatus, "manual");
   assert.equal(activeTrack(state, manual.id)?.priorityGiftAttribution, null);
@@ -2185,7 +2212,7 @@ test("upload submission without detected duration stays internal estimate and no
   assert.equal(track.durationSource, "internal_estimate");
 });
 
-test("uploaded MP3/WAV queue entries get private deletion metadata about 24 hours after creation", async () => {
+test("uploaded MP3/WAV queue entries retain private audio for at least 30 days", async () => {
   const created = new Date(Date.UTC(2026, 0, 2, 3, 4, 5));
   await freshOpenSession("upload deletion metadata", { showStarted: false });
 
@@ -2203,7 +2230,7 @@ test("uploaded MP3/WAV queue entries get private deletion metadata about 24 hour
 
   assert.equal(track.uploadedFileDeletionStatus, "pending");
   assert.equal(track.uploadedFileDeletedAt, null);
-  assert.equal(new Date(track.uploadedFileDeleteAfter).getTime(), created.getTime() + 24 * 60 * 60 * 1000);
+  assert.equal(new Date(track.uploadedFileDeleteAfter).getTime(), created.getTime() + 30 * 24 * 60 * 60 * 1000);
 });
 
 test("link-only submissions do not get raw upload deletion metadata", async () => {
@@ -2286,9 +2313,11 @@ test("cleanup deletes expired BARCODE upload files idempotently without removing
   });
   const deleted = [];
 
-  const first = await queue.cleanupExpiredQueueUploads({ now: new Date(Date.UTC(2026, 0, 3)), deleteBlob: async (url) => { deleted.push(url); } });
-  const second = await queue.cleanupExpiredQueueUploads({ now: new Date(Date.UTC(2026, 0, 3, 1)), deleteBlob: async (url) => { deleted.push(url); } });
-  const state = await queue.getRadioQueueState();
+  await withFakeNow(new Date(Date.UTC(2026, 0, 3)), () => queue.archiveCurrentQueueSession());
+
+  const first = await queue.cleanupExpiredQueueUploads({ now: new Date(Date.UTC(2026, 1, 3)), deleteBlob: async (url) => { deleted.push(url); } });
+  const second = await queue.cleanupExpiredQueueUploads({ now: new Date(Date.UTC(2026, 1, 3, 1)), deleteBlob: async (url) => { deleted.push(url); } });
+  const state = await queue.getRadioQueueState((await queue.getRadioQueueState()).sessions.find((session) => session.status === "archived").sessionId);
   const cleaned = state.queue.find((entry) => entry.id === upload.id);
   const link = state.queue.find((entry) => entry.id === linkOnly.id);
 
@@ -2297,7 +2326,7 @@ test("cleanup deletes expired BARCODE upload files idempotently without removing
   assert.deepEqual(deleted, [uploadUrl]);
   assert.ok(cleaned, "upload queue record should remain");
   assert.equal(cleaned.uploadedFileDeletionStatus, "deleted");
-  assert.equal(cleaned.uploadedFileDeletedAt, new Date(Date.UTC(2026, 0, 3)).toISOString());
+  assert.equal(cleaned.uploadedFileDeletedAt, new Date(Date.UTC(2026, 1, 3)).toISOString());
   assert.equal(cleaned.legalAcceptance.acceptedAt, legalAcceptance.acceptedAt);
   assert.equal(cleaned.priorityUpgradePaymentId, "pi_preserved");
   assert.equal(cleaned.stripeSessionId, "cs_preserved");
@@ -2327,16 +2356,18 @@ test("cleanup processes duplicate uploaded track appearances only once per run",
     createdAt: oldCreatedAt,
   });
   await queue.updateRadioTrack(upload.id, "spotlight");
+  await withFakeNow(new Date(Date.UTC(2026, 0, 3)), () => queue.archiveCurrentQueueSession());
 
   const deleted = [];
   const result = await queue.cleanupExpiredQueueUploads({
-    now: new Date(Date.UTC(2026, 0, 3)),
+    now: new Date(Date.UTC(2026, 1, 3)),
     deleteBlob: async (url) => {
       deleted.push(url);
       if (deleted.length > 1) throw new Error("duplicate delete should not run");
     },
   });
-  const state = await queue.getRadioQueueState();
+  const sessions = (await queue.getRadioQueueState()).sessions;
+  const state = await queue.getRadioQueueState(sessions.find((session) => session.status === "archived").sessionId);
   const queued = state.queue.find((entry) => entry.id === upload.id);
   const spotlight = state.spotlight.find((entry) => entry.id === upload.id);
 

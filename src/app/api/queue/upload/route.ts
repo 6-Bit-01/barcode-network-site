@@ -47,6 +47,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       onBeforeGenerateToken: async (pathname, clientPayload) => {
         const payload = parseClientPayload(clientPayload);
         const snapshot = await getPublicQueueSnapshot();
+        if (!snapshot.session) throw new Error(SESSION_SYNC_MESSAGE);
 
         assertCurrentUploadSession(payload.sessionId, snapshot.session.sessionId);
         assertUploadSessionOpen(snapshot.status.isOpen, snapshot.status.isFull, snapshot.status.acceptedCount ?? snapshot.status.activeCount, snapshot.status.capacity);

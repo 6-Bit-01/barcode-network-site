@@ -4,6 +4,8 @@ import { createContext, useContext, useState, useEffect, useCallback, ReactNode 
 import { usePathname } from "next/navigation";
 import type { QueueBroadcastPhase, QueuePublicSnapshot } from "@/lib/queue-types";
 import { derivePublicShowState } from "@/lib/live-status-public";
+import { SITE_LIVE_STATUS_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
+import { hasActiveQueueSession as responseHasActiveQueueSession, startSessionBoundPolling } from "@/lib/session-bound-polling";
 
 type SiteShowMode = "offline" | "intake_open" | "broadcast_live";
 
@@ -61,9 +63,10 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
   const [queueSnapshot, setQueueSnapshot] = useState<QueuePublicSnapshot | null>(null);
 
   const fetchStatus = useCallback(async () => {
-    if (isolatedPrototype) return;
+    if (isolatedPrototype) return false;
     let adminError: string | null = null;
     let queueError: string | null = null;
+    let sessionActive: boolean | null = null;
 
     try {
       const res = await fetch("/api/admin/live", { cache: "no-store", credentials: "include" });
@@ -77,12 +80,14 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
         setQueueProductionEnabled(queueProduction);
         if (!queueProduction) {
           setQueueSnapshot(null);
+          sessionActive = false;
         } else {
           try {
             const queueRes = await fetch("/api/queue", { cache: "no-store" });
             if (queueRes.ok) {
               const queueData = (await queueRes.json()) as QueuePublicSnapshot;
               setQueueSnapshot(queueData);
+              sessionActive = responseHasActiveQueueSession(queueData);
             } else {
               queueError = "Failed to fetch queue status";
             }
@@ -102,6 +107,7 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
     }
 
     setLastError(adminError ?? queueError);
+    return sessionActive;
   }, [isolatedPrototype]);
 
   useEffect(() => {
@@ -119,12 +125,7 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (isolatedPrototype) return;
-    const initialFetchTimer = setTimeout(fetchStatus, 0);
-    const interval = setInterval(fetchStatus, 15_000);
-    return () => {
-      clearTimeout(initialFetchTimer);
-      clearInterval(interval);
-    };
+    return startSessionBoundPolling({ intervalMs: SITE_LIVE_STATUS_POLL_INTERVAL_MS, poll: fetchStatus });
   }, [fetchStatus, isolatedPrototype]);
 
   const toggleLive = useCallback(async () => {

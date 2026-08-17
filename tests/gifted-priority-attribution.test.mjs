@@ -16,6 +16,11 @@ test("gifted Priority checkout captures only the explicit public name and binds 
   assert.match(publicQueue, /Leave blank to show Anonymous/);
   assert.match(publicQueue, /priorityGiftAttributionDisclosureText: PRIORITY_GIFT_ATTRIBUTION_DISCLOSURE_TEXT/);
   assert.match(publicQueue, /submitterToken/);
+  assert.match(publicQueue, /checkoutOwnerToken/);
+  assert.match(publicQueue, /priorityCheckoutOwnerTrackIds\.has\(track\.id\)/);
+  assert.match(checkoutRoute, /storedCheckoutBelongsToRequester/);
+  assert.match(checkoutRoute, /checkoutOwnerTokenHash: hashPriorityCheckoutOwnerToken/);
+  assert.match(checkoutRoute, /Only the person who started it can resume it/);
   assert.match(checkoutRoute, /submitterToken === checkoutRequest\.track\.submitterToken/);
   assert.match(checkoutRoute, /!requesterOwnsTrack && body\.priorityGift !== true/);
   assert.match(checkoutRoute, /const priorityGiftAttribution = !requesterOwnsTrack/);
@@ -27,6 +32,13 @@ test("gifted Priority checkout captures only the explicit public name and binds 
   assert.match(webhook, /checkoutSessionId: session\.id/);
   assert.match(webhook, /event\.created/);
   assert.doesNotMatch(`${checkoutRoute}\n${stripe}\n${webhook}`, /customer_details|customer_email|billing_details/);
+});
+
+test("direct Priority submission carries self-ownership and checkout-resume ownership", () => {
+  const form = source("src/components/RadioQueueForm.tsx");
+
+  assert.match(form, /getOrCreatePriorityCheckoutOwnerToken\(checkoutSessionId, trackId\)/);
+  assert.match(form, /JSON\.stringify\(\{ trackId, sessionId: checkoutSessionId, submitterToken, checkoutOwnerToken,/);
 });
 
 test("confirmed gift attribution is visible on queue and host surfaces but excluded from BNL", () => {

@@ -8,9 +8,12 @@ import { RadioQueueForm } from "@/components/RadioQueueForm";
 import { useLiveStatus } from "@/components/LiveStatusProvider";
 import { externalLinks } from "@/content";
 import { estimateExistingTrackTiming, estimatePriorityImpact } from "@/lib/queue-timing";
+import { clearPriorityCheckoutOwnerToken, getOrCreatePriorityCheckoutOwnerToken, getPriorityCheckoutOwnerToken } from "@/lib/priority-checkout-client";
 import { formatRuntime, PRIORITY_DISCLOSURE_TEXT, PRIORITY_GIFT_ATTRIBUTION_DISCLOSURE_TEXT, PRIORITY_GIFT_ATTRIBUTION_VERSION, PRIORITY_GIFT_NAME_MAX_LENGTH, PRIORITY_TERMS_VERSION } from "@/lib/queue-types";
 import { displayEstimate, buildQueueTimingDisplay, priorityDisplayFromImpact, publicTrackDurationLabel, queueTimingInputFromPublicSnapshot, type QueueTimingDisplaySummary, type PriorityTimingDisplay } from "@/lib/queue-timing-display";
 import type { QueuePublicSnapshot, QueuePublicTrack } from "@/lib/queue-types";
+import { PUBLIC_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
+import { hasActiveQueueSession, startSessionBoundPolling } from "@/lib/session-bound-polling";
 
 type QueueView = "active" | "recent";
 type ActivityTone = "red" | "amber" | "gold" | "cyan" | "archive" | "danger";
@@ -60,7 +63,7 @@ function actionVariant(seed: string, kind: "intake" | "upgrade" | "resume"): Pub
 }
 function formatPrice(cents: number, currency = "usd"): string { return `${new Intl.NumberFormat("en-US", { style: "currency", currency: currency.toUpperCase() }).format(Math.max(0, cents) / 100)} ${currency.toUpperCase()}`; }
 function snapshotBroadcastActive(snapshot: QueuePublicSnapshot | null): boolean {
-  return Boolean(snapshot?.nowPlaying || snapshot?.session.broadcastPhase === "broadcast_active" || snapshot?.session.showStarted);
+  return Boolean(snapshot?.nowPlaying || snapshot?.session?.broadcastPhase === "broadcast_active" || snapshot?.session?.showStarted);
 }
 
 
@@ -207,6 +210,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   const [priorityModalTrack, setPriorityModalTrack] = useState<QueuePublicTrack | null>(null);
   const [priorityRequestPending, setPriorityRequestPending] = useState(false);
   const [priorityRequestMessage, setPriorityRequestMessage] = useState<string | null>(null);
+  const [priorityCheckoutOwnerTrackIds, setPriorityCheckoutOwnerTrackIds] = useState<Set<string>>(() => new Set());
   const [checkoutNotice, setCheckoutNotice] = useState<string | null>(null);
   const [actionTransition, setActionTransition] = useState<PublicActionVariant | null>(null);
   const [activity, setActivity] = useState<QueueActivity[]>([]);
@@ -261,8 +265,8 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
       triggerResidue(next.upNext?.id, next.upNext ? trackTone(next.upNext) : "gold");
     }
     const previousTracks = publicTrackStateMap(previous);
-    const previousWheelSpinsOwed = previous.session.wheelSpinsOwed ?? 0;
-    const nextWheelSpinsOwed = next.session.wheelSpinsOwed ?? 0;
+    const previousWheelSpinsOwed = previous.session?.wheelSpinsOwed ?? 0;
+    const nextWheelSpinsOwed = next.session?.wheelSpinsOwed ?? 0;
     if (nextWheelSpinsOwed > previousWheelSpinsOwed) {
       changes.push({ text: "10K Tap Wheel Unlocked", detail: "Wheel Spins Unlocked count increased.", tone: "cyan" });
       setWheelUnlockPulse(true);
@@ -319,7 +323,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
     }
     const previousActive = new Set([previous.nowPlaying?.id, previous.upNext?.id, ...previous.queue.map((track) => track.id)].filter(Boolean));
     const nextKnown = new Set([next.nowPlaying?.id, next.upNext?.id, ...next.queue.map((track) => track.id), ...next.completed.map((track) => track.id)].filter(Boolean));
-    const removedCountIncreased = (next.session.removedCount ?? 0) > (previous.session.removedCount ?? 0);
+    const removedCountIncreased = (next.session?.removedCount ?? 0) > (previous.session?.removedCount ?? 0);
     if (removedCountIncreased && [...previousActive].some((id) => !nextKnown.has(id))) {
       changes.push({ text: "Removed from active queue", detail: "Submission no longer active.", tone: "danger" });
     }
@@ -336,7 +340,9 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
       processSnapshotChanges(previousSnapshotRef.current, next);
       previousSnapshotRef.current = next;
       setSnapshot(next);
+      return hasActiveQueueSession(next);
     }
+    return null;
   }
 
   useEffect(() => {
@@ -346,8 +352,17 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
     if (priorityResult === "cancelled") setCheckoutNotice("Payment was not completed. Your song stays in the free queue if still active.");
     if (priorityResult === "processing") setCheckoutNotice("Checkout started. Skip is not active yet.");
   }, []);
-  useEffect(() => { load(); const interval = setInterval(load, 5_000); return () => clearInterval(interval); }, [sessionId, submitterToken]);
+  useEffect(() => startSessionBoundPolling({ intervalMs: PUBLIC_QUEUE_POLL_INTERVAL_MS, poll: load }), [sessionId, submitterToken]);
   useEffect(() => { const interval = window.setInterval(() => setClockNow(Date.now()), 1_000); return () => window.clearInterval(interval); }, []);
+  useEffect(() => {
+    if (!snapshot) return;
+    const ownerTrackIds = new Set(
+      uniqueActiveTracks(snapshot)
+        .filter((track) => Boolean(getPriorityCheckoutOwnerToken(sessionId, track.id)))
+        .map((track) => track.id),
+    );
+    setPriorityCheckoutOwnerTrackIds(ownerTrackIds);
+  }, [sessionId, snapshot?.revision]);
   useEffect(() => {
     if (!submitOpen || !intakeScrollLocked) return;
     const previousOverflow = document.body.style.overflow;
@@ -369,7 +384,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   }, [snapshot]);
 
   const isOpen = snapshot?.status.isOpen ?? false;
-  const isEnded = snapshot?.session.status === "archived" || snapshot?.session.broadcastPhase === "ended";
+  const isEnded = snapshot?.session?.status === "archived" || snapshot?.session?.broadcastPhase === "ended";
   const isBroadcastActive = snapshotBroadcastActive(snapshot);
   const isFull = Boolean(snapshot?.status.isFull || (snapshot && (snapshot.status.acceptedCount ?? snapshot.status.activeCount) >= snapshot.status.capacity));
   const canSubmit = !isEnded && isOpen && !isFull;
@@ -383,21 +398,21 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
     (snapshot?.submitterStatus?.submitted ?? []).forEach((track) => ids.add(track.id));
     return ids;
   }, [lastSubmittedTrackId, snapshot?.submitterStatus?.submitted]);
-  const completedRuntime = snapshot?.session.completedRuntimeSeconds ?? 0;
-  const priorityUpgradeEnabled = snapshot?.session.priorityUpgradesEnabled === true;
-  const priorityPaymentsEnabled = snapshot?.session.priorityUpgradePaymentsEnabled === true && (snapshot?.session.priorityUpgradePriceCents ?? 0) > 0;
+  const completedRuntime = snapshot?.session?.completedRuntimeSeconds ?? 0;
+  const priorityUpgradeEnabled = snapshot?.session?.priorityUpgradesEnabled === true;
+  const priorityPaymentsEnabled = snapshot?.session?.priorityUpgradePaymentsEnabled === true && (snapshot?.session?.priorityUpgradePriceCents ?? 0) > 0;
   const priorityPaymentsAvailable = priorityUpgradeEnabled && priorityPaymentsEnabled;
   const priorityUpgradeAvailable = priorityPaymentsAvailable && (snapshot?.status.activeCount ?? 0) >= MIN_PRIORITY_ACTIVE_DEPTH;
-  const priorityPriceCents = snapshot?.session.priorityUpgradePriceCents ?? 0;
-  const priorityCurrency = snapshot?.session.priorityUpgradeCurrency ?? "usd";
+  const priorityPriceCents = snapshot?.session?.priorityUpgradePriceCents ?? 0;
+  const priorityCurrency = snapshot?.session?.priorityUpgradeCurrency ?? "usd";
   const timingInput = useMemo(() => queueTimingInputFromPublicSnapshot(snapshot), [snapshot]);
   const timingSummary = useMemo(() => buildQueueTimingDisplay(timingInput, { priorityEligible: priorityUpgradeAvailable, now: new Date(clockNow) }), [timingInput, priorityUpgradeAvailable, clockNow]);
-  const sponsorBreakRunning = snapshot?.session.sponsorBreakStatus === "running";
+  const sponsorBreakRunning = snapshot?.session?.sponsorBreakStatus === "running";
 
   const frontEdgeFreeTrackId = lanes.priority.length === 0 && lanes.wheel.length === 0 ? lanes.regular[0]?.id ?? null : null;
 
   function canShowPriorityUpgrade(track: QueuePublicTrack): boolean {
-    if (!priorityUpgradeAvailable || isEnded || snapshot?.session.status !== "open") return false;
+    if (!priorityUpgradeAvailable || isEnded || snapshot?.session?.status !== "open") return false;
     if (track.lane !== "regular") return false;
     if (track.id === snapshot?.nowPlaying?.id || track.id === snapshot?.upNext?.id) return false;
     if (track.id === frontEdgeFreeTrackId) return false;
@@ -405,8 +420,8 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   }
 
   function canResumePriorityPayment(track: QueuePublicTrack): boolean {
-    if (!priorityPaymentsAvailable || isEnded || snapshot?.session.status !== "open") return false;
-    return track.priorityUpgradeStatus === "checkout_pending";
+    if (!priorityPaymentsAvailable || isEnded || snapshot?.session?.status !== "open") return false;
+    return track.priorityUpgradeStatus === "checkout_pending" && priorityCheckoutOwnerTrackIds.has(track.id);
   }
 
   function runPublicActionTransition(transition: PublicActionVariant, action: () => void, delay = 1200) {
@@ -439,14 +454,23 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
       return;
     }
     setPriorityRequestPending(true);
+    const checkoutOwnerToken = getOrCreatePriorityCheckoutOwnerToken(sessionId, track.id);
     const priorityGift = !viewerSubmittedTrackIds.has(track.id);
-    const res = await fetch("/api/queue/priority-checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trackId: track.id, sessionId, submitterToken, acceptedPriorityTerms: true, priorityTermsVersion: PRIORITY_TERMS_VERSION, priorityDisclosureText: PRIORITY_DISCLOSURE_TEXT, priorityGift, priorityGiftSupporterName: priorityGift ? priorityGiftSupporterName : "", priorityGiftAttributionVersion: PRIORITY_GIFT_ATTRIBUTION_VERSION, priorityGiftAttributionDisclosureText: PRIORITY_GIFT_ATTRIBUTION_DISCLOSURE_TEXT }) });
+    const res = await fetch("/api/queue/priority-checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trackId: track.id, sessionId, submitterToken, checkoutOwnerToken, acceptedPriorityTerms: true, priorityTermsVersion: PRIORITY_TERMS_VERSION, priorityDisclosureText: PRIORITY_DISCLOSURE_TEXT, priorityGift, priorityGiftSupporterName: priorityGift ? priorityGiftSupporterName : "", priorityGiftAttributionVersion: PRIORITY_GIFT_ATTRIBUTION_VERSION, priorityGiftAttributionDisclosureText: PRIORITY_GIFT_ATTRIBUTION_DISCLOSURE_TEXT }) });
     const payload = await res.json().catch(() => ({}));
     setPriorityRequestPending(false);
     if (res.ok && typeof payload.url === "string") {
       setPriorityRequestMessage(payload.message ?? "Checkout started. Skip is not active yet.");
       window.location.href = payload.url;
       return;
+    }
+    if (payload.code === "checkout_owned_elsewhere") {
+      clearPriorityCheckoutOwnerToken(sessionId, track.id);
+      setPriorityCheckoutOwnerTrackIds((current) => {
+        const next = new Set(current);
+        next.delete(track.id);
+        return next;
+      });
     }
     setPriorityRequestMessage(payload.error ?? "Priority Signal checkout is not available right now.");
     await load();
@@ -465,8 +489,12 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   const showWatchLiveLink = Boolean(snapshot && !isEnded && liveShowHref);
   const contentOffsetClass = publicHudMinimized ? "pt-[2.25rem] sm:pt-[2.75rem]" : "pt-[4.25rem] sm:pt-[4.75rem]";
 
+  if (snapshot && !snapshot.session) {
+    return <section className="border border-border bg-surface p-6"><p className="text-xs uppercase tracking-[0.35em] text-muted">NO ACTIVE QUEUE</p><h2 className="mt-3 text-2xl font-bold text-foreground">No BARCODE Radio session exists</h2><p className="mt-2 text-sm text-muted">The queue service is online and waiting for the next session.</p></section>;
+  }
+
   if (isEnded) {
-    return <div className="space-y-6"><ReceiverHudPortal snapshot={snapshot} submissionsOpen={false} isBroadcastActive={false} pulse={false} mounted={mounted} minimized={false} onToggleMinimized={() => {}} canSubmit={false} submitLabel="Submissions Closed" onSubmit={() => {}} /><PersonalSignalStatusBar snapshot={snapshot} mounted={mounted} timingSummary={timingSummary} minimized={false} onToggleMinimized={() => {}} canSubmit={false} submitLabel="Submissions Closed" onSubmit={() => {}} /><div className={contentOffsetClass}><SessionPhasePanel snapshot={snapshot} submissionsOpen={false} canSubmit={false} isBroadcastActive={false} /><section className="border border-border bg-surface p-6 space-y-4"><p className="text-xs uppercase tracking-[0.35em] text-danger">SESSION ENDED</p><h2 className="text-3xl font-bold text-foreground">{snapshot?.session.title ?? "BARCODE Radio"}</h2><p className="text-sm text-muted">This song window has collapsed. Temporal alignment for this broadcast has expired. Review the completed signal log below.</p><div className="grid gap-3 sm:grid-cols-3 text-sm"><div className="border border-border p-3"><p className="text-xs text-muted">Show date</p><p>{snapshot?.session.showDate ?? "—"}</p></div><div className="border border-border p-3"><p className="text-xs text-muted">Completed tracks</p><p>{snapshot?.session.completedCount ?? snapshot?.completed.length ?? 0}</p></div><div className="border border-border p-3"><p className="text-xs text-muted">Completed runtime</p><p>{snapshot ? formatRuntime(completedRuntime) : "—"}</p></div></div></section><PublicLane title="Completed Signal Log" tracks={snapshot?.completed ?? []} lastSubmittedTrackId={null} viewerSubmittedTrackIds={viewerSubmittedTrackIds} canPriorityUpgrade={() => false} canResumePriorityPayment={() => false} priorityPriceCents={0} priorityCurrency="usd" onPriorityUpgrade={() => {}} onPriorityPayment={() => {}} /></div></div>;
+    return <div className="space-y-6"><ReceiverHudPortal snapshot={snapshot} submissionsOpen={false} isBroadcastActive={false} pulse={false} mounted={mounted} minimized={false} onToggleMinimized={() => {}} canSubmit={false} submitLabel="Submissions Closed" onSubmit={() => {}} /><PersonalSignalStatusBar snapshot={snapshot} mounted={mounted} timingSummary={timingSummary} minimized={false} onToggleMinimized={() => {}} canSubmit={false} submitLabel="Submissions Closed" onSubmit={() => {}} /><div className={contentOffsetClass}><SessionPhasePanel snapshot={snapshot} submissionsOpen={false} canSubmit={false} isBroadcastActive={false} /><section className="border border-border bg-surface p-6 space-y-4"><p className="text-xs uppercase tracking-[0.35em] text-danger">SESSION ENDED</p><h2 className="text-3xl font-bold text-foreground">{snapshot?.session?.title ?? "BARCODE Radio"}</h2><p className="text-sm text-muted">This song window has collapsed. Temporal alignment for this broadcast has expired. Review the completed signal log below.</p><div className="grid gap-3 sm:grid-cols-3 text-sm"><div className="border border-border p-3"><p className="text-xs text-muted">Show date</p><p>{snapshot?.session?.showDate ?? "—"}</p></div><div className="border border-border p-3"><p className="text-xs text-muted">Completed tracks</p><p>{snapshot?.session?.completedCount ?? snapshot?.completed.length ?? 0}</p></div><div className="border border-border p-3"><p className="text-xs text-muted">Completed runtime</p><p>{snapshot ? formatRuntime(completedRuntime) : "—"}</p></div></div></section><PublicLane title="Completed Signal Log" tracks={snapshot?.completed ?? []} lastSubmittedTrackId={null} viewerSubmittedTrackIds={viewerSubmittedTrackIds} canPriorityUpgrade={() => false} canResumePriorityPayment={() => false} priorityPriceCents={0} priorityCurrency="usd" onPriorityUpgrade={() => {}} onPriorityPayment={() => {}} /></div></div>;
   }
 
   return (
@@ -675,7 +703,7 @@ function publicSnapshotMovementKey(snapshot: QueuePublicSnapshot | null): string
     encodeTrack(snapshot.upNext, "next"),
     ...snapshot.queue.map((track, index) => `${index}:${encodeTrack(track, "queue")}`),
     ...snapshot.completed.map((track, index) => `done:${index}:${track.id}`),
-    `removed:${snapshot.session.removedCount ?? 0}`,
+    `removed:${snapshot.session?.removedCount ?? 0}`,
   ].join("|");
 }
 
@@ -788,17 +816,18 @@ function TrackTitleLink({ track }: { track: QueuePublicTrack }) {
 
 
 
-type PublicSessionPhase = "syncing" | "archived" | "closed" | "open" | "liveOpen" | "liveClosed";
+type PublicSessionPhase = "syncing" | "empty" | "archived" | "closed" | "open" | "liveOpen" | "liveClosed";
 
 function publicSessionPhase(snapshot: QueuePublicSnapshot | null, submissionsOpen: boolean, isBroadcastActive: boolean): PublicSessionPhase {
   if (!snapshot) return "syncing";
+  if (!snapshot.session) return "empty";
   if (snapshot.session.status === "archived" || snapshot.session.broadcastPhase === "ended") return "archived";
   if (isBroadcastActive) return submissionsOpen ? "liveOpen" : "liveClosed";
   return submissionsOpen ? "open" : "closed";
 }
 
 function uniqueActiveTracks(snapshot: QueuePublicSnapshot | null): QueuePublicTrack[] {
-  if (!snapshot || snapshot.session.status === "archived" || snapshot.session.broadcastPhase === "ended") return [];
+  if (!snapshot?.session || snapshot.session.status === "archived" || snapshot.session.broadcastPhase === "ended") return [];
   const seen = new Set<string>();
   return [snapshot.nowPlaying, snapshot.upNext, ...snapshot.queue].filter((track): track is QueuePublicTrack => {
     if (!track || seen.has(track.id)) return false;
@@ -809,8 +838,8 @@ function uniqueActiveTracks(snapshot: QueuePublicSnapshot | null): QueuePublicTr
 
 function publicQueueCounts(snapshot: QueuePublicSnapshot | null) {
   const activeTracks = uniqueActiveTracks(snapshot);
-  const completed = snapshot?.session.completedCount ?? snapshot?.completed.length ?? 0;
-  const removed = snapshot?.session.removedCount ?? 0;
+  const completed = snapshot?.session?.completedCount ?? snapshot?.completed.length ?? 0;
+  const removed = snapshot?.session?.removedCount ?? 0;
   return {
     active: activeTracks.length,
     remaining: activeTracks.length,
@@ -832,7 +861,7 @@ function sessionReadouts(snapshot: QueuePublicSnapshot | null, counts: ReturnTyp
   if ((snapshot?.queue ?? []).some((track) => track.lane === "wheel")) lines.push("Wheel Chosen: picked from the 10K tap wheel.");
   if ((snapshot?.queue ?? []).some((track) => track.lane === "priority" && (track.priorityUpgradeStatus === "paid" || track.priorityUpgradeStatus === "manual"))) lines.push("Priority Signal active.");
   if (counts.completed > 0) lines.push(`${counts.completed} songs already played.`);
-  const seed = `${snapshot?.session.sessionId ?? "sync"}:${counts.total}:${pressure}`;
+  const seed = `${snapshot?.session?.sessionId ?? "sync"}:${counts.total}:${pressure}`;
   const flavor = ["BNL-01 receiver trace stabilized.", "Host band interference cleared.", "Corridor alignment corrected.", "Signal anomaly contained."];
   if (stableHash(seed) % 13 === 0) lines.push(stableVariant(seed, flavor));
   return lines.slice(0, 5);
@@ -840,6 +869,7 @@ function sessionReadouts(snapshot: QueuePublicSnapshot | null, counts: ReturnTyp
 
 function phaseVisual(phase: PublicSessionPhase) {
   if (phase === "syncing") return { eyebrow: "SYNCING PUBLIC SIGNAL", title: "QUEUE TERMINAL HANDSHAKE", body: "Reading the current BARCODE Radio queue before opening the monitor.", tone: "text-muted", border: "border-border", meter: "bg-muted/60", gate: "SIGNAL SEARCH" };
+  if (phase === "empty") return { eyebrow: "NO ACTIVE QUEUE", title: "RECEIVER STANDBY", body: "The queue service is online, but no BARCODE Radio session currently exists.", tone: "text-muted", border: "border-border", meter: "bg-muted/60", gate: "NO SESSION" };
   if (phase === "archived") return { eyebrow: "BROADCAST ENDED", title: "SESSION ARCHIVED", body: "SUBMISSIONS CLOSED. No active BARCODE Radio session is currently accepting songs.", tone: "text-danger", border: "border-danger/35", meter: "bg-danger/60", gate: "ARCHIVE SEAL" };
   if (phase === "closed") return { eyebrow: "SESSION ONLINE", title: "SUBMISSION GATE CLOSED", body: "The broadcast corridor is powered on, but new songs are not currently being accepted. Stand by for intake.", tone: "text-cyan-200", border: "border-cyan-200/30", meter: "bg-cyan-200/60", gate: "INTAKE BARRIER SEALED" };
   if (phase === "open") return { eyebrow: "SUBMISSIONS OPEN", title: "SUBMIT YOUR TRACK NOW", body: "Free queue submissions are open. Priority Signal is a paid skip after payment clears.", tone: "text-accent", border: "border-accent/50", meter: "bg-accent/70", gate: "SUBMIT TRACK" };
@@ -927,7 +957,7 @@ function NowPlaying({ title, track, compact = false, domId, viewerSubmittedTrack
 }
 
 function WheelSpinsWaitingPanel({ snapshot, pulse }: { snapshot: QueuePublicSnapshot | null; pulse: boolean }) {
-  const wheelSpinsWaiting = snapshot?.session.wheelSpinsOwed ?? 0;
+  const wheelSpinsWaiting = snapshot?.session?.wheelSpinsOwed ?? 0;
   const active = wheelSpinsWaiting > 0;
   return <section data-active={active ? "true" : undefined} data-pulse={active && pulse ? "true" : undefined} className={`wheel-spins-waiting-panel relative overflow-hidden border p-4 ${active ? "border-cyan-200/55 bg-cyan-200/5 shadow-[0_0_34px_rgba(103,232,249,0.16)]" : "border-border bg-surface"}`} aria-label="Wheel Spins Unlocked" role="status" aria-live="polite"><div className="relative z-10 grid gap-3 sm:grid-cols-[auto_1fr]"><div><p className={`text-[10px] uppercase tracking-[0.34em] ${active ? "text-cyan-200" : "text-muted"}`}>Wheel Spins Unlocked</p><p className={`mt-2 text-5xl font-black leading-none ${active ? "text-cyan-200" : "text-foreground"}`}>{wheelSpinsWaiting}</p></div><div className="self-end"><p className="text-sm font-bold text-foreground">Wheel Spins Unlocked: {wheelSpinsWaiting}</p><p className="mt-1 text-xs leading-relaxed text-muted">This is the number of unlocked wheel spins.</p><p className="mt-2 text-[10px] uppercase tracking-[0.24em] text-muted">Wheel Chosen means the host selected a specific track.</p></div></div><span className="wheel-orbit wheel-orbit-outer" aria-hidden="true" /><span className="wheel-orbit wheel-orbit-inner" aria-hidden="true" /><span className="wheel-sweep" aria-hidden="true" /><style jsx>{`.wheel-spins-waiting-panel{min-height:8.5rem}.wheel-orbit{position:absolute;right:1rem;top:50%;border:1px solid rgba(103,232,249,.26);border-radius:999px;transform:translateY(-50%);pointer-events:none}.wheel-orbit-outer{width:6.4rem;height:6.4rem;opacity:.28}.wheel-orbit-inner{right:2.1rem;width:4.2rem;height:4.2rem;opacity:.22}.wheel-sweep{position:absolute;right:1.7rem;top:50%;width:5rem;height:1px;background:linear-gradient(90deg,transparent,rgba(103,232,249,.82),transparent);transform-origin:center;opacity:0;pointer-events:none}.wheel-spins-waiting-panel[data-active="true"] .wheel-orbit{border-color:rgba(103,232,249,.58);box-shadow:0 0 26px rgba(103,232,249,.16),inset 0 0 14px rgba(103,232,249,.08);opacity:.58}.wheel-spins-waiting-panel[data-active="true"] .wheel-sweep{opacity:.72;animation:wheel-panel-sweep 1.45s ease-out}.wheel-spins-waiting-panel[data-pulse="true"]{animation:wheel-panel-pulse 1.45s ease-out}@keyframes wheel-panel-pulse{0%{border-color:rgba(103,232,249,.24);box-shadow:0 0 0 rgba(103,232,249,0)}36%{border-color:rgba(103,232,249,.95);box-shadow:0 0 44px rgba(103,232,249,.30)}100%{border-color:rgba(103,232,249,.55);box-shadow:0 0 34px rgba(103,232,249,.16)}}@keyframes wheel-panel-sweep{0%{opacity:0;transform:rotate(-55deg)}35%{opacity:.8}100%{opacity:0;transform:rotate(145deg)}}@media (max-width:640px){.wheel-spins-waiting-panel{min-height:0}.wheel-orbit,.wheel-sweep{opacity:.12;right:.5rem}}@media (prefers-reduced-motion: reduce){.wheel-spins-waiting-panel,.wheel-spins-waiting-panel[data-active="true"] .wheel-sweep{animation:none}.wheel-sweep{display:none}}`}</style></section>;
 }
@@ -943,7 +973,7 @@ function SubmitterOutlookPanel({ snapshot, canSubmit, isFull, timingSummary, onS
   const statusTone = canSubmit ? "text-accent" : "text-danger";
   const lineFit = timingSummary?.lineFitCopy ?? "Timing updates as the line changes.";
   const liveCopy = "Timing updates as tracks finish, Priority clears, wheel spins happen, and removals shift the line.";
-  const activeSession = Boolean(snapshot && snapshot.session.status !== "archived" && snapshot.session.broadcastPhase !== "ended");
+  const activeSession = Boolean(snapshot?.session && snapshot.session.status !== "archived" && snapshot.session.broadcastPhase !== "ended");
   const projectedShowTime = activeSession ? timingSummary?.showRuntimeSummary.publicProjectedLabel ?? null : null;
   const projectedShowTimeHelper = `${timingSummary?.showRuntimeSummary.publicTargetLabel ? `Target: ${timingSummary.showRuntimeSummary.publicTargetLabel}. ` : ""}Uses detected song lengths where available.`;
 

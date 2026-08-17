@@ -47,6 +47,7 @@
 .shell select:focus-visible,
 .shell input:focus-visible,
 .boardPanel:focus-visible,
+.battleTheater:focus-visible,
 .reviewPanel:focus-visible {
   outline: 3px solid var(--amber);
   outline-offset: 3px;
@@ -151,6 +152,7 @@
 }
 
 .statusBar,
+.battleTheater,
 .scenarioStrip,
 .pressurePanel,
 .boardPanel,
@@ -160,6 +162,441 @@
   border: 1px solid var(--line);
   background: rgb(13 18 21 / 94%);
   box-shadow: 0 1.2rem 3.5rem rgb(0 0 0 / 18%);
+}
+
+.battleTheater {
+  position: relative;
+  overflow: hidden;
+  margin-top: 0.7rem;
+  padding: 0.75rem;
+  background:
+    radial-gradient(circle at 50% 110%, rgb(121 231 255 / 12%), transparent 42%),
+    linear-gradient(180deg, rgb(22 34 39 / 98%), rgb(7 11 13 / 98%));
+}
+
+.battleTheater::before {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: "";
+  background:
+    repeating-linear-gradient(90deg, transparent 0 5.9rem, rgb(121 231 255 / 2%) 6rem),
+    linear-gradient(125deg, transparent 0 72%, rgb(255 109 120 / 5%) 72% 100%);
+}
+
+.theaterHead {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  gap: 1rem;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: 0.05rem 0.05rem 0.65rem;
+}
+
+.theaterHead strong {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: clamp(0.8rem, 1.35vw, 1.08rem);
+  letter-spacing: 0.035em;
+}
+
+.sequenceSteps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  justify-content: flex-end;
+}
+
+.sequenceSteps span {
+  padding: 0.25rem 0.34rem;
+  border: 1px solid #35464c;
+  color: var(--muted);
+  background: rgb(8 13 15 / 78%);
+  font-size: 0.52rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.sequenceSteps span[data-active="true"] {
+  border-color: var(--amber);
+  color: #0b0d0d;
+  background: var(--amber);
+  box-shadow: 0 0 1rem rgb(255 214 111 / 24%);
+}
+
+.battlefield {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.42rem;
+}
+
+.battleFront {
+  position: relative;
+  min-width: 0;
+  min-height: 15.5rem;
+  overflow: hidden;
+  border: 1px solid #34474e;
+  background:
+    linear-gradient(90deg, transparent 49.6%, rgb(121 231 255 / 13%) 50%, transparent 50.4%),
+    linear-gradient(180deg, rgb(255 109 120 / 8%), transparent 45%, rgb(100 239 155 / 7%)),
+    #0b1215;
+}
+
+.battleFront[data-terrain="access"] {
+  background:
+    linear-gradient(145deg, transparent 0 56%, rgb(121 231 255 / 10%) 56% 58%, transparent 58%),
+    linear-gradient(180deg, rgb(255 109 120 / 8%), transparent 45%, rgb(100 239 155 / 7%)),
+    #0b1215;
+}
+
+.battleFront[data-terrain="cover"] {
+  background:
+    linear-gradient(90deg, transparent 0 20%, rgb(75 91 97 / 35%) 20% 35%, transparent 35% 68%, rgb(75 91 97 / 35%) 68% 83%, transparent 83%),
+    linear-gradient(180deg, rgb(255 109 120 / 8%), transparent 45%, rgb(100 239 155 / 7%)),
+    #0b1215;
+}
+
+.battleFront[data-terrain="system"] {
+  background:
+    repeating-linear-gradient(90deg, transparent 0 1rem, rgb(121 231 255 / 7%) 1rem 1.05rem),
+    linear-gradient(180deg, rgb(255 109 120 / 8%), transparent 45%, rgb(100 239 155 / 7%)),
+    #091316;
+}
+
+.battleFront[data-terrain="threshold"] {
+  box-shadow: inset 0 0 2rem rgb(255 109 120 / 8%);
+  background:
+    linear-gradient(90deg, rgb(255 109 120 / 10%), transparent 18% 82%, rgb(255 109 120 / 10%)),
+    linear-gradient(180deg, rgb(255 109 120 / 9%), transparent 45%, rgb(100 239 155 / 7%)),
+    #110e11;
+}
+
+.battleFront::after {
+  position: absolute;
+  right: 0.4rem;
+  bottom: 0.3rem;
+  left: 0.4rem;
+  height: 2.15rem;
+  border: 1px solid #2c3c42;
+  content: "";
+  transform: perspective(70px) rotateX(58deg);
+  transform-origin: bottom;
+  background: repeating-linear-gradient(90deg, transparent 0 1.2rem, rgb(121 231 255 / 13%) 1.2rem 1.25rem);
+}
+
+.frontLabel {
+  position: absolute;
+  z-index: 7;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.45rem;
+  align-items: center;
+  min-height: 2.45rem;
+  padding: 0.38rem 0.45rem;
+  border-bottom: 1px solid rgb(121 231 255 / 16%);
+  background: rgb(7 11 13 / 84%);
+}
+
+.frontLabel > span {
+  color: var(--cyan);
+  font-size: 0.56rem;
+  font-weight: 950;
+  letter-spacing: 0.1em;
+}
+
+.frontLabel div {
+  display: grid;
+  min-width: 0;
+}
+
+.frontLabel b,
+.frontLabel small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.frontLabel b {
+  font-size: 0.65rem;
+  letter-spacing: 0.05em;
+}
+
+.frontLabel small {
+  color: var(--muted);
+  font-size: 0.45rem;
+  font-weight: 850;
+  letter-spacing: 0.09em;
+}
+
+.enemyPosition,
+.playerPosition {
+  position: absolute;
+  z-index: 4;
+  right: 0.45rem;
+  left: 0.45rem;
+  display: flex;
+  gap: 0.42rem;
+  align-items: center;
+  min-width: 0;
+  transition: opacity 160ms ease, filter 160ms ease;
+}
+
+.enemyPosition {
+  top: 3rem;
+  flex-direction: row-reverse;
+  text-align: right;
+}
+
+.playerPosition {
+  bottom: 1.25rem;
+}
+
+.enemyPosition[data-visible="false"],
+.playerPosition[data-visible="false"] {
+  filter: grayscale(1);
+  opacity: 0.18;
+}
+
+.enemyPosition > span:last-child,
+.playerPosition > span:last-child {
+  display: grid;
+  min-width: 0;
+}
+
+.enemyPosition b,
+.playerPosition b,
+.enemyPosition small,
+.playerPosition small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.enemyPosition b,
+.playerPosition b {
+  font-size: 0.55rem;
+  letter-spacing: 0.06em;
+}
+
+.enemyPosition b { color: #ffc0c5; }
+.playerPosition b { color: #b7ffd2; }
+
+.enemyPosition small,
+.playerPosition small {
+  margin-top: 0.08rem;
+  color: var(--muted);
+  font-size: 0.46rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.combatant {
+  position: relative;
+  display: block;
+  flex: 0 0 auto;
+  width: 2.55rem;
+  height: 3.65rem;
+  color: var(--cyan);
+  filter: drop-shadow(0 0 0.7rem currentColor);
+  transform-origin: 50% 80%;
+}
+
+.combatant::before {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 1.18rem;
+  height: 1.18rem;
+  border: 2px solid currentColor;
+  border-radius: 48% 52% 42% 58%;
+  content: "";
+  translate: -50% 0;
+  background: #081014;
+}
+
+.combatant::after {
+  position: absolute;
+  right: 0.2rem;
+  bottom: 0;
+  left: 0.2rem;
+  height: 2.55rem;
+  border: 2px solid currentColor;
+  clip-path: polygon(28% 0, 72% 0, 100% 35%, 82% 100%, 56% 76%, 44% 76%, 18% 100%, 0 35%);
+  content: "";
+  background:
+    linear-gradient(135deg, currentColor 0 5%, transparent 5%),
+    #0b1519;
+}
+
+.enemyCombatant { color: var(--red); }
+.playerCombatant { color: var(--green); }
+
+.actionTrail {
+  position: absolute;
+  z-index: 2;
+  top: 6.45rem;
+  bottom: 4.5rem;
+  left: 50%;
+  width: 2px;
+  translate: -50% 0;
+  background: linear-gradient(180deg, var(--red), transparent 42% 58%, var(--green));
+  opacity: 0.44;
+}
+
+.battleFront[data-player-action="maneuver"] .actionTrail {
+  width: 42%;
+  border: 1px dashed var(--green);
+  background: transparent;
+  transform: skewX(-28deg);
+}
+
+.battleFront[data-player-action="modifier"] .actionTrail,
+.battleFront[data-player-action="recovery"] .actionTrail {
+  width: 3.2rem;
+  border: 1px solid var(--violet);
+  border-radius: 50%;
+  background: rgb(197 156 255 / 9%);
+}
+
+.battleFront[data-player-action="defend"] .playerPosition::before,
+.battleFront[data-player-action="reaction"] .playerPosition::before {
+  position: absolute;
+  z-index: -1;
+  bottom: -0.2rem;
+  left: -0.25rem;
+  width: 3.2rem;
+  height: 4rem;
+  border: 1px solid var(--cyan);
+  border-radius: 50% 50% 42% 42%;
+  content: "";
+  box-shadow: 0 0 1rem rgb(121 231 255 / 18%);
+}
+
+.impactReadout {
+  position: absolute;
+  z-index: 8;
+  top: 50%;
+  right: 0.25rem;
+  left: 0.25rem;
+  translate: 0 -50%;
+  padding: 0.3rem 0.2rem;
+  border-block: 1px solid rgb(121 231 255 / 24%);
+  color: var(--cyan);
+  background: rgb(5 9 11 / 82%);
+  font-size: 0.52rem;
+  letter-spacing: 0.07em;
+  text-align: center;
+}
+
+.battleFront[data-outcome="success"] .impactReadout { color: var(--green); }
+.battleFront[data-outcome="failure"] .impactReadout,
+.battleFront[data-outcome="uncontested"] .impactReadout { color: var(--red); }
+
+.sceneRoll {
+  position: absolute;
+  z-index: 8;
+  right: 0.35rem;
+  bottom: 0.25rem;
+  color: var(--amber);
+  font-size: 0.46rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+}
+
+.battleFront[data-sequence="player"][data-outcome="success"] .playerCombatant {
+  animation: wayfinder-strike 1.55s cubic-bezier(0.2, 0.75, 0.3, 1) both;
+}
+
+.battleFront[data-sequence="player"][data-outcome="success"] .enemyCombatant {
+  animation: enemy-hit 1.55s ease both;
+}
+
+.battleFront[data-sequence="player"][data-outcome="failure"] .playerCombatant {
+  animation: wayfinder-repelled 1.55s ease both;
+}
+
+.battleFront[data-sequence="enemy"][data-outcome="failure"] .enemyCombatant,
+.battleFront[data-sequence="enemy"][data-outcome="uncontested"] .enemyCombatant {
+  animation: enemy-advance 1.55s cubic-bezier(0.2, 0.75, 0.3, 1) both;
+}
+
+.battleFront[data-sequence="enemy"][data-outcome="success"] .enemyCombatant {
+  animation: enemy-stopped 1.55s ease both;
+}
+
+.battleFront[data-sequence="player"] .impactReadout,
+.battleFront[data-sequence="enemy"] .impactReadout,
+.battleFront[data-sequence="complete"] .impactReadout {
+  animation: impact-flash 1.55s ease both;
+}
+
+.battleTheater[data-break="true"] .combatant {
+  animation: pressure-break 1.55s ease both;
+}
+
+.battleTheater[data-break="true"] .battleFront {
+  animation: front-break 1.55s ease both;
+}
+
+.battleFront[data-player-action="preparation"] .playerCombatant,
+.battleFront[data-player-action="finisher"] .playerCombatant {
+  filter: drop-shadow(0 0 1.15rem var(--amber));
+}
+
+@keyframes wayfinder-strike {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  38% { transform: translateY(-3.3rem) rotate(-7deg); }
+  55% { transform: translateY(-3rem) rotate(4deg); }
+}
+
+@keyframes enemy-hit {
+  0%, 34%, 100% { transform: translateY(0) rotate(0); opacity: 1; }
+  48% { transform: translate(0.7rem, -0.45rem) rotate(15deg); opacity: 0.45; }
+  62% { transform: translate(-0.25rem, 0) rotate(-5deg); opacity: 0.75; }
+}
+
+@keyframes wayfinder-repelled {
+  0%, 100% { transform: translateY(0) rotate(0); opacity: 1; }
+  34% { transform: translateY(-2.45rem) rotate(-5deg); }
+  52% { transform: translate(0.65rem, 0.55rem) rotate(14deg); opacity: 0.5; }
+}
+
+@keyframes enemy-advance {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  42% { transform: translateY(3.2rem) rotate(7deg); }
+  58% { transform: translateY(2.8rem) rotate(-3deg); }
+}
+
+@keyframes enemy-stopped {
+  0%, 100% { transform: translateY(0); opacity: 1; }
+  38% { transform: translateY(1.1rem); opacity: 0.85; }
+  52% { transform: translateY(0.25rem); opacity: 0.35; }
+}
+
+@keyframes impact-flash {
+  0%, 24% { opacity: 0.35; filter: brightness(1); }
+  43% { opacity: 1; filter: brightness(2.1); box-shadow: 0 0 2rem currentColor; }
+  100% { opacity: 1; filter: brightness(1); box-shadow: none; }
+}
+
+@keyframes pressure-break {
+  0%, 30% { transform: translate(0); filter: drop-shadow(0 0 0.7rem currentColor); opacity: 1; }
+  42% { transform: translate(-0.35rem, 0.2rem) rotate(-7deg); }
+  50% { transform: translate(0.45rem, -0.15rem) rotate(8deg); filter: drop-shadow(0 0 1.6rem var(--amber)); }
+  62% { transform: translate(-0.2rem, 0.15rem) rotate(-3deg); opacity: 0.4; }
+  100% { transform: translate(0); filter: drop-shadow(0 0 0.4rem currentColor); opacity: 0.7; }
+}
+
+@keyframes front-break {
+  0%, 34%, 100% { border-color: #34474e; }
+  46% { border-color: var(--amber); box-shadow: inset 0 0 2.2rem rgb(255 214 111 / 24%); }
 }
 
 .statusBar {
@@ -581,6 +1018,25 @@
   letter-spacing: 0.12em;
 }
 
+.laneHead > div {
+  display: grid;
+  min-width: 0;
+}
+
+.laneHead > div > span,
+.laneHead > div > small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.laneHead > div > small {
+  margin-top: 0.12rem;
+  color: var(--muted);
+  font-size: 0.46rem;
+  letter-spacing: 0.08em;
+}
+
 .laneHead b {
   color: var(--red);
 }
@@ -600,6 +1056,61 @@
   font-size: 0.53rem;
   font-weight: 900;
   letter-spacing: 0.1em;
+}
+
+.enemyPresence {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr);
+  gap: 0.45rem;
+  align-items: center;
+  min-height: 3.1rem;
+  padding: 0.35rem;
+  border: 1px solid rgb(255 109 120 / 28%);
+  background: rgb(255 109 120 / 6%);
+}
+
+.enemyPresence .combatant {
+  width: 1.65rem;
+  height: 2.45rem;
+}
+
+.enemyPresence .combatant::before {
+  width: 0.78rem;
+  height: 0.78rem;
+  border-width: 1px;
+}
+
+.enemyPresence .combatant::after {
+  right: 0.12rem;
+  left: 0.12rem;
+  height: 1.75rem;
+  border-width: 1px;
+}
+
+.enemyPresence > span:last-child {
+  display: grid;
+  min-width: 0;
+}
+
+.enemyPresence b,
+.enemyPresence small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.enemyPresence b {
+  color: #ffc0c5;
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+}
+
+.enemyPresence small {
+  margin-top: 0.1rem;
+  color: var(--muted);
+  font-size: 0.49rem;
+  font-weight: 850;
+  letter-spacing: 0.05em;
 }
 
 .stackCards {
@@ -1339,6 +1850,14 @@
 }
 
 @media (max-width: 900px) {
+  .battlefield {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .battleFront {
+    min-height: 13.5rem;
+  }
+
   .statusBar {
     grid-template-columns: auto minmax(10rem, 1fr) auto;
   }
@@ -1407,6 +1926,91 @@
 
   .prototypeBadges span:nth-child(n + 2) {
     display: none;
+  }
+
+  .battleTheater {
+    padding: 0.6rem;
+  }
+
+  .theaterHead {
+    align-items: flex-start;
+  }
+
+  .theaterHead strong {
+    font-size: 0.72rem;
+  }
+
+  .sequenceSteps {
+    max-width: 8.6rem;
+  }
+
+  .sequenceSteps span {
+    padding: 0.2rem 0.25rem;
+    font-size: 0.4rem;
+  }
+
+  .battlefield {
+    gap: 0.3rem;
+  }
+
+  .battleFront {
+    min-height: 11.8rem;
+  }
+
+  .frontLabel {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.3rem;
+    min-height: 2.15rem;
+    padding: 0.3rem;
+  }
+
+  .frontLabel b { font-size: 0.54rem; }
+  .frontLabel small { font-size: 0.38rem; }
+  .frontLabel > span { font-size: 0.46rem; }
+
+  .combatant {
+    width: 1.75rem;
+    height: 2.65rem;
+  }
+
+  .combatant::before {
+    width: 0.82rem;
+    height: 0.82rem;
+    border-width: 1px;
+  }
+
+  .combatant::after {
+    right: 0.12rem;
+    left: 0.12rem;
+    height: 1.9rem;
+    border-width: 1px;
+  }
+
+  .enemyPosition {
+    top: 2.6rem;
+  }
+
+  .playerPosition {
+    bottom: 0.9rem;
+  }
+
+  .enemyPosition b,
+  .playerPosition b { font-size: 0.45rem; }
+
+  .enemyPosition small,
+  .playerPosition small { font-size: 0.38rem; }
+
+  .actionTrail {
+    top: 5.35rem;
+    bottom: 3.45rem;
+  }
+
+  .impactReadout {
+    font-size: 0.42rem;
+  }
+
+  .sceneRoll {
+    font-size: 0.38rem;
   }
 
   .statusBar {
@@ -1481,7 +2085,7 @@
   }
 
   .lane {
-    min-height: 29rem;
+    min-height: 32rem;
   }
 
   .rack {
@@ -1584,6 +2188,8 @@
 
   .card,
   .lane,
+  .battleTheater,
+  .battleFront,
   .statusBar,
   .scenarioStrip,
   .pressurePanel,

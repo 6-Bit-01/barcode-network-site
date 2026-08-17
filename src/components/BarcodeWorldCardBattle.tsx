@@ -43,6 +43,84 @@ const TYPE_MARKS: Record<string, string> = {
   recovery: "REC",
 };
 
+type LaneFront = {
+  name: string;
+  role: string;
+  terrain: "access" | "cover" | "system" | "threshold";
+};
+
+type Battlefield = {
+  location: string;
+  objective: string;
+  fronts: readonly [LaneFront, LaneFront, LaneFront, LaneFront];
+};
+
+type ResolutionStage = "planning" | "player" | "enemy" | "complete";
+
+const BATTLEFIELDS: Record<string, Battlefield> = {
+  "breacher-intercept-v0.2": {
+    location: "FRACTURED GATE",
+    objective: "STOP THE BREACHER CELL AT THE INNER GATE",
+    fronts: [
+      { name: "WEST ACCESS", role: "SIDE APPROACH", terrain: "access" },
+      { name: "CARGO DIVIDER", role: "COVER LINE", terrain: "cover" },
+      { name: "SERVICE RELAY", role: "SYSTEM NODE", terrain: "system" },
+      { name: "GATE THRESHOLD", role: "MAIN BREACH", terrain: "threshold" },
+    ],
+  },
+  "signal-surge-v0.2": {
+    location: "RELAY CONCOURSE",
+    objective: "CROSS THE SURGE AND HOLD THE UPLINK",
+    fronts: [
+      { name: "CABLE TRENCH", role: "LOW APPROACH", terrain: "access" },
+      { name: "UPLINK STAIRS", role: "COVER LINE", terrain: "cover" },
+      { name: "SIGNAL CORE", role: "SYSTEM NODE", terrain: "system" },
+      { name: "EXIT GANTRY", role: "ESCAPE LINE", terrain: "threshold" },
+    ],
+  },
+  "fractured-cache-v0.2": {
+    location: "CACHE VAULT",
+    objective: "REACH THE VAULT BEFORE THE CELL LOCKS IT DOWN",
+    fronts: [
+      { name: "BROKEN STACKS", role: "SIDE APPROACH", terrain: "access" },
+      { name: "INDEX HALL", role: "COVER LINE", terrain: "cover" },
+      { name: "CACHE NODE", role: "SYSTEM NODE", terrain: "system" },
+      { name: "VAULT DOOR", role: "LOCKDOWN LINE", terrain: "threshold" },
+    ],
+  },
+  "cascade-protocol-v0.2": {
+    location: "CASCADE ARRAY",
+    objective: "BREAK THE CELL BEFORE THE ARRAY CASCADES",
+    fronts: [
+      { name: "INTAKE BRIDGE", role: "SIDE APPROACH", terrain: "access" },
+      { name: "COOLING SPINE", role: "COVER LINE", terrain: "cover" },
+      { name: "CONTROL MESH", role: "SYSTEM NODE", terrain: "system" },
+      { name: "CORE APERTURE", role: "FAILURE LINE", terrain: "threshold" },
+    ],
+  },
+};
+
+const ENEMY_ACTORS: Record<string, string> = {
+  rush: "BREACHER RUNNER",
+  maul: "BREACHER BRUTE",
+  brace: "BREACHER WARD",
+  circle: "BREACHER STALKER",
+  rage: "BREACHER RAGER",
+  "wind-up": "BREACHER BREAKER",
+  counter: "BREACHER SENTINEL",
+  breach: "BREACHER PRIME",
+};
+
+function battlefieldFor(game: CardBattleState) {
+  return BATTLEFIELDS[game.scenarioId] ?? BATTLEFIELDS["breacher-intercept-v0.2"];
+}
+
+function enemyActor(cards: CardInstance[]) {
+  if (cards.length === 0) return "NO HOSTILE";
+  const lead = ENEMY_ACTORS[cards[0].designId] ?? "BREACHER";
+  return cards.length > 1 ? `${lead} +${cards.length - 1}` : lead;
+}
+
 function cx(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }
@@ -248,6 +326,117 @@ function ScenarioStrip({ game }: { game: CardBattleState }) {
   );
 }
 
+function battleOutcome(result: LaneResult | null) {
+  if (!result) return "planning";
+  if (!result.playerMove && !result.enemyMove) return "idle";
+  if (!result.playerMove) return "uncontested";
+  return result.success ? "success" : "failure";
+}
+
+function battleOutcomeLabel(
+  result: LaneResult | null,
+  forecast: LaneForecast | null,
+  sequenceStage: ResolutionStage,
+) {
+  if (!result) {
+    if (forecast?.playerMove && forecast.chance !== null) {
+      return `${forecast.playerMove.name} · ${forecast.chance}%`;
+    }
+    return forecast?.enemyMove ? "HOSTILE LOCKED" : "CLEAR FRONT";
+  }
+  if (sequenceStage === "player") {
+    if (!result.playerMove) return "NO PLAYER ACTION";
+    return `${result.success ? "PLAYER HIT" : "PLAYER FAILED"} · ${result.roll}/${result.chance}`;
+  }
+  if (sequenceStage === "enemy") {
+    if (!result.enemyMove) return "NO ENEMY ACTION";
+    if (result.playerMove && result.success) return "ENEMY STOPPED";
+    return `ENEMY ${result.enemyMove.name} · ${signed(result.pressure)}`;
+  }
+  if (!result.playerMove && !result.enemyMove) return "FRONT HELD";
+  if (!result.playerMove) return `${signed(result.pressure)} BREACH`;
+  return `${result.success ? "HIT" : "FAILED"} · ${signed(result.pressure)} PRESSURE`;
+}
+
+function BattleTheater({
+  game,
+  sequenceStage,
+  theaterRef,
+}: {
+  game: CardBattleState;
+  sequenceStage: ResolutionStage;
+  theaterRef: RefObject<HTMLElement | null>;
+}) {
+  const battlefield = battlefieldFor(game);
+  return (
+    <section
+      aria-labelledby="battle-theater-title"
+      className={styles.battleTheater}
+      data-break={game.currentReview?.breakTriggered && sequenceStage === "complete" ? "true" : "false"}
+      data-sequence={sequenceStage}
+      ref={theaterRef}
+      tabIndex={-1}
+    >
+      <div className={styles.theaterHead}>
+        <div>
+          <span className={styles.eyebrow}>PHYSICAL ENCOUNTER · {battlefield.location}</span>
+          <strong id="battle-theater-title">{battlefield.objective}</strong>
+        </div>
+        <div className={styles.sequenceSteps} aria-live="polite">
+          <span data-active={sequenceStage === "player" ? "true" : "false"}>1 · PLAYER</span>
+          <span data-active={sequenceStage === "enemy" ? "true" : "false"}>2 · ENEMY</span>
+          <span data-active={sequenceStage === "complete" ? "true" : "false"}>3 · RESOLVE</span>
+        </div>
+      </div>
+      <div className={styles.battlefield}>
+        {LANES.map((lane) => {
+          const front = battlefield.fronts[lane];
+          const reviewResult = game.currentReview?.laneResults[lane] ?? null;
+          const forecast = reviewResult ?? getLaneForecast(game, lane);
+          const playerMove = forecast?.playerMove ?? null;
+          const enemyMove = forecast?.enemyMove ?? null;
+          const playerCards = playerMove?.cards ?? game.player.lanes[lane];
+          const enemyCards = enemyMove?.cards ?? game.enemyPreview.lanes[lane]?.cards ?? [];
+          const outcome = battleOutcome(reviewResult);
+          return (
+            <article
+              aria-label={`${front.name}, Lane ${lane + 1}. ${enemyCards.length ? `${enemyActor(enemyCards)} occupies this front with ${enemyMove?.name}.` : "No hostile occupies this front."} ${playerMove ? `Wayfinder stages ${playerMove.name}.` : "No Wayfinder action is staged."}`}
+              className={styles.battleFront}
+              data-enemy-action={enemyMove?.category ?? "none"}
+              data-outcome={outcome}
+              data-player-action={playerMove?.category ?? "none"}
+              data-sequence={sequenceStage}
+              data-terrain={front.terrain}
+              key={front.name}
+              style={{ "--lane-index": lane } as CSSProperties}
+            >
+              <header className={styles.frontLabel}>
+                <span>L{lane + 1}</span>
+                <div><b>{front.name}</b><small>{front.role}</small></div>
+              </header>
+              <div className={styles.enemyPosition} data-visible={enemyCards.length ? "true" : "false"}>
+                <span className={cx(styles.combatant, styles.enemyCombatant)} aria-hidden="true" />
+                <span><b>{enemyActor(enemyCards)}</b><small>{enemyMove?.name ?? "CLEAR"}</small></span>
+              </div>
+              <span className={styles.actionTrail} aria-hidden="true" />
+              <strong className={styles.impactReadout}>
+                {battleOutcomeLabel(reviewResult, forecast, sequenceStage)}
+              </strong>
+              <div className={styles.playerPosition} data-visible={playerCards.length ? "true" : "false"}>
+                <span className={cx(styles.combatant, styles.playerCombatant)} aria-hidden="true" />
+                <span><b>WAYFINDER</b><small>{playerMove?.name ?? "AWAITING CARD"}</small></span>
+              </div>
+              {reviewResult?.chance !== null && reviewResult?.chance !== undefined && (
+                <span className={styles.sceneRoll}>{reviewResult.roll} / {reviewResult.chance}</span>
+              )}
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function LaneBoard({
   boardRef,
   game,
@@ -259,6 +448,7 @@ function LaneBoard({
   onChooseLane: (lane: number) => void;
   selectedCard: CardInstance | null;
 }) {
+  const battlefield = battlefieldFor(game);
   return (
     <section
       aria-labelledby="lane-board-title"
@@ -285,6 +475,7 @@ function LaneBoard({
       <div className={styles.laneScroll}>
         <div className={styles.lanes}>
           {LANES.map((lane) => {
+            const front = battlefield.fronts[lane];
             const stack = game.player.lanes[lane];
             const intent = game.enemyPreview.lanes[lane];
             const currentForecast = getLaneForecast(game, lane);
@@ -304,13 +495,17 @@ function LaneBoard({
                 key={lane}
               >
                 <header className={styles.laneHead}>
-                  <span>LANE {lane + 1}</span>
+                  <div><span>L{lane + 1} · {front.name}</span><small>{front.role}</small></div>
                   <b>{intent ? "LOCKED" : "OPEN"}</b>
                 </header>
                 <div className={styles.intentZone}>
-                  <span className={styles.zoneLabel}>BREACHER INTENT</span>
+                  <span className={styles.zoneLabel}>ENEMY IN THIS FRONT</span>
                   {intent ? (
                     <>
+                      <div className={styles.enemyPresence}>
+                        <span aria-hidden="true" className={cx(styles.combatant, styles.enemyCombatant)} />
+                        <span><b>{enemyActor(intent.cards)}</b><small>{intent.move.name}</small></span>
+                      </div>
                       <div className={styles.stackCards} data-count={intent.cards.length}>
                         {intent.cards.map((entry, index) => (
                           <StackCard card={entry} index={index} key={entry.id} side="enemy" />
@@ -318,7 +513,7 @@ function LaneBoard({
                       </div>
                       <strong className={styles.moveName}>{intent.move.name}</strong>
                     </>
-                  ) : <span className={styles.emptyZone}>NO INTENT</span>}
+                  ) : <span className={styles.emptyZone}>CLEAR FRONT</span>}
                 </div>
                 <div className={styles.contestZone}>
                   {forecast && <ProbabilityBar forecast={forecast} />}
@@ -418,7 +613,7 @@ function laneResultTitle(result: LaneResult) {
   return result.success ? "SUCCESS" : "FAILURE";
 }
 
-function LaneResultCard({ result }: { result: LaneResult }) {
+function LaneResultCard({ front, result }: { front: LaneFront; result: LaneResult }) {
   const tone = !result.playerMove && !result.enemyMove
     ? "neutral"
     : result.success
@@ -427,7 +622,7 @@ function LaneResultCard({ result }: { result: LaneResult }) {
   return (
     <li className={styles.resultLane} data-outcome={tone}>
       <div>
-        <span>LANE {result.lane + 1}</span>
+        <span>L{result.lane + 1} · {front.name}</span>
         <strong>{laneResultTitle(result)}</strong>
       </div>
       <p>
@@ -461,6 +656,7 @@ function RoundResolution({
 }) {
   const review = game.currentReview;
   if (!review) return null;
+  const battlefield = battlefieldFor(game);
   const resultTitle = game.result
     ? game.result.winner === "player" ? "LINE HELD" : "LINE BREACHED"
     : review.breakTriggered ? "PRESSURE BREAK" : "ROUND RESOLVED";
@@ -477,7 +673,9 @@ function RoundResolution({
         <p>NET {signed(review.pressureDelta)} PRESSURE</p>
       </div>
       <ol className={styles.resultLanes}>
-        {review.laneResults.map((entry) => <LaneResultCard key={entry.lane} result={entry} />)}
+        {review.laneResults.map((entry) => (
+          <LaneResultCard front={battlefield.fronts[entry.lane]} key={entry.lane} result={entry} />
+        ))}
       </ol>
       <div className={styles.replenishmentResult}>
         <span className={styles.eyebrow}>CARD FEED</span>
@@ -575,9 +773,12 @@ function Options({
 
 export function BarcodeWorldCardBattle() {
   const [game, setGame] = useState<CardBattleState>(() => createCardBattleState());
+  const [pendingResolution, setPendingResolution] = useState<CardBattleState | null>(null);
+  const [resolutionStage, setResolutionStage] = useState<ResolutionStage>("planning");
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [reducedMotion, setReducedMotion] = useState(false);
   const boardRef = useRef<HTMLElement>(null);
+  const theaterRef = useRef<HTMLElement>(null);
   const resolutionRef = useRef<HTMLElement>(null);
   const selectedCard = useMemo(
     () => game.player.hand.find((entry) => entry.id === selectedCardId) ?? null,
@@ -585,20 +786,44 @@ export function BarcodeWorldCardBattle() {
   );
 
   useEffect(() => {
-    if (!game.currentReview) return;
+    if (!pendingResolution) return;
+    const motionReduced = reducedMotion || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const scene = theaterRef.current;
+    if (!scene) return;
+    const frame = window.requestAnimationFrame(() => {
+      scene.focus({ preventScroll: true });
+      scene.scrollIntoView({ behavior: motionReduced ? "auto" : "smooth", block: "start" });
+    });
+    const phaseDuration = motionReduced ? 750 : 1700;
+    const settleDuration = motionReduced ? 350 : 650;
+    const enemyTimer = window.setTimeout(() => setResolutionStage("enemy"), phaseDuration);
+    const completeTimer = window.setTimeout(
+      () => setResolutionStage("complete"),
+      phaseDuration * 2,
+    );
+    const commitTimer = window.setTimeout(() => {
+      setGame(pendingResolution);
+      setPendingResolution(null);
+    }, phaseDuration * 2 + settleDuration);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(enemyTimer);
+      window.clearTimeout(completeTimer);
+      window.clearTimeout(commitTimer);
+    };
+  }, [pendingResolution, reducedMotion]);
+
+  useEffect(() => {
+    if (!game.currentReview || pendingResolution) return;
     const target = resolutionRef.current;
     if (!target) return;
+    const motionReduced = reducedMotion || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const frame = window.requestAnimationFrame(() => {
       target.focus({ preventScroll: true });
-      target.scrollIntoView({
-        behavior: reducedMotion || window.matchMedia("(prefers-reduced-motion: reduce)").matches
-          ? "auto"
-          : "smooth",
-        block: "start",
-      });
+      target.scrollIntoView({ behavior: motionReduced ? "auto" : "smooth", block: "start" });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [game.currentReview, reducedMotion]);
+  }, [game.currentReview, pendingResolution, reducedMotion]);
 
   function clearSelection() {
     setSelectedCardId(null);
@@ -606,6 +831,8 @@ export function BarcodeWorldCardBattle() {
 
   function reset(next: CardBattleState) {
     setGame(next);
+    setPendingResolution(null);
+    setResolutionStage("planning");
     clearSelection();
   }
 
@@ -627,6 +854,21 @@ export function BarcodeWorldCardBattle() {
     clearSelection();
   }
 
+  function beginResolution() {
+    const resolved = resolveRound(game);
+    if (!resolved.currentReview) return;
+    setResolutionStage("player");
+    setPendingResolution(resolved);
+    clearSelection();
+  }
+
+  const theaterGame = pendingResolution ?? game;
+  const theaterStage = pendingResolution
+    ? resolutionStage
+    : game.currentReview
+      ? "complete"
+      : "planning";
+
   return (
     <div className={cx(styles.shell, reducedMotion && styles.reducedMotion)}>
       <a className={styles.skipLink} href="#battle-controls">SKIP TO CONTROLS</a>
@@ -637,7 +879,7 @@ export function BarcodeWorldCardBattle() {
             <div>
               <p>BARCODE WORLD · PRIVATE BATTLE RESEARCH</p>
               <h1>STACK / RESOLVE</h1>
-              <span>FOUR LANES · SIX CARDS · VARIABLE FEED</span>
+              <span>FOUR PHYSICAL FRONTS · SIX CARDS · VARIABLE FEED</span>
             </div>
           </div>
           <div className={styles.prototypeBadges}>
@@ -645,11 +887,12 @@ export function BarcodeWorldCardBattle() {
           </div>
         </header>
 
+        <BattleTheater game={theaterGame} sequenceStage={theaterStage} theaterRef={theaterRef} />
         <StatusBar game={game} />
         <ScenarioStrip game={game} />
         <PressureTrack breakArmed={game.breakArmed} pressure={game.pressure} />
 
-        {game.currentReview ? (
+        {pendingResolution ? null : game.currentReview ? (
           <RoundResolution
             game={game}
             onNextRound={() => reset(startNextRound(game))}
@@ -685,10 +928,7 @@ export function BarcodeWorldCardBattle() {
               <button
                 aria-label="Resolve all four lanes"
                 className={styles.primaryButton}
-                onClick={() => {
-                  setGame((current) => resolveRound(current));
-                  clearSelection();
-                }}
+                onClick={beginResolution}
                 type="button"
               >
                 RESOLVE

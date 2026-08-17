@@ -27,6 +27,42 @@ Loose Signal, Fractured Gate, and card battle v0.1 remain historical mechanics
 references only. Their tactical grid, persistent card Health, replacement,
 Outflank, and 3/6 Command loop do not control v0.2.
 
+## August 17 scene correction
+
+The first v0.2 owner look exposed a presentation regression: the rebuilt rules
+were present, but red intent cards had replaced visible enemies, numbered lanes
+had no physical meaning, and the upper battle scene from v0.1 had been omitted.
+That is incompatible with the controlling premise that cards direct a real
+fight rather than becoming a tabletop game inside the fiction.
+
+The corrected surface therefore establishes:
+
+- A persistent battle theater sits at the top of the experience. It shows the
+  current location, objective, four physical fronts, hostile occupants, and
+  staged Wayfinder actions.
+- Lanes are encounter-specific regions of the explored location—not generic
+  card slots or square tactical tiles. Breacher Intercept, for example, uses
+  West Access, Cargo Divider, Service Relay, and Gate Threshold.
+- Hostile bodies remain visible both in the theater and inside their matching
+  lane. Enemy cards describe what those hostiles are about to do; the cards do
+  not substitute for the enemies themselves.
+- Resolve is a staged presentation rather than an immediate result screen.
+  First the Wayfinder's staged actions animate and reveal success or failure.
+  Then the locked hostiles take their action or visibly lose it because the
+  player stopped them. Only after both phases does Pressure settle and the
+  interface declare the round resolved.
+- The pre-resolution board, rack, and Pressure state remain authoritative while
+  the two action phases play. The already-computed deterministic result stays
+  buffered in memory so grants, final Pressure, and `ROUND RESOLVED` cannot leak
+  before the enemy phase finishes.
+- Reduced Motion removes movement but retains occupant, action, roll, outcome,
+  and Pressure information.
+
+The front names in this presentation pass identify physical space and connect
+the card interface to the fiction. They do not secretly add terrain modifiers;
+the visible enemy action, staged move, probability, and consequences remain the
+complete mechanical truth for this prototype.
+
 ## v0.2 battle loop
 
 The duel uses four fixed lanes and one shared Pressure track from enemy `-5` to
@@ -113,6 +149,12 @@ players manipulate the random stream.
 
 ## Interface contract
 
+- The upper battle theater remains visible before and after Resolve. It names
+  the location and objective, shows actual hostile occupants in all occupied
+  fronts, and runs `PLAYER → ENEMY → RESOLVE` before scrolling to the review.
+- Every numbered lane also has a concise encounter-specific front name and
+  spatial role. The same names appear in the theater, lane controls, and review.
+- Enemy silhouettes and actor labels are distinct from enemy action cards.
 - The four lanes remain above the six-slot rack on desktop and mobile.
 - Each lane embeds locked enemy intent, the current/projected player stack, its
   compiled move name, one probability bar, and explicit success/failure text.
@@ -155,26 +197,36 @@ Open the current PR preview directly:
 
 ### First read and mobile path
 
-1. At `390 × 844`, confirm the four horizontally scrollable lanes appear above
-   the six-slot rack and the sticky Resolve rail does not cover card content.
-2. Confirm each lane shows the locked Breacher move before any player choice.
-3. Select several different card types. Confirm legal lanes light up, projected
+1. At `390 × 844`, confirm the upper battle theater identifies a physical
+   location and shows all four fronts in a two-by-two field without horizontal
+   scrolling.
+2. Confirm every occupied front shows a visible hostile body and actor name;
+   its action card is supporting intent, not the only representation of an
+   enemy.
+3. Confirm the matching lane controls appear above the six-slot rack and use
+   the same front names. The sticky Resolve rail must not cover card content.
+4. Confirm each lane shows the locked enemy move before any player choice.
+5. Select several different card types. Confirm legal lanes light up, projected
    stack names change, and incompatible sequences do not silently place.
-4. Confirm every projected move shows a numeric percentage plus exact SUCCESS
+6. Confirm every projected move shows a numeric percentage plus exact SUCCESS
    and FAIL consequences. Confirm red/yellow/green never says good, bad, or best.
-5. Place one card and verify its rack slot remains empty. No replacement should
+7. Place one card and verify its rack slot remains empty. No replacement should
    appear simply because a card was played.
-6. Build `Jab → Jab` and verify `POWER ATTACK`. Build `Flank → Dread Pulse` and
+8. Build `Jab → Jab` and verify `POWER ATTACK`. Build `Flank → Dread Pulse` and
    verify `SURPRISE` with Fear. Attach `Cache Tap` to a compatible move and
    verify its success branch says `DRAW 2`.
-7. Resolve. Account for every lane's odds, revealed roll, success/failure,
-   Pressure contribution, and net movement.
-8. In Options, play at least two rounds under each feed recipe. Verify Signal
+9. Resolve. Confirm the interface returns to the upper theater first. It must
+   show the Wayfinder actions and their success/failure before advancing to the
+   locked enemy response. Pressure, grants, and `ROUND RESOLVED` must remain at
+   their pre-resolution state until both phases finish. Then account for every
+   lane's odds, revealed roll, Pressure contribution, and net movement in the
+   causal review.
+10. In Options, play at least two rounds under each feed recipe. Verify Signal
    Surge deals automatically, Breacher Intercept rewards results, Fractured
    Cache releases unlocks, and Cascade Protocol mixes sources.
-9. Reach a Pressure Break. Verify Pressure stays, both racks receive six, and
+11. Reach a Pressure Break. Verify Pressure stays, both racks receive six, and
    Charge/Fear clear.
-10. Replay Same State and repeat the same choices. Verify intents, rolls, draws,
+12. Replay Same State and repeat the same choices. Verify intents, rolls, draws,
     and results match. New Shuffle must change the derived seed/opening.
 
 ### Accessibility path
@@ -185,7 +237,8 @@ Open the current PR preview directly:
    borders, and source chips preserve the full meaning.
 4. Confirm Pressure and probability expose meter roles and current/min/max.
 5. Enable Reduce Motion and the operating-system reduced-motion preference;
-   verify smooth scrolling and transitions stop without hiding state.
+   verify battle movement, smooth scrolling, and transitions stop without
+   hiding occupants, actions, rolls, outcomes, or Pressure.
 6. Expand the event log by keyboard and confirm it explains the same result as
    the compact visible recap.
 
@@ -205,6 +258,9 @@ success/failure, unlocks, automatic next-round deals, hidden seeded rolls,
 visible probabilities, Break, endpoint precedence, enemy intent isolation,
 undo, replay, simulations, production isolation, concise surface structure,
 responsive ordering, accessibility primitives, and protected-system boundaries.
+The boundary suite also checks the upper theater, encounter-specific front
+names, visible hostile actors, buffered `PLAYER → ENEMY → RESOLVE` sequencing,
+animation cues, and reduced-motion fallback.
 
 ## Post-merge deployment and focused evidence
 

@@ -84,7 +84,7 @@ test("v0.2 keeps lanes above the six-card rack and exposes immediate probability
   assert.match(component, /v0\.2/);
   assert.match(component, /UNLISTED/);
   assert.match(component, /IN MEMORY/);
-  assert.match(component, /FOUR LANES · SIX CARDS · VARIABLE FEED/);
+  assert.match(component, /FOUR PHYSICAL FRONTS · SIX CARDS · VARIABLE FEED/);
   assert.match(component, /aria-labelledby="lane-board-title"/);
   assert.match(component, /id="rack-title"/);
   assert.ok(
@@ -117,7 +117,7 @@ test("v0.2 keeps lanes above the six-card rack and exposes immediate probability
 
   assert.match(component, /getPlacementPreview\(game, selectedCard\.id, lane\)/);
   assert.match(component, /getLaneForecast\(game, lane\)/);
-  assert.match(component, /BREACHER INTENT/);
+  assert.match(component, /ENEMY IN THIS FRONT/);
   assert.match(component, /LOCKED/);
   assert.match(component, /YOUR STACK/);
   assert.match(component, /stack\.length\}\/\{CARD_BATTLE_RULES\.maxStack\}/);
@@ -127,6 +127,62 @@ test("v0.2 keeps lanes above the six-card rack and exposes immediate probability
     assert.match(css, new RegExp(`data-type="${type}"`), `${type} color`);
   }
   assert.doesNotMatch(component, /Outflank|MOVE RANGE|FAST \/ STANDARD \/ SLOW|PIVOT/);
+});
+
+test("the battle remains physical with named fronts, visible enemies, and Resolve animation", async () => {
+  const [component, css] = await Promise.all([
+    readFile("src/components/BarcodeWorldCardBattle.tsx", "utf8"),
+    readFile("src/components/BarcodeWorldCardBattle.module.css", "utf8"),
+  ]);
+
+  assert.match(component, /function BattleTheater/);
+  assert.match(component, /PHYSICAL ENCOUNTER/);
+  assert.match(component, /type ResolutionStage/);
+  assert.match(component, /FRACTURED GATE/);
+  assert.match(component, /WEST ACCESS/);
+  assert.match(component, /CARGO DIVIDER/);
+  assert.match(component, /SERVICE RELAY/);
+  assert.match(component, /GATE THRESHOLD/);
+  assert.match(component, /const ENEMY_ACTORS/);
+  assert.match(component, /BREACHER RUNNER/);
+  assert.match(component, /BREACHER BRUTE/);
+  assert.match(component, /className=\{styles\.enemyPresence\}/);
+  assert.match(component, /className=\{styles\.battleFront\}/);
+  assert.match(component, /data-outcome=\{outcome\}/);
+  assert.match(component, /data-player-action=\{playerMove\?\.category/);
+  assert.match(component, /data-enemy-action=\{enemyMove\?\.category/);
+  assert.match(component, /<BattleTheater game=\{theaterGame\} sequenceStage=\{theaterStage\} theaterRef=\{theaterRef\} \/>/);
+  assert.ok(
+    component.indexOf("<BattleTheater") < component.indexOf("<StatusBar"),
+    "the physical battle theater must render at the top of the play surface",
+  );
+  assert.match(component, /scene\.scrollIntoView/);
+  assert.match(component, /type ResolutionStage = "planning" \| "player" \| "enemy" \| "complete"/);
+  assert.match(component, /const \[pendingResolution, setPendingResolution\]/);
+  assert.match(component, /setResolutionStage\("player"\)/);
+  assert.match(component, /setResolutionStage\("enemy"\)/);
+  assert.match(component, /setResolutionStage\("complete"\)/);
+  assert.match(component, /setGame\(pendingResolution\)/);
+  assert.match(component, /pendingResolution \? null : game\.currentReview/);
+  assert.match(component, /1 · PLAYER/);
+  assert.match(component, /2 · ENEMY/);
+  assert.match(component, /3 · RESOLVE/);
+  assert.match(component, /PLAYER HIT/);
+  assert.match(component, /PLAYER FAILED/);
+  assert.match(component, /ENEMY STOPPED/);
+
+  assert.match(css, /\.battlefield\s*\{/);
+  assert.match(css, /\.combatant::before/);
+  assert.match(css, /\.combatant::after/);
+  assert.match(css, /@keyframes wayfinder-strike/);
+  assert.match(css, /@keyframes enemy-hit/);
+  assert.match(css, /@keyframes wayfinder-repelled/);
+  assert.match(css, /@keyframes enemy-advance/);
+  assert.match(css, /@keyframes enemy-stopped/);
+  assert.match(css, /data-sequence="player"/);
+  assert.match(css, /data-sequence="enemy"/);
+  assert.match(css, /\.reducedMotion \*/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
 });
 
 test("scenario feed sources are composable and selectable rather than hardwired", async () => {

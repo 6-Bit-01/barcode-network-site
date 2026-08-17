@@ -23,6 +23,20 @@ export type QueuePlaybackLifecycleState = "idle" | "loaded" | "ready" | "playing
 export type QueuePlaybackLifecycleEventType = "loaded" | "ready" | "play" | "pause" | "stall" | "resume" | "seek" | "ended" | "error" | "finish" | "skip" | "remove" | "return";
 export type QueuePlaybackErrorCode = "media_aborted" | "network_error" | "decode_error" | "source_unsupported" | "provider_error" | "ready_timeout" | "sync_error" | "unknown";
 export type QueuePlaybackOutcome = "finished" | "skipped" | "removed";
+export type QueueShowLogEventType =
+  | "session_created"
+  | "submissions_opened"
+  | "submissions_closed"
+  | "broadcast_started"
+  | "track_submitted"
+  | "track_loaded"
+  | "track_play_started"
+  | "track_finished"
+  | "track_skipped"
+  | "track_removed"
+  | "track_returned"
+  | "track_restored"
+  | "session_archived";
 export type QueueWheelTimingStatus = "idle" | "ready" | "reencrypting" | "spinning" | "result_pending" | "confirmed" | "cancelled" | "signal_lost";
 export type UploadedFileDeletionStatus = "pending" | "deleted" | "error";
 
@@ -60,6 +74,24 @@ export interface QueuePlaybackDiagnostics {
   lastErrorCode: QueuePlaybackErrorCode | null;
   nextSequence: number;
   events: QueuePlaybackLifecycleEvent[];
+}
+
+export interface QueueShowLogTrack {
+  trackId: string;
+  artist: string;
+  title: string;
+  tiktokHandle: string;
+  sourceType: QueueSourceType;
+  publicSourceUrl: string | null;
+  submissionOrder: number | null;
+  playedOrder: number | null;
+}
+
+export interface QueueShowLogEvent {
+  sequence: number;
+  eventType: QueueShowLogEventType;
+  occurredAt: string;
+  track: QueueShowLogTrack | null;
 }
 
 export interface QueuePlaybackTiming {
@@ -421,6 +453,7 @@ export interface QueueSession extends QueueSessionSummary {
   nextInLineHoldTrackId?: string | null;
   autoRoutingPaused?: boolean;
   playbackDiagnostics?: QueuePlaybackDiagnostics;
+  showLog: QueueShowLogEvent[];
   historicalRecoveryProvenance?: QueueHistoricalRecoveryProvenance | null;
 }
 

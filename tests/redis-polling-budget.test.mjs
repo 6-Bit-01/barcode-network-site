@@ -8,17 +8,16 @@ function source(path) {
 
 test("Redis-backed browser surfaces share a bounded polling budget", () => {
   const budget = source("src/lib/redis-polling-budget.ts");
-  assert.match(budget, /LIVE_OVERLAY_POLL_INTERVAL_MS = 2_000/);
-  assert.match(budget, /FOREGROUND_OVERLAY_POLL_INTERVAL_MS = 5_000/);
+  assert.match(budget, /LIVE_OVERLAY_POLL_INTERVAL_MS = 650/);
+  assert.match(budget, /FOREGROUND_OVERLAY_POLL_INTERVAL_MS = 1_000/);
   assert.match(budget, /PUBLIC_QUEUE_POLL_INTERVAL_MS = 15_000/);
   assert.match(budget, /ADMIN_QUEUE_POLL_INTERVAL_MS = 10_000/);
   assert.match(budget, /SITE_LIVE_STATUS_POLL_INTERVAL_MS = 15_000/);
-  assert.match(budget, /REDIS_POLL_ERROR_RETRY_INTERVAL_MS = 30_000/);
 
   const liveOverlay = source("src/components/LiveOverlayReceiver.tsx");
   assert.match(liveOverlay, /LIVE_OVERLAY_POLL_INTERVAL_MS/);
-  assert.match(liveOverlay, /REDIS_POLL_ERROR_RETRY_INTERVAL_MS/);
-  assert.match(liveOverlay, /window\.setTimeout\(poll, nextPollDelayMs\)/);
+  assert.doesNotMatch(liveOverlay, /REDIS_POLL_ERROR_RETRY_INTERVAL_MS/);
+  assert.match(liveOverlay, /window\.setTimeout\(poll, OVERLAY_POLL_DELAY_MS\)/);
 
   for (const path of [
     "src/components/PublicQueueGateway.tsx",
@@ -39,13 +38,22 @@ test("Redis-backed browser surfaces share a bounded polling budget", () => {
 
   assert.match(source("src/components/ForegroundOverlayReceiver.tsx"), /FOREGROUND_OVERLAY_POLL_INTERVAL_MS/);
   assert.match(source("src/components/LiveStatusProvider.tsx"), /SITE_LIVE_STATUS_POLL_INTERVAL_MS/);
+
+  const fourHourShowMs = 4 * 60 * 60 * 1_000;
+  const liveOverlaySharedReads = Math.ceil(fourHourShowMs / 650) * 2;
+  const foregroundOverlaySharedReads = Math.ceil(fourHourShowMs / 1_000) * 2;
+  const playerSyncSharedWrites = Math.ceil(fourHourShowMs / 1_000);
+  const showCriticalSharedRedisCommands = liveOverlaySharedReads + foregroundOverlaySharedReads + playerSyncSharedWrites;
+  assert.equal(showCriticalSharedRedisCommands, 87_508);
+  assert.ok(showCriticalSharedRedisCommands <= 90_000, "four hours of both transient receivers plus 1 Hz player sync stays inside the bounded show allowance");
 });
 
 test("quota failover is read-only and retains only a previously confirmed queue snapshot", () => {
   const queue = source("src/lib/queue.ts");
   assert.match(queue, /lastKnownGoodRedisStore/);
-  assert.match(queue, /return normalizeStore\(lastKnownGoodRedisStore\)/);
-  assert.match(queue, /throw error/);
+  assert.match(queue, /fallback = normalizeStore\(lastKnownGoodRedisStore\)/);
+  assert.match(queue, /if \(fallback\) return fallback/);
+  assert.match(queue, /throw redisError/);
   assert.doesNotMatch(queue, /writeStore\(lastKnownGoodRedisStore/);
 
   const overlay = source("src/lib/live-overlay.ts");

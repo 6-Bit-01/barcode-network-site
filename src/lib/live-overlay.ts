@@ -418,6 +418,10 @@ export async function setLiveOverlayPlayerSync(sync: LiveOverlayPlayerSync | nul
   return normalized;
 }
 
+export async function updateLiveOverlayPlayerSync(input: unknown, receivedAt = new Date()): Promise<LiveOverlayPlayerSync | null> {
+  return setLiveOverlayPlayerSync(normalizePlayerSync(input, receivedAt), receivedAt);
+}
+
 export async function getStoredLiveOverlayState(): Promise<LiveOverlayState> {
   const redis = getRedis();
   if (!redis) return normalizeState(memoryOverlayState);

@@ -5,24 +5,33 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { verifyAdminToken, COOKIE_NAME } from "@/lib/auth";
+import { shouldHideBarcodeWorldPlaytest } from "@/lib/barcode-world/playtest-access.mjs";
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // The bounded BARCODE World proof is development-only. Stop at the request
-  // boundary in production so no page metadata or client-chunk reference is
-  // returned with the 404 response.
-  if (
-    pathname === "/world/playtest" &&
-    process.env.NODE_ENV === "production"
-  ) {
-    return new NextResponse(null, {
-      status: 404,
-      headers: {
-        "Cache-Control": "no-store, max-age=0",
-        "X-Robots-Tag": "noindex, nofollow, noarchive, noimageindex",
-      },
-    });
+  // The bounded BARCODE World proof is available only in local development and
+  // this branch's Vercel owner-review preview. Stop at the request boundary on
+  // the real production site and every other hosted production build so no
+  // page metadata or client-chunk reference is returned with the 404 response.
+  if (pathname === "/world/playtest") {
+    if (shouldHideBarcodeWorldPlaytest()) {
+      return new NextResponse(null, {
+        status: 404,
+        headers: {
+          "Cache-Control": "no-store, max-age=0",
+          "X-Robots-Tag": "noindex, nofollow, noarchive, noimageindex",
+        },
+      });
+    }
+
+    const response = NextResponse.next();
+    response.headers.set("Cache-Control", "private, no-store, max-age=0");
+    response.headers.set(
+      "X-Robots-Tag",
+      "noindex, nofollow, noarchive, noimageindex",
+    );
+    return response;
   }
 
   // ---- Rate limit: /api/queue/free ----

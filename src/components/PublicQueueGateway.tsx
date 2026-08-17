@@ -7,6 +7,7 @@ import { externalLinks } from "@/content";
 import { buildQueueTimingDisplay, queueTimingInputFromPublicSnapshot, type QueueTimingDisplaySummary } from "@/lib/queue-timing-display";
 import { formatRuntime, type QueuePublicSnapshot, type QueuePublicTrack } from "@/lib/queue-types";
 import { PUBLIC_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
+import { hasActiveQueueSession, startSessionBoundPolling } from "@/lib/session-bound-polling";
 
 type GatewayPhase = "syncing" | "empty" | "archived" | "closed" | "open" | "liveOpen" | "liveClosed";
 
@@ -132,15 +133,21 @@ export function PublicQueueGateway() {
       }
       wasOpen.current = nextOpen;
       setSnapshot(next);
+      return hasActiveQueueSession(next);
     }
+    return null;
   }
 
   useEffect(() => {
     setMounted(true);
     setNowMs(Date.now());
-    load();
-    const interval = setInterval(() => { setNowMs(Date.now()); load(); }, PUBLIC_QUEUE_POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
+    return startSessionBoundPolling({
+      intervalMs: PUBLIC_QUEUE_POLL_INTERVAL_MS,
+      poll: async () => {
+        setNowMs(Date.now());
+        return load();
+      },
+    });
   }, []);
 
   function beginNavigation(event: React.MouseEvent<HTMLAnchorElement>, href: string, activeSessionId: string) {

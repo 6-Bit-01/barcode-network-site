@@ -4,6 +4,7 @@ import { getTrackArtworkUrl, getTrackDurationLabel, parseTikTokVideoUrl } from "
 import { buildWheelSegments, derangedWheelCandidateOrder, orderedWheelCandidateIds, resolveLiveOverlayScene, safeLiveOverlayUrl, normalizeLiveOverlaySyncCorrectionReason, serverStampLiveOverlayPlayerSync, wheelFinalRotationForSegment } from "./live-overlay-resolver";
 import { parseYouTubeVideoId } from "./track-duration";
 import type { QueueEntry, QueueSourceType, QueueState } from "./queue-types";
+import { hasActiveQueueSession } from "./session-bound-polling";
 import type { LiveOverlayPlaybackState, LiveOverlayStateInput, LiveOverlayPlayerSync, LiveOverlayYouTubeSync, OverlayMode, ResolvedLiveOverlayScene, ResolvedWheelCeremonyTrack, WheelCeremonyStatus, WheelOverlayStatus } from "./live-overlay-resolver";
 
 export type { LiveOverlayAudioSync, LiveOverlayPlaybackState, LiveOverlayPlayerSync, LiveOverlayTikTokSync, LiveOverlayYouTubeSync, OverlayMode, ResolvedLiveOverlayScene, ResolvedWheelCeremonyTrack, WheelCeremonyStatus, WheelOverlayStatus } from "./live-overlay-resolver";
@@ -445,7 +446,7 @@ export function resolveLiveOverlaySceneFromQueueState(input: {
   const { overlayState, queueState, playerSync = null, now = new Date() } = input;
   const wheelCandidates = getWheelCandidatesFromQueue(queueState.queue);
   const session = queueState.session ?? null;
-  return resolveLiveOverlayScene({
+  const resolved = resolveLiveOverlayScene({
     overlayState,
     currentSession: session ? {
       sessionId: session.sessionId,
@@ -466,15 +467,27 @@ export function resolveLiveOverlaySceneFromQueueState(input: {
     queueOpen: session?.queueOpen,
     now,
   });
+  return { ...resolved, sessionActive: hasActiveQueueSession(queueState) };
 }
 
 export async function getResolvedLiveOverlayScene(): Promise<ResolvedLiveOverlayScene> {
-  const [overlayState, queueState, playerSync] = await Promise.all([getStoredLiveOverlayState(), getRadioQueueState(), getLiveOverlayPlayerSync()]);
+  const queueState = await getRadioQueueState();
+  if (!hasActiveQueueSession(queueState)) {
+    return resolveLiveOverlaySceneFromQueueState({ overlayState: defaultLiveOverlayState(), queueState, playerSync: null });
+  }
+  const [overlayState, playerSync] = await Promise.all([getStoredLiveOverlayState(), getLiveOverlayPlayerSync()]);
   return resolveLiveOverlaySceneFromQueueState({ overlayState, queueState, playerSync });
 }
 
 export async function getLiveOverlayAdminSnapshot(): Promise<LiveOverlayAdminSnapshot> {
-  const [overlayState, scene, playerSync, queueState] = await Promise.all([getStoredLiveOverlayState(), getResolvedLiveOverlayScene(), getLiveOverlayPlayerSync(), getRadioQueueState()]);
+  const queueState = await getRadioQueueState();
+  if (!hasActiveQueueSession(queueState)) {
+    const overlayState = defaultLiveOverlayState();
+    const scene = resolveLiveOverlaySceneFromQueueState({ overlayState, queueState, playerSync: null });
+    return { overlayState, scene, playerSync: null, wheelCandidates: [] };
+  }
+  const [overlayState, playerSync] = await Promise.all([getStoredLiveOverlayState(), getLiveOverlayPlayerSync()]);
+  const scene = resolveLiveOverlaySceneFromQueueState({ overlayState, queueState, playerSync });
   return { overlayState, scene, playerSync, wheelCandidates: getWheelCandidatesFromQueue(queueState.queue) };
 }
 

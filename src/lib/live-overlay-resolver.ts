@@ -440,6 +440,7 @@ export interface ResolvedWheelCeremonyScene {
 }
 
 export interface ResolvedLiveOverlayScene {
+  sessionActive?: boolean;
   mode: OverlayMode;
   resolvedMode: OverlayMode;
   reason: string;

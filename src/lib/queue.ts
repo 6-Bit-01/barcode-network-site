@@ -3616,6 +3616,7 @@ export async function getPublicQueueSnapshot(sessionId?: string, identity?: { su
   if (!found) {
     return {
       revision: store.revision,
+      sessionActive: false,
       session: null,
       status: emptyQueuePublicStatus(),
       queue: [],
@@ -3658,6 +3659,7 @@ export async function getPublicQueueSnapshot(sessionId?: string, identity?: { su
 
     return {
       revision: store.revision,
+      sessionActive: false,
       session: archivedPublicSession,
       status: {
         isOpen: false,
@@ -3676,7 +3678,7 @@ export async function getPublicQueueSnapshot(sessionId?: string, identity?: { su
       submitterStatus: null,
     };
   }
-  return { revision: store.revision, session: summarizeSession(normalized), status: normalized.publicStatus, queue: normalized.queue.map(toPublicQueueTrack), completed: normalized.completed.slice(0, 10).map(toPublicQueueTrack), nowPlaying: normalized.loadedTrack ? toPublicQueueTrack(normalized.loadedTrack) : null, upNext: normalized.nextInLineTrack ? toPublicQueueTrack(normalized.nextInLineTrack) : null, submitterStatus: publicSubmitterStatus(normalized, identity) };
+  return { revision: store.revision, sessionActive: normalized.sessionId === store.activeSessionId, session: summarizeSession(normalized), status: normalized.publicStatus, queue: normalized.queue.map(toPublicQueueTrack), completed: normalized.completed.slice(0, 10).map(toPublicQueueTrack), nowPlaying: normalized.loadedTrack ? toPublicQueueTrack(normalized.loadedTrack) : null, upNext: normalized.nextInLineTrack ? toPublicQueueTrack(normalized.nextInLineTrack) : null, submitterStatus: publicSubmitterStatus(normalized, identity) };
 }
 
 async function requestPriorityUpgradePlaceholderMutation(id: string): Promise<QueuePublicTrack | null> {

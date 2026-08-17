@@ -6,6 +6,7 @@ import type { CSSProperties, MutableRefObject } from "react";
 import { buildWheelSegments, estimateOneWayNetworkTransitMs, playbackCorrectionTarget, roundPlaybackDriftSeconds, serverRelativeSyncAgeSeconds, shouldCorrectPlaybackDrift, updateTransitEstimateMs, wheelFinalRotationForSegment, wheelUprightLabelRotationDegrees } from "@/lib/live-overlay-resolver";
 import type { LiveOverlayPlaybackState, LiveOverlayTikTokSync, LiveOverlayYouTubeSync, ResolvedLiveOverlayScene } from "@/lib/live-overlay";
 import { LIVE_OVERLAY_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
+import { hasActiveQueueSession, startSessionBoundPolling } from "@/lib/session-bound-polling";
 
 type YTPlayer = {
   loadVideoById: (options: { videoId: string; startSeconds?: number }) => void;
@@ -980,13 +981,12 @@ export function LiveOverlayReceiver() {
 
   useEffect(() => {
     let cancelled = false;
-    let timeoutId: number | null = null;
     let requestSeq = 0;
     let latestAppliedSeq = 0;
     let activeController: AbortController | null = null;
 
-    async function poll() {
-      if (cancelled) return;
+    async function poll(): Promise<boolean | null> {
+      if (cancelled) return null;
       const seq = requestSeq + 1;
       requestSeq = seq;
       activeController = new AbortController();
@@ -1013,18 +1013,19 @@ export function LiveOverlayReceiver() {
           setScene((current) => nextScene ?? current);
           setConnected(true);
         }
+        return hasActiveQueueSession(nextScene);
       } catch {
         if (!cancelled) setConnected(false);
+        return null;
       } finally {
         activeController = null;
-        if (!cancelled) timeoutId = window.setTimeout(poll, OVERLAY_POLL_DELAY_MS);
       }
     }
 
-    poll();
+    const stopPolling = startSessionBoundPolling({ intervalMs: OVERLAY_POLL_DELAY_MS, poll });
     return () => {
       cancelled = true;
-      if (timeoutId) window.clearTimeout(timeoutId);
+      stopPolling();
       activeController?.abort();
     };
   }, []);

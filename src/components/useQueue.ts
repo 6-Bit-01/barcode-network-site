@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { QueueState } from "@/lib/queue-types";
 import { PUBLIC_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
+import { hasActiveQueueSession, startSessionBoundPolling } from "@/lib/session-bound-polling";
 
 const POLL_INTERVAL = PUBLIC_QUEUE_POLL_INTERVAL_MS;
 
@@ -18,21 +19,18 @@ export function useQueue() {
       const data: QueueState = await res.json();
       setState(data);
       setError(null);
+      return hasActiveQueueSession(data);
     } catch (err) {
       console.error("[useQueue]", err);
       setError("Failed to load queue");
+      return null;
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    const initial = setTimeout(() => void fetchQueue(), 0);
-    const interval = setInterval(fetchQueue, POLL_INTERVAL);
-    return () => {
-      clearTimeout(initial);
-      clearInterval(interval);
-    };
+    return startSessionBoundPolling({ intervalMs: POLL_INTERVAL, poll: fetchQueue });
   }, [fetchQueue]);
 
   return { state, loading, error, refresh: fetchQueue };

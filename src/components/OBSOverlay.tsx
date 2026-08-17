@@ -5,6 +5,7 @@ import type { QueueState, QueueEntry, QueueTier } from "@/lib/queue-types";
 import { normalizeTier } from "@/lib/queue-types";
 import { isWithinBroadcastWindow } from "@/lib/broadcastSchedule";
 import { ADMIN_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
+import { hasActiveQueueSession, startSessionBoundPolling } from "@/lib/session-bound-polling";
 
 const LIVE_URL = "https://www.tiktok.com/@six.bit/live";
 
@@ -72,12 +73,15 @@ export function OBSOverlay() {
     async function poll() {
       try {
         const res = await fetch("/api/queue");
-        if (res.ok) setState(await res.json());
+        if (res.ok) {
+          const next = await res.json() as QueueState;
+          setState(next);
+          return hasActiveQueueSession(next);
+        }
       } catch { /* silent */ }
+      return null;
     }
-    poll();
-    const interval = setInterval(poll, ADMIN_QUEUE_POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
+    return startSessionBoundPolling({ intervalMs: ADMIN_QUEUE_POLL_INTERVAL_MS, poll });
   }, []);
 
   /* Check broadcast schedule every 15s */

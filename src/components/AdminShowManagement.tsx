@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
+import { notifyQueueSessionChanged } from "@/lib/session-bound-polling";
 import { AdminQueueSessionProvenance } from "@/components/AdminQueueSessionProvenance";
 import { formatRuntime } from "@/lib/queue-types";
 import { pacificDateString } from "@/lib/pacific-time";
@@ -96,7 +97,10 @@ export function AdminShowManagement() {
     setPriorityStartError(null);
     const paidUpgradesEnabled = priorityUpgradesEnabled && priorityUpgradePriceCents > 0;
     const next = await post({ action: "startSession", title, showDate, description, purpose, bnlPublicationStatus, trackLimitPerArtist, queueCapacity, submissionCooldownSeconds, priorityUpgradesEnabled: paidUpgradesEnabled, priorityUpgradeLabel: FIXED_PRIORITY_LABEL, priorityUpgradeInstructions: FIXED_PRIORITY_INSTRUCTIONS, priorityUpgradePriceCents, priorityUpgradeCurrency, priorityUpgradePaymentsEnabled: paidUpgradesEnabled });
-    if (next?.session?.sessionId) router.push(`/admin/queue?sessionId=${encodeURIComponent(next.session.sessionId)}`);
+    if (next?.session?.sessionId) {
+      notifyQueueSessionChanged();
+      router.push(`/admin/queue?sessionId=${encodeURIComponent(next.session.sessionId)}`);
+    }
   }
 
   async function endSession() {
@@ -104,6 +108,7 @@ export function AdminShowManagement() {
     const ended = await post({ action: "archiveSession", sessionId: state?.session?.sessionId });
     setEndingSession(false);
     if (!ended) return;
+    notifyQueueSessionChanged();
     setEndConfirmOpen(false);
     await load();
   }

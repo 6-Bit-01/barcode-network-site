@@ -17,7 +17,7 @@ test("Redis-backed browser surfaces share a bounded polling budget", () => {
   const liveOverlay = source("src/components/LiveOverlayReceiver.tsx");
   assert.match(liveOverlay, /LIVE_OVERLAY_POLL_INTERVAL_MS/);
   assert.doesNotMatch(liveOverlay, /REDIS_POLL_ERROR_RETRY_INTERVAL_MS/);
-  assert.match(liveOverlay, /window\.setTimeout\(poll, OVERLAY_POLL_DELAY_MS\)/);
+  assert.match(liveOverlay, /startSessionBoundPolling\(\{ intervalMs: OVERLAY_POLL_DELAY_MS, poll \}\)/);
 
   for (const path of [
     "src/components/PublicQueueGateway.tsx",
@@ -38,6 +38,21 @@ test("Redis-backed browser surfaces share a bounded polling budget", () => {
 
   assert.match(source("src/components/ForegroundOverlayReceiver.tsx"), /FOREGROUND_OVERLAY_POLL_INTERVAL_MS/);
   assert.match(source("src/components/LiveStatusProvider.tsx"), /SITE_LIVE_STATUS_POLL_INTERVAL_MS/);
+
+  for (const path of [
+    "src/components/LiveOverlayReceiver.tsx",
+    "src/components/ForegroundOverlayReceiver.tsx",
+    "src/components/PublicQueueGateway.tsx",
+    "src/components/PublicQueueSession.tsx",
+    "src/components/RadioQueueForm.tsx",
+    "src/components/useQueue.ts",
+    "src/components/AdminLiveOverlayControl.tsx",
+    "src/components/AdminRadioQueueControl.tsx",
+    "src/components/OBSOverlay.tsx",
+    "src/components/LiveStatusProvider.tsx",
+  ]) {
+    assert.match(source(path), /startSessionBoundPolling/, `${path} must stop recurring requests when no current session exists`);
+  }
 
   const fourHourShowMs = 4 * 60 * 60 * 1_000;
   const liveOverlaySharedReads = Math.ceil(fourHourShowMs / 650) * 2;

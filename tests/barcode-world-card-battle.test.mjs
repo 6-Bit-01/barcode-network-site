@@ -1,18 +1,22 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 
 import {
   CARD_BATTLE_RULES,
+  CARD_BATTLE_SCENARIOS,
+  CARD_TYPES,
+  DEFAULT_CARD_BATTLE_SCENARIO_ID,
   ENEMY_CARD_DEFINITIONS,
   ENEMY_DECK,
   PLAYER_CARD_DEFINITIONS,
   PLAYER_DECK,
-  cancelOutflank,
+  compileMove,
   createCardBattleState,
+  deterministicContestRoll,
   deterministicShuffle,
+  getLaneForecast,
+  getPlacementPreview,
   placePlayerCard,
-  planEnemyPlacements,
   replayNewShuffle,
   replaySameState,
   resolveRound,
@@ -20,490 +24,449 @@ import {
   runDeterministicSimulation,
   startNextRound,
   undoPlayerAction,
-  useOutflank,
 } from "../src/lib/barcode-world/card-battle-engine.mjs";
-
-function active(side, designId, copy = 1, enteredRound = 0, overrides = {}) {
-  const definitions = side === "player" ? PLAYER_CARD_DEFINITIONS : ENEMY_CARD_DEFINITIONS;
-  const definition = definitions[designId];
-  return {
-    ...definition,
-    id: `${side}-${designId}-${copy}`,
-    designId,
-    side,
-    copy,
-    maxHealth: definition.health,
-    currentHealth: definition.health,
-    powerBonus: 0,
-    healthBonus: 0,
-    temporaryPowerBonus: 0,
-    enteredRound,
-    damageReductionAvailable: designId === "enforcer",
-    ...overrides,
-  };
-}
 
 function card(side, designId, copy = 1) {
   const deck = side === "player" ? PLAYER_DECK : ENEMY_DECK;
-  return structuredClone(deck.find((entry) => entry.designId === designId && entry.copy === copy));
+  return structuredClone(
+    deck.find((entry) => entry.designId === designId && entry.copy === copy),
+  );
 }
 
-function controlledState(seed = "controlled") {
-  const state = createCardBattleState(seed);
+function passingSeed(prefix, maximumRoll = 50, lane = 0) {
+  for (let index = 0; index < 10_000; index += 1) {
+    const seed = `${prefix}-${index}`;
+    if (deterministicContestRoll(seed, 1, lane) <= maximumRoll) return seed;
+  }
+  throw new Error(`Could not find passing seed for ${prefix}`);
+}
+
+function failingSeed(prefix, minimumRoll = 96, lane = 0) {
+  for (let index = 0; index < 10_000; index += 1) {
+    const seed = `${prefix}-${index}`;
+    if (deterministicContestRoll(seed, 1, lane) >= minimumRoll) return seed;
+  }
+  throw new Error(`Could not find failing seed for ${prefix}`);
+}
+
+function controlledState(
+  seed = "controlled",
+  scenarioId = DEFAULT_CARD_BATTLE_SCENARIO_ID,
+) {
+  const state = createCardBattleState(seed, scenarioId);
   state.player.hand = [];
   state.player.drawPile = [];
   state.player.discard = [];
-  state.player.lanes = [null, null, null, null];
+  state.player.lanes = [[], [], [], []];
+  state.player.reserve = CARD_BATTLE_RULES.commandCap;
+  state.player.conditions = { charge: false, chargeLane: null };
   state.enemy.hand = [];
   state.enemy.drawPile = [];
   state.enemy.discard = [];
-  state.enemy.lanes = [null, null, null, null];
-  state.enemyPreview = { round: state.round, locked: true, placements: [] };
+  state.enemy.reserve = 0;
+  state.enemy.conditions = { fear: false };
+  state.enemyPreview = { round: state.round, locked: true, lanes: [null, null, null, null] };
   state.pendingPlayerActions = [];
   state.pendingEvents = [];
   state.currentReview = null;
+  state.currentRoundGrant = { automaticCards: 0, reserveBonus: 0 };
   state.history = [];
+  state.unlocks = { fearDrawClaimed: false, pressureDrawClaimed: false };
   state.eventSequence = 0;
   state.playerActionSequence = 0;
-  state.player.command = 6;
-  state.enemy.command = 0;
   return state;
 }
 
-function eventTypes(state) {
+function setEnemyIntent(state, lane, designIds) {
+  const cards = designIds.map((designId, index) => card("enemy", designId, index + 1));
+  const move = compileMove(cards, "enemy");
+  state.enemyPreview.lanes[lane] = {
+    lane,
+    cards,
+    move,
+    cost: move.cost,
+    score: 1,
+  };
+  return state;
+}
+
+function reviewEventTypes(state) {
   return state.currentReview.events.map((entry) => entry.type);
 }
 
 function assertCausalEvents(events) {
   assert.ok(events.length > 0);
   for (const entry of events) {
-    assert.equal(typeof entry.sceneCue, "string", `${entry.id} sceneCue type`);
-    assert.ok(entry.sceneCue.length > 0, `${entry.id} has a scene cue`);
-    assert.equal(typeof entry.detail, "string", `${entry.id} detail type`);
-    assert.ok(entry.detail.length > 0, `${entry.id} has causal detail`);
+    assert.ok(entry.id);
+    assert.ok(entry.sceneCue, `${entry.id} scene cue`);
+    assert.ok(entry.detail, `${entry.id} causal detail`);
   }
 }
 
-function allZoneIds(state, side) {
-  const actor = state[side];
+function playerZoneIds(state) {
   return [
-    ...actor.drawPile,
-    ...actor.hand,
-    ...actor.discard,
-    ...actor.lanes.filter(Boolean),
-    ...(side === "enemy" && state.phase === "player-action"
-      ? state.enemyPreview.placements.map((entry) => entry.card)
-      : []),
+    ...state.player.drawPile,
+    ...state.player.hand,
+    ...state.player.discard,
+    ...state.player.lanes.flat(),
   ].map((entry) => entry.id);
 }
 
-test("exact decks contain twelve unique instances and two copies of every approved design", () => {
+function enemyZoneIds(state) {
+  return [
+    ...state.enemy.drawPile,
+    ...state.enemy.hand,
+    ...state.enemy.discard,
+    ...state.enemyPreview.lanes.flatMap((intent) => intent?.cards ?? []),
+  ].map((entry) => entry.id);
+}
+
+test("v0.2 decks contain eighteen unique cards and all eight card types", () => {
+  assert.equal(CARD_BATTLE_RULES.deckSize, 18);
+  assert.equal(CARD_BATTLE_RULES.handSize, 6);
+  assert.equal(CARD_TYPES.length, 8);
+  assert.deepEqual(
+    new Set(Object.values(PLAYER_CARD_DEFINITIONS).map((entry) => entry.type)),
+    new Set(CARD_TYPES),
+  );
   for (const [side, deck, definitions] of [
     ["player", PLAYER_DECK, PLAYER_CARD_DEFINITIONS],
     ["enemy", ENEMY_DECK, ENEMY_CARD_DEFINITIONS],
   ]) {
-    assert.equal(deck.length, 12, `${side} deck size`);
-    assert.equal(new Set(deck.map((entry) => entry.id)).size, 12, `${side} instance ids`);
+    assert.equal(deck.length, 18, `${side} deck size`);
+    assert.equal(new Set(deck.map((entry) => entry.id)).size, 18, `${side} unique ids`);
     assert.deepEqual(new Set(deck.map((entry) => entry.designId)), new Set(Object.keys(definitions)));
-    for (const [designId, definition] of Object.entries(definitions)) {
-      const copies = deck.filter((entry) => entry.designId === designId);
-      assert.deepEqual(copies.map((entry) => entry.copy), [1, 2]);
-      for (const instance of copies) {
-        assert.equal(instance.side, side);
-        assert.deepEqual(
-          { name: instance.name, cost: instance.cost, power: instance.power, health: instance.health, ability: instance.ability },
-          { name: definition.name, cost: definition.cost, power: definition.power, health: definition.health, ability: definition.ability },
-        );
-      }
+    for (const instance of deck) {
+      assert.equal(instance.side, side);
+      assert.equal(instance.ability, instance.effect);
     }
   }
+  assert.equal(PLAYER_CARD_DEFINITIONS["cache-tap"].type, "modifier");
+  assert.equal(PLAYER_CARD_DEFINITIONS["cache-tap"].drawOnSuccess, 2);
 });
 
-test("seeded Fisher-Yates openings replay exactly while a new shuffle changes domains", () => {
-  const first = createCardBattleState("replay-proof");
-  const duplicate = createCardBattleState("replay-proof");
+test("scenario recipes can isolate or mix every replenishment source", () => {
+  const byId = Object.fromEntries(CARD_BATTLE_SCENARIOS.map((entry) => [entry.id, entry]));
+  assert.equal(byId["breacher-intercept-v0.2"].replenishment.roundStartDraw, 0);
+  assert.equal(byId["breacher-intercept-v0.2"].replenishment.contestedSuccessDraw, 1);
+  assert.equal(byId["signal-surge-v0.2"].replenishment.roundStartDraw, 2);
+  assert.equal(byId["signal-surge-v0.2"].reservePerRoundBonus, 2);
+  assert.equal(byId["fractured-cache-v0.2"].replenishment.fearUnlockDraw, 2);
+  const mixed = byId["cascade-protocol-v0.2"];
+  assert.ok(mixed.replenishment.roundStartDraw > 0);
+  assert.ok(mixed.replenishment.contestedSuccessDraw > 0);
+  assert.ok(mixed.replenishment.fearUnlockDraw > 0);
+});
+
+test("seeded openings and hidden rolls replay exactly within the selected scenario", () => {
+  const first = createCardBattleState("replay-proof", "cascade-protocol-v0.2");
+  const duplicate = createCardBattleState("replay-proof", "cascade-protocol-v0.2");
   assert.deepEqual(first, duplicate);
   assert.deepEqual(replaySameState(first), first);
-
-  const next = replayNewShuffle(first);
-  assert.equal(next.baseSeed, first.baseSeed);
-  assert.equal(next.shuffleIndex, first.shuffleIndex + 1);
-  assert.notEqual(next.seed, first.seed);
-  assert.notDeepEqual(next.player.hand.map((entry) => entry.id), first.player.hand.map((entry) => entry.id));
+  const reshuffled = replayNewShuffle(first);
+  assert.equal(reshuffled.scenarioId, first.scenarioId);
+  assert.equal(reshuffled.shuffleIndex, 1);
+  assert.notEqual(reshuffled.seed, first.seed);
+  assert.notDeepEqual(reshuffled, first);
   assert.deepEqual(
-    deterministicShuffle([1, 2, 3, 4, 5], "domain-a"),
-    deterministicShuffle([1, 2, 3, 4, 5], "domain-a"),
-  );
-  assert.notDeepEqual(
-    deterministicShuffle([1, 2, 3, 4, 5], "domain-a"),
-    deterministicShuffle([1, 2, 3, 4, 5], "domain-b"),
+    deterministicShuffle([1, 2, 3, 4, 5], "domain"),
+    deterministicShuffle([1, 2, 3, 4, 5], "domain"),
   );
 });
 
-test("setup deals real five-card hands and fixes the lone opening Bruiser in Lane 2", () => {
+test("setup deals six visible cards, +10 Reserve, and locked enemy intents", () => {
   const state = createCardBattleState("opening-zones");
   assert.equal(state.phase, "player-action");
   assert.equal(state.round, 1);
-  assert.equal(state.player.hand.length, 5);
-  assert.equal(state.player.drawPile.length, 7);
-  assert.equal(state.enemy.hand.length + state.enemyPreview.placements.length, 5);
-  assert.equal(state.enemy.drawPile.length, 6);
-  assert.equal(state.enemy.lanes.filter(Boolean).length, 1);
-  assert.equal(state.enemy.lanes[CARD_BATTLE_RULES.startingBruiserLane].designId, "bruiser");
-  assert.equal(state.enemy.lanes[CARD_BATTLE_RULES.startingBruiserLane].enteredRound, 0);
+  assert.equal(state.player.hand.length, 6);
+  assert.equal(state.player.drawPile.length, 12);
+  assert.equal(state.player.reserve, 10);
+  assert.equal(state.enemy.reserve >= 0, true);
   assert.equal(state.enemyPreview.locked, true);
-  assert.equal(state.player.command, 3);
-  assert.ok(state.enemy.command >= 0 && state.enemy.command <= 3);
-  assert.equal(new Set(allZoneIds(state, "player")).size, 12);
-  assert.equal(new Set(allZoneIds(state, "enemy")).size, 12);
+  assert.ok(state.enemyPreview.lanes.some(Boolean));
+  assert.equal(new Set(playerZoneIds(state)).size, 18);
+  assert.equal(new Set(enemyZoneIds(state)).size, 18);
 });
 
-test("Command gains three, banks to six, and only later rounds draw one card", () => {
-  let state = controlledState("command-draw");
-  state.player.command = 4;
-  state.enemy.command = 5;
-  state.player.drawPile = [card("player", "hold-ground")];
-  state.enemy.drawPile = [card("enemy", "rush")];
+test("Signal Surge grants its Reserve bonus immediately and automatic cards only next round", () => {
+  let state = controlledState("automatic-feed", "signal-surge-v0.2");
+  state.player.reserve = 0;
+  state.player.drawPile = [card("player", "jab", 1), card("player", "guard", 1)];
   state = resolveRound(state);
+  assert.equal(state.currentReview.replenishment.playerDrawn, 0);
   state = startNextRound(state);
-  assert.equal(state.round, 2);
-  assert.equal(state.player.command, 6);
-  assert.ok(state.enemy.command <= 6);
+  assert.equal(state.player.reserve, 12);
+  assert.equal(state.player.hand.length, 2);
+  assert.equal(state.currentRoundGrant.automaticCards, 2);
+  assert.ok(state.pendingEvents.some((entry) => entry.type === "automatic-draw"));
+});
+
+test("earned-feed scenarios do not automatically refill the rack", () => {
+  let state = controlledState("no-auto-refill");
+  state.player.hand = [card("player", "guard")];
+  state.player.drawPile = [card("player", "jab")];
+  state = resolveRound(state);
+  assert.equal(state.currentReview.replenishment.playerDrawn, 0);
+  state = startNextRound(state);
   assert.equal(state.player.hand.length, 1);
-  assert.equal(state.player.hand[0].designId, "hold-ground");
-  assert.equal(state.pendingEvents.filter((entry) => entry.type === "draw").length, 2);
+  assert.equal(state.player.hand[0].designId, "guard");
+  assert.equal(state.currentRoundGrant.automaticCards, 0);
 });
 
-test("affordability is enforced and replacement discards without a false destroy trigger", () => {
-  let state = controlledState("replacement");
-  state.player.command = 1;
-  state.player.hand = [card("player", "linebreaker"), card("player", "hold-ground")];
-  state.player.lanes[0] = active("player", "scout-route", 1, 0, { currentHealth: 1 });
-  const blocked = placePlayerCard(state, state.player.hand[0].id, 0);
-  assert.equal(blocked.player.lanes[0].designId, "scout-route");
-  assert.match(blocked.notice, /need 3 Command/i);
+test("placing a card spends Reserve without drawing a replacement", () => {
+  let state = controlledState("placement-no-refill");
+  state.player.reserve = 10;
+  state.player.hand = [card("player", "jab"), card("player", "guard")];
+  state.player.drawPile = [card("player", "flank")];
+  const beforePile = state.player.drawPile.map((entry) => entry.id);
+  state = placePlayerCard(state, "player-jab-1", 0);
+  assert.equal(state.player.reserve, 8);
+  assert.deepEqual(state.player.hand.map((entry) => entry.designId), ["guard"]);
+  assert.deepEqual(state.player.drawPile.map((entry) => entry.id), beforePile);
+  assert.equal(state.player.lanes[0][0].designId, "jab");
+  assert.match(state.pendingEvents.at(-1).detail, /No replacement card is drawn/i);
+});
 
-  state = placePlayerCard(state, state.player.hand[1].id, 0);
-  assert.equal(state.player.lanes[0].designId, "hold-ground");
-  assert.equal(state.player.command, 0);
-  assert.deepEqual(state.player.discard.map((entry) => entry.designId), ["scout-route"]);
+test("stack grammar transforms compatible cards and rejects incompatible modifiers", () => {
+  let state = controlledState("stack-grammar");
+  state.player.hand = [
+    card("player", "jab", 1),
+    card("player", "jab", 2),
+    card("player", "overclock", 1),
+    card("player", "dread-pulse", 1),
+  ];
+  const modifierAlone = placePlayerCard(state, "player-overclock-1", 0);
+  assert.match(modifierAlone.notice, /does not connect/i);
+  state = placePlayerCard(state, "player-jab-1", 0);
+  state = placePlayerCard(state, "player-jab-2", 0);
+  assert.equal(getLaneForecast(state, 0).playerMove.name, "POWER ATTACK");
+  state = placePlayerCard(state, "player-overclock-1", 0);
+  assert.equal(getLaneForecast(state, 0).playerMove.name, "OVERLOADED POWER ATTACK");
+  const tooMany = placePlayerCard(state, "player-dread-pulse-1", 0);
+  assert.match(tooMany.notice, /complete three-card move/i);
+});
+
+test("Flank plus Dread Pulse creates Surprise and Fear without a wordy rules layer", () => {
+  let state = controlledState(passingSeed("surprise", 90));
+  state.player.hand = [card("player", "flank"), card("player", "dread-pulse")];
+  state = placePlayerCard(state, "player-flank-1", 0);
+  state = placePlayerCard(state, "player-dread-pulse-1", 0);
+  const forecast = getLaneForecast(state, 0);
+  assert.equal(forecast.playerMove.name, "SURPRISE");
+  assert.equal(forecast.playerMove.appliesFear, true);
   state = resolveRound(state);
-  assert.ok(eventTypes(state).includes("replace"));
-  assert.equal(state.currentReview.events.some((entry) => entry.type === "destroy" && entry.title.includes("Scout Route")), false);
-  assert.equal(state.player.hand.some((entry) => entry.designId === "linebreaker"), true);
+  assert.equal(state.currentReview.laneResults[0].success, true);
+  assert.equal(state.enemy.conditions.fear, true);
 });
 
-test("Intercept, Last Opening, Brace, and Last Push apply only their exact entry bonuses", () => {
-  let state = controlledState("entry-bonuses");
-  state.pressure = -1;
-  state.player.hand = [card("player", "intercept"), card("player", "last-opening")];
-  state.enemyPreview = {
-    round: 1,
-    locked: true,
-    placements: [{ card: card("enemy", "brace"), cardId: "enemy-brace-1", designId: "brace", lane: 0, cost: 1, replacesCardId: null, score: 1 }],
-  };
-  state = placePlayerCard(state, "player-intercept-1", 0);
-  state = placePlayerCard(state, "player-last-opening-1", 1);
-  assert.equal(state.player.lanes[0].maxHealth, 3, "Intercept sees the locked preview");
-  assert.equal(state.player.lanes[0].powerBonus, 0);
-  assert.equal(state.player.lanes[1].maxHealth, 4, "Last Opening enters while behind");
-  assert.equal(state.player.lanes[1].powerBonus, 1);
+test("a draw Modifier attaches to an action and grants cards only when that move succeeds", () => {
+  let state = controlledState(passingSeed("cache-success", 80), "signal-surge-v0.2");
+  state.player.hand = [card("player", "jab"), card("player", "cache-tap")];
+  state.player.drawPile = [
+    card("player", "guard"),
+    card("player", "flank"),
+    card("player", "charge"),
+  ];
+  state = placePlayerCard(state, "player-jab-1", 0);
+  state = placePlayerCard(state, "player-cache-tap-1", 0);
+  assert.equal(getLaneForecast(state, 0).playerMove.name, "SIGNAL STRIKE");
+  assert.match(getLaneForecast(state, 0).successLabel, /DRAW 2/);
   state = resolveRound(state);
-  assert.equal(state.enemy.lanes[0].maxHealth, 4, "Brace enters opposed");
+  assert.equal(state.currentReview.replenishment.cardEffectDraws, 2);
+  assert.equal(state.currentReview.replenishment.playerDrawn, 2);
+  assert.deepEqual(
+    state.currentReview.replenishment.sources.map((entry) => entry.type),
+    ["card"],
+  );
 
-  let enemyBehind = controlledState("last-push");
-  enemyBehind.pressure = 1;
-  enemyBehind.player.lanes[2] = active("player", "hold-ground");
-  enemyBehind.enemyPreview = {
-    round: 1,
-    locked: true,
-    placements: [{ card: card("enemy", "last-push"), cardId: "enemy-last-push-1", designId: "last-push", lane: 2, cost: 3, replacesCardId: null, score: 1 }],
-  };
-  enemyBehind = resolveRound(enemyBehind);
-  assert.equal(enemyBehind.enemy.lanes[2].maxHealth, 3);
-  assert.equal(enemyBehind.enemy.lanes[2].powerBonus, 1);
+  let failed = controlledState(failingSeed("cache-failure"), "signal-surge-v0.2");
+  failed.player.hand = [card("player", "jab"), card("player", "cache-tap")];
+  failed.player.drawPile = [card("player", "guard")];
+  failed = placePlayerCard(failed, "player-jab-1", 0);
+  failed = placePlayerCard(failed, "player-cache-tap-1", 0);
+  failed = resolveRound(failed);
+  assert.equal(failed.currentReview.laneResults[0].success, false);
+  assert.equal(failed.currentReview.replenishment.cardEffectDraws, 0);
+  assert.equal(failed.currentReview.replenishment.playerDrawn, 0);
 });
 
-test("four lanes resolve simultaneously, survivor damage persists, and mutual destruction is possible", () => {
-  let state = controlledState("simultaneous");
-  state.player.lanes[0] = active("player", "hold-ground");
-  state.enemy.lanes[0] = active("enemy", "bruiser", 2);
-  state.player.lanes[1] = active("player", "intercept");
-  state.enemy.lanes[1] = active("enemy", "breaker");
+test("Breacher Intercept grants separate contest and combo draws", () => {
+  let state = controlledState(passingSeed("earned-combo", 70));
+  state.player.hand = [card("player", "flank"), card("player", "guard")];
+  state.player.drawPile = [card("player", "jab"), card("player", "charge")];
+  setEnemyIntent(state, 0, ["rush"]);
+  state = placePlayerCard(state, "player-flank-1", 0);
+  state = placePlayerCard(state, "player-guard-1", 0);
   state = resolveRound(state);
-  assert.equal(state.player.lanes[0], null);
-  assert.equal(state.enemy.lanes[0].currentHealth, 1);
-  assert.equal(state.player.lanes[1], null);
-  assert.equal(state.enemy.lanes[1], null);
-  assert.equal(state.player.discard.some((entry) => entry.designId === "intercept"), true);
-  assert.equal(state.enemy.discard.some((entry) => entry.designId === "breaker"), true);
-  assert.equal(state.currentReview.events.filter((entry) => entry.type === "clash").length, 2);
+  assert.equal(state.currentReview.laneResults[0].success, true);
+  assert.equal(state.currentReview.replenishment.outcomeDraws, 2);
+  assert.equal(state.currentReview.replenishment.playerDrawn, 2);
+  assert.deepEqual(
+    state.currentReview.replenishment.sources.map((entry) => entry.label),
+    ["CONTEST", "COMBO"],
+  );
 });
 
-test("Scout Route draws on destruction and Enforcer reduces only the first damage it receives", () => {
-  let scout = controlledState("scout-trigger");
-  scout.player.drawPile = [card("player", "flank")];
-  scout.player.lanes[0] = active("player", "scout-route");
-  scout.enemy.lanes[0] = active("enemy", "breaker");
-  scout = resolveRound(scout);
-  assert.equal(scout.player.lanes[0], null);
-  assert.deepEqual(scout.player.hand.map((entry) => entry.designId), ["flank"]);
-  assert.equal(scout.currentReview.events.some((entry) => entry.sceneCue === "scout-draw"), true);
+test("Fractured Cache unlocks draws from Fear and Pressure milestones once", () => {
+  let fear = controlledState(passingSeed("fear-unlock", 90), "fractured-cache-v0.2");
+  fear.player.hand = [card("player", "flank"), card("player", "dread-pulse")];
+  fear.player.drawPile = [card("player", "guard"), card("player", "jab")];
+  fear = placePlayerCard(fear, "player-flank-1", 0);
+  fear = placePlayerCard(fear, "player-dread-pulse-1", 0);
+  fear = resolveRound(fear);
+  assert.equal(fear.unlocks.fearDrawClaimed, true);
+  assert.equal(fear.currentReview.replenishment.unlockDraws, 2);
+  assert.equal(fear.currentReview.replenishment.sources[0].label, "FEAR UNLOCK");
 
-  let enforcer = controlledState("enforcer-persistence");
-  enforcer.player.lanes[0] = active("player", "hold-ground");
-  enforcer.enemy.lanes[0] = active("enemy", "enforcer");
-  enforcer = resolveRound(enforcer);
-  assert.equal(enforcer.enemy.lanes[0].currentHealth, 3, "first 2 damage is reduced to 1");
-  assert.equal(enforcer.enemy.lanes[0].damageReductionAvailable, false);
-  enforcer = startNextRound(enforcer);
-  enforcer.enemyPreview = { round: enforcer.round, locked: true, placements: [] };
-  enforcer.player.lanes[0] = active("player", "hold-ground", 2, enforcer.round);
-  enforcer = resolveRound(enforcer);
-  assert.equal(enforcer.enemy.lanes[0].currentHealth, 1, "later 2 damage is not reduced");
-  assert.equal(enforcer.enemy.lanes[0].damageReductionAvailable, false);
+  let pressure = controlledState(passingSeed("pressure-unlock", 65), "fractured-cache-v0.2");
+  pressure.player.hand = [card("player", "heavy-strike")];
+  pressure.player.drawPile = [card("player", "guard"), card("player", "jab")];
+  pressure = placePlayerCard(pressure, "player-heavy-strike-1", 0);
+  pressure = resolveRound(pressure);
+  assert.equal(pressure.pressure, 2);
+  assert.equal(pressure.unlocks.pressureDrawClaimed, true);
+  assert.equal(pressure.currentReview.replenishment.unlockDraws, 2);
 });
 
-test("unblocked effective Power nets once and Linebreaker adds its printed Pressure effect", () => {
-  let state = controlledState("pressure-net");
-  state.player.lanes[0] = active("player", "flank");
-  state.enemy.lanes[1] = active("enemy", "rush");
-  state.player.lanes[2] = active("player", "linebreaker");
-  state.enemy.lanes[2] = active("enemy", "breaker", 1, 0, { currentHealth: 2 });
+test("Cascade Protocol combines an earned draw with an automatic next-round draw", () => {
+  let state = controlledState(passingSeed("mixed-feed", 70), "cascade-protocol-v0.2");
+  state.player.hand = [card("player", "jab")];
+  state.player.drawPile = [card("player", "guard"), card("player", "flank")];
+  setEnemyIntent(state, 0, ["rush"]);
+  state = placePlayerCard(state, "player-jab-1", 0);
   state = resolveRound(state);
-  assert.equal(state.pressure, 2, "Flank +3 and Rush -2 net +1; Linebreaker adds +1");
-  assert.equal(state.currentReview.events.some((entry) => entry.sceneCue === "linebreaker-pressure"), true);
-  assert.equal(state.currentReview.pressureDelta, 2);
+  assert.equal(state.currentReview.replenishment.outcomeDraws, 1);
+  assert.equal(state.player.hand.length, 1);
+  state = startNextRound(state);
+  assert.equal(state.currentRoundGrant.automaticCards, 1);
+  assert.equal(state.player.hand.length, 2);
+  assert.equal(state.currentRoundGrant.reserveBonus, 1);
 });
 
-test("victory at an end is checked before Pressure Break", () => {
-  let state = controlledState("victory-before-break");
+test("visible probability is stepped and the deterministic roll stays hidden until resolve", () => {
+  let state = controlledState("probability-forecast");
+  state.player.hand = [card("player", "heavy-strike")];
+  setEnemyIntent(state, 0, ["brace"]);
+  const preview = getPlacementPreview(state, "player-heavy-strike-1", 0);
+  assert.equal(preview.legal, true);
+  assert.ok(preview.forecast.chance >= 15 && preview.forecast.chance <= 95);
+  assert.equal(preview.forecast.chance % 5, 0);
+  assert.equal("roll" in preview.forecast, false);
+  assert.ok(preview.forecast.successLabel);
+  assert.ok(preview.forecast.failureLabel);
+  state = placePlayerCard(state, "player-heavy-strike-1", 0);
+  state = resolveRound(state);
+  assert.equal(typeof state.currentReview.laneResults[0].roll, "number");
+  assert.match(
+    state.currentReview.events.find((entry) => entry.type.startsWith("move-")).detail,
+    /rolled \d+ against \d+%/,
+  );
+});
+
+test("undo restores the exact rack, lane, Reserve, and pending event boundary", () => {
+  let state = controlledState("undo");
+  state.player.reserve = 10;
+  state.player.hand = [card("player", "jab"), card("player", "guard")];
+  const before = structuredClone(state);
+  state = placePlayerCard(state, "player-jab-1", 2);
+  state = undoPlayerAction(state);
+  assert.deepEqual(state.player, before.player);
+  assert.deepEqual(state.pendingEvents, before.pendingEvents);
+  assert.equal(state.eventSequence, before.eventSequence);
+  assert.match(state.notice, /returned to the rack/i);
+
+  state = placePlayerCard(state, "player-jab-1", 2);
+  state = returnPlayerCard(state, "player-jab-1");
+  assert.deepEqual(state.player, before.player);
+});
+
+test("Reaction and Finisher requirements are enforced by lane context and Fear", () => {
+  let state = controlledState("requirements");
+  state.player.hand = [card("player", "parry"), card("player", "breakpoint")];
+  let rejected = placePlayerCard(state, "player-parry-1", 0);
+  assert.match(rejected.notice, /locked enemy attack/i);
+  setEnemyIntent(state, 0, ["rush"]);
+  state = placePlayerCard(state, "player-parry-1", 0);
+  assert.equal(state.player.lanes[0][0].designId, "parry");
+  rejected = placePlayerCard(state, "player-breakpoint-1", 1);
+  assert.match(rejected.notice, /needs Fear/i);
+});
+
+test("Pressure Break refreshes both racks to six and clears Charge and Fear", () => {
+  let state = controlledState(passingSeed("pressure-break", 65));
   state.pressure = 2;
-  state.player.lanes[0] = active("player", "linebreaker");
+  state.player.conditions.charge = true;
+  state.enemy.conditions.fear = true;
+  state.player.hand = [card("player", "jab")];
+  state.player.drawPile = PLAYER_DECK.filter((entry) => entry.designId !== "jab")
+    .slice(0, 8)
+    .map((entry) => structuredClone(entry));
+  state.enemy.drawPile = ENEMY_DECK.slice(0, 8).map((entry) => structuredClone(entry));
+  state = placePlayerCard(state, "player-jab-1", 0);
   state = resolveRound(state);
-  assert.equal(state.pressure, 5);
+  assert.equal(state.currentReview.breakTriggered, true);
+  assert.equal(state.pressure, 4);
+  assert.equal(state.player.hand.length, 6);
+  assert.equal(state.enemy.hand.length, 6);
+  assert.equal(state.player.conditions.charge, false);
+  assert.equal(state.enemy.conditions.fear, false);
+  assert.equal(state.currentReview.replenishment.sources[0].type, "break");
+  assert.ok(reviewEventTypes(state).includes("break"));
+});
+
+test("victory at either Pressure endpoint resolves before a Break refresh", () => {
+  let state = controlledState(passingSeed("endpoint", 80));
+  state.pressure = 4;
+  state.player.hand = [card("player", "jab")];
+  state = placePlayerCard(state, "player-jab-1", 0);
+  state = resolveRound(state);
   assert.equal(state.phase, "result");
   assert.equal(state.result.winner, "player");
-  assert.equal(eventTypes(state).includes("victory"), true);
-  assert.equal(eventTypes(state).includes("break"), false);
-  assert.notEqual(state.player.lanes[0], null, "victory prevents Break clear");
+  assert.equal(state.pressure, 5);
+  assert.equal(state.currentReview.breakTriggered, false);
+  assert.ok(reviewEventTypes(state).includes("victory"));
+  assert.equal(reviewEventTypes(state).includes("break"), false);
 });
 
-test("enemy-side victory and negative Break mirror the player-side rules", () => {
-  let victory = controlledState("enemy-victory-before-break");
-  victory.pressure = -2;
-  victory.enemy.lanes[0] = active("enemy", "enforcer");
-  victory = resolveRound(victory);
-  assert.equal(victory.pressure, -5);
-  assert.equal(victory.phase, "result");
-  assert.equal(victory.result.winner, "enemy");
-  assert.equal(eventTypes(victory).includes("break"), false);
-
-  let negativeBreak = controlledState("negative-break");
-  negativeBreak.pressure = -2;
-  negativeBreak.enemy.lanes[0] = active("enemy", "rush");
-  negativeBreak.player.lanes[1] = active("player", "hold-ground");
-  negativeBreak = resolveRound(negativeBreak);
-  assert.equal(negativeBreak.pressure, -3);
-  assert.equal(negativeBreak.currentReview.breakTriggered, true);
-  assert.equal(negativeBreak.breakArmed, false);
-  assert.deepEqual(negativeBreak.player.lanes, [null, null, null, null]);
-  assert.deepEqual(negativeBreak.enemy.lanes, [null, null, null, null]);
-});
-
-test("Pressure Break finishes the clash, clears both boards, retains Pressure, disarms, then rearms centrally", () => {
-  let state = controlledState("break-cycle");
-  state.pressure = 2;
-  state.player.lanes[0] = active("player", "hold-ground");
-  state.player.lanes[2] = active("player", "flank");
-  state.enemy.lanes[0] = active("enemy", "brace");
-  state.enemy.lanes[3] = active("enemy", "rush");
-  state = resolveRound(state);
-  assert.equal(state.pressure, 3);
-  assert.equal(state.currentReview.breakTriggered, true);
-  assert.equal(state.breakArmed, false);
-  assert.deepEqual(state.player.lanes, [null, null, null, null]);
-  assert.deepEqual(state.enemy.lanes, [null, null, null, null]);
-  assert.equal(state.player.discard.length, 2);
-  assert.equal(state.enemy.discard.length, 2);
-  assert.ok(state.currentReview.events.every((entry) => entry.type !== "destroy"));
-
-  state = startNextRound(state);
-  state.enemyPreview = { round: state.round, locked: true, placements: [] };
-  state.enemy.lanes = [active("enemy", "rush"), null, null, null];
-  state.player.lanes = [null, active("player", "hold-ground"), null, null];
-  state = resolveRound(state);
-  assert.equal(state.pressure, 2);
-  assert.equal(state.breakArmed, true);
-  assert.equal(eventTypes(state).includes("break-rearm"), true);
-  assert.equal(eventTypes(state).includes("break"), false);
-});
-
-test("Outflank moves only a prior-round card to an open lane, grants one-clash Power, and is once per battle", () => {
-  let state = controlledState("outflank");
-  state.round = 2;
-  state.player.lanes[0] = active("player", "hold-ground", 1, 1);
-  state.player.lanes[2] = active("player", "flank", 1, 2);
-  const ineligible = useOutflank(state, 2, 3);
-  assert.match(ineligible.notice, /played this round/i);
-  state.player.lanes[2] = null;
-  state.pressure = 1;
-
-  state = useOutflank(state, 0, 1);
-  assert.equal(state.player.lanes[0], null);
-  assert.equal(state.player.lanes[1].temporaryPowerBonus, 1);
-  assert.equal(state.outflank.used, true);
-  const second = useOutflank(state, 1, 3);
-  assert.match(second.notice, /already been used/i);
-  state = resolveRound(state);
-  assert.equal(state.pressure, 3);
-  assert.equal(state.outflank.pending, null);
-  assert.equal(state.outflank.used, true);
-  assert.equal(state.player.lanes[1], null, "Break clears the Outflanking card after its +2 direct press");
-  assert.equal(state.currentReview.events.some((entry) => entry.type === "outflank"), true);
-});
-
-test("enemy preview is legal, deterministic, locked, and blind to player hand contents", () => {
+test("enemy intents are seeded and locked before player staging", () => {
   const state = createCardBattleState("blind-ai");
-  const altered = structuredClone(state);
-  altered.player.hand = PLAYER_DECK.slice(0, 5).map((entry) => structuredClone(entry));
-  assert.deepEqual(planEnemyPlacements(altered), planEnemyPlacements(state));
-  assert.equal(state.enemyPreview.locked, true);
-  assert.equal(state.enemyPreview.round, state.round);
-  assert.equal(new Set(state.enemyPreview.placements.map((entry) => entry.lane)).size, state.enemyPreview.placements.length);
-  assert.ok(state.enemyPreview.placements.reduce((sum, entry) => sum + entry.cost, 0) <= 3);
-  assert.ok(state.enemyPreview.placements.every((entry) => ENEMY_DECK.some((cardEntry) => cardEntry.id === entry.cardId)));
-
-  const locked = structuredClone(state.enemyPreview);
-  const affordable = state.player.hand.find((entry) => entry.cost <= state.player.command);
-  const afterPlayer = placePlayerCard(state, affordable.id, 0);
-  assert.deepEqual(afterPlayer.enemyPreview, locked);
+  const before = structuredClone(state.enemyPreview);
+  const legal = state.player.hand.flatMap((entry) =>
+    [0, 1, 2, 3].map((lane) => getPlacementPreview(state, entry.id, lane)),
+  ).find((entry) => entry.legal);
+  assert.ok(legal);
+  const after = placePlayerCard(state, legal.card.id, legal.lane);
+  assert.deepEqual(after.enemyPreview, before);
+  assert.notDeepEqual(after.player.lanes, state.player.lanes);
 });
 
-test("undo restores the exact pending play or Outflank state without affecting locked preview", () => {
-  let state = createCardBattleState("undo");
-  const initial = structuredClone(state);
-  const affordable = state.player.hand.find((entry) => entry.cost <= state.player.command);
-  state = placePlayerCard(state, affordable.id, 0);
-  state = undoPlayerAction(state);
-  assert.deepEqual(state.player, initial.player);
-  assert.deepEqual(state.enemyPreview, initial.enemyPreview);
-
-  state.round = 2;
-  state.player.lanes[0] = active("player", "hold-ground", 1, 1);
-  const beforeOutflank = structuredClone(state.player.lanes);
-  state = useOutflank(state, 0, 3);
-  state = undoPlayerAction(state);
-  assert.deepEqual(state.player.lanes, beforeOutflank);
-  assert.deepEqual(state.outflank, { used: false, pending: null });
-});
-
-test("direct return and cancel paths keep action identities causal and collision-free", () => {
-  let state = controlledState("direct-cancel-paths");
-  state.player.hand = [
-    card("player", "hold-ground"),
-    card("player", "scout-route"),
-    card("player", "flank"),
-  ];
-  state = placePlayerCard(state, "player-hold-ground-1", 0);
-  state = placePlayerCard(state, "player-scout-route-1", 1);
-  const scoutActionId = state.pendingPlayerActions[1].actionId;
-  state = returnPlayerCard(state, "player-hold-ground-1");
-  state = placePlayerCard(state, "player-flank-1", 2);
-  assert.equal(new Set(state.pendingPlayerActions.map((action) => action.actionId)).size, 2);
-  assert.notEqual(state.pendingPlayerActions[1].actionId, scoutActionId);
-  state = undoPlayerAction(state);
-  assert.equal(state.player.lanes[1].designId, "scout-route");
-  assert.equal(state.pendingPlayerActions.length, 1);
-  assert.equal(state.pendingPlayerActions[0].actionId, scoutActionId);
-  assert.ok(state.pendingEvents.some((entry) => entry.actionId === scoutActionId));
-  state = undoPlayerAction(state);
-  assert.deepEqual(
-    state.player.hand.map((entry) => entry.designId),
-    ["hold-ground", "scout-route", "flank"],
-  );
-
-  let outflank = controlledState("direct-outflank-cancel");
-  outflank.round = 2;
-  outflank.player.lanes[0] = active("player", "hold-ground", 1, 1);
-  const before = structuredClone(outflank.player.lanes);
-  outflank = useOutflank(outflank, 0, 3);
-  outflank = cancelOutflank(outflank);
-  assert.deepEqual(outflank.player.lanes, before);
-  assert.deepEqual(outflank.outflank, { used: false, pending: null });
-  assert.equal(outflank.pendingPlayerActions.length, 0);
-  assert.equal(outflank.pendingEvents.some((entry) => entry.type === "outflank"), false);
-});
-
-test("empty draw piles reshuffle discard deterministically without losing or duplicating cards", () => {
-  let state = controlledState("reshuffle-proof");
-  state.player.discard = [card("player", "hold-ground"), card("player", "flank")];
-  state.enemy.discard = [card("enemy", "rush"), card("enemy", "brace")];
+test("round review events expose causal lane outcomes, Pressure, and replenishment", () => {
+  let state = controlledState(passingSeed("causal-events", 70));
+  state.player.hand = [card("player", "jab")];
+  state.player.drawPile = [card("player", "guard")];
+  setEnemyIntent(state, 0, ["rush"]);
+  state = placePlayerCard(state, "player-jab-1", 0);
   state = resolveRound(state);
-  const replayInput = structuredClone(state);
-  const first = startNextRound(state);
-  const second = startNextRound(replayInput);
-  assert.deepEqual(first, second);
-  assert.equal(first.rng.playerReshuffles, 1);
-  assert.equal(first.rng.enemyReshuffles, 1);
-  assert.equal(first.player.discard.length, 0);
-  assert.equal(first.enemy.discard.length, 0);
-  assert.equal(first.player.hand.length, 1);
-  assert.equal(first.player.drawPile.length, 1);
-  assert.equal(
-    first.enemy.hand.length + first.enemy.drawPile.length + first.enemyPreview.placements.length,
-    2,
-  );
-  assert.equal(first.pendingEvents.filter((entry) => entry.type === "reshuffle").length, 2);
-  assertCausalEvents(first.pendingEvents);
+  assertCausalEvents(state.currentReview.events);
+  assert.ok(reviewEventTypes(state).includes("move-success"));
+  assert.ok(reviewEventTypes(state).includes("pressure"));
+  assert.ok(reviewEventTypes(state).includes("replenish"));
+  assert.equal(state.currentReview.laneResults.length, 4);
 });
 
-test("public engine transitions are pure and invalid actions do not mutate their input", () => {
-  const original = createCardBattleState("purity");
-  const snapshot = structuredClone(original);
-  const affordable = original.player.hand.find((entry) => entry.cost <= original.player.command);
-  const placed = placePlayerCard(original, affordable.id, 0);
-  assert.deepEqual(original, snapshot);
-  const placedSnapshot = structuredClone(placed);
-  const resolved = resolveRound(placed);
-  assert.deepEqual(placed, placedSnapshot);
-  assert.notEqual(resolved, placed);
-
-  const invalidSnapshot = structuredClone(original);
-  const invalid = placePlayerCard(original, "missing-card", 9);
-  assert.deepEqual(original, invalidSnapshot);
-  assert.notEqual(invalid, original);
-  assert.match(invalid.notice, /four lanes/i);
-});
-
-test("every emitted event has a causal scene cue and normal play preserves twelve unique instances per side", () => {
-  let state = createCardBattleState("event-and-zones");
-  for (let rounds = 0; rounds < 3 && state.phase !== "result"; rounds += 1) {
-    const affordable = state.player.hand.find((entry) => entry.cost <= state.player.command);
-    if (affordable) state = placePlayerCard(state, affordable.id, rounds % 4);
-    state = resolveRound(state);
-    assertCausalEvents(state.currentReview.events);
-    assert.equal(allZoneIds(state, "player").length, 12);
-    assert.equal(new Set(allZoneIds(state, "player")).size, 12);
-    assert.equal(allZoneIds(state, "enemy").length, 12);
-    assert.equal(new Set(allZoneIds(state, "enemy")).size, 12);
-    if (state.phase === "round-review") state = startNextRound(state);
+test("deterministic simulations terminate and exercise named stacks under every scenario recipe", () => {
+  for (const scenario of CARD_BATTLE_SCENARIOS) {
+    const result = runDeterministicSimulation({
+      battles: 40,
+      seedPrefix: `contract-${scenario.id}`,
+      maxRounds: 40,
+      scenarioId: scenario.id,
+    });
+    assert.equal(result.scenarioId, scenario.id);
+    assert.equal(result.unfinished, 0, `${scenario.name} unfinished`);
+    assert.equal(result.playerWins + result.enemyWins, 40);
+    assert.ok(result.averageRounds >= 1 && result.averageRounds < 10);
+    assert.ok(result.successRate > 0 && result.successRate < 1);
+    assert.ok(Object.keys(result.namedCombos).length > 0);
   }
-  assert.equal("storage" in state, false);
-  assert.equal("account" in state, false);
-  assert.equal("profile" in state, false);
-});
-
-test("the checked-in fixed-seed simulation artifact is exactly reproducible", async () => {
-  const artifact = JSON.parse(
-    await readFile("tests/artifacts/barcode-world-card-battle-simulation-v0.1.json", "utf8"),
-  );
-  const result = runDeterministicSimulation(artifact.run);
-  const { rounds, ...summary } = result;
-  const roundsChecksum = rounds.reduce(
-    (hash, value, index) => Math.imul(hash ^ ((value + index) & 255), 16777619) >>> 0,
-    2166136261,
-  );
-  assert.deepEqual(summary, artifact.summary);
-  assert.equal(roundsChecksum, artifact.roundsChecksum);
 });

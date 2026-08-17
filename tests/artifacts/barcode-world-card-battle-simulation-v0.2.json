@@ -1,0 +1,76 @@
+{
+  "artifact": "BARCODE World stack / resolve card battle v0.2 deterministic simulation",
+  "evidenceClass": "machine rules and tuning smoke; not owner comprehension, accessibility, balance, fun, or replay evidence",
+  "generatedOn": "2026-08-17",
+  "engineSource": "src/lib/barcode-world/card-battle-engine.mjs",
+  "run": {
+    "battlesPerScenario": 250,
+    "totalBattles": 1000,
+    "seedPrefix": "BW-CARD-V0.2-SIM-<scenario-id>",
+    "maxRounds": 40
+  },
+  "playerPolicy": "At each action, stage the legal affordable card/lane option with the highest immediate expected lane value; then prefer deeper stacks, higher success chance, deterministic lane order, and instance ID. Stop when no positive option remains.",
+  "scenarios": [
+    {
+      "id": "breacher-intercept-v0.2",
+      "name": "Breacher Intercept",
+      "playerWins": 171,
+      "enemyWins": 79,
+      "unfinished": 0,
+      "breaks": 182,
+      "averageRounds": 3.284,
+      "minRounds": 1,
+      "maxRoundsObserved": 18,
+      "averageCardsDrawn": 6.656,
+      "successRate": 0.7259,
+      "namedComboCount": 22,
+      "roundsChecksum": 3218870046
+    },
+    {
+      "id": "signal-surge-v0.2",
+      "name": "Signal Surge",
+      "playerWins": 198,
+      "enemyWins": 52,
+      "unfinished": 0,
+      "breaks": 171,
+      "averageRounds": 3.404,
+      "minRounds": 1,
+      "maxRoundsObserved": 15,
+      "averageCardsDrawn": 5.204,
+      "successRate": 0.7318,
+      "namedComboCount": 22,
+      "roundsChecksum": 2227076786
+    },
+    {
+      "id": "fractured-cache-v0.2",
+      "name": "Fractured Cache",
+      "playerWins": 123,
+      "enemyWins": 127,
+      "unfinished": 0,
+      "breaks": 156,
+      "averageRounds": 3.46,
+      "minRounds": 1,
+      "maxRoundsObserved": 17,
+      "averageCardsDrawn": 5.176,
+      "successRate": 0.7041,
+      "namedComboCount": 19,
+      "roundsChecksum": 940401618
+    },
+    {
+      "id": "cascade-protocol-v0.2",
+      "name": "Cascade Protocol",
+      "playerWins": 194,
+      "enemyWins": 56,
+      "unfinished": 0,
+      "breaks": 186,
+      "averageRounds": 3.188,
+      "minRounds": 1,
+      "maxRoundsObserved": 14,
+      "averageCardsDrawn": 6.536,
+      "successRate": 0.7271,
+      "namedComboCount": 20,
+      "roundsChecksum": 2368378494
+    }
+  ],
+  "interpretation": "All 1,000 battles ended before the round cap and every scenario exercised multi-card named moves. Signal Surge and Cascade Protocol are deliberately generous test recipes and are not balance-approved."
+}

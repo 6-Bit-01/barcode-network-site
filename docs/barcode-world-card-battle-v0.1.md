@@ -1,5 +1,8 @@
 # BARCODE World: four-lane card-battle v0.1
 
+> Historical checkpoint. The active owner-review contract is
+> `docs/barcode-world-card-battle-v0.2.md`.
+
 Status: **UNLISTED OWNER-REVIEW RESEARCH PROTOTYPE**
 
 Controlling direction:

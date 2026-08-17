@@ -4,8 +4,8 @@ Status: **HISTORICAL TACTICAL IMPLEMENTATION — SUPERSEDED AS THE ACTIVE PRIVAT
 
 The deterministic and accessibility patterns remain implementation evidence,
 but the Fractured Gate rules and interface no longer control Battle Mode. The
-active `/world/playtest` target is the four-lane card-battle v0.1 described in
-`docs/barcode-world-card-battle-v0.1.md`.
+active `/world/playtest` target is the stack / resolve card-battle v0.2 described
+in `docs/barcode-world-card-battle-v0.2.md`.
 
 Controlling direction:
 `BARCODE_WORLD_BATTLE_MODE_BREACHFLOW_OWNER_LOCK_2026-07-31`

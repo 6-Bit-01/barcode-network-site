@@ -18,7 +18,7 @@ export function generateMetadata(): Metadata {
     };
   }
   return {
-    title: "Four-Lane Card Battle · Private BARCODE World Battle Mode Proof",
+    title: "Stack / Resolve · Private BARCODE World Battle Mode Proof",
     description:
       "Private, deterministic, resettable, noncanonical BARCODE World card-battle prototype.",
     robots: {

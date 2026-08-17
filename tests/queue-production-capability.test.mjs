@@ -70,6 +70,14 @@ async function withQueueProduction(value, fn) {
   }
 }
 
+async function startFreshQueueSession(options) {
+  const current = await queue.getRadioQueueState();
+  if (current.revision !== 0 && current.session.status !== "archived") {
+    await queue.archiveCurrentQueueSession();
+  }
+  return queue.startNewQueueSession(options);
+}
+
 test("queue production capability defaults false and only exact true enables it", () => {
   assert.equal(capability.isQueueProductionEnabled({}), false);
   assert.equal(capability.isQueueProductionEnabled({ BARCODE_QUEUE_PRODUCTION_ENABLED: "" }), false);
@@ -158,7 +166,7 @@ test("admin live exposes non-sensitive capability without exposing env name", as
 
 test("disabled BNL read model does not read queue storage or expose queue-derived data", async () => {
   await withQueueProduction(undefined, async () => {
-    await queue.startNewQueueSession({ title: "Open Test Queue" });
+    await startFreshQueueSession({ title: "Open Test Queue" });
     await queue.setQueueOpen(true);
     const original = queue.getRadioQueueState;
     queue.getRadioQueueState = async () => { throw new Error("queue storage should not be read"); };
@@ -219,8 +227,7 @@ test("not_connected queue submission boundary remains compatible while disabled"
 
 test("enabled capability restores public-facing BNL queue behavior", async () => {
   await withQueueProduction("true", async () => {
-    await queue.setQueueOpen(false);
-    await queue.startNewQueueSession({
+    await startFreshQueueSession({
       title: "Production Enabled Queue",
       purpose: "live_broadcast",
       bnlPublicationStatus: "runtime_only",
@@ -240,8 +247,7 @@ test("enabled capability restores public-facing BNL queue behavior", async () =>
 
 test("enabled native queue capability does not override session-level BNL quarantine", async () => {
   await withQueueProduction("true", async () => {
-    await queue.setQueueOpen(false);
-    await queue.startNewQueueSession({ title: "Production Rehearsal Queue" });
+    await startFreshQueueSession({ title: "Production Rehearsal Queue" });
     await queue.setQueueOpen(true);
     const added = await queue.addToQueue({ artist: "Rehearsal Artist", title: "Rehearsal Track", tier: "free", lane: "regular", amount: 0, createdAt: new Date().toISOString() });
     const publicSnapshot = await queue.getPublicQueueSnapshot();

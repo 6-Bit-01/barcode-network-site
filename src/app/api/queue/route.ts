@@ -206,7 +206,7 @@ export async function submitTrackFromBody(body: Record<string, unknown>): Promis
   }
 
   const active = await getPublicQueueSnapshot();
-  if (active.session.sessionId !== sessionId) return NextResponse.json({ error: SESSION_SYNC_MESSAGE, code: "stale_session" }, { status: 409 });
+  if (!active.session || active.session.sessionId !== sessionId) return NextResponse.json({ error: SESSION_SYNC_MESSAGE, code: "stale_session" }, { status: 409 });
   if (!active.status.isOpen) {
     return NextResponse.json({ error: active.status.isFull ? "This broadcast queue is full for new transmissions." : "This broadcast queue is closed." }, { status: 409 });
   }

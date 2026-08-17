@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { COOKIE_NAME, verifyAdminToken } from "@/lib/auth";
-import { getLiveOverlayAdminSnapshot, setLiveOverlayState } from "@/lib/live-overlay";
+import { getLiveOverlayAdminSnapshot, setLiveOverlayPlayerSync, setLiveOverlayState, updateLiveOverlayPlayerSync } from "@/lib/live-overlay";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +28,16 @@ export async function POST(req: Request) {
   if (!(await assertAdmin())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json().catch(() => ({}));
   try {
+    if (body?.action === "updatePlayerSync") {
+      await updateLiveOverlayPlayerSync(body.sync, serverRequestReceivedAt);
+      const serverResponseGeneratedAt = new Date();
+      return NextResponse.json({ ok: true }, { headers: transportHeaders(serverRequestReceivedAt, serverResponseGeneratedAt) });
+    }
+    if (body?.action === "clearPlayerSync") {
+      await setLiveOverlayPlayerSync(null, serverRequestReceivedAt);
+      const serverResponseGeneratedAt = new Date();
+      return NextResponse.json({ ok: true }, { headers: transportHeaders(serverRequestReceivedAt, serverResponseGeneratedAt) });
+    }
     const snapshot = await setLiveOverlayState(body, serverRequestReceivedAt);
     const serverResponseGeneratedAt = new Date();
     return NextResponse.json(snapshot, { headers: transportHeaders(serverRequestReceivedAt, serverResponseGeneratedAt) });

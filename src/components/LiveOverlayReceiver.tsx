@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MutableRefObject } from "react";
 import { buildWheelSegments, estimateOneWayNetworkTransitMs, playbackCorrectionTarget, roundPlaybackDriftSeconds, serverRelativeSyncAgeSeconds, shouldCorrectPlaybackDrift, updateTransitEstimateMs, wheelFinalRotationForSegment, wheelUprightLabelRotationDegrees } from "@/lib/live-overlay-resolver";
 import type { LiveOverlayPlaybackState, LiveOverlayTikTokSync, LiveOverlayYouTubeSync, ResolvedLiveOverlayScene } from "@/lib/live-overlay";
-import { LIVE_OVERLAY_POLL_INTERVAL_MS, REDIS_POLL_ERROR_RETRY_INTERVAL_MS } from "@/lib/redis-polling-budget";
+import { LIVE_OVERLAY_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 
 type YTPlayer = {
   loadVideoById: (options: { videoId: string; startSeconds?: number }) => void;
@@ -987,7 +987,6 @@ export function LiveOverlayReceiver() {
 
     async function poll() {
       if (cancelled) return;
-      let nextPollDelayMs = OVERLAY_POLL_DELAY_MS;
       const seq = requestSeq + 1;
       requestSeq = seq;
       activeController = new AbortController();
@@ -1015,11 +1014,10 @@ export function LiveOverlayReceiver() {
           setConnected(true);
         }
       } catch {
-        nextPollDelayMs = REDIS_POLL_ERROR_RETRY_INTERVAL_MS;
         if (!cancelled) setConnected(false);
       } finally {
         activeController = null;
-        if (!cancelled) timeoutId = window.setTimeout(poll, nextPollDelayMs);
+        if (!cancelled) timeoutId = window.setTimeout(poll, OVERLAY_POLL_DELAY_MS);
       }
     }
 

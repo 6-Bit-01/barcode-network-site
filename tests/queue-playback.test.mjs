@@ -54,9 +54,17 @@ const overlay = require("../src/lib/live-overlay.ts");
 const publicOverlayRoute = require("../src/app/api/overlay/live/route.ts");
 
 let trackSequence = 0;
+
+async function startFreshQueueSession(options) {
+  const current = await queue.getRadioQueueState();
+  if (current.revision !== 0 && current.session.status !== "archived") {
+    await queue.archiveCurrentQueueSession();
+  }
+  return queue.startNewQueueSession(options);
+}
+
 async function freshOpenSession(label, options = {}) {
-  await queue.setQueueOpen(false);
-  const state = await queue.startNewQueueSession({
+  const state = await startFreshQueueSession({
     title: `${label} ${Date.now()} ${trackSequence}`,
     purpose: options.purpose,
     bnlPublicationStatus: options.bnlPublicationStatus,
@@ -161,8 +169,7 @@ function countTrackOccurrences(state, id) {
 }
 
 test("new active session begins in warmup before submissions open", async () => {
-  await queue.setQueueOpen(false);
-  await queue.startNewQueueSession({ title: `warmup start ${Date.now()} ${trackSequence}` });
+  await startFreshQueueSession({ title: `warmup start ${Date.now()} ${trackSequence}` });
   const free = await addTrack("Warmup Free");
 
   const state = await queue.updateRadioTrack("", "pullNext");
@@ -176,8 +183,7 @@ test("new active session begins in warmup before submissions open", async () => 
 });
 
 test("warmup rejects public submissions while submissions are closed", async () => {
-  await queue.setQueueOpen(false);
-  await queue.startNewQueueSession({ title: `warmup rejects ${Date.now()} ${trackSequence}` });
+  await startFreshQueueSession({ title: `warmup rejects ${Date.now()} ${trackSequence}` });
   const state = await queue.getRadioQueueState();
   assert.equal(state.session.broadcastPhase, "warmup");
   assert.equal(state.session.queueOpen, false);
@@ -186,8 +192,7 @@ test("warmup rejects public submissions while submissions are closed", async () 
 });
 
 test("opening submissions starts the pre-show routing timer without starting routing", async () => {
-  await queue.setQueueOpen(false);
-  await queue.startNewQueueSession({ title: `timer start ${Date.now()} ${trackSequence}` });
+  await startFreshQueueSession({ title: `timer start ${Date.now()} ${trackSequence}` });
   const beforeOpen = Date.now();
 
   await queue.setQueueOpen(true);
@@ -1077,8 +1082,7 @@ test("archived public snapshots neutralize active lanes while preserving the rea
 
 
 test("new sessions default queue capacity to 44", async () => {
-  await queue.setQueueOpen(false);
-  const state = await queue.startNewQueueSession({ title: `default capacity ${Date.now()} ${trackSequence}` });
+  const state = await startFreshQueueSession({ title: `default capacity ${Date.now()} ${trackSequence}` });
   assert.equal(state.session.queueCapacity, 44);
   assert.equal(state.session.acceptedCount, 0);
   assert.equal(state.session.submissionClosureReason, "manual");
@@ -1154,8 +1158,7 @@ test("concurrent duplicate and per-artist collisions are revalidated inside the 
   let state = await queue.getRadioQueueState();
   assert.equal(state.session.acceptedCount, 1);
 
-  await queue.setQueueOpen(false);
-  await queue.startNewQueueSession({
+  await startFreshQueueSession({
     title: `atomic artist collision ${Date.now()} ${trackSequence}`,
     queueCapacity: 44,
     trackLimitPerArtist: 1,
@@ -1285,7 +1288,7 @@ test("submission capacity surfaces use accepted show slots while timing keeps ac
 test("clear archive removes archived sessions and preserves active session", async () => {
   const activeSessionId = await freshOpenSession("clear archive preserve active");
   await queue.archiveCurrentQueueSession();
-  await queue.startNewQueueSession({ title: `active after archive ${Date.now()} ${trackSequence}` });
+  await startFreshQueueSession({ title: `active after archive ${Date.now()} ${trackSequence}` });
 
   const before = await queue.getRadioQueueState();
   assert.ok(before.sessions.some((session) => session.status === "archived"));
@@ -1377,8 +1380,7 @@ test("BNL read model excludes simulation tracks from queue and artists", async (
 });
 
 test("simulation free is blocked while submissions are closed", async () => {
-  await queue.setQueueOpen(false);
-  await queue.startNewQueueSession({ title: `sim free blocked ${Date.now()} ${trackSequence}` });
+  await startFreshQueueSession({ title: `sim free blocked ${Date.now()} ${trackSequence}` });
   const before = await queue.getRadioQueueState();
 
   const state = await queue.updateRadioTrack("", "addSimulationFreeTrack");
@@ -1388,8 +1390,7 @@ test("simulation free is blocked while submissions are closed", async () => {
 });
 
 test("simulation paid priority is blocked while submissions are closed", async () => {
-  await queue.setQueueOpen(false);
-  await queue.startNewQueueSession({ title: `sim paid blocked ${Date.now()} ${trackSequence}` });
+  await startFreshQueueSession({ title: `sim paid blocked ${Date.now()} ${trackSequence}` });
   const before = await queue.getRadioQueueState();
 
   const state = await queue.updateRadioTrack("", "addSimulationPaidPriority");
@@ -1399,8 +1400,7 @@ test("simulation paid priority is blocked while submissions are closed", async (
 });
 
 test("simulation checkout/failed/held creation actions are blocked while submissions are closed", async () => {
-  await queue.setQueueOpen(false);
-  await queue.startNewQueueSession({ title: `sim variants blocked ${Date.now()} ${trackSequence}` });
+  await startFreshQueueSession({ title: `sim variants blocked ${Date.now()} ${trackSequence}` });
   const before = await queue.getRadioQueueState();
   let state = await queue.updateRadioTrack("", "addSimulationCheckoutPending");
   state = await queue.updateRadioTrack("", "addSimulationPaymentFailed");

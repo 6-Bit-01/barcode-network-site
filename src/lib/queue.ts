@@ -123,7 +123,7 @@ export interface QueueSessionProvenanceInput {
 
 interface QueueStore {
   revision: number;
-  activeSessionId: string;
+  activeSessionId: string | null;
   sessions: QueueSession[];
 }
 
@@ -335,6 +335,9 @@ const mem: QueueStore = (() => {
 
 let lastKnownGoodRedisStore: QueueStore | null = null;
 let lastKnownGoodRedisEndpoint: string | null = null;
+let durableSnapshotInFlightRevision = -1;
+let durableSnapshotConfirmedRevision = -1;
+let durableSnapshotPending: QueueStore | null = null;
 
 let mutationTail: Promise<void> = Promise.resolve();
 const mutationLeaseStorage = new AsyncLocalStorage<QueueMutationLease>();
@@ -385,6 +388,35 @@ redis.call("SET", KEYS[2], ARGV[3])
 redis.call("SET", KEYS[3], ARGV[4])
 return tonumber(ARGV[4])
 `;
+
+function scheduleQueueDurableSnapshot(store: QueueStore): void {
+  const snapshot = normalizeStore(store);
+  if (snapshot.revision <= durableSnapshotConfirmedRevision) return;
+  if (durableSnapshotInFlightRevision >= 0) {
+    const pendingRevision = durableSnapshotPending?.revision ?? -1;
+    if (snapshot.revision > durableSnapshotInFlightRevision && snapshot.revision > pendingRevision) {
+      durableSnapshotPending = snapshot;
+    }
+    return;
+  }
+
+  durableSnapshotInFlightRevision = snapshot.revision;
+  void (async () => {
+    let current: QueueStore | null = snapshot;
+    while (current) {
+      try {
+        await captureQueueDurableSnapshotIfNeeded(current);
+        durableSnapshotConfirmedRevision = Math.max(durableSnapshotConfirmedRevision, current.revision);
+      } catch {
+        // A later read or mutation retries this revision after the worker exits.
+      }
+      const pending = durableSnapshotPending;
+      durableSnapshotPending = null;
+      current = pending && pending.revision > durableSnapshotConfirmedRevision ? pending : null;
+      durableSnapshotInFlightRevision = current?.revision ?? -1;
+    }
+  })();
+}
 
 function laneRank(lane: QueueLane | undefined): number {
   if (lane === "priority") return 0;
@@ -1254,10 +1286,14 @@ function normalizeStore(input: unknown): QueueStore {
     const revision = typeof maybe.revision === "number" && Number.isFinite(maybe.revision)
       ? Math.max(0, Math.floor(maybe.revision))
       : 0;
-    const activeSessionId = maybe.activeSessionId && sessions.some((session) => session.sessionId === maybe.activeSessionId)
-      ? maybe.activeSessionId
-      : sessions.find((session) => session.status !== "archived")?.sessionId ?? sessions[0]?.sessionId;
-    if (activeSessionId) return { revision, activeSessionId, sessions };
+    const hasExplicitActiveSessionId = Object.prototype.hasOwnProperty.call(maybe, "activeSessionId");
+    const explicitActiveSession = typeof maybe.activeSessionId === "string"
+      ? sessions.find((session) => session.sessionId === maybe.activeSessionId)
+      : null;
+    const activeSessionId = hasExplicitActiveSessionId
+      ? explicitActiveSession?.sessionId ?? null
+      : sessions.find((session) => session.status !== "archived")?.sessionId ?? sessions[0]?.sessionId ?? null;
+    return { revision, activeSessionId, sessions };
   }
   const legacy = input as { queue?: QueueEntry[]; completed?: QueueEntry[]; removed?: QueueEntry[]; spotlight?: QueueEntry[]; isOpen?: boolean } | null;
   if (legacy && (Array.isArray(legacy.queue) || Array.isArray(legacy.completed))) {
@@ -1292,45 +1328,50 @@ async function readStoreFromRedis(redis: Redis): Promise<QueueStore> {
   }
   lastKnownGoodRedisStore = store;
   lastKnownGoodRedisEndpoint = getQueueRedisEndpoint();
-  // Seed or refresh the optional recovery copy after a healthy Redis read.
-  // Backup failure is deliberately ignored: Redis remains the live queue.
-  try {
-    await captureQueueDurableSnapshotIfNeeded(store);
-  } catch {
-    // Best effort only.
-  }
+  // Seed or refresh the optional recovery copy without holding a queue read or
+  // mutation lock on Blob latency. Redis remains the live queue authority.
+  scheduleQueueDurableSnapshot(store);
   return store;
 }
 
 async function readStore(): Promise<QueueStore> {
   const lease = mutationLeaseStorage.getStore();
   if (lease) return normalizeStore(lease.store);
-  // Use the recovery copy for polling when it is available, then fall back to
-  // Redis. Blob is never required for a healthy Redis read.
+  let redis: Redis | null;
   try {
-    const durable = await readQueueDurableSnapshot<QueueStore>();
-    if (durable) {
-      const normalized = normalizeStore(durable);
-      const endpoint = getQueueRedisEndpoint();
-      if (lastKnownGoodRedisStore && endpoint && endpoint === lastKnownGoodRedisEndpoint && lastKnownGoodRedisStore.revision > normalized.revision) {
-        return normalizeStore(lastKnownGoodRedisStore);
-      }
-      return normalized;
-    }
-  } catch {
-    // Redis remains available when the optional backup cannot be read.
+    redis = getRedis();
+  } catch (error) {
+    return readStoreRecoveryFallback(error);
   }
-  const redis = getRedis();
   if (!redis) return normalizeStore(mem);
   try {
     return await readStoreFromRedis(redis);
   } catch (error) {
+    return readStoreRecoveryFallback(error);
+  }
+}
+
+async function readStoreRecoveryFallback(redisError: unknown): Promise<QueueStore> {
+  let fallback: QueueStore | null = null;
+  try {
     const endpoint = getQueueRedisEndpoint();
     if (lastKnownGoodRedisStore && endpoint && endpoint === lastKnownGoodRedisEndpoint) {
-      return normalizeStore(lastKnownGoodRedisStore);
+      fallback = normalizeStore(lastKnownGoodRedisStore);
     }
-    throw error;
+  } catch {
+    // A malformed Redis configuration can still use the independent snapshot.
   }
+  try {
+    const durable = await readQueueDurableSnapshot<QueueStore>();
+    if (durable) {
+      const normalized = normalizeStore(durable);
+      if (!fallback || normalized.revision > fallback.revision) fallback = normalized;
+    }
+  } catch {
+    // Preserve the original Redis failure when no confirmed fallback exists.
+  }
+  if (fallback) return fallback;
+  throw redisError;
 }
 
 function mutationRevision(value: unknown): number {
@@ -1387,21 +1428,6 @@ async function withQueueMutation<T>(operation: () => Promise<T>): Promise<T> {
         throw new Error("Queue state revision is inconsistent. Mutation refused.");
       }
       const revision = Math.max(stored.revision, persistedRevision);
-      try {
-        const durableRaw = await readQueueDurableSnapshot<QueueStore>();
-        if (durableRaw) {
-          const durable = normalizeStore(durableRaw);
-          if (durable.revision > revision) {
-            throw new Error(`Durable queue revision ${durable.revision} is ahead of Redis revision ${revision}. Restore the durable snapshot before mutating.`);
-          }
-          if (durable.revision === revision && !storesMatch(durable, { ...stored, revision })) {
-            throw new Error("Queue Redis differs from the durable snapshot at the same revision. Mutation refused.");
-          }
-        }
-      } catch (error) {
-        if (error instanceof Error && (/ahead of Redis revision|differs from the durable snapshot/.test(error.message))) throw error;
-        // Blob is optional during ordinary live operations.
-      }
       const lease: QueueMutationLease = {
         redis,
         token,
@@ -1436,7 +1462,12 @@ async function writeStore(
     lease.revision = nextRevision;
     lease.store = normalized;
     store.revision = nextRevision;
-    await persistQueueDurableSnapshot(normalized);
+    if (options.requireDurableSnapshot) {
+      const persisted = await persistQueueDurableSnapshot(normalized);
+      if (!persisted) throw new Error("Durable queue snapshots are not configured.");
+    } else {
+      scheduleQueueDurableSnapshot(normalized);
+    }
     return;
   }
   if (!lease.token) throw new Error("Queue mutation lease is missing its fencing token.");
@@ -1449,13 +1480,11 @@ async function writeStore(
   if (committed !== nextRevision) {
     throw new Error("Queue state changed before this mutation could commit. Please retry.");
   }
-  try {
-    const persisted = await persistQueueDurableSnapshot(normalized);
-    if (options.requireDurableSnapshot && !persisted) {
-      throw new Error("Durable queue snapshots are not configured.");
-    }
-  } catch (snapshotError) {
-    if (options.requireDurableSnapshot) {
+  if (options.requireDurableSnapshot) {
+    try {
+      const persisted = await persistQueueDurableSnapshot(normalized);
+      if (!persisted) throw new Error("Durable queue snapshots are not configured.");
+    } catch (snapshotError) {
       const rolledBack = await lease.redis.eval<unknown[], number>(
         ROLLBACK_MUTATION_SCRIPT,
         [MUTATION_LOCK_KEY, STATE_KEY, MUTATION_REVISION_KEY],
@@ -1468,8 +1497,8 @@ async function writeStore(
       lastKnownGoodRedisEndpoint = getQueueRedisEndpoint();
       throw snapshotError;
     }
-    // Ordinary queue operation succeeded in Redis. Backup failure is never a
-    // reason to stop or undo a live show.
+  } else {
+    scheduleQueueDurableSnapshot(normalized);
   }
   lease.revision = nextRevision;
   lease.store = normalized;
@@ -1510,7 +1539,7 @@ export interface QueueRecoveryResult {
   dryRun: boolean;
   restored: boolean;
   revision: number;
-  activeSessionId: string;
+  activeSessionId: string | null;
   sessionCount: number;
   trackRecordCount: number;
   previousRedisRevision: number;
@@ -2538,9 +2567,16 @@ export async function restoreQueueFromDurableSnapshot(input: { dryRun?: boolean;
   });
 }
 
-function getSession(store: QueueStore, sessionId?: string): QueueSession {
+function findSession(store: QueueStore, sessionId?: string): QueueSession | null {
   const targetId = sessionId ?? store.activeSessionId;
-  return store.sessions.find((session) => session.sessionId === targetId) ?? store.sessions.find((session) => session.sessionId === store.activeSessionId) ?? store.sessions[0];
+  if (!targetId) return null;
+  return store.sessions.find((session) => session.sessionId === targetId) ?? null;
+}
+
+function getSession(store: QueueStore, sessionId?: string): QueueSession {
+  const session = findSession(store, sessionId) ?? (sessionId ? findSession(store) : null);
+  if (!session) throw new Error("Queue session not found.");
+  return session;
 }
 
 function replaceSession(store: QueueStore, session: QueueSession): QueueStore {
@@ -3161,15 +3197,52 @@ function queueStateFromSession(session: QueueSession, store: QueueStore, viewedS
   };
 }
 
+function emptyQueuePublicStatus(): QueuePublicStatus {
+  return {
+    isOpen: false,
+    activeCount: 0,
+    acceptedCount: 0,
+    estimatedRuntimeSeconds: 0,
+    capacity: DEFAULT_QUEUE_CAPACITY,
+    isFull: false,
+    pressure: "low",
+  };
+}
+
+function queueStateWithoutSession(store: QueueStore): QueueState {
+  return {
+    revision: store.revision,
+    nowPlaying: null,
+    queue: [],
+    history: [],
+    totalPlayed: 0,
+    streamStatus: "offline",
+    removed: [],
+    spotlight: [],
+    publicStatus: emptyQueuePublicStatus(),
+    sessions: store.sessions.map(summarizeSession).sort((a, b) => b.showDate.localeCompare(a.showDate) || b.createdAt.localeCompare(a.createdAt)),
+    readOnly: false,
+    isCurrentSession: false,
+    nextInLine: null,
+    loadedTrack: null,
+    autoRoutingPaused: false,
+    nextNonPriorityLane: "wheel",
+    wheelEligibleArtists: [],
+    playbackDiagnostics: emptyQueuePlaybackDiagnostics(),
+  };
+}
+
 export async function getRadioQueueState(sessionId?: string): Promise<QueueState> {
   const store = await readStore();
-  const session = normalizeSession(getSession(store, sessionId));
+  const found = findSession(store, sessionId) ?? (sessionId ? findSession(store) : null);
+  if (!found) return queueStateWithoutSession(store);
+  const session = normalizeSession(found);
   if (session.status !== "archived") {
     applyPreShowTimer(session);
     applyCommercialBreakTimer(session);
     pullNextInLine(session);
   }
-  return queueStateFromSession(session, store, sessionId ?? store.activeSessionId);
+  return queueStateFromSession(session, store, sessionId ?? store.activeSessionId ?? session.sessionId);
 }
 
 function publicSourceUrlForTrack(entry: QueueEntry): string | null {
@@ -3262,7 +3335,20 @@ function publicSubmitterStatus(session: QueueSession, identity?: { submitterToke
 
 export async function getPublicQueueSnapshot(sessionId?: string, identity?: { submitterToken?: string | null; tiktokHandle?: string | null; contactEmail?: string | null; artist?: string | null }): Promise<QueuePublicSnapshot> {
   const store = await readStore();
-  const session = normalizeSession(getSession(store, sessionId));
+  const found = findSession(store, sessionId) ?? (sessionId ? findSession(store) : null);
+  if (!found) {
+    return {
+      revision: store.revision,
+      session: null,
+      status: emptyQueuePublicStatus(),
+      queue: [],
+      completed: [],
+      nowPlaying: null,
+      upNext: null,
+      submitterStatus: null,
+    };
+  }
+  const session = normalizeSession(found);
   if (session.status !== "archived") {
     applyPreShowTimer(session);
     applyCommercialBreakTimer(session);
@@ -3683,7 +3769,11 @@ export async function updateSubmissionCooldownSettings(input: { submissionCooldo
 
 async function setQueueOpenMutation(isOpen: boolean): Promise<QueuePublicStatus> {
   const store = await readStore();
-  const session = getSession(store);
+  const session = findSession(store);
+  if (!session) {
+    if (!isOpen) return emptyQueuePublicStatus();
+    throw new Error("Queue session not found.");
+  }
   if (session.status === "archived") return session.publicStatus;
 
   const now = new Date();
@@ -3708,9 +3798,14 @@ export async function setQueueOpen(isOpen: boolean): Promise<QueuePublicStatus> 
 
 async function startNewQueueSessionMutation(options: QueueSessionOptions = {}): Promise<QueueState> {
   const store = await readStore();
-  const current = getSession(store);
-  if (current.status === "open" || current.queueOpen) return queueStateFromSession(current, store);
-  const preserved = store.sessions.map((session) => session.sessionId === store.activeSessionId && session.status !== "archived" ? normalizeSession({ ...session, status: "closed", queueOpen: false, submissionClosureReason: "manual", updatedAt: new Date().toISOString() }) : session);
+  const current = findSession(store);
+  const replacingPlaceholder = isEmptyRevisionZeroPlaceholder(store);
+  if (current && current.status !== "archived" && !replacingPlaceholder) {
+    return queueStateFromSession(current, store, current.sessionId);
+  }
+  const preserved = replacingPlaceholder
+    ? []
+    : store.sessions;
   const next = defaultSession(options);
   const nextStore = { revision: store.revision, activeSessionId: next.sessionId, sessions: [next, ...preserved] };
   await writeStore(nextStore);
@@ -3755,7 +3850,9 @@ export async function updateQueueSessionProvenance(
 
 async function archiveCurrentQueueSessionMutation(): Promise<QueueState> {
   const store = await readStore();
-  const session = normalizeSession({ ...getSession(store), status: "archived", queueOpen: false, submissionClosureReason: "archived", showStarted: false, updatedAt: new Date().toISOString() });
+  const current = findSession(store);
+  if (!current) return queueStateWithoutSession(store);
+  const session = normalizeSession({ ...current, status: "archived", queueOpen: false, submissionClosureReason: "archived", showStarted: false, updatedAt: new Date().toISOString() });
   const archivedStore = replaceSession(store, session);
   const active = archivedStore.sessions.find((item) => item.status === "open" || item.status === "prepared") ?? session;
   archivedStore.activeSessionId = active.sessionId;
@@ -3771,15 +3868,19 @@ export async function archiveCurrentQueueSession(): Promise<QueueState> {
 async function clearArchivedQueueSessionsMutation(): Promise<QueueState> {
   const store = await readStore();
   const sessions = store.sessions.filter((session) => session.status !== "archived");
-  const fallback = sessions[0] ?? defaultSession();
+  if (sessions.length === store.sessions.length) {
+    const current = findSession(store);
+    return current ? queueStateFromSession(current, store) : queueStateWithoutSession(store);
+  }
   const activeExists = sessions.some((session) => session.sessionId === store.activeSessionId);
   const nextStore: QueueStore = {
     revision: store.revision,
-    activeSessionId: activeExists ? store.activeSessionId : fallback.sessionId,
-    sessions: sessions.length > 0 ? sessions : [fallback],
+    activeSessionId: activeExists ? store.activeSessionId : null,
+    sessions,
   };
   await writeStore(nextStore);
-  return queueStateFromSession(getSession(nextStore), nextStore);
+  const current = findSession(nextStore);
+  return current ? queueStateFromSession(current, nextStore) : queueStateWithoutSession(nextStore);
 }
 
 export async function clearArchivedQueueSessions(): Promise<QueueState> {

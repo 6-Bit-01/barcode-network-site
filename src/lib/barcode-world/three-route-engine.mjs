@@ -11,8 +11,8 @@ export const CARD_CATEGORIES = Object.freeze([
 export const THREE_ROUTE_RULES = Object.freeze({
   choiceLanes: 3,
   maxPlanSteps: 3,
-  categoryCapacity: 3,
-  openingPerCategory: 2,
+  categoryCapacity: 5,
+  openingPerCategory: 4,
   reserveStart: 10,
   reservePerRound: 10,
   reserveCap: 20,
@@ -471,14 +471,18 @@ export const THREE_ROUTE_SCENARIOS = Object.freeze([
     location: "SUBLEVEL RING",
     objective: "BREAK THE DUELIST OR WITHDRAW THROUGH THE WEST HATCH",
     zones: [
-      zone("west-hatch", "West Hatch", 12, 58, { exit: true, cover: true }),
-      zone("service-ring", "Service Ring", 38, 42),
-      zone("center-mark", "Center Mark", 61, 58),
-      zone("east-lock", "East Lock", 86, 40, { cover: true }),
+      zone("west-hatch", "West Hatch", 10, 55, { exit: true, cover: true }),
+      zone("service-ring", "Service Ring", 35, 68),
+      zone("upper-walk", "Upper Walk", 38, 25, { cover: true }),
+      zone("center-mark", "Center Mark", 62, 49),
+      zone("east-lock", "East Lock", 88, 38, { cover: true }),
     ],
     edges: [
       ["west-hatch", "service-ring"],
+      ["west-hatch", "upper-walk"],
       ["service-ring", "center-mark"],
+      ["upper-walk", "center-mark"],
+      ["upper-walk", "east-lock"],
       ["center-mark", "east-lock"],
     ],
     objects: [],
@@ -573,8 +577,10 @@ export const THREE_ROUTE_SCENARIOS = Object.freeze([
   }),
 ]);
 
-export const DEFAULT_THREE_ROUTE_SCENARIO_ID = THREE_ROUTE_SCENARIOS[0].id;
-export const THREE_ROUTE_SCENARIO = THREE_ROUTE_SCENARIOS[0];
+export const DEFAULT_THREE_ROUTE_SCENARIO_ID = "fractured-gate-routes-v0.3";
+export const THREE_ROUTE_SCENARIO = THREE_ROUTE_SCENARIOS.find(
+  (entry) => entry.id === DEFAULT_THREE_ROUTE_SCENARIO_ID,
+) ?? THREE_ROUTE_SCENARIOS[0];
 
 export function getThreeRouteScenario(
   scenarioId = DEFAULT_THREE_ROUTE_SCENARIO_ID,
@@ -673,10 +679,22 @@ function createCategoryPool(category, seed) {
     cards,
     seed + ":pool:" + category,
   );
+  const opening = [core];
+  const remaining = [...shuffled];
+  while (
+    opening.length < THREE_ROUTE_RULES.openingPerCategory &&
+    remaining.length > 0
+  ) {
+    const uniqueIndex = remaining.findIndex(
+      (entry) => !opening.some((ready) => ready.designId === entry.designId),
+    );
+    const [next] = remaining.splice(uniqueIndex >= 0 ? uniqueIndex : 0, 1);
+    opening.push(next);
+  }
   return {
     category,
-    available: [core, ...shuffled.slice(0, THREE_ROUTE_RULES.openingPerCategory - 1)],
-    drawPile: shuffled.slice(THREE_ROUTE_RULES.openingPerCategory - 1),
+    available: opening,
+    drawPile: remaining,
     discard: [],
     reshuffles: 0,
   };

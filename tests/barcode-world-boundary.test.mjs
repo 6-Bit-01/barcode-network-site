@@ -87,16 +87,25 @@ test("v0.3 categorizes cards—not lanes—and binds card-first choices to theat
   assert.match(component, /ROUTE B/);
   assert.match(component, /ROUTE C/);
   assert.match(component, /FOUR SEPARATE CARD POOLS/);
-  assert.match(component, /CHOOSE CARD FIRST/);
+  assert.match(component, /YOUR CARD LIBRARY/);
+  assert.match(component, /01 · CHOOSE A CATEGORY/);
+  assert.match(component, /02 · CHOOSE A TARGET/);
+  assert.match(component, /03 · REVIEW THE PLAN/);
+  assert.match(component, /const \[activeCategory, setActiveCategory\]/);
+  assert.match(component, /styles\.categorySelector/);
+  assert.match(component, /aria-expanded=\{isOpen\}/);
+  assert.match(component, /visibleCards\.map/);
   assert.match(component, /CARD_CATEGORIES\.map/);
   assert.match(component, /getVisibleCategoryCards/);
   assert.match(component, /getThreeRouteChoices\(game, selectedCard\.id\)/);
-  assert.match(component, /Every route is a concrete target in the theater above/);
+  assert.match(component, /The theater highlights targets; its fixed paths remain the physical map/);
 
   for (const category of ["movement", "defense", "offense", "special"]) {
     assert.match(engine, new RegExp(`${category}: Object\\.freeze\\(\\[`, "i"), `${category} loadout`);
   }
   assert.match(engine, /choiceLanes:\s*3/);
+  assert.match(engine, /openingPerCategory:\s*4/);
+  assert.match(engine, /categoryCapacity:\s*5/);
   assert.match(engine, /slice\(0, THREE_ROUTE_RULES\.choiceLanes\)/);
   assert.match(engine, /targetFromZone/);
   assert.match(engine, /targetFromEnemy/);
@@ -119,8 +128,10 @@ test("one Wayfinder and variable persistent enemies occupy one connected, readab
   assert.equal((component.match(/className=\{styles\.wayfinderActor\}/g) ?? []).length, 1);
   assert.match(component, /PROJECTED/);
   assert.match(component, /projectPlannedTheater/);
-  assert.match(component, /styles\.routeLine/);
   assert.match(component, /styles\.projectedLine/);
+  assert.match(component, /PHYSICAL PATH/);
+  assert.match(component, /LEGAL TARGET/);
+  assert.doesNotMatch(component, /styles\.routeLine/);
 
   assert.match(engine, /id:\s*"sublevel-duel-v0\.3"/);
   assert.match(engine, /id:\s*"fractured-gate-routes-v0\.3"/);
@@ -133,6 +144,7 @@ test("one Wayfinder and variable persistent enemies occupy one connected, readab
 
   assert.match(css, /\.battlefield\s*\{/);
   assert.match(css, /\.edgeLayer\s*\{/);
+  assert.match(css, /\.theaterLegend\s*\{/);
   assert.match(css, /\.wayfinderFigure/);
   assert.match(css, /\.enemyFigure/);
   assert.match(css, /@keyframes playerAct/);
@@ -190,7 +202,9 @@ test("replenishment is category-specific and never an automatic placement refill
     readFile("src/components/BarcodeWorldCardBattle.tsx", "utf8"),
     readFile("src/lib/barcode-world/three-route-engine.mjs", "utf8"),
   ]);
-  assert.match(component, /AVAILABLE · \{pool\.drawPile\.length\} DRAW/);
+  assert.match(component, /\{visibleCards\.length\} AVAILABLE/);
+  assert.match(component, /\{pool\.drawPile\.length\} DRAW/);
+  assert.match(component, /NO AUTOMATIC PLACEMENT REFILL/);
   assert.match(component, /CYCLE · 1R/);
   assert.match(component, /Wait for a grant or reshuffle/);
   assert.match(engine, /drawUsedCategoryOnSuccess/);
@@ -232,6 +246,10 @@ test("the compact surface preserves odds truth, causal detail, resets, and acces
   assert.match(css, /animation-duration:\s*0\.001ms/);
   assert.match(css, /env\(safe-area-inset-bottom\)/);
   assert.match(css, /@media \(max-width: 420px\)/);
+  assert.match(css, /--cyan:\s*#79e7ff/);
+  assert.match(css, /--green:\s*#64ef9b/);
+  assert.match(css, /\.categoryGrid\s*\{/);
+  assert.match(css, /\.categoryDrawer\s*\{/);
   assert.doesNotMatch(component, /<details[^>]*\sopen(?:=|\s|>)/);
 });
 
@@ -280,13 +298,13 @@ function contrast(foreground, background) {
 
 test("core v0.3 battle colors clear WCAG AA normal-text contrast", () => {
   const pairs = [
-    ["#eef6f4", "#070b0c", "primary text"],
-    ["#90a19f", "#070b0c", "muted text"],
-    ["#49e4dc", "#070b0c", "cyan labels"],
-    ["#ffbd4a", "#070b0c", "amber labels"],
-    ["#071008", "#b8ff38", "primary action"],
-    ["#ff5267", "#070b0c", "low odds"],
-    ["#75e6a4", "#070b0c", "high odds"],
+    ["#f4f7f4", "#070a0c", "primary text"],
+    ["#98a7aa", "#070a0c", "muted text"],
+    ["#79e7ff", "#070a0c", "cyan labels"],
+    ["#ffd66f", "#070a0c", "amber labels"],
+    ["#071008", "#64ef9b", "primary action"],
+    ["#ff6d78", "#070a0c", "low odds"],
+    ["#64ef9b", "#070a0c", "high odds"],
   ];
   for (const [foreground, background, label] of pairs) {
     assert.ok(contrast(foreground, background) >= 4.5, `${label} must be at least 4.5:1`);

@@ -43,6 +43,25 @@ const CATEGORY_LABELS: Record<CardCategory, string> = {
   special: "Special",
 };
 
+const CATEGORY_DETAILS: Record<CardCategory, { purpose: string; cue: string }> = {
+  movement: {
+    purpose: "Position, approach, flank, or retreat.",
+    cue: "WHERE CAN I GO?",
+  },
+  defense: {
+    purpose: "Guard, evade, protect, or answer intent.",
+    cue: "WHAT CAN I SAVE?",
+  },
+  offense: {
+    purpose: "Strike, suppress, counter, or finish.",
+    cue: "WHAT CAN I BREAK?",
+  },
+  special: {
+    purpose: "Prepare, inspect, modify, or use the scene.",
+    cue: "WHAT CAN I CHANGE?",
+  },
+};
+
 const ROUTE_LABELS = ["ROUTE A", "ROUTE B", "ROUTE C"];
 
 function cx(...values: Array<string | false | null | undefined>) {
@@ -166,7 +185,6 @@ function BattleTheater({
   const enemies = eventSnapshot?.enemies ?? game.enemies;
   const playerZone = zoneMap.get(playerPositionId) ?? scenario.zones[0];
   const projectedZone = zoneMap.get(projected.playerPositionId) ?? playerZone;
-  const choiceOrigin = zoneMap.get(projected.playerPositionId) ?? playerZone;
   const selfChoice = choices.find((choice) => choice.target.kind === "self");
 
   return (
@@ -197,7 +215,9 @@ function BattleTheater({
             if (!from || !to) return null;
             return <line key={`${fromId}-${toId}`} x1={from.x} y1={from.y} x2={to.x} y2={to.y} />;
           })}
-          {!activeEvent && game.player.plan.map((step) => {
+          {!activeEvent && game.player.plan.filter(
+            (step) => step.card.move && step.target.kind === "zone",
+          ).map((step) => {
             const from = zoneMap.get(step.expectedStartId);
             const to = zoneMap.get(step.target.zoneId);
             if (!from || !to || from.id === to.id) return null;
@@ -212,22 +232,13 @@ function BattleTheater({
               />
             );
           })}
-          {!activeEvent && choices.map((choice) => {
-            const targetZone = zoneMap.get(choice.target.zoneId);
-            if (!targetZone || choice.target.kind === "plan") return null;
-            return (
-              <line
-                className={styles.routeLine}
-                data-route={choice.lane}
-                key={choice.id}
-                x1={choiceOrigin.x}
-                y1={choiceOrigin.y}
-                x2={targetZone.x}
-                y2={targetZone.y}
-              />
-            );
-          })}
         </svg>
+
+        <div className={styles.theaterLegend} aria-label="Theater map legend">
+          <span><i data-kind="path" />PHYSICAL PATH</span>
+          <span><i data-kind="target" />LEGAL TARGET</span>
+          <span><i data-kind="projection" />PROJECTED MOVE</span>
+        </div>
 
         {scenario.zones.map((zone) => {
           const route = choices.find(
@@ -370,6 +381,7 @@ export function BarcodeWorldCardBattle() {
   const [pendingResolution, setPendingResolution] = useState<ThreeRouteState | null>(null);
   const [resolutionEventIndex, setResolutionEventIndex] = useState(0);
   const [reducedMotion, setReducedMotion] = useState(false);
+  const [activeCategory, setActiveCategory] = useState<CardCategory | null>(null);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -447,6 +459,7 @@ export function BarcodeWorldCardBattle() {
 
   function resetScenario(scenarioId: string) {
     setSelectedCardId(null);
+    setActiveCategory(null);
     setPendingResolution(null);
     setResolutionEventIndex(0);
     setGame(createThreeRouteState(`barcode-world-v0.3:${scenarioId}`, scenarioId));
@@ -473,14 +486,23 @@ export function BarcodeWorldCardBattle() {
           <div className={styles.identity}>
             <span className={styles.barcodeMark} aria-hidden="true" />
             <div>
-              <span className={styles.eyebrow}>BARCODE WORLD · PLAYABLE PROTOTYPE</span>
+              <span className={styles.eyebrow}>BARCODE WORLD · PRIVATE BATTLE RESEARCH</span>
               <h1>THREE-ROUTE THEATER</h1>
+              <p>ONE PHYSICAL BATTLE · CATEGORY CARD LIBRARY · THREE CHOICES</p>
             </div>
           </div>
           <div className={styles.prototypeBadges}>
-            <span>v0.3</span><span>OWNER PREVIEW</span><span>DETERMINISTIC</span>
+            <span>v0.3</span><span>UNLISTED</span><span>IN MEMORY</span>
           </div>
         </header>
+
+        <BattleTheater
+          activeEvent={activeEvent}
+          choices={pendingResolution ? [] : choices}
+          game={game}
+          onChoose={choose}
+          projected={projected}
+        />
 
         <div className={styles.statusBar}>
           <span>ROUND <b>{game.round}</b></span>
@@ -492,14 +514,6 @@ export function BarcodeWorldCardBattle() {
 
         <PressureTrack pressure={currentPressure} breakArmed={game.breakArmed} />
 
-        <BattleTheater
-          activeEvent={activeEvent}
-          choices={pendingResolution ? [] : choices}
-          game={game}
-          onChoose={choose}
-          projected={projected}
-        />
-
         {pendingResolution && activeEvent ? (
           <section className={styles.resolvingPanel} aria-live="polite">
             <span>RESOLUTION {resolutionEventIndex + 1}/{pendingResolution.currentReview?.events.length}</span>
@@ -509,13 +523,108 @@ export function BarcodeWorldCardBattle() {
 
         {game.phase === "planning" && !pendingResolution ? (
           <>
+            <section className={styles.poolsPanel} id="battle-controls" aria-labelledby="pools-title">
+              <div className={styles.sectionHead}>
+                <div>
+                  <span className={styles.sectionNumber}>01 · CHOOSE A CATEGORY</span>
+                  <span className={styles.eyebrow}>FOUR SEPARATE CARD POOLS</span>
+                  <h2 id="pools-title">YOUR CARD LIBRARY</h2>
+                </div>
+                <p>Open one category, then choose from several reusable cards. The category is not a lane.</p>
+              </div>
+              <div className={styles.categoryGrid}>
+                {CARD_CATEGORIES.map((category, index) => {
+                  const pool = game.player.pools[category];
+                  const visibleCards = visibleByCategory[category];
+                  const contextCount = visibleCards.filter((card) => card.context).length;
+                  const preview = visibleCards.slice(0, 3).map((card) => card.name).join(" · ");
+                  const extra = Math.max(0, visibleCards.length - 3);
+                  const isOpen = activeCategory === category;
+                  return (
+                    <button
+                      aria-controls={`category-cards-${category}`}
+                      aria-expanded={isOpen}
+                      className={styles.categorySelector}
+                      data-category={category}
+                      data-open={isOpen ? "true" : "false"}
+                      key={category}
+                      onClick={() => {
+                        setActiveCategory((current) => current === category ? null : category);
+                        if (activeCategory !== category) setSelectedCardId(null);
+                      }}
+                      type="button"
+                    >
+                      <span className={styles.categoryIndex}>{String(index + 1).padStart(2, "0")}</span>
+                      <span className={styles.categorySummary}>
+                        <strong>{CATEGORY_LABELS[category]}</strong>
+                        <small>{CATEGORY_DETAILS[category].purpose}</small>
+                      </span>
+                      <span className={styles.categoryCounts}>
+                        <b>{visibleCards.length}<small> READY</small></b>
+                        <span>{pool.drawPile.length} DECK · {pool.discard.length} DISCARD{contextCount ? ` · ${contextCount} CONTEXT` : ""}</span>
+                      </span>
+                      <span className={styles.categoryPreview}>{preview}{extra ? ` · +${extra} MORE` : ""}</span>
+                      <span className={styles.categoryCue}>{isOpen ? "CLOSE CARDS" : CATEGORY_DETAILS[category].cue}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {activeCategory ? (() => {
+                const category = activeCategory;
+                const pool = game.player.pools[category];
+                const visibleCards = visibleByCategory[category];
+                return (
+                  <section
+                    className={styles.categoryDrawer}
+                    data-category={category}
+                    id={`category-cards-${category}`}
+                  >
+                    <header>
+                      <div>
+                        <span>{CATEGORY_LABELS[category]} · {visibleCards.length} AVAILABLE</span>
+                        <strong>{CATEGORY_DETAILS[category].purpose}</strong>
+                        <small>{pool.drawPile.length} DRAW · {pool.discard.length} DISCARD · NO AUTOMATIC PLACEMENT REFILL</small>
+                      </div>
+                      <button
+                        className={styles.cycleButton}
+                        disabled={game.player.reserve < 1 || pool.available.length === 0}
+                        onClick={() => { setSelectedCardId(null); setGame((current) => cycleThreeRouteCategory(current, category)); }}
+                        title="Spend 1 Reserve to cycle the first general card"
+                        type="button"
+                      >CYCLE · 1R</button>
+                    </header>
+                    <div className={styles.poolCards}>
+                      {visibleCards.map((card) => (
+                        <button
+                          aria-pressed={selectedCardId === card.id}
+                          className={styles.cardButton}
+                          data-selected={selectedCardId === card.id ? "true" : "false"}
+                          disabled={card.cost > game.player.reserve}
+                          key={card.id}
+                          onClick={() => setSelectedCardId((current) => current === card.id ? null : card.id)}
+                          type="button"
+                        >
+                          <CardFace card={card} />
+                        </button>
+                      ))}
+                      {visibleCards.length === 0 ? <div className={styles.emptyPool}>NO AVAILABLE CARDS<br /><small>Wait for a grant or reshuffle.</small></div> : null}
+                    </div>
+                  </section>
+                );
+              })() : (
+                <p className={styles.categoryInstruction}>TAP MOVEMENT, DEFENSE, OFFENSE, OR SPECIAL TO OPEN ITS AVAILABLE CARDS.</p>
+              )}
+            </section>
+
             <section className={styles.routeBoard} aria-labelledby="routes-title">
               <div className={styles.sectionHead}>
                 <div>
+                  <span className={styles.sectionNumber}>02 · CHOOSE A TARGET</span>
                   <span className={styles.eyebrow}>NEUTRAL CHOICE LANES</span>
                   <h2 id="routes-title">{selectedCard ? `${selectedCard.name} · LEGAL TARGETS` : "SELECT A CARD TO OPEN THREE ROUTES"}</h2>
                 </div>
-                <p>Cards have categories. Routes do not. Every route is a concrete target in the theater above.</p>
+                <p>Cards have categories. Routes do not. The theater highlights targets; its fixed paths remain the physical map.</p>
               </div>
               <div className={styles.routeGrid}>
                 {ROUTE_SLOTS.map((slot) => {
@@ -537,7 +646,7 @@ export function BarcodeWorldCardBattle() {
                     <div className={styles.emptyRoute} data-route={slot} key={slot}>
                       <span>{ROUTE_LABELS[slot]}</span>
                       <strong>{selectedCard ? "NO LEGAL TARGET" : "AWAITING CARD"}</strong>
-                      <p>{selectedCard ? "The current projected position cannot use this route." : "Select Movement, Defense, Offense, or Special below."}</p>
+                      <p>{selectedCard ? "The current projected position cannot use this route." : "Open a category and select a card above."}</p>
                     </div>
                   );
                 })}
@@ -547,7 +656,11 @@ export function BarcodeWorldCardBattle() {
 
             <section className={styles.planPanel} aria-labelledby="plan-title">
               <div className={styles.sectionHead}>
-                <div><span className={styles.eyebrow}>ONE WAYFINDER · SEQUENTIAL PLAN</span><h2 id="plan-title">PROJECTED ACTION CHAIN</h2></div>
+                <div>
+                  <span className={styles.sectionNumber}>03 · REVIEW THE PLAN</span>
+                  <span className={styles.eyebrow}>ONE WAYFINDER · SEQUENTIAL PLAN</span>
+                  <h2 id="plan-title">PROJECTED ACTION CHAIN</h2>
+                </div>
                 <div className={styles.controlRail}>
                   <button className={styles.secondaryButton} disabled={game.pendingActions.length === 0} onClick={() => { setSelectedCardId(null); setGame((current) => undoThreeRouteChoice(current)); }} type="button">UNDO LAST</button>
                   <button className={styles.primaryButton} disabled={game.player.plan.length === 0} onClick={resolvePlan} type="button">ACT OUT PLAN</button>
@@ -564,49 +677,6 @@ export function BarcodeWorldCardBattle() {
                       {step.modifiers.length > 0 ? <p>MOD · {step.modifiers.map((modifier) => modifier.name).join(" + ")}</p> : null}
                     </article>
                   ) : <div className={styles.emptyPlanStep} key={slot}><span>STEP {slot + 1}</span><b>OPEN</b></div>;
-                })}
-              </div>
-            </section>
-
-            <section className={styles.poolsPanel} id="battle-controls" aria-labelledby="pools-title">
-              <div className={styles.sectionHead}>
-                <div><span className={styles.eyebrow}>FOUR SEPARATE CARD POOLS</span><h2 id="pools-title">CHOOSE CARD FIRST</h2></div>
-                <p>General cards travel between scenarios. Temporary Context Cards appear only when the Wayfinder reaches their physical source.</p>
-              </div>
-              <div className={styles.poolGrid}>
-                {CARD_CATEGORIES.map((category) => {
-                  const pool = game.player.pools[category];
-                  const visibleCards = visibleByCategory[category];
-                  return (
-                    <section className={styles.categoryPool} data-category={category} key={category}>
-                      <header>
-                        <div><span>{CATEGORY_LABELS[category]}</span><small>{pool.available.length} AVAILABLE · {pool.drawPile.length} DRAW · {pool.discard.length} DISCARD</small></div>
-                        <button
-                          className={styles.cycleButton}
-                          disabled={game.player.reserve < 1 || pool.available.length === 0}
-                          onClick={() => { setSelectedCardId(null); setGame((current) => cycleThreeRouteCategory(current, category)); }}
-                          title="Spend 1 Reserve to cycle the first general card"
-                          type="button"
-                        >CYCLE · 1R</button>
-                      </header>
-                      <div className={styles.poolCards}>
-                        {visibleCards.map((card) => (
-                          <button
-                            aria-pressed={selectedCardId === card.id}
-                            className={styles.cardButton}
-                            data-selected={selectedCardId === card.id ? "true" : "false"}
-                            disabled={card.cost > game.player.reserve}
-                            key={card.id}
-                            onClick={() => setSelectedCardId((current) => current === card.id ? null : card.id)}
-                            type="button"
-                          >
-                            <CardFace card={card} />
-                          </button>
-                        ))}
-                        {visibleCards.length === 0 ? <div className={styles.emptyPool}>NO AVAILABLE CARDS<br /><small>Wait for a grant or reshuffle.</small></div> : null}
-                      </div>
-                    </section>
-                  );
                 })}
               </div>
             </section>

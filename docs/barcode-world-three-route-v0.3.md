@@ -13,6 +13,20 @@ The owner-review checkpoint is reconciled with the current `main` tree. Its
 focused 24-test prototype contract, full 875-test repository suite, TypeScript
 check, focused lint, and production build all pass against that merged state.
 
+## Owner correction — category browser and spatial theater
+
+The first v0.3 presentation pass changed more of v0.2's established surface
+than intended. This correction keeps the v0.3 rules architecture while
+restoring the cyan/green/red/violet private-research visual language, strong
+boxed separation between Theater, Cards, Choices, and Plan, and the theater's
+position at the top of the page.
+
+The correction also removes temporary straight target rays. Scenario edges are
+the only persistent map lines. Selecting a card highlights legal bodies,
+objects, or positions with Route A/B/C markers; staged Movement may trace the
+physical move it projects, but attacks and defenses do not redraw the theater
+as three lines aimed at an enemy.
+
 ## Owner locks — A / A / A
 
 The owner selected all three recommended architecture choices:
@@ -104,7 +118,8 @@ boxes. Each scenario supplies:
 - cover, exits, and interactive scene objects;
 - exactly one solid Wayfinder actor;
 - a variable number of persistent enemy actors with health and locked intent;
-- a projected Wayfinder ghost and route lines while planning;
+- legal-target rings and Route A/B/C markers without temporary attack rays;
+- a projected Wayfinder ghost and staged Movement trace while planning;
 - action animation and event text during resolution.
 
 The same theater supports a one-on-one duel, a three-enemy gate defense, and a
@@ -115,20 +130,24 @@ and what source produces a Context Card.
 ## Planning loop
 
 1. Enemy intent is seeded and locked at the beginning of the planning phase.
-2. The player selects any affordable visible card from one of four category
-   pools.
-3. The engine derives zero to three legal targets from the current projected
+2. The player sees four category doors first: Movement, Defense, Offense, and
+   Special. Each shows ready, draw, discard, Context, and card-name preview
+   information.
+3. Opening a category reveals its full available set. Every category starts
+   with four general cards visible, and its available capacity is five.
+4. The player selects any affordable card from that category.
+5. The engine derives zero to three legal targets from the current projected
    theater.
-4. The neutral Route A/B/C panels show target, numeric probability, success,
+6. The neutral Route A/B/C panels show target, numeric probability, success,
    failure, and any projected-position prerequisite.
-5. Selecting a route spends Reserve and stages that general card. It does not
+7. Selecting a route spends Reserve and stages that general card. It does not
    automatically draw a replacement.
-6. Successful projection updates the next target query. A successful `Advance`
+8. Successful projection updates the next target query. A successful `Advance`
    can therefore open a close-range Strike, a new movement branch, or a scene-
    sourced Context Card.
-7. Up to three actions form the plan. Compatible Modifier cards attach to an
+9. Up to three actions form the plan. Compatible Modifier cards attach to an
    existing step rather than consuming another action slot.
-8. Undo returns the exact last card, Reserve, and projection.
+10. Undo returns the exact last card, Reserve, and projection.
 
 Projection explains possibilities; it is not a guarantee. If an earlier move
 fails, a later action that required the projected position is invalidated. Its
@@ -151,9 +170,10 @@ event order, action title, chance, roll, outcome, health, and Pressure.
 
 ## Card availability and replenishment
 
-Each category has a visible available area, draw pile, discard, capacity, and
-reshuffle count. Playing a card moves it toward discard only after resolution;
-nothing fills its space on placement.
+Each category has a visible overview plus a tap-open card drawer, draw pile,
+discard, capacity, and reshuffle count. The opening state exposes four cards in
+every category instead of two token choices. Playing a card moves it toward
+discard only after resolution; nothing fills its space on placement.
 
 The current engine supports mixtures of:
 
@@ -182,9 +202,9 @@ with a 40-round safety cap. All 120 terminate and every category is exercised.
 
 | Scenario | Player wins | Enemy wins | Retreats | Unfinished | Average rounds | Context uses |
 |---|---:|---:|---:|---:|---:|---:|
-| Sublevel Duel | 34 | 1 | 5 | 0 | 6.275 | 0 |
-| Fractured Gate | 32 | 0 | 8 | 0 | 5.275 | 36 |
-| Coolant Extraction | 31 | 0 | 9 | 0 | 6.025 | 31 |
+| Sublevel Duel | 39 | 0 | 1 | 0 | 3.775 | 0 |
+| Fractured Gate | 38 | 0 | 2 | 0 | 4.300 | 14 |
+| Coolant Extraction | 40 | 0 | 0 | 0 | 5.725 | 29 |
 
 This is deadlock, determinism, branching, and broad rules smoke only. The
 policy is not a human player. These figures are not evidence of balance,
@@ -196,10 +216,12 @@ difficulty, comprehension, fun, animation quality, or replay value.
 
 1. Confirm the theater reads as one connected physical space with one solid
    Wayfinder and the scenario's actual enemies—not one Wayfinder per box.
-2. Select `Advance`. Confirm Routes A–C name connected theater positions and
-   matching lines/markers appear above.
-3. Select Defense, Offense, and Special cards. Confirm those categories change
-   legal choices without changing what the three lanes mean.
+2. Open Movement and confirm at least four available cards are visible. Select
+   `Advance`. Confirm Routes A–C name connected theater positions and matching
+   target markers appear above without drawing three attack rays.
+3. Open Defense, Offense, and Special. Confirm each has several choices and
+   that changing card category changes legal targets without changing what the
+   three lanes mean.
 4. Stage a movement. Confirm the projected Wayfinder moves and the next card's
    targets derive from that projected position.
 5. In Fractured Gate, reach Service Relay by projection. Confirm `Overload

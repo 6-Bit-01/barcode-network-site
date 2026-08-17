@@ -48,14 +48,22 @@ function choiceForTarget(state, cardId, targetId) {
 test("v0.3 keeps four separate reusable category pools and three neutral choice lanes", () => {
   const state = createThreeRouteState("category-contract");
   assert.equal(state.version, "0.3");
+  assert.equal(state.scenarioId, "fractured-gate-routes-v0.3");
   assert.equal(THREE_ROUTE_RULES.choiceLanes, 3);
   assert.equal(THREE_ROUTE_RULES.maxPlanSteps, 3);
+  assert.ok(THREE_ROUTE_RULES.openingPerCategory >= 4);
+  assert.ok(THREE_ROUTE_RULES.categoryCapacity > THREE_ROUTE_RULES.openingPerCategory);
   assert.deepEqual(Object.keys(state.player.pools), CARD_CATEGORIES);
   for (const category of CARD_CATEGORIES) {
     const pool = state.player.pools[category];
     assert.equal(pool.category, category);
     assert.equal(pool.available.length, THREE_ROUTE_RULES.openingPerCategory);
     assert.ok(pool.available.every((entry) => entry.category === category));
+    assert.equal(
+      new Set(pool.available.map((entry) => entry.designId)).size,
+      THREE_ROUTE_RULES.openingPerCategory,
+      category + " must open with distinct choices rather than duplicate filler",
+    );
     assert.ok(CATEGORY_LOADOUTS[category].length >= 6);
   }
 });
@@ -82,7 +90,7 @@ test("the same general card binds to scenario theater targets instead of encodin
   );
   assert.deepEqual(
     getThreeRouteChoices(duel, duelAdvance.id).map((entry) => entry.target.name),
-    ["Service Ring"],
+    ["Service Ring", "Upper Walk"],
   );
   assert.deepEqual(
     getThreeRouteChoices(gate, gateAdvance.id).map((entry) => entry.target.name),
@@ -340,6 +348,15 @@ test("the same engine handles one, two, and three enemies across different physi
     assert.ok(scenario.zones.length >= 4);
     assert.ok(scenario.edges.length >= scenario.zones.length - 1);
     assert.ok(scenario.exits.length >= 1);
+    const degrees = new Map(scenario.zones.map((zone) => [zone.id, 0]));
+    for (const [left, right] of scenario.edges) {
+      degrees.set(left, degrees.get(left) + 1);
+      degrees.set(right, degrees.get(right) + 1);
+    }
+    assert.ok(
+      [...degrees.values()].some((degree) => degree >= 3),
+      scenario.name + " must contain a spatial branch instead of a single corridor",
+    );
   }
 });
 

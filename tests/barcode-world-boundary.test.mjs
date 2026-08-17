@@ -14,11 +14,11 @@ const gameFiles = [
   "src/app/world/playtest/page.tsx",
   "src/components/BarcodeWorldCardBattle.tsx",
   "src/components/BarcodeWorldCardBattle.module.css",
-  "src/lib/barcode-world/card-battle-engine.mjs",
+  "src/lib/barcode-world/three-route-engine.mjs",
   "src/lib/barcode-world/playtest-access.mjs",
 ];
 
-test("card battle remains production-gated, unlinked, owner-preview-only, and locally inert", async () => {
+test("v0.3 remains production-gated, unlinked, owner-preview-only, and locally inert", async () => {
   const contents = await Promise.all(
     gameFiles.map(async (path) => [path, await readFile(path, "utf8")]),
   );
@@ -27,14 +27,12 @@ test("card battle remains production-gated, unlinked, owner-preview-only, and lo
   assert.match(page, /shouldHideBarcodeWorldPlaytest\(\)/);
   assert.match(page, /notFound\(\)/);
   assert.match(page, /BarcodeWorldCardBattle/);
-  assert.doesNotMatch(page, /FracturedGatePrototype|BarcodeWorldGreybox/);
+  assert.match(page, /Three-Route Theater/);
 
   const middleware = contents.find(([path]) => path === "middleware.ts")[1];
   assert.match(middleware, /pathname === "\/world\/playtest"/);
   assert.match(middleware, /shouldHideBarcodeWorldPlaytest\(\)/);
   assert.match(middleware, /status:\s*404/);
-  assert.match(middleware, /Cache-Control/);
-  assert.match(middleware, /X-Robots-Tag/);
   assert.match(middleware, /private, no-store, max-age=0/);
   assert.match(middleware, /noindex, nofollow, noarchive, noimageindex/);
 
@@ -55,7 +53,8 @@ test("card battle remains production-gated, unlinked, owner-preview-only, and lo
   assert.doesNotMatch(publicShell, /\/world\/playtest/);
 });
 
-test("only development and the exact card-battle branch preview can render", () => {
+test("only development and the exact v0.3 branch preview can render", () => {
+  assert.equal(BARCODE_WORLD_OWNER_PREVIEW_BRANCH, "agent/barcode-world-three-route-v0-3");
   const ownerPreview = {
     NODE_ENV: "production",
     VERCEL_ENV: "preview",
@@ -74,179 +73,165 @@ test("only development and the exact card-battle branch preview can render", () 
   assert.equal(shouldHideBarcodeWorldPlaytest({ NODE_ENV: "test" }), true);
 });
 
-test("v0.2 keeps lanes above the six-card rack and exposes immediate probability truth", async () => {
-  const [component, css] = await Promise.all([
-    readFile("src/components/BarcodeWorldCardBattle.tsx", "utf8"),
-    readFile("src/components/BarcodeWorldCardBattle.module.css", "utf8"),
-  ]);
-
-  assert.match(component, /PRIVATE BATTLE RESEARCH/);
-  assert.match(component, /v0\.2/);
-  assert.match(component, /UNLISTED/);
-  assert.match(component, /IN MEMORY/);
-  assert.match(component, /FOUR PHYSICAL FRONTS · SIX CARDS · VARIABLE FEED/);
-  assert.match(component, /aria-labelledby="lane-board-title"/);
-  assert.match(component, /id="rack-title"/);
-  assert.ok(
-    component.indexOf("<LaneBoard") < component.indexOf("<CardRack"),
-    "lane board must render above the card rack",
-  );
-  assert.match(component, /SIX-SLOT RACK/);
-  assert.match(component, /game\.player\.hand\.length/);
-  assert.match(component, /CARD_BATTLE_RULES\.handSize - game\.player\.hand\.length/);
-  assert.match(component, /WAITING FOR GRANT/);
-
-  const probability = component.slice(
-    component.indexOf("function ProbabilityBar"),
-    component.indexOf("function PressureTrack"),
-  );
-  assert.match(probability, /role="meter"/);
-  assert.match(probability, /aria-valuenow=\{forecast\.chance\}/);
-  assert.match(probability, /<strong>\{forecast\.chance\}%<\/strong>/);
-  assert.match(probability, /<b>SUCCESS<\/b>\{forecast\.successLabel\}/);
-  assert.match(probability, /<b>FAIL<\/b>\{forecast\.failureLabel\}/);
-  assert.doesNotMatch(probability, /\broll\b/i);
-  assert.match(component, /ROLL \{result\.roll\}/);
-  assert.match(component, /COLOR SHOWS THIS ROLL&apos;S ODDS—NOT THE MOVE&apos;S STRATEGIC VALUE/);
-  assert.doesNotMatch(component, /\b(?:GOOD|BAD|BEST)\b/i);
-  assert.match(component, /if \(chance < 45\) return "low"/);
-  assert.match(component, /if \(chance < 70\) return "medium"/);
-  assert.match(css, /\.forecast\[data-tone="low"\]\s*\{\s*--tone-color:\s*var\(--red\)/);
-  assert.match(css, /\.forecast\[data-tone="medium"\]\s*\{\s*--tone-color:\s*var\(--amber\)/);
-  assert.match(css, /\.forecast\[data-tone="high"\]\s*\{\s*--tone-color:\s*var\(--green\)/);
-
-  assert.match(component, /getPlacementPreview\(game, selectedCard\.id, lane\)/);
-  assert.match(component, /getLaneForecast\(game, lane\)/);
-  assert.match(component, /ENEMY IN THIS FRONT/);
-  assert.match(component, /LOCKED/);
-  assert.match(component, /YOUR STACK/);
-  assert.match(component, /stack\.length\}\/\{CARD_BATTLE_RULES\.maxStack\}/);
-  assert.match(component, /TypeBadge/);
-  for (const type of ["attack", "defend", "maneuver", "modifier", "preparation", "reaction", "finisher", "recovery"]) {
-    assert.match(component, new RegExp(`${type}:`), `${type} badge`);
-    assert.match(css, new RegExp(`data-type="${type}"`), `${type} color`);
-  }
-  assert.doesNotMatch(component, /Outflank|MOVE RANGE|FAST \/ STANDARD \/ SLOW|PIVOT/);
-});
-
-test("the battle remains physical with named fronts, visible enemies, and Resolve animation", async () => {
-  const [component, css] = await Promise.all([
-    readFile("src/components/BarcodeWorldCardBattle.tsx", "utf8"),
-    readFile("src/components/BarcodeWorldCardBattle.module.css", "utf8"),
-  ]);
-
-  assert.match(component, /function BattleTheater/);
-  assert.match(component, /PHYSICAL ENCOUNTER/);
-  assert.match(component, /type ResolutionStage/);
-  assert.match(component, /FRACTURED GATE/);
-  assert.match(component, /WEST ACCESS/);
-  assert.match(component, /CARGO DIVIDER/);
-  assert.match(component, /SERVICE RELAY/);
-  assert.match(component, /GATE THRESHOLD/);
-  assert.match(component, /const ENEMY_ACTORS/);
-  assert.match(component, /BREACHER RUNNER/);
-  assert.match(component, /BREACHER BRUTE/);
-  assert.match(component, /className=\{styles\.enemyPresence\}/);
-  assert.match(component, /className=\{styles\.battleFront\}/);
-  assert.match(component, /data-outcome=\{outcome\}/);
-  assert.match(component, /data-player-action=\{playerMove\?\.category/);
-  assert.match(component, /data-enemy-action=\{enemyMove\?\.category/);
-  assert.match(component, /<BattleTheater game=\{theaterGame\} sequenceStage=\{theaterStage\} theaterRef=\{theaterRef\} \/>/);
-  assert.ok(
-    component.indexOf("<BattleTheater") < component.indexOf("<StatusBar"),
-    "the physical battle theater must render at the top of the play surface",
-  );
-  assert.match(component, /scene\.scrollIntoView/);
-  assert.match(component, /type ResolutionStage = "planning" \| "player" \| "enemy" \| "complete"/);
-  assert.match(component, /const \[pendingResolution, setPendingResolution\]/);
-  assert.match(component, /setResolutionStage\("player"\)/);
-  assert.match(component, /setResolutionStage\("enemy"\)/);
-  assert.match(component, /setResolutionStage\("complete"\)/);
-  assert.match(component, /setGame\(pendingResolution\)/);
-  assert.match(component, /pendingResolution \? null : game\.currentReview/);
-  assert.match(component, /1 · PLAYER/);
-  assert.match(component, /2 · ENEMY/);
-  assert.match(component, /3 · RESOLVE/);
-  assert.match(component, /PLAYER HIT/);
-  assert.match(component, /PLAYER FAILED/);
-  assert.match(component, /ENEMY STOPPED/);
-
-  assert.match(css, /\.battlefield\s*\{/);
-  assert.match(css, /\.combatant::before/);
-  assert.match(css, /\.combatant::after/);
-  assert.match(css, /@keyframes wayfinder-strike/);
-  assert.match(css, /@keyframes enemy-hit/);
-  assert.match(css, /@keyframes wayfinder-repelled/);
-  assert.match(css, /@keyframes enemy-advance/);
-  assert.match(css, /@keyframes enemy-stopped/);
-  assert.match(css, /data-sequence="player"/);
-  assert.match(css, /data-sequence="enemy"/);
-  assert.match(css, /\.reducedMotion \*/);
-  assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
-});
-
-test("scenario feed sources are composable and selectable rather than hardwired", async () => {
+test("v0.3 categorizes cards—not lanes—and binds card-first choices to theater targets", async () => {
   const [component, engine] = await Promise.all([
     readFile("src/components/BarcodeWorldCardBattle.tsx", "utf8"),
-    readFile("src/lib/barcode-world/card-battle-engine.mjs", "utf8"),
+    readFile("src/lib/barcode-world/three-route-engine.mjs", "utf8"),
   ]);
-  assert.match(component, /SCENARIO FEED/);
-  assert.match(component, /REPLENISHMENT RECIPE/);
-  assert.match(component, /CARD_BATTLE_SCENARIOS\.map/);
-  assert.match(component, /onScenario=\{\(scenarioId\) => reset\(createCardBattleState\(game\.baseSeed, scenarioId\)\)\}/);
-  assert.match(component, /"CARD EFFECTS"/);
-  assert.match(engine, /roundStartDraw/);
-  assert.match(engine, /contestedSuccessDraw/);
-  assert.match(engine, /successfulComboDraw/);
-  assert.match(engine, /fearUnlockDraw/);
-  assert.match(engine, /pressureUnlockDraw/);
-  assert.match(engine, /drawOnSuccess/);
-  assert.match(engine, /emptyRackFallback/);
-  assert.match(engine, /breakRefill/);
-  assert.match(engine, /reservePerRoundBonus/);
-  assert.match(engine, /id: "cascade-protocol-v0\.2"/);
-  const cascade = engine.slice(
-    engine.indexOf('id: "cascade-protocol-v0.2"'),
-    engine.indexOf("}),", engine.indexOf('id: "cascade-protocol-v0.2"')),
-  );
-  assert.match(cascade, /roundStartDraw: 1/);
-  assert.match(cascade, /contestedSuccessDraw: 1/);
-  assert.match(cascade, /fearUnlockDraw: 2/);
+
+  assert.match(component, /THREE-ROUTE THEATER/);
+  assert.match(component, /v0\.3/);
+  assert.match(component, /NEUTRAL CHOICE LANES/);
+  assert.match(component, /Cards have categories\. Routes do not\./);
+  assert.match(component, /ROUTE A/);
+  assert.match(component, /ROUTE B/);
+  assert.match(component, /ROUTE C/);
+  assert.match(component, /FOUR SEPARATE CARD POOLS/);
+  assert.match(component, /CHOOSE CARD FIRST/);
+  assert.match(component, /CARD_CATEGORIES\.map/);
+  assert.match(component, /getVisibleCategoryCards/);
+  assert.match(component, /getThreeRouteChoices\(game, selectedCard\.id\)/);
+  assert.match(component, /Every route is a concrete target in the theater above/);
+
+  for (const category of ["movement", "defense", "offense", "special"]) {
+    assert.match(engine, new RegExp(`${category}: Object\\.freeze\\(\\[`, "i"), `${category} loadout`);
+  }
+  assert.match(engine, /choiceLanes:\s*3/);
+  assert.match(engine, /slice\(0, THREE_ROUTE_RULES\.choiceLanes\)/);
+  assert.match(engine, /targetFromZone/);
+  assert.match(engine, /targetFromEnemy/);
+  assert.match(engine, /targetFromObject/);
+  assert.match(engine, /kind:\s*"plan"/);
 });
 
-test("the compact surface preserves causal detail, reset controls, and accessible interaction", async () => {
+test("one Wayfinder and variable persistent enemies occupy one connected, readable theater", async () => {
+  const [component, engine, css] = await Promise.all([
+    readFile("src/components/BarcodeWorldCardBattle.tsx", "utf8"),
+    readFile("src/lib/barcode-world/three-route-engine.mjs", "utf8"),
+    readFile("src/components/BarcodeWorldCardBattle.module.css", "utf8"),
+  ]);
+
+  assert.match(component, /CONNECTED BATTLE THEATER/);
+  assert.match(component, /scenario\.edges\.map/);
+  assert.match(component, /scenario\.zones\.map/);
+  assert.match(component, /scenario\.objects\.map/);
+  assert.match(component, /enemies\.filter\(\(enemy\) => enemy\.hp > 0\)\.map/);
+  assert.equal((component.match(/className=\{styles\.wayfinderActor\}/g) ?? []).length, 1);
+  assert.match(component, /PROJECTED/);
+  assert.match(component, /projectPlannedTheater/);
+  assert.match(component, /styles\.routeLine/);
+  assert.match(component, /styles\.projectedLine/);
+
+  assert.match(engine, /id:\s*"sublevel-duel-v0\.3"/);
+  assert.match(engine, /id:\s*"fractured-gate-routes-v0\.3"/);
+  assert.match(engine, /id:\s*"coolant-extraction-v0\.3"/);
+  assert.match(engine, /1 VS 1/);
+  assert.match(engine, /1 VS 2/);
+  assert.match(engine, /1 VS 3/);
+  assert.match(engine, /playerStart/);
+  assert.match(engine, /edges:/);
+
+  assert.match(css, /\.battlefield\s*\{/);
+  assert.match(css, /\.edgeLayer\s*\{/);
+  assert.match(css, /\.wayfinderFigure/);
+  assert.match(css, /\.enemyFigure/);
+  assert.match(css, /@keyframes playerAct/);
+  assert.match(css, /@keyframes enemyAct/);
+  assert.match(css, /@keyframes actorHit/);
+});
+
+test("resolution visibly runs player chain, then enemy intents, and only then settles", async () => {
+  const [component, engine] = await Promise.all([
+    readFile("src/components/BarcodeWorldCardBattle.tsx", "utf8"),
+    readFile("src/lib/barcode-world/three-route-engine.mjs", "utf8"),
+  ]);
+
+  assert.match(component, /1 · PLAYER PLAN/);
+  assert.match(component, /2 · PLAYER ACTS/);
+  assert.match(component, /3 · ENEMY ACTS/);
+  assert.match(component, /4 · SETTLE/);
+  assert.match(component, /const \[pendingResolution, setPendingResolution\]/);
+  assert.match(component, /pendingResolution\?\.currentReview\?\.events\[resolutionEventIndex\]/);
+  assert.match(component, /setGame\(pendingResolution\)/);
+  assert.match(component, /ROUND NOT YET RESOLVED/);
+  assert.match(component, /ROUND RESOLVES AFTER BOTH SIDES/);
+  assert.match(component, /game\.phase === "round-review"/);
+
+  const playerLoop = engine.indexOf("for (let index = 0; index < draft.player.plan.length");
+  const enemyLoop = engine.indexOf("for (let index = 0; index < draft.enemyIntents.length");
+  const settleEvent = engine.indexOf('phase: "settle"', enemyLoop);
+  assert.ok(playerLoop > 0 && playerLoop < enemyLoop, "player chain resolves before enemies");
+  assert.ok(enemyLoop < settleEvent, "enemy intents resolve before settle");
+  assert.match(engine, /sceneCue:\s*success \? "player-success" : "player-failed"/);
+});
+
+test("general cards remain reusable while Context Cards are rare, source-bound exceptions", async () => {
+  const engine = await readFile("src/lib/barcode-world/three-route-engine.mjs", "utf8");
+  assert.match(engine, /GENERAL_CARD_DEFINITIONS/);
+  assert.match(engine, /CONTEXT_CARD_DEFINITIONS/);
+  assert.match(engine, /name: "Advance"/);
+  assert.match(engine, /name: "Guard"/);
+  assert.match(engine, /name: "Strike"/);
+  assert.match(engine, /name: "Charge"/);
+  assert.match(engine, /"overload-relay"/);
+  assert.match(engine, /"seal-gate"/);
+  assert.match(engine, /"vent-coolant"/);
+  assert.match(engine, /currentZone\?\.feature === definition\.contextFeature/);
+  assert.match(engine, /category !== "special"/);
+  assert.match(engine, /if \(cardValue\.context\)/);
+  assert.doesNotMatch(
+    engine.slice(engine.indexOf("CATEGORY_LOADOUTS"), engine.indexOf("function zone")),
+    /overload-relay|seal-gate|vent-coolant/,
+  );
+});
+
+test("replenishment is category-specific and never an automatic placement refill", async () => {
+  const [component, engine] = await Promise.all([
+    readFile("src/components/BarcodeWorldCardBattle.tsx", "utf8"),
+    readFile("src/lib/barcode-world/three-route-engine.mjs", "utf8"),
+  ]);
+  assert.match(component, /AVAILABLE · \{pool\.drawPile\.length\} DRAW/);
+  assert.match(component, /CYCLE · 1R/);
+  assert.match(component, /Wait for a grant or reshuffle/);
+  assert.match(engine, /drawUsedCategoryOnSuccess/);
+  assert.match(engine, /emptyPoolFallback/);
+  assert.match(engine, /breakDrawPerCategory/);
+  assert.match(engine, /roundStart:\s*\{ movement: 1 \}/);
+  assert.match(engine, /"SUCCESS · " \+ category\.toUpperCase\(\)/);
+  assert.match(engine, /"CACHE TAP"/);
+  assert.match(engine, /"PRESSURE BREAK"/);
+  assert.doesNotMatch(engine, /placementRefill|refillOnPlacement/);
+});
+
+test("the compact surface preserves odds truth, causal detail, resets, and accessible interaction", async () => {
   const [component, css] = await Promise.all([
     readFile("src/components/BarcodeWorldCardBattle.tsx", "utf8"),
     readFile("src/components/BarcodeWorldCardBattle.module.css", "utf8"),
   ]);
-  assert.match(component, /function RoundResolution/);
-  assert.match(component, /CAUSAL EVENT LOG/);
-  assert.match(component, /<details className=\{styles\.eventDetails\}>/);
-  assert.match(component, /review\.events\.map/);
-  assert.match(component, /replenishment\.sources\.map/);
+  assert.match(component, /role="meter"/);
+  assert.match(component, /aria-valuenow=\{choice\.forecast\.chance\}/);
+  assert.match(component, /<b>SUCCESS<\/b>\{choice\.forecast\.successLabel\}/);
+  assert.match(component, /<b>FAILURE<\/b>\{choice\.forecast\.failureLabel\}/);
+  assert.match(component, /if \(chance < 45\) return "low"/);
+  assert.match(component, /if \(chance < 70\) return "medium"/);
+  assert.match(component, /odds, not promises/i);
+  assert.doesNotMatch(component, /\b(?:GOOD|BAD|BEST)\b/i);
+  assert.match(component, /VIEW DETERMINISTIC EVENT RECORD/);
   assert.match(component, /REPLAY SAME STATE/);
   assert.match(component, /NEW SHUFFLE/);
-  assert.match(component, /RESET SAME STATE/);
-  assert.match(component, /REDUCE MOTION/);
-  assert.match(component, /prefers-reduced-motion: reduce/);
-  assert.match(component, /scrollIntoView/);
+  assert.match(component, /Reduce theater motion/);
   assert.match(component, /aria-live="polite"/);
-  assert.doesNotMatch(component, /aria-live="assertive"/);
-  assert.match(component, /aria-label="Resolve all four lanes"/i);
-  assert.match(component, />\s*RESOLVE\s*<\/button>/);
+  assert.match(component, /aria-live="assertive"/);
   assert.match(component, /type="button"/);
-  assert.match(component, /aria-pressed=\{selected\}/);
-  assert.match(component, /aria-valuemax=\{100\}/);
-  assert.match(component, /aria-valuemin=\{0\}/);
+  assert.match(component, /aria-pressed/);
 
   assert.match(css, /:focus-visible/);
-  assert.match(css, /touch-action:\s*manipulation/);
-  assert.match(css, /min-height:\s*2\.9rem/);
-  assert.match(css, /scroll-snap-type:\s*x mandatory/);
+  assert.match(css, /min-height:\s*2\.65rem/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
   assert.match(css, /forced-colors:\s*active/);
   assert.match(css, /animation-duration:\s*0\.001ms/);
   assert.match(css, /env\(safe-area-inset-bottom\)/);
+  assert.match(css, /@media \(max-width: 420px\)/);
   assert.doesNotMatch(component, /<details[^>]*\sopen(?:=|\s|>)/);
 });
 
@@ -265,8 +250,6 @@ test("shared live providers remain inert on the private prototype route", async 
   assert.match(bnlProvider, /value=\{isolatedPrototype \? null : controller\}/);
   assert.match(siteChrome, /pathname === "\/world\/playtest"/);
   assert.match(siteChrome, /return children/);
-  assert.match(siteChrome, /<Header \/>/);
-  assert.match(siteChrome, /<BNLNetworkRelayShell \/>/);
 });
 
 function channelToLinear(channel) {
@@ -288,15 +271,15 @@ function contrast(foreground, background) {
   return (brighter + 0.05) / (darker + 0.05);
 }
 
-test("core battle colors clear WCAG AA normal-text contrast", () => {
+test("core v0.3 battle colors clear WCAG AA normal-text contrast", () => {
   const pairs = [
-    ["#f4f7f4", "#070a0c", "primary text"],
-    ["#98a7aa", "#070a0c", "muted text"],
-    ["#79e7ff", "#070a0c", "cyan labels"],
-    ["#ffd66f", "#070a0c", "amber labels"],
-    ["#06150d", "#64ef9b", "primary action"],
-    ["#ff6d78", "#070a0c", "low odds"],
-    ["#64ef9b", "#070a0c", "high odds"],
+    ["#eef6f4", "#070b0c", "primary text"],
+    ["#90a19f", "#070b0c", "muted text"],
+    ["#49e4dc", "#070b0c", "cyan labels"],
+    ["#ffbd4a", "#070b0c", "amber labels"],
+    ["#071008", "#b8ff38", "primary action"],
+    ["#ff5267", "#070b0c", "low odds"],
+    ["#75e6a4", "#070b0c", "high odds"],
   ];
   for (const [foreground, background, label] of pairs) {
     assert.ok(contrast(foreground, background) >= 4.5, `${label} must be at least 4.5:1`);

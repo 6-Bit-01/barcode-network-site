@@ -18,9 +18,9 @@ export function generateMetadata(): Metadata {
     };
   }
   return {
-    title: "Stack / Resolve · Private BARCODE World Battle Mode Proof",
+    title: "Three-Route Theater · Private BARCODE World v0.3",
     description:
-      "Private, deterministic, resettable, noncanonical BARCODE World card-battle prototype.",
+      "Private, deterministic BARCODE World prototype linking reusable card categories to one readable battle theater.",
     robots: {
       index: false,
       follow: false,

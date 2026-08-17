@@ -1,6 +1,9 @@
 # BARCODE World: stack / resolve card battle v0.2
 
-Status: **UNLISTED OWNER-REVIEW RESEARCH PROTOTYPE**
+> Frozen first genuinely playable checkpoint. The active owner-review contract
+> is `docs/barcode-world-three-route-v0.3.md`.
+
+Status: **FROZEN FIRST-PLAYABLE CHECKPOINT**
 
 Owner-review route: `/world/playtest`
 

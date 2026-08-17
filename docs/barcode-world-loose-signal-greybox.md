@@ -4,8 +4,8 @@ Status: **HISTORICAL IMPLEMENTATION — SUPERSEDED AS THE ACTIVE PRIVATE ROUTE**
 
 The reusable deterministic rules in this implementation remain a mechanics
 reference. The player-facing `/world/playtest` target is now the bounded
-stack / resolve card-battle prototype described in
-`docs/barcode-world-card-battle-v0.2.md`. This older Loose Signal interface is
+three-route theater prototype described in
+`docs/barcode-world-three-route-v0.3.md`. This older Loose Signal interface is
 not being extended and is not player evidence for the card-battle direction.
 
 Source revision: `BARCODE_WORLD_PLAYTEST_READY_VERTICAL_SLICE_SOURCE_PACK_2026-07-26`

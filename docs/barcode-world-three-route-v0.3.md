@@ -9,6 +9,10 @@ Battle Mode proof. It preserves the card-driven uncertainty and staged physical
 battle established by v0.2, while replacing the four-front stack interface
 with a card-first, three-route planning system tied to one readable theater.
 
+The owner-review checkpoint is reconciled with the current `main` tree. Its
+focused 24-test prototype contract, full 875-test repository suite, TypeScript
+check, focused lint, and production build all pass against that merged state.
+
 ## Owner locks — A / A / A
 
 The owner selected all three recommended architecture choices:

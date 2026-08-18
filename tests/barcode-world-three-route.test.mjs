@@ -6,6 +6,8 @@ import {
   CATEGORY_LOADOUTS,
   CONTEXT_CARD_DEFINITIONS,
   GENERAL_CARD_DEFINITIONS,
+  THREE_ROUTE_AI_DIFFICULTIES,
+  THREE_ROUTE_PLAYER_POLICIES,
   THREE_ROUTE_RULES,
   THREE_ROUTE_SCENARIOS,
   chooseThreeRoute,
@@ -14,11 +16,14 @@ import {
   deterministicThreeRouteRoll,
   getThreeRouteChoices,
   getVisibleCategoryCards,
+  hasPlayableThreeRouteAction,
   projectPlannedTheater,
+  planThreeRouteEnemyIntents,
   replayNewThreeRouteShuffle,
   replaySameThreeRouteState,
   resolveThreeRouteRound,
   runThreeRouteSimulation,
+  runThreeRouteLaboratory,
   startNextThreeRouteRound,
   undoThreeRouteChoice,
 } from "../src/lib/barcode-world/three-route-engine.mjs";
@@ -67,9 +72,9 @@ function seedMatching(label, checks) {
   assert.fail("No deterministic seed matched " + label);
 }
 
-test("v0.3 keeps four separate reusable category pools and three neutral choice lanes", () => {
+test("v0.4 keeps four separate reusable category pools and three neutral choice lanes", () => {
   const state = createThreeRouteState("category-contract");
-  assert.equal(state.version, "0.3");
+  assert.equal(state.version, "0.4");
   assert.equal(state.scenarioId, "fractured-gate-routes-v0.3");
   assert.equal(THREE_ROUTE_RULES.choiceLanes, 3);
   assert.equal(THREE_ROUTE_RULES.maxPlanSteps, 3);
@@ -393,8 +398,13 @@ test("a relay Context Card requires an earlier-round prime that survives enemy c
   );
   state = resolveThreeRouteRound(state);
   assert.deepEqual(state.preparedObjectIds, ["relay-object"]);
-  assert.equal(state.protectedObjectId, null, "the protection is spent stopping the jam");
+  assert.equal(
+    state.protectedObjectId,
+    "relay-object",
+    "Protect must cover the object for the complete enemy response",
+  );
   state = startNextThreeRouteRound(state);
+  assert.equal(state.protectedObjectId, null, "round protection clears before the next plan");
   const specialCards = getVisibleCategoryCards(state, "special");
   assert.ok(
     specialCards.some(
@@ -526,12 +536,29 @@ test("an exit resolves according to the mission instead of treating every escape
   const extractionSeed = seedMatching("extraction-contract", [
     { phase: "player", actionIndex: 0, maximum: 80 },
   ]);
-  let extraction = createThreeRouteState(
+  let blocked = createThreeRouteState(
     extractionSeed,
     "coolant-extraction-v0.3",
   );
+  blocked.player.positionId = "coolant-conduit";
+  blocked.enemyIntents = [];
+  const blockedAdvance = exposeCard(blocked, "movement", "advance");
+  blocked = chooseThreeRoute(
+    blocked,
+    blockedAdvance.id,
+    choiceForTarget(blocked, blockedAdvance.id, "south-lift").id,
+  );
+  assert.match(
+    blocked.player.plan[0].forecast.successLabel,
+    /EXIT TO BE CLEAR/,
+  );
+  blocked = resolveThreeRouteRound(blocked);
+  assert.equal(blocked.result, null, "reaching an occupied exit must not be an accidental victory");
+
+  let extraction = createThreeRouteState(extractionSeed, "coolant-extraction-v0.3");
   extraction.player.positionId = "coolant-conduit";
   extraction.enemyIntents = [];
+  extraction.enemies.find((entry) => entry.id === "breaker").suppressed = true;
   const advance = exposeCard(extraction, "movement", "advance");
   extraction = chooseThreeRoute(
     extraction,
@@ -760,6 +787,32 @@ test("explicit category cycling costs Reserve and is not a placement refill", ()
   assert.match(cycled.notice, /cycled from OFFENSE/);
 });
 
+test("an exhausted player recovers an empty pool before yielding, then yields without stalling when no action exists", () => {
+  let recoverable = createThreeRouteState("recover-before-yield", "sublevel-duel-v0.3");
+  const movement = recoverable.player.pools.movement;
+  movement.drawPile.push(...movement.available.splice(0));
+  recoverable.player.reserve = 0;
+  assert.equal(hasPlayableThreeRouteAction(recoverable), true);
+  const recovered = cycleThreeRouteCategory(recoverable, "movement");
+  assert.equal(recovered.player.pools.movement.available.length, 1);
+  assert.equal(recovered.player.reserve, 0, "tactical recovery must not spend Command Points");
+  assert.match(recovered.notice, /recovered one card/i);
+
+  let exhausted = createThreeRouteState("forced-yield", "sublevel-duel-v0.3");
+  exhausted.player.reserve = 0;
+  for (const category of CARD_CATEGORIES) {
+    exhausted.player.pools[category].available = [];
+    exhausted.player.pools[category].drawPile = [];
+    exhausted.player.pools[category].discard = [];
+  }
+  assert.equal(hasPlayableThreeRouteAction(exhausted), false);
+  exhausted = resolveThreeRouteRound(exhausted);
+  assert.equal(exhausted.phase, "round-review");
+  assert.match(exhausted.currentReview.events[0].title, /YIELD INITIATIVE/);
+  assert.equal(exhausted.currentReview.events.at(-1).phase, "settle");
+  assert.equal(exhausted.pressure, -1);
+});
+
 test("undo restores the exact category card, Reserve, and projected theater", () => {
   let state = createThreeRouteState(
     "undo-route",
@@ -823,10 +876,10 @@ test("same-state replay is exact while New Shuffle changes category availability
 
 test("the same engine handles one, two, and three enemies across different physical settings", () => {
   assert.deepEqual(
-    THREE_ROUTE_SCENARIOS.map((entry) => entry.enemies.length),
+    THREE_ROUTE_SCENARIOS.slice(0, 3).map((entry) => entry.enemies.length),
     [1, 3, 2],
   );
-  assert.equal(new Set(THREE_ROUTE_SCENARIOS.map((entry) => entry.location)).size, 3);
+  assert.equal(new Set(THREE_ROUTE_SCENARIOS.map((entry) => entry.location)).size, 5);
   for (const scenario of THREE_ROUTE_SCENARIOS) {
     assert.ok(scenario.zones.length >= 4);
     assert.ok(scenario.edges.length >= scenario.zones.length - 1);
@@ -839,6 +892,132 @@ test("the same engine handles one, two, and three enemies across different physi
     assert.ok(
       [...degrees.values()].some((degree) => degree >= 3),
       scenario.name + " must contain a spatial branch instead of a single corridor",
+    );
+  }
+});
+
+test("enemy planning is deterministic, role-readable, and limited to public theater state", () => {
+  const state = createThreeRouteState(
+    "ai-contract",
+    "archive-defense-v0.4",
+    { enemyDifficulty: "standard" },
+  );
+  const before = structuredClone(state);
+  const first = planThreeRouteEnemyIntents(state);
+  const second = planThreeRouteEnemyIntents(state);
+  assert.deepEqual(first, second);
+  assert.deepEqual(state, before, "planning enemy intent must not mutate battle state");
+  assert.deepEqual(THREE_ROUTE_AI_DIFFICULTIES, ["basic", "standard", "tactical"]);
+  assert.ok(first.some((intent) => intent.targetId === "archive-core-object"));
+  for (const intent of first) {
+    assert.ok(state.enemies.some((enemy) => enemy.id === intent.actorId && enemy.hp > 0));
+    assert.ok(state.scenario.zones.some((zone) => zone.id === intent.destinationId));
+    assert.ok(intent.reason.length > 20);
+    assert.ok(intent.candidateCount >= 1);
+    assert.ok(Number.isFinite(intent.score));
+    assert.equal(intent.difficulty, "standard");
+  }
+});
+
+test("Holdout resolves only after the enemy response at the authored round limit", () => {
+  const seed = seedMatching("holdout-contract", [
+    { phase: "player", actionIndex: 0, maximum: 95 },
+  ]);
+  let state = createThreeRouteState(seed, "signal-holdout-v0.4");
+  state.round = state.scenario.mission.roundLimit;
+  state.enemyIntents = [];
+  const guard = exposeCard(state, "defense", "guard");
+  state = chooseThreeRoute(
+    state,
+    guard.id,
+    getThreeRouteChoices(state, guard.id)[0].id,
+  );
+  state = resolveThreeRouteRound(state);
+  assert.equal(state.result?.winner, "player");
+  assert.equal(state.result?.outcome, "holdout");
+  assert.match(state.result?.title ?? "", /SIGNAL WINDOW SURVIVED/);
+  assert.equal(
+    state.currentReview.events.at(-1).phase,
+    "settle",
+    "timeout victory must settle after the enemy phase",
+  );
+});
+
+test("Defense exposes object Integrity and Protect covers the entire enemy response", () => {
+  const seed = seedMatching("defense-contract", [
+    { phase: "player", actionIndex: 0, maximum: 90 },
+    { phase: "enemy", actionIndex: 0, maximum: 95 },
+  ]);
+  let protectedState = createThreeRouteState(seed, "archive-defense-v0.4");
+  protectedState.player.positionId = "archive-core-zone";
+  protectedState.enemies.find((entry) => entry.id === "archive-breacher").positionId =
+    "archive-core-zone";
+  protectedState.enemyIntents = [{
+    actorId: "archive-breacher",
+    kind: "objective",
+    name: "Breach Archive Core",
+    targetId: "archive-core-object",
+    destinationId: "archive-core-zone",
+    chance: 95,
+    impact: 1,
+    pressure: 1,
+    order: 0,
+  }];
+  const protect = exposeCard(protectedState, "defense", "protect");
+  protectedState = chooseThreeRoute(
+    protectedState,
+    protect.id,
+    choiceForTarget(protectedState, protect.id, "archive-core-object").id,
+  );
+  protectedState = resolveThreeRouteRound(protectedState);
+  assert.equal(protectedState.objectIntegrity["archive-core-object"], 6);
+  assert.match(
+    protectedState.currentReview.events.find((event) => event.phase === "enemy").detail,
+    /dealt no Integrity damage/,
+  );
+
+  let breached = createThreeRouteState(seed, "archive-defense-v0.4");
+  breached.player.positionId = "archive-core-zone";
+  breached.enemies.find((entry) => entry.id === "archive-breacher").positionId =
+    "archive-core-zone";
+  breached.objectIntegrity["archive-core-object"] = 1;
+  breached.enemyIntents = protectedState.enemyIntents;
+  const guard = exposeCard(breached, "defense", "guard");
+  breached = chooseThreeRoute(
+    breached,
+    guard.id,
+    getThreeRouteChoices(breached, guard.id)[0].id,
+  );
+  breached = resolveThreeRouteRound(breached);
+  assert.equal(breached.objectIntegrity["archive-core-object"], 0);
+  assert.equal(breached.result?.winner, "enemy");
+  assert.match(breached.result?.title ?? "", /ARCHIVE CORE DESTROYED/);
+});
+
+test("the v0.4 lab proves intentional play beats blind policies in new mission types", () => {
+  assert.ok(THREE_ROUTE_PLAYER_POLICIES.includes("deliberate"));
+  assert.ok(THREE_ROUTE_PLAYER_POLICIES.includes("random"));
+  const lab = runThreeRouteLaboratory({
+    battlesPerCell: 40,
+    seedPrefix: "v0.4-evidence",
+    maxRounds: 30,
+    scenarioIds: ["signal-holdout-v0.4", "archive-defense-v0.4"],
+    policies: ["deliberate", "random", "first-legal"],
+    difficulties: ["standard"],
+  });
+  assert.equal(lab.version, "0.4");
+  assert.equal(lab.cells.length, 6);
+  for (const cell of lab.cells) {
+    assert.equal(cell.unfinished, 0);
+    assert.equal(cell.stalledBattles, 0);
+    assert.equal(cell.firstRoundWins, 0);
+    assert.ok(cell.enemyIntents > 0);
+    assert.ok(cell.meaningfulEnemyActions > 0);
+  }
+  for (const comparison of lab.comparisons) {
+    assert.ok(
+      comparison.intentionalAdvantage >= 0.25,
+      `${comparison.scenarioId} must reward deliberate play over random play`,
     );
   }
 });

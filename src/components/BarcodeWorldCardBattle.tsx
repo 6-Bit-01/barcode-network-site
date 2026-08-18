@@ -96,18 +96,26 @@ function zoneStyle(x: number, y: number): CSSProperties {
   return { "--zone-x": `${x}%`, "--zone-y": `${y}%` } as CSSProperties;
 }
 
-function PressureTrack({ pressure, breakArmed }: { pressure: number; breakArmed: boolean }) {
+function PressureTrack({
+  pressure,
+  breakArmed,
+  controlVictory,
+}: {
+  pressure: number;
+  breakArmed: boolean;
+  controlVictory: boolean;
+}) {
   const boundedPressure = Math.max(-5, Math.min(5, pressure));
   const position = ((boundedPressure + 5) / 10) * 100;
   return (
     <section className={styles.pressurePanel} aria-labelledby="pressure-title">
       <div className={styles.pressureHead}>
-        <span id="pressure-title">CONTROL <small>POSITION · NOT HEALTH</small></span>
+        <span id="pressure-title">CONTROL <small>{controlVictory ? "+5 = VICTORY" : "+5 = ADVANTAGE · NOT VICTORY"}</small></span>
         <strong>{signed(boundedPressure)}</strong>
         <span className={styles.breakState}>{breakArmed ? "BREAK ARMED" : "BREAK SPENT"}</span>
       </div>
       <div
-        aria-label={`Battle control ${boundedPressure}. Break ${breakArmed ? "armed" : "spent"}.`}
+        aria-label={`Battle control ${boundedPressure}. Positive five ${controlVictory ? "wins this scenario" : "creates advantage but does not win this scenario"}. Break ${breakArmed ? "armed" : "spent"}.`}
         aria-valuemax={5}
         aria-valuemin={-5}
         aria-valuenow={boundedPressure}
@@ -257,7 +265,13 @@ function cardAvailability(game: ThreeRouteState, card: ThreeRouteCard) {
   }
   const routeCount = getThreeRouteChoices(game, card.id).length;
   if (routeCount === 0) {
-    return { usable: false, label: "NOT USABLE HERE" };
+    if (card.requiresSecuredZone) {
+      return { usable: false, label: "OBJECTIVE POSITION CONTESTED" };
+    }
+    if (card.requiresPreparation) {
+      return { usable: false, label: "OBJECT MUST BE PRIMED" };
+    }
+    return { usable: false, label: "NO LEGAL TARGET HERE" };
   }
   return {
     usable: true,
@@ -303,6 +317,8 @@ function BattleTheater({
   const playerGuard = eventSnapshot?.playerGuard ?? game.player.guard;
   const playerPower = eventSnapshot?.playerPower ?? game.player.power;
   const enemies = eventSnapshot?.enemies ?? game.enemies;
+  const protectedObjectId = eventSnapshot?.protectedObjectId ?? game.protectedObjectId;
+  const preparedObjectIds = eventSnapshot?.preparedObjectIds ?? game.preparedObjectIds;
   const playerZone = zoneMap.get(playerPositionId) ?? scenario.zones[0];
   const projectedZone = zoneMap.get(projected.playerPositionId) ?? playerZone;
   const selfChoice = choices.find((choice) => choice.target.kind === "self");
@@ -317,7 +333,13 @@ function BattleTheater({
         <div>
           <span className={styles.eyebrow}>CONNECTED BATTLE THEATER</span>
           <h2 id="theater-title">{scenario.location}</h2>
-          <p>{scenario.objective}</p>
+          <p>MISSION · {scenario.objective}</p>
+          <div className={styles.missionContract} aria-label="Scenario win, loss, exit, and tactical rules">
+            <span><b>WIN</b>{scenario.mission.win}</span>
+            <span><b>LOSE</b>{scenario.mission.lose}</span>
+            <span><b>EXIT</b>{scenario.mission.exit}</span>
+            <span><b>TACTICAL</b>{scenario.mission.tactical}</span>
+          </div>
         </div>
         <ol className={styles.sequence} aria-label="Round sequence">
           <li data-active={!activeEvent && game.phase === "planning"}>1 · BUILD YOUR PLAN</li>
@@ -409,6 +431,23 @@ function BattleTheater({
             feature: objectValue.feature,
           };
           const route = findChoiceForTarget(choices, target);
+          const prepared = preparedObjectIds.includes(objectValue.id);
+          const protectedObject = protectedObjectId === objectValue.id;
+          const contested = enemies.some(
+            (enemy) =>
+              enemy.hp > 0 &&
+              enemy.positionId === objectValue.zoneId &&
+              !enemy.suppressed,
+          );
+          const objectState = protectedObject
+            ? "PROTECTED"
+            : objectValue.feature === "gate"
+              ? contested
+                ? "CONTESTED"
+                : "SECURED"
+              : prepared
+                ? "PRIMED"
+                : "UNPRIMED · SCAN/CHARGE";
           if (!zone) return null;
           return (
             <button
@@ -422,7 +461,7 @@ function BattleTheater({
               style={{ ...zoneStyle(zone.x, zone.y), "--object-index": index } as CSSProperties}
               type="button"
             >
-              <span>◇</span>{objectValue.name}
+              <span>◇</span><b>{objectValue.name}</b><small>{objectState}</small>
             </button>
           );
         })}
@@ -575,10 +614,10 @@ export function BarcodeWorldCardBattle() {
         flankBonus: false,
         enemies: activeEvent.after.enemies,
         objectiveProgress: activeEvent.after.objectiveProgress,
-        protectedObjectId: null,
-        scannedObjectIds: [],
+        protectedObjectId: activeEvent.after.protectedObjectId,
+        preparedObjectIds: activeEvent.after.preparedObjectIds,
         pressure: activeEvent.after.pressure,
-        retreatCompleted: false,
+        exitCompleted: false,
       }
     : plannedProjection;
 
@@ -650,7 +689,7 @@ export function BarcodeWorldCardBattle() {
     : game.phase === "planning"
       ? "BUILD YOUR PLAN"
       : game.phase === "result"
-        ? "BATTLE COMPLETE"
+        ? game.result?.title ?? "BATTLE COMPLETE"
         : "ROUND RESULT";
 
   return (
@@ -667,7 +706,7 @@ export function BarcodeWorldCardBattle() {
             </div>
           </div>
           <div className={styles.prototypeBadges}>
-            <span>v0.3</span><span>UNLISTED</span><span>IN MEMORY</span>
+            <span>v0.3 · CHALLENGE</span><span>UNLISTED</span><span>IN MEMORY</span>
           </div>
         </header>
 
@@ -683,7 +722,9 @@ export function BarcodeWorldCardBattle() {
 
         <div className={styles.statusBar} aria-label="Current round status">
           <strong>{phaseLabel}</strong>
-          <span>ROUND <b>{game.round}</b></span>
+          <span>
+            ROUND <b>{game.round}{game.scenario.mission.roundLimit ? `/${game.scenario.mission.roundLimit}` : ""}</b>
+          </span>
           <span>PLAN <b>{game.player.plan.length}/{THREE_ROUTE_RULES.maxPlanSteps}</b></span>
           <CommandPointDisplay current={game.player.reserve} previewCard={pendingResolution ? null : selectedCard} />
           <button
@@ -708,7 +749,11 @@ export function BarcodeWorldCardBattle() {
           </section>
         ) : null}
 
-        <PressureTrack pressure={currentPressure} breakArmed={game.breakArmed} />
+        <PressureTrack
+          breakArmed={game.breakArmed}
+          controlVictory={game.scenario.mission.controlVictory}
+          pressure={currentPressure}
+        />
 
         {pendingResolution && activeEvent ? (
           <section className={styles.resolvingPanel} aria-live="polite">
@@ -922,10 +967,15 @@ export function BarcodeWorldCardBattle() {
         ) : null}
 
         {!pendingResolution && game.currentReview ? (
-          <section className={styles.reviewPanel} aria-labelledby="review-title">
+          <section
+            className={styles.reviewPanel}
+            data-outcome={game.result?.outcome ?? "round"}
+            data-winner={game.result?.winner ?? "none"}
+            aria-labelledby="review-title"
+          >
             <div className={styles.reviewHead}>
               <div>
-                <span className={styles.eyebrow}>{game.result ? "BATTLE COMPLETE" : "ROUND RESOLVED"}</span>
+                <span className={styles.eyebrow}>{game.result?.title ?? "ROUND RESOLVED"}</span>
                 <h2 id="review-title">{game.result?.reason ?? `HEALTH ${game.currentReview.conditionBefore} → ${game.currentReview.conditionAfter} · CONTROL ${signed(game.currentReview.pressureBefore)} → ${signed(game.currentReview.pressureAfter)}`}</h2>
               </div>
               <div className={styles.reviewActions}>

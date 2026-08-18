@@ -17,6 +17,9 @@ export type BattleSfxCue =
   | "enemy"
   | "enemy-blocked"
   | "break"
+  | "victory"
+  | "defeat"
+  | "withdrawal"
   | "round";
 
 type ToneOptions = {
@@ -90,6 +93,19 @@ function renderCue(context: AudioContext, cue: BattleSfxCue) {
       tone(context, { at: 0.1, duration: 0.16, endFrequency: 510, frequency: 380, type: "triangle", volume: 0.04 });
       tone(context, { at: 0.2, duration: 0.2, endFrequency: 820, frequency: 560, type: "sine", volume: 0.045 });
       return;
+    case "victory":
+      tone(context, { duration: 0.18, endFrequency: 520, frequency: 390, type: "triangle", volume: 0.045 });
+      tone(context, { at: 0.11, duration: 0.2, endFrequency: 780, frequency: 585, type: "triangle", volume: 0.045 });
+      tone(context, { at: 0.23, duration: 0.3, endFrequency: 1_040, frequency: 780, type: "sine", volume: 0.048 });
+      return;
+    case "defeat":
+      tone(context, { duration: 0.24, endFrequency: 155, frequency: 310, type: "sawtooth", volume: 0.048 });
+      tone(context, { at: 0.14, duration: 0.32, endFrequency: 68, frequency: 145, type: "square", volume: 0.04 });
+      return;
+    case "withdrawal":
+      tone(context, { duration: 0.18, endFrequency: 330, frequency: 440, type: "triangle", volume: 0.034 });
+      tone(context, { at: 0.12, duration: 0.24, endFrequency: 220, frequency: 330, type: "sine", volume: 0.03 });
+      return;
     case "round":
       tone(context, { duration: 0.22, endFrequency: 390, frequency: 350, type: "triangle", volume: 0.035 });
       tone(context, { at: 0.04, duration: 0.24, endFrequency: 585, frequency: 525, type: "triangle", volume: 0.03 });
@@ -103,6 +119,9 @@ export function battleSfxForSceneCue(sceneCue: string): BattleSfxCue {
   if (sceneCue === "enemy-hit" || sceneCue === "enemy-advance" || sceneCue === "enemy-guard") return "enemy";
   if (sceneCue === "enemy-stopped") return "enemy-blocked";
   if (sceneCue === "pressure-break") return "break";
+  if (sceneCue === "battle-victory") return "victory";
+  if (sceneCue === "battle-defeat") return "defeat";
+  if (sceneCue === "battle-withdrawal") return "withdrawal";
   return "round";
 }
 

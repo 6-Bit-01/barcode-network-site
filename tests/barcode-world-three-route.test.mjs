@@ -45,6 +45,28 @@ function choiceForTarget(state, cardId, targetId) {
   return choice;
 }
 
+function seedMatching(label, checks) {
+  for (let index = 0; index < 10_000; index += 1) {
+    const seed = label + "-" + index;
+    if (
+      checks.every(
+        ({ phase, actionIndex, maximum, minimum = 1, round = 1 }) => {
+          const roll = deterministicThreeRouteRoll(
+            seed,
+            round,
+            phase,
+            actionIndex,
+          );
+          return roll >= minimum && roll <= maximum;
+        },
+      )
+    ) {
+      return seed;
+    }
+  }
+  assert.fail("No deterministic seed matched " + label);
+}
+
 test("v0.3 keeps four separate reusable category pools and three neutral choice lanes", () => {
   const state = createThreeRouteState("category-contract");
   assert.equal(state.version, "0.3");
@@ -285,11 +307,13 @@ test("choosing a route spends its general card without automatic replacement and
   assert.equal(state.player.plan.length, 0, "public transition must remain pure");
 });
 
-test("a projected general movement opens a rare scene-bound Context Card", () => {
-  let state = createThreeRouteState(
-    "context-branch",
-    "fractured-gate-routes-v0.3",
-  );
+test("a relay Context Card requires an earlier-round prime that survives enemy counterplay", () => {
+  const seed = seedMatching("context-branch", [
+    { phase: "player", actionIndex: 0, maximum: 95 },
+    { phase: "player", actionIndex: 1, maximum: 90 },
+    { phase: "enemy", actionIndex: 0, maximum: 95 },
+  ]);
+  let state = createThreeRouteState(seed, "fractured-gate-routes-v0.3");
   const advance = getVisibleCategoryCards(state, "movement").find(
     (entry) => entry.designId === "advance",
   );
@@ -299,6 +323,50 @@ test("a projected general movement opens a rare scene-bound Context Card", () =>
     choiceForTarget(state, advance.id, "service-relay").id,
   );
   assert.equal(projectPlannedTheater(state).playerPositionId, "service-relay");
+  assert.equal(
+    getVisibleCategoryCards(state, "special").some(
+      (entry) => entry.designId === "overload-relay",
+    ),
+    false,
+    "moving to a relay must not expose its payoff before setup",
+  );
+
+  state = createThreeRouteState(seed, "fractured-gate-routes-v0.3");
+  state.player.positionId = "service-relay";
+  const scan = exposeCard(state, "special", "scan");
+  const protect = exposeCard(state, "defense", "protect");
+  state.enemyIntents = [{
+    actorId: "stalker",
+    kind: "disrupt",
+    name: "Jam Service Relay",
+    targetId: "relay-object",
+    destinationId: "upper-gantry",
+    chance: 95,
+    impact: 0,
+    pressure: 1,
+    order: 0,
+  }];
+  state = chooseThreeRoute(
+    state,
+    scan.id,
+    choiceForTarget(state, scan.id, "relay-object").id,
+  );
+  assert.equal(
+    getVisibleCategoryCards(state, "special").some(
+      (entry) => entry.designId === "overload-relay",
+    ),
+    false,
+    "a projected prime must wait for the enemy response",
+  );
+  state = chooseThreeRoute(
+    state,
+    protect.id,
+    choiceForTarget(state, protect.id, "relay-object").id,
+  );
+  state = resolveThreeRouteRound(state);
+  assert.deepEqual(state.preparedObjectIds, ["relay-object"]);
+  assert.equal(state.protectedObjectId, null, "the protection is spent stopping the jam");
+  state = startNextThreeRouteRound(state);
   const specialCards = getVisibleCategoryCards(state, "special");
   assert.ok(
     specialCards.some(
@@ -339,48 +407,261 @@ test("category modifiers attach to compatible staged actions rather than becomin
 });
 
 test("branch prerequisites invalidate cleanly when an earlier movement fails", () => {
-  let selected = null;
-  for (let index = 0; index < 2000 && !selected; index += 1) {
-    const seed = "failed-branch-" + index;
-    if (deterministicThreeRouteRoll(seed, 1, "player", 0) <= 80) continue;
-    let state = createThreeRouteState(
-      seed,
-      "fractured-gate-routes-v0.3",
-    );
-    const advance = getVisibleCategoryCards(state, "movement").find(
-      (entry) => entry.designId === "advance",
-    );
-    const movementChoice = choiceForTarget(
-      state,
-      advance.id,
-      "service-relay",
-    );
-    if (movementChoice.forecast.chance >= 95) continue;
-    state = chooseThreeRoute(state, advance.id, movementChoice.id);
-    const overload = getVisibleCategoryCards(state, "special").find(
-      (entry) => entry.designId === "overload-relay",
-    );
-    state = chooseThreeRoute(
-      state,
-      overload.id,
-      getThreeRouteChoices(state, overload.id)[0].id,
-    );
-    const result = resolveThreeRouteRound(state);
-    if (result.currentReview.events[0].success === false) {
-      selected = { state, result };
-    }
-  }
-  assert.ok(selected, "a deterministic failing movement seed must exist");
-  const playerEvents = selected.result.currentReview.events.filter(
+  const seed = seedMatching("failed-branch", [
+    { phase: "player", actionIndex: 0, minimum: 81, maximum: 100 },
+  ]);
+  let state = createThreeRouteState(seed, "fractured-gate-routes-v0.3");
+  const advance = getVisibleCategoryCards(state, "movement").find(
+    (entry) => entry.designId === "advance",
+  );
+  state = chooseThreeRoute(
+    state,
+    advance.id,
+    choiceForTarget(state, advance.id, "cargo-divider").id,
+  );
+  const strike = exposeCard(state, "offense", "strike");
+  state = chooseThreeRoute(
+    state,
+    strike.id,
+    choiceForTarget(state, strike.id, "runner").id,
+  );
+  const result = resolveThreeRouteRound(state);
+  const playerEvents = result.currentReview.events.filter(
     (entry) => entry.phase === "player",
   );
   assert.equal(playerEvents[0].success, false);
   assert.match(playerEvents[1].title, /INVALIDATED/);
-  assert.match(playerEvents[1].detail, /Cards and Reserve returned/);
-  assert.equal(
-    selected.result.usedContextCardIds.includes("overload-relay"),
-    false,
+  assert.match(playerEvents[1].detail, /Cards and Command Points returned/);
+  assert.equal(result.player.reserve, 8, "the failed move is spent and the invalid strike is returned");
+});
+
+test("Control is a tactical advantage unless the current scenario explicitly makes +5 a win", () => {
+  const seed = seedMatching("control-contract", [
+    { phase: "player", actionIndex: 0, maximum: 75 },
+  ]);
+  let gate = createThreeRouteState(seed, "fractured-gate-routes-v0.3");
+  gate.player.positionId = "cargo-divider";
+  gate.pressure = 4;
+  gate.enemyIntents = [];
+  const gateStrike = exposeCard(gate, "offense", "strike");
+  gate = chooseThreeRoute(
+    gate,
+    gateStrike.id,
+    choiceForTarget(gate, gateStrike.id, "runner").id,
   );
+  gate = resolveThreeRouteRound(gate);
+  assert.equal(gate.pressure, 5);
+  assert.equal(gate.result, null, "+5 Control must not complete Fractured Gate");
+  assert.equal(gate.phase, "round-review");
+
+  let duel = createThreeRouteState(seed, "sublevel-duel-v0.3");
+  duel.player.positionId = "east-lock";
+  duel.pressure = 4;
+  duel.enemyIntents = [];
+  const duelStrike = exposeCard(duel, "offense", "strike");
+  duel = chooseThreeRoute(
+    duel,
+    duelStrike.id,
+    choiceForTarget(duel, duelStrike.id, "duelist").id,
+  );
+  duel = resolveThreeRouteRound(duel);
+  assert.equal(duel.result?.winner, "player");
+  assert.equal(duel.result?.outcome, "pressure");
+  assert.match(duel.result?.title ?? "", /COMPLETE CONTROL/);
+});
+
+test("an exit resolves according to the mission instead of treating every escape as victory", () => {
+  const retreatSeed = seedMatching("withdrawal-contract", [
+    { phase: "player", actionIndex: 0, maximum: 90 },
+  ]);
+  let withdrawal = createThreeRouteState(
+    retreatSeed,
+    "fractured-gate-routes-v0.3",
+  );
+  withdrawal.player.positionId = "cargo-divider";
+  withdrawal.enemyIntents = [];
+  const retreat = exposeCard(withdrawal, "movement", "retreat");
+  withdrawal = chooseThreeRoute(
+    withdrawal,
+    retreat.id,
+    choiceForTarget(withdrawal, retreat.id, "west-access").id,
+  );
+  assert.match(
+    withdrawal.player.plan[0].forecast.successLabel,
+    /WITHDRAWAL · MISSION INCOMPLETE/,
+  );
+  withdrawal = resolveThreeRouteRound(withdrawal);
+  assert.equal(withdrawal.result?.winner, null);
+  assert.equal(withdrawal.result?.outcome, "withdrawal");
+  assert.match(withdrawal.result?.title ?? "", /MISSION INCOMPLETE/);
+
+  const extractionSeed = seedMatching("extraction-contract", [
+    { phase: "player", actionIndex: 0, maximum: 80 },
+  ]);
+  let extraction = createThreeRouteState(
+    extractionSeed,
+    "coolant-extraction-v0.3",
+  );
+  extraction.player.positionId = "coolant-conduit";
+  extraction.enemyIntents = [];
+  const advance = exposeCard(extraction, "movement", "advance");
+  extraction = chooseThreeRoute(
+    extraction,
+    advance.id,
+    choiceForTarget(extraction, advance.id, "south-lift").id,
+  );
+  assert.match(
+    extraction.player.plan[0].forecast.successLabel,
+    /EXTRACTION VICTORY/,
+  );
+  extraction = resolveThreeRouteRound(extraction);
+  assert.equal(extraction.result?.winner, "player");
+  assert.equal(extraction.result?.outcome, "extraction");
+});
+
+test("Fractured Gate scene actions create openings but cannot instantly complete the mission", () => {
+  const seed = seedMatching("relay-payoff", [
+    { phase: "player", actionIndex: 0, maximum: 65 },
+  ]);
+  let state = createThreeRouteState(seed, "fractured-gate-routes-v0.3");
+  state.player.positionId = "service-relay";
+  state.preparedObjectIds = ["relay-object"];
+  state.enemyIntents = [];
+  const overload = getVisibleCategoryCards(state, "special").find(
+    (entry) => entry.designId === "overload-relay",
+  );
+  assert.ok(overload);
+  const choice = choiceForTarget(state, overload.id, "relay-object");
+  assert.match(choice.forecast.successLabel, /MISSION CONTINUES/);
+  assert.doesNotMatch(choice.forecast.successLabel, /VICTORY/);
+  state = chooseThreeRoute(state, overload.id, choice.id);
+  state = resolveThreeRouteRound(state);
+  assert.equal(state.result, null);
+  assert.equal(state.objectiveProgress, 0);
+  assert.equal(state.enemies.find((entry) => entry.id === "runner").hp, 0);
+  assert.equal(state.enemies.find((entry) => entry.id === "ward").hp, 1);
+  assert.deepEqual(state.preparedObjectIds, []);
+
+  const failureSeed = seedMatching("relay-payoff-failure", [
+    { phase: "player", actionIndex: 0, minimum: 66, maximum: 100 },
+  ]);
+  let failed = createThreeRouteState(
+    failureSeed,
+    "fractured-gate-routes-v0.3",
+  );
+  failed.player.positionId = "service-relay";
+  failed.preparedObjectIds = ["relay-object"];
+  failed.enemyIntents = [];
+  const failedOverload = getVisibleCategoryCards(failed, "special").find(
+    (entry) => entry.designId === "overload-relay",
+  );
+  failed = chooseThreeRoute(
+    failed,
+    failedOverload.id,
+    choiceForTarget(failed, failedOverload.id, "relay-object").id,
+  );
+  failed = resolveThreeRouteRound(failed);
+  assert.deepEqual(failed.preparedObjectIds, [], "a failed discharge still spends its prime");
+  assert.ok(failed.usedContextCardIds.includes("overload-relay"));
+});
+
+test("the gate must be physically secured before Seal Gate becomes a legal route", () => {
+  const state = createThreeRouteState(
+    "gate-security",
+    "fractured-gate-routes-v0.3",
+  );
+  state.player.positionId = "gate-threshold";
+  const sealGate = getVisibleCategoryCards(state, "special").find(
+    (entry) => entry.designId === "seal-gate",
+  );
+  assert.ok(sealGate, "the theater should reveal the contextual possibility");
+  assert.equal(getThreeRouteChoices(state, sealGate.id).length, 0);
+  state.enemies.find((entry) => entry.id === "ward").suppressed = true;
+  assert.equal(getThreeRouteChoices(state, sealGate.id).length, 1);
+  assert.equal(
+    getThreeRouteChoices(state, sealGate.id)[0].target.id,
+    "gate-object",
+  );
+});
+
+test("enemy roles create readable counterplay: rush, hold, and jam", () => {
+  const seed = seedMatching("enemy-role-contract", [
+    { phase: "player", actionIndex: 0, maximum: 95 },
+    { phase: "enemy", actionIndex: 0, maximum: 85 },
+  ]);
+  let state = createThreeRouteState(seed, "fractured-gate-routes-v0.3");
+  const intents = Object.fromEntries(
+    state.enemyIntents.map((intent) => [intent.actorId, intent]),
+  );
+  assert.equal(intents.runner.kind, "advance");
+  assert.equal(intents.runner.name, "Rush");
+  assert.equal(intents.ward.kind, "guard");
+  assert.equal(intents.ward.targetId, "gate-object");
+  assert.equal(intents.stalker.kind, "disrupt");
+  assert.equal(intents.stalker.targetId, "relay-object");
+
+  state.enemyIntents = [intents.runner];
+  const charge = exposeCard(state, "special", "charge");
+  state = chooseThreeRoute(
+    state,
+    charge.id,
+    choiceForTarget(state, charge.id, "wayfinder").id,
+  );
+  state = resolveThreeRouteRound(state);
+  assert.equal(state.player.condition, 11, "an arriving rush must deal its stated Impact");
+  assert.equal(state.pressure, -1);
+});
+
+test("unprotected scene preparation is destroyed by a locked disrupt intent", () => {
+  const seed = seedMatching("unprotected-prime", [
+    { phase: "player", actionIndex: 0, maximum: 95 },
+    { phase: "enemy", actionIndex: 0, maximum: 95 },
+  ]);
+  let state = createThreeRouteState(seed, "fractured-gate-routes-v0.3");
+  state.player.positionId = "service-relay";
+  state.preparedObjectIds = ["relay-object"];
+  state.enemyIntents = [{
+    actorId: "stalker",
+    kind: "disrupt",
+    name: "Jam Service Relay",
+    targetId: "relay-object",
+    destinationId: "upper-gantry",
+    chance: 95,
+    impact: 0,
+    pressure: 1,
+    order: 0,
+  }];
+  const charge = exposeCard(state, "special", "charge");
+  state = chooseThreeRoute(
+    state,
+    charge.id,
+    choiceForTarget(state, charge.id, "wayfinder").id,
+  );
+  state = resolveThreeRouteRound(state);
+  assert.deepEqual(state.preparedObjectIds, []);
+  assert.match(
+    state.currentReview.events.find((event) => event.phase === "enemy").detail,
+    /destroyed the Service Relay prime/,
+  );
+});
+
+test("Fractured Gate closes after its displayed breach deadline", () => {
+  const seed = seedMatching("breach-deadline", [
+    { phase: "player", actionIndex: 0, maximum: 95 },
+  ]);
+  let state = createThreeRouteState(seed, "fractured-gate-routes-v0.3");
+  state.round = state.scenario.mission.roundLimit;
+  state.enemyIntents = [];
+  const guard = exposeCard(state, "defense", "guard");
+  state = chooseThreeRoute(
+    state,
+    guard.id,
+    getThreeRouteChoices(state, guard.id)[0].id,
+  );
+  state = resolveThreeRouteRound(state);
+  assert.equal(state.result?.winner, "enemy");
+  assert.equal(state.result?.outcome, "timeout");
+  assert.match(state.result?.title ?? "", /BREACH OPENED/);
 });
 
 test("resolution is deterministic and ordered player actions then enemies then Settle", () => {
@@ -521,4 +802,19 @@ test("deterministic multi-scenario simulations terminate and exercise all card c
       assert.ok(result.categoryUses[category] > 0, category + " unused");
     }
   }
+});
+
+test("Fractured Gate rewards deliberate play without becoming an automatic win", () => {
+  const result = runThreeRouteSimulation({
+    battles: 120,
+    seedPrefix: "challenge-audit",
+    maxRounds: 40,
+    scenarioId: "fractured-gate-routes-v0.3",
+  });
+  assert.equal(result.unfinished, 0);
+  assert.ok(result.playerWins > 0 && result.playerWins < result.battles * 0.7);
+  assert.ok(result.enemyWins > 0, "the mission deadline and enemy plan must produce defeats");
+  assert.ok(result.retreats > 0, "withdrawal must remain a distinct survival outcome");
+  assert.ok(result.contextCardsUsed > 0, "the deliberate policy must discover scene setup");
+  assert.ok(result.averageRounds >= 5 && result.averageRounds <= 12);
 });

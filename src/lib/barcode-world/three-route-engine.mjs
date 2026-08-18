@@ -1,5 +1,5 @@
 export const THREE_ROUTE_SOURCE =
-  "BARCODE_WORLD_THREE_ROUTE_CARD_THEATER_V0.3_HEALTH_2026-08-17";
+  "BARCODE_WORLD_THREE_ROUTE_CARD_THEATER_V0.3_CHALLENGE_2026-08-17";
 
 export const CARD_CATEGORIES = Object.freeze([
   "movement",
@@ -19,6 +19,7 @@ export const THREE_ROUTE_RULES = Object.freeze({
   conditionStart: 12,
   conditionMax: 12,
   guardCap: 8,
+  enemyGuardCap: 3,
   pressureMin: -5,
   pressureMax: 5,
   playerBreak: 3,
@@ -52,6 +53,9 @@ function card({
   drawOnSuccess = 0,
   restore = 0,
   contextFeature = null,
+  control = 0,
+  requiresPreparation = false,
+  requiresSecuredZone = false,
 }) {
   return Object.freeze({
     id,
@@ -75,6 +79,9 @@ function card({
     drawOnSuccess,
     restore,
     contextFeature,
+    control,
+    requiresPreparation,
+    requiresSecuredZone,
   });
 }
 
@@ -282,8 +289,8 @@ export const GENERAL_CARD_DEFINITIONS = Object.freeze({
     name: "Charge",
     category: "special",
     cost: 2,
-    effect: "Store 1 Power for the next damaging action.",
-    targetRule: "self",
+    effect: "Store 1 Power, or prime a scene object for a later Context action.",
+    targetRule: "charge-target",
     baseChance: 95,
     power: 1,
   }),
@@ -330,39 +337,45 @@ export const CONTEXT_CARD_DEFINITIONS = Object.freeze({
     name: "Overload Relay",
     category: "special",
     cost: 3,
-    effect: "Context: discharge the Service Relay into nearby hostiles.",
+    effect: "Context: discharge a primed Service Relay into nearby hostiles.",
     targetRule: "context-feature",
     baseChance: 65,
     impact: 2,
     status: "area-suppress",
     kind: "context",
     contextFeature: "relay",
+    control: 1,
+    requiresPreparation: true,
   }),
   "seal-gate": card({
     id: "seal-gate",
     name: "Seal Gate",
     category: "special",
     cost: 3,
-    effect: "Context: secure the damaged Gate controls.",
+    effect: "Context: seal the Gate after its position is secured.",
     targetRule: "context-feature",
     baseChance: 70,
-    impact: 2,
+    impact: 1,
     status: "objective",
     kind: "context",
     contextFeature: "gate",
+    control: 1,
+    requiresSecuredZone: true,
   }),
   "vent-coolant": card({
     id: "vent-coolant",
     name: "Vent Coolant",
     category: "special",
     cost: 3,
-    effect: "Context: flood the conduit and suppress nearby pursuers.",
+    effect: "Context: vent a primed coolant conduit into nearby pursuers.",
     targetRule: "context-feature",
     baseChance: 70,
     impact: 1,
     status: "area-suppress",
     kind: "context",
     contextFeature: "coolant",
+    control: 1,
+    requiresPreparation: true,
   }),
 });
 
@@ -444,6 +457,7 @@ function scenario({
   enemies,
   contextCardIds,
   objectiveGoal = 0,
+  mission = {},
   feed,
 }) {
   return Object.freeze({
@@ -460,6 +474,20 @@ function scenario({
     enemies: Object.freeze(enemies),
     contextCardIds: Object.freeze(contextCardIds),
     objectiveGoal,
+    mission: Object.freeze({
+      win: mission.win ?? objective,
+      lose: mission.lose ?? "HEALTH 0 OR CONTROL -5",
+      exit: mission.exit ?? "WITHDRAWAL · MISSION INCOMPLETE",
+      tactical: mission.tactical ?? "CONTROL CREATES ADVANTAGE",
+      eliminationVictory: mission.eliminationVictory ?? true,
+      objectiveVictory: mission.objectiveVictory ?? objectiveGoal > 0,
+      controlVictory: mission.controlVictory ?? false,
+      controlDefeat: mission.controlDefeat ?? true,
+      roundLimit: mission.roundLimit ?? null,
+      timeoutResult: mission.timeoutResult ?? "MISSION WINDOW CLOSED",
+      exitOutcome: mission.exitOutcome ?? "withdrawal",
+      objectiveResult: mission.objectiveResult ?? "OBJECTIVE COMPLETE",
+    }),
     feed: Object.freeze({
       roundStart: Object.freeze({ ...(feed.roundStart ?? {}) }),
       drawUsedCategoryOnSuccess: feed.drawUsedCategoryOnSuccess ?? 0,
@@ -475,7 +503,7 @@ export const THREE_ROUTE_SCENARIOS = Object.freeze([
     name: "Sublevel Duel",
     shortName: "1 VS 1 · EARNED FEED",
     location: "SUBLEVEL RING",
-    objective: "BREAK THE DUELIST OR WITHDRAW THROUGH THE WEST HATCH",
+    objective: "DEFEAT THE DUELIST OR FORCE A CONTROL BREAK",
     zones: [
       zone("west-hatch", "West Hatch", 10, 55, { exit: true, cover: true }),
       zone("service-ring", "Service Ring", 35, 68),
@@ -498,6 +526,12 @@ export const THREE_ROUTE_SCENARIOS = Object.freeze([
       enemy("duelist", "Breacher Duelist", "PRESSURE / COUNTER", "east-lock", 4),
     ],
     contextCardIds: [],
+    mission: {
+      win: "DEFEAT DUELIST OR REACH CONTROL +5",
+      exit: "WITHDRAWAL · DUEL CONCEDED",
+      tactical: "CONTROL +5 BREAKS THE DUELIST",
+      controlVictory: true,
+    },
     feed: {
       drawUsedCategoryOnSuccess: 1,
       emptyPoolFallback: 1,
@@ -508,7 +542,7 @@ export const THREE_ROUTE_SCENARIOS = Object.freeze([
     name: "Fractured Gate",
     shortName: "1 VS 3 · CONTEXT FEED",
     location: "FRACTURED GATE",
-    objective: "STOP THE CELL, USE THE GATE SYSTEM, OR RETREAT",
+    objective: "SEAL THE GATE OR DEFEAT THE BREACHER CELL",
     zones: [
       zone("west-access", "West Access", 10, 68, { exit: true }),
       zone("cargo-divider", "Cargo Divider", 34, 42, { cover: true }),
@@ -536,7 +570,17 @@ export const THREE_ROUTE_SCENARIOS = Object.freeze([
       enemy("stalker", "Breacher Stalker", "CONTROL", "upper-gantry", 2),
     ],
     contextCardIds: ["overload-relay", "seal-gate"],
-    objectiveGoal: 2,
+    objectiveGoal: 1,
+    mission: {
+      win: "SEAL GATE OR DEFEAT ALL HOSTILES",
+      lose: "HEALTH 0 · CONTROL -5 · BREACH OPENS AFTER ROUND 12",
+      exit: "WITHDRAWAL · MISSION INCOMPLETE",
+      tactical: "PRIME RELAY · PROTECT IT · OVERLOAD · SECURE GATE",
+      controlVictory: false,
+      roundLimit: 12,
+      timeoutResult: "BREACH OPENED",
+      objectiveResult: "GATE SEALED",
+    },
     feed: {
       drawUsedCategoryOnSuccess: 1,
       emptyPoolFallback: 1,
@@ -548,7 +592,7 @@ export const THREE_ROUTE_SCENARIOS = Object.freeze([
     name: "Coolant Extraction",
     shortName: "1 VS 2 · MIXED FEED",
     location: "COOLANT SPINE",
-    objective: "REACH THE SOUTH LIFT OR TURN THE SPINE AGAINST PURSUIT",
+    objective: "REACH THE SOUTH LIFT OR DEFEAT THE PURSUIT",
     zones: [
       zone("north-vault", "North Vault", 16, 24, { cover: true }),
       zone("archive-bridge", "Archive Bridge", 38, 45),
@@ -574,6 +618,13 @@ export const THREE_ROUTE_SCENARIOS = Object.freeze([
       enemy("breaker", "Spine Breaker", "DISRUPT", "south-lift", 3),
     ],
     contextCardIds: ["vent-coolant"],
+    mission: {
+      win: "REACH SOUTH LIFT OR DEFEAT ALL HOSTILES",
+      exit: "SOUTH LIFT · EXTRACTION VICTORY",
+      tactical: "PRIME COOLANT FOR AN OPTIONAL ADVANTAGE",
+      controlVictory: false,
+      exitOutcome: "victory",
+    },
     feed: {
       roundStart: { movement: 1 },
       drawUsedCategoryOnSuccess: 1,
@@ -763,9 +814,9 @@ function snapshotFromState(state) {
     enemies: structuredClone(state.enemies),
     objectiveProgress: state.objectiveProgress,
     protectedObjectId: state.protectedObjectId,
-    scannedObjectIds: [...state.scannedObjectIds],
+    preparedObjectIds: [...state.preparedObjectIds],
     pressure: state.pressure,
-    retreatCompleted: false,
+    exitCompleted: false,
   };
 }
 
@@ -783,7 +834,17 @@ function contextCardIsVisible(state, definition, snapshot) {
     return false;
   }
   const currentZone = zoneById(state.scenario, snapshot.playerPositionId);
-  return currentZone?.feature === definition.contextFeature;
+  if (currentZone?.feature !== definition.contextFeature) return false;
+  const objectValue = state.scenario.objects.find(
+    (entry) =>
+      entry.zoneId === currentZone.id &&
+      entry.feature === definition.contextFeature,
+  );
+  if (!objectValue) return false;
+  return (
+    !definition.requiresPreparation ||
+    state.preparedObjectIds.includes(objectValue.id)
+  );
 }
 
 export function getVisibleCategoryCards(state, category) {
@@ -848,6 +909,36 @@ function aliveEnemies(snapshot) {
   return snapshot.enemies.filter((entry) => entry.hp > 0);
 }
 
+function contextTargetIsReady(cardValue, objectValue, snapshot) {
+  if (
+    cardValue.requiresPreparation &&
+    !snapshot.preparedObjectIds.includes(objectValue.id)
+  ) {
+    return false;
+  }
+  if (
+    cardValue.requiresSecuredZone &&
+    aliveEnemies(snapshot).some(
+      (enemyValue) =>
+        enemyValue.positionId === objectValue.zoneId &&
+        !enemyValue.suppressed,
+    )
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function objectCanBePrepared(state, objectValue) {
+  return state.scenario.contextCardIds.some((contextId) => {
+    const definition = CONTEXT_CARD_DEFINITIONS[contextId];
+    return (
+      definition?.requiresPreparation === true &&
+      definition.contextFeature === objectValue.feature
+    );
+  });
+}
+
 function targetsForCard(state, cardValue, snapshot) {
   const scenarioValue = state.scenario;
   const currentPosition = snapshot.playerPositionId;
@@ -877,6 +968,23 @@ function targetsForCard(state, cardValue, snapshot) {
         name: "Wayfinder",
         zoneId: currentPosition,
       },
+    ];
+  }
+  if (cardValue.targetRule === "charge-target") {
+    return [
+      {
+        kind: "self",
+        id: "wayfinder",
+        name: "Wayfinder",
+        zoneId: currentPosition,
+      },
+      ...scenarioValue.objects
+        .filter(
+          (objectValue) =>
+            objectValue.zoneId === currentPosition &&
+            objectCanBePrepared(state, objectValue),
+        )
+        .map(targetFromObject),
     ];
   }
   if (
@@ -958,7 +1066,15 @@ function targetsForCard(state, cardValue, snapshot) {
       },
     ];
     for (const objectValue of scenarioValue.objects) {
-      if (objectValue.zoneId === currentPosition) {
+      const threatened = state.enemyIntents.some(
+        (intent) =>
+          intent.kind === "disrupt" &&
+          intent.targetId === objectValue.id,
+      );
+      if (
+        objectValue.zoneId === currentPosition &&
+        (threatened || snapshot.preparedObjectIds.includes(objectValue.id))
+      ) {
         output.push(targetFromObject(objectValue));
       }
     }
@@ -979,6 +1095,7 @@ function targetsForCard(state, cardValue, snapshot) {
       ...scenarioValue.objects
         .filter(
           (objectValue) =>
+            objectCanBePrepared(state, objectValue) &&
             graphDistance(
               scenarioValue,
               currentPosition,
@@ -993,7 +1110,8 @@ function targetsForCard(state, cardValue, snapshot) {
       .filter(
         (objectValue) =>
           objectValue.zoneId === currentPosition &&
-          objectValue.feature === cardValue.contextFeature,
+          objectValue.feature === cardValue.contextFeature &&
+          contextTargetIsReady(cardValue, objectValue, snapshot),
       )
       .map(targetFromObject);
   }
@@ -1034,6 +1152,12 @@ function forecastAction(state, cardValue, target, snapshot, modifiers = []) {
   if (targetEnemy?.guard > 0) chance -= targetEnemy.guard * 5;
   if (snapshot.playerExposed) chance -= 5;
   if (
+    cardValue.kind === "context" &&
+    snapshot.pressure >= THREE_ROUTE_RULES.playerBreak
+  ) {
+    chance += 10;
+  }
+  if (
     cardValue.move &&
     aliveEnemies(snapshot).some(
       (entry) =>
@@ -1047,47 +1171,156 @@ function forecastAction(state, cardValue, target, snapshot, modifiers = []) {
     cardValue.impact +
     totals.impact +
     (cardValue.category === "offense" ? snapshot.playerPower : 0);
-  const guard = cardValue.guard + totals.guard;
-  const restore = cardValue.restore ?? 0;
+  const requestedGuard = cardValue.guard + totals.guard;
+  const guard = Math.min(
+    requestedGuard,
+    Math.max(0, THREE_ROUTE_RULES.guardCap - snapshot.playerGuard),
+  );
+  const restore = Math.min(
+    cardValue.restore ?? 0,
+    Math.max(0, snapshot.playerMaxCondition - snapshot.playerCondition),
+  );
+  const control =
+    cardValue.control ||
+    (cardValue.category === "offense" ||
+    ["parry", "pursue"].includes(cardValue.designId)
+      ? 1
+      : 0);
   let successLabel = "ACTION COMPLETES";
   let failureLabel = "ACTION FAILS · WAYFINDER EXPOSED";
   if (cardValue.move) {
-    successLabel = "MOVE TO " + target.name.toUpperCase();
+    const completesExit =
+      state.scenario.exits.includes(target.zoneId) &&
+      (cardValue.designId === "retreat" ||
+        state.scenario.mission.exitOutcome === "victory");
+    successLabel = completesExit
+      ? "REACH " +
+        target.name.toUpperCase() +
+        " · AFTER ENEMY RESPONSE: " +
+        state.scenario.mission.exit.toUpperCase()
+      : "MOVE TO " + target.name.toUpperCase();
     failureLabel = "HOLD POSITION · WAYFINDER EXPOSED";
   }
-  if (cardValue.category === "offense" || cardValue.designId === "parry") {
+  if (
+    cardValue.category === "offense" ||
+    ["parry", "pursue"].includes(cardValue.designId)
+  ) {
+    const absorbed = targetEnemy
+      ? Math.min(impact, targetEnemy.guard)
+      : 0;
+    const healthDamage = targetEnemy
+      ? Math.max(0, impact - absorbed)
+      : impact;
+    const healthAfter = targetEnemy
+      ? Math.max(0, targetEnemy.hp - healthDamage)
+      : null;
     successLabel =
+      (cardValue.designId === "pursue"
+        ? "MOVE TO " + target.name.toUpperCase() + " · "
+        : "") +
       impact +
-      " DAMAGE · +" +
-      Math.max(1, impact) +
-      " CONTROL";
+      " IMPACT" +
+      (targetEnemy
+        ? " · " + targetEnemy.name.toUpperCase() + " " + targetEnemy.hp + "→" + healthAfter + " HP"
+        : "") +
+      " · +" +
+      control +
+      " CONTROL" +
+      (guard > 0 ? " · GAIN " + guard + " GUARD" : "") +
+      (cardValue.status === "suppressed"
+        ? " · SUPPRESS INTENT (-25%)"
+        : "");
     failureLabel = "NO DAMAGE · WAYFINDER EXPOSED";
   }
-  if (cardValue.category === "defense" && guard > 0) {
+  if (cardValue.move && cardValue.designId !== "pursue" && guard > 0) {
+    successLabel += " · GAIN " + guard + " GUARD";
+  }
+  if (cardValue.designId === "flank") {
+    successLabel += " · NEXT NEARBY ATTACK +15%";
+  }
+  if (
+    cardValue.category === "defense" &&
+    !cardValue.move &&
+    cardValue.designId !== "parry" &&
+    guard > 0
+  ) {
     successLabel = "GAIN " + guard + " GUARD";
     failureLabel = "GAIN 1 GUARD";
   }
   if (cardValue.designId === "charge") {
-    successLabel = "STORE 1 POWER";
+    successLabel =
+      target.kind === "object"
+        ? "PRIME " + target.name.toUpperCase() + " · PROTECT BEFORE ENEMY RESPONSE"
+        : "STORE 1 POWER";
   }
   if (cardValue.designId === "scan") {
-    successLabel = "TARGET EXPOSED · +10% AGAINST IT";
+    successLabel =
+      target.kind === "object"
+        ? "PRIME " + target.name.toUpperCase() + " · PROTECT BEFORE ENEMY RESPONSE"
+        : "TARGET EXPOSED · +10% AGAINST IT";
+  }
+  if (cardValue.designId === "protect" && target.kind === "object") {
+    successLabel =
+      "PROTECT " +
+      target.name.toUpperCase() +
+      " THROUGH ENEMY RESPONSE · GAIN " +
+      guard +
+      " GUARD";
+  }
+  if (cardValue.category === "defense") {
+    failureLabel = cardValue.move
+      ? "HOLD POSITION · GAIN 1 GUARD · WAYFINDER EXPOSED"
+      : cardValue.designId === "parry"
+        ? "NO DAMAGE · GAIN 1 GUARD · WAYFINDER EXPOSED"
+        : target.kind === "object"
+          ? "OBJECT NOT PROTECTED · GAIN 1 GUARD · WAYFINDER EXPOSED"
+          : "GAIN 1 GUARD · WAYFINDER EXPOSED";
   }
   if (cardValue.designId === "stabilize") {
     successLabel =
       "RESTORE " + restore + " HEALTH · GAIN " + guard + " GUARD";
   }
   if (cardValue.kind === "context") {
-    successLabel =
-      cardValue.status === "objective"
-        ? "ADVANCE OBJECTIVE BY 2"
-        : "HIT AND SUPPRESS NEARBY HOSTILES";
+    if (cardValue.status === "objective") {
+      successLabel =
+        state.scenario.mission.objectiveResult.toUpperCase() +
+        " · SURVIVE ENEMY RESPONSE";
+    } else {
+      const affected = aliveEnemies(snapshot)
+        .filter(
+          (enemyValue) =>
+            graphDistance(
+              state.scenario,
+              target.zoneId,
+              enemyValue.positionId,
+            ) <= 1,
+        )
+        .map((enemyValue) => {
+          const absorbed = Math.min(cardValue.impact, enemyValue.guard);
+          const healthDamage = Math.max(0, cardValue.impact - absorbed);
+          return (
+            enemyValue.name.toUpperCase() +
+            " " +
+            enemyValue.hp +
+            "→" +
+            Math.max(0, enemyValue.hp - healthDamage) +
+            " HP"
+          );
+        });
+      successLabel =
+        (affected.length > 0 ? affected.join(" · ") : "NO HOSTILES IN RANGE") +
+        " · +" +
+        control +
+        " CONTROL · MISSION CONTINUES";
+    }
+    failureLabel = "CONTEXT ACTION LOST · WAYFINDER EXPOSED";
   }
   return {
     chance,
     impact,
     guard,
     restore,
+    control,
     drawOnSuccess: totals.draw,
     successLabel,
     failureLabel,
@@ -1107,8 +1340,12 @@ function applySuccessfulAction(state, snapshot, step) {
     } else {
       output.playerPositionId = target.zoneId;
     }
-    if (cardValue.designId === "retreat" && state.scenario.exits.includes(output.playerPositionId)) {
-      output.retreatCompleted = true;
+    if (
+      state.scenario.exits.includes(output.playerPositionId) &&
+      (cardValue.designId === "retreat" ||
+        state.scenario.mission.exitOutcome === "victory")
+    ) {
+      output.exitCompleted = true;
     }
   }
   output.playerGuard = clamp(
@@ -1121,7 +1358,15 @@ function applySuccessfulAction(state, snapshot, step) {
     0,
     output.playerMaxCondition,
   );
-  if (cardValue.designId === "charge") output.playerPower += cardValue.power;
+  if (cardValue.designId === "charge") {
+    if (target.kind === "object") {
+      if (!output.preparedObjectIds.includes(target.id)) {
+        output.preparedObjectIds.push(target.id);
+      }
+    } else {
+      output.playerPower += cardValue.power;
+    }
+  }
   if (cardValue.designId === "stabilize") output.playerExposed = false;
   if (cardValue.designId === "flank") output.flankBonus = true;
   if (
@@ -1140,7 +1385,7 @@ function applySuccessfulAction(state, snapshot, step) {
       }
       targetEnemy.hp = Math.max(0, targetEnemy.hp - damage);
       if (cardValue.status === "suppressed") targetEnemy.suppressed = true;
-      output.pressure += Math.max(1, step.forecast.impact);
+      output.pressure += step.forecast.control;
     }
     output.playerPower = 0;
     output.flankBonus = false;
@@ -1151,8 +1396,8 @@ function applySuccessfulAction(state, snapshot, step) {
         (entry) => entry.id === target.id,
       );
       if (targetEnemy) targetEnemy.scanned = true;
-    } else if (!output.scannedObjectIds.includes(target.id)) {
-      output.scannedObjectIds.push(target.id);
+    } else if (!output.preparedObjectIds.includes(target.id)) {
+      output.preparedObjectIds.push(target.id);
     }
   }
   if (cardValue.designId === "protect" && target.kind === "object") {
@@ -1168,15 +1413,23 @@ function applySuccessfulAction(state, snapshot, step) {
           enemyValue.positionId,
         ) <= 1
       ) {
-        enemyValue.hp = Math.max(0, enemyValue.hp - cardValue.impact);
+        const absorbed = Math.min(cardValue.impact, enemyValue.guard);
+        enemyValue.guard -= absorbed;
+        enemyValue.hp = Math.max(
+          0,
+          enemyValue.hp - Math.max(0, cardValue.impact - absorbed),
+        );
         enemyValue.suppressed = true;
       }
     }
-    output.pressure += cardValue.impact;
+    output.pressure += step.forecast.control;
+    output.preparedObjectIds = output.preparedObjectIds.filter(
+      (objectId) => objectId !== target.id,
+    );
   }
   if (cardValue.status === "objective") {
     output.objectiveProgress += cardValue.impact;
-    output.pressure += 1;
+    output.pressure += step.forecast.control;
   }
   return output;
 }
@@ -1219,6 +1472,18 @@ function routeChoiceId(cardId, targetId) {
   return cardId + "::" + targetId;
 }
 
+function routeTargetPriority(cardValue, target) {
+  if (
+    target.kind === "object" &&
+    (["scan", "charge", "protect"].includes(cardValue.designId) ||
+      cardValue.kind === "context")
+  ) {
+    return 0;
+  }
+  if (target.kind === "self") return 1;
+  return 2;
+}
+
 export function getThreeRouteChoices(state, cardId) {
   if (state.phase !== "planning") return [];
   const cardValue = getVisibleCard(state, cardId);
@@ -1233,6 +1498,8 @@ export function getThreeRouteChoices(state, cardId) {
   const targets = targetsForCard(state, cardValue, snapshot)
     .sort(
       (left, right) =>
+        routeTargetPriority(cardValue, left) -
+          routeTargetPriority(cardValue, right) ||
         left.name.localeCompare(right.name) ||
         left.id.localeCompare(right.id),
     )
@@ -1483,7 +1750,7 @@ function createEnemyIntents(state) {
           enemyValue.id,
       );
       if (distance === 0) {
-        if (enemyValue.role.includes("GUARD") && roll < 0.35) {
+        if (enemyValue.role.includes("GUARD") && roll < 0.4) {
           return {
             actorId: enemyValue.id,
             kind: "guard",
@@ -1508,14 +1775,44 @@ function createEnemyIntents(state) {
           order: index,
         };
       }
-      if (enemyValue.role.includes("DISRUPT") && roll < 0.45) {
+      const guardedObject = state.scenario.objects.find(
+        (objectValue) => objectValue.zoneId === enemyValue.positionId,
+      );
+      if (enemyValue.role.includes("GUARD") && guardedObject) {
+        return {
+          actorId: enemyValue.id,
+          kind: "guard",
+          name: "Hold " + guardedObject.name,
+          targetId: guardedObject.id,
+          destinationId: enemyValue.positionId,
+          chance: 90,
+          impact: 0,
+          pressure: 0,
+          order: index,
+        };
+      }
+      if (
+        enemyValue.role.includes("DISRUPT") ||
+        enemyValue.role.includes("CONTROL")
+      ) {
+        const targetObject =
+          state.scenario.objects.find((objectValue) =>
+            state.preparedObjectIds.includes(objectValue.id),
+          ) ??
+          state.scenario.objects.find((objectValue) =>
+            ["relay", "coolant"].includes(objectValue.feature),
+          ) ??
+          state.scenario.objects[0] ??
+          null;
         return {
           actorId: enemyValue.id,
           kind: "disrupt",
-          name: "System Disruption",
-          targetId: "objective",
+          name: targetObject
+            ? "Jam " + targetObject.name
+            : "Control Jam",
+          targetId: targetObject?.id ?? "control",
           destinationId: enemyValue.positionId,
-          chance: 75,
+          chance: enemyValue.role.includes("CONTROL") ? 80 : 75,
           impact: 0,
           pressure: 1,
           order: index,
@@ -1524,16 +1821,21 @@ function createEnemyIntents(state) {
       return {
         actorId: enemyValue.id,
         kind: "advance",
-        name: "Advance",
+        name:
+          enemyValue.role.includes("ADVANCE") ||
+          enemyValue.role.includes("PURSUE") ||
+          enemyValue.role.includes("PRESSURE")
+            ? "Rush"
+            : "Advance",
         targetId: state.player.positionId,
         destinationId: nextStepToward(
           state.scenario,
           enemyValue.positionId,
           state.player.positionId,
         ),
-        chance: 90,
-        impact: 0,
-        pressure: 0,
+        chance: 85,
+        impact: enemyValue.role.includes("GUARD") ? 0 : 1,
+        pressure: 1,
         order: index,
       };
     });
@@ -1549,6 +1851,8 @@ function eventSnapshot(snapshot) {
     playerExposed: snapshot.playerExposed,
     enemies: structuredClone(snapshot.enemies),
     objectiveProgress: snapshot.objectiveProgress,
+    protectedObjectId: snapshot.protectedObjectId,
+    preparedObjectIds: [...snapshot.preparedObjectIds],
     pressure: snapshot.pressure,
   };
 }
@@ -1637,9 +1941,36 @@ function restoreInvalidStep(state, step) {
   }
 }
 
+function invalidStepReason(state, snapshot, step) {
+  if (snapshot.playerPositionId !== step.expectedStartId) {
+    return "Its required position was never reached. Cards and Command Points returned.";
+  }
+  const remainsLegal = targetsForCard(state, step.card, snapshot).some(
+    (target) =>
+      target.kind === step.target.kind &&
+      target.id === step.target.id,
+  );
+  if (remainsLegal) return null;
+  if (step.card.requiresSecuredZone) {
+    return "The position was not secured after earlier actions resolved. Cards and Command Points returned.";
+  }
+  if (step.card.requiresPreparation) {
+    return "The scene object was no longer primed. Cards and Command Points returned.";
+  }
+  if (step.target.kind === "enemy") {
+    return "The target was no longer available after earlier actions resolved. Cards and Command Points returned.";
+  }
+  return "The action was no longer physically legal. Cards and Command Points returned.";
+}
+
 function applyFailedPlayerAction(snapshot, step) {
   const output = cloneSnapshot(snapshot);
   output.playerExposed = true;
+  if (step.card.requiresPreparation && step.target.kind === "object") {
+    output.preparedObjectIds = output.preparedObjectIds.filter(
+      (objectId) => objectId !== step.target.id,
+    );
+  }
   if (step.card.category === "defense") {
     output.playerGuard = clamp(
       output.playerGuard + 1,
@@ -1648,6 +1979,36 @@ function applyFailedPlayerAction(snapshot, step) {
     );
   }
   return output;
+}
+
+function applyEnemyImpact(output, enemyValue, impact, pressure) {
+  const absorbed = Math.min(impact, output.playerGuard);
+  output.playerGuard -= absorbed;
+  const remaining = impact - absorbed;
+  const healthLost = Math.min(remaining, output.playerCondition);
+  output.playerCondition = Math.max(0, output.playerCondition - remaining);
+  if (healthLost > 0) output.pressure -= pressure;
+  if (healthLost === 0) {
+    return "Guard absorbed all " + impact + " Impact from " + enemyValue.name + ".";
+  }
+  if (absorbed > 0) {
+    return (
+      absorbed +
+      " Guard absorbed. " +
+      healthLost +
+      " Health lost" +
+      (pressure > 0 ? " · Control -" + pressure : "") +
+      "."
+    );
+  }
+  return (
+    enemyValue.name +
+    " dealt " +
+    healthLost +
+    " Health damage" +
+    (pressure > 0 ? " · Control -" + pressure : "") +
+    "."
+  );
 }
 
 function resolveEnemyIntent(state, snapshot, intent, index) {
@@ -1690,57 +2051,74 @@ function resolveEnemyIntent(state, snapshot, intent, index) {
   let cue = "enemy-stopped";
   if (success && intent.kind === "advance") {
     enemyValue.positionId = intent.destinationId;
-    detail =
-      enemyValue.name +
-      " advanced to " +
-      zoneById(state.scenario, intent.destinationId).name +
-      ".";
-    cue = "enemy-advance";
+    const reachedWayfinder =
+      enemyValue.positionId === output.playerPositionId &&
+      intent.impact > 0;
+    detail = reachedWayfinder
+      ? enemyValue.name +
+        " reached " +
+        zoneById(state.scenario, intent.destinationId).name +
+        ". " +
+        applyEnemyImpact(output, enemyValue, intent.impact, intent.pressure)
+      : enemyValue.name +
+        " advanced to " +
+        zoneById(state.scenario, intent.destinationId).name +
+        ".";
+    if (reachedWayfinder) output.playerExposed = true;
+    cue = reachedWayfinder ? "enemy-hit" : "enemy-advance";
   } else if (success && intent.kind === "guard") {
-    enemyValue.guard += 1;
-    detail = enemyValue.name + " gained 1 Guard.";
+    const beforeGuard = enemyValue.guard;
+    enemyValue.guard = Math.min(
+      THREE_ROUTE_RULES.enemyGuardCap,
+      enemyValue.guard + 1,
+    );
+    detail =
+      enemyValue.guard > beforeGuard
+        ? enemyValue.name + " gained 1 Guard."
+        : enemyValue.name + " held a fully guarded position.";
     cue = "enemy-guard";
   } else if (success && intent.kind === "attack") {
-    const absorbed = Math.min(intent.impact, output.playerGuard);
-    output.playerGuard -= absorbed;
-    const remaining = intent.impact - absorbed;
-    const healthLost = Math.min(remaining, output.playerCondition);
-    output.playerCondition = Math.max(
-      0,
-      output.playerCondition - remaining,
+    detail = applyEnemyImpact(
+      output,
+      enemyValue,
+      intent.impact,
+      intent.pressure,
     );
-    if (healthLost > 0) output.pressure -= intent.pressure;
-    if (healthLost === 0) {
-      detail =
-        "Guard absorbed all " + intent.impact + " Impact from " + enemyValue.name + ".";
-    } else if (absorbed > 0) {
-      detail =
-        absorbed +
-        " Guard absorbed. " +
-        healthLost +
-        " Health lost" +
-        (intent.pressure > 0 ? " · Control -" + intent.pressure : "") +
-        ".";
-    } else {
-      detail =
-        enemyValue.name +
-        " dealt " +
-        healthLost +
-        " Health damage" +
-        (intent.pressure > 0 ? " · Control -" + intent.pressure : "") +
-        ".";
-    }
     output.playerExposed = true;
     cue = "enemy-hit";
   } else if (success && intent.kind === "disrupt") {
-    output.pressure -= intent.pressure;
-    detail =
-      enemyValue.name +
-      " disrupted the field · Control -" +
-      intent.pressure +
-      ".";
-    output.playerExposed = true;
-    cue = "enemy-hit";
+    const targetObject = state.scenario.objects.find(
+      (objectValue) => objectValue.id === intent.targetId,
+    );
+    if (targetObject && output.protectedObjectId === targetObject.id) {
+      output.protectedObjectId = null;
+      detail =
+        targetObject.name +
+        " was protected. " +
+        enemyValue.name +
+        " failed to break its prepared state.";
+      cue = "enemy-stopped";
+    } else {
+      const wasPrepared =
+        targetObject &&
+        output.preparedObjectIds.includes(targetObject.id);
+      if (targetObject) {
+        output.preparedObjectIds = output.preparedObjectIds.filter(
+          (objectId) => objectId !== targetObject.id,
+        );
+      }
+      output.pressure -= intent.pressure;
+      detail =
+        enemyValue.name +
+        (wasPrepared
+          ? " destroyed the " + targetObject.name + " prime"
+          : " disrupted the field") +
+        " · Control -" +
+        intent.pressure +
+        ".";
+      output.playerExposed = true;
+      cue = "enemy-hit";
+    }
   }
   enemyValue.suppressed = false;
   return {
@@ -1781,7 +2159,8 @@ export function resolveThreeRouteRound(state) {
   for (let index = 0; index < draft.player.plan.length; index += 1) {
     const step = draft.player.plan[index];
     const before = cloneSnapshot(snapshot);
-    if (snapshot.playerPositionId !== step.expectedStartId) {
+    const invalidReason = invalidStepReason(draft, snapshot, step);
+    if (invalidReason) {
       restoreInvalidStep(draft, step);
       events.push(
         makeEvent({
@@ -1789,8 +2168,7 @@ export function resolveThreeRouteRound(state) {
           phase: "player",
           index,
           title: step.actionName.toUpperCase() + " · INVALIDATED",
-          detail:
-            "Its required position was never reached. Cards and Reserve returned.",
+          detail: invalidReason,
           actorId: "wayfinder",
           targetId: step.target.id,
           success: false,
@@ -1881,7 +2259,7 @@ export function resolveThreeRouteRound(state) {
   draft.enemies = snapshot.enemies;
   draft.objectiveProgress = snapshot.objectiveProgress;
   draft.protectedObjectId = snapshot.protectedObjectId;
-  draft.scannedObjectIds = snapshot.scannedObjectIds;
+  draft.preparedObjectIds = snapshot.preparedObjectIds;
   draft.pressure = clamp(
     snapshot.pressure,
     THREE_ROUTE_RULES.pressureMin,
@@ -1958,40 +2336,85 @@ export function resolveThreeRouteRound(state) {
     result = {
       winner: "enemy",
       outcome: "compromised",
+      title: "DEFEAT · WAYFINDER COMPROMISED",
       reason: "Wayfinder Health reached zero. The Wayfinder was Compromised.",
     };
-  } else if (draft.enemies.every((entry) => entry.hp <= 0)) {
+  } else if (
+    draft.scenario.mission.eliminationVictory &&
+    draft.enemies.every((entry) => entry.hp <= 0)
+  ) {
     result = {
       winner: "player",
       outcome: "victory",
+      title: "VICTORY · HOSTILES DEFEATED",
       reason: "Every hostile actor was defeated.",
     };
   } else if (
+    draft.scenario.mission.objectiveVictory &&
     draft.scenario.objectiveGoal > 0 &&
     draft.objectiveProgress >= draft.scenario.objectiveGoal
   ) {
     result = {
       winner: "player",
       outcome: "objective",
-      reason: "The physical battle objective was completed.",
+      title:
+        "VICTORY · " +
+        draft.scenario.mission.objectiveResult.toUpperCase(),
+      reason:
+        draft.scenario.mission.objectiveResult +
+        ". The physical battle objective was completed.",
     };
-  } else if (snapshot.retreatCompleted) {
-    result = {
-      winner: null,
-      outcome: "retreat",
-      reason: "The Wayfinder withdrew through a physical exit.",
-    };
-  } else if (draft.pressure >= THREE_ROUTE_RULES.pressureMax) {
+  } else if (snapshot.exitCompleted) {
+    result =
+      draft.scenario.mission.exitOutcome === "victory"
+        ? {
+            winner: "player",
+            outcome: "extraction",
+            title: "VICTORY · EXTRACTION COMPLETE",
+            reason: "The Wayfinder reached the mission extraction point.",
+          }
+        : {
+            winner: null,
+            outcome: "withdrawal",
+            title: "WITHDRAWAL · MISSION INCOMPLETE",
+            reason:
+              "The Wayfinder survived by withdrawing, but the mission objective was not completed.",
+          };
+  } else if (
+    draft.scenario.mission.controlVictory &&
+    draft.pressure >= THREE_ROUTE_RULES.pressureMax
+  ) {
     result = {
       winner: "player",
       outcome: "pressure",
+      title: "VICTORY · COMPLETE CONTROL",
       reason: "The Wayfinder secured complete battle control.",
     };
-  } else if (draft.pressure <= THREE_ROUTE_RULES.pressureMin) {
+  } else if (
+    draft.scenario.mission.controlDefeat &&
+    draft.pressure <= THREE_ROUTE_RULES.pressureMin
+  ) {
     result = {
       winner: "enemy",
       outcome: "pressure",
+      title: "DEFEAT · CONTROL LOST",
       reason: "The hostile formation secured complete battle control.",
+    };
+  } else if (
+    draft.scenario.mission.roundLimit !== null &&
+    draft.round >= draft.scenario.mission.roundLimit
+  ) {
+    result = {
+      winner: "enemy",
+      outcome: "timeout",
+      title:
+        "DEFEAT · " +
+        draft.scenario.mission.timeoutResult.toUpperCase(),
+      reason:
+        draft.scenario.mission.timeoutResult +
+        " at the end of round " +
+        draft.scenario.mission.roundLimit +
+        ". The mission objective was not completed in time.",
     };
   }
   const settleBefore = cloneSnapshot(snapshot);
@@ -2022,7 +2445,15 @@ export function resolveThreeRouteRound(state) {
       roll: null,
       before: settleBefore,
       after: settleAfter,
-      sceneCue: breakTriggered ? "pressure-break" : "settle",
+      sceneCue: result
+        ? result.winner === "player"
+          ? "battle-victory"
+          : result.winner === "enemy"
+            ? "battle-defeat"
+            : "battle-withdrawal"
+        : breakTriggered
+          ? "pressure-break"
+          : "settle",
     }),
   );
   draft.currentReview = {
@@ -2059,6 +2490,7 @@ export function startNextThreeRouteRound(state) {
   );
   draft.player.exposed = false;
   draft.player.flankBonus = false;
+  draft.protectedObjectId = null;
   const grants = [];
   for (const category of CARD_CATEGORIES) {
     drawFromCategory(
@@ -2118,7 +2550,7 @@ export function createThreeRouteState(
     enemyIntents: [],
     objectiveProgress: 0,
     protectedObjectId: null,
-    scannedObjectIds: [],
+    preparedObjectIds: [],
     usedContextCardIds: [],
     pendingActions: [],
     currentReview: null,
@@ -2155,6 +2587,29 @@ function routeScore(state, choice) {
       choice.forecast.drawOnSuccess * 3);
   if (cardValue.kind === "context") score += 12;
   if (cardValue.kind === "modifier") score += 2;
+  if (
+    ["scan", "charge"].includes(cardValue.designId) &&
+    choice.target.kind === "object" &&
+    state.scenario.contextCardIds.some(
+      (contextId) =>
+        CONTEXT_CARD_DEFINITIONS[contextId]?.contextFeature ===
+        choice.target.feature,
+    ) &&
+    !state.preparedObjectIds.includes(choice.target.id)
+  ) {
+    score += 10;
+  }
+  if (
+    cardValue.designId === "protect" &&
+    choice.target.kind === "object" &&
+    state.enemyIntents.some(
+      (intent) =>
+        intent.kind === "disrupt" &&
+        intent.targetId === choice.target.id,
+    )
+  ) {
+    score += 9;
+  }
   if (cardValue.category === "movement" && choice.target.kind === "zone") {
     const projected = projectPlannedTheater(state);
     const before = Math.min(
@@ -2180,7 +2635,14 @@ function routeScore(state, choice) {
   if (cardValue.designId === "guard" && state.enemyIntents.some((entry) => entry.kind === "attack")) {
     score += 4;
   }
-  if (cardValue.designId === "retreat" && state.pressure > -3) score -= 8;
+  if (
+    cardValue.designId === "retreat" &&
+    state.scenario.mission.exitOutcome === "victory"
+  ) {
+    score += 8;
+  } else if (cardValue.designId === "retreat" && state.pressure > -3) {
+    score -= 8;
+  }
   return score;
 }
 
@@ -2262,23 +2724,31 @@ export function runThreeRouteSimulation({
       ) {
         let pick = chooseSimulationAction(state);
         if (!pick && state.player.plan.length === 0) {
-          const beforeCycle = JSON.stringify(
-            CARD_CATEGORIES.map((category) =>
-              state.player.pools[category].available.map(
-                (entry) => entry.id,
+          let cycleAttempts = 0;
+          while (
+            !pick &&
+            state.player.reserve >= 1 &&
+            cycleAttempts < CARD_CATEGORIES.length * 2
+          ) {
+            const beforeCycle = JSON.stringify(
+              CARD_CATEGORIES.map((category) =>
+                state.player.pools[category].available.map(
+                  (entry) => entry.id,
+                ),
               ),
-            ),
-          );
-          state = cycleSimulationCategory(state);
-          const afterCycle = JSON.stringify(
-            CARD_CATEGORIES.map((category) =>
-              state.player.pools[category].available.map(
-                (entry) => entry.id,
+            );
+            state = cycleSimulationCategory(state);
+            const afterCycle = JSON.stringify(
+              CARD_CATEGORIES.map((category) =>
+                state.player.pools[category].available.map(
+                  (entry) => entry.id,
+                ),
               ),
-            ),
-          );
-          if (beforeCycle === afterCycle) break;
-          pick = chooseSimulationAction(state);
+            );
+            if (beforeCycle === afterCycle) break;
+            pick = chooseSimulationAction(state);
+            cycleAttempts += 1;
+          }
         }
         if (!pick) break;
         const beforeCount = state.pendingActions.length;
@@ -2303,7 +2773,7 @@ export function runThreeRouteSimulation({
       }
     }
     summary.rounds.push(Math.min(state.round, maxRounds));
-    if (state.result?.outcome === "retreat") summary.retreats += 1;
+    if (state.result?.outcome === "withdrawal") summary.retreats += 1;
     else if (state.result?.winner === "player") summary.playerWins += 1;
     else if (state.result?.winner === "enemy") summary.enemyWins += 1;
     else summary.unfinished += 1;

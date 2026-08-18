@@ -197,7 +197,9 @@ test("general cards remain reusable while Context Cards are rare, source-bound e
   assert.match(engine, /"overload-relay"/);
   assert.match(engine, /"seal-gate"/);
   assert.match(engine, /"vent-coolant"/);
-  assert.match(engine, /currentZone\?\.feature === definition\.contextFeature/);
+  assert.match(engine, /currentZone\?\.feature !== definition\.contextFeature/);
+  assert.match(engine, /state\.preparedObjectIds\.includes\(objectValue\.id\)/);
+  assert.match(engine, /requiresSecuredZone/);
   assert.match(engine, /category !== "special"/);
   assert.match(engine, /if \(cardValue\.context\)/);
   assert.doesNotMatch(
@@ -236,7 +238,7 @@ test("Health, Guard, enemy intent, and Control are persistent and visibly distin
 
   assert.match(component, /HEALTH \{playerCondition\}\/\{playerMaximum\}/);
   assert.match(component, /HEALTH 0 = COMPROMISED/);
-  assert.match(component, /POSITION · NOT HEALTH/);
+  assert.match(component, /\+5 = ADVANTAGE · NOT VICTORY/);
   assert.match(component, /function intentLabel/);
   assert.match(component, /IMPACT/);
   assert.match(component, /styles\.combatHud/);
@@ -244,7 +246,7 @@ test("Health, Guard, enemy intent, and Control are persistent and visibly distin
   assert.doesNotMatch(component, /styles\.enemyHudList/);
   assert.match(engine, /conditionStart:\s*12/);
   assert.match(engine, /conditionMax:\s*12/);
-  assert.match(engine, /const absorbed = Math\.min\(intent\.impact, output\.playerGuard\)/);
+  assert.match(engine, /const absorbed = Math\.min\(impact, output\.playerGuard\)/);
   assert.match(engine, /output\.playerCondition - remaining/);
   assert.match(engine, /outcome:\s*"compromised"/);
   assert.doesNotMatch(engine, /draft\.player\.guard = 0/);

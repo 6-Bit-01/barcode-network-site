@@ -10,7 +10,7 @@ battle established by v0.2, while replacing the four-front stack interface
 with a card-first, three-route planning system tied to one readable theater.
 
 The owner-review checkpoint is reconciled with the current `main` tree. Its
-focused 30-test prototype contract, full 881-test repository suite, TypeScript
+focused 38-test prototype contract, full 889-test repository suite, TypeScript
 check, lint with zero errors (39 unrelated existing warnings), and production
 build all pass against this checkpoint.
 
@@ -27,8 +27,9 @@ survival layer explicitly:
   rounds;
 - reaching 0 Health makes the Wayfinder **Compromised** and ends this simplified
   solo prototype encounter;
-- Battle Control remains a separate `-5…+5` tactical track and is labeled as
-  separate from Health everywhere it appears;
+- Battle Control remains a separate `-5…+5` tactical track. `+5` wins the
+  Sublevel Duel, but is only an advantage in Fractured Gate and Coolant
+  Extraction; the meter states the current scenario rule explicitly;
 - disruption can change Control without pretending to damage Health;
 - `Stabilize` restores 2 Health, clears exposure, and grants 1 Guard, capped at
   the 12-Health maximum;
@@ -47,6 +48,40 @@ RESULT`, and the first turn says directly that the player controls one
 Wayfinder. Route A/B/C focus now brightens the exact matching theater target;
 there are still no permanent straight attack rays.
 
+## Challenge and mission comprehension correction
+
+The first friend/owner playthroughs exposed accidental success rather than a
+mere tuning problem. Retreat, complete Control, an environmental payoff, enemy
+elimination, and the actual mission objective could all feel like equivalent
+ways to make the encounter stop. They are now separate declared outcomes:
+
+- every scenario displays compact `WIN`, `LOSE`, `EXIT`, and `TACTICAL` rules
+  above the theater;
+- Fractured Gate wins only by sealing the Gate or defeating every hostile;
+- Retreat from Fractured Gate is **Withdrawal · Mission Incomplete**, with a
+  neutral survivor result rather than a victory;
+- reaching the South Lift is an extraction victory only because Coolant
+  Extraction explicitly defines that exit as its objective;
+- complete `+5` Control wins only where the scenario contract says it does;
+- Fractured Gate has a visible 12-round breach deadline, preventing indefinite
+  defensive drift;
+- Overload Relay is a tactical opening, not an instant mission result. It
+  damages and suppresses nearby hostiles, consumes the relay prime, and leaves
+  the mission running;
+- the Gate Controls are visibly `CONTESTED` while an unsuppressed hostile holds
+  their position. `Seal Gate` has no legal route until that position is
+  secured;
+- scene preparation is a one-round commitment: use general `Scan` or `Charge`
+  to mark a relay/coolant object `PRIMED`, protect it against the locked Jam,
+  survive the enemy response, then use the temporary Context Card next round;
+- the Breacher Runner now rushes and deals arrival Impact, the Ward visibly
+  holds/guards the Gate, and the Stalker uses its `CONTROL` role to Jam scene
+  preparation. Those labels are mechanics, not flavor-only text.
+
+Every exit and objective preview also says that the enemy response still
+happens before the round settles. A successful card therefore promises its
+immediate effect, not an early victory banner.
+
 ## Progressive disclosure and density correction
 
 The prototype preserves every card pool and combat rule while showing only the
@@ -57,7 +92,8 @@ control layer needed for the current decision:
 - Selecting a card previews its exact cost as `− N CP` and shows the current
   bank changing to the projected bank before the card is placed. The same cost
   remains visible on every target choice and on the staged plan step.
-- The Control track is a slim positional meter labeled `NOT HEALTH`.
+- The Control track is a slim positional meter that states whether `+5` is a
+  victory or only tactical advantage in the current scenario.
 - The three-step projected plan is always available as a compact dock rather
   than a full review panel below every other control.
 - Category doors show only category name, ready count, usable count, and an
@@ -79,6 +115,9 @@ control layer needed for the current decision:
   battle surface.
 - A compact `SFX ON/OFF` control remains in the sticky status line. Sound
   effects use short interface and battle cues without adding another panel.
+- Theater objects carry compact live states such as `UNPRIMED`, `PRIMED`,
+  `PROTECTED`, `CONTESTED`, and `SECURED`; blocked Context Cards state the
+  missing physical requirement.
 
 This is an information-hierarchy correction, not a mechanical reduction or a
 new visual direction. Health, enemy intent, probability, all ready cards,
@@ -97,6 +136,8 @@ events a small procedural Web Audio layer:
   hit;
 - player success, player failure or invalidation, enemy action or impact,
   Pressure Break, and Round Result each have a recognizable cue family;
+- victory, defeat, and withdrawal use distinct final cues, so surviving an
+  incomplete mission never receives the victory sound;
 - the audio context is created lazily after interaction, uses no downloaded
   audio asset, and fails silently if browser audio is unavailable;
 - SFX are on by default for this prototype and can be muted from the sticky
@@ -194,13 +235,17 @@ Rare Context Cards are intentionally different from general cards. They are
 temporary opportunities supplied by the physical scene, not permanent level-
 specific movement vocabulary.
 
-- `Overload Relay` appears only while the projected Wayfinder occupies a relay.
-- `Seal Gate` appears only at physical gate controls.
-- `Vent Coolant` appears only at a coolant conduit.
+- `Overload Relay` appears only when the authoritative Wayfinder occupies a
+  relay whose prime survived an earlier enemy response.
+- `Seal Gate` appears at physical Gate Controls, but cannot be targeted while
+  an active enemy contests that position.
+- `Vent Coolant` appears only at a primed coolant conduit.
 
 Context Cards live outside the permanent category loadouts, appear in Special
-while their source is reachable, disappear when that projected opportunity is
-lost, and are consumed if used.
+while their physical source and prerequisite state are present, disappear when
+that opportunity is lost, and are consumed if used. `Scan` and `Charge` remain
+general cards: they prepare compatible scene objects without becoming bespoke
+movement vocabulary for each level.
 
 ## One readable battle theater
 
@@ -230,8 +275,9 @@ and what source produces a Context Card.
    with four general cards visible, and its available capacity is five. Mobile
    keeps two cards per row.
 4. The player selects any card marked `USABLE HERE`. Every ready card remains
-   visible; a blocked card says `NOT USABLE HERE`, `PLAN FULL`, or the Command
-   Point requirement instead of silently disappearing.
+   visible; a blocked card states `NO LEGAL TARGET HERE`, `OBJECTIVE POSITION
+   CONTESTED`, `OBJECT MUST BE PRIMED`, `PLAN FULL`, or the Command Point
+   requirement instead of silently disappearing.
 5. Selecting a card condenses the library to a selected-card strip. The engine
    derives zero to three legal targets from the current projected theater, and
    only then reveals the Route A/B/C panel.
@@ -240,8 +286,9 @@ and what source produces a Context Card.
 7. Selecting a route spends Command Points and stages that general card. It
    does not automatically draw a replacement.
 8. Successful projection updates the next target query. A successful `Advance`
-   can therefore open a close-range Strike, a new movement branch, or a scene-
-   sourced Context Card.
+   can therefore open a close-range Strike, a new movement branch, or a legal
+   general `Scan`/`Charge` target. Preparation-dependent Context Cards wait
+   until that prime survives the enemy response and becomes authoritative.
 9. Up to three actions form the plan. Compatible Modifier cards attach to an
    existing step rather than consuming another action slot.
 10. Undo returns the exact last card, Command Points, and projection.
@@ -263,6 +310,13 @@ authoritative state.
    Control, card grants, Break handling, objectives, retreat, or battle
    outcome.
 4. Only then may the UI say `ROUND RESOLVED` or `BATTLE COMPLETE`.
+
+Result order is explicit: Health 0 is defeat; scenario-authorized elimination
+or objective completion is victory; a physical exit uses that scenario's
+declared extraction/withdrawal result; Control only ends scenarios that grant
+it terminal authority; then any displayed mission deadline applies. A player
+cannot win Fractured Gate by retreating, reaching +5 Control, or merely firing
+the relay.
 
 Reduced Motion removes travel and impact movement but retains actor positions,
 event order, action title, chance, roll, outcome, Health, Guard, and Control.
@@ -301,13 +355,19 @@ with a 40-round safety cap. All 120 terminate and every category is exercised.
 
 | Scenario | Player wins | Enemy wins | Retreats | Unfinished | Average rounds | Context uses |
 |---|---:|---:|---:|---:|---:|---:|
-| Sublevel Duel | 39 | 0 | 1 | 0 | 4.100 | 0 |
-| Fractured Gate | 38 | 0 | 2 | 0 | 4.150 | 13 |
-| Coolant Extraction | 40 | 0 | 0 | 0 | 5.450 | 28 |
+| Sublevel Duel | 38 | 1 | 1 | 0 | 3.775 | 0 |
+| Fractured Gate | 14 | 11 | 15 | 0 | 9.450 | 52 |
+| Coolant Extraction | 40 | 0 | 0 | 0 | 4.850 | 22 |
 
 This is deadlock, determinism, branching, and broad rules smoke only. The
 policy is not a human player. These figures are not evidence of balance,
 difficulty, comprehension, fun, animation quality, or replay value.
+
+A separate 120-battle Fractured Gate challenge audit produced 47 victories,
+26 defeats, 47 withdrawals, and no unfinished battles at a 40-round harness
+cap (9.025 average rounds, 146 Context uses). The important regression signal
+is that the policy no longer converts retreat, `+5` Control, or Overload Relay
+into free wins.
 
 ## Owner review path
 
@@ -327,23 +387,36 @@ difficulty, comprehension, fun, animation quality, or replay value.
    three lanes mean.
 4. Stage a movement. Confirm the projected Wayfinder moves and the next card's
    targets derive from that projected position.
-5. In Fractured Gate, reach Service Relay by projection. Confirm `Overload
-   Relay` appears as a temporary Context Card; it must not appear in Sublevel
-   Duel or in the permanent Special draw pile.
-6. Attach a Modifier to a compatible planned step. Confirm odds/consequences
+5. In Fractured Gate, confirm the theater states `WIN`, `LOSE`, `EXIT`, and
+   `TACTICAL`, the status line shows `ROUND 1/12`, and the Control meter says
+   `+5 = ADVANTAGE · NOT VICTORY`.
+6. Reach or scan the Service Relay. Confirm it begins `UNPRIMED`; use general
+   `Scan` or `Charge` to prime it and `Protect` to answer the Stalker's locked
+   Jam. `Overload Relay` must remain absent from that projected plan, then
+   appear as a temporary Context Card next round only if the prime survived.
+   It must not appear in Sublevel Duel or the permanent Special draw pile.
+7. Use Overload Relay and confirm it damages/suppresses nearby enemies but says
+   `MISSION CONTINUES`. Reach Gate Controls while the Ward is active and
+   confirm `CONTESTED` plus `OBJECTIVE POSITION CONTESTED`; suppress or defeat
+   the holder before `Seal Gate` becomes targetable.
+8. Retreat from Fractured Gate and confirm the final result and sound are
+   `WITHDRAWAL · MISSION INCOMPLETE`, not victory. In Coolant Extraction,
+   reaching South Lift must instead produce the scenario-authorized extraction
+   victory.
+9. Attach a Modifier to a compatible planned step. Confirm odds/consequences
    update on that step rather than creating a scenario-specific base card.
-7. Play a card and confirm no automatic replacement appears. Then trigger at
+10. Play a card and confirm no automatic replacement appears. Then trigger at
    least one success grant, round-start Movement grant, Context Card, Cache Tap,
    Cycle, and Pressure Break.
-8. Resolve a three-step plan. Confirm player steps act first. Confirm enemies
+11. Resolve a three-step plan. Confirm player steps act first. Confirm enemies
    respond second. Health, Control, grants, `ROUND RESOLVED`, and the final
    review must not appear until the Round Result.
-9. Force an early movement failure with a later position-dependent step.
+12. Force an early movement failure with a later position-dependent step.
    Confirm the later step says `INVALIDATED` and returns its card/Command
    Points rather than teleporting or retargeting.
-10. Switch among the one-, two-, and three-enemy scenarios. Confirm the same
+13. Switch among the one-, two-, and three-enemy scenarios. Confirm the same
     card grammar still makes physical sense.
-11. Replay Same State with the same choices and confirm exact results. New
+14. Replay Same State with the same choices and confirm exact results. New
     Shuffle must change the derived seed and category availability.
 
 ### Mobile and accessibility
@@ -378,11 +451,13 @@ npm run build
 The focused suite covers Health/Guard/Control separation, Guard persistence,
 Compromised at zero Health, healing limits, reusable category pools, neutral three-choice lanes,
 card-first targeting, physical target binding, Context Card visibility,
-modifiers, projected prerequisites, causal invalidation, exact undo, no
-placement refill, multiple grant sources, explicit cycling, deterministic
-replay, player/enemy/settle ordering, variable enemy counts, simulation
-termination, optional gesture-armed SFX, production isolation, and
-accessibility primitives.
+one-round scene preparation, objective protection/disruption, contested Gate
+security, scenario-specific Control and exit outcomes, breach timeout, enemy
+role counterplay, non-terminal relay payoff, modifiers, projected
+prerequisites, causal invalidation, exact undo, no placement refill, multiple
+grant sources, explicit cycling, deterministic replay, player/enemy/settle
+ordering, variable enemy counts, simulation challenge bounds, distinct final
+SFX, production isolation, and accessibility primitives.
 
 ## Hard boundary
 

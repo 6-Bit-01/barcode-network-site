@@ -25,6 +25,9 @@ export interface ThreeRouteCard {
   drawOnSuccess: number;
   restore: number;
   contextFeature: string | null;
+  control: number;
+  requiresPreparation: boolean;
+  requiresSecuredZone: boolean;
   copy: number;
   context: boolean;
 }
@@ -72,6 +75,20 @@ export interface ThreeRouteScenario {
   enemies: TheaterEnemy[];
   contextCardIds: string[];
   objectiveGoal: number;
+  mission: {
+    win: string;
+    lose: string;
+    exit: string;
+    tactical: string;
+    eliminationVictory: boolean;
+    objectiveVictory: boolean;
+    controlVictory: boolean;
+    controlDefeat: boolean;
+    roundLimit: number | null;
+    timeoutResult: string;
+    exitOutcome: "withdrawal" | "victory";
+    objectiveResult: string;
+  };
   feed: {
     roundStart: Partial<Record<CardCategory, number>>;
     drawUsedCategoryOnSuccess: number;
@@ -101,6 +118,7 @@ export interface RouteForecast {
   impact: number;
   guard: number;
   restore: number;
+  control: number;
   drawOnSuccess: number;
   successLabel: string;
   failureLabel: string;
@@ -150,6 +168,8 @@ export interface TheaterSnapshot {
   playerExposed: boolean;
   enemies: TheaterEnemy[];
   objectiveProgress: number;
+  protectedObjectId: string | null;
+  preparedObjectIds: string[];
   pressure: number;
 }
 
@@ -179,7 +199,8 @@ export interface CardGrant {
 
 export interface ThreeRouteResult {
   winner: "player" | "enemy" | null;
-  outcome: "victory" | "objective" | "retreat" | "pressure" | "compromised";
+  outcome: "victory" | "objective" | "withdrawal" | "extraction" | "pressure" | "compromised" | "timeout";
+  title: string;
   reason: string;
 }
 
@@ -208,9 +229,9 @@ export interface ProjectedTheater {
   enemies: TheaterEnemy[];
   objectiveProgress: number;
   protectedObjectId: string | null;
-  scannedObjectIds: string[];
+  preparedObjectIds: string[];
   pressure: number;
-  retreatCompleted: boolean;
+  exitCompleted: boolean;
 }
 
 export interface ThreeRouteState {
@@ -243,7 +264,7 @@ export interface ThreeRouteState {
   enemyIntents: EnemyIntent[];
   objectiveProgress: number;
   protectedObjectId: string | null;
-  scannedObjectIds: string[];
+  preparedObjectIds: string[];
   usedContextCardIds: string[];
   pendingActions: Array<Record<string, unknown>>;
   currentReview: ThreeRouteReview | null;

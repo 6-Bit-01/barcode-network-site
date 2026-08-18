@@ -459,6 +459,39 @@
   line-height: 1.45;
 }
 
+.missionContract {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  max-width: 52rem;
+  margin-top: 0.62rem;
+  border: 1px solid #314043;
+  background: #314043;
+}
+
+.missionContract span {
+  min-width: 0;
+  padding: 0.38rem 0.45rem;
+  color: #b8c4c3;
+  background: rgb(7 12 14 / 94%);
+  font: 750 0.51rem/1.35 ui-monospace, monospace;
+  letter-spacing: 0.025em;
+  overflow-wrap: anywhere;
+}
+
+.missionContract b {
+  display: block;
+  margin-bottom: 0.17rem;
+  color: var(--cyan);
+  font-size: 0.44rem;
+  letter-spacing: 0.1em;
+}
+
+.missionContract span:nth-child(1) b { color: var(--acid); }
+.missionContract span:nth-child(2) b { color: var(--red); }
+.missionContract span:nth-child(3) b { color: var(--amber); }
+.missionContract span:nth-child(4) b { color: var(--special); }
+
 .combatHud {
   border-bottom: 1px solid var(--line);
   background: #0a1012;
@@ -753,10 +786,11 @@
 
 .objectMarker {
   z-index: 4;
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 0.3rem;
-  max-width: 8rem;
+  gap: 0.12rem 0.3rem;
+  max-width: 10rem;
   padding: 0.3rem 0.42rem;
   border: 1px solid #8066a0;
   color: #dec1ff;
@@ -767,8 +801,24 @@
 }
 
 .objectMarker span {
+  grid-row: 1 / 3;
   color: var(--special);
   font-size: 1rem;
+}
+
+.objectMarker b,
+.objectMarker small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.objectMarker small {
+  color: #9b89ad;
+  font-size: 0.43rem;
+  letter-spacing: 0.04em;
 }
 
 .objectMarker[data-target="true"] {
@@ -1848,6 +1898,22 @@
   background: linear-gradient(100deg, rgb(100 239 155 / 10%), transparent 55%);
 }
 
+.reviewPanel[data-winner="enemy"] {
+  border-color: var(--red);
+}
+
+.reviewPanel[data-winner="enemy"] .reviewHead {
+  background: linear-gradient(100deg, rgb(255 109 120 / 13%), transparent 55%);
+}
+
+.reviewPanel[data-outcome="withdrawal"] {
+  border-color: var(--amber);
+}
+
+.reviewPanel[data-outcome="withdrawal"] .reviewHead {
+  background: linear-gradient(100deg, rgb(255 193 94 / 13%), transparent 55%);
+}
+
 .grantStrip {
   display: flex;
   flex-wrap: wrap;
@@ -2119,9 +2185,13 @@
   .actorLabel small { max-width: 5rem; font-size: 0.4rem; }
 
   .objectMarker {
-    max-width: 5.5rem;
+    max-width: 6.5rem;
     font-size: 0.43rem;
     transform: translate(calc(-50% + 1rem), calc(-50% + 2.25rem + var(--object-index) * 0.3rem));
+  }
+
+  .objectMarker small {
+    font-size: 0.36rem;
   }
 
   .routeGrid,

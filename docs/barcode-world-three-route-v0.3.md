@@ -10,7 +10,7 @@ battle established by v0.2, while replacing the four-front stack interface
 with a card-first, three-route planning system tied to one readable theater.
 
 The owner-review checkpoint is reconciled with the current `main` tree. Its
-focused 28-test prototype contract, full 879-test repository suite, TypeScript
+focused 29-test prototype contract, full 880-test repository suite, TypeScript
 check, lint with zero errors (39 unrelated existing warnings), and production
 build all pass against this checkpoint.
 
@@ -32,8 +32,8 @@ survival layer explicitly:
 - disruption can change Control without pretending to damage Health;
 - `Stabilize` restores 2 Health, clears exposure, and grants 1 Guard, capped at
   the 12-Health maximum;
-- low Health is visually urgent but does not secretly change accuracy, Reserve,
-  or Command.
+- low Health is visually urgent but does not secretly change accuracy or
+  Command Points.
 
 The theater now keeps one compact Wayfinder status strip above the physical
 map. It names the single controlled actor as `YOU · WAYFINDER` and shows
@@ -52,7 +52,11 @@ there are still no permanent straight attack rays.
 The prototype preserves every card pool and combat rule while showing only the
 control layer needed for the current decision:
 
-- Round, phase, Reserve, and plan count share one compact status line.
+- Round, phase, Command Points, and plan count share one compact sticky status
+  line. The current Command Point bank is the dominant number in that line.
+- Selecting a card previews its exact cost as `− N CP` and shows the current
+  bank changing to the projected bank before the card is placed. The same cost
+  remains visible on every target choice and on the staged plan step.
 - The Control track is a slim positional meter labeled `NOT HEALTH`.
 - The three-step projected plan is always available as a compact dock rather
   than a full review panel below every other control.
@@ -77,6 +81,8 @@ control layer needed for the current decision:
 This is an information-hierarchy correction, not a mechanical reduction or a
 new visual direction. Health, enemy intent, probability, all ready cards,
 neutral routes, Context Cards, modifiers, and replenishment rules remain.
+The engine's existing `reserve` field is retained for compatibility; the
+player-facing name for that same resource is **Command Points**.
 
 ## Owner correction — category browser and spatial theater
 
@@ -202,25 +208,26 @@ and what source produces a Context Card.
    with four general cards visible, and its available capacity is five. Mobile
    keeps two cards per row.
 4. The player selects any card marked `USABLE HERE`. Every ready card remains
-   visible; a blocked card says `NOT USABLE HERE`, `PLAN FULL`, or the Reserve
-   requirement instead of silently disappearing.
+   visible; a blocked card says `NOT USABLE HERE`, `PLAN FULL`, or the Command
+   Point requirement instead of silently disappearing.
 5. Selecting a card condenses the library to a selected-card strip. The engine
    derives zero to three legal targets from the current projected theater, and
    only then reveals the Route A/B/C panel.
 6. The neutral Route A/B/C panels show target, numeric probability, success,
    failure, and any projected-position prerequisite.
-7. Selecting a route spends Reserve and stages that general card. It does not
-   automatically draw a replacement.
+7. Selecting a route spends Command Points and stages that general card. It
+   does not automatically draw a replacement.
 8. Successful projection updates the next target query. A successful `Advance`
    can therefore open a close-range Strike, a new movement branch, or a scene-
    sourced Context Card.
 9. Up to three actions form the plan. Compatible Modifier cards attach to an
    existing step rather than consuming another action slot.
-10. Undo returns the exact last card, Reserve, and projection.
+10. Undo returns the exact last card, Command Points, and projection.
 
 Projection explains possibilities; it is not a guarantee. If an earlier move
 fails, a later action that required the projected position is invalidated. Its
-card and Reserve return instead of silently retargeting or inventing movement.
+card and Command Points return instead of silently retargeting or inventing
+movement.
 
 ## Resolution contract
 
@@ -252,8 +259,8 @@ The current engine supports mixtures of:
 - Cache Tap / future modifier-card grants;
 - empty-pool fallback where a scenario explicitly enables it;
 - Pressure Break grants across categories;
-- explicit `Cycle · 1R`, which trades Reserve to rotate one general card and is
-  not a free placement refill.
+- explicit `Cycle · −1 CP`, which trades one Command Point to rotate one
+  general card and is not a free placement refill.
 
 The three test scenarios intentionally use different recipes:
 
@@ -310,8 +317,8 @@ difficulty, comprehension, fun, animation quality, or replay value.
    respond second. Health, Control, grants, `ROUND RESOLVED`, and the final
    review must not appear until the Round Result.
 9. Force an early movement failure with a later position-dependent step.
-   Confirm the later step says `INVALIDATED` and returns its card/Reserve rather
-   than teleporting or retargeting.
+   Confirm the later step says `INVALIDATED` and returns its card/Command
+   Points rather than teleporting or retargeting.
 10. Switch among the one-, two-, and three-enemy scenarios. Confirm the same
     card grammar still makes physical sense.
 11. Replay Same State with the same choices and confirm exact results. New

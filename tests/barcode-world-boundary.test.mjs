@@ -213,7 +213,7 @@ test("replenishment is category-specific and never an automatic placement refill
   assert.match(component, /\{visibleCards\.length\} READY/);
   assert.match(component, /\{usableCount\} USABLE HERE/);
   assert.match(component, /\{pool\.drawPile\.length\} DRAW/);
-  assert.match(component, /CYCLE · 1R/);
+  assert.match(component, /CYCLE · −1 CP/);
   assert.match(component, /Wait for a grant or reshuffle/);
   assert.match(engine, /drawUsedCategoryOnSuccess/);
   assert.match(engine, /emptyPoolFallback/);
@@ -251,6 +251,37 @@ test("Health, Guard, enemy intent, and Control are persistent and visibly distin
   assert.match(types, /impact:\s*number/);
   assert.match(css, /\.combatHud\s*\{/);
   assert.match(css, /\.healthMeter\s*\{/);
+});
+
+test("Command Points stay prominent and preview exact placement costs", async () => {
+  const [component, engine, css] = await Promise.all([
+    readFile("src/components/BarcodeWorldCardBattle.tsx", "utf8"),
+    readFile("src/lib/barcode-world/three-route-engine.mjs", "utf8"),
+    readFile("src/components/BarcodeWorldCardBattle.module.css", "utf8"),
+  ]);
+
+  assert.match(component, /function CommandPointDisplay/);
+  assert.match(component, /COMMAND POINTS/);
+  assert.match(component, /role="status"/);
+  assert.match(component, /− \{previewCost\}/);
+  assert.match(component, /\{current\} → \{projected\} IF PLACED/);
+  assert.match(component, /styles\.selectedCardCommandCost/);
+  assert.match(component, /styles\.routeCommandCost/);
+  assert.match(component, /styles\.planStepTop/);
+  assert.match(component, /CYCLE · −1 CP/);
+  assert.doesNotMatch(component, />RESERVE </);
+  assert.match(engine, /reserveStart:\s*10/);
+  assert.match(engine, /reserveCap:\s*20/);
+  assert.match(engine, /draft\.player\.reserve -= cardValue\.cost/);
+
+  assert.match(css, /\.statusBar\s*\{[\s\S]*?position:\s*sticky/);
+  assert.match(css, /\.commandPoints\s*\{/);
+  assert.match(css, /\.commandPointAmount\s*\{[\s\S]*?font-size:\s*1\.55rem/);
+  assert.match(css, /\.commandPoints\[data-preview="true"\]/);
+  assert.match(
+    css,
+    /@media \(max-width: 760px\)[\s\S]*?\.commandPoints \{[\s\S]*?grid-column: 1 \/ -1/,
+  );
 });
 
 test("the compact surface preserves odds truth, causal detail, resets, and accessible interaction", async () => {

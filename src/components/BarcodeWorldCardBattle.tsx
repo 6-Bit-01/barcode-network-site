@@ -72,6 +72,10 @@ function signed(value: number) {
   return value > 0 ? `+${value}` : String(value);
 }
 
+function interfaceCopy(value: string) {
+  return value.replaceAll("Reserve", "Command Points");
+}
+
 function eventPhaseLabel(phase: ResolutionEvent["phase"]) {
   if (phase === "player") return "YOUR ACTIONS";
   if (phase === "enemy") return "ENEMY RESPONSE";
@@ -139,6 +143,40 @@ function ProbabilityMeter({ choice }: { choice: ThreeRouteChoice }) {
   );
 }
 
+function CommandPointDisplay({
+  current,
+  previewCard,
+}: {
+  current: number;
+  previewCard: ThreeRouteCard | null;
+}) {
+  const previewCost = previewCard?.cost ?? 0;
+  const projected = Math.max(0, current - previewCost);
+  const label = previewCard
+    ? `Command Points ${current}. Placing ${previewCard.name} costs ${previewCost} and leaves ${projected}.`
+    : `Command Points ${current} of ${THREE_ROUTE_RULES.reserveCap}.`;
+
+  return (
+    <div
+      aria-label={label}
+      className={styles.commandPoints}
+      data-preview={previewCard ? "true" : "false"}
+      role="status"
+    >
+      <span className={styles.commandPointLabel}>COMMAND POINTS</span>
+      <strong className={styles.commandPointAmount}>
+        {current}<small>/{THREE_ROUTE_RULES.reserveCap}</small>
+      </strong>
+      {previewCard ? (
+        <span className={styles.commandPointDelta}>
+          <b>− {previewCost}</b>
+          <small>{current} → {projected} IF PLACED</small>
+        </span>
+      ) : <small className={styles.commandPointReady}>AVAILABLE</small>}
+    </div>
+  );
+}
+
 function CardFace({
   card,
   availability,
@@ -152,7 +190,9 @@ function CardFace({
     <span className={styles.card} data-category={card.category}>
       <span className={styles.cardTop}>
         <span className={styles.categoryBadge}>{CATEGORY_LABELS[card.category]}</span>
-        <span className={styles.cardCost}>{card.cost}<small>R</small></span>
+        <span aria-label={`Costs ${card.cost} Command Points`} className={styles.cardCost}>
+          <b>− {card.cost}</b><small>CP</small>
+        </span>
       </span>
       <strong className={styles.cardName}>{card.name}</strong>
       <span>{card.effect}</span>
@@ -203,7 +243,7 @@ function HealthMeter({
 
 function cardAvailability(game: ThreeRouteState, card: ThreeRouteCard) {
   if (card.cost > game.player.reserve) {
-    return { usable: false, label: `NEEDS ${card.cost} RESERVE` };
+    return { usable: false, label: `NEEDS ${card.cost} COMMAND POINTS` };
   }
   if (
     card.kind !== "modifier" &&
@@ -462,13 +502,13 @@ function BattleTheater({
           <div className={styles.eventBanner} aria-live="assertive">
             <span>{eventPhaseLabel(activeEvent.phase)} · {activeEvent.index + 1}</span>
             <strong>{activeEvent.title}</strong>
-            <p>{activeEvent.detail}</p>
+            <p>{interfaceCopy(activeEvent.detail)}</p>
           </div>
         ) : (
           <p>
             {selectedCard
               ? <><b>{selectedCard.name.toUpperCase()} SELECTED</b> · A/B/C MARK ITS LEGAL THEATER TARGETS.</>
-              : game.notice}
+              : interfaceCopy(game.notice)}
           </p>
         )}
       </div>
@@ -625,8 +665,8 @@ export function BarcodeWorldCardBattle() {
         <div className={styles.statusBar} aria-label="Current round status">
           <strong>{phaseLabel}</strong>
           <span>ROUND <b>{game.round}</b></span>
-          <span>RESERVE <b>{game.player.reserve}</b></span>
           <span>PLAN <b>{game.player.plan.length}/{THREE_ROUTE_RULES.maxPlanSteps}</b></span>
+          <CommandPointDisplay current={game.player.reserve} previewCard={pendingResolution ? null : selectedCard} />
         </div>
 
         {showFirstTurnGuide && game.round === 1 && game.phase === "planning" && !pendingResolution ? (
@@ -662,9 +702,15 @@ export function BarcodeWorldCardBattle() {
               <div className={styles.planChain}>
                 {ROUTE_SLOTS.map((slot) => {
                   const step = game.player.plan[slot];
+                  const spentCommandPoints = step
+                    ? step.card.cost + step.modifiers.reduce((total, modifier) => total + modifier.cost, 0)
+                    : 0;
                   return step ? (
                     <article className={styles.planStep} data-category={step.card.category} key={step.id}>
-                      <span>STEP {slot + 1}</span>
+                      <div className={styles.planStepTop}>
+                        <span>STEP {slot + 1}</span>
+                        <b>− {spentCommandPoints} CP</b>
+                      </div>
                       <strong>{step.actionName}</strong>
                       <small>{step.forecast.chance}% · {step.target.name}</small>
                       {step.modifiers.length > 0 ? <p>+ {step.modifiers.map((modifier) => modifier.name).join(" + ")}</p> : null}
@@ -696,7 +742,11 @@ export function BarcodeWorldCardBattle() {
                     <strong>{selectedCard.name}</strong>
                     <small>{selectedCard.effect}</small>
                   </div>
-                  <span className={styles.selectedCardStats}>{selectedCard.cost}R · {choices.length} TARGET{choices.length === 1 ? "" : "S"}</span>
+                  <span className={styles.selectedCardCommandCost}>
+                    <b>− {selectedCard.cost} CP</b>
+                    <small>{game.player.reserve} → {game.player.reserve - selectedCard.cost}</small>
+                  </span>
+                  <span className={styles.selectedCardStats}>{choices.length} TARGET{choices.length === 1 ? "" : "S"}</span>
                   <button className={styles.secondaryButton} onClick={() => setSelectedCardId(null)} type="button">CHANGE CARD</button>
                 </div>
               ) : (
@@ -755,9 +805,9 @@ export function BarcodeWorldCardBattle() {
                         className={styles.cycleButton}
                         disabled={game.player.reserve < 1 || pool.available.length === 0}
                         onClick={() => { setSelectedCardId(null); setGame((current) => cycleThreeRouteCategory(current, category)); }}
-                        title="Spend 1 Reserve to cycle the first general card"
+                        title="Spend 1 Command Point to cycle the first general card"
                         type="button"
-                      >CYCLE · 1R</button>
+                      >CYCLE · −1 CP</button>
                     </header>
                     <div className={styles.poolCards}>
                       {visibleCards.map((card) => {
@@ -816,6 +866,10 @@ export function BarcodeWorldCardBattle() {
                         type="button"
                       >
                         <span className={styles.routeTop}><b>{ROUTE_LABELS[slot]}</b><span>{choice.target.kind.toUpperCase()}</span></span>
+                        <span className={styles.routeCommandCost}>
+                          <b>− {selectedCard.cost} CP</b>
+                          <small>{game.player.reserve} → {game.player.reserve - selectedCard.cost}</small>
+                        </span>
                         <strong>{choice.actionName}</strong>
                         {choice.prerequisiteLabel ? <small className={styles.prerequisite}>{choice.prerequisiteLabel}</small> : null}
                         <ProbabilityMeter choice={choice} />
@@ -862,7 +916,7 @@ export function BarcodeWorldCardBattle() {
               <div className={styles.visibleRecap}>
                 {game.currentReview.events.map((event) => (
                   <article data-phase={event.phase} key={event.id}>
-                    <span>{eventPhaseLabel(event.phase)}</span><strong>{event.title}</strong><p>{event.detail}</p>
+                    <span>{eventPhaseLabel(event.phase)}</span><strong>{event.title}</strong><p>{interfaceCopy(event.detail)}</p>
                   </article>
                 ))}
               </div>

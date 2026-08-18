@@ -1,5 +1,5 @@
 export const BARCODE_WORLD_OWNER_PREVIEW_BRANCH =
-  "agent/barcode-world-three-route-v0-3";
+  "agent/barcode-world-ai-scenario-v0-4";
 
 export function isBarcodeWorldOwnerPreview(environment = process.env) {
   return (

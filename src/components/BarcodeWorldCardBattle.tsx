@@ -166,7 +166,7 @@ function CommandPointDisplay({
   const projected = Math.max(0, current - previewCost);
   const label = previewCard
     ? `Command Points ${current}. Placing ${previewCard.name} costs ${previewCost} and leaves ${projected}.`
-    : `Command Points ${current} of ${THREE_ROUTE_RULES.reserveCap}.`;
+    : `Command Points ${current} of ${THREE_ROUTE_RULES.reserveCap}. Unspent points bank. The next round adds ${THREE_ROUTE_RULES.reservePerRound}.`;
 
   return (
     <div
@@ -184,7 +184,12 @@ function CommandPointDisplay({
           <b>− {previewCost}</b>
           <small>{current} → {projected} IF PLACED</small>
         </span>
-      ) : <small className={styles.commandPointReady}>AVAILABLE</small>}
+      ) : (
+        <span className={styles.commandPointReady}>
+          <b>+{THREE_ROUTE_RULES.reservePerRound} NEXT ROUND</b>
+          <small>UNSPENT CP BANKS</small>
+        </span>
+      )}
     </div>
   );
 }
@@ -218,11 +223,15 @@ function CardFace({
 function intentLabel(
   intent: ThreeRouteState["enemyIntents"][number] | undefined,
   fallback: string,
+  destinationName?: string,
 ) {
   if (!intent) return fallback;
-  if (intent.impact > 0) return `${intent.name} · ${intent.impact} IMPACT`;
+  const movement = intent.kind === "advance" && destinationName
+    ? ` → ${destinationName}`
+    : "";
+  if (intent.impact > 0) return `${intent.name}${movement} · ${intent.impact} IMPACT`;
   if (intent.pressure > 0) return `${intent.name} · CONTROL -${intent.pressure}`;
-  return intent.name;
+  return `${intent.name}${movement}`;
 }
 
 function HealthMeter({
@@ -372,6 +381,24 @@ function BattleTheater({
             if (!from || !to) return null;
             return <line key={`${fromId}-${toId}`} x1={from.x} y1={from.y} x2={to.x} y2={to.y} />;
           })}
+          {!activeEvent && game.enemyIntents.filter(
+            (intent) => intent.kind === "advance" && intent.destinationId,
+          ).map((intent) => {
+            const enemy = enemies.find((entry) => entry.id === intent.actorId);
+            const from = enemy ? zoneMap.get(enemy.positionId) : null;
+            const to = zoneMap.get(intent.destinationId);
+            if (!from || !to || from.id === to.id) return null;
+            return (
+              <line
+                className={styles.enemyIntentLine}
+                key={`intent-${intent.actorId}`}
+                x1={from.x}
+                y1={from.y}
+                x2={to.x}
+                y2={to.y}
+              />
+            );
+          })}
           {!activeEvent && game.player.plan.filter(
             (step) => step.card.move && step.target.kind === "zone",
           ).map((step) => {
@@ -395,6 +422,7 @@ function BattleTheater({
           <span><i data-kind="path" />PHYSICAL PATH</span>
           <span><i data-kind="target" />LEGAL TARGET</span>
           <span><i data-kind="projection" />PROJECTED MOVE</span>
+          <span><i data-kind="enemy-intent" />ENEMY MOVE</span>
         </div>
 
         {scenario.zones.map((zone) => {
@@ -517,7 +545,7 @@ function BattleTheater({
               <span className={styles.actorLabel}>
                 <b>{enemy.name} · {enemy.hp}/{enemy.maxHp} HP</b>
                 <HealthMeter enemy label={enemy.name} maximum={enemy.maxHp} value={enemy.hp} />
-                <small>{intentLabel(intent, enemy.role)}{enemy.guard > 0 ? ` · GUARD ${enemy.guard}` : ""}</small>
+                <small>{intentLabel(intent, enemy.role, intent ? zoneMap.get(intent.destinationId)?.name : undefined)}{enemy.guard > 0 ? ` · GUARD ${enemy.guard}` : ""}</small>
               </span>
             </button>
           );
@@ -979,7 +1007,7 @@ export function BarcodeWorldCardBattle() {
                 <h2 id="review-title">{game.result?.reason ?? `HEALTH ${game.currentReview.conditionBefore} → ${game.currentReview.conditionAfter} · CONTROL ${signed(game.currentReview.pressureBefore)} → ${signed(game.currentReview.pressureAfter)}`}</h2>
               </div>
               <div className={styles.reviewActions}>
-                {game.phase === "round-review" ? <button className={styles.primaryButton} onClick={() => { playSfx("panel"); setGame((current) => startNextThreeRouteRound(current)); }} type="button">NEXT ROUND</button> : null}
+                {game.phase === "round-review" ? <button className={styles.primaryButton} onClick={() => { playSfx("panel"); setGame((current) => startNextThreeRouteRound(current)); }} type="button">NEXT ROUND · +{THREE_ROUTE_RULES.reservePerRound} CP</button> : null}
                 {game.phase === "result" ? (
                   <>
                     <button className={styles.secondaryButton} onClick={() => { playSfx("panel"); setGame((current) => replaySameThreeRouteState(current)); }} type="button">REPLAY SAME STATE</button>

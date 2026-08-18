@@ -313,14 +313,26 @@
 }
 
 .commandPointReady {
+  display: grid;
   grid-column: 2;
   grid-row: 1 / 3;
   align-self: center;
   justify-self: end;
+  justify-items: end;
+  gap: 0.12rem;
   color: var(--muted);
-  font-size: 0.48rem;
   font-weight: 850;
   letter-spacing: 0.08em;
+}
+
+.commandPointReady b {
+  color: var(--acid);
+  font-size: 0.58rem;
+}
+
+.commandPointReady small {
+  color: var(--muted);
+  font-size: 0.42rem;
 }
 
 .pressurePanel {
@@ -647,6 +659,14 @@
   animation: routeFlow 1.2s linear infinite;
 }
 
+.edgeLayer .enemyIntentLine {
+  stroke: var(--red);
+  stroke-width: 5;
+  stroke-dasharray: 3 5;
+  opacity: 0.58;
+  animation: routeFlow 0.85s linear infinite reverse;
+}
+
 @keyframes routeFlow {
   to { stroke-dashoffset: -22; }
 }
@@ -695,6 +715,10 @@
   height: 0.5rem;
   border: 1px solid var(--cyan);
   transform: rotate(45deg);
+}
+
+.theaterLegend i[data-kind="enemy-intent"] {
+  border-top-color: var(--red);
 }
 
 .zone,

@@ -73,6 +73,9 @@ test("v0.3 keeps four separate reusable category pools and three neutral choice 
   assert.equal(state.scenarioId, "fractured-gate-routes-v0.3");
   assert.equal(THREE_ROUTE_RULES.choiceLanes, 3);
   assert.equal(THREE_ROUTE_RULES.maxPlanSteps, 3);
+  assert.equal(THREE_ROUTE_RULES.reserveStart, 10);
+  assert.equal(THREE_ROUTE_RULES.reservePerRound, 6);
+  assert.equal(THREE_ROUTE_RULES.reserveCap, 20);
   assert.equal(state.player.condition, 12);
   assert.equal(state.player.maxCondition, 12);
   assert.equal(THREE_ROUTE_RULES.guardCap, 8);
@@ -305,6 +308,31 @@ test("choosing a route spends its general card without automatic replacement and
   assert.equal(staged.player.reserve, state.player.reserve - advance.cost);
   assert.deepEqual(staged.enemyIntents, intents);
   assert.equal(state.player.plan.length, 0, "public transition must remain pure");
+});
+
+test("Command Points bank between rounds instead of silently resetting to ten", () => {
+  let state = createThreeRouteState(
+    "command-bank-contract",
+    "fractured-gate-routes-v0.3",
+  );
+  state.enemyIntents = [];
+  const guard = exposeCard(state, "defense", "guard");
+  state = chooseThreeRoute(
+    state,
+    guard.id,
+    getThreeRouteChoices(state, guard.id)[0].id,
+  );
+  assert.equal(state.player.reserve, 8);
+  state = resolveThreeRouteRound(state);
+  assert.equal(state.player.reserve, 8, "resolution must not refill spent Command Points");
+  state = startNextThreeRouteRound(state);
+  assert.equal(state.player.reserve, 14, "the bank should gain exactly six next round");
+  assert.match(state.notice, /\+6 Command Points banked · 14\/20/);
+
+  state.phase = "round-review";
+  state.player.reserve = 19;
+  state = startNextThreeRouteRound(state);
+  assert.equal(state.player.reserve, 20, "banking must still respect the visible cap");
 });
 
 test("a relay Context Card requires an earlier-round prime that survives enemy counterplay", () => {
@@ -586,8 +614,10 @@ test("the gate must be physically secured before Seal Gate becomes a legal route
 
 test("enemy roles create readable counterplay: rush, hold, and jam", () => {
   const seed = seedMatching("enemy-role-contract", [
-    { phase: "player", actionIndex: 0, maximum: 95 },
+    { phase: "player", actionIndex: 0, maximum: 90 },
     { phase: "enemy", actionIndex: 0, maximum: 85 },
+    { phase: "enemy", actionIndex: 1, maximum: 85 },
+    { phase: "enemy", actionIndex: 2, maximum: 85 },
   ]);
   let state = createThreeRouteState(seed, "fractured-gate-routes-v0.3");
   const intents = Object.fromEntries(
@@ -595,21 +625,50 @@ test("enemy roles create readable counterplay: rush, hold, and jam", () => {
   );
   assert.equal(intents.runner.kind, "advance");
   assert.equal(intents.runner.name, "Rush");
+  assert.equal(intents.runner.impact, 2);
   assert.equal(intents.ward.kind, "guard");
   assert.equal(intents.ward.targetId, "gate-object");
-  assert.equal(intents.stalker.kind, "disrupt");
-  assert.equal(intents.stalker.targetId, "relay-object");
+  assert.equal(intents.ward.pressure, 0);
+  assert.equal(intents.stalker.kind, "advance");
+  assert.equal(intents.stalker.name, "Hunt");
+  assert.equal(intents.stalker.destinationId, "cargo-divider");
+  assert.equal(intents.stalker.impact, 2);
 
-  state.enemyIntents = [intents.runner];
-  const charge = exposeCard(state, "special", "charge");
+  let fortified = createThreeRouteState(
+    "fortified-ward-contract",
+    "fractured-gate-routes-v0.3",
+  );
+  fortified.phase = "round-review";
+  fortified.enemies.find((entry) => entry.id === "ward").guard =
+    THREE_ROUTE_RULES.enemyGuardCap;
+  fortified = startNextThreeRouteRound(fortified);
+  const fortifiedWard = fortified.enemyIntents.find(
+    (intent) => intent.actorId === "ward",
+  );
+  assert.equal(fortifiedWard.kind, "attack");
+  assert.equal(fortifiedWard.name, "Lockdown Shot");
+  assert.equal(fortifiedWard.impact, 1);
+
+  const advance = exposeCard(state, "movement", "advance");
   state = chooseThreeRoute(
     state,
-    charge.id,
-    choiceForTarget(state, charge.id, "wayfinder").id,
+    advance.id,
+    choiceForTarget(state, advance.id, "cargo-divider").id,
   );
   state = resolveThreeRouteRound(state);
-  assert.equal(state.player.condition, 11, "an arriving rush must deal its stated Impact");
-  assert.equal(state.pressure, -1);
+  assert.equal(
+    state.enemies.find((entry) => entry.id === "runner").positionId,
+    "west-access",
+    "the Runner should commit to its telegraphed route",
+  );
+  assert.equal(
+    state.enemies.find((entry) => entry.id === "stalker").positionId,
+    "cargo-divider",
+    "the Stalker should visibly cut off a different route",
+  );
+  assert.equal(state.enemies.find((entry) => entry.id === "ward").guard, 1);
+  assert.equal(state.player.condition, 10, "moving into a hostile cutoff must cost 2 Health");
+  assert.equal(state.pressure, -1, "the successful cutoff must change Control");
 });
 
 test("unprotected scene preparation is destroyed by a locked disrupt intent", () => {

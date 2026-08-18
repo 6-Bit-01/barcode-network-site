@@ -1,5 +1,5 @@
 export const THREE_ROUTE_SOURCE =
-  "BARCODE_WORLD_THREE_ROUTE_CARD_THEATER_V0.3_CHALLENGE_2026-08-17";
+  "BARCODE_WORLD_THREE_ROUTE_CARD_THEATER_V0.3_PRESSURE_2026-08-18";
 
 export const CARD_CATEGORIES = Object.freeze([
   "movement",
@@ -14,7 +14,7 @@ export const THREE_ROUTE_RULES = Object.freeze({
   categoryCapacity: 5,
   openingPerCategory: 4,
   reserveStart: 10,
-  reservePerRound: 10,
+  reservePerRound: 6,
   reserveCap: 20,
   conditionStart: 12,
   conditionMax: 12,
@@ -1750,7 +1750,7 @@ function createEnemyIntents(state) {
           enemyValue.id,
       );
       if (distance === 0) {
-        if (enemyValue.role.includes("GUARD") && roll < 0.4) {
+        if (enemyValue.role.includes("GUARD") && roll < 0.25) {
           return {
             actorId: enemyValue.id,
             kind: "guard",
@@ -1779,13 +1779,26 @@ function createEnemyIntents(state) {
         (objectValue) => objectValue.zoneId === enemyValue.positionId,
       );
       if (enemyValue.role.includes("GUARD") && guardedObject) {
+        if (enemyValue.guard >= THREE_ROUTE_RULES.enemyGuardCap) {
+          return {
+            actorId: enemyValue.id,
+            kind: "attack",
+            name: "Lockdown Shot",
+            targetId: "wayfinder",
+            destinationId: enemyValue.positionId,
+            chance: 70,
+            impact: 1,
+            pressure: 1,
+            order: index,
+          };
+        }
         return {
           actorId: enemyValue.id,
           kind: "guard",
           name: "Hold " + guardedObject.name,
           targetId: guardedObject.id,
           destinationId: enemyValue.positionId,
-          chance: 90,
+          chance: 85,
           impact: 0,
           pressure: 0,
           order: index,
@@ -1795,25 +1808,44 @@ function createEnemyIntents(state) {
         enemyValue.role.includes("DISRUPT") ||
         enemyValue.role.includes("CONTROL")
       ) {
-        const targetObject =
-          state.scenario.objects.find((objectValue) =>
-            state.preparedObjectIds.includes(objectValue.id),
-          ) ??
-          state.scenario.objects.find((objectValue) =>
-            ["relay", "coolant"].includes(objectValue.feature),
-          ) ??
-          state.scenario.objects[0] ??
-          null;
+        const preparedObject = state.scenario.objects.find((objectValue) =>
+          state.preparedObjectIds.includes(objectValue.id),
+        );
+        if (
+          preparedObject &&
+          graphDistance(
+            state.scenario,
+            enemyValue.positionId,
+            preparedObject.zoneId,
+          ) <= 1
+        ) {
+          return {
+            actorId: enemyValue.id,
+            kind: "disrupt",
+            name: "Jam " + preparedObject.name,
+            targetId: preparedObject.id,
+            destinationId: enemyValue.positionId,
+            chance: enemyValue.role.includes("CONTROL") ? 85 : 80,
+            impact: 0,
+            pressure: 1,
+            order: index,
+          };
+        }
+        const destinationId = nextStepToward(
+          state.scenario,
+          enemyValue.positionId,
+          preparedObject?.zoneId ?? state.player.positionId,
+        );
         return {
           actorId: enemyValue.id,
-          kind: "disrupt",
-          name: targetObject
-            ? "Jam " + targetObject.name
-            : "Control Jam",
-          targetId: targetObject?.id ?? "control",
-          destinationId: enemyValue.positionId,
-          chance: enemyValue.role.includes("CONTROL") ? 80 : 75,
-          impact: 0,
+          kind: "advance",
+          name: preparedObject
+            ? "Cut Off " + preparedObject.name
+            : "Hunt",
+          targetId: preparedObject?.id ?? state.player.positionId,
+          destinationId,
+          chance: 85,
+          impact: 2,
           pressure: 1,
           order: index,
         };
@@ -1834,7 +1866,7 @@ function createEnemyIntents(state) {
           state.player.positionId,
         ),
         chance: 85,
-        impact: enemyValue.role.includes("GUARD") ? 0 : 1,
+        impact: enemyValue.role.includes("GUARD") ? 0 : 2,
         pressure: 1,
         order: index,
       };
@@ -2072,10 +2104,15 @@ function resolveEnemyIntent(state, snapshot, intent, index) {
       THREE_ROUTE_RULES.enemyGuardCap,
       enemyValue.guard + 1,
     );
+    output.pressure -= intent.pressure;
     detail =
       enemyValue.guard > beforeGuard
-        ? enemyValue.name + " gained 1 Guard."
-        : enemyValue.name + " held a fully guarded position.";
+        ? enemyValue.name + " gained 1 Guard"
+        : enemyValue.name + " held a fully guarded position";
+    if (intent.pressure > 0) {
+      detail += " · Control -" + intent.pressure;
+    }
+    detail += ".";
     cue = "enemy-guard";
   } else if (success && intent.kind === "attack") {
     detail = applyEnemyImpact(
@@ -2504,9 +2541,16 @@ export function startNextThreeRouteRound(state) {
   draft.currentRoundGrant = grants;
   draft.enemyIntents = createEnemyIntents(draft);
   draft.notice =
-    grants.reduce((sum, entry) => sum + entry.actual, 0) > 0
+    "+" +
+    THREE_ROUTE_RULES.reservePerRound +
+    " Command Points banked · " +
+    draft.player.reserve +
+    "/" +
+    THREE_ROUTE_RULES.reserveCap +
+    ". " +
+    (grants.reduce((sum, entry) => sum + entry.actual, 0) > 0
       ? "Round-start category grants applied."
-      : "No automatic card grant in this scenario.";
+      : "No automatic card grant in this scenario.");
   return draft;
 }
 
@@ -2708,6 +2752,7 @@ export function runThreeRouteSimulation({
     rounds: [],
     actions: 0,
     contextCardsUsed: 0,
+    outcomeCounts: {},
     categoryUses: Object.fromEntries(
       CARD_CATEGORIES.map((category) => [category, 0]),
     ),
@@ -2773,6 +2818,9 @@ export function runThreeRouteSimulation({
       }
     }
     summary.rounds.push(Math.min(state.round, maxRounds));
+    const outcome = state.result?.outcome ?? "unfinished";
+    summary.outcomeCounts[outcome] =
+      (summary.outcomeCounts[outcome] ?? 0) + 1;
     if (state.result?.outcome === "withdrawal") summary.retreats += 1;
     else if (state.result?.winner === "player") summary.playerWins += 1;
     else if (state.result?.winner === "enemy") summary.enemyWins += 1;

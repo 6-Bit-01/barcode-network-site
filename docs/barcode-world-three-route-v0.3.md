@@ -10,7 +10,7 @@ battle established by v0.2, while replacing the four-front stack interface
 with a card-first, three-route planning system tied to one readable theater.
 
 The owner-review checkpoint is reconciled with the current `main` tree. Its
-focused 38-test prototype contract, full 889-test repository suite, TypeScript
+focused 39-test prototype contract, full 890-test repository suite, TypeScript
 check, lint with zero errors (39 unrelated existing warnings), and production
 build all pass against this checkpoint.
 
@@ -75,7 +75,8 @@ ways to make the encounter stop. They are now separate declared outcomes:
   to mark a relay/coolant object `PRIMED`, protect it against the locked Jam,
   survive the enemy response, then use the temporary Context Card next round;
 - the Breacher Runner now rushes and deals arrival Impact, the Ward visibly
-  holds/guards the Gate, and the Stalker uses its `CONTROL` role to Jam scene
+  holds/guards the Gate before switching to Lockdown Shot, and the Stalker
+  physically hunts or cuts off the Wayfinder before it can Jam nearby scene
   preparation. Those labels are mechanics, not flavor-only text.
 
 Every exit and objective preview also says that the enemy response still
@@ -146,6 +147,30 @@ events a small procedural Web Audio layer:
 These cues follow the already-buffered resolution event order. They do not
 change rolls, timing authority, Health, Control, Command Points, cards,
 replenishment, or outcome rules.
+
+## Command Point banking and enemy-pressure correction
+
+The next owner playthrough exposed two misleading behaviors: spent Command
+Points appeared to reset to `10`, and enemies declared intents without exerting
+enough visible battlefield pressure. The correction makes both systems
+legible and consequential without changing the established surface:
+
+- the Wayfinder starts with **10 Command Points**, banks every unspent point,
+  gains **+6** at the start of each later round, and cannot exceed **20**;
+- the sticky Command Point display always states `+6 NEXT ROUND` and `UNSPENT
+  CP BANKS`; the round-advance control repeats the exact `+6 CP` change;
+- a selected card still previews its immediate `− N CP` debit and resulting
+  bank before placement;
+- enemy movement intents draw temporary red dashed paths on the same physical
+  theater edges used by actors. They disappear during action playback;
+- Runner rushes and Stalker interceptions now carry 2 Impact when they reach
+  the Wayfinder. The Stalker must move into range before Jamming a prepared
+  object instead of disrupting it remotely;
+- the Ward builds Guard at the Gate, then converts a fully fortified position
+  into a telegraphed Lockdown Shot rather than guarding forever.
+
+The result is a real budget across rounds and an enemy plan that can be read,
+anticipated, evaded, or deliberately challenged on the theater.
 
 ## Owner correction — category browser and spatial theater
 
@@ -348,26 +373,28 @@ The three test scenarios intentionally use different recipes:
 
 These are test recipes, not final balance archetypes.
 
-## Deterministic machine smoke — 2026-08-17
+## Deterministic machine smoke — 2026-08-18
 
 The v0.3 contract test runs 40 policy battles under each scenario (120 total),
 with a 40-round safety cap. All 120 terminate and every category is exercised.
 
 | Scenario | Player wins | Enemy wins | Retreats | Unfinished | Average rounds | Context uses |
 |---|---:|---:|---:|---:|---:|---:|
-| Sublevel Duel | 38 | 1 | 1 | 0 | 3.775 | 0 |
-| Fractured Gate | 14 | 11 | 15 | 0 | 9.450 | 52 |
-| Coolant Extraction | 40 | 0 | 0 | 0 | 4.850 | 22 |
+| Sublevel Duel | 39 | 0 | 1 | 0 | 4.550 | 0 |
+| Fractured Gate | 16 | 18 | 6 | 0 | 10.525 | 49 |
+| Coolant Extraction | 40 | 0 | 0 | 0 | 6.025 | 32 |
 
 This is deadlock, determinism, branching, and broad rules smoke only. The
 policy is not a human player. These figures are not evidence of balance,
 difficulty, comprehension, fun, animation quality, or replay value.
 
-A separate 120-battle Fractured Gate challenge audit produced 47 victories,
-26 defeats, 47 withdrawals, and no unfinished battles at a 40-round harness
-cap (9.025 average rounds, 146 Context uses). The important regression signal
-is that the policy no longer converts retreat, `+5` Control, or Overload Relay
-into free wins.
+A separate 120-battle Fractured Gate challenge audit produced 46 victories,
+47 defeats, 27 withdrawals, and no unfinished battles at a 40-round harness
+cap (10.492 average rounds, 140 Context uses). Of those defeats, 46 reached the
+declared breach deadline and one lost through enemy Control pressure. The
+important regression signals are that the policy no longer converts retreat,
+`+5` Control, or Overload Relay into free wins, and that deliberate play can
+now produce wins, losses, or withdrawals in meaningful proportions.
 
 ## Owner review path
 
@@ -376,7 +403,8 @@ into free wins.
 1. Confirm the theater reads as one connected physical space with one solid
    Wayfinder and the scenario's actual enemies—not one Wayfinder per box.
    Confirm the Wayfinder begins at `12/12 HEALTH`, every enemy has numeric
-   Health, and each enemy's intent is readable before planning.
+   Health, and each enemy's intent is readable before planning. Confirm a
+   moving enemy also shows its destination on a red dashed physical path.
 2. Confirm the opening surface shows four compact categories and no empty Route
    panel. Open Movement and confirm at least four available cards are visible.
    Select `Advance`. Confirm the library condenses, Routes A–C appear, and
@@ -406,17 +434,20 @@ into free wins.
 9. Attach a Modifier to a compatible planned step. Confirm odds/consequences
    update on that step rather than creating a scenario-specific base card.
 10. Play a card and confirm no automatic replacement appears. Then trigger at
-   least one success grant, round-start Movement grant, Context Card, Cache Tap,
-   Cycle, and Pressure Break.
-11. Resolve a three-step plan. Confirm player steps act first. Confirm enemies
+    least one success grant, round-start Movement grant, Context Card, Cache Tap,
+    Cycle, and Pressure Break.
+11. Spend Command Points, finish the round, and confirm the remaining bank is
+    preserved. Start the next round and confirm it gains exactly `+6`, caps at
+    `20`, and never silently resets to `10`.
+12. Resolve a three-step plan. Confirm player steps act first. Confirm enemies
    respond second. Health, Control, grants, `ROUND RESOLVED`, and the final
    review must not appear until the Round Result.
-12. Force an early movement failure with a later position-dependent step.
+13. Force an early movement failure with a later position-dependent step.
    Confirm the later step says `INVALIDATED` and returns its card/Command
    Points rather than teleporting or retargeting.
-13. Switch among the one-, two-, and three-enemy scenarios. Confirm the same
+14. Switch among the one-, two-, and three-enemy scenarios. Confirm the same
     card grammar still makes physical sense.
-14. Replay Same State with the same choices and confirm exact results. New
+15. Replay Same State with the same choices and confirm exact results. New
     Shuffle must change the derived seed and category availability.
 
 ### Mobile and accessibility

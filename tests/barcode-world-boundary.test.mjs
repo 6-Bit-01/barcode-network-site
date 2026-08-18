@@ -274,11 +274,16 @@ test("Command Points stay prominent and preview exact placement costs", async ()
   assert.match(component, /CYCLE · −1 CP/);
   assert.doesNotMatch(component, />RESERVE </);
   assert.match(engine, /reserveStart:\s*10/);
+  assert.match(engine, /reservePerRound:\s*6/);
   assert.match(engine, /reserveCap:\s*20/);
   assert.match(engine, /draft\.player\.reserve -= cardValue\.cost/);
+  assert.match(component, /UNSPENT CP BANKS/);
+  assert.match(component, /NEXT ROUND · \+\{THREE_ROUTE_RULES\.reservePerRound\} CP/);
+  assert.match(component, /styles\.enemyIntentLine/);
 
   assert.match(css, /\.statusBar\s*\{[\s\S]*?position:\s*sticky/);
   assert.match(css, /\.commandPoints\s*\{/);
+  assert.match(css, /\.enemyIntentLine\s*\{/);
   assert.match(css, /\.commandPointAmount\s*\{[\s\S]*?font-size:\s*1\.55rem/);
   assert.match(css, /\.commandPoints\[data-preview="true"\]/);
   assert.match(

@@ -1,6 +1,14 @@
 export type CardCategory = "movement" | "defense" | "offense" | "special";
 export type ThreeRoutePhase = "planning" | "round-review" | "result";
 export type CardKind = "action" | "modifier" | "context";
+export type EnemyDifficulty = "basic" | "standard" | "tactical";
+export type ThreeRoutePlayerPolicy =
+  | "deliberate"
+  | "objective"
+  | "aggressive"
+  | "defensive"
+  | "random"
+  | "first-legal";
 
 export interface ThreeRouteCard {
   id: string;
@@ -47,6 +55,8 @@ export interface TheaterObject {
   name: string;
   zoneId: string;
   feature: string;
+  integrity?: number;
+  maxIntegrity?: number;
 }
 
 export interface TheaterEnemy {
@@ -75,6 +85,13 @@ export interface ThreeRouteScenario {
   enemies: TheaterEnemy[];
   contextCardIds: string[];
   objectiveGoal: number;
+  defendedObjectId: string | null;
+  enemyPlan: {
+    primaryTarget: "player" | "defended-object" | "block-exit";
+    aggression: number;
+    objectiveWeight: number;
+    fieldDisruption: boolean;
+  };
   mission: {
     win: string;
     lose: string;
@@ -86,8 +103,12 @@ export interface ThreeRouteScenario {
     controlDefeat: boolean;
     roundLimit: number | null;
     timeoutResult: string;
+    timeoutWinner: "player" | "enemy" | null;
+    timeoutOutcome: "timeout" | "holdout" | "defense";
     exitOutcome: "withdrawal" | "victory";
+    exitRequiresSecured: boolean;
     objectiveResult: string;
+    enemyObjectiveResult: string;
   };
   feed: {
     roundStart: Partial<Record<CardCategory, number>>;
@@ -148,14 +169,19 @@ export interface PlanStep {
 }
 
 export interface EnemyIntent {
+  id: string;
   actorId: string;
-  kind: "attack" | "advance" | "guard" | "disrupt";
+  kind: "attack" | "advance" | "guard" | "disrupt" | "objective";
   name: string;
   targetId: string;
   destinationId: string;
   chance: number;
   impact: number;
   pressure: number;
+  reason: string;
+  score: number;
+  candidateCount: number;
+  difficulty: EnemyDifficulty;
   order: number;
 }
 
@@ -168,6 +194,7 @@ export interface TheaterSnapshot {
   playerExposed: boolean;
   enemies: TheaterEnemy[];
   objectiveProgress: number;
+  objectIntegrity: Record<string, number>;
   protectedObjectId: string | null;
   preparedObjectIds: string[];
   pressure: number;
@@ -199,7 +226,7 @@ export interface CardGrant {
 
 export interface ThreeRouteResult {
   winner: "player" | "enemy" | null;
-  outcome: "victory" | "objective" | "withdrawal" | "extraction" | "pressure" | "compromised" | "timeout";
+  outcome: "victory" | "objective" | "withdrawal" | "extraction" | "pressure" | "compromised" | "timeout" | "holdout" | "defense";
   title: string;
   reason: string;
 }
@@ -228,6 +255,7 @@ export interface ProjectedTheater {
   flankBonus: boolean;
   enemies: TheaterEnemy[];
   objectiveProgress: number;
+  objectIntegrity: Record<string, number>;
   protectedObjectId: string | null;
   preparedObjectIds: string[];
   pressure: number;
@@ -235,13 +263,14 @@ export interface ProjectedTheater {
 }
 
 export interface ThreeRouteState {
-  version: "0.3";
+  version: "0.4";
   source: string;
   baseSeed: string;
   seed: string;
   shuffleIndex: number;
   scenarioId: string;
   scenario: ThreeRouteScenario;
+  enemyDifficulty: EnemyDifficulty;
   round: number;
   phase: ThreeRoutePhase;
   pressure: number;
@@ -263,6 +292,7 @@ export interface ThreeRouteState {
   enemies: TheaterEnemy[];
   enemyIntents: EnemyIntent[];
   objectiveProgress: number;
+  objectIntegrity: Record<string, number>;
   protectedObjectId: string | null;
   preparedObjectIds: string[];
   usedContextCardIds: string[];
@@ -274,8 +304,10 @@ export interface ThreeRouteState {
 }
 
 export interface ThreeRouteSimulation {
-  version: "0.3";
+  version: "0.4";
   scenarioId: string;
+  policy: ThreeRoutePlayerPolicy;
+  enemyDifficulty: EnemyDifficulty;
   battles: number;
   maxRounds: number;
   playerWins: number;
@@ -284,12 +316,27 @@ export interface ThreeRouteSimulation {
   unfinished: number;
   rounds: number[];
   actions: number;
+  commandPointsSpent: number;
   contextCardsUsed: number;
+  firstRoundWins: number;
+  stalledBattles: number;
+  invalidatedActions: number;
+  enemyIntents: number;
+  enemySuccesses: number;
+  meaningfulEnemyActions: number;
+  playerHealthLost: number;
+  objectIntegrityLost: number;
+  enemyIntentKinds: Record<string, number>;
+  outcomeCounts: Record<string, number>;
   categoryUses: Record<CardCategory, number>;
   averageRounds: number;
+  playerWinRate: number;
+  enemyMeaningfulRate: number;
 }
 
 export const THREE_ROUTE_SOURCE: string;
+export const THREE_ROUTE_AI_DIFFICULTIES: ReadonlyArray<EnemyDifficulty>;
+export const THREE_ROUTE_PLAYER_POLICIES: ReadonlyArray<ThreeRoutePlayerPolicy>;
 export const CARD_CATEGORIES: ReadonlyArray<CardCategory>;
 export const THREE_ROUTE_RULES: Readonly<Record<string, number>>;
 export const GENERAL_CARD_DEFINITIONS: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
@@ -316,6 +363,10 @@ export function graphDistance(
   startId: string,
   destinationId: string,
 ): number;
+export function planThreeRouteEnemyIntents(
+  state: ThreeRouteState,
+  options?: { difficulty?: EnemyDifficulty },
+): EnemyIntent[];
 export function getVisibleCategoryCards(
   state: ThreeRouteState,
   category: CardCategory,
@@ -324,6 +375,7 @@ export function getThreeRouteChoices(
   state: ThreeRouteState,
   cardId: string,
 ): ThreeRouteChoice[];
+export function hasPlayableThreeRouteAction(state: ThreeRouteState): boolean;
 export function projectPlannedTheater(state: ThreeRouteState): ProjectedTheater;
 export function chooseThreeRoute(
   state: ThreeRouteState,
@@ -340,6 +392,7 @@ export function startNextThreeRouteRound(state: ThreeRouteState): ThreeRouteStat
 export function createThreeRouteState(
   seed?: string,
   scenarioId?: string,
+  options?: { enemyDifficulty?: EnemyDifficulty },
 ): ThreeRouteState;
 export function replaySameThreeRouteState(state: ThreeRouteState): ThreeRouteState;
 export function replayNewThreeRouteShuffle(state: ThreeRouteState): ThreeRouteState;
@@ -348,4 +401,26 @@ export function runThreeRouteSimulation(options?: {
   seedPrefix?: string;
   maxRounds?: number;
   scenarioId?: string;
+  policy?: ThreeRoutePlayerPolicy;
+  enemyDifficulty?: EnemyDifficulty;
 }): ThreeRouteSimulation;
+export function runThreeRouteLaboratory(options?: {
+  battlesPerCell?: number;
+  seedPrefix?: string;
+  maxRounds?: number;
+  scenarioIds?: string[];
+  policies?: ThreeRoutePlayerPolicy[];
+  difficulties?: EnemyDifficulty[];
+}): {
+  version: "0.4";
+  battlesPerCell: number;
+  maxRounds: number;
+  cells: ThreeRouteSimulation[];
+  comparisons: Array<{
+    scenarioId: string;
+    enemyDifficulty: EnemyDifficulty;
+    deliberateWinRate: number;
+    randomWinRate: number;
+    intentionalAdvantage: number;
+  }>;
+};

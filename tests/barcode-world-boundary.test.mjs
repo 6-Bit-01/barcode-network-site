@@ -14,6 +14,7 @@ const gameFiles = [
   "src/app/world/playtest/page.tsx",
   "src/components/BarcodeWorldCardBattle.tsx",
   "src/components/BarcodeWorldCardBattle.module.css",
+  "src/lib/barcode-world/battle-sfx.ts",
   "src/lib/barcode-world/three-route-engine.mjs",
   "src/lib/barcode-world/playtest-access.mjs",
 ];
@@ -282,6 +283,33 @@ test("Command Points stay prominent and preview exact placement costs", async ()
     css,
     /@media \(max-width: 760px\)[\s\S]*?\.commandPoints \{[\s\S]*?grid-column: 1 \/ -1/,
   );
+});
+
+test("battle SFX are optional, gesture-armed, and synchronized to visible actions", async () => {
+  const [component, sfx, css] = await Promise.all([
+    readFile("src/components/BarcodeWorldCardBattle.tsx", "utf8"),
+    readFile("src/lib/barcode-world/battle-sfx.ts", "utf8"),
+    readFile("src/components/BarcodeWorldCardBattle.module.css", "utf8"),
+  ]);
+
+  assert.match(component, /useBattleSfx\(\)/);
+  assert.match(component, /aria-pressed=\{sfxEnabled\}/);
+  assert.match(component, /SFX \{sfxEnabled \? "ON" : "OFF"\}/);
+  assert.match(component, /playSfx\("commit"\)/);
+  assert.match(component, /playSfx\("cycle"\)/);
+  assert.match(component, /battleSfxForSceneCue\(activeSceneCue\)/);
+  assert.match(sfx, /new window\.AudioContext\(\)/);
+  assert.match(sfx, /context\.resume\(\)\.then\(run\)/);
+  assert.match(sfx, /context\.close\(\)/);
+  assert.match(sfx, /sceneCue === "player-success"/);
+  assert.match(sfx, /sceneCue === "player-failed"/);
+  assert.match(sfx, /sceneCue === "enemy-hit"/);
+  assert.match(sfx, /sceneCue === "pressure-break"/);
+  assert.match(sfx, /return "round"/);
+  assert.doesNotMatch(sfx, /\b(?:fetch|new Audio)\s*\(/);
+  assert.doesNotMatch(component, /<audio|autoplay/i);
+  assert.match(css, /\.sfxToggle\s*\{/);
+  assert.match(css, /\.sfxToggle\[aria-pressed="false"\]/);
 });
 
 test("the compact surface preserves odds truth, causal detail, resets, and accessible interaction", async () => {

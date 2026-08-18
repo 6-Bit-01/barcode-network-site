@@ -167,7 +167,7 @@
   z-index: 40;
   top: max(0.35rem, env(safe-area-inset-top));
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
   align-items: center;
   gap: 0.45rem 1rem;
   margin: 0.8rem 0;
@@ -195,6 +195,41 @@
 
 .statusBar b {
   color: var(--ink);
+}
+
+.sfxToggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.32rem;
+  min-height: 2rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid #3d6269;
+  color: var(--cyan);
+  background: #0b1416;
+  font: 900 0.54rem/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0.07em;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.sfxToggle::before {
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 50%;
+  content: "";
+  background: currentcolor;
+  box-shadow: 0 0 0.55rem currentcolor;
+}
+
+.sfxToggle[aria-pressed="false"] {
+  border-color: var(--line);
+  color: var(--muted);
+  background: #0a0f10;
+}
+
+.sfxToggle[aria-pressed="false"]::before {
+  box-shadow: none;
 }
 
 .commandPoints {
@@ -2005,14 +2040,20 @@
   }
 
   .statusBar {
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
     gap: 0.4rem 0.65rem;
     margin: 0.55rem 0;
   }
 
   .commandPoints {
     grid-column: 1 / -1;
+    grid-row: 2;
     min-width: 0;
+  }
+
+  .sfxToggle {
+    grid-column: 4;
+    grid-row: 1;
   }
 
   .firstTurnGuide {
@@ -2158,6 +2199,12 @@
   .statusBar > span {
     padding: 0;
     font-size: 0.52rem;
+  }
+
+  .sfxToggle {
+    min-height: 1.9rem;
+    padding-inline: 0.4rem;
+    font-size: 0.48rem;
   }
 
   .commandPointAmount {

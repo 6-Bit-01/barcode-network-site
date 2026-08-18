@@ -10,7 +10,7 @@ battle established by v0.2, while replacing the four-front stack interface
 with a card-first, three-route planning system tied to one readable theater.
 
 The owner-review checkpoint is reconciled with the current `main` tree. Its
-focused 29-test prototype contract, full 880-test repository suite, TypeScript
+focused 30-test prototype contract, full 881-test repository suite, TypeScript
 check, lint with zero errors (39 unrelated existing warnings), and production
 build all pass against this checkpoint.
 
@@ -77,12 +77,34 @@ control layer needed for the current decision:
 - Engine source, seed, persistence boundary, and scenario switches remain
   available inside collapsed prototype options instead of occupying the main
   battle surface.
+- A compact `SFX ON/OFF` control remains in the sticky status line. Sound
+  effects use short interface and battle cues without adding another panel.
 
 This is an information-hierarchy correction, not a mechanical reduction or a
 new visual direction. Health, enemy intent, probability, all ready cards,
 neutral routes, Context Cards, modifiers, and replenishment rules remain.
 The engine's existing `reserve` field is retained for compatibility; the
 player-facing name for that same resource is **Command Points**.
+
+## Procedural battle SFX
+
+The owner-review prototype now gives its existing interactions and theater
+events a small procedural Web Audio layer:
+
+- category open, card selection, Cycle, Undo, and plan start have quiet UI
+  cues;
+- placing a card on a target has a distinct commitment / Command Point debit
+  hit;
+- player success, player failure or invalidation, enemy action or impact,
+  Pressure Break, and Round Result each have a recognizable cue family;
+- the audio context is created lazily after interaction, uses no downloaded
+  audio asset, and fails silently if browser audio is unavailable;
+- SFX are on by default for this prototype and can be muted from the sticky
+  status line; the mute control is independent from Reduced Motion.
+
+These cues follow the already-buffered resolution event order. They do not
+change rolls, timing authority, Health, Control, Command Points, cards,
+replenishment, or outcome rules.
 
 ## Owner correction — category browser and spatial theater
 
@@ -338,6 +360,10 @@ difficulty, comprehension, fun, animation quality, or replay value.
    letters, and event order retain meaning.
 5. Enable both the in-prototype Reduce Motion option and the OS preference.
    Confirm event order and all state changes remain readable.
+6. Toggle SFX off and confirm planning plus a complete round remain playable
+   without audio. Toggle it back on, then confirm card placement, player
+   outcome, enemy response, and Round Result have distinct short cues with no
+   hover noise or looping audio.
 
 ## Automated validation
 
@@ -355,7 +381,8 @@ card-first targeting, physical target binding, Context Card visibility,
 modifiers, projected prerequisites, causal invalidation, exact undo, no
 placement refill, multiple grant sources, explicit cycling, deterministic
 replay, player/enemy/settle ordering, variable enemy counts, simulation
-termination, production isolation, and accessibility primitives.
+termination, optional gesture-armed SFX, production isolation, and
+accessibility primitives.
 
 ## Hard boundary
 

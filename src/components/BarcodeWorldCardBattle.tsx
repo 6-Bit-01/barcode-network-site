@@ -29,6 +29,10 @@ import {
   type ThreeRouteChoice,
   type ThreeRouteState,
 } from "@/lib/barcode-world/three-route-engine.mjs";
+import {
+  battleSfxForSceneCue,
+  useBattleSfx,
+} from "@/lib/barcode-world/battle-sfx";
 import styles from "./BarcodeWorldCardBattle.module.css";
 
 const ROUTE_SLOTS = Array.from(
@@ -517,6 +521,11 @@ function BattleTheater({
 }
 
 export function BarcodeWorldCardBattle() {
+  const {
+    enabled: sfxEnabled,
+    play: playSfx,
+    setEnabled: setSfxEnabled,
+  } = useBattleSfx();
   const [game, setGame] = useState<ThreeRouteState>(() => createThreeRouteState());
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [pendingResolution, setPendingResolution] = useState<ThreeRouteState | null>(null);
@@ -552,6 +561,8 @@ export function BarcodeWorldCardBattle() {
   const choices = selectedCard ? getThreeRouteChoices(game, selectedCard.id) : [];
   const plannedProjection = projectPlannedTheater(game);
   const activeEvent = pendingResolution?.currentReview?.events[resolutionEventIndex] ?? null;
+  const activeEventId = activeEvent?.id ?? null;
+  const activeSceneCue = activeEvent?.sceneCue ?? null;
 
   const projected: ProjectedTheater = activeEvent
     ? {
@@ -587,11 +598,17 @@ export function BarcodeWorldCardBattle() {
   }, [activeEvent?.phase, pendingResolution, reducedMotion, resolutionEventIndex]);
 
   useEffect(() => {
+    if (!activeEventId || !activeSceneCue) return;
+    playSfx(battleSfxForSceneCue(activeSceneCue));
+  }, [activeEventId, activeSceneCue, playSfx]);
+
+  useEffect(() => {
     if (selectedCardId && !selectedCard) setSelectedCardId(null);
   }, [selectedCard, selectedCardId]);
 
   function choose(choice: ThreeRouteChoice) {
     if (!selectedCard || pendingResolution) return;
+    playSfx("commit");
     setGame((current) => chooseThreeRoute(current, selectedCard.id, choice.id));
     setSelectedCardId(null);
     setActiveCategory(null);
@@ -600,6 +617,7 @@ export function BarcodeWorldCardBattle() {
 
   function resolvePlan() {
     if (pendingResolution || game.player.plan.length === 0) return;
+    playSfx("resolve");
     const resolved = resolveThreeRouteRound(game);
     if (!resolved.currentReview) {
       setGame(resolved);
@@ -612,6 +630,7 @@ export function BarcodeWorldCardBattle() {
   }
 
   function resetScenario(scenarioId: string) {
+    playSfx("panel");
     setSelectedCardId(null);
     setActiveCategory(null);
     setFocusedChoiceId(null);
@@ -667,13 +686,25 @@ export function BarcodeWorldCardBattle() {
           <span>ROUND <b>{game.round}</b></span>
           <span>PLAN <b>{game.player.plan.length}/{THREE_ROUTE_RULES.maxPlanSteps}</b></span>
           <CommandPointDisplay current={game.player.reserve} previewCard={pendingResolution ? null : selectedCard} />
+          <button
+            aria-label={`Sound effects ${sfxEnabled ? "on" : "off"}. Press to turn sound effects ${sfxEnabled ? "off" : "on"}.`}
+            aria-pressed={sfxEnabled}
+            className={styles.sfxToggle}
+            onClick={() => {
+              const next = !sfxEnabled;
+              setSfxEnabled(next);
+              if (next) playSfx("select");
+            }}
+            title={`Turn sound effects ${sfxEnabled ? "off" : "on"}`}
+            type="button"
+          >SFX {sfxEnabled ? "ON" : "OFF"}</button>
         </div>
 
         {showFirstTurnGuide && game.round === 1 && game.phase === "planning" && !pendingResolution ? (
           <section className={styles.firstTurnGuide} aria-label="First turn guide">
             <span>ONE WAYFINDER · HEALTH 0 = COMPROMISED</span>
             <p>1 CATEGORY · 2 CARD · 3 THEATER TARGET · THEN ACT OUT THE PLAN</p>
-            <button onClick={() => setShowFirstTurnGuide(false)} type="button">GOT IT</button>
+            <button onClick={() => { playSfx("panel"); setShowFirstTurnGuide(false); }} type="button">GOT IT</button>
           </section>
         ) : null}
 
@@ -695,7 +726,7 @@ export function BarcodeWorldCardBattle() {
                   <h2 id="plan-title">{game.player.plan.length === 0 ? "BUILD AN ACTION CHAIN" : "PROJECTED ACTION CHAIN"}</h2>
                 </div>
                 <div className={styles.controlRail}>
-                  <button className={styles.secondaryButton} disabled={game.pendingActions.length === 0} onClick={() => { setSelectedCardId(null); setActiveCategory(null); setGame((current) => undoThreeRouteChoice(current)); }} type="button">UNDO</button>
+                  <button className={styles.secondaryButton} disabled={game.pendingActions.length === 0} onClick={() => { playSfx("undo"); setSelectedCardId(null); setActiveCategory(null); setGame((current) => undoThreeRouteChoice(current)); }} type="button">UNDO</button>
                   <button className={styles.primaryButton} disabled={game.player.plan.length === 0} onClick={resolvePlan} type="button">ACT OUT PLAN</button>
                 </div>
               </div>
@@ -747,7 +778,7 @@ export function BarcodeWorldCardBattle() {
                     <small>{game.player.reserve} → {game.player.reserve - selectedCard.cost}</small>
                   </span>
                   <span className={styles.selectedCardStats}>{choices.length} TARGET{choices.length === 1 ? "" : "S"}</span>
-                  <button className={styles.secondaryButton} onClick={() => setSelectedCardId(null)} type="button">CHANGE CARD</button>
+                  <button className={styles.secondaryButton} onClick={() => { playSfx("undo"); setSelectedCardId(null); }} type="button">CHANGE CARD</button>
                 </div>
               ) : (
                 <>
@@ -766,6 +797,7 @@ export function BarcodeWorldCardBattle() {
                           data-open={isOpen ? "true" : "false"}
                           key={category}
                           onClick={() => {
+                            playSfx("panel");
                             setActiveCategory((current) => current === category ? null : category);
                             setSelectedCardId(null);
                           }}
@@ -804,7 +836,7 @@ export function BarcodeWorldCardBattle() {
                       <button
                         className={styles.cycleButton}
                         disabled={game.player.reserve < 1 || pool.available.length === 0}
-                        onClick={() => { setSelectedCardId(null); setGame((current) => cycleThreeRouteCategory(current, category)); }}
+                        onClick={() => { playSfx("cycle"); setSelectedCardId(null); setGame((current) => cycleThreeRouteCategory(current, category)); }}
                         title="Spend 1 Command Point to cycle the first general card"
                         type="button"
                       >CYCLE · −1 CP</button>
@@ -820,6 +852,7 @@ export function BarcodeWorldCardBattle() {
                             disabled={!availability.usable}
                             key={card.id}
                             onClick={() => {
+                              playSfx("select");
                               setFocusedChoiceId(null);
                               setSelectedCardId((current) => current === card.id ? null : card.id);
                             }}
@@ -896,11 +929,11 @@ export function BarcodeWorldCardBattle() {
                 <h2 id="review-title">{game.result?.reason ?? `HEALTH ${game.currentReview.conditionBefore} → ${game.currentReview.conditionAfter} · CONTROL ${signed(game.currentReview.pressureBefore)} → ${signed(game.currentReview.pressureAfter)}`}</h2>
               </div>
               <div className={styles.reviewActions}>
-                {game.phase === "round-review" ? <button className={styles.primaryButton} onClick={() => setGame((current) => startNextThreeRouteRound(current))} type="button">NEXT ROUND</button> : null}
+                {game.phase === "round-review" ? <button className={styles.primaryButton} onClick={() => { playSfx("panel"); setGame((current) => startNextThreeRouteRound(current)); }} type="button">NEXT ROUND</button> : null}
                 {game.phase === "result" ? (
                   <>
-                    <button className={styles.secondaryButton} onClick={() => setGame((current) => replaySameThreeRouteState(current))} type="button">REPLAY SAME STATE</button>
-                    <button className={styles.primaryButton} onClick={() => setGame((current) => replayNewThreeRouteShuffle(current))} type="button">NEW SHUFFLE</button>
+                    <button className={styles.secondaryButton} onClick={() => { playSfx("panel"); setGame((current) => replaySameThreeRouteState(current)); }} type="button">REPLAY SAME STATE</button>
+                    <button className={styles.primaryButton} onClick={() => { playSfx("panel"); setGame((current) => replayNewThreeRouteShuffle(current)); }} type="button">NEW SHUFFLE</button>
                   </>
                 ) : null}
               </div>

@@ -59,6 +59,10 @@ The queue production capability is fail-closed. The only enabled value is the lo
 
 ## Verification
 
+The current unlisted BARCODE World owner-review checkpoint is the
+[enemy AI + scenario laboratory v0.4](docs/barcode-world-ai-scenario-lab-v0.4.md).
+It remains branch-preview-only and does not alter the production site.
+
 ```bash
 npm run check
 npm run build

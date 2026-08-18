@@ -19,7 +19,7 @@ const gameFiles = [
   "src/lib/barcode-world/playtest-access.mjs",
 ];
 
-test("v0.3 remains production-gated, unlinked, owner-preview-only, and locally inert", async () => {
+test("v0.4 remains production-gated, unlinked, owner-preview-only, and locally inert", async () => {
   const contents = await Promise.all(
     gameFiles.map(async (path) => [path, await readFile(path, "utf8")]),
   );
@@ -54,8 +54,8 @@ test("v0.3 remains production-gated, unlinked, owner-preview-only, and locally i
   assert.doesNotMatch(publicShell, /\/world\/playtest/);
 });
 
-test("only development and the exact v0.3 branch preview can render", () => {
-  assert.equal(BARCODE_WORLD_OWNER_PREVIEW_BRANCH, "agent/barcode-world-three-route-v0-3");
+test("only development and the exact v0.4 branch preview can render", () => {
+  assert.equal(BARCODE_WORLD_OWNER_PREVIEW_BRANCH, "agent/barcode-world-ai-scenario-v0-4");
   const ownerPreview = {
     NODE_ENV: "production",
     VERCEL_ENV: "preview",
@@ -74,14 +74,14 @@ test("only development and the exact v0.3 branch preview can render", () => {
   assert.equal(shouldHideBarcodeWorldPlaytest({ NODE_ENV: "test" }), true);
 });
 
-test("v0.3 categorizes cards—not lanes—and binds card-first choices to theater targets", async () => {
+test("v0.4 categorizes cards—not lanes—and binds card-first choices to theater targets", async () => {
   const [component, engine] = await Promise.all([
     readFile("src/components/BarcodeWorldCardBattle.tsx", "utf8"),
     readFile("src/lib/barcode-world/three-route-engine.mjs", "utf8"),
   ]);
 
   assert.match(component, /THREE-ROUTE THEATER/);
-  assert.match(component, /v0\.3/);
+  assert.match(component, /v0\.4/);
   assert.match(component, /NEUTRAL CHOICE LANES/);
   assert.match(component, /ROUTE A/);
   assert.match(component, /ROUTE B/);
@@ -217,7 +217,8 @@ test("replenishment is category-specific and never an automatic placement refill
   assert.match(component, /\{usableCount\} USABLE HERE/);
   assert.match(component, /\{pool\.drawPile\.length\} DRAW/);
   assert.match(component, /CYCLE · −1 CP/);
-  assert.match(component, /Wait for a grant or reshuffle/);
+  assert.match(component, /RECOVER · FREE/);
+  assert.match(component, /Recover one card to continue/);
   assert.match(engine, /drawUsedCategoryOnSuccess/);
   assert.match(engine, /emptyPoolFallback/);
   assert.match(engine, /breakDrawPerCategory/);

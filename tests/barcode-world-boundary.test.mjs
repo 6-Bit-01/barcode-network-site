@@ -82,15 +82,16 @@ test("v0.3 categorizes cards—not lanes—and binds card-first choices to theat
   assert.match(component, /THREE-ROUTE THEATER/);
   assert.match(component, /v0\.3/);
   assert.match(component, /NEUTRAL CHOICE LANES/);
-  assert.match(component, /Cards have categories\. Routes do not\./);
   assert.match(component, /ROUTE A/);
   assert.match(component, /ROUTE B/);
   assert.match(component, /ROUTE C/);
   assert.match(component, /FOUR SEPARATE CARD POOLS/);
   assert.match(component, /YOUR CARD LIBRARY/);
-  assert.match(component, /01 · CHOOSE A CATEGORY/);
+  assert.match(component, /01 · CHOOSE A CARD/);
   assert.match(component, /02 · CHOOSE A TARGET/);
-  assert.match(component, /03 · REVIEW THE PLAN/);
+  assert.match(component, /styles\.planDock/);
+  assert.match(component, /styles\.selectedCardBar/);
+  assert.match(component, /data-mode=\{selectedCard \? "selected"/);
   assert.match(component, /const \[activeCategory, setActiveCategory\]/);
   assert.match(component, /styles\.categorySelector/);
   assert.match(component, /aria-expanded=\{isOpen\}/);
@@ -98,7 +99,11 @@ test("v0.3 categorizes cards—not lanes—and binds card-first choices to theat
   assert.match(component, /CARD_CATEGORIES\.map/);
   assert.match(component, /getVisibleCategoryCards/);
   assert.match(component, /getThreeRouteChoices\(game, selectedCard\.id\)/);
-  assert.match(component, /The theater highlights targets; its fixed paths remain the physical map/);
+  assert.match(
+    component,
+    /\{selectedCard \? \(\s*<section className=\{styles\.routeBoard\}/s,
+  );
+  assert.match(component, /setActiveCategory\(null\)/);
 
   for (const category of ["movement", "defense", "offense", "special"]) {
     assert.match(engine, new RegExp(`${category}: Object\\.freeze\\(\\[`, "i"), `${category} loadout`);
@@ -208,7 +213,6 @@ test("replenishment is category-specific and never an automatic placement refill
   assert.match(component, /\{visibleCards\.length\} READY/);
   assert.match(component, /\{usableCount\} USABLE HERE/);
   assert.match(component, /\{pool\.drawPile\.length\} DRAW/);
-  assert.match(component, /NO AUTOMATIC PLACEMENT REFILL/);
   assert.match(component, /CYCLE · 1R/);
   assert.match(component, /Wait for a grant or reshuffle/);
   assert.match(engine, /drawUsedCategoryOnSuccess/);
@@ -230,11 +234,13 @@ test("Health, Guard, enemy intent, and Control are persistent and visibly distin
   ]);
 
   assert.match(component, /HEALTH \{playerCondition\}\/\{playerMaximum\}/);
-  assert.match(component, /COMPROMISED AT 0/);
-  assert.match(component, /BATTLE CONTROL · SEPARATE FROM HEALTH/);
-  assert.match(component, /INTENT ·/);
+  assert.match(component, /HEALTH 0 = COMPROMISED/);
+  assert.match(component, /POSITION · NOT HEALTH/);
+  assert.match(component, /function intentLabel/);
+  assert.match(component, /IMPACT/);
   assert.match(component, /styles\.combatHud/);
   assert.match(component, /styles\.healthMeter/);
+  assert.doesNotMatch(component, /styles\.enemyHudList/);
   assert.match(engine, /conditionStart:\s*12/);
   assert.match(engine, /conditionMax:\s*12/);
   assert.match(engine, /const absorbed = Math\.min\(intent\.impact, output\.playerGuard\)/);
@@ -260,7 +266,10 @@ test("the compact surface preserves odds truth, causal detail, resets, and acces
   assert.match(component, /if \(chance < 70\) return "medium"/);
   assert.match(component, /odds, not promises/i);
   assert.doesNotMatch(component, /\b(?:GOOD|BAD|BEST)\b/i);
-  assert.match(component, /VIEW DETERMINISTIC EVENT RECORD/);
+  assert.match(component, /ROUND DETAILS ·/);
+  assert.match(component, /DETERMINISTIC EVENT RECORD/);
+  assert.match(component, /styles\.selectedCardBar/);
+  assert.match(component, /styles\.planDock/);
   assert.match(component, /REPLAY SAME STATE/);
   assert.match(component, /NEW SHUFFLE/);
   assert.match(component, /Reduce theater motion/);
@@ -280,6 +289,12 @@ test("the compact surface preserves odds truth, causal detail, resets, and acces
   assert.match(css, /--green:\s*#64ef9b/);
   assert.match(css, /\.categoryGrid\s*\{/);
   assert.match(css, /\.categoryDrawer\s*\{/);
+  assert.match(css, /\.selectedCardBar\s*\{/);
+  assert.match(css, /\.planDock\s*\{/);
+  assert.match(
+    css,
+    /@media \(max-width: 420px\)[\s\S]*?\.categoryGrid,[\s\S]*?\.poolCards \{\s*grid-template-columns: repeat\(2,/,
+  );
   assert.doesNotMatch(component, /<details[^>]*\sopen(?:=|\s|>)/);
 });
 

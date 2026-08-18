@@ -35,17 +35,48 @@ survival layer explicitly:
 - low Health is visually urgent but does not secretly change accuracy, Reserve,
   or Command.
 
-The theater now keeps a persistent combat HUD above the physical map. It names
-the single controlled actor as `YOU · WAYFINDER`, shows numeric Health, Guard,
-Power, position, and the zero-Health threshold, and shows every enemy's numeric
-Health and locked intent. Actor labels repeat compact Health bars so damage is
-readable both as a status change and as action in the theater.
+The theater now keeps one compact Wayfinder status strip above the physical
+map. It names the single controlled actor as `YOU · WAYFINDER` and shows
+numeric Health, Guard, Power, and position. Every enemy keeps numeric Health,
+a Health bar, and its locked intent directly on its theater actor. The removed
+duplicate enemy HUD list no longer repeats the same information above the map.
 
 The friend playtest also exposed two other comprehension problems. The visible
 round labels are now `BUILD YOUR PLAN → YOUR ACTIONS → ENEMY RESPONSE → ROUND
 RESULT`, and the first turn says directly that the player controls one
 Wayfinder. Route A/B/C focus now brightens the exact matching theater target;
 there are still no permanent straight attack rays.
+
+## Progressive disclosure and density correction
+
+The prototype preserves every card pool and combat rule while showing only the
+control layer needed for the current decision:
+
+- Round, phase, Reserve, and plan count share one compact status line.
+- The Control track is a slim positional meter labeled `NOT HEALTH`.
+- The three-step projected plan is always available as a compact dock rather
+  than a full review panel below every other control.
+- Category doors show only category name, ready count, usable count, and an
+  active Context count. Draw and discard information moves inside the opened
+  category.
+- Opening a category still shows every ready card. Mobile keeps two cards per
+  row rather than turning every card into a full-width vertical panel.
+- Selecting a card condenses the category browser into one selected-card strip
+  with `CHANGE CARD`; only then does the Route A/B/C target section appear.
+- Choosing a target closes the category and returns the player to the compact
+  category overview for the next action.
+- During resolution, all planning controls remain hidden so the theater and
+  player/enemy action order carry the screen.
+- Round review begins with the Health/Control result and any actual grants.
+  The complete event recap and deterministic record are collapsed under
+  `ROUND DETAILS`.
+- Engine source, seed, persistence boundary, and scenario switches remain
+  available inside collapsed prototype options instead of occupying the main
+  battle surface.
+
+This is an information-hierarchy correction, not a mechanical reduction or a
+new visual direction. Health, enemy intent, probability, all ready cards,
+neutral routes, Context Cards, modifiers, and replenishment rules remain.
 
 ## Owner correction — category browser and spatial theater
 
@@ -164,16 +195,18 @@ and what source produces a Context Card.
 ## Planning loop
 
 1. Enemy intent is seeded and locked at the beginning of the planning phase.
-2. The player sees four category doors first: Movement, Defense, Offense, and
-   Special. Each shows ready, **usable here**, draw, discard, Context, and
-   card-name preview information.
+2. The player sees four compact category doors first: Movement, Defense,
+   Offense, and Special. Each shows ready, **usable**, and active Context
+   counts. Draw and discard counts appear after that category is opened.
 3. Opening a category reveals its full available set. Every category starts
-   with four general cards visible, and its available capacity is five.
+   with four general cards visible, and its available capacity is five. Mobile
+   keeps two cards per row.
 4. The player selects any card marked `USABLE HERE`. Every ready card remains
    visible; a blocked card says `NOT USABLE HERE`, `PLAN FULL`, or the Reserve
    requirement instead of silently disappearing.
-5. The engine derives zero to three legal targets from the current projected
-   theater.
+5. Selecting a card condenses the library to a selected-card strip. The engine
+   derives zero to three legal targets from the current projected theater, and
+   only then reveals the Route A/B/C panel.
 6. The neutral Route A/B/C panels show target, numeric probability, success,
    failure, and any projected-position prerequisite.
 7. Selecting a route spends Reserve and stages that general card. It does not
@@ -255,9 +288,11 @@ difficulty, comprehension, fun, animation quality, or replay value.
    Wayfinder and the scenario's actual enemies—not one Wayfinder per box.
    Confirm the Wayfinder begins at `12/12 HEALTH`, every enemy has numeric
    Health, and each enemy's intent is readable before planning.
-2. Open Movement and confirm at least four available cards are visible. Select
-   `Advance`. Confirm Routes A–C name connected theater positions and matching
-   target markers appear above without drawing three attack rays.
+2. Confirm the opening surface shows four compact categories and no empty Route
+   panel. Open Movement and confirm at least four available cards are visible.
+   Select `Advance`. Confirm the library condenses, Routes A–C appear, and
+   connected theater positions gain matching target markers without drawing
+   three attack rays.
 3. Open Defense, Offense, and Special. Confirm each has several choices and
    that changing card category changes legal targets without changing what the
    three lanes mean.
@@ -285,7 +320,8 @@ difficulty, comprehension, fun, animation quality, or replay value.
 ### Mobile and accessibility
 
 1. At `390 × 844`, confirm the connected theater fits without horizontal page
-   scrolling and actor labels remain attributable to bodies.
+   scrolling, actor labels remain attributable to bodies, category doors stay
+   in a two-column grid, and an opened category keeps two cards per row.
 2. Complete a round with keyboard only. Card, route, theater target, plan,
    scenario, and review controls must have visible focus and useful names.
 3. Confirm every actionable route exposes a percentage plus exact SUCCESS and

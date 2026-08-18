@@ -51,6 +51,9 @@ test("v0.3 keeps four separate reusable category pools and three neutral choice 
   assert.equal(state.scenarioId, "fractured-gate-routes-v0.3");
   assert.equal(THREE_ROUTE_RULES.choiceLanes, 3);
   assert.equal(THREE_ROUTE_RULES.maxPlanSteps, 3);
+  assert.equal(state.player.condition, 12);
+  assert.equal(state.player.maxCondition, 12);
+  assert.equal(THREE_ROUTE_RULES.guardCap, 8);
   assert.ok(THREE_ROUTE_RULES.openingPerCategory >= 4);
   assert.ok(THREE_ROUTE_RULES.categoryCapacity > THREE_ROUTE_RULES.openingPerCategory);
   assert.deepEqual(Object.keys(state.player.pools), CARD_CATEGORIES);
@@ -66,6 +69,146 @@ test("v0.3 keeps four separate reusable category pools and three neutral choice 
     );
     assert.ok(CATEGORY_LOADOUTS[category].length >= 6);
   }
+});
+
+test("Guard absorbs enemy Impact before Health while Control remains a separate track", () => {
+  let state = createThreeRouteState("health-contract", "sublevel-duel-v0.3");
+  state.player.positionId = state.enemies[0].positionId;
+  state.enemyIntents = [{
+    actorId: state.enemies[0].id,
+    kind: "attack",
+    name: "Contract Strike",
+    targetId: "wayfinder",
+    destinationId: state.enemies[0].positionId,
+    chance: 95,
+    impact: 3,
+    pressure: 1,
+    order: 0,
+  }];
+  const guard = getVisibleCategoryCards(state, "defense").find(
+    (entry) => entry.designId === "guard",
+  );
+  state = chooseThreeRoute(
+    state,
+    guard.id,
+    getThreeRouteChoices(state, guard.id)[0].id,
+  );
+  state = resolveThreeRouteRound(state);
+  assert.equal(state.player.guard, 0, "2 Guard must absorb the first 2 Impact");
+  assert.equal(state.player.condition, 11, "remaining Impact must reduce Health");
+  assert.equal(state.pressure, -1, "actual Health loss may also shift Control");
+  assert.equal(state.currentReview.conditionBefore, 12);
+  assert.equal(state.currentReview.conditionAfter, 11);
+  assert.equal(state.currentReview.conditionDelta, -1);
+  assert.match(
+    state.currentReview.events.find((event) => event.phase === "enemy").detail,
+    /2 Guard absorbed\. 1 Health lost · Control -1/,
+  );
+});
+
+test("Guard persists across rounds and Stabilize restores Health without exceeding its maximum", () => {
+  let guarded = createThreeRouteState("guard-persistence", "sublevel-duel-v0.3");
+  guarded.enemyIntents = [{
+    actorId: guarded.enemies[0].id,
+    kind: "advance",
+    name: "Hold Range",
+    targetId: guarded.player.positionId,
+    destinationId: guarded.enemies[0].positionId,
+    chance: 95,
+    impact: 0,
+    pressure: 0,
+    order: 0,
+  }];
+  const guard = getVisibleCategoryCards(guarded, "defense").find(
+    (entry) => entry.designId === "guard",
+  );
+  guarded = chooseThreeRoute(
+    guarded,
+    guard.id,
+    getThreeRouteChoices(guarded, guard.id)[0].id,
+  );
+  guarded = resolveThreeRouteRound(guarded);
+  assert.equal(guarded.player.guard, 2);
+  guarded = startNextThreeRouteRound(guarded);
+  assert.equal(guarded.player.guard, 2, "unused Guard must persist into the next round");
+
+  let wounded = createThreeRouteState("stabilize-health", "sublevel-duel-v0.3");
+  wounded.player.condition = 11;
+  wounded.enemyIntents = [{
+    actorId: wounded.enemies[0].id,
+    kind: "advance",
+    name: "Hold Range",
+    targetId: wounded.player.positionId,
+    destinationId: wounded.enemies[0].positionId,
+    chance: 95,
+    impact: 0,
+    pressure: 0,
+    order: 0,
+  }];
+  const stabilize = exposeCard(wounded, "special", "stabilize");
+  wounded = chooseThreeRoute(
+    wounded,
+    stabilize.id,
+    getThreeRouteChoices(wounded, stabilize.id)[0].id,
+  );
+  wounded = resolveThreeRouteRound(wounded);
+  assert.equal(wounded.player.condition, 12);
+  assert.equal(wounded.player.guard, 1);
+});
+
+test("Control disruption does not fake Health damage and zero Health causes Compromised", () => {
+  let disrupted = createThreeRouteState("control-only", "sublevel-duel-v0.3");
+  disrupted.enemyIntents = [{
+    actorId: disrupted.enemies[0].id,
+    kind: "disrupt",
+    name: "Signal Jam",
+    targetId: "objective",
+    destinationId: disrupted.enemies[0].positionId,
+    chance: 95,
+    impact: 0,
+    pressure: 1,
+    order: 0,
+  }];
+  const charge = getVisibleCategoryCards(disrupted, "special").find(
+    (entry) => entry.designId === "charge",
+  );
+  disrupted = chooseThreeRoute(
+    disrupted,
+    charge.id,
+    getThreeRouteChoices(disrupted, charge.id)[0].id,
+  );
+  disrupted = resolveThreeRouteRound(disrupted);
+  assert.equal(disrupted.player.condition, 12);
+  assert.equal(disrupted.pressure, -1);
+
+  let compromised = createThreeRouteState("compromised", "sublevel-duel-v0.3");
+  compromised.player.condition = 1;
+  compromised.player.positionId = compromised.enemies[0].positionId;
+  compromised.enemyIntents = [{
+    actorId: compromised.enemies[0].id,
+    kind: "attack",
+    name: "Final Strike",
+    targetId: "wayfinder",
+    destinationId: compromised.enemies[0].positionId,
+    chance: 95,
+    impact: 2,
+    pressure: 1,
+    order: 0,
+  }];
+  const finalCharge = getVisibleCategoryCards(compromised, "special").find(
+    (entry) => entry.designId === "charge",
+  );
+  compromised = chooseThreeRoute(
+    compromised,
+    finalCharge.id,
+    getThreeRouteChoices(compromised, finalCharge.id)[0].id,
+  );
+  compromised = resolveThreeRouteRound(compromised);
+  assert.equal(compromised.player.condition, 0);
+  assert.equal(compromised.result?.winner, "enemy");
+  assert.equal(compromised.result?.outcome, "compromised");
+  assert.match(compromised.result?.reason ?? "", /Health reached zero.*Compromised/);
+  assert.ok(compromised.pressure > THREE_ROUTE_RULES.pressureMin);
 });
 
 test("the same general card binds to scenario theater targets instead of encoding level names", () => {

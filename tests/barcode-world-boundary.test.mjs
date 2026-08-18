@@ -131,6 +131,9 @@ test("one Wayfinder and variable persistent enemies occupy one connected, readab
   assert.match(component, /styles\.projectedLine/);
   assert.match(component, /PHYSICAL PATH/);
   assert.match(component, /LEGAL TARGET/);
+  assert.match(component, /YOU · WAYFINDER/);
+  assert.match(component, /data-preview/);
+  assert.match(component, /focusedChoiceId/);
   assert.doesNotMatch(component, /styles\.routeLine/);
 
   assert.match(engine, /id:\s*"sublevel-duel-v0\.3"/);
@@ -158,10 +161,10 @@ test("resolution visibly runs player chain, then enemy intents, and only then se
     readFile("src/lib/barcode-world/three-route-engine.mjs", "utf8"),
   ]);
 
-  assert.match(component, /1 · PLAYER PLAN/);
-  assert.match(component, /2 · PLAYER ACTS/);
-  assert.match(component, /3 · ENEMY ACTS/);
-  assert.match(component, /4 · SETTLE/);
+  assert.match(component, /1 · BUILD YOUR PLAN/);
+  assert.match(component, /2 · YOUR ACTIONS/);
+  assert.match(component, /3 · ENEMY RESPONSE/);
+  assert.match(component, /4 · ROUND RESULT/);
   assert.match(component, /const \[pendingResolution, setPendingResolution\]/);
   assert.match(component, /pendingResolution\?\.currentReview\?\.events\[resolutionEventIndex\]/);
   assert.match(component, /setGame\(pendingResolution\)/);
@@ -202,7 +205,8 @@ test("replenishment is category-specific and never an automatic placement refill
     readFile("src/components/BarcodeWorldCardBattle.tsx", "utf8"),
     readFile("src/lib/barcode-world/three-route-engine.mjs", "utf8"),
   ]);
-  assert.match(component, /\{visibleCards\.length\} AVAILABLE/);
+  assert.match(component, /\{visibleCards\.length\} READY/);
+  assert.match(component, /\{usableCount\} USABLE HERE/);
   assert.match(component, /\{pool\.drawPile\.length\} DRAW/);
   assert.match(component, /NO AUTOMATIC PLACEMENT REFILL/);
   assert.match(component, /CYCLE · 1R/);
@@ -215,6 +219,32 @@ test("replenishment is category-specific and never an automatic placement refill
   assert.match(engine, /"CACHE TAP"/);
   assert.match(engine, /"PRESSURE BREAK"/);
   assert.doesNotMatch(engine, /placementRefill|refillOnPlacement/);
+});
+
+test("Health, Guard, enemy intent, and Control are persistent and visibly distinct", async () => {
+  const [component, engine, types, css] = await Promise.all([
+    readFile("src/components/BarcodeWorldCardBattle.tsx", "utf8"),
+    readFile("src/lib/barcode-world/three-route-engine.mjs", "utf8"),
+    readFile("src/lib/barcode-world/three-route-engine.d.mts", "utf8"),
+    readFile("src/components/BarcodeWorldCardBattle.module.css", "utf8"),
+  ]);
+
+  assert.match(component, /HEALTH \{playerCondition\}\/\{playerMaximum\}/);
+  assert.match(component, /COMPROMISED AT 0/);
+  assert.match(component, /BATTLE CONTROL · SEPARATE FROM HEALTH/);
+  assert.match(component, /INTENT ·/);
+  assert.match(component, /styles\.combatHud/);
+  assert.match(component, /styles\.healthMeter/);
+  assert.match(engine, /conditionStart:\s*12/);
+  assert.match(engine, /conditionMax:\s*12/);
+  assert.match(engine, /const absorbed = Math\.min\(intent\.impact, output\.playerGuard\)/);
+  assert.match(engine, /output\.playerCondition - remaining/);
+  assert.match(engine, /outcome:\s*"compromised"/);
+  assert.doesNotMatch(engine, /draft\.player\.guard = 0/);
+  assert.match(types, /condition:\s*number/);
+  assert.match(types, /impact:\s*number/);
+  assert.match(css, /\.combatHud\s*\{/);
+  assert.match(css, /\.healthMeter\s*\{/);
 });
 
 test("the compact surface preserves odds truth, causal detail, resets, and accessible interaction", async () => {

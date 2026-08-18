@@ -10,8 +10,42 @@ battle established by v0.2, while replacing the four-front stack interface
 with a card-first, three-route planning system tied to one readable theater.
 
 The owner-review checkpoint is reconciled with the current `main` tree. Its
-focused 24-test prototype contract, full 875-test repository suite, TypeScript
-check, focused lint, and production build all pass against that merged state.
+focused 28-test prototype contract, full 879-test repository suite, TypeScript
+check, lint with zero errors (39 unrelated existing warnings), and production
+build all pass against this checkpoint.
+
+## Health restoration and comprehension correction
+
+Player Condition/Health was part of the established BARCODE World combat
+contract before this prototype. It was accidentally omitted when v0.3 was
+derived from the stripped card-battle experiment. That omission was a
+regression, not an owner-approved design decision. v0.3 now restores the
+survival layer explicitly:
+
+- the Wayfinder starts at **12 Health** (`Condition` in the underlying rules);
+- Guard absorbs incoming Impact before Health and unused Guard persists between
+  rounds;
+- reaching 0 Health makes the Wayfinder **Compromised** and ends this simplified
+  solo prototype encounter;
+- Battle Control remains a separate `-5…+5` tactical track and is labeled as
+  separate from Health everywhere it appears;
+- disruption can change Control without pretending to damage Health;
+- `Stabilize` restores 2 Health, clears exposure, and grants 1 Guard, capped at
+  the 12-Health maximum;
+- low Health is visually urgent but does not secretly change accuracy, Reserve,
+  or Command.
+
+The theater now keeps a persistent combat HUD above the physical map. It names
+the single controlled actor as `YOU · WAYFINDER`, shows numeric Health, Guard,
+Power, position, and the zero-Health threshold, and shows every enemy's numeric
+Health and locked intent. Actor labels repeat compact Health bars so damage is
+readable both as a status change and as action in the theater.
+
+The friend playtest also exposed two other comprehension problems. The visible
+round labels are now `BUILD YOUR PLAN → YOUR ACTIONS → ENEMY RESPONSE → ROUND
+RESULT`, and the first turn says directly that the player controls one
+Wayfinder. Route A/B/C focus now brightens the exact matching theater target;
+there are still no permanent straight attack rays.
 
 ## Owner correction — category browser and spatial theater
 
@@ -131,11 +165,13 @@ and what source produces a Context Card.
 
 1. Enemy intent is seeded and locked at the beginning of the planning phase.
 2. The player sees four category doors first: Movement, Defense, Offense, and
-   Special. Each shows ready, draw, discard, Context, and card-name preview
-   information.
+   Special. Each shows ready, **usable here**, draw, discard, Context, and
+   card-name preview information.
 3. Opening a category reveals its full available set. Every category starts
    with four general cards visible, and its available capacity is five.
-4. The player selects any affordable card from that category.
+4. The player selects any card marked `USABLE HERE`. Every ready card remains
+   visible; a blocked card says `NOT USABLE HERE`, `PLAN FULL`, or the Reserve
+   requirement instead of silently disappearing.
 5. The engine derives zero to three legal targets from the current projected
    theater.
 6. The neutral Route A/B/C panels show target, numeric probability, success,
@@ -161,12 +197,13 @@ authoritative state.
 1. Every Wayfinder step acts in order and reveals success, failure, or causal
    invalidation.
 2. Every surviving enemy then performs its previously locked intent.
-3. Only after both sides finish does the Settle event apply final Pressure,
-   card grants, Break handling, objectives, retreat, or battle outcome.
+3. Only after both sides finish does the Round Result apply final Health,
+   Control, card grants, Break handling, objectives, retreat, or battle
+   outcome.
 4. Only then may the UI say `ROUND RESOLVED` or `BATTLE COMPLETE`.
 
 Reduced Motion removes travel and impact movement but retains actor positions,
-event order, action title, chance, roll, outcome, health, and Pressure.
+event order, action title, chance, roll, outcome, Health, Guard, and Control.
 
 ## Card availability and replenishment
 
@@ -202,9 +239,9 @@ with a 40-round safety cap. All 120 terminate and every category is exercised.
 
 | Scenario | Player wins | Enemy wins | Retreats | Unfinished | Average rounds | Context uses |
 |---|---:|---:|---:|---:|---:|---:|
-| Sublevel Duel | 39 | 0 | 1 | 0 | 3.775 | 0 |
-| Fractured Gate | 38 | 0 | 2 | 0 | 4.300 | 14 |
-| Coolant Extraction | 40 | 0 | 0 | 0 | 5.725 | 29 |
+| Sublevel Duel | 39 | 0 | 1 | 0 | 4.100 | 0 |
+| Fractured Gate | 38 | 0 | 2 | 0 | 4.150 | 13 |
+| Coolant Extraction | 40 | 0 | 0 | 0 | 5.450 | 28 |
 
 This is deadlock, determinism, branching, and broad rules smoke only. The
 policy is not a human player. These figures are not evidence of balance,
@@ -216,6 +253,8 @@ difficulty, comprehension, fun, animation quality, or replay value.
 
 1. Confirm the theater reads as one connected physical space with one solid
    Wayfinder and the scenario's actual enemies—not one Wayfinder per box.
+   Confirm the Wayfinder begins at `12/12 HEALTH`, every enemy has numeric
+   Health, and each enemy's intent is readable before planning.
 2. Open Movement and confirm at least four available cards are visible. Select
    `Advance`. Confirm Routes A–C name connected theater positions and matching
    target markers appear above without drawing three attack rays.
@@ -233,8 +272,8 @@ difficulty, comprehension, fun, animation quality, or replay value.
    least one success grant, round-start Movement grant, Context Card, Cache Tap,
    Cycle, and Pressure Break.
 8. Resolve a three-step plan. Confirm player steps act first. Confirm enemies
-   act second. Pressure, grants, `ROUND RESOLVED`, and the final review must not
-   appear until Settle.
+   respond second. Health, Control, grants, `ROUND RESOLVED`, and the final
+   review must not appear until the Round Result.
 9. Force an early movement failure with a later position-dependent step.
    Confirm the later step says `INVALIDATED` and returns its card/Reserve rather
    than teleporting or retargeting.
@@ -252,7 +291,7 @@ difficulty, comprehension, fun, animation quality, or replay value.
 3. Confirm every actionable route exposes a percentage plus exact SUCCESS and
    FAILURE text. Red/amber/green may indicate odds only; no color means good,
    bad, or best.
-4. Suppress color and verify labels, borders, actor names, health pips, route
+4. Suppress color and verify labels, borders, actor names, numeric Health bars, route
    letters, and event order retain meaning.
 5. Enable both the in-prototype Reduce Motion option and the OS preference.
    Confirm event order and all state changes remain readable.
@@ -267,7 +306,8 @@ npm run lint
 npm run build
 ```
 
-The focused suite covers reusable category pools, neutral three-choice lanes,
+The focused suite covers Health/Guard/Control separation, Guard persistence,
+Compromised at zero Health, healing limits, reusable category pools, neutral three-choice lanes,
 card-first targeting, physical target binding, Context Card visibility,
 modifiers, projected prerequisites, causal invalidation, exact undo, no
 placement refill, multiple grant sources, explicit cycling, deterministic

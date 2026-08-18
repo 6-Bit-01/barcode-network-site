@@ -1,5 +1,5 @@
 export const THREE_ROUTE_SOURCE =
-  "BARCODE_WORLD_THREE_ROUTE_CARD_THEATER_V0.3_2026-08-17";
+  "BARCODE_WORLD_THREE_ROUTE_CARD_THEATER_V0.3_HEALTH_2026-08-17";
 
 export const CARD_CATEGORIES = Object.freeze([
   "movement",
@@ -16,6 +16,9 @@ export const THREE_ROUTE_RULES = Object.freeze({
   reserveStart: 10,
   reservePerRound: 10,
   reserveCap: 20,
+  conditionStart: 12,
+  conditionMax: 12,
+  guardCap: 8,
   pressureMin: -5,
   pressureMax: 5,
   playerBreak: 3,
@@ -47,6 +50,7 @@ function card({
   impactModifier = 0,
   guardModifier = 0,
   drawOnSuccess = 0,
+  restore = 0,
   contextFeature = null,
 }) {
   return Object.freeze({
@@ -69,6 +73,7 @@ function card({
     impactModifier,
     guardModifier,
     drawOnSuccess,
+    restore,
     contextFeature,
   });
 }
@@ -298,10 +303,11 @@ export const GENERAL_CARD_DEFINITIONS = Object.freeze({
     name: "Stabilize",
     category: "special",
     cost: 2,
-    effect: "Clear exposure and gain 1 Guard.",
+    effect: "Restore 2 Health, clear exposure, and gain 1 Guard.",
     targetRule: "self",
     baseChance: 90,
     guard: 1,
+    restore: 2,
     status: "stabilized",
   }),
   "cache-tap": card({
@@ -748,6 +754,8 @@ function cloneSnapshot(snapshot) {
 function snapshotFromState(state) {
   return {
     playerPositionId: state.player.positionId,
+    playerCondition: state.player.condition,
+    playerMaxCondition: state.player.maxCondition,
     playerGuard: state.player.guard,
     playerPower: state.player.power,
     playerExposed: state.player.exposed,
@@ -1040,6 +1048,7 @@ function forecastAction(state, cardValue, target, snapshot, modifiers = []) {
     totals.impact +
     (cardValue.category === "offense" ? snapshot.playerPower : 0);
   const guard = cardValue.guard + totals.guard;
+  const restore = cardValue.restore ?? 0;
   let successLabel = "ACTION COMPLETES";
   let failureLabel = "ACTION FAILS · WAYFINDER EXPOSED";
   if (cardValue.move) {
@@ -1051,7 +1060,7 @@ function forecastAction(state, cardValue, target, snapshot, modifiers = []) {
       impact +
       " DAMAGE · +" +
       Math.max(1, impact) +
-      " PRESSURE";
+      " CONTROL";
     failureLabel = "NO DAMAGE · WAYFINDER EXPOSED";
   }
   if (cardValue.category === "defense" && guard > 0) {
@@ -1064,6 +1073,10 @@ function forecastAction(state, cardValue, target, snapshot, modifiers = []) {
   if (cardValue.designId === "scan") {
     successLabel = "TARGET EXPOSED · +10% AGAINST IT";
   }
+  if (cardValue.designId === "stabilize") {
+    successLabel =
+      "RESTORE " + restore + " HEALTH · GAIN " + guard + " GUARD";
+  }
   if (cardValue.kind === "context") {
     successLabel =
       cardValue.status === "objective"
@@ -1074,6 +1087,7 @@ function forecastAction(state, cardValue, target, snapshot, modifiers = []) {
     chance,
     impact,
     guard,
+    restore,
     drawOnSuccess: totals.draw,
     successLabel,
     failureLabel,
@@ -1097,7 +1111,16 @@ function applySuccessfulAction(state, snapshot, step) {
       output.retreatCompleted = true;
     }
   }
-  output.playerGuard += step.forecast.guard;
+  output.playerGuard = clamp(
+    output.playerGuard + step.forecast.guard,
+    0,
+    THREE_ROUTE_RULES.guardCap,
+  );
+  output.playerCondition = clamp(
+    output.playerCondition + step.forecast.restore,
+    0,
+    output.playerMaxCondition,
+  );
   if (cardValue.designId === "charge") output.playerPower += cardValue.power;
   if (cardValue.designId === "stabilize") output.playerExposed = false;
   if (cardValue.designId === "flank") output.flankBonus = true;
@@ -1468,6 +1491,7 @@ function createEnemyIntents(state) {
             targetId: enemyValue.id,
             destinationId: enemyValue.positionId,
             chance: 90,
+            impact: 0,
             pressure: 0,
             order: index,
           };
@@ -1479,7 +1503,8 @@ function createEnemyIntents(state) {
           targetId: "wayfinder",
           destinationId: enemyValue.positionId,
           chance: enemyValue.role.includes("PRESSURE") ? 80 : 70,
-          pressure: enemyValue.maxHp >= 4 ? 2 : 1,
+          impact: enemyValue.maxHp >= 4 ? 3 : 2,
+          pressure: 1,
           order: index,
         };
       }
@@ -1491,6 +1516,7 @@ function createEnemyIntents(state) {
           targetId: "objective",
           destinationId: enemyValue.positionId,
           chance: 75,
+          impact: 0,
           pressure: 1,
           order: index,
         };
@@ -1506,6 +1532,7 @@ function createEnemyIntents(state) {
           state.player.positionId,
         ),
         chance: 90,
+        impact: 0,
         pressure: 0,
         order: index,
       };
@@ -1515,6 +1542,8 @@ function createEnemyIntents(state) {
 function eventSnapshot(snapshot) {
   return {
     playerPositionId: snapshot.playerPositionId,
+    playerCondition: snapshot.playerCondition,
+    playerMaxCondition: snapshot.playerMaxCondition,
     playerGuard: snapshot.playerGuard,
     playerPower: snapshot.playerPower,
     playerExposed: snapshot.playerExposed,
@@ -1612,7 +1641,11 @@ function applyFailedPlayerAction(snapshot, step) {
   const output = cloneSnapshot(snapshot);
   output.playerExposed = true;
   if (step.card.category === "defense") {
-    output.playerGuard += 1;
+    output.playerGuard = clamp(
+      output.playerGuard + 1,
+      0,
+      THREE_ROUTE_RULES.guardCap,
+    );
   }
   return output;
 }
@@ -1645,7 +1678,6 @@ function resolveEnemyIntent(state, snapshot, intent, index) {
   }
   let chance = intent.chance;
   if (enemyValue.suppressed) chance -= 25;
-  if (intent.kind === "attack") chance -= output.playerGuard * 10;
   chance = chanceStep(chance);
   const roll = deterministicThreeRouteRoll(
     state.seed,
@@ -1668,24 +1700,45 @@ function resolveEnemyIntent(state, snapshot, intent, index) {
     enemyValue.guard += 1;
     detail = enemyValue.name + " gained 1 Guard.";
     cue = "enemy-guard";
-  } else if (success && ["attack", "disrupt"].includes(intent.kind)) {
-    if (intent.kind === "attack" && output.playerGuard > 0) {
-      const absorbed = Math.min(intent.pressure, output.playerGuard);
-      output.playerGuard -= absorbed;
-      const remaining = intent.pressure - absorbed;
-      output.pressure -= remaining;
+  } else if (success && intent.kind === "attack") {
+    const absorbed = Math.min(intent.impact, output.playerGuard);
+    output.playerGuard -= absorbed;
+    const remaining = intent.impact - absorbed;
+    const healthLost = Math.min(remaining, output.playerCondition);
+    output.playerCondition = Math.max(
+      0,
+      output.playerCondition - remaining,
+    );
+    if (healthLost > 0) output.pressure -= intent.pressure;
+    if (healthLost === 0) {
       detail =
-        absorbed === intent.pressure
-          ? "Guard absorbed " + enemyValue.name + "'s attack."
-          : enemyValue.name + " broke Guard and applied -" + remaining + " Pressure.";
+        "Guard absorbed all " + intent.impact + " Impact from " + enemyValue.name + ".";
+    } else if (absorbed > 0) {
+      detail =
+        absorbed +
+        " Guard absorbed. " +
+        healthLost +
+        " Health lost" +
+        (intent.pressure > 0 ? " · Control -" + intent.pressure : "") +
+        ".";
     } else {
-      output.pressure -= intent.pressure;
       detail =
         enemyValue.name +
-        " applied -" +
-        intent.pressure +
-        " Pressure.";
+        " dealt " +
+        healthLost +
+        " Health damage" +
+        (intent.pressure > 0 ? " · Control -" + intent.pressure : "") +
+        ".";
     }
+    output.playerExposed = true;
+    cue = "enemy-hit";
+  } else if (success && intent.kind === "disrupt") {
+    output.pressure -= intent.pressure;
+    detail =
+      enemyValue.name +
+      " disrupted the field · Control -" +
+      intent.pressure +
+      ".";
     output.playerExposed = true;
     cue = "enemy-hit";
   }
@@ -1718,6 +1771,7 @@ export function resolveThreeRouteRound(state) {
     };
   }
   const draft = structuredClone(state);
+  const conditionBefore = draft.player.condition;
   const pressureBefore = draft.pressure;
   const events = [];
   const grants = [];
@@ -1815,8 +1869,11 @@ export function resolveThreeRouteRound(state) {
     );
     snapshot = resolved.snapshot;
     events.push(resolved.event);
+    if (snapshot.playerCondition <= 0) break;
   }
   draft.player.positionId = snapshot.playerPositionId;
+  draft.player.condition = snapshot.playerCondition;
+  draft.player.maxCondition = snapshot.playerMaxCondition;
   draft.player.guard = snapshot.playerGuard;
   draft.player.power = snapshot.playerPower;
   draft.player.exposed = snapshot.playerExposed;
@@ -1897,7 +1954,13 @@ export function resolveThreeRouteRound(state) {
     draft.breakArmed = true;
   }
   let result = null;
-  if (draft.enemies.every((entry) => entry.hp <= 0)) {
+  if (draft.player.condition <= 0) {
+    result = {
+      winner: "enemy",
+      outcome: "compromised",
+      reason: "Wayfinder Health reached zero. The Wayfinder was Compromised.",
+    };
+  } else if (draft.enemies.every((entry) => entry.hp <= 0)) {
     result = {
       winner: "player",
       outcome: "victory",
@@ -1941,7 +2004,11 @@ export function resolveThreeRouteRound(state) {
       index: 0,
       title: result ? "BATTLE SETTLED" : "ROUND SETTLED",
       detail:
-        "Pressure " +
+        "Health " +
+        conditionBefore +
+        " → " +
+        draft.player.condition +
+        " · Control " +
         pressureBefore +
         " → " +
         draft.pressure +
@@ -1960,6 +2027,9 @@ export function resolveThreeRouteRound(state) {
   );
   draft.currentReview = {
     round: draft.round,
+    conditionBefore,
+    conditionAfter: draft.player.condition,
+    conditionDelta: draft.player.condition - conditionBefore,
     pressureBefore,
     pressureAfter: draft.pressure,
     pressureDelta: draft.pressure - pressureBefore,
@@ -1987,7 +2057,6 @@ export function startNextThreeRouteRound(state) {
     THREE_ROUTE_RULES.reserveCap,
     draft.player.reserve + THREE_ROUTE_RULES.reservePerRound,
   );
-  draft.player.guard = 0;
   draft.player.exposed = false;
   draft.player.flankBonus = false;
   const grants = [];
@@ -2030,6 +2099,8 @@ export function createThreeRouteState(
     notice: "Choose a card. Its legal theater targets will become the three route choices.",
     player: {
       positionId: scenarioValue.playerStart,
+      condition: THREE_ROUTE_RULES.conditionStart,
+      maxCondition: THREE_ROUTE_RULES.conditionMax,
       guard: 0,
       power: 0,
       exposed: false,

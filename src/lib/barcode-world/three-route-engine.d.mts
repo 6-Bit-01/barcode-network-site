@@ -23,6 +23,7 @@ export interface ThreeRouteCard {
   impactModifier: number;
   guardModifier: number;
   drawOnSuccess: number;
+  restore: number;
   contextFeature: string | null;
   copy: number;
   context: boolean;
@@ -99,6 +100,7 @@ export interface RouteForecast {
   chance: number;
   impact: number;
   guard: number;
+  restore: number;
   drawOnSuccess: number;
   successLabel: string;
   failureLabel: string;
@@ -134,12 +136,15 @@ export interface EnemyIntent {
   targetId: string;
   destinationId: string;
   chance: number;
+  impact: number;
   pressure: number;
   order: number;
 }
 
 export interface TheaterSnapshot {
   playerPositionId: string;
+  playerCondition: number;
+  playerMaxCondition: number;
   playerGuard: number;
   playerPower: number;
   playerExposed: boolean;
@@ -174,12 +179,15 @@ export interface CardGrant {
 
 export interface ThreeRouteResult {
   winner: "player" | "enemy" | null;
-  outcome: "victory" | "objective" | "retreat" | "pressure";
+  outcome: "victory" | "objective" | "retreat" | "pressure" | "compromised";
   reason: string;
 }
 
 export interface ThreeRouteReview {
   round: number;
+  conditionBefore: number;
+  conditionAfter: number;
+  conditionDelta: number;
   pressureBefore: number;
   pressureAfter: number;
   pressureDelta: number;
@@ -191,6 +199,8 @@ export interface ThreeRouteReview {
 
 export interface ProjectedTheater {
   playerPositionId: string;
+  playerCondition: number;
+  playerMaxCondition: number;
   playerGuard: number;
   playerPower: number;
   playerExposed: boolean;
@@ -219,6 +229,8 @@ export interface ThreeRouteState {
   notice: string;
   player: {
     positionId: string;
+    condition: number;
+    maxCondition: number;
     guard: number;
     power: number;
     exposed: boolean;

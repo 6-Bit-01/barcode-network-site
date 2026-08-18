@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { FracturedGatePrototype } from "@/components/FracturedGatePrototype";
+import { BarcodeWorldCardBattle } from "@/components/BarcodeWorldCardBattle";
+import { shouldHideBarcodeWorldPlaytest } from "@/lib/barcode-world/playtest-access.mjs";
 
 export const dynamic = "force-dynamic";
 
 export function generateMetadata(): Metadata {
-  if (process.env.NODE_ENV === "production") {
+  if (shouldHideBarcodeWorldPlaytest()) {
     return {
       title: "Not Found",
       robots: {
@@ -17,9 +18,9 @@ export function generateMetadata(): Metadata {
     };
   }
   return {
-    title: "The Fractured Gate · Private BARCODE World Battle Mode Proof",
+    title: "Three-Route Theater · Private BARCODE World v0.3",
     description:
-      "Private, deterministic, resettable, noncanonical BARCODE World Battle Mode prototype.",
+      "Private, deterministic BARCODE World prototype linking reusable card categories to one readable battle theater.",
     robots: {
       index: false,
       follow: false,
@@ -30,9 +31,9 @@ export function generateMetadata(): Metadata {
 }
 
 export default function BarcodeWorldPlaytestPage() {
-  if (process.env.NODE_ENV === "production") {
+  if (shouldHideBarcodeWorldPlaytest()) {
     notFound();
   }
 
-  return <FracturedGatePrototype />;
+  return <BarcodeWorldCardBattle />;
 }

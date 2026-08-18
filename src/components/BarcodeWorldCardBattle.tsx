@@ -15,6 +15,7 @@ import {
   cycleThreeRouteCategory,
   getThreeRouteChoices,
   getVisibleCategoryCards,
+  hasPlayableThreeRouteAction,
   projectPlannedTheater,
   replayNewThreeRouteShuffle,
   replaySameThreeRouteState,
@@ -229,6 +230,9 @@ function intentLabel(
   const movement = intent.kind === "advance" && destinationName
     ? ` → ${destinationName}`
     : "";
+  if (intent.kind === "objective") {
+    return `${intent.name} · ${intent.impact} INTEGRITY`;
+  }
   if (intent.impact > 0) return `${intent.name}${movement} · ${intent.impact} IMPACT`;
   if (intent.pressure > 0) return `${intent.name} · CONTROL -${intent.pressure}`;
   return `${intent.name}${movement}`;
@@ -326,6 +330,7 @@ function BattleTheater({
   const playerGuard = eventSnapshot?.playerGuard ?? game.player.guard;
   const playerPower = eventSnapshot?.playerPower ?? game.player.power;
   const enemies = eventSnapshot?.enemies ?? game.enemies;
+  const objectIntegrity = eventSnapshot?.objectIntegrity ?? game.objectIntegrity;
   const protectedObjectId = eventSnapshot?.protectedObjectId ?? game.protectedObjectId;
   const preparedObjectIds = eventSnapshot?.preparedObjectIds ?? game.preparedObjectIds;
   const playerZone = zoneMap.get(playerPositionId) ?? scenario.zones[0];
@@ -467,8 +472,16 @@ function BattleTheater({
               enemy.positionId === objectValue.zoneId &&
               !enemy.suppressed,
           );
+          const integrity = objectIntegrity[objectValue.id];
+          const integrityState = integrity !== undefined
+            ? `INTEGRITY ${integrity}/${objectValue.maxIntegrity ?? objectValue.integrity ?? integrity}`
+            : null;
           const objectState = protectedObject
-            ? "PROTECTED"
+            ? `PROTECTED${integrityState ? ` · ${integrityState}` : ""}`
+            : integrityState
+              ? integrity <= 1
+                ? `CRITICAL · ${integrityState}`
+                : integrityState
             : objectValue.feature === "gate"
               ? contested
                 ? "CONTESTED"
@@ -545,7 +558,7 @@ function BattleTheater({
               <span className={styles.actorLabel}>
                 <b>{enemy.name} · {enemy.hp}/{enemy.maxHp} HP</b>
                 <HealthMeter enemy label={enemy.name} maximum={enemy.maxHp} value={enemy.hp} />
-                <small>{intentLabel(intent, enemy.role, intent ? zoneMap.get(intent.destinationId)?.name : undefined)}{enemy.guard > 0 ? ` · GUARD ${enemy.guard}` : ""}</small>
+                <small title={intent?.reason}>{intentLabel(intent, enemy.role, intent ? zoneMap.get(intent.destinationId)?.name : undefined)}{enemy.guard > 0 ? ` · GUARD ${enemy.guard}` : ""}</small>
               </span>
             </button>
           );
@@ -630,6 +643,10 @@ export function BarcodeWorldCardBattle() {
   const activeEvent = pendingResolution?.currentReview?.events[resolutionEventIndex] ?? null;
   const activeEventId = activeEvent?.id ?? null;
   const activeSceneCue = activeEvent?.sceneCue ?? null;
+  const forcedYield =
+    game.phase === "planning" &&
+    game.player.plan.length === 0 &&
+    !hasPlayableThreeRouteAction(game);
 
   const projected: ProjectedTheater = activeEvent
     ? {
@@ -642,6 +659,7 @@ export function BarcodeWorldCardBattle() {
         flankBonus: false,
         enemies: activeEvent.after.enemies,
         objectiveProgress: activeEvent.after.objectiveProgress,
+        objectIntegrity: activeEvent.after.objectIntegrity,
         protectedObjectId: activeEvent.after.protectedObjectId,
         preparedObjectIds: activeEvent.after.preparedObjectIds,
         pressure: activeEvent.after.pressure,
@@ -683,7 +701,7 @@ export function BarcodeWorldCardBattle() {
   }
 
   function resolvePlan() {
-    if (pendingResolution || game.player.plan.length === 0) return;
+    if (pendingResolution || (game.player.plan.length === 0 && !forcedYield)) return;
     playSfx("resolve");
     const resolved = resolveThreeRouteRound(game);
     if (!resolved.currentReview) {
@@ -704,7 +722,7 @@ export function BarcodeWorldCardBattle() {
     setShowFirstTurnGuide(true);
     setPendingResolution(null);
     setResolutionEventIndex(0);
-    setGame(createThreeRouteState(`barcode-world-v0.3:${scenarioId}`, scenarioId));
+    setGame(createThreeRouteState(`barcode-world-v0.4:${scenarioId}`, scenarioId));
   }
 
   const currentPressure = activeEvent?.after.pressure ?? game.pressure;
@@ -734,7 +752,7 @@ export function BarcodeWorldCardBattle() {
             </div>
           </div>
           <div className={styles.prototypeBadges}>
-            <span>v0.3 · CHALLENGE</span><span>UNLISTED</span><span>IN MEMORY</span>
+            <span>v0.4 · AI LAB</span><span>UNLISTED</span><span>IN MEMORY</span>
           </div>
         </header>
 
@@ -800,7 +818,12 @@ export function BarcodeWorldCardBattle() {
                 </div>
                 <div className={styles.controlRail}>
                   <button className={styles.secondaryButton} disabled={game.pendingActions.length === 0} onClick={() => { playSfx("undo"); setSelectedCardId(null); setActiveCategory(null); setGame((current) => undoThreeRouteChoice(current)); }} type="button">UNDO</button>
-                  <button className={styles.primaryButton} disabled={game.player.plan.length === 0} onClick={resolvePlan} type="button">ACT OUT PLAN</button>
+                  <button
+                    className={styles.primaryButton}
+                    disabled={game.player.plan.length === 0 && !forcedYield}
+                    onClick={resolvePlan}
+                    type="button"
+                  >{forcedYield ? "YIELD INITIATIVE" : "ACT OUT PLAN"}</button>
                 </div>
               </div>
               <div className={styles.planChain}>
@@ -894,6 +917,9 @@ export function BarcodeWorldCardBattle() {
                 const pool = game.player.pools[category];
                 const visibleCards = visibleByCategory[category];
                 const usableCount = visibleCards.filter((card) => availabilityByCardId.get(card.id)?.usable).length;
+                const canRecover =
+                  pool.available.length === 0 &&
+                  (pool.drawPile.length > 0 || pool.discard.length > 0);
                 return (
                   <section
                     className={styles.categoryDrawer}
@@ -908,11 +934,11 @@ export function BarcodeWorldCardBattle() {
                       </div>
                       <button
                         className={styles.cycleButton}
-                        disabled={game.player.reserve < 1 || pool.available.length === 0}
+                        disabled={canRecover ? false : game.player.reserve < 1 || pool.available.length === 0}
                         onClick={() => { playSfx("cycle"); setSelectedCardId(null); setGame((current) => cycleThreeRouteCategory(current, category)); }}
-                        title="Spend 1 Command Point to cycle the first general card"
+                        title={canRecover ? "Recover one card into this empty category" : "Spend 1 Command Point to cycle the first general card"}
                         type="button"
-                      >CYCLE · −1 CP</button>
+                      >{canRecover ? "RECOVER · FREE" : "CYCLE · −1 CP"}</button>
                     </header>
                     <div className={styles.poolCards}>
                       {visibleCards.map((card) => {
@@ -935,7 +961,7 @@ export function BarcodeWorldCardBattle() {
                           </button>
                         );
                       })}
-                      {visibleCards.length === 0 ? <div className={styles.emptyPool}>NO AVAILABLE CARDS<br /><small>Wait for a grant or reshuffle.</small></div> : null}
+                      {visibleCards.length === 0 ? <div className={styles.emptyPool}>NO READY CARDS<br /><small>{canRecover ? "Recover one card to continue." : "No cards remain in this pool."}</small></div> : null}
                     </div>
                   </section>
                 );

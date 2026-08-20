@@ -9,6 +9,7 @@ const COOKIE_NAME = "barcode_admin";
 const TOKEN_TTL = 60 * 60 * 24; // 24 hours in seconds
 const FOREGROUND_OVERLAY_TOKEN_TTL = 60 * 60 * 12;
 type AuthTokenSubject = "admin" | "foreground_overlay";
+const STUDIO_OVERLAY_TOKEN_SUBJECT = "studio_overlay";
 
 // --------------- HMAC helpers (Web Crypto) ---------------
 
@@ -96,6 +97,34 @@ export async function createForegroundOverlayToken(): Promise<string> {
 
 export async function verifyForegroundOverlayToken(token: string): Promise<boolean> {
   return verifyToken(token, "foreground_overlay");
+}
+
+// A deterministic, overlay-only capability lets TikTok Studio keep one saved
+// URL across shows. Rotating JWT_SECRET/QUEUE_API_KEY revokes it. It has no
+// expiry by design and can never pass admin-token verification.
+export async function createStudioOverlayToken(): Promise<string> {
+  const key = await getKey();
+  const header = base64url(new TextEncoder().encode(JSON.stringify({ alg: "HS256", typ: "JWT" })).buffer as ArrayBuffer);
+  const payload = base64url(new TextEncoder().encode(JSON.stringify({ sub: STUDIO_OVERLAY_TOKEN_SUBJECT, v: 1 })).buffer as ArrayBuffer);
+  const data = `${header}.${payload}`;
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(data));
+  return `${data}.${base64url(sig)}`;
+}
+
+export async function verifyStudioOverlayToken(token: string): Promise<boolean> {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return false;
+    const key = await getKey();
+    const data = `${parts[0]}.${parts[1]}`;
+    const sig = base64urlDecode(parts[2]);
+    const valid = await crypto.subtle.verify("HMAC", key, sig.buffer as ArrayBuffer, new TextEncoder().encode(data));
+    if (!valid) return false;
+    const payload = JSON.parse(new TextDecoder().decode(base64urlDecode(parts[1])));
+    return payload.sub === STUDIO_OVERLAY_TOKEN_SUBJECT && payload.v === 1;
+  } catch {
+    return false;
+  }
 }
 
 export function getAdminPassword(): string {

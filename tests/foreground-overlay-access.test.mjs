@@ -54,3 +54,23 @@ test("foreground source tokens are scoped and cannot authenticate as admin", asy
     else process.env.JWT_SECRET = previousSecret;
   }
 });
+
+test("permanent Studio overlay tokens are stable and overlay-only", async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousSecret = process.env.JWT_SECRET;
+  process.env.NODE_ENV = "production";
+  process.env.JWT_SECRET = "studio-overlay-test-secret";
+  try {
+    const first = await auth.createStudioOverlayToken();
+    const second = await auth.createStudioOverlayToken();
+    assert.equal(first, second);
+    assert.equal(await auth.verifyStudioOverlayToken(first), true);
+    assert.equal(await auth.verifyAdminToken(first), false);
+    assert.equal(await auth.verifyForegroundOverlayToken(first), false);
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+    if (previousSecret === undefined) delete process.env.JWT_SECRET;
+    else process.env.JWT_SECRET = previousSecret;
+  }
+});

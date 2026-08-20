@@ -23,6 +23,79 @@ type SessionBoundPollingOptions = {
   poll: () => Promise<boolean | null>;
 };
 
+type PermanentOverlayPollingOptions = {
+  activeIntervalMs: number;
+  standbyIntervalMs: number;
+  poll: () => Promise<boolean | null>;
+};
+
+// Permanent browser sources stay loaded in TikTok Studio between shows. They
+// use the same authoritative endpoint while a session is active or inactive;
+// only the polling cadence changes. Unlike app surfaces, they must keep their
+// standby wake poll even when the embedding browser marks the page hidden.
+export function startPermanentOverlayPolling({ activeIntervalMs, standbyIntervalMs, poll }: PermanentOverlayPollingOptions): () => void {
+  if (typeof window === "undefined") return () => {};
+
+  let stopped = false;
+  let inFlight = false;
+  let wakeRequested = false;
+  let sessionActive = false;
+  let timeoutId: number | null = null;
+
+  const clearScheduledPoll = () => {
+    if (timeoutId !== null) window.clearTimeout(timeoutId);
+    timeoutId = null;
+  };
+
+  const schedule = () => {
+    clearScheduledPoll();
+    if (stopped) return;
+    timeoutId = window.setTimeout(() => { void run(); }, sessionActive ? activeIntervalMs : standbyIntervalMs);
+  };
+
+  const run = async () => {
+    if (stopped) return;
+    if (inFlight) {
+      wakeRequested = true;
+      return;
+    }
+
+    clearScheduledPoll();
+    inFlight = true;
+    try {
+      const nextActive = await poll();
+      if (typeof nextActive === "boolean") sessionActive = nextActive;
+    } catch {
+      // Retain the last confirmed cadence across a transient request failure.
+    } finally {
+      inFlight = false;
+      if (stopped) return;
+      if (wakeRequested) {
+        wakeRequested = false;
+        void run();
+      } else {
+        schedule();
+      }
+    }
+  };
+
+  const wake = () => { void run(); };
+  window.addEventListener("focus", wake);
+  window.addEventListener("pageshow", wake);
+  window.addEventListener("online", wake);
+  window.addEventListener(QUEUE_SESSION_CHANGED_EVENT, wake);
+  void run();
+
+  return () => {
+    stopped = true;
+    clearScheduledPoll();
+    window.removeEventListener("focus", wake);
+    window.removeEventListener("pageshow", wake);
+    window.removeEventListener("online", wake);
+    window.removeEventListener(QUEUE_SESSION_CHANGED_EVENT, wake);
+  };
+}
+
 export function startSessionBoundPolling({ intervalMs, poll }: SessionBoundPollingOptions): () => void {
   if (typeof window === "undefined" || typeof document === "undefined") return () => {};
 

@@ -5,8 +5,9 @@ import type { CSSProperties } from "react";
 import { ForegroundOverlayStrip } from "@/components/ForegroundOverlayStrip";
 import { foregroundActionWithExpiryAt } from "@/lib/foreground-overlay-resolver";
 import type { ForegroundOverlayAction, ForegroundOverlaySnapshot } from "@/lib/foreground-overlay-resolver";
-import { FOREGROUND_OVERLAY_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
-import { hasActiveQueueSession, startSessionBoundPolling } from "@/lib/session-bound-polling";
+import { FOREGROUND_OVERLAY_POLL_INTERVAL_MS, FOREGROUND_OVERLAY_STANDBY_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
+import { hasActiveQueueSession, startPermanentOverlayPolling } from "@/lib/session-bound-polling";
+import { studioOverlayRequestHeaders } from "@/lib/studio-overlay-client";
 
 const POLL_INTERVAL_MS = FOREGROUND_OVERLAY_POLL_INTERVAL_MS;
 const STALE_AFTER_MS = 10_000;
@@ -21,11 +22,6 @@ const SOURCE_STYLE = {
   "--fg-side-margin": "24px",
   "--fg-key-color": "#0000ff",
 } as CSSProperties;
-
-function foregroundAccessToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return new URLSearchParams(window.location.hash.replace(/^#/, "")).get("access");
-}
 
 const SYNCING_ACTION: ForegroundOverlayAction = {
   id: "foreground-syncing",
@@ -107,11 +103,7 @@ export function ForegroundOverlayReceiver() {
       if (inFlight || stopped) return null;
       inFlight = true;
       try {
-        const accessToken = foregroundAccessToken();
-        const response = await fetch("/api/overlay/foreground", {
-          cache: "no-store",
-          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
-        });
+        const response = await fetch("/api/overlay/foreground", { cache: "no-store", headers: studioOverlayRequestHeaders() });
         if (!response.ok) throw new Error("Foreground overlay state unavailable.");
         const next = await response.json() as unknown;
         if (!isForegroundSnapshot(next)) throw new Error("Foreground overlay state invalid.");
@@ -132,7 +124,11 @@ export function ForegroundOverlayReceiver() {
 
     const markOffline = () => setSyncError(true);
 
-    const stopPolling = startSessionBoundPolling({ intervalMs: POLL_INTERVAL_MS, poll: load });
+    const stopPolling = startPermanentOverlayPolling({
+      activeIntervalMs: POLL_INTERVAL_MS,
+      standbyIntervalMs: FOREGROUND_OVERLAY_STANDBY_POLL_INTERVAL_MS,
+      poll: load,
+    });
     window.addEventListener("offline", markOffline);
 
     return () => {
@@ -147,6 +143,7 @@ export function ForegroundOverlayReceiver() {
     return () => window.clearInterval(intervalId);
   }, []);
 
+  const sessionActive = snapshot?.sessionActive === true;
   const action = actionAtClock(snapshot, clockNowMs, lastSuccessAtMs, syncError);
   const track = snapshot?.track ?? null;
   const identityCycleStartedAt = identityCycleAnchorForClient(snapshot, lastSuccessAtMs);
@@ -155,7 +152,7 @@ export function ForegroundOverlayReceiver() {
   return (
     <div className="foreground-overlay-source-shell" data-source-resolution="1080x1920" data-sync-state={syncState} style={SOURCE_STYLE}>
       <div className="foreground-overlay-canvas">
-        <ForegroundOverlayStrip
+        {sessionActive ? <ForegroundOverlayStrip
           artistName={track?.artistName ?? "BARCODE RADIO"}
           trackTitle={track?.trackTitle ?? "NEXT TRANSMISSION STANDING BY"}
           identityCycleStartedAt={identityCycleStartedAt}
@@ -165,7 +162,7 @@ export function ForegroundOverlayReceiver() {
           actionLabel={action.label}
           actionMessage={action.message}
           actionTone={action.tone}
-        />
+        /> : null}
       </div>
     </div>
   );

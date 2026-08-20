@@ -9,7 +9,9 @@ function source(path) {
 test("Redis-backed browser surfaces share a bounded polling budget", () => {
   const budget = source("src/lib/redis-polling-budget.ts");
   assert.match(budget, /LIVE_OVERLAY_POLL_INTERVAL_MS = 650/);
+  assert.match(budget, /LIVE_OVERLAY_STANDBY_POLL_INTERVAL_MS = 15_000/);
   assert.match(budget, /FOREGROUND_OVERLAY_POLL_INTERVAL_MS = 1_500/);
+  assert.match(budget, /FOREGROUND_OVERLAY_STANDBY_POLL_INTERVAL_MS = 15_000/);
   assert.match(budget, /RADIO_VISUALS_ACTIVE_POLL_INTERVAL_MS = 1_000/);
   assert.match(budget, /RADIO_VISUALS_STANDBY_POLL_INTERVAL_MS = 15_000/);
   assert.match(budget, /WHEEL_OVERLAY_ACTIVE_POLL_INTERVAL_MS = 1_000/);
@@ -22,7 +24,7 @@ test("Redis-backed browser surfaces share a bounded polling budget", () => {
   const liveOverlay = source("src/components/LiveOverlayReceiver.tsx");
   assert.match(liveOverlay, /LIVE_OVERLAY_POLL_INTERVAL_MS/);
   assert.doesNotMatch(liveOverlay, /REDIS_POLL_ERROR_RETRY_INTERVAL_MS/);
-  assert.match(liveOverlay, /startSessionBoundPolling\(\{ intervalMs: OVERLAY_POLL_DELAY_MS, poll \}\)/);
+  assert.match(liveOverlay, /startPermanentOverlayPolling\(\{[\s\S]*activeIntervalMs: OVERLAY_POLL_DELAY_MS,[\s\S]*standbyIntervalMs: LIVE_OVERLAY_STANDBY_POLL_INTERVAL_MS/);
 
   for (const path of [
     "src/components/PublicQueueGateway.tsx",
@@ -41,7 +43,10 @@ test("Redis-backed browser surfaces share a bounded polling budget", () => {
     assert.match(source(path), /ADMIN_QUEUE_POLL_INTERVAL_MS/, path);
   }
 
-  assert.match(source("src/components/ForegroundOverlayReceiver.tsx"), /FOREGROUND_OVERLAY_POLL_INTERVAL_MS/);
+  const foregroundOverlay = source("src/components/ForegroundOverlayReceiver.tsx");
+  assert.match(foregroundOverlay, /FOREGROUND_OVERLAY_POLL_INTERVAL_MS/);
+  assert.match(foregroundOverlay, /FOREGROUND_OVERLAY_STANDBY_POLL_INTERVAL_MS/);
+  assert.match(foregroundOverlay, /startPermanentOverlayPolling/);
   const radioVisuals = source("src/components/RadioVisualsReceiver.tsx");
   assert.match(radioVisuals, /RADIO_VISUALS_ACTIVE_POLL_INTERVAL_MS/);
   assert.match(radioVisuals, /RADIO_VISUALS_STANDBY_POLL_INTERVAL_MS/);
@@ -53,8 +58,6 @@ test("Redis-backed browser surfaces share a bounded polling budget", () => {
   assert.match(source("src/components/LiveStatusProvider.tsx"), /SITE_LIVE_STATUS_POLL_INTERVAL_MS/);
 
   for (const path of [
-    "src/components/LiveOverlayReceiver.tsx",
-    "src/components/ForegroundOverlayReceiver.tsx",
     "src/components/PublicQueueGateway.tsx",
     "src/components/PublicQueueSession.tsx",
     "src/components/RadioQueueForm.tsx",
@@ -66,6 +69,9 @@ test("Redis-backed browser surfaces share a bounded polling budget", () => {
   ]) {
     assert.match(source(path), /startSessionBoundPolling/, `${path} must stop recurring requests when no current session exists`);
   }
+
+  assert.doesNotMatch(liveOverlay, /startSessionBoundPolling/, "permanent live source must retain its bounded standby wake poll");
+  assert.doesNotMatch(foregroundOverlay, /startSessionBoundPolling/, "permanent foreground source must retain its bounded standby wake poll");
 
   const fourHourShowMs = 4 * 60 * 60 * 1_000;
   const liveOverlaySharedReads = Math.ceil(fourHourShowMs / 650) * 2;

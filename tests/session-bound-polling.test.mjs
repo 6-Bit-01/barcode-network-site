@@ -144,6 +144,29 @@ test("session creation wakes an idle same-tab poller without a background timer"
   }
 });
 
+test("a permanent overlay keeps a low-frequency standby wake poll while hidden", async () => {
+  const browser = browserHarness("hidden");
+  const results = [false, true, false];
+  let calls = 0;
+  try {
+    const stop = polling.startPermanentOverlayPolling({
+      activeIntervalMs: 1_000,
+      standbyIntervalMs: 15_000,
+      poll: async () => results[calls++] ?? false,
+    });
+    await browser.flush();
+    assert.equal(calls, 1);
+    assert.equal(await browser.runNextTimer(), 15_000);
+    assert.equal(calls, 2);
+    assert.equal(await browser.runNextTimer(), 1_000);
+    assert.equal(calls, 3);
+    assert.equal(await browser.runNextTimer(), 15_000);
+    stop();
+  } finally {
+    browser.restore();
+  }
+});
+
 test("active-session detection prefers explicit server authority", () => {
   assert.equal(polling.hasActiveQueueSession({ sessionActive: false, session: { status: "open" } }), false);
   assert.equal(polling.hasActiveQueueSession({ sessionActive: true, session: null }), true);

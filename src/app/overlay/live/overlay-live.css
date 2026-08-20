@@ -43,6 +43,10 @@ vercel-toolbar,
   font-family: var(--font-geist-mono), monospace;
 }
 
+.live-overlay-shell--inactive {
+  background: transparent;
+}
+
 .live-overlay-stage {
   position: relative;
   width: min(100vw, 100vh);

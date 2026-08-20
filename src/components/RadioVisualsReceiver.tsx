@@ -5,13 +5,16 @@ import type { RadioVisualEvent, RadioVisualEventType, RadioVisualsPlayerSignal, 
 import {
   clampVisualValue,
   RADIO_VISUALS_CHROMA_KEY,
+  RADIO_VISUALS_WHEEL_CENTER_Y_RATIO,
   radioVisualAmbientMoment,
   radioVisualCueEnvelope,
   radioVisualCueProgress,
   radioVisualsIntensity,
+  radioVisualsMusicSignal,
   radioVisualsMotionRate,
   radioVisualsPalette,
 } from "@/lib/radio-visuals-engine";
+import type { RadioVisualMusicSignal } from "@/lib/radio-visuals-engine";
 import { activeRadioVisualEvent, hashRadioVisualToken, radioVisualEventEnvelope, radioVisualEventProgress } from "@/lib/radio-visuals-events";
 import { RADIO_VISUALS_ACTIVE_POLL_INTERVAL_MS, RADIO_VISUALS_STANDBY_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 import { studioOverlayRequestHeaders } from "@/lib/studio-overlay-client";
@@ -50,6 +53,7 @@ interface VisualRuntime {
   finalMix: number;
   completeMix: number;
   pressureMix: number;
+  music: RadioVisualMusicSignal;
   observedSnapshotKey: string;
   observedSignals: VisualSignalMemory | null;
   syntheticEvents: RadioVisualEvent[];
@@ -112,6 +116,24 @@ function mixRgb(current: Rgb, target: Rgb, amount: number): Rgb {
 function ease(value: number): number {
   const bounded = clampVisualValue(value);
   return bounded * bounded * (3 - 2 * bounded);
+}
+
+function smoothMusicSignal(current: RadioVisualMusicSignal, target: RadioVisualMusicSignal, elapsedMs: number): RadioVisualMusicSignal {
+  const channel = (value: number, next: number, attackMs = 110, releaseMs = 440) => {
+    const responseMs = next > value ? attackMs : releaseMs;
+    return value + (next - value) * (1 - Math.exp(-elapsedMs / responseMs));
+  };
+  return {
+    source: target.source,
+    bpm: channel(current.bpm, target.bpm, 420, 720),
+    energy: channel(current.energy, target.energy, 130, 520),
+    bass: channel(current.bass, target.bass, 95, 420),
+    mid: channel(current.mid, target.mid, 120, 460),
+    treble: channel(current.treble, target.treble, 85, 360),
+    beat: channel(current.beat, target.beat, 65, 280),
+    accent: channel(current.accent, target.accent, 55, 320),
+    peak: channel(current.peak, target.peak, 45, 380),
+  };
 }
 
 function randomUnit(seed: number, index: number): number {
@@ -332,21 +354,217 @@ function drawWavefronts(
   height: number,
   time: number,
   intensity: number,
-  energy: number,
+  music: RadioVisualMusicSignal,
   primary: Rgb,
   secondary: Rgb,
+  seed: number,
 ): void {
-  const cycle = (time * 0.18) % 1;
-  const radius = Math.min(width, height) * (0.12 + cycle * 0.48);
-  const strokeColor = rgba(cycle > 0.55 ? secondary : primary, intensity * energy * (1 - cycle) * 0.48);
   context.save();
-  context.lineWidth = Math.max(1, Math.min(width, height) * 0.0035);
-  context.strokeStyle = strokeColor;
-  context.shadowColor = strokeColor;
-  context.shadowBlur = Math.min(width, height) * 0.018;
-  context.beginPath();
-  context.ellipse(width * 0.5, height * 0.5, radius * 0.72, radius, 0, 0, Math.PI * 2);
-  context.stroke();
+  const centerX = width * (0.34 + randomUnit(seed, 6_901) * 0.32);
+  const centerY = height * (0.28 + randomUnit(seed, 6_902) * 0.44);
+  const tilt = (randomUnit(seed, 6_903) - 0.5) * 0.72;
+  for (let wave = 0; wave < 2; wave += 1) {
+    const cycle = (time * (0.14 + wave * 0.035) + wave * 0.46 + randomUnit(seed, 6_910 + wave)) % 1;
+    const radius = Math.min(width, height) * (0.08 + cycle * (0.42 + randomUnit(seed, 6_920 + wave) * 0.18));
+    const alpha = intensity * (0.32 + music.energy * 0.28 + music.beat * 0.18) * (1 - cycle);
+    const strokeColor = rgba(wave ? secondary : primary, alpha);
+    context.lineWidth = Math.max(1, Math.min(width, height) * (0.002 + music.bass * 0.0025));
+    context.strokeStyle = strokeColor;
+    context.shadowColor = strokeColor;
+    context.shadowBlur = Math.min(width, height) * (0.012 + music.peak * 0.018);
+    context.setLineDash(wave ? [radius * 0.11, radius * 0.055] : []);
+    context.lineDashOffset = time * (wave ? -12 : 8);
+    context.beginPath();
+    context.ellipse(centerX, centerY, radius * (0.58 + randomUnit(seed, 6_930 + wave) * 0.28), radius, tilt, 0, Math.PI * 2);
+    context.stroke();
+  }
+  context.restore();
+}
+
+function drawLightRibbons(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  time: number,
+  mix: number,
+  music: RadioVisualMusicSignal,
+  primary: Rgb,
+  secondary: Rgb,
+  highlight: Rgb,
+  seed: number,
+): void {
+  if (mix < 0.002) return;
+  const vertical = randomUnit(seed, 24_001) > 0.58;
+  const count = 3 + Math.floor(randomUnit(seed, 24_002) * 4);
+  context.save();
+  context.lineCap = "round";
+  for (let ribbon = 0; ribbon < count; ribbon += 1) {
+    const color = ribbon % 4 === 0 ? highlight : ribbon % 2 ? secondary : primary;
+    const phase = time * (0.12 + randomUnit(seed, 24_100 + ribbon) * 0.2) + randomUnit(seed, 24_200 + ribbon) * Math.PI * 2;
+    const drift = Math.sin(phase) * (vertical ? width : height) * (0.035 + randomUnit(seed, 24_300 + ribbon) * 0.065);
+    const base = 0.12 + randomUnit(seed, 24_400 + ribbon) * 0.76;
+    const widthScale = Math.min(width, height) * (0.004 + randomUnit(seed, 24_500 + ribbon) * 0.012 + music.bass * 0.004);
+    const alpha = mix * (0.055 + music.mid * 0.11 + music.accent * 0.045) * (0.62 + randomUnit(seed, 24_600 + ribbon) * 0.38);
+    const gradient = vertical
+      ? context.createLinearGradient(0, -height * 0.1, 0, height * 1.1)
+      : context.createLinearGradient(-width * 0.1, 0, width * 1.1, 0);
+    gradient.addColorStop(0, rgba(color, 0));
+    gradient.addColorStop(0.24, rgba(color, alpha * 0.72));
+    gradient.addColorStop(0.6, rgba(color, alpha));
+    gradient.addColorStop(1, rgba(color, 0));
+    context.strokeStyle = gradient;
+    context.lineWidth = widthScale;
+    context.shadowColor = rgba(color, alpha * 1.6);
+    context.shadowBlur = Math.min(width, height) * (0.012 + music.peak * 0.02);
+    context.beginPath();
+    if (vertical) {
+      const x = width * base + drift;
+      context.moveTo(x, -height * 0.08);
+      context.bezierCurveTo(
+        x + Math.sin(phase * 0.73) * width * 0.24,
+        height * 0.28,
+        x + Math.cos(phase * 0.81) * width * 0.26,
+        height * 0.72,
+        x + Math.sin(phase * 0.53) * width * 0.12,
+        height * 1.08,
+      );
+    } else {
+      const y = height * base + drift;
+      context.moveTo(-width * 0.08, y);
+      context.bezierCurveTo(
+        width * 0.28,
+        y + Math.sin(phase * 0.71) * height * 0.16,
+        width * 0.72,
+        y + Math.cos(phase * 0.83) * height * 0.18,
+        width * 1.08,
+        y + Math.sin(phase * 0.49) * height * 0.09,
+      );
+    }
+    context.stroke();
+  }
+  context.restore();
+}
+
+function drawPrismaticShards(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  time: number,
+  mix: number,
+  music: RadioVisualMusicSignal,
+  primary: Rgb,
+  secondary: Rgb,
+  highlight: Rgb,
+  seed: number,
+): void {
+  if (mix < 0.002) return;
+  const count = 7 + Math.floor(randomUnit(seed, 25_001) * 9);
+  context.save();
+  for (let shard = 0; shard < count; shard += 1) {
+    const side = Math.floor(randomUnit(seed, 25_100 + shard) * 4);
+    const edge = randomUnit(seed, 25_200 + shard);
+    const inset = Math.min(width, height) * (0.02 + randomUnit(seed, 25_300 + shard) * 0.16);
+    const x = side === 0 ? inset : side === 1 ? width - inset : edge * width;
+    const y = side === 2 ? inset : side === 3 ? height - inset : edge * height;
+    const drift = Math.sin(time * (0.16 + randomUnit(seed, 25_400 + shard) * 0.26) + shard) * Math.min(width, height) * 0.035;
+    const size = Math.min(width, height) * (0.018 + randomUnit(seed, 25_500 + shard) * 0.068);
+    const color = shard % 5 === 0 ? highlight : shard % 2 ? primary : secondary;
+    const shimmer = 0.42 + 0.58 * Math.abs(Math.sin(time * (0.38 + randomUnit(seed, 25_600 + shard) * 0.42) + shard));
+    context.save();
+    context.translate(x + (side < 2 ? 0 : drift), y + (side < 2 ? drift : 0));
+    context.rotate(time * (0.025 + randomUnit(seed, 25_700 + shard) * 0.055) * (shard % 2 ? -1 : 1) + randomUnit(seed, 25_800 + shard) * Math.PI * 2);
+    context.fillStyle = rgba(color, mix * (0.025 + music.treble * 0.075) * shimmer);
+    context.strokeStyle = rgba(color, mix * (0.08 + music.accent * 0.12) * shimmer);
+    context.lineWidth = Math.max(1, Math.min(width, height) * 0.0015);
+    context.beginPath();
+    context.moveTo(-size * 0.72, size * 0.54);
+    context.lineTo(size * (0.08 + randomUnit(seed, 25_900 + shard) * 0.44), -size);
+    context.lineTo(size * 0.76, size * (0.24 + randomUnit(seed, 26_000 + shard) * 0.58));
+    context.closePath();
+    context.fill();
+    context.stroke();
+    context.restore();
+  }
+  context.restore();
+}
+
+function drawSignalConstellation(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  time: number,
+  mix: number,
+  music: RadioVisualMusicSignal,
+  primary: Rgb,
+  secondary: Rgb,
+  highlight: Rgb,
+  seed: number,
+): void {
+  if (mix < 0.002) return;
+  const count = 8 + Math.floor(randomUnit(seed, 26_101) * 9);
+  const points = Array.from({ length: count }, (_, index) => ({
+    x: width * (0.08 + randomUnit(seed, 26_200 + index) * 0.84) + Math.sin(time * 0.11 + index) * width * 0.012,
+    y: height * (0.1 + randomUnit(seed, 26_300 + index) * 0.8) + Math.cos(time * 0.09 + index * 0.74) * height * 0.01,
+  }));
+  context.save();
+  context.lineWidth = Math.max(0.7, Math.min(width, height) * 0.0012);
+  for (let index = 1; index < points.length; index += 1) {
+    const from = points[index - 1];
+    const to = points[index];
+    const distance = Math.hypot(to.x - from.x, to.y - from.y);
+    if (distance > Math.max(width, height) * 0.48) continue;
+    const color = index % 2 ? secondary : primary;
+    context.strokeStyle = rgba(color, mix * (0.035 + music.mid * 0.075));
+    context.beginPath();
+    context.moveTo(from.x, from.y);
+    context.lineTo(to.x, to.y);
+    context.stroke();
+  }
+  points.forEach((point, index) => {
+    const color = index % 6 === 0 ? highlight : index % 2 ? secondary : primary;
+    const radius = Math.max(1, Math.min(width, height) * (0.0018 + randomUnit(seed, 26_400 + index) * 0.0038) * (0.86 + music.peak * 0.5));
+    context.fillStyle = rgba(color, mix * (0.2 + music.treble * 0.38));
+    context.shadowColor = rgba(color, mix * 0.72);
+    context.shadowBlur = radius * (2.5 + music.peak * 5);
+    context.beginPath();
+    context.arc(point.x, point.y, radius, 0, Math.PI * 2);
+    context.fill();
+  });
+  context.restore();
+}
+
+function drawMusicHalo(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  time: number,
+  mix: number,
+  music: RadioVisualMusicSignal,
+  primary: Rgb,
+  secondary: Rgb,
+  highlight: Rgb,
+  seed: number,
+): void {
+  if (mix < 0.002) return;
+  const centerX = width * (0.28 + randomUnit(seed, 27_001) * 0.44);
+  const centerY = height * (0.2 + randomUnit(seed, 27_002) * 0.56);
+  const unit = Math.min(width, height);
+  const base = unit * (0.1 + randomUnit(seed, 27_003) * 0.16);
+  context.save();
+  context.translate(centerX, centerY);
+  context.rotate((randomUnit(seed, 27_004) - 0.5) * 0.8);
+  context.lineCap = "round";
+  for (let ring = 0; ring < 4; ring += 1) {
+    const radius = base * (0.72 + ring * 0.36) * (1 + music.bass * 0.055 + music.beat * 0.045);
+    const color = ring === 3 ? highlight : ring % 2 ? secondary : primary;
+    context.strokeStyle = rgba(color, mix * (0.045 + music.energy * 0.095 + music.accent * 0.07) / (1 + ring * 0.15));
+    context.lineWidth = Math.max(1, unit * (0.0016 + music.bass * 0.0018));
+    context.setLineDash([radius * (0.13 + ring * 0.025), radius * (0.07 + ring * 0.016)]);
+    context.lineDashOffset = time * (ring % 2 ? -10 - music.treble * 9 : 7 + music.mid * 8);
+    context.beginPath();
+    context.ellipse(0, 0, radius, radius * (0.58 + randomUnit(seed, 27_100 + ring) * 0.3), 0, 0, Math.PI * 2);
+    context.stroke();
+  }
   context.restore();
 }
 
@@ -390,7 +608,7 @@ function drawTrackSignature(
   height: number,
   time: number,
   mix: number,
-  energy: number,
+  music: RadioVisualMusicSignal,
   primary: Rgb,
   secondary: Rgb,
   highlight: Rgb,
@@ -399,17 +617,17 @@ function drawTrackSignature(
   if (mix < 0.002) return;
   const centerX = width * (0.42 + randomUnit(seed, 8_101) * 0.16);
   const centerY = height * (0.42 + randomUnit(seed, 8_102) * 0.2);
-  const base = Math.min(width, height) * (0.16 + energy * 0.07);
+  const base = Math.min(width, height) * (0.15 + music.energy * 0.08 + music.bass * 0.025);
   context.save();
   context.translate(centerX, centerY);
   context.rotate((randomUnit(seed, 8_103) - 0.5) * 0.38);
   for (let ring = 0; ring < 4; ring += 1) {
-    const wobble = 1 + Math.sin(time * (0.42 + ring * 0.08) + ring * 1.2) * 0.045 * energy;
+    const wobble = 1 + Math.sin(time * (0.42 + ring * 0.08) + ring * 1.2) * (0.025 + music.mid * 0.055) + music.beat * 0.035;
     const radius = base * (0.75 + ring * 0.42) * wobble;
-    context.strokeStyle = rgba(ring === 3 ? highlight : ring % 2 ? secondary : primary, mix * (0.08 + energy * 0.12) / (1 + ring * 0.18));
-    context.lineWidth = Math.max(1, Math.min(width, height) * (0.0018 + (3 - ring) * 0.0006));
+    context.strokeStyle = rgba(ring === 3 ? highlight : ring % 2 ? secondary : primary, mix * (0.075 + music.energy * 0.13 + music.accent * 0.045) / (1 + ring * 0.18));
+    context.lineWidth = Math.max(1, Math.min(width, height) * (0.0018 + (3 - ring) * 0.0006 + music.bass * 0.0008));
     context.setLineDash(ring % 2 ? [radius * 0.16, radius * 0.08] : []);
-    context.lineDashOffset = time * (ring % 2 ? -9 : 7);
+    context.lineDashOffset = time * (ring % 2 ? -9 - music.treble * 7 : 7 + music.mid * 5);
     context.beginPath();
     context.ellipse(0, 0, radius, radius * (0.62 + ring * 0.04), 0, 0, Math.PI * 2);
     context.stroke();
@@ -556,6 +774,7 @@ function drawAmbientMoment(
   highlight: Rgb,
   shadow: Rgb,
   nowMs: number,
+  music: RadioVisualMusicSignal,
 ): void {
   const moment = radioVisualAmbientMoment(snapshot.visualSeed, nowMs, snapshot.sessionActive);
   if (!moment || moment.envelope < 0.002) return;
@@ -597,6 +816,14 @@ function drawAmbientMoment(
       context.fillRect(side ? width - offset : offset, top, barWidth, barHeight);
     }
     context.restore();
+    return;
+  }
+  if (moment.type === "prism_drift") {
+    drawPrismaticShards(context, width, height, time * 0.72, alpha * 1.5, music, secondary, primary, highlight, moment.seed);
+    return;
+  }
+  if (moment.type === "ribbon_sweep") {
+    drawLightRibbons(context, width, height, time * 0.68, alpha * 1.25, music, primary, secondary, highlight, moment.seed);
     return;
   }
   context.save();
@@ -808,24 +1035,28 @@ function drawWheelScene(
   secondary: Rgb,
   highlight: Rgb,
   seed: number,
+  music?: RadioVisualMusicSignal,
 ): void {
   if (mix < 0.002) return;
-  const radius = Math.min(width, height) * 0.35;
+  const beat = music?.beat ?? 0;
+  const bass = music?.bass ?? 0;
+  const radius = Math.min(width, height) * (0.35 + beat * 0.012);
   context.save();
-  context.translate(width * 0.5, height * 0.5);
+  context.translate(width * 0.5, height * RADIO_VISUALS_WHEEL_CENTER_Y_RATIO);
   context.rotate(time * 0.28);
   for (let ring = 0; ring < 3; ring += 1) {
-    context.setLineDash([radius * (0.12 + ring * 0.04), radius * (0.06 + ring * 0.02)]);
-    context.lineDashOffset = time * (18 + ring * 9) * (ring % 2 ? -1 : 1);
-    context.lineWidth = Math.max(1.5, Math.min(width, height) * (0.004 + ring * 0.002));
-    context.strokeStyle = rgba(ring === 0 ? primary : ring === 1 ? secondary : highlight, mix * (0.3 + ring * 0.13));
+    const dashVariation = 0.82 + randomUnit(seed, 28_100 + ring) * 0.42;
+    context.setLineDash([radius * (0.11 + ring * 0.035) * dashVariation, radius * (0.052 + ring * 0.018)]);
+    context.lineDashOffset = time * (18 + ring * 9 + (music?.treble ?? 0) * 10) * (ring % 2 ? -1 : 1);
+    context.lineWidth = Math.max(1.5, Math.min(width, height) * (0.0038 + ring * 0.0018 + bass * 0.0012));
+    context.strokeStyle = rgba(ring === 0 ? primary : ring === 1 ? secondary : highlight, mix * (0.28 + ring * 0.12 + beat * 0.12));
     context.beginPath();
     context.arc(0, 0, radius * (0.72 + ring * 0.18), 0, Math.PI * 2);
     context.stroke();
   }
   context.restore();
 
-  drawParticleField(context, width, height, time * 1.5, mix * 0.75, seed + 8_801, primary, secondary, highlight, 1.35);
+  drawParticleField(context, width, height, time * (1.5 + (music?.mid ?? 0) * 0.35), mix * (0.72 + (music?.energy ?? 0) * 0.2), seed + 8_801, primary, secondary, highlight, 1.3 + (music?.treble ?? 0) * 0.28);
 }
 
 function drawPartyCue(
@@ -1101,12 +1332,6 @@ function drawLightningCue(
   radialLight(context, width, height, width * (0.18 + randomUnit(seed, 22_605) * 0.64), height * randomUnit(seed, 22_606) * 0.22, Math.max(width, height) * 0.72, highlight, afterglow);
 }
 
-function proceduralEnergy(snapshot: RadioVisualsSnapshot, time: number, seedPhase: number): number {
-  const actualEnergy = typeof snapshot.player?.audioEnergy === "number" ? clampVisualValue(snapshot.player.audioEnergy) : null;
-  const generated = 0.46 + Math.sin(time * 1.9 + seedPhase) * 0.18 + Math.sin(time * 4.1 + seedPhase * 0.6) * 0.1;
-  return clampVisualValue(actualEnergy ?? generated, 0.12, 0.82);
-}
-
 function visualSignalMemory(snapshot: RadioVisualsSnapshot): VisualSignalMemory {
   return {
     sessionActive: snapshot.sessionActive,
@@ -1233,10 +1458,11 @@ function drawVisualFrame(
 
   const seedBlend = ease((timestampMs - runtime.seedTransitionStartedAtMs) / PARTICLE_TRANSITION_MS);
   const playbackSeconds = projectedPlaybackSeconds(snapshot.player, anchor, timestampMs);
+  const transportSeconds = timestampMs / 1_000;
+  runtime.music = smoothMusicSignal(runtime.music, radioVisualsMusicSignal(snapshot, playbackSeconds, transportSeconds), elapsedMs);
+  const music = runtime.music;
   const motionScale = reducedMotion ? 0.18 : 1;
-  const time = (timestampMs / 1_000 * radioVisualsMotionRate(snapshot) + playbackSeconds * 0.035) * motionScale;
-  const seedPhase = (runtime.currentSeed % 997) / 997 * Math.PI * 2;
-  const energy = proceduralEnergy(snapshot, time, seedPhase);
+  const time = (transportSeconds * radioVisualsMotionRate(snapshot) + playbackSeconds * 0.035) * motionScale;
   const shadow = hexToRgb(palette.shadow);
   const serverNowMs = estimatedServerNowMs(anchor, timestampMs);
   observeSnapshotEvents(snapshot, runtime, serverNowMs);
@@ -1252,26 +1478,46 @@ function drawVisualFrame(
   context.fillStyle = previewMode ? "#080b0a" : RADIO_VISUALS_CHROMA_KEY;
   context.fillRect(0, 0, width, height);
 
-  drawAmbientLighting(context, width, height, time, runtime.intensity, runtime.primary, runtime.secondary, runtime.highlight, energy);
+  drawAmbientLighting(context, width, height, time, runtime.intensity, runtime.primary, runtime.secondary, runtime.highlight, music.energy);
   drawGoboShadows(context, width, height, time, runtime.intensity, shadow);
-  drawQueueLanes(context, width, height, time, runtime.queueMix, runtime.primary, runtime.secondary, runtime.currentSeed);
-  drawTrackSignature(context, width, height, time, runtime.trackMix, energy, runtime.primary, runtime.secondary, runtime.highlight, runtime.currentSeed);
-  drawIntakeAperture(context, width, height, time, runtime.intakeMix, runtime.primary, runtime.secondary, runtime.currentSeed);
-  drawSponsorCurtain(context, width, height, time, runtime.sponsorMix, runtime.secondary, runtime.primary, runtime.currentSeed);
-  drawFinalConvergence(context, width, height, time, runtime.finalMix, runtime.primary, runtime.secondary, runtime.currentSeed);
+  const drawSeedComposition = (seed: number, compositionMix: number) => {
+    if (compositionMix < 0.002) return;
+    const composition = Math.floor(randomUnit(seed, 29_001) * 4);
+    drawLightRibbons(context, width, height, time, runtime.intensity * compositionMix * (composition === 0 ? 1.12 : 0.72), music, runtime.primary, runtime.secondary, runtime.highlight, seed);
+    if (composition !== 2) drawPrismaticShards(context, width, height, time, runtime.intensity * compositionMix * (composition === 1 ? 1.18 : 0.68), music, runtime.primary, runtime.secondary, runtime.highlight, seed);
+    if (composition !== 1) drawSignalConstellation(context, width, height, time, runtime.intensity * compositionMix * (composition === 3 ? 1.15 : 0.7), music, runtime.primary, runtime.secondary, runtime.highlight, seed);
+    drawMusicHalo(context, width, height, time, Math.max(runtime.trackMix * 0.92, runtime.intensity * 0.46) * compositionMix, music, runtime.primary, runtime.secondary, runtime.highlight, seed);
+    drawQueueLanes(context, width, height, time, runtime.queueMix * compositionMix, runtime.primary, runtime.secondary, seed);
+    drawTrackSignature(context, width, height, time, runtime.trackMix * compositionMix, music, runtime.primary, runtime.secondary, runtime.highlight, seed);
+    drawIntakeAperture(context, width, height, time, runtime.intakeMix * compositionMix, runtime.primary, runtime.secondary, seed);
+    drawSponsorCurtain(context, width, height, time, runtime.sponsorMix * compositionMix, runtime.secondary, runtime.primary, seed);
+    drawFinalConvergence(context, width, height, time, runtime.finalMix * compositionMix, runtime.primary, runtime.secondary, seed);
+    drawCaustics(context, width, height, time, runtime.intensity * compositionMix, runtime.secondary, seed);
+    drawWavefronts(context, width, height, time, runtime.intensity * compositionMix, music, runtime.primary, runtime.secondary, seed);
+    drawParticleField(
+      context,
+      width,
+      height,
+      time * (1 + music.treble * 0.12),
+      runtime.intensity * compositionMix * (0.84 + music.energy * 0.24),
+      seed,
+      runtime.primary,
+      runtime.secondary,
+      runtime.highlight,
+      0.88 + music.treble * 0.48 + music.accent * 0.18,
+    );
+  };
+  if (seedBlend < 1) drawSeedComposition(runtime.previousSeed, 1 - seedBlend);
+  drawSeedComposition(runtime.currentSeed, seedBlend);
   drawCompletionAfterimage(context, width, height, time, runtime.completeMix, runtime.primary, runtime.secondary);
   drawPressureEdges(context, width, height, time, runtime.pressureMix, runtime.primary, runtime.secondary);
-  drawCaustics(context, width, height, time, runtime.intensity, runtime.secondary, runtime.currentSeed);
-  drawWavefronts(context, width, height, time, runtime.intensity, energy, runtime.primary, runtime.secondary);
-  if (seedBlend < 1) drawParticleField(context, width, height, time, runtime.intensity * (1 - seedBlend), runtime.previousSeed, runtime.secondary, runtime.primary, runtime.highlight);
-  drawParticleField(context, width, height, time, runtime.intensity * seedBlend, runtime.currentSeed, runtime.primary, runtime.secondary, runtime.highlight);
 
   if (runtime.systemMix > 0.002) {
     drawSignalBreachCue(context, width, height, time * 0.46, (Math.sin(time * 0.08) + 1) / 2, runtime.systemMix * 0.22, runtime.primary, runtime.secondary, runtime.highlight, runtime.currentSeed + 91);
   }
-  drawWheelScene(context, width, height, time, runtime.wheelMix, runtime.primary, runtime.secondary, runtime.highlight, runtime.currentSeed);
+  drawWheelScene(context, width, height, time, runtime.wheelMix, runtime.primary, runtime.secondary, runtime.highlight, runtime.currentSeed, music);
   drawTrackBloom(context, width, height, timestampMs - runtime.bloomStartedAtMs, runtime.primary, runtime.secondary, runtime.highlight);
-  drawAmbientMoment(context, width, height, time, snapshot, runtime.primary, runtime.secondary, runtime.highlight, shadow, serverNowMs);
+  drawAmbientMoment(context, width, height, time, snapshot, runtime.primary, runtime.secondary, runtime.highlight, shadow, serverNowMs, music);
 
   for (const event of activeVisualEvents(snapshot, runtime, serverNowMs)) {
     drawAutomaticEvent(context, width, height, time, event, serverNowMs, runtime.primary, runtime.secondary, runtime.highlight, shadow, motionScale);
@@ -1311,6 +1557,17 @@ export function RadioVisualsReceiver() {
     finalMix: 0,
     completeMix: 0,
     pressureMix: 0,
+    music: {
+      source: "timeline",
+      bpm: 112,
+      energy: 0.12,
+      bass: 0.1,
+      mid: 0.1,
+      treble: 0.08,
+      beat: 0,
+      accent: 0,
+      peak: 0,
+    },
     observedSnapshotKey: "",
     observedSignals: null,
     syntheticEvents: [],
@@ -1428,6 +1685,7 @@ export function RadioVisualsReceiver() {
       data-player-state={snapshot.player?.playbackState ?? "waiting"}
       data-show-stage={snapshot.showStage}
       data-visual-mode={snapshot.visualMode}
+      data-music-source={snapshot.player?.audioEnergy === null || snapshot.player?.audioEnergy === undefined ? "timeline" : "analyser"}
       data-visual-cue={snapshot.cue?.type ?? "none"}
       aria-hidden="true"
     >

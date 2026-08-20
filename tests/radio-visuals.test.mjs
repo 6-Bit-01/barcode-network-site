@@ -21,6 +21,8 @@ const visuals = require("../src/lib/radio-visuals-resolver.ts");
 const engine = require("../src/lib/radio-visuals-engine.ts");
 const cues = require("../src/lib/radio-visuals-cues.ts");
 const visualEvents = require("../src/lib/radio-visuals-events.ts");
+const audioVisuals = require("../src/lib/radio-visuals-audio.ts");
+const liveOverlay = require("../src/lib/live-overlay-resolver.ts");
 
 test.after(() => {
   Module._extensions[".ts"] = originalExtension;
@@ -179,7 +181,7 @@ test("track identity seeds visuals and fresh timeline drives motion without expo
   const snapshot = visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: currentScene, playerSync: youtube, now: new Date("2026-08-19T19:00:00.000Z") });
   const anotherTrack = visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: { ...currentScene, track: { ...currentScene.track, trackTitle: "Another Track" } }, playerSync: youtube, now: new Date("2026-08-19T19:00:00.000Z") });
   assert.equal(snapshot.visualMode, "track");
-  assert.deepEqual(snapshot.player, { provider: "youtube", playbackState: "playing", currentTimeSeconds: 42, durationSeconds: 180, updatedAt: "2026-08-19T18:59:55.000Z", audioEnergy: null });
+  assert.deepEqual(snapshot.player, { provider: "youtube", playbackState: "playing", currentTimeSeconds: 42, durationSeconds: 180, updatedAt: "2026-08-19T18:59:55.000Z", audioEnergy: null, audioBands: null, audioPeak: null });
   assert.notEqual(snapshot.visualSeed, anotherTrack.visualSeed, "track identity selects a repeatable visual character");
   const serialized = JSON.stringify(snapshot);
   assert.doesNotMatch(serialized, /Detected Artist|Detected Track|private@example\.com|pi_private|private-session-id|abcDEF12345|track-7/);
@@ -189,9 +191,13 @@ test("audio uploads use the same fresh timeline seam and reject stale or mismatc
   const current = entry("upload-1", { sourceType: "upload" });
   const state = queueState({ nowPlaying: current, loadedTrack: current });
   const currentScene = scene("now_playing", { track: { id: "upload-1", artistName: "Artist", trackTitle: "Upload", sourceType: "upload" } });
-  const fresh = { provider: "audio", trackId: "upload-1", playbackState: "paused", currentTimeSeconds: 21, durationSeconds: 90, updatedAt: "2026-08-19T18:59:55.000Z", muted: false };
+  const fresh = { provider: "audio", trackId: "upload-1", playbackState: "paused", currentTimeSeconds: 21, durationSeconds: 90, updatedAt: "2026-08-19T18:59:55.000Z", muted: false, audioAnalysis: { energy: 0.72, bass: 0.81, mid: 0.58, treble: 0.34, peak: 0.9 } };
   const now = new Date("2026-08-19T19:00:00.000Z");
-  assert.equal(visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: currentScene, playerSync: fresh, now }).player?.provider, "audio");
+  const projected = visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: currentScene, playerSync: fresh, now }).player;
+  assert.equal(projected?.provider, "audio");
+  assert.equal(projected?.audioEnergy, 0.72);
+  assert.deepEqual(projected?.audioBands, { bass: 0.81, mid: 0.58, treble: 0.34 });
+  assert.equal(projected?.audioPeak, 0.9);
   assert.equal(visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: currentScene, playerSync: { ...fresh, trackId: "another-track" }, now }).player, null);
   assert.equal(visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: currentScene, playerSync: { ...fresh, updatedAt: "2026-08-19T18:59:40.000Z" }, now }).player, null);
 });
@@ -290,11 +296,49 @@ test("idle ambient moments are deterministic within a cycle and change compositi
   };
   const first = findMoment(0, false);
   const repeated = findMoment(0, false);
-  const second = findMoment(27_000, false);
+  const second = findMoment(25_000, false);
   assert.ok(first && repeated && second);
   assert.deepEqual(first, repeated);
   assert.notEqual(first.seed, second.seed);
   assert.ok(first.envelope > 0 && first.intensity > 0);
+});
+
+test("music response follows the authoritative playback clock and uses direct analysis when available", () => {
+  const current = entry("track-music", { sourceType: "youtube" });
+  const youtube = { provider: "youtube", videoId: "abcDEF12345", trackId: current.id, playbackState: "playing", currentTimeSeconds: 24, durationSeconds: 180, updatedAt: "2026-08-19T18:59:55.000Z", muted: true };
+  const state = queueState({ nowPlaying: current, loadedTrack: current });
+  const timelineSnapshot = visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: scene("now_playing", { track: { id: current.id, artistName: "Artist", trackTitle: "Track", sourceType: "youtube" }, youtube }), playerSync: youtube, now: new Date("2026-08-19T19:00:00.000Z") });
+  const first = engine.radioVisualsMusicSignal(timelineSnapshot, 24, 100);
+  const repeated = engine.radioVisualsMusicSignal(timelineSnapshot, 24, 100);
+  const later = engine.radioVisualsMusicSignal(timelineSnapshot, 24.23, 100.23);
+  assert.deepEqual(first, repeated);
+  assert.notDeepEqual(first, later);
+  assert.equal(first.source, "timeline");
+  assert.ok(first.bpm >= 84 && first.bpm <= 148);
+  for (const channel of [first.energy, first.bass, first.mid, first.treble, first.beat, first.accent, first.peak]) assert.ok(channel >= 0 && channel <= 1);
+
+  const upload = entry("upload-music", { sourceType: "upload" });
+  const uploadState = queueState({ nowPlaying: upload, loadedTrack: upload });
+  const uploadScene = scene("now_playing", { track: { id: upload.id, artistName: "Artist", trackTitle: "Upload", sourceType: "upload" } });
+  const audioSync = { provider: "audio", trackId: upload.id, playbackState: "playing", currentTimeSeconds: 12, durationSeconds: 120, updatedAt: "2026-08-19T18:59:55.000Z", muted: false, audioAnalysis: { energy: 0.88, bass: 0.94, mid: 0.7, treble: 0.42, peak: 0.97 } };
+  const analysedSnapshot = visuals.resolveRadioVisualsSnapshot({ queueState: uploadState, scene: uploadScene, playerSync: audioSync, now: new Date("2026-08-19T19:00:00.000Z") });
+  const analysed = engine.radioVisualsMusicSignal(analysedSnapshot, 12, 100);
+  assert.equal(analysed.source, "analyser");
+  assert.ok(analysed.energy > 0.65);
+  assert.ok(analysed.bass > analysed.treble);
+});
+
+test("direct audio analysis separates frequency bands and safely bounds untrusted samples", () => {
+  const bins = new Uint8Array(512);
+  bins.fill(220, 1, 6);
+  bins.fill(130, 6, 52);
+  bins.fill(65, 52, 300);
+  const analysis = audioVisuals.analyzeRadioVisualFrequencyData(bins, 48_000, 1_024);
+  assert.ok(analysis);
+  assert.ok(analysis.bass > analysis.mid && analysis.mid > analysis.treble);
+  assert.ok(analysis.peak > analysis.energy);
+  assert.deepEqual(liveOverlay.normalizeRadioVisualAudioAnalysis({ energy: 3, bass: -1, mid: 0.5, treble: 0.25, peak: 2 }), { energy: 1, bass: 0, mid: 0.5, treble: 0.25, peak: 1 });
+  assert.equal(liveOverlay.normalizeRadioVisualAudioAnalysis({ energy: "loud" }), null);
 });
 
 test("the effect palette preserves BARCODE green, violet, black, and white while excluding the orange key", () => {
@@ -319,6 +363,9 @@ test("permanent receiver is a pure full-frame effects surface with a stable link
   const bnlProvider = fs.readFileSync(path.join(projectRoot, "src/components/BNLStatusProvider.tsx"), "utf8");
   const liveCss = fs.readFileSync(path.join(projectRoot, "src/app/overlay/live/overlay-live.css"), "utf8");
   const foregroundCss = fs.readFileSync(path.join(projectRoot, "src/app/overlay/foreground/calibration/foreground-calibration.css"), "utf8");
+  const engineSource = fs.readFileSync(path.join(projectRoot, "src/lib/radio-visuals-engine.ts"), "utf8");
+  const queueControl = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioQueueControl.tsx"), "utf8");
+  const productionContract = fs.readFileSync(path.join(projectRoot, "docs/queue-production-capability.md"), "utf8");
   const render = receiver.slice(receiver.lastIndexOf("return ("));
   assert.match(receiver, /fetch\("\/api\/overlay\/radio-visuals"/);
   assert.match(receiver, /payload\.snapshot\.sessionActive \? RADIO_VISUALS_ACTIVE_POLL_INTERVAL_MS : RADIO_VISUALS_STANDBY_POLL_INTERVAL_MS/);
@@ -327,12 +374,22 @@ test("permanent receiver is a pure full-frame effects surface with a stable link
   assert.match(render, /<canvas ref=\{canvasRef\}/);
   assert.match(receiver, /drawAmbientLighting|drawGoboShadows|drawCaustics|drawWavefronts|drawParticleField|drawTrackBloom|drawPartyCue|drawShadowCue|drawSignalBreachCue|drawBlackoutCue|drawLightningCue/);
   assert.match(receiver, /drawQueueLanes|drawTrackSignature|drawIntakeAperture|drawSponsorCurtain|drawFinalConvergence|drawCompletionAfterimage|drawPressureEdges/);
+  assert.match(receiver, /drawLightRibbons|drawPrismaticShards|drawSignalConstellation|drawMusicHalo|drawSeedComposition/);
   assert.match(receiver, /drawAmbientMoment|radioVisualAmbientMoment|observeSnapshotEvents|drawAutomaticEvent/);
   assert.match(receiver, /wheel_gained|priority_sent|priority_confirmed|track_skipped|sponsor_started|stage_shift/);
   assert.match(receiver, /hashRadioVisualToken\(`\$\{snapshot\.cue\.type\}:\$\{snapshot\.cue\.nonce\}/, "manual cue nonce must vary every repeated effect");
   assert.match(receiver, /lightningMainPath|lightningBranches|drawLightningTree/);
   assert.doesNotMatch(receiver, /function drawBolt\(/, "lightning must use a branching procedural composition rather than generic twin bolts");
   assert.match(receiver, /PALETTE_TRANSITION_MS = 2_400|PARTICLE_TRANSITION_MS = 2_000|radioVisualCueEnvelope/);
+  assert.match(receiver, /smoothMusicSignal|radioVisualsMusicSignal/);
+  assert.match(engineSource, /RADIO_VISUALS_WHEEL_CENTER_Y_RATIO = 0\.375/);
+  const wheelScene = receiver.slice(receiver.indexOf("function drawWheelScene"), receiver.indexOf("function drawPartyCue"));
+  assert.match(wheelScene, /height \* RADIO_VISUALS_WHEEL_CENTER_Y_RATIO/);
+  assert.doesNotMatch(wheelScene, /height \* 0\.5/);
+  assert.match(queueControl, /createMediaElementSource|createAnalyser|audioAnalysis|analyzeRadioVisualFrequencyData/);
+  assert.match(queueControl, /YOUTUBE_SYNC_HEARTBEAT_MS = 1_000/);
+  assert.match(productionContract, /same-origin MP3\/WAV player[\s\S]*existing 1 Hz player-sync heartbeat/);
+  assert.match(productionContract, /YouTube and TikTok embeds remain timeline-reactive/);
   assert.match(builder, /const queueState = await getRadioQueueState\(\);\s*if \(!hasActiveQueueSession\(queueState\)\)/);
   const idleBranch = builder.slice(builder.indexOf("if (!hasActiveQueueSession(queueState))"), builder.indexOf("const [overlayState, playerSync]"));
   assert.doesNotMatch(idleBranch, /getStoredLiveOverlayState|getLiveOverlayPlayerSync/);
@@ -343,6 +400,7 @@ test("permanent receiver is a pure full-frame effects surface with a stable link
   assert.match(css, /--radio-visuals-key: #ff5a00/);
   assert.match(receiver, /data-source-aspect="3:4"/);
   assert.match(receiver, /data-source-resolution="1080x1440"/);
+  assert.match(receiver, /data-music-source=.*"timeline".*"analyser"/);
   assert.match(css, /width: min\(100vw, 75vh\);\s*height: min\(133\.333333vw, 100vh\)/);
   assert.match(css, /aspect-ratio: 3 \/ 4/);
   assert.match(css, /nextjs-portal|vercel-live-feedback|data-vercel-toolbar/);

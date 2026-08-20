@@ -3,7 +3,9 @@ import { YOUTUBE_SYNC_STALE_AFTER_MS } from "./live-overlay-resolver";
 import type { LiveOverlayState } from "./live-overlay";
 import type { RadioVisualCue } from "./radio-visuals-cues";
 import { activeRadioVisualCue } from "./radio-visuals-cues";
-import type { QueueState } from "./queue-types";
+import { activeRadioVisualEvent, hashRadioVisualToken } from "./radio-visuals-events";
+import type { RadioVisualEvent, RadioVisualEventType } from "./radio-visuals-events";
+import type { QueueBroadcastPhase, QueueEntry, QueueState, SponsorBreakStatus } from "./queue-types";
 import { hasActiveQueueSession } from "./session-bound-polling";
 
 export type RadioVisualsShowStage = "standby" | "intake" | "early" | "middle" | "late" | "final" | "complete";
@@ -28,14 +30,23 @@ export interface RadioVisualsQueueSignal {
   pressure: "low" | "medium" | "high" | "max";
 }
 
+export interface RadioVisualsShowSignals {
+  intakeOpen: boolean;
+  wheelSpinsOwed: number;
+  sponsorStatus: SponsorBreakStatus | null;
+  broadcastPhase: QueueBroadcastPhase | null;
+}
+
 export interface RadioVisualsSnapshot {
   sessionActive: boolean;
   showStage: RadioVisualsShowStage;
   visualMode: RadioVisualsMode;
   sceneMode: ResolvedLiveOverlayScene["mode"];
   queue: RadioVisualsQueueSignal;
+  signals: RadioVisualsShowSignals;
   player: RadioVisualsPlayerSignal | null;
   cue: RadioVisualCue | null;
+  events: RadioVisualEvent[];
   visualSeed: number;
   updatedAt: string;
 }
@@ -48,13 +59,79 @@ function nonNegativeInteger(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
 }
 
-function hashVisualSeed(value: string): number {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
+function uniqueEntries(entries: Array<QueueEntry | null | undefined>): QueueEntry[] {
+  const seen = new Set<string>();
+  return entries.filter((entry): entry is QueueEntry => {
+    if (!entry || entry.isTestTrack || seen.has(entry.id)) return false;
+    seen.add(entry.id);
+    return true;
+  });
+}
+
+function allQueueEntries(state: QueueState): QueueEntry[] {
+  return uniqueEntries([
+    state.nowPlaying,
+    state.loadedTrack,
+    state.nextInLine,
+    ...state.queue,
+    ...state.history,
+    ...(state.removed ?? []),
+  ]);
+}
+
+function eventCandidate(type: RadioVisualEventType, occurredAt: string | null | undefined, nonce: string, now: Date): RadioVisualEvent | null {
+  return activeRadioVisualEvent({ type, occurredAt, nonce }, now);
+}
+
+function priorityEvents(state: QueueState, now: Date): RadioVisualEvent[] {
+  return allQueueEntries(state).flatMap((entry) => {
+    const events: RadioVisualEvent[] = [];
+    const sentAt = entry.priorityUpgradeCheckoutCreatedAt ?? entry.priorityUpgradeRequestedAt ?? null;
+    const sent = eventCandidate("priority_sent", sentAt, `${entry.id}:sent`, now);
+    if (sent) events.push(sent);
+    if (entry.priorityUpgradeStatus === "paid" || entry.priorityUpgradeStatus === "paid_needs_attention" || entry.priorityUpgradeStatus === "manual") {
+      const confirmedAt = entry.priorityUpgradePaidAt ?? entry.priorityUpgradeAt ?? entry.priorityUpgradeRequestedAt ?? null;
+      const confirmed = eventCandidate("priority_confirmed", confirmedAt, `${entry.id}:confirmed`, now);
+      if (confirmed) events.push(confirmed);
+    }
+    return events;
+  });
+}
+
+function playbackEvents(state: QueueState, now: Date): RadioVisualEvent[] {
+  return (state.playbackDiagnostics?.events ?? []).slice(-8).flatMap((event) => {
+    const type = event.eventType === "play" || event.eventType === "resume"
+      ? "track_started"
+      : event.eventType === "skip"
+        ? "track_skipped"
+        : null;
+    if (!type) return [];
+    const projected = eventCandidate(type, event.observedAt, `${event.trackId}:${event.sequence}`, now);
+    return projected ? [projected] : [];
+  });
+}
+
+function stateEvents(state: QueueState, scene: ResolvedLiveOverlayScene, now: Date): RadioVisualEvent[] {
+  const session = state.session;
+  const events: Array<RadioVisualEvent | null> = [
+    eventCandidate("show_started", session?.broadcastStartedAt, `show:${session?.broadcastStartedAt ?? ""}`, now),
+  ];
+  if (session?.sponsorBreakStatus === "due") events.push(eventCandidate("sponsor_due", session.updatedAt, `sponsor:due:${session.updatedAt}`, now));
+  if (session?.sponsorBreakStatus === "running") events.push(eventCandidate("sponsor_started", session.sponsorBreakStartedAt, `sponsor:start:${session.sponsorBreakStartedAt ?? ""}`, now));
+  if (session?.sponsorBreakStatus === "completed") events.push(eventCandidate("sponsor_completed", session.sponsorBreakCompletedAt, `sponsor:end:${session.sponsorBreakCompletedAt ?? ""}`, now));
+  if (scene.mode === "wheel_ready") events.push(eventCandidate("wheel_launched", scene.updatedAt, `wheel:launch:${scene.updatedAt}`, now));
+  if (scene.mode === "wheel_spinning" || scene.mode === "wheel_reencrypting") events.push(eventCandidate("wheel_spinning", scene.updatedAt, `wheel:spin:${scene.updatedAt}`, now));
+  return events.filter((event): event is RadioVisualEvent => Boolean(event));
+}
+
+function recentVisualEvents(state: QueueState, scene: ResolvedLiveOverlayScene, now: Date): RadioVisualEvent[] {
+  const deduplicated = new Map<string, RadioVisualEvent>();
+  for (const event of [...priorityEvents(state, now), ...playbackEvents(state, now), ...stateEvents(state, scene, now)]) {
+    deduplicated.set(`${event.type}:${event.occurredAt}:${event.seed}`, event);
   }
-  return hash >>> 0;
+  return [...deduplicated.values()]
+    .sort((left, right) => Date.parse(left.occurredAt) - Date.parse(right.occurredAt))
+    .slice(-6);
 }
 
 function visualModeForScene(scene: ResolvedLiveOverlayScene, sessionActive: boolean): RadioVisualsMode {
@@ -146,9 +223,16 @@ export function resolveRadioVisualsSnapshot(input: {
       progress,
       pressure: queueState.publicStatus?.pressure ?? "low",
     },
+    signals: {
+      intakeOpen: queueState.publicStatus?.isOpen ?? queueState.session?.queueOpen ?? false,
+      wheelSpinsOwed: nonNegativeInteger(queueState.session?.wheelSpinsOwed ?? scene.wheelSpinsOwed),
+      sponsorStatus: queueState.session?.sponsorBreakStatus ?? null,
+      broadcastPhase: queueState.session?.broadcastPhase ?? null,
+    },
     player,
     cue,
-    visualSeed: hashVisualSeed(trackIdentity),
+    events: sessionActive ? recentVisualEvents(queueState, scene, now) : [],
+    visualSeed: hashRadioVisualToken(trackIdentity),
     updatedAt: scene.updatedAt || now.toISOString(),
   };
 }

@@ -5,8 +5,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MutableRefObject } from "react";
 import { buildWheelSegments, estimateOneWayNetworkTransitMs, playbackCorrectionTarget, roundPlaybackDriftSeconds, serverRelativeSyncAgeSeconds, shouldCorrectPlaybackDrift, updateTransitEstimateMs, wheelFinalRotationForSegment, wheelUprightLabelRotationDegrees } from "@/lib/live-overlay-resolver";
 import type { LiveOverlayPlaybackState, LiveOverlayTikTokSync, LiveOverlayYouTubeSync, ResolvedLiveOverlayScene } from "@/lib/live-overlay";
-import { LIVE_OVERLAY_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
+import { LIVE_OVERLAY_POLL_INTERVAL_MS, WHEEL_OVERLAY_ACTIVE_POLL_INTERVAL_MS, WHEEL_OVERLAY_SHOW_IDLE_POLL_INTERVAL_MS, WHEEL_OVERLAY_STANDBY_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 import { hasActiveQueueSession, startSessionBoundPolling } from "@/lib/session-bound-polling";
+import type { WheelOverlaySnapshot } from "@/lib/wheel-overlay";
 
 type YTPlayer = {
   loadVideoById: (options: { videoId: string; startSeconds?: number }) => void;
@@ -963,10 +964,10 @@ function TikTokOverlayPlayer({ sync, artistName, trackTitle, clockAnchorRef, clo
   return <div className="live-overlay-tiktok-player" aria-label="Muted TikTok overlay player" data-tiktok-status={safeStatus} data-tiktok-failure-reason={playerError?.reason ?? diagnostics.failureReason ?? undefined} data-tiktok-error-code={playerError?.code ?? diagnostics.errorCode ?? undefined} data-tiktok-first-event={diagnostics.firstTrustedEventType} data-tiktok-last-event={diagnostics.lastTrustedEventType} data-tiktok-drift-seconds={diagnostics.driftSeconds} data-tiktok-drift-direction={diagnostics.driftDirection} data-tiktok-correction-target={diagnostics.correctionTargetSeconds} data-tiktok-correction-count={diagnostics.correctionCount} data-tiktok-correction-reason={diagnostics.correctionReason} data-overlay-server-clock={clockAnchored ? "anchored" : "missing"} data-overlay-response-transit-ms={responseTransitMs ?? undefined}><iframe ref={iframeRef} onLoad={handleIframeLoad} title={`TikTok overlay for ${artistName} — ${trackTitle}`} src={src} className={playerError ? "live-overlay-tiktok-iframe live-overlay-tiktok-iframe--hidden" : "live-overlay-tiktok-iframe"} allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" />{playerError && <div className="live-overlay-tiktok-fallback" role="status" data-tiktok-status="failed" data-tiktok-failure-reason={playerError.reason} data-tiktok-error-code={playerError.code} data-tiktok-first-event={diagnostics.firstTrustedEventType} data-tiktok-last-event={diagnostics.lastTrustedEventType} data-tiktok-drift-seconds={diagnostics.driftSeconds} data-tiktok-drift-direction={diagnostics.driftDirection} data-tiktok-correction-target={diagnostics.correctionTargetSeconds} data-tiktok-correction-count={diagnostics.correctionCount} data-tiktok-correction-reason={diagnostics.correctionReason} data-overlay-server-clock={clockAnchored ? "anchored" : "missing"} data-overlay-response-transit-ms={responseTransitMs ?? undefined}><p>{artistName}</p><strong>{trackTitle}</strong><span>{playerError.message}</span></div>}</div>;
 }
 
-export function LiveOverlayReceiver() {
+export function LiveOverlayReceiver({ wheelOnly = false }: { wheelOnly?: boolean }) {
   const [scene, setScene] = useState<ResolvedLiveOverlayScene>(fallbackScene());
   const [connected, setConnected] = useState(false);
-  const [audioArmed, setAudioArmed] = useState(false);
+  const [audioArmed, setAudioArmed] = useState(wheelOnly);
   const [audioNotice, setAudioNotice] = useState<string | null>(null);
   const [audioJustArmed, setAudioJustArmed] = useState(false);
   const [serverClockAnchored, setServerClockAnchored] = useState(false);
@@ -980,10 +981,42 @@ export function LiveOverlayReceiver() {
   const responseTransitEstimateMsRef = useRef<number | null>(null);
 
   useEffect(() => {
+    if (!wheelOnly) return undefined;
+    let cancelled = false;
+    const spin = new Audio("/audio/wheel/142.mp3");
+    spin.preload = "auto";
+    spinAudioRef.current = spin;
+    const context = new AudioContext();
+    sfxContextRef.current = context;
+    void Promise.all([
+      decodeAudioBuffer(context, WHEEL_WINNER_CHEER_AUDIO_PATH),
+      decodeAudioBuffer(context, WHEEL_REENCRYPT_AUDIO_PATH),
+    ]).then(([cheerBuffer, encryptBuffer]) => {
+      if (cancelled) return;
+      cheerBufferRef.current = cheerBuffer;
+      encryptBufferRef.current = encryptBuffer;
+    });
+    return () => {
+      cancelled = true;
+      stopWheelAudio(spin);
+      spinAudioRef.current = null;
+      cheerBufferRef.current = null;
+      encryptBufferRef.current = null;
+      sfxContextRef.current = null;
+      void context.close().catch(() => undefined);
+    };
+  }, [wheelOnly]);
+
+  useEffect(() => {
     let cancelled = false;
     let requestSeq = 0;
     let latestAppliedSeq = 0;
     let activeController: AbortController | null = null;
+    let permanentTimeoutId: number | null = null;
+    let permanentInFlight = false;
+    let permanentWakeRequested = false;
+    let wheelSessionActive = false;
+    let wheelCeremonyActive = false;
 
     async function poll(): Promise<boolean | null> {
       if (cancelled) return null;
@@ -992,16 +1025,20 @@ export function LiveOverlayReceiver() {
       activeController = new AbortController();
       try {
         const requestStartedAtPerformanceMs = performance.now();
-        const res = await fetch("/api/overlay/live", { cache: "no-store", signal: activeController.signal });
+        const res = await fetch(wheelOnly ? "/api/overlay/wheel" : "/api/overlay/live", { cache: "no-store", signal: activeController.signal });
         if (!res.ok) throw new Error("Overlay state unavailable");
-        const next = await res.json();
+        const next = await res.json() as { snapshot?: WheelOverlaySnapshot; scene?: ResolvedLiveOverlayScene; serverRequestReceivedAt?: string; serverNow?: string };
         const responseReceivedAtPerformanceMs = performance.now();
         const serverRequestReceivedAtMs = typeof next?.serverRequestReceivedAt === "string" ? new Date(next.serverRequestReceivedAt).getTime() : Number.NaN;
         const serverNowMs = typeof next?.serverNow === "string" ? new Date(next.serverNow).getTime() : Number.NaN;
         const serverProcessingMs = serverNowMs - serverRequestReceivedAtMs;
         const responseTransitMs = estimateOneWayNetworkTransitMs(responseReceivedAtPerformanceMs - requestStartedAtPerformanceMs, serverProcessingMs);
         responseTransitEstimateMsRef.current = updateTransitEstimateMs(responseTransitEstimateMsRef.current, responseTransitMs);
-        const nextScene = next?.scene ?? next;
+        const wheelSnapshot = wheelOnly ? next.snapshot : undefined;
+        const nextScene = wheelOnly ? wheelSnapshot?.scene ?? fallbackScene() : next.scene ?? fallbackScene();
+        const nextSessionActive = wheelOnly ? wheelSnapshot?.sessionActive === true : hasActiveQueueSession(nextScene);
+        wheelSessionActive = nextSessionActive;
+        wheelCeremonyActive = wheelOnly ? wheelSnapshot?.wheelActive === true : Boolean(nextScene.wheelCeremony);
         if (!cancelled && seq > latestAppliedSeq) {
           latestAppliedSeq = seq;
           const clockAnchor = Number.isFinite(serverNowMs) && Number.isFinite(serverRequestReceivedAtMs) ? { serverNowMs, receivedAtPerformanceMs: responseReceivedAtPerformanceMs, responseTransitEstimateMs: responseTransitEstimateMsRef.current ?? 0 } : null;
@@ -1010,10 +1047,10 @@ export function LiveOverlayReceiver() {
           setServerClockAnchored((current) => current === nextAnchored ? current : nextAnchored);
           const nextTransitDiagnosticMs = clockAnchor ? Math.round(clockAnchor.responseTransitEstimateMs) : null;
           setResponseTransitDiagnosticMs((current) => current === nextTransitDiagnosticMs ? current : nextTransitDiagnosticMs);
-          setScene((current) => nextScene ?? current);
+          setScene(nextScene);
           setConnected(true);
         }
-        return hasActiveQueueSession(nextScene);
+        return nextSessionActive;
       } catch {
         if (!cancelled) setConnected(false);
         return null;
@@ -1022,13 +1059,62 @@ export function LiveOverlayReceiver() {
       }
     }
 
-    const stopPolling = startSessionBoundPolling({ intervalMs: OVERLAY_POLL_DELAY_MS, poll });
+    if (!wheelOnly) {
+      const stopPolling = startSessionBoundPolling({ intervalMs: OVERLAY_POLL_DELAY_MS, poll });
+      return () => {
+        cancelled = true;
+        stopPolling();
+        activeController?.abort();
+      };
+    }
+
+    const clearPermanentSchedule = () => {
+      if (permanentTimeoutId !== null) window.clearTimeout(permanentTimeoutId);
+      permanentTimeoutId = null;
+    };
+    const schedulePermanentPoll = () => {
+      clearPermanentSchedule();
+      if (cancelled) return;
+      const delayMs = wheelCeremonyActive
+        ? WHEEL_OVERLAY_ACTIVE_POLL_INTERVAL_MS
+        : wheelSessionActive
+          ? WHEEL_OVERLAY_SHOW_IDLE_POLL_INTERVAL_MS
+          : WHEEL_OVERLAY_STANDBY_POLL_INTERVAL_MS;
+      permanentTimeoutId = window.setTimeout(() => { void runPermanentPoll(); }, delayMs);
+    };
+    async function runPermanentPoll() {
+      if (cancelled) return;
+      if (permanentInFlight) {
+        permanentWakeRequested = true;
+        return;
+      }
+      clearPermanentSchedule();
+      permanentInFlight = true;
+      await poll();
+      permanentInFlight = false;
+      if (cancelled) return;
+      if (permanentWakeRequested) {
+        permanentWakeRequested = false;
+        void runPermanentPoll();
+        return;
+      }
+      schedulePermanentPoll();
+    }
+    const wakePermanentPoll = () => { void runPermanentPoll(); };
+    window.addEventListener("focus", wakePermanentPoll);
+    window.addEventListener("pageshow", wakePermanentPoll);
+    window.addEventListener("online", wakePermanentPoll);
+    void runPermanentPoll();
+
     return () => {
       cancelled = true;
-      stopPolling();
+      clearPermanentSchedule();
       activeController?.abort();
+      window.removeEventListener("focus", wakePermanentPoll);
+      window.removeEventListener("pageshow", wakePermanentPoll);
+      window.removeEventListener("online", wakePermanentPoll);
     };
-  }, []);
+  }, [wheelOnly]);
 
   const label = useMemo(() => modeLabel(scene.mode), [scene.mode]);
   const trackVisible = showTrack(scene);
@@ -1114,6 +1200,28 @@ export function LiveOverlayReceiver() {
     } catch {
       setAudioNotice("WHEEL SFX UNAVAILABLE");
     }
+  }
+
+  if (wheelOnly) {
+    return (
+      <div
+        className="wheel-overlay-shell"
+        data-audio-armed={audioArmed ? "true" : "false"}
+        data-connection={connected ? "connected" : "reconnecting"}
+        data-wheel-active={wheelVisible ? "true" : "false"}
+        aria-label="BARCODE Radio permanent wheel browser source"
+      >
+        {wheelVisible ? (
+          <section className="wheel-overlay-stage live-overlay-stage live-overlay-stage--wheel live-overlay-stage--wheel-ceremony">
+            <div className="live-overlay-noise" aria-hidden="true" />
+            <div className="live-overlay-corners" aria-hidden="true" />
+            <div className="live-overlay-content">
+              <WheelCeremonyOverlay scene={scene} audioArmed={audioArmed} audioNotice={null} audioJustArmed={false} playSpinMusic={playSpinMusic} fadeSpinMusic={fadeSpinMusic} playCheerSfx={() => playSfxBuffer(cheerBufferRef, WHEEL_CHEER_VOLUME)} playEncryptSfx={() => playSfxBuffer(encryptBufferRef, WHEEL_ENCRYPT_VOLUME)} />
+            </div>
+          </section>
+        ) : null}
+      </div>
+    );
   }
 
   return (

@@ -10,7 +10,7 @@ import { BNLNetworkRelayShell } from "@/components/BNLNetworkRelayShell";
 export function SiteChrome({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
-  if (pathname === "/world/playtest") {
+  if (pathname === "/world/playtest" || pathname.startsWith("/overlay/")) {
     return children;
   }
 

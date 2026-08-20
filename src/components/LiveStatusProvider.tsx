@@ -51,7 +51,7 @@ export function useLiveStatus() {
 
 export function LiveStatusProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const isolatedPrototype = pathname === "/world/playtest";
+  const isolatedPrototype = pathname === "/world/playtest" || pathname.startsWith("/overlay/");
   const [isLive, setIsLive] = useState(false);
   const [isScheduled, setIsScheduled] = useState(false);
   const [streamUrl, setStreamUrlState] = useState("https://www.tiktok.com/@six.bit/live");

@@ -4,8 +4,9 @@ import { resolveRadioVisualsSnapshot } from "./radio-visuals-resolver";
 import type { RadioVisualsSnapshot } from "./radio-visuals-resolver";
 import { hasActiveQueueSession } from "./session-bound-polling";
 
-export type { RadioVisualsMode, RadioVisualsPlayerSignal, RadioVisualsQueueSignal, RadioVisualsShowStage, RadioVisualsSnapshot } from "./radio-visuals-resolver";
+export type { RadioVisualsMode, RadioVisualsPlayerSignal, RadioVisualsQueueSignal, RadioVisualsShowSignals, RadioVisualsShowStage, RadioVisualsSnapshot } from "./radio-visuals-resolver";
 export type { RadioVisualCue, RadioVisualCueType } from "./radio-visuals-cues";
+export type { RadioVisualEvent, RadioVisualEventType } from "./radio-visuals-events";
 
 export async function getRadioVisualsSnapshot(now = new Date()): Promise<RadioVisualsSnapshot> {
   const queueState = await getRadioQueueState();

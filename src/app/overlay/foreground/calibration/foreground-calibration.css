@@ -17,7 +17,12 @@ body {
   background: #050807 !important;
 }
 
-body > :not(main):not(script):not(style) {
+nextjs-portal,
+#vercel-toolbar,
+vercel-live-feedback,
+vercel-toolbar,
+[data-vercel-live-feedback],
+[data-vercel-toolbar] {
   display: none !important;
 }
 

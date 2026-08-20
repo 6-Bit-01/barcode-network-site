@@ -1035,10 +1035,13 @@ export function LiveOverlayReceiver({ wheelOnly = false }: { wheelOnly?: boolean
         const responseTransitMs = estimateOneWayNetworkTransitMs(responseReceivedAtPerformanceMs - requestStartedAtPerformanceMs, serverProcessingMs);
         responseTransitEstimateMsRef.current = updateTransitEstimateMs(responseTransitEstimateMsRef.current, responseTransitMs);
         const wheelSnapshot = wheelOnly ? next.snapshot : undefined;
-        const nextScene = wheelOnly ? wheelSnapshot?.scene ?? fallbackScene() : next.scene ?? fallbackScene();
-        const nextSessionActive = wheelOnly ? wheelSnapshot?.sessionActive === true : hasActiveQueueSession(nextScene);
+        const nextScene = wheelOnly
+          ? wheelSnapshot?.scene ?? fallbackScene()
+          : next.scene ?? (next as unknown as ResolvedLiveOverlayScene);
+        const resolvedScene = nextScene ?? fallbackScene();
+        const nextSessionActive = wheelOnly ? wheelSnapshot?.sessionActive === true : hasActiveQueueSession(resolvedScene);
         wheelSessionActive = nextSessionActive;
-        wheelCeremonyActive = wheelOnly ? wheelSnapshot?.wheelActive === true : Boolean(nextScene.wheelCeremony);
+        wheelCeremonyActive = wheelOnly ? wheelSnapshot?.wheelActive === true : Boolean(resolvedScene.wheelCeremony);
         if (!cancelled && seq > latestAppliedSeq) {
           latestAppliedSeq = seq;
           const clockAnchor = Number.isFinite(serverNowMs) && Number.isFinite(serverRequestReceivedAtMs) ? { serverNowMs, receivedAtPerformanceMs: responseReceivedAtPerformanceMs, responseTransitEstimateMs: responseTransitEstimateMsRef.current ?? 0 } : null;
@@ -1047,7 +1050,7 @@ export function LiveOverlayReceiver({ wheelOnly = false }: { wheelOnly?: boolean
           setServerClockAnchored((current) => current === nextAnchored ? current : nextAnchored);
           const nextTransitDiagnosticMs = clockAnchor ? Math.round(clockAnchor.responseTransitEstimateMs) : null;
           setResponseTransitDiagnosticMs((current) => current === nextTransitDiagnosticMs ? current : nextTransitDiagnosticMs);
-          setScene(nextScene);
+          setScene((current) => nextScene ?? current);
           setConnected(true);
         }
         return nextSessionActive;

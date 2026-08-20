@@ -88,6 +88,9 @@ test("ordinary calibration link renders a review while source mode keeps exact c
 
 test("calibration route is noindex and does not expose site chrome", () => {
   assert.match(page, /robots: \{ index: false, follow: false \}/);
-  assert.match(css, /body > :not\(main\):not\(script\):not\(style\)/);
+  assert.match(css, /nextjs-portal/);
+  assert.match(css, /#vercel-toolbar/);
+  assert.match(css, /\[data-vercel-live-feedback\]/);
+  assert.doesNotMatch(css, /body > :not\(main\)/, "calibration must not hide its own Next root");
   assert.match(css, /display: none !important/);
 });

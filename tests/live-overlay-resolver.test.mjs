@@ -443,7 +443,7 @@ for (const audioPath of wheelAudioPaths) {
 }
 assert.equal(existsSync("src/lib/live-overlay-client-recovery.ts"), false, "the unproven client scene validator remains absent after restoring the July 17 receiver");
 assert.equal(sourceReceiver.includes("extractOverlayScene"), false, "the receiver does not reintroduce positional candidate validation");
-assert.equal(sourceReceiver.includes("const nextScene = next?.scene ?? next"), true, "the restored receiver accepts the server-resolved scene without treating array indexes as validation depth");
+assert.equal(sourceReceiver.includes(": next.scene ?? (next as unknown as ResolvedLiveOverlayScene)"), true, "the live receiver still accepts the server-resolved scene directly while the permanent Wheel source reads its isolated snapshot");
 const adminPostSource = sourceAdminOverlayRoute.slice(sourceAdminOverlayRoute.indexOf("export async function POST"));
 assert.equal(adminPostSource.includes("const serverRequestReceivedAt = new Date()") && adminPostSource.indexOf("const serverRequestReceivedAt = new Date()") < adminPostSource.indexOf("assertAdmin"), true, "admin POST captures request receipt before auth/action processing");
 assert.equal(sourceAdminOverlayRoute.includes("X-BNL-Request-Received-At") && sourceAdminOverlayRoute.includes("X-BNL-Response-Generated-At"), true, "admin POST success/controlled responses contain timing headers");

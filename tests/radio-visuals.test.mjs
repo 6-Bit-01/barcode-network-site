@@ -355,7 +355,7 @@ test("permanent receiver is a pure full-frame effects surface with a stable link
   assert.match(admin, /1080 × 1440/);
 });
 
-test("wheel ceremony has a permanent isolated browser source without changing wheel mechanics", () => {
+test("show-long live and Wheel source follows Start and End Broadcast without changing wheel mechanics", () => {
   const receiver = fs.readFileSync(path.join(projectRoot, "src/components/LiveOverlayReceiver.tsx"), "utf8");
   const builder = fs.readFileSync(path.join(projectRoot, "src/lib/wheel-overlay.ts"), "utf8");
   const route = fs.readFileSync(path.join(projectRoot, "src/app/api/overlay/wheel/route.ts"), "utf8");
@@ -371,7 +371,14 @@ test("wheel ceremony has a permanent isolated browser source without changing wh
   assert.match(receiver, /const cheer = new Audio\(WHEEL_WINNER_CHEER_AUDIO_PATH\)/);
   assert.match(receiver, /const encrypt = new Audio\(WHEEL_REENCRYPT_AUDIO_PATH\)/);
   assert.match(builder, /const queueState = await getRadioQueueState\(\);\s*if \(!hasActiveQueueSession\(queueState\)\)/);
-  assert.match(builder, /const overlayState = await getStoredLiveOverlayState\(\)/);
+  assert.match(builder, /const broadcastActive = queueState\.session\?\.showStarted === true/);
+  assert.match(builder, /Promise\.all\(\[getStoredLiveOverlayState\(\), getLiveOverlayPlayerSync\(\)\]\)/);
+  assert.match(builder, /broadcastActive: true,[\s\S]*?scene,/);
+  assert.doesNotMatch(builder, /scene: wheelActive \? scene : null/);
+  assert.match(receiver, /const broadcastVisible = hasActiveQueueSession\(scene\)/);
+  assert.match(receiver, /wheelSnapshot\?\.broadcastActive === true/);
+  assert.match(receiver, /wheelOnly \? "wheel-overlay-stage " : ""/);
+  assert.match(receiver, /playCheerSfx=\{wheelOnly \? \(\) => playWheelOnlySfx/);
   assert.doesNotMatch(builder, /setLiveOverlayState|updateRadioTrack|redis\.set/);
   assert.match(route, /getWheelOverlaySnapshot/);
   assert.match(route, /verifyStudioOverlayToken/);
@@ -382,6 +389,8 @@ test("wheel ceremony has a permanent isolated browser source without changing wh
   assert.match(admin, /sourceLinks\?\.wheel/);
   assert.match(sourceAccess, /\/overlay\/wheel\$\{STUDIO_SOURCE_QUERY\}\$\{fragment\}/);
   assert.match(admin, /1080 × 1080 · key #FF5A00 · sound on/);
+  assert.match(admin, /Live Overlay \+ Wheel \+ Audio/);
+  assert.match(admin, /appears when Start Broadcast is pressed/);
   assert.doesNotMatch(admin, /Copy Wheel Link|Preview Wheel Source/);
   assert.match(builder, /const wheelActive = Boolean\(scene\.wheelCeremony\)/);
   assert.match(receiver, /estimatedServerNowMs/);

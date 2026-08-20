@@ -174,12 +174,12 @@ export function AdminLiveOverlayControl({ focusWheelTick = 0 }: { focusWheelTick
             <p className="mt-2">1080 × 1440 · key #FF5A00</p>
           </div>
           <div className="border border-cyan-300/25 bg-surface p-3">
-            <p className="font-bold text-cyan-100">Wheel Ceremony + Audio</p>
+            <p className="font-bold text-cyan-100">Live Overlay + Wheel + Audio</p>
             <code className="mt-2 block break-all text-xs text-foreground">{sourceLinks?.wheel ?? "Load the permanent private links once."}</code>
             <p className="mt-2">1080 × 1080 · key #FF5A00 · sound on</p>
           </div>
         </div>
-        <p className="mt-3 text-xs text-muted">These production capability links stay the same and grant overlay display only—not admin access. Leave them saved in Studio: each source wakes from authoritative show state after a session opens and clears itself after the session ends.</p>
+        <p className="mt-3 text-xs text-muted">These production capability links stay the same and grant overlay display only—not admin access. Leave them saved in Studio: Foreground and Show Visuals follow the current session; the square Live Overlay + Wheel source appears when Start Broadcast is pressed; all three clear after End Broadcast.</p>
       </details>
 
       <section className="space-y-3 border border-violet-400/35 bg-surface p-4">

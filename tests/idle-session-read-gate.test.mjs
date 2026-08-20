@@ -83,9 +83,15 @@ test("public queue GET preserves both shared overlay reads during an active sess
 test("overlay builders read queue authority before shared state and short-circuit while idle", () => {
   const liveOverlay = fs.readFileSync(path.join(projectRoot, "src/lib/live-overlay.ts"), "utf8");
   const foregroundOverlay = fs.readFileSync(path.join(projectRoot, "src/lib/foreground-overlay.ts"), "utf8");
+  const wheelOverlay = fs.readFileSync(path.join(projectRoot, "src/lib/wheel-overlay.ts"), "utf8");
   assert.match(liveOverlay, /const queueState = await getRadioQueueState\(\);\s*if \(!hasActiveQueueSession\(queueState\)\)/);
   assert.match(liveOverlay, /return resolveLiveOverlaySceneFromQueueState\(\{ overlayState: defaultLiveOverlayState\(\), queueState, playerSync: null \}\)/);
   assert.match(foregroundOverlay, /const queueState = await getRadioQueueState\(\);\s*const sessionActive = hasActiveQueueSession\(queueState\)/);
   const idleBranch = foregroundOverlay.slice(foregroundOverlay.indexOf("if (!sessionActive)"), foregroundOverlay.indexOf("const [overlayState, playerSync]"));
   assert.doesNotMatch(idleBranch, /getStoredLiveOverlayState|getLiveOverlayPlayerSync/);
+  assert.match(wheelOverlay, /const queueState = await getRadioQueueState\(\);\s*if \(!hasActiveQueueSession\(queueState\)\)/);
+  const wheelIdleBranch = wheelOverlay.slice(wheelOverlay.indexOf("if (!hasActiveQueueSession(queueState))"), wheelOverlay.indexOf("const broadcastActive"));
+  assert.doesNotMatch(wheelIdleBranch, /getStoredLiveOverlayState|getLiveOverlayPlayerSync/);
+  const wheelPreBroadcastBranch = wheelOverlay.slice(wheelOverlay.indexOf("if (!broadcastActive)"), wheelOverlay.indexOf("const [overlayState, playerSync]"));
+  assert.doesNotMatch(wheelPreBroadcastBranch, /getStoredLiveOverlayState|getLiveOverlayPlayerSync/);
 });

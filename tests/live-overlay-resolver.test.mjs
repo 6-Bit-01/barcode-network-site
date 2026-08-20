@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
-import { buildWheelSegments, derangedWheelCandidateOrder, detectMaterialPlaybackSeek, estimateOneWayNetworkTransitMs, playbackCorrectionTarget, projectObservedPlaybackTime, resolveLiveOverlayScene, roundPlaybackDriftSeconds, serverRelativeSyncAgeSeconds, serverStampAudioSync, serverStampTikTokSync, serverStampYouTubeSync, shouldCorrectPlaybackDrift, updateTransitEstimateMs, youtubePresentationFromUrl, WHEEL_RIGHT_POINTER_ANGLE_DEGREES, wheelFinalRotationForSegment, wheelFinalRotationForSlice, wheelSegmentAtPointer, wheelSliceIndexAtPointer, wheelUprightLabelRotationDegrees } from "../src/lib/live-overlay-resolver.ts";
+import { buildWheelSegments, derangedWheelCandidateOrder, detectMaterialPlaybackSeek, estimateOneWayNetworkTransitMs, normalizeRadioVisualAudioAnalysis, playbackCorrectionTarget, projectObservedPlaybackTime, resolveLiveOverlayScene, roundPlaybackDriftSeconds, serverRelativeSyncAgeSeconds, serverStampAudioSync, serverStampTikTokSync, serverStampYouTubeSync, shouldCorrectPlaybackDrift, updateTransitEstimateMs, youtubePresentationFromUrl, WHEEL_RIGHT_POINTER_ANGLE_DEGREES, wheelFinalRotationForSegment, wheelFinalRotationForSlice, wheelSegmentAtPointer, wheelSliceIndexAtPointer, wheelUprightLabelRotationDegrees } from "../src/lib/live-overlay-resolver.ts";
 
 const session = { sessionId: "s1", status: "open", queueOpen: true, wheelSpinsOwed: 0, sponsorBreakStatus: "not_due", broadcastPhase: "broadcast_active" };
 const youtubeTrack = { id: "yt1", submittedArtistName: "Artist Name", submittedSongTitle: "Video Track", sourceType: "youtube", sourceArtworkUrl: "https://img.youtube.com/vi/abcdefghijk/hqdefault.jpg", link: "https://youtube.com/watch?v=abcdefghijk", durationLabel: "3:30", youtubeVideoId: "abcdefghijk" };
@@ -193,9 +193,11 @@ assert.equal(serverStampTikTokSync({ ...freshTikTokSync, correctionReason: "seek
 assert.equal(serverStampTikTokSync({ ...freshTikTokSync, correctionReason: "bad" }, serverReceipt)?.correctionReason, undefined, "invalid correctionReason is discarded");
 assert.equal(serverStampTikTokSync(freshTikTokSync, serverReceipt)?.correctionReason, undefined, "old sync without correctionReason remains valid");
 assert.equal(serverStampTikTokSync({ ...freshTikTokSync, muted: false }, serverReceipt)?.muted, true, "muted remains forced true");
-const audioSync = serverStampAudioSync({ provider: "audio", trackId: "upload-track", playbackState: "playing", currentTimeSeconds: 42.5, durationSeconds: 215, updatedAt: "2099-01-01T00:00:00.000Z", muted: false, correctionReason: "heartbeat" }, serverReceipt);
+const audioSync = serverStampAudioSync({ provider: "audio", trackId: "upload-track", playbackState: "playing", currentTimeSeconds: 42.5, durationSeconds: 215, updatedAt: "2099-01-01T00:00:00.000Z", muted: false, correctionReason: "heartbeat", audioAnalysis: { energy: 0.72, bass: 1.4, mid: 0.58, treble: -0.2, peak: 0.91 } }, serverReceipt);
 assert.equal(audioSync?.updatedAt, serverReceipt.toISOString(), "native audio sync is server-stamped");
 assert.equal(audioSync?.durationSeconds, 215, "native audio duration is retained for queue timing");
+assert.deepEqual(audioSync?.audioAnalysis, { energy: 0.72, bass: 1, mid: 0.58, treble: 0, peak: 0.91 }, "native audio analysis is bounded before it reaches the public visual projection");
+assert.equal(normalizeRadioVisualAudioAnalysis({ energy: "invalid" }), null, "incomplete analysis payloads are discarded");
 assert.equal(serverStampAudioSync({ provider: "audio", trackId: "", playbackState: "playing", currentTimeSeconds: 0 }, serverReceipt), null, "native audio sync requires a track identity");
 
 const nonYoutubeNowPlaying = resolveLiveOverlayScene({ currentSession: session, nowPlaying: spotifyTrack });

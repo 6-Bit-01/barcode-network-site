@@ -1,5 +1,5 @@
 import type { LiveOverlayPlayerSync, LiveOverlayPlaybackState, ResolvedLiveOverlayScene } from "./live-overlay-resolver";
-import { YOUTUBE_SYNC_STALE_AFTER_MS } from "./live-overlay-resolver";
+import { normalizeRadioVisualAudioAnalysis, YOUTUBE_SYNC_STALE_AFTER_MS } from "./live-overlay-resolver";
 import type { LiveOverlayState } from "./live-overlay";
 import type { RadioVisualCue } from "./radio-visuals-cues";
 import { activeRadioVisualCue } from "./radio-visuals-cues";
@@ -17,8 +17,10 @@ export interface RadioVisualsPlayerSignal {
   currentTimeSeconds: number;
   durationSeconds?: number;
   updatedAt: string;
-  /** Reserved for a future first-party audio-analysis bridge. Null means timeline-reactive only. */
+  /** Direct first-party player analysis when available. Null means timeline-reactive only. */
   audioEnergy: number | null;
+  audioBands: { bass: number; mid: number; treble: number } | null;
+  audioPeak: number | null;
 }
 
 export interface RadioVisualsQueueSignal {
@@ -167,13 +169,16 @@ function playerSignalForScene(input: {
   if (candidate.trackId && candidate.trackId !== currentTrackId) return null;
   const updatedAtMs = new Date(candidate.updatedAt).getTime();
   if (!Number.isFinite(updatedAtMs) || now.getTime() - updatedAtMs > YOUTUBE_SYNC_STALE_AFTER_MS) return null;
+  const audioAnalysis = candidate.provider === "audio" ? normalizeRadioVisualAudioAnalysis(candidate.audioAnalysis) : null;
   return {
     provider: candidate.provider,
     playbackState: candidate.playbackState,
     currentTimeSeconds: Math.max(0, candidate.currentTimeSeconds),
     durationSeconds: candidate.durationSeconds,
     updatedAt: candidate.updatedAt,
-    audioEnergy: null,
+    audioEnergy: audioAnalysis?.energy ?? null,
+    audioBands: audioAnalysis ? { bass: audioAnalysis.bass, mid: audioAnalysis.mid, treble: audioAnalysis.treble } : null,
+    audioPeak: audioAnalysis?.peak ?? null,
   };
 }
 

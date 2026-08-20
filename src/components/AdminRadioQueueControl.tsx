@@ -13,6 +13,8 @@ import type { QueueEntry, QueueLane, QueuePlaybackDiagnostics, QueuePlaybackErro
 import type { LiveOverlayPlaybackState, LiveOverlaySyncCorrectionReason } from "@/lib/live-overlay-resolver";
 import { ADMIN_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 import { hasActiveQueueSession, notifyQueueSessionChanged, startSessionBoundPolling } from "@/lib/session-bound-polling";
+import { analyzeRadioVisualFrequencyData, smoothRadioVisualAudioAnalysis } from "@/lib/radio-visuals-audio";
+import type { RadioVisualAudioAnalysis } from "@/lib/radio-visuals-audio";
 
 type Tab = "active" | "completed" | "removed" | "spotlight";
 type AdminQueueAction = "pullNext" | "pullWheelChosen" | "pullFreeTransmission" | "startShow" | "addWheelSpinOwed" | "load" | "finish" | "skip" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "resolvePaidPriority" | "pausePriority" | "resumePriority";
@@ -1238,14 +1240,68 @@ function AdminTikTokPlayer({ entry, sessionId }: { entry: QueueEntry; sessionId:
 
 function AdminAudioPlayer({ entry, sessionId }: { entry: QueueEntry; sessionId: string | null }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const analysisRef = useRef<RadioVisualAudioAnalysis | null>(null);
+  const analysisGraphRef = useRef<{
+    element: HTMLAudioElement;
+    context: AudioContext;
+    source: MediaElementAudioSourceNode;
+    analyser: AnalyserNode;
+    bins: Uint8Array<ArrayBuffer>;
+  } | null>(null);
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
     let lifecycleState: "loaded" | "ready" | "playing" | "paused" | "stalled" | "ended" | "error" = "loaded";
     const playbackState = (): LiveOverlayPlaybackState => audio.ended ? "stopped" : audio.paused ? (audio.currentTime > 0 ? "paused" : "stopped") : "playing";
+    const ensureAnalysis = async () => {
+      const existing = analysisGraphRef.current;
+      if (existing && existing.element !== audio) {
+        existing.source.disconnect();
+        existing.analyser.disconnect();
+        void existing.context.close();
+        analysisGraphRef.current = null;
+        analysisRef.current = null;
+      }
+      let graph = analysisGraphRef.current;
+      if (!graph) {
+        const audioWindow = window as unknown as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext };
+        const AudioContextConstructor = audioWindow.AudioContext ?? audioWindow.webkitAudioContext;
+        if (!AudioContextConstructor) return null;
+        const context = new AudioContextConstructor();
+        try {
+          const source = context.createMediaElementSource(audio);
+          const analyser = context.createAnalyser();
+          analyser.fftSize = 1_024;
+          analyser.smoothingTimeConstant = 0.78;
+          analyser.minDecibels = -90;
+          analyser.maxDecibels = -15;
+          source.connect(analyser);
+          analyser.connect(context.destination);
+          graph = { element: audio, context, source, analyser, bins: new Uint8Array(analyser.frequencyBinCount) };
+          analysisGraphRef.current = graph;
+        } catch {
+          void context.close();
+          return null;
+        }
+      }
+      if (graph.context.state === "suspended") await graph.context.resume().catch(() => undefined);
+      return graph;
+    };
+    const sampleAnalysis = () => {
+      const graph = analysisGraphRef.current;
+      if (!graph || graph.element !== audio || audio.paused || audio.ended || graph.context.state !== "running") return;
+      graph.analyser.getByteFrequencyData(graph.bins);
+      const sample = analyzeRadioVisualFrequencyData(graph.bins, graph.context.sampleRate, graph.analyser.fftSize);
+      if (sample) analysisRef.current = smoothRadioVisualAudioAnalysis(analysisRef.current, sample);
+    };
+    const startAnalysis = () => {
+      void ensureAnalysis().then((graph) => { if (graph) sampleAnalysis(); });
+    };
     const publish = (correctionReason: LiveOverlaySyncCorrectionReason) => {
       const durationSeconds = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : undefined;
-      void postOverlayPlayerSync({ provider: "audio" as const, trackId: entry.id, playbackState: playbackState(), currentTimeSeconds: Math.max(0, audio.currentTime || 0), durationSeconds, updatedAt: new Date().toISOString(), muted: audio.muted, correctionReason }).catch(() => undefined);
+      const state = playbackState();
+      const audioAnalysis = state === "playing" ? analysisRef.current : null;
+      void postOverlayPlayerSync({ provider: "audio" as const, trackId: entry.id, playbackState: state, currentTimeSeconds: Math.max(0, audio.currentTime || 0), durationSeconds, updatedAt: new Date().toISOString(), muted: audio.muted, ...(audioAnalysis ? { audioAnalysis } : {}), correctionReason }).catch(() => undefined);
     };
     const report = (eventType: QueuePlaybackLifecycleEventInput["eventType"], errorCode: QueuePlaybackErrorCode | null = null) => {
       const durationSeconds = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : undefined;
@@ -1266,10 +1322,14 @@ function AdminAudioPlayer({ entry, sessionId }: { entry: QueueEntry; sessionId: 
       publish("state_change");
       report("ready");
     };
-    const play = () => publish("state_change");
+    const play = () => {
+      startAnalysis();
+      publish("state_change");
+    };
     const playing = () => {
       const eventType = lifecycleState === "paused" || lifecycleState === "stalled" ? "resume" : "play";
       lifecycleState = "playing";
+      startAnalysis();
       publish("state_change");
       report(eventType);
     };
@@ -1312,8 +1372,10 @@ function AdminAudioPlayer({ entry, sessionId }: { entry: QueueEntry; sessionId: 
     const interval = window.setInterval(() => {
       if (!audio.paused || audio.currentTime > 0) publish("heartbeat");
     }, YOUTUBE_SYNC_HEARTBEAT_MS);
+    const analysisInterval = window.setInterval(sampleAnalysis, 80);
     return () => {
       window.clearInterval(interval);
+      window.clearInterval(analysisInterval);
       audio.removeEventListener("loadedmetadata", ready);
       audio.removeEventListener("canplay", ready);
       audio.removeEventListener("play", play);
@@ -1324,6 +1386,16 @@ function AdminAudioPlayer({ entry, sessionId }: { entry: QueueEntry; sessionId: 
       audio.removeEventListener("ended", ended);
       audio.removeEventListener("error", error);
       audio.removeEventListener("seeked", seek);
+      window.setTimeout(() => {
+        const graph = analysisGraphRef.current;
+        if (!audio.isConnected && graph?.element === audio) {
+          graph.source.disconnect();
+          graph.analyser.disconnect();
+          void graph.context.close();
+          analysisGraphRef.current = null;
+          analysisRef.current = null;
+        }
+      }, 0);
     };
   }, [entry.id, sessionId]);
   return <audio ref={audioRef} key={`${entry.id}-${adminAudioUrl(entry)}`} src={adminAudioUrl(entry)} controls preload="metadata" className="w-full" />;

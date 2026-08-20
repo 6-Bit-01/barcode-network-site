@@ -1,4 +1,5 @@
 import type { QueueSourceType, SponsorBreakStatus } from "./queue-types";
+import type { RadioVisualAudioAnalysis } from "./radio-visuals-audio";
 
 export type OverlayMode = "standby" | "now_playing" | "artist_card" | "wheel_ready" | "wheel_reencrypting" | "wheel_spinning" | "wheel_result" | "wheel_confirmed" | "sponsor" | "video_placeholder" | "system_message" | "session_active";
 export type WheelOverlayStatus = "ready" | "intro" | "active" | "complete";
@@ -300,8 +301,26 @@ export interface LiveOverlayAudioSync {
   durationSeconds?: number;
   updatedAt: string;
   muted: boolean;
+  audioAnalysis?: RadioVisualAudioAnalysis;
   clientUpdatedAt?: string;
   correctionReason?: LiveOverlaySyncCorrectionReason;
+}
+
+function audioAnalysisUnit(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return Math.min(1, Math.max(0, value));
+}
+
+export function normalizeRadioVisualAudioAnalysis(input: unknown): RadioVisualAudioAnalysis | null {
+  const raw = input as Partial<RadioVisualAudioAnalysis> | null;
+  if (!raw || typeof raw !== "object") return null;
+  const energy = audioAnalysisUnit(raw.energy);
+  const bass = audioAnalysisUnit(raw.bass);
+  const mid = audioAnalysisUnit(raw.mid);
+  const treble = audioAnalysisUnit(raw.treble);
+  const peak = audioAnalysisUnit(raw.peak);
+  if (energy === null || bass === null || mid === null || treble === null || peak === null) return null;
+  return { energy, bass, mid, treble, peak };
 }
 
 export type LiveOverlayPlayerSync = LiveOverlayYouTubeSync | LiveOverlayTikTokSync | LiveOverlayAudioSync;
@@ -338,6 +357,7 @@ export function serverStampAudioSync(input: unknown, receivedAt: Date = new Date
   if (raw.playbackState !== "playing" && raw.playbackState !== "paused" && raw.playbackState !== "stopped") return null;
   if (typeof raw.currentTimeSeconds !== "number" || !Number.isFinite(raw.currentTimeSeconds) || raw.currentTimeSeconds < 0) return null;
   const durationSeconds = typeof raw.durationSeconds === "number" && Number.isFinite(raw.durationSeconds) && raw.durationSeconds > 0 ? raw.durationSeconds : undefined;
+  const audioAnalysis = normalizeRadioVisualAudioAnalysis(raw.audioAnalysis);
   return {
     provider: "audio",
     trackId,
@@ -346,6 +366,7 @@ export function serverStampAudioSync(input: unknown, receivedAt: Date = new Date
     durationSeconds,
     updatedAt: receivedAt.toISOString(),
     muted: raw.muted === true,
+    ...(audioAnalysis ? { audioAnalysis } : {}),
     correctionReason: normalizeLiveOverlaySyncCorrectionReason(raw.correctionReason),
   };
 }

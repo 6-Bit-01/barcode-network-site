@@ -83,6 +83,7 @@ test("the 1 Hz player-sync path uses one shared Redis command per heartbeat and 
       durationSeconds: 180,
       updatedAt: "2000-01-01T00:00:00.000Z",
       muted: false,
+      audioAnalysis: { energy: 0.7, bass: 0.82, mid: 0.6, treble: 0.4, peak: 0.9 },
       correctionReason: "heartbeat",
     }, receivedAt);
 
@@ -90,6 +91,7 @@ test("the 1 Hz player-sync path uses one shared Redis command per heartbeat and 
     assert.deepEqual(FakeRedis.calls.map(([operation]) => operation), ["set"], "a heartbeat performs exactly one SET and zero reads");
     assert.equal(FakeRedis.calls[0][1], "barcode:live-overlay:player-sync");
     assert.equal(JSON.parse(FakeRedis.calls[0][2]).updatedAt, receivedAt.toISOString());
+    assert.equal(JSON.parse(FakeRedis.calls[0][2]).audioAnalysis.bass, 0.82, "analysis piggybacks on the existing heartbeat instead of adding writes");
 
     FakeRedis.calls.length = 0;
     await overlay.setLiveOverlayPlayerSync(null, receivedAt);

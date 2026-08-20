@@ -40,8 +40,43 @@ vercel-toolbar,
   place-items: center;
   overflow: hidden;
   background: var(--wheel-overlay-key);
-  contain: strict;
   isolation: isolate;
+}
+
+/*
+ * TikTok LIVE Studio keeps two Link-source renderers: the canvas renderer and
+ * the Settings preview. If this source opens before a queue session exists,
+ * the canvas renderer otherwise sees one completely static chroma frame and
+ * can suspend it while the separately-created Settings preview stays current.
+ *
+ * This two-pixel, key-coloured compositor heartbeat keeps the saved canvas
+ * source producing frames from startup. It is deliberately imperceptible and
+ * remains inside the chroma range; it does not alter show or Wheel state.
+ */
+.wheel-overlay-shell::after {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 2147483647;
+  width: 2px;
+  height: 2px;
+  background: #ff5900;
+  content: "";
+  pointer-events: none;
+  /* Operational keepalive: reduced-motion rules must not disable it. */
+  animation: wheel-overlay-capture-heartbeat 1s steps(2, end) infinite !important;
+  will-change: transform;
+}
+
+@keyframes wheel-overlay-capture-heartbeat {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+
+  50% {
+    transform: translate3d(-1px, 0, 0);
+  }
 }
 
 .wheel-overlay-stage.live-overlay-stage {

@@ -55,7 +55,7 @@ internal sealed class BridgeApplicationContext : ApplicationContext
         _statusTimer.Tick += (_, _) =>
         {
             _statusItem.Text = _capture.Status;
-            _notifyIcon.Text = _capture.CaptureActive ? "BARCODE Audio Bridge — LIVE" : "BARCODE Audio Bridge — ready";
+            _notifyIcon.Text = _capture.TrayTooltip;
         };
         BridgeLog.Write("BARCODE Audio Bridge started.");
     }

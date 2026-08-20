@@ -400,6 +400,26 @@ test("music response follows the authoritative playback clock and uses direct an
   assert.equal(loopback.bpm, 128);
   assert.ok(loopback.bass > loopback.treble);
   assert.ok(loopback.beat > 0.7);
+
+  const quietLoopback = engine.radioVisualsMusicSignal(timelineSnapshot, 24, 100, {
+    schemaVersion: "barcode_audio_signal_v1",
+    source: "windows_loopback",
+    capturedAtUnixMs: Date.now(),
+    sequence: 20,
+    captureActive: true,
+    warmedUp: true,
+    silence: true,
+    energy: 0.007,
+    bass: 0.009,
+    mid: 0.006,
+    treble: 0.004,
+    peak: 0.008,
+    beat: 0,
+    bpm: 112,
+    tempoConfidence: 0,
+  });
+  assert.equal(quietLoopback.source, "windows_loopback", "low but real loopback levels must not be discarded as silence");
+  assert.ok(quietLoopback.energy > 0.04, "quiet speaker output must be shaped into a visible response");
 });
 
 test("Windows loopback signal contract rejects malformed and stale local data", () => {
@@ -434,7 +454,9 @@ test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a
   const project = fs.readFileSync(path.join(helperRoot, "Barcode.AudioBridge.csproj"), "utf8");
   const program = fs.readFileSync(path.join(helperRoot, "Program.cs"), "utf8");
   const installer = fs.readFileSync(path.join(helperRoot, "BridgeInstaller.cs"), "utf8");
+  const application = fs.readFileSync(path.join(helperRoot, "BridgeApplicationContext.cs"), "utf8");
   const capture = fs.readFileSync(path.join(helperRoot, "LoopbackCaptureController.cs"), "utf8");
+  const analyzer = fs.readFileSync(path.join(helperRoot, "AudioAnalyzer.cs"), "utf8");
   const server = fs.readFileSync(path.join(helperRoot, "LocalSignalServer.cs"), "utf8");
   const readme = fs.readFileSync(path.join(helperRoot, "README.md"), "utf8");
   const workflow = fs.readFileSync(path.join(projectRoot, ".github/workflows/ci.yml"), "utf8");
@@ -443,11 +465,20 @@ test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a
   assert.match(project, /<TargetFramework>net8\.0-windows<\/TargetFramework>/);
   assert.match(project, /<SelfContained>true<\/SelfContained>/);
   assert.match(project, /<PublishSingleFile>true<\/PublishSingleFile>/);
+  assert.match(project, /<Version>1\.0\.2<\/Version>/);
   assert.match(project, /PackageReference Include="NAudio" Version="2\.3\.0"/);
   assert.match(capture, /new WasapiLoopbackCapture\(\)/, "capture must use the default Windows Speakers render endpoint");
   assert.doesNotMatch(capture, /new (?:WaveIn|WasapiCapture)\(/, "the helper must not open a microphone capture endpoint");
   assert.match(capture, /TouchClient\(\)[\s\S]*EnsureStarted\(\)/, "visual-source requests must wake capture automatically");
   assert.match(capture, /ClientIdleCaptureStopMilliseconds/, "capture must stop after the visual source becomes idle");
+  assert.match(capture, /no Speakers audio detected[\s\S]*Speakers audio detected/, "helper status must report actual audio detection instead of capture startup");
+  assert.doesNotMatch(capture, /Live — Speakers loopback is driving the visuals/, "opening WASAPI alone must not claim that music is driving visuals");
+  assert.match(capture, /TrayTooltip[\s\S]*WarmedUp[\s\S]*Silence[\s\S]*LIVE audio/, "tray tooltip must reflect actual analyzed speaker audio");
+  assert.match(application, /_notifyIcon\.Text = _capture\.TrayTooltip/);
+  assert.doesNotMatch(application, /CaptureActive \? "BARCODE Audio Bridge — LIVE"/, "active capture without audible samples must not show a false LIVE tray tooltip");
+  assert.match(analyzer, /WaveFormatExtensible[\s\S]*ToStandardWaveFormat\(\)/, "32-bit extensible PCM must not be decoded as IEEE float");
+  assert.doesNotMatch(analyzer, /WaveFormatEncoding\.Extensible && format\.BitsPerSample == 32/);
+  assert.match(analyzer, /_energy < 0\.008/, "quiet but audible speaker output must remain available to the visuals");
   assert.match(server, /new TcpListener\(IPAddress\.Loopback, BridgeConstants\.Port\)/, "the signal endpoint must never bind to the LAN");
   assert.match(server, /Access-Control-Allow-Private-Network: true/);
   assert.match(server, /www\.barcode-network\.com|barcode-network\.com/);
@@ -525,7 +556,7 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.match(render, /<canvas ref=\{canvasRef\}/);
   assert.match(receiver, /drawAmbientLighting|drawGoboShadows|drawCaustics|drawWavefronts|drawParticleField|drawTrackBloom|drawPartyCue|drawShadowCue|drawSignalBreachCue|drawBlackoutCue|drawLightningCue/);
   assert.match(receiver, /drawQueueLanes|drawTrackSignature|drawIntakeAperture|drawSponsorCurtain|drawFinalConvergence|drawCompletionAfterimage|drawPressureEdges/);
-  assert.match(receiver, /drawLightRibbons|drawPrismaticShards|drawSignalConstellation|drawMusicHalo|drawSeedComposition/);
+  assert.match(receiver, /drawLightRibbons|drawPrismaticShards|drawSignalConstellation|drawMusicHalo|drawSeedComposition|drawLiveMusicResponse/);
   assert.doesNotMatch(receiver, /drawLiquidDream|drawKaleidoscopeBloom|drawSpectralLoom|drawFeedbackArchitecture|drawChromaticSmears|radioVisualComposition/);
   assert.match(receiver, /drawAmbientMoment|radioVisualAmbientMoment|observeSnapshotEvents|drawAutomaticEvent/);
   assert.match(receiver, /wheel_gained|priority_sent|priority_confirmed|track_skipped|sponsor_started|stage_shift/);
@@ -542,7 +573,14 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   const wheelScene = receiver.slice(receiver.indexOf("function drawWheelScene"), receiver.indexOf("function drawPartyCue"));
   assert.match(wheelScene, /height \* RADIO_VISUALS_WHEEL_CENTER_Y_RATIO/);
   assert.doesNotMatch(wheelScene, /height \* 0\.5/);
-  assert.match(wheelScene, /stateSpeed|ringCount|spokeCount|reencrypting|result/);
+  assert.match(wheelScene, /ring < 3/);
+  assert.match(wheelScene, /context\.arc\(0, 0, radius/);
+  assert.doesNotMatch(wheelScene, /stateSpeed|ringCount|spokeCount|reencrypting|result/);
+  const liveMusicResponse = receiver.slice(receiver.indexOf("function drawLiveMusicResponse"), receiver.indexOf("function drawQueueLanes"));
+  assert.match(liveMusicResponse, /music\.source !== "windows_loopback"/);
+  assert.match(liveMusicResponse, /bassDrive|midDrive|trebleDrive/);
+  assert.match(receiver, /Math\.floor\(randomUnit\(seed, 29_001\) \* 4\)/, "restore the original four visual compositions");
+  assert.doesNotMatch(receiver, /Math\.floor\(randomUnit\(seed, 29_001\) \* 8\)/);
   assert.match(queueControl, /createMediaElementSource|createAnalyser|audioAnalysis|analyzeRadioVisualFrequencyData/);
   assert.doesNotMatch(queueControl, /getDisplayMedia|createMediaStreamSource|Capture show audio|Share audio/);
   assert.match(queueControl, /YOUTUBE_SYNC_HEARTBEAT_MS = 1_000/);

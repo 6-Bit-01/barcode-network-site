@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
 import { useEffect, useRef, useState } from "react";
@@ -10,6 +9,15 @@ import { hasActiveQueueSession, startSessionBoundPolling } from "@/lib/session-b
 
 function sceneLabel(mode?: string): string {
   return mode ? mode.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase()) : "Syncing";
+}
+
+function responseClockMs(response: Response, snapshot: LiveOverlayAdminSnapshot): number {
+  for (const value of [response.headers.get("Date"), snapshot.overlayState.visualCueStartedAt, snapshot.scene.updatedAt]) {
+    if (!value) continue;
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
 }
 
 const VISUAL_CUE_CONTROLS: Array<{ type: RadioVisualCueType; label: string; description: string }> = [
@@ -37,7 +45,7 @@ export function AdminLiveOverlayControl({ focusWheelTick = 0 }: { focusWheelTick
     }
     const next = await res.json() as LiveOverlayAdminSnapshot;
     setSnapshot(next);
-    setVisualClockMs(Date.now());
+    setVisualClockMs(responseClockMs(res, next));
     return hasActiveQueueSession(next.scene);
   }
 
@@ -57,8 +65,9 @@ export function AdminLiveOverlayControl({ focusWheelTick = 0 }: { focusWheelTick
       setStatus(typeof errorBody.error === "string" ? errorBody.error : "Overlay update failed.");
       return;
     }
-    setSnapshot(await res.json());
-    setVisualClockMs(Date.now());
+    const next = await res.json() as LiveOverlayAdminSnapshot;
+    setSnapshot(next);
+    setVisualClockMs(responseClockMs(res, next));
     setStatus(successMessage);
   }
 

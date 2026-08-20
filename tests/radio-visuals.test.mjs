@@ -337,7 +337,7 @@ test("permanent receiver is a pure full-frame effects surface with a stable link
   const idleBranch = builder.slice(builder.indexOf("if (!hasActiveQueueSession(queueState))"), builder.indexOf("const [overlayState, playerSync]"));
   assert.doesNotMatch(idleBranch, /getStoredLiveOverlayState|getLiveOverlayPlayerSync/);
   assert.match(admin, /sourceLinks\?\.radioVisuals/);
-  assert.match(sourceAccess, /\/overlay\/radio-visuals\$\{fragment\}/);
+  assert.match(sourceAccess, /\/overlay\/radio-visuals\$\{STUDIO_SOURCE_QUERY\}\$\{fragment\}/);
   assert.match(receiver, /studioOverlayRequestHeaders/);
   assert.match(admin, /triggerVisualCue|Party Burst|Shadow Sweep|Signal Breach|Blackout \/ Return|Lightning Hit/);
   assert.match(css, /--radio-visuals-key: #ff5a00/);
@@ -380,7 +380,7 @@ test("wheel ceremony has a permanent isolated browser source without changing wh
   assert.match(css, /--wheel-overlay-key: #ff5a00/);
   assert.match(css, /width: min\(100vw, 100vh\);\s*height: min\(100vw, 100vh\)/);
   assert.match(admin, /sourceLinks\?\.wheel/);
-  assert.match(sourceAccess, /\/overlay\/wheel\$\{fragment\}/);
+  assert.match(sourceAccess, /\/overlay\/wheel\$\{STUDIO_SOURCE_QUERY\}\$\{fragment\}/);
   assert.match(admin, /1080 × 1080 · key #FF5A00 · sound on/);
   assert.doesNotMatch(admin, /Copy Wheel Link|Preview Wheel Source/);
   assert.match(builder, /const wheelActive = Boolean\(scene\.wheelCeremony\)/);

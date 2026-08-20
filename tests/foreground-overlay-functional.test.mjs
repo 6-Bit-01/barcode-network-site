@@ -314,9 +314,12 @@ test("functional receiver is a permanent session-driven Studio source", () => {
   assert.match(sessionBoundPolling, /addEventListener\("focus"/);
   assert.match(sessionBoundPolling, /addEventListener\("online"/);
   assert.match(receiver, /data-source-resolution="1080x1920"/);
+  assert.match(receiver, /data-session-active=\{sessionActive \? "true" : "false"\}/);
   assert.match(receiver, /"--fg-key-color": "#0000ff"/);
   assert.match(css, /\.foreground-overlay-canvas > \.foreground-strip/);
   assert.match(css, /top: calc\(var\(--fg-anchor-y\) - var\(--fg-height\)\)/);
+  assert.match(css, /html:has\(\.foreground-overlay-source-shell\)[\s\S]*width: 1080px !important;[\s\S]*height: 1920px !important;/);
+  assert.match(css, /data-session-active="false"[\s\S]*visibility: hidden;[\s\S]*opacity: 0;/);
   assert.match(admin, /One-Time TikTok Studio Source Setup/);
   assert.match(admin, /\/api\/admin\/overlay\/source-access/);
   assert.match(admin, /Load Permanent Private Links/);
@@ -329,8 +332,9 @@ test("functional receiver is a permanent session-driven Studio source", () => {
   assert.doesNotMatch(receiver, /foreground-access|verifyForegroundOverlayToken/);
   assert.match(sourceAccessApi, /createStudioOverlayToken/);
   assert.match(sourceAccessApi, /https:\/\/www\.barcode-network\.com/);
-  assert.match(sourceAccessApi, /\/overlay\/foreground\$\{fragment\}/);
-  assert.match(receiver, /sessionActive \? <ForegroundOverlayStrip/);
+  assert.match(sourceAccessApi, /STUDIO_SOURCE_QUERY = "\?studioSource=v1"/);
+  assert.match(sourceAccessApi, /\/overlay\/foreground\$\{STUDIO_SOURCE_QUERY\}\$\{fragment\}/);
+  assert.doesNotMatch(receiver, /sessionActive \? <ForegroundOverlayStrip/);
   assert.match(receiver, /foregroundActionWithExpiryAt/);
   assert.doesNotMatch(foregroundSource, /resolveBNLCurrentView/);
   assert.match(strip, /useRef<number \| null>\(null\)/);

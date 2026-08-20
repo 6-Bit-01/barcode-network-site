@@ -150,9 +150,15 @@ export function ForegroundOverlayReceiver() {
   const syncState = !snapshot ? syncError ? "retrying" : "syncing" : syncError && lastSuccessAtMs !== null && clockNowMs - lastSuccessAtMs > STALE_AFTER_MS ? "retrying" : "synchronized";
 
   return (
-    <div className="foreground-overlay-source-shell" data-source-resolution="1080x1920" data-sync-state={syncState} style={SOURCE_STYLE}>
+    <div
+      className="foreground-overlay-source-shell"
+      data-session-active={sessionActive ? "true" : "false"}
+      data-source-resolution="1080x1920"
+      data-sync-state={syncState}
+      style={SOURCE_STYLE}
+    >
       <div className="foreground-overlay-canvas">
-        {sessionActive ? <ForegroundOverlayStrip
+        <ForegroundOverlayStrip
           artistName={track?.artistName ?? "BARCODE RADIO"}
           trackTitle={track?.trackTitle ?? "NEXT TRANSMISSION STANDING BY"}
           identityCycleStartedAt={identityCycleStartedAt}
@@ -162,7 +168,7 @@ export function ForegroundOverlayReceiver() {
           actionLabel={action.label}
           actionMessage={action.message}
           actionTone={action.tone}
-        /> : null}
+        />
       </div>
     </div>
   );

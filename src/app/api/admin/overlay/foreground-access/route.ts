@@ -5,6 +5,8 @@ import { COOKIE_NAME, createStudioOverlayToken, verifyAdminToken } from "@/lib/a
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+const STUDIO_SOURCE_QUERY = "?studioSource=v1";
+
 export async function POST() {
   const adminToken = (await cookies()).get(COOKIE_NAME)?.value;
   if (!adminToken || !(await verifyAdminToken(adminToken))) {
@@ -12,7 +14,7 @@ export async function POST() {
   }
 
   const accessToken = await createStudioOverlayToken();
-  return NextResponse.json({ path: `/overlay/foreground#access=${encodeURIComponent(accessToken)}` }, {
+  return NextResponse.json({ path: `/overlay/foreground${STUDIO_SOURCE_QUERY}#access=${encodeURIComponent(accessToken)}` }, {
     headers: {
       "Cache-Control": "no-store",
       "Referrer-Policy": "no-referrer",

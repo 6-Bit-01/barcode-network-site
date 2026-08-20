@@ -22,8 +22,6 @@ type YTPlayer = {
   destroy?: () => void;
 };
 
-const WHEEL_SOURCE_STYLE = { width: "1080px", height: "1080px" } as CSSProperties;
-
 declare global {
   interface Window {
     YT?: { Player: new (elementId: string | HTMLElement, options: Record<string, unknown>) => YTPlayer };
@@ -1240,14 +1238,14 @@ export function LiveOverlayReceiver({ wheelOnly = false }: { wheelOnly?: boolean
   }
 
   if (!broadcastVisible) {
-    return <div className={wheelOnly ? "wheel-overlay-shell" : "live-overlay-shell live-overlay-shell--inactive"} data-source-resolution={wheelOnly ? "1080x1080" : undefined} data-audio-armed={audioArmed ? "true" : "false"} data-connection={connected ? "connected" : "reconnecting"} data-broadcast-active="false" data-wheel-active="false" style={wheelOnly ? WHEEL_SOURCE_STYLE : undefined} aria-label={wheelOnly ? "BARCODE Radio permanent live and Wheel browser source" : "BARCODE Radio live overlay receiver"} />;
+    return <div className={wheelOnly ? "wheel-overlay-shell" : "live-overlay-shell live-overlay-shell--inactive"} data-audio-armed={audioArmed ? "true" : "false"} data-connection={connected ? "connected" : "reconnecting"} data-broadcast-active="false" data-wheel-active="false" aria-label={wheelOnly ? "BARCODE Radio permanent live and Wheel browser source" : "BARCODE Radio live overlay receiver"} />;
   }
 
   const shellClassName = wheelOnly ? "wheel-overlay-shell" : "live-overlay-shell";
   const stageClassName = `${wheelOnly ? "wheel-overlay-stage " : ""}live-overlay-stage ${frameTone(scene.mode)} ${youtubeVisible ? "live-overlay-stage--youtube" : ""} ${tiktokVisible ? "live-overlay-stage--tiktok" : ""} ${wheelVisible ? "live-overlay-stage--wheel-ceremony" : ""}`;
 
   return (
-    <div className={shellClassName} data-source-resolution={wheelOnly ? "1080x1080" : undefined} data-audio-armed={audioArmed ? "true" : "false"} data-connection={connected ? "connected" : "reconnecting"} data-broadcast-active="true" data-wheel-active={wheelVisible ? "true" : "false"} style={wheelOnly ? WHEEL_SOURCE_STYLE : undefined} aria-label={wheelOnly ? "BARCODE Radio permanent live and Wheel browser source" : "BARCODE Radio live overlay receiver"}>
+    <div className={shellClassName} data-audio-armed={audioArmed ? "true" : "false"} data-connection={connected ? "connected" : "reconnecting"} data-broadcast-active="true" data-wheel-active={wheelVisible ? "true" : "false"} aria-label={wheelOnly ? "BARCODE Radio permanent live and Wheel browser source" : "BARCODE Radio live overlay receiver"}>
       <section className={stageClassName}>
         <div className="live-overlay-noise" aria-hidden="true" />
         <div className="live-overlay-corners" aria-hidden="true" />

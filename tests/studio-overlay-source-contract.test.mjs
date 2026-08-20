@@ -67,7 +67,7 @@ test("all permanent Studio pages are native square sources", () => {
   assert.match(visuals, /data-source-resolution="1080x1080"/);
   assert.match(foregroundCss, /\.foreground-overlay-source-shell \{[\s\S]*?aspect-ratio: 1 \/ 1;/);
   assert.match(visualsCss, /width: min\(100vw, 100vh\);[\s\S]*?height: min\(100vw, 100vh\);[\s\S]*?aspect-ratio: 1 \/ 1;/);
-  assert.match(wheelCss, /\.wheel-overlay-shell::after \{[\s\S]*?animation: wheel-overlay-capture-heartbeat 1s steps\(2, end\) infinite;/);
+  assert.match(wheelCss, /\.wheel-overlay-shell::after \{[\s\S]*?animation: wheel-overlay-capture-heartbeat 1s steps\(2, end\) infinite !important;/);
   assert.match(wheelCss, /@keyframes wheel-overlay-capture-heartbeat/);
   assert.doesNotMatch(wheelCss, /contain:\s*strict/);
   assert.match(admin, /Foreground Strip[\s\S]*?1080 × 1080[\s\S]*?Show Visuals[\s\S]*?1080 × 1080[\s\S]*?Live Overlay \+ Wheel \+ Audio[\s\S]*?1080 × 1080/);

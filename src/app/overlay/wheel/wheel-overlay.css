@@ -63,7 +63,8 @@ vercel-toolbar,
   background: #ff5900;
   content: "";
   pointer-events: none;
-  animation: wheel-overlay-capture-heartbeat 1s steps(2, end) infinite;
+  /* Operational keepalive: reduced-motion rules must not disable it. */
+  animation: wheel-overlay-capture-heartbeat 1s steps(2, end) infinite !important;
   will-change: transform;
 }
 

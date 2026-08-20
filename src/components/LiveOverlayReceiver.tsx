@@ -1048,8 +1048,9 @@ export function LiveOverlayReceiver({ wheelOnly = false }: { wheelOnly?: boolean
         const responseTransitMs = estimateOneWayNetworkTransitMs(responseReceivedAtPerformanceMs - requestStartedAtPerformanceMs, serverProcessingMs);
         responseTransitEstimateMsRef.current = updateTransitEstimateMs(responseTransitEstimateMsRef.current, responseTransitMs);
         const wheelSnapshot = wheelOnly ? next.snapshot : undefined;
+        const wheelBroadcastActive = wheelOnly ? wheelSnapshot?.broadcastActive === true : false;
         const nextScene = wheelOnly
-          ? wheelSnapshot?.scene ?? fallbackScene()
+          ? wheelBroadcastActive ? wheelSnapshot?.scene ?? fallbackScene() : fallbackScene()
           : next.scene ?? (next as unknown as ResolvedLiveOverlayScene);
         const resolvedScene = nextScene ?? fallbackScene();
         const nextSessionActive = wheelOnly ? wheelSnapshot?.sessionActive === true : hasActiveQueueSession(resolvedScene);
@@ -1141,6 +1142,7 @@ export function LiveOverlayReceiver({ wheelOnly = false }: { wheelOnly?: boolean
   const youtubeVisible = scene.mode === "now_playing" && scene.automatic && scene.youtube && scene.track;
   const tiktokVisible = scene.mode === "now_playing" && scene.automatic && scene.tiktok && scene.track;
   const wheelVisible = Boolean(scene.wheelCeremony);
+  const broadcastVisible = hasActiveQueueSession(scene);
   const shortYouTube = scene.track?.youtubePresentation === "short";
   const youtubeSceneClass = shortYouTube ? "live-overlay-youtube-scene live-overlay-youtube-scene--short" : "live-overlay-youtube-scene";
 
@@ -1235,35 +1237,16 @@ export function LiveOverlayReceiver({ wheelOnly = false }: { wheelOnly?: boolean
     }
   }
 
-  if (wheelOnly) {
-    return (
-      <div
-        className="wheel-overlay-shell"
-        data-audio-armed={audioArmed ? "true" : "false"}
-        data-connection={connected ? "connected" : "reconnecting"}
-        data-wheel-active={wheelVisible ? "true" : "false"}
-        aria-label="BARCODE Radio permanent wheel browser source"
-      >
-        {wheelVisible ? (
-          <section className="wheel-overlay-stage live-overlay-stage live-overlay-stage--wheel live-overlay-stage--wheel-ceremony">
-            <div className="live-overlay-noise" aria-hidden="true" />
-            <div className="live-overlay-corners" aria-hidden="true" />
-            <div className="live-overlay-content">
-              <WheelCeremonyOverlay scene={scene} clockAnchorRef={serverClockAnchorRef} audioArmed={audioArmed} audioNotice={null} audioJustArmed={false} playSpinMusic={playSpinMusic} fadeSpinMusic={fadeSpinMusic} playCheerSfx={() => playWheelOnlySfx(wheelOnlyCheerAudioRef, WHEEL_CHEER_VOLUME)} playEncryptSfx={() => playWheelOnlySfx(wheelOnlyEncryptAudioRef, WHEEL_ENCRYPT_VOLUME)} />
-            </div>
-          </section>
-        ) : null}
-      </div>
-    );
+  if (!broadcastVisible) {
+    return <div className={wheelOnly ? "wheel-overlay-shell" : "live-overlay-shell live-overlay-shell--inactive"} data-audio-armed={audioArmed ? "true" : "false"} data-connection={connected ? "connected" : "reconnecting"} data-broadcast-active="false" data-wheel-active="false" aria-label={wheelOnly ? "BARCODE Radio permanent live and Wheel browser source" : "BARCODE Radio live overlay receiver"} />;
   }
 
-  if (!hasActiveQueueSession(scene)) {
-    return <div className="live-overlay-shell live-overlay-shell--inactive" data-connection={connected ? "connected" : "reconnecting"} aria-label="BARCODE Radio live overlay receiver" />;
-  }
+  const shellClassName = wheelOnly ? "wheel-overlay-shell" : "live-overlay-shell";
+  const stageClassName = `${wheelOnly ? "wheel-overlay-stage " : ""}live-overlay-stage ${frameTone(scene.mode)} ${youtubeVisible ? "live-overlay-stage--youtube" : ""} ${tiktokVisible ? "live-overlay-stage--tiktok" : ""} ${wheelVisible ? "live-overlay-stage--wheel-ceremony" : ""}`;
 
   return (
-    <div className="live-overlay-shell" aria-label="BARCODE Radio live overlay receiver">
-      <section className={`live-overlay-stage ${frameTone(scene.mode)} ${youtubeVisible ? "live-overlay-stage--youtube" : ""} ${tiktokVisible ? "live-overlay-stage--tiktok" : ""} ${wheelVisible ? "live-overlay-stage--wheel-ceremony" : ""}`}>
+    <div className={shellClassName} data-audio-armed={audioArmed ? "true" : "false"} data-connection={connected ? "connected" : "reconnecting"} data-broadcast-active="true" data-wheel-active={wheelVisible ? "true" : "false"} aria-label={wheelOnly ? "BARCODE Radio permanent live and Wheel browser source" : "BARCODE Radio live overlay receiver"}>
+      <section className={stageClassName}>
         <div className="live-overlay-noise" aria-hidden="true" />
         <div className="live-overlay-corners" aria-hidden="true" />
         <div className="live-overlay-header">
@@ -1273,7 +1256,7 @@ export function LiveOverlayReceiver({ wheelOnly = false }: { wheelOnly?: boolean
 
         <main className="live-overlay-content">
           {wheelVisible ? (
-            <WheelCeremonyOverlay scene={scene} clockAnchorRef={serverClockAnchorRef} audioArmed={audioArmed} audioNotice={audioNotice} audioJustArmed={audioJustArmed} playSpinMusic={playSpinMusic} fadeSpinMusic={fadeSpinMusic} playCheerSfx={() => playSfxBuffer(cheerBufferRef, WHEEL_CHEER_VOLUME)} playEncryptSfx={() => playSfxBuffer(encryptBufferRef, WHEEL_ENCRYPT_VOLUME)} />
+            <WheelCeremonyOverlay scene={scene} clockAnchorRef={serverClockAnchorRef} audioArmed={audioArmed} audioNotice={wheelOnly ? null : audioNotice} audioJustArmed={wheelOnly ? false : audioJustArmed} playSpinMusic={playSpinMusic} fadeSpinMusic={fadeSpinMusic} playCheerSfx={wheelOnly ? () => playWheelOnlySfx(wheelOnlyCheerAudioRef, WHEEL_CHEER_VOLUME) : () => playSfxBuffer(cheerBufferRef, WHEEL_CHEER_VOLUME)} playEncryptSfx={wheelOnly ? () => playWheelOnlySfx(wheelOnlyEncryptAudioRef, WHEEL_ENCRYPT_VOLUME) : () => playSfxBuffer(encryptBufferRef, WHEEL_ENCRYPT_VOLUME)} />
           ) : youtubeVisible && scene.youtube && scene.track ? (
             <div className={youtubeSceneClass}>
               <div className="live-overlay-youtube-viewport">
@@ -1327,7 +1310,7 @@ export function LiveOverlayReceiver({ wheelOnly = false }: { wheelOnly?: boolean
           <span>{scene.automatic ? "AUTO LIVE SOURCE" : "OVERRIDE LIVE SOURCE"} / 1:1</span>
           <span>{new Date(scene.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
         </div>}
-        {!audioArmed && <div className="live-overlay-wheel-audio-modal" role="dialog" aria-modal="true" aria-label="Enable live overlay audio"><div className="live-overlay-wheel-audio-modal-card"><p>ENABLE LIVE OVERLAY AUDIO</p><span>Required for wheel music, winner sounds, and broadcast effects.</span><span>Click once before the show.</span><button type="button" className="live-overlay-wheel-audio-arm" onClick={() => { void enableOverlayAudio(); }}>ENABLE AUDIO</button>{audioNotice && <em>{audioNotice}</em>}</div></div>}
+        {!wheelOnly && !audioArmed && <div className="live-overlay-wheel-audio-modal" role="dialog" aria-modal="true" aria-label="Enable live overlay audio"><div className="live-overlay-wheel-audio-modal-card"><p>ENABLE LIVE OVERLAY AUDIO</p><span>Required for wheel music, winner sounds, and broadcast effects.</span><span>Click once before the show.</span><button type="button" className="live-overlay-wheel-audio-arm" onClick={() => { void enableOverlayAudio(); }}>ENABLE AUDIO</button>{audioNotice && <em>{audioNotice}</em>}</div></div>}
       </section>
     </div>
   );

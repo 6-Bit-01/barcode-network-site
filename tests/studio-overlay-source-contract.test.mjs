@@ -45,13 +45,24 @@ test("permanent Studio links are private, stable, and use one authoritative stat
   assert.doesNotMatch(admin, /Preview Wheel Source|Copy Wheel Link|Preview Visuals|Copy Visuals Link/);
 });
 
-test("wheel source uses resolved ceremony authority, browser-source audio, and server-time reconnect progress", () => {
+test("square live and Wheel source follows broadcast lifecycle, resolved ceremony authority, and browser-source audio", () => {
   const wheel = source("src/lib/wheel-overlay.ts");
   const receiver = source("src/components/LiveOverlayReceiver.tsx");
+  const page = source("src/app/overlay/wheel/page.tsx");
+  assert.match(wheel, /const broadcastActive = queueState\.session\?\.showStarted === true/);
+  assert.match(wheel, /Promise\.all\(\[getStoredLiveOverlayState\(\), getLiveOverlayPlayerSync\(\)\]\)/);
   assert.match(wheel, /const wheelActive = Boolean\(scene\.wheelCeremony\)/);
+  assert.match(wheel, /broadcastActive: true,[\s\S]*?scene,/);
+  assert.doesNotMatch(wheel, /scene: wheelActive \? scene : null/);
   assert.doesNotMatch(wheel, /overlayState\.wheelOverlayActive === true &&/);
+  assert.match(receiver, /const broadcastVisible = hasActiveQueueSession\(scene\)/);
+  assert.match(receiver, /wheelSnapshot\?\.broadcastActive === true/);
+  assert.match(receiver, /wheelOnly \? "wheel-overlay-stage " : ""/);
+  assert.match(receiver, /data-broadcast-active="true"/);
   assert.match(receiver, /const cheer = new Audio\(WHEEL_WINNER_CHEER_AUDIO_PATH\)/);
   assert.match(receiver, /const encrypt = new Audio\(WHEEL_REENCRYPT_AUDIO_PATH\)/);
+  assert.match(receiver, /playCheerSfx=\{wheelOnly \? \(\) => playWheelOnlySfx/);
+  assert.match(page, /Live \+ Wheel Browser Source/);
   assert.match(receiver, /estimatedServerNowMs/);
   assert.match(receiver, /elapsedSinceSpinStartMs/);
   assert.match(receiver, /initialProgress/);

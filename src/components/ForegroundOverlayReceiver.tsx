@@ -13,6 +13,8 @@ const POLL_INTERVAL_MS = FOREGROUND_OVERLAY_POLL_INTERVAL_MS;
 const STALE_AFTER_MS = 10_000;
 
 const SOURCE_STYLE = {
+  width: "1080px",
+  height: "1920px",
   "--fg-height": "100px",
   "--fg-primary-size": "36px",
   "--fg-secondary-size": "18px",

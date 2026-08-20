@@ -1689,7 +1689,7 @@ export function RadioVisualsReceiver() {
       data-visual-cue={snapshot.cue?.type ?? "none"}
       aria-hidden="true"
     >
-      <canvas ref={canvasRef} className="radio-visuals-canvas" />
+      <canvas ref={canvasRef} className="radio-visuals-canvas" width={1080} height={1440} />
     </section>
   );
 }

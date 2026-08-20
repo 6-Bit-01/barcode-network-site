@@ -5,11 +5,12 @@
 html,
 body {
   position: fixed;
-  inset: 0;
-  width: 100vw;
-  height: 100vh;
-  min-width: 100vw;
-  min-height: 100vh;
+  top: 0;
+  left: 0;
+  width: 1080px;
+  height: 1440px;
+  min-width: 1080px;
+  min-height: 1440px;
   margin: 0;
   padding: 0;
   overflow: hidden;
@@ -42,14 +43,13 @@ vercel-toolbar,
 .radio-visuals-shell {
   position: fixed;
   top: 0;
-  left: 50%;
+  left: 0;
   z-index: 9999;
-  width: min(100vw, 75vh);
-  height: min(133.333333vw, 100vh);
-  min-width: 1px;
-  min-height: 1px;
+  width: 1080px;
+  height: 1440px;
+  min-width: 1080px;
+  min-height: 1440px;
   aspect-ratio: 3 / 4;
-  transform: translateX(-50%);
   overflow: hidden;
   background: var(--radio-visuals-key);
   contain: strict;

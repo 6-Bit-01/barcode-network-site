@@ -401,10 +401,11 @@ test("permanent receiver is a pure full-frame effects surface with a stable link
   assert.match(receiver, /data-source-aspect="3:4"/);
   assert.match(receiver, /data-source-resolution="1080x1440"/);
   assert.match(receiver, /data-music-source=.*"timeline".*"analyser"/);
-  assert.match(css, /width: min\(100vw, 75vh\);\s*height: min\(133\.333333vw, 100vh\)/);
+  assert.match(css, /width: 1080px;\s*height: 1440px;/);
+  assert.doesNotMatch(css, /100vw|100vh|75vh|133\.333333vw/);
   assert.match(css, /aspect-ratio: 3 \/ 4/);
   assert.match(css, /nextjs-portal|vercel-live-feedback|data-vercel-toolbar/);
-  assert.match(page, /width: 1080/);
+  assert.match(page, /width: 1080,[\s\S]*?height: 1440/);
   assert.match(chrome, /pathname\.startsWith\("\/overlay\/"\)/, "overlay sources must bypass the animated site shell");
   assert.match(liveProvider, /pathname\.startsWith\("\/overlay\/"\)/, "overlay sources must not run the global live-status poller");
   assert.match(bnlProvider, /pathname\.startsWith\("\/overlay\/"\)/, "overlay sources must not run the BNL status poller");
@@ -441,9 +442,10 @@ test("show-long live and Wheel source follows Start and End Broadcast without ch
   assert.match(route, /getWheelOverlaySnapshot/);
   assert.match(route, /verifyStudioOverlayToken/);
   assert.match(page, /<LiveOverlayReceiver wheelOnly \/>/);
-  assert.match(page, /width: 1080/);
+  assert.match(page, /width: 1080,[\s\S]*?height: 1080/);
   assert.match(css, /--wheel-overlay-key: #ff5a00/);
-  assert.match(css, /width: min\(100vw, 100vh\);\s*height: min\(100vw, 100vh\)/);
+  assert.match(css, /width: 1080px;\s*height: 1080px;/);
+  assert.doesNotMatch(css, /100vw|100vh|min\(100vw/);
   assert.match(admin, /sourceLinks\?\.wheel/);
   assert.match(sourceAccess, /\/overlay\/wheel\$\{STUDIO_SOURCE_QUERY\}\$\{fragment\}/);
   assert.match(admin, /1080 × 1080 · key #FF5A00 · sound on/);

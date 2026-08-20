@@ -65,6 +65,16 @@ export function AdminLiveOverlayControl({ focusWheelTick = 0 }: { focusWheelTick
     setStatus("Foreground overlay opened with private show access.");
   }
 
+  async function copyRadioVisualsOverlayLink() {
+    const overlayUrl = new URL("/overlay/radio-visuals", window.location.origin).toString();
+    try {
+      await navigator.clipboard.writeText(overlayUrl);
+      setStatus("Permanent radio visuals link copied for TikTok Studio.");
+    } catch {
+      setStatus(`Copy this permanent radio visuals link: ${overlayUrl}`);
+    }
+  }
+
   const scene = snapshot?.scene;
   const wheelOwed = scene?.wheelSpinsOwed ?? 0;
   const wheelActive = scene?.wheelOverlayActive === true;
@@ -124,8 +134,15 @@ export function AdminLiveOverlayControl({ focusWheelTick = 0 }: { focusWheelTick
         </div>
         <div className="flex flex-wrap gap-2">
           <a href="/overlay/live" target="_blank" rel="noreferrer" className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Open Live Overlay</a>
+          <a href="/overlay/radio-visuals" target="_blank" rel="noreferrer" className="border border-fuchsia-300/70 px-3 py-2 text-xs uppercase tracking-widest text-fuchsia-200 hover:bg-fuchsia-300 hover:text-background">Open Radio Visuals</a>
+          <button type="button" onClick={copyRadioVisualsOverlayLink} className="border border-fuchsia-300/50 px-3 py-2 text-xs uppercase tracking-widest text-fuchsia-200 hover:border-fuchsia-300">Copy Visuals Link</button>
           <button type="button" onClick={openForegroundOverlay} className="border border-cyan-300/70 px-3 py-2 text-xs uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background">Open Foreground Overlay</button>
         </div>
+      </div>
+
+      <div className="border border-fuchsia-300/30 bg-fuchsia-300/10 p-3 text-sm text-muted">
+        <p className="font-bold text-fuchsia-100">Separate TikTok Studio browser source</p>
+        <p className="mt-1">Add the Radio Visuals link once, then size and position that source independently. It waits in animated standby, detects each show automatically, and reacts to queue stage, track changes, and player play/pause/timeline. Level 1 is player-reactive; it does not claim cross-origin audio-spectrum analysis.</p>
       </div>
 
       <div className="grid gap-3 text-sm md:grid-cols-3">

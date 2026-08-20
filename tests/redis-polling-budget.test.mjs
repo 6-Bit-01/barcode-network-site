@@ -10,6 +10,8 @@ test("Redis-backed browser surfaces share a bounded polling budget", () => {
   const budget = source("src/lib/redis-polling-budget.ts");
   assert.match(budget, /LIVE_OVERLAY_POLL_INTERVAL_MS = 650/);
   assert.match(budget, /FOREGROUND_OVERLAY_POLL_INTERVAL_MS = 1_500/);
+  assert.match(budget, /RADIO_VISUALS_ACTIVE_POLL_INTERVAL_MS = 1_500/);
+  assert.match(budget, /RADIO_VISUALS_STANDBY_POLL_INTERVAL_MS = 15_000/);
   assert.match(budget, /PUBLIC_QUEUE_POLL_INTERVAL_MS = 10_000/);
   assert.match(budget, /ADMIN_QUEUE_POLL_INTERVAL_MS = 10_000/);
   assert.match(budget, /SITE_LIVE_STATUS_POLL_INTERVAL_MS = 15_000/);
@@ -37,6 +39,10 @@ test("Redis-backed browser surfaces share a bounded polling budget", () => {
   }
 
   assert.match(source("src/components/ForegroundOverlayReceiver.tsx"), /FOREGROUND_OVERLAY_POLL_INTERVAL_MS/);
+  const radioVisuals = source("src/components/RadioVisualsReceiver.tsx");
+  assert.match(radioVisuals, /RADIO_VISUALS_ACTIVE_POLL_INTERVAL_MS/);
+  assert.match(radioVisuals, /RADIO_VISUALS_STANDBY_POLL_INTERVAL_MS/);
+  assert.doesNotMatch(radioVisuals, /startSessionBoundPolling/, "permanent Studio source must retain its bounded standby wake poll");
   assert.match(source("src/components/LiveStatusProvider.tsx"), /SITE_LIVE_STATUS_POLL_INTERVAL_MS/);
 
   for (const path of [
@@ -61,6 +67,13 @@ test("Redis-backed browser surfaces share a bounded polling budget", () => {
   const showCriticalSharedRedisCommands = liveOverlaySharedReads + foregroundOverlaySharedReads + playerSyncSharedWrites;
   assert.equal(showCriticalSharedRedisCommands, 77_908);
   assert.ok(showCriticalSharedRedisCommands <= 80_000, "four hours of both transient receivers plus 1 Hz player sync stays inside the bounded show allowance");
+
+  // The Radio Visuals strip is an alternate live presentation receiver at the
+  // same cadence as foreground, not a reason to tighten any player write loop.
+  const radioVisualsSharedReads = Math.ceil(fourHourShowMs / 1_500) * 2;
+  const studioVisualsShowCommands = radioVisualsSharedReads + foregroundOverlaySharedReads + playerSyncSharedWrites;
+  assert.equal(studioVisualsShowCommands, 52_800);
+  assert.ok(studioVisualsShowCommands <= 80_000, "four hours of foreground plus Radio Visuals and 1 Hz player sync stays inside the bounded show allowance");
 });
 
 test("quota failover is read-only and retains only a previously confirmed queue snapshot", () => {

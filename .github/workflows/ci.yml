@@ -36,3 +36,32 @@ jobs:
 
       - name: Build production application
         run: npm run build
+
+  windows-audio-bridge:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Use .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore Windows audio bridge
+        run: dotnet restore tools/barcode-audio-bridge/Barcode.AudioBridge.csproj
+
+      - name: Build Windows audio bridge
+        run: dotnet build tools/barcode-audio-bridge/Barcode.AudioBridge.csproj -c Release --no-restore
+
+      - name: Publish one-click Windows helper
+        run: dotnet publish tools/barcode-audio-bridge/Barcode.AudioBridge.csproj -c Release -r win-x64 --self-contained true --no-restore -o artifacts/barcode-audio-bridge
+
+      - name: Upload Windows helper
+        uses: actions/upload-artifact@v4
+        with:
+          name: barcode-audio-bridge-win-x64
+          path: artifacts/barcode-audio-bridge/BARCODE.AudioBridge.exe
+          if-no-files-found: error

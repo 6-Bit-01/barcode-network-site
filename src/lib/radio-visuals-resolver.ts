@@ -205,9 +205,19 @@ export function resolveRadioVisualsSnapshot(input: {
   const player = visualMode === "track"
     ? playerSignalForScene({ scene, playerSync, currentTrackId, now })
     : null;
+  const currentEntry = queueState.nowPlaying ?? queueState.loadedTrack ?? null;
+  const loadedOccurrence = currentTrackId
+    ? [...(queueState.playbackDiagnostics?.events ?? [])]
+      .reverse()
+      .find((event) => event.trackId === currentTrackId && event.eventType === "loaded")
+      ?.observedAt
+    : null;
+  const transientSceneOccurrence = visualMode === "wheel" || visualMode === "system" || visualMode === "sponsor"
+    ? `:${scene.mode}:${scene.updatedAt || now.toISOString()}`
+    : "";
   const trackIdentity = scene.track
-    ? `${scene.track.artistName}:${scene.track.trackTitle}:${scene.track.sourceType}`
-    : `${visualMode}:${showStage}:${acceptedCount}:${completedCount}`;
+    ? `${scene.track.id ?? currentTrackId ?? "track"}:${scene.track.artistName}:${scene.track.trackTitle}:${scene.track.sourceType}:${loadedOccurrence ?? currentEntry?.playedAt ?? currentEntry?.createdAt ?? "occurrence"}`
+    : `${visualMode}:${showStage}:${acceptedCount}:${completedCount}${transientSceneOccurrence}`;
   const cue = sessionActive && overlayState ? activeRadioVisualCue({
     type: overlayState.visualCueType,
     startedAt: overlayState.visualCueStartedAt,

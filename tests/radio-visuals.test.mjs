@@ -454,6 +454,7 @@ test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a
   const project = fs.readFileSync(path.join(helperRoot, "Barcode.AudioBridge.csproj"), "utf8");
   const program = fs.readFileSync(path.join(helperRoot, "Program.cs"), "utf8");
   const installer = fs.readFileSync(path.join(helperRoot, "BridgeInstaller.cs"), "utf8");
+  const application = fs.readFileSync(path.join(helperRoot, "BridgeApplicationContext.cs"), "utf8");
   const capture = fs.readFileSync(path.join(helperRoot, "LoopbackCaptureController.cs"), "utf8");
   const analyzer = fs.readFileSync(path.join(helperRoot, "AudioAnalyzer.cs"), "utf8");
   const server = fs.readFileSync(path.join(helperRoot, "LocalSignalServer.cs"), "utf8");
@@ -472,6 +473,9 @@ test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a
   assert.match(capture, /ClientIdleCaptureStopMilliseconds/, "capture must stop after the visual source becomes idle");
   assert.match(capture, /no Speakers audio detected[\s\S]*Speakers audio detected/, "helper status must report actual audio detection instead of capture startup");
   assert.doesNotMatch(capture, /Live — Speakers loopback is driving the visuals/, "opening WASAPI alone must not claim that music is driving visuals");
+  assert.match(capture, /TrayTooltip[\s\S]*WarmedUp[\s\S]*Silence[\s\S]*LIVE audio/, "tray tooltip must reflect actual analyzed speaker audio");
+  assert.match(application, /_notifyIcon\.Text = _capture\.TrayTooltip/);
+  assert.doesNotMatch(application, /CaptureActive \? "BARCODE Audio Bridge — LIVE"/, "active capture without audible samples must not show a false LIVE tray tooltip");
   assert.match(analyzer, /WaveFormatExtensible[\s\S]*ToStandardWaveFormat\(\)/, "32-bit extensible PCM must not be decoded as IEEE float");
   assert.doesNotMatch(analyzer, /WaveFormatEncoding\.Extensible && format\.BitsPerSample == 32/);
   assert.match(analyzer, /_energy < 0\.008/, "quiet but audible speaker output must remain available to the visuals");

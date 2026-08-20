@@ -45,6 +45,20 @@ internal sealed class LoopbackCaptureController : IDisposable
         get { lock (_sync) return _capture is not null; }
     }
 
+    public string TrayTooltip
+    {
+        get
+        {
+            if (!CaptureActive) return "BARCODE Audio Bridge — ready";
+
+            var signal = _analyzer.Snapshot(true);
+            if (!signal.WarmedUp) return "BARCODE Audio Bridge — warming up";
+            return signal.Silence
+                ? "BARCODE Audio Bridge — no Speakers audio"
+                : "BARCODE Audio Bridge — LIVE audio";
+        }
+    }
+
     public void TouchClient()
     {
         lock (_sync) _lastClientRequest = DateTimeOffset.UtcNow;

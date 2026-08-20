@@ -1679,8 +1679,8 @@ export function RadioVisualsReceiver() {
   return (
     <section
       className="radio-visuals-shell"
-      data-source-aspect="3:4"
-      data-source-resolution="1080x1440"
+      data-source-aspect="1:1"
+      data-source-resolution="1080x1080"
       data-connection={connection}
       data-player-state={snapshot.player?.playbackState ?? "waiting"}
       data-show-stage={snapshot.showStage}
@@ -1689,7 +1689,7 @@ export function RadioVisualsReceiver() {
       data-visual-cue={snapshot.cue?.type ?? "none"}
       aria-hidden="true"
     >
-      <canvas ref={canvasRef} className="radio-visuals-canvas" width={1080} height={1440} />
+      <canvas ref={canvasRef} className="radio-visuals-canvas" />
     </section>
   );
 }

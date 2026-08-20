@@ -5,12 +5,11 @@
 html,
 body {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 1080px;
-  height: 1080px;
-  min-width: 1080px;
-  min-height: 1080px;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  min-width: 100vw;
+  min-height: 100vh;
   margin: 0;
   padding: 0;
   overflow: hidden;
@@ -31,14 +30,13 @@ vercel-toolbar,
 
 .wheel-overlay-shell {
   position: fixed;
-  top: 0;
-  left: 0;
+  inset: 0;
   z-index: 9999;
   display: grid;
-  width: 1080px;
-  height: 1080px;
-  min-width: 1080px;
-  min-height: 1080px;
+  width: 100vw;
+  height: 100vh;
+  min-width: 100vw;
+  min-height: 100vh;
   place-items: center;
   overflow: hidden;
   background: var(--wheel-overlay-key);
@@ -48,9 +46,9 @@ vercel-toolbar,
 
 .wheel-overlay-stage.live-overlay-stage {
   position: relative;
-  width: 1080px;
-  height: 1080px;
-  min-width: 1080px;
-  min-height: 1080px;
+  width: min(100vw, 100vh);
+  height: min(100vw, 100vh);
+  min-width: 1px;
+  min-height: 1px;
   aspect-ratio: 1 / 1;
 }

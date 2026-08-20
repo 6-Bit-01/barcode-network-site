@@ -166,12 +166,12 @@ export function AdminLiveOverlayControl({ focusWheelTick = 0 }: { focusWheelTick
           <div className="border border-cyan-300/25 bg-surface p-3">
             <p className="font-bold text-cyan-100">Foreground Strip</p>
             <code className="mt-2 block break-all text-xs text-foreground">{sourceLinks?.foreground ?? "Load the permanent private links once."}</code>
-            <p className="mt-2">1080 × 1920 · key #0000FF</p>
+            <p className="mt-2">1080 × 1080 · key #0000FF</p>
           </div>
           <div className="border border-violet-400/25 bg-surface p-3">
             <p className="font-bold text-violet-100">Show Visuals</p>
             <code className="mt-2 block break-all text-xs text-foreground">{sourceLinks?.radioVisuals ?? "Load the permanent private links once."}</code>
-            <p className="mt-2">1080 × 1440 · key #FF5A00</p>
+            <p className="mt-2">1080 × 1080 · key #FF5A00</p>
           </div>
           <div className="border border-cyan-300/25 bg-surface p-3">
             <p className="font-bold text-cyan-100">Live Overlay + Wheel + Audio</p>
@@ -179,7 +179,7 @@ export function AdminLiveOverlayControl({ focusWheelTick = 0 }: { focusWheelTick
             <p className="mt-2">1080 × 1080 · key #FF5A00 · sound on</p>
           </div>
         </div>
-        <p className="mt-3 text-xs text-muted">These production capability links stay the same and grant overlay display only—not admin access. Leave them saved in Studio: Foreground and Show Visuals follow the current session; the square Live Overlay + Wheel source appears when Start Broadcast is pressed; all three clear after End Broadcast.</p>
+        <p className="mt-3 text-xs text-muted">These production capability links stay the same and grant overlay display only—not admin access. All three are square sources for TikTok Studio, wake when the session opens, and clear when the session ends. The Live Overlay source remains active through pre-show and automatically becomes the Wheel with audio when launched.</p>
       </details>
 
       <section className="space-y-3 border border-violet-400/35 bg-surface p-4">

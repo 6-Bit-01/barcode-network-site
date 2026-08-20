@@ -3,13 +3,13 @@ import { ForegroundOverlayReceiver } from "@/components/ForegroundOverlayReceive
 
 export const metadata: Metadata = {
   title: "Foreground Overlay Receiver — BARCODE Radio",
-  description: "1080 by 1920 chroma-key foreground strip for BARCODE Radio live production.",
+  description: "Square chroma-key foreground strip source for BARCODE Radio live production.",
   robots: { index: false, follow: false },
 };
 
 export const viewport: Viewport = {
   width: 1080,
-  height: 1920,
+  height: 1080,
   initialScale: 1,
   minimumScale: 1,
   maximumScale: 1,

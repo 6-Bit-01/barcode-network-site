@@ -34,9 +34,12 @@ test("permanent Studio links are private, stable, and use one authoritative stat
   assert.match(access, /verifyAdminToken/);
   assert.match(access, /createStudioOverlayToken/);
   assert.match(access, /https:\/\/www\.barcode-network\.com/);
-  assert.match(access, /foreground: `\$\{PRODUCTION_ORIGIN\}\/overlay\/foreground\$\{fragment\}`/);
-  assert.match(access, /radioVisuals: `\$\{PRODUCTION_ORIGIN\}\/overlay\/radio-visuals\$\{fragment\}`/);
-  assert.match(access, /wheel: `\$\{PRODUCTION_ORIGIN\}\/overlay\/wheel\$\{fragment\}`/);
+  assert.match(access, /STUDIO_SOURCE_QUERY = "\?studioSource=v1"/);
+  assert.match(access, /foreground: `\$\{PRODUCTION_ORIGIN\}\/overlay\/foreground\$\{STUDIO_SOURCE_QUERY\}\$\{fragment\}`/);
+  assert.match(access, /radioVisuals: `\$\{PRODUCTION_ORIGIN\}\/overlay\/radio-visuals\$\{STUDIO_SOURCE_QUERY\}\$\{fragment\}`/);
+  assert.match(access, /wheel: `\$\{PRODUCTION_ORIGIN\}\/overlay\/wheel\$\{STUDIO_SOURCE_QUERY\}\$\{fragment\}`/);
+  assert.match(foreground, /data-session-active=\{sessionActive \? "true" : "false"\}/);
+  assert.doesNotMatch(foreground, /sessionActive \? <ForegroundOverlayStrip/);
   assert.match(admin, /One-Time TikTok Studio Source Setup/);
   assert.match(admin, /Load Permanent Private Links/);
   assert.doesNotMatch(admin, /Preview Wheel Source|Copy Wheel Link|Preview Visuals|Copy Visuals Link/);

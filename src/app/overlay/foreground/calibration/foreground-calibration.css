@@ -44,6 +44,15 @@ body:has(.foreground-overlay-source-shell) {
   background: var(--fg-key-color) !important;
 }
 
+html:has(.foreground-overlay-source-shell),
+body:has(.foreground-overlay-source-shell) {
+  width: 1080px !important;
+  min-width: 1080px !important;
+  height: 1920px !important;
+  min-height: 1920px !important;
+  overflow: hidden !important;
+}
+
 .foreground-strip {
   position: relative;
   display: grid;
@@ -497,6 +506,11 @@ body:has(.foreground-overlay-source-shell) {
   position: relative;
 }
 
+.foreground-overlay-source-shell {
+  aspect-ratio: 9 / 16;
+  contain: layout paint size;
+}
+
 .fg-calibration-canvas,
 .foreground-overlay-canvas {
   position: relative;
@@ -509,6 +523,11 @@ body:has(.foreground-overlay-source-shell) {
   top: calc(var(--fg-anchor-y) - var(--fg-height));
   left: var(--fg-side-margin);
   width: calc(100% - (var(--fg-side-margin) * 2));
+}
+
+.foreground-overlay-source-shell[data-session-active="false"] .foreground-strip {
+  visibility: hidden;
+  opacity: 0;
 }
 
 .fg-calibration-review {

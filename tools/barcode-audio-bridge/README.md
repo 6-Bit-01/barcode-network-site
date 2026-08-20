@@ -17,6 +17,8 @@ The release is a self-contained `BARCODE.AudioBridge.exe`:
 2. It installs itself for the current Windows account and starts automatically with Windows.
 3. Leave the tray app running. There is no capture button.
 
+Double-clicking a newer build replaces the running installed copy and relaunches it immediately; no manual uninstall or Windows restart is required.
+
 The local endpoint remains ready at negligible cost. Speakers capture starts when the permanent Show Visuals Link reports an active queue session and stops a few seconds after that session ends or the source goes away. If the bridge is missing, blocked, silent, or restarting, the overlay automatically continues with its six deterministic randomized song-motion profiles.
 
 ## Build

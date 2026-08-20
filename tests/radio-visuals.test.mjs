@@ -210,20 +210,6 @@ test("wheel, sponsor, and emergency scenes select distinct automatic visual mode
   assert.equal(visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: scene("system_message") }).visualMode, "system");
 });
 
-test("procedural scene library spans six genuinely different visual families", () => {
-  assert.deepEqual(engine.RADIO_VISUAL_COMPOSITION_TYPES, [
-    "liquid_dream",
-    "kaleidoscope",
-    "spectral_loom",
-    "feedback_architecture",
-    "cosmic_signal",
-    "chromatic_smear",
-  ]);
-  const seen = new Set(Array.from({ length: 256 }, (_, index) => engine.radioVisualComposition(index + 1)));
-  assert.equal(seen.size, engine.RADIO_VISUAL_COMPOSITION_TYPES.length);
-  for (const composition of engine.RADIO_VISUAL_COMPOSITION_TYPES) assert.ok(seen.has(composition));
-});
-
 test("uncaptured songs automatically rotate through six synthetic rhythm personalities", () => {
   assert.deepEqual(engine.RADIO_VISUAL_FALLBACK_RHYTHMS, [
     "sub_bloom",
@@ -243,19 +229,6 @@ test("uncaptured songs automatically rotate through six synthetic rhythm persona
   assert.equal(snapshot.player, null);
   assert.equal(signal.source, "timeline");
   assert.ok(signal.energy > 0.12, "an uncaptured loaded track still receives active automatic music motion");
-});
-
-test("wheel vortex phases have distinct spin, fracture, and release profiles", () => {
-  const ready = engine.radioVisualWheelVortexProfile("wheel_ready");
-  const spinning = engine.radioVisualWheelVortexProfile("wheel_spinning");
-  const reencrypting = engine.radioVisualWheelVortexProfile("wheel_reencrypting");
-  const result = engine.radioVisualWheelVortexProfile("wheel_result");
-  assert.equal(spinning.spin, 1);
-  assert.equal(spinning.tunnel, 1);
-  assert.equal(reencrypting.turbulence, 1);
-  assert.equal(result.release, 1);
-  assert.ok(ready.spin < spinning.spin);
-  assert.ok(ready.turbulence < reencrypting.turbulence);
 });
 
 test("track loads and wheel activations vary by occurrence while remaining stable during one occurrence", () => {
@@ -371,7 +344,15 @@ test("idle ambient moments are deterministic within a cycle and change compositi
   assert.deepEqual(first, repeated);
   assert.notEqual(first.seed, second.seed);
   assert.ok(first.envelope > 0 && first.intensity > 0);
-  assert.ok(engine.RADIO_VISUAL_AMBIENT_MOMENT_TYPES.length >= 11);
+  assert.deepEqual(engine.RADIO_VISUAL_AMBIENT_MOMENT_TYPES, [
+    "violet_bloom",
+    "signal_ripple",
+    "shadow_pass",
+    "particle_lift",
+    "barcode_shimmer",
+    "prism_drift",
+    "ribbon_sweep",
+  ]);
 });
 
 test("music response follows the authoritative playback clock and uses direct analysis when available", () => {
@@ -470,7 +451,10 @@ test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a
   assert.match(server, /new TcpListener\(IPAddress\.Loopback, BridgeConstants\.Port\)/, "the signal endpoint must never bind to the LAN");
   assert.match(server, /Access-Control-Allow-Private-Network: true/);
   assert.match(server, /www\.barcode-network\.com|barcode-network\.com/);
+  assert.match(server, /barcode-network-site-cpps\.vercel\.app|-6-bits-projects\.vercel\.app/);
+  assert.match(server, /ReportBrowserHandshake/, "the tray status must distinguish browser handshake failures from silence");
   assert.match(installer, /Registry\.CurrentUser[\s\S]*CurrentVersion\\Run/, "autostart must be scoped to the current Windows user");
+  assert.match(installer, /StopInstalledInstance\(\)[\s\S]*process\.Kill\(entireProcessTree: true\)/, "running v1 installs must be replaced immediately by the one-click update");
   assert.match(program, /BridgeInstaller\.InstallAndLaunch\(\)/);
   assert.doesNotMatch(program, /capture button|Select.*device/i);
   assert.match(readme, /There is no capture button/);
@@ -542,7 +526,7 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.match(receiver, /drawAmbientLighting|drawGoboShadows|drawCaustics|drawWavefronts|drawParticleField|drawTrackBloom|drawPartyCue|drawShadowCue|drawSignalBreachCue|drawBlackoutCue|drawLightningCue/);
   assert.match(receiver, /drawQueueLanes|drawTrackSignature|drawIntakeAperture|drawSponsorCurtain|drawFinalConvergence|drawCompletionAfterimage|drawPressureEdges/);
   assert.match(receiver, /drawLightRibbons|drawPrismaticShards|drawSignalConstellation|drawMusicHalo|drawSeedComposition/);
-  assert.match(receiver, /drawLiquidDream|drawKaleidoscopeBloom|drawSpectralLoom|drawFeedbackArchitecture|drawChromaticSmears|radioVisualComposition/);
+  assert.doesNotMatch(receiver, /drawLiquidDream|drawKaleidoscopeBloom|drawSpectralLoom|drawFeedbackArchitecture|drawChromaticSmears|radioVisualComposition/);
   assert.match(receiver, /drawAmbientMoment|radioVisualAmbientMoment|observeSnapshotEvents|drawAutomaticEvent/);
   assert.match(receiver, /wheel_gained|priority_sent|priority_confirmed|track_skipped|sponsor_started|stage_shift/);
   assert.match(receiver, /hashRadioVisualToken\(`\$\{snapshot\.cue\.type\}:\$\{snapshot\.cue\.nonce\}/, "manual cue nonce must vary every repeated effect");
@@ -550,14 +534,15 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.doesNotMatch(receiver, /function drawBolt\(/, "lightning must use a branching procedural composition rather than generic twin bolts");
   assert.match(receiver, /PALETTE_TRANSITION_MS = 2_400|PARTICLE_TRANSITION_MS = 2_000|radioVisualCueEnvelope/);
   assert.match(receiver, /smoothMusicSignal|radioVisualsMusicSignal/);
-  assert.match(receiver, /RADIO_AUDIO_BRIDGE_URL|targetAddressSpace: "loopback"|data-audio-bridge/);
+  assert.match(receiver, /RADIO_AUDIO_BRIDGE_URL|4_000|data-audio-bridge/);
+  assert.doesNotMatch(receiver, /targetAddressSpace/, "literal 127.0.0.1 must remain compatible with TikTok Studio's embedded Chromium version");
   assert.match(receiver, /if \(!snapshot\.sessionActive\)[\s\S]*setAudioBridgeConnection\("idle"\)/);
   assert.match(engineSource, /source: "analyser" \| "timeline" \| "windows_loopback"/);
   assert.match(engineSource, /RADIO_VISUALS_WHEEL_CENTER_Y_RATIO = 0\.375/);
   const wheelScene = receiver.slice(receiver.indexOf("function drawWheelScene"), receiver.indexOf("function drawPartyCue"));
   assert.match(wheelScene, /height \* RADIO_VISUALS_WHEEL_CENTER_Y_RATIO/);
   assert.doesNotMatch(wheelScene, /height \* 0\.5/);
-  assert.match(wheelScene, /gravity lens|RGB channels|burstCount|radioVisualWheelVortexProfile/);
+  assert.match(wheelScene, /stateSpeed|ringCount|spokeCount|reencrypting|result/);
   assert.match(queueControl, /createMediaElementSource|createAnalyser|audioAnalysis|analyzeRadioVisualFrequencyData/);
   assert.doesNotMatch(queueControl, /getDisplayMedia|createMediaStreamSource|Capture show audio|Share audio/);
   assert.match(queueControl, /YOUTUBE_SYNC_HEARTBEAT_MS = 1_000/);

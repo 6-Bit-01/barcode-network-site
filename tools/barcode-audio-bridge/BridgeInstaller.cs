@@ -24,6 +24,7 @@ internal static class BridgeInstaller
     {
         var current = Environment.ProcessPath ?? throw new InvalidOperationException("The helper executable path is unavailable.");
         Directory.CreateDirectory(InstallDirectory);
+        StopInstalledInstance();
         var temporary = InstalledExecutable + ".new";
         File.Copy(current, temporary, true);
         File.Move(temporary, InstalledExecutable, true);
@@ -34,6 +35,27 @@ internal static class BridgeInstaller
             "BARCODE Audio Bridge",
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);
+    }
+
+    private static void StopInstalledInstance()
+    {
+        var currentProcessId = Environment.ProcessId;
+        foreach (var process in Process.GetProcessesByName("BARCODE.AudioBridge"))
+        {
+            using (process)
+            {
+                if (process.Id == currentProcessId) continue;
+                string? path;
+                try { path = process.MainModule?.FileName; }
+                catch { continue; }
+                if (path is null || !string.Equals(
+                    Path.GetFullPath(path),
+                    Path.GetFullPath(InstalledExecutable),
+                    StringComparison.OrdinalIgnoreCase)) continue;
+                process.Kill(entireProcessTree: true);
+                process.WaitForExit(2_000);
+            }
+        }
     }
 
     public static void RegisterAutoStart()

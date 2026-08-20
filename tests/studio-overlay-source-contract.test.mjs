@@ -45,18 +45,45 @@ test("permanent Studio links are private, stable, and use one authoritative stat
   assert.doesNotMatch(admin, /Preview Wheel Source|Copy Wheel Link|Preview Visuals|Copy Visuals Link/);
 });
 
-test("square live and Wheel source follows broadcast lifecycle, resolved ceremony authority, and browser-source audio", () => {
+test("all permanent Studio pages are native square sources", () => {
+  const foregroundPage = source("src/app/overlay/foreground/page.tsx");
+  const visualsPage = source("src/app/overlay/radio-visuals/page.tsx");
+  const wheelPage = source("src/app/overlay/wheel/page.tsx");
+  const foreground = source("src/components/ForegroundOverlayReceiver.tsx");
+  const visuals = source("src/components/RadioVisualsReceiver.tsx");
+  const visualsCss = source("src/app/overlay/radio-visuals/radio-visuals.css");
+  const foregroundCss = source("src/app/overlay/foreground/calibration/foreground-calibration.css");
+  const admin = source("src/components/AdminLiveOverlayControl.tsx");
+
+  for (const page of [foregroundPage, visualsPage, wheelPage]) {
+    assert.match(page, /width: 1080,[\s\S]*?height: 1080,/);
+    assert.match(page, /minimumScale: 1,/);
+    assert.match(page, /maximumScale: 1,/);
+    assert.match(page, /userScalable: false,/);
+  }
+  assert.match(foreground, /data-source-resolution="1080x1080"/);
+  assert.match(visuals, /data-source-aspect="1:1"/);
+  assert.match(visuals, /data-source-resolution="1080x1080"/);
+  assert.match(foregroundCss, /\.foreground-overlay-source-shell \{[\s\S]*?aspect-ratio: 1 \/ 1;/);
+  assert.match(visualsCss, /width: min\(100vw, 100vh\);[\s\S]*?height: min\(100vw, 100vh\);[\s\S]*?aspect-ratio: 1 \/ 1;/);
+  assert.match(admin, /Foreground Strip[\s\S]*?1080 × 1080[\s\S]*?Show Visuals[\s\S]*?1080 × 1080[\s\S]*?Live Overlay \+ Wheel \+ Audio[\s\S]*?1080 × 1080/);
+  assert.doesNotMatch(admin, /1080 × 1920|1080 × 1440/);
+});
+
+test("square live and Wheel source follows session lifecycle, resolved ceremony authority, and browser-source audio", () => {
   const wheel = source("src/lib/wheel-overlay.ts");
   const receiver = source("src/components/LiveOverlayReceiver.tsx");
   const page = source("src/app/overlay/wheel/page.tsx");
   assert.match(wheel, /const broadcastActive = queueState\.session\?\.showStarted === true/);
   assert.match(wheel, /Promise\.all\(\[getStoredLiveOverlayState\(\), getLiveOverlayPlayerSync\(\)\]\)/);
   assert.match(wheel, /const wheelActive = Boolean\(scene\.wheelCeremony\)/);
-  assert.match(wheel, /broadcastActive: true,[\s\S]*?scene,/);
+  assert.match(wheel, /broadcastActive,[\s\S]*?scene,/);
+  assert.doesNotMatch(wheel, /if \(!broadcastActive\)/);
   assert.doesNotMatch(wheel, /scene: wheelActive \? scene : null/);
   assert.doesNotMatch(wheel, /overlayState\.wheelOverlayActive === true &&/);
   assert.match(receiver, /const broadcastVisible = hasActiveQueueSession\(scene\)/);
-  assert.match(receiver, /wheelSnapshot\?\.broadcastActive === true/);
+  assert.doesNotMatch(receiver, /wheelSnapshot\?\.broadcastActive === true/);
+  assert.match(receiver, /wheelSnapshot\?\.scene \?\? fallbackScene\(\)/);
   assert.match(receiver, /wheelOnly \? "wheel-overlay-stage " : ""/);
   assert.match(receiver, /data-broadcast-active="true"/);
   assert.match(receiver, /const cheer = new Audio\(WHEEL_WINNER_CHEER_AUDIO_PATH\)/);

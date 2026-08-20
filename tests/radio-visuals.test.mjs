@@ -398,11 +398,11 @@ test("permanent receiver is a pure full-frame effects surface with a stable link
   assert.match(receiver, /studioOverlayRequestHeaders/);
   assert.match(admin, /triggerVisualCue|Party Burst|Shadow Sweep|Signal Breach|Blackout \/ Return|Lightning Hit/);
   assert.match(css, /--radio-visuals-key: #ff5a00/);
-  assert.match(receiver, /data-source-aspect="3:4"/);
-  assert.match(receiver, /data-source-resolution="1080x1440"/);
+  assert.match(receiver, /data-source-aspect="1:1"/);
+  assert.match(receiver, /data-source-resolution="1080x1080"/);
   assert.match(receiver, /data-music-source=.*"timeline".*"analyser"/);
-  assert.match(css, /width: min\(100vw, 75vh\);\s*height: min\(133\.333333vw, 100vh\)/);
-  assert.match(css, /aspect-ratio: 3 \/ 4/);
+  assert.match(css, /width: min\(100vw, 100vh\);\s*height: min\(100vw, 100vh\)/);
+  assert.match(css, /aspect-ratio: 1 \/ 1/);
   assert.match(css, /nextjs-portal|vercel-live-feedback|data-vercel-toolbar/);
   assert.match(page, /width: 1080/);
   assert.match(chrome, /pathname\.startsWith\("\/overlay\/"\)/, "overlay sources must bypass the animated site shell");
@@ -410,10 +410,10 @@ test("permanent receiver is a pure full-frame effects surface with a stable link
   assert.match(bnlProvider, /pathname\.startsWith\("\/overlay\/"\)/, "overlay sources must not run the BNL status poller");
   assert.doesNotMatch(liveCss, /body > div:last-of-type/, "isolated live sources must never hide their own root element");
   assert.doesNotMatch(foregroundCss, /body > :not\(main\)/, "isolated foreground sources must never hide their own root element");
-  assert.match(admin, /1080 × 1440/);
+  assert.match(admin, /Show Visuals[\s\S]*1080 × 1080/);
 });
 
-test("show-long live and Wheel source follows Start and End Broadcast without changing wheel mechanics", () => {
+test("show-long live and Wheel source wakes with the session and clears when it ends without changing wheel mechanics", () => {
   const receiver = fs.readFileSync(path.join(projectRoot, "src/components/LiveOverlayReceiver.tsx"), "utf8");
   const builder = fs.readFileSync(path.join(projectRoot, "src/lib/wheel-overlay.ts"), "utf8");
   const route = fs.readFileSync(path.join(projectRoot, "src/app/api/overlay/wheel/route.ts"), "utf8");
@@ -431,10 +431,12 @@ test("show-long live and Wheel source follows Start and End Broadcast without ch
   assert.match(builder, /const queueState = await getRadioQueueState\(\);\s*if \(!hasActiveQueueSession\(queueState\)\)/);
   assert.match(builder, /const broadcastActive = queueState\.session\?\.showStarted === true/);
   assert.match(builder, /Promise\.all\(\[getStoredLiveOverlayState\(\), getLiveOverlayPlayerSync\(\)\]\)/);
-  assert.match(builder, /broadcastActive: true,[\s\S]*?scene,/);
+  assert.match(builder, /broadcastActive,[\s\S]*?scene,/);
+  assert.doesNotMatch(builder, /if \(!broadcastActive\)/);
   assert.doesNotMatch(builder, /scene: wheelActive \? scene : null/);
   assert.match(receiver, /const broadcastVisible = hasActiveQueueSession\(scene\)/);
-  assert.match(receiver, /wheelSnapshot\?\.broadcastActive === true/);
+  assert.doesNotMatch(receiver, /wheelSnapshot\?\.broadcastActive === true/);
+  assert.match(receiver, /wheelSnapshot\?\.scene \?\? fallbackScene\(\)/);
   assert.match(receiver, /wheelOnly \? "wheel-overlay-stage " : ""/);
   assert.match(receiver, /playCheerSfx=\{wheelOnly \? \(\) => playWheelOnlySfx/);
   assert.doesNotMatch(builder, /setLiveOverlayState|updateRadioTrack|redis\.set/);
@@ -448,7 +450,7 @@ test("show-long live and Wheel source follows Start and End Broadcast without ch
   assert.match(sourceAccess, /\/overlay\/wheel\$\{STUDIO_SOURCE_QUERY\}\$\{fragment\}/);
   assert.match(admin, /1080 × 1080 · key #FF5A00 · sound on/);
   assert.match(admin, /Live Overlay \+ Wheel \+ Audio/);
-  assert.match(admin, /appears when Start Broadcast is pressed/);
+  assert.match(admin, /wake when the session opens/);
   assert.doesNotMatch(admin, /Copy Wheel Link|Preview Wheel Source/);
   assert.match(builder, /const wheelActive = Boolean\(scene\.wheelCeremony\)/);
   assert.match(receiver, /estimatedServerNowMs/);

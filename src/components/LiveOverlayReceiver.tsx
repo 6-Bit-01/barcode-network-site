@@ -1048,9 +1048,8 @@ export function LiveOverlayReceiver({ wheelOnly = false }: { wheelOnly?: boolean
         const responseTransitMs = estimateOneWayNetworkTransitMs(responseReceivedAtPerformanceMs - requestStartedAtPerformanceMs, serverProcessingMs);
         responseTransitEstimateMsRef.current = updateTransitEstimateMs(responseTransitEstimateMsRef.current, responseTransitMs);
         const wheelSnapshot = wheelOnly ? next.snapshot : undefined;
-        const wheelBroadcastActive = wheelOnly ? wheelSnapshot?.broadcastActive === true : false;
         const nextScene = wheelOnly
-          ? wheelBroadcastActive ? wheelSnapshot?.scene ?? fallbackScene() : fallbackScene()
+          ? wheelSnapshot?.scene ?? fallbackScene()
           : next.scene ?? (next as unknown as ResolvedLiveOverlayScene);
         const resolvedScene = nextScene ?? fallbackScene();
         const nextSessionActive = wheelOnly ? wheelSnapshot?.sessionActive === true : hasActiveQueueSession(resolvedScene);

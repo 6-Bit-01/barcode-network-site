@@ -41,15 +41,15 @@ vercel-toolbar,
 
 .radio-visuals-shell {
   position: fixed;
-  top: 0;
+  top: 50%;
   left: 50%;
   z-index: 9999;
-  width: min(100vw, 75vh);
-  height: min(133.333333vw, 100vh);
+  width: min(100vw, 100vh);
+  height: min(100vw, 100vh);
   min-width: 1px;
   min-height: 1px;
-  aspect-ratio: 3 / 4;
-  transform: translateX(-50%);
+  aspect-ratio: 1 / 1;
+  transform: translate(-50%, -50%);
   overflow: hidden;
   background: var(--radio-visuals-key);
   contain: strict;

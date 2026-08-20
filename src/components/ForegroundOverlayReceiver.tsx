@@ -18,7 +18,7 @@ const SOURCE_STYLE = {
   "--fg-secondary-size": "18px",
   "--fg-wheel-size": "92px",
   "--fg-wheel-count-size": "50px",
-  "--fg-anchor-y": "1222px",
+  "--fg-anchor-y": "calc(100vh - 24px)",
   "--fg-side-margin": "24px",
   "--fg-key-color": "#0000ff",
 } as CSSProperties;
@@ -153,7 +153,7 @@ export function ForegroundOverlayReceiver() {
     <div
       className="foreground-overlay-source-shell"
       data-session-active={sessionActive ? "true" : "false"}
-      data-source-resolution="1080x1920"
+      data-source-resolution="1080x1080"
       data-sync-state={syncState}
       style={SOURCE_STYLE}
     >

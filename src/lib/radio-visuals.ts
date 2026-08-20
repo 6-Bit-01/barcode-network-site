@@ -4,7 +4,8 @@ import { resolveRadioVisualsSnapshot } from "./radio-visuals-resolver";
 import type { RadioVisualsSnapshot } from "./radio-visuals-resolver";
 import { hasActiveQueueSession } from "./session-bound-polling";
 
-export type { RadioVisualsMode, RadioVisualsPlayerSignal, RadioVisualsQueueSignal, RadioVisualsShowStage, RadioVisualsSnapshot, RadioVisualsTrack } from "./radio-visuals-resolver";
+export type { RadioVisualsMode, RadioVisualsPlayerSignal, RadioVisualsQueueSignal, RadioVisualsShowStage, RadioVisualsSnapshot } from "./radio-visuals-resolver";
+export type { RadioVisualCue, RadioVisualCueType } from "./radio-visuals-cues";
 
 export async function getRadioVisualsSnapshot(now = new Date()): Promise<RadioVisualsSnapshot> {
   const queueState = await getRadioQueueState();
@@ -15,7 +16,7 @@ export async function getRadioVisualsSnapshot(now = new Date()): Promise<RadioVi
       playerSync: null,
       now,
     });
-    return resolveRadioVisualsSnapshot({ queueState, scene, playerSync: null, now });
+    return resolveRadioVisualsSnapshot({ queueState, scene, overlayState: null, playerSync: null, now });
   }
 
   const [overlayState, playerSync] = await Promise.all([
@@ -23,5 +24,5 @@ export async function getRadioVisualsSnapshot(now = new Date()): Promise<RadioVi
     getLiveOverlayPlayerSync(),
   ]);
   const scene = resolveLiveOverlaySceneFromQueueState({ overlayState, queueState, playerSync, now });
-  return resolveRadioVisualsSnapshot({ queueState, scene, playerSync, now });
+  return resolveRadioVisualsSnapshot({ queueState, scene, overlayState, playerSync, now });
 }

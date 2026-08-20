@@ -5,9 +5,12 @@ import { buildWheelSegments, derangedWheelCandidateOrder, orderedWheelCandidateI
 import { parseYouTubeVideoId } from "./track-duration";
 import type { QueueEntry, QueueSourceType, QueueState } from "./queue-types";
 import { hasActiveQueueSession } from "./session-bound-polling";
+import { normalizeRadioVisualCueType, RADIO_VISUAL_CUE_DURATION_MS } from "./radio-visuals-cues";
 import type { LiveOverlayPlaybackState, LiveOverlayStateInput, LiveOverlayPlayerSync, LiveOverlayYouTubeSync, OverlayMode, ResolvedLiveOverlayScene, ResolvedWheelCeremonyTrack, WheelCeremonyStatus, WheelOverlayStatus } from "./live-overlay-resolver";
+import type { RadioVisualCueType } from "./radio-visuals-cues";
 
 export type { LiveOverlayAudioSync, LiveOverlayPlaybackState, LiveOverlayPlayerSync, LiveOverlayTikTokSync, LiveOverlayYouTubeSync, OverlayMode, ResolvedLiveOverlayScene, ResolvedWheelCeremonyTrack, WheelCeremonyStatus, WheelOverlayStatus } from "./live-overlay-resolver";
+export type { RadioVisualCueType } from "./radio-visuals-cues";
 
 export interface LiveOverlayState extends LiveOverlayStateInput {
   mode: OverlayMode;
@@ -49,11 +52,15 @@ export interface LiveOverlayState extends LiveOverlayStateInput {
   wheelCeremonyJingleKey?: string;
   wheelCeremonySpinDurationMs?: number;
   wheelCeremonyAudioPath?: string;
+  visualCueType?: RadioVisualCueType;
+  visualCueStartedAt?: string;
+  visualCueExpiresAt?: string;
+  visualCueNonce?: string;
   updatedAt: string;
 }
 
 export interface LiveOverlayPayload {
-  action?: "launchWheel" | "spinWheel" | "reencryptWheel" | "confirmWheel" | "wheelWinnerNotHere" | "cancelWheel" | "clearWheel" | "setSystemMessage" | "clearSystemMessage" | "launchVideoPlaceholder" | "clearVideoPlaceholder" | "clearAllOverrides" | "updatePlayerSync" | "clearPlayerSync";
+  action?: "launchWheel" | "spinWheel" | "reencryptWheel" | "confirmWheel" | "wheelWinnerNotHere" | "cancelWheel" | "clearWheel" | "setSystemMessage" | "clearSystemMessage" | "launchVideoPlaceholder" | "clearVideoPlaceholder" | "triggerVisualCue" | "clearVisualCue" | "clearAllOverrides" | "updatePlayerSync" | "clearPlayerSync";
   selectedTrackId?: unknown;
   mode?: OverlayMode;
   title?: unknown;
@@ -65,6 +72,7 @@ export interface LiveOverlayPayload {
   sourceUrl?: unknown;
   sponsorLabel?: unknown;
   videoUrl?: unknown;
+  visualCue?: unknown;
   sync?: unknown;
 }
 
@@ -380,6 +388,10 @@ function normalizeState(input: unknown): LiveOverlayState {
     wheelCeremonyJingleKey: cleanText(raw.wheelCeremonyJingleKey, "silent"),
     wheelCeremonySpinDurationMs: normalizeSpinDurationMs(raw.wheelCeremonySpinDurationMs),
     wheelCeremonyAudioPath: cleanText(raw.wheelCeremonyAudioPath),
+    visualCueType: normalizeRadioVisualCueType(raw.visualCueType) ?? undefined,
+    visualCueStartedAt: typeof raw.visualCueStartedAt === "string" && Number.isFinite(Date.parse(raw.visualCueStartedAt)) ? new Date(raw.visualCueStartedAt).toISOString() : undefined,
+    visualCueExpiresAt: typeof raw.visualCueExpiresAt === "string" && Number.isFinite(Date.parse(raw.visualCueExpiresAt)) ? new Date(raw.visualCueExpiresAt).toISOString() : undefined,
+    visualCueNonce: cleanText(raw.visualCueNonce),
     updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : new Date().toISOString(),
   };
 }
@@ -496,7 +508,29 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload, receivedA
   const now = new Date().toISOString();
   let next: LiveOverlayState = { ...current, updatedAt: now };
 
-  if (payload.action === "launchWheel") {
+  if (payload.action === "triggerVisualCue") {
+    const visualCueType = normalizeRadioVisualCueType(payload.visualCue);
+    if (!visualCueType) throw new Error("Choose a supported radio visual cue.");
+    const startedAt = receivedAt ?? new Date();
+    next = {
+      ...current,
+      visualCueType,
+      visualCueStartedAt: startedAt.toISOString(),
+      visualCueExpiresAt: new Date(startedAt.getTime() + RADIO_VISUAL_CUE_DURATION_MS[visualCueType]).toISOString(),
+      visualCueNonce: randomSeed(),
+      // Visual-only cues must not restart or re-time the existing foreground/live scene.
+      updatedAt: current.updatedAt,
+    };
+  } else if (payload.action === "clearVisualCue") {
+    next = {
+      ...current,
+      visualCueType: undefined,
+      visualCueStartedAt: undefined,
+      visualCueExpiresAt: undefined,
+      visualCueNonce: undefined,
+      updatedAt: current.updatedAt,
+    };
+  } else if (payload.action === "launchWheel") {
     const queueState = await getRadioQueueState();
     const wheelSpinsOwed = queueState.session?.wheelSpinsOwed ?? 0;
     const candidates = getWheelCandidatesFromQueue(queueState.queue);
@@ -716,6 +750,10 @@ export async function resetWheelCeremonyStateForNewSession(): Promise<void> {
     wheelCeremonyJingleKey: "silent",
     wheelCeremonySpinDurationMs: undefined,
     wheelCeremonyAudioPath: undefined,
+    visualCueType: undefined,
+    visualCueStartedAt: undefined,
+    visualCueExpiresAt: undefined,
+    visualCueNonce: undefined,
     artistName: undefined,
     trackTitle: undefined,
     updatedAt: now,

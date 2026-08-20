@@ -18,6 +18,8 @@ Module._extensions[".ts"] = function loadTypeScript(module, filename) {
 
 const require = createRequire(import.meta.url);
 const visuals = require("../src/lib/radio-visuals-resolver.ts");
+const engine = require("../src/lib/radio-visuals-engine.ts");
+const cues = require("../src/lib/radio-visuals-cues.ts");
 
 test.after(() => {
   Module._extensions[".ts"] = originalExtension;
@@ -117,19 +119,20 @@ function scene(mode = "session_active", overrides = {}) {
   };
 }
 
-test("inactive receiver remains animated standby with a public-safe shape", () => {
+test("inactive receiver stays nearly invisible and exposes only the visual projection", () => {
   const state = queueState({ session: undefined, isCurrentSession: false, publicStatus: { isOpen: false, activeCount: 0, acceptedCount: 0, estimatedRuntimeSeconds: 0, capacity: 44, pressure: "low" } });
   const snapshot = visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: scene("standby", { sessionActive: false }), now: new Date("2026-08-19T19:00:00.000Z") });
   assert.equal(snapshot.sessionActive, false);
   assert.equal(snapshot.showStage, "standby");
   assert.equal(snapshot.visualMode, "standby");
-  assert.deepEqual(snapshot.queue, { acceptedCount: 0, completedCount: 0, activeCount: 0, remainingCount: 0, currentPosition: 0, progress: 0, pressure: "low" });
-  assert.equal(snapshot.track, null);
+  assert.deepEqual(snapshot.queue, { acceptedCount: 0, completedCount: 0, activeCount: 0, remainingCount: 0, progress: 0, pressure: "low" });
   assert.equal(snapshot.player, null);
-  assert.deepEqual(Object.keys(snapshot).sort(), ["player", "queue", "scene", "sessionActive", "showStage", "track", "updatedAt", "visualMode", "visualSeed"]);
+  assert.equal(snapshot.cue, null);
+  assert.deepEqual(Object.keys(snapshot).sort(), ["cue", "player", "queue", "sceneMode", "sessionActive", "showStage", "updatedAt", "visualMode", "visualSeed"]);
+  assert.ok(engine.radioVisualsIntensity(snapshot) < 0.05, "standby remains a ghost layer");
 });
 
-test("show stage follows queue completion instead of an independent visual state machine", () => {
+test("show stage follows queue completion without creating another queue state machine", () => {
   const bands = [
     { completedCount: 0, expected: "early" },
     { completedCount: 5, expected: "middle" },
@@ -152,7 +155,7 @@ test("pre-show and ended broadcast phases resolve to intake and complete", () =>
   assert.equal(visuals.resolveRadioVisualsSnapshot({ queueState: endedState, scene: scene() }).showStage, "complete");
 });
 
-test("current track and fresh player timeline drive the track visual without leaking private fields", () => {
+test("track identity seeds visuals and fresh timeline drives motion without exposing track copy or private fields", () => {
   const current = entry("track-7", { sourceType: "youtube" });
   const youtube = {
     provider: "youtube",
@@ -164,23 +167,19 @@ test("current track and fresh player timeline drive the track visual without lea
     updatedAt: "2026-08-19T18:59:55.000Z",
     muted: true,
   };
-  const state = queueState({
-    nowPlaying: current,
-    loadedTrack: current,
-    session: { ...queueState().session, completedCount: 6, activeCount: 14 },
-  });
+  const state = queueState({ nowPlaying: current, loadedTrack: current, session: { ...queueState().session, completedCount: 6, activeCount: 14 } });
   const currentScene = scene("now_playing", {
     title: "NOW PLAYING",
     track: { id: "track-7", artistName: "Detected Artist", trackTitle: "Detected Track", sourceType: "youtube" },
     youtube,
   });
   const snapshot = visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: currentScene, playerSync: youtube, now: new Date("2026-08-19T19:00:00.000Z") });
+  const anotherTrack = visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: { ...currentScene, track: { ...currentScene.track, trackTitle: "Another Track" } }, playerSync: youtube, now: new Date("2026-08-19T19:00:00.000Z") });
   assert.equal(snapshot.visualMode, "track");
-  assert.deepEqual(snapshot.track, { artistName: "Detected Artist", trackTitle: "Detected Track", sourceType: "youtube" });
   assert.deepEqual(snapshot.player, { provider: "youtube", playbackState: "playing", currentTimeSeconds: 42, durationSeconds: 180, updatedAt: "2026-08-19T18:59:55.000Z", audioEnergy: null });
-  assert.equal(snapshot.queue.currentPosition, 7);
+  assert.notEqual(snapshot.visualSeed, anotherTrack.visualSeed, "track identity selects a repeatable visual character");
   const serialized = JSON.stringify(snapshot);
-  assert.doesNotMatch(serialized, /private@example\.com|pi_private|private-session-id|abcDEF12345/);
+  assert.doesNotMatch(serialized, /Detected Artist|Detected Track|private@example\.com|pi_private|private-session-id|abcDEF12345|track-7/);
 });
 
 test("audio uploads use the same fresh timeline seam and reject stale or mismatched sync", () => {
@@ -188,33 +187,75 @@ test("audio uploads use the same fresh timeline seam and reject stale or mismatc
   const state = queueState({ nowPlaying: current, loadedTrack: current });
   const currentScene = scene("now_playing", { track: { id: "upload-1", artistName: "Artist", trackTitle: "Upload", sourceType: "upload" } });
   const fresh = { provider: "audio", trackId: "upload-1", playbackState: "paused", currentTimeSeconds: 21, durationSeconds: 90, updatedAt: "2026-08-19T18:59:55.000Z", muted: false };
-  const mismatch = { ...fresh, trackId: "another-track" };
-  const stale = { ...fresh, updatedAt: "2026-08-19T18:59:40.000Z" };
   const now = new Date("2026-08-19T19:00:00.000Z");
   assert.equal(visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: currentScene, playerSync: fresh, now }).player?.provider, "audio");
-  assert.equal(visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: currentScene, playerSync: mismatch, now }).player, null);
-  assert.equal(visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: currentScene, playerSync: stale, now }).player, null);
+  assert.equal(visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: currentScene, playerSync: { ...fresh, trackId: "another-track" }, now }).player, null);
+  assert.equal(visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: currentScene, playerSync: { ...fresh, updatedAt: "2026-08-19T18:59:40.000Z" }, now }).player, null);
 });
 
-test("wheel, sponsor, and emergency scenes select distinct visual modes", () => {
+test("wheel, sponsor, and emergency scenes select distinct automatic visual modes", () => {
   const state = queueState();
   assert.equal(visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: scene("wheel_spinning") }).visualMode, "wheel");
   assert.equal(visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: scene("sponsor") }).visualMode, "sponsor");
   assert.equal(visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: scene("system_message") }).visualMode, "system");
 });
 
-test("permanent receiver keeps low-frequency standby polling and admin exposes the stable link", () => {
+test("manual visual cues are bounded, server-timed, and expire without touching queue state", () => {
+  const overlayState = {
+    visualCueType: "party",
+    visualCueStartedAt: "2026-08-19T18:59:58.000Z",
+    visualCueExpiresAt: "2026-08-19T19:00:13.000Z",
+    visualCueNonce: "cue-1",
+  };
+  const active = visuals.resolveRadioVisualsSnapshot({ queueState: queueState(), scene: scene(), overlayState, now: new Date("2026-08-19T19:00:00.000Z") });
+  const expired = visuals.resolveRadioVisualsSnapshot({ queueState: queueState(), scene: scene(), overlayState, now: new Date("2026-08-19T19:00:14.000Z") });
+  assert.deepEqual(active.cue, { type: "party", startedAt: "2026-08-19T18:59:58.000Z", expiresAt: "2026-08-19T19:00:13.000Z", nonce: "cue-1" });
+  assert.equal(expired.cue, null);
+  assert.equal(cues.RADIO_VISUAL_CUE_DURATION_MS.party, 15_000);
+  assert.equal(cues.RADIO_VISUAL_CUE_DURATION_MS.shadow, 9_000);
+  assert.equal(cues.normalizeRadioVisualCueType("not-a-cue"), null);
+});
+
+test("manual cue envelopes ease in and out instead of snapping", () => {
+  const cue = { type: "party", startedAt: "2026-08-19T19:00:00.000Z", expiresAt: "2026-08-19T19:00:15.000Z", nonce: "party" };
+  const start = Date.parse(cue.startedAt);
+  const early = engine.radioVisualCueEnvelope(cue, start + 300);
+  const sustained = engine.radioVisualCueEnvelope(cue, start + 5_000);
+  const releasing = engine.radioVisualCueEnvelope(cue, start + 14_600);
+  assert.ok(early > 0 && early < sustained);
+  assert.equal(sustained, 1);
+  assert.ok(releasing > 0 && releasing < sustained);
+  assert.equal(engine.radioVisualCueEnvelope(cue, Date.parse(cue.expiresAt)), 0);
+});
+
+test("the effect palette preserves BARCODE green, violet, black, and white while excluding the orange key", () => {
+  const snapshot = visuals.resolveRadioVisualsSnapshot({ queueState: queueState(), scene: scene() });
+  const palette = engine.radioVisualsPalette(snapshot);
+  assert.equal(engine.RADIO_VISUALS_CHROMA_KEY, "#ff5a00");
+  assert.match([palette.primary, palette.secondary].join(" "), /#00ff88|#7c3aed|#a78bfa|#22d3ee/);
+  assert.match(palette.highlight, /#e0e0e0|#ffffff|#a78bfa/);
+  assert.match(palette.shadow, /#0[235]0[235]0[235]/);
+  assert.doesNotMatch(JSON.stringify(palette), /#ff5a00/);
+});
+
+test("permanent receiver is a pure full-frame effects surface with a stable link and bounded standby polling", () => {
   const receiver = fs.readFileSync(path.join(projectRoot, "src/components/RadioVisualsReceiver.tsx"), "utf8");
   const builder = fs.readFileSync(path.join(projectRoot, "src/lib/radio-visuals.ts"), "utf8");
   const admin = fs.readFileSync(path.join(projectRoot, "src/components/AdminLiveOverlayControl.tsx"), "utf8");
   const css = fs.readFileSync(path.join(projectRoot, "src/app/overlay/radio-visuals/radio-visuals.css"), "utf8");
+  const render = receiver.slice(receiver.lastIndexOf("return ("));
   assert.match(receiver, /fetch\("\/api\/overlay\/radio-visuals"/);
   assert.match(receiver, /payload\.snapshot\.sessionActive \? RADIO_VISUALS_ACTIVE_POLL_INTERVAL_MS : RADIO_VISUALS_STANDBY_POLL_INTERVAL_MS/);
   assert.doesNotMatch(receiver, /startSessionBoundPolling/);
+  assert.doesNotMatch(render, /<(?:header|footer|h[1-6]|p|span|strong|em)\b|aria-live/);
+  assert.match(render, /<canvas ref=\{canvasRef\}/);
+  assert.match(receiver, /drawAmbientLighting|drawGoboShadows|drawCaustics|drawWavefronts|drawParticleField|drawTrackBloom|drawPartyCue|drawShadowCue|drawSignalBreachCue|drawBlackoutCue|drawLightningCue/);
+  assert.match(receiver, /PALETTE_TRANSITION_MS = 2_400|PARTICLE_TRANSITION_MS = 2_000|radioVisualCueEnvelope/);
   assert.match(builder, /const queueState = await getRadioQueueState\(\);\s*if \(!hasActiveQueueSession\(queueState\)\)/);
   const idleBranch = builder.slice(builder.indexOf("if (!hasActiveQueueSession(queueState))"), builder.indexOf("const [overlayState, playerSync]"));
   assert.doesNotMatch(idleBranch, /getStoredLiveOverlayState|getLiveOverlayPlayerSync/);
   assert.match(admin, /\/overlay\/radio-visuals/);
-  assert.match(css, /animation: radio-visuals-sweep/);
+  assert.match(admin, /triggerVisualCue|Party Burst|Shadow Sweep|Signal Breach|Blackout \/ Return|Lightning Hit/);
+  assert.match(css, /--radio-visuals-key: #ff5a00/);
   assert.match(css, /width: 100vw;\s*height: 100vh/);
 });

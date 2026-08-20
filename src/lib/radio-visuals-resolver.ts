@@ -1,16 +1,13 @@
 import type { LiveOverlayPlayerSync, LiveOverlayPlaybackState, ResolvedLiveOverlayScene } from "./live-overlay-resolver";
 import { YOUTUBE_SYNC_STALE_AFTER_MS } from "./live-overlay-resolver";
-import type { QueueSourceType, QueueState } from "./queue-types";
+import type { LiveOverlayState } from "./live-overlay";
+import type { RadioVisualCue } from "./radio-visuals-cues";
+import { activeRadioVisualCue } from "./radio-visuals-cues";
+import type { QueueState } from "./queue-types";
 import { hasActiveQueueSession } from "./session-bound-polling";
 
 export type RadioVisualsShowStage = "standby" | "intake" | "early" | "middle" | "late" | "final" | "complete";
 export type RadioVisualsMode = "standby" | "queue" | "track" | "wheel" | "sponsor" | "system";
-
-export interface RadioVisualsTrack {
-  artistName: string;
-  trackTitle: string;
-  sourceType: QueueSourceType | "unknown";
-}
 
 export interface RadioVisualsPlayerSignal {
   provider: LiveOverlayPlayerSync["provider"];
@@ -27,7 +24,6 @@ export interface RadioVisualsQueueSignal {
   completedCount: number;
   activeCount: number;
   remainingCount: number;
-  currentPosition: number;
   progress: number;
   pressure: "low" | "medium" | "high" | "max";
 }
@@ -36,15 +32,10 @@ export interface RadioVisualsSnapshot {
   sessionActive: boolean;
   showStage: RadioVisualsShowStage;
   visualMode: RadioVisualsMode;
-  scene: {
-    mode: ResolvedLiveOverlayScene["mode"];
-    title: string;
-    subtitle?: string;
-    message?: string;
-  };
+  sceneMode: ResolvedLiveOverlayScene["mode"];
   queue: RadioVisualsQueueSignal;
-  track: RadioVisualsTrack | null;
   player: RadioVisualsPlayerSignal | null;
+  cue: RadioVisualCue | null;
   visualSeed: number;
   updatedAt: string;
 }
@@ -112,10 +103,11 @@ function playerSignalForScene(input: {
 export function resolveRadioVisualsSnapshot(input: {
   queueState: QueueState;
   scene: ResolvedLiveOverlayScene;
+  overlayState?: LiveOverlayState | null;
   playerSync?: LiveOverlayPlayerSync | null;
   now?: Date;
 }): RadioVisualsSnapshot {
-  const { queueState, scene, playerSync = null, now = new Date() } = input;
+  const { queueState, scene, overlayState = null, playerSync = null, now = new Date() } = input;
   const sessionActive = hasActiveQueueSession(queueState);
   const completedCount = nonNegativeInteger(queueState.session?.completedCount ?? queueState.totalPlayed);
   const activeCount = nonNegativeInteger(queueState.session?.activeCount ?? queueState.publicStatus?.activeCount);
@@ -126,45 +118,37 @@ export function resolveRadioVisualsSnapshot(input: {
   const remainingCount = Math.max(0, acceptedCount - completedCount);
   const progress = acceptedCount > 0 ? clamp(completedCount / acceptedCount, 0, 1) : 0;
   const currentTrackId = queueState.nowPlaying?.id ?? queueState.loadedTrack?.id ?? null;
-  const currentPosition = acceptedCount > 0
-    ? Math.min(acceptedCount, completedCount + (currentTrackId ? 1 : 0))
-    : 0;
   const showStage = showStageForState(queueState, sessionActive, progress);
   const visualMode = visualModeForScene(scene, sessionActive);
-  const track = scene.track ? {
-    artistName: scene.track.artistName,
-    trackTitle: scene.track.trackTitle,
-    sourceType: scene.track.sourceType,
-  } : null;
   const player = visualMode === "track"
     ? playerSignalForScene({ scene, playerSync, currentTrackId, now })
     : null;
-  const seedIdentity = track
-    ? `${track.artistName}:${track.trackTitle}:${track.sourceType}`
+  const trackIdentity = scene.track
+    ? `${scene.track.artistName}:${scene.track.trackTitle}:${scene.track.sourceType}`
     : `${visualMode}:${showStage}:${acceptedCount}:${completedCount}`;
+  const cue = sessionActive && overlayState ? activeRadioVisualCue({
+    type: overlayState.visualCueType,
+    startedAt: overlayState.visualCueStartedAt,
+    expiresAt: overlayState.visualCueExpiresAt,
+    nonce: overlayState.visualCueNonce,
+  }, now) : null;
 
   return {
     sessionActive,
     showStage,
     visualMode,
-    scene: {
-      mode: scene.mode,
-      title: scene.title,
-      subtitle: scene.subtitle,
-      message: scene.message,
-    },
+    sceneMode: scene.mode,
     queue: {
       acceptedCount,
       completedCount,
       activeCount,
       remainingCount,
-      currentPosition,
       progress,
       pressure: queueState.publicStatus?.pressure ?? "low",
     },
-    track,
     player,
-    visualSeed: hashVisualSeed(seedIdentity),
+    cue,
+    visualSeed: hashVisualSeed(trackIdentity),
     updatedAt: scene.updatedAt || now.toISOString(),
   };
 }

@@ -3,7 +3,7 @@ import { RadioVisualsReceiver } from "@/components/RadioVisualsReceiver";
 
 export const metadata: Metadata = {
   title: "Radio Visuals Receiver — BARCODE Radio",
-  description: "Responsive queue- and player-reactive browser-source strip for BARCODE Radio live production.",
+  description: "Chroma-keyed, queue- and player-reactive visual-effects source for BARCODE Radio live production.",
   robots: { index: false, follow: false },
 };
 

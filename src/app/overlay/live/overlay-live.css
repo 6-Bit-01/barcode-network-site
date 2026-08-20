@@ -16,7 +16,12 @@ main {
   animation: none !important;
 }
 
-body > div:last-of-type {
+nextjs-portal,
+#vercel-toolbar,
+vercel-live-feedback,
+vercel-toolbar,
+[data-vercel-live-feedback],
+[data-vercel-toolbar] {
   display: none !important;
 }
 

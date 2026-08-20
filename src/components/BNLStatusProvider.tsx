@@ -10,7 +10,7 @@ const Context = createContext<BNLStatusController | null>(null);
 
 export function BNLStatusProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const isolatedPrototype = pathname === "/world/playtest";
+  const isolatedPrototype = pathname === "/world/playtest" || pathname.startsWith("/overlay/");
   const disabled = isolatedPrototype || pathname === "/admin" || pathname.startsWith("/admin/");
   const controller = useMemo(() => new BNLStatusController((input, init) => globalThis.fetch(input, init)), []);
   useEffect(() => {

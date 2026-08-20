@@ -1,0 +1,54 @@
+:root {
+  --wheel-overlay-key: #ff5a00;
+}
+
+html,
+body {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  min-width: 100vw;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--wheel-overlay-key) !important;
+}
+
+nextjs-portal,
+#vercel-toolbar,
+vercel-live-feedback,
+vercel-toolbar,
+[data-vercel-live-feedback],
+[data-vercel-toolbar],
+.scanlines::before,
+.scanlines::after,
+.logo-watermark::before {
+  display: none !important;
+}
+
+.wheel-overlay-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  width: 100vw;
+  height: 100vh;
+  min-width: 100vw;
+  min-height: 100vh;
+  place-items: center;
+  overflow: hidden;
+  background: var(--wheel-overlay-key);
+  contain: strict;
+  isolation: isolate;
+}
+
+.wheel-overlay-stage.live-overlay-stage {
+  position: relative;
+  width: min(100vw, 100vh);
+  height: min(100vw, 100vh);
+  min-width: 1px;
+  min-height: 1px;
+  aspect-ratio: 1 / 1;
+}

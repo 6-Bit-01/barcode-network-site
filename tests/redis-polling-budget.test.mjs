@@ -12,6 +12,9 @@ test("Redis-backed browser surfaces share a bounded polling budget", () => {
   assert.match(budget, /FOREGROUND_OVERLAY_POLL_INTERVAL_MS = 1_500/);
   assert.match(budget, /RADIO_VISUALS_ACTIVE_POLL_INTERVAL_MS = 1_000/);
   assert.match(budget, /RADIO_VISUALS_STANDBY_POLL_INTERVAL_MS = 15_000/);
+  assert.match(budget, /WHEEL_OVERLAY_ACTIVE_POLL_INTERVAL_MS = 1_000/);
+  assert.match(budget, /WHEEL_OVERLAY_SHOW_IDLE_POLL_INTERVAL_MS = 2_000/);
+  assert.match(budget, /WHEEL_OVERLAY_STANDBY_POLL_INTERVAL_MS = 15_000/);
   assert.match(budget, /PUBLIC_QUEUE_POLL_INTERVAL_MS = 10_000/);
   assert.match(budget, /ADMIN_QUEUE_POLL_INTERVAL_MS = 10_000/);
   assert.match(budget, /SITE_LIVE_STATUS_POLL_INTERVAL_MS = 15_000/);
@@ -43,6 +46,10 @@ test("Redis-backed browser surfaces share a bounded polling budget", () => {
   assert.match(radioVisuals, /RADIO_VISUALS_ACTIVE_POLL_INTERVAL_MS/);
   assert.match(radioVisuals, /RADIO_VISUALS_STANDBY_POLL_INTERVAL_MS/);
   assert.doesNotMatch(radioVisuals, /startSessionBoundPolling/, "permanent Studio source must retain its bounded standby wake poll");
+  assert.match(liveOverlay, /fetch\(wheelOnly \? "\/api\/overlay\/wheel" : "\/api\/overlay\/live"/);
+  assert.match(liveOverlay, /WHEEL_OVERLAY_ACTIVE_POLL_INTERVAL_MS/);
+  assert.match(liveOverlay, /WHEEL_OVERLAY_SHOW_IDLE_POLL_INTERVAL_MS/);
+  assert.match(liveOverlay, /WHEEL_OVERLAY_STANDBY_POLL_INTERVAL_MS/);
   assert.match(source("src/components/LiveStatusProvider.tsx"), /SITE_LIVE_STATUS_POLL_INTERVAL_MS/);
 
   for (const path of [
@@ -74,6 +81,13 @@ test("Redis-backed browser surfaces share a bounded polling budget", () => {
   const studioVisualsShowCommands = radioVisualsSharedReads + foregroundOverlaySharedReads + playerSyncSharedWrites;
   assert.equal(studioVisualsShowCommands, 62_400);
   assert.ok(studioVisualsShowCommands <= 80_000, "four hours of foreground plus Radio Visuals and 1 Hz player sync stays inside the bounded show allowance");
+
+  const wheelShowIdleReads = Math.ceil(fourHourShowMs / 2_000) * 2;
+  const tenMinuteWheelMs = 10 * 60 * 1_000;
+  const wheelCeremonyAccelerationReads = (Math.ceil(tenMinuteWheelMs / 1_000) - Math.ceil(tenMinuteWheelMs / 2_000)) * 2;
+  const completeStudioSourceCommands = studioVisualsShowCommands + wheelShowIdleReads + wheelCeremonyAccelerationReads;
+  assert.equal(completeStudioSourceCommands, 77_400);
+  assert.ok(completeStudioSourceCommands <= 80_000, "foreground, visuals, permanent wheel source, ten active wheel minutes, and player sync stay inside the bounded show allowance");
 });
 
 test("quota failover is read-only and retains only a previously confirmed queue snapshot", () => {

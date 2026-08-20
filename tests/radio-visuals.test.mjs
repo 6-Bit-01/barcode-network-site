@@ -20,6 +20,7 @@ const require = createRequire(import.meta.url);
 const visuals = require("../src/lib/radio-visuals-resolver.ts");
 const engine = require("../src/lib/radio-visuals-engine.ts");
 const cues = require("../src/lib/radio-visuals-cues.ts");
+const visualEvents = require("../src/lib/radio-visuals-events.ts");
 
 test.after(() => {
   Module._extensions[".ts"] = originalExtension;
@@ -126,9 +127,11 @@ test("inactive receiver stays nearly invisible and exposes only the visual proje
   assert.equal(snapshot.showStage, "standby");
   assert.equal(snapshot.visualMode, "standby");
   assert.deepEqual(snapshot.queue, { acceptedCount: 0, completedCount: 0, activeCount: 0, remainingCount: 0, progress: 0, pressure: "low" });
+  assert.deepEqual(snapshot.signals, { intakeOpen: false, wheelSpinsOwed: 0, sponsorStatus: null, broadcastPhase: null });
   assert.equal(snapshot.player, null);
   assert.equal(snapshot.cue, null);
-  assert.deepEqual(Object.keys(snapshot).sort(), ["cue", "player", "queue", "sceneMode", "sessionActive", "showStage", "updatedAt", "visualMode", "visualSeed"]);
+  assert.deepEqual(snapshot.events, []);
+  assert.deepEqual(Object.keys(snapshot).sort(), ["cue", "events", "player", "queue", "sceneMode", "sessionActive", "showStage", "signals", "updatedAt", "visualMode", "visualSeed"]);
   assert.ok(engine.radioVisualsIntensity(snapshot) < 0.05, "standby remains a ghost layer");
 });
 
@@ -228,6 +231,72 @@ test("manual cue envelopes ease in and out instead of snapping", () => {
   assert.equal(engine.radioVisualCueEnvelope(cue, Date.parse(cue.expiresAt)), 0);
 });
 
+test("display-safe show events project Priority, playback, and Wheel state without private payloads", () => {
+  const paid = entry("private-priority-id", {
+    priorityUpgradeStatus: "paid",
+    priorityUpgradeCheckoutCreatedAt: "2026-08-19T18:59:57.000Z",
+    priorityUpgradePaidAt: "2026-08-19T18:59:59.000Z",
+  });
+  const state = queueState({
+    queue: [paid],
+    playbackDiagnostics: {
+      schemaVersion: "queue_playback_lifecycle_v1",
+      currentTrackId: "private-track-id",
+      lifecycleState: "playing",
+      lastEventAt: "2026-08-19T18:59:59.000Z",
+      lastErrorCode: null,
+      nextSequence: 3,
+      events: [
+        { sequence: 1, trackId: "private-track-id", provider: "audio", eventType: "play", lifecycleState: "playing", observedAt: "2026-08-19T18:59:58.000Z" },
+        { sequence: 2, trackId: "private-track-id", provider: "audio", eventType: "skip", lifecycleState: "cleared", observedAt: "2026-08-19T18:59:59.000Z" },
+      ],
+    },
+    session: { ...queueState().session, wheelSpinsOwed: 2 },
+  });
+  const snapshot = visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: scene(), now: new Date("2026-08-19T19:00:00.000Z") });
+  assert.deepEqual(snapshot.signals, { intakeOpen: true, wheelSpinsOwed: 2, sponsorStatus: "not_due", broadcastPhase: "broadcast_active" });
+  assert.ok(snapshot.events.some((event) => event.type === "priority_sent"));
+  assert.ok(snapshot.events.some((event) => event.type === "priority_confirmed"));
+  assert.ok(snapshot.events.some((event) => event.type === "track_started"));
+  assert.ok(snapshot.events.some((event) => event.type === "track_skipped"));
+  for (const event of snapshot.events) assert.deepEqual(Object.keys(event).sort(), ["expiresAt", "occurredAt", "seed", "type"]);
+  assert.doesNotMatch(JSON.stringify(snapshot.events), /private-priority-id|private-track-id|private@example\.com|pi_private|stripe|checkout/);
+});
+
+test("each event occurrence gets a stable but different visual composition and a smooth envelope", () => {
+  const now = new Date("2026-08-19T19:00:02.000Z");
+  const first = visualEvents.activeRadioVisualEvent({ type: "wheel_gained", occurredAt: "2026-08-19T19:00:00.000Z", nonce: "wheel-1" }, now);
+  const repeated = visualEvents.activeRadioVisualEvent({ type: "wheel_gained", occurredAt: "2026-08-19T19:00:00.000Z", nonce: "wheel-1" }, now);
+  const second = visualEvents.activeRadioVisualEvent({ type: "wheel_gained", occurredAt: "2026-08-19T19:00:01.000Z", nonce: "wheel-2" }, now);
+  assert.ok(first && repeated && second);
+  assert.deepEqual(first, repeated);
+  assert.notEqual(first.seed, second.seed, "the same event type changes layout on each occurrence");
+  const start = Date.parse(first.occurredAt);
+  const rising = visualEvents.radioVisualEventEnvelope(first, start + 120);
+  const held = visualEvents.radioVisualEventEnvelope(first, start + 2_000);
+  const releasing = visualEvents.radioVisualEventEnvelope(first, Date.parse(first.expiresAt) - 180);
+  assert.ok(rising > 0 && rising < held);
+  assert.equal(held, 1);
+  assert.ok(releasing > 0 && releasing < held);
+});
+
+test("idle ambient moments are deterministic within a cycle and change composition across cycles", () => {
+  const findMoment = (cycleStart, sessionActive) => {
+    for (let offset = 0; offset < 25_000; offset += 100) {
+      const moment = engine.radioVisualAmbientMoment(1_337, cycleStart + offset, sessionActive);
+      if (moment) return moment;
+    }
+    return null;
+  };
+  const first = findMoment(0, false);
+  const repeated = findMoment(0, false);
+  const second = findMoment(27_000, false);
+  assert.ok(first && repeated && second);
+  assert.deepEqual(first, repeated);
+  assert.notEqual(first.seed, second.seed);
+  assert.ok(first.envelope > 0 && first.intensity > 0);
+});
+
 test("the effect palette preserves BARCODE green, violet, black, and white while excluding the orange key", () => {
   const snapshot = visuals.resolveRadioVisualsSnapshot({ queueState: queueState(), scene: scene() });
   const palette = engine.radioVisualsPalette(snapshot);
@@ -243,6 +312,12 @@ test("permanent receiver is a pure full-frame effects surface with a stable link
   const builder = fs.readFileSync(path.join(projectRoot, "src/lib/radio-visuals.ts"), "utf8");
   const admin = fs.readFileSync(path.join(projectRoot, "src/components/AdminLiveOverlayControl.tsx"), "utf8");
   const css = fs.readFileSync(path.join(projectRoot, "src/app/overlay/radio-visuals/radio-visuals.css"), "utf8");
+  const page = fs.readFileSync(path.join(projectRoot, "src/app/overlay/radio-visuals/page.tsx"), "utf8");
+  const chrome = fs.readFileSync(path.join(projectRoot, "src/components/SiteChrome.tsx"), "utf8");
+  const liveProvider = fs.readFileSync(path.join(projectRoot, "src/components/LiveStatusProvider.tsx"), "utf8");
+  const bnlProvider = fs.readFileSync(path.join(projectRoot, "src/components/BNLStatusProvider.tsx"), "utf8");
+  const liveCss = fs.readFileSync(path.join(projectRoot, "src/app/overlay/live/overlay-live.css"), "utf8");
+  const foregroundCss = fs.readFileSync(path.join(projectRoot, "src/app/overlay/foreground/calibration/foreground-calibration.css"), "utf8");
   const render = receiver.slice(receiver.lastIndexOf("return ("));
   assert.match(receiver, /fetch\("\/api\/overlay\/radio-visuals"/);
   assert.match(receiver, /payload\.snapshot\.sessionActive \? RADIO_VISUALS_ACTIVE_POLL_INTERVAL_MS : RADIO_VISUALS_STANDBY_POLL_INTERVAL_MS/);
@@ -250,6 +325,12 @@ test("permanent receiver is a pure full-frame effects surface with a stable link
   assert.doesNotMatch(render, /<(?:header|footer|h[1-6]|p|span|strong|em)\b|aria-live/);
   assert.match(render, /<canvas ref=\{canvasRef\}/);
   assert.match(receiver, /drawAmbientLighting|drawGoboShadows|drawCaustics|drawWavefronts|drawParticleField|drawTrackBloom|drawPartyCue|drawShadowCue|drawSignalBreachCue|drawBlackoutCue|drawLightningCue/);
+  assert.match(receiver, /drawQueueLanes|drawTrackSignature|drawIntakeAperture|drawSponsorCurtain|drawFinalConvergence|drawCompletionAfterimage|drawPressureEdges/);
+  assert.match(receiver, /drawAmbientMoment|radioVisualAmbientMoment|observeSnapshotEvents|drawAutomaticEvent/);
+  assert.match(receiver, /wheel_gained|priority_sent|priority_confirmed|track_skipped|sponsor_started|stage_shift/);
+  assert.match(receiver, /hashRadioVisualToken\(`\$\{snapshot\.cue\.type\}:\$\{snapshot\.cue\.nonce\}/, "manual cue nonce must vary every repeated effect");
+  assert.match(receiver, /lightningMainPath|lightningBranches|drawLightningTree/);
+  assert.doesNotMatch(receiver, /function drawBolt\(/, "lightning must use a branching procedural composition rather than generic twin bolts");
   assert.match(receiver, /PALETTE_TRANSITION_MS = 2_400|PARTICLE_TRANSITION_MS = 2_000|radioVisualCueEnvelope/);
   assert.match(builder, /const queueState = await getRadioQueueState\(\);\s*if \(!hasActiveQueueSession\(queueState\)\)/);
   const idleBranch = builder.slice(builder.indexOf("if (!hasActiveQueueSession(queueState))"), builder.indexOf("const [overlayState, playerSync]"));
@@ -257,5 +338,39 @@ test("permanent receiver is a pure full-frame effects surface with a stable link
   assert.match(admin, /\/overlay\/radio-visuals/);
   assert.match(admin, /triggerVisualCue|Party Burst|Shadow Sweep|Signal Breach|Blackout \/ Return|Lightning Hit/);
   assert.match(css, /--radio-visuals-key: #ff5a00/);
-  assert.match(css, /width: 100vw;\s*height: 100vh/);
+  assert.match(receiver, /data-source-aspect="3:4"/);
+  assert.match(receiver, /data-source-resolution="1080x1440"/);
+  assert.match(css, /width: min\(100vw, 75vh\);\s*height: min\(133\.333333vw, 100vh\)/);
+  assert.match(css, /aspect-ratio: 3 \/ 4/);
+  assert.match(css, /nextjs-portal|vercel-live-feedback|data-vercel-toolbar/);
+  assert.match(page, /width: 1080/);
+  assert.match(chrome, /pathname\.startsWith\("\/overlay\/"\)/, "overlay sources must bypass the animated site shell");
+  assert.match(liveProvider, /pathname\.startsWith\("\/overlay\/"\)/, "overlay sources must not run the global live-status poller");
+  assert.match(bnlProvider, /pathname\.startsWith\("\/overlay\/"\)/, "overlay sources must not run the BNL status poller");
+  assert.doesNotMatch(liveCss, /body > div:last-of-type/, "isolated live sources must never hide their own root element");
+  assert.doesNotMatch(foregroundCss, /body > :not\(main\)/, "isolated foreground sources must never hide their own root element");
+  assert.match(admin, /1080 × 1440/);
+});
+
+test("wheel ceremony has a permanent isolated browser source without changing wheel mechanics", () => {
+  const receiver = fs.readFileSync(path.join(projectRoot, "src/components/LiveOverlayReceiver.tsx"), "utf8");
+  const builder = fs.readFileSync(path.join(projectRoot, "src/lib/wheel-overlay.ts"), "utf8");
+  const route = fs.readFileSync(path.join(projectRoot, "src/app/api/overlay/wheel/route.ts"), "utf8");
+  const page = fs.readFileSync(path.join(projectRoot, "src/app/overlay/wheel/page.tsx"), "utf8");
+  const css = fs.readFileSync(path.join(projectRoot, "src/app/overlay/wheel/wheel-overlay.css"), "utf8");
+  const admin = fs.readFileSync(path.join(projectRoot, "src/components/AdminLiveOverlayControl.tsx"), "utf8");
+  assert.match(receiver, /wheelOnly \? "\/api\/overlay\/wheel" : "\/api\/overlay\/live"/);
+  assert.match(receiver, /WHEEL_OVERLAY_ACTIVE_POLL_INTERVAL_MS|WHEEL_OVERLAY_SHOW_IDLE_POLL_INTERVAL_MS|WHEEL_OVERLAY_STANDBY_POLL_INTERVAL_MS/);
+  assert.match(receiver, /data-wheel-active=\{wheelVisible \? "true" : "false"\}/);
+  assert.match(receiver, /const \[audioArmed, setAudioArmed\] = useState\(wheelOnly\)/);
+  assert.match(receiver, /if \(!wheelOnly\) return undefined;\s*let cancelled = false;\s*const spin = new Audio/);
+  assert.match(builder, /const queueState = await getRadioQueueState\(\);\s*if \(!hasActiveQueueSession\(queueState\)\)/);
+  assert.match(builder, /const overlayState = await getStoredLiveOverlayState\(\)/);
+  assert.doesNotMatch(builder, /setLiveOverlayState|updateRadioTrack|redis\.set/);
+  assert.match(route, /getWheelOverlaySnapshot/);
+  assert.match(page, /<LiveOverlayReceiver wheelOnly \/>/);
+  assert.match(page, /width: 1080/);
+  assert.match(css, /--wheel-overlay-key: #ff5a00/);
+  assert.match(css, /width: min\(100vw, 100vh\);\s*height: min\(100vw, 100vh\)/);
+  assert.match(admin, /\/overlay\/wheel|Copy Wheel Link|Preview Wheel Source/);
 });

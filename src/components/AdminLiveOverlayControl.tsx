@@ -102,6 +102,16 @@ export function AdminLiveOverlayControl({ focusWheelTick = 0 }: { focusWheelTick
     }
   }
 
+  async function copyWheelOverlayLink() {
+    const overlayUrl = new URL("/overlay/wheel", window.location.origin).toString();
+    try {
+      await navigator.clipboard.writeText(overlayUrl);
+      setStatus("Permanent wheel browser-source link copied for TikTok Studio.");
+    } catch {
+      setStatus(`Copy this permanent wheel browser-source link: ${overlayUrl}`);
+    }
+  }
+
   const scene = snapshot?.scene;
   const wheelOwed = scene?.wheelSpinsOwed ?? 0;
   const wheelActive = scene?.wheelOverlayActive === true;
@@ -167,14 +177,17 @@ export function AdminLiveOverlayControl({ focusWheelTick = 0 }: { focusWheelTick
           <a href="/overlay/live" target="_blank" rel="noreferrer" className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Open Live Overlay</a>
           <a href="/overlay/radio-visuals?preview=1" target="_blank" rel="noreferrer" className="border border-violet-400/70 px-3 py-2 text-xs uppercase tracking-widest text-violet-200 hover:bg-violet-400 hover:text-background">Preview Visuals</a>
           <button type="button" onClick={copyRadioVisualsOverlayLink} className="border border-violet-400/50 px-3 py-2 text-xs uppercase tracking-widest text-violet-200 hover:border-violet-300">Copy Visuals Link</button>
+          <a href="/overlay/wheel" target="_blank" rel="noreferrer" className="border border-cyan-300/70 px-3 py-2 text-xs uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background">Preview Wheel Source</a>
+          <button type="button" onClick={copyWheelOverlayLink} className="border border-cyan-300/50 px-3 py-2 text-xs uppercase tracking-widest text-cyan-200 hover:border-cyan-200">Copy Wheel Link</button>
           <button type="button" onClick={openForegroundOverlay} className="border border-cyan-300/70 px-3 py-2 text-xs uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background">Open Foreground Overlay</button>
         </div>
       </div>
 
       <div className="border border-violet-400/30 bg-violet-400/10 p-3 text-sm text-muted">
-        <p className="font-bold text-violet-100">Separate full-frame TikTok Studio effects source</p>
-        <p className="mt-1">Copy the permanent link once, size it over the camera, and chroma-key <span className="font-bold text-[#ff5a00]">#FF5A00 safety orange</span>. The source contains no titles, counters, frames, or foreground UI. It wakes for each show and reads queue stage, scene, track changes, and player play/pause/timeline.</p>
+        <p className="font-bold text-violet-100">Separate 3:4 TikTok Studio camera-zone effects source</p>
+        <p className="mt-1">Use custom resolution <span className="font-bold text-white">1080 × 1440</span>, then size and move it over the red upper camera area. Chroma-key <span className="font-bold text-[#ff5a00]">#FF5A00 safety orange</span>. The source contains no titles, counters, frames, or foreground UI. It wakes for each show and reads queue stage, scene, track changes, and player play/pause/timeline.</p>
         <p className="mt-1">Core visual language: BARCODE green, black, white and violet, with compatible track accents. Level 1 is timeline-reactive; true audio-spectrum response remains a later audio-bridge upgrade.</p>
+        <p className="mt-2">The Wheel Source is a separate permanent 1080×1080 link using the same chroma key. Leave it active in Studio with sound enabled; it remains keyed out until the existing Launch Wheel control activates the ceremony.</p>
       </div>
 
       <section className="space-y-3 border border-violet-400/35 bg-surface p-4">

@@ -169,6 +169,10 @@ function rhythmPulse(phase: number, power: number): number {
   return Math.pow((Math.cos(cycle * Math.PI * 2) + 1) / 2, power);
 }
 
+function shapeLoopbackLevel(value: number): number {
+  return clampVisualValue(Math.pow(clampVisualValue(value), 0.68) * 1.3);
+}
+
 export function radioVisualsMusicSignal(
   snapshot: RadioVisualsSnapshot,
   playbackSeconds: number,
@@ -221,25 +225,33 @@ export function radioVisualsMusicSignal(
   const peak = hasAnalyser
     ? clampVisualValue(snapshot.player?.audioPeak ?? 0)
     : Math.max(beat * (0.42 + rhythmProfile.kick * 0.4), eighth * rhythmProfile.snare * 0.52, sixteenth * rhythmProfile.hats * 0.58) * activity;
+  const loopbackLevel = bridgeSignal
+    ? Math.max(bridgeSignal.energy, bridgeSignal.bass, bridgeSignal.mid, bridgeSignal.treble, bridgeSignal.peak)
+    : 0;
   const hasLoopback = Boolean(
     bridgeSignal?.captureActive
     && bridgeSignal.warmedUp
-    && !bridgeSignal.silence,
+    && (!bridgeSignal.silence || loopbackLevel >= 0.006),
   );
   if (hasLoopback && bridgeSignal) {
     const confidence = clampVisualValue(bridgeSignal.tempoConfidence);
-    const liveWeight = 0.9;
-    const liveBeat = clampVisualValue(bridgeSignal.beat);
+    const liveWeight = 0.96;
+    const liveEnergy = shapeLoopbackLevel(bridgeSignal.energy);
+    const liveBass = shapeLoopbackLevel(bridgeSignal.bass);
+    const liveMid = shapeLoopbackLevel(bridgeSignal.mid);
+    const liveTreble = shapeLoopbackLevel(bridgeSignal.treble);
+    const livePeak = shapeLoopbackLevel(bridgeSignal.peak);
+    const liveBeat = shapeLoopbackLevel(bridgeSignal.beat);
     return {
       source: "windows_loopback",
       bpm: confidence >= 0.28 ? bridgeSignal.bpm : bpm,
-      energy: clampVisualValue(bridgeSignal.energy * liveWeight + timelineEnergy * (1 - liveWeight), 0.025, 0.98),
-      bass: clampVisualValue(bridgeSignal.bass * liveWeight + timelineBass * (1 - liveWeight)),
-      mid: clampVisualValue(bridgeSignal.mid * liveWeight + timelineMid * (1 - liveWeight)),
-      treble: clampVisualValue(bridgeSignal.treble * liveWeight + timelineTreble * (1 - liveWeight)),
-      beat: clampVisualValue(Math.max(liveBeat, beat * 0.1) * (0.72 + bridgeSignal.bass * 0.28)),
-      accent: clampVisualValue(Math.max(liveBeat * 0.78, bridgeSignal.peak * 0.62, bridgeSignal.treble * 0.24)),
-      peak: clampVisualValue(bridgeSignal.peak),
+      energy: clampVisualValue(liveEnergy * liveWeight + timelineEnergy * (1 - liveWeight), 0.025, 0.98),
+      bass: clampVisualValue(liveBass * liveWeight + timelineBass * (1 - liveWeight)),
+      mid: clampVisualValue(liveMid * liveWeight + timelineMid * (1 - liveWeight)),
+      treble: clampVisualValue(liveTreble * liveWeight + timelineTreble * (1 - liveWeight)),
+      beat: clampVisualValue(Math.max(liveBeat, beat * 0.08) * (0.72 + liveBass * 0.28)),
+      accent: clampVisualValue(Math.max(liveBeat * 0.78, livePeak * 0.62, liveTreble * 0.24)),
+      peak: livePeak,
     };
   }
   return {

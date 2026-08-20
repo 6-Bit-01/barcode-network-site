@@ -20,7 +20,24 @@ internal sealed class LoopbackCaptureController : IDisposable
 
     public string Status
     {
-        get { lock (_sync) return _status; }
+        get
+        {
+            string status;
+            bool captureActive;
+            lock (_sync)
+            {
+                status = _status;
+                captureActive = _capture is not null;
+            }
+            if (!captureActive) return status;
+
+            var signal = _analyzer.Snapshot(true);
+            if (!signal.WarmedUp) return "Connected — warming up Speakers audio analysis";
+            var level = (int)Math.Round(Math.Max(signal.Energy, signal.Peak) * 100);
+            return signal.Silence
+                ? $"Connected — no Speakers audio detected (level {level}%)"
+                : $"Live — Speakers audio detected (level {level}%)";
+        }
     }
 
     public bool CaptureActive
@@ -58,8 +75,8 @@ internal sealed class LoopbackCaptureController : IDisposable
                 capture.RecordingStopped += OnRecordingStopped;
                 capture.StartRecording();
                 _capture = capture;
-                _status = "Live — Speakers loopback is driving the visuals";
-                BridgeLog.Write($"Speakers loopback started ({capture.WaveFormat.SampleRate} Hz, {capture.WaveFormat.Channels} channels, {capture.WaveFormat.BitsPerSample}-bit).");
+                _status = "Connected — warming up Speakers audio analysis";
+                BridgeLog.Write($"Speakers loopback started ({capture.WaveFormat.SampleRate} Hz, {capture.WaveFormat.Channels} channels, {capture.WaveFormat.BitsPerSample}-bit, {capture.WaveFormat.Encoding}).");
             }
             catch (Exception error)
             {

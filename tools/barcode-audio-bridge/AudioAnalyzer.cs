@@ -30,8 +30,10 @@ internal sealed class AudioAnalyzer
         if (buffer.Length == 0 || bytesRecorded <= 0 || format.SampleRate <= 0 || format.Channels <= 0) return;
         var bytesPerSample = Math.Max(1, format.BitsPerSample / 8);
         var frameBytes = Math.Max(bytesPerSample * format.Channels, format.BlockAlign);
-        var floatingPoint = format.Encoding == WaveFormatEncoding.IeeeFloat
-            || (format.Encoding == WaveFormatEncoding.Extensible && format.BitsPerSample == 32);
+        var standardFormat = format is WaveFormatExtensible extensible
+            ? extensible.ToStandardWaveFormat()
+            : format;
+        var floatingPoint = standardFormat.Encoding == WaveFormatEncoding.IeeeFloat;
 
         lock (_sync)
         {
@@ -65,7 +67,7 @@ internal sealed class AudioAnalyzer
         {
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var age = _lastDataUnixMs == 0 ? long.MaxValue : Math.Max(0, now - _lastDataUnixMs);
-            var silence = age > 650 || _energy < 0.025;
+            var silence = age > 650 || _energy < 0.008;
             var decay = age <= 650 ? 1 : Math.Exp(-(age - 650) / 480d);
             var beat = _lastBeatUnixMs == 0 ? 0 : Math.Exp(-Math.Max(0, now - _lastBeatUnixMs) / 145d);
             if (silence) beat = 0;

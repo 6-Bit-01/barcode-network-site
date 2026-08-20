@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { CSSProperties } from "react";
 import type { RadioVisualEvent, RadioVisualEventType, RadioVisualsPlayerSignal, RadioVisualsShowStage, RadioVisualsSnapshot } from "@/lib/radio-visuals";
 import {
   clampVisualValue,
@@ -64,7 +63,6 @@ const RETRY_POLL_INTERVAL_MS = 5_000;
 const PALETTE_TRANSITION_MS = 2_400;
 const PARTICLE_TRANSITION_MS = 2_000;
 const TRACK_BLOOM_MS = 1_700;
-const RADIO_VISUALS_SOURCE_STYLE = { width: "1080px", height: "1440px" } as CSSProperties;
 
 function fallbackSnapshot(): RadioVisualsSnapshot {
   return {
@@ -1689,7 +1687,6 @@ export function RadioVisualsReceiver() {
       data-visual-mode={snapshot.visualMode}
       data-music-source={snapshot.player?.audioEnergy === null || snapshot.player?.audioEnergy === undefined ? "timeline" : "analyser"}
       data-visual-cue={snapshot.cue?.type ?? "none"}
-      style={RADIO_VISUALS_SOURCE_STYLE}
       aria-hidden="true"
     >
       <canvas ref={canvasRef} className="radio-visuals-canvas" width={1080} height={1440} />

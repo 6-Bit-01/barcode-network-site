@@ -401,8 +401,7 @@ test("permanent receiver is a pure full-frame effects surface with a stable link
   assert.match(receiver, /data-source-aspect="3:4"/);
   assert.match(receiver, /data-source-resolution="1080x1440"/);
   assert.match(receiver, /data-music-source=.*"timeline".*"analyser"/);
-  assert.match(css, /width: 1080px;\s*height: 1440px;/);
-  assert.doesNotMatch(css, /100vw|100vh|75vh|133\.333333vw/);
+  assert.match(css, /width: min\(100vw, 75vh\);\s*height: min\(133\.333333vw, 100vh\)/);
   assert.match(css, /aspect-ratio: 3 \/ 4/);
   assert.match(css, /nextjs-portal|vercel-live-feedback|data-vercel-toolbar/);
   assert.match(page, /width: 1080,[\s\S]*?height: 1440/);

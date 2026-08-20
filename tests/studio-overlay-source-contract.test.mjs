@@ -65,13 +65,11 @@ test("permanent Studio sources advertise and render their native geometry on the
   }
 
   assert.match(foreground, /width: "1080px",[\s\S]*?height: "1920px",/);
-  assert.match(visuals, /RADIO_VISUALS_SOURCE_STYLE = \{ width: "1080px", height: "1440px" \}/);
   assert.match(visuals, /<canvas ref=\{canvasRef\} className="radio-visuals-canvas" width=\{1080\} height=\{1440\} \/>/);
   assert.match(wheel, /WHEEL_SOURCE_STYLE = \{ width: "1080px", height: "1080px" \}/);
   assert.match(wheel, /data-source-resolution=\{wheelOnly \? "1080x1080" : undefined\}/);
 
-  assert.match(visualsCss, /width: 1080px;[\s\S]*?height: 1440px;/);
-  assert.doesNotMatch(visualsCss, /100vw|100vh|75vh|133\.333333vw/);
+  assert.match(visualsCss, /width: min\(100vw, 75vh\);[\s\S]*?height: min\(133\.333333vw, 100vh\);/);
   assert.match(wheelCss, /width: 1080px;[\s\S]*?height: 1080px;/);
   assert.doesNotMatch(wheelCss, /100vw|100vh|min\(100vw/);
 });

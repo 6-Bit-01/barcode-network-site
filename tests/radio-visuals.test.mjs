@@ -22,6 +22,7 @@ const engine = require("../src/lib/radio-visuals-engine.ts");
 const cues = require("../src/lib/radio-visuals-cues.ts");
 const visualEvents = require("../src/lib/radio-visuals-events.ts");
 const audioVisuals = require("../src/lib/radio-visuals-audio.ts");
+const audioBridge = require("../src/lib/radio-audio-bridge.ts");
 const liveOverlay = require("../src/lib/live-overlay-resolver.ts");
 
 test.after(() => {
@@ -134,7 +135,7 @@ test("inactive receiver stays nearly invisible and exposes only the visual proje
   assert.equal(snapshot.cue, null);
   assert.deepEqual(snapshot.events, []);
   assert.deepEqual(Object.keys(snapshot).sort(), ["cue", "events", "player", "queue", "sceneMode", "sessionActive", "showStage", "signals", "updatedAt", "visualMode", "visualSeed"]);
-  assert.ok(engine.radioVisualsIntensity(snapshot) < 0.05, "standby remains a ghost layer");
+  assert.ok(engine.radioVisualsIntensity(snapshot) < 0.08, "standby remains a ghost layer");
 });
 
 test("show stage follows queue completion without creating another queue state machine", () => {
@@ -207,6 +208,75 @@ test("wheel, sponsor, and emergency scenes select distinct automatic visual mode
   assert.equal(visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: scene("wheel_spinning") }).visualMode, "wheel");
   assert.equal(visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: scene("sponsor") }).visualMode, "sponsor");
   assert.equal(visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: scene("system_message") }).visualMode, "system");
+});
+
+test("procedural scene library spans six genuinely different visual families", () => {
+  assert.deepEqual(engine.RADIO_VISUAL_COMPOSITION_TYPES, [
+    "liquid_dream",
+    "kaleidoscope",
+    "spectral_loom",
+    "feedback_architecture",
+    "cosmic_signal",
+    "chromatic_smear",
+  ]);
+  const seen = new Set(Array.from({ length: 256 }, (_, index) => engine.radioVisualComposition(index + 1)));
+  assert.equal(seen.size, engine.RADIO_VISUAL_COMPOSITION_TYPES.length);
+  for (const composition of engine.RADIO_VISUAL_COMPOSITION_TYPES) assert.ok(seen.has(composition));
+});
+
+test("uncaptured songs automatically rotate through six synthetic rhythm personalities", () => {
+  assert.deepEqual(engine.RADIO_VISUAL_FALLBACK_RHYTHMS, [
+    "sub_bloom",
+    "neon_breaks",
+    "ghost_dub",
+    "fever_drive",
+    "glass_rain",
+    "machine_funk",
+  ]);
+  const seen = new Set(Array.from({ length: 256 }, (_, index) => engine.radioVisualFallbackRhythm(index + 1)));
+  assert.equal(seen.size, engine.RADIO_VISUAL_FALLBACK_RHYTHMS.length);
+  const current = entry("external-rhythm", { sourceType: "spotify" });
+  const state = queueState({ nowPlaying: current, loadedTrack: current });
+  const currentScene = scene("now_playing", { track: { id: current.id, artistName: "Artist", trackTitle: "External Track", sourceType: "spotify" } });
+  const snapshot = visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: currentScene });
+  const signal = engine.radioVisualsMusicSignal(snapshot, 0, 42);
+  assert.equal(snapshot.player, null);
+  assert.equal(signal.source, "timeline");
+  assert.ok(signal.energy > 0.12, "an uncaptured loaded track still receives active automatic music motion");
+});
+
+test("wheel vortex phases have distinct spin, fracture, and release profiles", () => {
+  const ready = engine.radioVisualWheelVortexProfile("wheel_ready");
+  const spinning = engine.radioVisualWheelVortexProfile("wheel_spinning");
+  const reencrypting = engine.radioVisualWheelVortexProfile("wheel_reencrypting");
+  const result = engine.radioVisualWheelVortexProfile("wheel_result");
+  assert.equal(spinning.spin, 1);
+  assert.equal(spinning.tunnel, 1);
+  assert.equal(reencrypting.turbulence, 1);
+  assert.equal(result.release, 1);
+  assert.ok(ready.spin < spinning.spin);
+  assert.ok(ready.turbulence < reencrypting.turbulence);
+});
+
+test("track loads and wheel activations vary by occurrence while remaining stable during one occurrence", () => {
+  const current = entry("repeat-track", { sourceType: "spotify" });
+  const currentScene = scene("now_playing", { track: { id: current.id, artistName: "Artist", trackTitle: "Repeat", sourceType: "spotify" } });
+  const stateForLoad = (observedAt) => queueState({
+    nowPlaying: current,
+    loadedTrack: current,
+    playbackDiagnostics: { events: [{ trackId: current.id, eventType: "loaded", observedAt }] },
+  });
+  const first = visuals.resolveRadioVisualsSnapshot({ queueState: stateForLoad("2026-08-19T19:00:00.000Z"), scene: currentScene });
+  const repeated = visuals.resolveRadioVisualsSnapshot({ queueState: stateForLoad("2026-08-19T19:00:00.000Z"), scene: currentScene });
+  const replayed = visuals.resolveRadioVisualsSnapshot({ queueState: stateForLoad("2026-08-19T20:00:00.000Z"), scene: currentScene });
+  assert.equal(first.visualSeed, repeated.visualSeed);
+  assert.notEqual(first.visualSeed, replayed.visualSeed);
+
+  const wheelFirst = visuals.resolveRadioVisualsSnapshot({ queueState: queueState(), scene: scene("wheel_spinning", { updatedAt: "2026-08-19T19:00:00.000Z" }) });
+  const wheelRepeated = visuals.resolveRadioVisualsSnapshot({ queueState: queueState(), scene: scene("wheel_spinning", { updatedAt: "2026-08-19T19:00:00.000Z" }) });
+  const wheelAgain = visuals.resolveRadioVisualsSnapshot({ queueState: queueState(), scene: scene("wheel_spinning", { updatedAt: "2026-08-19T19:05:00.000Z" }) });
+  assert.equal(wheelFirst.visualSeed, wheelRepeated.visualSeed);
+  assert.notEqual(wheelFirst.visualSeed, wheelAgain.visualSeed);
 });
 
 test("manual visual cues are bounded, server-timed, and expire without touching queue state", () => {
@@ -301,6 +371,7 @@ test("idle ambient moments are deterministic within a cycle and change compositi
   assert.deepEqual(first, repeated);
   assert.notEqual(first.seed, second.seed);
   assert.ok(first.envelope > 0 && first.intensity > 0);
+  assert.ok(engine.RADIO_VISUAL_AMBIENT_MOMENT_TYPES.length >= 11);
 });
 
 test("music response follows the authoritative playback clock and uses direct analysis when available", () => {
@@ -326,6 +397,86 @@ test("music response follows the authoritative playback clock and uses direct an
   assert.equal(analysed.source, "analyser");
   assert.ok(analysed.energy > 0.65);
   assert.ok(analysed.bass > analysed.treble);
+
+  const loopback = engine.radioVisualsMusicSignal(timelineSnapshot, 24, 100, {
+    schemaVersion: "barcode_audio_signal_v1",
+    source: "windows_loopback",
+    capturedAtUnixMs: Date.now(),
+    sequence: 19,
+    captureActive: true,
+    warmedUp: true,
+    silence: false,
+    energy: 0.82,
+    bass: 0.91,
+    mid: 0.63,
+    treble: 0.37,
+    peak: 0.94,
+    beat: 0.88,
+    bpm: 128,
+    tempoConfidence: 0.72,
+  });
+  assert.equal(loopback.source, "windows_loopback");
+  assert.equal(loopback.bpm, 128);
+  assert.ok(loopback.bass > loopback.treble);
+  assert.ok(loopback.beat > 0.7);
+});
+
+test("Windows loopback signal contract rejects malformed and stale local data", () => {
+  const now = 1_782_000_000_000;
+  const valid = {
+    schemaVersion: "barcode_audio_signal_v1",
+    source: "windows_loopback",
+    capturedAtUnixMs: now - 150,
+    sequence: 42,
+    captureActive: true,
+    warmedUp: true,
+    silence: false,
+    energy: 0.72,
+    bass: 0.84,
+    mid: 0.55,
+    treble: 0.31,
+    peak: 0.9,
+    beat: 1,
+    bpm: 96,
+    tempoConfidence: 0.64,
+  };
+  assert.deepEqual(audioBridge.normalizeRadioAudioBridgeSignal(valid), valid);
+  assert.deepEqual(audioBridge.freshRadioAudioBridgeSignal(valid, now), valid);
+  assert.equal(audioBridge.freshRadioAudioBridgeSignal({ ...valid, capturedAtUnixMs: now - 1_201 }, now), null);
+  assert.equal(audioBridge.normalizeRadioAudioBridgeSignal({ ...valid, energy: 4 }), null);
+  assert.equal(audioBridge.normalizeRadioAudioBridgeSignal({ ...valid, bpm: 900 }), null);
+  assert.equal(audioBridge.normalizeRadioAudioBridgeSignal({ ...valid, schemaVersion: "wrong" }), null);
+});
+
+test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a one-click artifact", () => {
+  const helperRoot = path.join(projectRoot, "tools/barcode-audio-bridge");
+  const project = fs.readFileSync(path.join(helperRoot, "Barcode.AudioBridge.csproj"), "utf8");
+  const program = fs.readFileSync(path.join(helperRoot, "Program.cs"), "utf8");
+  const installer = fs.readFileSync(path.join(helperRoot, "BridgeInstaller.cs"), "utf8");
+  const capture = fs.readFileSync(path.join(helperRoot, "LoopbackCaptureController.cs"), "utf8");
+  const server = fs.readFileSync(path.join(helperRoot, "LocalSignalServer.cs"), "utf8");
+  const readme = fs.readFileSync(path.join(helperRoot, "README.md"), "utf8");
+  const workflow = fs.readFileSync(path.join(projectRoot, ".github/workflows/ci.yml"), "utf8");
+  const productionContract = fs.readFileSync(path.join(projectRoot, "docs/queue-production-capability.md"), "utf8");
+
+  assert.match(project, /<TargetFramework>net8\.0-windows<\/TargetFramework>/);
+  assert.match(project, /<SelfContained>true<\/SelfContained>/);
+  assert.match(project, /<PublishSingleFile>true<\/PublishSingleFile>/);
+  assert.match(project, /PackageReference Include="NAudio" Version="2\.3\.0"/);
+  assert.match(capture, /new WasapiLoopbackCapture\(\)/, "capture must use the default Windows Speakers render endpoint");
+  assert.doesNotMatch(capture, /new (?:WaveIn|WasapiCapture)\(/, "the helper must not open a microphone capture endpoint");
+  assert.match(capture, /TouchClient\(\)[\s\S]*EnsureStarted\(\)/, "visual-source requests must wake capture automatically");
+  assert.match(capture, /ClientIdleCaptureStopMilliseconds/, "capture must stop after the visual source becomes idle");
+  assert.match(server, /new TcpListener\(IPAddress\.Loopback, BridgeConstants\.Port\)/, "the signal endpoint must never bind to the LAN");
+  assert.match(server, /Access-Control-Allow-Private-Network: true/);
+  assert.match(server, /www\.barcode-network\.com|barcode-network\.com/);
+  assert.match(installer, /Registry\.CurrentUser[\s\S]*CurrentVersion\\Run/, "autostart must be scoped to the current Windows user");
+  assert.match(program, /BridgeInstaller\.InstallAndLaunch\(\)/);
+  assert.doesNotMatch(program, /capture button|Select.*device/i);
+  assert.match(readme, /There is no capture button/);
+  assert.match(readme, /No audio samples leave the computer/);
+  assert.match(workflow, /windows-audio-bridge:[\s\S]*dotnet publish[\s\S]*BARCODE\.AudioBridge\.exe/);
+  assert.match(productionContract, /BARCODE Audio Bridge[\s\S]*WASAPI loopback[\s\S]*creates no Redis or Vercel traffic/);
 });
 
 test("direct audio analysis separates frequency bands and safely bounds untrusted samples", () => {
@@ -351,7 +502,23 @@ test("the effect palette preserves BARCODE green, violet, black, and white while
   assert.doesNotMatch(JSON.stringify(palette), /#ff5a00/);
 });
 
-test("permanent receiver is a pure full-frame effects surface with a stable link and bounded standby polling", () => {
+test("the square Studio source contains a centered 3:4 portrait-safe visual stage", () => {
+  assert.equal(engine.RADIO_VISUALS_EFFECT_STAGE_ASPECT_RATIO, 3 / 4);
+  assert.deepEqual(engine.radioVisualsEffectStageBounds(1080, 1080), {
+    x: 135,
+    y: 0,
+    width: 810,
+    height: 1080,
+  });
+  assert.deepEqual(engine.radioVisualsEffectStageBounds(810, 1080), {
+    x: 0,
+    y: 0,
+    width: 810,
+    height: 1080,
+  });
+});
+
+test("permanent receiver is a pure portrait-safe effects surface with a stable link and bounded standby polling", () => {
   const receiver = fs.readFileSync(path.join(projectRoot, "src/components/RadioVisualsReceiver.tsx"), "utf8");
   const builder = fs.readFileSync(path.join(projectRoot, "src/lib/radio-visuals.ts"), "utf8");
   const admin = fs.readFileSync(path.join(projectRoot, "src/components/AdminLiveOverlayControl.tsx"), "utf8");
@@ -375,6 +542,7 @@ test("permanent receiver is a pure full-frame effects surface with a stable link
   assert.match(receiver, /drawAmbientLighting|drawGoboShadows|drawCaustics|drawWavefronts|drawParticleField|drawTrackBloom|drawPartyCue|drawShadowCue|drawSignalBreachCue|drawBlackoutCue|drawLightningCue/);
   assert.match(receiver, /drawQueueLanes|drawTrackSignature|drawIntakeAperture|drawSponsorCurtain|drawFinalConvergence|drawCompletionAfterimage|drawPressureEdges/);
   assert.match(receiver, /drawLightRibbons|drawPrismaticShards|drawSignalConstellation|drawMusicHalo|drawSeedComposition/);
+  assert.match(receiver, /drawLiquidDream|drawKaleidoscopeBloom|drawSpectralLoom|drawFeedbackArchitecture|drawChromaticSmears|radioVisualComposition/);
   assert.match(receiver, /drawAmbientMoment|radioVisualAmbientMoment|observeSnapshotEvents|drawAutomaticEvent/);
   assert.match(receiver, /wheel_gained|priority_sent|priority_confirmed|track_skipped|sponsor_started|stage_shift/);
   assert.match(receiver, /hashRadioVisualToken\(`\$\{snapshot\.cue\.type\}:\$\{snapshot\.cue\.nonce\}/, "manual cue nonce must vary every repeated effect");
@@ -382,14 +550,19 @@ test("permanent receiver is a pure full-frame effects surface with a stable link
   assert.doesNotMatch(receiver, /function drawBolt\(/, "lightning must use a branching procedural composition rather than generic twin bolts");
   assert.match(receiver, /PALETTE_TRANSITION_MS = 2_400|PARTICLE_TRANSITION_MS = 2_000|radioVisualCueEnvelope/);
   assert.match(receiver, /smoothMusicSignal|radioVisualsMusicSignal/);
+  assert.match(receiver, /RADIO_AUDIO_BRIDGE_URL|targetAddressSpace: "loopback"|data-audio-bridge/);
+  assert.match(receiver, /if \(!snapshot\.sessionActive\)[\s\S]*setAudioBridgeConnection\("idle"\)/);
+  assert.match(engineSource, /source: "analyser" \| "timeline" \| "windows_loopback"/);
   assert.match(engineSource, /RADIO_VISUALS_WHEEL_CENTER_Y_RATIO = 0\.375/);
   const wheelScene = receiver.slice(receiver.indexOf("function drawWheelScene"), receiver.indexOf("function drawPartyCue"));
   assert.match(wheelScene, /height \* RADIO_VISUALS_WHEEL_CENTER_Y_RATIO/);
   assert.doesNotMatch(wheelScene, /height \* 0\.5/);
+  assert.match(wheelScene, /gravity lens|RGB channels|burstCount|radioVisualWheelVortexProfile/);
   assert.match(queueControl, /createMediaElementSource|createAnalyser|audioAnalysis|analyzeRadioVisualFrequencyData/);
+  assert.doesNotMatch(queueControl, /getDisplayMedia|createMediaStreamSource|Capture show audio|Share audio/);
   assert.match(queueControl, /YOUTUBE_SYNC_HEARTBEAT_MS = 1_000/);
   assert.match(productionContract, /same-origin MP3\/WAV player[\s\S]*existing 1 Hz player-sync heartbeat/);
-  assert.match(productionContract, /YouTube and TikTok embeds remain timeline-reactive/);
+  assert.match(productionContract, /External players with no usable playback or audio signal automatically receive[\s\S]*no host prompt or control/);
   assert.match(builder, /const queueState = await getRadioQueueState\(\);\s*if \(!hasActiveQueueSession\(queueState\)\)/);
   const idleBranch = builder.slice(builder.indexOf("if (!hasActiveQueueSession(queueState))"), builder.indexOf("const [overlayState, playerSync]"));
   assert.doesNotMatch(idleBranch, /getStoredLiveOverlayState|getLiveOverlayPlayerSync/);
@@ -400,7 +573,12 @@ test("permanent receiver is a pure full-frame effects surface with a stable link
   assert.match(css, /--radio-visuals-key: #ff5a00/);
   assert.match(receiver, /data-source-aspect="1:1"/);
   assert.match(receiver, /data-source-resolution="1080x1080"/);
-  assert.match(receiver, /data-music-source=.*"timeline".*"analyser"/);
+  assert.match(receiver, /data-effect-stage-resolution="810x1080"/);
+  assert.match(receiver, /radioVisualsEffectStageBounds\(sourceWidth, sourceHeight\)/);
+  assert.match(receiver, /data-music-source=/);
+  assert.match(receiver, /"windows-loopback"/);
+  assert.match(receiver, /"timeline"/);
+  assert.match(receiver, /"analyser"/);
   assert.match(css, /width: min\(100vw, 100vh\);\s*height: min\(100vw, 100vh\)/);
   assert.match(css, /aspect-ratio: 1 \/ 1/);
   assert.match(css, /nextjs-portal|vercel-live-feedback|data-vercel-toolbar/);
@@ -410,7 +588,8 @@ test("permanent receiver is a pure full-frame effects surface with a stable link
   assert.match(bnlProvider, /pathname\.startsWith\("\/overlay\/"\)/, "overlay sources must not run the BNL status poller");
   assert.doesNotMatch(liveCss, /body > div:last-of-type/, "isolated live sources must never hide their own root element");
   assert.doesNotMatch(foregroundCss, /body > :not\(main\)/, "isolated foreground sources must never hide their own root element");
-  assert.match(admin, /Show Visuals[\s\S]*1080 × 1080/);
+  assert.match(admin, /Show Visuals[\s\S]*1080 × 1080 source · 810 × 1080 visual stage/);
+  assert.match(productionContract, /centered `810×1080` \(3:4\) portrait-safe stage/);
 });
 
 test("show-long live and Wheel source wakes with the session and clears when it ends without changing wheel mechanics", () => {

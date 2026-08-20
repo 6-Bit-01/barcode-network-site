@@ -5,22 +5,35 @@ import type { RadioVisualEvent, RadioVisualEventType, RadioVisualsPlayerSignal, 
 import {
   clampVisualValue,
   RADIO_VISUALS_CHROMA_KEY,
+  RADIO_VISUALS_EFFECT_STAGE_ASPECT_RATIO,
   RADIO_VISUALS_WHEEL_CENTER_Y_RATIO,
   radioVisualAmbientMoment,
+  radioVisualComposition,
   radioVisualCueEnvelope,
   radioVisualCueProgress,
   radioVisualsIntensity,
+  radioVisualsEffectStageBounds,
   radioVisualsMusicSignal,
   radioVisualsMotionRate,
   radioVisualsPalette,
+  radioVisualWheelVortexProfile,
 } from "@/lib/radio-visuals-engine";
 import type { RadioVisualMusicSignal } from "@/lib/radio-visuals-engine";
 import { activeRadioVisualEvent, hashRadioVisualToken, radioVisualEventEnvelope, radioVisualEventProgress } from "@/lib/radio-visuals-events";
 import { RADIO_VISUALS_ACTIVE_POLL_INTERVAL_MS, RADIO_VISUALS_STANDBY_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 import { studioOverlayRequestHeaders } from "@/lib/studio-overlay-client";
+import {
+  freshRadioAudioBridgeSignal,
+  normalizeRadioAudioBridgeSignal,
+  RADIO_AUDIO_BRIDGE_POLL_INTERVAL_MS,
+  RADIO_AUDIO_BRIDGE_RETRY_INTERVAL_MS,
+  RADIO_AUDIO_BRIDGE_URL,
+} from "@/lib/radio-audio-bridge";
+import type { RadioAudioBridgeSignal } from "@/lib/radio-audio-bridge";
 
 type ServerClockAnchor = { serverNowMs: number; receivedAtPerformanceMs: number };
 type ConnectionState = "connected" | "reconnecting" | "standby";
+type AudioBridgeConnectionState = "idle" | "connecting" | "connected" | "unavailable";
 type Rgb = [number, number, number];
 
 interface VisualSignalMemory {
@@ -445,6 +458,278 @@ function drawLightRibbons(
   context.restore();
 }
 
+function organicBlobPath(
+  context: CanvasRenderingContext2D,
+  centerX: number,
+  centerY: number,
+  radiusX: number,
+  radiusY: number,
+  time: number,
+  seed: number,
+  pointCount = 14,
+): void {
+  const points = Array.from({ length: pointCount }, (_, index) => {
+    const angle = index / pointCount * Math.PI * 2;
+    const wobble = 0.78
+      + randomUnit(seed, 23_700 + index) * 0.26
+      + Math.sin(time * (0.18 + randomUnit(seed, 23_800 + index) * 0.22) + index * 1.71) * 0.07;
+    return {
+      x: centerX + Math.cos(angle) * radiusX * wobble,
+      y: centerY + Math.sin(angle) * radiusY * wobble,
+    };
+  });
+  const first = points[0];
+  const last = points[points.length - 1];
+  context.beginPath();
+  context.moveTo((last.x + first.x) / 2, (last.y + first.y) / 2);
+  for (let index = 0; index < points.length; index += 1) {
+    const current = points[index];
+    const next = points[(index + 1) % points.length];
+    context.quadraticCurveTo(current.x, current.y, (current.x + next.x) / 2, (current.y + next.y) / 2);
+  }
+  context.closePath();
+}
+
+function drawLiquidDream(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  time: number,
+  mix: number,
+  music: RadioVisualMusicSignal,
+  primary: Rgb,
+  secondary: Rgb,
+  highlight: Rgb,
+  seed: number,
+): void {
+  if (mix < 0.002) return;
+  const unit = Math.min(width, height);
+  const blobCount = 4 + Math.floor(randomUnit(seed, 23_001) * 3);
+  context.save();
+  context.globalCompositeOperation = "screen";
+  for (let blob = 0; blob < blobCount; blob += 1) {
+    const phase = time * (0.055 + randomUnit(seed, 23_100 + blob) * 0.09) + randomUnit(seed, 23_200 + blob) * Math.PI * 2;
+    const centerX = width * (0.1 + randomUnit(seed, 23_300 + blob) * 0.8) + Math.sin(phase) * width * 0.09;
+    const centerY = height * (0.1 + randomUnit(seed, 23_400 + blob) * 0.8) + Math.cos(phase * 0.73) * height * 0.07;
+    const radiusX = unit * (0.1 + randomUnit(seed, 23_500 + blob) * 0.24) * (1 + music.bass * 0.055 + music.beat * 0.035);
+    const radiusY = radiusX * (0.55 + randomUnit(seed, 23_600 + blob) * 0.68);
+    const color = blob % 5 === 0 ? highlight : blob % 2 ? secondary : primary;
+    const gradient = context.createRadialGradient(
+      centerX - radiusX * 0.2,
+      centerY - radiusY * 0.18,
+      radiusX * 0.04,
+      centerX,
+      centerY,
+      radiusX,
+    );
+    const alpha = mix * (0.048 + music.energy * 0.085 + music.accent * 0.034);
+    gradient.addColorStop(0, rgba(color, alpha * 1.45));
+    gradient.addColorStop(0.42, rgba(color, alpha * 0.62));
+    gradient.addColorStop(0.76, rgba(blob % 2 ? primary : secondary, alpha * 0.3));
+    gradient.addColorStop(1, rgba(color, 0));
+    organicBlobPath(context, centerX, centerY, radiusX, radiusY, time, seed + blob * 919, 12 + (blob % 4));
+    context.fillStyle = gradient;
+    context.fill();
+    context.strokeStyle = rgba(color, alpha * (0.42 + music.treble * 0.36));
+    context.lineWidth = Math.max(0.75, unit * 0.0012);
+    context.stroke();
+  }
+  context.restore();
+}
+
+function drawKaleidoscopeBloom(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  time: number,
+  mix: number,
+  music: RadioVisualMusicSignal,
+  primary: Rgb,
+  secondary: Rgb,
+  highlight: Rgb,
+  seed: number,
+): void {
+  if (mix < 0.002) return;
+  const unit = Math.min(width, height);
+  const centerX = width * (0.32 + randomUnit(seed, 24_801) * 0.36);
+  const centerY = height * (0.26 + randomUnit(seed, 24_802) * 0.48);
+  const petalCount = 7 + Math.floor(randomUnit(seed, 24_803) * 7);
+  const baseRadius = unit * (0.12 + randomUnit(seed, 24_804) * 0.17) * (1 + music.bass * 0.08);
+  context.save();
+  context.translate(centerX, centerY);
+  context.rotate(time * (0.035 + music.energy * 0.045) * (randomUnit(seed, 24_805) > 0.5 ? 1 : -1));
+  context.globalCompositeOperation = "screen";
+  for (let layer = 0; layer < 3; layer += 1) {
+    const layerRadius = baseRadius * (0.7 + layer * 0.48);
+    for (let petal = 0; petal < petalCount; petal += 1) {
+      const angle = petal / petalCount * Math.PI * 2 + layer * 0.17;
+      const spread = Math.PI / petalCount * (0.44 + randomUnit(seed, 24_900 + layer) * 0.34);
+      const pulse = 1 + Math.sin(time * (0.24 + layer * 0.07) + petal * 0.8) * (0.025 + music.mid * 0.035) + music.beat * 0.04;
+      const color = (petal + layer) % 5 === 0 ? highlight : (petal + layer) % 2 ? secondary : primary;
+      const alpha = mix * (0.031 + music.treble * 0.067 + music.accent * 0.045) / (1 + layer * 0.2);
+      context.fillStyle = rgba(color, alpha);
+      context.strokeStyle = rgba(color, alpha * 1.8);
+      context.lineWidth = Math.max(0.8, unit * 0.0012);
+      context.beginPath();
+      context.moveTo(Math.cos(angle) * layerRadius * 0.18, Math.sin(angle) * layerRadius * 0.18);
+      context.quadraticCurveTo(
+        Math.cos(angle - spread) * layerRadius * 0.82 * pulse,
+        Math.sin(angle - spread) * layerRadius * 0.82 * pulse,
+        Math.cos(angle) * layerRadius * (1.18 + music.peak * 0.08) * pulse,
+        Math.sin(angle) * layerRadius * (1.18 + music.peak * 0.08) * pulse,
+      );
+      context.quadraticCurveTo(
+        Math.cos(angle + spread) * layerRadius * 0.82 * pulse,
+        Math.sin(angle + spread) * layerRadius * 0.82 * pulse,
+        Math.cos(angle) * layerRadius * 0.18,
+        Math.sin(angle) * layerRadius * 0.18,
+      );
+      context.closePath();
+      context.fill();
+      context.stroke();
+    }
+  }
+  context.restore();
+}
+
+function drawSpectralLoom(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  time: number,
+  mix: number,
+  music: RadioVisualMusicSignal,
+  primary: Rgb,
+  secondary: Rgb,
+  highlight: Rgb,
+  seed: number,
+): void {
+  if (mix < 0.002) return;
+  const bandCount = 6 + Math.floor(randomUnit(seed, 25_701) * 5);
+  const samples = 18;
+  const vertical = randomUnit(seed, 25_702) > 0.62;
+  context.save();
+  context.globalCompositeOperation = "screen";
+  for (let band = 0; band < bandCount; band += 1) {
+    const color = band % 5 === 0 ? highlight : band % 2 ? primary : secondary;
+    const center = (band + 0.5) / bandCount;
+    const thickness = (vertical ? width : height) * (0.008 + music.mid * 0.015 + randomUnit(seed, 25_800 + band) * 0.018);
+    const amplitude = (vertical ? width : height) * (0.018 + randomUnit(seed, 25_900 + band) * 0.055 + music.bass * 0.026);
+    const frequency = 1.4 + randomUnit(seed, 26_000 + band) * 3.8;
+    const phase = time * (0.22 + randomUnit(seed, 26_100 + band) * 0.32) + band * 0.72;
+    const point = (sample: number, edge: number) => {
+      const progress = sample / samples;
+      const wave = Math.sin(progress * Math.PI * 2 * frequency + phase) * amplitude
+        + Math.sin(progress * Math.PI * 2 * (frequency * 0.47) - phase * 0.61) * amplitude * 0.42;
+      if (vertical) return { x: width * center + wave + edge * thickness, y: height * progress };
+      return { x: width * progress, y: height * center + wave + edge * thickness };
+    };
+    context.beginPath();
+    for (let sample = 0; sample <= samples; sample += 1) {
+      const next = point(sample, -0.5);
+      if (sample === 0) context.moveTo(next.x, next.y);
+      else context.lineTo(next.x, next.y);
+    }
+    for (let sample = samples; sample >= 0; sample -= 1) {
+      const next = point(sample, 0.5);
+      context.lineTo(next.x, next.y);
+    }
+    context.closePath();
+    context.fillStyle = rgba(color, mix * (0.035 + music.energy * 0.072 + music.accent * 0.034));
+    context.shadowColor = rgba(color, mix * 0.2);
+    context.shadowBlur = Math.min(width, height) * (0.008 + music.peak * 0.014);
+    context.fill();
+  }
+  context.restore();
+}
+
+function drawFeedbackArchitecture(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  time: number,
+  mix: number,
+  music: RadioVisualMusicSignal,
+  primary: Rgb,
+  secondary: Rgb,
+  highlight: Rgb,
+  seed: number,
+): void {
+  if (mix < 0.002) return;
+  const unit = Math.min(width, height);
+  const centerX = width * (0.38 + randomUnit(seed, 26_701) * 0.24);
+  const centerY = height * (0.38 + randomUnit(seed, 26_702) * 0.24);
+  const skew = (randomUnit(seed, 26_703) - 0.5) * unit * 0.22;
+  const frameCount = 5 + Math.floor(randomUnit(seed, 26_704) * 4);
+  context.save();
+  context.translate(centerX, centerY);
+  context.rotate((randomUnit(seed, 26_705) - 0.5) * 0.3 + Math.sin(time * 0.08) * 0.035);
+  context.globalCompositeOperation = "screen";
+  for (let frame = 0; frame < frameCount; frame += 1) {
+    const scale = 0.18 + frame / Math.max(1, frameCount - 1) * 0.94;
+    const drift = Math.sin(time * (0.13 + frame * 0.012) + frame) * unit * 0.018;
+    const frameWidth = width * 0.62 * scale * (1 + music.bass * 0.035);
+    const frameHeight = height * 0.48 * scale * (1 + music.mid * 0.028);
+    const color = frame === frameCount - 1 ? highlight : frame % 2 ? secondary : primary;
+    const alpha = mix * (0.046 + music.energy * 0.07) * (1 - frame / frameCount * 0.42);
+    context.beginPath();
+    context.moveTo(-frameWidth / 2 + skew * scale + drift, -frameHeight / 2);
+    context.lineTo(frameWidth / 2 + drift, -frameHeight / 2 + skew * scale * 0.22);
+    context.lineTo(frameWidth / 2 - skew * scale + drift, frameHeight / 2);
+    context.lineTo(-frameWidth / 2 + drift, frameHeight / 2 - skew * scale * 0.22);
+    context.closePath();
+    context.fillStyle = rgba(color, alpha * 0.2);
+    context.strokeStyle = rgba(color, alpha);
+    context.lineWidth = Math.max(0.8, unit * (0.0012 + music.peak * 0.0012));
+    context.fill();
+    context.stroke();
+  }
+  context.restore();
+}
+
+function drawChromaticSmears(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  time: number,
+  mix: number,
+  music: RadioVisualMusicSignal,
+  primary: Rgb,
+  secondary: Rgb,
+  highlight: Rgb,
+  seed: number,
+): void {
+  if (mix < 0.002) return;
+  const unit = Math.min(width, height);
+  const smearCount = 3 + Math.floor(randomUnit(seed, 27_701) * 4);
+  context.save();
+  context.globalCompositeOperation = "screen";
+  context.lineCap = "round";
+  context.filter = `blur(${Math.max(1, unit * 0.0025)}px)`;
+  for (let smear = 0; smear < smearCount; smear += 1) {
+    const phase = time * (0.07 + randomUnit(seed, 27_800 + smear) * 0.14) + smear * 1.7;
+    const horizontal = randomUnit(seed, 27_900 + smear) > 0.35;
+    const base = 0.12 + randomUnit(seed, 28_000 + smear) * 0.76;
+    const color = smear % 5 === 0 ? highlight : smear % 2 ? secondary : primary;
+    context.strokeStyle = rgba(color, mix * (0.034 + music.energy * 0.071 + music.peak * 0.034));
+    context.lineWidth = unit * (0.018 + randomUnit(seed, 28_100 + smear) * 0.055 + music.bass * 0.018);
+    context.shadowColor = rgba(color, mix * 0.22);
+    context.shadowBlur = unit * 0.035;
+    context.beginPath();
+    if (horizontal) {
+      const y = height * base + Math.sin(phase) * height * 0.08;
+      context.moveTo(-width * 0.12, y);
+      context.bezierCurveTo(width * 0.22, y + Math.sin(phase * 0.7) * height * 0.22, width * 0.78, y + Math.cos(phase * 0.81) * height * 0.2, width * 1.12, y + Math.sin(phase * 0.53) * height * 0.08);
+    } else {
+      const x = width * base + Math.cos(phase) * width * 0.08;
+      context.moveTo(x, -height * 0.12);
+      context.bezierCurveTo(x + Math.sin(phase * 0.74) * width * 0.2, height * 0.24, x + Math.cos(phase * 0.82) * width * 0.22, height * 0.76, x + Math.sin(phase * 0.48) * width * 0.08, height * 1.12);
+    }
+    context.stroke();
+  }
+  context.restore();
+}
+
 function drawPrismaticShards(
   context: CanvasRenderingContext2D,
   width: number,
@@ -826,6 +1111,22 @@ function drawAmbientMoment(
     drawLightRibbons(context, width, height, time * 0.68, alpha * 1.25, music, primary, secondary, highlight, moment.seed);
     return;
   }
+  if (moment.type === "liquid_cell") {
+    drawLiquidDream(context, width, height, time * 0.62, alpha * 1.8, music, primary, secondary, highlight, moment.seed);
+    return;
+  }
+  if (moment.type === "kaleido_blink") {
+    drawKaleidoscopeBloom(context, width, height, time * 0.86, alpha * 1.5, music, primary, secondary, highlight, moment.seed);
+    return;
+  }
+  if (moment.type === "ghost_frame") {
+    drawFeedbackArchitecture(context, width, height, time * 0.7, alpha * 1.65, music, primary, secondary, highlight, moment.seed);
+    return;
+  }
+  if (moment.type === "spectral_veil") {
+    drawSpectralLoom(context, width, height, time * 0.58, alpha * 1.42, music, primary, secondary, highlight, moment.seed);
+    return;
+  }
   context.save();
   context.strokeStyle = rgba(randomUnit(moment.seed, 13_104) > 0.5 ? secondary : primary, alpha * 1.35);
   context.lineWidth = Math.max(1, Math.min(width, height) * 0.003);
@@ -927,6 +1228,7 @@ function drawAutomaticEvent(
   if (event.type === "show_started") {
     const ignition = ease(progress);
     radialLight(context, width, height, width * (0.38 + randomUnit(seed, 16_101) * 0.24), height * (0.38 + randomUnit(seed, 16_102) * 0.24), Math.max(width, height) * (0.15 + ignition * 0.68), secondary, envelope * 0.28);
+    drawKaleidoscopeBloom(context, width, height, time * 1.4, envelope * 0.72, { source: "timeline", bpm: 120, energy: envelope, bass: envelope, mid: envelope * 0.7, treble: envelope * 0.6, beat: envelope, accent: envelope, peak: envelope }, primary, secondary, highlight, seed + 31);
     drawPulseRings(context, width, height, progress, envelope, seed, primary, secondary, highlight, 6);
     drawEventFragments(context, width, height, time, progress, envelope, seed + 11, primary, secondary, highlight, 28);
     return;
@@ -938,6 +1240,9 @@ function drawAutomaticEvent(
     return;
   }
   if (event.type === "track_started" || event.type === "stage_shift") {
+    const eventMusic = { source: "timeline" as const, bpm: 118, energy: envelope * 0.82, bass: envelope, mid: envelope * 0.7, treble: envelope * 0.58, beat: envelope, accent: envelope * 0.88, peak: envelope * 0.7 };
+    if (radioVisualComposition(seed) === "kaleidoscope") drawKaleidoscopeBloom(context, width, height, time * 1.25, envelope * 0.72, eventMusic, primary, secondary, highlight, seed);
+    else drawLiquidDream(context, width, height, time * 1.15, envelope * 0.78, eventMusic, primary, secondary, highlight, seed);
     drawPulseRings(context, width, height, progress, envelope * (event.type === "track_started" ? 0.72 : 0.46), seed, primary, secondary, highlight, event.type === "track_started" ? 4 : 3);
     radialLight(context, width, height, width * (0.3 + randomUnit(seed, 16_201) * 0.4), height * (0.3 + randomUnit(seed, 16_202) * 0.4), Math.max(width, height) * (0.16 + progress * 0.42), event.type === "track_started" ? primary : secondary, envelope * 0.16);
     return;
@@ -977,9 +1282,11 @@ function drawAutomaticEvent(
       context.stroke();
     }
     context.restore();
+    drawSpectralLoom(context, width, height, time * 1.3, envelope * 0.5, { source: "timeline", bpm: 124, energy: envelope * 0.68, bass: envelope * 0.45, mid: envelope * 0.82, treble: envelope, beat: envelope * 0.55, accent: envelope * 0.74, peak: envelope * 0.6 }, primary, secondary, highlight, seed + 47);
     return;
   }
   if (event.type === "priority_confirmed") {
+    drawKaleidoscopeBloom(context, width, height, time * 1.6, envelope * 0.78, { source: "timeline", bpm: 132, energy: envelope, bass: envelope * 0.86, mid: envelope * 0.72, treble: envelope * 0.92, beat: envelope, accent: envelope, peak: envelope }, primary, secondary, highlight, seed + 53);
     drawPulseRings(context, width, height, progress, envelope, seed, primary, secondary, highlight, 7);
     drawEventFragments(context, width, height, time * 1.5, progress, envelope, seed, primary, secondary, highlight, 46);
     return;
@@ -987,7 +1294,19 @@ function drawAutomaticEvent(
   if (event.type === "wheel_gained" || event.type === "wheel_launched" || event.type === "wheel_spinning") {
     const strength = event.type === "wheel_gained" ? 0.82 : event.type === "wheel_spinning" ? 0.68 : 0.58;
     drawPulseRings(context, width, height, progress, envelope * strength, seed, primary, secondary, highlight, event.type === "wheel_gained" ? 7 : 5);
-    drawWheelScene(context, width, height, time * (event.type === "wheel_spinning" ? 2.2 : 1.3), envelope * strength, primary, secondary, highlight, seed);
+    drawWheelScene(
+      context,
+      width,
+      height,
+      time * (event.type === "wheel_spinning" ? 2.2 : 1.3),
+      envelope * strength,
+      primary,
+      secondary,
+      highlight,
+      seed,
+      undefined,
+      event.type === "wheel_spinning" ? "wheel_spinning" : "wheel_ready",
+    );
     if (event.type === "wheel_gained") drawEventFragments(context, width, height, time, progress, envelope, seed, primary, secondary, highlight, 38);
     return;
   }
@@ -999,6 +1318,7 @@ function drawAutomaticEvent(
   }
   if (event.type === "sponsor_due" || event.type === "sponsor_started" || event.type === "sponsor_completed") {
     drawSponsorCurtain(context, width, height, time * 1.5, envelope * (event.type === "sponsor_started" ? 1 : 0.62), secondary, primary, seed);
+    drawFeedbackArchitecture(context, width, height, time * 0.9, envelope * 0.52, { source: "timeline", bpm: 92, energy: envelope * 0.52, bass: envelope * 0.42, mid: envelope * 0.62, treble: envelope * 0.38, beat: 0, accent: envelope * 0.3, peak: envelope * 0.22 }, primary, secondary, highlight, seed + 61);
     if (event.type === "sponsor_completed") drawPulseRings(context, width, height, progress, envelope * 0.46, seed, secondary, primary, highlight, 4);
   }
 }
@@ -1036,27 +1356,244 @@ function drawWheelScene(
   highlight: Rgb,
   seed: number,
   music?: RadioVisualMusicSignal,
+  sceneMode: RadioVisualsSnapshot["sceneMode"] = "wheel_ready",
 ): void {
   if (mix < 0.002) return;
   const beat = music?.beat ?? 0;
   const bass = music?.bass ?? 0;
-  const radius = Math.min(width, height) * (0.35 + beat * 0.012);
+  const mid = music?.mid ?? 0;
+  const treble = music?.treble ?? 0;
+  const energy = music?.energy ?? 0;
+  const peak = music?.peak ?? 0;
+  const profile = radioVisualWheelVortexProfile(sceneMode);
+  const spinning = sceneMode === "wheel_spinning";
+  const reencrypting = sceneMode === "wheel_reencrypting";
+  const releasing = sceneMode === "wheel_result" || sceneMode === "wheel_confirmed";
+  const unit = Math.min(width, height);
+  const centerX = width * 0.5;
+  const centerY = height * RADIO_VISUALS_WHEEL_CENTER_Y_RATIO;
+  const radius = unit * (0.372 + beat * 0.014);
+  const spinDirection = randomUnit(seed, 28_001) > 0.5 ? 1 : -1;
+  const rotation = time * (0.36 + profile.spin * 1.34 + energy * 0.34) * spinDirection;
+
+  radialLight(context, width, height, centerX, centerY, radius * 1.42, secondary, mix * (0.055 + profile.tunnel * 0.08 + beat * 0.035));
   context.save();
-  context.translate(width * 0.5, height * RADIO_VISUALS_WHEEL_CENTER_Y_RATIO);
-  context.rotate(time * 0.28);
-  for (let ring = 0; ring < 3; ring += 1) {
-    const dashVariation = 0.82 + randomUnit(seed, 28_100 + ring) * 0.42;
-    context.setLineDash([radius * (0.11 + ring * 0.035) * dashVariation, radius * (0.052 + ring * 0.018)]);
-    context.lineDashOffset = time * (18 + ring * 9 + (music?.treble ?? 0) * 10) * (ring % 2 ? -1 : 1);
-    context.lineWidth = Math.max(1.5, Math.min(width, height) * (0.0038 + ring * 0.0018 + bass * 0.0012));
-    context.strokeStyle = rgba(ring === 0 ? primary : ring === 1 ? secondary : highlight, mix * (0.28 + ring * 0.12 + beat * 0.12));
+  context.translate(centerX, centerY);
+  context.globalCompositeOperation = "screen";
+
+  const bladeCount = 9 + Math.floor(randomUnit(seed, 28_002) * 7);
+  context.save();
+  context.rotate(rotation * 0.32);
+  for (let blade = 0; blade < bladeCount; blade += 1) {
+    const angle = blade / bladeCount * Math.PI * 2;
+    const bladeLength = radius * (0.58 + randomUnit(seed, 28_100 + blade) * 0.44);
+    const spread = Math.PI / bladeCount * (0.38 + profile.turbulence * 0.28);
+    const color = blade % 5 === 0 ? highlight : blade % 2 ? secondary : primary;
+    context.fillStyle = rgba(color, mix * profile.turbulence * (0.012 + peak * 0.025));
     context.beginPath();
-    context.arc(0, 0, radius * (0.72 + ring * 0.18), 0, Math.PI * 2);
+    context.moveTo(Math.cos(angle) * radius * 0.08, Math.sin(angle) * radius * 0.08);
+    context.lineTo(Math.cos(angle - spread) * bladeLength, Math.sin(angle - spread) * bladeLength);
+    context.quadraticCurveTo(
+      Math.cos(angle) * bladeLength * (0.72 + Math.sin(time * 0.7 + blade) * 0.08),
+      Math.sin(angle) * bladeLength * (0.72 + Math.sin(time * 0.7 + blade) * 0.08),
+      Math.cos(angle + spread) * bladeLength,
+      Math.sin(angle + spread) * bladeLength,
+    );
+    context.closePath();
+    context.fill();
+  }
+  context.restore();
+
+  const tunnelRingCount = 14 + Math.floor(profile.tunnel * 12);
+  for (let ring = 0; ring < tunnelRingCount; ring += 1) {
+    const cycle = (ring / tunnelRingCount + time * (0.045 + profile.spin * 0.095 + energy * 0.025)) % 1;
+    const depth = Math.pow(cycle, 1.62);
+    const ringRadius = radius * (0.075 + depth * 0.98);
+    const fade = Math.sin(cycle * Math.PI) * (0.42 + profile.tunnel * 0.58);
+    const eccentricity = 0.88 + Math.sin(time * 0.21 + ring * 0.63) * 0.055 * profile.turbulence;
+    const color = ring % 7 === 0 ? highlight : ring % 2 ? secondary : primary;
+    context.save();
+    context.rotate(rotation * (0.12 + depth * 0.22) + ring * 0.17 * spinDirection);
+    context.setLineDash([
+      ringRadius * (0.075 + randomUnit(seed, 28_300 + ring) * 0.11),
+      ringRadius * (0.025 + randomUnit(seed, 28_400 + ring) * 0.065),
+    ]);
+    context.lineDashOffset = time * (18 + profile.spin * 58 + treble * 24) * (ring % 2 ? -1 : 1);
+    context.lineWidth = Math.max(0.7, unit * (0.0011 + depth * 0.0032 + bass * 0.0014));
+    context.strokeStyle = rgba(color, mix * fade * (0.12 + depth * 0.32 + beat * 0.1));
+    context.shadowColor = rgba(color, mix * fade * 0.48);
+    context.shadowBlur = unit * (0.004 + peak * 0.012);
+    context.beginPath();
+    context.ellipse(0, 0, ringRadius, ringRadius * eccentricity, 0, 0, Math.PI * 2);
+    context.stroke();
+    context.restore();
+  }
+
+  const spiralCount = 4 + Math.floor(randomUnit(seed, 28_500) * 4);
+  context.save();
+  context.rotate(rotation);
+  context.lineCap = "round";
+  for (let arm = 0; arm < spiralCount; arm += 1) {
+    const color = arm % 3 === 0 ? highlight : arm % 2 ? primary : secondary;
+    context.strokeStyle = rgba(color, mix * (0.075 + profile.spin * 0.12 + mid * 0.075));
+    context.lineWidth = Math.max(1, unit * (0.0014 + bass * 0.0024 + (arm % 2) * 0.0009));
+    context.shadowColor = rgba(color, mix * 0.48);
+    context.shadowBlur = unit * (0.006 + peak * 0.014);
+    context.beginPath();
+    for (let step = 0; step <= 72; step += 1) {
+      const progress = step / 72;
+      const spiralRadius = radius * (0.045 + Math.pow(progress, 1.18) * 0.98);
+      const angle = arm / spiralCount * Math.PI * 2
+        + progress * Math.PI * (3.7 + profile.turbulence * 2.4)
+        + Math.sin(progress * Math.PI * 6 + time * 0.9 + arm) * profile.turbulence * 0.09;
+      const x = Math.cos(angle) * spiralRadius;
+      const y = Math.sin(angle) * spiralRadius * (0.9 + Math.sin(progress * Math.PI) * 0.05);
+      if (step === 0) context.moveTo(x, y);
+      else context.lineTo(x, y);
+    }
     context.stroke();
   }
   context.restore();
 
-  drawParticleField(context, width, height, time * (1.5 + (music?.mid ?? 0) * 0.35), mix * (0.72 + (music?.energy ?? 0) * 0.2), seed + 8_801, primary, secondary, highlight, 1.3 + (music?.treble ?? 0) * 0.28);
+  const streakCount = 28 + Math.floor(profile.spin * 34);
+  context.save();
+  context.rotate(-rotation * 0.22);
+  context.lineCap = "round";
+  for (let streak = 0; streak < streakCount; streak += 1) {
+    const angle = randomUnit(seed, 28_700 + streak) * Math.PI * 2;
+    const speed = 0.11 + randomUnit(seed, 28_800 + streak) * (0.22 + profile.spin * 0.3);
+    const cycle = (randomUnit(seed, 28_900 + streak) + time * speed) % 1;
+    const outer = radius * (0.2 + cycle * 1.08);
+    const length = radius * (0.025 + cycle * (0.08 + profile.spin * 0.13) + peak * 0.04);
+    const color = streak % 9 === 0 ? highlight : streak % 2 ? primary : secondary;
+    context.strokeStyle = rgba(color, mix * Math.sin(cycle * Math.PI) * (0.08 + profile.spin * 0.22 + treble * 0.08));
+    context.lineWidth = Math.max(0.75, unit * (0.0009 + cycle * 0.002 + treble * 0.0008));
+    context.beginPath();
+    context.moveTo(Math.cos(angle) * (outer - length), Math.sin(angle) * (outer - length));
+    context.lineTo(Math.cos(angle) * outer, Math.sin(angle) * outer);
+    context.stroke();
+  }
+  context.restore();
+
+  const coreRadius = radius * (0.07 + bass * 0.035 + beat * 0.025);
+  const core = context.createRadialGradient(-coreRadius * 0.18, -coreRadius * 0.18, 0, 0, 0, coreRadius * 2.8);
+  core.addColorStop(0, rgba(highlight, mix * (0.5 + beat * 0.3)));
+  core.addColorStop(0.24, rgba(primary, mix * (0.34 + energy * 0.22)));
+  core.addColorStop(0.6, rgba(secondary, mix * 0.16));
+  core.addColorStop(1, rgba(secondary, 0));
+  context.fillStyle = core;
+  context.beginPath();
+  context.arc(0, 0, coreRadius * 2.8, 0, Math.PI * 2);
+  context.fill();
+
+  // The active spin becomes a gravity lens: nested off-axis arcs buckle around the
+  // wheel without painting over its readable center.
+  if (spinning) {
+    context.save();
+    context.rotate(-rotation * 0.62);
+    for (let lens = 0; lens < 9; lens += 1) {
+      const lensProgress = lens / 8;
+      const lensRadius = radius * (0.22 + lensProgress * 0.98);
+      const wobble = Math.sin(time * (0.72 + lens * 0.035) + lens * 1.7) * radius * 0.035;
+      const color = lens % 4 === 0 ? highlight : lens % 2 ? secondary : primary;
+      context.strokeStyle = rgba(color, mix * (0.085 + (1 - lensProgress) * 0.18 + peak * 0.09));
+      context.lineWidth = Math.max(0.8, unit * (0.0011 + (1 - lensProgress) * 0.0027));
+      context.setLineDash([lensRadius * 0.16, lensRadius * (0.025 + treble * 0.04)]);
+      context.lineDashOffset = time * (70 + lens * 8) * (lens % 2 ? -1 : 1);
+      context.beginPath();
+      context.ellipse(wobble, -wobble * 0.55, lensRadius, lensRadius * (0.72 + lensProgress * 0.2), lens * 0.21, 0, Math.PI * 2);
+      context.stroke();
+    }
+    context.restore();
+  }
+
+  if (profile.turbulence > 0.45) {
+    context.save();
+    context.rotate(rotation * -0.18);
+    for (let slice = 0; slice < 7; slice += 1) {
+      const y = (randomUnit(seed, 29_100 + slice) - 0.5) * radius * 1.6;
+      const sliceWidth = radius * (0.36 + randomUnit(seed, 29_200 + slice) * 1.08);
+      const offset = Math.sin(time * (1.1 + slice * 0.07) + slice) * unit * 0.025 * profile.turbulence;
+      context.fillStyle = rgba(slice % 2 ? primary : secondary, mix * profile.turbulence * (0.018 + peak * 0.025));
+      context.fillRect(-sliceWidth / 2 + offset, y, sliceWidth, unit * (0.003 + randomUnit(seed, 29_300 + slice) * 0.012));
+    }
+    context.restore();
+  }
+
+  // Re-encryption tears the portal into offset RGB channels and angular fragments.
+  if (reencrypting) {
+    context.save();
+    context.rotate(rotation * 0.14);
+    const channelOffset = unit * (0.006 + peak * 0.012);
+    for (let fracture = 0; fracture < 18; fracture += 1) {
+      const startAngle = randomUnit(seed, 29_500 + fracture) * Math.PI * 2;
+      const span = 0.08 + randomUnit(seed, 29_600 + fracture) * 0.38;
+      const fractureRadius = radius * (0.28 + randomUnit(seed, 29_700 + fracture) * 0.88);
+      const color = fracture % 3 === 0 ? highlight : fracture % 2 ? secondary : primary;
+      context.lineWidth = Math.max(1, unit * (0.0013 + randomUnit(seed, 29_800 + fracture) * 0.0035));
+      context.strokeStyle = rgba(color, mix * (0.18 + energy * 0.16 + peak * 0.14));
+      context.beginPath();
+      context.arc(fracture % 2 ? channelOffset : -channelOffset, fracture % 3 ? 0 : channelOffset, fractureRadius, startAngle, startAngle + span);
+      context.stroke();
+      const innerX = Math.cos(startAngle + span * 0.5) * fractureRadius * 0.44;
+      const innerY = Math.sin(startAngle + span * 0.5) * fractureRadius * 0.44;
+      const outerX = Math.cos(startAngle + span * 0.5) * fractureRadius * 1.08;
+      const outerY = Math.sin(startAngle + span * 0.5) * fractureRadius * 1.08;
+      context.strokeStyle = rgba(fracture % 2 ? primary : secondary, mix * (0.1 + peak * 0.16));
+      context.beginPath();
+      context.moveTo(innerX, innerY);
+      context.lineTo((innerX + outerX) * 0.5 + (fracture % 2 ? channelOffset : -channelOffset) * 2.4, (innerY + outerY) * 0.5);
+      context.lineTo(outerX, outerY);
+      context.stroke();
+    }
+    context.restore();
+  }
+
+  if (profile.release > 0) {
+    const releaseCycle = (time * 0.12) % 1;
+    for (let shock = 0; shock < 3; shock += 1) {
+      const cycle = (releaseCycle + shock * 0.28) % 1;
+      context.strokeStyle = rgba(shock === 0 ? highlight : shock === 1 ? primary : secondary, mix * profile.release * (1 - cycle) * 0.34);
+      context.lineWidth = Math.max(1, unit * (0.0018 + (1 - cycle) * 0.004));
+      context.setLineDash([]);
+      context.beginPath();
+      context.ellipse(0, 0, radius * (0.54 + cycle * 0.72), radius * (0.49 + cycle * 0.68), 0, 0, Math.PI * 2);
+      context.stroke();
+    }
+    if (releasing) {
+      context.save();
+      context.rotate(rotation * 0.08);
+      context.lineCap = "round";
+      const burstCount = 34;
+      for (let burst = 0; burst < burstCount; burst += 1) {
+        const angle = burst / burstCount * Math.PI * 2 + (randomUnit(seed, 30_100 + burst) - 0.5) * 0.12;
+        const start = radius * (0.38 + randomUnit(seed, 30_200 + burst) * 0.2);
+        const length = radius * (0.13 + randomUnit(seed, 30_300 + burst) * 0.44) * profile.release;
+        const color = burst % 7 === 0 ? highlight : burst % 2 ? primary : secondary;
+        context.strokeStyle = rgba(color, mix * profile.release * (0.11 + randomUnit(seed, 30_400 + burst) * 0.28));
+        context.lineWidth = Math.max(0.8, unit * (0.001 + randomUnit(seed, 30_500 + burst) * 0.003));
+        context.beginPath();
+        context.moveTo(Math.cos(angle) * start, Math.sin(angle) * start);
+        context.lineTo(Math.cos(angle) * (start + length), Math.sin(angle) * (start + length));
+        context.stroke();
+      }
+      context.restore();
+    }
+  }
+  context.restore();
+
+  drawParticleField(
+    context,
+    width,
+    height,
+    time * (1.45 + mid * 0.42 + profile.spin * 0.7),
+    mix * (0.42 + energy * 0.18 + profile.spin * 0.26),
+    seed + 8_801,
+    primary,
+    secondary,
+    highlight,
+    0.82 + treble * 0.28 + profile.spin * 0.46,
+  );
 }
 
 function drawPartyCue(
@@ -1422,14 +1959,15 @@ function pressureTarget(snapshot: RadioVisualsSnapshot): number {
 
 function drawVisualFrame(
   context: CanvasRenderingContext2D,
-  width: number,
-  height: number,
+  sourceWidth: number,
+  sourceHeight: number,
   timestampMs: number,
   snapshot: RadioVisualsSnapshot,
   anchor: ServerClockAnchor | null,
   runtime: VisualRuntime,
   reducedMotion: boolean,
   previewMode: boolean,
+  bridgeSignal: RadioAudioBridgeSignal | null,
 ): void {
   const elapsedMs = runtime.lastFrameMs > 0 ? Math.min(100, timestampMs - runtime.lastFrameMs) : 16;
   runtime.lastFrameMs = timestampMs;
@@ -1459,7 +1997,11 @@ function drawVisualFrame(
   const seedBlend = ease((timestampMs - runtime.seedTransitionStartedAtMs) / PARTICLE_TRANSITION_MS);
   const playbackSeconds = projectedPlaybackSeconds(snapshot.player, anchor, timestampMs);
   const transportSeconds = timestampMs / 1_000;
-  runtime.music = smoothMusicSignal(runtime.music, radioVisualsMusicSignal(snapshot, playbackSeconds, transportSeconds), elapsedMs);
+  runtime.music = smoothMusicSignal(
+    runtime.music,
+    radioVisualsMusicSignal(snapshot, playbackSeconds, transportSeconds, freshRadioAudioBridgeSignal(bridgeSignal)),
+    elapsedMs,
+  );
   const music = runtime.music;
   const motionScale = reducedMotion ? 0.18 : 1;
   const time = (transportSeconds * radioVisualsMotionRate(snapshot) + playbackSeconds * 0.035) * motionScale;
@@ -1476,36 +2018,72 @@ function drawVisualFrame(
   context.globalAlpha = 1;
   context.filter = "none";
   context.fillStyle = previewMode ? "#080b0a" : RADIO_VISUALS_CHROMA_KEY;
-  context.fillRect(0, 0, width, height);
+  context.fillRect(0, 0, sourceWidth, sourceHeight);
+
+  // TikTok Studio reliably restores the saved Link as a square source. Keep that
+  // source contract, but compose every effect inside the portrait stage that
+  // matches the actual upper-show placement. The keyed side gutters disappear,
+  // while particles, flashes, and the wheel vortex remain inside the visible area.
+  const stage = radioVisualsEffectStageBounds(sourceWidth, sourceHeight);
+  const width = stage.width;
+  const height = stage.height;
+  context.save();
+  context.translate(stage.x, stage.y);
+  context.beginPath();
+  context.rect(0, 0, width, height);
+  context.clip();
 
   drawAmbientLighting(context, width, height, time, runtime.intensity, runtime.primary, runtime.secondary, runtime.highlight, music.energy);
   drawGoboShadows(context, width, height, time, runtime.intensity, shadow);
+  // The receiver never becomes visually dead. These two layers remain ghosted in standby,
+  // then naturally gain presence as the show and music energy rise.
+  const persistentPresence = snapshot.sessionActive ? 1 : 0.72;
+  drawLiquidDream(context, width, height, time * 0.46, (0.22 + runtime.intensity * 0.7) * persistentPresence, music, runtime.primary, runtime.secondary, runtime.highlight, runtime.currentSeed + 41_003);
+  drawChromaticSmears(context, width, height, time * 0.38, (0.1 + runtime.intensity * 0.42) * persistentPresence, music, runtime.primary, runtime.secondary, runtime.highlight, runtime.currentSeed + 53_009);
   const drawSeedComposition = (seed: number, compositionMix: number) => {
     if (compositionMix < 0.002) return;
-    const composition = Math.floor(randomUnit(seed, 29_001) * 4);
-    drawLightRibbons(context, width, height, time, runtime.intensity * compositionMix * (composition === 0 ? 1.12 : 0.72), music, runtime.primary, runtime.secondary, runtime.highlight, seed);
-    if (composition !== 2) drawPrismaticShards(context, width, height, time, runtime.intensity * compositionMix * (composition === 1 ? 1.18 : 0.68), music, runtime.primary, runtime.secondary, runtime.highlight, seed);
-    if (composition !== 1) drawSignalConstellation(context, width, height, time, runtime.intensity * compositionMix * (composition === 3 ? 1.15 : 0.7), music, runtime.primary, runtime.secondary, runtime.highlight, seed);
-    drawMusicHalo(context, width, height, time, Math.max(runtime.trackMix * 0.92, runtime.intensity * 0.46) * compositionMix, music, runtime.primary, runtime.secondary, runtime.highlight, seed);
+    const composition = radioVisualComposition(seed);
+    const activePresence = snapshot.sessionActive ? 1.34 : 0.82;
+    const baseMix = runtime.intensity * compositionMix * activePresence;
+    if (composition === "liquid_dream") {
+      drawLiquidDream(context, width, height, time, baseMix * 2.3, music, runtime.primary, runtime.secondary, runtime.highlight, seed);
+      drawChromaticSmears(context, width, height, time, baseMix * 1.25, music, runtime.primary, runtime.secondary, runtime.highlight, seed + 113);
+      drawCaustics(context, width, height, time, baseMix * 0.7, runtime.secondary, seed);
+    }
+    if (composition === "kaleidoscope") {
+      drawKaleidoscopeBloom(context, width, height, time, baseMix * 2.15, music, runtime.primary, runtime.secondary, runtime.highlight, seed);
+      drawPrismaticShards(context, width, height, time, baseMix * 1.2, music, runtime.primary, runtime.secondary, runtime.highlight, seed + 211);
+      drawLightRibbons(context, width, height, time, baseMix * 0.48, music, runtime.primary, runtime.secondary, runtime.highlight, seed + 313);
+    }
+    if (composition === "spectral_loom") {
+      drawSpectralLoom(context, width, height, time, baseMix * 2.05, music, runtime.primary, runtime.secondary, runtime.highlight, seed);
+      drawLightRibbons(context, width, height, time, baseMix * 0.72, music, runtime.primary, runtime.secondary, runtime.highlight, seed + 419);
+      drawWavefronts(context, width, height, time, baseMix * 0.46, music, runtime.primary, runtime.secondary, seed + 521);
+    }
+    if (composition === "feedback_architecture") {
+      drawFeedbackArchitecture(context, width, height, time, baseMix * 2.2, music, runtime.primary, runtime.secondary, runtime.highlight, seed);
+      drawChromaticSmears(context, width, height, time, baseMix * 0.84, music, runtime.primary, runtime.secondary, runtime.highlight, seed + 617);
+      drawSignalConstellation(context, width, height, time, baseMix * 0.34, music, runtime.primary, runtime.secondary, runtime.highlight, seed + 719);
+    }
+    if (composition === "cosmic_signal") {
+      drawSignalConstellation(context, width, height, time, baseMix * 1.3, music, runtime.primary, runtime.secondary, runtime.highlight, seed);
+      drawMusicHalo(context, width, height, time, Math.max(runtime.trackMix * 0.9, baseMix * 0.62) * compositionMix, music, runtime.primary, runtime.secondary, runtime.highlight, seed + 811);
+      drawWavefronts(context, width, height, time, baseMix * 0.78, music, runtime.primary, runtime.secondary, seed + 919);
+      drawParticleField(context, width, height, time * (1 + music.treble * 0.12), baseMix * 0.7, seed + 1_021, runtime.primary, runtime.secondary, runtime.highlight, 0.72 + music.treble * 0.34);
+    }
+    if (composition === "chromatic_smear") {
+      drawChromaticSmears(context, width, height, time, baseMix * 2.25, music, runtime.primary, runtime.secondary, runtime.highlight, seed);
+      drawLiquidDream(context, width, height, time, baseMix * 0.78, music, runtime.primary, runtime.secondary, runtime.highlight, seed + 1_123);
+      drawSpectralLoom(context, width, height, time, baseMix * 0.52, music, runtime.primary, runtime.secondary, runtime.highlight, seed + 1_229);
+      drawPrismaticShards(context, width, height, time, baseMix * 0.48, music, runtime.primary, runtime.secondary, runtime.highlight, seed + 1_333);
+    }
     drawQueueLanes(context, width, height, time, runtime.queueMix * compositionMix, runtime.primary, runtime.secondary, seed);
-    drawTrackSignature(context, width, height, time, runtime.trackMix * compositionMix, music, runtime.primary, runtime.secondary, runtime.highlight, seed);
+    if (composition === "cosmic_signal" || composition === "feedback_architecture") {
+      drawTrackSignature(context, width, height, time, runtime.trackMix * compositionMix * 0.52, music, runtime.primary, runtime.secondary, runtime.highlight, seed);
+    }
     drawIntakeAperture(context, width, height, time, runtime.intakeMix * compositionMix, runtime.primary, runtime.secondary, seed);
     drawSponsorCurtain(context, width, height, time, runtime.sponsorMix * compositionMix, runtime.secondary, runtime.primary, seed);
     drawFinalConvergence(context, width, height, time, runtime.finalMix * compositionMix, runtime.primary, runtime.secondary, seed);
-    drawCaustics(context, width, height, time, runtime.intensity * compositionMix, runtime.secondary, seed);
-    drawWavefronts(context, width, height, time, runtime.intensity * compositionMix, music, runtime.primary, runtime.secondary, seed);
-    drawParticleField(
-      context,
-      width,
-      height,
-      time * (1 + music.treble * 0.12),
-      runtime.intensity * compositionMix * (0.84 + music.energy * 0.24),
-      seed,
-      runtime.primary,
-      runtime.secondary,
-      runtime.highlight,
-      0.88 + music.treble * 0.48 + music.accent * 0.18,
-    );
   };
   if (seedBlend < 1) drawSeedComposition(runtime.previousSeed, 1 - seedBlend);
   drawSeedComposition(runtime.currentSeed, seedBlend);
@@ -1515,7 +2093,7 @@ function drawVisualFrame(
   if (runtime.systemMix > 0.002) {
     drawSignalBreachCue(context, width, height, time * 0.46, (Math.sin(time * 0.08) + 1) / 2, runtime.systemMix * 0.22, runtime.primary, runtime.secondary, runtime.highlight, runtime.currentSeed + 91);
   }
-  drawWheelScene(context, width, height, time, runtime.wheelMix, runtime.primary, runtime.secondary, runtime.highlight, runtime.currentSeed, music);
+  drawWheelScene(context, width, height, time, runtime.wheelMix, runtime.primary, runtime.secondary, runtime.highlight, runtime.currentSeed, music, snapshot.sceneMode);
   drawTrackBloom(context, width, height, timestampMs - runtime.bloomStartedAtMs, runtime.primary, runtime.secondary, runtime.highlight);
   drawAmbientMoment(context, width, height, time, snapshot, runtime.primary, runtime.secondary, runtime.highlight, shadow, serverNowMs, music);
 
@@ -1530,13 +2108,16 @@ function drawVisualFrame(
     if (snapshot.cue.type === "blackout") drawBlackoutCue(context, width, height, cueProgress, cueEnvelope, runtime.primary, shadow, cueSeed);
     if (snapshot.cue.type === "lightning") drawLightningCue(context, width, height, cueProgress, cueEnvelope, runtime.primary, runtime.highlight, cueSeed);
   }
+  context.restore();
 }
 
 export function RadioVisualsReceiver() {
   const [snapshot, setSnapshot] = useState<RadioVisualsSnapshot>(() => fallbackSnapshot());
   const [connection, setConnection] = useState<ConnectionState>("standby");
+  const [audioBridgeConnection, setAudioBridgeConnection] = useState<AudioBridgeConnectionState>("idle");
   const [clockAnchor, setClockAnchor] = useState<ServerClockAnchor | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const audioBridgeSignalRef = useRef<RadioAudioBridgeSignal | null>(null);
   const previewModeRef = useRef(false);
   const runtimeRef = useRef<VisualRuntime>({
     lastFrameMs: 0,
@@ -1576,6 +2157,64 @@ export function RadioVisualsReceiver() {
   useEffect(() => {
     previewModeRef.current = new URLSearchParams(window.location.search).get("preview") === "1";
   }, []);
+
+  useEffect(() => {
+    if (!snapshot.sessionActive) {
+      audioBridgeSignalRef.current = null;
+      setAudioBridgeConnection("idle");
+      return;
+    }
+
+    let stopped = false;
+    let timeoutId: number | null = null;
+    let controller: AbortController | null = null;
+    setAudioBridgeConnection("connecting");
+
+    const schedule = (delayMs: number) => {
+      if (stopped) return;
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+      timeoutId = window.setTimeout(() => { void poll(); }, delayMs);
+    };
+
+    const poll = async () => {
+      controller = new AbortController();
+      const abortId = window.setTimeout(() => controller?.abort(), 850);
+      try {
+        const request = new Request(RADIO_AUDIO_BRIDGE_URL, {
+          method: "GET",
+          mode: "cors",
+          cache: "no-store",
+          credentials: "omit",
+          signal: controller.signal,
+          targetAddressSpace: "loopback",
+        } as RequestInit & { targetAddressSpace: "loopback" });
+        const response = await fetch(request);
+        if (!response.ok) throw new Error(`Audio bridge returned ${response.status}.`);
+        const next = freshRadioAudioBridgeSignal(normalizeRadioAudioBridgeSignal(await response.json()));
+        if (!next) throw new Error("Audio bridge returned an invalid or stale signal.");
+        audioBridgeSignalRef.current = next;
+        setAudioBridgeConnection((current) => current === "connected" ? current : "connected");
+        schedule(RADIO_AUDIO_BRIDGE_POLL_INTERVAL_MS);
+      } catch {
+        if (!stopped) {
+          if (!freshRadioAudioBridgeSignal(audioBridgeSignalRef.current)) audioBridgeSignalRef.current = null;
+          setAudioBridgeConnection((current) => current === "unavailable" ? current : "unavailable");
+          schedule(RADIO_AUDIO_BRIDGE_RETRY_INTERVAL_MS);
+        }
+      } finally {
+        window.clearTimeout(abortId);
+        controller = null;
+      }
+    };
+
+    void poll();
+    return () => {
+      stopped = true;
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+      controller?.abort();
+      audioBridgeSignalRef.current = null;
+    };
+  }, [snapshot.sessionActive]);
 
   useEffect(() => {
     let stopped = false;
@@ -1670,7 +2309,18 @@ export function RadioVisualsReceiver() {
         canvas.height = pixelHeight;
       }
       context.setTransform(density, 0, 0, density, 0, 0);
-      drawVisualFrame(context, bounds.width, bounds.height, timestampMs, snapshot, clockAnchor, runtimeRef.current, reducedMotion, previewModeRef.current);
+      drawVisualFrame(
+        context,
+        bounds.width,
+        bounds.height,
+        timestampMs,
+        snapshot,
+        clockAnchor,
+        runtimeRef.current,
+        reducedMotion,
+        previewModeRef.current,
+        audioBridgeSignalRef.current,
+      );
     };
     frameId = window.requestAnimationFrame(draw);
     return () => window.cancelAnimationFrame(frameId);
@@ -1681,11 +2331,16 @@ export function RadioVisualsReceiver() {
       className="radio-visuals-shell"
       data-source-aspect="1:1"
       data-source-resolution="1080x1080"
+      data-effect-stage-aspect={`${RADIO_VISUALS_EFFECT_STAGE_ASPECT_RATIO * 4}:4`}
+      data-effect-stage-resolution="810x1080"
       data-connection={connection}
+      data-audio-bridge={audioBridgeConnection}
       data-player-state={snapshot.player?.playbackState ?? "waiting"}
       data-show-stage={snapshot.showStage}
       data-visual-mode={snapshot.visualMode}
-      data-music-source={snapshot.player?.audioEnergy === null || snapshot.player?.audioEnergy === undefined ? "timeline" : "analyser"}
+      data-music-source={audioBridgeConnection === "connected"
+        ? "windows-loopback"
+        : snapshot.player?.audioEnergy === null || snapshot.player?.audioEnergy === undefined ? "timeline" : "analyser"}
       data-visual-cue={snapshot.cue?.type ?? "none"}
       aria-hidden="true"
     >

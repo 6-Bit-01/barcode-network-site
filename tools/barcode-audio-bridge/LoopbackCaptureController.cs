@@ -34,6 +34,15 @@ internal sealed class LoopbackCaptureController : IDisposable
         EnsureStarted();
     }
 
+    public void ReportBrowserHandshake(string status)
+    {
+        lock (_sync)
+        {
+            if (_disposed || _capture is not null) return;
+            _status = status;
+        }
+    }
+
     public AudioSignal Snapshot() => _analyzer.Snapshot(CaptureActive);
 
     private void EnsureStarted()

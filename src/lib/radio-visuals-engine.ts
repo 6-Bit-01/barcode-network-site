@@ -65,17 +65,6 @@ const STAGE_INTENSITY: Record<RadioVisualsShowStage, number> = {
   complete: 0.13,
 };
 
-export const RADIO_VISUAL_COMPOSITION_TYPES = [
-  "liquid_dream",
-  "kaleidoscope",
-  "spectral_loom",
-  "feedback_architecture",
-  "cosmic_signal",
-  "chromatic_smear",
-] as const;
-
-export type RadioVisualCompositionType = (typeof RADIO_VISUAL_COMPOSITION_TYPES)[number];
-
 export const RADIO_VISUAL_FALLBACK_RHYTHMS = [
   "sub_bloom",
   "neon_breaks",
@@ -109,13 +98,6 @@ const FALLBACK_RHYTHM_PROFILES: Record<RadioVisualFallbackRhythm, RadioVisualFal
   machine_funk: { bpmMin: 96, bpmSpan: 22, bassBias: 0.12, midBias: 0.2, trebleBias: 0.05, kick: 0.5, snare: 0.6, hats: 0.4, density: 0.54, swing: 0.32 },
 };
 
-export interface RadioVisualWheelVortexProfile {
-  tunnel: number;
-  spin: number;
-  turbulence: number;
-  release: number;
-}
-
 export const RADIO_VISUAL_AMBIENT_MOMENT_TYPES = [
   "violet_bloom",
   "signal_ripple",
@@ -124,10 +106,6 @@ export const RADIO_VISUAL_AMBIENT_MOMENT_TYPES = [
   "barcode_shimmer",
   "prism_drift",
   "ribbon_sweep",
-  "liquid_cell",
-  "kaleido_blink",
-  "ghost_frame",
-  "spectral_veil",
 ] as const;
 
 export type RadioVisualAmbientMomentType = (typeof RADIO_VISUAL_AMBIENT_MOMENT_TYPES)[number];
@@ -181,23 +159,9 @@ function seededUnit(seed: number, salt: number): number {
   return (hashRadioVisualToken(`${seed}:${salt}`) % 10_000) / 10_000;
 }
 
-export function radioVisualComposition(seed: number): RadioVisualCompositionType {
-  const safeSeed = Number.isFinite(seed) ? Math.trunc(seed) : 0;
-  return RADIO_VISUAL_COMPOSITION_TYPES[hashRadioVisualToken(`composition:${safeSeed}`) % RADIO_VISUAL_COMPOSITION_TYPES.length];
-}
-
 export function radioVisualFallbackRhythm(seed: number): RadioVisualFallbackRhythm {
   const safeSeed = Number.isFinite(seed) ? Math.trunc(seed) : 0;
   return RADIO_VISUAL_FALLBACK_RHYTHMS[hashRadioVisualToken(`rhythm:${safeSeed}`) % RADIO_VISUAL_FALLBACK_RHYTHMS.length];
-}
-
-export function radioVisualWheelVortexProfile(sceneMode: RadioVisualsSnapshot["sceneMode"]): RadioVisualWheelVortexProfile {
-  if (sceneMode === "wheel_reencrypting") return { tunnel: 0.9, spin: 0.72, turbulence: 1, release: 0 };
-  if (sceneMode === "wheel_spinning") return { tunnel: 1, spin: 1, turbulence: 0.86, release: 0 };
-  if (sceneMode === "wheel_result") return { tunnel: 0.86, spin: 0.34, turbulence: 0.42, release: 1 };
-  if (sceneMode === "wheel_confirmed") return { tunnel: 0.52, spin: 0.18, turbulence: 0.18, release: 0.66 };
-  if (sceneMode === "wheel_ready") return { tunnel: 0.56, spin: 0.28, turbulence: 0.22, release: 0 };
-  return { tunnel: 0.46, spin: 0.24, turbulence: 0.2, release: 0 };
 }
 
 function rhythmPulse(phase: number, power: number): number {

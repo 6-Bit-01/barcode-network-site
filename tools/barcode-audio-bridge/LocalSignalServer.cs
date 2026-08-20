@@ -81,6 +81,9 @@ internal sealed class LocalSignalServer : IDisposable
                 headers.TryGetValue("Origin", out var origin);
                 if (!OriginAllowed(origin))
                 {
+                    var rejectedOrigin = string.IsNullOrWhiteSpace(origin) ? "(missing)" : origin;
+                    _capture.ReportBrowserHandshake("Show Visuals reached the bridge, but its link origin was rejected");
+                    BridgeLog.Write($"Rejected visual signal request from origin {rejectedOrigin}.");
                     await WriteResponse(stream, 403, "text/plain", "Forbidden", null, cancellationToken);
                     return;
                 }
@@ -89,6 +92,7 @@ internal sealed class LocalSignalServer : IDisposable
                 var path = parts[1].Split('?', 2)[0];
                 if (method == "OPTIONS")
                 {
+                    _capture.ReportBrowserHandshake("Show Visuals found the bridge — waiting for TikTok Studio to finish connecting");
                     await WriteResponse(stream, 204, "text/plain", string.Empty, origin, cancellationToken);
                     return;
                 }
@@ -127,7 +131,12 @@ internal sealed class LocalSignalServer : IDisposable
     {
         if (string.IsNullOrWhiteSpace(origin)) return true;
         if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri)) return false;
-        if (uri.Scheme == Uri.UriSchemeHttps && (uri.Host == "www.barcode-network.com" || uri.Host == "barcode-network.com")) return true;
+        if (uri.Scheme == Uri.UriSchemeHttps)
+        {
+            var host = uri.Host.ToLowerInvariant();
+            if (host is "www.barcode-network.com" or "barcode-network.com" or "barcode-network-site-cpps.vercel.app" or "6-bits-projects.vercel.app") return true;
+            if (host.EndsWith("-6-bits-projects.vercel.app", StringComparison.Ordinal)) return true;
+        }
         return uri.Scheme == Uri.UriSchemeHttp && (uri.Host == "localhost" || IPAddress.TryParse(uri.Host, out var address) && IPAddress.IsLoopback(address));
     }
 

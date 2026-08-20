@@ -14,6 +14,7 @@ import {
 } from "@/lib/radio-visuals-engine";
 import { activeRadioVisualEvent, hashRadioVisualToken, radioVisualEventEnvelope, radioVisualEventProgress } from "@/lib/radio-visuals-events";
 import { RADIO_VISUALS_ACTIVE_POLL_INTERVAL_MS, RADIO_VISUALS_STANDBY_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
+import { studioOverlayRequestHeaders } from "@/lib/studio-overlay-client";
 
 type ServerClockAnchor = { serverNowMs: number; receivedAtPerformanceMs: number };
 type ConnectionState = "connected" | "reconnecting" | "standby";
@@ -1347,7 +1348,7 @@ export function RadioVisualsReceiver() {
       inFlight = true;
       controller = new AbortController();
       try {
-        const response = await fetch("/api/overlay/radio-visuals", { cache: "no-store", signal: controller.signal });
+        const response = await fetch("/api/overlay/radio-visuals", { cache: "no-store", signal: controller.signal, headers: studioOverlayRequestHeaders() });
         if (!response.ok) throw new Error(`Visuals receiver returned ${response.status}.`);
         const receivedAtPerformanceMs = performance.now();
         const payload = await response.json() as { snapshot?: RadioVisualsSnapshot; serverNow?: string };

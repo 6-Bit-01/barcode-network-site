@@ -28,12 +28,19 @@ const VISUAL_CUE_CONTROLS: Array<{ type: RadioVisualCueType; label: string; desc
   { type: "lightning", label: "Lightning Hit", description: "Two controlled electrical strikes with a fading room afterglow." },
 ];
 
+type StudioOverlayLinks = {
+  foreground: string;
+  radioVisuals: string;
+  wheel: string;
+};
+
 export function AdminLiveOverlayControl({ focusWheelTick = 0 }: { focusWheelTick?: number }) {
   const [snapshot, setSnapshot] = useState<LiveOverlayAdminSnapshot | null>(null);
   const [systemTitle, setSystemTitle] = useState("");
   const [systemMessage, setSystemMessage] = useState("");
   const [selectedWheelTrackId, setSelectedWheelTrackId] = useState("");
   const [status, setStatus] = useState<string | null>(null);
+  const [sourceLinks, setSourceLinks] = useState<StudioOverlayLinks | null>(null);
   const [visualClockMs, setVisualClockMs] = useState(0);
   const wheelSectionRef = useRef<HTMLElement | null>(null);
 
@@ -76,40 +83,17 @@ export function AdminLiveOverlayControl({ focusWheelTick = 0 }: { focusWheelTick
     await post({ action: "triggerVisualCue", visualCue: type }, `${sceneLabel(type)} started for ${seconds} seconds.`);
   }
 
-  async function openForegroundOverlay() {
-    const target = window.open("", "_blank");
-    if (target) target.opener = null;
-    setStatus("Preparing foreground overlay…");
-    const response = await fetch("/api/admin/overlay/foreground-access", { method: "POST", cache: "no-store" });
+  async function loadPermanentSourceLinks() {
+    setStatus("Loading permanent private source links…");
+    const response = await fetch("/api/admin/overlay/source-access", { method: "POST", cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok || typeof payload.path !== "string") {
-      target?.close();
-      setStatus(response.status === 401 ? "Overlay controls require admin auth." : "Foreground overlay could not be opened.");
+    const links = payload?.links as Partial<StudioOverlayLinks> | undefined;
+    if (!response.ok || !links || typeof links.foreground !== "string" || typeof links.radioVisuals !== "string" || typeof links.wheel !== "string") {
+      setStatus(response.status === 401 ? "Overlay controls require admin auth." : "Permanent source links could not be loaded.");
       return;
     }
-    if (target) target.location.href = payload.path;
-    else window.location.assign(payload.path);
-    setStatus("Foreground overlay opened with private show access.");
-  }
-
-  async function copyRadioVisualsOverlayLink() {
-    const overlayUrl = new URL("/overlay/radio-visuals", window.location.origin).toString();
-    try {
-      await navigator.clipboard.writeText(overlayUrl);
-      setStatus("Permanent radio visuals link copied for TikTok Studio.");
-    } catch {
-      setStatus(`Copy this permanent radio visuals link: ${overlayUrl}`);
-    }
-  }
-
-  async function copyWheelOverlayLink() {
-    const overlayUrl = new URL("/overlay/wheel", window.location.origin).toString();
-    try {
-      await navigator.clipboard.writeText(overlayUrl);
-      setStatus("Permanent wheel browser-source link copied for TikTok Studio.");
-    } catch {
-      setStatus(`Copy this permanent wheel browser-source link: ${overlayUrl}`);
-    }
+    setSourceLinks({ foreground: links.foreground, radioVisuals: links.radioVisuals, wheel: links.wheel });
+    setStatus("Permanent private source links loaded. They remain the same between shows.");
   }
 
   const scene = snapshot?.scene;
@@ -167,28 +151,36 @@ export function AdminLiveOverlayControl({ focusWheelTick = 0 }: { focusWheelTick
 
   return (
     <section className="space-y-4 border border-accent/40 bg-background/50 p-5">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+      <div>
         <div>
           <p className="text-xs uppercase tracking-[0.35em] text-accent">Live Overlay Receiver</p>
           <h2 className="mt-2 text-xl font-bold text-foreground">Automatic</h2>
           <p className="mt-1 text-sm text-muted">Automatic scene selection is active. Normal show flow does not require manual overlay scene selection.</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <a href="/overlay/live" target="_blank" rel="noreferrer" className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Open Live Overlay</a>
-          <a href="/overlay/radio-visuals?preview=1" target="_blank" rel="noreferrer" className="border border-violet-400/70 px-3 py-2 text-xs uppercase tracking-widest text-violet-200 hover:bg-violet-400 hover:text-background">Preview Visuals</a>
-          <button type="button" onClick={copyRadioVisualsOverlayLink} className="border border-violet-400/50 px-3 py-2 text-xs uppercase tracking-widest text-violet-200 hover:border-violet-300">Copy Visuals Link</button>
-          <a href="/overlay/wheel" target="_blank" rel="noreferrer" className="border border-cyan-300/70 px-3 py-2 text-xs uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background">Preview Wheel Source</a>
-          <button type="button" onClick={copyWheelOverlayLink} className="border border-cyan-300/50 px-3 py-2 text-xs uppercase tracking-widest text-cyan-200 hover:border-cyan-200">Copy Wheel Link</button>
-          <button type="button" onClick={openForegroundOverlay} className="border border-cyan-300/70 px-3 py-2 text-xs uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background">Open Foreground Overlay</button>
-        </div>
       </div>
 
-      <div className="border border-violet-400/30 bg-violet-400/10 p-3 text-sm text-muted">
-        <p className="font-bold text-violet-100">Separate 3:4 TikTok Studio camera-zone effects source</p>
-        <p className="mt-1">Use custom resolution <span className="font-bold text-white">1080 × 1440</span>, then size and move it over the red upper camera area. Chroma-key <span className="font-bold text-[#ff5a00]">#FF5A00 safety orange</span>. The source contains no titles, counters, frames, or foreground UI. It wakes for each show and reads queue stage, scene, track changes, and player play/pause/timeline.</p>
-        <p className="mt-1">Core visual language: BARCODE green, black, white and violet, with compatible track accents. Level 1 is timeline-reactive; true audio-spectrum response remains a later audio-bridge upgrade.</p>
-        <p className="mt-2">The Wheel Source is a separate permanent 1080×1080 link using the same chroma key. Leave it active in Studio with sound enabled; it remains keyed out until the existing Launch Wheel control activates the ceremony.</p>
-      </div>
+      <details className="border border-border bg-background/40 p-4">
+        <summary className="cursor-pointer text-xs uppercase tracking-[0.3em] text-muted">One-Time TikTok Studio Source Setup</summary>
+        {!sourceLinks ? <button type="button" onClick={() => { void loadPermanentSourceLinks(); }} className="mt-4 border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Load Permanent Private Links</button> : null}
+        <div className="mt-4 grid gap-3 text-sm text-muted lg:grid-cols-3">
+          <div className="border border-cyan-300/25 bg-surface p-3">
+            <p className="font-bold text-cyan-100">Foreground Strip</p>
+            <code className="mt-2 block break-all text-xs text-foreground">{sourceLinks?.foreground ?? "Load the permanent private links once."}</code>
+            <p className="mt-2">1080 × 1920 · key #0000FF</p>
+          </div>
+          <div className="border border-violet-400/25 bg-surface p-3">
+            <p className="font-bold text-violet-100">Show Visuals</p>
+            <code className="mt-2 block break-all text-xs text-foreground">{sourceLinks?.radioVisuals ?? "Load the permanent private links once."}</code>
+            <p className="mt-2">1080 × 1440 · key #FF5A00</p>
+          </div>
+          <div className="border border-cyan-300/25 bg-surface p-3">
+            <p className="font-bold text-cyan-100">Wheel Ceremony + Audio</p>
+            <code className="mt-2 block break-all text-xs text-foreground">{sourceLinks?.wheel ?? "Load the permanent private links once."}</code>
+            <p className="mt-2">1080 × 1080 · key #FF5A00 · sound on</p>
+          </div>
+        </div>
+        <p className="mt-3 text-xs text-muted">These production capability links stay the same and grant overlay display only—not admin access. Leave them saved in Studio: each source wakes from authoritative show state after a session opens and clears itself after the session ends.</p>
+      </details>
 
       <section className="space-y-3 border border-violet-400/35 bg-surface p-4">
         <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">

@@ -23,7 +23,9 @@ export async function getWheelOverlaySnapshot(now = new Date()): Promise<WheelOv
 
   const overlayState = await getStoredLiveOverlayState();
   const scene = resolveLiveOverlaySceneFromQueueState({ overlayState, queueState, playerSync: null, now });
-  const wheelActive = overlayState.wheelOverlayActive === true && Boolean(scene.wheelCeremony);
+  // The resolved ceremony is the authoritative wheel state used by the admin
+  // and live receiver. Do not introduce a second flag gate for the link source.
+  const wheelActive = Boolean(scene.wheelCeremony);
   return {
     sessionActive: true,
     wheelActive,

@@ -5,8 +5,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MutableRefObject } from "react";
 import { buildWheelSegments, estimateOneWayNetworkTransitMs, playbackCorrectionTarget, roundPlaybackDriftSeconds, serverRelativeSyncAgeSeconds, shouldCorrectPlaybackDrift, updateTransitEstimateMs, wheelFinalRotationForSegment, wheelUprightLabelRotationDegrees } from "@/lib/live-overlay-resolver";
 import type { LiveOverlayPlaybackState, LiveOverlayTikTokSync, LiveOverlayYouTubeSync, ResolvedLiveOverlayScene } from "@/lib/live-overlay";
-import { LIVE_OVERLAY_POLL_INTERVAL_MS, WHEEL_OVERLAY_ACTIVE_POLL_INTERVAL_MS, WHEEL_OVERLAY_SHOW_IDLE_POLL_INTERVAL_MS, WHEEL_OVERLAY_STANDBY_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
-import { hasActiveQueueSession, startSessionBoundPolling } from "@/lib/session-bound-polling";
+import { LIVE_OVERLAY_POLL_INTERVAL_MS, LIVE_OVERLAY_STANDBY_POLL_INTERVAL_MS, WHEEL_OVERLAY_ACTIVE_POLL_INTERVAL_MS, WHEEL_OVERLAY_SHOW_IDLE_POLL_INTERVAL_MS, WHEEL_OVERLAY_STANDBY_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
+import { hasActiveQueueSession, startPermanentOverlayPolling } from "@/lib/session-bound-polling";
+import { studioOverlayRequestHeaders } from "@/lib/studio-overlay-client";
 import type { WheelOverlaySnapshot } from "@/lib/wheel-overlay";
 
 type YTPlayer = {
@@ -30,6 +31,7 @@ declare global {
 
 function fallbackScene(): ResolvedLiveOverlayScene {
   return {
+    sessionActive: false,
     mode: "standby",
     resolvedMode: "standby",
     reason: "Waiting for overlay state.",
@@ -315,7 +317,7 @@ function wheelLabelPosition(angle: number, radius: number, wheelRotationDeg: num
   return { x: `${x.toFixed(3)}vmin`, y: `${y.toFixed(3)}vmin`, rotation: `${rotation.toFixed(3)}deg` };
 }
 
-function WheelCeremonyOverlay({ scene, audioArmed, audioNotice, audioJustArmed, playSpinMusic, fadeSpinMusic, playCheerSfx, playEncryptSfx }: { scene: ResolvedLiveOverlayScene; audioArmed: boolean; audioNotice: string | null; audioJustArmed: boolean; playSpinMusic: (path?: string) => Promise<void>; fadeSpinMusic: () => void; playCheerSfx: () => void; playEncryptSfx: () => void }) {
+function WheelCeremonyOverlay({ scene, clockAnchorRef, audioArmed, audioNotice, audioJustArmed, playSpinMusic, fadeSpinMusic, playCheerSfx, playEncryptSfx }: { scene: ResolvedLiveOverlayScene; clockAnchorRef: OverlayServerClockAnchorRef; audioArmed: boolean; audioNotice: string | null; audioJustArmed: boolean; playSpinMusic: (path?: string) => Promise<void>; fadeSpinMusic: () => void; playCheerSfx: () => void; playEncryptSfx: () => void }) {
   const ceremony = scene.wheelCeremony;
   const candidates = ceremony?.displayCandidates ?? [];
   const result = ceremony?.resultTrack;
@@ -413,8 +415,19 @@ function WheelCeremonyOverlay({ scene, audioArmed, audioNotice, audioJustArmed, 
     const startRotation = wheelRotationDeg;
     const targetRotation = finalRotationDeg;
     const duration = Math.max(16_000, ceremony?.spinDurationMs ?? 24_000);
-    const startAt = performance.now() + WHEEL_SPIN_START_DELAY_MS;
     const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
+    const clientNow = performance.now();
+    const anchor = clockAnchorRef.current;
+    const estimatedServerNowMs = anchor
+      ? anchor.serverNowMs + anchor.responseTransitEstimateMs + (clientNow - anchor.receivedAtPerformanceMs)
+      : spinStartedAtMs;
+    const elapsedSinceSpinStartMs = spinStartedAtMs !== null && estimatedServerNowMs !== null
+      ? Math.max(0, estimatedServerNowMs - spinStartedAtMs)
+      : 0;
+    const initialProgress = Math.max(0, Math.min(1, (elapsedSinceSpinStartMs - WHEEL_SPIN_START_DELAY_MS) / duration));
+    const remainingDelayMs = Math.max(0, WHEEL_SPIN_START_DELAY_MS - elapsedSinceSpinStartMs);
+    const startAt = remainingDelayMs > 0 ? clientNow + remainingDelayMs : clientNow - initialProgress * duration;
+    if (initialProgress > 0) setWheelRotationDeg(startRotation + (targetRotation - startRotation) * easeOut(initialProgress));
     const tick = (now: number) => {
       if (now < startAt) {
         spinRafRef.current = window.requestAnimationFrame(tick);
@@ -437,7 +450,7 @@ function WheelCeremonyOverlay({ scene, audioArmed, audioNotice, audioJustArmed, 
       if (spinRafRef.current !== null) window.cancelAnimationFrame(spinRafRef.current);
       spinRafRef.current = null;
     };
-  }, [ceremony?.status, ceremony?.spinStartedAt, ceremony?.spinDurationMs, finalRotationDeg]);
+  }, [ceremony?.status, ceremony?.spinStartedAt, ceremony?.spinDurationMs, finalRotationDeg, clockAnchorRef, spinStartedAtMs]);
 
   useEffect(() => {
     if (resultRevealTimeoutRef.current !== null) {
@@ -973,6 +986,8 @@ export function LiveOverlayReceiver({ wheelOnly = false }: { wheelOnly?: boolean
   const [serverClockAnchored, setServerClockAnchored] = useState(false);
   const [responseTransitDiagnosticMs, setResponseTransitDiagnosticMs] = useState<number | null>(null);
   const spinAudioRef = useRef<HTMLAudioElement | null>(null);
+  const wheelOnlyCheerAudioRef = useRef<HTMLAudioElement | null>(null);
+  const wheelOnlyEncryptAudioRef = useRef<HTMLAudioElement | null>(null);
   const sfxContextRef = useRef<AudioContext | null>(null);
   const cheerBufferRef = useRef<AudioBuffer | null>(null);
   const encryptBufferRef = useRef<AudioBuffer | null>(null);
@@ -982,28 +997,22 @@ export function LiveOverlayReceiver({ wheelOnly = false }: { wheelOnly?: boolean
 
   useEffect(() => {
     if (!wheelOnly) return undefined;
-    let cancelled = false;
     const spin = new Audio("/audio/wheel/142.mp3");
+    const cheer = new Audio(WHEEL_WINNER_CHEER_AUDIO_PATH);
+    const encrypt = new Audio(WHEEL_REENCRYPT_AUDIO_PATH);
     spin.preload = "auto";
+    cheer.preload = "auto";
+    encrypt.preload = "auto";
     spinAudioRef.current = spin;
-    const context = new AudioContext();
-    sfxContextRef.current = context;
-    void Promise.all([
-      decodeAudioBuffer(context, WHEEL_WINNER_CHEER_AUDIO_PATH),
-      decodeAudioBuffer(context, WHEEL_REENCRYPT_AUDIO_PATH),
-    ]).then(([cheerBuffer, encryptBuffer]) => {
-      if (cancelled) return;
-      cheerBufferRef.current = cheerBuffer;
-      encryptBufferRef.current = encryptBuffer;
-    });
+    wheelOnlyCheerAudioRef.current = cheer;
+    wheelOnlyEncryptAudioRef.current = encrypt;
     return () => {
-      cancelled = true;
       stopWheelAudio(spin);
+      stopWheelAudio(cheer);
+      stopWheelAudio(encrypt);
       spinAudioRef.current = null;
-      cheerBufferRef.current = null;
-      encryptBufferRef.current = null;
-      sfxContextRef.current = null;
-      void context.close().catch(() => undefined);
+      wheelOnlyCheerAudioRef.current = null;
+      wheelOnlyEncryptAudioRef.current = null;
     };
   }, [wheelOnly]);
 
@@ -1025,7 +1034,11 @@ export function LiveOverlayReceiver({ wheelOnly = false }: { wheelOnly?: boolean
       activeController = new AbortController();
       try {
         const requestStartedAtPerformanceMs = performance.now();
-        const res = await fetch(wheelOnly ? "/api/overlay/wheel" : "/api/overlay/live", { cache: "no-store", signal: activeController.signal });
+        const res = await fetch(wheelOnly ? "/api/overlay/wheel" : "/api/overlay/live", {
+          cache: "no-store",
+          signal: activeController.signal,
+          headers: wheelOnly ? studioOverlayRequestHeaders() : undefined,
+        });
         if (!res.ok) throw new Error("Overlay state unavailable");
         const next = await res.json() as { snapshot?: WheelOverlaySnapshot; scene?: ResolvedLiveOverlayScene; serverRequestReceivedAt?: string; serverNow?: string };
         const responseReceivedAtPerformanceMs = performance.now();
@@ -1063,7 +1076,11 @@ export function LiveOverlayReceiver({ wheelOnly = false }: { wheelOnly?: boolean
     }
 
     if (!wheelOnly) {
-      const stopPolling = startSessionBoundPolling({ intervalMs: OVERLAY_POLL_DELAY_MS, poll });
+      const stopPolling = startPermanentOverlayPolling({
+        activeIntervalMs: OVERLAY_POLL_DELAY_MS,
+        standbyIntervalMs: LIVE_OVERLAY_STANDBY_POLL_INTERVAL_MS,
+        poll,
+      });
       return () => {
         cancelled = true;
         stopPolling();
@@ -1205,6 +1222,19 @@ export function LiveOverlayReceiver({ wheelOnly = false }: { wheelOnly?: boolean
     }
   }
 
+  function playWheelOnlySfx(audioRef: React.MutableRefObject<HTMLAudioElement | null>, volume: number) {
+    const audio = audioRef.current;
+    if (!audio || !audioArmed) return;
+    try {
+      audio.pause();
+      audio.currentTime = 0;
+      audio.volume = volume;
+      void audio.play().catch(() => undefined);
+    } catch {
+      // The browser source remains visual if its host has sound disabled.
+    }
+  }
+
   if (wheelOnly) {
     return (
       <div
@@ -1219,12 +1249,16 @@ export function LiveOverlayReceiver({ wheelOnly = false }: { wheelOnly?: boolean
             <div className="live-overlay-noise" aria-hidden="true" />
             <div className="live-overlay-corners" aria-hidden="true" />
             <div className="live-overlay-content">
-              <WheelCeremonyOverlay scene={scene} audioArmed={audioArmed} audioNotice={null} audioJustArmed={false} playSpinMusic={playSpinMusic} fadeSpinMusic={fadeSpinMusic} playCheerSfx={() => playSfxBuffer(cheerBufferRef, WHEEL_CHEER_VOLUME)} playEncryptSfx={() => playSfxBuffer(encryptBufferRef, WHEEL_ENCRYPT_VOLUME)} />
+              <WheelCeremonyOverlay scene={scene} clockAnchorRef={serverClockAnchorRef} audioArmed={audioArmed} audioNotice={null} audioJustArmed={false} playSpinMusic={playSpinMusic} fadeSpinMusic={fadeSpinMusic} playCheerSfx={() => playWheelOnlySfx(wheelOnlyCheerAudioRef, WHEEL_CHEER_VOLUME)} playEncryptSfx={() => playWheelOnlySfx(wheelOnlyEncryptAudioRef, WHEEL_ENCRYPT_VOLUME)} />
             </div>
           </section>
         ) : null}
       </div>
     );
+  }
+
+  if (!hasActiveQueueSession(scene)) {
+    return <div className="live-overlay-shell live-overlay-shell--inactive" data-connection={connected ? "connected" : "reconnecting"} aria-label="BARCODE Radio live overlay receiver" />;
   }
 
   return (
@@ -1239,7 +1273,7 @@ export function LiveOverlayReceiver({ wheelOnly = false }: { wheelOnly?: boolean
 
         <main className="live-overlay-content">
           {wheelVisible ? (
-            <WheelCeremonyOverlay scene={scene} audioArmed={audioArmed} audioNotice={audioNotice} audioJustArmed={audioJustArmed} playSpinMusic={playSpinMusic} fadeSpinMusic={fadeSpinMusic} playCheerSfx={() => playSfxBuffer(cheerBufferRef, WHEEL_CHEER_VOLUME)} playEncryptSfx={() => playSfxBuffer(encryptBufferRef, WHEEL_ENCRYPT_VOLUME)} />
+            <WheelCeremonyOverlay scene={scene} clockAnchorRef={serverClockAnchorRef} audioArmed={audioArmed} audioNotice={audioNotice} audioJustArmed={audioJustArmed} playSpinMusic={playSpinMusic} fadeSpinMusic={fadeSpinMusic} playCheerSfx={() => playSfxBuffer(cheerBufferRef, WHEEL_CHEER_VOLUME)} playEncryptSfx={() => playSfxBuffer(encryptBufferRef, WHEEL_ENCRYPT_VOLUME)} />
           ) : youtubeVisible && scene.youtube && scene.track ? (
             <div className={youtubeSceneClass}>
               <div className="live-overlay-youtube-viewport">

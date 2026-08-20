@@ -5,6 +5,8 @@ import { COOKIE_NAME, createStudioOverlayToken, verifyAdminToken } from "@/lib/a
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+const PRODUCTION_ORIGIN = "https://www.barcode-network.com";
+
 export async function POST() {
   const adminToken = (await cookies()).get(COOKIE_NAME)?.value;
   if (!adminToken || !(await verifyAdminToken(adminToken))) {
@@ -12,7 +14,14 @@ export async function POST() {
   }
 
   const accessToken = await createStudioOverlayToken();
-  return NextResponse.json({ path: `/overlay/foreground#access=${encodeURIComponent(accessToken)}` }, {
+  const fragment = `#access=${encodeURIComponent(accessToken)}`;
+  return NextResponse.json({
+    links: {
+      foreground: `${PRODUCTION_ORIGIN}/overlay/foreground${fragment}`,
+      radioVisuals: `${PRODUCTION_ORIGIN}/overlay/radio-visuals${fragment}`,
+      wheel: `${PRODUCTION_ORIGIN}/overlay/wheel${fragment}`,
+    },
+  }, {
     headers: {
       "Cache-Control": "no-store",
       "Referrer-Policy": "no-referrer",

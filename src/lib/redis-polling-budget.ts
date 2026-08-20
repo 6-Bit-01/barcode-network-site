@@ -4,7 +4,9 @@
 // Keep the transient live receiver subsecond, the visual cue receiver at 1 Hz,
 // and the foreground receiver at two polls per 3 seconds.
 export const LIVE_OVERLAY_POLL_INTERVAL_MS = 650;
+export const LIVE_OVERLAY_STANDBY_POLL_INTERVAL_MS = 15_000;
 export const FOREGROUND_OVERLAY_POLL_INTERVAL_MS = 1_500;
+export const FOREGROUND_OVERLAY_STANDBY_POLL_INTERVAL_MS = 15_000;
 export const RADIO_VISUALS_ACTIVE_POLL_INTERVAL_MS = 1_000;
 export const RADIO_VISUALS_STANDBY_POLL_INTERVAL_MS = 15_000;
 export const WHEEL_OVERLAY_ACTIVE_POLL_INTERVAL_MS = 1_000;

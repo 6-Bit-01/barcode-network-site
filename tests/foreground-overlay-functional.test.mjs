@@ -297,7 +297,7 @@ test("one chained show simulation updates track, gifted skip, Wheel, sponsor, an
   assert.equal(closed.action.label, "WHEEL UNLOCKED");
 });
 
-test("functional receiver is exact-source, reconnect-aware, and opened beside the live overlay", () => {
+test("functional receiver is a permanent session-driven Studio source", () => {
   const receiver = fs.readFileSync(path.join(projectRoot, "src/components/ForegroundOverlayReceiver.tsx"), "utf8");
   const sessionBoundPolling = fs.readFileSync(path.join(projectRoot, "src/lib/session-bound-polling.ts"), "utf8");
   const strip = fs.readFileSync(path.join(projectRoot, "src/components/ForegroundOverlayStrip.tsx"), "utf8");
@@ -305,11 +305,11 @@ test("functional receiver is exact-source, reconnect-aware, and opened beside th
   const css = fs.readFileSync(path.join(projectRoot, "src/app/overlay/foreground/calibration/foreground-calibration.css"), "utf8");
   const admin = fs.readFileSync(path.join(projectRoot, "src/components/AdminLiveOverlayControl.tsx"), "utf8");
   const api = fs.readFileSync(path.join(projectRoot, "src/app/api/overlay/foreground/route.ts"), "utf8");
-  const accessApi = fs.readFileSync(path.join(projectRoot, "src/app/api/admin/overlay/foreground-access/route.ts"), "utf8");
+  const sourceAccessApi = fs.readFileSync(path.join(projectRoot, "src/app/api/admin/overlay/source-access/route.ts"), "utf8");
   const combined = `${receiver}\n${strip}`;
 
   assert.match(receiver, /fetch\("\/api\/overlay\/foreground"/);
-  assert.match(receiver, /startSessionBoundPolling\(\{ intervalMs: POLL_INTERVAL_MS, poll: load \}\)/);
+  assert.match(receiver, /startPermanentOverlayPolling\(\{[\s\S]*activeIntervalMs: POLL_INTERVAL_MS,[\s\S]*standbyIntervalMs: FOREGROUND_OVERLAY_STANDBY_POLL_INTERVAL_MS,[\s\S]*poll: load/);
   assert.match(sessionBoundPolling, /visibilitychange/);
   assert.match(sessionBoundPolling, /addEventListener\("focus"/);
   assert.match(sessionBoundPolling, /addEventListener\("online"/);
@@ -317,17 +317,20 @@ test("functional receiver is exact-source, reconnect-aware, and opened beside th
   assert.match(receiver, /"--fg-key-color": "#0000ff"/);
   assert.match(css, /\.foreground-overlay-canvas > \.foreground-strip/);
   assert.match(css, /top: calc\(var\(--fg-anchor-y\) - var\(--fg-height\)\)/);
-  assert.match(admin, /href="\/overlay\/live"/);
-  assert.match(admin, /Open Live Overlay/);
-  assert.match(admin, /Open Foreground Overlay/);
+  assert.match(admin, /One-Time TikTok Studio Source Setup/);
+  assert.match(admin, /\/api\/admin\/overlay\/source-access/);
+  assert.match(admin, /Load Permanent Private Links/);
+  assert.doesNotMatch(admin, /Open Live Overlay|Open Foreground Overlay|Preview Visuals|Copy Visuals Link|Preview Wheel Source|Copy Wheel Link/);
   assert.match(api, /"Cache-Control": "no-store"/);
-  assert.match(api, /verifyForegroundOverlayToken/);
-  assert.match(api, /verifyAdminToken/);
-  assert.match(api, /allowPrivateQueueState/);
-  assert.match(accessApi, /createForegroundOverlayToken/);
-  assert.match(admin, /\/api\/admin\/overlay\/foreground-access/);
-  assert.match(receiver, /new URLSearchParams\(window\.location\.hash\.replace/);
-  assert.match(receiver, /Authorization: `Bearer \$\{accessToken\}`/);
+  assert.match(api, /allowPrivateQueueState: true/);
+  assert.match(api, /verifyStudioOverlayToken/);
+  assert.match(api, /authorization\.startsWith\("Bearer "\)/);
+  assert.match(receiver, /studioOverlayRequestHeaders/);
+  assert.doesNotMatch(receiver, /foreground-access|verifyForegroundOverlayToken/);
+  assert.match(sourceAccessApi, /createStudioOverlayToken/);
+  assert.match(sourceAccessApi, /https:\/\/www\.barcode-network\.com/);
+  assert.match(sourceAccessApi, /\/overlay\/foreground\$\{fragment\}/);
+  assert.match(receiver, /sessionActive \? <ForegroundOverlayStrip/);
   assert.match(receiver, /foregroundActionWithExpiryAt/);
   assert.doesNotMatch(foregroundSource, /resolveBNLCurrentView/);
   assert.match(strip, /useRef<number \| null>\(null\)/);

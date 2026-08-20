@@ -1,6 +1,5 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { COOKIE_NAME, verifyAdminToken, verifyForegroundOverlayToken } from "@/lib/auth";
+import { verifyStudioOverlayToken } from "@/lib/auth";
 import { getForegroundOverlaySnapshot } from "@/lib/foreground-overlay";
 
 export const dynamic = "force-dynamic";
@@ -12,13 +11,11 @@ function bearerToken(req: Request): string | null {
 }
 
 export async function GET(req: Request) {
-  const sourceToken = bearerToken(req);
-  const adminToken = (await cookies()).get(COOKIE_NAME)?.value ?? null;
-  const allowPrivateQueueState = Boolean(
-    (sourceToken && await verifyForegroundOverlayToken(sourceToken))
-    || (adminToken && await verifyAdminToken(adminToken)),
-  );
-  const snapshot = await getForegroundOverlaySnapshot(new Date(), { allowPrivateQueueState });
+  const accessToken = bearerToken(req);
+  if (!accessToken || !(await verifyStudioOverlayToken(accessToken))) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } });
+  }
+  const snapshot = await getForegroundOverlaySnapshot(new Date(), { allowPrivateQueueState: true });
   return NextResponse.json(snapshot, {
     headers: {
       "Cache-Control": "no-store",

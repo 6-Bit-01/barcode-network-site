@@ -505,7 +505,174 @@ test("music response follows the authoritative playback clock and uses direct an
     tempoConfidence: 0,
   });
   assert.equal(quietLoopback.source, "windows_loopback", "low but real loopback levels must not be discarded as silence");
-  assert.ok(quietLoopback.energy > 0.04, "quiet speaker output must be shaped into a visible response");
+  assert.ok(quietLoopback.energy <= 0.005, "quiet speaker output must remain below the visual noise knee");
+  assert.ok(Math.max(quietLoopback.bass, quietLoopback.mid, quietLoopback.treble, quietLoopback.beat, quietLoopback.accent) <= 0.005);
+});
+
+test("an active warmed Windows bridge owns silence continuously instead of snapping to synthetic music", () => {
+  const current = entry("track-loopback-silence", { sourceType: "youtube" });
+  const youtube = { provider: "youtube", videoId: "abcDEF12345", trackId: current.id, playbackState: "playing", currentTimeSeconds: 24, durationSeconds: 180, updatedAt: "2026-08-19T18:59:55.000Z", muted: true };
+  const state = queueState({ nowPlaying: current, loadedTrack: current });
+  const snapshot = visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: scene("now_playing", { track: { id: current.id, artistName: "Artist", trackTitle: "Track", sourceType: "youtube" }, youtube }), playerSync: youtube, now: new Date("2026-08-19T19:00:00.000Z") });
+  const atLevel = (level, sequence) => engine.radioVisualsMusicSignal(snapshot, 24, 100, {
+    schemaVersion: "barcode_audio_signal_v1",
+    source: "windows_loopback",
+    capturedAtUnixMs: Date.now(),
+    sequence,
+    captureActive: true,
+    warmedUp: true,
+    silence: level < 0.008,
+    energy: level,
+    bass: level,
+    mid: level,
+    treble: level,
+    peak: level,
+    beat: 0,
+    bpm: 112,
+    tempoConfidence: 0,
+  });
+  const levels = [0, 0.004, 0.007, 0.02].map(atLevel);
+  for (const signal of levels) {
+    assert.equal(signal.source, "windows_loopback");
+    assert.ok(Math.max(signal.energy, signal.bass, signal.mid, signal.treble, signal.beat, signal.accent, signal.peak) <= 0.03);
+  }
+  for (let index = 1; index < levels.length; index += 1) {
+    assert.ok(levels[index].energy >= levels[index - 1].energy);
+    assert.ok(levels[index].energy - levels[index - 1].energy <= 0.04);
+  }
+  const unavailableSignal = {
+    schemaVersion: "barcode_audio_signal_v1",
+    source: "windows_loopback",
+    capturedAtUnixMs: Date.now(),
+    sequence: 100,
+    captureActive: false,
+    warmedUp: false,
+    silence: true,
+    energy: 0,
+    bass: 0,
+    mid: 0,
+    treble: 0,
+    peak: 0,
+    beat: 0,
+    bpm: 112,
+    tempoConfidence: 0,
+  };
+  const inactiveFallback = engine.radioVisualsMusicSignal(snapshot, 24, 100, { ...unavailableSignal, warmedUp: true });
+  const warmingFallback = engine.radioVisualsMusicSignal(snapshot, 24, 100, { ...unavailableSignal, captureActive: true });
+  assert.equal(inactiveFallback.source, "timeline", "an inactive bridge must return control to synthetic audio");
+  assert.equal(warmingFallback.source, "timeline", "a not-yet-warmed bridge must return control to synthetic audio");
+});
+
+test("Windows audio transfer suppresses quiet noise and expands loud passages", () => {
+  const inputs = [0, 0.02, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 1];
+  for (const channel of ["energy", "bass", "mid", "treble"]) {
+    const outputs = inputs.map((input) => engine.radioVisualLoopbackLevel(input, channel));
+    assert.equal(outputs[0], 0);
+    outputs.forEach((output) => assert.ok(Number.isFinite(output) && output >= 0 && output <= 1));
+    for (let index = 1; index < outputs.length; index += 1) assert.ok(outputs[index] >= outputs[index - 1]);
+    assert.ok(outputs[2] <= 0.035, `${channel} must not exaggerate 5% input`);
+    assert.ok(outputs[3] <= 0.08, `${channel} must keep 10% input restrained`);
+    assert.ok(outputs[6] - outputs[5] >= 0.32, `${channel} must visibly expand between a moderate and strong passage`);
+    assert.ok(outputs[7] - outputs[6] >= 0.12, `${channel} must retain visible headroom above a strong passage`);
+    assert.ok(outputs[7] >= 0.9 && outputs[7] < 0.99, `${channel} must make a hot passage strong without saturating early`);
+    assert.equal(outputs[8], 1, `${channel} may reach full drive only at full input`);
+  }
+  const midpoint = engine.radioVisualLoopbackLevel(0.5, "energy");
+  assert.ok(midpoint >= 0.35 && midpoint <= 0.6);
+});
+
+test("Windows levels become quiet, isolated band layers and a full-spectrum tapestry end to end", () => {
+  const current = entry("track-loopback-tapestry", { sourceType: "youtube" });
+  const youtube = {
+    provider: "youtube",
+    videoId: "abcDEF12345",
+    trackId: current.id,
+    playbackState: "playing",
+    currentTimeSeconds: 24,
+    durationSeconds: 180,
+    updatedAt: "2026-08-19T18:59:55.000Z",
+    muted: true,
+  };
+  const state = queueState({ nowPlaying: current, loadedTrack: current });
+  const snapshot = visuals.resolveRadioVisualsSnapshot({
+    queueState: state,
+    scene: scene("now_playing", {
+      track: { id: current.id, artistName: "Artist", trackTitle: "Track", sourceType: "youtube" },
+      youtube,
+    }),
+    playerSync: youtube,
+    now: new Date("2026-08-19T19:00:00.000Z"),
+  });
+  const bridge = {
+    schemaVersion: "barcode_audio_signal_v1",
+    source: "windows_loopback",
+    capturedAtUnixMs: Date.now(),
+    sequence: 1,
+    captureActive: true,
+    warmedUp: true,
+    silence: false,
+    energy: 0.45,
+    bass: 0.05,
+    mid: 0.05,
+    treble: 0.05,
+    peak: 0.05,
+    beat: 0,
+    bpm: 120,
+    tempoConfidence: 0.6,
+  };
+  const drivesAt = (overrides) => engine.radioVisualAudioDrives(
+    engine.radioVisualsMusicSignal(snapshot, 24, 100, { ...bridge, ...overrides }),
+  );
+
+  const quiet = drivesAt({ energy: 0.05 });
+  assert.ok(Math.max(quiet.bassLayer, quiet.midLayer, quiet.trebleLayer, quiet.tapestry) < 0.01, "quiet bridge noise must not manufacture decorative layers");
+
+  const bass = drivesAt({ bass: 0.45 });
+  const mids = drivesAt({ mid: 0.45 });
+  const treble = drivesAt({ treble: 0.45 });
+  assert.ok(bass.bassLayer > 0.2 && bass.midLayer < 0.01 && bass.trebleLayer < 0.01, "ordinary bass must enter only the bass-owned layer");
+  assert.ok(mids.midLayer > 0.2 && mids.bassLayer < 0.01 && mids.trebleLayer < 0.01, "ordinary mids must enter only the mid-owned layer");
+  assert.ok(treble.trebleLayer > 0.2 && treble.bassLayer < 0.01 && treble.midLayer < 0.01, "ordinary treble must enter only the treble-owned layer");
+
+  const hot = drivesAt({ energy: 0.75, bass: 0.75, mid: 0.75, treble: 0.75, peak: 0.75 });
+  assert.ok(hot.bassLayer > 0.75 && hot.midLayer > 0.75 && hot.trebleLayer > 0.75);
+  assert.ok(hot.tapestry > 0.9 && hot.build > 0.7, "strong full-spectrum Windows audio must assemble the combined composition");
+  const fullRest = drivesAt({ energy: 1, bass: 1, mid: 1, treble: 1, peak: 0, beat: 0 });
+  const overload = drivesAt({ energy: 1, bass: 1, mid: 1, treble: 1, peak: 1, beat: 1 });
+
+  const expectedIsolation = {
+    bass: { bass: true, mid: false, treble: false, tapestry: false },
+    mids: { bass: false, mid: true, treble: false, tapestry: false },
+    treble: { bass: false, mid: false, treble: true, tapestry: false },
+  };
+  const profileDrives = { quiet, bass, mids, treble, hot, fullRest, overload };
+  for (const musicScene of engine.RADIO_VISUAL_MUSIC_SCENES) {
+    const plans = Object.fromEntries(
+      Object.entries(profileDrives).map(([profile, profileDrive]) => [
+        profile,
+        engine.radioVisualMusicSceneLayerPlan(musicScene, profileDrive),
+      ]),
+    );
+    assert.deepEqual(plans.quiet, { bass: 0, mid: 0, treble: 0, tapestry: 0 }, `${musicScene} must not invent audio density during silence`);
+    for (const [profile, expected] of Object.entries(expectedIsolation)) {
+      for (const layer of ["bass", "mid", "treble", "tapestry"]) {
+        assert.equal(plans[profile][layer] > 0, expected[layer], `${musicScene} ${profile} must ${expected[layer] ? "reveal" : "withhold"} its ${layer} density budget`);
+      }
+    }
+    assert.ok(Object.values(plans.hot).every((count) => count > 0), `${musicScene} must reveal all four layer systems on full-spectrum audio`);
+
+    const limits = engine.RADIO_VISUAL_MUSIC_SCENE_LAYER_LIMITS[musicScene];
+    for (const plan of Object.values(plans)) {
+      for (const layer of ["bass", "mid", "treble", "tapestry"]) {
+        assert.ok(plan[layer] <= limits[layer].sustained + limits[layer].pulse, `${musicScene} ${layer} must remain inside its hard density-budget ceiling`);
+      }
+    }
+    for (const layer of ["bass", "mid", "treble", "tapestry"]) {
+      if (limits[layer].pulse > 0) {
+        assert.ok(plans.overload[layer] > plans.fullRest[layer], `${musicScene} ${layer} hits must add transient density above the sustained maximum`);
+      }
+    }
+  }
 });
 
 test("Windows loopback signal contract rejects malformed and stale local data", () => {
@@ -646,7 +813,7 @@ test("music scene selection is deterministic and spans ten genuinely different f
   assert.deepEqual([...selected].sort(), [...engine.RADIO_VISUAL_MUSIC_SCENES].sort());
 });
 
-test("live audio drives preserve broadband mass, separated bands, transients, and long-form build", () => {
+test("live audio drives preserve broadband mass, independent band layers, transients, and an all-band tapestry", () => {
   const base = {
     source: "windows_loopback",
     bpm: 120,
@@ -661,8 +828,8 @@ test("live audio drives preserve broadband mass, separated bands, transients, an
     phrase: 0.25,
   };
   const bodyOnly = engine.radioVisualAudioDrives({ ...base, energy: 0.9 });
-  assert.ok(bodyOnly.body > 0.9, "broadband energy must retain visible composition mass");
-  assert.ok(Math.max(bodyOnly.bass, bodyOnly.mid, bodyOnly.treble) < 0.2, "energy must not pretend every frequency band is loud");
+  assert.equal(bodyOnly.body, 0.9, "broadband energy must retain visible composition mass without another compressor");
+  assert.ok(Math.max(bodyOnly.bass, bodyOnly.mid, bodyOnly.treble) <= 0.05, "energy must not pretend every frequency band is loud");
 
   const bass = engine.radioVisualAudioDrives({ ...base, bass: 0.95 });
   const mids = engine.radioVisualAudioDrives({ ...base, mid: 0.95 });
@@ -670,24 +837,40 @@ test("live audio drives preserve broadband mass, separated bands, transients, an
   assert.ok(bass.bass > bass.mid + 0.6 && bass.bass > bass.treble + 0.6);
   assert.ok(mids.mid > mids.bass + 0.6 && mids.mid > mids.treble + 0.6);
   assert.ok(treble.treble > treble.bass + 0.6 && treble.treble > treble.mid + 0.6);
-  assert.ok(bass.bassPulse > bass.midPulse + 0.18 && bass.bassPulse > bass.treblePulse + 0.18);
-  assert.ok(mids.midPulse > mids.bassPulse + 0.18 && mids.midPulse > mids.treblePulse + 0.18);
-  assert.ok(treble.treblePulse > treble.bassPulse + 0.18 && treble.treblePulse > treble.midPulse + 0.18);
+  assert.ok(bass.bassLayer > 0.9 && bass.midLayer < 0.02 && bass.trebleLayer < 0.02);
+  assert.ok(mids.midLayer > 0.9 && mids.bassLayer < 0.02 && mids.trebleLayer < 0.02);
+  assert.ok(treble.trebleLayer > 0.9 && treble.bassLayer < 0.02 && treble.midLayer < 0.02);
+  assert.ok(Math.max(bass.tapestry, mids.tapestry, treble.tapestry) < 0.02, "one loud band must not counterfeit the combined layer");
 
   const bassHit = engine.radioVisualAudioDrives({ ...base, bass: 0.95, beat: 1 });
+  const midHit = engine.radioVisualAudioDrives({ ...base, mid: 0.95, accent: 1 });
   const trebleHit = engine.radioVisualAudioDrives({ ...base, treble: 0.95, peak: 1 });
-  assert.ok(bassHit.bassPulse > 0.95 && bassHit.midPulse < 0.1 && bassHit.treblePulse < 0.1);
-  assert.ok(trebleHit.treblePulse > 0.75 && trebleHit.bassPulse < 0.1 && trebleHit.midPulse < 0.1);
+  assert.ok(bassHit.bassPulse > 0.9 && bassHit.midPulse < 0.1 && bassHit.treblePulse < 0.1);
+  assert.ok(midHit.midPulse > 0.9 && midHit.bassPulse < 0.1 && midHit.treblePulse < 0.1);
+  assert.ok(trebleHit.treblePulse > 0.9 && trebleHit.bassPulse < 0.1 && trebleHit.midPulse < 0.1);
 
-  const early = engine.radioVisualAudioDrives({ ...base, progress: 0, phrase: 0 });
-  const progressBuild = engine.radioVisualAudioDrives({ ...base, progress: 1, phrase: 0 });
-  const phraseBuild = engine.radioVisualAudioDrives({ ...base, progress: 0, phrase: 1 });
-  const late = engine.radioVisualAudioDrives({ ...base, progress: 1, phrase: 1 });
-  assert.ok(progressBuild.build > early.build + 0.25, "track progress must independently add structure");
-  assert.ok(phraseBuild.build > early.build + 0.2, "phrase progress must independently add structure");
-  assert.ok(late.build > early.build + 0.5, "track and phrase progression must produce a real long-form build");
-  assert.equal(late.progress, 1);
-  assert.equal(late.phrase, 1);
+  const mixedBed = { ...base, energy: 0.6, bass: 0.6, mid: 0.6, treble: 0.6, peak: 0 };
+  const mixedRest = engine.radioVisualAudioDrives(mixedBed);
+  const mixedBassHit = engine.radioVisualAudioDrives({ ...mixedBed, beat: 1 });
+  const mixedMidHit = engine.radioVisualAudioDrives({ ...mixedBed, accent: 1 });
+  const mixedTrebleHit = engine.radioVisualAudioDrives({ ...mixedBed, peak: 1 });
+  assert.ok(mixedBassHit.bassPulse > mixedBassHit.midPulse + 0.3 && mixedBassHit.bassPulse > mixedBassHit.treblePulse + 0.3, "a bass hit must not fire the mid or treble transient layer");
+  assert.ok(mixedMidHit.midPulse > mixedMidHit.bassPulse + 0.3 && mixedMidHit.midPulse > mixedMidHit.treblePulse + 0.3, "a mid hit must not fire the bass or treble transient layer");
+  assert.ok(mixedTrebleHit.treblePulse > mixedTrebleHit.bassPulse + 0.3 && mixedTrebleHit.treblePulse > mixedTrebleHit.midPulse + 0.3, "a treble hit must not fire the bass or mid transient layer");
+  assert.ok(mixedRest.tapestry > 0.6 && mixedRest.tapestryPulse < 0.01, "steady full-spectrum audio is a sustained tapestry, not a permanent transient flash");
+  const coupledHit = engine.radioVisualAudioDrives({ ...mixedBed, beat: 1, accent: 1, peak: 1 });
+  assert.ok(coupledHit.tapestryPulse > 0.3, "a simultaneous three-band hit must fire the coupled transient layer");
+
+  const quietEarly = engine.radioVisualAudioDrives({ ...base, energy: 0, bass: 0, mid: 0, treble: 0, peak: 0, progress: 0, phrase: 0 });
+  const quietLate = engine.radioVisualAudioDrives({ ...base, energy: 0, bass: 0, mid: 0, treble: 0, peak: 0, progress: 1, phrase: 1 });
+  assert.equal(quietEarly.build, 0);
+  assert.equal(quietLate.build, 0, "timeline chronology must never manufacture density during silence");
+
+  const allHigh = engine.radioVisualAudioDrives({ ...base, energy: 0.9, bass: 0.9, mid: 0.9, treble: 0.9 });
+  assert.ok(allHigh.bassLayer > 0.9 && allHigh.midLayer > 0.9 && allHigh.trebleLayer > 0.9);
+  assert.ok(allHigh.tapestry > 0.85 && allHigh.build > 0.8, "all three bands together must reveal the combined tapestry layer");
+  assert.ok(allHigh.tapestryPulse < 0.01, "sustained all-band energy must not masquerade as a transient overload");
+  assert.ok(allHigh.tapestry > Math.max(bass.tapestry, mids.tapestry, treble.tapestry) + 0.8);
 });
 
 test("band onsets hit independently and structural build releases gradually", () => {
@@ -734,6 +917,18 @@ test("band onsets hit independently and structural build releases gradually", ()
   assert.ok(attacked.state.buildMemory > 0.4, "build must attack quickly enough to add visible layers during a rise");
   assert.ok(released.state.buildMemory < attacked.state.buildMemory);
   assert.ok(released.state.buildMemory > coldLow.state.buildMemory + 0.18, "build must release gradually instead of collapsing between hits");
+
+  let sustainedBuild = { state: initial, drives: engine.radioVisualAudioDrives(highBuildSignal) };
+  for (let frame = 0; frame < 60; frame += 1) sustainedBuild = engine.advanceRadioVisualAudioReaction(sustainedBuild.state, highBuildSignal, 1_000 / 60);
+  assert.ok(sustainedBuild.state.buildMemory >= 0.65, "one second of full-spectrum audio must assemble the layered composition");
+  assert.ok(sustainedBuild.drives.tapestry > 0.8 && sustainedBuild.drives.tapestryPulse < 0.05, "a settled full-spectrum passage must retain the composition without repeating its arrival flash");
+  const silenceBuildSignal = { ...lowBuildSignal, energy: 0, bass: 0, mid: 0, treble: 0, peak: 0 };
+  let quarterSecondRelease = sustainedBuild;
+  for (let frame = 0; frame < 15; frame += 1) quarterSecondRelease = engine.advanceRadioVisualAudioReaction(quarterSecondRelease.state, silenceBuildSignal, 1_000 / 60);
+  assert.ok(quarterSecondRelease.state.buildMemory >= 0.3, "the composition must retain a short musical afterimage");
+  let fullRelease = quarterSecondRelease;
+  for (let frame = 15; frame < 120; frame += 1) fullRelease = engine.advanceRadioVisualAudioReaction(fullRelease.state, silenceBuildSignal, 1_000 / 60);
+  assert.ok(fullRelease.state.buildMemory <= 0.15, "the build must clear instead of leaving a permanently dense quiet scene");
 });
 
 test("Wheel geometry uses a candidate-count-calibrated outer band", () => {
@@ -913,7 +1108,7 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.match(receiver, /audioTime = \(transportSeconds/);
   assert.match(receiver, /sharedTransmissionRetention = clampVisualValue\(1 - runtime\.trackMix \* 0\.78, 0\.22, 1\)/, "the shared transmission language must recede during track-specific scenes");
   assert.match(receiver, /activeSurfaceMix \* sharedTransmissionRetention \* clampVisualValue\(0\.62 \+ runtime\.intensity \* 0\.24, 0\.62, 0\.9\)/, "the restored transmission floor must remain strong outside track scenes");
-  assert.match(receiver, /clampVisualValue\(0\.52 \+ musicDrives\.body \* 0\.28 \+ musicDrives\.presence \* 0\.28, 0\.52, 1\)/, "track-specific families must replace the receding shared layer with a strong visible floor");
+  assert.match(receiver, /0\.14[\s\S]*musicDrives\.body \* 0\.42[\s\S]*musicDrives\.presence \* 0\.36[\s\S]*musicDrives\.tapestry \* 0\.12[\s\S]*0\.14,[\s\S]*1,/, "track scenes must retain a quiet identity floor while expanding continuously with real audio");
   assert.equal((receiver.match(/drawEdgeSpectrum\(/g) ?? []).length, 2, "spectrum meters must only be defined and invoked by the music dispatcher");
   assert.equal((receiver.match(/drawOscilloscopeRibbons\(/g) ?? []).length, 2, "waveform ribbons must only be defined and invoked by the music dispatcher");
   for (const rendererName of [
@@ -932,21 +1127,24 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
     const end = receiver.indexOf("\nfunction ", start + 10);
     const renderer = receiver.slice(start, end);
     assert.ok(start >= 0 && end > start, `${rendererName} must be independently implemented`);
-    for (const structuralDrive of ["bass", "mid", "treble", "bassPulse", "midPulse", "treblePulse", "build", "progress"]) {
+    for (const structuralDrive of ["bass", "mid", "treble", "bassPulse", "midPulse", "treblePulse", "tapestry", "tapestryPulse", "build", "progress"]) {
       assert.match(renderer, new RegExp(`drives\\.${structuralDrive}\\b`), `${rendererName} must structurally respond to ${structuralDrive}`);
+    }
+    for (const audioLayer of ["bass", "mid", "treble", "tapestry"]) {
+      assert.match(renderer, new RegExp(`layerPlan\\.${audioLayer}\\b`), `${rendererName} must consume its tested ${audioLayer} density budget`);
     }
   }
   const sceneIdentityTokens = {
-    drawEdgeSpectrum: ["barCount", "holdReach"],
-    drawOscilloscopeRibbons: ["ribbonCount", "cycles"],
-    drawTapeFeedback: ["frameCount", "tearCount"],
-    drawMatrixRain: ["SIGNAL_GLYPHS", "bassCascade"],
-    drawAsciiTerminal: ["TERMINAL_GLYPHS", "paneCount"],
-    drawPixelSortStorm: ["sliceCount", "smearCount", "bandCount"],
-    drawLightningSwitchyard: ["railCount", "drawLightningTree"],
-    drawLaserLattice: ["topology", "beamCount", "shutterX"],
-    drawParticlePressure: ["pressure", "frontCount"],
-    drawSignalConstellation: ["linkReach", "quadraticCurveTo", "packetX"],
+    drawEdgeSpectrum: ["barCount", "bassPlateCount", "midBridgeCount", "scanCount", "holdReach"],
+    drawOscilloscopeRibbons: ["ribbonCount", "carrierY", "harmonicCount", "knotCount", "cycles"],
+    drawTapeFeedback: ["frameCount", "tearCount", "blockCount", "afterimageCount"],
+    drawMatrixRain: ["SIGNAL_GLYPHS", "bassCascade", "trebleHeadCount", "anchorCount", "bridgeCount", "decryptY"],
+    drawAsciiTerminal: ["TERMINAL_GLYPHS", "promptCount", "paneCount", "cursorSparkCount", "executeY"],
+    drawPixelSortStorm: ["sliceCount", "smearCount", "bandCount", "surgeY"],
+    drawLightningSwitchyard: ["railCount", "nodeSize", "reservoirCount", "current", "networkCouplingX", "networkDischarge", "drawLightningTree"],
+    drawLaserLattice: ["topology", "beamCount", "depthPlaneCount", "shutterX", "cageRadius"],
+    drawParticlePressure: ["pressure", "frontCount", "breath"],
+    drawSignalConstellation: ["linkReach", "anchorCount", "cometCount", "quadraticCurveTo", "packetX"],
   };
   for (const [rendererName, identityTokens] of Object.entries(sceneIdentityTokens)) {
     const start = receiver.indexOf(`function ${rendererName}`);

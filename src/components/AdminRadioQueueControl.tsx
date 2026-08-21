@@ -24,6 +24,7 @@ type SimulationAction = "addSimulationFreeTrack" | "addSimulationPaidPriority" |
 const LANE_LABELS: Record<QueueLane, string> = { priority: "Priority Signal", wheel: "Wheel Winner", regular: "Regular Queue" };
 const FIXED_PRIORITY_LABEL = "Priority Signal Upgrade";
 const FIXED_PRIORITY_INSTRUCTIONS = "Moves this track into the Priority Signal lane after payment confirmation.";
+const LEGACY_GLOBAL_SUBMISSION_FLAG = "Many attempts in a short time";
 
 const YOUTUBE_SYNC_HEARTBEAT_MS = 1_000;
 const TIKTOK_SYNC_HEARTBEAT_MS = 1_000;
@@ -143,6 +144,11 @@ function AdminSubmissionNote({ entry, compact = false }: { entry: QueueEntry; co
   const note = entry.note?.trim();
   if (!note) return null;
   return <div className={`${compact ? "mt-2 max-w-3xl p-2" : "mt-3 p-3"} border-2 border-accent bg-accent/10 text-left shadow-[0_0_20px_rgba(255,0,0,0.12)]`}><p className="text-[10px] font-black uppercase tracking-[0.2em] text-accent">Submission Note · Read Before Playing</p><p className={`${compact ? "mt-1 max-h-24 overflow-y-auto text-xs" : "mt-2 text-sm"} whitespace-pre-wrap break-words font-bold text-foreground`}>{note}</p></div>;
+}
+function AdminSuspiciousFlags({ entry }: { entry: QueueEntry }) {
+  const flags = (entry.suspiciousFlags ?? []).filter((flag) => flag !== LEGACY_GLOBAL_SUBMISSION_FLAG);
+  if (flags.length === 0) return null;
+  return <div className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 p-2 text-xs text-[#ffaa00]">Admin flags: {flags.join(" / ")}</div>;
 }
 function durationLabel(entry: QueueEntry): string {
   const duration = formatRuntime(getTrackRuntimeSeconds(entry));
@@ -1598,7 +1604,7 @@ function Lane({ title, tracks, onAction, onPlayer, onCopy, mode, readOnly }: { t
                   <p className="text-xs text-muted">{sourceLabel(entry)} · {durationLabel(entry)}</p>
                 </div>
                 <AdminTrackMetadata entry={entry} />
-                {entry.suspiciousFlags && entry.suspiciousFlags.length > 0 && <div className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 p-2 text-xs text-[#ffaa00]">Admin flags: {entry.suspiciousFlags.join(" / ")}</div>}
+                <AdminSuspiciousFlags entry={entry} />
                 <AdminSubmissionNote entry={entry} />
               </div>
               <TrackActions entry={entry} onAction={onAction} onPlayer={onPlayer} onCopy={onCopy} mode={mode} readOnly={readOnly} />

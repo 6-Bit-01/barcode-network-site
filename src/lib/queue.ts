@@ -2936,8 +2936,6 @@ function suspiciousFlagsFor(session: QueueSession, track: QueueEntry): string[] 
   if (track.submitterToken && entries.some((entry) => entry.submitterToken === track.submitterToken && normalizeIdentity(entry.submitterArtistName ?? entry.submittedArtistName) !== submitter)) flags.add("Same browser token using different artist names");
   if (track.fileName && track.fileSize && entries.some((entry) => entry.fileName?.toLowerCase() === (track.fileName ?? "").toLowerCase() && entry.fileSize === track.fileSize && (!track.detectedDurationSeconds || !entry.detectedDurationSeconds || entry.detectedDurationSeconds === track.detectedDurationSeconds))) flags.add("Same file name, size, and duration");
   if (track.submittedSongTitle && entries.some((entry) => normalizeIdentity(entry.submittedSongTitle) === normalizeIdentity(track.submittedSongTitle) && normalizeIdentity(entry.submittedArtistName) !== normalizeIdentity(track.submittedArtistName))) flags.add("Same source/title with changed artist name");
-  const recent = entries.filter((entry) => Date.now() - new Date(entry.createdAt).getTime() < 10 * 60 * 1000).length;
-  if (recent >= 5) flags.add("Many attempts in a short time");
   return [...flags];
 }
 

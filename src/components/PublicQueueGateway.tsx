@@ -337,5 +337,5 @@ function StatCard({ label, value, helper, accent = "text-foreground" }: { label:
 }
 
 function BroadcastSlot({ label, track, tone }: { label: string; track: QueuePublicTrack; tone: string }) {
-  return <div className="border border-border bg-background/45 p-3 text-sm"><p className={`text-xs uppercase tracking-widest ${tone}`}>{label}</p><p className="mt-1 font-bold text-foreground">{track.submittedArtistName} — {track.submittedSongTitle}</p></div>;
+  return <div className="border border-border bg-background/45 p-3 text-sm"><p className={`text-xs uppercase tracking-widest ${tone}`}>{label}</p><p className="mt-1 font-bold text-foreground">{track.submittedArtistName} — {track.submittedSongTitle}</p>{track.collaboratorNames?.trim() && <p className="mt-1 font-bold text-accent"><span className="uppercase tracking-widest">Featuring:</span> {track.collaboratorNames.trim()}</p>}</div>;
 }

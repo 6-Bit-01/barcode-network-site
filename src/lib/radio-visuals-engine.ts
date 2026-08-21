@@ -177,7 +177,7 @@ export const RADIO_VISUAL_MUSIC_SCENES = [
 ] as const;
 
 /** Music-only gain applied after track ownership and scene crossfade. */
-export const RADIO_VISUAL_MUSIC_OUTPUT_GAIN = 2;
+export const RADIO_VISUAL_MUSIC_OUTPUT_GAIN = 1.35;
 
 export interface RadioVisualMusicTransitionState {
   currentSeed: number;
@@ -227,6 +227,97 @@ export interface RadioVisualAudioDrives {
   build: number;
   progress: number;
   phrase: number;
+}
+
+export type RadioVisualMusicGesture = "vocal_pattern" | "melodic_lift" | "instrumental_break";
+
+export type RadioVisualMusicLifecycleAct = "origin" | "mutation" | "finale";
+
+export type RadioVisualMusicLifecycleVariant =
+  | "bars_to_teeth"
+  | "ribbons_to_braids"
+  | "frames_to_splice"
+  | "rain_to_crossfeed"
+  | "terminal_to_breach"
+  | "slices_to_scramble"
+  | "rails_to_discharge"
+  | "grid_to_prism"
+  | "drift_to_vortex"
+  | "stars_to_network";
+
+export interface RadioVisualMusicGesturePlan {
+  gesture: RadioVisualMusicGesture;
+  vocalPattern: number;
+  melodicLift: number;
+  instrumentalBreak: number;
+  strength: number;
+}
+
+export interface RadioVisualMusicEvolutionPlan {
+  sectionIndex: number;
+  sectionBlend: number;
+  lifecycleAct: RadioVisualMusicLifecycleAct;
+  lifecycleProgress: number;
+  actProgress: number;
+  metamorphosis: number;
+  finale: number;
+  shapeMorph: number;
+  variant: RadioVisualMusicLifecycleVariant;
+  pulse: number;
+  scaleX: number;
+  scaleY: number;
+  translateXRatio: number;
+  translateYRatio: number;
+  rotation: number;
+  shearX: number;
+  shearY: number;
+  jitter: number;
+  hueBlend: number;
+  motionRate: number;
+  tempoPulse: number;
+  gesture: RadioVisualMusicGesturePlan;
+}
+
+export const RADIO_VISUAL_BROADCAST_FX_TYPES = [
+  "crt_roll",
+  "scanline_stack",
+  "signal_tear",
+  "frame_stutter",
+  "chromatic_desync",
+  "barcode_sweep",
+  "code_breach",
+  "terminal_packet",
+  "bit_noise",
+  "sync_dropout",
+  "packet_trace",
+  "compression_blocks",
+] as const;
+
+export type RadioVisualBroadcastFxType = (typeof RADIO_VISUAL_BROADCAST_FX_TYPES)[number];
+
+export interface RadioVisualBroadcastFxPlan {
+  active: boolean;
+  type: RadioVisualBroadcastFxType;
+  occurrenceIndex: number;
+  occurrenceSeed: number;
+  progress: number;
+  envelope: number;
+  strength: number;
+  detail: number;
+  centerAllowed: boolean;
+  centerStrength: number;
+  centerPrimitiveBudget: number;
+  crtStrength: number;
+}
+
+export interface RadioVisualBroadcastFxInput {
+  time: number;
+  seed: number;
+  sessionActive: boolean;
+  showStage: RadioVisualsShowStage;
+  sceneMix: number;
+  drives: RadioVisualAudioDrives;
+  cueType: RadioVisualCue["type"] | null;
 }
 
 /**
@@ -431,16 +522,174 @@ export function radioVisualMusicScene(seed: number): RadioVisualMusicScene {
   return RADIO_VISUAL_MUSIC_SCENES[hashRadioVisualToken(`music-scene:${safeSeed}`) % RADIO_VISUAL_MUSIC_SCENES.length];
 }
 
+interface RadioVisualMusicEvolutionProfile {
+  variant: RadioVisualMusicLifecycleVariant;
+  bassScale: number;
+  midDrift: number;
+  trebleHue: number;
+  startMotion: number;
+  endMotion: number;
+  startJitter: number;
+  endJitter: number;
+  tilt: number;
+  endRotation: number;
+  endShearX: number;
+  endShearY: number;
+}
+
+const MUSIC_EVOLUTION_PROFILES: Record<RadioVisualMusicScene, RadioVisualMusicEvolutionProfile> = {
+  edge_spectrum: { variant: "bars_to_teeth", bassScale: 0.72, midDrift: 0.42, trebleHue: 0.56, startMotion: 0.7, endMotion: 1.34, startJitter: 0.04, endJitter: 0.62, tilt: 0.2, endRotation: 0.006, endShearX: 0.035, endShearY: 0 },
+  oscilloscope_ribbons: { variant: "ribbons_to_braids", bassScale: 0.34, midDrift: 0.92, trebleHue: 0.7, startMotion: 0.82, endMotion: 1.62, startJitter: 0.02, endJitter: 0.18, tilt: 0.44, endRotation: -0.014, endShearX: 0, endShearY: 0.026 },
+  tape_feedback: { variant: "frames_to_splice", bassScale: 0.56, midDrift: 0.7, trebleHue: 0.5, startMotion: 1.18, endMotion: 0.72, startJitter: 0.58, endJitter: 0.08, tilt: 0.86, endRotation: 0.03, endShearX: -0.028, endShearY: 0.018 },
+  matrix_rain: { variant: "rain_to_crossfeed", bassScale: 0.26, midDrift: 0.48, trebleHue: 0.96, startMotion: 0.68, endMotion: 1.7, startJitter: 0.02, endJitter: 0.54, tilt: 0.18, endRotation: -0.008, endShearX: -0.045, endShearY: 0 },
+  ascii_terminal: { variant: "terminal_to_breach", bassScale: 0.22, midDrift: 0.64, trebleHue: 0.82, startMotion: 0.58, endMotion: 1.32, startJitter: 0.02, endJitter: 0.72, tilt: 0.12, endRotation: 0, endShearX: 0.05, endShearY: -0.018 },
+  pixel_sort_storm: { variant: "slices_to_scramble", bassScale: 0.64, midDrift: 0.84, trebleHue: 1, startMotion: 0.76, endMotion: 1.84, startJitter: 0.16, endJitter: 1, tilt: 0.54, endRotation: 0.02, endShearX: -0.055, endShearY: 0.032 },
+  lightning_switchyard: { variant: "rails_to_discharge", bassScale: 0.48, midDrift: 0.38, trebleHue: 0.88, startMotion: 0.62, endMotion: 1.76, startJitter: 0.04, endJitter: 0.84, tilt: 0.34, endRotation: -0.018, endShearX: 0.028, endShearY: 0.02 },
+  laser_lattice: { variant: "grid_to_prism", bassScale: 0.4, midDrift: 0.58, trebleHue: 0.98, startMotion: 0.72, endMotion: 1.52, startJitter: 0.03, endJitter: 0.12, tilt: 0.72, endRotation: 0.042, endShearX: 0.018, endShearY: -0.018 },
+  particle_pressure: { variant: "drift_to_vortex", bassScale: 0.9, midDrift: 0.76, trebleHue: 0.62, startMotion: 0.56, endMotion: 1.58, startJitter: 0.06, endJitter: 0.34, tilt: 0.26, endRotation: 0.026, endShearX: 0, endShearY: 0.028 },
+  signal_constellation: { variant: "stars_to_network", bassScale: 0.3, midDrift: 0.88, trebleHue: 0.86, startMotion: 0.48, endMotion: 1.18, startJitter: 0.26, endJitter: 0.02, tilt: 0.62, endRotation: -0.034, endShearX: -0.02, endShearY: -0.012 },
+};
+
+/**
+ * Infer musical gestures from the frequency and transient envelopes already
+ * available to the receiver. These are intentionally signal-derived hints,
+ * not semantic stem or lyric detection.
+ */
+export function radioVisualMusicGesturePlan(drives: RadioVisualAudioDrives): RadioVisualMusicGesturePlan {
+  const vocalPattern = clampVisualValue(
+    drives.midLayer * 0.62
+      + drives.midPulse * 0.3
+      + drives.trebleLayer * 0.14
+      - drives.bassPulse * 0.22,
+  );
+  const melodicLift = clampVisualValue(
+    drives.midPulse * 0.34
+      + drives.treblePulse * 0.4
+      + drives.midLayer * drives.trebleLayer * 0.36,
+  );
+  const instrumentalBreak = clampVisualValue(
+    drives.tapestry * 0.38
+      + drives.bassPulse * 0.24
+      + drives.treblePulse * 0.2
+      + drives.build * 0.24
+      - vocalPattern * 0.14,
+  );
+  const ranked: Array<[RadioVisualMusicGesture, number]> = [
+    ["vocal_pattern", vocalPattern],
+    ["melodic_lift", melodicLift],
+    ["instrumental_break", instrumentalBreak],
+  ];
+  ranked.sort((left, right) => right[1] - left[1]);
+  return {
+    gesture: ranked[0][0],
+    vocalPattern,
+    melodicLift,
+    instrumentalBreak,
+    strength: ranked[0][1],
+  };
+}
+
+/** Smooth, bounded evolution inside one family; it never changes scene ownership. */
+export function radioVisualMusicEvolutionPlan(
+  scene: RadioVisualMusicScene,
+  seed: number,
+  time: number,
+  drives: RadioVisualAudioDrives,
+  bpm = 120,
+): RadioVisualMusicEvolutionPlan {
+  const profile = MUSIC_EVOLUTION_PROFILES[scene];
+  const safeTime = Number.isFinite(time) ? time : 0;
+  const lifecycleProgress = clampVisualValue(drives.progress);
+  const sectionPosition = lifecycleProgress * 4;
+  const sectionIndex = Math.min(3, Math.floor(sectionPosition));
+  const sectionBlend = smoothstep(sectionPosition - sectionIndex);
+  const smoothSection = sectionIndex + sectionBlend;
+  const lifecycleAct: RadioVisualMusicLifecycleAct = lifecycleProgress < 0.22
+    ? "origin"
+    : lifecycleProgress < 0.74
+      ? "mutation"
+      : "finale";
+  const actProgress = lifecycleAct === "origin"
+    ? clampVisualValue(lifecycleProgress / 0.22)
+    : lifecycleAct === "mutation"
+      ? clampVisualValue((lifecycleProgress - 0.22) / 0.52)
+      : clampVisualValue((lifecycleProgress - 0.74) / 0.26);
+  // Hold a readable origin long enough to establish the family, then make the
+  // end unmistakably different without a hard scene swap.
+  const metamorphosis = smoothstep((lifecycleProgress - 0.08) / 0.84);
+  const finale = smoothstep((lifecycleProgress - 0.7) / 0.3);
+  const seedPhase = deterministicVisualUnit(seed, 26_001) * Math.PI * 2;
+  const phraseWave = 0.5 + 0.5 * Math.sin(clampVisualValue(drives.phrase) * Math.PI * 2 + seedPhase);
+  const safeBpm = clampVisualValue(bpm, 55, 200);
+  const tempoPosition = safeTime * safeBpm / 60;
+  const tempoWave = Math.pow(0.5 + 0.5 * Math.cos(tempoPosition * Math.PI * 2), 3.2);
+  const detectedHit = Math.max(drives.bassPulse, drives.midPulse, drives.treblePulse, drives.tapestryPulse, drives.impact);
+  const tempoPulse = clampVisualValue(Math.max(detectedHit, tempoWave * (0.12 + detectedHit * 0.88)));
+  const lifecycleMotion = profile.startMotion + (profile.endMotion - profile.startMotion) * metamorphosis;
+  const slowWave = Math.sin(safeTime * (0.12 + lifecycleMotion * 0.055) + seedPhase + smoothSection * 0.74);
+  const crossWave = Math.cos(safeTime * (0.09 + profile.midDrift * 0.06) + seedPhase * 0.73 + smoothSection * 0.41);
+  const bassMotion = clampVisualValue(drives.bassLayer * 0.46 + drives.bassPulse * 0.54);
+  const midMotion = clampVisualValue(drives.midLayer * 0.56 + drives.midPulse * 0.44);
+  const trebleMotion = clampVisualValue(drives.trebleLayer * 0.5 + drives.treblePulse * 0.5);
+  const pulse = clampVisualValue(0.12 + bassMotion * (0.3 + phraseWave * 0.38) + tempoPulse * 0.18 + drives.tapestryPulse * 0.16);
+  const scaleAmount = profile.bassScale * bassMotion * (0.004 + phraseWave * 0.017 + tempoPulse * 0.006);
+  const drift = profile.midDrift * midMotion;
+  const shapeMorph = clampVisualValue(metamorphosis * (0.4 + drives.body * 0.24 + midMotion * 0.2 + drives.tapestry * 0.16));
+  const jitterProfile = profile.startJitter + (profile.endJitter - profile.startJitter) * metamorphosis;
+  const jitter = clampVisualValue(jitterProfile * (0.18 + trebleMotion * 0.5 + tempoPulse * 0.32));
+  return {
+    sectionIndex,
+    sectionBlend,
+    lifecycleAct,
+    lifecycleProgress,
+    actProgress,
+    metamorphosis,
+    finale,
+    shapeMorph,
+    variant: profile.variant,
+    pulse,
+    scaleX: clampVisualValue(1 + scaleAmount + drives.tapestry * 0.003 + profile.endShearY * shapeMorph * 0.12, 0.975, 1.055),
+    scaleY: clampVisualValue(1 + scaleAmount * (0.54 + profile.midDrift * 0.34) - profile.endShearX * shapeMorph * 0.1, 0.975, 1.055),
+    translateXRatio: clampVisualValue(slowWave * drift * (0.006 + metamorphosis * 0.006), -0.014, 0.014),
+    translateYRatio: clampVisualValue(crossWave * drift * (0.004 + metamorphosis * 0.005), -0.014, 0.014),
+    rotation: clampVisualValue(
+      slowWave * profile.tilt * midMotion * 0.012 + profile.endRotation * shapeMorph,
+      -0.05,
+      0.05,
+    ),
+    shearX: clampVisualValue(profile.endShearX * shapeMorph, -0.06, 0.06),
+    shearY: clampVisualValue(profile.endShearY * shapeMorph, -0.06, 0.06),
+    jitter,
+    hueBlend: clampVisualValue(
+      profile.trebleHue
+        * metamorphosis
+        * (0.2 + trebleMotion * 0.8)
+        * (0.72 + 0.28 * (0.5 + 0.5 * Math.sin(safeTime * 0.22 + seedPhase))),
+      0,
+      0.62,
+    ),
+    motionRate: clampVisualValue(
+      lifecycleMotion * (0.86 + clampVisualValue((safeBpm - 70) / 100) * 0.2) + trebleMotion * 0.16 + tempoPulse * 0.12,
+      0.48,
+      1.95,
+    ),
+    tempoPulse,
+    gesture: radioVisualMusicGesturePlan(drives),
+  };
+}
+
 function bandLayerActivation(value: number, threshold: number, ceiling: number): number {
   const normalized = clampVisualValue(
     (clampVisualValue(value) - threshold) / Math.max(0.001, ceiling - threshold),
   );
-  return clampVisualValue(Math.pow(normalized, 1.08));
+  // Preserve headroom through ordinary passages: low readings move gently,
+  // while genuinely high band energy can still reach the full layer budget.
+  return clampVisualValue(Math.pow(normalized, 1.42));
 }
 
 function tapestryActivation(bass: number, mid: number, treble: number): number {
   const sharedFloor = Math.min(bass, mid, treble);
-  const shared = bandLayerActivation(sharedFloor, 0.018, 0.75);
+  const shared = bandLayerActivation(sharedFloor, 0.03, 0.9);
   const mean = (bass + mid + treble) / 3;
   return clampVisualValue(shared * (0.72 + mean * 0.28));
 }
@@ -478,9 +727,9 @@ export function radioVisualAudioDrives(signal: RadioVisualMusicSignal): RadioVis
   const bassPulse = clampVisualValue(Math.max(bass * 0.08, beatDrive * bass));
   const midPulse = clampVisualValue(Math.max(mid * 0.08, accentDrive * mid));
   const treblePulse = clampVisualValue(Math.max(treble * 0.08, peakDrive * treble));
-  const bassLayer = bandLayerActivation(bass, 0.018, 0.78);
-  const midLayer = bandLayerActivation(mid, 0.016, 0.76);
-  const trebleLayer = bandLayerActivation(treble, 0.012, 0.72);
+  const bassLayer = bandLayerActivation(bass, 0.032, 0.92);
+  const midLayer = bandLayerActivation(mid, 0.028, 0.9);
+  const trebleLayer = bandLayerActivation(treble, 0.022, 0.88);
   const tapestry = tapestryActivation(bass, mid, treble);
   const progress = clampVisualValue(signal.progress);
   const phrase = clampVisualValue(signal.phrase);
@@ -576,37 +825,41 @@ export function radioVisualMusicPerimeterPlan(
   drives: RadioVisualAudioDrives,
 ): RadioVisualMusicPerimeterPlan {
   const bassDrive = clampVisualValue(
-    0.12 + drives.bassLayer * 0.58 + drives.bassPulse * 0.3,
+    0.07 + drives.bassLayer * 0.58 + drives.bassPulse * 0.28,
   );
   const midDrive = clampVisualValue(
-    0.1 + drives.midLayer * 0.58 + drives.midPulse * 0.32,
+    0.055 + drives.midLayer * 0.59 + drives.midPulse * 0.3,
   );
   const trebleDrive = clampVisualValue(
-    0.1 + drives.trebleLayer * 0.54 + drives.treblePulse * 0.36,
+    0.055 + drives.trebleLayer * 0.56 + drives.treblePulse * 0.33,
   );
   const tapestryDrive = clampVisualValue(
     drives.tapestry * 0.7 + drives.tapestryPulse * 0.3,
   );
   const sharedBandDrive = (bassDrive + midDrive + trebleDrive) / 3;
   const strength = clampVisualValue(
-    0.64
-      + drives.body * 0.1
-      + drives.presence * 0.08
+    0.52
+      + drives.body * 0.12
+      + drives.presence * 0.1
       + sharedBandDrive * 0.1
-      + drives.impact * 0.04
-      + tapestryDrive * 0.08,
-    0.64,
+      + drives.impact * 0.06
+      + tapestryDrive * 0.1,
+    0.52,
     1,
   );
   const reach = clampVisualValue(
-    0.075 + midDrive * 0.055 + trebleDrive * 0.035 + tapestryDrive * 0.035,
-    0.075,
-    0.2,
+    0.032
+      + midDrive * 0.046
+      + trebleDrive * 0.032
+      + tapestryDrive * 0.032
+      + drives.impact * 0.009,
+    0.032,
+    0.155,
   );
   const thickness = clampVisualValue(
-    0.0035 + bassDrive * 0.0095 + drives.bassPulse * 0.0045,
-    0.0035,
-    0.018,
+    0.0025 + bassDrive * 0.0078 + drives.bassPulse * 0.0037,
+    0.0025,
+    0.014,
   );
   return {
     motif: RADIO_VISUAL_MUSIC_PERIMETER_MOTIFS[scene],
@@ -617,9 +870,9 @@ export function radioVisualMusicPerimeterPlan(
     midDrive,
     trebleDrive,
     tapestryDrive,
-    bassElements: Math.min(10, 2 + Math.round(drives.bassLayer * 5 + drives.bassPulse * 3)),
-    midElements: Math.min(14, 3 + Math.round(drives.midLayer * 7 + drives.midPulse * 4)),
-    trebleElements: Math.min(18, 3 + Math.round(drives.trebleLayer * 9 + drives.treblePulse * 6)),
+    bassElements: Math.min(10, 1 + Math.round(drives.bassLayer * 6 + drives.bassPulse * 3)),
+    midElements: Math.min(14, 2 + Math.round(drives.midLayer * 8 + drives.midPulse * 4)),
+    trebleElements: Math.min(18, 2 + Math.round(drives.trebleLayer * 10 + drives.treblePulse * 6)),
     tapestryElements: tapestryDrive > 0.025
       ? Math.min(6, 1 + Math.round(drives.tapestry * 3 + drives.tapestryPulse * 2))
       : 0,
@@ -638,6 +891,10 @@ export interface RadioVisualWindowIntrusionPlan {
   lightningCueStrength: number;
   signalBreachProgress: number | null;
   signalBreachStrength: number;
+  musicSweepProgress: number | null;
+  musicSweepStrength: number;
+  musicSweepSeed: number;
+  musicGesture: RadioVisualMusicGesture;
 }
 
 export interface RadioVisualWindowIntrusionInput {
@@ -654,6 +911,105 @@ export interface RadioVisualWindowIntrusionInput {
 
 function deterministicVisualUnit(seed: number, salt: number): number {
   return (hashRadioVisualToken(`${Math.trunc(seed)}:${salt}`) % 1_000_000) / 1_000_000;
+}
+
+function rawBroadcastFxBag(seed: number, bagIndex: number): RadioVisualBroadcastFxType[] {
+  const bag = [...RADIO_VISUAL_BROADCAST_FX_TYPES];
+  const bagSeed = hashRadioVisualToken(`${Math.trunc(seed)}:broadcast-fx-bag:${Math.trunc(bagIndex)}`);
+  for (let index = bag.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(deterministicVisualUnit(bagSeed, 27_000 + index) * (index + 1));
+    [bag[index], bag[swapIndex]] = [bag[swapIndex], bag[index]];
+  }
+  return bag;
+}
+
+/** Deterministic shuffle-bag lookup with a hard no-repeat bag boundary. */
+export function radioVisualBroadcastFxTypeForOccurrence(
+  seed: number,
+  occurrenceIndex: number,
+): RadioVisualBroadcastFxType {
+  const safeOccurrence = Math.max(0, Math.floor(Number.isFinite(occurrenceIndex) ? occurrenceIndex : 0));
+  const bagSize = RADIO_VISUAL_BROADCAST_FX_TYPES.length;
+  const bagIndex = Math.floor(safeOccurrence / bagSize);
+  const position = safeOccurrence % bagSize;
+  const bag = rawBroadcastFxBag(seed, bagIndex);
+  if (bagIndex > 0) {
+    const previousBag = rawBroadcastFxBag(seed, bagIndex - 1);
+    const previousType = previousBag[previousBag.length - 1];
+    if (bag[0] === previousType) {
+      const swapIndex = bag.findIndex((type, index) => index > 0 && type !== previousType);
+      [bag[0], bag[swapIndex]] = [bag[swapIndex], bag[0]];
+    }
+  }
+  return bag[position];
+}
+
+const CENTER_SAFE_BROADCAST_FX = new Set<RadioVisualBroadcastFxType>([
+  "scanline_stack",
+  "signal_tear",
+  "frame_stutter",
+  "chromatic_desync",
+  "barcode_sweep",
+  "code_breach",
+  "terminal_packet",
+  "sync_dropout",
+  "packet_trace",
+  "compression_blocks",
+]);
+
+/**
+ * Schedule one bounded BARCODE transmission artifact at a time. Selection and
+ * cadence are seed-stable; audio only changes the earned strength and detail.
+ */
+export function radioVisualBroadcastFxPlan(input: RadioVisualBroadcastFxInput): RadioVisualBroadcastFxPlan {
+  const safeTime = Math.max(0, Number.isFinite(input.time) ? input.time : 0);
+  const slotSeconds = 5.4;
+  const occurrenceIndex = Math.floor(safeTime / slotSeconds);
+  const occurrenceSeed = hashRadioVisualToken(`${Math.trunc(input.seed)}:broadcast-fx:${occurrenceIndex}`);
+  const type = radioVisualBroadcastFxTypeForOccurrence(input.seed, occurrenceIndex);
+  const slotTime = safeTime - occurrenceIndex * slotSeconds;
+  const delay = 0.2 + deterministicVisualUnit(occurrenceSeed, 27_101) * 0.65;
+  const duration = 0.72 + deterministicVisualUnit(occurrenceSeed, 27_102) * 0.94;
+  const progress = clampVisualValue((slotTime - delay) / duration);
+  const showEligible = input.sessionActive && input.showStage !== "intake";
+  const withinWindow = slotTime >= delay && slotTime < delay + duration;
+  const envelope = showEligible && withinWindow
+    ? Math.pow(Math.sin(progress * Math.PI), 1.12)
+    : 0;
+  const sceneMix = clampVisualValue(input.sceneMix);
+  const audioMass = clampVisualValue(
+    input.drives.body * 0.26
+      + input.drives.build * 0.22
+      + Math.max(input.drives.bassLayer, input.drives.midLayer, input.drives.trebleLayer) * 0.22
+      + input.drives.impact * 0.3,
+  );
+  const cuePriority = input.cueType === null ? 1 : 0.42;
+  const strength = clampVisualValue(envelope * sceneMix * (0.18 + audioMass * 0.5) * cuePriority, 0, 0.68);
+  const detail = clampVisualValue(
+    0.22
+      + input.drives.midLayer * 0.2
+      + input.drives.trebleLayer * 0.25
+      + input.drives.tapestry * 0.2
+      + input.drives.impact * 0.13,
+  );
+  const centerAllowed = input.cueType === null && CENTER_SAFE_BROADCAST_FX.has(type);
+  const centerStrength = centerAllowed
+    ? clampVisualValue(strength * (0.22 + detail * 0.25), 0, 0.26)
+    : 0;
+  return {
+    active: strength >= 0.002,
+    type,
+    occurrenceIndex,
+    occurrenceSeed,
+    progress,
+    envelope,
+    strength,
+    detail,
+    centerAllowed,
+    centerStrength,
+    centerPrimitiveBudget: centerAllowed ? Math.min(8, 2 + Math.floor(detail * 6)) : 0,
+    crtStrength: showEligible ? clampVisualValue(sceneMix * (0.026 + input.drives.body * 0.018), 0, 0.055) : 0,
+  };
 }
 
 function boundedCycleProgress(cycle: number, activeWindow: number): number | null {
@@ -732,11 +1088,30 @@ export function radioVisualWindowIntrusionPlan(
     ? (clampVisualValue(input.cueProgress) * 2) % 1
     : null;
   const signalBreachStrength = signalBreachProgress === null ? 0 : cueEnvelope * 0.52;
+  const gesturePlan = radioVisualMusicGesturePlan(input.drives);
+  const musicSweepCycleSeconds = 4.6 + deterministicVisualUnit(input.seed, 23_801) * 2.2;
+  const musicSweepShiftedTime = input.time + deterministicVisualUnit(input.seed, 23_802) * musicSweepCycleSeconds;
+  const musicSweepCycleIndex = Math.floor(musicSweepShiftedTime / musicSweepCycleSeconds);
+  const musicSweepGate = input.cueType === null && trackMix > 0.08 && gesturePlan.strength > 0.24
+    ? boundedCycleProgress(musicSweepShiftedTime / musicSweepCycleSeconds, 0.11)
+    : null;
+  const musicSweepStrength = musicSweepGate === null
+    ? 0
+    : clampVisualValue(
+      sceneMix
+        * trackMix
+        * Math.sin(musicSweepGate * Math.PI)
+        * (gesturePlan.strength - 0.18)
+        * 0.44,
+      0,
+      0.26,
+    );
   const active = (scanProgress !== null && scanStrength >= 0.002)
     || (stutterProgress !== null && stutterStrength >= 0.002)
     || lightningFamilyStrength >= 0.002
     || lightningCueStrength > 0.002
-    || signalBreachStrength >= 0.002;
+    || signalBreachStrength >= 0.002
+    || musicSweepStrength >= 0.002;
 
   return {
     active,
@@ -750,6 +1125,10 @@ export function radioVisualWindowIntrusionPlan(
     lightningCueStrength,
     signalBreachProgress,
     signalBreachStrength,
+    musicSweepProgress: musicSweepStrength >= 0.002 ? musicSweepGate : null,
+    musicSweepStrength,
+    musicSweepSeed: input.seed + musicSweepCycleIndex * 11_173,
+    musicGesture: gesturePlan.gesture,
   };
 }
 

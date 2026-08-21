@@ -941,8 +941,10 @@ test("music evolution stays bounded while bass, mids, treble, phrase, and song a
     const bassPlan = engine.radioVisualMusicEvolutionPlan(musicScene, 8317, 11.3, bass);
     const midPlan = engine.radioVisualMusicEvolutionPlan(musicScene, 8317, 11.3, mids);
     const treblePlan = engine.radioVisualMusicEvolutionPlan(musicScene, 8317, 11.3, treble);
-    assert.ok(still.scaleX >= 0.975 && still.scaleX <= 1.055);
-    assert.ok(bassPlan.scaleX >= still.scaleX && bassPlan.scaleY >= still.scaleY, `${musicScene} bass must own scale and pulse`);
+    assert.ok(still.scaleX >= 0.955 && still.scaleX <= 1.075);
+    assert.ok(bassPlan.scaleY >= 0.955 && bassPlan.scaleY <= 1.075);
+    assert.ok(bassPlan.pulse > still.pulse + 0.3, `${musicScene} bass impact must own a material pulse`);
+    assert.ok(bassPlan.lineWeight > still.lineWeight && bassPlan.reach > still.reach, `${musicScene} bass must thicken and extend its geometry`);
     assert.ok(Math.abs(midPlan.translateXRatio) + Math.abs(midPlan.translateYRatio) >= Math.abs(still.translateXRatio) + Math.abs(still.translateYRatio), `${musicScene} mids must own drift`);
     assert.ok(Math.abs(midPlan.rotation - still.rotation) > 0.00001, `${musicScene} mids must own bounded tilt within the progress-driven lifecycle pose`);
     assert.ok(treblePlan.hueBlend > still.hueBlend && treblePlan.motionRate > still.motionRate, `${musicScene} treble must own hue and phase speed`);
@@ -963,6 +965,75 @@ test("music evolution stays bounded while bass, mids, treble, phrase, and song a
   const later = engine.radioVisualMusicEvolutionPlan("signal_constellation", 8317, 31, { ...quiet, progress: 0.72, phrase: 0.8 });
   assert.notEqual(start.sectionIndex, later.sectionIndex, "the long song arc must advance without changing family identity");
   assert.notEqual(start.translateXRatio, later.translateXRatio, "phrase and elapsed motion must keep the selected family alive");
+});
+
+test("music evolution converts real hits and section energy into bounded pulse, glow, weight, reach, and deformation", () => {
+  const steady = {
+    presence: 0.62,
+    body: 0.58,
+    bass: 0.54,
+    mid: 0.6,
+    treble: 0.56,
+    bassLayer: 0.48,
+    midLayer: 0.52,
+    trebleLayer: 0.46,
+    tapestry: 0.4,
+    impact: 0,
+    bassPulse: 0,
+    midPulse: 0,
+    treblePulse: 0,
+    tapestryPulse: 0,
+    build: 0.42,
+    progress: 0.5,
+    phrase: 0.35,
+  };
+  const hardHit = {
+    ...steady,
+    impact: 1,
+    bassPulse: 1,
+    midPulse: 0.88,
+    treblePulse: 0.92,
+    tapestryPulse: 0.84,
+  };
+  const signatures = new Set();
+  for (const musicScene of engine.RADIO_VISUAL_MUSIC_SCENES) {
+    const calm = engine.radioVisualMusicEvolutionPlan(musicScene, 7_731, 12.25, steady, 120);
+    const hit = engine.radioVisualMusicEvolutionPlan(musicScene, 7_731, 12.25, hardHit, 120);
+    assert.ok(hit.hardBeat > 0.98, `${musicScene} must recognize an analyser-earned hard beat`);
+    assert.ok(hit.beatPunch > calm.beatPunch + 0.7, `${musicScene} must punch harder on the detected hit`);
+    assert.ok(hit.pulse > calm.pulse + 0.45, `${musicScene} must visibly pulse rather than only translate`);
+    assert.ok(hit.lineWeight > calm.lineWeight + 0.3, `${musicScene} must thicken on impact`);
+    assert.ok(hit.reach > calm.reach + 0.12, `${musicScene} must extend on impact`);
+    assert.ok(hit.glowBloom > calm.glowBloom + 0.12, `${musicScene} must bloom on impact`);
+    assert.ok(hit.deformation > calm.deformation, `${musicScene} must change shape on impact`);
+    assert.ok(hit.movementBurst > calm.movementBurst, `${musicScene} may earn additional movement on impact`);
+    assert.ok(hit.lineWeight >= 0.82 && hit.lineWeight <= 2.4);
+    assert.ok(hit.reach >= 0.86 && hit.reach <= 1.55);
+    assert.ok(hit.scaleX >= 0.955 && hit.scaleX <= 1.075);
+    assert.ok(hit.scaleY >= 0.955 && hit.scaleY <= 1.075);
+    assert.ok(calm.movementBurst >= 0.16, `${musicScene} must retain its existing baseline motion`);
+    signatures.add([
+      hit.variant,
+      hit.breath.toFixed(3),
+      hit.lineWeight.toFixed(3),
+      hit.reach.toFixed(3),
+      hit.glowBloom.toFixed(3),
+      hit.deformation.toFixed(3),
+      hit.movementBurst.toFixed(3),
+    ].join(":"));
+  }
+  assert.equal(signatures.size, 10, "all ten families must keep distinct modulation signatures");
+
+  const tempoOnly = engine.radioVisualMusicEvolutionPlan("edge_spectrum", 7_731, 12, steady, 120);
+  assert.equal(tempoOnly.hardBeat, 0, "the mathematical tempo clock cannot fabricate a hard analyser beat");
+  assert.ok(tempoOnly.beatPunch > 0, "tempo may still provide a subtle breathing cadence");
+
+  const silent = Object.fromEntries(Object.keys(steady).map((key) => [key, 0]));
+  silent.progress = 0.125;
+  const silentSection = engine.radioVisualMusicEvolutionPlan("laser_lattice", 7_731, 12.25, silent, 120);
+  const liveSection = engine.radioVisualMusicEvolutionPlan("laser_lattice", 7_731, 12.25, { ...steady, progress: 0.125 }, 120);
+  assert.equal(silentSection.sectionSurge, 0, "silence cannot manufacture a section surge");
+  assert.ok(liveSection.sectionSurge > 0.05, "audible section energy must create a lifecycle swell");
 });
 
 test("all ten music families have authored origin, mutation, and finale forms paced by tempo", () => {
@@ -1473,6 +1544,12 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.match(receiver, /drawIdleTransmission|drawLightRibbons|drawPrismaticShards|drawSignalConstellation|drawSeedComposition/);
   assert.match(receiver, /drawEdgeSpectrum|drawOscilloscopeRibbons|drawTapeFeedback|drawMatrixRain|drawAsciiTerminal|drawPixelSortStorm|drawLightningSwitchyard|drawLaserLattice|drawParticlePressure|drawSignalConstellation|drawSeededMusicScene/);
   assert.match(receiver, /drawMusicLifecycleVariant[\s\S]*bars_to_teeth[\s\S]*ribbons_to_braids[\s\S]*frames_to_splice[\s\S]*rain_to_crossfeed[\s\S]*terminal_to_breach[\s\S]*slices_to_scramble[\s\S]*rails_to_discharge[\s\S]*grid_to_prism[\s\S]*drift_to_vortex[\s\S]*stars_to_network/, "all ten families must own a different late-song form");
+  assert.match(receiver, /drawMusicDynamicModulation[\s\S]*edge_spectrum[\s\S]*oscilloscope_ribbons[\s\S]*tape_feedback[\s\S]*matrix_rain[\s\S]*ascii_terminal[\s\S]*pixel_sort_storm[\s\S]*lightning_switchyard[\s\S]*laser_lattice[\s\S]*particle_pressure[\s\S]*signal_constellation/, "all ten existing families must receive a distinct additive performance layer");
+  const dynamicModulation = receiver.slice(receiver.indexOf("function drawMusicDynamicModulation"), receiver.indexOf("function drawSeededMusicScene"));
+  for (const modulation of ["pulse", "breath", "beatPunch", "hardBeat", "sectionSurge", "glowBloom", "lineWeight", "reach", "deformation", "movementBurst"]) {
+    assert.match(dynamicModulation, new RegExp(`evolution\\.${modulation}\\b`), `the additive layer must visibly consume ${modulation}`);
+  }
+  assert.match(receiver, /drawMusicLifecycleVariant\([^;]+;\s*drawMusicDynamicModulation\(/s, "dynamic modulation must layer after the retained lifecycle geometry");
   assert.match(receiver, /drawSeededMusicScene\(context, width, height, audioTime, music\.bpm,/, "the selected family lifecycle must receive the detected tempo");
   assert.match(receiver, /return clampVisualValue\(mix \* \(0\.82 \+ drive \* 0\.16\), 0, 0\.98\)/, "chroma-safe cores must multiply by state fades while surviving the orange key");
   assert.doesNotMatch(receiver, /drawVortexRelay|drawBarcodeCathedral|drawHalftoneOrganism|drawMusicHalo|drawPulseRings/);

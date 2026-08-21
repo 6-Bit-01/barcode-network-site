@@ -130,7 +130,7 @@ test("inactive receiver stays nearly invisible and exposes only the visual proje
   assert.equal(snapshot.showStage, "standby");
   assert.equal(snapshot.visualMode, "standby");
   assert.deepEqual(snapshot.queue, { acceptedCount: 0, completedCount: 0, activeCount: 0, remainingCount: 0, progress: 0, pressure: "low" });
-  assert.deepEqual(snapshot.signals, { intakeOpen: false, wheelSpinsOwed: 0, sponsorStatus: null, broadcastPhase: null });
+  assert.deepEqual(snapshot.signals, { intakeOpen: false, wheelSpinsOwed: 0, wheelCandidateCount: 0, sponsorStatus: null, broadcastPhase: null });
   assert.equal(snapshot.player, null);
   assert.equal(snapshot.cue, null);
   assert.deepEqual(snapshot.events, []);
@@ -229,6 +229,12 @@ test("uncaptured songs automatically rotate through six synthetic rhythm persona
   assert.equal(snapshot.player, null);
   assert.equal(signal.source, "timeline");
   assert.ok(signal.energy > 0.12, "an uncaptured loaded track still receives active automatic music motion");
+  const trackStart = engine.radioVisualsMusicSignal(snapshot, 0, 900, null, 0);
+  const trackBuild = engine.radioVisualsMusicSignal(snapshot, 0, 1_020, null, 120);
+  const nextOccurrenceStart = engine.radioVisualsMusicSignal(snapshot, 0, 1_020, null, 0);
+  assert.equal(trackStart.progress, 0, "an unknown-duration track starts its own long-form build at zero");
+  assert.ok(trackBuild.progress > trackStart.progress, "unknown-duration progress builds from the track occurrence rather than the document clock");
+  assert.equal(nextOccurrenceStart.progress, 0, "a new occurrence cannot inherit the previous track's topology stage");
 });
 
 test("track loads and wheel activations vary by occurrence while remaining stable during one occurrence", () => {
@@ -302,14 +308,23 @@ test("display-safe show events project Priority, playback, and Wheel state witho
     },
     session: { ...queueState().session, wheelSpinsOwed: 2 },
   });
-  const snapshot = visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: scene(), now: new Date("2026-08-19T19:00:00.000Z") });
-  assert.deepEqual(snapshot.signals, { intakeOpen: true, wheelSpinsOwed: 2, sponsorStatus: "not_due", broadcastPhase: "broadcast_active" });
+  const snapshot = visuals.resolveRadioVisualsSnapshot({
+    queueState: state,
+    scene: scene("session_active", {
+      wheelCeremony: {
+        displayCandidates: Array.from({ length: 17 }, (_, index) => ({ id: `wheel-private-${index}`, artistName: `Private ${index}` })),
+      },
+    }),
+    now: new Date("2026-08-19T19:00:00.000Z"),
+  });
+  assert.deepEqual(snapshot.signals, { intakeOpen: true, wheelSpinsOwed: 2, wheelCandidateCount: 17, sponsorStatus: "not_due", broadcastPhase: "broadcast_active" });
   assert.ok(snapshot.events.some((event) => event.type === "priority_sent"));
   assert.ok(snapshot.events.some((event) => event.type === "priority_confirmed"));
   assert.ok(snapshot.events.some((event) => event.type === "track_started"));
   assert.ok(snapshot.events.some((event) => event.type === "track_skipped"));
   for (const event of snapshot.events) assert.deepEqual(Object.keys(event).sort(), ["expiresAt", "occurredAt", "seed", "type"]);
   assert.doesNotMatch(JSON.stringify(snapshot.events), /private-priority-id|private-track-id|private@example\.com|pi_private|stripe|checkout/);
+  assert.doesNotMatch(JSON.stringify(snapshot), /wheel-private|Private \d+/, "only the display-safe candidate count may reach the visual source");
 });
 
 test("each event occurrence gets a stable but different visual composition and a smooth envelope", () => {
@@ -327,6 +342,41 @@ test("each event occurrence gets a stable but different visual composition and a
   assert.ok(rising > 0 && rising < held);
   assert.equal(held, 1);
   assert.ok(releasing > 0 && releasing < held);
+});
+
+test("broadcast start is inferred from the authoritative phase or intake-to-live edge, not queue activation", () => {
+  const signal = (overrides = {}) => ({
+    sessionActive: true,
+    showStage: "intake",
+    visualMode: "queue",
+    sceneMode: "session_active",
+    visualSeed: 17,
+    intakeOpen: true,
+    broadcastPhase: "submission_window",
+    wheelSpinsOwed: 0,
+    sponsorStatus: "not_due",
+    ...overrides,
+  });
+  assert.equal(visualEvents.radioVisualBroadcastStartedTransition(
+    signal(),
+    signal({ showStage: "early", broadcastPhase: "broadcast_active" }),
+  ), true);
+  assert.equal(visualEvents.radioVisualBroadcastStartedTransition(
+    signal({ broadcastPhase: null }),
+    signal({ showStage: "early", broadcastPhase: null }),
+  ), true, "legacy snapshots still recover the intake-to-live edge");
+  assert.equal(visualEvents.radioVisualBroadcastStartedTransition(
+    signal(),
+    signal({ showStage: "early" }),
+  ), false, "an explicit non-active phase cannot masquerade as Start Broadcast");
+  assert.equal(visualEvents.radioVisualBroadcastStartedTransition(
+    signal({ sessionActive: false, intakeOpen: false }),
+    signal({ sessionActive: true, intakeOpen: true }),
+  ), false, "opening submissions is not Start Broadcast");
+  assert.equal(visualEvents.radioVisualBroadcastStartedTransition(
+    signal({ showStage: "early", broadcastPhase: "broadcast_active" }),
+    signal({ showStage: "middle", broadcastPhase: "broadcast_active" }),
+  ), false);
 });
 
 test("idle ambient moments are deterministic within a cycle and change composition across cycles", () => {
@@ -367,7 +417,10 @@ test("music response follows the authoritative playback clock and uses direct an
   assert.notDeepEqual(first, later);
   assert.equal(first.source, "timeline");
   assert.ok(first.bpm >= 84 && first.bpm <= 148);
-  for (const channel of [first.energy, first.bass, first.mid, first.treble, first.beat, first.accent, first.peak]) assert.ok(channel >= 0 && channel <= 1);
+  for (const channel of [first.energy, first.bass, first.mid, first.treble, first.beat, first.accent, first.peak, first.progress, first.phrase]) assert.ok(channel >= 0 && channel <= 1);
+  assert.equal(first.progress, 24 / 180);
+  assert.ok(later.progress > first.progress);
+  assert.notEqual(later.phrase, first.phrase);
 
   const upload = entry("upload-music", { sourceType: "upload" });
   const uploadState = queueState({ nowPlaying: upload, loadedTrack: upload });
@@ -378,6 +431,7 @@ test("music response follows the authoritative playback clock and uses direct an
   assert.equal(analysed.source, "analyser");
   assert.ok(analysed.energy > 0.65);
   assert.ok(analysed.bass > analysed.treble);
+  assert.equal(analysed.progress, 0.1);
 
   const loopback = engine.radioVisualsMusicSignal(timelineSnapshot, 24, 100, {
     schemaVersion: "barcode_audio_signal_v1",
@@ -400,6 +454,8 @@ test("music response follows the authoritative playback clock and uses direct an
   assert.equal(loopback.bpm, 128);
   assert.ok(loopback.bass > loopback.treble);
   assert.ok(loopback.beat > 0.7);
+  assert.equal(loopback.progress, first.progress);
+  assert.equal(loopback.phrase, first.phrase);
 
   const quietLoopback = engine.radioVisualsMusicSignal(timelineSnapshot, 24, 100, {
     schemaVersion: "barcode_audio_signal_v1",
@@ -560,23 +616,117 @@ test("music scene selection is deterministic and spans ten genuinely different f
   assert.deepEqual([...selected].sort(), [...engine.RADIO_VISUAL_MUSIC_SCENES].sort());
 });
 
-test("live audio drives give every loud signal visible mass instead of collapsing to peak dots", () => {
-  const loud = engine.radioVisualAudioDrives({
+test("live audio drives preserve broadband mass, separated bands, transients, and long-form build", () => {
+  const base = {
     source: "windows_loopback",
     bpm: 120,
-    energy: 0.76,
+    energy: 0.6,
     bass: 0.05,
-    mid: 0.04,
-    treble: 0.03,
-    beat: 0.2,
-    accent: 0.1,
-    peak: 0.76,
-  });
-  assert.equal(loud.presence, 0.76);
-  assert.ok(loud.bass >= 0.49, "energy must create bass-backed geometry");
-  assert.ok(loud.mid >= 0.45, "energy must create mid-backed structure");
-  assert.ok(loud.treble >= 0.34, "peak must create treble-backed tearing");
-  assert.equal(loud.impact, 0.76);
+    mid: 0.05,
+    treble: 0.05,
+    beat: 0,
+    accent: 0,
+    peak: 0.1,
+    progress: 0.2,
+    phrase: 0.25,
+  };
+  const bodyOnly = engine.radioVisualAudioDrives({ ...base, energy: 0.9 });
+  assert.ok(bodyOnly.body > 0.9, "broadband energy must retain visible composition mass");
+  assert.ok(Math.max(bodyOnly.bass, bodyOnly.mid, bodyOnly.treble) < 0.2, "energy must not pretend every frequency band is loud");
+
+  const bass = engine.radioVisualAudioDrives({ ...base, bass: 0.95 });
+  const mids = engine.radioVisualAudioDrives({ ...base, mid: 0.95 });
+  const treble = engine.radioVisualAudioDrives({ ...base, treble: 0.95 });
+  assert.ok(bass.bass > bass.mid + 0.6 && bass.bass > bass.treble + 0.6);
+  assert.ok(mids.mid > mids.bass + 0.6 && mids.mid > mids.treble + 0.6);
+  assert.ok(treble.treble > treble.bass + 0.6 && treble.treble > treble.mid + 0.6);
+  assert.ok(bass.bassPulse > bass.midPulse + 0.18 && bass.bassPulse > bass.treblePulse + 0.18);
+  assert.ok(mids.midPulse > mids.bassPulse + 0.18 && mids.midPulse > mids.treblePulse + 0.18);
+  assert.ok(treble.treblePulse > treble.bassPulse + 0.18 && treble.treblePulse > treble.midPulse + 0.18);
+
+  const bassHit = engine.radioVisualAudioDrives({ ...base, bass: 0.95, beat: 1 });
+  const trebleHit = engine.radioVisualAudioDrives({ ...base, treble: 0.95, peak: 1 });
+  assert.ok(bassHit.bassPulse > 0.95 && bassHit.midPulse < 0.1 && bassHit.treblePulse < 0.1);
+  assert.ok(trebleHit.treblePulse > 0.75 && trebleHit.bassPulse < 0.1 && trebleHit.midPulse < 0.1);
+
+  const early = engine.radioVisualAudioDrives({ ...base, progress: 0, phrase: 0 });
+  const progressBuild = engine.radioVisualAudioDrives({ ...base, progress: 1, phrase: 0 });
+  const phraseBuild = engine.radioVisualAudioDrives({ ...base, progress: 0, phrase: 1 });
+  const late = engine.radioVisualAudioDrives({ ...base, progress: 1, phrase: 1 });
+  assert.ok(progressBuild.build > early.build + 0.25, "track progress must independently add structure");
+  assert.ok(phraseBuild.build > early.build + 0.2, "phrase progress must independently add structure");
+  assert.ok(late.build > early.build + 0.5, "track and phrase progression must produce a real long-form build");
+  assert.equal(late.progress, 1);
+  assert.equal(late.phrase, 1);
+});
+
+test("band onsets hit independently and structural build releases gradually", () => {
+  const base = {
+    source: "windows_loopback",
+    bpm: 120,
+    energy: 0.5,
+    bass: 0.05,
+    mid: 0.05,
+    treble: 0.05,
+    beat: 0,
+    accent: 0,
+    peak: 0.05,
+    progress: 0.2,
+    phrase: 0.25,
+  };
+  const initial = engine.radioVisualAudioReactionInitialState();
+  const bassHit = engine.advanceRadioVisualAudioReaction(initial, { ...base, bass: 0.9 }, 16);
+  const midHit = engine.advanceRadioVisualAudioReaction(initial, { ...base, mid: 0.9 }, 16);
+  const trebleHit = engine.advanceRadioVisualAudioReaction(initial, { ...base, treble: 0.9 }, 16);
+  assert.ok(bassHit.drives.bassPulse > bassHit.drives.midPulse + 0.6 && bassHit.drives.bassPulse > bassHit.drives.treblePulse + 0.6);
+  assert.ok(midHit.drives.midPulse > midHit.drives.bassPulse + 0.6 && midHit.drives.midPulse > midHit.drives.treblePulse + 0.6);
+  assert.ok(trebleHit.drives.treblePulse > trebleHit.drives.bassPulse + 0.6 && trebleHit.drives.treblePulse > trebleHit.drives.midPulse + 0.6);
+
+  let settledBass = bassHit;
+  for (let step = 0; step < 240; step += 1) {
+    settledBass = engine.advanceRadioVisualAudioReaction(settledBass.state, { ...base, bass: 0.9 }, 1_000 / 60);
+  }
+  const sustainedBass = engine.radioVisualAudioDrives({ ...base, bass: 0.9 });
+  assert.ok(settledBass.state.bassOnset < bassHit.state.bassOnset * 0.05, "a sustained bass bed must stop looking like a new hit");
+  assert.ok(Math.abs(settledBass.drives.bassPulse - sustainedBass.bassPulse) < 0.02, "rendered bass pulse must settle to the sustained-band response");
+
+  const highBuildSignal = { ...base, energy: 0.9, bass: 0.8, mid: 0.8, treble: 0.8, progress: 0.5, phrase: 0.5 };
+  const lowBuildSignal = { ...base, energy: 0.1, bass: 0.05, mid: 0.05, treble: 0.05, progress: 0.5, phrase: 0.5 };
+  let attacked = { state: initial, drives: engine.radioVisualAudioDrives(highBuildSignal) };
+  let released = attacked;
+  let coldLow = { state: initial, drives: engine.radioVisualAudioDrives(lowBuildSignal) };
+  for (let frame = 0; frame < 30; frame += 1) attacked = engine.advanceRadioVisualAudioReaction(attacked.state, highBuildSignal, 1_000 / 60);
+  released = attacked;
+  for (let frame = 0; frame < 30; frame += 1) {
+    released = engine.advanceRadioVisualAudioReaction(released.state, lowBuildSignal, 1_000 / 60);
+    coldLow = engine.advanceRadioVisualAudioReaction(coldLow.state, lowBuildSignal, 1_000 / 60);
+  }
+  assert.ok(attacked.state.buildMemory > 0.4, "build must attack quickly enough to add visible layers during a rise");
+  assert.ok(released.state.buildMemory < attacked.state.buildMemory);
+  assert.ok(released.state.buildMemory > coldLow.state.buildMemory + 0.18, "build must release gradually instead of collapsing between hits");
+});
+
+test("Wheel geometry uses a candidate-count-calibrated outer band", () => {
+  assert.deepEqual(engine.radioVisualsWheelBand(Number.NaN), { innerCenterRatio: 0.49, outerCenterRatio: 0.493, edgeOnly: true, maxRings: 1 });
+  assert.deepEqual(engine.radioVisualsWheelBand(undefined), { innerCenterRatio: 0.49, outerCenterRatio: 0.493, edgeOnly: true, maxRings: 1 });
+  assert.deepEqual(engine.radioVisualsWheelBand(0), { innerCenterRatio: 0.43, outerCenterRatio: 0.478, edgeOnly: false, maxRings: 7 });
+  for (const count of [1, 8]) {
+    assert.deepEqual(engine.radioVisualsWheelBand(count), { innerCenterRatio: 0.49, outerCenterRatio: 0.493, edgeOnly: true, maxRings: 1 });
+  }
+  for (const count of [9, 12]) {
+    assert.deepEqual(engine.radioVisualsWheelBand(count), { innerCenterRatio: 0.47, outerCenterRatio: 0.478, edgeOnly: false, maxRings: 2 });
+  }
+  for (const count of [13, 24]) {
+    assert.deepEqual(engine.radioVisualsWheelBand(count), { innerCenterRatio: 0.456, outerCenterRatio: 0.478, edgeOnly: false, maxRings: 4 });
+  }
+  for (const count of [25, 32, 44, 64, 99, 128]) {
+    assert.deepEqual(engine.radioVisualsWheelBand(count), { innerCenterRatio: 0.45, outerCenterRatio: 0.478, edgeOnly: false, maxRings: 7 });
+  }
+  for (let count = 1; count <= 128; count += 1) {
+    const band = engine.radioVisualsWheelBand(count);
+    assert.ok(band.outerCenterRatio > band.innerCenterRatio, `${count} candidates must retain visible spinning geometry`);
+    assert.ok(band.maxRings >= 1, `${count} candidates cannot disable the Wheel visual`);
+  }
 });
 
 test("the square Studio source contains a centered 3:4 portrait-safe visual stage", () => {
@@ -632,7 +782,7 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.match(receiver, /drawQueueLanes|drawIntakeAperture|drawSponsorCurtain|drawFinalConvergence|drawCompletionAfterimage|drawPressureEdges/);
   assert.match(receiver, /drawIdleTransmission|drawLightRibbons|drawPrismaticShards|drawSignalConstellation|drawSeedComposition/);
   assert.match(receiver, /drawEdgeSpectrum|drawOscilloscopeRibbons|drawTapeFeedback|drawMatrixRain|drawAsciiTerminal|drawPixelSortStorm|drawLightningSwitchyard|drawLaserLattice|drawParticlePressure|drawSignalConstellation|drawSeededMusicScene/);
-  assert.match(receiver, /return clampVisualValue\(mix \* \(0\.46 \+ drive \* 0\.24\), 0, 0\.72\)/, "chroma-safe cores must multiply by state and event fades");
+  assert.match(receiver, /return clampVisualValue\(mix \* \(0\.82 \+ drive \* 0\.16\), 0, 0\.98\)/, "chroma-safe cores must multiply by state fades while surviving the orange key");
   assert.doesNotMatch(receiver, /drawVortexRelay|drawBarcodeCathedral|drawHalftoneOrganism|drawMusicHalo|drawPulseRings/);
   assert.doesNotMatch(receiver, /drawLiquidDream|drawKaleidoscopeBloom|drawSpectralLoom|drawFeedbackArchitecture|drawChromaticSmears|radioVisualComposition/);
   assert.match(receiver, /drawAmbientMoment|radioVisualAmbientMoment|observeSnapshotEvents|drawAutomaticEvent/);
@@ -646,29 +796,89 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.doesNotMatch(receiver, /targetAddressSpace/, "literal 127.0.0.1 must remain compatible with TikTok Studio's embedded Chromium version");
   assert.match(receiver, /if \(!snapshot\.sessionActive\)[\s\S]*setAudioBridgeConnection\("idle"\)/);
   assert.match(engineSource, /source: "analyser" \| "timeline" \| "windows_loopback"/);
+  assert.match(engineSource, /fallbackProgressBeats = 384 \+ Math\.floor\(seededUnit\(seed, 30_004\) \* 256\)/, "durationless tracks must use a multi-minute deterministic arc");
+  assert.doesNotMatch(engineSource, /beatPosition % 64/, "durationless progress must not restart every 64 beats");
+  assert.doesNotMatch(engineSource, /fallbackProgressPosition % fallbackProgressBeats/, "durationless progress must not wrap abruptly at the end of its build arc");
   assert.match(engineSource, /RADIO_VISUALS_WHEEL_CENTER_Y_RATIO = 0\.375/);
   assert.match(receiver, /prepareEffectLayer|applyPerformerSafeField|destination-in/);
-  assert.match(receiver, /if \(snapshot\.showStage !== "intake"\) applyPerformerSafeField/);
+  assert.match(receiver, /if \(snapshot\.showStage !== "intake"\) applyPerformerSafeField\(context, width, height, 0\.14\)/);
+  assert.match(receiver, /radioVisualBroadcastStartedTransition\(previous, current\)/);
+  assert.match(receiver, /serverSnapshotRef\.current === snapshot/, "the fabricated fallback snapshot must never become broadcast-transition evidence");
+  assert.match(receiver, /if \(activeSurfaceMix > 0\) \{\s*if \(authoritativeSnapshot\) observeSnapshotEvents/, "only a server snapshot may drive inferred show events");
+  assert.match(receiver, /if \(event\.type === "show_started"\) continue;[\s\S]*applyPerformerSafeField[\s\S]*if \(event\.type === "show_started"\)[\s\S]*drawAutomaticEvent\(outputContext/, "broadcast ignition must render after the ordinary performer attenuation");
   const wheelScene = receiver.slice(receiver.indexOf("function wheelAngularVelocityTarget"), receiver.indexOf("function drawPartyCue"));
   assert.match(wheelScene, /height \* RADIO_VISUALS_WHEEL_CENTER_Y_RATIO/);
   assert.doesNotMatch(wheelScene, /height \* 0\.5/);
-  assert.match(wheelScene, /ring < 4/);
-  assert.match(wheelScene, /context\.arc\(0, 0, radius/);
-  assert.match(wheelScene, /radius \* \(0\.96 \+ ring \* 0\.055\)/);
-  assert.match(wheelScene, /fragment < 28/);
+  assert.match(wheelScene, /candidateCount\?: number/);
+  assert.match(wheelScene, /radioVisualsWheelBand\(candidateCount\)/);
+  assert.match(wheelScene, /band\.innerCenterRatio/);
+  assert.match(wheelScene, /band\.outerCenterRatio/);
+  assert.match(wheelScene, /if \(band\.edgeOnly\)/);
+  assert.match(wheelScene, /shadowBlur = 0/);
+  assert.match(wheelScene, /if \(releaseMode\)[\s\S]*?const sealCount = confirmedMode \? 8 : 4/, "low-candidate results must retain a name-safe release seal");
+  assert.match(wheelScene, /const outermostRing = ring === ringCount - 1[\s\S]*?shadowBlur = outermostRing/, "only the outermost Wheel ring may glow inward");
+  assert.match(wheelScene, /Math\.min\(requestedRingCount, band\.maxRings\)/);
+  assert.match(wheelScene, /hardGeometryOuterRadius/);
+  assert.match(wheelScene, /radiusInBand/);
   assert.doesNotMatch(wheelScene, /spoke|wedge/);
   for (const wheelMode of ["wheel_ready", "wheel_spinning", "wheel_reencrypting", "wheel_result", "wheel_confirmed"]) {
     assert.match(wheelScene, new RegExp(wheelMode));
   }
   assert.match(receiver, /runtime\.wheelPhase \+= runtime\.wheelVelocity \* elapsedMs \/ 1_000/);
   assert.match(receiver, /drawWheelScene\([\s\S]*?runtime\.wheelPhase[\s\S]*?runtime\.wheelMix \* activeSurfaceMix/);
+  assert.match(receiver, /snapshot\.signals\.wheelCandidateCount/);
   assert.doesNotMatch(receiver, /drawTrackSignature|drawLiveMusicResponse/, "one shared layer must not flatten the ten scene silhouettes");
   assert.doesNotMatch(receiver, /globalCompositeOperation = "screen"/);
   assert.match(receiver, /radioVisualMusicScene\(seed\)/);
+  assert.match(receiver, /trackProgressSeed !== snapshot\.visualSeed[\s\S]*?trackProgressStartedAtMs = timestampMs/, "unknown-duration builds must reset on each track occurrence");
   assert.match(receiver, /audioTime = \(transportSeconds/);
-  assert.match(receiver, /activeSurfaceMix \* clampVisualValue\(0\.075/);
+  assert.match(receiver, /sharedTransmissionRetention = clampVisualValue\(1 - runtime\.trackMix \* 0\.78, 0\.22, 1\)/, "the shared transmission language must recede during track-specific scenes");
+  assert.match(receiver, /activeSurfaceMix \* sharedTransmissionRetention \* clampVisualValue\(0\.62 \+ runtime\.intensity \* 0\.24, 0\.62, 0\.9\)/, "the restored transmission floor must remain strong outside track scenes");
+  assert.match(receiver, /clampVisualValue\(0\.52 \+ musicDrives\.body \* 0\.28 \+ musicDrives\.presence \* 0\.28, 0\.52, 1\)/, "track-specific families must replace the receding shared layer with a strong visible floor");
   assert.equal((receiver.match(/drawEdgeSpectrum\(/g) ?? []).length, 2, "spectrum meters must only be defined and invoked by the music dispatcher");
   assert.equal((receiver.match(/drawOscilloscopeRibbons\(/g) ?? []).length, 2, "waveform ribbons must only be defined and invoked by the music dispatcher");
+  for (const rendererName of [
+    "drawEdgeSpectrum",
+    "drawOscilloscopeRibbons",
+    "drawTapeFeedback",
+    "drawMatrixRain",
+    "drawAsciiTerminal",
+    "drawPixelSortStorm",
+    "drawLightningSwitchyard",
+    "drawLaserLattice",
+    "drawParticlePressure",
+    "drawSignalConstellation",
+  ]) {
+    const start = receiver.indexOf(`function ${rendererName}`);
+    const end = receiver.indexOf("\nfunction ", start + 10);
+    const renderer = receiver.slice(start, end);
+    assert.ok(start >= 0 && end > start, `${rendererName} must be independently implemented`);
+    for (const structuralDrive of ["bass", "mid", "treble", "bassPulse", "midPulse", "treblePulse", "build", "progress"]) {
+      assert.match(renderer, new RegExp(`drives\\.${structuralDrive}\\b`), `${rendererName} must structurally respond to ${structuralDrive}`);
+    }
+  }
+  const sceneIdentityTokens = {
+    drawEdgeSpectrum: ["barCount", "holdReach"],
+    drawOscilloscopeRibbons: ["ribbonCount", "cycles"],
+    drawTapeFeedback: ["frameCount", "tearCount"],
+    drawMatrixRain: ["SIGNAL_GLYPHS", "bassCascade"],
+    drawAsciiTerminal: ["TERMINAL_GLYPHS", "paneCount"],
+    drawPixelSortStorm: ["sliceCount", "smearCount", "bandCount"],
+    drawLightningSwitchyard: ["railCount", "drawLightningTree"],
+    drawLaserLattice: ["topology", "beamCount", "shutterX"],
+    drawParticlePressure: ["pressure", "frontCount"],
+    drawSignalConstellation: ["linkReach", "quadraticCurveTo", "packetX"],
+  };
+  for (const [rendererName, identityTokens] of Object.entries(sceneIdentityTokens)) {
+    const start = receiver.indexOf(`function ${rendererName}`);
+    const end = receiver.indexOf("\nfunction ", start + 10);
+    const renderer = receiver.slice(start, end);
+    for (const identityToken of identityTokens) {
+      assert.match(renderer, new RegExp(`\\b${identityToken}\\b`), `${rendererName} must retain its ${identityToken} visual language`);
+    }
+  }
+  assert.match(receiver.slice(receiver.indexOf("function drawMatrixRain"), receiver.indexOf("function drawTapeFeedback")), /drives\.phrase/);
+  assert.match(receiver.slice(receiver.indexOf("function drawLaserLattice"), receiver.indexOf("function drawParticlePressure")), /drives\.progress/);
   assert.match(receiver, /sceneStateMix = clampVisualValue\(1 - Math\.max\(runtime\.wheelMix, runtime\.sponsorMix, runtime\.systemMix\), 0, 1\)/);
   assert.match(receiver, /drawSeedComposition\(runtime\.previousSeed, 1 - seedBlend\)/);
   assert.match(receiver, /drawSeedComposition\(runtime\.currentSeed, seedBlend\)/);

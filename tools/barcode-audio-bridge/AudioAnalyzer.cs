@@ -25,7 +25,11 @@ internal sealed class AudioAnalyzer
     private double _bpm = 112;
     private double _tempoConfidence;
 
-    public void AddSamples(byte[] buffer, int bytesRecorded, WaveFormat format)
+    public void AddSamples(
+        byte[] buffer,
+        int bytesRecorded,
+        WaveFormat format,
+        double sampleGain = EndpointVolumeCompensation.NeutralSampleGain)
     {
         if (buffer.Length == 0 || bytesRecorded <= 0 || format.SampleRate <= 0 || format.Channels <= 0) return;
         var bytesPerSample = Math.Max(1, format.BitsPerSample / 8);
@@ -50,7 +54,9 @@ internal sealed class AudioAnalyzer
                     decodedChannels += 1;
                 }
                 if (decodedChannels == 0) continue;
-                _window[_windowIndex] = Math.Clamp(mono / decodedChannels, -1, 1);
+                _window[_windowIndex] = EndpointVolumeCompensation.Apply(
+                    mono / decodedChannels,
+                    sampleGain);
                 _windowIndex += 1;
                 if (_windowIndex == FftSize)
                 {
@@ -244,4 +250,46 @@ internal sealed class AudioAnalyzer
     }
 
     private static double Unit(double value) => double.IsFinite(value) ? Math.Clamp(value, 0, 1) : 0;
+}
+
+internal static class EndpointVolumeCompensation
+{
+    public const double NeutralSampleGain = 1;
+    private const double MinimumEndpointDecibels = -120;
+    private const double MaximumEndpointDecibels = 24;
+    private const double MaximumSampleGain = 100;
+
+    /// <summary>
+    /// Convert the render endpoint's decibel attenuation into the inverse
+    /// linear sample gain needed to reconstruct the pre-volume signal.
+    /// Invalid or unavailable endpoint readings deliberately preserve the
+    /// previous analyzer behavior instead of dropping an audio frame.
+    /// </summary>
+    public static double SampleGainFromEndpointDecibels(double? endpointDecibels)
+    {
+        if (endpointDecibels is not double decibels
+            || !double.IsFinite(decibels)
+            || decibels < MinimumEndpointDecibels
+            || decibels > MaximumEndpointDecibels)
+        {
+            return NeutralSampleGain;
+        }
+
+        var endpointAmplitude = Math.Pow(10, decibels / 20d);
+        if (!double.IsFinite(endpointAmplitude) || endpointAmplitude <= 0) return NeutralSampleGain;
+
+        var sampleGain = 1 / endpointAmplitude;
+        return double.IsFinite(sampleGain) && sampleGain > 0
+            ? Math.Min(sampleGain, MaximumSampleGain)
+            : NeutralSampleGain;
+    }
+
+    public static double Apply(double sample, double sampleGain)
+    {
+        if (!double.IsFinite(sample)) return 0;
+        var safeGain = double.IsFinite(sampleGain) && sampleGain > 0
+            ? sampleGain
+            : NeutralSampleGain;
+        return Math.Clamp(sample * safeGain, -1, 1);
+    }
 }

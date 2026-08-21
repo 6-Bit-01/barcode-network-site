@@ -693,12 +693,16 @@ export function radioVisualMusicIntensityPlan(
   return {
     structureLevel,
     transientLevel,
-    visibility: clampVisualValue(0.13 + structureLevel * 0.74 + transientLevel * 0.13, 0.13, 1),
-    baseGain: clampVisualValue(0.36 + structureLevel * 0.64, 0.36, 1),
-    perimeterGain: clampVisualValue(0.3 + structureLevel * 0.7, 0.3, 1),
-    lifecycleGain: clampVisualValue(0.08 + structureLevel * 0.72 + transientLevel * 0.2, 0.08, 1),
-    modulationGain: clampVisualValue(0.05 + structureLevel * 0.45 + transientLevel * 0.5, 0.05, 1),
-    identityDensity: clampVisualValue(0.08 + structureLevel * 0.82 + transientLevel * 0.1, 0.08, 1),
+    // A selected track must always retain a readable family signature through
+    // Studio's chroma key. These are identity floors, not simulated audio:
+    // real structure still owns most of the opacity, density, perimeter reach,
+    // lifecycle mutation, and transient modulation above them.
+    visibility: clampVisualValue(0.23 + structureLevel * 0.67 + transientLevel * 0.1, 0.23, 1),
+    baseGain: clampVisualValue(0.58 + structureLevel * 0.42, 0.58, 1),
+    perimeterGain: clampVisualValue(0.52 + structureLevel * 0.48, 0.52, 1),
+    lifecycleGain: clampVisualValue(0.1 + structureLevel * 0.7 + transientLevel * 0.2, 0.1, 1),
+    modulationGain: clampVisualValue(0.065 + structureLevel * 0.435 + transientLevel * 0.5, 0.065, 1),
+    identityDensity: clampVisualValue(0.16 + structureLevel * 0.74 + transientLevel * 0.1, 0.16, 1),
   };
 }
 
@@ -1512,10 +1516,14 @@ const LOOPBACK_LEVEL_CALIBRATION: Record<RadioVisualLoopbackChannel, { floor: nu
   // AudioAnalyzer deliberately compresses RMS and FFT magnitudes with
   // sub-linear exponents. These inverse-ish knees restore musical contrast:
   // low readings stay low, while genuinely high readings retain headroom.
-  energy: { floor: 0.025, ceiling: 1, gamma: 1.8 },
-  bass: { floor: 0.03, ceiling: 1, gamma: 1.8 },
-  mid: { floor: 0.025, ceiling: 1, gamma: 1.8 },
-  treble: { floor: 0.018, ceiling: 1, gamma: 1.75 },
+  // Restore the response curve from the last accepted level checkpoint. The
+  // fixed analysis reference already prevents system-volume reconstruction
+  // from pinning these readings; another 1.8-power gate made useful bridge
+  // readings disappear before the family renderer could consume them.
+  energy: { floor: 0.025, ceiling: 1, gamma: 1.25 },
+  bass: { floor: 0.03, ceiling: 1, gamma: 1.3 },
+  mid: { floor: 0.025, ceiling: 1, gamma: 1.25 },
+  treble: { floor: 0.018, ceiling: 1, gamma: 1.15 },
 };
 
 /** Map the installed bridge's already-compressed bands through one quiet-knee curve. */

@@ -4935,7 +4935,9 @@ function drawVisualFrame(
         * musicSceneActivity
         * RADIO_VISUAL_MUSIC_OUTPUT_GAIN,
     );
-    if (musicMix < 0.06) return;
+    // drawSeededMusicScene already owns the near-zero guard. A second, much
+    // higher cutoff here could erase both families during a legitimate track
+    // fade or erase a quiet family after loopback calibration.
     drawSeededMusicScene(context, width, height, audioTime, music.bpm, musicMix, musicDrives, runtime.primary, runtime.secondary, runtime.highlight, seed);
   };
   drawSeedComposition(runtime.previousMusicSeed, 1 - musicSeedBlend);

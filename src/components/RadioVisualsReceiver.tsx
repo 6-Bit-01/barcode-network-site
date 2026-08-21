@@ -1904,17 +1904,32 @@ function drawMusicLifecycleVariant(
   const morph = evolution.shapeMorph;
   const finale = evolution.finale;
   const beatLift = 0.74 + evolution.tempoPulse * 0.26;
+  const transientShape = Math.max(
+    evolution.bassImpact,
+    evolution.midImpact,
+    evolution.trebleImpact,
+    evolution.tapestryImpact,
+  );
+  const morphVisibility = 0.045 + evolution.structureLevel * 0.72 + transientShape * 0.235;
   const coreAlpha = clampVisualValue(
     chromaCoreAlpha(mix, drives.presence)
       * morph
-      * (0.18 + drives.presence * 0.42 + evolution.pulse * 0.08)
+      * morphVisibility
+      * (
+        0.1
+          + evolution.structureLevel * 0.5
+          + evolution.snareFlash * 0.16
+          + evolution.trebleImpact * 0.1
+          + evolution.tapestryImpact * 0.14
+      )
       * beatLift,
     0,
     0.72,
   );
   const edgeReach = width
     * (0.035 + drives.body * 0.035 + drives.midLayer * 0.075 + finale * 0.035)
-    * evolution.reach;
+    * evolution.reach
+    * (0.52 + evolution.structureLevel * 0.38 + transientShape * 0.1);
   const tick = Math.floor(time * (2 + evolution.motionRate * 4 + evolution.tempoPulse * 5));
   context.save();
   context.globalCompositeOperation = "source-over";
@@ -2119,6 +2134,196 @@ function drawMusicLifecycleVariant(
 }
 
 /**
+ * Short, analyser-earned accents layered over the retained family geometry.
+ * Bass changes pressure/weight, a mid-led transient lights a different family
+ * feature, and treble emits only a few glints. None of these are a continuous
+ * substitute for the underlying scene.
+ */
+function drawMusicBandEventAccents(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  time: number,
+  mix: number,
+  evolution: RadioVisualMusicEvolutionPlan,
+  scene: RadioVisualMusicScene,
+  primary: Rgb,
+  secondary: Rgb,
+  highlight: Rgb,
+  seed: number,
+): void {
+  const eventEnergy = Math.max(
+    evolution.bassImpact,
+    evolution.snareFlash,
+    evolution.trebleImpact,
+    evolution.tapestryImpact,
+  );
+  if (mix < 0.002 || eventEnergy < 0.018) return;
+  const unit = Math.min(width, height);
+  const centerX = width * 0.5;
+  const centerY = height * 0.44;
+  const eventSeed = seed + Math.floor(time * 4) * 65_537;
+  const alpha = clampVisualValue(chromaCoreAlpha(mix) * (0.22 + eventEnergy * 0.62), 0, 0.82);
+  context.save();
+  context.globalCompositeOperation = "lighter";
+  context.lineCap = "round";
+  context.lineJoin = "round";
+
+  if (evolution.bassImpact >= 0.025) {
+    const pressure = evolution.bassImpact;
+    const inset = unit * (0.02 + (1 - pressure) * 0.025);
+    context.strokeStyle = rgba(primary, alpha * (0.42 + pressure * 0.44));
+    context.lineWidth = Math.max(1.5, unit * (0.002 + pressure * 0.012));
+    context.shadowColor = rgba(primary, alpha * 0.54);
+    context.shadowBlur = unit * (0.004 + pressure * 0.018);
+    context.beginPath();
+    if (scene === "particle_pressure" || scene === "signal_constellation" || scene === "laser_lattice") {
+      context.ellipse(
+        centerX,
+        centerY,
+        width * (0.2 + pressure * 0.2),
+        height * (0.14 + pressure * 0.15),
+        evolution.rotation,
+        0,
+        Math.PI * 2,
+      );
+    } else {
+      context.rect(inset, inset, width - inset * 2, height - inset * 2);
+    }
+    context.stroke();
+  }
+
+  if (evolution.snareFlash >= 0.025) {
+    const flash = evolution.snareFlash;
+    const y = height * (0.18 + randomUnit(eventSeed, 67_001) * 0.56);
+    const reach = width * (0.08 + flash * 0.24);
+    context.shadowColor = rgba(highlight, alpha * 0.84);
+    context.shadowBlur = unit * (0.006 + flash * 0.026);
+    context.strokeStyle = rgba(highlight, alpha * (0.48 + flash * 0.5));
+    context.fillStyle = rgba(highlight, alpha * (0.4 + flash * 0.5));
+    context.lineWidth = Math.max(1.5, unit * (0.0018 + flash * 0.01));
+
+    if (scene === "edge_spectrum") {
+      const flashHeight = Math.max(2, unit * (0.002 + flash * 0.014));
+      context.fillRect(0, y, reach, flashHeight);
+      context.fillRect(width - reach, y, reach, flashHeight);
+    } else if (scene === "oscilloscope_ribbons") {
+      context.beginPath();
+      context.arc(width * 0.08, y, unit * (0.018 + flash * 0.045), -Math.PI * 0.5, Math.PI * 0.5);
+      context.arc(width * 0.92, y, unit * (0.018 + flash * 0.045), Math.PI * 0.5, Math.PI * 1.5);
+      context.stroke();
+    } else if (scene === "tape_feedback") {
+      const splice = unit * (0.03 + flash * 0.08);
+      context.beginPath();
+      context.moveTo(0, y - splice);
+      context.lineTo(reach * 0.55, y);
+      context.lineTo(0, y + splice);
+      context.moveTo(width, y - splice);
+      context.lineTo(width - reach * 0.55, y);
+      context.lineTo(width, y + splice);
+      context.stroke();
+    } else if (scene === "matrix_rain") {
+      const glyphCount = 4 + Math.floor(flash * 5);
+      context.font = `900 ${Math.max(10, unit * (0.011 + flash * 0.006))}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      for (let glyph = 0; glyph < glyphCount; glyph += 1) {
+        const x = width * (glyph + 0.5) / glyphCount;
+        context.fillText(SIGNAL_GLYPHS[Math.abs(glyph * 7 + eventSeed) % SIGNAL_GLYPHS.length], x, y);
+      }
+    } else if (scene === "ascii_terminal") {
+      context.font = `900 ${Math.max(10, unit * (0.01 + flash * 0.006))}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+      context.textBaseline = "middle";
+      context.textAlign = "left";
+      context.fillText("[MID::SYNC]", unit * 0.02, y);
+      context.textAlign = "right";
+      context.fillText("[HIT::ACK]", width - unit * 0.02, y);
+    } else if (scene === "pixel_sort_storm") {
+      for (let shard = 0; shard < 3; shard += 1) {
+        const offset = (shard - 1) * unit * 0.014;
+        const shardReach = reach * (0.45 + shard * 0.2);
+        context.fillRect(0, y + offset, shardReach, Math.max(2, unit * (0.002 + flash * 0.007)));
+        context.fillRect(width - shardReach, y - offset, shardReach, Math.max(2, unit * (0.002 + flash * 0.007)));
+      }
+    } else if (scene === "lightning_switchyard") {
+      context.beginPath();
+      context.moveTo(0, y);
+      for (let step = 1; step <= 6; step += 1) {
+        context.lineTo(
+          reach * step / 6,
+          y + (randomUnit(eventSeed, 67_100 + step) - 0.5) * unit * (0.025 + flash * 0.06),
+        );
+      }
+      context.moveTo(width, y);
+      for (let step = 1; step <= 6; step += 1) {
+        context.lineTo(
+          width - reach * step / 6,
+          y + (randomUnit(eventSeed, 67_200 + step) - 0.5) * unit * (0.025 + flash * 0.06),
+        );
+      }
+      context.stroke();
+    } else if (scene === "laser_lattice") {
+      const radiusX = width * (0.08 + flash * 0.18);
+      const radiusY = height * (0.05 + flash * 0.13);
+      context.beginPath();
+      context.moveTo(centerX, centerY - radiusY);
+      context.lineTo(centerX + radiusX, centerY);
+      context.lineTo(centerX, centerY + radiusY);
+      context.lineTo(centerX - radiusX, centerY);
+      context.closePath();
+      context.stroke();
+    } else if (scene === "particle_pressure") {
+      context.beginPath();
+      context.ellipse(centerX, centerY, width * (0.12 + flash * 0.21), height * (0.08 + flash * 0.15), 0, 0, Math.PI * 2);
+      context.stroke();
+    } else {
+      const spokeCount = 5 + Math.floor(flash * 5);
+      for (let spoke = 0; spoke < spokeCount; spoke += 1) {
+        const angle = spoke / spokeCount * Math.PI * 2;
+        const inner = unit * 0.08;
+        const outer = unit * (0.13 + flash * 0.17);
+        context.beginPath();
+        context.moveTo(centerX + Math.cos(angle) * inner, centerY + Math.sin(angle) * inner);
+        context.lineTo(centerX + Math.cos(angle) * outer, centerY + Math.sin(angle) * outer);
+        context.stroke();
+      }
+    }
+  }
+
+  if (evolution.trebleImpact >= 0.025) {
+    const sparkleCount = 1 + Math.floor(evolution.trebleImpact * 5);
+    context.shadowColor = rgba(highlight, alpha * 0.86);
+    context.shadowBlur = unit * (0.008 + evolution.trebleImpact * 0.022);
+    context.lineWidth = Math.max(1, unit * (0.0012 + evolution.trebleImpact * 0.003));
+    for (let sparkle = 0; sparkle < sparkleCount; sparkle += 1) {
+      const fromRight = sparkle % 2 === 1;
+      const x = width * (fromRight ? 0.83 : 0.17) + (randomUnit(eventSeed, 67_400 + sparkle) - 0.5) * width * 0.16;
+      const y = height * (0.12 + randomUnit(eventSeed, 67_500 + sparkle) * 0.68);
+      const length = unit * (0.012 + evolution.trebleImpact * 0.045);
+      const angle = randomUnit(eventSeed, 67_600 + sparkle) * Math.PI * 2;
+      context.strokeStyle = rgba(sparkle % 2 ? secondary : highlight, alpha * (0.5 + evolution.trebleImpact * 0.42));
+      context.beginPath();
+      context.moveTo(x - Math.cos(angle) * length, y - Math.sin(angle) * length);
+      context.lineTo(x + Math.cos(angle) * length, y + Math.sin(angle) * length);
+      context.stroke();
+    }
+  }
+
+  if (evolution.tapestryImpact >= 0.04) {
+    const burst = evolution.tapestryImpact;
+    const angle = randomUnit(eventSeed, 67_900) * Math.PI - Math.PI * 0.5;
+    const length = Math.hypot(width, height) * 0.58;
+    context.strokeStyle = rgba(secondary, alpha * (0.34 + burst * 0.52));
+    context.lineWidth = Math.max(1.5, unit * (0.0018 + burst * 0.007));
+    context.beginPath();
+    context.moveTo(centerX - Math.cos(angle) * length, centerY - Math.sin(angle) * length);
+    context.lineTo(centerX + Math.cos(angle) * length, centerY + Math.sin(angle) * length);
+    context.stroke();
+  }
+  context.restore();
+}
+
+/**
  * Additive performance pass for the ten authored music families. The original
  * renderer and its lifecycle form stay intact; this layer turns the shared
  * audio envelope into family-specific breathing, impact, weight, reach, glow,
@@ -2141,36 +2346,54 @@ function drawMusicDynamicModulation(
   if (mix < 0.002) return;
   const unit = Math.min(width, height);
   const colors = [primary, secondary, highlight] as const;
-  const audioBody = clampVisualValue(
-    drives.presence * 0.3
-      + drives.bassLayer * 0.24
-      + drives.midLayer * 0.24
-      + drives.trebleLayer * 0.12
-      + drives.tapestry * 0.1,
+  const eventEnergy = Math.max(
+    evolution.bassImpact,
+    evolution.midImpact,
+    evolution.trebleImpact,
+    evolution.tapestryImpact,
   );
-  const breathScale = 0.78 + evolution.breath * 0.24;
-  const impactScale = 1 + evolution.beatPunch * 0.12 + evolution.hardBeat * 0.2;
-  const reachScale = evolution.reach * breathScale * impactScale;
+  const breathScale = 0.94
+    + (evolution.breath - 0.5) * evolution.structureLevel * 0.18;
+  const impactScale = 1
+    + evolution.bassImpact * 0.16
+    + evolution.tapestryImpact * 0.12;
+  const reachScale = (0.68 + evolution.structureLevel * 0.32)
+    * evolution.reach
+    * breathScale
+    * impactScale;
   const deformation = evolution.deformation;
   const coreAlpha = clampVisualValue(
     chromaCoreAlpha(mix, drives.presence)
-      * (0.16 + audioBody * 0.25 + evolution.pulse * 0.22 + evolution.hardBeat * 0.22),
+      * (
+        0.025
+          + evolution.structureLevel * 0.23
+          + evolution.bassImpact * 0.12
+          + evolution.snareFlash * 0.2
+          + evolution.trebleImpact * 0.14
+          + evolution.tapestryImpact * 0.18
+          + evolution.sectionSurge * 0.08
+      ),
     0,
     0.82,
   );
-  const lineWidth = Math.max(1.25, unit * 0.0017 * evolution.lineWeight);
-  const glowRadius = unit * (0.002 + evolution.glowBloom * 0.014 + evolution.hardBeat * 0.006);
-  const movementGate = 0.18 + evolution.movementBurst * 0.82;
-  const tick = Math.floor(time * (2.2 + evolution.motionRate * 3.4 + evolution.hardBeat * 7));
+  const lineWidth = Math.max(0.8, unit * 0.00155 * evolution.lineWeight);
+  const glowRadius = unit * (0.0008 + evolution.glowBloom * 0.016 + evolution.trebleImpact * 0.008);
+  const movementGate = 0.06 + evolution.structureLevel * 0.12 + evolution.movementBurst * 0.82;
+  const tick = Math.floor(time * (0.9 + evolution.motionRate * 1.7 + eventEnergy * 8));
   context.save();
   context.globalCompositeOperation = "source-over";
   context.lineCap = "round";
   context.lineJoin = "round";
-  context.shadowColor = rgba(highlight, coreAlpha * (0.28 + evolution.glowBloom * 0.54 + evolution.sectionSurge * 0.12));
+  context.shadowColor = rgba(highlight, coreAlpha * (0.18 + evolution.glowBloom * 0.64 + evolution.snareFlash * 0.22));
   context.shadowBlur = glowRadius + unit * evolution.sectionSurge * 0.004;
 
   if (scene === "edge_spectrum") {
-    const barCount = 8 + Math.floor(drives.midLayer * 8 + drives.trebleLayer * 6);
+    const barCount = 3 + Math.floor(
+      evolution.structureLevel * 7
+        + drives.midLayer * 3
+        + drives.trebleLayer * 2
+        + evolution.snareFlash * 3,
+    );
     for (let bar = 0; bar < barCount; bar += 1) {
       const position = (bar + 0.5) / barCount;
       const localWave = 0.72 + 0.28 * Math.sin(time * (0.7 + movementGate * 0.45) + bar * 1.43);
@@ -2178,7 +2401,11 @@ function drawMusicDynamicModulation(
       const depth = width * (0.026 + bandDrive * 0.085 + evolution.pulse * 0.05)
         * reachScale
         * localWave;
-      const thickness = lineWidth * (1.2 + bandDrive * 2.2 + evolution.beatPunch * (bar % 4 === 0 ? 2 : 0.7));
+      const thickness = lineWidth * (
+        0.82
+          + bandDrive * 1.55
+          + evolution.bassImpact * (bar % 4 === 0 ? 2.8 : 0.8)
+      );
       const y = height * position;
       const color = colors[bar % colors.length];
       context.strokeStyle = rgba(color, coreAlpha * (0.56 + bandDrive * 0.34));
@@ -2190,10 +2417,11 @@ function drawMusicDynamicModulation(
       context.lineTo(width - depth, y - Math.sin(bar + time * movementGate) * unit * deformation * 0.008);
       context.stroke();
     }
-    if (evolution.hardBeat > 0.05) {
-      const bite = width * (0.08 + evolution.hardBeat * 0.09) * evolution.reach;
-      context.strokeStyle = rgba(highlight, coreAlpha * evolution.hardBeat);
-      context.lineWidth = lineWidth * (1.8 + evolution.hardBeat * 2.2);
+    if (evolution.snareFlash > 0.025 || evolution.hardBeat > 0.05) {
+      const biteStrength = Math.max(evolution.snareFlash, evolution.hardBeat);
+      const bite = width * (0.055 + biteStrength * 0.12) * evolution.reach;
+      context.strokeStyle = rgba(highlight, coreAlpha * (0.34 + biteStrength * 0.66));
+      context.lineWidth = lineWidth * (1.1 + evolution.snareFlash * 4 + evolution.hardBeat * 1.4);
       for (const y of [height * 0.22, height * 0.5, height * 0.78]) {
         context.beginPath();
         context.moveTo(0, y - unit * 0.018);
@@ -2206,15 +2434,19 @@ function drawMusicDynamicModulation(
       }
     }
   } else if (scene === "oscilloscope_ribbons") {
-    const braidCount = 2 + Math.floor(drives.tapestry * 3 + drives.midLayer * 2);
+    const braidCount = 1 + Math.floor(
+      evolution.structureLevel * 2
+        + drives.tapestry * 2
+        + evolution.midImpact * 2,
+    );
     for (let braid = 0; braid < braidCount; braid += 1) {
       const color = colors[braid % colors.length];
       const phase = time * (0.38 + movementGate * 0.5) + braid * 1.67;
       const amplitude = width * (0.025 + drives.midLayer * 0.055 + deformation * 0.045)
         * breathScale
         * (1 + evolution.beatPunch * 0.24);
-      context.strokeStyle = rgba(color, coreAlpha * (0.5 + drives.midPulse * 0.34));
-      context.lineWidth = lineWidth * (1.3 + drives.bassLayer * 2.4 + evolution.beatPunch * 1.1);
+      context.strokeStyle = rgba(color, coreAlpha * (0.42 + evolution.snareFlash * 0.5));
+      context.lineWidth = lineWidth * (0.9 + drives.bassLayer * 1.35 + evolution.bassImpact * 2.4);
       for (const side of [-1, 1]) {
         context.beginPath();
         for (let step = 0; step <= 32; step += 1) {
@@ -2234,7 +2466,12 @@ function drawMusicDynamicModulation(
       }
     }
   } else if (scene === "tape_feedback") {
-    const frameCount = 3 + Math.floor(drives.midLayer * 4 + drives.tapestry * 2);
+    const frameCount = 1 + Math.floor(
+      evolution.structureLevel * 3
+        + drives.midLayer * 2
+        + drives.tapestry * 2
+        + evolution.snareFlash * 2,
+    );
     for (let frame = 0; frame < frameCount; frame += 1) {
       const depth = (frame + 1) / (frameCount + 1);
       const pulseOffset = unit * (evolution.breath - 0.5) * (0.014 + depth * 0.018)
@@ -2243,7 +2480,7 @@ function drawMusicDynamicModulation(
       const insetY = unit * (0.014 + depth * 0.032) - pulseOffset * 0.62;
       const splice = unit * deformation * 0.026 * Math.sin(time * (0.2 + movementGate * 0.18) + frame * 1.4);
       context.strokeStyle = rgba(colors[frame % colors.length], coreAlpha * (0.4 + depth * 0.28));
-      context.lineWidth = lineWidth * (1.1 + drives.bassLayer * 2.1 + (1 - depth) * evolution.beatPunch);
+      context.lineWidth = lineWidth * (0.82 + drives.bassLayer * 1.3 + evolution.bassImpact * (2.2 - depth));
       context.beginPath();
       context.moveTo(insetX + splice, insetY);
       context.lineTo(width - insetX, insetY + splice * 0.24);
@@ -2253,7 +2490,12 @@ function drawMusicDynamicModulation(
       context.stroke();
     }
   } else if (scene === "matrix_rain") {
-    const columnCount = 6 + Math.floor(drives.midLayer * 5 + drives.trebleLayer * 5);
+    const columnCount = 2 + Math.floor(
+      evolution.structureLevel * 5
+        + drives.midLayer * 2
+        + drives.trebleLayer * 2
+        + evolution.trebleImpact * 3,
+    );
     const headHeight = unit * (0.012 + drives.bassLayer * 0.035 + evolution.pulse * 0.03) * reachScale;
     for (let column = 0; column < columnCount; column += 1) {
       const side = column % 2;
@@ -2266,10 +2508,15 @@ function drawMusicDynamicModulation(
       context.fillRect(x - lineWidth, y - headHeight, lineWidth * (1.2 + evolution.lineWeight), headHeight);
     }
     const scanY = height * ((time * (0.025 + movementGate * 0.055) + randomUnit(seed, 65_300)) % 1);
-    context.fillStyle = rgba(highlight, coreAlpha * (0.16 + evolution.hardBeat * 0.5));
-    context.fillRect(0, scanY, width, lineWidth * (0.8 + evolution.beatPunch * 4.2));
+    context.fillStyle = rgba(highlight, coreAlpha * (0.08 + evolution.snareFlash * 0.78 + evolution.trebleImpact * 0.2));
+    context.fillRect(0, scanY, width, lineWidth * (0.55 + evolution.snareFlash * 5.2));
   } else if (scene === "ascii_terminal") {
-    const packetCount = 4 + Math.floor(drives.midLayer * 5 + drives.trebleLayer * 3);
+    const packetCount = 2 + Math.floor(
+      evolution.structureLevel * 4
+        + drives.midLayer * 2
+        + drives.trebleLayer
+        + evolution.snareFlash * 2,
+    );
     const fontSize = Math.max(9, unit * (0.009 + drives.bassLayer * 0.006 + evolution.beatPunch * 0.004));
     context.font = `800 ${fontSize}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
     context.textBaseline = "middle";
@@ -2280,21 +2527,27 @@ function drawMusicDynamicModulation(
       const jitter = (randomUnit(seed + tick, 65_700 + packet) - 0.5) * unit * deformation * 0.03 * movementGate;
       const x = side ? width - gate - jitter : gate + jitter;
       const color = colors[packet % colors.length];
-      context.fillStyle = rgba(color, coreAlpha * (0.48 + drives.treblePulse * 0.36));
+      context.fillStyle = rgba(color, coreAlpha * (0.4 + evolution.trebleImpact * 0.48 + evolution.snareFlash * 0.2));
       context.textAlign = side ? "right" : "left";
       context.fillText(`${side ? ">" : "<"}${((seed + packet * 211 + tick) >>> 0).toString(16).slice(-4).toUpperCase()}`, x, y);
       context.fillRect(side ? x : 0, y + fontSize * 0.62, side ? width - x : x, lineWidth * (0.7 + evolution.beatPunch * 1.8));
     }
   } else if (scene === "pixel_sort_storm") {
-    const shardCount = 7 + Math.floor(drives.midLayer * 6 + drives.trebleLayer * 7);
+    const shardCount = 3 + Math.floor(
+      evolution.structureLevel * 6
+        + drives.midLayer * 2
+        + drives.trebleLayer * 3
+        + evolution.snareFlash * 3
+        + evolution.trebleImpact * 3,
+    );
     for (let shard = 0; shard < shardCount; shard += 1) {
       const localSeed = seed + tick * 193 + shard * 29;
       const fromRight = shard % 2 === 1;
       const y = height * randomUnit(localSeed, 66_100 + shard);
-      const length = width * (0.025 + drives.midLayer * 0.085 + drives.treblePulse * 0.055)
+      const length = width * (0.015 + drives.midLayer * 0.06 + evolution.snareFlash * 0.06 + evolution.trebleImpact * 0.04)
         * reachScale
         * (0.7 + randomUnit(seed, 66_200 + shard) * 0.6);
-      const shardHeight = lineWidth * (1.1 + drives.bassLayer * 3.4 + evolution.hardBeat * (shard % 3 === 0 ? 5 : 1.2));
+      const shardHeight = lineWidth * (0.8 + drives.bassLayer * 1.8 + evolution.bassImpact * (shard % 3 === 0 ? 5.4 : 1.4));
       const skew = unit * deformation * 0.022 * (randomUnit(localSeed, 66_300 + shard) - 0.5);
       context.fillStyle = rgba(colors[shard % colors.length], coreAlpha * (0.46 + drives.trebleLayer * 0.36));
       context.beginPath();
@@ -2306,7 +2559,12 @@ function drawMusicDynamicModulation(
       context.fill();
     }
   } else if (scene === "lightning_switchyard") {
-    const railCount = 3 + Math.floor(drives.midLayer * 4 + drives.trebleLayer * 4);
+    const railCount = 2 + Math.floor(
+      evolution.structureLevel * 3
+        + drives.midLayer * 2
+        + evolution.snareFlash * 2
+        + evolution.trebleImpact * 3,
+    );
     for (let rail = 0; rail < railCount; rail += 1) {
       const fromRight = rail % 2 === 1;
       const direction = fromRight ? -1 : 1;
@@ -2314,8 +2572,8 @@ function drawMusicDynamicModulation(
       const y = height * (rail + 1) / (railCount + 1);
       const length = width * (0.045 + drives.midLayer * 0.08 + evolution.pulse * 0.055) * reachScale;
       const color = colors[rail % colors.length];
-      context.strokeStyle = rgba(color, coreAlpha * (0.5 + drives.treblePulse * 0.4));
-      context.lineWidth = lineWidth * (1.2 + drives.bassLayer * 2.2 + evolution.hardBeat * 2.4);
+      context.strokeStyle = rgba(color, coreAlpha * (0.4 + evolution.trebleImpact * 0.5 + evolution.snareFlash * 0.22));
+      context.lineWidth = lineWidth * (0.9 + drives.bassLayer * 1.25 + evolution.bassImpact * 2.8);
       context.beginPath();
       context.moveTo(originX, y);
       for (let step = 1; step <= 7; step += 1) {
@@ -2334,7 +2592,12 @@ function drawMusicDynamicModulation(
       context.fill();
     }
   } else if (scene === "laser_lattice") {
-    const prismCount = 3 + Math.floor(drives.tapestry * 3 + drives.midLayer * 3);
+    const prismCount = 1 + Math.floor(
+      evolution.structureLevel * 3
+        + drives.tapestry * 2
+        + evolution.midImpact * 2,
+    );
+    context.save();
     context.translate(width * 0.5, height * 0.5);
     context.rotate(Math.sin(time * 0.12) * deformation * 0.08 + evolution.hardBeat * 0.025);
     for (let prism = 0; prism < prismCount; prism += 1) {
@@ -2342,7 +2605,7 @@ function drawMusicDynamicModulation(
       const radiusX = width * (0.08 + depth * 0.35) * breathScale * (1 + evolution.beatPunch * 0.08);
       const radiusY = height * (0.055 + depth * 0.31) * (0.82 + evolution.breath * 0.18 + deformation * depth * 0.08);
       context.strokeStyle = rgba(colors[prism % colors.length], coreAlpha * (0.38 + depth * 0.3));
-      context.lineWidth = lineWidth * (1 + drives.bassLayer * 1.8 + evolution.beatPunch * (1 - depth) * 1.8);
+      context.lineWidth = lineWidth * (0.78 + drives.bassLayer * 1.05 + evolution.bassImpact * (1 - depth) * 2.8);
       context.beginPath();
       context.moveTo(0, -radiusY);
       context.lineTo(radiusX, 0);
@@ -2351,8 +2614,14 @@ function drawMusicDynamicModulation(
       context.closePath();
       context.stroke();
     }
+    context.restore();
   } else if (scene === "particle_pressure") {
-    const ringCount = 4 + Math.floor(drives.midLayer * 3 + drives.tapestry * 3);
+    const ringCount = 2 + Math.floor(
+      evolution.structureLevel * 3
+        + drives.midLayer
+        + drives.tapestry * 2
+        + evolution.bassImpact * 2,
+    );
     const centerX = width * 0.5;
     const centerY = height * 0.5;
     for (let ring = 0; ring < ringCount; ring += 1) {
@@ -2361,7 +2630,7 @@ function drawMusicDynamicModulation(
         * breathScale
         * (1 + evolution.beatPunch * (0.05 + depth * 0.08));
       context.strokeStyle = rgba(colors[ring % colors.length], coreAlpha * (0.34 + (1 - depth) * 0.34));
-      context.lineWidth = lineWidth * (1.1 + drives.bassLayer * 2.4 + evolution.beatPunch * (1.8 - depth));
+      context.lineWidth = lineWidth * (0.82 + drives.bassLayer * 1.35 + evolution.bassImpact * (2.8 - depth));
       context.beginPath();
       context.ellipse(
         centerX,
@@ -2389,7 +2658,13 @@ function drawMusicDynamicModulation(
       }
     }
   } else if (scene === "signal_constellation") {
-    const nodeCount = 7 + Math.floor(drives.midLayer * 5 + drives.trebleLayer * 5 + drives.tapestry * 4);
+    const nodeCount = 3 + Math.floor(
+      evolution.structureLevel * 5
+        + drives.midLayer * 2
+        + drives.trebleLayer * 2
+        + drives.tapestry * 3
+        + evolution.trebleImpact * 2,
+    );
     const nodes = Array.from({ length: nodeCount }, (_, node) => {
       const angle = node / nodeCount * Math.PI * 2 + time * 0.018 * movementGate;
       const radius = unit * (0.1 + node / nodeCount * 0.35)
@@ -2405,12 +2680,12 @@ function drawMusicDynamicModulation(
       const to = nodes[(node + 2 + Math.floor(evolution.finale * 2)) % nodes.length];
       const color = colors[node % colors.length];
       context.strokeStyle = rgba(color, coreAlpha * (0.3 + drives.midLayer * 0.38));
-      context.lineWidth = lineWidth * (0.74 + drives.bassLayer * 1.4 + evolution.beatPunch * 1.2);
+      context.lineWidth = lineWidth * (0.6 + drives.bassLayer * 0.9 + evolution.bassImpact * 2.2);
       context.beginPath();
       context.moveTo(from.x, from.y);
       context.quadraticCurveTo(width * 0.5, height * 0.5, to.x, to.y);
       context.stroke();
-      const radius = lineWidth * (1.4 + drives.bassLayer * 2.8 + evolution.beatPunch * (node % 3 === 0 ? 3 : 1));
+      const radius = lineWidth * (1.1 + drives.bassLayer * 1.6 + evolution.bassImpact * (node % 3 === 0 ? 4.4 : 1.4));
       context.fillStyle = rgba(color, coreAlpha * (0.52 + evolution.glowBloom * 0.34));
       context.beginPath();
       context.arc(from.x, from.y, radius, 0, Math.PI * 2);
@@ -2418,6 +2693,19 @@ function drawMusicDynamicModulation(
     }
   }
 
+  drawMusicBandEventAccents(
+    context,
+    width,
+    height,
+    time,
+    mix,
+    evolution,
+    scene,
+    primary,
+    secondary,
+    highlight,
+    seed,
+  );
   context.shadowBlur = 0;
   context.shadowColor = "transparent";
   context.restore();
@@ -2961,6 +3249,149 @@ function drawMusicGestureSweep(
     const length = unit * (0.018 + (trailCount - trail) * 0.009);
     context.fillStyle = rgba(colors[trail % colors.length], plan.musicSweepStrength * (0.34 + (trailCount - trail) * 0.11));
     context.fillRect(direction > 0 ? trailX - length : trailX, y + (trail % 2 ? unit * 0.006 : 0), length, Math.max(1.5, unit * 0.003));
+  }
+  context.restore();
+}
+
+/**
+ * A tiny event-only allow-list that softens the performer-window cutout.
+ * It never replays a dense family renderer: at most two bass contours, two
+ * mid flashes, four treble sparks, and one all-band sweep can cross the field.
+ */
+function drawMusicTransientIntrusions(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  plan: RadioVisualWindowIntrusionPlan,
+  primary: Rgb,
+  secondary: Rgb,
+  highlight: Rgb,
+): void {
+  const strongest = Math.max(
+    plan.bassBreachStrength,
+    plan.midFlashStrength,
+    plan.trebleSparkStrength,
+    plan.tapestryBurstStrength,
+  );
+  if (strongest < 0.002) return;
+  const unit = Math.min(width, height);
+  const centerX = width * 0.5;
+  const centerY = height * 0.44;
+  const bass = clampVisualValue(plan.bassBreachStrength / 0.28);
+  const mids = clampVisualValue(plan.midFlashStrength / 0.34);
+  const treble = clampVisualValue(plan.trebleSparkStrength / 0.3);
+  const tapestry = clampVisualValue(plan.tapestryBurstStrength / 0.38);
+  const codeFamily = plan.musicScene === "matrix_rain" || plan.musicScene === "ascii_terminal";
+  const angularFamily = plan.musicScene === "tape_feedback"
+    || plan.musicScene === "pixel_sort_storm"
+    || plan.musicScene === "lightning_switchyard";
+  const orbitalFamily = plan.musicScene === "laser_lattice"
+    || plan.musicScene === "particle_pressure"
+    || plan.musicScene === "signal_constellation";
+  context.save();
+  context.globalCompositeOperation = "lighter";
+  context.lineCap = "round";
+  context.lineJoin = "round";
+
+  if (bass >= 0.02) {
+    context.strokeStyle = rgba(primary, plan.bassBreachStrength * (0.58 + bass * 0.38));
+    context.lineWidth = Math.max(1.5, unit * (0.002 + bass * 0.009));
+    context.shadowColor = rgba(primary, plan.bassBreachStrength * 0.82);
+    context.shadowBlur = unit * (0.008 + bass * 0.022);
+    for (let contour = 0; contour < 2; contour += 1) {
+      const contourDepth = contour * unit * (0.018 + bass * 0.012);
+      context.beginPath();
+      if (orbitalFamily) {
+        context.ellipse(
+          centerX,
+          centerY,
+          width * (0.14 + bass * 0.12) + contourDepth,
+          height * (0.1 + bass * 0.09) + contourDepth,
+          contour ? -0.08 : 0.08,
+          0,
+          Math.PI * 2,
+        );
+      } else {
+        const halfWidth = width * (0.12 + bass * 0.13) + contourDepth;
+        const halfHeight = height * (0.085 + bass * 0.08) + contourDepth;
+        context.rect(
+          centerX - halfWidth,
+          centerY - halfHeight,
+          halfWidth * 2,
+          halfHeight * 2,
+        );
+      }
+      context.stroke();
+    }
+  }
+
+  if (mids >= 0.02) {
+    const y = centerY + (randomUnit(plan.transientSeed, 68_101) - 0.5) * height * 0.24;
+    context.shadowColor = rgba(highlight, plan.midFlashStrength);
+    context.shadowBlur = unit * (0.01 + mids * 0.03);
+    context.strokeStyle = rgba(highlight, plan.midFlashStrength * (0.62 + mids * 0.34));
+    context.fillStyle = rgba(highlight, plan.midFlashStrength * (0.48 + mids * 0.42));
+    context.lineWidth = Math.max(1.5, unit * (0.0018 + mids * 0.008));
+    if (codeFamily) {
+      context.font = `900 ${Math.max(10, unit * (0.011 + mids * 0.006))}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      const text = plan.musicScene === "matrix_rain" ? "// MID HIT //" : "[SYNC::ACK]";
+      context.fillText(text, centerX, y);
+      context.fillRect(centerX - width * (0.08 + mids * 0.12), y + unit * 0.018, width * (0.16 + mids * 0.24), Math.max(1.5, unit * 0.002));
+    } else if (angularFamily) {
+      const reach = width * (0.1 + mids * 0.18);
+      context.beginPath();
+      context.moveTo(centerX - reach, y - unit * (0.018 + mids * 0.025));
+      context.lineTo(centerX - reach * 0.22, y);
+      context.lineTo(centerX + reach * 0.16, y - unit * mids * 0.012);
+      context.lineTo(centerX + reach, y + unit * (0.018 + mids * 0.025));
+      context.stroke();
+    } else if (orbitalFamily) {
+      context.beginPath();
+      context.arc(centerX, centerY, unit * (0.06 + mids * 0.11), -Math.PI * 0.2, Math.PI * 1.15);
+      context.stroke();
+    } else {
+      const reach = width * (0.09 + mids * 0.17);
+      context.beginPath();
+      context.moveTo(centerX - reach, y);
+      context.lineTo(centerX + reach, y);
+      context.moveTo(centerX - reach * 0.68, y + unit * 0.014);
+      context.lineTo(centerX + reach * 0.42, y + unit * 0.014);
+      context.stroke();
+    }
+  }
+
+  if (treble >= 0.02) {
+    const sparkCount = Math.min(4, 1 + Math.floor(treble * 4));
+    context.shadowColor = rgba(highlight, plan.trebleSparkStrength);
+    context.shadowBlur = unit * (0.008 + treble * 0.02);
+    context.lineWidth = Math.max(1, unit * (0.0012 + treble * 0.0025));
+    for (let spark = 0; spark < sparkCount; spark += 1) {
+      const angle = randomUnit(plan.transientSeed, 68_300 + spark) * Math.PI * 2;
+      const orbit = unit * (0.055 + randomUnit(plan.transientSeed, 68_400 + spark) * 0.13);
+      const x = centerX + Math.cos(angle) * orbit;
+      const y = centerY + Math.sin(angle) * orbit * 1.18;
+      const length = unit * (0.014 + treble * 0.035);
+      context.strokeStyle = rgba(spark % 2 ? secondary : highlight, plan.trebleSparkStrength * (0.6 + treble * 0.34));
+      context.beginPath();
+      context.moveTo(x - Math.cos(angle) * length, y - Math.sin(angle) * length);
+      context.lineTo(x + Math.cos(angle) * length, y + Math.sin(angle) * length);
+      context.stroke();
+    }
+  }
+
+  if (tapestry >= 0.02) {
+    const angle = randomUnit(plan.transientSeed, 68_701) * Math.PI - Math.PI * 0.5;
+    const length = unit * (0.18 + tapestry * 0.22);
+    context.strokeStyle = rgba(secondary, plan.tapestryBurstStrength * (0.62 + tapestry * 0.34));
+    context.lineWidth = Math.max(1.5, unit * (0.002 + tapestry * 0.006));
+    context.shadowColor = rgba(secondary, plan.tapestryBurstStrength);
+    context.shadowBlur = unit * (0.012 + tapestry * 0.028);
+    context.beginPath();
+    context.moveTo(centerX - Math.cos(angle) * length, centerY - Math.sin(angle) * length);
+    context.lineTo(centerX + Math.cos(angle) * length, centerY + Math.sin(angle) * length);
+    context.stroke();
   }
   context.restore();
 }
@@ -4134,6 +4565,7 @@ function drawPerformerWindowIntrusions(
     true,
   );
   drawMusicGestureSweep(context, width, height, plan, primary, secondary, highlight);
+  drawMusicTransientIntrusions(context, width, height, plan, primary, secondary, highlight);
 
   // A sparse scan may cross the performer field, but dense scene geometry is
   // never replayed here. This is an explicit allow-list, not a weaker global

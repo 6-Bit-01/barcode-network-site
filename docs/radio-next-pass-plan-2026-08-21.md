@@ -45,6 +45,8 @@ Accepted additive extension:
 - Gate persistent additive geometry behind a shaped sustained-structure level so silence and quiet passages cannot begin in a visually maxed state, while loud sustained passages can still build the retained forms.
 - Give bass, mid/snare-like, treble, and true all-band arrivals separate short-lived event channels: bass owns pressure and weight, mids own flashes and structural strikes, treble owns sparks and glints, and the combined hit owns the rare coordinated burst. The mid event is a spectral/transient proxy, not semantic drum or stem detection.
 - Soften the performer-window cutout with bounded event-only breaches that reuse each family's visual language. These breaches may cross the safe field briefly without replaying the dense family renderer or removing the established center protection.
+- Give the retained family renderer, lifecycle form, additive modulation, and perimeter identity one shared quiet-to-loud intensity owner. A quiet opening must reduce all four passes together; no older baseline count, opacity floor, or perimeter minimum may remain visually maxed behind a newer gate.
+- Treat the Windows helper's held sample peak as level evidence only, never as a continuous kick, snare, treble, or all-band event. Reset the prior track's smoothed bands and build memory when a new loaded occurrence begins so a quiet opening cannot inherit the previous song's chorus.
 
 ### 3. Sponsor-break eligibility
 

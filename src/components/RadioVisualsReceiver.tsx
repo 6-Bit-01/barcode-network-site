@@ -17,6 +17,7 @@ import {
   radioVisualCueEnvelope,
   radioVisualCueProgress,
   radioVisualMusicEvolutionPlan,
+  radioVisualMusicIntensityPlan,
   radioVisualMusicScene,
   radioVisualMusicSceneLayerPlan,
   radioVisualMusicPerimeterPlan,
@@ -642,7 +643,9 @@ function drawSignalConstellation(
   const unit = Math.min(width, height);
   const coreAlpha = chromaCoreAlpha(mix, drives.presence);
   const topology = Math.min(3, Math.floor(drives.progress * 4));
-  const count = 6
+  const identityDensity = radioVisualMusicIntensityPlan(drives).identityDensity;
+  const count = 2
+    + Math.round(identityDensity * 4)
     + Math.max(layerPlan.mid, Math.floor(drives.midLayer * 8))
     + Math.floor(drives.trebleLayer * 5)
     + Math.max(layerPlan.tapestry, Math.floor(drives.tapestry * 8))
@@ -821,9 +824,11 @@ function drawEdgeSpectrum(
   const unit = Math.min(width, height);
   const coreAlpha = chromaCoreAlpha(mix, drives.presence);
   const songSection = Math.min(3, Math.floor(drives.progress * 4));
+  const identityDensity = radioVisualMusicIntensityPlan(drives).identityDensity;
   const bassThreshold = 0.7 - songSection * 0.012;
   const trebleThreshold = 0.26 + songSection * 0.012;
-  const barCount = 9
+  const barCount = 2
+    + Math.round(identityDensity * 7)
     + Math.floor(
       drives.bassLayer * 6
       + drives.midLayer * 8
@@ -915,12 +920,14 @@ function drawMatrixRain(
   const unit = Math.min(width, height);
   const coreAlpha = chromaCoreAlpha(mix, drives.presence);
   const matrixTopology = Math.min(3, Math.floor(drives.progress * 4));
+  const identityDensity = radioVisualMusicIntensityPlan(drives).identityDensity;
   const fontSize = Math.max(10, unit * (0.011 + drives.bass * 0.004 + drives.bassPulse * 0.005));
   const columns = Math.max(10, Math.floor(width / (fontSize * (1.85 - drives.midLayer * 0.55))));
   const activeColumns = Math.min(
     columns,
-    4
-      + Math.floor((columns - 4) * (drives.midLayer * 0.52 + drives.trebleLayer * 0.12 + drives.tapestry * 0.28 + drives.build * 0.08)),
+    1
+      + Math.round(identityDensity * 2)
+      + Math.floor((columns - 3) * (drives.midLayer * 0.52 + drives.trebleLayer * 0.12 + drives.tapestry * 0.28 + drives.build * 0.08)),
   );
   context.save();
   context.globalCompositeOperation = "source-over";
@@ -1006,9 +1013,14 @@ function drawTapeFeedback(
   const unit = Math.min(width, height);
   const coreAlpha = chromaCoreAlpha(mix, drives.presence);
   const feedbackTopology = Math.min(3, Math.floor(drives.progress * 4));
+  const identityDensity = radioVisualMusicIntensityPlan(drives).identityDensity;
   const centerX = width * (0.48 + feedbackTopology * 0.009 + Math.sin(time * 0.13) * (drives.mid * 0.006 + drives.midLayer * 0.049));
   const centerY = height * (0.49 + (feedbackTopology % 2) * 0.02 + Math.cos(time * 0.11) * drives.midLayer * 0.032);
-  const frameCount = 2 + layerPlan.mid + layerPlan.tapestry + Math.floor(drives.build * 2);
+  const frameCount = 1
+    + Math.round(identityDensity)
+    + layerPlan.mid
+    + layerPlan.tapestry
+    + Math.floor(drives.build * 2);
   context.save();
   context.globalCompositeOperation = "source-over";
   for (let frame = 0; frame < frameCount; frame += 1) {
@@ -1087,8 +1099,11 @@ function drawAsciiTerminal(
   const unit = Math.min(width, height);
   const coreAlpha = chromaCoreAlpha(mix, drives.presence);
   const terminalLayout = Math.min(3, Math.floor(drives.progress * 4));
+  const identityDensity = radioVisualMusicIntensityPlan(drives).identityDensity;
   const columns = 30;
-  const activeRows = 3 + Math.floor(drives.midLayer * 8 + drives.tapestry * 5 + drives.build * 2);
+  const activeRows = 1
+    + Math.round(identityDensity * 2)
+    + Math.floor(drives.midLayer * 8 + drives.tapestry * 5 + drives.build * 2);
   const fontSize = Math.max(9, unit * (0.011 + drives.bass * 0.004 + drives.bassLayer * 0.004 + drives.bassPulse * 0.003));
   context.save();
   context.globalCompositeOperation = "source-over";
@@ -1375,8 +1390,12 @@ function drawPixelSortStorm(
   const unit = Math.min(width, height);
   const coreAlpha = chromaCoreAlpha(mix, drives.presence);
   const sortPass = Math.min(3, Math.floor(drives.progress * 4));
+  const identityDensity = radioVisualMusicIntensityPlan(drives).identityDensity;
   const tick = Math.floor(time * (0.8 + drives.treble * 9 + drives.treblePulse * 15));
-  const sliceCount = 3 + layerPlan.treble + Math.floor(drives.tapestry * 10 + drives.build * 2);
+  const sliceCount = 1
+    + Math.round(identityDensity * 2)
+    + layerPlan.treble
+    + Math.floor(drives.tapestry * 10 + drives.build * 2);
   context.save();
   context.globalCompositeOperation = "source-over";
   for (let slice = 0; slice < sliceCount; slice += 1) {
@@ -1437,7 +1456,9 @@ function drawLaserLattice(
   if (mix < 0.002) return;
   const unit = Math.min(width, height);
   const coreAlpha = chromaCoreAlpha(mix, drives.presence);
-  const beamCount = 2
+  const identityDensity = radioVisualMusicIntensityPlan(drives).identityDensity;
+  const beamCount = 1
+    + Math.round(identityDensity)
     + layerPlan.mid
     + Math.floor(drives.tapestry * 5)
     + Math.floor(drives.build * 2);
@@ -1535,8 +1556,10 @@ function drawParticlePressure(
   const unit = Math.min(width, height);
   const coreAlpha = chromaCoreAlpha(mix, drives.presence);
   const pressureMode = Math.min(3, Math.floor(drives.progress * 4));
+  const identityDensity = radioVisualMusicIntensityPlan(drives).identityDensity;
   const pressure = clampVisualValue(drives.bass * 0.18 + drives.bassLayer * 0.58 + drives.bassPulse * 0.34 + drives.build * 0.08);
-  const count = 6
+  const count = 2
+    + Math.round(identityDensity * 4)
     + Math.floor(drives.body * 10 + drives.tapestry * 23 + drives.build * 6)
     + Math.max(layerPlan.mid, Math.floor(drives.midLayer * 18))
     + Math.max(layerPlan.treble, Math.floor(drives.trebleLayer * 24))
@@ -2727,6 +2750,7 @@ function drawSeededMusicScene(
   if (mix < 0.002) return;
   const scene = radioVisualMusicScene(seed);
   const layerPlan = radioVisualMusicSceneLayerPlan(scene, drives);
+  const intensity = radioVisualMusicIntensityPlan(drives);
   const evolution = radioVisualMusicEvolutionPlan(scene, seed, time, drives, bpm);
   const evolvedTime = time * evolution.motionRate;
   const evolvedPrimary = mixRgb(primary, highlight, evolution.hueBlend);
@@ -2747,26 +2771,27 @@ function drawSeededMusicScene(
   context.save();
   context.shadowColor = rgba(evolvedHighlight, chromaCoreAlpha(mix, drives.presence) * (0.08 + evolution.glowBloom * 0.28));
   context.shadowBlur = Math.min(width, height) * (0.001 + evolution.glowBloom * 0.007);
-  if (scene === "edge_spectrum") drawEdgeSpectrum(context, width, height, evolvedTime, mix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
-  if (scene === "oscilloscope_ribbons") drawOscilloscopeRibbons(context, width, height, evolvedTime, mix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
-  if (scene === "tape_feedback") drawTapeFeedback(context, width, height, evolvedTime, mix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
-  if (scene === "matrix_rain") drawMatrixRain(context, width, height, evolvedTime, mix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
-  if (scene === "ascii_terminal") drawAsciiTerminal(context, width, height, evolvedTime, mix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
-  if (scene === "pixel_sort_storm") drawPixelSortStorm(context, width, height, evolvedTime, mix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
-  if (scene === "lightning_switchyard") drawLightningSwitchyard(context, width, height, evolvedTime, mix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
-  if (scene === "laser_lattice") drawLaserLattice(context, width, height, evolvedTime, mix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
-  if (scene === "particle_pressure") drawParticlePressure(context, width, height, evolvedTime, mix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
-  if (scene === "signal_constellation") drawSignalConstellation(context, width, height, evolvedTime, mix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
+  const baseMix = mix * intensity.baseGain;
+  if (scene === "edge_spectrum") drawEdgeSpectrum(context, width, height, evolvedTime, baseMix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
+  if (scene === "oscilloscope_ribbons") drawOscilloscopeRibbons(context, width, height, evolvedTime, baseMix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
+  if (scene === "tape_feedback") drawTapeFeedback(context, width, height, evolvedTime, baseMix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
+  if (scene === "matrix_rain") drawMatrixRain(context, width, height, evolvedTime, baseMix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
+  if (scene === "ascii_terminal") drawAsciiTerminal(context, width, height, evolvedTime, baseMix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
+  if (scene === "pixel_sort_storm") drawPixelSortStorm(context, width, height, evolvedTime, baseMix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
+  if (scene === "lightning_switchyard") drawLightningSwitchyard(context, width, height, evolvedTime, baseMix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
+  if (scene === "laser_lattice") drawLaserLattice(context, width, height, evolvedTime, baseMix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
+  if (scene === "particle_pressure") drawParticlePressure(context, width, height, evolvedTime, baseMix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
+  if (scene === "signal_constellation") drawSignalConstellation(context, width, height, evolvedTime, baseMix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
   context.restore();
-  drawMusicLifecycleVariant(context, width, height, evolvedTime, mix, drives, evolution, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
-  drawMusicDynamicModulation(context, width, height, evolvedTime, mix, drives, evolution, scene, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
+  drawMusicLifecycleVariant(context, width, height, evolvedTime, mix * intensity.lifecycleGain, drives, evolution, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
+  drawMusicDynamicModulation(context, width, height, evolvedTime, mix * intensity.modulationGain, drives, evolution, scene, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
   context.restore();
   drawMusicPerimeterIdentity(
     context,
     width,
     height,
     evolvedTime,
-    mix,
+    mix * intensity.perimeterGain,
     drives,
     radioVisualMusicPerimeterPlan(scene, drives),
     mixRgb(primary, secondary, evolution.hueBlend * 0.42),
@@ -4754,7 +4779,23 @@ function drawVisualFrame(
     runtime.currentMusicSeed = musicTransition.currentSeed;
     runtime.previousMusicSeed = musicTransition.previousSeed;
     runtime.musicTransitionStartedAtMs = musicTransition.startedAtMs;
-    runtime.buildMemory *= 0.28;
+    // A new song must not inherit the previous song's loud chorus as its
+    // opening state. The actual incoming audio attacks immediately below,
+    // while all structural and transient followers begin from a clean floor.
+    runtime.music = {
+      ...runtime.music,
+      energy: 0,
+      bass: 0,
+      mid: 0,
+      treble: 0,
+      beat: 0,
+      accent: 0,
+      peak: 0,
+    };
+    runtime.bassSlow = 0;
+    runtime.midSlow = 0;
+    runtime.trebleSlow = 0;
+    runtime.buildMemory = 0;
     runtime.bassOnset = 0;
     runtime.midOnset = 0;
     runtime.trebleOnset = 0;

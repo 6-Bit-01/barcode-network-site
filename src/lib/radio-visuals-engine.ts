@@ -299,6 +299,23 @@ export interface RadioVisualMusicEvolutionPlan {
   gesture: RadioVisualMusicGesturePlan;
 }
 
+/**
+ * One intensity owner for the complete music renderer. The selected family is
+ * always allowed a faint identity, but persistent geometry, perimeter density,
+ * lifecycle mutations, and event accents must all earn their reach from the
+ * same sustained audio structure or a real short-lived transient.
+ */
+export interface RadioVisualMusicIntensityPlan {
+  structureLevel: number;
+  transientLevel: number;
+  visibility: number;
+  baseGain: number;
+  perimeterGain: number;
+  lifecycleGain: number;
+  modulationGain: number;
+  identityDensity: number;
+}
+
 export const RADIO_VISUAL_BROADCAST_FX_TYPES = [
   "crt_roll",
   "scanline_stack",
@@ -645,6 +662,43 @@ function radioVisualMusicTransientChannels(
   };
 }
 
+/** Resolve the shared quiet-to-loud budget consumed by every music pass. */
+export function radioVisualMusicIntensityPlan(
+  drives: RadioVisualAudioDrives,
+): RadioVisualMusicIntensityPlan {
+  const sustainedMass = clampVisualValue(
+    drives.body * 0.3
+      + drives.presence * 0.14
+      + drives.bassLayer * 0.2
+      + drives.midLayer * 0.2
+      + drives.trebleLayer * 0.1
+      + drives.tapestry * 0.06,
+  );
+  // Restore contrast lost to the helper's deliberately compressed RMS/FFT
+  // envelopes. Ordinary low audio stays near the identity floor; only a real
+  // full-spectrum rise can assemble the complete composition.
+  const structureLevel = clampVisualValue(
+    Math.pow(smoothstep((sustainedMass - 0.08) / 0.74), 1.12),
+  );
+  const transientChannels = radioVisualMusicTransientChannels(drives);
+  const transientLevel = Math.max(
+    transientChannels.bassImpact,
+    transientChannels.midImpact,
+    transientChannels.trebleImpact,
+    transientChannels.tapestryImpact,
+  );
+  return {
+    structureLevel,
+    transientLevel,
+    visibility: clampVisualValue(0.13 + structureLevel * 0.74 + transientLevel * 0.13, 0.13, 1),
+    baseGain: clampVisualValue(0.36 + structureLevel * 0.64, 0.36, 1),
+    perimeterGain: clampVisualValue(0.3 + structureLevel * 0.7, 0.3, 1),
+    lifecycleGain: clampVisualValue(0.08 + structureLevel * 0.72 + transientLevel * 0.2, 0.08, 1),
+    modulationGain: clampVisualValue(0.05 + structureLevel * 0.45 + transientLevel * 0.5, 0.05, 1),
+    identityDensity: clampVisualValue(0.08 + structureLevel * 0.82 + transientLevel * 0.1, 0.08, 1),
+  };
+}
+
 /** Smooth, bounded evolution inside one family; it never changes scene ownership. */
 export function radioVisualMusicEvolutionPlan(
   scene: RadioVisualMusicScene,
@@ -682,18 +736,7 @@ export function radioVisualMusicEvolutionPlan(
   const lifecycleMotion = profile.startMotion + (profile.endMotion - profile.startMotion) * metamorphosis;
   const slowWave = Math.sin(safeTime * (0.12 + lifecycleMotion * 0.055) + seedPhase + smoothSection * 0.74);
   const crossWave = Math.cos(safeTime * (0.09 + profile.midDrift * 0.06) + seedPhase * 0.73 + smoothSection * 0.41);
-  const sustainedMass = clampVisualValue(
-    drives.body * 0.3
-      + drives.presence * 0.14
-      + drives.bassLayer * 0.2
-      + drives.midLayer * 0.2
-      + drives.trebleLayer * 0.1
-      + drives.tapestry * 0.06,
-  );
-  // Persistent geometry must earn its size and density. A shaped quiet knee
-  // leaves the authored family visible without letting a low-level song begin
-  // in the same state as a loud chorus.
-  const structureLevel = smoothstep((sustainedMass - 0.07) / 0.78);
+  const { structureLevel } = radioVisualMusicIntensityPlan(drives);
   // The analyser exposes independent short envelopes. Keep them independent:
   // bass owns pressure, mids own snare-like illumination, and treble owns
   // sparks/glow. Their tiny sustained floors stay below these onset knees.
@@ -962,18 +1005,7 @@ export function radioVisualMusicSceneLayerPlan(
  * real audio—not track progress—to expand its opacity and occupied area.
  */
 export function radioVisualMusicSceneVisibility(drives: RadioVisualAudioDrives): number {
-  const bandFullness = (drives.bassLayer + drives.midLayer + drives.trebleLayer) / 3;
-  const loudestLayer = Math.max(drives.bassLayer, drives.midLayer, drives.trebleLayer);
-  return clampVisualValue(
-    0.3
-      + drives.body * 0.24
-      + drives.presence * 0.16
-      + bandFullness * 0.18
-      + loudestLayer * 0.06
-      + drives.tapestry * 0.12,
-    0.3,
-    1,
-  );
+  return radioVisualMusicIntensityPlan(drives).visibility;
 }
 
 /**
@@ -986,43 +1018,51 @@ export function radioVisualMusicPerimeterPlan(
   scene: RadioVisualMusicScene,
   drives: RadioVisualAudioDrives,
 ): RadioVisualMusicPerimeterPlan {
+  const intensity = radioVisualMusicIntensityPlan(drives);
   const bassDrive = clampVisualValue(
-    0.07 + drives.bassLayer * 0.58 + drives.bassPulse * 0.28,
+    drives.bassLayer * 0.62 + drives.bassPulse * 0.3,
   );
   const midDrive = clampVisualValue(
-    0.055 + drives.midLayer * 0.59 + drives.midPulse * 0.3,
+    drives.midLayer * 0.63 + drives.midPulse * 0.31,
   );
   const trebleDrive = clampVisualValue(
-    0.055 + drives.trebleLayer * 0.56 + drives.treblePulse * 0.33,
+    drives.trebleLayer * 0.6 + drives.treblePulse * 0.34,
   );
   const tapestryDrive = clampVisualValue(
     drives.tapestry * 0.7 + drives.tapestryPulse * 0.3,
   );
   const sharedBandDrive = (bassDrive + midDrive + trebleDrive) / 3;
   const strength = clampVisualValue(
-    0.52
-      + drives.body * 0.12
-      + drives.presence * 0.1
-      + sharedBandDrive * 0.1
-      + drives.impact * 0.06
-      + tapestryDrive * 0.1,
-    0.52,
+    0.16
+      + intensity.structureLevel * 0.38
+      + drives.body * 0.08
+      + sharedBandDrive * 0.16
+      + intensity.transientLevel * 0.08
+      + tapestryDrive * 0.14,
+    0.16,
     1,
   );
   const reach = clampVisualValue(
-    0.032
+    0.012
+      + intensity.structureLevel * 0.016
       + midDrive * 0.046
       + trebleDrive * 0.032
       + tapestryDrive * 0.032
-      + drives.impact * 0.009,
-    0.032,
+      + intensity.transientLevel * 0.009,
+    0.012,
     0.155,
   );
   const thickness = clampVisualValue(
-    0.0025 + bassDrive * 0.0078 + drives.bassPulse * 0.0037,
-    0.0025,
+    0.0012
+      + intensity.structureLevel * 0.0012
+      + bassDrive * 0.0078
+      + drives.bassPulse * 0.0032,
+    0.0012,
     0.014,
   );
+  const bassActive = bassDrive > 0.025;
+  const midActive = midDrive > 0.022;
+  const trebleActive = trebleDrive > 0.02;
   return {
     motif: RADIO_VISUAL_MUSIC_PERIMETER_MOTIFS[scene],
     strength,
@@ -1032,9 +1072,15 @@ export function radioVisualMusicPerimeterPlan(
     midDrive,
     trebleDrive,
     tapestryDrive,
-    bassElements: Math.min(10, 1 + Math.round(drives.bassLayer * 6 + drives.bassPulse * 3)),
-    midElements: Math.min(14, 2 + Math.round(drives.midLayer * 8 + drives.midPulse * 4)),
-    trebleElements: Math.min(18, 2 + Math.round(drives.trebleLayer * 10 + drives.treblePulse * 6)),
+    bassElements: bassActive
+      ? Math.min(10, 1 + Math.round(drives.bassLayer * 6 + drives.bassPulse * 3))
+      : 0,
+    midElements: midActive
+      ? Math.min(14, 1 + Math.round(drives.midLayer * 8 + drives.midPulse * 4))
+      : 0,
+    trebleElements: trebleActive
+      ? Math.min(18, 1 + Math.round(drives.trebleLayer * 10 + drives.treblePulse * 6))
+      : 0,
     tapestryElements: tapestryDrive > 0.025
       ? Math.min(6, 1 + Math.round(drives.tapestry * 3 + drives.tapestryPulse * 2))
       : 0,
@@ -1446,10 +1492,13 @@ function rhythmPulse(phase: number, power: number): number {
 export type RadioVisualLoopbackChannel = "energy" | "bass" | "mid" | "treble";
 
 const LOOPBACK_LEVEL_CALIBRATION: Record<RadioVisualLoopbackChannel, { floor: number; ceiling: number; gamma: number }> = {
-  energy: { floor: 0.025, ceiling: 1, gamma: 1.25 },
-  bass: { floor: 0.03, ceiling: 1, gamma: 1.3 },
-  mid: { floor: 0.025, ceiling: 1, gamma: 1.25 },
-  treble: { floor: 0.018, ceiling: 1, gamma: 1.15 },
+  // AudioAnalyzer deliberately compresses RMS and FFT magnitudes with
+  // sub-linear exponents. These inverse-ish knees restore musical contrast:
+  // low readings stay low, while genuinely high readings retain headroom.
+  energy: { floor: 0.025, ceiling: 1, gamma: 1.8 },
+  bass: { floor: 0.03, ceiling: 1, gamma: 1.8 },
+  mid: { floor: 0.025, ceiling: 1, gamma: 1.8 },
+  treble: { floor: 0.018, ceiling: 1, gamma: 1.75 },
 };
 
 /** Map the installed bridge's already-compressed bands through one quiet-knee curve. */
@@ -1462,11 +1511,6 @@ export function radioVisualLoopbackLevel(value: number, channel: RadioVisualLoop
   // ordinary 20-50% live readings visually tiny; a power knee still rejects
   // the noise floor while preserving useful motion across that real range.
   return clampVisualValue(Math.pow(normalized, calibration.gamma));
-}
-
-function radioVisualLoopbackPeak(value: number): number {
-  const normalized = clampVisualValue((clampVisualValue(value) - 0.02) / 0.94);
-  return clampVisualValue(Math.pow(smoothstep(normalized), 1.15));
 }
 
 export function radioVisualsMusicSignal(
@@ -1547,9 +1591,12 @@ export function radioVisualsMusicSignal(
     const liveBass = radioVisualLoopbackLevel(bridgeSignal.bass, "bass");
     const liveMid = radioVisualLoopbackLevel(bridgeSignal.mid, "mid");
     const liveTreble = radioVisualLoopbackLevel(bridgeSignal.treble, "treble");
-    const livePeak = radioVisualLoopbackPeak(bridgeSignal.peak);
     const liveBeat = Math.pow(clampVisualValue(bridgeSignal.beat), 1.15);
-    const liveTransient = Math.max(liveBeat, livePeak);
+    // The helper's `peak` field is a held sample-amplitude meter, not an onset
+    // envelope. Feeding it into every transient channel made a mastered track
+    // look like one permanent hit. The helper's flux-qualified beat plus the
+    // independent browser band-onset followers own short events instead.
+    const liveTransient = liveBeat;
     return {
       source: "windows_loopback",
       bpm: confidence >= 0.28 ? bridgeSignal.bpm : bpm,

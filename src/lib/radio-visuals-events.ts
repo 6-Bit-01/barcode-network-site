@@ -43,6 +43,23 @@ export interface RadioVisualEvent {
   seed: number;
 }
 
+export interface RadioVisualBroadcastTransitionState {
+  broadcastPhase: string | null;
+  showStage: string;
+}
+
+export function radioVisualBroadcastStartedTransition(
+  previous: RadioVisualBroadcastTransitionState,
+  current: RadioVisualBroadcastTransitionState,
+): boolean {
+  if (previous.broadcastPhase !== "broadcast_active" && current.broadcastPhase === "broadcast_active") return true;
+  if (previous.broadcastPhase !== null || current.broadcastPhase !== null) return false;
+  return previous.showStage === "intake"
+    && current.showStage !== "intake"
+    && current.showStage !== "standby"
+    && current.showStage !== "complete";
+}
+
 export function hashRadioVisualToken(value: string): number {
   let hash = 2166136261;
   for (let index = 0; index < value.length; index += 1) {

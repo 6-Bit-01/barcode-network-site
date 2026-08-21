@@ -35,6 +35,7 @@ export interface RadioVisualsQueueSignal {
 export interface RadioVisualsShowSignals {
   intakeOpen: boolean;
   wheelSpinsOwed: number;
+  wheelCandidateCount: number;
   sponsorStatus: SponsorBreakStatus | null;
   broadcastPhase: QueueBroadcastPhase | null;
 }
@@ -241,6 +242,7 @@ export function resolveRadioVisualsSnapshot(input: {
     signals: {
       intakeOpen: queueState.publicStatus?.isOpen ?? queueState.session?.queueOpen ?? false,
       wheelSpinsOwed: nonNegativeInteger(queueState.session?.wheelSpinsOwed ?? scene.wheelSpinsOwed),
+      wheelCandidateCount: nonNegativeInteger(scene.wheelCeremony?.displayCandidates?.length),
       sponsorStatus: queueState.session?.sponsorBreakStatus ?? null,
       broadcastPhase: queueState.session?.broadcastPhase ?? null,
     },

@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { externalLinks } from "@/content";
 import { buildQueueTimingDisplay, queueTimingInputFromPublicSnapshot, type QueueTimingDisplaySummary } from "@/lib/queue-timing-display";
-import { formatRuntime, type QueuePublicSnapshot, type QueuePublicTrack } from "@/lib/queue-types";
+import { confirmedPriorityPurchaseDisplay, formatRuntime, type QueuePublicSnapshot, type QueuePublicTrack } from "@/lib/queue-types";
 import { PUBLIC_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 import { hasActiveQueueSession, startSessionBoundPolling } from "@/lib/session-bound-polling";
 
@@ -337,5 +337,6 @@ function StatCard({ label, value, helper, accent = "text-foreground" }: { label:
 }
 
 function BroadcastSlot({ label, track, tone }: { label: string; track: QueuePublicTrack; tone: string }) {
-  return <div className="border border-border bg-background/45 p-3 text-sm"><p className={`text-xs uppercase tracking-widest ${tone}`}>{label}</p><p className="mt-1 font-bold text-foreground">{track.submittedArtistName} — {track.submittedSongTitle}</p>{track.collaboratorNames?.trim() && <p className="mt-1 font-bold text-accent"><span className="uppercase tracking-widest">Featuring:</span> {track.collaboratorNames.trim()}</p>}</div>;
+  const purchase = confirmedPriorityPurchaseDisplay(track);
+  return <div className="border border-border bg-background/45 p-3 text-sm"><p className={`text-xs uppercase tracking-widest ${tone}`}>{label}</p>{purchase && <p className="mt-2 inline-flex border border-[#ffaa00]/70 bg-[#ffaa00]/15 px-2 py-1 text-[10px] font-black uppercase tracking-widest text-[#ffaa00]">{purchase.text}</p>}<p className="mt-1 font-bold text-foreground">{track.submittedArtistName} — {track.submittedSongTitle}</p>{track.collaboratorNames?.trim() && <p className="mt-1 font-bold text-accent"><span className="uppercase tracking-widest">Featuring:</span> {track.collaboratorNames.trim()}</p>}</div>;
 }

@@ -7,7 +7,7 @@ import { AdminLiveOverlayControl } from "@/components/AdminLiveOverlayControl";
 import { buildQueueTimingDisplay, formatHoursMinutes, queueTimingInputFromAdminState } from "@/lib/queue-timing-display";
 import { combineQueueTimeBankEvents, deriveQueuePaceBankEvent, deriveQueueTimeBankEvent, type QueueTimeBankEvent, type QueueTimeBankObservation } from "@/lib/queue-time-bank-events";
 import { parseYouTubeVideoId } from "@/lib/track-duration";
-import { formatRuntime, getTrackRuntimeSeconds, parseTikTokVideoUrl } from "@/lib/queue-types";
+import { confirmedPriorityPurchaseDisplay, formatRuntime, getTrackRuntimeSeconds, parseTikTokVideoUrl } from "@/lib/queue-types";
 import { detectMaterialPlaybackSeek, estimateOneWayNetworkTransitMs, projectObservedPlaybackTime, updateTransitEstimateMs, YOUTUBE_SYNC_STALE_AFTER_MS } from "@/lib/live-overlay-resolver";
 import type { QueueEntry, QueueLane, QueuePlaybackDiagnostics, QueuePlaybackErrorCode, QueuePlaybackLifecycleEventInput, QueueState } from "@/lib/queue-types";
 import type { LiveOverlayPlaybackState, LiveOverlaySyncCorrectionReason } from "@/lib/live-overlay-resolver";
@@ -131,11 +131,18 @@ function LaneStatusBadge({ entry }: { entry: QueueEntry }) {
   const visual = queueTrackVisual(entry);
   return <p className={`mt-2 inline-flex px-2 py-1 text-[10px] uppercase tracking-widest ${visual.badgeClass}`}>{visual.label}</p>;
 }
-function AdminPriorityGiftBanner({ entry, compact = false }: { entry: QueueEntry; compact?: boolean }) {
+function AdminPriorityPurchaseBanner({ entry, compact = false }: { entry: QueueEntry; compact?: boolean }) {
+  const purchase = confirmedPriorityPurchaseDisplay(entry);
   const gift = entry.priorityGiftAttribution;
-  if (!gift) return null;
-  const confirmed = entry.priorityUpgradeStatus === "paid" || entry.priorityUpgradeStatus === "paid_needs_attention";
-  return <p className={`${compact ? "mt-1 text-[10px]" : "mt-3 text-xs"} border border-[#ffaa00]/70 bg-[#ffaa00]/15 px-3 py-2 font-black uppercase tracking-widest text-[#ffaa00]`}>{confirmed ? "GIFTED PRIORITY CONFIRMED" : "GIFTED PRIORITY CHECKOUT"} · FROM {gift.supporterName} · FOR {gift.recipientName}</p>;
+  const giftCheckoutPending = Boolean(gift) && (entry.priorityUpgradeStatus === "requested" || entry.priorityUpgradeStatus === "checkout_pending");
+  if (!purchase && !giftCheckoutPending) return null;
+  const text = purchase?.text ?? `GIFTED PRIORITY CHECKOUT · FROM ${gift?.supporterName} · FOR ${gift?.recipientName}`;
+  return <p className={`${compact ? "mt-1 text-[10px]" : "mt-3 text-xs"} border border-[#ffaa00]/70 bg-[#ffaa00]/15 px-3 py-2 font-black uppercase tracking-widest text-[#ffaa00]`}>{text}</p>;
+}
+function AdminSubmissionNote({ entry, compact = false }: { entry: QueueEntry; compact?: boolean }) {
+  const note = entry.note?.trim();
+  if (!note) return null;
+  return <div className={`${compact ? "mt-2 max-w-3xl p-2" : "mt-3 p-3"} border-2 border-accent bg-accent/10 text-left shadow-[0_0_20px_rgba(255,0,0,0.12)]`}><p className="text-[10px] font-black uppercase tracking-[0.2em] text-accent">Submission Note · Read Before Playing</p><p className={`${compact ? "mt-1 max-h-24 overflow-y-auto text-xs" : "mt-2 text-sm"} whitespace-pre-wrap break-words font-bold text-foreground`}>{note}</p></div>;
 }
 function durationLabel(entry: QueueEntry): string {
   const duration = formatRuntime(getTrackRuntimeSeconds(entry));
@@ -764,7 +771,7 @@ function TopBarCommercialChip({ summary, minimized = false }: { summary: ReturnT
 
 function NextInLineBox({ entry, playerOccupied, readOnly, onAction, onPlayer, onCopy }: { entry: QueueEntry | null; playerOccupied: boolean; readOnly: boolean; onAction: (id: string, action: AdminQueueAction) => void; onPlayer: (entry: QueueEntry) => void; onCopy: (entry: QueueEntry) => void }) {
   const visual = entry ? queueTrackVisual(entry) : null;
-  return <section className={`p-5 space-y-4 ${visual?.sectionClass ?? "border border-accent/60 bg-accent/5"}`}><div><p className="text-xs uppercase tracking-[0.4em] text-accent">Next in Line</p>{!entry ? <p className="mt-3 text-lg text-muted">No Next In Line — Pull Next Track when ready.</p> : <><div className="mt-3"><LaneStatusBadge entry={entry} /></div><AdminPriorityGiftBanner entry={entry} /><h2 className="mt-3 text-2xl font-bold text-foreground">{submittedArtist(entry)} — {submittedTitle(entry)}</h2><AdminCollaboratorLine entry={entry} className="mt-1" /><p className="text-sm text-muted mt-1">Lane: {LANE_LABELS[entryLane(entry)]} · Source: {sourceLabel(entry)} · Duration: {durationLabel(entry)}</p>{detectedLabel(entry) && <p className="text-xs text-muted mt-1">Detected / Provider: {detectedLabel(entry)}</p>}</>}</div>{entry && <TrackActions entry={entry} mode="next" playerOccupied={playerOccupied} readOnly={readOnly} onAction={onAction} onPlayer={onPlayer} onCopy={onCopy} />}</section>;
+  return <section className={`p-5 space-y-4 ${visual?.sectionClass ?? "border border-accent/60 bg-accent/5"}`}><div><p className="text-xs uppercase tracking-[0.4em] text-accent">Next in Line</p>{!entry ? <p className="mt-3 text-lg text-muted">No Next In Line — Pull Next Track when ready.</p> : <><div className="mt-3"><LaneStatusBadge entry={entry} /></div><AdminPriorityPurchaseBanner entry={entry} /><h2 className="mt-3 text-2xl font-bold text-foreground">{submittedArtist(entry)} — {submittedTitle(entry)}</h2><AdminCollaboratorLine entry={entry} className="mt-1" /><p className="text-sm text-muted mt-1">Lane: {LANE_LABELS[entryLane(entry)]} · Source: {sourceLabel(entry)} · Duration: {durationLabel(entry)}</p>{detectedLabel(entry) && <p className="text-xs text-muted mt-1">Detected / Provider: {detectedLabel(entry)}</p>}<AdminSubmissionNote entry={entry} /></>}</div>{entry && <TrackActions entry={entry} mode="next" playerOccupied={playerOccupied} readOnly={readOnly} onAction={onAction} onPlayer={onPlayer} onCopy={onCopy} />}</section>;
 }
 
 type AdminYTPlayer = {
@@ -1427,7 +1434,7 @@ function PlayerDock({ player, sessionId, playbackDiagnostics, minimized, setMini
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.35em] text-accent">{minimized ? "Queue Player Dock" : "Command Deck Player"}</p>
-            <h3 className="text-lg font-bold">{submittedArtist(player)} — {submittedTitle(player)}</h3><AdminCollaboratorLine entry={player} className="mt-1" /><LaneStatusBadge entry={player} /><AdminPriorityGiftBanner entry={player} compact />
+            <h3 className="text-lg font-bold">{submittedArtist(player)} — {submittedTitle(player)}</h3><AdminCollaboratorLine entry={player} className="mt-1" /><LaneStatusBadge entry={player} /><AdminPriorityPurchaseBanner entry={player} compact /><AdminSubmissionNote entry={player} compact />
             {detectedLabel(player) && <p className="text-xs text-muted mt-1">Detected / Provider: {detectedLabel(player)}</p>}
             <p className="text-xs text-muted mt-1">{sourceLabel(player)} · {durationLabel(player)}</p>
           </div>
@@ -1478,7 +1485,7 @@ function AdminTrackMetadata({ entry }: { entry: QueueEntry }) {
         {entry.contactEmail && <p className="mt-1 text-muted">Contact: {entry.contactEmail}</p>}
         {entry.submitterArtistName && <p className="mt-1 text-muted">Submitted by: {entry.submitterArtistName}</p>}
         <LaneStatusBadge entry={entry} />
-        <AdminPriorityGiftBanner entry={entry} />
+        <AdminPriorityPurchaseBanner entry={entry} />
       </div>
       <div className="border border-border/60 p-3">
         <span className="block text-muted uppercase tracking-widest">Detected source</span>
@@ -1592,7 +1599,7 @@ function Lane({ title, tracks, onAction, onPlayer, onCopy, mode, readOnly }: { t
                 </div>
                 <AdminTrackMetadata entry={entry} />
                 {entry.suspiciousFlags && entry.suspiciousFlags.length > 0 && <div className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 p-2 text-xs text-[#ffaa00]">Admin flags: {entry.suspiciousFlags.join(" / ")}</div>}
-                {entry.note && <details className="border border-accent/30 bg-accent/5 p-2 text-xs"><summary className="cursor-pointer text-accent uppercase tracking-widest">Submission note</summary><p className="mt-2 line-clamp-4 whitespace-pre-wrap break-words text-foreground">{entry.note}</p></details>}
+                <AdminSubmissionNote entry={entry} />
               </div>
               <TrackActions entry={entry} onAction={onAction} onPlayer={onPlayer} onCopy={onCopy} mode={mode} readOnly={readOnly} />
             </article>

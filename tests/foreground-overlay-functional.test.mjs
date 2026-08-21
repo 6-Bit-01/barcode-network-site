@@ -150,7 +150,7 @@ test("foreground snapshot exposes only safe track identity and live queue state"
   assert.doesNotMatch(JSON.stringify(snapshot), /private@example|pi_private|checkout\.example|contactEmail|paymentId/i);
 });
 
-test("pending Priority stays off the rail and confirmed gifted Priority owns exactly three seconds", () => {
+test("pending Priority stays off the rail and confirmed own or gifted purchases equally own exactly three seconds", () => {
   const pending = entry("pending", {
     submittedArtistName: "Artist One",
     submittedSongTitle: "Signal One",
@@ -176,13 +176,26 @@ test("pending Priority stays off the rail and confirmed gifted Priority owns exa
     },
   });
   const confirmedSnapshot = foreground.resolveForegroundOverlaySnapshot({ queueState: queueState({ queue: [confirmed] }), scene: scene("wheel_spinning", { message: "Wheel still owns the fallback." }) }, new Date("2026-08-09T03:00:46.000Z"));
-  assert.equal(confirmedSnapshot.action.label, "GIFTED PRIORITY");
-  assert.equal(confirmedSnapshot.action.message, "FROM Signal Friend // FOR Artist Two // THANK YOU FOR THE SKIP");
+  assert.equal(confirmedSnapshot.action.label, "SKIP PURCHASED");
+  assert.equal(confirmedSnapshot.action.message, "Signal Friend BOUGHT A SKIP FOR Artist Two // THANK YOU FOR THE SKIP");
   assert.equal(confirmedSnapshot.action.expiresAt, "2026-08-09T03:00:48.000Z");
   assert.equal(confirmedSnapshot.actions[1].label, "WHEEL SPINNING");
-  assert.equal(foreground.foregroundActionWithExpiryAt(confirmedSnapshot.actions, confirmedSnapshot.actionCycleStartedAt, Date.parse("2026-08-09T03:00:47.999Z")).label, "GIFTED PRIORITY");
+  assert.equal(foreground.foregroundActionWithExpiryAt(confirmedSnapshot.actions, confirmedSnapshot.actionCycleStartedAt, Date.parse("2026-08-09T03:00:47.999Z")).label, "SKIP PURCHASED");
   assert.equal(foreground.foregroundActionWithExpiryAt(confirmedSnapshot.actions, confirmedSnapshot.actionCycleStartedAt, Date.parse("2026-08-09T03:00:48.000Z")).label, "WHEEL SPINNING");
   assert.equal(foreground.foregroundActionWithExpiryAt(confirmedSnapshot.actions, confirmedSnapshot.actionCycleStartedAt, Date.parse("2026-08-09T03:01:48.000Z")).label, "WHEEL SPINNING", "reconnects must not replay the popup");
+
+  const ownPurchase = entry("own-purchase", {
+    submittedArtistName: "Artist Three",
+    submittedSongTitle: "Signal Three",
+    priorityUpgradeStatus: "paid",
+    priorityUpgradePaidAt: "2026-08-09T03:00:45.000Z",
+    priorityGiftAttribution: null,
+  });
+  const ownSnapshot = foreground.resolveForegroundOverlaySnapshot({ queueState: queueState({ queue: [ownPurchase] }), scene: scene("wheel_spinning", { message: "Wheel still owns the fallback." }) }, new Date("2026-08-09T03:00:46.000Z"));
+  assert.equal(ownSnapshot.action.label, "SKIP PURCHASED");
+  assert.equal(ownSnapshot.action.message, "Artist Three BOUGHT A SKIP // THANK YOU FOR THE SKIP");
+  assert.equal(ownSnapshot.action.expiresAt, confirmedSnapshot.action.expiresAt);
+  assert.equal(ownSnapshot.actions[1].label, "WHEEL SPINNING", "own and gifted purchases must return to the same interrupted scene");
 
   const oldConfirmation = foreground.resolveForegroundOverlaySnapshot({ queueState: queueState({ queue: [confirmed] }), scene: scene() }, new Date("2026-08-09T03:05:00.000Z"));
   assert.notEqual(oldConfirmation.action.source, "priority");
@@ -275,7 +288,7 @@ test("one chained show simulation updates track, gifted skip, Wheel, sponsor, an
     queueState: queueState({ nowPlaying: playing, loadedTrack: playing, queue: [confirmedPriority], session: baseSession }),
     scene: scene("wheel_ready", { wheelSpinsOwed: 1, wheelOverlayActive: true, message: "Candidates standing by." }),
   }, new Date("2026-08-09T03:01:46.000Z"));
-  assert.equal(wheel.action.label, "GIFTED PRIORITY");
+  assert.equal(wheel.action.label, "SKIP PURCHASED");
   assert.equal(wheel.actions[1].label, "WHEEL READY");
   assert.equal(foreground.foregroundActionWithExpiryAt(wheel.actions, wheel.actionCycleStartedAt, Date.parse("2026-08-09T03:01:48.000Z")).label, "WHEEL READY");
 

@@ -10,10 +10,16 @@ const require = createRequire(import.meta.url);
 
 class FakeRedis {
   static calls = [];
+  static values = new Map();
 
   async get(key) {
     FakeRedis.calls.push(["get", key]);
-    return null;
+    return FakeRedis.values.get(key) ?? null;
+  }
+
+  async mget(...keys) {
+    FakeRedis.calls.push(["mget", keys]);
+    return keys.map((key) => FakeRedis.values.get(key) ?? null);
   }
 
   async set(key, value) {
@@ -74,6 +80,7 @@ test("the 1 Hz player-sync path uses one shared Redis command per heartbeat and 
     const overlay = loadLiveOverlayWithFakeRedis();
     const receivedAt = new Date("2026-08-16T12:34:56.789Z");
     FakeRedis.calls.length = 0;
+    FakeRedis.values.clear();
 
     const stored = await overlay.updateLiveOverlayPlayerSync({
       provider: "audio",
@@ -97,6 +104,47 @@ test("the 1 Hz player-sync path uses one shared Redis command per heartbeat and 
     await overlay.setLiveOverlayPlayerSync(null, receivedAt);
     assert.deepEqual(FakeRedis.calls, [["del", "barcode:live-overlay:player-sync"]], "clear performs exactly one DEL and zero reads");
   } finally {
+    if (previousUrl === undefined) delete process.env.UPSTASH_REDIS_REST_URL;
+    else process.env.UPSTASH_REDIS_REST_URL = previousUrl;
+    if (previousToken === undefined) delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    else process.env.UPSTASH_REDIS_REST_TOKEN = previousToken;
+  }
+});
+
+test("active readers fetch overlay state and player sync with one MGET", async () => {
+  const previousUrl = process.env.UPSTASH_REDIS_REST_URL;
+  const previousToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+  process.env.UPSTASH_REDIS_REST_URL = "https://shared-overlay-redis.example.test";
+  process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
+
+  try {
+    const overlay = loadLiveOverlayWithFakeRedis();
+    FakeRedis.values.clear();
+    FakeRedis.values.set("barcode:live-overlay:state", JSON.stringify({
+      mode: "auto",
+      title: "BARCODE RADIO",
+      updatedAt: "2026-08-21T20:00:00.000Z",
+    }));
+    FakeRedis.values.set("barcode:live-overlay:player-sync", JSON.stringify({
+      provider: "audio",
+      trackId: "track-1",
+      playbackState: "playing",
+      currentTimeSeconds: 42,
+      durationSeconds: 180,
+      updatedAt: "2026-08-21T20:00:01.000Z",
+      muted: false,
+    }));
+    FakeRedis.calls.length = 0;
+
+    const runtime = await overlay.getLiveOverlayRuntimeState();
+    assert.equal(runtime.overlayState.title, "BARCODE RADIO");
+    assert.equal(runtime.playerSync.trackId, "track-1");
+    assert.deepEqual(FakeRedis.calls, [[
+      "mget",
+      ["barcode:live-overlay:state", "barcode:live-overlay:player-sync"],
+    ]]);
+  } finally {
+    FakeRedis.values.clear();
     if (previousUrl === undefined) delete process.env.UPSTASH_REDIS_REST_URL;
     else process.env.UPSTASH_REDIS_REST_URL = previousUrl;
     if (previousToken === undefined) delete process.env.UPSTASH_REDIS_REST_TOKEN;

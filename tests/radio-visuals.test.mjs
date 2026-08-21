@@ -1738,9 +1738,9 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.match(queueControl, /YOUTUBE_SYNC_HEARTBEAT_MS = 1_000/);
   assert.match(productionContract, /same-origin MP3\/WAV player[\s\S]*existing 1 Hz player-sync heartbeat/);
   assert.match(productionContract, /External players with no usable playback or audio signal automatically receive[\s\S]*no host prompt or control/);
-  assert.match(builder, /const queueState = await getRadioQueueState\(\);\s*if \(!hasActiveQueueSession\(queueState\)\)/);
-  const idleBranch = builder.slice(builder.indexOf("if (!hasActiveQueueSession(queueState))"), builder.indexOf("const [overlayState, playerSync]"));
-  assert.doesNotMatch(idleBranch, /getStoredLiveOverlayState|getLiveOverlayPlayerSync/);
+  assert.match(builder, /const queueState = await getRadioLiveQueueState\(\);\s*if \(!hasActiveQueueSession\(queueState\)\)/);
+  const idleBranch = builder.slice(builder.indexOf("if (!hasActiveQueueSession(queueState))"), builder.indexOf("const { overlayState, playerSync }"));
+  assert.doesNotMatch(idleBranch, /getLiveOverlayRuntimeState/);
   assert.match(admin, /sourceLinks\?\.radioVisuals/);
   assert.match(sourceAccess, /\/overlay\/radio-visuals\$\{STUDIO_SOURCE_QUERY\}\$\{fragment\}/);
   assert.match(receiver, /studioOverlayRequestHeaders/);
@@ -1784,9 +1784,9 @@ test("show-long live and Wheel source wakes with the session and clears when it 
   assert.match(receiver, /if \(!wheelOnly\) return undefined;\s*const spin = new Audio/);
   assert.match(receiver, /const cheer = new Audio\(WHEEL_WINNER_CHEER_AUDIO_PATH\)/);
   assert.match(receiver, /const encrypt = new Audio\(WHEEL_REENCRYPT_AUDIO_PATH\)/);
-  assert.match(builder, /const queueState = await getRadioQueueState\(\);\s*if \(!hasActiveQueueSession\(queueState\)\)/);
+  assert.match(builder, /const queueState = await getRadioLiveQueueState\(\);\s*if \(!hasActiveQueueSession\(queueState\)\)/);
   assert.match(builder, /const broadcastActive = queueState\.session\?\.showStarted === true/);
-  assert.match(builder, /Promise\.all\(\[getStoredLiveOverlayState\(\), getLiveOverlayPlayerSync\(\)\]\)/);
+  assert.match(builder, /getLiveOverlayRuntimeState\(\)/);
   assert.match(builder, /broadcastActive,[\s\S]*?scene,/);
   assert.doesNotMatch(builder, /if \(!broadcastActive\)/);
   assert.doesNotMatch(builder, /scene: wheelActive \? scene : null/);

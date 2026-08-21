@@ -1,6 +1,6 @@
-import { getLiveOverlayPlayerSync, getStoredLiveOverlayState, resolveLiveOverlaySceneFromQueueState } from "./live-overlay";
+import { getLiveOverlayRuntimeState, resolveLiveOverlaySceneFromQueueState } from "./live-overlay";
 import type { ResolvedLiveOverlayScene } from "./live-overlay";
-import { getRadioQueueState } from "./queue";
+import { getRadioLiveQueueState } from "./queue";
 import { hasActiveQueueSession } from "./session-bound-polling";
 
 export interface WheelOverlaySnapshot {
@@ -12,7 +12,7 @@ export interface WheelOverlaySnapshot {
 }
 
 export async function getWheelOverlaySnapshot(now = new Date()): Promise<WheelOverlaySnapshot> {
-  const queueState = await getRadioQueueState();
+  const queueState = await getRadioLiveQueueState();
   if (!hasActiveQueueSession(queueState)) {
     return {
       sessionActive: false,
@@ -24,7 +24,7 @@ export async function getWheelOverlaySnapshot(now = new Date()): Promise<WheelOv
   }
 
   const broadcastActive = queueState.session?.showStarted === true;
-  const [overlayState, playerSync] = await Promise.all([getStoredLiveOverlayState(), getLiveOverlayPlayerSync()]);
+  const { overlayState, playerSync } = await getLiveOverlayRuntimeState();
   const scene = resolveLiveOverlaySceneFromQueueState({ overlayState, queueState, playerSync, now });
   // The resolved ceremony is the authoritative wheel state used by the admin
   // and live receiver. Do not introduce a second flag gate for the link source.

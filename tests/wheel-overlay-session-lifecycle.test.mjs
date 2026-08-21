@@ -32,15 +32,18 @@ function loadWheelOverlayHarness() {
 
   Module._load = function loadWithStubs(request, parent, isMain) {
     if (request === "./queue" && parent?.filename.endsWith("wheel-overlay.ts")) {
-      return { getRadioQueueState: async () => queueState };
+      return { getRadioLiveQueueState: async () => queueState };
     }
     if (request === "./session-bound-polling" && parent?.filename.endsWith("wheel-overlay.ts")) {
       return { hasActiveQueueSession: (value) => Boolean(value?.session && value.session.status !== "archived") };
     }
     if (request === "./live-overlay" && parent?.filename.endsWith("wheel-overlay.ts")) {
       return {
-        getStoredLiveOverlayState: async () => { calls.overlay += 1; return { mode: "auto" }; },
-        getLiveOverlayPlayerSync: async () => { calls.player += 1; return playerSync; },
+        getLiveOverlayRuntimeState: async () => {
+          calls.overlay += 1;
+          calls.player += 1;
+          return { overlayState: { mode: "auto" }, playerSync };
+        },
         resolveLiveOverlaySceneFromQueueState: (input) => {
           calls.resolve += 1;
           resolverInput = input;

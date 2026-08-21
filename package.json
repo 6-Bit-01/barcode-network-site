@@ -15,7 +15,8 @@
     "test:queue": "node --test tests/live-overlay-resolver.test.mjs tests/queue-playback.test.mjs tests/bnl-read-model.test.mjs tests/queue-production-capability.test.mjs tests/track-duration.test.mjs tests/provider-metadata-failsoft.test.mjs tests/apple-music-queue-boundary.test.mjs",
     "check": "npm run typecheck && npm run lint && npm test",
     "test:bnl": "node --test tests/bnl-status-controller.test.mjs tests/bnl-force-pull.test.mjs tests/bnl-admin-ui-contract.test.mjs tests/bnl-presence-relay-contract.test.mjs tests/bnl-journal-contract.test.mjs tests/bnl-journal-admin-control.test.mjs",
-    "test:shell": "node --test tests/global-identity-shell.test.mjs"
+    "test:shell": "node --test tests/global-identity-shell.test.mjs",
+    "measure:radio-live-usage": "node scripts/measure-radio-live-usage.mjs"
   },
   "dependencies": {
     "@fontsource-variable/oxanium": "5.3.0",

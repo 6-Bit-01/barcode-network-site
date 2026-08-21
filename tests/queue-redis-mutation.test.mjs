@@ -32,6 +32,13 @@ class FakeRedis {
     return FakeRedis.values.get(key) ?? null;
   }
 
+  async mget(...keys) {
+    FakeRedis.calls.push(["mget", keys]);
+    if (FakeRedis.getFailure) throw FakeRedis.getFailure;
+    if (FakeRedis.failAllCommands || FakeRedis.failGets) throw FakeRedis.quotaError();
+    return keys.map((key) => FakeRedis.values.get(key) ?? null);
+  }
+
   async set(key, value, options = {}) {
     FakeRedis.calls.push(["set", key, options]);
     if (FakeRedis.failAllCommands) throw FakeRedis.quotaError();
@@ -44,13 +51,14 @@ class FakeRedis {
     FakeRedis.calls.push(["eval", keys]);
     if (FakeRedis.failAllCommands) throw FakeRedis.quotaError();
     if (script.includes("current_revision")) {
-      const [lockKey, stateKey, revisionKey] = keys;
-      const [token, expectedRevision, stateJson, nextRevision] = args;
+      const [lockKey, stateKey, revisionKey, liveStateKey] = keys;
+      const [token, expectedRevision, stateJson, nextRevision, liveStateJson] = args;
       if (FakeRedis.values.get(lockKey) !== token) return -1;
       const currentRevision = FakeRedis.values.get(revisionKey);
       if (currentRevision !== undefined && Number(currentRevision) !== Number(expectedRevision)) return -2;
       FakeRedis.values.set(stateKey, stateJson);
       FakeRedis.values.set(revisionKey, nextRevision);
+      if (liveStateKey && liveStateJson) FakeRedis.values.set(liveStateKey, liveStateJson);
       return Number(nextRevision);
     }
     const [lockKey] = keys;
@@ -607,6 +615,85 @@ test("Vercel Production requires an isolated dedicated queue Redis endpoint", as
   } finally {
     if (previousVercelEnv === undefined) delete process.env.VERCEL_ENV;
     else process.env.VERCEL_ENV = previousVercelEnv;
+    delete process.env.BLOB_READ_WRITE_TOKEN;
+    delete process.env.QUEUE_REDIS_REST_URL;
+    delete process.env.QUEUE_REDIS_REST_TOKEN;
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+  }
+});
+
+test("live readers use the atomically committed current-session projection", async () => {
+  resetQueueTestState();
+  delete process.env.BLOB_READ_WRITE_TOKEN;
+  delete process.env.QUEUE_REDIS_REST_URL;
+  delete process.env.QUEUE_REDIS_REST_TOKEN;
+  process.env.UPSTASH_REDIS_REST_URL = "https://redis.example.test";
+  process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
+
+  try {
+    const { first } = loadIndependentQueueModules();
+    await first.startNewQueueSession({ title: "Compact live projection" });
+    await first.setQueueOpen(true);
+    await first.addToQueue(legacyEntry(1));
+    await first.addToQueue(legacyEntry(2));
+
+    const full = await first.getRadioQueueState();
+    const storedProjection = JSON.parse(FakeRedis.values.get("radioQueue:v2:live-session"));
+    assert.equal(storedProjection.schemaVersion, "queue_live_store_v1");
+    assert.equal(storedProjection.revision, full.revision);
+    assert.equal(storedProjection.activeSessionId, full.session.sessionId);
+    assert.equal(storedProjection.session.sessionId, full.session.sessionId);
+
+    FakeRedis.calls.length = 0;
+    const live = await first.getRadioLiveQueueState();
+    assert.deepEqual(FakeRedis.calls, [[
+      "mget",
+      ["radioQueue:v2:live-session", "radioQueue:v2:sessions:mutation-revision"],
+    ]], "a live snapshot verifies the compact projection in one round trip");
+    for (const key of [
+      "revision",
+      "nowPlaying",
+      "queue",
+      "history",
+      "removed",
+      "spotlight",
+      "publicStatus",
+      "session",
+      "nextInLine",
+      "loadedTrack",
+      "autoRoutingPaused",
+      "nextNonPriorityLane",
+      "wheelEligibleArtists",
+      "playbackDiagnostics",
+      "isCurrentSession",
+    ]) {
+      assert.deepEqual(live[key], full[key], `live projection preserves ${key}`);
+    }
+    assert.equal(live.sessions.length, 1, "archived session summaries are excluded from visual polling");
+
+    await first.archiveCurrentQueueSession();
+    FakeRedis.calls.length = 0;
+    const ended = await first.getRadioLiveQueueState();
+    assert.equal(ended.session, undefined);
+    assert.equal(ended.isCurrentSession, false);
+    assert.deepEqual(FakeRedis.calls, [[
+      "mget",
+      ["radioQueue:v2:live-session", "radioQueue:v2:sessions:mutation-revision"],
+    ]], "ended shows stay on the compact idle projection");
+
+    const staleProjection = JSON.parse(FakeRedis.values.get("radioQueue:v2:live-session"));
+    staleProjection.revision -= 1;
+    FakeRedis.values.set("radioQueue:v2:live-session", JSON.stringify(staleProjection));
+    FakeRedis.calls.length = 0;
+    const fallback = await first.getRadioLiveQueueState();
+    assert.equal(fallback.revision, ended.revision, "a stale projection falls back to full queue authority");
+    assert.deepEqual(FakeRedis.calls[0], [
+      "mget",
+      ["radioQueue:v2:live-session", "radioQueue:v2:sessions:mutation-revision"],
+    ]);
+    assert.ok(FakeRedis.calls.some(([command, key]) => command === "get" && key === "radioQueue:v2:sessions"));
+  } finally {
     delete process.env.BLOB_READ_WRITE_TOKEN;
     delete process.env.QUEUE_REDIS_REST_URL;
     delete process.env.QUEUE_REDIS_REST_TOKEN;

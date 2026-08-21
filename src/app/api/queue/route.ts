@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { APPLE_MUSIC_QUEUE_UNSUPPORTED_MESSAGE, PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT, PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION, PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION, PUBLIC_QUEUE_LEGAL_TERMS_VERSION, detectQueueSourceType, isAppleMusicUrl } from "@/lib/queue-types";
 import { getPublicQueueSnapshot, getRadioQueueState, isTrackPersistedInSessionQueue, normalizeQueueSourceKey, requestPriorityUpgradePlaceholder, submitRadioTrack, toPublicQueueTrack } from "@/lib/queue";
-import { getLiveOverlayPlayerSync, getStoredLiveOverlayState } from "@/lib/live-overlay";
+import { getLiveOverlayRuntimeState } from "@/lib/live-overlay";
 import { attachQueueLiveTiming } from "@/lib/queue-live-timing";
 import type { QueueEntry } from "@/lib/queue-types";
 
@@ -125,10 +125,7 @@ export async function GET(req: Request) {
   if (snapshot.sessionActive !== true) {
     return NextResponse.json(attachQueueLiveTiming(snapshot, null, null, now));
   }
-  const [playerSync, overlayState] = await Promise.all([
-    getLiveOverlayPlayerSync(),
-    getStoredLiveOverlayState(),
-  ]);
+  const { playerSync, overlayState } = await getLiveOverlayRuntimeState();
   return NextResponse.json(attachQueueLiveTiming(snapshot, playerSync, overlayState, now));
 }
 

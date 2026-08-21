@@ -1,7 +1,7 @@
 import { resolveForegroundOverlaySnapshot } from "./foreground-overlay-resolver";
 import { isForegroundQueueProjectionPublic } from "./foreground-overlay-access";
-import { getLiveOverlayPlayerSync, getStoredLiveOverlayState, resolveLiveOverlaySceneFromQueueState } from "./live-overlay";
-import { getRadioQueueState } from "./queue";
+import { getLiveOverlayRuntimeState, resolveLiveOverlaySceneFromQueueState } from "./live-overlay";
+import { getRadioLiveQueueState } from "./queue";
 import type { ForegroundOverlaySnapshot } from "./foreground-overlay-resolver";
 import type { QueueState } from "./queue-types";
 import { hasActiveQueueSession } from "./session-bound-polling";
@@ -32,7 +32,7 @@ export async function getForegroundOverlaySnapshot(
   now = new Date(),
   options: { allowPrivateQueueState?: boolean; env?: NodeJS.ProcessEnv } = {},
 ): Promise<ForegroundOverlaySnapshot> {
-  const queueState = await getRadioQueueState();
+  const queueState = await getRadioLiveQueueState();
   const sessionActive = hasActiveQueueSession(queueState);
   const publicProjectionAllowed = isForegroundQueueProjectionPublic(options.env ?? process.env, queueState.session);
   const projectionAllowed = options.allowPrivateQueueState === true || publicProjectionAllowed;
@@ -49,10 +49,7 @@ export async function getForegroundOverlaySnapshot(
     });
     return resolveForegroundOverlaySnapshot({ queueState: projectedQueueState, scene }, now);
   }
-  const [overlayState, playerSync] = await Promise.all([
-    getStoredLiveOverlayState(),
-    getLiveOverlayPlayerSync(),
-  ]);
+  const { overlayState, playerSync } = await getLiveOverlayRuntimeState();
   const scene = resolveLiveOverlaySceneFromQueueState({
     overlayState,
     queueState: projectedQueueState,

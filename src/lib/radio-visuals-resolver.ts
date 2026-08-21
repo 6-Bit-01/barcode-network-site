@@ -5,11 +5,11 @@ import type { RadioVisualCue } from "./radio-visuals-cues";
 import { activeRadioVisualCue } from "./radio-visuals-cues";
 import { activeRadioVisualEvent, hashRadioVisualToken } from "./radio-visuals-events";
 import type { RadioVisualEvent, RadioVisualEventType } from "./radio-visuals-events";
-import type { QueueBroadcastPhase, QueueEntry, QueueState, SponsorBreakStatus } from "./queue-types";
+import type { QueueBroadcastPhase, QueueEntry, QueueState } from "./queue-types";
 import { hasActiveQueueSession } from "./session-bound-polling";
 
 export type RadioVisualsShowStage = "standby" | "intake" | "early" | "middle" | "late" | "final" | "complete";
-export type RadioVisualsMode = "standby" | "queue" | "track" | "wheel" | "sponsor" | "system";
+export type RadioVisualsMode = "standby" | "queue" | "track" | "wheel" | "system";
 
 export interface RadioVisualsPlayerSignal {
   provider: LiveOverlayPlayerSync["provider"];
@@ -36,7 +36,6 @@ export interface RadioVisualsShowSignals {
   intakeOpen: boolean;
   wheelSpinsOwed: number;
   wheelCandidateCount: number;
-  sponsorStatus: SponsorBreakStatus | null;
   broadcastPhase: QueueBroadcastPhase | null;
 }
 
@@ -119,9 +118,6 @@ function stateEvents(state: QueueState, scene: ResolvedLiveOverlayScene, now: Da
   const events: Array<RadioVisualEvent | null> = [
     eventCandidate("show_started", session?.broadcastStartedAt, `show:${session?.broadcastStartedAt ?? ""}`, now),
   ];
-  if (session?.sponsorBreakStatus === "due") events.push(eventCandidate("sponsor_due", session.updatedAt, `sponsor:due:${session.updatedAt}`, now));
-  if (session?.sponsorBreakStatus === "running") events.push(eventCandidate("sponsor_started", session.sponsorBreakStartedAt, `sponsor:start:${session.sponsorBreakStartedAt ?? ""}`, now));
-  if (session?.sponsorBreakStatus === "completed") events.push(eventCandidate("sponsor_completed", session.sponsorBreakCompletedAt, `sponsor:end:${session.sponsorBreakCompletedAt ?? ""}`, now));
   if (scene.mode === "wheel_ready") events.push(eventCandidate("wheel_launched", scene.updatedAt, `wheel:launch:${scene.updatedAt}`, now));
   if (scene.mode === "wheel_spinning" || scene.mode === "wheel_reencrypting") events.push(eventCandidate("wheel_spinning", scene.updatedAt, `wheel:spin:${scene.updatedAt}`, now));
   return events.filter((event): event is RadioVisualEvent => Boolean(event));
@@ -140,7 +136,6 @@ function recentVisualEvents(state: QueueState, scene: ResolvedLiveOverlayScene, 
 function visualModeForScene(scene: ResolvedLiveOverlayScene, sessionActive: boolean): RadioVisualsMode {
   if (!sessionActive || scene.mode === "standby") return "standby";
   if (scene.mode.startsWith("wheel_")) return "wheel";
-  if (scene.mode === "sponsor") return "sponsor";
   if (scene.mode === "system_message" || scene.mode === "video_placeholder") return "system";
   if (scene.mode === "now_playing" || scene.mode === "artist_card") return "track";
   return "queue";
@@ -213,12 +208,21 @@ export function resolveRadioVisualsSnapshot(input: {
       .find((event) => event.trackId === currentTrackId && event.eventType === "loaded")
       ?.observedAt
     : null;
-  const transientSceneOccurrence = visualMode === "wheel" || visualMode === "system" || visualMode === "sponsor"
-    ? `:${scene.mode}:${scene.updatedAt || now.toISOString()}`
-    : "";
+  const wheelOccurrence = visualMode === "wheel"
+    ? scene.wheelCeremony?.startedAt
+      ?? scene.wheelCeremony?.seed
+      ?? `${scene.mode}:${scene.updatedAt || now.toISOString()}`
+    : null;
+  const transientSceneOccurrence = visualMode === "wheel"
+    ? `:wheel:${wheelOccurrence}`
+    : visualMode === "system"
+      ? `:${scene.mode}:${scene.updatedAt || now.toISOString()}`
+      : "";
   const trackIdentity = scene.track
     ? `${scene.track.id ?? currentTrackId ?? "track"}:${scene.track.artistName}:${scene.track.trackTitle}:${scene.track.sourceType}:${loadedOccurrence ?? currentEntry?.playedAt ?? currentEntry?.createdAt ?? "occurrence"}`
-    : `${visualMode}:${showStage}:${acceptedCount}:${completedCount}${transientSceneOccurrence}`;
+    : visualMode === "wheel"
+      ? `wheel:${wheelOccurrence}`
+      : `${visualMode}:${showStage}:${acceptedCount}:${completedCount}${transientSceneOccurrence}`;
   const cue = sessionActive && overlayState ? activeRadioVisualCue({
     type: overlayState.visualCueType,
     startedAt: overlayState.visualCueStartedAt,
@@ -243,7 +247,6 @@ export function resolveRadioVisualsSnapshot(input: {
       intakeOpen: queueState.publicStatus?.isOpen ?? queueState.session?.queueOpen ?? false,
       wheelSpinsOwed: nonNegativeInteger(queueState.session?.wheelSpinsOwed ?? scene.wheelSpinsOwed),
       wheelCandidateCount: nonNegativeInteger(scene.wheelCeremony?.displayCandidates?.length),
-      sponsorStatus: queueState.session?.sponsorBreakStatus ?? null,
       broadcastPhase: queueState.session?.broadcastPhase ?? null,
     },
     player,

@@ -10,9 +10,6 @@ export const RADIO_VISUAL_EVENT_TYPES = [
   "wheel_spinning",
   "intake_opened",
   "intake_closed",
-  "sponsor_due",
-  "sponsor_started",
-  "sponsor_completed",
   "stage_shift",
 ] as const;
 
@@ -30,9 +27,6 @@ export const RADIO_VISUAL_EVENT_DURATION_MS: Record<RadioVisualEventType, number
   wheel_spinning: 7_500,
   intake_opened: 5_400,
   intake_closed: 5_400,
-  sponsor_due: 6_000,
-  sponsor_started: 7_000,
-  sponsor_completed: 5_600,
   stage_shift: 5_000,
 };
 

@@ -19,6 +19,7 @@ import {
   radioVisualsMusicSignal,
   radioVisualsMotionRate,
   radioVisualsPalette,
+  radioVisualsPortalProfile,
   radioVisualsWheelBand,
 } from "@/lib/radio-visuals-engine";
 import type { RadioVisualAudioDrives, RadioVisualMusicSignal } from "@/lib/radio-visuals-engine";
@@ -48,7 +49,6 @@ interface VisualSignalMemory {
   intakeOpen: boolean;
   broadcastPhase: RadioVisualsSnapshot["signals"]["broadcastPhase"];
   wheelSpinsOwed: number;
-  sponsorStatus: RadioVisualsSnapshot["signals"]["sponsorStatus"];
 }
 
 interface VisualRuntime {
@@ -69,7 +69,6 @@ interface VisualRuntime {
   systemMix: number;
   queueMix: number;
   trackMix: number;
-  sponsorMix: number;
   intakeMix: number;
   finalMix: number;
   completeMix: number;
@@ -113,7 +112,6 @@ function fallbackSnapshot(): RadioVisualsSnapshot {
       intakeOpen: false,
       wheelSpinsOwed: 0,
       wheelCandidateCount: 0,
-      sponsorStatus: null,
       broadcastPhase: null,
     },
     player: null,
@@ -227,20 +225,42 @@ function applyPerformerSafeField(
   context: CanvasRenderingContext2D,
   width: number,
   height: number,
-  centerRetention = 0.14,
+  centerRetention = 0.2,
 ): void {
   const unit = Math.min(width, height);
   const maskColor: Rgb = [255, 255, 255];
   context.save();
   context.globalCompositeOperation = "destination-in";
   context.translate(width * 0.5, height * 0.44);
-  context.scale(1, 1.32);
+  context.scale(1, 1.28);
   const gradient = context.createRadialGradient(0, 0, unit * 0.045, 0, 0, unit * 0.55);
   gradient.addColorStop(0, rgba(maskColor, centerRetention));
-  gradient.addColorStop(0.24, rgba(maskColor, centerRetention + 0.02));
-  gradient.addColorStop(0.46, rgba(maskColor, 0.3));
-  gradient.addColorStop(0.68, rgba(maskColor, 0.78));
+  gradient.addColorStop(0.2, rgba(maskColor, centerRetention + 0.04));
+  gradient.addColorStop(0.44, rgba(maskColor, 0.38));
+  gradient.addColorStop(0.68, rgba(maskColor, 0.82));
   gradient.addColorStop(1, rgba(maskColor, 1));
+  context.fillStyle = gradient;
+  context.fillRect(-width, -height, width * 2, height * 2);
+  context.restore();
+}
+
+function applyPerformerIntrusionField(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+): void {
+  const unit = Math.min(width, height);
+  const maskColor: Rgb = [255, 255, 255];
+  context.save();
+  context.globalCompositeOperation = "destination-in";
+  context.translate(width * 0.5, height * 0.44);
+  context.scale(1, 1.24);
+  const gradient = context.createRadialGradient(0, 0, unit * 0.03, 0, 0, unit * 0.48);
+  gradient.addColorStop(0, rgba(maskColor, 0.92));
+  gradient.addColorStop(0.3, rgba(maskColor, 0.8));
+  gradient.addColorStop(0.58, rgba(maskColor, 0.34));
+  gradient.addColorStop(0.82, rgba(maskColor, 0.08));
+  gradient.addColorStop(1, rgba(maskColor, 0));
   context.fillStyle = gradient;
   context.fillRect(-width, -height, width * 2, height * 2);
   context.restore();
@@ -1294,41 +1314,6 @@ function drawIntakeAperture(
   context.restore();
 }
 
-function drawSponsorCurtain(
-  context: CanvasRenderingContext2D,
-  width: number,
-  height: number,
-  time: number,
-  mix: number,
-  primary: Rgb,
-  secondary: Rgb,
-  seed: number,
-): void {
-  if (mix < 0.002) return;
-  const unit = Math.min(width, height);
-  const coreAlpha = chromaCoreAlpha(mix);
-  context.save();
-  const stripHeight = height * (0.055 + mix * 0.045);
-  const offset = (time * (12 + mix * 18) + randomUnit(seed, 10_101) * unit) % (unit * 0.1);
-  context.fillStyle = rgba(primary, coreAlpha * 0.2);
-  context.fillRect(0, 0, width, stripHeight);
-  context.fillRect(0, height - stripHeight, width, stripHeight);
-  for (let sprocket = -1; sprocket < 14; sprocket += 1) {
-    const x = sprocket * unit * 0.1 + offset;
-    const holeWidth = unit * 0.038;
-    const holeHeight = stripHeight * 0.38;
-    const color = sprocket % 3 === 0 ? secondary : primary;
-    context.fillStyle = rgba(color, coreAlpha * (0.42 + (sprocket % 2) * 0.16));
-    context.fillRect(x, stripHeight * 0.25, holeWidth, holeHeight);
-    context.fillRect(x, height - stripHeight * 0.63, holeWidth, holeHeight);
-  }
-  const leaderY = height * ((time * 0.028 + randomUnit(seed, 10_501)) % 1);
-  context.fillStyle = rgba(secondary, coreAlpha * 0.34);
-  context.fillRect(0, leaderY, width * 0.18, Math.max(3, unit * 0.005));
-  context.fillRect(width * 0.82, leaderY, width * 0.18, Math.max(3, unit * 0.005));
-  context.restore();
-}
-
 function drawFinalConvergence(
   context: CanvasRenderingContext2D,
   width: number,
@@ -1725,6 +1710,47 @@ function drawIndustrialOverride(
   context.restore();
 }
 
+function drawWheelEventAccent(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  rotationPhase: number,
+  progress: number,
+  envelope: number,
+  eventType: RadioVisualEventType,
+  primary: Rgb,
+  secondary: Rgb,
+  highlight: Rgb,
+  seed: number,
+): void {
+  const unit = Math.min(width, height);
+  const strength = eventType === "wheel_gained" ? 0.76 : eventType === "wheel_spinning" ? 0.62 : 0.54;
+  const coreAlpha = chromaCoreAlpha(envelope * strength) * (0.72 + Math.sin(progress * Math.PI) * 0.28);
+  const accentCount = eventType === "wheel_spinning" ? 4 : eventType === "wheel_gained" ? 3 : 2;
+  context.save();
+  context.translate(width * 0.5, height * RADIO_VISUALS_WHEEL_CENTER_Y_RATIO);
+  context.globalCompositeOperation = "lighter";
+  context.lineCap = "round";
+  for (let accent = 0; accent < accentCount; accent += 1) {
+    const radius = unit * (0.478 + accent * 0.0045);
+    const angle = rotationPhase + randomUnit(seed, 42_100 + accent) * Math.PI * 2;
+    const span = 0.16 + randomUnit(seed, 42_200 + accent) * 0.24;
+    const color = accent === 0 ? highlight : accent % 2 ? secondary : primary;
+    context.shadowColor = rgba(color, coreAlpha * 0.46);
+    context.shadowBlur = unit * 0.009;
+    context.strokeStyle = rgba(color, coreAlpha * 0.42);
+    context.lineWidth = Math.max(3, unit * (0.004 + accent * 0.0007));
+    context.beginPath();
+    context.arc(0, 0, radius, angle - span, angle + span);
+    context.stroke();
+    context.shadowBlur = 0;
+    context.strokeStyle = rgba(highlight, coreAlpha * 0.74);
+    context.lineWidth = Math.max(1.2, unit * 0.0014);
+    context.stroke();
+  }
+  context.restore();
+}
+
 function drawAutomaticEvent(
   context: CanvasRenderingContext2D,
   width: number,
@@ -1737,7 +1763,7 @@ function drawAutomaticEvent(
   highlight: Rgb,
   shadow: Rgb,
   motionScale: number,
-  wheelCandidateCount?: number,
+  wheelPhase = 0,
 ): void {
   const progress = radioVisualEventProgress(event, nowMs);
   if (progress === null) return;
@@ -1788,22 +1814,7 @@ function drawAutomaticEvent(
     return;
   }
   if (event.type === "wheel_gained" || event.type === "wheel_launched" || event.type === "wheel_spinning") {
-    const strength = event.type === "wheel_gained" ? 0.82 : event.type === "wheel_spinning" ? 0.68 : 0.58;
-    drawWheelScene(
-      context,
-      width,
-      height,
-      time * (event.type === "wheel_spinning" ? 2.2 : 1.3),
-      envelope * strength,
-      primary,
-      secondary,
-      highlight,
-      seed,
-      undefined,
-      event.type === "wheel_spinning" ? "wheel_spinning" : "wheel_ready",
-      wheelCandidateCount,
-    );
-    if (event.type === "wheel_gained") drawEventFragments(context, width, height, time, progress, envelope, seed, primary, secondary, highlight, 38);
+    drawWheelEventAccent(context, width, height, wheelPhase, progress, envelope, event.type, primary, secondary, highlight, seed);
     return;
   }
   if (event.type === "intake_opened" || event.type === "intake_closed") {
@@ -1811,10 +1822,6 @@ function drawAutomaticEvent(
     drawIntakeAperture(context, width, height, time * 1.8, envelope * (0.5 + apertureProgress * 0.5), primary, secondary, seed);
     drawBorderPulse(context, width, height, apertureProgress, envelope * 0.42, seed, primary, secondary, highlight, 3);
     return;
-  }
-  if (event.type === "sponsor_due" || event.type === "sponsor_started" || event.type === "sponsor_completed") {
-    drawSponsorCurtain(context, width, height, time * 1.5, envelope * (event.type === "sponsor_started" ? 1 : 0.62), secondary, primary, seed);
-    if (event.type === "sponsor_completed") drawTapeSplice(context, width, height, progress, envelope * 0.58, secondary, primary, highlight, seed);
   }
 }
 
@@ -1853,6 +1860,108 @@ function wheelAngularVelocityTarget(
   return 0.95 + drives.treble * 1.8 + drives.impact * 0.5;
 }
 
+function tracePortalSpiral(
+  context: CanvasRenderingContext2D,
+  innerRadius: number,
+  outerRadius: number,
+  startAngle: number,
+  turns: number,
+  direction: number,
+  turbulence: number,
+  rotationPhase: number,
+  seed: number,
+): void {
+  const steps = 52;
+  const rippleCount = 3 + Math.floor(randomUnit(seed, 27_101) * 4);
+  const ripplePhase = randomUnit(seed, 27_102) * Math.PI * 2;
+  context.beginPath();
+  for (let step = 0; step <= steps; step += 1) {
+    const progress = step / steps;
+    const angle = startAngle
+      + direction * progress * Math.PI * 2 * turns
+      + direction * rotationPhase * (0.12 + randomUnit(seed, 27_103) * 0.18);
+    const ripple = Math.sin(progress * Math.PI * rippleCount + ripplePhase + rotationPhase * direction * 0.7)
+      * (outerRadius - innerRadius) * (0.025 + turbulence * 0.028);
+    const radius = innerRadius + (outerRadius - innerRadius) * ease(progress) + ripple;
+    const x = Math.cos(angle) * radius;
+    const y = Math.sin(angle) * radius;
+    if (step === 0) context.moveTo(x, y);
+    else context.lineTo(x, y);
+  }
+}
+
+function tracePortalCaustic(
+  context: CanvasRenderingContext2D,
+  radius: number,
+  amplitude: number,
+  harmonics: number,
+  phase: number,
+): void {
+  const steps = 72;
+  context.beginPath();
+  for (let step = 0; step <= steps; step += 1) {
+    const angle = step / steps * Math.PI * 2;
+    const warp = Math.sin(angle * harmonics + phase) * amplitude
+      + Math.sin(angle * (harmonics + 2.7) - phase * 0.61) * amplitude * 0.36;
+    const localRadius = radius + warp;
+    const x = Math.cos(angle) * localRadius;
+    const y = Math.sin(angle) * localRadius;
+    if (step === 0) context.moveTo(x, y);
+    else context.lineTo(x, y);
+  }
+  context.closePath();
+}
+
+function drawPortalRimLightning(
+  context: CanvasRenderingContext2D,
+  unit: number,
+  innerRadius: number,
+  outerRadius: number,
+  rotationPhase: number,
+  strength: number,
+  turbulence: number,
+  primary: Rgb,
+  secondary: Rgb,
+  highlight: Rgb,
+  seed: number,
+  count: number,
+): void {
+  context.save();
+  context.globalCompositeOperation = "lighter";
+  context.lineCap = "round";
+  context.lineJoin = "miter";
+  for (let strike = 0; strike < count; strike += 1) {
+    const direction = randomUnit(seed, 30_101 + strike) > 0.46 ? 1 : -1;
+    const startAngle = randomUnit(seed, 30_201 + strike) * Math.PI * 2
+      + rotationPhase * direction * (0.34 + randomUnit(seed, 30_301 + strike) * 0.44);
+    const span = direction * (0.19 + randomUnit(seed, 30_401 + strike) * (0.22 + turbulence * 0.09));
+    const steps = 10 + Math.floor(randomUnit(seed, 30_501 + strike) * 7);
+    const channel = strike % 3 === 0 ? highlight : strike % 2 ? secondary : primary;
+    context.beginPath();
+    for (let step = 0; step <= steps; step += 1) {
+      const progress = step / steps;
+      const angle = startAngle + span * progress;
+      const orbit = innerRadius
+        + (outerRadius - innerRadius) * (0.25 + randomUnit(seed, 30_700 + strike * 31 + step) * 0.7)
+        + Math.sin(progress * Math.PI * (3 + strike % 3)) * unit * 0.0035 * turbulence;
+      const x = Math.cos(angle) * orbit;
+      const y = Math.sin(angle) * orbit;
+      if (step === 0) context.moveTo(x, y);
+      else context.lineTo(x, y);
+    }
+    context.shadowColor = rgba(channel, 0.48 * strength);
+    context.shadowBlur = unit * (0.007 + turbulence * 0.006);
+    context.strokeStyle = rgba(channel, 0.2 * strength);
+    context.lineWidth = Math.max(3, unit * (0.006 + turbulence * 0.002));
+    context.stroke();
+    context.shadowBlur = unit * 0.003;
+    context.strokeStyle = rgba(highlight, 0.72 * strength);
+    context.lineWidth = Math.max(1.5, unit * 0.0018);
+    context.stroke();
+  }
+  context.restore();
+}
+
 function drawWheelScene(
   context: CanvasRenderingContext2D,
   width: number,
@@ -1883,7 +1992,6 @@ function drawWheelScene(
     phrase: 0,
   };
   const readyMode = sceneMode === "wheel_ready";
-  const spinningMode = sceneMode === "wheel_spinning";
   const reencryptingMode = sceneMode === "wheel_reencrypting";
   const resultMode = sceneMode === "wheel_result";
   const confirmedMode = sceneMode === "wheel_confirmed";
@@ -1891,144 +1999,161 @@ function drawWheelScene(
   const visualImpact = Math.max(drives.impact, confirmedMode ? 0.84 : resultMode ? 0.7 : 0);
   const unit = Math.min(width, height);
   const band = radioVisualsWheelBand(candidateCount);
-  const innerRadius = unit * band.innerCenterRatio;
-  const outerRadius = unit * band.outerCenterRatio;
-  const hardGeometryOuterRadius = Math.max(innerRadius, outerRadius - unit * 0.004);
-  const radiusInBand = (position: number, maximum = outerRadius) => innerRadius + (maximum - innerRadius) * clampVisualValue(position);
+  const portal = radioVisualsPortalProfile(candidateCount);
+  const stateEnergy = readyMode ? 0.88 : reencryptingMode ? 1.1 : releaseMode ? 0.82 : 1;
+  const portalStrength = portal.strength * stateEnergy;
+  const turbulence = portal.turbulence * (0.86 + visualImpact * 0.22);
+  const outerRadius = unit * portal.outerRatio;
+  const wispyInnerRadius = unit * portal.wispInnerRatio;
+  const hardInnerRadius = Math.min(unit * band.innerCenterRatio, outerRadius - unit * 0.007);
+  const hardGeometryOuterRadius = Math.max(
+    hardInnerRadius,
+    Math.min(outerRadius - unit * 0.003, unit * (band.outerCenterRatio + 0.015)),
+  );
   const coreAlpha = chromaCoreAlpha(mix, drives.presence);
-  if (!band.edgeOnly) {
-    radialLight(
-      context,
-      width,
-      height,
-      width * 0.5,
-      height * RADIO_VISUALS_WHEEL_CENTER_Y_RATIO,
-      innerRadius * (0.92 + visualImpact * 0.04),
-      secondary,
-      mix * (0.03 + drives.presence * 0.04 + (releaseMode ? 0.024 : 0)),
-    );
-  }
+  const centerX = width * 0.5;
+  const centerY = height * RADIO_VISUALS_WHEEL_CENTER_Y_RATIO;
+  const portalVoid: Rgb = [2, 2, 6];
+
+  // A faint lens reaches the labels, but all opaque depth and high-energy
+  // geometry remains in the count-calibrated outer zone.
+  radialLight(
+    context,
+    width,
+    height,
+    centerX,
+    centerY,
+    wispyInnerRadius * 1.02,
+    confirmedMode ? highlight : secondary,
+    mix * (0.018 + portalStrength * 0.022 + (releaseMode ? 0.01 : 0)),
+  );
+
   context.save();
-  context.translate(width * 0.5, height * RADIO_VISUALS_WHEEL_CENTER_Y_RATIO);
-  context.rotate(rotationPhase);
-  context.globalCompositeOperation = "source-over";
+  context.translate(centerX, centerY);
+  const throat = context.createRadialGradient(0, 0, hardInnerRadius, 0, 0, outerRadius);
+  throat.addColorStop(0, rgba(highlight, coreAlpha * 0.018));
+  throat.addColorStop(0.24, rgba(portalVoid, coreAlpha * (0.11 + turbulence * 0.035)));
+  throat.addColorStop(0.66, rgba(portalVoid, coreAlpha * (0.34 + portalStrength * 0.13)));
+  throat.addColorStop(0.86, rgba(highlight, coreAlpha * (0.18 + turbulence * 0.08)));
+  throat.addColorStop(1, rgba(primary, coreAlpha * (0.42 + portalStrength * 0.14)));
+  context.fillStyle = throat;
+  context.beginPath();
+  context.arc(0, 0, outerRadius, 0, Math.PI * 2);
+  context.arc(0, 0, hardInnerRadius, 0, Math.PI * 2, true);
+  context.fill("evenodd");
 
-  if (band.edgeOnly) {
-    const rimRadius = radiusInBand(0.56);
-    const rimColor = confirmedMode ? highlight : resultMode ? secondary : reencryptingMode ? highlight : primary;
-    const dash = readyMode
-      ? [unit * 0.08, unit * 0.035]
-      : spinningMode
-        ? [unit * 0.028, unit * 0.018]
-        : reencryptingMode
-          ? [unit * 0.016, unit * 0.012]
-          : confirmedMode
-            ? [unit * 0.13, unit * 0.022]
-            : [unit * 0.05, unit * 0.014];
-    context.setLineDash(dash);
-    context.lineDashOffset = rotationPhase * (reencryptingMode ? -82 : spinningMode ? 58 : 18);
-    context.lineWidth = Math.max(2, unit * 0.0025);
-    context.strokeStyle = rgba(rimColor, coreAlpha * (confirmedMode ? 0.96 : 0.8));
-    context.shadowBlur = 0;
-    context.beginPath();
-    context.arc(0, 0, rimRadius, 0, Math.PI * 2);
-    context.stroke();
-    context.setLineDash([]);
-
-    const tickCount = readyMode ? 6 : spinningMode ? 10 : reencryptingMode ? 12 : resultMode ? 8 : confirmedMode ? 4 : 7;
-    for (let tick = 0; tick < tickCount; tick += 1) {
-      const angle = tick / tickCount * Math.PI * 2 - rotationPhase * (tick % 2 ? 0.12 : -0.08);
-      const orbit = radiusInBand(0.18 + randomUnit(seed, 28_900 + tick) * 0.5);
-      const tickWidth = unit * (0.004 + randomUnit(seed, 29_000 + tick) * 0.005);
-      const tickHeight = Math.max(1.5, unit * 0.0018);
-      const color = confirmedMode ? highlight : tick % 2 ? secondary : primary;
-      context.save();
-      context.translate(Math.cos(angle) * orbit, Math.sin(angle) * orbit);
-      context.rotate(angle + Math.PI / 2);
-      context.fillStyle = rgba(color, coreAlpha * (0.62 + drives.treblePulse * 0.24));
-      context.fillRect(-tickWidth * 0.5, -tickHeight * 0.5, tickWidth, tickHeight);
-      context.restore();
-    }
-    if (releaseMode) {
-      const sealCount = confirmedMode ? 8 : 4;
-      const sealRadius = radiusInBand(confirmedMode ? 0.28 : 0.72);
-      const sealSpan = confirmedMode ? 0.034 : 0.068;
-      context.setLineDash([]);
-      context.lineWidth = Math.max(1.5, unit * 0.002);
-      context.strokeStyle = rgba(confirmedMode ? highlight : secondary, coreAlpha * (confirmedMode ? 0.98 : 0.84));
-      context.shadowBlur = 0;
-      context.shadowColor = "transparent";
-      for (let seal = 0; seal < sealCount; seal += 1) {
-        const angle = seal / sealCount * Math.PI * 2 + (resultMode ? rotationPhase * 0.08 : 0);
-        context.beginPath();
-        context.arc(0, 0, sealRadius, angle - sealSpan, angle + sealSpan);
-        context.stroke();
-      }
-    }
-    context.restore();
-    return;
-  }
-
-  // Candidate labels occupy the middle of the Wheel source. Keep every
-  // orbit in the count-calibrated outer band instead of scaling a center ring.
-  const requestedRingCount = readyMode ? 2 : spinningMode ? 4 : reencryptingMode ? 5 : resultMode ? 4 : confirmedMode ? 2 : 3;
-  const ringCount = Math.min(requestedRingCount, band.maxRings);
-  for (let ring = 0; ring < ringCount; ring += 1) {
-    const dashVariation = 0.82 + randomUnit(seed, 28_100 + ring) * 0.42;
-    const dashScale = readyMode ? 0.12 : confirmedMode ? 0.16 : resultMode ? 0.09 : 0.06;
-    const ringRadius = radiusInBand(ringCount === 1 ? 1 : ring / (ringCount - 1));
-    context.setLineDash([unit * (dashScale + ring * 0.011) * dashVariation, unit * (0.025 + ring * 0.006)]);
-    context.lineDashOffset = rotationPhase * (22 + ring * 13 + drives.treble * 18) * (ring % 2 ? -1 : 1);
-    context.lineWidth = Math.min(unit * 0.006, Math.max(3, unit * (0.0035 + ring * 0.00045 + drives.bass * 0.0016 + drives.bassPulse * 0.0012)));
-    const transientRing = (releaseMode && ring === ringCount - 1) || (drives.treblePulse > 0.8 && ring === 2);
-    const color = transientRing ? highlight : ring % 2 ? secondary : primary;
-    context.strokeStyle = rgba(color, coreAlpha * (0.68 + Math.min(0.22, ring * 0.045)));
-    const outermostRing = ring === ringCount - 1;
-    context.shadowColor = outermostRing
-      ? rgba(ring % 2 ? secondary : primary, coreAlpha * (0.34 + visualImpact * 0.36))
-      : "transparent";
-    context.shadowBlur = outermostRing ? Math.min(unit * 0.008, unit * (0.003 + visualImpact * 0.005)) : 0;
-    context.beginPath();
-    context.arc(0, 0, ringRadius, 0, Math.PI * 2);
-    context.stroke();
-  }
-
-  context.setLineDash([]);
+  // The outer halo provides scale and depth without throwing blur across the
+  // candidate field. The rotating material below carries the actual motion.
+  context.shadowColor = rgba(primary, coreAlpha * 0.48);
+  context.shadowBlur = unit * (0.012 + turbulence * 0.008);
+  context.strokeStyle = rgba(primary, coreAlpha * (0.22 + portalStrength * 0.16));
+  context.lineWidth = unit * (0.008 + turbulence * 0.003);
+  context.beginPath();
+  context.arc(0, 0, outerRadius - unit * 0.0035, 0, Math.PI * 2);
+  context.stroke();
   context.shadowBlur = 0;
   context.shadowColor = "transparent";
-  const arcCount = readyMode ? 12 : spinningMode ? 34 : reencryptingMode ? 42 : resultMode ? 24 : confirmedMode ? 14 : 18;
-  for (let arc = 0; arc < arcCount; arc += 1) {
-    const angle = arc / arcCount * Math.PI * 2 - rotationPhase * (arc % 2 ? 0.16 : -0.11);
-    const orbit = radiusInBand(randomUnit(seed, 28_300 + arc), hardGeometryOuterRadius);
-    const span = Math.min(0.14, 0.025 + drives.mid * 0.055 + drives.midPulse * 0.04 + randomUnit(seed, 28_500 + arc) * 0.06);
-    const color = drives.treblePulse > 0.84 && arc % 13 === 0 ? highlight : arc % 2 ? secondary : primary;
-    context.strokeStyle = rgba(color, coreAlpha * (0.46 + drives.midPulse * 0.24 + (releaseMode ? 0.14 : 0)));
-    context.lineWidth = Math.min(unit * 0.0045, Math.max(2, unit * (0.0024 + drives.mid * 0.0021)));
-    context.beginPath();
-    context.arc(0, 0, orbit, angle - span, angle + span);
+
+  context.rotate(rotationPhase);
+  context.globalCompositeOperation = "lighter";
+  context.lineCap = "round";
+  context.lineJoin = "round";
+
+  // Broad translucent spiral sheets make the rim read as a dimensional
+  // tunnel even with one candidate. Their inward reach grows only as labels
+  // get denser and smaller.
+  for (let ribbon = 0; ribbon < portal.ribbonCount; ribbon += 1) {
+    const direction = (ribbon + (seed & 1)) % 4 === 0 ? -1 : 1;
+    const startAngle = ribbon / portal.ribbonCount * Math.PI * 2
+      + randomUnit(seed, 27_500 + ribbon) * 0.48;
+    const ribbonOuterRadius = outerRadius - unit * (0.006 + randomUnit(seed, 27_600 + ribbon) * 0.012);
+    const ribbonInnerRadius = wispyInnerRadius
+      + (hardInnerRadius - wispyInnerRadius) * randomUnit(seed, 27_700 + ribbon) * 0.62;
+    tracePortalSpiral(
+      context,
+      ribbonInnerRadius,
+      ribbonOuterRadius,
+      startAngle,
+      0.56 + randomUnit(seed, 27_800 + ribbon) * (0.34 + turbulence * 0.12),
+      direction,
+      turbulence,
+      rotationPhase,
+      seed + ribbon * 977,
+    );
+    const color = ribbon % 4 === 0 ? highlight : ribbon % 3 === 0 ? secondary : primary;
+    context.strokeStyle = rgba(color, coreAlpha * (0.07 + portalStrength * 0.055));
+    context.lineWidth = unit * (0.012 + randomUnit(seed, 27_900 + ribbon) * 0.012 + turbulence * 0.004);
+    context.stroke();
+    context.strokeStyle = rgba(color, coreAlpha * (0.28 + portalStrength * 0.1));
+    context.lineWidth = Math.max(1.8, unit * (0.0022 + randomUnit(seed, 28_000 + ribbon) * 0.003));
     context.stroke();
   }
 
-  const fragmentCount = readyMode ? 18 : spinningMode ? 44 : reencryptingMode ? 52 : resultMode ? 32 : confirmedMode ? 18 : 26;
-  for (let fragment = 0; fragment < fragmentCount; fragment += 1) {
-    const phase = (randomUnit(seed, 28_800 + fragment) + Math.abs(rotationPhase) * (0.018 + drives.treble * 0.036 + fragment * 0.0004)) % 1;
-    const angle = randomUnit(seed, 28_900 + fragment) * Math.PI * 2 - rotationPhase * (fragment % 2 ? 0.18 : -0.12);
-    const orbit = radiusInBand(0.08 + phase * 0.84, hardGeometryOuterRadius);
-    const fragmentWidth = unit * (0.004 + randomUnit(seed, 29_000 + fragment) * 0.012 + drives.bassPulse * 0.006);
-    const fragmentHeight = Math.max(2, unit * (0.002 + drives.treblePulse * 0.002));
-    const color = drives.treblePulse > 0.86 && fragment % 17 === 0 ? highlight : fragment % 2 ? secondary : primary;
-    context.save();
-    context.translate(Math.cos(angle) * orbit, Math.sin(angle) * orbit);
-    context.rotate(angle + Math.PI / 2);
-    context.fillStyle = rgba(color, coreAlpha * (0.46 + (1 - phase) * 0.38));
-    context.fillRect(-fragmentWidth * 0.5, -fragmentHeight * 0.5, fragmentWidth, fragmentHeight);
-    context.restore();
+  // Continuous warped caustics replace the old stack of dashed circles. Hard
+  // caustics honor the label-safe band; small Wheels still retain the full
+  // translucent tunnel above.
+  const causticCount = band.edgeOnly
+    ? Math.min(4, portal.ribbonCount)
+    : Math.min(portal.ribbonCount, band.maxRings + 3);
+  for (let ribbon = 0; ribbon < causticCount; ribbon += 1) {
+    const lane = (ribbon + 0.5) / causticCount;
+    const radius = hardInnerRadius + (hardGeometryOuterRadius - hardInnerRadius) * lane;
+    const availableWidth = Math.max(unit * 0.003, hardGeometryOuterRadius - hardInnerRadius);
+    const amplitude = Math.min(
+      availableWidth * 0.28,
+      unit * (0.003 + turbulence * 0.0035 + randomUnit(seed, 28_100 + ribbon) * 0.003),
+    );
+    const phase = randomUnit(seed, 28_200 + ribbon) * Math.PI * 2
+      + rotationPhase * (ribbon % 2 ? -0.46 : 0.62);
+    tracePortalCaustic(context, radius, amplitude, 2 + (ribbon % 5), phase);
+    const color = ribbon % 5 === 0 ? highlight : ribbon % 2 ? secondary : primary;
+    context.strokeStyle = rgba(color, coreAlpha * (0.36 + portalStrength * 0.16));
+    context.lineWidth = Math.max(2.2, unit * (0.003 + drives.bass * 0.002 + portalStrength * 0.0012));
+    context.stroke();
+    if (ribbon % 3 === 0) {
+      context.strokeStyle = rgba(highlight, coreAlpha * (0.3 + drives.treblePulse * 0.24));
+      context.lineWidth = Math.max(1.2, unit * 0.0014);
+      context.stroke();
+    }
   }
+
+  // Curved suction streaks flow through the tunnel instead of sitting on the
+  // circumference as rectangular dots.
+  for (let streak = 0; streak < portal.streakCount; streak += 1) {
+    const direction = streak % 5 === 0 ? -1 : 1;
+    const phase = randomUnit(seed, 28_700 + streak);
+    const angle = randomUnit(seed, 28_800 + streak) * Math.PI * 2
+      + rotationPhase * direction * (0.32 + randomUnit(seed, 28_900 + streak) * 1.24);
+    const orbit = wispyInnerRadius
+      + (hardGeometryOuterRadius - wispyInnerRadius) * Math.pow(phase, 0.72);
+    const span = direction * (0.025 + randomUnit(seed, 29_000 + streak) * (0.065 + turbulence * 0.025));
+    const color = streak % 11 === 0 ? highlight : streak % 3 === 0 ? secondary : primary;
+    context.strokeStyle = rgba(color, coreAlpha * (0.16 + (1 - phase) * 0.2 + portalStrength * 0.08));
+    context.lineWidth = Math.max(1.2, unit * (0.0014 + randomUnit(seed, 29_100 + streak) * 0.0024));
+    context.beginPath();
+    context.arc(0, 0, orbit, angle - span, angle);
+    context.stroke();
+  }
+
+  drawPortalRimLightning(
+    context,
+    unit,
+    hardInnerRadius,
+    outerRadius - unit * 0.004,
+    rotationPhase,
+    coreAlpha * Math.min(1.12, 0.68 + portalStrength * 0.32),
+    turbulence,
+    primary,
+    secondary,
+    highlight,
+    seed,
+    portal.lightningArcCount,
+  );
   context.restore();
 
   if (visualImpact > 0.34 || releaseMode) {
     context.save();
-    const lockRadius = Math.max(innerRadius, outerRadius - unit * 0.006);
+    const lockRadius = outerRadius - unit * 0.008;
     context.strokeStyle = rgba(confirmedMode ? highlight : resultMode ? secondary : primary, coreAlpha * Math.max(visualImpact, 0.52) * 0.92);
     context.lineWidth = Math.min(unit * 0.006, Math.max(3, unit * (0.0038 + visualImpact * 0.0022)));
     if (confirmedMode) {
@@ -2324,6 +2449,108 @@ function drawLightningCue(
   radialLight(context, width, height, width * (0.18 + randomUnit(seed, 22_605) * 0.64), height * randomUnit(seed, 22_606) * 0.22, Math.max(width, height) * 0.72, highlight, afterglow);
 }
 
+function drawWindowScanline(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  time: number,
+  strength: number,
+  primary: Rgb,
+  secondary: Rgb,
+  highlight: Rgb,
+  seed: number,
+): void {
+  if (strength < 0.002) return;
+  const cycle = ((time * 0.065 + randomUnit(seed, 23_101)) % 1 + 1) % 1;
+  if (cycle > 0.1) return;
+  const progress = cycle / 0.1;
+  const envelope = Math.sin(progress * Math.PI) * clampVisualValue(strength);
+  const unit = Math.min(width, height);
+  const y = height * (0.1 + ease(progress) * 0.8);
+  const color = randomUnit(seed, 23_102) > 0.54 ? secondary : primary;
+  const gradient = context.createLinearGradient(0, 0, width, 0);
+  gradient.addColorStop(0, rgba(color, 0));
+  gradient.addColorStop(0.22, rgba(color, envelope * 0.36));
+  gradient.addColorStop(0.5, rgba(highlight, envelope * 0.64));
+  gradient.addColorStop(0.78, rgba(color, envelope * 0.36));
+  gradient.addColorStop(1, rgba(color, 0));
+  context.save();
+  context.fillStyle = gradient;
+  context.fillRect(0, y, width, Math.max(1.5, unit * 0.0022));
+  context.globalAlpha = 0.42;
+  context.fillRect(0, y + unit * 0.009, width, Math.max(1, unit * 0.0012));
+  context.restore();
+}
+
+function drawPerformerWindowIntrusions(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  time: number,
+  sceneMix: number,
+  trackMix: number,
+  drives: RadioVisualAudioDrives,
+  primary: Rgb,
+  secondary: Rgb,
+  highlight: Rgb,
+  seed: number,
+  cue: RadioVisualsSnapshot["cue"],
+  cueProgress: number | null,
+  cueEnvelope: number,
+  cueSeed: number,
+): void {
+  if (sceneMix < 0.002) return;
+
+  // A sparse scan may cross the performer field, but dense scene geometry is
+  // never replayed here. This is an explicit allow-list, not a weaker global
+  // mask.
+  drawWindowScanline(
+    context,
+    width,
+    height,
+    time,
+    sceneMix * (0.1 + trackMix * (0.12 + drives.midPulse * 0.14)),
+    primary,
+    secondary,
+    highlight,
+    seed,
+  );
+
+  if (trackMix > 0.08 && radioVisualMusicScene(seed) === "lightning_switchyard") {
+    const current = clampVisualValue(0.06 + drives.treble * 0.1 + drives.treblePulse * 0.28 + drives.impact * 0.12);
+    drawLightningTree(
+      context,
+      width,
+      height,
+      seed + Math.floor(time * (0.72 + drives.treblePulse * 2.4)) * 131,
+      sceneMix * trackMix * current * 0.42,
+      primary,
+      secondary,
+      highlight,
+    );
+  }
+
+  if (cue?.type === "lightning" && cueProgress !== null && cueEnvelope > 0.002) {
+    context.save();
+    context.globalAlpha = 0.32;
+    drawLightningCue(context, width, height, cueProgress, cueEnvelope, primary, highlight, cueSeed);
+    context.restore();
+  }
+  if (cue?.type === "signal_breach" && cueEnvelope > 0.002) {
+    drawWindowScanline(
+      context,
+      width,
+      height,
+      time * 2.4,
+      cueEnvelope * 0.52,
+      secondary,
+      primary,
+      highlight,
+      cueSeed,
+    );
+  }
+}
+
 function visualSignalMemory(snapshot: RadioVisualsSnapshot): VisualSignalMemory {
   return {
     sessionActive: snapshot.sessionActive,
@@ -2334,7 +2561,6 @@ function visualSignalMemory(snapshot: RadioVisualsSnapshot): VisualSignalMemory 
     intakeOpen: snapshot.signals.intakeOpen,
     broadcastPhase: snapshot.signals.broadcastPhase,
     wheelSpinsOwed: snapshot.signals.wheelSpinsOwed,
-    sponsorStatus: snapshot.signals.sponsorStatus,
   };
 }
 
@@ -2349,7 +2575,6 @@ function snapshotObservationKey(snapshot: RadioVisualsSnapshot): string {
     snapshot.signals.intakeOpen ? 1 : 0,
     snapshot.signals.broadcastPhase ?? "none",
     snapshot.signals.wheelSpinsOwed,
-    snapshot.signals.sponsorStatus ?? "none",
     snapshot.events.map((event) => `${event.type}:${event.seed}`).join(","),
   ].join("|");
 }
@@ -2392,11 +2617,6 @@ function observeSnapshotEvents(snapshot: RadioVisualsSnapshot, runtime: VisualRu
   }
   if (current.sceneMode !== previous.sceneMode && current.sceneMode === "wheel_ready") emit("wheel_launched", "wheel-ready");
   if (current.sceneMode !== previous.sceneMode && (current.sceneMode === "wheel_spinning" || current.sceneMode === "wheel_reencrypting")) emit("wheel_spinning", `wheel:${current.sceneMode}`);
-  if (current.sponsorStatus !== previous.sponsorStatus) {
-    if (current.sponsorStatus === "due") emit("sponsor_due", "sponsor-due");
-    if (current.sponsorStatus === "running") emit("sponsor_started", "sponsor-running");
-    if (current.sponsorStatus === "completed" || current.sponsorStatus === "skipped") emit("sponsor_completed", `sponsor:${current.sponsorStatus}`);
-  }
   runtime.syntheticEvents = runtime.syntheticEvents.slice(-8);
 }
 
@@ -2443,7 +2663,6 @@ function drawVisualFrame(
   runtime.systemMix += ((snapshot.visualMode === "system" ? 1 : 0) - runtime.systemMix) * (1 - Math.exp(-elapsedMs / 1_100));
   runtime.queueMix += ((snapshot.visualMode === "queue" ? 1 : 0) - runtime.queueMix) * (1 - Math.exp(-elapsedMs / 1_700));
   runtime.trackMix += ((snapshot.visualMode === "track" ? 1 : 0) - runtime.trackMix) * (1 - Math.exp(-elapsedMs / 1_500));
-  runtime.sponsorMix += ((snapshot.visualMode === "sponsor" ? 1 : 0) - runtime.sponsorMix) * (1 - Math.exp(-elapsedMs / 1_800));
   runtime.intakeMix += ((snapshot.showStage === "intake" ? 1 : 0) - runtime.intakeMix) * (1 - Math.exp(-elapsedMs / 2_000));
   runtime.finalMix += ((snapshot.showStage === "final" ? 1 : 0) - runtime.finalMix) * (1 - Math.exp(-elapsedMs / 2_300));
   runtime.completeMix += ((snapshot.showStage === "complete" ? 1 : 0) - runtime.completeMix) * (1 - Math.exp(-elapsedMs / 2_600));
@@ -2493,7 +2712,6 @@ function drawVisualFrame(
     runtime.systemMix = 0;
     runtime.queueMix = 0;
     runtime.trackMix = 0;
-    runtime.sponsorMix = 0;
     runtime.intakeMix = 0;
     runtime.finalMix = 0;
     runtime.completeMix = 0;
@@ -2564,7 +2782,7 @@ function drawVisualFrame(
     runtime.highlight,
     runtime.currentSeed,
   );
-  const sceneStateMix = clampVisualValue(1 - Math.max(runtime.wheelMix, runtime.sponsorMix, runtime.systemMix), 0, 1);
+  const sceneStateMix = clampVisualValue(1 - Math.max(runtime.wheelMix, runtime.systemMix), 0, 1);
   const drawSeedComposition = (seed: number, compositionMix: number) => {
     if (compositionMix < 0.002) return;
     const musicMix = activeSurfaceMix * sceneStateMix * compositionMix * musicSceneActivity;
@@ -2575,7 +2793,6 @@ function drawVisualFrame(
   drawSeedComposition(runtime.currentSeed, seedBlend);
   drawQueueLanes(context, width, height, time, runtime.queueMix * activeSurfaceMix, runtime.primary, runtime.secondary, runtime.currentSeed);
   drawIntakeAperture(context, width, height, time, runtime.intakeMix * activeSurfaceMix, runtime.primary, runtime.secondary, runtime.currentSeed);
-  drawSponsorCurtain(context, width, height, time, runtime.sponsorMix * activeSurfaceMix, runtime.secondary, runtime.primary, runtime.currentSeed);
   drawFinalConvergence(context, width, height, time, runtime.finalMix * activeSurfaceMix, runtime.primary, runtime.secondary, runtime.currentSeed);
   drawCompletionAfterimage(context, width, height, time, runtime.completeMix * activeSurfaceMix, runtime.primary, runtime.secondary);
   drawPressureEdges(context, width, height, time, runtime.pressureMix * activeSurfaceMix, runtime.primary, runtime.secondary);
@@ -2600,7 +2817,7 @@ function drawVisualFrame(
   if (activeSurfaceMix > 0) {
     for (const event of visualEvents) {
       if (event.type === "show_started") continue;
-      drawAutomaticEvent(context, width, height, time, event, serverNowMs, runtime.primary, runtime.secondary, runtime.highlight, shadow, motionScale, snapshot.signals.wheelCandidateCount);
+      drawAutomaticEvent(context, width, height, time, event, serverNowMs, runtime.primary, runtime.secondary, runtime.highlight, shadow, motionScale, runtime.wheelPhase);
     }
   }
 
@@ -2612,14 +2829,38 @@ function drawVisualFrame(
     if (snapshot.cue.type === "lightning") drawLightningCue(context, width, height, cueProgress, cueEnvelope, runtime.primary, runtime.highlight, cueSeed);
   }
   if (effectLayer) {
-    if (snapshot.showStage !== "intake") applyPerformerSafeField(context, width, height, 0.14);
+    if (snapshot.showStage !== "intake") applyPerformerSafeField(context, width, height, 0.2);
     outputContext.drawImage(effectLayer.canvas, 0, 0, width, height);
+    if (snapshot.showStage !== "intake" && activeSurfaceMix > 0) {
+      const intrusionLayer = prepareEffectLayer(runtime, width, height);
+      if (intrusionLayer) {
+        drawPerformerWindowIntrusions(
+          intrusionLayer.context,
+          width,
+          height,
+          audioTime,
+          activeSurfaceMix * sceneStateMix,
+          runtime.trackMix,
+          musicDrives,
+          runtime.primary,
+          runtime.secondary,
+          runtime.highlight,
+          runtime.currentSeed,
+          snapshot.cue,
+          cueProgress,
+          cueEnvelope,
+          cueSeed,
+        );
+        applyPerformerIntrusionField(intrusionLayer.context, width, height);
+        outputContext.drawImage(intrusionLayer.canvas, 0, 0, width, height);
+      }
+    }
   }
   // The broadcast ignition is already an edge/top/bottom composition. Render
   // it after the ordinary performer mask so Start Broadcast cannot key away.
   for (const event of visualEvents) {
     if (event.type === "show_started") {
-      drawAutomaticEvent(outputContext, width, height, time, event, serverNowMs, runtime.primary, runtime.secondary, runtime.highlight, shadow, motionScale, snapshot.signals.wheelCandidateCount);
+      drawAutomaticEvent(outputContext, width, height, time, event, serverNowMs, runtime.primary, runtime.secondary, runtime.highlight, shadow, motionScale, runtime.wheelPhase);
     }
   }
   drawWheelScene(
@@ -2666,7 +2907,6 @@ export function RadioVisualsReceiver() {
     systemMix: 0,
     queueMix: 0,
     trackMix: 0,
-    sponsorMix: 0,
     intakeMix: 0,
     finalMix: 0,
     completeMix: 0,

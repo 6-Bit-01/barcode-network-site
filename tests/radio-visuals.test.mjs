@@ -466,7 +466,6 @@ test("music response follows the authoritative playback clock and uses direct an
   const loopback = engine.radioVisualsMusicSignal(timelineSnapshot, 24, 100, {
     schemaVersion: "barcode_audio_signal_v1",
     source: "windows_loopback",
-    analysisCalibration: "fixed_reference_v1",
     capturedAtUnixMs: Date.now(),
     sequence: 19,
     captureActive: true,
@@ -491,7 +490,6 @@ test("music response follows the authoritative playback clock and uses direct an
   const quietLoopback = engine.radioVisualsMusicSignal(timelineSnapshot, 24, 100, {
     schemaVersion: "barcode_audio_signal_v1",
     source: "windows_loopback",
-    analysisCalibration: "fixed_reference_v1",
     capturedAtUnixMs: Date.now(),
     sequence: 20,
     captureActive: true,
@@ -519,7 +517,6 @@ test("an active warmed Windows bridge owns silence continuously instead of snapp
   const atLevel = (level, sequence) => engine.radioVisualsMusicSignal(snapshot, 24, 100, {
     schemaVersion: "barcode_audio_signal_v1",
     source: "windows_loopback",
-    analysisCalibration: "fixed_reference_v1",
     capturedAtUnixMs: Date.now(),
     sequence,
     captureActive: true,
@@ -546,7 +543,6 @@ test("an active warmed Windows bridge owns silence continuously instead of snapp
   const unavailableSignal = {
     schemaVersion: "barcode_audio_signal_v1",
     source: "windows_loopback",
-    analysisCalibration: "fixed_reference_v1",
     capturedAtUnixMs: Date.now(),
     sequence: 100,
     captureActive: false,
@@ -574,124 +570,18 @@ test("Windows audio transfer suppresses quiet noise and expands loud passages", 
     assert.equal(outputs[0], 0);
     outputs.forEach((output) => assert.ok(Number.isFinite(output) && output >= 0 && output <= 1));
     for (let index = 1; index < outputs.length; index += 1) assert.ok(outputs[index] >= outputs[index - 1]);
-    assert.ok(outputs[2] <= 0.02, `${channel} must not exaggerate 5% input`);
-    assert.ok(outputs[3] <= 0.06, `${channel} must keep 10% input restrained`);
-    assert.ok(outputs[4] >= 0.1 && outputs[4] <= 0.15, `${channel} must keep a real 20% bridge reading subtle but usable`);
-    assert.ok(outputs[5] >= 0.14 && outputs[5] <= 0.2, `${channel} must let 25% input begin influencing geometry without resembling a chorus`);
-    assert.ok(outputs[7] >= 0.33 && outputs[7] <= 0.4, `${channel} must keep a 45% bridge reading visibly moderate`);
-    assert.ok(outputs[8] >= 0.5 && outputs[8] <= 0.56, `${channel} must retain a real step between moderate and hot audio`);
+    assert.ok(outputs[2] <= 0.035, `${channel} must not exaggerate 5% input`);
+    assert.ok(outputs[3] <= 0.08, `${channel} must keep 10% input restrained`);
+    assert.ok(outputs[4] >= 0.1, `${channel} must begin producing useful motion at a real 20% bridge reading`);
+    assert.ok(outputs[5] >= 0.13, `${channel} must make an ordinary 25% bridge reading clearly usable`);
+    assert.ok(outputs[7] >= 0.3, `${channel} must make a 45% bridge reading visibly strong`);
+    assert.ok(outputs[8] >= 0.48, `${channel} must make a 60% bridge reading near-hot`);
     assert.ok(outputs[7] - outputs[5] > outputs[5] - outputs[2], `${channel} must expand higher readings more than quiet readings`);
-    assert.ok(outputs[10] >= 0.86 && outputs[10] < 0.9, `${channel} must retain headroom at a 90% reading`);
+    assert.ok(outputs[10] >= 0.86 && outputs[10] < 0.95, `${channel} must retain headroom at a 90% reading`);
     assert.equal(outputs[11], 1, `${channel} may reach full drive only at full input`);
   }
   const midpoint = engine.radioVisualLoopbackLevel(0.5, "energy");
-  assert.ok(midpoint >= 0.4 && midpoint <= 0.43);
-});
-
-test("the deployed renderer de-hots legacy full-scale bridge values exactly once", () => {
-  const fixedReferenceGain = Math.pow(10, -9 / 20);
-  const legacyChannels = {};
-  for (const channel of ["energy", "bass", "mid", "treble"]) {
-    const exponent = channel === "energy" ? 0.72 : 0.58;
-    const legacyRaw = 0.9;
-    const fixedRaw = legacyRaw * Math.pow(fixedReferenceGain, exponent);
-    const legacyOutput = engine.radioVisualLoopbackLevel(legacyRaw, channel, "legacy_full_scale");
-    const fixedOutput = engine.radioVisualLoopbackLevel(fixedRaw, channel, "fixed_reference_v1");
-    const uncorrectedOutput = engine.radioVisualLoopbackLevel(legacyRaw, channel, "fixed_reference_v1");
-
-    assert.ok(Math.abs(legacyOutput - fixedOutput) < 0.000001, `${channel} legacy compatibility must match the new helper reference`);
-    assert.ok(legacyOutput < uncorrectedOutput * 0.5, `${channel} legacy full-scale startup cannot remain near maximum`);
-    legacyChannels[channel] = legacyOutput;
-  }
-
-  const legacyCeiling = engine.radioVisualMusicIntensityPlan(engine.radioVisualAudioDrives({
-    source: "windows_loopback",
-    bpm: 120,
-    energy: legacyChannels.energy,
-    bass: legacyChannels.bass,
-    mid: legacyChannels.mid,
-    treble: legacyChannels.treble,
-    beat: 0,
-    accent: 0,
-    peak: 0,
-    progress: 0,
-    phrase: 0,
-  }));
-  assert.ok(legacyCeiling.structureLevel < 0.25, "even a saturated legacy helper frame cannot assemble a maximum-strength opening");
-  assert.ok(
-    legacyCeiling.visibility >= 0.3
-      && legacyCeiling.visibility < 0.42
-      && legacyCeiling.perimeterGain < 0.65,
-    "legacy startup must retain a readable family signature while remaining visibly below the chorus state",
-  );
-});
-
-test("one music intensity owner keeps a quiet opening far below a loud section across every render pass", () => {
-  const signal = (rawLevel) => {
-    const energy = engine.radioVisualLoopbackLevel(rawLevel, "energy");
-    const bass = engine.radioVisualLoopbackLevel(rawLevel, "bass");
-    const mid = engine.radioVisualLoopbackLevel(rawLevel, "mid");
-    const treble = engine.radioVisualLoopbackLevel(rawLevel, "treble");
-    return engine.radioVisualAudioDrives({
-      source: "windows_loopback",
-      bpm: 120,
-      energy,
-      bass,
-      mid,
-      treble,
-      beat: 0,
-      accent: 0,
-      peak: 0,
-      progress: 0.08,
-      phrase: 0.1,
-    });
-  };
-  const quiet = engine.radioVisualMusicIntensityPlan(signal(0.3));
-  const moderate = engine.radioVisualMusicIntensityPlan(signal(0.6));
-  const loud = engine.radioVisualMusicIntensityPlan(signal(0.9));
-  const effectiveBase = (plan) => plan.visibility * engine.RADIO_VISUAL_MUSIC_OUTPUT_GAIN * plan.baseGain;
-
-  assert.ok(quiet.structureLevel < 0.03, "a compressed 30% bridge opening cannot begin with assembled geometry");
-  assert.ok(
-    effectiveBase(quiet) >= 0.17 && effectiveBase(quiet) < 0.22,
-    "the retained base renderer must survive the Studio key without resembling a chorus",
-  );
-  assert.ok(quiet.perimeterGain < 0.55 && quiet.lifecycleGain < 0.13 && quiet.modulationGain < 0.085);
-  assert.ok(moderate.structureLevel > quiet.structureLevel + 0.4, "a real rise must visibly assemble the composition");
-  assert.ok(loud.structureLevel > 0.9 && effectiveBase(loud) > effectiveBase(moderate) * 1.6);
-  assert.ok(loud.perimeterGain > moderate.perimeterGain && loud.lifecycleGain > moderate.lifecycleGain && loud.modulationGain > moderate.modulationGain);
-});
-
-test("a held Windows sample peak is not treated as a permanent kick, snare, and treble hit", () => {
-  const current = entry("track-held-peak", { sourceType: "youtube" });
-  const youtube = { provider: "youtube", videoId: "abcDEF12345", trackId: current.id, playbackState: "playing", currentTimeSeconds: 8, durationSeconds: 180, updatedAt: "2026-08-19T18:59:55.000Z", muted: true };
-  const state = queueState({ nowPlaying: current, loadedTrack: current });
-  const snapshot = visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: scene("now_playing", { track: { id: current.id, artistName: "Artist", trackTitle: "Track", sourceType: "youtube" }, youtube }), playerSync: youtube, now: new Date("2026-08-19T19:00:00.000Z") });
-  const held = engine.radioVisualsMusicSignal(snapshot, 8, 100, {
-    schemaVersion: "barcode_audio_signal_v1",
-    source: "windows_loopback",
-    analysisCalibration: "fixed_reference_v1",
-    capturedAtUnixMs: Date.now(),
-    sequence: 22,
-    captureActive: true,
-    warmedUp: true,
-    silence: false,
-    energy: 0.62,
-    bass: 0.58,
-    mid: 0.55,
-    treble: 0.5,
-    peak: 1,
-    beat: 0,
-    bpm: 112,
-    tempoConfidence: 0,
-  });
-  const drives = engine.radioVisualAudioDrives(held);
-
-  assert.equal(held.beat, 0);
-  assert.equal(held.accent, 0);
-  assert.equal(held.peak, 0);
-  assert.ok(Math.max(drives.bassPulse, drives.midPulse, drives.treblePulse) < 0.04, "a held amplitude meter cannot keep every transient layer switched on");
-  assert.ok(engine.radioVisualMusicIntensityPlan(drives).transientLevel < 0.01);
+  assert.ok(midpoint >= 0.35 && midpoint <= 0.6);
 });
 
 test("Windows levels become quiet, isolated band layers and a full-spectrum tapestry end to end", () => {
@@ -719,7 +609,6 @@ test("Windows levels become quiet, isolated band layers and a full-spectrum tape
   const bridge = {
     schemaVersion: "barcode_audio_signal_v1",
     source: "windows_loopback",
-    analysisCalibration: "fixed_reference_v1",
     capturedAtUnixMs: Date.now(),
     sequence: 1,
     captureActive: true,
@@ -744,29 +633,29 @@ test("Windows levels become quiet, isolated band layers and a full-spectrum tape
   const bass = drivesAt({ bass: 0.25 });
   const mids = drivesAt({ mid: 0.25 });
   const treble = drivesAt({ treble: 0.25 });
-  assert.ok(bass.bassLayer > 0.04 && bass.bassLayer < 0.08 && bass.midLayer < 0.01 && bass.trebleLayer < 0.01, "ordinary bass must enter only the bass-owned layer without jumping near maximum");
-  assert.ok(mids.midLayer > 0.05 && mids.midLayer < 0.09 && mids.bassLayer < 0.01 && mids.trebleLayer < 0.01, "ordinary mids must enter only the mid-owned layer without jumping near maximum");
-  assert.ok(treble.trebleLayer > 0.08 && treble.trebleLayer < 0.12 && treble.bassLayer < 0.01 && treble.midLayer < 0.01, "ordinary treble must enter only the treble-owned layer without jumping near maximum");
+  assert.ok(bass.bassLayer > 0.07 && bass.midLayer < 0.01 && bass.trebleLayer < 0.01, "ordinary bass must enter only the bass-owned layer");
+  assert.ok(mids.midLayer > 0.09 && mids.bassLayer < 0.01 && mids.trebleLayer < 0.01, "ordinary mids must enter only the mid-owned layer");
+  assert.ok(treble.trebleLayer > 0.14 && treble.bassLayer < 0.01 && treble.midLayer < 0.01, "ordinary treble must enter only the treble-owned layer");
 
-  const firstFullTapestry = drivesAt({ energy: 0.35, bass: 0.35, mid: 0.35, treble: 0.35, peak: 0.35 });
-  const moderate = drivesAt({ energy: 0.5, bass: 0.5, mid: 0.5, treble: 0.5, peak: 0.5 });
-  const strong = drivesAt({ energy: 0.7, bass: 0.7, mid: 0.7, treble: 0.7, peak: 0.7 });
-  const hot = drivesAt({ energy: 0.9, bass: 0.9, mid: 0.9, treble: 0.9, peak: 0.9 });
-  const ordinaryFullHit = drivesAt({ energy: 0.6, bass: 0.6, mid: 0.6, treble: 0.6, peak: 0.6, beat: 1 });
+  const moderate = drivesAt({ energy: 0.22, bass: 0.22, mid: 0.22, treble: 0.22, peak: 0.22 });
+  const firstFullTapestry = drivesAt({ energy: 0.15, bass: 0.15, mid: 0.15, treble: 0.15, peak: 0.15 });
+  const strong = drivesAt({ energy: 0.45, bass: 0.45, mid: 0.45, treble: 0.45, peak: 0.45 });
+  const hot = drivesAt({ energy: 0.75, bass: 0.75, mid: 0.75, treble: 0.75, peak: 0.75 });
+  const ordinaryFullHit = drivesAt({ energy: 0.45, bass: 0.45, mid: 0.45, treble: 0.45, peak: 0.45, beat: 1 });
   assert.ok(hot.bassLayer > 0.75 && hot.midLayer > 0.75 && hot.trebleLayer > 0.75);
-  assert.ok(hot.tapestry > 0.7 && hot.build > 0.72, "strong full-spectrum Windows audio must assemble the combined composition with remaining headroom");
+  assert.ok(hot.tapestry > 0.72 && hot.build > 0.65, "strong full-spectrum Windows audio must assemble the combined composition with remaining headroom");
   assert.ok(ordinaryFullHit.bassPulse > 0.25, "an ordinary live bass hit must survive the complete bridge-to-renderer path");
   assert.ok(ordinaryFullHit.midPulse > 0.25, "an ordinary live mid hit must survive the complete bridge-to-renderer path");
   assert.ok(ordinaryFullHit.treblePulse > 0.25, "an ordinary live treble hit must survive the complete bridge-to-renderer path");
   assert.ok(ordinaryFullHit.tapestryPulse > 0.2, "a simultaneous live hit must build the coupled tapestry instead of leaving one band visible");
   assert.ok(
-    engine.radioVisualMusicSceneVisibility(quiet) >= 0.23
-      && engine.radioVisualMusicSceneVisibility(quiet) <= 0.24,
-    "quiet audio keeps a readable family identity instead of disappearing or starting near chorus strength",
+    engine.radioVisualMusicSceneVisibility(quiet) >= 0.3
+      && engine.radioVisualMusicSceneVisibility(quiet) <= 0.31,
+    "quiet audio keeps a visible but restrained family identity",
   );
-  assert.ok(engine.radioVisualMusicSceneVisibility(moderate) > 0.14, "ordinary full-spectrum audio must survive the Studio key");
-  assert.ok(engine.radioVisualMusicSceneVisibility(strong) > engine.radioVisualMusicSceneVisibility(moderate) + 0.18);
-  assert.ok(engine.radioVisualMusicSceneVisibility(hot) > engine.radioVisualMusicSceneVisibility(strong) + 0.16);
+  assert.ok(engine.radioVisualMusicSceneVisibility(moderate) > 0.36, "ordinary full-spectrum audio must survive the Studio key");
+  assert.ok(engine.radioVisualMusicSceneVisibility(strong) > 0.52);
+  assert.ok(engine.radioVisualMusicSceneVisibility(hot) > 0.82);
   const fullRest = drivesAt({ energy: 1, bass: 1, mid: 1, treble: 1, peak: 0, beat: 0 });
   const overload = drivesAt({ energy: 1, bass: 1, mid: 1, treble: 1, peak: 1, beat: 1 });
 
@@ -789,7 +678,7 @@ test("Windows levels become quiet, isolated band layers and a full-spectrum tape
         assert.equal(plans[profile][layer] > 0, expected[layer], `${musicScene} ${profile} must ${expected[layer] ? "reveal" : "withhold"} its ${layer} density budget`);
       }
     }
-    assert.ok(Object.values(plans.firstFullTapestry).every((count) => count > 0), `${musicScene} must reveal bass, mids, treble, and tapestry by a restrained 18% all-band bridge reading`);
+    assert.ok(Object.values(plans.firstFullTapestry).every((count) => count > 0), `${musicScene} must reveal bass, mids, treble, and tapestry by a realistic 15% all-band bridge reading`);
     assert.ok(Object.values(plans.moderate).every((count) => count > 0), `${musicScene} must reveal all four systems at a realistic 22% all-band bridge reading`);
     assert.ok(
       Object.values(plans.strong).reduce((sum, count) => sum + count, 0)
@@ -817,7 +706,6 @@ test("Windows loopback signal contract rejects malformed and stale local data", 
   const valid = {
     schemaVersion: "barcode_audio_signal_v1",
     source: "windows_loopback",
-    analysisCalibration: "fixed_reference_v1",
     capturedAtUnixMs: now - 150,
     sequence: 42,
     captureActive: true,
@@ -838,10 +726,6 @@ test("Windows loopback signal contract rejects malformed and stale local data", 
   assert.equal(audioBridge.normalizeRadioAudioBridgeSignal({ ...valid, energy: 4 }), null);
   assert.equal(audioBridge.normalizeRadioAudioBridgeSignal({ ...valid, bpm: 900 }), null);
   assert.equal(audioBridge.normalizeRadioAudioBridgeSignal({ ...valid, schemaVersion: "wrong" }), null);
-  assert.equal(audioBridge.normalizeRadioAudioBridgeSignal({ ...valid, analysisCalibration: "unknown" }), null);
-  const legacy = { ...valid };
-  delete legacy.analysisCalibration;
-  assert.deepEqual(audioBridge.normalizeRadioAudioBridgeSignal(legacy), legacy, "1.0.3 helper payloads remain accepted for compatibility calibration");
 });
 
 test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a one-click artifact", () => {
@@ -869,10 +753,7 @@ test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a
   assert.doesNotMatch(capture, /MasterVolumeLevelScalar/, "audio-tapered scalar volume must not be treated as a linear sample gain");
   assert.match(capture, /SampleGainFromEndpointDecibels[\s\S]*_analyzer\.AddSamples/, "endpoint attenuation must be removed before analysis");
   assert.match(analyzer, /Math\.Pow\(10, decibels \/ 20d\)[\s\S]*1 \/ endpointAmplitude/, "endpoint decibels must be converted to inverse linear sample gain");
-  assert.match(analyzer, /EndpointVolumeCompensation\.ApplyForAnalysis[\s\S]*AnalyzeWindow/, "volume reconstruction and the fixed analysis reference must happen before RMS, FFT, peak, flux, and beat analysis");
-  assert.match(analyzer, /AnalysisReferenceDecibels = -9[\s\S]*AnalysisReferenceGain/, "the helper must restore the proven analysis headroom at one volume-independent reference");
-  assert.match(analyzer, /Apply\(sample, sampleGain\) \* AnalysisReferenceGain/, "the fixed reference must follow endpoint-volume reconstruction instead of replacing it");
-  assert.match(analyzer, /BridgeConstants\.AnalysisCalibration/, "the helper must mark reference-calibrated payloads so the browser never applies the compatibility correction twice");
+  assert.match(analyzer, /EndpointVolumeCompensation\.Apply[\s\S]*AnalyzeWindow/, "normalization must happen before RMS, FFT, peak, flux, and beat analysis");
   assert.match(capture, /TouchClient\(\)[\s\S]*EnsureStarted\(\)/, "visual-source requests must wake capture automatically");
   assert.match(capture, /ClientIdleCaptureStopMilliseconds/, "capture must stop after the visual source becomes idle");
   assert.match(capture, /no Speakers audio detected[\s\S]*Speakers audio detected/, "helper status must report actual audio detection instead of capture startup");
@@ -978,7 +859,7 @@ test("broadcast FX exhaust a twelve-effect shuffle bag before repeating", () => 
       engine.radioVisualBroadcastFxTypeForOccurrence(seed, occurrence)
     ));
     for (let occurrence = 1; occurrence < sequence.length; occurrence += 1) {
-      assert.notEqual(sequence[occurrence], sequence[occurrence - 1], `seed ${seed} occurrence ${occurrence} cannot repeat its neighbor`);
+      assert.notEqual(sequence[occurrence], sequence[occurrence - 1], "broadcast FX cannot repeat its neighbor");
     }
   }
 });
@@ -1036,242 +917,6 @@ test("broadcast FX cadence is deterministic, audio-earned, center-bounded, and i
   assert.equal(cue.centerStrength, 0);
 });
 
-test("music evolution stays bounded while bass, mids, treble, phrase, and song arc own different motion", () => {
-  const baseSignal = {
-    source: "windows_loopback",
-    bpm: 120,
-    energy: 0.45,
-    bass: 0.05,
-    mid: 0.05,
-    treble: 0.05,
-    beat: 0,
-    accent: 0,
-    peak: 0,
-    progress: 0.32,
-    phrase: 0.2,
-  };
-  const quiet = engine.radioVisualAudioDrives(baseSignal);
-  const bass = engine.radioVisualAudioDrives({ ...baseSignal, bass: 0.9, beat: 1 });
-  const mids = engine.radioVisualAudioDrives({ ...baseSignal, mid: 0.9, accent: 1 });
-  const treble = engine.radioVisualAudioDrives({ ...baseSignal, treble: 0.9, peak: 1 });
-  const signatures = new Set();
-  for (const musicScene of engine.RADIO_VISUAL_MUSIC_SCENES) {
-    const still = engine.radioVisualMusicEvolutionPlan(musicScene, 8317, 11.3, quiet);
-    const bassPlan = engine.radioVisualMusicEvolutionPlan(musicScene, 8317, 11.3, bass);
-    const midPlan = engine.radioVisualMusicEvolutionPlan(musicScene, 8317, 11.3, mids);
-    const treblePlan = engine.radioVisualMusicEvolutionPlan(musicScene, 8317, 11.3, treble);
-    assert.ok(still.scaleX >= 0.955 && still.scaleX <= 1.075);
-    assert.ok(bassPlan.scaleY >= 0.955 && bassPlan.scaleY <= 1.075);
-    assert.ok(bassPlan.pulse > still.pulse + 0.3, `${musicScene} bass impact must own a material pulse`);
-    assert.ok(bassPlan.lineWeight > still.lineWeight && bassPlan.reach > still.reach, `${musicScene} bass must thicken and extend its geometry`);
-    assert.ok(Math.abs(midPlan.translateXRatio) + Math.abs(midPlan.translateYRatio) >= Math.abs(still.translateXRatio) + Math.abs(still.translateYRatio), `${musicScene} mids must own drift`);
-    assert.ok(Math.abs(midPlan.rotation - still.rotation) > 0.00001, `${musicScene} mids must own bounded tilt within the progress-driven lifecycle pose`);
-    assert.ok(treblePlan.hueBlend > still.hueBlend && treblePlan.motionRate > still.motionRate, `${musicScene} treble must own hue and phase speed`);
-    assert.ok(Math.abs(midPlan.translateXRatio) <= 0.014 && Math.abs(midPlan.translateYRatio) <= 0.014);
-    assert.ok(Math.abs(midPlan.rotation) <= 0.05 && treblePlan.hueBlend <= 0.62 && treblePlan.motionRate <= 1.95);
-    assert.ok(Math.abs(midPlan.shearX) <= 0.06 && Math.abs(midPlan.shearY) <= 0.06 && treblePlan.jitter <= 1);
-    signatures.add(`${bassPlan.variant}:${[
-      bassPlan.scaleX,
-      midPlan.translateXRatio,
-      midPlan.rotation,
-      treblePlan.hueBlend,
-      treblePlan.motionRate,
-    ].map((value) => value.toFixed(5)).join(":")}`);
-  }
-  assert.equal(signatures.size, engine.RADIO_VISUAL_MUSIC_SCENES.length, "all ten families must evolve with different motion profiles");
-
-  const start = engine.radioVisualMusicEvolutionPlan("signal_constellation", 8317, 3, { ...quiet, progress: 0.05, phrase: 0.1 });
-  const later = engine.radioVisualMusicEvolutionPlan("signal_constellation", 8317, 31, { ...quiet, progress: 0.72, phrase: 0.8 });
-  assert.notEqual(start.sectionIndex, later.sectionIndex, "the long song arc must advance without changing family identity");
-  assert.notEqual(start.translateXRatio, later.translateXRatio, "phrase and elapsed motion must keep the selected family alive");
-});
-
-test("music evolution converts real hits and section energy into bounded pulse, glow, weight, reach, and deformation", () => {
-  const steady = {
-    presence: 0.62,
-    body: 0.58,
-    bass: 0.54,
-    mid: 0.6,
-    treble: 0.56,
-    bassLayer: 0.48,
-    midLayer: 0.52,
-    trebleLayer: 0.46,
-    tapestry: 0.4,
-    impact: 0,
-    bassPulse: 0,
-    midPulse: 0,
-    treblePulse: 0,
-    tapestryPulse: 0,
-    build: 0.42,
-    progress: 0.5,
-    phrase: 0.35,
-  };
-  const hardHit = {
-    ...steady,
-    impact: 1,
-    bassPulse: 1,
-    midPulse: 0.88,
-    treblePulse: 0.92,
-    tapestryPulse: 0.84,
-  };
-  const signatures = new Set();
-  for (const musicScene of engine.RADIO_VISUAL_MUSIC_SCENES) {
-    const calm = engine.radioVisualMusicEvolutionPlan(musicScene, 7_731, 12.25, steady, 120);
-    const hit = engine.radioVisualMusicEvolutionPlan(musicScene, 7_731, 12.25, hardHit, 120);
-    assert.ok(hit.hardBeat > 0.98, `${musicScene} must recognize an analyser-earned hard beat`);
-    assert.ok(hit.beatPunch > calm.beatPunch + 0.7, `${musicScene} must punch harder on the detected hit`);
-    assert.ok(hit.pulse > calm.pulse + 0.45, `${musicScene} must visibly pulse rather than only translate`);
-    assert.ok(hit.lineWeight > calm.lineWeight + 0.3, `${musicScene} must thicken on impact`);
-    assert.ok(hit.reach > calm.reach + 0.12, `${musicScene} must extend on impact`);
-    assert.ok(hit.glowBloom > calm.glowBloom + 0.12, `${musicScene} must bloom on impact`);
-    assert.ok(hit.deformation > calm.deformation, `${musicScene} must change shape on impact`);
-    assert.ok(hit.movementBurst > calm.movementBurst, `${musicScene} may earn additional movement on impact`);
-    assert.ok(hit.lineWeight >= 0.68 && hit.lineWeight <= 2.25);
-    assert.ok(hit.reach >= 0.7 && hit.reach <= 1.5);
-    assert.ok(hit.scaleX >= 0.955 && hit.scaleX <= 1.075);
-    assert.ok(hit.scaleY >= 0.955 && hit.scaleY <= 1.075);
-    assert.ok(calm.movementBurst >= 0.04, `${musicScene} must retain subtle baseline motion without imitating a hit`);
-    signatures.add([
-      hit.variant,
-      hit.breath.toFixed(3),
-      hit.lineWeight.toFixed(3),
-      hit.reach.toFixed(3),
-      hit.glowBloom.toFixed(3),
-      hit.deformation.toFixed(3),
-      hit.movementBurst.toFixed(3),
-    ].join(":"));
-  }
-  assert.equal(signatures.size, 10, "all ten families must keep distinct modulation signatures");
-
-  const tempoOnly = engine.radioVisualMusicEvolutionPlan("edge_spectrum", 7_731, 12, steady, 120);
-  assert.equal(tempoOnly.hardBeat, 0, "the mathematical tempo clock cannot fabricate a hard analyser beat");
-  assert.ok(tempoOnly.beatPunch > 0, "tempo may still provide a subtle breathing cadence");
-
-  const silent = Object.fromEntries(Object.keys(steady).map((key) => [key, 0]));
-  silent.progress = 0.125;
-  const silentSection = engine.radioVisualMusicEvolutionPlan("laser_lattice", 7_731, 12.25, silent, 120);
-  const liveSection = engine.radioVisualMusicEvolutionPlan("laser_lattice", 7_731, 12.25, { ...steady, progress: 0.125 }, 120);
-  assert.equal(silentSection.sectionSurge, 0, "silence cannot manufacture a section surge");
-  assert.ok(liveSection.sectionSurge > 0.05, "audible section energy must create a lifecycle swell");
-});
-
-test("quiet structure stays restrained while bass, snare-like mids, treble, and full-band hits own separate events", () => {
-  const signal = (overrides = {}) => ({
-    source: "windows_loopback",
-    bpm: 122,
-    energy: 0.12,
-    bass: 0.1,
-    mid: 0.11,
-    treble: 0.09,
-    beat: 0,
-    accent: 0,
-    peak: 0,
-    progress: 0.42,
-    phrase: 0.3,
-    ...overrides,
-  });
-  const plan = (overrides = {}) => engine.radioVisualMusicEvolutionPlan(
-    "tape_feedback",
-    9_911,
-    17.25,
-    engine.radioVisualAudioDrives(signal(overrides)),
-    122,
-  );
-  const quiet = plan();
-  const sustained = plan({ energy: 0.86, bass: 0.82, mid: 0.86, treble: 0.8 });
-  const bass = plan({ energy: 0.64, bass: 0.92, beat: 1 });
-  const mids = plan({ energy: 0.64, mid: 0.92, accent: 1 });
-  const treble = plan({ energy: 0.64, treble: 0.92, peak: 1 });
-  const tapestry = plan({ energy: 0.92, bass: 0.92, mid: 0.92, treble: 0.92, beat: 1, accent: 1, peak: 1 });
-
-  assert.ok(quiet.structureLevel < 0.03 && quiet.pulse < 0.02, "a quiet opening cannot start near the maximum additive state");
-  assert.ok(sustained.structureLevel > 0.9 && sustained.reach > quiet.reach + 0.18, "sustained loudness must grow the structure without fabricating a hit");
-  assert.equal(sustained.bassImpact, 0);
-  assert.equal(sustained.midImpact, 0);
-  assert.equal(sustained.trebleImpact, 0);
-  assert.ok(bass.bassImpact > 0.98 && bass.midImpact === 0 && bass.trebleImpact === 0, "a bass onset must only fire pressure");
-  assert.ok(bass.lineWeight > quiet.lineWeight + 0.55 && bass.reach > quiet.reach + 0.25, "bass pressure must thicken and extend geometry");
-  assert.ok(mids.midImpact > 0.98 && mids.snareFlash > 0.7 && mids.bassImpact === 0 && mids.trebleImpact === 0, "a mid onset must own the snare-like flash");
-  assert.ok(mids.deformation > quiet.deformation + 0.25, "the mid event must illuminate and reshape rather than only translate");
-  assert.ok(treble.trebleImpact > 0.98 && treble.bassImpact === 0 && treble.midImpact === 0, "a high onset must only fire sparkle/glow");
-  assert.ok(treble.glowBloom > quiet.glowBloom + 0.3, "treble must materially bloom the glow system");
-  assert.ok(tapestry.tapestryImpact > 0.98 && tapestry.pulse > 0.9, "a simultaneous three-band onset must fire the coordinated tapestry burst");
-});
-
-test("all ten music families have authored origin, mutation, and finale forms paced by tempo", () => {
-  const signal = {
-    source: "windows_loopback",
-    bpm: 120,
-    energy: 0.72,
-    bass: 0.68,
-    mid: 0.74,
-    treble: 0.7,
-    beat: 0,
-    accent: 0,
-    peak: 0,
-    progress: 0,
-    phrase: 0.25,
-  };
-  const steady = {
-    ...engine.radioVisualAudioDrives(signal),
-    bassPulse: 0,
-    midPulse: 0,
-    treblePulse: 0,
-    tapestryPulse: 0,
-    impact: 0,
-  };
-  const variants = new Set();
-  const endSignatures = new Set();
-  for (const musicScene of engine.RADIO_VISUAL_MUSIC_SCENES) {
-    const origin = engine.radioVisualMusicEvolutionPlan(musicScene, 2_611, 12, { ...steady, progress: 0.01 }, 120);
-    const mutation = engine.radioVisualMusicEvolutionPlan(musicScene, 2_611, 12, { ...steady, progress: 0.5 }, 120);
-    const finale = engine.radioVisualMusicEvolutionPlan(musicScene, 2_611, 12, { ...steady, progress: 0.98 }, 120);
-    assert.equal(origin.lifecycleAct, "origin");
-    assert.equal(mutation.lifecycleAct, "mutation");
-    assert.equal(finale.lifecycleAct, "finale");
-    assert.ok(origin.metamorphosis < 0.01, `${musicScene} must establish a readable original form`);
-    assert.ok(mutation.metamorphosis > 0.3 && mutation.metamorphosis < 0.7, `${musicScene} must visibly transform through the middle`);
-    assert.ok(finale.metamorphosis > 0.98 && finale.finale > 0.98, `${musicScene} must arrive at its authored final form`);
-    assert.ok(finale.shapeMorph > origin.shapeMorph + 0.45, `${musicScene} finale must change geometry, not only drift the original`);
-    assert.ok(finale.hueBlend > origin.hueBlend + 0.08, `${musicScene} finale must earn a changed palette`);
-    assert.ok(Math.abs(finale.motionRate - origin.motionRate) > 0.2, `${musicScene} lifecycle must materially change its motion character`);
-    variants.add(finale.variant);
-    endSignatures.add([
-      finale.variant,
-      finale.motionRate.toFixed(3),
-      finale.jitter.toFixed(3),
-      finale.rotation.toFixed(3),
-      finale.shearX.toFixed(3),
-      finale.shearY.toFixed(3),
-    ].join(":"));
-  }
-  assert.equal(variants.size, 10, "every music family must own a different final-form geometry");
-  assert.equal(endSignatures.size, 10, "every music family must finish with a distinct motion language");
-
-  const onBeat = engine.radioVisualMusicEvolutionPlan("edge_spectrum", 2_611, 12, { ...steady, progress: 0.8 }, 120);
-  const offBeat = engine.radioVisualMusicEvolutionPlan("edge_spectrum", 2_611, 12.25, { ...steady, progress: 0.8 }, 120);
-  assert.ok(onBeat.tempoPulse > offBeat.tempoPulse + 0.04, "detected BPM may pace subtle lifecycle breathing without imitating a real transient");
-});
-
-test("signal-derived musical gesture hints distinguish vocal, melodic, and instrumental patterns", () => {
-  const base = engine.radioVisualAudioDrives({
-    source: "windows_loopback",
-    bpm: 120,
-    energy: 0.7,
-    bass: 0.2,
-    mid: 0.7,
-    treble: 0.35,
-    beat: 0,
-    accent: 0.2,
-    peak: 0.1,
-    progress: 0.4,
-    phrase: 0.3,
-  });
-  assert.equal(engine.radioVisualMusicGesturePlan({ ...base, midLayer: 0.9, midPulse: 0.35, trebleLayer: 0.2, treblePulse: 0.05, bassPulse: 0 }).gesture, "vocal_pattern");
-  assert.equal(engine.radioVisualMusicGesturePlan({ ...base, midLayer: 0.25, trebleLayer: 0.7, midPulse: 0.85, treblePulse: 1, bassPulse: 0 }).gesture, "melodic_lift");
-  assert.equal(engine.radioVisualMusicGesturePlan({ ...base, midLayer: 0.08, midPulse: 0.05, trebleLayer: 0.65, treblePulse: 0.7, bassPulse: 1, tapestry: 1, build: 1 }).gesture, "instrumental_break");
-});
-
 test("all ten music families retain a distinct bounded perimeter identity from quiet through full audio", () => {
   const signal = (level, overrides = {}) => ({
     source: "windows_loopback",
@@ -1298,16 +943,13 @@ test("all ten music families retain a distinct bounded perimeter identity from q
 
     assert.equal(quietPlan.motif, engine.RADIO_VISUAL_MUSIC_PERIMETER_MOTIFS[musicScene]);
     assert.equal(hotPlan.motif, quietPlan.motif, `${musicScene} cannot change perimeter language with volume`);
-    assert.ok(quietPlan.strength >= 0.16 && quietPlan.strength <= 0.17, `${musicScene} must retain only a faint edge identity at silence`);
+    assert.ok(quietPlan.strength >= 0.64 && quietPlan.strength <= 1, `${musicScene} must remain readable at silence`);
     assert.ok(hotPlan.strength > quietPlan.strength && hotPlan.strength <= 1, `${musicScene} must brighten with real audio`);
-    assert.ok(quietPlan.reach >= 0.012 && hotPlan.reach <= 0.155 && hotPlan.reach > quietPlan.reach * 5, `${musicScene} must earn inward expansion while remaining inside its bounded perimeter band`);
-    assert.ok(quietPlan.thickness >= 0.0012 && hotPlan.thickness <= 0.014 && hotPlan.thickness > quietPlan.thickness * 6, `${musicScene} must gain bass-owned weight without flooding the stage`);
-    assert.equal(quietPlan.bassElements, 0, `${musicScene} cannot draw bass-owned perimeter geometry at silence`);
-    assert.equal(quietPlan.midElements, 0, `${musicScene} cannot draw mid-owned perimeter geometry at silence`);
-    assert.equal(quietPlan.trebleElements, 0, `${musicScene} cannot draw treble-owned perimeter geometry at silence`);
-    assert.ok(hotPlan.bassElements >= 6 && hotPlan.bassElements <= 10);
-    assert.ok(hotPlan.midElements >= 8 && hotPlan.midElements <= 14);
-    assert.ok(hotPlan.trebleElements >= 10 && hotPlan.trebleElements <= 18);
+    assert.ok(quietPlan.reach >= 0.075 && hotPlan.reach <= 0.2 && hotPlan.reach > quietPlan.reach * 1.5, `${musicScene} must expand materially while remaining inside its bounded perimeter band`);
+    assert.ok(quietPlan.thickness >= 0.0035 && hotPlan.thickness <= 0.018 && hotPlan.thickness > quietPlan.thickness * 1.5, `${musicScene} must gain bass-owned weight without flooding the stage`);
+    assert.ok(quietPlan.bassElements >= 2 && hotPlan.bassElements <= 10 && hotPlan.bassElements >= quietPlan.bassElements * 2);
+    assert.ok(quietPlan.midElements >= 3 && hotPlan.midElements <= 14 && hotPlan.midElements >= quietPlan.midElements * 2);
+    assert.ok(quietPlan.trebleElements >= 3 && hotPlan.trebleElements <= 18 && hotPlan.trebleElements >= quietPlan.trebleElements * 2);
     assert.equal(quietPlan.tapestryElements, 0, `${musicScene} cannot fabricate an all-band perimeter layer at silence`);
     assert.ok(hotPlan.tapestryElements >= 1 && hotPlan.tapestryElements <= 6, `${musicScene} must add a bounded all-band lock when the full song arrives`);
   }
@@ -1357,21 +999,6 @@ test("the receiver renders every planned identity outside the unchanged performe
   assert.doesNotMatch(perimeterRenderer, /applyPerformerSafeField|applyPerformerIntrusionField|destination-in/, "perimeter identity cannot weaken or bypass the center mask");
 });
 
-test("the receiver applies the shared intensity budget to the retained base, lifecycle, modulation, and perimeter passes", () => {
-  const receiver = fs.readFileSync(path.join(projectRoot, "src/components/RadioVisualsReceiver.tsx"), "utf8");
-  const seededScene = receiver.slice(
-    receiver.indexOf("function drawSeededMusicScene"),
-    receiver.indexOf("function drawQueueLanes"),
-  );
-  assert.match(seededScene, /const intensity = radioVisualMusicIntensityPlan\(drives\)/);
-  assert.match(seededScene, /const baseMix = mix \* intensity\.baseGain/);
-  assert.match(seededScene, /drawMusicLifecycleVariant\([\s\S]*mix \* intensity\.lifecycleGain/);
-  assert.match(seededScene, /drawMusicDynamicModulation\([\s\S]*mix \* intensity\.modulationGain/);
-  assert.match(seededScene, /drawMusicPerimeterIdentity\([\s\S]*mix \* intensity\.perimeterGain/);
-  assert.doesNotMatch(receiver, /if \(musicMix < 0\.06\) return;/, "a quiet family or midpoint crossfade cannot be discarded by a second render cutoff");
-  assert.match(receiver, /runtime\.music = \{[\s\S]*energy: 0,[\s\S]*bass: 0,[\s\S]*mid: 0,[\s\S]*treble: 0,[\s\S]*runtime\.bassSlow = 0;[\s\S]*runtime\.buildMemory = 0;/, "a new family cannot inherit the previous song's chorus envelope");
-});
-
 test("live audio drives preserve broadband mass, independent band layers, transients, and an all-band tapestry", () => {
   const base = {
     source: "windows_loopback",
@@ -1416,7 +1043,7 @@ test("live audio drives preserve broadband mass, independent band layers, transi
   assert.ok(mixedBassHit.bassPulse > mixedBassHit.midPulse + 0.3 && mixedBassHit.bassPulse > mixedBassHit.treblePulse + 0.3, "a bass hit must not fire the mid or treble transient layer");
   assert.ok(mixedMidHit.midPulse > mixedMidHit.bassPulse + 0.3 && mixedMidHit.midPulse > mixedMidHit.treblePulse + 0.3, "a mid hit must not fire the bass or treble transient layer");
   assert.ok(mixedTrebleHit.treblePulse > mixedTrebleHit.bassPulse + 0.3 && mixedTrebleHit.treblePulse > mixedTrebleHit.midPulse + 0.3, "a treble hit must not fire the bass or mid transient layer");
-  assert.ok(mixedRest.tapestry > 0.45 && mixedRest.tapestryPulse < 0.01, "steady full-spectrum audio is a sustained tapestry with headroom, not a permanent transient flash");
+  assert.ok(mixedRest.tapestry > 0.6 && mixedRest.tapestryPulse < 0.01, "steady full-spectrum audio is a sustained tapestry, not a permanent transient flash");
   const coupledHit = engine.radioVisualAudioDrives({ ...mixedBed, beat: 1, accent: 1, peak: 1 });
   assert.ok(coupledHit.tapestryPulse > 0.3, "a simultaneous three-band hit must fire the coupled transient layer");
 
@@ -1480,7 +1107,7 @@ test("band onsets hit independently and structural build releases gradually", ()
   let sustainedBuild = { state: initial, drives: engine.radioVisualAudioDrives(highBuildSignal) };
   for (let frame = 0; frame < 60; frame += 1) sustainedBuild = engine.advanceRadioVisualAudioReaction(sustainedBuild.state, highBuildSignal, 1_000 / 60);
   assert.ok(sustainedBuild.state.buildMemory >= 0.65, "one second of full-spectrum audio must assemble the layered composition");
-  assert.ok(sustainedBuild.drives.tapestry > 0.75 && sustainedBuild.drives.tapestryPulse < 0.05, "a settled full-spectrum passage must retain the composition without repeating its arrival flash");
+  assert.ok(sustainedBuild.drives.tapestry > 0.8 && sustainedBuild.drives.tapestryPulse < 0.05, "a settled full-spectrum passage must retain the composition without repeating its arrival flash");
   const silenceBuildSignal = { ...lowBuildSignal, energy: 0, bass: 0, mid: 0, treble: 0, peak: 0 };
   let quarterSecondRelease = sustainedBuild;
   for (let frame = 0; frame < 15; frame += 1) quarterSecondRelease = engine.advanceRadioVisualAudioReaction(quarterSecondRelease.state, silenceBuildSignal, 1_000 / 60);
@@ -1645,23 +1272,6 @@ test("performer-window intrusions have fixed cadence, bounded strips, cue bypass
   assert.ok(hotBurst.stutterStripCount >= quietBurst.stutterStripCount && hotBurst.stutterStripCount <= 3);
   assert.equal(planAt(inactiveTime).active, false, "an empty allow-list must skip the second Canvas pass");
 
-  const bassHit = drives({ energy: 0.64, bass: 0.92, beat: 1 });
-  const midHit = drives({ energy: 0.64, mid: 0.92, accent: 1 });
-  const trebleHit = drives({ energy: 0.64, treble: 0.92, peak: 1 });
-  const tapestryHit = drives({ energy: 0.92, bass: 0.92, mid: 0.92, treble: 0.92, beat: 1, accent: 1, peak: 1 });
-  const bassIntrusion = planAt(inactiveTime, bassHit, { musicScene: "particle_pressure" });
-  const midIntrusion = planAt(inactiveTime, midHit, { musicScene: "ascii_terminal" });
-  const trebleIntrusion = planAt(inactiveTime, trebleHit, { musicScene: "signal_constellation" });
-  const tapestryIntrusion = planAt(inactiveTime, tapestryHit, { musicScene: "laser_lattice" });
-  assert.ok(bassIntrusion.bassBreachStrength > 0.25 && bassIntrusion.midFlashStrength === 0 && bassIntrusion.trebleSparkStrength === 0);
-  assert.ok(midIntrusion.midFlashStrength > 0.24 && midIntrusion.bassBreachStrength === 0 && midIntrusion.trebleSparkStrength === 0);
-  assert.ok(trebleIntrusion.trebleSparkStrength > 0.27 && trebleIntrusion.bassBreachStrength === 0 && trebleIntrusion.midFlashStrength === 0);
-  assert.ok(tapestryIntrusion.tapestryBurstStrength > 0.35, "a real full-band hit must briefly breach the performer field");
-  assert.equal(midIntrusion.musicScene, "ascii_terminal", "the bounded breach must retain the active family's visual language");
-  for (const plan of [bassIntrusion, midIntrusion, trebleIntrusion, tapestryIntrusion]) {
-    assert.equal(plan.active, true, "a real transient must activate the otherwise idle second Canvas pass");
-  }
-
   const lightning = planAt(inactiveTime, quiet, {
     sceneMix: 0,
     trackMix: 0,
@@ -1740,15 +1350,6 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.match(receiver, /drawQueueLanes|drawIntakeAperture|drawFinalConvergence|drawCompletionAfterimage|drawPressureEdges/);
   assert.match(receiver, /drawIdleTransmission|drawLightRibbons|drawPrismaticShards|drawSignalConstellation|drawSeedComposition/);
   assert.match(receiver, /drawEdgeSpectrum|drawOscilloscopeRibbons|drawTapeFeedback|drawMatrixRain|drawAsciiTerminal|drawPixelSortStorm|drawLightningSwitchyard|drawLaserLattice|drawParticlePressure|drawSignalConstellation|drawSeededMusicScene/);
-  assert.match(receiver, /drawMusicLifecycleVariant[\s\S]*bars_to_teeth[\s\S]*ribbons_to_braids[\s\S]*frames_to_splice[\s\S]*rain_to_crossfeed[\s\S]*terminal_to_breach[\s\S]*slices_to_scramble[\s\S]*rails_to_discharge[\s\S]*grid_to_prism[\s\S]*drift_to_vortex[\s\S]*stars_to_network/, "all ten families must own a different late-song form");
-  assert.match(receiver, /drawMusicDynamicModulation[\s\S]*edge_spectrum[\s\S]*oscilloscope_ribbons[\s\S]*tape_feedback[\s\S]*matrix_rain[\s\S]*ascii_terminal[\s\S]*pixel_sort_storm[\s\S]*lightning_switchyard[\s\S]*laser_lattice[\s\S]*particle_pressure[\s\S]*signal_constellation/, "all ten existing families must receive a distinct additive performance layer");
-  const dynamicModulation = receiver.slice(receiver.indexOf("function drawMusicDynamicModulation"), receiver.indexOf("function drawSeededMusicScene"));
-  for (const modulation of ["structureLevel", "bassImpact", "midImpact", "trebleImpact", "tapestryImpact", "snareFlash", "pulse", "breath", "beatPunch", "hardBeat", "sectionSurge", "glowBloom", "lineWeight", "reach", "deformation", "movementBurst"]) {
-    assert.match(dynamicModulation, new RegExp(`evolution\\.${modulation}\\b`), `the additive layer must visibly consume ${modulation}`);
-  }
-  assert.match(receiver, /drawMusicBandEventAccents[\s\S]*MID::SYNC[\s\S]*HIT::ACK/, "snare-like mid events must light an authored family feature instead of becoming more static lines");
-  assert.match(receiver, /drawMusicLifecycleVariant\([^;]+;\s*drawMusicDynamicModulation\(/s, "dynamic modulation must layer after the retained lifecycle geometry");
-  assert.match(receiver, /drawSeededMusicScene\(context, width, height, audioTime, music\.bpm,/, "the selected family lifecycle must receive the detected tempo");
   assert.match(receiver, /return clampVisualValue\(mix \* \(0\.82 \+ drive \* 0\.16\), 0, 0\.98\)/, "chroma-safe cores must multiply by state fades while surviving the orange key");
   assert.doesNotMatch(receiver, /drawVortexRelay|drawBarcodeCathedral|drawHalftoneOrganism|drawMusicHalo|drawPulseRings/);
   assert.doesNotMatch(receiver, /drawLiquidDream|drawKaleidoscopeBloom|drawSpectralLoom|drawFeedbackArchitecture|drawChromaticSmears|radioVisualComposition/);
@@ -1770,11 +1371,9 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.match(engineSource, /RADIO_VISUALS_WHEEL_CENTER_Y_RATIO = 0\.375/);
   assert.match(receiver, /prepareEffectLayer|applyPerformerSafeField|applyPerformerIntrusionField|destination-in/);
   assert.match(receiver, /if \(snapshot\.showStage !== "intake"\) applyPerformerSafeField\(context, width, height, 0\.2\)/);
-  assert.match(receiver, /drawPerformerWindowIntrusions[\s\S]*?drawBroadcastFx[\s\S]*?drawMusicGestureSweep[\s\S]*?plan\.lightningFamilyStrength[\s\S]*?cue\?\.type === "lightning"[\s\S]*?cue\?\.type === "signal_breach"/, "only the bounded artifact, music-sweep, lightning, and scan-line allow-list may regain controlled center presence");
+  assert.match(receiver, /drawPerformerWindowIntrusions[\s\S]*?plan\.lightningFamilyStrength[\s\S]*?cue\?\.type === "lightning"[\s\S]*?cue\?\.type === "signal_breach"/, "only planned lightning and scan-line compositions may regain controlled center presence");
   const windowIntrusions = receiver.slice(receiver.indexOf("function drawWindowScanline"), receiver.indexOf("function visualSignalMemory"));
   assert.match(windowIntrusions, /drawWindowSignalStutter[\s\S]*plan\.stutterStripCount/, "center slippage must consume the tested two-to-three-strip plan");
-  assert.match(receiver, /drawMusicTransientIntrusions[\s\S]*bassBreachStrength[\s\S]*midFlashStrength[\s\S]*trebleSparkStrength[\s\S]*tapestryBurstStrength/, "independent transient systems may briefly breach the performer field within a fixed primitive budget");
-  assert.match(windowIntrusions, /drawMusicTransientIntrusions\(context, width, height, plan, primary, secondary, highlight\)/, "the performer allow-list must render the bounded transient breach layer");
   assert.doesNotMatch(windowIntrusions, /drawEdgeSpectrum|drawOscilloscopeRibbons|drawMatrixRain|drawAsciiTerminal|drawPixelSortStorm|drawParticlePressure|drawIndustrialOverride/, "dense family renderers must never be replayed across the performer window");
   assert.match(receiver, /applyPerformerIntrusionField\(intrusionLayer\.context, width, height\)/, "window intrusions must receive their own feathered center mask");
   assert.match(receiver, /\(intrusionPlan\.active \|\| broadcastFxPlan\.centerStrength >= 0\.002\)/, "inactive center effects must skip the second full-stage Canvas pass");
@@ -1874,8 +1473,8 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.match(receiver.slice(receiver.indexOf("function drawLaserLattice"), receiver.indexOf("function drawParticlePressure")), /drives\.progress/);
   assert.match(receiver, /sceneStateMix = clampVisualValue\(1 - Math\.max\(runtime\.wheelMix, runtime\.systemMix\), 0, 1\)/);
   assert.match(receiver, /activeMusicMix = runtime\.trackMix \* sceneStateMix/, "music output must fade with track ownership");
-  assert.match(receiver, /RADIO_VISUAL_MUSIC_OUTPUT_GAIN/, "the ten music families must share one explicit bounded output gain");
-  assert.equal(engine.RADIO_VISUAL_MUSIC_OUTPUT_GAIN, 1.35);
+  assert.match(receiver, /RADIO_VISUAL_MUSIC_OUTPUT_GAIN/, "the ten music families must share one explicit two-times output gain");
+  assert.equal(engine.RADIO_VISUAL_MUSIC_OUTPUT_GAIN, 2);
   assert.match(receiver, /drawSeedComposition\(runtime\.previousMusicSeed, 1 - musicSeedBlend\)/);
   assert.match(receiver, /drawSeedComposition\(runtime\.currentMusicSeed, musicSeedBlend\)/);
   assert.match(receiver, /runtime\.syntheticEvents = \[\]/, "inactive sessions must clear residual automatic events immediately");

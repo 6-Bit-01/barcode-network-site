@@ -23,6 +23,7 @@ const cues = require("../src/lib/radio-visuals-cues.ts");
 const visualEvents = require("../src/lib/radio-visuals-events.ts");
 const audioVisuals = require("../src/lib/radio-visuals-audio.ts");
 const audioBridge = require("../src/lib/radio-audio-bridge.ts");
+const musicEmbellishments = require("../src/lib/radio-visuals-music-embellishments.ts");
 const liveOverlay = require("../src/lib/live-overlay-resolver.ts");
 
 test.after(() => {
@@ -846,6 +847,157 @@ test("music scene selection is deterministic and spans ten genuinely different f
   assert.deepEqual([...selected].sort(), [...engine.RADIO_VISUAL_MUSIC_SCENES].sort());
 });
 
+test("additive music embellishments stay quiet at low signal and expand with real audio", () => {
+  const drivesAt = (level, progress) => engine.radioVisualAudioDrives({
+    source: "windows_loopback",
+    bpm: 118,
+    energy: level,
+    bass: level,
+    mid: level,
+    treble: level,
+    beat: 0,
+    accent: 0,
+    peak: 0,
+    progress,
+    phrase: 0.35,
+  });
+  const quiet = drivesAt(0.02, 0.92);
+  const loud = drivesAt(0.82, 0.92);
+  const variants = new Set();
+
+  for (const [index, scene] of engine.RADIO_VISUAL_MUSIC_SCENES.entries()) {
+    const quietPlan = musicEmbellishments.radioVisualMusicEmbellishmentPlan(scene, index + 10, 12, quiet, 118);
+    const loudPlan = musicEmbellishments.radioVisualMusicEmbellishmentPlan(scene, index + 10, 12, loud, 118);
+    variants.add(quietPlan.variant);
+    assert.equal(quietPlan.scene, scene);
+    assert.ok(quietPlan.structureLevel < 0.03, `${scene} cannot start a quiet song at full structure`);
+    assert.ok(quietPlan.lineWeight <= 0.8, `${scene} cannot start a quiet song with maximum line weight`);
+    assert.ok(quietPlan.pulse < 0.03 && quietPlan.glow < 0.03, `${scene} cannot fabricate pulse or glow at silence`);
+    assert.equal(quietPlan.centerActive, false, `${scene} cannot breach the center without an audio event`);
+    assert.ok(loudPlan.structureLevel > quietPlan.structureLevel + 0.7, `${scene} must grow materially with real program level`);
+    assert.ok(loudPlan.lineWeight > quietPlan.lineWeight + 0.25, `${scene} must thicken with real audio`);
+    assert.ok(loudPlan.morphology > quietPlan.morphology + 0.35, `${scene} lifecycle geometry must retain audio headroom`);
+    assert.ok(loudPlan.edgePrimitiveBudget > quietPlan.edgePrimitiveBudget, `${scene} must earn more additive detail from the song`);
+    assert.ok(loudPlan.lineWeight < 1.4, `${scene} sustained audio alone cannot pin every accent to maximum`);
+    assert.equal(loudPlan.centerPrimitiveBudget, 9);
+  }
+  assert.equal(variants.size, engine.RADIO_VISUAL_MUSIC_SCENES.length, "every family must evolve into a different second form");
+});
+
+test("bass, mid, treble, and all-band hits own independent additive events", () => {
+  const drives = (overrides = {}) => engine.radioVisualAudioDrives({
+    source: "windows_loopback",
+    bpm: 124,
+    energy: 0.38,
+    bass: 0.04,
+    mid: 0.04,
+    treble: 0.04,
+    beat: 0,
+    accent: 0,
+    peak: 0,
+    progress: 0.48,
+    phrase: 0.3,
+    ...overrides,
+  });
+  const plan = (signal) => musicEmbellishments.radioVisualMusicEmbellishmentPlan(
+    "lightning_switchyard",
+    43120,
+    17,
+    signal,
+    124,
+  );
+  const bass = plan(drives({ bass: 0.95, beat: 1 }));
+  const mids = plan(drives({ mid: 0.95, accent: 1 }));
+  const treble = plan(drives({ treble: 0.95, peak: 1 }));
+  const tapestry = plan(drives({ bass: 0.95, mid: 0.95, treble: 0.95, beat: 1, accent: 1, peak: 1 }));
+
+  assert.ok(bass.bassImpact > 0.9 && bass.midImpact < 0.02 && bass.trebleImpact < 0.02);
+  assert.ok(mids.midImpact > 0.9 && mids.bassImpact < 0.02 && mids.trebleImpact < 0.02);
+  assert.ok(treble.trebleImpact > 0.9 && treble.bassImpact < 0.02 && treble.midImpact < 0.02);
+  assert.ok(mids.snareFlash > 0.75, "mid-band onsets must visibly light a snare-like structural flash");
+  assert.ok(treble.glow > bass.glow, "high-band onsets must own the strongest glow response");
+  assert.ok(tapestry.tapestryImpact > 0.9, "simultaneous full-band hits must earn the coordinated tapestry burst");
+  assert.equal(bass.centerActive, true);
+  assert.equal(mids.centerActive, true);
+  assert.equal(treble.centerActive, true);
+});
+
+test("track progress changes additive morphology without manufacturing audio strength", () => {
+  const signal = (progress) => engine.radioVisualAudioDrives({
+    source: "windows_loopback",
+    bpm: 92,
+    energy: 0.025,
+    bass: 0.02,
+    mid: 0.025,
+    treble: 0.018,
+    beat: 0,
+    accent: 0,
+    peak: 0,
+    progress,
+    phrase: 0.2,
+  });
+  const origin = musicEmbellishments.radioVisualMusicEmbellishmentPlan("signal_constellation", 17, 5, signal(0.04), 92);
+  const finale = musicEmbellishments.radioVisualMusicEmbellishmentPlan("signal_constellation", 17, 5, signal(0.96), 92);
+  assert.equal(finale.structureLevel, origin.structureLevel);
+  assert.equal(finale.bassImpact, origin.bassImpact);
+  assert.equal(finale.midImpact, origin.midImpact);
+  assert.equal(finale.trebleImpact, origin.trebleImpact);
+  assert.ok(finale.morphology > origin.morphology, "the family must still have a visible beginning and end state");
+  assert.equal(finale.centerActive, false, "lifecycle progress alone cannot trigger a center breach");
+});
+
+test("the music embellishment kill switch returns the exact checkpoint path", () => {
+  const drives = engine.radioVisualAudioDrives({
+    source: "windows_loopback",
+    bpm: 120,
+    energy: 1,
+    bass: 1,
+    mid: 1,
+    treble: 1,
+    beat: 1,
+    accent: 1,
+    peak: 1,
+    progress: 1,
+    phrase: 1,
+  });
+  const disabled = musicEmbellishments.radioVisualMusicEmbellishmentPlan(
+    "pixel_sort_storm",
+    99,
+    20,
+    drives,
+    120,
+    false,
+  );
+  assert.equal(disabled.enabled, false);
+  assert.equal(disabled.active, false);
+  assert.equal(disabled.centerActive, false);
+  assert.equal(disabled.edgePrimitiveBudget, 0);
+  assert.equal(disabled.centerPrimitiveBudget, 0);
+  assert.equal(disabled.structureLevel, 0);
+  assert.equal(disabled.pulse, 0);
+});
+
+test("additive recovery cannot gate, transform, or replace the checkpoint renderer and crossfade", () => {
+  const receiver = fs.readFileSync(path.join(projectRoot, "src/components/RadioVisualsReceiver.tsx"), "utf8");
+  const renderer = fs.readFileSync(path.join(projectRoot, "src/components/radio-visuals-music-embellishments.ts"), "utf8");
+  const composition = receiver.slice(
+    receiver.indexOf("const drawSeedComposition"),
+    receiver.indexOf("drawQueueLanes", receiver.indexOf("const drawSeedComposition")),
+  );
+  const baseDraw = composition.indexOf("drawSeededMusicScene(");
+  const additiveDraw = composition.indexOf("drawRadioVisualMusicEmbellishments(");
+  assert.ok(baseDraw >= 0 && additiveDraw > baseDraw, "the accepted family must render before any optional additions");
+  assert.match(receiver, /activeMusicMix = runtime\.trackMix \* sceneStateMix/, "track and Wheel ownership must remain authoritative");
+  assert.match(receiver, /drawSeedComposition\(runtime\.previousMusicSeed, 1 - musicSeedBlend\)/);
+  assert.match(receiver, /drawSeedComposition\(runtime\.currentMusicSeed, musicSeedBlend\)/);
+  assert.doesNotMatch(receiver, /radioVisualMusicIntensityPlan/, "the failed parallel intensity stack cannot return");
+  assert.doesNotMatch(renderer, /\.scale\(|\.transform\(|\.setTransform\(|\.translate\(|\.rotate\(/, "additions cannot move or transform the accepted base canvas");
+  assert.doesNotMatch(renderer, /destination-out|destination-in/, "the additive renderer cannot erase or mask checkpoint pixels");
+  assert.match(receiver, /drawRadioVisualMusicCenterEmbellishments[\s\S]*applyPerformerIntrusionField\(intrusionLayer\.context, width, height\)/, "center events must remain behind the existing bounded intrusion mask");
+  assert.equal(engine.RADIO_VISUAL_MUSIC_OUTPUT_GAIN, 2, "the accepted checkpoint output gain cannot change");
+  assert.equal(audioBridge.RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION, "fixed_reference_v1", "the corrected Windows volume-neutral calibration must remain active");
+});
+
 test("broadcast FX exhaust a twelve-effect shuffle bag before repeating", () => {
   assert.equal(engine.RADIO_VISUAL_BROADCAST_FX_TYPES.length, 12);
   for (const seed of [17, 43120, 2166136261]) {
@@ -1371,12 +1523,12 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.match(engineSource, /RADIO_VISUALS_WHEEL_CENTER_Y_RATIO = 0\.375/);
   assert.match(receiver, /prepareEffectLayer|applyPerformerSafeField|applyPerformerIntrusionField|destination-in/);
   assert.match(receiver, /if \(snapshot\.showStage !== "intake"\) applyPerformerSafeField\(context, width, height, 0\.2\)/);
-  assert.match(receiver, /drawPerformerWindowIntrusions[\s\S]*?plan\.lightningFamilyStrength[\s\S]*?cue\?\.type === "lightning"[\s\S]*?cue\?\.type === "signal_breach"/, "only planned lightning and scan-line compositions may regain controlled center presence");
+  assert.match(receiver, /drawPerformerWindowIntrusions[\s\S]*?plan\.lightningFamilyStrength[\s\S]*?cue\?\.type === "lightning"[\s\S]*?cue\?\.type === "signal_breach"/, "the existing generic intrusion renderer must remain limited to its planned lightning and scan-line compositions");
   const windowIntrusions = receiver.slice(receiver.indexOf("function drawWindowScanline"), receiver.indexOf("function visualSignalMemory"));
   assert.match(windowIntrusions, /drawWindowSignalStutter[\s\S]*plan\.stutterStripCount/, "center slippage must consume the tested two-to-three-strip plan");
   assert.doesNotMatch(windowIntrusions, /drawEdgeSpectrum|drawOscilloscopeRibbons|drawMatrixRain|drawAsciiTerminal|drawPixelSortStorm|drawParticlePressure|drawIndustrialOverride/, "dense family renderers must never be replayed across the performer window");
   assert.match(receiver, /applyPerformerIntrusionField\(intrusionLayer\.context, width, height\)/, "window intrusions must receive their own feathered center mask");
-  assert.match(receiver, /\(intrusionPlan\.active \|\| broadcastFxPlan\.centerStrength >= 0\.002\)/, "inactive center effects must skip the second full-stage Canvas pass");
+  assert.match(receiver, /\(intrusionPlan\.active \|\| broadcastFxPlan\.centerStrength >= 0\.002 \|\| musicEmbellishmentCenterActive\)/, "the second full-stage Canvas pass must remain gated by a real generic, broadcast, or audio-earned center event");
   assert.match(receiver, /prepareCrtTexture[\s\S]*drawPersistentBroadcastTexture/, "the always-alive CRT bed must reuse a cached texture");
   assert.match(receiver, /radioVisualBroadcastFxPlan\([\s\S]*time: serverNowMs \/ 1_000/, "featured artifact cadence must survive a receiver refresh");
   assert.match(receiver, /radioVisualBroadcastStartedTransition\(previous, current\)/);

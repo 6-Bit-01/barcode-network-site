@@ -943,7 +943,97 @@ test("track progress changes additive morphology without manufacturing audio str
   assert.equal(finale.midImpact, origin.midImpact);
   assert.equal(finale.trebleImpact, origin.trebleImpact);
   assert.ok(finale.morphology > origin.morphology, "the family must still have a visible beginning and end state");
+  assert.equal(finale.beatPunch, 0, "timeline progress cannot invent a beat");
+  assert.equal(finale.hardBeat, 0, "timeline progress cannot invent a hard hit");
+  assert.equal(finale.sectionSurge, 0, "timeline milestones remain optical-only until real audio supplies structure");
+  assert.equal(finale.bloom, 0, "timeline progress cannot invent bloom at silence");
+  assert.equal(finale.glare, 0, "timeline progress cannot invent glare at silence");
+  assert.equal(finale.jitter, 0, "timeline progress cannot invent jitter at silence");
+  assert.equal(finale.shapeScaleX, 1);
+  assert.equal(finale.shapeScaleY, 1);
+  assert.equal(finale.opticalPrimitiveBudget, 0);
   assert.equal(finale.centerActive, false, "lifecycle progress alone cannot trigger a center breach");
+});
+
+test("the recovered lifecycle develops shape, pacing, and section accents without pinning steady audio", () => {
+  const signal = (progress) => engine.radioVisualAudioDrives({
+    source: "windows_loopback",
+    bpm: 100,
+    energy: 0.65,
+    bass: 0.55,
+    mid: 0.65,
+    treble: 0.5,
+    beat: 0,
+    accent: 0,
+    peak: 0,
+    progress,
+    phrase: 0.3,
+  });
+  const planAt = (scene, progress) => musicEmbellishments.radioVisualMusicEmbellishmentPlan(
+    scene,
+    17,
+    12,
+    signal(progress),
+    100,
+  );
+
+  for (const scene of engine.RADIO_VISUAL_MUSIC_SCENES) {
+    const origin = planAt(scene, 0.01);
+    const firstBoundary = planAt(scene, 0.25);
+    const lateSection = planAt(scene, 0.625);
+    const finale = planAt(scene, 0.99);
+    assert.equal(origin.lifecycleAct, "origin");
+    assert.equal(lateSection.lifecycleAct, "mutation");
+    assert.equal(finale.lifecycleAct, "finale");
+    assert.equal(lateSection.sectionIndex, 2);
+    assert.ok(lateSection.sectionSurge > firstBoundary.sectionSurge + 0.4, `${scene} must visibly crest between lifecycle boundaries`);
+    assert.ok(finale.morphology > origin.morphology + 0.45, `${scene} must finish in an obviously different authored form`);
+    assert.notEqual(finale.tempoRate, origin.tempoRate, `${scene} must change its pacing across the song`);
+    assert.ok(lateSection.shapeScaleX >= 0.955 && lateSection.shapeScaleX <= 1.075);
+    assert.ok(lateSection.shapeScaleY >= 0.955 && lateSection.shapeScaleY <= 1.075);
+    assert.ok(lateSection.opticalPrimitiveBudget >= 2 && lateSection.opticalPrimitiveBudget <= 16);
+    assert.ok(lateSection.lineWeight < 1.8, `${scene} steady audio must retain thickness headroom for actual hits`);
+    assert.ok(lateSection.bloom < 0.2, `${scene} steady audio cannot pin optical bloom to maximum`);
+    assert.ok(lateSection.glare < 0.2, `${scene} steady audio cannot pin glare to maximum`);
+  }
+});
+
+test("bass, snare-range mids, and treble own different recovered optical dynamics", () => {
+  const drives = (overrides = {}) => engine.radioVisualAudioDrives({
+    source: "windows_loopback",
+    bpm: 124,
+    energy: 0.38,
+    bass: 0.04,
+    mid: 0.04,
+    treble: 0.04,
+    beat: 0,
+    accent: 0,
+    peak: 0,
+    progress: 0.48,
+    phrase: 0.3,
+    ...overrides,
+  });
+  const plan = (signal) => musicEmbellishments.radioVisualMusicEmbellishmentPlan(
+    "lightning_switchyard",
+    43120,
+    17,
+    signal,
+    124,
+  );
+  const bass = plan(drives({ bass: 0.95, beat: 1 }));
+  const mids = plan(drives({ mid: 0.95, accent: 1 }));
+  const treble = plan(drives({ treble: 0.95, peak: 1 }));
+
+  assert.ok(bass.beatPunch > mids.beatPunch + 0.25, "bass impacts must own the strongest expansion/compression punch");
+  assert.ok(bass.lineWeight > mids.lineWeight + 0.45, "bass impacts must own the largest thickness jump");
+  assert.ok(bass.shapeScaleX > 1 && bass.reach > 1.15, "bass impacts must make geometry grow and reach");
+  assert.ok(mids.snareFlash > 0.75 && mids.deformation > bass.deformation + 0.2, "snare-range mids must own flash and shape deformation");
+  assert.ok(mids.movementBurst > bass.movementBurst + 0.15, "mid hits must own the strongest structural motion burst");
+  assert.ok(treble.bloom > bass.bloom + 0.3, "treble hits must own bloom");
+  assert.ok(treble.glare > bass.glare + 0.3, "treble hits must own glare");
+  assert.ok(treble.chromaFringe > 0.45, "treble hits must own the chromatic fringe");
+  assert.ok(treble.jitter > bass.jitter + 0.1, "treble hits must own fine jitter instead of bass movement");
+  assert.ok([bass, mids, treble].every((current) => current.opticalPrimitiveBudget <= 16));
 });
 
 test("the music embellishment kill switch returns the exact checkpoint path", () => {
@@ -972,9 +1062,14 @@ test("the music embellishment kill switch returns the exact checkpoint path", ()
   assert.equal(disabled.active, false);
   assert.equal(disabled.centerActive, false);
   assert.equal(disabled.edgePrimitiveBudget, 0);
+  assert.equal(disabled.opticalPrimitiveBudget, 0);
   assert.equal(disabled.centerPrimitiveBudget, 0);
   assert.equal(disabled.structureLevel, 0);
   assert.equal(disabled.pulse, 0);
+  assert.equal(disabled.bloom, 0);
+  assert.equal(disabled.glare, 0);
+  assert.equal(disabled.shapeScaleX, 1);
+  assert.equal(disabled.shapeScaleY, 1);
 });
 
 test("additive recovery cannot gate, transform, or replace the checkpoint renderer and crossfade", () => {
@@ -993,6 +1088,12 @@ test("additive recovery cannot gate, transform, or replace the checkpoint render
   assert.doesNotMatch(receiver, /radioVisualMusicIntensityPlan/, "the failed parallel intensity stack cannot return");
   assert.doesNotMatch(renderer, /\.scale\(|\.transform\(|\.setTransform\(|\.translate\(|\.rotate\(/, "additions cannot move or transform the accepted base canvas");
   assert.doesNotMatch(renderer, /destination-out|destination-in/, "the additive renderer cannot erase or mask checkpoint pixels");
+  assert.match(renderer, /drawLifecycleShapeAccents\(input, alpha\)/, "the safe layer must retain the recovered per-family shape lifecycle");
+  assert.match(renderer, /drawOpticalBloomAndGlare\(input, alpha\)/, "the safe layer must retain event-earned bloom and glare");
+  assert.ok(
+    renderer.indexOf("drawLifecycleShapeAccents(input, alpha)") < renderer.indexOf("drawOpticalBloomAndGlare(input, alpha)"),
+    "morphology must render before its optical finish",
+  );
   assert.match(receiver, /drawRadioVisualMusicCenterEmbellishments[\s\S]*applyPerformerIntrusionField\(intrusionLayer\.context, width, height\)/, "center events must remain behind the existing bounded intrusion mask");
   assert.equal(engine.RADIO_VISUAL_MUSIC_OUTPUT_GAIN, 2, "the accepted checkpoint output gain cannot change");
   assert.equal(audioBridge.RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION, "fixed_reference_v1", "the corrected Windows volume-neutral calibration must remain active");

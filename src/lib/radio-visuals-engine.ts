@@ -264,6 +264,15 @@ export interface RadioVisualMusicEvolutionPlan {
   shapeMorph: number;
   variant: RadioVisualMusicLifecycleVariant;
   pulse: number;
+  breath: number;
+  beatPunch: number;
+  hardBeat: number;
+  sectionSurge: number;
+  glowBloom: number;
+  lineWeight: number;
+  reach: number;
+  deformation: number;
+  movementBurst: number;
   scaleX: number;
   scaleY: number;
   translateXRatio: number;
@@ -535,19 +544,26 @@ interface RadioVisualMusicEvolutionProfile {
   endRotation: number;
   endShearX: number;
   endShearY: number;
+  breathBeats: number;
+  breathDepth: number;
+  beatReach: number;
+  beatWeight: number;
+  glowBias: number;
+  deformationBias: number;
+  impactMotion: number;
 }
 
 const MUSIC_EVOLUTION_PROFILES: Record<RadioVisualMusicScene, RadioVisualMusicEvolutionProfile> = {
-  edge_spectrum: { variant: "bars_to_teeth", bassScale: 0.72, midDrift: 0.42, trebleHue: 0.56, startMotion: 0.7, endMotion: 1.34, startJitter: 0.04, endJitter: 0.62, tilt: 0.2, endRotation: 0.006, endShearX: 0.035, endShearY: 0 },
-  oscilloscope_ribbons: { variant: "ribbons_to_braids", bassScale: 0.34, midDrift: 0.92, trebleHue: 0.7, startMotion: 0.82, endMotion: 1.62, startJitter: 0.02, endJitter: 0.18, tilt: 0.44, endRotation: -0.014, endShearX: 0, endShearY: 0.026 },
-  tape_feedback: { variant: "frames_to_splice", bassScale: 0.56, midDrift: 0.7, trebleHue: 0.5, startMotion: 1.18, endMotion: 0.72, startJitter: 0.58, endJitter: 0.08, tilt: 0.86, endRotation: 0.03, endShearX: -0.028, endShearY: 0.018 },
-  matrix_rain: { variant: "rain_to_crossfeed", bassScale: 0.26, midDrift: 0.48, trebleHue: 0.96, startMotion: 0.68, endMotion: 1.7, startJitter: 0.02, endJitter: 0.54, tilt: 0.18, endRotation: -0.008, endShearX: -0.045, endShearY: 0 },
-  ascii_terminal: { variant: "terminal_to_breach", bassScale: 0.22, midDrift: 0.64, trebleHue: 0.82, startMotion: 0.58, endMotion: 1.32, startJitter: 0.02, endJitter: 0.72, tilt: 0.12, endRotation: 0, endShearX: 0.05, endShearY: -0.018 },
-  pixel_sort_storm: { variant: "slices_to_scramble", bassScale: 0.64, midDrift: 0.84, trebleHue: 1, startMotion: 0.76, endMotion: 1.84, startJitter: 0.16, endJitter: 1, tilt: 0.54, endRotation: 0.02, endShearX: -0.055, endShearY: 0.032 },
-  lightning_switchyard: { variant: "rails_to_discharge", bassScale: 0.48, midDrift: 0.38, trebleHue: 0.88, startMotion: 0.62, endMotion: 1.76, startJitter: 0.04, endJitter: 0.84, tilt: 0.34, endRotation: -0.018, endShearX: 0.028, endShearY: 0.02 },
-  laser_lattice: { variant: "grid_to_prism", bassScale: 0.4, midDrift: 0.58, trebleHue: 0.98, startMotion: 0.72, endMotion: 1.52, startJitter: 0.03, endJitter: 0.12, tilt: 0.72, endRotation: 0.042, endShearX: 0.018, endShearY: -0.018 },
-  particle_pressure: { variant: "drift_to_vortex", bassScale: 0.9, midDrift: 0.76, trebleHue: 0.62, startMotion: 0.56, endMotion: 1.58, startJitter: 0.06, endJitter: 0.34, tilt: 0.26, endRotation: 0.026, endShearX: 0, endShearY: 0.028 },
-  signal_constellation: { variant: "stars_to_network", bassScale: 0.3, midDrift: 0.88, trebleHue: 0.86, startMotion: 0.48, endMotion: 1.18, startJitter: 0.26, endJitter: 0.02, tilt: 0.62, endRotation: -0.034, endShearX: -0.02, endShearY: -0.012 },
+  edge_spectrum: { variant: "bars_to_teeth", bassScale: 0.72, midDrift: 0.42, trebleHue: 0.56, startMotion: 0.7, endMotion: 1.34, startJitter: 0.04, endJitter: 0.62, tilt: 0.2, endRotation: 0.006, endShearX: 0.035, endShearY: 0, breathBeats: 2, breathDepth: 0.74, beatReach: 0.94, beatWeight: 1, glowBias: 0.64, deformationBias: 0.72, impactMotion: 0.72 },
+  oscilloscope_ribbons: { variant: "ribbons_to_braids", bassScale: 0.34, midDrift: 0.92, trebleHue: 0.7, startMotion: 0.82, endMotion: 1.62, startJitter: 0.02, endJitter: 0.18, tilt: 0.44, endRotation: -0.014, endShearX: 0, endShearY: 0.026, breathBeats: 4, breathDepth: 0.96, beatReach: 0.66, beatWeight: 0.56, glowBias: 0.82, deformationBias: 0.96, impactMotion: 0.54 },
+  tape_feedback: { variant: "frames_to_splice", bassScale: 0.56, midDrift: 0.7, trebleHue: 0.5, startMotion: 1.18, endMotion: 0.72, startJitter: 0.58, endJitter: 0.08, tilt: 0.86, endRotation: 0.03, endShearX: -0.028, endShearY: 0.018, breathBeats: 8, breathDepth: 0.66, beatReach: 0.74, beatWeight: 0.88, glowBias: 0.58, deformationBias: 0.82, impactMotion: 0.44 },
+  matrix_rain: { variant: "rain_to_crossfeed", bassScale: 0.26, midDrift: 0.48, trebleHue: 0.96, startMotion: 0.68, endMotion: 1.7, startJitter: 0.02, endJitter: 0.54, tilt: 0.18, endRotation: -0.008, endShearX: -0.045, endShearY: 0, breathBeats: 2, breathDepth: 0.46, beatReach: 0.7, beatWeight: 0.48, glowBias: 1, deformationBias: 0.7, impactMotion: 0.86 },
+  ascii_terminal: { variant: "terminal_to_breach", bassScale: 0.22, midDrift: 0.64, trebleHue: 0.82, startMotion: 0.58, endMotion: 1.32, startJitter: 0.02, endJitter: 0.72, tilt: 0.12, endRotation: 0, endShearX: 0.05, endShearY: -0.018, breathBeats: 4, breathDepth: 0.52, beatReach: 0.62, beatWeight: 0.7, glowBias: 0.62, deformationBias: 0.86, impactMotion: 0.9 },
+  pixel_sort_storm: { variant: "slices_to_scramble", bassScale: 0.64, midDrift: 0.84, trebleHue: 1, startMotion: 0.76, endMotion: 1.84, startJitter: 0.16, endJitter: 1, tilt: 0.54, endRotation: 0.02, endShearX: -0.055, endShearY: 0.032, breathBeats: 1, breathDepth: 0.84, beatReach: 1, beatWeight: 0.9, glowBias: 0.78, deformationBias: 1, impactMotion: 1 },
+  lightning_switchyard: { variant: "rails_to_discharge", bassScale: 0.48, midDrift: 0.38, trebleHue: 0.88, startMotion: 0.62, endMotion: 1.76, startJitter: 0.04, endJitter: 0.84, tilt: 0.34, endRotation: -0.018, endShearX: 0.028, endShearY: 0.02, breathBeats: 2, breathDepth: 0.56, beatReach: 1, beatWeight: 1, glowBias: 1, deformationBias: 0.92, impactMotion: 1 },
+  laser_lattice: { variant: "grid_to_prism", bassScale: 0.4, midDrift: 0.58, trebleHue: 0.98, startMotion: 0.72, endMotion: 1.52, startJitter: 0.03, endJitter: 0.12, tilt: 0.72, endRotation: 0.042, endShearX: 0.018, endShearY: -0.018, breathBeats: 4, breathDepth: 0.9, beatReach: 0.76, beatWeight: 0.72, glowBias: 1, deformationBias: 0.9, impactMotion: 0.7 },
+  particle_pressure: { variant: "drift_to_vortex", bassScale: 0.9, midDrift: 0.76, trebleHue: 0.62, startMotion: 0.56, endMotion: 1.58, startJitter: 0.06, endJitter: 0.34, tilt: 0.26, endRotation: 0.026, endShearX: 0, endShearY: 0.028, breathBeats: 4, breathDepth: 1, beatReach: 1, beatWeight: 0.86, glowBias: 0.72, deformationBias: 1, impactMotion: 0.86 },
+  signal_constellation: { variant: "stars_to_network", bassScale: 0.3, midDrift: 0.88, trebleHue: 0.86, startMotion: 0.48, endMotion: 1.18, startJitter: 0.26, endJitter: 0.02, tilt: 0.62, endRotation: -0.034, endShearX: -0.02, endShearY: -0.012, breathBeats: 8, breathDepth: 0.76, beatReach: 0.64, beatWeight: 0.68, glowBias: 0.96, deformationBias: 0.76, impactMotion: 0.5 },
 };
 
 /**
@@ -631,12 +647,75 @@ export function radioVisualMusicEvolutionPlan(
   const bassMotion = clampVisualValue(drives.bassLayer * 0.46 + drives.bassPulse * 0.54);
   const midMotion = clampVisualValue(drives.midLayer * 0.56 + drives.midPulse * 0.44);
   const trebleMotion = clampVisualValue(drives.trebleLayer * 0.5 + drives.treblePulse * 0.5);
-  const pulse = clampVisualValue(0.12 + bassMotion * (0.3 + phraseWave * 0.38) + tempoPulse * 0.18 + drives.tapestryPulse * 0.16);
+  const audioLife = clampVisualValue(
+    drives.presence * 0.25
+      + bassMotion * 0.24
+      + midMotion * 0.2
+      + trebleMotion * 0.18
+      + drives.tapestry * 0.13,
+  );
+  const breathWave = Math.sin(
+    tempoPosition / profile.breathBeats * Math.PI * 2
+      + seedPhase
+      + smoothSection * 0.21,
+  );
+  const breath = clampVisualValue(0.5 + breathWave * 0.5);
+  const hardBeat = smoothstep((detectedHit - 0.34) / 0.58);
+  const beatPunch = clampVisualValue(
+    detectedHit * 0.68
+      + hardBeat * 0.24
+      + tempoWave * (0.035 + audioLife * 0.12),
+  );
+  const sectionSurge = clampVisualValue(
+    Math.pow(Math.sin(sectionBlend * Math.PI), 2)
+      * (0.18 + metamorphosis * 0.82)
+      * audioLife,
+  );
+  const pulse = clampVisualValue(
+    audioLife * (0.12 + breath * 0.32)
+      + beatPunch * 0.34
+      + hardBeat * 0.28
+      + sectionSurge * 0.18,
+  );
   const scaleAmount = profile.bassScale * bassMotion * (0.004 + phraseWave * 0.017 + tempoPulse * 0.006);
   const drift = profile.midDrift * midMotion;
   const shapeMorph = clampVisualValue(metamorphosis * (0.4 + drives.body * 0.24 + midMotion * 0.2 + drives.tapestry * 0.16));
   const jitterProfile = profile.startJitter + (profile.endJitter - profile.startJitter) * metamorphosis;
   const jitter = clampVisualValue(jitterProfile * (0.18 + trebleMotion * 0.5 + tempoPulse * 0.32));
+  const glowBloom = clampVisualValue(
+    profile.glowBias
+      * (trebleMotion * 0.42 + drives.treblePulse * 0.28 + hardBeat * 0.24 + sectionSurge * 0.12 + shapeMorph * 0.08),
+  );
+  const lineWeight = clampVisualValue(
+    0.82
+      + profile.beatWeight
+        * (drives.bassLayer * 0.38 + drives.bassPulse * 0.52 + hardBeat * 0.54 + sectionSurge * 0.16),
+    0.82,
+    2.4,
+  );
+  const reach = clampVisualValue(
+    0.88
+      + profile.breathDepth * audioLife * (0.04 + breath * 0.1)
+      + profile.beatReach * (beatPunch * 0.2 + hardBeat * 0.2)
+      + drives.midLayer * 0.07
+      + sectionSurge * 0.09,
+    0.86,
+    1.55,
+  );
+  const deformation = clampVisualValue(
+    profile.deformationBias
+      * (shapeMorph * 0.38 + midMotion * 0.24 + drives.tapestry * 0.12 + sectionSurge * 0.18 + hardBeat * 0.22),
+  );
+  const movementBurst = clampVisualValue(
+    0.16
+      + metamorphosis * 0.12
+      + sectionSurge * 0.38
+      + hardBeat * profile.impactMotion * 0.54
+      + drives.midPulse * 0.2,
+  );
+  const breathingScale = breathWave * profile.breathDepth * audioLife * (0.006 + metamorphosis * 0.006);
+  const beatCompression = beatPunch * profile.beatReach * (0.004 + hardBeat * 0.015);
+  const travelGate = 0.36 + metamorphosis * 0.12 + movementBurst * 0.52;
   return {
     sectionIndex,
     sectionBlend,
@@ -648,10 +727,19 @@ export function radioVisualMusicEvolutionPlan(
     shapeMorph,
     variant: profile.variant,
     pulse,
-    scaleX: clampVisualValue(1 + scaleAmount + drives.tapestry * 0.003 + profile.endShearY * shapeMorph * 0.12, 0.975, 1.055),
-    scaleY: clampVisualValue(1 + scaleAmount * (0.54 + profile.midDrift * 0.34) - profile.endShearX * shapeMorph * 0.1, 0.975, 1.055),
-    translateXRatio: clampVisualValue(slowWave * drift * (0.006 + metamorphosis * 0.006), -0.014, 0.014),
-    translateYRatio: clampVisualValue(crossWave * drift * (0.004 + metamorphosis * 0.005), -0.014, 0.014),
+    breath,
+    beatPunch,
+    hardBeat,
+    sectionSurge,
+    glowBloom,
+    lineWeight,
+    reach,
+    deformation,
+    movementBurst,
+    scaleX: clampVisualValue(1 + scaleAmount + breathingScale - beatCompression + drives.tapestry * 0.003 + profile.endShearY * shapeMorph * 0.12, 0.955, 1.075),
+    scaleY: clampVisualValue(1 + scaleAmount * (0.54 + profile.midDrift * 0.34) + breathingScale * (0.62 + profile.midDrift * 0.22) - beatCompression * (0.5 + profile.beatWeight * 0.32) - profile.endShearX * shapeMorph * 0.1, 0.955, 1.075),
+    translateXRatio: clampVisualValue(slowWave * drift * (0.006 + metamorphosis * 0.006) * travelGate, -0.014, 0.014),
+    translateYRatio: clampVisualValue(crossWave * drift * (0.004 + metamorphosis * 0.005) * travelGate, -0.014, 0.014),
     rotation: clampVisualValue(
       slowWave * profile.tilt * midMotion * 0.012 + profile.endRotation * shapeMorph,
       -0.05,
@@ -669,7 +757,10 @@ export function radioVisualMusicEvolutionPlan(
       0.62,
     ),
     motionRate: clampVisualValue(
-      lifecycleMotion * (0.86 + clampVisualValue((safeBpm - 70) / 100) * 0.2) + trebleMotion * 0.16 + tempoPulse * 0.12,
+      lifecycleMotion * (0.84 + clampVisualValue((safeBpm - 70) / 100) * 0.2)
+        + trebleMotion * 0.16
+        + tempoPulse * 0.08
+        + movementBurst * 0.12,
       0.48,
       1.95,
     ),

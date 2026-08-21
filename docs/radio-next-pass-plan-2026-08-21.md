@@ -36,6 +36,13 @@ Acceptance:
 - Track progress and phrase motion evolve a family without changing its identity mid-song.
 - Music transitions, Wheel behavior, 30 FPS cap, Canvas density, and zero-new-polling constraints remain intact.
 
+Accepted additive extension:
+
+- Preserve every existing family renderer, lifecycle form, transition, perimeter identity, and baseline movement.
+- Layer family-specific breathing, pulse, glow, line-weight change, inward reach, growth/shrink, and shape deformation over those retained forms.
+- Ordinary audio keeps the visuals alive with headroom; real analyser hits earn the strongest compression/expansion, impact motion, glow, and cross-shape response. The BPM clock may pace subtle breathing but cannot fabricate a hard hit.
+- The ten families keep distinct modulation profiles so this pass adds visible performance without flattening them into one shared effect.
+
 ### 3. Sponsor-break eligibility
 
 Require both two elapsed broadcast hours and the current moving played-versus-remaining midpoint before the sponsor break can become due.

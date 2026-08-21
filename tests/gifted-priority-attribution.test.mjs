@@ -41,22 +41,39 @@ test("direct Priority submission carries self-ownership and checkout-resume owne
   assert.match(form, /JSON\.stringify\(\{ trackId, sessionId: checkoutSessionId, submitterToken, checkoutOwnerToken,/);
 });
 
-test("confirmed gift attribution is visible on queue and host surfaces but excluded from BNL", () => {
+test("confirmed own and gifted purchases use one safe display rule across queue and host surfaces but stay excluded from BNL", () => {
+  const queueTypes = source("src/lib/queue-types.ts");
   const publicQueue = source("src/components/PublicQueueSession.tsx");
+  const publicGateway = source("src/components/PublicQueueGateway.tsx");
   const admin = source("src/components/AdminRadioQueueControl.tsx");
+  const foreground = source("src/lib/foreground-overlay-resolver.ts");
   const bnl = source("src/app/api/bnl/read-model/route.ts");
   const bnlTrackType = bnl.slice(bnl.indexOf("type BnlQueueTrack"), bnl.indexOf("function bnlTrackContext"));
   const bnlProjection = bnl.slice(bnl.indexOf("function publicTrack("), bnl.indexOf("function isRealQueueEntry"));
 
-  assert.match(publicQueue, /function PriorityGiftTag/);
-  assert.match(publicQueue, /FROM \{gift\.supporterName\} · FOR \{gift\.recipientName\}/);
-  assert.match(publicQueue, /Gifted Priority Signal confirmed/);
-  assert.match(admin, /function AdminPriorityGiftBanner/);
-  assert.match(admin, /GIFTED PRIORITY CONFIRMED/);
-  assert.match(admin, /<AdminPriorityGiftBanner entry=\{player\}/);
-  assert.match(admin, /<AdminPriorityGiftBanner entry=\{entry\}/);
+  assert.match(queueTypes, /function confirmedPriorityPurchaseDisplay/);
+  assert.match(queueTypes, /\$\{recipientName\} BOUGHT A SKIP/);
+  assert.match(queueTypes, /\$\{supporterName\} BOUGHT A SKIP FOR \$\{recipientName\}/);
+  assert.match(publicQueue, /function PriorityPurchaseTag/);
+  assert.match(publicQueue, /confirmedPriorityPurchaseDisplay\(track\)/);
+  assert.match(publicGateway, /confirmedPriorityPurchaseDisplay\(track\)/);
+  assert.match(admin, /function AdminPriorityPurchaseBanner/);
+  assert.match(admin, /<AdminPriorityPurchaseBanner entry=\{player\}/);
+  assert.match(admin, /<AdminPriorityPurchaseBanner entry=\{entry\}/);
+  assert.match(foreground, /label: purchase \? "SKIP PURCHASED" : "SKIP CONFIRMED"/);
+  assert.match(foreground, /purchasedSkipOverridesScene/);
   assert.doesNotMatch(bnlTrackType, /priorityGiftAttribution/);
   assert.doesNotMatch(bnlProjection, /priorityGiftAttribution/);
+});
+
+test("submission notes are immediately readable in Next In Line, player, and operator lanes", () => {
+  const admin = source("src/components/AdminRadioQueueControl.tsx");
+
+  assert.match(admin, /function AdminSubmissionNote/);
+  assert.match(admin, /Submission Note · Read Before Playing/);
+  assert.match(admin, /<AdminSubmissionNote entry=\{player\} compact \/>/);
+  assert.ok([...admin.matchAll(/<AdminSubmissionNote entry=\{entry\}/g)].length >= 2, "Next In Line and operator lanes must both render the note openly");
+  assert.doesNotMatch(admin, /<summary[^>]*>Submission note<\/summary>/i);
 });
 
 test("the legal and operational contracts disclose the gifted attribution boundary", () => {

@@ -47,6 +47,7 @@ const {
   PRIORITY_GIFT_ATTRIBUTION_VERSION,
   PRIORITY_GIFT_NAME_MAX_LENGTH,
   PRIORITY_TERMS_VERSION,
+  confirmedPriorityPurchaseDisplay,
   normalizePriorityGiftDisplayName,
 } = require("../src/lib/queue-types.ts");
 const priorityAcceptance = { acceptedPriorityTerms: true, priorityTermsVersion: PRIORITY_TERMS_VERSION, priorityDisclosureText: PRIORITY_DISCLOSURE_TEXT };
@@ -1879,10 +1880,17 @@ test("gifted Priority attribution is sanitized, payment-bound, public only after
   });
   assert.equal(paid.updated, true);
   publicSnapshot = await queue.getPublicQueueSnapshot(sessionId);
-  assert.deepEqual(publicTrack(publicSnapshot, track.id)?.priorityGiftAttribution, {
+  const confirmedGift = publicTrack(publicSnapshot, track.id);
+  assert.deepEqual(confirmedGift?.priorityGiftAttribution, {
     version: PRIORITY_GIFT_ATTRIBUTION_VERSION,
     supporterName: "Signal Friend",
     recipientName: "Recipient Artist",
+  });
+  assert.deepEqual(confirmedPriorityPurchaseDisplay(confirmedGift), {
+    kind: "gift",
+    supporterName: "Signal Friend",
+    recipientName: "Recipient Artist",
+    text: "Signal Friend BOUGHT A SKIP FOR Recipient Artist",
   });
 
   const replacementGift = queue.createPriorityGiftAttribution({
@@ -1933,8 +1941,17 @@ test("self and manual Priority paths do not invent gifted attribution", async ()
   assert.equal(activeTrack(state, manual.id)?.priorityUpgradeStatus, "manual");
   assert.equal(activeTrack(state, manual.id)?.priorityGiftAttribution, null);
   const publicSnapshot = await queue.getPublicQueueSnapshot(sessionId);
-  assert.equal(publicTrack(publicSnapshot, selfUpgrade.id)?.priorityGiftAttribution, null);
-  assert.equal(publicTrack(publicSnapshot, manual.id)?.priorityGiftAttribution, null);
+  const publicSelfUpgrade = publicTrack(publicSnapshot, selfUpgrade.id);
+  const publicManual = publicTrack(publicSnapshot, manual.id);
+  assert.equal(publicSelfUpgrade?.priorityGiftAttribution, null);
+  assert.equal(publicManual?.priorityGiftAttribution, null);
+  assert.deepEqual(confirmedPriorityPurchaseDisplay(publicSelfUpgrade), {
+    kind: "own",
+    supporterName: null,
+    recipientName: selfUpgrade.submittedArtistName,
+    text: `${selfUpgrade.submittedArtistName} BOUGHT A SKIP`,
+  });
+  assert.equal(confirmedPriorityPurchaseDisplay(publicManual), null, "manual Priority must never be presented as a purchased skip");
 });
 
 test("resolvePaidPriority promotes safe queued paid_needs_attention without duplicating or clearing payment metadata", async () => {

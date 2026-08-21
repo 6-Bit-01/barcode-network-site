@@ -1,4 +1,4 @@
-import type { QueueEntry, QueueState } from "./queue-types";
+import { confirmedPriorityPurchaseDisplay, type QueueEntry, type QueueState } from "./queue-types";
 import type { ResolvedLiveOverlayScene } from "./live-overlay-resolver";
 
 export const FOREGROUND_ARTIST_HOLD_MS = 12_000;
@@ -113,11 +113,11 @@ function priorityAction(state: QueueState, nowMs: number): ForegroundOverlayActi
     const occurredAtMs = timeMs(occurredAt);
     const eventAgeMs = occurredAtMs === null ? null : nowMs - occurredAtMs;
     if (occurredAtMs !== null && eventAgeMs !== null && eventAgeMs >= 0 && eventAgeMs < FOREGROUND_PRIORITY_POPUP_MS) {
-      const gift = status !== "manual" ? entry.priorityGiftAttribution : null;
+      const purchase = status !== "manual" ? confirmedPriorityPurchaseDisplay(entry) : null;
       return [{
-        id: `${gift ? "priority-gift" : "priority-confirmed"}:${entry.id}:${occurredAt}`,
-        label: gift ? "GIFTED PRIORITY" : "SKIP CONFIRMED",
-        message: gift ? `FROM ${cleanText(gift.supporterName, "ANONYMOUS", 24)} // FOR ${cleanText(gift.recipientName, displayArtist(entry), 24)} // THANK YOU FOR THE SKIP` : actionTrackMessage(entry),
+        id: `${purchase ? "priority-purchase" : "priority-confirmed"}:${entry.id}:${occurredAt}`,
+        label: purchase ? "SKIP PURCHASED" : "SKIP CONFIRMED",
+        message: purchase ? `${purchase.text} // THANK YOU FOR THE SKIP` : actionTrackMessage(entry),
         tone: "skip" as const,
         source: "priority" as const,
         occurredAt,
@@ -440,15 +440,15 @@ export function resolveForegroundOverlaySnapshot(input: ResolveForegroundOverlay
   const sceneOverride = sceneAction(scene);
   const skipAction = priorityAction(queueState, nowMs);
   const operational = operationalActions(queueState, scene, nowMs);
-  const giftedSkipOverridesScene = skipAction?.id.startsWith("priority-gift:") === true;
-  const actions = giftedSkipOverridesScene && skipAction
+  const purchasedSkipOverridesScene = skipAction?.id.startsWith("priority-purchase:") === true;
+  const actions = purchasedSkipOverridesScene && skipAction
     ? [skipAction, ...(sceneOverride ? [sceneOverride] : operational)]
     : sceneOverride
       ? [sceneOverride]
       : skipAction
         ? [skipAction, ...operational]
         : operational;
-  const actionCycleStartedAt = skipAction && (!sceneOverride || giftedSkipOverridesScene)
+  const actionCycleStartedAt = skipAction && (!sceneOverride || purchasedSkipOverridesScene)
     ? skipAction.occurredAt ?? now.toISOString()
     : sceneOverride?.occurredAt ?? session?.updatedAt ?? scene.updatedAt ?? now.toISOString();
 

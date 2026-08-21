@@ -278,6 +278,30 @@ export interface PriorityGiftAttribution {
 
 export type PriorityGiftPublicAttribution = Pick<PriorityGiftAttribution, "version" | "supporterName" | "recipientName">;
 
+export interface PriorityPurchaseDisplayInput {
+  priorityUpgradeStatus?: PriorityUpgradeStatus;
+  priorityGiftAttribution?: PriorityGiftPublicAttribution | null;
+  submittedArtistName?: string | null;
+  artist?: string | null;
+}
+
+export interface PriorityPurchaseDisplay {
+  kind: "own" | "gift";
+  supporterName: string | null;
+  recipientName: string;
+  text: string;
+}
+
+export function confirmedPriorityPurchaseDisplay(input: PriorityPurchaseDisplayInput): PriorityPurchaseDisplay | null {
+  if (input.priorityUpgradeStatus !== "paid" && input.priorityUpgradeStatus !== "paid_needs_attention") return null;
+  const recipientName = normalizePriorityGiftDisplayName(input.priorityGiftAttribution?.recipientName ?? input.submittedArtistName ?? input.artist, "Unknown Artist");
+  if (!input.priorityGiftAttribution) {
+    return { kind: "own", supporterName: null, recipientName, text: `${recipientName} BOUGHT A SKIP` };
+  }
+  const supporterName = normalizePriorityGiftDisplayName(input.priorityGiftAttribution.supporterName, PRIORITY_GIFT_ANONYMOUS_NAME);
+  return { kind: "gift", supporterName, recipientName, text: `${supporterName} BOUGHT A SKIP FOR ${recipientName}` };
+}
+
 export interface QueueEntry {
   id: string;
   artist: string;

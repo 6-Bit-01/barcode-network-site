@@ -7,16 +7,18 @@ import {
   RADIO_VISUALS_CHROMA_KEY,
   RADIO_VISUALS_EFFECT_STAGE_ASPECT_RATIO,
   RADIO_VISUALS_WHEEL_CENTER_Y_RATIO,
+  radioVisualAudioDrives,
   radioVisualAmbientMoment,
   radioVisualCueEnvelope,
   radioVisualCueProgress,
+  radioVisualMusicScene,
   radioVisualsIntensity,
   radioVisualsEffectStageBounds,
   radioVisualsMusicSignal,
   radioVisualsMotionRate,
   radioVisualsPalette,
 } from "@/lib/radio-visuals-engine";
-import type { RadioVisualMusicSignal } from "@/lib/radio-visuals-engine";
+import type { RadioVisualAudioDrives, RadioVisualMusicSignal } from "@/lib/radio-visuals-engine";
 import { activeRadioVisualEvent, hashRadioVisualToken, radioVisualEventEnvelope, radioVisualEventProgress } from "@/lib/radio-visuals-events";
 import { RADIO_VISUALS_ACTIVE_POLL_INTERVAL_MS, RADIO_VISUALS_STANDBY_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 import { studioOverlayRequestHeaders } from "@/lib/studio-overlay-client";
@@ -141,9 +143,9 @@ function smoothMusicSignal(current: RadioVisualMusicSignal, target: RadioVisualM
     bass: channel(current.bass, target.bass, 95, 420),
     mid: channel(current.mid, target.mid, 120, 460),
     treble: channel(current.treble, target.treble, 85, 360),
-    beat: channel(current.beat, target.beat, 65, 280),
-    accent: channel(current.accent, target.accent, 55, 320),
-    peak: channel(current.peak, target.peak, 45, 380),
+    beat: channel(current.beat, target.beat, 65, 170),
+    accent: channel(current.accent, target.accent, 55, 185),
+    peak: channel(current.peak, target.peak, 45, 220),
   };
 }
 
@@ -579,94 +581,439 @@ function drawMusicHalo(
   context.restore();
 }
 
-function drawLiveMusicResponse(
+function chromaCoreAlpha(mix: number, drive = 0): number {
+  return clampVisualValue(mix * 0.86 + drive * 0.12, 0, 0.98);
+}
+
+function drawIdleTransmission(
   context: CanvasRenderingContext2D,
   width: number,
   height: number,
   time: number,
+  mix: number,
+  primary: Rgb,
+  secondary: Rgb,
+  highlight: Rgb,
+  seed: number,
+): void {
+  if (mix < 0.002) return;
+  const unit = Math.min(width, height);
+  const coreAlpha = chromaCoreAlpha(mix);
+  context.save();
+  context.globalCompositeOperation = "source-over";
+
+  for (let bar = 0; bar < 12; bar += 1) {
+    const barWidth = Math.max(3, unit * (0.003 + randomUnit(seed, 32_100 + bar) * 0.009));
+    const edgeInset = unit * (0.018 + randomUnit(seed, 32_200 + bar) * 0.09);
+    const x = bar % 2 === 0 ? edgeInset : width - edgeInset - barWidth;
+    const y = height * ((randomUnit(seed, 32_300 + bar) + time * (0.006 + bar * 0.0004)) % 1);
+    const barHeight = height * (0.025 + randomUnit(seed, 32_400 + bar) * 0.11);
+    context.fillStyle = rgba(bar % 3 === 0 ? secondary : primary, coreAlpha * (0.76 + (bar % 2) * 0.14));
+    context.fillRect(x, y, barWidth, barHeight);
+  }
+
+  const trackingY = height * ((time * 0.027 + randomUnit(seed, 32_501)) % 1);
+  context.fillStyle = rgba(highlight, coreAlpha * 0.86);
+  context.fillRect(width * 0.035, trackingY, width * 0.93, Math.max(3, unit * 0.004));
+  context.fillStyle = rgba(secondary, coreAlpha * 0.72);
+  context.fillRect(width * 0.12, trackingY + unit * 0.011, width * (0.26 + randomUnit(seed, 32_502) * 0.34), Math.max(4, unit * 0.006));
+
+  const rollY = height * ((time * 0.012 + randomUnit(seed, 32_503)) % 1.18 - 0.09);
+  const roll = context.createLinearGradient(0, rollY - unit * 0.08, 0, rollY + unit * 0.08);
+  roll.addColorStop(0, rgba(primary, 0));
+  roll.addColorStop(0.48, rgba(primary, mix * 0.18));
+  roll.addColorStop(0.52, rgba(secondary, mix * 0.14));
+  roll.addColorStop(1, rgba(secondary, 0));
+  context.fillStyle = roll;
+  context.fillRect(0, rollY - unit * 0.08, width, unit * 0.16);
+
+  context.strokeStyle = rgba(highlight, coreAlpha * 0.84);
+  context.lineWidth = Math.max(3, unit * 0.004);
+  const corner = unit * 0.045;
+  const inset = unit * 0.028;
+  const corners = [
+    { x: inset, y: inset, sx: 1, sy: 1 },
+    { x: width - inset, y: inset, sx: -1, sy: 1 },
+    { x: inset, y: height - inset, sx: 1, sy: -1 },
+    { x: width - inset, y: height - inset, sx: -1, sy: -1 },
+  ];
+  for (const cornerMark of corners) {
+    context.beginPath();
+    context.moveTo(cornerMark.x + cornerMark.sx * corner, cornerMark.y);
+    context.lineTo(cornerMark.x, cornerMark.y);
+    context.lineTo(cornerMark.x, cornerMark.y + cornerMark.sy * corner);
+    context.stroke();
+  }
+
+  for (let fleck = 0; fleck < 14; fleck += 1) {
+    const x = width * randomUnit(seed, 32_600 + fleck);
+    const y = height * ((randomUnit(seed, 32_700 + fleck) + time * (0.009 + fleck * 0.0003)) % 1);
+    const fleckWidth = Math.max(3, unit * (0.003 + randomUnit(seed, 32_800 + fleck) * 0.018));
+    const fleckHeight = Math.max(3, unit * (0.003 + randomUnit(seed, 32_900 + fleck) * 0.006));
+    const color = fleck % 5 === 0 ? highlight : fleck % 2 ? secondary : primary;
+    context.fillStyle = rgba(color, coreAlpha * (0.68 + randomUnit(seed, 33_000 + fleck) * 0.24));
+    context.fillRect(x, y, fleckWidth, fleckHeight);
+  }
+  context.restore();
+}
+
+function drawVortexRelay(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  time: number,
+  mix: number,
+  drives: RadioVisualAudioDrives,
+  primary: Rgb,
+  secondary: Rgb,
+  highlight: Rgb,
+  seed: number,
+): void {
+  if (mix < 0.002) return;
+  const unit = Math.min(width, height);
+  const centerX = width * (0.44 + randomUnit(seed, 33_101) * 0.12);
+  const centerY = height * (0.43 + randomUnit(seed, 33_102) * 0.14);
+  const rotation = time * (0.18 + drives.treble * 0.62);
+  const coreAlpha = chromaCoreAlpha(mix, drives.presence);
+  context.save();
+  context.translate(centerX, centerY);
+  context.rotate(rotation);
+  context.lineCap = "butt";
+  for (let ring = 0; ring < 7; ring += 1) {
+    const radius = unit * (0.105 + ring * 0.052) * (1 + drives.bass * 0.13 + drives.impact * 0.035);
+    const segments = 8 + ring;
+    const ellipticity = 0.74 + drives.mid * 0.18 + randomUnit(seed, 33_200 + ring) * 0.08;
+    const color = ring % 5 === 0 ? highlight : ring % 2 ? secondary : primary;
+    context.save();
+    context.rotate((ring % 2 ? -1 : 1) * rotation * (0.35 + ring * 0.08));
+    context.scale(1, ellipticity);
+    context.lineWidth = Math.max(4, unit * (0.006 + drives.bass * 0.006 + ring * 0.0007));
+    context.strokeStyle = rgba(color, coreAlpha * (0.78 + (ring % 3) * 0.08));
+    context.shadowColor = rgba(color, 0.28 + drives.impact * 0.34);
+    context.shadowBlur = unit * (0.006 + drives.impact * 0.014);
+    context.beginPath();
+    for (let segment = 0; segment < segments; segment += 1) {
+      const gap = 0.035 + randomUnit(seed, 33_300 + ring * 20 + segment) * 0.055;
+      const start = segment / segments * Math.PI * 2 + gap;
+      const end = (segment + 0.64 + randomUnit(seed, 33_500 + ring * 20 + segment) * 0.18) / segments * Math.PI * 2;
+      context.moveTo(Math.cos(start) * radius, Math.sin(start) * radius);
+      context.arc(0, 0, radius, start, end);
+    }
+    context.stroke();
+    context.restore();
+  }
+
+  for (let spoke = 0; spoke < 16; spoke += 1) {
+    const angle = spoke / 16 * Math.PI * 2 - rotation * (spoke % 2 ? 0.4 : -0.24);
+    const inner = unit * (0.13 + randomUnit(seed, 33_800 + spoke) * 0.08);
+    const outer = unit * (0.33 + randomUnit(seed, 33_900 + spoke) * 0.13 + drives.bass * 0.03);
+    const widthScale = unit * (0.006 + drives.mid * 0.009);
+    const color = spoke % 4 === 0 ? secondary : primary;
+    context.fillStyle = rgba(color, coreAlpha * (0.68 + (spoke % 3) * 0.08));
+    context.beginPath();
+    context.moveTo(Math.cos(angle - 0.025) * inner, Math.sin(angle - 0.025) * inner);
+    context.lineTo(Math.cos(angle) * outer, Math.sin(angle) * outer);
+    context.lineTo(Math.cos(angle + 0.035) * (outer - widthScale), Math.sin(angle + 0.035) * (outer - widthScale));
+    context.lineTo(Math.cos(angle + 0.04) * inner, Math.sin(angle + 0.04) * inner);
+    context.closePath();
+    context.fill();
+  }
+  context.restore();
+}
+
+function drawBarcodeCathedral(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  time: number,
+  mix: number,
+  drives: RadioVisualAudioDrives,
+  primary: Rgb,
+  secondary: Rgb,
+  highlight: Rgb,
+  seed: number,
+): void {
+  if (mix < 0.002) return;
+  const unit = Math.min(width, height);
+  const vanishingX = width * (0.45 + randomUnit(seed, 34_101) * 0.1 + Math.sin(time * 0.12) * drives.mid * 0.025);
+  const vanishingY = height * (0.31 + randomUnit(seed, 34_102) * 0.12 + Math.cos(time * 0.09) * drives.mid * 0.025);
+  const coreAlpha = chromaCoreAlpha(mix, drives.presence);
+  context.save();
+  context.globalCompositeOperation = "source-over";
+  for (let bar = 0; bar < 20; bar += 1) {
+    const startX = width * (-0.08 + bar / 19 * 1.16);
+    const barWidth = unit * (0.009 + randomUnit(seed, 34_200 + bar) * 0.032 + drives.bass * 0.012);
+    const push = drives.impact * unit * (0.01 + (bar % 4) * 0.004);
+    const color = bar % 7 === 0 ? highlight : bar % 2 ? secondary : primary;
+    context.fillStyle = rgba(color, coreAlpha * (0.74 + (bar % 3) * 0.1));
+    context.beginPath();
+    context.moveTo(startX - barWidth - push, height);
+    context.lineTo(startX + barWidth + push, height);
+    context.lineTo(vanishingX + (startX - width * 0.5) * 0.035 + barWidth * 0.18, vanishingY);
+    context.lineTo(vanishingX + (startX - width * 0.5) * 0.035 - barWidth * 0.18, vanishingY);
+    context.closePath();
+    context.fill();
+  }
+
+  for (let beam = 0; beam < 6; beam += 1) {
+    const depth = (beam + 1) / 7;
+    const y = vanishingY + (height - vanishingY) * depth * depth;
+    const spread = width * (0.08 + depth * 0.5);
+    const color = beam % 3 === 0 ? highlight : beam % 2 ? primary : secondary;
+    context.strokeStyle = rgba(color, coreAlpha * (0.7 + drives.mid * 0.18));
+    context.lineWidth = Math.max(4, unit * (0.005 + depth * 0.011 + drives.bass * 0.004));
+    context.beginPath();
+    context.moveTo(vanishingX - spread, y + Math.sin(time * 0.3 + beam) * drives.mid * unit * 0.01);
+    context.lineTo(vanishingX + spread, y - Math.sin(time * 0.27 + beam) * drives.mid * unit * 0.01);
+    context.stroke();
+  }
+
+  const splitCount = 3 + Math.floor(drives.treble * 5);
+  for (let split = 0; split < splitCount; split += 1) {
+    const y = height * (0.18 + randomUnit(seed, 34_600 + split) * 0.68);
+    const x = width * randomUnit(seed, 34_700 + split);
+    const splitWidth = width * (0.06 + randomUnit(seed, 34_800 + split) * 0.2);
+    context.fillStyle = rgba(split % 2 ? secondary : primary, coreAlpha * 0.82);
+    context.fillRect(x, y, splitWidth, Math.max(4, unit * (0.005 + drives.treble * 0.009)));
+  }
+  context.restore();
+}
+
+function drawTapeFeedback(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  time: number,
+  mix: number,
+  drives: RadioVisualAudioDrives,
+  primary: Rgb,
+  secondary: Rgb,
+  highlight: Rgb,
+  seed: number,
+): void {
+  if (mix < 0.002) return;
+  const unit = Math.min(width, height);
+  const coreAlpha = chromaCoreAlpha(mix, drives.presence);
+  const centerX = width * (0.48 + Math.sin(time * 0.13) * drives.mid * 0.04);
+  const centerY = height * (0.5 + Math.cos(time * 0.11) * drives.mid * 0.025);
+  context.save();
+  context.globalCompositeOperation = "source-over";
+  for (let frame = 0; frame < 9; frame += 1) {
+    const depth = (frame / 9 + time * (0.055 + drives.bass * 0.05) + drives.impact * 0.06) % 1;
+    const frameWidth = width * (0.12 + depth * 0.9);
+    const frameHeight = height * (0.1 + depth * 0.82);
+    const skew = Math.sin(time * 0.21 + frame * 0.81) * drives.mid * unit * 0.045;
+    const color = frame % 4 === 0 ? highlight : frame % 2 ? secondary : primary;
+    context.strokeStyle = rgba(color, coreAlpha * (0.72 + depth * 0.24));
+    context.lineWidth = Math.max(4, unit * (0.005 + depth * 0.012 + drives.bass * 0.004));
+    context.beginPath();
+    context.moveTo(centerX - frameWidth * 0.5 + skew, centerY - frameHeight * 0.5);
+    context.lineTo(centerX + frameWidth * 0.5 + skew * 0.32, centerY - frameHeight * 0.5);
+    context.lineTo(centerX + frameWidth * 0.5 - skew, centerY + frameHeight * 0.5);
+    context.lineTo(centerX - frameWidth * 0.5 - skew * 0.32, centerY + frameHeight * 0.5);
+    context.closePath();
+    context.stroke();
+  }
+
+  const tearCount = 2 + Math.floor(drives.treble * 4);
+  for (let tear = 0; tear < tearCount; tear += 1) {
+    const y = height * ((randomUnit(seed, 35_100 + tear) + time * (0.035 + tear * 0.006)) % 1);
+    const displacement = width * drives.treble * (0.03 + randomUnit(seed, 35_200 + tear) * 0.11);
+    const color = tear % 3 === 0 ? highlight : tear % 2 ? primary : secondary;
+    context.fillStyle = rgba(color, coreAlpha * (0.74 + drives.impact * 0.18));
+    context.fillRect(width * 0.03 + displacement, y, width * (0.46 + randomUnit(seed, 35_300 + tear) * 0.48) - displacement, Math.max(4, unit * (0.005 + drives.treble * 0.012)));
+  }
+
+  for (let block = 0; block < 12; block += 1) {
+    const blockWidth = width / 12 * (0.42 + randomUnit(seed, 35_500 + block) * 0.52);
+    const blockHeight = unit * (0.008 + randomUnit(seed, 35_600 + block) * 0.025 + drives.bass * 0.018);
+    context.fillStyle = rgba(block % 4 === 0 ? highlight : block % 2 ? secondary : primary, coreAlpha * 0.76);
+    context.fillRect(block / 12 * width, height - blockHeight, blockWidth, blockHeight);
+  }
+  context.restore();
+}
+
+function drawHalftoneOrganism(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  time: number,
+  mix: number,
+  drives: RadioVisualAudioDrives,
+  primary: Rgb,
+  secondary: Rgb,
+  highlight: Rgb,
+  seed: number,
+): void {
+  if (mix < 0.002) return;
+  const unit = Math.min(width, height);
+  const coreAlpha = chromaCoreAlpha(mix, drives.presence);
+  context.save();
+  context.globalCompositeOperation = "source-over";
+  for (let blob = 0; blob < 3; blob += 1) {
+    const centerX = width * (0.24 + blob * 0.25 + (randomUnit(seed, 36_100 + blob) - 0.5) * 0.08);
+    const centerY = height * (0.3 + randomUnit(seed, 36_200 + blob) * 0.42);
+    const base = unit * (0.11 + randomUnit(seed, 36_300 + blob) * 0.1) * (1 + drives.bass * 0.2 + drives.impact * 0.04);
+    const color = blob === 2 ? highlight : blob % 2 ? secondary : primary;
+    context.fillStyle = rgba(color, coreAlpha * (blob === 2 ? 0.84 : 0.94));
+    context.beginPath();
+    const points = 14;
+    for (let point = 0; point < points; point += 1) {
+      const angle = point / points * Math.PI * 2;
+      const deformation = 1
+        + Math.sin(angle * (3 + blob) + time * (0.38 + blob * 0.09)) * drives.mid * 0.18
+        + (randomUnit(seed, 36_500 + blob * 30 + point) - 0.5) * 0.22;
+      const radius = base * deformation;
+      const x = centerX + Math.cos(angle) * radius;
+      const y = centerY + Math.sin(angle) * radius * (0.78 + blob * 0.08);
+      if (point === 0) context.moveTo(x, y);
+      else context.lineTo(x, y);
+    }
+    context.closePath();
+    context.fill();
+
+    for (let hole = 0; hole < 5; hole += 1) {
+      const angle = randomUnit(seed, 36_800 + blob * 20 + hole) * Math.PI * 2;
+      const orbit = base * randomUnit(seed, 36_900 + blob * 20 + hole) * 0.62;
+      const holeWidth = unit * (0.01 + randomUnit(seed, 37_000 + blob * 20 + hole) * 0.025);
+      const holeHeight = unit * (0.006 + randomUnit(seed, 37_100 + blob * 20 + hole) * 0.018);
+      context.fillStyle = RADIO_VISUALS_CHROMA_KEY;
+      context.fillRect(centerX + Math.cos(angle) * orbit - holeWidth * 0.5, centerY + Math.sin(angle) * orbit - holeHeight * 0.5, holeWidth, holeHeight);
+    }
+  }
+
+  const fragmentCount = 5 + Math.floor(drives.treble * 10);
+  for (let fragment = 0; fragment < fragmentCount; fragment += 1) {
+    const x = width * randomUnit(seed, 37_300 + fragment);
+    const y = height * randomUnit(seed, 37_400 + fragment);
+    const size = unit * (0.012 + randomUnit(seed, 37_500 + fragment) * 0.04 + drives.treble * 0.018);
+    const color = fragment % 5 === 0 ? highlight : fragment % 2 ? secondary : primary;
+    context.fillStyle = rgba(color, coreAlpha * 0.82);
+    context.beginPath();
+    context.moveTo(x - size, y + size * 0.6);
+    context.lineTo(x + size * 0.12, y - size);
+    context.lineTo(x + size, y + size * 0.38);
+    context.closePath();
+    context.fill();
+  }
+  context.restore();
+}
+
+function drawOscilloscopeRibbons(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  time: number,
+  mix: number,
+  drives: RadioVisualAudioDrives,
+  primary: Rgb,
+  secondary: Rgb,
+  highlight: Rgb,
+  seed: number,
+): void {
+  if (mix < 0.002) return;
+  const unit = Math.min(width, height);
+  const coreAlpha = chromaCoreAlpha(mix, drives.presence);
+  context.save();
+  context.globalCompositeOperation = "source-over";
+  for (let ribbon = 0; ribbon < 4; ribbon += 1) {
+    const baseY = height * (0.18 + ribbon * 0.21);
+    const amplitude = height * (0.018 + drives.mid * 0.075 + ribbon * 0.004);
+    const thickness = unit * (0.009 + drives.bass * 0.021 + ribbon * 0.002);
+    const cycles = 4 + ribbon * 2 + drives.treble * 8;
+    const phase = time * (0.95 + ribbon * 0.18) * (ribbon % 2 ? -1 : 1) + randomUnit(seed, 38_100 + ribbon) * Math.PI * 2;
+    const color = ribbon === 3 ? highlight : ribbon === 1 ? secondary : primary;
+    context.fillStyle = rgba(color, coreAlpha * (ribbon === 3 ? 0.82 : 0.94));
+    context.beginPath();
+    for (let step = 0; step <= 40; step += 1) {
+      const progress = step / 40;
+      const x = width * (-0.03 + progress * 1.06);
+      const wave = Math.sin(progress * Math.PI * cycles + phase) * 0.72
+        + Math.sin(progress * Math.PI * (cycles * 2.7) - phase * 0.63) * 0.28;
+      const y = baseY + wave * amplitude - thickness * 0.5;
+      if (step === 0) context.moveTo(x, y);
+      else context.lineTo(x, y);
+    }
+    for (let step = 40; step >= 0; step -= 1) {
+      const progress = step / 40;
+      const x = width * (-0.03 + progress * 1.06);
+      const wave = Math.sin(progress * Math.PI * cycles + phase) * 0.72
+        + Math.sin(progress * Math.PI * (cycles * 2.7) - phase * 0.63) * 0.28;
+      context.lineTo(x, baseY + wave * amplitude + thickness * 0.5);
+    }
+    context.closePath();
+    context.fill();
+  }
+
+  for (let gate = 0; gate < 7; gate += 1) {
+    const x = width * (0.08 + gate / 7 * 0.84);
+    const gateHeight = height * (0.08 + randomUnit(seed, 38_400 + gate) * 0.26 + drives.mid * 0.08);
+    const color = drives.impact > 0.62 && gate % 2 === 0 ? highlight : gate % 3 === 0 ? secondary : primary;
+    context.fillStyle = rgba(color, coreAlpha * (0.7 + drives.impact * 0.22));
+    context.fillRect(x, height * 0.5 - gateHeight * 0.5, Math.max(4, unit * (0.006 + drives.bass * 0.008)), gateHeight);
+  }
+  context.restore();
+}
+
+function drawLightningSwitchyard(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  time: number,
+  mix: number,
+  drives: RadioVisualAudioDrives,
+  primary: Rgb,
+  secondary: Rgb,
+  highlight: Rgb,
+  seed: number,
+): void {
+  if (mix < 0.002) return;
+  const unit = Math.min(width, height);
+  const coreAlpha = chromaCoreAlpha(mix, drives.presence);
+  context.save();
+  context.globalCompositeOperation = "source-over";
+  for (let rail = 0; rail < 3; rail += 1) {
+    const y = height * (0.2 + rail * 0.3 + Math.sin(time * 0.12 + rail) * drives.mid * 0.025);
+    const color = rail === 1 ? secondary : primary;
+    context.strokeStyle = rgba(color, coreAlpha * 0.9);
+    context.lineWidth = Math.max(7, unit * (0.01 + drives.bass * 0.012));
+    context.beginPath();
+    context.moveTo(width * 0.04, y);
+    context.lineTo(width * (0.26 + rail * 0.06), y);
+    context.lineTo(width * (0.34 + rail * 0.08), y + (rail - 1) * unit * 0.09);
+    context.lineTo(width * 0.96, y + (rail - 1) * unit * 0.09);
+    context.stroke();
+  }
+  context.restore();
+
+  const current = 0.2 + drives.treble * 0.48 + drives.impact * 0.58;
+  drawLightningTree(context, width, height, seed + Math.floor(time * 2.4) * 131, mix * current, primary, secondary, highlight);
+  if (drives.impact > 0.58) {
+    drawLightningTree(context, width, height, seed + 71_901 + Math.floor(time * 3.2) * 191, mix * drives.impact * 0.72, secondary, primary, highlight);
+  }
+}
+
+function drawSeededMusicScene(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  time: number,
+  mix: number,
   music: RadioVisualMusicSignal,
   primary: Rgb,
   secondary: Rgb,
   highlight: Rgb,
   seed: number,
 ): void {
-  if (music.source !== "windows_loopback") return;
-  const presence = clampVisualValue(Math.max(music.energy, music.bass, music.mid, music.treble, music.peak));
-  if (presence < 0.006) return;
-
-  const unit = Math.min(width, height);
-  const centerX = width * 0.5;
-  const centerY = height * (0.51 + Math.sin(time * 0.08) * 0.015);
-  const bassDrive = clampVisualValue(music.bass * 0.88 + music.beat * 0.48);
-  const midDrive = clampVisualValue(music.mid * 0.9 + music.energy * 0.36);
-  const trebleDrive = clampVisualValue(music.treble * 0.9 + music.peak * 0.38);
-
-  context.save();
-  context.globalCompositeOperation = "screen";
-  context.lineCap = "round";
-  radialLight(
-    context,
-    width,
-    height,
-    centerX,
-    centerY,
-    unit * (0.28 + bassDrive * 0.28),
-    secondary,
-    0.035 + presence * 0.13 + music.beat * 0.08,
-  );
-
-  context.save();
-  context.translate(centerX, centerY);
-  context.rotate(time * (0.035 + music.energy * 0.055));
-  for (let ring = 0; ring < 3; ring += 1) {
-    const radius = unit * (0.16 + ring * 0.105 + bassDrive * (0.018 + ring * 0.009));
-    const color = ring === 0 ? primary : ring === 1 ? secondary : highlight;
-    context.setLineDash([radius * (0.12 + ring * 0.025), radius * (0.05 + ring * 0.018)]);
-    context.lineDashOffset = time * (ring % 2 ? -20 : 15) * (0.55 + trebleDrive);
-    context.lineWidth = Math.max(1.2, unit * (0.0022 + bassDrive * 0.003 + music.beat * 0.002));
-    context.strokeStyle = rgba(color, 0.1 + presence * 0.22 + music.beat * 0.18 - ring * 0.012);
-    context.shadowColor = rgba(color, 0.16 + music.peak * 0.36);
-    context.shadowBlur = unit * (0.006 + music.peak * 0.016);
-    context.beginPath();
-    context.arc(0, 0, radius, 0, Math.PI * 2);
-    context.stroke();
-  }
-  context.restore();
-
-  context.setLineDash([]);
-  for (let lane = 0; lane < 3; lane += 1) {
-    const baseY = height * (0.29 + lane * 0.23);
-    const amplitude = height * (0.009 + midDrive * 0.025 + (lane === 1 ? music.bass * 0.012 : music.treble * 0.008));
-    const color = lane === 0 ? secondary : lane === 1 ? primary : highlight;
-    context.strokeStyle = rgba(color, 0.07 + midDrive * 0.22 + music.accent * 0.08);
-    context.lineWidth = Math.max(1, unit * (0.0014 + music.energy * 0.0022));
-    context.beginPath();
-    for (let step = 0; step <= 56; step += 1) {
-      const progress = step / 56;
-      const x = width * (0.04 + progress * 0.92);
-      const carrier = Math.sin(progress * Math.PI * (5 + lane * 2) + time * (1.2 + lane * 0.24));
-      const modulation = Math.sin(progress * Math.PI * 17 - time * (0.62 + lane * 0.11));
-      const y = baseY + (carrier * 0.72 + modulation * 0.28) * amplitude;
-      if (step === 0) context.moveTo(x, y);
-      else context.lineTo(x, y);
-    }
-    context.stroke();
-  }
-
-  const sparkleCount = 18 + Math.floor(trebleDrive * 22);
-  for (let sparkle = 0; sparkle < sparkleCount; sparkle += 1) {
-    const angle = randomUnit(seed, 31_100 + sparkle) * Math.PI * 2 + time * (0.08 + trebleDrive * 0.18) * (sparkle % 2 ? -1 : 1);
-    const orbit = unit * (0.18 + randomUnit(seed, 31_200 + sparkle) * 0.29 + music.beat * 0.018);
-    const x = centerX + Math.cos(angle) * orbit;
-    const y = centerY + Math.sin(angle) * orbit * 1.18;
-    const radius = Math.max(0.8, unit * (0.0012 + randomUnit(seed, 31_300 + sparkle) * 0.0028 + trebleDrive * 0.0018));
-    const color = sparkle % 7 === 0 ? highlight : sparkle % 2 ? secondary : primary;
-    context.fillStyle = rgba(color, 0.08 + trebleDrive * 0.34 + music.peak * 0.18);
-    context.beginPath();
-    context.arc(x, y, radius, 0, Math.PI * 2);
-    context.fill();
-  }
-  context.restore();
+  if (mix < 0.002) return;
+  const drives = radioVisualAudioDrives(music);
+  const scene = radioVisualMusicScene(seed);
+  if (scene === "vortex_relay") drawVortexRelay(context, width, height, time, mix, drives, primary, secondary, highlight, seed);
+  if (scene === "barcode_cathedral") drawBarcodeCathedral(context, width, height, time, mix, drives, primary, secondary, highlight, seed);
+  if (scene === "tape_feedback") drawTapeFeedback(context, width, height, time, mix, drives, primary, secondary, highlight, seed);
+  if (scene === "halftone_organism") drawHalftoneOrganism(context, width, height, time, mix, drives, primary, secondary, highlight, seed);
+  if (scene === "oscilloscope_ribbons") drawOscilloscopeRibbons(context, width, height, time, mix, drives, primary, secondary, highlight, seed);
+  if (scene === "lightning_switchyard") drawLightningSwitchyard(context, width, height, time, mix, drives, primary, secondary, highlight, seed);
 }
 
 function drawQueueLanes(
@@ -682,56 +1029,34 @@ function drawQueueLanes(
   if (mix < 0.002) return;
   const horizonY = height * (0.38 + randomUnit(seed, 7_101) * 0.22);
   const horizonX = width * (0.38 + randomUnit(seed, 7_102) * 0.24);
+  const unit = Math.min(width, height);
+  const coreAlpha = chromaCoreAlpha(mix);
   context.save();
-  context.lineWidth = Math.max(1, Math.min(width, height) * 0.002);
+  context.lineWidth = Math.max(4, unit * 0.006);
   for (let lane = 0; lane < 7; lane += 1) {
     const startX = width * (-0.18 + lane * 0.225);
     const drift = Math.sin(time * 0.18 + lane * 0.91) * width * 0.014;
-    context.strokeStyle = rgba(lane % 2 ? secondary : primary, mix * (0.08 + (lane % 3) * 0.026));
+    context.strokeStyle = rgba(lane % 2 ? secondary : primary, coreAlpha * (0.66 + (lane % 3) * 0.08));
     context.beginPath();
     context.moveTo(startX + drift, height * 1.04);
     context.quadraticCurveTo(width * (0.5 + (lane - 3) * 0.018), height * 0.72, horizonX, horizonY);
     context.stroke();
   }
   const scan = ((time * 0.055 + randomUnit(seed, 7_103)) % 1) * 0.64 + 0.31;
-  context.strokeStyle = rgba(primary, mix * 0.16 * Math.sin(scan * Math.PI));
-  context.lineWidth = Math.max(1, Math.min(width, height) * 0.0035);
+  context.strokeStyle = rgba(primary, coreAlpha * (0.72 + Math.sin(scan * Math.PI) * 0.2));
+  context.lineWidth = Math.max(4, unit * 0.007);
   context.beginPath();
   context.moveTo(width * 0.05, height * scan);
   context.lineTo(width * 0.95, height * scan);
   context.stroke();
-  context.restore();
-}
-
-function drawTrackSignature(
-  context: CanvasRenderingContext2D,
-  width: number,
-  height: number,
-  time: number,
-  mix: number,
-  music: RadioVisualMusicSignal,
-  primary: Rgb,
-  secondary: Rgb,
-  highlight: Rgb,
-  seed: number,
-): void {
-  if (mix < 0.002) return;
-  const centerX = width * (0.42 + randomUnit(seed, 8_101) * 0.16);
-  const centerY = height * (0.42 + randomUnit(seed, 8_102) * 0.2);
-  const base = Math.min(width, height) * (0.15 + music.energy * 0.08 + music.bass * 0.025);
-  context.save();
-  context.translate(centerX, centerY);
-  context.rotate((randomUnit(seed, 8_103) - 0.5) * 0.38);
-  for (let ring = 0; ring < 4; ring += 1) {
-    const wobble = 1 + Math.sin(time * (0.42 + ring * 0.08) + ring * 1.2) * (0.025 + music.mid * 0.055) + music.beat * 0.035;
-    const radius = base * (0.75 + ring * 0.42) * wobble;
-    context.strokeStyle = rgba(ring === 3 ? highlight : ring % 2 ? secondary : primary, mix * (0.075 + music.energy * 0.13 + music.accent * 0.045) / (1 + ring * 0.18));
-    context.lineWidth = Math.max(1, Math.min(width, height) * (0.0018 + (3 - ring) * 0.0006 + music.bass * 0.0008));
-    context.setLineDash(ring % 2 ? [radius * 0.16, radius * 0.08] : []);
-    context.lineDashOffset = time * (ring % 2 ? -9 - music.treble * 7 : 7 + music.mid * 5);
-    context.beginPath();
-    context.ellipse(0, 0, radius, radius * (0.62 + ring * 0.04), 0, 0, Math.PI * 2);
-    context.stroke();
+  for (let packet = 0; packet < 9; packet += 1) {
+    const progress = (randomUnit(seed, 7_500 + packet) + time * (0.025 + packet * 0.0012)) % 1;
+    const x = horizonX + (width * (packet / 8 - 0.5) - horizonX) * progress;
+    const y = horizonY + (height - horizonY) * progress * progress;
+    const packetWidth = unit * (0.008 + progress * 0.025);
+    const packetHeight = Math.max(4, unit * (0.005 + progress * 0.012));
+    context.fillStyle = rgba(packet % 3 === 0 ? secondary : primary, coreAlpha * (0.7 + progress * 0.24));
+    context.fillRect(x - packetWidth * 0.5, y - packetHeight * 0.5, packetWidth, packetHeight);
   }
   context.restore();
 }
@@ -750,17 +1075,32 @@ function drawIntakeAperture(
   const centerX = width * (0.46 + randomUnit(seed, 9_101) * 0.08);
   const centerY = height * (0.46 + randomUnit(seed, 9_102) * 0.08);
   const radius = Math.min(width, height) * (0.25 + Math.sin(time * 0.28) * 0.018);
+  const unit = Math.min(width, height);
+  const coreAlpha = chromaCoreAlpha(mix);
   context.save();
   context.translate(centerX, centerY);
   context.rotate(time * 0.035);
-  context.lineCap = "round";
+  context.lineCap = "butt";
   for (let arc = 0; arc < 8; arc += 1) {
     const angle = arc / 8 * Math.PI * 2 + randomUnit(seed, 9_200 + arc) * 0.16;
-    context.strokeStyle = rgba(arc % 2 ? secondary : primary, mix * (0.075 + (arc % 3) * 0.018));
-    context.lineWidth = Math.max(1, Math.min(width, height) * 0.0028);
+    context.strokeStyle = rgba(arc % 2 ? secondary : primary, coreAlpha * (0.7 + (arc % 3) * 0.09));
+    context.lineWidth = Math.max(5, unit * (0.007 + (arc % 3) * 0.002));
     context.beginPath();
     context.arc(0, 0, radius * (0.88 + (arc % 3) * 0.1), angle, angle + 0.5 + randomUnit(seed, 9_300 + arc) * 0.34);
     context.stroke();
+  }
+  for (let blade = 0; blade < 10; blade += 1) {
+    const angle = blade / 10 * Math.PI * 2 - time * 0.08;
+    const inner = radius * 0.3;
+    const outer = radius * (0.72 + (blade % 3) * 0.08);
+    context.fillStyle = rgba(blade % 2 ? secondary : primary, coreAlpha * 0.78);
+    context.beginPath();
+    context.moveTo(Math.cos(angle - 0.05) * inner, Math.sin(angle - 0.05) * inner);
+    context.lineTo(Math.cos(angle - 0.11) * outer, Math.sin(angle - 0.11) * outer);
+    context.lineTo(Math.cos(angle + 0.025) * outer, Math.sin(angle + 0.025) * outer);
+    context.lineTo(Math.cos(angle + 0.05) * inner, Math.sin(angle + 0.05) * inner);
+    context.closePath();
+    context.fill();
   }
   context.restore();
 }
@@ -776,17 +1116,23 @@ function drawSponsorCurtain(
   seed: number,
 ): void {
   if (mix < 0.002) return;
+  const unit = Math.min(width, height);
+  const coreAlpha = chromaCoreAlpha(mix);
   context.save();
-  for (let band = 0; band < 7; band += 1) {
-    const center = width * (band + 0.5) / 7 + Math.sin(time * 0.14 + band + seed * 0.0001) * width * 0.016;
-    const bandWidth = width * (0.07 + randomUnit(seed, 10_100 + band) * 0.08);
-    const gradient = context.createLinearGradient(center - bandWidth, 0, center + bandWidth, 0);
-    gradient.addColorStop(0, rgba(secondary, 0));
-    gradient.addColorStop(0.5, rgba(band % 3 === 0 ? primary : secondary, mix * (0.04 + (band % 2) * 0.025)));
-    gradient.addColorStop(1, rgba(secondary, 0));
-    context.fillStyle = gradient;
+  for (let band = 0; band < 9; band += 1) {
+    const center = width * (band + 0.5) / 9 + Math.sin(time * 0.14 + band + seed * 0.0001) * width * 0.012;
+    const bandWidth = width * (0.025 + randomUnit(seed, 10_100 + band) * 0.045);
+    const color = band % 4 === 0 ? secondary : primary;
+    context.fillStyle = rgba(color, coreAlpha * (0.66 + (band % 3) * 0.1));
     context.fillRect(center - bandWidth, 0, bandWidth * 2, height);
+    context.fillStyle = RADIO_VISUALS_CHROMA_KEY;
+    context.fillRect(center - bandWidth * 0.7, 0, Math.max(3, bandWidth * 0.12), height);
   }
+  const leaderY = height * ((time * 0.018 + randomUnit(seed, 10_501)) % 1);
+  context.fillStyle = rgba(secondary, coreAlpha * 0.92);
+  context.fillRect(0, leaderY, width, Math.max(6, unit * 0.012));
+  context.fillStyle = rgba(primary, coreAlpha * 0.84);
+  context.fillRect(width * 0.08, leaderY + unit * 0.022, width * 0.84, Math.max(4, unit * 0.006));
   context.restore();
 }
 
@@ -803,20 +1149,24 @@ function drawFinalConvergence(
   if (mix < 0.002) return;
   const targetX = width * (0.43 + randomUnit(seed, 11_101) * 0.14);
   const targetY = height * (0.42 + randomUnit(seed, 11_102) * 0.16);
+  const unit = Math.min(width, height);
+  const coreAlpha = chromaCoreAlpha(mix);
   context.save();
-  context.lineWidth = Math.max(1, Math.min(width, height) * 0.0024);
   for (let ray = 0; ray < 12; ray += 1) {
     const side = ray % 4;
     const position = randomUnit(seed, 11_200 + ray);
     const startX = side === 0 ? 0 : side === 1 ? width : position * width;
     const startY = side === 2 ? 0 : side === 3 ? height : position * height;
     const pulse = 0.5 + 0.5 * Math.sin(time * (0.22 + ray * 0.006) + ray);
-    context.strokeStyle = rgba(ray % 2 ? secondary : primary, mix * (0.035 + pulse * 0.08));
+    context.strokeStyle = rgba(ray % 2 ? secondary : primary, coreAlpha * (0.64 + pulse * 0.26));
+    context.lineWidth = Math.max(4, unit * (0.005 + pulse * 0.008));
     context.beginPath();
     context.moveTo(startX, startY);
     context.lineTo(targetX, targetY);
     context.stroke();
   }
+  context.fillStyle = rgba(secondary, coreAlpha * 0.9);
+  context.fillRect(targetX - unit * 0.035, targetY - unit * 0.035, unit * 0.07, unit * 0.07);
   context.restore();
   radialLight(context, width, height, targetX, targetY, Math.min(width, height) * 0.32, secondary, mix * 0.08);
 }
@@ -852,6 +1202,8 @@ function drawPressureEdges(
   if (mix < 0.002) return;
   const pulse = 0.55 + Math.sin(time * (0.62 + mix * 0.3)) * 0.18;
   const edgeWidth = width * (0.12 + mix * 0.08);
+  const unit = Math.min(width, height);
+  const coreAlpha = chromaCoreAlpha(mix);
   const left = context.createLinearGradient(0, 0, edgeWidth, 0);
   left.addColorStop(0, rgba(secondary, mix * pulse * 0.16));
   left.addColorStop(1, rgba(primary, 0));
@@ -862,6 +1214,14 @@ function drawPressureEdges(
   right.addColorStop(1, rgba(secondary, 0));
   context.fillStyle = right;
   context.fillRect(width - edgeWidth, 0, edgeWidth, height);
+  for (let bracket = 0; bracket < 7; bracket += 1) {
+    const y = height * (bracket + 0.5) / 7 + Math.sin(time * 0.3 + bracket) * unit * 0.008;
+    const bracketWidth = unit * (0.018 + mix * 0.026);
+    const bracketHeight = Math.max(5, unit * (0.006 + pulse * 0.004));
+    context.fillStyle = rgba(bracket % 2 ? secondary : primary, coreAlpha * (0.7 + pulse * 0.2));
+    context.fillRect(0, y, bracketWidth, bracketHeight);
+    context.fillRect(width - bracketWidth, y, bracketWidth, bracketHeight);
+  }
 }
 
 function drawAmbientMoment(
@@ -1006,6 +1366,150 @@ function drawEventFragments(
   context.restore();
 }
 
+function drawCrtIgnition(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  progress: number,
+  envelope: number,
+  primary: Rgb,
+  secondary: Rgb,
+  highlight: Rgb,
+  seed: number,
+): void {
+  const unit = Math.min(width, height);
+  const opening = ease(clampVisualValue(progress * 1.35));
+  const coreAlpha = chromaCoreAlpha(envelope);
+  const centerY = height * (0.46 + randomUnit(seed, 40_101) * 0.08);
+  context.save();
+  context.globalCompositeOperation = "source-over";
+  context.strokeStyle = rgba(highlight, coreAlpha);
+  context.lineWidth = Math.max(6, unit * (0.008 + (1 - opening) * 0.014));
+  context.beginPath();
+  context.moveTo(width * (0.5 - opening * 0.5), centerY);
+  context.lineTo(width * (0.5 + opening * 0.5), centerY);
+  context.stroke();
+
+  const apertureHeight = height * opening * 0.46;
+  context.strokeStyle = rgba(primary, coreAlpha * 0.84);
+  context.lineWidth = Math.max(4, unit * 0.006);
+  context.strokeRect(width * 0.04, centerY - apertureHeight, width * 0.92, apertureHeight * 2);
+  for (let rung = 0; rung < 8; rung += 1) {
+    const y = centerY - apertureHeight + apertureHeight * 2 * (rung + 0.5) / 8;
+    const inset = width * randomUnit(seed, 40_200 + rung) * 0.18;
+    context.fillStyle = rgba(rung % 2 ? secondary : primary, coreAlpha * (0.68 + (rung % 3) * 0.1));
+    context.fillRect(inset, y, width * (0.08 + randomUnit(seed, 40_300 + rung) * 0.2), Math.max(4, unit * 0.006));
+    context.fillRect(width - inset - width * 0.12, y, width * (0.08 + randomUnit(seed, 40_400 + rung) * 0.16), Math.max(4, unit * 0.006));
+  }
+  context.restore();
+}
+
+function drawTapeSplice(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  progress: number,
+  envelope: number,
+  primary: Rgb,
+  secondary: Rgb,
+  highlight: Rgb,
+  seed: number,
+): void {
+  const unit = Math.min(width, height);
+  const displacement = Math.sin(progress * Math.PI) * width * 0.18;
+  const coreAlpha = chromaCoreAlpha(envelope);
+  context.save();
+  context.globalCompositeOperation = "source-over";
+  for (let frame = 0; frame < 5; frame += 1) {
+    const insetX = width * (0.04 + frame * 0.055);
+    const insetY = height * (0.05 + frame * 0.045);
+    const offset = (frame % 2 ? -1 : 1) * displacement * (0.35 + frame * 0.12);
+    const color = frame === 0 ? highlight : frame % 2 ? secondary : primary;
+    context.strokeStyle = rgba(color, coreAlpha * (0.72 + frame * 0.05));
+    context.lineWidth = Math.max(4, unit * (0.005 + (5 - frame) * 0.0015));
+    context.strokeRect(insetX + offset, insetY, width - insetX * 2, height - insetY * 2);
+  }
+  const spliceY = height * (0.2 + randomUnit(seed, 40_601) * 0.6);
+  context.fillStyle = rgba(highlight, coreAlpha * 0.92);
+  context.fillRect(displacement - width * 0.1, spliceY, width * 1.2, Math.max(6, unit * 0.012));
+  context.fillStyle = rgba(secondary, coreAlpha * 0.8);
+  context.fillRect(-displacement - width * 0.1, spliceY + unit * 0.025, width * 1.2, Math.max(4, unit * 0.007));
+  context.restore();
+}
+
+function drawPrioritySignalPacket(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  progress: number,
+  envelope: number,
+  secondary: Rgb,
+  highlight: Rgb,
+  seed: number,
+): void {
+  const unit = Math.min(width, height);
+  const direction = randomUnit(seed, 40_701) > 0.5 ? 1 : -1;
+  const travel = ease(progress);
+  const x = direction > 0 ? width * (-0.12 + travel * 1.24) : width * (1.12 - travel * 1.24);
+  const y = height * (0.28 + randomUnit(seed, 40_702) * 0.44);
+  const coreAlpha = chromaCoreAlpha(envelope);
+  context.save();
+  context.globalCompositeOperation = "source-over";
+  for (let trail = 0; trail < 7; trail += 1) {
+    const trailX = x - direction * trail * unit * 0.035;
+    const packetWidth = unit * (0.026 + (7 - trail) * 0.006);
+    const packetHeight = unit * (0.009 + (7 - trail) * 0.002);
+    context.fillStyle = rgba(trail === 0 ? highlight : secondary, coreAlpha * (0.64 + (7 - trail) * 0.045));
+    context.fillRect(trailX - packetWidth * 0.5, y - packetHeight * 0.5, packetWidth, packetHeight);
+  }
+  const gateX = direction > 0 ? width * 0.82 : width * 0.18;
+  context.strokeStyle = rgba(secondary, coreAlpha * 0.94);
+  context.lineWidth = Math.max(5, unit * 0.008);
+  context.beginPath();
+  context.moveTo(gateX - direction * unit * 0.06, y - unit * 0.12);
+  context.lineTo(gateX, y - unit * 0.12);
+  context.lineTo(gateX, y + unit * 0.12);
+  context.lineTo(gateX - direction * unit * 0.06, y + unit * 0.12);
+  context.stroke();
+  context.restore();
+}
+
+function drawIndustrialOverride(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  progress: number,
+  envelope: number,
+  secondary: Rgb,
+  highlight: Rgb,
+  seed: number,
+): void {
+  const unit = Math.min(width, height);
+  const coreAlpha = chromaCoreAlpha(envelope);
+  const emergency: Rgb = [255, 0, 170];
+  const shutter = Math.sin(progress * Math.PI);
+  context.save();
+  context.globalCompositeOperation = "source-over";
+  for (let panel = 0; panel < 8; panel += 1) {
+    const panelWidth = width / 8;
+    const panelHeight = height * shutter * (0.08 + (panel % 3) * 0.035);
+    const color = panel % 4 === 0 ? highlight : panel % 2 ? emergency : secondary;
+    context.fillStyle = rgba(color, coreAlpha * (0.76 + (panel % 3) * 0.08));
+    context.fillRect(panel * panelWidth, 0, panelWidth * (0.58 + randomUnit(seed, 40_900 + panel) * 0.34), panelHeight);
+    context.fillRect(panel * panelWidth + panelWidth * 0.18, height - panelHeight, panelWidth * (0.48 + randomUnit(seed, 41_000 + panel) * 0.38), panelHeight);
+  }
+  const scanY = height * ease(progress);
+  context.fillStyle = rgba(highlight, coreAlpha);
+  context.fillRect(0, scanY, width, Math.max(7, unit * 0.014));
+  for (let bar = 0; bar < 18; bar += 1) {
+    const barWidth = unit * (0.004 + randomUnit(seed, 41_200 + bar) * 0.018);
+    const x = width * randomUnit(seed, 41_300 + bar);
+    context.fillStyle = rgba(bar % 5 === 0 ? highlight : bar % 2 ? emergency : secondary, coreAlpha * 0.86);
+    context.fillRect(x, height * 0.18, barWidth, height * 0.64);
+  }
+  context.restore();
+}
+
 function drawAutomaticEvent(
   context: CanvasRenderingContext2D,
   width: number,
@@ -1026,21 +1530,21 @@ function drawAutomaticEvent(
   const seed = event.seed;
 
   if (event.type === "show_started") {
-    const ignition = ease(progress);
-    radialLight(context, width, height, width * (0.38 + randomUnit(seed, 16_101) * 0.24), height * (0.38 + randomUnit(seed, 16_102) * 0.24), Math.max(width, height) * (0.15 + ignition * 0.68), secondary, envelope * 0.28);
-    drawPulseRings(context, width, height, progress, envelope, seed, primary, secondary, highlight, 6);
-    drawEventFragments(context, width, height, time, progress, envelope, seed + 11, primary, secondary, highlight, 28);
+    drawCrtIgnition(context, width, height, progress, envelope, primary, secondary, highlight, seed);
     return;
   }
   if (event.type === "show_complete") {
     context.fillStyle = rgba(shadow, envelope * 0.22);
     context.fillRect(0, 0, width, height);
-    drawPulseRings(context, width, height, 1 - progress, envelope * 0.7, seed, secondary, primary, highlight, 5);
+    drawCrtIgnition(context, width, height, 1 - progress, envelope * 0.7, secondary, primary, highlight, seed);
     return;
   }
-  if (event.type === "track_started" || event.type === "stage_shift") {
-    drawPulseRings(context, width, height, progress, envelope * (event.type === "track_started" ? 0.72 : 0.46), seed, primary, secondary, highlight, event.type === "track_started" ? 4 : 3);
-    radialLight(context, width, height, width * (0.3 + randomUnit(seed, 16_201) * 0.4), height * (0.3 + randomUnit(seed, 16_202) * 0.4), Math.max(width, height) * (0.16 + progress * 0.42), event.type === "track_started" ? primary : secondary, envelope * 0.16);
+  if (event.type === "track_started") {
+    drawTapeSplice(context, width, height, progress, envelope, primary, secondary, highlight, seed);
+    return;
+  }
+  if (event.type === "stage_shift") {
+    drawIndustrialOverride(context, width, height, progress, envelope * 0.72, secondary, highlight, seed);
     return;
   }
   if (event.type === "track_skipped") {
@@ -1064,31 +1568,28 @@ function drawAutomaticEvent(
     return;
   }
   if (event.type === "priority_sent") {
-    const direction = randomUnit(seed, 16_501) > 0.5 ? 1 : -1;
-    const startX = direction > 0 ? -width * 0.08 : width * 1.08;
-    const endX = direction > 0 ? width * 1.08 : -width * 0.08;
-    context.save();
-    context.strokeStyle = rgba(secondary, envelope * 0.58);
-    context.lineWidth = Math.max(2, Math.min(width, height) * 0.004);
-    for (let lane = 0; lane < 4; lane += 1) {
-      const y = height * (0.22 + randomUnit(seed, 16_600 + lane) * 0.56);
-      context.beginPath();
-      context.moveTo(startX, y + lane * height * 0.012);
-      context.quadraticCurveTo(width * 0.5, y - height * (0.12 + lane * 0.025), startX + (endX - startX) * ease(progress), y);
-      context.stroke();
-    }
-    context.restore();
+    drawPrioritySignalPacket(context, width, height, progress, envelope, secondary, highlight, seed);
     return;
   }
   if (event.type === "priority_confirmed") {
-    drawPulseRings(context, width, height, progress, envelope, seed, primary, secondary, highlight, 7);
-    drawEventFragments(context, width, height, time * 1.5, progress, envelope, seed, primary, secondary, highlight, 46);
+    drawIndustrialOverride(context, width, height, progress, envelope, secondary, highlight, seed);
     return;
   }
   if (event.type === "wheel_gained" || event.type === "wheel_launched" || event.type === "wheel_spinning") {
     const strength = event.type === "wheel_gained" ? 0.82 : event.type === "wheel_spinning" ? 0.68 : 0.58;
-    drawPulseRings(context, width, height, progress, envelope * strength, seed, primary, secondary, highlight, event.type === "wheel_gained" ? 7 : 5);
-    drawWheelScene(context, width, height, time * (event.type === "wheel_spinning" ? 2.2 : 1.3), envelope * strength, primary, secondary, highlight, seed);
+    drawWheelScene(
+      context,
+      width,
+      height,
+      time * (event.type === "wheel_spinning" ? 2.2 : 1.3),
+      envelope * strength,
+      primary,
+      secondary,
+      highlight,
+      seed,
+      undefined,
+      event.type === "wheel_spinning" ? "wheel_spinning" : "wheel_ready",
+    );
     if (event.type === "wheel_gained") drawEventFragments(context, width, height, time, progress, envelope, seed, primary, secondary, highlight, 38);
     return;
   }
@@ -1100,7 +1601,7 @@ function drawAutomaticEvent(
   }
   if (event.type === "sponsor_due" || event.type === "sponsor_started" || event.type === "sponsor_completed") {
     drawSponsorCurtain(context, width, height, time * 1.5, envelope * (event.type === "sponsor_started" ? 1 : 0.62), secondary, primary, seed);
-    if (event.type === "sponsor_completed") drawPulseRings(context, width, height, progress, envelope * 0.46, seed, secondary, primary, highlight, 4);
+    if (event.type === "sponsor_completed") drawTapeSplice(context, width, height, progress, envelope * 0.58, secondary, primary, highlight, seed);
   }
 }
 
@@ -1137,27 +1638,95 @@ function drawWheelScene(
   highlight: Rgb,
   seed: number,
   music?: RadioVisualMusicSignal,
+  sceneMode: RadioVisualsSnapshot["sceneMode"] = "wheel_spinning",
 ): void {
   if (mix < 0.002) return;
-  const beat = music?.beat ?? 0;
-  const bass = music?.bass ?? 0;
-  const radius = Math.min(width, height) * (0.35 + beat * 0.012);
+  const drives = music ? radioVisualAudioDrives(music) : { presence: 0.2, bass: 0.2, mid: 0.2, treble: 0.2, impact: 0.1 };
+  const releaseMode = sceneMode === "wheel_result" || sceneMode === "wheel_confirmed";
+  const stateRate = sceneMode === "wheel_ready"
+    ? 0.24
+    : sceneMode === "wheel_reencrypting"
+      ? -1.28
+      : releaseMode
+        ? 0.055
+        : 1;
+  const visualImpact = Math.max(drives.impact, releaseMode ? 0.68 : 0);
+  const unit = Math.min(width, height);
+  const radius = unit * (0.35 + visualImpact * 0.016);
+  const spin = time * (1.05 + drives.treble * 2.3 + visualImpact * 0.8) * stateRate;
+  const coreAlpha = chromaCoreAlpha(mix, drives.presence);
   context.save();
   context.translate(width * 0.5, height * RADIO_VISUALS_WHEEL_CENTER_Y_RATIO);
-  context.rotate(time * 0.28);
+  context.rotate(spin);
+  context.globalCompositeOperation = "source-over";
   for (let ring = 0; ring < 3; ring += 1) {
     const dashVariation = 0.82 + randomUnit(seed, 28_100 + ring) * 0.42;
     context.setLineDash([radius * (0.11 + ring * 0.035) * dashVariation, radius * (0.052 + ring * 0.018)]);
-    context.lineDashOffset = time * (18 + ring * 9 + (music?.treble ?? 0) * 10) * (ring % 2 ? -1 : 1);
-    context.lineWidth = Math.max(1.5, Math.min(width, height) * (0.0038 + ring * 0.0018 + bass * 0.0012));
-    context.strokeStyle = rgba(ring === 0 ? primary : ring === 1 ? secondary : highlight, mix * (0.28 + ring * 0.12 + beat * 0.12));
+    context.lineDashOffset = spin * (24 + ring * 13 + drives.treble * 18) * (ring % 2 ? -1 : 1);
+    context.lineWidth = Math.max(5, unit * (0.006 + ring * 0.0022 + drives.bass * 0.004));
+    context.strokeStyle = rgba(ring === 0 ? primary : ring === 1 ? secondary : highlight, coreAlpha * (0.8 + ring * 0.07));
+    context.shadowColor = rgba(ring === 1 ? secondary : primary, 0.34 + visualImpact * 0.38);
+    context.shadowBlur = unit * (0.008 + visualImpact * 0.016);
     context.beginPath();
     context.arc(0, 0, radius * (0.72 + ring * 0.18), 0, Math.PI * 2);
     context.stroke();
   }
+
+  context.setLineDash([]);
+  for (let spoke = 0; spoke < 24; spoke += 1) {
+    const angle = spoke / 24 * Math.PI * 2 - spin * (spoke % 2 ? 0.18 : -0.11);
+    const inner = radius * (0.32 + (spoke % 3) * 0.035);
+    const outer = radius * (0.92 + randomUnit(seed, 28_300 + spoke) * 0.34 + drives.bass * 0.08);
+    const color = spoke % 6 === 0 ? highlight : spoke % 2 ? secondary : primary;
+    context.strokeStyle = rgba(color, coreAlpha * (0.62 + (spoke % 4) * 0.08));
+    context.lineWidth = Math.max(3, unit * (0.0035 + drives.mid * 0.004));
+    context.beginPath();
+    context.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner);
+    context.lineTo(Math.cos(angle + drives.mid * 0.08) * outer, Math.sin(angle + drives.mid * 0.08) * outer);
+    context.stroke();
+  }
+
+  for (let wedge = 0; wedge < 12; wedge += 1) {
+    const angle = wedge / 12 * Math.PI * 2 + spin * (wedge % 2 ? -0.32 : 0.21);
+    const inner = radius * (0.46 + randomUnit(seed, 28_500 + wedge) * 0.1);
+    const outer = radius * (0.76 + randomUnit(seed, 28_600 + wedge) * 0.22 + visualImpact * 0.08);
+    const spread = 0.035 + drives.treble * 0.035;
+    const color = wedge % 4 === 0 ? highlight : wedge % 2 ? primary : secondary;
+    context.fillStyle = rgba(color, coreAlpha * (0.68 + visualImpact * 0.18));
+    context.beginPath();
+    context.moveTo(Math.cos(angle - spread) * inner, Math.sin(angle - spread) * inner);
+    context.lineTo(Math.cos(angle - spread * 0.45) * outer, Math.sin(angle - spread * 0.45) * outer);
+    context.lineTo(Math.cos(angle + spread * 0.45) * outer, Math.sin(angle + spread * 0.45) * outer);
+    context.lineTo(Math.cos(angle + spread) * inner, Math.sin(angle + spread) * inner);
+    context.closePath();
+    context.fill();
+  }
+
+  for (let fragment = 0; fragment < 30; fragment += 1) {
+    const phase = (randomUnit(seed, 28_800 + fragment) + time * (0.08 + drives.treble * 0.14 + fragment * 0.0007) * Math.max(0.12, Math.abs(stateRate))) % 1;
+    const angle = randomUnit(seed, 28_900 + fragment) * Math.PI * 2 - spin * (fragment % 2 ? 0.2 : -0.14);
+    const orbit = radius * (0.42 + phase * 0.95);
+    const fragmentWidth = unit * (0.006 + randomUnit(seed, 29_000 + fragment) * 0.02 + drives.bass * 0.008);
+    const fragmentHeight = Math.max(4, unit * (0.004 + drives.treble * 0.006));
+    const color = fragment % 7 === 0 ? highlight : fragment % 2 ? secondary : primary;
+    context.save();
+    context.translate(Math.cos(angle) * orbit, Math.sin(angle) * orbit);
+    context.rotate(angle + Math.PI / 2);
+    context.fillStyle = rgba(color, coreAlpha * (0.66 + (1 - phase) * 0.24));
+    context.fillRect(-fragmentWidth * 0.5, -fragmentHeight * 0.5, fragmentWidth, fragmentHeight);
+    context.restore();
+  }
   context.restore();
 
-  drawParticleField(context, width, height, time * (1.5 + (music?.mid ?? 0) * 0.35), mix * (0.72 + (music?.energy ?? 0) * 0.2), seed + 8_801, primary, secondary, highlight, 1.3 + (music?.treble ?? 0) * 0.28);
+  if (visualImpact > 0.34) {
+    context.save();
+    context.strokeStyle = rgba(highlight, coreAlpha * visualImpact);
+    context.lineWidth = Math.max(5, unit * (0.007 + visualImpact * 0.008));
+    context.beginPath();
+    context.ellipse(width * 0.5, height * RADIO_VISUALS_WHEEL_CENTER_Y_RATIO, radius * (1.08 + visualImpact * 0.18), radius * (1.08 + visualImpact * 0.18), 0, 0, Math.PI * 2);
+    context.stroke();
+    context.restore();
+  }
 }
 function drawPartyCue(
   context: CanvasRenderingContext2D,
@@ -1231,18 +1800,20 @@ function drawSignalBreachCue(
   seed: number,
 ): void {
   const frameSeed = seed + Math.floor(time * 7) * 97;
+  const unit = Math.min(width, height);
+  const coreAlpha = chromaCoreAlpha(envelope);
   context.save();
   for (let index = 0; index < 34; index += 1) {
     const fromRight = randomUnit(frameSeed, index * 4) > 0.5;
     const x = fromRight ? width * (0.68 + randomUnit(frameSeed, index * 4 + 1) * 0.34) : width * randomUnit(frameSeed, index * 4 + 1) * 0.32;
     const y = height * randomUnit(frameSeed, index * 4 + 2);
     const fragmentWidth = width * (0.01 + randomUnit(frameSeed, index * 4 + 3) * 0.1);
-    const color = index % 9 === 0 ? [255, 51, 51] as Rgb : index % 3 === 0 ? highlight : index % 2 === 0 ? primary : secondary;
-    context.fillStyle = rgba(color, envelope * (0.18 + randomUnit(frameSeed, index + 900) * 0.52));
-    context.fillRect(x, y, fragmentWidth, Math.max(1, height * (0.001 + randomUnit(frameSeed, index + 1_200) * 0.006)));
+    const color = index % 9 === 0 ? [255, 0, 170] as Rgb : index % 3 === 0 ? highlight : index % 2 === 0 ? primary : secondary;
+    context.fillStyle = rgba(color, coreAlpha * (0.72 + randomUnit(frameSeed, index + 900) * 0.24));
+    context.fillRect(x, y, fragmentWidth, Math.max(3, height * (0.001 + randomUnit(frameSeed, index + 1_200) * 0.006)));
   }
-  context.strokeStyle = rgba(progress < 0.5 ? highlight : primary, envelope * 0.55);
-  context.lineWidth = Math.max(1, Math.min(width, height) * 0.003);
+  context.strokeStyle = rgba(progress < 0.5 ? highlight : primary, coreAlpha * 0.88);
+  context.lineWidth = Math.max(3, unit * 0.003);
   context.beginPath();
   for (let step = 0; step <= 18; step += 1) {
     const y = height * (step / 18);
@@ -1392,11 +1963,11 @@ function drawLightningTree(
   const channel = randomUnit(seed, 22_401) > 0.5 ? primary : secondary;
   strokeLightningPath(context, path, channel, strength * 0.24, Math.max(4, unit * 0.021), unit * 0.055);
   strokeLightningPath(context, path, channel, strength * 0.74, Math.max(2, unit * 0.008), unit * 0.026);
-  strokeLightningPath(context, path, highlight, strength, Math.max(1, unit * 0.0027), unit * 0.008);
+  strokeLightningPath(context, path, highlight, strength, Math.max(3, unit * 0.0027), unit * 0.008);
   for (let branch = 0; branch < branches.length; branch += 1) {
     const branchStrength = strength * (0.34 + randomUnit(seed, 22_500 + branch) * 0.44);
     strokeLightningPath(context, branches[branch], channel, branchStrength * 0.64, Math.max(1, unit * 0.0045), unit * 0.018);
-    strokeLightningPath(context, branches[branch], highlight, branchStrength, Math.max(0.7, unit * 0.0018), unit * 0.006);
+    strokeLightningPath(context, branches[branch], highlight, branchStrength, Math.max(2.5, unit * 0.0018), unit * 0.006);
   }
   const endpoint = path[path.length - 1];
   radialLight(context, width, height, endpoint.x, endpoint.y, unit * (0.1 + randomUnit(seed, 22_402) * 0.18), channel, strength * 0.54);
@@ -1568,9 +2139,26 @@ function drawVisualFrame(
   const music = runtime.music;
   const motionScale = reducedMotion ? 0.18 : 1;
   const time = (transportSeconds * radioVisualsMotionRate(snapshot) + playbackSeconds * 0.035) * motionScale;
+  const audioMotionScale = reducedMotion ? 0.45 : 1;
+  const audioTime = (transportSeconds * (music.source === "windows_loopback" ? 1 : 0.72) + playbackSeconds * 0.08) * audioMotionScale;
   const shadow = hexToRgb(palette.shadow);
   const serverNowMs = estimatedServerNowMs(anchor, timestampMs);
-  observeSnapshotEvents(snapshot, runtime, serverNowMs);
+  const activeSurfaceMix = snapshot.sessionActive || previewMode ? 1 : 0;
+  if (activeSurfaceMix > 0) {
+    observeSnapshotEvents(snapshot, runtime, serverNowMs);
+  } else {
+    runtime.wheelMix = 0;
+    runtime.systemMix = 0;
+    runtime.queueMix = 0;
+    runtime.trackMix = 0;
+    runtime.sponsorMix = 0;
+    runtime.intakeMix = 0;
+    runtime.finalMix = 0;
+    runtime.completeMix = 0;
+    runtime.pressureMix = 0;
+    runtime.syntheticEvents = [];
+    runtime.observedSignals = null;
+  }
   const cueProgress = radioVisualCueProgress(snapshot.cue, serverNowMs);
   const cueEnvelope = radioVisualCueEnvelope(snapshot.cue, serverNowMs);
   const cueSeed = snapshot.cue
@@ -1596,53 +2184,83 @@ function drawVisualFrame(
   context.rect(0, 0, width, height);
   context.clip();
 
-  drawAmbientLighting(context, width, height, time, runtime.intensity, runtime.primary, runtime.secondary, runtime.highlight, music.energy);
-  drawGoboShadows(context, width, height, time, runtime.intensity, shadow);
+  drawAmbientLighting(context, width, height, time, runtime.intensity * activeSurfaceMix, runtime.primary, runtime.secondary, runtime.highlight, music.energy);
+  drawGoboShadows(context, width, height, time, runtime.intensity * activeSurfaceMix, shadow);
+  drawIdleTransmission(
+    context,
+    width,
+    height,
+    time,
+    activeSurfaceMix * clampVisualValue(0.62 + runtime.intensity * 0.24, 0.62, 0.9),
+    runtime.primary,
+    runtime.secondary,
+    runtime.highlight,
+    runtime.currentSeed,
+  );
+  const musicDrives = radioVisualAudioDrives(music);
+  const musicSceneActivity = music.source === "windows_loopback"
+    ? clampVisualValue(0.18 + musicDrives.presence * 1.06, 0.18, 1)
+    : runtime.trackMix > 0.08
+      ? clampVisualValue(0.36 + musicDrives.presence * 0.62, 0.36, 1)
+      : 0.18;
+  const sceneStateMix = clampVisualValue(1 - Math.max(runtime.wheelMix, runtime.sponsorMix, runtime.systemMix), 0, 1);
   const drawSeedComposition = (seed: number, compositionMix: number) => {
     if (compositionMix < 0.002) return;
-    const composition = Math.floor(randomUnit(seed, 29_001) * 4);
-    drawLightRibbons(context, width, height, time, runtime.intensity * compositionMix * (composition === 0 ? 1.12 : 0.72), music, runtime.primary, runtime.secondary, runtime.highlight, seed);
-    if (composition !== 2) drawPrismaticShards(context, width, height, time, runtime.intensity * compositionMix * (composition === 1 ? 1.18 : 0.68), music, runtime.primary, runtime.secondary, runtime.highlight, seed);
-    if (composition !== 1) drawSignalConstellation(context, width, height, time, runtime.intensity * compositionMix * (composition === 3 ? 1.15 : 0.7), music, runtime.primary, runtime.secondary, runtime.highlight, seed);
-    drawMusicHalo(context, width, height, time, Math.max(runtime.trackMix * 0.92, runtime.intensity * 0.46) * compositionMix, music, runtime.primary, runtime.secondary, runtime.highlight, seed);
-    drawQueueLanes(context, width, height, time, runtime.queueMix * compositionMix, runtime.primary, runtime.secondary, seed);
-    drawTrackSignature(context, width, height, time, runtime.trackMix * compositionMix, music, runtime.primary, runtime.secondary, runtime.highlight, seed);
-    drawIntakeAperture(context, width, height, time, runtime.intakeMix * compositionMix, runtime.primary, runtime.secondary, seed);
-    drawSponsorCurtain(context, width, height, time, runtime.sponsorMix * compositionMix, runtime.secondary, runtime.primary, seed);
-    drawFinalConvergence(context, width, height, time, runtime.finalMix * compositionMix, runtime.primary, runtime.secondary, seed);
-    drawCaustics(context, width, height, time, runtime.intensity * compositionMix, runtime.secondary, seed);
-    drawWavefronts(context, width, height, time, runtime.intensity * compositionMix, music, runtime.primary, runtime.secondary, seed);
-    drawParticleField(
+    const scene = radioVisualMusicScene(seed);
+    const musicMix = activeSurfaceMix * sceneStateMix * compositionMix * musicSceneActivity;
+    if (musicMix < 0.06) return;
+    drawSeededMusicScene(context, width, height, audioTime, musicMix, music, runtime.primary, runtime.secondary, runtime.highlight, seed);
+
+    // Keep one approved texture from the original renderer in each family. The
+    // scene's opaque geometry carries the picture; these remain transmitted grime.
+    const textureMix =
+      runtime.intensity *
+      compositionMix *
+      activeSurfaceMix *
+      sceneStateMix *
+      musicSceneActivity *
+      0.58;
+    if (scene === "vortex_relay") drawMusicHalo(context, width, height, audioTime, textureMix, music, runtime.primary, runtime.secondary, runtime.highlight, seed);
+    if (scene === "barcode_cathedral") drawCaustics(context, width, height, time, textureMix, runtime.secondary, seed);
+    if (scene === "tape_feedback") drawSignalConstellation(context, width, height, time, textureMix, music, runtime.primary, runtime.secondary, runtime.highlight, seed);
+    if (scene === "halftone_organism") drawPrismaticShards(context, width, height, audioTime, textureMix, music, runtime.primary, runtime.secondary, runtime.highlight, seed);
+    if (scene === "oscilloscope_ribbons") drawLightRibbons(context, width, height, audioTime, textureMix, music, runtime.primary, runtime.secondary, runtime.highlight, seed);
+    if (scene === "lightning_switchyard") drawWavefronts(context, width, height, audioTime, textureMix, music, runtime.primary, runtime.secondary, seed);
+  };
+  drawSeedComposition(runtime.previousSeed, 1 - seedBlend);
+  drawSeedComposition(runtime.currentSeed, seedBlend);
+  drawQueueLanes(context, width, height, time, runtime.queueMix * activeSurfaceMix, runtime.primary, runtime.secondary, runtime.currentSeed);
+  drawIntakeAperture(context, width, height, time, runtime.intakeMix * activeSurfaceMix, runtime.primary, runtime.secondary, runtime.currentSeed);
+  drawSponsorCurtain(context, width, height, time, runtime.sponsorMix * activeSurfaceMix, runtime.secondary, runtime.primary, runtime.currentSeed);
+  drawFinalConvergence(context, width, height, time, runtime.finalMix * activeSurfaceMix, runtime.primary, runtime.secondary, runtime.currentSeed);
+  drawCompletionAfterimage(context, width, height, time, runtime.completeMix * activeSurfaceMix, runtime.primary, runtime.secondary);
+  drawPressureEdges(context, width, height, time, runtime.pressureMix * activeSurfaceMix, runtime.primary, runtime.secondary);
+
+  if (runtime.systemMix * activeSurfaceMix > 0.002) {
+    drawIndustrialOverride(
       context,
       width,
       height,
-      time * (1 + music.treble * 0.12),
-      runtime.intensity * compositionMix * (0.84 + music.energy * 0.24),
-      seed,
-      runtime.primary,
+      (audioTime * 0.16) % 1,
+      runtime.systemMix * activeSurfaceMix,
       runtime.secondary,
       runtime.highlight,
-      0.88 + music.treble * 0.48 + music.accent * 0.18,
+      runtime.currentSeed + 91,
     );
-  };
-  if (seedBlend < 1) drawSeedComposition(runtime.previousSeed, 1 - seedBlend);
-  drawSeedComposition(runtime.currentSeed, seedBlend);
-  drawLiveMusicResponse(context, width, height, time, music, runtime.primary, runtime.secondary, runtime.highlight, runtime.currentSeed);
-  drawCompletionAfterimage(context, width, height, time, runtime.completeMix, runtime.primary, runtime.secondary);
-  drawPressureEdges(context, width, height, time, runtime.pressureMix, runtime.primary, runtime.secondary);
-
-  if (runtime.systemMix > 0.002) {
-    drawSignalBreachCue(context, width, height, time * 0.46, (Math.sin(time * 0.08) + 1) / 2, runtime.systemMix * 0.22, runtime.primary, runtime.secondary, runtime.highlight, runtime.currentSeed + 91);
   }
-  drawWheelScene(context, width, height, time, runtime.wheelMix, runtime.primary, runtime.secondary, runtime.highlight, runtime.currentSeed, music);
-  drawTrackBloom(context, width, height, timestampMs - runtime.bloomStartedAtMs, runtime.primary, runtime.secondary, runtime.highlight);
-  drawAmbientMoment(context, width, height, time, snapshot, runtime.primary, runtime.secondary, runtime.highlight, shadow, serverNowMs, music);
-
-  for (const event of activeVisualEvents(snapshot, runtime, serverNowMs)) {
-    drawAutomaticEvent(context, width, height, time, event, serverNowMs, runtime.primary, runtime.secondary, runtime.highlight, shadow, motionScale);
+  drawWheelScene(context, width, height, audioTime, runtime.wheelMix * activeSurfaceMix, runtime.primary, runtime.secondary, runtime.highlight, runtime.currentSeed, music, snapshot.sceneMode);
+  if (activeSurfaceMix > 0) {
+    drawTrackBloom(context, width, height, timestampMs - runtime.bloomStartedAtMs, runtime.primary, runtime.secondary, runtime.highlight);
+    drawAmbientMoment(context, width, height, time, snapshot, runtime.primary, runtime.secondary, runtime.highlight, shadow, serverNowMs, music);
   }
 
-  if (snapshot.cue && cueProgress !== null && cueEnvelope > 0.001) {
+  if (activeSurfaceMix > 0) {
+    for (const event of activeVisualEvents(snapshot, runtime, serverNowMs)) {
+      drawAutomaticEvent(context, width, height, time, event, serverNowMs, runtime.primary, runtime.secondary, runtime.highlight, shadow, motionScale);
+    }
+  }
+
+  if (activeSurfaceMix > 0 && snapshot.cue && cueProgress !== null && cueEnvelope > 0.001) {
     if (snapshot.cue.type === "party") drawPartyCue(context, width, height, time, cueProgress, cueEnvelope, runtime.primary, runtime.secondary, runtime.highlight, cueSeed);
     if (snapshot.cue.type === "shadow") drawShadowCue(context, width, height, cueProgress, cueEnvelope, shadow, cueSeed);
     if (snapshot.cue.type === "signal_breach") drawSignalBreachCue(context, width, height, time, cueProgress, cueEnvelope, runtime.primary, runtime.secondary, runtime.highlight, cueSeed);
@@ -1848,7 +2466,7 @@ export function RadioVisualsReceiver() {
       if (timestampMs - lastDrawAt < 32) return;
       lastDrawAt = timestampMs;
       const bounds = canvas.getBoundingClientRect();
-      const density = Math.min(1.5, window.devicePixelRatio || 1);
+      const density = 1;
       const pixelWidth = Math.max(1, Math.round(bounds.width * density));
       const pixelHeight = Math.max(1, Math.round(bounds.height * density));
       if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
@@ -1885,6 +2503,7 @@ export function RadioVisualsReceiver() {
       data-player-state={snapshot.player?.playbackState ?? "waiting"}
       data-show-stage={snapshot.showStage}
       data-visual-mode={snapshot.visualMode}
+      data-music-scene={radioVisualMusicScene(snapshot.visualSeed)}
       data-music-source={audioBridgeConnection === "connected"
         ? "windows-loopback"
         : snapshot.player?.audioEnergy === null || snapshot.player?.audioEnergy === undefined ? "timeline" : "analyser"}

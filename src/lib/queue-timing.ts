@@ -5,6 +5,7 @@ export const DEFAULT_PRE_TRACK_TALK_SECONDS = 30;
 export const DEFAULT_POST_TRACK_TALK_SECONDS = 30;
 export const DEFAULT_HOST_TALK_BUFFER_SECONDS = DEFAULT_PRE_TRACK_TALK_SECONDS + DEFAULT_POST_TRACK_TALK_SECONDS;
 export const DEFAULT_SPONSOR_BREAK_SECONDS = 12 * 60;
+export const MIN_SPONSOR_BREAK_ELAPSED_SECONDS = 2 * 60 * 60;
 export const DEFAULT_WHEEL_CEREMONY_SECONDS = 120;
 export const DEFAULT_MAX_HOST_TALK_SECONDS = 120;
 export const TARGET_SHOW_SECONDS = 5 * 60 * 60;
@@ -111,6 +112,9 @@ export interface SponsorBreakEstimate {
   sponsorBreakSeconds: number;
   broadcastStartedAt: string | null;
   broadcastElapsedSeconds: number | null;
+  minimumElapsedSeconds: number;
+  elapsedGateReached: boolean;
+  targetCrossesElapsedGate: boolean;
   midpointReached: boolean | null;
   commercialBreakEligible: boolean;
   commercialBreakPointSeconds: number | null;
@@ -538,8 +542,9 @@ export function estimateSponsorBreakPlacement(input: QueueTimingInput, options?:
   const actualSponsorBreakSeconds = safeNonNegativeSeconds(input.session?.sponsorBreakSeconds) ?? normalized.sponsorBreakSeconds;
   const completedPlayableCount = countCompletedPlayable(input);
   const totalNonRemovedSubmissions = countTotalNonRemoved(input);
-  const latchedThreshold = safeNonNegativeInteger(input.session?.sponsorBreakDueAfterPlayableCount);
-  const sponsorBreakThreshold = latchedThreshold > 0 ? latchedThreshold : totalNonRemovedSubmissions ? Math.ceil(totalNonRemovedSubmissions / 2) : null;
+  // The midpoint is deliberately live, not latched: additions and removals must
+  // immediately move the target against the current non-removed real-song total.
+  const sponsorBreakThreshold = totalNonRemovedSubmissions ? Math.ceil(totalNonRemovedSubmissions / 2) : null;
   const targetSongsAhead = safeNonNegativeInteger(options?.targetSongsAhead);
   const targetProjectedSecondsAhead = safeNonNegativeSeconds(options?.targetProjectedSecondsAhead) ?? 0;
   const targetStartCompletedCount = completedPlayableCount + targetSongsAhead;
@@ -549,8 +554,12 @@ export function estimateSponsorBreakPlacement(input: QueueTimingInput, options?:
   const broadcastElapsedSeconds = secondsSince(broadcastStartedAt, options?.now);
   const midpointReached = sponsorBreakThreshold === null ? null : completedPlayableCount >= sponsorBreakThreshold;
   const targetCrossesMidpoint = sponsorBreakThreshold !== null && targetStartCompletedCount >= sponsorBreakThreshold;
-  const commercialBreakPointSeconds = targetCrossesMidpoint ? targetProjectedSecondsAhead : null;
-  const commercialBreakEligible = midpointReached === true;
+  const elapsedGateReached = broadcastElapsedSeconds !== null && broadcastElapsedSeconds >= MIN_SPONSOR_BREAK_ELAPSED_SECONDS;
+  const projectedElapsedSeconds = (broadcastElapsedSeconds ?? 0) + targetProjectedSecondsAhead;
+  const targetCrossesElapsedGate = projectedElapsedSeconds >= MIN_SPONSOR_BREAK_ELAPSED_SECONDS;
+  const targetCrossesSponsorGate = targetCrossesMidpoint && targetCrossesElapsedGate;
+  const commercialBreakPointSeconds = targetCrossesSponsorGate ? targetProjectedSecondsAhead : null;
+  const commercialBreakEligible = elapsedGateReached && midpointReached === true;
 
   if (!explicitStatus) sponsorBreakNotes.push("Sponsor break status is derived from counted real submissions and the completed-song midpoint.");
   if (input.session?.sponsorBreakManualNote) sponsorBreakNotes.push(input.session.sponsorBreakManualNote);
@@ -565,10 +574,10 @@ export function estimateSponsorBreakPlacement(input: QueueTimingInput, options?:
   } else if (explicitStatus === "running") {
     sponsorBreakIncluded = true;
     sponsorBreakNotes.push("Sponsor break is marked running; remaining break duration is included.");
-  } else if (midpointReached === true || explicitStatus === "due") {
+  } else if (commercialBreakEligible) {
     sponsorBreakStatus = "due";
     sponsorBreakIncluded = true;
-  } else if (targetCrossesMidpoint) {
+  } else if (targetCrossesSponsorGate) {
     sponsorBreakStatus = "not_due";
     sponsorBreakIncluded = true;
   } else if (sponsorBreakThreshold === null) {
@@ -581,8 +590,9 @@ export function estimateSponsorBreakPlacement(input: QueueTimingInput, options?:
   const sponsorBreakSecondsIncluded = sponsorBreakIncluded && !sponsorBreakAlreadyCompleted
     ? (explicitStatus === "running" ? (runningPlanningReserveSeconds ?? normalized.sponsorBreakSeconds) : normalized.sponsorBreakSeconds)
     : 0;
-  if (sponsorBreakStatus === "due") sponsorBreakNotes.push("The counted-submission midpoint has been reached; include the sponsor break until it completes.");
-  if (sponsorBreakStatus === "not_due" && targetCrossesMidpoint) sponsorBreakNotes.push("The projected target crosses the counted-submission midpoint, so the full sponsor break is reserved before it.");
+  if (explicitStatus === "due" && !commercialBreakEligible) sponsorBreakNotes.push("A stored due state is ignored until both two broadcast hours and the current counted midpoint are reached.");
+  if (sponsorBreakStatus === "due") sponsorBreakNotes.push("Two broadcast hours and the current counted-submission midpoint have been reached; include the sponsor break until it completes.");
+  if (sponsorBreakStatus === "not_due" && targetCrossesSponsorGate) sponsorBreakNotes.push("The projected target crosses both the two-hour minimum and the current counted midpoint, so the full sponsor break is reserved before it.");
   if (sponsorBreakAlreadyCompleted && input.session?.sponsorBreakCompletedAt) sponsorBreakNotes.push(`Sponsor break completion recorded at ${input.session.sponsorBreakCompletedAt}.`);
 
   return {
@@ -594,6 +604,9 @@ export function estimateSponsorBreakPlacement(input: QueueTimingInput, options?:
     sponsorBreakSeconds: actualSponsorBreakSeconds,
     broadcastStartedAt,
     broadcastElapsedSeconds,
+    minimumElapsedSeconds: MIN_SPONSOR_BREAK_ELAPSED_SECONDS,
+    elapsedGateReached,
+    targetCrossesElapsedGate,
     midpointReached,
     commercialBreakEligible,
     commercialBreakPointSeconds,

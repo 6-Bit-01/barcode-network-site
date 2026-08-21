@@ -135,8 +135,8 @@ test("commercial dueNow is separate from included-in-projection and maps compact
     queue: Array.from({ length: 22 }, (_, i) => track(`m-q-${i}`)),
     session: { sponsorBreakStatus: "not_due", broadcastStartedAt: new Date(Date.now() - 90 * 60 * 1000).toISOString(), showStarted: true, broadcastPhase: "broadcast_active" },
   });
-  assert.equal(midpointDue.sponsorBreakSummary.dueNow, true);
-  assert.equal(midpointDue.sponsorBreakSummary.compactLabel, "Due");
+  assert.equal(midpointDue.sponsorBreakSummary.dueNow, false);
+  assert.equal(midpointDue.sponsorBreakSummary.compactLabel, "2h minimum");
 
   const waitingMidpoint = display.buildQueueTimingDisplay({
     completed: Array.from({ length: 10 }, (_, i) => track(`g-${i}`, { status: "played" })),
@@ -155,12 +155,12 @@ test("commercial dueNow is separate from included-in-projection and maps compact
   assert.equal(due.sponsorBreakSummary.compactLabel, "Due");
 });
 
-test("public sponsor note reserves the midpoint break independent of elapsed clock time", () => {
+test("public sponsor note does not suggest the break before two hours", () => {
   const completed = Array.from({ length: 20 }, (_, index) => track(`public-done-${index}`, { status: "completed" }));
   const queue = [track("public-queued-target", { detectedDurationSeconds: 60 })];
   const early = display.buildQueueTimingDisplay({ completed, queue, session: { sponsorBreakStatus: "not_due", broadcastStartedAt: new Date(Date.now() - 90 * 60 * 1000).toISOString() } });
   const included = display.buildQueueTimingDisplay({ completed, queue, session: { sponsorBreakStatus: "not_due", broadcastStartedAt: "2026-01-01T00:00:00.000Z" } });
-  assert.ok(early.publicNotes.includes("Wheel spins or the commercial break may add time."));
+  assert.ok(!early.publicNotes.includes("Wheel spins or the commercial break may add time."));
   assert.ok(included.publicNotes.includes("Wheel spins or the commercial break may add time."));
 });
 

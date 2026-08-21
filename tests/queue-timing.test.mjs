@@ -277,13 +277,14 @@ test("range formatting widens low-confidence ranges", () => {
 });
 
 
-test("sponsor break becomes due at midpoint regardless of elapsed broadcast time", () => {
+test("sponsor break remains not due when midpoint is reached before two broadcast hours", () => {
   const completed = Array.from({ length: 20 }, (_, index) => track(`pre2h-done-${index}`, { status: "played", completedAt: START_1H30_AGO }));
   const queue = Array.from({ length: 20 }, (_, index) => track(`pre2h-queued-${index}`, { detectedDurationSeconds: 60 }));
   const estimate = timing.estimateSponsorBreakPlacement({ completed, queue, session: { broadcastStartedAt: START_1H30_AGO } }, { targetSongsAhead: 1, targetProjectedSecondsAhead: 20 * 60, now: NOW });
   assert.equal(estimate.midpointReached, true);
-  assert.equal(estimate.sponsorBreakIncluded, true);
-  assert.equal(estimate.sponsorBreakStatus, "due");
+  assert.equal(estimate.elapsedGateReached, false);
+  assert.equal(estimate.sponsorBreakIncluded, false);
+  assert.equal(estimate.sponsorBreakStatus, "not_due");
 });
 
 test("sponsor break waits for the counted midpoint", () => {
@@ -299,8 +300,9 @@ test("sponsor break waits for the counted midpoint", () => {
 test("projected targets reserve the sponsor break only when they cross midpoint", () => {
   const completed = Array.from({ length: 10 }, (_, index) => track(`target-done-${index}`, { status: "played" }));
   const queue = Array.from({ length: 30 }, (_, index) => track(`target-queued-${index}`, { detectedDurationSeconds: 60 }));
-  const before = timing.estimateSponsorBreakPlacement({ completed, queue }, { targetSongsAhead: 9, targetProjectedSecondsAhead: 10 * 60, now: NOW });
-  const crossing = timing.estimateSponsorBreakPlacement({ completed, queue }, { targetSongsAhead: 10, targetProjectedSecondsAhead: 12 * 60, now: NOW });
+  const session = { broadcastStartedAt: START_2H20_AGO };
+  const before = timing.estimateSponsorBreakPlacement({ completed, queue, session }, { targetSongsAhead: 9, targetProjectedSecondsAhead: 10 * 60, now: NOW });
+  const crossing = timing.estimateSponsorBreakPlacement({ completed, queue, session }, { targetSongsAhead: 10, targetProjectedSecondsAhead: 12 * 60, now: NOW });
   assert.equal(before.sponsorBreakIncluded, false);
   assert.equal(crossing.sponsorBreakIncluded, true);
   assert.equal(crossing.sponsorBreakStatus, "not_due");
@@ -314,21 +316,56 @@ test("skipped sponsor break is not included", () => {
   assert.equal(estimate.sponsorBreakIncluded, false);
 });
 
-test("unknown broadcast start does not block midpoint sponsor placement", () => {
+test("unknown broadcast start can reserve a future break but cannot mark it due", () => {
   const completed = Array.from({ length: 20 }, (_, index) => track(`unknown-start-done-${index}`, { status: "played" }));
   const queue = Array.from({ length: 20 }, (_, index) => track(`unknown-start-queued-${index}`));
   const estimate = timing.estimateSponsorBreakPlacement({ completed, queue }, { targetSongsAhead: 20, targetProjectedSecondsAhead: 3 * 3600, now: NOW });
   assert.equal(estimate.broadcastStartedAt, null);
   assert.equal(estimate.sponsorBreakIncluded, true);
-  assert.equal(estimate.sponsorBreakStatus, "due");
+  assert.equal(estimate.sponsorBreakStatus, "not_due");
 });
 
-test("projected show runtime reserves sponsor break for the counted show midpoint", () => {
+test("projected show runtime reserves sponsor break only after both gates can be crossed", () => {
   const shortQueue = Array.from({ length: 5 }, (_, index) => track(`short-${index}`, { detectedDurationSeconds: 60 }));
   const longCompleted = Array.from({ length: 20 }, (_, index) => track(`long-done-${index}`, { status: "played", completedAt: START_1H45_AGO }));
   const longQueue = Array.from({ length: 20 }, (_, index) => track(`long-${index}`, { detectedDurationSeconds: 60 }));
   const shortSnapshot = timing.buildQueueTimingSnapshot({ queue: shortQueue, session: { broadcastStartedAt: START_1H30_AGO } }, { now: NOW });
   const longSnapshot = timing.buildQueueTimingSnapshot({ completed: longCompleted, queue: longQueue, session: { broadcastStartedAt: START_1H45_AGO } }, { now: NOW });
-  assert.equal(shortSnapshot.sponsorBreakSecondsIncluded, timing.DEFAULT_SPONSOR_BREAK_SECONDS);
+  assert.equal(shortSnapshot.sponsorBreakSecondsIncluded, 0);
   assert.equal(longSnapshot.sponsorBreakSecondsIncluded, timing.DEFAULT_SPONSOR_BREAK_SECONDS);
+});
+
+test("stale due state is ignored before two hours and after the moving midpoint changes", () => {
+  const midpointCompleted = Array.from({ length: 2 }, (_, index) => track(`stale-done-${index}`, { status: "played" }));
+  const midpointQueue = Array.from({ length: 2 }, (_, index) => track(`stale-queue-${index}`));
+  const tooEarly = timing.estimateSponsorBreakPlacement({
+    completed: midpointCompleted,
+    queue: midpointQueue,
+    session: { sponsorBreakStatus: "due", sponsorBreakDueAfterPlayableCount: 2, broadcastStartedAt: START_1H30_AGO },
+  }, { now: NOW });
+  assert.equal(tooEarly.sponsorBreakStatus, "not_due");
+  assert.equal(tooEarly.sponsorBreakIncluded, false);
+
+  const expandedQueue = Array.from({ length: 4 }, (_, index) => track(`expanded-queue-${index}`));
+  const movedMidpoint = timing.estimateSponsorBreakPlacement({
+    completed: midpointCompleted,
+    queue: expandedQueue,
+    session: { sponsorBreakStatus: "due", broadcastStartedAt: START_2H20_AGO },
+  }, { now: NOW });
+  assert.equal(movedMidpoint.sponsorBreakThreshold, 3);
+  assert.equal(movedMidpoint.midpointReached, false);
+  assert.equal(movedMidpoint.sponsorBreakStatus, "not_due");
+});
+
+test("removing real songs immediately moves the sponsor midpoint and releases projected time", () => {
+  const completed = Array.from({ length: 12 }, (_, index) => track(`removal-done-${index}`, { status: "played", completedAt: START_2H20_AGO, detectedDurationSeconds: 180 }));
+  const remaining = Array.from({ length: 18 }, (_, index) => track(`removal-queue-${index}`, { detectedDurationSeconds: 300 }));
+  const before = timing.buildQueueTimingSnapshot({ completed, queue: remaining, session: { broadcastStartedAt: START_2H20_AGO } }, { now: NOW });
+  const after = timing.buildQueueTimingSnapshot({ completed, queue: remaining.map((entry, index) => index < 6 ? { ...entry, status: "removed", removedAt: NOW.toISOString() } : entry), session: { broadcastStartedAt: START_2H20_AGO } }, { now: NOW });
+  assert.equal(before.sponsorBreak.sponsorBreakThreshold, 15);
+  assert.equal(before.sponsorBreakStatus, "not_due");
+  assert.equal(after.sponsorBreak.sponsorBreakThreshold, 12);
+  assert.equal(after.sponsorBreakStatus, "due");
+  assert.ok(after.projectedRemainingShowSeconds < before.projectedRemainingShowSeconds);
+  assert.ok(after.timeBankSeconds > before.timeBankSeconds);
 });

@@ -1151,6 +1151,7 @@ function normalizeEntry(entry: QueueEntry): QueueEntry {
     title: entry.title ?? submittedSongTitle,
     submittedArtistName,
     submittedSongTitle,
+    collaboratorNames: entry.collaboratorNames?.trim() || null,
     detectedArtistName: entry.detectedArtistName ?? null,
     detectedSongTitle: entry.detectedSongTitle ?? null,
     providerTitle: entry.providerTitle ?? null,
@@ -3582,6 +3583,7 @@ export function toPublicQueueTrack(entry: QueueEntry): QueuePublicTrack {
     id: normalized.id,
     submittedArtistName: normalized.submittedArtistName ?? normalized.artist,
     submittedSongTitle: normalized.submittedSongTitle ?? normalized.title,
+    collaboratorNames: normalized.collaboratorNames ?? null,
     detectedArtistName: isUpload ? null : normalized.detectedArtistName ?? null,
     detectedSongTitle: isUpload ? null : normalized.detectedSongTitle ?? null,
     providerTitle: isUpload ? null : normalized.providerTitle ?? null,
@@ -3626,7 +3628,7 @@ function publicSubmitterStatus(session: QueueSession, identity?: { submitterToke
     limit,
     remaining: Math.max(0, limit - matching.length),
     cooldownRemainingSeconds,
-    submitted: matching.slice(0, limit).map(toPublicQueueTrack).map(({ id, submittedArtistName, submittedSongTitle, sourceType, lane, durationLabel, detectedDurationSeconds, estimatedDurationSeconds, durationIsEstimate, durationSource, priorityUpgradeStatus }) => ({ id, submittedArtistName, submittedSongTitle, sourceType, lane, durationLabel, detectedDurationSeconds, estimatedDurationSeconds, durationIsEstimate, durationSource, priorityUpgradeStatus })),
+    submitted: matching.slice(0, limit).map(toPublicQueueTrack).map(({ id, submittedArtistName, submittedSongTitle, collaboratorNames, sourceType, lane, durationLabel, detectedDurationSeconds, estimatedDurationSeconds, durationIsEstimate, durationSource, priorityUpgradeStatus }) => ({ id, submittedArtistName, submittedSongTitle, collaboratorNames, sourceType, lane, durationLabel, detectedDurationSeconds, estimatedDurationSeconds, durationIsEstimate, durationSource, priorityUpgradeStatus })),
   };
 }
 

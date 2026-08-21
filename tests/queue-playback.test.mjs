@@ -2287,6 +2287,48 @@ test("public queue snapshots omit raw upload URLs and deletion metadata", async 
   assert.equal(json.includes("uploadedFileDeletionStatus"), false);
 });
 
+test("collaborator names survive intake and public projection without exposing private submission details", async () => {
+  await freshOpenSession("public collaborator visibility", {
+    showStarted: false,
+    submissionCooldownSeconds: 0,
+  });
+  const tiktokHandle = `@collaboratorvisibility${++trackSequence}`;
+  const track = await queue.submitRadioTrack({
+    artist: "Primary Artist",
+    title: "Collaborator Track",
+    tiktokHandle,
+    link: `https://example.com/collaborator-visibility-${trackSequence}`,
+    sourceType: "other",
+    collaboratorNames: "  Featured Artist A + Featured Artist B  ",
+    note: "private collaborator submission note",
+    contactEmail: "private-collaborator@example.com",
+  });
+
+  assert.equal(track.collaboratorNames, "Featured Artist A + Featured Artist B");
+  const snapshot = await queue.getPublicQueueSnapshot(undefined, { tiktokHandle });
+  assert.equal(publicTrack(snapshot, track.id)?.collaboratorNames, "Featured Artist A + Featured Artist B");
+  assert.equal(snapshot.submitterStatus?.submitted.find((entry) => entry.id === track.id)?.collaboratorNames, "Featured Artist A + Featured Artist B");
+
+  const json = JSON.stringify(snapshot);
+  assert.equal(json.includes("private collaborator submission note"), false);
+  assert.equal(json.includes("private-collaborator@example.com"), false);
+});
+
+test("collaborators have an explicit Featuring line on active public and operator track surfaces", () => {
+  const publicSource = fs.readFileSync(path.join(projectRoot, "src/components/PublicQueueSession.tsx"), "utf8");
+  const gatewaySource = fs.readFileSync(path.join(projectRoot, "src/components/PublicQueueGateway.tsx"), "utf8");
+  const adminSource = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioQueueControl.tsx"), "utf8");
+
+  assert.match(publicSource, /function CollaboratorLine/);
+  assert.match(publicSource, /Featuring:<\/span> \{value\}/);
+  assert.ok((publicSource.match(/<CollaboratorLine names=\{track\.collaboratorNames\}/g) ?? []).length >= 2, "public Now Playing/Next In Line and queue lanes should render collaborators");
+  assert.match(gatewaySource, /track\.collaboratorNames\?\.trim\(\)/);
+  assert.match(gatewaySource, /Featuring:<\/span> \{track\.collaboratorNames\.trim\(\)\}/);
+  assert.match(adminSource, /function AdminCollaboratorLine/);
+  assert.match(adminSource, /Featuring:<\/span> \{names\}/);
+  assert.ok((adminSource.match(/<AdminCollaboratorLine entry=\{/g) ?? []).length >= 3, "operator Next In Line, Player Dock, and lanes should render collaborators");
+});
+
 test("cleanup deletes expired BARCODE upload files idempotently without removing records or metadata", async () => {
   await freshOpenSession("upload cleanup", { showStarted: false });
   const oldCreatedAt = new Date(Date.UTC(2026, 0, 1)).toISOString();

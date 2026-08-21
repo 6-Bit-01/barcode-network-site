@@ -28,7 +28,7 @@ function withTypeScriptLoader(run) {
 }
 
 function loadQueueRoute(snapshot) {
-  const calls = { player: 0, overlay: 0 };
+  const calls = { runtime: 0 };
   const originalLoad = Module._load;
   Module._load = function loadWithStubs(request, parent, isMain) {
     if (request === "next/server") return { NextResponse: { json: (value) => ({ json: async () => value }) } };
@@ -42,8 +42,10 @@ function loadQueueRoute(snapshot) {
       toPublicQueueTrack: (value) => value,
     };
     if (request === "@/lib/live-overlay") return {
-      getLiveOverlayPlayerSync: async () => { calls.player += 1; return null; },
-      getStoredLiveOverlayState: async () => { calls.overlay += 1; return null; },
+      getLiveOverlayRuntimeState: async () => {
+        calls.runtime += 1;
+        return { playerSync: null, overlayState: null };
+      },
     };
     if (request === "@/lib/queue-live-timing") return { attachQueueLiveTiming: (value) => value };
     if (request === "@/lib/queue-types") return {
@@ -71,27 +73,27 @@ function loadQueueRoute(snapshot) {
 test("public queue GET does not read shared overlay keys without a current session", async () => {
   const { route, calls } = loadQueueRoute({ revision: 0, sessionActive: false, session: null, status: {}, queue: [], completed: [] });
   await route.GET(new Request("https://example.test/api/queue"));
-  assert.deepEqual(calls, { player: 0, overlay: 0 });
+  assert.deepEqual(calls, { runtime: 0 });
 });
 
-test("public queue GET preserves both shared overlay reads during an active session", async () => {
+test("public queue GET combines shared overlay state into one active-session read", async () => {
   const { route, calls } = loadQueueRoute({ revision: 1, sessionActive: true, session: { status: "open" }, status: {}, queue: [], completed: [] });
   await route.GET(new Request("https://example.test/api/queue"));
-  assert.deepEqual(calls, { player: 1, overlay: 1 });
+  assert.deepEqual(calls, { runtime: 1 });
 });
 
 test("overlay builders read queue authority before shared state and short-circuit while idle", () => {
   const liveOverlay = fs.readFileSync(path.join(projectRoot, "src/lib/live-overlay.ts"), "utf8");
   const foregroundOverlay = fs.readFileSync(path.join(projectRoot, "src/lib/foreground-overlay.ts"), "utf8");
   const wheelOverlay = fs.readFileSync(path.join(projectRoot, "src/lib/wheel-overlay.ts"), "utf8");
-  assert.match(liveOverlay, /const queueState = await getRadioQueueState\(\);\s*if \(!hasActiveQueueSession\(queueState\)\)/);
+  assert.match(liveOverlay, /const queueState = await getRadioLiveQueueState\(\);\s*if \(!hasActiveQueueSession\(queueState\)\)/);
   assert.match(liveOverlay, /return resolveLiveOverlaySceneFromQueueState\(\{ overlayState: defaultLiveOverlayState\(\), queueState, playerSync: null \}\)/);
-  assert.match(foregroundOverlay, /const queueState = await getRadioQueueState\(\);\s*const sessionActive = hasActiveQueueSession\(queueState\)/);
-  const idleBranch = foregroundOverlay.slice(foregroundOverlay.indexOf("if (!sessionActive)"), foregroundOverlay.indexOf("const [overlayState, playerSync]"));
-  assert.doesNotMatch(idleBranch, /getStoredLiveOverlayState|getLiveOverlayPlayerSync/);
-  assert.match(wheelOverlay, /const queueState = await getRadioQueueState\(\);\s*if \(!hasActiveQueueSession\(queueState\)\)/);
+  assert.match(foregroundOverlay, /const queueState = await getRadioLiveQueueState\(\);\s*const sessionActive = hasActiveQueueSession\(queueState\)/);
+  const idleBranch = foregroundOverlay.slice(foregroundOverlay.indexOf("if (!sessionActive)"), foregroundOverlay.indexOf("const { overlayState, playerSync }"));
+  assert.doesNotMatch(idleBranch, /getLiveOverlayRuntimeState/);
+  assert.match(wheelOverlay, /const queueState = await getRadioLiveQueueState\(\);\s*if \(!hasActiveQueueSession\(queueState\)\)/);
   const wheelIdleBranch = wheelOverlay.slice(wheelOverlay.indexOf("if (!hasActiveQueueSession(queueState))"), wheelOverlay.indexOf("const broadcastActive"));
-  assert.doesNotMatch(wheelIdleBranch, /getStoredLiveOverlayState|getLiveOverlayPlayerSync/);
+  assert.doesNotMatch(wheelIdleBranch, /getLiveOverlayRuntimeState/);
   assert.doesNotMatch(wheelOverlay, /if \(!broadcastActive\)/);
-  assert.match(wheelOverlay, /const broadcastActive[\s\S]*const \[overlayState, playerSync\] = await Promise\.all/);
+  assert.match(wheelOverlay, /const broadcastActive[\s\S]*const \{ overlayState, playerSync \} = await getLiveOverlayRuntimeState\(\)/);
 });

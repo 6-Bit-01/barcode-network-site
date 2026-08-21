@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { COOKIE_NAME, verifyAdminToken } from "@/lib/auth";
-import { getLiveOverlayPlayerSync, getStoredLiveOverlayState } from "@/lib/live-overlay";
+import { getLiveOverlayRuntimeState } from "@/lib/live-overlay";
 import { getRadioQueueState, recordQueuePlaybackEvent } from "@/lib/queue";
 import { buildQueuePlaybackDiagnosticExport } from "@/lib/queue-playback-diagnostics";
 import { attachQueueLiveTiming } from "@/lib/queue-live-timing";
@@ -58,11 +58,11 @@ export async function GET(req: Request) {
   if (!(await assertAdmin())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const sessionId = new URL(req.url).searchParams.get("sessionId") ?? undefined;
   const now = new Date();
-  const [state, playerSync, overlayState] = await Promise.all([
+  const [state, runtimeState] = await Promise.all([
     getRadioQueueState(sessionId),
-    getLiveOverlayPlayerSync(),
-    getStoredLiveOverlayState(),
+    getLiveOverlayRuntimeState(),
   ]);
+  const { playerSync, overlayState } = runtimeState;
   const stateWithLiveTiming = state.isCurrentSession === false ? state : attachQueueLiveTiming(state, playerSync, overlayState, now);
   const exported = buildQueuePlaybackDiagnosticExport(stateWithLiveTiming, now);
   const filenameDate = state.session?.showDate?.replace(/[^0-9-]/g, "") || now.toISOString().slice(0, 10);

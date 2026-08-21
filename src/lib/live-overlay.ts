@@ -1,5 +1,5 @@
 import { Redis } from "@upstash/redis";
-import { getRadioQueueState, isWheelEligibleTrack, updateRadioTrack } from "./queue";
+import { getRadioLiveQueueState, getRadioQueueState, isWheelEligibleTrack, updateRadioTrack } from "./queue";
 import { getTrackArtworkUrl, getTrackDurationLabel, parseTikTokVideoUrl } from "./queue-types";
 import { buildWheelSegments, derangedWheelCandidateOrder, orderedWheelCandidateIds, resolveLiveOverlayScene, safeLiveOverlayUrl, normalizeLiveOverlaySyncCorrectionReason, serverStampLiveOverlayPlayerSync, wheelFinalRotationForSegment } from "./live-overlay-resolver";
 import { parseYouTubeVideoId } from "./track-duration";
@@ -81,6 +81,11 @@ export interface LiveOverlayAdminSnapshot {
   scene: ResolvedLiveOverlayScene;
   playerSync: LiveOverlayPlayerSync | null;
   wheelCandidates: ResolvedWheelCeremonyTrack[];
+}
+
+export interface LiveOverlayRuntimeState {
+  overlayState: LiveOverlayState;
+  playerSync: LiveOverlayPlayerSync | null;
 }
 
 const OVERLAY_STATE_KEY = "barcode:live-overlay:state";
@@ -462,6 +467,57 @@ export async function getStoredLiveOverlayState(): Promise<LiveOverlayState> {
   }
 }
 
+/** Read the two shared live-overlay keys in one Redis round trip. */
+export async function getLiveOverlayRuntimeState(): Promise<LiveOverlayRuntimeState> {
+  const redis = getRedis();
+  if (!redis) {
+    return {
+      overlayState: normalizeLiveOverlayState(memoryOverlayState),
+      playerSync: normalizePlayerSync(memoryPlayerSync),
+    };
+  }
+  try {
+    const [rawOverlayState, rawPlayerSync] = await redis.mget<[
+      LiveOverlayState | string | null,
+      LiveOverlayPlayerSync | string | null,
+    ]>(OVERLAY_STATE_KEY, PLAYER_SYNC_KEY);
+
+    if (!rawOverlayState) {
+      memoryOverlayState = defaultLiveOverlayState();
+    } else {
+      try {
+        memoryOverlayState = normalizeLiveOverlayState(
+          typeof rawOverlayState === "string" ? JSON.parse(rawOverlayState) : rawOverlayState,
+        );
+      } catch {
+        // Match the individual read path: keep the last confirmed value.
+      }
+    }
+
+    if (!rawPlayerSync) {
+      memoryPlayerSync = null;
+    } else {
+      try {
+        memoryPlayerSync = normalizePlayerSync(
+          typeof rawPlayerSync === "string" ? JSON.parse(rawPlayerSync) : rawPlayerSync,
+        );
+      } catch {
+        // A malformed sibling key must not discard the valid overlay state.
+      }
+    }
+
+    return {
+      overlayState: normalizeLiveOverlayState(memoryOverlayState),
+      playerSync: normalizePlayerSync(memoryPlayerSync),
+    };
+  } catch {
+    return {
+      overlayState: normalizeLiveOverlayState(memoryOverlayState),
+      playerSync: normalizePlayerSync(memoryPlayerSync),
+    };
+  }
+}
+
 export function resolveLiveOverlaySceneFromQueueState(input: {
   overlayState: LiveOverlayState;
   queueState: QueueState;
@@ -497,11 +553,11 @@ export function resolveLiveOverlaySceneFromQueueState(input: {
 }
 
 export async function getResolvedLiveOverlayScene(): Promise<ResolvedLiveOverlayScene> {
-  const queueState = await getRadioQueueState();
+  const queueState = await getRadioLiveQueueState();
   if (!hasActiveQueueSession(queueState)) {
     return resolveLiveOverlaySceneFromQueueState({ overlayState: defaultLiveOverlayState(), queueState, playerSync: null });
   }
-  const [overlayState, playerSync] = await Promise.all([getStoredLiveOverlayState(), getLiveOverlayPlayerSync()]);
+  const { overlayState, playerSync } = await getLiveOverlayRuntimeState();
   return resolveLiveOverlaySceneFromQueueState({ overlayState, queueState, playerSync });
 }
 
@@ -512,7 +568,7 @@ export async function getLiveOverlayAdminSnapshot(): Promise<LiveOverlayAdminSna
     const scene = resolveLiveOverlaySceneFromQueueState({ overlayState, queueState, playerSync: null });
     return { overlayState, scene, playerSync: null, wheelCandidates: [] };
   }
-  const [overlayState, playerSync] = await Promise.all([getStoredLiveOverlayState(), getLiveOverlayPlayerSync()]);
+  const { overlayState, playerSync } = await getLiveOverlayRuntimeState();
   const scene = resolveLiveOverlaySceneFromQueueState({ overlayState, queueState, playerSync });
   return { overlayState, scene, playerSync, wheelCandidates: getWheelCandidatesFromQueue(queueState.queue) };
 }

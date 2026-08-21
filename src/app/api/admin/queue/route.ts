@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { COOKIE_NAME, verifyAdminToken } from "@/lib/auth";
-import { getLiveOverlayPlayerSync, getStoredLiveOverlayState, resetWheelCeremonyStateForNewSession } from "@/lib/live-overlay";
+import { getLiveOverlayRuntimeState, resetWheelCeremonyStateForNewSession } from "@/lib/live-overlay";
 import { attachQueueLiveTiming } from "@/lib/queue-live-timing";
 import { resolveQueueArchiveSessionId } from "@/lib/queue-admin-session-target";
 import { archiveCurrentQueueSession, clearArchivedQueueSessions, getRadioQueueState, setQueueOpen, startNewQueueSession, activateQueueSession, updatePriorityUpgradeSettings, updateQueueSessionProvenance, updateRadioTrack, updateSponsorBreakState, updateSubmissionCooldownSettings } from "@/lib/queue";
@@ -18,7 +18,8 @@ export async function GET(req: Request) {
   if (!(await assertAdmin())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const sessionId = new URL(req.url).searchParams.get("sessionId") ?? undefined;
   const now = new Date();
-  const [state, playerSync, overlayState] = await Promise.all([getRadioQueueState(sessionId), getLiveOverlayPlayerSync(), getStoredLiveOverlayState()]);
+  const [state, runtimeState] = await Promise.all([getRadioQueueState(sessionId), getLiveOverlayRuntimeState()]);
+  const { playerSync, overlayState } = runtimeState;
   return NextResponse.json(attachQueueLiveTiming(state, playerSync, overlayState, now));
 }
 

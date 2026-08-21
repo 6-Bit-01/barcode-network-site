@@ -75,6 +75,7 @@ import type {
 import { estimateSponsorBreakPlacement } from "./queue-timing";
 
 const STATE_KEY = "radioQueue:v2:sessions";
+const LIVE_STATE_KEY = "radioQueue:v2:live-session";
 const LEGACY_STATE_KEY = "radioQueue:v1:state";
 const MUTATION_LOCK_KEY = "radioQueue:v2:sessions:mutation-lock";
 const MUTATION_REVISION_KEY = "radioQueue:v2:sessions:mutation-revision";
@@ -134,6 +135,13 @@ interface QueueStore {
   revision: number;
   activeSessionId: string | null;
   sessions: QueueSession[];
+}
+
+interface QueueLiveStoreProjection {
+  schemaVersion: "queue_live_store_v1";
+  revision: number;
+  activeSessionId: string | null;
+  session: QueueSession | null;
 }
 
 interface QueueMutationLease {
@@ -372,6 +380,7 @@ if current_revision and tonumber(current_revision) ~= tonumber(ARGV[2]) then
 end
 redis.call("SET", KEYS[2], ARGV[3])
 redis.call("SET", KEYS[3], ARGV[4])
+redis.call("SET", KEYS[4], ARGV[5])
 return tonumber(ARGV[4])
 `;
 
@@ -392,6 +401,7 @@ if not current_revision or tonumber(current_revision) ~= tonumber(ARGV[2]) then
 end
 redis.call("SET", KEYS[2], ARGV[3])
 redis.call("SET", KEYS[3], ARGV[4])
+redis.call("SET", KEYS[4], ARGV[5])
 return tonumber(ARGV[4])
 `;
 
@@ -406,6 +416,7 @@ if normalized_revision ~= tonumber(ARGV[2]) then
 end
 redis.call("SET", KEYS[2], ARGV[3])
 redis.call("SET", KEYS[3], ARGV[4])
+redis.call("SET", KEYS[4], ARGV[5])
 return tonumber(ARGV[4])
 `;
 
@@ -1358,6 +1369,50 @@ function normalizeStore(input: unknown): QueueStore {
   return { revision: 0, activeSessionId: session.sessionId, sessions: [session] };
 }
 
+function liveStoreProjection(store: QueueStore): QueueLiveStoreProjection {
+  const normalized = normalizeStore(store);
+  const active = normalized.activeSessionId
+    ? normalized.sessions.find((session) => session.sessionId === normalized.activeSessionId) ?? null
+    : null;
+  const session = active && active.status !== "archived" ? normalizeSession(active) : null;
+  return {
+    schemaVersion: "queue_live_store_v1",
+    revision: normalized.revision,
+    activeSessionId: session?.sessionId ?? null,
+    session,
+  };
+}
+
+function normalizeLiveStoreProjection(input: unknown): QueueLiveStoreProjection | null {
+  if (!input || typeof input !== "object") return null;
+  const candidate = input as Partial<QueueLiveStoreProjection>;
+  if (candidate.schemaVersion !== "queue_live_store_v1"
+    || typeof candidate.revision !== "number"
+    || !Number.isFinite(candidate.revision)
+    || candidate.revision < 0) return null;
+  const activeSessionId = typeof candidate.activeSessionId === "string" && candidate.activeSessionId
+    ? candidate.activeSessionId
+    : null;
+  if (!activeSessionId) {
+    if (candidate.session !== null) return null;
+    return {
+      schemaVersion: "queue_live_store_v1",
+      revision: Math.floor(candidate.revision),
+      activeSessionId: null,
+      session: null,
+    };
+  }
+  if (!candidate.session || candidate.session.sessionId !== activeSessionId) return null;
+  const session = normalizeSession(candidate.session);
+  if (session.status === "archived") return null;
+  return {
+    schemaVersion: "queue_live_store_v1",
+    revision: Math.floor(candidate.revision),
+    activeSessionId,
+    session,
+  };
+}
+
 async function readStoreFromRedis(redis: Redis): Promise<QueueStore> {
   const raw = await redis.get<QueueStore | string>(STATE_KEY);
   let store: QueueStore;
@@ -1518,8 +1573,8 @@ async function writeStore(
   if (!lease.token) throw new Error("Queue mutation lease is missing its fencing token.");
   const committed = await lease.redis.eval<unknown[], number>(
     COMMIT_MUTATION_SCRIPT,
-    [MUTATION_LOCK_KEY, STATE_KEY, MUTATION_REVISION_KEY],
-    [lease.token, String(lease.revision), JSON.stringify(normalized), String(nextRevision)],
+    [MUTATION_LOCK_KEY, STATE_KEY, MUTATION_REVISION_KEY, LIVE_STATE_KEY],
+    [lease.token, String(lease.revision), JSON.stringify(normalized), String(nextRevision), JSON.stringify(liveStoreProjection(normalized))],
   );
   if (committed !== nextRevision) {
     throw new Error("Queue state changed before this mutation could commit. Please retry.");
@@ -1531,8 +1586,8 @@ async function writeStore(
     } catch (snapshotError) {
       const rolledBack = await lease.redis.eval<unknown[], number>(
         ROLLBACK_MUTATION_SCRIPT,
-        [MUTATION_LOCK_KEY, STATE_KEY, MUTATION_REVISION_KEY],
-        [lease.token, String(nextRevision), JSON.stringify(previous), String(lease.revision)],
+        [MUTATION_LOCK_KEY, STATE_KEY, MUTATION_REVISION_KEY, LIVE_STATE_KEY],
+        [lease.token, String(nextRevision), JSON.stringify(previous), String(lease.revision), JSON.stringify(liveStoreProjection(previous))],
       );
       if (rolledBack !== lease.revision) {
         throw new Error("Queue recovery snapshot failed and the Redis mutation could not be rolled back safely.", { cause: snapshotError });
@@ -2601,8 +2656,8 @@ export async function restoreQueueFromDurableSnapshot(input: { dryRun?: boolean;
       }
       const restoredRevision = await redis.eval<unknown[], number>(
         RESTORE_DURABLE_SNAPSHOT_SCRIPT,
-        [MUTATION_LOCK_KEY, STATE_KEY, MUTATION_REVISION_KEY],
-        [token, String(currentRevision), JSON.stringify(durable), String(durable.revision)],
+        [MUTATION_LOCK_KEY, STATE_KEY, MUTATION_REVISION_KEY, LIVE_STATE_KEY],
+        [token, String(currentRevision), JSON.stringify(durable), String(durable.revision), JSON.stringify(liveStoreProjection(durable))],
       );
       if (restoredRevision !== durable.revision) throw new Error("Queue Redis changed before restore could commit. Restore refused.");
       lastKnownGoodRedisStore = durable;
@@ -3290,6 +3345,49 @@ export async function getRadioQueueState(sessionId?: string): Promise<QueueState
     pullNextInLine(session);
   }
   return queueStateFromSession(session, store, sessionId ?? store.activeSessionId ?? session.sessionId);
+}
+
+/**
+ * Read the current live session without reparsing every archived show. The
+ * compact projection is committed atomically with the durable full store; a
+ * missing pre-migration projection falls back to the established authority.
+ */
+export async function getRadioLiveQueueState(): Promise<QueueState> {
+  let redis: Redis | null;
+  try {
+    redis = getRedis();
+  } catch {
+    return getRadioQueueState();
+  }
+  if (!redis) return getRadioQueueState();
+  let projection: QueueLiveStoreProjection | null;
+  try {
+    const [rawProjection, rawRevision] = await redis.mget<[
+      QueueLiveStoreProjection | string | null,
+      number | string | null,
+    ]>(LIVE_STATE_KEY, MUTATION_REVISION_KEY);
+    projection = normalizeLiveStoreProjection(
+      typeof rawProjection === "string" ? JSON.parse(rawProjection) : rawProjection,
+    );
+    if (!projection || projection.revision !== mutationRevision(rawRevision)) {
+      return getRadioQueueState();
+    }
+  } catch {
+    return getRadioQueueState();
+  }
+  if (!projection.session || !projection.activeSessionId) {
+    return queueStateWithoutSession({ revision: projection.revision, activeSessionId: null, sessions: [] });
+  }
+  const session = normalizeSession(projection.session);
+  applyPreShowTimer(session);
+  applyCommercialBreakTimer(session);
+  pullNextInLine(session);
+  const store: QueueStore = {
+    revision: projection.revision,
+    activeSessionId: projection.activeSessionId,
+    sessions: [session],
+  };
+  return queueStateFromSession(session, store, projection.activeSessionId);
 }
 
 function publicSourceUrlForTrack(entry: QueueEntry): string | null {

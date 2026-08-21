@@ -79,7 +79,7 @@ test("square live and Wheel source follows session lifecycle, resolved ceremony 
   const receiver = source("src/components/LiveOverlayReceiver.tsx");
   const page = source("src/app/overlay/wheel/page.tsx");
   assert.match(wheel, /const broadcastActive = queueState\.session\?\.showStarted === true/);
-  assert.match(wheel, /Promise\.all\(\[getStoredLiveOverlayState\(\), getLiveOverlayPlayerSync\(\)\]\)/);
+  assert.match(wheel, /getLiveOverlayRuntimeState\(\)/);
   assert.match(wheel, /const wheelActive = Boolean\(scene\.wheelCeremony\)/);
   assert.match(wheel, /broadcastActive,[\s\S]*?scene,/);
   assert.doesNotMatch(wheel, /if \(!broadcastActive\)/);

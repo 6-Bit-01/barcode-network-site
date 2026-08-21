@@ -35,6 +35,16 @@ export interface RadioVisualsWheelBand {
   maxRings: number;
 }
 
+export interface RadioVisualsPortalProfile {
+  strength: number;
+  turbulence: number;
+  wispInnerRatio: number;
+  outerRatio: number;
+  ribbonCount: number;
+  streakCount: number;
+  lightningArcCount: number;
+}
+
 /**
  * Hard Wheel geometry lives outside the rotating display labels. Small wheels
  * use a thin broken rim because their larger labels leave no reliable full
@@ -50,6 +60,34 @@ export function radioVisualsWheelBand(input: number | null | undefined): RadioVi
   if (count <= 12) return { innerCenterRatio: 0.47, outerCenterRatio: 0.478, edgeOnly: false, maxRings: 2 };
   if (count <= 24) return { innerCenterRatio: 0.456, outerCenterRatio: 0.478, edgeOnly: false, maxRings: 4 };
   return { innerCenterRatio: 0.45, outerCenterRatio: 0.478, edgeOnly: false, maxRings: 7 };
+}
+
+/**
+ * The Wheel portal is always fully present. Candidate count only increases its
+ * density, turbulence, and translucent inward reach: one candidate already
+ * gets a strong portal, while fourteen candidates reaches the storm tier and
+ * larger Wheels continue into a bounded overdrive tier.
+ */
+export function radioVisualsPortalProfile(input: number | null | undefined): RadioVisualsPortalProfile {
+  const count = typeof input === "number" && Number.isFinite(input)
+    ? Math.max(0, Math.floor(input))
+    : 0;
+  const crowd = clampVisualValue((count - 1) / 13);
+  const storm = count >= 14 ? 1 : 0;
+  const overdrive = clampVisualValue((count - 14) / 14);
+  return {
+    strength: 0.68 + crowd * 0.28 + storm * 0.08 + overdrive * 0.16,
+    turbulence: 0.44 + crowd * 0.52 + storm * 0.2 + overdrive * 0.28,
+    wispInnerRatio: 0.466 - crowd * 0.02 - storm * 0.006 - overdrive * 0.008,
+    outerRatio: 0.497,
+    ribbonCount: 4 + Math.round(crowd * 4) + storm * 2 + Math.round(overdrive * 2),
+    streakCount: 24 + Math.round(crowd * 38) + storm * 16 + Math.round(overdrive * 30),
+    lightningArcCount: count >= 14
+      ? 5 + Math.round(overdrive * 3)
+      : count >= 8
+        ? 2
+        : 1,
+  };
 }
 
 export interface RadioVisualMusicSignal {
@@ -286,7 +324,6 @@ export function advanceRadioVisualAudioReaction(
 export function radioVisualsPalette(snapshot: RadioVisualsSnapshot): RadioVisualsPalette {
   if (snapshot.visualMode === "wheel") return { primary: "#00ff88", secondary: "#e0e0e0", highlight: "#a78bfa", shadow: "#030303" };
   if (snapshot.visualMode === "system") return { primary: "#ff00aa", secondary: "#00ff88", highlight: "#ffffff", shadow: "#020202" };
-  if (snapshot.visualMode === "sponsor") return { primary: "#7c3aed", secondary: "#00ff88", highlight: "#ffffff", shadow: "#050505" };
   return BRAND_PALETTES[Math.abs(snapshot.visualSeed) % BRAND_PALETTES.length];
 }
 
@@ -294,7 +331,6 @@ export function radioVisualsIntensity(snapshot: RadioVisualsSnapshot): number {
   let intensity = STAGE_INTENSITY[snapshot.showStage];
   if (snapshot.visualMode === "wheel") intensity = 0.58;
   if (snapshot.visualMode === "system") intensity = 0.44;
-  if (snapshot.visualMode === "sponsor") intensity = 0.3;
   if (snapshot.player?.playbackState === "playing") intensity += 0.075;
   if (snapshot.player?.playbackState === "paused") intensity -= 0.045;
   if (snapshot.queue.pressure === "medium") intensity += 0.018;

@@ -130,7 +130,7 @@ test("inactive receiver stays nearly invisible and exposes only the visual proje
   assert.equal(snapshot.showStage, "standby");
   assert.equal(snapshot.visualMode, "standby");
   assert.deepEqual(snapshot.queue, { acceptedCount: 0, completedCount: 0, activeCount: 0, remainingCount: 0, progress: 0, pressure: "low" });
-  assert.deepEqual(snapshot.signals, { intakeOpen: false, wheelSpinsOwed: 0, wheelCandidateCount: 0, sponsorStatus: null, broadcastPhase: null });
+  assert.deepEqual(snapshot.signals, { intakeOpen: false, wheelSpinsOwed: 0, wheelCandidateCount: 0, broadcastPhase: null });
   assert.equal(snapshot.player, null);
   assert.equal(snapshot.cue, null);
   assert.deepEqual(snapshot.events, []);
@@ -203,11 +203,12 @@ test("audio uploads use the same fresh timeline seam and reject stale or mismatc
   assert.equal(visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: currentScene, playerSync: { ...fresh, updatedAt: "2026-08-19T18:59:40.000Z" }, now }).player, null);
 });
 
-test("wheel, sponsor, and emergency scenes select distinct automatic visual modes", () => {
+test("Wheel and emergency scenes remain distinct while sponsor scenes have no dedicated FX mode", () => {
   const state = queueState();
   assert.equal(visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: scene("wheel_spinning") }).visualMode, "wheel");
-  assert.equal(visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: scene("sponsor") }).visualMode, "sponsor");
+  assert.equal(visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: scene("sponsor") }).visualMode, "queue");
   assert.equal(visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: scene("system_message") }).visualMode, "system");
+  assert.doesNotMatch(visualEvents.RADIO_VISUAL_EVENT_TYPES.join(" "), /sponsor/);
 });
 
 test("uncaptured songs automatically rotate through six synthetic rhythm personalities", () => {
@@ -237,7 +238,7 @@ test("uncaptured songs automatically rotate through six synthetic rhythm persona
   assert.equal(nextOccurrenceStart.progress, 0, "a new occurrence cannot inherit the previous track's topology stage");
 });
 
-test("track loads and wheel activations vary by occurrence while remaining stable during one occurrence", () => {
+test("track loads and Wheel ceremonies vary by occurrence while remaining stable through every ceremony state", () => {
   const current = entry("repeat-track", { sourceType: "spotify" });
   const currentScene = scene("now_playing", { track: { id: current.id, artistName: "Artist", trackTitle: "Repeat", sourceType: "spotify" } });
   const stateForLoad = (observedAt) => queueState({
@@ -251,11 +252,41 @@ test("track loads and wheel activations vary by occurrence while remaining stabl
   assert.equal(first.visualSeed, repeated.visualSeed);
   assert.notEqual(first.visualSeed, replayed.visualSeed);
 
-  const wheelFirst = visuals.resolveRadioVisualsSnapshot({ queueState: queueState(), scene: scene("wheel_spinning", { updatedAt: "2026-08-19T19:00:00.000Z" }) });
-  const wheelRepeated = visuals.resolveRadioVisualsSnapshot({ queueState: queueState(), scene: scene("wheel_spinning", { updatedAt: "2026-08-19T19:00:00.000Z" }) });
-  const wheelAgain = visuals.resolveRadioVisualsSnapshot({ queueState: queueState(), scene: scene("wheel_spinning", { updatedAt: "2026-08-19T19:05:00.000Z" }) });
-  assert.equal(wheelFirst.visualSeed, wheelRepeated.visualSeed);
-  assert.notEqual(wheelFirst.visualSeed, wheelAgain.visualSeed);
+  const wheelScene = (mode, startedAt, updatedAt) => scene(mode, {
+    updatedAt,
+    wheelCeremony: {
+      status: mode === "wheel_spinning" ? "spinning" : mode === "wheel_result" ? "result_pending" : "ready",
+      storedStatus: mode === "wheel_spinning" || mode === "wheel_result" ? "spinning" : "ready",
+      candidateCount: 14,
+      displayCandidates: [],
+      hiddenCandidateCount: 0,
+      startedAt,
+      spinDurationMs: 24_000,
+    },
+  });
+  const wheelQueueState = (completedCount, acceptedCount = 14) => queueState({
+    totalPlayed: completedCount,
+    publicStatus: {
+      ...queueState().publicStatus,
+      activeCount: acceptedCount - completedCount,
+      acceptedCount,
+    },
+    session: {
+      ...queueState().session,
+      activeCount: acceptedCount - completedCount,
+      acceptedCount,
+      completedCount,
+    },
+  });
+  const wheelReady = visuals.resolveRadioVisualsSnapshot({ queueState: wheelQueueState(0), scene: wheelScene("wheel_ready", "2026-08-19T19:00:00.000Z", "2026-08-19T19:00:00.000Z") });
+  const wheelSpinning = visuals.resolveRadioVisualsSnapshot({ queueState: wheelQueueState(7), scene: wheelScene("wheel_spinning", "2026-08-19T19:00:00.000Z", "2026-08-19T19:00:08.000Z") });
+  const wheelResult = visuals.resolveRadioVisualsSnapshot({ queueState: wheelQueueState(13), scene: wheelScene("wheel_result", "2026-08-19T19:00:00.000Z", "2026-08-19T19:00:32.000Z") });
+  const laterLaunch = visuals.resolveRadioVisualsSnapshot({ queueState: queueState(), scene: wheelScene("wheel_ready", "2026-08-19T19:05:00.000Z", "2026-08-19T19:05:00.000Z") });
+  assert.notEqual(wheelReady.showStage, wheelSpinning.showStage, "the continuity test must cross a queue-stage boundary");
+  assert.notEqual(wheelSpinning.showStage, wheelResult.showStage, "the continuity test must cover another queue-stage boundary");
+  assert.equal(wheelReady.visualSeed, wheelSpinning.visualSeed, "ready and spinning retain one portal personality across queue-count and stage changes");
+  assert.equal(wheelReady.visualSeed, wheelResult.visualSeed, "result retains the ceremony portal personality across queue-count and stage changes");
+  assert.notEqual(wheelReady.visualSeed, laterLaunch.visualSeed, "a later Wheel launch receives a new portal personality");
 });
 
 test("manual visual cues are bounded, server-timed, and expire without touching queue state", () => {
@@ -317,7 +348,7 @@ test("display-safe show events project Priority, playback, and Wheel state witho
     }),
     now: new Date("2026-08-19T19:00:00.000Z"),
   });
-  assert.deepEqual(snapshot.signals, { intakeOpen: true, wheelSpinsOwed: 2, wheelCandidateCount: 17, sponsorStatus: "not_due", broadcastPhase: "broadcast_active" });
+  assert.deepEqual(snapshot.signals, { intakeOpen: true, wheelSpinsOwed: 2, wheelCandidateCount: 17, broadcastPhase: "broadcast_active" });
   assert.ok(snapshot.events.some((event) => event.type === "priority_sent"));
   assert.ok(snapshot.events.some((event) => event.type === "priority_confirmed"));
   assert.ok(snapshot.events.some((event) => event.type === "track_started"));
@@ -354,7 +385,6 @@ test("broadcast start is inferred from the authoritative phase or intake-to-live
     intakeOpen: true,
     broadcastPhase: "submission_window",
     wheelSpinsOwed: 0,
-    sponsorStatus: "not_due",
     ...overrides,
   });
   assert.equal(visualEvents.radioVisualBroadcastStartedTransition(
@@ -583,7 +613,7 @@ test("every scene palette survives the Studio orange key with restrained green a
     const composited = color.map((channel, index) => channel * alpha + key[index] * (1 - alpha));
     return Math.hypot(...composited.map((channel, index) => channel - key[index]));
   };
-  const modes = ["queue", "track", "wheel", "sponsor", "system"];
+  const modes = ["queue", "track", "wheel", "system"];
   for (const visualMode of modes) {
     for (let visualSeed = 0; visualSeed < 32; visualSeed += 1) {
       const palette = engine.radioVisualsPalette({ ...base, visualMode, visualSeed });
@@ -729,6 +759,44 @@ test("Wheel geometry uses a candidate-count-calibrated outer band", () => {
   }
 });
 
+test("Wheel portal starts strong and becomes a bounded storm at fourteen candidates", () => {
+  const empty = engine.radioVisualsPortalProfile(0);
+  const one = engine.radioVisualsPortalProfile(1);
+  const thirteen = engine.radioVisualsPortalProfile(13);
+  const fourteen = engine.radioVisualsPortalProfile(14);
+  const twentyEight = engine.radioVisualsPortalProfile(28);
+  const oneHundredTwentyEight = engine.radioVisualsPortalProfile(128);
+
+  assert.equal(empty.strength, one.strength, "an empty or one-name Wheel still receives the full starting portal");
+  assert.ok(one.strength >= 0.68);
+  assert.ok(one.ribbonCount >= 4);
+  assert.ok(one.streakCount >= 24);
+  assert.ok(one.lightningArcCount >= 1);
+  assert.ok(fourteen.strength > thirteen.strength);
+  assert.ok(fourteen.turbulence > thirteen.turbulence);
+  assert.ok(fourteen.streakCount > thirteen.streakCount);
+  assert.ok(fourteen.strength - thirteen.strength >= 0.09, "fourteen candidates must receive an unmistakable strength jump");
+  assert.ok(fourteen.turbulence - thirteen.turbulence >= 0.2, "fourteen candidates must receive an unmistakable turbulence jump");
+  assert.ok(fourteen.ribbonCount - thirteen.ribbonCount >= 2, "fourteen candidates must gain structural spiral sheets");
+  assert.ok(fourteen.streakCount - thirteen.streakCount >= 16, "fourteen candidates must gain a structural suction-streak storm");
+  assert.ok(fourteen.lightningArcCount >= 5 && fourteen.lightningArcCount > thirteen.lightningArcCount, "fourteen candidates must enter the storm tier");
+  assert.ok(twentyEight.strength > fourteen.strength);
+  assert.ok(twentyEight.ribbonCount > fourteen.ribbonCount);
+  assert.ok(twentyEight.streakCount > fourteen.streakCount);
+  assert.ok(twentyEight.wispInnerRatio < fourteen.wispInnerRatio, "only translucent material may reach farther inward as the labels get denser");
+  assert.deepEqual(oneHundredTwentyEight, twentyEight, "very large Wheels stay at the bounded overdrive profile instead of disabling the portal");
+
+  let previous = engine.radioVisualsPortalProfile(0);
+  for (let count = 1; count <= 128; count += 1) {
+    const profile = engine.radioVisualsPortalProfile(count);
+    assert.ok(profile.strength >= previous.strength, `${count} candidates cannot weaken the portal`);
+    assert.ok(profile.turbulence >= previous.turbulence, `${count} candidates cannot reduce turbulence`);
+    assert.ok(profile.ribbonCount >= 4 && profile.streakCount >= 24 && profile.lightningArcCount >= 1, `${count} candidates cannot disable a portal layer`);
+    assert.equal(profile.outerRatio, 0.497, `${count} candidates must retain the edge-to-edge portal scale`);
+    previous = profile;
+  }
+});
+
 test("the square Studio source contains a centered 3:4 portrait-safe visual stage", () => {
   assert.equal(engine.RADIO_VISUALS_EFFECT_STAGE_ASPECT_RATIO, 3 / 4);
   assert.deepEqual(engine.radioVisualsEffectStageBounds(1080, 1080), {
@@ -779,14 +847,15 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.doesNotMatch(render, /<(?:header|footer|h[1-6]|p|span|strong|em)\b|aria-live/);
   assert.match(render, /<canvas ref=\{canvasRef\}/);
   assert.match(receiver, /drawAmbientLighting|drawGoboShadows|drawParticleField|drawTrackBloom|drawPartyCue|drawShadowCue|drawSignalBreachCue|drawBlackoutCue|drawLightningCue/);
-  assert.match(receiver, /drawQueueLanes|drawIntakeAperture|drawSponsorCurtain|drawFinalConvergence|drawCompletionAfterimage|drawPressureEdges/);
+  assert.match(receiver, /drawQueueLanes|drawIntakeAperture|drawFinalConvergence|drawCompletionAfterimage|drawPressureEdges/);
   assert.match(receiver, /drawIdleTransmission|drawLightRibbons|drawPrismaticShards|drawSignalConstellation|drawSeedComposition/);
   assert.match(receiver, /drawEdgeSpectrum|drawOscilloscopeRibbons|drawTapeFeedback|drawMatrixRain|drawAsciiTerminal|drawPixelSortStorm|drawLightningSwitchyard|drawLaserLattice|drawParticlePressure|drawSignalConstellation|drawSeededMusicScene/);
   assert.match(receiver, /return clampVisualValue\(mix \* \(0\.82 \+ drive \* 0\.16\), 0, 0\.98\)/, "chroma-safe cores must multiply by state fades while surviving the orange key");
   assert.doesNotMatch(receiver, /drawVortexRelay|drawBarcodeCathedral|drawHalftoneOrganism|drawMusicHalo|drawPulseRings/);
   assert.doesNotMatch(receiver, /drawLiquidDream|drawKaleidoscopeBloom|drawSpectralLoom|drawFeedbackArchitecture|drawChromaticSmears|radioVisualComposition/);
   assert.match(receiver, /drawAmbientMoment|radioVisualAmbientMoment|observeSnapshotEvents|drawAutomaticEvent/);
-  assert.match(receiver, /wheel_gained|priority_sent|priority_confirmed|track_skipped|sponsor_started|stage_shift/);
+  assert.match(receiver, /wheel_gained|priority_sent|priority_confirmed|track_skipped|stage_shift/);
+  assert.doesNotMatch(receiver, /drawSponsorCurtain|sponsorMix|sponsor_due|sponsor_started|sponsor_completed/, "invisible sponsor-only FX must not remain in the Show Visuals renderer");
   assert.match(receiver, /hashRadioVisualToken\(`\$\{snapshot\.cue\.type\}:\$\{snapshot\.cue\.nonce\}/, "manual cue nonce must vary every repeated effect");
   assert.match(receiver, /lightningMainPath|lightningBranches|drawLightningTree/);
   assert.doesNotMatch(receiver, /function drawBolt\(/, "lightning must use a branching procedural composition rather than generic twin bolts");
@@ -800,27 +869,37 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.doesNotMatch(engineSource, /beatPosition % 64/, "durationless progress must not restart every 64 beats");
   assert.doesNotMatch(engineSource, /fallbackProgressPosition % fallbackProgressBeats/, "durationless progress must not wrap abruptly at the end of its build arc");
   assert.match(engineSource, /RADIO_VISUALS_WHEEL_CENTER_Y_RATIO = 0\.375/);
-  assert.match(receiver, /prepareEffectLayer|applyPerformerSafeField|destination-in/);
-  assert.match(receiver, /if \(snapshot\.showStage !== "intake"\) applyPerformerSafeField\(context, width, height, 0\.14\)/);
+  assert.match(receiver, /prepareEffectLayer|applyPerformerSafeField|applyPerformerIntrusionField|destination-in/);
+  assert.match(receiver, /if \(snapshot\.showStage !== "intake"\) applyPerformerSafeField\(context, width, height, 0\.2\)/);
+  assert.match(receiver, /drawPerformerWindowIntrusions[\s\S]*?"lightning_switchyard"[\s\S]*?cue\?\.type === "lightning"[\s\S]*?cue\?\.type === "signal_breach"/, "only explicit lightning and scan-line compositions may regain controlled center presence");
+  assert.match(receiver, /applyPerformerIntrusionField\(intrusionLayer\.context, width, height\)/, "window intrusions must receive their own feathered center mask");
   assert.match(receiver, /radioVisualBroadcastStartedTransition\(previous, current\)/);
   assert.match(receiver, /serverSnapshotRef\.current === snapshot/, "the fabricated fallback snapshot must never become broadcast-transition evidence");
   assert.match(receiver, /if \(activeSurfaceMix > 0\) \{\s*if \(authoritativeSnapshot\) observeSnapshotEvents/, "only a server snapshot may drive inferred show events");
   assert.match(receiver, /if \(event\.type === "show_started"\) continue;[\s\S]*applyPerformerSafeField[\s\S]*if \(event\.type === "show_started"\)[\s\S]*drawAutomaticEvent\(outputContext/, "broadcast ignition must render after the ordinary performer attenuation");
   const wheelScene = receiver.slice(receiver.indexOf("function wheelAngularVelocityTarget"), receiver.indexOf("function drawPartyCue"));
+  const automaticEvent = receiver.slice(receiver.indexOf("function drawAutomaticEvent"), receiver.indexOf("function drawTrackBloom"));
+  assert.match(automaticEvent, /drawWheelEventAccent/, "Wheel events retain a lightweight accent on the integrated portal phase");
+  assert.doesNotMatch(automaticEvent, /drawWheelScene/, "automatic Wheel events must not render a second independently phased portal");
   assert.match(wheelScene, /height \* RADIO_VISUALS_WHEEL_CENTER_Y_RATIO/);
   assert.doesNotMatch(wheelScene, /height \* 0\.5/);
   assert.match(wheelScene, /candidateCount\?: number/);
   assert.match(wheelScene, /radioVisualsWheelBand\(candidateCount\)/);
+  assert.match(wheelScene, /radioVisualsPortalProfile\(candidateCount\)/);
   assert.match(wheelScene, /band\.innerCenterRatio/);
   assert.match(wheelScene, /band\.outerCenterRatio/);
-  assert.match(wheelScene, /if \(band\.edgeOnly\)/);
+  assert.match(wheelScene, /band\.edgeOnly/);
   assert.match(wheelScene, /shadowBlur = 0/);
-  assert.match(wheelScene, /if \(releaseMode\)[\s\S]*?const sealCount = confirmedMode \? 8 : 4/, "low-candidate results must retain a name-safe release seal");
-  assert.match(wheelScene, /const outermostRing = ring === ringCount - 1[\s\S]*?shadowBlur = outermostRing/, "only the outermost Wheel ring may glow inward");
-  assert.match(wheelScene, /Math\.min\(requestedRingCount, band\.maxRings\)/);
+  assert.match(wheelScene, /context\.fill\("evenodd"\)/, "the portal must have a hollow depth throat instead of a central opaque disk");
+  assert.match(wheelScene, /createRadialGradient\(0, 0, hardInnerRadius, 0, 0, outerRadius\)/, "dark portal depth must begin at the hard name-safe radius");
+  assert.match(wheelScene, /context\.arc\(0, 0, hardInnerRadius, 0, Math\.PI \* 2, true\)/, "the dark throat cutout must preserve the hard name-safe interior");
+  assert.match(wheelScene, /tracePortalSpiral/);
+  assert.match(wheelScene, /tracePortalCaustic/);
+  assert.match(wheelScene, /drawPortalRimLightning/);
+  assert.match(wheelScene, /portal\.ribbonCount[\s\S]*portal\.streakCount[\s\S]*portal\.lightningArcCount/, "candidate count must build continuous portal layers");
+  assert.match(wheelScene, /const causticCount = band\.edgeOnly[\s\S]*band\.maxRings \+ 3/, "hard caustics must remain label-safe while translucent portal material stays present");
   assert.match(wheelScene, /hardGeometryOuterRadius/);
-  assert.match(wheelScene, /radiusInBand/);
-  assert.doesNotMatch(wheelScene, /spoke|wedge/);
+  assert.doesNotMatch(wheelScene, /setLineDash|lineDashOffset|fillRect|spoke|wedge/, "the Wheel must no longer be dominated by dashed rings or rectangular ticks");
   for (const wheelMode of ["wheel_ready", "wheel_spinning", "wheel_reencrypting", "wheel_result", "wheel_confirmed"]) {
     assert.match(wheelScene, new RegExp(wheelMode));
   }
@@ -879,7 +958,7 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   }
   assert.match(receiver.slice(receiver.indexOf("function drawMatrixRain"), receiver.indexOf("function drawTapeFeedback")), /drives\.phrase/);
   assert.match(receiver.slice(receiver.indexOf("function drawLaserLattice"), receiver.indexOf("function drawParticlePressure")), /drives\.progress/);
-  assert.match(receiver, /sceneStateMix = clampVisualValue\(1 - Math\.max\(runtime\.wheelMix, runtime\.sponsorMix, runtime\.systemMix\), 0, 1\)/);
+  assert.match(receiver, /sceneStateMix = clampVisualValue\(1 - Math\.max\(runtime\.wheelMix, runtime\.systemMix\), 0, 1\)/);
   assert.match(receiver, /drawSeedComposition\(runtime\.previousSeed, 1 - seedBlend\)/);
   assert.match(receiver, /drawSeedComposition\(runtime\.currentSeed, seedBlend\)/);
   assert.match(receiver, /runtime\.syntheticEvents = \[\]/, "inactive sessions must clear residual automatic events immediately");

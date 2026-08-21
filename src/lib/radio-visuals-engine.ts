@@ -56,22 +56,26 @@ const BRAND_PALETTES: RadioVisualsPalette[] = [
 ];
 
 const STAGE_INTENSITY: Record<RadioVisualsShowStage, number> = {
-  standby: 0.06,
-  intake: 0.16,
-  early: 0.22,
-  middle: 0.3,
-  late: 0.38,
-  final: 0.46,
-  complete: 0.13,
+  standby: 0.045,
+  intake: 0.2,
+  early: 0.15,
+  middle: 0.2,
+  late: 0.26,
+  final: 0.32,
+  complete: 0.1,
 };
 
 export const RADIO_VISUAL_MUSIC_SCENES = [
-  "vortex_relay",
-  "barcode_cathedral",
-  "tape_feedback",
-  "halftone_organism",
+  "edge_spectrum",
   "oscilloscope_ribbons",
+  "tape_feedback",
+  "matrix_rain",
+  "ascii_terminal",
+  "pixel_sort_storm",
   "lightning_switchyard",
+  "laser_lattice",
+  "particle_pressure",
+  "signal_constellation",
 ] as const;
 
 export type RadioVisualMusicScene = (typeof RADIO_VISUAL_MUSIC_SCENES)[number];
@@ -166,20 +170,20 @@ export function radioVisualsPalette(snapshot: RadioVisualsSnapshot): RadioVisual
 
 export function radioVisualsIntensity(snapshot: RadioVisualsSnapshot): number {
   let intensity = STAGE_INTENSITY[snapshot.showStage];
-  if (snapshot.visualMode === "wheel") intensity = 0.56;
-  if (snapshot.visualMode === "system") intensity = 0.42;
-  if (snapshot.visualMode === "sponsor") intensity = 0.28;
-  if (snapshot.player?.playbackState === "playing") intensity += 0.07;
+  if (snapshot.visualMode === "wheel") intensity = 0.5;
+  if (snapshot.visualMode === "system") intensity = 0.36;
+  if (snapshot.visualMode === "sponsor") intensity = 0.24;
+  if (snapshot.player?.playbackState === "playing") intensity += 0.055;
   if (snapshot.player?.playbackState === "paused") intensity -= 0.045;
   if (snapshot.queue.pressure === "medium") intensity += 0.018;
   if (snapshot.queue.pressure === "high") intensity += 0.05;
   if (snapshot.queue.pressure === "max") intensity += 0.085;
-  if (snapshot.cue?.type === "party") intensity = Math.max(intensity, 0.55);
-  if (snapshot.cue?.type === "shadow") intensity = Math.max(intensity, 0.5);
-  if (snapshot.cue?.type === "signal_breach") intensity = Math.max(intensity, 0.68);
-  if (snapshot.cue?.type === "blackout") intensity = Math.max(intensity, 0.82);
-  if (snapshot.cue?.type === "lightning") intensity = Math.max(intensity, 0.75);
-  return clampVisualValue(intensity, 0.025, 0.9);
+  if (snapshot.cue?.type === "party") intensity = Math.max(intensity, 0.44);
+  if (snapshot.cue?.type === "shadow") intensity = Math.max(intensity, 0.42);
+  if (snapshot.cue?.type === "signal_breach") intensity = Math.max(intensity, 0.55);
+  if (snapshot.cue?.type === "blackout") intensity = Math.max(intensity, 0.68);
+  if (snapshot.cue?.type === "lightning") intensity = Math.max(intensity, 0.6);
+  return clampVisualValue(intensity, 0.02, 0.76);
 }
 
 export function radioVisualsMotionRate(snapshot: RadioVisualsSnapshot): number {

@@ -540,19 +540,23 @@ test("every scene palette survives the Studio orange key with restrained green a
   }
 });
 
-test("music scene selection is deterministic and spans six genuinely different families", () => {
+test("music scene selection is deterministic and spans ten genuinely different families", () => {
   assert.deepEqual(engine.RADIO_VISUAL_MUSIC_SCENES, [
-    "vortex_relay",
-    "barcode_cathedral",
-    "tape_feedback",
-    "halftone_organism",
+    "edge_spectrum",
     "oscilloscope_ribbons",
+    "tape_feedback",
+    "matrix_rain",
+    "ascii_terminal",
+    "pixel_sort_storm",
     "lightning_switchyard",
+    "laser_lattice",
+    "particle_pressure",
+    "signal_constellation",
   ]);
   for (let seed = 0; seed < 32; seed += 1) {
     assert.equal(engine.radioVisualMusicScene(seed), engine.radioVisualMusicScene(seed));
   }
-  const selected = new Set(Array.from({ length: 256 }, (_, seed) => engine.radioVisualMusicScene(seed)));
+  const selected = new Set(Array.from({ length: 512 }, (_, seed) => engine.radioVisualMusicScene(seed)));
   assert.deepEqual([...selected].sort(), [...engine.RADIO_VISUAL_MUSIC_SCENES].sort());
 });
 
@@ -624,11 +628,12 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.doesNotMatch(receiver, /startSessionBoundPolling/);
   assert.doesNotMatch(render, /<(?:header|footer|h[1-6]|p|span|strong|em)\b|aria-live/);
   assert.match(render, /<canvas ref=\{canvasRef\}/);
-  assert.match(receiver, /drawAmbientLighting|drawGoboShadows|drawCaustics|drawWavefronts|drawParticleField|drawTrackBloom|drawPartyCue|drawShadowCue|drawSignalBreachCue|drawBlackoutCue|drawLightningCue/);
+  assert.match(receiver, /drawAmbientLighting|drawGoboShadows|drawParticleField|drawTrackBloom|drawPartyCue|drawShadowCue|drawSignalBreachCue|drawBlackoutCue|drawLightningCue/);
   assert.match(receiver, /drawQueueLanes|drawIntakeAperture|drawSponsorCurtain|drawFinalConvergence|drawCompletionAfterimage|drawPressureEdges/);
-  assert.match(receiver, /drawIdleTransmission|drawLightRibbons|drawPrismaticShards|drawSignalConstellation|drawMusicHalo|drawSeedComposition/);
-  assert.match(receiver, /drawVortexRelay|drawBarcodeCathedral|drawTapeFeedback|drawHalftoneOrganism|drawOscilloscopeRibbons|drawLightningSwitchyard|drawSeededMusicScene/);
-  assert.match(receiver, /return clampVisualValue\(mix \* 0\.86 \+ drive \* 0\.12, 0, 0\.98\)/, "chroma-safe cores must still respect state and event fades");
+  assert.match(receiver, /drawIdleTransmission|drawLightRibbons|drawPrismaticShards|drawSignalConstellation|drawSeedComposition/);
+  assert.match(receiver, /drawEdgeSpectrum|drawOscilloscopeRibbons|drawTapeFeedback|drawMatrixRain|drawAsciiTerminal|drawPixelSortStorm|drawLightningSwitchyard|drawLaserLattice|drawParticlePressure|drawSignalConstellation|drawSeededMusicScene/);
+  assert.match(receiver, /return clampVisualValue\(mix \* \(0\.46 \+ drive \* 0\.24\), 0, 0\.72\)/, "chroma-safe cores must multiply by state and event fades");
+  assert.doesNotMatch(receiver, /drawVortexRelay|drawBarcodeCathedral|drawHalftoneOrganism|drawMusicHalo|drawPulseRings/);
   assert.doesNotMatch(receiver, /drawLiquidDream|drawKaleidoscopeBloom|drawSpectralLoom|drawFeedbackArchitecture|drawChromaticSmears|radioVisualComposition/);
   assert.match(receiver, /drawAmbientMoment|radioVisualAmbientMoment|observeSnapshotEvents|drawAutomaticEvent/);
   assert.match(receiver, /wheel_gained|priority_sent|priority_confirmed|track_skipped|sponsor_started|stage_shift/);
@@ -642,25 +647,33 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.match(receiver, /if \(!snapshot\.sessionActive\)[\s\S]*setAudioBridgeConnection\("idle"\)/);
   assert.match(engineSource, /source: "analyser" \| "timeline" \| "windows_loopback"/);
   assert.match(engineSource, /RADIO_VISUALS_WHEEL_CENTER_Y_RATIO = 0\.375/);
-  const wheelScene = receiver.slice(receiver.indexOf("function drawWheelScene"), receiver.indexOf("function drawPartyCue"));
+  assert.match(receiver, /prepareEffectLayer|applyPerformerSafeField|destination-in/);
+  assert.match(receiver, /if \(snapshot\.showStage !== "intake"\) applyPerformerSafeField/);
+  const wheelScene = receiver.slice(receiver.indexOf("function wheelAngularVelocityTarget"), receiver.indexOf("function drawPartyCue"));
   assert.match(wheelScene, /height \* RADIO_VISUALS_WHEEL_CENTER_Y_RATIO/);
   assert.doesNotMatch(wheelScene, /height \* 0\.5/);
-  assert.match(wheelScene, /ring < 3/);
+  assert.match(wheelScene, /ring < 4/);
   assert.match(wheelScene, /context\.arc\(0, 0, radius/);
-  assert.match(wheelScene, /spoke < 24|wedge < 12|fragment < 30/);
+  assert.match(wheelScene, /radius \* \(0\.96 \+ ring \* 0\.055\)/);
+  assert.match(wheelScene, /fragment < 28/);
+  assert.doesNotMatch(wheelScene, /spoke|wedge/);
   for (const wheelMode of ["wheel_ready", "wheel_spinning", "wheel_reencrypting", "wheel_result", "wheel_confirmed"]) {
     assert.match(wheelScene, new RegExp(wheelMode));
   }
-  assert.doesNotMatch(receiver, /drawTrackSignature|drawLiveMusicResponse/, "one shared ring-and-tear layer must not flatten the six scene silhouettes");
+  assert.match(receiver, /runtime\.wheelPhase \+= runtime\.wheelVelocity \* elapsedMs \/ 1_000/);
+  assert.match(receiver, /drawWheelScene\([\s\S]*?runtime\.wheelPhase[\s\S]*?runtime\.wheelMix \* activeSurfaceMix/);
+  assert.doesNotMatch(receiver, /drawTrackSignature|drawLiveMusicResponse/, "one shared layer must not flatten the ten scene silhouettes");
   assert.doesNotMatch(receiver, /globalCompositeOperation = "screen"/);
   assert.match(receiver, /radioVisualMusicScene\(seed\)/);
   assert.match(receiver, /audioTime = \(transportSeconds/);
-  assert.match(receiver, /activeSurfaceMix \* clampVisualValue\(0\.62/);
+  assert.match(receiver, /activeSurfaceMix \* clampVisualValue\(0\.075/);
+  assert.equal((receiver.match(/drawEdgeSpectrum\(/g) ?? []).length, 2, "spectrum meters must only be defined and invoked by the music dispatcher");
+  assert.equal((receiver.match(/drawOscilloscopeRibbons\(/g) ?? []).length, 2, "waveform ribbons must only be defined and invoked by the music dispatcher");
   assert.match(receiver, /sceneStateMix = clampVisualValue\(1 - Math\.max\(runtime\.wheelMix, runtime\.sponsorMix, runtime\.systemMix\), 0, 1\)/);
   assert.match(receiver, /drawSeedComposition\(runtime\.previousSeed, 1 - seedBlend\)/);
   assert.match(receiver, /drawSeedComposition\(runtime\.currentSeed, seedBlend\)/);
   assert.match(receiver, /runtime\.syntheticEvents = \[\]/, "inactive sessions must clear residual automatic events immediately");
-  assert.match(receiver, /drawWheelScene\([^;]+runtime\.wheelMix \* activeSurfaceMix[^;]+snapshot\.sceneMode\)/s);
+  assert.match(receiver, /drawWheelScene\([^;]+runtime\.wheelPhase[^;]+runtime\.wheelMix \* activeSurfaceMix[^;]+snapshot\.sceneMode/s);
   assert.match(receiver, /const density = 1/);
   assert.match(queueControl, /createMediaElementSource|createAnalyser|audioAnalysis|analyzeRadioVisualFrequencyData/);
   assert.doesNotMatch(queueControl, /getDisplayMedia|createMediaStreamSource|Capture show audio|Share audio/);

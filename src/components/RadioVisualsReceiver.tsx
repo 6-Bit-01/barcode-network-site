@@ -15,15 +15,18 @@ import {
   radioVisualCueProgress,
   radioVisualMusicScene,
   radioVisualMusicSceneLayerPlan,
+  radioVisualMusicSceneVisibility,
+  radioVisualWindowIntrusionPlan,
   radioVisualsIntensity,
   radioVisualsEffectStageBounds,
   radioVisualsMusicSignal,
   radioVisualsMotionRate,
   radioVisualsPalette,
   radioVisualsPortalProfile,
+  radioVisualsPortalStageEdgeRadius,
   radioVisualsWheelBand,
 } from "@/lib/radio-visuals-engine";
-import type { RadioVisualAudioDrives, RadioVisualMusicSceneLayerPlan, RadioVisualMusicSignal } from "@/lib/radio-visuals-engine";
+import type { RadioVisualAudioDrives, RadioVisualMusicSceneLayerPlan, RadioVisualMusicSignal, RadioVisualWindowIntrusionPlan } from "@/lib/radio-visuals-engine";
 import { activeRadioVisualEvent, hashRadioVisualToken, radioVisualBroadcastStartedTransition, radioVisualEventEnvelope, radioVisualEventProgress } from "@/lib/radio-visuals-events";
 import { RADIO_VISUALS_ACTIVE_POLL_INTERVAL_MS, RADIO_VISUALS_STANDBY_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 import { studioOverlayRequestHeaders } from "@/lib/studio-overlay-client";
@@ -2309,6 +2312,83 @@ function drawPortalRimLightning(
   context.restore();
 }
 
+function drawPortalOuterTendrils(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  centerX: number,
+  centerY: number,
+  outerRadius: number,
+  rotationPhase: number,
+  strength: number,
+  turbulence: number,
+  primary: Rgb,
+  secondary: Rgb,
+  highlight: Rgb,
+  seed: number,
+  count: number,
+): void {
+  const unit = Math.min(width, height);
+  const rootRadius = outerRadius - unit * 0.002;
+  const edgePadding = Math.max(1.5, unit * 0.002);
+  const colors: Rgb[] = [primary, secondary, highlight];
+  context.save();
+  context.translate(centerX, centerY);
+  context.beginPath();
+  context.rect(-centerX, -centerY, width, height);
+  context.arc(0, 0, rootRadius, 0, Math.PI * 2, true);
+  context.clip("evenodd");
+  context.globalCompositeOperation = "lighter";
+  context.lineCap = "round";
+  context.lineJoin = "miter";
+  for (let channelIndex = 0; channelIndex < colors.length; channelIndex += 1) {
+    const color = colors[channelIndex];
+    context.beginPath();
+    for (let tendril = channelIndex; tendril < count; tendril += colors.length) {
+      const direction = randomUnit(seed, 31_100 + tendril) > 0.46 ? 1 : -1;
+      const angle = tendril / count * Math.PI * 2
+        + randomUnit(seed, 31_200 + tendril) * 0.32
+        + rotationPhase * direction * (0.24 + randomUnit(seed, 31_300 + tendril) * 0.26);
+      const edgeRadius = radioVisualsPortalStageEdgeRadius(
+        width,
+        height,
+        centerX,
+        centerY,
+        angle,
+        edgePadding,
+      );
+      if (!Number.isFinite(edgeRadius) || edgeRadius <= rootRadius) continue;
+      const steps = 6 + Math.floor(randomUnit(seed, 31_400 + tendril) * 4);
+      const angularSweep = direction * (0.018 + turbulence * 0.019 + randomUnit(seed, 31_500 + tendril) * 0.02);
+      for (let step = 0; step <= steps; step += 1) {
+        const progress = step / steps;
+        const radialProgress = Math.pow(progress, 0.84);
+        const radius = rootRadius + (edgeRadius - rootRadius) * radialProgress;
+        const edgeEnvelope = Math.sin(progress * Math.PI);
+        const stepJitter = (randomUnit(seed, 31_600 + tendril * 17 + step) - 0.5)
+          * unit
+          * (0.006 + turbulence * 0.008)
+          * edgeEnvelope;
+        const localAngle = angle + angularSweep * Math.sin(progress * Math.PI);
+        const x = Math.cos(localAngle) * radius - Math.sin(localAngle) * stepJitter;
+        const y = Math.sin(localAngle) * radius + Math.cos(localAngle) * stepJitter;
+        if (step === 0) context.moveTo(x, y);
+        else context.lineTo(x, y);
+      }
+    }
+    context.shadowColor = rgba(color, strength * 0.42);
+    context.shadowBlur = unit * (0.006 + turbulence * 0.004);
+    context.strokeStyle = rgba(color, strength * 0.14);
+    context.lineWidth = Math.max(3, unit * (0.004 + turbulence * 0.0018));
+    context.stroke();
+    context.shadowBlur = unit * 0.002;
+    context.strokeStyle = rgba(color, strength * 0.52);
+    context.lineWidth = Math.max(1.2, unit * (0.0015 + turbulence * 0.0007));
+    context.stroke();
+  }
+  context.restore();
+}
+
 function drawWheelScene(
   context: CanvasRenderingContext2D,
   width: number,
@@ -2378,6 +2458,26 @@ function drawWheelScene(
     wispyInnerRadius * 1.02,
     confirmedMode ? highlight : secondary,
     mix * (0.018 + portalStrength * 0.022 + (releaseMode ? 0.01 : 0)),
+  );
+
+  // Jagged exterior material carries the vortex beyond the circular rim to
+  // the clipped portrait-stage edges. It begins outside every name and never
+  // enters the hollow candidate field.
+  drawPortalOuterTendrils(
+    context,
+    width,
+    height,
+    centerX,
+    centerY,
+    outerRadius,
+    rotationPhase,
+    coreAlpha * Math.min(1.12, 0.66 + portalStrength * 0.3),
+    turbulence,
+    primary,
+    secondary,
+    highlight,
+    seed,
+    portal.outerTendrilCount,
   );
 
   context.save();
@@ -2805,7 +2905,7 @@ function drawWindowScanline(
   context: CanvasRenderingContext2D,
   width: number,
   height: number,
-  time: number,
+  progress: number,
   strength: number,
   primary: Rgb,
   secondary: Rgb,
@@ -2813,12 +2913,10 @@ function drawWindowScanline(
   seed: number,
 ): void {
   if (strength < 0.002) return;
-  const cycle = ((time * 0.065 + randomUnit(seed, 23_101)) % 1 + 1) % 1;
-  if (cycle > 0.1) return;
-  const progress = cycle / 0.1;
-  const envelope = Math.sin(progress * Math.PI) * clampVisualValue(strength);
+  const boundedProgress = clampVisualValue(progress);
+  const envelope = Math.sin(boundedProgress * Math.PI) * clampVisualValue(strength);
   const unit = Math.min(width, height);
-  const y = height * (0.1 + ease(progress) * 0.8);
+  const y = height * (0.1 + ease(boundedProgress) * 0.8);
   const color = randomUnit(seed, 23_102) > 0.54 ? secondary : primary;
   const gradient = context.createLinearGradient(0, 0, width, 0);
   gradient.addColorStop(0, rgba(color, 0));
@@ -2834,67 +2932,109 @@ function drawWindowScanline(
   context.restore();
 }
 
+function drawWindowSignalStutter(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  plan: RadioVisualWindowIntrusionPlan,
+  primary: Rgb,
+  secondary: Rgb,
+  highlight: Rgb,
+): void {
+  if (plan.stutterProgress === null || plan.stutterStrength < 0.002) return;
+  const envelope = Math.sin(plan.stutterProgress * Math.PI) * clampVisualValue(plan.stutterStrength);
+  const unit = Math.min(width, height);
+  const localSeed = plan.stutterSeed;
+  context.save();
+  context.globalCompositeOperation = "lighter";
+  for (let fragment = 0; fragment < plan.stutterStripCount; fragment += 1) {
+    const y = height * (0.17 + randomUnit(localSeed, 23_300 + fragment) * 0.58);
+    const stripHeight = Math.max(1.5, unit * (0.0014 + randomUnit(localSeed, 23_400 + fragment) * 0.0026));
+    const stripWidth = width * (0.12 + randomUnit(localSeed, 23_500 + fragment) * 0.16);
+    const baseX = width * (0.16 + randomUnit(localSeed, 23_600 + fragment) * 0.5);
+    const jitter = unit
+      * (0.004 + randomUnit(localSeed, 23_700 + fragment) * 0.014)
+      * (fragment % 2 ? 1 : -1);
+    const gradient = context.createLinearGradient(baseX + jitter, 0, baseX + jitter + stripWidth, 0);
+    gradient.addColorStop(0, rgba(fragment % 2 ? secondary : primary, 0));
+    gradient.addColorStop(0.18, rgba(fragment % 2 ? secondary : primary, envelope * 0.18));
+    gradient.addColorStop(0.52, rgba(highlight, envelope * 0.3));
+    gradient.addColorStop(0.84, rgba(fragment % 2 ? primary : secondary, envelope * 0.16));
+    gradient.addColorStop(1, rgba(fragment % 2 ? primary : secondary, 0));
+    context.fillStyle = gradient;
+    context.fillRect(baseX + jitter, y, stripWidth, stripHeight);
+  }
+  context.restore();
+}
+
 function drawPerformerWindowIntrusions(
   context: CanvasRenderingContext2D,
   width: number,
   height: number,
   time: number,
-  sceneMix: number,
-  trackMix: number,
-  drives: RadioVisualAudioDrives,
+  plan: RadioVisualWindowIntrusionPlan,
   primary: Rgb,
   secondary: Rgb,
   highlight: Rgb,
   seed: number,
   cue: RadioVisualsSnapshot["cue"],
   cueProgress: number | null,
-  cueEnvelope: number,
   cueSeed: number,
 ): void {
-  if (sceneMix < 0.002) return;
+  if (!plan.active) return;
 
   // A sparse scan may cross the performer field, but dense scene geometry is
   // never replayed here. This is an explicit allow-list, not a weaker global
   // mask.
-  drawWindowScanline(
+  if (plan.scanProgress !== null) {
+    drawWindowScanline(
+      context,
+      width,
+      height,
+      plan.scanProgress,
+      plan.scanStrength,
+      primary,
+      secondary,
+      highlight,
+      seed,
+    );
+  }
+  drawWindowSignalStutter(
     context,
     width,
     height,
-    time,
-    sceneMix * (0.1 + trackMix * (0.12 + drives.midPulse * 0.14)),
+    plan,
     primary,
     secondary,
     highlight,
-    seed,
   );
 
-  if (trackMix > 0.08 && radioVisualMusicScene(seed) === "lightning_switchyard") {
-    const current = clampVisualValue(0.06 + drives.treble * 0.1 + drives.treblePulse * 0.28 + drives.impact * 0.12);
+  if (plan.lightningFamilyStrength >= 0.002) {
     drawLightningTree(
       context,
       width,
       height,
-      seed + Math.floor(time * (0.72 + drives.treblePulse * 2.4)) * 131,
-      sceneMix * trackMix * current * 0.42,
+      seed + Math.floor(time * 0.9) * 131,
+      plan.lightningFamilyStrength,
       primary,
       secondary,
       highlight,
     );
   }
 
-  if (cue?.type === "lightning" && cueProgress !== null && cueEnvelope > 0.002) {
+  if (cue?.type === "lightning" && cueProgress !== null && plan.lightningCueStrength >= 0.002) {
     context.save();
     context.globalAlpha = 0.32;
-    drawLightningCue(context, width, height, cueProgress, cueEnvelope, primary, highlight, cueSeed);
+    drawLightningCue(context, width, height, cueProgress, plan.lightningCueStrength, primary, highlight, cueSeed);
     context.restore();
   }
-  if (cue?.type === "signal_breach" && cueEnvelope > 0.002) {
+  if (cue?.type === "signal_breach" && plan.signalBreachProgress !== null) {
     drawWindowScanline(
       context,
       width,
       height,
-      time * 2.4,
-      cueEnvelope * 0.52,
+      plan.signalBreachProgress,
+      plan.signalBreachStrength,
       secondary,
       primary,
       highlight,
@@ -3078,6 +3218,7 @@ function drawVisualFrame(
     }
   }
   const musicDrives = reactiveAudioDrives(runtime, music, elapsedMs);
+  const musicScene = radioVisualMusicScene(runtime.currentSeed);
   const targetWheelVelocity = snapshot.visualMode === "wheel" || runtime.wheelMix > 0.002
     ? wheelAngularVelocityTarget(snapshot.sceneMode, musicDrives) * motionScale
     : 0;
@@ -3115,14 +3256,7 @@ function drawVisualFrame(
   drawAmbientLighting(context, width, height, time, runtime.intensity * activeSurfaceMix, runtime.primary, runtime.secondary, runtime.highlight, music.energy);
   drawGoboShadows(context, width, height, time, runtime.intensity * activeSurfaceMix, shadow);
   const musicSceneActivity = music.source === "windows_loopback" || runtime.trackMix > 0.08
-    ? clampVisualValue(
-      0.14
-      + musicDrives.body * 0.42
-      + musicDrives.presence * 0.36
-      + musicDrives.tapestry * 0.12,
-      0.14,
-      1,
-    )
+    ? radioVisualMusicSceneVisibility(musicDrives)
     : 0;
   // Keep the strong BARCODE transmission bed between songs, but let each
   // track's own scene language take over instead of flattening all ten into
@@ -3188,7 +3322,18 @@ function drawVisualFrame(
   if (effectLayer) {
     if (snapshot.showStage !== "intake") applyPerformerSafeField(context, width, height, 0.2);
     outputContext.drawImage(effectLayer.canvas, 0, 0, width, height);
-    if (snapshot.showStage !== "intake" && activeSurfaceMix > 0) {
+    const intrusionPlan = radioVisualWindowIntrusionPlan({
+      time: audioTime,
+      sceneMix: activeSurfaceMix * sceneStateMix,
+      trackMix: runtime.trackMix,
+      drives: musicDrives,
+      musicScene,
+      seed: runtime.currentSeed,
+      cueType: snapshot.cue?.type ?? null,
+      cueProgress,
+      cueEnvelope,
+    });
+    if (snapshot.showStage !== "intake" && activeSurfaceMix > 0 && intrusionPlan.active) {
       const intrusionLayer = prepareEffectLayer(runtime, width, height);
       if (intrusionLayer) {
         drawPerformerWindowIntrusions(
@@ -3196,16 +3341,13 @@ function drawVisualFrame(
           width,
           height,
           audioTime,
-          activeSurfaceMix * sceneStateMix,
-          runtime.trackMix,
-          musicDrives,
+          intrusionPlan,
           runtime.primary,
           runtime.secondary,
           runtime.highlight,
           runtime.currentSeed,
           snapshot.cue,
           cueProgress,
-          cueEnvelope,
           cueSeed,
         );
         applyPerformerIntrusionField(intrusionLayer.context, width, height);

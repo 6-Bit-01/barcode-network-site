@@ -43,6 +43,36 @@ export interface RadioVisualsPortalProfile {
   ribbonCount: number;
   streakCount: number;
   lightningArcCount: number;
+  outerTendrilCount: number;
+}
+
+/** Exact radial distance from a portal center to the clipped stage boundary. */
+export function radioVisualsPortalStageEdgeRadius(
+  width: number,
+  height: number,
+  centerX: number,
+  centerY: number,
+  angle: number,
+  padding = 0,
+): number {
+  const safeWidth = Math.max(1, Number.isFinite(width) ? width : 1);
+  const safeHeight = Math.max(1, Number.isFinite(height) ? height : 1);
+  const safeCenterX = clampVisualValue(centerX, 0, safeWidth);
+  const safeCenterY = clampVisualValue(centerY, 0, safeHeight);
+  const safePadding = clampVisualValue(padding, 0, Math.min(safeWidth, safeHeight) / 2);
+  const cosine = Math.cos(Number.isFinite(angle) ? angle : 0);
+  const sine = Math.sin(Number.isFinite(angle) ? angle : 0);
+  const xDistance = Math.abs(cosine) < 0.0001
+    ? Number.POSITIVE_INFINITY
+    : (cosine > 0
+      ? safeWidth - safeCenterX - safePadding
+      : safeCenterX - safePadding) / Math.abs(cosine);
+  const yDistance = Math.abs(sine) < 0.0001
+    ? Number.POSITIVE_INFINITY
+    : (sine > 0
+      ? safeHeight - safeCenterY - safePadding
+      : safeCenterY - safePadding) / Math.abs(sine);
+  return Math.max(0, Math.min(xDistance, yDistance));
 }
 
 /**
@@ -75,6 +105,7 @@ export function radioVisualsPortalProfile(input: number | null | undefined): Rad
   const crowd = clampVisualValue((count - 1) / 13);
   const storm = count >= 14 ? 1 : 0;
   const overdrive = clampVisualValue((count - 14) / 14);
+  const edgeRush = clampVisualValue((count - 14) / 6);
   return {
     strength: 0.68 + crowd * 0.28 + storm * 0.08 + overdrive * 0.16,
     turbulence: 0.44 + crowd * 0.52 + storm * 0.2 + overdrive * 0.28,
@@ -87,6 +118,7 @@ export function radioVisualsPortalProfile(input: number | null | undefined): Rad
       : count >= 8
         ? 2
         : 1,
+    outerTendrilCount: 10 + Math.round(crowd * 8) + storm * 6 + Math.round(edgeRush * 8),
   };
 }
 
@@ -344,7 +376,7 @@ function bandLayerActivation(value: number, threshold: number, ceiling: number):
 
 function tapestryActivation(bass: number, mid: number, treble: number): number {
   const sharedFloor = Math.min(bass, mid, treble);
-  const shared = bandLayerActivation(sharedFloor, 0.08, 0.76);
+  const shared = bandLayerActivation(sharedFloor, 0.055, 0.78);
   const mean = (bass + mid + treble) / 3;
   return clampVisualValue(shared * (0.72 + mean * 0.28));
 }
@@ -379,9 +411,9 @@ export function radioVisualAudioDrives(signal: RadioVisualMusicSignal): RadioVis
   const bassPulse = clampVisualValue(Math.max(bass * 0.08, beatDrive * bass * bass));
   const midPulse = clampVisualValue(Math.max(mid * 0.08, accentDrive * mid * mid));
   const treblePulse = clampVisualValue(Math.max(treble * 0.08, peakDrive * treble * treble));
-  const bassLayer = bandLayerActivation(bass, 0.055, 0.95);
-  const midLayer = bandLayerActivation(mid, 0.05, 0.95);
-  const trebleLayer = bandLayerActivation(treble, 0.04, 0.95);
+  const bassLayer = bandLayerActivation(bass, 0.055, 0.82);
+  const midLayer = bandLayerActivation(mid, 0.05, 0.8);
+  const trebleLayer = bandLayerActivation(treble, 0.04, 0.78);
   const tapestry = tapestryActivation(bass, mid, treble);
   const progress = clampVisualValue(signal.progress);
   const phrase = clampVisualValue(signal.phrase);
@@ -418,9 +450,12 @@ function dedicatedAudioLayerCount(
   const maximum = limit.sustained + limit.pulse;
   if (maximum <= 0) return 0;
   const boundedLayer = clampVisualValue(layer);
-  const sustainedProgress = clampVisualValue((boundedLayer - threshold) / Math.max(0.001, 1 - threshold));
+  const sustainedProgress = Math.pow(
+    clampVisualValue((boundedLayer - threshold) / Math.max(0.001, 1 - threshold)),
+    0.82,
+  );
   const sustained = boundedLayer > threshold && limit.sustained > 0
-    ? 1 + Math.floor(sustainedProgress * Math.max(0, limit.sustained - 1))
+    ? 1 + Math.round(sustainedProgress * Math.max(0, limit.sustained - 1))
     : 0;
   const transient = Math.floor(clampVisualValue(pulse) * limit.pulse);
   return Math.min(maximum, sustained + transient);
@@ -440,7 +475,153 @@ export function radioVisualMusicSceneLayerPlan(
     bass: dedicatedAudioLayerCount(drives.bassLayer, drives.bassPulse, limits.bass),
     mid: dedicatedAudioLayerCount(drives.midLayer, drives.midPulse, limits.mid),
     treble: dedicatedAudioLayerCount(drives.trebleLayer, drives.treblePulse, limits.treble),
-    tapestry: dedicatedAudioLayerCount(drives.tapestry, drives.tapestryPulse, limits.tapestry, 0.05),
+    tapestry: dedicatedAudioLayerCount(drives.tapestry, drives.tapestryPulse, limits.tapestry),
+  };
+}
+
+/**
+ * Keep every selected family readable through the Studio key while allowing
+ * real audio—not track progress—to expand its opacity and occupied area.
+ */
+export function radioVisualMusicSceneVisibility(drives: RadioVisualAudioDrives): number {
+  const bandFullness = (drives.bassLayer + drives.midLayer + drives.trebleLayer) / 3;
+  const loudestLayer = Math.max(drives.bassLayer, drives.midLayer, drives.trebleLayer);
+  return clampVisualValue(
+    0.3
+      + drives.body * 0.24
+      + drives.presence * 0.16
+      + bandFullness * 0.18
+      + loudestLayer * 0.06
+      + drives.tapestry * 0.12,
+    0.3,
+    1,
+  );
+}
+
+export interface RadioVisualWindowIntrusionPlan {
+  active: boolean;
+  scanProgress: number | null;
+  scanStrength: number;
+  stutterProgress: number | null;
+  stutterStrength: number;
+  stutterStripCount: number;
+  stutterSeed: number;
+  lightningFamilyStrength: number;
+  lightningCueStrength: number;
+  signalBreachProgress: number | null;
+  signalBreachStrength: number;
+}
+
+export interface RadioVisualWindowIntrusionInput {
+  time: number;
+  sceneMix: number;
+  trackMix: number;
+  drives: RadioVisualAudioDrives;
+  musicScene: RadioVisualMusicScene;
+  seed: number;
+  cueType: RadioVisualCue["type"] | null;
+  cueProgress: number | null;
+  cueEnvelope: number;
+}
+
+function deterministicVisualUnit(seed: number, salt: number): number {
+  return (hashRadioVisualToken(`${Math.trunc(seed)}:${salt}`) % 1_000_000) / 1_000_000;
+}
+
+function boundedCycleProgress(cycle: number, activeWindow: number): number | null {
+  const wrapped = ((cycle % 1) + 1) % 1;
+  if (wrapped > activeWindow) return null;
+  return clampVisualValue(wrapped / activeWindow);
+}
+
+/**
+ * Resolve the complete performer-window allow-list before allocating its
+ * second Canvas pass. Cadence is seed-stable; audio changes only intensity
+ * and the bounded two-to-three-strip density, so a transient cannot reopen a
+ * burst midway through its cycle.
+ */
+export function radioVisualWindowIntrusionPlan(
+  input: RadioVisualWindowIntrusionInput,
+): RadioVisualWindowIntrusionPlan {
+  const sceneMix = clampVisualValue(input.sceneMix);
+  const trackMix = clampVisualValue(input.trackMix);
+  const cueEnvelope = clampVisualValue(input.cueEnvelope);
+  const scanStrength = sceneMix * (
+    0.16
+      + trackMix * (
+        0.18
+          + input.drives.midLayer * 0.08
+          + input.drives.midPulse * 0.12
+          + input.drives.tapestry * 0.08
+      )
+  );
+  const scanProgress = scanStrength >= 0.002
+    ? boundedCycleProgress(input.time * 0.085 + deterministicVisualUnit(input.seed, 23_101), 0.13)
+    : null;
+
+  const glitchFamilyBoost = input.musicScene === "pixel_sort_storm"
+    || input.musicScene === "tape_feedback"
+    || input.musicScene === "ascii_terminal"
+    || input.musicScene === "matrix_rain"
+    ? 0.14
+    : 0.05;
+  const stutterStrength = sceneMix * (
+    0.1
+      + glitchFamilyBoost
+      + trackMix * (
+        0.12
+          + input.drives.midLayer * 0.08
+          + input.drives.trebleLayer * 0.1
+          + input.drives.tapestry * 0.1
+          + input.drives.impact * 0.08
+      )
+  );
+  const cycleSeconds = 5.2 + deterministicVisualUnit(input.seed, 23_201) * 2.6;
+  const shiftedTime = input.time + deterministicVisualUnit(input.seed, 23_202) * cycleSeconds;
+  const stutterCycleIndex = Math.floor(shiftedTime / cycleSeconds);
+  const stutterProgress = stutterStrength >= 0.002
+    ? boundedCycleProgress(shiftedTime / cycleSeconds, 0.075)
+    : null;
+  const fragmentDrive = clampVisualValue(
+    stutterStrength * 0.52
+      + input.drives.midLayer * 0.12
+      + input.drives.trebleLayer * 0.14
+      + input.drives.midPulse * 0.18
+      + input.drives.treblePulse * 0.22
+      + input.drives.tapestryPulse * 0.2,
+  );
+  const stutterStripCount = stutterProgress === null ? 0 : 2 + Math.round(fragmentDrive);
+
+  const lightningFamilyStrength = trackMix > 0.08 && input.musicScene === "lightning_switchyard"
+    ? sceneMix * trackMix * clampVisualValue(
+      0.06 + input.drives.treble * 0.1 + input.drives.treblePulse * 0.28 + input.drives.impact * 0.12,
+    ) * 0.42
+    : 0;
+  const lightningCueStrength = input.cueType === "lightning" && input.cueProgress !== null && cueEnvelope > 0.002
+    ? cueEnvelope
+    : 0;
+  const signalBreachProgress = input.cueType === "signal_breach" && input.cueProgress !== null && cueEnvelope > 0.002
+    ? (clampVisualValue(input.cueProgress) * 2) % 1
+    : null;
+  const signalBreachStrength = signalBreachProgress === null ? 0 : cueEnvelope * 0.52;
+  const active = (scanProgress !== null && scanStrength >= 0.002)
+    || (stutterProgress !== null && stutterStrength >= 0.002)
+    || lightningFamilyStrength >= 0.002
+    || lightningCueStrength > 0.002
+    || signalBreachStrength >= 0.002;
+
+  return {
+    active,
+    scanProgress,
+    scanStrength,
+    stutterProgress,
+    stutterStrength,
+    stutterStripCount,
+    stutterSeed: input.seed + stutterCycleIndex * 7_919,
+    lightningFamilyStrength,
+    lightningCueStrength,
+    signalBreachProgress,
+    signalBreachStrength,
   };
 }
 
@@ -568,7 +749,10 @@ export function radioVisualLoopbackLevel(value: number, channel: RadioVisualLoop
   const normalized = clampVisualValue(
     (clampVisualValue(value) - calibration.floor) / (calibration.ceiling - calibration.floor),
   );
-  return clampVisualValue(Math.pow(smoothstep(normalized), calibration.gamma));
+  // The helper already compresses FFT/RMS values. A second smoothstep made
+  // ordinary 20-50% live readings visually tiny; a power knee still rejects
+  // the noise floor while preserving useful motion across that real range.
+  return clampVisualValue(Math.pow(normalized, calibration.gamma));
 }
 
 function radioVisualLoopbackPeak(value: number): number {
@@ -655,7 +839,7 @@ export function radioVisualsMusicSignal(
     const liveMid = radioVisualLoopbackLevel(bridgeSignal.mid, "mid");
     const liveTreble = radioVisualLoopbackLevel(bridgeSignal.treble, "treble");
     const livePeak = radioVisualLoopbackPeak(bridgeSignal.peak);
-    const liveBeat = Math.pow(clampVisualValue(bridgeSignal.beat), 1.8);
+    const liveBeat = Math.pow(clampVisualValue(bridgeSignal.beat), 1.55);
     return {
       source: "windows_loopback",
       bpm: confidence >= 0.28 ? bridgeSignal.bpm : bpm,

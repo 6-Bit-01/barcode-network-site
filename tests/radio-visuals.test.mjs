@@ -564,7 +564,7 @@ test("an active warmed Windows bridge owns silence continuously instead of snapp
 });
 
 test("Windows audio transfer suppresses quiet noise and expands loud passages", () => {
-  const inputs = [0, 0.02, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 1];
+  const inputs = [0, 0.02, 0.05, 0.1, 0.2, 0.25, 0.3, 0.45, 0.6, 0.75, 0.9, 1];
   for (const channel of ["energy", "bass", "mid", "treble"]) {
     const outputs = inputs.map((input) => engine.radioVisualLoopbackLevel(input, channel));
     assert.equal(outputs[0], 0);
@@ -572,10 +572,13 @@ test("Windows audio transfer suppresses quiet noise and expands loud passages", 
     for (let index = 1; index < outputs.length; index += 1) assert.ok(outputs[index] >= outputs[index - 1]);
     assert.ok(outputs[2] <= 0.035, `${channel} must not exaggerate 5% input`);
     assert.ok(outputs[3] <= 0.08, `${channel} must keep 10% input restrained`);
-    assert.ok(outputs[6] - outputs[5] >= 0.32, `${channel} must visibly expand between a moderate and strong passage`);
-    assert.ok(outputs[7] - outputs[6] >= 0.12, `${channel} must retain visible headroom above a strong passage`);
-    assert.ok(outputs[7] >= 0.9 && outputs[7] < 0.99, `${channel} must make a hot passage strong without saturating early`);
-    assert.equal(outputs[8], 1, `${channel} may reach full drive only at full input`);
+    assert.ok(outputs[4] >= 0.1, `${channel} must begin producing useful motion at a real 20% bridge reading`);
+    assert.ok(outputs[5] >= 0.13, `${channel} must make an ordinary 25% bridge reading clearly usable`);
+    assert.ok(outputs[7] >= 0.3, `${channel} must make a 45% bridge reading visibly strong`);
+    assert.ok(outputs[8] >= 0.48, `${channel} must make a 60% bridge reading near-hot`);
+    assert.ok(outputs[7] - outputs[5] > outputs[5] - outputs[2], `${channel} must expand higher readings more than quiet readings`);
+    assert.ok(outputs[10] >= 0.86 && outputs[10] < 0.95, `${channel} must retain headroom at a 90% reading`);
+    assert.equal(outputs[11], 1, `${channel} may reach full drive only at full input`);
   }
   const midpoint = engine.radioVisualLoopbackLevel(0.5, "energy");
   assert.ok(midpoint >= 0.35 && midpoint <= 0.6);
@@ -627,16 +630,26 @@ test("Windows levels become quiet, isolated band layers and a full-spectrum tape
   const quiet = drivesAt({ energy: 0.05 });
   assert.ok(Math.max(quiet.bassLayer, quiet.midLayer, quiet.trebleLayer, quiet.tapestry) < 0.01, "quiet bridge noise must not manufacture decorative layers");
 
-  const bass = drivesAt({ bass: 0.45 });
-  const mids = drivesAt({ mid: 0.45 });
-  const treble = drivesAt({ treble: 0.45 });
-  assert.ok(bass.bassLayer > 0.2 && bass.midLayer < 0.01 && bass.trebleLayer < 0.01, "ordinary bass must enter only the bass-owned layer");
-  assert.ok(mids.midLayer > 0.2 && mids.bassLayer < 0.01 && mids.trebleLayer < 0.01, "ordinary mids must enter only the mid-owned layer");
-  assert.ok(treble.trebleLayer > 0.2 && treble.bassLayer < 0.01 && treble.midLayer < 0.01, "ordinary treble must enter only the treble-owned layer");
+  const bass = drivesAt({ bass: 0.25 });
+  const mids = drivesAt({ mid: 0.25 });
+  const treble = drivesAt({ treble: 0.25 });
+  assert.ok(bass.bassLayer > 0.07 && bass.midLayer < 0.01 && bass.trebleLayer < 0.01, "ordinary bass must enter only the bass-owned layer");
+  assert.ok(mids.midLayer > 0.09 && mids.bassLayer < 0.01 && mids.trebleLayer < 0.01, "ordinary mids must enter only the mid-owned layer");
+  assert.ok(treble.trebleLayer > 0.14 && treble.bassLayer < 0.01 && treble.midLayer < 0.01, "ordinary treble must enter only the treble-owned layer");
 
+  const moderate = drivesAt({ energy: 0.22, bass: 0.22, mid: 0.22, treble: 0.22, peak: 0.22 });
+  const strong = drivesAt({ energy: 0.45, bass: 0.45, mid: 0.45, treble: 0.45, peak: 0.45 });
   const hot = drivesAt({ energy: 0.75, bass: 0.75, mid: 0.75, treble: 0.75, peak: 0.75 });
   assert.ok(hot.bassLayer > 0.75 && hot.midLayer > 0.75 && hot.trebleLayer > 0.75);
-  assert.ok(hot.tapestry > 0.9 && hot.build > 0.7, "strong full-spectrum Windows audio must assemble the combined composition");
+  assert.ok(hot.tapestry > 0.72 && hot.build > 0.65, "strong full-spectrum Windows audio must assemble the combined composition with remaining headroom");
+  assert.ok(
+    engine.radioVisualMusicSceneVisibility(quiet) >= 0.3
+      && engine.radioVisualMusicSceneVisibility(quiet) <= 0.31,
+    "quiet audio keeps a visible but restrained family identity",
+  );
+  assert.ok(engine.radioVisualMusicSceneVisibility(moderate) > 0.36, "ordinary full-spectrum audio must survive the Studio key");
+  assert.ok(engine.radioVisualMusicSceneVisibility(strong) > 0.52);
+  assert.ok(engine.radioVisualMusicSceneVisibility(hot) > 0.82);
   const fullRest = drivesAt({ energy: 1, bass: 1, mid: 1, treble: 1, peak: 0, beat: 0 });
   const overload = drivesAt({ energy: 1, bass: 1, mid: 1, treble: 1, peak: 1, beat: 1 });
 
@@ -645,7 +658,7 @@ test("Windows levels become quiet, isolated band layers and a full-spectrum tape
     mids: { bass: false, mid: true, treble: false, tapestry: false },
     treble: { bass: false, mid: false, treble: true, tapestry: false },
   };
-  const profileDrives = { quiet, bass, mids, treble, hot, fullRest, overload };
+  const profileDrives = { quiet, bass, mids, treble, moderate, strong, hot, fullRest, overload };
   for (const musicScene of engine.RADIO_VISUAL_MUSIC_SCENES) {
     const plans = Object.fromEntries(
       Object.entries(profileDrives).map(([profile, profileDrive]) => [
@@ -659,6 +672,12 @@ test("Windows levels become quiet, isolated band layers and a full-spectrum tape
         assert.equal(plans[profile][layer] > 0, expected[layer], `${musicScene} ${profile} must ${expected[layer] ? "reveal" : "withhold"} its ${layer} density budget`);
       }
     }
+    assert.ok(Object.values(plans.moderate).every((count) => count > 0), `${musicScene} must reveal all four systems at a realistic 22% all-band bridge reading`);
+    assert.ok(
+      Object.values(plans.strong).reduce((sum, count) => sum + count, 0)
+        > Object.values(plans.moderate).reduce((sum, count) => sum + count, 0),
+      `${musicScene} must add density between ordinary and strong full-spectrum audio`,
+    );
     assert.ok(Object.values(plans.hot).every((count) => count > 0), `${musicScene} must reveal all four layer systems on full-spectrum audio`);
 
     const limits = engine.RADIO_VISUAL_MUSIC_SCENE_LAYER_LIMITS[musicScene];
@@ -959,6 +978,7 @@ test("Wheel portal starts strong and becomes a bounded storm at fourteen candida
   const one = engine.radioVisualsPortalProfile(1);
   const thirteen = engine.radioVisualsPortalProfile(13);
   const fourteen = engine.radioVisualsPortalProfile(14);
+  const twenty = engine.radioVisualsPortalProfile(20);
   const twentyEight = engine.radioVisualsPortalProfile(28);
   const oneHundredTwentyEight = engine.radioVisualsPortalProfile(128);
 
@@ -967,6 +987,7 @@ test("Wheel portal starts strong and becomes a bounded storm at fourteen candida
   assert.ok(one.ribbonCount >= 4);
   assert.ok(one.streakCount >= 24);
   assert.ok(one.lightningArcCount >= 1);
+  assert.ok(one.outerTendrilCount >= 10, "the portal must reach outward even with one candidate");
   assert.ok(fourteen.strength > thirteen.strength);
   assert.ok(fourteen.turbulence > thirteen.turbulence);
   assert.ok(fourteen.streakCount > thirteen.streakCount);
@@ -975,6 +996,9 @@ test("Wheel portal starts strong and becomes a bounded storm at fourteen candida
   assert.ok(fourteen.ribbonCount - thirteen.ribbonCount >= 2, "fourteen candidates must gain structural spiral sheets");
   assert.ok(fourteen.streakCount - thirteen.streakCount >= 16, "fourteen candidates must gain a structural suction-streak storm");
   assert.ok(fourteen.lightningArcCount >= 5 && fourteen.lightningArcCount > thirteen.lightningArcCount, "fourteen candidates must enter the storm tier");
+  assert.ok(fourteen.outerTendrilCount - thirteen.outerTendrilCount >= 6, "fourteen candidates must receive an obvious exterior-tendril storm");
+  assert.equal(twenty.outerTendrilCount, 32, "twenty candidates must reach the bounded exterior overdrive tier");
+  assert.equal(oneHundredTwentyEight.outerTendrilCount, twenty.outerTendrilCount, "candidate counts above the real Wheel range cannot add unbounded exterior work");
   assert.ok(twentyEight.strength > fourteen.strength);
   assert.ok(twentyEight.ribbonCount > fourteen.ribbonCount);
   assert.ok(twentyEight.streakCount > fourteen.streakCount);
@@ -987,8 +1011,122 @@ test("Wheel portal starts strong and becomes a bounded storm at fourteen candida
     assert.ok(profile.strength >= previous.strength, `${count} candidates cannot weaken the portal`);
     assert.ok(profile.turbulence >= previous.turbulence, `${count} candidates cannot reduce turbulence`);
     assert.ok(profile.ribbonCount >= 4 && profile.streakCount >= 24 && profile.lightningArcCount >= 1, `${count} candidates cannot disable a portal layer`);
+    assert.ok(profile.outerTendrilCount >= previous.outerTendrilCount && profile.outerTendrilCount <= 32, `${count} candidates must retain bounded monotonic edge-reaching tendrils`);
     assert.equal(profile.outerRatio, 0.497, `${count} candidates must retain the edge-to-edge portal scale`);
     previous = profile;
+  }
+});
+
+test("Wheel portal tendrils contact the clipped stage edge without crossing the name-safe root", () => {
+  const width = 810;
+  const height = 1080;
+  const centerX = width * 0.5;
+  const centerY = height * engine.RADIO_VISUALS_WHEEL_CENTER_Y_RATIO;
+  const padding = width * 0.002;
+  const rootRadius = width * (0.497 - 0.002);
+
+  for (let sample = 0; sample < 720; sample += 1) {
+    const angle = sample / 720 * Math.PI * 2;
+    const radius = engine.radioVisualsPortalStageEdgeRadius(width, height, centerX, centerY, angle, padding);
+    const x = centerX + Math.cos(angle) * radius;
+    const y = centerY + Math.sin(angle) * radius;
+    assert.ok(radius > rootRadius, `sample ${sample} must retain even its shortest cardinal edge contact`);
+    assert.ok(x >= padding - 1e-7 && x <= width - padding + 1e-7);
+    assert.ok(y >= padding - 1e-7 && y <= height - padding + 1e-7);
+    const boundaryError = Math.min(
+      Math.abs(x - padding),
+      Math.abs(x - (width - padding)),
+      Math.abs(y - padding),
+      Math.abs(y - (height - padding)),
+    );
+    assert.ok(boundaryError < 1e-6, `sample ${sample} must terminate on a stage boundary`);
+  }
+});
+
+test("performer-window intrusions have fixed cadence, bounded strips, cue bypass, and an idle fast path", () => {
+  const drives = (overrides = {}) => engine.radioVisualAudioDrives({
+    source: "windows_loopback",
+    bpm: 118,
+    energy: 0,
+    bass: 0,
+    mid: 0,
+    treble: 0,
+    beat: 0,
+    accent: 0,
+    peak: 0,
+    progress: 0.4,
+    phrase: 0.25,
+    ...overrides,
+  });
+  const quiet = drives();
+  const mids = drives({ energy: 0.45, mid: 0.45, accent: 0.5 });
+  const treble = drives({ energy: 0.45, treble: 0.45, peak: 0.5 });
+  const hot = drives({ energy: 0.75, bass: 0.75, mid: 0.75, treble: 0.75, beat: 0.7, accent: 0.7, peak: 0.8 });
+  const planAt = (time, audioDrives = quiet, overrides = {}) => engine.radioVisualWindowIntrusionPlan({
+    time,
+    sceneMix: 1,
+    trackMix: 1,
+    drives: audioDrives,
+    musicScene: "matrix_rain",
+    seed: 43120,
+    cueType: null,
+    cueProgress: null,
+    cueEnvelope: 0,
+    ...overrides,
+  });
+
+  let activeTime = null;
+  let inactiveTime = null;
+  for (let tick = 0; tick <= 2_000; tick += 1) {
+    const time = tick / 100;
+    const plan = planAt(time);
+    if (plan.stutterProgress !== null && activeTime === null) activeTime = time;
+    if (!plan.active && inactiveTime === null) inactiveTime = time;
+    if (activeTime !== null && inactiveTime !== null) break;
+  }
+  assert.notEqual(activeTime, null, "the deterministic cadence must contain an occasional stutter window");
+  assert.notEqual(inactiveTime, null, "the deterministic cadence must leave most frames on the idle fast path");
+
+  for (let tick = 0; tick <= 2_000; tick += 1) {
+    const time = tick / 100;
+    const quietPlan = planAt(time, quiet);
+    const hotPlan = planAt(time, hot);
+    assert.equal(hotPlan.stutterProgress, quietPlan.stutterProgress, "audio cannot reopen or close the fixed stutter gate");
+    assert.ok(hotPlan.stutterStripCount >= 0 && hotPlan.stutterStripCount <= 3, "stutter work must stay within three actual strips");
+  }
+
+  const quietBurst = planAt(activeTime, quiet);
+  const midBurst = planAt(activeTime, mids);
+  const trebleBurst = planAt(activeTime, treble);
+  const hotBurst = planAt(activeTime, hot);
+  assert.ok(quietBurst.stutterStripCount >= 2 && quietBurst.stutterStripCount <= 3);
+  assert.ok(midBurst.stutterStrength > quietBurst.stutterStrength, "mids must strengthen their center glitch layer");
+  assert.ok(trebleBurst.stutterStrength > quietBurst.stutterStrength, "treble must strengthen its center glitch layer");
+  assert.ok(hotBurst.stutterStripCount >= quietBurst.stutterStripCount && hotBurst.stutterStripCount <= 3);
+  assert.equal(planAt(inactiveTime).active, false, "an empty allow-list must skip the second Canvas pass");
+
+  const lightning = planAt(inactiveTime, quiet, {
+    sceneMix: 0,
+    trackMix: 0,
+    musicScene: "edge_spectrum",
+    cueType: "lightning",
+    cueProgress: 0.5,
+    cueEnvelope: 0.8,
+  });
+  assert.equal(lightning.active, true, "an explicit Lightning cue must bypass sceneMix=0");
+  assert.ok(lightning.lightningCueStrength > 0);
+
+  for (const cueProgress of [0.25, 0.75]) {
+    const breach = planAt(inactiveTime, quiet, {
+      sceneMix: 0,
+      trackMix: 0,
+      musicScene: "edge_spectrum",
+      cueType: "signal_breach",
+      cueProgress,
+      cueEnvelope: 0.8,
+    });
+    assert.equal(breach.active, true, "Signal Breach must bypass sceneMix=0");
+    assert.ok(breach.signalBreachProgress !== null && breach.signalBreachStrength > 0);
   }
 });
 
@@ -1066,8 +1204,12 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.match(engineSource, /RADIO_VISUALS_WHEEL_CENTER_Y_RATIO = 0\.375/);
   assert.match(receiver, /prepareEffectLayer|applyPerformerSafeField|applyPerformerIntrusionField|destination-in/);
   assert.match(receiver, /if \(snapshot\.showStage !== "intake"\) applyPerformerSafeField\(context, width, height, 0\.2\)/);
-  assert.match(receiver, /drawPerformerWindowIntrusions[\s\S]*?"lightning_switchyard"[\s\S]*?cue\?\.type === "lightning"[\s\S]*?cue\?\.type === "signal_breach"/, "only explicit lightning and scan-line compositions may regain controlled center presence");
+  assert.match(receiver, /drawPerformerWindowIntrusions[\s\S]*?plan\.lightningFamilyStrength[\s\S]*?cue\?\.type === "lightning"[\s\S]*?cue\?\.type === "signal_breach"/, "only planned lightning and scan-line compositions may regain controlled center presence");
+  const windowIntrusions = receiver.slice(receiver.indexOf("function drawWindowScanline"), receiver.indexOf("function visualSignalMemory"));
+  assert.match(windowIntrusions, /drawWindowSignalStutter[\s\S]*plan\.stutterStripCount/, "center slippage must consume the tested two-to-three-strip plan");
+  assert.doesNotMatch(windowIntrusions, /drawEdgeSpectrum|drawOscilloscopeRibbons|drawMatrixRain|drawAsciiTerminal|drawPixelSortStorm|drawParticlePressure|drawIndustrialOverride/, "dense family renderers must never be replayed across the performer window");
   assert.match(receiver, /applyPerformerIntrusionField\(intrusionLayer\.context, width, height\)/, "window intrusions must receive their own feathered center mask");
+  assert.match(receiver, /activeSurfaceMix > 0 && intrusionPlan\.active/, "inactive intrusion cadences must skip the second full-stage Canvas pass");
   assert.match(receiver, /radioVisualBroadcastStartedTransition\(previous, current\)/);
   assert.match(receiver, /serverSnapshotRef\.current === snapshot/, "the fabricated fallback snapshot must never become broadcast-transition evidence");
   assert.match(receiver, /if \(activeSurfaceMix > 0\) \{\s*if \(authoritativeSnapshot\) observeSnapshotEvents/, "only a server snapshot may drive inferred show events");
@@ -1091,6 +1233,10 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.match(wheelScene, /tracePortalSpiral/);
   assert.match(wheelScene, /tracePortalCaustic/);
   assert.match(wheelScene, /drawPortalRimLightning/);
+  assert.match(wheelScene, /drawPortalOuterTendrils/);
+  assert.match(wheelScene, /radioVisualsPortalStageEdgeRadius[\s\S]*Math\.sin\(progress \* Math\.PI\)/, "tendril angular sweep must return to the exact boundary ray at both endpoints");
+  assert.match(wheelScene, /context\.clip\("evenodd"\)/, "exterior tendril glow must be clipped outside the name-safe root");
+  assert.match(wheelScene, /portal\.outerTendrilCount/, "candidate count must scale the edge-reaching jagged portal material");
   assert.match(wheelScene, /portal\.ribbonCount[\s\S]*portal\.streakCount[\s\S]*portal\.lightningArcCount/, "candidate count must build continuous portal layers");
   assert.match(wheelScene, /const causticCount = band\.edgeOnly[\s\S]*band\.maxRings \+ 3/, "hard caustics must remain label-safe while translucent portal material stays present");
   assert.match(wheelScene, /hardGeometryOuterRadius/);
@@ -1108,7 +1254,7 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.match(receiver, /audioTime = \(transportSeconds/);
   assert.match(receiver, /sharedTransmissionRetention = clampVisualValue\(1 - runtime\.trackMix \* 0\.78, 0\.22, 1\)/, "the shared transmission language must recede during track-specific scenes");
   assert.match(receiver, /activeSurfaceMix \* sharedTransmissionRetention \* clampVisualValue\(0\.62 \+ runtime\.intensity \* 0\.24, 0\.62, 0\.9\)/, "the restored transmission floor must remain strong outside track scenes");
-  assert.match(receiver, /0\.14[\s\S]*musicDrives\.body \* 0\.42[\s\S]*musicDrives\.presence \* 0\.36[\s\S]*musicDrives\.tapestry \* 0\.12[\s\S]*0\.14,[\s\S]*1,/, "track scenes must retain a quiet identity floor while expanding continuously with real audio");
+  assert.match(receiver, /radioVisualMusicSceneVisibility\(musicDrives\)/, "track scenes must retain a tested visible identity floor while expanding with all three audio bands");
   assert.equal((receiver.match(/drawEdgeSpectrum\(/g) ?? []).length, 2, "spectrum meters must only be defined and invoked by the music dispatcher");
   assert.equal((receiver.match(/drawOscilloscopeRibbons\(/g) ?? []).length, 2, "waveform ribbons must only be defined and invoked by the music dispatcher");
   for (const rendererName of [

@@ -1,8 +1,5 @@
 import type { RadioVisualCue } from "./radio-visuals-cues";
-import {
-  RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION,
-  type RadioAudioBridgeSignal,
-} from "./radio-audio-bridge";
+import type { RadioAudioBridgeSignal } from "./radio-audio-bridge";
 import { hashRadioVisualToken } from "./radio-visuals-events";
 import type { RadioVisualsShowStage, RadioVisualsSnapshot } from "./radio-visuals-resolver";
 
@@ -180,7 +177,7 @@ export const RADIO_VISUAL_MUSIC_SCENES = [
 ] as const;
 
 /** Music-only gain applied after track ownership and scene crossfade. */
-export const RADIO_VISUAL_MUSIC_OUTPUT_GAIN = 1.35;
+export const RADIO_VISUAL_MUSIC_OUTPUT_GAIN = 2;
 
 export interface RadioVisualMusicTransitionState {
   currentSeed: number;
@@ -232,93 +229,6 @@ export interface RadioVisualAudioDrives {
   phrase: number;
 }
 
-export type RadioVisualMusicGesture = "vocal_pattern" | "melodic_lift" | "instrumental_break";
-
-export type RadioVisualMusicLifecycleAct = "origin" | "mutation" | "finale";
-
-export type RadioVisualMusicLifecycleVariant =
-  | "bars_to_teeth"
-  | "ribbons_to_braids"
-  | "frames_to_splice"
-  | "rain_to_crossfeed"
-  | "terminal_to_breach"
-  | "slices_to_scramble"
-  | "rails_to_discharge"
-  | "grid_to_prism"
-  | "drift_to_vortex"
-  | "stars_to_network";
-
-export interface RadioVisualMusicGesturePlan {
-  gesture: RadioVisualMusicGesture;
-  vocalPattern: number;
-  melodicLift: number;
-  instrumentalBreak: number;
-  strength: number;
-}
-
-export interface RadioVisualMusicEvolutionPlan {
-  sectionIndex: number;
-  sectionBlend: number;
-  lifecycleAct: RadioVisualMusicLifecycleAct;
-  lifecycleProgress: number;
-  actProgress: number;
-  metamorphosis: number;
-  finale: number;
-  shapeMorph: number;
-  variant: RadioVisualMusicLifecycleVariant;
-  /** Sustained analyser mass after a quiet-knee curve; owns persistent geometry density. */
-  structureLevel: number;
-  /** Short low-band onset used for pressure, scale, reach, and weight. */
-  bassImpact: number;
-  /** Short mid-band onset used as the snare-like structural illumination proxy. */
-  midImpact: number;
-  /** Short high-band onset used for sparks, glints, and glow. */
-  trebleImpact: number;
-  /** Simultaneous three-band onset used for rare coordinated tapestry bursts. */
-  tapestryImpact: number;
-  /** Mid-led, high-band-supported flash envelope; not semantic stem detection. */
-  snareFlash: number;
-  pulse: number;
-  breath: number;
-  beatPunch: number;
-  hardBeat: number;
-  sectionSurge: number;
-  glowBloom: number;
-  lineWeight: number;
-  reach: number;
-  deformation: number;
-  movementBurst: number;
-  scaleX: number;
-  scaleY: number;
-  translateXRatio: number;
-  translateYRatio: number;
-  rotation: number;
-  shearX: number;
-  shearY: number;
-  jitter: number;
-  hueBlend: number;
-  motionRate: number;
-  tempoPulse: number;
-  gesture: RadioVisualMusicGesturePlan;
-}
-
-/**
- * One intensity owner for the complete music renderer. The selected family is
- * always allowed a faint identity, but persistent geometry, perimeter density,
- * lifecycle mutations, and event accents must all earn their reach from the
- * same sustained audio structure or a real short-lived transient.
- */
-export interface RadioVisualMusicIntensityPlan {
-  structureLevel: number;
-  transientLevel: number;
-  visibility: number;
-  baseGain: number;
-  perimeterGain: number;
-  lifecycleGain: number;
-  modulationGain: number;
-  identityDensity: number;
-}
-
 export const RADIO_VISUAL_BROADCAST_FX_TYPES = [
   "crt_roll",
   "scanline_stack",
@@ -360,6 +270,7 @@ export interface RadioVisualBroadcastFxInput {
   drives: RadioVisualAudioDrives;
   cueType: RadioVisualCue["type"] | null;
 }
+
 
 /**
  * Bounded audio-only density budgets consumed by one music-scene renderer.
@@ -563,345 +474,16 @@ export function radioVisualMusicScene(seed: number): RadioVisualMusicScene {
   return RADIO_VISUAL_MUSIC_SCENES[hashRadioVisualToken(`music-scene:${safeSeed}`) % RADIO_VISUAL_MUSIC_SCENES.length];
 }
 
-interface RadioVisualMusicEvolutionProfile {
-  variant: RadioVisualMusicLifecycleVariant;
-  bassScale: number;
-  midDrift: number;
-  trebleHue: number;
-  startMotion: number;
-  endMotion: number;
-  startJitter: number;
-  endJitter: number;
-  tilt: number;
-  endRotation: number;
-  endShearX: number;
-  endShearY: number;
-  breathBeats: number;
-  breathDepth: number;
-  beatReach: number;
-  beatWeight: number;
-  glowBias: number;
-  deformationBias: number;
-  impactMotion: number;
-}
-
-const MUSIC_EVOLUTION_PROFILES: Record<RadioVisualMusicScene, RadioVisualMusicEvolutionProfile> = {
-  edge_spectrum: { variant: "bars_to_teeth", bassScale: 0.72, midDrift: 0.42, trebleHue: 0.56, startMotion: 0.7, endMotion: 1.34, startJitter: 0.04, endJitter: 0.62, tilt: 0.2, endRotation: 0.006, endShearX: 0.035, endShearY: 0, breathBeats: 2, breathDepth: 0.74, beatReach: 0.94, beatWeight: 1, glowBias: 0.64, deformationBias: 0.72, impactMotion: 0.72 },
-  oscilloscope_ribbons: { variant: "ribbons_to_braids", bassScale: 0.34, midDrift: 0.92, trebleHue: 0.7, startMotion: 0.82, endMotion: 1.62, startJitter: 0.02, endJitter: 0.18, tilt: 0.44, endRotation: -0.014, endShearX: 0, endShearY: 0.026, breathBeats: 4, breathDepth: 0.96, beatReach: 0.66, beatWeight: 0.56, glowBias: 0.82, deformationBias: 0.96, impactMotion: 0.54 },
-  tape_feedback: { variant: "frames_to_splice", bassScale: 0.56, midDrift: 0.7, trebleHue: 0.5, startMotion: 1.18, endMotion: 0.72, startJitter: 0.58, endJitter: 0.08, tilt: 0.86, endRotation: 0.03, endShearX: -0.028, endShearY: 0.018, breathBeats: 8, breathDepth: 0.66, beatReach: 0.74, beatWeight: 0.88, glowBias: 0.58, deformationBias: 0.82, impactMotion: 0.44 },
-  matrix_rain: { variant: "rain_to_crossfeed", bassScale: 0.26, midDrift: 0.48, trebleHue: 0.96, startMotion: 0.68, endMotion: 1.7, startJitter: 0.02, endJitter: 0.54, tilt: 0.18, endRotation: -0.008, endShearX: -0.045, endShearY: 0, breathBeats: 2, breathDepth: 0.46, beatReach: 0.7, beatWeight: 0.48, glowBias: 1, deformationBias: 0.7, impactMotion: 0.86 },
-  ascii_terminal: { variant: "terminal_to_breach", bassScale: 0.22, midDrift: 0.64, trebleHue: 0.82, startMotion: 0.58, endMotion: 1.32, startJitter: 0.02, endJitter: 0.72, tilt: 0.12, endRotation: 0, endShearX: 0.05, endShearY: -0.018, breathBeats: 4, breathDepth: 0.52, beatReach: 0.62, beatWeight: 0.7, glowBias: 0.62, deformationBias: 0.86, impactMotion: 0.9 },
-  pixel_sort_storm: { variant: "slices_to_scramble", bassScale: 0.64, midDrift: 0.84, trebleHue: 1, startMotion: 0.76, endMotion: 1.84, startJitter: 0.16, endJitter: 1, tilt: 0.54, endRotation: 0.02, endShearX: -0.055, endShearY: 0.032, breathBeats: 1, breathDepth: 0.84, beatReach: 1, beatWeight: 0.9, glowBias: 0.78, deformationBias: 1, impactMotion: 1 },
-  lightning_switchyard: { variant: "rails_to_discharge", bassScale: 0.48, midDrift: 0.38, trebleHue: 0.88, startMotion: 0.62, endMotion: 1.76, startJitter: 0.04, endJitter: 0.84, tilt: 0.34, endRotation: -0.018, endShearX: 0.028, endShearY: 0.02, breathBeats: 2, breathDepth: 0.56, beatReach: 1, beatWeight: 1, glowBias: 1, deformationBias: 0.92, impactMotion: 1 },
-  laser_lattice: { variant: "grid_to_prism", bassScale: 0.4, midDrift: 0.58, trebleHue: 0.98, startMotion: 0.72, endMotion: 1.52, startJitter: 0.03, endJitter: 0.12, tilt: 0.72, endRotation: 0.042, endShearX: 0.018, endShearY: -0.018, breathBeats: 4, breathDepth: 0.9, beatReach: 0.76, beatWeight: 0.72, glowBias: 1, deformationBias: 0.9, impactMotion: 0.7 },
-  particle_pressure: { variant: "drift_to_vortex", bassScale: 0.9, midDrift: 0.76, trebleHue: 0.62, startMotion: 0.56, endMotion: 1.58, startJitter: 0.06, endJitter: 0.34, tilt: 0.26, endRotation: 0.026, endShearX: 0, endShearY: 0.028, breathBeats: 4, breathDepth: 1, beatReach: 1, beatWeight: 0.86, glowBias: 0.72, deformationBias: 1, impactMotion: 0.86 },
-  signal_constellation: { variant: "stars_to_network", bassScale: 0.3, midDrift: 0.88, trebleHue: 0.86, startMotion: 0.48, endMotion: 1.18, startJitter: 0.26, endJitter: 0.02, tilt: 0.62, endRotation: -0.034, endShearX: -0.02, endShearY: -0.012, breathBeats: 8, breathDepth: 0.76, beatReach: 0.64, beatWeight: 0.68, glowBias: 0.96, deformationBias: 0.76, impactMotion: 0.5 },
-};
-
-/**
- * Infer musical gestures from the frequency and transient envelopes already
- * available to the receiver. These are intentionally signal-derived hints,
- * not semantic stem or lyric detection.
- */
-export function radioVisualMusicGesturePlan(drives: RadioVisualAudioDrives): RadioVisualMusicGesturePlan {
-  const vocalPattern = clampVisualValue(
-    drives.midLayer * 0.62
-      + drives.midPulse * 0.3
-      + drives.trebleLayer * 0.14
-      - drives.bassPulse * 0.22,
-  );
-  const melodicLift = clampVisualValue(
-    drives.midPulse * 0.34
-      + drives.treblePulse * 0.4
-      + drives.midLayer * drives.trebleLayer * 0.36,
-  );
-  const instrumentalBreak = clampVisualValue(
-    drives.tapestry * 0.38
-      + drives.bassPulse * 0.24
-      + drives.treblePulse * 0.2
-      + drives.build * 0.24
-      - vocalPattern * 0.14,
-  );
-  const ranked: Array<[RadioVisualMusicGesture, number]> = [
-    ["vocal_pattern", vocalPattern],
-    ["melodic_lift", melodicLift],
-    ["instrumental_break", instrumentalBreak],
-  ];
-  ranked.sort((left, right) => right[1] - left[1]);
-  return {
-    gesture: ranked[0][0],
-    vocalPattern,
-    melodicLift,
-    instrumentalBreak,
-    strength: ranked[0][1],
-  };
-}
-
-interface RadioVisualMusicTransientChannels {
-  bassImpact: number;
-  midImpact: number;
-  trebleImpact: number;
-  tapestryImpact: number;
-  snareFlash: number;
-}
-
-/** Separate the bridge's short envelopes after rejecting their sustained floors. */
-function radioVisualMusicTransientChannels(
-  drives: RadioVisualAudioDrives,
-): RadioVisualMusicTransientChannels {
-  const bassImpact = smoothstep((drives.bassPulse - 0.1) / 0.72);
-  const midImpact = smoothstep((drives.midPulse - 0.085) / 0.68);
-  const trebleImpact = smoothstep((drives.treblePulse - 0.07) / 0.62);
-  const sharedImpact = Math.min(bassImpact, midImpact, trebleImpact);
-  const tapestryImpact = smoothstep(
-    (Math.max(drives.tapestryPulse, sharedImpact * 0.9) - 0.045) / 0.72,
-  );
-  return {
-    bassImpact,
-    midImpact,
-    trebleImpact,
-    tapestryImpact,
-    snareFlash: clampVisualValue(midImpact * (0.74 + trebleImpact * 0.26) + tapestryImpact * 0.1),
-  };
-}
-
-/** Resolve the shared quiet-to-loud budget consumed by every music pass. */
-export function radioVisualMusicIntensityPlan(
-  drives: RadioVisualAudioDrives,
-): RadioVisualMusicIntensityPlan {
-  const sustainedMass = clampVisualValue(
-    drives.body * 0.3
-      + drives.presence * 0.14
-      + drives.bassLayer * 0.2
-      + drives.midLayer * 0.2
-      + drives.trebleLayer * 0.1
-      + drives.tapestry * 0.06,
-  );
-  // Restore contrast lost to the helper's deliberately compressed RMS/FFT
-  // envelopes. Ordinary low audio stays near the identity floor; only a real
-  // full-spectrum rise can assemble the complete composition.
-  const structureLevel = clampVisualValue(
-    Math.pow(smoothstep((sustainedMass - 0.08) / 0.74), 1.12),
-  );
-  const transientChannels = radioVisualMusicTransientChannels(drives);
-  const transientLevel = Math.max(
-    transientChannels.bassImpact,
-    transientChannels.midImpact,
-    transientChannels.trebleImpact,
-    transientChannels.tapestryImpact,
-  );
-  return {
-    structureLevel,
-    transientLevel,
-    // A selected track must always retain a readable family signature through
-    // Studio's chroma key. These are identity floors, not simulated audio:
-    // real structure still owns most of the opacity, density, perimeter reach,
-    // lifecycle mutation, and transient modulation above them.
-    visibility: clampVisualValue(0.23 + structureLevel * 0.67 + transientLevel * 0.1, 0.23, 1),
-    baseGain: clampVisualValue(0.58 + structureLevel * 0.42, 0.58, 1),
-    perimeterGain: clampVisualValue(0.52 + structureLevel * 0.48, 0.52, 1),
-    lifecycleGain: clampVisualValue(0.1 + structureLevel * 0.7 + transientLevel * 0.2, 0.1, 1),
-    modulationGain: clampVisualValue(0.065 + structureLevel * 0.435 + transientLevel * 0.5, 0.065, 1),
-    identityDensity: clampVisualValue(0.16 + structureLevel * 0.74 + transientLevel * 0.1, 0.16, 1),
-  };
-}
-
-/** Smooth, bounded evolution inside one family; it never changes scene ownership. */
-export function radioVisualMusicEvolutionPlan(
-  scene: RadioVisualMusicScene,
-  seed: number,
-  time: number,
-  drives: RadioVisualAudioDrives,
-  bpm = 120,
-): RadioVisualMusicEvolutionPlan {
-  const profile = MUSIC_EVOLUTION_PROFILES[scene];
-  const safeTime = Number.isFinite(time) ? time : 0;
-  const lifecycleProgress = clampVisualValue(drives.progress);
-  const sectionPosition = lifecycleProgress * 4;
-  const sectionIndex = Math.min(3, Math.floor(sectionPosition));
-  const sectionBlend = smoothstep(sectionPosition - sectionIndex);
-  const smoothSection = sectionIndex + sectionBlend;
-  const lifecycleAct: RadioVisualMusicLifecycleAct = lifecycleProgress < 0.22
-    ? "origin"
-    : lifecycleProgress < 0.74
-      ? "mutation"
-      : "finale";
-  const actProgress = lifecycleAct === "origin"
-    ? clampVisualValue(lifecycleProgress / 0.22)
-    : lifecycleAct === "mutation"
-      ? clampVisualValue((lifecycleProgress - 0.22) / 0.52)
-      : clampVisualValue((lifecycleProgress - 0.74) / 0.26);
-  // Hold a readable origin long enough to establish the family, then make the
-  // end unmistakably different without a hard scene swap.
-  const metamorphosis = smoothstep((lifecycleProgress - 0.08) / 0.84);
-  const finale = smoothstep((lifecycleProgress - 0.7) / 0.3);
-  const seedPhase = deterministicVisualUnit(seed, 26_001) * Math.PI * 2;
-  const phraseWave = 0.5 + 0.5 * Math.sin(clampVisualValue(drives.phrase) * Math.PI * 2 + seedPhase);
-  const safeBpm = clampVisualValue(bpm, 55, 200);
-  const tempoPosition = safeTime * safeBpm / 60;
-  const tempoWave = Math.pow(0.5 + 0.5 * Math.cos(tempoPosition * Math.PI * 2), 3.2);
-  const lifecycleMotion = profile.startMotion + (profile.endMotion - profile.startMotion) * metamorphosis;
-  const slowWave = Math.sin(safeTime * (0.12 + lifecycleMotion * 0.055) + seedPhase + smoothSection * 0.74);
-  const crossWave = Math.cos(safeTime * (0.09 + profile.midDrift * 0.06) + seedPhase * 0.73 + smoothSection * 0.41);
-  const { structureLevel } = radioVisualMusicIntensityPlan(drives);
-  // The analyser exposes independent short envelopes. Keep them independent:
-  // bass owns pressure, mids own snare-like illumination, and treble owns
-  // sparks/glow. Their tiny sustained floors stay below these onset knees.
-  const { bassImpact, midImpact, trebleImpact, tapestryImpact, snareFlash } = radioVisualMusicTransientChannels(drives);
-  const detectedHit = Math.max(bassImpact, midImpact, trebleImpact, tapestryImpact, drives.impact * structureLevel * 0.38);
-  const tempoPulse = clampVisualValue(
-    Math.max(detectedHit, tempoWave * (0.012 + structureLevel * 0.075)),
-  );
-  const bassMotion = clampVisualValue(drives.bassLayer * 0.68 + bassImpact * 0.32);
-  const midMotion = clampVisualValue(drives.midLayer * 0.7 + midImpact * 0.3);
-  const trebleMotion = clampVisualValue(drives.trebleLayer * 0.68 + trebleImpact * 0.32);
-  const breathWave = Math.sin(
-    tempoPosition / profile.breathBeats * Math.PI * 2
-      + seedPhase
-      + smoothSection * 0.21,
-  );
-  const breath = clampVisualValue(0.5 + breathWave * 0.5);
-  const hardBeat = smoothstep((detectedHit - 0.22) / 0.7);
-  const beatPunch = clampVisualValue(
-    bassImpact * 0.46
-      + midImpact * 0.18
-      + trebleImpact * 0.1
-      + tapestryImpact * 0.26
-      + hardBeat * 0.18
-      + tempoWave * structureLevel * 0.035,
-  );
-  const sectionSurge = clampVisualValue(
-    Math.pow(Math.sin(sectionBlend * Math.PI), 2)
-      * (0.18 + metamorphosis * 0.82)
-      * structureLevel,
-  );
-  const pulse = clampVisualValue(
-    structureLevel * (0.035 + breath * 0.13)
-      + bassImpact * 0.45
-      + midImpact * 0.16
-      + trebleImpact * 0.08
-      + tapestryImpact * 0.26
-      + hardBeat * 0.12
-      + sectionSurge * 0.1,
-  );
-  const scaleAmount = profile.bassScale * bassMotion * (0.004 + phraseWave * 0.017 + tempoPulse * 0.006);
-  const drift = profile.midDrift * midMotion;
-  const shapeMorph = clampVisualValue(
-    metamorphosis * (0.24 + structureLevel * 0.48 + midMotion * 0.18 + drives.tapestry * 0.1),
-  );
-  const jitterProfile = profile.startJitter + (profile.endJitter - profile.startJitter) * metamorphosis;
-  const jitter = clampVisualValue(
-    jitterProfile
-      * (0.035 + structureLevel * 0.12 + trebleImpact * 0.46 + midImpact * 0.16 + tapestryImpact * 0.12),
-  );
-  const glowBloom = clampVisualValue(
-    profile.glowBias
-      * (structureLevel * 0.08 + trebleImpact * 0.52 + snareFlash * 0.24 + tapestryImpact * 0.2 + sectionSurge * 0.08),
-  );
-  const lineWeight = clampVisualValue(
-    0.68
-      + profile.beatWeight
-        * (structureLevel * 0.28 + bassImpact * 0.72 + tapestryImpact * 0.28 + sectionSurge * 0.08),
-    0.68,
-    2.25,
-  );
-  const reach = clampVisualValue(
-    0.7
-      + structureLevel * 0.2
-      + profile.breathDepth * structureLevel * (0.02 + breath * 0.055)
-      + profile.beatReach * (bassImpact * 0.26 + tapestryImpact * 0.18)
-      + midImpact * 0.08
-      + sectionSurge * 0.05,
-    0.7,
-    1.5,
-  );
-  const deformation = clampVisualValue(
-    profile.deformationBias
-      * (shapeMorph * structureLevel * 0.24 + midImpact * 0.4 + tapestryImpact * 0.24 + sectionSurge * 0.12 + trebleImpact * 0.08),
-  );
-  const movementBurst = clampVisualValue(
-    0.04
-      + metamorphosis * structureLevel * 0.05
-      + sectionSurge * 0.18
-      + bassImpact * profile.impactMotion * 0.2
-      + midImpact * profile.impactMotion * 0.38
-      + trebleImpact * 0.22
-      + tapestryImpact * 0.24,
-  );
-  const breathingScale = breathWave * profile.breathDepth * structureLevel * (0.003 + metamorphosis * 0.004);
-  const beatCompression = (bassImpact * 0.7 + tapestryImpact * 0.3) * profile.beatReach * (0.004 + hardBeat * 0.012);
-  const travelGate = 0.1 + metamorphosis * structureLevel * 0.06 + movementBurst * 0.84;
-  return {
-    sectionIndex,
-    sectionBlend,
-    lifecycleAct,
-    lifecycleProgress,
-    actProgress,
-    metamorphosis,
-    finale,
-    shapeMorph,
-    variant: profile.variant,
-    structureLevel,
-    bassImpact,
-    midImpact,
-    trebleImpact,
-    tapestryImpact,
-    snareFlash,
-    pulse,
-    breath,
-    beatPunch,
-    hardBeat,
-    sectionSurge,
-    glowBloom,
-    lineWeight,
-    reach,
-    deformation,
-    movementBurst,
-    scaleX: clampVisualValue(1 + scaleAmount + breathingScale - beatCompression + drives.tapestry * 0.003 + profile.endShearY * shapeMorph * 0.12, 0.955, 1.075),
-    scaleY: clampVisualValue(1 + scaleAmount * (0.54 + profile.midDrift * 0.34) + breathingScale * (0.62 + profile.midDrift * 0.22) - beatCompression * (0.5 + profile.beatWeight * 0.32) - profile.endShearX * shapeMorph * 0.1, 0.955, 1.075),
-    translateXRatio: clampVisualValue(slowWave * drift * (0.006 + metamorphosis * 0.006) * travelGate, -0.014, 0.014),
-    translateYRatio: clampVisualValue(crossWave * drift * (0.004 + metamorphosis * 0.005) * travelGate, -0.014, 0.014),
-    rotation: clampVisualValue(
-      slowWave * profile.tilt * midMotion * 0.012 + profile.endRotation * shapeMorph,
-      -0.05,
-      0.05,
-    ),
-    shearX: clampVisualValue(profile.endShearX * shapeMorph, -0.06, 0.06),
-    shearY: clampVisualValue(profile.endShearY * shapeMorph, -0.06, 0.06),
-    jitter,
-    hueBlend: clampVisualValue(
-      profile.trebleHue
-        * metamorphosis
-        * (0.2 + trebleMotion * 0.8)
-        * (0.72 + 0.28 * (0.5 + 0.5 * Math.sin(safeTime * 0.22 + seedPhase))),
-      0,
-      0.62,
-    ),
-    motionRate: clampVisualValue(
-      lifecycleMotion * (0.84 + clampVisualValue((safeBpm - 70) / 100) * 0.2)
-        + trebleMotion * 0.16
-        + tempoPulse * 0.08
-        + movementBurst * 0.12,
-      0.48,
-      1.95,
-    ),
-    tempoPulse,
-    gesture: radioVisualMusicGesturePlan(drives),
-  };
-}
-
 function bandLayerActivation(value: number, threshold: number, ceiling: number): number {
   const normalized = clampVisualValue(
     (clampVisualValue(value) - threshold) / Math.max(0.001, ceiling - threshold),
   );
-  // Preserve headroom through ordinary passages: low readings move gently,
-  // while genuinely high band energy can still reach the full layer budget.
-  return clampVisualValue(Math.pow(normalized, 1.42));
+  return clampVisualValue(Math.pow(normalized, 1.08));
 }
 
 function tapestryActivation(bass: number, mid: number, treble: number): number {
   const sharedFloor = Math.min(bass, mid, treble);
-  const shared = bandLayerActivation(sharedFloor, 0.03, 0.9);
+  const shared = bandLayerActivation(sharedFloor, 0.018, 0.75);
   const mean = (bass + mid + treble) / 3;
   return clampVisualValue(shared * (0.72 + mean * 0.28));
 }
@@ -939,9 +521,9 @@ export function radioVisualAudioDrives(signal: RadioVisualMusicSignal): RadioVis
   const bassPulse = clampVisualValue(Math.max(bass * 0.08, beatDrive * bass));
   const midPulse = clampVisualValue(Math.max(mid * 0.08, accentDrive * mid));
   const treblePulse = clampVisualValue(Math.max(treble * 0.08, peakDrive * treble));
-  const bassLayer = bandLayerActivation(bass, 0.032, 0.92);
-  const midLayer = bandLayerActivation(mid, 0.028, 0.9);
-  const trebleLayer = bandLayerActivation(treble, 0.022, 0.88);
+  const bassLayer = bandLayerActivation(bass, 0.018, 0.78);
+  const midLayer = bandLayerActivation(mid, 0.016, 0.76);
+  const trebleLayer = bandLayerActivation(treble, 0.012, 0.72);
   const tapestry = tapestryActivation(bass, mid, treble);
   const progress = clampVisualValue(signal.progress);
   const phrase = clampVisualValue(signal.phrase);
@@ -1012,7 +594,18 @@ export function radioVisualMusicSceneLayerPlan(
  * real audio—not track progress—to expand its opacity and occupied area.
  */
 export function radioVisualMusicSceneVisibility(drives: RadioVisualAudioDrives): number {
-  return radioVisualMusicIntensityPlan(drives).visibility;
+  const bandFullness = (drives.bassLayer + drives.midLayer + drives.trebleLayer) / 3;
+  const loudestLayer = Math.max(drives.bassLayer, drives.midLayer, drives.trebleLayer);
+  return clampVisualValue(
+    0.3
+      + drives.body * 0.24
+      + drives.presence * 0.16
+      + bandFullness * 0.18
+      + loudestLayer * 0.06
+      + drives.tapestry * 0.12,
+    0.3,
+    1,
+  );
 }
 
 /**
@@ -1025,51 +618,39 @@ export function radioVisualMusicPerimeterPlan(
   scene: RadioVisualMusicScene,
   drives: RadioVisualAudioDrives,
 ): RadioVisualMusicPerimeterPlan {
-  const intensity = radioVisualMusicIntensityPlan(drives);
   const bassDrive = clampVisualValue(
-    drives.bassLayer * 0.62 + drives.bassPulse * 0.3,
+    0.12 + drives.bassLayer * 0.58 + drives.bassPulse * 0.3,
   );
   const midDrive = clampVisualValue(
-    drives.midLayer * 0.63 + drives.midPulse * 0.31,
+    0.1 + drives.midLayer * 0.58 + drives.midPulse * 0.32,
   );
   const trebleDrive = clampVisualValue(
-    drives.trebleLayer * 0.6 + drives.treblePulse * 0.34,
+    0.1 + drives.trebleLayer * 0.54 + drives.treblePulse * 0.36,
   );
   const tapestryDrive = clampVisualValue(
     drives.tapestry * 0.7 + drives.tapestryPulse * 0.3,
   );
   const sharedBandDrive = (bassDrive + midDrive + trebleDrive) / 3;
   const strength = clampVisualValue(
-    0.16
-      + intensity.structureLevel * 0.38
-      + drives.body * 0.08
-      + sharedBandDrive * 0.16
-      + intensity.transientLevel * 0.08
-      + tapestryDrive * 0.14,
-    0.16,
+    0.64
+      + drives.body * 0.1
+      + drives.presence * 0.08
+      + sharedBandDrive * 0.1
+      + drives.impact * 0.04
+      + tapestryDrive * 0.08,
+    0.64,
     1,
   );
   const reach = clampVisualValue(
-    0.012
-      + intensity.structureLevel * 0.016
-      + midDrive * 0.046
-      + trebleDrive * 0.032
-      + tapestryDrive * 0.032
-      + intensity.transientLevel * 0.009,
-    0.012,
-    0.155,
+    0.075 + midDrive * 0.055 + trebleDrive * 0.035 + tapestryDrive * 0.035,
+    0.075,
+    0.2,
   );
   const thickness = clampVisualValue(
-    0.0012
-      + intensity.structureLevel * 0.0012
-      + bassDrive * 0.0078
-      + drives.bassPulse * 0.0032,
-    0.0012,
-    0.014,
+    0.0035 + bassDrive * 0.0095 + drives.bassPulse * 0.0045,
+    0.0035,
+    0.018,
   );
-  const bassActive = bassDrive > 0.025;
-  const midActive = midDrive > 0.022;
-  const trebleActive = trebleDrive > 0.02;
   return {
     motif: RADIO_VISUAL_MUSIC_PERIMETER_MOTIFS[scene],
     strength,
@@ -1079,15 +660,9 @@ export function radioVisualMusicPerimeterPlan(
     midDrive,
     trebleDrive,
     tapestryDrive,
-    bassElements: bassActive
-      ? Math.min(10, 1 + Math.round(drives.bassLayer * 6 + drives.bassPulse * 3))
-      : 0,
-    midElements: midActive
-      ? Math.min(14, 1 + Math.round(drives.midLayer * 8 + drives.midPulse * 4))
-      : 0,
-    trebleElements: trebleActive
-      ? Math.min(18, 1 + Math.round(drives.trebleLayer * 10 + drives.treblePulse * 6))
-      : 0,
+    bassElements: Math.min(10, 2 + Math.round(drives.bassLayer * 5 + drives.bassPulse * 3)),
+    midElements: Math.min(14, 3 + Math.round(drives.midLayer * 7 + drives.midPulse * 4)),
+    trebleElements: Math.min(18, 3 + Math.round(drives.trebleLayer * 9 + drives.treblePulse * 6)),
     tapestryElements: tapestryDrive > 0.025
       ? Math.min(6, 1 + Math.round(drives.tapestry * 3 + drives.tapestryPulse * 2))
       : 0,
@@ -1106,16 +681,6 @@ export interface RadioVisualWindowIntrusionPlan {
   lightningCueStrength: number;
   signalBreachProgress: number | null;
   signalBreachStrength: number;
-  musicSweepProgress: number | null;
-  musicSweepStrength: number;
-  musicSweepSeed: number;
-  musicGesture: RadioVisualMusicGesture;
-  musicScene: RadioVisualMusicScene;
-  transientSeed: number;
-  bassBreachStrength: number;
-  midFlashStrength: number;
-  trebleSparkStrength: number;
-  tapestryBurstStrength: number;
 }
 
 export interface RadioVisualWindowIntrusionInput {
@@ -1233,6 +798,7 @@ export function radioVisualBroadcastFxPlan(input: RadioVisualBroadcastFxInput): 
   };
 }
 
+
 function boundedCycleProgress(cycle: number, activeWindow: number): number | null {
   const wrapped = ((cycle % 1) + 1) % 1;
   if (wrapped > activeWindow) return null;
@@ -1309,58 +875,11 @@ export function radioVisualWindowIntrusionPlan(
     ? (clampVisualValue(input.cueProgress) * 2) % 1
     : null;
   const signalBreachStrength = signalBreachProgress === null ? 0 : cueEnvelope * 0.52;
-  const gesturePlan = radioVisualMusicGesturePlan(input.drives);
-  const musicSweepCycleSeconds = 4.6 + deterministicVisualUnit(input.seed, 23_801) * 2.2;
-  const musicSweepShiftedTime = input.time + deterministicVisualUnit(input.seed, 23_802) * musicSweepCycleSeconds;
-  const musicSweepCycleIndex = Math.floor(musicSweepShiftedTime / musicSweepCycleSeconds);
-  const musicSweepGate = input.cueType === null && trackMix > 0.08 && gesturePlan.strength > 0.24
-    ? boundedCycleProgress(musicSweepShiftedTime / musicSweepCycleSeconds, 0.11)
-    : null;
-  const musicSweepStrength = musicSweepGate === null
-    ? 0
-    : clampVisualValue(
-      sceneMix
-        * trackMix
-        * Math.sin(musicSweepGate * Math.PI)
-        * (gesturePlan.strength - 0.18)
-        * 0.44,
-      0,
-      0.26,
-    );
-  const transientChannels = radioVisualMusicTransientChannels(input.drives);
-  const transientGate = input.cueType === null && trackMix > 0.08
-    ? sceneMix * trackMix
-    : 0;
-  const bassBreachStrength = clampVisualValue(
-    transientGate * transientChannels.bassImpact * 0.28,
-    0,
-    0.28,
-  );
-  const midFlashStrength = clampVisualValue(
-    transientGate * transientChannels.snareFlash * 0.34,
-    0,
-    0.34,
-  );
-  const trebleSparkStrength = clampVisualValue(
-    transientGate * transientChannels.trebleImpact * 0.3,
-    0,
-    0.3,
-  );
-  const tapestryBurstStrength = clampVisualValue(
-    transientGate * transientChannels.tapestryImpact * 0.38,
-    0,
-    0.38,
-  );
   const active = (scanProgress !== null && scanStrength >= 0.002)
     || (stutterProgress !== null && stutterStrength >= 0.002)
     || lightningFamilyStrength >= 0.002
     || lightningCueStrength > 0.002
-    || signalBreachStrength >= 0.002
-    || musicSweepStrength >= 0.002
-    || bassBreachStrength >= 0.002
-    || midFlashStrength >= 0.002
-    || trebleSparkStrength >= 0.002
-    || tapestryBurstStrength >= 0.002;
+    || signalBreachStrength >= 0.002;
 
   return {
     active,
@@ -1374,16 +893,6 @@ export function radioVisualWindowIntrusionPlan(
     lightningCueStrength,
     signalBreachProgress,
     signalBreachStrength,
-    musicSweepProgress: musicSweepStrength >= 0.002 ? musicSweepGate : null,
-    musicSweepStrength,
-    musicSweepSeed: input.seed + musicSweepCycleIndex * 11_173,
-    musicGesture: gesturePlan.gesture,
-    musicScene: input.musicScene,
-    transientSeed: input.seed + Math.floor(input.time * 4) * 104_729,
-    bassBreachStrength,
-    midFlashStrength,
-    trebleSparkStrength,
-    tapestryBurstStrength,
   };
 }
 
@@ -1497,29 +1006,8 @@ function rhythmPulse(phase: number, power: number): number {
 }
 
 export type RadioVisualLoopbackChannel = "energy" | "bass" | "mid" | "treble";
-export type RadioVisualLoopbackAnalysisCalibration = typeof RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION | "legacy_full_scale";
-
-const LEGACY_LOOPBACK_REFERENCE_GAIN = Math.pow(10, -9 / 20);
-const LEGACY_LOOPBACK_LEVEL_SCALE: Record<RadioVisualLoopbackChannel, number> = {
-  // AudioAnalyzer 1.0.3 raised reconstructed full-scale samples to these
-  // channel exponents before the browser saw them. Reapply the fixed analysis
-  // reference in that compressed domain so the deployed renderer improves
-  // immediately; 1.0.4 applies the same reference before analysis and marks
-  // its payload to prevent this compatibility correction from running twice.
-  energy: Math.pow(LEGACY_LOOPBACK_REFERENCE_GAIN, 0.72),
-  bass: Math.pow(LEGACY_LOOPBACK_REFERENCE_GAIN, 0.58),
-  mid: Math.pow(LEGACY_LOOPBACK_REFERENCE_GAIN, 0.58),
-  treble: Math.pow(LEGACY_LOOPBACK_REFERENCE_GAIN, 0.58),
-};
 
 const LOOPBACK_LEVEL_CALIBRATION: Record<RadioVisualLoopbackChannel, { floor: number; ceiling: number; gamma: number }> = {
-  // AudioAnalyzer deliberately compresses RMS and FFT magnitudes with
-  // sub-linear exponents. These inverse-ish knees restore musical contrast:
-  // low readings stay low, while genuinely high readings retain headroom.
-  // Restore the response curve from the last accepted level checkpoint. The
-  // fixed analysis reference already prevents system-volume reconstruction
-  // from pinning these readings; another 1.8-power gate made useful bridge
-  // readings disappear before the family renderer could consume them.
   energy: { floor: 0.025, ceiling: 1, gamma: 1.25 },
   bass: { floor: 0.03, ceiling: 1, gamma: 1.3 },
   mid: { floor: 0.025, ceiling: 1, gamma: 1.25 },
@@ -1527,24 +1015,20 @@ const LOOPBACK_LEVEL_CALIBRATION: Record<RadioVisualLoopbackChannel, { floor: nu
 };
 
 /** Map the installed bridge's already-compressed bands through one quiet-knee curve. */
-export function radioVisualLoopbackLevel(
-  value: number,
-  channel: RadioVisualLoopbackChannel = "energy",
-  analysisCalibration: RadioVisualLoopbackAnalysisCalibration = RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION,
-): number {
+export function radioVisualLoopbackLevel(value: number, channel: RadioVisualLoopbackChannel = "energy"): number {
   const calibration = LOOPBACK_LEVEL_CALIBRATION[channel];
-  const analysisValue = clampVisualValue(value) * (
-    analysisCalibration === RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION
-      ? 1
-      : LEGACY_LOOPBACK_LEVEL_SCALE[channel]
-  );
   const normalized = clampVisualValue(
-    (analysisValue - calibration.floor) / (calibration.ceiling - calibration.floor),
+    (clampVisualValue(value) - calibration.floor) / (calibration.ceiling - calibration.floor),
   );
   // The helper already compresses FFT/RMS values. A second smoothstep made
   // ordinary 20-50% live readings visually tiny; a power knee still rejects
   // the noise floor while preserving useful motion across that real range.
   return clampVisualValue(Math.pow(normalized, calibration.gamma));
+}
+
+function radioVisualLoopbackPeak(value: number): number {
+  const normalized = clampVisualValue((clampVisualValue(value) - 0.02) / 0.94);
+  return clampVisualValue(Math.pow(smoothstep(normalized), 1.15));
 }
 
 export function radioVisualsMusicSignal(
@@ -1621,19 +1105,13 @@ export function radioVisualsMusicSignal(
   );
   if (hasLoopback && bridgeSignal) {
     const confidence = clampVisualValue(bridgeSignal.tempoConfidence);
-    const analysisCalibration = bridgeSignal.analysisCalibration === RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION
-      ? RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION
-      : "legacy_full_scale";
-    const liveEnergy = radioVisualLoopbackLevel(bridgeSignal.energy, "energy", analysisCalibration);
-    const liveBass = radioVisualLoopbackLevel(bridgeSignal.bass, "bass", analysisCalibration);
-    const liveMid = radioVisualLoopbackLevel(bridgeSignal.mid, "mid", analysisCalibration);
-    const liveTreble = radioVisualLoopbackLevel(bridgeSignal.treble, "treble", analysisCalibration);
+    const liveEnergy = radioVisualLoopbackLevel(bridgeSignal.energy, "energy");
+    const liveBass = radioVisualLoopbackLevel(bridgeSignal.bass, "bass");
+    const liveMid = radioVisualLoopbackLevel(bridgeSignal.mid, "mid");
+    const liveTreble = radioVisualLoopbackLevel(bridgeSignal.treble, "treble");
+    const livePeak = radioVisualLoopbackPeak(bridgeSignal.peak);
     const liveBeat = Math.pow(clampVisualValue(bridgeSignal.beat), 1.15);
-    // The helper's `peak` field is a held sample-amplitude meter, not an onset
-    // envelope. Feeding it into every transient channel made a mastered track
-    // look like one permanent hit. The helper's flux-qualified beat plus the
-    // independent browser band-onset followers own short events instead.
-    const liveTransient = liveBeat;
+    const liveTransient = Math.max(liveBeat, livePeak);
     return {
       source: "windows_loopback",
       bpm: confidence >= 0.28 ? bridgeSignal.bpm : bpm,

@@ -42,6 +42,9 @@ Accepted additive extension:
 - Layer family-specific breathing, pulse, glow, line-weight change, inward reach, growth/shrink, and shape deformation over those retained forms.
 - Ordinary audio keeps the visuals alive with headroom; real analyser hits earn the strongest compression/expansion, impact motion, glow, and cross-shape response. The BPM clock may pace subtle breathing but cannot fabricate a hard hit.
 - The ten families keep distinct modulation profiles so this pass adds visible performance without flattening them into one shared effect.
+- Gate persistent additive geometry behind a shaped sustained-structure level so silence and quiet passages cannot begin in a visually maxed state, while loud sustained passages can still build the retained forms.
+- Give bass, mid/snare-like, treble, and true all-band arrivals separate short-lived event channels: bass owns pressure and weight, mids own flashes and structural strikes, treble owns sparks and glints, and the combined hit owns the rare coordinated burst. The mid event is a spectral/transient proxy, not semantic drum or stem detection.
+- Soften the performer-window cutout with bounded event-only breaches that reuse each family's visual language. These breaches may cross the safe field briefly without replaying the dense family renderer or removing the established center protection.
 
 ### 3. Sponsor-break eligibility
 

@@ -1007,11 +1007,11 @@ test("music evolution converts real hits and section energy into bounded pulse, 
     assert.ok(hit.glowBloom > calm.glowBloom + 0.12, `${musicScene} must bloom on impact`);
     assert.ok(hit.deformation > calm.deformation, `${musicScene} must change shape on impact`);
     assert.ok(hit.movementBurst > calm.movementBurst, `${musicScene} may earn additional movement on impact`);
-    assert.ok(hit.lineWeight >= 0.82 && hit.lineWeight <= 2.4);
-    assert.ok(hit.reach >= 0.86 && hit.reach <= 1.55);
+    assert.ok(hit.lineWeight >= 0.68 && hit.lineWeight <= 2.25);
+    assert.ok(hit.reach >= 0.7 && hit.reach <= 1.5);
     assert.ok(hit.scaleX >= 0.955 && hit.scaleX <= 1.075);
     assert.ok(hit.scaleY >= 0.955 && hit.scaleY <= 1.075);
-    assert.ok(calm.movementBurst >= 0.16, `${musicScene} must retain its existing baseline motion`);
+    assert.ok(calm.movementBurst >= 0.04, `${musicScene} must retain subtle baseline motion without imitating a hit`);
     signatures.add([
       hit.variant,
       hit.breath.toFixed(3),
@@ -1034,6 +1034,49 @@ test("music evolution converts real hits and section energy into bounded pulse, 
   const liveSection = engine.radioVisualMusicEvolutionPlan("laser_lattice", 7_731, 12.25, { ...steady, progress: 0.125 }, 120);
   assert.equal(silentSection.sectionSurge, 0, "silence cannot manufacture a section surge");
   assert.ok(liveSection.sectionSurge > 0.05, "audible section energy must create a lifecycle swell");
+});
+
+test("quiet structure stays restrained while bass, snare-like mids, treble, and full-band hits own separate events", () => {
+  const signal = (overrides = {}) => ({
+    source: "windows_loopback",
+    bpm: 122,
+    energy: 0.12,
+    bass: 0.1,
+    mid: 0.11,
+    treble: 0.09,
+    beat: 0,
+    accent: 0,
+    peak: 0,
+    progress: 0.42,
+    phrase: 0.3,
+    ...overrides,
+  });
+  const plan = (overrides = {}) => engine.radioVisualMusicEvolutionPlan(
+    "tape_feedback",
+    9_911,
+    17.25,
+    engine.radioVisualAudioDrives(signal(overrides)),
+    122,
+  );
+  const quiet = plan();
+  const sustained = plan({ energy: 0.86, bass: 0.82, mid: 0.86, treble: 0.8 });
+  const bass = plan({ energy: 0.64, bass: 0.92, beat: 1 });
+  const mids = plan({ energy: 0.64, mid: 0.92, accent: 1 });
+  const treble = plan({ energy: 0.64, treble: 0.92, peak: 1 });
+  const tapestry = plan({ energy: 0.92, bass: 0.92, mid: 0.92, treble: 0.92, beat: 1, accent: 1, peak: 1 });
+
+  assert.ok(quiet.structureLevel < 0.03 && quiet.pulse < 0.02, "a quiet opening cannot start near the maximum additive state");
+  assert.ok(sustained.structureLevel > 0.9 && sustained.reach > quiet.reach + 0.18, "sustained loudness must grow the structure without fabricating a hit");
+  assert.equal(sustained.bassImpact, 0);
+  assert.equal(sustained.midImpact, 0);
+  assert.equal(sustained.trebleImpact, 0);
+  assert.ok(bass.bassImpact > 0.98 && bass.midImpact === 0 && bass.trebleImpact === 0, "a bass onset must only fire pressure");
+  assert.ok(bass.lineWeight > quiet.lineWeight + 0.55 && bass.reach > quiet.reach + 0.25, "bass pressure must thicken and extend geometry");
+  assert.ok(mids.midImpact > 0.98 && mids.snareFlash > 0.7 && mids.bassImpact === 0 && mids.trebleImpact === 0, "a mid onset must own the snare-like flash");
+  assert.ok(mids.deformation > quiet.deformation + 0.25, "the mid event must illuminate and reshape rather than only translate");
+  assert.ok(treble.trebleImpact > 0.98 && treble.bassImpact === 0 && treble.midImpact === 0, "a high onset must only fire sparkle/glow");
+  assert.ok(treble.glowBloom > quiet.glowBloom + 0.3, "treble must materially bloom the glow system");
+  assert.ok(tapestry.tapestryImpact > 0.98 && tapestry.pulse > 0.9, "a simultaneous three-band onset must fire the coordinated tapestry burst");
 });
 
 test("all ten music families have authored origin, mutation, and finale forms paced by tempo", () => {
@@ -1088,7 +1131,7 @@ test("all ten music families have authored origin, mutation, and finale forms pa
 
   const onBeat = engine.radioVisualMusicEvolutionPlan("edge_spectrum", 2_611, 12, { ...steady, progress: 0.8 }, 120);
   const offBeat = engine.radioVisualMusicEvolutionPlan("edge_spectrum", 2_611, 12.25, { ...steady, progress: 0.8 }, 120);
-  assert.ok(onBeat.tempoPulse > offBeat.tempoPulse + 0.08, "detected BPM must pace lifecycle motion even between strong analyser transients");
+  assert.ok(onBeat.tempoPulse > offBeat.tempoPulse + 0.04, "detected BPM may pace subtle lifecycle breathing without imitating a real transient");
 });
 
 test("signal-derived musical gesture hints distinguish vocal, melodic, and instrumental patterns", () => {
@@ -1465,6 +1508,23 @@ test("performer-window intrusions have fixed cadence, bounded strips, cue bypass
   assert.ok(hotBurst.stutterStripCount >= quietBurst.stutterStripCount && hotBurst.stutterStripCount <= 3);
   assert.equal(planAt(inactiveTime).active, false, "an empty allow-list must skip the second Canvas pass");
 
+  const bassHit = drives({ energy: 0.64, bass: 0.92, beat: 1 });
+  const midHit = drives({ energy: 0.64, mid: 0.92, accent: 1 });
+  const trebleHit = drives({ energy: 0.64, treble: 0.92, peak: 1 });
+  const tapestryHit = drives({ energy: 0.92, bass: 0.92, mid: 0.92, treble: 0.92, beat: 1, accent: 1, peak: 1 });
+  const bassIntrusion = planAt(inactiveTime, bassHit, { musicScene: "particle_pressure" });
+  const midIntrusion = planAt(inactiveTime, midHit, { musicScene: "ascii_terminal" });
+  const trebleIntrusion = planAt(inactiveTime, trebleHit, { musicScene: "signal_constellation" });
+  const tapestryIntrusion = planAt(inactiveTime, tapestryHit, { musicScene: "laser_lattice" });
+  assert.ok(bassIntrusion.bassBreachStrength > 0.25 && bassIntrusion.midFlashStrength === 0 && bassIntrusion.trebleSparkStrength === 0);
+  assert.ok(midIntrusion.midFlashStrength > 0.24 && midIntrusion.bassBreachStrength === 0 && midIntrusion.trebleSparkStrength === 0);
+  assert.ok(trebleIntrusion.trebleSparkStrength > 0.27 && trebleIntrusion.bassBreachStrength === 0 && trebleIntrusion.midFlashStrength === 0);
+  assert.ok(tapestryIntrusion.tapestryBurstStrength > 0.35, "a real full-band hit must briefly breach the performer field");
+  assert.equal(midIntrusion.musicScene, "ascii_terminal", "the bounded breach must retain the active family's visual language");
+  for (const plan of [bassIntrusion, midIntrusion, trebleIntrusion, tapestryIntrusion]) {
+    assert.equal(plan.active, true, "a real transient must activate the otherwise idle second Canvas pass");
+  }
+
   const lightning = planAt(inactiveTime, quiet, {
     sceneMix: 0,
     trackMix: 0,
@@ -1546,9 +1606,10 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.match(receiver, /drawMusicLifecycleVariant[\s\S]*bars_to_teeth[\s\S]*ribbons_to_braids[\s\S]*frames_to_splice[\s\S]*rain_to_crossfeed[\s\S]*terminal_to_breach[\s\S]*slices_to_scramble[\s\S]*rails_to_discharge[\s\S]*grid_to_prism[\s\S]*drift_to_vortex[\s\S]*stars_to_network/, "all ten families must own a different late-song form");
   assert.match(receiver, /drawMusicDynamicModulation[\s\S]*edge_spectrum[\s\S]*oscilloscope_ribbons[\s\S]*tape_feedback[\s\S]*matrix_rain[\s\S]*ascii_terminal[\s\S]*pixel_sort_storm[\s\S]*lightning_switchyard[\s\S]*laser_lattice[\s\S]*particle_pressure[\s\S]*signal_constellation/, "all ten existing families must receive a distinct additive performance layer");
   const dynamicModulation = receiver.slice(receiver.indexOf("function drawMusicDynamicModulation"), receiver.indexOf("function drawSeededMusicScene"));
-  for (const modulation of ["pulse", "breath", "beatPunch", "hardBeat", "sectionSurge", "glowBloom", "lineWeight", "reach", "deformation", "movementBurst"]) {
+  for (const modulation of ["structureLevel", "bassImpact", "midImpact", "trebleImpact", "tapestryImpact", "snareFlash", "pulse", "breath", "beatPunch", "hardBeat", "sectionSurge", "glowBloom", "lineWeight", "reach", "deformation", "movementBurst"]) {
     assert.match(dynamicModulation, new RegExp(`evolution\\.${modulation}\\b`), `the additive layer must visibly consume ${modulation}`);
   }
+  assert.match(receiver, /drawMusicBandEventAccents[\s\S]*MID::SYNC[\s\S]*HIT::ACK/, "snare-like mid events must light an authored family feature instead of becoming more static lines");
   assert.match(receiver, /drawMusicLifecycleVariant\([^;]+;\s*drawMusicDynamicModulation\(/s, "dynamic modulation must layer after the retained lifecycle geometry");
   assert.match(receiver, /drawSeededMusicScene\(context, width, height, audioTime, music\.bpm,/, "the selected family lifecycle must receive the detected tempo");
   assert.match(receiver, /return clampVisualValue\(mix \* \(0\.82 \+ drive \* 0\.16\), 0, 0\.98\)/, "chroma-safe cores must multiply by state fades while surviving the orange key");
@@ -1575,6 +1636,8 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.match(receiver, /drawPerformerWindowIntrusions[\s\S]*?drawBroadcastFx[\s\S]*?drawMusicGestureSweep[\s\S]*?plan\.lightningFamilyStrength[\s\S]*?cue\?\.type === "lightning"[\s\S]*?cue\?\.type === "signal_breach"/, "only the bounded artifact, music-sweep, lightning, and scan-line allow-list may regain controlled center presence");
   const windowIntrusions = receiver.slice(receiver.indexOf("function drawWindowScanline"), receiver.indexOf("function visualSignalMemory"));
   assert.match(windowIntrusions, /drawWindowSignalStutter[\s\S]*plan\.stutterStripCount/, "center slippage must consume the tested two-to-three-strip plan");
+  assert.match(receiver, /drawMusicTransientIntrusions[\s\S]*bassBreachStrength[\s\S]*midFlashStrength[\s\S]*trebleSparkStrength[\s\S]*tapestryBurstStrength/, "independent transient systems may briefly breach the performer field within a fixed primitive budget");
+  assert.match(windowIntrusions, /drawMusicTransientIntrusions\(context, width, height, plan, primary, secondary, highlight\)/, "the performer allow-list must render the bounded transient breach layer");
   assert.doesNotMatch(windowIntrusions, /drawEdgeSpectrum|drawOscilloscopeRibbons|drawMatrixRain|drawAsciiTerminal|drawPixelSortStorm|drawParticlePressure|drawIndustrialOverride/, "dense family renderers must never be replayed across the performer window");
   assert.match(receiver, /applyPerformerIntrusionField\(intrusionLayer\.context, width, height\)/, "window intrusions must receive their own feathered center mask");
   assert.match(receiver, /\(intrusionPlan\.active \|\| broadcastFxPlan\.centerStrength >= 0\.002\)/, "inactive center effects must skip the second full-stage Canvas pass");

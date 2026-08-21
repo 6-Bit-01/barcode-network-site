@@ -263,6 +263,18 @@ export interface RadioVisualMusicEvolutionPlan {
   finale: number;
   shapeMorph: number;
   variant: RadioVisualMusicLifecycleVariant;
+  /** Sustained analyser mass after a quiet-knee curve; owns persistent geometry density. */
+  structureLevel: number;
+  /** Short low-band onset used for pressure, scale, reach, and weight. */
+  bassImpact: number;
+  /** Short mid-band onset used as the snare-like structural illumination proxy. */
+  midImpact: number;
+  /** Short high-band onset used for sparks, glints, and glow. */
+  trebleImpact: number;
+  /** Simultaneous three-band onset used for rare coordinated tapestry bursts. */
+  tapestryImpact: number;
+  /** Mid-led, high-band-supported flash envelope; not semantic stem detection. */
+  snareFlash: number;
   pulse: number;
   breath: number;
   beatPunch: number;
@@ -605,6 +617,34 @@ export function radioVisualMusicGesturePlan(drives: RadioVisualAudioDrives): Rad
   };
 }
 
+interface RadioVisualMusicTransientChannels {
+  bassImpact: number;
+  midImpact: number;
+  trebleImpact: number;
+  tapestryImpact: number;
+  snareFlash: number;
+}
+
+/** Separate the bridge's short envelopes after rejecting their sustained floors. */
+function radioVisualMusicTransientChannels(
+  drives: RadioVisualAudioDrives,
+): RadioVisualMusicTransientChannels {
+  const bassImpact = smoothstep((drives.bassPulse - 0.1) / 0.72);
+  const midImpact = smoothstep((drives.midPulse - 0.085) / 0.68);
+  const trebleImpact = smoothstep((drives.treblePulse - 0.07) / 0.62);
+  const sharedImpact = Math.min(bassImpact, midImpact, trebleImpact);
+  const tapestryImpact = smoothstep(
+    (Math.max(drives.tapestryPulse, sharedImpact * 0.9) - 0.045) / 0.72,
+  );
+  return {
+    bassImpact,
+    midImpact,
+    trebleImpact,
+    tapestryImpact,
+    snareFlash: clampVisualValue(midImpact * (0.74 + trebleImpact * 0.26) + tapestryImpact * 0.1),
+  };
+}
+
 /** Smooth, bounded evolution inside one family; it never changes scene ownership. */
 export function radioVisualMusicEvolutionPlan(
   scene: RadioVisualMusicScene,
@@ -639,83 +679,108 @@ export function radioVisualMusicEvolutionPlan(
   const safeBpm = clampVisualValue(bpm, 55, 200);
   const tempoPosition = safeTime * safeBpm / 60;
   const tempoWave = Math.pow(0.5 + 0.5 * Math.cos(tempoPosition * Math.PI * 2), 3.2);
-  const detectedHit = Math.max(drives.bassPulse, drives.midPulse, drives.treblePulse, drives.tapestryPulse, drives.impact);
-  const tempoPulse = clampVisualValue(Math.max(detectedHit, tempoWave * (0.12 + detectedHit * 0.88)));
   const lifecycleMotion = profile.startMotion + (profile.endMotion - profile.startMotion) * metamorphosis;
   const slowWave = Math.sin(safeTime * (0.12 + lifecycleMotion * 0.055) + seedPhase + smoothSection * 0.74);
   const crossWave = Math.cos(safeTime * (0.09 + profile.midDrift * 0.06) + seedPhase * 0.73 + smoothSection * 0.41);
-  const bassMotion = clampVisualValue(drives.bassLayer * 0.46 + drives.bassPulse * 0.54);
-  const midMotion = clampVisualValue(drives.midLayer * 0.56 + drives.midPulse * 0.44);
-  const trebleMotion = clampVisualValue(drives.trebleLayer * 0.5 + drives.treblePulse * 0.5);
-  const audioLife = clampVisualValue(
-    drives.presence * 0.25
-      + bassMotion * 0.24
-      + midMotion * 0.2
-      + trebleMotion * 0.18
-      + drives.tapestry * 0.13,
+  const sustainedMass = clampVisualValue(
+    drives.body * 0.3
+      + drives.presence * 0.14
+      + drives.bassLayer * 0.2
+      + drives.midLayer * 0.2
+      + drives.trebleLayer * 0.1
+      + drives.tapestry * 0.06,
   );
+  // Persistent geometry must earn its size and density. A shaped quiet knee
+  // leaves the authored family visible without letting a low-level song begin
+  // in the same state as a loud chorus.
+  const structureLevel = smoothstep((sustainedMass - 0.07) / 0.78);
+  // The analyser exposes independent short envelopes. Keep them independent:
+  // bass owns pressure, mids own snare-like illumination, and treble owns
+  // sparks/glow. Their tiny sustained floors stay below these onset knees.
+  const { bassImpact, midImpact, trebleImpact, tapestryImpact, snareFlash } = radioVisualMusicTransientChannels(drives);
+  const detectedHit = Math.max(bassImpact, midImpact, trebleImpact, tapestryImpact, drives.impact * structureLevel * 0.38);
+  const tempoPulse = clampVisualValue(
+    Math.max(detectedHit, tempoWave * (0.012 + structureLevel * 0.075)),
+  );
+  const bassMotion = clampVisualValue(drives.bassLayer * 0.68 + bassImpact * 0.32);
+  const midMotion = clampVisualValue(drives.midLayer * 0.7 + midImpact * 0.3);
+  const trebleMotion = clampVisualValue(drives.trebleLayer * 0.68 + trebleImpact * 0.32);
   const breathWave = Math.sin(
     tempoPosition / profile.breathBeats * Math.PI * 2
       + seedPhase
       + smoothSection * 0.21,
   );
   const breath = clampVisualValue(0.5 + breathWave * 0.5);
-  const hardBeat = smoothstep((detectedHit - 0.34) / 0.58);
+  const hardBeat = smoothstep((detectedHit - 0.22) / 0.7);
   const beatPunch = clampVisualValue(
-    detectedHit * 0.68
-      + hardBeat * 0.24
-      + tempoWave * (0.035 + audioLife * 0.12),
+    bassImpact * 0.46
+      + midImpact * 0.18
+      + trebleImpact * 0.1
+      + tapestryImpact * 0.26
+      + hardBeat * 0.18
+      + tempoWave * structureLevel * 0.035,
   );
   const sectionSurge = clampVisualValue(
     Math.pow(Math.sin(sectionBlend * Math.PI), 2)
       * (0.18 + metamorphosis * 0.82)
-      * audioLife,
+      * structureLevel,
   );
   const pulse = clampVisualValue(
-    audioLife * (0.12 + breath * 0.32)
-      + beatPunch * 0.34
-      + hardBeat * 0.28
-      + sectionSurge * 0.18,
+    structureLevel * (0.035 + breath * 0.13)
+      + bassImpact * 0.45
+      + midImpact * 0.16
+      + trebleImpact * 0.08
+      + tapestryImpact * 0.26
+      + hardBeat * 0.12
+      + sectionSurge * 0.1,
   );
   const scaleAmount = profile.bassScale * bassMotion * (0.004 + phraseWave * 0.017 + tempoPulse * 0.006);
   const drift = profile.midDrift * midMotion;
-  const shapeMorph = clampVisualValue(metamorphosis * (0.4 + drives.body * 0.24 + midMotion * 0.2 + drives.tapestry * 0.16));
+  const shapeMorph = clampVisualValue(
+    metamorphosis * (0.24 + structureLevel * 0.48 + midMotion * 0.18 + drives.tapestry * 0.1),
+  );
   const jitterProfile = profile.startJitter + (profile.endJitter - profile.startJitter) * metamorphosis;
-  const jitter = clampVisualValue(jitterProfile * (0.18 + trebleMotion * 0.5 + tempoPulse * 0.32));
+  const jitter = clampVisualValue(
+    jitterProfile
+      * (0.035 + structureLevel * 0.12 + trebleImpact * 0.46 + midImpact * 0.16 + tapestryImpact * 0.12),
+  );
   const glowBloom = clampVisualValue(
     profile.glowBias
-      * (trebleMotion * 0.42 + drives.treblePulse * 0.28 + hardBeat * 0.24 + sectionSurge * 0.12 + shapeMorph * 0.08),
+      * (structureLevel * 0.08 + trebleImpact * 0.52 + snareFlash * 0.24 + tapestryImpact * 0.2 + sectionSurge * 0.08),
   );
   const lineWeight = clampVisualValue(
-    0.82
+    0.68
       + profile.beatWeight
-        * (drives.bassLayer * 0.38 + drives.bassPulse * 0.52 + hardBeat * 0.54 + sectionSurge * 0.16),
-    0.82,
-    2.4,
+        * (structureLevel * 0.28 + bassImpact * 0.72 + tapestryImpact * 0.28 + sectionSurge * 0.08),
+    0.68,
+    2.25,
   );
   const reach = clampVisualValue(
-    0.88
-      + profile.breathDepth * audioLife * (0.04 + breath * 0.1)
-      + profile.beatReach * (beatPunch * 0.2 + hardBeat * 0.2)
-      + drives.midLayer * 0.07
-      + sectionSurge * 0.09,
-    0.86,
-    1.55,
+    0.7
+      + structureLevel * 0.2
+      + profile.breathDepth * structureLevel * (0.02 + breath * 0.055)
+      + profile.beatReach * (bassImpact * 0.26 + tapestryImpact * 0.18)
+      + midImpact * 0.08
+      + sectionSurge * 0.05,
+    0.7,
+    1.5,
   );
   const deformation = clampVisualValue(
     profile.deformationBias
-      * (shapeMorph * 0.38 + midMotion * 0.24 + drives.tapestry * 0.12 + sectionSurge * 0.18 + hardBeat * 0.22),
+      * (shapeMorph * structureLevel * 0.24 + midImpact * 0.4 + tapestryImpact * 0.24 + sectionSurge * 0.12 + trebleImpact * 0.08),
   );
   const movementBurst = clampVisualValue(
-    0.16
-      + metamorphosis * 0.12
-      + sectionSurge * 0.38
-      + hardBeat * profile.impactMotion * 0.54
-      + drives.midPulse * 0.2,
+    0.04
+      + metamorphosis * structureLevel * 0.05
+      + sectionSurge * 0.18
+      + bassImpact * profile.impactMotion * 0.2
+      + midImpact * profile.impactMotion * 0.38
+      + trebleImpact * 0.22
+      + tapestryImpact * 0.24,
   );
-  const breathingScale = breathWave * profile.breathDepth * audioLife * (0.006 + metamorphosis * 0.006);
-  const beatCompression = beatPunch * profile.beatReach * (0.004 + hardBeat * 0.015);
-  const travelGate = 0.36 + metamorphosis * 0.12 + movementBurst * 0.52;
+  const breathingScale = breathWave * profile.breathDepth * structureLevel * (0.003 + metamorphosis * 0.004);
+  const beatCompression = (bassImpact * 0.7 + tapestryImpact * 0.3) * profile.beatReach * (0.004 + hardBeat * 0.012);
+  const travelGate = 0.1 + metamorphosis * structureLevel * 0.06 + movementBurst * 0.84;
   return {
     sectionIndex,
     sectionBlend,
@@ -726,6 +791,12 @@ export function radioVisualMusicEvolutionPlan(
     finale,
     shapeMorph,
     variant: profile.variant,
+    structureLevel,
+    bassImpact,
+    midImpact,
+    trebleImpact,
+    tapestryImpact,
+    snareFlash,
     pulse,
     breath,
     beatPunch,
@@ -986,6 +1057,12 @@ export interface RadioVisualWindowIntrusionPlan {
   musicSweepStrength: number;
   musicSweepSeed: number;
   musicGesture: RadioVisualMusicGesture;
+  musicScene: RadioVisualMusicScene;
+  transientSeed: number;
+  bassBreachStrength: number;
+  midFlashStrength: number;
+  trebleSparkStrength: number;
+  tapestryBurstStrength: number;
 }
 
 export interface RadioVisualWindowIntrusionInput {
@@ -1197,12 +1274,40 @@ export function radioVisualWindowIntrusionPlan(
       0,
       0.26,
     );
+  const transientChannels = radioVisualMusicTransientChannels(input.drives);
+  const transientGate = input.cueType === null && trackMix > 0.08
+    ? sceneMix * trackMix
+    : 0;
+  const bassBreachStrength = clampVisualValue(
+    transientGate * transientChannels.bassImpact * 0.28,
+    0,
+    0.28,
+  );
+  const midFlashStrength = clampVisualValue(
+    transientGate * transientChannels.snareFlash * 0.34,
+    0,
+    0.34,
+  );
+  const trebleSparkStrength = clampVisualValue(
+    transientGate * transientChannels.trebleImpact * 0.3,
+    0,
+    0.3,
+  );
+  const tapestryBurstStrength = clampVisualValue(
+    transientGate * transientChannels.tapestryImpact * 0.38,
+    0,
+    0.38,
+  );
   const active = (scanProgress !== null && scanStrength >= 0.002)
     || (stutterProgress !== null && stutterStrength >= 0.002)
     || lightningFamilyStrength >= 0.002
     || lightningCueStrength > 0.002
     || signalBreachStrength >= 0.002
-    || musicSweepStrength >= 0.002;
+    || musicSweepStrength >= 0.002
+    || bassBreachStrength >= 0.002
+    || midFlashStrength >= 0.002
+    || trebleSparkStrength >= 0.002
+    || tapestryBurstStrength >= 0.002;
 
   return {
     active,
@@ -1220,6 +1325,12 @@ export function radioVisualWindowIntrusionPlan(
     musicSweepStrength,
     musicSweepSeed: input.seed + musicSweepCycleIndex * 11_173,
     musicGesture: gesturePlan.gesture,
+    musicScene: input.musicScene,
+    transientSeed: input.seed + Math.floor(input.time * 4) * 104_729,
+    bassBreachStrength,
+    midFlashStrength,
+    trebleSparkStrength,
+    tapestryBurstStrength,
   };
 }
 

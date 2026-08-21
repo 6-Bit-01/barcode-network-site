@@ -570,18 +570,82 @@ test("Windows audio transfer suppresses quiet noise and expands loud passages", 
     assert.equal(outputs[0], 0);
     outputs.forEach((output) => assert.ok(Number.isFinite(output) && output >= 0 && output <= 1));
     for (let index = 1; index < outputs.length; index += 1) assert.ok(outputs[index] >= outputs[index - 1]);
-    assert.ok(outputs[2] <= 0.035, `${channel} must not exaggerate 5% input`);
-    assert.ok(outputs[3] <= 0.08, `${channel} must keep 10% input restrained`);
-    assert.ok(outputs[4] >= 0.1, `${channel} must begin producing useful motion at a real 20% bridge reading`);
-    assert.ok(outputs[5] >= 0.13, `${channel} must make an ordinary 25% bridge reading clearly usable`);
-    assert.ok(outputs[7] >= 0.3, `${channel} must make a 45% bridge reading visibly strong`);
-    assert.ok(outputs[8] >= 0.48, `${channel} must make a 60% bridge reading near-hot`);
+    assert.ok(outputs[2] <= 0.01, `${channel} must not exaggerate 5% input`);
+    assert.ok(outputs[3] <= 0.02, `${channel} must keep 10% input restrained`);
+    assert.ok(outputs[4] >= 0.035 && outputs[4] <= 0.06, `${channel} must keep a real 20% bridge reading subtle`);
+    assert.ok(outputs[5] >= 0.06 && outputs[5] <= 0.09, `${channel} must let 25% input begin influencing geometry without resembling a chorus`);
+    assert.ok(outputs[7] >= 0.2 && outputs[7] <= 0.25, `${channel} must keep a 45% bridge reading visibly moderate`);
+    assert.ok(outputs[8] >= 0.36 && outputs[8] <= 0.41, `${channel} must retain a real step between moderate and hot audio`);
     assert.ok(outputs[7] - outputs[5] > outputs[5] - outputs[2], `${channel} must expand higher readings more than quiet readings`);
-    assert.ok(outputs[10] >= 0.86 && outputs[10] < 0.95, `${channel} must retain headroom at a 90% reading`);
+    assert.ok(outputs[10] >= 0.8 && outputs[10] < 0.86, `${channel} must retain headroom at a 90% reading`);
     assert.equal(outputs[11], 1, `${channel} may reach full drive only at full input`);
   }
   const midpoint = engine.radioVisualLoopbackLevel(0.5, "energy");
-  assert.ok(midpoint >= 0.35 && midpoint <= 0.6);
+  assert.ok(midpoint >= 0.25 && midpoint <= 0.3);
+});
+
+test("one music intensity owner keeps a quiet opening far below a loud section across every render pass", () => {
+  const signal = (rawLevel) => {
+    const energy = engine.radioVisualLoopbackLevel(rawLevel, "energy");
+    const bass = engine.radioVisualLoopbackLevel(rawLevel, "bass");
+    const mid = engine.radioVisualLoopbackLevel(rawLevel, "mid");
+    const treble = engine.radioVisualLoopbackLevel(rawLevel, "treble");
+    return engine.radioVisualAudioDrives({
+      source: "windows_loopback",
+      bpm: 120,
+      energy,
+      bass,
+      mid,
+      treble,
+      beat: 0,
+      accent: 0,
+      peak: 0,
+      progress: 0.08,
+      phrase: 0.1,
+    });
+  };
+  const quiet = engine.radioVisualMusicIntensityPlan(signal(0.45));
+  const moderate = engine.radioVisualMusicIntensityPlan(signal(0.65));
+  const loud = engine.radioVisualMusicIntensityPlan(signal(0.9));
+  const effectiveBase = (plan) => plan.visibility * engine.RADIO_VISUAL_MUSIC_OUTPUT_GAIN * plan.baseGain;
+
+  assert.ok(quiet.structureLevel < 0.04, "a compressed 45% bridge opening cannot begin with assembled geometry");
+  assert.ok(effectiveBase(quiet) < 0.09, "the retained base renderer must also remain faint at the opening");
+  assert.ok(quiet.perimeterGain < 0.34 && quiet.lifecycleGain < 0.12 && quiet.modulationGain < 0.09);
+  assert.ok(moderate.structureLevel > quiet.structureLevel + 0.2, "a real rise must visibly assemble the composition");
+  assert.ok(loud.structureLevel > 0.9 && effectiveBase(loud) > effectiveBase(moderate) * 2);
+  assert.ok(loud.perimeterGain > moderate.perimeterGain && loud.lifecycleGain > moderate.lifecycleGain && loud.modulationGain > moderate.modulationGain);
+});
+
+test("a held Windows sample peak is not treated as a permanent kick, snare, and treble hit", () => {
+  const current = entry("track-held-peak", { sourceType: "youtube" });
+  const youtube = { provider: "youtube", videoId: "abcDEF12345", trackId: current.id, playbackState: "playing", currentTimeSeconds: 8, durationSeconds: 180, updatedAt: "2026-08-19T18:59:55.000Z", muted: true };
+  const state = queueState({ nowPlaying: current, loadedTrack: current });
+  const snapshot = visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: scene("now_playing", { track: { id: current.id, artistName: "Artist", trackTitle: "Track", sourceType: "youtube" }, youtube }), playerSync: youtube, now: new Date("2026-08-19T19:00:00.000Z") });
+  const held = engine.radioVisualsMusicSignal(snapshot, 8, 100, {
+    schemaVersion: "barcode_audio_signal_v1",
+    source: "windows_loopback",
+    capturedAtUnixMs: Date.now(),
+    sequence: 22,
+    captureActive: true,
+    warmedUp: true,
+    silence: false,
+    energy: 0.62,
+    bass: 0.58,
+    mid: 0.55,
+    treble: 0.5,
+    peak: 1,
+    beat: 0,
+    bpm: 112,
+    tempoConfidence: 0,
+  });
+  const drives = engine.radioVisualAudioDrives(held);
+
+  assert.equal(held.beat, 0);
+  assert.equal(held.accent, 0);
+  assert.equal(held.peak, 0);
+  assert.ok(Math.max(drives.bassPulse, drives.midPulse, drives.treblePulse) < 0.04, "a held amplitude meter cannot keep every transient layer switched on");
+  assert.ok(engine.radioVisualMusicIntensityPlan(drives).transientLevel < 0.01);
 });
 
 test("Windows levels become quiet, isolated band layers and a full-spectrum tapestry end to end", () => {
@@ -633,29 +697,29 @@ test("Windows levels become quiet, isolated band layers and a full-spectrum tape
   const bass = drivesAt({ bass: 0.25 });
   const mids = drivesAt({ mid: 0.25 });
   const treble = drivesAt({ treble: 0.25 });
-  assert.ok(bass.bassLayer > 0.04 && bass.midLayer < 0.01 && bass.trebleLayer < 0.01, "ordinary bass must enter only the bass-owned layer without jumping near maximum");
-  assert.ok(mids.midLayer > 0.05 && mids.bassLayer < 0.01 && mids.trebleLayer < 0.01, "ordinary mids must enter only the mid-owned layer without jumping near maximum");
-  assert.ok(treble.trebleLayer > 0.08 && treble.bassLayer < 0.01 && treble.midLayer < 0.01, "ordinary treble must enter only the treble-owned layer without jumping near maximum");
+  assert.ok(bass.bassLayer > 0.01 && bass.bassLayer < 0.04 && bass.midLayer < 0.01 && bass.trebleLayer < 0.01, "ordinary bass must enter only the bass-owned layer without jumping near maximum");
+  assert.ok(mids.midLayer > 0.01 && mids.midLayer < 0.04 && mids.bassLayer < 0.01 && mids.trebleLayer < 0.01, "ordinary mids must enter only the mid-owned layer without jumping near maximum");
+  assert.ok(treble.trebleLayer > 0.02 && treble.trebleLayer < 0.06 && treble.bassLayer < 0.01 && treble.midLayer < 0.01, "ordinary treble must enter only the treble-owned layer without jumping near maximum");
 
-  const moderate = drivesAt({ energy: 0.22, bass: 0.22, mid: 0.22, treble: 0.22, peak: 0.22 });
-  const firstFullTapestry = drivesAt({ energy: 0.18, bass: 0.18, mid: 0.18, treble: 0.18, peak: 0.18 });
-  const strong = drivesAt({ energy: 0.45, bass: 0.45, mid: 0.45, treble: 0.45, peak: 0.45 });
-  const hot = drivesAt({ energy: 0.75, bass: 0.75, mid: 0.75, treble: 0.75, peak: 0.75 });
-  const ordinaryFullHit = drivesAt({ energy: 0.45, bass: 0.45, mid: 0.45, treble: 0.45, peak: 0.45, beat: 1 });
-  assert.ok(hot.bassLayer > 0.6 && hot.midLayer > 0.65 && hot.trebleLayer > 0.7);
-  assert.ok(hot.tapestry > 0.58 && hot.build > 0.65, "strong full-spectrum Windows audio must assemble the combined composition with remaining headroom");
+  const firstFullTapestry = drivesAt({ energy: 0.35, bass: 0.35, mid: 0.35, treble: 0.35, peak: 0.35 });
+  const moderate = drivesAt({ energy: 0.5, bass: 0.5, mid: 0.5, treble: 0.5, peak: 0.5 });
+  const strong = drivesAt({ energy: 0.7, bass: 0.7, mid: 0.7, treble: 0.7, peak: 0.7 });
+  const hot = drivesAt({ energy: 0.9, bass: 0.9, mid: 0.9, treble: 0.9, peak: 0.9 });
+  const ordinaryFullHit = drivesAt({ energy: 0.6, bass: 0.6, mid: 0.6, treble: 0.6, peak: 0.6, beat: 1 });
+  assert.ok(hot.bassLayer > 0.75 && hot.midLayer > 0.75 && hot.trebleLayer > 0.75);
+  assert.ok(hot.tapestry > 0.7 && hot.build > 0.72, "strong full-spectrum Windows audio must assemble the combined composition with remaining headroom");
   assert.ok(ordinaryFullHit.bassPulse > 0.25, "an ordinary live bass hit must survive the complete bridge-to-renderer path");
   assert.ok(ordinaryFullHit.midPulse > 0.25, "an ordinary live mid hit must survive the complete bridge-to-renderer path");
   assert.ok(ordinaryFullHit.treblePulse > 0.25, "an ordinary live treble hit must survive the complete bridge-to-renderer path");
   assert.ok(ordinaryFullHit.tapestryPulse > 0.2, "a simultaneous live hit must build the coupled tapestry instead of leaving one band visible");
   assert.ok(
-    engine.radioVisualMusicSceneVisibility(quiet) >= 0.3
-      && engine.radioVisualMusicSceneVisibility(quiet) <= 0.31,
-    "quiet audio keeps a visible but restrained family identity",
+    engine.radioVisualMusicSceneVisibility(quiet) >= 0.13
+      && engine.radioVisualMusicSceneVisibility(quiet) <= 0.14,
+    "quiet audio keeps a faint family identity instead of starting near chorus strength",
   );
-  assert.ok(engine.radioVisualMusicSceneVisibility(moderate) > 0.36, "ordinary full-spectrum audio must survive the Studio key");
-  assert.ok(engine.radioVisualMusicSceneVisibility(strong) > 0.52);
-  assert.ok(engine.radioVisualMusicSceneVisibility(hot) > 0.78);
+  assert.ok(engine.radioVisualMusicSceneVisibility(moderate) > 0.14, "ordinary full-spectrum audio must survive the Studio key");
+  assert.ok(engine.radioVisualMusicSceneVisibility(strong) > engine.radioVisualMusicSceneVisibility(moderate) + 0.18);
+  assert.ok(engine.radioVisualMusicSceneVisibility(hot) > engine.radioVisualMusicSceneVisibility(strong) + 0.16);
   const fullRest = drivesAt({ energy: 1, bass: 1, mid: 1, treble: 1, peak: 0, beat: 0 });
   const overload = drivesAt({ energy: 1, bass: 1, mid: 1, treble: 1, peak: 1, beat: 1 });
 
@@ -1179,13 +1243,16 @@ test("all ten music families retain a distinct bounded perimeter identity from q
 
     assert.equal(quietPlan.motif, engine.RADIO_VISUAL_MUSIC_PERIMETER_MOTIFS[musicScene]);
     assert.equal(hotPlan.motif, quietPlan.motif, `${musicScene} cannot change perimeter language with volume`);
-    assert.ok(quietPlan.strength >= 0.52 && quietPlan.strength <= 0.56, `${musicScene} must retain a restrained edge identity at silence`);
+    assert.ok(quietPlan.strength >= 0.16 && quietPlan.strength <= 0.17, `${musicScene} must retain only a faint edge identity at silence`);
     assert.ok(hotPlan.strength > quietPlan.strength && hotPlan.strength <= 1, `${musicScene} must brighten with real audio`);
-    assert.ok(quietPlan.reach >= 0.032 && hotPlan.reach <= 0.155 && hotPlan.reach > quietPlan.reach * 2, `${musicScene} must earn inward expansion while remaining inside its bounded perimeter band`);
-    assert.ok(quietPlan.thickness >= 0.0025 && hotPlan.thickness <= 0.014 && hotPlan.thickness > quietPlan.thickness * 2, `${musicScene} must gain bass-owned weight without flooding the stage`);
-    assert.ok(quietPlan.bassElements >= 1 && hotPlan.bassElements <= 10 && hotPlan.bassElements >= quietPlan.bassElements * 4);
-    assert.ok(quietPlan.midElements >= 2 && hotPlan.midElements <= 14 && hotPlan.midElements >= quietPlan.midElements * 3);
-    assert.ok(quietPlan.trebleElements >= 2 && hotPlan.trebleElements <= 18 && hotPlan.trebleElements >= quietPlan.trebleElements * 4);
+    assert.ok(quietPlan.reach >= 0.012 && hotPlan.reach <= 0.155 && hotPlan.reach > quietPlan.reach * 5, `${musicScene} must earn inward expansion while remaining inside its bounded perimeter band`);
+    assert.ok(quietPlan.thickness >= 0.0012 && hotPlan.thickness <= 0.014 && hotPlan.thickness > quietPlan.thickness * 6, `${musicScene} must gain bass-owned weight without flooding the stage`);
+    assert.equal(quietPlan.bassElements, 0, `${musicScene} cannot draw bass-owned perimeter geometry at silence`);
+    assert.equal(quietPlan.midElements, 0, `${musicScene} cannot draw mid-owned perimeter geometry at silence`);
+    assert.equal(quietPlan.trebleElements, 0, `${musicScene} cannot draw treble-owned perimeter geometry at silence`);
+    assert.ok(hotPlan.bassElements >= 6 && hotPlan.bassElements <= 10);
+    assert.ok(hotPlan.midElements >= 8 && hotPlan.midElements <= 14);
+    assert.ok(hotPlan.trebleElements >= 10 && hotPlan.trebleElements <= 18);
     assert.equal(quietPlan.tapestryElements, 0, `${musicScene} cannot fabricate an all-band perimeter layer at silence`);
     assert.ok(hotPlan.tapestryElements >= 1 && hotPlan.tapestryElements <= 6, `${musicScene} must add a bounded all-band lock when the full song arrives`);
   }
@@ -1233,6 +1300,20 @@ test("the receiver renders every planned identity outside the unchanged performe
   assert.match(receiver, /drawSeededMusicScene[\s\S]*drawMusicPerimeterIdentity\([\s\S]*radioVisualMusicPerimeterPlan\(scene, drives\)/, "every selected family must render its tested perimeter plan");
   assert.match(receiver, /if \(snapshot\.showStage !== "intake"\) applyPerformerSafeField\(context, width, height, 0\.2\)/, "the center retention must remain at the approved twenty percent");
   assert.doesNotMatch(perimeterRenderer, /applyPerformerSafeField|applyPerformerIntrusionField|destination-in/, "perimeter identity cannot weaken or bypass the center mask");
+});
+
+test("the receiver applies the shared intensity budget to the retained base, lifecycle, modulation, and perimeter passes", () => {
+  const receiver = fs.readFileSync(path.join(projectRoot, "src/components/RadioVisualsReceiver.tsx"), "utf8");
+  const seededScene = receiver.slice(
+    receiver.indexOf("function drawSeededMusicScene"),
+    receiver.indexOf("function drawQueueLanes"),
+  );
+  assert.match(seededScene, /const intensity = radioVisualMusicIntensityPlan\(drives\)/);
+  assert.match(seededScene, /const baseMix = mix \* intensity\.baseGain/);
+  assert.match(seededScene, /drawMusicLifecycleVariant\([\s\S]*mix \* intensity\.lifecycleGain/);
+  assert.match(seededScene, /drawMusicDynamicModulation\([\s\S]*mix \* intensity\.modulationGain/);
+  assert.match(seededScene, /drawMusicPerimeterIdentity\([\s\S]*mix \* intensity\.perimeterGain/);
+  assert.match(receiver, /runtime\.music = \{[\s\S]*energy: 0,[\s\S]*bass: 0,[\s\S]*mid: 0,[\s\S]*treble: 0,[\s\S]*runtime\.bassSlow = 0;[\s\S]*runtime\.buildMemory = 0;/, "a new family cannot inherit the previous song's chorus envelope");
 });
 
 test("live audio drives preserve broadband mass, independent band layers, transients, and an all-band tapestry", () => {

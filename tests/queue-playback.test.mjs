@@ -1117,6 +1117,33 @@ test("new sessions default queue capacity to 44", async () => {
   );
 });
 
+test("rapid submissions from distinct artists do not create a repeated-attempt admin flag", async () => {
+  await freshOpenSession("distinct artist intake", {
+    showStarted: false,
+    submissionCooldownSeconds: 0,
+  });
+
+  const tracks = [];
+  for (let index = 1; index <= 6; index += 1) {
+    tracks.push(await submitTrack(`Distinct Intake ${index}`, { artist: `Distinct Artist ${index}` }));
+  }
+
+  assert.equal(
+    tracks.some((track) => track.suspiciousFlags?.includes("Many attempts in a short time")),
+    false,
+    "normal queue traffic from unrelated artists must not be attached to an individual submission",
+  );
+});
+
+test("admin queue suppresses only the obsolete global-traffic warning", () => {
+  const source = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioQueueControl.tsx"), "utf8");
+
+  assert.match(source, /const LEGACY_GLOBAL_SUBMISSION_FLAG = "Many attempts in a short time"/);
+  assert.match(source, /filter\(\(flag\) => flag !== LEGACY_GLOBAL_SUBMISSION_FLAG\)/);
+  assert.match(source, /<AdminSuspiciousFlags entry=\{entry\} \/>/);
+  assert.match(source, /Admin flags: \{flags\.join\(" \/ "\)\}/);
+});
+
 test("concurrent slots 43 through 45 accept exactly two tracks without losing either write", async () => {
   await freshOpenSession("atomic default capacity", {
     showStarted: false,

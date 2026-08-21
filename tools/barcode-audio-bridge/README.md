@@ -21,6 +21,12 @@ Double-clicking a newer build replaces the running installed copy and relaunches
 
 The local endpoint remains ready at negligible cost. Speakers capture starts when the permanent Show Visuals Link reports an active queue session and stops a few seconds after that session ends or the source goes away. If the bridge is missing, blocked, silent, or restarting, the overlay automatically continues with its six deterministic randomized song-motion profiles.
 
+## Volume handling
+
+The bridge analyzes the program signal rather than the operator's Windows listening level. It reads the default Speakers endpoint level in decibels and removes that known attenuation from each loopback buffer before calculating energy, bass, mids, treble, peak, flux, or beat. Moving the Windows volume slider therefore does not make the same passage visually weaker or stronger, while real quiet-to-loud changes inside the song remain intact.
+
+Muted or digitally silent output remains silent; the bridge never invents audio activity. If Windows briefly cannot provide the endpoint-volume reading during a device or driver transition, that frame is analyzed at neutral gain instead of interrupting capture. A media player's separate in-app volume is part of the signal Windows supplies and is not rewritten by the bridge.
+
 ## Build
 
 The repository's Windows CI job publishes the supported self-contained `win-x64` executable:

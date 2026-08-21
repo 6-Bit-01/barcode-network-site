@@ -744,10 +744,16 @@ test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a
   assert.match(project, /<TargetFramework>net8\.0-windows<\/TargetFramework>/);
   assert.match(project, /<SelfContained>true<\/SelfContained>/);
   assert.match(project, /<PublishSingleFile>true<\/PublishSingleFile>/);
-  assert.match(project, /<Version>1\.0\.2<\/Version>/);
+  assert.match(project, /<Version>1\.0\.3<\/Version>/);
   assert.match(project, /PackageReference Include="NAudio" Version="2\.3\.0"/);
-  assert.match(capture, /new WasapiLoopbackCapture\(\)/, "capture must use the default Windows Speakers render endpoint");
+  assert.match(capture, /GetDefaultAudioEndpoint\(DataFlow\.Render, Role\.Multimedia\)/, "capture must resolve the default Windows Speakers render endpoint");
+  assert.match(capture, /new WasapiLoopbackCapture\(renderDevice\)/, "capture and endpoint-volume compensation must use the same Speakers endpoint");
   assert.doesNotMatch(capture, /new (?:WaveIn|WasapiCapture)\(/, "the helper must not open a microphone capture endpoint");
+  assert.match(capture, /AudioEndpointVolume\.MasterVolumeLevel/, "the helper must read the endpoint's decibel level, not the tapered scalar");
+  assert.doesNotMatch(capture, /MasterVolumeLevelScalar/, "audio-tapered scalar volume must not be treated as a linear sample gain");
+  assert.match(capture, /SampleGainFromEndpointDecibels[\s\S]*_analyzer\.AddSamples/, "endpoint attenuation must be removed before analysis");
+  assert.match(analyzer, /Math\.Pow\(10, decibels \/ 20d\)[\s\S]*1 \/ endpointAmplitude/, "endpoint decibels must be converted to inverse linear sample gain");
+  assert.match(analyzer, /EndpointVolumeCompensation\.Apply[\s\S]*AnalyzeWindow/, "normalization must happen before RMS, FFT, peak, flux, and beat analysis");
   assert.match(capture, /TouchClient\(\)[\s\S]*EnsureStarted\(\)/, "visual-source requests must wake capture automatically");
   assert.match(capture, /ClientIdleCaptureStopMilliseconds/, "capture must stop after the visual source becomes idle");
   assert.match(capture, /no Speakers audio detected[\s\S]*Speakers audio detected/, "helper status must report actual audio detection instead of capture startup");
@@ -769,8 +775,9 @@ test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a
   assert.doesNotMatch(program, /capture button|Select.*device/i);
   assert.match(readme, /There is no capture button/);
   assert.match(readme, /No audio samples leave the computer/);
-  assert.match(workflow, /windows-audio-bridge:[\s\S]*dotnet publish[\s\S]*BARCODE\.AudioBridge\.exe/);
-  assert.match(productionContract, /BARCODE Audio Bridge[\s\S]*WASAPI loopback[\s\S]*creates no Redis or Vercel traffic/);
+  assert.match(readme, /program signal rather than the operator's Windows listening level/);
+  assert.match(workflow, /windows-audio-bridge:[\s\S]*dotnet test tools\/barcode-audio-bridge\.Tests[\s\S]*dotnet publish[\s\S]*BARCODE\.AudioBridge\.exe/);
+  assert.match(productionContract, /BARCODE Audio Bridge[\s\S]*WASAPI loopback[\s\S]*volume-neutral program signal[\s\S]*creates no Redis or Vercel traffic/);
 });
 
 test("direct audio analysis separates frequency bands and safely bounds untrusted samples", () => {

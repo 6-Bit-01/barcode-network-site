@@ -42,6 +42,11 @@ import {
   RADIO_AUDIO_BRIDGE_URL,
 } from "@/lib/radio-audio-bridge";
 import type { RadioAudioBridgeSignal } from "@/lib/radio-audio-bridge";
+import { radioVisualMusicEmbellishmentPlan } from "@/lib/radio-visuals-music-embellishments";
+import {
+  drawRadioVisualMusicCenterEmbellishments,
+  drawRadioVisualMusicEmbellishments,
+} from "./radio-visuals-music-embellishments";
 
 type ServerClockAnchor = { serverNowMs: number; receivedAtPerformanceMs: number };
 type ConnectionState = "connected" | "reconnecting" | "standby";
@@ -3842,17 +3847,58 @@ function drawVisualFrame(
     runtime.currentSeed,
   );
   const activeMusicMix = runtime.trackMix * sceneStateMix;
+  const musicCompositionMix = (compositionMix: number) => clampVisualValue(
+    activeSurfaceMix
+      * activeMusicMix
+      * compositionMix
+      * musicSceneActivity
+      * RADIO_VISUAL_MUSIC_OUTPUT_GAIN,
+  );
+  const previousMusicEmbellishmentPlan = radioVisualMusicEmbellishmentPlan(
+    radioVisualMusicScene(runtime.previousMusicSeed),
+    runtime.previousMusicSeed,
+    audioTime,
+    musicDrives,
+    music.bpm,
+  );
+  const currentMusicEmbellishmentPlan = radioVisualMusicEmbellishmentPlan(
+    radioVisualMusicScene(runtime.currentMusicSeed),
+    runtime.currentMusicSeed,
+    audioTime,
+    musicDrives,
+    music.bpm,
+  );
+  const previousMusicCompositionMix = musicCompositionMix(1 - musicSeedBlend);
+  const currentMusicCompositionMix = musicCompositionMix(musicSeedBlend);
+  const musicEmbellishmentCenterActive = (
+    previousMusicCompositionMix >= 0.06 && previousMusicEmbellishmentPlan.centerActive
+  ) || (
+    currentMusicCompositionMix >= 0.06 && currentMusicEmbellishmentPlan.centerActive
+  );
   const drawSeedComposition = (seed: number, compositionMix: number) => {
     if (compositionMix < 0.002) return;
-    const musicMix = clampVisualValue(
-      activeSurfaceMix
-        * activeMusicMix
-        * compositionMix
-        * musicSceneActivity
-        * RADIO_VISUAL_MUSIC_OUTPUT_GAIN,
-    );
+    const musicMix = musicCompositionMix(compositionMix);
     if (musicMix < 0.06) return;
     drawSeededMusicScene(context, width, height, audioTime, musicMix, musicDrives, runtime.primary, runtime.secondary, runtime.highlight, seed);
+    drawRadioVisualMusicEmbellishments({
+      context,
+      width,
+      height,
+      time: audioTime,
+      mix: musicMix,
+      drives: musicDrives,
+      plan: radioVisualMusicEmbellishmentPlan(
+        radioVisualMusicScene(seed),
+        seed,
+        audioTime,
+        musicDrives,
+        music.bpm,
+      ),
+      primary: runtime.primary,
+      secondary: runtime.secondary,
+      highlight: runtime.highlight,
+      seed,
+    });
   };
   drawSeedComposition(runtime.previousMusicSeed, 1 - musicSeedBlend);
   drawSeedComposition(runtime.currentMusicSeed, musicSeedBlend);
@@ -3921,7 +3967,7 @@ function drawVisualFrame(
     if (
       snapshot.showStage !== "intake"
       && activeSurfaceMix > 0
-      && (intrusionPlan.active || broadcastFxPlan.centerStrength >= 0.002)
+      && (intrusionPlan.active || broadcastFxPlan.centerStrength >= 0.002 || musicEmbellishmentCenterActive)
     ) {
       const intrusionLayer = prepareEffectLayer(runtime, width, height);
       if (intrusionLayer) {
@@ -3940,6 +3986,36 @@ function drawVisualFrame(
           cueProgress,
           cueSeed,
         );
+        if (previousMusicCompositionMix >= 0.06 && previousMusicEmbellishmentPlan.centerActive) {
+          drawRadioVisualMusicCenterEmbellishments({
+            context: intrusionLayer.context,
+            width,
+            height,
+            time: audioTime,
+            mix: previousMusicCompositionMix,
+            drives: musicDrives,
+            plan: previousMusicEmbellishmentPlan,
+            primary: runtime.primary,
+            secondary: runtime.secondary,
+            highlight: runtime.highlight,
+            seed: runtime.previousMusicSeed,
+          });
+        }
+        if (currentMusicCompositionMix >= 0.06 && currentMusicEmbellishmentPlan.centerActive) {
+          drawRadioVisualMusicCenterEmbellishments({
+            context: intrusionLayer.context,
+            width,
+            height,
+            time: audioTime,
+            mix: currentMusicCompositionMix,
+            drives: musicDrives,
+            plan: currentMusicEmbellishmentPlan,
+            primary: runtime.primary,
+            secondary: runtime.secondary,
+            highlight: runtime.highlight,
+            seed: runtime.currentMusicSeed,
+          });
+        }
         applyPerformerIntrusionField(intrusionLayer.context, width, height);
         outputContext.drawImage(intrusionLayer.canvas, 0, 0, width, height);
       }

@@ -511,10 +511,68 @@ test("the effect palette preserves BARCODE green, violet, black, and white while
   const snapshot = visuals.resolveRadioVisualsSnapshot({ queueState: queueState(), scene: scene() });
   const palette = engine.radioVisualsPalette(snapshot);
   assert.equal(engine.RADIO_VISUALS_CHROMA_KEY, "#ff5a00");
-  assert.match([palette.primary, palette.secondary].join(" "), /#00ff88|#7c3aed|#a78bfa|#22d3ee/);
+  assert.match([palette.primary, palette.secondary].join(" "), /#00ff88/);
+  assert.match([palette.primary, palette.secondary, palette.highlight].join(" "), /#7c3aed|#a78bfa/);
   assert.match(palette.highlight, /#e0e0e0|#ffffff|#a78bfa/);
   assert.match(palette.shadow, /#0[235]0[235]0[235]/);
   assert.doesNotMatch(JSON.stringify(palette), /#ff5a00/);
+});
+
+test("every scene palette survives the Studio orange key with restrained green and violet accents", () => {
+  const base = visuals.resolveRadioVisualsSnapshot({ queueState: queueState(), scene: scene() });
+  const key = [255, 90, 0];
+  const parseHex = (hex) => [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16));
+  const keyDistanceAfterBlend = (hex, alpha = 0.4) => {
+    const color = parseHex(hex);
+    const composited = color.map((channel, index) => channel * alpha + key[index] * (1 - alpha));
+    return Math.hypot(...composited.map((channel, index) => channel - key[index]));
+  };
+  const modes = ["queue", "track", "wheel", "sponsor", "system"];
+  for (const visualMode of modes) {
+    for (let visualSeed = 0; visualSeed < 32; visualSeed += 1) {
+      const palette = engine.radioVisualsPalette({ ...base, visualMode, visualSeed });
+      const serialized = JSON.stringify(palette).toLowerCase();
+      assert.doesNotMatch(serialized, /#ff5a00|#00e5ff|#00ffff/);
+      for (const color of Object.values(palette)) {
+        assert.ok(keyDistanceAfterBlend(color) >= 72, `${visualMode} ${color} must remain distinct from the orange key`);
+      }
+    }
+  }
+});
+
+test("music scene selection is deterministic and spans six genuinely different families", () => {
+  assert.deepEqual(engine.RADIO_VISUAL_MUSIC_SCENES, [
+    "vortex_relay",
+    "barcode_cathedral",
+    "tape_feedback",
+    "halftone_organism",
+    "oscilloscope_ribbons",
+    "lightning_switchyard",
+  ]);
+  for (let seed = 0; seed < 32; seed += 1) {
+    assert.equal(engine.radioVisualMusicScene(seed), engine.radioVisualMusicScene(seed));
+  }
+  const selected = new Set(Array.from({ length: 256 }, (_, seed) => engine.radioVisualMusicScene(seed)));
+  assert.deepEqual([...selected].sort(), [...engine.RADIO_VISUAL_MUSIC_SCENES].sort());
+});
+
+test("live audio drives give every loud signal visible mass instead of collapsing to peak dots", () => {
+  const loud = engine.radioVisualAudioDrives({
+    source: "windows_loopback",
+    bpm: 120,
+    energy: 0.76,
+    bass: 0.05,
+    mid: 0.04,
+    treble: 0.03,
+    beat: 0.2,
+    accent: 0.1,
+    peak: 0.76,
+  });
+  assert.equal(loud.presence, 0.76);
+  assert.ok(loud.bass >= 0.49, "energy must create bass-backed geometry");
+  assert.ok(loud.mid >= 0.45, "energy must create mid-backed structure");
+  assert.ok(loud.treble >= 0.34, "peak must create treble-backed tearing");
+  assert.equal(loud.impact, 0.76);
 });
 
 test("the square Studio source contains a centered 3:4 portrait-safe visual stage", () => {
@@ -530,6 +588,18 @@ test("the square Studio source contains a centered 3:4 portrait-safe visual stag
     y: 0,
     width: 810,
     height: 1080,
+  });
+  assert.deepEqual(engine.radioVisualsEffectStageBounds(1920, 1080), {
+    x: 555,
+    y: 0,
+    width: 810,
+    height: 1080,
+  });
+  assert.deepEqual(engine.radioVisualsEffectStageBounds(1080, 1920), {
+    x: 0,
+    y: 240,
+    width: 1080,
+    height: 1440,
   });
 });
 
@@ -555,8 +625,10 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.doesNotMatch(render, /<(?:header|footer|h[1-6]|p|span|strong|em)\b|aria-live/);
   assert.match(render, /<canvas ref=\{canvasRef\}/);
   assert.match(receiver, /drawAmbientLighting|drawGoboShadows|drawCaustics|drawWavefronts|drawParticleField|drawTrackBloom|drawPartyCue|drawShadowCue|drawSignalBreachCue|drawBlackoutCue|drawLightningCue/);
-  assert.match(receiver, /drawQueueLanes|drawTrackSignature|drawIntakeAperture|drawSponsorCurtain|drawFinalConvergence|drawCompletionAfterimage|drawPressureEdges/);
-  assert.match(receiver, /drawLightRibbons|drawPrismaticShards|drawSignalConstellation|drawMusicHalo|drawSeedComposition|drawLiveMusicResponse/);
+  assert.match(receiver, /drawQueueLanes|drawIntakeAperture|drawSponsorCurtain|drawFinalConvergence|drawCompletionAfterimage|drawPressureEdges/);
+  assert.match(receiver, /drawIdleTransmission|drawLightRibbons|drawPrismaticShards|drawSignalConstellation|drawMusicHalo|drawSeedComposition/);
+  assert.match(receiver, /drawVortexRelay|drawBarcodeCathedral|drawTapeFeedback|drawHalftoneOrganism|drawOscilloscopeRibbons|drawLightningSwitchyard|drawSeededMusicScene/);
+  assert.match(receiver, /return clampVisualValue\(mix \* 0\.86 \+ drive \* 0\.12, 0, 0\.98\)/, "chroma-safe cores must still respect state and event fades");
   assert.doesNotMatch(receiver, /drawLiquidDream|drawKaleidoscopeBloom|drawSpectralLoom|drawFeedbackArchitecture|drawChromaticSmears|radioVisualComposition/);
   assert.match(receiver, /drawAmbientMoment|radioVisualAmbientMoment|observeSnapshotEvents|drawAutomaticEvent/);
   assert.match(receiver, /wheel_gained|priority_sent|priority_confirmed|track_skipped|sponsor_started|stage_shift/);
@@ -575,12 +647,21 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.doesNotMatch(wheelScene, /height \* 0\.5/);
   assert.match(wheelScene, /ring < 3/);
   assert.match(wheelScene, /context\.arc\(0, 0, radius/);
-  assert.doesNotMatch(wheelScene, /stateSpeed|ringCount|spokeCount|reencrypting|result/);
-  const liveMusicResponse = receiver.slice(receiver.indexOf("function drawLiveMusicResponse"), receiver.indexOf("function drawQueueLanes"));
-  assert.match(liveMusicResponse, /music\.source !== "windows_loopback"/);
-  assert.match(liveMusicResponse, /bassDrive|midDrive|trebleDrive/);
-  assert.match(receiver, /Math\.floor\(randomUnit\(seed, 29_001\) \* 4\)/, "restore the original four visual compositions");
-  assert.doesNotMatch(receiver, /Math\.floor\(randomUnit\(seed, 29_001\) \* 8\)/);
+  assert.match(wheelScene, /spoke < 24|wedge < 12|fragment < 30/);
+  for (const wheelMode of ["wheel_ready", "wheel_spinning", "wheel_reencrypting", "wheel_result", "wheel_confirmed"]) {
+    assert.match(wheelScene, new RegExp(wheelMode));
+  }
+  assert.doesNotMatch(receiver, /drawTrackSignature|drawLiveMusicResponse/, "one shared ring-and-tear layer must not flatten the six scene silhouettes");
+  assert.doesNotMatch(receiver, /globalCompositeOperation = "screen"/);
+  assert.match(receiver, /radioVisualMusicScene\(seed\)/);
+  assert.match(receiver, /audioTime = \(transportSeconds/);
+  assert.match(receiver, /activeSurfaceMix \* clampVisualValue\(0\.62/);
+  assert.match(receiver, /sceneStateMix = clampVisualValue\(1 - Math\.max\(runtime\.wheelMix, runtime\.sponsorMix, runtime\.systemMix\), 0, 1\)/);
+  assert.match(receiver, /drawSeedComposition\(runtime\.previousSeed, 1 - seedBlend\)/);
+  assert.match(receiver, /drawSeedComposition\(runtime\.currentSeed, seedBlend\)/);
+  assert.match(receiver, /runtime\.syntheticEvents = \[\]/, "inactive sessions must clear residual automatic events immediately");
+  assert.match(receiver, /drawWheelScene\([^;]+runtime\.wheelMix \* activeSurfaceMix[^;]+snapshot\.sceneMode\)/s);
+  assert.match(receiver, /const density = 1/);
   assert.match(queueControl, /createMediaElementSource|createAnalyser|audioAnalysis|analyzeRadioVisualFrequencyData/);
   assert.doesNotMatch(queueControl, /getDisplayMedia|createMediaStreamSource|Capture show audio|Share audio/);
   assert.match(queueControl, /YOUTUBE_SYNC_HEARTBEAT_MS = 1_000/);
@@ -594,9 +675,11 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.match(receiver, /studioOverlayRequestHeaders/);
   assert.match(admin, /triggerVisualCue|Party Burst|Shadow Sweep|Signal Breach|Blackout \/ Return|Lightning Hit/);
   assert.match(css, /--radio-visuals-key: #ff5a00/);
+  assert.doesNotMatch(css, /radio-visuals-canvas[\s\S]*opacity:\s*0\.72/);
   assert.match(receiver, /data-source-aspect="1:1"/);
   assert.match(receiver, /data-source-resolution="1080x1080"/);
   assert.match(receiver, /data-effect-stage-resolution="810x1080"/);
+  assert.match(receiver, /data-music-scene=\{radioVisualMusicScene\(snapshot\.visualSeed\)\}/);
   assert.match(receiver, /radioVisualsEffectStageBounds\(sourceWidth, sourceHeight\)/);
   assert.match(receiver, /data-music-source=/);
   assert.match(receiver, /"windows-loopback"/);

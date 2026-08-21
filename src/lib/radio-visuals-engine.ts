@@ -52,18 +52,37 @@ const BRAND_PALETTES: RadioVisualsPalette[] = [
   { primary: "#7c3aed", secondary: "#00ff88", highlight: "#ffffff", shadow: "#050505" },
   { primary: "#00ff88", secondary: "#22d3ee", highlight: "#a78bfa", shadow: "#030303" },
   { primary: "#a78bfa", secondary: "#00ff88", highlight: "#e0e0e0", shadow: "#050505" },
-  { primary: "#22d3ee", secondary: "#7c3aed", highlight: "#ffffff", shadow: "#020202" },
+  { primary: "#7c3aed", secondary: "#00ff88", highlight: "#a78bfa", shadow: "#020202" },
 ];
 
 const STAGE_INTENSITY: Record<RadioVisualsShowStage, number> = {
   standby: 0.06,
-  intake: 0.12,
-  early: 0.18,
-  middle: 0.26,
-  late: 0.34,
-  final: 0.42,
+  intake: 0.16,
+  early: 0.22,
+  middle: 0.3,
+  late: 0.38,
+  final: 0.46,
   complete: 0.13,
 };
+
+export const RADIO_VISUAL_MUSIC_SCENES = [
+  "vortex_relay",
+  "barcode_cathedral",
+  "tape_feedback",
+  "halftone_organism",
+  "oscilloscope_ribbons",
+  "lightning_switchyard",
+] as const;
+
+export type RadioVisualMusicScene = (typeof RADIO_VISUAL_MUSIC_SCENES)[number];
+
+export interface RadioVisualAudioDrives {
+  presence: number;
+  bass: number;
+  mid: number;
+  treble: number;
+  impact: number;
+}
 
 export const RADIO_VISUAL_FALLBACK_RHYTHMS = [
   "sub_bloom",
@@ -122,9 +141,25 @@ export function clampVisualValue(value: number, minimum = 0, maximum = 1): numbe
   return Math.min(maximum, Math.max(minimum, Number.isFinite(value) ? value : minimum));
 }
 
+export function radioVisualMusicScene(seed: number): RadioVisualMusicScene {
+  const safeSeed = Number.isFinite(seed) ? Math.trunc(seed) : 0;
+  return RADIO_VISUAL_MUSIC_SCENES[hashRadioVisualToken(`music-scene:${safeSeed}`) % RADIO_VISUAL_MUSIC_SCENES.length];
+}
+
+export function radioVisualAudioDrives(signal: RadioVisualMusicSignal): RadioVisualAudioDrives {
+  const presence = clampVisualValue(Math.max(signal.energy, signal.bass, signal.mid, signal.treble, signal.peak));
+  return {
+    presence,
+    bass: clampVisualValue(Math.max(signal.bass, signal.energy * 0.65) + signal.beat * 0.24),
+    mid: clampVisualValue(Math.max(signal.mid, signal.energy * 0.6) + signal.accent * 0.16),
+    treble: clampVisualValue(Math.max(signal.treble, signal.peak * 0.45) + signal.accent * 0.12),
+    impact: clampVisualValue(Math.max(signal.peak, signal.beat * 0.86, signal.accent * 0.72)),
+  };
+}
+
 export function radioVisualsPalette(snapshot: RadioVisualsSnapshot): RadioVisualsPalette {
   if (snapshot.visualMode === "wheel") return { primary: "#00ff88", secondary: "#e0e0e0", highlight: "#a78bfa", shadow: "#030303" };
-  if (snapshot.visualMode === "system") return { primary: "#ff3333", secondary: "#00ff88", highlight: "#ffffff", shadow: "#020202" };
+  if (snapshot.visualMode === "system") return { primary: "#ff00aa", secondary: "#00ff88", highlight: "#ffffff", shadow: "#020202" };
   if (snapshot.visualMode === "sponsor") return { primary: "#7c3aed", secondary: "#00ff88", highlight: "#ffffff", shadow: "#050505" };
   return BRAND_PALETTES[Math.abs(snapshot.visualSeed) % BRAND_PALETTES.length];
 }

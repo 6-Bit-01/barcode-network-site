@@ -23,7 +23,9 @@ The local endpoint remains ready at negligible cost. Speakers capture starts whe
 
 ## Volume handling
 
-The bridge analyzes the program signal rather than the operator's Windows listening level. It reads the default Speakers endpoint level in decibels and removes that known attenuation from each loopback buffer before calculating energy, bass, mids, treble, peak, flux, or beat. Moving the Windows volume slider therefore does not make the same passage visually weaker or stronger, while real quiet-to-loud changes inside the song remain intact.
+The bridge analyzes the program signal rather than the operator's Windows listening level. It reads the default Speakers endpoint level in decibels, removes that known attenuation from each loopback buffer, and then places the reconstructed program at one fixed -9 dB internal analysis reference before calculating energy, bass, mids, treble, peak, flux, or beat. This fixed headroom restores the response the analyzer had before volume compensation: moving the Windows volume slider does not make the same passage visually weaker or stronger, soft openings remain restrained, and real quiet-to-loud changes inside the song remain intact.
+
+Version 1.0.4 marks its local signal as `fixed_reference_v1`. The website also recognizes unmarked 1.0.3 payloads and applies the equivalent reference correction once, so the deployed overlay stops treating legacy full-scale readings as maximum while the one-click helper update is being installed.
 
 Muted or digitally silent output remains silent; the bridge never invents audio activity. If Windows briefly cannot provide the endpoint-volume reading during a device or driver transition, that frame is analyzed at neutral gain instead of interrupting capture. A media player's separate in-app volume is part of the signal Windows supplies and is not rewritten by the bridge.
 

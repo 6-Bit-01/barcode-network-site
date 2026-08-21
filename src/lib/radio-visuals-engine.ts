@@ -1,5 +1,8 @@
 import type { RadioVisualCue } from "./radio-visuals-cues";
-import type { RadioAudioBridgeSignal } from "./radio-audio-bridge";
+import {
+  RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION,
+  type RadioAudioBridgeSignal,
+} from "./radio-audio-bridge";
 import { hashRadioVisualToken } from "./radio-visuals-events";
 import type { RadioVisualsShowStage, RadioVisualsSnapshot } from "./radio-visuals-resolver";
 
@@ -1490,6 +1493,20 @@ function rhythmPulse(phase: number, power: number): number {
 }
 
 export type RadioVisualLoopbackChannel = "energy" | "bass" | "mid" | "treble";
+export type RadioVisualLoopbackAnalysisCalibration = typeof RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION | "legacy_full_scale";
+
+const LEGACY_LOOPBACK_REFERENCE_GAIN = Math.pow(10, -9 / 20);
+const LEGACY_LOOPBACK_LEVEL_SCALE: Record<RadioVisualLoopbackChannel, number> = {
+  // AudioAnalyzer 1.0.3 raised reconstructed full-scale samples to these
+  // channel exponents before the browser saw them. Reapply the fixed analysis
+  // reference in that compressed domain so the deployed renderer improves
+  // immediately; 1.0.4 applies the same reference before analysis and marks
+  // its payload to prevent this compatibility correction from running twice.
+  energy: Math.pow(LEGACY_LOOPBACK_REFERENCE_GAIN, 0.72),
+  bass: Math.pow(LEGACY_LOOPBACK_REFERENCE_GAIN, 0.58),
+  mid: Math.pow(LEGACY_LOOPBACK_REFERENCE_GAIN, 0.58),
+  treble: Math.pow(LEGACY_LOOPBACK_REFERENCE_GAIN, 0.58),
+};
 
 const LOOPBACK_LEVEL_CALIBRATION: Record<RadioVisualLoopbackChannel, { floor: number; ceiling: number; gamma: number }> = {
   // AudioAnalyzer deliberately compresses RMS and FFT magnitudes with
@@ -1502,10 +1519,19 @@ const LOOPBACK_LEVEL_CALIBRATION: Record<RadioVisualLoopbackChannel, { floor: nu
 };
 
 /** Map the installed bridge's already-compressed bands through one quiet-knee curve. */
-export function radioVisualLoopbackLevel(value: number, channel: RadioVisualLoopbackChannel = "energy"): number {
+export function radioVisualLoopbackLevel(
+  value: number,
+  channel: RadioVisualLoopbackChannel = "energy",
+  analysisCalibration: RadioVisualLoopbackAnalysisCalibration = RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION,
+): number {
   const calibration = LOOPBACK_LEVEL_CALIBRATION[channel];
+  const analysisValue = clampVisualValue(value) * (
+    analysisCalibration === RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION
+      ? 1
+      : LEGACY_LOOPBACK_LEVEL_SCALE[channel]
+  );
   const normalized = clampVisualValue(
-    (clampVisualValue(value) - calibration.floor) / (calibration.ceiling - calibration.floor),
+    (analysisValue - calibration.floor) / (calibration.ceiling - calibration.floor),
   );
   // The helper already compresses FFT/RMS values. A second smoothstep made
   // ordinary 20-50% live readings visually tiny; a power knee still rejects
@@ -1587,10 +1613,13 @@ export function radioVisualsMusicSignal(
   );
   if (hasLoopback && bridgeSignal) {
     const confidence = clampVisualValue(bridgeSignal.tempoConfidence);
-    const liveEnergy = radioVisualLoopbackLevel(bridgeSignal.energy, "energy");
-    const liveBass = radioVisualLoopbackLevel(bridgeSignal.bass, "bass");
-    const liveMid = radioVisualLoopbackLevel(bridgeSignal.mid, "mid");
-    const liveTreble = radioVisualLoopbackLevel(bridgeSignal.treble, "treble");
+    const analysisCalibration = bridgeSignal.analysisCalibration === RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION
+      ? RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION
+      : "legacy_full_scale";
+    const liveEnergy = radioVisualLoopbackLevel(bridgeSignal.energy, "energy", analysisCalibration);
+    const liveBass = radioVisualLoopbackLevel(bridgeSignal.bass, "bass", analysisCalibration);
+    const liveMid = radioVisualLoopbackLevel(bridgeSignal.mid, "mid", analysisCalibration);
+    const liveTreble = radioVisualLoopbackLevel(bridgeSignal.treble, "treble", analysisCalibration);
     const liveBeat = Math.pow(clampVisualValue(bridgeSignal.beat), 1.15);
     // The helper's `peak` field is a held sample-amplitude meter, not an onset
     // envelope. Feeding it into every transient channel made a mastered track

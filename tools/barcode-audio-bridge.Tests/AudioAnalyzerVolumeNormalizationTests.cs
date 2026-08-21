@@ -49,7 +49,19 @@ public sealed class AudioAnalyzerVolumeNormalizationTests
         Assert.True(loud.Bass > quiet.Bass + 0.15, $"bass did not retain dynamics: {quiet.Bass} -> {loud.Bass}");
         Assert.True(loud.Mid > quiet.Mid + 0.15, $"mid did not retain dynamics: {quiet.Mid} -> {loud.Mid}");
         Assert.True(loud.Treble > quiet.Treble + 0.10, $"treble did not retain dynamics: {quiet.Treble} -> {loud.Treble}");
-        Assert.True(loud.Peak > quiet.Peak + 0.15, $"peak did not retain dynamics: {quiet.Peak} -> {loud.Peak}");
+        Assert.True(loud.Peak > quiet.Peak + 0.07, $"peak did not retain dynamics: {quiet.Peak} -> {loud.Peak}");
+    }
+
+    [Fact]
+    public void FixedAnalysisReferencePreventsFullScaleProgramFromStartingAtTheCeiling()
+    {
+        var signal = Analyze(endpointDecibels: 0, amplitude: 1, windowCount: 24);
+
+        Assert.InRange(signal.Energy, 0.2, 0.4);
+        Assert.InRange(signal.Bass, 0.2, 0.5);
+        Assert.InRange(signal.Mid, 0.15, 0.4);
+        Assert.InRange(signal.Treble, 0.1, 0.3);
+        Assert.InRange(signal.Peak, 0.05, 0.2);
     }
 
     [Fact]
@@ -104,6 +116,21 @@ public sealed class AudioAnalyzerVolumeNormalizationTests
         var reconstructed = EndpointVolumeCompensation.Apply(capturedSample, sampleGain);
 
         Assert.InRange(Math.Abs(originalSample - reconstructed), 0, 0.000001);
+    }
+
+    [Theory]
+    [MemberData(nameof(EndpointAttenuationFixtures))]
+    public void FixedAnalysisReferenceFollowsVolumeReconstruction(double endpointDecibels)
+    {
+        const double originalSample = 0.42;
+        var endpointAmplitude = Math.Pow(10, endpointDecibels / 20d);
+        var capturedSample = originalSample * endpointAmplitude;
+        var sampleGain = EndpointVolumeCompensation.SampleGainFromEndpointDecibels(endpointDecibels);
+
+        var analyzed = EndpointVolumeCompensation.ApplyForAnalysis(capturedSample, sampleGain);
+        var expected = originalSample * EndpointVolumeCompensation.AnalysisReferenceGain;
+
+        Assert.InRange(Math.Abs(expected - analyzed), 0, 0.000001);
     }
 
     private static AudioSignal Analyze(double endpointDecibels, double amplitude, int windowCount)

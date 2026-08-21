@@ -466,6 +466,7 @@ test("music response follows the authoritative playback clock and uses direct an
   const loopback = engine.radioVisualsMusicSignal(timelineSnapshot, 24, 100, {
     schemaVersion: "barcode_audio_signal_v1",
     source: "windows_loopback",
+    analysisCalibration: "fixed_reference_v1",
     capturedAtUnixMs: Date.now(),
     sequence: 19,
     captureActive: true,
@@ -490,6 +491,7 @@ test("music response follows the authoritative playback clock and uses direct an
   const quietLoopback = engine.radioVisualsMusicSignal(timelineSnapshot, 24, 100, {
     schemaVersion: "barcode_audio_signal_v1",
     source: "windows_loopback",
+    analysisCalibration: "fixed_reference_v1",
     capturedAtUnixMs: Date.now(),
     sequence: 20,
     captureActive: true,
@@ -517,6 +519,7 @@ test("an active warmed Windows bridge owns silence continuously instead of snapp
   const atLevel = (level, sequence) => engine.radioVisualsMusicSignal(snapshot, 24, 100, {
     schemaVersion: "barcode_audio_signal_v1",
     source: "windows_loopback",
+    analysisCalibration: "fixed_reference_v1",
     capturedAtUnixMs: Date.now(),
     sequence,
     captureActive: true,
@@ -543,6 +546,7 @@ test("an active warmed Windows bridge owns silence continuously instead of snapp
   const unavailableSignal = {
     schemaVersion: "barcode_audio_signal_v1",
     source: "windows_loopback",
+    analysisCalibration: "fixed_reference_v1",
     capturedAtUnixMs: Date.now(),
     sequence: 100,
     captureActive: false,
@@ -582,6 +586,39 @@ test("Windows audio transfer suppresses quiet noise and expands loud passages", 
   }
   const midpoint = engine.radioVisualLoopbackLevel(0.5, "energy");
   assert.ok(midpoint >= 0.25 && midpoint <= 0.3);
+});
+
+test("the deployed renderer de-hots legacy full-scale bridge values exactly once", () => {
+  const fixedReferenceGain = Math.pow(10, -9 / 20);
+  const legacyChannels = {};
+  for (const channel of ["energy", "bass", "mid", "treble"]) {
+    const exponent = channel === "energy" ? 0.72 : 0.58;
+    const legacyRaw = 0.9;
+    const fixedRaw = legacyRaw * Math.pow(fixedReferenceGain, exponent);
+    const legacyOutput = engine.radioVisualLoopbackLevel(legacyRaw, channel, "legacy_full_scale");
+    const fixedOutput = engine.radioVisualLoopbackLevel(fixedRaw, channel, "fixed_reference_v1");
+    const uncorrectedOutput = engine.radioVisualLoopbackLevel(legacyRaw, channel, "fixed_reference_v1");
+
+    assert.ok(Math.abs(legacyOutput - fixedOutput) < 0.000001, `${channel} legacy compatibility must match the new helper reference`);
+    assert.ok(legacyOutput < uncorrectedOutput * 0.5, `${channel} legacy full-scale startup cannot remain near maximum`);
+    legacyChannels[channel] = legacyOutput;
+  }
+
+  const legacyCeiling = engine.radioVisualMusicIntensityPlan(engine.radioVisualAudioDrives({
+    source: "windows_loopback",
+    bpm: 120,
+    energy: legacyChannels.energy,
+    bass: legacyChannels.bass,
+    mid: legacyChannels.mid,
+    treble: legacyChannels.treble,
+    beat: 0,
+    accent: 0,
+    peak: 0,
+    progress: 0,
+    phrase: 0,
+  }));
+  assert.ok(legacyCeiling.structureLevel < 0.25, "even a saturated legacy helper frame cannot assemble a maximum-strength opening");
+  assert.ok(legacyCeiling.visibility < 0.35 && legacyCeiling.perimeterGain < 0.48, "legacy startup lines must remain visibly below the chorus state");
 });
 
 test("one music intensity owner keeps a quiet opening far below a loud section across every render pass", () => {
@@ -625,6 +662,7 @@ test("a held Windows sample peak is not treated as a permanent kick, snare, and 
   const held = engine.radioVisualsMusicSignal(snapshot, 8, 100, {
     schemaVersion: "barcode_audio_signal_v1",
     source: "windows_loopback",
+    analysisCalibration: "fixed_reference_v1",
     capturedAtUnixMs: Date.now(),
     sequence: 22,
     captureActive: true,
@@ -673,6 +711,7 @@ test("Windows levels become quiet, isolated band layers and a full-spectrum tape
   const bridge = {
     schemaVersion: "barcode_audio_signal_v1",
     source: "windows_loopback",
+    analysisCalibration: "fixed_reference_v1",
     capturedAtUnixMs: Date.now(),
     sequence: 1,
     captureActive: true,
@@ -770,6 +809,7 @@ test("Windows loopback signal contract rejects malformed and stale local data", 
   const valid = {
     schemaVersion: "barcode_audio_signal_v1",
     source: "windows_loopback",
+    analysisCalibration: "fixed_reference_v1",
     capturedAtUnixMs: now - 150,
     sequence: 42,
     captureActive: true,
@@ -790,6 +830,10 @@ test("Windows loopback signal contract rejects malformed and stale local data", 
   assert.equal(audioBridge.normalizeRadioAudioBridgeSignal({ ...valid, energy: 4 }), null);
   assert.equal(audioBridge.normalizeRadioAudioBridgeSignal({ ...valid, bpm: 900 }), null);
   assert.equal(audioBridge.normalizeRadioAudioBridgeSignal({ ...valid, schemaVersion: "wrong" }), null);
+  assert.equal(audioBridge.normalizeRadioAudioBridgeSignal({ ...valid, analysisCalibration: "unknown" }), null);
+  const legacy = { ...valid };
+  delete legacy.analysisCalibration;
+  assert.deepEqual(audioBridge.normalizeRadioAudioBridgeSignal(legacy), legacy, "1.0.3 helper payloads remain accepted for compatibility calibration");
 });
 
 test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a one-click artifact", () => {
@@ -808,7 +852,7 @@ test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a
   assert.match(project, /<TargetFramework>net8\.0-windows<\/TargetFramework>/);
   assert.match(project, /<SelfContained>true<\/SelfContained>/);
   assert.match(project, /<PublishSingleFile>true<\/PublishSingleFile>/);
-  assert.match(project, /<Version>1\.0\.3<\/Version>/);
+  assert.match(project, /<Version>1\.0\.4<\/Version>/);
   assert.match(project, /PackageReference Include="NAudio" Version="2\.3\.0"/);
   assert.match(capture, /GetDefaultAudioEndpoint\(DataFlow\.Render, Role\.Multimedia\)/, "capture must resolve the default Windows Speakers render endpoint");
   assert.match(capture, /new WasapiLoopbackCapture\(renderDevice\)/, "capture and endpoint-volume compensation must use the same Speakers endpoint");
@@ -817,7 +861,10 @@ test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a
   assert.doesNotMatch(capture, /MasterVolumeLevelScalar/, "audio-tapered scalar volume must not be treated as a linear sample gain");
   assert.match(capture, /SampleGainFromEndpointDecibels[\s\S]*_analyzer\.AddSamples/, "endpoint attenuation must be removed before analysis");
   assert.match(analyzer, /Math\.Pow\(10, decibels \/ 20d\)[\s\S]*1 \/ endpointAmplitude/, "endpoint decibels must be converted to inverse linear sample gain");
-  assert.match(analyzer, /EndpointVolumeCompensation\.Apply[\s\S]*AnalyzeWindow/, "normalization must happen before RMS, FFT, peak, flux, and beat analysis");
+  assert.match(analyzer, /EndpointVolumeCompensation\.ApplyForAnalysis[\s\S]*AnalyzeWindow/, "volume reconstruction and the fixed analysis reference must happen before RMS, FFT, peak, flux, and beat analysis");
+  assert.match(analyzer, /AnalysisReferenceDecibels = -9[\s\S]*AnalysisReferenceGain/, "the helper must restore the proven analysis headroom at one volume-independent reference");
+  assert.match(analyzer, /Apply\(sample, sampleGain\) \* AnalysisReferenceGain/, "the fixed reference must follow endpoint-volume reconstruction instead of replacing it");
+  assert.match(analyzer, /BridgeConstants\.AnalysisCalibration/, "the helper must mark reference-calibrated payloads so the browser never applies the compatibility correction twice");
   assert.match(capture, /TouchClient\(\)[\s\S]*EnsureStarted\(\)/, "visual-source requests must wake capture automatically");
   assert.match(capture, /ClientIdleCaptureStopMilliseconds/, "capture must stop after the visual source becomes idle");
   assert.match(capture, /no Speakers audio detected[\s\S]*Speakers audio detected/, "helper status must report actual audio detection instead of capture startup");

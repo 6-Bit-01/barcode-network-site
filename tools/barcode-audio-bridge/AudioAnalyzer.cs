@@ -54,7 +54,7 @@ internal sealed class AudioAnalyzer
                     decodedChannels += 1;
                 }
                 if (decodedChannels == 0) continue;
-                _window[_windowIndex] = EndpointVolumeCompensation.Apply(
+                _window[_windowIndex] = EndpointVolumeCompensation.ApplyForAnalysis(
                     mono / decodedChannels,
                     sampleGain);
                 _windowIndex += 1;
@@ -81,6 +81,7 @@ internal sealed class AudioAnalyzer
             return new AudioSignal(
                 BridgeConstants.SchemaVersion,
                 BridgeConstants.Source,
+                BridgeConstants.AnalysisCalibration,
                 now,
                 _sequence,
                 captureActive,
@@ -255,6 +256,8 @@ internal sealed class AudioAnalyzer
 internal static class EndpointVolumeCompensation
 {
     public const double NeutralSampleGain = 1;
+    public const double AnalysisReferenceDecibels = -9;
+    public static readonly double AnalysisReferenceGain = Math.Pow(10, AnalysisReferenceDecibels / 20d);
     private const double MinimumEndpointDecibels = -120;
     private const double MaximumEndpointDecibels = 24;
     private const double MaximumSampleGain = 100;
@@ -291,5 +294,17 @@ internal static class EndpointVolumeCompensation
             ? sampleGain
             : NeutralSampleGain;
         return Math.Clamp(sample * safeGain, -1, 1);
+    }
+
+    /// <summary>
+    /// Reconstruct the volume-neutral program sample, then place it at one
+    /// stable internal reference level before RMS, FFT, peak, flux, and beat
+    /// analysis. The analyzer was originally tuned against attenuated speaker
+    /// samples; feeding it reconstructed full-scale program audio erased that
+    /// headroom and made soft songs look permanently maxed.
+    /// </summary>
+    public static double ApplyForAnalysis(double sample, double sampleGain)
+    {
+        return Math.Clamp(Apply(sample, sampleGain) * AnalysisReferenceGain, -1, 1);
     }
 }

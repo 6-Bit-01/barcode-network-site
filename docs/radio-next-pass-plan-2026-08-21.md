@@ -24,6 +24,12 @@ Acceptance:
 - A failed volume query falls back safely without interrupting capture.
 - Browser contracts, queue state, polling, visual gains, and music/Wheel ownership remain unchanged.
 
+Accepted calibration correction:
+
+- Preserve endpoint-volume removal, then apply one fixed -9 dB internal analysis reference before RMS/FFT instead of feeding reconstructed full-scale program audio into the analyzer that was tuned against attenuated samples.
+- Mark new helper payloads as `fixed_reference_v1`; keep the v1 signal schema backward compatible and apply the mathematically equivalent compressed-domain reference once to unmarked 1.0.3 payloads so the web deploy improves the running helper immediately without double-correcting 1.0.4.
+- Do not change, replace, or remove any of the ten music families, lifecycle forms, modulation passes, perimeter identities, transitions, Wheel behavior, or broadcast FX in this correction.
+
 ### 2. Full-screen broadcast FX and evolving music families
 
 Add a deterministic randomized shuffle bag of BARCODE-specific CRT, scan, tear, stutter, code, packet, barcode, dropout, and compression effects. Add subtle time evolution inside each selected music family.

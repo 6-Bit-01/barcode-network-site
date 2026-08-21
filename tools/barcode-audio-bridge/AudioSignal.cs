@@ -3,6 +3,7 @@ namespace Barcode.AudioBridge;
 internal sealed record AudioSignal(
     string SchemaVersion,
     string Source,
+    string AnalysisCalibration,
     long CapturedAtUnixMs,
     long Sequence,
     bool CaptureActive,

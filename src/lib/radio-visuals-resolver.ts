@@ -7,6 +7,7 @@ import { activeRadioVisualEvent, hashRadioVisualToken } from "./radio-visuals-ev
 import type { RadioVisualEvent, RadioVisualEventType } from "./radio-visuals-events";
 import type { QueueBroadcastPhase, QueueEntry, QueueState } from "./queue-types";
 import { hasActiveQueueSession } from "./session-bound-polling";
+import { radioVisualMusicFamilyIndexForOccurrence, radioVisualSeedForMusicFamily, radioVisualTrackOccurrence } from "./radio-visuals-selection";
 
 export type RadioVisualsShowStage = "standby" | "intake" | "early" | "middle" | "late" | "final" | "complete";
 export type RadioVisualsMode = "standby" | "queue" | "track" | "wheel" | "system";
@@ -202,12 +203,8 @@ export function resolveRadioVisualsSnapshot(input: {
     ? playerSignalForScene({ scene, playerSync, currentTrackId, now })
     : null;
   const currentEntry = queueState.nowPlaying ?? queueState.loadedTrack ?? null;
-  const loadedOccurrence = currentTrackId
-    ? [...(queueState.playbackDiagnostics?.events ?? [])]
-      .reverse()
-      .find((event) => event.trackId === currentTrackId && event.eventType === "loaded")
-      ?.observedAt
-    : null;
+  const trackOccurrence = radioVisualTrackOccurrence(queueState);
+  const loadedOccurrence = trackOccurrence?.occurredAt ?? null;
   const wheelOccurrence = visualMode === "wheel"
     ? scene.wheelCeremony?.startedAt
       ?? scene.wheelCeremony?.seed
@@ -223,6 +220,16 @@ export function resolveRadioVisualsSnapshot(input: {
     : visualMode === "wheel"
       ? `wheel:${wheelOccurrence}`
       : `${visualMode}:${showStage}:${acceptedCount}:${completedCount}${transientSceneOccurrence}`;
+  const baseVisualSeed = hashRadioVisualToken(trackIdentity);
+  const visualSeed = scene.track
+    ? radioVisualSeedForMusicFamily(
+      trackIdentity,
+      radioVisualMusicFamilyIndexForOccurrence(
+        queueState.session?.sessionId ?? "radio-session",
+        trackOccurrence?.ordinal ?? completedCount,
+      ),
+    )
+    : baseVisualSeed;
   const cue = sessionActive && overlayState ? activeRadioVisualCue({
     type: overlayState.visualCueType,
     startedAt: overlayState.visualCueStartedAt,
@@ -252,7 +259,7 @@ export function resolveRadioVisualsSnapshot(input: {
     player,
     cue,
     events: sessionActive ? recentVisualEvents(queueState, scene, now) : [],
-    visualSeed: hashRadioVisualToken(trackIdentity),
+    visualSeed,
     updatedAt: scene.updatedAt || now.toISOString(),
   };
 }

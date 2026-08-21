@@ -214,6 +214,42 @@ export interface RadioVisualMusicSceneLayerPlan {
   tapestry: number;
 }
 
+export const RADIO_VISUAL_MUSIC_PERIMETER_MOTIFS = {
+  edge_spectrum: "edge_bars",
+  oscilloscope_ribbons: "ribbon_rails",
+  tape_feedback: "feedback_corners",
+  matrix_rain: "matrix_columns",
+  ascii_terminal: "terminal_brackets",
+  pixel_sort_storm: "pixel_fragments",
+  lightning_switchyard: "switchyard_arcs",
+  laser_lattice: "laser_chevrons",
+  particle_pressure: "pressure_streaks",
+  signal_constellation: "constellation_chain",
+} as const satisfies Record<RadioVisualMusicScene, string>;
+
+export type RadioVisualMusicPerimeterMotif = (typeof RADIO_VISUAL_MUSIC_PERIMETER_MOTIFS)[RadioVisualMusicScene];
+
+/**
+ * Bounded edge-only identity shared by none of the ten family renderers.
+ * Values are normalized so the Canvas implementation can remain entirely in
+ * the performer-safe perimeter while bass, mids, treble, and the all-band
+ * tapestry still own visibly different parts of that family signature.
+ */
+export interface RadioVisualMusicPerimeterPlan {
+  motif: RadioVisualMusicPerimeterMotif;
+  strength: number;
+  reach: number;
+  thickness: number;
+  bassDrive: number;
+  midDrive: number;
+  trebleDrive: number;
+  tapestryDrive: number;
+  bassElements: number;
+  midElements: number;
+  trebleElements: number;
+  tapestryElements: number;
+}
+
 interface RadioVisualMusicSceneLayerLimit {
   sustained: number;
   pulse: number;
@@ -496,6 +532,67 @@ export function radioVisualMusicSceneVisibility(drives: RadioVisualAudioDrives):
     0.3,
     1,
   );
+}
+
+/**
+ * Guarantee a chroma-safe family signature around the outside of the stage.
+ * The quiet floor is deliberately structural rather than dense: real audio
+ * expands its reach, weight, count, and brightness, while the central
+ * performer window remains owned by the existing mask and intrusion plan.
+ */
+export function radioVisualMusicPerimeterPlan(
+  scene: RadioVisualMusicScene,
+  drives: RadioVisualAudioDrives,
+): RadioVisualMusicPerimeterPlan {
+  const bassDrive = clampVisualValue(
+    0.12 + drives.bassLayer * 0.58 + drives.bassPulse * 0.3,
+  );
+  const midDrive = clampVisualValue(
+    0.1 + drives.midLayer * 0.58 + drives.midPulse * 0.32,
+  );
+  const trebleDrive = clampVisualValue(
+    0.1 + drives.trebleLayer * 0.54 + drives.treblePulse * 0.36,
+  );
+  const tapestryDrive = clampVisualValue(
+    drives.tapestry * 0.7 + drives.tapestryPulse * 0.3,
+  );
+  const sharedBandDrive = (bassDrive + midDrive + trebleDrive) / 3;
+  const strength = clampVisualValue(
+    0.64
+      + drives.body * 0.1
+      + drives.presence * 0.08
+      + sharedBandDrive * 0.1
+      + drives.impact * 0.04
+      + tapestryDrive * 0.08,
+    0.64,
+    1,
+  );
+  const reach = clampVisualValue(
+    0.075 + midDrive * 0.035 + trebleDrive * 0.02 + tapestryDrive * 0.025,
+    0.075,
+    0.155,
+  );
+  const thickness = clampVisualValue(
+    0.0035 + bassDrive * 0.0055 + drives.bassPulse * 0.002,
+    0.0035,
+    0.011,
+  );
+  return {
+    motif: RADIO_VISUAL_MUSIC_PERIMETER_MOTIFS[scene],
+    strength,
+    reach,
+    thickness,
+    bassDrive,
+    midDrive,
+    trebleDrive,
+    tapestryDrive,
+    bassElements: Math.min(7, 2 + Math.round(drives.bassLayer * 3 + drives.bassPulse * 2)),
+    midElements: Math.min(9, 3 + Math.round(drives.midLayer * 4 + drives.midPulse * 2)),
+    trebleElements: Math.min(11, 3 + Math.round(drives.trebleLayer * 5 + drives.treblePulse * 3)),
+    tapestryElements: tapestryDrive > 0.025
+      ? Math.min(4, 1 + Math.round(drives.tapestry * 2 + drives.tapestryPulse))
+      : 0,
+  };
 }
 
 export interface RadioVisualWindowIntrusionPlan {

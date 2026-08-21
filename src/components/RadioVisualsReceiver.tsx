@@ -15,6 +15,7 @@ import {
   radioVisualCueProgress,
   radioVisualMusicScene,
   radioVisualMusicSceneLayerPlan,
+  radioVisualMusicPerimeterPlan,
   radioVisualMusicSceneVisibility,
   radioVisualWindowIntrusionPlan,
   radioVisualsIntensity,
@@ -26,7 +27,7 @@ import {
   radioVisualsPortalStageEdgeRadius,
   radioVisualsWheelBand,
 } from "@/lib/radio-visuals-engine";
-import type { RadioVisualAudioDrives, RadioVisualMusicSceneLayerPlan, RadioVisualMusicSignal, RadioVisualWindowIntrusionPlan } from "@/lib/radio-visuals-engine";
+import type { RadioVisualAudioDrives, RadioVisualMusicPerimeterPlan, RadioVisualMusicSceneLayerPlan, RadioVisualMusicSignal, RadioVisualWindowIntrusionPlan } from "@/lib/radio-visuals-engine";
 import { activeRadioVisualEvent, hashRadioVisualToken, radioVisualBroadcastStartedTransition, radioVisualEventEnvelope, radioVisualEventProgress } from "@/lib/radio-visuals-events";
 import { RADIO_VISUALS_ACTIVE_POLL_INTERVAL_MS, RADIO_VISUALS_STANDBY_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 import { studioOverlayRequestHeaders } from "@/lib/studio-overlay-client";
@@ -1525,6 +1526,302 @@ function drawParticlePressure(
   context.restore();
 }
 
+function perimeterRectanglePoint(
+  progress: number,
+  width: number,
+  height: number,
+  inset: number,
+): { x: number; y: number } {
+  const safeWidth = Math.max(1, width - inset * 2);
+  const safeHeight = Math.max(1, height - inset * 2);
+  const perimeter = (safeWidth + safeHeight) * 2;
+  let distance = (((progress % 1) + 1) % 1) * perimeter;
+  if (distance <= safeWidth) return { x: inset + distance, y: inset };
+  distance -= safeWidth;
+  if (distance <= safeHeight) return { x: width - inset, y: inset + distance };
+  distance -= safeHeight;
+  if (distance <= safeWidth) return { x: width - inset - distance, y: height - inset };
+  distance -= safeWidth;
+  return { x: inset, y: height - inset - distance };
+}
+
+function drawMusicPerimeterIdentity(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  time: number,
+  mix: number,
+  drives: RadioVisualAudioDrives,
+  plan: RadioVisualMusicPerimeterPlan,
+  primary: Rgb,
+  secondary: Rgb,
+  highlight: Rgb,
+  seed: number,
+): void {
+  if (mix < 0.002) return;
+  const unit = Math.min(width, height);
+  const edgeX = width * plan.reach;
+  const edgeY = unit * plan.reach;
+  const lineWidth = Math.max(2.5, unit * plan.thickness);
+  const coreAlpha = clampVisualValue(chromaCoreAlpha(mix, drives.presence) * plan.strength * 1.24, 0, 0.96);
+  const colors: Rgb[] = [primary, secondary, highlight];
+  context.save();
+  context.globalCompositeOperation = "source-over";
+  context.lineCap = "square";
+  context.lineJoin = "miter";
+
+  if (plan.motif === "edge_bars") {
+    const barCount = plan.bassElements + plan.midElements + plan.trebleElements;
+    for (let bar = 0; bar < barCount; bar += 1) {
+      const progress = (bar + 0.5) / barCount;
+      const bassBand = progress > 0.68;
+      const trebleBand = progress < 0.3;
+      const drive = bassBand ? plan.bassDrive : trebleBand ? plan.trebleDrive : plan.midDrive;
+      const color = bassBand ? primary : trebleBand ? highlight : secondary;
+      const pulse = 0.54 + 0.46 * Math.abs(Math.sin(time * (0.72 + drive * 2.8) + bar * 0.91));
+      const reach = edgeX * (0.38 + drive * 0.62) * pulse;
+      const barHeight = Math.max(3, height / barCount * (0.3 + drive * 0.28));
+      const y = progress * height - barHeight * 0.5;
+      context.fillStyle = rgba(color, coreAlpha * (0.62 + drive * 0.28));
+      context.fillRect(0, y, reach, barHeight);
+      context.fillRect(width - reach, y, reach, barHeight);
+    }
+    for (let lock = 0; lock < plan.tapestryElements; lock += 1) {
+      const x = width * (lock + 1) / (plan.tapestryElements + 1);
+      context.fillStyle = rgba(highlight, coreAlpha * (0.34 + plan.tapestryDrive * 0.42));
+      context.fillRect(x, 0, Math.max(2, lineWidth * 0.45), edgeY * (0.35 + plan.tapestryDrive * 0.45));
+      context.fillRect(x, height - edgeY * (0.35 + plan.tapestryDrive * 0.45), Math.max(2, lineWidth * 0.45), edgeY * (0.35 + plan.tapestryDrive * 0.45));
+    }
+  } else if (plan.motif === "ribbon_rails") {
+    const railCount = plan.midElements;
+    for (let rail = 0; rail < railCount; rail += 1) {
+      const top = rail % 2 === 0;
+      const lane = Math.floor(rail / 2) + 1;
+      const baseY = top ? edgeY * lane / (Math.ceil(railCount / 2) + 1) : height - edgeY * lane / (Math.floor(railCount / 2) + 1);
+      const amplitude = edgeY * (0.06 + plan.midDrive * 0.18);
+      const cycles = 3 + rail + plan.trebleDrive * 8;
+      context.strokeStyle = rgba(rail % 3 === 0 ? highlight : rail % 2 ? secondary : primary, coreAlpha * (0.48 + plan.midDrive * 0.38));
+      context.lineWidth = lineWidth * (0.52 + plan.bassDrive * 0.72);
+      context.beginPath();
+      for (let step = 0; step <= 48; step += 1) {
+        const progress = step / 48;
+        const y = baseY + Math.sin(progress * Math.PI * cycles + time * (0.9 + plan.trebleDrive * 1.6) + rail) * amplitude;
+        if (step === 0) context.moveTo(0, y);
+        else context.lineTo(width * progress, y);
+      }
+      context.stroke();
+      const beadX = width * ((time * (0.045 + plan.trebleDrive * 0.16) + rail / railCount) % 1);
+      context.fillStyle = rgba(highlight, coreAlpha * (0.52 + plan.trebleDrive * 0.42));
+      context.fillRect(beadX - lineWidth, baseY - lineWidth * 0.4, lineWidth * 2, lineWidth * 0.8);
+    }
+  } else if (plan.motif === "feedback_corners") {
+    const frameCount = Math.min(7, 2 + plan.midElements + plan.tapestryElements);
+    for (let frame = 0; frame < frameCount; frame += 1) {
+      const depth = (frame + 1) / (frameCount + 1);
+      const insetX = edgeX * depth;
+      const insetY = edgeY * depth;
+      const color = colors[frame % colors.length];
+      const jitter = Math.sin(time * (0.34 + plan.trebleDrive * 0.42) + frame * 1.7) * unit * plan.midDrive * 0.008;
+      context.strokeStyle = rgba(color, coreAlpha * (0.48 + plan.midDrive * 0.3));
+      context.lineWidth = lineWidth * (0.48 + plan.bassDrive * 0.76) * (1 - depth * 0.28);
+      const cornerWidth = Math.max(unit * 0.035, edgeX * (0.46 - depth * 0.12));
+      const cornerHeight = Math.max(unit * 0.035, edgeY * (0.55 - depth * 0.12));
+      context.beginPath();
+      context.moveTo(insetX + cornerWidth + jitter, insetY);
+      context.lineTo(insetX + jitter, insetY);
+      context.lineTo(insetX - jitter, insetY + cornerHeight);
+      context.moveTo(width - insetX - cornerWidth + jitter, insetY);
+      context.lineTo(width - insetX - jitter, insetY);
+      context.lineTo(width - insetX + jitter, insetY + cornerHeight);
+      context.moveTo(insetX - jitter, height - insetY - cornerHeight);
+      context.lineTo(insetX + jitter, height - insetY);
+      context.lineTo(insetX + cornerWidth - jitter, height - insetY);
+      context.moveTo(width - insetX + jitter, height - insetY - cornerHeight);
+      context.lineTo(width - insetX - jitter, height - insetY);
+      context.lineTo(width - insetX - cornerWidth + jitter, height - insetY);
+      context.stroke();
+    }
+  } else if (plan.motif === "matrix_columns") {
+    const columnCount = plan.midElements;
+    const fontSize = Math.max(11, unit * (0.012 + plan.bassDrive * 0.008));
+    context.font = `800 ${fontSize}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    for (let column = 0; column < columnCount; column += 1) {
+      const fromRight = column % 2 === 1;
+      const lane = Math.floor(column / 2) + 1;
+      const x = fromRight
+        ? width - edgeX * lane / (Math.ceil(columnCount / 2) + 1)
+        : edgeX * lane / (Math.ceil(columnCount / 2) + 1);
+      const trail = 3 + Math.round(plan.trebleDrive * 5);
+      const head = height * ((randomUnit(seed, 52_100 + column) + time * (0.045 + plan.trebleDrive * 0.13)) % 1.16 - 0.08);
+      for (let glyph = 0; glyph < trail; glyph += 1) {
+        const y = head - glyph * fontSize * 1.2;
+        const character = SIGNAL_GLYPHS[Math.floor(randomUnit(seed + Math.floor(time * 4), 52_300 + column * 19 + glyph) * SIGNAL_GLYPHS.length)];
+        const fade = 1 - glyph / trail;
+        context.fillStyle = rgba(glyph === 0 ? highlight : column % 3 ? primary : secondary, coreAlpha * fade * (0.52 + plan.trebleDrive * 0.38));
+        context.fillText(character, x, y);
+      }
+    }
+    context.fillStyle = rgba(primary, coreAlpha * (0.42 + plan.bassDrive * 0.45));
+    const shelfHeight = lineWidth * (0.7 + plan.bassDrive);
+    context.fillRect(0, height - shelfHeight, edgeX, shelfHeight);
+    context.fillRect(width - edgeX, height - shelfHeight, edgeX, shelfHeight);
+  } else if (plan.motif === "terminal_brackets") {
+    const promptCount = plan.midElements;
+    context.font = `800 ${Math.max(10, unit * (0.011 + plan.bassDrive * 0.005))}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+    context.textBaseline = "middle";
+    for (let prompt = 0; prompt < promptCount; prompt += 1) {
+      const top = prompt % 2 === 0;
+      const progress = (Math.floor(prompt / 2) + 0.5) / Math.ceil(promptCount / 2);
+      const x = width * (0.06 + progress * 0.88);
+      const y = top ? edgeY * 0.48 : height - edgeY * 0.48;
+      const promptWidth = unit * (0.028 + plan.midDrive * 0.05);
+      const promptHeight = lineWidth * (0.8 + plan.bassDrive * 0.75);
+      const color = prompt % 3 === 0 ? highlight : prompt % 2 ? secondary : primary;
+      context.fillStyle = rgba(color, coreAlpha * (0.56 + plan.midDrive * 0.34));
+      context.fillRect(x - promptWidth * 0.5, y - promptHeight * 0.5, promptWidth, promptHeight);
+      const glyph = TERMINAL_GLYPHS[(prompt * 7 + Math.floor(time * (2 + plan.trebleDrive * 5))) % TERMINAL_GLYPHS.length];
+      context.fillStyle = rgba(highlight, coreAlpha * (0.56 + plan.trebleDrive * 0.4));
+      context.fillText(glyph, x + promptWidth * 0.7, y);
+    }
+    context.strokeStyle = rgba(secondary, coreAlpha * (0.42 + plan.midDrive * 0.36));
+    context.lineWidth = lineWidth;
+    context.strokeRect(lineWidth, lineWidth, width - lineWidth * 2, height - lineWidth * 2);
+  } else if (plan.motif === "pixel_fragments") {
+    const fragmentCount = plan.bassElements + plan.midElements + plan.trebleElements;
+    const tick = Math.floor(time * (1.2 + plan.trebleDrive * 8));
+    for (let fragment = 0; fragment < fragmentCount; fragment += 1) {
+      const localSeed = seed + tick * 101 + fragment * 17;
+      const side = fragment % 4;
+      const bandDrive = side < 2 ? plan.midDrive : fragment % 3 === 0 ? plan.bassDrive : plan.trebleDrive;
+      const along = randomUnit(localSeed, 53_100 + fragment);
+      const depth = randomUnit(localSeed, 53_200 + fragment);
+      const length = unit * (0.012 + bandDrive * 0.075 + randomUnit(localSeed, 53_300 + fragment) * 0.04);
+      const thickness = Math.max(3, lineWidth * (0.45 + randomUnit(localSeed, 53_400 + fragment) * 0.85));
+      const color = colors[fragment % colors.length];
+      context.fillStyle = rgba(color, coreAlpha * (0.5 + bandDrive * 0.38));
+      if (side === 0 || side === 1) {
+        const x = side === 0 ? depth * edgeX : width - depth * edgeX - thickness;
+        context.fillRect(x, along * height, thickness, length);
+      } else {
+        const y = side === 2 ? depth * edgeY : height - depth * edgeY - thickness;
+        context.fillRect(along * width, y, length, thickness);
+      }
+    }
+  } else if (plan.motif === "switchyard_arcs") {
+    const railCount = plan.midElements;
+    for (let rail = 0; rail < railCount; rail += 1) {
+      const fromRight = rail % 2 === 1;
+      const y = height * (rail + 1) / (railCount + 1);
+      const edge = fromRight ? width : 0;
+      const direction = fromRight ? -1 : 1;
+      const reach = edgeX * (0.52 + plan.midDrive * 0.48);
+      const step = unit * (0.018 + plan.trebleDrive * 0.025);
+      const color = rail % 3 === 0 ? highlight : rail % 2 ? secondary : primary;
+      context.strokeStyle = rgba(color, coreAlpha * (0.5 + plan.midDrive * 0.34));
+      context.lineWidth = lineWidth * (0.55 + plan.bassDrive * 0.85);
+      context.beginPath();
+      context.moveTo(edge, y);
+      context.lineTo(edge + direction * reach * 0.32, y);
+      context.lineTo(edge + direction * reach * 0.5, y + (rail % 2 ? -step : step));
+      context.lineTo(edge + direction * reach, y + (rail % 2 ? -step : step));
+      context.stroke();
+      const nodeX = edge + direction * reach * 0.5;
+      context.fillStyle = rgba(highlight, coreAlpha * (0.54 + plan.trebleDrive * 0.4));
+      context.fillRect(nodeX - lineWidth * 0.55, y + (rail % 2 ? -step : step) - lineWidth * 0.55, lineWidth * 1.1, lineWidth * 1.1);
+    }
+  } else if (plan.motif === "laser_chevrons") {
+    const chevronCount = plan.trebleElements;
+    context.globalCompositeOperation = "lighter";
+    for (let chevron = 0; chevron < chevronCount; chevron += 1) {
+      const corner = chevron % 4;
+      const lane = Math.floor(chevron / 4) + 1;
+      const inset = unit * lane * 0.018;
+      const horizontal = edgeX * (0.5 + plan.midDrive * 0.5);
+      const vertical = edgeY * (0.5 + plan.trebleDrive * 0.5);
+      const left = corner === 0 || corner === 2;
+      const top = corner < 2;
+      const x = left ? inset : width - inset;
+      const y = top ? inset : height - inset;
+      const color = colors[chevron % colors.length];
+      context.strokeStyle = rgba(color, coreAlpha * (0.46 + plan.trebleDrive * 0.44));
+      context.shadowColor = rgba(color, coreAlpha * 0.38);
+      context.shadowBlur = unit * (0.003 + plan.trebleDrive * 0.006);
+      context.lineWidth = lineWidth * (0.42 + plan.bassDrive * 0.52);
+      context.beginPath();
+      context.moveTo(x + (left ? horizontal : -horizontal), y);
+      context.lineTo(x, y);
+      context.lineTo(x, y + (top ? vertical : -vertical));
+      context.stroke();
+    }
+    context.shadowBlur = 0;
+    context.shadowColor = "transparent";
+  } else if (plan.motif === "pressure_streaks") {
+    const streakCount = plan.bassElements + plan.midElements + plan.trebleElements;
+    for (let streak = 0; streak < streakCount; streak += 1) {
+      const fromRight = streak % 2 === 1;
+      const y = height * randomUnit(seed, 54_100 + streak);
+      const travel = (randomUnit(seed, 54_200 + streak) + time * (0.035 + plan.trebleDrive * 0.09)) % 1;
+      const reach = edgeX * (0.34 + plan.bassDrive * 0.66);
+      const length = Math.min(
+        reach * 0.32,
+        unit * (0.008 + plan.trebleDrive * 0.05 + randomUnit(seed, 54_300 + streak) * 0.025),
+      );
+      const travelDistance = Math.max(0, reach - length);
+      const x = fromRight ? width - travel * travelDistance : travel * travelDistance;
+      const color = colors[streak % colors.length];
+      context.fillStyle = rgba(color, coreAlpha * (0.45 + (1 - travel) * plan.bassDrive * 0.42));
+      context.fillRect(fromRight ? x - length : x, y, length, Math.max(2.5, lineWidth * 0.45));
+    }
+    for (let front = 0; front < plan.bassElements; front += 1) {
+      const x = edgeX * (front + 1) / (plan.bassElements + 1);
+      context.strokeStyle = rgba(front % 2 ? secondary : primary, coreAlpha * (0.38 + plan.bassDrive * 0.46));
+      context.lineWidth = lineWidth * (0.54 + plan.bassDrive * 0.68);
+      context.beginPath();
+      context.moveTo(x, 0);
+      context.bezierCurveTo(x + unit * plan.midDrive * 0.025, height * 0.3, x - unit * plan.midDrive * 0.025, height * 0.7, x, height);
+      context.stroke();
+      context.beginPath();
+      context.moveTo(width - x, 0);
+      context.bezierCurveTo(width - x - unit * plan.midDrive * 0.025, height * 0.3, width - x + unit * plan.midDrive * 0.025, height * 0.7, width - x, height);
+      context.stroke();
+    }
+  } else if (plan.motif === "constellation_chain") {
+    const pointCount = plan.midElements + plan.trebleElements + plan.tapestryElements;
+    const inset = unit * (0.018 + plan.bassDrive * 0.008);
+    const points = Array.from({ length: pointCount }, (_, point) => {
+      const progress = point / pointCount + time * (0.002 + plan.midDrive * 0.004);
+      const base = perimeterRectanglePoint(progress, width, height, inset);
+      const centerX = width * 0.5;
+      const centerY = height * 0.5;
+      const inward = edgeX * randomUnit(seed, 55_100 + point) * (0.08 + plan.midDrive * 0.22);
+      const distance = Math.max(1, Math.hypot(centerX - base.x, centerY - base.y));
+      return {
+        x: base.x + (centerX - base.x) / distance * inward,
+        y: base.y + (centerY - base.y) / distance * inward,
+      };
+    });
+    context.lineWidth = Math.max(1.5, lineWidth * 0.42);
+    for (let point = 0; point < points.length; point += 1) {
+      const from = points[point];
+      const to = points[(point + 1) % points.length];
+      const color = colors[point % colors.length];
+      context.strokeStyle = rgba(color, coreAlpha * (0.38 + plan.midDrive * 0.38));
+      context.beginPath();
+      context.moveTo(from.x, from.y);
+      context.lineTo(to.x, to.y);
+      context.stroke();
+      const radius = lineWidth * (0.55 + plan.bassDrive * 0.85) * (point % 4 === 0 ? 1.35 : 0.72);
+      context.fillStyle = rgba(point % 5 === 0 ? highlight : color, coreAlpha * (0.56 + plan.trebleDrive * 0.38));
+      context.beginPath();
+      context.arc(from.x, from.y, radius, 0, Math.PI * 2);
+      context.fill();
+    }
+  }
+  context.restore();
+}
+
 function drawSeededMusicScene(
   context: CanvasRenderingContext2D,
   width: number,
@@ -1550,6 +1847,19 @@ function drawSeededMusicScene(
   if (scene === "laser_lattice") drawLaserLattice(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
   if (scene === "particle_pressure") drawParticlePressure(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
   if (scene === "signal_constellation") drawSignalConstellation(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
+  drawMusicPerimeterIdentity(
+    context,
+    width,
+    height,
+    time,
+    mix,
+    drives,
+    radioVisualMusicPerimeterPlan(scene, drives),
+    primary,
+    secondary,
+    highlight,
+    seed,
+  );
 }
 
 function drawQueueLanes(

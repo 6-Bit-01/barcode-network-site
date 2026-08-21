@@ -832,6 +832,88 @@ test("music scene selection is deterministic and spans ten genuinely different f
   assert.deepEqual([...selected].sort(), [...engine.RADIO_VISUAL_MUSIC_SCENES].sort());
 });
 
+test("all ten music families retain a distinct bounded perimeter identity from quiet through full audio", () => {
+  const signal = (level, overrides = {}) => ({
+    source: "windows_loopback",
+    bpm: 120,
+    energy: level,
+    bass: level,
+    mid: level,
+    treble: level,
+    beat: level,
+    accent: level,
+    peak: level,
+    progress: 0.35,
+    phrase: 0.4,
+    ...overrides,
+  });
+  const quiet = engine.radioVisualAudioDrives(signal(0));
+  const hot = engine.radioVisualAudioDrives(signal(0.9));
+  const motifs = new Set();
+
+  for (const musicScene of engine.RADIO_VISUAL_MUSIC_SCENES) {
+    const quietPlan = engine.radioVisualMusicPerimeterPlan(musicScene, quiet);
+    const hotPlan = engine.radioVisualMusicPerimeterPlan(musicScene, hot);
+    motifs.add(quietPlan.motif);
+
+    assert.equal(quietPlan.motif, engine.RADIO_VISUAL_MUSIC_PERIMETER_MOTIFS[musicScene]);
+    assert.equal(hotPlan.motif, quietPlan.motif, `${musicScene} cannot change perimeter language with volume`);
+    assert.ok(quietPlan.strength >= 0.64 && quietPlan.strength <= 1, `${musicScene} must remain readable at silence`);
+    assert.ok(hotPlan.strength > quietPlan.strength && hotPlan.strength <= 1, `${musicScene} must brighten with real audio`);
+    assert.ok(quietPlan.reach >= 0.075 && hotPlan.reach <= 0.155 && hotPlan.reach > quietPlan.reach, `${musicScene} must expand only inside its bounded perimeter band`);
+    assert.ok(quietPlan.thickness >= 0.0035 && hotPlan.thickness <= 0.011 && hotPlan.thickness > quietPlan.thickness, `${musicScene} must gain bass-owned weight without flooding the stage`);
+    assert.ok(quietPlan.bassElements >= 2 && hotPlan.bassElements <= 7 && hotPlan.bassElements >= quietPlan.bassElements);
+    assert.ok(quietPlan.midElements >= 3 && hotPlan.midElements <= 9 && hotPlan.midElements >= quietPlan.midElements);
+    assert.ok(quietPlan.trebleElements >= 3 && hotPlan.trebleElements <= 11 && hotPlan.trebleElements >= quietPlan.trebleElements);
+    assert.equal(quietPlan.tapestryElements, 0, `${musicScene} cannot fabricate an all-band perimeter layer at silence`);
+    assert.ok(hotPlan.tapestryElements >= 1 && hotPlan.tapestryElements <= 4, `${musicScene} must add a bounded all-band lock when the full song arrives`);
+  }
+
+  assert.equal(motifs.size, engine.RADIO_VISUAL_MUSIC_SCENES.length, "every music family must own a different perimeter silhouette");
+});
+
+test("perimeter plans preserve independent bass, mid, and treble ownership", () => {
+  const drives = (overrides = {}) => engine.radioVisualAudioDrives({
+    source: "windows_loopback",
+    bpm: 120,
+    energy: 0.45,
+    bass: 0,
+    mid: 0,
+    treble: 0,
+    beat: 0,
+    accent: 0,
+    peak: 0,
+    progress: 0.4,
+    phrase: 0.3,
+    ...overrides,
+  });
+  const base = engine.radioVisualMusicPerimeterPlan("signal_constellation", drives());
+  const bass = engine.radioVisualMusicPerimeterPlan("signal_constellation", drives({ bass: 0.8, beat: 0.8 }));
+  const mids = engine.radioVisualMusicPerimeterPlan("signal_constellation", drives({ mid: 0.8, accent: 0.8 }));
+  const treble = engine.radioVisualMusicPerimeterPlan("signal_constellation", drives({ treble: 0.8, peak: 0.8 }));
+
+  assert.ok(bass.bassDrive > base.bassDrive && bass.thickness > base.thickness && bass.bassElements > base.bassElements);
+  assert.ok(mids.midDrive > base.midDrive && mids.reach > base.reach && mids.midElements > base.midElements);
+  assert.ok(treble.trebleDrive > base.trebleDrive && treble.reach > base.reach && treble.trebleElements > base.trebleElements);
+  assert.equal(bass.tapestryElements, 0);
+  assert.equal(mids.tapestryElements, 0);
+  assert.equal(treble.tapestryElements, 0);
+});
+
+test("the receiver renders every planned identity outside the unchanged performer window", () => {
+  const receiver = fs.readFileSync(path.join(projectRoot, "src/components/RadioVisualsReceiver.tsx"), "utf8");
+  const perimeterRenderer = receiver.slice(
+    receiver.indexOf("function perimeterRectanglePoint"),
+    receiver.indexOf("function drawSeededMusicScene"),
+  );
+  for (const motif of Object.values(engine.RADIO_VISUAL_MUSIC_PERIMETER_MOTIFS)) {
+    assert.match(perimeterRenderer, new RegExp(`plan\\.motif === ["']${motif}["']`), `${motif} must own an explicit Canvas branch`);
+  }
+  assert.match(receiver, /drawSeededMusicScene[\s\S]*drawMusicPerimeterIdentity\([\s\S]*radioVisualMusicPerimeterPlan\(scene, drives\)/, "every selected family must render its tested perimeter plan");
+  assert.match(receiver, /if \(snapshot\.showStage !== "intake"\) applyPerformerSafeField\(context, width, height, 0\.2\)/, "the center retention must remain at the approved twenty percent");
+  assert.doesNotMatch(perimeterRenderer, /applyPerformerSafeField|applyPerformerIntrusionField|destination-in/, "perimeter identity cannot weaken or bypass the center mask");
+});
+
 test("live audio drives preserve broadband mass, independent band layers, transients, and an all-band tapestry", () => {
   const base = {
     source: "windows_loopback",

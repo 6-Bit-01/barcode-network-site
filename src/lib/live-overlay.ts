@@ -6,6 +6,7 @@ import { parseYouTubeVideoId } from "./track-duration";
 import type { QueueEntry, QueueSourceType, QueueState } from "./queue-types";
 import { hasActiveQueueSession } from "./session-bound-polling";
 import { normalizeRadioVisualCueType, RADIO_VISUAL_CUE_DURATION_MS } from "./radio-visuals-cues";
+import { radioVisualLatestLoadedOccurrence, radioVisualTrackLoadSupersedesWheel } from "./radio-visuals-selection";
 import type { LiveOverlayPlaybackState, LiveOverlayStateInput, LiveOverlayPlayerSync, LiveOverlayYouTubeSync, OverlayMode, ResolvedLiveOverlayScene, ResolvedWheelCeremonyTrack, WheelCeremonyStatus, WheelOverlayStatus } from "./live-overlay-resolver";
 import type { RadioVisualCueType } from "./radio-visuals-cues";
 
@@ -458,8 +459,16 @@ export function resolveLiveOverlaySceneFromQueueState(input: {
   const { overlayState, queueState, playerSync = null, now = new Date() } = input;
   const wheelCandidates = getWheelCandidatesFromQueue(queueState.queue);
   const session = queueState.session ?? null;
+  const latestLoadedOccurrence = radioVisualLatestLoadedOccurrence(queueState);
+  const sceneOverlayState = radioVisualTrackLoadSupersedesWheel(latestLoadedOccurrence, overlayState)
+    ? {
+      ...overlayState,
+      wheelOverlayActive: false,
+      wheelCeremonyStatus: "idle" as const,
+    }
+    : overlayState;
   const resolved = resolveLiveOverlayScene({
-    overlayState,
+    overlayState: sceneOverlayState,
     currentSession: session ? {
       sessionId: session.sessionId,
       title: session.title,

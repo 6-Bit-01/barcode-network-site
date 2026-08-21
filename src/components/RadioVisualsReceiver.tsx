@@ -31,7 +31,7 @@ import {
   radioVisualsPortalStageEdgeRadius,
   radioVisualsWheelBand,
 } from "@/lib/radio-visuals-engine";
-import type { RadioVisualAudioDrives, RadioVisualBroadcastFxPlan, RadioVisualMusicPerimeterPlan, RadioVisualMusicSceneLayerPlan, RadioVisualMusicSignal, RadioVisualWindowIntrusionPlan } from "@/lib/radio-visuals-engine";
+import type { RadioVisualAudioDrives, RadioVisualBroadcastFxPlan, RadioVisualMusicEvolutionPlan, RadioVisualMusicPerimeterPlan, RadioVisualMusicSceneLayerPlan, RadioVisualMusicSignal, RadioVisualWindowIntrusionPlan } from "@/lib/radio-visuals-engine";
 import { activeRadioVisualEvent, hashRadioVisualToken, radioVisualBroadcastStartedTransition, radioVisualEventEnvelope, radioVisualEventProgress } from "@/lib/radio-visuals-events";
 import { RADIO_VISUALS_ACTIVE_POLL_INTERVAL_MS, RADIO_VISUALS_STANDBY_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 import { studioOverlayRequestHeaders } from "@/lib/studio-overlay-client";
@@ -1881,11 +1881,245 @@ function drawMusicPerimeterIdentity(
   context.restore();
 }
 
+/**
+ * The base renderer establishes a family's identity. This late-arriving layer
+ * authors an unmistakable second form for that same family, with geometry
+ * still earned from its owned audio bands and cadence paced by detected tempo.
+ */
+function drawMusicLifecycleVariant(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  time: number,
+  mix: number,
+  drives: RadioVisualAudioDrives,
+  evolution: RadioVisualMusicEvolutionPlan,
+  primary: Rgb,
+  secondary: Rgb,
+  highlight: Rgb,
+  seed: number,
+): void {
+  if (mix < 0.002 || evolution.shapeMorph < 0.025) return;
+  const unit = Math.min(width, height);
+  const morph = evolution.shapeMorph;
+  const finale = evolution.finale;
+  const beatLift = 0.74 + evolution.tempoPulse * 0.26;
+  const coreAlpha = clampVisualValue(
+    chromaCoreAlpha(mix, drives.presence)
+      * morph
+      * (0.18 + drives.presence * 0.42)
+      * beatLift,
+    0,
+    0.72,
+  );
+  const edgeReach = width * (0.035 + drives.body * 0.035 + drives.midLayer * 0.075 + finale * 0.035);
+  const tick = Math.floor(time * (2 + evolution.motionRate * 4 + evolution.tempoPulse * 5));
+  context.save();
+  context.globalCompositeOperation = "source-over";
+  context.lineCap = "square";
+  context.lineJoin = "miter";
+
+  if (evolution.variant === "bars_to_teeth") {
+    const toothCount = 6 + Math.floor(drives.midLayer * 7 + drives.trebleLayer * 7 + finale * 4);
+    for (let tooth = 0; tooth < toothCount; tooth += 1) {
+      const y = height * (tooth + 0.5) / toothCount;
+      const depth = edgeReach * (0.34 + randomUnit(seed, 61_100 + tooth) * 0.66) * (0.72 + drives.treblePulse * 0.28);
+      const toothHeight = Math.max(3, height / toothCount * (0.24 + drives.bassLayer * 0.34));
+      const offset = Math.sin(time * (0.45 + evolution.motionRate * 0.3) + tooth * 1.7) * unit * evolution.jitter * 0.006;
+      const color = tooth % 3 === 0 ? highlight : tooth % 2 ? secondary : primary;
+      context.fillStyle = rgba(color, coreAlpha * (0.58 + drives.treblePulse * 0.3));
+      context.beginPath();
+      context.moveTo(0, y - toothHeight);
+      context.lineTo(depth + offset, y);
+      context.lineTo(0, y + toothHeight);
+      context.closePath();
+      context.fill();
+      context.beginPath();
+      context.moveTo(width, y - toothHeight);
+      context.lineTo(width - depth - offset, y);
+      context.lineTo(width, y + toothHeight);
+      context.closePath();
+      context.fill();
+    }
+  } else if (evolution.variant === "ribbons_to_braids") {
+    const braidCount = 2 + Math.floor(drives.midLayer * 4 + drives.tapestry * 3);
+    for (let braid = 0; braid < braidCount; braid += 1) {
+      const phase = time * (0.55 + evolution.motionRate * 0.34) + braid * Math.PI * 0.72;
+      const color = braid % 3 === 0 ? highlight : braid % 2 ? secondary : primary;
+      context.strokeStyle = rgba(color, coreAlpha * (0.5 + drives.midPulse * 0.34));
+      context.lineWidth = Math.max(2, unit * (0.0018 + drives.bassLayer * 0.008));
+      for (const side of [-1, 1]) {
+        context.beginPath();
+        for (let step = 0; step <= 36; step += 1) {
+          const progress = step / 36;
+          const baseX = side < 0 ? edgeReach * 0.38 : width - edgeReach * 0.38;
+          const wave = Math.sin(progress * Math.PI * (4 + finale * 4) + phase) * edgeReach * (0.16 + drives.midLayer * 0.34);
+          const x = baseX + side * wave;
+          const y = height * progress;
+          if (step === 0) context.moveTo(x, y);
+          else context.lineTo(x, y);
+        }
+        context.stroke();
+      }
+    }
+  } else if (evolution.variant === "frames_to_splice") {
+    const frameCount = 2 + Math.floor(drives.midLayer * 4 + drives.tapestry * 3 + finale * 2);
+    for (let frame = 0; frame < frameCount; frame += 1) {
+      const depth = (frame + 1) / (frameCount + 1);
+      const insetX = edgeReach * depth;
+      const insetY = unit * (0.018 + depth * 0.055);
+      const splice = Math.sin(time * (0.18 + evolution.motionRate * 0.12) + frame * 1.3) * unit * morph * 0.045;
+      context.strokeStyle = rgba(frame % 2 ? secondary : primary, coreAlpha * (0.42 + drives.midLayer * 0.34));
+      context.lineWidth = Math.max(2, unit * (0.002 + drives.bassLayer * 0.007) * (1 - depth * 0.28));
+      context.beginPath();
+      context.moveTo(insetX, insetY + height * 0.18);
+      context.lineTo(insetX + splice, insetY);
+      context.lineTo(width - insetX + splice * 0.24, insetY);
+      context.lineTo(width - insetX, height - insetY - height * 0.18);
+      context.moveTo(width - insetX, height - insetY - height * 0.18);
+      context.lineTo(width - insetX - splice, height - insetY);
+      context.lineTo(insetX - splice * 0.24, height - insetY);
+      context.lineTo(insetX, insetY + height * 0.18);
+      context.stroke();
+    }
+  } else if (evolution.variant === "rain_to_crossfeed") {
+    const rowCount = 3 + Math.floor(drives.midLayer * 6 + drives.trebleLayer * 5 + finale * 3);
+    context.font = `800 ${Math.max(10, unit * (0.012 + drives.bassLayer * 0.006))}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+    context.textBaseline = "middle";
+    for (let row = 0; row < rowCount; row += 1) {
+      const fromRight = row % 2 === 1;
+      const travel = ((time * (0.04 + drives.trebleLayer * 0.18 + evolution.motionRate * 0.04) + randomUnit(seed, 61_600 + row)) % 1.3) - 0.15;
+      const x = fromRight ? width * (1 - travel) : width * travel;
+      const y = height * (row + 0.5) / rowCount;
+      const glyphCount = 2 + Math.floor(drives.midLayer * 5 + finale * 3);
+      for (let glyph = 0; glyph < glyphCount; glyph += 1) {
+        const character = SIGNAL_GLYPHS[(tick + row * 11 + glyph * 7) % SIGNAL_GLYPHS.length];
+        const offset = glyph * unit * 0.018 * (fromRight ? 1 : -1);
+        context.fillStyle = rgba(glyph === 0 ? highlight : row % 2 ? secondary : primary, coreAlpha * (0.42 + (1 - glyph / glyphCount) * 0.38));
+        context.fillText(character, x + offset, y);
+      }
+    }
+  } else if (evolution.variant === "terminal_to_breach") {
+    const packetCount = 3 + Math.floor(drives.midLayer * 5 + drives.trebleLayer * 4 + finale * 4);
+    context.font = `800 ${Math.max(9, unit * 0.011)}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+    context.textBaseline = "middle";
+    for (let packet = 0; packet < packetCount; packet += 1) {
+      const side = packet % 2;
+      const y = height * randomUnit(seed, 62_100 + packet);
+      const pulseOffset = Math.sin(time * evolution.motionRate + packet) * unit * evolution.jitter * 0.018;
+      const reach = edgeReach * (0.42 + randomUnit(seed, 62_200 + packet) * 0.58);
+      const x = side ? width - reach - pulseOffset : reach + pulseOffset;
+      const label = `0x${((seed + packet * 97 + tick) >>> 0).toString(16).slice(-4).toUpperCase()}`;
+      context.fillStyle = rgba(packet % 3 === 0 ? highlight : packet % 2 ? secondary : primary, coreAlpha * (0.48 + drives.treblePulse * 0.38));
+      context.textAlign = side ? "right" : "left";
+      context.fillText(label, x, y);
+      context.fillRect(side ? x : 0, y + unit * 0.008, side ? width - x : x, Math.max(2, unit * 0.0025));
+    }
+  } else if (evolution.variant === "slices_to_scramble") {
+    const shardCount = 5 + Math.floor(drives.midLayer * 6 + drives.trebleLayer * 8 + finale * 5);
+    for (let shard = 0; shard < shardCount; shard += 1) {
+      const localSeed = seed + tick * 131 + shard * 17;
+      const fromRight = shard % 2 === 1;
+      const y = height * randomUnit(localSeed, 62_600 + shard);
+      const shardWidth = edgeReach * (0.24 + randomUnit(localSeed, 62_700 + shard) * 0.76);
+      const shardHeight = Math.max(3, unit * (0.003 + randomUnit(localSeed, 62_800 + shard) * (0.008 + drives.bassLayer * 0.018)));
+      const skew = unit * (0.01 + evolution.jitter * 0.03) * (shard % 3 - 1);
+      context.fillStyle = rgba(shard % 4 === 0 ? highlight : shard % 2 ? secondary : primary, coreAlpha * (0.44 + drives.treblePulse * 0.4));
+      context.beginPath();
+      context.moveTo(fromRight ? width : 0, y);
+      context.lineTo(fromRight ? width - shardWidth : shardWidth, y + skew);
+      context.lineTo(fromRight ? width - shardWidth : shardWidth, y + shardHeight + skew);
+      context.lineTo(fromRight ? width : 0, y + shardHeight);
+      context.closePath();
+      context.fill();
+    }
+  } else if (evolution.variant === "rails_to_discharge") {
+    const dischargeCount = 2 + Math.floor(drives.midLayer * 4 + drives.trebleLayer * 5 + finale * 3);
+    for (let discharge = 0; discharge < dischargeCount; discharge += 1) {
+      const fromRight = discharge % 2 === 1;
+      const direction = fromRight ? -1 : 1;
+      const originX = fromRight ? width : 0;
+      const y = height * (discharge + 1) / (dischargeCount + 1);
+      const reach = edgeReach * (0.5 + drives.treblePulse * 0.5);
+      const color = discharge % 3 === 0 ? highlight : discharge % 2 ? secondary : primary;
+      context.strokeStyle = rgba(color, coreAlpha * (0.52 + drives.treblePulse * 0.4));
+      context.shadowColor = rgba(color, coreAlpha * 0.42);
+      context.shadowBlur = unit * (0.003 + drives.treblePulse * 0.01);
+      context.lineWidth = Math.max(1.5, unit * (0.0015 + drives.bassLayer * 0.006));
+      context.beginPath();
+      context.moveTo(originX, y);
+      for (let step = 1; step <= 6; step += 1) {
+        const x = originX + direction * reach * step / 6;
+        const jag = (randomUnit(seed + tick, 63_100 + discharge * 11 + step) - 0.5) * unit * (0.01 + evolution.jitter * 0.028);
+        context.lineTo(x, y + jag);
+      }
+      context.stroke();
+    }
+  } else if (evolution.variant === "grid_to_prism") {
+    const prismCount = 2 + Math.floor(drives.midLayer * 3 + drives.tapestry * 3 + finale * 2);
+    context.translate(width * 0.5, height * 0.5);
+    context.rotate(time * (0.025 + evolution.motionRate * 0.018));
+    for (let prism = 0; prism < prismCount; prism += 1) {
+      const depth = (prism + 1) / (prismCount + 1);
+      const radiusX = width * (0.12 + depth * (0.34 + drives.midLayer * 0.08));
+      const radiusY = height * (0.08 + depth * (0.28 + drives.trebleLayer * 0.06));
+      context.strokeStyle = rgba(prism % 3 === 0 ? highlight : prism % 2 ? secondary : primary, coreAlpha * (0.38 + drives.trebleLayer * 0.38));
+      context.lineWidth = Math.max(1.5, unit * (0.0015 + drives.bassLayer * 0.005));
+      context.beginPath();
+      context.moveTo(0, -radiusY);
+      context.lineTo(radiusX, 0);
+      context.lineTo(0, radiusY);
+      context.lineTo(-radiusX, 0);
+      context.closePath();
+      context.stroke();
+    }
+  } else if (evolution.variant === "drift_to_vortex") {
+    const particleCount = 8 + Math.floor(drives.body * 10 + drives.trebleLayer * 8 + finale * 6);
+    for (let particle = 0; particle < particleCount; particle += 1) {
+      const base = randomUnit(seed, 63_600 + particle);
+      const radius = unit * (0.08 + base * (0.34 + drives.bassLayer * 0.08));
+      const angle = randomUnit(seed, 63_700 + particle) * Math.PI * 2 + time * (0.12 + evolution.motionRate * 0.1) * (particle % 2 ? -1 : 1);
+      const x = width * 0.5 + Math.cos(angle) * radius;
+      const y = height * 0.5 + Math.sin(angle) * radius * 1.24;
+      const size = Math.max(2, unit * (0.002 + drives.bassLayer * 0.007 + evolution.tempoPulse * 0.002));
+      const color = particle % 5 === 0 ? highlight : particle % 2 ? secondary : primary;
+      context.fillStyle = rgba(color, coreAlpha * (0.42 + drives.trebleLayer * 0.36));
+      context.fillRect(x - size * 0.5, y - size * 0.5, size, size);
+    }
+  } else if (evolution.variant === "stars_to_network") {
+    const nodeCount = 6 + Math.floor(drives.midLayer * 6 + drives.trebleLayer * 5 + drives.tapestry * 5 + finale * 3);
+    const nodes = Array.from({ length: nodeCount }, (_, node) => {
+      const angle = node / nodeCount * Math.PI * 2 + time * (0.025 + evolution.motionRate * 0.018);
+      const radius = unit * (0.11 + node / nodeCount * (0.3 + drives.midLayer * 0.05));
+      return { x: width * 0.5 + Math.cos(angle) * radius, y: height * 0.5 + Math.sin(angle) * radius * 1.18 };
+    });
+    context.lineWidth = Math.max(1, unit * (0.001 + drives.midLayer * 0.002));
+    for (let node = 0; node < nodes.length; node += 1) {
+      const from = nodes[node];
+      const to = nodes[(node + 2 + Math.floor(finale * 2)) % nodes.length];
+      const color = node % 3 === 0 ? highlight : node % 2 ? secondary : primary;
+      context.strokeStyle = rgba(color, coreAlpha * (0.32 + drives.midLayer * 0.42));
+      context.beginPath();
+      context.moveTo(from.x, from.y);
+      context.quadraticCurveTo(width * 0.5, height * 0.5, to.x, to.y);
+      context.stroke();
+      context.fillStyle = rgba(color, coreAlpha * (0.48 + drives.treblePulse * 0.38));
+      context.beginPath();
+      context.arc(from.x, from.y, Math.max(1.5, unit * (0.002 + drives.bassLayer * 0.005)), 0, Math.PI * 2);
+      context.fill();
+    }
+  }
+  context.shadowBlur = 0;
+  context.shadowColor = "transparent";
+  context.restore();
+}
+
 function drawSeededMusicScene(
   context: CanvasRenderingContext2D,
   width: number,
   height: number,
   time: number,
+  bpm: number,
   mix: number,
   drives: RadioVisualAudioDrives,
   primary: Rgb,
@@ -1896,17 +2130,21 @@ function drawSeededMusicScene(
   if (mix < 0.002) return;
   const scene = radioVisualMusicScene(seed);
   const layerPlan = radioVisualMusicSceneLayerPlan(scene, drives);
-  const evolution = radioVisualMusicEvolutionPlan(scene, seed, time, drives);
+  const evolution = radioVisualMusicEvolutionPlan(scene, seed, time, drives, bpm);
   const evolvedTime = time * evolution.motionRate;
-  const evolvedPrimary = mixRgb(primary, secondary, evolution.hueBlend);
-  const evolvedSecondary = mixRgb(secondary, highlight, evolution.hueBlend * 0.72);
-  const evolvedHighlight = mixRgb(highlight, primary, evolution.hueBlend * 0.34);
+  const evolvedPrimary = mixRgb(primary, highlight, evolution.hueBlend);
+  const evolvedSecondary = mixRgb(secondary, primary, evolution.hueBlend * 0.82);
+  const evolvedHighlight = mixRgb(highlight, secondary, evolution.hueBlend * 0.56);
+  const jitterTick = Math.floor(time * clampVisualValue(bpm, 55, 200) / 15);
+  const jitterX = (randomUnit(seed + jitterTick, 64_100) - 0.5) * width * evolution.jitter * 0.009;
+  const jitterY = (randomUnit(seed + jitterTick, 64_101) - 0.5) * height * evolution.jitter * 0.006;
   context.save();
   context.translate(
-    width * (0.5 + evolution.translateXRatio),
-    height * (0.5 + evolution.translateYRatio),
+    width * (0.5 + evolution.translateXRatio) + jitterX,
+    height * (0.5 + evolution.translateYRatio) + jitterY,
   );
   context.rotate(evolution.rotation);
+  context.transform(1, evolution.shearY, evolution.shearX, 1, 0, 0);
   context.scale(evolution.scaleX, evolution.scaleY);
   context.translate(-width * 0.5, -height * 0.5);
   if (scene === "edge_spectrum") drawEdgeSpectrum(context, width, height, evolvedTime, mix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
@@ -1919,12 +2157,13 @@ function drawSeededMusicScene(
   if (scene === "laser_lattice") drawLaserLattice(context, width, height, evolvedTime, mix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
   if (scene === "particle_pressure") drawParticlePressure(context, width, height, evolvedTime, mix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
   if (scene === "signal_constellation") drawSignalConstellation(context, width, height, evolvedTime, mix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
+  drawMusicLifecycleVariant(context, width, height, evolvedTime, mix, drives, evolution, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
   context.restore();
   drawMusicPerimeterIdentity(
     context,
     width,
     height,
-    time,
+    evolvedTime,
     mix,
     drives,
     radioVisualMusicPerimeterPlan(scene, drives),
@@ -3910,7 +4149,7 @@ function drawVisualFrame(
         * RADIO_VISUAL_MUSIC_OUTPUT_GAIN,
     );
     if (musicMix < 0.06) return;
-    drawSeededMusicScene(context, width, height, audioTime, musicMix, musicDrives, runtime.primary, runtime.secondary, runtime.highlight, seed);
+    drawSeededMusicScene(context, width, height, audioTime, music.bpm, musicMix, musicDrives, runtime.primary, runtime.secondary, runtime.highlight, seed);
   };
   drawSeedComposition(runtime.previousMusicSeed, 1 - musicSeedBlend);
   drawSeedComposition(runtime.currentMusicSeed, musicSeedBlend);

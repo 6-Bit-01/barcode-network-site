@@ -231,6 +231,20 @@ export interface RadioVisualAudioDrives {
 
 export type RadioVisualMusicGesture = "vocal_pattern" | "melodic_lift" | "instrumental_break";
 
+export type RadioVisualMusicLifecycleAct = "origin" | "mutation" | "finale";
+
+export type RadioVisualMusicLifecycleVariant =
+  | "bars_to_teeth"
+  | "ribbons_to_braids"
+  | "frames_to_splice"
+  | "rain_to_crossfeed"
+  | "terminal_to_breach"
+  | "slices_to_scramble"
+  | "rails_to_discharge"
+  | "grid_to_prism"
+  | "drift_to_vortex"
+  | "stars_to_network";
+
 export interface RadioVisualMusicGesturePlan {
   gesture: RadioVisualMusicGesture;
   vocalPattern: number;
@@ -242,14 +256,25 @@ export interface RadioVisualMusicGesturePlan {
 export interface RadioVisualMusicEvolutionPlan {
   sectionIndex: number;
   sectionBlend: number;
+  lifecycleAct: RadioVisualMusicLifecycleAct;
+  lifecycleProgress: number;
+  actProgress: number;
+  metamorphosis: number;
+  finale: number;
+  shapeMorph: number;
+  variant: RadioVisualMusicLifecycleVariant;
   pulse: number;
   scaleX: number;
   scaleY: number;
   translateXRatio: number;
   translateYRatio: number;
   rotation: number;
+  shearX: number;
+  shearY: number;
+  jitter: number;
   hueBlend: number;
   motionRate: number;
+  tempoPulse: number;
   gesture: RadioVisualMusicGesturePlan;
 }
 
@@ -498,24 +523,31 @@ export function radioVisualMusicScene(seed: number): RadioVisualMusicScene {
 }
 
 interface RadioVisualMusicEvolutionProfile {
+  variant: RadioVisualMusicLifecycleVariant;
   bassScale: number;
   midDrift: number;
   trebleHue: number;
-  motion: number;
+  startMotion: number;
+  endMotion: number;
+  startJitter: number;
+  endJitter: number;
   tilt: number;
+  endRotation: number;
+  endShearX: number;
+  endShearY: number;
 }
 
 const MUSIC_EVOLUTION_PROFILES: Record<RadioVisualMusicScene, RadioVisualMusicEvolutionProfile> = {
-  edge_spectrum: { bassScale: 0.72, midDrift: 0.42, trebleHue: 0.52, motion: 0.86, tilt: 0.2 },
-  oscilloscope_ribbons: { bassScale: 0.34, midDrift: 0.92, trebleHue: 0.68, motion: 1.28, tilt: 0.44 },
-  tape_feedback: { bassScale: 0.56, midDrift: 0.7, trebleHue: 0.42, motion: 0.72, tilt: 0.86 },
-  matrix_rain: { bassScale: 0.26, midDrift: 0.48, trebleHue: 0.9, motion: 1.14, tilt: 0.18 },
-  ascii_terminal: { bassScale: 0.22, midDrift: 0.64, trebleHue: 0.74, motion: 0.62, tilt: 0.12 },
-  pixel_sort_storm: { bassScale: 0.64, midDrift: 0.84, trebleHue: 1, motion: 1.36, tilt: 0.54 },
-  lightning_switchyard: { bassScale: 0.48, midDrift: 0.38, trebleHue: 0.82, motion: 1.5, tilt: 0.34 },
-  laser_lattice: { bassScale: 0.4, midDrift: 0.58, trebleHue: 0.94, motion: 1.22, tilt: 0.72 },
-  particle_pressure: { bassScale: 0.9, midDrift: 0.76, trebleHue: 0.58, motion: 1.08, tilt: 0.26 },
-  signal_constellation: { bassScale: 0.3, midDrift: 0.88, trebleHue: 0.78, motion: 0.94, tilt: 0.62 },
+  edge_spectrum: { variant: "bars_to_teeth", bassScale: 0.72, midDrift: 0.42, trebleHue: 0.56, startMotion: 0.7, endMotion: 1.34, startJitter: 0.04, endJitter: 0.62, tilt: 0.2, endRotation: 0.006, endShearX: 0.035, endShearY: 0 },
+  oscilloscope_ribbons: { variant: "ribbons_to_braids", bassScale: 0.34, midDrift: 0.92, trebleHue: 0.7, startMotion: 0.82, endMotion: 1.62, startJitter: 0.02, endJitter: 0.18, tilt: 0.44, endRotation: -0.014, endShearX: 0, endShearY: 0.026 },
+  tape_feedback: { variant: "frames_to_splice", bassScale: 0.56, midDrift: 0.7, trebleHue: 0.5, startMotion: 1.18, endMotion: 0.72, startJitter: 0.58, endJitter: 0.08, tilt: 0.86, endRotation: 0.03, endShearX: -0.028, endShearY: 0.018 },
+  matrix_rain: { variant: "rain_to_crossfeed", bassScale: 0.26, midDrift: 0.48, trebleHue: 0.96, startMotion: 0.68, endMotion: 1.7, startJitter: 0.02, endJitter: 0.54, tilt: 0.18, endRotation: -0.008, endShearX: -0.045, endShearY: 0 },
+  ascii_terminal: { variant: "terminal_to_breach", bassScale: 0.22, midDrift: 0.64, trebleHue: 0.82, startMotion: 0.58, endMotion: 1.32, startJitter: 0.02, endJitter: 0.72, tilt: 0.12, endRotation: 0, endShearX: 0.05, endShearY: -0.018 },
+  pixel_sort_storm: { variant: "slices_to_scramble", bassScale: 0.64, midDrift: 0.84, trebleHue: 1, startMotion: 0.76, endMotion: 1.84, startJitter: 0.16, endJitter: 1, tilt: 0.54, endRotation: 0.02, endShearX: -0.055, endShearY: 0.032 },
+  lightning_switchyard: { variant: "rails_to_discharge", bassScale: 0.48, midDrift: 0.38, trebleHue: 0.88, startMotion: 0.62, endMotion: 1.76, startJitter: 0.04, endJitter: 0.84, tilt: 0.34, endRotation: -0.018, endShearX: 0.028, endShearY: 0.02 },
+  laser_lattice: { variant: "grid_to_prism", bassScale: 0.4, midDrift: 0.58, trebleHue: 0.98, startMotion: 0.72, endMotion: 1.52, startJitter: 0.03, endJitter: 0.12, tilt: 0.72, endRotation: 0.042, endShearX: 0.018, endShearY: -0.018 },
+  particle_pressure: { variant: "drift_to_vortex", bassScale: 0.9, midDrift: 0.76, trebleHue: 0.62, startMotion: 0.56, endMotion: 1.58, startJitter: 0.06, endJitter: 0.34, tilt: 0.26, endRotation: 0.026, endShearX: 0, endShearY: 0.028 },
+  signal_constellation: { variant: "stars_to_network", bassScale: 0.3, midDrift: 0.88, trebleHue: 0.86, startMotion: 0.48, endMotion: 1.18, startJitter: 0.26, endJitter: 0.02, tilt: 0.62, endRotation: -0.034, endShearX: -0.02, endShearY: -0.012 },
 };
 
 /**
@@ -563,38 +595,85 @@ export function radioVisualMusicEvolutionPlan(
   seed: number,
   time: number,
   drives: RadioVisualAudioDrives,
+  bpm = 120,
 ): RadioVisualMusicEvolutionPlan {
   const profile = MUSIC_EVOLUTION_PROFILES[scene];
   const safeTime = Number.isFinite(time) ? time : 0;
-  const sectionPosition = clampVisualValue(drives.progress) * 4;
+  const lifecycleProgress = clampVisualValue(drives.progress);
+  const sectionPosition = lifecycleProgress * 4;
   const sectionIndex = Math.min(3, Math.floor(sectionPosition));
   const sectionBlend = smoothstep(sectionPosition - sectionIndex);
   const smoothSection = sectionIndex + sectionBlend;
+  const lifecycleAct: RadioVisualMusicLifecycleAct = lifecycleProgress < 0.22
+    ? "origin"
+    : lifecycleProgress < 0.74
+      ? "mutation"
+      : "finale";
+  const actProgress = lifecycleAct === "origin"
+    ? clampVisualValue(lifecycleProgress / 0.22)
+    : lifecycleAct === "mutation"
+      ? clampVisualValue((lifecycleProgress - 0.22) / 0.52)
+      : clampVisualValue((lifecycleProgress - 0.74) / 0.26);
+  // Hold a readable origin long enough to establish the family, then make the
+  // end unmistakably different without a hard scene swap.
+  const metamorphosis = smoothstep((lifecycleProgress - 0.08) / 0.84);
+  const finale = smoothstep((lifecycleProgress - 0.7) / 0.3);
   const seedPhase = deterministicVisualUnit(seed, 26_001) * Math.PI * 2;
   const phraseWave = 0.5 + 0.5 * Math.sin(clampVisualValue(drives.phrase) * Math.PI * 2 + seedPhase);
-  const slowWave = Math.sin(safeTime * (0.12 + profile.motion * 0.055) + seedPhase + smoothSection * 0.74);
+  const safeBpm = clampVisualValue(bpm, 55, 200);
+  const tempoPosition = safeTime * safeBpm / 60;
+  const tempoWave = Math.pow(0.5 + 0.5 * Math.cos(tempoPosition * Math.PI * 2), 3.2);
+  const detectedHit = Math.max(drives.bassPulse, drives.midPulse, drives.treblePulse, drives.tapestryPulse, drives.impact);
+  const tempoPulse = clampVisualValue(Math.max(detectedHit, tempoWave * (0.12 + detectedHit * 0.88)));
+  const lifecycleMotion = profile.startMotion + (profile.endMotion - profile.startMotion) * metamorphosis;
+  const slowWave = Math.sin(safeTime * (0.12 + lifecycleMotion * 0.055) + seedPhase + smoothSection * 0.74);
   const crossWave = Math.cos(safeTime * (0.09 + profile.midDrift * 0.06) + seedPhase * 0.73 + smoothSection * 0.41);
   const bassMotion = clampVisualValue(drives.bassLayer * 0.46 + drives.bassPulse * 0.54);
   const midMotion = clampVisualValue(drives.midLayer * 0.56 + drives.midPulse * 0.44);
   const trebleMotion = clampVisualValue(drives.trebleLayer * 0.5 + drives.treblePulse * 0.5);
-  const pulse = clampVisualValue(0.18 + bassMotion * (0.36 + phraseWave * 0.46) + drives.tapestryPulse * 0.22);
-  const scaleAmount = profile.bassScale * bassMotion * (0.006 + phraseWave * 0.021);
+  const pulse = clampVisualValue(0.12 + bassMotion * (0.3 + phraseWave * 0.38) + tempoPulse * 0.18 + drives.tapestryPulse * 0.16);
+  const scaleAmount = profile.bassScale * bassMotion * (0.004 + phraseWave * 0.017 + tempoPulse * 0.006);
   const drift = profile.midDrift * midMotion;
+  const shapeMorph = clampVisualValue(metamorphosis * (0.4 + drives.body * 0.24 + midMotion * 0.2 + drives.tapestry * 0.16));
+  const jitterProfile = profile.startJitter + (profile.endJitter - profile.startJitter) * metamorphosis;
+  const jitter = clampVisualValue(jitterProfile * (0.18 + trebleMotion * 0.5 + tempoPulse * 0.32));
   return {
     sectionIndex,
     sectionBlend,
+    lifecycleAct,
+    lifecycleProgress,
+    actProgress,
+    metamorphosis,
+    finale,
+    shapeMorph,
+    variant: profile.variant,
     pulse,
-    scaleX: clampVisualValue(1 + scaleAmount + drives.tapestry * 0.004, 0.985, 1.045),
-    scaleY: clampVisualValue(1 + scaleAmount * (0.54 + profile.midDrift * 0.34), 0.985, 1.045),
-    translateXRatio: clampVisualValue(slowWave * drift * 0.011, -0.012, 0.012),
-    translateYRatio: clampVisualValue(crossWave * drift * 0.008, -0.012, 0.012),
-    rotation: clampVisualValue(slowWave * profile.tilt * midMotion * 0.017, -0.018, 0.018),
-    hueBlend: clampVisualValue(
-      profile.trebleHue * trebleMotion * (0.08 + 0.18 * (0.5 + 0.5 * Math.sin(safeTime * 0.22 + seedPhase))),
-      0,
-      0.28,
+    scaleX: clampVisualValue(1 + scaleAmount + drives.tapestry * 0.003 + profile.endShearY * shapeMorph * 0.12, 0.975, 1.055),
+    scaleY: clampVisualValue(1 + scaleAmount * (0.54 + profile.midDrift * 0.34) - profile.endShearX * shapeMorph * 0.1, 0.975, 1.055),
+    translateXRatio: clampVisualValue(slowWave * drift * (0.006 + metamorphosis * 0.006), -0.014, 0.014),
+    translateYRatio: clampVisualValue(crossWave * drift * (0.004 + metamorphosis * 0.005), -0.014, 0.014),
+    rotation: clampVisualValue(
+      slowWave * profile.tilt * midMotion * 0.012 + profile.endRotation * shapeMorph,
+      -0.05,
+      0.05,
     ),
-    motionRate: clampVisualValue(0.82 + profile.motion * 0.18 + trebleMotion * 0.28 + drives.impact * 0.1, 0.82, 1.45),
+    shearX: clampVisualValue(profile.endShearX * shapeMorph, -0.06, 0.06),
+    shearY: clampVisualValue(profile.endShearY * shapeMorph, -0.06, 0.06),
+    jitter,
+    hueBlend: clampVisualValue(
+      profile.trebleHue
+        * metamorphosis
+        * (0.2 + trebleMotion * 0.8)
+        * (0.72 + 0.28 * (0.5 + 0.5 * Math.sin(safeTime * 0.22 + seedPhase))),
+      0,
+      0.62,
+    ),
+    motionRate: clampVisualValue(
+      lifecycleMotion * (0.86 + clampVisualValue((safeBpm - 70) / 100) * 0.2) + trebleMotion * 0.16 + tempoPulse * 0.12,
+      0.48,
+      1.95,
+    ),
+    tempoPulse,
     gesture: radioVisualMusicGesturePlan(drives),
   };
 }

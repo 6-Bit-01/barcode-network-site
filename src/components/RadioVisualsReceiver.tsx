@@ -3,8 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { RadioVisualEvent, RadioVisualEventType, RadioVisualsPlayerSignal, RadioVisualsShowStage, RadioVisualsSnapshot } from "@/lib/radio-visuals";
 import {
+  advanceRadioVisualMusicTransition,
   advanceRadioVisualAudioReaction,
   clampVisualValue,
+  RADIO_VISUAL_MUSIC_OUTPUT_GAIN,
   RADIO_VISUALS_CHROMA_KEY,
   RADIO_VISUALS_EFFECT_STAGE_ASPECT_RATIO,
   RADIO_VISUALS_WHEEL_CENTER_Y_RATIO,
@@ -65,8 +67,9 @@ interface VisualRuntime {
   secondary: Rgb;
   highlight: Rgb;
   currentSeed: number;
-  previousSeed: number;
-  seedTransitionStartedAtMs: number;
+  currentMusicSeed: number;
+  previousMusicSeed: number;
+  musicTransitionStartedAtMs: number;
   trackProgressSeed: number | null;
   trackProgressStartedAtMs: number;
   bloomStartedAtMs: number;
@@ -3470,10 +3473,16 @@ function drawVisualFrame(
   runtime.completeMix += ((snapshot.showStage === "complete" ? 1 : 0) - runtime.completeMix) * (1 - Math.exp(-elapsedMs / 2_600));
   runtime.pressureMix += (pressureTarget(snapshot) - runtime.pressureMix) * (1 - Math.exp(-elapsedMs / 2_400));
 
-  if (runtime.currentSeed !== snapshot.visualSeed) {
-    runtime.previousSeed = runtime.currentSeed;
-    runtime.currentSeed = snapshot.visualSeed;
-    runtime.seedTransitionStartedAtMs = timestampMs;
+  if (runtime.currentSeed !== snapshot.visualSeed) runtime.currentSeed = snapshot.visualSeed;
+  const musicTransition = advanceRadioVisualMusicTransition({
+    currentSeed: runtime.currentMusicSeed,
+    previousSeed: runtime.previousMusicSeed,
+    startedAtMs: runtime.musicTransitionStartedAtMs,
+  }, snapshot.visualMode, snapshot.visualSeed, timestampMs);
+  if (musicTransition.currentSeed !== runtime.currentMusicSeed) {
+    runtime.currentMusicSeed = musicTransition.currentSeed;
+    runtime.previousMusicSeed = musicTransition.previousSeed;
+    runtime.musicTransitionStartedAtMs = musicTransition.startedAtMs;
     runtime.buildMemory *= 0.28;
     runtime.bassOnset = 0;
     runtime.midOnset = 0;
@@ -3488,7 +3497,7 @@ function drawVisualFrame(
     runtime.trackProgressStartedAtMs = timestampMs;
   }
 
-  const seedBlend = ease((timestampMs - runtime.seedTransitionStartedAtMs) / PARTICLE_TRANSITION_MS);
+  const musicSeedBlend = ease((timestampMs - runtime.musicTransitionStartedAtMs) / PARTICLE_TRANSITION_MS);
   const playbackSeconds = projectedPlaybackSeconds(snapshot.player, anchor, timestampMs);
   const transportSeconds = timestampMs / 1_000;
   const trackElapsedSeconds = runtime.trackProgressSeed === snapshot.visualSeed
@@ -3528,7 +3537,7 @@ function drawVisualFrame(
     }
   }
   const musicDrives = reactiveAudioDrives(runtime, music, elapsedMs);
-  const musicScene = radioVisualMusicScene(runtime.currentSeed);
+  const musicScene = radioVisualMusicScene(runtime.currentMusicSeed);
   const targetWheelVelocity = snapshot.visualMode === "wheel" || runtime.wheelMix > 0.002
     ? wheelAngularVelocityTarget(snapshot.sceneMode, musicDrives) * motionScale
     : 0;
@@ -3584,14 +3593,21 @@ function drawVisualFrame(
     runtime.currentSeed,
   );
   const sceneStateMix = clampVisualValue(1 - Math.max(runtime.wheelMix, runtime.systemMix), 0, 1);
+  const activeMusicMix = runtime.trackMix * sceneStateMix;
   const drawSeedComposition = (seed: number, compositionMix: number) => {
     if (compositionMix < 0.002) return;
-    const musicMix = activeSurfaceMix * sceneStateMix * compositionMix * musicSceneActivity;
+    const musicMix = clampVisualValue(
+      activeSurfaceMix
+        * activeMusicMix
+        * compositionMix
+        * musicSceneActivity
+        * RADIO_VISUAL_MUSIC_OUTPUT_GAIN,
+    );
     if (musicMix < 0.06) return;
     drawSeededMusicScene(context, width, height, audioTime, musicMix, musicDrives, runtime.primary, runtime.secondary, runtime.highlight, seed);
   };
-  drawSeedComposition(runtime.previousSeed, 1 - seedBlend);
-  drawSeedComposition(runtime.currentSeed, seedBlend);
+  drawSeedComposition(runtime.previousMusicSeed, 1 - musicSeedBlend);
+  drawSeedComposition(runtime.currentMusicSeed, musicSeedBlend);
   drawQueueLanes(context, width, height, time, runtime.queueMix * activeSurfaceMix, runtime.primary, runtime.secondary, runtime.currentSeed);
   drawIntakeAperture(context, width, height, time, runtime.intakeMix * activeSurfaceMix, runtime.primary, runtime.secondary, runtime.currentSeed);
   drawFinalConvergence(context, width, height, time, runtime.finalMix * activeSurfaceMix, runtime.primary, runtime.secondary, runtime.currentSeed);
@@ -3707,8 +3723,9 @@ export function RadioVisualsReceiver() {
     secondary: hexToRgb("#7c3aed"),
     highlight: hexToRgb("#e0e0e0"),
     currentSeed: 2166136261,
-    previousSeed: 2166136261,
-    seedTransitionStartedAtMs: 0,
+    currentMusicSeed: 2166136261,
+    previousMusicSeed: 2166136261,
+    musicTransitionStartedAtMs: 0,
     trackProgressSeed: null,
     trackProgressStartedAtMs: 0,
     bloomStartedAtMs: Number.NEGATIVE_INFINITY,

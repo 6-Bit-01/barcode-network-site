@@ -176,6 +176,34 @@ export const RADIO_VISUAL_MUSIC_SCENES = [
   "signal_constellation",
 ] as const;
 
+/** Music-only gain applied after track ownership and scene crossfade. */
+export const RADIO_VISUAL_MUSIC_OUTPUT_GAIN = 2;
+
+export interface RadioVisualMusicTransitionState {
+  currentSeed: number;
+  previousSeed: number;
+  startedAtMs: number;
+}
+
+/**
+ * Music scenes only advance on a loaded track. Queue/Wheel snapshots may
+ * change the global visual seed, but they must never consume the next music
+ * crossfade or replace the last track family between songs.
+ */
+export function advanceRadioVisualMusicTransition(
+  state: RadioVisualMusicTransitionState,
+  visualMode: RadioVisualsSnapshot["visualMode"],
+  visualSeed: number,
+  nowMs: number,
+): RadioVisualMusicTransitionState {
+  if (visualMode !== "track" || state.currentSeed === visualSeed) return state;
+  return {
+    previousSeed: state.currentSeed,
+    currentSeed: visualSeed,
+    startedAtMs: nowMs,
+  };
+}
+
 export type RadioVisualMusicScene = (typeof RADIO_VISUAL_MUSIC_SCENES)[number];
 
 export interface RadioVisualAudioDrives {
@@ -407,12 +435,12 @@ function bandLayerActivation(value: number, threshold: number, ceiling: number):
   const normalized = clampVisualValue(
     (clampVisualValue(value) - threshold) / Math.max(0.001, ceiling - threshold),
   );
-  return clampVisualValue(Math.pow(normalized, 1.12));
+  return clampVisualValue(Math.pow(normalized, 1.08));
 }
 
 function tapestryActivation(bass: number, mid: number, treble: number): number {
   const sharedFloor = Math.min(bass, mid, treble);
-  const shared = bandLayerActivation(sharedFloor, 0.055, 0.78);
+  const shared = bandLayerActivation(sharedFloor, 0.018, 0.75);
   const mean = (bass + mid + treble) / 3;
   return clampVisualValue(shared * (0.72 + mean * 0.28));
 }
@@ -439,17 +467,20 @@ export function radioVisualAudioDrives(signal: RadioVisualMusicSignal): RadioVis
   const bass = clampVisualValue(signal.bass);
   const mid = clampVisualValue(signal.mid);
   const treble = clampVisualValue(signal.treble);
-  const beatDrive = Math.pow(clampVisualValue(signal.beat), 1.8);
-  const accentDrive = Math.pow(clampVisualValue(signal.accent), 1.55);
-  const peakDrive = Math.pow(clampVisualValue(signal.peak), 1.35);
+  // The loopback bridge already provides shaped transient envelopes. Consume
+  // each envelope once and multiply it by its owned band once; repeated powers
+  // previously reduced ordinary bass and mid hits to almost nothing.
+  const beatDrive = clampVisualValue(signal.beat);
+  const accentDrive = clampVisualValue(signal.accent);
+  const peakDrive = clampVisualValue(signal.peak);
   const impact = clampVisualValue(Math.max(peakDrive, beatDrive * 0.86, accentDrive * 0.72));
   const presence = clampVisualValue(body * 0.68 + Math.max(bass, mid, treble) * 0.22 + impact * 0.1);
-  const bassPulse = clampVisualValue(Math.max(bass * 0.08, beatDrive * bass * bass));
-  const midPulse = clampVisualValue(Math.max(mid * 0.08, accentDrive * mid * mid));
-  const treblePulse = clampVisualValue(Math.max(treble * 0.08, peakDrive * treble * treble));
-  const bassLayer = bandLayerActivation(bass, 0.055, 0.82);
-  const midLayer = bandLayerActivation(mid, 0.05, 0.8);
-  const trebleLayer = bandLayerActivation(treble, 0.04, 0.78);
+  const bassPulse = clampVisualValue(Math.max(bass * 0.08, beatDrive * bass));
+  const midPulse = clampVisualValue(Math.max(mid * 0.08, accentDrive * mid));
+  const treblePulse = clampVisualValue(Math.max(treble * 0.08, peakDrive * treble));
+  const bassLayer = bandLayerActivation(bass, 0.018, 0.78);
+  const midLayer = bandLayerActivation(mid, 0.016, 0.76);
+  const trebleLayer = bandLayerActivation(treble, 0.012, 0.72);
   const tapestry = tapestryActivation(bass, mid, treble);
   const progress = clampVisualValue(signal.progress);
   const phrase = clampVisualValue(signal.phrase);
@@ -481,14 +512,14 @@ function dedicatedAudioLayerCount(
   layer: number,
   pulse: number,
   limit: RadioVisualMusicSceneLayerLimit,
-  threshold = 0.025,
+  threshold = 0.01,
 ): number {
   const maximum = limit.sustained + limit.pulse;
   if (maximum <= 0) return 0;
   const boundedLayer = clampVisualValue(layer);
   const sustainedProgress = Math.pow(
     clampVisualValue((boundedLayer - threshold) / Math.max(0.001, 1 - threshold)),
-    0.82,
+    0.62,
   );
   const sustained = boundedLayer > threshold && limit.sustained > 0
     ? 1 + Math.round(sustainedProgress * Math.max(0, limit.sustained - 1))
@@ -568,14 +599,14 @@ export function radioVisualMusicPerimeterPlan(
     1,
   );
   const reach = clampVisualValue(
-    0.075 + midDrive * 0.035 + trebleDrive * 0.02 + tapestryDrive * 0.025,
+    0.075 + midDrive * 0.055 + trebleDrive * 0.035 + tapestryDrive * 0.035,
     0.075,
-    0.155,
+    0.2,
   );
   const thickness = clampVisualValue(
-    0.0035 + bassDrive * 0.0055 + drives.bassPulse * 0.002,
+    0.0035 + bassDrive * 0.0095 + drives.bassPulse * 0.0045,
     0.0035,
-    0.011,
+    0.018,
   );
   return {
     motif: RADIO_VISUAL_MUSIC_PERIMETER_MOTIFS[scene],
@@ -586,11 +617,11 @@ export function radioVisualMusicPerimeterPlan(
     midDrive,
     trebleDrive,
     tapestryDrive,
-    bassElements: Math.min(7, 2 + Math.round(drives.bassLayer * 3 + drives.bassPulse * 2)),
-    midElements: Math.min(9, 3 + Math.round(drives.midLayer * 4 + drives.midPulse * 2)),
-    trebleElements: Math.min(11, 3 + Math.round(drives.trebleLayer * 5 + drives.treblePulse * 3)),
+    bassElements: Math.min(10, 2 + Math.round(drives.bassLayer * 5 + drives.bassPulse * 3)),
+    midElements: Math.min(14, 3 + Math.round(drives.midLayer * 7 + drives.midPulse * 4)),
+    trebleElements: Math.min(18, 3 + Math.round(drives.trebleLayer * 9 + drives.treblePulse * 6)),
     tapestryElements: tapestryDrive > 0.025
-      ? Math.min(4, 1 + Math.round(drives.tapestry * 2 + drives.tapestryPulse))
+      ? Math.min(6, 1 + Math.round(drives.tapestry * 3 + drives.tapestryPulse * 2))
       : 0,
   };
 }
@@ -936,7 +967,8 @@ export function radioVisualsMusicSignal(
     const liveMid = radioVisualLoopbackLevel(bridgeSignal.mid, "mid");
     const liveTreble = radioVisualLoopbackLevel(bridgeSignal.treble, "treble");
     const livePeak = radioVisualLoopbackPeak(bridgeSignal.peak);
-    const liveBeat = Math.pow(clampVisualValue(bridgeSignal.beat), 1.55);
+    const liveBeat = Math.pow(clampVisualValue(bridgeSignal.beat), 1.15);
+    const liveTransient = Math.max(liveBeat, livePeak);
     return {
       source: "windows_loopback",
       bpm: confidence >= 0.28 ? bridgeSignal.bpm : bpm,
@@ -944,9 +976,9 @@ export function radioVisualsMusicSignal(
       bass: liveBass,
       mid: liveMid,
       treble: liveTreble,
-      beat: clampVisualValue(liveBeat * liveBass),
-      accent: clampVisualValue(liveBeat * liveMid),
-      peak: livePeak,
+      beat: liveBeat,
+      accent: liveTransient,
+      peak: liveTransient,
       progress,
       phrase,
     };

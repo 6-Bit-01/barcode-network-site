@@ -22,14 +22,7 @@ type TrackOccurrenceState = {
   session?: { completedCount?: number | null } | null;
 };
 
-type WheelOccurrenceState = {
-  wheelOverlayActive?: boolean;
-  wheelCeremonyStatus?: string | null;
-  wheelCeremonyStartedAt?: string | null;
-  wheelOverlayLaunchedAt?: string | null;
-};
-
-export interface RadioVisualLoadedOccurrence {
+interface RadioVisualLoadedOccurrence {
   trackId: string;
   occurredAt: string | null;
 }
@@ -64,27 +57,6 @@ function completedCountForState(state: TrackOccurrenceState): number {
 }
 
 /**
- * Return the newest retained load even after its track has finished. This lets
- * live-scene projection keep an older Wheel ceremony suppressed between tracks
- * without changing queue or Wheel state.
- */
-export function radioVisualLatestLoadedOccurrence(state: TrackOccurrenceState): RadioVisualLoadedOccurrence | null {
-  const latestEvent = loadedEventsForState(state).at(-1) ?? null;
-  const latestEntry = [state.nowPlaying, state.loadedTrack, ...(state.history ?? [])]
-    .filter((entry): entry is TrackOccurrenceEntry & { id: string; playedAt: string } =>
-      typeof entry?.id === "string" && typeof entry.playedAt === "string" && validTime(entry.playedAt) !== null)
-    .sort((left, right) => (validTime(left.playedAt) ?? 0) - (validTime(right.playedAt) ?? 0))
-    .at(-1) ?? null;
-  const eventTime = validTime(latestEvent?.observedAt);
-  const entryTime = validTime(latestEntry?.playedAt);
-  if (eventTime === null && entryTime === null) return null;
-  if (eventTime !== null && (entryTime === null || eventTime >= entryTime)) {
-    return { trackId: latestEvent?.trackId ?? "", occurredAt: latestEvent?.observedAt ?? null };
-  }
-  return { trackId: latestEntry?.id ?? "", occurredAt: latestEntry?.playedAt ?? null };
-}
-
-/**
  * Locate the active load occurrence without depending on which queue response
  * arrived first. The persisted completed count keeps the deck position stable
  * if old playback diagnostics have already fallen out of their bounded window;
@@ -109,28 +81,6 @@ export function radioVisualTrackOccurrence(state: TrackOccurrenceState): RadioVi
     occurredAt: matching?.observedAt ?? (validTime(activeEntry?.playedAt) !== null ? activeEntry?.playedAt ?? null : null),
     ordinal: Math.max(completedCount, matchingIndex),
   };
-}
-
-function activeWheelStatus(state: WheelOccurrenceState): boolean {
-  const status = state.wheelCeremonyStatus ?? (state.wheelOverlayActive ? "ready" : "idle");
-  return status !== "idle" && status !== "cancelled";
-}
-
-/**
- * A track loaded after a Wheel launch owns the live scene. This comparison is
- * projection-only: it does not clear or otherwise mutate the stored ceremony.
- */
-export function radioVisualTrackLoadSupersedesWheel(
-  trackOccurrence: RadioVisualLoadedOccurrence | null,
-  wheelState: WheelOccurrenceState,
-): boolean {
-  if (!trackOccurrence?.occurredAt || !activeWheelStatus(wheelState)) return false;
-  const loadedAtMs = validTime(trackOccurrence.occurredAt);
-  const wheelAtMs = validTime(wheelState.wheelCeremonyStartedAt)
-    ?? validTime(wheelState.wheelOverlayLaunchedAt);
-  // Only an explicit, later Wheel launch can reclaim priority. Generic overlay
-  // updates (for example a visual cue) must never make an older Wheel look new.
-  return loadedAtMs !== null && (wheelAtMs === null || loadedAtMs >= wheelAtMs);
 }
 
 function shuffledFamilyDeck(sessionToken: string, deckIndex: number, previousLast: number | null): number[] {

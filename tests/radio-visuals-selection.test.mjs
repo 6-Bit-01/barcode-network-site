@@ -195,12 +195,6 @@ test("legacy loaded entries use playedAt when playback diagnostics are absent", 
     queueState: state,
     now: new Date("2026-08-21T19:08:30.000Z"),
   }).mode, "now_playing");
-
-  assert.equal(liveOverlay.resolveLiveOverlaySceneFromQueueState({
-    overlayState: { ...olderWheel, wheelCeremonyStartedAt: "2026-08-21T19:05:00.000Z" },
-    queueState: state,
-    now: new Date("2026-08-21T19:08:30.000Z"),
-  }).mode, "wheel_ready", "a Wheel explicitly launched after the legacy load still wins");
 });
 
 test("finished and skipped tracks advance the family occurrence ordinal", () => {
@@ -218,8 +212,8 @@ test("finished and skipped tracks advance the family occurrence ordinal", () => 
   assert.equal(new Set(families).size, 3, "finish and skip both move to the next card in the shuffled deck");
 });
 
-test("a later loaded track supersedes an older Wheel ceremony, while a newly launched Wheel still wins", () => {
-  const current = entry("later-track", 3);
+test("a loaded song owns visuals regardless of Wheel timestamps or queue alias", () => {
+  const current = entry("loaded-song-wins", 3);
   const state = queueState(current, 3, [{
     sequence: 10,
     trackId: current.id,
@@ -228,100 +222,91 @@ test("a later loaded track supersedes an older Wheel ceremony, while a newly lau
     lifecycleState: "loaded",
     observedAt: "2026-08-21T19:03:00.000Z",
   }]);
-  const baseOverlayState = {
+  const activeWheel = {
     mode: "wheel_ready",
     wheelOverlayActive: true,
     wheelCeremonyStatus: "ready",
     wheelCeremonySeed: "wheel-seed",
-    updatedAt: "2026-08-21T19:00:00.000Z",
+    wheelCeremonyStartedAt: "2026-08-21T19:10:00.000Z",
+    updatedAt: "2026-08-21T19:10:00.000Z",
   };
 
   for (const wheelCeremonyStatus of ["ready", "spinning", "result_pending"]) {
-    const olderWheel = {
-      ...baseOverlayState,
+    const overlayState = {
+      ...activeWheel,
       wheelCeremonyStatus,
-      wheelCeremonyStartedAt: "2026-08-21T19:00:00.000Z",
-      wheelCeremonySpinStartedAt: "2026-08-21T19:01:00.000Z",
+      wheelCeremonySpinStartedAt: "2026-08-21T19:10:00.000Z",
     };
     const resolved = liveOverlay.resolveLiveOverlaySceneFromQueueState({
-      overlayState: olderWheel,
+      overlayState,
       queueState: state,
-      now: new Date("2026-08-21T19:04:00.000Z"),
+      now: new Date("2026-08-21T19:10:30.000Z"),
     });
-    assert.equal(resolved.mode, "now_playing", `${wheelCeremonyStatus} must yield to the later loaded occurrence`);
+    assert.equal(resolved.mode, "now_playing", `${wheelCeremonyStatus} must yield while a song is loaded`);
     assert.equal(resolved.track?.id, current.id);
-    assert.equal(olderWheel.wheelCeremonyStatus, wheelCeremonyStatus, "projection must not mutate the stored Wheel state");
   }
 
-  const newerWheel = {
-    ...baseOverlayState,
-    wheelCeremonyStartedAt: "2026-08-21T19:05:00.000Z",
-    updatedAt: "2026-08-21T19:05:00.000Z",
-  };
-  const resolved = liveOverlay.resolveLiveOverlaySceneFromQueueState({
-    overlayState: newerWheel,
-    queueState: state,
-    now: new Date("2026-08-21T19:05:30.000Z"),
-  });
-  assert.equal(resolved.mode, "wheel_ready", "a Wheel launched after the track load must retain priority");
+  const loadedTrackOnly = { ...state, nowPlaying: null, loadedTrack: current };
+  assert.equal(liveOverlay.resolveLiveOverlaySceneFromQueueState({
+    overlayState: activeWheel,
+    queueState: loadedTrackOnly,
+    now: new Date("2026-08-21T19:10:30.000Z"),
+  }).mode, "now_playing", "loadedTrack must remain a complete current-song alias");
 });
 
-test("cue updates cannot revive an undated Wheel over a known loaded occurrence", () => {
-  const current = entry("cue-safe-track", 5);
-  const state = queueState(current, 5, [{
-    sequence: 16,
-    trackId: current.id,
-    provider: "external",
-    eventType: "loaded",
-    lifecycleState: "loaded",
-    observedAt: current.playedAt,
-  }]);
-  const resolved = liveOverlay.resolveLiveOverlaySceneFromQueueState({
-    overlayState: {
-      mode: "wheel_ready",
-      wheelOverlayActive: true,
-      wheelCeremonyStatus: "ready",
-      visualCueType: "lightning",
-      visualCueStartedAt: "2026-08-21T19:09:00.000Z",
-      updatedAt: "2026-08-21T19:09:00.000Z",
-    },
-    queueState: state,
-    now: new Date("2026-08-21T19:09:30.000Z"),
-  });
-  assert.equal(resolved.mode, "now_playing", "only a Wheel-specific launch timestamp can establish newer priority");
-});
-
-test("a superseded Wheel stays hidden after unload until a later Wheel launch", () => {
-  const completed = { ...entry("completed-track", 6), status: "played", completedAt: "2026-08-21T19:07:00.000Z" };
-  const state = {
-    ...queueState(null, 7, [{
-      sequence: 19,
-      trackId: completed.id,
-      provider: "external",
-      eventType: "loaded",
-      lifecycleState: "loaded",
-      observedAt: completed.playedAt,
-    }]),
-    history: [completed],
-  };
-  const olderWheel = {
-    mode: "wheel_result_pending",
+test("the Wheel exists only when explicitly active between songs", () => {
+  const betweenSongs = queueState(null, 4, []);
+  const launchedWheel = {
+    mode: "wheel_ready",
     wheelOverlayActive: true,
-    wheelCeremonyStatus: "result_pending",
-    wheelCeremonyStartedAt: "2026-08-21T19:00:00.000Z",
-    updatedAt: "2026-08-21T19:07:30.000Z",
+    wheelCeremonyStatus: "ready",
+    wheelCeremonySeed: "between-song-wheel",
+    updatedAt: "2026-08-21T19:12:00.000Z",
   };
-  const betweenTracks = liveOverlay.resolveLiveOverlaySceneFromQueueState({
-    overlayState: olderWheel,
-    queueState: state,
-    now: new Date("2026-08-21T19:08:00.000Z"),
-  });
-  assert.equal(betweenTracks.mode.startsWith("wheel_"), false, "the older Wheel must not reappear when the loaded track clears");
+  assert.equal(liveOverlay.resolveLiveOverlaySceneFromQueueState({
+    overlayState: launchedWheel,
+    queueState: betweenSongs,
+    now: new Date("2026-08-21T19:12:30.000Z"),
+  }).mode, "wheel_ready");
 
-  const relaunched = liveOverlay.resolveLiveOverlaySceneFromQueueState({
-    overlayState: { ...olderWheel, mode: "wheel_ready", wheelCeremonyStatus: "ready", wheelCeremonyStartedAt: "2026-08-21T19:08:30.000Z" },
-    queueState: state,
-    now: new Date("2026-08-21T19:09:00.000Z"),
+  const down = liveOverlay.resolveLiveOverlaySceneFromQueueState({
+    overlayState: { ...launchedWheel, wheelOverlayActive: false },
+    queueState: betweenSongs,
+    now: new Date("2026-08-21T19:12:30.000Z"),
   });
-  assert.equal(relaunched.mode, "wheel_ready", "a fresh Wheel launch after unload reclaims priority");
+  assert.equal(down.mode.startsWith("wheel_"), false, "a down Wheel overlay cannot leave its mechanism running");
+});
+
+test("stored Wheel normalization preserves an explicit down flag", () => {
+  const down = liveOverlay.normalizeLiveOverlayState({
+    mode: "wheel_spinning",
+    wheelOverlayActive: false,
+    wheelCeremonyStatus: "spinning",
+  });
+  assert.equal(down.wheelOverlayActive, false, "a stale Wheel mode cannot relaunch an explicitly cleared overlay");
+  assert.equal(down.wheelCeremonyStatus, "idle", "clearing the overlay ends the normalized Wheel mechanism");
+
+  const legacy = liveOverlay.normalizeLiveOverlayState({
+    mode: "wheel_spinning",
+    wheelCeremonyStatus: "spinning",
+  });
+  assert.equal(legacy.wheelOverlayActive, true, "legacy records without an active flag retain their Wheel mode fallback");
+  assert.equal(legacy.wheelCeremonyStatus, "spinning");
+});
+
+test("music transition state ignores every between-song seed", () => {
+  const first = engine.advanceRadioVisualMusicTransition({
+    currentSeed: 10,
+    previousSeed: 10,
+    startedAtMs: 0,
+  }, "track", 101, 1_000);
+  assert.deepEqual(first, { currentSeed: 101, previousSeed: 10, startedAtMs: 1_000 });
+
+  const queueGap = engine.advanceRadioVisualMusicTransition(first, "queue", 202, 2_000);
+  const wheelGap = engine.advanceRadioVisualMusicTransition(queueGap, "wheel", 303, 3_000);
+  assert.equal(queueGap, first);
+  assert.equal(wheelGap, first);
+
+  const second = engine.advanceRadioVisualMusicTransition(wheelGap, "track", 404, 4_000);
+  assert.deepEqual(second, { currentSeed: 404, previousSeed: 101, startedAtMs: 4_000 });
 });

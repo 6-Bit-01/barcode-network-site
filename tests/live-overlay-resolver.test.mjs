@@ -176,7 +176,7 @@ assert.equal(serverStampTikTokSync({ ...freshTikTokSync, currentTimeSeconds: -1 
 assert.equal(serverStampTikTokSync({ ...freshTikTokSync, currentTimeSeconds: Number.NaN }, serverReceipt), null, "NaN TikTok current times are rejected");
 assert.equal(serverStampTikTokSync({ ...freshTikTokSync, durationSeconds: -1 }, serverReceipt)?.durationSeconds, undefined, "invalid TikTok duration is discarded");
 assert.equal(resolveLiveOverlayScene({ currentSession: { ...session, sponsorBreakStatus: "running" }, nowPlaying: tiktokTrack, playerSync: freshTikTokSync, now: freshNow }).mode, "sponsor", "Sponsor override beats TikTok playback");
-assert.equal(resolveLiveOverlayScene({ currentSession: { ...session, wheelSpinsOwed: 1 }, overlayState: { wheelOverlayActive: true }, nowPlaying: tiktokTrack, playerSync: freshTikTokSync, now: freshNow }).mode, "wheel_ready", "Wheel override beats TikTok playback");
+assert.equal(resolveLiveOverlayScene({ currentSession: { ...session, wheelSpinsOwed: 1 }, overlayState: { wheelOverlayActive: true }, nowPlaying: tiktokTrack, playerSync: freshTikTokSync, now: freshNow }).mode, "now_playing", "loaded TikTok playback owns the scene even if Wheel was accidentally launched");
 assert.equal(resolveLiveOverlayScene({ currentSession: session, overlayState: { systemMessageActive: true, systemMessage: "Hold" }, nowPlaying: tiktokTrack, playerSync: freshTikTokSync, now: freshNow }).mode, "system_message", "System message override beats TikTok playback");
 assert.equal(resolveLiveOverlayScene({ currentSession: session, overlayState: { systemMessageActive: false }, nowPlaying: tiktokTrack, playerSync: freshTikTokSync, now: freshNow }).tiktok?.postId, "6718335390845095173", "Clearing an override returns to synchronized TikTok when sync remains fresh");
 
@@ -211,7 +211,7 @@ const wheelWaiting = resolveLiveOverlayScene({ currentSession: { ...session, whe
 assert.equal(wheelWaiting.mode, "now_playing", "wheel owed does not auto-launch wheel scene");
 assert.equal(wheelWaiting.wheelSpinsOwed, 2, "wheel owed count remains available for admin notification");
 
-assert.equal(resolveLiveOverlayScene({ currentSession: { ...session, wheelSpinsOwed: 1 }, overlayState: { wheelOverlayActive: true }, nowPlaying: youtubeTrack }).mode, "wheel_ready", "launched wheel overlay resolves to wheel ready");
+assert.equal(resolveLiveOverlayScene({ currentSession: { ...session, wheelSpinsOwed: 1 }, overlayState: { wheelOverlayActive: true }, nowPlaying: youtubeTrack }).mode, "now_playing", "loaded YouTube playback owns the scene even if Wheel was accidentally launched");
 assert.equal(resolveLiveOverlayScene({ currentSession: session, overlayState: { wheelOverlayActive: false }, nowPlaying: youtubeTrack }).mode, "now_playing", "cleared wheel overlay returns to automatic now playing");
 
 const system = resolveLiveOverlayScene({ currentSession: session, overlayState: { systemMessageActive: true, systemMessageTitle: "BRB", systemMessage: "Technical reset." }, nowPlaying: youtubeTrack });
@@ -310,7 +310,7 @@ const notLaunched = resolveLiveOverlayScene({ currentSession: { ...session, whee
 assert.equal(notLaunched.mode, "now_playing", "wheel owed with candidates still does not auto-spin before launch");
 assert.equal(notLaunched.wheelCeremony, undefined, "wheel ceremony state is absent until host launch");
 
-const launched = resolveLiveOverlayScene({ currentSession: { ...session, wheelSpinsOwed: 1 }, overlayState: { wheelCeremonyStatus: "ready", wheelOverlayActive: true, wheelCeremonyStartedAt: "2026-05-14T00:00:00.000Z" }, wheelCandidates: eligibleCandidates, nowPlaying: spotifyTrack });
+const launched = resolveLiveOverlayScene({ currentSession: { ...session, wheelSpinsOwed: 1 }, overlayState: { wheelCeremonyStatus: "ready", wheelOverlayActive: true, wheelCeremonyStartedAt: "2026-05-14T00:00:00.000Z" }, wheelCandidates: eligibleCandidates });
 assert.equal(launched.mode, "wheel_ready", "launched wheel resolves to ready scene");
 assert.equal(launched.wheelCeremony?.candidateCount, 2, "ready scene exposes safe eligible candidate count");
 assert.equal(launched.automatic, false, "launched wheel is host-controlled visual state");
@@ -344,7 +344,7 @@ for (const candidateCount of candidateCountRegressions) {
   assert.equal(candidateCountWheel.wheelCeremony?.displayCandidates.every((candidate) => candidate.tracks?.length === 1), true, `${candidateCount}-candidate grouped wheel preserves nested track data at every visible array position`);
 }
 
-const groupedCandidate = resolveLiveOverlayScene({ currentSession: { ...session, wheelSpinsOwed: 1 }, overlayState: { wheelCeremonyStatus: "ready", wheelOverlayActive: true, wheelCeremonySeed: "grouped-a" }, wheelCandidates: [{ id: "person:melanie", artistName: "Melanie", trackTitle: "3 eligible tracks", trackIds: ["m1", "m2", "m3"], trackCount: 3, tracks: [{ id: "m1", artistName: "Melanie", trackTitle: "First" }, { id: "m2", artistName: "Melanie", trackTitle: "Second" }, { id: "m3", artistName: "Melanie", trackTitle: "Third" }] }], nowPlaying: spotifyTrack });
+const groupedCandidate = resolveLiveOverlayScene({ currentSession: { ...session, wheelSpinsOwed: 1 }, overlayState: { wheelCeremonyStatus: "ready", wheelOverlayActive: true, wheelCeremonySeed: "grouped-a" }, wheelCandidates: [{ id: "person:melanie", artistName: "Melanie", trackTitle: "3 eligible tracks", trackIds: ["m1", "m2", "m3"], trackCount: 3, tracks: [{ id: "m1", artistName: "Melanie", trackTitle: "First" }, { id: "m2", artistName: "Melanie", trackTitle: "Second" }, { id: "m3", artistName: "Melanie", trackTitle: "Third" }] }] });
 assert.equal(groupedCandidate.wheelCeremony?.candidateCount, 1, "grouped person appears once on the wheel");
 assert.equal(groupedCandidate.wheelCeremony?.displayCandidates[0]?.trackCount, 3, "grouped wheel entry preserves eligible track count");
 

@@ -153,14 +153,110 @@ export interface RadioVisualAudioDrives {
   bass: number;
   mid: number;
   treble: number;
+  /** Sustained, thresholded geometry owned by each frequency band. */
+  bassLayer: number;
+  midLayer: number;
+  trebleLayer: number;
+  /** Extra composition revealed only when all three bands are genuinely present. */
+  tapestry: number;
   impact: number;
   bassPulse: number;
   midPulse: number;
   treblePulse: number;
+  tapestryPulse: number;
   build: number;
   progress: number;
   phrase: number;
 }
+
+/**
+ * Bounded audio-only density budgets consumed by one music-scene renderer.
+ * A renderer may apply one budget across a coupled group of shapes; baseline
+ * identity geometry is excluded so settled quiet and isolated bands remain
+ * independently testable.
+ */
+export interface RadioVisualMusicSceneLayerPlan {
+  bass: number;
+  mid: number;
+  treble: number;
+  tapestry: number;
+}
+
+interface RadioVisualMusicSceneLayerLimit {
+  sustained: number;
+  pulse: number;
+}
+
+export interface RadioVisualMusicSceneLayerLimits {
+  bass: RadioVisualMusicSceneLayerLimit;
+  mid: RadioVisualMusicSceneLayerLimit;
+  treble: RadioVisualMusicSceneLayerLimit;
+  tapestry: RadioVisualMusicSceneLayerLimit;
+}
+
+/** Hard ceilings for the four dedicated density-budget inputs in every family. */
+export const RADIO_VISUAL_MUSIC_SCENE_LAYER_LIMITS: Record<RadioVisualMusicScene, RadioVisualMusicSceneLayerLimits> = {
+  edge_spectrum: {
+    bass: { sustained: 4, pulse: 3 },
+    mid: { sustained: 4, pulse: 3 },
+    treble: { sustained: 3, pulse: 4 },
+    tapestry: { sustained: 2, pulse: 0 },
+  },
+  oscilloscope_ribbons: {
+    bass: { sustained: 4, pulse: 5 },
+    mid: { sustained: 4, pulse: 2 },
+    treble: { sustained: 4, pulse: 5 },
+    tapestry: { sustained: 5, pulse: 4 },
+  },
+  tape_feedback: {
+    bass: { sustained: 8, pulse: 6 },
+    mid: { sustained: 7, pulse: 3 },
+    treble: { sustained: 5, pulse: 6 },
+    tapestry: { sustained: 4, pulse: 0 },
+  },
+  matrix_rain: {
+    bass: { sustained: 4, pulse: 2 },
+    mid: { sustained: 3, pulse: 5 },
+    treble: { sustained: 4, pulse: 4 },
+    tapestry: { sustained: 1, pulse: 0 },
+  },
+  ascii_terminal: {
+    bass: { sustained: 4, pulse: 3 },
+    mid: { sustained: 4, pulse: 2 },
+    treble: { sustained: 7, pulse: 5 },
+    tapestry: { sustained: 1, pulse: 0 },
+  },
+  pixel_sort_storm: {
+    bass: { sustained: 8, pulse: 6 },
+    mid: { sustained: 6, pulse: 5 },
+    treble: { sustained: 24, pulse: 12 },
+    tapestry: { sustained: 1, pulse: 0 },
+  },
+  lightning_switchyard: {
+    bass: { sustained: 3, pulse: 2 },
+    mid: { sustained: 5, pulse: 2 },
+    treble: { sustained: 1, pulse: 0 },
+    tapestry: { sustained: 1, pulse: 0 },
+  },
+  laser_lattice: {
+    bass: { sustained: 4, pulse: 2 },
+    mid: { sustained: 8, pulse: 4 },
+    treble: { sustained: 1, pulse: 0 },
+    tapestry: { sustained: 1, pulse: 0 },
+  },
+  particle_pressure: {
+    bass: { sustained: 5, pulse: 3 },
+    mid: { sustained: 18, pulse: 0 },
+    treble: { sustained: 24, pulse: 0 },
+    tapestry: { sustained: 1, pulse: 0 },
+  },
+  signal_constellation: {
+    bass: { sustained: 3, pulse: 2 },
+    mid: { sustained: 8, pulse: 0 },
+    treble: { sustained: 7, pulse: 5 },
+    tapestry: { sustained: 3, pulse: 0 },
+  },
+};
 
 export interface RadioVisualAudioReactionState {
   bassSlow: number;
@@ -239,40 +335,124 @@ export function radioVisualMusicScene(seed: number): RadioVisualMusicScene {
   return RADIO_VISUAL_MUSIC_SCENES[hashRadioVisualToken(`music-scene:${safeSeed}`) % RADIO_VISUAL_MUSIC_SCENES.length];
 }
 
+function bandLayerActivation(value: number, threshold: number, ceiling: number): number {
+  const normalized = clampVisualValue(
+    (clampVisualValue(value) - threshold) / Math.max(0.001, ceiling - threshold),
+  );
+  return clampVisualValue(Math.pow(normalized, 1.12));
+}
+
+function tapestryActivation(bass: number, mid: number, treble: number): number {
+  const sharedFloor = Math.min(bass, mid, treble);
+  const shared = bandLayerActivation(sharedFloor, 0.08, 0.76);
+  const mean = (bass + mid + treble) / 3;
+  return clampVisualValue(shared * (0.72 + mean * 0.28));
+}
+
+function tapestryPulseActivation(
+  bassPulse: number,
+  midPulse: number,
+  treblePulse: number,
+  bass: number,
+  mid: number,
+  treble: number,
+): number {
+  const bassTransient = Math.max(0, bassPulse - bass * 0.08);
+  const midTransient = Math.max(0, midPulse - mid * 0.08);
+  const trebleTransient = Math.max(0, treblePulse - treble * 0.08);
+  return clampVisualValue(Math.min(bassTransient, midTransient, trebleTransient) * 1.08);
+}
+
 export function radioVisualAudioDrives(signal: RadioVisualMusicSignal): RadioVisualAudioDrives {
-  const presence = clampVisualValue(Math.max(signal.energy, signal.bass, signal.mid, signal.treble, signal.peak));
-  const body = clampVisualValue(Math.pow(clampVisualValue(signal.energy), 0.78) * 1.04);
-  const bass = clampVisualValue(Math.pow(clampVisualValue(signal.bass), 0.76) * 0.92 + body * 0.08);
-  const mid = clampVisualValue(Math.pow(clampVisualValue(signal.mid), 0.8) * 0.92 + body * 0.07);
-  const treble = clampVisualValue(Math.pow(clampVisualValue(signal.treble), 0.82) * 0.94 + body * 0.05);
+  // The Windows helper already applies its own FFT calibration. Keep this
+  // stage linear so quiet audio is not lifted a second time and each band can
+  // own a genuinely independent visual layer.
+  const body = clampVisualValue(signal.energy);
+  const bass = clampVisualValue(signal.bass);
+  const mid = clampVisualValue(signal.mid);
+  const treble = clampVisualValue(signal.treble);
+  const beatDrive = Math.pow(clampVisualValue(signal.beat), 1.8);
+  const accentDrive = Math.pow(clampVisualValue(signal.accent), 1.55);
+  const peakDrive = Math.pow(clampVisualValue(signal.peak), 1.35);
+  const impact = clampVisualValue(Math.max(peakDrive, beatDrive * 0.86, accentDrive * 0.72));
+  const presence = clampVisualValue(body * 0.68 + Math.max(bass, mid, treble) * 0.22 + impact * 0.1);
+  const bassPulse = clampVisualValue(Math.max(bass * 0.08, beatDrive * bass * bass));
+  const midPulse = clampVisualValue(Math.max(mid * 0.08, accentDrive * mid * mid));
+  const treblePulse = clampVisualValue(Math.max(treble * 0.08, peakDrive * treble * treble));
+  const bassLayer = bandLayerActivation(bass, 0.055, 0.95);
+  const midLayer = bandLayerActivation(mid, 0.05, 0.95);
+  const trebleLayer = bandLayerActivation(treble, 0.04, 0.95);
+  const tapestry = tapestryActivation(bass, mid, treble);
   const progress = clampVisualValue(signal.progress);
   const phrase = clampVisualValue(signal.phrase);
-  const phraseBuild = phrase * phrase * (3 - 2 * phrase);
+  const audioStructure = body * 0.34 + bass * 0.24 + mid * 0.25 + treble * 0.17;
   return {
     presence,
     body,
     bass,
     mid,
     treble,
-    impact: clampVisualValue(Math.max(signal.peak, signal.beat * 0.86, signal.accent * 0.72)),
-    bassPulse: clampVisualValue(bass * 0.32 + signal.beat * (0.46 + bass * 0.34)),
-    midPulse: clampVisualValue(mid * 0.3 + signal.accent * (0.42 + mid * 0.32)),
-    treblePulse: clampVisualValue(treble * 0.28 + Math.max(signal.accent, signal.peak * 0.76) * (0.4 + treble * 0.3)),
-    build: clampVisualValue(0.12 + body * 0.28 + progress * 0.32 + phraseBuild * 0.28),
+    bassLayer,
+    midLayer,
+    trebleLayer,
+    tapestry,
+    impact,
+    bassPulse,
+    midPulse,
+    treblePulse,
+    tapestryPulse: tapestryPulseActivation(bassPulse, midPulse, treblePulse, bass, mid, treble),
+    // Progress and phrase still select deterministic layout evolution below,
+    // but silence can no longer manufacture visual density late in a track.
+    build: clampVisualValue(audioStructure * 0.82 + tapestry * 0.18),
     progress,
     phrase,
   };
 }
 
+function dedicatedAudioLayerCount(
+  layer: number,
+  pulse: number,
+  limit: RadioVisualMusicSceneLayerLimit,
+  threshold = 0.025,
+): number {
+  const maximum = limit.sustained + limit.pulse;
+  if (maximum <= 0) return 0;
+  const boundedLayer = clampVisualValue(layer);
+  const sustainedProgress = clampVisualValue((boundedLayer - threshold) / Math.max(0.001, 1 - threshold));
+  const sustained = boundedLayer > threshold && limit.sustained > 0
+    ? 1 + Math.floor(sustainedProgress * Math.max(0, limit.sustained - 1))
+    : 0;
+  const transient = Math.floor(clampVisualValue(pulse) * limit.pulse);
+  return Math.min(maximum, sustained + transient);
+}
+
+/**
+ * Resolve the bounded, audio-only density budget that the selected renderer
+ * must consume. Quiet, single-band, and full-spectrum behavior can therefore
+ * be verified without duplicating Canvas implementation details in tests.
+ */
+export function radioVisualMusicSceneLayerPlan(
+  scene: RadioVisualMusicScene,
+  drives: RadioVisualAudioDrives,
+): RadioVisualMusicSceneLayerPlan {
+  const limits = RADIO_VISUAL_MUSIC_SCENE_LAYER_LIMITS[scene];
+  return {
+    bass: dedicatedAudioLayerCount(drives.bassLayer, drives.bassPulse, limits.bass),
+    mid: dedicatedAudioLayerCount(drives.midLayer, drives.midPulse, limits.mid),
+    treble: dedicatedAudioLayerCount(drives.trebleLayer, drives.treblePulse, limits.treble),
+    tapestry: dedicatedAudioLayerCount(drives.tapestry, drives.tapestryPulse, limits.tapestry, 0.05),
+  };
+}
+
 export function radioVisualAudioReactionInitialState(): RadioVisualAudioReactionState {
   return {
-    bassSlow: 0.1,
-    midSlow: 0.1,
-    trebleSlow: 0.08,
+    bassSlow: 0,
+    midSlow: 0,
+    trebleSlow: 0,
     bassOnset: 0,
     midOnset: 0,
     trebleOnset: 0,
-    buildMemory: 0.12,
+    buildMemory: 0,
   };
 }
 
@@ -284,39 +464,46 @@ export function advanceRadioVisualAudioReaction(
 ): RadioVisualAudioReactionFrame {
   const base = radioVisualAudioDrives(signal);
   const safeElapsedMs = clampVisualValue(elapsedMs, 0, 1_000);
-  const slowLerp = 1 - Math.exp(-safeElapsedMs / 720);
-  const onsetDecay = Math.exp(-safeElapsedMs / 260);
-  const bassSlow = state.bassSlow + (signal.bass - state.bassSlow) * slowLerp;
-  const midSlow = state.midSlow + (signal.mid - state.midSlow) * slowLerp;
-  const trebleSlow = state.trebleSlow + (signal.treble - state.trebleSlow) * slowLerp;
+  const bassSlow = state.bassSlow + (base.bass - state.bassSlow) * (1 - Math.exp(-safeElapsedMs / 420));
+  const midSlow = state.midSlow + (base.mid - state.midSlow) * (1 - Math.exp(-safeElapsedMs / 340));
+  const trebleSlow = state.trebleSlow + (base.treble - state.trebleSlow) * (1 - Math.exp(-safeElapsedMs / 260));
+  const onset = (level: number, slow: number, gate: number, multiplier: number) => (
+    clampVisualValue(Math.max(0, level - slow - gate) * multiplier)
+  );
   const bassOnset = Math.max(
-    state.bassOnset * onsetDecay,
-    clampVisualValue((signal.bass - state.bassSlow) * 3.8 + signal.beat * 0.34),
+    state.bassOnset * Math.exp(-safeElapsedMs / 180),
+    onset(base.bass, state.bassSlow, 0.035, 3.2),
   );
   const midOnset = Math.max(
-    state.midOnset * onsetDecay,
-    clampVisualValue((signal.mid - state.midSlow) * 3.5 + signal.accent * 0.28),
+    state.midOnset * Math.exp(-safeElapsedMs / 140),
+    onset(base.mid, state.midSlow, 0.03, 3.1),
   );
   const trebleOnset = Math.max(
-    state.trebleOnset * onsetDecay,
-    clampVisualValue((signal.treble - state.trebleSlow) * 3.2 + signal.accent * 0.22 + signal.peak * 0.16),
+    state.trebleOnset * Math.exp(-safeElapsedMs / 95),
+    onset(base.treble, state.trebleSlow, 0.025, 3),
   );
+  const slowTapestry = tapestryActivation(bassSlow, midSlow, trebleSlow);
+  const audioStructure = base.body * 0.34 + bassSlow * 0.24 + midSlow * 0.25 + trebleSlow * 0.17;
   const buildTarget = clampVisualValue(
-    base.build * 0.62
-    + (bassSlow + midSlow + trebleSlow) / 3 * 0.25
-    + Math.max(bassOnset, midOnset, trebleOnset) * 0.13,
+    audioStructure * 0.82
+    + slowTapestry * 0.18
+    + Math.max(bassOnset, midOnset, trebleOnset) * 0.08,
   );
-  const buildResponseMs = buildTarget > state.buildMemory ? 340 : 1_650;
+  const buildResponseMs = buildTarget > state.buildMemory ? 220 : 900;
   const buildMemory = state.buildMemory
     + (buildTarget - state.buildMemory) * (1 - Math.exp(-safeElapsedMs / buildResponseMs));
+  const bassPulse = Math.max(base.bassPulse, bassOnset);
+  const midPulse = Math.max(base.midPulse, midOnset);
+  const treblePulse = Math.max(base.treblePulse, trebleOnset);
   return {
     state: { bassSlow, midSlow, trebleSlow, bassOnset, midOnset, trebleOnset, buildMemory },
     drives: {
       ...base,
-      bassPulse: Math.max(base.bassPulse, bassOnset),
-      midPulse: Math.max(base.midPulse, midOnset),
-      treblePulse: Math.max(base.treblePulse, trebleOnset),
-      build: clampVisualValue(Math.max(base.build * 0.72, buildMemory)),
+      bassPulse,
+      midPulse,
+      treblePulse,
+      tapestryPulse: tapestryPulseActivation(bassPulse, midPulse, treblePulse, base.bass, base.mid, base.treble),
+      build: clampVisualValue(Math.max(base.build * 0.3, buildMemory)),
     },
   };
 }
@@ -366,11 +553,27 @@ function rhythmPulse(phase: number, power: number): number {
   return Math.pow((Math.cos(cycle * Math.PI * 2) + 1) / 2, power);
 }
 
-function shapeLoopbackLevel(value: number): number {
-  const bounded = clampVisualValue(value);
-  // Preserve quiet-speaker visibility without flattening every loud passage at
-  // the top of the range. The former 1.3x power curve saturated near 0.68.
-  return clampVisualValue((1 - Math.exp(-bounded * 2.1)) * 0.72 + Math.sqrt(bounded) * 0.28);
+export type RadioVisualLoopbackChannel = "energy" | "bass" | "mid" | "treble";
+
+const LOOPBACK_LEVEL_CALIBRATION: Record<RadioVisualLoopbackChannel, { floor: number; ceiling: number; gamma: number }> = {
+  energy: { floor: 0.025, ceiling: 1, gamma: 1.25 },
+  bass: { floor: 0.03, ceiling: 1, gamma: 1.3 },
+  mid: { floor: 0.025, ceiling: 1, gamma: 1.25 },
+  treble: { floor: 0.018, ceiling: 1, gamma: 1.15 },
+};
+
+/** Map the installed bridge's already-compressed bands through one quiet-knee curve. */
+export function radioVisualLoopbackLevel(value: number, channel: RadioVisualLoopbackChannel = "energy"): number {
+  const calibration = LOOPBACK_LEVEL_CALIBRATION[channel];
+  const normalized = clampVisualValue(
+    (clampVisualValue(value) - calibration.floor) / (calibration.ceiling - calibration.floor),
+  );
+  return clampVisualValue(Math.pow(smoothstep(normalized), calibration.gamma));
+}
+
+function radioVisualLoopbackPeak(value: number): number {
+  const normalized = clampVisualValue((clampVisualValue(value) - 0.02) / 0.94);
+  return clampVisualValue(Math.pow(smoothstep(normalized), 1.15));
 }
 
 export function radioVisualsMusicSignal(
@@ -441,32 +644,27 @@ export function radioVisualsMusicSignal(
   const peak = hasAnalyser
     ? clampVisualValue(snapshot.player?.audioPeak ?? 0)
     : Math.max(beat * (0.42 + rhythmProfile.kick * 0.4), eighth * rhythmProfile.snare * 0.52, sixteenth * rhythmProfile.hats * 0.58) * activity;
-  const loopbackLevel = bridgeSignal
-    ? Math.max(bridgeSignal.energy, bridgeSignal.bass, bridgeSignal.mid, bridgeSignal.treble, bridgeSignal.peak)
-    : 0;
   const hasLoopback = Boolean(
     bridgeSignal?.captureActive
-    && bridgeSignal.warmedUp
-    && (!bridgeSignal.silence || loopbackLevel >= 0.006),
+    && bridgeSignal.warmedUp,
   );
   if (hasLoopback && bridgeSignal) {
     const confidence = clampVisualValue(bridgeSignal.tempoConfidence);
-    const liveWeight = 0.96;
-    const liveEnergy = shapeLoopbackLevel(bridgeSignal.energy);
-    const liveBass = shapeLoopbackLevel(bridgeSignal.bass);
-    const liveMid = shapeLoopbackLevel(bridgeSignal.mid);
-    const liveTreble = shapeLoopbackLevel(bridgeSignal.treble);
-    const livePeak = shapeLoopbackLevel(bridgeSignal.peak);
-    const liveBeat = shapeLoopbackLevel(bridgeSignal.beat);
+    const liveEnergy = radioVisualLoopbackLevel(bridgeSignal.energy, "energy");
+    const liveBass = radioVisualLoopbackLevel(bridgeSignal.bass, "bass");
+    const liveMid = radioVisualLoopbackLevel(bridgeSignal.mid, "mid");
+    const liveTreble = radioVisualLoopbackLevel(bridgeSignal.treble, "treble");
+    const livePeak = radioVisualLoopbackPeak(bridgeSignal.peak);
+    const liveBeat = Math.pow(clampVisualValue(bridgeSignal.beat), 1.8);
     return {
       source: "windows_loopback",
       bpm: confidence >= 0.28 ? bridgeSignal.bpm : bpm,
-      energy: clampVisualValue(liveEnergy * liveWeight + timelineEnergy * (1 - liveWeight), 0.025, 0.98),
-      bass: clampVisualValue(liveBass * liveWeight + timelineBass * (1 - liveWeight)),
-      mid: clampVisualValue(liveMid * liveWeight + timelineMid * (1 - liveWeight)),
-      treble: clampVisualValue(liveTreble * liveWeight + timelineTreble * (1 - liveWeight)),
-      beat: clampVisualValue(Math.max(liveBeat, beat * 0.08) * (0.72 + liveBass * 0.28)),
-      accent: clampVisualValue(Math.max(liveBeat * 0.78, livePeak * 0.62, liveTreble * 0.24)),
+      energy: liveEnergy,
+      bass: liveBass,
+      mid: liveMid,
+      treble: liveTreble,
+      beat: clampVisualValue(liveBeat * liveBass),
+      accent: clampVisualValue(liveBeat * liveMid),
       peak: livePeak,
       progress,
       phrase,

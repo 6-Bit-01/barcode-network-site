@@ -14,6 +14,7 @@ import {
   radioVisualCueEnvelope,
   radioVisualCueProgress,
   radioVisualMusicScene,
+  radioVisualMusicSceneLayerPlan,
   radioVisualsIntensity,
   radioVisualsEffectStageBounds,
   radioVisualsMusicSignal,
@@ -22,7 +23,7 @@ import {
   radioVisualsPortalProfile,
   radioVisualsWheelBand,
 } from "@/lib/radio-visuals-engine";
-import type { RadioVisualAudioDrives, RadioVisualMusicSignal } from "@/lib/radio-visuals-engine";
+import type { RadioVisualAudioDrives, RadioVisualMusicSceneLayerPlan, RadioVisualMusicSignal } from "@/lib/radio-visuals-engine";
 import { activeRadioVisualEvent, hashRadioVisualToken, radioVisualBroadcastStartedTransition, radioVisualEventEnvelope, radioVisualEventProgress } from "@/lib/radio-visuals-events";
 import { RADIO_VISUALS_ACTIVE_POLL_INTERVAL_MS, RADIO_VISUALS_STANDBY_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 import { studioOverlayRequestHeaders } from "@/lib/studio-overlay-client";
@@ -156,13 +157,16 @@ function smoothMusicSignal(current: RadioVisualMusicSignal, target: RadioVisualM
   return {
     source: target.source,
     bpm: channel(current.bpm, target.bpm, 420, 720),
-    energy: channel(current.energy, target.energy, 130, 520),
-    bass: channel(current.bass, target.bass, 95, 420),
-    mid: channel(current.mid, target.mid, 120, 460),
-    treble: channel(current.treble, target.treble, 85, 360),
-    beat: channel(current.beat, target.beat, 65, 170),
-    accent: channel(current.accent, target.accent, 55, 185),
-    peak: channel(current.peak, target.peak, 45, 220),
+    // The native helper already smooths its analyser values. This shorter
+    // browser follower preserves impact while still easing releases between
+    // the helper's 100 ms updates.
+    energy: channel(current.energy, target.energy, 55, 260),
+    bass: channel(current.bass, target.bass, 45, 240),
+    mid: channel(current.mid, target.mid, 38, 180),
+    treble: channel(current.treble, target.treble, 25, 110),
+    beat: channel(current.beat, target.beat, 10, 70),
+    accent: channel(current.accent, target.accent, 12, 85),
+    peak: channel(current.peak, target.peak, 10, 100),
     progress: target.progress,
     phrase: target.phrase,
   };
@@ -292,12 +296,20 @@ function radialLight(
   color: Rgb,
   alpha: number,
 ): void {
+  context.save();
+  context.shadowBlur = 0;
+  context.shadowColor = "transparent";
   const gradient = context.createRadialGradient(x, y, 0, x, y, radius);
   gradient.addColorStop(0, rgba(color, alpha));
   gradient.addColorStop(0.38, rgba(color, alpha * 0.48));
   gradient.addColorStop(1, rgba(color, 0));
   context.fillStyle = gradient;
-  context.fillRect(0, 0, width, height);
+  const left = Math.max(0, x - radius);
+  const top = Math.max(0, y - radius);
+  const right = Math.min(width, x + radius);
+  const bottom = Math.min(height, y + radius);
+  context.fillRect(left, top, Math.max(0, right - left), Math.max(0, bottom - top));
+  context.restore();
 }
 
 function drawBeam(
@@ -557,6 +569,7 @@ function drawSignalConstellation(
   time: number,
   mix: number,
   drives: RadioVisualAudioDrives,
+  layerPlan: RadioVisualMusicSceneLayerPlan,
   primary: Rgb,
   secondary: Rgb,
   highlight: Rgb,
@@ -566,17 +579,21 @@ function drawSignalConstellation(
   const unit = Math.min(width, height);
   const coreAlpha = chromaCoreAlpha(mix, drives.presence);
   const topology = Math.min(3, Math.floor(drives.progress * 4));
-  const count = 10 + topology * 2 + Math.floor(drives.build * 14 + randomUnit(seed, 26_101) * 5);
-  const gravity = 1 - drives.bassPulse * 0.08;
+  const count = 6
+    + Math.max(layerPlan.mid, Math.floor(drives.midLayer * 8))
+    + Math.floor(drives.trebleLayer * 5)
+    + Math.max(layerPlan.tapestry, Math.floor(drives.tapestry * 8))
+    + Math.floor(drives.build * 3);
+  const gravity = 1 - drives.bassLayer * 0.2 - drives.bassPulse * 0.09;
   const points = Array.from({ length: count }, (_, index) => ({
     x: width * 0.5 + (width * (0.08 + randomUnit(seed, 26_200 + index) * 0.84) - width * 0.5) * gravity
-      + Math.sin(time * (0.08 + drives.mid * 0.08) + index) * width * (0.006 + drives.mid * 0.012),
+      + Math.sin(time * (0.08 + drives.mid * 0.08) + index) * width * (0.003 + drives.midLayer * 0.018),
     y: height * 0.5 + (height * (0.08 + randomUnit(seed, 26_300 + index) * 0.84) - height * 0.5) * gravity
-      + Math.cos(time * (0.07 + drives.mid * 0.07) + index * 0.74) * height * (0.005 + drives.mid * 0.01),
+      + Math.cos(time * (0.07 + drives.mid * 0.07) + index * 0.74) * height * (0.003 + drives.midLayer * 0.015),
   }));
   context.save();
-  context.lineWidth = Math.max(1, unit * (0.0013 + drives.mid * 0.0015));
-  const linkReach = Math.max(width, height) * (0.2 + drives.mid * 0.18 + drives.build * 0.08 + topology * 0.018);
+  context.lineWidth = Math.max(1, unit * (0.001 + drives.midLayer * 0.0022));
+  const linkReach = Math.max(width, height) * (0.12 + drives.midLayer * (0.3 + topology * 0.012) + drives.tapestry * 0.12);
   for (let index = 0; index < points.length; index += 1) {
     const from = points[index];
     const topologyOffset = 1 + topology;
@@ -585,13 +602,13 @@ function drawSignalConstellation(
     const distance = Math.hypot(to.x - from.x, to.y - from.y);
     if (distance > linkReach) continue;
     const color = index % 2 ? secondary : primary;
-    context.strokeStyle = rgba(color, coreAlpha * (0.12 + drives.mid * 0.34 + drives.build * 0.12));
+    context.strokeStyle = rgba(color, coreAlpha * (0.08 + drives.midLayer * 0.5 + drives.tapestry * 0.16));
     context.beginPath();
     context.moveTo(from.x, from.y);
-    const bend = Math.sin(time * 0.13 + index) * unit * drives.mid * 0.025;
+    const bend = Math.sin(time * 0.13 + index) * unit * drives.midLayer * 0.034;
     context.quadraticCurveTo((from.x + to.x) * 0.5 + bend, (from.y + to.y) * 0.5 - bend, to.x, to.y);
     context.stroke();
-    if (drives.bassPulse > 0.42 || drives.midPulse > 0.55) {
+    if (drives.midPulse > 0.32 || drives.tapestryPulse > 0.38) {
       const travel = (time * (0.18 + drives.midPulse * 0.42) + randomUnit(seed, 26_700 + index)) % 1;
       const packetX = from.x + (to.x - from.x) * travel;
       const packetY = from.y + (to.y - from.y) * travel;
@@ -602,15 +619,47 @@ function drawSignalConstellation(
   points.forEach((point, index) => {
     const transientCore = drives.treblePulse > 0.72 && index % 7 === 0;
     const color = transientCore ? highlight : index % 2 ? secondary : primary;
-    const radius = Math.max(1, unit * (0.0018 + randomUnit(seed, 26_400 + index) * 0.0038) * (0.82 + drives.bass * 0.78));
-    const twinkle = 0.48 + 0.52 * Math.abs(Math.sin(time * (0.7 + drives.treble * 2.2) + index));
-    context.fillStyle = rgba(color, coreAlpha * (0.28 + drives.treble * 0.48) * twinkle);
+    const radius = Math.max(1, unit * (0.0014 + randomUnit(seed, 26_400 + index) * 0.0032) * (0.76 + drives.bass * 0.42));
+    const twinkle = 0.34 + 0.66 * Math.abs(Math.sin(time * (0.45 + drives.treble * 3.2) + index));
+    context.fillStyle = rgba(color, coreAlpha * (0.16 + drives.trebleLayer * 0.66) * twinkle);
     context.shadowColor = rgba(color, coreAlpha * 0.72);
     context.shadowBlur = radius * (2.5 + drives.treblePulse * 6);
     context.beginPath();
     context.arc(point.x, point.y, radius, 0, Math.PI * 2);
     context.fill();
   });
+  context.shadowBlur = 0;
+  context.shadowColor = rgba(primary, 0);
+
+  // Bass reveals massive gravity wells instead of merely making every tiny
+  // star a little thicker.
+  const anchorCount = layerPlan.bass;
+  for (let anchor = 0; anchor < anchorCount; anchor += 1) {
+    const angle = time * (0.035 + anchor * 0.009) + randomUnit(seed, 26_850 + anchor) * Math.PI * 2;
+    const orbit = unit * (0.12 + randomUnit(seed, 26_880 + anchor) * 0.22);
+    const x = width * 0.5 + Math.cos(angle) * orbit;
+    const y = height * 0.5 + Math.sin(angle) * orbit;
+    const radius = unit * (0.012 + drives.bassLayer * 0.02 + drives.bassPulse * 0.012);
+    radialLight(context, width, height, x, y, radius * 4.5, anchor % 2 ? secondary : primary, coreAlpha * drives.bassLayer * 0.34);
+    context.fillStyle = rgba(anchor % 2 ? secondary : primary, coreAlpha * (0.28 + drives.bassPulse * 0.54));
+    context.beginPath();
+    context.arc(x, y, radius, 0, Math.PI * 2);
+    context.fill();
+  }
+
+  // Treble owns short comets; the all-band tapestry locks them onto the mesh.
+  const cometCount = layerPlan.treble + Math.floor(drives.tapestry * 3);
+  for (let comet = 0; comet < cometCount; comet += 1) {
+    const point = points[comet % points.length];
+    const angle = randomUnit(seed, 26_920 + comet) * Math.PI * 2 + time * 0.08;
+    const length = unit * (0.012 + drives.trebleLayer * 0.035 + drives.tapestry * 0.018);
+    context.strokeStyle = rgba(comet % 3 ? primary : highlight, coreAlpha * (0.16 + drives.treblePulse * 0.64));
+    context.lineWidth = Math.max(1, unit * 0.0014);
+    context.beginPath();
+    context.moveTo(point.x, point.y);
+    context.lineTo(point.x - Math.cos(angle) * length, point.y - Math.sin(angle) * length);
+    context.stroke();
+  }
   context.restore();
 }
 
@@ -699,6 +748,7 @@ function drawEdgeSpectrum(
   time: number,
   mix: number,
   drives: RadioVisualAudioDrives,
+  layerPlan: RadioVisualMusicSceneLayerPlan,
   primary: Rgb,
   secondary: Rgb,
   highlight: Rgb,
@@ -710,7 +760,17 @@ function drawEdgeSpectrum(
   const songSection = Math.min(3, Math.floor(drives.progress * 4));
   const bassThreshold = 0.7 - songSection * 0.012;
   const trebleThreshold = 0.26 + songSection * 0.012;
-  const barCount = 18 + songSection * 2 + Math.floor(drives.build * 18);
+  const barCount = 9
+    + Math.floor(
+      drives.bassLayer * 6
+      + drives.midLayer * 8
+      + drives.trebleLayer * 7
+      + drives.tapestry * 7
+      + drives.build * 3,
+    )
+    + Math.floor(
+      songSection * Math.max(drives.bassLayer, drives.midLayer, drives.trebleLayer, drives.tapestry),
+    );
   context.save();
   context.globalCompositeOperation = "source-over";
   for (let bar = 0; bar < barCount; bar += 1) {
@@ -718,27 +778,54 @@ function drawEdgeSpectrum(
     const bassBand = progress > bassThreshold;
     const midBand = progress >= trebleThreshold && progress <= bassThreshold;
     const bandDrive = bassBand ? drives.bass : midBand ? drives.mid : drives.treble;
+    const bandLayer = bassBand ? drives.bassLayer : midBand ? drives.midLayer : drives.trebleLayer;
     const bandPulse = bassBand ? drives.bassPulse : midBand ? drives.midPulse : drives.treblePulse;
-    const pulse = 0.24 + 0.76 * Math.abs(Math.sin(time * (1.1 + bandDrive * 3.2) + bar * 0.71 + randomUnit(seed, 33_100 + bar) * 3));
-    const reach = width * (0.018 + drives.body * 0.025 + bandDrive * 0.12 * pulse + bandPulse * 0.07);
-    const barHeight = Math.max(3, height / barCount * (0.46 + drives.build * 0.18));
+    const pulse = 0.12 + 0.88 * Math.abs(Math.sin(time * (0.55 + bandDrive * 4.1) + bar * 0.71 + randomUnit(seed, 33_100 + bar) * 3));
+    const reach = width * (0.008 + bandLayer * 0.145 * pulse + bandPulse * 0.085 + drives.tapestry * 0.028 + drives.tapestryPulse * 0.012);
+    const barHeight = Math.max(2, height / barCount * (0.34 + bandLayer * 0.42 + drives.build * 0.08));
     const y = progress * height - barHeight * 0.5;
     const color = drives.treblePulse > 0.78 && bar % 11 === 0 ? highlight : bassBand ? primary : midBand ? secondary : bar % 2 ? primary : secondary;
-    context.fillStyle = rgba(color, coreAlpha * (0.46 + pulse * 0.42));
+    context.fillStyle = rgba(color, coreAlpha * (0.12 + bandLayer * 0.54 + pulse * bandLayer * 0.28));
     context.shadowColor = rgba(color, coreAlpha * (0.38 + bandPulse * 0.42));
     context.shadowBlur = unit * (0.003 + bandPulse * 0.011);
     context.fillRect(0, y, reach, barHeight);
     context.fillRect(width - reach, y, reach, barHeight);
-    const holdReach = Math.min(width * 0.46, reach + width * (0.01 + bandPulse * 0.035));
-    context.fillStyle = rgba(bassBand ? secondary : primary, coreAlpha * (0.24 + bandPulse * 0.34));
+    const holdReach = Math.min(width * 0.46, reach + width * (0.004 + bandPulse * 0.045));
+    context.fillStyle = rgba(bassBand ? secondary : primary, coreAlpha * (0.08 + bandLayer * 0.2 + bandPulse * 0.48));
     context.fillRect(holdReach, y, Math.max(2, unit * 0.003), barHeight);
     context.fillRect(width - holdReach - Math.max(2, unit * 0.003), y, Math.max(2, unit * 0.003), barHeight);
   }
-  const scanCount = 1 + songSection % 2 + Math.floor(drives.build * 3);
+  context.shadowBlur = 0;
+  context.shadowColor = "transparent";
+
+  const bassPlateCount = layerPlan.bass;
+  for (let plate = 0; plate < bassPlateCount; plate += 1) {
+    const plateY = height * (0.72 + plate / Math.max(1, bassPlateCount) * 0.25);
+    const plateReach = width * (0.035 + drives.bassLayer * 0.13 + drives.bassPulse * 0.08) * (1 - plate * 0.08);
+    context.fillStyle = rgba(plate % 2 ? secondary : primary, coreAlpha * (0.2 + drives.bassLayer * 0.44));
+    context.fillRect(0, plateY, plateReach, Math.max(4, unit * (0.006 + drives.bassPulse * 0.008)));
+    context.fillRect(width - plateReach, plateY, plateReach, Math.max(4, unit * (0.006 + drives.bassPulse * 0.008)));
+  }
+
+  const midBridgeCount = layerPlan.mid + layerPlan.tapestry;
+  for (let bridge = 0; bridge < midBridgeCount; bridge += 1) {
+    const bridgeY = height * (0.31 + bridge / Math.max(1, midBridgeCount) * 0.38);
+    const bridgeReach = width * (0.05 + drives.midLayer * 0.16 + drives.tapestry * 0.08);
+    context.strokeStyle = rgba(bridge % 2 ? primary : secondary, coreAlpha * (0.14 + drives.midPulse * 0.48));
+    context.lineWidth = Math.max(2, unit * 0.0025);
+    context.beginPath();
+    context.moveTo(0, bridgeY);
+    context.lineTo(bridgeReach, bridgeY + Math.sin(time + bridge) * unit * drives.midPulse * 0.018);
+    context.moveTo(width, bridgeY);
+    context.lineTo(width - bridgeReach, bridgeY - Math.sin(time + bridge) * unit * drives.midPulse * 0.018);
+    context.stroke();
+  }
+
+  const scanCount = layerPlan.treble + Math.floor(drives.tapestry * 2);
   for (let scan = 0; scan < scanCount; scan += 1) {
     const scanY = height * ((time * (0.14 + drives.treble * 0.2) + randomUnit(seed, 33_900 + scan)) % 1);
     const scanColor = drives.treblePulse > 0.8 && scan === 0 ? highlight : scan % 2 ? secondary : primary;
-    context.fillStyle = rgba(scanColor, coreAlpha * (0.26 + drives.treblePulse * 0.44));
+    context.fillStyle = rgba(scanColor, coreAlpha * (0.12 + drives.trebleLayer * 0.34 + drives.treblePulse * 0.48));
     context.fillRect(0, scanY, width * (0.1 + drives.midPulse * 0.14), Math.max(2, unit * 0.003));
     context.fillRect(width * (0.9 - drives.midPulse * 0.14), scanY, width * (0.1 + drives.midPulse * 0.14), Math.max(2, unit * 0.003));
   }
@@ -755,6 +842,7 @@ function drawMatrixRain(
   time: number,
   mix: number,
   drives: RadioVisualAudioDrives,
+  layerPlan: RadioVisualMusicSceneLayerPlan,
   primary: Rgb,
   secondary: Rgb,
   highlight: Rgb,
@@ -764,39 +852,76 @@ function drawMatrixRain(
   const unit = Math.min(width, height);
   const coreAlpha = chromaCoreAlpha(mix, drives.presence);
   const matrixTopology = Math.min(3, Math.floor(drives.progress * 4));
-  const fontSize = Math.max(10, unit * (0.012 + drives.bass * 0.006 + drives.bassPulse * 0.006));
-  const columns = Math.max(10, Math.floor(width / (fontSize * (1.7 - drives.build * 0.5))));
-  const activeColumns = Math.max(6, Math.floor(columns * (0.48 + drives.build * 0.52)) + matrixTopology);
+  const fontSize = Math.max(10, unit * (0.011 + drives.bass * 0.004 + drives.bassPulse * 0.005));
+  const columns = Math.max(10, Math.floor(width / (fontSize * (1.85 - drives.midLayer * 0.55))));
+  const activeColumns = Math.min(
+    columns,
+    4
+      + Math.floor((columns - 4) * (drives.midLayer * 0.52 + drives.trebleLayer * 0.12 + drives.tapestry * 0.28 + drives.build * 0.08)),
+  );
   context.save();
   context.globalCompositeOperation = "source-over";
   context.font = `700 ${fontSize}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
   context.textAlign = "center";
   context.textBaseline = "middle";
   for (let column = 0; column < activeColumns; column += 1) {
-    const bassCascade = drives.bassPulse * Math.max(0, 1 - Math.abs(column / Math.max(1, activeColumns - 1) - drives.phrase) * 3.4);
-    const speed = 0.055 + randomUnit(seed, 34_100 + column) * 0.1 + drives.treble * 0.2 + drives.treblePulse * 0.08;
+    const bassCascade = (drives.bassLayer * 0.45 + drives.bassPulse * 0.55) * Math.max(0, 1 - Math.abs(column / Math.max(1, activeColumns - 1) - drives.phrase) * 3.4);
+    const speed = 0.018 + randomUnit(seed, 34_100 + column) * 0.045 + drives.treble * 0.18 + drives.treblePulse * 0.12;
     const head = ((randomUnit(seed, 34_300 + column) + time * speed + bassCascade * 0.18) % 1.28) * height - height * 0.14;
-    const trail = 3 + Math.floor(randomUnit(seed, 34_500 + column) * 6 + drives.mid * 7 + drives.build * 5);
-    const x = (column + 0.5) / activeColumns * width + Math.sin(time * 0.32 + column) * drives.mid * unit * 0.006;
+    const trail = 2 + Math.floor(randomUnit(seed, 34_500 + column) * 3 + drives.midLayer * 11 + drives.build * 2);
+    const x = (column + 0.5) / activeColumns * width + Math.sin(time * 0.32 + column) * drives.mid * unit * (0.002 + drives.midLayer * 0.007);
     for (let glyph = 0; glyph < trail; glyph += 1) {
       const glyphIndex = Math.floor(randomUnit(seed + Math.floor(time * 4), column * 37 + glyph) * SIGNAL_GLYPHS.length);
       const y = head - glyph * fontSize * 1.25;
       if (y < -fontSize || y > height + fontSize) continue;
       const fade = 1 - glyph / trail;
       const color = glyph === 0 && drives.treblePulse > 0.66 ? highlight : column % 3 === 0 ? secondary : primary;
-      context.fillStyle = rgba(color, coreAlpha * fade * (0.32 + drives.presence * 0.48));
+      context.fillStyle = rgba(color, coreAlpha * fade * (0.14 + drives.midLayer * 0.42 + drives.trebleLayer * 0.22));
       context.shadowColor = rgba(color, glyph === 0 ? coreAlpha * drives.treblePulse : 0);
       context.shadowBlur = glyph === 0 ? unit * (0.004 + drives.treblePulse * 0.01) : 0;
       context.fillText(SIGNAL_GLYPHS[glyphIndex], x, y);
     }
   }
-  const bridgeCount = matrixTopology + Math.floor(drives.midPulse * 5 + drives.build * 3);
+  context.shadowBlur = 0;
+  context.shadowColor = "transparent";
+  const trebleHeadCount = layerPlan.treble;
+  for (let spark = 0; spark < trebleHeadCount; spark += 1) {
+    const x = width * (spark + 0.5) / Math.max(1, trebleHeadCount);
+    const y = height * ((randomUnit(seed, 34_820 + spark) + time * (0.16 + drives.treblePulse * 0.38)) % 1);
+    const glyphIndex = (spark * 11 + matrixTopology) % SIGNAL_GLYPHS.length;
+    context.fillStyle = rgba(spark % 3 ? secondary : highlight, coreAlpha * (0.16 + drives.trebleLayer * 0.42 + drives.treblePulse * 0.38));
+    context.fillText(SIGNAL_GLYPHS[glyphIndex], x, y);
+  }
+  const bridgeCount = layerPlan.mid + Math.floor(drives.tapestry * 3);
   for (let bridge = 0; bridge < bridgeCount; bridge += 1) {
     const y = height * ((randomUnit(seed, 34_900 + bridge) + time * 0.025) % 1);
     const reach = width * (0.18 + drives.mid * 0.46);
     const fromRight = bridge % 2 === 1;
     context.fillStyle = rgba(bridge % 2 ? primary : secondary, coreAlpha * (0.18 + drives.midPulse * 0.42));
     context.fillRect(fromRight ? width - reach : 0, y, reach, Math.max(2, unit * 0.003));
+  }
+
+  // Bass owns a small number of massive anchor glyphs and a base impact shelf.
+  const anchorCount = layerPlan.bass;
+  context.font = `900 ${fontSize * (1.35 + drives.bassLayer * 0.9)}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+  for (let anchor = 0; anchor < anchorCount; anchor += 1) {
+    const x = width * (anchor + 0.5) / Math.max(1, anchorCount);
+    const drop = height * ((randomUnit(seed, 35_010 + anchor) + time * (0.02 + drives.bassPulse * 0.05)) % 0.32);
+    const y = height * 0.68 + drop;
+    context.fillStyle = rgba(anchor % 2 ? secondary : primary, coreAlpha * (0.22 + drives.bassLayer * 0.5));
+    context.fillText(SIGNAL_GLYPHS[(anchor * 7 + matrixTopology) % SIGNAL_GLYPHS.length], x, y);
+  }
+  if (anchorCount > 0) {
+    context.fillStyle = rgba(primary, coreAlpha * (0.12 + drives.bassPulse * 0.42));
+    context.fillRect(0, height - unit * (0.005 + drives.bassLayer * 0.018), width, unit * (0.005 + drives.bassLayer * 0.018));
+  }
+
+  // When all bands arrive, one decrypt front synchronizes the otherwise
+  // independent bass, mid, and treble systems.
+  if (layerPlan.tapestry > 0) {
+    const decryptY = height * ((time * (0.08 + drives.tapestryPulse * 0.18) + drives.phrase) % 1);
+    context.fillStyle = rgba(highlight, coreAlpha * (0.08 + drives.tapestry * 0.38 + drives.tapestryPulse * 0.34));
+    context.fillRect(0, decryptY, width, Math.max(2, unit * (0.002 + drives.tapestry * 0.006)));
   }
   context.restore();
 }
@@ -808,6 +933,7 @@ function drawTapeFeedback(
   time: number,
   mix: number,
   drives: RadioVisualAudioDrives,
+  layerPlan: RadioVisualMusicSceneLayerPlan,
   primary: Rgb,
   secondary: Rgb,
   highlight: Rgb,
@@ -817,19 +943,20 @@ function drawTapeFeedback(
   const unit = Math.min(width, height);
   const coreAlpha = chromaCoreAlpha(mix, drives.presence);
   const feedbackTopology = Math.min(3, Math.floor(drives.progress * 4));
-  const centerX = width * (0.46 + feedbackTopology * 0.014 + Math.sin(time * 0.13) * drives.mid * 0.04);
-  const centerY = height * (0.48 + (feedbackTopology % 2) * 0.035 + Math.cos(time * 0.11) * drives.mid * 0.025);
-  const frameCount = 5 + feedbackTopology + Math.floor(drives.mid * 5 + drives.build * 5);
+  const centerX = width * (0.48 + feedbackTopology * 0.009 + Math.sin(time * 0.13) * (drives.mid * 0.006 + drives.midLayer * 0.049));
+  const centerY = height * (0.49 + (feedbackTopology % 2) * 0.02 + Math.cos(time * 0.11) * drives.midLayer * 0.032);
+  const frameCount = 2 + layerPlan.mid + layerPlan.tapestry + Math.floor(drives.build * 2);
   context.save();
   context.globalCompositeOperation = "source-over";
   for (let frame = 0; frame < frameCount; frame += 1) {
-    const depth = (frame / frameCount + time * (0.04 + drives.bass * 0.07) + drives.bassPulse * 0.12) % 1;
-    const frameWidth = width * (0.12 + depth * 0.9);
-    const frameHeight = height * (0.1 + depth * 0.82);
-    const skew = Math.sin(time * 0.21 + frame * 0.81) * drives.mid * unit * 0.045;
+    const depth = (frame / frameCount + time * (0.018 + drives.bass * 0.08) + drives.bassPulse * 0.14) % 1;
+    const bassExpansion = 0.74 + drives.bassLayer * 0.3 + drives.bassPulse * 0.16;
+    const frameWidth = width * (0.08 + depth * 0.82) * bassExpansion;
+    const frameHeight = height * (0.07 + depth * 0.75) * bassExpansion;
+    const skew = Math.sin(time * 0.21 + frame * 0.81) * drives.midLayer * unit * 0.065;
     const color = drives.treblePulse > 0.76 && frame % 5 === 0 ? highlight : frame % 2 ? secondary : primary;
-    context.strokeStyle = rgba(color, coreAlpha * (0.58 + depth * 0.3 + drives.build * 0.1));
-    context.lineWidth = Math.max(4, unit * (0.004 + depth * 0.011 + drives.bassPulse * 0.007));
+    context.strokeStyle = rgba(color, coreAlpha * (0.16 + drives.midLayer * 0.38 + depth * 0.22 + drives.tapestry * 0.16));
+    context.lineWidth = Math.max(2, unit * (0.002 + depth * 0.007 + drives.bassLayer * 0.008 + drives.bassPulse * 0.008));
     context.beginPath();
     context.moveTo(centerX - frameWidth * 0.5 + skew, centerY - frameHeight * 0.5);
     context.lineTo(centerX + frameWidth * 0.5 + skew * 0.32, centerY - frameHeight * 0.5);
@@ -837,9 +964,14 @@ function drawTapeFeedback(
     context.lineTo(centerX - frameWidth * 0.5 - skew * 0.32, centerY + frameHeight * 0.5);
     context.closePath();
     context.stroke();
+    if (drives.bassLayer > 0.08 && frame % 2 === 0) {
+      context.strokeStyle = rgba(secondary, coreAlpha * drives.bassLayer * 0.12);
+      context.lineWidth += unit * drives.bassLayer * 0.012;
+      context.stroke();
+    }
   }
 
-  const tearCount = 1 + Math.floor(drives.treble * 4 + drives.treblePulse * 5 + drives.build * 2);
+  const tearCount = layerPlan.treble + Math.floor(drives.tapestry * 2);
   for (let tear = 0; tear < tearCount; tear += 1) {
     const y = height * ((randomUnit(seed, 35_100 + tear) + time * (0.035 + tear * 0.006)) % 1);
     const displacement = width * (drives.treble * 0.7 + drives.treblePulse * 0.5) * (0.03 + randomUnit(seed, 35_200 + tear) * 0.11);
@@ -848,10 +980,10 @@ function drawTapeFeedback(
     context.fillRect(width * 0.03 + displacement, y, width * (0.46 + randomUnit(seed, 35_300 + tear) * 0.48) - displacement, Math.max(4, unit * (0.005 + drives.treble * 0.012)));
   }
 
-  const blockCount = 8 + Math.floor(drives.build * 10);
+  const blockCount = layerPlan.bass + Math.floor(drives.tapestry * 4);
   for (let block = 0; block < blockCount; block += 1) {
     const blockWidth = width / blockCount * (0.42 + randomUnit(seed, 35_500 + block) * 0.52);
-    const blockHeight = unit * (0.008 + randomUnit(seed, 35_600 + block) * 0.025 + drives.bassPulse * 0.028);
+    const blockHeight = unit * (0.006 + randomUnit(seed, 35_600 + block) * 0.018 + drives.bassLayer * 0.036 + drives.bassPulse * 0.032);
     context.fillStyle = rgba(drives.treblePulse > 0.82 && block % 7 === 0 ? highlight : block % 2 ? secondary : primary, coreAlpha * 0.76);
     context.fillRect(block / blockCount * width, height - blockHeight, blockWidth, blockHeight);
   }
@@ -863,6 +995,15 @@ function drawTapeFeedback(
     context.fillStyle = rgba(primary, coreAlpha * drives.midPulse * 0.68);
     context.fillRect(width * 0.5 + split, spliceY, width * 0.5 - split, Math.max(3, unit * 0.006));
   }
+  if (layerPlan.tapestry > 0) {
+    const afterimageCount = layerPlan.tapestry;
+    for (let echo = 0; echo < afterimageCount; echo += 1) {
+      const inset = unit * (0.025 + echo * 0.028 + drives.tapestryPulse * 0.018);
+      context.strokeStyle = rgba(echo % 2 ? primary : secondary, coreAlpha * drives.tapestry * (0.18 - echo * 0.025));
+      context.lineWidth = Math.max(2, unit * 0.0025);
+      context.strokeRect(inset, inset, width - inset * 2, height - inset * 2);
+    }
+  }
   context.restore();
 }
 
@@ -873,6 +1014,7 @@ function drawAsciiTerminal(
   time: number,
   mix: number,
   drives: RadioVisualAudioDrives,
+  layerPlan: RadioVisualMusicSceneLayerPlan,
   primary: Rgb,
   secondary: Rgb,
   highlight: Rgb,
@@ -883,8 +1025,8 @@ function drawAsciiTerminal(
   const coreAlpha = chromaCoreAlpha(mix, drives.presence);
   const terminalLayout = Math.min(3, Math.floor(drives.progress * 4));
   const columns = 30;
-  const activeRows = 7 + terminalLayout + Math.floor(drives.mid * 5 + drives.build * 6);
-  const fontSize = Math.max(9, unit * (0.012 + drives.bass * 0.006 + drives.bassPulse * 0.002));
+  const activeRows = 3 + Math.floor(drives.midLayer * 8 + drives.tapestry * 5 + drives.build * 2);
+  const fontSize = Math.max(9, unit * (0.011 + drives.bass * 0.004 + drives.bassLayer * 0.004 + drives.bassPulse * 0.003));
   context.save();
   context.globalCompositeOperation = "source-over";
   context.font = `600 ${fontSize}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
@@ -892,9 +1034,9 @@ function drawAsciiTerminal(
   context.textBaseline = "middle";
   for (let row = 0; row < activeRows; row += 1) {
     const direction = (row + terminalLayout) % 2 === 0 ? 1 : -1;
-    const activity = 0.18 + drives.mid * 0.48 + drives.midPulse * 0.22 + drives.build * 0.12;
-    const cursor = Math.floor(((time * (1.8 + drives.treble * 6 + drives.treblePulse * 5) * direction + row * 1.7) % columns + columns) % columns);
-    const span = 3 + Math.floor(activity * 15 + randomUnit(seed, 36_100 + row) * 4);
+    const activity = drives.midLayer * 0.58 + drives.midPulse * 0.24 + drives.tapestry * 0.18;
+    const cursor = Math.floor(((time * (0.7 + drives.treble * 7 + drives.treblePulse * 6) * direction + row * 1.7) % columns + columns) % columns);
+    const span = 2 + Math.floor(activity * 18 + randomUnit(seed, 36_100 + row) * (1 + drives.trebleLayer * 4));
     const y = height * (row + 0.5) / activeRows;
     const bassIndent = Math.floor(drives.bassPulse * 5) * (row % 3 === 0 ? 1 : 0);
     for (let step = 0; step < span; step += 1) {
@@ -903,19 +1045,40 @@ function drawAsciiTerminal(
       const glyphIndex = Math.floor(randomUnit(seed + Math.floor(time * (3 + drives.treblePulse * 8)), row * 101 + column) * TERMINAL_GLYPHS.length);
       const fade = 1 - step / Math.max(1, span);
       const color = step === 0 && drives.treblePulse > 0.72 ? highlight : row % 3 === 0 ? secondary : primary;
-      context.fillStyle = rgba(color, coreAlpha * (0.18 + fade * 0.58));
+      context.fillStyle = rgba(color, coreAlpha * (0.1 + fade * (0.24 + drives.midLayer * 0.38 + drives.trebleLayer * 0.2)));
       context.fillText(TERMINAL_GLYPHS[glyphIndex], x, y);
     }
   }
-  const paneCount = 2 + terminalLayout % 2 + Math.floor(drives.build * 3);
+  const paneCount = layerPlan.mid + Math.floor(drives.tapestry * 2);
   for (let pane = 0; pane < paneCount; pane += 1) {
     const inset = unit * (0.025 + pane * 0.028);
-    const paneWidth = width * (0.11 + drives.mid * 0.12);
+    const paneWidth = width * (0.08 + drives.mid * 0.1 + drives.midLayer * 0.12);
     const y = height * (0.12 + pane / Math.max(1, paneCount - 1) * 0.76);
     const color = pane % 2 ? secondary : primary;
-    context.strokeStyle = rgba(color, coreAlpha * (0.28 + drives.midPulse * 0.36));
-    context.lineWidth = Math.max(2, unit * (0.002 + drives.bass * 0.002));
-    context.strokeRect(pane % 2 ? width - inset - paneWidth : inset, y - unit * 0.02, paneWidth, unit * (0.04 + drives.bass * 0.045 + drives.bassPulse * 0.015));
+    context.strokeStyle = rgba(color, coreAlpha * (0.12 + drives.midLayer * 0.32 + drives.midPulse * 0.4));
+    context.lineWidth = Math.max(2, unit * (0.0015 + drives.bassLayer * 0.004));
+    context.strokeRect(pane % 2 ? width - inset - paneWidth : inset, y - unit * 0.02, paneWidth, unit * (0.025 + drives.bass * 0.03 + drives.bassLayer * 0.055 + drives.bassPulse * 0.02));
+  }
+
+  // Bass stamps heavyweight prompt/header blocks into the terminal rather
+  // than only nudging text columns.
+  const promptCount = layerPlan.bass;
+  for (let prompt = 0; prompt < promptCount; prompt += 1) {
+    const y = prompt % 2 === 0
+      ? unit * (0.025 + prompt * 0.018)
+      : height - unit * (0.04 + prompt * 0.018);
+    const reach = width * (0.12 + drives.bassLayer * 0.24 + drives.bassPulse * 0.12);
+    const color = prompt % 2 ? secondary : primary;
+    context.fillStyle = rgba(color, coreAlpha * (0.18 + drives.bassLayer * 0.44));
+    context.fillRect(prompt % 2 ? width - reach : 0, y, reach, Math.max(4, unit * (0.006 + drives.bassPulse * 0.012)));
+  }
+
+  const cursorSparkCount = layerPlan.treble;
+  for (let spark = 0; spark < cursorSparkCount; spark += 1) {
+    const x = width * ((randomUnit(seed, 37_020 + spark) + time * (0.12 + drives.treble * 0.38)) % 1);
+    const y = height * randomUnit(seed, 37_090 + spark);
+    context.fillStyle = rgba(spark % 4 ? primary : highlight, coreAlpha * (0.14 + drives.treblePulse * 0.58));
+    context.fillText(TERMINAL_GLYPHS[(spark * 5 + terminalLayout) % TERMINAL_GLYPHS.length], x, y);
   }
   if (drives.midPulse > 0.56) {
     const commitY = height * ((randomUnit(seed, 37_300) + time * 0.04) % 1);
@@ -924,6 +1087,11 @@ function drawAsciiTerminal(
     context.fillRect(0, commitY, reach, Math.max(3, unit * 0.005));
     context.fillStyle = rgba(primary, coreAlpha * (0.34 + drives.midPulse * 0.38));
     context.fillRect(width - reach, commitY, reach, Math.max(3, unit * 0.005));
+  }
+  if (layerPlan.tapestry > 0) {
+    const executeY = height * ((time * (0.045 + drives.tapestryPulse * 0.12) + drives.progress) % 1);
+    context.fillStyle = rgba(highlight, coreAlpha * (0.08 + drives.tapestry * 0.34 + drives.tapestryPulse * 0.28));
+    context.fillRect(0, executeY, width, Math.max(2, unit * (0.002 + drives.tapestry * 0.005)));
   }
   context.restore();
 }
@@ -935,6 +1103,7 @@ function drawOscilloscopeRibbons(
   time: number,
   mix: number,
   drives: RadioVisualAudioDrives,
+  layerPlan: RadioVisualMusicSceneLayerPlan,
   primary: Rgb,
   secondary: Rgb,
   highlight: Rgb,
@@ -944,17 +1113,17 @@ function drawOscilloscopeRibbons(
   const unit = Math.min(width, height);
   const coreAlpha = chromaCoreAlpha(mix, drives.presence);
   const waveformTopology = Math.min(3, Math.floor(drives.progress * 4));
-  const ribbonCount = 2 + waveformTopology + Math.floor(drives.mid * 2 + drives.build * 2);
+  const ribbonCount = 1 + layerPlan.mid + Math.min(3, layerPlan.tapestry) + Math.floor(drives.build);
   context.save();
   context.globalCompositeOperation = "source-over";
   for (let ribbon = 0; ribbon < ribbonCount; ribbon += 1) {
     const baseY = height * (ribbon + 1) / (ribbonCount + 1);
-    const amplitude = height * (0.012 + drives.mid * 0.07 + drives.midPulse * 0.045 + ribbon * 0.003);
-    const thickness = unit * (0.006 + drives.bass * 0.018 + drives.bassPulse * 0.013 + ribbon * 0.0015);
-    const cycles = 3 + waveformTopology * 1.5 + ribbon * 2 + drives.treble * 7 + drives.treblePulse * 6;
+    const amplitude = height * (0.006 + drives.mid * 0.01 + drives.midLayer * 0.075 + drives.midPulse * 0.055 + ribbon * 0.002);
+    const thickness = unit * (0.0025 + drives.bass * 0.003 + drives.bassLayer * 0.023 + drives.bassPulse * 0.018 + ribbon * 0.001);
+    const cycles = 2 + waveformTopology + ribbon * 1.6 + drives.trebleLayer * 9 + drives.treblePulse * 7;
     const phase = time * (0.95 + ribbon * 0.18) * (ribbon % 2 ? -1 : 1) + randomUnit(seed, 38_100 + ribbon) * Math.PI * 2;
     const color = drives.treblePulse > 0.8 && ribbon === ribbonCount - 1 ? highlight : ribbon % 2 ? secondary : primary;
-    context.fillStyle = rgba(color, coreAlpha * (0.76 + drives.build * 0.18));
+    context.fillStyle = rgba(color, coreAlpha * (0.18 + drives.midLayer * 0.48 + drives.bassLayer * 0.22 + drives.tapestry * 0.16));
     context.beginPath();
     for (let step = 0; step <= 40; step += 1) {
       const progress = step / 40;
@@ -976,13 +1145,64 @@ function drawOscilloscopeRibbons(
     context.fill();
   }
 
-  const gateCount = 3 + waveformTopology * 2 + Math.floor(drives.build * 8);
+  // A slow, wide bass carrier arrives as its own tube beneath the faster
+  // mid-owned ribbons.
+  if (layerPlan.bass > 0) {
+    const carrierY = height * (0.5 + Math.sin(time * 0.17) * drives.bassPulse * 0.06);
+    const carrierAmplitude = height * (0.008 + drives.bass * 0.008 + drives.bassLayer * 0.027);
+    context.strokeStyle = rgba(primary, coreAlpha * (0.1 + drives.bassLayer * 0.34 + drives.bassPulse * 0.28));
+    context.shadowColor = rgba(primary, coreAlpha * drives.bassLayer * 0.42);
+    context.shadowBlur = unit * (0.004 + drives.bassLayer * 0.018);
+    context.lineWidth = Math.max(4, unit * (0.006 + drives.bassLayer * 0.028));
+    context.beginPath();
+    for (let step = 0; step <= 40; step += 1) {
+      const progress = step / 40;
+      const y = carrierY + Math.sin(progress * Math.PI * (2 + waveformTopology) + time * 0.42) * carrierAmplitude;
+      if (step === 0) context.moveTo(0, y);
+      else context.lineTo(width * progress, y);
+    }
+    context.stroke();
+  }
+  context.shadowBlur = 0;
+  context.shadowColor = "transparent";
+
+  const gateCount = layerPlan.bass
+    + Math.min(3, layerPlan.mid)
+    + Math.min(3, layerPlan.tapestry);
   for (let gate = 0; gate < gateCount; gate += 1) {
     const x = width * (0.08 + gate / Math.max(1, gateCount - 1) * 0.84);
     const gateHeight = height * (0.06 + randomUnit(seed, 38_400 + gate) * 0.2 + drives.midPulse * 0.16);
     const color = drives.treblePulse > 0.76 && gate % 4 === 0 ? highlight : gate % 3 === 0 ? secondary : primary;
     context.fillStyle = rgba(color, coreAlpha * (0.56 + drives.midPulse * 0.32));
     context.fillRect(x, height * 0.5 - gateHeight * 0.5, Math.max(4, unit * (0.004 + drives.bassPulse * 0.012)), gateHeight);
+  }
+
+  const harmonicCount = layerPlan.treble;
+  context.shadowBlur = 0;
+  for (let harmonic = 0; harmonic < harmonicCount; harmonic += 1) {
+    const baseY = height * (harmonic + 1) / (harmonicCount + 1);
+    const cycles = 8 + harmonic * 2 + drives.treble * 10;
+    context.strokeStyle = rgba(harmonic % 3 ? secondary : highlight, coreAlpha * (0.1 + drives.trebleLayer * 0.34 + drives.treblePulse * 0.3));
+    context.lineWidth = Math.max(1, unit * 0.0013);
+    context.beginPath();
+    for (let step = 0; step <= 32; step += 1) {
+      const progress = step / 32;
+      const y = baseY + Math.sin(progress * Math.PI * cycles + time * 1.8) * unit * (0.003 + drives.treblePulse * 0.009);
+      if (step === 0) context.moveTo(0, y);
+      else context.lineTo(width * progress, y);
+    }
+    context.stroke();
+  }
+
+  const knotCount = layerPlan.tapestry;
+  for (let knot = 0; knot < knotCount; knot += 1) {
+    const x = width * (knot + 1) / (knotCount + 1);
+    const y = height * (0.5 + Math.sin(time * 0.38 + knot) * 0.16);
+    const radius = unit * (0.006 + drives.tapestry * 0.014 + drives.tapestryPulse * 0.01);
+    context.fillStyle = rgba(knot % 2 ? secondary : primary, coreAlpha * (0.18 + drives.tapestry * 0.48));
+    context.beginPath();
+    context.arc(x, y, radius, 0, Math.PI * 2);
+    context.fill();
   }
   context.restore();
 }
@@ -994,6 +1214,7 @@ function drawLightningSwitchyard(
   time: number,
   mix: number,
   drives: RadioVisualAudioDrives,
+  layerPlan: RadioVisualMusicSceneLayerPlan,
   primary: Rgb,
   secondary: Rgb,
   highlight: Rgb,
@@ -1003,35 +1224,74 @@ function drawLightningSwitchyard(
   const unit = Math.min(width, height);
   const coreAlpha = chromaCoreAlpha(mix, drives.presence);
   const routingMode = Math.min(3, Math.floor(drives.progress * 4));
-  const railCount = 2 + routingMode + Math.floor(drives.mid * 2 + drives.build * 2);
+  const railCount = 1
+    + layerPlan.mid
+    + layerPlan.tapestry
+    + Math.floor(drives.tapestry * 3 + drives.build);
   context.save();
   context.globalCompositeOperation = "source-over";
   for (let rail = 0; rail < railCount; rail += 1) {
     const railProgress = rail / Math.max(1, railCount - 1);
-    const y = height * (0.15 + railProgress * 0.7 + Math.sin(time * 0.12 + rail) * drives.mid * 0.025);
+    const y = height * (0.15 + railProgress * 0.7 + Math.sin(time * 0.12 + rail) * drives.mid * (0.008 + drives.midLayer * 0.026));
     const color = rail === 1 ? secondary : primary;
-    context.strokeStyle = rgba(color, coreAlpha * (0.58 + drives.build * 0.28));
-    context.lineWidth = Math.max(6, unit * (0.007 + drives.bass * 0.009 + drives.bassPulse * 0.009));
+    context.strokeStyle = rgba(color, coreAlpha * (0.16 + drives.midLayer * 0.42 + drives.tapestry * 0.18));
+    context.shadowColor = rgba(color, coreAlpha * drives.bassLayer * 0.52);
+    context.shadowBlur = unit * (0.002 + drives.bassLayer * 0.024);
+    context.lineWidth = Math.max(3, unit * (0.003 + drives.bass * 0.004 + drives.bassLayer * 0.012 + drives.bassPulse * 0.01));
     context.beginPath();
     context.moveTo(width * 0.04, y);
     context.lineTo(width * (0.22 + railProgress * 0.14), y);
     const routeDirection = routingMode % 2 === 0 ? 1 : -1;
-    const routeOffset = (railProgress - 0.5) * routeDirection * unit * (0.08 + routingMode * 0.018 + drives.midPulse * 0.12);
+    const routeOffset = (railProgress - 0.5) * routeDirection * unit * (0.035 + routingMode * 0.014 + drives.midLayer * 0.08 + drives.midPulse * 0.14);
     context.lineTo(width * (0.36 + railProgress * 0.16), y + routeOffset);
     context.lineTo(width * 0.96, y + routeOffset);
     context.stroke();
     const nodeX = width * (0.28 + railProgress * 0.22);
-    context.fillStyle = rgba(rail % 2 ? primary : secondary, coreAlpha * (0.34 + drives.midPulse * 0.5));
-    context.fillRect(nodeX - unit * 0.008, y - unit * 0.008, unit * 0.016, unit * 0.016);
+    const nodeSize = unit * (0.008 + drives.midLayer * 0.008 + drives.bassLayer * 0.025 + drives.bassPulse * 0.016);
+    context.fillStyle = rgba(rail % 2 ? primary : secondary, coreAlpha * (0.18 + drives.midLayer * 0.3 + drives.midPulse * 0.44 + drives.bassLayer * 0.18));
+    context.fillRect(nodeX - nodeSize * 0.5, y - nodeSize * 0.5, nodeSize, nodeSize);
+    if (layerPlan.bass > 0) {
+      radialLight(context, width, height, nodeX, y, nodeSize * (3 + drives.bassPulse * 2), rail % 2 ? primary : secondary, coreAlpha * drives.bassLayer * 0.3);
+    }
+  }
+  context.shadowBlur = 0;
+  context.shadowColor = "transparent";
+  const reservoirCount = layerPlan.bass;
+  for (let reservoir = 0; reservoir < reservoirCount; reservoir += 1) {
+    const x = width * (reservoir + 1) / (reservoirCount + 1);
+    const y = height * (reservoir % 2 === 0 ? 0.82 : 0.18);
+    const radius = unit * (0.009 + drives.bassLayer * 0.016 + drives.bassPulse * 0.012);
+    const color = reservoir % 2 ? secondary : primary;
+    radialLight(context, width, height, x, y, radius * 4.2, color, coreAlpha * drives.bassLayer * 0.28);
+    context.fillStyle = rgba(color, coreAlpha * (0.18 + drives.bassLayer * 0.34 + drives.bassPulse * 0.38));
+    context.fillRect(x - radius, y - radius * 0.45, radius * 2, radius * 0.9);
+  }
+  if (layerPlan.tapestry > 0) {
+    const networkCouplingX = width * (0.5 + Math.sin(time * 0.18) * drives.tapestry * 0.035);
+    context.shadowBlur = 0;
+    context.shadowColor = "transparent";
+    context.strokeStyle = rgba(highlight, coreAlpha * (0.08 + drives.tapestry * 0.32));
+    context.lineWidth = Math.max(2, unit * (0.002 + drives.tapestry * 0.004));
+    context.beginPath();
+    for (let node = 0; node < railCount; node += 1) {
+      const y = height * (0.15 + node / Math.max(1, railCount - 1) * 0.7);
+      const x = networkCouplingX + Math.sin(time * 0.31 + node * 1.7) * unit * drives.tapestry * 0.025;
+      if (node === 0) context.moveTo(x, y);
+      else context.lineTo(x, y);
+    }
+    context.stroke();
   }
   context.restore();
 
-  const current = 0.08 + drives.treble * 0.22 + drives.treblePulse * 0.7;
-  if (current > 0.16) {
+  // Treble owns the sharp discharge; bass visibly charges conduits and
+  // reservoirs first without masquerading as a high-frequency bolt.
+  const current = drives.treble * 0.06 + drives.trebleLayer * 0.3 + drives.treblePulse * 0.76;
+  if (layerPlan.treble > 0 && current > 0.08) {
     drawLightningTree(context, width, height, seed + Math.floor(time * (0.8 + drives.treblePulse * 4.2)) * 131, mix * current, primary, secondary, highlight);
   }
-  if (drives.treblePulse > 0.68 && drives.bassPulse > 0.42) {
-    drawLightningTree(context, width, height, seed + 71_901 + Math.floor(time * 4.1) * 191, mix * drives.treblePulse * 0.78, secondary, primary, highlight);
+  if (layerPlan.tapestry > 0 && drives.tapestryPulse > 0.22) {
+    const networkDischarge = clampVisualValue(drives.tapestry * 0.2 + drives.tapestryPulse * 0.78 + drives.impact * 0.08);
+    drawLightningTree(context, width, height, seed + 71_901 + Math.floor(time * (2.2 + networkDischarge * 3.1)) * 191, mix * networkDischarge, secondary, primary, highlight);
   }
 }
 
@@ -1042,6 +1302,7 @@ function drawPixelSortStorm(
   time: number,
   mix: number,
   drives: RadioVisualAudioDrives,
+  layerPlan: RadioVisualMusicSceneLayerPlan,
   primary: Rgb,
   secondary: Rgb,
   highlight: Rgb,
@@ -1051,8 +1312,8 @@ function drawPixelSortStorm(
   const unit = Math.min(width, height);
   const coreAlpha = chromaCoreAlpha(mix, drives.presence);
   const sortPass = Math.min(3, Math.floor(drives.progress * 4));
-  const tick = Math.floor(time * (2 + drives.treble * 8 + drives.treblePulse * 13));
-  const sliceCount = 12 + sortPass * 3 + Math.floor(drives.treble * 16 + drives.build * 18);
+  const tick = Math.floor(time * (0.8 + drives.treble * 9 + drives.treblePulse * 15));
+  const sliceCount = 3 + layerPlan.treble + Math.floor(drives.tapestry * 10 + drives.build * 2);
   context.save();
   context.globalCompositeOperation = "source-over";
   for (let slice = 0; slice < sliceCount; slice += 1) {
@@ -1060,30 +1321,39 @@ function drawPixelSortStorm(
     const y = height * randomUnit(localSeed, 39_100 + slice);
     const sliceHeight = Math.max(2, unit * (0.002 + randomUnit(localSeed, 39_200 + slice) * 0.014));
     const fromRight = (randomUnit(localSeed, 39_300 + slice) > 0.5) !== (sortPass % 2 === 1);
-    const pulse = 0.24 + drives.treble * 0.28 + drives.treblePulse * 0.48;
-    const length = width * (0.025 + randomUnit(localSeed, 39_400 + slice) * (0.2 + pulse * 0.42 + drives.midPulse * 0.12));
-    const inset = width * randomUnit(localSeed, 39_500 + slice) * (0.08 + drives.mid * 0.2);
+    const pulse = drives.trebleLayer * 0.42 + drives.treblePulse * 0.58;
+    const length = width * (0.012 + randomUnit(localSeed, 39_400 + slice) * (0.05 + pulse * 0.5 + drives.midPulse * 0.16));
+    const inset = width * randomUnit(localSeed, 39_500 + slice) * (0.03 + drives.mid * 0.08 + drives.midLayer * 0.18);
     const color = drives.treblePulse > 0.82 && slice % 13 === 0 ? highlight : slice % 2 ? secondary : primary;
-    context.fillStyle = rgba(color, coreAlpha * (0.26 + randomUnit(localSeed, 39_600 + slice) * 0.5));
+    context.fillStyle = rgba(color, coreAlpha * (0.1 + drives.trebleLayer * 0.38 + drives.treblePulse * 0.26 + randomUnit(localSeed, 39_600 + slice) * 0.18));
     context.fillRect(fromRight ? width - inset - length : inset, y, length, sliceHeight);
   }
-  const smearCount = 3 + Math.floor(drives.bass * 5 + drives.bassPulse * 5);
+  const smearCount = layerPlan.bass + Math.floor(drives.tapestry * 3);
   for (let column = 0; column < smearCount; column += 1) {
     const x = width * randomUnit(seed, 39_800 + column);
     const speed = 0.04 + randomUnit(seed, 39_900 + column) * 0.09 + drives.bass * 0.08;
     const y = height * ((randomUnit(seed, 40_000 + column) + time * speed) % 1);
     const color = drives.treblePulse > 0.78 && column % 5 === 0 ? highlight : column % 2 ? primary : secondary;
-    context.fillStyle = rgba(color, coreAlpha * (0.2 + drives.bass * 0.46));
-    context.fillRect(x, y, Math.max(3, unit * (0.004 + drives.bassPulse * 0.006)), unit * (0.025 + drives.bass * 0.12 + drives.bassPulse * 0.1));
+    context.fillStyle = rgba(color, coreAlpha * (0.12 + drives.bassLayer * 0.52 + drives.bassPulse * 0.24));
+    context.fillRect(x, y, Math.max(3, unit * (0.004 + drives.bassLayer * 0.024 + drives.bassPulse * 0.012)), unit * (0.018 + drives.bass * 0.04 + drives.bassLayer * 0.18 + drives.bassPulse * 0.12));
   }
-  const bandCount = Math.floor(drives.midPulse * 4 + drives.build * 3);
+  const bandCount = layerPlan.mid + Math.floor(drives.tapestry * 3);
   for (let band = 0; band < bandCount; band += 1) {
     const y = height * randomUnit(seed, 40_300 + band);
-    const bandHeight = unit * (0.012 + drives.mid * 0.025);
-    const offset = width * Math.sin(time * 0.42 + band) * drives.midPulse * 0.16;
+    const bandHeight = unit * (0.006 + drives.mid * 0.012 + drives.midLayer * 0.042);
+    const offset = width * Math.sin(time * 0.42 + band) * (drives.midLayer * 0.08 + drives.midPulse * 0.18);
     const color = band % 2 ? secondary : primary;
     context.fillStyle = rgba(color, coreAlpha * (0.2 + drives.midPulse * 0.42));
     context.fillRect(offset - width * 0.08, y, width * 1.16, bandHeight);
+  }
+  if (layerPlan.tapestry > 0) {
+    const surge = ((time * (0.06 + drives.tapestryPulse * 0.14) + sortPass * 0.17) % 1.3) - 0.15;
+    const surgeY = height * surge;
+    const surgeHeight = unit * (0.018 + drives.tapestry * 0.07);
+    context.fillStyle = rgba(highlight, coreAlpha * (0.06 + drives.tapestry * 0.24 + drives.tapestryPulse * 0.28));
+    context.fillRect(0, surgeY, width, surgeHeight);
+    context.fillStyle = rgba(primary, coreAlpha * drives.tapestry * 0.18);
+    context.fillRect(width * 0.08, surgeY + surgeHeight, width * 0.84, Math.max(2, unit * 0.004));
   }
   context.restore();
 }
@@ -1095,6 +1365,7 @@ function drawLaserLattice(
   time: number,
   mix: number,
   drives: RadioVisualAudioDrives,
+  layerPlan: RadioVisualMusicSceneLayerPlan,
   primary: Rgb,
   secondary: Rgb,
   highlight: Rgb,
@@ -1103,40 +1374,83 @@ function drawLaserLattice(
   if (mix < 0.002) return;
   const unit = Math.min(width, height);
   const coreAlpha = chromaCoreAlpha(mix, drives.presence);
-  const beamCount = 4 + Math.floor(drives.mid * 4 + drives.build * 7);
+  const beamCount = 2
+    + layerPlan.mid
+    + Math.floor(drives.tapestry * 5)
+    + Math.floor(drives.build * 2);
   const topology = Math.floor(drives.progress * 4) % 3;
   context.save();
   context.globalCompositeOperation = "source-over";
   context.lineCap = "square";
   for (let beam = 0; beam < beamCount; beam += 1) {
     const direction = beam % 2 === 0 ? 1 : -1;
-    const travel = ((time * (0.025 + drives.treble * 0.09 + drives.treblePulse * 0.08) * direction + randomUnit(seed, 41_100 + beam)) % 1.4 + 1.4) % 1.4;
+    const travel = ((time * (0.012 + drives.treble * 0.1 + drives.treblePulse * 0.1) * direction + randomUnit(seed, 41_100 + beam)) % 1.4 + 1.4) % 1.4;
     const startY = height * (travel - 0.2);
     const baseSlope = topology === 0 ? 0.18 : topology === 1 ? 0.42 : 0.7;
     const slope = height * (baseSlope + randomUnit(seed, 41_200 + beam) * 0.18) * direction;
     const color = drives.treblePulse > 0.8 && beam % 9 === 0 ? highlight : beam % 2 ? secondary : primary;
-    context.strokeStyle = rgba(color, coreAlpha * (0.24 + drives.mid * 0.42 + drives.impact * 0.18));
+    context.strokeStyle = rgba(color, coreAlpha * (0.1 + drives.midLayer * 0.5 + drives.midPulse * 0.16 + drives.impact * 0.08));
     context.shadowColor = rgba(color, coreAlpha * (0.28 + drives.treblePulse * 0.48));
     context.shadowBlur = unit * (0.003 + drives.treblePulse * 0.012);
-    context.lineWidth = Math.max(1.5, unit * (0.0018 + drives.bass * 0.003 + drives.bassPulse * 0.0045));
+    context.lineWidth = Math.max(1.5, unit * (0.0015 + drives.bass * 0.0015 + drives.bassLayer * 0.004 + drives.bassPulse * 0.003));
     context.beginPath();
     context.moveTo(-width * 0.08, startY - slope * 0.5);
     context.lineTo(width * 1.08, startY + slope * 0.5);
     context.stroke();
   }
-  const nodeCount = 3 + Math.floor(drives.midPulse * 7 + drives.build * 4);
+  context.shadowBlur = 0;
+  context.shadowColor = "transparent";
+  const nodeCount = layerPlan.mid + Math.floor(drives.tapestry * 4);
   for (let pulse = 0; pulse < nodeCount; pulse += 1) {
     const x = width * ((time * (0.04 + drives.mid * 0.08) + randomUnit(seed, 41_500 + pulse)) % 1);
     const y = height * randomUnit(seed, 41_600 + pulse);
     const color = pulse % 2 ? secondary : primary;
     context.fillStyle = rgba(color, coreAlpha * (0.22 + drives.midPulse * 0.5));
-    const nodeSize = unit * (0.012 + drives.bassPulse * 0.035);
+    const nodeSize = unit * (0.006 + drives.bassLayer * 0.026 + drives.bassPulse * 0.024);
     context.fillRect(x - nodeSize * 0.5, y - Math.max(2, unit * 0.002), nodeSize, Math.max(3, unit * 0.004));
   }
-  if (drives.treblePulse > 0.58) {
+
+  // Bass reveals dim structural depth planes behind the mid-frequency
+  // lattice; they pulse in width but do not become razor scanner rays.
+  const depthPlaneCount = layerPlan.bass;
+  for (let plane = 0; plane < depthPlaneCount; plane += 1) {
+    const y = height * (plane + 1) / (depthPlaneCount + 1);
+    const tilt = unit * (0.05 + plane * 0.018) * (topology === 1 ? -1 : 1);
+    const color = plane % 2 ? secondary : primary;
+    context.strokeStyle = rgba(color, coreAlpha * (0.08 + drives.bassLayer * 0.24 + drives.bassPulse * 0.18));
+    context.shadowColor = rgba(color, coreAlpha * drives.bassLayer * 0.32);
+    context.shadowBlur = unit * (0.012 + drives.bassLayer * 0.025);
+    context.lineWidth = Math.max(5, unit * (0.008 + drives.bassLayer * 0.025));
+    context.beginPath();
+    context.moveTo(0, y - tilt);
+    context.lineTo(width, y + tilt);
+    context.stroke();
+  }
+  context.shadowBlur = 0;
+  context.shadowColor = "transparent";
+
+  if (layerPlan.treble > 0) {
     const shutterX = width * ((time * (0.24 + drives.treblePulse * 0.42)) % 1);
-    context.fillStyle = rgba(secondary, coreAlpha * drives.treblePulse * 0.54);
+    context.fillStyle = rgba(secondary, coreAlpha * (drives.trebleLayer * 0.24 + drives.treblePulse * 0.52));
     context.fillRect(shutterX, 0, Math.max(2, unit * 0.003), height);
+  }
+
+  if (layerPlan.tapestry > 0) {
+    const cageRadius = unit * (0.12 + drives.tapestry * 0.24 + drives.tapestryPulse * 0.05);
+    const sides = 4 + topology + Math.floor(drives.tapestry * 3);
+    context.strokeStyle = rgba(highlight, coreAlpha * (0.08 + drives.tapestry * 0.34 + drives.tapestryPulse * 0.3));
+    context.shadowColor = rgba(highlight, coreAlpha * (0.14 + drives.tapestry * 0.28));
+    context.lineWidth = Math.max(2, unit * 0.0025);
+    context.shadowBlur = unit * (0.004 + drives.tapestryPulse * 0.012);
+    context.beginPath();
+    for (let side = 0; side <= sides; side += 1) {
+      const angle = time * 0.055 + side / sides * Math.PI * 2;
+      const x = width * 0.5 + Math.cos(angle) * cageRadius;
+      const y = height * 0.5 + Math.sin(angle) * cageRadius * 0.72;
+      if (side === 0) context.moveTo(x, y);
+      else context.lineTo(x, y);
+    }
+    context.stroke();
   }
   context.restore();
 }
@@ -1148,6 +1462,7 @@ function drawParticlePressure(
   time: number,
   mix: number,
   drives: RadioVisualAudioDrives,
+  layerPlan: RadioVisualMusicSceneLayerPlan,
   primary: Rgb,
   secondary: Rgb,
   highlight: Rgb,
@@ -1157,30 +1472,34 @@ function drawParticlePressure(
   const unit = Math.min(width, height);
   const coreAlpha = chromaCoreAlpha(mix, drives.presence);
   const pressureMode = Math.min(3, Math.floor(drives.progress * 4));
-  const pressure = clampVisualValue(drives.bass * 0.48 + drives.bassPulse * 0.42 + drives.build * 0.22);
-  const count = 22 + pressureMode * 6 + Math.floor(drives.body * 32 + drives.build * 42);
+  const pressure = clampVisualValue(drives.bass * 0.18 + drives.bassLayer * 0.58 + drives.bassPulse * 0.34 + drives.build * 0.08);
+  const count = 6
+    + Math.floor(drives.body * 10 + drives.tapestry * 23 + drives.build * 6)
+    + Math.max(layerPlan.mid, Math.floor(drives.midLayer * 18))
+    + Math.max(layerPlan.treble, Math.floor(drives.trebleLayer * 24))
+    + layerPlan.tapestry;
   context.save();
   for (let particle = 0; particle < count; particle += 1) {
     const fromRight = (randomUnit(seed, 42_100 + particle) > 0.5) !== (pressureMode === 1 || (pressureMode === 3 && particle % 3 === 0));
     const lane = randomUnit(seed, 42_200 + particle);
-    const speed = 0.025 + randomUnit(seed, 42_300 + particle) * 0.08 + drives.treble * 0.11;
+    const speed = 0.012 + randomUnit(seed, 42_300 + particle) * 0.035 + drives.treble * 0.08 + drives.trebleLayer * 0.09;
     const travel = (randomUnit(seed, 42_400 + particle) + time * speed + drives.bassPulse * 0.08) % 1;
-    const reach = width * (0.05 + pressure * 0.34);
+    const reach = width * (0.025 + pressure * 0.42);
     const x = fromRight ? width - travel * reach : travel * reach;
-    const curl = Math.sin(time * (0.3 + drives.mid * 0.8) + particle) * unit * drives.midPulse * 0.04;
+    const curl = Math.sin(time * (0.22 + drives.mid * 0.9) + particle) * unit * (drives.midLayer * 0.035 + drives.midPulse * 0.055);
     const y = lane * height + curl;
-    const length = unit * (0.004 + randomUnit(seed, 42_500 + particle) * 0.016 + drives.treblePulse * 0.018);
+    const length = unit * (0.003 + randomUnit(seed, 42_500 + particle) * (0.008 + drives.trebleLayer * 0.018) + drives.treblePulse * 0.026);
     const color = drives.treblePulse > 0.82 && particle % 17 === 0 ? highlight : particle % 2 ? secondary : primary;
-    context.fillStyle = rgba(color, coreAlpha * (0.22 + drives.body * 0.35 + (1 - travel) * drives.bassPulse * 0.24));
+    context.fillStyle = rgba(color, coreAlpha * (0.1 + drives.body * 0.16 + drives.trebleLayer * 0.28 + (1 - travel) * drives.bassPulse * 0.28));
     context.fillRect(fromRight ? x - length : x, y, length, Math.max(2, unit * 0.0025));
   }
-  const frontCount = 2 + pressureMode + Math.floor(drives.build * 4);
+  const frontCount = layerPlan.bass + Math.floor(drives.tapestry * 2);
   for (let front = 0; front < frontCount; front += 1) {
     const frontProgress = (front + 1) / (frontCount + 1);
     const x = width * (0.025 + pressure * 0.3 * frontProgress);
     const color = front % 2 ? secondary : primary;
-    context.strokeStyle = rgba(color, coreAlpha * (0.18 + drives.bassPulse * 0.48));
-    context.lineWidth = Math.max(2, unit * (0.002 + drives.bassPulse * 0.005));
+    context.strokeStyle = rgba(color, coreAlpha * (0.1 + drives.bassLayer * 0.34 + drives.bassPulse * 0.46));
+    context.lineWidth = Math.max(2, unit * (0.002 + drives.bassLayer * 0.009 + drives.bassPulse * 0.007));
     context.beginPath();
     context.moveTo(x, 0);
     context.bezierCurveTo(x + drives.midPulse * unit * 0.04, height * 0.32, x - drives.midPulse * unit * 0.04, height * 0.68, x, height);
@@ -1188,6 +1507,16 @@ function drawParticlePressure(
     context.beginPath();
     context.moveTo(width - x, 0);
     context.bezierCurveTo(width - x - drives.midPulse * unit * 0.04, height * 0.32, width - x + drives.midPulse * unit * 0.04, height * 0.68, width - x, height);
+    context.stroke();
+  }
+  if (layerPlan.tapestry > 0) {
+    const breath = 0.5 + 0.5 * Math.sin(time * (0.22 + drives.tapestryPulse * 0.34));
+    const radiusX = width * (0.1 + drives.tapestry * 0.28 + breath * 0.04);
+    const radiusY = height * (0.08 + drives.tapestry * 0.22 + breath * 0.035);
+    context.strokeStyle = rgba(highlight, coreAlpha * (0.06 + drives.tapestry * 0.26 + drives.tapestryPulse * 0.3));
+    context.lineWidth = Math.max(2, unit * (0.002 + drives.tapestry * 0.005));
+    context.beginPath();
+    context.ellipse(width * 0.5, height * 0.5, radiusX, radiusY, time * 0.035, 0, Math.PI * 2);
     context.stroke();
   }
   context.restore();
@@ -1207,16 +1536,17 @@ function drawSeededMusicScene(
 ): void {
   if (mix < 0.002) return;
   const scene = radioVisualMusicScene(seed);
-  if (scene === "edge_spectrum") drawEdgeSpectrum(context, width, height, time, mix, drives, primary, secondary, highlight, seed);
-  if (scene === "oscilloscope_ribbons") drawOscilloscopeRibbons(context, width, height, time, mix, drives, primary, secondary, highlight, seed);
-  if (scene === "tape_feedback") drawTapeFeedback(context, width, height, time, mix, drives, primary, secondary, highlight, seed);
-  if (scene === "matrix_rain") drawMatrixRain(context, width, height, time, mix, drives, primary, secondary, highlight, seed);
-  if (scene === "ascii_terminal") drawAsciiTerminal(context, width, height, time, mix, drives, primary, secondary, highlight, seed);
-  if (scene === "pixel_sort_storm") drawPixelSortStorm(context, width, height, time, mix, drives, primary, secondary, highlight, seed);
-  if (scene === "lightning_switchyard") drawLightningSwitchyard(context, width, height, time, mix, drives, primary, secondary, highlight, seed);
-  if (scene === "laser_lattice") drawLaserLattice(context, width, height, time, mix, drives, primary, secondary, highlight, seed);
-  if (scene === "particle_pressure") drawParticlePressure(context, width, height, time, mix, drives, primary, secondary, highlight, seed);
-  if (scene === "signal_constellation") drawSignalConstellation(context, width, height, time, mix, drives, primary, secondary, highlight, seed);
+  const layerPlan = radioVisualMusicSceneLayerPlan(scene, drives);
+  if (scene === "edge_spectrum") drawEdgeSpectrum(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
+  if (scene === "oscilloscope_ribbons") drawOscilloscopeRibbons(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
+  if (scene === "tape_feedback") drawTapeFeedback(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
+  if (scene === "matrix_rain") drawMatrixRain(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
+  if (scene === "ascii_terminal") drawAsciiTerminal(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
+  if (scene === "pixel_sort_storm") drawPixelSortStorm(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
+  if (scene === "lightning_switchyard") drawLightningSwitchyard(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
+  if (scene === "laser_lattice") drawLaserLattice(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
+  if (scene === "particle_pressure") drawParticlePressure(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
+  if (scene === "signal_constellation") drawSignalConstellation(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
 }
 
 function drawQueueLanes(
@@ -1285,15 +1615,32 @@ function drawIntakeAperture(
     bass: 0.2 + pulse * 0.16,
     mid: 0.3 + pulse * 0.2,
     treble: 0.38 + pulse * 0.24,
+    bassLayer: 0.18 + pulse * 0.2,
+    midLayer: 0.26 + pulse * 0.28,
+    trebleLayer: 0.34 + pulse * 0.34,
+    tapestry: 0.18 + pulse * 0.22,
     impact: pulse * 0.34,
     bassPulse: 0.18 + pulse * 0.16,
     midPulse: 0.26 + pulse * 0.2,
     treblePulse: 0.3 + pulse * 0.24,
+    tapestryPulse: 0.16 + pulse * 0.24,
     build: 0.52 + pulse * 0.28,
     progress: (time * 0.018) % 1,
     phrase: (time * 0.08) % 1,
   };
-  drawMatrixRain(context, width, height, time * 1.45, mix * 0.72, drives, primary, secondary, secondary, seed + 9_901);
+  drawMatrixRain(
+    context,
+    width,
+    height,
+    time * 1.45,
+    mix * 0.72,
+    drives,
+    radioVisualMusicSceneLayerPlan("matrix_rain", drives),
+    primary,
+    secondary,
+    secondary,
+    seed + 9_901,
+  );
   context.save();
   const sweepY = height * ((time * 0.12 + randomUnit(seed, 9_102)) % 1);
   const sweep = context.createLinearGradient(0, sweepY - unit * 0.08, 0, sweepY + unit * 0.08);
@@ -1983,10 +2330,15 @@ function drawWheelScene(
     bass: 0.2,
     mid: 0.2,
     treble: 0.2,
+    bassLayer: 0.12,
+    midLayer: 0.12,
+    trebleLayer: 0.12,
+    tapestry: 0.08,
     impact: 0.1,
     bassPulse: 0.14,
     midPulse: 0.14,
     treblePulse: 0.14,
+    tapestryPulse: 0.08,
     build: 0.28,
     progress: 0,
     phrase: 0,
@@ -2762,11 +3114,16 @@ function drawVisualFrame(
 
   drawAmbientLighting(context, width, height, time, runtime.intensity * activeSurfaceMix, runtime.primary, runtime.secondary, runtime.highlight, music.energy);
   drawGoboShadows(context, width, height, time, runtime.intensity * activeSurfaceMix, shadow);
-  const musicSceneActivity = music.source === "windows_loopback"
-    ? clampVisualValue(0.28 + musicDrives.body * 0.5 + musicDrives.presence * 0.44, 0.28, 1)
-    : runtime.trackMix > 0.08
-      ? clampVisualValue(0.52 + musicDrives.body * 0.28 + musicDrives.presence * 0.28, 0.52, 1)
-      : 0;
+  const musicSceneActivity = music.source === "windows_loopback" || runtime.trackMix > 0.08
+    ? clampVisualValue(
+      0.14
+      + musicDrives.body * 0.42
+      + musicDrives.presence * 0.36
+      + musicDrives.tapestry * 0.12,
+      0.14,
+      1,
+    )
+    : 0;
   // Keep the strong BARCODE transmission bed between songs, but let each
   // track's own scene language take over instead of flattening all ten into
   // the same bars, tracking lines, corners, and flecks.

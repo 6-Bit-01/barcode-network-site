@@ -13,8 +13,10 @@ import {
   radioVisualAudioDrives,
   radioVisualAudioReactionInitialState,
   radioVisualAmbientMoment,
+  radioVisualBroadcastFxPlan,
   radioVisualCueEnvelope,
   radioVisualCueProgress,
+  radioVisualMusicEvolutionPlan,
   radioVisualMusicScene,
   radioVisualMusicSceneLayerPlan,
   radioVisualMusicPerimeterPlan,
@@ -29,7 +31,7 @@ import {
   radioVisualsPortalStageEdgeRadius,
   radioVisualsWheelBand,
 } from "@/lib/radio-visuals-engine";
-import type { RadioVisualAudioDrives, RadioVisualMusicPerimeterPlan, RadioVisualMusicSceneLayerPlan, RadioVisualMusicSignal, RadioVisualWindowIntrusionPlan } from "@/lib/radio-visuals-engine";
+import type { RadioVisualAudioDrives, RadioVisualBroadcastFxPlan, RadioVisualMusicPerimeterPlan, RadioVisualMusicSceneLayerPlan, RadioVisualMusicSignal, RadioVisualWindowIntrusionPlan } from "@/lib/radio-visuals-engine";
 import { activeRadioVisualEvent, hashRadioVisualToken, radioVisualBroadcastStartedTransition, radioVisualEventEnvelope, radioVisualEventProgress } from "@/lib/radio-visuals-events";
 import { RADIO_VISUALS_ACTIVE_POLL_INTERVAL_MS, RADIO_VISUALS_STANDBY_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 import { studioOverlayRequestHeaders } from "@/lib/studio-overlay-client";
@@ -94,6 +96,8 @@ interface VisualRuntime {
   syntheticEvents: RadioVisualEvent[];
   effectCanvas: HTMLCanvasElement | null;
   effectContext: CanvasRenderingContext2D | null;
+  crtCanvas: HTMLCanvasElement | null;
+  crtContext: CanvasRenderingContext2D | null;
 }
 
 const RETRY_POLL_INTERVAL_MS = 5_000;
@@ -230,6 +234,58 @@ function prepareEffectLayer(
   context.filter = "none";
   context.clearRect(0, 0, pixelWidth, pixelHeight);
   return { canvas, context };
+}
+
+function prepareCrtTexture(
+  runtime: VisualRuntime,
+  width: number,
+  height: number,
+): HTMLCanvasElement | null {
+  const needsInitialPaint = runtime.crtCanvas === null;
+  const canvas = runtime.crtCanvas ?? document.createElement("canvas");
+  const context = runtime.crtContext ?? canvas.getContext("2d");
+  if (!context) return null;
+  runtime.crtCanvas = canvas;
+  runtime.crtContext = context;
+  const pixelWidth = Math.max(1, Math.round(width));
+  const pixelHeight = Math.max(1, Math.round(height));
+  if (!needsInitialPaint && canvas.width === pixelWidth && canvas.height === pixelHeight) return canvas;
+  canvas.width = pixelWidth;
+  canvas.height = pixelHeight;
+  context.clearRect(0, 0, pixelWidth, pixelHeight);
+  for (let y = 0; y < pixelHeight; y += 4) {
+    context.fillStyle = y % 8 === 0 ? "rgba(0,0,0,0.72)" : "rgba(255,255,255,0.2)";
+    context.fillRect(0, y, pixelWidth, 1);
+  }
+  return canvas;
+}
+
+function drawPersistentBroadcastTexture(
+  context: CanvasRenderingContext2D,
+  runtime: VisualRuntime,
+  width: number,
+  height: number,
+  time: number,
+  strength: number,
+  primary: Rgb,
+  highlight: Rgb,
+): void {
+  if (strength < 0.002) return;
+  const texture = prepareCrtTexture(runtime, width, height);
+  const unit = Math.min(width, height);
+  context.save();
+  if (texture) {
+    context.globalAlpha = clampVisualValue(strength, 0, 0.055);
+    context.drawImage(texture, 0, 0, width, height);
+  }
+  const rollY = height * ((time * 0.027) % 1);
+  const roll = context.createLinearGradient(0, rollY - unit * 0.045, 0, rollY + unit * 0.045);
+  roll.addColorStop(0, rgba(primary, 0));
+  roll.addColorStop(0.5, rgba(highlight, clampVisualValue(strength * 0.72, 0, 0.04)));
+  roll.addColorStop(1, rgba(primary, 0));
+  context.fillStyle = roll;
+  context.fillRect(0, rollY - unit * 0.045, width, unit * 0.09);
+  context.restore();
 }
 
 function applyPerformerSafeField(
@@ -1840,16 +1896,30 @@ function drawSeededMusicScene(
   if (mix < 0.002) return;
   const scene = radioVisualMusicScene(seed);
   const layerPlan = radioVisualMusicSceneLayerPlan(scene, drives);
-  if (scene === "edge_spectrum") drawEdgeSpectrum(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
-  if (scene === "oscilloscope_ribbons") drawOscilloscopeRibbons(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
-  if (scene === "tape_feedback") drawTapeFeedback(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
-  if (scene === "matrix_rain") drawMatrixRain(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
-  if (scene === "ascii_terminal") drawAsciiTerminal(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
-  if (scene === "pixel_sort_storm") drawPixelSortStorm(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
-  if (scene === "lightning_switchyard") drawLightningSwitchyard(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
-  if (scene === "laser_lattice") drawLaserLattice(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
-  if (scene === "particle_pressure") drawParticlePressure(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
-  if (scene === "signal_constellation") drawSignalConstellation(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
+  const evolution = radioVisualMusicEvolutionPlan(scene, seed, time, drives);
+  const evolvedTime = time * evolution.motionRate;
+  const evolvedPrimary = mixRgb(primary, secondary, evolution.hueBlend);
+  const evolvedSecondary = mixRgb(secondary, highlight, evolution.hueBlend * 0.72);
+  const evolvedHighlight = mixRgb(highlight, primary, evolution.hueBlend * 0.34);
+  context.save();
+  context.translate(
+    width * (0.5 + evolution.translateXRatio),
+    height * (0.5 + evolution.translateYRatio),
+  );
+  context.rotate(evolution.rotation);
+  context.scale(evolution.scaleX, evolution.scaleY);
+  context.translate(-width * 0.5, -height * 0.5);
+  if (scene === "edge_spectrum") drawEdgeSpectrum(context, width, height, evolvedTime, mix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
+  if (scene === "oscilloscope_ribbons") drawOscilloscopeRibbons(context, width, height, evolvedTime, mix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
+  if (scene === "tape_feedback") drawTapeFeedback(context, width, height, evolvedTime, mix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
+  if (scene === "matrix_rain") drawMatrixRain(context, width, height, evolvedTime, mix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
+  if (scene === "ascii_terminal") drawAsciiTerminal(context, width, height, evolvedTime, mix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
+  if (scene === "pixel_sort_storm") drawPixelSortStorm(context, width, height, evolvedTime, mix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
+  if (scene === "lightning_switchyard") drawLightningSwitchyard(context, width, height, evolvedTime, mix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
+  if (scene === "laser_lattice") drawLaserLattice(context, width, height, evolvedTime, mix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
+  if (scene === "particle_pressure") drawParticlePressure(context, width, height, evolvedTime, mix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
+  if (scene === "signal_constellation") drawSignalConstellation(context, width, height, evolvedTime, mix, drives, layerPlan, evolvedPrimary, evolvedSecondary, evolvedHighlight, seed);
+  context.restore();
   drawMusicPerimeterIdentity(
     context,
     width,
@@ -1858,8 +1928,8 @@ function drawSeededMusicScene(
     mix,
     drives,
     radioVisualMusicPerimeterPlan(scene, drives),
-    primary,
-    secondary,
+    mixRgb(primary, secondary, evolution.hueBlend * 0.42),
+    mixRgb(secondary, highlight, evolution.hueBlend * 0.3),
     highlight,
     seed,
   );
@@ -2136,6 +2206,208 @@ function drawAmbientMoment(
     context.beginPath();
     context.ellipse(x, y, width * (0.04 + progress * 0.34), height * (0.03 + progress * 0.23), (randomUnit(moment.seed, 13_105) - 0.5) * 0.6, 0, Math.PI * 2);
     context.stroke();
+  }
+  context.restore();
+}
+
+const BROADCAST_CODE_LINES = [
+  "BOOT_SEQUENCE.INIT",
+  "HANDSHAKE.EXE",
+  "LINKED.PROCESS",
+  "SYNC.PATCH",
+  "SESSION_END.LOG",
+  "PACKET_TRACE.OK",
+  "BARCODE://LIVE",
+  "SIGNAL_ROUTE_06",
+];
+
+function drawBroadcastFx(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  time: number,
+  plan: RadioVisualBroadcastFxPlan,
+  primary: Rgb,
+  secondary: Rgb,
+  highlight: Rgb,
+  centerPass = false,
+): void {
+  const strength = centerPass ? plan.centerStrength : plan.strength;
+  if (!plan.active || strength < 0.002 || (centerPass && !plan.centerAllowed)) return;
+  const unit = Math.min(width, height);
+  const seed = plan.occurrenceSeed;
+  const budget = centerPass ? plan.centerPrimitiveBudget : 10 + Math.floor(plan.detail * 14);
+  const colors: Rgb[] = [primary, secondary, highlight];
+  const travel = ease(plan.progress);
+  context.save();
+  context.globalCompositeOperation = plan.type === "chromatic_desync" || plan.type === "packet_trace"
+    ? "lighter"
+    : "source-over";
+
+  if (plan.type === "crt_roll") {
+    const y = height * travel;
+    const gradient = context.createLinearGradient(0, y - unit * 0.08, 0, y + unit * 0.08);
+    gradient.addColorStop(0, rgba(primary, 0));
+    gradient.addColorStop(0.46, rgba(primary, strength * 0.12));
+    gradient.addColorStop(0.5, rgba(highlight, strength * 0.42));
+    gradient.addColorStop(0.54, rgba(secondary, strength * 0.1));
+    gradient.addColorStop(1, rgba(secondary, 0));
+    context.fillStyle = gradient;
+    context.fillRect(0, y - unit * 0.08, width, unit * 0.16);
+  } else if (plan.type === "scanline_stack") {
+    const count = Math.max(2, Math.min(budget, 3 + Math.floor(plan.detail * 6)));
+    for (let line = 0; line < count; line += 1) {
+      const y = height * ((travel + line / count * 0.34 + randomUnit(seed, 61_000 + line) * 0.12) % 1);
+      const lineHeight = Math.max(1, unit * (0.0012 + randomUnit(seed, 61_100 + line) * 0.003));
+      context.fillStyle = rgba(colors[line % colors.length], strength * (0.28 + randomUnit(seed, 61_200 + line) * 0.48));
+      context.fillRect(0, y, width, lineHeight);
+    }
+  } else if (plan.type === "signal_tear") {
+    const count = Math.max(2, Math.min(budget, 2 + Math.floor(plan.detail * 5)));
+    for (let tear = 0; tear < count; tear += 1) {
+      const y = height * (0.12 + randomUnit(seed, 61_300 + tear) * 0.76);
+      const amplitude = unit * (0.004 + plan.detail * 0.018);
+      context.strokeStyle = rgba(colors[tear % colors.length], strength * (0.42 + plan.detail * 0.36));
+      context.lineWidth = Math.max(1.5, unit * (0.0014 + randomUnit(seed, 61_400 + tear) * 0.002));
+      context.beginPath();
+      for (let step = 0; step <= 12; step += 1) {
+        const x = width * step / 12;
+        const offset = (randomUnit(seed + Math.floor(time * 5), 61_500 + tear * 17 + step) - 0.5) * amplitude;
+        if (step === 0) context.moveTo(x, y + offset);
+        else context.lineTo(x, y + offset);
+      }
+      context.stroke();
+    }
+  } else if (plan.type === "frame_stutter") {
+    const count = Math.max(2, Math.min(budget, 2 + Math.floor(plan.detail * 4)));
+    for (let frame = 0; frame < count; frame += 1) {
+      const insetX = width * (0.025 + frame * 0.018);
+      const insetY = height * (0.03 + frame * 0.014);
+      const offset = (frame % 2 ? -1 : 1) * unit * strength * (0.012 + frame * 0.004);
+      context.strokeStyle = rgba(colors[frame % colors.length], strength * (0.32 + frame * 0.06));
+      context.lineWidth = Math.max(1.5, unit * 0.0018);
+      context.strokeRect(insetX + offset, insetY, width - insetX * 2, height - insetY * 2);
+    }
+  } else if (plan.type === "chromatic_desync") {
+    const offsets: Array<[Rgb, number]> = [[primary, -1], [highlight, 0], [secondary, 1]];
+    for (let channel = 0; channel < offsets.length; channel += 1) {
+      const [color, direction] = offsets[channel];
+      const offset = direction * unit * (0.003 + strength * 0.022);
+      context.strokeStyle = rgba(color, strength * (channel === 1 ? 0.34 : 0.5));
+      context.lineWidth = Math.max(1.5, unit * 0.002);
+      context.strokeRect(unit * 0.018 + offset, unit * 0.018, width - unit * 0.036, height - unit * 0.036);
+    }
+  } else if (plan.type === "barcode_sweep") {
+    const count = Math.max(3, Math.min(budget, 5 + Math.floor(plan.detail * 8)));
+    const centerX = width * (-0.08 + travel * 1.16);
+    for (let bar = 0; bar < count; bar += 1) {
+      const barWidth = Math.max(1, unit * (0.0015 + randomUnit(seed, 61_600 + bar) * 0.006));
+      const x = centerX + (bar - count * 0.5) * unit * 0.012;
+      const barHeight = height * (0.18 + randomUnit(seed, 61_700 + bar) * 0.62);
+      const y = (height - barHeight) * randomUnit(seed, 61_800 + bar);
+      context.fillStyle = rgba(colors[bar % colors.length], strength * (0.32 + randomUnit(seed, 61_900 + bar) * 0.5));
+      context.fillRect(x, y, barWidth, barHeight);
+    }
+  } else if (plan.type === "code_breach" || plan.type === "terminal_packet") {
+    const count = Math.max(2, Math.min(budget, 2 + Math.floor(plan.detail * 5)));
+    const fontSize = Math.max(9, unit * (centerPass ? 0.011 : 0.014));
+    context.font = `800 ${fontSize}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+    context.textBaseline = "middle";
+    for (let row = 0; row < count; row += 1) {
+      const text = BROADCAST_CODE_LINES[(Math.floor(randomUnit(seed, 62_000 + row) * BROADCAST_CODE_LINES.length) + row) % BROADCAST_CODE_LINES.length];
+      const fromRight = row % 2 === 1;
+      const x = width * (fromRight ? 0.98 - travel * 0.34 : 0.02 + travel * 0.34);
+      const y = height * (0.14 + randomUnit(seed, 62_100 + row) * 0.72);
+      context.textAlign = fromRight ? "right" : "left";
+      context.fillStyle = rgba(colors[row % colors.length], strength * (0.38 + randomUnit(seed, 62_200 + row) * 0.42));
+      context.fillText(text, x, y, width * 0.48);
+      if (plan.type === "terminal_packet" && row < Math.ceil(count / 2)) {
+        const boxWidth = Math.min(width * 0.34, context.measureText(text).width + unit * 0.025);
+        context.strokeStyle = rgba(colors[(row + 1) % colors.length], strength * 0.28);
+        context.lineWidth = Math.max(1, unit * 0.0012);
+        context.strokeRect(fromRight ? x - boxWidth : x, y - fontSize, boxWidth, fontSize * 2);
+      }
+    }
+  } else if (plan.type === "bit_noise") {
+    const count = 8 + Math.floor(plan.detail * 18);
+    for (let bit = 0; bit < count; bit += 1) {
+      const x = width * randomUnit(seed + Math.floor(time * 4), 62_300 + bit);
+      const y = height * randomUnit(seed + Math.floor(time * 4), 62_400 + bit);
+      const size = Math.max(1, unit * (0.001 + randomUnit(seed, 62_500 + bit) * 0.004));
+      context.fillStyle = rgba(colors[bit % colors.length], strength * (0.2 + randomUnit(seed, 62_600 + bit) * 0.5));
+      context.fillRect(x, y, size * (bit % 3 === 0 ? 4 : 1), size);
+    }
+  } else if (plan.type === "sync_dropout") {
+    const count = Math.max(2, Math.min(budget, 2 + Math.floor(plan.detail * 4)));
+    for (let strip = 0; strip < count; strip += 1) {
+      const y = height * (0.16 + randomUnit(seed, 62_700 + strip) * 0.68);
+      const stripHeight = Math.max(2, unit * (0.002 + randomUnit(seed, 62_800 + strip) * 0.006));
+      const start = width * randomUnit(seed, 62_900 + strip) * 0.42;
+      const stripWidth = width * (0.22 + randomUnit(seed, 63_000 + strip) * 0.5);
+      context.fillStyle = rgba([2, 2, 6], strength * 0.52);
+      context.fillRect(start, y, stripWidth, stripHeight);
+      context.fillStyle = rgba(colors[strip % colors.length], strength * 0.46);
+      context.fillRect(start + unit * 0.008, y, stripWidth * 0.46, Math.max(1, stripHeight * 0.22));
+    }
+  } else if (plan.type === "packet_trace") {
+    const count = Math.max(2, Math.min(budget, 2 + Math.floor(plan.detail * 5)));
+    for (let trace = 0; trace < count; trace += 1) {
+      const direction = trace % 2 ? -1 : 1;
+      const x = direction > 0 ? width * (-0.12 + travel * 1.24) : width * (1.12 - travel * 1.24);
+      const y = height * (0.12 + randomUnit(seed, 63_100 + trace) * 0.76);
+      const length = unit * (0.035 + randomUnit(seed, 63_200 + trace) * 0.09);
+      context.strokeStyle = rgba(colors[trace % colors.length], strength * (0.46 + plan.detail * 0.32));
+      context.lineWidth = Math.max(1.5, unit * (0.0015 + randomUnit(seed, 63_300 + trace) * 0.002));
+      context.beginPath();
+      context.moveTo(x - direction * length, y);
+      context.lineTo(x, y);
+      context.lineTo(x - direction * unit * 0.012, y - unit * 0.008);
+      context.moveTo(x, y);
+      context.lineTo(x - direction * unit * 0.012, y + unit * 0.008);
+      context.stroke();
+    }
+  } else if (plan.type === "compression_blocks") {
+    const count = Math.max(3, Math.min(budget, 4 + Math.floor(plan.detail * 6)));
+    for (let block = 0; block < count; block += 1) {
+      const blockWidth = width * (0.025 + randomUnit(seed, 63_400 + block) * 0.11);
+      const blockHeight = height * (0.012 + randomUnit(seed, 63_500 + block) * 0.055);
+      const x = width * randomUnit(seed, 63_600 + block);
+      const y = height * randomUnit(seed, 63_700 + block);
+      context.fillStyle = rgba(colors[block % colors.length], strength * (0.18 + randomUnit(seed, 63_800 + block) * 0.42));
+      context.fillRect(x, y, blockWidth, blockHeight);
+    }
+  }
+  context.restore();
+}
+
+function drawMusicGestureSweep(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  plan: RadioVisualWindowIntrusionPlan,
+  primary: Rgb,
+  secondary: Rgb,
+  highlight: Rgb,
+): void {
+  if (plan.musicSweepProgress === null || plan.musicSweepStrength < 0.002) return;
+  const unit = Math.min(width, height);
+  const progress = ease(plan.musicSweepProgress);
+  const direction = randomUnit(plan.musicSweepSeed, 64_001) > 0.5 ? 1 : -1;
+  const x = direction > 0 ? width * (-0.12 + progress * 1.24) : width * (1.12 - progress * 1.24);
+  const yBase = height * (0.2 + randomUnit(plan.musicSweepSeed, 64_002) * 0.58);
+  const curve = Math.sin(progress * Math.PI) * unit * (plan.musicGesture === "melodic_lift" ? 0.1 : 0.035);
+  const y = yBase - curve;
+  const trailCount = plan.musicGesture === "instrumental_break" ? 5 : plan.musicGesture === "melodic_lift" ? 4 : 3;
+  const colors: Rgb[] = plan.musicGesture === "vocal_pattern"
+    ? [secondary, highlight, secondary]
+    : [primary, secondary, highlight];
+  context.save();
+  context.globalCompositeOperation = "lighter";
+  for (let trail = 0; trail < trailCount; trail += 1) {
+    const trailX = x - direction * trail * unit * 0.035;
+    const length = unit * (0.018 + (trailCount - trail) * 0.009);
+    context.fillStyle = rgba(colors[trail % colors.length], plan.musicSweepStrength * (0.34 + (trailCount - trail) * 0.11));
+    context.fillRect(direction > 0 ? trailX - length : trailX, y + (trail % 2 ? unit * 0.006 : 0), length, Math.max(1.5, unit * 0.003));
   }
   context.restore();
 }
@@ -3286,6 +3558,7 @@ function drawPerformerWindowIntrusions(
   height: number,
   time: number,
   plan: RadioVisualWindowIntrusionPlan,
+  broadcastFxPlan: RadioVisualBroadcastFxPlan,
   primary: Rgb,
   secondary: Rgb,
   highlight: Rgb,
@@ -3294,7 +3567,20 @@ function drawPerformerWindowIntrusions(
   cueProgress: number | null,
   cueSeed: number,
 ): void {
-  if (!plan.active) return;
+  if (!plan.active && !broadcastFxPlan.centerAllowed) return;
+
+  drawBroadcastFx(
+    context,
+    width,
+    height,
+    time,
+    broadcastFxPlan,
+    primary,
+    secondary,
+    highlight,
+    true,
+  );
+  drawMusicGestureSweep(context, width, height, plan, primary, secondary, highlight);
 
   // A sparse scan may cross the performer field, but dense scene geometry is
   // never replayed here. This is an explicit allow-list, not a weaker global
@@ -3549,6 +3835,27 @@ function drawVisualFrame(
     ? hashRadioVisualToken(`${snapshot.cue.type}:${snapshot.cue.nonce}:${snapshot.cue.startedAt}`)
     : runtime.currentSeed;
   const visualEvents = activeSurfaceMix > 0 ? activeVisualEvents(snapshot, runtime, serverNowMs) : [];
+  const sceneStateMix = clampVisualValue(1 - Math.max(runtime.wheelMix, runtime.systemMix), 0, 1);
+  const broadcastFxPlan = radioVisualBroadcastFxPlan({
+    time: serverNowMs / 1_000,
+    seed: runtime.currentSeed,
+    sessionActive: snapshot.sessionActive || previewMode,
+    showStage: snapshot.showStage,
+    sceneMix: activeSurfaceMix * sceneStateMix,
+    drives: musicDrives,
+    cueType: snapshot.cue?.type ?? null,
+  });
+  const intrusionPlan = radioVisualWindowIntrusionPlan({
+    time: audioTime,
+    sceneMix: activeSurfaceMix * sceneStateMix,
+    trackMix: runtime.trackMix,
+    drives: musicDrives,
+    musicScene,
+    seed: runtime.currentSeed,
+    cueType: snapshot.cue?.type ?? null,
+    cueProgress,
+    cueEnvelope,
+  });
 
   const outputContext = context;
   outputContext.globalCompositeOperation = "source-over";
@@ -3592,7 +3899,6 @@ function drawVisualFrame(
     runtime.highlight,
     runtime.currentSeed,
   );
-  const sceneStateMix = clampVisualValue(1 - Math.max(runtime.wheelMix, runtime.systemMix), 0, 1);
   const activeMusicMix = runtime.trackMix * sceneStateMix;
   const drawSeedComposition = (seed: number, compositionMix: number) => {
     if (compositionMix < 0.002) return;
@@ -3629,6 +3935,8 @@ function drawVisualFrame(
   if (activeSurfaceMix > 0) {
     drawTrackBloom(context, width, height, timestampMs - runtime.bloomStartedAtMs, runtime.primary, runtime.secondary, runtime.highlight);
     drawAmbientMoment(context, width, height, time, snapshot, runtime.primary, runtime.secondary, runtime.highlight, shadow, serverNowMs, music);
+    drawBroadcastFx(context, width, height, audioTime, broadcastFxPlan, runtime.primary, runtime.secondary, runtime.highlight);
+    drawMusicGestureSweep(context, width, height, intrusionPlan, runtime.primary, runtime.secondary, runtime.highlight);
   }
 
   if (activeSurfaceMix > 0) {
@@ -3648,18 +3956,21 @@ function drawVisualFrame(
   if (effectLayer) {
     if (snapshot.showStage !== "intake") applyPerformerSafeField(context, width, height, 0.2);
     outputContext.drawImage(effectLayer.canvas, 0, 0, width, height);
-    const intrusionPlan = radioVisualWindowIntrusionPlan({
-      time: audioTime,
-      sceneMix: activeSurfaceMix * sceneStateMix,
-      trackMix: runtime.trackMix,
-      drives: musicDrives,
-      musicScene,
-      seed: runtime.currentSeed,
-      cueType: snapshot.cue?.type ?? null,
-      cueProgress,
-      cueEnvelope,
-    });
-    if (snapshot.showStage !== "intake" && activeSurfaceMix > 0 && intrusionPlan.active) {
+    drawPersistentBroadcastTexture(
+      outputContext,
+      runtime,
+      width,
+      height,
+      audioTime,
+      broadcastFxPlan.crtStrength,
+      runtime.primary,
+      runtime.highlight,
+    );
+    if (
+      snapshot.showStage !== "intake"
+      && activeSurfaceMix > 0
+      && (intrusionPlan.active || broadcastFxPlan.centerStrength >= 0.002)
+    ) {
       const intrusionLayer = prepareEffectLayer(runtime, width, height);
       if (intrusionLayer) {
         drawPerformerWindowIntrusions(
@@ -3668,6 +3979,7 @@ function drawVisualFrame(
           height,
           audioTime,
           intrusionPlan,
+          broadcastFxPlan,
           runtime.primary,
           runtime.secondary,
           runtime.highlight,
@@ -3756,6 +4068,8 @@ export function RadioVisualsReceiver() {
     syntheticEvents: [],
     effectCanvas: null,
     effectContext: null,
+    crtCanvas: null,
+    crtContext: null,
   });
 
   useEffect(() => {

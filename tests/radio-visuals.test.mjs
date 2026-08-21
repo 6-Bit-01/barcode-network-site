@@ -638,10 +638,16 @@ test("Windows levels become quiet, isolated band layers and a full-spectrum tape
   assert.ok(treble.trebleLayer > 0.14 && treble.bassLayer < 0.01 && treble.midLayer < 0.01, "ordinary treble must enter only the treble-owned layer");
 
   const moderate = drivesAt({ energy: 0.22, bass: 0.22, mid: 0.22, treble: 0.22, peak: 0.22 });
+  const firstFullTapestry = drivesAt({ energy: 0.15, bass: 0.15, mid: 0.15, treble: 0.15, peak: 0.15 });
   const strong = drivesAt({ energy: 0.45, bass: 0.45, mid: 0.45, treble: 0.45, peak: 0.45 });
   const hot = drivesAt({ energy: 0.75, bass: 0.75, mid: 0.75, treble: 0.75, peak: 0.75 });
+  const ordinaryFullHit = drivesAt({ energy: 0.45, bass: 0.45, mid: 0.45, treble: 0.45, peak: 0.45, beat: 1 });
   assert.ok(hot.bassLayer > 0.75 && hot.midLayer > 0.75 && hot.trebleLayer > 0.75);
   assert.ok(hot.tapestry > 0.72 && hot.build > 0.65, "strong full-spectrum Windows audio must assemble the combined composition with remaining headroom");
+  assert.ok(ordinaryFullHit.bassPulse > 0.25, "an ordinary live bass hit must survive the complete bridge-to-renderer path");
+  assert.ok(ordinaryFullHit.midPulse > 0.25, "an ordinary live mid hit must survive the complete bridge-to-renderer path");
+  assert.ok(ordinaryFullHit.treblePulse > 0.25, "an ordinary live treble hit must survive the complete bridge-to-renderer path");
+  assert.ok(ordinaryFullHit.tapestryPulse > 0.2, "a simultaneous live hit must build the coupled tapestry instead of leaving one band visible");
   assert.ok(
     engine.radioVisualMusicSceneVisibility(quiet) >= 0.3
       && engine.radioVisualMusicSceneVisibility(quiet) <= 0.31,
@@ -658,7 +664,7 @@ test("Windows levels become quiet, isolated band layers and a full-spectrum tape
     mids: { bass: false, mid: true, treble: false, tapestry: false },
     treble: { bass: false, mid: false, treble: true, tapestry: false },
   };
-  const profileDrives = { quiet, bass, mids, treble, moderate, strong, hot, fullRest, overload };
+  const profileDrives = { quiet, bass, mids, treble, firstFullTapestry, moderate, strong, hot, fullRest, overload };
   for (const musicScene of engine.RADIO_VISUAL_MUSIC_SCENES) {
     const plans = Object.fromEntries(
       Object.entries(profileDrives).map(([profile, profileDrive]) => [
@@ -672,6 +678,7 @@ test("Windows levels become quiet, isolated band layers and a full-spectrum tape
         assert.equal(plans[profile][layer] > 0, expected[layer], `${musicScene} ${profile} must ${expected[layer] ? "reveal" : "withhold"} its ${layer} density budget`);
       }
     }
+    assert.ok(Object.values(plans.firstFullTapestry).every((count) => count > 0), `${musicScene} must reveal bass, mids, treble, and tapestry by a realistic 15% all-band bridge reading`);
     assert.ok(Object.values(plans.moderate).every((count) => count > 0), `${musicScene} must reveal all four systems at a realistic 22% all-band bridge reading`);
     assert.ok(
       Object.values(plans.strong).reduce((sum, count) => sum + count, 0)
@@ -860,13 +867,13 @@ test("all ten music families retain a distinct bounded perimeter identity from q
     assert.equal(hotPlan.motif, quietPlan.motif, `${musicScene} cannot change perimeter language with volume`);
     assert.ok(quietPlan.strength >= 0.64 && quietPlan.strength <= 1, `${musicScene} must remain readable at silence`);
     assert.ok(hotPlan.strength > quietPlan.strength && hotPlan.strength <= 1, `${musicScene} must brighten with real audio`);
-    assert.ok(quietPlan.reach >= 0.075 && hotPlan.reach <= 0.155 && hotPlan.reach > quietPlan.reach, `${musicScene} must expand only inside its bounded perimeter band`);
-    assert.ok(quietPlan.thickness >= 0.0035 && hotPlan.thickness <= 0.011 && hotPlan.thickness > quietPlan.thickness, `${musicScene} must gain bass-owned weight without flooding the stage`);
-    assert.ok(quietPlan.bassElements >= 2 && hotPlan.bassElements <= 7 && hotPlan.bassElements >= quietPlan.bassElements);
-    assert.ok(quietPlan.midElements >= 3 && hotPlan.midElements <= 9 && hotPlan.midElements >= quietPlan.midElements);
-    assert.ok(quietPlan.trebleElements >= 3 && hotPlan.trebleElements <= 11 && hotPlan.trebleElements >= quietPlan.trebleElements);
+    assert.ok(quietPlan.reach >= 0.075 && hotPlan.reach <= 0.2 && hotPlan.reach > quietPlan.reach * 1.5, `${musicScene} must expand materially while remaining inside its bounded perimeter band`);
+    assert.ok(quietPlan.thickness >= 0.0035 && hotPlan.thickness <= 0.018 && hotPlan.thickness > quietPlan.thickness * 1.5, `${musicScene} must gain bass-owned weight without flooding the stage`);
+    assert.ok(quietPlan.bassElements >= 2 && hotPlan.bassElements <= 10 && hotPlan.bassElements >= quietPlan.bassElements * 2);
+    assert.ok(quietPlan.midElements >= 3 && hotPlan.midElements <= 14 && hotPlan.midElements >= quietPlan.midElements * 2);
+    assert.ok(quietPlan.trebleElements >= 3 && hotPlan.trebleElements <= 18 && hotPlan.trebleElements >= quietPlan.trebleElements * 2);
     assert.equal(quietPlan.tapestryElements, 0, `${musicScene} cannot fabricate an all-band perimeter layer at silence`);
-    assert.ok(hotPlan.tapestryElements >= 1 && hotPlan.tapestryElements <= 4, `${musicScene} must add a bounded all-band lock when the full song arrives`);
+    assert.ok(hotPlan.tapestryElements >= 1 && hotPlan.tapestryElements <= 6, `${musicScene} must add a bounded all-band lock when the full song arrives`);
   }
 
   assert.equal(motifs.size, engine.RADIO_VISUAL_MUSIC_SCENES.length, "every music family must own a different perimeter silhouette");
@@ -932,15 +939,15 @@ test("live audio drives preserve broadband mass, independent band layers, transi
   assert.equal(bodyOnly.body, 0.9, "broadband energy must retain visible composition mass without another compressor");
   assert.ok(Math.max(bodyOnly.bass, bodyOnly.mid, bodyOnly.treble) <= 0.05, "energy must not pretend every frequency band is loud");
 
-  const bass = engine.radioVisualAudioDrives({ ...base, bass: 0.95 });
-  const mids = engine.radioVisualAudioDrives({ ...base, mid: 0.95 });
-  const treble = engine.radioVisualAudioDrives({ ...base, treble: 0.95 });
+  const bass = engine.radioVisualAudioDrives({ ...base, bass: 0.95, mid: 0, treble: 0 });
+  const mids = engine.radioVisualAudioDrives({ ...base, bass: 0, mid: 0.95, treble: 0 });
+  const treble = engine.radioVisualAudioDrives({ ...base, bass: 0, mid: 0, treble: 0.95 });
   assert.ok(bass.bass > bass.mid + 0.6 && bass.bass > bass.treble + 0.6);
   assert.ok(mids.mid > mids.bass + 0.6 && mids.mid > mids.treble + 0.6);
   assert.ok(treble.treble > treble.bass + 0.6 && treble.treble > treble.mid + 0.6);
-  assert.ok(bass.bassLayer > 0.9 && bass.midLayer < 0.02 && bass.trebleLayer < 0.02);
-  assert.ok(mids.midLayer > 0.9 && mids.bassLayer < 0.02 && mids.trebleLayer < 0.02);
-  assert.ok(treble.trebleLayer > 0.9 && treble.bassLayer < 0.02 && treble.midLayer < 0.02);
+  assert.ok(bass.bassLayer > 0.9 && bass.midLayer < 0.08 && bass.trebleLayer < 0.08);
+  assert.ok(mids.midLayer > 0.9 && mids.bassLayer < 0.08 && mids.trebleLayer < 0.08);
+  assert.ok(treble.trebleLayer > 0.9 && treble.bassLayer < 0.08 && treble.midLayer < 0.08);
   assert.ok(Math.max(bass.tapestry, mids.tapestry, treble.tapestry) < 0.02, "one loud band must not counterfeit the combined layer");
 
   const bassHit = engine.radioVisualAudioDrives({ ...base, bass: 0.95, beat: 1 });
@@ -1385,8 +1392,11 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.match(receiver.slice(receiver.indexOf("function drawMatrixRain"), receiver.indexOf("function drawTapeFeedback")), /drives\.phrase/);
   assert.match(receiver.slice(receiver.indexOf("function drawLaserLattice"), receiver.indexOf("function drawParticlePressure")), /drives\.progress/);
   assert.match(receiver, /sceneStateMix = clampVisualValue\(1 - Math\.max\(runtime\.wheelMix, runtime\.systemMix\), 0, 1\)/);
-  assert.match(receiver, /drawSeedComposition\(runtime\.previousSeed, 1 - seedBlend\)/);
-  assert.match(receiver, /drawSeedComposition\(runtime\.currentSeed, seedBlend\)/);
+  assert.match(receiver, /activeMusicMix = runtime\.trackMix \* sceneStateMix/, "music output must fade with track ownership");
+  assert.match(receiver, /RADIO_VISUAL_MUSIC_OUTPUT_GAIN/, "the ten music families must share one explicit two-times output gain");
+  assert.equal(engine.RADIO_VISUAL_MUSIC_OUTPUT_GAIN, 2);
+  assert.match(receiver, /drawSeedComposition\(runtime\.previousMusicSeed, 1 - musicSeedBlend\)/);
+  assert.match(receiver, /drawSeedComposition\(runtime\.currentMusicSeed, musicSeedBlend\)/);
   assert.match(receiver, /runtime\.syntheticEvents = \[\]/, "inactive sessions must clear residual automatic events immediately");
   assert.match(receiver, /drawWheelScene\([^;]+runtime\.wheelPhase[^;]+runtime\.wheelMix \* activeSurfaceMix[^;]+snapshot\.sceneMode/s);
   assert.match(receiver, /const density = 1/);

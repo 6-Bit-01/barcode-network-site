@@ -108,5 +108,5 @@ test("quota failover is read-only and retains only a previously confirmed queue 
   assert.match(overlay, /memoryPlayerSync = normalizePlayerSync/);
   assert.match(overlay, /return normalizePlayerSync\(memoryPlayerSync\)/);
   assert.match(overlay, /memoryOverlayState = raw/);
-  assert.match(overlay, /return normalizeState\(memoryOverlayState\)/);
+  assert.match(overlay, /return normalizeLiveOverlayState\(memoryOverlayState\)/);
 });

@@ -6,7 +6,6 @@ import { parseYouTubeVideoId } from "./track-duration";
 import type { QueueEntry, QueueSourceType, QueueState } from "./queue-types";
 import { hasActiveQueueSession } from "./session-bound-polling";
 import { normalizeRadioVisualCueType, RADIO_VISUAL_CUE_DURATION_MS } from "./radio-visuals-cues";
-import { radioVisualLatestLoadedOccurrence, radioVisualTrackLoadSupersedesWheel } from "./radio-visuals-selection";
 import type { LiveOverlayPlaybackState, LiveOverlayStateInput, LiveOverlayPlayerSync, LiveOverlayYouTubeSync, OverlayMode, ResolvedLiveOverlayScene, ResolvedWheelCeremonyTrack, WheelCeremonyStatus, WheelOverlayStatus } from "./live-overlay-resolver";
 import type { RadioVisualCueType } from "./radio-visuals-cues";
 
@@ -346,11 +345,22 @@ export function youtubeSyncFromTrack(entry: QueueEntry, playbackState: LiveOverl
   return { provider: "youtube", videoId, trackId: entry.id, playbackState, currentTimeSeconds: Math.max(0, currentTimeSeconds), updatedAt: new Date().toISOString(), muted: true };
 }
 
-function normalizeState(input: unknown): LiveOverlayState {
+export function normalizeLiveOverlayState(input: unknown): LiveOverlayState {
   const raw = input as Partial<LiveOverlayState> | null;
   if (!raw || typeof raw !== "object") return defaultLiveOverlayState();
+  const mode = normalizeMode(raw.mode);
+  const wheelModeActive = mode === "wheel_ready"
+    || mode === "wheel_reencrypting"
+    || mode === "wheel_spinning"
+    || mode === "wheel_result"
+    || mode === "wheel_confirmed";
+  // An explicit down flag is authoritative. Wheel modes are retained only as
+  // a compatibility fallback for legacy records that predate the active flag.
+  const wheelOverlayActive = typeof raw.wheelOverlayActive === "boolean"
+    ? raw.wheelOverlayActive
+    : wheelModeActive;
   return {
-    mode: normalizeMode(raw.mode),
+    mode,
     title: cleanText(raw.title),
     subtitle: cleanText(raw.subtitle),
     message: cleanText(raw.message),
@@ -367,10 +377,12 @@ function normalizeState(input: unknown): LiveOverlayState {
     systemMessageTitle: cleanText(raw.systemMessageTitle),
     systemMessage: cleanText(raw.systemMessage),
     videoPlaceholderActive: raw.videoPlaceholderActive === true,
-    wheelOverlayActive: raw.wheelOverlayActive === true || raw.mode === "wheel_ready" || raw.mode === "wheel_reencrypting" || raw.mode === "wheel_spinning" || raw.mode === "wheel_result" || raw.mode === "wheel_confirmed",
+    wheelOverlayActive,
     wheelOverlayLaunchedAt: typeof raw.wheelOverlayLaunchedAt === "string" ? raw.wheelOverlayLaunchedAt : undefined,
     wheelOverlayStatus: normalizeWheelStatus(raw.wheelOverlayStatus),
-    wheelCeremonyStatus: normalizeWheelCeremonyStatus(raw.wheelCeremonyStatus ?? (raw.wheelOverlayActive ? "ready" : "idle")),
+    wheelCeremonyStatus: wheelOverlayActive
+      ? normalizeWheelCeremonyStatus(raw.wheelCeremonyStatus ?? "ready")
+      : raw.wheelCeremonyStatus === "cancelled" ? "cancelled" : "idle",
     wheelCeremonyStartedAt: typeof raw.wheelCeremonyStartedAt === "string" ? raw.wheelCeremonyStartedAt : undefined,
     wheelCeremonySpinStartedAt: typeof raw.wheelCeremonySpinStartedAt === "string" ? raw.wheelCeremonySpinStartedAt : undefined,
     wheelCeremonyResultTrackId: cleanText(raw.wheelCeremonyResultTrackId),
@@ -398,7 +410,7 @@ function normalizeState(input: unknown): LiveOverlayState {
 }
 
 async function writeLiveOverlayState(state: LiveOverlayState): Promise<LiveOverlayState> {
-  const normalized = normalizeState(state);
+  const normalized = normalizeLiveOverlayState(state);
   const redis = getRedis();
   if (redis) await redis.set(OVERLAY_STATE_KEY, JSON.stringify(normalized));
   memoryOverlayState = normalized;
@@ -438,15 +450,15 @@ export async function updateLiveOverlayPlayerSync(input: unknown, receivedAt = n
 
 export async function getStoredLiveOverlayState(): Promise<LiveOverlayState> {
   const redis = getRedis();
-  if (!redis) return normalizeState(memoryOverlayState);
+  if (!redis) return normalizeLiveOverlayState(memoryOverlayState);
   try {
     const raw = await redis.get<LiveOverlayState | string>(OVERLAY_STATE_KEY);
     memoryOverlayState = raw
-      ? normalizeState(typeof raw === "string" ? JSON.parse(raw) : raw)
+      ? normalizeLiveOverlayState(typeof raw === "string" ? JSON.parse(raw) : raw)
       : defaultLiveOverlayState();
-    return normalizeState(memoryOverlayState);
+    return normalizeLiveOverlayState(memoryOverlayState);
   } catch {
-    return normalizeState(memoryOverlayState);
+    return normalizeLiveOverlayState(memoryOverlayState);
   }
 }
 
@@ -459,16 +471,9 @@ export function resolveLiveOverlaySceneFromQueueState(input: {
   const { overlayState, queueState, playerSync = null, now = new Date() } = input;
   const wheelCandidates = getWheelCandidatesFromQueue(queueState.queue);
   const session = queueState.session ?? null;
-  const latestLoadedOccurrence = radioVisualLatestLoadedOccurrence(queueState);
-  const sceneOverlayState = radioVisualTrackLoadSupersedesWheel(latestLoadedOccurrence, overlayState)
-    ? {
-      ...overlayState,
-      wheelOverlayActive: false,
-      wheelCeremonyStatus: "idle" as const,
-    }
-    : overlayState;
+  const loadedTrack = queueState.nowPlaying ?? queueState.loadedTrack ?? null;
   const resolved = resolveLiveOverlayScene({
-    overlayState: sceneOverlayState,
+    overlayState,
     currentSession: session ? {
       sessionId: session.sessionId,
       title: session.title,
@@ -478,7 +483,7 @@ export function resolveLiveOverlaySceneFromQueueState(input: {
       wheelSpinsOwed: session.wheelSpinsOwed ?? 0,
       sponsorBreakStatus: session.sponsorBreakStatus,
     } : null,
-    nowPlaying: queueState.nowPlaying ? overlayTrackInput(queueState.nowPlaying) : null,
+    nowPlaying: loadedTrack ? overlayTrackInput(loadedTrack) : null,
     upNext: queueState.nextInLine ? overlayTrackInput(queueState.nextInLine) : null,
     playerSync,
     wheelCandidates,

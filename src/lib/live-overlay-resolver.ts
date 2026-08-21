@@ -730,6 +730,7 @@ export function derangedWheelCandidateOrder(candidates: Pick<ResolvedWheelCeremo
 
 function resolveWheelCeremony(input: ResolveLiveOverlaySceneInput, now: Date): ResolvedWheelCeremonyScene | null {
   const overlayState = input.overlayState ?? null;
+  if (overlayState?.wheelOverlayActive !== true) return null;
   const storedStatus = normalizeWheelCeremonyStatus(overlayState?.wheelCeremonyStatus ?? (overlayState?.wheelOverlayActive ? "ready" : "idle"));
   if (storedStatus === "idle" || storedStatus === "cancelled") return null;
   const candidates = (input.wheelCandidates ?? []).map(safeWheelCandidate).filter((candidate): candidate is ResolvedWheelCeremonyTrack => Boolean(candidate));
@@ -810,7 +811,9 @@ export function resolveLiveOverlayScene(input: ResolveLiveOverlaySceneInput): Re
   const sponsorBreakStatus = input.sponsorBreakStatus ?? currentSession?.sponsorBreakStatus;
   const queueOpen = input.queueOpen ?? currentSession?.queueOpen ?? false;
   const broadcastPhase = input.broadcastPhase ?? currentSession?.broadcastPhase;
-  const wheelCeremony = resolveWheelCeremony(input, now);
+  // A loaded song always owns the music scene. The Wheel is a between-song
+  // overlay and only exists while its explicit launch flag remains active.
+  const wheelCeremony = input.nowPlaying ? null : resolveWheelCeremony(input, now);
 
   if (wheelCeremony) {
     const result = wheelCeremony.resultTrack;

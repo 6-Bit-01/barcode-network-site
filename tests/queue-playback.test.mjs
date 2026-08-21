@@ -961,10 +961,25 @@ test("host cannot start the sponsor break before the counted midpoint", async ()
   assert.equal(state.session.sponsorBreakStartedAt, null);
 });
 
+test("host cannot start the sponsor break at midpoint before two broadcast hours", async () => {
+  await freshOpenSession("commercial blocked before two hours");
+  const track = await addTrack("commercial early midpoint");
+  await queue.updateRadioTrack(track.id, "load");
+  let state = await queue.updateRadioTrack(track.id, "finish");
+  assert.equal(state.session.sponsorBreakStatus, "not_due");
+  state = await queue.updateSponsorBreakState("start");
+  assert.equal(state.session.sponsorBreakStatus, "not_due");
+  assert.equal(state.session.sponsorBreakStartedAt, null);
+});
+
 test("running commercial break auto-completes after 10m30s", async () => {
   await freshOpenSession("commercial timer auto-complete");
-  await reachSponsorMidpoint("commercial timer midpoint");
-  let state = await queue.updateSponsorBreakState("start");
+  const initial = await queue.getRadioQueueState();
+  const eligibleNow = new Date(Date.parse(initial.session.broadcastStartedAt) + 2 * 60 * 60 * 1000 + 1000);
+  const state = await withFakeNow(eligibleNow, async () => {
+    await reachSponsorMidpoint("commercial timer midpoint");
+    return queue.updateSponsorBreakState("start");
+  });
   assert.equal(state.session.sponsorBreakStatus, "running");
   assert.equal(state.session.sponsorBreakDueAfterPlayableCount, 1);
   assert.ok(state.session.sponsorBreakStartedAt);
@@ -977,21 +992,25 @@ test("running commercial break auto-completes after 10m30s", async () => {
 
 test("commercial start is idempotent when already running/completed/skipped", async () => {
   await freshOpenSession("commercial idempotent start");
-  await reachSponsorMidpoint("commercial idempotent midpoint");
-  let state = await queue.updateSponsorBreakState("start");
-  const firstStartedAt = state.session.sponsorBreakStartedAt;
-  state = await queue.updateSponsorBreakState("start");
-  assert.equal(state.session.sponsorBreakStatus, "running");
-  assert.equal(state.session.sponsorBreakStartedAt, firstStartedAt);
-  state = await queue.updateSponsorBreakState("complete");
-  const completedAt = state.session.sponsorBreakCompletedAt;
-  state = await queue.updateSponsorBreakState("start");
-  assert.equal(state.session.sponsorBreakStatus, "completed");
-  assert.equal(state.session.sponsorBreakCompletedAt, completedAt);
-  await queue.updateSponsorBreakState("reset");
-  await queue.updateSponsorBreakState("skip");
-  state = await queue.updateSponsorBreakState("start");
-  assert.equal(state.session.sponsorBreakStatus, "skipped");
+  const initial = await queue.getRadioQueueState();
+  const eligibleNow = new Date(Date.parse(initial.session.broadcastStartedAt) + 2 * 60 * 60 * 1000 + 1000);
+  await withFakeNow(eligibleNow, async () => {
+    await reachSponsorMidpoint("commercial idempotent midpoint");
+    let state = await queue.updateSponsorBreakState("start");
+    const firstStartedAt = state.session.sponsorBreakStartedAt;
+    state = await queue.updateSponsorBreakState("start");
+    assert.equal(state.session.sponsorBreakStatus, "running");
+    assert.equal(state.session.sponsorBreakStartedAt, firstStartedAt);
+    state = await queue.updateSponsorBreakState("complete");
+    const completedAt = state.session.sponsorBreakCompletedAt;
+    state = await queue.updateSponsorBreakState("start");
+    assert.equal(state.session.sponsorBreakStatus, "completed");
+    assert.equal(state.session.sponsorBreakCompletedAt, completedAt);
+    await queue.updateSponsorBreakState("reset");
+    await queue.updateSponsorBreakState("skip");
+    state = await queue.updateSponsorBreakState("start");
+    assert.equal(state.session.sponsorBreakStatus, "skipped");
+  });
 });
 
 test("ending broadcast is separate from closing submissions", async () => {

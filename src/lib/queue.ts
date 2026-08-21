@@ -72,6 +72,7 @@ import type {
   QueueState,
   QueueTier,
 } from "./queue-types";
+import { estimateSponsorBreakPlacement } from "./queue-timing";
 
 const STATE_KEY = "radioQueue:v2:sessions";
 const LEGACY_STATE_KEY = "radioQueue:v1:state";
@@ -881,18 +882,37 @@ function completedCountedTrackCountForSession(session: Pick<QueueSession, "compl
   return new Set(session.completed.filter((entry) => !removedIds.has(entry.id) && !isSimulationTrack(entry) && (entry.status === "completed" || entry.status === "played")).map((entry) => entry.id)).size;
 }
 
-function applySponsorBreakDueState(session: QueueSession): void {
+function applySponsorBreakDueState(session: QueueSession, now = new Date()): void {
   if (session.sponsorBreakStatus === "running" || session.sponsorBreakStatus === "completed" || session.sponsorBreakStatus === "skipped") return;
-  const acceptedCount = acceptedTrackCountForSession(session);
-  if (acceptedCount <= 0) return;
-  const currentThreshold = Math.ceil(acceptedCount / 2);
-  const latchedThreshold = typeof session.sponsorBreakDueAfterPlayableCount === "number" && Number.isFinite(session.sponsorBreakDueAfterPlayableCount)
-    ? Math.max(1, Math.floor(session.sponsorBreakDueAfterPlayableCount))
-    : null;
-  const threshold = latchedThreshold ?? currentThreshold;
-  if (completedCountedTrackCountForSession(session) < threshold && session.sponsorBreakStatus !== "due") return;
+  const placement = estimateSponsorBreakPlacement({
+    nowPlaying: session.loadedTrack ?? null,
+    upNext: session.nextInLineTrack ?? null,
+    queue: session.queue,
+    completed: session.completed,
+    removed: session.removed,
+    session: {
+      completedCount: completedCountedTrackCountForSession(session),
+      acceptedCount: acceptedTrackCountForSession(session),
+      sponsorBreakSeconds: session.sponsorBreakSeconds,
+      sponsorBreakMode: session.sponsorBreakMode,
+      sponsorBreakStatus: session.sponsorBreakStatus,
+      broadcastStartedAt: session.broadcastStartedAt,
+      sponsorBreakStartedAt: session.sponsorBreakStartedAt,
+      sponsorBreakCompletedAt: session.sponsorBreakCompletedAt,
+      sponsorBreakCompletedAfterPlayableCount: session.sponsorBreakCompletedAfterPlayableCount,
+      sponsorBreakDueAfterPlayableCount: session.sponsorBreakDueAfterPlayableCount,
+      sponsorBreakManualNote: session.sponsorBreakManualNote,
+      showStarted: session.showStarted,
+      broadcastPhase: broadcastPhaseForSession(session),
+    },
+  }, { now });
+  if (!placement.commercialBreakEligible || placement.sponsorBreakThreshold === null) {
+    session.sponsorBreakStatus = "not_due";
+    session.sponsorBreakDueAfterPlayableCount = null;
+    return;
+  }
   session.sponsorBreakStatus = "due";
-  session.sponsorBreakDueAfterPlayableCount = threshold;
+  session.sponsorBreakDueAfterPlayableCount = placement.sponsorBreakThreshold;
 }
 
 function normalizeSubmissionClosureReason(value: unknown): QueueSubmissionClosureReason {

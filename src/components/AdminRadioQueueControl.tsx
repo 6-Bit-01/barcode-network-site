@@ -102,6 +102,12 @@ function adminAudioUrl(entry: QueueEntry): string {
 function openUrl(entry: QueueEntry): string { return entry.sourceType === "upload" ? adminAudioUrl(entry) : entry.link; }
 function submittedArtist(entry: QueueEntry): string { return entry.submittedArtistName ?? entry.artist; }
 function submittedTitle(entry: QueueEntry): string { return entry.submittedSongTitle ?? entry.title; }
+function collaboratorNames(entry: QueueEntry): string | null { return entry.collaboratorNames?.trim() || null; }
+function AdminCollaboratorLine({ entry, className = "" }: { entry: QueueEntry; className?: string }) {
+  const names = collaboratorNames(entry);
+  if (!names) return null;
+  return <p className={`text-sm font-bold text-accent ${className}`}><span className="uppercase tracking-widest">Featuring:</span> {names}</p>;
+}
 function entryLane(entry: QueueEntry): QueueLane { return entry.lane ?? "regular"; }
 function durationSourceLabel(entry: QueueEntry): string { return (entry.durationSource ?? "internal_estimate").replace(/_/g, " "); }
 function canPausePriority(entry: QueueEntry): boolean { return entry.lane === "priority" && !entry.priorityPausedAt && (entry.priorityUpgradeStatus === "paid" || entry.priorityUpgradeStatus === "manual"); }
@@ -758,7 +764,7 @@ function TopBarCommercialChip({ summary, minimized = false }: { summary: ReturnT
 
 function NextInLineBox({ entry, playerOccupied, readOnly, onAction, onPlayer, onCopy }: { entry: QueueEntry | null; playerOccupied: boolean; readOnly: boolean; onAction: (id: string, action: AdminQueueAction) => void; onPlayer: (entry: QueueEntry) => void; onCopy: (entry: QueueEntry) => void }) {
   const visual = entry ? queueTrackVisual(entry) : null;
-  return <section className={`p-5 space-y-4 ${visual?.sectionClass ?? "border border-accent/60 bg-accent/5"}`}><div><p className="text-xs uppercase tracking-[0.4em] text-accent">Next in Line</p>{!entry ? <p className="mt-3 text-lg text-muted">No Next In Line — Pull Next Track when ready.</p> : <><div className="mt-3"><LaneStatusBadge entry={entry} /></div><AdminPriorityGiftBanner entry={entry} /><h2 className="mt-3 text-2xl font-bold text-foreground">{submittedArtist(entry)} — {submittedTitle(entry)}</h2><p className="text-sm text-muted mt-1">Lane: {LANE_LABELS[entryLane(entry)]} · Source: {sourceLabel(entry)} · Duration: {durationLabel(entry)}</p>{detectedLabel(entry) && <p className="text-xs text-muted mt-1">Detected / Provider: {detectedLabel(entry)}</p>}</>}</div>{entry && <TrackActions entry={entry} mode="next" playerOccupied={playerOccupied} readOnly={readOnly} onAction={onAction} onPlayer={onPlayer} onCopy={onCopy} />}</section>;
+  return <section className={`p-5 space-y-4 ${visual?.sectionClass ?? "border border-accent/60 bg-accent/5"}`}><div><p className="text-xs uppercase tracking-[0.4em] text-accent">Next in Line</p>{!entry ? <p className="mt-3 text-lg text-muted">No Next In Line — Pull Next Track when ready.</p> : <><div className="mt-3"><LaneStatusBadge entry={entry} /></div><AdminPriorityGiftBanner entry={entry} /><h2 className="mt-3 text-2xl font-bold text-foreground">{submittedArtist(entry)} — {submittedTitle(entry)}</h2><AdminCollaboratorLine entry={entry} className="mt-1" /><p className="text-sm text-muted mt-1">Lane: {LANE_LABELS[entryLane(entry)]} · Source: {sourceLabel(entry)} · Duration: {durationLabel(entry)}</p>{detectedLabel(entry) && <p className="text-xs text-muted mt-1">Detected / Provider: {detectedLabel(entry)}</p>}</>}</div>{entry && <TrackActions entry={entry} mode="next" playerOccupied={playerOccupied} readOnly={readOnly} onAction={onAction} onPlayer={onPlayer} onCopy={onCopy} />}</section>;
 }
 
 type AdminYTPlayer = {
@@ -1421,7 +1427,7 @@ function PlayerDock({ player, sessionId, playbackDiagnostics, minimized, setMini
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.35em] text-accent">{minimized ? "Queue Player Dock" : "Command Deck Player"}</p>
-            <h3 className="text-lg font-bold">{submittedArtist(player)} — {submittedTitle(player)}</h3><LaneStatusBadge entry={player} /><AdminPriorityGiftBanner entry={player} compact />
+            <h3 className="text-lg font-bold">{submittedArtist(player)} — {submittedTitle(player)}</h3><AdminCollaboratorLine entry={player} className="mt-1" /><LaneStatusBadge entry={player} /><AdminPriorityGiftBanner entry={player} compact />
             {detectedLabel(player) && <p className="text-xs text-muted mt-1">Detected / Provider: {detectedLabel(player)}</p>}
             <p className="text-xs text-muted mt-1">{sourceLabel(player)} · {durationLabel(player)}</p>
           </div>
@@ -1581,6 +1587,7 @@ function Lane({ title, tracks, onAction, onPlayer, onCopy, mode, readOnly }: { t
               <div className="space-y-2">
                 <div>
                   <p className="font-bold">{submittedArtist(entry)} — {submittedTitle(entry)}</p>
+                  <AdminCollaboratorLine entry={entry} className="mt-1" />
                   <p className="text-xs text-muted">{sourceLabel(entry)} · {durationLabel(entry)}</p>
                 </div>
                 <AdminTrackMetadata entry={entry} />

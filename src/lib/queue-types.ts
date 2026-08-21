@@ -461,6 +461,7 @@ export interface QueuePublicTrack {
   id: string;
   submittedArtistName: string;
   submittedSongTitle: string;
+  collaboratorNames?: string | null;
   detectedArtistName?: string | null;
   detectedSongTitle?: string | null;
   providerTitle?: string | null;
@@ -485,7 +486,7 @@ export interface QueuePublicSubmitterStatus {
   limit: number;
   remaining: number;
   cooldownRemainingSeconds: number;
-  submitted: Pick<QueuePublicTrack, "id" | "submittedArtistName" | "submittedSongTitle" | "sourceType" | "lane" | "durationLabel" | "detectedDurationSeconds" | "estimatedDurationSeconds" | "durationIsEstimate" | "durationSource" | "priorityUpgradeStatus">[];
+  submitted: Pick<QueuePublicTrack, "id" | "submittedArtistName" | "submittedSongTitle" | "collaboratorNames" | "sourceType" | "lane" | "durationLabel" | "detectedDurationSeconds" | "estimatedDurationSeconds" | "durationIsEstimate" | "durationSource" | "priorityUpgradeStatus">[];
 }
 
 export interface QueuePublicSnapshot {

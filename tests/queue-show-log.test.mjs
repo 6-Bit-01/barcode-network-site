@@ -126,13 +126,18 @@ test("private show log records submission, load, playback, outcome, archive, Tik
     durationSeconds: 180,
   });
   assert.equal(playback.accepted, true);
+  await queue.recordQueuePlaybackEvent({ sessionId, trackId: upload.id, provider: "audio", eventType: "pause", currentTimeSeconds: 30, durationSeconds: 180 });
+  await queue.recordQueuePlaybackEvent({ sessionId, trackId: upload.id, provider: "audio", eventType: "stall", currentTimeSeconds: 30, durationSeconds: 180 });
+  await queue.recordQueuePlaybackEvent({ sessionId, trackId: upload.id, provider: "audio", eventType: "resume", currentTimeSeconds: 31, durationSeconds: 180 });
+  await queue.recordQueuePlaybackEvent({ sessionId, trackId: upload.id, provider: "audio", eventType: "error", currentTimeSeconds: 60, durationSeconds: 180, errorCode: "network_error" });
   await queue.updateRadioTrack(upload.id, "finish");
   await queue.updateRadioTrack(linked.id, "load");
   await queue.updateRadioTrack(linked.id, "remove");
   await queue.archiveCurrentQueueSession();
 
   const exported = await queue.getQueueSessionShowLog(sessionId);
-  assert.equal(exported.schemaVersion, "barcode_queue_show_log_v1");
+  assert.equal(exported.schemaVersion, "barcode_queue_show_log_v2");
+  assert.equal(exported.report.schemaVersion, "barcode_queue_show_report_v1");
   assert.equal(exported.session.sessionId, sessionId);
   assert.equal(exported.session.status, "archived");
   assert.deepEqual(
@@ -151,6 +156,10 @@ test("private show log records submission, load, playback, outcome, archive, Tik
     "broadcast_started",
     "track_loaded",
     "track_play_started",
+    "track_paused",
+    "track_stalled",
+    "track_resumed",
+    "track_playback_error",
     "track_finished",
     "track_removed",
     "submissions_closed",
@@ -179,6 +188,15 @@ test("private show log records submission, load, playback, outcome, archive, Tik
   assert.equal(linkedSubmitted.track.submissionOrder, 2);
   assert.equal(uploadPlayed.track.playedOrder, 1);
   assert.equal(uploadFinished.track.playedOrder, 1);
+  const playbackError = uploadEvents.find((event) => event.eventType === "track_playback_error");
+  assert.equal(playbackError.details.playbackProvider, "audio");
+  assert.equal(playbackError.details.playbackPositionSeconds, 60);
+  assert.equal(playbackError.details.playbackDurationSeconds, 180);
+  assert.equal(playbackError.details.playbackErrorCode, "network_error");
+  assert.equal(exported.report.operations.pauses, 1);
+  assert.equal(exported.report.operations.stalls, 1);
+  assert.equal(exported.report.operations.resumes, 1);
+  assert.equal(exported.report.operations.playbackErrors, 1);
 
   const serialized = JSON.stringify(exported);
   for (const forbidden of [
@@ -194,13 +212,14 @@ test("private show log records submission, load, playback, outcome, archive, Tik
 
   const csv = await queue.getQueueSessionShowLogCsv(sessionId);
   assert.match(csv.csv, /TikTok handle/);
+  assert.match(csv.csv, /playback position seconds/);
   assert.match(csv.csv, /@upload\.artist/);
   assert.match(csv.csv, /@linked_artist/);
   assert.match(csv.csv, /https:\/\/www\.youtube\.com\/watch\?v=abcdefghijk/);
   assert.doesNotMatch(csv.csv, /upload-secret@example\.test|secret-token-|private-store\.private\.blob/);
 
   const publicSnapshot = await queue.getPublicQueueSnapshot(sessionId);
-  assert.doesNotMatch(JSON.stringify(publicSnapshot), /"showLog"|barcode_queue_show_log_v1/);
+  assert.doesNotMatch(JSON.stringify(publicSnapshot), /"showLog"|barcode_queue_show_log_v[12]|barcode_queue_show_report_v1/);
 
   const beforeRejectedEvent = exported.events.length;
   const rejected = await queue.recordQueuePlaybackEvent({
@@ -220,6 +239,36 @@ test("simulation tracks are omitted from the operator show log", async () => {
   const exported = await queue.getQueueSessionShowLog(sessionId);
   assert.deepEqual(exported.events.map((event) => event.eventType), ["session_created"]);
   assert.ok(exported.events.every((event) => event.track === null));
+});
+
+test("low-frequency Wheel actions are retained for finished-show timing", async () => {
+  const started = await startFreshSession("Wheel timing log");
+  const sessionId = started.session.sessionId;
+  const launchedAt = new Date().toISOString();
+  const spunAt = new Date(Date.parse(launchedAt) + 10_000).toISOString();
+  const confirmedAt = new Date(Date.parse(launchedAt) + 120_000).toISOString();
+
+  assert.equal(await queue.recordQueueOperationalShowEvent({
+    eventType: "wheel_launched",
+    occurredAt: launchedAt,
+    details: { wheelCandidateCount: 8 },
+  }), true);
+  assert.equal(await queue.recordQueueOperationalShowEvent({
+    eventType: "wheel_spun",
+    occurredAt: spunAt,
+    details: { wheelCandidateCount: 8, wheelSpinDurationMs: 12_000 },
+  }), true);
+  assert.equal(await queue.recordQueueOperationalShowEvent({
+    eventType: "wheel_confirmed",
+    occurredAt: confirmedAt,
+    details: { wheelCandidateCount: 8 },
+  }), true);
+
+  const exported = await queue.getQueueSessionShowLog(sessionId);
+  assert.deepEqual(exported.events.slice(-3).map((event) => event.eventType), ["wheel_launched", "wheel_spun", "wheel_confirmed"]);
+  assert.equal(exported.report.operations.wheel.completedCeremonies, 1);
+  assert.equal(exported.report.operations.wheel.ceremonySeconds, 120);
+  assert.equal(exported.report.operations.wheel.plannedSpinSeconds, 12);
 });
 
 test("show-log normalization is bounded and strips non-public upload URLs", () => {
@@ -244,15 +293,24 @@ test("show-log normalization is bounded and strips non-public upload URLs", () =
   assert.equal(normalized.at(-1).sequence, showLog.MAX_QUEUE_SHOW_LOG_EVENTS + 2);
   assert.equal(normalized[0].track.tiktokHandle, "@artisthandle");
   assert.equal(normalized[0].track.publicSourceUrl, null);
+  assert.equal(normalized[0].details, null);
 });
 
 test("the download surface is private and confined to authenticated admin UI", () => {
   const route = fs.readFileSync(path.join(projectRoot, "src/app/api/admin/queue/show-log/route.ts"), "utf8");
   const admin = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioQueueControl.tsx"), "utf8");
   const archive = fs.readFileSync(path.join(projectRoot, "src/components/AdminQueueArchive.tsx"), "utf8");
+  const finishedReview = fs.readFileSync(path.join(projectRoot, "src/components/AdminFinishedSessionReview.tsx"), "utf8");
+  const liveOverlay = fs.readFileSync(path.join(projectRoot, "src/lib/live-overlay.ts"), "utf8");
   assert.ok(route.indexOf("await assertAdmin()") < route.indexOf("new URL(req.url)"));
   assert.match(route, /private, no-store/);
   assert.match(route, /verifyAdminToken/);
   assert.match(admin, /\/api\/admin\/queue\/show-log/);
   assert.match(archive, /\/api\/admin\/queue\/show-log/);
+  assert.match(finishedReview, /Timing calibration data/);
+  assert.match(finishedReview, /showLog\.report/);
+  for (const action of ["launchWheel", "reencryptWheel", "spinWheel", "wheelWinnerNotHere", "confirmWheel", "cancelWheel"]) {
+    assert.match(liveOverlay, new RegExp(`payload\\.action === "${action}"`));
+  }
+  assert.match(liveOverlay, /recordQueueOperationalShowEvent/);
 });

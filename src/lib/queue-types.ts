@@ -31,11 +31,25 @@ export type QueueShowLogEventType =
   | "track_submitted"
   | "track_loaded"
   | "track_play_started"
+  | "track_paused"
+  | "track_stalled"
+  | "track_resumed"
+  | "track_playback_error"
   | "track_finished"
   | "track_skipped"
   | "track_removed"
   | "track_returned"
   | "track_restored"
+  | "wheel_launched"
+  | "wheel_reencrypted"
+  | "wheel_spun"
+  | "wheel_result_rejected"
+  | "wheel_confirmed"
+  | "wheel_cancelled"
+  | "sponsor_break_started"
+  | "sponsor_break_completed"
+  | "sponsor_break_skipped"
+  | "sponsor_break_reset"
   | "session_archived";
 export type QueueWheelTimingStatus = "idle" | "ready" | "reencrypting" | "spinning" | "result_pending" | "confirmed" | "cancelled" | "signal_lost";
 export type UploadedFileDeletionStatus = "pending" | "deleted" | "error";
@@ -92,6 +106,16 @@ export interface QueueShowLogEvent {
   eventType: QueueShowLogEventType;
   occurredAt: string;
   track: QueueShowLogTrack | null;
+  details?: QueueShowLogEventDetails | null;
+}
+
+export interface QueueShowLogEventDetails {
+  playbackProvider?: QueuePlaybackProvider | null;
+  playbackPositionSeconds?: number | null;
+  playbackDurationSeconds?: number | null;
+  playbackErrorCode?: QueuePlaybackErrorCode | null;
+  wheelCandidateCount?: number | null;
+  wheelSpinDurationMs?: number | null;
 }
 
 export interface QueuePlaybackTiming {

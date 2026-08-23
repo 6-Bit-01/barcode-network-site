@@ -4,7 +4,7 @@ import { COOKIE_NAME, verifyAdminToken } from "@/lib/auth";
 import { getLiveOverlayRuntimeState, resetWheelCeremonyStateForNewSession } from "@/lib/live-overlay";
 import { attachQueueLiveTiming } from "@/lib/queue-live-timing";
 import { resolveQueueArchiveSessionId } from "@/lib/queue-admin-session-target";
-import { archiveCurrentQueueSession, clearArchivedQueueSessions, getRadioQueueState, setQueueOpen, startNewQueueSession, activateQueueSession, updatePriorityUpgradeSettings, updateQueueSessionProvenance, updateRadioTrack, updateSponsorBreakState, updateSubmissionCooldownSettings } from "@/lib/queue";
+import { archiveCurrentQueueSession, clearArchivedQueueSessions, getRadioQueueState, normalizeTrackLimitPerArtist, setQueueOpen, startNewQueueSession, activateQueueSession, updatePriorityUpgradeSettings, updateQueueSessionProvenance, updateRadioTrack, updateSponsorBreakState, updateSubmissionCooldownSettings } from "@/lib/queue";
 import { isQueueSessionBnlPublicationStatus, isQueueSessionPurpose } from "@/lib/queue-types";
 
 export const dynamic = "force-dynamic";
@@ -40,7 +40,6 @@ export async function POST(req: Request) {
     if (body.purpose !== "live_broadcast" && body.bnlPublicationStatus !== undefined && body.bnlPublicationStatus !== "private") {
       return NextResponse.json({ error: "Only live broadcast sessions can approve BNL publication." }, { status: 400 });
     }
-    const trackLimitPerArtist = Number(body.trackLimitPerArtist);
     const skipGameTapTarget = Number(body.skipGameTapTarget);
     const queueCapacity = Number(body.queueCapacity);
     const submissionCooldownSeconds = Number(body.submissionCooldownSeconds);
@@ -54,7 +53,7 @@ export async function POST(req: Request) {
       description: typeof body.description === "string" ? body.description : undefined,
       purpose: isQueueSessionPurpose(body.purpose) ? body.purpose : undefined,
       bnlPublicationStatus: isQueueSessionBnlPublicationStatus(body.bnlPublicationStatus) ? body.bnlPublicationStatus : undefined,
-      trackLimitPerArtist: Number.isFinite(trackLimitPerArtist) && trackLimitPerArtist > 0 ? trackLimitPerArtist : undefined,
+      trackLimitPerArtist: normalizeTrackLimitPerArtist(body.trackLimitPerArtist),
       queueCapacity: Number.isFinite(queueCapacity) && queueCapacity > 0 ? queueCapacity : undefined,
       skipGameTapTarget: Number.isFinite(skipGameTapTarget) && skipGameTapTarget > 0 ? skipGameTapTarget : undefined,
       submissionCooldownSeconds: Number.isFinite(submissionCooldownSeconds) ? submissionCooldownSeconds : undefined,

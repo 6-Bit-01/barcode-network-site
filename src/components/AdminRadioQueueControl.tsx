@@ -534,12 +534,12 @@ export function AdminRadioQueueControl() {
       {isArchivedReview && hasSession && <div className="border border-danger/40 bg-danger/10 p-3 text-xs uppercase tracking-widest text-danger">ARCHIVED / READ ONLY — viewing {state?.session?.title ?? "finished session"}. Queue review actions are locked for this finished session.</div>}
 
       {mounted && canControlSession && createPortal(<section className="fixed left-4 right-4 top-[calc(3.5rem+env(safe-area-inset-top))] z-[8500] space-y-1.5 border border-border bg-background/95 p-2.5 text-sm shadow-2xl backdrop-blur">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="min-w-0">
             <p className="truncate text-[11px] uppercase tracking-[0.2em] text-muted">{state?.session?.title} · {state?.session?.showDate}</p>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {sponsorBreakDue && <button type="button" onClick={() => updateSponsorBreakState("start")} className="min-h-10 border-2 border-[#ffaa00] bg-[#ffaa00] px-4 py-2 font-black uppercase tracking-widest text-background shadow-[0_0_28px_rgba(255,170,0,0.55)] animate-pulse hover:bg-[#ffbd4a] motion-reduce:animate-none">Start Sponsor Break</button>}
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {sponsorBreakDue && <button type="button" onClick={() => updateSponsorBreakState("start")} className="min-h-10 border-2 border-[#ffaa00] bg-[#ffaa00] px-3 py-2 font-black uppercase tracking-widest text-background shadow-[0_0_28px_rgba(255,170,0,0.55)] animate-pulse hover:bg-[#ffbd4a] motion-reduce:animate-none sm:px-4"><span className="sm:hidden">Start Break</span><span className="hidden sm:inline">Start Sponsor Break</span></button>}
             <button type="button" onClick={() => setTopBarMinimized((value) => !value)} className="min-h-10 border border-border px-3 py-2 uppercase tracking-widest text-muted">{topBarMinimized ? "Expand" : "Minimize"}</button>
           </div>
         </div>

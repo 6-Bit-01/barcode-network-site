@@ -297,7 +297,8 @@ test("admin top bar surfaces the existing sponsor start action only when due", (
   const source = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioQueueControl.tsx"), "utf8");
   assert.ok(source.includes("const sponsorBreakDue = timingSummary.sponsorBreakSummary.dueNow;"));
   assert.ok(source.includes('{sponsorBreakDue && <button type="button" onClick={() => updateSponsorBreakState("start")}'));
-  assert.ok(source.includes(">Start Sponsor Break</button>"));
+  assert.ok(source.includes('<span className="sm:hidden">Start Break</span><span className="hidden sm:inline">Start Sponsor Break</span>'));
+  assert.ok(source.includes('className="flex flex-wrap items-center justify-end gap-2"'));
 });
 
 test("public pressure and runtime consumers use the shared timing display owner", () => {

@@ -1223,6 +1223,77 @@ test("concurrent duplicate and per-artist collisions are revalidated inside the 
   assert.equal(state.session.acceptedCount, 1);
 });
 
+test("the three-track cap counts the union of known submitter identities", async () => {
+  await freshOpenSession("union submitter limit", {
+    showStarted: false,
+    trackLimitPerArtist: 3,
+    submissionCooldownSeconds: 0,
+  });
+
+  const submit = (suffix, identity) => queue.submitRadioTrack({
+    artist: identity.artist,
+    title: `Union Identity ${suffix}`,
+    tiktokHandle: identity.tiktokHandle,
+    contactEmail: identity.contactEmail,
+    submitterToken: identity.submitterToken,
+    link: `https://example.com/union-identity-${suffix}`,
+    sourceType: "other",
+  });
+
+  await submit("one", { artist: "First Artist", tiktokHandle: "@first", contactEmail: "first@example.com", submitterToken: "browser-one" });
+  await submit("two", { artist: "Shared Artist", tiktokHandle: "@second", contactEmail: "second@example.com", submitterToken: "browser-two" });
+  await submit("three", { artist: "Third Artist", tiktokHandle: "@third", contactEmail: "third@example.com", submitterToken: "browser-three" });
+
+  await assert.rejects(
+    () => submit("four", { artist: "Shared Artist", tiktokHandle: "@third", contactEmail: "fourth@example.com", submitterToken: "browser-one" }),
+    (error) => error?.code === "submission_limit" && error?.reasons?.includes("Limit matched across known submitter identities"),
+  );
+
+  const state = await queue.getRadioQueueState();
+  assert.equal(state.session.acceptedCount, 3);
+});
+
+test("the three-track cap follows transitive identity links", async () => {
+  await freshOpenSession("transitive submitter limit", {
+    showStarted: false,
+    trackLimitPerArtist: 3,
+    submissionCooldownSeconds: 0,
+  });
+
+  const submit = (suffix, identity) => queue.submitRadioTrack({
+    artist: identity.artist,
+    title: `Transitive Identity ${suffix}`,
+    tiktokHandle: identity.tiktokHandle,
+    contactEmail: `${suffix}@example.com`,
+    submitterToken: identity.submitterToken,
+    link: `https://example.com/transitive-identity-${suffix}`,
+    sourceType: "other",
+  });
+
+  await submit("one", { artist: "Artist One", tiktokHandle: "@handle_one", submitterToken: "browser-one" });
+  await submit("two", { artist: "Artist Two", tiktokHandle: "@handle_two", submitterToken: "browser-one" });
+  await submit("three", { artist: "Artist Three", tiktokHandle: "@handle_two", submitterToken: "browser-two" });
+
+  await assert.rejects(
+    () => submit("four", { artist: "Artist Four", tiktokHandle: "@handle_four", submitterToken: "browser-two" }),
+    (error) => error?.code === "submission_limit" && error?.reasons?.includes("Limit matched across known submitter identities"),
+  );
+});
+
+test("session track limits are always normalized to the hard maximum of three", async () => {
+  await freshOpenSession("hard submitter maximum", {
+    showStarted: false,
+    trackLimitPerArtist: 99.5,
+    submissionCooldownSeconds: 0,
+  });
+  const state = await queue.getRadioQueueState();
+  assert.equal(state.session.trackLimitPerArtist, 3);
+  assert.equal(queue.normalizeTrackLimitPerArtist(null), 3);
+  assert.equal(queue.normalizeTrackLimitPerArtist(""), 3);
+  assert.equal(queue.normalizeTrackLimitPerArtist(2.9), 2);
+  assert.equal(queue.normalizeTrackLimitPerArtist(0), 1);
+});
+
 test("completed tracks keep their show slot while removal reopens only capacity-closed intake", async () => {
   await freshOpenSession("truthful capacity lifecycle", {
     showStarted: false,

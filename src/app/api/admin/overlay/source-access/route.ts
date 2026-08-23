@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const PRODUCTION_ORIGIN = "https://www.barcode-network.com";
-const STUDIO_SOURCE_QUERY = "?studioSource=v1";
+const STUDIO_SOURCE_QUERY = "?studioSource=v2";
 
 export async function POST() {
   const adminToken = (await cookies()).get(COOKIE_NAME)?.value;
@@ -20,6 +20,7 @@ export async function POST() {
     links: {
       foreground: `${PRODUCTION_ORIGIN}/overlay/foreground${STUDIO_SOURCE_QUERY}${fragment}`,
       radioVisuals: `${PRODUCTION_ORIGIN}/overlay/radio-visuals${STUDIO_SOURCE_QUERY}${fragment}`,
+      live: `${PRODUCTION_ORIGIN}/overlay/live${STUDIO_SOURCE_QUERY}${fragment}`,
       wheel: `${PRODUCTION_ORIGIN}/overlay/wheel${STUDIO_SOURCE_QUERY}${fragment}`,
     },
   }, {

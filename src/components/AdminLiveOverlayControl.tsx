@@ -31,6 +31,7 @@ const VISUAL_CUE_CONTROLS: Array<{ type: RadioVisualCueType; label: string; desc
 type StudioOverlayLinks = {
   foreground: string;
   radioVisuals: string;
+  live: string;
   wheel: string;
 };
 
@@ -88,12 +89,12 @@ export function AdminLiveOverlayControl({ focusWheelTick = 0 }: { focusWheelTick
     const response = await fetch("/api/admin/overlay/source-access", { method: "POST", cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
     const links = payload?.links as Partial<StudioOverlayLinks> | undefined;
-    if (!response.ok || !links || typeof links.foreground !== "string" || typeof links.radioVisuals !== "string" || typeof links.wheel !== "string") {
+    if (!response.ok || !links || typeof links.foreground !== "string" || typeof links.radioVisuals !== "string" || typeof links.live !== "string" || typeof links.wheel !== "string") {
       setStatus(response.status === 401 ? "Overlay controls require admin auth." : "Permanent source links could not be loaded.");
       return;
     }
-    setSourceLinks({ foreground: links.foreground, radioVisuals: links.radioVisuals, wheel: links.wheel });
-    setStatus("Permanent private source links loaded. They remain the same between shows.");
+    setSourceLinks({ foreground: links.foreground, radioVisuals: links.radioVisuals, live: links.live, wheel: links.wheel });
+    setStatus("Permanent source links loaded. They remain the same between shows.");
   }
 
   const scene = snapshot?.scene;
@@ -161,25 +162,30 @@ export function AdminLiveOverlayControl({ focusWheelTick = 0 }: { focusWheelTick
 
       <details className="border border-border bg-background/40 p-4">
         <summary className="cursor-pointer text-xs uppercase tracking-[0.3em] text-muted">One-Time TikTok Studio Source Setup</summary>
-        {!sourceLinks ? <button type="button" onClick={() => { void loadPermanentSourceLinks(); }} className="mt-4 border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Load Permanent Private Links</button> : null}
-        <div className="mt-4 grid gap-3 text-sm text-muted lg:grid-cols-3">
+        {!sourceLinks ? <button type="button" onClick={() => { void loadPermanentSourceLinks(); }} className="mt-4 border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Load Permanent Source Links</button> : null}
+        <div className="mt-4 grid gap-3 text-sm text-muted lg:grid-cols-4">
           <div className="border border-cyan-300/25 bg-surface p-3">
             <p className="font-bold text-cyan-100">Foreground Strip</p>
-            <code className="mt-2 block break-all text-xs text-foreground">{sourceLinks?.foreground ?? "Load the permanent private links once."}</code>
+            <code className="mt-2 block break-all text-xs text-foreground">{sourceLinks?.foreground ?? "Load the permanent source links once."}</code>
             <p className="mt-2">1080 × 1080 · key #0000FF</p>
           </div>
           <div className="border border-violet-400/25 bg-surface p-3">
             <p className="font-bold text-violet-100">Show Visuals</p>
-            <code className="mt-2 block break-all text-xs text-foreground">{sourceLinks?.radioVisuals ?? "Load the permanent private links once."}</code>
+            <code className="mt-2 block break-all text-xs text-foreground">{sourceLinks?.radioVisuals ?? "Load the permanent source links once."}</code>
             <p className="mt-2">1080 × 1080 source · 810 × 1080 visual stage · key #FF5A00</p>
           </div>
+          <div className="border border-accent/25 bg-surface p-3">
+            <p className="font-bold text-accent">Live Video + Track Lane</p>
+            <code className="mt-2 block break-all text-xs text-foreground">{sourceLinks?.live ?? "Load the permanent source links once."}</code>
+            <p className="mt-2">1080 × 1080 · key #FF5A00 · video lane only</p>
+          </div>
           <div className="border border-cyan-300/25 bg-surface p-3">
-            <p className="font-bold text-cyan-100">Live Overlay + Wheel + Audio</p>
-            <code className="mt-2 block break-all text-xs text-foreground">{sourceLinks?.wheel ?? "Load the permanent private links once."}</code>
-            <p className="mt-2">1080 × 1080 · key #FF5A00 · sound on</p>
+            <p className="font-bold text-cyan-100">Wheel + Audio Lane</p>
+            <code className="mt-2 block break-all text-xs text-foreground">{sourceLinks?.wheel ?? "Load the permanent source links once."}</code>
+            <p className="mt-2">1080 × 1080 · key #FF5A00 · sound on · Wheel only</p>
           </div>
         </div>
-        <p className="mt-3 text-xs text-muted">These production capability links stay the same and grant overlay display only—not admin access. All three remain square sources for reliable TikTok Studio startup, wake when the session opens, and clear when the session ends. Show Visuals composes inside a centered 3:4 portrait-safe stage with keyed side gutters. The Live Overlay source remains active through pre-show and automatically becomes the Wheel with audio when launched.</p>
+        <p className="mt-3 text-xs text-muted">These overlay-only capability links stay the same between shows and grant no admin access. All four remain square sources for reliable TikTok Studio startup and clear when the session ends. Show Visuals composes inside a centered 3:4 portrait-safe stage with keyed side gutters. Live Video + Track is the only lane that decodes video; Wheel + Audio remains transparent until a Wheel ceremony is active.</p>
       </details>
 
       <section className="space-y-3 border border-violet-400/35 bg-surface p-4">

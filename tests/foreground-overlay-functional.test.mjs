@@ -337,7 +337,7 @@ test("functional receiver is a permanent session-driven Studio source", () => {
   assert.match(css, /data-session-active="false"[\s\S]*visibility: hidden;[\s\S]*opacity: 0;/);
   assert.match(admin, /One-Time TikTok Studio Source Setup/);
   assert.match(admin, /\/api\/admin\/overlay\/source-access/);
-  assert.match(admin, /Load Permanent Private Links/);
+  assert.match(admin, /Load Permanent Source Links/);
   assert.doesNotMatch(admin, /Open Live Overlay|Open Foreground Overlay|Preview Visuals|Copy Visuals Link|Preview Wheel Source|Copy Wheel Link/);
   assert.match(api, /"Cache-Control": "no-store"/);
   assert.match(api, /allowPrivateQueueState: true/);
@@ -347,7 +347,7 @@ test("functional receiver is a permanent session-driven Studio source", () => {
   assert.doesNotMatch(receiver, /foreground-access|verifyForegroundOverlayToken/);
   assert.match(sourceAccessApi, /createStudioOverlayToken/);
   assert.match(sourceAccessApi, /https:\/\/www\.barcode-network\.com/);
-  assert.match(sourceAccessApi, /STUDIO_SOURCE_QUERY = "\?studioSource=v1"/);
+  assert.match(sourceAccessApi, /STUDIO_SOURCE_QUERY = "\?studioSource=v2"/);
   assert.match(sourceAccessApi, /\/overlay\/foreground\$\{STUDIO_SOURCE_QUERY\}\$\{fragment\}/);
   assert.doesNotMatch(receiver, /sessionActive \? <ForegroundOverlayStrip/);
   assert.match(receiver, /foregroundActionWithExpiryAt/);

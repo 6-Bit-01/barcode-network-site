@@ -51,7 +51,7 @@ test("Redis-backed browser surfaces share a bounded polling budget", () => {
   assert.match(radioVisuals, /RADIO_VISUALS_ACTIVE_POLL_INTERVAL_MS/);
   assert.match(radioVisuals, /RADIO_VISUALS_STANDBY_POLL_INTERVAL_MS/);
   assert.doesNotMatch(radioVisuals, /startSessionBoundPolling/, "permanent Studio source must retain its bounded standby wake poll");
-  assert.match(liveOverlay, /fetch\(wheelOnly \? "\/api\/overlay\/wheel" : "\/api\/overlay\/live"/);
+  assert.match(liveOverlay, /fetch\(wheelOnly \? "\/api\/overlay\/wheel" : "\/api\/overlay\/media"/);
   assert.match(liveOverlay, /WHEEL_OVERLAY_ACTIVE_POLL_INTERVAL_MS/);
   assert.match(liveOverlay, /WHEEL_OVERLAY_SHOW_IDLE_POLL_INTERVAL_MS/);
   assert.match(liveOverlay, /WHEEL_OVERLAY_STANDBY_POLL_INTERVAL_MS/);

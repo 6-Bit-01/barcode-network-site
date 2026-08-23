@@ -293,6 +293,13 @@ test("admin top bar renders pressure chip from timingSummary", () => {
   assert.ok(source.includes("disabled={sponsorStartDisabled}"));
 });
 
+test("admin top bar surfaces the existing sponsor start action only when due", () => {
+  const source = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioQueueControl.tsx"), "utf8");
+  assert.ok(source.includes("const sponsorBreakDue = timingSummary.sponsorBreakSummary.dueNow;"));
+  assert.ok(source.includes('{sponsorBreakDue && <button type="button" onClick={() => updateSponsorBreakState("start")}'));
+  assert.ok(source.includes(">Start Sponsor Break</button>"));
+});
+
 test("public pressure and runtime consumers use the shared timing display owner", () => {
   const gateway = fs.readFileSync(path.join(projectRoot, "src/components/PublicQueueGateway.tsx"), "utf8");
   const session = fs.readFileSync(path.join(projectRoot, "src/components/PublicQueueSession.tsx"), "utf8");

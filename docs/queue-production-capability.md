@@ -66,6 +66,8 @@ Unknown tracks reserve 5:00 until an exact detected/provider/upload duration rep
 
 The current projection uses observed broadcast pace after subtracting known music playback, the commercial, and resolved Wheel ceremonies. Queue submissions, exact duration locks, Finish/Skip/Remove outcomes, Wheel obligations, commercial state, player progress, and live talk/transition drift all recalculate the same snapshot. Admin pressure, public projected timing/waits, and existing timing-driven public motion use that owner; capacity pressure is not substituted for show-time pressure.
 
+The fixed admin dashboard bar surfaces the existing `Start Sponsor Break` action only while that shared timing owner reports the break due. It uses the existing sponsor-state mutation, never starts automatically, and adds no second timer or sponsor workflow.
+
 The permanent admin/public layout is unchanged. The only new presentation is one transient admin-only time-bank popup for material changes. It lasts 4.8 seconds, never replays on initial load or across session changes, combines rapid changes into one popup, and has no persistent history or dashboard control.
 
 ## Playback lifecycle and diagnostics

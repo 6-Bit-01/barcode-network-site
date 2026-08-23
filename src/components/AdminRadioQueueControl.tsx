@@ -476,6 +476,7 @@ export function AdminRadioQueueControl() {
   const canPullFreeTransmission = !resolverOverrideBlocked && (state?.queue ?? []).some((entry) => (!entry.lane || entry.lane === "regular") && entry.status === "queued");
   const timingSummary = buildQueueTimingDisplay(queueTimingInputFromAdminState(state), { now: new Date(clockNow) });
   const topPressure = timingSummary.pressureSummary;
+  const sponsorBreakDue = timingSummary.sponsorBreakSummary.dueNow;
   const requestedCount = (state?.queue ?? []).filter((entry) => (entry.priorityUpgradeStatus ?? "none") === "requested").length;
   const checkoutPendingCount = (state?.queue ?? []).filter((entry) => (entry.priorityUpgradeStatus ?? "none") === "checkout_pending").length;
   const paidNeedsAttentionCount = (state?.queue ?? []).filter((entry) => (entry.priorityUpgradeStatus ?? "none") === "paid_needs_attention").length;
@@ -537,7 +538,10 @@ export function AdminRadioQueueControl() {
           <div className="min-w-0">
             <p className="truncate text-[11px] uppercase tracking-[0.2em] text-muted">{state?.session?.title} · {state?.session?.showDate}</p>
           </div>
-          <button type="button" onClick={() => setTopBarMinimized((value) => !value)} className="min-h-10 border border-border px-3 py-2 uppercase tracking-widest text-muted">{topBarMinimized ? "Expand" : "Minimize"}</button>
+          <div className="flex shrink-0 items-center gap-2">
+            {sponsorBreakDue && <button type="button" onClick={() => updateSponsorBreakState("start")} className="min-h-10 border-2 border-[#ffaa00] bg-[#ffaa00] px-4 py-2 font-black uppercase tracking-widest text-background shadow-[0_0_28px_rgba(255,170,0,0.55)] animate-pulse hover:bg-[#ffbd4a] motion-reduce:animate-none">Start Sponsor Break</button>}
+            <button type="button" onClick={() => setTopBarMinimized((value) => !value)} className="min-h-10 border border-border px-3 py-2 uppercase tracking-widest text-muted">{topBarMinimized ? "Expand" : "Minimize"}</button>
+          </div>
         </div>
         {topBarMinimized ? <div className="flex flex-wrap items-center gap-2">
           <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Phase: {phaseLabel}</span>

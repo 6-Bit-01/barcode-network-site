@@ -52,6 +52,7 @@ interface ExpandedFamilyActivity {
 }
 
 const KINETIC_GLYPHS = ["B", "4", "R", "C", "0", "D", "E", "//", "01", "<>", "[]", "#"] as const;
+const KINETIC_TAPESTRY_GLYPHS = ["//", "01", "<>", "[]", "#"] as const;
 
 function rgba(color: ExpandedRadioVisualRgb, alpha: number): string {
   return `rgba(${color[0]},${color[1]},${color[2]},${clampVisualValue(alpha)})`;
@@ -611,9 +612,15 @@ function drawKineticGlyphEngine(input: DrawExpandedRadioVisualMusicInput): void 
 
   if (a.tapestryCount > 0) {
     const wordY = height * (0.16 + ((time * (0.035 + a.tapestry * 0.08) + a.progress) % 0.68));
+    const tapestryGlyphCount = Math.min(11, 5 + a.tapestryCount * 2 + Math.floor(a.trebleCount * 0.35));
+    const tapestryStep = width * 0.055;
     context.font = `900 ${Math.max(24, unit * (0.032 + a.bass * 0.022))}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
     context.fillStyle = rgba(highlight, alpha * (0.1 + a.tapestry * 0.32));
-    context.fillText(a.act >= 2 ? "B4RC0DE//LIVE" : "SIGNAL//ARMED", width * 0.5, wordY);
+    for (let glyph = 0; glyph < tapestryGlyphCount; glyph += 1) {
+      const glyphValue = KINETIC_TAPESTRY_GLYPHS[(glyph * 3 + tick) % KINETIC_TAPESTRY_GLYPHS.length];
+      const x = width * 0.5 + (glyph - (tapestryGlyphCount - 1) * 0.5) * tapestryStep;
+      context.fillText(glyphValue, x, wordY + Math.sin(time * 0.8 + glyph) * unit * 0.006);
+    }
   }
   context.restore();
 }

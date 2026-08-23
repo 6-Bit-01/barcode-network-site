@@ -20,6 +20,7 @@ const require = createRequire(import.meta.url);
 const visuals = require("../src/lib/radio-visuals-resolver.ts");
 const engine = require("../src/lib/radio-visuals-engine.ts");
 const cues = require("../src/lib/radio-visuals-cues.ts");
+const previews = require("../src/lib/radio-visuals-preview.ts");
 const visualEvents = require("../src/lib/radio-visuals-events.ts");
 const audioVisuals = require("../src/lib/radio-visuals-audio.ts");
 const audioBridge = require("../src/lib/radio-audio-bridge.ts");
@@ -134,8 +135,9 @@ test("inactive receiver stays nearly invisible and exposes only the visual proje
   assert.deepEqual(snapshot.signals, { intakeOpen: false, wheelSpinsOwed: 0, wheelCandidateCount: 0, broadcastPhase: null });
   assert.equal(snapshot.player, null);
   assert.equal(snapshot.cue, null);
+  assert.equal(snapshot.preview, null);
   assert.deepEqual(snapshot.events, []);
-  assert.deepEqual(Object.keys(snapshot).sort(), ["cue", "events", "player", "queue", "sceneMode", "sessionActive", "showStage", "signals", "updatedAt", "visualMode", "visualSeed"]);
+  assert.deepEqual(Object.keys(snapshot).sort(), ["cue", "events", "player", "preview", "queue", "sceneMode", "sessionActive", "showStage", "signals", "updatedAt", "visualMode", "visualSeed"]);
   assert.ok(engine.radioVisualsIntensity(snapshot) < 0.08, "standby remains a ghost layer");
 });
 
@@ -316,6 +318,53 @@ test("manual cue envelopes ease in and out instead of snapping", () => {
   assert.equal(sustained, 1);
   assert.ok(releasing > 0 && releasing < sustained);
   assert.equal(engine.radioVisualCueEnvelope(cue, Date.parse(cue.expiresAt)), 0);
+});
+
+test("all twenty visual tests use one exact two-second silent-preview contract", () => {
+  assert.equal(previews.RADIO_VISUAL_PREVIEW_DURATION_MS, 2_000);
+  assert.equal(previews.RADIO_VISUAL_PREVIEW_CONTROLS.length, 20);
+  assert.deepEqual(
+    previews.RADIO_VISUAL_PREVIEW_CONTROLS.map((control) => control.scene),
+    engine.RADIO_VISUAL_MUSIC_SCENES,
+  );
+  assert.equal(new Set(previews.RADIO_VISUAL_PREVIEW_CONTROLS.map((control) => control.scene)).size, 20);
+  for (const control of previews.RADIO_VISUAL_PREVIEW_CONTROLS) {
+    const seed = previews.radioVisualPreviewSeed(control.scene, `test-${control.scene}`);
+    assert.equal(engine.radioVisualMusicScene(seed), control.scene, `${control.scene} test seed must select its exact production family`);
+  }
+  assert.equal(previews.radioVisualPreviewProgress(1_000, 1_000), 0);
+  assert.ok(previews.radioVisualPreviewProgress(1_000, 2_999) > 0.99);
+  assert.equal(previews.radioVisualPreviewProgress(1_000, 3_000), null, "the sample stops at exactly two seconds");
+  assert.equal(previews.radioVisualPreviewProgress(1_000, 3_001), null);
+  assert.equal(previews.radioVisualPreviewEnvelope(null), 0);
+  assert.equal(previews.radioVisualPreviewEnvelope(0.5), 1);
+});
+
+test("visual preview projection is short-lived, display-safe, and does not replace real show ownership", () => {
+  const overlayState = {
+    visualPreviewFamily: "matrix_rain",
+    visualPreviewRequestedAt: "2026-08-19T19:00:00.000Z",
+    visualPreviewDeliveryExpiresAt: "2026-08-19T19:00:05.000Z",
+    visualPreviewNonce: "preview-1",
+  };
+  const active = visuals.resolveRadioVisualsSnapshot({
+    queueState: queueState(),
+    scene: scene(),
+    overlayState,
+    now: new Date("2026-08-19T19:00:01.000Z"),
+  });
+  const expired = visuals.resolveRadioVisualsSnapshot({
+    queueState: queueState(),
+    scene: scene(),
+    overlayState,
+    now: new Date("2026-08-19T19:00:05.000Z"),
+  });
+  assert.equal(active.visualMode, "queue", "the server projection must not replace real scene ownership");
+  assert.equal(active.preview.scene, "matrix_rain");
+  assert.equal(engine.radioVisualMusicScene(active.preview.visualSeed), "matrix_rain");
+  assert.deepEqual(Object.keys(active.preview).sort(), ["deliveryExpiresAt", "nonce", "requestedAt", "scene", "visualSeed"]);
+  assert.equal(JSON.stringify(active.preview).includes("private-session-id"), false);
+  assert.equal(expired.preview, null);
 });
 
 test("display-safe show events project Priority, playback, and Wheel state without private payloads", () => {
@@ -1092,9 +1141,9 @@ test("additive recovery cannot gate, transform, or replace the checkpoint render
   const baseDraw = composition.indexOf("drawSeededMusicScene(");
   const additiveDraw = composition.indexOf("drawRadioVisualMusicEmbellishments(");
   assert.ok(baseDraw >= 0 && additiveDraw > baseDraw, "the accepted family must render before any optional additions");
-  assert.match(receiver, /activeMusicMix = runtime\.trackMix \* sceneStateMix/, "track and Wheel ownership must remain authoritative");
-  assert.match(receiver, /drawSeedComposition\(runtime\.previousMusicSeed, 1 - musicSeedBlend\)/);
-  assert.match(receiver, /drawSeedComposition\(runtime\.currentMusicSeed, musicSeedBlend\)/);
+  assert.match(receiver, /activeMusicMix = renderTrackMix \* sceneStateMix/, "track and Wheel ownership must remain authoritative outside the bounded preview envelope");
+  assert.match(receiver, /drawSeedComposition\(previousMusicSeed, 1 - renderMusicSeedBlend\)/);
+  assert.match(receiver, /drawSeedComposition\(currentMusicSeed, renderMusicSeedBlend\)/);
   assert.doesNotMatch(receiver, /radioVisualMusicIntensityPlan/, "the failed parallel intensity stack cannot return");
   assert.doesNotMatch(renderer, /\.scale\(|\.transform\(|\.setTransform\(|\.translate\(|\.rotate\(/, "additions cannot move or transform the accepted base canvas");
   assert.doesNotMatch(renderer, /destination-out|destination-in/, "the additive renderer cannot erase or mask checkpoint pixels");
@@ -1260,7 +1309,7 @@ test("the receiver renders every planned identity outside the unchanged performe
     assert.match(perimeterSources, new RegExp(`plan\\.motif === ["']${motif}["']`), `${motif} must own an explicit Canvas branch`);
   }
   assert.match(receiver, /drawSeededMusicScene[\s\S]*drawMusicPerimeterIdentity\([\s\S]*radioVisualMusicPerimeterPlan\(scene, drives\)/, "every selected family must render its tested perimeter plan");
-  assert.match(receiver, /if \(snapshot\.showStage !== "intake"\) applyPerformerSafeField\(context, width, height, 0\.2\)/, "the center retention must remain at the approved twenty percent");
+  assert.match(receiver, /if \(renderSnapshot\.showStage !== "intake"\) applyPerformerSafeField\(context, width, height, 0\.2\)/, "the center retention must remain at the approved twenty percent");
   assert.doesNotMatch(perimeterSources, /applyPerformerSafeField|applyPerformerIntrusionField|destination-in/, "perimeter identity cannot weaken or bypass the center mask");
 });
 
@@ -1595,6 +1644,8 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   const expansion = fs.readFileSync(path.join(projectRoot, "src/components/radio-visuals-music-expansion.ts"), "utf8");
   const builder = fs.readFileSync(path.join(projectRoot, "src/lib/radio-visuals.ts"), "utf8");
   const admin = fs.readFileSync(path.join(projectRoot, "src/components/AdminLiveOverlayControl.tsx"), "utf8");
+  const visualAdmin = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioVisualsControl.tsx"), "utf8");
+  const previewSource = fs.readFileSync(path.join(projectRoot, "src/lib/radio-visuals-preview.ts"), "utf8");
   const sourceAccess = fs.readFileSync(path.join(projectRoot, "src/app/api/admin/overlay/source-access/route.ts"), "utf8");
   const css = fs.readFileSync(path.join(projectRoot, "src/app/overlay/radio-visuals/radio-visuals.css"), "utf8");
   const page = fs.readFileSync(path.join(projectRoot, "src/app/overlay/radio-visuals/page.tsx"), "utf8");
@@ -1607,7 +1658,13 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   const queueControl = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioQueueControl.tsx"), "utf8");
   const productionContract = fs.readFileSync(path.join(projectRoot, "docs/queue-production-capability.md"), "utf8");
   const render = receiver.slice(receiver.lastIndexOf("return ("));
-  assert.doesNotMatch(`${receiver}\n${page}`, /previewScene|forcedScene|selectedScene|sceneOverride|\.get\(["']scene["']\)/, "the production source cannot gain a preview-only family selector");
+  assert.doesNotMatch(`${receiver}\n${page}`, /forcedScene|selectedScene|sceneOverride|\.get\(["']scene["']\)/, "the production URL cannot gain a query-string family selector");
+  assert.match(visualAdmin, /RADIO_VISUAL_PREVIEW_CONTROLS\.map/);
+  assert.match(visualAdmin, /action: "previewRadioVisual"[\s\S]*visualFamily: scene/);
+  assert.match(previewSource, /RADIO_VISUAL_PREVIEW_DURATION_MS = 2_000/);
+  assert.match(receiver, /radioVisualsMusicSignal\([\s\S]*previewSnapshot[\s\S]*null,[\s\S]*visualPreview\.elapsedSeconds/,
+    "a visual test must use the synthetic timeline and explicitly ignore live bridge analysis");
+  assert.doesNotMatch(visualAdmin, /new Audio|\.play\(|createMediaElementSource|AudioContext/);
   assert.match(receiver, /fetch\("\/api\/overlay\/radio-visuals"/);
   assert.match(receiver, /payload\.snapshot\.sessionActive \? RADIO_VISUALS_ACTIVE_POLL_INTERVAL_MS : RADIO_VISUALS_STANDBY_POLL_INTERVAL_MS/);
   assert.doesNotMatch(receiver, /startSessionBoundPolling/);
@@ -1623,7 +1680,7 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.match(receiver, /drawAmbientMoment|radioVisualAmbientMoment|observeSnapshotEvents|drawAutomaticEvent/);
   assert.match(receiver, /wheel_gained|priority_sent|priority_confirmed|track_skipped|stage_shift/);
   assert.doesNotMatch(receiver, /drawSponsorCurtain|sponsorMix|sponsor_due|sponsor_started|sponsor_completed/, "invisible sponsor-only FX must not remain in the Show Visuals renderer");
-  assert.match(receiver, /hashRadioVisualToken\(`\$\{snapshot\.cue\.type\}:\$\{snapshot\.cue\.nonce\}/, "manual cue nonce must vary every repeated effect");
+  assert.match(receiver, /hashRadioVisualToken\(`\$\{activeCue\.type\}:\$\{activeCue\.nonce\}/, "manual cue nonce must vary every repeated effect");
   assert.match(receiver, /lightningMainPath|lightningBranches|drawLightningTree/);
   assert.doesNotMatch(receiver, /function drawBolt\(/, "lightning must use a branching procedural composition rather than generic twin bolts");
   assert.match(receiver, /PALETTE_TRANSITION_MS = 2_400|PARTICLE_TRANSITION_MS = 2_000|radioVisualCueEnvelope/);
@@ -1637,7 +1694,7 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.doesNotMatch(engineSource, /fallbackProgressPosition % fallbackProgressBeats/, "durationless progress must not wrap abruptly at the end of its build arc");
   assert.match(engineSource, /RADIO_VISUALS_WHEEL_CENTER_Y_RATIO = 0\.375/);
   assert.match(receiver, /prepareEffectLayer|applyPerformerSafeField|applyPerformerIntrusionField|destination-in/);
-  assert.match(receiver, /if \(snapshot\.showStage !== "intake"\) applyPerformerSafeField\(context, width, height, 0\.2\)/);
+  assert.match(receiver, /if \(renderSnapshot\.showStage !== "intake"\) applyPerformerSafeField\(context, width, height, 0\.2\)/);
   assert.match(receiver, /drawPerformerWindowIntrusions[\s\S]*?plan\.lightningFamilyStrength[\s\S]*?cue\?\.type === "lightning"[\s\S]*?cue\?\.type === "signal_breach"/, "the existing generic intrusion renderer must remain limited to its planned lightning and scan-line compositions");
   const windowIntrusions = receiver.slice(receiver.indexOf("function drawWindowScanline"), receiver.indexOf("function visualSignalMemory"));
   assert.match(windowIntrusions, /drawWindowSignalStutter[\s\S]*plan\.stutterStripCount/, "center slippage must consume the tested two-to-three-strip plan");
@@ -1681,15 +1738,15 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
     assert.match(wheelScene, new RegExp(wheelMode));
   }
   assert.match(receiver, /runtime\.wheelPhase \+= runtime\.wheelVelocity \* elapsedMs \/ 1_000/);
-  assert.match(receiver, /drawWheelScene\([\s\S]*?runtime\.wheelPhase[\s\S]*?runtime\.wheelMix \* activeSurfaceMix/);
+  assert.match(receiver, /drawWheelScene\([\s\S]*?runtime\.wheelPhase[\s\S]*?runtime\.wheelMix \* automaticSceneMix/);
   assert.match(receiver, /snapshot\.signals\.wheelCandidateCount/);
   assert.doesNotMatch(receiver, /drawTrackSignature|drawLiveMusicResponse/, "one shared layer must not flatten the twenty scene silhouettes");
   assert.doesNotMatch(receiver, /globalCompositeOperation = "screen"/);
   assert.match(receiver, /radioVisualMusicScene\(seed\)/);
   assert.match(receiver, /trackProgressSeed !== snapshot\.visualSeed[\s\S]*?trackProgressStartedAtMs = timestampMs/, "unknown-duration builds must reset on each track occurrence");
-  assert.match(receiver, /audioTime = \(transportSeconds/);
-  assert.match(receiver, /sharedTransmissionRetention = clampVisualValue\(1 - runtime\.trackMix \* 0\.78, 0\.22, 1\)/, "the shared transmission language must recede during track-specific scenes");
-  assert.match(receiver, /activeSurfaceMix \* sharedTransmissionRetention \* clampVisualValue\(0\.62 \+ runtime\.intensity \* 0\.24, 0\.62, 0\.9\)/, "the restored transmission floor must remain strong outside track scenes");
+  assert.match(receiver, /audioTime = \(renderTransportSeconds/);
+  assert.match(receiver, /sharedTransmissionRetention = clampVisualValue\(1 - renderTrackMix \* 0\.78, 0\.22, 1\)/, "the shared transmission language must recede during track-specific scenes");
+  assert.match(receiver, /activeSurfaceMix \* sharedTransmissionRetention \* clampVisualValue\(0\.62 \+ renderIntensity \* 0\.24, 0\.62, 0\.9\)/, "the restored transmission floor must remain strong outside track scenes");
   assert.match(receiver, /radioVisualMusicSceneVisibility\(musicDrives\)/, "track scenes must retain a tested visible identity floor while expanding with all three audio bands");
   assert.equal((receiver.match(/drawEdgeSpectrum\(/g) ?? []).length, 2, "spectrum meters must only be defined and invoked by the music dispatcher");
   assert.equal((receiver.match(/drawOscilloscopeRibbons\(/g) ?? []).length, 2, "waveform ribbons must only be defined and invoked by the music dispatcher");
@@ -1755,7 +1812,7 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
     drawBarcodeFoundry: ["barCount", "pistonCount", "scannerX", "stampY"],
     drawRecursivePortal: ["ringCount", "slab", "packetCount", "strokeRect"],
     drawHolographicTerrain: ["ridgeCount", "beaconCount", "seededPeak", "horizonY"],
-    drawKineticGlyphEngine: ["KINETIC_GLYPHS", "glyphCount", "plateWidth", "wordY"],
+    drawKineticGlyphEngine: ["KINETIC_GLYPHS", "KINETIC_TAPESTRY_GLYPHS", "glyphCount", "plateWidth", "wordY"],
     drawMechanicalIris: ["bladeCount", "innerRadius", "outerRadius", "actuatorCount"],
   };
   const expandedRendererNames = Object.keys(expandedSceneIdentityTokens);
@@ -1775,16 +1832,17 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   for (const scene of engine.RADIO_VISUAL_MUSIC_SCENES.slice(10)) {
     assert.match(expansion, new RegExp(`scene === ["']${scene}["']`), `${scene} must own a production Canvas dispatch branch`);
   }
+  assert.doesNotMatch(expansion, /B4RC0DE\/\/LIVE|SIGNAL\/\/ARMED/, "the effects-only visual source cannot render semantic status copy");
   assert.match(receiver.slice(receiver.indexOf("function drawMatrixRain"), receiver.indexOf("function drawTapeFeedback")), /drives\.phrase/);
   assert.match(receiver.slice(receiver.indexOf("function drawLaserLattice"), receiver.indexOf("function drawParticlePressure")), /drives\.progress/);
-  assert.match(receiver, /sceneStateMix = clampVisualValue\(1 - Math\.max\(runtime\.wheelMix, runtime\.systemMix\), 0, 1\)/);
-  assert.match(receiver, /activeMusicMix = runtime\.trackMix \* sceneStateMix/, "music output must fade with track ownership");
+  assert.match(receiver, /sceneStateMix = visualPreview \? 1 : clampVisualValue\(1 - Math\.max\(runtime\.wheelMix, runtime\.systemMix\), 0, 1\)/);
+  assert.match(receiver, /activeMusicMix = renderTrackMix \* sceneStateMix/, "music output must fade with track ownership or the bounded preview envelope");
   assert.match(receiver, /RADIO_VISUAL_MUSIC_OUTPUT_GAIN/, "the twenty music families must share one explicit two-times output gain");
   assert.equal(engine.RADIO_VISUAL_MUSIC_OUTPUT_GAIN, 2);
-  assert.match(receiver, /drawSeedComposition\(runtime\.previousMusicSeed, 1 - musicSeedBlend\)/);
-  assert.match(receiver, /drawSeedComposition\(runtime\.currentMusicSeed, musicSeedBlend\)/);
+  assert.match(receiver, /drawSeedComposition\(previousMusicSeed, 1 - renderMusicSeedBlend\)/);
+  assert.match(receiver, /drawSeedComposition\(currentMusicSeed, renderMusicSeedBlend\)/);
   assert.match(receiver, /runtime\.syntheticEvents = \[\]/, "inactive sessions must clear residual automatic events immediately");
-  assert.match(receiver, /drawWheelScene\([^;]+runtime\.wheelPhase[^;]+runtime\.wheelMix \* activeSurfaceMix[^;]+snapshot\.sceneMode/s);
+  assert.match(receiver, /drawWheelScene\([^;]+runtime\.wheelPhase[^;]+runtime\.wheelMix \* automaticSceneMix[^;]+renderSnapshot\.sceneMode/s);
   assert.match(receiver, /const density = 1/);
   assert.match(queueControl, /createMediaElementSource|createAnalyser|audioAnalysis|analyzeRadioVisualFrequencyData/);
   assert.doesNotMatch(queueControl, /getDisplayMedia|createMediaStreamSource|Capture show audio|Share audio/);
@@ -1797,13 +1855,15 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.match(admin, /sourceLinks\?\.radioVisuals/);
   assert.match(sourceAccess, /\/overlay\/radio-visuals\$\{STUDIO_SOURCE_QUERY\}\$\{fragment\}/);
   assert.match(receiver, /studioOverlayRequestHeaders/);
-  assert.match(admin, /triggerVisualCue|Party Burst|Shadow Sweep|Signal Breach|Blackout \/ Return|Lightning Hit/);
+  assert.doesNotMatch(admin, /triggerVisualCue|Party Burst|Shadow Sweep|Signal Breach|Blackout \/ Return|Lightning Hit/);
+  assert.match(visualAdmin, /triggerVisualCue|Party Burst|Shadow Sweep|Signal Breach|Blackout \/ Return|Lightning Hit/);
   assert.match(css, /--radio-visuals-key: #ff5a00/);
   assert.doesNotMatch(css, /radio-visuals-canvas[\s\S]*opacity:\s*0\.72/);
   assert.match(receiver, /data-source-aspect="1:1"/);
   assert.match(receiver, /data-source-resolution="1080x1080"/);
   assert.match(receiver, /data-effect-stage-resolution="810x1080"/);
-  assert.match(receiver, /data-music-scene=\{radioVisualMusicScene\(snapshot\.visualSeed\)\}/);
+  assert.match(receiver, /data-music-scene=\{snapshot\.preview\?\.scene \?\? radioVisualMusicScene\(snapshot\.visualSeed\)\}/);
+  assert.match(receiver, /data-visual-preview-duration-ms=\{RADIO_VISUAL_PREVIEW_DURATION_MS\}/);
   assert.match(receiver, /radioVisualsEffectStageBounds\(sourceWidth, sourceHeight\)/);
   assert.match(receiver, /data-music-source=/);
   assert.match(receiver, /"windows-loopback"/);

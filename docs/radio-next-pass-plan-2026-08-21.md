@@ -113,12 +113,13 @@ Acceptance:
 - Add CRT Signal Breach, Voxel Megacity, Liquid Chrome, Cellular Takeover, Shattered Broadcast, Barcode Foundry, Recursive Portal, Holographic Terrain, Kinetic Glyph Engine, and Mechanical Iris as ten genuinely different composite families.
 - Every loaded-track deck contains all twenty families once before reuse, forbids adjacent repeats across deck boundaries, and preserves loaded-song ownership and the existing previous/current crossfade.
 - Every new family retains independent bass, mid, treble, all-band tapestry, lifecycle, and perimeter behavior through the existing audio drive and performer-safe pipeline.
-- Do not add the proposed preview-only scene selector. The permanent source URL and existing `preview=1` surface remain otherwise unchanged.
-- Do not change Audio Bridge capture, the combined live video/Wheel source, queue or timing behavior, playback ownership, API payloads, Redis polling, the 30 FPS cap, or Canvas density.
+- Add an authenticated Visual Overlays menu with one test button for each of the twenty production families. Each command carries only the selected family plus a short-lived nonce through the existing overlay state; the Show Visuals receiver starts an exact two-second synthetic timeline sample when it first observes that nonce, never plays media or uses live audio for the test, and then resumes the real show state.
+- Move the five existing manual visual-moment controls into that Visual Overlays menu. Keep the combined live video/Wheel controls in their own Wheel Overlay menu.
+- Do not change Audio Bridge capture, the combined live video/Wheel source behavior, queue or timing behavior, playback ownership, Redis polling cadence, the 30 FPS cap, or Canvas density. The permanent source URL and existing `preview=1` surface remain unchanged.
 
 Rollback and deployment boundary:
 
-- Ship the visual expansion as one self-contained pull request with no schema, stored-state, or data migration. If it misbehaves, revert only that merge commit between shows.
+- Ship the visual expansion and its optional short-lived preview command fields as one self-contained pull request with no data migration. If it misbehaves, revert only that merge commit between shows.
 - Keep the future 6 Bit camera CRT/hologram overlay in a separate pull request, route, and file set with no dependency on this expansion. Either PR must be independently revertible without reverting the other.
 - Deploy each PR between shows and re-open the saved Studio source before the rehearsal check; do not combine both changes into one live-show rollout.
 

@@ -43,6 +43,7 @@ import {
 } from "@/lib/radio-audio-bridge";
 import type { RadioAudioBridgeSignal } from "@/lib/radio-audio-bridge";
 import { radioVisualMusicEmbellishmentPlan } from "@/lib/radio-visuals-music-embellishments";
+import { radioVisualPreviewEnvelope, radioVisualPreviewProgress, RADIO_VISUAL_PREVIEW_DURATION_MS } from "@/lib/radio-visuals-preview";
 import {
   drawRadioVisualMusicCenterEmbellishments,
   drawRadioVisualMusicEmbellishments,
@@ -91,6 +92,8 @@ interface VisualRuntime {
   finalMix: number;
   completeMix: number;
   pressureMix: number;
+  visualPreviewNonce: string;
+  visualPreviewStartedAtMs: number;
   music: RadioVisualMusicSignal;
   bassSlow: number;
   midSlow: number;
@@ -136,6 +139,7 @@ function fallbackSnapshot(): RadioVisualsSnapshot {
     },
     player: null,
     cue: null,
+    preview: null,
     events: [],
     visualSeed: 2166136261,
     updatedAt: new Date().toISOString(),
@@ -3795,6 +3799,33 @@ function pressureTarget(snapshot: RadioVisualsSnapshot): number {
   return 0;
 }
 
+interface RadioVisualPreviewFrame {
+  preview: NonNullable<RadioVisualsSnapshot["preview"]>;
+  progress: number;
+  envelope: number;
+  elapsedSeconds: number;
+}
+
+function activeVisualPreviewFrame(
+  snapshot: RadioVisualsSnapshot,
+  runtime: VisualRuntime,
+  timestampMs: number,
+): RadioVisualPreviewFrame | null {
+  if (!snapshot.preview) return null;
+  if (runtime.visualPreviewNonce !== snapshot.preview.nonce) {
+    runtime.visualPreviewNonce = snapshot.preview.nonce;
+    runtime.visualPreviewStartedAtMs = timestampMs;
+  }
+  const progress = radioVisualPreviewProgress(runtime.visualPreviewStartedAtMs, timestampMs);
+  if (progress === null) return null;
+  return {
+    preview: snapshot.preview,
+    progress,
+    envelope: radioVisualPreviewEnvelope(progress),
+    elapsedSeconds: Math.max(0, timestampMs - runtime.visualPreviewStartedAtMs) / 1_000,
+  };
+}
+
 function drawVisualFrame(
   context: CanvasRenderingContext2D,
   sourceWidth: number,
@@ -3810,12 +3841,39 @@ function drawVisualFrame(
 ): void {
   const elapsedMs = runtime.lastFrameMs > 0 ? Math.min(100, timestampMs - runtime.lastFrameMs) : 16;
   runtime.lastFrameMs = timestampMs;
+  const visualPreview = activeVisualPreviewFrame(snapshot, runtime, timestampMs);
+  const previewSnapshot: RadioVisualsSnapshot | null = visualPreview ? {
+    ...snapshot,
+    sessionActive: true,
+    showStage: "middle",
+    visualMode: "track",
+    sceneMode: "now_playing",
+    player: {
+      provider: "audio",
+      playbackState: "playing",
+      currentTimeSeconds: visualPreview.elapsedSeconds,
+      durationSeconds: 120,
+      updatedAt: visualPreview.preview.requestedAt,
+      audioEnergy: null,
+      audioBands: null,
+      audioPeak: null,
+    },
+    cue: null,
+    events: [],
+    visualSeed: visualPreview.preview.visualSeed,
+  } : null;
+  const renderSnapshot = previewSnapshot ?? snapshot;
   const palette = radioVisualsPalette(snapshot);
+  const renderPalette = previewSnapshot ? radioVisualsPalette(previewSnapshot) : palette;
   const paletteLerp = 1 - Math.exp(-elapsedMs / PALETTE_TRANSITION_MS);
   runtime.primary = mixRgb(runtime.primary, hexToRgb(palette.primary), paletteLerp);
   runtime.secondary = mixRgb(runtime.secondary, hexToRgb(palette.secondary), paletteLerp);
   runtime.highlight = mixRgb(runtime.highlight, hexToRgb(palette.highlight), paletteLerp);
   runtime.intensity += (radioVisualsIntensity(snapshot) - runtime.intensity) * (1 - Math.exp(-elapsedMs / 1_800));
+  const primary = previewSnapshot ? hexToRgb(renderPalette.primary) : runtime.primary;
+  const secondary = previewSnapshot ? hexToRgb(renderPalette.secondary) : runtime.secondary;
+  const highlight = previewSnapshot ? hexToRgb(renderPalette.highlight) : runtime.highlight;
+  const renderIntensity = previewSnapshot ? Math.max(0.58, radioVisualsIntensity(previewSnapshot)) : runtime.intensity;
   const wheelTargetMix = snapshot.visualMode === "wheel" ? 1 : 0;
   const wheelMixResponseMs = wheelTargetMix > runtime.wheelMix ? 520 : 950;
   runtime.wheelMix += (wheelTargetMix - runtime.wheelMix) * (1 - Math.exp(-elapsedMs / wheelMixResponseMs));
@@ -3862,14 +3920,24 @@ function drawVisualFrame(
     radioVisualsMusicSignal(snapshot, playbackSeconds, transportSeconds, freshRadioAudioBridgeSignal(bridgeSignal), trackElapsedSeconds),
     elapsedMs,
   );
-  const music = runtime.music;
+  const music = previewSnapshot && visualPreview
+    ? radioVisualsMusicSignal(
+      previewSnapshot,
+      visualPreview.elapsedSeconds,
+      visualPreview.elapsedSeconds,
+      null,
+      visualPreview.elapsedSeconds,
+    )
+    : runtime.music;
   const motionScale = reducedMotion ? 0.18 : 1;
-  const time = (transportSeconds * radioVisualsMotionRate(snapshot) + playbackSeconds * 0.035) * motionScale;
+  const renderTransportSeconds = visualPreview?.elapsedSeconds ?? transportSeconds;
+  const renderPlaybackSeconds = visualPreview?.elapsedSeconds ?? playbackSeconds;
+  const time = (renderTransportSeconds * radioVisualsMotionRate(renderSnapshot) + renderPlaybackSeconds * 0.035) * motionScale;
   const audioMotionScale = reducedMotion ? 0.45 : 1;
-  const audioTime = (transportSeconds * (music.source === "windows_loopback" ? 1 : 0.72) + playbackSeconds * 0.08) * audioMotionScale;
-  const shadow = hexToRgb(palette.shadow);
+  const audioTime = (renderTransportSeconds * (music.source === "windows_loopback" ? 1 : 0.72) + renderPlaybackSeconds * 0.08) * audioMotionScale;
+  const shadow = hexToRgb(renderPalette.shadow);
   const serverNowMs = estimatedServerNowMs(anchor, timestampMs);
-  const activeSurfaceMix = snapshot.sessionActive || previewMode ? 1 : 0;
+  const activeSurfaceMix = snapshot.sessionActive || previewMode || visualPreview ? 1 : 0;
   if (activeSurfaceMix > 0) {
     if (authoritativeSnapshot) observeSnapshotEvents(snapshot, runtime, serverNowMs);
   } else {
@@ -3890,28 +3958,34 @@ function drawVisualFrame(
       runtime.observedSnapshotKey = snapshotObservationKey(snapshot);
     }
   }
-  const musicDrives = reactiveAudioDrives(runtime, music, elapsedMs);
-  const musicScene = radioVisualMusicScene(runtime.currentMusicSeed);
+  const normalMusicDrives = reactiveAudioDrives(runtime, runtime.music, elapsedMs);
+  const musicDrives = visualPreview ? radioVisualAudioDrives(music) : normalMusicDrives;
+  const renderSeed = visualPreview?.preview.visualSeed ?? runtime.currentSeed;
+  const previousMusicSeed = visualPreview?.preview.visualSeed ?? runtime.previousMusicSeed;
+  const currentMusicSeed = visualPreview?.preview.visualSeed ?? runtime.currentMusicSeed;
+  const renderMusicSeedBlend = visualPreview ? 1 : musicSeedBlend;
+  const musicScene = radioVisualMusicScene(currentMusicSeed);
   const targetWheelVelocity = snapshot.visualMode === "wheel" || runtime.wheelMix > 0.002
     ? wheelAngularVelocityTarget(snapshot.sceneMode, musicDrives) * motionScale
     : 0;
   runtime.wheelVelocity += (targetWheelVelocity - runtime.wheelVelocity) * (1 - Math.exp(-elapsedMs / 650));
   runtime.wheelPhase += runtime.wheelVelocity * elapsedMs / 1_000;
-  const cueProgress = radioVisualCueProgress(snapshot.cue, serverNowMs);
-  const cueEnvelope = radioVisualCueEnvelope(snapshot.cue, serverNowMs);
-  const cueSeed = snapshot.cue
-    ? hashRadioVisualToken(`${snapshot.cue.type}:${snapshot.cue.nonce}:${snapshot.cue.startedAt}`)
-    : runtime.currentSeed;
-  const visualEvents = activeSurfaceMix > 0 ? activeVisualEvents(snapshot, runtime, serverNowMs) : [];
-  const sceneStateMix = clampVisualValue(1 - Math.max(runtime.wheelMix, runtime.systemMix), 0, 1);
+  const activeCue = visualPreview ? null : snapshot.cue;
+  const cueProgress = radioVisualCueProgress(activeCue, serverNowMs);
+  const cueEnvelope = radioVisualCueEnvelope(activeCue, serverNowMs);
+  const cueSeed = activeCue
+    ? hashRadioVisualToken(`${activeCue.type}:${activeCue.nonce}:${activeCue.startedAt}`)
+    : renderSeed;
+  const visualEvents = visualPreview || activeSurfaceMix <= 0 ? [] : activeVisualEvents(snapshot, runtime, serverNowMs);
+  const sceneStateMix = visualPreview ? 1 : clampVisualValue(1 - Math.max(runtime.wheelMix, runtime.systemMix), 0, 1);
   const broadcastFxPlan = radioVisualBroadcastFxPlan({
     time: serverNowMs / 1_000,
-    seed: runtime.currentSeed,
+    seed: renderSeed,
     sessionActive: snapshot.sessionActive || previewMode,
-    showStage: snapshot.showStage,
+    showStage: renderSnapshot.showStage,
     sceneMix: activeSurfaceMix * sceneStateMix,
     drives: musicDrives,
-    cueType: snapshot.cue?.type ?? null,
+    cueType: activeCue?.type ?? null,
   });
 
   const outputContext = context;
@@ -3936,27 +4010,28 @@ function drawVisualFrame(
   const effectLayer = prepareEffectLayer(runtime, width, height);
   if (effectLayer) context = effectLayer.context;
 
-  drawAmbientLighting(context, width, height, time, runtime.intensity * activeSurfaceMix, runtime.primary, runtime.secondary, runtime.highlight, music.energy);
-  drawGoboShadows(context, width, height, time, runtime.intensity * activeSurfaceMix, shadow);
-  const musicSceneActivity = music.source === "windows_loopback" || runtime.trackMix > 0.08
+  drawAmbientLighting(context, width, height, time, renderIntensity * activeSurfaceMix, primary, secondary, highlight, music.energy);
+  drawGoboShadows(context, width, height, time, renderIntensity * activeSurfaceMix, shadow);
+  const renderTrackMix = visualPreview ? visualPreview.envelope : runtime.trackMix;
+  const musicSceneActivity = visualPreview || music.source === "windows_loopback" || runtime.trackMix > 0.08
     ? radioVisualMusicSceneVisibility(musicDrives)
     : 0;
   // Keep the strong BARCODE transmission bed between songs, but let each
   // track's own scene language take over instead of flattening all twenty into
   // the same bars, tracking lines, corners, and flecks.
-  const sharedTransmissionRetention = clampVisualValue(1 - runtime.trackMix * 0.78, 0.22, 1);
+  const sharedTransmissionRetention = clampVisualValue(1 - renderTrackMix * 0.78, 0.22, 1);
   drawIdleTransmission(
     context,
     width,
     height,
     time,
-    activeSurfaceMix * sharedTransmissionRetention * clampVisualValue(0.62 + runtime.intensity * 0.24, 0.62, 0.9),
-    runtime.primary,
-    runtime.secondary,
-    runtime.highlight,
-    runtime.currentSeed,
+    activeSurfaceMix * sharedTransmissionRetention * clampVisualValue(0.62 + renderIntensity * 0.24, 0.62, 0.9),
+    primary,
+    secondary,
+    highlight,
+    renderSeed,
   );
-  const activeMusicMix = runtime.trackMix * sceneStateMix;
+  const activeMusicMix = renderTrackMix * sceneStateMix;
   const musicCompositionMix = (compositionMix: number) => clampVisualValue(
     activeSurfaceMix
       * activeMusicMix
@@ -3965,21 +4040,21 @@ function drawVisualFrame(
       * RADIO_VISUAL_MUSIC_OUTPUT_GAIN,
   );
   const previousMusicEmbellishmentPlan = radioVisualMusicEmbellishmentPlan(
-    radioVisualMusicScene(runtime.previousMusicSeed),
-    runtime.previousMusicSeed,
+    radioVisualMusicScene(previousMusicSeed),
+    previousMusicSeed,
     audioTime,
     musicDrives,
     music.bpm,
   );
   const currentMusicEmbellishmentPlan = radioVisualMusicEmbellishmentPlan(
-    radioVisualMusicScene(runtime.currentMusicSeed),
-    runtime.currentMusicSeed,
+    radioVisualMusicScene(currentMusicSeed),
+    currentMusicSeed,
     audioTime,
     musicDrives,
     music.bpm,
   );
-  const previousMusicCompositionMix = musicCompositionMix(1 - musicSeedBlend);
-  const currentMusicCompositionMix = musicCompositionMix(musicSeedBlend);
+  const previousMusicCompositionMix = musicCompositionMix(1 - renderMusicSeedBlend);
+  const currentMusicCompositionMix = musicCompositionMix(renderMusicSeedBlend);
   const musicEmbellishmentCenterActive = (
     previousMusicCompositionMix >= 0.06 && previousMusicEmbellishmentPlan.centerActive
   ) || (
@@ -3989,7 +4064,7 @@ function drawVisualFrame(
     if (compositionMix < 0.002) return;
     const musicMix = musicCompositionMix(compositionMix);
     if (musicMix < 0.06) return;
-    drawSeededMusicScene(context, width, height, audioTime, musicMix, musicDrives, runtime.primary, runtime.secondary, runtime.highlight, seed);
+    drawSeededMusicScene(context, width, height, audioTime, musicMix, musicDrives, primary, secondary, highlight, seed);
     drawRadioVisualMusicEmbellishments({
       context,
       width,
@@ -4004,54 +4079,56 @@ function drawVisualFrame(
         musicDrives,
         music.bpm,
       ),
-      primary: runtime.primary,
-      secondary: runtime.secondary,
-      highlight: runtime.highlight,
+      primary,
+      secondary,
+      highlight,
       seed,
     });
   };
-  drawSeedComposition(runtime.previousMusicSeed, 1 - musicSeedBlend);
-  drawSeedComposition(runtime.currentMusicSeed, musicSeedBlend);
-  drawQueueLanes(context, width, height, time, runtime.queueMix * activeSurfaceMix, runtime.primary, runtime.secondary, runtime.currentSeed);
-  drawIntakeAperture(context, width, height, time, runtime.intakeMix * activeSurfaceMix, runtime.primary, runtime.secondary, runtime.currentSeed);
-  drawFinalConvergence(context, width, height, time, runtime.finalMix * activeSurfaceMix, runtime.primary, runtime.secondary, runtime.currentSeed);
-  drawCompletionAfterimage(context, width, height, time, runtime.completeMix * activeSurfaceMix, runtime.primary, runtime.secondary);
-  drawPressureEdges(context, width, height, time, runtime.pressureMix * activeSurfaceMix, runtime.primary, runtime.secondary);
+  drawSeedComposition(previousMusicSeed, 1 - renderMusicSeedBlend);
+  drawSeedComposition(currentMusicSeed, renderMusicSeedBlend);
+  const automaticSceneMix = visualPreview ? 0 : activeSurfaceMix;
+  drawQueueLanes(context, width, height, time, runtime.queueMix * automaticSceneMix, primary, secondary, renderSeed);
+  drawIntakeAperture(context, width, height, time, runtime.intakeMix * automaticSceneMix, primary, secondary, renderSeed);
+  drawFinalConvergence(context, width, height, time, runtime.finalMix * automaticSceneMix, primary, secondary, renderSeed);
+  drawCompletionAfterimage(context, width, height, time, runtime.completeMix * automaticSceneMix, primary, secondary);
+  drawPressureEdges(context, width, height, time, runtime.pressureMix * automaticSceneMix, primary, secondary);
 
-  if (runtime.systemMix * activeSurfaceMix > 0.002) {
+  if (runtime.systemMix * automaticSceneMix > 0.002) {
     drawIndustrialOverride(
       context,
       width,
       height,
       (audioTime * 0.16) % 1,
-      runtime.systemMix * activeSurfaceMix,
-      runtime.secondary,
-      runtime.highlight,
-      runtime.currentSeed + 91,
+      runtime.systemMix * automaticSceneMix,
+      secondary,
+      highlight,
+      renderSeed + 91,
     );
   }
   if (activeSurfaceMix > 0) {
-    drawTrackBloom(context, width, height, timestampMs - runtime.bloomStartedAtMs, runtime.primary, runtime.secondary, runtime.highlight);
-    drawAmbientMoment(context, width, height, time, snapshot, runtime.primary, runtime.secondary, runtime.highlight, shadow, serverNowMs, music);
-    drawBroadcastFx(context, width, height, audioTime, broadcastFxPlan, runtime.primary, runtime.secondary, runtime.highlight);
+    const bloomElapsedMs = visualPreview ? visualPreview.elapsedSeconds * 1_000 : timestampMs - runtime.bloomStartedAtMs;
+    drawTrackBloom(context, width, height, bloomElapsedMs, primary, secondary, highlight);
+    drawAmbientMoment(context, width, height, time, renderSnapshot, primary, secondary, highlight, shadow, serverNowMs, music);
+    drawBroadcastFx(context, width, height, audioTime, broadcastFxPlan, primary, secondary, highlight);
   }
 
   if (activeSurfaceMix > 0) {
     for (const event of visualEvents) {
       if (event.type === "show_started") continue;
-      drawAutomaticEvent(context, width, height, time, event, serverNowMs, runtime.primary, runtime.secondary, runtime.highlight, shadow, motionScale, runtime.wheelPhase);
+      drawAutomaticEvent(context, width, height, time, event, serverNowMs, primary, secondary, highlight, shadow, motionScale, runtime.wheelPhase);
     }
   }
 
-  if (activeSurfaceMix > 0 && snapshot.cue && cueProgress !== null && cueEnvelope > 0.001) {
-    if (snapshot.cue.type === "party") drawPartyCue(context, width, height, time, cueProgress, cueEnvelope, runtime.primary, runtime.secondary, runtime.highlight, cueSeed);
-    if (snapshot.cue.type === "shadow") drawShadowCue(context, width, height, cueProgress, cueEnvelope, shadow, cueSeed);
-    if (snapshot.cue.type === "signal_breach") drawSignalBreachCue(context, width, height, time, cueProgress, cueEnvelope, runtime.primary, runtime.secondary, runtime.highlight, cueSeed);
-    if (snapshot.cue.type === "blackout") drawBlackoutCue(context, width, height, cueProgress, cueEnvelope, runtime.primary, shadow, cueSeed);
-    if (snapshot.cue.type === "lightning") drawLightningCue(context, width, height, cueProgress, cueEnvelope, runtime.primary, runtime.highlight, cueSeed);
+  if (activeSurfaceMix > 0 && activeCue && cueProgress !== null && cueEnvelope > 0.001) {
+    if (activeCue.type === "party") drawPartyCue(context, width, height, time, cueProgress, cueEnvelope, primary, secondary, highlight, cueSeed);
+    if (activeCue.type === "shadow") drawShadowCue(context, width, height, cueProgress, cueEnvelope, shadow, cueSeed);
+    if (activeCue.type === "signal_breach") drawSignalBreachCue(context, width, height, time, cueProgress, cueEnvelope, primary, secondary, highlight, cueSeed);
+    if (activeCue.type === "blackout") drawBlackoutCue(context, width, height, cueProgress, cueEnvelope, primary, shadow, cueSeed);
+    if (activeCue.type === "lightning") drawLightningCue(context, width, height, cueProgress, cueEnvelope, primary, highlight, cueSeed);
   }
   if (effectLayer) {
-    if (snapshot.showStage !== "intake") applyPerformerSafeField(context, width, height, 0.2);
+    if (renderSnapshot.showStage !== "intake") applyPerformerSafeField(context, width, height, 0.2);
     outputContext.drawImage(effectLayer.canvas, 0, 0, width, height);
     drawPersistentBroadcastTexture(
       outputContext,
@@ -4060,22 +4137,22 @@ function drawVisualFrame(
       height,
       audioTime,
       broadcastFxPlan.crtStrength,
-      runtime.primary,
-      runtime.highlight,
+      primary,
+      highlight,
     );
     const intrusionPlan = radioVisualWindowIntrusionPlan({
       time: audioTime,
       sceneMix: activeSurfaceMix * sceneStateMix,
-      trackMix: runtime.trackMix,
+      trackMix: renderTrackMix,
       drives: musicDrives,
       musicScene,
-      seed: runtime.currentSeed,
-      cueType: snapshot.cue?.type ?? null,
+      seed: renderSeed,
+      cueType: activeCue?.type ?? null,
       cueProgress,
       cueEnvelope,
     });
     if (
-      snapshot.showStage !== "intake"
+      renderSnapshot.showStage !== "intake"
       && activeSurfaceMix > 0
       && (intrusionPlan.active || broadcastFxPlan.centerStrength >= 0.002 || musicEmbellishmentCenterActive)
     ) {
@@ -4088,11 +4165,11 @@ function drawVisualFrame(
           audioTime,
           intrusionPlan,
           broadcastFxPlan,
-          runtime.primary,
-          runtime.secondary,
-          runtime.highlight,
-          runtime.currentSeed,
-          snapshot.cue,
+          primary,
+          secondary,
+          highlight,
+          renderSeed,
+          activeCue,
           cueProgress,
           cueSeed,
         );
@@ -4105,10 +4182,10 @@ function drawVisualFrame(
             mix: previousMusicCompositionMix,
             drives: musicDrives,
             plan: previousMusicEmbellishmentPlan,
-            primary: runtime.primary,
-            secondary: runtime.secondary,
-            highlight: runtime.highlight,
-            seed: runtime.previousMusicSeed,
+            primary,
+            secondary,
+            highlight,
+            seed: previousMusicSeed,
           });
         }
         if (currentMusicCompositionMix >= 0.06 && currentMusicEmbellishmentPlan.centerActive) {
@@ -4120,10 +4197,10 @@ function drawVisualFrame(
             mix: currentMusicCompositionMix,
             drives: musicDrives,
             plan: currentMusicEmbellishmentPlan,
-            primary: runtime.primary,
-            secondary: runtime.secondary,
-            highlight: runtime.highlight,
-            seed: runtime.currentMusicSeed,
+            primary,
+            secondary,
+            highlight,
+            seed: currentMusicSeed,
           });
         }
         applyPerformerIntrusionField(intrusionLayer.context, width, height);
@@ -4135,7 +4212,7 @@ function drawVisualFrame(
   // it after the ordinary performer mask so Start Broadcast cannot key away.
   for (const event of visualEvents) {
     if (event.type === "show_started") {
-      drawAutomaticEvent(outputContext, width, height, time, event, serverNowMs, runtime.primary, runtime.secondary, runtime.highlight, shadow, motionScale, runtime.wheelPhase);
+      drawAutomaticEvent(outputContext, width, height, time, event, serverNowMs, primary, secondary, highlight, shadow, motionScale, runtime.wheelPhase);
     }
   }
   drawWheelScene(
@@ -4143,13 +4220,13 @@ function drawVisualFrame(
     width,
     height,
     runtime.wheelPhase,
-    runtime.wheelMix * activeSurfaceMix,
-    runtime.primary,
-    runtime.secondary,
-    runtime.highlight,
-    runtime.currentSeed,
+    runtime.wheelMix * automaticSceneMix,
+    primary,
+    secondary,
+    highlight,
+    renderSeed,
     music,
-    snapshot.sceneMode,
+    renderSnapshot.sceneMode,
     snapshot.signals.wheelCandidateCount,
   );
   outputContext.restore();
@@ -4187,6 +4264,8 @@ export function RadioVisualsReceiver() {
     finalMix: 0,
     completeMix: 0,
     pressureMix: 0,
+    visualPreviewNonce: "",
+    visualPreviewStartedAtMs: Number.NEGATIVE_INFINITY,
     music: {
       source: "timeline",
       bpm: 112,
@@ -4402,7 +4481,9 @@ export function RadioVisualsReceiver() {
       data-player-state={snapshot.player?.playbackState ?? "waiting"}
       data-show-stage={snapshot.showStage}
       data-visual-mode={snapshot.visualMode}
-      data-music-scene={radioVisualMusicScene(snapshot.visualSeed)}
+      data-music-scene={snapshot.preview?.scene ?? radioVisualMusicScene(snapshot.visualSeed)}
+      data-visual-preview={snapshot.preview?.scene ?? "none"}
+      data-visual-preview-duration-ms={RADIO_VISUAL_PREVIEW_DURATION_MS}
       data-music-source={audioBridgeConnection === "connected"
         ? "windows-loopback"
         : snapshot.player?.audioEnergy === null || snapshot.player?.audioEnergy === undefined ? "timeline" : "analyser"}

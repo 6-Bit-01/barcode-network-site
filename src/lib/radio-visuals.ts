@@ -6,6 +6,7 @@ import { hasActiveQueueSession } from "./session-bound-polling";
 
 export type { RadioVisualsMode, RadioVisualsPlayerSignal, RadioVisualsQueueSignal, RadioVisualsShowSignals, RadioVisualsShowStage, RadioVisualsSnapshot } from "./radio-visuals-resolver";
 export type { RadioVisualCue, RadioVisualCueType } from "./radio-visuals-cues";
+export type { RadioVisualPreview } from "./radio-visuals-preview";
 export type { RadioVisualEvent, RadioVisualEventType } from "./radio-visuals-events";
 
 export async function getRadioVisualsSnapshot(now = new Date()): Promise<RadioVisualsSnapshot> {

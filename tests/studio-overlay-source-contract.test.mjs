@@ -11,6 +11,7 @@ test("permanent Studio links are private, stable, and use one authoritative stat
   const foregroundRoute = source("src/app/api/overlay/foreground/route.ts");
   const visualsRoute = source("src/app/api/overlay/radio-visuals/route.ts");
   const wheelRoute = source("src/app/api/overlay/wheel/route.ts");
+  const legacyLivePage = source("src/app/overlay/live/page.tsx");
   const foreground = source("src/components/ForegroundOverlayReceiver.tsx");
   const visuals = source("src/components/RadioVisualsReceiver.tsx");
   const live = source("src/components/LiveOverlayReceiver.tsx");
@@ -38,6 +39,8 @@ test("permanent Studio links are private, stable, and use one authoritative stat
   assert.match(access, /foreground: `\$\{PRODUCTION_ORIGIN\}\/overlay\/foreground\$\{STUDIO_SOURCE_QUERY\}\$\{fragment\}`/);
   assert.match(access, /radioVisuals: `\$\{PRODUCTION_ORIGIN\}\/overlay\/radio-visuals\$\{STUDIO_SOURCE_QUERY\}\$\{fragment\}`/);
   assert.match(access, /wheel: `\$\{PRODUCTION_ORIGIN\}\/overlay\/wheel\$\{STUDIO_SOURCE_QUERY\}\$\{fragment\}`/);
+  assert.match(legacyLivePage, /query\.studioSource === "v2"/);
+  assert.match(legacyLivePage, /return null/);
   assert.match(foreground, /data-session-active=\{sessionActive \? "true" : "false"\}/);
   assert.doesNotMatch(foreground, /sessionActive \? <ForegroundOverlayStrip/);
   assert.match(admin, /One-Time TikTok Studio Source Setup/);

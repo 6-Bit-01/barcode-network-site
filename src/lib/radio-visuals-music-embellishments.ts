@@ -19,6 +19,16 @@ export const RADIO_VISUAL_MUSIC_LIFECYCLE_VARIANTS = {
   laser_lattice: "grid_to_prism",
   particle_pressure: "drift_to_vortex",
   signal_constellation: "stars_to_network",
+  crt_signal_breach: "sync_to_breach",
+  voxel_megacity: "blocks_to_city",
+  liquid_chrome: "membranes_to_refraction",
+  cellular_takeover: "cells_to_network",
+  shattered_broadcast: "shards_to_reassembly",
+  barcode_foundry: "bars_to_foundry",
+  recursive_portal: "frames_to_tunnel",
+  holographic_terrain: "ridges_to_horizon",
+  kinetic_glyph_engine: "glyphs_to_machine",
+  mechanical_iris: "blades_to_reactor",
 } as const satisfies Record<RadioVisualMusicScene, string>;
 
 export type RadioVisualMusicLifecycleVariant =
@@ -57,6 +67,16 @@ const EMBELLISHMENT_PROFILES: Record<RadioVisualMusicScene, RadioVisualMusicEmbe
   laser_lattice: { breathBeats: 4, breathDepth: 0.86, morphBias: 0.92, glowBias: 0.92, glareBias: 0.94, movementBias: 0.42, deformationBias: 0.88, bassScale: 0.4, trebleHue: 0.98, startMotion: 0.72, endMotion: 1.52, startJitter: 0.03, endJitter: 0.12, beatReach: 0.76, beatWeight: 0.72, impactMotion: 0.7, edgeBudget: 8 },
   particle_pressure: { breathBeats: 4, breathDepth: 0.98, morphBias: 0.98, glowBias: 0.68, glareBias: 0.62, movementBias: 0.58, deformationBias: 0.96, bassScale: 0.9, trebleHue: 0.62, startMotion: 0.56, endMotion: 1.58, startJitter: 0.06, endJitter: 0.34, beatReach: 1, beatWeight: 0.86, impactMotion: 0.86, edgeBudget: 12 },
   signal_constellation: { breathBeats: 8, breathDepth: 0.72, morphBias: 0.86, glowBias: 0.88, glareBias: 0.82, movementBias: 0.38, deformationBias: 0.74, bassScale: 0.3, trebleHue: 0.86, startMotion: 0.48, endMotion: 1.18, startJitter: 0.26, endJitter: 0.02, beatReach: 0.64, beatWeight: 0.68, impactMotion: 0.5, edgeBudget: 10 },
+  crt_signal_breach: { breathBeats: 2, breathDepth: 0.54, morphBias: 0.92, glowBias: 0.84, glareBias: 0.94, movementBias: 0.72, deformationBias: 0.98, bassScale: 0.52, trebleHue: 0.92, startMotion: 0.68, endMotion: 1.82, startJitter: 0.08, endJitter: 0.9, beatReach: 0.92, beatWeight: 0.82, impactMotion: 0.96, edgeBudget: 11 },
+  voxel_megacity: { breathBeats: 8, breathDepth: 0.48, morphBias: 0.9, glowBias: 0.72, glareBias: 0.64, movementBias: 0.38, deformationBias: 0.74, bassScale: 0.86, trebleHue: 0.7, startMotion: 0.54, endMotion: 1.16, startJitter: 0.02, endJitter: 0.12, beatReach: 0.78, beatWeight: 0.94, impactMotion: 0.52, edgeBudget: 12 },
+  liquid_chrome: { breathBeats: 4, breathDepth: 0.96, morphBias: 0.98, glowBias: 0.92, glareBias: 0.98, movementBias: 0.5, deformationBias: 1, bassScale: 0.68, trebleHue: 1, startMotion: 0.62, endMotion: 1.38, startJitter: 0.02, endJitter: 0.2, beatReach: 0.7, beatWeight: 0.62, impactMotion: 0.7, edgeBudget: 9 },
+  cellular_takeover: { breathBeats: 2, breathDepth: 0.42, morphBias: 0.94, glowBias: 0.66, glareBias: 0.7, movementBias: 0.44, deformationBias: 0.88, bassScale: 0.72, trebleHue: 0.74, startMotion: 0.46, endMotion: 1.42, startJitter: 0.02, endJitter: 0.34, beatReach: 0.84, beatWeight: 0.9, impactMotion: 0.82, edgeBudget: 13 },
+  shattered_broadcast: { breathBeats: 2, breathDepth: 0.58, morphBias: 1, glowBias: 0.78, glareBias: 0.94, movementBias: 0.8, deformationBias: 1, bassScale: 0.62, trebleHue: 0.96, startMotion: 0.76, endMotion: 1.92, startJitter: 0.14, endJitter: 1, beatReach: 1, beatWeight: 0.82, impactMotion: 1, edgeBudget: 12 },
+  barcode_foundry: { breathBeats: 4, breathDepth: 0.5, morphBias: 0.86, glowBias: 0.7, glareBias: 0.74, movementBias: 0.48, deformationBias: 0.72, bassScale: 0.94, trebleHue: 0.68, startMotion: 0.58, endMotion: 1.28, startJitter: 0.01, endJitter: 0.18, beatReach: 0.96, beatWeight: 1, impactMotion: 0.76, edgeBudget: 14 },
+  recursive_portal: { breathBeats: 8, breathDepth: 0.9, morphBias: 0.96, glowBias: 0.88, glareBias: 0.76, movementBias: 0.36, deformationBias: 0.82, bassScale: 0.78, trebleHue: 0.84, startMotion: 0.48, endMotion: 1.34, startJitter: 0.02, endJitter: 0.1, beatReach: 0.7, beatWeight: 0.78, impactMotion: 0.58, edgeBudget: 9 },
+  holographic_terrain: { breathBeats: 4, breathDepth: 0.7, morphBias: 0.92, glowBias: 0.9, glareBias: 0.82, movementBias: 0.42, deformationBias: 0.88, bassScale: 0.76, trebleHue: 0.9, startMotion: 0.52, endMotion: 1.44, startJitter: 0.04, endJitter: 0.24, beatReach: 0.82, beatWeight: 0.74, impactMotion: 0.66, edgeBudget: 11 },
+  kinetic_glyph_engine: { breathBeats: 2, breathDepth: 0.62, morphBias: 0.94, glowBias: 0.78, glareBias: 0.88, movementBias: 0.66, deformationBias: 0.9, bassScale: 0.58, trebleHue: 0.94, startMotion: 0.64, endMotion: 1.72, startJitter: 0.04, endJitter: 0.68, beatReach: 0.88, beatWeight: 0.88, impactMotion: 0.94, edgeBudget: 10 },
+  mechanical_iris: { breathBeats: 4, breathDepth: 0.84, morphBias: 0.98, glowBias: 0.86, glareBias: 0.82, movementBias: 0.4, deformationBias: 0.78, bassScale: 1, trebleHue: 0.78, startMotion: 0.44, endMotion: 1.26, startJitter: 0.01, endJitter: 0.1, beatReach: 0.76, beatWeight: 1, impactMotion: 0.68, edgeBudget: 12 },
 };
 
 export interface RadioVisualMusicEmbellishmentPlan {

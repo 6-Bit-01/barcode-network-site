@@ -101,6 +101,27 @@ Acceptance:
 - Preserve durable snapshots, queue semantics, overlay ownership, recovery, and public/private boundaries.
 - Every optimization has before/after evidence and a rollback-safe boundary.
 
+### 7. Twenty-family music visual expansion
+
+Implementation base: production commit `a3ff0a5` after PR `#373` (finished-show timing report telemetry).
+
+Repair the two show-tested weak families, then expand the deterministic music deck from ten to twenty without changing the existing source workflow.
+
+Acceptance:
+
+- Matrix Rain uses larger chroma-safe glyphs and readable code banks; Signal Constellation uses visible facets, node plates, packets, anchors, and links that survive keying and stream compression.
+- Add CRT Signal Breach, Voxel Megacity, Liquid Chrome, Cellular Takeover, Shattered Broadcast, Barcode Foundry, Recursive Portal, Holographic Terrain, Kinetic Glyph Engine, and Mechanical Iris as ten genuinely different composite families.
+- Every loaded-track deck contains all twenty families once before reuse, forbids adjacent repeats across deck boundaries, and preserves loaded-song ownership and the existing previous/current crossfade.
+- Every new family retains independent bass, mid, treble, all-band tapestry, lifecycle, and perimeter behavior through the existing audio drive and performer-safe pipeline.
+- Do not add the proposed preview-only scene selector. The permanent source URL and existing `preview=1` surface remain otherwise unchanged.
+- Do not change Audio Bridge capture, the combined live video/Wheel source, queue or timing behavior, playback ownership, API payloads, Redis polling, the 30 FPS cap, or Canvas density.
+
+Rollback and deployment boundary:
+
+- Ship the visual expansion as one self-contained pull request with no schema, stored-state, or data migration. If it misbehaves, revert only that merge commit between shows.
+- Keep the future 6 Bit camera CRT/hologram overlay in a separate pull request, route, and file set with no dependency on this expansion. Either PR must be independently revertible without reverting the other.
+- Deploy each PR between shows and re-open the saved Studio source before the rehearsal check; do not combine both changes into one live-show rollout.
+
 ## Change-control rule
 
 No pass may silently suppress another system, infer state ownership from event order, or alter queue/Wheel/music behavior outside its acceptance criteria. If a newly discovered dependency would require that expansion, stop that pass and document the dependency before implementation.

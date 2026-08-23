@@ -47,6 +47,10 @@ import {
   drawRadioVisualMusicCenterEmbellishments,
   drawRadioVisualMusicEmbellishments,
 } from "./radio-visuals-music-embellishments";
+import {
+  drawExpandedRadioVisualMusicPerimeter,
+  drawExpandedRadioVisualMusicScene,
+} from "./radio-visuals-music-expansion";
 
 type ServerClockAnchor = { serverNowMs: number; receivedAtPerformanceMs: number };
 type ConnectionState = "connected" | "reconnecting" | "standby";
@@ -646,7 +650,11 @@ function drawSignalConstellation(
   const unit = Math.min(width, height);
   const coreAlpha = chromaCoreAlpha(mix, drives.presence);
   const topology = Math.min(3, Math.floor(drives.progress * 4));
-  const count = 6
+  // The original constellation was technically active but its 1–4 px stars
+  // and low-alpha links collapsed under chroma keying and stream compression.
+  // Keep the network behavior, but give it filled facets, node plates, and
+  // stronger packets so it reads as a living signal map instead of faint dots.
+  const count = 8
     + Math.max(layerPlan.mid, Math.floor(drives.midLayer * 8))
     + Math.floor(drives.trebleLayer * 5)
     + Math.max(layerPlan.tapestry, Math.floor(drives.tapestry * 8))
@@ -659,8 +667,31 @@ function drawSignalConstellation(
       + Math.cos(time * (0.07 + drives.mid * 0.07) + index * 0.74) * height * (0.003 + drives.midLayer * 0.015),
   }));
   context.save();
-  context.lineWidth = Math.max(1, unit * (0.001 + drives.midLayer * 0.0022));
+  context.globalCompositeOperation = "source-over";
+  context.lineWidth = Math.max(2, unit * (0.002 + drives.midLayer * 0.0028));
   const linkReach = Math.max(width, height) * (0.12 + drives.midLayer * (0.3 + topology * 0.012) + drives.tapestry * 0.12);
+
+  // Mid and all-band energy turn related nodes into broad signal facets. The
+  // irregular filled cells are deliberately much larger than the old stars,
+  // while remaining edge-owned enough for the performer mask to stay clean.
+  const facetCount = Math.min(7, 1 + layerPlan.mid + layerPlan.tapestry + topology);
+  for (let facet = 0; facet < facetCount; facet += 1) {
+    const first = points[(facet * 3 + topology) % points.length];
+    const second = points[(facet * 5 + 2 + topology) % points.length];
+    const third = points[(facet * 7 + 4 + topology) % points.length];
+    const color = facet % 3 === 0 ? highlight : facet % 2 ? secondary : primary;
+    context.beginPath();
+    context.moveTo(first.x, first.y);
+    context.lineTo(second.x, second.y);
+    context.lineTo(third.x, third.y);
+    context.closePath();
+    context.fillStyle = rgba(color, coreAlpha * (0.07 + drives.midLayer * 0.11 + drives.tapestry * 0.13));
+    context.fill();
+    context.strokeStyle = rgba(color, coreAlpha * (0.18 + drives.midLayer * 0.34 + drives.tapestryPulse * 0.24));
+    context.lineWidth = Math.max(2, unit * (0.002 + drives.midPulse * 0.003));
+    context.stroke();
+  }
+
   for (let index = 0; index < points.length; index += 1) {
     const from = points[index];
     const topologyOffset = 1 + topology;
@@ -669,7 +700,8 @@ function drawSignalConstellation(
     const distance = Math.hypot(to.x - from.x, to.y - from.y);
     if (distance > linkReach) continue;
     const color = index % 2 ? secondary : primary;
-    context.strokeStyle = rgba(color, coreAlpha * (0.08 + drives.midLayer * 0.5 + drives.tapestry * 0.16));
+    context.strokeStyle = rgba(color, coreAlpha * (0.18 + drives.midLayer * 0.54 + drives.tapestry * 0.2));
+    context.lineWidth = Math.max(2, unit * (0.002 + drives.midLayer * 0.003 + drives.tapestry * 0.0015));
     context.beginPath();
     context.moveTo(from.x, from.y);
     const bend = Math.sin(time * 0.13 + index) * unit * drives.midLayer * 0.034;
@@ -680,15 +712,39 @@ function drawSignalConstellation(
       const packetX = from.x + (to.x - from.x) * travel;
       const packetY = from.y + (to.y - from.y) * travel;
       context.fillStyle = rgba(index % 2 ? primary : secondary, coreAlpha * (0.38 + drives.midPulse * 0.5));
-      context.fillRect(packetX - unit * 0.004, packetY - unit * 0.0015, unit * 0.008, unit * 0.003);
+      context.fillRect(packetX - unit * 0.008, packetY - unit * 0.003, unit * 0.016, Math.max(4, unit * 0.006));
     }
   }
+
+  // A limited set of large plates gives the family a legible identity between
+  // pulses; bass changes their footprint while treble flashes their cores.
+  const plateCount = Math.min(8, 2 + layerPlan.mid + layerPlan.tapestry);
+  for (let plate = 0; plate < plateCount; plate += 1) {
+    const point = points[(plate * 5 + topology) % points.length];
+    const radius = unit * (0.012 + drives.bassLayer * 0.012 + randomUnit(seed, 26_760 + plate) * 0.01);
+    const color = plate % 3 === 0 ? highlight : plate % 2 ? secondary : primary;
+    context.beginPath();
+    for (let corner = 0; corner < 6; corner += 1) {
+      const angle = Math.PI / 3 * corner + time * (plate % 2 ? -0.035 : 0.035);
+      const x = point.x + Math.cos(angle) * radius;
+      const y = point.y + Math.sin(angle) * radius;
+      if (corner === 0) context.moveTo(x, y);
+      else context.lineTo(x, y);
+    }
+    context.closePath();
+    context.fillStyle = rgba(color, coreAlpha * (0.14 + drives.bassLayer * 0.2 + drives.midLayer * 0.14));
+    context.fill();
+    context.strokeStyle = rgba(color, coreAlpha * (0.38 + drives.treblePulse * 0.36));
+    context.lineWidth = Math.max(2, unit * 0.0025);
+    context.stroke();
+  }
+
   points.forEach((point, index) => {
     const transientCore = drives.treblePulse > 0.72 && index % 7 === 0;
     const color = transientCore ? highlight : index % 2 ? secondary : primary;
-    const radius = Math.max(1, unit * (0.0014 + randomUnit(seed, 26_400 + index) * 0.0032) * (0.76 + drives.bass * 0.42));
+    const radius = Math.max(3, unit * (0.0032 + randomUnit(seed, 26_400 + index) * 0.0055) * (0.86 + drives.bass * 0.48));
     const twinkle = 0.34 + 0.66 * Math.abs(Math.sin(time * (0.45 + drives.treble * 3.2) + index));
-    context.fillStyle = rgba(color, coreAlpha * (0.16 + drives.trebleLayer * 0.66) * twinkle);
+    context.fillStyle = rgba(color, coreAlpha * (0.34 + drives.trebleLayer * 0.56) * twinkle);
     context.shadowColor = rgba(color, coreAlpha * 0.72);
     context.shadowBlur = radius * (2.5 + drives.treblePulse * 6);
     context.beginPath();
@@ -707,8 +763,8 @@ function drawSignalConstellation(
     const x = width * 0.5 + Math.cos(angle) * orbit;
     const y = height * 0.5 + Math.sin(angle) * orbit;
     const radius = unit * (0.012 + drives.bassLayer * 0.02 + drives.bassPulse * 0.012);
-    radialLight(context, width, height, x, y, radius * 4.5, anchor % 2 ? secondary : primary, coreAlpha * drives.bassLayer * 0.34);
-    context.fillStyle = rgba(anchor % 2 ? secondary : primary, coreAlpha * (0.28 + drives.bassPulse * 0.54));
+    radialLight(context, width, height, x, y, radius * 5.5, anchor % 2 ? secondary : primary, coreAlpha * (0.12 + drives.bassLayer * 0.42));
+    context.fillStyle = rgba(anchor % 2 ? secondary : primary, coreAlpha * (0.44 + drives.bassPulse * 0.46));
     context.beginPath();
     context.arc(x, y, radius, 0, Math.PI * 2);
     context.fill();
@@ -720,8 +776,8 @@ function drawSignalConstellation(
     const point = points[comet % points.length];
     const angle = randomUnit(seed, 26_920 + comet) * Math.PI * 2 + time * 0.08;
     const length = unit * (0.012 + drives.trebleLayer * 0.035 + drives.tapestry * 0.018);
-    context.strokeStyle = rgba(comet % 3 ? primary : highlight, coreAlpha * (0.16 + drives.treblePulse * 0.64));
-    context.lineWidth = Math.max(1, unit * 0.0014);
+    context.strokeStyle = rgba(comet % 3 ? primary : highlight, coreAlpha * (0.28 + drives.treblePulse * 0.62));
+    context.lineWidth = Math.max(2, unit * 0.0024);
     context.beginPath();
     context.moveTo(point.x, point.y);
     context.lineTo(point.x - Math.cos(angle) * length, point.y - Math.sin(angle) * length);
@@ -919,12 +975,15 @@ function drawMatrixRain(
   const unit = Math.min(width, height);
   const coreAlpha = chromaCoreAlpha(mix, drives.presence);
   const matrixTopology = Math.min(3, Math.floor(drives.progress * 4));
-  const fontSize = Math.max(10, unit * (0.011 + drives.bass * 0.004 + drives.bassPulse * 0.005));
-  const columns = Math.max(10, Math.floor(width / (fontSize * (1.85 - drives.midLayer * 0.55))));
+  // The former 10–16 px rain disappeared after chroma keying and TikTok
+  // compression. Keep fewer, substantially larger glyphs and pair them with
+  // edge-owned data banks so the family reads as Matrix code at normal audio.
+  const fontSize = Math.max(18, unit * (0.018 + drives.bass * 0.006 + drives.bassPulse * 0.008));
+  const columns = Math.max(8, Math.floor(width / (fontSize * (1.58 - drives.midLayer * 0.32))));
   const activeColumns = Math.min(
     columns,
-    4
-      + Math.floor((columns - 4) * (drives.midLayer * 0.52 + drives.trebleLayer * 0.12 + drives.tapestry * 0.28 + drives.build * 0.08)),
+    6
+      + Math.floor((columns - 6) * (drives.midLayer * 0.44 + drives.trebleLayer * 0.14 + drives.tapestry * 0.3 + drives.build * 0.12)),
   );
   context.save();
   context.globalCompositeOperation = "source-over";
@@ -935,7 +994,7 @@ function drawMatrixRain(
     const bassCascade = (drives.bassLayer * 0.45 + drives.bassPulse * 0.55) * Math.max(0, 1 - Math.abs(column / Math.max(1, activeColumns - 1) - drives.phrase) * 3.4);
     const speed = 0.018 + randomUnit(seed, 34_100 + column) * 0.045 + drives.treble * 0.18 + drives.treblePulse * 0.12;
     const head = ((randomUnit(seed, 34_300 + column) + time * speed + bassCascade * 0.18) % 1.28) * height - height * 0.14;
-    const trail = 2 + Math.floor(randomUnit(seed, 34_500 + column) * 3 + drives.midLayer * 11 + drives.build * 2);
+    const trail = 4 + Math.floor(randomUnit(seed, 34_500 + column) * 4 + drives.midLayer * 10 + drives.build * 3);
     const x = (column + 0.5) / activeColumns * width + Math.sin(time * 0.32 + column) * drives.mid * unit * (0.002 + drives.midLayer * 0.007);
     for (let glyph = 0; glyph < trail; glyph += 1) {
       const glyphIndex = Math.floor(randomUnit(seed + Math.floor(time * 4), column * 37 + glyph) * SIGNAL_GLYPHS.length);
@@ -943,9 +1002,9 @@ function drawMatrixRain(
       if (y < -fontSize || y > height + fontSize) continue;
       const fade = 1 - glyph / trail;
       const color = glyph === 0 && drives.treblePulse > 0.66 ? highlight : column % 3 === 0 ? secondary : primary;
-      context.fillStyle = rgba(color, coreAlpha * fade * (0.14 + drives.midLayer * 0.42 + drives.trebleLayer * 0.22));
-      context.shadowColor = rgba(color, glyph === 0 ? coreAlpha * drives.treblePulse : 0);
-      context.shadowBlur = glyph === 0 ? unit * (0.004 + drives.treblePulse * 0.01) : 0;
+      context.fillStyle = rgba(color, coreAlpha * fade * (0.3 + drives.midLayer * 0.36 + drives.trebleLayer * 0.24));
+      context.shadowColor = rgba(color, coreAlpha * (glyph === 0 ? 0.38 + drives.treblePulse * 0.52 : 0.12));
+      context.shadowBlur = glyph === 0 ? unit * (0.005 + drives.treblePulse * 0.012) : unit * 0.0015;
       context.fillText(SIGNAL_GLYPHS[glyphIndex], x, y);
     }
   }
@@ -956,26 +1015,47 @@ function drawMatrixRain(
     const x = width * (spark + 0.5) / Math.max(1, trebleHeadCount);
     const y = height * ((randomUnit(seed, 34_820 + spark) + time * (0.16 + drives.treblePulse * 0.38)) % 1);
     const glyphIndex = (spark * 11 + matrixTopology) % SIGNAL_GLYPHS.length;
-    context.fillStyle = rgba(spark % 3 ? secondary : highlight, coreAlpha * (0.16 + drives.trebleLayer * 0.42 + drives.treblePulse * 0.38));
+    context.fillStyle = rgba(spark % 3 ? secondary : highlight, coreAlpha * (0.28 + drives.trebleLayer * 0.38 + drives.treblePulse * 0.34));
     context.fillText(SIGNAL_GLYPHS[glyphIndex], x, y);
   }
+
+  // Mid structure assembles readable code banks at the sidewalls. Their
+  // grouped numerals survive downscaling without becoming a permanent center
+  // label, while track progress changes the bank topology over the song.
+  const bankCount = Math.min(7, 2 + layerPlan.mid + matrixTopology);
+  context.font = `900 ${fontSize * (1.34 + drives.bassLayer * 0.36)}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+  context.textBaseline = "middle";
+  for (let bank = 0; bank < bankCount; bank += 1) {
+    const fromRight = bank % 2 === 1;
+    const y = height * (bank + 0.7) / (bankCount + 0.4);
+    const panelWidth = width * (0.085 + drives.midLayer * 0.085 + drives.midPulse * 0.045);
+    const panelHeight = fontSize * (1.5 + drives.bassLayer * 0.42);
+    const color = bank % 3 === 0 ? highlight : bank % 2 ? secondary : primary;
+    context.fillStyle = rgba(color, coreAlpha * (0.1 + drives.midLayer * 0.2 + drives.midPulse * 0.18));
+    context.fillRect(fromRight ? width - panelWidth : 0, y - panelHeight * 0.5, panelWidth, panelHeight);
+    const bankGlyph = `${(bank + matrixTopology) % 10}${(bank * 7 + Math.floor(time * (1 + drives.treble * 5))) % 10}`;
+    context.textAlign = fromRight ? "right" : "left";
+    context.fillStyle = rgba(color, coreAlpha * (0.44 + drives.midLayer * 0.28 + drives.treblePulse * 0.22));
+    context.fillText(bankGlyph, fromRight ? width - fontSize * 0.35 : fontSize * 0.35, y);
+  }
+  context.textAlign = "center";
   const bridgeCount = layerPlan.mid + Math.floor(drives.tapestry * 3);
   for (let bridge = 0; bridge < bridgeCount; bridge += 1) {
     const y = height * ((randomUnit(seed, 34_900 + bridge) + time * 0.025) % 1);
     const reach = width * (0.18 + drives.mid * 0.46);
     const fromRight = bridge % 2 === 1;
-    context.fillStyle = rgba(bridge % 2 ? primary : secondary, coreAlpha * (0.18 + drives.midPulse * 0.42));
-    context.fillRect(fromRight ? width - reach : 0, y, reach, Math.max(2, unit * 0.003));
+    context.fillStyle = rgba(bridge % 2 ? primary : secondary, coreAlpha * (0.24 + drives.midLayer * 0.18 + drives.midPulse * 0.4));
+    context.fillRect(fromRight ? width - reach : 0, y, reach, Math.max(3, unit * (0.004 + drives.midPulse * 0.004)));
   }
 
   // Bass owns a small number of massive anchor glyphs and a base impact shelf.
   const anchorCount = layerPlan.bass;
-  context.font = `900 ${fontSize * (1.35 + drives.bassLayer * 0.9)}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+  context.font = `900 ${fontSize * (1.7 + drives.bassLayer * 1.15)}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
   for (let anchor = 0; anchor < anchorCount; anchor += 1) {
     const x = width * (anchor + 0.5) / Math.max(1, anchorCount);
     const drop = height * ((randomUnit(seed, 35_010 + anchor) + time * (0.02 + drives.bassPulse * 0.05)) % 0.32);
     const y = height * 0.68 + drop;
-    context.fillStyle = rgba(anchor % 2 ? secondary : primary, coreAlpha * (0.22 + drives.bassLayer * 0.5));
+    context.fillStyle = rgba(anchor % 2 ? secondary : primary, coreAlpha * (0.38 + drives.bassLayer * 0.42));
     context.fillText(SIGNAL_GLYPHS[(anchor * 7 + matrixTopology) % SIGNAL_GLYPHS.length], x, y);
   }
   if (anchorCount > 0) {
@@ -1633,6 +1713,23 @@ function drawMusicPerimeterIdentity(
   context.lineCap = "square";
   context.lineJoin = "miter";
 
+  if (drawExpandedRadioVisualMusicPerimeter({
+    context,
+    width,
+    height,
+    time,
+    mix,
+    drives,
+    plan,
+    primary,
+    secondary,
+    highlight,
+    seed,
+  })) {
+    context.restore();
+    return;
+  }
+
   if (plan.motif === "edge_bars") {
     const barCount = plan.bassElements + plan.midElements + plan.trebleElements;
     for (let bar = 0; bar < barCount; bar += 1) {
@@ -1910,6 +2007,19 @@ function drawSeededMusicScene(
   if (scene === "laser_lattice") drawLaserLattice(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
   if (scene === "particle_pressure") drawParticlePressure(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
   if (scene === "signal_constellation") drawSignalConstellation(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
+  drawExpandedRadioVisualMusicScene(scene, {
+    context,
+    width,
+    height,
+    time,
+    mix,
+    drives,
+    layerPlan,
+    primary,
+    secondary,
+    highlight,
+    seed,
+  });
   drawMusicPerimeterIdentity(
     context,
     width,
@@ -3832,7 +3942,7 @@ function drawVisualFrame(
     ? radioVisualMusicSceneVisibility(musicDrives)
     : 0;
   // Keep the strong BARCODE transmission bed between songs, but let each
-  // track's own scene language take over instead of flattening all ten into
+  // track's own scene language take over instead of flattening all twenty into
   // the same bars, tracking lines, corners, and flecks.
   const sharedTransmissionRetention = clampVisualValue(1 - runtime.trackMix * 0.78, 0.22, 1);
   drawIdleTransmission(

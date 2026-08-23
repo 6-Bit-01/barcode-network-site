@@ -174,6 +174,16 @@ export const RADIO_VISUAL_MUSIC_SCENES = [
   "laser_lattice",
   "particle_pressure",
   "signal_constellation",
+  "crt_signal_breach",
+  "voxel_megacity",
+  "liquid_chrome",
+  "cellular_takeover",
+  "shattered_broadcast",
+  "barcode_foundry",
+  "recursive_portal",
+  "holographic_terrain",
+  "kinetic_glyph_engine",
+  "mechanical_iris",
 ] as const;
 
 /** Music-only gain applied after track ownership and scene crossfade. */
@@ -296,12 +306,22 @@ export const RADIO_VISUAL_MUSIC_PERIMETER_MOTIFS = {
   laser_lattice: "laser_chevrons",
   particle_pressure: "pressure_streaks",
   signal_constellation: "constellation_chain",
+  crt_signal_breach: "crt_sync_bands",
+  voxel_megacity: "voxel_skyline",
+  liquid_chrome: "liquid_membranes",
+  cellular_takeover: "cellular_colonies",
+  shattered_broadcast: "shard_panels",
+  barcode_foundry: "foundry_gates",
+  recursive_portal: "portal_notches",
+  holographic_terrain: "terrain_shelves",
+  kinetic_glyph_engine: "glyph_marquee",
+  mechanical_iris: "iris_blades",
 } as const satisfies Record<RadioVisualMusicScene, string>;
 
 export type RadioVisualMusicPerimeterMotif = (typeof RADIO_VISUAL_MUSIC_PERIMETER_MOTIFS)[RadioVisualMusicScene];
 
 /**
- * Bounded edge-only identity shared by none of the ten family renderers.
+ * Bounded edge-only identity shared by none of the twenty family renderers.
  * Values are normalized so the Canvas implementation can remain entirely in
  * the performer-safe perimeter while bass, mids, treble, and the all-band
  * tapestry still own visibly different parts of that family signature.
@@ -394,6 +414,66 @@ export const RADIO_VISUAL_MUSIC_SCENE_LAYER_LIMITS: Record<RadioVisualMusicScene
     mid: { sustained: 8, pulse: 0 },
     treble: { sustained: 7, pulse: 5 },
     tapestry: { sustained: 3, pulse: 0 },
+  },
+  crt_signal_breach: {
+    bass: { sustained: 4, pulse: 2 },
+    mid: { sustained: 7, pulse: 3 },
+    treble: { sustained: 10, pulse: 5 },
+    tapestry: { sustained: 3, pulse: 2 },
+  },
+  voxel_megacity: {
+    bass: { sustained: 7, pulse: 3 },
+    mid: { sustained: 8, pulse: 3 },
+    treble: { sustained: 12, pulse: 5 },
+    tapestry: { sustained: 4, pulse: 2 },
+  },
+  liquid_chrome: {
+    bass: { sustained: 5, pulse: 3 },
+    mid: { sustained: 6, pulse: 3 },
+    treble: { sustained: 8, pulse: 5 },
+    tapestry: { sustained: 4, pulse: 2 },
+  },
+  cellular_takeover: {
+    bass: { sustained: 8, pulse: 4 },
+    mid: { sustained: 12, pulse: 4 },
+    treble: { sustained: 14, pulse: 6 },
+    tapestry: { sustained: 5, pulse: 2 },
+  },
+  shattered_broadcast: {
+    bass: { sustained: 5, pulse: 3 },
+    mid: { sustained: 8, pulse: 4 },
+    treble: { sustained: 10, pulse: 7 },
+    tapestry: { sustained: 4, pulse: 2 },
+  },
+  barcode_foundry: {
+    bass: { sustained: 8, pulse: 4 },
+    mid: { sustained: 8, pulse: 4 },
+    treble: { sustained: 10, pulse: 5 },
+    tapestry: { sustained: 4, pulse: 2 },
+  },
+  recursive_portal: {
+    bass: { sustained: 6, pulse: 3 },
+    mid: { sustained: 7, pulse: 3 },
+    treble: { sustained: 7, pulse: 5 },
+    tapestry: { sustained: 5, pulse: 2 },
+  },
+  holographic_terrain: {
+    bass: { sustained: 6, pulse: 3 },
+    mid: { sustained: 9, pulse: 4 },
+    treble: { sustained: 10, pulse: 5 },
+    tapestry: { sustained: 4, pulse: 2 },
+  },
+  kinetic_glyph_engine: {
+    bass: { sustained: 5, pulse: 3 },
+    mid: { sustained: 7, pulse: 3 },
+    treble: { sustained: 9, pulse: 6 },
+    tapestry: { sustained: 3, pulse: 2 },
+  },
+  mechanical_iris: {
+    bass: { sustained: 8, pulse: 4 },
+    mid: { sustained: 10, pulse: 4 },
+    treble: { sustained: 10, pulse: 6 },
+    tapestry: { sustained: 5, pulse: 2 },
   },
 };
 

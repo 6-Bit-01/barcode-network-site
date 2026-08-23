@@ -108,29 +108,32 @@ function nowPlayingScene(current) {
   };
 }
 
-test("music families are dealt as deterministic ten-card decks without adjacent repeats", () => {
-  const sequence = Array.from({ length: 30 }, (_, ordinal) =>
+test("music families are dealt as deterministic twenty-card decks without adjacent repeats", () => {
+  const deckSize = selection.RADIO_VISUAL_MUSIC_FAMILY_COUNT;
+  assert.equal(deckSize, 20);
+  assert.equal(deckSize, engine.RADIO_VISUAL_MUSIC_SCENES.length);
+  const sequence = Array.from({ length: deckSize * 3 }, (_, ordinal) =>
     selection.radioVisualMusicFamilyIndexForOccurrence("session-alpha", ordinal));
   assert.deepEqual(
     sequence,
-    Array.from({ length: 30 }, (_, ordinal) =>
+    Array.from({ length: deckSize * 3 }, (_, ordinal) =>
       selection.radioVisualMusicFamilyIndexForOccurrence("session-alpha", ordinal)),
     "the same session and occurrence always select the same family",
   );
-  for (let start = 0; start < sequence.length; start += selection.RADIO_VISUAL_MUSIC_FAMILY_COUNT) {
-    assert.equal(new Set(sequence.slice(start, start + 10)).size, 10, "every family must appear before the deck reuses one");
+  for (let start = 0; start < sequence.length; start += deckSize) {
+    assert.equal(new Set(sequence.slice(start, start + deckSize)).size, deckSize, "every family must appear before the deck reuses one");
   }
   for (let index = 1; index < sequence.length; index += 1) {
     assert.notEqual(sequence[index], sequence[index - 1], "adjacent loaded occurrences must not repeat a family");
   }
-  const anotherSession = Array.from({ length: 10 }, (_, ordinal) =>
+  const anotherSession = Array.from({ length: deckSize }, (_, ordinal) =>
     selection.radioVisualMusicFamilyIndexForOccurrence("session-beta", ordinal));
-  assert.notDeepEqual(sequence.slice(0, 10), anotherSession, "sessions receive independently shuffled decks");
+  assert.notDeepEqual(sequence.slice(0, deckSize), anotherSession, "sessions receive independently shuffled decks");
 });
 
 test("family-constrained seeds remain unique per track and match the renderer selector", () => {
   const seeds = [];
-  for (let ordinal = 0; ordinal < 20; ordinal += 1) {
+  for (let ordinal = 0; ordinal < selection.RADIO_VISUAL_MUSIC_FAMILY_COUNT * 2; ordinal += 1) {
     const familyIndex = selection.radioVisualMusicFamilyIndexForOccurrence("seed-session", ordinal);
     const seed = selection.radioVisualSeedForMusicFamily(`track-${ordinal}:occurrence-${ordinal}`, familyIndex);
     seeds.push(seed);
@@ -145,10 +148,11 @@ test("family-constrained seeds remain unique per track and match the renderer se
 });
 
 test("successive resolved track snapshots consume a full non-repeating family deck", () => {
+  const deckSize = selection.RADIO_VISUAL_MUSIC_FAMILY_COUNT;
   const loadedEvents = [];
   const seeds = [];
   const families = [];
-  for (let ordinal = 0; ordinal < 20; ordinal += 1) {
+  for (let ordinal = 0; ordinal < deckSize * 2; ordinal += 1) {
     const current = entry(`track-${ordinal}`, ordinal);
     loadedEvents.push({
       sequence: ordinal * 3 + 1,
@@ -167,9 +171,9 @@ test("successive resolved track snapshots consume a full non-repeating family de
     seeds.push(snapshot.visualSeed);
     families.push(engine.RADIO_VISUAL_MUSIC_SCENES.indexOf(engine.radioVisualMusicScene(snapshot.visualSeed)));
   }
-  assert.equal(new Set(seeds).size, 20);
-  assert.equal(new Set(families.slice(0, 10)).size, 10);
-  assert.equal(new Set(families.slice(10, 20)).size, 10);
+  assert.equal(new Set(seeds).size, deckSize * 2);
+  assert.equal(new Set(families.slice(0, deckSize)).size, deckSize);
+  assert.equal(new Set(families.slice(deckSize, deckSize * 2)).size, deckSize);
   for (let index = 1; index < families.length; index += 1) assert.notEqual(families[index], families[index - 1]);
 });
 

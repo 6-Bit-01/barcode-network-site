@@ -30,6 +30,12 @@ export interface QueueShowReportTrackOutcome {
   durationIsEstimate: boolean;
 }
 
+export interface QueueShowReportWheelSpinTiming {
+  startedAt: string;
+  endedAt: string | null;
+  durationSeconds: number | null;
+}
+
 export interface QueueShowReport {
   schemaVersion: typeof QUEUE_SHOW_REPORT_SCHEMA_VERSION;
   timeline: {
@@ -105,6 +111,7 @@ export interface QueueShowReport {
       ceremonySeconds: number;
       averageCeremonySeconds: number | null;
       plannedSpinSeconds: number;
+      spinTimings: QueueShowReportWheelSpinTiming[];
       spinsOwedRemaining: number;
     };
   };
@@ -222,7 +229,8 @@ function modeledMusic(entry: QueueEntry): { seconds: number; observedSeconds: nu
   const observedPosition = typeof entry.playbackEndPositionSeconds === "number" && Number.isFinite(entry.playbackEndPositionSeconds)
     ? Math.max(0, entry.playbackEndPositionSeconds)
     : null;
-  if (observedPosition !== null) {
+  const observedAt = iso(entry.playbackEndPositionObservedAt);
+  if (observedPosition !== null && observedAt !== null) {
     const seconds = observedDuration === null ? observedPosition : Math.min(observedPosition, observedDuration);
     return { seconds, observedSeconds: seconds, directlyObserved: true };
   }
@@ -252,6 +260,42 @@ function wheelCeremonies(events: QueueShowLogEvent[]): TimedInterval[] {
     launchedAt = null;
   }
   return ceremonies;
+}
+
+function clipIntervalsToWindow(intervals: TimedInterval[], startedAt: string | null, endedAt: string | null): TimedInterval[] {
+  const windowStart = startedAt ? Date.parse(startedAt) : Number.NaN;
+  const windowEnd = endedAt ? Date.parse(endedAt) : Number.NaN;
+  if (!Number.isFinite(windowStart) || !Number.isFinite(windowEnd) || windowEnd < windowStart) return intervals;
+  return intervals.flatMap((interval) => {
+    const intervalStart = Date.parse(interval.startedAt);
+    const intervalEnd = Date.parse(interval.endedAt);
+    if (!Number.isFinite(intervalStart) || !Number.isFinite(intervalEnd)) return [];
+    const clippedStart = Math.max(windowStart, intervalStart);
+    const clippedEnd = Math.min(windowEnd, intervalEnd);
+    if (clippedEnd <= clippedStart) return [];
+    return [{
+      startedAt: new Date(clippedStart).toISOString(),
+      endedAt: new Date(clippedEnd).toISOString(),
+      durationSeconds: Math.round((clippedEnd - clippedStart) / 1_000),
+    }];
+  });
+}
+
+function wheelSpinTimings(events: QueueShowLogEvent[]): QueueShowReportWheelSpinTiming[] {
+  return events
+    .filter((event) => event.eventType === "wheel_spun")
+    .map((event) => {
+      const startedAtMs = Date.parse(event.occurredAt);
+      const durationMs = event.details?.wheelSpinDurationMs;
+      if (!Number.isFinite(startedAtMs) || typeof durationMs !== "number" || !Number.isFinite(durationMs) || durationMs < 0) {
+        return { startedAt: event.occurredAt, endedAt: null, durationSeconds: null };
+      }
+      return {
+        startedAt: new Date(startedAtMs).toISOString(),
+        endedAt: new Date(startedAtMs + durationMs).toISOString(),
+        durationSeconds: rounded(durationMs / 1_000),
+      };
+    });
 }
 
 function intervalOverlapSeconds(start: string, end: string, intervals: TimedInterval[]): number {
@@ -327,7 +371,8 @@ export function buildQueueShowReport(session: QueueSession, inputEvents: QueueSh
   const sponsorInterval = sponsorBreakSeconds > 0 && session.sponsorBreakStartedAt && session.sponsorBreakCompletedAt
     ? [{ startedAt: session.sponsorBreakStartedAt, endedAt: session.sponsorBreakCompletedAt, durationSeconds: sponsorBreakSeconds }]
     : [];
-  const ceremonies = wheelCeremonies(events);
+  const ceremonies = clipIntervalsToWindow(wheelCeremonies(events), broadcastStartedAt, broadcastEndedAt);
+  const spinTimings = wheelSpinTimings(events);
   const eventPairs = trackEventPairs(events, [...sponsorInterval, ...ceremonies]);
 
   const trackOutcomes: QueueShowReportTrackOutcome[] = completed
@@ -386,7 +431,8 @@ export function buildQueueShowReport(session: QueueSession, inputEvents: QueueSh
     completedCeremonies: ceremonyDurations.length,
     ceremonySeconds: wheelCeremonySeconds,
     averageCeremonySeconds: average(ceremonyDurations),
-    plannedSpinSeconds: rounded(events.filter((event) => event.eventType === "wheel_spun").reduce((sum, event) => sum + ((event.details?.wheelSpinDurationMs ?? 0) / 1000), 0)),
+    plannedSpinSeconds: rounded(events.filter((event) => event.eventType === "wheel_spun").reduce((sum, event) => sum + ((event.details?.wheelSpinDurationMs ?? 0) / 1_000), 0)),
+    spinTimings,
     spinsOwedRemaining: Math.max(0, Math.floor(session.wheelSpinsOwed ?? 0)),
   };
 
@@ -400,6 +446,8 @@ export function buildQueueShowReport(session: QueueSession, inputEvents: QueueSh
   const missingTransitions = Math.max(0, trackOutcomes.length - 1 - transitions.length);
   if (missingTransitions > 0) calibrationReasons.push(`${missingTransitions} between-track transition${missingTransitions === 1 ? " is" : "s are"} missing event timing.`);
   if (laneCounts.wheel > 0 && wheel.confirmations === 0) calibrationReasons.push("Wheel-selected tracks exist, but Wheel ceremony telemetry is missing.");
+  const missingSpinEndTimings = spinTimings.filter((timing) => timing.endedAt === null).length;
+  if (missingSpinEndTimings > 0) calibrationReasons.push(`${missingSpinEndTimings} Wheel spin${missingSpinEndTimings === 1 ? " is" : "s are"} missing start-to-end timing.`);
   if ((session.sponsorBreakStatus === "completed" || session.sponsorBreakStatus === "skipped") && !session.sponsorBreakCompletedAt) calibrationReasons.push("Sponsor-break completion timing is incomplete.");
   const interruptionCount = eventCount(events, "track_stalled") + eventCount(events, "track_playback_error");
   if (interruptionCount > 0) calibrationReasons.push("Playback stalls or errors require review before using this show as a timing baseline.");

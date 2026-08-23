@@ -309,6 +309,7 @@ test("the download surface is private and confined to authenticated admin UI", (
   assert.match(archive, /\/api\/admin\/queue\/show-log/);
   assert.match(finishedReview, /Timing calibration data/);
   assert.match(finishedReview, /showLog\.report/);
+  assert.match(finishedReview, /operations\.wheel\.spinTimings/);
   for (const action of ["launchWheel", "reencryptWheel", "spinWheel", "wheelWinnerNotHere", "confirmWheel", "cancelWheel"]) {
     assert.match(liveOverlay, new RegExp(`payload\\.action === "${action}"`));
   }

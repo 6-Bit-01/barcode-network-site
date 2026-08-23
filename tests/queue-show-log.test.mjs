@@ -219,7 +219,7 @@ test("private show log records submission, load, playback, outcome, archive, Tik
   assert.doesNotMatch(csv.csv, /upload-secret@example\.test|secret-token-|private-store\.private\.blob/);
 
   const publicSnapshot = await queue.getPublicQueueSnapshot(sessionId);
-  assert.doesNotMatch(JSON.stringify(publicSnapshot), /"showLog"|barcode_queue_show_log_v1/);
+  assert.doesNotMatch(JSON.stringify(publicSnapshot), /"showLog"|barcode_queue_show_log_v[12]|barcode_queue_show_report_v1/);
 
   const beforeRejectedEvent = exported.events.length;
   const rejected = await queue.recordQueuePlaybackEvent({

@@ -223,7 +223,7 @@ function modeledMusic(entry: QueueEntry): { seconds: number; observedSeconds: nu
     ? Math.max(0, entry.playbackEndPositionSeconds)
     : null;
   if (observedPosition !== null) {
-    const seconds = Math.min(observedPosition, observedDuration ?? scheduled);
+    const seconds = observedDuration === null ? observedPosition : Math.min(observedPosition, observedDuration);
     return { seconds, observedSeconds: seconds, directlyObserved: true };
   }
   if (entry.playbackEndedNaturally === true && observedDuration !== null) {
@@ -395,6 +395,10 @@ export function buildQueueShowReport(session: QueueSession, inputEvents: QueueSh
   if (broadcastDurationSeconds === null) calibrationReasons.push("Broadcast start/end timestamps are incomplete.");
   if (trackOutcomes.length < 5) calibrationReasons.push("Fewer than five played tracks makes the pacing sample too small.");
   if (fallbackTrackCount > 0) calibrationReasons.push(`${fallbackTrackCount} played track${fallbackTrackCount === 1 ? " lacks" : "s lack"} direct playback-position timing.`);
+  const missingTrackSlots = trackOutcomes.length - trackSlots.length;
+  if (missingTrackSlots > 0) calibrationReasons.push(`${missingTrackSlots} played track${missingTrackSlots === 1 ? " lacks" : "s lack"} complete playback start/end event timing.`);
+  const missingTransitions = Math.max(0, trackOutcomes.length - 1 - transitions.length);
+  if (missingTransitions > 0) calibrationReasons.push(`${missingTransitions} between-track transition${missingTransitions === 1 ? " is" : "s are"} missing event timing.`);
   if (laneCounts.wheel > 0 && wheel.confirmations === 0) calibrationReasons.push("Wheel-selected tracks exist, but Wheel ceremony telemetry is missing.");
   if ((session.sponsorBreakStatus === "completed" || session.sponsorBreakStatus === "skipped") && !session.sponsorBreakCompletedAt) calibrationReasons.push("Sponsor-break completion timing is incomplete.");
   const interruptionCount = eventCount(events, "track_stalled") + eventCount(events, "track_playback_error");

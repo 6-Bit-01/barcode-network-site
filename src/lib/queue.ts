@@ -3762,10 +3762,11 @@ function queueStoreWithShowLog(previous: QueueStore, next: QueueStore): QueueSto
       const requestedHasNewEvents = (requested.at(-1)?.sequence ?? 0) > (existing.at(-1)?.sequence ?? 0);
       const requestedBySequence = new Map(requested.map((event) => [event.sequence, JSON.stringify(event)]));
       const firstRequestedSequence = requested.at(0)?.sequence ?? Number.MAX_SAFE_INTEGER;
-      const requestedPreservesExisting = existing.every((event) => {
+      const overlappingExisting = existing.filter((event) => event.sequence >= firstRequestedSequence);
+      const requestedPreservesExisting = existing.length === 0 || (overlappingExisting.length > 0 && overlappingExisting.every((event) => {
         if (event.sequence < firstRequestedSequence) return true;
         return requestedBySequence.get(event.sequence) === JSON.stringify(event);
-      });
+      }));
       const seeded = requestedHasNewEvents && requestedPreservesExisting
         ? requested
         : existing.length > 0

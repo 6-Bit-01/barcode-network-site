@@ -212,3 +212,19 @@ test("finished-session report surfaces ordinary playback data-quality problems",
   assert.ok(report.calibration.reasons.some((reason) => reason.includes("direct playback-position timing")));
   assert.ok(report.calibration.reasons.some((reason) => reason.includes("Playback stalls or errors")));
 });
+
+test("directly observed playback position is not truncated by a shorter duration fallback", () => {
+  const { session, events } = fixture();
+  session.completed[0] = {
+    ...session.completed[0],
+    detectedDurationSeconds: null,
+    estimatedDurationSeconds: 180,
+    playbackEndPositionSeconds: 240,
+    playbackObservedDurationSeconds: null,
+    playbackEndedNaturally: false,
+  };
+
+  const report = buildQueueShowReport(session, events);
+  assert.equal(report.trackOutcomes[0].modeledMusicSeconds, 240);
+  assert.equal(report.trackOutcomes[0].directlyObserved, true);
+});

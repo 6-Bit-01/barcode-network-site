@@ -2,8 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { LiveOverlayReceiver } from "@/components/LiveOverlayReceiver";
 
 export const metadata: Metadata = {
-  title: "Wheel + Audio Lane — BARCODE Radio",
-  description: "Permanent chroma-key browser source for the BARCODE Radio Wheel ceremony and audio.",
+  title: "Live + Wheel Browser Source — BARCODE Radio",
+  description: "Permanent chroma-key browser source for the BARCODE Radio live show and Wheel ceremony audio.",
   robots: { index: false, follow: false },
 };
 

@@ -1769,7 +1769,7 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.match(productionContract, /centered `810×1080` \(3:4\) portrait-safe stage/);
 });
 
-test("show-long Wheel source stays isolated from live video while preserving ceremony mechanics", () => {
+test("show-long live and Wheel source wakes with the session and clears when it ends without changing wheel mechanics", () => {
   const receiver = fs.readFileSync(path.join(projectRoot, "src/components/LiveOverlayReceiver.tsx"), "utf8");
   const builder = fs.readFileSync(path.join(projectRoot, "src/lib/wheel-overlay.ts"), "utf8");
   const route = fs.readFileSync(path.join(projectRoot, "src/app/api/overlay/wheel/route.ts"), "utf8");
@@ -1777,24 +1777,24 @@ test("show-long Wheel source stays isolated from live video while preserving cer
   const css = fs.readFileSync(path.join(projectRoot, "src/app/overlay/wheel/wheel-overlay.css"), "utf8");
   const admin = fs.readFileSync(path.join(projectRoot, "src/components/AdminLiveOverlayControl.tsx"), "utf8");
   const sourceAccess = fs.readFileSync(path.join(projectRoot, "src/app/api/admin/overlay/source-access/route.ts"), "utf8");
-  assert.match(receiver, /wheelOnly \? "\/api\/overlay\/wheel" : "\/api\/overlay\/media"/);
+  assert.match(receiver, /wheelOnly \? "\/api\/overlay\/wheel" : "\/api\/overlay\/live"/);
   assert.match(receiver, /WHEEL_OVERLAY_ACTIVE_POLL_INTERVAL_MS|WHEEL_OVERLAY_SHOW_IDLE_POLL_INTERVAL_MS|WHEEL_OVERLAY_STANDBY_POLL_INTERVAL_MS/);
   assert.match(receiver, /data-wheel-active=\{wheelVisible \? "true" : "false"\}/);
-  assert.match(receiver, /const audioArmed = wheelOnly/);
+  assert.match(receiver, /const \[audioArmed, setAudioArmed\] = useState\(wheelOnly\)/);
   assert.match(receiver, /if \(!wheelOnly\) return undefined;\s*const spin = new Audio/);
   assert.match(receiver, /const cheer = new Audio\(WHEEL_WINNER_CHEER_AUDIO_PATH\)/);
   assert.match(receiver, /const encrypt = new Audio\(WHEEL_REENCRYPT_AUDIO_PATH\)/);
   assert.match(builder, /const queueState = await getRadioLiveQueueState\(\);\s*if \(!hasActiveQueueSession\(queueState\)\)/);
   assert.match(builder, /const broadcastActive = queueState\.session\?\.showStarted === true/);
-  assert.match(builder, /getStoredLiveOverlayState\(\)/);
-  assert.match(builder, /playerSync: null/);
-  assert.match(builder, /scene: wheelActive \? scene : null/);
+  assert.match(builder, /getLiveOverlayRuntimeState\(\)/);
+  assert.match(builder, /broadcastActive,[\s\S]*?scene,/);
   assert.doesNotMatch(builder, /if \(!broadcastActive\)/);
-  assert.match(receiver, /const broadcastVisible = wheelOnly \? wheelVisible : hasActiveQueueSession\(scene\) && !wheelSceneActive/);
+  assert.doesNotMatch(builder, /scene: wheelActive \? scene : null/);
+  assert.match(receiver, /const broadcastVisible = hasActiveQueueSession\(scene\)/);
   assert.doesNotMatch(receiver, /wheelSnapshot\?\.broadcastActive === true/);
   assert.match(receiver, /wheelSnapshot\?\.scene \?\? fallbackScene\(\)/);
   assert.match(receiver, /wheelOnly \? "wheel-overlay-stage " : ""/);
-  assert.match(receiver, /playCheerSfx=\{\(\) => playWheelOnlySfx/);
+  assert.match(receiver, /playCheerSfx=\{wheelOnly \? \(\) => playWheelOnlySfx/);
   assert.doesNotMatch(builder, /setLiveOverlayState|updateRadioTrack|redis\.set/);
   assert.match(route, /getWheelOverlaySnapshot/);
   assert.match(route, /verifyStudioOverlayToken/);
@@ -1805,9 +1805,8 @@ test("show-long Wheel source stays isolated from live video while preserving cer
   assert.match(admin, /sourceLinks\?\.wheel/);
   assert.match(sourceAccess, /\/overlay\/wheel\$\{STUDIO_SOURCE_QUERY\}\$\{fragment\}/);
   assert.match(admin, /1080 × 1080 · key #FF5A00 · sound on/);
-  assert.match(admin, /Live Video \+ Track Lane/);
-  assert.match(admin, /Wheel \+ Audio Lane/);
-  assert.match(admin, /Wheel \+ Audio remains transparent until a Wheel ceremony is active/);
+  assert.match(admin, /Live Overlay \+ Wheel \+ Audio/);
+  assert.match(admin, /wake when the session opens/);
   assert.doesNotMatch(admin, /Copy Wheel Link|Preview Wheel Source/);
   assert.match(builder, /const wheelActive = Boolean\(scene\.wheelCeremony\)/);
   assert.match(receiver, /estimatedServerNowMs/);

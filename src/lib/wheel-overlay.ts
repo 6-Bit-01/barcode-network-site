@@ -1,4 +1,4 @@
-import { getStoredLiveOverlayState, resolveLiveOverlaySceneFromQueueState } from "./live-overlay";
+import { getLiveOverlayRuntimeState, resolveLiveOverlaySceneFromQueueState } from "./live-overlay";
 import type { ResolvedLiveOverlayScene } from "./live-overlay";
 import { getRadioLiveQueueState } from "./queue";
 import { hasActiveQueueSession } from "./session-bound-polling";
@@ -24,8 +24,8 @@ export async function getWheelOverlaySnapshot(now = new Date()): Promise<WheelOv
   }
 
   const broadcastActive = queueState.session?.showStarted === true;
-  const overlayState = await getStoredLiveOverlayState();
-  const scene = resolveLiveOverlaySceneFromQueueState({ overlayState, queueState, playerSync: null, now });
+  const { overlayState, playerSync } = await getLiveOverlayRuntimeState();
+  const scene = resolveLiveOverlaySceneFromQueueState({ overlayState, queueState, playerSync, now });
   // The resolved ceremony is the authoritative wheel state used by the admin
   // and live receiver. Do not introduce a second flag gate for the link source.
   const wheelActive = Boolean(scene.wheelCeremony);
@@ -33,10 +33,10 @@ export async function getWheelOverlaySnapshot(now = new Date()): Promise<WheelOv
     sessionActive: true,
     broadcastActive,
     wheelActive,
-    // Keep the permanent Wheel lane warm without mounting a second copy of
-    // the live video player. The separate Live lane remains the only media
-    // decoder; this source renders only an active Wheel ceremony and audio.
-    scene: wheelActive ? scene : null,
+    // The permanent source wakes with the session so the pre-show scene is
+    // already rendered before Start Broadcast. The Wheel ceremony takes over
+    // this same scene when launched and uses the same authoritative state.
+    scene,
     updatedAt: scene.updatedAt || now.toISOString(),
   };
 }

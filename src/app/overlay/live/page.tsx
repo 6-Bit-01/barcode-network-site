@@ -1,21 +1,25 @@
-import type { Metadata, Viewport } from "next";
+import type { Metadata } from "next";
 import { LiveOverlayReceiver } from "@/components/LiveOverlayReceiver";
 
 export const metadata: Metadata = {
-  title: "Live Video + Track Lane — BARCODE Radio",
-  description: "Permanent square browser-source lane for BARCODE Radio video and track scenes.",
+  title: "Live Overlay Receiver — BARCODE Radio",
+  description: "Square browser-source receiver for BARCODE Radio live production.",
   robots: { index: false, follow: false },
 };
 
-export const viewport: Viewport = {
-  width: 1080,
-  height: 1080,
-  initialScale: 1,
-  minimumScale: 1,
-  maximumScale: 1,
-  userScalable: false,
-};
+export default async function LiveOverlayPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const query = (await searchParams) ?? {};
 
-export default function LiveOverlayPage() {
+  // PR #369 briefly issued this URL as a separate permanent Studio source.
+  // Keep saved copies transparent after the combined source is restored so
+  // they cannot duplicate the video and track-card lane in production.
+  if (query.studioSource === "v2") {
+    return null;
+  }
+
   return <LiveOverlayReceiver />;
 }

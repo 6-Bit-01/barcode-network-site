@@ -225,6 +225,7 @@ assert.equal(unsafe.sourceUrl, null, "unsafe link is not exposed");
 assert.equal(unsafe.artworkUrl, null, "private blob artwork is not exposed");
 
 const adminPanel = readFileSync("src/components/AdminLiveOverlayControl.tsx", "utf8");
+const visualAdminPanel = readFileSync("src/components/AdminRadioVisualsControl.tsx", "utf8");
 const adminQueueControl = readFileSync("src/components/AdminRadioQueueControl.tsx", "utf8");
 const liveOverlayController = readFileSync("src/lib/live-overlay.ts", "utf8");
 assert.equal(adminPanel.includes("Show Now Playing"), false, "admin panel does not expose normal manual scene picker");
@@ -239,7 +240,10 @@ assert.equal(adminQueueControl.includes("playerHostRef") && adminQueueControl.in
 assert.equal(adminQueueControl.includes("clearImperativeHost") && adminQueueControl.includes("replaceChildren()"), true, "admin YouTube cleanup clears YouTube-owned descendants imperatively and idempotently");
 assert.equal(adminQueueControl.includes("YOUTUBE_PLAYER_READY_TIMEOUT_MS") && adminQueueControl.includes("window.setTimeout"), true, "admin YouTube player has a readiness watchdog");
 assert.equal(adminQueueControl.includes("Open Wheel Panel") || adminQueueControl.includes("Open Wheel"), true, "top bar and wheel CTA expose an Open Wheel action when spins are owed");
-assert.equal(adminQueueControl.includes("Live Overlay — Wheel Owed"), true, "live overlay utility copy clearly signals owed wheel state");
+assert.equal(adminQueueControl.includes("Wheel Overlay — Spin Owed"), true, "wheel overlay utility copy clearly signals an owed spin");
+assert.equal(adminQueueControl.includes("Visual Overlays") && adminQueueControl.includes("AdminRadioVisualsControl"), true, "visual overlays have a separate operator menu");
+assert.equal(adminPanel.includes("Party Burst") || adminPanel.includes("triggerVisualCue"), false, "the Wheel menu no longer contains manual visual controls");
+assert.equal(visualAdminPanel.includes("Party Burst") && visualAdminPanel.includes("triggerVisualCue") && visualAdminPanel.includes("RADIO_VISUAL_PREVIEW_CONTROLS.map"), true, "the Visual Overlays menu owns the five manual cues and twenty family tests");
 assert.equal(adminPanel.includes("Next Action:"), true, "wheel section includes a next action summary for hosts");
 assert.equal(adminQueueControl.includes("top-bar Spin Wheel"), false, "top bar does not include dangerous Spin Wheel action");
 assert.equal(adminQueueControl.includes("top-bar Confirm Wheel"), false, "top bar does not include dangerous Confirm Wheel action");

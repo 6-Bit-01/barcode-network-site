@@ -3,6 +3,8 @@ import { normalizeRadioVisualAudioAnalysis, YOUTUBE_SYNC_STALE_AFTER_MS } from "
 import type { LiveOverlayState } from "./live-overlay";
 import type { RadioVisualCue } from "./radio-visuals-cues";
 import { activeRadioVisualCue } from "./radio-visuals-cues";
+import type { RadioVisualPreview } from "./radio-visuals-preview";
+import { activeRadioVisualPreview } from "./radio-visuals-preview";
 import { activeRadioVisualEvent, hashRadioVisualToken } from "./radio-visuals-events";
 import type { RadioVisualEvent, RadioVisualEventType } from "./radio-visuals-events";
 import type { QueueBroadcastPhase, QueueEntry, QueueState } from "./queue-types";
@@ -49,6 +51,7 @@ export interface RadioVisualsSnapshot {
   signals: RadioVisualsShowSignals;
   player: RadioVisualsPlayerSignal | null;
   cue: RadioVisualCue | null;
+  preview: RadioVisualPreview | null;
   events: RadioVisualEvent[];
   visualSeed: number;
   updatedAt: string;
@@ -236,6 +239,12 @@ export function resolveRadioVisualsSnapshot(input: {
     expiresAt: overlayState.visualCueExpiresAt,
     nonce: overlayState.visualCueNonce,
   }, now) : null;
+  const preview = sessionActive && overlayState ? activeRadioVisualPreview({
+    scene: overlayState.visualPreviewFamily,
+    requestedAt: overlayState.visualPreviewRequestedAt,
+    deliveryExpiresAt: overlayState.visualPreviewDeliveryExpiresAt,
+    nonce: overlayState.visualPreviewNonce,
+  }, now) : null;
 
   return {
     sessionActive,
@@ -258,6 +267,7 @@ export function resolveRadioVisualsSnapshot(input: {
     },
     player,
     cue,
+    preview,
     events: sessionActive ? recentVisualEvents(queueState, scene, now) : [],
     visualSeed,
     updatedAt: scene.updatedAt || now.toISOString(),

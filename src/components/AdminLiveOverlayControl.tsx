@@ -2,31 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { LiveOverlayAdminSnapshot } from "@/lib/live-overlay";
-import { RADIO_VISUAL_CUE_DURATION_MS } from "@/lib/radio-visuals-cues";
-import type { RadioVisualCueType } from "@/lib/radio-visuals-cues";
 import { ADMIN_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 import { hasActiveQueueSession, startSessionBoundPolling } from "@/lib/session-bound-polling";
 
 function sceneLabel(mode?: string): string {
   return mode ? mode.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase()) : "Syncing";
 }
-
-function responseClockMs(response: Response, snapshot: LiveOverlayAdminSnapshot): number {
-  for (const value of [response.headers.get("Date"), snapshot.overlayState.visualCueStartedAt, snapshot.scene.updatedAt]) {
-    if (!value) continue;
-    const parsed = Date.parse(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return 0;
-}
-
-const VISUAL_CUE_CONTROLS: Array<{ type: RadioVisualCueType; label: string; description: string }> = [
-  { type: "party", label: "Party Burst", description: "Green/violet club beams, pulses and a dense particle lift." },
-  { type: "shadow", label: "Shadow Sweep", description: "A broad moving gobo shadow crosses the room and performer." },
-  { type: "signal_breach", label: "Signal Breach", description: "Data fractures, scan interference and electrical signal damage." },
-  { type: "blackout", label: "Blackout / Return", description: "The room closes down, holds briefly, then relights from center." },
-  { type: "lightning", label: "Lightning Hit", description: "Two controlled electrical strikes with a fading room afterglow." },
-];
 
 type StudioOverlayLinks = {
   foreground: string;
@@ -41,7 +22,6 @@ export function AdminLiveOverlayControl({ focusWheelTick = 0 }: { focusWheelTick
   const [selectedWheelTrackId, setSelectedWheelTrackId] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [sourceLinks, setSourceLinks] = useState<StudioOverlayLinks | null>(null);
-  const [visualClockMs, setVisualClockMs] = useState(0);
   const wheelSectionRef = useRef<HTMLElement | null>(null);
 
   async function load() {
@@ -52,7 +32,6 @@ export function AdminLiveOverlayControl({ focusWheelTick = 0 }: { focusWheelTick
     }
     const next = await res.json() as LiveOverlayAdminSnapshot;
     setSnapshot(next);
-    setVisualClockMs(responseClockMs(res, next));
     return hasActiveQueueSession(next.scene);
   }
 
@@ -74,13 +53,7 @@ export function AdminLiveOverlayControl({ focusWheelTick = 0 }: { focusWheelTick
     }
     const next = await res.json() as LiveOverlayAdminSnapshot;
     setSnapshot(next);
-    setVisualClockMs(responseClockMs(res, next));
     setStatus(successMessage);
-  }
-
-  async function triggerVisualCue(type: RadioVisualCueType) {
-    const seconds = Math.round(RADIO_VISUAL_CUE_DURATION_MS[type] / 1_000);
-    await post({ action: "triggerVisualCue", visualCue: type }, `${sceneLabel(type)} started for ${seconds} seconds.`);
   }
 
   async function loadPermanentSourceLinks() {
@@ -110,10 +83,6 @@ export function AdminLiveOverlayControl({ focusWheelTick = 0 }: { focusWheelTick
   const canSpin = wheelOwed > 0 && wheelReadyForAction && candidates.length > 0;
   const canReencrypt = wheelOwed > 0 && wheelReadyForAction && candidates.length > 0 && !ceremony?.resultTrackId;
   const systemActive = snapshot?.overlayState.systemMessageActive === true;
-  const visualCueExpiresAtMs = snapshot?.overlayState.visualCueExpiresAt ? Date.parse(snapshot.overlayState.visualCueExpiresAt) : Number.NaN;
-  const activeVisualCue = Number.isFinite(visualCueExpiresAtMs) && visualCueExpiresAtMs > visualClockMs
-    ? snapshot?.overlayState.visualCueType
-    : undefined;
   const wheelAttention = wheelOwed > 0 || wheelActive;
   const wheelNextAction = ceremony?.status === "reencrypting"
     ? "Re-encrypting candidates…"
@@ -153,9 +122,9 @@ export function AdminLiveOverlayControl({ focusWheelTick = 0 }: { focusWheelTick
     <section className="space-y-4 border border-accent/40 bg-background/50 p-5">
       <div>
         <div>
-          <p className="text-xs uppercase tracking-[0.35em] text-accent">Live Overlay Receiver</p>
-          <h2 className="mt-2 text-xl font-bold text-foreground">Automatic</h2>
-          <p className="mt-1 text-sm text-muted">Automatic scene selection is active. Normal show flow does not require manual overlay scene selection.</p>
+          <p className="text-xs uppercase tracking-[0.35em] text-cyan-200">Wheel Overlay</p>
+          <h2 className="mt-2 text-xl font-bold text-foreground">Automatic + Wheel Control</h2>
+          <p className="mt-1 text-sm text-muted">This menu owns the combined live video and Wheel source. Song visual tests and manual visual moments are in the separate Visual Overlays menu.</p>
         </div>
       </div>
 
@@ -181,26 +150,6 @@ export function AdminLiveOverlayControl({ focusWheelTick = 0 }: { focusWheelTick
         </div>
         <p className="mt-3 text-xs text-muted">These production capability links stay the same and grant overlay display only—not admin access. All three remain square sources for reliable TikTok Studio startup, wake when the session opens, and clear when the session ends. Show Visuals composes inside a centered 3:4 portrait-safe stage with keyed side gutters. The Live Overlay source remains active through pre-show and automatically becomes the Wheel with audio when launched.</p>
       </details>
-
-      <section className="space-y-3 border border-violet-400/35 bg-surface p-4">
-        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-violet-300">Manual Visual Moments</p>
-            <p className="mt-1 text-sm text-muted">Automatic lighting stays restrained. These short cues use eased entrances and exits for intentional big moments.</p>
-          </div>
-          <p className="text-xs uppercase tracking-widest text-violet-200">{activeVisualCue ? `Active: ${sceneLabel(activeVisualCue)}` : "Automatic Baseline"}</p>
-        </div>
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
-          {VISUAL_CUE_CONTROLS.map((cue) => (
-            <button key={cue.type} type="button" onClick={() => triggerVisualCue(cue.type)} className="border border-violet-400/45 bg-background/40 p-3 text-left transition hover:border-accent hover:bg-accent/10">
-              <span className="block text-xs font-bold uppercase tracking-widest text-foreground">{cue.label}</span>
-              <span className="mt-1 block text-xs leading-relaxed text-muted">{cue.description}</span>
-              <span className="mt-2 block text-[10px] uppercase tracking-widest text-violet-300">{Math.round(RADIO_VISUAL_CUE_DURATION_MS[cue.type] / 1_000)} sec</span>
-            </button>
-          ))}
-        </div>
-        <button type="button" onClick={() => post({ action: "clearVisualCue" }, "Manual visual cue cleared; automatic lighting resumed.")} disabled={!activeVisualCue} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-40">Stop Cue / Return to Auto</button>
-      </section>
 
       <div className="grid gap-3 text-sm md:grid-cols-3">
         <div className="border border-border bg-surface p-3"><p className="text-xs uppercase tracking-widest text-muted">Current Scene</p><p className="mt-1 font-bold text-foreground">{sceneLabel(scene?.mode)}</p></div>

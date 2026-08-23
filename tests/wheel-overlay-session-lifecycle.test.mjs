@@ -23,8 +23,7 @@ function withTypeScriptLoader(run) {
 }
 
 function loadWheelOverlayHarness() {
-  const calls = { overlay: 0, player: 0, resolve: 0 };
-  const playerSync = { trackId: "track-1", playbackState: "playing" };
+  const calls = { overlay: 0, resolve: 0 };
   let queueState = { session: null };
   let resolvedScene = { sessionActive: true, mode: "session_active", updatedAt: "2026-08-20T12:00:00.000Z" };
   let resolverInput = null;
@@ -39,10 +38,9 @@ function loadWheelOverlayHarness() {
     }
     if (request === "./live-overlay" && parent?.filename.endsWith("wheel-overlay.ts")) {
       return {
-        getLiveOverlayRuntimeState: async () => {
+        getStoredLiveOverlayState: async () => {
           calls.overlay += 1;
-          calls.player += 1;
-          return { overlayState: { mode: "auto" }, playerSync };
+          return { mode: "auto" };
         },
         resolveLiveOverlaySceneFromQueueState: (input) => {
           calls.resolve += 1;
@@ -63,7 +61,6 @@ function loadWheelOverlayHarness() {
     return {
       api,
       calls,
-      playerSync,
       getResolverInput: () => resolverInput,
       setQueueState: (next) => { queueState = next; },
       setResolvedScene: (next) => { resolvedScene = next; },
@@ -73,7 +70,7 @@ function loadWheelOverlayHarness() {
   }
 }
 
-test("permanent square source wakes with the session, stays live through broadcast, and clears after End", async () => {
+test("permanent Wheel source wakes with the session but stays media-free until a ceremony", async () => {
   const harness = loadWheelOverlayHarness();
   const now = new Date("2026-08-20T12:00:00.000Z");
 
@@ -85,23 +82,23 @@ test("permanent square source wakes with the session, stays live through broadca
     scene: null,
     updatedAt: now.toISOString(),
   });
-  assert.deepEqual(harness.calls, { overlay: 0, player: 0, resolve: 0 });
+  assert.deepEqual(harness.calls, { overlay: 0, resolve: 0 });
 
   harness.setQueueState({ session: { status: "open", showStarted: false, updatedAt: "2026-08-20T12:01:00.000Z" } });
   const preBroadcast = await harness.api.getWheelOverlaySnapshot(now);
   assert.equal(preBroadcast.sessionActive, true, "pre-show session keeps the fast wake cadence");
   assert.equal(preBroadcast.broadcastActive, false);
-  assert.equal(preBroadcast.scene?.mode, "session_active", "opening the session wakes the source before Start Broadcast");
-  assert.equal(harness.getResolverInput()?.playerSync, harness.playerSync, "the pre-show scene shares live player sync");
-  assert.deepEqual(harness.calls, { overlay: 1, player: 1, resolve: 1 });
+  assert.equal(preBroadcast.scene, null, "the Wheel lane stays transparent instead of mounting the live/video scene");
+  assert.equal(harness.getResolverInput()?.playerSync, null, "the Wheel lane never reads or projects live video sync");
+  assert.deepEqual(harness.calls, { overlay: 1, resolve: 1 });
 
   harness.setQueueState({ session: { status: "open", showStarted: true, updatedAt: "2026-08-20T12:02:00.000Z" } });
   const live = await harness.api.getWheelOverlaySnapshot(now);
   assert.equal(live.broadcastActive, true);
   assert.equal(live.wheelActive, false);
-  assert.equal(live.scene?.mode, "session_active", "the full live scene is visible even without a Wheel ceremony");
-  assert.equal(harness.getResolverInput()?.playerSync, harness.playerSync, "the square source shares live player sync");
-  assert.deepEqual(harness.calls, { overlay: 2, player: 2, resolve: 2 });
+  assert.equal(live.scene, null, "normal video playback remains exclusively on the Live lane");
+  assert.equal(harness.getResolverInput()?.playerSync, null, "normal playback sync remains isolated to the Live lane");
+  assert.deepEqual(harness.calls, { overlay: 2, resolve: 2 });
 
   harness.setResolvedScene({ sessionActive: true, mode: "wheel_spinning", wheelCeremony: { status: "spinning" }, updatedAt: "2026-08-20T12:03:00.000Z" });
   const wheel = await harness.api.getWheelOverlaySnapshot(now);
@@ -113,5 +110,5 @@ test("permanent square source wakes with the session, stays live through broadca
   const ended = await harness.api.getWheelOverlaySnapshot(now);
   assert.equal(ended.broadcastActive, false);
   assert.equal(ended.scene, null, "End Broadcast clears the source back to chroma key");
-  assert.deepEqual(harness.calls, { overlay: 3, player: 3, resolve: 3 }, "ended sessions do not read shared overlay state");
+  assert.deepEqual(harness.calls, { overlay: 3, resolve: 3 }, "ended sessions do not read shared overlay state");
 });

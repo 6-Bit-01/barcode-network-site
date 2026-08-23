@@ -95,5 +95,6 @@ test("overlay builders read queue authority before shared state and short-circui
   const wheelIdleBranch = wheelOverlay.slice(wheelOverlay.indexOf("if (!hasActiveQueueSession(queueState))"), wheelOverlay.indexOf("const broadcastActive"));
   assert.doesNotMatch(wheelIdleBranch, /getLiveOverlayRuntimeState/);
   assert.doesNotMatch(wheelOverlay, /if \(!broadcastActive\)/);
-  assert.match(wheelOverlay, /const broadcastActive[\s\S]*const \{ overlayState, playerSync \} = await getLiveOverlayRuntimeState\(\)/);
+  assert.match(wheelOverlay, /const broadcastActive[\s\S]*const overlayState = await getStoredLiveOverlayState\(\)[\s\S]*playerSync: null/);
+  assert.doesNotMatch(wheelOverlay, /getLiveOverlayRuntimeState\(\)/);
 });

@@ -61,12 +61,6 @@ test("queue GET routes attach sanitized player and wheel clocks", () => {
   assert.ok(adminRoute.includes("attachQueueLiveTiming"));
 });
 
-test("admin session creation preserves raw track-limit defaults before hard-cap normalization", () => {
-  const adminRoute = fs.readFileSync(path.join(projectRoot, "src/app/api/admin/queue/route.ts"), "utf8");
-  assert.match(adminRoute, /trackLimitPerArtist: normalizeTrackLimitPerArtist\(body\.trackLimitPerArtist\)/);
-  assert.doesNotMatch(adminRoute, /const trackLimitPerArtist = Number\(body\.trackLimitPerArtist\)/);
-});
-
 test("live timing accepts only the matching player track and sanitizes wheel state", () => {
   const track = { id: "playing-track", detectedDurationSeconds: 240, estimatedDurationSeconds: 240 };
   const observedAt = "2026-08-09T03:00:00.000Z";

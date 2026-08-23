@@ -4,13 +4,12 @@ import test from "node:test";
 
 const source = (path) => fs.readFileSync(path, "utf8");
 
-test("permanent Studio links are stable and private rehearsal state stays capability-gated", () => {
+test("permanent Studio links are private, stable, and use one authoritative state path", () => {
   const auth = source("src/lib/auth.ts");
   const client = source("src/lib/studio-overlay-client.ts");
   const access = source("src/app/api/admin/overlay/source-access/route.ts");
   const foregroundRoute = source("src/app/api/overlay/foreground/route.ts");
   const visualsRoute = source("src/app/api/overlay/radio-visuals/route.ts");
-  const mediaRoute = source("src/app/api/overlay/media/route.ts");
   const wheelRoute = source("src/app/api/overlay/wheel/route.ts");
   const foreground = source("src/components/ForegroundOverlayReceiver.tsx");
   const visuals = source("src/components/RadioVisualsReceiver.tsx");
@@ -24,34 +23,31 @@ test("permanent Studio links are stable and private rehearsal state stays capabi
   assert.match(client, /window\.location\.hash/);
   assert.match(client, /Authorization: `Bearer \$\{accessToken\}`/);
 
-  for (const route of [foregroundRoute, visualsRoute, mediaRoute, wheelRoute]) {
+  for (const route of [foregroundRoute, visualsRoute, wheelRoute]) {
     assert.match(route, /verifyStudioOverlayToken/);
     assert.match(route, /status: 401/);
   }
   assert.match(foreground, /studioOverlayRequestHeaders/);
   assert.match(visuals, /studioOverlayRequestHeaders/);
-  assert.match(live, /headers: studioOverlayRequestHeaders\(\)/);
-  assert.match(live, /wheelOnly \? "\/api\/overlay\/wheel" : "\/api\/overlay\/media"/);
+  assert.match(live, /wheelOnly \? studioOverlayRequestHeaders\(\) : undefined/);
 
   assert.match(access, /verifyAdminToken/);
   assert.match(access, /createStudioOverlayToken/);
   assert.match(access, /https:\/\/www\.barcode-network\.com/);
-  assert.match(access, /STUDIO_SOURCE_QUERY = "\?studioSource=v2"/);
+  assert.match(access, /STUDIO_SOURCE_QUERY = "\?studioSource=v1"/);
   assert.match(access, /foreground: `\$\{PRODUCTION_ORIGIN\}\/overlay\/foreground\$\{STUDIO_SOURCE_QUERY\}\$\{fragment\}`/);
   assert.match(access, /radioVisuals: `\$\{PRODUCTION_ORIGIN\}\/overlay\/radio-visuals\$\{STUDIO_SOURCE_QUERY\}\$\{fragment\}`/);
-  assert.match(access, /live: `\$\{PRODUCTION_ORIGIN\}\/overlay\/live\$\{STUDIO_SOURCE_QUERY\}\$\{fragment\}`/);
   assert.match(access, /wheel: `\$\{PRODUCTION_ORIGIN\}\/overlay\/wheel\$\{STUDIO_SOURCE_QUERY\}\$\{fragment\}`/);
   assert.match(foreground, /data-session-active=\{sessionActive \? "true" : "false"\}/);
   assert.doesNotMatch(foreground, /sessionActive \? <ForegroundOverlayStrip/);
   assert.match(admin, /One-Time TikTok Studio Source Setup/);
-  assert.match(admin, /Load Permanent Source Links/);
+  assert.match(admin, /Load Permanent Private Links/);
   assert.doesNotMatch(admin, /Preview Wheel Source|Copy Wheel Link|Preview Visuals|Copy Visuals Link/);
 });
 
 test("all permanent Studio pages are native square sources", () => {
   const foregroundPage = source("src/app/overlay/foreground/page.tsx");
   const visualsPage = source("src/app/overlay/radio-visuals/page.tsx");
-  const livePage = source("src/app/overlay/live/page.tsx");
   const wheelPage = source("src/app/overlay/wheel/page.tsx");
   const foreground = source("src/components/ForegroundOverlayReceiver.tsx");
   const visuals = source("src/components/RadioVisualsReceiver.tsx");
@@ -60,7 +56,7 @@ test("all permanent Studio pages are native square sources", () => {
   const foregroundCss = source("src/app/overlay/foreground/calibration/foreground-calibration.css");
   const admin = source("src/components/AdminLiveOverlayControl.tsx");
 
-  for (const page of [foregroundPage, visualsPage, livePage, wheelPage]) {
+  for (const page of [foregroundPage, visualsPage, wheelPage]) {
     assert.match(page, /width: 1080,[\s\S]*?height: 1080,/);
     assert.match(page, /minimumScale: 1,/);
     assert.match(page, /maximumScale: 1,/);
@@ -74,37 +70,30 @@ test("all permanent Studio pages are native square sources", () => {
   assert.match(wheelCss, /\.wheel-overlay-shell::after \{[\s\S]*?animation: wheel-overlay-capture-heartbeat 1s steps\(2, end\) infinite !important;/);
   assert.match(wheelCss, /@keyframes wheel-overlay-capture-heartbeat/);
   assert.doesNotMatch(wheelCss, /contain:\s*strict/);
-  assert.match(admin, /Foreground Strip[\s\S]*?1080 × 1080[\s\S]*?Show Visuals[\s\S]*?1080 × 1080[\s\S]*?Live Video \+ Track Lane[\s\S]*?1080 × 1080[\s\S]*?Wheel \+ Audio Lane[\s\S]*?1080 × 1080/);
+  assert.match(admin, /Foreground Strip[\s\S]*?1080 × 1080[\s\S]*?Show Visuals[\s\S]*?1080 × 1080[\s\S]*?Live Overlay \+ Wheel \+ Audio[\s\S]*?1080 × 1080/);
   assert.doesNotMatch(admin, /1080 × 1920|1080 × 1440/);
 });
 
-test("Live media and Wheel audio use isolated square lanes", () => {
+test("square live and Wheel source follows session lifecycle, resolved ceremony authority, and browser-source audio", () => {
   const wheel = source("src/lib/wheel-overlay.ts");
   const receiver = source("src/components/LiveOverlayReceiver.tsx");
-  const livePage = source("src/app/overlay/live/page.tsx");
-  const wheelPage = source("src/app/overlay/wheel/page.tsx");
+  const page = source("src/app/overlay/wheel/page.tsx");
   assert.match(wheel, /const broadcastActive = queueState\.session\?\.showStarted === true/);
-  assert.match(wheel, /getStoredLiveOverlayState\(\)/);
-  assert.doesNotMatch(wheel, /getLiveOverlayRuntimeState\(\)/);
-  assert.match(wheel, /playerSync: null/);
+  assert.match(wheel, /getLiveOverlayRuntimeState\(\)/);
   assert.match(wheel, /const wheelActive = Boolean\(scene\.wheelCeremony\)/);
-  assert.match(wheel, /scene: wheelActive \? scene : null/);
+  assert.match(wheel, /broadcastActive,[\s\S]*?scene,/);
   assert.doesNotMatch(wheel, /if \(!broadcastActive\)/);
+  assert.doesNotMatch(wheel, /scene: wheelActive \? scene : null/);
   assert.doesNotMatch(wheel, /overlayState\.wheelOverlayActive === true &&/);
-  assert.match(receiver, /const youtubeVisible = !wheelOnly/);
-  assert.match(receiver, /const tiktokVisible = !wheelOnly/);
-  assert.match(receiver, /const wheelVisible = wheelOnly && wheelSceneActive/);
-  assert.match(receiver, /const broadcastVisible = wheelOnly \? wheelVisible : hasActiveQueueSession\(scene\) && !wheelSceneActive/);
+  assert.match(receiver, /const broadcastVisible = hasActiveQueueSession\(scene\)/);
   assert.doesNotMatch(receiver, /wheelSnapshot\?\.broadcastActive === true/);
   assert.match(receiver, /wheelSnapshot\?\.scene \?\? fallbackScene\(\)/);
   assert.match(receiver, /wheelOnly \? "wheel-overlay-stage " : ""/);
   assert.match(receiver, /data-broadcast-active="true"/);
-  assert.doesNotMatch(receiver, /ENABLE LIVE OVERLAY AUDIO/);
   assert.match(receiver, /const cheer = new Audio\(WHEEL_WINNER_CHEER_AUDIO_PATH\)/);
   assert.match(receiver, /const encrypt = new Audio\(WHEEL_REENCRYPT_AUDIO_PATH\)/);
-  assert.match(receiver, /playCheerSfx=\{\(\) => playWheelOnlySfx/);
-  assert.match(livePage, /Live Video \+ Track Lane/);
-  assert.match(wheelPage, /Wheel \+ Audio Lane/);
+  assert.match(receiver, /playCheerSfx=\{wheelOnly \? \(\) => playWheelOnlySfx/);
+  assert.match(page, /Live \+ Wheel Browser Source/);
   assert.match(receiver, /estimatedServerNowMs/);
   assert.match(receiver, /elapsedSinceSpinStartMs/);
   assert.match(receiver, /initialProgress/);

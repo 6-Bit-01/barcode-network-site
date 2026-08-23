@@ -433,7 +433,6 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
       if (!latestSessionId) throw new Error(SESSION_SYNC_REQUIRED_MESSAGE);
       const visibleSessionId = session?.sessionId ?? sessionId;
       if (visibleSessionId && latestSessionId !== visibleSessionId) throw new Error(SESSION_CHANGED_MESSAGE);
-      if ((refreshedBeforeSubmit?.submitterStatus?.remaining ?? 1) <= 0) throw new Error("Submission limit reached for this session.");
       const body: Record<string, string | number | boolean> = {
         mode,
         artist: artist.trim(),
@@ -605,7 +604,6 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
   if (transmissionState !== "idle") return createPortal(<WarpSequence state={transmissionState} data={warpData} />, document.body);
 
   const effectiveCooldown = session?.submissionCooldownSeconds === 0 ? 0 : cooldownRemaining;
-  const submissionLimitReached = (submitterStatus?.remaining ?? 1) <= 0;
   const estimatedPosition = Math.min((status?.activeCount ?? publicQueue.length) + 1, status?.capacity ?? ((status?.activeCount ?? publicQueue.length) + 1));
 
   return (
@@ -723,7 +721,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
             </div>
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
               <button type="button" onClick={() => setStep("track")} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted">Back</button>
-              <button type="submit" onClick={() => { finalSubmitIntent.current = true; }} disabled={submitting || readState === "uploading" || routingLockRemaining > 0 || effectiveCooldown > 0 || submissionLimitReached || status?.isOpen === false || status?.isFull === true} className="border border-accent px-5 py-2.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{readState === "uploading" ? "Uploading audio…" : submitting ? "Submitting…" : routingLockRemaining > 0 ? `Submit lock: ${routingLockRemaining}` : effectiveCooldown > 0 ? `Next submission available in ${formatCooldown(effectiveCooldown)}` : submissionLimitReached ? "Submission Limit Reached" : status?.isFull ? "Queue Full" : selectedRoute === "priority" ? "Submit & Continue to Payment" : "Submit Free"}</button>
+              <button type="submit" onClick={() => { finalSubmitIntent.current = true; }} disabled={submitting || readState === "uploading" || routingLockRemaining > 0 || effectiveCooldown > 0 || status?.isOpen === false || status?.isFull === true} className="border border-accent px-5 py-2.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{readState === "uploading" ? "Uploading audio…" : submitting ? "Submitting…" : routingLockRemaining > 0 ? `Submit lock: ${routingLockRemaining}` : effectiveCooldown > 0 ? `Next submission available in ${formatCooldown(effectiveCooldown)}` : status?.isFull ? "Queue Full" : selectedRoute === "priority" ? "Submit & Continue to Payment" : "Submit Free"}</button>
             </div>
           </div>
         )}

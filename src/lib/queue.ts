@@ -82,6 +82,7 @@ const MUTATION_REVISION_KEY = "radioQueue:v2:sessions:mutation-revision";
 const MUTATION_LOCK_TTL_MS = 15_000;
 const MUTATION_LOCK_WAIT_MS = 5_000;
 const DEFAULT_QUEUE_CAPACITY = 44;
+export const MAX_TRACKS_PER_SUBMITTER = 3;
 const DEFAULT_SUBMISSION_COOLDOWN_SECONDS = 5 * 60;
 const MAX_SUBMISSION_COOLDOWN_SECONDS = 60 * 60;
 const SPONSOR_BREAK_SECONDS = 10 * 60 + 30;
@@ -289,6 +290,13 @@ function normalizeSubmissionCooldownSeconds(value: unknown): number {
   return Math.min(MAX_SUBMISSION_COOLDOWN_SECONDS, Math.max(0, Math.round(numeric)));
 }
 
+export function normalizeTrackLimitPerArtist(value: unknown): number {
+  if (value === null || value === undefined || (typeof value === "string" && value.trim() === "")) return MAX_TRACKS_PER_SUBMITTER;
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric)) return MAX_TRACKS_PER_SUBMITTER;
+  return Math.min(MAX_TRACKS_PER_SUBMITTER, Math.max(1, Math.floor(numeric)));
+}
+
 function normalizePaidPriorityEnabled(input: { priorityUpgradesEnabled?: boolean | null; priorityUpgradePaymentsEnabled?: boolean | null; priorityUpgradePriceCents?: unknown }): boolean {
   return (input.priorityUpgradesEnabled === true || input.priorityUpgradePaymentsEnabled === true) && normalizePriceCents(input.priorityUpgradePriceCents) > 0;
 }
@@ -313,7 +321,7 @@ function defaultSession(options: QueueSessionOptions = {}): QueueSession {
     updatedAt: now,
     queueOpen: false,
     description: options.description?.trim() || sessionDescriptionFor(date),
-    trackLimitPerArtist: options.trackLimitPerArtist ?? 3,
+    trackLimitPerArtist: normalizeTrackLimitPerArtist(options.trackLimitPerArtist),
     queueCapacity: options.queueCapacity ?? DEFAULT_QUEUE_CAPACITY,
     skipGameTapTarget: options.skipGameTapTarget ?? 10000,
     submissionCooldownSeconds: normalizeSubmissionCooldownSeconds(options.submissionCooldownSeconds),
@@ -1012,7 +1020,7 @@ function summarizeSession(session: QueueSession): QueueSessionSummary {
     updatedAt: session.updatedAt,
     queueOpen: session.queueOpen,
     description: session.description ?? sessionDescriptionFor(session.showDate),
-    trackLimitPerArtist: session.trackLimitPerArtist ?? 3,
+    trackLimitPerArtist: normalizeTrackLimitPerArtist(session.trackLimitPerArtist),
     queueCapacity: session.queueCapacity ?? DEFAULT_QUEUE_CAPACITY,
     skipGameTapTarget: session.skipGameTapTarget ?? 10000,
     submissionCooldownSeconds: normalizeSubmissionCooldownSeconds(session.submissionCooldownSeconds),
@@ -1167,6 +1175,7 @@ function normalizeEntry(entry: QueueEntry): QueueEntry {
     detectedSongTitle: entry.detectedSongTitle ?? null,
     providerTitle: entry.providerTitle ?? null,
     sourceType,
+    normalizedTikTokHandle: normalizeTikTokHandle(entry.normalizedTikTokHandle ?? entry.tiktokHandle ?? ""),
     normalizedSourceKey: shouldMigrateTikTokIdentity && canonicalTikTokKey ? canonicalTikTokKey : entry.normalizedSourceKey ?? null,
     providerId: shouldMigrateTikTokIdentity && canonicalTikTokKey ? canonicalTikTokKey : entry.providerId ?? null,
     estimatedDurationSeconds: entry.estimatedDurationSeconds ?? detectedDurationSeconds ?? INTERNAL_BUFFER_DURATION_SECONDS,
@@ -1280,7 +1289,7 @@ function normalizeSession(raw: Partial<QueueSession> & { sessionId: string; titl
     provenanceRevision: typeof raw.provenanceRevision === "number" && Number.isFinite(raw.provenanceRevision) ? Math.max(0, Math.floor(raw.provenanceRevision)) : 0,
     provenanceUpdatedAt: typeof raw.provenanceUpdatedAt === "string" && raw.provenanceUpdatedAt ? raw.provenanceUpdatedAt : null,
     description: raw.description ?? sessionDescriptionFor(raw.showDate),
-    trackLimitPerArtist: raw.trackLimitPerArtist ?? 3,
+    trackLimitPerArtist: normalizeTrackLimitPerArtist(raw.trackLimitPerArtist),
     queueCapacity: raw.queueCapacity ?? raw.publicStatus?.capacity ?? DEFAULT_QUEUE_CAPACITY,
     skipGameTapTarget: raw.skipGameTapTarget ?? 10000,
     submissionCooldownSeconds: normalizeSubmissionCooldownSeconds(raw.submissionCooldownSeconds),
@@ -2859,6 +2868,49 @@ function normalizeEmail(value?: string | null): string {
   return (value ?? "").trim().toLowerCase();
 }
 
+type SubmissionIdentityInput = {
+  submitterToken?: string | null;
+  normalizedTikTokHandle?: string | null;
+  tiktokHandle?: string | null;
+  contactEmail?: string | null;
+  submitterArtistName?: string | null;
+  submittedArtistName?: string | null;
+  artist?: string | null;
+};
+
+function submissionIdentityKeys(identity: SubmissionIdentityInput): string[] {
+  const token = identity.submitterToken?.trim() ?? "";
+  const tikTok = normalizeTikTokHandle(identity.normalizedTikTokHandle ?? identity.tiktokHandle ?? "");
+  const email = normalizeEmail(identity.contactEmail);
+  const artist = normalizeIdentity(identity.submitterArtistName ?? identity.submittedArtistName ?? identity.artist);
+  return [
+    token ? `token:${token}` : "",
+    tikTok ? `tiktok:${tikTok}` : "",
+    email ? `email:${email}` : "",
+    artist ? `artist:${artist}` : "",
+  ].filter(Boolean);
+}
+
+function connectedSubmissionEntries(entries: QueueEntry[], identity: SubmissionIdentityInput): QueueEntry[] {
+  const connectedKeys = new Set(submissionIdentityKeys(identity));
+  if (connectedKeys.size === 0) return [];
+
+  const connectedIndexes = new Set<number>();
+  let expanded = true;
+  while (expanded) {
+    expanded = false;
+    entries.forEach((entry, index) => {
+      if (connectedIndexes.has(index)) return;
+      const keys = submissionIdentityKeys(entry);
+      if (!keys.some((key) => connectedKeys.has(key))) return;
+      connectedIndexes.add(index);
+      keys.forEach((key) => connectedKeys.add(key));
+      expanded = true;
+    });
+  }
+  return entries.filter((_, index) => connectedIndexes.has(index));
+}
+
 export function normalizeQueueSourceKey(value?: string | null): string | null {
   if (!value) return null;
   const tiktok = parseTikTokVideoUrl(value);
@@ -2918,14 +2970,16 @@ function findDuplicateSubmissionReasons(session: QueueSession, track: QueueEntry
 function findSubmissionLimitBlocks(session: QueueSession, track: QueueEntry): string[] {
   const entries = submissionCheckEntries(session);
   const reasons: string[] = [];
+  const limit = normalizeTrackLimitPerArtist(session.trackLimitPerArtist);
   const tikTok = track.normalizedTikTokHandle;
   const submitter = normalizeIdentity(track.submitterArtistName ?? track.submittedArtistName);
   const email = normalizeEmail(track.contactEmail);
   const token = track.submitterToken ?? "";
-  if (tikTok && countMatches(entries, (entry) => entry.normalizedTikTokHandle === tikTok) >= session.trackLimitPerArtist) reasons.push("Limit matched by TikTok handle");
-  if (submitter && countMatches(entries, (entry) => normalizeIdentity(entry.submitterArtistName ?? entry.submittedArtistName) === submitter) >= session.trackLimitPerArtist) reasons.push("Limit matched by submitter artist name");
-  if (email && countMatches(entries, (entry) => normalizeEmail(entry.contactEmail) === email) >= session.trackLimitPerArtist) reasons.push("Limit matched by contact/email");
-  if (token && countMatches(entries, (entry) => entry.submitterToken === token) >= session.trackLimitPerArtist) reasons.push("Limit matched by browser token");
+  if (tikTok && countMatches(entries, (entry) => entry.normalizedTikTokHandle === tikTok) >= limit) reasons.push("Limit matched by TikTok handle");
+  if (submitter && countMatches(entries, (entry) => normalizeIdentity(entry.submitterArtistName ?? entry.submittedArtistName) === submitter) >= limit) reasons.push("Limit matched by submitter artist name");
+  if (email && countMatches(entries, (entry) => normalizeEmail(entry.contactEmail) === email) >= limit) reasons.push("Limit matched by contact/email");
+  if (token && countMatches(entries, (entry) => entry.submitterToken === token) >= limit) reasons.push("Limit matched by browser token");
+  if (connectedSubmissionEntries(entries, track).length >= limit) reasons.push("Limit matched across known submitter identities");
   return reasons;
 }
 
@@ -3707,24 +3761,23 @@ function publicSubmitterStatus(session: QueueSession, identity?: { submitterToke
   const artist = normalizeIdentity(identity?.artist);
   if (!token && !tikTok && !email && !artist) return null;
 
-  const entries = [...session.queue, ...(session.nextInLineTrack ? [session.nextInLineTrack] : []), ...(session.loadedTrack ? [session.loadedTrack] : []), ...session.completed, ...session.removed];
-  const matching = entries.filter((entry) => {
-    if (token && entry.submitterToken === token) return true;
-    if (tikTok && entry.normalizedTikTokHandle === tikTok) return true;
-    if (email && normalizeEmail(entry.contactEmail) === email) return true;
-    if (artist && normalizeIdentity(entry.submitterArtistName ?? entry.submittedArtistName) === artist) return true;
-    return false;
-  });
-  const latest = matching.reduce((time, entry) => Math.max(time, new Date(entry.createdAt).getTime()), 0);
+  const entries = submissionCheckEntries(session);
+  const identityKeys = new Set(submissionIdentityKeys({ submitterToken: token, normalizedTikTokHandle: tikTok, contactEmail: email, artist }));
+  const directMatching = entries.filter((entry) => submissionIdentityKeys(entry).some((key) => identityKeys.has(key)));
+  const connectedMatching = connectedSubmissionEntries(entries, { submitterToken: token, normalizedTikTokHandle: tikTok, contactEmail: email, artist });
+  // The cap follows all linked identities, while the public track list and
+  // cooldown expose only direct matches so linked track details are not
+  // disclosed through the public snapshot.
+  const latest = directMatching.reduce((time, entry) => Math.max(time, new Date(entry.createdAt).getTime()), 0);
   const cooldownSeconds = normalizeSubmissionCooldownSeconds(session.submissionCooldownSeconds);
   const cooldownRemainingSeconds = latest && cooldownSeconds > 0 ? Math.max(0, cooldownSeconds - Math.floor((Date.now() - latest) / 1000)) : 0;
-  const limit = session.trackLimitPerArtist ?? 3;
+  const limit = normalizeTrackLimitPerArtist(session.trackLimitPerArtist);
   return {
-    used: matching.length,
+    used: connectedMatching.length,
     limit,
-    remaining: Math.max(0, limit - matching.length),
+    remaining: Math.max(0, limit - connectedMatching.length),
     cooldownRemainingSeconds,
-    submitted: matching.slice(0, limit).map(toPublicQueueTrack).map(({ id, submittedArtistName, submittedSongTitle, collaboratorNames, sourceType, lane, durationLabel, detectedDurationSeconds, estimatedDurationSeconds, durationIsEstimate, durationSource, priorityUpgradeStatus }) => ({ id, submittedArtistName, submittedSongTitle, collaboratorNames, sourceType, lane, durationLabel, detectedDurationSeconds, estimatedDurationSeconds, durationIsEstimate, durationSource, priorityUpgradeStatus })),
+    submitted: directMatching.slice(0, limit).map(toPublicQueueTrack).map(({ id, submittedArtistName, submittedSongTitle, collaboratorNames, sourceType, lane, durationLabel, detectedDurationSeconds, estimatedDurationSeconds, durationIsEstimate, durationSource, priorityUpgradeStatus }) => ({ id, submittedArtistName, submittedSongTitle, collaboratorNames, sourceType, lane, durationLabel, detectedDurationSeconds, estimatedDurationSeconds, durationIsEstimate, durationSource, priorityUpgradeStatus })),
   };
 }
 

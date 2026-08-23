@@ -55,6 +55,7 @@ test("Redis-backed browser surfaces share a bounded polling budget", () => {
   assert.match(liveOverlay, /WHEEL_OVERLAY_ACTIVE_POLL_INTERVAL_MS/);
   assert.match(liveOverlay, /WHEEL_OVERLAY_SHOW_IDLE_POLL_INTERVAL_MS/);
   assert.match(liveOverlay, /WHEEL_OVERLAY_STANDBY_POLL_INTERVAL_MS/);
+  assert.match(liveOverlay, /combinedVideoActive[\s\S]*?LIVE_OVERLAY_POLL_INTERVAL_MS/);
   assert.match(source("src/components/LiveStatusProvider.tsx"), /SITE_LIVE_STATUS_POLL_INTERVAL_MS/);
 
   for (const path of [

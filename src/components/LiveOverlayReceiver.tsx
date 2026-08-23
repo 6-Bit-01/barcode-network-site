@@ -330,9 +330,11 @@ function WheelCeremonyOverlay({ scene, clockAnchorRef, audioArmed, audioNotice, 
   const lastReencryptKeyRef = useRef<string | null>(null);
   const resultRevealTimeoutRef = useRef<number | null>(null);
   const [resultRevealReadyKey, setResultRevealReadyKey] = useState<string | null>(null);
-  const [wheelRotationDeg, setWheelRotationDeg] = useState(0);
   const [wheelFrozen, setWheelFrozen] = useState(false);
   const spinRafRef = useRef<number | null>(null);
+  const wheelElementRef = useRef<HTMLDivElement | null>(null);
+  const wheelLabelElementsRef = useRef<Map<string, HTMLSpanElement>>(new Map());
+  const wheelRotationValueRef = useRef(0);
   const candidateCount = Math.max(1, candidates.length);
   const wheelSegments = buildWheelSegments(candidates.map((candidate) => ({ id: candidate.id, label: candidate.artistName, weight: candidate.weight })));
   const resultSegment = wheelSegments.find((segment) => segment.candidateId === result?.id) ?? wheelSegments[0];
@@ -361,7 +363,41 @@ function WheelCeremonyOverlay({ scene, clockAnchorRef, audioArmed, audioNotice, 
   const revealKey = `${ceremony?.resultTrackId ?? "none"}:${ceremony?.status ?? "none"}`;
   const showResultPending = ceremony?.status === "result_pending" && resultRevealReadyKey === revealKey;
   const spinShouldStillAnimate = ceremony?.status === "spinning" && !wheelFrozen;
-  const displayRotationDeg = wheelRotationDeg;
+  const wheelLabelPlans = candidates.map((candidate, index) => {
+    const segment = wheelSegments[index] ?? resultSegment;
+    const label = candidate.artistName.replace(/\s+/g, " ").trim();
+    return {
+      candidate,
+      angle: segment.centerAngle,
+      label,
+      labelFit: wheelLabelFit(label, candidateCount, segment.angleSize),
+    };
+  });
+  const wheelLabelPlansRef = useRef(wheelLabelPlans);
+
+  useEffect(() => {
+    wheelLabelPlansRef.current = wheelLabelPlans;
+  }, [wheelLabelPlans]);
+
+  const applyWheelRotation = useCallback((rotationDeg: number) => {
+    // Keep the ceremony inside this combined source, but move its frame loop
+    // off React so a spin does not reconcile the full Wheel tree at 60 fps.
+    wheelRotationValueRef.current = rotationDeg;
+    if (wheelElementRef.current) {
+      wheelElementRef.current.style.transform = `rotate(${rotationDeg}deg)`;
+    }
+    for (const plan of wheelLabelPlansRef.current) {
+      const labelElement = wheelLabelElementsRef.current.get(plan.candidate.id);
+      if (!labelElement) continue;
+      const position = wheelLabelPosition(plan.angle, plan.labelFit.radius, rotationDeg);
+      labelElement.style.setProperty("--wheel-label-rotation", position.rotation);
+    }
+  }, []);
+
+  const bindWheelElement = useCallback((element: HTMLDivElement | null) => {
+    wheelElementRef.current = element;
+    if (element) element.style.transform = `rotate(${wheelRotationValueRef.current}deg)`;
+  }, []);
 
   useEffect(() => {
     if (!reencryptNonce || lastSeenReencryptNonceRef.current === reencryptNonce) return undefined;
@@ -412,7 +448,7 @@ function WheelCeremonyOverlay({ scene, clockAnchorRef, audioArmed, audioNotice, 
     }
     if (ceremony?.status !== "spinning") return;
     const unfreezeTimer = window.setTimeout(() => setWheelFrozen(false), 0);
-    const startRotation = wheelRotationDeg;
+    const startRotation = wheelRotationValueRef.current;
     const targetRotation = finalRotationDeg;
     const duration = Math.max(16_000, ceremony?.spinDurationMs ?? 24_000);
     const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
@@ -427,7 +463,7 @@ function WheelCeremonyOverlay({ scene, clockAnchorRef, audioArmed, audioNotice, 
     const initialProgress = Math.max(0, Math.min(1, (elapsedSinceSpinStartMs - WHEEL_SPIN_START_DELAY_MS) / duration));
     const remainingDelayMs = Math.max(0, WHEEL_SPIN_START_DELAY_MS - elapsedSinceSpinStartMs);
     const startAt = remainingDelayMs > 0 ? clientNow + remainingDelayMs : clientNow - initialProgress * duration;
-    if (initialProgress > 0) setWheelRotationDeg(startRotation + (targetRotation - startRotation) * easeOut(initialProgress));
+    if (initialProgress > 0) applyWheelRotation(startRotation + (targetRotation - startRotation) * easeOut(initialProgress));
     const tick = (now: number) => {
       if (now < startAt) {
         spinRafRef.current = window.requestAnimationFrame(tick);
@@ -435,9 +471,9 @@ function WheelCeremonyOverlay({ scene, clockAnchorRef, audioArmed, audioNotice, 
       }
       const t = Math.max(0, Math.min(1, (now - startAt) / duration));
       const eased = easeOut(t);
-      setWheelRotationDeg(startRotation + (targetRotation - startRotation) * eased);
+      applyWheelRotation(startRotation + (targetRotation - startRotation) * eased);
       if (t >= 1) {
-        setWheelRotationDeg(targetRotation);
+        applyWheelRotation(targetRotation);
         setWheelFrozen(true);
         spinRafRef.current = null;
         return;
@@ -450,7 +486,7 @@ function WheelCeremonyOverlay({ scene, clockAnchorRef, audioArmed, audioNotice, 
       if (spinRafRef.current !== null) window.cancelAnimationFrame(spinRafRef.current);
       spinRafRef.current = null;
     };
-  }, [ceremony?.status, ceremony?.spinStartedAt, ceremony?.spinDurationMs, finalRotationDeg, clockAnchorRef, spinStartedAtMs]);
+  }, [ceremony?.status, ceremony?.spinStartedAt, ceremony?.spinDurationMs, finalRotationDeg, clockAnchorRef, spinStartedAtMs, applyWheelRotation]);
 
   useEffect(() => {
     if (resultRevealTimeoutRef.current !== null) {
@@ -477,20 +513,15 @@ function WheelCeremonyOverlay({ scene, clockAnchorRef, audioArmed, audioNotice, 
 
       <div className="live-overlay-wheel-wrap">
         <div className="live-overlay-wheel-pointer" aria-hidden="true" />
-        <div className="live-overlay-wheel" style={{ ...wheelStyle, transform: `rotate(${displayRotationDeg}deg)` }}>
+        <div ref={bindWheelElement} className="live-overlay-wheel" style={wheelStyle}>
           <div className="live-overlay-wheel-slices" aria-hidden="true" />
           {result && (ceremony?.status === "result_pending" || ceremony?.status === "confirmed") && <div className="live-overlay-wheel-winning-segment" aria-hidden="true" />}
-          {candidates.length === 0 ? <span className="live-overlay-wheel-empty">NO CANDIDATES</span> : candidates.map((candidate, index) => {
-            const segment = wheelSegments[index] ?? resultSegment;
-            const angle = segment.centerAngle;
-            const label = candidate.artistName.replace(/\s+/g, " ").trim();
-            const labelFit = wheelLabelFit(label, candidateCount, segment.angleSize);
-            const position = wheelLabelPosition(angle, labelFit.radius, displayRotationDeg);
+          {candidates.length === 0 ? <span className="live-overlay-wheel-empty">NO CANDIDATES</span> : wheelLabelPlans.map(({ candidate, angle, label, labelFit }) => {
+            const position = wheelLabelPosition(angle, labelFit.radius, 0);
             // Wheel labels are visual only. Winner selection is based on slice geometry and the right-side pointer.
             const labelStyle = {
               "--wheel-label-x": position.x,
               "--wheel-label-y": position.y,
-              "--wheel-label-rotation": position.rotation,
               "--wheel-label-width": labelFit.width,
               "--wheel-name-size": labelFit.size,
               "--wheel-letter-spacing": labelFit.tracking,
@@ -498,7 +529,21 @@ function WheelCeremonyOverlay({ scene, clockAnchorRef, audioArmed, audioNotice, 
               "--wheel-label-line-height": labelFit.lineHeight,
             } as CSSProperties;
             return (
-              <span key={candidate.id} className="live-overlay-wheel-slice-label" style={labelStyle} title={`${candidate.artistName} — ${candidate.trackTitle}`}>
+              <span
+                key={candidate.id}
+                ref={(element) => {
+                  if (!element) {
+                    wheelLabelElementsRef.current.delete(candidate.id);
+                    return;
+                  }
+                  wheelLabelElementsRef.current.set(candidate.id, element);
+                  const currentPosition = wheelLabelPosition(angle, labelFit.radius, wheelRotationValueRef.current);
+                  element.style.setProperty("--wheel-label-rotation", currentPosition.rotation);
+                }}
+                className="live-overlay-wheel-slice-label"
+                style={labelStyle}
+                title={`${candidate.artistName} — ${candidate.trackTitle}`}
+              >
                 <span>{label}</span>
               </span>
             );
@@ -1026,6 +1071,7 @@ export function LiveOverlayReceiver({ wheelOnly = false }: { wheelOnly?: boolean
     let permanentWakeRequested = false;
     let wheelSessionActive = false;
     let wheelCeremonyActive = false;
+    let combinedVideoActive = false;
 
     async function poll(): Promise<boolean | null> {
       if (cancelled) return null;
@@ -1055,6 +1101,12 @@ export function LiveOverlayReceiver({ wheelOnly = false }: { wheelOnly?: boolean
         const nextSessionActive = wheelOnly ? wheelSnapshot?.sessionActive === true : hasActiveQueueSession(resolvedScene);
         wheelSessionActive = nextSessionActive;
         wheelCeremonyActive = wheelOnly ? wheelSnapshot?.wheelActive === true : Boolean(resolvedScene.wheelCeremony);
+        // This is an internal cadence lane, not a second Studio source. Video,
+        // track cards, Wheel visuals, and Wheel audio remain in /overlay/wheel.
+        combinedVideoActive = wheelOnly
+          && !wheelCeremonyActive
+          && resolvedScene.mode === "now_playing"
+          && Boolean(resolvedScene.youtube || resolvedScene.tiktok);
         if (!cancelled && seq > latestAppliedSeq) {
           latestAppliedSeq = seq;
           const clockAnchor = Number.isFinite(serverNowMs) && Number.isFinite(serverRequestReceivedAtMs) ? { serverNowMs, receivedAtPerformanceMs: responseReceivedAtPerformanceMs, responseTransitEstimateMs: responseTransitEstimateMsRef.current ?? 0 } : null;
@@ -1097,9 +1149,11 @@ export function LiveOverlayReceiver({ wheelOnly = false }: { wheelOnly?: boolean
       if (cancelled) return;
       const delayMs = wheelCeremonyActive
         ? WHEEL_OVERLAY_ACTIVE_POLL_INTERVAL_MS
-        : wheelSessionActive
-          ? WHEEL_OVERLAY_SHOW_IDLE_POLL_INTERVAL_MS
-          : WHEEL_OVERLAY_STANDBY_POLL_INTERVAL_MS;
+        : combinedVideoActive
+          ? LIVE_OVERLAY_POLL_INTERVAL_MS
+          : wheelSessionActive
+            ? WHEEL_OVERLAY_SHOW_IDLE_POLL_INTERVAL_MS
+            : WHEEL_OVERLAY_STANDBY_POLL_INTERVAL_MS;
       permanentTimeoutId = window.setTimeout(() => { void runPermanentPoll(); }, delayMs);
     };
     async function runPermanentPoll() {

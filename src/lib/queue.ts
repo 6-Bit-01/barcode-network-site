@@ -26,6 +26,8 @@ import {
   QUEUE_SHOW_LOG_SCHEMA_VERSION,
 } from "./queue-show-log";
 import type { QueueShowLogEventInput } from "./queue-show-log";
+import { buildQueueShowReport } from "./queue-show-report";
+import type { QueueShowReport } from "./queue-show-report";
 import { parseIso8601DurationToSeconds, parseSpotifyTrackId, parseYouTubeVideoId as parseTrackDurationYouTubeVideoId } from "./track-duration";
 import {
   INTERNAL_BUFFER_DURATION_SECONDS,
@@ -65,6 +67,8 @@ import type {
   QueueSessionStatus,
   QueueSessionSummary,
   QueueShowLogEvent,
+  QueueShowLogEventDetails,
+  QueueShowLogEventType,
   QueueShowLogTrack,
   QueueSubmissionClosureReason,
   QueueSourceType,
@@ -3525,6 +3529,7 @@ function appendQueueShowLogEvent(
     eventType: input.eventType,
     occurredAt: input.occurredAt,
     track,
+    details: input.details ?? null,
   }]);
 }
 
@@ -3534,6 +3539,7 @@ function initialQueueShowLog(session: QueueSession): QueueShowLogEvent[] {
     eventType: QueueShowLogEventInput["eventType"];
     occurredAt: string;
     trackEntry?: QueueEntry;
+    details?: QueueShowLogEventDetails | null;
   }> = [{ eventType: "session_created", occurredAt: session.createdAt }];
 
   for (const { entry } of tracks.values()) {
@@ -3559,7 +3565,15 @@ function initialQueueShowLog(session: QueueSession): QueueShowLogEvent[] {
     if (event.eventType === "loaded") {
       timeline.push({ eventType: "track_loaded", occurredAt: event.observedAt, trackEntry: located.entry });
     } else if (event.eventType === "play") {
-      timeline.push({ eventType: "track_play_started", occurredAt: event.observedAt, trackEntry: located.entry });
+      timeline.push({ eventType: "track_play_started", occurredAt: event.observedAt, trackEntry: located.entry, details: { playbackProvider: event.provider, playbackPositionSeconds: event.currentTimeSeconds, playbackDurationSeconds: event.durationSeconds, playbackErrorCode: event.errorCode } });
+    } else if (event.eventType === "pause") {
+      timeline.push({ eventType: "track_paused", occurredAt: event.observedAt, trackEntry: located.entry, details: { playbackProvider: event.provider, playbackPositionSeconds: event.currentTimeSeconds, playbackDurationSeconds: event.durationSeconds, playbackErrorCode: event.errorCode } });
+    } else if (event.eventType === "stall") {
+      timeline.push({ eventType: "track_stalled", occurredAt: event.observedAt, trackEntry: located.entry, details: { playbackProvider: event.provider, playbackPositionSeconds: event.currentTimeSeconds, playbackDurationSeconds: event.durationSeconds, playbackErrorCode: event.errorCode } });
+    } else if (event.eventType === "resume") {
+      timeline.push({ eventType: "track_resumed", occurredAt: event.observedAt, trackEntry: located.entry, details: { playbackProvider: event.provider, playbackPositionSeconds: event.currentTimeSeconds, playbackDurationSeconds: event.durationSeconds, playbackErrorCode: event.errorCode } });
+    } else if (event.eventType === "error") {
+      timeline.push({ eventType: "track_playback_error", occurredAt: event.observedAt, trackEntry: located.entry, details: { playbackProvider: event.provider, playbackPositionSeconds: event.currentTimeSeconds, playbackDurationSeconds: event.durationSeconds, playbackErrorCode: event.errorCode } });
     } else if (event.eventType === "return") {
       timeline.push({ eventType: "track_returned", occurredAt: event.observedAt, trackEntry: located.entry });
     }
@@ -3567,6 +3581,15 @@ function initialQueueShowLog(session: QueueSession): QueueShowLogEvent[] {
 
   if (session.broadcastStartedAt) {
     timeline.push({ eventType: "broadcast_started", occurredAt: session.broadcastStartedAt });
+  }
+  if (session.sponsorBreakStartedAt) {
+    timeline.push({ eventType: "sponsor_break_started", occurredAt: session.sponsorBreakStartedAt });
+  }
+  if (session.sponsorBreakCompletedAt && (session.sponsorBreakStatus === "completed" || session.sponsorBreakStatus === "skipped")) {
+    timeline.push({
+      eventType: session.sponsorBreakStatus === "skipped" ? "sponsor_break_skipped" : "sponsor_break_completed",
+      occurredAt: session.sponsorBreakCompletedAt,
+    });
   }
   if (session.status === "archived") {
     timeline.push({ eventType: "session_archived", occurredAt: session.updatedAt });
@@ -3615,6 +3638,25 @@ function queueShowLogMutationEvents(
       eventType: "broadcast_started",
       occurredAt: next.broadcastStartedAt,
     });
+  }
+  if (previous.sponsorBreakStatus !== next.sponsorBreakStatus) {
+    const sponsorEventType = next.sponsorBreakStatus === "running"
+      ? "sponsor_break_started"
+      : next.sponsorBreakStatus === "completed"
+        ? "sponsor_break_completed"
+        : next.sponsorBreakStatus === "skipped"
+          ? "sponsor_break_skipped"
+          : previous.sponsorBreakStatus === "running" || previous.sponsorBreakStatus === "completed" || previous.sponsorBreakStatus === "skipped"
+            ? "sponsor_break_reset"
+            : null;
+    if (sponsorEventType) {
+      events = appendQueueShowLogEvent(events, {
+        eventType: sponsorEventType,
+        occurredAt: next.sponsorBreakStatus === "running"
+          ? next.sponsorBreakStartedAt ?? occurredAt
+          : next.sponsorBreakCompletedAt ?? occurredAt,
+      });
+    }
   }
 
   for (const [trackId, located] of nextTracks) {
@@ -3670,15 +3712,35 @@ function queueShowLogMutationEvents(
   const previousPlaybackSequence = normalizeQueuePlaybackDiagnostics(previous.playbackDiagnostics)
     .events.reduce((highest, event) => Math.max(highest, event.sequence), 0);
   for (const event of normalizeQueuePlaybackDiagnostics(next.playbackDiagnostics).events) {
-    if (event.sequence <= previousPlaybackSequence || event.eventType !== "play") continue;
+    if (event.sequence <= previousPlaybackSequence) continue;
+    const showLogEventType = event.eventType === "play"
+      ? "track_play_started"
+      : event.eventType === "pause"
+        ? "track_paused"
+        : event.eventType === "stall"
+          ? "track_stalled"
+          : event.eventType === "resume"
+            ? "track_resumed"
+            : event.eventType === "error"
+              ? "track_playback_error"
+              : null;
+    if (!showLogEventType) continue;
     const located = nextTracks.get(event.trackId) ?? previousTracks.get(event.trackId);
     if (!located) continue;
     const existingPlayedOrder = queueShowLogTrackOrder(events, event.trackId, "playedOrder");
     events = appendQueueShowLogEvent(events, {
-      eventType: "track_play_started",
+      eventType: showLogEventType,
       occurredAt: event.observedAt,
       trackEntry: located.entry,
-      playedOrder: existingPlayedOrder ?? nextQueueShowLogOrder(events, "playedOrder"),
+      playedOrder: event.eventType === "play"
+        ? existingPlayedOrder ?? nextQueueShowLogOrder(events, "playedOrder")
+        : existingPlayedOrder,
+      details: {
+        playbackProvider: event.provider,
+        playbackPositionSeconds: event.currentTimeSeconds,
+        playbackDurationSeconds: event.durationSeconds,
+        playbackErrorCode: event.errorCode,
+      },
     });
   }
 
@@ -3696,7 +3758,19 @@ function queueStoreWithShowLog(previous: QueueStore, next: QueueStore): QueueSto
       const before = previousSessions.get(session.sessionId);
       if (!before) return { ...session, showLog: initialQueueShowLog(session) };
       const existing = normalizeQueueShowLog(before.showLog);
-      const seeded = existing.length > 0 ? existing : initialQueueShowLog(before);
+      const requested = normalizeQueueShowLog(session.showLog);
+      const requestedHasNewEvents = (requested.at(-1)?.sequence ?? 0) > (existing.at(-1)?.sequence ?? 0);
+      const requestedBySequence = new Map(requested.map((event) => [event.sequence, JSON.stringify(event)]));
+      const firstRequestedSequence = requested.at(0)?.sequence ?? Number.MAX_SAFE_INTEGER;
+      const requestedPreservesExisting = existing.every((event) => {
+        if (event.sequence < firstRequestedSequence) return true;
+        return requestedBySequence.get(event.sequence) === JSON.stringify(event);
+      });
+      const seeded = requestedHasNewEvents && requestedPreservesExisting
+        ? requested
+        : existing.length > 0
+          ? existing
+          : initialQueueShowLog(before);
       return {
         ...session,
         showLog: queueShowLogMutationEvents(before, session, seeded),
@@ -4148,6 +4222,7 @@ export interface QueueSessionShowLogExport {
   generatedAt: string;
   revision: number;
   session: Pick<QueueSessionSummary, "sessionId" | "title" | "showDate" | "status">;
+  report: QueueShowReport;
   events: QueueShowLogEvent[];
 }
 
@@ -4155,6 +4230,7 @@ export async function getQueueSessionShowLog(sessionId?: string): Promise<QueueS
   const store = await readStore();
   const session = normalizeSession(getSession(store, sessionId));
   const events = normalizeQueueShowLog(session.showLog);
+  const exportedEvents = events.length > 0 ? events : initialQueueShowLog(session);
   return {
     schemaVersion: QUEUE_SHOW_LOG_SCHEMA_VERSION,
     generatedAt: new Date().toISOString(),
@@ -4165,7 +4241,8 @@ export async function getQueueSessionShowLog(sessionId?: string): Promise<QueueS
       showDate: session.showDate,
       status: session.status,
     },
-    events: events.length > 0 ? events : initialQueueShowLog(session),
+    report: buildQueueShowReport(session, exportedEvents),
+    events: exportedEvents,
   };
 }
 
@@ -4183,6 +4260,12 @@ export async function getQueueSessionShowLogCsv(sessionId?: string): Promise<{ f
     "public source link",
     "submission order",
     "played order",
+    "playback provider",
+    "playback position seconds",
+    "playback duration seconds",
+    "playback error",
+    "wheel candidate count",
+    "wheel spin duration ms",
   ];
   const body = log.events.map((event) => [
     event.sequence,
@@ -4196,12 +4279,54 @@ export async function getQueueSessionShowLogCsv(sessionId?: string): Promise<{ f
     event.track?.publicSourceUrl ?? "",
     event.track?.submissionOrder ?? "",
     event.track?.playedOrder ?? "",
+    event.details?.playbackProvider ?? "",
+    event.details?.playbackPositionSeconds ?? "",
+    event.details?.playbackDurationSeconds ?? "",
+    event.details?.playbackErrorCode ?? "",
+    event.details?.wheelCandidateCount ?? "",
+    event.details?.wheelSpinDurationMs ?? "",
   ].map(csvEscape).join(","));
   const safeDate = log.session.showDate || pacificDateString();
   return {
     filename: `barcode-radio-show-log-${safeDate}.csv`,
     csv: [headers.map(csvEscape).join(","), ...body].join("\n"),
   };
+}
+
+const OPERATIONAL_SHOW_LOG_EVENT_TYPES = new Set<QueueShowLogEventType>([
+  "wheel_launched",
+  "wheel_reencrypted",
+  "wheel_spun",
+  "wheel_result_rejected",
+  "wheel_confirmed",
+  "wheel_cancelled",
+]);
+
+export interface QueueOperationalShowLogEventInput {
+  eventType: QueueShowLogEventType;
+  occurredAt: string;
+  details?: QueueShowLogEventDetails | null;
+}
+
+export async function recordQueueOperationalShowEvent(input: QueueOperationalShowLogEventInput): Promise<boolean> {
+  if (!OPERATIONAL_SHOW_LOG_EVENT_TYPES.has(input.eventType) || !Number.isFinite(Date.parse(input.occurredAt))) return false;
+  return withQueueMutation(async () => {
+    const store = await readStore();
+    const found = findSession(store);
+    if (!found || found.status === "archived") return false;
+    const session = normalizeSession(found);
+    const showLog = appendQueueShowLogEvents(session.showLog, [{
+      eventType: input.eventType,
+      occurredAt: new Date(input.occurredAt).toISOString(),
+      track: null,
+      details: input.details ?? null,
+    }]);
+    if ((showLog.at(-1)?.sequence ?? 0) <= (session.showLog.at(-1)?.sequence ?? 0)) return false;
+    const updated = normalizeSession({ ...session, showLog });
+    const nextStore = replaceSession(store, updated);
+    await writeStore(nextStore);
+    return true;
+  });
 }
 
 async function updatePriorityUpgradeSettingsMutation(input: PriorityUpgradeSettingsInput): Promise<QueueState> {

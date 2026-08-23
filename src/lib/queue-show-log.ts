@@ -1,11 +1,14 @@
 import type {
+  QueuePlaybackErrorCode,
+  QueuePlaybackProvider,
   QueueShowLogEvent,
+  QueueShowLogEventDetails,
   QueueShowLogEventType,
   QueueShowLogTrack,
   QueueSourceType,
 } from "./queue-types";
 
-export const QUEUE_SHOW_LOG_SCHEMA_VERSION = "barcode_queue_show_log_v1" as const;
+export const QUEUE_SHOW_LOG_SCHEMA_VERSION = "barcode_queue_show_log_v2" as const;
 export const MAX_QUEUE_SHOW_LOG_EVENTS = 2_048;
 
 const EVENT_TYPES = new Set<QueueShowLogEventType>([
@@ -16,11 +19,25 @@ const EVENT_TYPES = new Set<QueueShowLogEventType>([
   "track_submitted",
   "track_loaded",
   "track_play_started",
+  "track_paused",
+  "track_stalled",
+  "track_resumed",
+  "track_playback_error",
   "track_finished",
   "track_skipped",
   "track_removed",
   "track_returned",
   "track_restored",
+  "wheel_launched",
+  "wheel_reencrypted",
+  "wheel_spun",
+  "wheel_result_rejected",
+  "wheel_confirmed",
+  "wheel_cancelled",
+  "sponsor_break_started",
+  "sponsor_break_completed",
+  "sponsor_break_skipped",
+  "sponsor_break_reset",
   "session_archived",
 ]);
 
@@ -32,6 +49,17 @@ const SOURCE_TYPES = new Set<QueueSourceType>([
   "spotify",
   "tiktok",
   "other",
+]);
+const PLAYBACK_PROVIDERS = new Set<QueuePlaybackProvider>(["audio", "youtube", "tiktok", "external"]);
+const PLAYBACK_ERROR_CODES = new Set<QueuePlaybackErrorCode>([
+  "media_aborted",
+  "network_error",
+  "decode_error",
+  "source_unsupported",
+  "provider_error",
+  "ready_timeout",
+  "sync_error",
+  "unknown",
 ]);
 
 export type QueueShowLogEventInput = Omit<QueueShowLogEvent, "sequence">;
@@ -59,6 +87,33 @@ function positiveInteger(value: unknown): number | null {
 
 function optionalOrder(value: unknown): number | null {
   return value === null || value === undefined ? null : positiveInteger(value);
+}
+
+function boundedNonNegative(value: unknown, max: number): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric) || numeric < 0) return null;
+  return Math.min(max, Math.round(numeric * 1000) / 1000);
+}
+
+function normalizeDetails(value: unknown): QueueShowLogEventDetails | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Partial<QueueShowLogEventDetails>;
+  const playbackProvider = PLAYBACK_PROVIDERS.has(raw.playbackProvider as QueuePlaybackProvider)
+    ? raw.playbackProvider as QueuePlaybackProvider
+    : null;
+  const playbackErrorCode = PLAYBACK_ERROR_CODES.has(raw.playbackErrorCode as QueuePlaybackErrorCode)
+    ? raw.playbackErrorCode as QueuePlaybackErrorCode
+    : null;
+  const details: QueueShowLogEventDetails = {
+    playbackProvider,
+    playbackPositionSeconds: boundedNonNegative(raw.playbackPositionSeconds, 24 * 60 * 60),
+    playbackDurationSeconds: boundedNonNegative(raw.playbackDurationSeconds, 24 * 60 * 60),
+    playbackErrorCode,
+    wheelCandidateCount: boundedNonNegative(raw.wheelCandidateCount, 10_000),
+    wheelSpinDurationMs: boundedNonNegative(raw.wheelSpinDurationMs, 10 * 60 * 1_000),
+  };
+  return Object.values(details).some((item) => item !== null) ? details : null;
 }
 
 function normalizedTikTokHandle(value: unknown): string {
@@ -113,7 +168,7 @@ function normalizeEvent(value: unknown): QueueShowLogEvent | null {
   if (raw.track && !track) return null;
   if (eventType.startsWith("track_") && !track) return null;
   if (!eventType.startsWith("track_") && track) return null;
-  return { sequence, eventType, occurredAt, track };
+  return { sequence, eventType, occurredAt, track, details: normalizeDetails(raw.details) };
 }
 
 export function normalizeQueueShowLog(value: unknown): QueueShowLogEvent[] {

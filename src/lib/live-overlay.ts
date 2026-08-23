@@ -1,5 +1,5 @@
 import { Redis } from "@upstash/redis";
-import { getRadioLiveQueueState, getRadioQueueState, isWheelEligibleTrack, updateRadioTrack } from "./queue";
+import { getRadioLiveQueueState, getRadioQueueState, isWheelEligibleTrack, recordQueueOperationalShowEvent, updateRadioTrack } from "./queue";
 import { getTrackArtworkUrl, getTrackDurationLabel, parseTikTokVideoUrl } from "./queue-types";
 import { buildWheelSegments, derangedWheelCandidateOrder, orderedWheelCandidateIds, resolveLiveOverlayScene, safeLiveOverlayUrl, normalizeLiveOverlaySyncCorrectionReason, serverStampLiveOverlayPlayerSync, wheelFinalRotationForSegment } from "./live-overlay-resolver";
 import { parseYouTubeVideoId } from "./track-duration";
@@ -789,6 +789,33 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload, receivedA
   }
 
   await writeLiveOverlayState(next);
+  const wheelEventType = payload.action === "launchWheel"
+    ? "wheel_launched"
+    : payload.action === "reencryptWheel"
+      ? "wheel_reencrypted"
+      : payload.action === "spinWheel"
+        ? "wheel_spun"
+        : payload.action === "wheelWinnerNotHere"
+          ? "wheel_result_rejected"
+          : payload.action === "confirmWheel"
+            ? "wheel_confirmed"
+            : payload.action === "cancelWheel"
+              ? "wheel_cancelled"
+              : null;
+  if (wheelEventType) {
+    try {
+      await recordQueueOperationalShowEvent({
+        eventType: wheelEventType,
+        occurredAt: now,
+        details: {
+          wheelCandidateCount: next.wheelCeremonyCandidateOrder?.length ?? null,
+          wheelSpinDurationMs: payload.action === "spinWheel" ? next.wheelCeremonySpinDurationMs ?? null : null,
+        },
+      });
+    } catch (error) {
+      console.error("[queue-show-report] wheel event capture failed", error);
+    }
+  }
   return getLiveOverlayAdminSnapshot();
 }
 

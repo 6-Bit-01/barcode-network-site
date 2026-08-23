@@ -83,6 +83,12 @@ Uploaded MP3/WAV playback is admin-authenticated and private. The delivery route
 
 Playback lifecycle history is bounded per queue session and uses the existing serialized queue mutation owner. The admin diagnostic export is built from an explicit safe projection: it can include queue/session identifiers, submitted artist/title, media category, durations, lifecycle events, and explicit outcomes, but excludes raw source/upload URLs, contact fields, legal acceptance text, admin notes, payment state/identifiers, and private storage locations. Playback diagnostics are not part of the public queue snapshot or BNL queue projection.
 
+## Finished-session show report
+
+The private finished-session screen and show-log JSON include an automatic report for reviewing a completed broadcast. It records actual broadcast and playback windows, played/unplayed/removed totals, late additions, observed-versus-fallback music time, ordinary between-track transitions, sponsor duration, Wheel ceremony duration, playback pauses/stalls/errors, early cutoffs, source and lane mix, and opening/middle/closing pace. Sponsor and Wheel intervals are kept separate from ordinary transition time.
+
+The report is derived from the archived queue session plus low-frequency lifecycle and operator actions already emitted during the show. It adds no per-second database writes, public polling, new public fields, or BNL projection. The report is evidence for a later timing review; it does not automatically change the live timing formula.
+
 ## Gifted Priority attribution
 
 When a viewer starts Priority Signal checkout for somebody else’s track, the queue modal offers one prominent optional public-name field. Blank means `Anonymous`; Stripe customer, billing, email, or payment identity is never used as a substitute. The server sanitizes and versions the chosen supporter name, snapshots the recipient artist, binds both values to the created Stripe checkout, and preserves the first confirmed attribution across webhook retries.

@@ -1135,16 +1135,46 @@ test("rapid submissions from distinct artists do not create a repeated-attempt a
   );
 });
 
-test("admin queue suppresses the obsolete global warning and explains accepted submission checks", () => {
+test("same-browser artist checks retain the specific names needed by the admin notice", async () => {
+  await freshOpenSession("named same-browser admin notice", {
+    showStarted: false,
+    submissionCooldownSeconds: 0,
+  });
+  const submitterToken = "shared-browser-admin-notice";
+  const first = await queue.submitRadioTrack({
+    artist: "Oreaganomics",
+    title: "Browser Group First",
+    tiktokHandle: "@oreaganomics",
+    submitterToken,
+    link: "https://example.com/browser-group-first",
+    sourceType: "other",
+  });
+  const second = await queue.submitRadioTrack({
+    artist: "jomarma",
+    title: "Browser Group Second",
+    tiktokHandle: "@jomarma",
+    submitterToken,
+    link: "https://example.com/browser-group-second",
+    sourceType: "other",
+  });
+
+  assert.equal(first.submitterToken, submitterToken);
+  assert.equal(second.submitterToken, submitterToken);
+  assert.deepEqual([first.submittedArtistName, second.submittedArtistName], ["Oreaganomics", "jomarma"]);
+  assert.ok(second.suspiciousFlags?.includes("Same browser token using different artist names"));
+});
+
+test("admin queue hides generic flags and names artists sharing a flagged browser", () => {
   const source = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioQueueControl.tsx"), "utf8");
 
-  assert.match(source, /const LEGACY_GLOBAL_SUBMISSION_FLAG = "Many attempts in a short time"/);
-  assert.match(source, /filter\(\(flag\) => flag !== LEGACY_GLOBAL_SUBMISSION_FLAG\)/);
-  assert.match(source, /Same browser as an earlier submission under a different artist name; this check does not indicate a second browser\./);
-  assert.match(source, /Upload metadata matches an earlier submission: file name, size, and duration\./);
-  assert.match(source, /Song title or source matches an earlier submission under a different artist name\./);
-  assert.match(source, /<AdminSuspiciousFlags entry=\{entry\} \/>/);
-  assert.match(source, /Accepted submission · informational checks: \{flags\.join\(" \/ "\)\}/);
+  assert.match(source, /const SAME_BROWSER_DIFFERENT_ARTISTS_FLAG = "Same browser token using different artist names"/);
+  assert.match(source, /if \(!\(entry\.suspiciousFlags \?\? \[\]\)\.includes\(SAME_BROWSER_DIFFERENT_ARTISTS_FLAG\)\) return \[\]/);
+  assert.match(source, /if \(!browserToken\) return \[\]/);
+  assert.match(source, /return grouped\.size > 1 \? \[\.\.\.grouped\.values\(\)\] : \[\]/);
+  assert.match(source, /Same browser submitted multiple artist names: \{summary\}/);
+  assert.match(source, /\$\{artistName\} \(\$\{trackCount\} \$\{trackCount === 1 \? "track" : "tracks"\}\)/);
+  assert.match(source, /<AdminBrowserArtistNotice entry=\{entry\} sessionEntries=\{sessionEntries\} \/>/);
+  assert.doesNotMatch(source, /ADMIN_SUBMISSION_FLAG_COPY|Accepted submission · informational checks|Upload metadata matches an earlier submission/);
   assert.doesNotMatch(source, />Admin flags:/);
 });
 

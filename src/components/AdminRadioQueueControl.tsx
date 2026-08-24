@@ -26,12 +26,7 @@ type SimulationAction = "addSimulationFreeTrack" | "addSimulationPaidPriority" |
 const LANE_LABELS: Record<QueueLane, string> = { priority: "Priority Signal", wheel: "Wheel Winner", regular: "Regular Queue" };
 const FIXED_PRIORITY_LABEL = "Priority Signal Upgrade";
 const FIXED_PRIORITY_INSTRUCTIONS = "Moves this track into the Priority Signal lane after payment confirmation.";
-const LEGACY_GLOBAL_SUBMISSION_FLAG = "Many attempts in a short time";
-const ADMIN_SUBMISSION_FLAG_COPY: Record<string, string> = {
-  "Same browser token using different artist names": "Same browser as an earlier submission under a different artist name; this check does not indicate a second browser.",
-  "Same file name, size, and duration": "Upload metadata matches an earlier submission: file name, size, and duration.",
-  "Same source/title with changed artist name": "Song title or source matches an earlier submission under a different artist name.",
-};
+const SAME_BROWSER_DIFFERENT_ARTISTS_FLAG = "Same browser token using different artist names";
 
 const YOUTUBE_SYNC_HEARTBEAT_MS = 1_000;
 const TIKTOK_SYNC_HEARTBEAT_MS = 1_000;
@@ -159,12 +154,29 @@ function AdminSubmissionNote({ entry, compact = false }: { entry: QueueEntry; co
   if (!note) return null;
   return <div className={`${compact ? "mt-2 max-w-3xl p-2" : "mt-3 p-3"} border-2 border-accent bg-accent/10 text-left shadow-[0_0_20px_rgba(255,0,0,0.12)]`}><p className="text-[10px] font-black uppercase tracking-[0.2em] text-accent">Submission Note · Read Before Playing</p><p className={`${compact ? "mt-1 max-h-24 overflow-y-auto text-xs" : "mt-2 text-sm"} whitespace-pre-wrap break-words font-bold text-foreground`}>{note}</p></div>;
 }
-function AdminSuspiciousFlags({ entry }: { entry: QueueEntry }) {
-  const flags = (entry.suspiciousFlags ?? [])
-    .filter((flag) => flag !== LEGACY_GLOBAL_SUBMISSION_FLAG)
-    .map((flag) => ADMIN_SUBMISSION_FLAG_COPY[flag] ?? flag);
-  if (flags.length === 0) return null;
-  return <div className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 p-2 text-xs text-[#ffaa00]">Accepted submission · informational checks: {flags.join(" / ")}</div>;
+function browserArtistSubmissionSummary(entry: QueueEntry, sessionEntries: QueueEntry[]): Array<{ artistName: string; trackCount: number }> {
+  if (!(entry.suspiciousFlags ?? []).includes(SAME_BROWSER_DIFFERENT_ARTISTS_FLAG)) return [];
+  const browserToken = entry.submitterToken?.trim();
+  if (!browserToken) return [];
+  const uniqueTracks = new Map<string, QueueEntry>();
+  for (const candidate of sessionEntries) {
+    if (candidate.submitterToken?.trim() === browserToken) uniqueTracks.set(candidate.id, candidate);
+  }
+  const grouped = new Map<string, { artistName: string; trackCount: number }>();
+  for (const candidate of [...uniqueTracks.values()].sort((left, right) => left.createdAt.localeCompare(right.createdAt))) {
+    const artistName = (candidate.submitterArtistName ?? candidate.submittedArtistName ?? candidate.artist).trim();
+    const key = artistName.toLocaleLowerCase();
+    const existing = grouped.get(key);
+    if (existing) existing.trackCount += 1;
+    else grouped.set(key, { artistName, trackCount: 1 });
+  }
+  return grouped.size > 1 ? [...grouped.values()] : [];
+}
+function AdminBrowserArtistNotice({ entry, sessionEntries }: { entry: QueueEntry; sessionEntries: QueueEntry[] }) {
+  const artists = browserArtistSubmissionSummary(entry, sessionEntries);
+  if (artists.length < 2) return null;
+  const summary = artists.map(({ artistName, trackCount }) => `${artistName} (${trackCount} ${trackCount === 1 ? "track" : "tracks"})`).join(" / ");
+  return <div className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 p-2 text-xs text-[#ffaa00]">Same browser submitted multiple artist names: {summary}</div>;
 }
 function durationLabel(entry: QueueEntry): string {
   const duration = formatRuntime(getTrackRuntimeSeconds(entry));
@@ -485,6 +497,17 @@ export function AdminRadioQueueControl() {
       spotlight: state?.spotlight ?? [],
     };
   }, [state]);
+  const sessionEntries = useMemo(() => {
+    const entries = [
+      ...(state?.queue ?? []),
+      ...(state?.nextInLine ? [state.nextInLine] : []),
+      ...(state?.nowPlaying ? [state.nowPlaying] : []),
+      ...(state?.history ?? []),
+      ...(state?.removed ?? []),
+      ...(state?.spotlight ?? []),
+    ];
+    return [...new Map(entries.map((entry) => [entry.id, entry])).values()];
+  }, [state]);
 
   if (error) return <div className="border border-danger/40 bg-danger/5 p-6 text-danger">{error}</div>;
   const readOnly = state?.readOnly ?? false;
@@ -666,7 +689,7 @@ export function AdminRadioQueueControl() {
         </div>
 
         {tab === "active" && <div className="grid gap-5">
-          <div className="space-y-5"><Lane title="Priority Signal" tracks={lanes.priority} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="active" readOnly={readOnly} /><Lane title="Wheel Winners" tracks={lanes.wheel} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="active" readOnly={readOnly} /><Lane title="Regular Queue" tracks={lanes.regular} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="active" readOnly={readOnly} /></div>
+          <div className="space-y-5"><Lane title="Priority Signal" tracks={lanes.priority} sessionEntries={sessionEntries} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="active" readOnly={readOnly} /><Lane title="Wheel Winners" tracks={lanes.wheel} sessionEntries={sessionEntries} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="active" readOnly={readOnly} /><Lane title="Regular Queue" tracks={lanes.regular} sessionEntries={sessionEntries} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="active" readOnly={readOnly} /></div>
           <aside className="xl:hidden space-y-3">
             <section className="border border-border bg-surface p-3 space-y-2">
               <div className="flex items-center justify-between">
@@ -692,9 +715,9 @@ export function AdminRadioQueueControl() {
             </section>
           </aside>
         </div>}
-        {tab === "completed" && <Lane title="Completed Tracks" tracks={state?.history ?? []} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="completed" readOnly={readOnly} />}
-        {tab === "removed" && <Lane title="Removed Tracks" tracks={state?.removed ?? []} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="removed" readOnly={readOnly} />}
-        {tab === "spotlight" && <Lane title="Spotlight List" tracks={lanes.spotlight} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="spotlight" readOnly={readOnly} />}
+        {tab === "completed" && <Lane title="Completed Tracks" tracks={state?.history ?? []} sessionEntries={sessionEntries} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="completed" readOnly={readOnly} />}
+        {tab === "removed" && <Lane title="Removed Tracks" tracks={state?.removed ?? []} sessionEntries={sessionEntries} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="removed" readOnly={readOnly} />}
+        {tab === "spotlight" && <Lane title="Spotlight List" tracks={lanes.spotlight} sessionEntries={sessionEntries} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="spotlight" readOnly={readOnly} />}
       </>}
 
       {mounted && loadedPlayer && createPortal(<PlayerDock key={loadedPlayer.id} player={loadedPlayer} sessionId={state?.session?.sessionId ?? null} playbackDiagnostics={state?.playbackDiagnostics ?? null} minimized={minimized} setMinimized={setMinimized} readOnly={readOnly} actionPending={playerActionPending} onAction={playerAction} onCopy={() => copy(loadedPlayer)} />, document.body)}
@@ -1650,7 +1673,7 @@ function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction, s
   );
 }
 
-function Lane({ title, tracks, onAction, onPlayer, onCopy, mode, readOnly }: { title: string; tracks: QueueEntry[]; onAction: (id: string, action: AdminQueueAction) => void; onPlayer: (entry: QueueEntry) => void; onCopy: (entry: QueueEntry) => void; mode: "next" | "active" | "spotlight" | "completed" | "removed"; readOnly: boolean }) {
+function Lane({ title, tracks, sessionEntries, onAction, onPlayer, onCopy, mode, readOnly }: { title: string; tracks: QueueEntry[]; sessionEntries: QueueEntry[]; onAction: (id: string, action: AdminQueueAction) => void; onPlayer: (entry: QueueEntry) => void; onCopy: (entry: QueueEntry) => void; mode: "next" | "active" | "spotlight" | "completed" | "removed"; readOnly: boolean }) {
   const sectionClass = title.includes("Priority") ? "border-[#ffaa00]/50 bg-[#ffaa00]/5" : title.includes("Wheel") ? "border-cyan-300/50 bg-cyan-300/5" : title.includes("Regular") ? "border-border bg-surface" : "border-border bg-surface";
   const titleClass = title.includes("Priority") ? "text-[#ffaa00]" : title.includes("Wheel") ? "text-cyan-200" : "text-foreground";
   return (
@@ -1672,7 +1695,7 @@ function Lane({ title, tracks, onAction, onPlayer, onCopy, mode, readOnly }: { t
                   <p className="text-xs text-muted">{sourceLabel(entry)} · {durationLabel(entry)}</p>
                 </div>
                 <AdminTrackMetadata entry={entry} />
-                <AdminSuspiciousFlags entry={entry} />
+                <AdminBrowserArtistNotice entry={entry} sessionEntries={sessionEntries} />
                 <AdminSubmissionNote entry={entry} />
               </div>
               <TrackActions entry={entry} onAction={onAction} onPlayer={onPlayer} onCopy={onCopy} mode={mode} readOnly={readOnly} />

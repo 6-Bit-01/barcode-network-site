@@ -7,7 +7,7 @@ import type { ReactNode } from "react";
 export const metadata: Metadata = {
   title: "Legal / Privacy — BARCODE Network",
   description:
-    "BARCODE Network Legal Center, including Terms of Use, Queue Submission Terms, Priority Signal Terms, Privacy Policy, copyright, security, accessibility, and contact information.",
+    "BARCODE Network Legal Center, including Terms of Use, Queue Submission Terms, Priority Signal Terms, Signal Hold Terms, Privacy Policy, copyright, security, accessibility, and contact information.",
   alternates: { canonical: "/legal" },
 };
 
@@ -20,6 +20,7 @@ const anchorByHeading: Record<string, string> = {
   "Terms of Use": "terms",
   "Queue Submission Terms": "queue-submission",
   "Priority Signal Terms": "priority-signal",
+  "Signal Hold Terms": "signal-hold",
   "Privacy Policy": "privacy",
   "Copyright / Takedown Policy": "copyright",
   "Security Contact / Responsible Disclosure": "security",
@@ -32,6 +33,7 @@ const legalNavigation = [
   ["Terms", "#terms"],
   ["Queue Submission", "#queue-submission"],
   ["Priority Signal", "#priority-signal"],
+  ["Signal Hold", "#signal-hold"],
   ["Privacy", "#privacy"],
   ["Copyright", "#copyright"],
   ["Security", "#security"],
@@ -208,9 +210,9 @@ export default function LegalPage() {
             Legal / Privacy
           </h1>
           <p className="mt-5 max-w-3xl text-sm leading-7 text-muted sm:text-base">
-            Terms, queue submission rules, Priority Signal terms, privacy,
-            copyright, security, accessibility, dimensional operating conditions,
-            and contact information.
+            Terms, queue submission rules, Priority Signal terms, Signal Hold
+            terms, privacy, copyright, security, accessibility, dimensional
+            operating conditions, and contact information.
           </p>
         </div>
       </section>

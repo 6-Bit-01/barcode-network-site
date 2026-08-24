@@ -56,6 +56,10 @@ export function AdminShowManagement() {
   const [priorityUpgradePriceCents, setPriorityUpgradePriceCents] = useState(1000);
   const [priorityStartError, setPriorityStartError] = useState<string | null>(null);
   const [priorityUpgradeCurrency] = useState("usd");
+  const [signalHoldEnabled, setSignalHoldEnabled] = useState(false);
+  const [signalHoldPriceCents, setSignalHoldPriceCents] = useState(0);
+  const [signalHoldStartError, setSignalHoldStartError] = useState<string | null>(null);
+  const [signalHoldCurrency] = useState("usd");
   const [endConfirmOpen, setEndConfirmOpen] = useState(false);
   const [endingSession, setEndingSession] = useState(false);
   const router = useRouter();
@@ -94,9 +98,15 @@ export function AdminShowManagement() {
       setPriorityStartError("Checkout requires a price above 0.");
       return;
     }
+    if (signalHoldEnabled && signalHoldPriceCents <= 0) {
+      setSignalHoldStartError("Signal Hold checkout requires a price above 0.");
+      return;
+    }
     setPriorityStartError(null);
+    setSignalHoldStartError(null);
     const paidUpgradesEnabled = priorityUpgradesEnabled && priorityUpgradePriceCents > 0;
-    const next = await post({ action: "startSession", title, showDate, description, purpose, bnlPublicationStatus, trackLimitPerArtist, queueCapacity, submissionCooldownSeconds, priorityUpgradesEnabled: paidUpgradesEnabled, priorityUpgradeLabel: FIXED_PRIORITY_LABEL, priorityUpgradeInstructions: FIXED_PRIORITY_INSTRUCTIONS, priorityUpgradePriceCents, priorityUpgradeCurrency, priorityUpgradePaymentsEnabled: paidUpgradesEnabled });
+    const paidSignalHoldEnabled = signalHoldEnabled && signalHoldPriceCents > 0;
+    const next = await post({ action: "startSession", title, showDate, description, purpose, bnlPublicationStatus, trackLimitPerArtist, queueCapacity, submissionCooldownSeconds, priorityUpgradesEnabled: paidUpgradesEnabled, priorityUpgradeLabel: FIXED_PRIORITY_LABEL, priorityUpgradeInstructions: FIXED_PRIORITY_INSTRUCTIONS, priorityUpgradePriceCents, priorityUpgradeCurrency, priorityUpgradePaymentsEnabled: paidUpgradesEnabled, signalHoldEnabled: paidSignalHoldEnabled, signalHoldPriceCents, signalHoldCurrency, signalHoldPaymentsEnabled: paidSignalHoldEnabled });
     if (next?.session?.sessionId) {
       notifyQueueSessionChanged();
       router.push(`/admin/queue?sessionId=${encodeURIComponent(next.session.sessionId)}`);
@@ -127,7 +137,7 @@ export function AdminShowManagement() {
   return (
     <div className="space-y-6">
       {actionError && <div role="alert" className="border border-danger/50 bg-danger/10 p-3 text-sm text-danger">{actionError}</div>}
-      <StartNewSession locked={startLocked} queueIsOpen={queueIsOpen} onCloseSubmissions={() => post({ action: "setOpen", isOpen: false })} onEnd={() => setEndConfirmOpen(true)} title={title} description={description} purpose={purpose} bnlPublicationStatus={bnlPublicationStatus} trackLimitPerArtist={trackLimitPerArtist} queueCapacity={queueCapacity} onTitle={setTitle} onDescription={setDescription} onPurpose={(value) => { setPurpose(value); if (value !== "live_broadcast") setBnlPublicationStatus("private"); }} onBnlPublicationStatus={setBnlPublicationStatus} onTrackLimit={setTrackLimitPerArtist} onCapacity={setQueueCapacity} submissionCooldownSeconds={submissionCooldownSeconds} onSubmissionCooldown={setSubmissionCooldownSeconds} priorityUpgradesEnabled={priorityUpgradesEnabled} priorityUpgradePriceCents={priorityUpgradePriceCents} priorityUpgradeCurrency={priorityUpgradeCurrency} priorityStartError={priorityStartError} onPriorityEnabled={setPriorityUpgradesEnabled} onPriorityPrice={(value) => { setPriorityUpgradePriceCents(value); if (value > 0) setPriorityStartError(null); }} onStart={startSession} sessionId={currentSession?.sessionId} />
+      <StartNewSession locked={startLocked} queueIsOpen={queueIsOpen} onCloseSubmissions={() => post({ action: "setOpen", isOpen: false })} onEnd={() => setEndConfirmOpen(true)} title={title} description={description} purpose={purpose} bnlPublicationStatus={bnlPublicationStatus} trackLimitPerArtist={trackLimitPerArtist} queueCapacity={queueCapacity} onTitle={setTitle} onDescription={setDescription} onPurpose={(value) => { setPurpose(value); if (value !== "live_broadcast") setBnlPublicationStatus("private"); }} onBnlPublicationStatus={setBnlPublicationStatus} onTrackLimit={setTrackLimitPerArtist} onCapacity={setQueueCapacity} submissionCooldownSeconds={submissionCooldownSeconds} onSubmissionCooldown={setSubmissionCooldownSeconds} priorityUpgradesEnabled={priorityUpgradesEnabled} priorityUpgradePriceCents={priorityUpgradePriceCents} priorityUpgradeCurrency={priorityUpgradeCurrency} priorityStartError={priorityStartError} onPriorityEnabled={setPriorityUpgradesEnabled} onPriorityPrice={(value) => { setPriorityUpgradePriceCents(value); if (value > 0) setPriorityStartError(null); }} signalHoldEnabled={signalHoldEnabled} signalHoldPriceCents={signalHoldPriceCents} signalHoldCurrency={signalHoldCurrency} signalHoldStartError={signalHoldStartError} onSignalHoldEnabled={setSignalHoldEnabled} onSignalHoldPrice={(value) => { setSignalHoldPriceCents(value); if (value > 0) setSignalHoldStartError(null); }} onStart={startSession} sessionId={currentSession?.sessionId} />
       <CurrentSession session={currentSession} onPost={post} onEnd={() => setEndConfirmOpen(true)} />
       <SessionData session={currentSession} />
       {endConfirmOpen && createPortal(<EndSessionConfirm ending={endingSession} onCancel={() => setEndConfirmOpen(false)} onConfirm={endSession} />, document.body)}
@@ -152,6 +162,10 @@ type StartNewSessionProps = {
   priorityUpgradePriceCents: number;
   priorityUpgradeCurrency: string;
   priorityStartError: string | null;
+  signalHoldEnabled: boolean;
+  signalHoldPriceCents: number;
+  signalHoldCurrency: string;
+  signalHoldStartError: string | null;
   onTitle: (value: string) => void;
   onDescription: (value: string) => void;
   onPurpose: (value: QueueSessionPurpose) => void;
@@ -161,12 +175,15 @@ type StartNewSessionProps = {
   onSubmissionCooldown: (value: number) => void;
   onPriorityEnabled: (value: boolean) => void;
   onPriorityPrice: (value: number) => void;
+  onSignalHoldEnabled: (value: boolean) => void;
+  onSignalHoldPrice: (value: number) => void;
   onStart: () => void;
   sessionId?: string;
 };
 
-function StartNewSession({ locked, queueIsOpen, onCloseSubmissions, onEnd, title, description, purpose, bnlPublicationStatus, trackLimitPerArtist, queueCapacity, submissionCooldownSeconds, priorityUpgradesEnabled, priorityUpgradePriceCents, priorityUpgradeCurrency, priorityStartError, onTitle, onDescription, onPurpose, onBnlPublicationStatus, onTrackLimit, onCapacity, onSubmissionCooldown, onPriorityEnabled, onPriorityPrice, onStart, sessionId }: StartNewSessionProps) {
+function StartNewSession({ locked, queueIsOpen, onCloseSubmissions, onEnd, title, description, purpose, bnlPublicationStatus, trackLimitPerArtist, queueCapacity, submissionCooldownSeconds, priorityUpgradesEnabled, priorityUpgradePriceCents, priorityUpgradeCurrency, priorityStartError, signalHoldEnabled, signalHoldPriceCents, signalHoldCurrency, signalHoldStartError, onTitle, onDescription, onPurpose, onBnlPublicationStatus, onTrackLimit, onCapacity, onSubmissionCooldown, onPriorityEnabled, onPriorityPrice, onSignalHoldEnabled, onSignalHoldPrice, onStart, sessionId }: StartNewSessionProps) {
   const priceWarning = priorityUpgradesEnabled && priorityUpgradePriceCents <= 0 ? "Checkout requires a price above 0." : null;
+  const signalHoldPriceWarning = signalHoldEnabled && signalHoldPriceCents <= 0 ? "Signal Hold checkout requires a price above 0." : null;
   return (
     <section className={`space-y-5 border p-6 ${locked ? "border-danger/60 bg-danger/10" : "border-accent/40 bg-surface"}`}>
       <div>
@@ -189,6 +206,16 @@ function StartNewSession({ locked, queueIsOpen, onCloseSubmissions, onEnd, title
           <p className="text-xs text-muted">Rehearsal, simulation, internal-test, legacy, and unknown sessions stay private regardless of queue visibility. Publication never enables bot memory, Broadcast Memory, dossiers, or queue mutation.</p>
         </section>
         <section className="space-y-4 border border-[#ffaa00]/40 bg-[#ffaa00]/10 p-4 lg:col-span-2"><div><p className="text-xs uppercase tracking-[0.3em] text-[#ffaa00]">Priority Signal Paid Upgrades</p><p className="mt-1 text-sm text-muted">Default: ON at 1000 cents ($10.00 USD). Admin can disable paid upgrades for this session.</p></div><div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(12rem,0.35fr)] md:items-center"><label className="flex items-center justify-between gap-3 border border-border bg-background/60 p-4 text-sm"><span><span className="block text-lg font-bold text-foreground">{priorityUpgradesEnabled ? "ON" : "OFF"}</span><span className="text-xs text-muted">Priority Signal paid upgrades</span></span><input disabled={locked} type="checkbox" checked={priorityUpgradesEnabled} onChange={(event) => onPriorityEnabled(event.target.checked)} /></label><div className="border border-border bg-background/50 p-4"><p className="text-xs uppercase tracking-widest text-muted">Display price</p><p className="mt-1 text-xl font-bold text-foreground">{formatPrice(priorityUpgradePriceCents, priorityUpgradeCurrency)}</p></div></div><label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Price</span><input disabled={locked} type="number" min={0} value={priorityUpgradePriceCents} onChange={(event) => onPriorityPrice(Math.max(0, Number(event.target.value)))} className="w-full bg-background border border-border px-3 py-2.5 text-sm disabled:opacity-50" /><span className="block text-xs text-muted">Enter cents. Example: 1000 = $10.00.</span></label>{(priceWarning || priorityStartError) && <p className="border border-danger/40 bg-danger/10 p-3 text-sm text-danger">{priorityStartError ?? priceWarning}</p>}</section>
+        <section className="space-y-4 border border-cyan-300/40 bg-cyan-300/5 p-4 lg:col-span-2">
+          <div><p className="text-xs uppercase tracking-[0.3em] text-cyan-200">Signal Hold</p><p className="mt-1 text-sm text-muted">Disabled by default. No price or production activation is selected in this change.</p></div>
+          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(12rem,0.35fr)] md:items-center">
+            <label className="flex items-center justify-between gap-3 border border-border bg-background/60 p-4 text-sm"><span><span className="block text-lg font-bold text-foreground">{signalHoldEnabled ? "ON" : "OFF"}</span><span className="text-xs text-muted">Paid Signal Hold for this session</span></span><input disabled={locked} type="checkbox" checked={signalHoldEnabled} onChange={(event) => onSignalHoldEnabled(event.target.checked)} /></label>
+            <div className="border border-border bg-background/50 p-4"><p className="text-xs uppercase tracking-widest text-muted">Display price</p><p className="mt-1 text-xl font-bold text-foreground">{formatPrice(signalHoldPriceCents, signalHoldCurrency)}</p></div>
+          </div>
+          <label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Signal Hold price</span><input disabled={locked} type="number" min={0} value={signalHoldPriceCents} onChange={(event) => onSignalHoldPrice(Math.max(0, Number(event.target.value)))} className="w-full bg-background border border-border px-3 py-2.5 text-sm disabled:opacity-50" /><span className="block text-xs text-muted">Enter cents. Signal Hold cannot be enabled at 0.</span></label>
+          <p className="text-sm text-muted">If we call the artist and they are absent, the host may move the protected track to the bottom instead of removing it. One show only; no place preservation or guaranteed play.</p>
+          {(signalHoldPriceWarning || signalHoldStartError) && <p className="border border-danger/40 bg-danger/10 p-3 text-sm text-danger">{signalHoldStartError ?? signalHoldPriceWarning}</p>}
+        </section>
       </div>
       <button onClick={onStart} disabled={locked} className="border border-accent px-5 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Start New Session</button>
     </section>
@@ -199,6 +226,9 @@ function CurrentSession({ session, onPost, onEnd }: { session: QueueSessionSumma
   const [priorityEnabled, setPriorityEnabled] = useState(false);
   const [priorityPriceCents, setPriorityPriceCents] = useState(0);
   const [priorityCurrency, setPriorityCurrency] = useState("usd");
+  const [signalHoldEnabled, setSignalHoldEnabled] = useState(false);
+  const [signalHoldPriceCents, setSignalHoldPriceCents] = useState(0);
+  const [signalHoldCurrency, setSignalHoldCurrency] = useState("usd");
   const [sessionCooldownSeconds, setSessionCooldownSeconds] = useState(300);
   const [priorityEditing, setPriorityEditing] = useState(false);
   const [prioritySaving, setPrioritySaving] = useState(false);
@@ -210,16 +240,21 @@ function CurrentSession({ session, onPost, onEnd }: { session: QueueSessionSumma
     setPriorityEnabled(session.priorityUpgradePaymentsEnabled === true);
     setPriorityPriceCents(session.priorityUpgradePriceCents ?? 0);
     setPriorityCurrency(session.priorityUpgradeCurrency ?? "usd");
+    setSignalHoldEnabled(session.signalHoldPaymentsEnabled === true);
+    setSignalHoldPriceCents(session.signalHoldPriceCents ?? 0);
+    setSignalHoldCurrency(session.signalHoldCurrency ?? "usd");
     setSessionCooldownSeconds(session.submissionCooldownSeconds ?? 300);
     setPrioritySaveError(null);
   }, [session]);
 
   async function savePrioritySettings() {
     const gatedPaymentsEnabled = priorityEnabled && priorityPriceCents > 0;
+    const gatedSignalHoldEnabled = signalHoldEnabled && signalHoldPriceCents > 0;
     setPrioritySaving(true);
     setPrioritySaveError(null);
     const cooldownNext = await onPost({ action: "updateSubmissionCooldownSettings", submissionCooldownSeconds: sessionCooldownSeconds });
-    const next = cooldownNext ? await onPost({ action: "updatePriorityUpgradeSettings", enabled: gatedPaymentsEnabled, label: FIXED_PRIORITY_LABEL, instructions: FIXED_PRIORITY_INSTRUCTIONS, priceCents: priorityPriceCents, currency: priorityCurrency, paymentsEnabled: gatedPaymentsEnabled }) : null;
+    const priorityNext = cooldownNext ? await onPost({ action: "updatePriorityUpgradeSettings", enabled: gatedPaymentsEnabled, label: FIXED_PRIORITY_LABEL, instructions: FIXED_PRIORITY_INSTRUCTIONS, priceCents: priorityPriceCents, currency: priorityCurrency, paymentsEnabled: gatedPaymentsEnabled }) : null;
+    const next = priorityNext ? await onPost({ action: "updateSignalHoldSettings", enabled: gatedSignalHoldEnabled, priceCents: signalHoldPriceCents, currency: signalHoldCurrency, paymentsEnabled: gatedSignalHoldEnabled }) : null;
     setPrioritySaving(false);
     if (!next) {
       setPrioritySaveError("Session options could not be saved.");
@@ -265,13 +300,16 @@ function CurrentSession({ session, onPost, onEnd }: { session: QueueSessionSumma
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-accent">Session Options</p>
             <h3 className="mt-2 text-xl font-bold text-foreground">Edit Session Options</h3>
-            <p className="mt-1 text-sm text-muted">Configure session-level submission behavior and paid Priority Signal upgrades.</p>
+            <p className="mt-1 text-sm text-muted">Configure session-level submission behavior, Priority Signal, and disabled-by-default Signal Hold.</p>
           </div>
           <div className="grid gap-4 lg:grid-cols-2">
             <label className="space-y-2 block lg:col-span-2"><span className="text-xs uppercase tracking-widest text-muted">Submission Delay</span><input type="number" min={0} max={3600} value={sessionCooldownSeconds} onChange={(event) => setSessionCooldownSeconds(Math.max(0, Math.min(3600, Number(event.target.value))))} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /><span className="block text-xs text-muted">Delay between accepted submissions from the same source. Set to 0 to disable during testing.</span></label>
             <label className="flex items-center justify-between gap-3 border border-border bg-background/50 p-4 text-sm lg:col-span-2"><span><span className="block font-bold text-foreground">Priority Signal paid upgrades</span><span className="text-xs text-muted">Enables automated Stripe checkout when the price is greater than 0.</span></span><input type="checkbox" checked={priorityEnabled} onChange={(event) => setPriorityEnabled(event.target.checked)} /></label>
             <label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Priority Signal price</span><input type="number" min={0} value={priorityPriceCents} onChange={(event) => setPriorityPriceCents(Math.max(0, Number(event.target.value)))} disabled={!priorityEnabled} className="w-full bg-background border border-border px-3 py-2.5 text-sm disabled:opacity-50" /><span className="block text-xs text-muted">Enter cents. Example: 1000 = $10.00.</span></label>
             <div className="border border-border bg-background/50 p-4"><p className="text-xs uppercase tracking-widest text-muted">Current display price</p><p className="mt-2 text-2xl font-bold text-foreground">{formatPrice(priorityPriceCents, priorityCurrency)}</p></div>
+            <label className="flex items-center justify-between gap-3 border border-border bg-background/50 p-4 text-sm lg:col-span-2"><span><span className="block font-bold text-foreground">Signal Hold payments</span><span className="text-xs text-muted">Disabled by default. Requires a price above 0 and verified Stripe webhook confirmation.</span></span><input type="checkbox" checked={signalHoldEnabled} onChange={(event) => setSignalHoldEnabled(event.target.checked)} /></label>
+            <label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Signal Hold price</span><input type="number" min={0} value={signalHoldPriceCents} onChange={(event) => setSignalHoldPriceCents(Math.max(0, Number(event.target.value)))} disabled={!signalHoldEnabled} className="w-full bg-background border border-border px-3 py-2.5 text-sm disabled:opacity-50" /><span className="block text-xs text-muted">Enter cents. Saving at 0 keeps Signal Hold disabled.</span></label>
+            <div className="border border-border bg-background/50 p-4"><p className="text-xs uppercase tracking-widest text-muted">Signal Hold display price</p><p className="mt-2 text-2xl font-bold text-foreground">{formatPrice(signalHoldPriceCents, signalHoldCurrency)}</p></div>
           </div>
           <p className="border border-border bg-background/50 p-3 text-sm text-muted">Saving paid upgrades with a zero price keeps checkout disabled. Only the verified Stripe webhook marks a track paid or moves it into Priority Signal.</p>
           {prioritySaveError && <p className="border border-danger/40 bg-danger/5 p-2 text-xs text-danger">{prioritySaveError}</p>}
@@ -294,6 +332,8 @@ function CurrentSession({ session, onPost, onEnd }: { session: QueueSessionSumma
             <div className="border border-border bg-surface p-4"><p className="text-xs uppercase tracking-widest text-muted">Submission Delay</p><p className="mt-2 text-lg font-bold text-foreground">{session.submissionCooldownSeconds === 0 ? "Disabled" : `${session.submissionCooldownSeconds}s`}</p></div>
             <div className="border border-border bg-surface p-4"><p className="text-xs uppercase tracking-widest text-muted">Priority Signal Paid Upgrades</p><p className={session.priorityUpgradePaymentsEnabled ? "mt-2 text-lg font-bold text-accent" : "mt-2 text-lg font-bold text-muted"}>{session.priorityUpgradePaymentsEnabled ? "Enabled" : "Disabled"}</p></div>
             <div className="border border-border bg-surface p-4"><p className="text-xs uppercase tracking-widest text-muted">Price</p><p className="mt-2 text-lg font-bold text-foreground">{formatPrice(session.priorityUpgradePriceCents, session.priorityUpgradeCurrency)}</p></div>
+            <div className="border border-border bg-surface p-4"><p className="text-xs uppercase tracking-widest text-muted">Signal Hold</p><p className={session.signalHoldPaymentsEnabled ? "mt-2 text-lg font-bold text-cyan-200" : "mt-2 text-lg font-bold text-muted"}>{session.signalHoldPaymentsEnabled ? "Enabled" : "Disabled"}</p></div>
+            <div className="border border-border bg-surface p-4"><p className="text-xs uppercase tracking-widest text-muted">Signal Hold Price</p><p className="mt-2 text-lg font-bold text-foreground">{formatPrice(session.signalHoldPriceCents, session.signalHoldCurrency)}</p></div>
           </div>
           <p className="border border-border bg-surface p-3 text-sm text-muted">Only the verified Stripe webhook marks a track paid or moves it into Priority Signal.</p>
         </section>

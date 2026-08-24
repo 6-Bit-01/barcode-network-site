@@ -331,6 +331,32 @@ test("new own-track checkout persists only a Signal Hold owner-token hash", asyn
   });
 });
 
+test("near-front ineligibility stops checkout before Stripe or pending state", async () => {
+  let stripeCalls = 0;
+  let pendingWrites = 0;
+  const message = queueTypes.SIGNAL_HOLD_NEXT_TWO_UNAVAILABLE_MESSAGE;
+
+  await withCheckoutMocks({
+    requestSignalHoldCheckout: async () => { throw new Error(message); },
+    createSignalHoldCheckoutSession: async () => { stripeCalls += 1; throw new Error("Stripe must not be called"); },
+    markSignalHoldCheckoutPending: async () => { pendingWrites += 1; },
+  }, async () => {
+    const response = await checkoutRoute.POST(checkoutRequest({
+      trackId: "track-near-front",
+      sessionId: "session-near-front",
+      submitterToken: "owner-near-front",
+      checkoutOwnerToken: "d".repeat(64),
+    }));
+    const payload = await response.json();
+    assert.equal(response.status, 409);
+    assert.equal(payload.error, message);
+    assert.equal("url" in payload, false);
+  });
+
+  assert.equal(stripeCalls, 0);
+  assert.equal(pendingWrites, 0);
+});
+
 test("webhook rejects a missing or invalid signature before any paid mutation", async () => {
   let signalMutations = 0;
   let priorityMutations = 0;

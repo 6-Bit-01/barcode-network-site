@@ -10,7 +10,7 @@ import { externalLinks } from "@/content";
 import { estimateExistingTrackTiming, estimatePriorityImpact } from "@/lib/queue-timing";
 import { clearPriorityCheckoutOwnerToken, getOrCreatePriorityCheckoutOwnerToken, getPriorityCheckoutOwnerToken } from "@/lib/priority-checkout-client";
 import { clearSignalHoldCheckoutOwnerToken, getOrCreateSignalHoldCheckoutOwnerToken, getSignalHoldCheckoutOwnerToken } from "@/lib/signal-hold-checkout-client";
-import { confirmedPriorityPurchaseDisplay, formatRuntime, PRIORITY_DISCLOSURE_TEXT, PRIORITY_GIFT_ATTRIBUTION_DISCLOSURE_TEXT, PRIORITY_GIFT_ATTRIBUTION_VERSION, PRIORITY_GIFT_NAME_MAX_LENGTH, PRIORITY_TERMS_VERSION, SIGNAL_HOLD_DISCLOSURE_TEXT, SIGNAL_HOLD_TERMS_VERSION } from "@/lib/queue-types";
+import { confirmedPriorityPurchaseDisplay, formatRuntime, isSignalHoldCheckoutNearFront, PRIORITY_DISCLOSURE_TEXT, PRIORITY_GIFT_ATTRIBUTION_DISCLOSURE_TEXT, PRIORITY_GIFT_ATTRIBUTION_VERSION, PRIORITY_GIFT_NAME_MAX_LENGTH, PRIORITY_TERMS_VERSION, SIGNAL_HOLD_DISCLOSURE_TEXT, SIGNAL_HOLD_NEXT_TWO_UNAVAILABLE_MESSAGE, SIGNAL_HOLD_TERMS_VERSION } from "@/lib/queue-types";
 import { displayEstimate, buildQueueTimingDisplay, priorityDisplayFromImpact, publicTrackDurationLabel, queueTimingInputFromPublicSnapshot, type QueueTimingDisplaySummary, type PriorityTimingDisplay } from "@/lib/queue-timing-display";
 import type { QueuePublicSnapshot, QueuePublicTrack } from "@/lib/queue-types";
 import { PUBLIC_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
@@ -510,8 +510,12 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
     return snapshot?.upNext?.id === track.id || (snapshot?.queue ?? []).some((queued) => queued.id === track.id);
   }
 
+  function isSignalHoldCheckoutBlocked(track: PublicTrackSummary): boolean {
+    return isSignalHoldCheckoutNearFront(track.id, { upNext: snapshot?.upNext, queue: snapshot?.queue });
+  }
+
   function canPurchaseSignalHold(track: PublicTrackSummary): boolean {
-    if (!signalHoldPaymentsAvailable || !viewerSubmittedTrackIds.has(track.id) || !isSignalHoldTrackActive(track)) return false;
+    if (!signalHoldPaymentsAvailable || !viewerSubmittedTrackIds.has(track.id) || !isSignalHoldTrackActive(track) || isSignalHoldCheckoutBlocked(track)) return false;
     return track.signalHoldStatus === "none" || track.signalHoldStatus === "failed" || track.signalHoldStatus === "refunded";
   }
 
@@ -519,16 +523,25 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
     return signalHoldPaymentsAvailable
       && viewerSubmittedTrackIds.has(track.id)
       && isSignalHoldTrackActive(track)
+      && !isSignalHoldCheckoutBlocked(track)
       && track.signalHoldStatus === "checkout_pending"
       && signalHoldCheckoutOwnerTrackIds.has(track.id);
   }
 
   function requestSignalHold(track: PublicTrackSummary) {
+    if (isSignalHoldCheckoutBlocked(track)) {
+      setSignalHoldRequestMessage(SIGNAL_HOLD_NEXT_TWO_UNAVAILABLE_MESSAGE);
+      return;
+    }
     setSignalHoldModalTrack(track);
     setSignalHoldRequestMessage(signalHoldPaymentsAvailable ? null : "Signal Hold is not available for this show.");
   }
 
   async function beginSignalHoldCheckout(track: PublicTrackSummary) {
+    if (isSignalHoldCheckoutBlocked(track)) {
+      setSignalHoldRequestMessage(SIGNAL_HOLD_NEXT_TWO_UNAVAILABLE_MESSAGE);
+      return;
+    }
     if (track.signalHoldStatus === "checkout_pending" ? !canResumeSignalHoldPayment(track) : !canPurchaseSignalHold(track)) {
       setSignalHoldRequestMessage("Signal Hold is not available for this track.");
       return;
@@ -621,7 +634,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
 
       <QueueMechanicsInfo />
 
-      <SignalHoldOwnerPanel snapshot={snapshot} paymentsAvailable={signalHoldPaymentsAvailable} priceCents={signalHoldPriceCents} currency={signalHoldCurrency} canPurchase={canPurchaseSignalHold} canResume={canResumeSignalHoldPayment} onPurchase={requestSignalHold} onResume={resumeSignalHoldPayment} />
+      <SignalHoldOwnerPanel snapshot={snapshot} paymentsAvailable={signalHoldPaymentsAvailable} priceCents={signalHoldPriceCents} currency={signalHoldCurrency} isCheckoutBlocked={isSignalHoldCheckoutBlocked} canPurchase={canPurchaseSignalHold} canResume={canResumeSignalHoldPayment} onPurchase={requestSignalHold} onResume={resumeSignalHoldPayment} />
 
       <div className="flex gap-2 border-b border-border">
         <button type="button" onClick={() => setView("active")} className={`cursor-pointer px-4 py-3 text-xs uppercase tracking-widest transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${view === "active" ? "border-b border-accent text-accent" : "text-muted hover:text-foreground"}`}>Active Queue</button>
@@ -1091,7 +1104,7 @@ function submittedPublicTrack(snapshot: QueuePublicSnapshot | null, submitted: P
 }
 function pluralizeSongs(count: number): string { return `${count} ${count === 1 ? "song" : "songs"}`; }
 
-function SignalHoldOwnerPanel({ snapshot, paymentsAvailable, priceCents, currency, canPurchase, canResume, onPurchase, onResume }: { snapshot: QueuePublicSnapshot | null; paymentsAvailable: boolean; priceCents: number; currency: string; canPurchase: (track: PublicTrackSummary) => boolean; canResume: (track: PublicTrackSummary) => boolean; onPurchase: (track: PublicTrackSummary) => void; onResume: (track: PublicTrackSummary) => void }) {
+function SignalHoldOwnerPanel({ snapshot, paymentsAvailable, priceCents, currency, isCheckoutBlocked, canPurchase, canResume, onPurchase, onResume }: { snapshot: QueuePublicSnapshot | null; paymentsAvailable: boolean; priceCents: number; currency: string; isCheckoutBlocked: (track: PublicTrackSummary) => boolean; canPurchase: (track: PublicTrackSummary) => boolean; canResume: (track: PublicTrackSummary) => boolean; onPurchase: (track: PublicTrackSummary) => void; onResume: (track: PublicTrackSummary) => void }) {
   const activeTrackIds = new Set([snapshot?.upNext?.id, ...(snapshot?.queue ?? []).map((track) => track.id)].filter(Boolean));
   const ownerTracks = (snapshot?.submitterStatus?.submitted ?? []).filter((track) => activeTrackIds.has(track.id));
   const visibleTracks = ownerTracks.filter((track) => paymentsAvailable || (track.signalHoldStatus ?? "none") !== "none");
@@ -1105,6 +1118,7 @@ function SignalHoldOwnerPanel({ snapshot, paymentsAvailable, priceCents, currenc
         {visibleTracks.map((track) => {
           const status = track.signalHoldStatus ?? "none";
           const applicationCount = track.signalHoldApplicationCount ?? 0;
+          const checkoutBlocked = isCheckoutBlocked(track);
           const statusCopy = status === "active"
             ? `Signal Hold Active${applicationCount > 0 ? ` · used ${applicationCount} ${applicationCount === 1 ? "time" : "times"}` : ""}`
             : status === "checkout_pending"
@@ -1117,7 +1131,9 @@ function SignalHoldOwnerPanel({ snapshot, paymentsAvailable, priceCents, currenc
                     ? "Signal Hold Expired"
                     : status === "failed" || status === "refunded"
                       ? "Signal Hold payment was not completed · track is not protected"
-                      : "Signal Hold available";
+                      : checkoutBlocked
+                        ? "Signal Hold unavailable · this track is one of the next two to play"
+                        : "Signal Hold available";
           return <article key={track.id} className="grid gap-3 border border-border bg-background/50 p-3 sm:grid-cols-[1fr_auto] sm:items-center"><div><p className="font-bold text-foreground">{track.submittedArtistName} — {track.submittedSongTitle}</p><p className={`mt-1 text-xs ${status === "active" ? "text-cyan-200" : status === "paid_needs_attention" || status === "failed" || status === "refunded" ? "text-danger" : status === "checkout_pending" ? "text-[#ffaa00]" : "text-muted"}`}>{statusCopy}</p></div><div className="sm:text-right">{canResume(track) ? <button type="button" onClick={() => onResume(track)} className="border border-[#ffaa00]/60 bg-[#ffaa00]/10 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background">Resume Signal Hold Payment</button> : canPurchase(track) ? <button type="button" onClick={() => onPurchase(track)} className="border border-cyan-200/60 bg-cyan-200/10 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-cyan-200 hover:bg-cyan-200 hover:text-background">Add Signal Hold · {formatPrice(priceCents, currency)}</button> : null}</div></article>;
         })}
       </div>

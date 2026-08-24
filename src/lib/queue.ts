@@ -39,12 +39,14 @@ import {
   PRIORITY_GIFT_ATTRIBUTION_VERSION,
   PRIORITY_TERMS_VERSION,
   SIGNAL_HOLD_DISCLOSURE_TEXT,
+  SIGNAL_HOLD_NEXT_TWO_UNAVAILABLE_MESSAGE,
   SIGNAL_HOLD_TERMS_VERSION,
   detectQueueSourceType,
   generateQueueId,
   getTrackRuntimeSeconds,
   getTrackDurationLabel,
   getTrackArtworkUrl,
+  isSignalHoldCheckoutNearFront,
   normalizeQueueSessionBnlPublicationStatus,
   normalizeQueueSessionPurpose,
   normalizePriorityGiftDisplayName,
@@ -4370,6 +4372,9 @@ export async function requestSignalHoldCheckout(trackId: string, queueSessionId:
   if (!track || (track.status !== "queued" && track.status !== "next") || (status !== "none" && status !== "checkout_pending" && status !== "failed" && status !== "refunded")) {
     throw new Error("Signal Hold is not available for this track.");
   }
+  if (isSignalHoldCheckoutNearFront(trackId, { upNext: session.nextInLineTrack, queue: session.queue })) {
+    throw new Error(SIGNAL_HOLD_NEXT_TWO_UNAVAILABLE_MESSAGE);
+  }
   return {
     session: summarizeSession(session),
     track,
@@ -4394,6 +4399,9 @@ async function markSignalHoldCheckoutPendingMutation(trackId: string, queueSessi
   const found = store.sessions.find((item) => item.sessionId === queueSessionId);
   if (!found || found.sessionId !== store.activeSessionId || found.status === "archived") return null;
   const session = normalizeSession(found);
+  if (isSignalHoldCheckoutNearFront(trackId, { upNext: session.nextInLineTrack, queue: session.queue })) {
+    throw new Error(SIGNAL_HOLD_NEXT_TWO_UNAVAILABLE_MESSAGE);
+  }
   const now = new Date().toISOString();
   const legalAcceptance = metadata.signalHoldAcceptance
     ? normalizeSignalHoldLegalAcceptance(metadata.signalHoldAcceptance)

@@ -734,7 +734,7 @@ export function AdminRadioQueueControl() {
             <p className="text-xs text-muted">{nextInLine ? `${submittedArtist(nextInLine)} — ${submittedTitle(nextInLine)}` : "No Next In Line"}</p>
             <span className="inline-flex border border-cyan-300/30 bg-cyan-300/5 px-2 py-1 text-[10px] uppercase tracking-widest text-cyan-200">Wheel Spins: {state?.session?.wheelSpinsOwed ?? 0}</span>
           </div> : <>
-            <NextInLineBox entry={nextInLine} playerOccupied={Boolean(loadedPlayer)} readOnly={readOnly} onAction={action} onPlayer={loadPlayer} onCopy={copy} />
+            <div className="pt-12"><NextInLineBox entry={nextInLine} playerOccupied={Boolean(loadedPlayer)} readOnly={readOnly} onAction={action} onPlayer={loadPlayer} onCopy={copy} /></div>
             <section className="border border-border bg-surface p-3 space-y-2">
               <p className="text-sm uppercase tracking-[0.24em] text-muted">Next In Line Actions</p>
               {!nextInLine && <><p className="text-sm text-muted">No Next In Line — Pull Next Track when ready.</p><button onClick={() => action("", "pullNext")} className="min-h-10 border border-accent px-3 py-2 text-sm uppercase tracking-widest text-accent">Pull Next Track</button></>}
@@ -1682,12 +1682,12 @@ function Lane({ title, tracks, sessionEntries, onAction, onPlayer, onCopy, mode,
         <h2 className={`text-sm uppercase tracking-[0.25em] ${titleClass}`}>{title}</h2>
         <span className="text-xs text-muted">{tracks.length}</span>
       </div>
-      <div className="space-y-2">
+      <div className="space-y-3">
         {tracks.length === 0 ? (
           <p className="border border-border/60 p-3 text-sm text-muted">No tracks in this lane.</p>
         ) : (
           tracks.map((entry) => (
-            <article key={`${title}-${entry.id}`} className={`space-y-2 p-3 ${queueTrackVisual(entry).cardClass}`}>
+            <article key={`${title}-${entry.id}`} className={`space-y-2 border-2 p-3 ${queueTrackVisual(entry).cardClass}`}>
               <div className="space-y-2">
                 <div>
                   <p className="font-bold">{submittedArtist(entry)} — {submittedTitle(entry)}</p>

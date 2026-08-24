@@ -155,6 +155,27 @@ export const PRIORITY_GIFT_ANONYMOUS_NAME = "Anonymous";
 export const PRIORITY_GIFT_NAME_MAX_LENGTH = 48;
 export const SIGNAL_HOLD_TERMS_VERSION = "1.0";
 export const SIGNAL_HOLD_DISCLOSURE_TEXT = "Signal Hold protects one eligible track from absence-based removal during the current BARCODE Radio session. If the artist is called and is not present, the host may move the track to the bottom of the active queue instead of removing it. Signal Hold does not preserve Next In Line, Priority, or Wheel position; does not guarantee airplay or a specific time; does not carry into another show; and expires when the session ends. It does not prevent removal for invalid or unavailable media, rights or policy issues, artist withdrawal, moderation, or other non-absence reasons. By continuing to checkout, I confirm that I am at least 18 years old or have permission from a parent or legal guardian to make this payment.";
+export const SIGNAL_HOLD_NEXT_TWO_UNAVAILABLE_MESSAGE = "Signal Hold is unavailable once this track is one of the next two to play.";
+export const SIGNAL_HOLD_CHECKOUT_POSITION_CUTOFF = 2;
+
+type SignalHoldCheckoutLineTrack = { id: string };
+
+export function signalHoldCheckoutPosition(
+  trackId: string,
+  line: { upNext?: SignalHoldCheckoutLineTrack | null; queue?: readonly SignalHoldCheckoutLineTrack[] | null },
+): number | null {
+  const upcoming = [line.upNext, ...(line.queue ?? [])].filter((track): track is SignalHoldCheckoutLineTrack => Boolean(track));
+  const position = upcoming.findIndex((track) => track.id === trackId);
+  return position >= 0 ? position + 1 : null;
+}
+
+export function isSignalHoldCheckoutNearFront(
+  trackId: string,
+  line: { upNext?: SignalHoldCheckoutLineTrack | null; queue?: readonly SignalHoldCheckoutLineTrack[] | null },
+): boolean {
+  const position = signalHoldCheckoutPosition(trackId, line);
+  return position !== null && position <= SIGNAL_HOLD_CHECKOUT_POSITION_CUTOFF;
+}
 
 export function normalizePriorityGiftDisplayName(value: unknown, fallback: string): string {
   const normalized = typeof value === "string"

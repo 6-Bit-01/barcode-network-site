@@ -67,11 +67,14 @@ test("public Signal Hold copy stays owner-only, plain, and distinct from active 
   assert.match(publicContract, /does not guarantee (?:play|airplay)/i);
   assert.match(publicContract, /pending[^.]{0,120}not active|not active[^.]{0,120}pending/i);
   assert.match(publicQueue, /viewerSubmittedTrackIds/);
+  assert.match(publicQueue, /isSignalHoldCheckoutBlocked\(track\)/);
+  assert.match(publicQueue, /this track is one of the next two to play/i);
   assert.doesNotMatch(publicContract, /Gift Signal Hold|Gifted Signal Hold|Boost (?:This )?.*Signal Hold|Send Signal Hold/i);
 });
 
 test("admin UI keeps Signal Hold statuses narrow and renames visible Held Priority copy", () => {
   assert.match(adminQueue, /USE SIGNAL HOLD(?:\s+—|\s+-)?\s+MOVE TO BOTTOM/i);
+  assert.match(adminQueue, /function canUseSignalHold\(entry:[\s\S]{0,180}entry\.signalHoldStatus === "active"/);
   assert.match(adminQueue, /Signal Hold Active/i);
   assert.match(adminQueue, /Signal Hold[\s\S]{0,500}Payment Processing|Payment Processing[\s\S]{0,500}Signal Hold/i);
   assert.match(adminQueue, /Signal Hold[\s\S]{0,500}Needs Attention|Needs Attention[\s\S]{0,500}Signal Hold/i);

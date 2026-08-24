@@ -43,7 +43,9 @@ Module._extensions[".ts"] = function loadTypeScript(module, filename) {
 const require = createRequire(import.meta.url);
 const queue = require("../src/lib/queue.ts");
 const {
+  isSignalHoldCheckoutNearFront,
   SIGNAL_HOLD_DISCLOSURE_TEXT,
+  SIGNAL_HOLD_NEXT_TWO_UNAVAILABLE_MESSAGE,
   SIGNAL_HOLD_TERMS_VERSION,
 } = require("../src/lib/queue-types.ts");
 
@@ -140,7 +142,6 @@ async function markSignalHoldPending(track, sessionId) {
 }
 
 async function activateSignalHold(track, sessionId, overrides = {}) {
-  await markSignalHoldPending(track, sessionId);
   const payment = paymentMetadata(track, overrides);
   const result = await queue.markSignalHoldPaidFromStripe(track.id, sessionId, payment);
   assert.equal(result.updated, true, result.reason ?? "paid webhook should activate Signal Hold");
@@ -208,9 +209,47 @@ test("legacy entries normalize with no Hold and every new session is disabled by
   );
 });
 
+test("Signal Hold checkout blocks only the specific tracks in the next two slots", async () => {
+  const sessionId = await startFreshSession("Signal Hold next two checkout gate");
+  await enableSignalHold();
+  const ownerToken = `same-owner-${Date.now()}`;
+  const first = await addTrack("Owner First", { submitterToken: ownerToken });
+  const second = await addTrack("Owner Second", { submitterToken: ownerToken });
+  const later = await addTrack("Owner Later", { submitterToken: ownerToken });
+  const state = await queue.getRadioQueueState();
+
+  assert.equal(state.nextInLine?.id, first.id);
+  assert.deepEqual(state.queue.map((entry) => entry.id), [second.id, later.id]);
+  assert.equal(isSignalHoldCheckoutNearFront(first.id, { upNext: state.nextInLine, queue: state.queue }), true);
+  assert.equal(isSignalHoldCheckoutNearFront(second.id, { upNext: state.nextInLine, queue: state.queue }), true);
+  assert.equal(isSignalHoldCheckoutNearFront(later.id, { upNext: state.nextInLine, queue: state.queue }), false);
+
+  await assert.rejects(
+    () => queue.requestSignalHoldCheckout(first.id, sessionId, signalHoldAcceptance),
+    new RegExp(SIGNAL_HOLD_NEXT_TWO_UNAVAILABLE_MESSAGE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"),
+  );
+  await assert.rejects(
+    () => queue.requestSignalHoldCheckout(second.id, sessionId, signalHoldAcceptance),
+    /next two to play/i,
+  );
+  await assert.rejects(
+    () => queue.markSignalHoldCheckoutPending(second.id, sessionId, checkoutMetadata(second)),
+    /next two to play/i,
+  );
+  const eligible = await queue.requestSignalHoldCheckout(later.id, sessionId, signalHoldAcceptance);
+  assert.equal(eligible.track.id, later.id, "the same owner's later track remains independently eligible");
+
+  const after = await queue.getRadioQueueState();
+  assert.equal(activeTrack(after, first.id).signalHoldStatus, "none");
+  assert.equal(activeTrack(after, second.id).signalHoldStatus, "none");
+  assert.equal(activeTrack(after, later.id).signalHoldStatus, "none");
+});
+
 test("checkout pending is not active protection and cannot move a track", async () => {
   const sessionId = await startFreshSession("Signal Hold pending", { showStarted: false });
   await enableSignalHold();
+  await addTrack("Pending Lead One");
+  await addTrack("Pending Lead Two");
   const track = await addTrack("Pending Hold");
   await markSignalHoldPending(track, sessionId);
 
@@ -237,6 +276,7 @@ test("paid confirmation activates exactly once without changing queue order", as
   const sessionId = await startFreshSession("Signal Hold paid authority", { showStarted: false });
   await enableSignalHold();
   const first = await addTrack("Paid First");
+  const second = await addTrack("Paid Second");
   const protectedTrack = await addTrack("Paid Protected");
   const last = await addTrack("Paid Last");
   await markSignalHoldPending(protectedTrack, sessionId);
@@ -258,7 +298,7 @@ test("paid confirmation activates exactly once without changing queue order", as
   assert.equal(active.signalHoldStatus, "active");
   assert.equal(active.signalHoldPaymentId, payment.paymentId);
   assert.equal(active.signalHoldApplicationCount, 0);
-  assert.deepEqual(state.queue.map((entry) => entry.id), [first.id, protectedTrack.id, last.id]);
+  assert.deepEqual(state.queue.map((entry) => entry.id), [first.id, second.id, protectedTrack.id, last.id]);
   const events = await signalHoldEvents(sessionId, protectedTrack.id);
   assert.equal(events.filter((event) => event.eventType === "track_signal_hold_activated").length, 1);
 });
@@ -618,6 +658,8 @@ test("archive expires an unfulfilled Hold and a new show receives no carryover",
 test("late paid confirmation is needs-attention and cannot reorder the new live show", async () => {
   const oldSessionId = await startFreshSession("Signal Hold late payment", { showStarted: false });
   await enableSignalHold();
+  await addTrack("Late Paid Lead One");
+  await addTrack("Late Paid Lead Two");
   const oldTrack = await addTrack("Late Paid Protected");
   const oldTail = await addTrack("Late Paid Tail");
   await markSignalHoldPending(oldTrack, oldSessionId);

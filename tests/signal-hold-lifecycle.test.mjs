@@ -397,6 +397,35 @@ test("a protected Wheel winner becomes regular, restores one owed spin, and choo
   assert.equal(trackOccurrences(state, protectedTrack.id).total, 1);
 });
 
+test("a loaded Wheel winner can use Signal Hold before playback and still restores the owed spin", async () => {
+  const sessionId = await startFreshSession("Signal Hold loaded Wheel");
+  await enableSignalHold();
+  const protectedTrack = await addTrack("Loaded Wheel Protected");
+  const firstFree = await addTrack("Loaded Wheel Free One");
+  const secondFree = await addTrack("Loaded Wheel Free Two");
+  await queue.updateRadioTrack("", "addWheelSpinOwed");
+  let state = await queue.updateRadioTrack(protectedTrack.id, "wheel");
+  assert.equal(state.nextInLine?.id, protectedTrack.id);
+  await activateSignalHold(protectedTrack, sessionId);
+  state = await queue.updateRadioTrack(protectedTrack.id, "load");
+  assert.equal(state.loadedTrack?.id, protectedTrack.id);
+  assert.equal(state.nextInLine?.id, firstFree.id, "loading may stage a speculative regular successor");
+  const pointerBefore = state.nextNonPriorityLane;
+
+  state = await queue.updateRadioTrack(protectedTrack.id, "useSignalHold");
+  const held = activeTrack(state, protectedTrack.id);
+  assert.equal(state.loadedTrack, null);
+  assert.equal(state.nextInLine, null, "the speculative successor is unwound so the host can choose another Wheel winner");
+  assert.equal(state.session.wheelSpinsOwed, 1);
+  assert.equal(state.nextNonPriorityLane, pointerBefore);
+  assert.equal(state.autoRoutingPaused, true);
+  assert.deepEqual(state.queue.map((entry) => entry.id), [firstFree.id, secondFree.id, protectedTrack.id]);
+  assert.equal(held.lane, "regular");
+  assert.equal(held.signalHoldApplicationCount, 1);
+  assert.equal(state.playbackDiagnostics.events.at(-1)?.eventType, "return");
+  assert.deepEqual(trackOccurrences(state, protectedTrack.id), { loaded: 0, next: 0, queued: 1, completed: 0, removed: 0, total: 1 });
+});
+
 test("a paid Priority track relinquishes active Priority but keeps payment history", async () => {
   const sessionId = await startFreshSession("Signal Hold Priority");
   await enableSignalHold();
@@ -438,28 +467,86 @@ test("a paid Priority track relinquishes active Priority but keeps payment histo
   assert.equal(trackOccurrences(state, protectedTrack.id).total, 1);
 });
 
-test("Signal Hold rejects Now Playing without mutating it", async () => {
-  const sessionId = await startFreshSession("Signal Hold Now Playing");
+test("a loaded protected track can use Signal Hold before playback begins", async () => {
+  const sessionId = await startFreshSession("Signal Hold loaded before playback");
   await enableSignalHold();
-  const protectedTrack = await addTrack("Now Playing Protected");
+  const protectedTrack = await addTrack("Loaded Protected");
+  const following = await addTrack("Loaded Following");
+  const tail = await addTrack("Loaded Tail");
   await activateSignalHold(protectedTrack, sessionId);
   await queue.updateRadioTrack("", "pullNext");
-  const before = await queue.updateRadioTrack(protectedTrack.id, "load");
+  let before = await queue.updateRadioTrack(protectedTrack.id, "load");
   assert.equal(before.loadedTrack?.id, protectedTrack.id);
-  const targetBefore = structuredClone(before.loadedTrack);
+  assert.equal(before.nextInLine?.id, following.id);
+  const ready = await queue.recordQueuePlaybackEvent({
+    sessionId,
+    trackId: protectedTrack.id,
+    provider: "external",
+    eventType: "ready",
+    currentTimeSeconds: 0,
+  });
+  assert.equal(ready.accepted, true);
+  before = await queue.getRadioQueueState();
   const pointerBefore = before.nextNonPriorityLane;
+
+  const state = await queue.updateRadioTrack(protectedTrack.id, "useSignalHold");
+  const held = activeTrack(state, protectedTrack.id);
+  assert.equal(state.loadedTrack, null, "using the player action must clear the loaded player");
+  assert.equal(state.nextInLine?.id, following.id, "the speculative next track remains the next owner");
+  assert.equal(state.nextNonPriorityLane, pointerBefore, "loading and applying Hold must not consume alternation");
+  assert.deepEqual(state.queue.map((entry) => entry.id), [tail.id, protectedTrack.id]);
+  assert.equal(held.signalHoldStatus, "active");
+  assert.equal(held.signalHoldApplicationCount, 1);
+  assert.equal(held.status, "queued");
+  assert.equal(held.lane, "regular");
+  assert.equal(state.playbackDiagnostics.currentTrackId, null);
+  assert.equal(state.playbackDiagnostics.lifecycleState, "cleared");
+  assert.equal(state.playbackDiagnostics.events.at(-1)?.eventType, "return");
+  assert.deepEqual(trackOccurrences(state, protectedTrack.id), { loaded: 0, next: 0, queued: 1, completed: 0, removed: 0, total: 1 });
+  const events = await signalHoldEvents(sessionId, protectedTrack.id);
+  assert.equal(events.filter((event) => event.eventType === "track_signal_hold_applied").length, 1);
+  assert.equal(events.filter((event) => event.eventType === "track_finished").length, 0);
+  assert.equal(events.filter((event) => event.eventType === "track_skipped").length, 0);
+  assert.equal(events.filter((event) => event.eventType === "track_removed").length, 0);
+});
+
+test("Signal Hold rejects a loaded track after playback begins without mutating it", async () => {
+  const sessionId = await startFreshSession("Signal Hold playback begun");
+  await enableSignalHold();
+  const protectedTrack = await addTrack("Playback Begun Protected");
+  const following = await addTrack("Playback Begun Following");
+  await activateSignalHold(protectedTrack, sessionId);
+  await queue.updateRadioTrack("", "pullNext");
+  await queue.updateRadioTrack(protectedTrack.id, "load");
+  const played = await queue.recordQueuePlaybackEvent({
+    sessionId,
+    trackId: protectedTrack.id,
+    provider: "external",
+    eventType: "play",
+    currentTimeSeconds: 0,
+  });
+  assert.equal(played.accepted, true);
+  const before = await queue.getRadioQueueState();
+  assert.equal(before.loadedTrack?.id, protectedTrack.id);
+  assert.equal(before.nextInLine?.id, following.id);
+  const targetBefore = structuredClone(before.loadedTrack);
+  const orderBefore = currentOrder(before);
 
   await assert.rejects(
     () => queue.updateRadioTrack(protectedTrack.id, "useSignalHold"),
-    /Now Playing|playback|already playing|not available/i,
+    /after playback has begun/i,
   );
   const after = await queue.getRadioQueueState();
+  assert.deepEqual(currentOrder(after), orderBefore);
   assert.deepEqual(after.loadedTrack, targetBefore);
-  assert.equal(after.nextNonPriorityLane, pointerBefore);
   assert.equal(after.loadedTrack.signalHoldStatus, "active");
   assert.equal(after.loadedTrack.signalHoldApplicationCount, 0);
   assert.equal(after.loadedTrack.signalHoldAppliedAt, null);
+  assert.equal(after.playbackDiagnostics.currentTrackId, protectedTrack.id);
+  assert.equal(after.playbackDiagnostics.lifecycleState, "playing");
   assert.deepEqual(trackOccurrences(after, protectedTrack.id), { loaded: 1, next: 0, queued: 0, completed: 0, removed: 0, total: 1 });
+  const events = await signalHoldEvents(sessionId, protectedTrack.id);
+  assert.equal(events.filter((event) => event.eventType === "track_signal_hold_applied").length, 0);
 });
 
 test("playing a protected track fulfills it without conflating the playback outcome", async () => {

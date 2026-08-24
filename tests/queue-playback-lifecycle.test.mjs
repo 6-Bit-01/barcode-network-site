@@ -151,27 +151,10 @@ test("loaded, ready, play, pause, stall, resume, seek, and ended form one truthf
   assert.equal(state.playbackDiagnostics.events.at(-1).eventType, "finish");
 });
 
-test("Skip is a completed early cutoff while Remove remains a removal that reopens capacity", async () => {
-  await freshSession("skip remove outcomes", { queueCapacity: 1 });
-  const skippedTrack = await addUpload("Explicit Skip", { durationSeconds: 300 });
-  let state = await loadTrack(skippedTrack);
-  await report(skippedTrack, "play", { currentTimeSeconds: 0, durationSeconds: 300 });
-  await report(skippedTrack, "pause", { currentTimeSeconds: 120, durationSeconds: 300 });
-
-  state = await queue.updateRadioTrack(skippedTrack.id, "skip");
-  const skipped = state.history.find((entry) => entry.id === skippedTrack.id);
-  assert.ok(skipped, "Skip should remain part of played broadcast history");
-  assert.equal(skipped.playbackOutcome, "skipped");
-  assert.equal(skipped.playbackEndedNaturally, false);
-  assert.equal(skipped.playbackEarlyCutoff, true);
-  assert.equal(skipped.playbackEndPositionSeconds, 120);
-  assert.ok(skipped.playbackEndPositionObservedAt);
-  assert.equal(state.session.completedCount, 1);
-  assert.equal(state.session.acceptedCount, 1, "a skipped aired track still consumes its accepted show slot");
-
+test("Remove remains a removal that reopens capacity", async () => {
   await freshSession("remove reopens", { queueCapacity: 1 });
   const removedTrack = await addUpload("Explicit Remove", { durationSeconds: 240 });
-  state = await loadTrack(removedTrack);
+  let state = await loadTrack(removedTrack);
   assert.equal(state.session.acceptedCount, 1);
   assert.equal(state.publicStatus.isOpen, false);
   await report(removedTrack, "play", { currentTimeSeconds: 0, durationSeconds: 240 });
@@ -232,14 +215,14 @@ test("fresh action snapshots clock the endpoint while stale lifecycle positions 
   assert.equal(captured.playbackEndPositionObservedAt, observedAt);
 });
 
-test("operator Finish and Skip persist a matching endpoint snapshot", async () => {
+test("operator Finish persists a matching endpoint snapshot", async () => {
   await freshSession("endpoint snapshot");
   const track = await addUpload("Endpoint Snapshot", { durationSeconds: 300 });
   await loadTrack(track);
   await report(track, "play", { currentTimeSeconds: 0, durationSeconds: 300 });
   const observedAt = new Date().toISOString();
 
-  const state = await queue.updateRadioTrack(track.id, "skip", {
+  const state = await queue.updateRadioTrack(track.id, "finish", {
     trackId: track.id,
     playbackState: "paused",
     currentTimeSeconds: 87,
@@ -249,6 +232,8 @@ test("operator Finish and Skip persist a matching endpoint snapshot", async () =
   const completed = state.history.find((entry) => entry.id === track.id);
   assert.equal(completed.playbackEndPositionSeconds, 87);
   assert.equal(completed.playbackEndPositionObservedAt, observedAt);
+  assert.equal(completed.playbackOutcome, "finished");
+  assert.equal(completed.playbackEarlyCutoff, true);
 });
 
 test("stall, malformed-media error, and interrupted-network error never advance the queue", async () => {
@@ -375,7 +360,7 @@ test("public queue snapshots never expose playback lifecycle diagnostics or priv
   await loadTrack(track);
   await report(track, "play", { currentTimeSeconds: 0, durationSeconds: 199 });
   await report(track, "error", { currentTimeSeconds: 20, durationSeconds: 199, errorCode: "decode_error" });
-  await queue.updateRadioTrack(track.id, "skip");
+  await queue.updateRadioTrack(track.id, "finish");
 
   const json = JSON.stringify(await queue.getPublicQueueSnapshot());
   for (const privateValue of ["playbackDiagnostics", "playbackOutcome", "playbackIssueCode", "playbackEndPositionSeconds", "playbackEndPositionObservedAt", "hidden-playback@example.com", "cs_hidden_playback", "pi_hidden_playback"]) {
@@ -536,10 +521,15 @@ test("storage exceptions return a generic diagnostic-safe response", async () =>
   assert.equal(body.includes(privateUrl), false);
 });
 
-test("operator UI exposes explicit outcomes and diagnostics without auto-finish code", () => {
+test("operator UI exposes only Finish and Remove outcomes, with pre-play Signal Hold in the player", () => {
   const source = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioQueueControl.tsx"), "utf8");
+  const adminRoute = fs.readFileSync(path.join(projectRoot, "src/app/api/admin/queue/route.ts"), "utf8");
   const audioPlayer = source.slice(source.indexOf("function AdminAudioPlayer"), source.indexOf("function PlayerDock"));
-  assert.match(source, />Skip Track</);
+  const playerDock = source.slice(source.indexOf("function PlayerDock"), source.indexOf("function AdminTrackMetadata"));
+  assert.doesNotMatch(source, />Skip Track</);
+  assert.doesNotMatch(adminRoute, /\["load", "finish", "skip", "remove"/);
+  assert.match(playerDock, /canUseSignalHoldFromPlayer\(player, playbackDiagnostics\)/);
+  assert.match(playerDock, /USE SIGNAL HOLD — MOVE TO BOTTOM/);
   assert.match(source, /Download Playback Diagnostics/);
   assert.match(source, /Playback ended/);
   assert.match(source, /Playback error/);

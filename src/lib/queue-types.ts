@@ -346,6 +346,7 @@ export interface QueueEntry {
   playbackEndedNaturally?: boolean | null;
   playbackEarlyCutoff?: boolean | null;
   playbackEndPositionSeconds?: number | null;
+  playbackEndPositionObservedAt?: string | null;
   playbackObservedDurationSeconds?: number | null;
   playbackIssueCode?: QueuePlaybackErrorCode | null;
   note?: string | null;

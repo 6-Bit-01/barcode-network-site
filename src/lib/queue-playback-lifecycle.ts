@@ -12,6 +12,7 @@ import type {
 } from "./queue-types";
 
 export const MAX_QUEUE_PLAYBACK_EVENTS = 80;
+export const QUEUE_PLAYBACK_ENDPOINT_FRESHNESS_MS = 12_000;
 const MAX_PLAYBACK_SECONDS = 24 * 60 * 60;
 
 const PROVIDERS = new Set<QueuePlaybackProvider>(["audio", "youtube", "tiktok", "external"]);
@@ -25,6 +26,19 @@ export type QueuePlaybackEventReceipt = {
   diagnostics: QueuePlaybackDiagnostics;
   event: QueuePlaybackLifecycleEvent | null;
 };
+
+export interface QueuePlaybackEndpointSnapshot {
+  trackId: string;
+  playbackState: "playing" | "paused" | "stopped";
+  currentTimeSeconds: number;
+  durationSeconds?: number | null;
+  observedAt: string;
+}
+
+interface QueuePlaybackOutcomeOptions {
+  snapshot?: QueuePlaybackEndpointSnapshot | null;
+  now?: Date;
+}
 
 export function emptyQueuePlaybackDiagnostics(): QueuePlaybackDiagnostics {
   return {
@@ -179,6 +193,32 @@ function latestTrackEvent(diagnostics: QueuePlaybackDiagnostics | null | undefin
   return [...events].reverse().find((event) => event.trackId === trackId) ?? null;
 }
 
+function observedEndpoint(input: {
+  trackId: string;
+  expectedTrackId: string;
+  playbackState: "playing" | "paused" | "stopped";
+  currentTimeSeconds: number | null | undefined;
+  durationSeconds: number | null | undefined;
+  observedAt: string | null | undefined;
+  now: Date;
+  allowStale?: boolean;
+}): { position: number; duration: number | null; observedAt: string } | null {
+  if (input.trackId !== input.expectedTrackId) return null;
+  const observedAt = validIso(input.observedAt);
+  const position = boundedSeconds(input.currentTimeSeconds);
+  const duration = boundedSeconds(input.durationSeconds);
+  const nowMs = input.now.getTime();
+  const observedAtMs = observedAt ? Date.parse(observedAt) : Number.NaN;
+  if (!observedAt || position === null || !Number.isFinite(nowMs) || !Number.isFinite(observedAtMs)) return null;
+  const ageMs = nowMs - observedAtMs;
+  if (ageMs < -1_000 || (!input.allowStale && ageMs > QUEUE_PLAYBACK_ENDPOINT_FRESHNESS_MS)) return null;
+  const projected = input.playbackState === "playing"
+    ? position + Math.max(0, ageMs) / 1_000
+    : position;
+  const boundedPosition = Math.max(0, duration !== null && duration > 0 ? Math.min(projected, duration) : projected);
+  return { position: Math.floor(boundedPosition), duration, observedAt };
+}
+
 function earlyCutoff(position: number | null, duration: number | null, endedNaturally: boolean, outcome: QueuePlaybackOutcome): boolean | null {
   if (outcome === "skipped") return true;
   if (outcome === "removed") return null;
@@ -192,18 +232,45 @@ export function queuePlaybackOutcomeFields(
   diagnostics: QueuePlaybackDiagnostics | null | undefined,
   trackId: string,
   outcome: QueuePlaybackOutcome,
-): Pick<QueueEntry, "playbackOutcome" | "playbackEndedNaturally" | "playbackEarlyCutoff" | "playbackEndPositionSeconds" | "playbackObservedDurationSeconds" | "playbackIssueCode"> {
+  options: QueuePlaybackOutcomeOptions = {},
+): Pick<QueueEntry, "playbackOutcome" | "playbackEndedNaturally" | "playbackEarlyCutoff" | "playbackEndPositionSeconds" | "playbackEndPositionObservedAt" | "playbackObservedDurationSeconds" | "playbackIssueCode"> {
   const normalized = normalizeQueuePlaybackDiagnostics(diagnostics);
   const latest = latestTrackEvent(normalized, trackId);
   const endedNaturally = outcome === "finished" && latest?.eventType === "ended";
-  const position = latest?.currentTimeSeconds ?? null;
-  const duration = latest?.durationSeconds ?? null;
+  const now = options.now ?? new Date();
+  const snapshotEndpoint = options.snapshot
+    ? observedEndpoint({
+      trackId: options.snapshot.trackId,
+      expectedTrackId: trackId,
+      playbackState: options.snapshot.playbackState,
+      currentTimeSeconds: options.snapshot.currentTimeSeconds,
+      durationSeconds: options.snapshot.durationSeconds,
+      observedAt: options.snapshot.observedAt,
+      now,
+    })
+    : null;
+  const lifecycleEndpoint = latest
+    ? observedEndpoint({
+      trackId: latest.trackId,
+      expectedTrackId: trackId,
+      playbackState: latest.lifecycleState === "playing" ? "playing" : latest.lifecycleState === "paused" ? "paused" : "stopped",
+      currentTimeSeconds: latest.currentTimeSeconds,
+      durationSeconds: latest.durationSeconds,
+      observedAt: latest.observedAt,
+      now,
+      allowStale: latest.eventType === "ended",
+    })
+    : null;
+  const endpoint = snapshotEndpoint ?? lifecycleEndpoint;
+  const position = endpoint?.position ?? null;
+  const duration = endpoint?.duration ?? (typeof latest?.durationSeconds === "number" ? latest.durationSeconds : null);
   const lastError = [...normalized.events].reverse().find((event) => event.trackId === trackId && event.eventType === "error")?.errorCode ?? null;
   return {
     playbackOutcome: outcome,
     playbackEndedNaturally: outcome === "removed" ? false : endedNaturally,
     playbackEarlyCutoff: earlyCutoff(position, duration, endedNaturally, outcome),
     playbackEndPositionSeconds: position,
+    playbackEndPositionObservedAt: endpoint?.observedAt ?? null,
     playbackObservedDurationSeconds: duration,
     playbackIssueCode: lastError,
   };

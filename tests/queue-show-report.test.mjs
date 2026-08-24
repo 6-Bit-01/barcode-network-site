@@ -59,6 +59,7 @@ function track(id, playedMinute, completedMinute, options = {}) {
     playbackEndedNaturally: completed,
     playbackEarlyCutoff: completed ? false : null,
     playbackEndPositionSeconds: completed ? 180 : null,
+    playbackEndPositionObservedAt: completed ? at(completedMinute) : null,
     playbackObservedDurationSeconds: completed ? 180 : null,
     playbackIssueCode: null,
     sourceType: options.sourceType ?? "upload",
@@ -182,6 +183,11 @@ test("finished-session report separates music, ordinary transitions, sponsor tim
   assert.equal(report.pacing.p90TransitionSeconds, 60);
   assert.equal(report.pacing.tracksPerBroadcastHour, 12);
   assert.equal(report.operations.wheel.plannedSpinSeconds, 12);
+  assert.deepEqual(report.operations.wheel.spinTimings, [{
+    startedAt: at(21, 10),
+    endedAt: at(21, 22),
+    durationSeconds: 12,
+  }]);
   assert.equal(report.operations.wheel.completedCeremonies, 1);
   assert.equal(report.operations.sponsor.durationSeconds, 300);
   assert.equal(report.calibration.status, "eligible");
@@ -220,6 +226,7 @@ test("directly observed playback position is not truncated by a shorter duration
     detectedDurationSeconds: null,
     estimatedDurationSeconds: 180,
     playbackEndPositionSeconds: 240,
+    playbackEndPositionObservedAt: at(3),
     playbackObservedDurationSeconds: null,
     playbackEndedNaturally: false,
   };
@@ -227,4 +234,42 @@ test("directly observed playback position is not truncated by a shorter duration
   const report = buildQueueShowReport(session, events);
   assert.equal(report.trackOutcomes[0].modeledMusicSeconds, 240);
   assert.equal(report.trackOutcomes[0].directlyObserved, true);
+});
+
+test("unclocked manual endpoint positions remain fallback-quality report evidence", () => {
+  const { session, events } = fixture();
+  session.completed[0] = {
+    ...session.completed[0],
+    playbackEndedNaturally: false,
+    playbackEndPositionSeconds: 30,
+    playbackEndPositionObservedAt: null,
+  };
+
+  const report = buildQueueShowReport(session, events);
+  assert.equal(report.trackOutcomes[0].modeledMusicSeconds, 180);
+  assert.equal(report.trackOutcomes[0].directlyObserved, false);
+  assert.equal(report.pacing.fallbackTrackCount, 1);
+  assert.equal(report.calibration.status, "review_required");
+});
+
+test("Wheel ceremony airtime is clipped to the actual broadcast window", () => {
+  const { session, events } = fixture();
+  const withoutWheel = events.filter((event) => !event.eventType.startsWith("wheel_"));
+  const replacement = [
+    { eventType: "wheel_launched", occurredAt: at(-2), track: null, details: null },
+    { eventType: "wheel_spun", occurredAt: at(-1, 50), track: null, details: { wheelSpinDurationMs: 12_000 } },
+    { eventType: "wheel_confirmed", occurredAt: at(1), track: null, details: null },
+  ];
+  const clippedEvents = [...withoutWheel, ...replacement]
+    .sort((left, right) => Date.parse(left.occurredAt) - Date.parse(right.occurredAt))
+    .map((event, index) => ({ ...event, sequence: index + 1 }));
+
+  const report = buildQueueShowReport(session, clippedEvents);
+  assert.equal(report.pacing.wheelCeremonySeconds, 60);
+  assert.equal(report.operations.wheel.ceremonySeconds, 60);
+  assert.deepEqual(report.operations.wheel.spinTimings, [{
+    startedAt: at(-1, 50),
+    endedAt: at(0, 2),
+    durationSeconds: 12,
+  }]);
 });

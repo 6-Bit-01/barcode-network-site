@@ -14,6 +14,24 @@ async function assertAdmin(): Promise<boolean> {
   return token ? verifyAdminToken(token) : false;
 }
 
+async function currentPlaybackSnapshot(trackId: string) {
+  try {
+    const { playerSync } = await getLiveOverlayRuntimeState();
+    if (!playerSync || playerSync.trackId !== trackId) return null;
+    return {
+      trackId,
+      playbackState: playerSync.playbackState,
+      currentTimeSeconds: playerSync.currentTimeSeconds,
+      durationSeconds: playerSync.durationSeconds ?? null,
+      observedAt: playerSync.updatedAt,
+    };
+  } catch {
+    // Outcome actions remain available if the optional live endpoint snapshot
+    // cannot be read. The report will mark stale lifecycle evidence as fallback.
+    return null;
+  }
+}
+
 export async function GET(req: Request) {
   if (!(await assertAdmin())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const sessionId = new URL(req.url).searchParams.get("sessionId") ?? undefined;
@@ -139,7 +157,10 @@ export async function POST(req: Request) {
   if (body.action === "viewSession" && typeof body.sessionId === "string") return NextResponse.json(await getRadioQueueState(body.sessionId));
   if (["pullNext", "pullWheelChosen", "pullFreeTransmission", "startShow", "addWheelSpinOwed", "addSimulationFreeTrack", "addSimulationPaidPriority", "addSimulationCheckoutPending", "addSimulationPaymentFailed", "addSimulationHeldPriority", "clearSimulationTracks"].includes(body.action)) return NextResponse.json(await updateRadioTrack("", body.action));
   if (["load", "finish", "skip", "remove", "priority", "regular", "wheel", "moveBack", "spotlight", "removeSpotlight", "restoreRegular", "restorePriority", "markPriorityManual", "markPriorityRequested", "markPriorityCheckoutPending", "pausePriority", "resumePriority"].includes(body.action) && typeof body.id === "string") {
-    return NextResponse.json(await updateRadioTrack(body.id, body.action));
+    const playbackSnapshot = body.action === "finish" || body.action === "skip"
+      ? await currentPlaybackSnapshot(body.id)
+      : null;
+    return NextResponse.json(await updateRadioTrack(body.id, body.action, playbackSnapshot));
   }
   return NextResponse.json({ error: "Unknown queue action" }, { status: 400 });
 }

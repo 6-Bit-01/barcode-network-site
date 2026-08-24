@@ -19,6 +19,7 @@ import {
   normalizeQueuePlaybackDiagnostics,
   queuePlaybackOutcomeFields,
   queuePlaybackProviderForSourceType,
+  type QueuePlaybackEndpointSnapshot,
 } from "./queue-playback-lifecycle";
 import {
   appendQueueShowLogEvents,
@@ -698,8 +699,14 @@ function appendSessionPlaybackEvent(session: QueueSession, input: QueuePlaybackL
   return receipt;
 }
 
-function entryWithPlaybackOutcome(session: QueueSession, entry: QueueEntry, outcome: "finished" | "skipped" | "removed", now = new Date()): QueueEntry {
-  const fields = queuePlaybackOutcomeFields(session.playbackDiagnostics, entry.id, outcome);
+function entryWithPlaybackOutcome(
+  session: QueueSession,
+  entry: QueueEntry,
+  outcome: "finished" | "skipped" | "removed",
+  options: { now?: Date; snapshot?: QueuePlaybackEndpointSnapshot | null } = {},
+): QueueEntry {
+  const now = options.now ?? new Date();
+  const fields = queuePlaybackOutcomeFields(session.playbackDiagnostics, entry.id, outcome, { now, snapshot: options.snapshot });
   if (session.loadedTrack?.id === entry.id) {
     appendSessionPlaybackEvent(session, {
       trackId: entry.id,
@@ -1194,6 +1201,7 @@ function normalizeEntry(entry: QueueEntry): QueueEntry {
     playbackEndedNaturally: typeof entry.playbackEndedNaturally === "boolean" ? entry.playbackEndedNaturally : null,
     playbackEarlyCutoff: typeof entry.playbackEarlyCutoff === "boolean" ? entry.playbackEarlyCutoff : null,
     playbackEndPositionSeconds: typeof entry.playbackEndPositionSeconds === "number" && Number.isFinite(entry.playbackEndPositionSeconds) ? Math.max(0, entry.playbackEndPositionSeconds) : null,
+    playbackEndPositionObservedAt: typeof entry.playbackEndPositionObservedAt === "string" && Number.isFinite(Date.parse(entry.playbackEndPositionObservedAt)) ? new Date(entry.playbackEndPositionObservedAt).toISOString() : null,
     playbackObservedDurationSeconds: typeof entry.playbackObservedDurationSeconds === "number" && Number.isFinite(entry.playbackObservedDurationSeconds) ? Math.max(0, entry.playbackObservedDurationSeconds) : null,
     playbackIssueCode: entry.playbackIssueCode === "media_aborted" || entry.playbackIssueCode === "network_error" || entry.playbackIssueCode === "decode_error" || entry.playbackIssueCode === "source_unsupported" || entry.playbackIssueCode === "provider_error" || entry.playbackIssueCode === "ready_timeout" || entry.playbackIssueCode === "sync_error" || entry.playbackIssueCode === "unknown" ? entry.playbackIssueCode : null,
     note: entry.note ?? null,
@@ -4657,7 +4665,7 @@ function resolvePaidPriorityTrack(session: QueueSession, id: string): boolean {
 }
 
 function restoreEntry(entry: QueueEntry, lane: QueueLane): QueueEntry {
-  return normalizeEntry({ ...entry, lane, tier: lane === "priority" ? "fastlane" : "free", status: "queued", createdAt: new Date().toISOString(), playedAt: null, completedAt: null, removedAt: null, restoredAt: new Date().toISOString(), playbackOutcome: null, playbackEndedNaturally: null, playbackEarlyCutoff: null, playbackEndPositionSeconds: null, playbackObservedDurationSeconds: null, playbackIssueCode: null, displacedFromNextInLineAt: null, ...priorityUpgradeMetadata(entry, lane) });
+  return normalizeEntry({ ...entry, lane, tier: lane === "priority" ? "fastlane" : "free", status: "queued", createdAt: new Date().toISOString(), playedAt: null, completedAt: null, removedAt: null, restoredAt: new Date().toISOString(), playbackOutcome: null, playbackEndedNaturally: null, playbackEarlyCutoff: null, playbackEndPositionSeconds: null, playbackEndPositionObservedAt: null, playbackObservedDurationSeconds: null, playbackIssueCode: null, displacedFromNextInLineAt: null, ...priorityUpgradeMetadata(entry, lane) });
 }
 
 const SIMULATION_TRACK_NOTE = "[QUEUE SIMULATION TRACK]";
@@ -4863,7 +4871,7 @@ function addSimulationTrack(session: QueueSession, action: QueueAdminAction): bo
   return false;
 }
 
-async function updateRadioTrackMutation(id: string, action: QueueAdminAction): Promise<QueueState> {
+async function updateRadioTrackMutation(id: string, action: QueueAdminAction, playbackSnapshot: QueuePlaybackEndpointSnapshot | null = null): Promise<QueueState> {
   const store = await readStore();
   const session = getSession(store);
   if (session.status === "archived") return queueStateFromSession(session, store);
@@ -4991,10 +4999,11 @@ async function updateRadioTrackMutation(id: string, action: QueueAdminAction): P
       session.nextInLineHoldTrackId = null;
       const current = session.loadedTrack;
       if (current) {
-        const completed = entryWithPlaybackOutcome(session, current, action === "skip" ? "skipped" : "finished");
+        const completedAt = new Date();
+        const completed = entryWithPlaybackOutcome(session, current, action === "skip" ? "skipped" : "finished", { now: completedAt, snapshot: playbackSnapshot });
         clearLoadedTrack(session);
         removeTrackFromActiveLocations(session, current.id);
-        const now = new Date().toISOString();
+        const now = completedAt.toISOString();
         if (!session.broadcastStartedAt) session.broadcastStartedAt = current.playedAt ?? now;
         session.completed.unshift({ ...completed, status: "played", playedAt: completed.playedAt ?? now, completedAt: now });
         advanceNonPriorityLaneAfter(session, current.lane);
@@ -5129,8 +5138,8 @@ export async function recordQueuePlaybackEvent(input: QueuePlaybackLifecycleEven
   });
 }
 
-export async function updateRadioTrack(id: string, action: QueueAdminAction): Promise<QueueState> {
-  return withQueueMutation(() => updateRadioTrackMutation(id, action));
+export async function updateRadioTrack(id: string, action: QueueAdminAction, playbackSnapshot: QueuePlaybackEndpointSnapshot | null = null): Promise<QueueState> {
+  return withQueueMutation(() => updateRadioTrackMutation(id, action, playbackSnapshot));
 }
 
 // Legacy-compatible helpers used by archived/OBS components.

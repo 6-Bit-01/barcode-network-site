@@ -145,6 +145,7 @@ test("loaded, ready, play, pause, stall, resume, seek, and ended form one truthf
   assert.equal(completed.playbackEndedNaturally, true);
   assert.equal(completed.playbackEarlyCutoff, false);
   assert.equal(completed.playbackEndPositionSeconds, 180);
+  assert.ok(completed.playbackEndPositionObservedAt);
   assert.equal(completed.detectedDurationSeconds, 180);
   assert.equal(state.playbackDiagnostics.currentTrackId, null);
   assert.equal(state.playbackDiagnostics.events.at(-1).eventType, "finish");
@@ -164,6 +165,7 @@ test("Skip is a completed early cutoff while Remove remains a removal that reope
   assert.equal(skipped.playbackEndedNaturally, false);
   assert.equal(skipped.playbackEarlyCutoff, true);
   assert.equal(skipped.playbackEndPositionSeconds, 120);
+  assert.ok(skipped.playbackEndPositionObservedAt);
   assert.equal(state.session.completedCount, 1);
   assert.equal(state.session.acceptedCount, 1, "a skipped aired track still consumes its accepted show slot");
 
@@ -197,6 +199,56 @@ test("Finish near EOF is not misclassified as an early cutoff", async () => {
   assert.equal(completed.playbackOutcome, "finished");
   assert.equal(completed.playbackEndedNaturally, false);
   assert.equal(completed.playbackEarlyCutoff, false);
+});
+
+test("fresh action snapshots clock the endpoint while stale lifecycle positions fall back", async () => {
+  let diagnostics = lifecycle.emptyQueuePlaybackDiagnostics();
+  diagnostics = lifecycle.appendQueuePlaybackEvent(diagnostics, {
+    trackId: "track_endpoint",
+    provider: "audio",
+    eventType: "play",
+    currentTimeSeconds: 0,
+    durationSeconds: 300,
+  }, "track_endpoint", new Date("2026-08-21T20:00:00.000Z")).diagnostics;
+
+  const stale = lifecycle.queuePlaybackOutcomeFields(diagnostics, "track_endpoint", "skipped", {
+    now: new Date("2026-08-21T20:03:00.000Z"),
+  });
+  assert.equal(stale.playbackEndPositionSeconds, null);
+  assert.equal(stale.playbackEndPositionObservedAt, null);
+
+  const observedAt = "2026-08-21T20:02:58.000Z";
+  const captured = lifecycle.queuePlaybackOutcomeFields(diagnostics, "track_endpoint", "skipped", {
+    now: new Date("2026-08-21T20:03:00.000Z"),
+    snapshot: {
+      trackId: "track_endpoint",
+      playbackState: "playing",
+      currentTimeSeconds: 118,
+      durationSeconds: 300,
+      observedAt,
+    },
+  });
+  assert.equal(captured.playbackEndPositionSeconds, 120);
+  assert.equal(captured.playbackEndPositionObservedAt, observedAt);
+});
+
+test("operator Finish and Skip persist a matching endpoint snapshot", async () => {
+  await freshSession("endpoint snapshot");
+  const track = await addUpload("Endpoint Snapshot", { durationSeconds: 300 });
+  await loadTrack(track);
+  await report(track, "play", { currentTimeSeconds: 0, durationSeconds: 300 });
+  const observedAt = new Date().toISOString();
+
+  const state = await queue.updateRadioTrack(track.id, "skip", {
+    trackId: track.id,
+    playbackState: "paused",
+    currentTimeSeconds: 87,
+    durationSeconds: 300,
+    observedAt,
+  });
+  const completed = state.history.find((entry) => entry.id === track.id);
+  assert.equal(completed.playbackEndPositionSeconds, 87);
+  assert.equal(completed.playbackEndPositionObservedAt, observedAt);
 });
 
 test("stall, malformed-media error, and interrupted-network error never advance the queue", async () => {
@@ -326,7 +378,7 @@ test("public queue snapshots never expose playback lifecycle diagnostics or priv
   await queue.updateRadioTrack(track.id, "skip");
 
   const json = JSON.stringify(await queue.getPublicQueueSnapshot());
-  for (const privateValue of ["playbackDiagnostics", "playbackOutcome", "playbackIssueCode", "playbackEndPositionSeconds", "hidden-playback@example.com", "cs_hidden_playback", "pi_hidden_playback"]) {
+  for (const privateValue of ["playbackDiagnostics", "playbackOutcome", "playbackIssueCode", "playbackEndPositionSeconds", "playbackEndPositionObservedAt", "hidden-playback@example.com", "cs_hidden_playback", "pi_hidden_playback"]) {
     assert.equal(json.includes(privateValue), false, privateValue);
   }
 });

@@ -49,7 +49,7 @@ export function AdminShowManagement() {
   const [description, setDescription] = useState(defaultDescription(todayDate()));
   const [trackLimitPerArtist, setTrackLimitPerArtist] = useState(3);
   const [queueCapacity, setQueueCapacity] = useState(44);
-  const [purpose, setPurpose] = useState<QueueSessionPurpose>("rehearsal");
+  const [purpose, setPurpose] = useState<QueueSessionPurpose | "">("");
   const [bnlPublicationStatus, setBnlPublicationStatus] = useState<QueueSessionBnlPublicationStatus>("private");
   const [submissionCooldownSeconds, setSubmissionCooldownSeconds] = useState(300);
   const [priorityUpgradesEnabled, setPriorityUpgradesEnabled] = useState(true);
@@ -94,6 +94,10 @@ export function AdminShowManagement() {
 
   async function startSession() {
     if (startLocked) return;
+    if (!purpose) {
+      setActionError("Choose whether this is a live broadcast, rehearsal, simulation, or internal test before starting the session.");
+      return;
+    }
     if (priorityUpgradesEnabled && priorityUpgradePriceCents <= 0) {
       setPriorityStartError("Checkout requires a price above 0.");
       return;
@@ -153,7 +157,7 @@ type StartNewSessionProps = {
   onEnd: () => void;
   title: string;
   description: string;
-  purpose: QueueSessionPurpose;
+  purpose: QueueSessionPurpose | "";
   bnlPublicationStatus: QueueSessionBnlPublicationStatus;
   trackLimitPerArtist: number;
   queueCapacity: number;
@@ -168,7 +172,7 @@ type StartNewSessionProps = {
   signalHoldStartError: string | null;
   onTitle: (value: string) => void;
   onDescription: (value: string) => void;
-  onPurpose: (value: QueueSessionPurpose) => void;
+  onPurpose: (value: QueueSessionPurpose | "") => void;
   onBnlPublicationStatus: (value: QueueSessionBnlPublicationStatus) => void;
   onTrackLimit: (value: number) => void;
   onCapacity: (value: number) => void;
@@ -198,9 +202,9 @@ function StartNewSession({ locked, queueIsOpen, onCloseSubmissions, onEnd, title
         <label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Submission Delay</span><input disabled={locked} type="number" min={0} max={3600} value={submissionCooldownSeconds} onChange={(event) => onSubmissionCooldown(Math.max(0, Math.min(3600, Number(event.target.value))))} className="w-full bg-background border border-border px-3 py-2.5 text-sm disabled:opacity-50" /><span className="block text-xs text-muted">Delay between accepted submissions from the same source. Set to 0 to disable during testing.</span></label>
         <label className="space-y-2 lg:col-span-2"><span className="text-xs uppercase tracking-widest text-muted">Description / rule blurb</span><textarea disabled={locked} value={description} onChange={(event) => onDescription(event.target.value)} rows={4} className="w-full bg-background border border-border px-3 py-2.5 text-sm disabled:opacity-50" /></label>
         <section className="space-y-4 border border-cyan-300/35 bg-cyan-300/5 p-4 lg:col-span-2">
-          <div><p className="text-xs uppercase tracking-[0.3em] text-cyan-200">Session provenance / BNL boundary</p><p className="mt-1 text-sm text-muted">Native queue use never authorizes BNL context by itself. New sessions default to a quarantined rehearsal.</p></div>
+          <div><p className="text-xs uppercase tracking-[0.3em] text-cyan-200">Session provenance / BNL boundary</p><p className="mt-1 text-sm text-muted">Choose the purpose explicitly. Only Live broadcast sessions enter the public Broadcast Archive; BNL remains private unless separately approved.</p></div>
           <div className="grid gap-3 lg:grid-cols-2">
-            <label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Session purpose</span><select disabled={locked} value={purpose} onChange={(event) => onPurpose(event.target.value as QueueSessionPurpose)} className="w-full border border-border bg-background px-3 py-2.5 text-sm disabled:opacity-50"><option value="rehearsal">Rehearsal</option><option value="live_broadcast">Live broadcast</option><option value="simulation">Simulation</option><option value="internal_test">Internal test</option></select></label>
+            <label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Session purpose</span><select required disabled={locked} value={purpose} onChange={(event) => onPurpose(event.target.value as QueueSessionPurpose | "")} className="w-full border border-border bg-background px-3 py-2.5 text-sm disabled:opacity-50"><option value="" disabled>Choose purpose…</option><option value="live_broadcast">Live broadcast · retained in public Archive</option><option value="rehearsal">Rehearsal · private</option><option value="simulation">Simulation · private</option><option value="internal_test">Internal test · private</option></select></label>
             <label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">BNL publication</span><select disabled={locked || purpose !== "live_broadcast"} value={bnlPublicationStatus} onChange={(event) => onBnlPublicationStatus(event.target.value as QueueSessionBnlPublicationStatus)} className="w-full border border-border bg-background px-3 py-2.5 text-sm disabled:opacity-50"><option value="private">Private / quarantined</option><option value="runtime_only">Runtime context only</option><option value="recap_approved">Recap candidates approved</option><option value="public_copy_approved">Public copy approved</option></select></label>
           </div>
           <p className="text-xs text-muted">Rehearsal, simulation, internal-test, legacy, and unknown sessions stay private regardless of queue visibility. Publication never enables bot memory, Broadcast Memory, dossiers, or queue mutation.</p>
@@ -217,7 +221,7 @@ function StartNewSession({ locked, queueIsOpen, onCloseSubmissions, onEnd, title
           {(signalHoldPriceWarning || signalHoldStartError) && <p className="border border-danger/40 bg-danger/10 p-3 text-sm text-danger">{signalHoldStartError ?? signalHoldPriceWarning}</p>}
         </section>
       </div>
-      <button onClick={onStart} disabled={locked} className="border border-accent px-5 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Start New Session</button>
+      <button onClick={onStart} disabled={locked || !purpose} className="border border-accent px-5 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Start New Session</button>
     </section>
   );
 }

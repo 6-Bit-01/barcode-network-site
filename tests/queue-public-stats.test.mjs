@@ -38,19 +38,21 @@ Module._extensions[".ts"] = function loadTypeScript(module, filename) {
 const require = createRequire(import.meta.url);
 const queue = require("../src/lib/queue.ts");
 
-const baseTime = Date.parse("2026-08-21T20:00:00.000Z");
+const baseTime = Date.parse("2026-08-31T20:00:00.000Z");
 const at = (minute) => new Date(baseTime + minute * 60_000).toISOString();
 
 function entry(id, handle, options = {}) {
   const outcome = options.outcome ?? null;
   const terminal = outcome !== null || options.status === "completed" || options.status === "played";
+  const sourceType = options.sourceType ?? "upload";
   return {
     id,
     artist: options.artist ?? `${id} Artist`,
-    title: `${id} Song`,
+    title: options.title ?? `${id} Song`,
     submittedArtistName: options.artist ?? `${id} Artist`,
-    submittedSongTitle: `${id} Song`,
-    link: `https://private.example.test/${id}`,
+    submittedSongTitle: options.title ?? `${id} Song`,
+    collaboratorNames: options.collaboratorNames ?? null,
+    link: options.link ?? (sourceType === "upload" ? `https://private.example.test/${id}` : `https://music.example.test/${id}`),
     tier: "free",
     lane: options.lane ?? "regular",
     amount: options.amount ?? 0,
@@ -65,7 +67,7 @@ function entry(id, handle, options = {}) {
     normalizedTikTokHandle: queue.normalizeTikTokHandle(handle),
     contactEmail: options.contactEmail ?? "private@example.test",
     submitterToken: options.submitterToken ?? "private-browser-token",
-    sourceType: "upload",
+    sourceType,
     fileUrl: `https://storage.example.test/${id}.mp3`,
     fileName: `${id}.mp3`,
     priorityUpgradePaymentId: options.priorityUpgradePaymentId ?? "pi_private_priority",
@@ -76,15 +78,37 @@ function entry(id, handle, options = {}) {
   };
 }
 
+function showLogEvent(sequence, eventType, track = null, occurredAt = at(sequence)) {
+  return {
+    sequence,
+    eventType,
+    occurredAt,
+    track: track ? {
+      trackId: track.id,
+      artist: track.submittedArtistName,
+      title: track.submittedSongTitle,
+      tiktokHandle: track.tiktokHandle,
+      sourceType: track.sourceType,
+      publicSourceUrl: track.sourceType === "upload" ? null : track.link,
+      submissionOrder: sequence,
+      playedOrder: null,
+    } : null,
+  };
+}
+
 function session(id, purpose, options = {}) {
   return {
     sessionId: id,
     title: options.title ?? `${id} Show`,
-    showDate: options.showDate ?? "2026-08-21",
+    showDate: options.showDate ?? "2026-08-31",
     createdAt: options.createdAt ?? at(-10),
     updatedAt: options.updatedAt ?? at(20),
     status: options.status ?? "archived",
     purpose,
+    provenanceRevision: options.provenanceRevision ?? 1,
+    queueOpen: options.queueOpen ?? false,
+    showStarted: options.showStarted ?? false,
+    broadcastPhase: options.broadcastPhase ?? (options.status === "archived" ? "ended" : "broadcast_active"),
     queue: options.queue ?? [],
     nextInLineTrack: options.nextInLineTrack ?? null,
     loadedTrack: options.loadedTrack ?? null,
@@ -95,80 +119,137 @@ function session(id, purpose, options = {}) {
   };
 }
 
-const counts = (submittedTrackCount, finishedTrackCount, skippedTrackCount, removedTrackCount, activeTrackCount, unknownOutcomeTrackCount) => ({
-  submittedTrackCount,
-  finishedTrackCount,
-  skippedTrackCount,
-  removedTrackCount,
-  activeTrackCount,
-  unknownOutcomeTrackCount,
-});
-
-test("public queue stats aggregate exact TikTok handles across live broadcasts without double-counting", () => {
-  const active = entry("active", "TikTok.com/@Signal.Artist", { artist: "Signal Artist", createdAt: at(8) });
-  const finished = entry("finished", "@SIGNAL.ARTIST", { artist: "Signal Artist", outcome: "finished", createdAt: at(4) });
-  const skipped = entry("skipped", "signal.artist", { artist: "Signal Artist", outcome: "skipped", createdAt: at(5) });
-  const removed = entry("removed", "@signal.artist", { artist: "Signal Artist", outcome: "removed", status: "removed", removedAt: at(7), createdAt: at(6) });
-  const other = entry("other", "@another.artist", { artist: "Another Artist", outcome: "finished" });
-  const simulation = entry("simulation", "@signal.artist", { outcome: "finished", isTestTrack: true });
-  const legacyUnknown = entry("legacy", "@signal.artist", { artist: "Earlier Name", status: "played", createdAt: at(-20) });
+test("Broadcast Archive projects only retained live shows into separate Shows and Artists catalogs", () => {
+  const waiting = entry("waiting", "TikTok.com/@Submitter.One", {
+    artist: "Neon   Signal",
+    title: "Waiting Song",
+    collaboratorNames: "Guest Voice",
+    sourceType: "link",
+    createdAt: at(8),
+  });
+  const next = entry("next", "@submitter.two", { artist: "NEON SIGNAL", title: "Next Song", createdAt: at(7) });
+  const playing = entry("playing", "@third.handle", { artist: "Neon Signals", title: "Different Project", status: "playing", createdAt: at(6) });
+  const finished = entry("finished", "@submitter.one", { artist: "neon signal", title: "Played Song", collaboratorNames: "Guest Voice", outcome: "finished", sourceType: "youtube", lane: "wheel", createdAt: at(2) });
+  const skipped = entry("skipped", "@submitter.two", { artist: "NEON SIGNAL", title: "Not Completed", outcome: "skipped", createdAt: at(3) });
+  const removed = entry("removed", "@submitter.one", { artist: "Neon Signal", title: "Removed Song", outcome: "removed", status: "removed", removedAt: at(9), createdAt: at(4) });
+  const unknown = entry("unknown", "@submitter.one", { artist: "Neon Signal", title: "Legacy Outcome", status: "played", createdAt: at(5) });
+  const differentArchived = entry("different-archived", "@third.handle", { artist: "Neon Signals", title: "Different Project", outcome: "finished", createdAt: at(6) });
+  const firstRetained = entry("first-retained", "@archive.handle", { artist: "Archive Artist", outcome: "finished", createdAt: at(1) });
+  const simulation = entry("simulation", "@submitter.one", { artist: "Neon Signal", outcome: "finished", isTestTrack: true });
+  const currentLog = [
+    showLogEvent(1, "submissions_opened"),
+    showLogEvent(2, "track_submitted", waiting),
+    showLogEvent(3, "wheel_confirmed"),
+  ];
+  const archivedLog = [
+    showLogEvent(1, "submissions_opened"),
+    showLogEvent(2, "track_submitted", finished),
+    showLogEvent(3, "wheel_confirmed", finished),
+    showLogEvent(4, "track_finished", finished),
+    showLogEvent(5, "session_archived"),
+  ];
 
   const result = queue.buildQueuePublicStats({
     revision: 42,
     activeSessionId: "live-current",
-    requestedTikTokHandle: "https://www.tiktok.com/@SIGNAL.ARTIST?lang=en",
     sessions: [
       session("live-current", "live_broadcast", {
         status: "open",
-        showDate: "2026-08-21",
-        queue: [active],
-        nextInLineTrack: active,
-        completed: [finished, skipped, other, simulation],
-        removed: [removed],
+        queueOpen: true,
+        showStarted: true,
+        showDate: "2026-08-31",
+        queue: [waiting],
+        nextInLineTrack: next,
+        loadedTrack: playing,
+        showLog: currentLog,
       }),
-      session("live-prior", "live_broadcast", {
-        showDate: "2026-08-14",
-        completed: [legacyUnknown],
+      session("coverage-start", "live_broadcast", {
+        showDate: "2026-08-24",
+        completed: [firstRetained, finished, skipped, unknown, differentArchived, simulation],
+        removed: [removed],
+        showLog: archivedLog,
+      }),
+      session("before-coverage", "live_broadcast", {
+        showDate: "2026-08-23",
+        completed: [entry("too-old", "@old.handle", { outcome: "finished" })],
       }),
       session("rehearsal", "rehearsal", {
-        showDate: "2026-08-20",
-        completed: [entry("rehearsal-track", "@signal.artist", { outcome: "finished" })],
-      }),
-      session("legacy-private", "unknown", {
-        showDate: "2026-08-13",
-        completed: [entry("legacy-private-track", "@signal.artist", { outcome: "finished" })],
+        showDate: "2026-08-31",
+        completed: [entry("rehearsal-track", "@private.handle", { outcome: "finished" })],
       }),
     ],
   });
 
-  assert.equal(result.schemaVersion, "queue_public_stats_v1");
-  assert.equal(result.revision, 42);
-  assert.deepEqual(result.overview, {
-    showCount: 2,
-    ...counts(6, 2, 1, 1, 1, 1),
-  });
-  assert.deepEqual(result.currentShow, {
-    sessionId: "live-current",
-    title: "live-current Show",
-    showDate: "2026-08-21",
-    status: "open",
-    ...counts(5, 2, 1, 1, 1, 0),
-  });
-  assert.deepEqual(result.latestShow, result.currentShow);
-  assert.deepEqual(result.artist, {
-    tiktokHandle: "@signal.artist",
-    artistNames: ["Signal Artist", "Earlier Name"],
-    showCount: 2,
-    firstShowDate: "2026-08-14",
-    latestShowDate: "2026-08-21",
-    ...counts(5, 1, 1, 1, 1, 1),
-    currentShow: counts(4, 1, 1, 1, 1, 0),
-  });
+  assert.equal(result.schemaVersion, "queue_public_history_projection_v1");
+  assert.equal(result.source, "queue_public_history_projection");
+  assert.equal(result.visibility, "public_safe");
+  assert.equal(result.historyCoverageStartedAt, "2026-08-24");
+  assert.equal(result.sourceRevision, 42);
+  assert.equal(result.overview.showCount, 1);
+  assert.equal(result.overview.artistCount, 3);
+  assert.equal(result.overview.submittedTrackCount, 6);
+  assert.equal(result.overview.finishedTrackCount, 3);
+  assert.equal(result.overview.skippedTrackCount, 1);
+  assert.equal(result.overview.removedTrackCount, 1);
+  assert.equal(result.overview.unknownOutcomeTrackCount, 1);
+  assert.equal(result.overview.waitingTrackCount, 0);
+  assert.equal(result.overview.upNextTrackCount, 0);
+  assert.equal(result.overview.nowPlayingTrackCount, 0);
+  assert.equal(result.overview.wheelChosenTrackCount, 1);
+  assert.deepEqual(result.shows.map((show) => show.sessionId), ["coverage-start"]);
+  assert.equal(result.currentShow.sessionId, "live-current");
+  assert.equal(result.currentShow.trackRoster.length, 3);
+  assert.equal(result.currentShow.trackRoster.find((track) => track.trackId === "waiting").publicSourceUrl, "https://music.example.test/waiting");
+  assert.equal(result.currentShow.trackRoster.find((track) => track.trackId === "next").publicSourceUrl, null);
+  assert.equal(result.shows[0].trackRoster.find((track) => track.trackId === "finished").wheelChosen, true);
+
+  const neon = result.artists.find((artist) => artist.projectKey === "neon signal");
+  assert.ok(neon);
+  assert.equal(neon.showCount, 1);
+  assert.equal(neon.submittedTrackCount, 4);
+  assert.deepEqual([...new Set(neon.tracks.map((track) => track.submittedByTikTokHandle))].sort(), ["@submitter.one", "@submitter.two"]);
+  assert.equal(neon.tracks.find((track) => track.trackId === "finished").collaboratorNames, "Guest Voice");
+  assert.equal(result.artists.some((artist) => artist.projectKey === "guest voice"), false, "collaborators do not become or merge artist records");
+  assert.ok(result.artists.some((artist) => artist.projectKey === "neon signals"), "similar project names remain separate");
+  assert.equal(result.personalHistory, null);
 });
 
-test("public queue stats do not enumerate handles and serialize no private queue fields", () => {
+test("project normalization is deterministic but deliberately avoids fuzzy identity merging", () => {
+  assert.equal(queue.normalizeQueueProjectKey("  Signal\u00a0Artist  "), "signal artist");
+  assert.equal(queue.normalizeQueueProjectKey("SIGNAL ARTIST"), "signal artist");
+  assert.equal(queue.normalizeQueueProjectKey("Signal—Artist"), "signal-artist");
+  assert.equal(queue.normalizeQueueProjectKey("Ｓｉｇｎａｌ Artist"), "signal artist");
+  assert.notEqual(queue.normalizeQueueProjectKey("Signal Artist"), queue.normalizeQueueProjectKey("Signal Artists"));
+  assert.notEqual(queue.normalizeQueueProjectKey("Signal Artist"), queue.normalizeQueueProjectKey("Signal-Artist"));
+});
+
+test("same-browser history is token-gated while public artist attribution remains unverified", () => {
+  const token = "owned-browser-token";
+  const owned = entry("owned", "@owner.handle", { artist: "Owner Project", outcome: "finished", submitterToken: token });
+  const sameHandleOtherBrowser = entry("same-handle", "@owner.handle", { artist: "Second Project", outcome: "finished", submitterToken: "different-token" });
+  const unrelated = entry("unrelated", "@another.handle", { artist: "Other Project", outcome: "finished", submitterToken: "different-token" });
+  const input = {
+    revision: 8,
+    activeSessionId: null,
+    sessions: [session("public-live", "live_broadcast", { completed: [owned, sameHandleOtherBrowser, unrelated] })],
+  };
+
+  const anonymous = queue.buildQueuePublicStats(input);
+  assert.equal(anonymous.personalHistory, null);
+  assert.equal(anonymous.artists.find((artist) => artist.projectKey === "owner project").tracks[0].submittedByTikTokHandle, "@owner.handle");
+
+  const personal = queue.buildQueuePublicStats({ ...input, submitterToken: token }).personalHistory;
+  assert.equal(personal.access, "confirmed_same_browser_submission");
+  assert.equal(personal.identityStatus, "submitted_handle_not_verified_account");
+  assert.equal(personal.profileStatus, "not_verified_profile");
+  assert.deepEqual(personal.handles.map((handle) => handle.tiktokHandle), ["@owner.handle"]);
+  assert.equal(personal.handles[0].submittedTrackCount, 2, "the token confirms the submitted handle, not ownership of a person or account");
+});
+
+test("projection is idempotent, rebuilds corrections and deletions, and serializes no protected fields", () => {
   const privateEntry = entry("private", "@privacy.artist", {
     artist: "Privacy Artist",
+    title: "Original Title",
     outcome: "finished",
     contactEmail: "secret@example.test",
     submitterToken: "secret-browser-token",
@@ -176,18 +257,28 @@ test("public queue stats do not enumerate handles and serialize no private queue
     priorityUpgradePaymentId: "pi_secret_priority",
     signalHoldPaymentId: "pi_secret_hold",
   });
-  const input = {
-    revision: 9,
-    activeSessionId: null,
-    sessions: [session("public-live", "live_broadcast", { completed: [privateEntry] })],
-  };
+  const retained = session("public-live", "live_broadcast", { completed: [privateEntry] });
+  const input = { revision: 9, activeSessionId: null, sessions: [retained] };
+  const first = queue.buildQueuePublicStats(input);
+  const repeated = queue.buildQueuePublicStats(input);
+  assert.equal(first.sourceDigest, repeated.sourceDigest);
 
-  const anonymous = queue.buildQueuePublicStats(input);
-  assert.equal(anonymous.artist, null);
-  assert.doesNotMatch(JSON.stringify(anonymous), /privacy\.artist/i);
+  const corrected = queue.buildQueuePublicStats({
+    ...input,
+    revision: 10,
+    sessions: [session("public-live", "live_broadcast", { completed: [{ ...privateEntry, title: "Corrected Title", submittedSongTitle: "Corrected Title" }] })],
+  });
+  assert.notEqual(corrected.sourceDigest, first.sourceDigest);
+  assert.equal(corrected.artists[0].tracks[0].title, "Corrected Title");
 
-  const selected = queue.buildQueuePublicStats({ ...input, requestedTikTokHandle: "@privacy.artist" });
-  const json = JSON.stringify(selected);
+  const deleted = queue.buildQueuePublicStats({ revision: 11, activeSessionId: null, sessions: [] });
+  assert.notEqual(deleted.sourceDigest, corrected.sourceDigest);
+  assert.equal(deleted.overview.showCount, 0);
+  assert.equal(deleted.overview.submittedTrackCount, 0);
+
+  const json = JSON.stringify(first);
+  assert.match(json, /@privacy\.artist/);
+  assert.match(json, /Privacy Artist/);
   for (const forbidden of [
     "secret@example.test",
     "secret-browser-token",
@@ -199,24 +290,74 @@ test("public queue stats do not enumerate handles and serialize no private queue
     "signalHold",
     "priorityUpgrade",
     "suspiciousFlags",
-    "sourceType",
-    "submittedSongTitle",
+    "contactEmail",
+    "submitterToken",
+    "fileUrl",
+    "fileName",
+    "amount",
   ]) {
     assert.doesNotMatch(json, new RegExp(forbidden, "i"));
   }
 });
 
-test("public queue stats route is GET-only, validates handles, and disables caching", async () => {
+test("public history route is GET-only, token-bounded, and never cacheable", async () => {
   const route = require("../src/app/api/queue/stats/route.ts");
   assert.equal(typeof route.GET, "function");
   for (const method of ["POST", "PUT", "PATCH", "DELETE"]) assert.equal(route[method], undefined);
 
-  const invalid = await route.GET(new Request("https://example.test/api/queue/stats?tiktokHandle=%20%20"));
+  const invalid = await route.GET(new Request("https://example.test/api/queue/stats", {
+    headers: { "x-barcode-submitter-token": "x".repeat(513) },
+  }));
   assert.equal(invalid.status, 400);
   assert.equal(invalid.headers.get("cache-control"), "no-store");
 
   const response = await route.GET(new Request("https://example.test/api/queue/stats"));
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("cache-control"), "no-store");
-  assert.equal((await response.json()).schemaVersion, "queue_public_stats_v1");
+  assert.equal(response.headers.get("vary"), "x-barcode-submitter-token");
+  assert.equal((await response.json()).schemaVersion, "queue_public_history_projection_v1");
+});
+
+test("Broadcast Deck and Broadcast Archive remain separate destinations with connected queue entry points", () => {
+  const archivePage = fs.readFileSync(path.join(projectRoot, "src/app/radio/archive/page.tsx"), "utf8");
+  const archive = fs.readFileSync(path.join(projectRoot, "src/components/BroadcastArchive.tsx"), "utf8");
+  const deckPage = fs.readFileSync(path.join(projectRoot, "src/app/radio/deck/page.tsx"), "utf8");
+  const deck = fs.readFileSync(path.join(projectRoot, "src/components/BroadcastDeck.tsx"), "utf8");
+  const gateway = fs.readFileSync(path.join(projectRoot, "src/components/PublicQueueGateway.tsx"), "utf8");
+  const publicQueue = fs.readFileSync(path.join(projectRoot, "src/components/PublicQueueSession.tsx"), "utf8");
+  const radio = fs.readFileSync(path.join(projectRoot, "src/app/radio/page.tsx"), "utf8");
+  const sitemap = fs.readFileSync(path.join(projectRoot, "src/app/sitemap.ts"), "utf8");
+  const management = fs.readFileSync(path.join(projectRoot, "src/components/AdminShowManagement.tsx"), "utf8");
+
+  assert.match(archivePage, /BroadcastArchive/);
+  assert.doesNotMatch(deckPage, /BroadcastArchive/);
+  assert.match(deckPage, /BroadcastDeck/);
+  assert.match(deck, /href="\/radio\/archive"/);
+  assert.match(deck, /BROADCAST ARCHIVE|Broadcast Archive/);
+  assert.match(deck, /startSessionBoundPolling/);
+  assert.match(deck, /PUBLIC_QUEUE_POLL_INTERVAL_MS/);
+  assert.match(deck, /From this browser/);
+  assert.match(deck, /multiple artists|multiple artists|multiple/i);
+
+  assert.match(archive, /Shows ·/);
+  assert.match(archive, /Artists ·/);
+  assert.match(archive, /Search shows, artists, songs, TikTok handles, collaborators/);
+  assert.match(archive, /Submitted by/);
+  assert.match(archive, /Wheel Chosen/);
+  assert.match(archive, /not a verified artist account/);
+  assert.match(archive, /Completed-play outcomes only/);
+
+  for (const source of [gateway, publicQueue, radio]) {
+    assert.match(source, /\/radio\/deck/);
+    assert.match(source, /\/radio\/archive/);
+  }
+  assert.match(sitemap, /\/radio\/deck/);
+  assert.match(sitemap, /\/radio\/archive/);
+  assert.match(publicQueue, /broadcastArchiveArtistHref/);
+  assert.match(publicQueue, /Artist Archive/);
+
+  assert.match(management, /useState<QueueSessionPurpose \| "">\(""\)/);
+  assert.match(management, /Choose purpose/);
+  assert.match(management, /Live broadcast · retained in public Archive/);
+  assert.match(management, /disabled=\{locked \|\| !purpose\}/);
 });

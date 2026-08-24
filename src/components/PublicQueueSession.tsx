@@ -9,7 +9,8 @@ import { useLiveStatus } from "@/components/LiveStatusProvider";
 import { externalLinks } from "@/content";
 import { estimateExistingTrackTiming, estimatePriorityImpact } from "@/lib/queue-timing";
 import { clearPriorityCheckoutOwnerToken, getOrCreatePriorityCheckoutOwnerToken, getPriorityCheckoutOwnerToken } from "@/lib/priority-checkout-client";
-import { confirmedPriorityPurchaseDisplay, formatRuntime, PRIORITY_DISCLOSURE_TEXT, PRIORITY_GIFT_ATTRIBUTION_DISCLOSURE_TEXT, PRIORITY_GIFT_ATTRIBUTION_VERSION, PRIORITY_GIFT_NAME_MAX_LENGTH, PRIORITY_TERMS_VERSION } from "@/lib/queue-types";
+import { clearSignalHoldCheckoutOwnerToken, getOrCreateSignalHoldCheckoutOwnerToken, getSignalHoldCheckoutOwnerToken } from "@/lib/signal-hold-checkout-client";
+import { confirmedPriorityPurchaseDisplay, formatRuntime, PRIORITY_DISCLOSURE_TEXT, PRIORITY_GIFT_ATTRIBUTION_DISCLOSURE_TEXT, PRIORITY_GIFT_ATTRIBUTION_VERSION, PRIORITY_GIFT_NAME_MAX_LENGTH, PRIORITY_TERMS_VERSION, SIGNAL_HOLD_DISCLOSURE_TEXT, SIGNAL_HOLD_TERMS_VERSION } from "@/lib/queue-types";
 import { displayEstimate, buildQueueTimingDisplay, priorityDisplayFromImpact, publicTrackDurationLabel, queueTimingInputFromPublicSnapshot, type QueueTimingDisplaySummary, type PriorityTimingDisplay } from "@/lib/queue-timing-display";
 import type { QueuePublicSnapshot, QueuePublicTrack } from "@/lib/queue-types";
 import { PUBLIC_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
@@ -211,6 +212,10 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   const [priorityRequestPending, setPriorityRequestPending] = useState(false);
   const [priorityRequestMessage, setPriorityRequestMessage] = useState<string | null>(null);
   const [priorityCheckoutOwnerTrackIds, setPriorityCheckoutOwnerTrackIds] = useState<Set<string>>(() => new Set());
+  const [signalHoldModalTrack, setSignalHoldModalTrack] = useState<PublicTrackSummary | null>(null);
+  const [signalHoldRequestPending, setSignalHoldRequestPending] = useState(false);
+  const [signalHoldRequestMessage, setSignalHoldRequestMessage] = useState<string | null>(null);
+  const [signalHoldCheckoutOwnerTrackIds, setSignalHoldCheckoutOwnerTrackIds] = useState<Set<string>>(() => new Set());
   const [checkoutNotice, setCheckoutNotice] = useState<string | null>(null);
   const [actionTransition, setActionTransition] = useState<PublicActionVariant | null>(null);
   const [activity, setActivity] = useState<QueueActivity[]>([]);
@@ -303,7 +308,10 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
           changes.push({ text: "Payment Processing", detail: "Checkout started. Skip is not active yet.", tone: "amber" });
           triggerResidue(track.id, "amber");
         }
-        if (track.priorityUpgradeStatus === "paid" || track.priorityUpgradeStatus === "paid_needs_attention" || track.priorityUpgradeStatus === "manual") {
+        if (track.priorityUpgradeStatus === "paid_needs_attention") {
+          changes.push({ text: "Priority payment needs attention", detail: "Payment cleared, but Priority is not active.", tone: "danger" });
+          triggerResidue(track.id, "danger");
+        } else if (isActivePublicPriority(track)) {
           const purchase = confirmedPriorityPurchaseDisplay(track);
           changes.push({ text: purchase?.text ?? "Priority Signal confirmed", detail: purchase ? "Payment cleared. Priority Signal active." : "Manual Priority Signal active.", tone: "gold" });
           triggerResidue(track.id, "gold");
@@ -351,6 +359,9 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
     const priorityResult = new URLSearchParams(window.location.search).get("priority");
     if (priorityResult === "cancelled") setCheckoutNotice("Payment was not completed. Your song stays in the free queue if still active.");
     if (priorityResult === "processing") setCheckoutNotice("Checkout started. Skip is not active yet.");
+    const signalHoldResult = new URLSearchParams(window.location.search).get("signalHold");
+    if (signalHoldResult === "cancelled") setCheckoutNotice("Signal Hold payment was not completed. Your track remains unprotected.");
+    if (signalHoldResult === "processing") setCheckoutNotice("Checkout started. Signal Hold is not active yet.");
   }, []);
   useEffect(() => startSessionBoundPolling({ intervalMs: PUBLIC_QUEUE_POLL_INTERVAL_MS, poll: load }), [sessionId, submitterToken]);
   useEffect(() => { const interval = window.setInterval(() => setClockNow(Date.now()), 1_000); return () => window.clearInterval(interval); }, []);
@@ -362,6 +373,12 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
         .map((track) => track.id),
     );
     setPriorityCheckoutOwnerTrackIds(ownerTrackIds);
+    const signalHoldOwnerTrackIds = new Set(
+      uniqueActiveTracks(snapshot)
+        .filter((track) => Boolean(getSignalHoldCheckoutOwnerToken(sessionId, track.id)))
+        .map((track) => track.id),
+    );
+    setSignalHoldCheckoutOwnerTrackIds(signalHoldOwnerTrackIds);
   }, [sessionId, snapshot?.revision]);
   useEffect(() => {
     if (!submitOpen || !intakeScrollLocked) return;
@@ -404,6 +421,11 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   const priorityUpgradeAvailable = priorityPaymentsAvailable && (snapshot?.status.activeCount ?? 0) >= MIN_PRIORITY_ACTIVE_DEPTH;
   const priorityPriceCents = snapshot?.session?.priorityUpgradePriceCents ?? 0;
   const priorityCurrency = snapshot?.session?.priorityUpgradeCurrency ?? "usd";
+  const signalHoldEnabled = snapshot?.session?.signalHoldEnabled === true;
+  const signalHoldPaymentsEnabled = snapshot?.session?.signalHoldPaymentsEnabled === true && (snapshot?.session?.signalHoldPriceCents ?? 0) > 0;
+  const signalHoldPaymentsAvailable = signalHoldEnabled && signalHoldPaymentsEnabled && !isEnded;
+  const signalHoldPriceCents = snapshot?.session?.signalHoldPriceCents ?? 0;
+  const signalHoldCurrency = snapshot?.session?.signalHoldCurrency ?? "usd";
   const timingInput = useMemo(() => queueTimingInputFromPublicSnapshot(snapshot), [snapshot]);
   const timingSummary = useMemo(() => buildQueueTimingDisplay(timingInput, { priorityEligible: priorityUpgradeAvailable, now: new Date(clockNow) }), [timingInput, priorityUpgradeAvailable, clockNow]);
   const sponsorBreakRunning = snapshot?.session?.sponsorBreakStatus === "running";
@@ -484,6 +506,61 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
     await beginPriorityCheckout(track);
   }
 
+  function isSignalHoldTrackActive(track: PublicTrackSummary): boolean {
+    return snapshot?.upNext?.id === track.id || (snapshot?.queue ?? []).some((queued) => queued.id === track.id);
+  }
+
+  function canPurchaseSignalHold(track: PublicTrackSummary): boolean {
+    if (!signalHoldPaymentsAvailable || !viewerSubmittedTrackIds.has(track.id) || !isSignalHoldTrackActive(track)) return false;
+    return track.signalHoldStatus === "none" || track.signalHoldStatus === "failed" || track.signalHoldStatus === "refunded";
+  }
+
+  function canResumeSignalHoldPayment(track: PublicTrackSummary): boolean {
+    return signalHoldPaymentsAvailable
+      && viewerSubmittedTrackIds.has(track.id)
+      && isSignalHoldTrackActive(track)
+      && track.signalHoldStatus === "checkout_pending"
+      && signalHoldCheckoutOwnerTrackIds.has(track.id);
+  }
+
+  function requestSignalHold(track: PublicTrackSummary) {
+    setSignalHoldModalTrack(track);
+    setSignalHoldRequestMessage(signalHoldPaymentsAvailable ? null : "Signal Hold is not available for this show.");
+  }
+
+  async function beginSignalHoldCheckout(track: PublicTrackSummary) {
+    if (track.signalHoldStatus === "checkout_pending" ? !canResumeSignalHoldPayment(track) : !canPurchaseSignalHold(track)) {
+      setSignalHoldRequestMessage("Signal Hold is not available for this track.");
+      return;
+    }
+    setSignalHoldRequestPending(true);
+    const checkoutOwnerToken = getOrCreateSignalHoldCheckoutOwnerToken(sessionId, track.id);
+    const res = await fetch("/api/queue/signal-hold-checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trackId: track.id, sessionId, submitterToken, checkoutOwnerToken, acceptedSignalHoldTerms: true, signalHoldTermsVersion: SIGNAL_HOLD_TERMS_VERSION, signalHoldDisclosureText: SIGNAL_HOLD_DISCLOSURE_TEXT }) });
+    const payload = await res.json().catch(() => ({}));
+    setSignalHoldRequestPending(false);
+    if (res.ok && typeof payload.url === "string") {
+      setSignalHoldRequestMessage(payload.message ?? "Checkout started. Signal Hold is not active yet.");
+      window.location.href = payload.url;
+      return;
+    }
+    if (payload.code === "checkout_owned_elsewhere") {
+      clearSignalHoldCheckoutOwnerToken(sessionId, track.id);
+      setSignalHoldCheckoutOwnerTrackIds((current) => {
+        const next = new Set(current);
+        next.delete(track.id);
+        return next;
+      });
+    }
+    setSignalHoldRequestMessage(payload.error ?? "Signal Hold checkout is not available right now.");
+    await load();
+  }
+
+  async function resumeSignalHoldPayment(track: PublicTrackSummary) {
+    setSignalHoldModalTrack(track);
+    setSignalHoldRequestMessage(null);
+    await beginSignalHoldCheckout(track);
+  }
+
   const liveShowHref = streamUrl || externalLinks.tiktokLive;
   const showWatchLiveLink = Boolean(snapshot && !isEnded && liveShowHref);
   const contentOffsetClass = publicHudMinimized ? "pt-[2.25rem] sm:pt-[2.75rem]" : "pt-[4.25rem] sm:pt-[4.75rem]";
@@ -543,6 +620,8 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
       {isFull && <p className="border border-danger/40 bg-danger/5 p-3 text-sm text-danger">This broadcast queue is full for new songs.</p>}
 
       <QueueMechanicsInfo />
+
+      <SignalHoldOwnerPanel snapshot={snapshot} paymentsAvailable={signalHoldPaymentsAvailable} priceCents={signalHoldPriceCents} currency={signalHoldCurrency} canPurchase={canPurchaseSignalHold} canResume={canResumeSignalHoldPayment} onPurchase={requestSignalHold} onResume={resumeSignalHoldPayment} />
 
       <div className="flex gap-2 border-b border-border">
         <button type="button" onClick={() => setView("active")} className={`cursor-pointer px-4 py-3 text-xs uppercase tracking-widest transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${view === "active" ? "border-b border-accent text-accent" : "text-muted hover:text-foreground"}`}>Active Queue</button>
@@ -632,6 +711,8 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
 
       {mounted && priorityModalTrack && createPortal(<PriorityUpgradeModal track={priorityModalTrack} price={formatPrice(priorityPriceCents, priorityCurrency)} priorityImpact={priorityDisplayFromImpact(estimatePriorityImpactForTrack(timingSummary, priorityModalTrack))} isOwnTrack={viewerSubmittedTrackIds.has(priorityModalTrack.id)} pending={priorityRequestPending} message={priorityRequestMessage} onConfirm={(supporterName) => beginPriorityCheckout(priorityModalTrack, supporterName)} onClose={() => setPriorityModalTrack(null)} />, document.body)}
 
+      {mounted && signalHoldModalTrack && createPortal(<SignalHoldModal track={signalHoldModalTrack} price={formatPrice(signalHoldPriceCents, signalHoldCurrency)} pending={signalHoldRequestPending} message={signalHoldRequestMessage} onConfirm={() => beginSignalHoldCheckout(signalHoldModalTrack)} onClose={() => setSignalHoldModalTrack(null)} />, document.body)}
+
       {mounted && submitOpen && createPortal(<div className="fixed inset-0 z-[10000] grid place-items-center overscroll-contain bg-black/75 p-2 backdrop-blur-md"><div className="flex max-h-[calc(100dvh-1rem)] w-full max-w-[920px] flex-col overflow-hidden border border-accent/50 bg-background/95 p-3 shadow-[0_0_70px_rgba(255,0,0,0.22)]"><div className="mb-2 flex shrink-0 items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[0.35em] text-accent">Submission Intake</p><p className="mt-0.5 text-[11px] text-muted">Send your song into the free queue.</p></div><button type="button" onClick={() => { setSubmitOpen(false); setIntakeScrollLocked(false); }} className="cursor-pointer border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted transition-colors hover:border-foreground/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-muted/50">Collapse Intake</button></div><div className="overflow-y-auto pr-1"><RadioQueueForm sessionId={sessionId} onCancel={() => { setSubmitOpen(false); setIntakeScrollLocked(false); }} onAcceptedReceipt={(receipt) => setAcceptedReceipt(receipt)} onSubmitted={(trackId, phase, targetId) => { setLastSubmittedTrackId(trackId ?? null); setSubmitterToken(window.localStorage.getItem("barcode-radio-submitter-token") ?? ""); setView("active"); if (phase === "resolved") { setIntakeScrollLocked(false); load(); window.setTimeout(() => document.getElementById(targetId ?? "active-queue-panel")?.scrollIntoView({ behavior: "smooth", block: "center" }), 250); } if (phase === "complete") { setSubmitOpen(false); setIntakeScrollLocked(false); load(); } }} /></div></div></div>, document.body)}
     </div>
   );
@@ -714,11 +795,15 @@ function publicTrackStateMap(snapshot: QueuePublicSnapshot): Map<string, QueuePu
   return map;
 }
 
+function isActivePublicPriority(track: Pick<QueuePublicTrack, "lane" | "priorityUpgradeStatus">): boolean {
+  return track.lane === "priority" && (track.priorityUpgradeStatus === "paid" || track.priorityUpgradeStatus === "manual");
+}
+
 function trackTone(track: QueuePublicTrack): ActivityTone {
   if (track.priorityUpgradeStatus === "checkout_pending") return "amber";
-  if (track.lane === "priority" || track.priorityUpgradeStatus === "paid" || track.priorityUpgradeStatus === "paid_needs_attention" || track.priorityUpgradeStatus === "manual") return "gold";
+  if (isActivePublicPriority(track)) return "gold";
   if (track.lane === "wheel") return "cyan";
-  if (track.priorityUpgradeStatus === "failed" || track.priorityUpgradeStatus === "refunded") return "danger";
+  if (track.priorityUpgradeStatus === "paid_needs_attention" || track.priorityUpgradeStatus === "failed" || track.priorityUpgradeStatus === "refunded") return "danger";
   return "red";
 }
 
@@ -992,8 +1077,54 @@ function QueueStat({ label, value, helper, accent = "text-foreground" }: { label
 }
 
 type PublicTrackSummary = NonNullable<QueuePublicSnapshot["submitterStatus"]>["submitted"][number];
-function submittedPublicTrack(snapshot: QueuePublicSnapshot | null, submitted: PublicTrackSummary): QueuePublicTrack | PublicTrackSummary { const active = [snapshot?.nowPlaying, snapshot?.upNext, ...(snapshot?.queue ?? []), ...(snapshot?.completed ?? [])].filter(Boolean) as QueuePublicTrack[]; return active.find((track) => track.id === submitted.id) ?? submitted; }
+function submittedPublicTrack(snapshot: QueuePublicSnapshot | null, submitted: PublicTrackSummary): QueuePublicTrack | PublicTrackSummary {
+  const active = [snapshot?.nowPlaying, snapshot?.upNext, ...(snapshot?.queue ?? []), ...(snapshot?.completed ?? [])].filter(Boolean) as QueuePublicTrack[];
+  const publicTrack = active.find((track) => track.id === submitted.id);
+  if (!publicTrack) return submitted;
+  return {
+    ...publicTrack,
+    ...(submitted.signalHoldStatus ? {
+      signalHoldStatus: submitted.signalHoldStatus,
+      signalHoldApplicationCount: submitted.signalHoldApplicationCount ?? 0,
+    } : {}),
+  };
+}
 function pluralizeSongs(count: number): string { return `${count} ${count === 1 ? "song" : "songs"}`; }
+
+function SignalHoldOwnerPanel({ snapshot, paymentsAvailable, priceCents, currency, canPurchase, canResume, onPurchase, onResume }: { snapshot: QueuePublicSnapshot | null; paymentsAvailable: boolean; priceCents: number; currency: string; canPurchase: (track: PublicTrackSummary) => boolean; canResume: (track: PublicTrackSummary) => boolean; onPurchase: (track: PublicTrackSummary) => void; onResume: (track: PublicTrackSummary) => void }) {
+  const activeTrackIds = new Set([snapshot?.upNext?.id, ...(snapshot?.queue ?? []).map((track) => track.id)].filter(Boolean));
+  const ownerTracks = (snapshot?.submitterStatus?.submitted ?? []).filter((track) => activeTrackIds.has(track.id));
+  const visibleTracks = ownerTracks.filter((track) => paymentsAvailable || (track.signalHoldStatus ?? "none") !== "none");
+  if (visibleTracks.length === 0) return null;
+  return (
+    <section className="border border-cyan-200/35 bg-cyan-200/5 p-5" aria-label="Signal Hold for your tracks">
+      <p className="text-xs uppercase tracking-[0.3em] text-cyan-200">Signal Hold · Your Tracks Only</p>
+      <h2 className="mt-2 text-xl font-bold text-foreground">Paid “I might leave” protection</h2>
+      <p className="mt-2 text-sm leading-relaxed text-muted">If we call you and you are not here, Signal Hold moves your track to the bottom instead of removing it. It lasts only for this show. It does not hold your place or guarantee play.</p>
+      <div className="mt-4 space-y-3">
+        {visibleTracks.map((track) => {
+          const status = track.signalHoldStatus ?? "none";
+          const applicationCount = track.signalHoldApplicationCount ?? 0;
+          const statusCopy = status === "active"
+            ? `Signal Hold Active${applicationCount > 0 ? ` · used ${applicationCount} ${applicationCount === 1 ? "time" : "times"}` : ""}`
+            : status === "checkout_pending"
+              ? "Signal Hold Payment Processing · checkout pending is not active protection"
+              : status === "paid_needs_attention"
+                ? "Signal Hold Needs Attention · payment confirmed but protection is not active"
+                : status === "fulfilled"
+                  ? "Signal Hold Fulfilled"
+                  : status === "expired"
+                    ? "Signal Hold Expired"
+                    : status === "failed" || status === "refunded"
+                      ? "Signal Hold payment was not completed · track is not protected"
+                      : "Signal Hold available";
+          return <article key={track.id} className="grid gap-3 border border-border bg-background/50 p-3 sm:grid-cols-[1fr_auto] sm:items-center"><div><p className="font-bold text-foreground">{track.submittedArtistName} — {track.submittedSongTitle}</p><p className={`mt-1 text-xs ${status === "active" ? "text-cyan-200" : status === "paid_needs_attention" || status === "failed" || status === "refunded" ? "text-danger" : status === "checkout_pending" ? "text-[#ffaa00]" : "text-muted"}`}>{statusCopy}</p></div><div className="sm:text-right">{canResume(track) ? <button type="button" onClick={() => onResume(track)} className="border border-[#ffaa00]/60 bg-[#ffaa00]/10 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background">Resume Signal Hold Payment</button> : canPurchase(track) ? <button type="button" onClick={() => onPurchase(track)} className="border border-cyan-200/60 bg-cyan-200/10 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-cyan-200 hover:bg-cyan-200 hover:text-background">Add Signal Hold · {formatPrice(priceCents, currency)}</button> : null}</div></article>;
+        })}
+      </div>
+    </section>
+  );
+}
+
 function PersonalSignalStatusBar({ snapshot, mounted, timingSummary, minimized, onToggleMinimized, canSubmit, submitLabel, onSubmit }: { snapshot: QueuePublicSnapshot | null; mounted: boolean; timingSummary: QueueTimingDisplaySummary | null; minimized: boolean; onToggleMinimized: () => void; canSubmit: boolean; submitLabel: string; onSubmit: () => void }) {
   const status = snapshot?.submitterStatus ?? null;
   let main = "No songs submitted yet.";
@@ -1005,8 +1136,11 @@ function PersonalSignalStatusBar({ snapshot, mounted, timingSummary, minimized, 
     const upNext = snapshot?.upNext && submittedIds.has(snapshot.upNext.id);
     const waiting = (snapshot?.queue ?? []).filter((track) => submittedIds.has(track.id));
     const played = (snapshot?.completed ?? []).filter((track) => submittedIds.has(track.id));
+    const signalHoldNeedsAttention = allSubmitted.some((track) => "signalHoldStatus" in track && track.signalHoldStatus === "paid_needs_attention");
+    const signalHoldCheckoutPending = allSubmitted.some((track) => "signalHoldStatus" in track && track.signalHoldStatus === "checkout_pending");
+    const signalHoldActive = allSubmitted.some((track) => "signalHoldStatus" in track && track.signalHoldStatus === "active");
     const checkoutPending = allSubmitted.some((track) => "priorityUpgradeStatus" in track && track.priorityUpgradeStatus === "checkout_pending");
-    const priorityActiveTrack = allSubmitted.find((track) => "priorityUpgradeStatus" in track && (track.priorityUpgradeStatus === "paid" || track.priorityUpgradeStatus === "paid_needs_attention" || track.priorityUpgradeStatus === "manual"));
+    const priorityActiveTrack = allSubmitted.find((track) => isActivePublicPriority(track));
     const paymentNotCompleted = allSubmitted.some((track) => "priorityUpgradeStatus" in track && (track.priorityUpgradeStatus === "failed" || track.priorityUpgradeStatus === "refunded"));
     const closestQueueTrack = (snapshot?.queue ?? []).find((track) => submittedIds.has(track.id)) ?? null;
     const closestEstimate = closestQueueTrack ? estimateExistingTrackForDisplay(timingSummary, closestQueueTrack.id) : null;
@@ -1014,6 +1148,9 @@ function PersonalSignalStatusBar({ snapshot, mounted, timingSummary, minimized, 
     detail = `${waiting.length} waiting · ${played.length} already played.`;
     if (nowPlaying) { main = "Your track is playing now."; detail = "Personal receiver locked to your submitted track."; }
     else if (upNext) { main = "Your track is coming up next."; detail = "One of your submitted tracks is Next In Line."; }
+    else if (signalHoldNeedsAttention) { main = "Signal Hold needs attention."; detail = "Payment was confirmed, but protection is not active. BARCODE staff will review it."; }
+    else if (signalHoldCheckoutPending) { main = "Signal Hold checkout started."; detail = "Checkout pending is not active protection."; }
+    else if (signalHoldActive) { main = "Signal Hold active."; detail = "If you are absent when called, the host may move the protected track to the bottom instead of removing it."; }
     else if (checkoutPending) { main = "Checkout started."; detail = "Skip is not active yet."; }
     else if (priorityActiveTrack) { const estimate = estimateExistingTrackForDisplay(timingSummary, priorityActiveTrack.id); main = "Priority Signal active."; detail = estimate ? `Priority Signal active · estimated wait ${estimate.label.toLowerCase()}.` : "Confirmed skip is active."; }
     else if (paymentNotCompleted) { main = "Payment was not completed."; detail = "Song stays in the free queue if still active."; }
@@ -1029,15 +1166,17 @@ function estimateExistingTrackForDisplay(timingSummary: QueueTimingDisplaySummar
   return displayEstimate(estimateExistingTrackTiming(timingSummary.input, trackId));
 }
 
-function QueueMechanicsInfo() { return <details className="border border-accent/30 bg-accent/5 p-4 text-xs"><summary className="cursor-pointer uppercase tracking-[0.3em] text-accent">How does the queue work?</summary><ul className="mt-3 list-disc space-y-1 pl-4 leading-relaxed text-muted"><li>Submit Track sends your song into the free queue.</li><li>Priority Signal is a paid skip after payment clears.</li><li>Wheel Chosen means the host picked it from the 10K tap wheel.</li><li>Next In Line means coming up next.</li><li>Now Playing means playing now.</li></ul></details>; }
+function QueueMechanicsInfo() { return <details className="border border-accent/30 bg-accent/5 p-4 text-xs"><summary className="cursor-pointer uppercase tracking-[0.3em] text-accent">How does the queue work?</summary><ul className="mt-3 list-disc space-y-1 pl-4 leading-relaxed text-muted"><li>Submit Track sends your song into the free queue.</li><li>Priority Signal is a paid skip after payment clears.</li><li>Signal Hold is owner-only protection for one track in one show: if the artist is absent when called, the host may move it to the bottom instead of removing it. It does not preserve a place or guarantee play.</li><li>Wheel Chosen means the host picked it from the 10K tap wheel.</li><li>Next In Line means coming up next.</li><li>Now Playing means playing now.</li></ul></details>; }
 
 function trackStatusStyle(track: QueuePublicTrack, isLanding: boolean, isCompleted: boolean): { card: string; stamp: string | null } {
   const purchase = confirmedPriorityPurchaseDisplay(track);
   const purchaseTag = purchase ? ` · ${purchase.text}` : "";
   if (isCompleted) return { card: "completed-stamp border-border opacity-85", stamp: `ALREADY PLAYED${purchaseTag}` };
   if (track.priorityUpgradeStatus === "checkout_pending") return { card: "payment-pending border-[#ffaa00]/45", stamp: "PAYMENT PROCESSING — SKIP NOT ACTIVE" };
+  if (track.priorityUpgradeStatus === "paid_needs_attention") return { card: "removed-stamp border-danger/45", stamp: "PAYMENT CONFIRMED — PRIORITY NOT ACTIVE" };
   if (track.priorityUpgradeStatus === "failed" || track.priorityUpgradeStatus === "refunded") return { card: "removed-stamp border-danger/45", stamp: "PAYMENT NOT COMPLETED" };
-  if (track.lane === "priority" || track.priorityUpgradeStatus === "manual" || track.priorityUpgradeStatus === "paid" || track.priorityUpgradeStatus === "paid_needs_attention") return { card: "priority-lock border-[#ffaa00]/55", stamp: purchase ? `PAYMENT CLEARED · ${purchase.text}` : "PRIORITY SIGNAL ACTIVE" };
+  if (isActivePublicPriority(track)) return { card: "priority-lock border-[#ffaa00]/55", stamp: purchase ? `PAYMENT CLEARED · ${purchase.text}` : "PRIORITY SIGNAL ACTIVE" };
+  if (track.priorityUpgradeStatus === "paid" || track.priorityUpgradeStatus === "manual") return { card: "border-border", stamp: purchase ? `PRIORITY PAYMENT RECORDED · POSITION NOT ACTIVE · ${purchase.text}` : "PRIORITY POSITION NOT ACTIVE" };
   if (track.lane === "wheel") return { card: "wheel-pulse border-cyan-200/45", stamp: "WHEEL CHOSEN" };
   if (isLanding) return { card: "packet-lock border-accent", stamp: "TRANSMISSION ACCEPTED" };
   return { card: "border-border", stamp: null };
@@ -1047,7 +1186,7 @@ function PublicLane({ title, tracks, subtitle, lastSubmittedTrackId, viewerSubmi
   const collapsed = collapsible && tracks.length === 0;
   const id = domId ?? (title === "Free Transmissions" ? "free-transmissions-lane" : undefined);
   const isCompletedLane = title === "Recently Played" || title === "Completed Signal Log";
-  return <section id={id} className={`w-full border bg-surface transition-all ${lastSubmittedTrackId && tracks.some((track) => track.id === lastSubmittedTrackId) ? "border-accent shadow-[0_0_34px_rgba(255,0,0,0.22)]" : "border-border"} ${collapsed ? "p-3" : "p-5"}`}><div className="flex items-start justify-between gap-3"><div><h2 className="text-sm uppercase tracking-[0.25em] text-foreground">{title}</h2>{subtitle && !collapsed && <p className="mt-1 text-xs text-muted">{subtitle}</p>}</div><span className="text-xs text-muted">{tracks.length}</span></div>{collapsed ? <p className="mt-1 text-xs text-muted">No active songs here.</p> : <div className="mt-4 space-y-3">{tracks.length === 0 ? <p className="border border-border/60 p-4 text-sm text-muted">No songs here right now.</p> : tracks.map((track, index) => { const isLanding = track.id === lastSubmittedTrackId; const isMine = viewerSubmittedTrackIds.has(track.id); const style = trackStatusStyle(track, isLanding, isCompletedLane); const sourceClass = track.sourceType === "upload" ? "source-upload" : track.sourceType === "other" ? "source-other" : "source-link"; const residue = residueMap[track.id]; const priorityImpact = getPriorityImpact(track); const durationText = publicTrackDurationLabel(track); void priorityImpact; return <article key={track.id} data-track-id={track.id} data-track-card="true" data-track-zone={isCompletedLane ? "completed" : title === "Priority Signal" ? "priority" : title === "Wheel Chosen" ? "wheel" : "free"} data-track-tone={trackFlipTone(track, isCompletedLane ? "completed" : title === "Priority Signal" ? "priority" : title === "Wheel Chosen" ? "wheel" : "free")} data-track-artist={track.submittedArtistName} data-track-title={track.submittedSongTitle} data-track-label={style.stamp ?? title} id={`track-card-${track.id}`} className={`queue-track-card grid gap-3 border bg-background/40 p-3 sm:grid-cols-[5rem_1fr_auto] sm:items-center ${style.card} ${sourceClass} ${isMine ? "border-accent/70 bg-accent/5 shadow-[0_0_22px_rgba(255,0,0,0.16)]" : ""}`}>{residue && <SignalResidue tone={residue.tone} seed={`${track.id}:${residue.nonce}`} />}<div className="mini-aperture" aria-hidden="true"><span /><span /></div><div className="packet-trail" aria-hidden="true" /><div className="h-20 overflow-hidden border border-border/70"><SourceArt track={track} /></div><div><p className="text-xs text-muted">#{index + 1} · {track.sourceType.toUpperCase()}</p><p className="font-bold text-foreground">{track.submittedArtistName}</p><CollaboratorLine names={track.collaboratorNames} className="mt-1" />{track.publicSourceUrl ? <a href={track.publicSourceUrl} target="_blank" rel="noreferrer" className="text-sm text-foreground/85 underline-offset-2 hover:text-accent hover:underline">{track.submittedSongTitle}</a> : <p className="text-sm text-foreground/85">{track.submittedSongTitle}</p>}<div className="mt-2 text-xs text-muted"><TikTokLink handle={track.tiktokHandle} /></div>{style.stamp && <p className={`status-stamp mt-2 inline-flex border px-2 py-1 text-[10px] uppercase tracking-widest ${track.priorityUpgradeStatus === "checkout_pending" ? "border-[#ffaa00]/45 text-[#ffaa00]" : track.lane === "priority" || track.priorityUpgradeStatus === "paid" || track.priorityUpgradeStatus === "paid_needs_attention" || track.priorityUpgradeStatus === "manual" ? "border-[#ffaa00]/50 text-[#ffaa00]" : track.lane === "wheel" ? "border-cyan-200/45 text-cyan-200" : isCompletedLane ? "border-border text-muted" : "border-accent/35 text-accent"}`}>{style.stamp}</p>}{isMine && <p className="mt-2 inline-flex border border-accent/45 bg-accent/10 px-2 py-1 text-[10px] uppercase tracking-widest text-accent">YOUR TRACK</p>}{track.priorityUpgradeStatus === "requested" && <p className="mt-2 inline-flex border border-accent/30 px-2 py-1 text-[10px] uppercase tracking-widest text-accent">Payment Processing</p>}{(track.priorityUpgradeStatus === "failed" || track.priorityUpgradeStatus === "refunded") && <p className="mt-2 inline-flex border border-danger/40 px-2 py-1 text-[10px] uppercase tracking-widest text-danger">Payment was not completed. Stays free if still active</p>}</div><div className="space-y-2 sm:text-right"><p className="text-xs text-muted">{durationText}</p>{canResumePriorityPayment(track) && <div><button type="button" onClick={() => onPriorityPayment(track)} aria-label="Resume Priority Payment. Finish checkout to activate your skip." className="cursor-pointer border border-[#ffaa00]/55 bg-[#ffaa00]/10 px-3 py-1.5 text-[10px] uppercase tracking-widest text-[#ffaa00] transition-colors hover:bg-[#ffaa00] hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ffaa00]/60">Resume Priority Payment</button><p className="mt-1 text-[10px] text-muted">Finish checkout to activate your skip.</p></div>}{canPriorityUpgrade(track) && <div><button type="button" onClick={() => onPriorityUpgrade(track)} aria-label={isMine ? "Upgrade my track with Priority Signal. Move your track closer to the front after payment clears." : "Boost this track with Priority Signal. Pay to move this artist closer to the front after payment clears."} className="cursor-pointer border border-[#ffaa00]/55 bg-[#ffaa00]/10 px-3 py-1.5 text-[10px] uppercase tracking-widest text-[#ffaa00] transition-colors hover:bg-[#ffaa00] hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ffaa00]/60">{isMine ? "Upgrade My Track" : "Boost This Track"} · {formatPrice(priorityPriceCents, priorityCurrency)}</button><p className="mt-1 text-[10px] text-muted">{isMine ? "Move your track closer to the front after payment clears." : "Pay to boost this artist’s track closer to the front after payment clears."}</p></div>}</div></article>; })}</div>}<style jsx>{`.queue-track-card{position:relative;overflow:hidden;transition:border-color .35s ease,box-shadow .35s ease,filter .35s ease}.queue-track-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;opacity:.75}.source-upload::before{background:linear-gradient(#fff,rgba(255,255,255,.2))}.source-link::before{background:linear-gradient(rgba(255,0,0,.8),rgba(255,0,0,.12))}.source-other::before{background:linear-gradient(rgba(255,255,255,.35),transparent)}.packet-lock{animation:packet-lock-in .95s ease-out;box-shadow:0 0 26px rgba(255,0,0,.20)}.payment-pending{animation:payment-pending-flicker 1.4s steps(2,end) infinite;box-shadow:0 0 20px rgba(255,170,0,.10)}.priority-lock{animation:priority-relay-lock 1.2s ease-out;box-shadow:0 0 24px rgba(255,170,0,.18)}.wheel-pulse{animation:wheel-signal-pulse 2.2s ease-in-out infinite;box-shadow:0 0 20px rgba(103,232,249,.12)}.completed-stamp{filter:saturate(.72)}.removed-stamp{filter:saturate(.65);box-shadow:0 0 18px rgba(255,0,0,.10)}.status-stamp{animation:status-stamp-in .42s ease-out}.mini-aperture{position:absolute;right:.75rem;top:.75rem;width:2.6rem;height:1.5rem;border:1px solid rgba(255,255,255,.16);box-shadow:0 0 10px rgba(255,255,255,.05),inset 0 0 10px rgba(255,255,255,.025);opacity:.28}.mini-aperture span{position:absolute;inset:24%;border:1px solid currentColor;color:rgba(255,255,255,.28);opacity:.55}.mini-aperture span:nth-child(2){inset:38%;animation-delay:.18s}.packet-trail{position:absolute;left:0;right:0;top:50%;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.18),transparent);opacity:.12}.payment-pending .mini-aperture{border-color:rgba(255,170,0,.48);box-shadow:0 0 20px rgba(255,170,0,.16)}.payment-pending .mini-aperture span,.payment-pending .packet-trail{color:rgba(255,170,0,.75);background:linear-gradient(90deg,transparent,rgba(255,170,0,.55),transparent);animation:packet-trail-route 1.8s ease-in-out infinite}.payment-pending .mini-aperture span{animation:mini-aperture-ring 1.4s ease-in-out infinite}.priority-lock .mini-aperture{border-color:rgba(255,170,0,.6);box-shadow:0 0 28px rgba(255,170,0,.24)}.priority-lock .mini-aperture span,.priority-lock .packet-trail{color:rgba(255,170,0,.85);background:linear-gradient(90deg,transparent,rgba(255,170,0,.68),transparent);animation:packet-trail-route 1.8s ease-in-out infinite}.priority-lock .mini-aperture span{animation:mini-aperture-ring 1.4s ease-in-out infinite}.wheel-pulse .mini-aperture{border-color:rgba(103,232,249,.6);box-shadow:0 0 24px rgba(103,232,249,.18)}.wheel-pulse .mini-aperture span,.wheel-pulse .packet-trail{color:rgba(103,232,249,.85);background:linear-gradient(90deg,transparent,rgba(103,232,249,.62),transparent);animation:packet-trail-route 1.8s ease-in-out infinite}.wheel-pulse .mini-aperture span{animation:mini-aperture-ring 1.4s ease-in-out infinite}.completed-stamp .mini-aperture{border-color:rgba(183,183,183,.35);box-shadow:0 0 18px rgba(183,183,183,.10)}.removed-stamp .mini-aperture{border-color:rgba(255,0,0,.55);transform:scaleX(.7);opacity:.45}@keyframes packet-lock-in{0%{transform:translateY(5px);filter:brightness(1.5)}100%{transform:translateY(0);filter:brightness(1)}}@keyframes payment-pending-flicker{0%,100%{border-color:rgba(255,170,0,.28)}50%{border-color:rgba(255,170,0,.65)}}@keyframes priority-relay-lock{0%{box-shadow:0 0 0 rgba(255,170,0,0);filter:brightness(1.6)}100%{box-shadow:0 0 24px rgba(255,170,0,.18);filter:brightness(1)}}@keyframes wheel-signal-pulse{0%,100%{border-color:rgba(103,232,249,.28)}50%{border-color:rgba(103,232,249,.72)}}@keyframes status-stamp-in{0%{transform:scale(.96);opacity:0}100%{transform:scale(1);opacity:1}}@keyframes mini-aperture-ring{0%,100%{transform:scale(.9);opacity:.35}50%{transform:scale(1.12);opacity:.9}}@keyframes packet-trail-route{0%,100%{transform:scaleX(.08);opacity:.12}50%{transform:scaleX(1);opacity:.62}}@media (prefers-reduced-motion: reduce){.packet-lock,.payment-pending,.priority-lock,.wheel-pulse,.status-stamp,.mini-aperture span,.packet-trail{animation:none}}`}</style></section>;
+  return <section id={id} className={`w-full border bg-surface transition-all ${lastSubmittedTrackId && tracks.some((track) => track.id === lastSubmittedTrackId) ? "border-accent shadow-[0_0_34px_rgba(255,0,0,0.22)]" : "border-border"} ${collapsed ? "p-3" : "p-5"}`}><div className="flex items-start justify-between gap-3"><div><h2 className="text-sm uppercase tracking-[0.25em] text-foreground">{title}</h2>{subtitle && !collapsed && <p className="mt-1 text-xs text-muted">{subtitle}</p>}</div><span className="text-xs text-muted">{tracks.length}</span></div>{collapsed ? <p className="mt-1 text-xs text-muted">No active songs here.</p> : <div className="mt-4 space-y-3">{tracks.length === 0 ? <p className="border border-border/60 p-4 text-sm text-muted">No songs here right now.</p> : tracks.map((track, index) => { const isLanding = track.id === lastSubmittedTrackId; const isMine = viewerSubmittedTrackIds.has(track.id); const style = trackStatusStyle(track, isLanding, isCompletedLane); const sourceClass = track.sourceType === "upload" ? "source-upload" : track.sourceType === "other" ? "source-other" : "source-link"; const residue = residueMap[track.id]; const priorityImpact = getPriorityImpact(track); const durationText = publicTrackDurationLabel(track); void priorityImpact; return <article key={track.id} data-track-id={track.id} data-track-card="true" data-track-zone={isCompletedLane ? "completed" : title === "Priority Signal" ? "priority" : title === "Wheel Chosen" ? "wheel" : "free"} data-track-tone={trackFlipTone(track, isCompletedLane ? "completed" : title === "Priority Signal" ? "priority" : title === "Wheel Chosen" ? "wheel" : "free")} data-track-artist={track.submittedArtistName} data-track-title={track.submittedSongTitle} data-track-label={style.stamp ?? title} id={`track-card-${track.id}`} className={`queue-track-card grid gap-3 border bg-background/40 p-3 sm:grid-cols-[5rem_1fr_auto] sm:items-center ${style.card} ${sourceClass} ${isMine ? "border-accent/70 bg-accent/5 shadow-[0_0_22px_rgba(255,0,0,0.16)]" : ""}`}>{residue && <SignalResidue tone={residue.tone} seed={`${track.id}:${residue.nonce}`} />}<div className="mini-aperture" aria-hidden="true"><span /><span /></div><div className="packet-trail" aria-hidden="true" /><div className="h-20 overflow-hidden border border-border/70"><SourceArt track={track} /></div><div><p className="text-xs text-muted">#{index + 1} · {track.sourceType.toUpperCase()}</p><p className="font-bold text-foreground">{track.submittedArtistName}</p><CollaboratorLine names={track.collaboratorNames} className="mt-1" />{track.publicSourceUrl ? <a href={track.publicSourceUrl} target="_blank" rel="noreferrer" className="text-sm text-foreground/85 underline-offset-2 hover:text-accent hover:underline">{track.submittedSongTitle}</a> : <p className="text-sm text-foreground/85">{track.submittedSongTitle}</p>}<div className="mt-2 text-xs text-muted"><TikTokLink handle={track.tiktokHandle} /></div>{style.stamp && <p className={`status-stamp mt-2 inline-flex border px-2 py-1 text-[10px] uppercase tracking-widest ${track.priorityUpgradeStatus === "checkout_pending" ? "border-[#ffaa00]/45 text-[#ffaa00]" : isActivePublicPriority(track) ? "border-[#ffaa00]/50 text-[#ffaa00]" : track.priorityUpgradeStatus === "paid_needs_attention" ? "border-danger/50 text-danger" : track.lane === "wheel" ? "border-cyan-200/45 text-cyan-200" : isCompletedLane ? "border-border text-muted" : "border-accent/35 text-accent"}`}>{style.stamp}</p>}{isMine && <p className="mt-2 inline-flex border border-accent/45 bg-accent/10 px-2 py-1 text-[10px] uppercase tracking-widest text-accent">YOUR TRACK</p>}{track.priorityUpgradeStatus === "requested" && <p className="mt-2 inline-flex border border-accent/30 px-2 py-1 text-[10px] uppercase tracking-widest text-accent">Payment Processing</p>}{(track.priorityUpgradeStatus === "failed" || track.priorityUpgradeStatus === "refunded") && <p className="mt-2 inline-flex border border-danger/40 px-2 py-1 text-[10px] uppercase tracking-widest text-danger">Payment was not completed. Stays free if still active</p>}</div><div className="space-y-2 sm:text-right"><p className="text-xs text-muted">{durationText}</p>{canResumePriorityPayment(track) && <div><button type="button" onClick={() => onPriorityPayment(track)} aria-label="Resume Priority Payment. Finish checkout to activate your skip." className="cursor-pointer border border-[#ffaa00]/55 bg-[#ffaa00]/10 px-3 py-1.5 text-[10px] uppercase tracking-widest text-[#ffaa00] transition-colors hover:bg-[#ffaa00] hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ffaa00]/60">Resume Priority Payment</button><p className="mt-1 text-[10px] text-muted">Finish checkout to activate your skip.</p></div>}{canPriorityUpgrade(track) && <div><button type="button" onClick={() => onPriorityUpgrade(track)} aria-label={isMine ? "Upgrade my track with Priority Signal. Move your track closer to the front after payment clears." : "Boost this track with Priority Signal. Pay to move this artist closer to the front after payment clears."} className="cursor-pointer border border-[#ffaa00]/55 bg-[#ffaa00]/10 px-3 py-1.5 text-[10px] uppercase tracking-widest text-[#ffaa00] transition-colors hover:bg-[#ffaa00] hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ffaa00]/60">{isMine ? "Upgrade My Track" : "Boost This Track"} · {formatPrice(priorityPriceCents, priorityCurrency)}</button><p className="mt-1 text-[10px] text-muted">{isMine ? "Move your track closer to the front after payment clears." : "Pay to boost this artist’s track closer to the front after payment clears."}</p></div>}</div></article>; })}</div>}<style jsx>{`.queue-track-card{position:relative;overflow:hidden;transition:border-color .35s ease,box-shadow .35s ease,filter .35s ease}.queue-track-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;opacity:.75}.source-upload::before{background:linear-gradient(#fff,rgba(255,255,255,.2))}.source-link::before{background:linear-gradient(rgba(255,0,0,.8),rgba(255,0,0,.12))}.source-other::before{background:linear-gradient(rgba(255,255,255,.35),transparent)}.packet-lock{animation:packet-lock-in .95s ease-out;box-shadow:0 0 26px rgba(255,0,0,.20)}.payment-pending{animation:payment-pending-flicker 1.4s steps(2,end) infinite;box-shadow:0 0 20px rgba(255,170,0,.10)}.priority-lock{animation:priority-relay-lock 1.2s ease-out;box-shadow:0 0 24px rgba(255,170,0,.18)}.wheel-pulse{animation:wheel-signal-pulse 2.2s ease-in-out infinite;box-shadow:0 0 20px rgba(103,232,249,.12)}.completed-stamp{filter:saturate(.72)}.removed-stamp{filter:saturate(.65);box-shadow:0 0 18px rgba(255,0,0,.10)}.status-stamp{animation:status-stamp-in .42s ease-out}.mini-aperture{position:absolute;right:.75rem;top:.75rem;width:2.6rem;height:1.5rem;border:1px solid rgba(255,255,255,.16);box-shadow:0 0 10px rgba(255,255,255,.05),inset 0 0 10px rgba(255,255,255,.025);opacity:.28}.mini-aperture span{position:absolute;inset:24%;border:1px solid currentColor;color:rgba(255,255,255,.28);opacity:.55}.mini-aperture span:nth-child(2){inset:38%;animation-delay:.18s}.packet-trail{position:absolute;left:0;right:0;top:50%;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.18),transparent);opacity:.12}.payment-pending .mini-aperture{border-color:rgba(255,170,0,.48);box-shadow:0 0 20px rgba(255,170,0,.16)}.payment-pending .mini-aperture span,.payment-pending .packet-trail{color:rgba(255,170,0,.75);background:linear-gradient(90deg,transparent,rgba(255,170,0,.55),transparent);animation:packet-trail-route 1.8s ease-in-out infinite}.payment-pending .mini-aperture span{animation:mini-aperture-ring 1.4s ease-in-out infinite}.priority-lock .mini-aperture{border-color:rgba(255,170,0,.6);box-shadow:0 0 28px rgba(255,170,0,.24)}.priority-lock .mini-aperture span,.priority-lock .packet-trail{color:rgba(255,170,0,.85);background:linear-gradient(90deg,transparent,rgba(255,170,0,.68),transparent);animation:packet-trail-route 1.8s ease-in-out infinite}.priority-lock .mini-aperture span{animation:mini-aperture-ring 1.4s ease-in-out infinite}.wheel-pulse .mini-aperture{border-color:rgba(103,232,249,.6);box-shadow:0 0 24px rgba(103,232,249,.18)}.wheel-pulse .mini-aperture span,.wheel-pulse .packet-trail{color:rgba(103,232,249,.85);background:linear-gradient(90deg,transparent,rgba(103,232,249,.62),transparent);animation:packet-trail-route 1.8s ease-in-out infinite}.wheel-pulse .mini-aperture span{animation:mini-aperture-ring 1.4s ease-in-out infinite}.completed-stamp .mini-aperture{border-color:rgba(183,183,183,.35);box-shadow:0 0 18px rgba(183,183,183,.10)}.removed-stamp .mini-aperture{border-color:rgba(255,0,0,.55);transform:scaleX(.7);opacity:.45}@keyframes packet-lock-in{0%{transform:translateY(5px);filter:brightness(1.5)}100%{transform:translateY(0);filter:brightness(1)}}@keyframes payment-pending-flicker{0%,100%{border-color:rgba(255,170,0,.28)}50%{border-color:rgba(255,170,0,.65)}}@keyframes priority-relay-lock{0%{box-shadow:0 0 0 rgba(255,170,0,0);filter:brightness(1.6)}100%{box-shadow:0 0 24px rgba(255,170,0,.18);filter:brightness(1)}}@keyframes wheel-signal-pulse{0%,100%{border-color:rgba(103,232,249,.28)}50%{border-color:rgba(103,232,249,.72)}}@keyframes status-stamp-in{0%{transform:scale(.96);opacity:0}100%{transform:scale(1);opacity:1}}@keyframes mini-aperture-ring{0%,100%{transform:scale(.9);opacity:.35}50%{transform:scale(1.12);opacity:.9}}@keyframes packet-trail-route{0%,100%{transform:scaleX(.08);opacity:.12}50%{transform:scaleX(1);opacity:.62}}@media (prefers-reduced-motion: reduce){.packet-lock,.payment-pending,.priority-lock,.wheel-pulse,.status-stamp,.mini-aperture span,.packet-trail{animation:none}}`}</style></section>;
 }
 
 function PriorityUpgradeModal({ track, price, priorityImpact, pending, message, onConfirm, onClose, isOwnTrack }: { track: QueuePublicTrack; price: string; priorityImpact: PriorityTimingDisplay | null; pending: boolean; message: string | null; onConfirm: (supporterName: string) => void; onClose: () => void; isOwnTrack: boolean }) {
@@ -1079,6 +1218,29 @@ function PriorityUpgradeModal({ track, price, priorityImpact, pending, message, 
         </div>
         {message && <p className="mt-3 border border-accent/30 bg-accent/5 p-2 text-xs text-accent">{message}</p>}
         <div className="mt-5 flex flex-wrap justify-end gap-2"><button type="button" onClick={onClose} disabled={pending} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted disabled:opacity-50">Cancel</button><button type="button" onClick={() => onConfirm(supporterName)} disabled={pending} className="border border-[#ffaa00]/60 px-4 py-2 text-xs uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background disabled:opacity-50">{pending ? "Opening checkout…" : "Continue to Payment"}</button></div>
+      </div>
+    </div>
+  );
+}
+
+function SignalHoldModal({ track, price, pending, message, onConfirm, onClose }: { track: PublicTrackSummary; price: string; pending: boolean; message: string | null; onConfirm: () => void; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[10050] grid place-items-center bg-black/80 p-4 backdrop-blur-sm">
+      <div role="dialog" aria-modal="true" aria-labelledby="signal-hold-title" className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto border border-cyan-200/50 bg-background p-5 shadow-[0_0_70px_rgba(103,232,249,0.18)]">
+        <p className="text-xs uppercase tracking-[0.35em] text-cyan-200">Signal Hold · One Show Only</p>
+        <h2 id="signal-hold-title" className="mt-3 text-2xl font-bold text-foreground">Protect my track if I might leave</h2>
+        <div className="mt-4 border border-border bg-surface p-3 text-sm">
+          <p className="font-bold text-foreground">{track.submittedArtistName} — {track.submittedSongTitle}</p>
+          <p className="mt-3 text-lg font-bold text-cyan-200">{price}</p>
+        </div>
+        <div className="mt-4 space-y-2 border border-border bg-surface p-3 text-xs leading-relaxed text-muted">
+          <p>If we call you and you are not here, Signal Hold lets the host move this track to the bottom instead of removing it.</p>
+          <p>It protects this track only for this show. It does not hold your place, preserve Next In Line, Wheel, or Priority position, or guarantee play.</p>
+          <p>Checkout pending is not active protection. Protection starts only after signed payment confirmation.</p>
+          <p className="mt-3 border border-cyan-200/25 bg-cyan-200/5 p-2">{SIGNAL_HOLD_DISCLOSURE_TEXT}</p>
+        </div>
+        {message && <p className="mt-3 border border-accent/30 bg-accent/5 p-2 text-xs text-accent">{message}</p>}
+        <div className="mt-5 flex flex-wrap justify-end gap-2"><button type="button" onClick={onClose} disabled={pending} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted disabled:opacity-50">Cancel</button><button type="button" onClick={onConfirm} disabled={pending} className="border border-cyan-200/60 px-4 py-2 text-xs uppercase tracking-widest text-cyan-200 hover:bg-cyan-200 hover:text-background disabled:opacity-50">{pending ? "Opening checkout…" : "Continue to Payment"}</button></div>
       </div>
     </div>
   );

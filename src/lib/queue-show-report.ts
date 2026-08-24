@@ -92,6 +92,13 @@ export interface QueueShowReport {
     playbackErrors: number;
     earlyCutoffs: number;
     issueTracks: number;
+    signalHold: {
+      activations: number;
+      needsAttention: number;
+      applications: number;
+      fulfilled: number;
+      expired: number;
+    };
     sponsor: {
       status: SponsorBreakStatus;
       startedAt: string | null;
@@ -504,6 +511,13 @@ export function buildQueueShowReport(session: QueueSession, inputEvents: QueueSh
       playbackErrors: eventCount(events, "track_playback_error"),
       earlyCutoffs: trackOutcomes.filter((track) => track.earlyCutoff === true).length,
       issueTracks: trackOutcomes.filter((track) => Boolean(track.playbackIssueCode)).length,
+      signalHold: {
+        activations: eventCount(events, "track_signal_hold_activated"),
+        needsAttention: eventCount(events, "track_signal_hold_needs_attention"),
+        applications: eventCount(events, "track_signal_hold_applied"),
+        fulfilled: eventCount(events, "track_signal_hold_fulfilled"),
+        expired: eventCount(events, "track_signal_hold_expired"),
+      },
       sponsor: {
         status: session.sponsorBreakStatus ?? "not_due",
         startedAt: iso(session.sponsorBreakStartedAt),

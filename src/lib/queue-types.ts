@@ -15,6 +15,7 @@ export type QueueSessionPurpose = "unknown" | "rehearsal" | "live_broadcast" | "
 export type QueueSessionBnlPublicationStatus = "private" | "runtime_only" | "recap_approved" | "public_copy_approved";
 export type PriorityUpgradeStatus = "none" | "requested" | "manual" | "checkout_pending" | "paid" | "paid_needs_attention" | "failed" | "refunded";
 export type PriorityUpgradeSource = "admin" | "public_placeholder" | "future_payment" | "stripe";
+export type SignalHoldStatus = "none" | "checkout_pending" | "active" | "paid_needs_attention" | "failed" | "refunded" | "fulfilled" | "expired";
 export type SponsorBreakMode = "mid_show";
 export type SponsorBreakStatus = "not_due" | "due" | "running" | "completed" | "skipped";
 export type QueuePlaybackState = "playing" | "paused" | "stopped";
@@ -40,6 +41,11 @@ export type QueueShowLogEventType =
   | "track_removed"
   | "track_returned"
   | "track_restored"
+  | "track_signal_hold_activated"
+  | "track_signal_hold_needs_attention"
+  | "track_signal_hold_applied"
+  | "track_signal_hold_fulfilled"
+  | "track_signal_hold_expired"
   | "wheel_launched"
   | "wheel_reencrypted"
   | "wheel_spun"
@@ -116,6 +122,8 @@ export interface QueueShowLogEventDetails {
   playbackErrorCode?: QueuePlaybackErrorCode | null;
   wheelCandidateCount?: number | null;
   wheelSpinDurationMs?: number | null;
+  signalHoldPreviousLane?: QueueLane | null;
+  signalHoldApplicationCount?: number | null;
 }
 
 export interface QueuePlaybackTiming {
@@ -135,7 +143,7 @@ export interface QueueWheelTiming {
   spinsOwed: number;
 }
 
-export const PUBLIC_QUEUE_LEGAL_TERMS_VERSION = "1.1";
+export const PUBLIC_QUEUE_LEGAL_TERMS_VERSION = "1.2";
 export const PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION = "1.1";
 export const PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION = "1.0";
 export const PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT = "I agree to the BARCODE Network Terms, Queue Submission Terms, and Privacy Policy. I confirm I am 13+ and, if under 18, have parent/guardian permission. I confirm I have the rights to submit this track, and I understand uploads are temporary and may be used for BARCODE Radio/live show-related playback, clips, recaps, platform replays, and related BARCODE Network features as described in the terms.";
@@ -145,6 +153,8 @@ export const PRIORITY_GIFT_ATTRIBUTION_VERSION = "1.0";
 export const PRIORITY_GIFT_ATTRIBUTION_DISCLOSURE_TEXT = "For a skip sent to someone else, the public name you enter—or Anonymous if you leave it blank—will appear with the recipient artist on the public queue and broadcast overlay after payment clears.";
 export const PRIORITY_GIFT_ANONYMOUS_NAME = "Anonymous";
 export const PRIORITY_GIFT_NAME_MAX_LENGTH = 48;
+export const SIGNAL_HOLD_TERMS_VERSION = "1.0";
+export const SIGNAL_HOLD_DISCLOSURE_TEXT = "Signal Hold protects one eligible track from absence-based removal during the current BARCODE Radio session. If the artist is called and is not present, the host may move the track to the bottom of the active queue instead of removing it. Signal Hold does not preserve Next In Line, Priority, or Wheel position; does not guarantee airplay or a specific time; does not carry into another show; and expires when the session ends. It does not prevent removal for invalid or unavailable media, rights or policy issues, artist withdrawal, moderation, or other non-absence reasons. By continuing to checkout, I confirm that I am at least 18 years old or have permission from a parent or legal guardian to make this payment.";
 
 export function normalizePriorityGiftDisplayName(value: unknown, fallback: string): string {
   const normalized = typeof value === "string"
@@ -287,6 +297,19 @@ export interface PriorityLegalAcceptanceInput {
   priorityDisclosureText: string;
 }
 
+export interface SignalHoldLegalAcceptance {
+  acceptedAt: string;
+  signalHoldTermsVersion: typeof SIGNAL_HOLD_TERMS_VERSION;
+  signalHoldDisclosureText: string;
+  source: "signal_hold_checkout";
+}
+
+export interface SignalHoldLegalAcceptanceInput {
+  acceptedSignalHoldTerms: boolean;
+  signalHoldTermsVersion: string;
+  signalHoldDisclosureText: string;
+}
+
 export interface PriorityGiftAttributionInput {
   attributionVersion: string;
   attributionDisclosureText: string;
@@ -403,6 +426,26 @@ export interface QueueEntry {
   priorityQueueOrderAt?: string | null;
   legalAcceptance?: QueueLegalAcceptance | null;
   priorityLegalAcceptance?: PriorityLegalAcceptance | null;
+  signalHoldStatus?: SignalHoldStatus;
+  signalHoldRequestedAt?: string | null;
+  signalHoldPaidAt?: string | null;
+  signalHoldPaymentProvider?: string | null;
+  signalHoldPaymentId?: string | null;
+  signalHoldCheckoutProvider?: string | null;
+  signalHoldCheckoutSessionId?: string | null;
+  signalHoldCheckoutUrl?: string | null;
+  signalHoldCheckoutCreatedAt?: string | null;
+  signalHoldCheckoutExpiresAt?: string | null;
+  signalHoldCheckoutOwnerTokenHash?: string | null;
+  signalHoldAmountCents?: number | null;
+  signalHoldCurrency?: string | null;
+  signalHoldLegalAcceptance?: SignalHoldLegalAcceptance | null;
+  signalHoldAppliedAt?: string | null;
+  signalHoldApplicationCount?: number;
+  signalHoldQueueOrderAt?: string | null;
+  signalHoldPriorityRelinquishedAt?: string | null;
+  signalHoldFulfilledAt?: string | null;
+  signalHoldExpiredAt?: string | null;
   isTestTrack?: boolean;
 }
 
@@ -457,6 +500,12 @@ export interface QueueSessionSummary {
   priorityUpgradePriceCents: number;
   priorityUpgradeCurrency: string;
   priorityUpgradePaymentsEnabled: boolean;
+  signalHoldEnabled: boolean;
+  signalHoldLabel: string;
+  signalHoldInstructions: string;
+  signalHoldPriceCents: number;
+  signalHoldCurrency: string;
+  signalHoldPaymentsEnabled: boolean;
   sponsorBreakSeconds?: number;
   sponsorBreakMode?: SponsorBreakMode;
   sponsorBreakStatus?: SponsorBreakStatus;
@@ -535,13 +584,16 @@ export interface QueuePublicSubmitterStatus {
   limit: number;
   remaining: number;
   cooldownRemainingSeconds: number;
-  submitted: Pick<QueuePublicTrack, "id" | "submittedArtistName" | "submittedSongTitle" | "collaboratorNames" | "sourceType" | "lane" | "durationLabel" | "detectedDurationSeconds" | "estimatedDurationSeconds" | "durationIsEstimate" | "durationSource" | "priorityUpgradeStatus">[];
+  submitted: Array<Pick<QueuePublicTrack, "id" | "submittedArtistName" | "submittedSongTitle" | "collaboratorNames" | "sourceType" | "lane" | "durationLabel" | "detectedDurationSeconds" | "estimatedDurationSeconds" | "durationIsEstimate" | "durationSource" | "priorityUpgradeStatus"> & {
+    signalHoldStatus?: SignalHoldStatus;
+    signalHoldApplicationCount?: number;
+  }>;
 }
 
 export interface QueuePublicSnapshot {
   revision: number;
   sessionActive?: boolean;
-  session: Pick<QueueSessionSummary, "sessionId" | "title" | "showDate" | "status" | "description" | "completedCount" | "completedRuntimeSeconds" | "activeCount" | "acceptedCount" | "submissionClosureReason" | "removedCount" | "submissionCooldownSeconds" | "queueOpen" | "showStarted" | "preShowEndsAt" | "broadcastPhase" | "broadcastStartedAt" | "nextInLineTrackId" | "loadedTrackId" | "wheelSpinsOwed" | "priorityUpgradesEnabled" | "priorityUpgradeLabel" | "priorityUpgradeInstructions" | "priorityUpgradePriceCents" | "priorityUpgradeCurrency" | "priorityUpgradePaymentsEnabled" | "sponsorBreakSeconds" | "sponsorBreakMode" | "sponsorBreakStatus" | "sponsorBreakStartedAt" | "sponsorBreakCompletedAt" | "sponsorBreakCompletedAfterPlayableCount" | "sponsorBreakDueAfterPlayableCount" | "sponsorBreakManualNote"> | null;
+  session: Pick<QueueSessionSummary, "sessionId" | "title" | "showDate" | "status" | "description" | "completedCount" | "completedRuntimeSeconds" | "activeCount" | "acceptedCount" | "submissionClosureReason" | "removedCount" | "submissionCooldownSeconds" | "queueOpen" | "showStarted" | "preShowEndsAt" | "broadcastPhase" | "broadcastStartedAt" | "nextInLineTrackId" | "loadedTrackId" | "wheelSpinsOwed" | "priorityUpgradesEnabled" | "priorityUpgradeLabel" | "priorityUpgradeInstructions" | "priorityUpgradePriceCents" | "priorityUpgradeCurrency" | "priorityUpgradePaymentsEnabled" | "signalHoldEnabled" | "signalHoldLabel" | "signalHoldInstructions" | "signalHoldPriceCents" | "signalHoldCurrency" | "signalHoldPaymentsEnabled" | "sponsorBreakSeconds" | "sponsorBreakMode" | "sponsorBreakStatus" | "sponsorBreakStartedAt" | "sponsorBreakCompletedAt" | "sponsorBreakCompletedAfterPlayableCount" | "sponsorBreakDueAfterPlayableCount" | "sponsorBreakManualNote"> | null;
   status: QueuePublicStatus;
   queue: QueuePublicTrack[];
   completed: QueuePublicTrack[];

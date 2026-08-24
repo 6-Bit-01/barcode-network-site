@@ -1,10 +1,10 @@
 # BARCODE Network Legal Center
 
 **Effective Date:** June 13, 2026  
-**Last Updated:** August 9, 2026
-**Version:** 1.1
+**Last Updated:** August 23, 2026
+**Legal Center Version:** 1.2
 
-This Legal Center applies to BARCODE Network, including barcode-network.com, BARCODE Radio, the BARCODE Radio queue, music submission tools, stream tools, relay features, BNL-related systems, public database/dossier features, community features, payment features, uploads, and related services.
+This Legal Center applies to BARCODE Network, including barcode-network.com, BARCODE Radio, the BARCODE Radio queue, music submission tools, Priority Signal, Signal Hold, stream tools, relay features, BNL-related systems, public database/dossier features, community features, payment features, uploads, and related services.
 
 Contact for support, legal questions, privacy requests, copyright/takedown notices, security reports, and accessibility feedback:
 
@@ -19,9 +19,9 @@ thebarcodenetwork@gmail.com
 
 ## 1. Acceptance of These Terms
 
-By accessing or using BARCODE Network, visiting barcode-network.com, submitting music, uploading files, using the queue, purchasing or requesting Priority Signal, interacting with BNL-related systems, joining connected community features, or otherwise using BARCODE Network services, you agree to these Terms of Use.
+By accessing or using BARCODE Network, visiting barcode-network.com, submitting music, uploading files, using the queue, purchasing or requesting Priority Signal or Signal Hold, interacting with BNL-related systems, joining connected community features, or otherwise using BARCODE Network services, you agree to these Terms of Use.
 
-If you do not agree, do not use the site, submit music, upload files, provide information, or purchase Priority Signal.
+If you do not agree, do not use the site, submit music, upload files, provide information, or purchase Priority Signal or Signal Hold.
 
 ## 2. What BARCODE Network Is
 
@@ -45,7 +45,7 @@ You must be at least 13 years old to submit music, upload files, provide persona
 
 If you are under 18, you may submit music only with permission from a parent or legal guardian.
 
-If you purchase, request, or authorize Priority Signal, you confirm that you are at least 18 years old or have permission from a parent or legal guardian to make the payment.
+If you purchase, request, or authorize Priority Signal or Signal Hold, you confirm that you are at least 18 years old or have permission from a parent or legal guardian to make the payment.
 
 Do not submit personal information from anyone under 13.
 
@@ -55,7 +55,7 @@ Do not submit private information about another person without permission.
 
 You agree that any information you provide is accurate to the best of your knowledge.
 
-This may include artist names, stage names, usernames, handles, TikTok handles, song titles, collaborator names, track links, uploaded files, contact information, payment-related information, queue activity, notes, takedown requests, or other submission details.
+This may include artist names, stage names, usernames, handles, TikTok handles, song titles, collaborator names, track links, uploaded files, contact information, payment-related information, Priority Signal or Signal Hold status, queue activity, notes, takedown requests, or other submission details.
 
 You are responsible for keeping your own accounts, links, passwords, files, and contact information secure.
 
@@ -200,7 +200,7 @@ BARCODE Network may remove or disable access to content that appears to infringe
 
 BARCODE Network may change, pause, limit, test, remove, or discontinue features at any time.
 
-This includes queue behavior, BNL features, payment options, stream tools, relay features, public database features, community displays, submission rules, upload features, and Priority Signal features.
+This includes queue behavior, BNL features, payment options, stream tools, relay features, public database features, community displays, submission rules, upload features, Priority Signal features, and Signal Hold features.
 
 ## 20. Disclaimers
 
@@ -401,6 +401,8 @@ BARCODE Network will review the request. Removal is not guaranteed in every thir
 
 # Priority Signal Terms
 
+**Version:** 1.1
+
 These Priority Signal Terms apply when you pay for, request, resume, or authorize Priority Signal placement.
 
 ## 1. What Priority Signal Is
@@ -477,9 +479,75 @@ The Priority Signal checkout flow should display this disclosure near the paymen
 
 ---
 
+# Signal Hold Terms
+
+**Version:** 1.0
+
+These Signal Hold Terms apply when the submitting artist pays for, requests, resumes, or authorizes Signal Hold for an eligible track in the current BARCODE Radio show.
+
+## 1. What Signal Hold Is
+
+Signal Hold is paid “I might leave” insurance for one eligible submitted track in one current BARCODE Radio show.
+
+If BARCODE Network calls the artist and the artist is not present, the host or admin may use an active Signal Hold to move that track to the bottom of the active regular queue instead of removing it because of the artist’s absence. The host or admin decides whether the artist is absent. Signal Hold does not create an automatic presence, check-in, or grace-period system.
+
+Signal Hold protects the track only. The protection remains active for that track through the current show and may be applied again if the artist is still absent when the track is called later.
+
+## 2. Owner-Only Purchase; No Gifting
+
+Signal Hold v1 is owner-bound. It may be purchased only by the submitting viewer whose ownership of the eligible track is verified through the current queue’s submission-ownership safeguards.
+
+Signal Hold cannot be purchased, gifted, sent, or transferred to another artist’s track. A separate person’s payment or claim does not activate protection for that track.
+
+## 3. Payment Confirmation and Pending Checkout
+
+Starting or resuming checkout does not activate Signal Hold. Checkout pending or Payment Processing is not active protection.
+
+Signal Hold becomes active only after paid confirmation from BARCODE Network’s signed Stripe webhook. An unsigned, invalid, unpaid, incomplete, cancelled, failed, expired, wrong-source, or otherwise unconfirmed checkout does not activate Signal Hold.
+
+BARCODE Network may store limited payment and entitlement metadata needed to confirm the purchase, prevent duplicate activation, preserve an audit record, and handle payment or refund review. BARCODE Network does not store full credit card numbers.
+
+## 4. Queue Position and Airplay
+
+When the host or admin uses Signal Hold for an absent artist, the protected track gives up its current place and moves to the bottom as a normal active regular queued track.
+
+Signal Hold does not preserve Next In Line, Wheel Chosen, Priority, or any other special queue position. A Wheel Chosen track loses its Wheel position, the Wheel turn remains owed, and the host chooses another winner under the existing queue rules. A Priority track loses its active Priority position or eligibility, although the historical Priority payment or attribution may remain in BARCODE Network’s private audit record.
+
+Signal Hold does not guarantee approval, airplay, a specific time, a repeat call, a queue position, promotion, review, or that the show will continue long enough to reach the track. Signal Hold does not interrupt or replace the track currently playing and cannot be used after playback has begun.
+
+## 5. Current Show Only
+
+Signal Hold applies only to the specific eligible track and current queue session for which it was purchased. It expires when that show or session ends.
+
+If the show ends before the artist returns or before the track is reached and played, the entitlement ends. It does not carry into another show and does not create a future queue slot, future placement, automatic credit, or automatic refund solely because the show ended first.
+
+## 6. What Signal Hold Does Not Protect
+
+Signal Hold protects only against absence-based removal when the artist is called and is not present.
+
+It does not prevent BARCODE Network from rejecting, skipping, or removing a track because of invalid, unavailable, or unsafe media; rights, copyright, or policy concerns; moderation or community-safety decisions; artist withdrawal; technical failures; abuse; or any other non-absence reason permitted by these Terms.
+
+## 7. Late Confirmation and Review
+
+If paid confirmation arrives after the track or session is no longer eligible, Signal Hold does not change the live queue order. BARCODE Network may place that payment into operator attention or refund review under its existing payment-safety process.
+
+Unless otherwise required by law, Signal Hold does not create an automatic refund merely because the show ended before the protected track was played. BARCODE Network may review duplicate charges, mistaken payments, technical errors, or confirmed payments that could not be safely attached to an eligible track.
+
+Refund requests can be sent to:
+
+thebarcodenetwork@gmail.com
+
+## 8. Signal Hold Checkout Disclosure
+
+The Signal Hold checkout flow should plainly display this disclosure near the payment action:
+
+“If we call you and you are not here, Signal Hold moves your track to the bottom instead of removing it. It lasts only for this show. It does not hold your place or guarantee play. Signal Hold activates only after paid confirmation.”
+
+---
+
 # Privacy Policy
 
-This Privacy Policy explains how BARCODE Network collects, uses, stores, and shares information through barcode-network.com, the music queue, payment features, BNL-related systems, stream tools, relay features, public database/dossier features, community features, uploads, and related services.
+This Privacy Policy explains how BARCODE Network collects, uses, stores, and shares information through barcode-network.com, the music queue, Priority Signal, Signal Hold, payment features, BNL-related systems, stream tools, relay features, public database/dossier features, community features, uploads, and related services.
 
 ## 1. Information We Collect
 
@@ -533,7 +601,7 @@ BARCODE Network does not store full credit card numbers.
 
 Payment providers may process payment details, billing information, fraud-prevention data, and transaction records according to their own terms and privacy policies.
 
-BARCODE Network may store payment metadata such as payment status, amount, currency, timestamp, transaction ID, checkout ID, priority status, and related submission ID.
+BARCODE Network may store payment metadata such as payment status, amount, currency, timestamp, transaction ID, checkout ID, Priority Signal status, Signal Hold status, and related submission and queue-session IDs.
 
 ## 3. Uploaded Files and Retention
 
@@ -549,7 +617,7 @@ Private upload URLs, raw file metadata, contact emails, payment IDs, admin notes
 
 ## 4. Legal Acceptance Records
 
-When you agree to Terms, acknowledge the Privacy Policy, submit to the queue, or authorize Priority Signal, BARCODE Network may store a record of that action.
+When you agree to Terms, acknowledge the Privacy Policy, submit to the queue, or authorize Priority Signal or Signal Hold, BARCODE Network may store a record of that action.
 
 This may include:
 
@@ -557,13 +625,14 @@ This may include:
 - Accepted Privacy Policy version.
 - Accepted Queue Submission Terms version.
 - Accepted Priority Signal Terms version.
+- Accepted Signal Hold Terms version.
 - Acceptance timestamp.
 - Submission ID.
 - Payment ID or checkout ID if applicable.
 - Hashed IP address if collected.
 - Hashed user agent if collected.
 - The checkbox or disclosure text accepted.
-- Source of acceptance, such as the public queue form or Priority Signal checkout flow.
+- Source of acceptance, such as the public queue form, Priority Signal checkout flow, or Signal Hold checkout flow.
 
 BARCODE Network stores these records to operate the service, prevent disputes, handle payments, enforce rules, and comply with legal obligations.
 

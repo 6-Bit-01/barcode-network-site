@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
-import { markPriorityUpgradePaidFromStripe } from "@/lib/queue";
+import { markPriorityUpgradePaidFromStripe, markSignalHoldPaidFromStripe } from "@/lib/queue";
 import { PRIORITY_GIFT_ANONYMOUS_NAME, PRIORITY_GIFT_ATTRIBUTION_VERSION, normalizePriorityGiftDisplayName } from "@/lib/queue-types";
 import type { PriorityGiftAttribution } from "@/lib/queue-types";
-import { constructWebhookEvent, isPrioritySignalCheckoutSession } from "@/lib/stripe";
+import { constructWebhookEvent, isPrioritySignalCheckoutSession, isSignalHoldCheckoutSession } from "@/lib/stripe";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -45,6 +45,26 @@ export async function POST(req: Request) {
   if (event.type !== "checkout.session.completed") return NextResponse.json({ received: true });
 
   const session = event.data.object as Stripe.Checkout.Session;
+  if (isSignalHoldCheckoutSession(session)) {
+    if (session.payment_status !== "paid") return NextResponse.json({ received: true, ignored: "unpaid_checkout" });
+
+    const trackId = metadataText(session.metadata?.trackId);
+    const queueSessionId = metadataText(session.metadata?.queueSessionId);
+    if (!trackId || !queueSessionId) return NextResponse.json({ received: true, ignored: "missing_metadata" });
+
+    const amountCents = typeof session.amount_total === "number" ? session.amount_total : 0;
+    const currency = metadataText(session.currency) || "usd";
+    const paidAt = new Date((event.created || Math.floor(Date.now() / 1000)) * 1000).toISOString();
+    const result = await markSignalHoldPaidFromStripe(trackId, queueSessionId, {
+      paymentId: paymentIdForSession(session),
+      amountCents,
+      currency,
+      paidAt,
+      checkoutSessionId: session.id,
+    });
+
+    return NextResponse.json({ received: true, result });
+  }
   if (!isPrioritySignalCheckoutSession(session)) return NextResponse.json({ received: true, ignored: true });
   if (session.payment_status !== "paid") return NextResponse.json({ received: true, ignored: "unpaid_checkout" });
 

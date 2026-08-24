@@ -20,6 +20,7 @@ export function getStripeWebhookSecret(): string {
 
 
 const PRIORITY_SIGNAL_SOURCE = "barcode-radio-priority-signal";
+const SIGNAL_HOLD_SOURCE = "barcode-radio-signal-hold";
 
 const PRIORITY_RECOVERY_START_SECONDS = Date.parse("2026-08-14T07:00:00.000Z") / 1000;
 const PRIORITY_RECOVERY_END_SECONDS = Date.parse("2026-08-15T10:23:00.000Z") / 1000;
@@ -320,6 +321,64 @@ export async function createPrioritySignalCheckoutSession({
 
 export function isPrioritySignalCheckoutSession(session: Stripe.Checkout.Session): boolean {
   return session.metadata?.source === PRIORITY_SIGNAL_SOURCE;
+}
+
+export async function createSignalHoldCheckoutSession({
+  trackId,
+  queueSessionId,
+  artist,
+  title,
+  amountCents,
+  currency,
+}: {
+  trackId: string;
+  queueSessionId: string;
+  artist: string;
+  title: string;
+  amountCents: number;
+  currency: string;
+}): Promise<{ url: string; sessionId: string; createdAt: string; expiresAt: string | null }> {
+  const stripe = getStripe();
+  const origin = getSiteUrl();
+  const metadata = {
+    trackId,
+    queueSessionId,
+    source: SIGNAL_HOLD_SOURCE,
+  };
+
+  const session = await stripe.checkout.sessions.create({
+    mode: "payment",
+    payment_method_types: ["card"],
+    line_items: [
+      {
+        price_data: {
+          currency,
+          unit_amount: amountCents,
+          product_data: {
+            name: "Signal Hold",
+            description: `${artist} — ${title}`,
+          },
+        },
+        quantity: 1,
+      },
+    ],
+    metadata,
+    payment_intent_data: { metadata },
+    success_url: `${origin}/queue/${encodeURIComponent(queueSessionId)}?signalHold=processing`,
+    cancel_url: `${origin}/queue/${encodeURIComponent(queueSessionId)}?signalHold=cancelled`,
+  });
+
+  if (!session.url) throw new Error("Stripe did not return a checkout URL.");
+  return {
+    url: session.url,
+    sessionId: session.id,
+    createdAt: new Date(session.created * 1000).toISOString(),
+    expiresAt: typeof session.expires_at === "number" ? new Date(session.expires_at * 1000).toISOString() : null,
+  };
+}
+
+export function isSignalHoldCheckoutSession(session: Stripe.Checkout.Session): boolean {
+  return session.metadata?.source === SIGNAL_HOLD_SOURCE;
 }
 
 /** Create a Stripe checkout session for a queue request */

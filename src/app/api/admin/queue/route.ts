@@ -4,7 +4,7 @@ import { COOKIE_NAME, verifyAdminToken } from "@/lib/auth";
 import { getLiveOverlayRuntimeState, resetWheelCeremonyStateForNewSession } from "@/lib/live-overlay";
 import { attachQueueLiveTiming } from "@/lib/queue-live-timing";
 import { resolveQueueArchiveSessionId } from "@/lib/queue-admin-session-target";
-import { archiveCurrentQueueSession, clearArchivedQueueSessions, getRadioQueueState, normalizeTrackLimitPerArtist, setQueueOpen, startNewQueueSession, activateQueueSession, updatePriorityUpgradeSettings, updateQueueSessionProvenance, updateRadioTrack, updateSponsorBreakState, updateSubmissionCooldownSettings } from "@/lib/queue";
+import { archiveCurrentQueueSession, clearArchivedQueueSessions, getRadioQueueState, normalizeTrackLimitPerArtist, setQueueOpen, startNewQueueSession, activateQueueSession, updatePriorityUpgradeSettings, updateQueueSessionProvenance, updateRadioTrack, updateSignalHoldSettings, updateSponsorBreakState, updateSubmissionCooldownSettings } from "@/lib/queue";
 import { isQueueSessionBnlPublicationStatus, isQueueSessionPurpose } from "@/lib/queue-types";
 
 export const dynamic = "force-dynamic";
@@ -65,6 +65,10 @@ export async function POST(req: Request) {
     const safePriorityPriceCents = Number.isFinite(priorityPriceCents) ? Math.max(0, Math.round(priorityPriceCents)) : undefined;
     const priorityPaidRequested = body.priorityUpgradesEnabled === true || body.priorityUpgradePaymentsEnabled === true;
     const priorityPaidEnabled = priorityPaidRequested && (safePriorityPriceCents ?? 0) > 0;
+    const signalHoldPriceCents = Number(body.signalHoldPriceCents);
+    const safeSignalHoldPriceCents = Number.isFinite(signalHoldPriceCents) ? Math.max(0, Math.round(signalHoldPriceCents)) : undefined;
+    const signalHoldPaidRequested = body.signalHoldEnabled === true || body.signalHoldPaymentsEnabled === true;
+    const signalHoldPaidEnabled = signalHoldPaidRequested && (safeSignalHoldPriceCents ?? 0) > 0;
     const state = await startNewQueueSession({
       title: typeof body.title === "string" ? body.title : undefined,
       showDate: typeof body.showDate === "string" ? body.showDate : undefined,
@@ -81,6 +85,10 @@ export async function POST(req: Request) {
       priorityUpgradePriceCents: safePriorityPriceCents,
       priorityUpgradeCurrency: typeof body.priorityUpgradeCurrency === "string" ? body.priorityUpgradeCurrency : undefined,
       priorityUpgradePaymentsEnabled: priorityPaidEnabled,
+      signalHoldEnabled: signalHoldPaidEnabled,
+      signalHoldPriceCents: safeSignalHoldPriceCents,
+      signalHoldCurrency: typeof body.signalHoldCurrency === "string" ? body.signalHoldCurrency : undefined,
+      signalHoldPaymentsEnabled: signalHoldPaidEnabled,
     });
     await resetWheelCeremonyStateForNewSession();
     return NextResponse.json(state);
@@ -129,6 +137,18 @@ export async function POST(req: Request) {
       paymentsEnabled: priorityPaidEnabled,
     }));
   }
+  if (body.action === "updateSignalHoldSettings") {
+    const signalHoldPriceCents = Number(body.priceCents);
+    const safeSignalHoldPriceCents = Number.isFinite(signalHoldPriceCents) ? Math.max(0, Math.round(signalHoldPriceCents)) : undefined;
+    const signalHoldPaidRequested = body.enabled === true || body.paymentsEnabled === true;
+    const signalHoldPaidEnabled = signalHoldPaidRequested && (safeSignalHoldPriceCents ?? 0) > 0;
+    return NextResponse.json(await updateSignalHoldSettings({
+      enabled: signalHoldPaidEnabled,
+      priceCents: safeSignalHoldPriceCents,
+      currency: typeof body.currency === "string" ? body.currency : undefined,
+      paymentsEnabled: signalHoldPaidEnabled,
+    }));
+  }
   if (body.action === "updateSponsorBreakState" && ["start", "complete", "skip", "reset"].includes(body.sponsorAction)) return NextResponse.json(await updateSponsorBreakState(body.sponsorAction));
   if (body.action === "archiveSession") {
     try {
@@ -156,7 +176,7 @@ export async function POST(req: Request) {
   if (body.action === "activateSession" && typeof body.sessionId === "string") return NextResponse.json(await activateQueueSession(body.sessionId));
   if (body.action === "viewSession" && typeof body.sessionId === "string") return NextResponse.json(await getRadioQueueState(body.sessionId));
   if (["pullNext", "pullWheelChosen", "pullFreeTransmission", "startShow", "addWheelSpinOwed", "addSimulationFreeTrack", "addSimulationPaidPriority", "addSimulationCheckoutPending", "addSimulationPaymentFailed", "addSimulationHeldPriority", "clearSimulationTracks"].includes(body.action)) return NextResponse.json(await updateRadioTrack("", body.action));
-  if (["load", "finish", "skip", "remove", "priority", "regular", "wheel", "moveBack", "spotlight", "removeSpotlight", "restoreRegular", "restorePriority", "markPriorityManual", "markPriorityRequested", "markPriorityCheckoutPending", "pausePriority", "resumePriority"].includes(body.action) && typeof body.id === "string") {
+  if (["load", "finish", "skip", "remove", "priority", "regular", "wheel", "moveBack", "spotlight", "removeSpotlight", "restoreRegular", "restorePriority", "markPriorityManual", "markPriorityRequested", "markPriorityCheckoutPending", "pausePriority", "resumePriority", "useSignalHold"].includes(body.action) && typeof body.id === "string") {
     const playbackSnapshot = body.action === "finish" || body.action === "skip"
       ? await currentPlaybackSnapshot(body.id)
       : null;

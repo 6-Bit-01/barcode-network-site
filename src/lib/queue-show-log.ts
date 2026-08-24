@@ -1,6 +1,7 @@
 import type {
   QueuePlaybackErrorCode,
   QueuePlaybackProvider,
+  QueueLane,
   QueueShowLogEvent,
   QueueShowLogEventDetails,
   QueueShowLogEventType,
@@ -28,6 +29,11 @@ const EVENT_TYPES = new Set<QueueShowLogEventType>([
   "track_removed",
   "track_returned",
   "track_restored",
+  "track_signal_hold_activated",
+  "track_signal_hold_needs_attention",
+  "track_signal_hold_applied",
+  "track_signal_hold_fulfilled",
+  "track_signal_hold_expired",
   "wheel_launched",
   "wheel_reencrypted",
   "wheel_spun",
@@ -61,6 +67,7 @@ const PLAYBACK_ERROR_CODES = new Set<QueuePlaybackErrorCode>([
   "sync_error",
   "unknown",
 ]);
+const QUEUE_LANES = new Set<QueueLane>(["priority", "wheel", "regular"]);
 
 export type QueueShowLogEventInput = Omit<QueueShowLogEvent, "sequence">;
 
@@ -105,6 +112,9 @@ function normalizeDetails(value: unknown): QueueShowLogEventDetails | null {
   const playbackErrorCode = PLAYBACK_ERROR_CODES.has(raw.playbackErrorCode as QueuePlaybackErrorCode)
     ? raw.playbackErrorCode as QueuePlaybackErrorCode
     : null;
+  const signalHoldPreviousLane = QUEUE_LANES.has(raw.signalHoldPreviousLane as QueueLane)
+    ? raw.signalHoldPreviousLane as QueueLane
+    : null;
   const details: QueueShowLogEventDetails = {
     playbackProvider,
     playbackPositionSeconds: boundedNonNegative(raw.playbackPositionSeconds, 24 * 60 * 60),
@@ -112,6 +122,8 @@ function normalizeDetails(value: unknown): QueueShowLogEventDetails | null {
     playbackErrorCode,
     wheelCandidateCount: boundedNonNegative(raw.wheelCandidateCount, 10_000),
     wheelSpinDurationMs: boundedNonNegative(raw.wheelSpinDurationMs, 10 * 60 * 1_000),
+    signalHoldPreviousLane,
+    signalHoldApplicationCount: boundedNonNegative(raw.signalHoldApplicationCount, 10_000),
   };
   return Object.values(details).some((item) => item !== null) ? details : null;
 }

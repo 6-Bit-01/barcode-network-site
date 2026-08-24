@@ -37,6 +37,8 @@ import {
   PRIORITY_GIFT_ATTRIBUTION_DISCLOSURE_TEXT,
   PRIORITY_GIFT_ATTRIBUTION_VERSION,
   PRIORITY_TERMS_VERSION,
+  SIGNAL_HOLD_DISCLOSURE_TEXT,
+  SIGNAL_HOLD_TERMS_VERSION,
   detectQueueSourceType,
   generateQueueId,
   getTrackRuntimeSeconds,
@@ -62,6 +64,7 @@ import type {
   PriorityGiftAttribution,
   PriorityGiftAttributionInput,
   PriorityLegalAcceptanceInput,
+  SignalHoldLegalAcceptanceInput,
   QueueSession,
   QueueSessionBnlPublicationStatus,
   QueueSessionPurpose,
@@ -95,6 +98,10 @@ const DEFAULT_PRIORITY_UPGRADE_LABEL = "Priority Signal Upgrade";
 const DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS = "Priority Signal Upgrade is being prepared. No payment has been processed.";
 const DEFAULT_PRIORITY_UPGRADE_PRICE_CENTS = 1000;
 const DEFAULT_PRIORITY_UPGRADE_CURRENCY = "usd";
+const DEFAULT_SIGNAL_HOLD_LABEL = "Signal Hold";
+const DEFAULT_SIGNAL_HOLD_INSTRUCTIONS = "If we call you and you are not here, Signal Hold moves your track to the bottom instead of removing it. It lasts only for this show. It does not hold your place or guarantee play.";
+const DEFAULT_SIGNAL_HOLD_PRICE_CENTS = 0;
+const DEFAULT_SIGNAL_HOLD_CURRENCY = "usd";
 const PRE_SHOW_ROUTING_DELAY_MS = (20 * 60 + 15) * 1000;
 // Uploaded audio is part of the queue record, not disposable request scratch.
 // Keep it through the live session and for a recovery window after archival.
@@ -102,12 +109,19 @@ const UPLOADED_FILE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const BARCODE_QUEUE_UPLOAD_HOST_SUFFIX = ".private.blob.vercel-storage.com";
 const BARCODE_QUEUE_UPLOAD_PATH_PREFIX = "/barcode-radio-queue/";
 
-type QueueAdminAction = "pullNext" | "pullWheelChosen" | "pullFreeTransmission" | "startShow" | "addWheelSpinOwed" | "load" | "finish" | "skip" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "markPriorityManual" | "markPriorityRequested" | "markPriorityCheckoutPending" | "resolvePaidPriority" | "pausePriority" | "resumePriority" | "addSimulationFreeTrack" | "addSimulationPaidPriority" | "addSimulationCheckoutPending" | "addSimulationPaymentFailed" | "addSimulationHeldPriority" | "clearSimulationTracks";
+type QueueAdminAction = "pullNext" | "pullWheelChosen" | "pullFreeTransmission" | "startShow" | "addWheelSpinOwed" | "load" | "finish" | "skip" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "markPriorityManual" | "markPriorityRequested" | "markPriorityCheckoutPending" | "resolvePaidPriority" | "pausePriority" | "resumePriority" | "useSignalHold" | "addSimulationFreeTrack" | "addSimulationPaidPriority" | "addSimulationCheckoutPending" | "addSimulationPaymentFailed" | "addSimulationHeldPriority" | "clearSimulationTracks";
 
 export interface PriorityUpgradeSettingsInput {
   enabled?: boolean;
   label?: string;
   instructions?: string;
+  priceCents?: number;
+  currency?: string;
+  paymentsEnabled?: boolean;
+}
+
+export interface SignalHoldSettingsInput {
+  enabled?: boolean;
   priceCents?: number;
   currency?: string;
   paymentsEnabled?: boolean;
@@ -129,6 +143,10 @@ export interface QueueSessionOptions {
   priorityUpgradePriceCents?: number;
   priorityUpgradeCurrency?: string;
   priorityUpgradePaymentsEnabled?: boolean;
+  signalHoldEnabled?: boolean;
+  signalHoldPriceCents?: number;
+  signalHoldCurrency?: string;
+  signalHoldPaymentsEnabled?: boolean;
 }
 
 export interface QueueSessionProvenanceInput {
@@ -289,6 +307,11 @@ function normalizePriceCents(value: unknown): number {
   return Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : DEFAULT_PRIORITY_UPGRADE_PRICE_CENTS;
 }
 
+function normalizeSignalHoldPriceCents(value: unknown): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : DEFAULT_SIGNAL_HOLD_PRICE_CENTS;
+}
+
 function normalizeSubmissionCooldownSeconds(value: unknown): number {
   const numeric = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(numeric)) return DEFAULT_SUBMISSION_COOLDOWN_SECONDS;
@@ -304,6 +327,10 @@ export function normalizeTrackLimitPerArtist(value: unknown): number {
 
 function normalizePaidPriorityEnabled(input: { priorityUpgradesEnabled?: boolean | null; priorityUpgradePaymentsEnabled?: boolean | null; priorityUpgradePriceCents?: unknown }): boolean {
   return (input.priorityUpgradesEnabled === true || input.priorityUpgradePaymentsEnabled === true) && normalizePriceCents(input.priorityUpgradePriceCents) > 0;
+}
+
+function normalizePaidSignalHoldEnabled(input: { signalHoldEnabled?: boolean | null; signalHoldPaymentsEnabled?: boolean | null; signalHoldPriceCents?: unknown }): boolean {
+  return (input.signalHoldEnabled === true || input.signalHoldPaymentsEnabled === true) && normalizeSignalHoldPriceCents(input.signalHoldPriceCents) > 0;
 }
 
 function defaultSession(options: QueueSessionOptions = {}): QueueSession {
@@ -366,6 +393,12 @@ function defaultSession(options: QueueSessionOptions = {}): QueueSession {
     priorityUpgradePriceCents: Number.isFinite(options.priorityUpgradePriceCents) ? Math.max(0, Math.round(options.priorityUpgradePriceCents ?? 0)) : DEFAULT_PRIORITY_UPGRADE_PRICE_CENTS,
     priorityUpgradeCurrency: normalizeCurrency(options.priorityUpgradeCurrency),
     priorityUpgradePaymentsEnabled: normalizePaidPriorityEnabled(options),
+    signalHoldEnabled: normalizePaidSignalHoldEnabled(options),
+    signalHoldLabel: DEFAULT_SIGNAL_HOLD_LABEL,
+    signalHoldInstructions: DEFAULT_SIGNAL_HOLD_INSTRUCTIONS,
+    signalHoldPriceCents: Number.isFinite(options.signalHoldPriceCents) ? Math.max(0, Math.round(options.signalHoldPriceCents ?? 0)) : DEFAULT_SIGNAL_HOLD_PRICE_CENTS,
+    signalHoldCurrency: normalizeCurrency(options.signalHoldCurrency ?? DEFAULT_SIGNAL_HOLD_CURRENCY),
+    signalHoldPaymentsEnabled: normalizePaidSignalHoldEnabled(options),
   });
 }
 
@@ -498,7 +531,7 @@ function queueRank(entry: QueueEntry): number {
 function queueOrderTime(entry: QueueEntry): number {
   if (isActivePriorityTrack(entry)) return getPriorityOrderTime(entry);
   if ((entry.lane ?? "regular") === "priority") return new Date(entry.priorityPausedAt ?? entry.priorityQueueOrderAt ?? entry.priorityUpgradePaidAt ?? entry.createdAt).getTime();
-  return new Date(entry.displacedFromNextInLineAt ?? entry.createdAt).getTime();
+  return new Date(entry.displacedFromNextInLineAt ?? entry.signalHoldQueueOrderAt ?? entry.createdAt).getTime();
 }
 
 function sortActive(entries: QueueEntry[]): QueueEntry[] {
@@ -717,7 +750,15 @@ function entryWithPlaybackOutcome(
       errorCode: fields.playbackIssueCode,
     }, now);
   }
-  return normalizeEntry({ ...entry, ...fields });
+  const signalHoldFulfilledAt = outcome !== "removed" && normalizeSignalHoldStatus(entry.signalHoldStatus) === "active"
+    ? now.toISOString()
+    : entry.signalHoldFulfilledAt ?? null;
+  return normalizeEntry({
+    ...entry,
+    ...fields,
+    signalHoldStatus: signalHoldFulfilledAt ? "fulfilled" : entry.signalHoldStatus,
+    signalHoldFulfilledAt,
+  });
 }
 
 function recordLoadedTrackReturned(session: QueueSession, entry: QueueEntry, now = new Date()): void {
@@ -1058,6 +1099,12 @@ function summarizeSession(session: QueueSession): QueueSessionSummary {
     priorityUpgradePriceCents: normalizePriceCents(session.priorityUpgradePriceCents),
     priorityUpgradeCurrency: normalizeCurrency(session.priorityUpgradeCurrency),
     priorityUpgradePaymentsEnabled: normalizePaidPriorityEnabled(session),
+    signalHoldEnabled: normalizePaidSignalHoldEnabled(session),
+    signalHoldLabel: session.signalHoldLabel?.trim() || DEFAULT_SIGNAL_HOLD_LABEL,
+    signalHoldInstructions: session.signalHoldInstructions?.trim() || DEFAULT_SIGNAL_HOLD_INSTRUCTIONS,
+    signalHoldPriceCents: normalizeSignalHoldPriceCents(session.signalHoldPriceCents),
+    signalHoldCurrency: normalizeCurrency(session.signalHoldCurrency ?? DEFAULT_SIGNAL_HOLD_CURRENCY),
+    signalHoldPaymentsEnabled: normalizePaidSignalHoldEnabled(session),
     sponsorBreakSeconds: SPONSOR_BREAK_SECONDS,
     sponsorBreakMode: session.sponsorBreakMode ?? "mid_show",
     sponsorBreakStatus: session.sponsorBreakStatus ?? "not_due",
@@ -1119,6 +1166,11 @@ function normalizePriorityUpgradeStatus(status: unknown): QueueEntry["priorityUp
 function normalizePriorityUpgradeSource(source: unknown): QueueEntry["priorityUpgradeSource"] {
   if (source === "admin" || source === "public_placeholder" || source === "future_payment" || source === "stripe") return source;
   return null;
+}
+
+function normalizeSignalHoldStatus(status: unknown): QueueEntry["signalHoldStatus"] {
+  if (status === "checkout_pending" || status === "active" || status === "paid_needs_attention" || status === "failed" || status === "refunded" || status === "fulfilled" || status === "expired") return status;
+  return "none";
 }
 
 function normalizePriorityGiftAttribution(value: unknown, fallbackCapturedAt: string): PriorityGiftAttribution | null {
@@ -1228,6 +1280,26 @@ function normalizeEntry(entry: QueueEntry): QueueEntry {
     priorityResumedAt: entry.priorityResumedAt ?? null,
     priorityQueueOrderAt: entry.priorityQueueOrderAt ?? entry.priorityUpgradePaidAt ?? null,
     priorityLegalAcceptance: entry.priorityLegalAcceptance ?? null,
+    signalHoldStatus: normalizeSignalHoldStatus(entry.signalHoldStatus),
+    signalHoldRequestedAt: entry.signalHoldRequestedAt ?? null,
+    signalHoldPaidAt: entry.signalHoldPaidAt ?? null,
+    signalHoldPaymentProvider: entry.signalHoldPaymentProvider ?? null,
+    signalHoldPaymentId: entry.signalHoldPaymentId ?? null,
+    signalHoldCheckoutProvider: entry.signalHoldCheckoutProvider ?? null,
+    signalHoldCheckoutSessionId: entry.signalHoldCheckoutSessionId ?? null,
+    signalHoldCheckoutUrl: entry.signalHoldCheckoutUrl ?? null,
+    signalHoldCheckoutCreatedAt: entry.signalHoldCheckoutCreatedAt ?? null,
+    signalHoldCheckoutExpiresAt: entry.signalHoldCheckoutExpiresAt ?? null,
+    signalHoldCheckoutOwnerTokenHash: entry.signalHoldCheckoutOwnerTokenHash ?? null,
+    signalHoldAmountCents: typeof entry.signalHoldAmountCents === "number" ? Math.max(0, Math.round(entry.signalHoldAmountCents)) : null,
+    signalHoldCurrency: entry.signalHoldCurrency ? normalizeCurrency(entry.signalHoldCurrency) : null,
+    signalHoldLegalAcceptance: entry.signalHoldLegalAcceptance ?? null,
+    signalHoldAppliedAt: entry.signalHoldAppliedAt ?? null,
+    signalHoldApplicationCount: typeof entry.signalHoldApplicationCount === "number" && Number.isFinite(entry.signalHoldApplicationCount) ? Math.max(0, Math.floor(entry.signalHoldApplicationCount)) : 0,
+    signalHoldQueueOrderAt: entry.signalHoldQueueOrderAt ?? null,
+    signalHoldPriorityRelinquishedAt: entry.signalHoldPriorityRelinquishedAt ?? null,
+    signalHoldFulfilledAt: entry.signalHoldFulfilledAt ?? null,
+    signalHoldExpiredAt: entry.signalHoldExpiredAt ?? null,
     isTestTrack: entry.isTestTrack === true,
   };
 }
@@ -1331,6 +1403,12 @@ function normalizeSession(raw: Partial<QueueSession> & { sessionId: string; titl
     priorityUpgradePriceCents: normalizePriceCents(raw.priorityUpgradePriceCents),
     priorityUpgradeCurrency: normalizeCurrency(raw.priorityUpgradeCurrency),
     priorityUpgradePaymentsEnabled: normalizePaidPriorityEnabled(raw),
+    signalHoldEnabled: normalizePaidSignalHoldEnabled(raw),
+    signalHoldLabel: raw.signalHoldLabel?.trim() || DEFAULT_SIGNAL_HOLD_LABEL,
+    signalHoldInstructions: raw.signalHoldInstructions?.trim() || DEFAULT_SIGNAL_HOLD_INSTRUCTIONS,
+    signalHoldPriceCents: normalizeSignalHoldPriceCents(raw.signalHoldPriceCents),
+    signalHoldCurrency: normalizeCurrency(raw.signalHoldCurrency ?? DEFAULT_SIGNAL_HOLD_CURRENCY),
+    signalHoldPaymentsEnabled: normalizePaidSignalHoldEnabled(raw),
     sponsorBreakSeconds: SPONSOR_BREAK_SECONDS,
     sponsorBreakMode: raw.sponsorBreakMode === "mid_show" ? raw.sponsorBreakMode : "mid_show",
     sponsorBreakStatus: raw.sponsorBreakStatus === "due" || raw.sponsorBreakStatus === "running" || raw.sponsorBreakStatus === "completed" || raw.sponsorBreakStatus === "skipped" || raw.sponsorBreakStatus === "not_due" ? raw.sponsorBreakStatus : undefined,
@@ -3555,6 +3633,20 @@ function initialQueueShowLog(session: QueueSession): QueueShowLogEvent[] {
     if (entry.restoredAt) {
       timeline.push({ eventType: "track_restored", occurredAt: entry.restoredAt, trackEntry: entry });
     }
+    if (entry.signalHoldPaidAt && entry.signalHoldStatus === "paid_needs_attention") {
+      timeline.push({ eventType: "track_signal_hold_needs_attention", occurredAt: entry.signalHoldPaidAt, trackEntry: entry });
+    } else if (entry.signalHoldPaidAt && entry.signalHoldStatus !== "none" && entry.signalHoldStatus !== "checkout_pending" && entry.signalHoldStatus !== "failed" && entry.signalHoldStatus !== "refunded") {
+      timeline.push({ eventType: "track_signal_hold_activated", occurredAt: entry.signalHoldPaidAt, trackEntry: entry });
+    }
+    if (entry.signalHoldAppliedAt && (entry.signalHoldApplicationCount ?? 0) > 0) {
+      timeline.push({ eventType: "track_signal_hold_applied", occurredAt: entry.signalHoldAppliedAt, trackEntry: entry, details: { signalHoldApplicationCount: entry.signalHoldApplicationCount ?? 1 } });
+    }
+    if (entry.signalHoldFulfilledAt && entry.signalHoldStatus === "fulfilled") {
+      timeline.push({ eventType: "track_signal_hold_fulfilled", occurredAt: entry.signalHoldFulfilledAt, trackEntry: entry });
+    }
+    if (entry.signalHoldExpiredAt && entry.signalHoldStatus === "expired") {
+      timeline.push({ eventType: "track_signal_hold_expired", occurredAt: entry.signalHoldExpiredAt, trackEntry: entry });
+    }
     if (entry.completedAt) {
       timeline.push({
         eventType: entry.playbackOutcome === "skipped" ? "track_skipped" : "track_finished",
@@ -3715,6 +3807,49 @@ function queueShowLogMutationEvents(
         trackEntry: located.entry,
       });
     }
+    const previousSignalHoldStatus = normalizeSignalHoldStatus(before?.entry.signalHoldStatus);
+    const nextSignalHoldStatus = normalizeSignalHoldStatus(located.entry.signalHoldStatus);
+    if (previousSignalHoldStatus !== "active" && nextSignalHoldStatus === "active") {
+      events = appendQueueShowLogEvent(events, {
+        eventType: "track_signal_hold_activated",
+        occurredAt: located.entry.signalHoldPaidAt ?? occurredAt,
+        trackEntry: located.entry,
+      });
+    }
+    if (previousSignalHoldStatus !== "paid_needs_attention" && nextSignalHoldStatus === "paid_needs_attention") {
+      events = appendQueueShowLogEvent(events, {
+        eventType: "track_signal_hold_needs_attention",
+        occurredAt: located.entry.signalHoldPaidAt ?? occurredAt,
+        trackEntry: located.entry,
+      });
+    }
+    const previousApplicationCount = Math.max(0, Math.floor(before?.entry.signalHoldApplicationCount ?? 0));
+    const nextApplicationCount = Math.max(0, Math.floor(located.entry.signalHoldApplicationCount ?? 0));
+    if (nextApplicationCount > previousApplicationCount) {
+      events = appendQueueShowLogEvent(events, {
+        eventType: "track_signal_hold_applied",
+        occurredAt: located.entry.signalHoldAppliedAt ?? occurredAt,
+        trackEntry: located.entry,
+        details: {
+          signalHoldPreviousLane: before?.entry.lane ?? "regular",
+          signalHoldApplicationCount: nextApplicationCount,
+        },
+      });
+    }
+    if (previousSignalHoldStatus !== "fulfilled" && nextSignalHoldStatus === "fulfilled") {
+      events = appendQueueShowLogEvent(events, {
+        eventType: "track_signal_hold_fulfilled",
+        occurredAt: located.entry.signalHoldFulfilledAt ?? occurredAt,
+        trackEntry: located.entry,
+      });
+    }
+    if (previousSignalHoldStatus !== "expired" && nextSignalHoldStatus === "expired") {
+      events = appendQueueShowLogEvent(events, {
+        eventType: "track_signal_hold_expired",
+        occurredAt: located.entry.signalHoldExpiredAt ?? occurredAt,
+        trackEntry: located.entry,
+      });
+    }
   }
 
   const previousPlaybackSequence = normalizeQueuePlaybackDiagnostics(previous.playbackDiagnostics)
@@ -3860,7 +3995,28 @@ function publicSubmitterStatus(session: QueueSession, identity?: { submitterToke
     limit,
     remaining: Math.max(0, limit - connectedMatching.length),
     cooldownRemainingSeconds,
-    submitted: directMatching.slice(0, limit).map(toPublicQueueTrack).map(({ id, submittedArtistName, submittedSongTitle, collaboratorNames, sourceType, lane, durationLabel, detectedDurationSeconds, estimatedDurationSeconds, durationIsEstimate, durationSource, priorityUpgradeStatus }) => ({ id, submittedArtistName, submittedSongTitle, collaboratorNames, sourceType, lane, durationLabel, detectedDurationSeconds, estimatedDurationSeconds, durationIsEstimate, durationSource, priorityUpgradeStatus })),
+    submitted: directMatching.slice(0, limit).map((entry) => {
+      const { id, submittedArtistName, submittedSongTitle, collaboratorNames, sourceType, lane, durationLabel, detectedDurationSeconds, estimatedDurationSeconds, durationIsEstimate, durationSource, priorityUpgradeStatus } = toPublicQueueTrack(entry);
+      const ownsSignalHoldDetails = Boolean(token && entry.submitterToken?.trim() && token === entry.submitterToken.trim());
+      return {
+        id,
+        submittedArtistName,
+        submittedSongTitle,
+        collaboratorNames,
+        sourceType,
+        lane,
+        durationLabel,
+        detectedDurationSeconds,
+        estimatedDurationSeconds,
+        durationIsEstimate,
+        durationSource,
+        priorityUpgradeStatus,
+        ...(ownsSignalHoldDetails ? {
+          signalHoldStatus: normalizeSignalHoldStatus(entry.signalHoldStatus) ?? "none",
+          signalHoldApplicationCount: Math.max(0, Math.floor(entry.signalHoldApplicationCount ?? 0)),
+        } : {}),
+      };
+    }),
   };
 }
 
@@ -3909,6 +4065,8 @@ export async function getPublicQueueSnapshot(sessionId?: string, identity?: { su
       wheelSpinsOwed: 0,
       priorityUpgradesEnabled: false,
       priorityUpgradePaymentsEnabled: false,
+      signalHoldEnabled: false,
+      signalHoldPaymentsEnabled: false,
     };
 
     return {
@@ -4160,6 +4318,197 @@ export async function markPriorityUpgradePaidFromStripe(trackId: string, queueSe
   return withQueueMutation(() => markPriorityUpgradePaidFromStripeMutation(trackId, queueSessionId, payment));
 }
 
+export interface SignalHoldCheckoutRequestResult {
+  session: QueueSessionSummary;
+  track: QueueEntry;
+  amountCents: number;
+  currency: string;
+  label: string;
+}
+
+export interface StripeSignalHoldPaymentMetadata {
+  paymentId: string;
+  amountCents: number;
+  currency: string;
+  paidAt?: string;
+  checkoutSessionId?: string;
+}
+
+function normalizeSignalHoldLegalAcceptance(input?: SignalHoldLegalAcceptanceInput): QueueEntry["signalHoldLegalAcceptance"] {
+  if (!input || input.acceptedSignalHoldTerms !== true || input.signalHoldTermsVersion !== SIGNAL_HOLD_TERMS_VERSION || input.signalHoldDisclosureText !== SIGNAL_HOLD_DISCLOSURE_TEXT) {
+    throw new Error("Signal Hold checkout requires acknowledgement of the Signal Hold disclosure.");
+  }
+  return {
+    acceptedAt: new Date().toISOString(),
+    signalHoldTermsVersion: SIGNAL_HOLD_TERMS_VERSION,
+    signalHoldDisclosureText: SIGNAL_HOLD_DISCLOSURE_TEXT,
+    source: "signal_hold_checkout",
+  };
+}
+
+function activeSignalHoldCheckoutTrack(session: QueueSession, trackId: string): QueueEntry | null {
+  return session.queue.find((entry) => entry.id === trackId)
+    ?? (session.nextInLineTrack?.id === trackId ? session.nextInLineTrack : null);
+}
+
+export async function requestSignalHoldCheckout(trackId: string, queueSessionId: string, signalHoldAcceptance?: SignalHoldLegalAcceptanceInput): Promise<SignalHoldCheckoutRequestResult> {
+  normalizeSignalHoldLegalAcceptance(signalHoldAcceptance);
+  const store = await readStore();
+  const found = store.sessions.find((item) => item.sessionId === queueSessionId);
+  if (!found || found.sessionId !== store.activeSessionId || found.status === "archived") {
+    throw new Error("Signal Hold is available only for an active broadcast session.");
+  }
+  const session = normalizeSession(found);
+  if (!session.signalHoldEnabled || !session.signalHoldPaymentsEnabled) {
+    throw new Error("Signal Hold is unavailable for this broadcast.");
+  }
+  const amountCents = normalizeSignalHoldPriceCents(session.signalHoldPriceCents);
+  if (amountCents <= 0) throw new Error("Signal Hold price is not configured yet.");
+  const track = activeSignalHoldCheckoutTrack(session, trackId);
+  const status = normalizeSignalHoldStatus(track?.signalHoldStatus);
+  if (!track || (track.status !== "queued" && track.status !== "next") || (status !== "none" && status !== "checkout_pending" && status !== "failed" && status !== "refunded")) {
+    throw new Error("Signal Hold is not available for this track.");
+  }
+  return {
+    session: summarizeSession(session),
+    track,
+    amountCents,
+    currency: normalizeCurrency(session.signalHoldCurrency),
+    label: session.signalHoldLabel || DEFAULT_SIGNAL_HOLD_LABEL,
+  };
+}
+
+type SignalHoldCheckoutPendingMetadata = {
+  provider?: string;
+  checkoutSessionId?: string;
+  checkoutUrl?: string;
+  checkoutCreatedAt?: string | null;
+  checkoutExpiresAt?: string | null;
+  checkoutOwnerTokenHash?: string | null;
+  signalHoldAcceptance?: SignalHoldLegalAcceptanceInput;
+};
+
+async function markSignalHoldCheckoutPendingMutation(trackId: string, queueSessionId: string, metadata: SignalHoldCheckoutPendingMetadata = {}): Promise<QueuePublicTrack | null> {
+  const store = await readStore();
+  const found = store.sessions.find((item) => item.sessionId === queueSessionId);
+  if (!found || found.sessionId !== store.activeSessionId || found.status === "archived") return null;
+  const session = normalizeSession(found);
+  const now = new Date().toISOString();
+  const legalAcceptance = metadata.signalHoldAcceptance
+    ? normalizeSignalHoldLegalAcceptance(metadata.signalHoldAcceptance)
+    : null;
+  const update = (entry: QueueEntry): QueueEntry => {
+    const status = normalizeSignalHoldStatus(entry.signalHoldStatus);
+    if (status === "active" || status === "paid_needs_attention" || status === "fulfilled" || status === "expired") return entry;
+    return normalizeEntry({
+      ...entry,
+      signalHoldStatus: "checkout_pending",
+      signalHoldRequestedAt: entry.signalHoldRequestedAt ?? now,
+      signalHoldCheckoutProvider: metadata.provider ?? entry.signalHoldCheckoutProvider ?? null,
+      signalHoldCheckoutSessionId: metadata.checkoutSessionId ?? entry.signalHoldCheckoutSessionId ?? null,
+      signalHoldCheckoutUrl: metadata.checkoutUrl ?? entry.signalHoldCheckoutUrl ?? null,
+      signalHoldCheckoutCreatedAt: metadata.checkoutCreatedAt ?? entry.signalHoldCheckoutCreatedAt ?? now,
+      signalHoldCheckoutExpiresAt: metadata.checkoutExpiresAt ?? entry.signalHoldCheckoutExpiresAt ?? null,
+      signalHoldCheckoutOwnerTokenHash: metadata.checkoutOwnerTokenHash ?? entry.signalHoldCheckoutOwnerTokenHash ?? null,
+      signalHoldLegalAcceptance: legalAcceptance ?? entry.signalHoldLegalAcceptance ?? null,
+      signalHoldExpiredAt: null,
+    });
+  };
+  const queueIndex = session.queue.findIndex((entry) => entry.id === trackId);
+  if (queueIndex >= 0) {
+    session.queue[queueIndex] = update(session.queue[queueIndex]);
+    await writeStore(replaceSession(store, session));
+    return toPublicQueueTrack(session.queue[queueIndex]);
+  }
+  if (session.nextInLineTrack?.id === trackId) {
+    session.nextInLineTrack = update(session.nextInLineTrack);
+    session.nextInLineTrackId = session.nextInLineTrack.id;
+    await writeStore(replaceSession(store, session));
+    return toPublicQueueTrack(session.nextInLineTrack);
+  }
+  return null;
+}
+
+export async function markSignalHoldCheckoutPending(trackId: string, queueSessionId: string, metadata: SignalHoldCheckoutPendingMetadata = {}): Promise<QueuePublicTrack | null> {
+  return withQueueMutation(() => markSignalHoldCheckoutPendingMutation(trackId, queueSessionId, metadata));
+}
+
+async function markSignalHoldPaidFromStripeMutation(trackId: string, queueSessionId: string, payment: StripeSignalHoldPaymentMetadata): Promise<{ updated: boolean; reason?: string; track?: QueueEntry }> {
+  const store = await readStore();
+  const found = store.sessions.find((item) => item.sessionId === queueSessionId);
+  if (!found) return { updated: false, reason: "missing_session" };
+  const session = normalizeSession(found);
+  const located = session.queue.find((entry) => entry.id === trackId)
+    ? { location: "queue" as const, index: session.queue.findIndex((entry) => entry.id === trackId), entry: session.queue.find((entry) => entry.id === trackId)! }
+    : session.nextInLineTrack?.id === trackId
+      ? { location: "next" as const, index: -1, entry: session.nextInLineTrack }
+      : session.loadedTrack?.id === trackId
+        ? { location: "loaded" as const, index: -1, entry: session.loadedTrack }
+        : session.completed.find((entry) => entry.id === trackId)
+          ? { location: "completed" as const, index: session.completed.findIndex((entry) => entry.id === trackId), entry: session.completed.find((entry) => entry.id === trackId)! }
+          : session.removed.find((entry) => entry.id === trackId)
+            ? { location: "removed" as const, index: session.removed.findIndex((entry) => entry.id === trackId), entry: session.removed.find((entry) => entry.id === trackId)! }
+            : null;
+  if (!located) return { updated: false, reason: "missing_track" };
+
+  const existingStatus = normalizeSignalHoldStatus(located.entry.signalHoldStatus);
+  if (existingStatus === "active" || existingStatus === "paid_needs_attention" || existingStatus === "fulfilled" || existingStatus === "expired" || existingStatus === "refunded") {
+    return { updated: false, reason: "already_paid", track: located.entry };
+  }
+  const now = payment.paidAt ?? new Date().toISOString();
+  const checkoutMismatch = Boolean(
+    payment.checkoutSessionId
+    && located.entry.signalHoldCheckoutSessionId
+    && payment.checkoutSessionId !== located.entry.signalHoldCheckoutSessionId,
+  );
+  const eligibleLocation = located.location === "queue" || located.location === "next";
+  const eligible = session.sessionId === store.activeSessionId
+    && session.status !== "archived"
+    && normalizePaidSignalHoldEnabled(session)
+    && eligibleLocation
+    && (located.entry.status === "queued" || located.entry.status === "next")
+    && !checkoutMismatch;
+  const updated = normalizeEntry({
+    ...located.entry,
+    signalHoldStatus: eligible ? "active" : "paid_needs_attention",
+    signalHoldRequestedAt: located.entry.signalHoldRequestedAt ?? now,
+    signalHoldPaidAt: now,
+    signalHoldPaymentProvider: "stripe",
+    signalHoldPaymentId: payment.paymentId,
+    signalHoldCheckoutProvider: null,
+    signalHoldCheckoutSessionId: null,
+    signalHoldCheckoutUrl: null,
+    signalHoldCheckoutCreatedAt: null,
+    signalHoldCheckoutExpiresAt: null,
+    signalHoldCheckoutOwnerTokenHash: null,
+    signalHoldAmountCents: normalizeSignalHoldPriceCents(payment.amountCents),
+    signalHoldCurrency: normalizeCurrency(payment.currency),
+    signalHoldFulfilledAt: null,
+    signalHoldExpiredAt: null,
+  });
+
+  if (located.location === "queue") session.queue[located.index] = updated;
+  else if (located.location === "next") {
+    session.nextInLineTrack = updated;
+    session.nextInLineTrackId = updated.id;
+  } else if (located.location === "loaded") {
+    session.loadedTrack = updated;
+    session.loadedTrackId = updated.id;
+  } else if (located.location === "completed") session.completed[located.index] = updated;
+  else session.removed[located.index] = updated;
+
+  await writeStore(replaceSession(store, session));
+  return {
+    updated: true,
+    reason: eligible ? undefined : "paid_needs_attention",
+    track: updated,
+  };
+}
+
+export async function markSignalHoldPaidFromStripe(trackId: string, queueSessionId: string, payment: StripeSignalHoldPaymentMetadata): Promise<{ updated: boolean; reason?: string; track?: QueueEntry }> {
+  return withQueueMutation(() => markSignalHoldPaidFromStripeMutation(trackId, queueSessionId, payment));
+}
+
 export interface QueueSessionSubmitterRow {
   sessionId: string;
   sessionTitle: string;
@@ -4275,6 +4624,8 @@ export async function getQueueSessionShowLogCsv(sessionId?: string): Promise<{ f
     "playback error",
     "wheel candidate count",
     "wheel spin duration ms",
+    "Signal Hold previous lane",
+    "Signal Hold application count",
   ];
   const body = log.events.map((event) => [
     event.sequence,
@@ -4294,6 +4645,8 @@ export async function getQueueSessionShowLogCsv(sessionId?: string): Promise<{ f
     event.details?.playbackErrorCode ?? "",
     event.details?.wheelCandidateCount ?? "",
     event.details?.wheelSpinDurationMs ?? "",
+    event.details?.signalHoldPreviousLane ?? "",
+    event.details?.signalHoldApplicationCount ?? "",
   ].map(csvEscape).join(","));
   const safeDate = log.session.showDate || pacificDateString();
   return {
@@ -4361,6 +4714,35 @@ async function updatePriorityUpgradeSettingsMutation(input: PriorityUpgradeSetti
 
 export async function updatePriorityUpgradeSettings(input: PriorityUpgradeSettingsInput): Promise<QueueState> {
   return withQueueMutation(() => updatePriorityUpgradeSettingsMutation(input));
+}
+
+async function updateSignalHoldSettingsMutation(input: SignalHoldSettingsInput): Promise<QueueState> {
+  const store = await readStore();
+  const session = getSession(store);
+  if (session.status === "archived") return queueStateFromSession(session, store);
+  const signalHoldPriceCents = normalizeSignalHoldPriceCents(input.priceCents ?? session.signalHoldPriceCents);
+  const signalHoldPaidEnabled = normalizePaidSignalHoldEnabled({
+    signalHoldEnabled: input.enabled,
+    signalHoldPaymentsEnabled: input.paymentsEnabled,
+    signalHoldPriceCents,
+  });
+  const next = normalizeSession({
+    ...session,
+    signalHoldEnabled: signalHoldPaidEnabled,
+    signalHoldLabel: DEFAULT_SIGNAL_HOLD_LABEL,
+    signalHoldInstructions: DEFAULT_SIGNAL_HOLD_INSTRUCTIONS,
+    signalHoldPriceCents,
+    signalHoldCurrency: normalizeCurrency(input.currency ?? session.signalHoldCurrency),
+    signalHoldPaymentsEnabled: signalHoldPaidEnabled,
+    updatedAt: new Date().toISOString(),
+  });
+  const nextStore = replaceSession(store, next);
+  await writeStore(nextStore);
+  return queueStateFromSession(next, nextStore);
+}
+
+export async function updateSignalHoldSettings(input: SignalHoldSettingsInput): Promise<QueueState> {
+  return withQueueMutation(() => updateSignalHoldSettingsMutation(input));
 }
 
 
@@ -4497,7 +4879,23 @@ async function archiveCurrentQueueSessionMutation(): Promise<QueueState> {
   const store = await readStore();
   const current = findSession(store);
   if (!current) return queueStateWithoutSession(store);
-  const session = normalizeSession({ ...current, status: "archived", queueOpen: false, submissionClosureReason: "archived", showStarted: false, updatedAt: new Date().toISOString() });
+  const expiredAt = new Date().toISOString();
+  const expireSignalHold = (entry: QueueEntry): QueueEntry => normalizeSignalHoldStatus(entry.signalHoldStatus) === "active"
+    ? normalizeEntry({ ...entry, signalHoldStatus: "expired", signalHoldExpiredAt: expiredAt })
+    : entry;
+  const session = normalizeSession({
+    ...current,
+    status: "archived",
+    queueOpen: false,
+    submissionClosureReason: "archived",
+    showStarted: false,
+    queue: current.queue.map(expireSignalHold),
+    nextInLineTrack: current.nextInLineTrack ? expireSignalHold(current.nextInLineTrack) : null,
+    loadedTrack: current.loadedTrack ? expireSignalHold(current.loadedTrack) : null,
+    completed: current.completed.map(expireSignalHold),
+    removed: current.removed.map(expireSignalHold),
+    updatedAt: expiredAt,
+  });
   const archivedStore = replaceSession(store, session);
   const active = archivedStore.sessions.find((item) => item.status === "open" || item.status === "prepared") ?? session;
   archivedStore.activeSessionId = active.sessionId;
@@ -4871,6 +5269,56 @@ function addSimulationTrack(session: QueueSession, action: QueueAdminAction): bo
   return false;
 }
 
+function applySignalHoldToMoveTrackToBottom(session: QueueSession, trackId: string): boolean {
+  if (session.loadedTrack?.id === trackId) {
+    throw new Error("Signal Hold cannot be used once the track is Now Playing.");
+  }
+  const queueIndex = session.queue.findIndex((entry) => entry.id === trackId);
+  const source = queueIndex >= 0
+    ? session.queue[queueIndex]
+    : session.nextInLineTrack?.id === trackId
+      ? session.nextInLineTrack
+      : null;
+  if (!source || (source.status !== "queued" && source.status !== "next")) {
+    throw new Error("Signal Hold is available only for a queued or Next In Line track.");
+  }
+  if (normalizeSignalHoldStatus(source.signalHoldStatus) !== "active") {
+    throw new Error("Signal Hold payment is not active for this track.");
+  }
+
+  const previousLane = source.lane ?? "regular";
+  const now = new Date().toISOString();
+  if (queueIndex >= 0) session.queue.splice(queueIndex, 1);
+  else clearNextInLine(session);
+  const moved = normalizeEntry({
+    ...source,
+    lane: "regular",
+    tier: "free",
+    status: "queued",
+    displacedFromNextInLineAt: null,
+    stagedAsFallbackForLane: null,
+    priorityPausedAt: null,
+    priorityResumedAt: null,
+    signalHoldAppliedAt: now,
+    signalHoldApplicationCount: Math.max(0, Math.floor(source.signalHoldApplicationCount ?? 0)) + 1,
+    signalHoldQueueOrderAt: now,
+    signalHoldPriorityRelinquishedAt: previousLane === "priority"
+      ? now
+      : source.signalHoldPriorityRelinquishedAt ?? null,
+  });
+  session.queue = sortActive([...session.queue.filter((entry) => entry.id !== trackId), moved]);
+  session.nextInLineHoldTrackId = trackId;
+
+  if (previousLane === "wheel") {
+    session.wheelSpinsOwed = normalizeWheelSpinsOwed(session.wheelSpinsOwed) + 1;
+    session.autoRoutingPaused = true;
+    return true;
+  }
+
+  resolveNextInLine(session, trackId, true);
+  return true;
+}
+
 async function updateRadioTrackMutation(id: string, action: QueueAdminAction, playbackSnapshot: QueuePlaybackEndpointSnapshot | null = null): Promise<QueueState> {
   const store = await readStore();
   const session = getSession(store);
@@ -4900,6 +5348,13 @@ async function updateRadioTrackMutation(id: string, action: QueueAdminAction, pl
 
 
   if (addSimulationTrack(session, action)) {
+    const nextStore = replaceSession(store, session);
+    await writeStore(nextStore);
+    return queueStateFromSession(session, nextStore);
+  }
+
+  if (action === "useSignalHold") {
+    applySignalHoldToMoveTrackToBottom(session, id);
     const nextStore = replaceSession(store, session);
     await writeStore(nextStore);
     return queueStateFromSession(session, nextStore);

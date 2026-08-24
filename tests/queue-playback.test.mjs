@@ -1135,13 +1135,17 @@ test("rapid submissions from distinct artists do not create a repeated-attempt a
   );
 });
 
-test("admin queue suppresses only the obsolete global-traffic warning", () => {
+test("admin queue suppresses the obsolete global warning and explains accepted submission checks", () => {
   const source = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioQueueControl.tsx"), "utf8");
 
   assert.match(source, /const LEGACY_GLOBAL_SUBMISSION_FLAG = "Many attempts in a short time"/);
   assert.match(source, /filter\(\(flag\) => flag !== LEGACY_GLOBAL_SUBMISSION_FLAG\)/);
+  assert.match(source, /Same browser as an earlier submission under a different artist name; this check does not indicate a second browser\./);
+  assert.match(source, /Upload metadata matches an earlier submission: file name, size, and duration\./);
+  assert.match(source, /Song title or source matches an earlier submission under a different artist name\./);
   assert.match(source, /<AdminSuspiciousFlags entry=\{entry\} \/>/);
-  assert.match(source, /Admin flags: \{flags\.join\(" \/ "\)\}/);
+  assert.match(source, /Accepted submission · informational checks: \{flags\.join\(" \/ "\)\}/);
+  assert.doesNotMatch(source, />Admin flags:/);
 });
 
 test("concurrent slots 43 through 45 accept exactly two tracks without losing either write", async () => {

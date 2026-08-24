@@ -27,6 +27,11 @@ const LANE_LABELS: Record<QueueLane, string> = { priority: "Priority Signal", wh
 const FIXED_PRIORITY_LABEL = "Priority Signal Upgrade";
 const FIXED_PRIORITY_INSTRUCTIONS = "Moves this track into the Priority Signal lane after payment confirmation.";
 const LEGACY_GLOBAL_SUBMISSION_FLAG = "Many attempts in a short time";
+const ADMIN_SUBMISSION_FLAG_COPY: Record<string, string> = {
+  "Same browser token using different artist names": "Same browser as an earlier submission under a different artist name; this check does not indicate a second browser.",
+  "Same file name, size, and duration": "Upload metadata matches an earlier submission: file name, size, and duration.",
+  "Same source/title with changed artist name": "Song title or source matches an earlier submission under a different artist name.",
+};
 
 const YOUTUBE_SYNC_HEARTBEAT_MS = 1_000;
 const TIKTOK_SYNC_HEARTBEAT_MS = 1_000;
@@ -155,9 +160,11 @@ function AdminSubmissionNote({ entry, compact = false }: { entry: QueueEntry; co
   return <div className={`${compact ? "mt-2 max-w-3xl p-2" : "mt-3 p-3"} border-2 border-accent bg-accent/10 text-left shadow-[0_0_20px_rgba(255,0,0,0.12)]`}><p className="text-[10px] font-black uppercase tracking-[0.2em] text-accent">Submission Note · Read Before Playing</p><p className={`${compact ? "mt-1 max-h-24 overflow-y-auto text-xs" : "mt-2 text-sm"} whitespace-pre-wrap break-words font-bold text-foreground`}>{note}</p></div>;
 }
 function AdminSuspiciousFlags({ entry }: { entry: QueueEntry }) {
-  const flags = (entry.suspiciousFlags ?? []).filter((flag) => flag !== LEGACY_GLOBAL_SUBMISSION_FLAG);
+  const flags = (entry.suspiciousFlags ?? [])
+    .filter((flag) => flag !== LEGACY_GLOBAL_SUBMISSION_FLAG)
+    .map((flag) => ADMIN_SUBMISSION_FLAG_COPY[flag] ?? flag);
   if (flags.length === 0) return null;
-  return <div className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 p-2 text-xs text-[#ffaa00]">Admin flags: {flags.join(" / ")}</div>;
+  return <div className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 p-2 text-xs text-[#ffaa00]">Accepted submission · informational checks: {flags.join(" / ")}</div>;
 }
 function durationLabel(entry: QueueEntry): string {
   const duration = formatRuntime(getTrackRuntimeSeconds(entry));

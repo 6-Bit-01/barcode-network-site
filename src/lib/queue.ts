@@ -17,6 +17,7 @@ import {
   appendQueuePlaybackEvent,
   emptyQueuePlaybackDiagnostics,
   normalizeQueuePlaybackDiagnostics,
+  queuePlaybackHasBegun,
   queuePlaybackOutcomeFields,
   queuePlaybackProviderForSourceType,
   type QueuePlaybackEndpointSnapshot,
@@ -109,7 +110,7 @@ const UPLOADED_FILE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const BARCODE_QUEUE_UPLOAD_HOST_SUFFIX = ".private.blob.vercel-storage.com";
 const BARCODE_QUEUE_UPLOAD_PATH_PREFIX = "/barcode-radio-queue/";
 
-type QueueAdminAction = "pullNext" | "pullWheelChosen" | "pullFreeTransmission" | "startShow" | "addWheelSpinOwed" | "load" | "finish" | "skip" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "markPriorityManual" | "markPriorityRequested" | "markPriorityCheckoutPending" | "resolvePaidPriority" | "pausePriority" | "resumePriority" | "useSignalHold" | "addSimulationFreeTrack" | "addSimulationPaidPriority" | "addSimulationCheckoutPending" | "addSimulationPaymentFailed" | "addSimulationHeldPriority" | "clearSimulationTracks";
+type QueueAdminAction = "pullNext" | "pullWheelChosen" | "pullFreeTransmission" | "startShow" | "addWheelSpinOwed" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "markPriorityManual" | "markPriorityRequested" | "markPriorityCheckoutPending" | "resolvePaidPriority" | "pausePriority" | "resumePriority" | "useSignalHold" | "addSimulationFreeTrack" | "addSimulationPaidPriority" | "addSimulationCheckoutPending" | "addSimulationPaymentFailed" | "addSimulationHeldPriority" | "clearSimulationTracks";
 
 export interface PriorityUpgradeSettingsInput {
   enabled?: boolean;
@@ -5270,8 +5271,16 @@ function addSimulationTrack(session: QueueSession, action: QueueAdminAction): bo
 }
 
 function applySignalHoldToMoveTrackToBottom(session: QueueSession, trackId: string): boolean {
-  if (session.loadedTrack?.id === trackId) {
-    throw new Error("Signal Hold cannot be used once the track is Now Playing.");
+  const loaded = session.loadedTrack?.id === trackId ? session.loadedTrack : null;
+  if (loaded) {
+    if (normalizeSignalHoldStatus(loaded.signalHoldStatus) !== "active") {
+      throw new Error("Signal Hold payment is not active for this track.");
+    }
+    if (queuePlaybackHasBegun(session.playbackDiagnostics, trackId)) {
+      throw new Error("Signal Hold cannot be used after playback has begun.");
+    }
+    recordLoadedTrackReturned(session, loaded);
+    undoLoadedTrack(session);
   }
   const queueIndex = session.queue.findIndex((entry) => entry.id === trackId);
   const source = queueIndex >= 0
@@ -5450,12 +5459,12 @@ async function updateRadioTrackMutation(id: string, action: QueueAdminAction, pl
       recordLoadedTrackReturned(session, loaded);
       undoLoadedTrack(session);
     }
-    if (action === "finish" || action === "skip") {
+    if (action === "finish") {
       session.nextInLineHoldTrackId = null;
       const current = session.loadedTrack;
       if (current) {
         const completedAt = new Date();
-        const completed = entryWithPlaybackOutcome(session, current, action === "skip" ? "skipped" : "finished", { now: completedAt, snapshot: playbackSnapshot });
+        const completed = entryWithPlaybackOutcome(session, current, "finished", { now: completedAt, snapshot: playbackSnapshot });
         clearLoadedTrack(session);
         removeTrackFromActiveLocations(session, current.id);
         const now = completedAt.toISOString();
@@ -5494,13 +5503,13 @@ async function updateRadioTrackMutation(id: string, action: QueueAdminAction, pl
       session.nextInLineHoldTrackId = restored?.id ?? null;
       session.autoRoutingPaused = true;
     }
-    if (action === "finish" || action === "skip") {
+    if (action === "finish") {
       const current = clearNextInLine(session);
       if (current) {
         removeTrackFromActiveLocations(session, current.id);
         const now = new Date().toISOString();
         if (!session.broadcastStartedAt) session.broadcastStartedAt = current.playedAt ?? now;
-        const completed = entryWithPlaybackOutcome(session, current, action === "skip" ? "skipped" : "finished");
+        const completed = entryWithPlaybackOutcome(session, current, "finished");
         session.completed.unshift({ ...completed, status: "played", playedAt: completed.playedAt ?? now, completedAt: now });
         advanceNonPriorityLaneAfter(session, current.lane);
       }
@@ -5544,10 +5553,10 @@ async function updateRadioTrackMutation(id: string, action: QueueAdminAction, pl
     session.wheelSpinsOwed = Math.max(0, normalizeWheelSpinsOwed(session.wheelSpinsOwed) - 1);
     handleWheelWinnerSelected(session);
   }
-  if (action === "finish" || action === "skip") {
+  if (action === "finish") {
     session.queue.splice(index, 1);
     removeTrackFromActiveLocations(session, active.id);
-    const completed = entryWithPlaybackOutcome(session, active, action === "skip" ? "skipped" : "finished");
+    const completed = entryWithPlaybackOutcome(session, active, "finished");
     session.completed.unshift({ ...completed, status: "played", playedAt: new Date().toISOString(), completedAt: new Date().toISOString() });
     advanceNonPriorityLaneAfter(session, active.lane);
   }

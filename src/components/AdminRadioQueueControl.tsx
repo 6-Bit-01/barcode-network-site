@@ -7,6 +7,7 @@ import { AdminLiveOverlayControl } from "@/components/AdminLiveOverlayControl";
 import { AdminRadioVisualsControl } from "@/components/AdminRadioVisualsControl";
 import { buildQueueTimingDisplay, formatHoursMinutes, queueTimingInputFromAdminState } from "@/lib/queue-timing-display";
 import { combineQueueTimeBankEvents, deriveQueuePaceBankEvent, deriveQueueTimeBankEvent, type QueueTimeBankEvent, type QueueTimeBankObservation } from "@/lib/queue-time-bank-events";
+import { queuePlaybackHasBegun } from "@/lib/queue-playback-lifecycle";
 import { parseYouTubeVideoId } from "@/lib/track-duration";
 import { confirmedPriorityPurchaseDisplay, formatRuntime, getTrackRuntimeSeconds, parseTikTokVideoUrl } from "@/lib/queue-types";
 import { detectMaterialPlaybackSeek, estimateOneWayNetworkTransitMs, projectObservedPlaybackTime, updateTransitEstimateMs, YOUTUBE_SYNC_STALE_AFTER_MS } from "@/lib/live-overlay-resolver";
@@ -18,7 +19,7 @@ import { analyzeRadioVisualFrequencyData, smoothRadioVisualAudioAnalysis } from 
 import type { RadioVisualAudioAnalysis } from "@/lib/radio-visuals-audio";
 
 type Tab = "active" | "completed" | "removed" | "spotlight";
-type AdminQueueAction = "pullNext" | "pullWheelChosen" | "pullFreeTransmission" | "startShow" | "addWheelSpinOwed" | "load" | "finish" | "skip" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "resolvePaidPriority" | "pausePriority" | "resumePriority" | "useSignalHold";
+type AdminQueueAction = "pullNext" | "pullWheelChosen" | "pullFreeTransmission" | "startShow" | "addWheelSpinOwed" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "resolvePaidPriority" | "pausePriority" | "resumePriority" | "useSignalHold";
 type SimulationSpeed = "slow" | "normal" | "fast";
 type SimulationAction = "addSimulationFreeTrack" | "addSimulationPaidPriority" | "addSimulationCheckoutPending" | "addSimulationPaymentFailed" | "addSimulationHeldPriority" | "clearSimulationTracks";
 
@@ -118,6 +119,7 @@ function isPaidPriorityTrack(entry: QueueEntry): boolean { return entry.lane ===
 function wasPrioritySignal(entry: QueueEntry): boolean { return entry.lane === "priority" || entry.priorityUpgradeStatus === "paid" || entry.priorityUpgradeStatus === "manual"; }
 function isWheelEligibleTrack(entry: QueueEntry): boolean { return (!entry.lane || entry.lane === "regular") && entry.status === "queued" && (entry.priorityUpgradeStatus ?? "none") === "none" && !entry.priorityPausedAt; }
 function canUseSignalHold(entry: QueueEntry): boolean { return entry.signalHoldStatus === "active" && (entry.status === "queued" || entry.status === "next"); }
+function canUseSignalHoldFromPlayer(entry: QueueEntry, diagnostics: QueuePlaybackDiagnostics | null): boolean { return entry.signalHoldStatus === "active" && !queuePlaybackHasBegun(diagnostics, entry.id); }
 function queueTrackVisual(entry: QueueEntry): { label: string; badgeClass: string; cardClass: string; sectionClass: string } {
   if (entry.signalHoldStatus === "paid_needs_attention") return { label: "Signal Hold Needs Attention", badgeClass: "border-danger bg-danger text-background", cardClass: "border-danger/60 bg-danger/10 shadow-[inset_4px_0_0_rgba(255,0,0,0.8)]", sectionClass: "border-danger/50 bg-danger/5" };
   if (entry.signalHoldStatus === "checkout_pending") return { label: "Signal Hold Payment Processing", badgeClass: "border-cyan-300 bg-cyan-300/20 text-cyan-100", cardClass: "border-cyan-300/60 bg-cyan-300/10 shadow-[inset_4px_0_0_rgba(103,232,249,0.8)]", sectionClass: "border-cyan-300/50 bg-cyan-300/5" };
@@ -369,7 +371,7 @@ export function AdminRadioQueueControl() {
   }
   async function playerAction(id: string, next: AdminQueueAction) {
     if (playerActionPending) return;
-    const isClearingAction = next === "finish" || next === "skip" || next === "remove" || next === "moveBack" || next === "pausePriority";
+    const isClearingAction = next === "finish" || next === "remove" || next === "moveBack" || next === "pausePriority" || next === "useSignalHold";
     if (isClearingAction) {
       setLoadingPlayerId(null);
       setClearingPlayerId(id);
@@ -378,8 +380,10 @@ export function AdminRadioQueueControl() {
     const updated = await action(id, next);
     if (isClearingAction) {
       const clearingTarget = state?.nowPlaying?.id === id ? state.nowPlaying : null;
-      if (clearingTarget?.sourceType === "youtube" || clearingTarget?.sourceType === "tiktok" || clearingTarget?.sourceType === "upload") await clearOverlayPlayerSync();
-      if (!updated) setLoadingPlayerId(null);
+      const didClearPlayer = Boolean(updated && updated.nowPlaying?.id !== id);
+      if (didClearPlayer && (clearingTarget?.sourceType === "youtube" || clearingTarget?.sourceType === "tiktok" || clearingTarget?.sourceType === "upload")) await clearOverlayPlayerSync();
+      if (!didClearPlayer) setLoadingPlayerId(null);
+      setClearingPlayerId(null);
     }
     setPlayerActionPending(false);
   }
@@ -1468,7 +1472,7 @@ function PlaybackLifecycleBanner({ diagnostics, trackId }: { diagnostics: QueueP
   if (!diagnostics || diagnostics.currentTrackId !== trackId) return <p className="border border-border/60 bg-surface/70 p-2 text-xs text-muted">Player loaded. Playback has not reported a state yet.</p>;
   const state = diagnostics.lifecycleState;
   if (state === "ended") return <p className="border border-accent/60 bg-accent/10 p-2 text-xs font-bold text-accent">Playback ended — choose Finish Track to count it and advance. The queue has not advanced automatically.</p>;
-  if (state === "error") return <p className="border border-danger/60 bg-danger/10 p-2 text-xs font-bold text-danger">Playback error — the track is still loaded. Retry playback, use Open Link, Skip Track, or Remove Track.</p>;
+  if (state === "error") return <p className="border border-danger/60 bg-danger/10 p-2 text-xs font-bold text-danger">Playback error — the track is still loaded. Retry playback, use Open Link, Finish Track if it aired, or Remove Track.</p>;
   if (state === "stalled") return <p className="border border-[#ffaa00]/60 bg-[#ffaa00]/10 p-2 text-xs font-bold text-[#ffaa00]">Playback stalled — waiting for media. The queue has not advanced.</p>;
   if (state === "paused") return <p className="border border-border/70 bg-surface/70 p-2 text-xs text-muted">Playback paused. The queue has not advanced.</p>;
   if (state === "playing") return <p className="border border-[#3ddc97]/50 bg-[#3ddc97]/10 p-2 text-xs font-bold text-[#3ddc97]">Playback active.</p>;
@@ -1503,15 +1507,15 @@ function PlayerDock({ player, sessionId, playbackDiagnostics, minimized, setMini
             {player.sourceType === "tiktok" && <AdminTikTokPlayer key={player.id} entry={player} sessionId={sessionId} />}
             {player.sourceType !== "upload" && player.sourceType !== "youtube" && player.sourceType !== "tiktok" && embedded && <iframe key={`${player.id}-${embedded}`} title="Queue preview" src={embedded} className="h-56 w-full border border-border" allow="clipboard-write; encrypted-media; picture-in-picture" />}
             {player.sourceType !== "upload" && player.sourceType !== "youtube" && player.sourceType !== "tiktok" && !embedded && <div className="border border-border p-2 text-sm text-muted">No embeddable preview for this source. Use Open Link or Copy Link.</div>}
-            {player.sourceType !== "upload" && player.sourceType !== "youtube" && player.sourceType !== "tiktok" && <p className="mt-2 text-xs text-muted">This provider does not expose reliable playback events. Use the explicit Finish, Skip, or Remove outcome.</p>}
+            {player.sourceType !== "upload" && player.sourceType !== "youtube" && player.sourceType !== "tiktok" && <p className="mt-2 text-xs text-muted">This provider does not expose reliable playback events. Use the explicit Finish or Remove outcome.</p>}
             </div>
           </div>
           <div className="space-y-2 xl:max-w-[34rem]">
-            {!readOnly && <p className="text-[10px] uppercase tracking-widest text-muted">Finish = completed · Skip = played early · Remove = removed + frees slot · Undo = return to queue</p>}
+            {!readOnly && <p className="text-[10px] uppercase tracking-widest text-muted">Finish = completed · Remove = removed + frees slot · Undo = return to queue</p>}
             <div className="flex flex-wrap gap-2">
             <a href={openUrl(player)} target="_blank" rel="noreferrer" className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent">Open Link</a>
             <button type="button" onClick={onCopy} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted">Copy Link</button>
-            {!readOnly && <><button type="button" disabled={actionPending} onClick={() => onAction(player.id, "finish")} className="border border-accent bg-accent px-4 py-2 text-xs uppercase tracking-widest text-background disabled:opacity-50">Finish Track</button><button type="button" disabled={actionPending} onClick={() => onAction(player.id, "skip")} className="border border-[#ffaa00]/60 px-4 py-2 text-xs uppercase tracking-widest text-[#ffaa00] disabled:opacity-50">Skip Track</button><button type="button" disabled={actionPending} onClick={() => onAction(player.id, "remove")} className="border border-danger/40 px-4 py-2 text-xs uppercase tracking-widest text-danger disabled:opacity-50">Remove Track</button><button type="button" disabled={actionPending} onClick={() => onAction(player.id, "moveBack")} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted disabled:opacity-50">Undo Load</button>{canPausePriority(player) && <button type="button" disabled={actionPending} onClick={() => onAction(player.id, "pausePriority")} className="border border-[#ffaa00]/50 px-4 py-2 text-xs uppercase tracking-widest text-[#ffaa00] disabled:opacity-50">Pause Priority</button>}<button type="button" disabled={actionPending} onClick={() => onAction(player.id, "spotlight")} className="border border-foreground/40 px-4 py-2 text-xs uppercase tracking-widest text-foreground disabled:opacity-50">Spotlight</button></>}
+            {!readOnly && <>{canUseSignalHoldFromPlayer(player, playbackDiagnostics) && <button type="button" disabled={actionPending} onClick={() => onAction(player.id, "useSignalHold")} className="border-2 border-cyan-300 bg-cyan-300/15 px-4 py-2 text-xs font-black uppercase tracking-widest text-cyan-100 hover:bg-cyan-300 hover:text-background disabled:opacity-50">USE SIGNAL HOLD — MOVE TO BOTTOM</button>}<button type="button" disabled={actionPending} onClick={() => onAction(player.id, "finish")} className="border border-accent bg-accent px-4 py-2 text-xs uppercase tracking-widest text-background disabled:opacity-50">Finish Track</button><button type="button" disabled={actionPending} onClick={() => onAction(player.id, "remove")} className="border border-danger/40 px-4 py-2 text-xs uppercase tracking-widest text-danger disabled:opacity-50">Remove Track</button><button type="button" disabled={actionPending} onClick={() => onAction(player.id, "moveBack")} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted disabled:opacity-50">Undo Load</button>{canPausePriority(player) && <button type="button" disabled={actionPending} onClick={() => onAction(player.id, "pausePriority")} className="border border-[#ffaa00]/50 px-4 py-2 text-xs uppercase tracking-widest text-[#ffaa00] disabled:opacity-50">Pause Priority</button>}<button type="button" disabled={actionPending} onClick={() => onAction(player.id, "spotlight")} className="border border-foreground/40 px-4 py-2 text-xs uppercase tracking-widest text-foreground disabled:opacity-50">Spotlight</button></>}
             </div>
           </div>
         </div>
@@ -1632,7 +1636,7 @@ function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction, s
         <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Unknown Durations</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.unknownDurationCount}</p><p className="mt-1 text-muted">Tracks using est. 5:00</p></div>
         <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Known Durations</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.knownDurationCount}</p><p className="mt-1 text-muted">Detected/provider/upload durations</p></div>
       </div>
-      <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Playback Lifecycle</p><p className="mt-1 font-bold capitalize text-foreground">{playbackStateLabel}</p><p className="mt-1 text-muted">{playbackDiagnostics?.events.length ?? 0} bounded lifecycle events · last issue {playbackDiagnostics?.lastErrorCode ?? "none"}. Natural end, Skip, Finish, and Remove remain distinct.</p></div>
+      <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Playback Lifecycle</p><p className="mt-1 font-bold capitalize text-foreground">{playbackStateLabel}</p><p className="mt-1 text-muted">{playbackDiagnostics?.events.length ?? 0} bounded lifecycle events · last issue {playbackDiagnostics?.lastErrorCode ?? "none"}. Natural end, Finish, and Remove remain distinct.</p></div>
       <div className="grid gap-3 md:grid-cols-3"><div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Talk Room to 5h</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.talkRoomLabel}</p><p className="mt-1 text-muted">{timingSummary.showRuntimeSummary.talkPerTrackLabel}</p></div><div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Room to 6h</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.warningRoomLabel}</p><p className="mt-1 text-muted">Operational redline only; the show continues past it.</p></div><div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Runtime Confidence</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.confidenceLabel}</p><p className="mt-1 text-muted">Unknown durations widen timing uncertainty without adding a pressure penalty.</p></div></div>
       <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Current Runtime Notes</p><p className="mt-1 text-muted">Sponsor: {sponsor.diagnosticLabel} · Wheel overhead: {formatHoursMinutes(wheel.overheadSeconds)} · {timingSummary.showRuntimeSummary.notes[0] ?? "No projection warnings."}</p></div>
     </section>

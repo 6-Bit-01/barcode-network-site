@@ -188,6 +188,15 @@ export function queuePlaybackProviderForSourceType(sourceType?: QueueSourceType 
   return "external";
 }
 
+export function queuePlaybackHasBegun(
+  diagnostics: QueuePlaybackDiagnostics | null | undefined,
+  trackId: string,
+): boolean {
+  return normalizeQueuePlaybackDiagnostics(diagnostics).events.some((event) => (
+    event.trackId === trackId && (event.eventType === "play" || event.eventType === "resume")
+  ));
+}
+
 function latestTrackEvent(diagnostics: QueuePlaybackDiagnostics | null | undefined, trackId: string): QueuePlaybackLifecycleEvent | null {
   const events = normalizeQueuePlaybackDiagnostics(diagnostics).events;
   return [...events].reverse().find((event) => event.trackId === trackId) ?? null;

@@ -62,6 +62,9 @@ import type {
   QueueNonPriorityLane,
   QueuePlaybackLifecycleEventInput,
   QueuePublicSnapshot,
+  QueuePublicStats,
+  QueuePublicStatsCounts,
+  QueuePublicShowStats,
   QueuePublicStatus,
   QueuePublicTrack,
   PriorityGiftAttribution,
@@ -4021,6 +4024,139 @@ function publicSubmitterStatus(session: QueueSession, identity?: { submitterToke
       };
     }),
   };
+}
+
+type QueuePublicStatsOutcome = "finished" | "skipped" | "removed" | "active" | "unknown";
+
+interface QueuePublicStatsRecord {
+  entry: QueueEntry;
+  outcome: QueuePublicStatsOutcome;
+}
+
+function publicStatsOutcomeForEntry(entry: QueueEntry, location: "active" | "completed" | "removed"): QueuePublicStatsOutcome {
+  if (location === "removed" || entry.status === "removed" || entry.playbackOutcome === "removed") return "removed";
+  if (entry.playbackOutcome === "skipped") return "skipped";
+  if (entry.playbackOutcome === "finished") return "finished";
+  if (location === "completed" || entry.status === "completed" || entry.status === "played") return "unknown";
+  return "active";
+}
+
+function publicStatsRecordsForSession(session: QueueSession): QueuePublicStatsRecord[] {
+  const locations: Array<{ entry: QueueEntry; location: "active" | "completed" | "removed"; precedence: number }> = [
+    ...(session.queue ?? []).map((entry) => ({ entry, location: "active" as const, precedence: 1 })),
+    ...(session.nextInLineTrack ? [{ entry: session.nextInLineTrack, location: "active" as const, precedence: 1 }] : []),
+    ...(session.loadedTrack ? [{ entry: session.loadedTrack, location: "active" as const, precedence: 1 }] : []),
+    ...(session.completed ?? []).map((entry) => ({ entry, location: "completed" as const, precedence: 2 })),
+    ...(session.removed ?? []).map((entry) => ({ entry, location: "removed" as const, precedence: 3 })),
+  ];
+  const simulationIds = new Set(locations.filter(({ entry }) => isSimulationTrack(entry)).map(({ entry }) => entry.id));
+  const unique = new Map<string, QueuePublicStatsRecord & { precedence: number }>();
+  for (const { entry, location, precedence } of locations) {
+    if (!entry?.id || simulationIds.has(entry.id)) continue;
+    const existing = unique.get(entry.id);
+    if (existing && existing.precedence > precedence) continue;
+    unique.set(entry.id, { entry, outcome: publicStatsOutcomeForEntry(entry, location), precedence });
+  }
+  return [...unique.values()].map(({ entry, outcome }) => ({ entry, outcome }));
+}
+
+function publicStatsCounts(records: QueuePublicStatsRecord[]): QueuePublicStatsCounts {
+  const count = (outcome: QueuePublicStatsOutcome) => records.filter((record) => record.outcome === outcome).length;
+  return {
+    submittedTrackCount: records.length,
+    finishedTrackCount: count("finished"),
+    skippedTrackCount: count("skipped"),
+    removedTrackCount: count("removed"),
+    activeTrackCount: count("active"),
+    unknownOutcomeTrackCount: count("unknown"),
+  };
+}
+
+function publicShowStats(session: QueueSession, records: QueuePublicStatsRecord[]): QueuePublicShowStats {
+  return {
+    sessionId: session.sessionId,
+    title: session.title,
+    showDate: session.showDate,
+    status: session.status,
+    ...publicStatsCounts(records),
+  };
+}
+
+function publicStatsSessionTime(session: QueueSession): number {
+  const showDate = Date.parse(`${session.showDate}T00:00:00.000Z`);
+  if (Number.isFinite(showDate)) return showDate;
+  const createdAt = Date.parse(session.createdAt);
+  return Number.isFinite(createdAt) ? createdAt : 0;
+}
+
+function publicStatsHandleForEntry(entry: QueueEntry): string {
+  return normalizeTikTokHandle(entry.normalizedTikTokHandle ?? entry.tiktokHandle ?? "");
+}
+
+export function buildQueuePublicStats(input: {
+  revision: number;
+  activeSessionId?: string | null;
+  sessions: QueueSession[];
+  requestedTikTokHandle?: string | null;
+}): QueuePublicStats {
+  const sessions = input.sessions
+    .filter((session) => session.purpose === "live_broadcast")
+    .map((session) => ({ session, records: publicStatsRecordsForSession(session) }))
+    .sort((left, right) => publicStatsSessionTime(right.session) - publicStatsSessionTime(left.session));
+  const allRecords = sessions.flatMap(({ records }) => records);
+  const current = sessions.find(({ session }) => session.sessionId === input.activeSessionId && session.status !== "archived") ?? null;
+  const requestedTikTokHandle = normalizeTikTokHandle(input.requestedTikTokHandle ?? "");
+
+  let artist: QueuePublicStats["artist"] = null;
+  if (requestedTikTokHandle) {
+    const matchingShows = sessions
+      .map(({ session, records }) => ({
+        session,
+        records: records.filter(({ entry }) => publicStatsHandleForEntry(entry) === requestedTikTokHandle),
+      }))
+      .filter(({ records }) => records.length > 0);
+    if (matchingShows.length > 0) {
+      const matchingRecords = matchingShows.flatMap(({ records }) => records);
+      const artistNames: string[] = [];
+      const seenNames = new Set<string>();
+      for (const { entry } of [...matchingRecords].sort((left, right) => Date.parse(right.entry.createdAt) - Date.parse(left.entry.createdAt))) {
+        const name = (entry.submittedArtistName ?? entry.artist).trim();
+        const key = name.toLocaleLowerCase();
+        if (!name || seenNames.has(key)) continue;
+        seenNames.add(key);
+        artistNames.push(name);
+      }
+      const currentRecords = current?.records.filter(({ entry }) => publicStatsHandleForEntry(entry) === requestedTikTokHandle) ?? [];
+      artist = {
+        tiktokHandle: requestedTikTokHandle,
+        artistNames,
+        showCount: matchingShows.length,
+        firstShowDate: matchingShows.at(-1)?.session.showDate ?? matchingShows[0].session.showDate,
+        latestShowDate: matchingShows[0].session.showDate,
+        ...publicStatsCounts(matchingRecords),
+        currentShow: currentRecords.length > 0 ? publicStatsCounts(currentRecords) : null,
+      };
+    }
+  }
+
+  return {
+    schemaVersion: "queue_public_stats_v1",
+    revision: Math.max(0, Math.floor(input.revision)),
+    overview: { showCount: sessions.length, ...publicStatsCounts(allRecords) },
+    currentShow: current ? publicShowStats(current.session, current.records) : null,
+    latestShow: sessions[0] ? publicShowStats(sessions[0].session, sessions[0].records) : null,
+    artist,
+  };
+}
+
+export async function getPublicQueueStats(requestedTikTokHandle?: string | null): Promise<QueuePublicStats> {
+  const store = await readStore();
+  return buildQueuePublicStats({
+    revision: store.revision,
+    activeSessionId: store.activeSessionId,
+    sessions: store.sessions.map((session) => normalizeSession(session)),
+    requestedTikTokHandle,
+  });
 }
 
 export async function getPublicQueueSnapshot(sessionId?: string, identity?: { submitterToken?: string | null; tiktokHandle?: string | null; contactEmail?: string | null; artist?: string | null }): Promise<QueuePublicSnapshot> {

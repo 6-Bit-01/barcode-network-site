@@ -625,6 +625,40 @@ export interface QueuePublicSnapshot {
   wheelTiming?: QueueWheelTiming | null;
 }
 
+export interface QueuePublicStatsCounts {
+  submittedTrackCount: number;
+  finishedTrackCount: number;
+  skippedTrackCount: number;
+  removedTrackCount: number;
+  activeTrackCount: number;
+  unknownOutcomeTrackCount: number;
+}
+
+export interface QueuePublicShowStats extends QueuePublicStatsCounts {
+  sessionId: string;
+  title: string;
+  showDate: string;
+  status: QueueSessionStatus;
+}
+
+export interface QueuePublicArtistStats extends QueuePublicStatsCounts {
+  tiktokHandle: string;
+  artistNames: string[];
+  showCount: number;
+  firstShowDate: string;
+  latestShowDate: string;
+  currentShow: QueuePublicStatsCounts | null;
+}
+
+export interface QueuePublicStats {
+  schemaVersion: "queue_public_stats_v1";
+  revision: number;
+  overview: QueuePublicStatsCounts & { showCount: number };
+  currentShow: QueuePublicShowStats | null;
+  latestShow: QueuePublicShowStats | null;
+  artist: QueuePublicArtistStats | null;
+}
+
 export interface QueueWheelArtistOption {
   artist: string;
   normalizedArtist: string;

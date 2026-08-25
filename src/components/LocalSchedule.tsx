@@ -127,7 +127,8 @@ export function LocalSchedule({
   const displayFirst = localTimes?.first ?? firstTrack;
   const displayZone = localTimes?.zone ?? "PT";
   const isConverted = localTimes?.converted ?? false;
-  const { isLive } = useLiveStatus();
+  const { siteShowMode } = useLiveStatus();
+  const isLive = siteShowMode === "broadcast_live";
 
   return (
     <div className={`border ${isLive ? "border-danger/50 bg-danger/5" : "border-accent/30 bg-accent/5"} px-5 py-4 max-w-xl mb-8 transition-colors duration-500`}>

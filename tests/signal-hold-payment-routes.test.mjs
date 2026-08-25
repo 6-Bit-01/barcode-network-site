@@ -104,6 +104,7 @@ function webhookRequest({ signature = "sig_signal_hold", body = "signed-body" } 
 
 async function withCheckoutMocks(mocks, callback) {
   const originals = {
+    getPublicQueueSnapshot: queue.getPublicQueueSnapshot,
     requestSignalHoldCheckout: queue.requestSignalHoldCheckout,
     markSignalHoldCheckoutPending: queue.markSignalHoldCheckoutPending,
     createSignalHoldCheckoutSession: stripe.createSignalHoldCheckoutSession,
@@ -112,12 +113,14 @@ async function withCheckoutMocks(mocks, callback) {
   };
   process.env.STRIPE_SECRET_KEY = "sk_test_signal_hold_boundary";
   process.env.STRIPE_WEBHOOK_SECRET = "whsec_signal_hold_boundary";
+  queue.getPublicQueueSnapshot = mocks.getPublicQueueSnapshot ?? (async (sessionId) => ({ session: { sessionId, purpose: "live_broadcast" } }));
   queue.requestSignalHoldCheckout = mocks.requestSignalHoldCheckout ?? originals.requestSignalHoldCheckout;
   queue.markSignalHoldCheckoutPending = mocks.markSignalHoldCheckoutPending ?? originals.markSignalHoldCheckoutPending;
   stripe.createSignalHoldCheckoutSession = mocks.createSignalHoldCheckoutSession ?? originals.createSignalHoldCheckoutSession;
   try {
     return await callback();
   } finally {
+    queue.getPublicQueueSnapshot = originals.getPublicQueueSnapshot;
     queue.requestSignalHoldCheckout = originals.requestSignalHoldCheckout;
     queue.markSignalHoldCheckoutPending = originals.markSignalHoldCheckoutPending;
     stripe.createSignalHoldCheckoutSession = originals.createSignalHoldCheckoutSession;

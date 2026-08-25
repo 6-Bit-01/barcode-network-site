@@ -1,4 +1,4 @@
-import type { PriorityUpgradeStatus, QueueEntry, QueueLane, QueuePlaybackTiming, QueuePublicTrack, QueueTrackStatus, QueueWheelTiming } from "./queue-types";
+import type { PriorityUpgradeStatus, QueueEntry, QueueLane, QueuePlaybackTiming, QueuePublicTrack, QueueSessionPurpose, QueueTrackStatus, QueueWheelTiming } from "./queue-types";
 
 export const DEFAULT_UNKNOWN_TRACK_SECONDS = 300;
 export const DEFAULT_PRE_TRACK_TALK_SECONDS = 30;
@@ -48,6 +48,7 @@ export interface QueueTimingInput {
   completed?: QueueTimingTrack[] | null;
   removed?: QueueTimingTrack[] | null;
   session?: {
+    purpose?: QueueSessionPurpose | null;
     completedCount?: number | null;
     removedCount?: number | null;
     completedRuntimeSeconds?: number | null;
@@ -318,12 +319,22 @@ function isSimulationTimingTrack(track: QueueTimingTrack | null | undefined): bo
   return track?.isTestTrack === true || track?.isSimulation === true;
 }
 
+function privatePurposeIncludesSimulationTiming(input: QueueTimingInput): boolean {
+  return input.session?.purpose === "rehearsal"
+    || input.session?.purpose === "simulation"
+    || input.session?.purpose === "internal_test";
+}
+
+function isTimingTrackIncluded(input: QueueTimingInput, track: QueueTimingTrack | null | undefined): boolean {
+  return !isSimulationTimingTrack(track) || privatePurposeIncludesSimulationTiming(input);
+}
+
 function resolvedUpNext(input: QueueTimingInput): QueueTimingTrack | null {
   return input.upNext ?? input.nextInLine ?? null;
 }
 
 function activeTracksInResolvedOrder(input: QueueTimingInput): QueueTimingTrack[] {
-  return [input.nowPlaying, resolvedUpNext(input), ...(input.queue ?? [])].filter((track): track is QueueTimingTrack => Boolean(track && !isRemovedTrack(track) && !isCompletedTrack(track) && !isSimulationTimingTrack(track)));
+  return [input.nowPlaying, resolvedUpNext(input), ...(input.queue ?? [])].filter((track): track is QueueTimingTrack => Boolean(track && !isRemovedTrack(track) && !isCompletedTrack(track) && isTimingTrackIncluded(input, track)));
 }
 
 function uniqueTracks(tracks: QueueTimingTrack[]): QueueTimingTrack[] {
@@ -418,7 +429,7 @@ export function estimateWheelCeremonySeconds(wheelSpinsOwed?: number | null, opt
 }
 
 function countCompletedPlayable(input: QueueTimingInput): number {
-  const completed = uniqueTracks(input.completed ?? []).filter((track) => isCompletedTrack(track) && !isRemovedTrack(track) && !isSimulationTimingTrack(track)).length;
+  const completed = uniqueTracks(input.completed ?? []).filter((track) => isCompletedTrack(track) && !isRemovedTrack(track) && isTimingTrackIncluded(input, track)).length;
   return Math.max(completed, safeNonNegativeInteger(input.session?.completedCount));
 }
 
@@ -429,7 +440,7 @@ function countRemoved(input: QueueTimingInput): number | null {
 }
 
 function countTotalNonRemoved(input: QueueTimingInput): number | null {
-  const completed = uniqueTracks(input.completed ?? []).filter((track) => !isRemovedTrack(track) && !isSimulationTimingTrack(track));
+  const completed = uniqueTracks(input.completed ?? []).filter((track) => !isRemovedTrack(track) && isTimingTrackIncluded(input, track));
   const active = activeTracksInResolvedOrder(input);
   const totalFromTracks = uniqueTracks([...completed, ...active]).length;
   const sessionCompleted = safeNonNegativeInteger(input.session?.completedCount);
@@ -442,7 +453,7 @@ function countTotalNonRemoved(input: QueueTimingInput): number | null {
 }
 
 function countResolvedWheelSpins(input: QueueTimingInput): number {
-  const completed = uniqueTracks(input.completed ?? []).filter((track) => !isRemovedTrack(track) && !isSimulationTimingTrack(track));
+  const completed = uniqueTracks(input.completed ?? []).filter((track) => !isRemovedTrack(track) && isTimingTrackIncluded(input, track));
   const active = activeTracksInResolvedOrder(input);
   return uniqueTracks([...completed, ...active]).filter((track) => track.lane === "wheel").length;
 }
@@ -467,7 +478,7 @@ function deriveBroadcastStartedAt(input: QueueTimingInput): string | null {
   if (explicit) return explicit;
   const candidates = [
     validIsoString(input.nowPlaying?.playedAt),
-    ...(input.completed ?? []).map((track) => validIsoString(track?.playedAt) ?? validIsoString(track?.completedAt)),
+    ...(input.completed ?? []).filter((track) => isTimingTrackIncluded(input, track)).map((track) => validIsoString(track?.playedAt) ?? validIsoString(track?.completedAt)),
   ].filter((value): value is string => Boolean(value));
   if (candidates.length === 0) return null;
   return candidates.sort((a, b) => Date.parse(a) - Date.parse(b))[0];
@@ -483,7 +494,7 @@ function secondsSince(iso: string | null, now = new Date()): number | null {
 
 function completedObservedMusicSeconds(input: QueueTimingInput, options: NormalizedQueueTimingOptions): number {
   return uniqueTracks(input.completed ?? [])
-    .filter((track) => isCompletedTrack(track) && !isRemovedTrack(track) && !isSimulationTimingTrack(track))
+    .filter((track) => isCompletedTrack(track) && !isRemovedTrack(track) && isTimingTrackIncluded(input, track))
     .reduce((total, track) => {
       const observedEnd = safeNonNegativeSeconds(track.playbackEndPositionSeconds);
       const observedDuration = safePositiveSeconds(track.playbackObservedDurationSeconds);
@@ -497,7 +508,7 @@ function completedObservedMusicSeconds(input: QueueTimingInput, options: Normali
 
 function currentObservedMusicSeconds(input: QueueTimingInput, options: NormalizedQueueTimingOptions, now: Date): number {
   const nowPlaying = input.nowPlaying;
-  if (!nowPlaying) return 0;
+  if (!nowPlaying || !isTimingTrackIncluded(input, nowPlaying)) return 0;
   const playbackTiming = input.playbackTiming;
   const runtime = safePositiveSeconds(playbackTiming?.durationSeconds) ?? getEstimatedTrackRuntimeSeconds(nowPlaying, options);
   if (playbackTiming && playbackTiming.trackId === nowPlaying.id) {
@@ -716,7 +727,7 @@ export function buildQueueTimingSnapshot(input: QueueTimingInput, options?: Queu
   const maximumTalkTimeline = buildProjectedShowTimeline(input, { ...optionsAtTalkPace(normalized, normalized.maxHostTalkSeconds), now });
   const activeRuntime = estimateRuntimeForTracks(activeTracksInResolvedOrder(input), normalized);
   const completedRuntimeSeconds = safePositiveSeconds(input.completedRuntimeSeconds) ?? safePositiveSeconds(input.session?.completedRuntimeSeconds) ?? null;
-  const completedTracks = (input.completed ?? []).filter((track) => !isSimulationTimingTrack(track));
+  const completedTracks = (input.completed ?? []).filter((track) => isTimingTrackIncluded(input, track));
   const completedEstimatedRuntime = completedRuntimeSeconds ?? estimateRuntimeForTracks(completedTracks, normalized).slotSeconds;
   const targetPaceProjectedRemainingShowSeconds = sumSegments(targetPaceTimeline.segments);
   const projectedRemainingShowSeconds = sumSegments(currentPaceTimeline.segments);
@@ -892,7 +903,7 @@ export function estimateExistingTrackTiming(input: QueueTimingInput, trackId: st
   if (queueIndex >= 0) {
     const priorQueue = queue.slice(0, queueIndex);
     const aheadInput = { ...input, queue: priorQueue };
-    const tracksAhead = uniqueTracks([...tracksBeforeTarget, ...priorQueue.filter((track): track is QueueTimingTrack => Boolean(track && !isRemovedTrack(track) && !isCompletedTrack(track)))]);
+    const tracksAhead = uniqueTracks([...tracksBeforeTarget, ...priorQueue.filter((track): track is QueueTimingTrack => Boolean(track && !isRemovedTrack(track) && !isCompletedTrack(track) && isTimingTrackIncluded(input, track)))]);
     const timeline = buildProjectedShowTimeline(aheadInput, { ...currentPaceOptions, targetSongsAhead: tracksAhead.length, now: options?.now });
     const seconds = sumSegments(timeline.segments);
     const stats = segmentStats(timeline.segments);

@@ -2216,6 +2216,7 @@ test("wheel ceremony spin and stale confirm errors do not mutate queue", async (
 const queueApi = require("../src/app/api/queue/route.ts");
 const uploadApi = require("../src/app/api/queue/upload/route.ts");
 const queueTypes = require("../src/lib/queue-types.ts");
+const queueAuth = require("../src/lib/auth.ts");
 
 function legalAcceptanceBody() {
   return {
@@ -2282,7 +2283,7 @@ test("public POST rejects missing legal acceptance", async () => {
 });
 
 test("public POST accepts current active sessionId", async () => {
-  const sessionId = await freshOpenSession("current session");
+  const sessionId = await freshOpenSession("current session", { purpose: "live_broadcast", bnlPublicationStatus: "private" });
   const response = await queueApi.submitTrackFromBody({
     sessionId,
     mode: "link",
@@ -2297,8 +2298,37 @@ test("public POST accepts current active sessionId", async () => {
   assert.ok(payload.track?.id);
 });
 
+test("private rehearsal intake is blocked publicly but remains usable through an authenticated admin request", async () => {
+  const sessionId = await freshOpenSession("private admin intake", { purpose: "rehearsal", bnlPublicationStatus: "private" });
+  const requestBody = {
+    sessionId,
+    mode: "link",
+    artist: "Private Test Artist",
+    title: "Private Test Track",
+    tiktokHandle: "@privatetestartist",
+    link: `https://example.com/private-test-${Date.now()}`,
+    ...legalAcceptanceBody(),
+  };
+  const request = (cookie = "") => new Request("https://example.test/api/queue", {
+    method: "POST",
+    headers: { "content-type": "application/json", ...(cookie ? { cookie } : {}) },
+    body: JSON.stringify(requestBody),
+  });
+
+  const publicResponse = await queueApi.POST(request());
+  assert.equal(publicResponse.status, 409);
+  assert.equal((await publicResponse.json()).code, "private_session");
+
+  const adminToken = await queueAuth.createAdminToken();
+  const adminResponse = await queueApi.POST(request(`${queueAuth.COOKIE_NAME}=${adminToken}`));
+  assert.equal(adminResponse.status, 201);
+  assert.ok((await adminResponse.json()).track?.id);
+});
+
 test("concurrent public POSTs return one accepted response and one truthful full response for the final slot", async () => {
   const sessionId = await freshOpenSession("public final slot", {
+    purpose: "live_broadcast",
+    bnlPublicationStatus: "private",
     queueCapacity: 1,
     submissionCooldownSeconds: 0,
   });
@@ -2325,7 +2355,7 @@ test("concurrent public POSTs return one accepted response and one truthful full
 });
 
 test("public POST remains rejected while submissions are closed", async () => {
-  const sessionId = await freshOpenSession("closed submit");
+  const sessionId = await freshOpenSession("closed submit", { purpose: "live_broadcast", bnlPublicationStatus: "private" });
   await queue.setQueueOpen(false);
   const response = await queueApi.submitTrackFromBody({
     sessionId,

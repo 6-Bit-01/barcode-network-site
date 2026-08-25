@@ -614,7 +614,8 @@ export interface QueuePublicSubmitterStatus {
 export interface QueuePublicSnapshot {
   revision: number;
   sessionActive?: boolean;
-  session: Pick<QueueSessionSummary, "sessionId" | "title" | "showDate" | "status" | "description" | "completedCount" | "completedRuntimeSeconds" | "activeCount" | "acceptedCount" | "submissionClosureReason" | "removedCount" | "submissionCooldownSeconds" | "queueOpen" | "showStarted" | "preShowEndsAt" | "broadcastPhase" | "broadcastStartedAt" | "nextInLineTrackId" | "loadedTrackId" | "wheelSpinsOwed" | "priorityUpgradesEnabled" | "priorityUpgradeLabel" | "priorityUpgradeInstructions" | "priorityUpgradePriceCents" | "priorityUpgradeCurrency" | "priorityUpgradePaymentsEnabled" | "signalHoldEnabled" | "signalHoldLabel" | "signalHoldInstructions" | "signalHoldPriceCents" | "signalHoldCurrency" | "signalHoldPaymentsEnabled" | "sponsorBreakSeconds" | "sponsorBreakMode" | "sponsorBreakStatus" | "sponsorBreakStartedAt" | "sponsorBreakCompletedAt" | "sponsorBreakCompletedAfterPlayableCount" | "sponsorBreakDueAfterPlayableCount" | "sponsorBreakManualNote"> | null;
+  suppressPublicLiveStatus?: boolean;
+  session: Pick<QueueSessionSummary, "sessionId" | "title" | "showDate" | "status" | "purpose" | "description" | "completedCount" | "completedRuntimeSeconds" | "activeCount" | "acceptedCount" | "submissionClosureReason" | "removedCount" | "submissionCooldownSeconds" | "queueOpen" | "showStarted" | "preShowEndsAt" | "broadcastPhase" | "broadcastStartedAt" | "nextInLineTrackId" | "loadedTrackId" | "wheelSpinsOwed" | "priorityUpgradesEnabled" | "priorityUpgradeLabel" | "priorityUpgradeInstructions" | "priorityUpgradePriceCents" | "priorityUpgradeCurrency" | "priorityUpgradePaymentsEnabled" | "signalHoldEnabled" | "signalHoldLabel" | "signalHoldInstructions" | "signalHoldPriceCents" | "signalHoldCurrency" | "signalHoldPaymentsEnabled" | "sponsorBreakSeconds" | "sponsorBreakMode" | "sponsorBreakStatus" | "sponsorBreakStartedAt" | "sponsorBreakCompletedAt" | "sponsorBreakCompletedAfterPlayableCount" | "sponsorBreakDueAfterPlayableCount" | "sponsorBreakManualNote"> | null;
   status: QueuePublicStatus;
   queue: QueuePublicTrack[];
   completed: QueuePublicTrack[];
@@ -623,6 +624,137 @@ export interface QueuePublicSnapshot {
   submitterStatus?: QueuePublicSubmitterStatus | null;
   playbackTiming?: QueuePlaybackTiming | null;
   wheelTiming?: QueueWheelTiming | null;
+}
+
+export interface QueuePublicStatsCounts {
+  submittedTrackCount: number;
+  finishedTrackCount: number;
+  skippedTrackCount: number;
+  removedTrackCount: number;
+  activeTrackCount: number;
+  waitingTrackCount: number;
+  nowPlayingTrackCount: number;
+  upNextTrackCount: number;
+  unknownOutcomeTrackCount: number;
+  wheelChosenTrackCount: number;
+}
+
+export interface QueuePublicShowStats extends QueuePublicStatsCounts {
+  sessionId: string;
+  title: string;
+  showDate: string;
+  status: QueueSessionStatus;
+  broadcastPhase: QueueBroadcastPhase;
+  submissionsOpen: boolean;
+  sourceRevision: number;
+  sourceUpdatedAt: string;
+  trackRoster: QueuePublicHistoryTrack[];
+  milestones: QueuePublicHistoryEvent[];
+}
+
+export type QueuePublicHistoryOutcome = "active" | "finished" | "skipped" | "removed" | "unknown";
+
+export interface QueuePublicHistoryTrack {
+  sessionId: string;
+  sessionTitle: string;
+  showDate: string;
+  trackId: string;
+  projectLabel: string;
+  projectKey: string;
+  title: string;
+  submittedByTikTokHandle: string;
+  collaboratorNames: string | null;
+  sourceType: QueueSourceType;
+  publicSourceUrl: string | null;
+  submittedAt: string;
+  resolvedAt: string | null;
+  outcome: QueuePublicHistoryOutcome;
+  lane: QueueLane;
+  wheelChosen: boolean;
+  isSimulation?: boolean;
+  submissionEventSequence: number | null;
+  outcomeEventSequence: number | null;
+}
+
+export interface QueuePublicProjectHistory extends QueuePublicStatsCounts {
+  projectKey: string;
+  projectLabel: string;
+  showCount: number;
+  firstShowDate: string;
+  latestShowDate: string;
+  tracks: QueuePublicHistoryTrack[];
+}
+
+export interface QueuePublicHandleHistory extends QueuePublicStatsCounts {
+  tiktokHandle: string;
+  identityStatus: "submitted_handle_not_verified_account";
+  profileStatus: "not_verified_profile";
+  showCount: number;
+  projectCount: number;
+  firstShowDate: string;
+  latestShowDate: string;
+  currentShow: QueuePublicStatsCounts | null;
+  projects: QueuePublicProjectHistory[];
+}
+
+export type QueuePublicHistoryEventType =
+  | "submissions_opened"
+  | "submissions_closed"
+  | "broadcast_started"
+  | "track_submitted"
+  | "track_loaded"
+  | "track_play_started"
+  | "track_finished"
+  | "track_removed"
+  | "track_returned"
+  | "track_restored"
+  | "wheel_launched"
+  | "wheel_spun"
+  | "wheel_confirmed"
+  | "sponsor_break_started"
+  | "sponsor_break_completed"
+  | "session_archived";
+
+export interface QueuePublicHistoryEvent {
+  eventId: string;
+  sessionId: string;
+  showDate: string;
+  sequence: number;
+  eventType: QueuePublicHistoryEventType;
+  occurredAt: string;
+  headline: string;
+  detail: string;
+  track: { projectLabel: string; title: string } | null;
+}
+
+export interface QueuePublicStats {
+  schemaVersion: "queue_public_history_projection_v1";
+  source: "queue_public_history_projection";
+  visibility: "public_safe";
+  historyCoverageStartedAt: "2026-08-24";
+  builtAt: string | null;
+  sourceRevision: number;
+  sourceDigest: string;
+  memoryDefault: "do_not_store";
+  sourceFileDefault: "review_evidence_only";
+  publicDossierDefault: "not_automatic";
+  overview: QueuePublicStatsCounts & {
+    showCount: number;
+    artistCount: number;
+    submitterHandleCount: number;
+    publicTrackLinkCount: number;
+  };
+  currentShow: QueuePublicShowStats | null;
+  latestShow: QueuePublicShowStats | null;
+  shows: QueuePublicShowStats[];
+  artists: QueuePublicProjectHistory[];
+  recentEvents: QueuePublicHistoryEvent[];
+  personalHistory: {
+    access: "confirmed_same_browser_submission";
+    identityStatus: "submitted_handle_not_verified_account";
+    profileStatus: "not_verified_profile";
+    handles: QueuePublicHandleHistory[];
+  } | null;
 }
 
 export interface QueueWheelArtistOption {

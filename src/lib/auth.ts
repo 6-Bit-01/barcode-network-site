@@ -91,6 +91,26 @@ export async function verifyAdminToken(token: string): Promise<boolean> {
   return verifyToken(token, "admin");
 }
 
+export function requestCookieValue(request: Request, name: string): string {
+  const cookieHeader = request.headers.get("cookie") ?? "";
+  for (const cookie of cookieHeader.split(";")) {
+    const [key, ...valueParts] = cookie.trim().split("=");
+    if (key !== name) continue;
+    const value = valueParts.join("=");
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return value;
+    }
+  }
+  return "";
+}
+
+export async function verifyAdminRequest(request: Request): Promise<boolean> {
+  const token = requestCookieValue(request, COOKIE_NAME);
+  return token ? verifyAdminToken(token) : false;
+}
+
 export async function createForegroundOverlayToken(): Promise<string> {
   return createToken("foreground_overlay", FOREGROUND_OVERLAY_TOKEN_TTL);
 }

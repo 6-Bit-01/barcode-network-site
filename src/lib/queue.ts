@@ -5,6 +5,7 @@
 import { Redis } from "@upstash/redis";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
+import { normalizeBroadcastArchiveProjectKey } from "./broadcast-archive";
 import { createProviderFetchBudget, fetchProviderJson } from "./provider-fetch";
 import { pacificDateString } from "./pacific-time";
 import {
@@ -61,7 +62,16 @@ import type {
   QueueLane,
   QueueNonPriorityLane,
   QueuePlaybackLifecycleEventInput,
+  QueuePublicHandleHistory,
+  QueuePublicHistoryEvent,
+  QueuePublicHistoryEventType,
+  QueuePublicHistoryOutcome,
+  QueuePublicHistoryTrack,
+  QueuePublicProjectHistory,
   QueuePublicSnapshot,
+  QueuePublicStats,
+  QueuePublicStatsCounts,
+  QueuePublicShowStats,
   QueuePublicStatus,
   QueuePublicTrack,
   PriorityGiftAttribution,
@@ -4023,6 +4033,496 @@ function publicSubmitterStatus(session: QueueSession, identity?: { submitterToke
   };
 }
 
+export const QUEUE_PUBLIC_HISTORY_COVERAGE_STARTED_AT = "2026-08-24" as const;
+
+type QueuePublicStatsStage = "waiting" | "up_next" | "now_playing" | "terminal";
+
+interface QueuePublicStatsRecord {
+  entry: QueueEntry;
+  outcome: QueuePublicHistoryOutcome;
+  stage: QueuePublicStatsStage;
+  wheelChosen: boolean;
+}
+
+interface QueuePublicStatsSession {
+  session: QueueSession;
+  records: QueuePublicStatsRecord[];
+  events: QueuePublicHistoryEvent[];
+}
+
+const PUBLIC_HISTORY_EVENT_TYPES = new Set<QueuePublicHistoryEventType>([
+  "submissions_opened",
+  "submissions_closed",
+  "broadcast_started",
+  "track_submitted",
+  "track_loaded",
+  "track_play_started",
+  "track_finished",
+  "track_removed",
+  "track_returned",
+  "track_restored",
+  "wheel_launched",
+  "wheel_spun",
+  "wheel_confirmed",
+  "sponsor_break_started",
+  "sponsor_break_completed",
+  "session_archived",
+]);
+
+function publicStatsOutcomeForEntry(entry: QueueEntry, location: "active" | "completed" | "removed"): QueuePublicHistoryOutcome {
+  if (location === "removed" || entry.status === "removed" || entry.playbackOutcome === "removed") return "removed";
+  if (entry.playbackOutcome === "skipped") return "skipped";
+  if (entry.playbackOutcome === "finished") return "finished";
+  if (location === "completed" || entry.status === "completed" || entry.status === "played") return "unknown";
+  return "active";
+}
+
+function publicStatsRecordsForSession(session: QueueSession, includeSimulationTracks = false): QueuePublicStatsRecord[] {
+  const wheelChosenIds = new Set(
+    normalizeQueueShowLog(session.showLog)
+      .filter((event) => event.eventType === "track_signal_hold_applied" && event.details?.signalHoldPreviousLane === "wheel" && event.track?.trackId)
+      .map((event) => event.track!.trackId),
+  );
+  const locations: Array<{
+    entry: QueueEntry;
+    location: "active" | "completed" | "removed";
+    stage: QueuePublicStatsStage;
+    precedence: number;
+  }> = [
+    ...(session.queue ?? []).map((entry) => ({ entry, location: "active" as const, stage: "waiting" as const, precedence: 1 })),
+    ...(session.nextInLineTrack ? [{ entry: session.nextInLineTrack, location: "active" as const, stage: "up_next" as const, precedence: 2 }] : []),
+    ...(session.loadedTrack ? [{ entry: session.loadedTrack, location: "active" as const, stage: "now_playing" as const, precedence: 3 }] : []),
+    ...(session.completed ?? []).map((entry) => ({ entry, location: "completed" as const, stage: "terminal" as const, precedence: 4 })),
+    ...(session.removed ?? []).map((entry) => ({ entry, location: "removed" as const, stage: "terminal" as const, precedence: 5 })),
+  ];
+  const simulationIds = includeSimulationTracks
+    ? new Set<string>()
+    : new Set(locations.filter(({ entry }) => isSimulationTrack(entry)).map(({ entry }) => entry.id));
+  const unique = new Map<string, QueuePublicStatsRecord & { precedence: number }>();
+  for (const { entry, location, stage, precedence } of locations) {
+    if (!entry?.id || simulationIds.has(entry.id)) continue;
+    const existing = unique.get(entry.id);
+    if (existing && existing.precedence > precedence) continue;
+    unique.set(entry.id, {
+      entry,
+      outcome: publicStatsOutcomeForEntry(entry, location),
+      stage,
+      wheelChosen: wheelChosenIds.has(entry.id) || entry.lane === "wheel",
+      precedence,
+    });
+  }
+  return [...unique.values()].map(({ entry, outcome, stage, wheelChosen }) => ({ entry, outcome, stage, wheelChosen }));
+}
+
+function publicStatsCounts(records: QueuePublicStatsRecord[]): QueuePublicStatsCounts {
+  const countOutcome = (outcome: QueuePublicHistoryOutcome) => records.filter((record) => record.outcome === outcome).length;
+  const countStage = (stage: QueuePublicStatsStage) => records.filter((record) => record.outcome === "active" && record.stage === stage).length;
+  return {
+    submittedTrackCount: records.length,
+    finishedTrackCount: countOutcome("finished"),
+    skippedTrackCount: countOutcome("skipped"),
+    removedTrackCount: countOutcome("removed"),
+    activeTrackCount: countOutcome("active"),
+    waitingTrackCount: countStage("waiting"),
+    nowPlayingTrackCount: countStage("now_playing"),
+    upNextTrackCount: countStage("up_next"),
+    unknownOutcomeTrackCount: countOutcome("unknown"),
+    wheelChosenTrackCount: records.filter((record) => record.wheelChosen).length,
+  };
+}
+
+function publicShowStats(
+  session: QueueSession,
+  records: QueuePublicStatsRecord[],
+  milestones: QueuePublicHistoryEvent[] = [],
+): QueuePublicShowStats {
+  return {
+    sessionId: session.sessionId,
+    title: session.title,
+    showDate: session.showDate,
+    status: session.status,
+    broadcastPhase: session.broadcastPhase ?? broadcastPhaseForSession(session),
+    submissionsOpen: session.queueOpen === true && session.status !== "archived",
+    sourceRevision: Math.max(0, Math.floor(session.provenanceRevision ?? 0)),
+    sourceUpdatedAt: session.updatedAt,
+    trackRoster: [...records]
+      .sort((left, right) => Date.parse(left.entry.createdAt) - Date.parse(right.entry.createdAt))
+      .map((record) => publicHistoryTrackForRecord(session, record)),
+    milestones,
+    ...publicStatsCounts(records),
+  };
+}
+
+function publicStatsSessionTime(session: QueueSession): number {
+  const showDate = Date.parse(`${session.showDate}T00:00:00.000Z`);
+  if (Number.isFinite(showDate)) return showDate;
+  const createdAt = Date.parse(session.createdAt);
+  return Number.isFinite(createdAt) ? createdAt : 0;
+}
+
+function publicStatsHandleForEntry(entry: QueueEntry): string {
+  return normalizeTikTokHandle(entry.normalizedTikTokHandle ?? entry.tiktokHandle ?? "");
+}
+
+function publicHistoryProjectLabel(entry: QueueEntry): string {
+  return (entry.submittedArtistName ?? entry.artist).normalize("NFKC").replace(/\s+/g, " ").trim() || "Unknown project";
+}
+
+export const normalizeQueueProjectKey = normalizeBroadcastArchiveProjectKey;
+
+function historyEventSequence(session: QueueSession, trackId: string, eventTypes: QueueShowLogEventType[]): number | null {
+  const event = normalizeQueueShowLog(session.showLog)
+    .filter((item) => item.track?.trackId === trackId && eventTypes.includes(item.eventType))
+    .sort((left, right) => right.sequence - left.sequence)[0];
+  return event?.sequence ?? null;
+}
+
+function publicHistoryTrackForRecord(session: QueueSession, record: QueuePublicStatsRecord): QueuePublicHistoryTrack {
+  const outcomeEvents: Partial<Record<QueuePublicHistoryOutcome, QueueShowLogEventType[]>> = {
+    finished: ["track_finished"],
+    skipped: ["track_skipped"],
+    removed: ["track_removed"],
+  };
+  const resolvedAt = record.outcome === "removed"
+    ? record.entry.removedAt ?? null
+    : record.outcome === "finished" || record.outcome === "skipped" || record.outcome === "unknown"
+      ? record.entry.completedAt ?? record.entry.playedAt ?? null
+      : null;
+  return {
+    sessionId: session.sessionId,
+    sessionTitle: session.title,
+    showDate: session.showDate,
+    trackId: record.entry.id,
+    projectLabel: publicHistoryProjectLabel(record.entry),
+    projectKey: normalizeQueueProjectKey(publicHistoryProjectLabel(record.entry)),
+    title: (record.entry.submittedSongTitle ?? record.entry.title).normalize("NFKC").replace(/\s+/g, " ").trim() || "Untitled track",
+    submittedByTikTokHandle: publicStatsHandleForEntry(record.entry),
+    collaboratorNames: record.entry.collaboratorNames?.normalize("NFKC").replace(/\s+/g, " ").trim() || null,
+    sourceType: record.entry.sourceType ?? "other",
+    publicSourceUrl: publicSourceUrlForTrack(record.entry),
+    submittedAt: record.entry.createdAt,
+    resolvedAt,
+    outcome: record.outcome,
+    lane: record.entry.lane ?? "regular",
+    wheelChosen: record.wheelChosen,
+    ...(isSimulationTrack(record.entry) ? { isSimulation: true } : {}),
+    submissionEventSequence: historyEventSequence(session, record.entry.id, ["track_submitted"]),
+    outcomeEventSequence: outcomeEvents[record.outcome]
+      ? historyEventSequence(session, record.entry.id, outcomeEvents[record.outcome]!)
+      : null,
+  };
+}
+
+function publicHistoryEventCopy(eventType: QueuePublicHistoryEventType, track: QueuePublicHistoryEvent["track"]): { headline: string; detail: string } {
+  const trackText = track ? `${track.projectLabel} — ${track.title}` : "BARCODE Radio";
+  if (eventType === "submissions_opened") return { headline: "Submissions opened", detail: "The intake window is accepting tracks." };
+  if (eventType === "submissions_closed") return { headline: "Submissions closed", detail: "The intake window is closed." };
+  if (eventType === "broadcast_started") return { headline: "Broadcast started", detail: "The live BARCODE Radio show is underway." };
+  if (eventType === "track_submitted") return { headline: "Submission received", detail: trackText };
+  if (eventType === "track_loaded") return { headline: "Track loaded", detail: trackText };
+  if (eventType === "track_play_started") return { headline: "Now playing", detail: trackText };
+  if (eventType === "track_finished") return { headline: "Track finished", detail: trackText };
+  if (eventType === "track_removed") return { headline: "Track left the active queue", detail: trackText };
+  if (eventType === "track_returned" || eventType === "track_restored") return { headline: "Track returned to the queue", detail: trackText };
+  if (eventType === "wheel_launched") return { headline: "Wheel launched", detail: "A 10K Tap Wheel selection is underway." };
+  if (eventType === "wheel_spun") return { headline: "Wheel spun", detail: "The Wheel result is being resolved." };
+  if (eventType === "wheel_confirmed") return { headline: "Wheel Chosen", detail: track ? trackText : "A Wheel result was confirmed." };
+  if (eventType === "sponsor_break_started") return { headline: "Sponsor break started", detail: "The show remains live during the break." };
+  if (eventType === "sponsor_break_completed") return { headline: "Sponsor break completed", detail: "The broadcast returned to the queue." };
+  return { headline: "Broadcast archived", detail: "The show moved into retained after-show history." };
+}
+
+function publicHistoryEventsForSession(session: QueueSession, records: QueuePublicStatsRecord[]): QueuePublicHistoryEvent[] {
+  const recordsById = new Map(records.map((record) => [record.entry.id, record]));
+  return normalizeQueueShowLog(session.showLog).flatMap((event) => {
+    if (!PUBLIC_HISTORY_EVENT_TYPES.has(event.eventType as QueuePublicHistoryEventType)) return [];
+    const eventType = event.eventType as QueuePublicHistoryEventType;
+    const record = event.track?.trackId ? recordsById.get(event.track.trackId) : null;
+    if (event.track?.trackId && !record) return [];
+    const track = record ? { projectLabel: publicHistoryProjectLabel(record.entry), title: record.entry.submittedSongTitle ?? record.entry.title } : null;
+    const copy = publicHistoryEventCopy(eventType, track);
+    return [{
+      eventId: `${session.sessionId}:${event.sequence}`,
+      sessionId: session.sessionId,
+      showDate: session.showDate,
+      sequence: event.sequence,
+      eventType,
+      occurredAt: event.occurredAt,
+      headline: copy.headline,
+      detail: copy.detail,
+      track,
+    }];
+  });
+}
+
+function buildPublicArtistCatalog(sessions: QueuePublicStatsSession[]): QueuePublicProjectHistory[] {
+  const groups = new Map<string, Array<{ session: QueueSession; record: QueuePublicStatsRecord }>>();
+  for (const { session, records } of sessions) {
+    for (const record of records) {
+      const projectKey = normalizeQueueProjectKey(publicHistoryProjectLabel(record.entry));
+      if (!projectKey) continue;
+      groups.set(projectKey, [...(groups.get(projectKey) ?? []), { session, record }]);
+    }
+  }
+  return [...groups.entries()].map(([projectKey, items]) => {
+    const sortedItems = [...items].sort((left, right) => Date.parse(right.record.entry.createdAt) - Date.parse(left.record.entry.createdAt));
+    const dates = [...new Set(items.map(({ session }) => session.showDate))].sort();
+    return {
+      projectKey,
+      projectLabel: publicHistoryProjectLabel(sortedItems[0].record.entry),
+      showCount: dates.length,
+      firstShowDate: dates[0],
+      latestShowDate: dates.at(-1)!,
+      ...publicStatsCounts(items.map(({ record }) => record)),
+      tracks: sortedItems.map(({ session, record }) => publicHistoryTrackForRecord(session, record)),
+    };
+  }).sort((left, right) => left.projectLabel.localeCompare(right.projectLabel));
+}
+
+function buildPublicPersonalHistory(
+  sessions: QueuePublicStatsSession[],
+  current: QueuePublicStatsSession | null,
+  submitterToken?: string | null,
+): QueuePublicStats["personalHistory"] {
+  const token = submitterToken?.trim();
+  if (!token) return null;
+  const ownedHandles = new Set(
+    sessions.flatMap(({ records }) => records)
+      .filter(({ entry }) => entry.submitterToken?.trim() === token)
+      .map(({ entry }) => publicStatsHandleForEntry(entry))
+      .filter(Boolean),
+  );
+  if (ownedHandles.size === 0) return null;
+
+  const handles: QueuePublicHandleHistory[] = [...ownedHandles].map((tiktokHandle) => {
+    const matching = sessions.flatMap(({ session, records }) => records
+      .filter(({ entry }) => publicStatsHandleForEntry(entry) === tiktokHandle)
+      .map((record) => ({ session, record })));
+    const dates = [...new Set(matching.map(({ session }) => session.showDate))].sort();
+    const projectGroups = new Map<string, Array<{ session: QueueSession; record: QueuePublicStatsRecord }>>();
+    for (const item of matching) {
+      const key = normalizeQueueProjectKey(publicHistoryProjectLabel(item.record.entry));
+      if (!key) continue;
+      projectGroups.set(key, [...(projectGroups.get(key) ?? []), item]);
+    }
+    const projects: QueuePublicProjectHistory[] = [...projectGroups.entries()].map(([projectKey, items]) => {
+      const sortedItems = [...items].sort((left, right) => Date.parse(right.record.entry.createdAt) - Date.parse(left.record.entry.createdAt));
+      const projectDates = [...new Set(items.map(({ session }) => session.showDate))].sort();
+      return {
+        projectKey,
+        projectLabel: publicHistoryProjectLabel(sortedItems[0].record.entry),
+        showCount: projectDates.length,
+        firstShowDate: projectDates[0],
+        latestShowDate: projectDates.at(-1)!,
+        ...publicStatsCounts(items.map(({ record }) => record)),
+        tracks: sortedItems.map(({ session, record }) => publicHistoryTrackForRecord(session, record)),
+      };
+    }).sort((left, right) => right.latestShowDate.localeCompare(left.latestShowDate) || left.projectLabel.localeCompare(right.projectLabel));
+    const currentRecords = current?.records.filter(({ entry }) => publicStatsHandleForEntry(entry) === tiktokHandle) ?? [];
+    return {
+      tiktokHandle,
+      identityStatus: "submitted_handle_not_verified_account" as const,
+      profileStatus: "not_verified_profile" as const,
+      showCount: dates.length,
+      projectCount: projects.length,
+      firstShowDate: dates[0],
+      latestShowDate: dates.at(-1)!,
+      ...publicStatsCounts(matching.map(({ record }) => record)),
+      currentShow: currentRecords.length > 0 ? publicStatsCounts(currentRecords) : null,
+      projects,
+    };
+  }).sort((left, right) => right.latestShowDate.localeCompare(left.latestShowDate) || left.tiktokHandle.localeCompare(right.tiktokHandle));
+
+  return {
+    access: "confirmed_same_browser_submission",
+    identityStatus: "submitted_handle_not_verified_account",
+    profileStatus: "not_verified_profile",
+    handles,
+  };
+}
+
+function buildQueueStatsProjection(input: {
+  revision: number;
+  activeSessionId?: string | null;
+  submitterToken?: string | null;
+}, selectedSessions: QueueSession[], includeSimulationTracks: boolean): QueuePublicStats {
+  const eligibleSessions: QueuePublicStatsSession[] = selectedSessions
+    .map((session) => {
+      const records = publicStatsRecordsForSession(session, includeSimulationTracks);
+      return { session, records, events: publicHistoryEventsForSession(session, records) };
+    })
+    .sort((left, right) => publicStatsSessionTime(right.session) - publicStatsSessionTime(left.session));
+  const archiveSessions = eligibleSessions.filter(({ session }) => session.status === "archived");
+  const archivedRecords = archiveSessions.flatMap(({ records }) => records);
+  const current = eligibleSessions.find(({ session }) => session.sessionId === input.activeSessionId && session.status !== "archived") ?? null;
+  const shows = archiveSessions.map(({ session, records, events }) => publicShowStats(session, records, events));
+  const artists = buildPublicArtistCatalog(archiveSessions);
+  const sourceRevision = Math.max(0, Math.floor(input.revision));
+  const builtAt = eligibleSessions.map(({ session }) => session.updatedAt).filter(Boolean).sort().at(-1) ?? null;
+  const digestInput = {
+    schemaVersion: "queue_public_history_projection_v1",
+    historyCoverageStartedAt: QUEUE_PUBLIC_HISTORY_COVERAGE_STARTED_AT,
+    sourceRevision,
+    sessions: eligibleSessions.map(({ session, records, events }) => ({
+      session: publicShowStats(session, records, events),
+      records: records.map((record) => ({
+        ...publicHistoryTrackForRecord(session, record),
+        tiktokHandle: publicStatsHandleForEntry(record.entry),
+        stage: record.stage,
+        wheelChosen: record.wheelChosen,
+      })),
+      events,
+    })),
+  };
+  const sourceDigest = createHash("sha256").update(canonicalJson(digestInput)).digest("hex");
+  const recentEvents = archiveSessions.flatMap(({ events }) => events)
+    .sort((left, right) => Date.parse(right.occurredAt) - Date.parse(left.occurredAt) || right.sequence - left.sequence)
+    .slice(0, 16);
+
+  return {
+    schemaVersion: "queue_public_history_projection_v1",
+    source: "queue_public_history_projection",
+    visibility: "public_safe",
+    historyCoverageStartedAt: QUEUE_PUBLIC_HISTORY_COVERAGE_STARTED_AT,
+    builtAt,
+    sourceRevision,
+    sourceDigest,
+    memoryDefault: "do_not_store",
+    sourceFileDefault: "review_evidence_only",
+    publicDossierDefault: "not_automatic",
+    overview: {
+      showCount: archiveSessions.length,
+      artistCount: artists.length,
+      submitterHandleCount: new Set(archivedRecords.map(({ entry }) => publicStatsHandleForEntry(entry)).filter(Boolean)).size,
+      publicTrackLinkCount: archivedRecords.filter(({ entry }) => Boolean(publicSourceUrlForTrack(entry))).length,
+      ...publicStatsCounts(archivedRecords),
+    },
+    currentShow: current ? publicShowStats(current.session, current.records, current.events) : null,
+    latestShow: shows[0] ?? null,
+    shows,
+    artists,
+    recentEvents,
+    personalHistory: buildPublicPersonalHistory(eligibleSessions, current, input.submitterToken),
+  };
+}
+
+export function buildQueuePublicStats(input: {
+  revision: number;
+  activeSessionId?: string | null;
+  sessions: QueueSession[];
+  submitterToken?: string | null;
+}): QueuePublicStats {
+  const sessions = input.sessions
+    .map((session) => normalizeSession(session))
+    .filter((session) => session.purpose === "live_broadcast" && session.showDate >= QUEUE_PUBLIC_HISTORY_COVERAGE_STARTED_AT);
+  return buildQueueStatsProjection(input, sessions, false);
+}
+
+export function buildQueueAdminPreviewStats(input: {
+  revision: number;
+  selectedSession: QueueSession;
+  submitterToken?: string | null;
+}): QueuePublicStats {
+  const selectedSession = normalizeSession(input.selectedSession);
+  return buildQueueStatsProjection({
+    revision: input.revision,
+    activeSessionId: selectedSession.status === "archived" ? null : selectedSession.sessionId,
+    submitterToken: input.submitterToken,
+  }, [selectedSession], true);
+}
+
+export async function getPublicQueueStats(submitterToken?: string | null): Promise<QueuePublicStats> {
+  const store = await readStore();
+  return buildQueuePublicStats({
+    revision: store.revision,
+    activeSessionId: store.activeSessionId,
+    sessions: store.sessions.map((session) => normalizeSession(session)),
+    submitterToken,
+  });
+}
+
+export interface QueueAdminPreviewReadback {
+  schemaVersion: "queue_admin_broadcast_preview_readback_v1";
+  readAuthority: "queue_store_fresh_read";
+  visibility: "admin_private_preview";
+  readAt: string;
+  storeRevision: number;
+  sessionId: string;
+  sessionPurpose: QueueSessionPurpose;
+  sessionStatus: QueueSessionStatus;
+  sessionProvenanceRevision: number;
+  sourceUpdatedAt: string;
+  sourceDigest: string;
+  savedTrackCount: number;
+  activeTrackCount: number;
+  completedTrackCount: number;
+  removedTrackCount: number;
+  simulationTrackCount: number;
+  showLogEventCount: number;
+}
+
+function queueSessionEntries(session: QueueSession): QueueEntry[] {
+  const unique = new Map<string, QueueEntry>();
+  for (const entry of [
+    ...session.queue,
+    ...(session.nextInLineTrack ? [session.nextInLineTrack] : []),
+    ...(session.loadedTrack ? [session.loadedTrack] : []),
+    ...session.completed,
+    ...session.removed,
+    ...session.spotlight,
+  ]) {
+    if (entry?.id) unique.set(entry.id, entry);
+  }
+  return [...unique.values()];
+}
+
+function activeQueueSessionEntries(session: QueueSession): QueueEntry[] {
+  const unique = new Map<string, QueueEntry>();
+  for (const entry of [
+    ...session.queue,
+    ...(session.nextInLineTrack ? [session.nextInLineTrack] : []),
+    ...(session.loadedTrack ? [session.loadedTrack] : []),
+  ]) {
+    if (entry?.id) unique.set(entry.id, entry);
+  }
+  return [...unique.values()];
+}
+
+export async function getQueueAdminPreviewStats(sessionId?: string | null, submitterToken?: string | null): Promise<QueuePublicStats> {
+  const store = await readStore();
+  const selected = findSession(store, sessionId?.trim() || undefined);
+  if (!selected) throw new Error("Queue session not found.");
+  return buildQueueAdminPreviewStats({ revision: store.revision, selectedSession: normalizeSession(selected), submitterToken });
+}
+
+export async function getQueueAdminPreviewReadback(sessionId?: string | null): Promise<QueueAdminPreviewReadback> {
+  const store = await readStore();
+  const selected = findSession(store, sessionId?.trim() || undefined);
+  if (!selected) throw new Error("Queue session not found.");
+  const session = normalizeSession(selected);
+  const entries = queueSessionEntries(session);
+  const stats = buildQueueAdminPreviewStats({ revision: store.revision, selectedSession: session });
+  return {
+    schemaVersion: "queue_admin_broadcast_preview_readback_v1",
+    readAuthority: "queue_store_fresh_read",
+    visibility: "admin_private_preview",
+    readAt: new Date().toISOString(),
+    storeRevision: store.revision,
+    sessionId: session.sessionId,
+    sessionPurpose: session.purpose,
+    sessionStatus: session.status,
+    sessionProvenanceRevision: session.provenanceRevision,
+    sourceUpdatedAt: session.updatedAt,
+    sourceDigest: stats.sourceDigest,
+    savedTrackCount: entries.length,
+    activeTrackCount: activeQueueSessionEntries(session).length,
+    completedTrackCount: session.completed.filter((entry) => !session.removed.some((removed) => removed.id === entry.id)).length,
+    removedTrackCount: session.removed.length,
+    simulationTrackCount: entries.filter((entry) => isSimulationTrack(entry)).length,
+    showLogEventCount: normalizeQueueShowLog(session.showLog).length,
+  };
+}
+
 export async function getPublicQueueSnapshot(sessionId?: string, identity?: { submitterToken?: string | null; tiktokHandle?: string | null; contactEmail?: string | null; artist?: string | null }): Promise<QueuePublicSnapshot> {
   const store = await readStore();
   const found = findSession(store, sessionId) ?? (sessionId ? findSession(store) : null);
@@ -4094,6 +4594,63 @@ export async function getPublicQueueSnapshot(sessionId?: string, identity?: { su
     };
   }
   return { revision: store.revision, sessionActive: normalized.sessionId === store.activeSessionId, session: summarizeSession(normalized), status: normalized.publicStatus, queue: normalized.queue.map(toPublicQueueTrack), completed: normalized.completed.slice(0, 10).map(toPublicQueueTrack), nowPlaying: normalized.loadedTrack ? toPublicQueueTrack(normalized.loadedTrack) : null, upNext: normalized.nextInLineTrack ? toPublicQueueTrack(normalized.nextInLineTrack) : null, submitterStatus: publicSubmitterStatus(normalized, identity) };
+}
+
+function isPublicSimulationTrack(track: QueuePublicTrack | null | undefined): boolean {
+  return track?.isSimulation === true;
+}
+
+export function sanitizeQueueSnapshotForPublic(snapshot: QueuePublicSnapshot): QueuePublicSnapshot {
+  const session = snapshot.session;
+  if (!session) return { ...snapshot, suppressPublicLiveStatus: false };
+  const active = session.status !== "archived" && session.broadcastPhase !== "ended";
+  if (session.purpose !== "live_broadcast") {
+    return {
+      revision: snapshot.revision,
+      sessionActive: false,
+      suppressPublicLiveStatus: active,
+      session: null,
+      status: {
+        isOpen: false,
+        activeCount: 0,
+        acceptedCount: 0,
+        estimatedRuntimeSeconds: 0,
+        capacity: snapshot.status.capacity,
+        isFull: false,
+        pressure: "low",
+      },
+      queue: [],
+      completed: [],
+      nowPlaying: null,
+      upNext: null,
+      submitterStatus: null,
+      playbackTiming: null,
+      wheelTiming: null,
+    };
+  }
+
+  const queue = snapshot.queue.filter((track) => !isPublicSimulationTrack(track));
+  const completed = snapshot.completed.filter((track) => !isPublicSimulationTrack(track));
+  const nowPlaying = isPublicSimulationTrack(snapshot.nowPlaying) ? null : snapshot.nowPlaying ?? null;
+  const upNext = isPublicSimulationTrack(snapshot.upNext) ? null : snapshot.upNext ?? null;
+  const submitterStatus = snapshot.submitterStatus
+    ? { ...snapshot.submitterStatus, submitted: snapshot.submitterStatus.submitted.filter((track) => !isPublicSimulationTrack(track)) }
+    : snapshot.submitterStatus ?? null;
+  return {
+    ...snapshot,
+    suppressPublicLiveStatus: false,
+    session: {
+      ...session,
+      nextInLineTrackId: upNext?.id ?? null,
+      loadedTrackId: nowPlaying?.id ?? null,
+    },
+    queue,
+    completed,
+    nowPlaying,
+    upNext,
+    submitterStatus,
+    playbackTiming: nowPlaying ? snapshot.playbackTiming ?? null : null,
+  };
 }
 
 async function requestPriorityUpgradePlaceholderMutation(id: string): Promise<QueuePublicTrack | null> {

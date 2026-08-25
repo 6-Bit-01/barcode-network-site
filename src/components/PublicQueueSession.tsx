@@ -1,4 +1,4 @@
-/* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps, @next/next/no-img-element */
+/* eslint-disable react-hooks/exhaustive-deps, @next/next/no-img-element */
 "use client";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -10,6 +10,7 @@ import { externalLinks } from "@/content";
 import { estimateExistingTrackTiming, estimatePriorityImpact } from "@/lib/queue-timing";
 import { clearPriorityCheckoutOwnerToken, getOrCreatePriorityCheckoutOwnerToken, getPriorityCheckoutOwnerToken } from "@/lib/priority-checkout-client";
 import { clearSignalHoldCheckoutOwnerToken, getOrCreateSignalHoldCheckoutOwnerToken, getSignalHoldCheckoutOwnerToken } from "@/lib/signal-hold-checkout-client";
+import { broadcastArchiveArtistHref } from "@/lib/broadcast-archive";
 import { confirmedPriorityPurchaseDisplay, formatRuntime, isSignalHoldCheckoutNearFront, PRIORITY_DISCLOSURE_TEXT, PRIORITY_GIFT_ATTRIBUTION_DISCLOSURE_TEXT, PRIORITY_GIFT_ATTRIBUTION_VERSION, PRIORITY_GIFT_NAME_MAX_LENGTH, PRIORITY_TERMS_VERSION, SIGNAL_HOLD_DISCLOSURE_TEXT, SIGNAL_HOLD_NEXT_TWO_UNAVAILABLE_MESSAGE, SIGNAL_HOLD_TERMS_VERSION } from "@/lib/queue-types";
 import { displayEstimate, buildQueueTimingDisplay, priorityDisplayFromImpact, publicTrackDurationLabel, queueTimingInputFromPublicSnapshot, type QueueTimingDisplaySummary, type PriorityTimingDisplay } from "@/lib/queue-timing-display";
 import type { QueuePublicSnapshot, QueuePublicTrack } from "@/lib/queue-types";
@@ -198,7 +199,7 @@ function sourceTypeLabel(track: QueuePublicTrack): string {
   return track.sourceType ? track.sourceType.toUpperCase() : "Track link";
 }
 
-export function PublicQueueSession({ sessionId }: { sessionId: string }) {
+export function PublicQueueSession({ sessionId, snapshotEndpoint = "/api/queue" }: { sessionId: string; snapshotEndpoint?: string }) {
   const [snapshot, setSnapshot] = useState<QueuePublicSnapshot | null>(null);
   const { streamUrl } = useLiveStatus();
   const [submitOpen, setSubmitOpen] = useState(false);
@@ -341,7 +342,9 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   async function load() {
     const params = new URLSearchParams({ sessionId });
     if (submitterToken) params.set("submitterToken", submitterToken);
-    const res = await fetch(`/api/queue?${params.toString()}`, { cache: "no-store" });
+    const endpoint = new URL(snapshotEndpoint, window.location.origin);
+    params.forEach((value, key) => endpoint.searchParams.set(key, value));
+    const res = await fetch(`${endpoint.pathname}${endpoint.search}`, { cache: "no-store" });
     if (res.ok) {
       const next = await res.json() as QueuePublicSnapshot;
       captureTrackRects();
@@ -363,7 +366,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
     if (signalHoldResult === "cancelled") setCheckoutNotice("Signal Hold payment was not completed. Your track remains unprotected.");
     if (signalHoldResult === "processing") setCheckoutNotice("Checkout started. Signal Hold is not active yet.");
   }, []);
-  useEffect(() => startSessionBoundPolling({ intervalMs: PUBLIC_QUEUE_POLL_INTERVAL_MS, poll: load }), [sessionId, submitterToken]);
+  useEffect(() => startSessionBoundPolling({ intervalMs: PUBLIC_QUEUE_POLL_INTERVAL_MS, poll: load }), [sessionId, snapshotEndpoint, submitterToken]);
   useEffect(() => { const interval = window.setInterval(() => setClockNow(Date.now()), 1_000); return () => window.clearInterval(interval); }, []);
   useEffect(() => {
     if (!snapshot) return;
@@ -596,6 +599,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
           <p className="text-xs uppercase tracking-[0.35em] text-muted">{"//"} BARCODE RADIO</p>
           <h1 className="mt-3 text-3xl font-bold tracking-tight text-foreground sm:text-4xl"><span className="text-accent text-glow">Broadcast</span> Queue</h1>
           <p className="mt-2 text-sm text-muted">Current BARCODE Radio session monitor.</p>
+          <div className="mt-4 flex flex-wrap gap-2"><a href="/radio/deck" className="border border-[#ffaa00]/55 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background">Open Broadcast Deck</a><a href="/radio/archive" className="border border-cyan-200/45 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-cyan-200 hover:bg-cyan-200 hover:text-background">Broadcast Archive</a></div>
         </section>
         {sponsorBreakRunning && <section className="sponsor-mode-banner border border-[#ffaa00]/45 bg-[#ffaa00]/8 p-3" role="status" aria-live="polite"><p className="text-xs font-bold uppercase tracking-[0.34em] text-[#ffaa00]">A WORD FROM OUR SPONSOR</p><p className="mt-1 text-sm text-muted">The 10:30 sponsor break is in progress. The queue, submissions, status, and navigation stay live.</p></section>}
         {showWatchLiveLink && (
@@ -612,7 +616,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
         </div>
       )}
         {checkoutNotice && <div className="border border-[#ffaa00]/40 bg-[#ffaa00]/5 p-3 text-sm text-[#ffaa00]">{checkoutNotice}</div>}
-        {acceptedReceipt && <div className="relative z-20 border border-accent/80 bg-accent/15 p-3 text-sm text-foreground shadow-[0_0_30px_rgba(255,0,0,0.18)]"><div className="flex items-start justify-between gap-3"><div><p className="font-bold uppercase tracking-[0.18em] text-accent">Submission accepted</p><p className="mt-1">{acceptedReceipt.artist} — {acceptedReceipt.title}</p><p className="text-xs text-muted">{acceptedReceipt.sessionTitle} · {acceptedReceipt.sessionDate}</p><p className="text-xs">Confirmation: {acceptedReceipt.trackCode}</p></div><button type="button" onClick={() => setAcceptedReceipt(null)} className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">Close</button></div></div>}
+        {acceptedReceipt && <div className="relative z-20 border border-accent/80 bg-accent/15 p-3 text-sm text-foreground shadow-[0_0_30px_rgba(255,0,0,0.18)]"><div className="flex items-start justify-between gap-3"><div><p className="font-bold uppercase tracking-[0.18em] text-accent">Submission accepted</p><p className="mt-1">{acceptedReceipt.artist} — {acceptedReceipt.title}</p><p className="text-xs text-muted">{acceptedReceipt.sessionTitle} · {acceptedReceipt.sessionDate}</p><p className="text-xs">Confirmation: {acceptedReceipt.trackCode}</p><a href="/radio/deck" className="mt-3 inline-flex border border-[#ffaa00]/60 bg-[#ffaa00]/10 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background">Follow the show on the Broadcast Deck</a></div><button type="button" onClick={() => setAcceptedReceipt(null)} className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">Close</button></div></div>}
 
         <SessionPhasePanel snapshot={snapshot} timingSummary={timingSummary} submissionsOpen={isOpen} canSubmit={canSubmitFromHud} isBroadcastActive={isBroadcastActive} />
 
@@ -772,8 +776,11 @@ function NavigationTransition({ label, detail, mode, kind }: PublicActionVariant
 function SourceArt({ track, className = "h-full w-full" }: { track: QueuePublicTrack | null; className?: string }) {
   const [failed, setFailed] = useState(false);
   const artworkUrl = track?.sourceArtworkUrl ?? null;
-  if (artworkUrl && !failed) return <img src={artworkUrl} alt="" className={`${className} object-cover`} onError={() => setFailed(true)} />;
-  return <div className={`${className} flex items-center justify-center bg-[radial-gradient(circle_at_center,rgba(255,0,0,0.25),transparent_60%)] text-4xl text-accent`}>▦</div>;
+  const artwork = artworkUrl && !failed
+    ? <img src={artworkUrl} alt="" className={`${className} object-cover`} onError={() => setFailed(true)} />
+    : <div className={`${className} flex items-center justify-center bg-[radial-gradient(circle_at_center,rgba(255,0,0,0.25),transparent_60%)] text-4xl text-accent`}>▦</div>;
+  if (!track) return artwork;
+  return <a href={broadcastArchiveArtistHref(track.submittedArtistName)} aria-label={`Open ${track.submittedArtistName} in the Broadcast Archive`} className="group relative block h-full w-full overflow-hidden">{artwork}<span className="absolute inset-x-0 bottom-0 bg-black/85 px-2 py-1 text-center text-[8px] font-bold uppercase tracking-[0.16em] text-cyan-200 opacity-90 transition group-hover:bg-cyan-200 group-hover:text-background">Artist Archive ↗</span></a>;
 }
 
 function tiktokHref(handle?: string | null): string | null { const cleaned = (handle ?? "").trim().replace(/^@+/, "").split(/[/?#]/)[0]?.replace(/[^a-zA-Z0-9._-]/g, ""); return cleaned ? `https://www.tiktok.com/@${cleaned}` : null; }

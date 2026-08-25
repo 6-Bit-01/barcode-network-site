@@ -11,6 +11,7 @@ Production: <https://www.barcode-network.com>
 | Public site | Next.js App Router under `src/app/` |
 | Shared content and public dossiers | `src/content.ts` |
 | Native Radio queue | Redis mutation authority plus private, revisioned Vercel Blob read/recovery snapshots in `src/lib/queue.ts` and `src/lib/queue-durable-snapshot.ts` |
+| Broadcast companion and public history | Live `/radio/deck`, separate post-show `/radio/archive`, and the sanitized queue history projection served by `/api/queue/stats` |
 | Queue uploads | Vercel Blob through `/api/queue/upload` |
 | Priority payments | Stripe checkout and webhook routes |
 | Queue, BNL, Journal, and dossier persistence | Upstash Redis |
@@ -22,6 +23,10 @@ Production: <https://www.barcode-network.com>
 The native queue exists and is tested, but native presentation remains quarantined unless `BARCODE_QUEUE_PRODUCTION_ENABLED` is exactly `true`. Until the owner approves the native cutover, operational Radio submission links and copy continue to point to Auxchord. When enabled, the server-side capability moves the Radio page, Footer, Terminal, and BNL public source context to the native `/queue` route; historical Auxchord records remain intact. Queue-derived BNL context has an additional session-level boundary: only a session explicitly marked `live_broadcast` can opt into `runtime_only`, `recap_approved`, or `public_copy_approved`. New rehearsals and legacy/unknown sessions remain private by default even when the native queue is publicly usable.
 
 Queue acceptance uses 44 show slots by default. A slot remains occupied when a real track moves from queued to Next In Line, loaded/Now Playing, or completed/played; removal frees it, while simulations and failed or rejected attempts never consume one. Queue writes share one serialized, revisioned Redis mutation boundary. Every successful mutation is copied to a private, checksummed Blob revision; public/admin polling reads that durable model without spending Redis commands. Redis quota failures therefore leave the last committed queue visible while mutations fail closed.
+
+The Broadcast Deck is the live show companion and links to, but does not embed, the separate Broadcast Archive. Public Archive history begins on 2026-08-24 and is rebuilt only from archived sessions explicitly marked `live_broadcast`; active shows remain on the Deck, and older shows are not automatically imported. Rehearsals, simulations, private upload URLs, payment state, moderation data, private contact details, and browser tokens remain outside the public projection. Submitted TikTok handles are attribution for who submitted a track, not verified identity or artist ownership.
+
+Authenticated operators can verify the same queue-to-companion pipeline at Admin → Queue Control → Private Broadcast Test. Rehearsal, simulation, internal-test, and legacy/unknown sessions remain public-dark: they cannot trigger public `Live Now`, appear in the public Deck or Archive, or accept public submissions and checkout starts. The private test surface selects one persisted session, reuses the production Deck and Archive components, and exposes a fresh queue-store revision/count/digest readback. Simulation tracks remain capacity-exempt but participate in rehearsal/test timing so the private run behaves like a real show. After the operator ends and archives the test session, its show and artist records become available only in that authenticated Archive Preview.
 
 `stream-engine/`, `discord-bot/`, and `_archive/` are historical references. They are not production services and do not define current queue contracts.
 

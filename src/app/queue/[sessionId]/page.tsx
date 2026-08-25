@@ -1,8 +1,10 @@
 /* eslint-disable react/jsx-no-comment-textnodes */
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { PublicQueueSession } from "@/components/PublicQueueSession";
-import { getPublicQueueSnapshot } from "@/lib/queue";
+import { COOKIE_NAME, verifyAdminToken } from "@/lib/auth";
+import { getPublicQueueSnapshot, sanitizeQueueSnapshotForPublic } from "@/lib/queue";
 
 export const metadata = {
   title: "BARCODE Radio Broadcast Queue | BARCODE Network",
@@ -10,7 +12,10 @@ export const metadata = {
 
 export default async function QueueSessionPage({ params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = await params;
-  const snapshot = await getPublicQueueSnapshot();
+  const token = (await cookies()).get(COOKIE_NAME)?.value;
+  const isAdmin = Boolean(token && await verifyAdminToken(token));
+  const rawSnapshot = await getPublicQueueSnapshot();
+  const snapshot = isAdmin ? rawSnapshot : sanitizeQueueSnapshotForPublic(rawSnapshot);
   if (!snapshot.session) {
     return (
       <main className="pt-14 min-h-screen">
@@ -53,7 +58,12 @@ export default async function QueueSessionPage({ params }: { params: Promise<{ s
   return (
     <main className="pt-14 min-h-screen">
       <section className="mx-auto max-w-6xl px-4 pb-8 pt-0 sm:px-6">
-        <PublicQueueSession sessionId={sessionId} />
+        <PublicQueueSession
+          sessionId={sessionId}
+          snapshotEndpoint={isAdmin && snapshot.session?.purpose !== "live_broadcast"
+            ? `/api/admin/queue/broadcast-preview?kind=snapshot&sessionId=${encodeURIComponent(sessionId)}`
+            : "/api/queue"}
+        />
       </section>
     </main>
   );

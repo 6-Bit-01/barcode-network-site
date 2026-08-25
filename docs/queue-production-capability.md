@@ -1,6 +1,6 @@
 # BARCODE queue production capability
 
-`BARCODE_QUEUE_PRODUCTION_ENABLED` is the server-only capability for native BARCODE Radio participation and the outer boundary for queue-derived public/BNL signals. It is necessary but no longer sufficient for BNL queue projection: each queue session also carries explicit purpose and BNL-publication provenance.
+`BARCODE_QUEUE_PRODUCTION_ENABLED` is the server-only capability for native BARCODE Radio participation and the outer boundary for queue-derived public/BNL signals. It is necessary but no longer sufficient for BNL queue projection: each queue session also carries an explicit purpose and one three-state BNL queue-access choice.
 
 ## Default-off behavior
 
@@ -101,29 +101,25 @@ Gift attribution remains admin-only while checkout is pending. After the verifie
 
 The foreground owner may replace its action row with the confirmed `from`/`for` thank-you for exactly three seconds using absolute server timestamps. It then resumes the live action rail; polling, refresh, and reconnect cannot restart the full interval. The safe public attribution is not added to the BNL queue projection, memory, dossiers, payment read models, or any new publication path.
 
-## Session provenance and BNL publication
+## Session provenance and BNL queue access
 
-Native queue visibility, payment, playback, and operator controls remain independent from BNL publication. Every session has:
+Native queue visibility, payment, playback, and operator controls remain independent from BNL access. Admin Show Management presents exactly three choices:
 
-- `purpose`: `rehearsal`, `live_broadcast`, `simulation`, `internal_test`, or the normalized safe legacy value `unknown`;
-- `bnlPublicationStatus`: `private`, `runtime_only`, `recap_approved`, or `public_copy_approved`;
-- `provenanceRevision`: `0` for normalized legacy state, `1` at explicit session creation, then incremented by each explicit admin change;
-- `provenanceUpdatedAt`: the timestamp of the latest explicit admin provenance action, or `null` for legacy/unknown state.
+| Admin choice | Who can read the sanitized queue | Where the data may be used |
+| --- | --- | --- |
+| No BNL queue access | Nobody through the BNL queue projection | Nowhere |
+| Private BNL queue access | The authenticated BNL service in owner/admin and private-test channels | Private test and operator output only |
+| Public BNL queue access | BNL and public read-model consumers | Public replies, the Broadcast Deck, and Broadcast Archive interactions when relevant |
 
-New sessions default to `rehearsal` + `private`. Stored sessions without provenance normalize to `unknown` + `private`. Rehearsal, simulation, internal-test, and unknown sessions are quarantined from every queue-derived BNL lane regardless of native queue visibility or any malformed stored publication value.
+Public access is available only for `live_broadcast`. Rehearsal, simulation, and internal-test sessions may use private access so the real queue-to-Deck-to-Archive pipeline can be verified without producing `Live Now`, public Deck output, or public Archive records. Legacy/unknown sessions remain no-access until an admin explicitly assigns a known purpose and access choice.
 
-Only `live_broadcast` sessions can use the publication levels:
+The persisted compatibility field remains `bnlPublicationStatus`: `private` means no access, `runtime_only` means private access, and both legacy `recap_approved` and `public_copy_approved` mean public access. Those storage values are not four different user choices and do not create separate recap or message permissions.
 
-| BNL publication status | Sanitized runtime context | Completed recap candidates | Generic queue public-copy candidates |
-| --- | --- | --- | --- |
-| `private` | No | No | No |
-| `runtime_only` | Yes | No | No |
-| `recap_approved` | Yes | Yes | No |
-| `public_copy_approved` | Yes | Yes | Yes |
+Private and public access expose the same explicit read-only operational queue DTO: sanitized session state, order and positions, Now Playing and Next In Line, completed/removed tracks, safe submitted artist/title/handle/link attribution, duration and timing state, Wheel state, operational Priority/Signal Hold state, bounded playback diagnostics, and the matching sanitized show-history projection. They never expose payment or checkout records, amounts/currency, contact email, submitter tokens, raw upload locations or file metadata, legal-acceptance records, private notes, moderation flags, browser capabilities, or admin-only fields.
 
-Broadcast Memory and dossier-seed lanes remain empty and independently controlled at every level. Session approval never enables bot memory, bot queue observation, Source File creation, dossier publication, payment identity, Discord identity linking, queue mutation, or any bot/public gate. Public dossier summaries in the read model remain an independent website source and are not evidence that an unpublished queue session was projected.
+The existing `BNL_API_KEY` authenticates private reads at `/api/bnl/read-model`. Anonymous or invalid-key requests fail closed for a private session. Private responses are `no-store`, `noindex`, and may be consumed only by the bot's `sealed_test` and `internal_controlled` channel policies; public, show-day, recap, Broadcast Memory, dossier, and publication paths strip or reject private queue data. Public responses remain cacheable and contain no simulation tracks.
 
-Admin Show Management records the purpose and BNL publication level at creation and permits an explicit later change, including for an archive. Reading or archiving a session does not upgrade it. Existing rehearsal rows are not silently approved or rewritten into broadcast provenance.
+Every access mode is read-only. BNL never receives queue mutation, playback control, automatic memory, relationship, Source File, canon, or dossier-write authority. Reading or archiving a session does not upgrade its access choice.
 
 ## Vercel rollout procedure
 
@@ -132,11 +128,12 @@ Admin Show Management records the purpose and BNL publication level at creation 
 3. Set the value to exactly `true` when the owner approves production queue signals.
 4. Redeploy the site so server-only code reads the new environment value.
 5. Confirm `/api/admin/live` and `/api/bnl/read-model` report `capabilities.queueProduction=true`.
-6. Confirm a rehearsal/private session reports queue projection unavailable with no queue-derived artist, runtime, recap, or public-copy lane items while `/queue` remains usable.
-7. If the owner explicitly approves a live-broadcast publication level, confirm `/api/bnl/read-model` exposes only the mapped sanitized lanes.
-8. Confirm `/radio`, the Footer, and Terminal `RADIO` route submission to `/queue` as internal links.
-9. Confirm `/queue` shows an honest closed/waiting state when no session is open and the active session when one is open.
-10. Keep the bot's separate queue-production gate disabled until the site cutover is verified and the owner explicitly approves sanitized bot context.
+6. Confirm a rehearsal with no BNL access returns `accessScope=none`; then choose Private BNL queue access and confirm an anonymous request still returns none while an authenticated request returns `accessScope=private` with simulation/timing evidence.
+7. Confirm the private test appears only in the authenticated Deck and Archive Preview, never in public `Live Now`, the public Deck, or the public Broadcast Archive.
+8. If the owner selects Public BNL queue access for a live broadcast, confirm `/api/bnl/read-model` returns `accessScope=public` without a credential and excludes simulations and every forbidden sensitive field.
+9. Confirm `/radio`, the Footer, and Terminal `RADIO` route submission to `/queue` as internal links.
+10. Confirm `/queue` shows an honest closed/waiting state when no session is open and the active session when one is open.
+11. Keep the bot's separate queue-production gate disabled until the site and private-channel boundary are verified and the owner explicitly approves bot queue context.
 
 ## Rollback
 

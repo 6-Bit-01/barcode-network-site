@@ -239,6 +239,40 @@ test("the private Broadcast Test surface is authenticated, noindexed, and reuses
   assert.match(archive, /refreshEndpoint/);
 });
 
+test("the active private queue dashboard opens that session's Deck Preview directly", () => {
+  const queuePage = fs.readFileSync(path.join(projectRoot, "src/app/admin/queue/page.tsx"), "utf8");
+  const dashboard = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioQueueControl.tsx"), "utf8");
+
+  assert.doesNotMatch(queuePage, /href="\/admin\/queue\/broadcast-test"/);
+  assert.match(dashboard, /state\.session\.purpose === "rehearsal"/);
+  assert.match(dashboard, /state\.session\.purpose === "simulation"/);
+  assert.match(dashboard, /state\.session\.purpose === "internal_test"/);
+  assert.match(dashboard, /broadcast-test\?sessionId=\$\{encodeURIComponent\(state\.session\.sessionId\)\}&surface=deck/);
+  assert.match(dashboard, /Open Test Broadcast Deck/);
+  assert.match(dashboard, /target="_blank"/);
+});
+
+test("BNL controls expose exactly no access, private access, and public access in plain language", () => {
+  const showManagement = fs.readFileSync(path.join(projectRoot, "src/components/AdminShowManagement.tsx"), "utf8");
+  const provenance = fs.readFileSync(path.join(projectRoot, "src/components/AdminQueueSessionProvenance.tsx"), "utf8");
+  const queueArchive = fs.readFileSync(path.join(projectRoot, "src/components/AdminQueueArchive.tsx"), "utf8");
+
+  for (const source of [showManagement, provenance]) {
+    assert.match(source, /No BNL queue access/);
+    assert.match(source, /Private BNL queue access/);
+    assert.match(source, /Public BNL queue access/);
+    assert.doesNotMatch(source, /show recap|sanitized public message use|Runtime context only|Recap candidates approved|Public copy approved/i);
+  }
+  assert.match(showManagement, /BNL queue access/);
+  assert.match(provenance, /BNL queue access/);
+  assert.match(showManagement, /Tests can use private BNL access without appearing in public BNL outputs or the public Broadcast Archive/);
+  assert.match(provenance, /Payment, checkout, contact, upload, legal-acceptance, and admin-only fields are never included/);
+  assert.match(queueArchive, /No BNL access/);
+  assert.match(queueArchive, /Private BNL access/);
+  assert.match(queueArchive, /Public BNL access/);
+  assert.doesNotMatch(queueArchive, /BNL \{session\.bnlPublicationStatus\}/);
+});
+
 test("private queue intake and paid checkout routes require authenticated admin access", () => {
   const publicQueueRoute = fs.readFileSync(path.join(projectRoot, "src/app/api/queue/route.ts"), "utf8");
   const uploadRoute = fs.readFileSync(path.join(projectRoot, "src/app/api/queue/upload/route.ts"), "utf8");

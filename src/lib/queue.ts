@@ -51,6 +51,7 @@ import {
   normalizeQueueSessionBnlPublicationStatus,
   normalizeQueueSessionPurpose,
   normalizePriorityGiftDisplayName,
+  queueSessionBnlPublicationAccess,
   normalizeTier,
   parseTikTokVideoUrl,
 } from "./queue-types";
@@ -79,6 +80,7 @@ import type {
   PriorityLegalAcceptanceInput,
   SignalHoldLegalAcceptanceInput,
   QueueSession,
+  QueueSessionBnlAccessLevel,
   QueueSessionBnlPublicationStatus,
   QueueSessionPurpose,
   QueueSessionStatus,
@@ -4345,10 +4347,13 @@ function buildQueueStatsProjection(input: {
   revision: number;
   activeSessionId?: string | null;
   submitterToken?: string | null;
-}, selectedSessions: QueueSession[], includeSimulationTracks: boolean): QueuePublicStats {
+}, selectedSessions: QueueSession[], includeSimulationTracks: boolean | ((session: QueueSession) => boolean)): QueuePublicStats {
   const eligibleSessions: QueuePublicStatsSession[] = selectedSessions
     .map((session) => {
-      const records = publicStatsRecordsForSession(session, includeSimulationTracks);
+      const includeSessionSimulationTracks = typeof includeSimulationTracks === "function"
+        ? includeSimulationTracks(session)
+        : includeSimulationTracks;
+      const records = publicStatsRecordsForSession(session, includeSessionSimulationTracks);
       return { session, records, events: publicHistoryEventsForSession(session, records) };
     })
     .sort((left, right) => publicStatsSessionTime(right.session) - publicStatsSessionTime(left.session));
@@ -4439,6 +4444,40 @@ export async function getPublicQueueStats(submitterToken?: string | null): Promi
     sessions: store.sessions.map((session) => normalizeSession(session)),
     submitterToken,
   });
+}
+
+export type QueueBnlStats = Omit<QueuePublicStats, "source" | "visibility"> & {
+  source: "queue_bnl_history_projection";
+  visibility: "bnl_private_safe" | "public_safe";
+  accessScope: Exclude<QueueSessionBnlAccessLevel, "none">;
+};
+
+export async function getQueueBnlStats(
+  accessScope: Exclude<QueueSessionBnlAccessLevel, "none">,
+): Promise<QueueBnlStats> {
+  const store = await readStore();
+  const selectedSessions = store.sessions
+    .map((session) => normalizeSession(session))
+    .filter((session) => {
+      const access = queueSessionBnlPublicationAccess(session);
+      if (accessScope === "public") return access.accessLevel === "public";
+      return access.accessLevel === "private" || access.accessLevel === "public";
+    });
+  const projection = buildQueueStatsProjection(
+    {
+      revision: store.revision,
+      activeSessionId: store.activeSessionId,
+    },
+    selectedSessions,
+    (session) => accessScope === "private"
+      && queueSessionBnlPublicationAccess(session).accessLevel === "private",
+  );
+  return {
+    ...projection,
+    source: "queue_bnl_history_projection",
+    visibility: accessScope === "private" ? "bnl_private_safe" : "public_safe",
+    accessScope,
+  };
 }
 
 export interface QueueAdminPreviewReadback {

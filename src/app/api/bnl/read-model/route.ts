@@ -16,6 +16,7 @@ import type {
   PublicPageVisibility,
 } from "@/content";
 import { getDatabaseAggregateStats } from "@/lib/database-stats";
+import { authenticateBNLJournalRequest } from "@/lib/bnl-journal-contract";
 import {
   getDossierPrimaryLink,
   getDossierPublicLinks,
@@ -29,7 +30,7 @@ import {
   isHiddenFromBnl,
   isPublicDatabasePageVisible,
 } from "@/lib/database-visibility";
-import { getRadioQueueState, toPublicQueueTrack } from "@/lib/queue";
+import { getQueueBnlStats, getRadioQueueState, toPublicQueueTrack } from "@/lib/queue";
 import {
   isQueueProductionEnabled,
   queueProductionCapability,
@@ -38,6 +39,7 @@ import { getRadioSubmissionRouting } from "@/lib/radio-submission-routing";
 import type {
   QueueEntry,
   QueueLane,
+  QueuePlaybackDiagnostics,
   QueuePublicTrack,
   QueueSessionBnlPublicationAccess,
   QueueSourceType,
@@ -47,7 +49,8 @@ import { queueSessionBnlPublicationAccess } from "@/lib/queue-types";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const CACHE_CONTROL = "public, max-age=15, s-maxage=30";
+const PUBLIC_CACHE_CONTROL = "public, max-age=15, s-maxage=30";
+const PRIVATE_CACHE_CONTROL = "private, no-store, max-age=0";
 const MAX_ARTISTS = 25;
 const MAX_TRACKS_PER_ARTIST = 5;
 
@@ -57,7 +60,7 @@ type BnlTrackContextRole = "runtime" | "recap_candidate";
 
 type BnlTrackContext = {
   source: "queue_public_snapshot";
-  visibility: "public";
+  visibility: "private" | "public";
   contextRole: BnlTrackContextRole;
   status: BnlReadModelTrackStatus;
   memoryDefault: "do_not_store" | "recap_candidate_only";
@@ -84,7 +87,7 @@ type BnlReadModelArtist = {
   trackStatusCounts: BnlArtistTrackStatusCounts;
   bnlContext: {
     source: "queue_public_snapshot";
-    visibility: "public";
+    visibility: "private" | "public";
     surfaceType: "queue_derived_artist_surface";
     profileStatus: "not_profile";
     identityStatus: "not_discord_or_account_identity";
@@ -98,6 +101,7 @@ type BnlQueueTrack = Pick<
   | "id"
   | "submittedArtistName"
   | "submittedSongTitle"
+  | "collaboratorNames"
   | "detectedArtistName"
   | "detectedSongTitle"
   | "providerTitle"
@@ -107,20 +111,53 @@ type BnlQueueTrack = Pick<
   | "estimatedDurationSeconds"
   | "detectedDurationSeconds"
   | "durationIsEstimate"
+  | "durationSource"
   | "sourceArtworkUrl"
   | "publicSourceUrl"
   | "tiktokHandle"
-  | "priorityUpgradeRequested"
-  | "priorityUpgradeStatus"
 > & {
+  stage: BnlReadModelTrackStatus | "removed" | "spotlight" | "loaded";
+  queuePosition: number | null;
+  storedStatus: QueueEntry["status"];
+  submittedAt: string;
+  playedAt: string | null;
+  completedAt: string | null;
+  removedAt: string | null;
+  restoredAt: string | null;
+  playback: {
+    outcome: QueueEntry["playbackOutcome"] | null;
+    endedNaturally: boolean | null;
+    earlyCutoff: boolean | null;
+    endPositionSeconds: number | null;
+    observedDurationSeconds: number | null;
+    issueCode: QueueEntry["playbackIssueCode"] | null;
+  };
+  priority: {
+    active: boolean;
+    paused: boolean;
+  };
+  signalHold: {
+    protected: boolean;
+    state: "none" | "active" | "fulfilled" | "expired";
+    applicationCount: number;
+    lastAppliedAt: string | null;
+    priorityRelinquishedAt: string | null;
+  };
+  isSimulation: boolean;
   bnlContext: BnlTrackContext;
 };
 
-function bnlTrackContext(status: BnlReadModelTrackStatus): BnlTrackContext {
+type BnlQueueTrackStage = BnlQueueTrack["stage"];
+type BnlQueueAccessScope = "none" | "private" | "public";
+
+function bnlTrackContext(
+  status: BnlReadModelTrackStatus,
+  accessScope: Exclude<BnlQueueAccessScope, "none">,
+): BnlTrackContext {
   const completed = status === "completed";
   return {
     source: "queue_public_snapshot",
-    visibility: "public",
+    visibility: accessScope,
     contextRole: completed ? "recap_candidate" : "runtime",
     status,
     memoryDefault: completed ? "recap_candidate_only" : "do_not_store",
@@ -130,15 +167,31 @@ function bnlTrackContext(status: BnlReadModelTrackStatus): BnlTrackContext {
   };
 }
 
-function publicTrack(
-  track: QueuePublicTrack | null | undefined,
-  status: BnlReadModelTrackStatus,
+function safeSignalHoldState(entry: QueueEntry): BnlQueueTrack["signalHold"]["state"] {
+  if (entry.signalHoldStatus === "active") return "active";
+  if (entry.signalHoldStatus === "fulfilled") return "fulfilled";
+  if (entry.signalHoldStatus === "expired") return "expired";
+  return "none";
+}
+
+function operationalTrack(
+  entry: QueueEntry | null | undefined,
+  stage: BnlQueueTrackStage,
+  accessScope: Exclude<BnlQueueAccessScope, "none">,
+  queuePosition: number | null = null,
 ): BnlQueueTrack | null {
-  if (!track) return null;
+  if (!entry) return null;
+  const track = toPublicQueueTrack(entry);
+  const contextStatus: BnlReadModelTrackStatus = stage === "removed" || stage === "spotlight" || stage === "loaded"
+    ? entry.playbackOutcome || entry.status === "completed" || entry.status === "played"
+      ? "completed"
+      : "queued"
+    : stage;
   return {
     id: track.id,
     submittedArtistName: track.submittedArtistName,
     submittedSongTitle: track.submittedSongTitle,
+    collaboratorNames: track.collaboratorNames ?? null,
     detectedArtistName: track.detectedArtistName ?? null,
     detectedSongTitle: track.detectedSongTitle ?? null,
     providerTitle: track.providerTitle ?? null,
@@ -148,19 +201,49 @@ function publicTrack(
     estimatedDurationSeconds: track.estimatedDurationSeconds,
     detectedDurationSeconds: track.detectedDurationSeconds ?? null,
     durationIsEstimate: track.durationIsEstimate,
+    durationSource: track.durationSource,
     sourceArtworkUrl: track.sourceArtworkUrl ?? null,
     publicSourceUrl: track.publicSourceUrl ?? null,
     tiktokHandle: track.tiktokHandle ?? null,
-    priorityUpgradeRequested: track.priorityUpgradeRequested === true,
-    priorityUpgradeStatus: track.priorityUpgradeStatus ?? "none",
-    bnlContext: bnlTrackContext(status),
+    stage,
+    queuePosition,
+    storedStatus: entry.status,
+    submittedAt: entry.createdAt,
+    playedAt: entry.playedAt ?? null,
+    completedAt: entry.completedAt ?? null,
+    removedAt: entry.removedAt ?? null,
+    restoredAt: entry.restoredAt ?? null,
+    playback: {
+      outcome: entry.playbackOutcome ?? null,
+      endedNaturally: entry.playbackEndedNaturally ?? null,
+      earlyCutoff: entry.playbackEarlyCutoff ?? null,
+      endPositionSeconds: entry.playbackEndPositionSeconds ?? null,
+      observedDurationSeconds: entry.playbackObservedDurationSeconds ?? null,
+      issueCode: entry.playbackIssueCode ?? null,
+    },
+    priority: {
+      active: (entry.lane ?? "regular") === "priority",
+      paused: Boolean(entry.priorityPausedAt),
+    },
+    signalHold: {
+      protected: entry.signalHoldStatus === "active",
+      state: safeSignalHoldState(entry),
+      applicationCount: Math.max(0, Math.floor(entry.signalHoldApplicationCount ?? 0)),
+      lastAppliedAt: entry.signalHoldAppliedAt ?? null,
+      priorityRelinquishedAt: entry.signalHoldPriorityRelinquishedAt ?? null,
+    },
+    isSimulation: track.isSimulation === true,
+    bnlContext: bnlTrackContext(contextStatus, accessScope),
   };
 }
 
-function isRealQueueEntry(
+function isBnlQueueEntry(
   entry: QueueEntry | null | undefined,
+  includeSimulationTracks: boolean,
 ): entry is QueueEntry {
-  if (!entry || entry.isTestTrack === true) return false;
+  if (!entry) return false;
+  if (includeSimulationTracks) return true;
+  if (entry.isTestTrack === true) return false;
   if (entry.note?.includes("[QUEUE SIMULATION TRACK]") === true) return false;
   if (entry.artist.startsWith("SIM ") || entry.title.startsWith("SIM "))
     return false;
@@ -184,88 +267,153 @@ function disabledQueueProjection() {
     available: false,
     reason: "queue_production_disabled",
     message:
-      "BARCODE Radio queue production signals are disabled; testing queue data is unavailable to the BNL public read model.",
+      "BARCODE Radio queue production signals are disabled; queue data is unavailable to BNL.",
   };
 }
 
-function unpublishedQueueProjection(access: QueueSessionBnlPublicationAccess) {
+function unavailableQueueProjection() {
   return {
     available: false,
-    reason: access.reason,
-    message:
-      "The current BARCODE Radio session has not authorized queue-derived BNL context. Native queue participation remains independent.",
-    publication: access,
+    reason: "queue_data_unavailable",
+    message: "No public BNL queue data is available.",
   };
 }
 
-async function readPublicLiveQueueForBnl() {
+function safePlaybackDiagnostics(
+  diagnostics: QueuePlaybackDiagnostics | null | undefined,
+) {
+  if (!diagnostics) return null;
+  return {
+    schemaVersion: diagnostics.schemaVersion,
+    currentTrackId: diagnostics.currentTrackId,
+    lifecycleState: diagnostics.lifecycleState,
+    lastEventAt: diagnostics.lastEventAt,
+    lastErrorCode: diagnostics.lastErrorCode,
+    events: diagnostics.events.slice(-20).map((event) => ({
+      sequence: event.sequence,
+      trackId: event.trackId,
+      provider: event.provider,
+      eventType: event.eventType,
+      lifecycleState: event.lifecycleState,
+      observedAt: event.observedAt,
+      currentTimeSeconds: event.currentTimeSeconds,
+      durationSeconds: event.durationSeconds,
+      readyState: event.readyState,
+      networkState: event.networkState,
+      errorCode: event.errorCode,
+    })),
+  };
+}
+
+async function readQueueForBnl(authenticated: boolean) {
   const state = await getRadioQueueState();
   const publication = queueSessionBnlPublicationAccess(state.session);
-  if (!publication.runtimeContext) {
+  const accessScope: BnlQueueAccessScope = publication.accessLevel === "public"
+    ? "public"
+    : publication.accessLevel === "private" && authenticated
+      ? "private"
+      : "none";
+  if (!publication.queueReadable) {
     return {
-      queue: unpublishedQueueProjection(publication),
+      accessScope,
+      queue: unavailableQueueProjection(),
       artists: [] as BnlReadModelArtist[],
       operatorQueue: null,
-      publication,
+      publication: null,
     };
   }
+  if (publication.accessLevel === "private" && !authenticated) {
+    return {
+      accessScope,
+      queue: unavailableQueueProjection(),
+      artists: [] as BnlReadModelArtist[],
+      operatorQueue: null,
+      publication: null,
+    };
+  }
+
+  const readableScope = accessScope as Exclude<BnlQueueAccessScope, "none">;
+  const includeSimulationTracks = readableScope === "private";
   const sessionEnded =
     state.session?.status === "archived" ||
     state.session?.broadcastPhase === "ended";
-  const realQueueEntries = sessionEnded
+  const queueEntries = sessionEnded
     ? []
-    : state.queue.filter(isRealQueueEntry);
-  const realCompletedEntries = publication.recapCandidates
-    ? state.history.filter(isRealQueueEntry).slice(0, 10)
-    : [];
-  const realRemovedCount = (state.removed ?? []).filter(
-    isRealQueueEntry,
-  ).length;
-  const realNowPlaying = !sessionEnded && isRealQueueEntry(state.nowPlaying)
+    : state.queue.filter((entry) => isBnlQueueEntry(entry, includeSimulationTracks));
+  const completedEntries = state.history.filter((entry) =>
+    isBnlQueueEntry(entry, includeSimulationTracks));
+  const removedEntries = (state.removed ?? []).filter((entry) =>
+    isBnlQueueEntry(entry, includeSimulationTracks));
+  const spotlightEntries = (state.spotlight ?? []).filter((entry) =>
+    isBnlQueueEntry(entry, includeSimulationTracks));
+  const nowPlayingEntry = !sessionEnded && isBnlQueueEntry(state.nowPlaying, includeSimulationTracks)
     ? state.nowPlaying
     : null;
-  const realUpNext = !sessionEnded && isRealQueueEntry(state.nextInLine)
+  const upNextEntry = !sessionEnded && isBnlQueueEntry(state.nextInLine, includeSimulationTracks)
     ? state.nextInLine
     : null;
   const activeIds = new Set<string>();
-  for (const entry of realQueueEntries) {
+  for (const entry of queueEntries) {
     if (entry.status === "queued" || entry.status === "playing")
       activeIds.add(entry.id);
   }
-  if (realNowPlaying) activeIds.add(realNowPlaying.id);
-  if (realUpNext) activeIds.add(realUpNext.id);
+  if (nowPlayingEntry) activeIds.add(nowPlayingEntry.id);
+  if (upNextEntry) activeIds.add(upNextEntry.id);
+  const readableActiveTrackIds = new Set(queueEntries.map((entry) => entry.id));
+  if (upNextEntry) readableActiveTrackIds.add(upNextEntry.id);
+  if (nowPlayingEntry) readableActiveTrackIds.add(nowPlayingEntry.id);
 
   const capacity =
     state.publicStatus?.capacity ?? state.session?.queueCapacity ?? 0;
   const activeCount = activeIds.size;
-  const publicQueueTracks = realQueueEntries.map(toPublicQueueTrack);
-  const publicCompletedTracks = realCompletedEntries.map(toPublicQueueTrack);
-  const nowPlaying = realNowPlaying ? toPublicQueueTrack(realNowPlaying) : null;
-  const upNext = realUpNext ? toPublicQueueTrack(realUpNext) : null;
+  const publicQueueTracks = queueEntries.map(toPublicQueueTrack);
+  const publicCompletedTracks = completedEntries.map(toPublicQueueTrack);
+  const nowPlaying = nowPlayingEntry ? toPublicQueueTrack(nowPlayingEntry) : null;
+  const upNext = upNextEntry ? toPublicQueueTrack(upNextEntry) : null;
 
   const queue = {
     available: true,
+    accessScope: readableScope,
+    mutationAllowed: false,
     publication,
+    revision: state.revision ?? 0,
     session: {
       sessionId: state.session?.sessionId ?? "",
       title: state.session?.title ?? "",
       showDate: state.session?.showDate ?? "",
       status: state.session?.status ?? "prepared",
       purpose: publication.purpose,
-      bnlPublicationStatus: publication.status,
+      bnlAccessLevel: publication.accessLevel,
       queueOpen: !sessionEnded && state.session?.queueOpen === true,
       broadcastPhase: state.session?.broadcastPhase ?? null,
+      broadcastStartedAt: state.session?.broadcastStartedAt ?? null,
+      showStarted: !sessionEnded && state.session?.showStarted === true,
       activeCount,
+      acceptedCount: state.session?.acceptedCount ?? activeCount + completedEntries.length + removedEntries.length,
       completedCount:
-        state.session?.completedCount ?? publicCompletedTracks.length,
-      removedCount: realRemovedCount,
+        state.session?.completedCount ?? completedEntries.length,
+      removedCount: removedEntries.length,
+      estimatedActiveRuntimeSeconds: state.session?.estimatedActiveRuntimeSeconds ?? 0,
+      completedRuntimeSeconds: state.session?.completedRuntimeSeconds ?? 0,
+      submissionClosureReason: state.session?.submissionClosureReason ?? null,
       wheelSpinsOwed: sessionEnded
         ? 0
         : state.session?.wheelSpinsOwed ?? 0,
+      nextNonPriorityLane: state.nextNonPriorityLane ?? state.session?.nextNonPriorityLane ?? "wheel",
+      autoRoutingPaused: state.autoRoutingPaused === true,
       priorityUpgradesEnabled:
         !sessionEnded && state.session?.priorityUpgradesEnabled === true,
       priorityUpgradeLabel:
         state.session?.priorityUpgradeLabel ?? "Priority Signal",
+      signalHoldEnabled:
+        !sessionEnded && state.session?.signalHoldEnabled === true,
+      signalHoldLabel: state.session?.signalHoldLabel ?? "Signal Hold",
+      sponsorBreak: {
+        status: state.session?.sponsorBreakStatus ?? "not_due",
+        mode: state.session?.sponsorBreakMode ?? "mid_show",
+        startedAt: state.session?.sponsorBreakStartedAt ?? null,
+        completedAt: state.session?.sponsorBreakCompletedAt ?? null,
+      },
     },
     status: {
       isOpen:
@@ -274,24 +422,45 @@ async function readPublicLiveQueueForBnl() {
       activeCount,
       capacity,
       pressure: pressureFor(activeCount, capacity),
+      estimatedRuntimeSeconds: state.publicStatus?.estimatedRuntimeSeconds ?? 0,
     },
-    nowPlaying: publicTrack(nowPlaying, "nowPlaying"),
-    upNext: publicTrack(upNext, "upNext"),
-    queue: publicQueueTracks
-      .map((track) => publicTrack(track, "queued"))
+    nowPlaying: operationalTrack(nowPlayingEntry, "nowPlaying", readableScope),
+    upNext: operationalTrack(upNextEntry, "upNext", readableScope, upNextEntry ? 1 : null),
+    queue: queueEntries
+      .map((entry, index) => operationalTrack(entry, "queued", readableScope, index + (upNextEntry ? 2 : 1)))
       .filter((track): track is BnlQueueTrack => Boolean(track)),
-    completed: publicCompletedTracks
-      .map((track) => publicTrack(track, "completed"))
+    completed: completedEntries
+      .map((entry) => operationalTrack(entry, "completed", readableScope))
       .filter((track): track is BnlQueueTrack => Boolean(track)),
+    removed: removedEntries
+      .map((entry) => operationalTrack(entry, "removed", readableScope))
+      .filter((track): track is BnlQueueTrack => Boolean(track)),
+    spotlight: spotlightEntries
+      .map((entry) => operationalTrack(entry, "spotlight", readableScope))
+      .filter((track): track is BnlQueueTrack => Boolean(track)),
+    wheelEligibleArtists: sessionEnded ? [] : (state.wheelEligibleArtists ?? []).flatMap((artist) => {
+      const trackIds = artist.trackIds.filter((trackId) => readableActiveTrackIds.has(trackId));
+      return trackIds.length > 0 ? [{
+        artist: artist.artist,
+        normalizedArtist: artist.normalizedArtist,
+        trackIds,
+        trackCount: trackIds.length,
+      }] : [];
+    }),
+    playbackTiming: state.playbackTiming ?? null,
+    wheelTiming: state.wheelTiming ?? null,
+    playbackDiagnostics: safePlaybackDiagnostics(state.playbackDiagnostics),
   };
 
   return {
+    accessScope,
     queue,
     artists: artistsFromTracks(
       nowPlaying,
       upNext,
       publicQueueTracks,
       publicCompletedTracks,
+      readableScope,
     ),
     operatorQueue: queue,
     publication,
@@ -338,6 +507,7 @@ function addArtistTrack(
   artists: Map<string, BnlReadModelArtist>,
   track: QueuePublicTrack | null | undefined,
   status: BnlReadModelTrackStatus,
+  accessScope: Exclude<BnlQueueAccessScope, "none">,
 ) {
   if (!track) return;
   const name = artistNameForTrack(track);
@@ -360,7 +530,7 @@ function addArtistTrack(
     },
     bnlContext: {
       source: "queue_public_snapshot",
-      visibility: "public",
+      visibility: accessScope,
       surfaceType: "queue_derived_artist_surface",
       profileStatus: "not_profile",
       identityStatus: "not_discord_or_account_identity",
@@ -394,12 +564,13 @@ function artistsFromTracks(
   upNext: QueuePublicTrack | null,
   queue: QueuePublicTrack[],
   completed: QueuePublicTrack[],
+  accessScope: Exclude<BnlQueueAccessScope, "none">,
 ): BnlReadModelArtist[] {
   const artists = new Map<string, BnlReadModelArtist>();
-  addArtistTrack(artists, nowPlaying, "nowPlaying");
-  addArtistTrack(artists, upNext, "upNext");
-  for (const track of queue) addArtistTrack(artists, track, "queued");
-  for (const track of completed) addArtistTrack(artists, track, "completed");
+  addArtistTrack(artists, nowPlaying, "nowPlaying", accessScope);
+  addArtistTrack(artists, upNext, "upNext", accessScope);
+  for (const track of queue) addArtistTrack(artists, track, "queued", accessScope);
+  for (const track of completed) addArtistTrack(artists, track, "completed", accessScope);
   return [...artists.values()].slice(0, MAX_ARTISTS);
 }
 
@@ -873,10 +1044,10 @@ function trackLaneItem(
     status,
     reason:
       lane === "recapCandidates"
-        ? "Completed public queue track; possible recap item only."
+        ? "Completed sanitized queue track available under public BNL access."
         : lane === "publicSafeCopyCandidates"
-          ? "Explicitly approved public queue copy candidate."
-          : "Public queue track; temporary runtime/site context only.",
+          ? "Sanitized queue track available under public BNL access."
+          : "Sanitized queue track; temporary read-only context only.",
   };
 }
 
@@ -910,7 +1081,7 @@ function buildOperatorLanes(
         source: "queue_public_snapshot",
         kind: "queue_status",
         value: queue.session.queueOpen,
-        reason: "Approved public queue runtime status.",
+        reason: "Authorized sanitized queue runtime status.",
       },
       {
         id: "session:status",
@@ -918,7 +1089,7 @@ function buildOperatorLanes(
         source: "queue_public_snapshot",
         kind: "session_status",
         value: queue.session.status,
-        reason: "Approved public session runtime status.",
+        reason: "Authorized sanitized session runtime status.",
       },
       {
         id: "session:broadcastPhase",
@@ -926,7 +1097,7 @@ function buildOperatorLanes(
         source: "queue_public_snapshot",
         kind: "broadcast_phase",
         value: queue.session.broadcastPhase,
-        reason: "Approved public broadcast phase runtime status.",
+        reason: "Authorized sanitized broadcast phase runtime status.",
       },
       {
         id: "queue:activeCount",
@@ -934,7 +1105,7 @@ function buildOperatorLanes(
         source: "queue_public_snapshot",
         kind: "queue_count",
         value: queue.session.activeCount,
-        reason: "Approved public count of active queue tracks.",
+        reason: "Authorized sanitized count of active queue tracks.",
       },
       {
         id: "priority:enabled",
@@ -942,7 +1113,7 @@ function buildOperatorLanes(
         source: "queue_public_snapshot",
         kind: "priority_signal_status",
         value: queue.session.priorityUpgradesEnabled,
-        reason: "Public feature availability label only, not a payment fact.",
+        reason: "Operational feature availability only, not a payment fact.",
       },
       {
         id: "priority:label",
@@ -950,7 +1121,7 @@ function buildOperatorLanes(
         source: "queue_public_snapshot",
         kind: "priority_signal_label",
         value: queue.session.priorityUpgradeLabel,
-        reason: "Public queue label only.",
+        reason: "Operational queue label only.",
       },
       {
         id: "wheel:spinsOwed",
@@ -958,7 +1129,7 @@ function buildOperatorLanes(
         source: "queue_public_snapshot",
         kind: "wheel_status",
         value: queue.session.wheelSpinsOwed,
-        reason: "Approved public queue runtime status.",
+        reason: "Authorized sanitized queue runtime status.",
       },
     );
   }
@@ -1027,8 +1198,10 @@ function buildOperatorLanes(
       "TikTok handle is not Discord identity",
       "Priority Signal status is not payment fact",
       "public dossier summary is not private dossier seed",
-      "website read model is public temporary context",
-      "simulation/test tracks are excluded",
+      "website queue read model is temporary context",
+      publication?.accessLevel === "private"
+        ? "simulation/test tracks are private test evidence only"
+        : "simulation/test tracks are excluded",
       "no private payment/contact/upload/admin data",
       ...(publication?.runtimeContext
         ? []
@@ -1037,87 +1210,116 @@ function buildOperatorLanes(
   };
 }
 
-const rules = {
-  allowedUse: [
-    "public-safe BNL context",
-    "research/reference use",
-    "public replies when relevant",
-    "queue/session awareness",
-    "artist/track awareness from public queue snapshot",
-    "simulation/test tracks are excluded from this read model",
-    "operatorLanes are hints, not actions",
-    "broadcastMemoryCandidates are drafts only",
-    "recapCandidates are possible recap items only",
-    "queue publication access and each track bnlContext constrain every use",
-    "dossierSeedCandidates are possible seeds only",
-    "temporaryRuntimeContext should not be stored",
-    "BNL must not treat this endpoint as private access",
-    "clearance labels are public-facing classification labels unless a dossier explicitly says otherwise",
-    "public database page visibility permits only the same public-safe summary fields",
-    "RESTRICTED means restricted-classified in universe, not private user data by default",
-    "public-page-visible dossiers are not automatically broadcast memory or dossier seeds",
-    "queue-derived artists are still not dossier records",
-  ],
-  disallowedUse: [
-    "private user identity",
-    "payment facts",
-    "Stripe/session details",
-    "contact emails",
-    "submitter tokens",
-    "private upload URLs",
-    "private queue notes",
-    "account profiles",
-    "Discord identity merging",
-    "automatic canon creation",
-    "using runtime-only queue context as recap, durable memory, or general public copy",
-    "using recap candidates as general public copy without public_copy_approved",
-    "inferring BNL publication consent from native queue visibility, playback, or archive state",
-    "claiming private access to restricted/internal dossier details",
-    "inferring hidden details from restricted/internal clearance labels",
-    "exposing admin notes, Discord IDs, payment/customer data, contact fields, upload fields, or private fields",
-    "claiming public dossiers exist when not implemented",
-    "treating admin simulation data as live/public context",
-  ],
-  sourceAuthority: {
-    queue: "public runtime snapshot with simulation/test filtering",
-    artists: "queue-derived public artist surface, not profiles",
-    dossiers:
-      "public-page-visible database dossier summaries with clearance labels preserved; hidden/private details are not exposed",
-    operatorLanes:
-      "deterministic public-safe lane hints, not automatic actions",
-    sourceContext: "public site context aligned with the production capability",
-    simulationData:
-      "BNL must treat this read model as live/public context only, not admin simulation data",
-  },
-};
+function rulesForAccess(accessScope: BnlQueueAccessScope) {
+  const privateAccess = accessScope === "private";
+  const publicAccess = accessScope === "public";
+  return {
+    allowedUse: [
+      "research/reference use",
+      ...(accessScope === "none"
+        ? []
+        : [
+            "read-only queue/session awareness",
+            "read-only artist/track awareness from the sanitized queue snapshot",
+            "read-only Broadcast Deck and Archive interaction",
+          ]),
+      ...(publicAccess
+        ? ["public replies and public show companion output when relevant"]
+        : []),
+      ...(privateAccess
+        ? ["owner/admin and private-test output only"]
+        : []),
+      "operatorLanes are hints, not actions",
+      "temporary queue context should not be stored",
+      "public database page visibility permits only the same public-safe summary fields",
+      "queue-derived artists are not dossier records",
+    ],
+    disallowedUse: [
+      "queue mutation or playback control",
+      "private user identity",
+      "payment, checkout, Stripe, amount, currency, or purchase-state facts",
+      "contact emails or submitter tokens",
+      "private upload URLs or file metadata",
+      "legal acceptance records",
+      "private queue notes, suspicious flags, or admin-only fields",
+      "account or Discord identity merging",
+      "automatic canon, memory, Source File, relationship, or dossier creation",
+      ...(privateAccess
+        ? [
+            "public replies from this private queue data",
+            "public Broadcast Deck or public Broadcast Archive output from this private queue data",
+            "public recap or announcement drafting from this private queue data",
+          ]
+        : []),
+      "inferring BNL access from native queue visibility, playback, or archive state",
+      "inferring hidden details from restricted/internal dossier clearance labels",
+    ],
+    sourceAuthority: {
+      queue: accessScope === "none"
+        ? "current session does not authorize BNL queue access"
+        : `${accessScope} read-only sanitized operational queue snapshot`,
+      artists: accessScope === "none"
+        ? "queue-derived artist surfaces unavailable"
+        : `queue-derived ${accessScope} artist surface, not profiles`,
+      dossiers:
+        "public-page-visible database dossier summaries with clearance labels preserved; hidden/private details are not exposed",
+      operatorLanes:
+        "deterministic read-only lane hints, never automatic actions or writes",
+      sourceContext: "public site context aligned with the production capability",
+      simulationData: privateAccess
+        ? "simulation/test tracks are private test evidence and must never enter public output"
+        : "simulation/test tracks are excluded from public BNL queue context",
+    },
+  };
+}
 
-export async function GET() {
+export async function GET(req?: Request) {
+  const authenticated = authenticateBNLJournalRequest(req?.headers.get("x-api-key") ?? null);
   const queueProductionEnabled = isQueueProductionEnabled();
   const liveQueue = queueProductionEnabled
-    ? await readPublicLiveQueueForBnl()
+    ? await readQueueForBnl(authenticated)
     : {
+        accessScope: "none" as const,
         queue: disabledQueueProjection(),
         artists: [] as BnlReadModelArtist[],
         operatorQueue: null,
         publication: null,
       };
+  const accessScope = liveQueue.accessScope;
+  const archive = queueProductionEnabled && accessScope !== "none"
+    ? { available: true, ...(await getQueueBnlStats(accessScope)) }
+    : {
+        available: false,
+        reason: queueProductionEnabled
+          ? "current_session_does_not_authorize_bnl_queue_access"
+          : "queue_production_disabled",
+      };
   const dossiers = publicDossiers();
-  const queueProjectionEnabled =
-    queueProductionEnabled && liveQueue.publication?.runtimeContext === true;
+  const privateResponse = accessScope === "private";
 
   return NextResponse.json(
     {
       ok: true,
       version: 1,
-      schemaRevision: "1.5",
+      schemaRevision: "1.6",
       generatedAt: new Date().toISOString(),
-      scope: "bnl_public_read_model",
+      scope: privateResponse ? "bnl_private_read_model" : "bnl_public_read_model",
       source: "barcode-network-site",
-      publicOnly: true,
-      capabilities: queueProductionCapability(),
+      publicOnly: !privateResponse,
+      accessScope,
+      mutationAllowed: false,
+      capabilities: {
+        ...queueProductionCapability(),
+        bnlQueueAccess: {
+          level: accessScope,
+          authenticatedPrivateAccess: privateResponse,
+          mutationAllowed: false,
+        },
+      },
       sections: {
         sourceContext: buildSourceContext(),
         queue: liveQueue.queue,
+        archive,
         artists: liveQueue.artists,
         dossiers,
         operatorLanes: queueProductionEnabled
@@ -1134,34 +1336,14 @@ export async function GET() {
               publicSafeCopyCandidates: [],
               doNotStore: ["queue production signals are disabled"],
             },
-        rules: queueProjectionEnabled
-          ? rules
-          : {
-              ...rules,
-              allowedUse: rules.allowedUse.filter(
-                (item) => !/queue|artist\/track/i.test(item),
-              ),
-              sourceAuthority: {
-                ...rules.sourceAuthority,
-                queue:
-                  queueProductionEnabled
-                    ? "current session provenance does not authorize queue-derived BNL context; native queue participation remains independent"
-                    : "production queue signals unavailable; testing queue sessions and tracks are not public runtime context",
-                artists:
-                  queueProductionEnabled
-                    ? "queue-derived artist surfaces unavailable without explicit session publication"
-                    : "queue-derived artist surfaces unavailable while production queue signals are disabled",
-                operatorLanes:
-                  queueProductionEnabled
-                    ? "queue-derived lane hints unavailable without explicit session publication; public dossier summaries remain independent"
-                    : "queue-derived lane hints unavailable while production queue signals are disabled",
-              },
-            },
+        rules: rulesForAccess(accessScope),
       },
     },
     {
       headers: {
-        "Cache-Control": CACHE_CONTROL,
+        "Cache-Control": privateResponse ? PRIVATE_CACHE_CONTROL : PUBLIC_CACHE_CONTROL,
+        Vary: "x-api-key",
+        ...(privateResponse ? { "X-Robots-Tag": "noindex, nofollow, noarchive" } : {}),
       },
     },
   );

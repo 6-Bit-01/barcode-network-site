@@ -14,6 +14,11 @@ async function assertAdmin(): Promise<boolean> {
   return token ? verifyAdminToken(token) : false;
 }
 
+function isAllowedBnlAccessForPurpose(purpose: unknown, status: unknown): boolean {
+  if (purpose === "live_broadcast") return true;
+  return status === undefined || status === "private" || status === "runtime_only";
+}
+
 async function currentPlaybackSnapshot(trackId: string) {
   try {
     const { playerSync } = await getLiveOverlayRuntimeState();
@@ -53,10 +58,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid queue session purpose." }, { status: 400 });
     }
     if (body.bnlPublicationStatus !== undefined && !isQueueSessionBnlPublicationStatus(body.bnlPublicationStatus)) {
-      return NextResponse.json({ error: "Invalid BNL publication status." }, { status: 400 });
+      return NextResponse.json({ error: "Invalid BNL queue access choice." }, { status: 400 });
     }
-    if (body.purpose !== "live_broadcast" && body.bnlPublicationStatus !== undefined && body.bnlPublicationStatus !== "private") {
-      return NextResponse.json({ error: "Only live broadcast sessions can approve BNL publication." }, { status: 400 });
+    if (!isAllowedBnlAccessForPurpose(body.purpose, body.bnlPublicationStatus)) {
+      return NextResponse.json({ error: "Public BNL queue access is available only for live broadcasts." }, { status: 400 });
     }
     const skipGameTapTarget = Number(body.skipGameTapTarget);
     const queueCapacity = Number(body.queueCapacity);
@@ -105,10 +110,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid queue session purpose." }, { status: 400 });
     }
     if (!isQueueSessionBnlPublicationStatus(body.bnlPublicationStatus)) {
-      return NextResponse.json({ error: "Invalid BNL publication status." }, { status: 400 });
+      return NextResponse.json({ error: "Invalid BNL queue access choice." }, { status: 400 });
     }
-    if (body.purpose !== "live_broadcast" && body.bnlPublicationStatus !== "private") {
-      return NextResponse.json({ error: "Only live broadcast sessions can approve BNL publication." }, { status: 400 });
+    if (!isAllowedBnlAccessForPurpose(body.purpose, body.bnlPublicationStatus)) {
+      return NextResponse.json({ error: "Public BNL queue access is available only for live broadcasts." }, { status: 400 });
     }
     try {
       return NextResponse.json(await updateQueueSessionProvenance({

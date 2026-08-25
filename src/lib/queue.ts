@@ -4077,7 +4077,7 @@ function publicStatsOutcomeForEntry(entry: QueueEntry, location: "active" | "com
   return "active";
 }
 
-function publicStatsRecordsForSession(session: QueueSession): QueuePublicStatsRecord[] {
+function publicStatsRecordsForSession(session: QueueSession, includeSimulationTracks = false): QueuePublicStatsRecord[] {
   const wheelChosenIds = new Set(
     normalizeQueueShowLog(session.showLog)
       .filter((event) => event.eventType === "track_signal_hold_applied" && event.details?.signalHoldPreviousLane === "wheel" && event.track?.trackId)
@@ -4095,7 +4095,9 @@ function publicStatsRecordsForSession(session: QueueSession): QueuePublicStatsRe
     ...(session.completed ?? []).map((entry) => ({ entry, location: "completed" as const, stage: "terminal" as const, precedence: 4 })),
     ...(session.removed ?? []).map((entry) => ({ entry, location: "removed" as const, stage: "terminal" as const, precedence: 5 })),
   ];
-  const simulationIds = new Set(locations.filter(({ entry }) => isSimulationTrack(entry)).map(({ entry }) => entry.id));
+  const simulationIds = includeSimulationTracks
+    ? new Set<string>()
+    : new Set(locations.filter(({ entry }) => isSimulationTrack(entry)).map(({ entry }) => entry.id));
   const unique = new Map<string, QueuePublicStatsRecord & { precedence: number }>();
   for (const { entry, location, stage, precedence } of locations) {
     if (!entry?.id || simulationIds.has(entry.id)) continue;
@@ -4203,6 +4205,7 @@ function publicHistoryTrackForRecord(session: QueueSession, record: QueuePublicS
     outcome: record.outcome,
     lane: record.entry.lane ?? "regular",
     wheelChosen: record.wheelChosen,
+    ...(isSimulationTrack(record.entry) ? { isSimulation: true } : {}),
     submissionEventSequence: historyEventSequence(session, record.entry.id, ["track_submitted"]),
     outcomeEventSequence: outcomeEvents[record.outcome]
       ? historyEventSequence(session, record.entry.id, outcomeEvents[record.outcome]!)
@@ -4338,16 +4341,14 @@ function buildPublicPersonalHistory(
   };
 }
 
-export function buildQueuePublicStats(input: {
+function buildQueueStatsProjection(input: {
   revision: number;
   activeSessionId?: string | null;
-  sessions: QueueSession[];
   submitterToken?: string | null;
-}): QueuePublicStats {
-  const eligibleSessions: QueuePublicStatsSession[] = input.sessions
-    .filter((session) => session.purpose === "live_broadcast" && session.showDate >= QUEUE_PUBLIC_HISTORY_COVERAGE_STARTED_AT)
+}, selectedSessions: QueueSession[], includeSimulationTracks: boolean): QueuePublicStats {
+  const eligibleSessions: QueuePublicStatsSession[] = selectedSessions
     .map((session) => {
-      const records = publicStatsRecordsForSession(session);
+      const records = publicStatsRecordsForSession(session, includeSimulationTracks);
       return { session, records, events: publicHistoryEventsForSession(session, records) };
     })
     .sort((left, right) => publicStatsSessionTime(right.session) - publicStatsSessionTime(left.session));
@@ -4405,6 +4406,31 @@ export function buildQueuePublicStats(input: {
   };
 }
 
+export function buildQueuePublicStats(input: {
+  revision: number;
+  activeSessionId?: string | null;
+  sessions: QueueSession[];
+  submitterToken?: string | null;
+}): QueuePublicStats {
+  const sessions = input.sessions
+    .map((session) => normalizeSession(session))
+    .filter((session) => session.purpose === "live_broadcast" && session.showDate >= QUEUE_PUBLIC_HISTORY_COVERAGE_STARTED_AT);
+  return buildQueueStatsProjection(input, sessions, false);
+}
+
+export function buildQueueAdminPreviewStats(input: {
+  revision: number;
+  selectedSession: QueueSession;
+  submitterToken?: string | null;
+}): QueuePublicStats {
+  const selectedSession = normalizeSession(input.selectedSession);
+  return buildQueueStatsProjection({
+    revision: input.revision,
+    activeSessionId: selectedSession.status === "archived" ? null : selectedSession.sessionId,
+    submitterToken: input.submitterToken,
+  }, [selectedSession], true);
+}
+
 export async function getPublicQueueStats(submitterToken?: string | null): Promise<QueuePublicStats> {
   const store = await readStore();
   return buildQueuePublicStats({
@@ -4413,6 +4439,88 @@ export async function getPublicQueueStats(submitterToken?: string | null): Promi
     sessions: store.sessions.map((session) => normalizeSession(session)),
     submitterToken,
   });
+}
+
+export interface QueueAdminPreviewReadback {
+  schemaVersion: "queue_admin_broadcast_preview_readback_v1";
+  readAuthority: "queue_store_fresh_read";
+  visibility: "admin_private_preview";
+  readAt: string;
+  storeRevision: number;
+  sessionId: string;
+  sessionPurpose: QueueSessionPurpose;
+  sessionStatus: QueueSessionStatus;
+  sessionProvenanceRevision: number;
+  sourceUpdatedAt: string;
+  sourceDigest: string;
+  savedTrackCount: number;
+  activeTrackCount: number;
+  completedTrackCount: number;
+  removedTrackCount: number;
+  simulationTrackCount: number;
+  showLogEventCount: number;
+}
+
+function queueSessionEntries(session: QueueSession): QueueEntry[] {
+  const unique = new Map<string, QueueEntry>();
+  for (const entry of [
+    ...session.queue,
+    ...(session.nextInLineTrack ? [session.nextInLineTrack] : []),
+    ...(session.loadedTrack ? [session.loadedTrack] : []),
+    ...session.completed,
+    ...session.removed,
+    ...session.spotlight,
+  ]) {
+    if (entry?.id) unique.set(entry.id, entry);
+  }
+  return [...unique.values()];
+}
+
+function activeQueueSessionEntries(session: QueueSession): QueueEntry[] {
+  const unique = new Map<string, QueueEntry>();
+  for (const entry of [
+    ...session.queue,
+    ...(session.nextInLineTrack ? [session.nextInLineTrack] : []),
+    ...(session.loadedTrack ? [session.loadedTrack] : []),
+  ]) {
+    if (entry?.id) unique.set(entry.id, entry);
+  }
+  return [...unique.values()];
+}
+
+export async function getQueueAdminPreviewStats(sessionId?: string | null, submitterToken?: string | null): Promise<QueuePublicStats> {
+  const store = await readStore();
+  const selected = findSession(store, sessionId?.trim() || undefined);
+  if (!selected) throw new Error("Queue session not found.");
+  return buildQueueAdminPreviewStats({ revision: store.revision, selectedSession: normalizeSession(selected), submitterToken });
+}
+
+export async function getQueueAdminPreviewReadback(sessionId?: string | null): Promise<QueueAdminPreviewReadback> {
+  const store = await readStore();
+  const selected = findSession(store, sessionId?.trim() || undefined);
+  if (!selected) throw new Error("Queue session not found.");
+  const session = normalizeSession(selected);
+  const entries = queueSessionEntries(session);
+  const stats = buildQueueAdminPreviewStats({ revision: store.revision, selectedSession: session });
+  return {
+    schemaVersion: "queue_admin_broadcast_preview_readback_v1",
+    readAuthority: "queue_store_fresh_read",
+    visibility: "admin_private_preview",
+    readAt: new Date().toISOString(),
+    storeRevision: store.revision,
+    sessionId: session.sessionId,
+    sessionPurpose: session.purpose,
+    sessionStatus: session.status,
+    sessionProvenanceRevision: session.provenanceRevision,
+    sourceUpdatedAt: session.updatedAt,
+    sourceDigest: stats.sourceDigest,
+    savedTrackCount: entries.length,
+    activeTrackCount: activeQueueSessionEntries(session).length,
+    completedTrackCount: session.completed.filter((entry) => !session.removed.some((removed) => removed.id === entry.id)).length,
+    removedTrackCount: session.removed.length,
+    simulationTrackCount: entries.filter((entry) => isSimulationTrack(entry)).length,
+    showLogEventCount: normalizeQueueShowLog(session.showLog).length,
+  };
 }
 
 export async function getPublicQueueSnapshot(sessionId?: string, identity?: { submitterToken?: string | null; tiktokHandle?: string | null; contactEmail?: string | null; artist?: string | null }): Promise<QueuePublicSnapshot> {
@@ -4486,6 +4594,63 @@ export async function getPublicQueueSnapshot(sessionId?: string, identity?: { su
     };
   }
   return { revision: store.revision, sessionActive: normalized.sessionId === store.activeSessionId, session: summarizeSession(normalized), status: normalized.publicStatus, queue: normalized.queue.map(toPublicQueueTrack), completed: normalized.completed.slice(0, 10).map(toPublicQueueTrack), nowPlaying: normalized.loadedTrack ? toPublicQueueTrack(normalized.loadedTrack) : null, upNext: normalized.nextInLineTrack ? toPublicQueueTrack(normalized.nextInLineTrack) : null, submitterStatus: publicSubmitterStatus(normalized, identity) };
+}
+
+function isPublicSimulationTrack(track: QueuePublicTrack | null | undefined): boolean {
+  return track?.isSimulation === true;
+}
+
+export function sanitizeQueueSnapshotForPublic(snapshot: QueuePublicSnapshot): QueuePublicSnapshot {
+  const session = snapshot.session;
+  if (!session) return { ...snapshot, suppressPublicLiveStatus: false };
+  const active = session.status !== "archived" && session.broadcastPhase !== "ended";
+  if (session.purpose !== "live_broadcast") {
+    return {
+      revision: snapshot.revision,
+      sessionActive: false,
+      suppressPublicLiveStatus: active,
+      session: null,
+      status: {
+        isOpen: false,
+        activeCount: 0,
+        acceptedCount: 0,
+        estimatedRuntimeSeconds: 0,
+        capacity: snapshot.status.capacity,
+        isFull: false,
+        pressure: "low",
+      },
+      queue: [],
+      completed: [],
+      nowPlaying: null,
+      upNext: null,
+      submitterStatus: null,
+      playbackTiming: null,
+      wheelTiming: null,
+    };
+  }
+
+  const queue = snapshot.queue.filter((track) => !isPublicSimulationTrack(track));
+  const completed = snapshot.completed.filter((track) => !isPublicSimulationTrack(track));
+  const nowPlaying = isPublicSimulationTrack(snapshot.nowPlaying) ? null : snapshot.nowPlaying ?? null;
+  const upNext = isPublicSimulationTrack(snapshot.upNext) ? null : snapshot.upNext ?? null;
+  const submitterStatus = snapshot.submitterStatus
+    ? { ...snapshot.submitterStatus, submitted: snapshot.submitterStatus.submitted.filter((track) => !isPublicSimulationTrack(track)) }
+    : snapshot.submitterStatus ?? null;
+  return {
+    ...snapshot,
+    suppressPublicLiveStatus: false,
+    session: {
+      ...session,
+      nextInLineTrackId: upNext?.id ?? null,
+      loadedTrackId: nowPlaying?.id ?? null,
+    },
+    queue,
+    completed,
+    nowPlaying,
+    upNext,
+    submitterStatus,
+    playbackTiming: nowPlaying ? snapshot.playbackTiming ?? null : null,
+  };
 }
 
 async function requestPriorityUpgradePlaceholderMutation(id: string): Promise<QueuePublicTrack | null> {

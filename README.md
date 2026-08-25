@@ -26,6 +26,8 @@ Queue acceptance uses 44 show slots by default. A slot remains occupied when a r
 
 The Broadcast Deck is the live show companion and links to, but does not embed, the separate Broadcast Archive. Public Archive history begins on 2026-08-24 and is rebuilt only from archived sessions explicitly marked `live_broadcast`; active shows remain on the Deck, and older shows are not automatically imported. Rehearsals, simulations, private upload URLs, payment state, moderation data, private contact details, and browser tokens remain outside the public projection. Submitted TikTok handles are attribution for who submitted a track, not verified identity or artist ownership.
 
+Authenticated operators can verify the same queue-to-companion pipeline at Admin → Queue Control → Private Broadcast Test. Rehearsal, simulation, internal-test, and legacy/unknown sessions remain public-dark: they cannot trigger public `Live Now`, appear in the public Deck or Archive, or accept public submissions and checkout starts. The private test surface selects one persisted session, reuses the production Deck and Archive components, and exposes a fresh queue-store revision/count/digest readback. Simulation tracks remain capacity-exempt but participate in rehearsal/test timing so the private run behaves like a real show. After the operator ends and archives the test session, its show and artist records become available only in that authenticated Archive Preview.
+
 `stream-engine/`, `discord-bot/`, and `_archive/` are historical references. They are not production services and do not define current queue contracts.
 
 ## Requirements

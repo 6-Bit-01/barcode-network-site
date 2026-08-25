@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { createHash, timingSafeEqual } from "node:crypto";
+import { verifyAdminRequest } from "@/lib/auth";
 import { createSignalHoldCheckoutSession } from "@/lib/stripe";
-import { markSignalHoldCheckoutPending, requestSignalHoldCheckout } from "@/lib/queue";
+import { getPublicQueueSnapshot, markSignalHoldCheckoutPending, requestSignalHoldCheckout } from "@/lib/queue";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -53,6 +54,10 @@ export async function POST(req: Request) {
     const trackId = cleanText(body.trackId);
     const sessionId = cleanText(body.sessionId);
     if (!trackId || !sessionId) return NextResponse.json({ error: "Signal Hold is not available for this track." }, { status: 400 });
+    const snapshot = await getPublicQueueSnapshot(sessionId);
+    if (snapshot.session?.sessionId !== sessionId || (snapshot.session.purpose !== "live_broadcast" && !(await verifyAdminRequest(req)))) {
+      return NextResponse.json({ error: "Signal Hold is not available for this track." }, { status: 409 });
+    }
     const checkoutOwnerToken = cleanCheckoutOwnerToken(body.checkoutOwnerToken);
     if (!checkoutOwnerToken) return NextResponse.json({ error: "Signal Hold checkout ownership could not be verified. Refresh the queue and try again." }, { status: 400 });
     const signalHoldAcceptance = {

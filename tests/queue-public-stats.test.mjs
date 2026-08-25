@@ -332,7 +332,8 @@ test("Broadcast Deck and Broadcast Archive remain separate destinations with con
   assert.match(archivePage, /BroadcastArchive/);
   assert.doesNotMatch(deckPage, /BroadcastArchive/);
   assert.match(deckPage, /BroadcastDeck/);
-  assert.match(deck, /href="\/radio\/archive"/);
+  assert.match(deck, /archiveHref\s*=\s*"\/radio\/archive"/);
+  assert.match(deck, /href=\{archiveHref\}/);
   assert.match(deck, /BROADCAST ARCHIVE|Broadcast Archive/);
   assert.match(deck, /startSessionBoundPolling/);
   assert.match(deck, /PUBLIC_QUEUE_POLL_INTERVAL_MS/);

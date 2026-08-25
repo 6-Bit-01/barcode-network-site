@@ -38,9 +38,11 @@ function loadQueueRoute(snapshot) {
       isTrackPersistedInSessionQueue: async () => false,
       normalizeQueueSourceKey: () => "",
       requestPriorityUpgradePlaceholder: async () => null,
+      sanitizeQueueSnapshotForPublic: (value) => value,
       submitRadioTrack: async () => null,
       toPublicQueueTrack: (value) => value,
     };
+    if (request === "@/lib/auth") return { verifyAdminRequest: async () => false };
     if (request === "@/lib/live-overlay") return {
       getLiveOverlayRuntimeState: async () => {
         calls.runtime += 1;

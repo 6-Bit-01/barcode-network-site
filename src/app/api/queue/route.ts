@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { APPLE_MUSIC_QUEUE_UNSUPPORTED_MESSAGE, PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT, PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION, PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION, PUBLIC_QUEUE_LEGAL_TERMS_VERSION, detectQueueSourceType, isAppleMusicUrl } from "@/lib/queue-types";
-import { getPublicQueueSnapshot, getRadioQueueState, isTrackPersistedInSessionQueue, normalizeQueueSourceKey, requestPriorityUpgradePlaceholder, submitRadioTrack, toPublicQueueTrack } from "@/lib/queue";
+import { getPublicQueueSnapshot, getRadioQueueState, isTrackPersistedInSessionQueue, normalizeQueueSourceKey, requestPriorityUpgradePlaceholder, sanitizeQueueSnapshotForPublic, submitRadioTrack, toPublicQueueTrack } from "@/lib/queue";
 import { getLiveOverlayRuntimeState } from "@/lib/live-overlay";
 import { attachQueueLiveTiming } from "@/lib/queue-live-timing";
+import { verifyAdminRequest } from "@/lib/auth";
 import type { QueueEntry } from "@/lib/queue-types";
 
 export const dynamic = "force-dynamic";
@@ -116,12 +117,13 @@ export async function GET(req: Request) {
   const params = new URL(req.url).searchParams;
   const sessionId = params.get("sessionId") ?? undefined;
   const now = new Date();
-  const snapshot = await getPublicQueueSnapshot(sessionId, {
+  const rawSnapshot = await getPublicQueueSnapshot(sessionId, {
     submitterToken: params.get("submitterToken"),
     tiktokHandle: params.get("tiktokHandle"),
     contactEmail: params.get("contactEmail"),
     artist: params.get("artist"),
   });
+  const snapshot = sanitizeQueueSnapshotForPublic(rawSnapshot);
   if (snapshot.sessionActive !== true) {
     return NextResponse.json(attachQueueLiveTiming(snapshot, null, null, now));
   }
@@ -131,21 +133,26 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    const allowPrivateSession = await verifyAdminRequest(req);
     const contentType = req.headers.get("content-type") ?? "";
     if (contentType.includes("application/json")) {
       const body = await req.json().catch(() => ({}));
       if (body.action === "priorityUpgradePlaceholder" && typeof body.id === "string") {
+        const active = await getPublicQueueSnapshot();
+        if (active.session?.purpose !== "live_broadcast" && !allowPrivateSession) {
+          return NextResponse.json({ error: SESSION_SYNC_MESSAGE, code: "private_session" }, { status: 409 });
+        }
         const track = await requestPriorityUpgradePlaceholder(body.id);
         if (!track) return NextResponse.json({ error: "Priority Signal Upgrade is not available for this track." }, { status: 409 });
         return NextResponse.json({ track, message: "Priority Signal Upgrade is being prepared. No payment has been processed." });
       }
       if (typeof body.action === "string") return NextResponse.json({ error: "Unknown queue action" }, { status: 400 });
-      return await submitTrackFromBody(body);
+      return await submitTrackFromBody(body, { allowPrivateSession });
     }
 
     const form = await req.formData();
     const body = Object.fromEntries(form.entries());
-    return await submitTrackFromBody(body);
+    return await submitTrackFromBody(body, { allowPrivateSession });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Submission failed";
     const reasons = Array.isArray((error as { reasons?: unknown }).reasons) ? (error as { reasons: string[] }).reasons : [];
@@ -163,7 +170,10 @@ export async function POST(req: Request) {
   }
 }
 
-export async function submitTrackFromBody(body: Record<string, unknown>): Promise<NextResponse> {
+export async function submitTrackFromBody(
+  body: Record<string, unknown>,
+  options: { allowPrivateSession?: boolean } = {},
+): Promise<NextResponse> {
   const artist = cleanBodyText(body.artist);
   const title = cleanBodyText(body.title);
   const mode = cleanBodyText(body.mode);
@@ -207,6 +217,9 @@ export async function submitTrackFromBody(body: Record<string, unknown>): Promis
 
   const active = await getPublicQueueSnapshot();
   if (!active.session || active.session.sessionId !== sessionId) return NextResponse.json({ error: SESSION_SYNC_MESSAGE, code: "stale_session" }, { status: 409 });
+  if (active.session.purpose !== "live_broadcast" && options.allowPrivateSession !== true) {
+    return NextResponse.json({ error: SESSION_SYNC_MESSAGE, code: "private_session" }, { status: 409 });
+  }
   if (!active.status.isOpen) {
     return NextResponse.json({ error: active.status.isFull ? "This broadcast queue is full for new transmissions." : "This broadcast queue is closed." }, { status: 409 });
   }

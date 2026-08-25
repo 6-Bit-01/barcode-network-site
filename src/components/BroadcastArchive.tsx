@@ -61,6 +61,22 @@ function artistSearchText(artist: QueuePublicProjectHistory): string {
   return [artist.projectLabel, ...artist.tracks.map(searchableTrack)].join(" ").toLocaleLowerCase("en-US");
 }
 
+function archiveSelectionHref(baseHref: string, view: BroadcastArchiveView, value: string): string {
+  if (baseHref === "/radio/archive") {
+    return view === "shows" ? broadcastArchiveShowHref(value) : broadcastArchiveArtistHref(value);
+  }
+  const url = new URL(baseHref, "https://barcode.test");
+  url.searchParams.set("view", view);
+  if (view === "shows") {
+    url.searchParams.set("show", value);
+    url.searchParams.delete("artist");
+  } else {
+    url.searchParams.set("artist", value);
+    url.searchParams.delete("show");
+  }
+  return `${url.pathname}${url.search}`;
+}
+
 function setArchiveUrl(href: string): void {
   if (typeof window === "undefined") return;
   window.history.replaceState(window.history.state, "", href);
@@ -76,22 +92,23 @@ function Stat({ label, value, detail }: { label: string; value: number | string;
   );
 }
 
-function TrackRow({ track, showLink = true }: { track: QueuePublicHistoryTrack; showLink?: boolean }) {
+function TrackRow({ track, showLink = true, archiveBaseHref }: { track: QueuePublicHistoryTrack; showLink?: boolean; archiveBaseHref: string }) {
   const handle = track.submittedByTikTokHandle || "Handle not supplied";
   return (
     <article className="border-t-2 border-border/80 py-4 first:border-t-0 first:pt-0">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <Link href={broadcastArchiveArtistHref(track.projectKey)} className="font-bold text-foreground underline decoration-accent/50 underline-offset-4 hover:text-accent">
+          <Link href={archiveSelectionHref(archiveBaseHref, "artists", track.projectKey)} className="font-bold text-foreground underline decoration-accent/50 underline-offset-4 hover:text-accent">
             {track.projectLabel}
           </Link>
           <p className="mt-1 text-sm text-foreground/85">{track.title}</p>
           {track.collaboratorNames && <p className="mt-1 text-xs text-muted"><span className="uppercase tracking-widest text-accent/80">Featuring</span> {track.collaboratorNames}</p>}
           <p className="mt-2 text-xs text-muted">Submitted by <span className="font-mono text-cyan-200">{handle}</span></p>
-          {showLink && <Link href={broadcastArchiveShowHref(track.sessionId)} className="mt-1 inline-flex text-xs text-muted underline decoration-border underline-offset-4 hover:text-accent">{displayDate(track.showDate)} · {track.sessionTitle}</Link>}
+          {showLink && <Link href={archiveSelectionHref(archiveBaseHref, "shows", track.sessionId)} className="mt-1 inline-flex text-xs text-muted underline decoration-border underline-offset-4 hover:text-accent">{displayDate(track.showDate)} · {track.sessionTitle}</Link>}
         </div>
         <div className="flex shrink-0 flex-wrap gap-2 sm:max-w-[17rem] sm:justify-end">
           {track.wheelChosen && <span className="border border-cyan-200/45 bg-cyan-200/5 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-cyan-200">Wheel Chosen</span>}
+          {track.isSimulation && <span className="border border-violet-300/45 bg-violet-300/5 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-violet-200">Simulation</span>}
           <span className={`border px-2 py-1 text-[10px] font-bold uppercase tracking-widest ${outcomeTone(track.outcome)}`}>{outcomeLabel(track.outcome)}</span>
           {track.publicSourceUrl ? (
             <a href={track.publicSourceUrl} target="_blank" rel="noopener noreferrer" className="border border-accent/45 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-accent hover:bg-accent hover:text-background">
@@ -106,7 +123,7 @@ function TrackRow({ track, showLink = true }: { track: QueuePublicHistoryTrack; 
   );
 }
 
-function ShowDetail({ show }: { show: QueuePublicShowStats }) {
+function ShowDetail({ show, archiveBaseHref }: { show: QueuePublicShowStats; archiveBaseHref: string }) {
   const didNotPlay = show.skippedTrackCount + show.removedTrackCount + show.unknownOutcomeTrackCount;
   return (
     <section aria-labelledby="selected-show-heading" className="border border-border bg-surface p-5 sm:p-6">
@@ -130,7 +147,7 @@ function ShowDetail({ show }: { show: QueuePublicShowStats }) {
           <span className="font-mono text-xs text-muted">{show.trackRoster.length} records</span>
         </div>
         <div className="pt-4">
-          {show.trackRoster.length > 0 ? show.trackRoster.map((track) => <TrackRow key={`${track.sessionId}:${track.trackId}`} track={track} showLink={false} />) : <p className="text-sm text-muted">No public-safe track records were retained for this show.</p>}
+          {show.trackRoster.length > 0 ? show.trackRoster.map((track) => <TrackRow key={`${track.sessionId}:${track.trackId}`} track={track} showLink={false} archiveBaseHref={archiveBaseHref} />) : <p className="text-sm text-muted">No track records were retained for this show.</p>}
         </div>
       </div>
       {show.milestones.length > 0 && <details className="mt-6 border border-border bg-background/45 p-4"><summary className="cursor-pointer text-xs font-bold uppercase tracking-[0.24em] text-muted">Show milestones ({show.milestones.length})</summary><ol className="mt-4 space-y-3">{show.milestones.map((event) => <li key={event.eventId} className="border-l-2 border-accent/40 pl-3 text-sm"><p className="font-bold text-foreground">{event.headline}</p><p className="mt-1 text-xs text-muted">{event.detail}</p></li>)}</ol></details>}
@@ -138,7 +155,7 @@ function ShowDetail({ show }: { show: QueuePublicShowStats }) {
   );
 }
 
-function ArtistDetail({ artist }: { artist: QueuePublicProjectHistory }) {
+function ArtistDetail({ artist, archiveBaseHref }: { artist: QueuePublicProjectHistory; archiveBaseHref: string }) {
   const handles = [...new Set(artist.tracks.map((track) => track.submittedByTikTokHandle).filter(Boolean))].sort();
   const didNotPlay = artist.skippedTrackCount + artist.removedTrackCount + artist.unknownOutcomeTrackCount;
   return (
@@ -164,7 +181,7 @@ function ArtistDetail({ artist }: { artist: QueuePublicProjectHistory }) {
       </div>
       <div className="mt-6">
         <div className="flex flex-wrap items-end justify-between gap-3 border-b-2 border-cyan-200/40 pb-3"><div><p className="text-xs uppercase tracking-[0.3em] text-muted">Appearance history</p><p className="mt-1 text-xs text-muted">Every retained show appearance and track.</p></div><span className="font-mono text-xs text-muted">{artist.tracks.length} records</span></div>
-        <div className="pt-4">{artist.tracks.map((track) => <TrackRow key={`${track.sessionId}:${track.trackId}`} track={track} />)}</div>
+        <div className="pt-4">{artist.tracks.map((track) => <TrackRow key={`${track.sessionId}:${track.trackId}`} track={track} archiveBaseHref={archiveBaseHref} />)}</div>
       </div>
     </section>
   );
@@ -175,11 +192,21 @@ export function BroadcastArchive({
   initialView = "shows",
   initialShowId = "",
   initialArtistKey = "",
+  refreshEndpoint = "/api/queue/stats",
+  archiveBaseHref = "/radio/archive",
+  deckHref = "/radio/deck",
+  queueHref = "/queue",
+  previewMode = false,
 }: {
   initialStats: QueuePublicStats;
   initialView?: BroadcastArchiveView;
   initialShowId?: string;
   initialArtistKey?: string;
+  refreshEndpoint?: string;
+  archiveBaseHref?: string;
+  deckHref?: string;
+  queueHref?: string;
+  previewMode?: boolean;
 }) {
   const [stats, setStats] = useState(initialStats);
   const [view, setView] = useState<BroadcastArchiveView>(initialView);
@@ -215,24 +242,24 @@ export function BroadcastArchive({
 
   function chooseView(next: BroadcastArchiveView) {
     setView(next);
-    setArchiveUrl(next === "shows" ? broadcastArchiveShowHref(selectedShow?.sessionId ?? "") : broadcastArchiveArtistHref(selectedArtist?.projectKey ?? ""));
+    setArchiveUrl(archiveSelectionHref(archiveBaseHref, next, next === "shows" ? selectedShow?.sessionId ?? "" : selectedArtist?.projectKey ?? ""));
   }
 
   function chooseShow(sessionId: string) {
     setSelectedShowId(sessionId);
-    setArchiveUrl(broadcastArchiveShowHref(sessionId));
+    setArchiveUrl(archiveSelectionHref(archiveBaseHref, "shows", sessionId));
   }
 
   function chooseArtist(projectKey: string) {
     setSelectedArtistKey(projectKey);
-    setArchiveUrl(broadcastArchiveArtistHref(projectKey));
+    setArchiveUrl(archiveSelectionHref(archiveBaseHref, "artists", projectKey));
   }
 
   async function refresh() {
     setRefreshing(true);
     setRefreshError(false);
     try {
-      const response = await fetch("/api/queue/stats", { cache: "no-store" });
+      const response = await fetch(refreshEndpoint, { cache: "no-store" });
       if (!response.ok) throw new Error("Archive refresh failed");
       setStats(await response.json() as QueuePublicStats);
     } catch {
@@ -244,23 +271,24 @@ export function BroadcastArchive({
 
   return (
     <div className="space-y-6">
+      {previewMode && <section className="border-2 border-violet-300 bg-violet-300/10 p-4 text-center"><p className="text-xs font-black uppercase tracking-[0.32em] text-violet-200">Private Archive Preview · Admin Only</p><p className="mt-2 text-xs text-muted">This reads the selected persisted test session, including simulation records. It does not add the session to the public Broadcast Archive.</p></section>}
       <section className="overflow-hidden border border-accent/45 bg-surface">
         <div className="border-b border-accent/25 bg-[linear-gradient(110deg,rgba(255,0,0,0.12),transparent_55%)] p-5 sm:p-7">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
             <div className="max-w-3xl">
-              <p className="text-xs font-bold uppercase tracking-[0.38em] text-accent">Post-show database</p>
-              <h1 className="mt-3 text-3xl font-black tracking-tight text-foreground sm:text-5xl">The Broadcast Archive</h1>
-              <p className="mt-4 max-w-2xl text-sm leading-relaxed text-muted sm:text-base">Search BARCODE Radio by individual show or by artist/project. Follow who submitted each track, public music links, collaborators, exact outcomes, Wheel selections, and repeat appearances.</p>
+              <p className="text-xs font-bold uppercase tracking-[0.38em] text-accent">{previewMode ? "Private post-show readback" : "Post-show database"}</p>
+              <h1 className="mt-3 text-3xl font-black tracking-tight text-foreground sm:text-5xl">{previewMode ? "Broadcast Archive Preview" : "The Broadcast Archive"}</h1>
+              <p className="mt-4 max-w-2xl text-sm leading-relaxed text-muted sm:text-base">Search {previewMode ? "this test session" : "BARCODE Radio"} by individual show or by artist/project. Follow who submitted each track, public music links, collaborators, exact outcomes, Wheel selections, and repeat appearances.</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Link href="/radio/deck" className="border border-[#ffaa00]/55 px-4 py-3 text-xs font-bold uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background">Open Broadcast Deck</Link>
-              <Link href="/queue" className="border border-border px-4 py-3 text-xs font-bold uppercase tracking-widest text-muted hover:border-accent hover:text-accent">Open Queue</Link>
+              <Link href={deckHref} className="border border-[#ffaa00]/55 px-4 py-3 text-xs font-bold uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background">{previewMode ? "Open Deck Preview" : "Open Broadcast Deck"}</Link>
+              <Link href={queueHref} className="border border-border px-4 py-3 text-xs font-bold uppercase tracking-widest text-muted hover:border-accent hover:text-accent">Open Queue</Link>
             </div>
           </div>
-          <p className="mt-5 border-l-2 border-cyan-200/45 pl-3 text-xs leading-relaxed text-muted">Public history begins {displayDate(stats.historyCoverageStartedAt)}. Older shows are not automatically imported. Rehearsals, simulations, private uploads, payments, moderation data, and private contact details are excluded.</p>
+          <p className="mt-5 border-l-2 border-cyan-200/45 pl-3 text-xs leading-relaxed text-muted">{previewMode ? "Private verification includes simulation records but still uses the public-safe projection: no private contact details, payment secrets, moderation notes, or private upload URLs are exposed here." : `Public history begins ${displayDate(stats.historyCoverageStartedAt)}. Older shows are not automatically imported. Rehearsals, simulations, private uploads, payments, moderation data, and private contact details are excluded.`}</p>
         </div>
         <div className="grid grid-cols-2 gap-px bg-border sm:grid-cols-4">
-          <Stat label="Shows" value={stats.overview.showCount} detail="Retained live broadcasts." />
+          <Stat label="Shows" value={stats.overview.showCount} detail={previewMode ? "Selected persisted test record." : "Retained live broadcasts."} />
           <Stat label="Artists" value={stats.overview.artistCount} detail="Distinct submitted project labels." />
           <Stat label="Tracks" value={stats.overview.submittedTrackCount} detail="Public-safe show records." />
           <Stat label="Played" value={stats.overview.finishedTrackCount} detail="Completed-play outcomes only." />
@@ -285,7 +313,7 @@ export function BroadcastArchive({
             <div className="flex items-center justify-between gap-3 border-b border-border pb-3"><div><p className="text-xs font-bold uppercase tracking-[0.25em] text-accent">Shows</p><p className="mt-1 text-[11px] text-muted">{shows.length} matching records</p></div><label><span className="sr-only">Sort shows</span><select value={showSort} onChange={(event) => setShowSort(event.target.value as ShowSort)} className="border border-border bg-background px-2 py-2 text-xs text-muted"><option value="newest">Newest</option><option value="tracks">Most tracks</option><option value="played">Most played</option></select></label></div>
             <div className="mt-3 max-h-[62vh] space-y-2 overflow-y-auto pr-1">{shows.map((show) => <button key={show.sessionId} type="button" onClick={() => chooseShow(show.sessionId)} className={`${selectedShow?.sessionId === show.sessionId ? "border-accent bg-accent/10" : "border-border hover:border-accent/55"} w-full border p-3 text-left`}><p className="font-bold text-foreground">{show.title}</p><p className="mt-1 text-xs text-muted">{displayDate(show.showDate)}</p><p className="mt-2 font-mono text-[10px] uppercase tracking-widest text-muted">{show.submittedTrackCount} tracks · {show.finishedTrackCount} played</p></button>)}{shows.length === 0 && <p className="p-3 text-sm text-muted">No shows match this search.</p>}</div>
           </aside>
-          {selectedShow ? <ShowDetail show={selectedShow} /> : <EmptyArchive kind="show" />}
+          {selectedShow ? <ShowDetail show={selectedShow} archiveBaseHref={archiveBaseHref} /> : <EmptyArchive kind="show" previewMode={previewMode} />}
         </div>
       ) : (
         <div className="grid gap-5 lg:grid-cols-[minmax(16rem,0.34fr)_minmax(0,1fr)]">
@@ -293,13 +321,13 @@ export function BroadcastArchive({
             <div className="flex items-center justify-between gap-3 border-b border-border pb-3"><div><p className="text-xs font-bold uppercase tracking-[0.25em] text-cyan-200">Artists</p><p className="mt-1 text-[11px] text-muted">{artists.length} matching records</p></div><label><span className="sr-only">Sort artists</span><select value={artistSort} onChange={(event) => setArtistSort(event.target.value as ArtistSort)} className="border border-border bg-background px-2 py-2 text-xs text-muted"><option value="alphabetical">A–Z</option><option value="tracks">Most tracks</option><option value="played">Most played</option><option value="recent">Most recent</option></select></label></div>
             <div className="mt-3 max-h-[62vh] space-y-2 overflow-y-auto pr-1">{artists.map((artist) => <button key={artist.projectKey} type="button" onClick={() => chooseArtist(artist.projectKey)} className={`${selectedArtist?.projectKey === artist.projectKey ? "border-cyan-200 bg-cyan-200/5" : "border-border hover:border-cyan-200/55"} w-full border p-3 text-left`}><p className="font-bold text-foreground">{artist.projectLabel}</p><p className="mt-1 text-xs text-muted">{artist.showCount} {artist.showCount === 1 ? "show" : "shows"}</p><p className="mt-2 font-mono text-[10px] uppercase tracking-widest text-muted">{artist.submittedTrackCount} tracks · {artist.finishedTrackCount} played</p></button>)}{artists.length === 0 && <p className="p-3 text-sm text-muted">No artists match this search.</p>}</div>
           </aside>
-          {selectedArtist ? <ArtistDetail artist={selectedArtist} /> : <EmptyArchive kind="artist" />}
+          {selectedArtist ? <ArtistDetail artist={selectedArtist} archiveBaseHref={archiveBaseHref} /> : <EmptyArchive kind="artist" previewMode={previewMode} />}
         </div>
       )}
     </div>
   );
 }
 
-function EmptyArchive({ kind }: { kind: "show" | "artist" }) {
-  return <section className="border border-border bg-surface p-8 text-center"><p className="text-sm text-muted">No retained {kind} records are available yet. The next explicitly marked live broadcast will begin this Archive.</p></section>;
+function EmptyArchive({ kind, previewMode }: { kind: "show" | "artist"; previewMode: boolean }) {
+  return <section className="border border-border bg-surface p-8 text-center"><p className="text-sm text-muted">No retained {kind} records are available yet. {previewMode ? "Run the selected private queue and refresh this preview." : "The next explicitly marked live broadcast will begin this Archive."}</p></section>;
 }

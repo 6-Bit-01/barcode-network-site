@@ -158,6 +158,7 @@ function timingTrack(track: TimingDisplayTrack, status: QueueTrackStatus): Timin
 
 function sessionTimingFields(session: NonNullable<QueuePublicSnapshot["session"]> | QueueSessionSummary) {
   return {
+    purpose: session.purpose,
     completedCount: session.completedCount,
     removedCount: session.removedCount,
     completedRuntimeSeconds: session.completedRuntimeSeconds,

@@ -1,4 +1,4 @@
-/* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps, @next/next/no-img-element */
+/* eslint-disable react-hooks/exhaustive-deps, @next/next/no-img-element */
 "use client";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -199,7 +199,7 @@ function sourceTypeLabel(track: QueuePublicTrack): string {
   return track.sourceType ? track.sourceType.toUpperCase() : "Track link";
 }
 
-export function PublicQueueSession({ sessionId }: { sessionId: string }) {
+export function PublicQueueSession({ sessionId, snapshotEndpoint = "/api/queue" }: { sessionId: string; snapshotEndpoint?: string }) {
   const [snapshot, setSnapshot] = useState<QueuePublicSnapshot | null>(null);
   const { streamUrl } = useLiveStatus();
   const [submitOpen, setSubmitOpen] = useState(false);
@@ -342,7 +342,9 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
   async function load() {
     const params = new URLSearchParams({ sessionId });
     if (submitterToken) params.set("submitterToken", submitterToken);
-    const res = await fetch(`/api/queue?${params.toString()}`, { cache: "no-store" });
+    const endpoint = new URL(snapshotEndpoint, window.location.origin);
+    params.forEach((value, key) => endpoint.searchParams.set(key, value));
+    const res = await fetch(`${endpoint.pathname}${endpoint.search}`, { cache: "no-store" });
     if (res.ok) {
       const next = await res.json() as QueuePublicSnapshot;
       captureTrackRects();
@@ -364,7 +366,7 @@ export function PublicQueueSession({ sessionId }: { sessionId: string }) {
     if (signalHoldResult === "cancelled") setCheckoutNotice("Signal Hold payment was not completed. Your track remains unprotected.");
     if (signalHoldResult === "processing") setCheckoutNotice("Checkout started. Signal Hold is not active yet.");
   }, []);
-  useEffect(() => startSessionBoundPolling({ intervalMs: PUBLIC_QUEUE_POLL_INTERVAL_MS, poll: load }), [sessionId, submitterToken]);
+  useEffect(() => startSessionBoundPolling({ intervalMs: PUBLIC_QUEUE_POLL_INTERVAL_MS, poll: load }), [sessionId, snapshotEndpoint, submitterToken]);
   useEffect(() => { const interval = window.setInterval(() => setClockNow(Date.now()), 1_000); return () => window.clearInterval(interval); }, []);
   useEffect(() => {
     if (!snapshot) return;

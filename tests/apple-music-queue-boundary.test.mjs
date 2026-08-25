@@ -90,9 +90,13 @@ test("Apple Music intake boundary matches only the real Apple Music host", () =>
 });
 
 test("server rejects new Apple Music intake without mutating existing queue records", { concurrency: false }, async () => {
-  await queue.setQueueOpen(false);
+  const current = await queue.getRadioQueueState();
+  if (current.revision !== 0 && current.session.status !== "archived") {
+    await queue.archiveCurrentQueueSession();
+  }
   const started = await queue.startNewQueueSession({
     title: `Apple boundary ${Date.now()}`,
+    purpose: "live_broadcast",
     submissionCooldownSeconds: 0,
   });
   await queue.setQueueOpen(true);
@@ -132,7 +136,8 @@ test("server rejects new Apple Music intake without mutating existing queue reco
     tiktokHandle: "@genericartist",
     link: `https://example.com/track-${Date.now()}`,
   }));
-  assert.equal(accepted.status, 201);
+  const acceptedPayload = await accepted.json();
+  assert.equal(accepted.status, 201, JSON.stringify(acceptedPayload));
 });
 
 test("Apple rejection is ordered before the active queue snapshot read", () => {

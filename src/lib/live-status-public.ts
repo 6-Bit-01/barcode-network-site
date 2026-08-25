@@ -22,6 +22,7 @@ export function derivePublicShowState({
   isLive,
   queueSnapshot,
 }: PublicShowStateInput): PublicShowState {
+  const suppressPublicLiveStatus = queueProductionEnabled && queueSnapshot?.suppressPublicLiveStatus === true;
   const queueSession = queueProductionEnabled ? queueSnapshot?.session : null;
   const hasActiveQueueSession = Boolean(
     queueSession &&
@@ -41,7 +42,7 @@ export function derivePublicShowState({
 
   let siteShowMode: SiteShowMode = "offline";
   if (queueSubmissionsOpen) siteShowMode = "intake_open";
-  if (queueBroadcastPhase === "broadcast_active" || isLive)
+  if (!suppressPublicLiveStatus && (queueBroadcastPhase === "broadcast_active" || isLive))
     siteShowMode = "broadcast_live";
 
   return {

@@ -52,6 +52,7 @@ function checkoutRequest(body) {
 
 async function withCheckoutMocks(mocks, callback) {
   const originals = {
+    getPublicQueueSnapshot: queue.getPublicQueueSnapshot,
     requestPriorityCheckout: queue.requestPriorityCheckout,
     markPriorityUpgradeCheckoutPending: queue.markPriorityUpgradeCheckoutPending,
     createPrioritySignalCheckoutSession: stripe.createPrioritySignalCheckoutSession,
@@ -60,12 +61,14 @@ async function withCheckoutMocks(mocks, callback) {
   };
   process.env.STRIPE_SECRET_KEY = "sk_test_priority_boundary";
   process.env.STRIPE_WEBHOOK_SECRET = "whsec_priority_boundary";
+  queue.getPublicQueueSnapshot = mocks.getPublicQueueSnapshot ?? (async (sessionId) => ({ session: { sessionId, purpose: "live_broadcast" } }));
   queue.requestPriorityCheckout = mocks.requestPriorityCheckout ?? originals.requestPriorityCheckout;
   queue.markPriorityUpgradeCheckoutPending = mocks.markPriorityUpgradeCheckoutPending ?? originals.markPriorityUpgradeCheckoutPending;
   stripe.createPrioritySignalCheckoutSession = mocks.createPrioritySignalCheckoutSession ?? originals.createPrioritySignalCheckoutSession;
   try {
     return await callback();
   } finally {
+    queue.getPublicQueueSnapshot = originals.getPublicQueueSnapshot;
     queue.requestPriorityCheckout = originals.requestPriorityCheckout;
     queue.markPriorityUpgradeCheckoutPending = originals.markPriorityUpgradeCheckoutPending;
     stripe.createPrioritySignalCheckoutSession = originals.createPrioritySignalCheckoutSession;

@@ -614,7 +614,8 @@ export interface QueuePublicSubmitterStatus {
 export interface QueuePublicSnapshot {
   revision: number;
   sessionActive?: boolean;
-  session: Pick<QueueSessionSummary, "sessionId" | "title" | "showDate" | "status" | "description" | "completedCount" | "completedRuntimeSeconds" | "activeCount" | "acceptedCount" | "submissionClosureReason" | "removedCount" | "submissionCooldownSeconds" | "queueOpen" | "showStarted" | "preShowEndsAt" | "broadcastPhase" | "broadcastStartedAt" | "nextInLineTrackId" | "loadedTrackId" | "wheelSpinsOwed" | "priorityUpgradesEnabled" | "priorityUpgradeLabel" | "priorityUpgradeInstructions" | "priorityUpgradePriceCents" | "priorityUpgradeCurrency" | "priorityUpgradePaymentsEnabled" | "signalHoldEnabled" | "signalHoldLabel" | "signalHoldInstructions" | "signalHoldPriceCents" | "signalHoldCurrency" | "signalHoldPaymentsEnabled" | "sponsorBreakSeconds" | "sponsorBreakMode" | "sponsorBreakStatus" | "sponsorBreakStartedAt" | "sponsorBreakCompletedAt" | "sponsorBreakCompletedAfterPlayableCount" | "sponsorBreakDueAfterPlayableCount" | "sponsorBreakManualNote"> | null;
+  suppressPublicLiveStatus?: boolean;
+  session: Pick<QueueSessionSummary, "sessionId" | "title" | "showDate" | "status" | "purpose" | "description" | "completedCount" | "completedRuntimeSeconds" | "activeCount" | "acceptedCount" | "submissionClosureReason" | "removedCount" | "submissionCooldownSeconds" | "queueOpen" | "showStarted" | "preShowEndsAt" | "broadcastPhase" | "broadcastStartedAt" | "nextInLineTrackId" | "loadedTrackId" | "wheelSpinsOwed" | "priorityUpgradesEnabled" | "priorityUpgradeLabel" | "priorityUpgradeInstructions" | "priorityUpgradePriceCents" | "priorityUpgradeCurrency" | "priorityUpgradePaymentsEnabled" | "signalHoldEnabled" | "signalHoldLabel" | "signalHoldInstructions" | "signalHoldPriceCents" | "signalHoldCurrency" | "signalHoldPaymentsEnabled" | "sponsorBreakSeconds" | "sponsorBreakMode" | "sponsorBreakStatus" | "sponsorBreakStartedAt" | "sponsorBreakCompletedAt" | "sponsorBreakCompletedAfterPlayableCount" | "sponsorBreakDueAfterPlayableCount" | "sponsorBreakManualNote"> | null;
   status: QueuePublicStatus;
   queue: QueuePublicTrack[];
   completed: QueuePublicTrack[];
@@ -670,6 +671,7 @@ export interface QueuePublicHistoryTrack {
   outcome: QueuePublicHistoryOutcome;
   lane: QueueLane;
   wheelChosen: boolean;
+  isSimulation?: boolean;
   submissionEventSequence: number | null;
   outcomeEventSequence: number | null;
 }

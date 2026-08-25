@@ -113,12 +113,13 @@ test("YouTube Music uses the normal YouTube API metadata path", { concurrency: f
   const calls = [];
   const track = await withFetch(async (url) => {
     calls.push(String(url));
-    return jsonResponse({ items: [{ snippet: { title: "YT Music Title", channelTitle: "YT Music Artist" }, contentDetails: { duration: "PT3M21S" } }] });
+    return jsonResponse({ items: [{ snippet: { title: "YT Music Title", channelTitle: "YT Music Artist", channelId: "UC_verified_artist" }, contentDetails: { duration: "PT3M21S" } }] });
   }, () => queue.createQueueTrack(trackInput("YTMusic", "https://music.youtube.com/watch?v=abc123_DEF45&list=test", "youtube")));
   assert.equal(calls.length, 1);
   assert.match(calls[0], /youtube\/v3\/videos/);
   assert.equal(track.detectedArtistName, "YT Music Artist");
   assert.equal(track.detectedSongTitle, "YT Music Title");
+  assert.deepEqual(track.providerArtistIdentities, [{ provider: "youtube", providerArtistId: "youtube:channel:UC_verified_artist", displayName: "YT Music Artist", identityRole: "channel" }]);
   assert.equal(track.detectedDurationSeconds, 201);
   assert.equal(track.durationSource, "youtube_api");
   assert.equal(track.durationIsEstimate, false);
@@ -167,7 +168,7 @@ test("Spotify success uses one token and one track request without duplicate dur
     const value = String(url);
     calls.push(value);
     if (value.includes("accounts.spotify.com")) return jsonResponse({ access_token: "spotify-token" });
-    if (value.includes("api.spotify.com/v1/tracks")) return jsonResponse({ duration_ms: 202400, name: "Spotify API Title", artists: [{ name: "Spotify API Artist" }], album: { images: [{ url: "https://i.scdn.co/image/api" }] } });
+    if (value.includes("api.spotify.com/v1/tracks")) return jsonResponse({ duration_ms: 202400, name: "Spotify API Title", artists: [{ id: "spotify-artist-id", name: "Spotify API Artist" }], album: { id: "spotify-album-id", name: "Signal Album", images: [{ url: "https://i.scdn.co/image/api" }] } });
     throw new Error(`unexpected fetch ${value}`);
   }, () => queue.createQueueTrack(trackInput("SpotifySuccess", "https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC", "spotify")));
   assert.equal(calls.length, 2);
@@ -175,6 +176,9 @@ test("Spotify success uses one token and one track request without duplicate dur
   assert.equal(calls.filter((value) => value.includes("api.spotify.com/v1/tracks")).length, 1);
   assert.equal(track.detectedArtistName, "Spotify API Artist");
   assert.equal(track.detectedSongTitle, "Spotify API Title");
+  assert.equal(track.detectedAlbumName, "Signal Album");
+  assert.equal(track.providerReleaseId, "spotify:album:spotify-album-id");
+  assert.deepEqual(track.providerArtistIdentities, [{ provider: "spotify", providerArtistId: "spotify:artist:spotify-artist-id", displayName: "Spotify API Artist", identityRole: "artist" }]);
   assert.equal(track.detectedDurationSeconds, 202);
   assert.equal(track.durationSource, "spotify_api");
   assert.equal(track.durationIsEstimate, false);
@@ -195,4 +199,28 @@ test("SoundCloud resolve failure falls back safely to public oEmbed", { concurre
   assert.equal(track.sourceArtworkUrl, "https://i1.sndcdn.com/artworks-test-large.jpg");
   assert.equal(track.detectedDurationSeconds, null);
   assert.equal(track.durationIsEstimate, true);
+}));
+
+test("SoundCloud account metadata stays uploader provenance rather than artist identity", { concurrency: false }, async () => withProviderEnv({ SOUNDCLOUD_CLIENT_ID: "soundcloud-client" }, async () => {
+  const track = await withFetch(async (url) => {
+    const value = String(url);
+    if (value.includes("api-v2.soundcloud.com/resolve")) {
+      return jsonResponse({
+        id: 918273,
+        duration: 181200,
+        title: "SoundCloud Provider Track",
+        user: { id: 445566, username: "Upload Account" },
+        publisher_metadata: { album_title: "SoundCloud Project" },
+        artwork_url: "https://i1.sndcdn.com/artworks-provider-large.jpg",
+      });
+    }
+    throw new Error(`unexpected fetch ${value}`);
+  }, () => queue.createQueueTrack(trackInput("SoundCloudSuccess", "https://soundcloud.com/upload-account/provider-track", "soundcloud")));
+  assert.equal(track.detectedArtistName, "Upload Account");
+  assert.equal(track.detectedSongTitle, "SoundCloud Provider Track");
+  assert.equal(track.detectedAlbumName, "SoundCloud Project");
+  assert.equal(track.providerReleaseId, null);
+  assert.deepEqual(track.providerArtistIdentities, [{ provider: "soundcloud", providerArtistId: "soundcloud:user:445566", displayName: "Upload Account", identityRole: "uploader" }]);
+  assert.equal(track.detectedDurationSeconds, 181);
+  assert.equal(track.durationSource, "soundcloud_api");
 }));

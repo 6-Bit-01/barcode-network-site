@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import Module, { createRequire } from "node:module";
 import path from "node:path";
@@ -51,6 +52,14 @@ const readModel = require("../src/app/api/bnl/read-model/route.ts");
 const sourceFilesReadModel = require("../src/app/api/bnl/source-files/route.ts");
 const workflowStore = require("../src/lib/dossier-workflow-store.ts");
 const workflow = require("../src/lib/dossier-workflow.ts");
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).filter((key) => value[key] !== undefined).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
 
 const forbiddenKeys = [
   "contactEmail",
@@ -161,8 +170,19 @@ async function addTrack(label, options = {}) {
   return queue.addToQueue({
     artist,
     title: `${label} Track`,
+    submittedArtistName: artist,
+    submittedSongTitle: options.submittedSongTitle ?? `${label} Track`,
+    submittedAlbumName: options.submittedAlbumName ?? null,
+    collaboratorNames: options.collaboratorNames ?? null,
+    detectedArtistName: options.detectedArtistName ?? null,
+    detectedSongTitle: options.detectedSongTitle ?? null,
+    detectedAlbumName: options.detectedAlbumName ?? null,
+    providerArtistIdentities: options.providerArtistIdentities ?? [],
+    providerReleaseId: options.providerReleaseId ?? null,
+    providerId: options.providerId ?? null,
     tiktokHandle: `@${artist.toLowerCase().replace(/[^a-z0-9]/g, "")}${sequence}`,
-    link: `https://example.com/${label.toLowerCase().replace(/[^a-z0-9]/g, "")}-${sequence}`,
+    link: options.link ?? `https://example.com/${label.toLowerCase().replace(/[^a-z0-9]/g, "")}-${sequence}`,
+    sourceType: options.sourceType ?? "other",
     tier: "free",
     lane: options.lane ?? "regular",
     amount: 0,
@@ -387,6 +407,116 @@ test("BNL access is exactly none, private, or public, with legacy recap approval
   assert.equal(updated.session.provenanceRevision, 5);
 });
 
+test("public production artist memory keeps structured identity, song, album, and lifecycle facts without private-session bleed", async () => {
+  await freshReadModelSession();
+  const track = await addTrack("Catalog Signal", {
+    artist: "Submitted Signal",
+    collaboratorNames: "Feature Signal, Guest Voice",
+    submittedSongTitle: "Submitted Signal Song",
+    submittedAlbumName: "Submitted Project",
+    detectedArtistName: "Provider Signal",
+    detectedSongTitle: "Provider Signal Song",
+    detectedAlbumName: "Provider Album",
+    providerArtistIdentities: [{ provider: "spotify", providerArtistId: "spotify:artist:provider-signal", displayName: "Provider Signal", identityRole: "artist" }],
+    providerReleaseId: "spotify:album:provider-album",
+    providerId: "spotify:provider-track",
+    sourceType: "spotify",
+    link: "https://open.spotify.com/track/provider-track",
+  });
+
+  let model = await modelJson();
+  const projection = model.sections.artistMemory;
+  assert.equal(projection.schemaVersion, "queue_artist_memory_v1");
+  assert.equal(projection.visibility, "public_safe");
+  assert.equal(projection.durableMemoryAuthorized, true);
+  assert.equal(projection.identityPolicy, "provider_identity_then_submission_attribution_never_discord_merge");
+  let record = projection.records.find((item) => item.recordId.endsWith(`:${track.id}`));
+  assert.ok(record);
+  assert.equal(record.artist.identityKey, "spotify:artist:provider-signal");
+  assert.equal(record.artist.displayName, "Provider Signal");
+  assert.equal(record.artist.submittedName, "Submitted Signal");
+  assert.deepEqual(record.artist.submittedCollaboratorNames, ["Feature Signal", "Guest Voice"]);
+  assert.equal(record.artist.conflictStatus, "submitted_provider_mismatch");
+  assert.equal(record.artist.discordIdentityStatus, "not_connected");
+  assert.equal(record.track.title, "Provider Signal Song");
+  assert.equal(record.track.submittedTitle, "Submitted Signal Song");
+  assert.equal(record.track.conflictStatus, "submitted_provider_mismatch");
+  assert.equal(record.track.publicSourceUrl, "https://open.spotify.com/track/provider-track");
+  assert.equal(record.release.albumName, "Provider Album");
+  assert.equal(record.release.submittedAlbumName, "Submitted Project");
+  assert.equal(record.release.conflictStatus, "submitted_provider_mismatch");
+  assert.equal(record.lifecycle.memoryState, "provisional");
+  assert.equal(record.provenance.privateSessionDataIncluded, false);
+  assert.equal(record.provenance.fileMetadataIncluded, false);
+  const { sourceRevision: sealedRevision, ...recordBody } = record;
+  assert.equal(
+    sealedRevision,
+    createHash("sha256").update(canonicalJson(recordBody)).digest("hex"),
+    "each record revision must seal every public catalog field",
+  );
+  const provisionalRevision = record.sourceRevision;
+  const provisionalDigest = projection.sourceDigest;
+
+  const channelTrack = await addTrack("Channel Account", {
+    artist: "Submitted Channel Artist",
+    detectedArtistName: "Label Upload Channel",
+    detectedSongTitle: "Channel Provider Song",
+    providerArtistIdentities: [{ provider: "youtube", providerArtistId: "youtube:channel:label-upload", displayName: "Label Upload Channel", identityRole: "channel" }],
+    providerId: "youtube:channel-track",
+    sourceType: "youtube",
+    link: "https://www.youtube.com/watch?v=channel-track",
+  });
+  model = await modelJson();
+  const channelRecord = model.sections.artistMemory.records.find((item) => item.recordId.endsWith(`:${channelTrack.id}`));
+  assert.equal(channelRecord.artist.identityBasis, "submitted_tiktok_attribution");
+  assert.equal(channelRecord.artist.displayName, "Submitted Channel Artist");
+  assert.equal(channelRecord.artist.providerCredits[0].identityRole, "channel");
+
+  await queue.setQueueOpen(false);
+  await queue.setQueueOpen(true);
+  model = await modelJson();
+  const unchangedRecord = model.sections.artistMemory.records.find((item) => item.recordId.endsWith(`:${track.id}`));
+  assert.equal(unchangedRecord.sourceRevision, provisionalRevision);
+  assert.notEqual(model.sections.artistMemory.sourceRevision, projection.sourceRevision);
+  assert.notEqual(model.sections.artistMemory.sourceDigest, provisionalDigest, "the added Channel Account record changes the durable catalog digest");
+  const digestAfterChannelAdd = model.sections.artistMemory.sourceDigest;
+
+  await queue.setQueueOpen(false);
+  await queue.setQueueOpen(true);
+  model = await modelJson();
+  assert.equal(model.sections.artistMemory.sourceDigest, digestAfterChannelAdd, "unrelated session-open state must not rewrite artist memory");
+
+  await queue.updateRadioTrack(track.id, "finish");
+  model = await modelJson();
+  record = model.sections.artistMemory.records.find((item) => item.recordId.endsWith(`:${track.id}`));
+  assert.equal(record.lifecycle.memoryState, "confirmed");
+  assert.equal(record.lifecycle.outcome, "finished");
+  assert.notEqual(record.sourceRevision, provisionalRevision);
+
+  const removedBeforePlay = await addTrack("Removed Before Play", { artist: "Removed Artist" });
+  await queue.updateRadioTrack(removedBeforePlay.id, "remove");
+  model = await modelJson();
+  const removedRecord = model.sections.artistMemory.records.find((item) => item.recordId.endsWith(`:${removedBeforePlay.id}`));
+  assert.equal(removedRecord.lifecycle.memoryState, "provisional");
+  assert.equal(removedRecord.lifecycle.outcome, "removed");
+  assert.equal(removedRecord.lifecycle.playedAt, null);
+
+  sequence += 1;
+  await startFreshQueueSession({
+    title: `Private memory isolation ${Date.now()} ${sequence}`,
+    purpose: "rehearsal",
+    bnlPublicationStatus: "runtime_only",
+  });
+  await queue.setQueueOpen(true);
+  const privateTrack = await addTrack("Private Memory", { artist: "Private Memory Artist" });
+  const privateModel = await modelJson("test-bnl-read-model-key");
+  assert.equal(privateModel.accessScope, "private");
+  assert.ok(privateModel.sections.artistMemory.records.some((item) => item.recordId.endsWith(`:${track.id}`)));
+  assert.equal(privateModel.sections.artistMemory.records.some((item) => item.recordId.endsWith(`:${privateTrack.id}`)), false);
+  assert.equal(JSON.stringify(privateModel.sections.artistMemory).includes("Private Memory Artist"), false);
+  assert.deepEqual(findForbiddenKeys(privateModel.sections.artistMemory), []);
+});
+
 test("BNL read model preserves v1 compatibility and adds semantic sections", async () => {
   await freshReadModelSession();
   const queued = await addTrack("Queued", { artist: "Queued Artist" });
@@ -397,11 +527,12 @@ test("BNL read model preserves v1 compatibility and adds semantic sections", asy
 
   assert.equal(model.ok, true);
   assert.equal(model.version, 1);
-  assert.equal(model.schemaRevision, "1.6");
+  assert.equal(model.schemaRevision, "1.7");
   assert.equal(model.publicOnly, true);
   assert.ok(model.sections.sourceContext);
   assert.ok(model.sections.queue);
   assert.ok(model.sections.artists);
+  assert.ok(model.sections.artistMemory);
   assert.ok(model.sections.dossiers);
   assert.ok(model.sections.rules);
   assert.ok(model.sections.operatorLanes);

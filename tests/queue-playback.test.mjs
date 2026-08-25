@@ -2290,6 +2290,7 @@ test("public POST accepts current active sessionId", async () => {
     mode: "link",
     artist: "Current Artist",
     title: "Current Track",
+    submittedAlbumName: "Current Project",
     tiktokHandle: "@currentartist",
     link: "https://example.com/current-track",
     ...legalAcceptanceBody(),
@@ -2297,6 +2298,10 @@ test("public POST accepts current active sessionId", async () => {
   const payload = await jsonOf(response);
   assert.equal(response.status, 201);
   assert.ok(payload.track?.id);
+  assert.equal(payload.track.submittedAlbumName, "Current Project");
+  const state = await queue.getRadioQueueState();
+  const stored = [state.nowPlaying, state.nextInLine, ...state.queue].find((track) => track?.id === payload.track.id);
+  assert.equal(stored.submittedAlbumName, "Current Project");
 });
 
 test("private rehearsal intake is blocked publicly but remains usable through an authenticated admin request", async () => {

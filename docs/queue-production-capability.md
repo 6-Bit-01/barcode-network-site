@@ -8,6 +8,8 @@ The capability is disabled unless the environment variable value is exactly `tru
 
 While disabled, queue sessions and tracks do not affect global live status, public queue CTAs derived from live status, public show mode, BNL read-model queue projections, queue-derived artists, queue-derived operator lanes, dossier recommendations, Source File evidence, public authoring suggestions, or memory-like evidence. No session-level approval can bypass this outer capability.
 
+The public queue history projection also returns an empty, revision-free result while disabled. This keeps `/api/queue/stats`, the Broadcast Deck, and the public Broadcast Archive dark even if a live-broadcast session exists in the queue store. The authenticated Admin → Queue Control preview uses its separate private projection and remains available for rehearsal verification.
+
 Operational Radio submission surfaces also remain on the established Auxchord route while disabled. This includes the Radio page, Footer resource and description, Terminal `RADIO` response, and the BARCODE Radio sentence in BNL's public source context. Historical Auxchord database records and dossiers are canon records, not operational routing, and are unchanged by the capability.
 
 ## Authorized testing that remains available

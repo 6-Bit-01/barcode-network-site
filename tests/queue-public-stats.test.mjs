@@ -7,6 +7,7 @@ import ts from "typescript";
 
 delete process.env.UPSTASH_REDIS_REST_URL;
 delete process.env.UPSTASH_REDIS_REST_TOKEN;
+process.env.BARCODE_QUEUE_PRODUCTION_ENABLED = "true";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const originalResolveFilename = Module._resolveFilename;
@@ -237,6 +238,56 @@ test("Broadcast Archive projects only retained live shows into separate Shows an
   assert.equal(result.artists.some((artist) => artist.projectKey === "guest voice"), false, "collaborators do not become or merge artist records");
   assert.ok(result.artists.some((artist) => artist.projectKey === "neon signals"), "similar project names remain separate");
   assert.equal(result.personalHistory, null);
+});
+
+test("public queue history stays empty until the production capability is exactly enabled", () => {
+  const live = session("live-current", "live_broadcast", {
+    status: "open",
+    queueOpen: true,
+    showStarted: true,
+    queue: [entry("waiting", "@private.test", { sourceType: "link" })],
+    showLog: [showLogEvent(1, "track_submitted", entry("waiting", "@private.test", { sourceType: "link" }))],
+  });
+  const archived = session("live-archive", "live_broadcast", {
+    completed: [entry("finished", "@archive.test", { outcome: "finished", sourceType: "link" })],
+  });
+  const input = {
+    revision: 73,
+    activeSessionId: live.sessionId,
+    sessions: [live, archived],
+    submitterToken: "private-browser-token",
+  };
+
+  for (const value of [undefined, "", "TRUE", "1", "yes", "false"]) {
+    const env = value === undefined ? {} : { BARCODE_QUEUE_PRODUCTION_ENABLED: value };
+    const result = queue.buildQueuePublicStats(input, env);
+    assert.equal(result.sourceRevision, 0);
+    assert.equal(result.builtAt, null);
+    assert.equal(result.currentShow, null);
+    assert.equal(result.latestShow, null);
+    assert.equal(result.overview.showCount, 0);
+    assert.equal(result.overview.submittedTrackCount, 0);
+    assert.deepEqual(result.shows, []);
+    assert.deepEqual(result.artists, []);
+    assert.deepEqual(result.recentEvents, []);
+    assert.equal(result.personalHistory, null);
+    assert.doesNotMatch(JSON.stringify(result), /private\.test|archive\.test|live-current|live-archive/);
+  }
+
+  const enabled = queue.buildQueuePublicStats(input, { BARCODE_QUEUE_PRODUCTION_ENABLED: "true" });
+  assert.equal(enabled.sourceRevision, 73);
+  assert.equal(enabled.currentShow.sessionId, "live-current");
+  assert.deepEqual(enabled.shows.map((show) => show.sessionId), ["live-archive"]);
+
+  const privatePreview = queue.buildQueueAdminPreviewStats({
+    revision: 73,
+    selectedSession: session("private-rehearsal", "rehearsal", {
+      status: "open",
+      queue: [entry("test-track", "@trusted.tester")],
+    }),
+  });
+  assert.equal(privatePreview.currentShow.sessionId, "private-rehearsal");
+  assert.equal(privatePreview.currentShow.submittedTrackCount, 1);
 });
 
 test("project normalization is deterministic but deliberately avoids fuzzy identity merging", () => {

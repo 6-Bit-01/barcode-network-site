@@ -29,6 +29,7 @@ import {
   QUEUE_SHOW_LOG_SCHEMA_VERSION,
 } from "./queue-show-log";
 import type { QueueShowLogEventInput } from "./queue-show-log";
+import { isQueueProductionEnabled } from "./queue-production";
 import { buildQueueShowReport } from "./queue-show-report";
 import type { QueueShowReport } from "./queue-show-report";
 import { parseIso8601DurationToSeconds, parseSpotifyTrackId, parseYouTubeVideoId as parseTrackDurationYouTubeVideoId } from "./track-duration";
@@ -4467,7 +4468,10 @@ export function buildQueuePublicStats(input: {
   activeSessionId?: string | null;
   sessions: QueueSession[];
   submitterToken?: string | null;
-}): QueuePublicStats {
+}, env: NodeJS.ProcessEnv = process.env): QueuePublicStats {
+  if (!isQueueProductionEnabled(env)) {
+    return buildQueueStatsProjection({ revision: 0, activeSessionId: null }, [], false);
+  }
   const sessions = input.sessions
     .map((session) => normalizeSession(session))
     .filter((session) => session.purpose === "live_broadcast" && session.showDate >= QUEUE_PUBLIC_HISTORY_COVERAGE_STARTED_AT);
@@ -4488,6 +4492,9 @@ export function buildQueueAdminPreviewStats(input: {
 }
 
 export async function getPublicQueueStats(submitterToken?: string | null): Promise<QueuePublicStats> {
+  if (!isQueueProductionEnabled()) {
+    return buildQueueStatsProjection({ revision: 0, activeSessionId: null }, [], false);
+  }
   const store = await readStore();
   return buildQueuePublicStats({
     revision: store.revision,

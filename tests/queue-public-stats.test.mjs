@@ -343,7 +343,7 @@ test("public history route is GET-only, token-bounded, and never cacheable", asy
   assert.equal((await response.json()).schemaVersion, "queue_public_history_projection_v1");
 });
 
-test("Broadcast Deck and Broadcast Archive remain separate destinations with connected queue entry points", () => {
+test("the active queue is the only public Broadcast Deck entry point", () => {
   const archivePage = fs.readFileSync(path.join(projectRoot, "src/app/radio/archive/page.tsx"), "utf8");
   const archive = fs.readFileSync(path.join(projectRoot, "src/components/BroadcastArchive.tsx"), "utf8");
   const deckPage = fs.readFileSync(path.join(projectRoot, "src/app/radio/deck/page.tsx"), "utf8");
@@ -385,15 +385,22 @@ test("Broadcast Deck and Broadcast Archive remain separate destinations with con
   assert.match(archive, /Wheel Chosen/);
   assert.match(archive, /not a verified artist account/);
   assert.match(archive, /Completed-play outcomes only/);
+  assert.match(archive, /deckHref &&/);
 
   assert.doesNotMatch(gateway, /href="\/radio\/deck"/);
   assert.match(gateway, /href="\/radio\/archive"/);
-  for (const source of [publicQueue, radio]) {
-    assert.match(source, /\/radio\/deck/);
-    assert.match(source, /\/radio\/archive/);
-  }
-  assert.match(sitemap, /\/radio\/deck/);
+  assert.match(publicQueue, /\/radio\/deck/);
+  assert.match(publicQueue, /Done submitting—or just watching\?/);
+  assert.match(publicQueue, /Song submissions stay here in the queue/);
+  assert.match(publicQueue, /Submission complete · follow the show on the Deck/);
+  assert.match(publicQueue, /\/radio\/archive/);
+  assert.doesNotMatch(radio, /\/radio\/deck/);
+  assert.match(radio, /\/radio\/archive/);
+  assert.doesNotMatch(archivePage, /deckHref|\/radio\/deck/);
+  assert.doesNotMatch(sitemap, /\/radio\/deck/);
   assert.match(sitemap, /\/radio\/archive/);
+  assert.match(deck, /Song submissions stay in the queue/);
+  assert.match(deck, /Submissions happen in the queue/);
   assert.match(publicQueue, /broadcastArchiveArtistHref/);
   assert.match(publicQueue, /Artist Archive/);
 

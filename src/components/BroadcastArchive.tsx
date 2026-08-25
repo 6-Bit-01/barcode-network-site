@@ -194,7 +194,7 @@ export function BroadcastArchive({
   initialArtistKey = "",
   refreshEndpoint = "/api/queue/stats",
   archiveBaseHref = "/radio/archive",
-  deckHref = "/radio/deck",
+  deckHref,
   queueHref = "/queue",
   previewMode = false,
 }: {
@@ -281,7 +281,7 @@ export function BroadcastArchive({
               <p className="mt-4 max-w-2xl text-sm leading-relaxed text-muted sm:text-base">Search {previewMode ? "this test session" : "BARCODE Radio"} by individual show or by artist/project. Follow who submitted each track, public music links, collaborators, exact outcomes, Wheel selections, and repeat appearances.</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Link href={deckHref} className="border border-[#ffaa00]/55 px-4 py-3 text-xs font-bold uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background">{previewMode ? "Open Deck Preview" : "Open Broadcast Deck"}</Link>
+              {deckHref && <Link href={deckHref} className="border border-[#ffaa00]/55 px-4 py-3 text-xs font-bold uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background">Open Deck Preview</Link>}
               <Link href={queueHref} className="border border-border px-4 py-3 text-xs font-bold uppercase tracking-widest text-muted hover:border-accent hover:text-accent">Open Queue</Link>
             </div>
           </div>

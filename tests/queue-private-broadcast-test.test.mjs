@@ -243,7 +243,8 @@ test("the active private queue dashboard opens that session's Deck Preview direc
   const queuePage = fs.readFileSync(path.join(projectRoot, "src/app/admin/queue/page.tsx"), "utf8");
   const dashboard = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioQueueControl.tsx"), "utf8");
 
-  assert.doesNotMatch(queuePage, /href="\/admin\/queue\/broadcast-test"/);
+  assert.match(queuePage, /href="\/admin\/queue\/broadcast-test"/);
+  assert.match(queuePage, /Browse Test Broadcasts/);
   assert.match(dashboard, /state\.session\.purpose === "rehearsal"/);
   assert.match(dashboard, /state\.session\.purpose === "simulation"/);
   assert.match(dashboard, /state\.session\.purpose === "internal_test"/);

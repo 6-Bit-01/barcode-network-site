@@ -872,6 +872,58 @@ test("BNL read model excludes simulation/test tracks from all public semantic su
   assert.equal(json.includes("Glass Circuit"), false);
 });
 
+test("BNL public queue diagnostics and runtime are derived only from readable tracks", async () => {
+  const sessionId = await freshReadModelSession();
+  await queue.updateRadioTrack("", "addSimulationFreeTrack");
+
+  let state = await queue.getRadioQueueState();
+  const simulation = [state.nowPlaying, state.nextInLine, ...state.queue]
+    .filter(Boolean)
+    .find((track) => track.isTestTrack === true);
+  assert.ok(simulation, "the simulation track should exist in the private queue state");
+
+  await queue.updateRadioTrack(simulation.id, "load");
+  const receipt = await queue.recordQueuePlaybackEvent({
+    sessionId,
+    trackId: simulation.id,
+    provider: "external",
+    eventType: "play",
+    currentTimeSeconds: 12,
+    durationSeconds: 300,
+  });
+  assert.equal(receipt.accepted, true);
+
+  state = await queue.getRadioQueueState();
+  assert.ok(state.session.estimatedActiveRuntimeSeconds > 0, "the full private state should retain simulation runtime");
+  assert.ok(state.playbackDiagnostics.events.some((event) => event.trackId === simulation.id), "the full private state should retain simulation diagnostics");
+
+  const model = await modelJson();
+  const publicQueue = model.sections.queue;
+
+  assert.equal(publicQueue.accessScope, "public");
+  assert.equal(publicQueue.session.activeCount, 0);
+  assert.equal(publicQueue.session.estimatedActiveRuntimeSeconds, 0);
+  assert.equal(publicQueue.status.activeCount, 0);
+  assert.equal(publicQueue.status.estimatedRuntimeSeconds, 0);
+  assert.equal(publicQueue.playbackTiming, null);
+  assert.equal(publicQueue.playbackDiagnostics.currentTrackId, null);
+  assert.equal(publicQueue.playbackDiagnostics.lifecycleState, "idle");
+  assert.equal(publicQueue.playbackDiagnostics.events.length, 0);
+  assert.equal(JSON.stringify(publicQueue).includes(simulation.id), false);
+
+  await queue.updateRadioTrack(simulation.id, "finish");
+  const afterSimulationFinish = (await modelJson()).sections.queue;
+  assert.equal(afterSimulationFinish.session.completedRuntimeSeconds, 0);
+  assert.equal(afterSimulationFinish.playbackDiagnostics.currentTrackId, null);
+  assert.equal(afterSimulationFinish.playbackDiagnostics.lifecycleState, "idle");
+  assert.equal(afterSimulationFinish.playbackDiagnostics.lastEventAt, null);
+  assert.equal(afterSimulationFinish.playbackDiagnostics.events.length, 0);
+  assert.equal(JSON.stringify(afterSimulationFinish).includes(simulation.id), false);
+
+  const routeSource = fs.readFileSync(path.join(projectRoot, "src/app/api/bnl/read-model/route.ts"), "utf8");
+  assert.match(routeSource, /source:\s*timing\.source/);
+});
+
 test("BNL read model excludes private queue/payment/upload keys and gifted Priority attribution", async () => {
   await freshReadModelSession();
   await addTrack("Private Fields", {

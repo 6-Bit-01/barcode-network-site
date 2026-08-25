@@ -40,11 +40,15 @@ import type {
   QueueEntry,
   QueueLane,
   QueuePlaybackDiagnostics,
+  QueuePlaybackTiming,
   QueuePublicTrack,
   QueueSessionBnlPublicationAccess,
   QueueSourceType,
 } from "@/lib/queue-types";
-import { queueSessionBnlPublicationAccess } from "@/lib/queue-types";
+import {
+  getTrackRuntimeSeconds,
+  queueSessionBnlPublicationAccess,
+} from "@/lib/queue-types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -281,15 +285,25 @@ function unavailableQueueProjection() {
 
 function safePlaybackDiagnostics(
   diagnostics: QueuePlaybackDiagnostics | null | undefined,
+  readableTrackIds: ReadonlySet<string>,
 ) {
   if (!diagnostics) return null;
+  const events = diagnostics.events
+    .filter((event) => readableTrackIds.has(event.trackId))
+    .slice(-20);
+  const latestStoredEvent = diagnostics.events.at(-1);
+  const currentTrackReadable = diagnostics.currentTrackId !== null
+    && readableTrackIds.has(diagnostics.currentTrackId);
+  const currentStateReadable = diagnostics.currentTrackId !== null
+    ? currentTrackReadable
+    : !latestStoredEvent || readableTrackIds.has(latestStoredEvent.trackId);
   return {
     schemaVersion: diagnostics.schemaVersion,
-    currentTrackId: diagnostics.currentTrackId,
-    lifecycleState: diagnostics.lifecycleState,
-    lastEventAt: diagnostics.lastEventAt,
-    lastErrorCode: diagnostics.lastErrorCode,
-    events: diagnostics.events.slice(-20).map((event) => ({
+    currentTrackId: currentTrackReadable ? diagnostics.currentTrackId : null,
+    lifecycleState: currentStateReadable ? diagnostics.lifecycleState : "idle",
+    lastEventAt: events.at(-1)?.observedAt ?? null,
+    lastErrorCode: currentStateReadable ? diagnostics.lastErrorCode : null,
+    events: events.map((event) => ({
       sequence: event.sequence,
       trackId: event.trackId,
       provider: event.provider,
@@ -303,6 +317,31 @@ function safePlaybackDiagnostics(
       errorCode: event.errorCode,
     })),
   };
+}
+
+function safePlaybackTiming(
+  timing: QueuePlaybackTiming | null | undefined,
+  nowPlayingTrackId: string | null,
+) {
+  if (!timing || !nowPlayingTrackId || timing.trackId !== nowPlayingTrackId)
+    return null;
+  return {
+    trackId: timing.trackId,
+    playbackState: timing.playbackState,
+    currentTimeSeconds: timing.currentTimeSeconds,
+    durationSeconds: timing.durationSeconds,
+    observedAt: timing.observedAt,
+    source: timing.source,
+  };
+}
+
+function runtimeSecondsFor(entries: readonly QueueEntry[]): number {
+  const seen = new Set<string>();
+  return entries.reduce((total, entry) => {
+    if (seen.has(entry.id)) return total;
+    seen.add(entry.id);
+    return total + getTrackRuntimeSeconds(entry);
+  }, 0);
 }
 
 async function readQueueForBnl(authenticated: boolean) {
@@ -362,10 +401,23 @@ async function readQueueForBnl(authenticated: boolean) {
   const readableActiveTrackIds = new Set(queueEntries.map((entry) => entry.id));
   if (upNextEntry) readableActiveTrackIds.add(upNextEntry.id);
   if (nowPlayingEntry) readableActiveTrackIds.add(nowPlayingEntry.id);
+  const readableTrackIds = new Set([
+    ...readableActiveTrackIds,
+    ...completedEntries.map((entry) => entry.id),
+    ...removedEntries.map((entry) => entry.id),
+    ...spotlightEntries.map((entry) => entry.id),
+  ]);
 
   const capacity =
     state.publicStatus?.capacity ?? state.session?.queueCapacity ?? 0;
   const activeCount = activeIds.size;
+  const activeEntries = [
+    ...queueEntries.filter((entry) => entry.status === "queued" || entry.status === "playing"),
+    ...(upNextEntry ? [upNextEntry] : []),
+    ...(nowPlayingEntry ? [nowPlayingEntry] : []),
+  ];
+  const estimatedActiveRuntimeSeconds = runtimeSecondsFor(activeEntries);
+  const completedRuntimeSeconds = runtimeSecondsFor(completedEntries);
   const publicQueueTracks = queueEntries.map(toPublicQueueTrack);
   const publicCompletedTracks = completedEntries.map(toPublicQueueTrack);
   const nowPlaying = nowPlayingEntry ? toPublicQueueTrack(nowPlayingEntry) : null;
@@ -393,8 +445,8 @@ async function readQueueForBnl(authenticated: boolean) {
       completedCount:
         state.session?.completedCount ?? completedEntries.length,
       removedCount: removedEntries.length,
-      estimatedActiveRuntimeSeconds: state.session?.estimatedActiveRuntimeSeconds ?? 0,
-      completedRuntimeSeconds: state.session?.completedRuntimeSeconds ?? 0,
+      estimatedActiveRuntimeSeconds,
+      completedRuntimeSeconds,
       submissionClosureReason: state.session?.submissionClosureReason ?? null,
       wheelSpinsOwed: sessionEnded
         ? 0
@@ -422,7 +474,7 @@ async function readQueueForBnl(authenticated: boolean) {
       activeCount,
       capacity,
       pressure: pressureFor(activeCount, capacity),
-      estimatedRuntimeSeconds: state.publicStatus?.estimatedRuntimeSeconds ?? 0,
+      estimatedRuntimeSeconds: estimatedActiveRuntimeSeconds,
     },
     nowPlaying: operationalTrack(nowPlayingEntry, "nowPlaying", readableScope),
     upNext: operationalTrack(upNextEntry, "upNext", readableScope, upNextEntry ? 1 : null),
@@ -447,9 +499,9 @@ async function readQueueForBnl(authenticated: boolean) {
         trackCount: trackIds.length,
       }] : [];
     }),
-    playbackTiming: state.playbackTiming ?? null,
+    playbackTiming: safePlaybackTiming(state.playbackTiming, nowPlayingEntry?.id ?? null),
     wheelTiming: state.wheelTiming ?? null,
-    playbackDiagnostics: safePlaybackDiagnostics(state.playbackDiagnostics),
+    playbackDiagnostics: safePlaybackDiagnostics(state.playbackDiagnostics, readableTrackIds),
   };
 
   return {

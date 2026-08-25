@@ -91,13 +91,15 @@ function readAudioDuration(file: File): Promise<number | null> {
   });
 }
 
-function publicTrackFromApi(track: { id: string; submittedArtistName?: string; submittedSongTitle?: string; artist?: string; title?: string; sourceType?: QueuePublicTrack["sourceType"]; lane?: QueuePublicTrack["lane"]; detectedArtistName?: string | null; detectedSongTitle?: string | null; detectedDurationSeconds?: number | null; estimatedDurationSeconds?: number; durationLabel?: string; durationIsEstimate?: boolean; durationSource?: QueuePublicTrack["durationSource"]; sourceArtworkUrl?: string | null; publicSourceUrl?: string | null; tiktokHandle?: string | null; priorityUpgradeRequested?: boolean; priorityUpgradeStatus?: QueuePublicTrack["priorityUpgradeStatus"] }): QueuePublicTrack {
+function publicTrackFromApi(track: { id: string; submittedArtistName?: string; submittedSongTitle?: string; submittedAlbumName?: string | null; artist?: string; title?: string; sourceType?: QueuePublicTrack["sourceType"]; lane?: QueuePublicTrack["lane"]; detectedArtistName?: string | null; detectedSongTitle?: string | null; detectedAlbumName?: string | null; detectedDurationSeconds?: number | null; estimatedDurationSeconds?: number; durationLabel?: string; durationIsEstimate?: boolean; durationSource?: QueuePublicTrack["durationSource"]; sourceArtworkUrl?: string | null; publicSourceUrl?: string | null; tiktokHandle?: string | null; priorityUpgradeRequested?: boolean; priorityUpgradeStatus?: QueuePublicTrack["priorityUpgradeStatus"] }): QueuePublicTrack {
   return {
     id: track.id,
     submittedArtistName: track.submittedArtistName ?? track.artist ?? "Submitted artist",
     submittedSongTitle: track.submittedSongTitle ?? track.title ?? "Submitted track",
+    submittedAlbumName: track.submittedAlbumName ?? null,
     detectedArtistName: track.detectedArtistName ?? null,
     detectedSongTitle: track.detectedSongTitle ?? null,
+    detectedAlbumName: track.detectedAlbumName ?? null,
     sourceType: track.sourceType ?? "other",
     lane: track.lane ?? "regular",
     durationLabel: track.durationLabel ?? (track.durationIsEstimate === false && track.detectedDurationSeconds ? formatRuntime(track.detectedDurationSeconds) : "est. 5:00"),
@@ -128,6 +130,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
   const finalSubmitIntent = useRef(false);
   const [artist, setArtist] = useState("");
   const [title, setTitle] = useState("");
+  const [albumName, setAlbumName] = useState("");
   const [link, setLink] = useState("");
   const [tiktokHandle, setTikTokHandle] = useState("");
   const [collaboratorNames, setCollaboratorNames] = useState("");
@@ -368,6 +371,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
 
   function clearTrackDraftFields() {
     setTitle("");
+    setAlbumName("");
     setLink("");
     setCollaboratorNames("");
     setNote("");
@@ -438,6 +442,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
         mode,
         artist: artist.trim(),
         title: title.trim(),
+        submittedAlbumName: albumName.trim(),
         tiktokHandle: tiktokHandle.trim(),
         collaboratorNames: collaboratorNames.trim(),
         contactEmail: contactEmail.trim(),
@@ -633,6 +638,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
             <div className="grid gap-2.5 sm:grid-cols-2">
               <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Artist name</span><input value={artist} onChange={(e) => setArtist(e.target.value)} className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
               <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Song title</span><input value={title} onChange={(e) => setTitle(e.target.value)} className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
+              <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Album / project</span><input value={albumName} onChange={(e) => setAlbumName(e.target.value.slice(0, 200))} placeholder="Optional — leave blank for a single" className="w-full bg-background border border-border px-3 py-2 text-sm" /></label>
               <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">TikTok handle</span><input value={tiktokHandle} onChange={(e) => setTikTokHandle(e.target.value)} placeholder="@six.bit" className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
               <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Featured/collaborator artist(s)</span><input value={collaboratorNames} onChange={(e) => setCollaboratorNames(e.target.value)} placeholder="Optional" className="w-full bg-background border border-border px-3 py-2 text-sm" /></label>
             </div>
@@ -693,6 +699,7 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
             <div className="grid gap-2 border border-accent/30 bg-accent/5 p-3 text-xs sm:grid-cols-2">
               <p><span className="text-muted">Artist:</span> {artist.trim() || "—"}</p>
               <p><span className="text-muted">Song:</span> {title.trim() || "—"}</p>
+              {albumName.trim() && <p><span className="text-muted">Album / project:</span> {albumName.trim()}</p>}
               <p><span className="text-muted">TikTok:</span> {tiktokHandle.trim() || "—"}</p>
               {collaboratorNames.trim() && <p><span className="text-muted">Featured:</span> {collaboratorNames.trim()}</p>}
               <p><span className="text-muted">Source type:</span> {mode === "upload" ? "Upload" : "Link"}</p>

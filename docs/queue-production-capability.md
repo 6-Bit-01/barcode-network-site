@@ -119,11 +119,20 @@ Public access is available only for `live_broadcast`. Rehearsal, simulation, and
 
 The persisted compatibility field remains `bnlPublicationStatus`: `private` means no access, `runtime_only` means private access, and both legacy `recap_approved` and `public_copy_approved` mean public access. Those storage values are not four different user choices and do not create separate recap or message permissions.
 
-Private and public access expose the same explicit read-only operational queue DTO: sanitized session state, order and positions, Now Playing and Next In Line, completed/removed tracks, safe submitted artist/title/handle/link attribution, duration and timing state, Wheel state, operational Priority/Signal Hold state, bounded playback diagnostics, and the matching sanitized show-history projection. They never expose payment or checkout records, amounts/currency, contact email, submitter tokens, raw upload locations or file metadata, legal-acceptance records, private notes, moderation flags, browser capabilities, or admin-only fields.
+Private and public access expose the same explicit read-only operational queue DTO: sanitized session state, order and positions, Now Playing and Next In Line, completed/removed tracks, safe submitted artist/title/album/handle/link attribution, duration and timing state, Wheel state, operational Priority/Signal Hold state, bounded playback diagnostics, and the matching sanitized show-history projection. They never expose payment or checkout records, amounts/currency, contact email, submitter tokens, raw upload locations or file metadata, legal-acceptance records, private notes, moderation flags, browser capabilities, or admin-only fields.
 
 The existing `BNL_API_KEY` authenticates private reads at `/api/bnl/read-model`. Anonymous or invalid-key requests fail closed for a private session. Private responses are `no-store`, `noindex`, and may be consumed only by the bot's `sealed_test` and `internal_controlled` channel policies; public, show-day, recap, Broadcast Memory, dossier, and publication paths strip or reject private queue data. Public responses remain cacheable and contain no simulation tracks.
 
-Every access mode is read-only. BNL never receives queue mutation, playback control, automatic memory, relationship, Source File, canon, or dossier-write authority. Reading or archiving a session does not upgrade its access choice.
+Every access mode is read-only. BNL never receives queue mutation or playback control. Operational `queue`, `archive`, `artists`, and `operatorLanes` data remains temporary and cannot write memory, relationships, Source Files, canon, or dossiers. The one narrow exception is the independently versioned public-only `sections.artistMemory` projection:
+
+- It contains only sessions whose purpose/access resolves to public `live_broadcast`, beginning at the public-history coverage boundary of 2026-08-24. Private, rehearsal, simulation, internal-test, legacy/unknown, and no-access sessions are excluded even when the current authenticated response is private.
+- Accepted tracks enter as provisional durable catalog facts. Only a recorded play timestamp or play-start event makes the lifecycle confirmed. Removal before play remains provisional and says removed; it is never rewritten as played.
+- Song, artist, and optional album/project values preserve submitted and provider forms. A mismatch is explicit. Provider values are preferred for display without deleting the submitted provenance.
+- Primary identity grouping uses exactly one semantic provider artist ID when available. Spotify artist IDs qualify. YouTube channel and SoundCloud uploader IDs remain provider-account credits, because a channel/uploader is not automatically the musical artist. Otherwise the key is derived from submitted TikTok attribution plus submitted artist name, or the normalized submitted name for legacy records.
+- No submitted TikTok attribution, provider ID, channel, uploader, or artist label is connected to a Discord member/account. The projection explicitly reports `discordIdentityStatus=not_connected`.
+- Link submissions may retain one validated HTTP(S) music link. Upload records contain public submitted labels only: no upload URL, filename, size, MIME type, detected file label, or private Blob reference.
+- Record revisions change only when that record's catalog or lifecycle facts change. The projection digest changes only when the structured catalog changes, so unrelated queue/payment/session mutations do not churn durable memory.
+- This authorization does not create a dossier, Source File, relationship, or canon identity. Reading or archiving any other queue section does not gain the exception.
 
 ## Vercel rollout procedure
 
@@ -133,8 +142,8 @@ Every access mode is read-only. BNL never receives queue mutation, playback cont
 4. Redeploy the site so server-only code reads the new environment value.
 5. Confirm `/api/admin/live` and `/api/bnl/read-model` report `capabilities.queueProduction=true`.
 6. Confirm a rehearsal with no BNL access returns `accessScope=none`; then choose Private BNL queue access and confirm an anonymous request still returns none while an authenticated request returns `accessScope=private` with simulation/timing evidence.
-7. Confirm the private test appears only in the authenticated Deck and Archive Preview, never in public `Live Now`, the public Deck, or the public Broadcast Archive.
-8. If the owner selects Public BNL queue access for a live broadcast, confirm `/api/bnl/read-model` returns `accessScope=public` without a credential and excludes simulations and every forbidden sensitive field.
+7. Confirm the private test appears only in the authenticated Deck and Archive Preview, never in public `Live Now`, the public Deck, or the public Broadcast Archive. No regular member should have access to the permission-locked BNL test channels.
+8. If the owner selects Public BNL queue access for a live broadcast, confirm `/api/bnl/read-model` returns `accessScope=public` without a credential and excludes simulations and every forbidden sensitive field. Confirm `sections.artistMemory` carries the exact `queue_artist_memory_v1` schema, accepted/provisional and played/confirmed transitions, stable semantic artist grouping, explicit label conflicts, and no Discord/file/private fields.
 9. Confirm `/radio`, the Footer, and Terminal `RADIO` route submission to `/queue` as internal links.
 10. Confirm `/queue` shows an honest closed/waiting state when no session is open and the active session when one is open.
 11. Keep the bot's separate queue-production gate disabled until the site and private-channel boundary are verified and the owner explicitly approves bot queue context.

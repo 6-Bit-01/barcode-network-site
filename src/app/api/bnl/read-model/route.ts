@@ -30,7 +30,7 @@ import {
   isHiddenFromBnl,
   isPublicDatabasePageVisible,
 } from "@/lib/database-visibility";
-import { getQueueBnlStats, getRadioQueueState, toPublicQueueTrack } from "@/lib/queue";
+import { getQueueBnlReadProjections, getRadioQueueState, toPublicQueueTrack } from "@/lib/queue";
 import {
   isQueueProductionEnabled,
   queueProductionCapability,
@@ -105,9 +105,11 @@ type BnlQueueTrack = Pick<
   | "id"
   | "submittedArtistName"
   | "submittedSongTitle"
+  | "submittedAlbumName"
   | "collaboratorNames"
   | "detectedArtistName"
   | "detectedSongTitle"
+  | "detectedAlbumName"
   | "providerTitle"
   | "sourceType"
   | "lane"
@@ -195,9 +197,11 @@ function operationalTrack(
     id: track.id,
     submittedArtistName: track.submittedArtistName,
     submittedSongTitle: track.submittedSongTitle,
+    submittedAlbumName: track.submittedAlbumName ?? null,
     collaboratorNames: track.collaboratorNames ?? null,
     detectedArtistName: track.detectedArtistName ?? null,
     detectedSongTitle: track.detectedSongTitle ?? null,
+    detectedAlbumName: track.detectedAlbumName ?? null,
     providerTitle: track.providerTitle ?? null,
     sourceType: track.sourceType,
     lane: track.lane,
@@ -1251,6 +1255,7 @@ function buildOperatorLanes(
       "Priority Signal status is not payment fact",
       "public dossier summary is not private dossier seed",
       "website queue read model is temporary context",
+      "only sections.artistMemory may enter durable artist catalog memory",
       publication?.accessLevel === "private"
         ? "simulation/test tracks are private test evidence only"
         : "simulation/test tracks are excluded",
@@ -1283,6 +1288,7 @@ function rulesForAccess(accessScope: BnlQueueAccessScope) {
         : []),
       "operatorLanes are hints, not actions",
       "temporary queue context should not be stored",
+      "sections.artistMemory alone authorizes durable public artist, song, album, and show-lifecycle facts",
       "public database page visibility permits only the same public-safe summary fields",
       "queue-derived artists are not dossier records",
     ],
@@ -1295,7 +1301,8 @@ function rulesForAccess(accessScope: BnlQueueAccessScope) {
       "legal acceptance records",
       "private queue notes, suspicious flags, or admin-only fields",
       "account or Discord identity merging",
-      "automatic canon, memory, Source File, relationship, or dossier creation",
+      "automatic canon, Source File, relationship, or dossier creation",
+      "automatic durable memory from queue, archive, artists, operatorLanes, or any section other than artistMemory",
       ...(privateAccess
         ? [
             "public replies from this private queue data",
@@ -1313,6 +1320,8 @@ function rulesForAccess(accessScope: BnlQueueAccessScope) {
       artists: accessScope === "none"
         ? "queue-derived artist surfaces unavailable"
         : `queue-derived ${accessScope} artist surface, not profiles`,
+      artistMemory:
+        "public-production artist/song/album lifecycle facts authorized for durable memory; never Discord identity or automatic dossier authority",
       dossiers:
         "public-page-visible database dossier summaries with clearance labels preserved; hidden/private details are not exposed",
       operatorLanes:
@@ -1338,8 +1347,19 @@ export async function GET(req?: Request) {
         publication: null,
       };
   const accessScope = liveQueue.accessScope;
-  const archive = queueProductionEnabled && accessScope !== "none"
-    ? { available: true, ...(await getQueueBnlStats(accessScope)) }
+  const queueProjections = queueProductionEnabled
+    ? await getQueueBnlReadProjections(accessScope === "none" ? null : accessScope)
+    : null;
+  const artistMemory = queueProjections
+    ? queueProjections.artistMemory
+    : {
+        available: false,
+        reason: "queue_production_disabled",
+        durableMemoryAuthorized: false,
+        records: [],
+      };
+  const archive = queueProjections?.archive
+    ? { available: true, ...queueProjections.archive }
     : {
         available: false,
         reason: queueProductionEnabled
@@ -1353,7 +1373,7 @@ export async function GET(req?: Request) {
     {
       ok: true,
       version: 1,
-      schemaRevision: "1.6",
+      schemaRevision: "1.7",
       generatedAt: new Date().toISOString(),
       scope: privateResponse ? "bnl_private_read_model" : "bnl_public_read_model",
       source: "barcode-network-site",
@@ -1373,6 +1393,7 @@ export async function GET(req?: Request) {
         queue: liveQueue.queue,
         archive,
         artists: liveQueue.artists,
+        artistMemory,
         dossiers,
         operatorLanes: queueProductionEnabled
           ? buildOperatorLanes(

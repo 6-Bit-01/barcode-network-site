@@ -176,6 +176,7 @@ export async function submitTrackFromBody(
 ): Promise<NextResponse> {
   const artist = cleanBodyText(body.artist);
   const title = cleanBodyText(body.title);
+  const submittedAlbumName = cleanBodyText(body.submittedAlbumName).slice(0, 200) || null;
   const mode = cleanBodyText(body.mode);
   const detectedDurationSeconds = parseBodyDuration(body.detectedDurationSeconds);
   const note = cleanBodyText(body.note).slice(0, 500);
@@ -235,6 +236,7 @@ export async function submitTrackFromBody(
     const track = await submitRadioTrack({
       artist,
       title,
+      submittedAlbumName,
       link: fileUrl,
       fileUrl,
       fileName,
@@ -261,7 +263,7 @@ export async function submitTrackFromBody(
   if (await hasDuplicateLinkSubmission(link)) return duplicateResponse();
 
   const sourceType = detectQueueSourceType(link);
-  const track = await submitRadioTrack({ artist, title, link, sourceType, note, submitterArtistName: artist, tiktokHandle, collaboratorNames, contactEmail, submitterToken, legalAcceptance, sessionId });
+  const track = await submitRadioTrack({ artist, title, submittedAlbumName, link, sourceType, note, submitterArtistName: artist, tiktokHandle, collaboratorNames, contactEmail, submitterToken, legalAcceptance, sessionId });
   if (!(await isTrackPersistedInSessionQueue(track.id, active.session.sessionId))) {
     return NextResponse.json({ error: QUEUE_ACCEPTANCE_UNCONFIRMED_MESSAGE, code: "queue_acceptance_unconfirmed" }, { status: 500 });
   }

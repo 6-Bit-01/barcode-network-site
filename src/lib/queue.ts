@@ -64,6 +64,7 @@ import type {
   QueueLane,
   QueueNonPriorityLane,
   QueuePlaybackLifecycleEventInput,
+  QueueProviderArtistIdentity,
   QueuePublicHandleHistory,
   QueuePublicHistoryEvent,
   QueuePublicHistoryEventType,
@@ -194,7 +195,10 @@ interface QueueMutationLease {
 interface ProviderMetadata {
   detectedArtistName: string | null;
   detectedSongTitle: string | null;
+  detectedAlbumName: string | null;
   providerTitle: string | null;
+  providerArtistIdentities: QueueProviderArtistIdentity[];
+  providerReleaseId: string | null;
   detectedDurationSeconds: number | null;
   durationSource: QueueDurationSource;
   artworkUrl?: string | null;
@@ -1227,6 +1231,36 @@ function uploadedFileDeleteAfterFor(entry: QueueEntry, sourceType: QueueSourceTy
   return new Date(base + UPLOADED_FILE_RETENTION_MS).toISOString();
 }
 
+function sanitizeProviderIdentity(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const cleaned = value.trim().slice(0, 180);
+  return /^[a-z0-9][a-z0-9:._-]*$/i.test(cleaned) ? cleaned : null;
+}
+
+function normalizeProviderArtistIdentities(value: unknown): QueueProviderArtistIdentity[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const identities: QueueProviderArtistIdentity[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const raw = item as Partial<QueueProviderArtistIdentity>;
+    const provider = raw.provider === "spotify" || raw.provider === "youtube" || raw.provider === "soundcloud"
+      ? raw.provider
+      : null;
+    const providerArtistId = sanitizeProviderIdentity(raw.providerArtistId);
+    const displayName = sanitizeProviderText(raw.displayName, 160);
+    const identityRole = raw.identityRole === "artist" || raw.identityRole === "channel" || raw.identityRole === "uploader"
+      ? raw.identityRole
+      : null;
+    if (!provider || !providerArtistId || !displayName || !identityRole) continue;
+    const key = `${provider}:${providerArtistId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    identities.push({ provider, providerArtistId, displayName, identityRole });
+  }
+  return identities.slice(0, 12);
+}
+
 function normalizeEntry(entry: QueueEntry): QueueEntry {
   const { priorityOverlayDisplacedAt: legacyDisplacedFromNextInLineAt, ...entryWithoutLegacyMarker } = entry as QueueEntry & { priorityOverlayDisplacedAt?: string | null };
   const submittedArtistName = entry.submittedArtistName ?? entry.artist;
@@ -1249,10 +1283,14 @@ function normalizeEntry(entry: QueueEntry): QueueEntry {
     title: entry.title ?? submittedSongTitle,
     submittedArtistName,
     submittedSongTitle,
+    submittedAlbumName: sanitizeProviderText(entry.submittedAlbumName, 200),
     collaboratorNames: entry.collaboratorNames?.trim() || null,
     detectedArtistName: entry.detectedArtistName ?? null,
     detectedSongTitle: entry.detectedSongTitle ?? null,
+    detectedAlbumName: entry.detectedAlbumName ?? null,
     providerTitle: entry.providerTitle ?? null,
+    providerArtistIdentities: normalizeProviderArtistIdentities(entry.providerArtistIdentities),
+    providerReleaseId: sanitizeProviderIdentity(entry.providerReleaseId),
     sourceType,
     normalizedTikTokHandle: normalizeTikTokHandle(entry.normalizedTikTokHandle ?? entry.tiktokHandle ?? ""),
     normalizedSourceKey: shouldMigrateTikTokIdentity && canonicalTikTokKey ? canonicalTikTokKey : entry.normalizedSourceKey ?? null,
@@ -2811,7 +2849,17 @@ function parseFilenameMetadata(fileName?: string | null): { artist: string | nul
 }
 
 function blankProvider(source: QueueDurationSource = "internal_estimate"): ProviderMetadata {
-  return { detectedArtistName: null, detectedSongTitle: null, providerTitle: null, detectedDurationSeconds: null, durationSource: source, artworkUrl: null };
+  return {
+    detectedArtistName: null,
+    detectedSongTitle: null,
+    detectedAlbumName: null,
+    providerTitle: null,
+    providerArtistIdentities: [],
+    providerReleaseId: null,
+    detectedDurationSeconds: null,
+    durationSource: source,
+    artworkUrl: null,
+  };
 }
 
 export function parseYouTubeVideoId(link: string): string | null {
@@ -2830,14 +2878,27 @@ async function lookupYouTubeMetadata(link: string, budget = createProviderFetchB
   const payload = await fetchProviderJson(url, {}, budget) as {
     items?: Array<{
       contentDetails?: { duration?: unknown };
-      snippet?: { title?: unknown; channelTitle?: unknown };
+      snippet?: { title?: unknown; channelTitle?: unknown; channelId?: unknown };
     }>;
   } | null;
   const item = Array.isArray(payload?.items) ? payload.items[0] : null;
   const duration = typeof item?.contentDetails?.duration === "string" ? parseYouTubeDuration(item.contentDetails.duration) : null;
   const providerTitle = sanitizeProviderText(item?.snippet?.title, 240);
   const channelTitle = sanitizeProviderText(item?.snippet?.channelTitle, 160);
-  return { detectedArtistName: channelTitle, detectedSongTitle: providerTitle, providerTitle, detectedDurationSeconds: duration, durationSource: duration ? "youtube_api" : "internal_estimate", artworkUrl: id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : null };
+  const channelId = sanitizeProviderIdentity(item?.snippet?.channelId);
+  return {
+    detectedArtistName: channelTitle,
+    detectedSongTitle: providerTitle,
+    detectedAlbumName: null,
+    providerTitle,
+    providerArtistIdentities: channelTitle && channelId
+      ? [{ provider: "youtube", providerArtistId: `youtube:channel:${channelId}`, displayName: channelTitle, identityRole: "channel" }]
+      : [],
+    providerReleaseId: null,
+    detectedDurationSeconds: duration,
+    durationSource: duration ? "youtube_api" : "internal_estimate",
+    artworkUrl: id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : null,
+  };
 }
 
 function spotifyOEmbedUrl(link: string): string {
@@ -2868,16 +2929,39 @@ async function lookupSpotifyMetadata(link: string, budget = createProviderFetchB
   if (!token) return fallback();
   const track = await fetchProviderJson(`https://api.spotify.com/v1/tracks/${encodeURIComponent(trackId)}`, { headers: { Authorization: `Bearer ${token}` } }, budget) as {
     duration_ms?: unknown;
-    artists?: Array<{ name?: unknown }>;
+    artists?: Array<{ id?: unknown; name?: unknown }>;
     name?: unknown;
-    album?: { images?: Array<{ url?: unknown }> };
+    album?: { id?: unknown; name?: unknown; images?: Array<{ url?: unknown }> };
   } | null;
   if (!track) return fallback();
   const seconds = typeof track.duration_ms === "number" ? Math.round(track.duration_ms / 1000) : null;
   const artist = Array.isArray(track.artists) ? track.artists.map((item) => sanitizeProviderText(item.name, 120)).filter((value): value is string => Boolean(value)).join(", ") : null;
   const title = sanitizeProviderText(track.name, 240);
+  const detectedAlbumName = sanitizeProviderText(track.album?.name, 200);
+  const providerReleaseId = sanitizeProviderIdentity(track.album?.id);
+  const providerArtistIdentities = normalizeProviderArtistIdentities(
+    Array.isArray(track.artists)
+      ? track.artists.map((item) => {
+          const id = sanitizeProviderIdentity(item.id);
+          const displayName = sanitizeProviderText(item.name, 160);
+          return id && displayName
+            ? { provider: "spotify", providerArtistId: `spotify:artist:${id}`, displayName, identityRole: "artist" }
+            : null;
+        }).filter(Boolean)
+      : [],
+  );
   const artworkUrl = Array.isArray(track.album?.images) ? track.album.images.map((image) => safeHttpsPublicUrl(image.url)).find((value): value is string => Boolean(value)) ?? null : null;
-  const metadata = { detectedArtistName: artist || null, detectedSongTitle: title, providerTitle: title, detectedDurationSeconds: seconds, durationSource: seconds ? "spotify_api" as const : "internal_estimate" as const, artworkUrl };
+  const metadata: ProviderMetadata = {
+    detectedArtistName: artist || null,
+    detectedSongTitle: title,
+    detectedAlbumName,
+    providerTitle: title,
+    providerArtistIdentities,
+    providerReleaseId: providerReleaseId ? `spotify:album:${providerReleaseId}` : null,
+    detectedDurationSeconds: seconds,
+    durationSource: seconds ? "spotify_api" : "internal_estimate",
+    artworkUrl,
+  };
   return artworkUrl ? metadata : fallback(metadata);
 }
 
@@ -2913,7 +2997,10 @@ async function lookupTikTokMetadata(link: string, budget = createProviderFetchBu
   return {
     detectedArtistName: sanitizeProviderText(payload.author_name, 120),
     detectedSongTitle: null,
+    detectedAlbumName: null,
     providerTitle: sanitizeProviderText(payload.title, 240),
+    providerArtistIdentities: [],
+    providerReleaseId: null,
     detectedDurationSeconds: null,
     durationSource: "internal_estimate",
     artworkUrl: safeHttpsPublicUrl(payload.thumbnail_url),
@@ -2926,18 +3013,34 @@ async function lookupSoundCloudMetadata(link: string, budget = createProviderFet
   if (!clientId) return fallback();
   const resolveUrl = `https://api-v2.soundcloud.com/resolve?url=${encodeURIComponent(link)}&client_id=${encodeURIComponent(clientId)}`;
   const track = await fetchProviderJson(resolveUrl, {}, budget) as {
+    id?: unknown;
     duration?: unknown;
     title?: unknown;
-    user?: { username?: unknown };
+    user?: { id?: unknown; username?: unknown };
+    publisher_metadata?: { album_title?: unknown; release_title?: unknown };
     artwork_url?: unknown;
   } | null;
   if (!track) return fallback();
   const seconds = typeof track.duration === "number" ? Math.round(track.duration / 1000) : null;
   const title = sanitizeProviderText(track.title, 240);
   const artist = sanitizeProviderText(track.user?.username, 160);
+  const userId = sanitizeProviderIdentity(track.user?.id === undefined ? null : String(track.user.id));
+  const detectedAlbumName = sanitizeProviderText(track.publisher_metadata?.album_title ?? track.publisher_metadata?.release_title, 200);
   const rawArtwork = safeHttpsPublicUrl(track.artwork_url);
   const artworkUrl = rawArtwork ? rawArtwork.replace("-large.", "-t500x500.") : null;
-  const metadata = { detectedArtistName: artist, detectedSongTitle: title, providerTitle: title, detectedDurationSeconds: seconds, durationSource: seconds ? "soundcloud_api" as const : "internal_estimate" as const, artworkUrl };
+  const metadata: ProviderMetadata = {
+    detectedArtistName: artist,
+    detectedSongTitle: title,
+    detectedAlbumName,
+    providerTitle: title,
+    providerArtistIdentities: artist && userId
+      ? [{ provider: "soundcloud", providerArtistId: `soundcloud:user:${userId}`, displayName: artist, identityRole: "uploader" }]
+      : [],
+    providerReleaseId: null,
+    detectedDurationSeconds: seconds,
+    durationSource: seconds ? "soundcloud_api" : "internal_estimate",
+    artworkUrl,
+  };
   return artworkUrl ? metadata : fallback(metadata);
 }
 
@@ -3139,6 +3242,7 @@ class QueueSubmissionBlockedError extends Error {
 export async function createQueueTrack(input: {
   artist: string;
   title: string;
+  submittedAlbumName?: string | null;
   submitterArtistName?: string;
   tiktokHandle: string;
   collaboratorNames?: string | null;
@@ -3153,6 +3257,7 @@ export async function createQueueTrack(input: {
   sourceType?: QueueSourceType;
   detectedArtistName?: string | null;
   detectedSongTitle?: string | null;
+  detectedAlbumName?: string | null;
   providerTitle?: string | null;
   detectedDurationSeconds?: number | null;
   durationSource?: QueueDurationSource;
@@ -3161,6 +3266,7 @@ export async function createQueueTrack(input: {
   const sourceType = input.sourceType ?? (input.fileUrl ? "upload" : detectQueueSourceType(input.link ?? ""));
   const submittedArtistName = input.artist.trim();
   const submittedSongTitle = input.title.trim();
+  const submittedAlbumName = sanitizeProviderText(input.submittedAlbumName, 200);
   const submitterArtistName = (input.submitterArtistName?.trim() || submittedArtistName).trim();
   const normalizedTikTokHandle = normalizeTikTokHandle(input.tiktokHandle);
   if (!normalizedTikTokHandle) throw new Error("TikTok handle is required.");
@@ -3195,6 +3301,7 @@ export async function createQueueTrack(input: {
     submitterArtistName,
     submittedArtistName,
     submittedSongTitle,
+    submittedAlbumName,
     collaboratorNames: input.collaboratorNames?.trim() || null,
     tiktokHandle: normalizedTikTokHandle,
     normalizedTikTokHandle,
@@ -3205,7 +3312,10 @@ export async function createQueueTrack(input: {
     sourceArtworkUrl: sourceType === "youtube" && providerId?.startsWith("youtube:") ? `https://img.youtube.com/vi/${providerId.slice("youtube:".length)}/hqdefault.jpg` : providerMetadata.artworkUrl ?? null,
     detectedArtistName: input.detectedArtistName ?? providerMetadata.detectedArtistName ?? fileMetadata.artist,
     detectedSongTitle: input.detectedSongTitle ?? providerMetadata.detectedSongTitle ?? fileMetadata.title,
+    detectedAlbumName: input.detectedAlbumName ?? providerMetadata.detectedAlbumName,
     providerTitle: input.providerTitle ?? providerMetadata.providerTitle ?? fileMetadata.providerTitle,
+    providerArtistIdentities: providerMetadata.providerArtistIdentities,
+    providerReleaseId: providerMetadata.providerReleaseId,
     fileUrl: input.fileUrl ?? null,
     fileName: input.fileName ?? null,
     fileSize: input.fileSize ?? null,
@@ -3980,9 +4090,11 @@ export function toPublicQueueTrack(entry: QueueEntry): QueuePublicTrack {
     id: normalized.id,
     submittedArtistName: normalized.submittedArtistName ?? normalized.artist,
     submittedSongTitle: normalized.submittedSongTitle ?? normalized.title,
+    submittedAlbumName: normalized.submittedAlbumName ?? null,
     collaboratorNames: normalized.collaboratorNames ?? null,
     detectedArtistName: isUpload ? null : normalized.detectedArtistName ?? null,
     detectedSongTitle: isUpload ? null : normalized.detectedSongTitle ?? null,
+    detectedAlbumName: isUpload ? null : normalized.detectedAlbumName ?? null,
     providerTitle: isUpload ? null : normalized.providerTitle ?? null,
     sourceType: normalized.sourceType ?? "other",
     lane: normalized.lane ?? "regular",
@@ -4510,10 +4622,10 @@ export type QueueBnlStats = Omit<QueuePublicStats, "source" | "visibility"> & {
   accessScope: Exclude<QueueSessionBnlAccessLevel, "none">;
 };
 
-export async function getQueueBnlStats(
+function buildQueueBnlStatsFromStore(
+  store: QueueStore,
   accessScope: Exclude<QueueSessionBnlAccessLevel, "none">,
-): Promise<QueueBnlStats> {
-  const store = await readStore();
+): QueueBnlStats {
   const selectedSessions = store.sessions
     .map((session) => normalizeSession(session))
     .filter((session) => {
@@ -4535,6 +4647,304 @@ export async function getQueueBnlStats(
     source: "queue_bnl_history_projection",
     visibility: accessScope === "private" ? "bnl_private_safe" : "public_safe",
     accessScope,
+  };
+}
+
+export async function getQueueBnlStats(
+  accessScope: Exclude<QueueSessionBnlAccessLevel, "none">,
+): Promise<QueueBnlStats> {
+  return buildQueueBnlStatsFromStore(await readStore(), accessScope);
+}
+
+export const QUEUE_BNL_ARTIST_MEMORY_SCHEMA_VERSION = "queue_artist_memory_v1" as const;
+const MAX_QUEUE_BNL_ARTIST_MEMORY_RECORDS = 1000;
+
+export interface QueueBnlArtistMemoryRecord {
+  recordId: string;
+  sourceRevision: string;
+  artist: {
+    identityKey: string;
+    identityBasis: "provider_artist_id" | "submitted_tiktok_attribution" | "normalized_submitted_name";
+    displayName: string;
+    submittedName: string;
+    submittedCollaboratorNames: string[];
+    detectedName: string | null;
+    providerCredits: QueueProviderArtistIdentity[];
+    submittedTikTokHandle: string | null;
+    discordIdentityStatus: "not_connected";
+    conflictStatus: "none" | "submitted_provider_mismatch";
+  };
+  track: {
+    title: string;
+    submittedTitle: string;
+    detectedTitle: string | null;
+    providerTrackId: string | null;
+    sourceType: QueueSourceType;
+    publicSourceUrl: string | null;
+    conflictStatus: "none" | "submitted_provider_mismatch";
+  };
+  release: {
+    albumName: string | null;
+    submittedAlbumName: string | null;
+    detectedAlbumName: string | null;
+    providerReleaseId: string | null;
+    conflictStatus: "none" | "submitted_provider_mismatch";
+  };
+  lifecycle: {
+    memoryState: "provisional" | "confirmed";
+    outcome: "queued" | "playing" | "finished" | "skipped" | "removed" | "unknown";
+    acceptedAt: string;
+    playedAt: string | null;
+    resolvedAt: string | null;
+    wheelChosen: boolean;
+  };
+  show: {
+    sessionId: string;
+    title: string;
+    showDate: string;
+    publicationStatus: "recap_approved" | "public_copy_approved";
+  };
+  provenance: {
+    source: "barcode_network_public_queue";
+    visibility: "public_safe";
+    privateSessionDataIncluded: false;
+    simulationDataIncluded: false;
+    fileMetadataIncluded: false;
+  };
+}
+
+export interface QueueBnlArtistMemoryProjection {
+  available: true;
+  schemaVersion: typeof QUEUE_BNL_ARTIST_MEMORY_SCHEMA_VERSION;
+  source: "queue_public_artist_memory";
+  visibility: "public_safe";
+  durableMemoryAuthorized: true;
+  sourceRevision: number;
+  sourceDigest: string;
+  builtAt: string | null;
+  truncated: boolean;
+  identityPolicy: "provider_identity_then_submission_attribution_never_discord_merge";
+  lifecyclePolicy: "accepted_is_provisional_played_is_confirmed";
+  records: QueueBnlArtistMemoryRecord[];
+}
+
+function artistMemoryText(value: unknown, limit: number): string | null {
+  return sanitizeProviderText(value, limit);
+}
+
+function artistMemoryNameKey(value: string): string {
+  const normalized = normalizeIdentity(value);
+  return createHash("sha256").update(normalized || value).digest("hex").slice(0, 24);
+}
+
+function artistMemoryCollaboratorNames(entry: QueueEntry): string[] {
+  const raw = typeof entry.collaboratorNames === "string" ? entry.collaboratorNames : "";
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const part of raw.split(/[,;\n]+/)) {
+    const name = artistMemoryText(part, 160);
+    const key = name ? normalizeIdentity(name) : "";
+    if (!name || !key || seen.has(key)) continue;
+    seen.add(key);
+    names.push(name);
+  }
+  return names.slice(0, 12);
+}
+
+function artistMemoryIdentity(entry: QueueEntry): QueueBnlArtistMemoryRecord["artist"] {
+  const sourceType = entry.sourceType ?? "other";
+  const submittedName = artistMemoryText(entry.submittedArtistName ?? entry.artist, 160) ?? "Unknown artist";
+  const submittedCollaboratorNames = artistMemoryCollaboratorNames(entry);
+  const detectedName = sourceType === "upload" ? null : artistMemoryText(entry.detectedArtistName, 160);
+  const providerCredits = sourceType === "upload"
+    ? []
+    : normalizeProviderArtistIdentities(entry.providerArtistIdentities);
+  const providerArtistCredits = providerCredits.filter((credit) => credit.identityRole === "artist");
+  const submittedTikTokHandle = normalizeTikTokHandle(entry.normalizedTikTokHandle ?? entry.tiktokHandle ?? "") || null;
+  const conflictStatus = detectedName
+    && normalizeIdentity(submittedName) !== normalizeIdentity(detectedName)
+      ? "submitted_provider_mismatch"
+      : "none";
+  if (providerArtistCredits.length === 1) {
+    return {
+      identityKey: providerArtistCredits[0].providerArtistId,
+      identityBasis: "provider_artist_id",
+      displayName: providerArtistCredits[0].displayName,
+      submittedName,
+      submittedCollaboratorNames,
+      detectedName,
+      providerCredits,
+      submittedTikTokHandle,
+      discordIdentityStatus: "not_connected",
+      conflictStatus,
+    };
+  }
+  const identityBasis = submittedTikTokHandle
+    ? "submitted_tiktok_attribution"
+    : "normalized_submitted_name";
+  const identityKey = submittedTikTokHandle
+    ? `queue:submission:${submittedTikTokHandle.slice(1)}:${artistMemoryNameKey(submittedName)}`
+    : `queue:artist-name:${artistMemoryNameKey(submittedName)}`;
+  return {
+    identityKey,
+    identityBasis,
+    displayName: submittedName,
+    submittedName,
+    submittedCollaboratorNames,
+    detectedName,
+    providerCredits,
+    submittedTikTokHandle,
+    discordIdentityStatus: "not_connected",
+    conflictStatus,
+  };
+}
+
+function queueArtistMemoryPlayedAt(session: QueueSession, entry: QueueEntry): string | null {
+  if (entry.playedAt) return entry.playedAt;
+  const playStarted = normalizeQueueShowLog(session.showLog)
+    .filter((event) => event.eventType === "track_play_started" && event.track?.trackId === entry.id)
+    .sort((left, right) => Date.parse(left.occurredAt) - Date.parse(right.occurredAt))[0];
+  return playStarted?.occurredAt ?? null;
+}
+
+function queueArtistMemoryOutcome(record: QueuePublicStatsRecord): QueueBnlArtistMemoryRecord["lifecycle"]["outcome"] {
+  if (record.outcome === "finished" || record.outcome === "skipped" || record.outcome === "removed") return record.outcome;
+  if (record.outcome === "unknown") return "unknown";
+  return record.entry.status === "playing" ? "playing" : "queued";
+}
+
+function queueArtistMemoryRecord(
+  session: QueueSession,
+  record: QueuePublicStatsRecord,
+): QueueBnlArtistMemoryRecord {
+  const entry = normalizeEntry(record.entry);
+  const sourceType = entry.sourceType ?? "other";
+  const artist = artistMemoryIdentity(entry);
+  const submittedTitle = artistMemoryText(entry.submittedSongTitle ?? entry.title, 240) ?? "Untitled track";
+  const detectedTitle = sourceType === "upload" ? null : artistMemoryText(entry.detectedSongTitle, 240);
+  const titleConflictStatus = detectedTitle
+    && normalizeIdentity(submittedTitle) !== normalizeIdentity(detectedTitle)
+      ? "submitted_provider_mismatch"
+      : "none";
+  const submittedAlbumName = artistMemoryText(entry.submittedAlbumName, 200);
+  const detectedAlbumName = sourceType === "upload" ? null : artistMemoryText(entry.detectedAlbumName, 200);
+  const conflictStatus = submittedAlbumName && detectedAlbumName
+    && normalizeIdentity(submittedAlbumName) !== normalizeIdentity(detectedAlbumName)
+      ? "submitted_provider_mismatch"
+      : "none";
+  const playedAt = queueArtistMemoryPlayedAt(session, entry);
+  const memoryState = playedAt ? "confirmed" : "provisional";
+  const outcome = queueArtistMemoryOutcome(record);
+  const providerTrackId = sourceType === "upload"
+    ? null
+    : sanitizeProviderIdentity(entry.providerId);
+  const publicSourceUrl = publicSourceUrlForTrack(entry);
+  const recordBody: Omit<QueueBnlArtistMemoryRecord, "sourceRevision"> = {
+    recordId: `queue-artist-memory:${session.sessionId}:${entry.id}`,
+    artist,
+    track: {
+      title: detectedTitle ?? submittedTitle,
+      submittedTitle,
+      detectedTitle,
+      providerTrackId,
+      sourceType,
+      publicSourceUrl,
+      conflictStatus: titleConflictStatus,
+    },
+    release: {
+      albumName: detectedAlbumName ?? submittedAlbumName,
+      submittedAlbumName,
+      detectedAlbumName,
+      providerReleaseId: sourceType === "upload" ? null : entry.providerReleaseId ?? null,
+      conflictStatus,
+    },
+    lifecycle: {
+      memoryState,
+      outcome,
+      acceptedAt: entry.createdAt,
+      playedAt,
+      resolvedAt: outcome === "removed"
+        ? entry.removedAt ?? null
+        : entry.completedAt ?? entry.playedAt ?? null,
+      wheelChosen: record.wheelChosen,
+    },
+    show: {
+      sessionId: session.sessionId,
+      title: session.title,
+      showDate: session.showDate,
+      publicationStatus: session.bnlPublicationStatus as "recap_approved" | "public_copy_approved",
+    },
+    provenance: {
+      source: "barcode_network_public_queue",
+      visibility: "public_safe",
+      privateSessionDataIncluded: false,
+      simulationDataIncluded: false,
+      fileMetadataIncluded: false,
+    },
+  };
+  return {
+    ...recordBody,
+    sourceRevision: createHash("sha256").update(canonicalJson(recordBody)).digest("hex"),
+  };
+}
+
+export function buildQueueBnlArtistMemory(input: {
+  revision: number;
+  sessions: QueueSession[];
+}): QueueBnlArtistMemoryProjection {
+  const eligibleSessions = input.sessions
+    .map((session) => normalizeSession(session))
+    .filter((session) => queueSessionBnlPublicationAccess(session).accessLevel === "public"
+      && session.showDate >= QUEUE_PUBLIC_HISTORY_COVERAGE_STARTED_AT)
+    .sort((left, right) => publicStatsSessionTime(right) - publicStatsSessionTime(left));
+  const allRecords = eligibleSessions.flatMap((session) =>
+    publicStatsRecordsForSession(session, false)
+      .sort((left, right) => Date.parse(right.entry.createdAt) - Date.parse(left.entry.createdAt))
+      .map((record) => queueArtistMemoryRecord(session, record)),
+  );
+  const records = allRecords.slice(0, MAX_QUEUE_BNL_ARTIST_MEMORY_RECORDS);
+  const sourceRevision = Math.max(0, Math.floor(input.revision));
+  const sourceDigest = createHash("sha256").update(canonicalJson({
+    schemaVersion: QUEUE_BNL_ARTIST_MEMORY_SCHEMA_VERSION,
+    records,
+  })).digest("hex");
+  return {
+    available: true,
+    schemaVersion: QUEUE_BNL_ARTIST_MEMORY_SCHEMA_VERSION,
+    source: "queue_public_artist_memory",
+    visibility: "public_safe",
+    durableMemoryAuthorized: true,
+    sourceRevision,
+    sourceDigest,
+    builtAt: eligibleSessions.map((session) => session.updatedAt).filter(Boolean).sort().at(-1) ?? null,
+    truncated: allRecords.length > records.length,
+    identityPolicy: "provider_identity_then_submission_attribution_never_discord_merge",
+    lifecyclePolicy: "accepted_is_provisional_played_is_confirmed",
+    records,
+  };
+}
+
+export async function getQueueBnlArtistMemory(): Promise<QueueBnlArtistMemoryProjection> {
+  const store = await readStore();
+  return buildQueueBnlArtistMemory({
+    revision: store.revision,
+    sessions: store.sessions,
+  });
+}
+
+export async function getQueueBnlReadProjections(
+  accessScope: Exclude<QueueSessionBnlAccessLevel, "none"> | null,
+): Promise<{
+  archive: QueueBnlStats | null;
+  artistMemory: QueueBnlArtistMemoryProjection;
+}> {
+  const store = await readStore();
+  return {
+    archive: accessScope ? buildQueueBnlStatsFromStore(store, accessScope) : null,
+    artistMemory: buildQueueBnlArtistMemory({
+      revision: store.revision,
+      sessions: store.sessions,
+    }),
   };
 }
 

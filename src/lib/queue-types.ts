@@ -4,6 +4,7 @@
 
 export type QueueTier = "free" | "featured" | "fastlane" | "frontrow";
 export type QueueSourceType = "upload" | "link" | "youtube" | "soundcloud" | "spotify" | "tiktok" | "other";
+export type QueueProviderIdentitySource = "youtube" | "soundcloud" | "spotify";
 export type QueueLane = "priority" | "wheel" | "regular";
 export type QueueNonPriorityLane = "wheel" | "regular";
 export type QueueTrackStatus = "queued" | "completed" | "removed" | "playing" | "next" | "pending" | "played" | "refunded" | "expired";
@@ -61,6 +62,13 @@ export type QueueShowLogEventType =
   | "session_archived";
 export type QueueWheelTimingStatus = "idle" | "ready" | "reencrypting" | "spinning" | "result_pending" | "confirmed" | "cancelled" | "signal_lost";
 export type UploadedFileDeletionStatus = "pending" | "deleted" | "error";
+
+export interface QueueProviderArtistIdentity {
+  provider: QueueProviderIdentitySource;
+  providerArtistId: string;
+  displayName: string;
+  identityRole: "artist" | "channel" | "uploader";
+}
 
 export interface QueuePlaybackLifecycleEventInput {
   sessionId?: string | null;
@@ -405,6 +413,7 @@ export interface QueueEntry {
   submitterArtistName?: string;
   submittedArtistName?: string;
   submittedSongTitle?: string;
+  submittedAlbumName?: string | null;
   collaboratorNames?: string | null;
   tiktokHandle?: string;
   normalizedTikTokHandle?: string;
@@ -417,7 +426,10 @@ export interface QueueEntry {
   limitMatchReasons?: string[];
   detectedArtistName?: string | null;
   detectedSongTitle?: string | null;
+  detectedAlbumName?: string | null;
   providerTitle?: string | null;
+  providerArtistIdentities?: QueueProviderArtistIdentity[];
+  providerReleaseId?: string | null;
   fileUrl?: string | null;
   fileName?: string | null;
   fileSize?: number | null;
@@ -588,9 +600,11 @@ export interface QueuePublicTrack {
   id: string;
   submittedArtistName: string;
   submittedSongTitle: string;
+  submittedAlbumName?: string | null;
   collaboratorNames?: string | null;
   detectedArtistName?: string | null;
   detectedSongTitle?: string | null;
+  detectedAlbumName?: string | null;
   providerTitle?: string | null;
   sourceType: QueueSourceType;
   lane: QueueLane;

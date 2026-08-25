@@ -13,6 +13,7 @@ export type QueueBroadcastPhase = "warmup" | "submission_window" | "broadcast_ac
 export type QueueSubmissionClosureReason = "manual" | "capacity" | "ended" | "archived" | null;
 export type QueueSessionPurpose = "unknown" | "rehearsal" | "live_broadcast" | "simulation" | "internal_test";
 export type QueueSessionBnlPublicationStatus = "private" | "runtime_only" | "recap_approved" | "public_copy_approved";
+export type QueueSessionBnlAccessLevel = "none" | "private" | "public";
 export type PriorityUpgradeStatus = "none" | "requested" | "manual" | "checkout_pending" | "paid" | "paid_needs_attention" | "failed" | "refunded";
 export type PriorityUpgradeSource = "admin" | "public_placeholder" | "future_payment" | "stripe";
 export type SignalHoldStatus = "none" | "checkout_pending" | "active" | "paid_needs_attention" | "failed" | "refunded" | "fulfilled" | "expired";
@@ -219,23 +220,26 @@ export function normalizeQueueSessionBnlPublicationStatus(
   value: unknown,
   purpose: QueueSessionPurpose,
 ): QueueSessionBnlPublicationStatus {
-  if (purpose !== "live_broadcast") return "private";
+  if (purpose === "unknown") return "private";
+  if (purpose !== "live_broadcast") return value === "runtime_only" ? "runtime_only" : "private";
   return isQueueSessionBnlPublicationStatus(value) ? value : "private";
 }
 
 export type QueueSessionBnlPublicationAccess = {
   purpose: QueueSessionPurpose;
   status: QueueSessionBnlPublicationStatus;
+  accessLevel: QueueSessionBnlAccessLevel;
+  queueReadable: boolean;
+  publicUse: boolean;
+  /** Compatibility aliases for existing read-model and overlay consumers. */
   runtimeContext: boolean;
   recapCandidates: boolean;
   publicCopyCandidates: boolean;
   reason:
     | "legacy_or_unknown_session_quarantined"
-    | "session_purpose_quarantined"
-    | "session_publication_private"
-    | "runtime_only_approved"
-    | "recap_approved"
-    | "public_copy_approved";
+    | "session_access_none"
+    | "private_access_approved"
+    | "public_access_approved";
 };
 
 export function queueSessionBnlPublicationAccess(
@@ -247,39 +251,40 @@ export function queueSessionBnlPublicationAccess(
     return {
       purpose,
       status: "private",
+      accessLevel: "none",
+      queueReadable: false,
+      publicUse: false,
       runtimeContext: false,
       recapCandidates: false,
       publicCopyCandidates: false,
       reason: "legacy_or_unknown_session_quarantined",
     };
   }
-  if (purpose !== "live_broadcast") {
-    return {
-      purpose,
-      status: "private",
-      runtimeContext: false,
-      recapCandidates: false,
-      publicCopyCandidates: false,
-      reason: "session_purpose_quarantined",
-    };
-  }
   if (status === "private") {
     return {
       purpose,
       status,
+      accessLevel: "none",
+      queueReadable: false,
+      publicUse: false,
       runtimeContext: false,
       recapCandidates: false,
       publicCopyCandidates: false,
-      reason: "session_publication_private",
+      reason: "session_access_none",
     };
   }
+  const publicUse = purpose === "live_broadcast"
+    && (status === "recap_approved" || status === "public_copy_approved");
   return {
     purpose,
     status,
+    accessLevel: publicUse ? "public" : "private",
+    queueReadable: true,
+    publicUse,
     runtimeContext: true,
-    recapCandidates: status === "recap_approved" || status === "public_copy_approved",
-    publicCopyCandidates: status === "public_copy_approved",
-    reason: status === "runtime_only" ? "runtime_only_approved" : status,
+    recapCandidates: publicUse,
+    publicCopyCandidates: publicUse,
+    reason: publicUse ? "public_access_approved" : "private_access_approved",
   };
 }
 

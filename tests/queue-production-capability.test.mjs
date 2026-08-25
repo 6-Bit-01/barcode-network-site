@@ -225,12 +225,12 @@ test("not_connected queue submission boundary remains compatible while disabled"
   });
 });
 
-test("enabled capability restores public-facing BNL queue behavior", async () => {
+test("enabled capability plus public BNL access restores public-facing queue behavior", async () => {
   await withQueueProduction("true", async () => {
     await startFreshQueueSession({
       title: "Production Enabled Queue",
       purpose: "live_broadcast",
-      bnlPublicationStatus: "runtime_only",
+      bnlPublicationStatus: "public_copy_approved",
     });
     await queue.setQueueOpen(true);
     const added = await queue.addToQueue({ artist: "Enabled Artist", title: "Enabled Track", tier: "free", lane: "regular", amount: 0, createdAt: new Date().toISOString() });
@@ -256,7 +256,7 @@ test("enabled native queue capability does not override session-level BNL quaran
     const model = await (await readModel.GET(new Request("https://example.test/api/bnl/read-model"))).json();
     assert.equal(model.capabilities.queueProduction, true);
     assert.equal(model.sections.queue.available, false);
-    assert.equal(model.sections.queue.reason, "session_purpose_quarantined");
+    assert.equal(model.sections.queue.reason, "queue_data_unavailable");
     assert.equal(JSON.stringify(model.sections.queue).includes(added.id), false);
     assert.equal(model.sections.artists.some((artist) => artist.name === "Rehearsal Artist"), false);
     assert.equal(model.sections.operatorLanes.temporaryRuntimeContext.some((item) => item.source === "queue_public_snapshot"), false);

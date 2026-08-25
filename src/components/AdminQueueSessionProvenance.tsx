@@ -19,33 +19,24 @@ const PURPOSE_OPTIONS: Array<{
   { value: "internal_test", label: "Internal test" },
 ];
 
-const PUBLICATION_OPTIONS: Array<{
-  value: QueueSessionBnlPublicationStatus;
-  label: string;
-}> = [
-  { value: "private", label: "BNL gets nothing from this show" },
-  { value: "runtime_only", label: "BNL can see the live queue during this show only" },
-  { value: "recap_approved", label: "BNL can also use finished tracks for a show recap" },
-  { value: "public_copy_approved", label: "BNL can also use sanitized show facts in public messages" },
-];
+function editablePublicationStatus(
+  status: QueueSessionBnlPublicationStatus,
+): QueueSessionBnlPublicationStatus {
+  return status === "recap_approved" ? "public_copy_approved" : status;
+}
 
 function publicationMeaning(
   purpose: QueueSessionPurpose,
   status: QueueSessionBnlPublicationStatus,
 ): string {
-  if (purpose !== "live_broadcast") {
-    return "Tests and rehearsals never send queue or track data to BNL. This choice is locked to “BNL gets nothing.”";
-  }
+  if (purpose === "unknown") return "Legacy or unknown sessions cannot provide queue data to BNL.";
   if (status === "private") {
     return "BNL receives no queue or track data from this show.";
   }
   if (status === "runtime_only") {
-    return "While the show is active, BNL may see a sanitized snapshot of what is happening. Finished tracks cannot be used for recaps or later public writing.";
+    return "BNL receives the sanitized operational queue and saved show history only in owner/admin and private-test contexts. It cannot use this show in public replies, public Deck output, or the public Broadcast Archive.";
   }
-  if (status === "recap_approved") {
-    return "BNL may see the live snapshot and receive sanitized finished tracks as possible show-recap material. It cannot reuse them for unrelated public writing.";
-  }
-  return "BNL may see the live snapshot, receive recap material, and reuse sanitized show facts in public messages. This still does not enable memory or dossiers.";
+  return "BNL receives the same sanitized operational queue and saved show history and may use it in public replies, the Broadcast Deck, and Broadcast Archive interactions. It still cannot mutate the queue or create memory or dossiers automatically.";
 }
 
 export function AdminQueueSessionProvenance({
@@ -57,14 +48,14 @@ export function AdminQueueSessionProvenance({
 }) {
   const [purpose, setPurpose] = useState<QueueSessionPurpose>(session.purpose);
   const [publicationStatus, setPublicationStatus] =
-    useState<QueueSessionBnlPublicationStatus>(session.bnlPublicationStatus);
+    useState<QueueSessionBnlPublicationStatus>(editablePublicationStatus(session.bnlPublicationStatus));
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setPurpose(session.purpose);
-    setPublicationStatus(session.bnlPublicationStatus);
+    setPublicationStatus(editablePublicationStatus(session.bnlPublicationStatus));
     setMessage(null);
     setError(null);
   }, [session.sessionId, session.purpose, session.bnlPublicationStatus]);
@@ -86,14 +77,15 @@ export function AdminQueueSessionProvenance({
     }
     setPurpose(next.session?.purpose ?? purpose);
     setPublicationStatus(
-      next.session?.bnlPublicationStatus ?? publicationStatus,
+      editablePublicationStatus(next.session?.bnlPublicationStatus ?? publicationStatus),
     );
     setMessage("BNL access choice saved. Queue behavior was not changed.");
   }
 
   function changePurpose(value: QueueSessionPurpose) {
     setPurpose(value);
-    if (value !== "live_broadcast") setPublicationStatus("private");
+    if (value === "unknown") setPublicationStatus("private");
+    else if (value !== "live_broadcast" && publicationStatus === "public_copy_approved") setPublicationStatus("runtime_only");
     setMessage(null);
     setError(null);
   }
@@ -101,7 +93,7 @@ export function AdminQueueSessionProvenance({
   return (
     <details className="border border-cyan-300/35 bg-cyan-300/5 p-4">
       <summary className="cursor-pointer text-xs font-bold uppercase tracking-[0.28em] text-cyan-200">
-        What BNL can use from this show
+        BNL queue access
       </summary>
       <div className="mt-4 space-y-4">
         <div className="grid gap-3 lg:grid-cols-2">
@@ -120,10 +112,10 @@ export function AdminQueueSessionProvenance({
             </select>
           </label>
           <label className="space-y-2">
-            <span className="text-xs uppercase tracking-widest text-muted">What can BNL use from this show?</span>
+            <span className="text-xs uppercase tracking-widest text-muted">BNL queue access</span>
             <select
               value={publicationStatus}
-              disabled={purpose !== "live_broadcast"}
+              disabled={purpose === "unknown"}
               onChange={(event) => {
                 setPublicationStatus(event.target.value as QueueSessionBnlPublicationStatus);
                 setMessage(null);
@@ -131,11 +123,9 @@ export function AdminQueueSessionProvenance({
               }}
               className="w-full border border-border bg-background px-3 py-2.5 text-sm disabled:opacity-50"
             >
-              {PUBLICATION_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
+              <option value="private">No BNL queue access</option>
+              <option value="runtime_only">Private BNL queue access</option>
+              {purpose === "live_broadcast" && <option value="public_copy_approved">Public BNL queue access</option>}
             </select>
           </label>
         </div>
@@ -158,7 +148,7 @@ export function AdminQueueSessionProvenance({
           {saving ? "Saving…" : "Save BNL Access"}
         </button>
         <p className="text-xs text-muted">
-          This does not publish a recap, enable BNL memory, create dossier data, or change queue, payment, or playback behavior.
+          Payment, checkout, contact, upload, legal-acceptance, and admin-only fields are never included. BNL access is read-only and never enables automatic memory, dossier creation, queue mutation, or playback control.
         </p>
       </div>
     </details>

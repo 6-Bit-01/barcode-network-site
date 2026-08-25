@@ -1504,7 +1504,7 @@ test("BNL read model excludes simulation tracks from queue and artists", async (
   await freshOpenSession("bnl read model sim exclusion", {
     showStarted: false,
     purpose: "live_broadcast",
-    bnlPublicationStatus: "runtime_only",
+    bnlPublicationStatus: "public_copy_approved",
   });
   const real = await submitTrack("BNL Real", { artist: "BNL Real Artist" });
   const nonLatin = await submitTrack("BNL Non Latin", { artist: "東京ビート" });
@@ -1523,6 +1523,8 @@ test("BNL read model excludes simulation tracks from queue and artists", async (
   const data = await response.json();
 
   assert.equal(data.ok, true);
+  assert.equal(data.accessScope, "public");
+  assert.equal(data.sections.queue.available, true);
   const queueTrackIds = data.sections.queue.queue.map((track) => track.id);
   assert.ok(queueTrackIds.includes(real.id), "real queue track should remain in the BNL read model");
   assert.ok(queueTrackIds.includes(nonLatin.id), "non-Latin artist track should remain in the BNL read model queue");
@@ -1538,8 +1540,7 @@ test("BNL read model excludes simulation tracks from queue and artists", async (
   assert.equal(typeof nonLatinArtist.normalizedName, "string");
   assert.notEqual(nonLatinArtist.normalizedName, "", "non-Latin artist normalizedName should not be empty");
   assert.equal(artistNames.some((name) => /^SIM /i.test(name)), false, "simulation artist must not enter derived artist surface");
-  assert.ok(data.sections.rules.allowedUse.includes("simulation/test tracks are excluded from this read model"));
-  assert.equal(data.sections.rules.sourceAuthority.simulationData, "BNL must treat this read model as live/public context only, not admin simulation data");
+  assert.equal(data.sections.rules.sourceAuthority.simulationData, "simulation/test tracks are excluded from public BNL queue context");
 });
 
 test("simulation free is blocked while submissions are closed", async () => {

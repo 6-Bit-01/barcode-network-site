@@ -252,19 +252,25 @@ test("the active private queue dashboard opens that session's Deck Preview direc
   assert.match(dashboard, /target="_blank"/);
 });
 
-test("BNL publication controls explain each cumulative access level in plain language", () => {
+test("BNL controls expose exactly no access, private access, and public access in plain language", () => {
   const showManagement = fs.readFileSync(path.join(projectRoot, "src/components/AdminShowManagement.tsx"), "utf8");
   const provenance = fs.readFileSync(path.join(projectRoot, "src/components/AdminQueueSessionProvenance.tsx"), "utf8");
+  const queueArchive = fs.readFileSync(path.join(projectRoot, "src/components/AdminQueueArchive.tsx"), "utf8");
 
   for (const source of [showManagement, provenance]) {
-    assert.match(source, /BNL gets nothing from this show/);
-    assert.match(source, /BNL can see the live queue during this show only/);
-    assert.match(source, /BNL can also use finished tracks for a show recap/);
-    assert.match(source, /BNL can also use sanitized show facts in public messages/);
-    assert.doesNotMatch(source, /Private \/ quarantined|Runtime context only|Recap candidates approved|Public copy approved/);
+    assert.match(source, /No BNL queue access/);
+    assert.match(source, /Private BNL queue access/);
+    assert.match(source, /Public BNL queue access/);
+    assert.doesNotMatch(source, /show recap|sanitized public message use|Runtime context only|Recap candidates approved|Public copy approved/i);
   }
-  assert.match(showManagement, /What can BNL use from this show\?/);
-  assert.match(provenance, /What BNL can use from this show/);
+  assert.match(showManagement, /BNL queue access/);
+  assert.match(provenance, /BNL queue access/);
+  assert.match(showManagement, /Tests can use private BNL access without appearing in public BNL outputs or the public Broadcast Archive/);
+  assert.match(provenance, /Payment, checkout, contact, upload, legal-acceptance, and admin-only fields are never included/);
+  assert.match(queueArchive, /No BNL access/);
+  assert.match(queueArchive, /Private BNL access/);
+  assert.match(queueArchive, /Public BNL access/);
+  assert.doesNotMatch(queueArchive, /BNL \{session\.bnlPublicationStatus\}/);
 });
 
 test("private queue intake and paid checkout routes require authenticated admin access", () => {

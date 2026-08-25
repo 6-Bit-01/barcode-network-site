@@ -78,7 +78,7 @@ function entry(id, handle, options = {}) {
   };
 }
 
-function showLogEvent(sequence, eventType, track = null, occurredAt = at(sequence)) {
+function showLogEvent(sequence, eventType, track = null, occurredAt = at(sequence), details = null) {
   return {
     sequence,
     eventType,
@@ -93,6 +93,7 @@ function showLogEvent(sequence, eventType, track = null, occurredAt = at(sequenc
       submissionOrder: sequence,
       playedOrder: null,
     } : null,
+    details,
   };
 }
 
@@ -137,9 +138,29 @@ test("Broadcast Archive projects only retained live shows into separate Shows an
   const firstRetained = entry("first-retained", "@archive.handle", { artist: "Archive Artist", outcome: "finished", createdAt: at(1) });
   const simulation = entry("simulation", "@submitter.one", { artist: "Neon Signal", outcome: "finished", isTestTrack: true });
   const currentLog = [
-    showLogEvent(1, "submissions_opened"),
-    showLogEvent(2, "track_submitted", waiting),
-    showLogEvent(3, "wheel_confirmed"),
+    showLogEvent(1, "session_created"),
+    showLogEvent(2, "submissions_opened"),
+    showLogEvent(3, "track_submitted", waiting),
+    showLogEvent(4, "track_loaded", waiting),
+    showLogEvent(5, "track_play_started", waiting),
+    showLogEvent(6, "track_paused", waiting),
+    showLogEvent(7, "track_stalled", waiting),
+    showLogEvent(8, "track_resumed", waiting),
+    showLogEvent(9, "track_playback_error", waiting),
+    showLogEvent(10, "track_skipped", waiting),
+    showLogEvent(11, "track_removed", waiting),
+    showLogEvent(12, "track_signal_hold_applied", waiting),
+    showLogEvent(13, "wheel_spin_unlocked", null, at(13), { wheelSpinsAdded: 1, wheelSpinsOwed: 2 }),
+    showLogEvent(14, "wheel_launched"),
+    showLogEvent(15, "wheel_reencrypted"),
+    showLogEvent(16, "wheel_spun"),
+    showLogEvent(17, "wheel_result_rejected"),
+    showLogEvent(18, "wheel_confirmed"),
+    showLogEvent(19, "wheel_cancelled"),
+    showLogEvent(20, "sponsor_break_started"),
+    showLogEvent(21, "sponsor_break_skipped"),
+    showLogEvent(22, "sponsor_break_reset"),
+    showLogEvent(23, "submissions_closed"),
   ];
   const archivedLog = [
     showLogEvent(1, "submissions_opened"),
@@ -201,6 +222,10 @@ test("Broadcast Archive projects only retained live shows into separate Shows an
   assert.equal(result.currentShow.trackRoster.length, 3);
   assert.equal(result.currentShow.trackRoster.find((track) => track.trackId === "waiting").publicSourceUrl, "https://music.example.test/waiting");
   assert.equal(result.currentShow.trackRoster.find((track) => track.trackId === "next").publicSourceUrl, null);
+  assert.deepEqual(result.currentShow.milestones.map((event) => event.eventType), currentLog.map((event) => event.eventType));
+  assert.equal(result.currentShow.milestones.find((event) => event.eventType === "wheel_spin_unlocked").detail, "2 Wheel spins are waiting.");
+  assert.equal(result.currentShow.milestones.find((event) => event.eventType === "track_skipped").headline, "Track skipped");
+  assert.equal(result.currentShow.milestones.find((event) => event.eventType === "track_playback_error").headline, "Playback issue detected");
   assert.equal(result.shows[0].trackRoster.find((track) => track.trackId === "finished").wheelChosen, true);
 
   const neon = result.artists.find((artist) => artist.projectKey === "neon signal");
@@ -318,7 +343,7 @@ test("public history route is GET-only, token-bounded, and never cacheable", asy
   assert.equal((await response.json()).schemaVersion, "queue_public_history_projection_v1");
 });
 
-test("Broadcast Deck and Broadcast Archive remain separate destinations with connected queue entry points", () => {
+test("the active queue is the only public Broadcast Deck entry point", () => {
   const archivePage = fs.readFileSync(path.join(projectRoot, "src/app/radio/archive/page.tsx"), "utf8");
   const archive = fs.readFileSync(path.join(projectRoot, "src/components/BroadcastArchive.tsx"), "utf8");
   const deckPage = fs.readFileSync(path.join(projectRoot, "src/app/radio/deck/page.tsx"), "utf8");
@@ -328,6 +353,7 @@ test("Broadcast Deck and Broadcast Archive remain separate destinations with con
   const radio = fs.readFileSync(path.join(projectRoot, "src/app/radio/page.tsx"), "utf8");
   const sitemap = fs.readFileSync(path.join(projectRoot, "src/app/sitemap.ts"), "utf8");
   const management = fs.readFileSync(path.join(projectRoot, "src/components/AdminShowManagement.tsx"), "utf8");
+  const activityLogPath = path.join(projectRoot, "src/components/BroadcastActivityLog.tsx");
 
   assert.match(archivePage, /BroadcastArchive/);
   assert.doesNotMatch(deckPage, /BroadcastArchive/);
@@ -339,6 +365,18 @@ test("Broadcast Deck and Broadcast Archive remain separate destinations with con
   assert.match(deck, /PUBLIC_QUEUE_POLL_INTERVAL_MS/);
   assert.match(deck, /From this browser/);
   assert.match(deck, /multiple artists|multiple artists|multiple/i);
+  assert.match(deck, /BroadcastActivityLog/);
+  assert.doesNotMatch(deck, /slice\(0,\s*14\)/);
+
+  assert.ok(fs.existsSync(activityLogPath), "the Deck must own an interactive full-show activity log");
+  const activityLog = fs.readFileSync(activityLogPath, "utf8");
+  assert.match(activityLog, /Everything/);
+  assert.match(activityLog, /Tracks/);
+  assert.match(activityLog, /Wheel/);
+  assert.match(activityLog, /Show/);
+  assert.match(activityLog, /Newest first/);
+  assert.match(activityLog, /Oldest first/);
+  assert.match(activityLog, /aria-live="polite"/);
 
   assert.match(archive, /Shows ·/);
   assert.match(archive, /Artists ·/);
@@ -347,13 +385,22 @@ test("Broadcast Deck and Broadcast Archive remain separate destinations with con
   assert.match(archive, /Wheel Chosen/);
   assert.match(archive, /not a verified artist account/);
   assert.match(archive, /Completed-play outcomes only/);
+  assert.match(archive, /deckHref &&/);
 
-  for (const source of [gateway, publicQueue, radio]) {
-    assert.match(source, /\/radio\/deck/);
-    assert.match(source, /\/radio\/archive/);
-  }
-  assert.match(sitemap, /\/radio\/deck/);
+  assert.doesNotMatch(gateway, /href="\/radio\/deck"/);
+  assert.match(gateway, /href="\/radio\/archive"/);
+  assert.match(publicQueue, /\/radio\/deck/);
+  assert.match(publicQueue, /Done submitting—or just watching\?/);
+  assert.match(publicQueue, /Song submissions stay here in the queue/);
+  assert.match(publicQueue, /Submission complete · follow the show on the Deck/);
+  assert.match(publicQueue, /\/radio\/archive/);
+  assert.doesNotMatch(radio, /\/radio\/deck/);
+  assert.match(radio, /\/radio\/archive/);
+  assert.doesNotMatch(archivePage, /deckHref|\/radio\/deck/);
+  assert.doesNotMatch(sitemap, /\/radio\/deck/);
   assert.match(sitemap, /\/radio\/archive/);
+  assert.match(deck, /Song submissions stay in the queue/);
+  assert.match(deck, /Submissions happen in the queue/);
   assert.match(publicQueue, /broadcastArchiveArtistHref/);
   assert.match(publicQueue, /Artist Archive/);
 
@@ -361,4 +408,20 @@ test("Broadcast Deck and Broadcast Archive remain separate destinations with con
   assert.match(management, /Choose purpose/);
   assert.match(management, /Live broadcast · retained in public Archive/);
   assert.match(management, /disabled=\{locked \|\| !purpose\}/);
+});
+
+test("Broadcast Deck exposes only valid external links as music actions", () => {
+  const contractPath = path.join(projectRoot, "src/lib/broadcast-deck.ts");
+  assert.ok(fs.existsSync(contractPath), "the Deck link boundary must be explicit and reusable");
+  const { deckExternalTrackHref } = require(contractPath);
+
+  assert.equal(deckExternalTrackHref({ sourceType: "youtube", publicSourceUrl: "https://www.youtube.com/watch?v=abcdefghijk" }), "https://www.youtube.com/watch?v=abcdefghijk");
+  assert.equal(deckExternalTrackHref({ sourceType: "link", publicSourceUrl: "http://music.example.test/track" }), "http://music.example.test/track");
+  assert.equal(deckExternalTrackHref({ sourceType: "upload", publicSourceUrl: "https://private.example.test/audio.mp3" }), null);
+  assert.equal(deckExternalTrackHref({ sourceType: "link", publicSourceUrl: "javascript:alert(1)" }), null);
+  assert.equal(deckExternalTrackHref({ sourceType: "link", publicSourceUrl: null }), null);
+
+  const deck = fs.readFileSync(path.join(projectRoot, "src/components/BroadcastDeck.tsx"), "utf8");
+  assert.match(deck, /deckExternalTrackHref/);
+  assert.doesNotMatch(deck, /fileUrl|AdminAudioPlayer|\/api\/admin\/queue\/file/);
 });

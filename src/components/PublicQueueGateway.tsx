@@ -200,8 +200,7 @@ export function PublicQueueGateway() {
         <h1 className="mt-2 text-2xl font-bold text-foreground">Current queue is offline</h1>
         <p className="mt-3 text-sm text-muted">No active BARCODE Radio queue is available right now.</p>
       </section>}
-      <section className="grid gap-3 sm:grid-cols-2" aria-label="BARCODE Radio companion destinations">
-        <a href="/radio/deck" className="group border border-[#ffaa00]/45 bg-[#ffaa00]/5 p-5 transition hover:border-[#ffaa00] hover:bg-[#ffaa00]/10"><p className="text-xs font-bold uppercase tracking-[0.3em] text-[#ffaa00]">Live show companion</p><h2 className="mt-2 text-xl font-black text-foreground group-hover:text-[#ffaa00]">The Broadcast Deck</h2><p className="mt-2 text-sm leading-relaxed text-muted">Keep it open during the show for Now Playing, the queue feed, Wheel movement, progress, and your browser’s submissions.</p><span className="mt-4 inline-flex text-xs font-bold uppercase tracking-widest text-[#ffaa00]">Open Deck →</span></a>
+      <section aria-label="BARCODE Radio companion destinations">
         <a href="/radio/archive" className="group border border-cyan-200/40 bg-cyan-200/5 p-5 transition hover:border-cyan-200 hover:bg-cyan-200/10"><p className="text-xs font-bold uppercase tracking-[0.3em] text-cyan-200">Post-show database</p><h2 className="mt-2 text-xl font-black text-foreground group-hover:text-cyan-200">The Broadcast Archive</h2><p className="mt-2 text-sm leading-relaxed text-muted">Search completed shows and artist histories, including submitting TikTok handles, tracks, links, outcomes, and Wheel selections.</p><span className="mt-4 inline-flex text-xs font-bold uppercase tracking-widest text-cyan-200">Browse Archive →</span></a>
       </section>
       <section className="border border-border bg-surface p-5 space-y-5">

@@ -47,6 +47,7 @@ export type QueueShowLogEventType =
   | "track_signal_hold_applied"
   | "track_signal_hold_fulfilled"
   | "track_signal_hold_expired"
+  | "wheel_spin_unlocked"
   | "wheel_launched"
   | "wheel_reencrypted"
   | "wheel_spun"
@@ -123,6 +124,8 @@ export interface QueueShowLogEventDetails {
   playbackErrorCode?: QueuePlaybackErrorCode | null;
   wheelCandidateCount?: number | null;
   wheelSpinDurationMs?: number | null;
+  wheelSpinsAdded?: number | null;
+  wheelSpinsOwed?: number | null;
   signalHoldPreviousLane?: QueueLane | null;
   signalHoldApplicationCount?: number | null;
 }
@@ -703,21 +706,34 @@ export interface QueuePublicHandleHistory extends QueuePublicStatsCounts {
 }
 
 export type QueuePublicHistoryEventType =
+  | "session_created"
   | "submissions_opened"
   | "submissions_closed"
   | "broadcast_started"
   | "track_submitted"
   | "track_loaded"
   | "track_play_started"
+  | "track_paused"
+  | "track_stalled"
+  | "track_resumed"
+  | "track_playback_error"
   | "track_finished"
+  | "track_skipped"
   | "track_removed"
   | "track_returned"
   | "track_restored"
+  | "track_signal_hold_applied"
+  | "wheel_spin_unlocked"
   | "wheel_launched"
+  | "wheel_reencrypted"
   | "wheel_spun"
+  | "wheel_result_rejected"
   | "wheel_confirmed"
+  | "wheel_cancelled"
   | "sponsor_break_started"
   | "sponsor_break_completed"
+  | "sponsor_break_skipped"
+  | "sponsor_break_reset"
   | "session_archived";
 
 export interface QueuePublicHistoryEvent {

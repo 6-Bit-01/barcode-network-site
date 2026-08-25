@@ -34,6 +34,7 @@ const EVENT_TYPES = new Set<QueueShowLogEventType>([
   "track_signal_hold_applied",
   "track_signal_hold_fulfilled",
   "track_signal_hold_expired",
+  "wheel_spin_unlocked",
   "wheel_launched",
   "wheel_reencrypted",
   "wheel_spun",
@@ -122,6 +123,8 @@ function normalizeDetails(value: unknown): QueueShowLogEventDetails | null {
     playbackErrorCode,
     wheelCandidateCount: boundedNonNegative(raw.wheelCandidateCount, 10_000),
     wheelSpinDurationMs: boundedNonNegative(raw.wheelSpinDurationMs, 10 * 60 * 1_000),
+    wheelSpinsAdded: boundedNonNegative(raw.wheelSpinsAdded, 10_000),
+    wheelSpinsOwed: boundedNonNegative(raw.wheelSpinsOwed, 10_000),
     signalHoldPreviousLane,
     signalHoldApplicationCount: boundedNonNegative(raw.signalHoldApplicationCount, 10_000),
   };

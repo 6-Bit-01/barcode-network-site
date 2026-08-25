@@ -248,6 +248,8 @@ test("low-frequency Wheel actions are retained for finished-show timing", async 
   const spunAt = new Date(Date.parse(launchedAt) + 10_000).toISOString();
   const confirmedAt = new Date(Date.parse(launchedAt) + 120_000).toISOString();
 
+  await queue.updateRadioTrack("", "addWheelSpinOwed");
+
   assert.equal(await queue.recordQueueOperationalShowEvent({
     eventType: "wheel_launched",
     occurredAt: launchedAt,
@@ -265,10 +267,17 @@ test("low-frequency Wheel actions are retained for finished-show timing", async 
   }), true);
 
   const exported = await queue.getQueueSessionShowLog(sessionId);
-  assert.deepEqual(exported.events.slice(-3).map((event) => event.eventType), ["wheel_launched", "wheel_spun", "wheel_confirmed"]);
+  assert.deepEqual(exported.events.slice(-4).map((event) => event.eventType), ["wheel_spin_unlocked", "wheel_launched", "wheel_spun", "wheel_confirmed"]);
+  const unlocked = exported.events.find((event) => event.eventType === "wheel_spin_unlocked");
+  assert.equal(unlocked.details.wheelSpinsAdded, 1);
+  assert.equal(unlocked.details.wheelSpinsOwed, 1);
   assert.equal(exported.report.operations.wheel.completedCeremonies, 1);
   assert.equal(exported.report.operations.wheel.ceremonySeconds, 120);
   assert.equal(exported.report.operations.wheel.plannedSpinSeconds, 12);
+
+  const csv = await queue.getQueueSessionShowLogCsv(sessionId);
+  assert.match(csv.csv, /Wheel spins added/);
+  assert.match(csv.csv, /Wheel spins owed/);
 });
 
 test("show-log normalization is bounded and strips non-public upload URLs", () => {

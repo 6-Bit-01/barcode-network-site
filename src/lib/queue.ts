@@ -3867,6 +3867,19 @@ function queueShowLogMutationEvents(
     }
   }
 
+  const previousWheelSpinsOwed = normalizeWheelSpinsOwed(previous.wheelSpinsOwed);
+  const nextWheelSpinsOwed = normalizeWheelSpinsOwed(next.wheelSpinsOwed);
+  if (nextWheelSpinsOwed > previousWheelSpinsOwed) {
+    events = appendQueueShowLogEvent(events, {
+      eventType: "wheel_spin_unlocked",
+      occurredAt,
+      details: {
+        wheelSpinsAdded: nextWheelSpinsOwed - previousWheelSpinsOwed,
+        wheelSpinsOwed: nextWheelSpinsOwed,
+      },
+    });
+  }
+
   const previousPlaybackSequence = normalizeQueuePlaybackDiagnostics(previous.playbackDiagnostics)
     .events.reduce((highest, event) => Math.max(highest, event.sequence), 0);
   for (const event of normalizeQueuePlaybackDiagnostics(next.playbackDiagnostics).events) {
@@ -4053,21 +4066,34 @@ interface QueuePublicStatsSession {
 }
 
 const PUBLIC_HISTORY_EVENT_TYPES = new Set<QueuePublicHistoryEventType>([
+  "session_created",
   "submissions_opened",
   "submissions_closed",
   "broadcast_started",
   "track_submitted",
   "track_loaded",
   "track_play_started",
+  "track_paused",
+  "track_stalled",
+  "track_resumed",
+  "track_playback_error",
   "track_finished",
+  "track_skipped",
   "track_removed",
   "track_returned",
   "track_restored",
+  "track_signal_hold_applied",
+  "wheel_spin_unlocked",
   "wheel_launched",
+  "wheel_reencrypted",
   "wheel_spun",
+  "wheel_result_rejected",
   "wheel_confirmed",
+  "wheel_cancelled",
   "sponsor_break_started",
   "sponsor_break_completed",
+  "sponsor_break_skipped",
+  "sponsor_break_reset",
   "session_archived",
 ]);
 
@@ -4215,22 +4241,47 @@ function publicHistoryTrackForRecord(session: QueueSession, record: QueuePublicS
   };
 }
 
-function publicHistoryEventCopy(eventType: QueuePublicHistoryEventType, track: QueuePublicHistoryEvent["track"]): { headline: string; detail: string } {
+function publicHistoryEventCopy(
+  eventType: QueuePublicHistoryEventType,
+  track: QueuePublicHistoryEvent["track"],
+  details: QueueShowLogEventDetails | null | undefined,
+): { headline: string; detail: string } {
   const trackText = track ? `${track.projectLabel} — ${track.title}` : "BARCODE Radio";
+  if (eventType === "session_created") return { headline: "Deck initialized", detail: "The show packet was created." };
   if (eventType === "submissions_opened") return { headline: "Submissions opened", detail: "The intake window is accepting tracks." };
   if (eventType === "submissions_closed") return { headline: "Submissions closed", detail: "The intake window is closed." };
   if (eventType === "broadcast_started") return { headline: "Broadcast started", detail: "The live BARCODE Radio show is underway." };
   if (eventType === "track_submitted") return { headline: "Submission received", detail: trackText };
   if (eventType === "track_loaded") return { headline: "Track loaded", detail: trackText };
   if (eventType === "track_play_started") return { headline: "Now playing", detail: trackText };
+  if (eventType === "track_paused") return { headline: "Playback paused", detail: trackText };
+  if (eventType === "track_stalled") return { headline: "Signal stalled", detail: trackText };
+  if (eventType === "track_resumed") return { headline: "Playback resumed", detail: trackText };
+  if (eventType === "track_playback_error") return { headline: "Playback issue detected", detail: trackText };
   if (eventType === "track_finished") return { headline: "Track finished", detail: trackText };
+  if (eventType === "track_skipped") return { headline: "Track skipped", detail: trackText };
   if (eventType === "track_removed") return { headline: "Track left the active queue", detail: trackText };
   if (eventType === "track_returned" || eventType === "track_restored") return { headline: "Track returned to the queue", detail: trackText };
+  if (eventType === "track_signal_hold_applied") return { headline: "Signal Hold used", detail: `${trackText} moved to the bottom of the active queue.` };
+  if (eventType === "wheel_spin_unlocked") {
+    const owed = Math.max(0, Math.floor(details?.wheelSpinsOwed ?? 0));
+    return {
+      headline: "Wheel spin unlocked",
+      detail: owed > 0
+        ? `${owed} Wheel spin${owed === 1 ? " is" : "s are"} waiting.`
+        : "A Wheel spin was added to the show.",
+    };
+  }
   if (eventType === "wheel_launched") return { headline: "Wheel launched", detail: "A 10K Tap Wheel selection is underway." };
+  if (eventType === "wheel_reencrypted") return { headline: "Wheel re-encrypted", detail: "The candidate order was reshuffled." };
   if (eventType === "wheel_spun") return { headline: "Wheel spun", detail: "The Wheel result is being resolved." };
+  if (eventType === "wheel_result_rejected") return { headline: "Wheel result rerouted", detail: "The selected result was unavailable, so the Wheel remains in play." };
   if (eventType === "wheel_confirmed") return { headline: "Wheel Chosen", detail: track ? trackText : "A Wheel result was confirmed." };
+  if (eventType === "wheel_cancelled") return { headline: "Wheel cancelled", detail: "The Wheel ceremony closed without a confirmed result." };
   if (eventType === "sponsor_break_started") return { headline: "Sponsor break started", detail: "The show remains live during the break." };
   if (eventType === "sponsor_break_completed") return { headline: "Sponsor break completed", detail: "The broadcast returned to the queue." };
+  if (eventType === "sponsor_break_skipped") return { headline: "Sponsor break skipped", detail: "The show continued without running the break." };
+  if (eventType === "sponsor_break_reset") return { headline: "Sponsor break reset", detail: "The break returned to standby." };
   return { headline: "Broadcast archived", detail: "The show moved into retained after-show history." };
 }
 
@@ -4242,7 +4293,7 @@ function publicHistoryEventsForSession(session: QueueSession, records: QueuePubl
     const record = event.track?.trackId ? recordsById.get(event.track.trackId) : null;
     if (event.track?.trackId && !record) return [];
     const track = record ? { projectLabel: publicHistoryProjectLabel(record.entry), title: record.entry.submittedSongTitle ?? record.entry.title } : null;
-    const copy = publicHistoryEventCopy(eventType, track);
+    const copy = publicHistoryEventCopy(eventType, track, event.details);
     return [{
       eventId: `${session.sessionId}:${event.sequence}`,
       sessionId: session.sessionId,
@@ -5229,6 +5280,8 @@ export async function getQueueSessionShowLogCsv(sessionId?: string): Promise<{ f
     "playback error",
     "wheel candidate count",
     "wheel spin duration ms",
+    "Wheel spins added",
+    "Wheel spins owed",
     "Signal Hold previous lane",
     "Signal Hold application count",
   ];
@@ -5250,6 +5303,8 @@ export async function getQueueSessionShowLogCsv(sessionId?: string): Promise<{ f
     event.details?.playbackErrorCode ?? "",
     event.details?.wheelCandidateCount ?? "",
     event.details?.wheelSpinDurationMs ?? "",
+    event.details?.wheelSpinsAdded ?? "",
+    event.details?.wheelSpinsOwed ?? "",
     event.details?.signalHoldPreviousLane ?? "",
     event.details?.signalHoldApplicationCount ?? "",
   ].map(csvEscape).join(","));

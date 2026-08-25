@@ -129,8 +129,7 @@ export default function RadioPage() {
             </section>
           ) : null}
 
-          <section aria-label="BARCODE Radio companion tools" className="mt-6 grid max-w-3xl gap-3 sm:grid-cols-2">
-            <Link href="/radio/deck" className="group border border-[#ffaa00]/45 bg-[#ffaa00]/5 p-5 transition-colors hover:border-[#ffaa00]"><p className="text-xs font-bold uppercase tracking-[0.3em] text-[#ffaa00]">During the show</p><h2 className="mt-2 text-xl font-black text-foreground group-hover:text-[#ffaa00]">The Broadcast Deck</h2><p className="mt-2 text-sm leading-relaxed text-muted">A live companion for the queue feed, Now Playing, show progress, Wheel movement, and this browser’s submissions.</p><span className="mt-4 inline-flex text-xs font-bold uppercase tracking-widest text-[#ffaa00]">Open Deck →</span></Link>
+          <section aria-label="BARCODE Radio archive" className="mt-6 max-w-3xl">
             <Link href="/radio/archive" className="group border border-cyan-200/40 bg-cyan-200/5 p-5 transition-colors hover:border-cyan-200"><p className="text-xs font-bold uppercase tracking-[0.3em] text-cyan-200">After the show</p><h2 className="mt-2 text-xl font-black text-foreground group-hover:text-cyan-200">The Broadcast Archive</h2><p className="mt-2 text-sm leading-relaxed text-muted">Search shows and artists, then trace tracks, submitting TikTok handles, public links, outcomes, and Wheel selections.</p><span className="mt-4 inline-flex text-xs font-bold uppercase tracking-widest text-cyan-200">Browse Archive →</span></Link>
           </section>
         </div>

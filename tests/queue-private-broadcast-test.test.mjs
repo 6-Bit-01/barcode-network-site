@@ -239,6 +239,34 @@ test("the private Broadcast Test surface is authenticated, noindexed, and reuses
   assert.match(archive, /refreshEndpoint/);
 });
 
+test("the active private queue dashboard opens that session's Deck Preview directly", () => {
+  const queuePage = fs.readFileSync(path.join(projectRoot, "src/app/admin/queue/page.tsx"), "utf8");
+  const dashboard = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioQueueControl.tsx"), "utf8");
+
+  assert.doesNotMatch(queuePage, /href="\/admin\/queue\/broadcast-test"/);
+  assert.match(dashboard, /state\.session\.purpose === "rehearsal"/);
+  assert.match(dashboard, /state\.session\.purpose === "simulation"/);
+  assert.match(dashboard, /state\.session\.purpose === "internal_test"/);
+  assert.match(dashboard, /broadcast-test\?sessionId=\$\{encodeURIComponent\(state\.session\.sessionId\)\}&surface=deck/);
+  assert.match(dashboard, /Open Test Broadcast Deck/);
+  assert.match(dashboard, /target="_blank"/);
+});
+
+test("BNL publication controls explain each cumulative access level in plain language", () => {
+  const showManagement = fs.readFileSync(path.join(projectRoot, "src/components/AdminShowManagement.tsx"), "utf8");
+  const provenance = fs.readFileSync(path.join(projectRoot, "src/components/AdminQueueSessionProvenance.tsx"), "utf8");
+
+  for (const source of [showManagement, provenance]) {
+    assert.match(source, /BNL gets nothing from this show/);
+    assert.match(source, /BNL can see the live queue during this show only/);
+    assert.match(source, /BNL can also use finished tracks for a show recap/);
+    assert.match(source, /BNL can also use sanitized show facts in public messages/);
+    assert.doesNotMatch(source, /Private \/ quarantined|Runtime context only|Recap candidates approved|Public copy approved/);
+  }
+  assert.match(showManagement, /What can BNL use from this show\?/);
+  assert.match(provenance, /What BNL can use from this show/);
+});
+
 test("private queue intake and paid checkout routes require authenticated admin access", () => {
   const publicQueueRoute = fs.readFileSync(path.join(projectRoot, "src/app/api/queue/route.ts"), "utf8");
   const uploadRoute = fs.readFileSync(path.join(projectRoot, "src/app/api/queue/upload/route.ts"), "utf8");

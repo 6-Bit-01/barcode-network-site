@@ -23,10 +23,10 @@ const PUBLICATION_OPTIONS: Array<{
   value: QueueSessionBnlPublicationStatus;
   label: string;
 }> = [
-  { value: "private", label: "Private / quarantined" },
-  { value: "runtime_only", label: "Runtime context only" },
-  { value: "recap_approved", label: "Recap candidates approved" },
-  { value: "public_copy_approved", label: "Public copy approved" },
+  { value: "private", label: "BNL gets nothing from this show" },
+  { value: "runtime_only", label: "BNL can see the live queue during this show only" },
+  { value: "recap_approved", label: "BNL can also use finished tracks for a show recap" },
+  { value: "public_copy_approved", label: "BNL can also use sanitized show facts in public messages" },
 ];
 
 function publicationMeaning(
@@ -34,18 +34,18 @@ function publicationMeaning(
   status: QueueSessionBnlPublicationStatus,
 ): string {
   if (purpose !== "live_broadcast") {
-    return "This purpose is quarantined from every queue-derived BNL lane, even while the native queue remains publicly usable.";
+    return "Tests and rehearsals never send queue or track data to BNL. This choice is locked to “BNL gets nothing.”";
   }
   if (status === "private") {
-    return "The session remains unavailable to BNL. Native queue behavior is unchanged.";
+    return "BNL receives no queue or track data from this show.";
   }
   if (status === "runtime_only") {
-    return "BNL may receive sanitized, temporary live context. Completed tracks are not recap or public-copy candidates.";
+    return "While the show is active, BNL may see a sanitized snapshot of what is happening. Finished tracks cannot be used for recaps or later public writing.";
   }
   if (status === "recap_approved") {
-    return "Sanitized completed tracks may enter the recap-candidate lane. Generic public-copy use remains blocked.";
+    return "BNL may see the live snapshot and receive sanitized finished tracks as possible show-recap material. It cannot reuse them for unrelated public writing.";
   }
-  return "Sanitized runtime, recap-candidate, and public-copy lanes are approved. Broadcast Memory and dossier seeds remain independently blocked.";
+  return "BNL may see the live snapshot, receive recap material, and reuse sanitized show facts in public messages. This still does not enable memory or dossiers.";
 }
 
 export function AdminQueueSessionProvenance({
@@ -88,7 +88,7 @@ export function AdminQueueSessionProvenance({
     setPublicationStatus(
       next.session?.bnlPublicationStatus ?? publicationStatus,
     );
-    setMessage("Session provenance saved. Queue behavior and bot gates were not changed.");
+    setMessage("BNL access choice saved. Queue behavior was not changed.");
   }
 
   function changePurpose(value: QueueSessionPurpose) {
@@ -101,7 +101,7 @@ export function AdminQueueSessionProvenance({
   return (
     <details className="border border-cyan-300/35 bg-cyan-300/5 p-4">
       <summary className="cursor-pointer text-xs font-bold uppercase tracking-[0.28em] text-cyan-200">
-        Session provenance / BNL publication
+        What BNL can use from this show
       </summary>
       <div className="mt-4 space-y-4">
         <div className="grid gap-3 lg:grid-cols-2">
@@ -120,7 +120,7 @@ export function AdminQueueSessionProvenance({
             </select>
           </label>
           <label className="space-y-2">
-            <span className="text-xs uppercase tracking-widest text-muted">BNL publication</span>
+            <span className="text-xs uppercase tracking-widest text-muted">What can BNL use from this show?</span>
             <select
               value={publicationStatus}
               disabled={purpose !== "live_broadcast"}
@@ -155,10 +155,10 @@ export function AdminQueueSessionProvenance({
           disabled={saving}
           className="border border-cyan-300/60 px-4 py-2 text-xs uppercase tracking-widest text-cyan-200 hover:bg-cyan-200 hover:text-background disabled:opacity-50"
         >
-          {saving ? "Saving…" : "Save BNL Boundary"}
+          {saving ? "Saving…" : "Save BNL Access"}
         </button>
         <p className="text-xs text-muted">
-          This action does not publish a recap, enable bot memory, change queue mechanics, or alter payment/playback authority.
+          This does not publish a recap, enable BNL memory, create dossier data, or change queue, payment, or playback behavior.
         </p>
       </div>
     </details>

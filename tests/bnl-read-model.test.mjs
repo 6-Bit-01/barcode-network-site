@@ -919,6 +919,9 @@ test("BNL public queue diagnostics and runtime are derived only from readable tr
   assert.equal(afterSimulationFinish.playbackDiagnostics.lastEventAt, null);
   assert.equal(afterSimulationFinish.playbackDiagnostics.events.length, 0);
   assert.equal(JSON.stringify(afterSimulationFinish).includes(simulation.id), false);
+
+  const routeSource = fs.readFileSync(path.join(projectRoot, "src/app/api/bnl/read-model/route.ts"), "utf8");
+  assert.match(routeSource, /source:\s*timing\.source/);
 });
 
 test("BNL read model excludes private queue/payment/upload keys and gifted Priority attribution", async () => {

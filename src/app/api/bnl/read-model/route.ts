@@ -331,6 +331,7 @@ function safePlaybackTiming(
     currentTimeSeconds: timing.currentTimeSeconds,
     durationSeconds: timing.durationSeconds,
     observedAt: timing.observedAt,
+    source: timing.source,
   };
 }
 

@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { BroadcastActivityLog } from "@/components/BroadcastActivityLog";
 import { broadcastArchiveArtistHref, normalizeBroadcastArchiveProjectKey } from "@/lib/broadcast-archive";
+import { deckExternalTrackHref } from "@/lib/broadcast-deck";
 import { buildQueueTimingDisplay, queueTimingInputFromPublicSnapshot } from "@/lib/queue-timing-display";
 import { formatRuntime, type QueuePublicSnapshot, type QueuePublicStats, type QueuePublicTrack } from "@/lib/queue-types";
 import { PUBLIC_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
@@ -51,6 +53,7 @@ function projectLink(artistName: string, archiveHref: string): string {
 
 function LiveTrackCard({ label, track, tone, archiveHref }: { label: string; track: QueuePublicTrack | null | undefined; tone: "amber" | "red" | "cyan"; archiveHref: string }) {
   const toneClass = tone === "amber" ? "border-[#ffaa00]/55 text-[#ffaa00]" : tone === "cyan" ? "border-cyan-200/45 text-cyan-200" : "border-accent/55 text-accent";
+  const externalHref = deckExternalTrackHref(track);
   return (
     <article className={`border bg-background/60 p-5 ${toneClass}`}>
       <p className="text-[10px] font-black uppercase tracking-[0.3em]">{label}</p>
@@ -62,7 +65,7 @@ function LiveTrackCard({ label, track, tone, archiveHref }: { label: string; tra
           <span className="border border-border px-2 py-1 text-muted">{track.durationLabel}</span>
           {track.lane === "wheel" && <span className="border border-cyan-200/45 px-2 py-1 text-cyan-200">Wheel Chosen</span>}
           {track.lane === "priority" && <span className="border border-[#ffaa00]/45 px-2 py-1 text-[#ffaa00]">Priority Signal</span>}
-          {track.publicSourceUrl && <a href={track.publicSourceUrl} target="_blank" rel="noopener noreferrer" className="border border-border px-2 py-1 text-muted hover:border-accent hover:text-accent">Open music ↗</a>}
+          {externalHref && <a href={externalHref} target="_blank" rel="noopener noreferrer" className="border border-border px-2 py-1 text-muted hover:border-accent hover:text-accent">Open music ↗</a>}
         </div>
       </> : <p className="mt-4 text-sm text-muted">Waiting for the host to route a track.</p>}
     </article>
@@ -128,7 +131,6 @@ export function BroadcastDeck({
   const liveTracks = uniqueLiveTracks(snapshot);
   const currentShow = stats?.currentShow && stats.currentShow.sessionId === snapshot?.session?.sessionId ? stats.currentShow : null;
   const timing = useMemo(() => snapshot ? buildQueueTimingDisplay(queueTimingInputFromPublicSnapshot(snapshot), clockNow ? { now: new Date(clockNow) } : {}) : null, [clockNow, snapshot]);
-  const feed = useMemo(() => [...(currentShow?.milestones ?? [])].sort((left, right) => right.sequence - left.sequence).slice(0, 14), [currentShow]);
   const queueHref = queueHrefOverride ?? (snapshot?.session && snapshot.session.status !== "archived" ? `/queue/${encodeURIComponent(snapshot.session.sessionId)}` : "/queue");
   const isLive = Boolean(snapshot?.session && snapshot.session.status !== "archived" && snapshot.session.broadcastPhase !== "ended");
   const finishedCount = currentShow?.finishedTrackCount ?? snapshot?.session?.completedCount ?? 0;
@@ -200,7 +202,7 @@ export function BroadcastDeck({
             <DeckTab active={view === "mine"} onClick={() => setView("mine")} label="This browser" />
           </div>
           <div className="p-5 sm:p-6">
-            {view === "feed" && <div><div className="border-b-2 border-[#ffaa00]/45 pb-3"><p className="text-xs font-bold uppercase tracking-[0.3em] text-[#ffaa00]">Live show feed</p><p className="mt-1 text-xs text-muted">Public-safe movement from this broadcast.</p></div><ol className="mt-4 space-y-3">{feed.length > 0 ? feed.map((event) => <li key={event.eventId} className="grid gap-2 border-l-2 border-[#ffaa00]/40 pl-4 sm:grid-cols-[5rem_1fr]"><time className="font-mono text-xs text-muted">{displayTime(event.occurredAt)}</time><div><p className="text-sm font-bold text-foreground">{event.headline}</p><p className="mt-1 text-xs text-muted">{event.detail}</p></div></li>) : <li className="text-sm text-muted">The live feed is waiting for the next public show event.</li>}</ol></div>}
+            {view === "feed" && <BroadcastActivityLog events={currentShow?.milestones ?? []} archiveHref={archiveHref} live={isLive} />}
             {view === "line" && <div><div className="border-b-2 border-accent/45 pb-3"><p className="text-xs font-bold uppercase tracking-[0.3em] text-accent">Queue map</p><p className="mt-1 text-xs text-muted">{previewMode ? "Private test order from the selected persisted session." : "Public order only. Priority and Wheel positions can change as the host routes the show."}</p></div><div className="mt-4 space-y-2">{liveTracks.map((track, index) => <div key={track.id} className="grid gap-2 border border-border bg-background/55 p-3 sm:grid-cols-[4rem_minmax(0,1fr)_auto] sm:items-center"><span className="font-mono text-xs text-muted">{track.id === snapshot?.nowPlaying?.id ? "LIVE" : track.id === snapshot?.upNext?.id ? "NEXT" : `#${Math.max(1, index - 1)}`}</span><div><Link href={projectLink(track.submittedArtistName, archiveHref)} className="font-bold text-foreground hover:text-accent">{track.submittedArtistName}</Link><p className="text-xs text-muted">{track.submittedSongTitle}</p></div><span className="text-[10px] uppercase tracking-widest text-muted">{track.lane}</span></div>)}</div></div>}
             {view === "mine" && <div><div className="border-b-2 border-cyan-200/40 pb-3"><p className="text-xs font-bold uppercase tracking-[0.3em] text-cyan-200">From this browser</p><p className="mt-1 text-xs text-muted">Useful when one device submits for multiple artists. This confirms a browser submission, not identity or account ownership.</p></div><div className="mt-4 space-y-3">{personalHandles.length > 0 ? personalHandles.map((handle) => <section key={handle.tiktokHandle} className="border border-border bg-background/55 p-4"><div className="flex flex-wrap items-center justify-between gap-2"><p className="font-mono text-sm font-bold text-cyan-200">{handle.tiktokHandle}</p><span className="text-[10px] uppercase tracking-widest text-muted">{handle.submittedTrackCount} tracks · {handle.projectCount} projects</span></div><div className="mt-3 flex flex-wrap gap-2">{handle.projects.map((project) => <Link key={project.projectKey} href={previewMode ? projectLink(project.projectKey, archiveHref) : broadcastArchiveArtistHref(project.projectKey)} className="border border-cyan-200/30 px-2 py-1 text-xs text-foreground hover:border-cyan-200 hover:text-cyan-200">{project.projectLabel} · {project.submittedTrackCount}</Link>)}</div></section>) : <p className="text-sm text-muted">Submit from this browser to see its {previewMode ? "test" : "public"} handles and project records grouped here.</p>}</div></div>}
           </div>

@@ -25,6 +25,7 @@ public sealed class CommercialBreakLibraryTests
         Assert.NotNull(result.Visuals);
         Assert.Equal("video/mp4", result.Visuals!.Background.ContentType);
         Assert.Equal("video/mp4", result.Visuals.TvOverlay.ContentType);
+        Assert.Equal("image/png", result.Visuals.StartEndIcon.ContentType);
     }
 
     [Fact]
@@ -121,6 +122,12 @@ public sealed class CommercialBreakLibraryTests
         var missingFrame = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
         Assert.False(missingFrame.Success);
         Assert.Contains("TV.mp4", missingFrame.Message);
+
+        TemporaryCommercialLibrary.AddFile(fixture.RootDirectory, "TV.mp4");
+        File.Delete(fixture.IconPath);
+        var missingIcon = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
+        Assert.False(missingIcon.Success);
+        Assert.Contains("ICON.png", missingIcon.Message);
     }
 
     [Fact]
@@ -157,6 +164,7 @@ public sealed class CommercialBreakLibraryTests
         Assert.Contains("BUMPER5.mp4", text);
         Assert.Contains("BG.mp4", text);
         Assert.Contains("TV.mp4", text);
+        Assert.Contains("ICON.png", text);
         Assert.Contains("1080 x 1920", text);
     }
 }

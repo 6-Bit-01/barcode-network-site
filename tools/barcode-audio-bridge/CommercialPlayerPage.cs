@@ -18,8 +18,8 @@ internal static class CommercialPlayerPage
       position: fixed;
       left: 50%;
       top: 50%;
-      width: min(100vw, calc(100vh * .5625));
-      height: min(100vh, calc(100vw * 1.7777778));
+      width: min(100vw, 56.25vh);
+      height: min(100vh, 177.777778vw);
       aspect-ratio: 9 / 16;
       transform: translate(-50%, -50%);
       overflow: hidden;
@@ -31,44 +31,10 @@ internal static class CommercialPlayerPage
       inset: 0;
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      object-fit: fill;
       background: transparent;
       z-index: 0;
-    }
-    #logo {
-      position: absolute;
-      top: 23.5%;
-      left: 50%;
-      width: 62%;
-      height: 12%;
-      object-fit: contain;
-      opacity: 0;
-      transform: translate(-50%, -10px) scale(.98);
-      transition: opacity 1800ms ease, transform 1800ms ease;
-      filter: drop-shadow(0 0 18px rgba(0,0,0,.72));
-      z-index: 4;
       pointer-events: none;
-    }
-    #logo.visible { opacity: 1; transform: translate(-50%, 0) scale(1); }
-    #tv-stage {
-      position: absolute;
-      top: 40.5%;
-      left: 50%;
-      width: 96%;
-      aspect-ratio: 16 / 9;
-      transform: translateX(-50%);
-      z-index: 2;
-    }
-    #player {
-      position: absolute;
-      left: 14.69%;
-      top: 13.06%;
-      width: 70.31%;
-      height: 66.11%;
-      object-fit: contain;
-      background: #000;
-      border-radius: 2.2% / 4.1%;
-      z-index: 1;
     }
     #tv-overlay-video {
       position: absolute;
@@ -77,19 +43,42 @@ internal static class CommercialPlayerPage
       height: 100%;
       object-fit: fill;
       pointer-events: none;
-      z-index: 2;
-      clip-path: inset(.7% 5.6% .7% 5.6% round 1.8%);
-      -webkit-mask:
-        linear-gradient(#fff 0 0) top / 100% 13.06% no-repeat,
-        linear-gradient(#fff 0 0) bottom / 100% 20.83% no-repeat,
-        linear-gradient(#fff 0 0) left 13.06% / 14.69% 66.11% no-repeat,
-        linear-gradient(#fff 0 0) right 13.06% / 15% 66.11% no-repeat;
-      mask:
-        linear-gradient(#fff 0 0) top / 100% 13.06% no-repeat,
-        linear-gradient(#fff 0 0) bottom / 100% 20.83% no-repeat,
-        linear-gradient(#fff 0 0) left 13.06% / 14.69% 66.11% no-repeat,
-        linear-gradient(#fff 0 0) right 13.06% / 15% 66.11% no-repeat;
+      z-index: 1;
     }
+    #video-window {
+      position: absolute;
+      left: 3.9%;
+      top: 35.85%;
+      width: 92.5%;
+      height: 28.8%;
+      overflow: hidden;
+      border-radius: 1.8% / 3.2%;
+      background: #000;
+      z-index: 2;
+    }
+    #player {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      background: #000;
+    }
+    #logo {
+      position: absolute;
+      top: 11.25%;
+      left: 50%;
+      width: 72%;
+      height: 14.75%;
+      object-fit: contain;
+      opacity: 0;
+      transform: translate(-50%, -6px) scale(.98);
+      transition:
+        opacity var(--logo-fade-duration, 1800ms) ease,
+        transform var(--logo-fade-duration, 1800ms) ease;
+      filter: drop-shadow(0 0 18px rgba(0,0,0,.72));
+      z-index: 3;
+      pointer-events: none;
+    }
+    #logo.visible { opacity: 1; transform: translate(-50%, 0) scale(1); }
     #background-video[hidden], #tv-overlay-video[hidden], #logo[hidden] { display: none; }
     #status {
       display: none;
@@ -107,17 +96,17 @@ internal static class CommercialPlayerPage
       z-index: 20;
     }
     body.debug #status { display: block; }
-    body.debug #tv-stage { outline: 1px dashed rgba(121,255,116,.65); }
+    body.debug #video-window { outline: 1px dashed rgba(121,255,116,.65); }
   </style>
 </head>
 <body>
   <div id="stage" hidden>
     <video id="background-video" preload="auto" autoplay muted loop playsinline disablepictureinpicture hidden></video>
-    <img id="logo" alt="" hidden>
-    <div id="tv-stage">
+    <video id="tv-overlay-video" preload="auto" autoplay muted loop playsinline disablepictureinpicture hidden></video>
+    <div id="video-window">
       <video id="player" preload="auto" autoplay playsinline disablepictureinpicture></video>
-      <video id="tv-overlay-video" preload="auto" autoplay muted loop playsinline disablepictureinpicture hidden></video>
     </div>
+    <img id="logo" alt="" hidden>
   </div>
   <div id="status">LOCAL COMMERCIAL PLAYER READY</div>
   <script>
@@ -159,6 +148,7 @@ internal static class CommercialPlayerPage
       logo.classList.remove('visible');
       logo.hidden = true;
       logo.removeAttribute('src');
+      logo.style.removeProperty('--logo-fade-duration');
     }
 
     function clearVisualVideo(video) {
@@ -209,12 +199,16 @@ internal static class CommercialPlayerPage
     function showLogo(item, token) {
       clearLogo();
       if (!item.logoUrl || token !== runToken) return;
+      const totalMs = Math.max(1000, item.durationSeconds * 1000);
+      const fadeMs = Math.min(1800, Math.max(350, totalMs * .2));
+      const revealAt = Math.min(180, totalMs * .05);
+      const fadeAt = Math.max(fadeMs + revealAt, totalMs - fadeMs - 200);
       logo.src = item.logoUrl;
       logo.hidden = false;
+      logo.style.setProperty('--logo-fade-duration', `${Math.round(fadeMs)}ms`);
       logoTimers.push(setTimeout(() => {
         if (token === runToken) logo.classList.add('visible');
-      }, 500));
-      const fadeAt = Math.max(2500, (item.durationSeconds * 1000) - 2300);
+      }, revealAt));
       logoTimers.push(setTimeout(() => {
         if (token === runToken) logo.classList.remove('visible');
       }, fadeAt));

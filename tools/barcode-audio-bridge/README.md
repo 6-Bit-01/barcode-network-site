@@ -40,6 +40,7 @@ Commercials/
 │   └── Inactive/
 ├── BG.mp4
 ├── TV.mp4
+├── ICON.png
 ├── BCN1.png
 ├── BCN2.png
 ├── BL.png
@@ -53,7 +54,9 @@ Commercials/
 - Folder changes affect the next break. The selected media is frozen into a managed local playback snapshot when a break starts, so moving or replacing a source file cannot interrupt the current break.
 - A file name containing parentheses is treated as a fake commercial/trailer instead of a sponsor.
 - `(BCN)`, `(BL)`, and `(R)` map to BARCODE, BLVCKL!GHT, and Rigged Sanchez.
-- The matching logo slowly fades in above the TV and fades out before that clip ends.
+- The upper framed panel is a dynamic logo aperture, not a permanent BARCODE panel.
+- `ICON.png` fades into that panel during START and END, then fades out before each clip finishes.
+- Tagged house content uses its matching logo in the same panel. Untagged sponsors and bumpers leave it clear.
 - `BCN1.png` and `BCN2.png` alternate in playback order and continue alternating across breaks.
 - Fake commercials/trailers are dotted between real sponsors and are never stacked back-to-back.
 
@@ -75,7 +78,7 @@ END
 
 The three bumper ranges are randomized within approximately 20–30%, 45–55%, and 70–80% of the content run. Whole videos are always preserved; the player never trims a spot to hit a timestamp.
 
-Only `SPACE1.mp4`, `Alien.mp4`, and `May.mp4` may be omitted when doing so makes the full break closer to 11:00. No real sponsor is silently removed. An unreadable active file is skipped and logged. Missing required fixed media, `BG.mp4`, `TV.mp4`, or a logo required by an active tag blocks the start with a clear error.
+Only `SPACE1.mp4`, `Alien.mp4`, and `May.mp4` may be omitted when doing so makes the full break closer to 11:00. No real sponsor is silently removed. An unreadable active file is skipped and logged. Missing required fixed media, `BG.mp4`, `TV.mp4`, `ICON.png`, or a logo required by an active tag blocks the start with a clear error.
 
 ### Composed local player
 
@@ -89,15 +92,17 @@ Set the source to **1080 × 1920** in TikTok Studio.
 
 During a break:
 
-- `BG.mp4` loops full-screen behind the composition.
+- `BG.mp4` and `TV.mp4` are matching 1080 × 1920 portrait videos. Both loop across the fixed 9:16 composition.
+- `BG.mp4` is the moving background and `TV.mp4` is the full-frame animated overlay above it.
 - Every START, sponsor, fake commercial/trailer, bumper, and END clip plays inside the TV screen.
-- `TV.mp4` loops as the animated frame above the clip. The browser applies a fixed GPU mask that removes the yellow screen and the area outside the TV body; there is no live chroma-key or per-frame CPU processing.
+- The clip window sits above only the TV screen area and is clipped to its rounded opening. It visually replaces the overlay's screen, so the screen behaves as transparent without chroma-keying, masking, or re-exporting `TV.mp4` with alpha.
+- The upper frame is reserved for the current dynamic logo: `ICON.png` for START/END and the tagged BCN/BL/R logo for matching house content.
 - `BG.mp4` and `TV.mp4` are muted. Only the current sequence clip supplies audio.
 - Only the next sequence clip is preloaded.
 - The background and frame are paused and cleared when the break is idle or stopped.
 - The source returns to transparent idle after END.
 
-Use **Copy commercial player source URL** for setup or **Open commercial player preview** for a visible local diagnostic view. Do not leave the preview browser open during a broadcast when the TikTok Studio source is already active, because both pages can play the same break.
+Use **Copy commercial player source URL** for the permanent Link source (`http://127.0.0.1:43120/commercials`) or **Open commercial player preview** for the diagnostic version (`http://127.0.0.1:43120/commercials?debug=1`). Do not leave the preview browser open during a broadcast when the TikTok Studio source is already active, because both pages can play the same break.
 
 Recommended video format: H.264 video and AAC audio in an MP4 container. Transparent PNGs are recommended for all logos.
 
@@ -107,7 +112,7 @@ The first release starts locally from the tray. It does not change the queue's s
 
 The bridge analyzes the program signal rather than the operator's Windows listening level. It reads the default Speakers endpoint level in decibels, removes that known attenuation from each loopback buffer, and places the reconstructed program at one fixed -9 dB internal analysis reference before calculating energy, bass, mids, treble, peak, flux, or beat.
 
-Version 1.0.4 introduced `fixed_reference_v1`. Version 1.0.5 adds the composed local commercial stage without changing that audio-analysis contract.
+Version 1.0.4 introduced `fixed_reference_v1`. Version 1.0.6 adds the corrected portrait commercial stage and START/END icon without changing that audio-analysis contract.
 
 Muted or digitally silent output remains silent; the bridge never invents audio activity. If Windows briefly cannot provide the endpoint-volume reading during a device or driver transition, that frame is analyzed at neutral gain instead of interrupting capture.
 

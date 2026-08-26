@@ -25,6 +25,12 @@ public sealed class CommercialBreakPlaylistTests
         Assert.All(plan.ContentBlockDurations, duration => Assert.True(duration > TimeSpan.Zero));
         Assert.Contains(plan.UsedVisualAssets, asset => asset.Id == "background");
         Assert.Contains(plan.UsedVisualAssets, asset => asset.Id == "tv-overlay");
+        Assert.Contains(plan.UsedVisualAssets, asset => asset.Id == "start-end-icon");
+        Assert.Equal("start-end-icon", plan.Items[0].LogoAssetId);
+        Assert.Equal("start-end-icon", plan.Items[^1].LogoAssetId);
+        Assert.All(
+            plan.Items.Skip(1).SkipLast(1).Where(item => item.Kind != CommercialClipKind.Interstitial),
+            item => Assert.Null(item.LogoAssetId));
     }
 
     [Fact]
@@ -165,6 +171,7 @@ public sealed class CommercialBreakPlaylistTests
     private static CommercialVisualAssets Visuals() => new(
         Asset("background", "video/mp4", ".mp4"),
         Asset("tv-overlay", "video/webm", ".webm"),
+        Asset("start-end-icon", "image/png"),
         new Dictionary<CommercialLogoBrand, IReadOnlyList<CommercialVisualAsset>>
         {
             [CommercialLogoBrand.Bcn] = new[] { Asset("bcn-logo-1", "image/png"), Asset("bcn-logo-2", "image/png") },

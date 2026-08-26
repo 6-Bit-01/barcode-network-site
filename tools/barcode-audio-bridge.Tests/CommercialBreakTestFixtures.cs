@@ -19,6 +19,7 @@ internal sealed class TemporaryCommercialLibrary : IDisposable
         AddFile(FixedDirectory, "END.mp4");
         AddFile(RootDirectory, "BG.mp4");
         AddFile(RootDirectory, "TV.mp4");
+        AddFile(RootDirectory, "ICON.png");
         AddFile(RootDirectory, "BCN1.png");
         AddFile(RootDirectory, "BCN2.png");
         AddFile(RootDirectory, "BL.png");
@@ -31,6 +32,7 @@ internal sealed class TemporaryCommercialLibrary : IDisposable
     public string InactiveDirectory { get; }
     public string BackgroundPath => Path.Combine(RootDirectory, "BG.mp4");
     public string TvPath => Path.Combine(RootDirectory, "TV.mp4");
+    public string IconPath => Path.Combine(RootDirectory, "ICON.png");
 
     public string AddActiveSponsor(string name) => AddFile(ActiveDirectory, name);
     public string AddInactiveSponsor(string name) => AddFile(InactiveDirectory, name);

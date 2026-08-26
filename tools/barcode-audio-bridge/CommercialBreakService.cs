@@ -156,7 +156,7 @@ internal sealed class CommercialMediaSnapshot : IDisposable
 
 internal sealed class CommercialBreakService
 {
-    public const string SchemaVersion = "barcode_commercial_break_v3";
+    public const string SchemaVersion = "barcode_commercial_break_v4";
 
     private readonly object _sync = new();
     private readonly CommercialBreakLibrary _library;

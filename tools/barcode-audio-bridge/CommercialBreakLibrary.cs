@@ -97,15 +97,17 @@ EXACT ROOT VISUAL FILE NAMES
 Put these files beside the Fixed and Sponsors folders:
   BG.mp4
   TV.mp4
+  ICON.png
   BCN1.png
   BCN2.png
   BL.png
   R.png
 
-BG.mp4 loops behind the composition. TV.mp4 is the animated frame; the player
-cuts a transparent opening over its yellow screen and places every start,
-sponsor, trailer, bumper, and end video inside that opening. BG.mp4 and TV.mp4
-are muted. Only the current sequence clip supplies audio.
+BG.mp4 and TV.mp4 are matching 1080 x 1920 videos. BG.mp4 loops behind the
+composition. TV.mp4 is the animated frame. The player replaces its screen with
+every start, sponsor, trailer, bumper, and end video. ICON.png fades in the upper
+logo panel during START and END only. BG.mp4 and TV.mp4 are muted. Only the
+current sequence clip supplies audio.
 
 PLAYBACK
 Right-click the BARCODE Audio Bridge tray icon and choose Start Commercial Break.
@@ -213,6 +215,8 @@ Recommended video format: H.264 video + AAC audio in an .mp4 container.
         if (bgPath is null) return Failure("Missing required root visual: BG.mp4.", warnings);
         var tvPath = FindNamedFile(_rootDirectory, "TV.mp4");
         if (tvPath is null) return Failure("Missing required root visual: TV.mp4.", warnings);
+        var iconPath = FindNamedFile(_rootDirectory, "ICON.png");
+        if (iconPath is null) return Failure("Missing required root logo: ICON.png.", warnings);
 
         var logos = new Dictionary<CommercialLogoBrand, IReadOnlyList<CommercialVisualAsset>>
         {
@@ -241,7 +245,11 @@ Recommended video format: H.264 video + AAC audio in an .mp4 container.
             new CommercialFixedClips(start, bumpers, end),
             sponsors,
             interstitials,
-            new CommercialVisualAssets(CreateVisualAsset(bgPath), CreateVisualAsset(tvPath), logos),
+            new CommercialVisualAssets(
+                CreateVisualAsset(bgPath),
+                CreateVisualAsset(tvPath),
+                CreateVisualAsset(iconPath),
+                logos),
             warnings);
     }
 

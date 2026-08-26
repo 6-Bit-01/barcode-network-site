@@ -96,6 +96,7 @@ public sealed class CommercialBreakServiceTests
         Assert.True(service.Start().Started);
         var snapshot = service.Snapshot();
         var item = snapshot.Items[0];
+        var ending = snapshot.Items[^1];
         var tagged = snapshot.Items.Single(entry => entry.Name == "network trailer (BCN)");
 
         Assert.True(service.TryGetMedia(item.Id, out var video));
@@ -109,8 +110,13 @@ public sealed class CommercialBreakServiceTests
         var logoId = tagged.LogoUrl![tagged.LogoUrl.LastIndexOf('/')..].TrimStart('/');
         Assert.True(service.TryGetMedia(logoId, out var logo));
         Assert.Equal("image/png", logo.ContentType);
+        Assert.NotNull(item.LogoUrl);
+        Assert.Equal(item.LogoUrl, ending.LogoUrl);
+        var iconId = item.LogoUrl![item.LogoUrl.LastIndexOf('/')..].TrimStart('/');
+        Assert.True(service.TryGetMedia(iconId, out var icon));
+        Assert.Equal("image/png", icon.ContentType);
         Assert.False(service.TryGetMedia("not-a-current-media-id", out _));
-        Assert.Equal("barcode_commercial_break_v3", snapshot.Schema);
+        Assert.Equal("barcode_commercial_break_v4", snapshot.Schema);
     }
 
     [Fact]

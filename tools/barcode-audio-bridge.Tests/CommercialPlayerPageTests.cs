@@ -23,11 +23,13 @@ public sealed class CommercialPlayerPageTests
     }
 
     [Fact]
-    public void VerticalStageLoopsMutedBackgroundAndRawTvOnlyDuringBreak()
+    public void PortraitStageCentersMatchingMutedBackgroundAndTvVideosOnlyDuringBreak()
     {
         var html = CommercialPlayerPage.Html;
 
         Assert.Contains("aspect-ratio: 9 / 16", html);
+        Assert.Contains("width: min(100vw, 56.25vh)", html);
+        Assert.Contains("height: min(100vh, 177.777778vw)", html);
         Assert.Contains("id=\"background-video\" preload=\"auto\" autoplay muted loop", html);
         Assert.Contains("id=\"tv-overlay-video\" preload=\"auto\" autoplay muted loop", html);
         Assert.Contains("clearVisualVideo(backgroundVideo)", html);
@@ -37,30 +39,43 @@ public sealed class CommercialPlayerPageTests
     }
 
     [Fact]
-    public void RawTvVideoIsMaskedAroundTheExactCommercialScreenWindow()
+    public void CommercialWindowReplacesTheTvScreenAtTheReferenceCoordinates()
     {
         var html = CommercialPlayerPage.Html;
 
-        Assert.Contains("-webkit-mask:", html);
-        Assert.Contains("linear-gradient(#fff 0 0) top", html);
-        Assert.Contains("clip-path: inset(.7% 5.6%", html);
-        Assert.Contains("left: 14.69%", html);
-        Assert.Contains("top: 13.06%", html);
-        Assert.Contains("width: 70.31%", html);
-        Assert.Contains("height: 66.11%", html);
-        Assert.Contains("object-fit: contain", html);
+        Assert.Matches(@"(?s)#tv-overlay-video\s*\{.*?inset:\s*0;.*?z-index:\s*1;", html);
+        Assert.Matches(
+            @"(?s)#video-window\s*\{.*?left:\s*3\.9%;.*?top:\s*35\.85%;.*?width:\s*92\.5%;.*?height:\s*28\.8%;.*?z-index:\s*2;",
+            html);
+        Assert.Contains("overflow: hidden", html);
+        Assert.Contains("border-radius: 1.8% / 3.2%", html);
+        Assert.Matches(@"(?s)#player\s*\{.*?width:\s*100%;.*?height:\s*100%;.*?object-fit:\s*cover;", html);
+        Assert.DoesNotContain("-webkit-mask:", html);
     }
 
     [Fact]
-    public void LogosFadeSlowlyAboveTheTvAndOnlyOneNextClipIsPreloaded()
+    public void DynamicLogoApertureUsesReferencePositionAndDurationAwareFades()
     {
         var html = CommercialPlayerPage.Html;
 
-        Assert.Contains("transition: opacity 1800ms ease", html);
+        Assert.Matches(
+            @"(?s)#logo\s*\{.*?top:\s*11\.25%;.*?width:\s*72%;.*?height:\s*14\.75%;.*?z-index:\s*3;",
+            html);
+        Assert.Contains("var(--logo-fade-duration, 1800ms)", html);
         Assert.Contains("#logo.visible", html);
-        Assert.Contains("top: 23.5%", html);
+        Assert.Contains("const totalMs = Math.max(1000, item.durationSeconds * 1000)", html);
+        Assert.Contains("totalMs - fadeMs - 200", html);
+        Assert.Contains("logo.style.setProperty('--logo-fade-duration'", html);
+    }
+
+    [Fact]
+    public void OnlyOneNextClipIsPreloadedAndDebugModeOutlinesTheTvWindow()
+    {
+        var html = CommercialPlayerPage.Html;
+
         Assert.Contains("let preloadPlayer = null", html);
         Assert.Contains("preload(nextItem)", html);
         Assert.Contains("query.get('debug') === '1'", html);
+        Assert.Contains("body.debug #video-window", html);
     }
 }

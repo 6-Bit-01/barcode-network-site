@@ -39,6 +39,7 @@ internal sealed record CommercialVisualAsset(
 internal sealed record CommercialVisualAssets(
     CommercialVisualAsset Background,
     CommercialVisualAsset TvOverlay,
+    CommercialVisualAsset StartEndIcon,
     IReadOnlyDictionary<CommercialLogoBrand, IReadOnlyList<CommercialVisualAsset>> Logos);
 
 internal sealed record CommercialPlaylistItem(
@@ -126,13 +127,14 @@ internal static class CommercialBreakPlaylistBuilder
 
         var playlist = new List<CommercialPlaylistItem>
         {
-            ToPlaylistItem(fixedClips.Start, contentBlock: null, logoAssetId: null),
+            ToPlaylistItem(fixedClips.Start, contentBlock: null, logoAssetId: visuals.StartEndIcon.Id),
         };
         var blockDurations = new List<TimeSpan>(ContentBlockCount);
         var usedVisualAssets = new Dictionary<string, CommercialVisualAsset>(StringComparer.Ordinal)
         {
             [visuals.Background.Id] = visuals.Background,
             [visuals.TvOverlay.Id] = visuals.TvOverlay,
+            [visuals.StartEndIcon.Id] = visuals.StartEndIcon,
         };
         var currentBlock = 1;
         var contentStart = 0;
@@ -168,7 +170,7 @@ internal static class CommercialBreakPlaylistBuilder
         }
 
         blockDurations.Add(SumClipDurations(content.Skip(contentStart)));
-        playlist.Add(ToPlaylistItem(fixedClips.End, contentBlock: null, logoAssetId: null));
+        playlist.Add(ToPlaylistItem(fixedClips.End, contentBlock: null, logoAssetId: visuals.StartEndIcon.Id));
 
         return new CommercialBreakPlan(
             playlist,

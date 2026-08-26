@@ -71,7 +71,7 @@ internal static class CommercialPlayerPage
       object-fit: contain;
       pointer-events: none;
       z-index: 2;
-      clip-path: inset(.7% 5.6% .7% 5.6% round 1.8%);
+      clip-path: inset(.7% 0 .7% 0 round 1.8%);
       -webkit-mask:
         linear-gradient(#fff 0 0) top / 100% 13.06% no-repeat,
         linear-gradient(#fff 0 0) bottom / 100% 20.83% no-repeat,
@@ -85,10 +85,10 @@ internal static class CommercialPlayerPage
     }
     #logo {
       position: absolute;
-      top: 11.25%;
+      top: 5.4%;
       left: 50%;
-      width: 72%;
-      height: 14.75%;
+      width: 96%;
+      height: 26.5%;
       object-fit: contain;
       opacity: 0;
       transform: translate(-50%, -6px) scale(.98);

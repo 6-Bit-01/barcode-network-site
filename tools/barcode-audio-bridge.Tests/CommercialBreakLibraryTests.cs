@@ -187,5 +187,7 @@ public sealed class CommercialBreakLibraryTests
         Assert.Contains("Visuals\\TV Overlay", text);
         Assert.Contains("ICON.png", text);
         Assert.Contains("1080 x 1920", text);
+        Assert.Contains("https://www.barcode-network.com/overlay/commercials", text);
+        Assert.DoesNotContain("  http://127.0.0.1:43120/commercials", text);
     }
 }

@@ -82,7 +82,7 @@ Only `SPACE1.mp4`, `Alien.mp4`, and `May.mp4` may be omitted when doing so makes
 The permanent Link/browser source remains:
 
 ```text
-http://127.0.0.1:43120/commercials
+https://www.barcode-network.com/overlay/commercials
 ```
 
 Set the source to **1080 × 1920** in TikTok Studio.
@@ -93,6 +93,7 @@ During a break:
 
 - The video in `Visuals/Background` fills the fixed 9:16 composition without being stretched.
 - The video in `Visuals/TV Overlay` keeps its own native landscape aspect ratio and is positioned as the TV shown in the reference composition. It is never expanded to the full portrait canvas.
+- The TV stays at the approved size and position; its full lower left and right bezel edges remain visible.
 - Every START, sponsor, fake commercial/trailer, bumper, and END clip plays inside the TV screen without changing the clip's aspect ratio.
 - The commercial is behind the TV layer. A fixed GPU mask removes the TV video's opaque screen area, so the bezel stays over the commercial and the opening behaves as transparent without per-frame CPU chroma-keying or re-exporting the TV video with alpha.
 - The upper frame is reserved for the current dynamic logo: `Visuals/ICON.png` for START/END and the tagged BCN/BL/R logo for matching house content.
@@ -101,7 +102,7 @@ During a break:
 - The background and frame are paused and cleared when the break is idle or stopped.
 - The source returns to transparent idle after END.
 
-Use **Copy permanent TikTok Studio source URL** for the reusable Link source (`http://127.0.0.1:43120/commercials`). **Open diagnostic preview (not Studio source)** opens the separate Chrome test page (`http://127.0.0.1:43120/commercials?debug=1`); Chrome requires one click on its audio gate before it permits audible playback. If a test break reaches that block first, the preview holds the same clip and resumes it after the click instead of failing the break. Do not leave the diagnostic preview open during a broadcast when the TikTok Studio source is already active, because both pages can play the same break.
+Use **Copy permanent TikTok Studio source URL** for the reusable HTTPS Link source (`https://www.barcode-network.com/overlay/commercials`). TikTok Studio requires HTTPS, so this BARCODE route redirects its source browser to the Audio Bridge's local-only player; sponsor media and visual files remain on the show computer. Add it once with custom resolution `1080 x 1920`, turn sound on, keep the source active, and size it once in the saved scene. **Open diagnostic preview (not Studio source)** opens the separate Chrome test page (`http://127.0.0.1:43120/commercials?debug=1`); Chrome requires one click on its audio gate before it permits audible playback. If a test break reaches that block first, the preview holds the same clip and resumes it after the click instead of failing the break. Do not leave the diagnostic preview open during a broadcast when the TikTok Studio source is already active, because both pages can play the same break.
 
 Recommended video format: H.264 video and AAC audio in an MP4 container. Transparent PNGs are recommended for all logos.
 
@@ -111,7 +112,7 @@ The first release starts locally from the tray. It does not change the queue's s
 
 The bridge analyzes the program signal rather than the operator's Windows listening level. It reads the default Speakers endpoint level in decibels, removes that known attenuation from each loopback buffer, and places the reconstructed program at one fixed -9 dB internal analysis reference before calculating energy, bass, mids, treble, peak, flux, or beat.
 
-Version 1.0.4 introduced `fixed_reference_v1`. Version 1.0.7 restores the established `Fixed/Bumpers` and `Visuals` folder contract. Version 1.0.8 adds nonfatal Chrome autoplay recovery to the diagnostic preview and clarifies that the TikTok Studio URL is a permanent reusable source. Version 1.0.9 restores the TV's native aspect ratio, masks its screen above the commercial, and keeps diagnostic preview controls out of the composition.
+Version 1.0.4 introduced `fixed_reference_v1`. Version 1.0.7 restores the established `Fixed/Bumpers` and `Visuals` folder contract. Version 1.0.8 adds nonfatal Chrome autoplay recovery to the diagnostic preview and clarifies that the TikTok Studio URL is a permanent reusable source. Version 1.0.9 restores the TV's native aspect ratio, masks its screen above the commercial, and keeps diagnostic preview controls out of the composition. Version 1.0.10 nearly doubles the logo display while preserving the approved TV size, restores the TV's cropped lower side edges, and replaces the Studio-rejected HTTP loopback address with the permanent BARCODE HTTPS source.
 
 Muted or digitally silent output remains silent; the bridge never invents audio activity. If Windows briefly cannot provide the endpoint-volume reading during a device or driver transition, that frame is analyzed at neutral gain instead of interrupting capture.
 

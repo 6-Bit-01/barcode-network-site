@@ -10,6 +10,14 @@ const pageSource = readFileSync(
   path.join(projectRoot, "tools/barcode-audio-bridge/CommercialPlayerPage.cs"),
   "utf8",
 );
+const librarySource = readFileSync(
+  path.join(projectRoot, "tools/barcode-audio-bridge/CommercialBreakLibrary.cs"),
+  "utf8",
+);
+const studioRouteSource = readFileSync(
+  path.join(projectRoot, "src/app/overlay/commercials/route.ts"),
+  "utf8",
+);
 const playerScript = pageSource.match(/  <script>\n([\s\S]*?)\n  <\/script>/)?.[1];
 
 class FakeElement {
@@ -57,9 +65,24 @@ test("TV frame keeps its native aspect, masks the screen, and remains above the 
   assert.doesNotMatch(pageSource, /object-fit:\s*fill;/);
   assert.match(pageSource, /#tv-stage\s*\{[\s\S]*?top:\s*31\.9%;[\s\S]*?width:\s*96%;[\s\S]*?z-index:\s*2;/);
   assert.match(pageSource, /#video-window\s*\{[\s\S]*?left:\s*14\.69%;[\s\S]*?top:\s*13\.06%;[\s\S]*?z-index:\s*1;/);
-  assert.match(pageSource, /#tv-overlay-video\s*\{[\s\S]*?height:\s*auto;[\s\S]*?object-fit:\s*contain;[\s\S]*?z-index:\s*2;[\s\S]*?-webkit-mask:/);
+  assert.match(pageSource, /#tv-overlay-video\s*\{[\s\S]*?height:\s*auto;[\s\S]*?object-fit:\s*contain;[\s\S]*?z-index:\s*2;[\s\S]*?clip-path:\s*inset\(\.7% 0 \.7% 0 round 1\.8%\);[\s\S]*?-webkit-mask:/);
   assert.match(pageSource, /<div id="tv-stage">[\s\S]*?<video id="player"[\s\S]*?<video id="tv-overlay-video"/);
   assert.doesNotMatch(playerScript, /player\.controls/);
+});
+
+test("logo is almost doubled without moving or enlarging the TV stage", () => {
+  assert.match(pageSource, /#logo\s*\{[\s\S]*?top:\s*5\.4%;[\s\S]*?width:\s*96%;[\s\S]*?height:\s*26\.5%;/);
+  assert.match(pageSource, /#tv-stage\s*\{[\s\S]*?top:\s*31\.9%;[\s\S]*?width:\s*96%;/);
+});
+
+test("TikTok Studio receives a reusable HTTPS source that redirects to the local-only player", () => {
+  assert.match(librarySource, /PlayerUrl = "https:\/\/www\.barcode-network\.com\/overlay\/commercials"/);
+  assert.match(librarySource, /LocalPlayerUrl => \$"http:\/\/127\.0\.0\.1:\{BridgeConstants\.Port\}\/commercials"/);
+  assert.match(librarySource, /PreviewUrl => LocalPlayerUrl \+ "\?debug=1"/);
+  assert.match(studioRouteSource, /LOCAL_COMMERCIAL_PLAYER_URL = "http:\/\/127\.0\.0\.1:43120\/commercials"/);
+  assert.match(studioRouteSource, /status: 307/);
+  assert.match(studioRouteSource, /Location: LOCAL_COMMERCIAL_PLAYER_URL/);
+  assert.match(studioRouteSource, /Cache-Control": "private, no-store, max-age=0"/);
 });
 
 test("Chrome autoplay denial holds the current commercial until one click instead of failing the break", async () => {

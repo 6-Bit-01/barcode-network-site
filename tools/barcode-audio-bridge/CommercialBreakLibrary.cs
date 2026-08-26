@@ -36,8 +36,9 @@ internal static class CommercialBreakPaths
         "BARCODE Network",
         "Commercials");
 
-    public static string PlayerUrl => $"http://127.0.0.1:{BridgeConstants.Port}/commercials";
-    public static string PreviewUrl => PlayerUrl + "?debug=1";
+    public const string PlayerUrl = "https://www.barcode-network.com/overlay/commercials";
+    public static string LocalPlayerUrl => $"http://127.0.0.1:{BridgeConstants.Port}/commercials";
+    public static string PreviewUrl => LocalPlayerUrl + "?debug=1";
 
     public static void EnsureCreated() => CommercialBreakLibrary.CreateDefault().EnsureLayout();
 
@@ -124,10 +125,12 @@ PLAYER SOURCE
 Right-click the tray icon and choose Copy permanent TikTok Studio source URL.
 Add this Link source to TikTok Studio once at 1080 x 1920, size it once, and
 leave it in the scene for every show:
-  http://127.0.0.1:43120/commercials
+  https://www.barcode-network.com/overlay/commercials
 
 Open diagnostic preview (not Studio source) is only for Chrome testing and is
-not the source that should be added to TikTok Studio.
+not the source that should be added to TikTok Studio. The permanent HTTPS link
+redirects only inside TikTok Studio to this computer's local player; sponsor
+media and visuals never leave this computer.
 
 Recommended video format: H.264 video + AAC audio in an .mp4 container.
 """;

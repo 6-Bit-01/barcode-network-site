@@ -56,7 +56,7 @@ public sealed class CommercialPlayerPageTests
             html);
         Assert.Contains("-webkit-mask:", html);
         Assert.Contains("linear-gradient(#fff 0 0) top", html);
-        Assert.Contains("clip-path: inset(.7% 5.6%", html);
+        Assert.Contains("clip-path: inset(.7% 0 .7% 0 round 1.8%)", html);
         Assert.Matches(
             @"(?s)<div id=""tv-stage"">.*?<div id=""video-window"">.*?<video id=""player"".*?</div>.*?<video id=""tv-overlay-video""",
             html);
@@ -70,7 +70,7 @@ public sealed class CommercialPlayerPageTests
         var html = CommercialPlayerPage.Html;
 
         Assert.Matches(
-            @"(?s)#logo\s*\{.*?top:\s*11\.25%;.*?width:\s*72%;.*?height:\s*14\.75%;.*?z-index:\s*3;",
+            @"(?s)#logo\s*\{.*?top:\s*5\.4%;.*?width:\s*96%;.*?height:\s*26\.5%;.*?z-index:\s*3;",
             html);
         Assert.Contains("var(--logo-fade-duration, 1800ms)", html);
         Assert.Contains("#logo.visible", html);

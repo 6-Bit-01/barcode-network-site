@@ -14,6 +14,28 @@ internal static class CommercialPlayerPage
     * { box-sizing: border-box; }
     html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; }
     body { font-family: Consolas, "Courier New", monospace; }
+    /*
+     * TikTok LIVE Studio keeps separate Settings-preview and placed-canvas
+     * renderers. This imperceptible two-pixel compositor heartbeat prevents
+     * the placed renderer from suspending before local video is ready.
+     */
+    body::after {
+      position: fixed;
+      right: 0;
+      bottom: 0;
+      z-index: 2147483647;
+      width: 2px;
+      height: 2px;
+      background: rgba(0, 0, 0, .004);
+      content: "";
+      pointer-events: none;
+      animation: commercial-source-capture-heartbeat 1s steps(2, end) infinite !important;
+      will-change: transform;
+    }
+    @keyframes commercial-source-capture-heartbeat {
+      0%, 100% { transform: translate3d(0, 0, 0); }
+      50% { transform: translate3d(-1px, 0, 0); }
+    }
     #stage {
       position: fixed;
       left: 50%;

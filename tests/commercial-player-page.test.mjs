@@ -107,6 +107,9 @@ test("TV motion is half-speed while frequent lamp pulses add no second video dec
 });
 
 test("idle shows only the animated background and a CSS CRT power-on precedes the first clip", () => {
+  assert.match(librarySource, /PlayerUrl = "https:\/\/www\.barcode-network\.com\/overlay\/commercials\?studioSource=v1"/);
+  assert.match(pageSource, /body::after\s*\{[\s\S]*?width:\s*2px;[\s\S]*?height:\s*2px;[\s\S]*?animation:\s*commercial-source-capture-heartbeat 1s steps\(2, end\) infinite !important;/);
+  assert.match(pageSource, /@keyframes commercial-source-capture-heartbeat/);
   assert.match(playerScript, /const idleBackgroundUrl = '\/v1\/commercials\/idle-background'/);
   assert.match(playerScript, /async function showIdleBackground\(\)[\s\S]*?tvStage\.hidden = true;[\s\S]*?startVisualVideo\(backgroundVideo, idleBackgroundUrl, 'idle background', token\)/);
   assert.match(pageSource, /id="tv-stage" hidden/);
@@ -251,8 +254,8 @@ test("BCN and BLVCKL!GHT logos remain enlarged while the cropped TV fills more o
   assert.match(pageSource, /\.corner-logo\s*\{[\s\S]*?right:\s*2\.2%;[\s\S]*?bottom:\s*2\.2%;[\s\S]*?width:\s*18%;[\s\S]*?height:\s*16%;[\s\S]*?object-fit:\s*contain;[\s\S]*?z-index:\s*2;/);
 });
 
-test("TikTok Studio receives a reusable HTTPS source that redirects to the local-only player", () => {
-  assert.match(librarySource, /PlayerUrl = "https:\/\/www\.barcode-network\.com\/overlay\/commercials"/);
+test("TikTok Studio receives a versioned reusable HTTPS source that redirects to the local-only player", () => {
+  assert.match(librarySource, /PlayerUrl = "https:\/\/www\.barcode-network\.com\/overlay\/commercials\?studioSource=v1"/);
   assert.match(librarySource, /LocalPlayerUrl => \$"http:\/\/127\.0\.0\.1:\{BridgeConstants\.Port\}\/commercials"/);
   assert.match(librarySource, /PreviewUrl => LocalPlayerUrl \+ "\?debug=1"/);
   assert.match(studioRouteSource, /LOCAL_COMMERCIAL_PLAYER_URL = "http:\/\/127\.0\.0\.1:43120\/commercials"/);

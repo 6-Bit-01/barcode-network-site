@@ -10,6 +10,9 @@ public sealed class CommercialPlayerPageTests
         var html = CommercialPlayerPage.Html;
 
         Assert.Contains("background: transparent", html);
+        Assert.Contains("body::after", html);
+        Assert.Contains("animation: commercial-source-capture-heartbeat 1s steps(2, end) infinite !important", html);
+        Assert.Contains("@keyframes commercial-source-capture-heartbeat", html);
         Assert.Contains("const idleBackgroundUrl = '/v1/commercials/idle-background'", html);
         Assert.Contains("async function showIdleBackground()", html);
         Assert.Contains("tvStage.hidden = true", html);

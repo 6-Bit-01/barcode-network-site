@@ -31,8 +31,8 @@ internal sealed class BridgeApplicationContext : ApplicationContext
 
         var openCommercials = new ToolStripMenuItem("Open commercial folder");
         openCommercials.Click += (_, _) => CommercialBreakPaths.OpenRootDirectory();
-        var copyPlayerUrl = new ToolStripMenuItem("Copy commercial player source URL");
-        var openPreview = new ToolStripMenuItem("Open commercial player preview");
+        var copyPlayerUrl = new ToolStripMenuItem("Copy permanent TikTok Studio source URL");
+        var openPreview = new ToolStripMenuItem("Open diagnostic preview (not Studio source)");
         openPreview.Click += (_, _) => CommercialBreakPaths.OpenPreview();
 
         var openLogs = new ToolStripMenuItem("Open diagnostics folder");
@@ -73,7 +73,7 @@ internal sealed class BridgeApplicationContext : ApplicationContext
             Visible = true,
         };
         _notifyIcon.DoubleClick += (_, _) => MessageBox.Show(
-            $"{_capture.Status}\n{_commercials.StatusText}\n\nCommercial player source:\n{CommercialBreakPaths.PlayerUrl}",
+            $"{_capture.Status}\n{_commercials.StatusText}\n\nPermanent TikTok Studio source:\n{CommercialBreakPaths.PlayerUrl}",
             "BARCODE Audio Bridge",
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);
@@ -123,7 +123,7 @@ internal sealed class BridgeApplicationContext : ApplicationContext
             Clipboard.SetText(CommercialBreakPaths.PlayerUrl);
             _notifyIcon.ShowBalloonTip(
                 2_000,
-                "Commercial player URL copied",
+                "Permanent TikTok Studio source copied",
                 CommercialBreakPaths.PlayerUrl,
                 ToolTipIcon.Info);
         }
@@ -132,7 +132,7 @@ internal sealed class BridgeApplicationContext : ApplicationContext
             BridgeLog.Write("Commercial player URL could not be copied.", error);
             MessageBox.Show(
                 CommercialBreakPaths.PlayerUrl,
-                "Copy the commercial player URL",
+                "Copy the permanent TikTok Studio source",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
         }

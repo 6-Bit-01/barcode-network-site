@@ -95,6 +95,27 @@ internal static class CommercialPlayerPage
       white-space: pre-wrap;
       z-index: 20;
     }
+    #audio-gate {
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      width: min(520px, calc(100% - 32px));
+      padding: 22px 24px;
+      border: 2px solid #79ff74;
+      background: rgba(0,0,0,.94);
+      color: #caffc7;
+      font: inherit;
+      text-align: center;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 0 0 1px rgba(0,0,0,.9), 0 0 30px rgba(121,255,116,.28);
+      cursor: pointer;
+      z-index: 30;
+    }
+    #audio-gate[hidden] { display: none; }
+    #audio-gate strong, #audio-gate span { display: block; }
+    #audio-gate strong { font-size: 18px; line-height: 1.35; }
+    #audio-gate span { margin-top: 8px; color: #a7d9a4; font-size: 13px; line-height: 1.4; }
+    #audio-gate:focus-visible { outline: 3px solid #fff; outline-offset: 4px; }
     body.debug #status { display: block; }
     body.debug #video-window { outline: 1px dashed rgba(121,255,116,.65); }
   </style>
@@ -108,6 +129,10 @@ internal static class CommercialPlayerPage
     </div>
     <img id="logo" alt="" hidden>
   </div>
+  <button id="audio-gate" type="button" hidden>
+    <strong>CLICK ONCE TO ENABLE COMMERCIAL AUDIO</strong>
+    <span>The diagnostic preview will resume the same clip.</span>
+  </button>
   <div id="status">LOCAL COMMERCIAL PLAYER READY</div>
   <script>
     const query = new URLSearchParams(location.search);
@@ -119,6 +144,7 @@ internal static class CommercialPlayerPage
     const tvOverlayVideo = document.getElementById('tv-overlay-video');
     const player = document.getElementById('player');
     const logo = document.getElementById('logo');
+    const audioGate = document.getElementById('audio-gate');
     const statusBox = document.getElementById('status');
     if (debug) player.controls = true;
 
@@ -127,6 +153,7 @@ internal static class CommercialPlayerPage
     let running = false;
     let preloadPlayer = null;
     let logoTimers = [];
+    let pendingAudioGate = null;
 
     function showStatus(message) { statusBox.textContent = message; }
 
@@ -158,9 +185,22 @@ internal static class CommercialPlayerPage
       video.hidden = true;
     }
 
+    function playbackCancelledError() {
+      return new DOMException('Commercial playback cancelled', 'AbortError');
+    }
+
+    function cancelAudioGate() {
+      audioGate.hidden = true;
+      if (!pendingAudioGate) return;
+      const pending = pendingAudioGate;
+      pendingAudioGate = null;
+      pending.cancel();
+    }
+
     function clearPlayer() {
       runToken += 1;
       running = false;
+      cancelAudioGate();
       player.pause();
       player.removeAttribute('src');
       player.load();
@@ -169,6 +209,73 @@ internal static class CommercialPlayerPage
       stage.hidden = true;
       clearLogo();
       releasePreload();
+    }
+
+    function isAutoplayBlock(error) {
+      const name = String(error?.name || '');
+      const message = String(error?.message || error || '');
+      return name === 'NotAllowedError'
+        || /user didn['’]?t interact|not allowed|autoplay/i.test(message);
+    }
+
+    function waitForAudioGesture(item, token) {
+      showStatus(`BREAK ${activeGeneration}\n${item.name}\nWAITING FOR ONE CLICK TO ENABLE AUDIO`);
+      audioGate.hidden = false;
+      audioGate.focus({ preventScroll: true });
+
+      return new Promise((resolve, reject) => {
+        let settled = false;
+        const cleanup = () => {
+          audioGate.removeEventListener('click', resume);
+          if (pendingAudioGate?.token === token) pendingAudioGate = null;
+        };
+        const finish = (callback, value) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          audioGate.hidden = true;
+          callback(value);
+        };
+        const resume = () => {
+          if (token !== runToken) {
+            finish(reject, playbackCancelledError());
+            return;
+          }
+          let playback;
+          try {
+            playback = player.play();
+          } catch (error) {
+            finish(reject, error);
+            return;
+          }
+          playback.then(() => {
+            showStatus(`BREAK ${activeGeneration}\n${item.name}\nAUDIO ENABLED · PLAYING`);
+            finish(resolve);
+          }).catch(error => finish(reject, error));
+        };
+        const cancel = () => finish(reject, playbackCancelledError());
+        pendingAudioGate = { token, cancel };
+        audioGate.addEventListener('click', resume, { once: true });
+      });
+    }
+
+    async function playWithAudioRecovery(item, token) {
+      let playbackError;
+      try {
+        await player.play();
+        return;
+      } catch (error) {
+        playbackError = error;
+      }
+      while (isAutoplayBlock(playbackError) && token === runToken) {
+        try {
+          await waitForAudioGesture(item, token);
+          return;
+        } catch (error) {
+          playbackError = error;
+        }
+      }
+      throw playbackError;
     }
 
     async function startVisualVideo(element, url, label, token) {
@@ -232,7 +339,7 @@ internal static class CommercialPlayerPage
         player.src = item.url;
         player.load();
         preload(nextItem);
-        player.play()
+        playWithAudioRecovery(item, token)
           .then(() => showLogo(item, token))
           .catch(error => { cleanup(); clearLogo(); reject(error); });
       });
@@ -296,6 +403,13 @@ internal static class CommercialPlayerPage
         if (!running) showStatus(`LOCAL COMMERCIAL PLAYER OFFLINE\n${error.message}`);
       }
     }
+
+    audioGate.addEventListener('click', () => {
+      if (pendingAudioGate) return;
+      audioGate.hidden = true;
+      showStatus('LOCAL COMMERCIAL PLAYER READY · AUDIO ENABLED');
+    });
+    if (debug && !navigator.userActivation?.hasBeenActive) audioGate.hidden = false;
 
     void poll();
     setInterval(() => void poll(), 500);

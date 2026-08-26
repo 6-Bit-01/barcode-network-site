@@ -121,8 +121,13 @@ files between Active and Inactive while a break runs affects only the next break
 The Playback Snapshots folder is managed and cleaned automatically.
 
 PLAYER SOURCE
-Use this permanent local source in TikTok Studio at 1080 x 1920:
+Right-click the tray icon and choose Copy permanent TikTok Studio source URL.
+Add this Link source to TikTok Studio once at 1080 x 1920, size it once, and
+leave it in the scene for every show:
   http://127.0.0.1:43120/commercials
+
+Open diagnostic preview (not Studio source) is only for Chrome testing and is
+not the source that should be added to TikTok Studio.
 
 Recommended video format: H.264 video + AAC audio in an .mp4 container.
 """;

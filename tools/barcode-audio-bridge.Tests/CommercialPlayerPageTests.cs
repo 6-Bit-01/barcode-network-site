@@ -78,4 +78,23 @@ public sealed class CommercialPlayerPageTests
         Assert.Contains("query.get('debug') === '1'", html);
         Assert.Contains("body.debug #video-window", html);
     }
+
+    [Fact]
+    public void AudibleAutoplayBlockWaitsForOneClickAndRetriesTheSameClip()
+    {
+        var html = CommercialPlayerPage.Html;
+
+        Assert.Contains("id=\"audio-gate\" type=\"button\" hidden", html);
+        Assert.Contains("CLICK ONCE TO ENABLE COMMERCIAL AUDIO", html);
+        Assert.Contains("The diagnostic preview will resume the same clip.", html);
+        Assert.Contains("name === 'NotAllowedError'", html);
+        Assert.Contains("function waitForAudioGesture(item, token)", html);
+        Assert.Contains("playback = player.play()", html);
+        Assert.Contains("await waitForAudioGesture(item, token)", html);
+        Assert.Contains("while (isAutoplayBlock(playbackError) && token === runToken)", html);
+        Assert.Contains("if (debug && !navigator.userActivation?.hasBeenActive) audioGate.hidden = false", html);
+        Assert.Matches(
+            @"(?s)async function playWithAudioRecovery.*?await player\.play\(\);.*?isAutoplayBlock\(playbackError\).*?waitForAudioGesture\(item, token\)",
+            html);
+    }
 }

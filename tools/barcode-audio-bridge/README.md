@@ -87,6 +87,8 @@ http://127.0.0.1:43120/commercials
 
 Set the source to **1080 × 1920** in TikTok Studio.
 
+Add and size that Link source once, then leave it in the TikTok Studio scene for every show. The tray app serves the same local URL whenever it is running; there is no per-show browser window, replacement source, or resizing step.
+
 During a break:
 
 - The video in `Visuals/Background` and the video in `Visuals/TV Overlay` are matching 1080 × 1920 portrait videos. Both loop across the fixed 9:16 composition.
@@ -99,7 +101,7 @@ During a break:
 - The background and frame are paused and cleared when the break is idle or stopped.
 - The source returns to transparent idle after END.
 
-Use **Copy commercial player source URL** for the permanent Link source (`http://127.0.0.1:43120/commercials`) or **Open commercial player preview** for the diagnostic version (`http://127.0.0.1:43120/commercials?debug=1`). Do not leave the preview browser open during a broadcast when the TikTok Studio source is already active, because both pages can play the same break.
+Use **Copy permanent TikTok Studio source URL** for the reusable Link source (`http://127.0.0.1:43120/commercials`). **Open diagnostic preview (not Studio source)** opens the separate Chrome test page (`http://127.0.0.1:43120/commercials?debug=1`); Chrome requires one click on its audio gate before it permits audible playback. If a test break reaches that block first, the preview holds the same clip and resumes it after the click instead of failing the break. Do not leave the diagnostic preview open during a broadcast when the TikTok Studio source is already active, because both pages can play the same break.
 
 Recommended video format: H.264 video and AAC audio in an MP4 container. Transparent PNGs are recommended for all logos.
 
@@ -109,7 +111,7 @@ The first release starts locally from the tray. It does not change the queue's s
 
 The bridge analyzes the program signal rather than the operator's Windows listening level. It reads the default Speakers endpoint level in decibels, removes that known attenuation from each loopback buffer, and places the reconstructed program at one fixed -9 dB internal analysis reference before calculating energy, bass, mids, treble, peak, flux, or beat.
 
-Version 1.0.4 introduced `fixed_reference_v1`. Version 1.0.7 keeps the corrected portrait commercial stage while restoring the established `Fixed/Bumpers` and `Visuals` folder contract.
+Version 1.0.4 introduced `fixed_reference_v1`. Version 1.0.7 keeps the corrected portrait commercial stage while restoring the established `Fixed/Bumpers` and `Visuals` folder contract. Version 1.0.8 adds nonfatal Chrome autoplay recovery to the diagnostic preview and clarifies that the TikTok Studio URL is a permanent reusable source.
 
 Muted or digitally silent output remains silent; the bridge never invents audio activity. If Windows briefly cannot provide the endpoint-volume reading during a device or driver transition, that frame is analyzed at neutral gain instead of interrupting capture.
 

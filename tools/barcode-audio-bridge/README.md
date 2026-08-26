@@ -93,7 +93,8 @@ During a break:
 
 - The video in `Visuals/Background` fills the fixed 9:16 composition without being stretched.
 - The video in `Visuals/TV Overlay` keeps its own native landscape aspect ratio and is positioned as the TV shown in the reference composition. It is never expanded to the full portrait canvas.
-- The TV stays at the approved size and position; its full lower left and right bezel edges remain visible.
+- The source video is cropped to the real central TV rectangle, removing its detached dark side columns, detached lower blocks, and the empty gaps between them.
+- The complete cropped TV and its commercial window are enlarged together by about eight percent while remaining centered in the same composition area.
 - Every START, sponsor, fake commercial/trailer, bumper, and END clip plays inside the TV screen without changing the clip's aspect ratio.
 - The commercial is behind the TV layer. A fixed GPU mask removes the TV video's opaque screen area, so the bezel stays over the commercial and the opening behaves as transparent without per-frame CPU chroma-keying or re-exporting the TV video with alpha.
 - The upper frame is reserved for the current dynamic logo: `Visuals/ICON.png` for START/END and the tagged BCN/BL/R logo for matching house content.
@@ -112,7 +113,7 @@ The first release starts locally from the tray. It does not change the queue's s
 
 The bridge analyzes the program signal rather than the operator's Windows listening level. It reads the default Speakers endpoint level in decibels, removes that known attenuation from each loopback buffer, and places the reconstructed program at one fixed -9 dB internal analysis reference before calculating energy, bass, mids, treble, peak, flux, or beat.
 
-Version 1.0.4 introduced `fixed_reference_v1`. Version 1.0.7 restores the established `Fixed/Bumpers` and `Visuals` folder contract. Version 1.0.8 adds nonfatal Chrome autoplay recovery to the diagnostic preview and clarifies that the TikTok Studio URL is a permanent reusable source. Version 1.0.9 restores the TV's native aspect ratio, masks its screen above the commercial, and keeps diagnostic preview controls out of the composition. Version 1.0.10 nearly doubles the logo display while preserving the approved TV size, restores the TV's cropped lower side edges, and replaces the Studio-rejected HTTP loopback address with the permanent BARCODE HTTPS source.
+Version 1.0.4 introduced `fixed_reference_v1`. Version 1.0.7 restores the established `Fixed/Bumpers` and `Visuals` folder contract. Version 1.0.8 adds nonfatal Chrome autoplay recovery to the diagnostic preview and clarifies that the TikTok Studio URL is a permanent reusable source. Version 1.0.9 restores the TV's native aspect ratio, masks its screen above the commercial, and keeps diagnostic preview controls out of the composition. Version 1.0.10 nearly doubles the logo display and replaces the Studio-rejected HTTP loopback address with the permanent BARCODE HTTPS source. Version 1.0.11 crops the TV source to the single real TV rectangle, removes its detached side and lower artifacts, and enlarges the complete TV/commercial unit slightly.
 
 Muted or digitally silent output remains silent; the bridge never invents audio activity. If Windows briefly cannot provide the endpoint-volume reading during a device or driver transition, that frame is analyzed at neutral gain instead of interrupting capture.
 

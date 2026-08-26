@@ -63,16 +63,20 @@ const flushTasks = async (count = 8) => {
 test("TV frame keeps its native aspect, masks the screen, and remains above the commercial", () => {
   assert.match(pageSource, /#background-video\s*\{[\s\S]*?object-fit:\s*cover;/);
   assert.doesNotMatch(pageSource, /object-fit:\s*fill;/);
-  assert.match(pageSource, /#tv-stage\s*\{[\s\S]*?top:\s*31\.9%;[\s\S]*?width:\s*96%;[\s\S]*?z-index:\s*2;/);
+  assert.match(pageSource, /#tv-stage\s*\{[\s\S]*?top:\s*30\.6%;[\s\S]*?width:\s*104%;[\s\S]*?z-index:\s*2;/);
   assert.match(pageSource, /#video-window\s*\{[\s\S]*?left:\s*14\.69%;[\s\S]*?top:\s*13\.06%;[\s\S]*?z-index:\s*1;/);
-  assert.match(pageSource, /#tv-overlay-video\s*\{[\s\S]*?height:\s*auto;[\s\S]*?object-fit:\s*contain;[\s\S]*?z-index:\s*2;[\s\S]*?clip-path:\s*inset\(\.7% 0 \.7% 0 round 1\.8%\);[\s\S]*?-webkit-mask:/);
+  assert.match(pageSource, /#tv-overlay-video\s*\{[\s\S]*?height:\s*auto;[\s\S]*?object-fit:\s*contain;[\s\S]*?z-index:\s*2;[\s\S]*?clip-path:\s*inset\(\.7% 8% \.7% 9\.5% round 1\.8%\);[\s\S]*?-webkit-mask:/);
+  assert.match(pageSource, /#tv-stage::before,[\s\S]*?#tv-stage::after\s*\{[\s\S]*?top:\s*64\.5%;[\s\S]*?height:\s*14\.8%;[\s\S]*?z-index:\s*3;/);
+  assert.match(pageSource, /#tv-stage::before\s*\{[\s\S]*?left:\s*9\.5%;[\s\S]*?width:\s*5\.25%;/);
+  assert.match(pageSource, /#tv-stage::after\s*\{[\s\S]*?right:\s*8%;[\s\S]*?width:\s*7%;/);
   assert.match(pageSource, /<div id="tv-stage">[\s\S]*?<video id="player"[\s\S]*?<video id="tv-overlay-video"/);
   assert.doesNotMatch(playerScript, /player\.controls/);
 });
 
-test("logo is almost doubled without moving or enlarging the TV stage", () => {
+test("logo stays enlarged while the cropped TV and commercial window grow together", () => {
   assert.match(pageSource, /#logo\s*\{[\s\S]*?top:\s*5\.4%;[\s\S]*?width:\s*96%;[\s\S]*?height:\s*26\.5%;/);
-  assert.match(pageSource, /#tv-stage\s*\{[\s\S]*?top:\s*31\.9%;[\s\S]*?width:\s*96%;/);
+  assert.match(pageSource, /#tv-stage\s*\{[\s\S]*?top:\s*30\.6%;[\s\S]*?width:\s*104%;/);
+  assert.match(pageSource, /#video-window\s*\{[\s\S]*?left:\s*14\.69%;[\s\S]*?top:\s*13\.06%;[\s\S]*?width:\s*70\.31%;[\s\S]*?height:\s*66\.11%;/);
 });
 
 test("TikTok Studio receives a reusable HTTPS source that redirects to the local-only player", () => {

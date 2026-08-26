@@ -38,13 +38,33 @@ internal static class CommercialPlayerPage
     }
     #tv-stage {
       position: absolute;
-      top: 31.9%;
+      top: 30.6%;
       left: 50%;
-      width: 96%;
+      width: 104%;
       transform: translateX(-50%);
       isolation: isolate;
       z-index: 2;
       pointer-events: none;
+    }
+    #tv-stage::before,
+    #tv-stage::after {
+      content: "";
+      position: absolute;
+      top: 64.5%;
+      height: 14.8%;
+      background: linear-gradient(180deg, #242525 0%, #111212 52%, #1a1b1b 100%);
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.1),
+        inset 0 -2px 0 rgba(0,0,0,.65);
+      z-index: 3;
+    }
+    #tv-stage::before {
+      left: 9.5%;
+      width: 5.25%;
+    }
+    #tv-stage::after {
+      right: 8%;
+      width: 7%;
     }
     #video-window {
       position: absolute;
@@ -71,7 +91,7 @@ internal static class CommercialPlayerPage
       object-fit: contain;
       pointer-events: none;
       z-index: 2;
-      clip-path: inset(.7% 0 .7% 0 round 1.8%);
+      clip-path: inset(.7% 8% .7% 9.5% round 1.8%);
       -webkit-mask:
         linear-gradient(#fff 0 0) top / 100% 13.06% no-repeat,
         linear-gradient(#fff 0 0) bottom / 100% 20.83% no-repeat,

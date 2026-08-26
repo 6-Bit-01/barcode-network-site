@@ -46,7 +46,7 @@ public sealed class CommercialPlayerPageTests
         var html = CommercialPlayerPage.Html;
 
         Assert.Matches(
-            @"(?s)#tv-stage\s*\{.*?top:\s*31\.9%;.*?width:\s*96%;.*?z-index:\s*2;",
+            @"(?s)#tv-stage\s*\{.*?top:\s*30\.6%;.*?width:\s*104%;.*?z-index:\s*2;",
             html);
         Assert.Matches(
             @"(?s)#video-window\s*\{.*?left:\s*14\.69%;.*?top:\s*13\.06%;.*?width:\s*70\.31%;.*?height:\s*66\.11%;.*?z-index:\s*1;",
@@ -56,7 +56,12 @@ public sealed class CommercialPlayerPageTests
             html);
         Assert.Contains("-webkit-mask:", html);
         Assert.Contains("linear-gradient(#fff 0 0) top", html);
-        Assert.Contains("clip-path: inset(.7% 0 .7% 0 round 1.8%)", html);
+        Assert.Contains("clip-path: inset(.7% 8% .7% 9.5% round 1.8%)", html);
+        Assert.Matches(
+            @"(?s)#tv-stage::before,.*?#tv-stage::after\s*\{.*?top:\s*64\.5%;.*?height:\s*14\.8%;.*?z-index:\s*3;",
+            html);
+        Assert.Matches(@"(?s)#tv-stage::before\s*\{.*?left:\s*9\.5%;.*?width:\s*5\.25%;", html);
+        Assert.Matches(@"(?s)#tv-stage::after\s*\{.*?right:\s*8%;.*?width:\s*7%;", html);
         Assert.Matches(
             @"(?s)<div id=""tv-stage"">.*?<div id=""video-window"">.*?<video id=""player"".*?</div>.*?<video id=""tv-overlay-video""",
             html);

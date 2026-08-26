@@ -60,20 +60,19 @@ const flushTasks = async (count = 8) => {
   }
 };
 
-test("TV frame keeps its native aspect, masks the screen, and remains above the commercial", () => {
-  assert.match(pageSource, /#background-video\s*\{[\s\S]*?object-fit:\s*cover;/);
+test("TV frame keeps its native aspect, uses the complete source bezel, and remains above the commercial", () => {
+  assert.match(pageSource, /#background-video\s*\{[\s\S]*?object-fit:\s*cover;[\s\S]*?transform:\s*scale\(1\.13\);[\s\S]*?transform-origin:\s*left top;/);
   assert.doesNotMatch(pageSource, /object-fit:\s*fill;/);
   assert.match(pageSource, /#tv-stage\s*\{[\s\S]*?top:\s*30\.6%;[\s\S]*?width:\s*104%;[\s\S]*?z-index:\s*2;/);
   assert.match(pageSource, /#video-window\s*\{[\s\S]*?left:\s*14\.69%;[\s\S]*?top:\s*13\.06%;[\s\S]*?z-index:\s*1;/);
-  assert.match(pageSource, /#tv-overlay-video\s*\{[\s\S]*?height:\s*auto;[\s\S]*?object-fit:\s*contain;[\s\S]*?z-index:\s*2;[\s\S]*?clip-path:\s*inset\(\.7% 8% \.7% 9\.5% round 1\.8%\);[\s\S]*?-webkit-mask:/);
-  assert.match(pageSource, /#tv-stage::before,[\s\S]*?#tv-stage::after\s*\{[\s\S]*?top:\s*64\.5%;[\s\S]*?height:\s*14\.8%;[\s\S]*?z-index:\s*3;/);
-  assert.match(pageSource, /#tv-stage::before\s*\{[\s\S]*?left:\s*9\.5%;[\s\S]*?width:\s*5\.25%;/);
-  assert.match(pageSource, /#tv-stage::after\s*\{[\s\S]*?right:\s*8%;[\s\S]*?width:\s*7%;/);
+  assert.match(pageSource, /#tv-overlay-video\s*\{[\s\S]*?height:\s*auto;[\s\S]*?object-fit:\s*contain;[\s\S]*?z-index:\s*2;[\s\S]*?clip-path:\s*inset\(0 7\.55% 0 7\.55%\);[\s\S]*?-webkit-mask:/);
+  assert.doesNotMatch(pageSource, /#tv-stage::before|#tv-stage::after/);
   assert.match(pageSource, /<div id="tv-stage">[\s\S]*?<video id="player"[\s\S]*?<video id="tv-overlay-video"/);
   assert.doesNotMatch(playerScript, /player\.controls/);
+  assert.doesNotMatch(pageSource, /body\.debug #tv-stage|body\.debug #video-window/);
 });
 
-test("logo stays enlarged while the cropped TV and commercial window grow together", () => {
+test("logo stays enlarged while the complete TV and commercial window grow together", () => {
   assert.match(pageSource, /#logo\s*\{[\s\S]*?top:\s*5\.4%;[\s\S]*?width:\s*96%;[\s\S]*?height:\s*26\.5%;/);
   assert.match(pageSource, /#tv-stage\s*\{[\s\S]*?top:\s*30\.6%;[\s\S]*?width:\s*104%;/);
   assert.match(pageSource, /#video-window\s*\{[\s\S]*?left:\s*14\.69%;[\s\S]*?top:\s*13\.06%;[\s\S]*?width:\s*70\.31%;[\s\S]*?height:\s*66\.11%;/);

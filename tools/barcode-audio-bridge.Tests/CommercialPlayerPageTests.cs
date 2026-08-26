@@ -32,7 +32,9 @@ public sealed class CommercialPlayerPageTests
         Assert.Contains("height: min(100vh, 177.777778vw)", html);
         Assert.Contains("id=\"background-video\" preload=\"auto\" autoplay muted loop", html);
         Assert.Contains("id=\"tv-overlay-video\" preload=\"auto\" autoplay muted loop", html);
-        Assert.Matches(@"(?s)#background-video\s*\{.*?object-fit:\s*cover;", html);
+        Assert.Matches(
+            @"(?s)#background-video\s*\{.*?object-fit:\s*cover;.*?transform:\s*scale\(1\.13\);.*?transform-origin:\s*left top;",
+            html);
         Assert.DoesNotContain("object-fit: fill", html);
         Assert.Contains("clearVisualVideo(backgroundVideo)", html);
         Assert.Contains("clearVisualVideo(tvOverlayVideo)", html);
@@ -41,7 +43,7 @@ public sealed class CommercialPlayerPageTests
     }
 
     [Fact]
-    public void NativeAspectTvFrameIsMaskedAboveTheCommercialScreen()
+    public void NativeAspectTvFrameUsesCompleteSourceBezelAboveTheCommercialScreen()
     {
         var html = CommercialPlayerPage.Html;
 
@@ -56,12 +58,9 @@ public sealed class CommercialPlayerPageTests
             html);
         Assert.Contains("-webkit-mask:", html);
         Assert.Contains("linear-gradient(#fff 0 0) top", html);
-        Assert.Contains("clip-path: inset(.7% 8% .7% 9.5% round 1.8%)", html);
-        Assert.Matches(
-            @"(?s)#tv-stage::before,.*?#tv-stage::after\s*\{.*?top:\s*64\.5%;.*?height:\s*14\.8%;.*?z-index:\s*3;",
-            html);
-        Assert.Matches(@"(?s)#tv-stage::before\s*\{.*?left:\s*9\.5%;.*?width:\s*5\.25%;", html);
-        Assert.Matches(@"(?s)#tv-stage::after\s*\{.*?right:\s*8%;.*?width:\s*7%;", html);
+        Assert.Contains("clip-path: inset(0 7.55% 0 7.55%)", html);
+        Assert.DoesNotContain("#tv-stage::before", html);
+        Assert.DoesNotContain("#tv-stage::after", html);
         Assert.Matches(
             @"(?s)<div id=""tv-stage"">.*?<div id=""video-window"">.*?<video id=""player"".*?</div>.*?<video id=""tv-overlay-video""",
             html);
@@ -92,8 +91,8 @@ public sealed class CommercialPlayerPageTests
         Assert.Contains("let preloadPlayer = null", html);
         Assert.Contains("preload(nextItem)", html);
         Assert.Contains("query.get('debug') === '1'", html);
-        Assert.Contains("body.debug #tv-stage", html);
-        Assert.Contains("body.debug #video-window", html);
+        Assert.DoesNotContain("body.debug #tv-stage", html);
+        Assert.DoesNotContain("body.debug #video-window", html);
         Assert.DoesNotContain("player.controls", html);
     }
 

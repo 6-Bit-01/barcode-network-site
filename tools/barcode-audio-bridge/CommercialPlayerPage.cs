@@ -32,6 +32,8 @@ internal static class CommercialPlayerPage
       width: 100%;
       height: 100%;
       object-fit: cover;
+      transform: scale(1.13);
+      transform-origin: left top;
       background: transparent;
       z-index: 0;
       pointer-events: none;
@@ -45,26 +47,6 @@ internal static class CommercialPlayerPage
       isolation: isolate;
       z-index: 2;
       pointer-events: none;
-    }
-    #tv-stage::before,
-    #tv-stage::after {
-      content: "";
-      position: absolute;
-      top: 64.5%;
-      height: 14.8%;
-      background: linear-gradient(180deg, #242525 0%, #111212 52%, #1a1b1b 100%);
-      box-shadow:
-        inset 0 1px 0 rgba(255,255,255,.1),
-        inset 0 -2px 0 rgba(0,0,0,.65);
-      z-index: 3;
-    }
-    #tv-stage::before {
-      left: 9.5%;
-      width: 5.25%;
-    }
-    #tv-stage::after {
-      right: 8%;
-      width: 7%;
     }
     #video-window {
       position: absolute;
@@ -91,7 +73,7 @@ internal static class CommercialPlayerPage
       object-fit: contain;
       pointer-events: none;
       z-index: 2;
-      clip-path: inset(.7% 8% .7% 9.5% round 1.8%);
+      clip-path: inset(0 7.55% 0 7.55%);
       -webkit-mask:
         linear-gradient(#fff 0 0) top / 100% 13.06% no-repeat,
         linear-gradient(#fff 0 0) bottom / 100% 20.83% no-repeat,
@@ -158,8 +140,6 @@ internal static class CommercialPlayerPage
     #audio-gate span { margin-top: 8px; color: #a7d9a4; font-size: 13px; line-height: 1.4; }
     #audio-gate:focus-visible { outline: 3px solid #fff; outline-offset: 4px; }
     body.debug #status { display: block; }
-    body.debug #tv-stage { outline: 1px dashed rgba(121,255,116,.65); }
-    body.debug #video-window { outline: 1px dashed rgba(255,210,72,.8); }
   </style>
 </head>
 <body>

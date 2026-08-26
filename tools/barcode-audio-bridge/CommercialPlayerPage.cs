@@ -357,20 +357,29 @@ internal static class CommercialPlayerPage
       }, fadeMs + 80));
     }
 
-    function primeCornerLogo(item, token) {
+    function primeCornerLogo(item, token, reveal) {
       if (!item?.cornerLogoUrl || token !== runToken) return;
       const identity = cornerLogoIdentity(item);
       if (activeCornerLogo?.dataset.identity === identity) {
         primedCornerLogo = activeCornerLogo;
         return;
       }
-      const element = cornerLogos.find(candidate => candidate !== activeCornerLogo) || cornerLogos[0];
+      const element = cornerLogos.find(candidate => candidate !== activeCornerLogo && candidate.hidden)
+        || cornerLogos.find(candidate => candidate !== activeCornerLogo)
+        || cornerLogos[0];
       configureCornerLogo(element, item, cornerLogoFadeMs(item));
       element.style.setProperty('z-index', '1');
       element.classList.remove('visible');
+      element.hidden = !reveal;
+      primedCornerLogo = element;
+      if (!reveal) return;
+
+      for (const candidate of cornerLogos) {
+        if (candidate !== element) clearCornerLogoElement(candidate);
+      }
+      if (activeCornerLogo !== element) activeCornerLogo = null;
       void element.offsetWidth;
       element.classList.add('visible');
-      primedCornerLogo = element;
     }
 
     function activateCornerLogoForItem(item, token) {
@@ -394,20 +403,22 @@ internal static class CommercialPlayerPage
       if (!element) element = cornerLogos.find(candidate => candidate !== activeCornerLogo) || cornerLogos[0];
 
       const previous = activeCornerLogo;
+      for (const candidate of cornerLogos) {
+        if (candidate !== element) clearCornerLogoElement(candidate);
+      }
       showCornerLogoInstant(element, item);
       element.style.setProperty('z-index', '2');
       activeCornerLogo = element;
       primedCornerLogo = null;
-      if (previous && previous !== element) {
-        previous.style.setProperty('z-index', '3');
-        fadeOutCornerLogo(previous, token);
-      }
+      if (previous && previous !== element) clearCornerLogoElement(previous);
     }
 
     function scheduleCornerLogoPrime(item, nextItem, token) {
       if (cornerLogoPrimeTimer !== null) clearTimeout(cornerLogoPrimeTimer);
       cornerLogoPrimeTimer = null;
       if (!nextItem?.cornerLogoUrl || token !== runToken) return;
+      primeCornerLogo(nextItem, token, false);
+      if (item?.cornerLogoUrl) return;
       const durationSeconds = Number.isFinite(player.duration) && player.duration > 0
         ? player.duration
         : Math.max(1, item.durationSeconds);
@@ -415,7 +426,7 @@ internal static class CommercialPlayerPage
       const leadMs = cornerLogoFadeMs(nextItem) + 350;
       cornerLogoPrimeTimer = setTimeout(() => {
         cornerLogoPrimeTimer = null;
-        primeCornerLogo(nextItem, token);
+        primeCornerLogo(nextItem, token, true);
       }, Math.max(0, remainingMs - leadMs));
     }
 

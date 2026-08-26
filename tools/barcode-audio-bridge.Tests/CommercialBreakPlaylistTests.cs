@@ -108,7 +108,7 @@ public sealed class CommercialBreakPlaylistTests
     }
 
     [Fact]
-    public void CornerLogosAlternateWithoutRepeatingAcrossMarkedClipsAndSelectedBumpers()
+    public void CornerLogosStayConstantInsideMarkedRunsAndAlternateBetweenRuns()
     {
         var sponsors = Enumerable.Range(1, 8)
             .Select(index => Clip(
@@ -131,15 +131,12 @@ public sealed class CommercialBreakPlaylistTests
             .ToArray();
 
         Assert.Equal(6, marked.Length);
-        Assert.Equal(("corner-logo-2", 2), marked[0]);
-        for (var index = 1; index < marked.Length; index += 1)
-        {
-            Assert.NotEqual(marked[index - 1], marked[index]);
-        }
+        var runs = AssertCornerLogoRuns(plan.Items);
+        Assert.Equal(2, runs[0]);
         Assert.All(
             plan.Items.Where(item => item.Kind == CommercialClipKind.Bumper),
             bumper => Assert.NotNull(bumper.CornerLogoAssetId));
-        Assert.Equal(1, plan.NextCornerLogoIndex);
+        Assert.Equal((1 + runs.Count) % 2, plan.NextCornerLogoIndex);
     }
 
     [Fact]
@@ -167,17 +164,42 @@ public sealed class CommercialBreakPlaylistTests
                 Assert.NotNull(bumper.CornerLogoVariant);
                 observedBumpers.Add(bumper.Id);
             });
-            var markedVariants = plan.Items
-                .Where(item => item.CornerLogoVariant.HasValue)
-                .Select(item => item.CornerLogoVariant!.Value)
-                .ToArray();
-            for (var index = 1; index < markedVariants.Length; index += 1)
-            {
-                Assert.NotEqual(markedVariants[index - 1], markedVariants[index]);
-            }
+            AssertCornerLogoRuns(plan.Items);
         }
 
         Assert.Equal(5, observedBumpers.Count);
+    }
+
+    private static IReadOnlyList<int> AssertCornerLogoRuns(IReadOnlyList<CommercialPlaylistItem> items)
+    {
+        var runs = new List<int>();
+        int? previousVariant = null;
+        var previousWasMarked = false;
+
+        foreach (var item in items)
+        {
+            if (item.CornerLogoVariant is not { } variant)
+            {
+                previousVariant = null;
+                previousWasMarked = false;
+                continue;
+            }
+
+            if (previousWasMarked)
+            {
+                Assert.Equal(previousVariant, variant);
+            }
+            else
+            {
+                if (runs.Count > 0) Assert.NotEqual(runs[^1], variant);
+                runs.Add(variant);
+            }
+            previousVariant = variant;
+            previousWasMarked = true;
+        }
+
+        Assert.NotEmpty(runs);
+        return runs;
     }
 
     [Fact]

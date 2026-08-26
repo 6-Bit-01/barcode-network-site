@@ -154,11 +154,22 @@ internal static class CommercialBreakPlaylistBuilder
             : 0;
         var currentBcnLogoIndex = NormalizeIndex(bcnLogoIndex, bcnLogoCount);
         var currentCornerLogoIndex = NormalizeIndex(cornerLogoIndex, visuals.CornerLogos.Count);
+        string? currentCornerLogoRunAssetId = null;
+        int? currentCornerLogoRunVariant = null;
         var brandIndexes = new Dictionary<CommercialLogoBrand, int>();
 
         (string? AssetId, int? Variant) TakeCornerLogo(CommercialClip clip)
         {
-            if (!clip.ShowCornerLogo && clip.Kind != CommercialClipKind.Bumper) return (null, null);
+            if (!clip.ShowCornerLogo && clip.Kind != CommercialClipKind.Bumper)
+            {
+                currentCornerLogoRunAssetId = null;
+                currentCornerLogoRunVariant = null;
+                return (null, null);
+            }
+            if (currentCornerLogoRunAssetId is not null)
+            {
+                return (currentCornerLogoRunAssetId, currentCornerLogoRunVariant);
+            }
             if (visuals.CornerLogos.Count < 2)
             {
                 throw new InvalidOperationException("Two corner logos are required for fixed bumpers and Veo-cover clips.");
@@ -166,7 +177,9 @@ internal static class CommercialBreakPlaylistBuilder
             var selectedCornerLogoIndex = NormalizeIndex(currentCornerLogoIndex++, visuals.CornerLogos.Count);
             var cornerLogo = visuals.CornerLogos[selectedCornerLogoIndex];
             usedVisualAssets[cornerLogo.Id] = cornerLogo;
-            return (cornerLogo.Id, selectedCornerLogoIndex + 1);
+            currentCornerLogoRunAssetId = cornerLogo.Id;
+            currentCornerLogoRunVariant = selectedCornerLogoIndex + 1;
+            return (currentCornerLogoRunAssetId, currentCornerLogoRunVariant);
         }
 
         for (var contentIndex = 0; contentIndex < content.Count; contentIndex += 1)

@@ -91,7 +91,7 @@ public sealed class CommercialPlayerPageTests
     }
 
     [Fact]
-    public void CornerLogosUsePreAndPostRollCrossfadesAndVariantTwoIsExactlyFifteenPercentSmaller()
+    public void CornerLogosPreloadAndHandoffWithoutEverDisplayingTwoAtOnce()
     {
         var html = CommercialPlayerPage.Html;
 
@@ -99,11 +99,16 @@ public sealed class CommercialPlayerPageTests
         Assert.Contains("id=\"corner-logo-a\" class=\"corner-logo\"", html);
         Assert.Contains("id=\"corner-logo-b\" class=\"corner-logo\"", html);
         Assert.Contains("return Math.min(2600, Math.max(800, totalMs * .14))", html);
+        Assert.Contains("activeCornerLogo?.dataset.identity === identity", html);
+        Assert.Contains("primedCornerLogo = activeCornerLogo", html);
         Assert.Contains("const leadMs = cornerLogoFadeMs(nextItem) + 350", html);
-        Assert.Contains("primeCornerLogo(nextItem, token)", html);
+        Assert.Contains("primeCornerLogo(nextItem, token, false)", html);
+        Assert.Contains("if (item?.cornerLogoUrl) return", html);
+        Assert.Contains("primeCornerLogo(nextItem, token, true)", html);
         Assert.Contains("activateCornerLogoForItem(item, token)", html);
         Assert.Contains("showCornerLogoInstant(element, item)", html);
-        Assert.Contains("fadeOutCornerLogo(previous, token)", html);
+        Assert.Contains("if (candidate !== element) clearCornerLogoElement(candidate)", html);
+        Assert.Contains("if (previous && previous !== element) clearCornerLogoElement(previous)", html);
         Assert.Contains("element.dataset.variant = String(item.cornerLogoVariant || 1)", html);
         Assert.Matches(
             @"(?s)\.corner-logo\[data-variant=""2""\]\s*\{.*?width:\s*15\.3%;.*?height:\s*13\.6%;",

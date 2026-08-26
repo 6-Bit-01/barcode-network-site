@@ -97,7 +97,7 @@ Put these two files directly in Fixed:
 Keep all five bumper MP4s in Fixed\Bumpers, exactly where they were before.
 Their file names do not matter. The player chooses three different bumpers for
 each break and places them in separate early, middle, and late timing ranges.
-Every bumper receives the next alternating corner logo whenever it is selected.
+Every bumper receives corner-logo coverage whenever it is selected.
 
 ACTIVE CONTENT
 Put every video eligible for the next break in Sponsors\Active.
@@ -126,12 +126,12 @@ and END only. Put the two alternating BARCODE logos in Visuals\Logos\BCN, the
 BLVCKL!GHT logo in Visuals\Logos\BL, and the Rigged Sanchez logo in
 Visuals\Logos\R. PNG, JPG, JPEG, and WEBP logo images are supported.
 
-Put CORNERLOGO1.png and CORNERLOGO2.png in Visuals\Corner Logos. They alternate
-without repeating across every selected bumper and requested Veo-marked clip,
-behind the TV frame at the bottom-right.
-The upcoming mark fades in during the preceding clip, is fully solid before the
-marked sponsor starts, stays solid for that whole sponsor, and fades only after
-the sponsor ends. CORNERLOGO2 renders 15% smaller than CORNERLOGO1. The
+Put CORNERLOGO1.png and CORNERLOGO2.png in Visuals\Corner Logos. Consecutive
+selected bumpers and requested Veo-marked clips share one uninterrupted mark;
+the two marks alternate between separated marked runs and across breaks.
+The upcoming mark fades in during the preceding unmarked clip, is fully solid
+before the marked run starts, stays solid for that whole run, and fades only
+after the run ends. CORNERLOGO2 renders 15% smaller than CORNERLOGO1. The
 player temporarily recognizes those exact files in Visuals\TV Overlay too, but
 the dedicated Corner Logos folder keeps every visual role unambiguous.
 

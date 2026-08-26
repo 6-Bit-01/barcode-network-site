@@ -100,14 +100,16 @@ test("TV motion is half-speed while frequent lamp pulses add no second video dec
   assert.doesNotMatch(pageSource, /<video id="tv-light/);
 });
 
-test("corner logos pre-roll, remain solid through sponsors, and post-roll with overlap", () => {
+test("corner logos pre-roll without ever rendering two marks together", () => {
   assert.match(pageSource, /transition:\s*opacity var\(--corner-logo-fade-duration, 2400ms\) ease;/);
   assert.match(pageSource, /\.corner-logo\[data-variant="2"\]\s*\{[\s\S]*?width:\s*15\.3%;[\s\S]*?height:\s*13\.6%;/);
   assert.match(pageSource, /id="corner-logo-a" class="corner-logo"[\s\S]*?id="corner-logo-b" class="corner-logo"/);
   assert.match(playerScript, /return Math\.min\(2600, Math\.max\(800, totalMs \* \.14\)\)/);
   assert.match(playerScript, /const leadMs = cornerLogoFadeMs\(nextItem\) \+ 350/);
-  assert.match(playerScript, /primeCornerLogo\(nextItem, token\)/);
-  assert.match(playerScript, /activateCornerLogoForItem\(item, token\)[\s\S]*?showCornerLogoInstant\(element, item\)[\s\S]*?fadeOutCornerLogo\(previous, token\)/);
+  assert.match(playerScript, /activeCornerLogo\?\.dataset\.identity === identity[\s\S]*?primedCornerLogo = activeCornerLogo/);
+  assert.match(playerScript, /primeCornerLogo\(nextItem, token, false\)[\s\S]*?if \(item\?\.cornerLogoUrl\) return/);
+  assert.match(playerScript, /primeCornerLogo\(nextItem, token, true\)/);
+  assert.match(playerScript, /activateCornerLogoForItem\(item, token\)[\s\S]*?if \(candidate !== element\) clearCornerLogoElement\(candidate\)[\s\S]*?showCornerLogoInstant\(element, item\)/);
   assert.match(playerScript, /element\.dataset\.variant = String\(item\.cornerLogoVariant \|\| 1\)/);
 });
 
@@ -124,7 +126,7 @@ test("automatic fit uses metadata, bounded distortion, centered cover, and sub-o
   assert.doesNotMatch(playerScript, /softFitNames|eversnow|crackedencounters/i);
 });
 
-test("fit math maximizes visible content and dual corner marks never uncover a marked transition", async () => {
+test("fit math maximizes visible content and corner-logo handoffs never overlap", async () => {
   assert.ok(playerScript, "commercial player script must remain extractable from the local page");
   const elements = new Map([
     ["stage", new FakeElement("stage")],
@@ -193,22 +195,33 @@ test("fit math maximizes visible content and dual corner marks never uncover a m
   assert.equal(player.style.getPropertyValue("--player-fit-height"), "100.8000%");
 
   context.firstMarked = { cornerLogoUrl: "/corner-1", cornerLogoVariant: 1, durationSeconds: 30 };
-  context.secondMarked = { cornerLogoUrl: "/corner-2", cornerLogoVariant: 2, durationSeconds: 30 };
-  vm.runInContext("primeCornerLogo(firstMarked, 0); activateCornerLogoForItem(firstMarked, 0)", context);
+  context.sameRunMarked = { cornerLogoUrl: "/corner-1", cornerLogoVariant: 1, durationSeconds: 30 };
+  context.nextRunMarked = { cornerLogoUrl: "/corner-2", cornerLogoVariant: 2, durationSeconds: 30 };
+  vm.runInContext("primeCornerLogo(firstMarked, 0, false); activateCornerLogoForItem(firstMarked, 0)", context);
   const firstElement = elements.get("corner-logo-a");
   assert.equal(firstElement.classList.contains("visible"), true, "the first marked sponsor starts fully covered");
 
-  vm.runInContext("primeCornerLogo(secondMarked, 0)", context);
+  vm.runInContext("primeCornerLogo(sameRunMarked, 0, false)", context);
   const secondElement = elements.get("corner-logo-b");
-  assert.equal(firstElement.classList.contains("visible"), true, "the current mark stays solid during the next mark's pre-roll");
-  assert.equal(secondElement.classList.contains("visible"), true, "the next mark fades in before its sponsor starts");
+  assert.equal(firstElement.classList.contains("visible"), true, "the current mark stays solid until its sponsor ends");
+  assert.equal(firstElement.hidden, false);
+  assert.equal(secondElement.classList.contains("visible"), false, "a consecutive marked clip does not activate the second layer");
+  assert.equal(secondElement.hidden, true);
 
-  vm.runInContext("activateCornerLogoForItem(secondMarked, 0)", context);
-  assert.equal(secondElement.classList.contains("visible"), true, "the next mark is solid at the sponsor boundary");
-  assert.equal(firstElement.classList.contains("visible"), false, "the prior mark starts fading only after its sponsor ended");
+  vm.runInContext("activateCornerLogoForItem(sameRunMarked, 0)", context);
+  assert.equal(firstElement.classList.contains("visible"), true, "one mark remains solid across the marked-run boundary");
+  assert.equal(firstElement.hidden, false);
+  assert.equal(secondElement.classList.contains("visible"), false);
+  assert.equal(secondElement.hidden, true, "the unused layer stays completely off-screen for the whole run");
 
   vm.runInContext("activateCornerLogoForItem({}, 0)", context);
-  assert.equal(secondElement.classList.contains("visible"), false, "the active mark begins its post-roll only after the marked sponsor ends");
+  assert.equal(firstElement.classList.contains("visible"), false, "the active mark begins its post-roll only after the marked run ends");
+  assert.equal(firstElement.hidden, false, "a lone outgoing mark may fade when no replacement is visible");
+
+  vm.runInContext("primeCornerLogo(nextRunMarked, 0, true)", context);
+  assert.equal(firstElement.hidden, true, "starting a later pre-roll immediately removes any unfinished outgoing fade");
+  assert.equal(secondElement.hidden, false);
+  assert.equal(secondElement.classList.contains("visible"), true, "the separated next run uses the alternate mark");
 });
 
 test("BCN and BLVCKL!GHT logos remain enlarged while the cropped TV fills more of the canvas", () => {

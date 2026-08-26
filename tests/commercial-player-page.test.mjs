@@ -52,6 +52,16 @@ const flushTasks = async (count = 8) => {
   }
 };
 
+test("TV frame keeps its native aspect, masks the screen, and remains above the commercial", () => {
+  assert.match(pageSource, /#background-video\s*\{[\s\S]*?object-fit:\s*cover;/);
+  assert.doesNotMatch(pageSource, /object-fit:\s*fill;/);
+  assert.match(pageSource, /#tv-stage\s*\{[\s\S]*?top:\s*31\.9%;[\s\S]*?width:\s*96%;[\s\S]*?z-index:\s*2;/);
+  assert.match(pageSource, /#video-window\s*\{[\s\S]*?left:\s*14\.69%;[\s\S]*?top:\s*13\.06%;[\s\S]*?z-index:\s*1;/);
+  assert.match(pageSource, /#tv-overlay-video\s*\{[\s\S]*?height:\s*auto;[\s\S]*?object-fit:\s*contain;[\s\S]*?z-index:\s*2;[\s\S]*?-webkit-mask:/);
+  assert.match(pageSource, /<div id="tv-stage">[\s\S]*?<video id="player"[\s\S]*?<video id="tv-overlay-video"/);
+  assert.doesNotMatch(playerScript, /player\.controls/);
+});
+
 test("Chrome autoplay denial holds the current commercial until one click instead of failing the break", async () => {
   assert.ok(playerScript, "commercial player script must remain extractable from the local page");
 

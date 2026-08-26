@@ -31,36 +31,57 @@ internal static class CommercialPlayerPage
       inset: 0;
       width: 100%;
       height: 100%;
-      object-fit: fill;
+      object-fit: cover;
       background: transparent;
       z-index: 0;
       pointer-events: none;
     }
-    #tv-overlay-video {
+    #tv-stage {
       position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      object-fit: fill;
+      top: 31.9%;
+      left: 50%;
+      width: 96%;
+      transform: translateX(-50%);
+      isolation: isolate;
+      z-index: 2;
       pointer-events: none;
-      z-index: 1;
     }
     #video-window {
       position: absolute;
-      left: 3.9%;
-      top: 35.85%;
-      width: 92.5%;
-      height: 28.8%;
+      left: 14.69%;
+      top: 13.06%;
+      width: 70.31%;
+      height: 66.11%;
       overflow: hidden;
-      border-radius: 1.8% / 3.2%;
+      border-radius: 2.2% / 4.1%;
       background: #000;
-      z-index: 2;
+      z-index: 1;
     }
     #player {
       width: 100%;
       height: 100%;
       object-fit: cover;
       background: #000;
+    }
+    #tv-overlay-video {
+      position: relative;
+      display: block;
+      width: 100%;
+      height: auto;
+      object-fit: contain;
+      pointer-events: none;
+      z-index: 2;
+      clip-path: inset(.7% 5.6% .7% 5.6% round 1.8%);
+      -webkit-mask:
+        linear-gradient(#fff 0 0) top / 100% 13.06% no-repeat,
+        linear-gradient(#fff 0 0) bottom / 100% 20.83% no-repeat,
+        linear-gradient(#fff 0 0) left 13.06% / 14.69% 66.11% no-repeat,
+        linear-gradient(#fff 0 0) right 13.06% / 15% 66.11% no-repeat;
+      mask:
+        linear-gradient(#fff 0 0) top / 100% 13.06% no-repeat,
+        linear-gradient(#fff 0 0) bottom / 100% 20.83% no-repeat,
+        linear-gradient(#fff 0 0) left 13.06% / 14.69% 66.11% no-repeat,
+        linear-gradient(#fff 0 0) right 13.06% / 15% 66.11% no-repeat;
     }
     #logo {
       position: absolute;
@@ -117,15 +138,18 @@ internal static class CommercialPlayerPage
     #audio-gate span { margin-top: 8px; color: #a7d9a4; font-size: 13px; line-height: 1.4; }
     #audio-gate:focus-visible { outline: 3px solid #fff; outline-offset: 4px; }
     body.debug #status { display: block; }
-    body.debug #video-window { outline: 1px dashed rgba(121,255,116,.65); }
+    body.debug #tv-stage { outline: 1px dashed rgba(121,255,116,.65); }
+    body.debug #video-window { outline: 1px dashed rgba(255,210,72,.8); }
   </style>
 </head>
 <body>
   <div id="stage" hidden>
     <video id="background-video" preload="auto" autoplay muted loop playsinline disablepictureinpicture hidden></video>
-    <video id="tv-overlay-video" preload="auto" autoplay muted loop playsinline disablepictureinpicture hidden></video>
-    <div id="video-window">
-      <video id="player" preload="auto" autoplay playsinline disablepictureinpicture></video>
+    <div id="tv-stage">
+      <div id="video-window">
+        <video id="player" preload="auto" autoplay playsinline disablepictureinpicture></video>
+      </div>
+      <video id="tv-overlay-video" preload="auto" autoplay muted loop playsinline disablepictureinpicture hidden></video>
     </div>
     <img id="logo" alt="" hidden>
   </div>
@@ -146,7 +170,6 @@ internal static class CommercialPlayerPage
     const logo = document.getElementById('logo');
     const audioGate = document.getElementById('audio-gate');
     const statusBox = document.getElementById('status');
-    if (debug) player.controls = true;
 
     let activeGeneration = -1;
     let runToken = 0;

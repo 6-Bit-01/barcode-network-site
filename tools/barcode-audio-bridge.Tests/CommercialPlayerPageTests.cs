@@ -23,7 +23,7 @@ public sealed class CommercialPlayerPageTests
     }
 
     [Fact]
-    public void PortraitStageCentersMatchingMutedBackgroundAndTvVideosOnlyDuringBreak()
+    public void PortraitStageCentersTheBackgroundWithoutStretchingIt()
     {
         var html = CommercialPlayerPage.Html;
 
@@ -32,6 +32,8 @@ public sealed class CommercialPlayerPageTests
         Assert.Contains("height: min(100vh, 177.777778vw)", html);
         Assert.Contains("id=\"background-video\" preload=\"auto\" autoplay muted loop", html);
         Assert.Contains("id=\"tv-overlay-video\" preload=\"auto\" autoplay muted loop", html);
+        Assert.Matches(@"(?s)#background-video\s*\{.*?object-fit:\s*cover;", html);
+        Assert.DoesNotContain("object-fit: fill", html);
         Assert.Contains("clearVisualVideo(backgroundVideo)", html);
         Assert.Contains("clearVisualVideo(tvOverlayVideo)", html);
         Assert.Contains("stage.hidden = true", html);
@@ -39,18 +41,27 @@ public sealed class CommercialPlayerPageTests
     }
 
     [Fact]
-    public void CommercialWindowReplacesTheTvScreenAtTheReferenceCoordinates()
+    public void NativeAspectTvFrameIsMaskedAboveTheCommercialScreen()
     {
         var html = CommercialPlayerPage.Html;
 
-        Assert.Matches(@"(?s)#tv-overlay-video\s*\{.*?inset:\s*0;.*?z-index:\s*1;", html);
         Assert.Matches(
-            @"(?s)#video-window\s*\{.*?left:\s*3\.9%;.*?top:\s*35\.85%;.*?width:\s*92\.5%;.*?height:\s*28\.8%;.*?z-index:\s*2;",
+            @"(?s)#tv-stage\s*\{.*?top:\s*31\.9%;.*?width:\s*96%;.*?z-index:\s*2;",
             html);
-        Assert.Contains("overflow: hidden", html);
-        Assert.Contains("border-radius: 1.8% / 3.2%", html);
+        Assert.Matches(
+            @"(?s)#video-window\s*\{.*?left:\s*14\.69%;.*?top:\s*13\.06%;.*?width:\s*70\.31%;.*?height:\s*66\.11%;.*?z-index:\s*1;",
+            html);
+        Assert.Matches(
+            @"(?s)#tv-overlay-video\s*\{.*?width:\s*100%;.*?height:\s*auto;.*?object-fit:\s*contain;.*?z-index:\s*2;",
+            html);
+        Assert.Contains("-webkit-mask:", html);
+        Assert.Contains("linear-gradient(#fff 0 0) top", html);
+        Assert.Contains("clip-path: inset(.7% 5.6%", html);
+        Assert.Matches(
+            @"(?s)<div id=""tv-stage"">.*?<div id=""video-window"">.*?<video id=""player"".*?</div>.*?<video id=""tv-overlay-video""",
+            html);
+        Assert.Contains("border-radius: 2.2% / 4.1%", html);
         Assert.Matches(@"(?s)#player\s*\{.*?width:\s*100%;.*?height:\s*100%;.*?object-fit:\s*cover;", html);
-        Assert.DoesNotContain("-webkit-mask:", html);
     }
 
     [Fact]
@@ -69,14 +80,16 @@ public sealed class CommercialPlayerPageTests
     }
 
     [Fact]
-    public void OnlyOneNextClipIsPreloadedAndDebugModeOutlinesTheTvWindow()
+    public void OnlyOneNextClipIsPreloadedAndPreviewCannotExposeNativeControls()
     {
         var html = CommercialPlayerPage.Html;
 
         Assert.Contains("let preloadPlayer = null", html);
         Assert.Contains("preload(nextItem)", html);
         Assert.Contains("query.get('debug') === '1'", html);
+        Assert.Contains("body.debug #tv-stage", html);
         Assert.Contains("body.debug #video-window", html);
+        Assert.DoesNotContain("player.controls", html);
     }
 
     [Fact]

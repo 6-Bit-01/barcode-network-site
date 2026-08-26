@@ -28,6 +28,7 @@ const LANE_LABELS: Record<QueueLane, string> = { priority: "Priority Signal", wh
 const FIXED_PRIORITY_LABEL = "Priority Signal Upgrade";
 const FIXED_PRIORITY_INSTRUCTIONS = "Moves this track into the Priority Signal lane after payment confirmation.";
 const SAME_BROWSER_DIFFERENT_ARTISTS_FLAG = "Same browser token using different artist names";
+const LOCAL_COMMERCIAL_START_URL = "http://127.0.0.1:43120/v1/commercials/start";
 
 const YOUTUBE_SYNC_HEARTBEAT_MS = 1_000;
 const TIKTOK_SYNC_HEARTBEAT_MS = 1_000;
@@ -444,7 +445,14 @@ export function AdminRadioQueueControl() {
     setPlayerActionPending(false);
   }
   async function updateSponsorBreakState(sponsorAction: "start" | "complete" | "skip" | "reset") {
-    await post({ action: "updateSponsorBreakState", sponsorAction });
+    const updated = await post({ action: "updateSponsorBreakState", sponsorAction });
+    if (sponsorAction !== "start" || !updated) return;
+    try {
+      const response = await fetch(LOCAL_COMMERCIAL_START_URL, { method: "POST", mode: "cors", cache: "no-store" });
+      if (!response.ok) throw new Error(`Audio Bridge returned ${response.status}`);
+    } catch {
+      setActionError("The sponsor timer started, but BARCODE Audio Bridge could not be reached. Confirm the bridge is running, then use its tray menu → Start Commercial Break.");
+    }
   }
 
   function openSessionOptions() {

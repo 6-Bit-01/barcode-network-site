@@ -18,6 +18,10 @@ const studioRouteSource = readFileSync(
   path.join(projectRoot, "src/app/overlay/commercials/route.ts"),
   "utf8",
 );
+const localServerSource = readFileSync(
+  path.join(projectRoot, "tools/barcode-audio-bridge/LocalSignalServer.cs"),
+  "utf8",
+);
 const playerScript = pageSource.match(/  <script>\n([\s\S]*?)\n  <\/script>/)?.[1];
 
 class FakeElement {
@@ -239,6 +243,14 @@ test("TikTok Studio receives a reusable HTTPS source that redirects to the local
   assert.match(studioRouteSource, /status: 307/);
   assert.match(studioRouteSource, /Location: LOCAL_COMMERCIAL_PLAYER_URL/);
   assert.match(studioRouteSource, /Cache-Control": "private, no-store, max-age=0"/);
+});
+
+test("the existing queue button can start the local player without a second browser window", () => {
+  assert.match(localServerSource, /path == "\/v1\/commercials\/start" && method == "POST"/);
+  assert.match(localServerSource, /isCommercialStartRoute[\s\S]*VisualOriginAllowed\(origin\)/);
+  assert.match(localServerSource, /var result = _commercials\.Start\(\)/);
+  assert.doesNotMatch(localServerSource, /StartFromQueue|queue trigger/i);
+  assert.doesNotMatch(playerScript, /barcode-network\.com\/api\/overlay\/commercials|pollQueueSignal/);
 });
 
 test("Chrome autoplay denial holds the current commercial until one click instead of failing the break", async () => {

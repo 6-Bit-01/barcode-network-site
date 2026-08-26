@@ -94,7 +94,10 @@ internal sealed class LocalSignalServer : IDisposable
                 var isCommercialRoute = path.Equals("/commercials", StringComparison.OrdinalIgnoreCase)
                     || path.Equals("/commercials/", StringComparison.OrdinalIgnoreCase)
                     || path.StartsWith("/v1/commercials/", StringComparison.OrdinalIgnoreCase);
-                var originAllowed = isCommercialRoute
+                var isCommercialStartRoute = path.Equals("/v1/commercials/start", StringComparison.OrdinalIgnoreCase);
+                var originAllowed = isCommercialStartRoute
+                    ? VisualOriginAllowed(origin)
+                    : isCommercialRoute
                     ? CommercialOriginAllowed(origin)
                     : VisualOriginAllowed(origin);
                 if (!originAllowed)
@@ -164,6 +167,25 @@ internal sealed class LocalSignalServer : IDisposable
                 {
                     var body = JsonSerializer.Serialize(_commercials.Snapshot(playerHeartbeat: true), JsonOptions);
                     await WriteTextResponse(stream, 200, "application/json; charset=utf-8", body, origin, cancellationToken);
+                    return;
+                }
+
+                if (path == "/v1/commercials/start" && method == "POST")
+                {
+                    var result = _commercials.Start();
+                    var body = JsonSerializer.Serialize(new
+                    {
+                        ok = result.Started,
+                        started = result.Started,
+                        message = result.Message,
+                    }, JsonOptions);
+                    await WriteTextResponse(
+                        stream,
+                        result.Started ? 200 : 409,
+                        "application/json; charset=utf-8",
+                        body,
+                        origin,
+                        cancellationToken);
                     return;
                 }
 

@@ -29,22 +29,19 @@ Right-click the BARCODE tray icon and choose **Open commercial folder**. Use thi
 Commercials/
 ├── Fixed/
 │   ├── START.mp4
-│   ├── BUMPER1.mp4
-│   ├── BUMPER2.mp4
-│   ├── BUMPER3.mp4
-│   ├── BUMPER4.mp4
-│   ├── BUMPER5.mp4
-│   └── END.mp4
+│   ├── END.mp4
+│   └── Bumpers/             # keep all five existing bumper MP4s here
 ├── Sponsors/
 │   ├── Active/
 │   └── Inactive/
-├── BG.mp4
-├── TV.mp4
-├── ICON.png
-├── BCN1.png
-├── BCN2.png
-├── BL.png
-└── R.png
+└── Visuals/
+    ├── ICON.png
+    ├── Background/          # one looping 1080×1920 MP4 or WEBM
+    ├── TV Overlay/          # one matching 1080×1920 MP4 or WEBM
+    └── Logos/
+        ├── BCN/             # both alternating BARCODE logo images
+        ├── BL/              # BLVCKL!GHT logo image
+        └── R/               # Rigged Sanchez logo image
 ```
 
 ### Eligibility and classification
@@ -57,7 +54,7 @@ Commercials/
 - The upper framed panel is a dynamic logo aperture, not a permanent BARCODE panel.
 - `ICON.png` fades into that panel during START and END, then fades out before each clip finishes.
 - Tagged house content uses its matching logo in the same panel. Untagged sponsors and bumpers leave it clear.
-- `BCN1.png` and `BCN2.png` alternate in playback order and continue alternating across breaks.
+- The two images already in `Visuals/Logos/BCN` alternate in playback order and continue alternating across breaks.
 - Fake commercials/trailers are dotted between real sponsors and are never stacked back-to-back.
 
 ### Eleven-minute sequence
@@ -78,7 +75,7 @@ END
 
 The three bumper ranges are randomized within approximately 20–30%, 45–55%, and 70–80% of the content run. Whole videos are always preserved; the player never trims a spot to hit a timestamp.
 
-Only `SPACE1.mp4`, `Alien.mp4`, and `May.mp4` may be omitted when doing so makes the full break closer to 11:00. No real sponsor is silently removed. An unreadable active file is skipped and logged. Missing required fixed media, `BG.mp4`, `TV.mp4`, `ICON.png`, or a logo required by an active tag blocks the start with a clear error.
+Only `SPACE1.mp4`, `Alien.mp4`, and `May.mp4` may be omitted when doing so makes the full break closer to 11:00. No real sponsor is silently removed. An unreadable active file is skipped and logged. Missing START/END media, fewer than three readable files in `Fixed/Bumpers`, a missing visual video, `Visuals/ICON.png`, or a logo required by an active tag blocks the start with a clear error.
 
 ### Composed local player
 
@@ -92,12 +89,12 @@ Set the source to **1080 × 1920** in TikTok Studio.
 
 During a break:
 
-- `BG.mp4` and `TV.mp4` are matching 1080 × 1920 portrait videos. Both loop across the fixed 9:16 composition.
-- `BG.mp4` is the moving background and `TV.mp4` is the full-frame animated overlay above it.
+- The video in `Visuals/Background` and the video in `Visuals/TV Overlay` are matching 1080 × 1920 portrait videos. Both loop across the fixed 9:16 composition.
+- The Background video supplies the moving background and the TV Overlay video is the full-frame animated layer above it.
 - Every START, sponsor, fake commercial/trailer, bumper, and END clip plays inside the TV screen.
-- The clip window sits above only the TV screen area and is clipped to its rounded opening. It visually replaces the overlay's screen, so the screen behaves as transparent without chroma-keying, masking, or re-exporting `TV.mp4` with alpha.
-- The upper frame is reserved for the current dynamic logo: `ICON.png` for START/END and the tagged BCN/BL/R logo for matching house content.
-- `BG.mp4` and `TV.mp4` are muted. Only the current sequence clip supplies audio.
+- The clip window sits above only the TV screen area and is clipped to its rounded opening. It visually replaces the overlay's screen, so the screen behaves as transparent without chroma-keying, masking, or re-exporting the TV Overlay video with alpha.
+- The upper frame is reserved for the current dynamic logo: `Visuals/ICON.png` for START/END and the tagged BCN/BL/R logo for matching house content.
+- Both Visuals videos are muted. Only the current sequence clip supplies audio.
 - Only the next sequence clip is preloaded.
 - The background and frame are paused and cleared when the break is idle or stopped.
 - The source returns to transparent idle after END.
@@ -112,7 +109,7 @@ The first release starts locally from the tray. It does not change the queue's s
 
 The bridge analyzes the program signal rather than the operator's Windows listening level. It reads the default Speakers endpoint level in decibels, removes that known attenuation from each loopback buffer, and places the reconstructed program at one fixed -9 dB internal analysis reference before calculating energy, bass, mids, treble, peak, flux, or beat.
 
-Version 1.0.4 introduced `fixed_reference_v1`. Version 1.0.6 adds the corrected portrait commercial stage and START/END icon without changing that audio-analysis contract.
+Version 1.0.4 introduced `fixed_reference_v1`. Version 1.0.7 keeps the corrected portrait commercial stage while restoring the established `Fixed/Bumpers` and `Visuals` folder contract.
 
 Muted or digitally silent output remains silent; the bridge never invents audio activity. If Windows briefly cannot provide the endpoint-volume reading during a device or driver transition, that frame is analyzed at neutral gain instead of interrupting capture.
 

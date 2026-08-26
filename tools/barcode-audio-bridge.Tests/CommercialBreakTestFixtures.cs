@@ -6,38 +6,63 @@ internal sealed class TemporaryCommercialLibrary : IDisposable
     {
         RootDirectory = Path.Combine(Path.GetTempPath(), "barcode-commercial-tests", Guid.NewGuid().ToString("N"));
         FixedDirectory = Path.Combine(RootDirectory, "Fixed");
+        BumpersDirectory = Path.Combine(FixedDirectory, "Bumpers");
         ActiveDirectory = Path.Combine(RootDirectory, "Sponsors", "Active");
         InactiveDirectory = Path.Combine(RootDirectory, "Sponsors", "Inactive");
-        foreach (var directory in new[] { FixedDirectory, ActiveDirectory, InactiveDirectory })
+        VisualsDirectory = Path.Combine(RootDirectory, "Visuals");
+        BackgroundDirectory = Path.Combine(VisualsDirectory, "Background");
+        TvOverlayDirectory = Path.Combine(VisualsDirectory, "TV Overlay");
+        BcnLogosDirectory = Path.Combine(VisualsDirectory, "Logos", "BCN");
+        BlLogosDirectory = Path.Combine(VisualsDirectory, "Logos", "BL");
+        RLogosDirectory = Path.Combine(VisualsDirectory, "Logos", "R");
+        foreach (var directory in new[]
+        {
+            FixedDirectory,
+            BumpersDirectory,
+            ActiveDirectory,
+            InactiveDirectory,
+            BackgroundDirectory,
+            TvOverlayDirectory,
+            BcnLogosDirectory,
+            BlLogosDirectory,
+            RLogosDirectory,
+        })
         {
             Directory.CreateDirectory(directory);
         }
 
         if (!createFixed) return;
         AddFile(FixedDirectory, "START.mp4");
-        foreach (var index in Enumerable.Range(1, 5)) AddBumper(index);
+        foreach (var index in Enumerable.Range(1, 5)) AddBumper($"existing-bumper-{index}.mp4");
         AddFile(FixedDirectory, "END.mp4");
-        AddFile(RootDirectory, "BG.mp4");
-        AddFile(RootDirectory, "TV.mp4");
-        AddFile(RootDirectory, "ICON.png");
-        AddFile(RootDirectory, "BCN1.png");
-        AddFile(RootDirectory, "BCN2.png");
-        AddFile(RootDirectory, "BL.png");
-        AddFile(RootDirectory, "R.png");
+        AddFile(BackgroundDirectory, "BG.mp4");
+        AddFile(TvOverlayDirectory, "TV.mp4");
+        AddFile(VisualsDirectory, "ICON.png");
+        AddFile(BcnLogosDirectory, "BCN1.png");
+        AddFile(BcnLogosDirectory, "BCN2.png");
+        AddFile(BlLogosDirectory, "BL.png");
+        AddFile(RLogosDirectory, "R.png");
     }
 
     public string RootDirectory { get; }
     public string FixedDirectory { get; }
+    public string BumpersDirectory { get; }
     public string ActiveDirectory { get; }
     public string InactiveDirectory { get; }
-    public string BackgroundPath => Path.Combine(RootDirectory, "BG.mp4");
-    public string TvPath => Path.Combine(RootDirectory, "TV.mp4");
-    public string IconPath => Path.Combine(RootDirectory, "ICON.png");
+    public string VisualsDirectory { get; }
+    public string BackgroundDirectory { get; }
+    public string TvOverlayDirectory { get; }
+    public string BcnLogosDirectory { get; }
+    public string BlLogosDirectory { get; }
+    public string RLogosDirectory { get; }
+    public string BackgroundPath => Path.Combine(BackgroundDirectory, "BG.mp4");
+    public string TvPath => Path.Combine(TvOverlayDirectory, "TV.mp4");
+    public string IconPath => Path.Combine(VisualsDirectory, "ICON.png");
 
     public string AddActiveSponsor(string name) => AddFile(ActiveDirectory, name);
     public string AddInactiveSponsor(string name) => AddFile(InactiveDirectory, name);
-    public string AddBumper(int index) => AddFile(FixedDirectory, $"BUMPER{index}.mp4");
-    public string AddBumper(string name) => AddFile(FixedDirectory, name);
+    public string AddBumper(int index) => AddFile(BumpersDirectory, $"existing-bumper-{index}.mp4");
+    public string AddBumper(string name) => AddFile(BumpersDirectory, name);
 
     public static string AddFile(string directory, string name)
     {

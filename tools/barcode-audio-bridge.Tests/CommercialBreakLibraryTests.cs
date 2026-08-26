@@ -52,7 +52,7 @@ public sealed class CommercialBreakLibraryTests
     }
 
     [Fact]
-    public void ExactFixedNamesAreCaseInsensitiveButAllSevenFilesAreRequired()
+    public void StartAndEndNamesAreCaseInsensitiveAndBumpersStayInTheirExistingFolder()
     {
         using var fixture = new TemporaryCommercialLibrary();
         fixture.AddActiveSponsor("sponsor.mp4");
@@ -63,10 +63,11 @@ public sealed class CommercialBreakLibraryTests
         var caseInsensitive = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
         Assert.True(caseInsensitive.Success, caseInsensitive.Message);
 
-        File.Delete(Path.Combine(fixture.FixedDirectory, "BUMPER5.mp4"));
+        foreach (var path in Directory.EnumerateFiles(fixture.BumpersDirectory).Skip(2)) File.Delete(path);
         var missing = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
         Assert.False(missing.Success);
-        Assert.Contains("BUMPER5.mp4", missing.Message);
+        Assert.Contains("At least 3", missing.Message);
+        Assert.Contains("Fixed\\Bumpers", missing.Message);
     }
 
     [Fact]
@@ -100,52 +101,68 @@ public sealed class CommercialBreakLibraryTests
     }
 
     [Fact]
-    public void TaggedClipRequiresItsRootLogoAndEveryBreakRequiresBgAndTv()
+    public void TaggedClipRequiresItsVisualsLogoAndEveryBreakRequiresBothVisualVideosAndIcon()
     {
         using var fixture = new TemporaryCommercialLibrary();
         fixture.AddActiveSponsor("real.mp4");
         fixture.AddActiveSponsor("fake (BL).mp4");
-        File.Delete(Path.Combine(fixture.RootDirectory, "BL.png"));
+        File.Delete(Directory.EnumerateFiles(fixture.BlLogosDirectory).Single());
 
         var missingLogo = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
         Assert.False(missingLogo.Success);
-        Assert.Contains("BL.png", missingLogo.Message);
+        Assert.Contains("Visuals\\Logos\\BL", missingLogo.Message);
 
-        TemporaryCommercialLibrary.AddFile(fixture.RootDirectory, "BL.png");
+        TemporaryCommercialLibrary.AddFile(fixture.BlLogosDirectory, "BL.png");
         File.Delete(fixture.BackgroundPath);
         var missingBackground = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
         Assert.False(missingBackground.Success);
-        Assert.Contains("BG.mp4", missingBackground.Message);
+        Assert.Contains("Visuals\\Background", missingBackground.Message);
 
-        TemporaryCommercialLibrary.AddFile(fixture.RootDirectory, "BG.mp4");
+        TemporaryCommercialLibrary.AddFile(fixture.BackgroundDirectory, "BG.mp4");
         File.Delete(fixture.TvPath);
         var missingFrame = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
         Assert.False(missingFrame.Success);
-        Assert.Contains("TV.mp4", missingFrame.Message);
+        Assert.Contains("Visuals\\TV Overlay", missingFrame.Message);
 
-        TemporaryCommercialLibrary.AddFile(fixture.RootDirectory, "TV.mp4");
+        TemporaryCommercialLibrary.AddFile(fixture.TvOverlayDirectory, "TV.mp4");
         File.Delete(fixture.IconPath);
+        TemporaryCommercialLibrary.AddFile(fixture.RootDirectory, "ICON.png");
         var missingIcon = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
         Assert.False(missingIcon.Success);
-        Assert.Contains("ICON.png", missingIcon.Message);
+        Assert.Contains("Visuals\\ICON.png", missingIcon.Message);
     }
 
     [Fact]
-    public void BcnTaggedContentRequiresBothAlternatingRootLogos()
+    public void BcnTaggedContentRequiresTwoImagesInItsExistingLogoFolder()
     {
         using var fixture = new TemporaryCommercialLibrary();
         fixture.AddActiveSponsor("real.mp4");
         fixture.AddActiveSponsor("fake (BCN).mp4");
-        File.Delete(Path.Combine(fixture.RootDirectory, "BCN2.png"));
+        File.Delete(Path.Combine(fixture.BcnLogosDirectory, "BCN2.png"));
 
         var result = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
 
         Assert.False(result.Success);
-        Assert.Contains("BCN1.png and BCN2.png", result.Message);
+        Assert.Contains("2 BCN logo images", result.Message);
+        Assert.Contains("Visuals\\Logos\\BCN", result.Message);
     }
 
     [Fact]
-    public void EnsureLayoutCreatesOnlyTheSimpleDropInFoldersAndCurrentInstructions()
+    public void StillImagesDoNotSatisfyTheAnimatedBackgroundContract()
+    {
+        using var fixture = new TemporaryCommercialLibrary();
+        fixture.AddActiveSponsor("real.mp4");
+        File.Delete(fixture.BackgroundPath);
+        TemporaryCommercialLibrary.AddFile(fixture.BackgroundDirectory, "background.png");
+
+        var result = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
+
+        Assert.False(result.Success);
+        Assert.Contains("background video", result.Message);
+    }
+
+    [Fact]
+    public void EnsureLayoutPreservesTheEstablishedBumperAndVisualsFolders()
     {
         using var fixture = new TemporaryCommercialLibrary(createFixed: false);
         Directory.Delete(fixture.RootDirectory, recursive: true);
@@ -153,17 +170,21 @@ public sealed class CommercialBreakLibraryTests
 
         library.EnsureLayout();
 
-        Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Fixed")));
+        Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Fixed", "Bumpers")));
         Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Sponsors", "Active")));
         Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Sponsors", "Inactive")));
-        Assert.False(Directory.Exists(Path.Combine(fixture.RootDirectory, "Visuals")));
+        Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Visuals", "Background")));
+        Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Visuals", "TV Overlay")));
+        Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Visuals", "Logos", "BCN")));
+        Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Visuals", "Logos", "BL")));
+        Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Visuals", "Logos", "R")));
         var instructions = Path.Combine(fixture.RootDirectory, "README.txt");
         Assert.True(File.Exists(instructions));
         var text = File.ReadAllText(instructions);
         Assert.Contains("START.mp4", text);
-        Assert.Contains("BUMPER5.mp4", text);
-        Assert.Contains("BG.mp4", text);
-        Assert.Contains("TV.mp4", text);
+        Assert.Contains("Fixed\\Bumpers", text);
+        Assert.Contains("Visuals\\Background", text);
+        Assert.Contains("Visuals\\TV Overlay", text);
         Assert.Contains("ICON.png", text);
         Assert.Contains("1080 x 1920", text);
     }

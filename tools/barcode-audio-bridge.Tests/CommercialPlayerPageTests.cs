@@ -44,7 +44,7 @@ public sealed class CommercialPlayerPageTests
     }
 
     [Fact]
-    public void CroppedReferenceGeometryUsesOneCompleteMaskedBezelAboveAnOverscannedCommercial()
+    public void CroppedReferenceGeometryUsesOneCompleteMaskedBezelAboveAnAutomaticallyFittedCommercial()
     {
         var html = CommercialPlayerPage.Html;
 
@@ -69,12 +69,11 @@ public sealed class CommercialPlayerPageTests
         Assert.DoesNotContain("#tv-stage::before", html);
         Assert.DoesNotContain("#tv-stage::after", html);
         Assert.Matches(
-            @"(?s)<div id=""tv-stage"">.*?<div id=""tv-source"">.*?<div id=""video-window"">.*?<video id=""player"".*?<img id=""corner-logo"".*?</div>.*?<video id=""tv-overlay-video""",
+            @"(?s)<div id=""tv-stage"">.*?<div id=""tv-source"">.*?<div id=""video-window"">.*?<video id=""player"".*?<img id=""corner-logo-a"".*?<img id=""corner-logo-b"".*?</div>.*?<video id=""tv-overlay-video""",
             html);
         Assert.DoesNotContain("border-radius: 2.4% / 4.5%", html);
-        Assert.Matches(@"(?s)#player\s*\{.*?width:\s*100%;.*?height:\s*100%;.*?object-fit:\s*cover;.*?transform:\s*scale\(1\.10\);", html);
-        Assert.Matches(@"(?s)#player\[data-fit=""soft""\]\s*\{.*?object-fit:\s*fill;.*?transform:\s*scale\(1\.015\);", html);
-        Assert.Matches(@"(?s)#corner-logo\s*\{.*?right:\s*2\.2%;.*?bottom:\s*2\.2%;.*?width:\s*18%;.*?height:\s*16%;.*?z-index:\s*2;", html);
+        Assert.Matches(@"(?s)#player\s*\{.*?left:\s*50%;.*?top:\s*50%;.*?width:\s*var\(--player-fit-width, 100\.8%\);.*?height:\s*var\(--player-fit-height, 100\.8%\);.*?object-fit:\s*fill;.*?object-position:\s*center center;.*?transform:\s*translate\(-50%, -50%\);", html);
+        Assert.Matches(@"(?s)\.corner-logo\s*\{.*?right:\s*2\.2%;.*?bottom:\s*2\.2%;.*?width:\s*18%;.*?height:\s*16%;.*?z-index:\s*2;", html);
     }
 
     [Fact]
@@ -92,31 +91,42 @@ public sealed class CommercialPlayerPageTests
     }
 
     [Fact]
-    public void CornerLogosUseSlowFadesAndVariantTwoIsExactlyFifteenPercentSmaller()
+    public void CornerLogosUsePreAndPostRollCrossfadesAndVariantTwoIsExactlyFifteenPercentSmaller()
     {
         var html = CommercialPlayerPage.Html;
 
         Assert.Contains("var(--corner-logo-fade-duration, 2400ms)", html);
-        Assert.Contains("const fadeMs = Math.min(2600, Math.max(800, totalMs * .14))", html);
-        Assert.Contains("cornerLogo.classList.add('visible')", html);
-        Assert.Contains("cornerLogo.classList.remove('visible')", html);
-        Assert.Contains("cornerLogo.dataset.variant = String(item.cornerLogoVariant || 1)", html);
+        Assert.Contains("id=\"corner-logo-a\" class=\"corner-logo\"", html);
+        Assert.Contains("id=\"corner-logo-b\" class=\"corner-logo\"", html);
+        Assert.Contains("return Math.min(2600, Math.max(800, totalMs * .14))", html);
+        Assert.Contains("const leadMs = cornerLogoFadeMs(nextItem) + 350", html);
+        Assert.Contains("primeCornerLogo(nextItem, token)", html);
+        Assert.Contains("activateCornerLogoForItem(item, token)", html);
+        Assert.Contains("showCornerLogoInstant(element, item)", html);
+        Assert.Contains("fadeOutCornerLogo(previous, token)", html);
+        Assert.Contains("element.dataset.variant = String(item.cornerLogoVariant || 1)", html);
         Assert.Matches(
-            @"(?s)#corner-logo\[data-variant=""2""\]\s*\{.*?width:\s*15\.3%;.*?height:\s*13\.6%;",
+            @"(?s)\.corner-logo\[data-variant=""2""\]\s*\{.*?width:\s*15\.3%;.*?height:\s*13\.6%;",
             html);
     }
 
     [Fact]
-    public void NearSixteenByNineCommercialsPreserveTheirTopAndBottomWithBoundedSoftFit()
+    public void EveryCommercialUsesCenteredMetadataDrivenFitWithBoundedDistortionAndSafetyBleed()
     {
         var html = CommercialPlayerPage.Html;
 
-        Assert.Contains("new Set(['eversnow', 'alien', 'crackedencounters'])", html);
-        Assert.Contains("const softFitMaximumStretch = 1.085", html);
-        Assert.Contains("const sourceAspect = player.videoWidth / player.videoHeight", html);
-        Assert.Contains("const stretch = apertureAspect / sourceAspect", html);
-        Assert.Contains("stretch >= 1 && stretch <= softFitMaximumStretch", html);
-        Assert.Contains("player.dataset.fit = 'soft'", html);
+        Assert.Contains("const automaticFitMaximumDistortion = 1.085", html);
+        Assert.Contains("const automaticFitSafetyBleed = 1.008", html);
+        Assert.Contains("function calculateAutomaticPlayerFit(sourceWidth, sourceHeight, apertureWidth, apertureHeight)", html);
+        Assert.Contains("const minimumRenderedAspect = sourceAspect / automaticFitMaximumDistortion", html);
+        Assert.Contains("const maximumRenderedAspect = sourceAspect * automaticFitMaximumDistortion", html);
+        Assert.Contains("Math.min(maximumRenderedAspect, Math.max(minimumRenderedAspect, apertureAspect))", html);
+        Assert.Contains("player.dataset.fit = 'automatic'", html);
+        Assert.Contains("--player-fit-width", html);
+        Assert.Contains("--player-fit-height", html);
+        Assert.DoesNotContain("softFitNames", html);
+        Assert.DoesNotContain("eversnow", html, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("crackedencounters", html, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

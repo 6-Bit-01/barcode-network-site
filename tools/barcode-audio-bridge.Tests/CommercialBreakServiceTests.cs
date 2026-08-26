@@ -142,7 +142,7 @@ public sealed class CommercialBreakServiceTests
     }
 
     [Fact]
-    public void CornerLogoAlternationContinuesAcrossBreaksAndAssetsAreFrozen()
+    public void CornerLogoAlternationNeverRepeatsAcrossBumpersSponsorsOrBreakBoundariesAndAssetsAreFrozen()
     {
         using var fixture = CreateReadyFixture();
         fixture.AddActiveSponsor("Alux.mp4");
@@ -152,10 +152,13 @@ public sealed class CommercialBreakServiceTests
 
         Assert.True(service.Start().Started);
         var first = service.Snapshot();
+        var firstMarked = first.Items.Where(entry => entry.CornerLogoVariant.HasValue).ToArray();
+        Assert.Equal(4, firstMarked.Length);
+        AssertAlternating(firstMarked);
+        Assert.All(first.Items.Where(entry => entry.Kind == "bumper"), entry => Assert.NotNull(entry.CornerLogoUrl));
         var firstAlux = first.Items.Single(entry => entry.Name == "Alux");
         var firstCorner = firstAlux.CornerLogoUrl;
         Assert.NotNull(firstCorner);
-        Assert.Equal(1, firstAlux.CornerLogoVariant);
         var firstCornerId = firstCorner![firstCorner.LastIndexOf('/')..].TrimStart('/');
         Assert.True(service.TryGetMedia(firstCornerId, out var cornerAsset));
         Assert.Equal("image/png", cornerAsset.ContentType);
@@ -163,11 +166,11 @@ public sealed class CommercialBreakServiceTests
 
         Assert.True(service.Start().Started);
         var second = service.Snapshot();
-        var secondAlux = second.Items.Single(entry => entry.Name == "Alux");
-        var secondCorner = secondAlux.CornerLogoUrl;
+        var secondMarked = second.Items.Where(entry => entry.CornerLogoVariant.HasValue).ToArray();
+        Assert.Equal(4, secondMarked.Length);
+        AssertAlternating(secondMarked);
 
-        Assert.NotEqual(firstCorner, secondCorner);
-        Assert.Equal(2, secondAlux.CornerLogoVariant);
+        Assert.NotEqual(firstMarked[^1].CornerLogoVariant, secondMarked[0].CornerLogoVariant);
     }
 
     [Fact]
@@ -214,4 +217,12 @@ public sealed class CommercialBreakServiceTests
         .With("late-addition.mp4", 20)
         .With("network trailer (BCN).mp4", 25)
         .With("Alux.mp4", 30);
+
+    private static void AssertAlternating(IReadOnlyList<CommercialPlaybackItemSnapshot> items)
+    {
+        for (var index = 1; index < items.Count; index += 1)
+        {
+            Assert.NotEqual(items[index - 1].CornerLogoVariant, items[index].CornerLogoVariant);
+        }
+    }
 }

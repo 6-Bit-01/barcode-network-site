@@ -156,12 +156,23 @@ internal static class CommercialBreakPlaylistBuilder
         var currentCornerLogoIndex = NormalizeIndex(cornerLogoIndex, visuals.CornerLogos.Count);
         var brandIndexes = new Dictionary<CommercialLogoBrand, int>();
 
+        (string? AssetId, int? Variant) TakeCornerLogo(CommercialClip clip)
+        {
+            if (!clip.ShowCornerLogo && clip.Kind != CommercialClipKind.Bumper) return (null, null);
+            if (visuals.CornerLogos.Count < 2)
+            {
+                throw new InvalidOperationException("Two corner logos are required for fixed bumpers and Veo-cover clips.");
+            }
+            var selectedCornerLogoIndex = NormalizeIndex(currentCornerLogoIndex++, visuals.CornerLogos.Count);
+            var cornerLogo = visuals.CornerLogos[selectedCornerLogoIndex];
+            usedVisualAssets[cornerLogo.Id] = cornerLogo;
+            return (cornerLogo.Id, selectedCornerLogoIndex + 1);
+        }
+
         for (var contentIndex = 0; contentIndex < content.Count; contentIndex += 1)
         {
             var clip = content[contentIndex];
             string? logoAssetId = null;
-            string? cornerLogoAssetId = null;
-            int? cornerLogoVariant = null;
             if (clip.LogoBrand is { } brand)
             {
                 var logos = GetLogos(visuals, brand);
@@ -173,28 +184,20 @@ internal static class CommercialBreakPlaylistBuilder
                 usedVisualAssets[logo.Id] = logo;
                 if (brand != CommercialLogoBrand.Bcn) brandIndexes[brand] = logoIndex + 1;
             }
-            if (clip.ShowCornerLogo)
-            {
-                if (visuals.CornerLogos.Count < 2)
-                {
-                    throw new InvalidOperationException("Two corner logos are required for Veo-cover clips.");
-                }
-                var selectedCornerLogoIndex = NormalizeIndex(currentCornerLogoIndex++, visuals.CornerLogos.Count);
-                var cornerLogo = visuals.CornerLogos[selectedCornerLogoIndex];
-                cornerLogoAssetId = cornerLogo.Id;
-                cornerLogoVariant = selectedCornerLogoIndex + 1;
-                usedVisualAssets[cornerLogo.Id] = cornerLogo;
-            }
+            var (cornerLogoAssetId, cornerLogoVariant) = TakeCornerLogo(clip);
 
             playlist.Add(ToPlaylistItem(clip, currentBlock, logoAssetId, cornerLogoAssetId, cornerLogoVariant));
             if (!boundaries.Contains(contentIndex + 1)) continue;
 
             blockDurations.Add(SumClipDurations(content.Skip(contentStart).Take(contentIndex + 1 - contentStart)));
+            var bumper = bumpers[currentBlock - 1];
+            var (bumperCornerLogoAssetId, bumperCornerLogoVariant) = TakeCornerLogo(bumper);
             playlist.Add(ToPlaylistItem(
-                bumpers[currentBlock - 1],
+                bumper,
                 contentBlock: null,
                 logoAssetId: null,
-                cornerLogoAssetId: null));
+                cornerLogoAssetId: bumperCornerLogoAssetId,
+                cornerLogoVariant: bumperCornerLogoVariant));
             contentStart = contentIndex + 1;
             currentBlock += 1;
         }

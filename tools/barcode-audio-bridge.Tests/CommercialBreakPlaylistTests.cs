@@ -108,7 +108,7 @@ public sealed class CommercialBreakPlaylistTests
     }
 
     [Fact]
-    public void CornerLogosAlternateOnlyAcrossMarkedClipsInPlaybackOrder()
+    public void CornerLogosAlternateWithoutRepeatingAcrossMarkedClipsAndSelectedBumpers()
     {
         var sponsors = Enumerable.Range(1, 8)
             .Select(index => Clip(
@@ -130,15 +130,54 @@ public sealed class CommercialBreakPlaylistTests
             .Select(item => (item.CornerLogoAssetId, item.CornerLogoVariant))
             .ToArray();
 
-        Assert.Equal(
-            new (string?, int?)[]
+        Assert.Equal(6, marked.Length);
+        Assert.Equal(("corner-logo-2", 2), marked[0]);
+        for (var index = 1; index < marked.Length; index += 1)
+        {
+            Assert.NotEqual(marked[index - 1], marked[index]);
+        }
+        Assert.All(
+            plan.Items.Where(item => item.Kind == CommercialClipKind.Bumper),
+            bumper => Assert.NotNull(bumper.CornerLogoAssetId));
+        Assert.Equal(1, plan.NextCornerLogoIndex);
+    }
+
+    [Fact]
+    public void EveryBumperInTheFiveFilePoolReceivesAlternatingCornerCoverageWhenSelected()
+    {
+        var sponsors = Enumerable.Range(1, 8)
+            .Select(index => Clip($"s{index}", 30, CommercialClipKind.Sponsor))
+            .ToArray();
+        var observedBumpers = new HashSet<string>(StringComparer.Ordinal);
+
+        for (var seed = 1; seed <= 64; seed += 1)
+        {
+            var plan = CommercialBreakPlaylistBuilder.Build(
+                Fixed(),
+                sponsors,
+                Array.Empty<CommercialClip>(),
+                Visuals(),
+                new Random(seed),
+                cornerLogoIndex: seed % 2);
+            var bumpers = plan.Items.Where(item => item.Kind == CommercialClipKind.Bumper).ToArray();
+            Assert.Equal(3, bumpers.Length);
+            Assert.All(bumpers, bumper =>
             {
-                ("corner-logo-2", 2),
-                ("corner-logo-1", 1),
-                ("corner-logo-2", 2),
-            },
-            marked);
-        Assert.Equal(0, plan.NextCornerLogoIndex);
+                Assert.NotNull(bumper.CornerLogoAssetId);
+                Assert.NotNull(bumper.CornerLogoVariant);
+                observedBumpers.Add(bumper.Id);
+            });
+            var markedVariants = plan.Items
+                .Where(item => item.CornerLogoVariant.HasValue)
+                .Select(item => item.CornerLogoVariant!.Value)
+                .ToArray();
+            for (var index = 1; index < markedVariants.Length; index += 1)
+            {
+                Assert.NotEqual(markedVariants[index - 1], markedVariants[index]);
+            }
+        }
+
+        Assert.Equal(5, observedBumpers.Count);
     }
 
     [Fact]

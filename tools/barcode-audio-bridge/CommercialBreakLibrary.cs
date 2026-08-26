@@ -97,6 +97,7 @@ Put these two files directly in Fixed:
 Keep all five bumper MP4s in Fixed\Bumpers, exactly where they were before.
 Their file names do not matter. The player chooses three different bumpers for
 each break and places them in separate early, middle, and late timing ranges.
+Every bumper receives the next alternating corner logo whenever it is selected.
 
 ACTIVE CONTENT
 Put every video eligible for the next break in Sponsors\Active.
@@ -126,13 +127,19 @@ BLVCKL!GHT logo in Visuals\Logos\BL, and the Rigged Sanchez logo in
 Visuals\Logos\R. PNG, JPG, JPEG, and WEBP logo images are supported.
 
 Put CORNERLOGO1.png and CORNERLOGO2.png in Visuals\Corner Logos. They alternate
-with slow fades at the bottom-right of the requested Veo-marked clips, behind the
-TV frame. CORNERLOGO2 renders 15% smaller than CORNERLOGO1. The
+without repeating across every selected bumper and requested Veo-marked clip,
+behind the TV frame at the bottom-right.
+The upcoming mark fades in during the preceding clip, is fully solid before the
+marked sponsor starts, stays solid for that whole sponsor, and fades only after
+the sponsor ends. CORNERLOGO2 renders 15% smaller than CORNERLOGO1. The
 player temporarily recognizes those exact files in Visuals\TV Overlay too, but
 the dedicated Corner Logos folder keeps every visual role unambiguous.
 
 The player replaces the TV overlay's screen with every start, sponsor, trailer,
-bumper, and end video. Only the current sequence clip supplies audio.
+bumper, and end video. Every video is automatically centered and fitted from its
+actual dimensions. A bounded correction preserves as much picture as possible,
+while a hidden safety bleed keeps the background from showing at any bezel edge.
+No per-file fit list is required. Only the current sequence clip supplies audio.
 
 PLAYBACK
 Right-click the BARCODE Audio Bridge tray icon and choose Start Commercial Break.
@@ -320,12 +327,12 @@ Recommended video format: H.264 video + AAC audio in an .mp4 container.
             .Where(path => path is not null)
             .Select(path => CreateVisualAsset(path!))
             .ToArray();
-        var needsCornerLogos = sponsors.Concat(interstitials).Any(clip => clip.ShowCornerLogo);
+        var needsCornerLogos = bumpers.Count > 0 || sponsors.Concat(interstitials).Any(clip => clip.ShowCornerLogo);
         if (needsCornerLogos && cornerLogos.Length < 2)
         {
             return Failure(
                 "CORNERLOGO1.png and CORNERLOGO2.png are required in Visuals\\Corner Logos " +
-                "for the active Veo-marked clips.",
+                "for the fixed bumpers and active Veo-marked clips.",
                 warnings);
         }
         if (cornerLogos.Length == 2 && cornerLogos.Any(asset =>

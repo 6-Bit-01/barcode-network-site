@@ -162,6 +162,48 @@ public sealed class CommercialBreakLibraryTests
     }
 
     [Fact]
+    public void ExactTvFileWinsWhenExtraOverlayVideosExistAndAmbiguousFoldersFailClosed()
+    {
+        using var fixture = new TemporaryCommercialLibrary();
+        fixture.AddActiveSponsor("real.mp4");
+        TemporaryCommercialLibrary.AddFile(fixture.TvOverlayDirectory, "A-WRONG.mp4");
+
+        var exact = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
+
+        Assert.True(exact.Success, exact.Message);
+        Assert.Equal("TV", exact.Visuals!.TvOverlay.Name);
+        Assert.Contains(exact.Warnings, warning => warning.Contains("locked to TV.mp4"));
+
+        File.Delete(fixture.TvPath);
+        TemporaryCommercialLibrary.AddFile(fixture.TvOverlayDirectory, "Z-ALSO-WRONG.mp4");
+        var ambiguous = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
+
+        Assert.False(ambiguous.Success);
+        Assert.Contains("Multiple TV overlay videos", ambiguous.Message);
+        Assert.Contains("TV.mp4", ambiguous.Message);
+    }
+
+    [Fact]
+    public void VeoMarkedClipRequiresBothExactCornerLogosInTheirDedicatedFolder()
+    {
+        using var fixture = new TemporaryCommercialLibrary();
+        fixture.AddActiveSponsor("Alux.mp4");
+        File.Delete(Path.Combine(fixture.CornerLogosDirectory, "CORNERLOGO2.png"));
+
+        var missing = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
+
+        Assert.False(missing.Success);
+        Assert.Contains("CORNERLOGO1.png and CORNERLOGO2.png", missing.Message);
+        Assert.Contains("Visuals\\Corner Logos", missing.Message);
+
+        TemporaryCommercialLibrary.AddFile(fixture.CornerLogosDirectory, "CORNERLOGO2.png");
+        var complete = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
+        Assert.True(complete.Success, complete.Message);
+        Assert.True(Assert.Single(complete.Sponsors).ShowCornerLogo);
+        Assert.Equal(2, complete.Visuals!.CornerLogos.Count);
+    }
+
+    [Fact]
     public void EnsureLayoutPreservesTheEstablishedBumperAndVisualsFolders()
     {
         using var fixture = new TemporaryCommercialLibrary(createFixed: false);
@@ -175,6 +217,7 @@ public sealed class CommercialBreakLibraryTests
         Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Sponsors", "Inactive")));
         Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Visuals", "Background")));
         Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Visuals", "TV Overlay")));
+        Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Visuals", "Corner Logos")));
         Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Visuals", "Logos", "BCN")));
         Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Visuals", "Logos", "BL")));
         Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Visuals", "Logos", "R")));
@@ -185,6 +228,8 @@ public sealed class CommercialBreakLibraryTests
         Assert.Contains("Fixed\\Bumpers", text);
         Assert.Contains("Visuals\\Background", text);
         Assert.Contains("Visuals\\TV Overlay", text);
+        Assert.Contains("Visuals\\Corner Logos", text);
+        Assert.Contains("CORNERLOGO1.png", text);
         Assert.Contains("ICON.png", text);
         Assert.Contains("1080 x 1920", text);
         Assert.Contains("https://www.barcode-network.com/overlay/commercials", text);

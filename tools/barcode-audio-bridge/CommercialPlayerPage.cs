@@ -32,7 +32,7 @@ internal static class CommercialPlayerPage
       width: 100%;
       height: 100%;
       object-fit: cover;
-      transform: scale(1.13);
+      transform: scale(1.18);
       transform-origin: left top;
       background: transparent;
       z-index: 0;
@@ -42,7 +42,8 @@ internal static class CommercialPlayerPage
       position: absolute;
       top: 30.6%;
       left: 50%;
-      width: 104%;
+      width: 88.3%;
+      aspect-ratio: 771 / 482;
       transform: translateX(-50%);
       isolation: isolate;
       z-index: 2;
@@ -50,40 +51,50 @@ internal static class CommercialPlayerPage
     }
     #video-window {
       position: absolute;
-      left: 14.69%;
-      top: 13.06%;
-      width: 70.31%;
-      height: 66.11%;
+      left: 6.2257%;
+      top: 9.7510%;
+      width: 87.2892%;
+      height: 74.4813%;
       overflow: hidden;
-      border-radius: 2.2% / 4.1%;
+      border-radius: 2.4% / 4.5%;
       background: #000;
       z-index: 1;
     }
     #player {
+      position: absolute;
+      inset: 0;
+      display: block;
       width: 100%;
       height: 100%;
       object-fit: cover;
+      transform: scale(1.05);
+      transform-origin: center;
       background: #000;
+      z-index: 1;
     }
     #tv-overlay-video {
-      position: relative;
+      position: absolute;
+      inset: 0;
       display: block;
       width: 100%;
-      height: auto;
-      object-fit: contain;
+      height: 100%;
+      object-fit: cover;
       pointer-events: none;
       z-index: 2;
-      clip-path: inset(0 7.55% 0 7.55%);
-      -webkit-mask:
-        linear-gradient(#fff 0 0) top / 100% 13.06% no-repeat,
-        linear-gradient(#fff 0 0) bottom / 100% 20.83% no-repeat,
-        linear-gradient(#fff 0 0) left 13.06% / 14.69% 66.11% no-repeat,
-        linear-gradient(#fff 0 0) right 13.06% / 15% 66.11% no-repeat;
-      mask:
-        linear-gradient(#fff 0 0) top / 100% 13.06% no-repeat,
-        linear-gradient(#fff 0 0) bottom / 100% 20.83% no-repeat,
-        linear-gradient(#fff 0 0) left 13.06% / 14.69% 66.11% no-repeat,
-        linear-gradient(#fff 0 0) right 13.06% / 15% 66.11% no-repeat;
+      -webkit-mask: url(#tv-bezel-mask) center / 100% 100% no-repeat;
+      mask: url(#tv-bezel-mask) center / 100% 100% no-repeat;
+    }
+    #corner-logo {
+      position: absolute;
+      right: 1.8%;
+      bottom: 2.2%;
+      width: 11.5%;
+      height: 10%;
+      object-fit: contain;
+      object-position: right bottom;
+      filter: drop-shadow(0 1px 2px rgba(0,0,0,.8));
+      z-index: 2;
+      pointer-events: none;
     }
     #logo {
       position: absolute;
@@ -101,8 +112,13 @@ internal static class CommercialPlayerPage
       z-index: 3;
       pointer-events: none;
     }
+    #logo[data-brand="bcn"], #logo[data-brand="bl"] {
+      top: 2.0875%;
+      width: 120%;
+      height: 33.125%;
+    }
     #logo.visible { opacity: 1; transform: translate(-50%, 0) scale(1); }
-    #background-video[hidden], #tv-overlay-video[hidden], #logo[hidden] { display: none; }
+    #background-video[hidden], #tv-overlay-video[hidden], #logo[hidden], #corner-logo[hidden] { display: none; }
     #status {
       display: none;
       position: fixed;
@@ -143,11 +159,19 @@ internal static class CommercialPlayerPage
   </style>
 </head>
 <body>
+  <svg aria-hidden="true" width="0" height="0" style="position:absolute;overflow:hidden">
+    <defs>
+      <mask id="tv-bezel-mask" maskUnits="objectBoundingBox" maskContentUnits="objectBoundingBox" style="mask-type:alpha">
+        <path fill="white" fill-rule="evenodd" d="M0 0H1V1H0Z M.083007 .097510H.914399C.925858 .097510 .935149 .112374 .935149 .130710V.809123C.935149 .827459 .925858 .842323 .914399 .842323H.083007C.071548 .842323 .062257 .827459 .062257 .809123V.130710C.062257 .112374 .071548 .097510 .083007 .097510Z"></path>
+      </mask>
+    </defs>
+  </svg>
   <div id="stage" hidden>
     <video id="background-video" preload="auto" autoplay muted loop playsinline disablepictureinpicture hidden></video>
     <div id="tv-stage">
       <div id="video-window">
-        <video id="player" preload="auto" autoplay playsinline disablepictureinpicture></video>
+        <video id="player" preload="metadata" autoplay playsinline disablepictureinpicture></video>
+        <img id="corner-logo" alt="" hidden>
       </div>
       <video id="tv-overlay-video" preload="auto" autoplay muted loop playsinline disablepictureinpicture hidden></video>
     </div>
@@ -167,6 +191,7 @@ internal static class CommercialPlayerPage
     const backgroundVideo = document.getElementById('background-video');
     const tvOverlayVideo = document.getElementById('tv-overlay-video');
     const player = document.getElementById('player');
+    const cornerLogo = document.getElementById('corner-logo');
     const logo = document.getElementById('logo');
     const audioGate = document.getElementById('audio-gate');
     const statusBox = document.getElementById('status');
@@ -174,7 +199,6 @@ internal static class CommercialPlayerPage
     let activeGeneration = -1;
     let runToken = 0;
     let running = false;
-    let preloadPlayer = null;
     let logoTimers = [];
     let pendingAudioGate = null;
 
@@ -185,20 +209,26 @@ internal static class CommercialPlayerPage
       if (!response.ok) throw new Error(`local player update failed (${response.status})`);
     }
 
-    function releasePreload() {
-      if (!preloadPlayer) return;
-      preloadPlayer.removeAttribute('src');
-      preloadPlayer.load();
-      preloadPlayer = null;
-    }
-
     function clearLogo() {
       for (const timer of logoTimers) clearTimeout(timer);
       logoTimers = [];
       logo.classList.remove('visible');
       logo.hidden = true;
       logo.removeAttribute('src');
+      delete logo.dataset.brand;
       logo.style.removeProperty('--logo-fade-duration');
+    }
+
+    function clearCornerLogo() {
+      cornerLogo.hidden = true;
+      cornerLogo.removeAttribute('src');
+    }
+
+    function showCornerLogo(item) {
+      clearCornerLogo();
+      if (!item.cornerLogoUrl) return;
+      cornerLogo.src = item.cornerLogoUrl;
+      cornerLogo.hidden = false;
     }
 
     function clearVisualVideo(video) {
@@ -231,7 +261,7 @@ internal static class CommercialPlayerPage
       clearVisualVideo(tvOverlayVideo);
       stage.hidden = true;
       clearLogo();
-      releasePreload();
+      clearCornerLogo();
     }
 
     function isAutoplayBlock(error) {
@@ -317,15 +347,6 @@ internal static class CommercialPlayerPage
       if (token !== runToken) element.pause();
     }
 
-    function preload(item) {
-      releasePreload();
-      if (!item) return;
-      preloadPlayer = document.createElement('video');
-      preloadPlayer.preload = 'auto';
-      preloadPlayer.src = item.url;
-      preloadPlayer.load();
-    }
-
     function showLogo(item, token) {
       clearLogo();
       if (!item.logoUrl || token !== runToken) return;
@@ -334,6 +355,7 @@ internal static class CommercialPlayerPage
       const revealAt = Math.min(180, totalMs * .05);
       const fadeAt = Math.max(fadeMs + revealAt, totalMs - fadeMs - 200);
       logo.src = item.logoUrl;
+      if (item.logoBrand) logo.dataset.brand = item.logoBrand;
       logo.hidden = false;
       logo.style.setProperty('--logo-fade-duration', `${Math.round(fadeMs)}ms`);
       logoTimers.push(setTimeout(() => {
@@ -344,27 +366,29 @@ internal static class CommercialPlayerPage
       }, fadeAt));
     }
 
-    function playItem(item, nextItem, token) {
+    function playItem(item, token) {
       return new Promise((resolve, reject) => {
         if (token !== runToken) { resolve(); return; }
         const cleanup = () => {
           player.removeEventListener('ended', onEnded);
           player.removeEventListener('error', onError);
         };
-        const onEnded = () => { cleanup(); clearLogo(); resolve(); };
+        const onEnded = () => { cleanup(); clearLogo(); clearCornerLogo(); resolve(); };
         const onError = () => {
           cleanup();
           clearLogo();
+          clearCornerLogo();
           reject(new Error(player.error?.message || `could not play ${item.name}`));
         };
         player.addEventListener('ended', onEnded, { once: true });
         player.addEventListener('error', onError, { once: true });
+        player.pause();
         player.src = item.url;
         player.load();
-        preload(nextItem);
+        showCornerLogo(item);
         playWithAudioRecovery(item, token)
           .then(() => showLogo(item, token))
-          .catch(error => { cleanup(); clearLogo(); reject(error); });
+          .catch(error => { cleanup(); clearLogo(); clearCornerLogo(); reject(error); });
       });
     }
 
@@ -387,7 +411,7 @@ internal static class CommercialPlayerPage
           const item = state.items[index];
           showStatus(`BREAK ${state.generation} · ${index + 1}/${state.items.length}\n${item.name}`);
           await post(`/v1/commercials/clip-started?generation=${state.generation}&index=${index}`);
-          await playItem(item, state.items[index + 1], token);
+          await playItem(item, token);
         }
         if (token !== runToken) return;
         await post(`/v1/commercials/complete?generation=${state.generation}`);

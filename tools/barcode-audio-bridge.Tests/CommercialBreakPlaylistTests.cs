@@ -108,6 +108,33 @@ public sealed class CommercialBreakPlaylistTests
     }
 
     [Fact]
+    public void CornerLogosAlternateOnlyAcrossMarkedClipsInPlaybackOrder()
+    {
+        var sponsors = Enumerable.Range(1, 8)
+            .Select(index => Clip(
+                $"s{index}",
+                30,
+                CommercialClipKind.Sponsor,
+                showCornerLogo: index is 1 or 3 or 6))
+            .ToArray();
+
+        var plan = CommercialBreakPlaylistBuilder.Build(
+            Fixed(),
+            sponsors,
+            Array.Empty<CommercialClip>(),
+            Visuals(),
+            new Random(18),
+            cornerLogoIndex: 1);
+        var marked = plan.Items
+            .Where(item => item.CornerLogoAssetId is not null)
+            .Select(item => item.CornerLogoAssetId)
+            .ToArray();
+
+        Assert.Equal(new[] { "corner-logo-2", "corner-logo-1", "corner-logo-2" }, marked);
+        Assert.Equal(0, plan.NextCornerLogoIndex);
+    }
+
+    [Fact]
     public void ThreeBumpersLandInDistinctEarlyMiddleAndLateRanges()
     {
         var sponsors = Enumerable.Range(1, 20)
@@ -177,7 +204,8 @@ public sealed class CommercialBreakPlaylistTests
             [CommercialLogoBrand.Bcn] = new[] { Asset("bcn-logo-1", "image/png"), Asset("bcn-logo-2", "image/png") },
             [CommercialLogoBrand.Bl] = new[] { Asset("bl-logo", "image/png") },
             [CommercialLogoBrand.R] = new[] { Asset("r-logo", "image/png") },
-        });
+        },
+        new[] { Asset("corner-logo-1", "image/png"), Asset("corner-logo-2", "image/png") });
 
     private static CommercialVisualAsset Asset(string id, string contentType, string extension = ".png") => new(
         id,
@@ -190,12 +218,14 @@ public sealed class CommercialBreakPlaylistTests
         double seconds,
         CommercialClipKind kind,
         CommercialLogoBrand? logoBrand = null,
-        int? optionalCutPriority = null) => new(
+        int? optionalCutPriority = null,
+        bool showCornerLogo = false) => new(
             id,
             id,
             $"C:\\fixture\\{id}.mp4",
             TimeSpan.FromSeconds(seconds),
             kind,
             logoBrand,
-            optionalCutPriority);
+            optionalCutPriority,
+            showCornerLogo);
 }

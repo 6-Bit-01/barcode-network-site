@@ -31,7 +31,7 @@ internal sealed class LocalSignalServer : IDisposable
     public void Start()
     {
         _listener = new TcpListener(IPAddress.Loopback, BridgeConstants.Port);
-        _listener.Start(16);
+        _listener.Start(64);
         _acceptLoop = AcceptLoop(_cancellation.Token);
         BridgeLog.Write($"Local show helper endpoint listening on 127.0.0.1:{BridgeConstants.Port}.");
     }
@@ -44,7 +44,7 @@ internal sealed class LocalSignalServer : IDisposable
             try
             {
                 var client = await _listener.AcceptTcpClientAsync(cancellationToken);
-                _ = Task.Run(() => HandleClient(client, cancellationToken), cancellationToken);
+                _ = HandleClient(client, cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -232,6 +232,10 @@ internal sealed class LocalSignalServer : IDisposable
             {
                 // Normal shutdown.
             }
+            catch (Exception error) when (IsExpectedClientDisconnect(error))
+            {
+                // Chromium intentionally closes range responses once its media buffer has enough data.
+            }
             catch (Exception error)
             {
                 BridgeLog.Write("A local show helper request failed.", error);
@@ -278,6 +282,24 @@ internal sealed class LocalSignalServer : IDisposable
         uri.Scheme == Uri.UriSchemeHttp
         && (uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
             || IPAddress.TryParse(uri.Host, out var address) && IPAddress.IsLoopback(address));
+
+    internal static bool IsExpectedClientDisconnect(Exception error)
+    {
+        var socketError = error switch
+        {
+            SocketException socket => socket.SocketErrorCode,
+            IOException { InnerException: SocketException socket } => socket.SocketErrorCode,
+            _ => (SocketError?)null,
+        };
+        return error is ObjectDisposedException
+            || socketError is SocketError.ConnectionAborted
+                or SocketError.ConnectionReset
+                or SocketError.Disconnecting
+                or SocketError.NetworkReset
+                or SocketError.NotConnected
+                or SocketError.OperationAborted
+                or SocketError.Shutdown;
+    }
 
     private static bool TryGetLong(Uri uri, string name, out long value) =>
         long.TryParse(GetQueryValue(uri, name), NumberStyles.None, CultureInfo.InvariantCulture, out value);
@@ -340,6 +362,7 @@ internal sealed class LocalSignalServer : IDisposable
         var extraHeaders = new Dictionary<string, string>
         {
             ["Accept-Ranges"] = "bytes",
+            ["ETag"] = $"\"{Path.GetFileNameWithoutExtension(filePath)}\"",
             ["X-Content-Type-Options"] = "nosniff",
         };
         if (selection.Requested)
@@ -352,7 +375,7 @@ internal sealed class LocalSignalServer : IDisposable
             contentType,
             selection.Length,
             origin,
-            "private, max-age=60",
+            "private, max-age=3600, immutable",
             extraHeaders,
             cancellationToken);
         if (headOnly)

@@ -30,7 +30,9 @@ internal sealed record CommercialPlaybackItemSnapshot(
     double DurationSeconds,
     int? ContentBlock,
     string Url,
-    string? LogoUrl);
+    string? LogoUrl,
+    string? LogoBrand,
+    string? CornerLogoUrl);
 
 internal sealed record CommercialBreakSnapshot(
     string Schema,
@@ -156,7 +158,7 @@ internal sealed class CommercialMediaSnapshot : IDisposable
 
 internal sealed class CommercialBreakService
 {
-    public const string SchemaVersion = "barcode_commercial_break_v4";
+    public const string SchemaVersion = "barcode_commercial_break_v5";
 
     private readonly object _sync = new();
     private readonly CommercialBreakLibrary _library;
@@ -168,6 +170,7 @@ internal sealed class CommercialBreakService
     private long _generation;
     private int _currentIndex = -1;
     private int _nextBcnLogoIndex;
+    private int _nextCornerLogoIndex;
     private string _message = "Ready";
     private bool _building;
     private DateTimeOffset _lastPlayerHeartbeat = DateTimeOffset.MinValue;
@@ -226,6 +229,7 @@ internal sealed class CommercialBreakService
     public CommercialBreakStartResult Start()
     {
         int bcnLogoIndex;
+        int cornerLogoIndex;
         CommercialMediaSnapshot? pendingMediaSnapshot = null;
         lock (_sync)
         {
@@ -235,6 +239,7 @@ internal sealed class CommercialBreakService
             }
             _building = true;
             bcnLogoIndex = _nextBcnLogoIndex;
+            cornerLogoIndex = _nextCornerLogoIndex;
         }
 
         try
@@ -262,7 +267,8 @@ internal sealed class CommercialBreakService
                 libraryResult.Interstitials,
                 libraryResult.Visuals,
                 random,
-                bcnLogoIndex);
+                bcnLogoIndex,
+                cornerLogoIndex);
             var planningWarnings = libraryResult.Warnings
                 .Concat(plan.OmittedInterstitials.Select(name =>
                     $"{name} was omitted to keep the complete break closest to 11:00."))
@@ -285,6 +291,7 @@ internal sealed class CommercialBreakService
                 pendingMediaSnapshot = null;
                 _warnings = planningWarnings;
                 _nextBcnLogoIndex = plan.NextBcnLogoIndex;
+                _nextCornerLogoIndex = plan.NextCornerLogoIndex;
                 _status = CommercialBreakPlaybackStatus.Queued;
                 _currentIndex = 0;
                 _message = $"Queued {plan.SponsorCount} sponsor{(plan.SponsorCount == 1 ? string.Empty : "s")}, " +
@@ -349,7 +356,9 @@ internal sealed class CommercialBreakService
                 item.Duration.TotalSeconds,
                 item.ContentBlock,
                 MediaUrl(item.Id),
-                item.LogoAssetId is null ? null : MediaUrl(item.LogoAssetId)))
+                item.LogoAssetId is null ? null : MediaUrl(item.LogoAssetId),
+                item.LogoBrand?.ToString().ToLowerInvariant(),
+                item.CornerLogoAssetId is null ? null : MediaUrl(item.CornerLogoAssetId)))
                 .ToArray() ?? Array.Empty<CommercialPlaybackItemSnapshot>();
 
             return new CommercialBreakSnapshot(

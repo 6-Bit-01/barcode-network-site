@@ -116,7 +116,8 @@ public sealed class CommercialBreakServiceTests
         Assert.True(service.TryGetMedia(iconId, out var icon));
         Assert.Equal("image/png", icon.ContentType);
         Assert.False(service.TryGetMedia("not-a-current-media-id", out _));
-        Assert.Equal("barcode_commercial_break_v4", snapshot.Schema);
+        Assert.Equal("bcn", tagged.LogoBrand);
+        Assert.Equal("barcode_commercial_break_v5", snapshot.Schema);
     }
 
     [Fact]
@@ -138,6 +139,31 @@ public sealed class CommercialBreakServiceTests
         var secondLogo = second.Items.Single(entry => entry.Name == "network trailer (BCN)").LogoUrl;
 
         Assert.NotEqual(firstLogo, secondLogo);
+    }
+
+    [Fact]
+    public void CornerLogoAlternationContinuesAcrossBreaksAndAssetsAreFrozen()
+    {
+        using var fixture = CreateReadyFixture();
+        fixture.AddActiveSponsor("Alux.mp4");
+        var service = new CommercialBreakService(new CommercialBreakLibrary(
+            fixture.RootDirectory,
+            Durations()));
+
+        Assert.True(service.Start().Started);
+        var first = service.Snapshot();
+        var firstCorner = first.Items.Single(entry => entry.Name == "Alux").CornerLogoUrl;
+        Assert.NotNull(firstCorner);
+        var firstCornerId = firstCorner![firstCorner.LastIndexOf('/')..].TrimStart('/');
+        Assert.True(service.TryGetMedia(firstCornerId, out var cornerAsset));
+        Assert.Equal("image/png", cornerAsset.ContentType);
+        Assert.True(service.MarkCompleted(first.Generation));
+
+        Assert.True(service.Start().Started);
+        var second = service.Snapshot();
+        var secondCorner = second.Items.Single(entry => entry.Name == "Alux").CornerLogoUrl;
+
+        Assert.NotEqual(firstCorner, secondCorner);
     }
 
     [Fact]
@@ -182,5 +208,6 @@ public sealed class CommercialBreakServiceTests
         .With("c.mp4", 60)
         .With("d.mp4", 35)
         .With("late-addition.mp4", 20)
-        .With("network trailer (BCN).mp4", 25);
+        .With("network trailer (BCN).mp4", 25)
+        .With("Alux.mp4", 30);
 }

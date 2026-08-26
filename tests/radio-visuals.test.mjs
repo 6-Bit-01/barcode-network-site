@@ -794,7 +794,7 @@ test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a
   assert.match(project, /<TargetFramework>net8\.0-windows<\/TargetFramework>/);
   assert.match(project, /<SelfContained>true<\/SelfContained>/);
   assert.match(project, /<PublishSingleFile>true<\/PublishSingleFile>/);
-  assert.match(project, /<Version>1\.0\.12<\/Version>/);
+  assert.match(project, /<Version>1\.0\.13<\/Version>/);
   assert.match(project, /PackageReference Include="NAudio" Version="2\.3\.0"/);
   assert.match(capture, /GetDefaultAudioEndpoint\(DataFlow\.Render, Role\.Multimedia\)/, "capture must resolve the default Windows Speakers render endpoint");
   assert.match(capture, /new WasapiLoopbackCapture\(renderDevice\)/, "capture and endpoint-volume compensation must use the same Speakers endpoint");

@@ -24,6 +24,7 @@ class FakeElement {
   constructor(id) {
     this.id = id;
     this.hidden = true;
+    this.dataset = {};
     this.events = new Map();
     this.style = { setProperty() {}, removeProperty() {} };
     this.classList = { add() {}, remove() {}, toggle() {} };
@@ -60,22 +61,26 @@ const flushTasks = async (count = 8) => {
   }
 };
 
-test("TV frame keeps its native aspect, uses the complete source bezel, and remains above the commercial", () => {
-  assert.match(pageSource, /#background-video\s*\{[\s\S]*?object-fit:\s*cover;[\s\S]*?transform:\s*scale\(1\.13\);[\s\S]*?transform-origin:\s*left top;/);
+test("TV frame uses the exact 771x482 bezel geometry with no patch strips or corner gaps", () => {
+  assert.match(pageSource, /#background-video\s*\{[\s\S]*?object-fit:\s*cover;[\s\S]*?transform:\s*scale\(1\.18\);[\s\S]*?transform-origin:\s*left top;/);
   assert.doesNotMatch(pageSource, /object-fit:\s*fill;/);
-  assert.match(pageSource, /#tv-stage\s*\{[\s\S]*?top:\s*30\.6%;[\s\S]*?width:\s*104%;[\s\S]*?z-index:\s*2;/);
-  assert.match(pageSource, /#video-window\s*\{[\s\S]*?left:\s*14\.69%;[\s\S]*?top:\s*13\.06%;[\s\S]*?z-index:\s*1;/);
-  assert.match(pageSource, /#tv-overlay-video\s*\{[\s\S]*?height:\s*auto;[\s\S]*?object-fit:\s*contain;[\s\S]*?z-index:\s*2;[\s\S]*?clip-path:\s*inset\(0 7\.55% 0 7\.55%\);[\s\S]*?-webkit-mask:/);
+  assert.match(pageSource, /#tv-stage\s*\{[\s\S]*?top:\s*30\.6%;[\s\S]*?width:\s*88\.3%;[\s\S]*?aspect-ratio:\s*771 \/ 482;[\s\S]*?z-index:\s*2;/);
+  assert.match(pageSource, /#video-window\s*\{[\s\S]*?left:\s*6\.2257%;[\s\S]*?top:\s*9\.7510%;[\s\S]*?width:\s*87\.2892%;[\s\S]*?height:\s*74\.4813%;[\s\S]*?overflow:\s*hidden;[\s\S]*?border-radius:\s*2\.4% \/ 4\.5%;[\s\S]*?z-index:\s*1;/);
+  assert.match(pageSource, /#player\s*\{[\s\S]*?object-fit:\s*cover;[\s\S]*?transform:\s*scale\(1\.05\);[\s\S]*?z-index:\s*1;/);
+  assert.match(pageSource, /#tv-overlay-video\s*\{[\s\S]*?inset:\s*0;[\s\S]*?width:\s*100%;[\s\S]*?height:\s*100%;[\s\S]*?object-fit:\s*cover;[\s\S]*?z-index:\s*2;[\s\S]*?-webkit-mask:\s*url\(#tv-bezel-mask\) center \/ 100% 100% no-repeat;/);
+  assert.match(pageSource, /<mask id="tv-bezel-mask"[\s\S]*?<path fill="white" fill-rule="evenodd"/);
+  assert.doesNotMatch(pageSource, /clip-path:\s*inset|#tv-stage::before|#tv-stage::after|\.frame-patch|\.side-strip/);
   assert.doesNotMatch(pageSource, /#tv-stage::before|#tv-stage::after/);
-  assert.match(pageSource, /<div id="tv-stage">[\s\S]*?<video id="player"[\s\S]*?<video id="tv-overlay-video"/);
+  assert.match(pageSource, /<div id="tv-stage">[\s\S]*?<div id="video-window">[\s\S]*?<video id="player"[\s\S]*?<img id="corner-logo"[\s\S]*?<video id="tv-overlay-video"/);
   assert.doesNotMatch(playerScript, /player\.controls/);
   assert.doesNotMatch(pageSource, /body\.debug #tv-stage|body\.debug #video-window/);
 });
 
-test("logo stays enlarged while the complete TV and commercial window grow together", () => {
+test("BCN and BLVCKL!GHT logos are 25 percent larger while the TV remains at its approved size", () => {
   assert.match(pageSource, /#logo\s*\{[\s\S]*?top:\s*5\.4%;[\s\S]*?width:\s*96%;[\s\S]*?height:\s*26\.5%;/);
-  assert.match(pageSource, /#tv-stage\s*\{[\s\S]*?top:\s*30\.6%;[\s\S]*?width:\s*104%;/);
-  assert.match(pageSource, /#video-window\s*\{[\s\S]*?left:\s*14\.69%;[\s\S]*?top:\s*13\.06%;[\s\S]*?width:\s*70\.31%;[\s\S]*?height:\s*66\.11%;/);
+  assert.match(pageSource, /#logo\[data-brand="bcn"\], #logo\[data-brand="bl"\]\s*\{[\s\S]*?width:\s*120%;[\s\S]*?height:\s*33\.125%;/);
+  assert.match(pageSource, /#tv-stage\s*\{[\s\S]*?top:\s*30\.6%;[\s\S]*?width:\s*88\.3%;/);
+  assert.match(pageSource, /#corner-logo\s*\{[\s\S]*?right:\s*1\.8%;[\s\S]*?bottom:\s*2\.2%;[\s\S]*?width:\s*11\.5%;[\s\S]*?object-fit:\s*contain;[\s\S]*?z-index:\s*2;/);
 });
 
 test("TikTok Studio receives a reusable HTTPS source that redirects to the local-only player", () => {
@@ -96,6 +101,7 @@ test("Chrome autoplay denial holds the current commercial until one click instea
     ["background-video", new FakeElement("background-video")],
     ["tv-overlay-video", new FakeElement("tv-overlay-video")],
     ["player", new FakeElement("player")],
+    ["corner-logo", new FakeElement("corner-logo")],
     ["logo", new FakeElement("logo")],
     ["audio-gate", new FakeElement("audio-gate")],
     ["status", new FakeElement("status")],
@@ -159,7 +165,11 @@ test("Chrome autoplay denial holds the current commercial until one click instea
   new vm.Script(playerScript, { filename: "CommercialPlayerPage.js" }).runInContext(context);
   await flushTasks();
 
-  assert.equal(playerPlayCalls, 1, "the blocked START clip is attempted exactly once before the gate");
+  assert.equal(
+    playerPlayCalls,
+    1,
+    `the blocked START clip is attempted exactly once before the gate; status=${elements.get("status").textContent}; posts=${posts.join(",")}`,
+  );
   assert.equal(audioGate.hidden, false, "the preview displays its one-click audio gate");
   assert.match(elements.get("status").textContent, /WAITING FOR ONE CLICK TO ENABLE AUDIO/);
   assert.ok(posts.some((url) => url.includes("/clip-started?generation=42&index=0")));

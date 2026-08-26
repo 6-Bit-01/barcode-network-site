@@ -37,7 +37,10 @@ Commercials/
 └── Visuals/
     ├── ICON.png
     ├── Background/          # one looping 1080×1920 portrait MP4 or WEBM
-    ├── TV Overlay/          # one looping landscape TV-frame MP4 or WEBM
+    ├── TV Overlay/          # correct animated frame named TV.mp4 or TV.webm
+    ├── Corner Logos/
+    │   ├── CORNERLOGO1.png
+    │   └── CORNERLOGO2.png
     └── Logos/
         ├── BCN/             # both alternating BARCODE logo images
         ├── BL/              # BLVCKL!GHT logo image
@@ -55,6 +58,8 @@ Commercials/
 - `ICON.png` fades into that panel during START and END, then fades out before each clip finishes.
 - Tagged house content uses its matching logo in the same panel. Untagged sponsors and bumpers leave it clear.
 - The two images already in `Visuals/Logos/BCN` alternate in playback order and continue alternating across breaks.
+- BCN and BLVCKL!GHT upper-panel logos render 25% larger than the other panel visuals.
+- `CORNERLOGO1.png` and `CORNERLOGO2.png` alternate over the bottom-right Veo mark on the configured clips, inside the commercial screen and below the TV frame.
 - Fake commercials/trailers are dotted between real sponsors and are never stacked back-to-back.
 
 ### Eleven-minute sequence
@@ -75,7 +80,7 @@ END
 
 The three bumper ranges are randomized within approximately 20–30%, 45–55%, and 70–80% of the content run. Whole videos are always preserved; the player never trims a spot to hit a timestamp.
 
-Only `SPACE1.mp4`, `Alien.mp4`, and `May.mp4` may be omitted when doing so makes the full break closer to 11:00. No real sponsor is silently removed. An unreadable active file is skipped and logged. Missing START/END media, fewer than three readable files in `Fixed/Bumpers`, a missing visual video, `Visuals/ICON.png`, or a logo required by an active tag blocks the start with a clear error.
+Only `SPACE1.mp4`, `Alien.mp4`, and `May.mp4` may be omitted when doing so makes the full break closer to 11:00. No real sponsor is silently removed. An unreadable active file is skipped and logged. Missing START/END media, fewer than three readable files in `Fixed/Bumpers`, a missing visual video, `Visuals/ICON.png`, or a logo required by an active tag blocks the start with a clear error. If `Visuals/TV Overlay` contains multiple videos, the player uses the exact `TV.mp4`/`TV.webm`; without that exact name it blocks the break instead of choosing an arbitrary file.
 
 ### Composed local player
 
@@ -92,16 +97,17 @@ Add and size that Link source once, then leave it in the TikTok Studio scene for
 During a break:
 
 - The video in `Visuals/Background` fills the fixed 9:16 composition without being stretched.
-- The video in `Visuals/TV Overlay` keeps its own native landscape aspect ratio and is positioned as the TV shown in the reference composition. It is never expanded to the full portrait canvas.
-- The source video's complete original TV bezel is clipped at its true outer edges, so its own continuous side and lower-corner pixels remain intact while the surrounding source background stays outside the composition.
-- No generated fill strips, painted corner patches, or detached dark fragments are layered onto the frame.
-- The complete cropped TV and its commercial window are enlarged together by about eight percent while remaining centered in the same composition area.
+- The exact `TV.mp4`/`TV.webm` keeps the complete 771:482 reference bezel centered at its established outer size. No source-side strips are clipped away.
+- The screen aperture uses the measured reference-frame opening as one rounded mask, so the side rails and all four corners come from the same continuous animated frame.
+- No generated fill strips, painted corner patches, detached dark fragments, or debug outlines are layered onto the frame.
 - Every START, sponsor, fake commercial/trailer, bumper, and END clip plays inside the TV screen without changing the clip's aspect ratio.
+- Every commercial is overscanned by 5% inside the clipped aperture, preventing background pinholes at the rounded corners without crossing the frame.
 - The commercial is behind the TV layer. A fixed GPU mask removes the TV video's opaque screen area, so the bezel stays over the commercial and the opening behaves as transparent without per-frame CPU chroma-keying or re-exporting the TV video with alpha.
 - The upper frame is reserved for the current dynamic logo: `Visuals/ICON.png` for START/END and the tagged BCN/BL/R logo for matching house content.
 - Both Visuals videos are muted. Only the current sequence clip supplies audio.
 - The animated background is cleanly overscanned from its upper-left source edge so its embedded lower-right Veo mark remains outside the 9:16 output.
-- Only the next sequence clip is preloaded.
+- Sequence clips load directly from the frozen local snapshot when they are due; the player does not run a second full-file preload stream beside the current commercial.
+- Immutable one-hour media caching and silent handling of normal Chromium range cancellations prevent transition-time request and log floods.
 - The background and frame are paused and cleared when the break is idle or stopped.
 - The source returns to transparent idle after END.
 
@@ -115,7 +121,7 @@ The first release starts locally from the tray. It does not change the queue's s
 
 The bridge analyzes the program signal rather than the operator's Windows listening level. It reads the default Speakers endpoint level in decibels, removes that known attenuation from each loopback buffer, and places the reconstructed program at one fixed -9 dB internal analysis reference before calculating energy, bass, mids, treble, peak, flux, or beat.
 
-Version 1.0.4 introduced `fixed_reference_v1`. Version 1.0.7 restores the established `Fixed/Bumpers` and `Visuals` folder contract. Version 1.0.8 adds nonfatal Chrome autoplay recovery to the diagnostic preview and clarifies that the TikTok Studio URL is a permanent reusable source. Version 1.0.9 restores the TV's native aspect ratio, masks its screen above the commercial, and keeps diagnostic preview controls out of the composition. Version 1.0.10 nearly doubles the logo display and replaces the Studio-rejected HTTP loopback address with the permanent BARCODE HTTPS source. Version 1.0.11 enlarges the TV/commercial unit. Version 1.0.12 restores the complete original TV bezel without synthetic patches, removes diagnostic frame outlines, and crops the background's embedded corner mark outside the output.
+Version 1.0.4 introduced `fixed_reference_v1`. Version 1.0.7 restores the established `Fixed/Bumpers` and `Visuals` folder contract. Version 1.0.8 adds nonfatal Chrome autoplay recovery to the diagnostic preview and clarifies that the TikTok Studio URL is a permanent reusable source. Version 1.0.9 restores the TV's native aspect ratio, masks its screen above the commercial, and keeps diagnostic preview controls out of the composition. Version 1.0.10 nearly doubles the logo display and replaces the Studio-rejected HTTP loopback address with the permanent BARCODE HTTPS source. Version 1.0.11 enlarges the TV/commercial unit. Version 1.0.12 restores the complete original TV bezel without synthetic patches, removes diagnostic frame outlines, and crops the background's embedded corner mark outside the output. Version 1.0.13 locks the TV to an exact file, rebuilds the aperture from the complete 771×482 frame, adds alternating corner logos, enlarges BCN/BL by 25%, and removes transition-time preload and canceled-stream log churn.
 
 Muted or digitally silent output remains silent; the bridge never invents audio activity. If Windows briefly cannot provide the endpoint-volume reading during a device or driver transition, that frame is analyzed at neutral gain instead of interrupting capture.
 

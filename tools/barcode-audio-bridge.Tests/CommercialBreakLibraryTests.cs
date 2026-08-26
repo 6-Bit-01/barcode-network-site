@@ -5,54 +5,92 @@ namespace Barcode.AudioBridge.Tests;
 public sealed class CommercialBreakLibraryTests
 {
     [Fact]
-    public void ActiveFolderIsTheEligibilitySwitchAndInactiveFilesAreIgnored()
+    public void ActiveFolderControlsEligibilityAndParenthesesSeparateHouseContentFromSponsors()
     {
         using var fixture = new TemporaryCommercialLibrary();
         fixture.AddActiveSponsor("eligible-a.mp4");
-        fixture.AddActiveSponsor("eligible-b.MP4");
+        fixture.AddActiveSponsor("BARCODE trailer (BCN).MP4");
         fixture.AddInactiveSponsor("former-sponsor.mp4");
         TemporaryCommercialLibrary.AddFile(fixture.ActiveDirectory, "notes.txt");
-        var durations = new TestDurationReader()
-            .With("eligible-a.mp4", 30)
-            .With("eligible-b.MP4", 75);
 
-        var result = new CommercialBreakLibrary(fixture.RootDirectory, durations).Load();
+        var result = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
 
         Assert.True(result.Success, result.Message);
-        Assert.Equal(new[] { "eligible-a", "eligible-b" }, result.Sponsors.Select(sponsor => sponsor.Name).ToArray());
-        Assert.DoesNotContain(result.Sponsors, sponsor => sponsor.Name == "former-sponsor");
+        var sponsor = Assert.Single(result.Sponsors);
+        Assert.Equal("eligible-a", sponsor.Name);
+        var house = Assert.Single(result.Interstitials);
+        Assert.Equal(CommercialLogoBrand.Bcn, house.LogoBrand);
+        Assert.DoesNotContain(result.Sponsors, clip => clip.Name == "former-sponsor");
         Assert.NotNull(result.FixedClips);
+        Assert.NotNull(result.Visuals);
     }
 
     [Fact]
-    public void MissingFixedFileBlocksTheBreakWithTheExactMissingName()
+    public void KnownTagsMapToBrandsAndApprovedCutNamesRemainHouseContentWithoutParentheses()
     {
         using var fixture = new TemporaryCommercialLibrary();
-        File.Delete(Path.Combine(fixture.FixedDirectory, "breaker-2.mp4"));
+        fixture.AddActiveSponsor("real-sponsor.mp4");
+        fixture.AddActiveSponsor("one (BL).mp4");
+        fixture.AddActiveSponsor("two (R).mp4");
+        fixture.AddActiveSponsor("SPACE1.mp4");
+        fixture.AddActiveSponsor("Alien (BCN).mp4");
+        fixture.AddActiveSponsor("May.mp4");
+
+        var result = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
+
+        Assert.True(result.Success, result.Message);
+        Assert.Single(result.Sponsors);
+        Assert.Equal(5, result.Interstitials.Count);
+        Assert.Equal(CommercialLogoBrand.Bl, result.Interstitials.Single(clip => clip.Name == "one (BL)").LogoBrand);
+        Assert.Equal(CommercialLogoBrand.R, result.Interstitials.Single(clip => clip.Name == "two (R)").LogoBrand);
+        Assert.Equal(0, result.Interstitials.Single(clip => clip.Name == "SPACE1").OptionalCutPriority);
+        Assert.Equal(1, result.Interstitials.Single(clip => clip.Name == "Alien (BCN)").OptionalCutPriority);
+        Assert.Equal(2, result.Interstitials.Single(clip => clip.Name == "May").OptionalCutPriority);
+    }
+
+    [Fact]
+    public void MissingStartBlocksTheBreakWithTheExactName()
+    {
+        using var fixture = new TemporaryCommercialLibrary();
+        File.Delete(Path.Combine(fixture.FixedDirectory, "start.mp4"));
         fixture.AddActiveSponsor("sponsor.mp4");
 
         var result = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
 
         Assert.False(result.Success);
-        Assert.Contains("breaker-2.mp4", result.Message);
+        Assert.Contains("start.mp4", result.Message);
     }
 
     [Fact]
-    public void UnreadableFixedFileBlocksTheBreak()
+    public void FewerThanThreeBumpersBlocksTheBreak()
+    {
+        using var fixture = new TemporaryCommercialLibrary();
+        foreach (var path in Directory.EnumerateFiles(fixture.BumpersDirectory).Skip(2)) File.Delete(path);
+        fixture.AddActiveSponsor("sponsor.mp4");
+
+        var result = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
+
+        Assert.False(result.Success);
+        Assert.Contains("At least 3", result.Message);
+        Assert.Contains("Fixed\\Bumpers", result.Message);
+    }
+
+    [Fact]
+    public void UnreadableStartBlocksTheBreak()
     {
         using var fixture = new TemporaryCommercialLibrary();
         fixture.AddActiveSponsor("sponsor.mp4");
-        var durations = new TestDurationReader().Fail("intro.mp4");
+        var durations = new TestDurationReader().Fail("start.mp4");
 
         var result = new CommercialBreakLibrary(fixture.RootDirectory, durations).Load();
 
         Assert.False(result.Success);
-        Assert.Contains("intro.mp4", result.Message);
+        Assert.Contains("start.mp4", result.Message);
         Assert.Contains("fixture unreadable", result.Message);
     }
 
     [Fact]
-    public void UnreadableSponsorIsSkippedWithoutCrashingOtherEligibleFiles()
+    public void UnreadableActiveFileIsSkippedWithoutCrashingOtherEligibleFiles()
     {
         using var fixture = new TemporaryCommercialLibrary();
         fixture.AddActiveSponsor("good.mp4");
@@ -64,24 +102,32 @@ public sealed class CommercialBreakLibraryTests
         Assert.True(result.Success, result.Message);
         Assert.Single(result.Sponsors);
         Assert.Equal("good", result.Sponsors[0].Name);
-        var warning = Assert.Single(result.Warnings);
-        Assert.Contains("bad.mp4", warning);
+        Assert.Contains(result.Warnings, warning => warning.Contains("bad.mp4"));
     }
 
     [Fact]
-    public void NoReadableActiveSponsorFailsClearly()
+    public void TaggedClipRequiresItsLogoAndEveryBreakRequiresTheBackground()
     {
         using var fixture = new TemporaryCommercialLibrary();
-        fixture.AddInactiveSponsor("inactive.mp4");
+        fixture.AddActiveSponsor("real.mp4");
+        fixture.AddActiveSponsor("fake (BL).mp4");
+        File.Delete(Directory.EnumerateFiles(fixture.BlLogosDirectory).Single());
 
-        var result = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
+        var missingLogo = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
 
-        Assert.False(result.Success);
-        Assert.Contains("Sponsors\\Active", result.Message);
+        Assert.False(missingLogo.Success);
+        Assert.Contains("Visuals\\Logos\\BL", missingLogo.Message);
+
+        TemporaryCommercialLibrary.AddFile(fixture.BlLogosDirectory, "bl.png");
+        File.Delete(Directory.EnumerateFiles(fixture.BackgroundDirectory).Single());
+        var missingBackground = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
+
+        Assert.False(missingBackground.Success);
+        Assert.Contains("Visuals\\Background", missingBackground.Message);
     }
 
     [Fact]
-    public void EnsureLayoutCreatesTheDropInFolderStructureAndInstructions()
+    public void EnsureLayoutCreatesDropInFoldersAndCurrentInstructions()
     {
         using var fixture = new TemporaryCommercialLibrary(createFixed: false);
         Directory.Delete(fixture.RootDirectory, recursive: true);
@@ -89,11 +135,15 @@ public sealed class CommercialBreakLibraryTests
 
         library.EnsureLayout();
 
-        Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Fixed")));
+        Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Fixed", "Bumpers")));
         Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Sponsors", "Active")));
         Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Sponsors", "Inactive")));
+        Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Visuals", "Background")));
+        Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Visuals", "Logos", "BCN")));
         var instructions = Path.Combine(fixture.RootDirectory, "README.txt");
         Assert.True(File.Exists(instructions));
-        Assert.Contains("Start Commercial Break", File.ReadAllText(instructions));
+        var text = File.ReadAllText(instructions);
+        Assert.Contains("11:00", text);
+        Assert.Contains("(BCN)", text);
     }
 }

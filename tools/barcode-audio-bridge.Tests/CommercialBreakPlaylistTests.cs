@@ -5,97 +5,187 @@ namespace Barcode.AudioBridge.Tests;
 public sealed class CommercialBreakPlaylistTests
 {
     [Fact]
-    public void EverySponsorAppearsOnceBetweenTheFixedIntroBreakersAndEnd()
+    public void EverySponsorAppearsOnceBetweenStartThreeUniqueBumpersAndEnd()
     {
         var sponsors = Enumerable.Range(1, 8)
             .Select(index => Clip($"s{index}", 20 + index, CommercialClipKind.Sponsor))
             .ToArray();
 
-        var plan = CommercialBreakPlaylistBuilder.Build(Fixed(), sponsors, new Random(17));
+        var plan = CommercialBreakPlaylistBuilder.Build(Fixed(), sponsors, Array.Empty<CommercialClip>(), Visuals(), new Random(17));
 
-        Assert.Equal("intro", plan.Items[0].Id);
+        Assert.Equal("start", plan.Items[0].Id);
         Assert.Equal("end", plan.Items[^1].Id);
-        Assert.Equal(new[] { "b1", "b2", "b3" }, plan.Items
-            .Where(item => item.Kind == CommercialClipKind.Breaker)
-            .Select(item => item.Id)
-            .ToArray());
+        var bumpers = plan.Items.Where(item => item.Kind == CommercialClipKind.Bumper).ToArray();
+        Assert.Equal(3, bumpers.Length);
+        Assert.Equal(3, bumpers.Select(item => item.Id).Distinct().Count());
         Assert.Equal(
             sponsors.Select(sponsor => sponsor.Id).OrderBy(id => id),
-            plan.Items
-                .Where(item => item.Kind == CommercialClipKind.Sponsor)
-                .Select(item => item.Id)
-                .OrderBy(id => id));
-        Assert.Equal(sponsors.Length, plan.Items.Count(item => item.Kind == CommercialClipKind.Sponsor));
-        Assert.All(
-            plan.Items.Where(item => item.Kind == CommercialClipKind.Sponsor),
-            item => Assert.InRange(item.SponsorBlock ?? 0, 1, 4));
+            plan.Items.Where(item => item.Kind == CommercialClipKind.Sponsor).Select(item => item.Id).OrderBy(id => id));
+        Assert.Equal(4, plan.ContentBlockDurations.Count);
+        Assert.All(plan.ContentBlockDurations, duration => Assert.True(duration > TimeSpan.Zero));
     }
 
     [Fact]
-    public void UnevenSponsorLengthsAreBalancedByRuntimeInsteadOfCount()
+    public void FakeCommercialsAndTrailersAreAlwaysDottedBetweenRealSponsors()
     {
-        var durations = new[] { 90d, 75d, 60d, 45d, 40d, 30d, 30d, 20d };
-        var sponsors = durations
-            .Select((duration, index) => Clip($"s{index + 1}", duration, CommercialClipKind.Sponsor))
+        var sponsors = Enumerable.Range(1, 8)
+            .Select(index => Clip($"s{index}", 30, CommercialClipKind.Sponsor))
+            .ToArray();
+        var house = new[]
+        {
+            Clip("house-bcn", 25, CommercialClipKind.Interstitial, CommercialLogoBrand.Bcn),
+            Clip("house-bl", 25, CommercialClipKind.Interstitial, CommercialLogoBrand.Bl),
+            Clip("house-r", 25, CommercialClipKind.Interstitial, CommercialLogoBrand.R),
+        };
+
+        var plan = CommercialBreakPlaylistBuilder.Build(Fixed(), sponsors, house, Visuals(), new Random(21));
+        var content = plan.Items.Where(item => item.Kind is CommercialClipKind.Sponsor or CommercialClipKind.Interstitial).ToArray();
+
+        Assert.Equal(3, content.Count(item => item.Kind == CommercialClipKind.Interstitial));
+        for (var index = 0; index < content.Length; index += 1)
+        {
+            if (content[index].Kind != CommercialClipKind.Interstitial) continue;
+            Assert.True(index > 0 && index < content.Length - 1);
+            Assert.Equal(CommercialClipKind.Sponsor, content[index - 1].Kind);
+            Assert.Equal(CommercialClipKind.Sponsor, content[index + 1].Kind);
+        }
+    }
+
+    [Fact]
+    public void ElevenMinuteTargetCutsOnlyTheThreeOwnerApprovedHouseClips()
+    {
+        var sponsors = Enumerable.Range(1, 8)
+            .Select(index => Clip($"s{index}", 60, CommercialClipKind.Sponsor))
+            .ToArray();
+        var house = new[]
+        {
+            Clip("required", 60, CommercialClipKind.Interstitial, CommercialLogoBrand.Bcn),
+            Clip("SPACE1", 60, CommercialClipKind.Interstitial, optionalCutPriority: 0),
+            Clip("Alien", 60, CommercialClipKind.Interstitial, optionalCutPriority: 1),
+            Clip("May", 60, CommercialClipKind.Interstitial, optionalCutPriority: 2),
+        };
+
+        var plan = CommercialBreakPlaylistBuilder.Build(
+            Fixed(startSeconds: 15, bumperSeconds: 10, endSeconds: 15),
+            sponsors,
+            house,
+            Visuals(),
+            new Random(4));
+
+        Assert.Equal(TimeSpan.FromMinutes(11), plan.TotalDuration);
+        Assert.Equal(new[] { "SPACE1", "Alien" }, plan.OmittedInterstitials);
+        Assert.Contains(plan.Items, item => item.Name == "required");
+        Assert.Contains(plan.Items, item => item.Name == "May");
+        Assert.Equal(8, plan.SponsorCount);
+    }
+
+    [Fact]
+    public void BcnLogosAlternateInPlaybackOrderAndContinueFromSuppliedIndex()
+    {
+        var sponsors = Enumerable.Range(1, 7)
+            .Select(index => Clip($"s{index}", 30, CommercialClipKind.Sponsor))
+            .ToArray();
+        var house = Enumerable.Range(1, 4)
+            .Select(index => Clip($"bcn-{index}", 20, CommercialClipKind.Interstitial, CommercialLogoBrand.Bcn))
             .ToArray();
 
-        var plan = CommercialBreakPlaylistBuilder.Build(Fixed(), sponsors, new Random(4));
-        var shortest = plan.SponsorBlockDurations.Min(duration => duration.TotalSeconds);
-        var longest = plan.SponsorBlockDurations.Max(duration => duration.TotalSeconds);
+        var plan = CommercialBreakPlaylistBuilder.Build(Fixed(), sponsors, house, Visuals(), new Random(11), bcnLogoIndex: 1);
+        var logos = plan.Items
+            .Where(item => item.Kind == CommercialClipKind.Interstitial)
+            .Select(item => item.LogoAssetId)
+            .ToArray();
 
-        Assert.Equal(390, plan.SponsorDuration.TotalSeconds);
-        Assert.True(longest - shortest <= 15, $"block spread was {longest - shortest:F1} seconds");
-        Assert.Equal(4, plan.SponsorBlockDurations.Count);
+        Assert.Equal(new[] { "bcn-logo-2", "bcn-logo-1", "bcn-logo-2", "bcn-logo-1" }, logos);
+        Assert.Equal(1, plan.NextBcnLogoIndex);
     }
 
     [Fact]
-    public void BlockAndSponsorOrderChangesAcrossRandomSeedsWithoutChangingBalance()
+    public void ThreeBumpersLandInDistinctEarlyMiddleAndLateRanges()
+    {
+        var sponsors = Enumerable.Range(1, 20)
+            .Select(index => Clip($"s{index}", 30, CommercialClipKind.Sponsor))
+            .ToArray();
+
+        var plan = CommercialBreakPlaylistBuilder.Build(Fixed(), sponsors, Array.Empty<CommercialClip>(), Visuals(), new Random(7));
+        var totalContent = plan.ContentBlockDurations.Sum(duration => duration.TotalSeconds);
+        var first = plan.ContentBlockDurations[0].TotalSeconds / totalContent;
+        var second = plan.ContentBlockDurations.Take(2).Sum(duration => duration.TotalSeconds) / totalContent;
+        var third = plan.ContentBlockDurations.Take(3).Sum(duration => duration.TotalSeconds) / totalContent;
+
+        Assert.InRange(first, 0.15, 0.35);
+        Assert.InRange(second, 0.40, 0.60);
+        Assert.InRange(third, 0.65, 0.85);
+    }
+
+    [Fact]
+    public void RandomSeedsChangeSponsorAndBumperOrderWithoutChangingMembership()
     {
         var sponsors = Enumerable.Range(1, 12)
             .Select(index => Clip($"s{index:00}", 30, CommercialClipKind.Sponsor))
             .ToArray();
 
-        var first = CommercialBreakPlaylistBuilder.Build(Fixed(), sponsors, new Random(1));
-        var second = CommercialBreakPlaylistBuilder.Build(Fixed(), sponsors, new Random(2));
+        var first = CommercialBreakPlaylistBuilder.Build(Fixed(), sponsors, Array.Empty<CommercialClip>(), Visuals(), new Random(1));
+        var second = CommercialBreakPlaylistBuilder.Build(Fixed(), sponsors, Array.Empty<CommercialClip>(), Visuals(), new Random(2));
         var firstOrder = string.Join(',', first.Items.Where(item => item.Kind == CommercialClipKind.Sponsor).Select(item => item.Id));
         var secondOrder = string.Join(',', second.Items.Where(item => item.Kind == CommercialClipKind.Sponsor).Select(item => item.Id));
 
         Assert.NotEqual(firstOrder, secondOrder);
-        Assert.All(first.SponsorBlockDurations, duration => Assert.Equal(90, duration.TotalSeconds));
-        Assert.All(second.SponsorBlockDurations, duration => Assert.Equal(90, duration.TotalSeconds));
+        Assert.Equal(first.Items.Count, second.Items.Count);
+        Assert.Equal(first.SponsorCount, second.SponsorCount);
     }
 
     [Fact]
-    public void FewerThanFourSponsorsLeavesEmptyBlocksWithoutRepeatingAnyone()
+    public void TooManyRequiredHouseClipsFailsInsteadOfStackingThemTogether()
     {
-        var sponsors = new[]
-        {
-            Clip("s1", 30, CommercialClipKind.Sponsor),
-            Clip("s2", 45, CommercialClipKind.Sponsor),
-        };
+        var sponsors = Enumerable.Range(1, 3)
+            .Select(index => Clip($"s{index}", 30, CommercialClipKind.Sponsor))
+            .ToArray();
+        var house = Enumerable.Range(1, 3)
+            .Select(index => Clip($"house-{index}", 20, CommercialClipKind.Interstitial))
+            .ToArray();
 
-        var plan = CommercialBreakPlaylistBuilder.Build(Fixed(), sponsors, new Random(9));
+        var error = Assert.Throws<InvalidOperationException>(() =>
+            CommercialBreakPlaylistBuilder.Build(Fixed(), sponsors, house, Visuals(), new Random(3)));
 
-        Assert.Equal(2, plan.SponsorCount);
-        Assert.Equal(2, plan.Items.Count(item => item.Kind == CommercialClipKind.Sponsor));
-        Assert.Equal(2, plan.SponsorBlockDurations.Count(duration => duration == TimeSpan.Zero));
-        Assert.Equal(7, plan.Items.Count);
+        Assert.Contains("cannot be separated", error.Message);
     }
 
-    private static CommercialFixedClips Fixed() => new(
-        Clip("intro", 5, CommercialClipKind.Intro),
-        new[]
-        {
-            Clip("b1", 3, CommercialClipKind.Breaker),
-            Clip("b2", 3, CommercialClipKind.Breaker),
-            Clip("b3", 3, CommercialClipKind.Breaker),
-        },
-        Clip("end", 5, CommercialClipKind.End));
+    private static CommercialFixedClips Fixed(
+        double startSeconds = 5,
+        double bumperSeconds = 3,
+        double endSeconds = 5) => new(
+            Clip("start", startSeconds, CommercialClipKind.Start),
+            Enumerable.Range(1, 5)
+                .Select(index => Clip($"bumper-{index}", bumperSeconds, CommercialClipKind.Bumper))
+                .ToArray(),
+            Clip("end", endSeconds, CommercialClipKind.End));
 
-    private static CommercialClip Clip(string id, double seconds, CommercialClipKind kind) => new(
+    private static CommercialVisualAssets Visuals() => new(
+        Asset("background", "image/png"),
+        new Dictionary<CommercialLogoBrand, IReadOnlyList<CommercialVisualAsset>>
+        {
+            [CommercialLogoBrand.Bcn] = new[] { Asset("bcn-logo-1", "image/png"), Asset("bcn-logo-2", "image/png") },
+            [CommercialLogoBrand.Bl] = new[] { Asset("bl-logo", "image/png") },
+            [CommercialLogoBrand.R] = new[] { Asset("r-logo", "image/png") },
+        });
+
+    private static CommercialVisualAsset Asset(string id, string contentType) => new(
         id,
         id,
-        $"C:\\fixture\\{id}.mp4",
-        TimeSpan.FromSeconds(seconds),
-        kind);
+        $"C:\\fixture\\{id}.png",
+        contentType);
+
+    private static CommercialClip Clip(
+        string id,
+        double seconds,
+        CommercialClipKind kind,
+        CommercialLogoBrand? logoBrand = null,
+        int? optionalCutPriority = null) => new(
+            id,
+            id,
+            $"C:\\fixture\\{id}.mp4",
+            TimeSpan.FromSeconds(seconds),
+            kind,
+            logoBrand,
+            optionalCutPriority);
 }

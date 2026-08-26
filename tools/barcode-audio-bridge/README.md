@@ -32,38 +32,44 @@ Right-click the BARCODE tray icon and choose **Open commercial folder**. The hel
 ```text
 Commercials/
 ├── Fixed/
-│   ├── intro.mp4
-│   ├── breaker-1.mp4
-│   ├── breaker-2.mp4
-│   ├── breaker-3.mp4
-│   └── end.mp4
-└── Sponsors/
-    ├── Active/
-    └── Inactive/
+│   ├── start.mp4
+│   ├── end.mp4
+│   └── Bumpers/             # drop all five bumper MP4s here
+├── Sponsors/
+│   ├── Active/
+│   └── Inactive/
+└── Visuals/
+    ├── Background/          # one background image
+    └── Logos/
+        ├── BCN/             # both alternating BARCODE logos
+        ├── BL/              # BLVCKL!GHT logo
+        └── R/               # Rigged Sanchez logo
 ```
 
 Workflow:
 
-- Add a sponsor by dropping its `.mp4` into `Sponsors/Active`.
-- Temporarily remove it by moving it to `Sponsors/Inactive`.
+- Add any eligible video by dropping its `.mp4` into `Sponsors/Active`.
+- Temporarily remove any video by moving it to `Sponsors/Inactive`.
 - Replace or delete files whenever a break is not running.
 - Folder changes apply the next time **Start Commercial Break** is selected.
 
-At start, the helper scans the active folder, reads each video's runtime, balances total sponsor time across four blocks, randomizes the balanced order, and plays this sequence automatically:
+Files with parentheses are fake commercials/trailers rather than sponsors. `(BCN)`, `(BL)`, and `(R)` map to the BARCODE, BLVCKL!GHT, and Rigged Sanchez logos. The matching logo fades in above the video and fades out near the end of that clip; the two BCN images alternate in playback order and continue alternating across breaks.
+
+At start, the helper scans the active folder, reads every runtime, selects three of the five bumpers, and builds the sequence closest to the 11-minute target:
 
 ```text
-intro
-sponsor block 1
-breaker 1
-sponsor block 2
-breaker 2
-sponsor block 3
-breaker 3
-sponsor block 4
+start
+content block 1
+bumper (early range)
+content block 2
+bumper (middle range)
+content block 3
+bumper (late range)
+content block 4
 end
 ```
 
-Every readable active sponsor plays once. An unreadable sponsor is skipped and logged instead of crashing the break. A missing or unreadable fixed clip blocks start with a clear error.
+Every readable real sponsor plays once. Fake commercials/trailers are randomized between sponsors and are never placed consecutively. Only `SPACE1.mp4`, `Alien.mp4`, and `May.mp4` may be omitted when that produces a closer 11-minute result. An unreadable active file is skipped and logged; missing start/end media, fewer than three readable bumpers, a missing background, or a missing logo required by an active tag blocks start with a clear error.
 
 ### TikTok Studio source
 
@@ -73,7 +79,7 @@ Create one permanent Link/browser source using:
 http://127.0.0.1:43120/commercials
 ```
 
-The page is transparent and idle until the tray action queues a break. It then plays one local file at a time, preloads only the next file, and returns to transparent idle after the end sequence. The source supports normal browser byte-range requests, so it does not load the full sponsor library into memory.
+The page is transparent and idle until the tray action queues a break. During playback it shows the local background, video window, and any clip-tagged logo; it preloads only the next video and returns to transparent idle after the end sequence. The source supports normal browser byte-range requests, so it does not load the full library into memory.
 
 Use **Copy commercial player source URL** for setup or **Open commercial player preview** for a visible local diagnostic view. Do not keep the preview browser open during a broadcast if the TikTok Studio source is already active, because both pages can play the same local break.
 

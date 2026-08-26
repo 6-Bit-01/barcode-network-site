@@ -104,14 +104,15 @@ internal sealed class BridgeApplicationContext : ApplicationContext
             return;
         }
 
-        var blockTimes = string.Join(" / ", result.SponsorBlockDurations.Select(FormatDuration));
+        var blockTimes = string.Join(" / ", result.ContentBlockDurations.Select(FormatDuration));
         var warningSuffix = result.Warnings.Count == 0
             ? string.Empty
-            : $" · {result.Warnings.Count} unreadable file{(result.Warnings.Count == 1 ? string.Empty : "s")} skipped";
+            : $" · {result.Warnings.Count} note{(result.Warnings.Count == 1 ? string.Empty : "s")}";
         _notifyIcon.ShowBalloonTip(
             4_000,
             "Commercial break queued",
-            $"{result.SponsorCount} sponsor{(result.SponsorCount == 1 ? string.Empty : "s")} · blocks {blockTimes}{warningSuffix}",
+            $"{result.SponsorCount} sponsor{(result.SponsorCount == 1 ? string.Empty : "s")} + " +
+            $"{result.InterstitialCount} house · {FormatDuration(result.TotalDuration)} total · blocks {blockTimes}{warningSuffix}",
             result.Warnings.Count == 0 ? ToolTipIcon.Info : ToolTipIcon.Warning);
     }
 

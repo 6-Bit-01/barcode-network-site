@@ -20,15 +20,15 @@ public sealed class CommercialBreakServiceTests
         Assert.True(first.Started, first.Message);
         Assert.False(second.Started);
         Assert.Equal("queued", snapshot.Status);
-        Assert.Equal(3, snapshot.SponsorCount);
-        Assert.Equal(8, snapshot.Items.Count);
+        Assert.Equal(4, snapshot.SponsorCount);
+        Assert.Equal(9, snapshot.Items.Count);
         Assert.DoesNotContain(snapshot.Items, item => item.Name == "late-addition");
         Assert.False(service.CanStart);
         Assert.True(service.CanStop);
     }
 
     [Fact]
-    public void PlayerProgressAndCompletionAreGenerationFenced()
+    public void PlayerProgressAndCompletionAreGenerationAndDirectionFenced()
     {
         using var fixture = CreateReadyFixture();
         var service = new CommercialBreakService(new CommercialBreakLibrary(
@@ -39,6 +39,7 @@ public sealed class CommercialBreakServiceTests
 
         Assert.False(service.MarkClipStarted(queued.Generation + 1, 0));
         Assert.True(service.MarkClipStarted(queued.Generation, 2));
+        Assert.False(service.MarkClipStarted(queued.Generation, 1));
         var playing = service.Snapshot();
         Assert.Equal("playing", playing.Status);
         Assert.Equal(2, playing.CurrentIndex);
@@ -85,18 +86,48 @@ public sealed class CommercialBreakServiceTests
     }
 
     [Fact]
-    public void MediaLookupOnlyServesFilesFromTheFrozenCurrentPlan()
+    public void MediaLookupServesOnlyFrozenPlanVideosBackgroundAndSelectedLogos()
     {
         using var fixture = CreateReadyFixture();
+        fixture.AddActiveSponsor("network trailer (BCN).mp4");
         var service = new CommercialBreakService(new CommercialBreakLibrary(
             fixture.RootDirectory,
             Durations()));
         Assert.True(service.Start().Started);
-        var item = service.Snapshot().Items[0];
+        var snapshot = service.Snapshot();
+        var item = snapshot.Items[0];
+        var tagged = snapshot.Items.Single(entry => entry.Name == "network trailer (BCN)");
 
-        Assert.True(service.TryGetMediaPath(item.Id, out var path));
-        Assert.True(File.Exists(path));
-        Assert.False(service.TryGetMediaPath("not-a-current-media-id", out _));
+        Assert.True(service.TryGetMedia(item.Id, out var video));
+        Assert.Equal("video/mp4", video.ContentType);
+        var backgroundId = snapshot.BackgroundUrl![snapshot.BackgroundUrl.LastIndexOf('/')..].TrimStart('/');
+        Assert.True(service.TryGetMedia(backgroundId, out var background));
+        Assert.Equal("image/png", background.ContentType);
+        var logoId = tagged.LogoUrl![tagged.LogoUrl.LastIndexOf('/')..].TrimStart('/');
+        Assert.True(service.TryGetMedia(logoId, out var logo));
+        Assert.Equal("image/png", logo.ContentType);
+        Assert.False(service.TryGetMedia("not-a-current-media-id", out _));
+    }
+
+    [Fact]
+    public void BcnLogoAlternationContinuesAcrossBreaks()
+    {
+        using var fixture = CreateReadyFixture();
+        fixture.AddActiveSponsor("network trailer (BCN).mp4");
+        var service = new CommercialBreakService(new CommercialBreakLibrary(
+            fixture.RootDirectory,
+            Durations()));
+
+        Assert.True(service.Start().Started);
+        var first = service.Snapshot();
+        var firstLogo = first.Items.Single(entry => entry.Name == "network trailer (BCN)").LogoUrl;
+        Assert.True(service.MarkCompleted(first.Generation));
+
+        Assert.True(service.Start().Started);
+        var second = service.Snapshot();
+        var secondLogo = second.Items.Single(entry => entry.Name == "network trailer (BCN)").LogoUrl;
+
+        Assert.NotEqual(firstLogo, secondLogo);
     }
 
     private static TemporaryCommercialLibrary CreateReadyFixture()
@@ -105,6 +136,7 @@ public sealed class CommercialBreakServiceTests
         fixture.AddActiveSponsor("a.mp4");
         fixture.AddActiveSponsor("b.mp4");
         fixture.AddActiveSponsor("c.mp4");
+        fixture.AddActiveSponsor("d.mp4");
         return fixture;
     }
 
@@ -112,5 +144,7 @@ public sealed class CommercialBreakServiceTests
         .With("a.mp4", 30)
         .With("b.mp4", 45)
         .With("c.mp4", 60)
-        .With("late-addition.mp4", 20);
+        .With("d.mp4", 35)
+        .With("late-addition.mp4", 20)
+        .With("network trailer (BCN).mp4", 25);
 }

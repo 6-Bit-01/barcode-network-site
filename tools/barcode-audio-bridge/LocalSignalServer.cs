@@ -146,7 +146,7 @@ internal sealed class LocalSignalServer : IDisposable
                 {
                     var securityHeaders = new Dictionary<string, string>
                     {
-                        ["Content-Security-Policy"] = "default-src 'self'; connect-src 'self'; media-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'none'; object-src 'none'; base-uri 'none'",
+                        ["Content-Security-Policy"] = "default-src 'self'; connect-src 'self'; media-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self'; object-src 'none'; base-uri 'none'",
                         ["X-Content-Type-Options"] = "nosniff",
                     };
                     await WriteTextResponse(
@@ -172,13 +172,20 @@ internal sealed class LocalSignalServer : IDisposable
                     && method is "GET" or "HEAD")
                 {
                     var id = path[mediaPrefix.Length..];
-                    if (id.Length is < 8 or > 64 || !_commercials.TryGetMediaPath(id, out var filePath))
+                    if (id.Length is < 8 or > 64 || !_commercials.TryGetMedia(id, out var media))
                     {
                         await WriteTextResponse(stream, 404, "text/plain", "Not Found", origin, cancellationToken);
                         return;
                     }
                     headers.TryGetValue("Range", out var range);
-                    await WriteFileResponse(stream, filePath, range, method == "HEAD", origin, cancellationToken);
+                    await WriteFileResponse(
+                        stream,
+                        media.FilePath,
+                        media.ContentType,
+                        range,
+                        method == "HEAD",
+                        origin,
+                        cancellationToken);
                     return;
                 }
 
@@ -296,6 +303,7 @@ internal sealed class LocalSignalServer : IDisposable
     private static async Task WriteFileResponse(
         NetworkStream stream,
         string filePath,
+        string contentType,
         string? rangeHeader,
         bool headOnly,
         string? origin,
@@ -341,7 +349,7 @@ internal sealed class LocalSignalServer : IDisposable
         await WriteHeader(
             stream,
             statusCode,
-            "video/mp4",
+            contentType,
             selection.Length,
             origin,
             "private, max-age=60",

@@ -14,8 +14,39 @@ internal static class CommercialPlayerPage
     * { box-sizing: border-box; }
     html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; }
     body { font-family: Consolas, "Courier New", monospace; }
-    video { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; background: transparent; }
-    video[hidden] { display: none; }
+    #background {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: 0;
+    }
+    #video-window {
+      position: fixed;
+      inset: 17% 4% 4%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      z-index: 1;
+    }
+    video { width: 100%; height: 100%; object-fit: contain; background: transparent; }
+    #logo {
+      position: fixed;
+      top: 2.5%;
+      left: 50%;
+      width: min(52%, 760px);
+      height: 12%;
+      object-fit: contain;
+      opacity: 0;
+      transform: translate(-50%, -8px) scale(.985);
+      transition: opacity 1800ms ease, transform 1800ms ease;
+      z-index: 2;
+      pointer-events: none;
+    }
+    #logo.visible { opacity: 1; transform: translate(-50%, 0) scale(1); }
+    #background[hidden], #video-window[hidden], #logo[hidden] { display: none; }
     #status {
       display: none;
       position: fixed;
@@ -29,20 +60,27 @@ internal static class CommercialPlayerPage
       font-size: 14px;
       line-height: 1.35;
       white-space: pre-wrap;
-      z-index: 2;
+      z-index: 3;
     }
     body.debug #status { display: block; }
   </style>
 </head>
 <body>
-  <video id="player" preload="auto" autoplay playsinline disablepictureinpicture hidden></video>
+  <img id="background" alt="" hidden>
+  <div id="video-window" hidden>
+    <video id="player" preload="auto" autoplay playsinline disablepictureinpicture></video>
+  </div>
+  <img id="logo" alt="" hidden>
   <div id="status">LOCAL COMMERCIAL PLAYER READY</div>
   <script>
     const query = new URLSearchParams(location.search);
     const debug = query.get('debug') === '1';
     document.body.classList.toggle('debug', debug);
 
+    const background = document.getElementById('background');
+    const videoWindow = document.getElementById('video-window');
     const player = document.getElementById('player');
+    const logo = document.getElementById('logo');
     const statusBox = document.getElementById('status');
     if (debug) player.controls = true;
 
@@ -50,6 +88,7 @@ internal static class CommercialPlayerPage
     let runToken = 0;
     let running = false;
     let preloadPlayer = null;
+    let logoTimers = [];
 
     function showStatus(message) {
       statusBox.textContent = message;
@@ -67,13 +106,24 @@ internal static class CommercialPlayerPage
       preloadPlayer = null;
     }
 
+    function clearLogo() {
+      for (const timer of logoTimers) clearTimeout(timer);
+      logoTimers = [];
+      logo.classList.remove('visible');
+      logo.hidden = true;
+      logo.removeAttribute('src');
+    }
+
     function clearPlayer() {
       runToken += 1;
       running = false;
       player.pause();
       player.removeAttribute('src');
       player.load();
-      player.hidden = true;
+      videoWindow.hidden = true;
+      background.hidden = true;
+      background.removeAttribute('src');
+      clearLogo();
       releasePreload();
     }
 
@@ -84,6 +134,20 @@ internal static class CommercialPlayerPage
       preloadPlayer.preload = 'auto';
       preloadPlayer.src = item.url;
       preloadPlayer.load();
+    }
+
+    function showLogo(item, token) {
+      clearLogo();
+      if (!item.logoUrl || token !== runToken) return;
+      logo.src = item.logoUrl;
+      logo.hidden = false;
+      logoTimers.push(setTimeout(() => {
+        if (token === runToken) logo.classList.add('visible');
+      }, 180));
+      const fadeAt = Math.max(2000, (item.durationSeconds * 1000) - 2200);
+      logoTimers.push(setTimeout(() => {
+        if (token === runToken) logo.classList.remove('visible');
+      }, fadeAt));
     }
 
     function playItem(item, nextItem, token) {
@@ -99,23 +163,28 @@ internal static class CommercialPlayerPage
         };
         const onEnded = () => {
           cleanup();
+          clearLogo();
           resolve();
         };
         const onError = () => {
           cleanup();
+          clearLogo();
           reject(new Error(player.error?.message || `could not play ${item.name}`));
         };
 
         player.addEventListener('ended', onEnded, { once: true });
         player.addEventListener('error', onError, { once: true });
         player.src = item.url;
-        player.hidden = false;
+        videoWindow.hidden = false;
         player.load();
         preload(nextItem);
-        player.play().catch(error => {
-          cleanup();
-          reject(error);
-        });
+        player.play()
+          .then(() => showLogo(item, token))
+          .catch(error => {
+            cleanup();
+            clearLogo();
+            reject(error);
+          });
       });
     }
 
@@ -126,7 +195,9 @@ internal static class CommercialPlayerPage
       const startIndex = state.status === 'playing'
         ? Math.max(0, Math.min(state.currentIndex, state.items.length - 1))
         : 0;
-      showStatus(`BREAK ${state.generation} · ${state.sponsorCount} SPONSORS · STARTING`);
+      background.src = state.backgroundUrl;
+      background.hidden = false;
+      showStatus(`BREAK ${state.generation} · ${state.sponsorCount} SPONSORS · ${state.interstitialCount} HOUSE · STARTING`);
 
       try {
         for (let index = startIndex; index < state.items.length; index += 1) {
@@ -157,6 +228,7 @@ internal static class CommercialPlayerPage
         const state = await response.json();
         if ((state.status === 'queued' || state.status === 'playing')
             && state.items.length > 0
+            && state.backgroundUrl
             && (!running || state.generation !== activeGeneration)) {
           clearPlayer();
           void runBreak(state);

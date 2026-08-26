@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using NAudio.Wave;
 
 namespace Barcode.AudioBridge;
@@ -24,6 +25,8 @@ internal sealed record CommercialBreakLibraryResult(
     string Message,
     CommercialFixedClips? FixedClips,
     IReadOnlyList<CommercialClip> Sponsors,
+    IReadOnlyList<CommercialClip> Interstitials,
+    CommercialVisualAssets? Visuals,
     IReadOnlyList<string> Warnings);
 
 internal static class CommercialBreakPaths
@@ -50,42 +53,64 @@ internal static class CommercialBreakPaths
 
 internal sealed class CommercialBreakLibrary
 {
-    private static readonly string[] RequiredFixedNames =
+    private static readonly Regex ParentheticalPattern = new(@"\((?<tag>[^()]*)\)", RegexOptions.Compiled);
+    private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        "intro.mp4",
-        "breaker-1.mp4",
-        "breaker-2.mp4",
-        "breaker-3.mp4",
-        "end.mp4",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp",
     };
+    private static readonly IReadOnlyDictionary<string, int> OptionalCutPriorities =
+        new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["SPACE1"] = 0,
+            ["Alien"] = 1,
+            ["May"] = 2,
+        };
 
     private const string Instructions = """
 BARCODE LOCAL COMMERCIAL PLAYER
 
-FIXED FILES
-Put these exact MP4 file names in the Fixed folder:
-  intro.mp4
-  breaker-1.mp4
-  breaker-2.mp4
-  breaker-3.mp4
+FIXED VIDEOS
+Put these files in Fixed:
+  start.mp4
   end.mp4
 
-SPONSORS
-Drop every currently eligible sponsor MP4 into Sponsors\Active.
-Move a sponsor into Sponsors\Inactive to remove it from the next break without deleting it.
+Put all five bumper MP4s in Fixed\Bumpers. The player selects three per break
+and places them in separate early, middle, and late timing ranges.
+
+ACTIVE CONTENT
+Put every video eligible for the next break in Sponsors\Active.
+Move any file to Sponsors\Inactive to remove it from the next break.
+
+Files with parentheses are treated as fake commercials/trailers, not sponsors.
+Use these tags anywhere in the file name to show a logo during that clip:
+  (BCN) = BARCODE
+  (BL)  = BLVCKL!GHT
+  (R)   = Rigged Sanchez
+
+SPACE1.mp4, Alien.mp4, and May.mp4 are also treated as house content and are
+the only clips the player may omit when that gets the full break closer to 11:00.
+Every real active sponsor always plays once. House clips are dotted between
+sponsors and never placed back-to-back.
+
+VISUALS
+Put one background image in Visuals\Background.
+Put the two alternating BARCODE logos in Visuals\Logos\BCN.
+Put the BLVCKL!GHT logo in Visuals\Logos\BL.
+Put the Rigged Sanchez logo in Visuals\Logos\R.
+PNG, JPG, JPEG, and WEBP images are supported.
 
 PLAYBACK
 Right-click the BARCODE Audio Bridge tray icon and choose Start Commercial Break.
-The helper scans the folders at that moment, reads each active sponsor's duration,
-balances the sponsors into four similarly timed blocks around the three breakers,
-randomizes the balanced sequence, and plays intro through end automatically.
+The entire plan is frozen at start, so folder changes apply only to the next break.
 
 PLAYER SOURCE
 Use this permanent local source in TikTok Studio:
   http://127.0.0.1:43120/commercials
 
-Recommended format: H.264 video + AAC audio in an .mp4 container.
-Folder changes apply to the next break and never rewrite a break already running.
+Recommended video format: H.264 video + AAC audio in an .mp4 container.
 """;
 
     private readonly string _rootDirectory;
@@ -104,16 +129,25 @@ Folder changes apply to the next break and never rewrite a break already running
         new MediaFoundationCommercialDurationReader());
 
     private string FixedDirectory => Path.Combine(_rootDirectory, "Fixed");
+    private string BumpersDirectory => Path.Combine(FixedDirectory, "Bumpers");
     private string ActiveSponsorsDirectory => Path.Combine(_rootDirectory, "Sponsors", "Active");
     private string InactiveSponsorsDirectory => Path.Combine(_rootDirectory, "Sponsors", "Inactive");
+    private string BackgroundDirectory => Path.Combine(_rootDirectory, "Visuals", "Background");
+    private string LogosDirectory => Path.Combine(_rootDirectory, "Visuals", "Logos");
     private string InstructionsPath => Path.Combine(_rootDirectory, "README.txt");
 
     public void EnsureLayout()
     {
         Directory.CreateDirectory(FixedDirectory);
+        Directory.CreateDirectory(BumpersDirectory);
         Directory.CreateDirectory(ActiveSponsorsDirectory);
         Directory.CreateDirectory(InactiveSponsorsDirectory);
-        if (!File.Exists(InstructionsPath))
+        Directory.CreateDirectory(BackgroundDirectory);
+        foreach (var folder in new[] { "BCN", "BL", "R" })
+        {
+            Directory.CreateDirectory(Path.Combine(LogosDirectory, folder));
+        }
+        if (!File.Exists(InstructionsPath) || File.ReadAllText(InstructionsPath) != Instructions)
         {
             File.WriteAllText(InstructionsPath, Instructions);
         }
@@ -122,82 +156,141 @@ Folder changes apply to the next break and never rewrite a break already running
     public CommercialBreakLibraryResult Load()
     {
         EnsureLayout();
+        var warnings = new List<string>();
 
-        var missing = RequiredFixedNames
-            .Where(name => !File.Exists(Path.Combine(FixedDirectory, name)))
+        var startPath = Path.Combine(FixedDirectory, "start.mp4");
+        var endPath = Path.Combine(FixedDirectory, "end.mp4");
+        var missing = new[] { startPath, endPath }
+            .Where(path => !File.Exists(path))
+            .Select(path => Path.GetFileName(path))
             .ToArray();
         if (missing.Length > 0)
         {
-            return new CommercialBreakLibraryResult(
-                false,
-                $"Missing fixed commercial files: {string.Join(", ", missing)}",
-                null,
-                Array.Empty<CommercialClip>(),
-                Array.Empty<string>());
+            return Failure($"Missing fixed commercial files: {string.Join(", ", missing)}", warnings);
         }
 
-        var fixedClips = new List<CommercialClip>();
-        foreach (var name in RequiredFixedNames)
+        var start = TryCreateClip(startPath, CommercialClipKind.Start);
+        if (start.Clip is null) return Failure($"Fixed commercial file could not be read: start.mp4. {start.Error}", warnings);
+        var end = TryCreateClip(endPath, CommercialClipKind.End);
+        if (end.Clip is null) return Failure($"Fixed commercial file could not be read: end.mp4. {end.Error}", warnings);
+
+        var bumperPaths = EnumerateMp4(BumpersDirectory).ToArray();
+        if (bumperPaths.Length < CommercialBreakPlaylistBuilder.BumperCount)
         {
-            var path = Path.Combine(FixedDirectory, name);
-            var kind = name switch
+            return Failure(
+                $"At least {CommercialBreakPlaylistBuilder.BumperCount} MP4 bumpers are required in Fixed\\Bumpers; found {bumperPaths.Length}.",
+                warnings);
+        }
+
+        var bumpers = new List<CommercialClip>();
+        foreach (var path in bumperPaths)
+        {
+            var result = TryCreateClip(path, CommercialClipKind.Bumper);
+            if (result.Clip is null)
             {
-                "intro.mp4" => CommercialClipKind.Intro,
-                "end.mp4" => CommercialClipKind.End,
-                _ => CommercialClipKind.Breaker,
-            };
-            var clipResult = TryCreateClip(path, kind);
-            if (clipResult.Clip is null)
-            {
-                return new CommercialBreakLibraryResult(
-                    false,
-                    $"Fixed commercial file could not be read: {name}. {clipResult.Error}",
-                    null,
-                    Array.Empty<CommercialClip>(),
-                    Array.Empty<string>());
+                warnings.Add($"{Path.GetFileName(path)} bumper was skipped: {result.Error}");
+                continue;
             }
-            fixedClips.Add(clipResult.Clip);
+            bumpers.Add(result.Clip);
+        }
+        if (bumpers.Count < CommercialBreakPlaylistBuilder.BumperCount)
+        {
+            return Failure(
+                $"At least {CommercialBreakPlaylistBuilder.BumperCount} readable bumpers are required; found {bumpers.Count}.",
+                warnings);
+        }
+        if (bumpers.Count != 5)
+        {
+            warnings.Add($"Expected five available bumpers but found {bumpers.Count}; three will still be selected.");
         }
 
         var sponsors = new List<CommercialClip>();
-        var warnings = new List<string>();
-        foreach (var path in Directory
-            .EnumerateFiles(ActiveSponsorsDirectory)
-            .Where(path => string.Equals(Path.GetExtension(path), ".mp4", StringComparison.OrdinalIgnoreCase))
-            .OrderBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase))
+        var interstitials = new List<CommercialClip>();
+        foreach (var path in EnumerateMp4(ActiveSponsorsDirectory))
         {
-            var clipResult = TryCreateClip(path, CommercialClipKind.Sponsor);
-            if (clipResult.Clip is null)
+            var fileName = Path.GetFileNameWithoutExtension(path);
+            var optionalCutPriority = GetOptionalCutPriority(fileName);
+            var isInterstitial = ParentheticalPattern.IsMatch(fileName) || optionalCutPriority.HasValue;
+            var logoBrand = isInterstitial ? GetLogoBrand(fileName) : null;
+            var result = TryCreateClip(
+                path,
+                isInterstitial ? CommercialClipKind.Interstitial : CommercialClipKind.Sponsor,
+                logoBrand,
+                optionalCutPriority);
+            if (result.Clip is null)
             {
-                warnings.Add($"{Path.GetFileName(path)} was skipped: {clipResult.Error}");
+                warnings.Add($"{Path.GetFileName(path)} was skipped: {result.Error}");
                 continue;
             }
-            sponsors.Add(clipResult.Clip);
+            if (isInterstitial) interstitials.Add(result.Clip);
+            else sponsors.Add(result.Clip);
         }
 
         if (sponsors.Count == 0)
         {
-            return new CommercialBreakLibraryResult(
-                false,
-                "No readable MP4 sponsor files are in Sponsors\\Active.",
-                null,
-                Array.Empty<CommercialClip>(),
-                warnings);
+            return Failure("No readable real sponsor MP4 files are in Sponsors\\Active.", warnings);
         }
 
-        var fixedSet = new CommercialFixedClips(
-            fixedClips[0],
-            fixedClips.Skip(1).Take(3).ToArray(),
-            fixedClips[4]);
+        var backgroundFiles = EnumerateImages(BackgroundDirectory).ToArray();
+        if (backgroundFiles.Length == 0)
+        {
+            return Failure("No background image is in Visuals\\Background.", warnings);
+        }
+        if (backgroundFiles.Length > 1)
+        {
+            warnings.Add($"Multiple background images found; using {Path.GetFileName(backgroundFiles[0])}.");
+        }
+        var background = CreateVisualAsset(backgroundFiles[0]);
+
+        var logos = new Dictionary<CommercialLogoBrand, IReadOnlyList<CommercialVisualAsset>>();
+        foreach (var brand in Enum.GetValues<CommercialLogoBrand>())
+        {
+            var assets = EnumerateImages(Path.Combine(LogosDirectory, LogoFolder(brand)))
+                .Select(CreateVisualAsset)
+                .ToArray();
+            logos[brand] = assets;
+        }
+
+        var activeBrands = interstitials.Where(clip => clip.LogoBrand.HasValue).Select(clip => clip.LogoBrand!.Value).Distinct();
+        foreach (var brand in activeBrands)
+        {
+            var requiredCount = brand == CommercialLogoBrand.Bcn ? 2 : 1;
+            if (logos[brand].Count < requiredCount)
+            {
+                return Failure(
+                    $"{requiredCount} {LogoFolder(brand)} logo image{(requiredCount == 1 ? string.Empty : "s")} " +
+                    $"required in Visuals\\Logos\\{LogoFolder(brand)} for active ({LogoFolder(brand)}) clips.",
+                    warnings);
+            }
+        }
+
+        var fixedClips = new CommercialFixedClips(start.Clip!, bumpers, end.Clip!);
+        var visuals = new CommercialVisualAssets(background, logos);
         return new CommercialBreakLibraryResult(
             true,
-            $"Loaded {sponsors.Count} active sponsor{(sponsors.Count == 1 ? string.Empty : "s")}.",
-            fixedSet,
+            $"Loaded {sponsors.Count} sponsor{(sponsors.Count == 1 ? string.Empty : "s")} and " +
+            $"{interstitials.Count} fake commercial/trailer clip{(interstitials.Count == 1 ? string.Empty : "s")}.",
+            fixedClips,
             sponsors,
+            interstitials,
+            visuals,
             warnings);
     }
 
-    private (CommercialClip? Clip, string? Error) TryCreateClip(string path, CommercialClipKind kind)
+    private CommercialBreakLibraryResult Failure(string message, IReadOnlyList<string> warnings) => new(
+        false,
+        message,
+        null,
+        Array.Empty<CommercialClip>(),
+        Array.Empty<CommercialClip>(),
+        null,
+        warnings.ToArray());
+
+    private (CommercialClip? Clip, string? Error) TryCreateClip(
+        string path,
+        CommercialClipKind kind,
+        CommercialLogoBrand? logoBrand = null,
+        int? optionalCutPriority = null)
     {
         try
         {
@@ -212,13 +305,63 @@ Folder changes apply to the next break and never rewrite a break already running
                 Path.GetFileNameWithoutExtension(path),
                 Path.GetFullPath(path),
                 duration,
-                kind), null);
+                kind,
+                logoBrand,
+                optionalCutPriority), null);
         }
         catch (Exception error)
         {
             return (null, error.Message);
         }
     }
+
+    private static CommercialVisualAsset CreateVisualAsset(string path) => new(
+        BuildMediaId(path),
+        Path.GetFileNameWithoutExtension(path),
+        Path.GetFullPath(path),
+        Path.GetExtension(path).ToLowerInvariant() switch
+        {
+            ".png" => "image/png",
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".webp" => "image/webp",
+            _ => "application/octet-stream",
+        });
+
+    private static CommercialLogoBrand? GetLogoBrand(string fileName)
+    {
+        foreach (Match match in ParentheticalPattern.Matches(fileName))
+        {
+            var tag = match.Groups["tag"].Value.Trim();
+            if (tag.Equals("BCN", StringComparison.OrdinalIgnoreCase)) return CommercialLogoBrand.Bcn;
+            if (tag.Equals("BL", StringComparison.OrdinalIgnoreCase)) return CommercialLogoBrand.Bl;
+            if (tag.Equals("R", StringComparison.OrdinalIgnoreCase)) return CommercialLogoBrand.R;
+        }
+        return null;
+    }
+
+    private static int? GetOptionalCutPriority(string fileName)
+    {
+        var untaggedName = ParentheticalPattern.Replace(fileName, string.Empty).Trim(' ', '-', '_');
+        return OptionalCutPriorities.TryGetValue(untaggedName, out var priority) ? priority : null;
+    }
+
+    private static string LogoFolder(CommercialLogoBrand brand) => brand switch
+    {
+        CommercialLogoBrand.Bcn => "BCN",
+        CommercialLogoBrand.Bl => "BL",
+        CommercialLogoBrand.R => "R",
+        _ => throw new ArgumentOutOfRangeException(nameof(brand)),
+    };
+
+    private static IEnumerable<string> EnumerateMp4(string directory) => Directory
+        .EnumerateFiles(directory)
+        .Where(path => string.Equals(Path.GetExtension(path), ".mp4", StringComparison.OrdinalIgnoreCase))
+        .OrderBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase);
+
+    private static IEnumerable<string> EnumerateImages(string directory) => Directory
+        .EnumerateFiles(directory)
+        .Where(path => ImageExtensions.Contains(Path.GetExtension(path)))
+        .OrderBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase);
 
     private static string BuildMediaId(string path)
     {

@@ -117,7 +117,7 @@ public sealed class CommercialBreakServiceTests
         Assert.Equal("image/png", icon.ContentType);
         Assert.False(service.TryGetMedia("not-a-current-media-id", out _));
         Assert.Equal("bcn", tagged.LogoBrand);
-        Assert.Equal("barcode_commercial_break_v5", snapshot.Schema);
+        Assert.Equal("barcode_commercial_break_v6", snapshot.Schema);
     }
 
     [Fact]
@@ -152,8 +152,10 @@ public sealed class CommercialBreakServiceTests
 
         Assert.True(service.Start().Started);
         var first = service.Snapshot();
-        var firstCorner = first.Items.Single(entry => entry.Name == "Alux").CornerLogoUrl;
+        var firstAlux = first.Items.Single(entry => entry.Name == "Alux");
+        var firstCorner = firstAlux.CornerLogoUrl;
         Assert.NotNull(firstCorner);
+        Assert.Equal(1, firstAlux.CornerLogoVariant);
         var firstCornerId = firstCorner![firstCorner.LastIndexOf('/')..].TrimStart('/');
         Assert.True(service.TryGetMedia(firstCornerId, out var cornerAsset));
         Assert.Equal("image/png", cornerAsset.ContentType);
@@ -161,9 +163,11 @@ public sealed class CommercialBreakServiceTests
 
         Assert.True(service.Start().Started);
         var second = service.Snapshot();
-        var secondCorner = second.Items.Single(entry => entry.Name == "Alux").CornerLogoUrl;
+        var secondAlux = second.Items.Single(entry => entry.Name == "Alux");
+        var secondCorner = secondAlux.CornerLogoUrl;
 
         Assert.NotEqual(firstCorner, secondCorner);
+        Assert.Equal(2, secondAlux.CornerLogoVariant);
     }
 
     [Fact]

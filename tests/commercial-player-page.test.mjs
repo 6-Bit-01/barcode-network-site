@@ -63,11 +63,12 @@ const flushTasks = async (count = 8) => {
 
 test("TV frame crops its embedded border while preserving the undistorted source geometry", () => {
   assert.match(pageSource, /#background-video\s*\{[\s\S]*?object-fit:\s*cover;[\s\S]*?transform:\s*scale\(1\.18\);[\s\S]*?transform-origin:\s*left top;/);
-  assert.doesNotMatch(pageSource, /object-fit:\s*fill;/);
+  assert.match(pageSource, /#tv-overlay-video\s*\{[\s\S]*?object-fit:\s*cover;/);
   assert.match(pageSource, /#tv-stage\s*\{[\s\S]*?top:\s*30\.6%;[\s\S]*?width:\s*92%;[\s\S]*?aspect-ratio:\s*719 \/ 435;[\s\S]*?overflow:\s*hidden;[\s\S]*?z-index:\s*2;/);
   assert.match(pageSource, /#tv-source\s*\{[\s\S]*?left:\s*-2\.6738%;[\s\S]*?top:\s*-2\.7624%;[\s\S]*?width:\s*106\.9519%;[\s\S]*?height:\s*110\.4972%;/);
   assert.match(pageSource, /#video-window\s*\{[\s\S]*?left:\s*5%;[\s\S]*?top:\s*8\.5%;[\s\S]*?width:\s*90%;[\s\S]*?height:\s*77%;[\s\S]*?overflow:\s*hidden;[\s\S]*?z-index:\s*1;/);
   assert.match(pageSource, /#player\s*\{[\s\S]*?object-fit:\s*cover;[\s\S]*?transform:\s*scale\(1\.10\);[\s\S]*?z-index:\s*1;/);
+  assert.match(pageSource, /#player\[data-fit="soft"\]\s*\{[\s\S]*?object-fit:\s*fill;[\s\S]*?transform:\s*scale\(1\.015\);/);
   assert.match(pageSource, /#tv-overlay-video\s*\{[\s\S]*?inset:\s*0;[\s\S]*?width:\s*100%;[\s\S]*?height:\s*100%;[\s\S]*?object-fit:\s*cover;[\s\S]*?z-index:\s*2;[\s\S]*?-webkit-mask:\s*url\(#tv-bezel-mask\) center \/ 100% 100% no-repeat;/);
   assert.match(pageSource, /<mask id="tv-bezel-mask"[\s\S]*?<path fill="white" fill-rule="evenodd"/);
   assert.doesNotMatch(pageSource, /clip-path:\s*inset|#tv-stage::before|#tv-stage::after|\.frame-patch|\.side-strip/);
@@ -75,6 +76,32 @@ test("TV frame crops its embedded border while preserving the undistorted source
   assert.match(pageSource, /<div id="tv-stage">[\s\S]*?<div id="tv-source">[\s\S]*?<div id="video-window">[\s\S]*?<video id="player"[\s\S]*?<img id="corner-logo"[\s\S]*?<video id="tv-overlay-video"/);
   assert.doesNotMatch(playerScript, /player\.controls/);
   assert.doesNotMatch(pageSource, /body\.debug #tv-stage|body\.debug #video-window/);
+});
+
+test("TV motion is half-speed while frequent lamp pulses add no second video decoder", () => {
+  assert.match(playerScript, /startVisualVideo\(tvOverlayVideo, state\.tvOverlayUrl, 'TV overlay', token, \.5\)/);
+  assert.match(playerScript, /element\.defaultPlaybackRate = playbackRate;[\s\S]*?element\.playbackRate = playbackRate;/);
+  assert.match(pageSource, /id="tv-light-pulses"[\s\S]*?id="tv-light-yellow"[\s\S]*?id="tv-light-red"/);
+  assert.match(pageSource, /animation:\s*tv-light-yellow-pulse 1\.7s/);
+  assert.match(pageSource, /animation:\s*tv-light-red-pulse 1\.35s/);
+  assert.doesNotMatch(pageSource, /<video id="tv-light/);
+});
+
+test("corner logos fade slowly and the second alternating mark is fifteen percent smaller", () => {
+  assert.match(pageSource, /transition:\s*opacity var\(--corner-logo-fade-duration, 2400ms\) ease;/);
+  assert.match(pageSource, /#corner-logo\[data-variant="2"\]\s*\{[\s\S]*?width:\s*15\.3%;[\s\S]*?height:\s*13\.6%;/);
+  assert.match(playerScript, /const fadeMs = Math\.min\(2600, Math\.max\(800, totalMs \* \.14\)\)/);
+  assert.match(playerScript, /cornerLogo\.dataset\.variant = String\(item\.cornerLogoVariant \|\| 1\)/);
+  assert.match(playerScript, /cornerLogo\.classList\.add\('visible'\)[\s\S]*?cornerLogo\.classList\.remove\('visible'\)/);
+});
+
+test("near-sixteen-by-nine commercials use bounded soft fill to preserve top and bottom", () => {
+  assert.match(playerScript, /new Set\(\['eversnow', 'alien', 'crackedencounters'\]\)/);
+  assert.match(playerScript, /const softFitMaximumStretch = 1\.085/);
+  assert.match(playerScript, /const sourceAspect = player\.videoWidth \/ player\.videoHeight/);
+  assert.match(playerScript, /const stretch = apertureAspect \/ sourceAspect/);
+  assert.match(playerScript, /stretch >= 1 && stretch <= softFitMaximumStretch/);
+  assert.match(playerScript, /player\.dataset\.fit = 'soft'/);
 });
 
 test("BCN and BLVCKL!GHT logos remain enlarged while the cropped TV fills more of the canvas", () => {

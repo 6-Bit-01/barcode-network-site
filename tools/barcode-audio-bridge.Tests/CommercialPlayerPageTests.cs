@@ -36,7 +36,7 @@ public sealed class CommercialPlayerPageTests
         Assert.Matches(
             @"(?s)#background-video\s*\{.*?object-fit:\s*cover;.*?transform:\s*scale\(1\.18\);.*?transform-origin:\s*left top;",
             html);
-        Assert.DoesNotContain("object-fit: fill", html);
+        Assert.Matches(@"(?s)#tv-overlay-video\s*\{.*?object-fit:\s*cover;", html);
         Assert.Contains("clearVisualVideo(backgroundVideo)", html);
         Assert.Contains("clearVisualVideo(tvOverlayVideo)", html);
         Assert.Contains("stage.hidden = true", html);
@@ -73,7 +73,50 @@ public sealed class CommercialPlayerPageTests
             html);
         Assert.DoesNotContain("border-radius: 2.4% / 4.5%", html);
         Assert.Matches(@"(?s)#player\s*\{.*?width:\s*100%;.*?height:\s*100%;.*?object-fit:\s*cover;.*?transform:\s*scale\(1\.10\);", html);
+        Assert.Matches(@"(?s)#player\[data-fit=""soft""\]\s*\{.*?object-fit:\s*fill;.*?transform:\s*scale\(1\.015\);", html);
         Assert.Matches(@"(?s)#corner-logo\s*\{.*?right:\s*2\.2%;.*?bottom:\s*2\.2%;.*?width:\s*18%;.*?height:\s*16%;.*?z-index:\s*2;", html);
+    }
+
+    [Fact]
+    public void TvFrameRunsAtHalfSpeedWhileLightPulsesStayFrequentAndDecoderCheap()
+    {
+        var html = CommercialPlayerPage.Html;
+
+        Assert.Contains("startVisualVideo(tvOverlayVideo, state.tvOverlayUrl, 'TV overlay', token, .5)", html);
+        Assert.Contains("element.defaultPlaybackRate = playbackRate", html);
+        Assert.Contains("element.playbackRate = playbackRate", html);
+        Assert.Contains("id=\"tv-light-pulses\"", html);
+        Assert.Contains("animation: tv-light-yellow-pulse 1.7s", html);
+        Assert.Contains("animation: tv-light-red-pulse 1.35s", html);
+        Assert.DoesNotContain("<video id=\"tv-light", html);
+    }
+
+    [Fact]
+    public void CornerLogosUseSlowFadesAndVariantTwoIsExactlyFifteenPercentSmaller()
+    {
+        var html = CommercialPlayerPage.Html;
+
+        Assert.Contains("var(--corner-logo-fade-duration, 2400ms)", html);
+        Assert.Contains("const fadeMs = Math.min(2600, Math.max(800, totalMs * .14))", html);
+        Assert.Contains("cornerLogo.classList.add('visible')", html);
+        Assert.Contains("cornerLogo.classList.remove('visible')", html);
+        Assert.Contains("cornerLogo.dataset.variant = String(item.cornerLogoVariant || 1)", html);
+        Assert.Matches(
+            @"(?s)#corner-logo\[data-variant=""2""\]\s*\{.*?width:\s*15\.3%;.*?height:\s*13\.6%;",
+            html);
+    }
+
+    [Fact]
+    public void NearSixteenByNineCommercialsPreserveTheirTopAndBottomWithBoundedSoftFit()
+    {
+        var html = CommercialPlayerPage.Html;
+
+        Assert.Contains("new Set(['eversnow', 'alien', 'crackedencounters'])", html);
+        Assert.Contains("const softFitMaximumStretch = 1.085", html);
+        Assert.Contains("const sourceAspect = player.videoWidth / player.videoHeight", html);
+        Assert.Contains("const stretch = apertureAspect / sourceAspect", html);
+        Assert.Contains("stretch >= 1 && stretch <= softFitMaximumStretch", html);
+        Assert.Contains("player.dataset.fit = 'soft'", html);
     }
 
     [Fact]

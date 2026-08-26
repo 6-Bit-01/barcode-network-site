@@ -80,6 +80,10 @@ internal static class CommercialPlayerPage
       background: #000;
       z-index: 1;
     }
+    #player[data-fit="soft"] {
+      object-fit: fill;
+      transform: scale(1.015);
+    }
     #tv-overlay-video {
       position: absolute;
       inset: 0;
@@ -100,9 +104,55 @@ internal static class CommercialPlayerPage
       height: 16%;
       object-fit: contain;
       object-position: right bottom;
+      opacity: 0;
+      transition: opacity var(--corner-logo-fade-duration, 2400ms) ease;
       filter: drop-shadow(0 1px 2px rgba(0,0,0,.8));
       z-index: 2;
       pointer-events: none;
+    }
+    #corner-logo[data-variant="2"] {
+      width: 15.3%;
+      height: 13.6%;
+    }
+    #corner-logo.visible { opacity: 1; }
+    #tv-light-pulses {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      z-index: 3;
+      pointer-events: none;
+    }
+    #tv-light-pulses span {
+      position: absolute;
+      aspect-ratio: 1;
+      border-radius: 50%;
+      opacity: .08;
+      mix-blend-mode: screen;
+      will-change: opacity, filter;
+    }
+    #tv-light-yellow {
+      left: 87.4%;
+      top: 4.8%;
+      width: 2.2%;
+      background: radial-gradient(circle, #fffbd0 0 16%, #ffd21c 38%, rgba(255,185,0,.72) 58%, transparent 76%);
+      animation: tv-light-yellow-pulse 1.7s steps(1, end) infinite;
+    }
+    #tv-light-red {
+      left: 90.7%;
+      top: 4.9%;
+      width: 2.1%;
+      background: radial-gradient(circle, #fff0df 0 14%, #ff4a25 36%, rgba(255,35,18,.72) 58%, transparent 76%);
+      animation: tv-light-red-pulse 1.35s steps(1, end) -.55s infinite;
+    }
+    @keyframes tv-light-yellow-pulse {
+      0%, 18%, 37%, 68%, 100% { opacity: .08; filter: brightness(.85); }
+      19%, 31%, 69%, 82% { opacity: .88; filter: brightness(1.35); }
+      32%, 36%, 83%, 91% { opacity: .28; filter: brightness(1); }
+    }
+    @keyframes tv-light-red-pulse {
+      0%, 29%, 48%, 77%, 100% { opacity: .06; filter: brightness(.8); }
+      30%, 43%, 78%, 90% { opacity: .82; filter: brightness(1.3); }
+      44%, 47%, 91%, 96% { opacity: .24; filter: brightness(1); }
     }
     #logo {
       position: absolute;
@@ -183,6 +233,10 @@ internal static class CommercialPlayerPage
           <img id="corner-logo" alt="" hidden>
         </div>
         <video id="tv-overlay-video" preload="auto" autoplay muted loop playsinline disablepictureinpicture hidden></video>
+        <div id="tv-light-pulses" aria-hidden="true">
+          <span id="tv-light-yellow"></span>
+          <span id="tv-light-red"></span>
+        </div>
       </div>
     </div>
     <img id="logo" alt="" hidden>
@@ -201,6 +255,7 @@ internal static class CommercialPlayerPage
     const backgroundVideo = document.getElementById('background-video');
     const tvOverlayVideo = document.getElementById('tv-overlay-video');
     const player = document.getElementById('player');
+    const videoWindow = document.getElementById('video-window');
     const cornerLogo = document.getElementById('corner-logo');
     const logo = document.getElementById('logo');
     const audioGate = document.getElementById('audio-gate');
@@ -210,7 +265,11 @@ internal static class CommercialPlayerPage
     let runToken = 0;
     let running = false;
     let logoTimers = [];
+    let cornerLogoTimers = [];
     let pendingAudioGate = null;
+
+    const softFitNames = new Set(['eversnow', 'alien', 'crackedencounters']);
+    const softFitMaximumStretch = 1.085;
 
     function showStatus(message) { statusBox.textContent = message; }
 
@@ -230,19 +289,64 @@ internal static class CommercialPlayerPage
     }
 
     function clearCornerLogo() {
+      for (const timer of cornerLogoTimers) clearTimeout(timer);
+      cornerLogoTimers = [];
+      cornerLogo.classList.remove('visible');
       cornerLogo.hidden = true;
       cornerLogo.removeAttribute('src');
+      delete cornerLogo.dataset.variant;
+      cornerLogo.style.removeProperty('--corner-logo-fade-duration');
     }
 
-    function showCornerLogo(item) {
+    function showCornerLogo(item, token) {
       clearCornerLogo();
-      if (!item.cornerLogoUrl) return;
+      if (!item.cornerLogoUrl || token !== runToken) return;
+      const totalMs = Math.max(1000, item.durationSeconds * 1000);
+      const fadeMs = Math.min(2600, Math.max(800, totalMs * .14));
+      const revealAt = Math.min(120, totalMs * .03);
+      const fadeAt = Math.max(fadeMs + revealAt, totalMs - fadeMs - 200);
       cornerLogo.src = item.cornerLogoUrl;
+      cornerLogo.dataset.variant = String(item.cornerLogoVariant || 1);
       cornerLogo.hidden = false;
+      cornerLogo.style.setProperty('--corner-logo-fade-duration', `${Math.round(fadeMs)}ms`);
+      cornerLogoTimers.push(setTimeout(() => {
+        if (token === runToken) cornerLogo.classList.add('visible');
+      }, revealAt));
+      cornerLogoTimers.push(setTimeout(() => {
+        if (token === runToken) cornerLogo.classList.remove('visible');
+      }, fadeAt));
+    }
+
+    function normalizedCommercialName(name) {
+      return String(name || '')
+        .replace(/\([^)]*\)/g, '')
+        .replace(/[^a-z0-9]/gi, '')
+        .toLowerCase();
+    }
+
+    function resetPlayerFit(item) {
+      delete player.dataset.fit;
+      if (softFitNames.has(normalizedCommercialName(item?.name))) player.dataset.fit = 'soft';
+    }
+
+    function refinePlayerFitFromMetadata(item, token) {
+      if (token !== runToken || !player.videoWidth || !player.videoHeight) return;
+      const sourceAspect = player.videoWidth / player.videoHeight;
+      const apertureAspect = videoWindow.clientWidth > 0 && videoWindow.clientHeight > 0
+        ? videoWindow.clientWidth / videoWindow.clientHeight
+        : 1.87;
+      const stretch = apertureAspect / sourceAspect;
+      if (sourceAspect > 1 && stretch >= 1 && stretch <= softFitMaximumStretch) {
+        player.dataset.fit = 'soft';
+      } else if (!softFitNames.has(normalizedCommercialName(item?.name))) {
+        delete player.dataset.fit;
+      }
     }
 
     function clearVisualVideo(video) {
       video.pause();
+      video.defaultPlaybackRate = 1;
+      video.playbackRate = 1;
       video.removeAttribute('src');
       video.load();
       video.hidden = true;
@@ -266,6 +370,7 @@ internal static class CommercialPlayerPage
       cancelAudioGate();
       player.pause();
       player.removeAttribute('src');
+      delete player.dataset.fit;
       player.load();
       clearVisualVideo(backgroundVideo);
       clearVisualVideo(tvOverlayVideo);
@@ -341,7 +446,7 @@ internal static class CommercialPlayerPage
       throw playbackError;
     }
 
-    async function startVisualVideo(element, url, label, token) {
+    async function startVisualVideo(element, url, label, token, playbackRate = 1) {
       if (!url) throw new Error(`${label} video is unavailable`);
       if (token !== runToken) return;
       element.muted = true;
@@ -349,6 +454,8 @@ internal static class CommercialPlayerPage
       element.src = url;
       element.hidden = false;
       element.load();
+      element.defaultPlaybackRate = playbackRate;
+      element.playbackRate = playbackRate;
       try {
         await element.play();
       } catch (error) {
@@ -382,6 +489,7 @@ internal static class CommercialPlayerPage
         const cleanup = () => {
           player.removeEventListener('ended', onEnded);
           player.removeEventListener('error', onError);
+          player.removeEventListener('loadedmetadata', onMetadata);
         };
         const onEnded = () => { cleanup(); clearLogo(); clearCornerLogo(); resolve(); };
         const onError = () => {
@@ -390,14 +498,16 @@ internal static class CommercialPlayerPage
           clearCornerLogo();
           reject(new Error(player.error?.message || `could not play ${item.name}`));
         };
+        const onMetadata = () => refinePlayerFitFromMetadata(item, token);
         player.addEventListener('ended', onEnded, { once: true });
         player.addEventListener('error', onError, { once: true });
+        player.addEventListener('loadedmetadata', onMetadata, { once: true });
         player.pause();
+        resetPlayerFit(item);
         player.src = item.url;
         player.load();
-        showCornerLogo(item);
         playWithAudioRecovery(item, token)
-          .then(() => showLogo(item, token))
+          .then(() => { showCornerLogo(item, token); showLogo(item, token); })
           .catch(error => { cleanup(); clearLogo(); clearCornerLogo(); reject(error); });
       });
     }
@@ -414,7 +524,7 @@ internal static class CommercialPlayerPage
         stage.hidden = false;
         await Promise.all([
           startVisualVideo(backgroundVideo, state.backgroundUrl, 'background', token),
-          startVisualVideo(tvOverlayVideo, state.tvOverlayUrl, 'TV overlay', token),
+          startVisualVideo(tvOverlayVideo, state.tvOverlayUrl, 'TV overlay', token, .5),
         ]);
         for (let index = startIndex; index < state.items.length; index += 1) {
           if (token !== runToken) return;

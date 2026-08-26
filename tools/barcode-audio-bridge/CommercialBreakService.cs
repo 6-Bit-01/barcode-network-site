@@ -32,7 +32,8 @@ internal sealed record CommercialPlaybackItemSnapshot(
     string Url,
     string? LogoUrl,
     string? LogoBrand,
-    string? CornerLogoUrl);
+    string? CornerLogoUrl,
+    int? CornerLogoVariant);
 
 internal sealed record CommercialBreakSnapshot(
     string Schema,
@@ -158,7 +159,7 @@ internal sealed class CommercialMediaSnapshot : IDisposable
 
 internal sealed class CommercialBreakService
 {
-    public const string SchemaVersion = "barcode_commercial_break_v5";
+    public const string SchemaVersion = "barcode_commercial_break_v6";
 
     private readonly object _sync = new();
     private readonly CommercialBreakLibrary _library;
@@ -358,7 +359,8 @@ internal sealed class CommercialBreakService
                 MediaUrl(item.Id),
                 item.LogoAssetId is null ? null : MediaUrl(item.LogoAssetId),
                 item.LogoBrand?.ToString().ToLowerInvariant(),
-                item.CornerLogoAssetId is null ? null : MediaUrl(item.CornerLogoAssetId)))
+                item.CornerLogoAssetId is null ? null : MediaUrl(item.CornerLogoAssetId),
+                item.CornerLogoVariant))
                 .ToArray() ?? Array.Empty<CommercialPlaybackItemSnapshot>();
 
             return new CommercialBreakSnapshot(

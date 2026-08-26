@@ -126,7 +126,8 @@ BLVCKL!GHT logo in Visuals\Logos\BL, and the Rigged Sanchez logo in
 Visuals\Logos\R. PNG, JPG, JPEG, and WEBP logo images are supported.
 
 Put CORNERLOGO1.png and CORNERLOGO2.png in Visuals\Corner Logos. They alternate
-at the bottom-right of the requested Veo-marked clips, behind the TV frame. The
+with slow fades at the bottom-right of the requested Veo-marked clips, behind the
+TV frame. CORNERLOGO2 renders 15% smaller than CORNERLOGO1. The
 player temporarily recognizes those exact files in Visuals\TV Overlay too, but
 the dedicated Corner Logos folder keeps every visual role unambiguous.
 

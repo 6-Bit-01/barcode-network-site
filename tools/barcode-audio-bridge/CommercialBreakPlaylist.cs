@@ -53,7 +53,8 @@ internal sealed record CommercialPlaylistItem(
     int? ContentBlock,
     string? LogoAssetId,
     CommercialLogoBrand? LogoBrand,
-    string? CornerLogoAssetId);
+    string? CornerLogoAssetId,
+    int? CornerLogoVariant);
 
 internal sealed record CommercialBreakPlan(
     IReadOnlyList<CommercialPlaylistItem> Items,
@@ -160,6 +161,7 @@ internal static class CommercialBreakPlaylistBuilder
             var clip = content[contentIndex];
             string? logoAssetId = null;
             string? cornerLogoAssetId = null;
+            int? cornerLogoVariant = null;
             if (clip.LogoBrand is { } brand)
             {
                 var logos = GetLogos(visuals, brand);
@@ -177,12 +179,14 @@ internal static class CommercialBreakPlaylistBuilder
                 {
                     throw new InvalidOperationException("Two corner logos are required for Veo-cover clips.");
                 }
-                var cornerLogo = visuals.CornerLogos[NormalizeIndex(currentCornerLogoIndex++, visuals.CornerLogos.Count)];
+                var selectedCornerLogoIndex = NormalizeIndex(currentCornerLogoIndex++, visuals.CornerLogos.Count);
+                var cornerLogo = visuals.CornerLogos[selectedCornerLogoIndex];
                 cornerLogoAssetId = cornerLogo.Id;
+                cornerLogoVariant = selectedCornerLogoIndex + 1;
                 usedVisualAssets[cornerLogo.Id] = cornerLogo;
             }
 
-            playlist.Add(ToPlaylistItem(clip, currentBlock, logoAssetId, cornerLogoAssetId));
+            playlist.Add(ToPlaylistItem(clip, currentBlock, logoAssetId, cornerLogoAssetId, cornerLogoVariant));
             if (!boundaries.Contains(contentIndex + 1)) continue;
 
             blockDurations.Add(SumClipDurations(content.Skip(contentStart).Take(contentIndex + 1 - contentStart)));
@@ -375,7 +379,8 @@ internal static class CommercialBreakPlaylistBuilder
         CommercialClip clip,
         int? contentBlock,
         string? logoAssetId,
-        string? cornerLogoAssetId) => new(
+        string? cornerLogoAssetId,
+        int? cornerLogoVariant = null) => new(
             clip.Id,
             clip.Name,
             clip.FilePath,
@@ -384,7 +389,8 @@ internal static class CommercialBreakPlaylistBuilder
             contentBlock,
             logoAssetId,
             clip.LogoBrand,
-            cornerLogoAssetId);
+            cornerLogoAssetId,
+            cornerLogoVariant);
 
     private static TimeSpan SumClipDurations(IEnumerable<CommercialClip> clips) =>
         TimeSpan.FromTicks(clips.Sum(clip => clip.Duration.Ticks));

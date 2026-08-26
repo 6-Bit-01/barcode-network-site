@@ -127,10 +127,17 @@ public sealed class CommercialBreakPlaylistTests
             cornerLogoIndex: 1);
         var marked = plan.Items
             .Where(item => item.CornerLogoAssetId is not null)
-            .Select(item => item.CornerLogoAssetId)
+            .Select(item => (item.CornerLogoAssetId, item.CornerLogoVariant))
             .ToArray();
 
-        Assert.Equal(new[] { "corner-logo-2", "corner-logo-1", "corner-logo-2" }, marked);
+        Assert.Equal(
+            new (string?, int?)[]
+            {
+                ("corner-logo-2", 2),
+                ("corner-logo-1", 1),
+                ("corner-logo-2", 2),
+            },
+            marked);
         Assert.Equal(0, plan.NextCornerLogoIndex);
     }
 

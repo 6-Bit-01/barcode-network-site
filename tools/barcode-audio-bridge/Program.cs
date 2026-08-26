@@ -32,7 +32,7 @@ internal static class Program
         {
             BridgeLog.Write("BARCODE Audio Bridge stopped because of an unrecoverable error.", error);
             MessageBox.Show(
-                $"BARCODE Audio Bridge could not start. The visual overlay will continue using its built-in randomized music motion.\n\nDiagnostics: {BridgeLog.FilePath}",
+                $"BARCODE Audio Bridge could not start. Show Visuals will continue using built-in motion, but the local commercial player will be unavailable.\n\nDiagnostics: {BridgeLog.FilePath}",
                 "BARCODE Audio Bridge",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);

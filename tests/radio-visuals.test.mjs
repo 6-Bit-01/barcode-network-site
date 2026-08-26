@@ -794,7 +794,7 @@ test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a
   assert.match(project, /<TargetFramework>net8\.0-windows<\/TargetFramework>/);
   assert.match(project, /<SelfContained>true<\/SelfContained>/);
   assert.match(project, /<PublishSingleFile>true<\/PublishSingleFile>/);
-  assert.match(project, /<Version>1\.0\.4<\/Version>/);
+  assert.match(project, /<Version>1\.0\.20<\/Version>/);
   assert.match(project, /PackageReference Include="NAudio" Version="2\.3\.0"/);
   assert.match(capture, /GetDefaultAudioEndpoint\(DataFlow\.Render, Role\.Multimedia\)/, "capture must resolve the default Windows Speakers render endpoint");
   assert.match(capture, /new WasapiLoopbackCapture\(renderDevice\)/, "capture and endpoint-volume compensation must use the same Speakers endpoint");
@@ -810,6 +810,8 @@ test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a
   assert.doesNotMatch(capture, /Live — Speakers loopback is driving the visuals/, "opening WASAPI alone must not claim that music is driving visuals");
   assert.match(capture, /TrayTooltip[\s\S]*WarmedUp[\s\S]*Silence[\s\S]*LIVE audio/, "tray tooltip must reflect actual analyzed speaker audio");
   assert.match(application, /_notifyIcon\.Text = _capture\.TrayTooltip/);
+  assert.match(application, /Copy permanent TikTok Studio source URL/);
+  assert.match(application, /Open diagnostic preview \(not Studio source\)/);
   assert.doesNotMatch(application, /CaptureActive \? "BARCODE Audio Bridge — LIVE"/, "active capture without audible samples must not show a false LIVE tray tooltip");
   assert.match(analyzer, /WaveFormatExtensible[\s\S]*ToStandardWaveFormat\(\)/, "32-bit extensible PCM must not be decoded as IEEE float");
   assert.doesNotMatch(analyzer, /WaveFormatEncoding\.Extensible && format\.BitsPerSample == 32/);

@@ -7,10 +7,11 @@
     <Nullable>enable</Nullable>
     <AssemblyName>BARCODE.AudioBridge</AssemblyName>
     <RootNamespace>Barcode.AudioBridge</RootNamespace>
-    <Version>1.0.4</Version>
+    <Version>1.0.20</Version>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <PublishTrimmed>false</PublishTrimmed>
     <DebugType>embedded</DebugType>
   </PropertyGroup>

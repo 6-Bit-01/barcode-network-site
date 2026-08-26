@@ -204,6 +204,20 @@ public sealed class CommercialBreakLibraryTests
     }
 
     [Fact]
+    public void GrayeyeSponsorReceivesCornerLogoCoverage()
+    {
+        using var fixture = new TemporaryCommercialLibrary();
+        fixture.AddActiveSponsor("grayeye.mp4");
+
+        var result = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
+
+        Assert.True(result.Success, result.Message);
+        var grayeye = Assert.Single(result.Sponsors);
+        Assert.Equal("grayeye", grayeye.Name);
+        Assert.True(grayeye.ShowCornerLogo);
+    }
+
+    [Fact]
     public void EnsureLayoutPreservesTheEstablishedBumperAndVisualsFolders()
     {
         using var fixture = new TemporaryCommercialLibrary(createFixed: false);

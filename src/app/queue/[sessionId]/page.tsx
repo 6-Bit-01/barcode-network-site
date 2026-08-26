@@ -3,8 +3,9 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { PublicQueueSession } from "@/components/PublicQueueSession";
-import { COOKIE_NAME, verifyAdminToken } from "@/lib/auth";
+import { COOKIE_NAME, REHEARSAL_QUEUE_COOKIE_NAME, verifyAdminToken, verifyRehearsalQueueToken } from "@/lib/auth";
 import { getPublicQueueSnapshot, sanitizeQueueSnapshotForPublic } from "@/lib/queue";
+import { isActiveRehearsalSession } from "@/lib/queue-rehearsal-access";
 
 export const metadata = {
   title: "BARCODE Radio Broadcast Queue | BARCODE Network",
@@ -12,10 +13,16 @@ export const metadata = {
 
 export default async function QueueSessionPage({ params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = await params;
-  const token = (await cookies()).get(COOKIE_NAME)?.value;
+  const cookieStore = await cookies();
+  const token = cookieStore.get(COOKIE_NAME)?.value;
+  const rehearsalToken = cookieStore.get(REHEARSAL_QUEUE_COOKIE_NAME)?.value;
   const isAdmin = Boolean(token && await verifyAdminToken(token));
   const rawSnapshot = await getPublicQueueSnapshot();
-  const snapshot = isAdmin ? rawSnapshot : sanitizeQueueSnapshotForPublic(rawSnapshot);
+  const hasRehearsalAccess = isActiveRehearsalSession(rawSnapshot.session, rawSnapshot.sessionActive === true)
+    && rawSnapshot.session.sessionId === sessionId
+    && Boolean(rehearsalToken)
+    && await verifyRehearsalQueueToken(rehearsalToken ?? "", sessionId);
+  const snapshot = isAdmin || hasRehearsalAccess ? rawSnapshot : sanitizeQueueSnapshotForPublic(rawSnapshot);
   if (!snapshot.session) {
     return (
       <main className="pt-14 min-h-screen">

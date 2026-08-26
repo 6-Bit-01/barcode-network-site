@@ -43,6 +43,7 @@ function loadQueueRoute(snapshot) {
       toPublicQueueTrack: (value) => value,
     };
     if (request === "@/lib/auth") return { verifyAdminRequest: async () => false };
+    if (request === "@/lib/queue-rehearsal-access") return { requestHasRehearsalQueueAccess: async () => false };
     if (request === "@/lib/live-overlay") return {
       getLiveOverlayRuntimeState: async () => {
         calls.runtime += 1;

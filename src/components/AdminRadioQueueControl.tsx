@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AdminLiveOverlayControl } from "@/components/AdminLiveOverlayControl";
+import { AdminRehearsalShareLink } from "@/components/AdminRehearsalShareLink";
 import { AdminRadioVisualsControl } from "@/components/AdminRadioVisualsControl";
 import { buildQueueTimingDisplay, formatHoursMinutes, queueTimingInputFromAdminState } from "@/lib/queue-timing-display";
 import { combineQueueTimeBankEvents, deriveQueuePaceBankEvent, deriveQueueTimeBankEvent, type QueueTimeBankEvent, type QueueTimeBankObservation } from "@/lib/queue-time-bank-events";
@@ -621,6 +622,7 @@ export function AdminRadioQueueControl() {
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
             {sponsorBreakDue && <button type="button" onClick={() => updateSponsorBreakState("start")} className="min-h-10 border-2 border-[#ffaa00] bg-[#ffaa00] px-3 py-2 font-black uppercase tracking-widest text-background shadow-[0_0_28px_rgba(255,170,0,0.55)] animate-pulse hover:bg-[#ffbd4a] motion-reduce:animate-none sm:px-4"><span className="sm:hidden">Start Break</span><span className="hidden sm:inline">Start Sponsor Break</span></button>}
+            {state?.session?.purpose === "rehearsal" && <AdminRehearsalShareLink sessionId={state.session.sessionId} compact />}
             {testBroadcastDeckHref && <a href={testBroadcastDeckHref} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center border-2 border-cyan-300 bg-cyan-300/15 px-3 py-2 font-black uppercase tracking-widest text-cyan-100 hover:bg-cyan-300 hover:text-background sm:px-4">Open Test Broadcast Deck</a>}
             <button type="button" onClick={() => setTopBarMinimized((value) => !value)} className="min-h-10 border border-border px-3 py-2 uppercase tracking-widest text-muted">{topBarMinimized ? "Expand" : "Minimize"}</button>
           </div>

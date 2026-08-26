@@ -8,8 +8,11 @@
 const COOKIE_NAME = "barcode_admin";
 const TOKEN_TTL = 60 * 60 * 24; // 24 hours in seconds
 const FOREGROUND_OVERLAY_TOKEN_TTL = 60 * 60 * 12;
+const REHEARSAL_QUEUE_TOKEN_TTL = 60 * 60 * 48;
+const REHEARSAL_QUEUE_COOKIE_NAME = "barcode_queue_rehearsal";
 type AuthTokenSubject = "admin" | "foreground_overlay";
 const STUDIO_OVERLAY_TOKEN_SUBJECT = "studio_overlay";
+const REHEARSAL_QUEUE_TOKEN_SUBJECT = "queue_rehearsal";
 
 // --------------- HMAC helpers (Web Crypto) ---------------
 
@@ -119,6 +122,47 @@ export async function verifyForegroundOverlayToken(token: string): Promise<boole
   return verifyToken(token, "foreground_overlay");
 }
 
+export async function createRehearsalQueueToken(sessionId: string): Promise<string> {
+  const normalizedSessionId = sessionId.trim();
+  if (!normalizedSessionId || normalizedSessionId.length > 200) throw new Error("Rehearsal session ID is invalid.");
+  const key = await getKey();
+  const issuedAt = Math.floor(Date.now() / 1000);
+  const header = base64url(new TextEncoder().encode(JSON.stringify({ alg: "HS256", typ: "JWT" })).buffer as ArrayBuffer);
+  const payload = base64url(
+    new TextEncoder().encode(JSON.stringify({
+      sub: REHEARSAL_QUEUE_TOKEN_SUBJECT,
+      sid: normalizedSessionId,
+      v: 1,
+      iat: issuedAt,
+      exp: issuedAt + REHEARSAL_QUEUE_TOKEN_TTL,
+    })).buffer as ArrayBuffer,
+  );
+  const data = `${header}.${payload}`;
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(data));
+  return `${data}.${base64url(sig)}`;
+}
+
+export async function verifyRehearsalQueueToken(token: string, sessionId: string): Promise<boolean> {
+  try {
+    const normalizedSessionId = sessionId.trim();
+    const parts = token.split(".");
+    if (!normalizedSessionId || parts.length !== 3) return false;
+    const key = await getKey();
+    const data = `${parts[0]}.${parts[1]}`;
+    const sig = base64urlDecode(parts[2]);
+    const valid = await crypto.subtle.verify("HMAC", key, sig.buffer as ArrayBuffer, new TextEncoder().encode(data));
+    if (!valid) return false;
+    const payload = JSON.parse(new TextDecoder().decode(base64urlDecode(parts[1])));
+    return payload.sub === REHEARSAL_QUEUE_TOKEN_SUBJECT
+      && payload.sid === normalizedSessionId
+      && payload.v === 1
+      && typeof payload.exp === "number"
+      && payload.exp >= Math.floor(Date.now() / 1000);
+  } catch {
+    return false;
+  }
+}
+
 // A deterministic, overlay-only capability lets TikTok Studio keep one saved
 // URL across shows. Rotating JWT_SECRET/QUEUE_API_KEY revokes it. It has no
 // expiry by design and can never pass admin-token verification.
@@ -155,4 +199,10 @@ export function getAdminPassword(): string {
   return process.env.ADMIN_PASSWORD || "barcode2026";
 }
 
-export { COOKIE_NAME, TOKEN_TTL, FOREGROUND_OVERLAY_TOKEN_TTL };
+export {
+  COOKIE_NAME,
+  TOKEN_TTL,
+  FOREGROUND_OVERLAY_TOKEN_TTL,
+  REHEARSAL_QUEUE_COOKIE_NAME,
+  REHEARSAL_QUEUE_TOKEN_TTL,
+};

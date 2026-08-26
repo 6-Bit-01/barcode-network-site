@@ -94,6 +94,7 @@ During a break:
 - The video in `Visuals/Background` fills the fixed 9:16 composition without being stretched.
 - The video in `Visuals/TV Overlay` keeps its own native landscape aspect ratio and is positioned as the TV shown in the reference composition. It is never expanded to the full portrait canvas.
 - The source video is cropped to the real central TV rectangle, removing its detached dark side columns, detached lower blocks, and the empty gaps between them.
+- The two missing lower side corners are completed inside that bounded TV frame; no dark source fragments remain outside it.
 - The complete cropped TV and its commercial window are enlarged together by about eight percent while remaining centered in the same composition area.
 - Every START, sponsor, fake commercial/trailer, bumper, and END clip plays inside the TV screen without changing the clip's aspect ratio.
 - The commercial is behind the TV layer. A fixed GPU mask removes the TV video's opaque screen area, so the bezel stays over the commercial and the opening behaves as transparent without per-frame CPU chroma-keying or re-exporting the TV video with alpha.

@@ -162,6 +162,19 @@ public sealed class CommercialBreakLibraryTests
     }
 
     [Fact]
+    public void IdleBackgroundCanLoadWithoutBuildingOrStartingACommercialBreak()
+    {
+        using var fixture = new TemporaryCommercialLibrary();
+        var library = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader());
+
+        var background = library.GetIdleBackground();
+
+        Assert.NotNull(background);
+        Assert.Equal(fixture.BackgroundPath, background!.FilePath);
+        Assert.Equal("video/mp4", background.ContentType);
+    }
+
+    [Fact]
     public void ExactTvFileWinsWhenExtraOverlayVideosExistAndAmbiguousFoldersFailClosed()
     {
         using var fixture = new TemporaryCommercialLibrary();

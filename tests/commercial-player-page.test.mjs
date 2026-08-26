@@ -28,6 +28,8 @@ class FakeElement {
   constructor(id) {
     this.id = id;
     this.hidden = true;
+    this.paused = true;
+    this.offsetWidth = 0;
     this.dataset = {};
     this.events = new Map();
     this.styleValues = new Map();
@@ -68,8 +70,8 @@ class FakeElement {
   click() { this.dispatch("click"); }
   focus() {}
   load() {}
-  pause() {}
-  play() { return Promise.resolve(); }
+  pause() { this.paused = true; }
+  play() { this.paused = false; return Promise.resolve(); }
   removeAttribute(name) { delete this[name]; }
 }
 
@@ -90,7 +92,7 @@ test("TV frame crops its embedded border while every commercial is centered and 
   assert.match(pageSource, /<mask id="tv-bezel-mask"[\s\S]*?<path fill="white" fill-rule="evenodd"/);
   assert.doesNotMatch(pageSource, /clip-path:\s*inset|#tv-stage::before|#tv-stage::after|\.frame-patch|\.side-strip/);
   assert.doesNotMatch(pageSource, /#tv-stage::before|#tv-stage::after/);
-  assert.match(pageSource, /<div id="tv-stage">[\s\S]*?<div id="tv-source">[\s\S]*?<div id="video-window">[\s\S]*?<video id="player"[\s\S]*?<img id="corner-logo-a"[\s\S]*?<img id="corner-logo-b"[\s\S]*?<video id="tv-overlay-video"/);
+  assert.match(pageSource, /<div id="tv-stage" hidden>[\s\S]*?<div id="tv-source">[\s\S]*?<div id="video-window">[\s\S]*?<video id="player"[\s\S]*?<img id="corner-logo-a"[\s\S]*?<img id="corner-logo-b"[\s\S]*?<video id="tv-overlay-video"/);
   assert.doesNotMatch(playerScript, /player\.controls/);
   assert.doesNotMatch(pageSource, /body\.debug #tv-stage|body\.debug #video-window/);
 });
@@ -102,6 +104,18 @@ test("TV motion is half-speed while frequent lamp pulses add no second video dec
   assert.match(pageSource, /animation:\s*tv-light-yellow-pulse 1\.7s/);
   assert.match(pageSource, /animation:\s*tv-light-red-pulse 1\.35s/);
   assert.doesNotMatch(pageSource, /<video id="tv-light/);
+});
+
+test("idle shows only the animated background and a CSS CRT power-on precedes the first clip", () => {
+  assert.match(playerScript, /const idleBackgroundUrl = '\/v1\/commercials\/idle-background'/);
+  assert.match(playerScript, /async function showIdleBackground\(\)[\s\S]*?tvStage\.hidden = true;[\s\S]*?startVisualVideo\(backgroundVideo, idleBackgroundUrl, 'idle background', token\)/);
+  assert.match(pageSource, /id="tv-stage" hidden/);
+  assert.match(pageSource, /id="crt-power-on"/);
+  assert.match(pageSource, /@keyframes crt-power-on/);
+  assert.match(pageSource, /animation:\s*crt-power-on 880ms/);
+  assert.match(playerScript, /tvStage\.hidden = false;[\s\S]*?await runCrtPowerOn\(token\);[\s\S]*?post\(`\/v1\/commercials\/clip-started/);
+  assert.doesNotMatch(pageSource, /<video id="crt-power-on/);
+  assert.match(localServerSource, /path == "\/v1\/commercials\/idle-background"[\s\S]*?_commercials\.TryGetIdleBackground/);
 });
 
 test("corner logos pre-roll without ever rendering two marks together", () => {
@@ -135,9 +149,11 @@ test("fit math maximizes visible content and corner-logo handoffs never overlap"
   const elements = new Map([
     ["stage", new FakeElement("stage")],
     ["background-video", new FakeElement("background-video")],
+    ["tv-stage", new FakeElement("tv-stage")],
     ["tv-overlay-video", new FakeElement("tv-overlay-video")],
     ["player", new FakeElement("player")],
     ["video-window", new FakeElement("video-window")],
+    ["crt-power-on", new FakeElement("crt-power-on")],
     ["corner-logo-a", new FakeElement("corner-logo-a")],
     ["corner-logo-b", new FakeElement("corner-logo-b")],
     ["logo", new FakeElement("logo")],
@@ -259,9 +275,11 @@ test("Chrome autoplay denial holds the current commercial until one click instea
   const elements = new Map([
     ["stage", new FakeElement("stage")],
     ["background-video", new FakeElement("background-video")],
+    ["tv-stage", new FakeElement("tv-stage")],
     ["tv-overlay-video", new FakeElement("tv-overlay-video")],
     ["player", new FakeElement("player")],
     ["video-window", new FakeElement("video-window")],
+    ["crt-power-on", new FakeElement("crt-power-on")],
     ["corner-logo-a", new FakeElement("corner-logo-a")],
     ["corner-logo-b", new FakeElement("corner-logo-b")],
     ["logo", new FakeElement("logo")],
@@ -321,7 +339,7 @@ test("Chrome autoplay denial holds the current commercial until one click instea
     location: { search: "?debug=1" },
     navigator: { userActivation: { hasBeenActive: false } },
     setInterval: () => 0,
-    setTimeout,
+    setTimeout: (callback) => setTimeout(callback, 0),
   });
 
   new vm.Script(playerScript, { filename: "CommercialPlayerPage.js" }).runInContext(context);

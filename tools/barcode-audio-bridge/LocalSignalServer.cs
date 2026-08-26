@@ -189,6 +189,25 @@ internal sealed class LocalSignalServer : IDisposable
                     return;
                 }
 
+                if (path == "/v1/commercials/idle-background" && method is "GET" or "HEAD")
+                {
+                    if (!_commercials.TryGetIdleBackground(out var background))
+                    {
+                        await WriteTextResponse(stream, 404, "text/plain", "Not Found", origin, cancellationToken);
+                        return;
+                    }
+                    headers.TryGetValue("Range", out var range);
+                    await WriteFileResponse(
+                        stream,
+                        background.FilePath,
+                        background.ContentType,
+                        range,
+                        method == "HEAD",
+                        origin,
+                        cancellationToken);
+                    return;
+                }
+
                 const string mediaPrefix = "/v1/commercials/media/";
                 if (path.StartsWith(mediaPrefix, StringComparison.OrdinalIgnoreCase)
                     && method is "GET" or "HEAD")

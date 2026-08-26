@@ -50,6 +50,7 @@ internal static class CommercialPlayerPage
       z-index: 2;
       pointer-events: none;
     }
+    #tv-stage[hidden] { display: none; }
     #tv-source {
       position: absolute;
       left: -2.6738%;
@@ -81,6 +82,32 @@ internal static class CommercialPlayerPage
       transform-origin: center;
       background: #000;
       z-index: 1;
+    }
+    #crt-power-on {
+      position: absolute;
+      inset: 0;
+      z-index: 4;
+      overflow: hidden;
+      background: #000;
+      opacity: 0;
+      transform-origin: center center;
+      pointer-events: none;
+      will-change: opacity, transform, filter;
+    }
+    #crt-power-on.active {
+      animation: crt-power-on 880ms linear both;
+    }
+    @keyframes crt-power-on {
+      0%, 9% { opacity: 1; transform: scaleY(1); background: #000; filter: brightness(1); }
+      10% { opacity: 1; transform: scaleY(.012); background: #ddfff8; filter: brightness(3.2); }
+      18% { opacity: .92; transform: scaleY(.07); background: #bfffee; filter: brightness(2.2); }
+      28% { opacity: .38; transform: scaleY(.58); background: #7bd7c9; filter: brightness(1.7); }
+      38% { opacity: .08; transform: scaleY(1); background: #07100f; filter: brightness(1); }
+      47% { opacity: .82; transform: scaleY(1); background: #000; }
+      57% { opacity: .12; background: #10201e; }
+      65% { opacity: .46; background: #000; }
+      74% { opacity: .07; background: #18312d; }
+      82%, 100% { opacity: 0; transform: scaleY(1); background: #000; filter: brightness(1); }
     }
     #tv-overlay-video {
       position: absolute;
@@ -224,12 +251,13 @@ internal static class CommercialPlayerPage
   </svg>
   <div id="stage" hidden>
     <video id="background-video" preload="auto" autoplay muted loop playsinline disablepictureinpicture hidden></video>
-    <div id="tv-stage">
+    <div id="tv-stage" hidden>
       <div id="tv-source">
         <div id="video-window">
           <video id="player" preload="metadata" autoplay playsinline disablepictureinpicture></video>
           <img id="corner-logo-a" class="corner-logo" alt="" decoding="sync" hidden>
           <img id="corner-logo-b" class="corner-logo" alt="" decoding="sync" hidden>
+          <div id="crt-power-on" aria-hidden="true"></div>
         </div>
         <video id="tv-overlay-video" preload="auto" autoplay muted loop playsinline disablepictureinpicture hidden></video>
         <div id="tv-light-pulses" aria-hidden="true">
@@ -252,9 +280,11 @@ internal static class CommercialPlayerPage
 
     const stage = document.getElementById('stage');
     const backgroundVideo = document.getElementById('background-video');
+    const tvStage = document.getElementById('tv-stage');
     const tvOverlayVideo = document.getElementById('tv-overlay-video');
     const player = document.getElementById('player');
     const videoWindow = document.getElementById('video-window');
+    const crtPowerOn = document.getElementById('crt-power-on');
     const cornerLogos = [
       document.getElementById('corner-logo-a'),
       document.getElementById('corner-logo-b'),
@@ -272,10 +302,13 @@ internal static class CommercialPlayerPage
     let activeCornerLogo = null;
     let primedCornerLogo = null;
     let pendingAudioGate = null;
+    let idleBackgroundStarting = false;
 
     const automaticFitMaximumDistortion = 1.085;
     const automaticFitSafetyBleed = 1.008;
     const fallbackApertureAspect = 1.87;
+    const idleBackgroundUrl = '/v1/commercials/idle-background';
+    const crtPowerOnDurationMs = 880;
 
     function showStatus(message) { statusBox.textContent = message; }
 
@@ -471,8 +504,13 @@ internal static class CommercialPlayerPage
       video.defaultPlaybackRate = 1;
       video.playbackRate = 1;
       video.removeAttribute('src');
+      delete video.dataset.source;
       video.load();
       video.hidden = true;
+    }
+
+    function resetCrtPowerOn() {
+      crtPowerOn.classList.remove('active');
     }
 
     function playbackCancelledError() {
@@ -487,7 +525,7 @@ internal static class CommercialPlayerPage
       pending.cancel();
     }
 
-    function clearPlayer() {
+    function clearPlayer(resumeIdleBackground = true) {
       runToken += 1;
       running = false;
       cancelAudioGate();
@@ -497,9 +535,12 @@ internal static class CommercialPlayerPage
       player.load();
       clearVisualVideo(backgroundVideo);
       clearVisualVideo(tvOverlayVideo);
+      resetCrtPowerOn();
+      tvStage.hidden = true;
       stage.hidden = true;
       clearLogo();
       clearCornerLogo();
+      if (resumeIdleBackground) void showIdleBackground();
     }
 
     function isAutoplayBlock(error) {
@@ -572,9 +613,16 @@ internal static class CommercialPlayerPage
     async function startVisualVideo(element, url, label, token, playbackRate = 1) {
       if (!url) throw new Error(`${label} video is unavailable`);
       if (token !== runToken) return;
+      if (element.dataset.source === url && !element.hidden) {
+        element.defaultPlaybackRate = playbackRate;
+        element.playbackRate = playbackRate;
+        if (element.paused) await element.play();
+        return;
+      }
       element.muted = true;
       element.loop = true;
       element.src = url;
+      element.dataset.source = url;
       element.hidden = false;
       element.load();
       element.defaultPlaybackRate = playbackRate;
@@ -585,6 +633,41 @@ internal static class CommercialPlayerPage
         throw new Error(`${label} video could not play: ${error?.message || error}`);
       }
       if (token !== runToken) element.pause();
+    }
+
+    async function showIdleBackground() {
+      if (running || idleBackgroundStarting) return;
+      if (backgroundVideo.dataset.source === idleBackgroundUrl && !backgroundVideo.hidden) {
+        stage.hidden = false;
+        tvStage.hidden = true;
+        return;
+      }
+
+      const token = runToken;
+      idleBackgroundStarting = true;
+      stage.hidden = false;
+      tvStage.hidden = true;
+      try {
+        await startVisualVideo(backgroundVideo, idleBackgroundUrl, 'idle background', token);
+        if (token !== runToken || running) return;
+        showStatus('LOCAL COMMERCIAL PLAYER READY · BACKGROUND ACTIVE');
+      } catch (error) {
+        if (token !== runToken || running) return;
+        clearVisualVideo(backgroundVideo);
+        stage.hidden = true;
+        showStatus(`LOCAL COMMERCIAL PLAYER\nIDLE BACKGROUND UNAVAILABLE · ${error?.message || error}`);
+      } finally {
+        idleBackgroundStarting = false;
+      }
+    }
+
+    async function runCrtPowerOn(token) {
+      if (token !== runToken) return;
+      resetCrtPowerOn();
+      void crtPowerOn.offsetWidth;
+      crtPowerOn.classList.add('active');
+      await new Promise(resolve => setTimeout(resolve, crtPowerOnDurationMs));
+      resetCrtPowerOn();
     }
 
     function showLogo(item, token) {
@@ -646,10 +729,15 @@ internal static class CommercialPlayerPage
       showStatus(`BREAK ${state.generation} · ${state.sponsorCount} SPONSORS · ${state.interstitialCount} HOUSE · STARTING`);
       try {
         stage.hidden = false;
+        tvStage.hidden = true;
         await Promise.all([
           startVisualVideo(backgroundVideo, state.backgroundUrl, 'background', token),
           startVisualVideo(tvOverlayVideo, state.tvOverlayUrl, 'TV overlay', token, .5),
         ]);
+        if (token !== runToken) return;
+        tvStage.hidden = false;
+        showStatus(`BREAK ${state.generation} · CRT POWER ON`);
+        await runCrtPowerOn(token);
         for (let index = startIndex; index < state.items.length; index += 1) {
           if (token !== runToken) return;
           const item = state.items[index];
@@ -681,7 +769,7 @@ internal static class CommercialPlayerPage
             && state.backgroundUrl
             && state.tvOverlayUrl
             && (!running || state.generation !== activeGeneration)) {
-          clearPlayer();
+          clearPlayer(false);
           void runBreak(state);
           return;
         }
@@ -690,7 +778,10 @@ internal static class CommercialPlayerPage
             && running) {
           clearPlayer();
         }
-        if (!running) showStatus(`LOCAL COMMERCIAL PLAYER\n${state.status.toUpperCase()} · ${state.message}`);
+        if (!running) {
+          showStatus(`LOCAL COMMERCIAL PLAYER\n${state.status.toUpperCase()} · ${state.message}`);
+          void showIdleBackground();
+        }
       } catch (error) {
         if (!running) showStatus(`LOCAL COMMERCIAL PLAYER OFFLINE\n${error.message}`);
       }
@@ -703,6 +794,7 @@ internal static class CommercialPlayerPage
     });
     if (debug && !navigator.userActivation?.hasBeenActive) audioGate.hidden = false;
 
+    void showIdleBackground();
     void poll();
     setInterval(() => void poll(), 500);
   </script>

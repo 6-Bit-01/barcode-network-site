@@ -5,11 +5,15 @@ namespace Barcode.AudioBridge.Tests;
 public sealed class CommercialPlayerPageTests
 {
     [Fact]
-    public void PlayerIsTransparentAtIdleAndUsesOnlyLocalCommercialEndpoints()
+    public void PlayerShowsOnlyTheLocalAnimatedBackgroundAtIdle()
     {
         var html = CommercialPlayerPage.Html;
 
         Assert.Contains("background: transparent", html);
+        Assert.Contains("const idleBackgroundUrl = '/v1/commercials/idle-background'", html);
+        Assert.Contains("async function showIdleBackground()", html);
+        Assert.Contains("tvStage.hidden = true", html);
+        Assert.Contains("void showIdleBackground()", html);
         Assert.Contains("<video id=\"player\" preload=\"metadata\" autoplay", html);
         Assert.Contains("state.backgroundUrl", html);
         Assert.Contains("state.tvOverlayUrl", html);
@@ -69,7 +73,7 @@ public sealed class CommercialPlayerPageTests
         Assert.DoesNotContain("#tv-stage::before", html);
         Assert.DoesNotContain("#tv-stage::after", html);
         Assert.Matches(
-            @"(?s)<div id=""tv-stage"">.*?<div id=""tv-source"">.*?<div id=""video-window"">.*?<video id=""player"".*?<img id=""corner-logo-a"".*?<img id=""corner-logo-b"".*?</div>.*?<video id=""tv-overlay-video""",
+            @"(?s)<div id=""tv-stage"" hidden>.*?<div id=""tv-source"">.*?<div id=""video-window"">.*?<video id=""player"".*?<img id=""corner-logo-a"".*?<img id=""corner-logo-b"".*?</div>.*?<video id=""tv-overlay-video""",
             html);
         Assert.DoesNotContain("border-radius: 2.4% / 4.5%", html);
         Assert.Matches(@"(?s)#player\s*\{.*?left:\s*50%;.*?top:\s*50%;.*?width:\s*var\(--player-fit-width, 100\.8%\);.*?height:\s*var\(--player-fit-height, 100\.8%\);.*?object-fit:\s*fill;.*?object-position:\s*center center;.*?transform:\s*translate\(-50%, -50%\);", html);
@@ -88,6 +92,23 @@ public sealed class CommercialPlayerPageTests
         Assert.Contains("animation: tv-light-yellow-pulse 1.7s", html);
         Assert.Contains("animation: tv-light-red-pulse 1.35s", html);
         Assert.DoesNotContain("<video id=\"tv-light", html);
+    }
+
+    [Fact]
+    public void TvFramePowersOnOverBlackBeforeTheFirstCommercialStarts()
+    {
+        var html = CommercialPlayerPage.Html;
+
+        Assert.Contains("id=\"tv-stage\" hidden", html);
+        Assert.Contains("id=\"crt-power-on\"", html);
+        Assert.Contains("@keyframes crt-power-on", html);
+        Assert.Contains("animation: crt-power-on 880ms", html);
+        Assert.Contains("async function runCrtPowerOn(token)", html);
+        Assert.Contains("showStatus(`BREAK ${state.generation} · CRT POWER ON`)", html);
+        Assert.Matches(
+            @"(?s)tvStage\.hidden = false;.*?await runCrtPowerOn\(token\);.*?post\(`/v1/commercials/clip-started",
+            html);
+        Assert.DoesNotContain("<video id=\"crt-power-on", html);
     }
 
     [Fact]

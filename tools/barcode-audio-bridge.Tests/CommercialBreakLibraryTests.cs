@@ -23,6 +23,8 @@ public sealed class CommercialBreakLibraryTests
         Assert.DoesNotContain(result.Sponsors, clip => clip.Name == "former-sponsor");
         Assert.NotNull(result.FixedClips);
         Assert.NotNull(result.Visuals);
+        Assert.Equal("video/mp4", result.Visuals!.Background.ContentType);
+        Assert.Equal("video/mp4", result.Visuals.TvOverlay.ContentType);
     }
 
     [Fact]
@@ -49,30 +51,21 @@ public sealed class CommercialBreakLibraryTests
     }
 
     [Fact]
-    public void MissingStartBlocksTheBreakWithTheExactName()
+    public void ExactFixedNamesAreCaseInsensitiveButAllSevenFilesAreRequired()
     {
         using var fixture = new TemporaryCommercialLibrary();
-        File.Delete(Path.Combine(fixture.FixedDirectory, "start.mp4"));
         fixture.AddActiveSponsor("sponsor.mp4");
+        File.Move(
+            Path.Combine(fixture.FixedDirectory, "START.mp4"),
+            Path.Combine(fixture.FixedDirectory, "start.MP4"));
 
-        var result = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
+        var caseInsensitive = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
+        Assert.True(caseInsensitive.Success, caseInsensitive.Message);
 
-        Assert.False(result.Success);
-        Assert.Contains("start.mp4", result.Message);
-    }
-
-    [Fact]
-    public void FewerThanThreeBumpersBlocksTheBreak()
-    {
-        using var fixture = new TemporaryCommercialLibrary();
-        foreach (var path in Directory.EnumerateFiles(fixture.BumpersDirectory).Skip(2)) File.Delete(path);
-        fixture.AddActiveSponsor("sponsor.mp4");
-
-        var result = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
-
-        Assert.False(result.Success);
-        Assert.Contains("At least 3", result.Message);
-        Assert.Contains("Fixed\\Bumpers", result.Message);
+        File.Delete(Path.Combine(fixture.FixedDirectory, "BUMPER5.mp4"));
+        var missing = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
+        Assert.False(missing.Success);
+        Assert.Contains("BUMPER5.mp4", missing.Message);
     }
 
     [Fact]
@@ -80,12 +73,12 @@ public sealed class CommercialBreakLibraryTests
     {
         using var fixture = new TemporaryCommercialLibrary();
         fixture.AddActiveSponsor("sponsor.mp4");
-        var durations = new TestDurationReader().Fail("start.mp4");
+        var durations = new TestDurationReader().Fail("START.mp4");
 
         var result = new CommercialBreakLibrary(fixture.RootDirectory, durations).Load();
 
         Assert.False(result.Success);
-        Assert.Contains("start.mp4", result.Message);
+        Assert.Contains("START.mp4", result.Message);
         Assert.Contains("fixture unreadable", result.Message);
     }
 
@@ -106,49 +99,46 @@ public sealed class CommercialBreakLibraryTests
     }
 
     [Fact]
-    public void TaggedClipRequiresItsLogoAndEveryBreakRequiresBothVisualVideos()
+    public void TaggedClipRequiresItsRootLogoAndEveryBreakRequiresBgAndTv()
     {
         using var fixture = new TemporaryCommercialLibrary();
         fixture.AddActiveSponsor("real.mp4");
         fixture.AddActiveSponsor("fake (BL).mp4");
-        File.Delete(Directory.EnumerateFiles(fixture.BlLogosDirectory).Single());
+        File.Delete(Path.Combine(fixture.RootDirectory, "BL.png"));
 
         var missingLogo = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
-
         Assert.False(missingLogo.Success);
-        Assert.Contains("Visuals\\Logos\\BL", missingLogo.Message);
+        Assert.Contains("BL.png", missingLogo.Message);
 
-        TemporaryCommercialLibrary.AddFile(fixture.BlLogosDirectory, "bl.png");
-        File.Delete(Directory.EnumerateFiles(fixture.BackgroundDirectory).Single());
+        TemporaryCommercialLibrary.AddFile(fixture.RootDirectory, "BL.png");
+        File.Delete(fixture.BackgroundPath);
         var missingBackground = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
-
         Assert.False(missingBackground.Success);
-        Assert.Contains("Visuals\\Background", missingBackground.Message);
+        Assert.Contains("BG.mp4", missingBackground.Message);
 
-        TemporaryCommercialLibrary.AddFile(fixture.BackgroundDirectory, "background.mp4");
-        File.Delete(Directory.EnumerateFiles(fixture.TvOverlayDirectory).Single());
-        var missingTvOverlay = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
-
-        Assert.False(missingTvOverlay.Success);
-        Assert.Contains("Visuals\\TV Overlay", missingTvOverlay.Message);
+        TemporaryCommercialLibrary.AddFile(fixture.RootDirectory, "BG.mp4");
+        File.Delete(fixture.TvPath);
+        var missingFrame = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
+        Assert.False(missingFrame.Success);
+        Assert.Contains("TV.mp4", missingFrame.Message);
     }
 
     [Fact]
-    public void StillImagesDoNotSatisfyTheAnimatedBackgroundOrTvOverlayContract()
+    public void BcnTaggedContentRequiresBothAlternatingRootLogos()
     {
         using var fixture = new TemporaryCommercialLibrary();
         fixture.AddActiveSponsor("real.mp4");
-        File.Delete(Directory.EnumerateFiles(fixture.BackgroundDirectory).Single());
-        TemporaryCommercialLibrary.AddFile(fixture.BackgroundDirectory, "background.png");
+        fixture.AddActiveSponsor("fake (BCN).mp4");
+        File.Delete(Path.Combine(fixture.RootDirectory, "BCN2.png"));
 
         var result = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
 
         Assert.False(result.Success);
-        Assert.Contains("background video", result.Message);
+        Assert.Contains("BCN1.png and BCN2.png", result.Message);
     }
 
     [Fact]
-    public void EnsureLayoutCreatesDropInFoldersAndCurrentInstructions()
+    public void EnsureLayoutCreatesOnlyTheSimpleDropInFoldersAndCurrentInstructions()
     {
         using var fixture = new TemporaryCommercialLibrary(createFixed: false);
         Directory.Delete(fixture.RootDirectory, recursive: true);
@@ -156,18 +146,17 @@ public sealed class CommercialBreakLibraryTests
 
         library.EnsureLayout();
 
-        Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Fixed", "Bumpers")));
+        Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Fixed")));
         Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Sponsors", "Active")));
         Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Sponsors", "Inactive")));
-        Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Visuals", "Background")));
-        Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Visuals", "TV Overlay")));
-        Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Visuals", "Logos", "BCN")));
+        Assert.False(Directory.Exists(Path.Combine(fixture.RootDirectory, "Visuals")));
         var instructions = Path.Combine(fixture.RootDirectory, "README.txt");
         Assert.True(File.Exists(instructions));
         var text = File.ReadAllText(instructions);
-        Assert.Contains("11:00", text);
-        Assert.Contains("(BCN)", text);
-        Assert.Contains("looping background video", text);
-        Assert.Contains("Visuals\\TV Overlay", text);
+        Assert.Contains("START.mp4", text);
+        Assert.Contains("BUMPER5.mp4", text);
+        Assert.Contains("BG.mp4", text);
+        Assert.Contains("TV.mp4", text);
+        Assert.Contains("1080 x 1920", text);
     }
 }

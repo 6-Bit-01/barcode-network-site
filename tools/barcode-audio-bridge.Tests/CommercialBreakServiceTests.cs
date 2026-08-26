@@ -105,7 +105,7 @@ public sealed class CommercialBreakServiceTests
         Assert.Equal("video/mp4", background.ContentType);
         var tvOverlayId = snapshot.TvOverlayUrl![snapshot.TvOverlayUrl.LastIndexOf('/')..].TrimStart('/');
         Assert.True(service.TryGetMedia(tvOverlayId, out var tvOverlay));
-        Assert.Equal("video/webm", tvOverlay.ContentType);
+        Assert.Equal("video/mp4", tvOverlay.ContentType);
         var logoId = tagged.LogoUrl![tagged.LogoUrl.LastIndexOf('/')..].TrimStart('/');
         Assert.True(service.TryGetMedia(logoId, out var logo));
         Assert.Equal("image/png", logo.ContentType);

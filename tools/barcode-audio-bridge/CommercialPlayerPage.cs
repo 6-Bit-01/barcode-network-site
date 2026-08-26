@@ -18,54 +18,79 @@ internal static class CommercialPlayerPage
       position: fixed;
       left: 50%;
       top: 50%;
-      width: min(100vw, 177.777778vh);
-      height: min(100vh, 56.25vw);
+      width: min(100vw, calc(100vh * .5625));
+      height: min(100vh, calc(100vw * 1.7777778));
+      aspect-ratio: 9 / 16;
       transform: translate(-50%, -50%);
       overflow: hidden;
+      background: transparent;
     }
-    #background-video, #tv-overlay-video {
+    #stage[hidden] { display: none; }
+    #background-video {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      background: transparent;
+      z-index: 0;
+    }
+    #logo {
+      position: absolute;
+      top: 23.5%;
+      left: 50%;
+      width: 62%;
+      height: 12%;
+      object-fit: contain;
+      opacity: 0;
+      transform: translate(-50%, -10px) scale(.98);
+      transition: opacity 1800ms ease, transform 1800ms ease;
+      filter: drop-shadow(0 0 18px rgba(0,0,0,.72));
+      z-index: 4;
+      pointer-events: none;
+    }
+    #logo.visible { opacity: 1; transform: translate(-50%, 0) scale(1); }
+    #tv-stage {
+      position: absolute;
+      top: 40.5%;
+      left: 50%;
+      width: 96%;
+      aspect-ratio: 16 / 9;
+      transform: translateX(-50%);
+      z-index: 2;
+    }
+    #player {
+      position: absolute;
+      left: 14.69%;
+      top: 13.06%;
+      width: 70.31%;
+      height: 66.11%;
+      object-fit: contain;
+      background: #000;
+      border-radius: 2.2% / 4.1%;
+      z-index: 1;
+    }
+    #tv-overlay-video {
       position: absolute;
       inset: 0;
       width: 100%;
       height: 100%;
       object-fit: fill;
       pointer-events: none;
-    }
-    #background-video {
-      z-index: 0;
-    }
-    #tv-overlay-video {
-      z-index: 1;
-    }
-    #video-window {
-      position: absolute;
-      left: 14.85%;
-      top: 12.85%;
-      width: 70.2%;
-      height: 66.55%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-      border-radius: 2.4% / 4.5%;
       z-index: 2;
+      clip-path: inset(.7% 5.6% .7% 5.6% round 1.8%);
+      -webkit-mask:
+        linear-gradient(#fff 0 0) top / 100% 13.06% no-repeat,
+        linear-gradient(#fff 0 0) bottom / 100% 20.83% no-repeat,
+        linear-gradient(#fff 0 0) left 13.06% / 14.69% 66.11% no-repeat,
+        linear-gradient(#fff 0 0) right 13.06% / 15% 66.11% no-repeat;
+      mask:
+        linear-gradient(#fff 0 0) top / 100% 13.06% no-repeat,
+        linear-gradient(#fff 0 0) bottom / 100% 20.83% no-repeat,
+        linear-gradient(#fff 0 0) left 13.06% / 14.69% 66.11% no-repeat,
+        linear-gradient(#fff 0 0) right 13.06% / 15% 66.11% no-repeat;
     }
-    #player { width: 100%; height: 100%; object-fit: cover; background: transparent; }
-    #logo {
-      position: absolute;
-      top: 2.5%;
-      left: 50%;
-      width: min(52%, 760px);
-      height: 12%;
-      object-fit: contain;
-      opacity: 0;
-      transform: translate(-50%, -8px) scale(.985);
-      transition: opacity 1800ms ease, transform 1800ms ease;
-      z-index: 3;
-      pointer-events: none;
-    }
-    #logo.visible { opacity: 1; transform: translate(-50%, 0) scale(1); }
-    #background-video[hidden], #tv-overlay-video[hidden], #video-window[hidden], #logo[hidden] { display: none; }
+    #background-video[hidden], #tv-overlay-video[hidden], #logo[hidden] { display: none; }
     #status {
       display: none;
       position: fixed;
@@ -79,19 +104,20 @@ internal static class CommercialPlayerPage
       font-size: 14px;
       line-height: 1.35;
       white-space: pre-wrap;
-      z-index: 4;
+      z-index: 20;
     }
     body.debug #status { display: block; }
+    body.debug #tv-stage { outline: 1px dashed rgba(121,255,116,.65); }
   </style>
 </head>
 <body>
-  <div id="stage">
+  <div id="stage" hidden>
     <video id="background-video" preload="auto" autoplay muted loop playsinline disablepictureinpicture hidden></video>
-    <video id="tv-overlay-video" preload="auto" autoplay muted loop playsinline disablepictureinpicture hidden></video>
-    <div id="video-window" hidden>
-      <video id="player" preload="auto" autoplay playsinline disablepictureinpicture></video>
-    </div>
     <img id="logo" alt="" hidden>
+    <div id="tv-stage">
+      <video id="player" preload="auto" autoplay playsinline disablepictureinpicture></video>
+      <video id="tv-overlay-video" preload="auto" autoplay muted loop playsinline disablepictureinpicture hidden></video>
+    </div>
   </div>
   <div id="status">LOCAL COMMERCIAL PLAYER READY</div>
   <script>
@@ -99,10 +125,10 @@ internal static class CommercialPlayerPage
     const debug = query.get('debug') === '1';
     document.body.classList.toggle('debug', debug);
 
+    const stage = document.getElementById('stage');
     const backgroundVideo = document.getElementById('background-video');
-    const videoWindow = document.getElementById('video-window');
-    const player = document.getElementById('player');
     const tvOverlayVideo = document.getElementById('tv-overlay-video');
+    const player = document.getElementById('player');
     const logo = document.getElementById('logo');
     const statusBox = document.getElementById('status');
     if (debug) player.controls = true;
@@ -113,9 +139,7 @@ internal static class CommercialPlayerPage
     let preloadPlayer = null;
     let logoTimers = [];
 
-    function showStatus(message) {
-      statusBox.textContent = message;
-    }
+    function showStatus(message) { statusBox.textContent = message; }
 
     async function post(path) {
       const response = await fetch(path, { method: 'POST', cache: 'no-store' });
@@ -137,19 +161,22 @@ internal static class CommercialPlayerPage
       logo.removeAttribute('src');
     }
 
+    function clearVisualVideo(video) {
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+      video.hidden = true;
+    }
+
     function clearPlayer() {
       runToken += 1;
       running = false;
       player.pause();
       player.removeAttribute('src');
       player.load();
-      videoWindow.hidden = true;
-      for (const visualVideo of [backgroundVideo, tvOverlayVideo]) {
-        visualVideo.pause();
-        visualVideo.hidden = true;
-        visualVideo.removeAttribute('src');
-        visualVideo.load();
-      }
+      clearVisualVideo(backgroundVideo);
+      clearVisualVideo(tvOverlayVideo);
+      stage.hidden = true;
       clearLogo();
       releasePreload();
     }
@@ -186,8 +213,8 @@ internal static class CommercialPlayerPage
       logo.hidden = false;
       logoTimers.push(setTimeout(() => {
         if (token === runToken) logo.classList.add('visible');
-      }, 180));
-      const fadeAt = Math.max(2000, (item.durationSeconds * 1000) - 2200);
+      }, 500));
+      const fadeAt = Math.max(2500, (item.durationSeconds * 1000) - 2300);
       logoTimers.push(setTimeout(() => {
         if (token === runToken) logo.classList.remove('visible');
       }, fadeAt));
@@ -195,39 +222,25 @@ internal static class CommercialPlayerPage
 
     function playItem(item, nextItem, token) {
       return new Promise((resolve, reject) => {
-        if (token !== runToken) {
-          resolve();
-          return;
-        }
-
+        if (token !== runToken) { resolve(); return; }
         const cleanup = () => {
           player.removeEventListener('ended', onEnded);
           player.removeEventListener('error', onError);
         };
-        const onEnded = () => {
-          cleanup();
-          clearLogo();
-          resolve();
-        };
+        const onEnded = () => { cleanup(); clearLogo(); resolve(); };
         const onError = () => {
           cleanup();
           clearLogo();
           reject(new Error(player.error?.message || `could not play ${item.name}`));
         };
-
         player.addEventListener('ended', onEnded, { once: true });
         player.addEventListener('error', onError, { once: true });
         player.src = item.url;
-        videoWindow.hidden = false;
         player.load();
         preload(nextItem);
         player.play()
           .then(() => showLogo(item, token))
-          .catch(error => {
-            cleanup();
-            clearLogo();
-            reject(error);
-          });
+          .catch(error => { cleanup(); clearLogo(); reject(error); });
       });
     }
 
@@ -238,9 +251,9 @@ internal static class CommercialPlayerPage
       const startIndex = state.status === 'playing'
         ? Math.max(0, Math.min(state.currentIndex, state.items.length - 1))
         : 0;
-      showStatus(`BREAK ${state.generation} · ${state.sponsorCount} SPONSORS · ${state.interstitialCount} HOUSE · STARTING VISUALS`);
-
+      showStatus(`BREAK ${state.generation} · ${state.sponsorCount} SPONSORS · ${state.interstitialCount} HOUSE · STARTING`);
       try {
+        stage.hidden = false;
         await Promise.all([
           startVisualVideo(backgroundVideo, state.backgroundUrl, 'background', token),
           startVisualVideo(tvOverlayVideo, state.tvOverlayUrl, 'TV overlay', token),
@@ -259,9 +272,7 @@ internal static class CommercialPlayerPage
       } catch (error) {
         if (token !== runToken) return;
         const reason = String(error?.message || error || 'playback error').slice(0, 180);
-        try {
-          await post(`/v1/commercials/failed?generation=${state.generation}&reason=${encodeURIComponent(reason)}`);
-        } catch {}
+        try { await post(`/v1/commercials/failed?generation=${state.generation}&reason=${encodeURIComponent(reason)}`); } catch {}
         showStatus(`PLAYBACK ERROR\n${reason}`);
         clearPlayer();
       }
@@ -286,9 +297,7 @@ internal static class CommercialPlayerPage
             && running) {
           clearPlayer();
         }
-        if (!running) {
-          showStatus(`LOCAL COMMERCIAL PLAYER\n${state.status.toUpperCase()} · ${state.message}`);
-        }
+        if (!running) showStatus(`LOCAL COMMERCIAL PLAYER\n${state.status.toUpperCase()} · ${state.message}`);
       } catch (error) {
         if (!running) showStatus(`LOCAL COMMERCIAL PLAYER OFFLINE\n${error.message}`);
       }

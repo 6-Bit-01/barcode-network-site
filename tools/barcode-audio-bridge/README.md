@@ -81,13 +81,13 @@ Create one permanent Link/browser source using:
 http://127.0.0.1:43120/commercials
 ```
 
-The page is transparent and idle until the tray action queues a break. During playback it loops the local background video, plays each commercial in the TV window, loops the TV-overlay video above that window, and shows any clip-tagged logo above the complete composition. It preloads only the next commercial and returns every layer to transparent idle after the end sequence. The source supports normal browser byte-range requests, so it does not load the full library into memory.
+The page is transparent and idle until the tray action queues a break. During playback it preserves one centered 16:9 composition, loops the local background video, loops the TV-overlay video, fits each commercial over the overlay's yellow inner screen, and shows any clip-tagged logo above the complete composition. It preloads only the next commercial and returns every layer to transparent idle after the end sequence. The source supports normal browser byte-range requests, so it does not load the full library into memory.
 
-The TV-overlay file is the top video layer. If its design crosses the commercial window, export that opening with transparency (WEBM with alpha is supported) so the commercial remains visible. An opaque MP4 is still supported when its TV opening does not cover the commercial window.
+The calibrated commercial window visually turns the yellow TV screen into a transparent opening: the commercial covers that screen while the surrounding animated TV casing remains visible. The supplied opaque MP4 works directly; no chroma key, alpha channel, or WEBM re-export is required. Keep both visual videos at the same 16:9 resolution used by the show composition (normally 1920x1080).
 
-Use **Copy commercial player source URL** for setup or **Open commercial player preview** for a visible local diagnostic view. Do not keep the preview browser open during a broadcast if the TikTok Studio source is already active, because both pages can play the same local break.
+Use **Copy commercial player source URL** for the permanent TikTok Studio Link source. **Open commercial player preview** opens that same local URL with `?debug=1`; only that diagnostic version shows the green status box. Do not keep the preview browser open during a broadcast if the TikTok Studio source is already active, because both pages can play the same local break.
 
-Recommended commercial/background format: H.264 video and AAC audio in an MP4 container, at the same resolution and frame rate used by the current commercial block. Use WEBM when the TV-overlay video needs transparency.
+Recommended commercial/background/TV-overlay format: H.264 video and AAC audio in an MP4 container, at the same 16:9 resolution and frame rate used by the current commercial block.
 
 The first release starts locally from the tray. It does not change the queue's existing sponsor timing, sponsor-break state, or Start Sponsor Break action. A queue-to-local start bridge remains a separate later integration.
 

@@ -14,41 +14,49 @@ internal static class CommercialPlayerPage
     * { box-sizing: border-box; }
     html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; }
     body { font-family: Consolas, "Courier New", monospace; }
-    #background-video, #tv-overlay-video {
+    #stage {
       position: fixed;
+      left: 50%;
+      top: 50%;
+      width: min(100vw, 177.777778vh);
+      height: min(100vh, 56.25vw);
+      transform: translate(-50%, -50%);
+      overflow: hidden;
+    }
+    #background-video, #tv-overlay-video {
+      position: absolute;
       inset: 0;
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      object-fit: fill;
       pointer-events: none;
     }
     #background-video {
       z-index: 0;
     }
+    #tv-overlay-video {
+      z-index: 1;
+    }
     #video-window {
-      position: fixed;
-      left: 10.2%;
-      top: 35.94%;
-      width: 79.2%;
-      height: 23.75%;
+      position: absolute;
+      left: 14.85%;
+      top: 12.85%;
+      width: 70.2%;
+      height: 66.55%;
       display: flex;
       align-items: center;
       justify-content: center;
       overflow: hidden;
-      border-radius: 2.2vw;
-      background: #000;
-      z-index: 1;
-    }
-    #player { display: block; width: 100%; height: 100%; object-fit: contain; background: #000; }
-    #tv-overlay-video {
+      border-radius: 2.4% / 4.5%;
       z-index: 2;
     }
+    #player { width: 100%; height: 100%; object-fit: cover; background: transparent; }
     #logo {
-      position: fixed;
-      top: 20.5%;
+      position: absolute;
+      top: 2.5%;
       left: 50%;
-      width: min(68%, 760px);
-      height: 9.5%;
+      width: min(52%, 760px);
+      height: 12%;
       object-fit: contain;
       opacity: 0;
       transform: translate(-50%, -8px) scale(.985);
@@ -77,12 +85,14 @@ internal static class CommercialPlayerPage
   </style>
 </head>
 <body>
-  <video id="background-video" preload="auto" autoplay muted loop playsinline disablepictureinpicture hidden></video>
-  <div id="video-window" hidden>
-    <video id="player" preload="auto" autoplay playsinline disablepictureinpicture></video>
+  <div id="stage">
+    <video id="background-video" preload="auto" autoplay muted loop playsinline disablepictureinpicture hidden></video>
+    <video id="tv-overlay-video" preload="auto" autoplay muted loop playsinline disablepictureinpicture hidden></video>
+    <div id="video-window" hidden>
+      <video id="player" preload="auto" autoplay playsinline disablepictureinpicture></video>
+    </div>
+    <img id="logo" alt="" hidden>
   </div>
-  <video id="tv-overlay-video" preload="auto" autoplay muted loop playsinline disablepictureinpicture hidden></video>
-  <img id="logo" alt="" hidden>
   <div id="status">LOCAL COMMERCIAL PLAYER READY</div>
   <script>
     const query = new URLSearchParams(location.search);

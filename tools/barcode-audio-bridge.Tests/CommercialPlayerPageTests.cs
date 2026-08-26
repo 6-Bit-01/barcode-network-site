@@ -27,31 +27,34 @@ public sealed class CommercialPlayerPageTests
     }
 
     [Fact]
-    public void CommercialWindowMatchesTheSuppliedVerticalTvAperture()
-    {
-        var html = CommercialPlayerPage.Html;
-
-        Assert.Contains("left: 10.2%", html);
-        Assert.Contains("top: 35.94%", html);
-        Assert.Contains("width: 79.2%", html);
-        Assert.Contains("height: 23.75%", html);
-        Assert.Contains("border-radius: 2.2vw", html);
-        Assert.Contains("background: #000", html);
-        Assert.Contains("object-fit: contain", html);
-    }
-
-    [Fact]
-    public void LogosFadeSlowlyAboveTheTvAndOnlyOneNextClipIsPreloaded()
+    public void LogosFadeSlowlyAboveTheVideoAndOnlyOneNextClipIsPreloaded()
     {
         var html = CommercialPlayerPage.Html;
 
         Assert.Contains("transition: opacity 1800ms ease", html);
         Assert.Contains("#logo.visible", html);
-        Assert.Contains("top: 20.5%", html);
-        Assert.Contains("height: 9.5%", html);
+        Assert.Contains("top: 2.5%", html);
         Assert.Contains("for (const visualVideo of [backgroundVideo, tvOverlayVideo])", html);
         Assert.Contains("let preloadPlayer = null", html);
         Assert.Contains("preload(nextItem)", html);
         Assert.Contains("query.get('debug') === '1'", html);
+    }
+
+    [Fact]
+    public void CompositionPreservesSixteenByNineAndReplacesTheOpaqueTvScreen()
+    {
+        var html = CommercialPlayerPage.Html;
+
+        Assert.Contains("<div id=\"stage\">", html);
+        Assert.Contains("width: min(100vw, 177.777778vh)", html);
+        Assert.Contains("height: min(100vh, 56.25vw)", html);
+        Assert.Contains("left: 14.85%", html);
+        Assert.Contains("top: 12.85%", html);
+        Assert.Contains("width: 70.2%", html);
+        Assert.Contains("height: 66.55%", html);
+        Assert.Contains("#tv-overlay-video {\n      z-index: 1", html);
+        Assert.Contains("border-radius: 2.4% / 4.5%;\n      z-index: 2", html);
+        Assert.Contains("#player { width: 100%; height: 100%; object-fit: cover", html);
+        Assert.DoesNotContain("inset: 17% 4% 4%", html);
     }
 }

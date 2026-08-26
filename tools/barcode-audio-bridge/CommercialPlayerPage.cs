@@ -42,21 +42,29 @@ internal static class CommercialPlayerPage
       position: absolute;
       top: 30.6%;
       left: 50%;
-      width: 88.3%;
-      aspect-ratio: 771 / 482;
+      width: 92%;
+      aspect-ratio: 719 / 435;
       transform: translateX(-50%);
+      overflow: hidden;
       isolation: isolate;
       z-index: 2;
       pointer-events: none;
     }
+    #tv-source {
+      position: absolute;
+      left: -2.6738%;
+      top: -2.7624%;
+      width: 106.9519%;
+      height: 110.4972%;
+      isolation: isolate;
+    }
     #video-window {
       position: absolute;
-      left: 6.2257%;
-      top: 9.7510%;
-      width: 87.2892%;
-      height: 74.4813%;
+      left: 5%;
+      top: 8.5%;
+      width: 90%;
+      height: 77%;
       overflow: hidden;
-      border-radius: 2.4% / 4.5%;
       background: #000;
       z-index: 1;
     }
@@ -67,7 +75,7 @@ internal static class CommercialPlayerPage
       width: 100%;
       height: 100%;
       object-fit: cover;
-      transform: scale(1.05);
+      transform: scale(1.10);
       transform-origin: center;
       background: #000;
       z-index: 1;
@@ -86,10 +94,10 @@ internal static class CommercialPlayerPage
     }
     #corner-logo {
       position: absolute;
-      right: 1.8%;
+      right: 2.2%;
       bottom: 2.2%;
-      width: 11.5%;
-      height: 10%;
+      width: 18%;
+      height: 16%;
       object-fit: contain;
       object-position: right bottom;
       filter: drop-shadow(0 1px 2px rgba(0,0,0,.8));
@@ -169,11 +177,13 @@ internal static class CommercialPlayerPage
   <div id="stage" hidden>
     <video id="background-video" preload="auto" autoplay muted loop playsinline disablepictureinpicture hidden></video>
     <div id="tv-stage">
-      <div id="video-window">
-        <video id="player" preload="metadata" autoplay playsinline disablepictureinpicture></video>
-        <img id="corner-logo" alt="" hidden>
+      <div id="tv-source">
+        <div id="video-window">
+          <video id="player" preload="metadata" autoplay playsinline disablepictureinpicture></video>
+          <img id="corner-logo" alt="" hidden>
+        </div>
+        <video id="tv-overlay-video" preload="auto" autoplay muted loop playsinline disablepictureinpicture hidden></video>
       </div>
-      <video id="tv-overlay-video" preload="auto" autoplay muted loop playsinline disablepictureinpicture hidden></video>
     </div>
     <img id="logo" alt="" hidden>
   </div>

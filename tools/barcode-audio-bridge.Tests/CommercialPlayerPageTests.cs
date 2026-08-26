@@ -44,15 +44,18 @@ public sealed class CommercialPlayerPageTests
     }
 
     [Fact]
-    public void ExactReferenceGeometryUsesOneCompleteMaskedBezelAboveAnOverscannedCommercial()
+    public void CroppedReferenceGeometryUsesOneCompleteMaskedBezelAboveAnOverscannedCommercial()
     {
         var html = CommercialPlayerPage.Html;
 
         Assert.Matches(
-            @"(?s)#tv-stage\s*\{.*?top:\s*30\.6%;.*?width:\s*88\.3%;.*?aspect-ratio:\s*771\s*/\s*482;.*?z-index:\s*2;",
+            @"(?s)#tv-stage\s*\{.*?top:\s*30\.6%;.*?width:\s*92%;.*?aspect-ratio:\s*719\s*/\s*435;.*?overflow:\s*hidden;.*?z-index:\s*2;",
             html);
         Assert.Matches(
-            @"(?s)#video-window\s*\{.*?left:\s*6\.2257%;.*?top:\s*9\.7510%;.*?width:\s*87\.2892%;.*?height:\s*74\.4813%;.*?z-index:\s*1;",
+            @"(?s)#tv-source\s*\{.*?left:\s*-2\.6738%;.*?top:\s*-2\.7624%;.*?width:\s*106\.9519%;.*?height:\s*110\.4972%;",
+            html);
+        Assert.Matches(
+            @"(?s)#video-window\s*\{.*?left:\s*5%;.*?top:\s*8\.5%;.*?width:\s*90%;.*?height:\s*77%;.*?z-index:\s*1;",
             html);
         Assert.Matches(
             @"(?s)#tv-overlay-video\s*\{.*?width:\s*100%;.*?height:\s*100%;.*?object-fit:\s*cover;.*?z-index:\s*2;",
@@ -66,11 +69,11 @@ public sealed class CommercialPlayerPageTests
         Assert.DoesNotContain("#tv-stage::before", html);
         Assert.DoesNotContain("#tv-stage::after", html);
         Assert.Matches(
-            @"(?s)<div id=""tv-stage"">.*?<div id=""video-window"">.*?<video id=""player"".*?<img id=""corner-logo"".*?</div>.*?<video id=""tv-overlay-video""",
+            @"(?s)<div id=""tv-stage"">.*?<div id=""tv-source"">.*?<div id=""video-window"">.*?<video id=""player"".*?<img id=""corner-logo"".*?</div>.*?<video id=""tv-overlay-video""",
             html);
-        Assert.Contains("border-radius: 2.4% / 4.5%", html);
-        Assert.Matches(@"(?s)#player\s*\{.*?width:\s*100%;.*?height:\s*100%;.*?object-fit:\s*cover;.*?transform:\s*scale\(1\.05\);", html);
-        Assert.Matches(@"(?s)#corner-logo\s*\{.*?right:\s*1\.8%;.*?bottom:\s*2\.2%;.*?width:\s*11\.5%;.*?z-index:\s*2;", html);
+        Assert.DoesNotContain("border-radius: 2.4% / 4.5%", html);
+        Assert.Matches(@"(?s)#player\s*\{.*?width:\s*100%;.*?height:\s*100%;.*?object-fit:\s*cover;.*?transform:\s*scale\(1\.10\);", html);
+        Assert.Matches(@"(?s)#corner-logo\s*\{.*?right:\s*2\.2%;.*?bottom:\s*2\.2%;.*?width:\s*18%;.*?height:\s*16%;.*?z-index:\s*2;", html);
     }
 
     [Fact]

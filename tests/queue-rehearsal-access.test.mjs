@@ -38,7 +38,7 @@ test("rehearsal access tokens are signed, session-scoped, and cannot authenticat
   assert.equal(await auth.verifyRehearsalQueueToken(`${token}tampered`, "session_rehearsal_one"), false);
 });
 
-test("the rehearsal cookie authorizes only an active rehearsal session", async () => {
+test("the rehearsal cookie authorizes only the current active rehearsal session", async () => {
   const sessionId = "session_rehearsal_cookie";
   const token = await auth.createRehearsalQueueToken(sessionId);
   const request = new Request("https://example.test/api/queue", {
@@ -46,11 +46,12 @@ test("the rehearsal cookie authorizes only an active rehearsal session", async (
   });
   const base = { sessionId, purpose: "rehearsal", status: "open", broadcastPhase: "submission_window" };
 
-  assert.equal(await access.requestHasRehearsalQueueAccess(request, base), true);
-  assert.equal(await access.requestHasRehearsalQueueAccess(request, { ...base, purpose: "simulation" }), false);
-  assert.equal(await access.requestHasRehearsalQueueAccess(request, { ...base, purpose: "internal_test" }), false);
-  assert.equal(await access.requestHasRehearsalQueueAccess(request, { ...base, purpose: "live_broadcast" }), false);
-  assert.equal(await access.requestHasRehearsalQueueAccess(request, { ...base, status: "archived" }), false);
-  assert.equal(await access.requestHasRehearsalQueueAccess(request, { ...base, broadcastPhase: "ended" }), false);
-  assert.equal(await access.requestHasRehearsalQueueAccess(request, { ...base, sessionId: "session_other" }), false);
+  assert.equal(await access.requestHasRehearsalQueueAccess(request, base, true), true);
+  assert.equal(await access.requestHasRehearsalQueueAccess(request, base, false), false);
+  assert.equal(await access.requestHasRehearsalQueueAccess(request, { ...base, purpose: "simulation" }, true), false);
+  assert.equal(await access.requestHasRehearsalQueueAccess(request, { ...base, purpose: "internal_test" }, true), false);
+  assert.equal(await access.requestHasRehearsalQueueAccess(request, { ...base, purpose: "live_broadcast" }, true), false);
+  assert.equal(await access.requestHasRehearsalQueueAccess(request, { ...base, status: "archived" }, true), false);
+  assert.equal(await access.requestHasRehearsalQueueAccess(request, { ...base, broadcastPhase: "ended" }, true), false);
+  assert.equal(await access.requestHasRehearsalQueueAccess(request, { ...base, sessionId: "session_other" }, true), false);
 });

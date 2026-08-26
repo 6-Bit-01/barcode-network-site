@@ -56,7 +56,7 @@ export async function POST(req: Request) {
     const sessionId = cleanText(body.sessionId);
     if (!trackId || !sessionId) return NextResponse.json({ error: "Signal Hold is not available for this track." }, { status: 400 });
     const snapshot = await getPublicQueueSnapshot(sessionId);
-    const allowPrivateSession = await verifyAdminRequest(req) || await requestHasRehearsalQueueAccess(req, snapshot.session);
+    const allowPrivateSession = await verifyAdminRequest(req) || await requestHasRehearsalQueueAccess(req, snapshot.session, snapshot.sessionActive === true);
     if (snapshot.session?.sessionId !== sessionId || (snapshot.session.purpose !== "live_broadcast" && !allowPrivateSession)) {
       return NextResponse.json({ error: "Signal Hold is not available for this track." }, { status: 409 });
     }

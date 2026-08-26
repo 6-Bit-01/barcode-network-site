@@ -17,7 +17,7 @@ export async function GET(
   const { sessionId } = await params;
   const accessToken = new URL(request.url).searchParams.get("access")?.trim() ?? "";
   const snapshot = await getPublicQueueSnapshot();
-  const validSession = isActiveRehearsalSession(snapshot.session)
+  const validSession = isActiveRehearsalSession(snapshot.session, snapshot.sessionActive === true)
     && snapshot.session.sessionId === sessionId;
   const validAccess = validSession
     && Boolean(accessToken)

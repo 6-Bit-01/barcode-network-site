@@ -11,9 +11,13 @@ type RehearsalSessionLike = {
   broadcastPhase?: string | null;
 } | null | undefined;
 
-export function isActiveRehearsalSession(session: RehearsalSessionLike): session is NonNullable<RehearsalSessionLike> {
+export function isActiveRehearsalSession(
+  session: RehearsalSessionLike,
+  isCurrentSession: boolean,
+): session is NonNullable<RehearsalSessionLike> {
   return Boolean(
-    session
+    isCurrentSession
+    && session
     && session.purpose === "rehearsal"
     && session.status !== "archived"
     && session.broadcastPhase !== "ended",
@@ -27,8 +31,9 @@ export function requestRehearsalQueueToken(request: Request): string {
 export async function requestHasRehearsalQueueAccess(
   request: Request,
   session: RehearsalSessionLike,
+  isCurrentSession: boolean,
 ): Promise<boolean> {
-  if (!isActiveRehearsalSession(session)) return false;
+  if (!isActiveRehearsalSession(session, isCurrentSession)) return false;
   const token = requestRehearsalQueueToken(request);
   return Boolean(token && await verifyRehearsalQueueToken(token, session.sessionId));
 }

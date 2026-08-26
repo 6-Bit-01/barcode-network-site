@@ -282,12 +282,13 @@ test("only a signed rehearsal link extends private intake and checkout beyond au
   const accessBoundary = fs.readFileSync(path.join(projectRoot, "src/lib/queue-rehearsal-access.ts"), "utf8");
 
   assert.match(publicQueueRoute, /sanitizeQueueSnapshotForPublic\(rawSnapshot\)/);
-  assert.match(publicQueueRoute, /requestHasRehearsalQueueAccess\(req, rawSnapshot\.session\)/);
+  assert.match(publicQueueRoute, /requestHasRehearsalQueueAccess\(req, rawSnapshot\.session, rawSnapshot\.sessionActive === true\)/);
   assert.match(publicQueueRoute, /allowAdminPrivateSession/);
   assert.match(publicQueueRoute, /allowRehearsalSession/);
-  assert.match(uploadRoute, /requestHasRehearsalQueueAccess\(request, snapshot\.session\)/);
-  assert.match(priorityRoute, /requestHasRehearsalQueueAccess\(req, snapshot\.session\)/);
-  assert.match(signalHoldRoute, /requestHasRehearsalQueueAccess\(req, snapshot\.session\)/);
+  assert.match(uploadRoute, /requestHasRehearsalQueueAccess\(request, snapshot\.session, snapshot\.sessionActive === true\)/);
+  assert.match(priorityRoute, /requestHasRehearsalQueueAccess\(req, snapshot\.session, snapshot\.sessionActive === true\)/);
+  assert.match(signalHoldRoute, /requestHasRehearsalQueueAccess\(req, snapshot\.session, snapshot\.sessionActive === true\)/);
+  assert.match(accessBoundary, /isCurrentSession/);
   assert.match(accessBoundary, /session\.purpose === "rehearsal"/);
   assert.match(accessBoundary, /session\.status !== "archived"/);
   assert.match(accessBoundary, /session\.broadcastPhase !== "ended"/);

@@ -17,7 +17,7 @@ export async function GET(request: Request) {
   }
 
   const state = await getRadioQueueState(sessionId);
-  if (!state.isCurrentSession || !isActiveRehearsalSession(state.session) || state.session.sessionId !== sessionId) {
+  if (!isActiveRehearsalSession(state.session, state.isCurrentSession === true) || state.session.sessionId !== sessionId) {
     return NextResponse.json({ error: "A current rehearsal session is required." }, { status: 409 });
   }
 

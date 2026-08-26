@@ -124,7 +124,7 @@ export async function GET(req: Request) {
     contactEmail: params.get("contactEmail"),
     artist: params.get("artist"),
   });
-  const hasRehearsalAccess = await requestHasRehearsalQueueAccess(req, rawSnapshot.session);
+  const hasRehearsalAccess = await requestHasRehearsalQueueAccess(req, rawSnapshot.session, rawSnapshot.sessionActive === true);
   const snapshot = hasRehearsalAccess ? rawSnapshot : sanitizeQueueSnapshotForPublic(rawSnapshot);
   if (snapshot.sessionActive !== true) {
     return NextResponse.json(attachQueueLiveTiming(snapshot, null, null, now));
@@ -142,7 +142,7 @@ export async function POST(req: Request) {
       const body = await req.json().catch(() => ({}));
       if (body.action === "priorityUpgradePlaceholder" && typeof body.id === "string") {
         const active = await getPublicQueueSnapshot();
-        const allowRehearsalSession = await requestHasRehearsalQueueAccess(req, active.session);
+        const allowRehearsalSession = await requestHasRehearsalQueueAccess(req, active.session, active.sessionActive === true);
         if (active.session?.purpose !== "live_broadcast" && !allowAdminPrivateSession && !allowRehearsalSession) {
           return NextResponse.json({ error: SESSION_SYNC_MESSAGE, code: "private_session" }, { status: 409 });
         }
@@ -222,7 +222,7 @@ export async function submitTrackFromBody(
 
   const active = await getPublicQueueSnapshot();
   if (!active.session || active.session.sessionId !== sessionId) return NextResponse.json({ error: SESSION_SYNC_MESSAGE, code: "stale_session" }, { status: 409 });
-  const allowRehearsalSession = isActiveRehearsalSession(active.session)
+  const allowRehearsalSession = isActiveRehearsalSession(active.session, active.sessionActive === true)
     && Boolean(options.rehearsalAccessToken)
     && await verifyRehearsalQueueToken(options.rehearsalAccessToken ?? "", active.session.sessionId);
   if (active.session.purpose !== "live_broadcast" && options.allowAdminPrivateSession !== true && !allowRehearsalSession) {

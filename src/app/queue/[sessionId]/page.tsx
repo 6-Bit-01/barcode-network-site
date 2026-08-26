@@ -18,7 +18,7 @@ export default async function QueueSessionPage({ params }: { params: Promise<{ s
   const rehearsalToken = cookieStore.get(REHEARSAL_QUEUE_COOKIE_NAME)?.value;
   const isAdmin = Boolean(token && await verifyAdminToken(token));
   const rawSnapshot = await getPublicQueueSnapshot();
-  const hasRehearsalAccess = isActiveRehearsalSession(rawSnapshot.session)
+  const hasRehearsalAccess = isActiveRehearsalSession(rawSnapshot.session, rawSnapshot.sessionActive === true)
     && rawSnapshot.session.sessionId === sessionId
     && Boolean(rehearsalToken)
     && await verifyRehearsalQueueToken(rehearsalToken ?? "", sessionId);

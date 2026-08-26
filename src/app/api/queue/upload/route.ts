@@ -51,7 +51,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         const payload = parseClientPayload(clientPayload);
         const snapshot = await getPublicQueueSnapshot();
         if (!snapshot.session) throw new Error(SESSION_SYNC_MESSAGE);
-        const allowRehearsalSession = await requestHasRehearsalQueueAccess(request, snapshot.session);
+        const allowRehearsalSession = await requestHasRehearsalQueueAccess(request, snapshot.session, snapshot.sessionActive === true);
         if (snapshot.session.purpose !== "live_broadcast" && !allowAdminPrivateSession && !allowRehearsalSession) throw new Error(SESSION_SYNC_MESSAGE);
 
         assertCurrentUploadSession(payload.sessionId, snapshot.session.sessionId);

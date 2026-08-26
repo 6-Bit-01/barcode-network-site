@@ -2,6 +2,7 @@ import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { NextResponse } from "next/server";
 import { verifyAdminRequest } from "@/lib/auth";
 import { getPublicQueueSnapshot } from "@/lib/queue";
+import { requestHasRehearsalQueueAccess } from "@/lib/queue-rehearsal-access";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -40,7 +41,7 @@ export function assertUploadSessionOpen(isOpen: boolean, isFull: boolean | undef
 
 export async function POST(request: Request): Promise<NextResponse> {
   const body = (await request.json()) as HandleUploadBody;
-  const allowPrivateSession = await verifyAdminRequest(request);
+  const allowAdminPrivateSession = await verifyAdminRequest(request);
 
   try {
     const jsonResponse = await handleUpload({
@@ -50,7 +51,8 @@ export async function POST(request: Request): Promise<NextResponse> {
         const payload = parseClientPayload(clientPayload);
         const snapshot = await getPublicQueueSnapshot();
         if (!snapshot.session) throw new Error(SESSION_SYNC_MESSAGE);
-        if (snapshot.session.purpose !== "live_broadcast" && !allowPrivateSession) throw new Error(SESSION_SYNC_MESSAGE);
+        const allowRehearsalSession = await requestHasRehearsalQueueAccess(request, snapshot.session);
+        if (snapshot.session.purpose !== "live_broadcast" && !allowAdminPrivateSession && !allowRehearsalSession) throw new Error(SESSION_SYNC_MESSAGE);
 
         assertCurrentUploadSession(payload.sessionId, snapshot.session.sessionId);
         assertUploadSessionOpen(snapshot.status.isOpen, snapshot.status.isFull, snapshot.status.acceptedCount ?? snapshot.status.activeCount, snapshot.status.capacity);

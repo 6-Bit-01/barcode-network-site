@@ -3,7 +3,8 @@ import { APPLE_MUSIC_QUEUE_UNSUPPORTED_MESSAGE, PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT
 import { getPublicQueueSnapshot, getRadioQueueState, isTrackPersistedInSessionQueue, normalizeQueueSourceKey, requestPriorityUpgradePlaceholder, sanitizeQueueSnapshotForPublic, submitRadioTrack, toPublicQueueTrack } from "@/lib/queue";
 import { getLiveOverlayRuntimeState } from "@/lib/live-overlay";
 import { attachQueueLiveTiming } from "@/lib/queue-live-timing";
-import { verifyAdminRequest } from "@/lib/auth";
+import { verifyAdminRequest, verifyRehearsalQueueToken } from "@/lib/auth";
+import { isActiveRehearsalSession, requestHasRehearsalQueueAccess, requestRehearsalQueueToken } from "@/lib/queue-rehearsal-access";
 import type { QueueEntry } from "@/lib/queue-types";
 
 export const dynamic = "force-dynamic";
@@ -123,7 +124,8 @@ export async function GET(req: Request) {
     contactEmail: params.get("contactEmail"),
     artist: params.get("artist"),
   });
-  const snapshot = sanitizeQueueSnapshotForPublic(rawSnapshot);
+  const hasRehearsalAccess = await requestHasRehearsalQueueAccess(req, rawSnapshot.session);
+  const snapshot = hasRehearsalAccess ? rawSnapshot : sanitizeQueueSnapshotForPublic(rawSnapshot);
   if (snapshot.sessionActive !== true) {
     return NextResponse.json(attachQueueLiveTiming(snapshot, null, null, now));
   }
@@ -133,13 +135,15 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const allowPrivateSession = await verifyAdminRequest(req);
+    const allowAdminPrivateSession = await verifyAdminRequest(req);
+    const rehearsalAccessToken = requestRehearsalQueueToken(req);
     const contentType = req.headers.get("content-type") ?? "";
     if (contentType.includes("application/json")) {
       const body = await req.json().catch(() => ({}));
       if (body.action === "priorityUpgradePlaceholder" && typeof body.id === "string") {
         const active = await getPublicQueueSnapshot();
-        if (active.session?.purpose !== "live_broadcast" && !allowPrivateSession) {
+        const allowRehearsalSession = await requestHasRehearsalQueueAccess(req, active.session);
+        if (active.session?.purpose !== "live_broadcast" && !allowAdminPrivateSession && !allowRehearsalSession) {
           return NextResponse.json({ error: SESSION_SYNC_MESSAGE, code: "private_session" }, { status: 409 });
         }
         const track = await requestPriorityUpgradePlaceholder(body.id);
@@ -147,12 +151,12 @@ export async function POST(req: Request) {
         return NextResponse.json({ track, message: "Priority Signal Upgrade is being prepared. No payment has been processed." });
       }
       if (typeof body.action === "string") return NextResponse.json({ error: "Unknown queue action" }, { status: 400 });
-      return await submitTrackFromBody(body, { allowPrivateSession });
+      return await submitTrackFromBody(body, { allowAdminPrivateSession, rehearsalAccessToken });
     }
 
     const form = await req.formData();
     const body = Object.fromEntries(form.entries());
-    return await submitTrackFromBody(body, { allowPrivateSession });
+    return await submitTrackFromBody(body, { allowAdminPrivateSession, rehearsalAccessToken });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Submission failed";
     const reasons = Array.isArray((error as { reasons?: unknown }).reasons) ? (error as { reasons: string[] }).reasons : [];
@@ -172,7 +176,7 @@ export async function POST(req: Request) {
 
 export async function submitTrackFromBody(
   body: Record<string, unknown>,
-  options: { allowPrivateSession?: boolean } = {},
+  options: { allowAdminPrivateSession?: boolean; rehearsalAccessToken?: string } = {},
 ): Promise<NextResponse> {
   const artist = cleanBodyText(body.artist);
   const title = cleanBodyText(body.title);
@@ -218,7 +222,10 @@ export async function submitTrackFromBody(
 
   const active = await getPublicQueueSnapshot();
   if (!active.session || active.session.sessionId !== sessionId) return NextResponse.json({ error: SESSION_SYNC_MESSAGE, code: "stale_session" }, { status: 409 });
-  if (active.session.purpose !== "live_broadcast" && options.allowPrivateSession !== true) {
+  const allowRehearsalSession = isActiveRehearsalSession(active.session)
+    && Boolean(options.rehearsalAccessToken)
+    && await verifyRehearsalQueueToken(options.rehearsalAccessToken ?? "", active.session.sessionId);
+  if (active.session.purpose !== "live_broadcast" && options.allowAdminPrivateSession !== true && !allowRehearsalSession) {
     return NextResponse.json({ error: SESSION_SYNC_MESSAGE, code: "private_session" }, { status: 409 });
   }
   if (!active.status.isOpen) {

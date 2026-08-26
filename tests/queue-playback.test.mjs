@@ -2304,8 +2304,9 @@ test("public POST accepts current active sessionId", async () => {
   assert.equal(stored.submittedAlbumName, "Current Project");
 });
 
-test("private rehearsal intake is blocked publicly but remains usable through an authenticated admin request", async () => {
-  const sessionId = await freshOpenSession("private admin intake", { purpose: "rehearsal", bnlPublicationStatus: "private" });
+test("private rehearsal intake stays public-dark but works through the copied rehearsal link", async () => {
+  const sessionId = await freshOpenSession("private rehearsal link intake", { purpose: "rehearsal", bnlPublicationStatus: "runtime_only", submissionCooldownSeconds: 0 });
+  await queue.setQueueOpen(false);
   const requestBody = {
     sessionId,
     mode: "link",
@@ -2315,20 +2316,64 @@ test("private rehearsal intake is blocked publicly but remains usable through an
     link: `https://example.com/private-test-${Date.now()}`,
     ...legalAcceptanceBody(),
   };
-  const request = (cookie = "") => new Request("https://example.test/api/queue", {
+  const request = (cookie = "", suffix = "") => new Request("https://example.test/api/queue", {
     method: "POST",
     headers: { "content-type": "application/json", ...(cookie ? { cookie } : {}) },
-    body: JSON.stringify(requestBody),
+    body: JSON.stringify({ ...requestBody, title: `${requestBody.title}${suffix}`, link: `${requestBody.link}${suffix}` }),
   });
+
+  const publicRead = await queueApi.GET(new Request(`https://example.test/api/queue?sessionId=${encodeURIComponent(sessionId)}`));
+  assert.equal((await publicRead.json()).session, null);
 
   const publicResponse = await queueApi.POST(request());
   assert.equal(publicResponse.status, 409);
   assert.equal((await publicResponse.json()).code, "private_session");
 
+  const rehearsalToken = await queueAuth.createRehearsalQueueToken(sessionId);
+  const rehearsalCookie = `${queueAuth.REHEARSAL_QUEUE_COOKIE_NAME}=${rehearsalToken}`;
+  const invitedRead = await queueApi.GET(new Request(`https://example.test/api/queue?sessionId=${encodeURIComponent(sessionId)}`, { headers: { cookie: rehearsalCookie } }));
+  const invitedSnapshot = await invitedRead.json();
+  assert.equal(invitedSnapshot.session?.sessionId, sessionId);
+  assert.equal(invitedSnapshot.status?.isOpen, false);
+
+  const closedRehearsalResponse = await queueApi.POST(request(rehearsalCookie, "-closed"));
+  assert.equal(closedRehearsalResponse.status, 409);
+  assert.equal((await closedRehearsalResponse.json()).error, "This broadcast queue is closed.");
+
+  await queue.setQueueOpen(true);
+  const rehearsalResponse = await queueApi.POST(request(rehearsalCookie, "-rehearsal"));
+  assert.equal(rehearsalResponse.status, 201);
+  assert.ok((await rehearsalResponse.json()).track?.id);
+
   const adminToken = await queueAuth.createAdminToken();
-  const adminResponse = await queueApi.POST(request(`${queueAuth.COOKIE_NAME}=${adminToken}`));
+  const adminResponse = await queueApi.POST(request(`${queueAuth.COOKIE_NAME}=${adminToken}`, "-admin"));
   assert.equal(adminResponse.status, 201);
   assert.ok((await adminResponse.json()).track?.id);
+});
+
+test("a rehearsal link cannot open simulation or internal-test intake", async () => {
+  for (const purpose of ["simulation", "internal_test"]) {
+    const sessionId = await freshOpenSession(`private ${purpose}`, { purpose, bnlPublicationStatus: "runtime_only" });
+    const rehearsalToken = await queueAuth.createRehearsalQueueToken(sessionId);
+    const response = await queueApi.POST(new Request("https://example.test/api/queue", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: `${queueAuth.REHEARSAL_QUEUE_COOKIE_NAME}=${rehearsalToken}`,
+      },
+      body: JSON.stringify({
+        sessionId,
+        mode: "link",
+        artist: `${purpose} Artist`,
+        title: `${purpose} Track`,
+        tiktokHandle: `@${purpose}`,
+        link: `https://example.com/${purpose}-${Date.now()}`,
+        ...legalAcceptanceBody(),
+      }),
+    }));
+    assert.equal(response.status, 409);
+    assert.equal((await response.json()).code, "private_session");
+  }
 });
 
 test("concurrent public POSTs return one accepted response and one truthful full response for the final slot", async () => {

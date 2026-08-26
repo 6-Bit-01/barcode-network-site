@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { notifyQueueSessionChanged } from "@/lib/session-bound-polling";
 import { AdminQueueSessionProvenance } from "@/components/AdminQueueSessionProvenance";
+import { AdminRehearsalShareLink } from "@/components/AdminRehearsalShareLink";
 import { formatRuntime } from "@/lib/queue-types";
 import { pacificDateString } from "@/lib/pacific-time";
 import type { QueueSessionBnlPublicationStatus, QueueSessionPurpose, QueueSessionSummary, QueueState } from "@/lib/queue-types";
@@ -194,7 +195,7 @@ function StartNewSession({ locked, queueIsOpen, onCloseSubmissions, onEnd, title
         <p className="text-xs uppercase tracking-[0.4em] text-accent">Start New Session</p>
         <p className="text-sm text-muted mt-2">Create a clean BARCODE Radio session. Submissions start closed; open them from Current Session when ready.</p>
       </div>
-      {locked && <div className="border border-danger/50 bg-danger/10 p-4"><p className="text-sm font-bold uppercase tracking-[0.25em] text-danger">CURRENT SESSION EXISTS</p><p className="mt-2 text-sm text-muted">Start New Session is locked while a current non-archived session exists. End/archive the current session before starting another.</p><div className="mt-3 flex flex-wrap gap-2 sm:items-center"><a href="/admin/queue" className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent">Open Queue Control</a>{queueIsOpen && <button type="button" onClick={onCloseSubmissions} className="border border-danger/60 px-3 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background">Close Submissions</button>}{sessionId && <a href={`/queue/${sessionId}`} className="border border-danger/50 px-3 py-2 text-xs uppercase tracking-widest text-danger">View Public Session</a>}<button type="button" onClick={onEnd} className="border border-danger px-3 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background sm:ml-auto">End Broadcast</button></div></div>}
+      {locked && <div className="border border-danger/50 bg-danger/10 p-4"><p className="text-sm font-bold uppercase tracking-[0.25em] text-danger">CURRENT SESSION EXISTS</p><p className="mt-2 text-sm text-muted">Start New Session is locked while a current non-archived session exists. End/archive the current session before starting another.</p><div className="mt-3 flex flex-wrap gap-2 sm:items-center"><a href="/admin/queue" className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent">Open Queue Control</a>{queueIsOpen && <button type="button" onClick={onCloseSubmissions} className="border border-danger/60 px-3 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background">Close Submissions</button>}{sessionId && <a href={`/queue/${sessionId}`} className="border border-danger/50 px-3 py-2 text-xs uppercase tracking-widest text-danger">Open Queue Session</a>}<button type="button" onClick={onEnd} className="border border-danger px-3 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background sm:ml-auto">End Broadcast</button></div></div>}
       <div className="grid gap-4 lg:grid-cols-2">
         <label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Session title</span><input disabled={locked} value={title} onChange={(event) => onTitle(event.target.value)} className="w-full bg-background border border-border px-3 py-2.5 text-sm disabled:opacity-50" /></label>
         <label className="space-y-2"><span className="text-xs uppercase tracking-widest text-muted">Track limit</span><input disabled={locked} type="number" min={1} max={3} step={1} value={trackLimitPerArtist} onChange={(event) => onTrackLimit(Math.max(1, Math.min(3, Math.floor(Number(event.target.value) || 1))))} className="w-full bg-background border border-border px-3 py-2.5 text-sm disabled:opacity-50" /><span className="block text-xs text-muted">Hard maximum: 3 tracks per connected submitter identity.</span></label>
@@ -296,6 +297,8 @@ function CurrentSession({ session, onPost, onEnd }: { session: QueueSessionSumma
           <button onClick={onEnd} className="border border-danger/60 px-4 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background">End Broadcast</button>
         </div>
       </div>
+
+      {session.purpose === "rehearsal" && <AdminRehearsalShareLink sessionId={session.sessionId} />}
 
       <AdminQueueSessionProvenance session={session} onSave={onPost} />
 

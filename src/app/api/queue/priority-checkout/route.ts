@@ -3,6 +3,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { verifyAdminRequest } from "@/lib/auth";
 import { createPrioritySignalCheckoutSession } from "@/lib/stripe";
 import { createPriorityGiftAttribution, getPublicQueueSnapshot, markPriorityUpgradeCheckoutPending, requestPriorityCheckout } from "@/lib/queue";
+import { requestHasRehearsalQueueAccess } from "@/lib/queue-rehearsal-access";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -53,7 +54,8 @@ export async function POST(req: Request) {
     const sessionId = cleanText(body.sessionId);
     if (!trackId || !sessionId) return NextResponse.json({ error: "Priority Signal Upgrade is not available for this track." }, { status: 400 });
     const snapshot = await getPublicQueueSnapshot(sessionId);
-    if (snapshot.session?.sessionId !== sessionId || (snapshot.session.purpose !== "live_broadcast" && !(await verifyAdminRequest(req)))) {
+    const allowPrivateSession = await verifyAdminRequest(req) || await requestHasRehearsalQueueAccess(req, snapshot.session);
+    if (snapshot.session?.sessionId !== sessionId || (snapshot.session.purpose !== "live_broadcast" && !allowPrivateSession)) {
       return NextResponse.json({ error: "Priority Signal Upgrade is not available for this track." }, { status: 409 });
     }
     const checkoutOwnerToken = cleanCheckoutOwnerToken(body.checkoutOwnerToken);

@@ -274,17 +274,41 @@ test("BNL controls expose exactly no access, private access, and public access i
   assert.doesNotMatch(queueArchive, /BNL \{session\.bnlPublicationStatus\}/);
 });
 
-test("private queue intake and paid checkout routes require authenticated admin access", () => {
+test("only a signed rehearsal link extends private intake and checkout beyond authenticated admins", () => {
   const publicQueueRoute = fs.readFileSync(path.join(projectRoot, "src/app/api/queue/route.ts"), "utf8");
   const uploadRoute = fs.readFileSync(path.join(projectRoot, "src/app/api/queue/upload/route.ts"), "utf8");
   const priorityRoute = fs.readFileSync(path.join(projectRoot, "src/app/api/queue/priority-checkout/route.ts"), "utf8");
   const signalHoldRoute = fs.readFileSync(path.join(projectRoot, "src/app/api/queue/signal-hold-checkout/route.ts"), "utf8");
+  const accessBoundary = fs.readFileSync(path.join(projectRoot, "src/lib/queue-rehearsal-access.ts"), "utf8");
 
   assert.match(publicQueueRoute, /sanitizeQueueSnapshotForPublic\(rawSnapshot\)/);
-  assert.match(publicQueueRoute, /const allowPrivateSession = await verifyAdminRequest\(req\)/);
-  assert.match(publicQueueRoute, /active\.session\.purpose !== "live_broadcast" && options\.allowPrivateSession !== true/);
-  assert.match(uploadRoute, /const allowPrivateSession = await verifyAdminRequest\(request\)/);
-  assert.match(uploadRoute, /snapshot\.session\.purpose !== "live_broadcast" && !allowPrivateSession/);
-  assert.match(priorityRoute, /snapshot\.session\.purpose !== "live_broadcast" && !\(await verifyAdminRequest\(req\)\)/);
-  assert.match(signalHoldRoute, /snapshot\.session\.purpose !== "live_broadcast" && !\(await verifyAdminRequest\(req\)\)/);
+  assert.match(publicQueueRoute, /requestHasRehearsalQueueAccess\(req, rawSnapshot\.session\)/);
+  assert.match(publicQueueRoute, /allowAdminPrivateSession/);
+  assert.match(publicQueueRoute, /allowRehearsalSession/);
+  assert.match(uploadRoute, /requestHasRehearsalQueueAccess\(request, snapshot\.session\)/);
+  assert.match(priorityRoute, /requestHasRehearsalQueueAccess\(req, snapshot\.session\)/);
+  assert.match(signalHoldRoute, /requestHasRehearsalQueueAccess\(req, snapshot\.session\)/);
+  assert.match(accessBoundary, /session\.purpose === "rehearsal"/);
+  assert.match(accessBoundary, /session\.status !== "archived"/);
+  assert.match(accessBoundary, /session\.broadcastPhase !== "ended"/);
+  assert.doesNotMatch(accessBoundary, /simulation|internal_test/);
+});
+
+test("rehearsal mode provides an admin-copyable private queue link without public discovery", () => {
+  const management = fs.readFileSync(path.join(projectRoot, "src/components/AdminShowManagement.tsx"), "utf8");
+  const dashboard = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioQueueControl.tsx"), "utf8");
+  const shareControl = fs.readFileSync(path.join(projectRoot, "src/components/AdminRehearsalShareLink.tsx"), "utf8");
+  const issueRoute = fs.readFileSync(path.join(projectRoot, "src/app/api/admin/queue/rehearsal-access/route.ts"), "utf8");
+  const acceptRoute = fs.readFileSync(path.join(projectRoot, "src/app/queue/rehearsal/[sessionId]/route.ts"), "utf8");
+
+  assert.match(management, /session\.purpose === "rehearsal" && <AdminRehearsalShareLink/);
+  assert.match(dashboard, /state\?\.session\?\.purpose === "rehearsal" && <AdminRehearsalShareLink/);
+  assert.match(shareControl, /Copy Rehearsal Queue Link/);
+  assert.match(shareControl, /This session stays unlisted/);
+  assert.match(issueRoute, /verifyAdminRequest/);
+  assert.match(issueRoute, /createRehearsalQueueToken/);
+  assert.match(acceptRoute, /verifyRehearsalQueueToken/);
+  assert.match(acceptRoute, /response\.cookies\.set\(REHEARSAL_QUEUE_COOKIE_NAME/);
+  assert.match(acceptRoute, /Referrer-Policy", "no-referrer/);
+  assert.match(acceptRoute, /noindex, nofollow, noarchive/);
 });

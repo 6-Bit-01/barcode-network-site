@@ -239,6 +239,18 @@ test("the private Broadcast Test surface is authenticated, noindexed, and reuses
   assert.match(archive, /refreshEndpoint/);
 });
 
+test("the authenticated private queue intake reuses the selected preview snapshot", () => {
+  const queueSession = fs.readFileSync(path.join(projectRoot, "src/components/PublicQueueSession.tsx"), "utf8");
+  const queueForm = fs.readFileSync(path.join(projectRoot, "src/components/RadioQueueForm.tsx"), "utf8");
+  const publicQueueRoute = fs.readFileSync(path.join(projectRoot, "src/app/api/queue/route.ts"), "utf8");
+
+  assert.match(queueSession, /<RadioQueueForm sessionId=\{sessionId\} snapshotEndpoint=\{snapshotEndpoint\}/);
+  assert.match(queueForm, /snapshotEndpoint = "\/api\/queue"/);
+  assert.match(queueForm, /const endpoint = new URL\(snapshotEndpoint, window\.location\.origin\)/);
+  assert.match(queueForm, /params\.forEach\(\(value, key\) => endpoint\.searchParams\.set\(key, value\)\)/);
+  assert.match(publicQueueRoute, /sanitizeQueueSnapshotForPublic\(rawSnapshot\)/);
+});
+
 test("the active private queue dashboard opens that session's Deck Preview directly", () => {
   const queuePage = fs.readFileSync(path.join(projectRoot, "src/app/admin/queue/page.tsx"), "utf8");
   const dashboard = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioQueueControl.tsx"), "utf8");

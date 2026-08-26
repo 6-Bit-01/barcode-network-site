@@ -115,7 +115,7 @@ function publicTrackFromApi(track: { id: string; submittedArtistName?: string; s
   };
 }
 
-export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedReceipt }: { sessionId?: string; onSubmitted?: (trackId?: string, phase?: SubmitPhase, targetId?: string) => void; onCancel?: () => void; onAcceptedReceipt?: (receipt: AcceptedReceipt) => void } = {}) {
+export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onSubmitted, onCancel, onAcceptedReceipt }: { sessionId?: string; snapshotEndpoint?: string; onSubmitted?: (trackId?: string, phase?: SubmitPhase, targetId?: string) => void; onCancel?: () => void; onAcceptedReceipt?: (receipt: AcceptedReceipt) => void } = {}) {
   const [status, setStatus] = useState<QueuePublicStatus | null>(null);
   const [publicQueue, setPublicQueue] = useState<QueuePublicTrack[]>([]);
   const [nowPlaying, setNowPlaying] = useState<QueuePublicTrack | null>(null);
@@ -178,7 +178,9 @@ export function RadioQueueForm({ sessionId, onSubmitted, onCancel, onAcceptedRec
     if (tiktokHandle.trim()) params.set("tiktokHandle", tiktokHandle.trim());
     if (contactEmail.trim()) params.set("contactEmail", contactEmail.trim());
     if (artist.trim()) params.set("artist", artist.trim());
-    const res = await fetch(`/api/queue${params.size ? `?${params.toString()}` : ""}`, { cache: "no-store" });
+    const endpoint = new URL(snapshotEndpoint, window.location.origin);
+    params.forEach((value, key) => endpoint.searchParams.set(key, value));
+    const res = await fetch(`${endpoint.pathname}${endpoint.search}`, { cache: "no-store" });
     if (res.ok) {
       const payload = await res.json();
       setStatus(payload.status ?? null);

@@ -130,6 +130,32 @@ public sealed class CommercialBreakServiceTests
         Assert.NotEqual(firstLogo, secondLogo);
     }
 
+    [Fact]
+    public void MovingAnActiveFileDuringPlaybackOnlyChangesTheNextPlan()
+    {
+        using var fixture = CreateReadyFixture();
+        var service = new CommercialBreakService(new CommercialBreakLibrary(
+            fixture.RootDirectory,
+            Durations()));
+        Assert.True(service.Start().Started);
+        var snapshot = service.Snapshot();
+        var activeItem = snapshot.Items.Single(entry => entry.Name == "a");
+        var originalPath = Path.Combine(fixture.ActiveDirectory, "a.mp4");
+        var inactivePath = Path.Combine(fixture.InactiveDirectory, "a.mp4");
+
+        File.Move(originalPath, inactivePath);
+
+        Assert.True(service.TryGetMedia(activeItem.Id, out var frozenMedia));
+        Assert.True(File.Exists(frozenMedia.FilePath));
+        Assert.NotEqual(originalPath, frozenMedia.FilePath);
+        Assert.True(service.MarkCompleted(snapshot.Generation));
+        Assert.False(service.TryGetMedia(activeItem.Id, out _));
+
+        fixture.AddActiveSponsor("replacement.mp4");
+        Assert.True(service.Start().Started);
+        Assert.DoesNotContain(service.Snapshot().Items, entry => entry.Name == "a");
+    }
+
     private static TemporaryCommercialLibrary CreateReadyFixture()
     {
         var fixture = new TemporaryCommercialLibrary();

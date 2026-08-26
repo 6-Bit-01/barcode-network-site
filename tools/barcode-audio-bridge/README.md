@@ -50,8 +50,8 @@ Workflow:
 
 - Add any eligible video by dropping its `.mp4` into `Sponsors/Active`.
 - Temporarily remove any video by moving it to `Sponsors/Inactive`.
-- Replace or delete files whenever a break is not running.
-- Folder changes apply the next time **Start Commercial Break** is selected.
+- Move files between Active and Inactive whenever needed.
+- The selected files are frozen into a managed local playback snapshot at start, so folder changes affect only the next break and cannot interrupt the current one.
 
 Files with parentheses are fake commercials/trailers rather than sponsors. `(BCN)`, `(BL)`, and `(R)` map to the BARCODE, BLVCKL!GHT, and Rigged Sanchez logos. The matching logo fades in above the video and fades out near the end of that clip; the two BCN images alternate in playback order and continue alternating across breaks.
 

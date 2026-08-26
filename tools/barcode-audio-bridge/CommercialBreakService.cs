@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 
 namespace Barcode.AudioBridge;
@@ -49,6 +50,109 @@ internal sealed record CommercialBreakSnapshot(
 
 internal sealed record CommercialMediaResource(string FilePath, string ContentType);
 
+internal sealed class CommercialMediaSnapshot : IDisposable
+{
+    private readonly string _directory;
+    private bool _disposed;
+
+    private CommercialMediaSnapshot(
+        string directory,
+        IReadOnlyDictionary<string, CommercialMediaResource> mediaById)
+    {
+        _directory = directory;
+        MediaById = mediaById;
+    }
+
+    public IReadOnlyDictionary<string, CommercialMediaResource> MediaById { get; }
+
+    public static CommercialMediaSnapshot Create(CommercialBreakPlan plan, string snapshotsRoot)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentException.ThrowIfNullOrWhiteSpace(snapshotsRoot);
+        Directory.CreateDirectory(snapshotsRoot);
+        foreach (var staleDirectory in Directory.EnumerateDirectories(snapshotsRoot))
+        {
+            DeleteDirectory(staleDirectory);
+        }
+
+        var runDirectory = Path.Combine(snapshotsRoot, Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(runDirectory);
+        try
+        {
+            var sources = plan.Items
+                .Select(item => (Id: item.Id, FilePath: item.FilePath, ContentType: "video/mp4"))
+                .Concat(plan.UsedVisualAssets.Select(asset =>
+                    (Id: asset.Id, FilePath: asset.FilePath, ContentType: asset.ContentType)))
+                .DistinctBy(source => source.Id)
+                .ToArray();
+            var media = new Dictionary<string, CommercialMediaResource>(StringComparer.Ordinal);
+            foreach (var source in sources)
+            {
+                var extension = Path.GetExtension(source.FilePath);
+                var destination = Path.Combine(runDirectory, source.Id + extension);
+                if (!TryCreateHardLink(destination, source.FilePath))
+                {
+                    File.Copy(source.FilePath, destination, overwrite: false);
+                }
+                media[source.Id] = new CommercialMediaResource(destination, source.ContentType);
+            }
+            return new CommercialMediaSnapshot(runDirectory, media);
+        }
+        catch
+        {
+            DeleteDirectory(runDirectory);
+            throw;
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        DeleteDirectory(_directory);
+    }
+
+    private static bool TryCreateHardLink(string destination, string source)
+    {
+        if (!OperatingSystem.IsWindows()) return false;
+        try
+        {
+            return CreateHardLink(destination, source, IntPtr.Zero);
+        }
+        catch (DllNotFoundException)
+        {
+            return false;
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return false;
+        }
+    }
+
+    private static void DeleteDirectory(string directory)
+    {
+        try
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+        catch (IOException)
+        {
+            // A browser range request may still be releasing its last handle.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Best-effort cleanup; stale runs are retried before the next break.
+        }
+    }
+
+    [DllImport("Kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CreateHardLink(
+        string fileName,
+        string existingFileName,
+        IntPtr securityAttributes);
+}
+
 internal sealed class CommercialBreakService
 {
     public const string SchemaVersion = "barcode_commercial_break_v2";
@@ -56,6 +160,7 @@ internal sealed class CommercialBreakService
     private readonly object _sync = new();
     private readonly CommercialBreakLibrary _library;
     private CommercialBreakPlan? _plan;
+    private CommercialMediaSnapshot? _mediaSnapshot;
     private CommercialBreakPlaybackStatus _status = CommercialBreakPlaybackStatus.Idle;
     private Dictionary<string, CommercialMediaResource> _mediaById = new(StringComparer.Ordinal);
     private IReadOnlyList<string> _warnings = Array.Empty<string>();
@@ -120,6 +225,7 @@ internal sealed class CommercialBreakService
     public CommercialBreakStartResult Start()
     {
         int bcnLogoIndex;
+        CommercialMediaSnapshot? pendingMediaSnapshot = null;
         lock (_sync)
         {
             if (_building || _status is CommercialBreakPlaybackStatus.Queued or CommercialBreakPlaybackStatus.Playing)
@@ -160,6 +266,7 @@ internal sealed class CommercialBreakService
                 .Concat(plan.OmittedInterstitials.Select(name =>
                     $"{name} was omitted to keep the complete break closest to 11:00."))
                 .ToArray();
+            pendingMediaSnapshot = CommercialMediaSnapshot.Create(plan, _library.PlaybackSnapshotsDirectory);
 
             long generation;
             string message;
@@ -168,7 +275,13 @@ internal sealed class CommercialBreakService
                 _generation += 1;
                 generation = _generation;
                 _plan = plan;
-                _mediaById = BuildMediaMap(plan);
+                DisposeMediaSnapshotLocked();
+                _mediaSnapshot = pendingMediaSnapshot;
+                _mediaById = pendingMediaSnapshot.MediaById.ToDictionary(
+                    pair => pair.Key,
+                    pair => pair.Value,
+                    StringComparer.Ordinal);
+                pendingMediaSnapshot = null;
                 _warnings = planningWarnings;
                 _nextBcnLogoIndex = plan.NextBcnLogoIndex;
                 _status = CommercialBreakPlaybackStatus.Queued;
@@ -214,6 +327,7 @@ internal sealed class CommercialBreakService
         }
         finally
         {
+            pendingMediaSnapshot?.Dispose();
             lock (_sync)
             {
                 _building = false;
@@ -278,6 +392,7 @@ internal sealed class CommercialBreakService
             _status = CommercialBreakPlaybackStatus.Completed;
             _currentIndex = _plan.Items.Count - 1;
             _message = "Commercial break completed.";
+            DisposeMediaSnapshotLocked();
             BridgeLog.Write($"Commercial break completed generation={generation}.");
             return true;
         }
@@ -293,6 +408,7 @@ internal sealed class CommercialBreakService
             _message = string.IsNullOrWhiteSpace(reason)
                 ? "Commercial player reported a playback error."
                 : $"Commercial player error: {reason.Trim()}";
+            DisposeMediaSnapshotLocked();
             BridgeLog.Write($"Commercial break failed generation={generation}. {_message}");
             return true;
         }
@@ -306,6 +422,7 @@ internal sealed class CommercialBreakService
             _status = CommercialBreakPlaybackStatus.Idle;
             _currentIndex = -1;
             _message = "Commercial break stopped.";
+            DisposeMediaSnapshotLocked();
             BridgeLog.Write($"Commercial break stopped generation={_generation}.");
         }
     }
@@ -339,19 +456,6 @@ internal sealed class CommercialBreakService
             _warnings);
     }
 
-    private static Dictionary<string, CommercialMediaResource> BuildMediaMap(CommercialBreakPlan plan)
-    {
-        var map = plan.Items.ToDictionary(
-            item => item.Id,
-            item => new CommercialMediaResource(item.FilePath, "video/mp4"),
-            StringComparer.Ordinal);
-        foreach (var asset in plan.UsedVisualAssets)
-        {
-            map[asset.Id] = new CommercialMediaResource(asset.FilePath, asset.ContentType);
-        }
-        return map;
-    }
-
     private static string MediaUrl(string id) => $"/v1/commercials/media/{id}";
 
     private static string FormatDuration(TimeSpan duration) =>
@@ -361,12 +465,19 @@ internal sealed class CommercialBreakService
     {
         lock (_sync)
         {
+            DisposeMediaSnapshotLocked();
             _plan = null;
-            _mediaById = new Dictionary<string, CommercialMediaResource>(StringComparer.Ordinal);
             _warnings = warnings.ToArray();
             _status = CommercialBreakPlaybackStatus.Failed;
             _currentIndex = -1;
             _message = message;
         }
+    }
+
+    private void DisposeMediaSnapshotLocked()
+    {
+        _mediaSnapshot?.Dispose();
+        _mediaSnapshot = null;
+        _mediaById = new Dictionary<string, CommercialMediaResource>(StringComparer.Ordinal);
     }
 }

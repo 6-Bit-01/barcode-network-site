@@ -104,7 +104,9 @@ PNG, JPG, JPEG, and WEBP images are supported.
 
 PLAYBACK
 Right-click the BARCODE Audio Bridge tray icon and choose Start Commercial Break.
-The entire plan is frozen at start, so folder changes apply only to the next break.
+The selected media is frozen into a local playback snapshot at start, so moving
+files between Active and Inactive while a break runs affects only the next break.
+The Playback Snapshots folder is managed and cleaned automatically.
 
 PLAYER SOURCE
 Use this permanent local source in TikTok Studio:
@@ -135,6 +137,7 @@ Recommended video format: H.264 video + AAC audio in an .mp4 container.
     private string BackgroundDirectory => Path.Combine(_rootDirectory, "Visuals", "Background");
     private string LogosDirectory => Path.Combine(_rootDirectory, "Visuals", "Logos");
     private string InstructionsPath => Path.Combine(_rootDirectory, "README.txt");
+    public string PlaybackSnapshotsDirectory => Path.Combine(_rootDirectory, "Playback Snapshots");
 
     public void EnsureLayout()
     {

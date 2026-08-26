@@ -218,6 +218,23 @@ public sealed class CommercialBreakLibraryTests
     }
 
     [Fact]
+    public void CopyrightWarsBcnReplacesTheOldRCornerLogoMatcher()
+    {
+        using var fixture = new TemporaryCommercialLibrary();
+        fixture.AddActiveSponsor("real-sponsor.mp4");
+        fixture.AddActiveSponsor("CopyrightWars(BCN).mp4");
+        fixture.AddActiveSponsor("CopyrightWars(R).mp4");
+
+        var result = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
+
+        Assert.True(result.Success, result.Message);
+        var copyrightWars = result.Interstitials.Single(clip => clip.Name == "CopyrightWars(BCN)");
+        Assert.Equal(CommercialLogoBrand.Bcn, copyrightWars.LogoBrand);
+        Assert.True(copyrightWars.ShowCornerLogo);
+        Assert.False(result.Interstitials.Single(clip => clip.Name == "CopyrightWars(R)").ShowCornerLogo);
+    }
+
+    [Fact]
     public void EnsureLayoutPreservesTheEstablishedBumperAndVisualsFolders()
     {
         using var fixture = new TemporaryCommercialLibrary(createFixed: false);

@@ -79,7 +79,7 @@ internal sealed class CommercialBreakLibrary
         "ALUX",
         "BBB",
         "BOBABRETT",
-        "COPYRIGHTWARSR",
+        "COPYRIGHTWARSBCN",
         "GRAYEYE",
         "HELIOS",
         "OREAGANOMICS",

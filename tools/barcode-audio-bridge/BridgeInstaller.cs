@@ -31,7 +31,7 @@ internal static class BridgeInstaller
         RegisterAutoStart();
         Process.Start(new ProcessStartInfo(InstalledExecutable, "--background") { UseShellExecute = true });
         MessageBox.Show(
-            "BARCODE Audio Bridge is installed and running. It will start with Windows and automatically wake only while the Show Visuals source has an active session.",
+            "BARCODE Audio Bridge is installed and running. It will start with Windows, drive Show Visuals when needed, and host the local commercial player from the tray.",
             "BARCODE Audio Bridge",
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);

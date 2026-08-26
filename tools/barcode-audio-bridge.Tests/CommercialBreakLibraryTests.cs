@@ -106,7 +106,7 @@ public sealed class CommercialBreakLibraryTests
     }
 
     [Fact]
-    public void TaggedClipRequiresItsLogoAndEveryBreakRequiresTheBackground()
+    public void TaggedClipRequiresItsLogoAndEveryBreakRequiresBothVisualVideos()
     {
         using var fixture = new TemporaryCommercialLibrary();
         fixture.AddActiveSponsor("real.mp4");
@@ -124,6 +124,27 @@ public sealed class CommercialBreakLibraryTests
 
         Assert.False(missingBackground.Success);
         Assert.Contains("Visuals\\Background", missingBackground.Message);
+
+        TemporaryCommercialLibrary.AddFile(fixture.BackgroundDirectory, "background.mp4");
+        File.Delete(Directory.EnumerateFiles(fixture.TvOverlayDirectory).Single());
+        var missingTvOverlay = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
+
+        Assert.False(missingTvOverlay.Success);
+        Assert.Contains("Visuals\\TV Overlay", missingTvOverlay.Message);
+    }
+
+    [Fact]
+    public void StillImagesDoNotSatisfyTheAnimatedBackgroundOrTvOverlayContract()
+    {
+        using var fixture = new TemporaryCommercialLibrary();
+        fixture.AddActiveSponsor("real.mp4");
+        File.Delete(Directory.EnumerateFiles(fixture.BackgroundDirectory).Single());
+        TemporaryCommercialLibrary.AddFile(fixture.BackgroundDirectory, "background.png");
+
+        var result = new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()).Load();
+
+        Assert.False(result.Success);
+        Assert.Contains("background video", result.Message);
     }
 
     [Fact]
@@ -139,11 +160,14 @@ public sealed class CommercialBreakLibraryTests
         Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Sponsors", "Active")));
         Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Sponsors", "Inactive")));
         Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Visuals", "Background")));
+        Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Visuals", "TV Overlay")));
         Assert.True(Directory.Exists(Path.Combine(fixture.RootDirectory, "Visuals", "Logos", "BCN")));
         var instructions = Path.Combine(fixture.RootDirectory, "README.txt");
         Assert.True(File.Exists(instructions));
         var text = File.ReadAllText(instructions);
         Assert.Contains("11:00", text);
         Assert.Contains("(BCN)", text);
+        Assert.Contains("looping background video", text);
+        Assert.Contains("Visuals\\TV Overlay", text);
     }
 }

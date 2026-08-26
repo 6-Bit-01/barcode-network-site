@@ -39,7 +39,8 @@ Commercials/
 │   ├── Active/
 │   └── Inactive/
 └── Visuals/
-    ├── Background/          # one background image
+    ├── Background/          # one looping background MP4 or WEBM
+    ├── TV Overlay/          # one looping TV-overlay MP4 or WEBM
     └── Logos/
         ├── BCN/             # both alternating BARCODE logos
         ├── BL/              # BLVCKL!GHT logo
@@ -52,6 +53,7 @@ Workflow:
 - Temporarily remove any video by moving it to `Sponsors/Inactive`.
 - Move files between Active and Inactive whenever needed.
 - The selected files are frozen into a managed local playback snapshot at start, so folder changes affect only the next break and cannot interrupt the current one.
+- The background and TV-overlay videos loop silently for the entire break; their audio tracks are always muted by the player.
 
 Files with parentheses are fake commercials/trailers rather than sponsors. `(BCN)`, `(BL)`, and `(R)` map to the BARCODE, BLVCKL!GHT, and Rigged Sanchez logos. The matching logo fades in above the video and fades out near the end of that clip; the two BCN images alternate in playback order and continue alternating across breaks.
 
@@ -69,7 +71,7 @@ content block 4
 end
 ```
 
-Every readable real sponsor plays once. Fake commercials/trailers are randomized between sponsors and are never placed consecutively. Only `SPACE1.mp4`, `Alien.mp4`, and `May.mp4` may be omitted when that produces a closer 11-minute result. An unreadable active file is skipped and logged; missing start/end media, fewer than three readable bumpers, a missing background, or a missing logo required by an active tag blocks start with a clear error.
+Every readable real sponsor plays once. Fake commercials/trailers are randomized between sponsors and are never placed consecutively. Only `SPACE1.mp4`, `Alien.mp4`, and `May.mp4` may be omitted when that produces a closer 11-minute result. An unreadable active file is skipped and logged; missing start/end media, fewer than three readable bumpers, a missing background video, a missing TV-overlay video, or a missing logo required by an active tag blocks start with a clear error.
 
 ### TikTok Studio source
 
@@ -79,11 +81,13 @@ Create one permanent Link/browser source using:
 http://127.0.0.1:43120/commercials
 ```
 
-The page is transparent and idle until the tray action queues a break. During playback it shows the local background, video window, and any clip-tagged logo; it preloads only the next video and returns to transparent idle after the end sequence. The source supports normal browser byte-range requests, so it does not load the full library into memory.
+The page is transparent and idle until the tray action queues a break. During playback it loops the local background video, plays each commercial in the TV window, loops the TV-overlay video above that window, and shows any clip-tagged logo above the complete composition. It preloads only the next commercial and returns every layer to transparent idle after the end sequence. The source supports normal browser byte-range requests, so it does not load the full library into memory.
+
+The TV-overlay file is the top video layer. If its design crosses the commercial window, export that opening with transparency (WEBM with alpha is supported) so the commercial remains visible. An opaque MP4 is still supported when its TV opening does not cover the commercial window.
 
 Use **Copy commercial player source URL** for setup or **Open commercial player preview** for a visible local diagnostic view. Do not keep the preview browser open during a broadcast if the TikTok Studio source is already active, because both pages can play the same local break.
 
-Recommended media format: H.264 video and AAC audio in an MP4 container, at the same resolution and frame rate used by the current commercial block.
+Recommended commercial/background format: H.264 video and AAC audio in an MP4 container, at the same resolution and frame rate used by the current commercial block. Use WEBM when the TV-overlay video needs transparency.
 
 The first release starts locally from the tray. It does not change the queue's existing sponsor timing, sponsor-break state, or Start Sponsor Break action. A queue-to-local start bridge remains a separate later integration.
 

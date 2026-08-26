@@ -38,6 +38,7 @@ internal sealed record CommercialVisualAsset(
 
 internal sealed record CommercialVisualAssets(
     CommercialVisualAsset Background,
+    CommercialVisualAsset TvOverlay,
     IReadOnlyDictionary<CommercialLogoBrand, IReadOnlyList<CommercialVisualAsset>> Logos);
 
 internal sealed record CommercialPlaylistItem(
@@ -56,6 +57,7 @@ internal sealed record CommercialBreakPlan(
     IReadOnlyList<string> OmittedInterstitials,
     IReadOnlyList<CommercialVisualAsset> UsedVisualAssets,
     CommercialVisualAsset Background,
+    CommercialVisualAsset TvOverlay,
     int SponsorCount,
     int InterstitialCount,
     TimeSpan SponsorDuration,
@@ -130,6 +132,7 @@ internal static class CommercialBreakPlaylistBuilder
         var usedVisualAssets = new Dictionary<string, CommercialVisualAsset>(StringComparer.Ordinal)
         {
             [visuals.Background.Id] = visuals.Background,
+            [visuals.TvOverlay.Id] = visuals.TvOverlay,
         };
         var currentBlock = 1;
         var contentStart = 0;
@@ -174,6 +177,7 @@ internal static class CommercialBreakPlaylistBuilder
             selection.OmittedInterstitials.Select(clip => clip.Name).ToArray(),
             usedVisualAssets.Values.ToArray(),
             visuals.Background,
+            visuals.TvOverlay,
             sponsors.Count,
             selection.Interstitials.Count,
             SumClipDurations(sponsors),

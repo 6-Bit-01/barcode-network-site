@@ -10,6 +10,7 @@ internal sealed class TemporaryCommercialLibrary : IDisposable
         ActiveDirectory = Path.Combine(RootDirectory, "Sponsors", "Active");
         InactiveDirectory = Path.Combine(RootDirectory, "Sponsors", "Inactive");
         BackgroundDirectory = Path.Combine(RootDirectory, "Visuals", "Background");
+        TvOverlayDirectory = Path.Combine(RootDirectory, "Visuals", "TV Overlay");
         BcnLogosDirectory = Path.Combine(RootDirectory, "Visuals", "Logos", "BCN");
         BlLogosDirectory = Path.Combine(RootDirectory, "Visuals", "Logos", "BL");
         RLogosDirectory = Path.Combine(RootDirectory, "Visuals", "Logos", "R");
@@ -20,6 +21,7 @@ internal sealed class TemporaryCommercialLibrary : IDisposable
             ActiveDirectory,
             InactiveDirectory,
             BackgroundDirectory,
+            TvOverlayDirectory,
             BcnLogosDirectory,
             BlLogosDirectory,
             RLogosDirectory,
@@ -32,7 +34,8 @@ internal sealed class TemporaryCommercialLibrary : IDisposable
         AddFile(FixedDirectory, "start.mp4");
         AddFile(FixedDirectory, "end.mp4");
         foreach (var index in Enumerable.Range(1, 5)) AddBumper($"bumper-{index}.mp4");
-        AddFile(BackgroundDirectory, "background.png");
+        AddFile(BackgroundDirectory, "background.mp4");
+        AddFile(TvOverlayDirectory, "tv-overlay.webm");
         AddFile(BcnLogosDirectory, "bcn-1.png");
         AddFile(BcnLogosDirectory, "bcn-2.png");
         AddFile(BlLogosDirectory, "bl.png");
@@ -45,6 +48,7 @@ internal sealed class TemporaryCommercialLibrary : IDisposable
     public string ActiveDirectory { get; }
     public string InactiveDirectory { get; }
     public string BackgroundDirectory { get; }
+    public string TvOverlayDirectory { get; }
     public string BcnLogosDirectory { get; }
     public string BlLogosDirectory { get; }
     public string RLogosDirectory { get; }

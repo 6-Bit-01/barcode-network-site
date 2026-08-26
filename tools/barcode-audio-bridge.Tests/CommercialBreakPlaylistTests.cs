@@ -23,6 +23,8 @@ public sealed class CommercialBreakPlaylistTests
             plan.Items.Where(item => item.Kind == CommercialClipKind.Sponsor).Select(item => item.Id).OrderBy(id => id));
         Assert.Equal(4, plan.ContentBlockDurations.Count);
         Assert.All(plan.ContentBlockDurations, duration => Assert.True(duration > TimeSpan.Zero));
+        Assert.Contains(plan.UsedVisualAssets, asset => asset.Id == "background");
+        Assert.Contains(plan.UsedVisualAssets, asset => asset.Id == "tv-overlay");
     }
 
     [Fact]
@@ -161,7 +163,8 @@ public sealed class CommercialBreakPlaylistTests
             Clip("end", endSeconds, CommercialClipKind.End));
 
     private static CommercialVisualAssets Visuals() => new(
-        Asset("background", "image/png"),
+        Asset("background", "video/mp4", ".mp4"),
+        Asset("tv-overlay", "video/webm", ".webm"),
         new Dictionary<CommercialLogoBrand, IReadOnlyList<CommercialVisualAsset>>
         {
             [CommercialLogoBrand.Bcn] = new[] { Asset("bcn-logo-1", "image/png"), Asset("bcn-logo-2", "image/png") },
@@ -169,10 +172,10 @@ public sealed class CommercialBreakPlaylistTests
             [CommercialLogoBrand.R] = new[] { Asset("r-logo", "image/png") },
         });
 
-    private static CommercialVisualAsset Asset(string id, string contentType) => new(
+    private static CommercialVisualAsset Asset(string id, string contentType, string extension = ".png") => new(
         id,
         id,
-        $"C:\\fixture\\{id}.png",
+        $"C:\\fixture\\{id}{extension}",
         contentType);
 
     private static CommercialClip Clip(

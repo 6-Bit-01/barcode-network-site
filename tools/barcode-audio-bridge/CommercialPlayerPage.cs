@@ -14,12 +14,15 @@ internal static class CommercialPlayerPage
     * { box-sizing: border-box; }
     html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; }
     body { font-family: Consolas, "Courier New", monospace; }
-    #background {
+    #background-video, #tv-overlay-video {
       position: fixed;
       inset: 0;
       width: 100%;
       height: 100%;
       object-fit: cover;
+      pointer-events: none;
+    }
+    #background-video {
       z-index: 0;
     }
     #video-window {
@@ -31,7 +34,10 @@ internal static class CommercialPlayerPage
       overflow: hidden;
       z-index: 1;
     }
-    video { width: 100%; height: 100%; object-fit: contain; background: transparent; }
+    #player { width: 100%; height: 100%; object-fit: contain; background: transparent; }
+    #tv-overlay-video {
+      z-index: 2;
+    }
     #logo {
       position: fixed;
       top: 2.5%;
@@ -42,11 +48,11 @@ internal static class CommercialPlayerPage
       opacity: 0;
       transform: translate(-50%, -8px) scale(.985);
       transition: opacity 1800ms ease, transform 1800ms ease;
-      z-index: 2;
+      z-index: 3;
       pointer-events: none;
     }
     #logo.visible { opacity: 1; transform: translate(-50%, 0) scale(1); }
-    #background[hidden], #video-window[hidden], #logo[hidden] { display: none; }
+    #background-video[hidden], #tv-overlay-video[hidden], #video-window[hidden], #logo[hidden] { display: none; }
     #status {
       display: none;
       position: fixed;
@@ -60,16 +66,17 @@ internal static class CommercialPlayerPage
       font-size: 14px;
       line-height: 1.35;
       white-space: pre-wrap;
-      z-index: 3;
+      z-index: 4;
     }
     body.debug #status { display: block; }
   </style>
 </head>
 <body>
-  <img id="background" alt="" hidden>
+  <video id="background-video" preload="auto" autoplay muted loop playsinline disablepictureinpicture hidden></video>
   <div id="video-window" hidden>
     <video id="player" preload="auto" autoplay playsinline disablepictureinpicture></video>
   </div>
+  <video id="tv-overlay-video" preload="auto" autoplay muted loop playsinline disablepictureinpicture hidden></video>
   <img id="logo" alt="" hidden>
   <div id="status">LOCAL COMMERCIAL PLAYER READY</div>
   <script>
@@ -77,9 +84,10 @@ internal static class CommercialPlayerPage
     const debug = query.get('debug') === '1';
     document.body.classList.toggle('debug', debug);
 
-    const background = document.getElementById('background');
+    const backgroundVideo = document.getElementById('background-video');
     const videoWindow = document.getElementById('video-window');
     const player = document.getElementById('player');
+    const tvOverlayVideo = document.getElementById('tv-overlay-video');
     const logo = document.getElementById('logo');
     const statusBox = document.getElementById('status');
     if (debug) player.controls = true;
@@ -121,10 +129,30 @@ internal static class CommercialPlayerPage
       player.removeAttribute('src');
       player.load();
       videoWindow.hidden = true;
-      background.hidden = true;
-      background.removeAttribute('src');
+      for (const visualVideo of [backgroundVideo, tvOverlayVideo]) {
+        visualVideo.pause();
+        visualVideo.hidden = true;
+        visualVideo.removeAttribute('src');
+        visualVideo.load();
+      }
       clearLogo();
       releasePreload();
+    }
+
+    async function startVisualVideo(element, url, label, token) {
+      if (!url) throw new Error(`${label} video is unavailable`);
+      if (token !== runToken) return;
+      element.muted = true;
+      element.loop = true;
+      element.src = url;
+      element.hidden = false;
+      element.load();
+      try {
+        await element.play();
+      } catch (error) {
+        throw new Error(`${label} video could not play: ${error?.message || error}`);
+      }
+      if (token !== runToken) element.pause();
     }
 
     function preload(item) {
@@ -195,11 +223,13 @@ internal static class CommercialPlayerPage
       const startIndex = state.status === 'playing'
         ? Math.max(0, Math.min(state.currentIndex, state.items.length - 1))
         : 0;
-      background.src = state.backgroundUrl;
-      background.hidden = false;
-      showStatus(`BREAK ${state.generation} · ${state.sponsorCount} SPONSORS · ${state.interstitialCount} HOUSE · STARTING`);
+      showStatus(`BREAK ${state.generation} · ${state.sponsorCount} SPONSORS · ${state.interstitialCount} HOUSE · STARTING VISUALS`);
 
       try {
+        await Promise.all([
+          startVisualVideo(backgroundVideo, state.backgroundUrl, 'background', token),
+          startVisualVideo(tvOverlayVideo, state.tvOverlayUrl, 'TV overlay', token),
+        ]);
         for (let index = startIndex; index < state.items.length; index += 1) {
           if (token !== runToken) return;
           const item = state.items[index];
@@ -212,6 +242,7 @@ internal static class CommercialPlayerPage
         showStatus(`BREAK ${state.generation} · COMPLETE`);
         clearPlayer();
       } catch (error) {
+        if (token !== runToken) return;
         const reason = String(error?.message || error || 'playback error').slice(0, 180);
         try {
           await post(`/v1/commercials/failed?generation=${state.generation}&reason=${encodeURIComponent(reason)}`);
@@ -229,6 +260,7 @@ internal static class CommercialPlayerPage
         if ((state.status === 'queued' || state.status === 'playing')
             && state.items.length > 0
             && state.backgroundUrl
+            && state.tvOverlayUrl
             && (!running || state.generation !== activeGeneration)) {
           clearPlayer();
           void runBreak(state);

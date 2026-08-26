@@ -44,6 +44,7 @@ internal sealed record CommercialBreakSnapshot(
     double TargetDurationSeconds,
     IReadOnlyList<double> ContentBlockDurationsSeconds,
     string? BackgroundUrl,
+    string? TvOverlayUrl,
     IReadOnlyList<CommercialPlaybackItemSnapshot> Items,
     IReadOnlyList<string> Warnings,
     string Message);
@@ -155,7 +156,7 @@ internal sealed class CommercialMediaSnapshot : IDisposable
 
 internal sealed class CommercialBreakService
 {
-    public const string SchemaVersion = "barcode_commercial_break_v2";
+    public const string SchemaVersion = "barcode_commercial_break_v3";
 
     private readonly object _sync = new();
     private readonly CommercialBreakLibrary _library;
@@ -363,6 +364,7 @@ internal sealed class CommercialBreakService
                 plan?.TargetDuration.TotalSeconds ?? CommercialBreakPlaylistBuilder.TargetDuration.TotalSeconds,
                 plan?.ContentBlockDurations.Select(duration => duration.TotalSeconds).ToArray() ?? Array.Empty<double>(),
                 plan is null ? null : MediaUrl(plan.Background.Id),
+                plan is null ? null : MediaUrl(plan.TvOverlay.Id),
                 items,
                 _warnings,
                 _message);

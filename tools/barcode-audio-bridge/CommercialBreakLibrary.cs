@@ -61,6 +61,11 @@ internal sealed class CommercialBreakLibrary
         ".jpeg",
         ".webp",
     };
+    private static readonly HashSet<string> VisualVideoExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".mp4",
+        ".webm",
+    };
     private static readonly IReadOnlyDictionary<string, int> OptionalCutPriorities =
         new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
         {
@@ -96,11 +101,13 @@ Every real active sponsor always plays once. House clips are dotted between
 sponsors and never placed back-to-back.
 
 VISUALS
-Put one background image in Visuals\Background.
+Put one looping background video in Visuals\Background.
+Put one looping TV overlay video in Visuals\TV Overlay.
+Both visual videos are muted by the player. MP4 and WEBM are supported.
 Put the two alternating BARCODE logos in Visuals\Logos\BCN.
 Put the BLVCKL!GHT logo in Visuals\Logos\BL.
 Put the Rigged Sanchez logo in Visuals\Logos\R.
-PNG, JPG, JPEG, and WEBP images are supported.
+PNG, JPG, JPEG, and WEBP logo images are supported.
 
 PLAYBACK
 Right-click the BARCODE Audio Bridge tray icon and choose Start Commercial Break.
@@ -135,6 +142,7 @@ Recommended video format: H.264 video + AAC audio in an .mp4 container.
     private string ActiveSponsorsDirectory => Path.Combine(_rootDirectory, "Sponsors", "Active");
     private string InactiveSponsorsDirectory => Path.Combine(_rootDirectory, "Sponsors", "Inactive");
     private string BackgroundDirectory => Path.Combine(_rootDirectory, "Visuals", "Background");
+    private string TvOverlayDirectory => Path.Combine(_rootDirectory, "Visuals", "TV Overlay");
     private string LogosDirectory => Path.Combine(_rootDirectory, "Visuals", "Logos");
     private string InstructionsPath => Path.Combine(_rootDirectory, "README.txt");
     public string PlaybackSnapshotsDirectory => Path.Combine(_rootDirectory, "Playback Snapshots");
@@ -146,6 +154,7 @@ Recommended video format: H.264 video + AAC audio in an .mp4 container.
         Directory.CreateDirectory(ActiveSponsorsDirectory);
         Directory.CreateDirectory(InactiveSponsorsDirectory);
         Directory.CreateDirectory(BackgroundDirectory);
+        Directory.CreateDirectory(TvOverlayDirectory);
         foreach (var folder in new[] { "BCN", "BL", "R" })
         {
             Directory.CreateDirectory(Path.Combine(LogosDirectory, folder));
@@ -234,16 +243,27 @@ Recommended video format: H.264 video + AAC audio in an .mp4 container.
             return Failure("No readable real sponsor MP4 files are in Sponsors\\Active.", warnings);
         }
 
-        var backgroundFiles = EnumerateImages(BackgroundDirectory).ToArray();
+        var backgroundFiles = EnumerateVisualVideos(BackgroundDirectory).ToArray();
         if (backgroundFiles.Length == 0)
         {
-            return Failure("No background image is in Visuals\\Background.", warnings);
+            return Failure("No MP4 or WEBM background video is in Visuals\\Background.", warnings);
         }
         if (backgroundFiles.Length > 1)
         {
-            warnings.Add($"Multiple background images found; using {Path.GetFileName(backgroundFiles[0])}.");
+            warnings.Add($"Multiple background videos found; using {Path.GetFileName(backgroundFiles[0])}.");
         }
         var background = CreateVisualAsset(backgroundFiles[0]);
+
+        var tvOverlayFiles = EnumerateVisualVideos(TvOverlayDirectory).ToArray();
+        if (tvOverlayFiles.Length == 0)
+        {
+            return Failure("No MP4 or WEBM TV overlay video is in Visuals\\TV Overlay.", warnings);
+        }
+        if (tvOverlayFiles.Length > 1)
+        {
+            warnings.Add($"Multiple TV overlay videos found; using {Path.GetFileName(tvOverlayFiles[0])}.");
+        }
+        var tvOverlay = CreateVisualAsset(tvOverlayFiles[0]);
 
         var logos = new Dictionary<CommercialLogoBrand, IReadOnlyList<CommercialVisualAsset>>();
         foreach (var brand in Enum.GetValues<CommercialLogoBrand>())
@@ -268,7 +288,7 @@ Recommended video format: H.264 video + AAC audio in an .mp4 container.
         }
 
         var fixedClips = new CommercialFixedClips(start.Clip!, bumpers, end.Clip!);
-        var visuals = new CommercialVisualAssets(background, logos);
+        var visuals = new CommercialVisualAssets(background, tvOverlay, logos);
         return new CommercialBreakLibraryResult(
             true,
             $"Loaded {sponsors.Count} sponsor{(sponsors.Count == 1 ? string.Empty : "s")} and " +
@@ -327,6 +347,8 @@ Recommended video format: H.264 video + AAC audio in an .mp4 container.
             ".png" => "image/png",
             ".jpg" or ".jpeg" => "image/jpeg",
             ".webp" => "image/webp",
+            ".mp4" => "video/mp4",
+            ".webm" => "video/webm",
             _ => "application/octet-stream",
         });
 
@@ -364,6 +386,11 @@ Recommended video format: H.264 video + AAC audio in an .mp4 container.
     private static IEnumerable<string> EnumerateImages(string directory) => Directory
         .EnumerateFiles(directory)
         .Where(path => ImageExtensions.Contains(Path.GetExtension(path)))
+        .OrderBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase);
+
+    private static IEnumerable<string> EnumerateVisualVideos(string directory) => Directory
+        .EnumerateFiles(directory)
+        .Where(path => VisualVideoExtensions.Contains(Path.GetExtension(path)))
         .OrderBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase);
 
     private static string BuildMediaId(string path)

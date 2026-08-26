@@ -86,7 +86,7 @@ public sealed class CommercialBreakServiceTests
     }
 
     [Fact]
-    public void MediaLookupServesOnlyFrozenPlanVideosBackgroundAndSelectedLogos()
+    public void MediaLookupServesOnlyFrozenPlanVideosBothVisualLoopsAndSelectedLogos()
     {
         using var fixture = CreateReadyFixture();
         fixture.AddActiveSponsor("network trailer (BCN).mp4");
@@ -102,11 +102,15 @@ public sealed class CommercialBreakServiceTests
         Assert.Equal("video/mp4", video.ContentType);
         var backgroundId = snapshot.BackgroundUrl![snapshot.BackgroundUrl.LastIndexOf('/')..].TrimStart('/');
         Assert.True(service.TryGetMedia(backgroundId, out var background));
-        Assert.Equal("image/png", background.ContentType);
+        Assert.Equal("video/mp4", background.ContentType);
+        var tvOverlayId = snapshot.TvOverlayUrl![snapshot.TvOverlayUrl.LastIndexOf('/')..].TrimStart('/');
+        Assert.True(service.TryGetMedia(tvOverlayId, out var tvOverlay));
+        Assert.Equal("video/webm", tvOverlay.ContentType);
         var logoId = tagged.LogoUrl![tagged.LogoUrl.LastIndexOf('/')..].TrimStart('/');
         Assert.True(service.TryGetMedia(logoId, out var logo));
         Assert.Equal("image/png", logo.ContentType);
         Assert.False(service.TryGetMedia("not-a-current-media-id", out _));
+        Assert.Equal("barcode_commercial_break_v3", snapshot.Schema);
     }
 
     [Fact]

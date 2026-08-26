@@ -27,13 +27,28 @@ public sealed class CommercialPlayerPageTests
     }
 
     [Fact]
-    public void LogosFadeSlowlyAboveTheVideoAndOnlyOneNextClipIsPreloaded()
+    public void CommercialWindowMatchesTheSuppliedVerticalTvAperture()
+    {
+        var html = CommercialPlayerPage.Html;
+
+        Assert.Contains("left: 10.2%", html);
+        Assert.Contains("top: 35.94%", html);
+        Assert.Contains("width: 79.2%", html);
+        Assert.Contains("height: 23.75%", html);
+        Assert.Contains("border-radius: 2.2vw", html);
+        Assert.Contains("background: #000", html);
+        Assert.Contains("object-fit: contain", html);
+    }
+
+    [Fact]
+    public void LogosFadeSlowlyAboveTheTvAndOnlyOneNextClipIsPreloaded()
     {
         var html = CommercialPlayerPage.Html;
 
         Assert.Contains("transition: opacity 1800ms ease", html);
         Assert.Contains("#logo.visible", html);
-        Assert.Contains("top: 2.5%", html);
+        Assert.Contains("top: 20.5%", html);
+        Assert.Contains("height: 9.5%", html);
         Assert.Contains("for (const visualVideo of [backgroundVideo, tvOverlayVideo])", html);
         Assert.Contains("let preloadPlayer = null", html);
         Assert.Contains("preload(nextItem)", html);

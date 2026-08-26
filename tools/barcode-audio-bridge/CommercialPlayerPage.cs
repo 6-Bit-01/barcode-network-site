@@ -27,23 +27,28 @@ internal static class CommercialPlayerPage
     }
     #video-window {
       position: fixed;
-      inset: 17% 4% 4%;
+      left: 10.2%;
+      top: 35.94%;
+      width: 79.2%;
+      height: 23.75%;
       display: flex;
       align-items: center;
       justify-content: center;
       overflow: hidden;
+      border-radius: 2.2vw;
+      background: #000;
       z-index: 1;
     }
-    #player { width: 100%; height: 100%; object-fit: contain; background: transparent; }
+    #player { display: block; width: 100%; height: 100%; object-fit: contain; background: #000; }
     #tv-overlay-video {
       z-index: 2;
     }
     #logo {
       position: fixed;
-      top: 2.5%;
+      top: 20.5%;
       left: 50%;
-      width: min(52%, 760px);
-      height: 12%;
+      width: min(68%, 760px);
+      height: 9.5%;
       object-fit: contain;
       opacity: 0;
       transform: translate(-50%, -8px) scale(.985);

@@ -98,7 +98,7 @@ function queueState(overrides = {}) {
       priorityUpgradePriceCents: 1000,
       priorityUpgradeCurrency: "usd",
       priorityUpgradePaymentsEnabled: true,
-      sponsorBreakSeconds: 630,
+      sponsorBreakSeconds: 660,
       sponsorBreakStatus: "not_due",
     },
     isCurrentSession: true,

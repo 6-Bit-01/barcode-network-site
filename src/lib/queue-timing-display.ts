@@ -402,7 +402,7 @@ function buildPressureSummary(snapshot: ReturnType<typeof buildQueueTimingSnapsh
   factors.push(`${formatMinutesSeconds(snapshot.currentPaceTalkSecondsPerTrack)} current talk/transition pace per track.`);
   if (snapshot.unknownDurationCount > 0) factors.push(`${snapshot.unknownDurationCount} track durations are estimated; timing confidence is ${snapshot.confidence}.`);
   const recommendation = snapshot.sponsorBreak.sponsorBreakStatus === "due"
-    ? "SPONSOR BREAK DUE · start the 10:30 break."
+    ? "SPONSOR BREAK DUE · start the 11:00 break."
     : level === "critical"
       ? "MOVE NOW · use only necessary transitions."
       : level === "high"

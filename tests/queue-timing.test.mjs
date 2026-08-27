@@ -194,13 +194,13 @@ test("completed sponsor break is not included again", () => {
   assert.equal(estimate.sponsorBreakSecondsIncluded, 0);
 });
 
-test("running commercial burns down the 12-minute planning reserve while exposing the 10:30 countdown", () => {
+test("running commercial burns down the 12-minute planning reserve while exposing the 11:00 countdown", () => {
   const now = new Date("2026-01-01T03:00:00.000Z");
   const startedAt = new Date(now.getTime() - 4 * 60 * 1000).toISOString();
-  const estimate = timing.estimateSponsorBreakPlacement({ session: { sponsorBreakStatus: "running", sponsorBreakStartedAt: startedAt, sponsorBreakSeconds: 630 } }, { now });
+  const estimate = timing.estimateSponsorBreakPlacement({ session: { sponsorBreakStatus: "running", sponsorBreakStartedAt: startedAt, sponsorBreakSeconds: 660 } }, { now });
   assert.equal(estimate.sponsorBreakStatus, "running");
   assert.equal(estimate.sponsorBreakSecondsIncluded, 480);
-  assert.equal(estimate.sponsorBreakSecondsRemaining, 390);
+  assert.equal(estimate.sponsorBreakSecondsRemaining, 420);
 });
 
 test("wheel overhead does not add extra song durations", () => {

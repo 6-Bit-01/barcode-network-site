@@ -974,7 +974,7 @@ test("host cannot start the sponsor break at midpoint before two broadcast hours
   assert.equal(state.session.sponsorBreakStartedAt, null);
 });
 
-test("running commercial break auto-completes after 10m30s", async () => {
+test("running commercial break auto-completes after the 11-minute local-player contract", async () => {
   await freshOpenSession("commercial timer auto-complete");
   const initial = await queue.getRadioQueueState();
   const eligibleNow = new Date(Date.parse(initial.session.broadcastStartedAt) + 2 * 60 * 60 * 1000 + 1000);
@@ -983,13 +983,15 @@ test("running commercial break auto-completes after 10m30s", async () => {
     return queue.updateSponsorBreakState("start");
   });
   assert.equal(state.session.sponsorBreakStatus, "running");
+  assert.equal(state.session.sponsorBreakSeconds, 11 * 60);
   assert.equal(state.session.sponsorBreakDueAfterPlayableCount, 1);
   assert.ok(state.session.sponsorBreakStartedAt);
-  const beforeDone = await withFakeNow(new Date(new Date(state.session.sponsorBreakStartedAt).getTime() + 10 * 60 * 1000), () => queue.getRadioQueueState());
+  const beforeDone = await withFakeNow(new Date(new Date(state.session.sponsorBreakStartedAt).getTime() + (11 * 60 - 1) * 1000), () => queue.getRadioQueueState());
   assert.equal(beforeDone.session.sponsorBreakStatus, "running");
-  const afterDone = await withFakeNow(new Date(new Date(state.session.sponsorBreakStartedAt).getTime() + 10 * 60 * 1000 + 31 * 1000), () => queue.getRadioQueueState());
+  const afterDone = await withFakeNow(new Date(new Date(state.session.sponsorBreakStartedAt).getTime() + 11 * 60 * 1000), () => queue.getRadioQueueState());
   assert.equal(afterDone.session.sponsorBreakStatus, "completed");
   assert.ok(afterDone.session.sponsorBreakCompletedAt);
+  assert.equal(afterDone.session.sponsorBreakManualNote, "Commercial break auto-completed after 11m 00s.");
 });
 
 test("commercial start is idempotent when already running/completed/skipped", async () => {

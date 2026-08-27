@@ -32,6 +32,7 @@ import type { QueueShowLogEventInput } from "./queue-show-log";
 import { isQueueProductionEnabled } from "./queue-production";
 import { buildQueueShowReport } from "./queue-show-report";
 import type { QueueShowReport } from "./queue-show-report";
+import { SPONSOR_BREAK_DURATION_SECONDS } from "./sponsor-break-contract";
 import { parseIso8601DurationToSeconds, parseSpotifyTrackId, parseYouTubeVideoId as parseTrackDurationYouTubeVideoId } from "./track-duration";
 import {
   INTERNAL_BUFFER_DURATION_SECONDS,
@@ -110,7 +111,7 @@ const DEFAULT_QUEUE_CAPACITY = 44;
 export const MAX_TRACKS_PER_SUBMITTER = 3;
 const DEFAULT_SUBMISSION_COOLDOWN_SECONDS = 5 * 60;
 const MAX_SUBMISSION_COOLDOWN_SECONDS = 60 * 60;
-const SPONSOR_BREAK_SECONDS = 10 * 60 + 30;
+const SPONSOR_BREAK_SECONDS = SPONSOR_BREAK_DURATION_SECONDS;
 const DEFAULT_PRIORITY_UPGRADE_LABEL = "Priority Signal Upgrade";
 const DEFAULT_PRIORITY_UPGRADE_INSTRUCTIONS = "Priority Signal Upgrade is being prepared. No payment has been processed.";
 const DEFAULT_PRIORITY_UPGRADE_PRICE_CENTS = 1000;
@@ -1167,7 +1168,7 @@ function applyCommercialBreakTimer(session: QueueSession, now = new Date()): boo
   session.sponsorBreakStatus = "completed";
   session.sponsorBreakCompletedAt = session.sponsorBreakCompletedAt ?? completedAtIso;
   session.sponsorBreakCompletedAfterPlayableCount = session.sponsorBreakCompletedAfterPlayableCount ?? completedCountedTrackCountForSession(session);
-  session.sponsorBreakManualNote = "Commercial break auto-completed after 10m 30s.";
+  session.sponsorBreakManualNote = "Commercial break auto-completed after 11m 00s.";
   session.updatedAt = now.toISOString();
   return true;
 }

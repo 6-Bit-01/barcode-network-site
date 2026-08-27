@@ -68,16 +68,16 @@ export function JournalArticle({
         <Title className="mt-5 text-3xl font-normal leading-tight text-foreground sm:text-5xl">
           {entry.title}
         </Title>
-        <p className="mt-5 max-w-3xl text-lg leading-8 text-foreground/75">
+        <p className="mt-5 max-w-3xl text-xl leading-7 text-foreground/75">
           {entry.excerpt}
         </p>
         <div className="mt-8 space-y-8">
           {entry.sections.map((section) => (
             <section key={section.heading} className="space-y-3">
-              <SectionTitle className="text-base font-normal uppercase text-accent sm:text-lg">
+              <SectionTitle className="text-lg font-normal uppercase text-accent sm:text-xl">
                 {section.heading}
               </SectionTitle>
-              <p className="max-w-3xl whitespace-pre-wrap text-base leading-8 text-foreground/75 sm:text-lg sm:leading-9">
+              <p className="max-w-3xl whitespace-pre-wrap text-lg leading-7 text-foreground/75 sm:text-xl sm:leading-8">
                 {section.body}
               </p>
             </section>
@@ -115,10 +115,10 @@ export function JournalArchiveCard({
         <JournalKindBadge entry={entry} />
       </div>
       <div className="font-jon-hand">
-        <h2 className="mt-2 text-base font-normal text-foreground">
+        <h2 className="mt-2 text-lg font-normal leading-tight text-foreground">
           {entry.title}
         </h2>
-        <p className="mt-2 line-clamp-3 text-sm leading-6 text-foreground/70">
+        <p className="mt-2 line-clamp-3 text-base leading-6 text-foreground/70">
           {entry.excerpt}
         </p>
       </div>

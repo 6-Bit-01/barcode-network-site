@@ -1035,6 +1035,30 @@ test("React server rendering exposes only display data and escapes hostile text"
   assert.equal(article.JournalArticle.toString().includes("useRouter"), false);
 });
 
+test("the handwriting font stays scoped to authored Journal copy", () => {
+  const entry = {
+    ...makeEntry(),
+    publishedAt: "2026-07-18T12:30:00Z",
+  };
+  const articleHtml = renderToStaticMarkup(
+    React.createElement(article.JournalArticle, { entry }),
+  );
+  const cardHtml = renderToStaticMarkup(
+    React.createElement(article.JournalArchiveCard, { entry }),
+  );
+  const globals = awaitFs("src/app/globals.css");
+
+  assert.match(globals, /font-family:\s*"Jon Hand Light"/);
+  assert.match(globals, /url\("\/fonts\/jon-hand-light\.woff2"\)/);
+  assert.match(articleHtml, /class="font-jon-hand"/);
+  assert.match(cardHtml, /class="font-jon-hand"/);
+  assert.match(
+    articleHtml,
+    /<p class="(?![^"]*font-jon-hand)[^"]*">By BNL-01\.<\/p>/,
+  );
+  assert.doesNotMatch(articleHtml, /font-jon-hand[^>]*>By BNL-01\./);
+});
+
 test("public archive UI exposes server-backed filters and preserves them in navigation", () => {
   const archivePage = awaitFs("src/app/journal/page.tsx");
   const entryPage = awaitFs("src/app/journal/[entryId]/page.tsx");

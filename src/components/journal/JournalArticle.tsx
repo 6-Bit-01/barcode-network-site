@@ -64,23 +64,25 @@ export function JournalArticle({
         className="mt-3 block font-mono text-xs uppercase tracking-widest text-muted"
         value={entry.publishedAt}
       />
-      <Title className="mt-5 text-3xl font-black leading-tight tracking-tight text-foreground sm:text-5xl">
-        {entry.title}
-      </Title>
-      <p className="mt-5 max-w-3xl text-lg leading-8 text-foreground/75">
-        {entry.excerpt}
-      </p>
-      <div className="mt-8 space-y-8">
-        {entry.sections.map((section) => (
-          <section key={section.heading} className="space-y-3">
-            <SectionTitle className="font-mono text-sm uppercase tracking-[0.25em] text-accent">
-              {section.heading}
-            </SectionTitle>
-            <p className="max-w-3xl whitespace-pre-wrap text-base leading-8 text-foreground/75 sm:text-lg sm:leading-9">
-              {section.body}
-            </p>
-          </section>
-        ))}
+      <div className="font-jon-hand">
+        <Title className="mt-5 text-3xl font-normal leading-tight text-foreground sm:text-5xl">
+          {entry.title}
+        </Title>
+        <p className="mt-5 max-w-3xl text-lg leading-8 text-foreground/75">
+          {entry.excerpt}
+        </p>
+        <div className="mt-8 space-y-8">
+          {entry.sections.map((section) => (
+            <section key={section.heading} className="space-y-3">
+              <SectionTitle className="text-base font-normal uppercase text-accent sm:text-lg">
+                {section.heading}
+              </SectionTitle>
+              <p className="max-w-3xl whitespace-pre-wrap text-base leading-8 text-foreground/75 sm:text-lg sm:leading-9">
+                {section.body}
+              </p>
+            </section>
+          ))}
+        </div>
       </div>
       {prominent && (
         <Link
@@ -112,12 +114,14 @@ export function JournalArchiveCard({
         />
         <JournalKindBadge entry={entry} />
       </div>
-      <h2 className="mt-2 text-base font-bold text-foreground">
-        {entry.title}
-      </h2>
-      <p className="mt-2 line-clamp-3 text-sm leading-6 text-foreground/70">
-        {entry.excerpt}
-      </p>
+      <div className="font-jon-hand">
+        <h2 className="mt-2 text-base font-normal text-foreground">
+          {entry.title}
+        </h2>
+        <p className="mt-2 line-clamp-3 text-sm leading-6 text-foreground/70">
+          {entry.excerpt}
+        </p>
+      </div>
     </Link>
   );
 }

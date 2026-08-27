@@ -36,7 +36,7 @@ internal static class CommercialBreakPaths
         "BARCODE Network",
         "Commercials");
 
-    public const string PlayerUrl = "https://www.barcode-network.com/overlay/commercials";
+    public const string PlayerUrl = "https://www.barcode-network.com/overlay/commercials?studioSource=v1";
     public static string LocalPlayerUrl => $"http://127.0.0.1:{BridgeConstants.Port}/commercials";
     public static string PreviewUrl => LocalPlayerUrl + "?debug=1";
 
@@ -66,6 +66,13 @@ internal sealed class CommercialBreakLibrary
     {
         ".mp4",
         ".webm",
+    };
+    private static readonly string[] BackgroundPreferredFileNames =
+    {
+        "BACKGROUND.mp4",
+        "BG.mp4",
+        "BACKGROUND.webm",
+        "BG.webm",
     };
     private static readonly IReadOnlyDictionary<string, int> OptionalCutPriorities =
         new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
@@ -152,12 +159,17 @@ PLAYER SOURCE
 Right-click the tray icon and choose Copy permanent TikTok Studio source URL.
 Add this Link source to TikTok Studio once at 1080 x 1920, size it once, and
 leave it in the scene for every show:
-  https://www.barcode-network.com/overlay/commercials
+  https://www.barcode-network.com/overlay/commercials?studioSource=v1
 
 Open diagnostic preview (not Studio source) is only for Chrome testing and is
 not the source that should be added to TikTok Studio. The permanent HTTPS link
 redirects only inside TikTok Studio to this computer's local player; sponsor
 media and visuals never leave this computer.
+
+While the player source is connected and no break is running, it shows only the
+animated background. Starting a break reveals the real TV frame over a black
+screen, runs one short CSS-only CRT power-on flicker, and then starts the normal
+commercial sequence. No second video is used for the power-on effect.
 
 Recommended video format: H.264 video + AAC audio in an .mp4 container.
 """;
@@ -206,6 +218,17 @@ Recommended video format: H.264 video + AAC audio in an .mp4 container.
         {
             File.WriteAllText(InstructionsPath, Instructions);
         }
+    }
+
+    public CommercialVisualAsset? GetIdleBackground()
+    {
+        if (!Directory.Exists(BackgroundDirectory)) return null;
+        var selection = SelectVisualVideo(
+            BackgroundDirectory,
+            "background",
+            BackgroundPreferredFileNames,
+            new List<string>());
+        return selection.Path is null ? null : CreateVisualAsset(selection.Path);
     }
 
     public CommercialBreakLibraryResult Load()
@@ -287,7 +310,7 @@ Recommended video format: H.264 video + AAC audio in an .mp4 container.
         var backgroundSelection = SelectVisualVideo(
             BackgroundDirectory,
             "background",
-            new[] { "BACKGROUND.mp4", "BG.mp4", "BACKGROUND.webm", "BG.webm" },
+            BackgroundPreferredFileNames,
             warnings);
         if (backgroundSelection.Error is not null)
         {

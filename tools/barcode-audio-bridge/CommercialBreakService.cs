@@ -455,6 +455,19 @@ internal sealed class CommercialBreakService
         return false;
     }
 
+    public bool TryGetIdleBackground(out CommercialMediaResource resource)
+    {
+        var background = _library.GetIdleBackground();
+        if (background is not null && File.Exists(background.FilePath))
+        {
+            resource = new CommercialMediaResource(background.FilePath, background.ContentType);
+            return true;
+        }
+
+        resource = new CommercialMediaResource(string.Empty, "application/octet-stream");
+        return false;
+    }
+
     private CommercialBreakStartResult StartResult(bool started, string message)
     {
         var plan = _plan;

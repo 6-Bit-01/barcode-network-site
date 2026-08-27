@@ -2311,7 +2311,7 @@ test("public POST rejects missing legal acceptance", async () => {
   assert.equal(payload.error, "Legal acceptance is required before submitting to the queue.");
 });
 
-test("public POST accepts current active sessionId", async () => {
+test("public POST accepts the current active session and ignores user-supplied album/project data", async () => {
   const sessionId = await freshOpenSession("current session", { purpose: "live_broadcast", bnlPublicationStatus: "private" });
   const response = await queueApi.submitTrackFromBody({
     sessionId,
@@ -2326,10 +2326,17 @@ test("public POST accepts current active sessionId", async () => {
   const payload = await jsonOf(response);
   assert.equal(response.status, 201);
   assert.ok(payload.track?.id);
-  assert.equal(payload.track.submittedAlbumName, "Current Project");
+  assert.equal(payload.track.submittedAlbumName, null);
   const state = await queue.getRadioQueueState();
   const stored = [state.nowPlaying, state.nextInLine, ...state.queue].find((track) => track?.id === payload.track.id);
-  assert.equal(stored.submittedAlbumName, "Current Project");
+  assert.equal(stored.submittedAlbumName, null);
+});
+
+test("public queue intake no longer asks for or sends album/project data", () => {
+  const formSource = fs.readFileSync(path.join(projectRoot, "src/components/RadioQueueForm.tsx"), "utf8");
+  assert.doesNotMatch(formSource, /Album \/ project/);
+  assert.doesNotMatch(formSource, /submittedAlbumName:\s*albumName/);
+  assert.doesNotMatch(formSource, /setAlbumName|const \[albumName/);
 });
 
 test("private rehearsal intake stays public-dark but works through the copied rehearsal link", async () => {

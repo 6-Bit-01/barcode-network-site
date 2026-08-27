@@ -130,7 +130,6 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
   const finalSubmitIntent = useRef(false);
   const [artist, setArtist] = useState("");
   const [title, setTitle] = useState("");
-  const [albumName, setAlbumName] = useState("");
   const [link, setLink] = useState("");
   const [tiktokHandle, setTikTokHandle] = useState("");
   const [collaboratorNames, setCollaboratorNames] = useState("");
@@ -373,7 +372,6 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
 
   function clearTrackDraftFields() {
     setTitle("");
-    setAlbumName("");
     setLink("");
     setCollaboratorNames("");
     setNote("");
@@ -444,7 +442,6 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
         mode,
         artist: artist.trim(),
         title: title.trim(),
-        submittedAlbumName: albumName.trim(),
         tiktokHandle: tiktokHandle.trim(),
         collaboratorNames: collaboratorNames.trim(),
         contactEmail: contactEmail.trim(),
@@ -640,7 +637,6 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
             <div className="grid gap-2.5 sm:grid-cols-2">
               <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Artist name</span><input value={artist} onChange={(e) => setArtist(e.target.value)} className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
               <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Song title</span><input value={title} onChange={(e) => setTitle(e.target.value)} className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
-              <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Album / project</span><input value={albumName} onChange={(e) => setAlbumName(e.target.value.slice(0, 200))} placeholder="Optional — leave blank for a single" className="w-full bg-background border border-border px-3 py-2 text-sm" /></label>
               <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">TikTok handle</span><input value={tiktokHandle} onChange={(e) => setTikTokHandle(e.target.value)} placeholder="@six.bit" className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
               <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Featured/collaborator artist(s)</span><input value={collaboratorNames} onChange={(e) => setCollaboratorNames(e.target.value)} placeholder="Optional" className="w-full bg-background border border-border px-3 py-2 text-sm" /></label>
             </div>
@@ -701,7 +697,6 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
             <div className="grid gap-2 border border-accent/30 bg-accent/5 p-3 text-xs sm:grid-cols-2">
               <p><span className="text-muted">Artist:</span> {artist.trim() || "—"}</p>
               <p><span className="text-muted">Song:</span> {title.trim() || "—"}</p>
-              {albumName.trim() && <p><span className="text-muted">Album / project:</span> {albumName.trim()}</p>}
               <p><span className="text-muted">TikTok:</span> {tiktokHandle.trim() || "—"}</p>
               {collaboratorNames.trim() && <p><span className="text-muted">Featured:</span> {collaboratorNames.trim()}</p>}
               <p><span className="text-muted">Source type:</span> {mode === "upload" ? "Upload" : "Link"}</p>

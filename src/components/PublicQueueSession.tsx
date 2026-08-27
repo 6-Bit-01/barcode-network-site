@@ -605,7 +605,7 @@ export function PublicQueueSession({ sessionId, snapshotEndpoint = "/api/queue" 
             <div className="mt-3 flex flex-wrap gap-2"><a href="/radio/deck" className="border border-[#ffaa00]/55 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background">Open Broadcast Deck</a><a href="/radio/archive" className="border border-cyan-200/45 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-cyan-200 hover:bg-cyan-200 hover:text-background">Broadcast Archive</a></div>
           </div>
         </section>
-        {sponsorBreakRunning && <section className="sponsor-mode-banner border border-[#ffaa00]/45 bg-[#ffaa00]/8 p-3" role="status" aria-live="polite"><p className="text-xs font-bold uppercase tracking-[0.34em] text-[#ffaa00]">A WORD FROM OUR SPONSOR</p><p className="mt-1 text-sm text-muted">The 10:30 sponsor break is in progress. The queue, submissions, status, and navigation stay live.</p></section>}
+        {sponsorBreakRunning && <section className="sponsor-mode-banner border border-[#ffaa00]/45 bg-[#ffaa00]/8 p-3" role="status" aria-live="polite"><p className="text-xs font-bold uppercase tracking-[0.34em] text-[#ffaa00]">A WORD FROM OUR SPONSOR</p><p className="mt-1 text-sm text-muted">The 11:00 sponsor break is in progress. The queue, submissions, status, and navigation stay live.</p></section>}
         {showWatchLiveLink && (
         <div className="-mt-2 mb-1 flex justify-start">
           <a

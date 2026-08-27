@@ -84,7 +84,7 @@ function queueState(overrides = {}) {
       priorityUpgradePriceCents: 1000,
       priorityUpgradeCurrency: "usd",
       priorityUpgradePaymentsEnabled: true,
-      sponsorBreakSeconds: 630,
+      sponsorBreakSeconds: 660,
       sponsorBreakStatus: "not_due",
     },
     ...overrides,
@@ -255,14 +255,14 @@ test("closed intake, sponsor due, and owed Wheel spins produce BARCODE status tr
 });
 
 test("Wheel, sponsor, and system scenes stay partnered with live-overlay priority", () => {
-  const state = queueState({ session: { ...queueState().session, sponsorBreakStatus: "running", sponsorBreakStartedAt: "2026-08-09T03:00:00.000Z", sponsorBreakSeconds: 630 } });
+  const state = queueState({ session: { ...queueState().session, sponsorBreakStatus: "running", sponsorBreakStartedAt: "2026-08-09T03:00:00.000Z", sponsorBreakSeconds: 660 } });
   const wheel = foreground.resolveForegroundOverlaySnapshot({ queueState: state, scene: scene("wheel_spinning", { message: "Result incoming.", wheelOverlayActive: true }) }, new Date("2026-08-09T03:01:00.000Z"));
   assert.equal(wheel.action.label, "WHEEL SPINNING");
   assert.equal(wheel.action.tone, "wheel");
 
   const sponsor = foreground.resolveForegroundOverlaySnapshot({ queueState: state, scene: scene("sponsor") }, new Date("2026-08-09T03:01:00.000Z"));
   assert.equal(sponsor.action.label, "SPONSOR BREAK");
-  assert.equal(sponsor.sponsorEndsAt, "2026-08-09T03:10:30.000Z");
+  assert.equal(sponsor.sponsorEndsAt, "2026-08-09T03:11:00.000Z");
 
   const system = foreground.resolveForegroundOverlaySnapshot({ queueState: queueState(), scene: scene("system_message", { title: "BNL-01", message: "Transmission received." }) }, new Date("2026-08-09T03:01:00.000Z"));
   assert.equal(system.action.label, "BNL");
@@ -298,7 +298,7 @@ test("one chained show simulation updates track, gifted skip, Wheel, sponsor, an
     scene: scene("sponsor"),
   }, new Date("2026-08-09T03:03:00.000Z"));
   assert.equal(sponsor.action.label, "SPONSOR BREAK");
-  assert.equal(sponsor.sponsorEndsAt, "2026-08-09T03:12:30.000Z");
+  assert.equal(sponsor.sponsorEndsAt, "2026-08-09T03:13:00.000Z");
 
   const closedSession = { ...baseSession, queueOpen: false, sponsorBreakStatus: "completed" };
   const closed = foreground.resolveForegroundOverlaySnapshot({

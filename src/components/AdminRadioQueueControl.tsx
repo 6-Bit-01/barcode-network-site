@@ -18,6 +18,7 @@ import { ADMIN_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 import { hasActiveQueueSession, notifyQueueSessionChanged, startSessionBoundPolling } from "@/lib/session-bound-polling";
 import { analyzeRadioVisualFrequencyData, smoothRadioVisualAudioAnalysis } from "@/lib/radio-visuals-audio";
 import type { RadioVisualAudioAnalysis } from "@/lib/radio-visuals-audio";
+import { launchLocalCommercialBreakIfAcknowledged } from "@/lib/sponsor-break-contract";
 
 type Tab = "active" | "completed" | "removed" | "spotlight";
 type AdminQueueAction = "pullNext" | "pullWheelChosen" | "pullFreeTransmission" | "startShow" | "addWheelSpinOwed" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "resolvePaidPriority" | "pausePriority" | "resumePriority" | "useSignalHold";
@@ -241,6 +242,7 @@ export function AdminRadioQueueControl() {
   const [loadingPlayerId, setLoadingPlayerId] = useState<string | null>(null);
   const [clearingPlayerId, setClearingPlayerId] = useState<string | null>(null);
   const [playerActionPending, setPlayerActionPending] = useState(false);
+  const [sponsorActionPending, setSponsorActionPending] = useState(false);
   const [minimized, setMinimized] = useState(false);
   const [topBarMinimized, setTopBarMinimized] = useState(false);
   const [railMinimized, setRailMinimized] = useState(false);
@@ -269,6 +271,7 @@ export function AdminRadioQueueControl() {
   const simulationTimerRef = useRef<number | null>(null);
   const simulationRunningRef = useRef(false);
   const simulationSpeedRef = useRef<SimulationSpeed>("normal");
+  const sponsorActionPendingRef = useRef(false);
   const mutationEpochRef = useRef(0);
   const mutationInFlightRef = useRef(0);
   const latestAppliedMutationEpochRef = useRef(0);
@@ -445,13 +448,23 @@ export function AdminRadioQueueControl() {
     setPlayerActionPending(false);
   }
   async function updateSponsorBreakState(sponsorAction: "start" | "complete" | "skip" | "reset") {
-    const updated = await post({ action: "updateSponsorBreakState", sponsorAction });
-    if (sponsorAction !== "start" || !updated) return;
+    const isStart = sponsorAction === "start";
+    if (isStart && sponsorActionPendingRef.current) return;
+    if (isStart) {
+      sponsorActionPendingRef.current = true;
+      setSponsorActionPending(true);
+    }
     try {
-      const response = await fetch(LOCAL_COMMERCIAL_START_URL, { method: "POST", mode: "cors", cache: "no-store" });
-      if (!response.ok) throw new Error(`Audio Bridge returned ${response.status}`);
+      const updated = await post({ action: "updateSponsorBreakState", sponsorAction });
+      if (!isStart || !updated) return;
+      await launchLocalCommercialBreakIfAcknowledged(updated, () => fetch(LOCAL_COMMERCIAL_START_URL, { method: "POST", mode: "cors", cache: "no-store" }));
     } catch {
       setActionError("The sponsor timer started, but BARCODE Audio Bridge could not be reached. Confirm the bridge is running, then use its tray menu → Start Commercial Break.");
+    } finally {
+      if (isStart) {
+        sponsorActionPendingRef.current = false;
+        setSponsorActionPending(false);
+      }
     }
   }
 
@@ -615,7 +628,7 @@ export function AdminRadioQueueControl() {
         </div>
       </section>}
 
-      {activeUtilityPanel === "visuals" && canControlSession && <section className="border border-border/80 bg-surface/70 p-3"><AdminRuntimeDiagnostics timingSummary={timingSummary} canControl={canControlSession} onSponsorAction={updateSponsorBreakState} sessionId={state?.session?.sessionId ?? null} playbackDiagnostics={state?.playbackDiagnostics ?? null} /></section>}
+      {activeUtilityPanel === "visuals" && canControlSession && <section className="border border-border/80 bg-surface/70 p-3"><AdminRuntimeDiagnostics timingSummary={timingSummary} canControl={canControlSession} onSponsorAction={updateSponsorBreakState} sponsorActionPending={sponsorActionPending} sessionId={state?.session?.sessionId ?? null} playbackDiagnostics={state?.playbackDiagnostics ?? null} /></section>}
 
       {activeUtilityPanel === "visualOverlays" && canControlSession && <section className="border border-violet-400/30 bg-surface/70 p-3"><AdminRadioVisualsControl /></section>}
 
@@ -629,7 +642,7 @@ export function AdminRadioQueueControl() {
             <p className="truncate text-[11px] uppercase tracking-[0.2em] text-muted">{state?.session?.title} · {state?.session?.showDate}</p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
-            {sponsorBreakDue && <button type="button" onClick={() => updateSponsorBreakState("start")} className="min-h-10 border-2 border-[#ffaa00] bg-[#ffaa00] px-3 py-2 font-black uppercase tracking-widest text-background shadow-[0_0_28px_rgba(255,170,0,0.55)] animate-pulse hover:bg-[#ffbd4a] motion-reduce:animate-none sm:px-4"><span className="sm:hidden">Start Break</span><span className="hidden sm:inline">Start Sponsor Break</span></button>}
+            {sponsorBreakDue && <button type="button" disabled={sponsorActionPending} onClick={() => updateSponsorBreakState("start")} className="min-h-10 border-2 border-[#ffaa00] bg-[#ffaa00] px-3 py-2 font-black uppercase tracking-widest text-background shadow-[0_0_28px_rgba(255,170,0,0.55)] animate-pulse hover:bg-[#ffbd4a] disabled:cursor-wait disabled:opacity-70 motion-reduce:animate-none sm:px-4"><span className="sm:hidden">{sponsorActionPending ? "Starting…" : "Start Break"}</span><span className="hidden sm:inline">{sponsorActionPending ? "Starting Sponsor Break…" : "Start Sponsor Break"}</span></button>}
             {state?.session?.purpose === "rehearsal" && <AdminRehearsalShareLink sessionId={state.session.sessionId} compact />}
             {testBroadcastDeckHref && <a href={testBroadcastDeckHref} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center border-2 border-cyan-300 bg-cyan-300/15 px-3 py-2 font-black uppercase tracking-widest text-cyan-100 hover:bg-cyan-300 hover:text-background sm:px-4">Open Test Broadcast Deck</a>}
             <button type="button" onClick={() => setTopBarMinimized((value) => !value)} className="min-h-10 border border-border px-3 py-2 uppercase tracking-widest text-muted">{topBarMinimized ? "Expand" : "Minimize"}</button>
@@ -1625,14 +1638,16 @@ function AdminTrackMetadata({ entry }: { entry: QueueEntry }) {
   );
 }
 
-function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction, sessionId, playbackDiagnostics }: { timingSummary: ReturnType<typeof buildQueueTimingDisplay>; canControl: boolean; onSponsorAction: (action: "start" | "complete" | "skip" | "reset") => void; sessionId: string | null; playbackDiagnostics: QueuePlaybackDiagnostics | null }) {
+function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction, sponsorActionPending, sessionId, playbackDiagnostics }: { timingSummary: ReturnType<typeof buildQueueTimingDisplay>; canControl: boolean; onSponsorAction: (action: "start" | "complete" | "skip" | "reset") => void; sponsorActionPending: boolean; sessionId: string | null; playbackDiagnostics: QueuePlaybackDiagnostics | null }) {
   const sponsor = timingSummary.sponsorBreakSummary;
   const wheel = timingSummary.wheelTimingSummary;
   const pressure = timingSummary.pressureSummary;
   const needleDeg = -90 + (pressure.score / 100) * 180;
   const pressureHeading = pressure.mode === "live" ? "Live Pressure" : pressure.mode === "ended" ? "Ended" : "Pre-show Projection";
-  const sponsorStartDisabled = !sponsor.dueNow || sponsor.status === "running" || sponsor.status === "completed" || sponsor.status === "skipped";
-  const sponsorStartLabel = sponsor.status === "running"
+  const sponsorStartDisabled = sponsorActionPending || !sponsor.dueNow || sponsor.status === "running" || sponsor.status === "completed" || sponsor.status === "skipped";
+  const sponsorStartLabel = sponsorActionPending
+    ? "Starting Commercial Break…"
+    : sponsor.status === "running"
     ? `Commercial Break Running${sponsor.diagnosticLabel.includes("remaining") ? ` · ${sponsor.diagnosticLabel.split("·")[1]?.trim().replace("remaining", "").trim()}` : ""}`
     : sponsor.status === "completed"
       ? "Commercial Break Done"

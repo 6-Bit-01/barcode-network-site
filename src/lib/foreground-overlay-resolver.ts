@@ -1,5 +1,6 @@
 import { confirmedPriorityPurchaseDisplay, type QueueEntry, type QueueState } from "./queue-types";
 import type { ResolvedLiveOverlayScene } from "./live-overlay-resolver";
+import { SPONSOR_BREAK_DURATION_SECONDS } from "./sponsor-break-contract";
 
 export const FOREGROUND_ARTIST_HOLD_MS = 12_000;
 export const FOREGROUND_TRACK_HOLD_MS = 6_000;
@@ -389,7 +390,7 @@ function sponsorEndsAt(state: QueueState): string | null {
   if (startedAt === null) return null;
   const seconds = typeof session.sponsorBreakSeconds === "number" && Number.isFinite(session.sponsorBreakSeconds)
     ? Math.max(0, session.sponsorBreakSeconds)
-    : 630;
+    : SPONSOR_BREAK_DURATION_SECONDS;
   return new Date(startedAt + seconds * 1000).toISOString();
 }
 

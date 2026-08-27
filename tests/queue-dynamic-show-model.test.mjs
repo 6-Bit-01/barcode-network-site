@@ -91,10 +91,10 @@ test("paused playback turns the live pause into observed transition pace", () =>
   assert.ok(second.projectedTotalShowSeconds > first.projectedTotalShowSeconds + 60);
 });
 
-test("the 12-minute commercial reserve stays planned around the existing 10:30 break", () => {
-  const preShow = timing.buildQueueTimingSnapshot({ queue: Array.from({ length: 44 }, (_, index) => track(`pre-${index}`)), session: { sponsorBreakStatus: "not_due", sponsorBreakSeconds: 630 } });
+test("the 12-minute commercial reserve stays planned around the 11:00 break", () => {
+  const preShow = timing.buildQueueTimingSnapshot({ queue: Array.from({ length: 44 }, (_, index) => track(`pre-${index}`)), session: { sponsorBreakStatus: "not_due", sponsorBreakSeconds: 660 } });
   assert.equal(preShow.sponsorBreakSecondsIncluded, 720);
-  assert.equal(preShow.sponsorBreak.sponsorBreakSeconds, 630);
+  assert.equal(preShow.sponsorBreak.sponsorBreakSeconds, 660);
 
   const midpoint = timing.estimateSponsorBreakPlacement(halfwayInput(22), { now: HALF_SHOW_NOW, targetSongsAhead: 0 });
   assert.equal(midpoint.sponsorBreakThreshold, 22);
@@ -140,11 +140,11 @@ test("submission intake time stays outside the five-hour show clock", () => {
   const queue = Array.from({ length: 44 }, (_, index) => track(`intake-${index}`, { detectedDurationSeconds: null, estimatedDurationSeconds: 300, durationIsEstimate: true }));
   const beforeStart = timing.buildQueueTimingSnapshot({
     queue,
-    session: { showStarted: false, broadcastPhase: "submission_window", sponsorBreakStatus: "not_due", sponsorBreakSeconds: 630 },
+    session: { showStarted: false, broadcastPhase: "submission_window", sponsorBreakStatus: "not_due", sponsorBreakSeconds: 660 },
   }, { now: HALF_SHOW_NOW });
   const atStart = timing.buildQueueTimingSnapshot({
     queue,
-    session: { showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt: HALF_SHOW_NOW.toISOString(), sponsorBreakStatus: "not_due", sponsorBreakSeconds: 630 },
+    session: { showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt: HALF_SHOW_NOW.toISOString(), sponsorBreakStatus: "not_due", sponsorBreakSeconds: 660 },
   }, { now: HALF_SHOW_NOW });
 
   assert.equal(beforeStart.broadcastElapsedSeconds, null);
@@ -154,7 +154,7 @@ test("submission intake time stays outside the five-hour show clock", () => {
 });
 
 test("track lengths drive pressure without baking illustrative track counts into the model", () => {
-  const liveSession = { showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt: HALF_SHOW_NOW.toISOString(), sponsorBreakStatus: "not_due", sponsorBreakSeconds: 630 };
+  const liveSession = { showStarted: true, broadcastPhase: "broadcast_active", broadcastStartedAt: HALF_SHOW_NOW.toISOString(), sponsorBreakStatus: "not_due", sponsorBreakSeconds: 660 };
   const threeMinute = display.buildQueueTimingDisplay({ queue: Array.from({ length: 44 }, (_, index) => track(`three-${index}`, { detectedDurationSeconds: 180 })), session: liveSession }, { now: HALF_SHOW_NOW });
   const fiveMinute = display.buildQueueTimingDisplay({ queue: Array.from({ length: 44 }, (_, index) => track(`five-${index}`)), session: liveSession }, { now: HALF_SHOW_NOW });
 
@@ -179,7 +179,7 @@ test("a late show clock remains low when little committed work remains", () => {
   const startedAt = "2026-08-09T03:00:00.000Z";
   const now = new Date("2026-08-09T07:00:00.000Z");
   const sponsorStartedAt = "2026-08-09T05:00:00.000Z";
-  const sponsorCompletedAt = "2026-08-09T05:10:30.000Z";
+  const sponsorCompletedAt = "2026-08-09T05:11:00.000Z";
   const summary = display.buildQueueTimingDisplay({
     completed: Array.from({ length: 41 }, (_, index) => track(`late-done-${index}`, { status: "played", playedAt: startedAt, completedAt: startedAt })),
     queue: Array.from({ length: 3 }, (_, index) => track(`late-rem-${index}`)),
@@ -188,12 +188,12 @@ test("a late show clock remains low when little committed work remains", () => {
   assert.equal(summary.pressureSummary.level, "low");
 });
 
-test("finishing the 10:30 commercial releases the unused 1:30 reserve", () => {
+test("finishing the 11:00 commercial releases the unused 1:00 reserve", () => {
   const now = new Date("2026-08-09T05:30:00.000Z");
-  const startedAt = new Date(now.getTime() - 630 * 1000).toISOString();
-  const base = { queue: [track("after-commercial")], session: { sponsorBreakSeconds: 630, sponsorBreakStartedAt: startedAt } };
+  const startedAt = new Date(now.getTime() - 660 * 1000).toISOString();
+  const base = { queue: [track("after-commercial")], session: { sponsorBreakSeconds: 660, sponsorBreakStartedAt: startedAt } };
   const running = timing.buildQueueTimingSnapshot({ ...base, session: { ...base.session, sponsorBreakStatus: "running" } }, { now });
   const completed = timing.buildQueueTimingSnapshot({ ...base, session: { ...base.session, sponsorBreakStatus: "completed", sponsorBreakCompletedAt: now.toISOString() } }, { now });
-  assert.equal(running.sponsorBreakSecondsIncluded, 90);
-  assert.equal(running.projectedTotalShowSeconds - completed.projectedTotalShowSeconds, 90);
+  assert.equal(running.sponsorBreakSecondsIncluded, 60);
+  assert.equal(running.projectedTotalShowSeconds - completed.projectedTotalShowSeconds, 60);
 });

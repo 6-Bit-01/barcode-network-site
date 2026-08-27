@@ -1083,7 +1083,7 @@ export function LiveOverlayReceiver({ wheelOnly = false }: { wheelOnly?: boolean
         const res = await fetch(wheelOnly ? "/api/overlay/wheel" : "/api/overlay/live", {
           cache: "no-store",
           signal: activeController.signal,
-          headers: wheelOnly ? studioOverlayRequestHeaders() : undefined,
+          headers: studioOverlayRequestHeaders(),
         });
         if (!res.ok) throw new Error("Overlay state unavailable");
         const next = await res.json() as { snapshot?: WheelOverlaySnapshot; scene?: ResolvedLiveOverlayScene; serverRequestReceivedAt?: string; serverNow?: string };

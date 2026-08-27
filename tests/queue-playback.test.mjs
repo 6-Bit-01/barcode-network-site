@@ -52,6 +52,7 @@ const {
 } = require("../src/lib/queue-types.ts");
 const priorityAcceptance = { acceptedPriorityTerms: true, priorityTermsVersion: PRIORITY_TERMS_VERSION, priorityDisclosureText: PRIORITY_DISCLOSURE_TEXT };
 const overlay = require("../src/lib/live-overlay.ts");
+const auth = require("../src/lib/auth.ts");
 const publicOverlayRoute = require("../src/app/api/overlay/live/route.ts");
 
 let trackSequence = 0;
@@ -2122,7 +2123,7 @@ test("resolvePaidPriority promotes safe queued paid_needs_attention without dupl
 });
 
 test("full default-capacity candidate population reaches the public overlay and keeps the owed spin pending", async () => {
-  await freshOpenSession("full capacity overlay", { showStarted: true });
+  await freshOpenSession("full capacity overlay", { purpose: "live_broadcast", showStarted: true });
   for (let index = 1; index <= 44; index += 1) {
     await addTrack(`Capacity Candidate ${index}`, { artist: `Distinct Artist ${index}` });
   }
@@ -2132,7 +2133,7 @@ test("full default-capacity candidate population reaches the public overlay and 
   assert.equal(queueState.session.wheelSpinsOwed, 1, "owed wheel state is available to the admin control");
 
   await overlay.setLiveOverlayState({ action: "launchWheel" });
-  const response = await publicOverlayRoute.GET();
+  const response = await publicOverlayRoute.GET(new Request("https://www.barcode-network.com/api/overlay/live"));
   const payload = await response.json();
   assert.equal(response.status, 200);
   assert.equal(payload.scene.mode, "wheel_ready");
@@ -2144,6 +2145,33 @@ test("full default-capacity candidate population reaches the public overlay and 
   const afterLaunch = await queue.getRadioQueueState();
   assert.equal(afterLaunch.session.wheelSpinsOwed, 1, "launching the visual wheel does not consume the owed spin");
   assert.equal(afterLaunch.queue.some((entry) => entry.lane === "wheel"), false, "launching the wheel does not mark a winner");
+});
+
+test("anonymous legacy live overlay stays dark for a private rehearsal while a Studio capability remains authorized", async () => {
+  await freshOpenSession("private legacy overlay rehearsal", {
+    purpose: "rehearsal",
+    bnlPublicationStatus: "runtime_only",
+    showStarted: true,
+  });
+  const privateTrack = await addTrack("Private Rehearsal Secret");
+  await queue.updateRadioTrack(privateTrack.id, "load");
+
+  const anonymousResponse = await publicOverlayRoute.GET(new Request("https://www.barcode-network.com/api/overlay/live"));
+  const anonymousPayload = await anonymousResponse.json();
+  assert.equal(anonymousResponse.status, 200);
+  assert.equal(anonymousPayload.scene.mode, "standby");
+  assert.equal(anonymousPayload.scene.sessionActive, false);
+  assert.doesNotMatch(JSON.stringify(anonymousPayload), /Private Rehearsal Secret/);
+
+  const studioToken = await auth.createStudioOverlayToken();
+  const studioResponse = await publicOverlayRoute.GET(new Request("https://www.barcode-network.com/api/overlay/live", {
+    headers: { authorization: `Bearer ${studioToken}` },
+  }));
+  const studioPayload = await studioResponse.json();
+  assert.equal(studioResponse.status, 200);
+  assert.equal(studioPayload.scene.mode, "now_playing");
+  assert.equal(studioPayload.scene.sessionActive, true);
+  assert.equal(studioPayload.scene.track.trackTitle, "Private Rehearsal Secret Track");
 });
 
 

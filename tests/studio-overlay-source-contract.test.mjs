@@ -30,7 +30,8 @@ test("permanent Studio links are private, stable, and use one authoritative stat
   }
   assert.match(foreground, /studioOverlayRequestHeaders/);
   assert.match(visuals, /studioOverlayRequestHeaders/);
-  assert.match(live, /wheelOnly \? studioOverlayRequestHeaders\(\) : undefined/);
+  assert.match(live, /fetch\(wheelOnly \? "\/api\/overlay\/wheel" : "\/api\/overlay\/live", \{[\s\S]*?headers: studioOverlayRequestHeaders\(\)/);
+  assert.doesNotMatch(live, /headers: wheelOnly \?/);
 
   assert.match(access, /verifyAdminToken/);
   assert.match(access, /createStudioOverlayToken/);

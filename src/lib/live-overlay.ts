@@ -5,6 +5,7 @@ import { buildWheelSegments, derangedWheelCandidateOrder, orderedWheelCandidateI
 import { parseYouTubeVideoId } from "./track-duration";
 import type { QueueEntry, QueueSourceType, QueueState } from "./queue-types";
 import { hasActiveQueueSession } from "./session-bound-polling";
+import { isQueueProductionEnabled } from "./queue-production";
 import { normalizeRadioVisualCueType, RADIO_VISUAL_CUE_DURATION_MS } from "./radio-visuals-cues";
 import { normalizeRadioVisualPreviewScene, RADIO_VISUAL_PREVIEW_DELIVERY_TTL_MS } from "./radio-visuals-preview";
 import type { LiveOverlayPlaybackState, LiveOverlayStateInput, LiveOverlayPlayerSync, LiveOverlayYouTubeSync, OverlayMode, ResolvedLiveOverlayScene, ResolvedWheelCeremonyTrack, WheelCeremonyStatus, WheelOverlayStatus } from "./live-overlay-resolver";
@@ -564,10 +565,51 @@ export function resolveLiveOverlaySceneFromQueueState(input: {
   return { ...resolved, sessionActive: hasActiveQueueSession(queueState) };
 }
 
-export async function getResolvedLiveOverlayScene(): Promise<ResolvedLiveOverlayScene> {
+function blockedLiveOverlayQueueState(): QueueState {
+  return {
+    revision: 0,
+    nowPlaying: null,
+    loadedTrack: null,
+    nextInLine: null,
+    queue: [],
+    history: [],
+    removed: [],
+    spotlight: [],
+    totalPlayed: 0,
+    streamStatus: "offline",
+    publicStatus: {
+      isOpen: false,
+      activeCount: 0,
+      acceptedCount: 0,
+      estimatedRuntimeSeconds: 0,
+      capacity: 44,
+      pressure: "low",
+    },
+  };
+}
+
+export function isAnonymousLiveOverlayQueueProjectionPublic(
+  env: NodeJS.ProcessEnv,
+  session: Pick<NonNullable<QueueState["session"]>, "purpose"> | null | undefined,
+): boolean {
+  return isQueueProductionEnabled(env) && session?.purpose === "live_broadcast";
+}
+
+export async function getResolvedLiveOverlayScene(
+  options: { allowPrivateQueueState?: boolean; env?: NodeJS.ProcessEnv } = {},
+): Promise<ResolvedLiveOverlayScene> {
   const queueState = await getRadioLiveQueueState();
   if (!hasActiveQueueSession(queueState)) {
     return resolveLiveOverlaySceneFromQueueState({ overlayState: defaultLiveOverlayState(), queueState, playerSync: null });
+  }
+  const projectionAllowed = options.allowPrivateQueueState === true
+    || isAnonymousLiveOverlayQueueProjectionPublic(options.env ?? process.env, queueState.session);
+  if (!projectionAllowed) {
+    return resolveLiveOverlaySceneFromQueueState({
+      overlayState: defaultLiveOverlayState(),
+      queueState: blockedLiveOverlayQueueState(),
+      playerSync: null,
+    });
   }
   const { overlayState, playerSync } = await getLiveOverlayRuntimeState();
   return resolveLiveOverlaySceneFromQueueState({ overlayState, queueState, playerSync });

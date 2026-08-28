@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import Module, { createRequire } from "node:module";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import ts from "typescript";
@@ -1011,6 +1013,57 @@ test("Windows loopback signal contract rejects malformed and stale local data", 
     })?.analysisCalibration,
     audioBridge.RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION,
   );
+  const perceptualBands = {
+    subBass: 0.72,
+    bass: 0.64,
+    lowMid: 0.51,
+    mid: 0.43,
+    highMid: 0.35,
+    presence: 0.28,
+    brilliance: 0.2,
+    air: 0.12,
+  };
+  const features = {
+    version: audioBridge.RADIO_AUDIO_BRIDGE_PERCEPTUAL_FEATURES_VERSION,
+    levels: perceptualBands,
+    onsets: {
+      subBass: 0.8,
+      bass: 0.7,
+      lowMid: 0.2,
+      mid: 0.1,
+      highMid: 0.05,
+      presence: 0.03,
+      brilliance: 0.02,
+      air: 0.01,
+    },
+    spectralCentroid: 0.42,
+    brightness: 0.31,
+    dynamicRange: 0.66,
+    transientDensity: 0.55,
+    stereoWidth: 0.48,
+    stereoBalance: -0.12,
+    waveform: [0, 0.2, -0.3, 0.4, -0.5, 0.6, -0.7, 0.8, -0.8, 0.7, -0.6, 0.5, -0.4, 0.3, -0.2, 0],
+  };
+  assert.deepEqual(
+    audioBridge.normalizeRadioAudioBridgeSignal({ ...valid, features })?.features,
+    features,
+  );
+  assert.equal(
+    audioBridge.normalizeRadioAudioBridgeSignal({
+      ...valid,
+      features: { ...features, levels: { ...perceptualBands, air: 2 } },
+    }),
+    null,
+    "a malformed optional feature block must fail closed",
+  );
+  assert.equal(
+    audioBridge.normalizeRadioAudioBridgeSignal({
+      ...valid,
+      features: { ...features, waveform: [0, 1] },
+    }),
+    null,
+    "the waveform contract must stay fixed and bounded",
+  );
   assert.deepEqual(audioBridge.freshRadioAudioBridgeSignal(valid, now), valid);
   assert.equal(audioBridge.freshRadioAudioBridgeSignal({ ...valid, capturedAtUnixMs: now - 1_201 }, now), null);
   assert.equal(audioBridge.normalizeRadioAudioBridgeSignal({ ...valid, energy: 4 }), null);
@@ -1038,7 +1091,7 @@ test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a
   assert.match(project, /<TargetFramework>net8\.0-windows<\/TargetFramework>/);
   assert.match(project, /<SelfContained>true<\/SelfContained>/);
   assert.match(project, /<PublishSingleFile>true<\/PublishSingleFile>/);
-  assert.match(project, /<Version>1\.1\.1<\/Version>/, "the spectral-separation hotfix must have an unmistakable upgrade version");
+  assert.match(project, /<Version>1\.2\.0<\/Version>/, "the perceptual-signal helper must have an unmistakable upgrade version");
   assert.match(project, /PackageReference Include="NAudio" Version="2\.3\.0"/);
   assert.match(commercialProject, /<AssemblyName>BARCODE\.CommercialPlayer<\/AssemblyName>/);
   assert.match(capture, /GetDefaultAudioEndpoint\(DataFlow\.Render, Role\.Multimedia\)/, "capture must resolve the default Windows Speakers render endpoint");
@@ -1089,6 +1142,74 @@ test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a
   assert.match(readme, /program signal rather than the operator's Windows listening level/);
   assert.match(workflow, /windows-audio-bridge:[\s\S]*dotnet test tools\/barcode-audio-bridge\.Tests[\s\S]*BARCODE\.AudioBridge\.exe[\s\S]*BARCODE\.CommercialPlayer\.exe/);
   assert.match(productionContract, /BARCODE Audio Bridge[\s\S]*WASAPI loopback[\s\S]*volume-neutral program signal[\s\S]*creates no Redis or Vercel traffic/);
+});
+
+test("numeric audio traces replay through the production reaction path without recording audio", () => {
+  const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "barcode-audio-trace-"));
+  const tracePath = path.join(temporaryRoot, "fixture.barcode-audio-trace.ndjson");
+  const bands = {
+    subBass: 0.24,
+    bass: 0.42,
+    lowMid: 0.31,
+    mid: 0.38,
+    highMid: 0.28,
+    presence: 0.22,
+    brilliance: 0.16,
+    air: 0.09,
+  };
+  const featureFrame = {
+    version: "perceptual_audio_v1",
+    levels: bands,
+    onsets: Object.fromEntries(Object.keys(bands).map((band, index) => [band, index === 1 ? 0.7 : 0.04])),
+    spectralCentroid: 0.4,
+    brightness: 0.32,
+    dynamicRange: 0.58,
+    transientDensity: 0.44,
+    stereoWidth: 0.36,
+    stereoBalance: 0.08,
+    waveform: [0, 0.2, -0.3, 0.4, -0.5, 0.6, -0.7, 0.8, -0.8, 0.7, -0.6, 0.5, -0.4, 0.3, -0.2, 0],
+  };
+  const frames = [
+    { energy: 0.18, bass: 0.28, mid: 0.12, treble: 0.08, peak: 0.2, beat: 0 },
+    { energy: 0.44, bass: 0.72, mid: 0.24, treble: 0.12, peak: 0.68, beat: 1 },
+    { energy: 0.3, bass: 0.4, mid: 0.34, treble: 0.2, peak: 0.35, beat: 0.35 },
+  ].map((frame, index) => ({
+    schemaVersion: "barcode_audio_signal_v1",
+    source: "windows_loopback",
+    analysisCalibration: "adaptive_reference_v2",
+    capturedAtUnixMs: 1_782_000_000_000 + index * 25,
+    sequence: index + 1,
+    captureActive: true,
+    warmedUp: true,
+    silence: false,
+    bpm: 96,
+    tempoConfidence: 0.64,
+    features: featureFrame,
+    ...frame,
+  }));
+
+  try {
+    fs.writeFileSync(tracePath, `${frames.map((frame) => JSON.stringify(frame)).join("\n")}\n`, "utf8");
+    const output = execFileSync(
+      process.execPath,
+      [path.join(projectRoot, "scripts/replay-radio-audio-trace.mjs"), tracePath],
+      { cwd: projectRoot, encoding: "utf8" },
+    );
+    const [summary] = JSON.parse(output);
+    assert.equal(summary.validFrames, 3);
+    assert.equal(summary.rejectedLines, 0);
+    assert.equal(summary.perceptualFeatures.frames, 3);
+    assert.ok(summary.productionReactionReplay.bassPulse.max > 0.2);
+  } finally {
+    fs.rmSync(temporaryRoot, { recursive: true, force: true });
+  }
+
+  const captureScript = fs.readFileSync(
+    path.join(projectRoot, "tools/barcode-audio-bridge/Capture-AudioSignalTrace.ps1"),
+    "utf8",
+  );
+  assert.match(captureScript, /127\.0\.0\.1:43120\/v1\/signal/);
+  assert.match(captureScript, /No audio samples were recorded/);
 });
 
 test("direct audio analysis separates frequency bands and safely bounds untrusted samples", () => {

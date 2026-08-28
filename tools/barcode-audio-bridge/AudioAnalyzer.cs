@@ -7,15 +7,39 @@ internal sealed class AudioAnalyzer
     private const int FftSize = 2_048;
     private const int AnalysisHopSize = FftSize / 2;
     private const int SpectrumBins = FftSize / 2;
+    private const int PerceptualBandCount = 8;
+    private const int WaveformPointCount = 16;
+    private const int TransientDensityWindowMilliseconds = 2_500;
+    private const int TransientRefractoryMilliseconds = 55;
+    private static readonly (double StartHz, double EndHz, double LevelSensitivity, double OnsetRelease)[] PerceptualBandDefinitions =
+    [
+        (25, 70, 7.2, 0.78),
+        (70, 180, 6.2, 0.75),
+        (180, 450, 5.5, 0.72),
+        (450, 1_200, 5.0, 0.68),
+        (1_200, 3_000, 4.7, 0.64),
+        (3_000, 6_000, 4.5, 0.58),
+        (6_000, 12_000, 4.8, 0.52),
+        (12_000, 18_000, 5.2, 0.48),
+    ];
     private readonly object _sync = new();
     private readonly double[] _window = new double[FftSize];
+    private readonly double[] _leftWindow = new double[FftSize];
+    private readonly double[] _rightWindow = new double[FftSize];
     private readonly double[] _previousSpectrum = new double[SpectrumBins];
+    private readonly double[] _perceptualBandLevels = new double[PerceptualBandCount];
+    private readonly double[] _visualPerceptualBandLevels = new double[PerceptualBandCount];
+    private readonly double[] _perceptualBandOnsets = new double[PerceptualBandCount];
+    private readonly double[] _perceptualNoveltyFloors = Enumerable.Repeat(0.012, PerceptualBandCount).ToArray();
+    private readonly double[] _waveform = new double[WaveformPointCount];
     private readonly Queue<double> _beatIntervalsMilliseconds = new();
+    private readonly Queue<long> _transientArrivalSequences = new();
     private int _windowIndex;
     private int _sampleRate = 48_000;
     private long _sequence;
     private long _lastDataUnixMs;
     private long _lastBeatUnixMs;
+    private long _lastTransientSequence = -10_000;
     private double _energy;
     private double _bass;
     private double _mid;
@@ -30,6 +54,12 @@ internal sealed class AudioAnalyzer
     private double _fluxFloor = 0.01;
     private double _bpm = 112;
     private double _tempoConfidence;
+    private double _spectralCentroid;
+    private double _brightness;
+    private double _dynamicRange;
+    private double _transientDensity;
+    private double _stereoWidth;
+    private double _stereoBalance;
     private readonly AdaptiveProgramGain _programGain = new(
         minimumCeiling: 0.16,
         targetLevel: 0.58,
@@ -55,18 +85,26 @@ internal sealed class AudioAnalyzer
             for (var frameOffset = 0; frameOffset + frameBytes <= bytesRecorded; frameOffset += frameBytes)
             {
                 double mono = 0;
+                double left = 0;
+                double right = 0;
                 var decodedChannels = 0;
                 for (var channel = 0; channel < format.Channels; channel += 1)
                 {
                     var sampleOffset = frameOffset + channel * bytesPerSample;
                     if (sampleOffset + bytesPerSample > bytesRecorded) break;
-                    mono += DecodeSample(buffer, sampleOffset, bytesPerSample, floatingPoint);
+                    var sample = DecodeSample(buffer, sampleOffset, bytesPerSample, floatingPoint);
+                    mono += sample;
+                    if (channel == 0) left = sample;
+                    if (channel == 1) right = sample;
                     decodedChannels += 1;
                 }
                 if (decodedChannels == 0) continue;
+                if (decodedChannels == 1) right = left;
                 _window[_windowIndex] = EndpointVolumeCompensation.ApplyForAnalysis(
                     mono / decodedChannels,
                     sampleGain);
+                _leftWindow[_windowIndex] = EndpointVolumeCompensation.ApplyForAnalysis(left, sampleGain);
+                _rightWindow[_windowIndex] = EndpointVolumeCompensation.ApplyForAnalysis(right, sampleGain);
                 _windowIndex += 1;
                 if (_windowIndex == FftSize)
                 {
@@ -77,6 +115,8 @@ internal sealed class AudioAnalyzer
                     // ~43 ms. This materially reduces visible lag without
                     // weakening bass-bin resolution.
                     Array.Copy(_window, AnalysisHopSize, _window, 0, AnalysisHopSize);
+                    Array.Copy(_leftWindow, AnalysisHopSize, _leftWindow, 0, AnalysisHopSize);
+                    Array.Copy(_rightWindow, AnalysisHopSize, _rightWindow, 0, AnalysisHopSize);
                     _windowIndex = AnalysisHopSize;
                 }
             }
@@ -110,7 +150,8 @@ internal sealed class AudioAnalyzer
                 Unit(_visualPeak * decay),
                 Unit(beat),
                 Math.Clamp(_bpm, 40, 240),
-                Unit(_tempoConfidence));
+                Unit(_tempoConfidence),
+                PerceptualFeaturesSnapshot(silence ? 0 : decay));
         }
     }
 
@@ -136,7 +177,6 @@ internal sealed class AudioAnalyzer
             var magnitude = 2 * Math.Sqrt(real[bin] * real[bin] + imaginary[bin] * imaginary[bin]) / FftSize;
             spectrum[bin] = magnitude;
             flux += Math.Max(0, magnitude - _previousSpectrum[bin]);
-            _previousSpectrum[bin] = magnitude;
         }
 
         var rms = Math.Sqrt(squared / FftSize);
@@ -169,6 +209,8 @@ internal sealed class AudioAnalyzer
         _visualMid = VisualLevel(_mid, visualGain, audibility);
         _visualTreble = VisualLevel(_treble, visualGain, audibility);
         _visualPeak = VisualLevel(_peak, visualGain, audibility);
+        AnalyzePerceptualFeatures(spectrum, rms, peak, visualGain, audibility);
+        Array.Copy(spectrum, _previousSpectrum, SpectrumBins);
 
         _energyFloor = _energyFloor * 0.982 + energy * 0.018;
         _fluxFloor = _fluxFloor * 0.975 + normalizedFlux * 0.025;
@@ -186,6 +228,215 @@ internal sealed class AudioAnalyzer
         {
             RegisterBeat(nowUnixMs, sinceBeat);
         }
+    }
+
+    private void AnalyzePerceptualFeatures(
+        double[] spectrum,
+        double rms,
+        double peak,
+        double visualGain,
+        double audibility)
+    {
+        var rawBandLevels = new double[PerceptualBandCount];
+        var totalBandLevel = 0d;
+        for (var index = 0; index < PerceptualBandDefinitions.Length; index += 1)
+        {
+            var definition = PerceptualBandDefinitions[index];
+            var upperHz = Math.Min(definition.EndHz, _sampleRate / 2d);
+            var rawLevel = upperHz > definition.StartHz
+                ? BandEnergy(spectrum, definition.StartHz, upperHz, definition.LevelSensitivity)
+                : 0;
+            rawBandLevels[index] = rawLevel;
+            totalBandLevel += rawLevel;
+            _perceptualBandLevels[index] = Smooth(
+                _perceptualBandLevels[index],
+                rawLevel,
+                index <= 1 ? 0.76 : index <= 4 ? 0.81 : 0.85,
+                index <= 1 ? 0.22 : index <= 4 ? 0.27 : 0.31);
+            _visualPerceptualBandLevels[index] = VisualLevel(
+                _perceptualBandLevels[index],
+                visualGain,
+                audibility);
+
+        }
+
+        var strongestArrival = 0d;
+        for (var index = 0; index < PerceptualBandDefinitions.Length; index += 1)
+        {
+            var definition = PerceptualBandDefinitions[index];
+            var upperHz = Math.Min(definition.EndHz, _sampleRate / 2d);
+            var novelty = upperHz > definition.StartHz
+                ? BandNovelty(spectrum, definition.StartHz, upperHz)
+                : 0;
+            // A sharp arrival leaks a small amount of FFT energy into many
+            // bins even with the Hann window. Weight local novelty by the
+            // band's perceptually compressed share of the current spectrum,
+            // so tiny leakage cannot turn one bass hit into eight simultaneous
+            // full-band onsets. A genuinely broadband arrival can still own
+            // several bands because each meaningful share remains visible.
+            var bandOwnership = totalBandLevel > 1e-8
+                ? Unit(rawBandLevels[index] / totalBandLevel * PerceptualBandCount)
+                : 0;
+            var onsetEvidence = novelty * bandOwnership * bandOwnership;
+            var noveltyFloor = _perceptualNoveltyFloors[index];
+            var onsetTarget = _sequence >= 2 && _visualPerceptualBandLevels[index] > 0.012
+                ? Unit(Math.Max(0, onsetEvidence - Math.Max(0.018, noveltyFloor * 1.12)) * 2.75)
+                : 0;
+            _perceptualBandOnsets[index] = Math.Max(
+                onsetTarget,
+                _perceptualBandOnsets[index] * definition.OnsetRelease);
+            _perceptualNoveltyFloors[index] = noveltyFloor * 0.985 + onsetEvidence * 0.015;
+            strongestArrival = Math.Max(strongestArrival, onsetTarget);
+        }
+
+        var transientWindowHops = Math.Max(1, (int)Math.Ceiling(
+            TransientDensityWindowMilliseconds * _sampleRate / (AnalysisHopSize * 1_000d)));
+        var transientRefractoryHops = Math.Max(1, (int)Math.Ceiling(
+            TransientRefractoryMilliseconds * _sampleRate / (AnalysisHopSize * 1_000d)));
+        if (strongestArrival >= 0.16 && _sequence - _lastTransientSequence >= transientRefractoryHops)
+        {
+            _transientArrivalSequences.Enqueue(_sequence);
+            _lastTransientSequence = _sequence;
+        }
+        while (_transientArrivalSequences.Count > 0
+            && _sequence - _transientArrivalSequences.Peek() > transientWindowHops)
+        {
+            _transientArrivalSequences.Dequeue();
+        }
+        _transientDensity = Smooth(
+            _transientDensity,
+            Unit(_transientArrivalSequences.Count / 18d),
+            0.42,
+            0.08);
+
+        double spectralWeight = 0;
+        double weightedFrequency = 0;
+        double brightWeight = 0;
+        for (var bin = 1; bin < SpectrumBins; bin += 1)
+        {
+            var frequency = bin * _sampleRate / (double)FftSize;
+            var weight = spectrum[bin] * spectrum[bin];
+            spectralWeight += weight;
+            weightedFrequency += frequency * weight;
+            if (frequency >= 3_000) brightWeight += weight;
+        }
+        var centroidHz = spectralWeight > 1e-12 ? weightedFrequency / spectralWeight : 0;
+        var centroidCeiling = Math.Min(18_000, _sampleRate / 2d);
+        var centroidTarget = centroidHz > 25 && centroidCeiling > 25
+            ? Unit(Math.Log(centroidHz / 25) / Math.Log(centroidCeiling / 25))
+            : 0;
+        var brightnessTarget = spectralWeight > 1e-12
+            ? Unit(Math.Sqrt(brightWeight / spectralWeight))
+            : 0;
+        _spectralCentroid = Smooth(_spectralCentroid, centroidTarget, 0.48, 0.18);
+        _brightness = Smooth(_brightness, brightnessTarget, 0.52, 0.2);
+
+        var crestDecibels = rms > 1e-8 && peak > 1e-8
+            ? 20 * Math.Log10(peak / rms)
+            : 0;
+        var dynamicRangeTarget = Unit((crestDecibels - 3) / 15);
+        _dynamicRange = Smooth(_dynamicRange, dynamicRangeTarget, 0.28, 0.12);
+
+        AnalyzeStereoImage();
+        AnalyzeWaveform(peak);
+    }
+
+    private double BandNovelty(double[] spectrum, double startHz, double endHz)
+    {
+        var start = Math.Max(1, (int)Math.Floor(startHz * FftSize / _sampleRate));
+        var end = Math.Min(SpectrumBins, Math.Max(start + 1, (int)Math.Ceiling(endHz * FftSize / _sampleRate)));
+        double positiveDifference = 0;
+        double reference = 0;
+        for (var bin = start; bin < end; bin += 1)
+        {
+            positiveDifference += Math.Max(0, spectrum[bin] - _previousSpectrum[bin]);
+            reference += _previousSpectrum[bin] + spectrum[bin] * 0.25;
+        }
+        if (positiveDifference <= 0) return 0;
+        return Unit(Math.Pow(positiveDifference / Math.Max(0.00025, reference), 0.62));
+    }
+
+    private void AnalyzeStereoImage()
+    {
+        double leftSquared = 0;
+        double rightSquared = 0;
+        double midSquared = 0;
+        double sideSquared = 0;
+        for (var index = 0; index < FftSize; index += 1)
+        {
+            var left = _leftWindow[index];
+            var right = _rightWindow[index];
+            var mid = (left + right) * 0.5;
+            var side = (left - right) * 0.5;
+            leftSquared += left * left;
+            rightSquared += right * right;
+            midSquared += mid * mid;
+            sideSquared += side * side;
+        }
+        var leftRms = Math.Sqrt(leftSquared / FftSize);
+        var rightRms = Math.Sqrt(rightSquared / FftSize);
+        var midRms = Math.Sqrt(midSquared / FftSize);
+        var sideRms = Math.Sqrt(sideSquared / FftSize);
+        var widthTarget = Unit(sideRms / Math.Max(1e-8, midRms + sideRms));
+        var balanceTarget = SignedUnit((rightRms - leftRms) / Math.Max(1e-8, rightRms + leftRms));
+        _stereoWidth = Smooth(_stereoWidth, widthTarget, 0.4, 0.2);
+        _stereoBalance += (balanceTarget - _stereoBalance) * 0.32;
+    }
+
+    private void AnalyzeWaveform(double peak)
+    {
+        for (var point = 0; point < WaveformPointCount; point += 1)
+        {
+            var start = point * FftSize / WaveformPointCount;
+            var end = Math.Max(start + 1, (point + 1) * FftSize / WaveformPointCount);
+            double squared = 0;
+            double signedEnergy = 0;
+            for (var index = start; index < end; index += 1)
+            {
+                var sample = _window[index];
+                squared += sample * sample;
+                signedEnergy += sample * Math.Abs(sample);
+            }
+            var segmentRms = Math.Sqrt(squared / Math.Max(1, end - start));
+            var polarity = signedEnergy < 0 ? -1 : 1;
+            // Publish one aggregate shape descriptor for each 128-sample
+            // segment rather than a decimated program sample. The resulting
+            // sixteen points are useful for visual geometry but cannot be
+            // replayed as captured audio.
+            var target = peak > 0.001 ? SignedUnit(polarity * segmentRms / peak) : 0;
+            _waveform[point] += (target - _waveform[point]) * 0.62;
+        }
+    }
+
+    private PerceptualAudioFeatures PerceptualFeaturesSnapshot(double decay)
+    {
+        var activity = Unit(decay);
+        var levels = _visualPerceptualBandLevels.Select(value => Unit(value * activity)).ToArray();
+        var onsets = _perceptualBandOnsets.Select(value => Unit(value * activity)).ToArray();
+        return new PerceptualAudioFeatures(
+            BridgeConstants.PerceptualFeaturesVersion,
+            PerceptualBandsFrom(levels),
+            PerceptualBandsFrom(onsets),
+            Unit(_spectralCentroid * activity),
+            Unit(_brightness * activity),
+            Unit(_dynamicRange * activity),
+            Unit(_transientDensity * activity),
+            Unit(_stereoWidth * activity),
+            SignedUnit(_stereoBalance * activity),
+            _waveform.Select(value => SignedUnit(value * activity)).ToArray());
+    }
+
+    private static PerceptualAudioBands PerceptualBandsFrom(IReadOnlyList<double> values)
+    {
+        return new PerceptualAudioBands(
+            values[0],
+            values[1],
+            values[2],
+            values[3],
+            values[4],
+            values[5],
+            values[6],
+            values[7]);
     }
 
     private void RegisterBeat(long nowUnixMs, long intervalMilliseconds)
@@ -290,6 +541,8 @@ internal sealed class AudioAnalyzer
     }
 
     private static double Unit(double value) => double.IsFinite(value) ? Math.Clamp(value, 0, 1) : 0;
+
+    private static double SignedUnit(double value) => double.IsFinite(value) ? Math.Clamp(value, -1, 1) : 0;
 
     private static double MusicalAudibility(double energy, double peak)
     {

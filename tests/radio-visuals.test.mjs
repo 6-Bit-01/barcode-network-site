@@ -25,6 +25,7 @@ const visualEvents = require("../src/lib/radio-visuals-events.ts");
 const audioVisuals = require("../src/lib/radio-visuals-audio.ts");
 const audioBridge = require("../src/lib/radio-audio-bridge.ts");
 const musicEmbellishments = require("../src/lib/radio-visuals-music-embellishments.ts");
+const liveDynamics = require("../src/lib/radio-visuals-live-dynamics.ts");
 const liveOverlay = require("../src/lib/live-overlay-resolver.ts");
 
 test.after(() => {
@@ -134,10 +135,11 @@ test("inactive receiver stays nearly invisible and exposes only the visual proje
   assert.deepEqual(snapshot.queue, { acceptedCount: 0, completedCount: 0, activeCount: 0, remainingCount: 0, progress: 0, pressure: "low" });
   assert.deepEqual(snapshot.signals, { intakeOpen: false, wheelSpinsOwed: 0, wheelCandidateCount: 0, broadcastPhase: null });
   assert.equal(snapshot.player, null);
+  assert.equal(snapshot.timeline, null);
   assert.equal(snapshot.cue, null);
   assert.equal(snapshot.preview, null);
   assert.deepEqual(snapshot.events, []);
-  assert.deepEqual(Object.keys(snapshot).sort(), ["cue", "events", "player", "preview", "queue", "sceneMode", "sessionActive", "showStage", "signals", "updatedAt", "visualMode", "visualSeed"]);
+  assert.deepEqual(Object.keys(snapshot).sort(), ["cue", "events", "player", "preview", "queue", "sceneMode", "sessionActive", "showStage", "signals", "timeline", "updatedAt", "visualMode", "visualSeed"]);
   assert.ok(engine.radioVisualsIntensity(snapshot) < 0.08, "standby remains a ghost layer");
 });
 
@@ -189,6 +191,45 @@ test("track identity seeds visuals and fresh timeline drives motion without expo
   assert.notEqual(snapshot.visualSeed, anotherTrack.visualSeed, "track identity selects a repeatable visual character");
   const serialized = JSON.stringify(snapshot);
   assert.doesNotMatch(serialized, /Detected Artist|Detected Track|private@example\.com|pi_private|private-session-id|abcDEF12345|track-7/);
+});
+
+test("external playback receives a safe authoritative beginning-to-finale timeline", () => {
+  const playedAt = "2026-08-19T18:57:30.000Z";
+  const current = entry("external-track-1", {
+    sourceType: "spotify",
+    playedAt,
+    detectedDurationSeconds: 200,
+  });
+  const state = queueState({
+    nowPlaying: current,
+    loadedTrack: current,
+    playbackTiming: {
+      trackId: current.id,
+      playbackState: "stopped",
+      currentTimeSeconds: 0,
+      durationSeconds: 200,
+      observedAt: playedAt,
+      source: "loaded_clock",
+    },
+  });
+  const snapshot = visuals.resolveRadioVisualsSnapshot({
+    queueState: state,
+    scene: scene("now_playing", {
+      track: { id: current.id, artistName: "Private Artist", trackTitle: "Private Track", sourceType: "spotify" },
+    }),
+    now: new Date("2026-08-19T19:00:00.000Z"),
+  });
+
+  assert.equal(snapshot.player, null);
+  assert.deepEqual(snapshot.timeline, {
+    playbackState: "playing",
+    currentTimeSeconds: 0,
+    durationSeconds: 200,
+    updatedAt: playedAt,
+  });
+  const signal = engine.radioVisualsMusicSignal(snapshot, 150, 150, null, 150);
+  assert.equal(signal.progress, 0.75, "external music must reach the late-track evolution instead of restarting at its opening state");
+  assert.doesNotMatch(JSON.stringify(snapshot.timeline), /external-track-1|Private Artist|Private Track|spotify/);
 });
 
 test("audio uploads use the same fresh timeline seam and reject stale or mismatched sync", () => {
@@ -1377,7 +1418,7 @@ test("additive recovery cannot gate, transform, or replace the checkpoint render
   assert.equal(engine.RADIO_VISUAL_MUSIC_OUTPUT_GAIN, 2, "the accepted checkpoint output gain cannot change");
   assert.equal(audioBridge.RADIO_AUDIO_BRIDGE_FIXED_REFERENCE_CALIBRATION, "fixed_reference_v1", "the corrected legacy Windows volume-neutral calibration must remain compatible");
   assert.equal(audioBridge.RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION, "adaptive_reference_v2", "the current helper must identify its adaptive per-band visual response");
-  assert.equal(audioBridge.RADIO_AUDIO_BRIDGE_POLL_INTERVAL_MS, 40, "the local signal handoff must refresh at 25 Hz");
+  assert.equal(audioBridge.RADIO_AUDIO_BRIDGE_POLL_INTERVAL_MS, 25, "the local signal handoff must refresh at 40 Hz");
 });
 
 test("broadcast FX exhaust a twelve-effect shuffle bag before repeating", () => {
@@ -1653,6 +1694,59 @@ test("band onsets hit independently and structural build releases gradually", ()
   assert.ok(fullRelease.state.buildMemory <= 0.15, "the build must clear instead of leaving a permanently dense quiet scene");
 });
 
+test("live dynamics preserve fast vocal and spectral changes without becoming a level pulse", () => {
+  const steady = {
+    source: "windows_loopback",
+    bpm: 110,
+    energy: 0.38,
+    bass: 0.32,
+    mid: 0.32,
+    treble: 0.32,
+    beat: 0,
+    accent: 0,
+    peak: 0,
+    progress: 0.35,
+    phrase: 0.4,
+  };
+  let reactionState = engine.radioVisualAudioReactionInitialState();
+  let dynamicsState = liveDynamics.radioVisualLiveDynamicsInitialState();
+  let frame = null;
+  for (let step = 0; step < 80; step += 1) {
+    const reaction = engine.advanceRadioVisualAudioReaction(reactionState, steady, 25);
+    reactionState = reaction.state;
+    frame = liveDynamics.advanceRadioVisualLiveDynamics(dynamicsState, steady, reaction.drives, reaction.state, 25);
+    dynamicsState = frame.state;
+  }
+  assert.ok(Math.max(dynamicsState.bassFlux, dynamicsState.midFlux, dynamicsState.trebleFlux) < 0.04,
+    "a sustained passage must settle instead of flashing on a volume clock");
+
+  const vocalArrival = { ...steady, mid: 0.76 };
+  const vocalReaction = engine.advanceRadioVisualAudioReaction(reactionState, vocalArrival, 25);
+  const vocalFrame = liveDynamics.advanceRadioVisualLiveDynamics(
+    dynamicsState,
+    vocalArrival,
+    vocalReaction.drives,
+    vocalReaction.state,
+    25,
+  );
+  assert.ok(vocalFrame.drives.midPulse > 0.75, "a vocal-band arrival must reach the renderer inside one bridge frame");
+  assert.ok(vocalFrame.drives.midPulse > vocalFrame.drives.bassPulse + 0.45);
+  assert.ok(vocalFrame.drives.midPulse > vocalFrame.drives.treblePulse + 0.45);
+
+  const bassLed = { ...steady, energy: 0.62, bass: 0.9, mid: 0.28, treble: 0.24 };
+  const bassReaction = engine.advanceRadioVisualAudioReaction(reactionState, bassLed, 25);
+  const bassFrame = liveDynamics.advanceRadioVisualLiveDynamics(
+    dynamicsState,
+    bassLed,
+    bassReaction.drives,
+    bassReaction.state,
+    25,
+  );
+  assert.ok(bassFrame.drives.bassLayer > bassFrame.drives.midLayer + 0.45,
+    "spectral ownership must make a bass-led passage visibly unlike a vocal-led passage");
+  assert.ok(bassFrame.drives.bassLayer > bassFrame.drives.trebleLayer + 0.45);
+});
+
 test("Wheel geometry uses a candidate-count-calibrated outer band", () => {
   assert.deepEqual(engine.radioVisualsWheelBand(Number.NaN), { innerCenterRatio: 0.49, outerCenterRatio: 0.493, edgeOnly: true, maxRings: 1 });
   assert.deepEqual(engine.radioVisualsWheelBand(undefined), { innerCenterRatio: 0.49, outerCenterRatio: 0.493, edgeOnly: true, maxRings: 1 });
@@ -1908,9 +2002,11 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.match(receiver, /PALETTE_TRANSITION_MS = 2_400|PARTICLE_TRANSITION_MS = 2_000|radioVisualCueEnvelope/);
   assert.match(receiver, /smoothMusicSignal|radioVisualsMusicSignal/);
   assert.match(receiver, /RADIO_AUDIO_BRIDGE_URL|4_000|data-audio-bridge/);
-  assert.match(receiver, /energy: channel\(current\.energy, target\.energy, 24, 190\)/, "the browser must not reintroduce a slow attack after adaptive native analysis");
-  assert.match(receiver, /mid: channel\(current\.mid, target\.mid, 14, 135\)/, "vocal-band updates must reach the renderer on the fast display follower");
-  assert.match(receiver, /peak: channel\(current\.peak, target\.peak, 6, 75\)/, "transient display attack must remain below one 40 ms bridge poll interval");
+  assert.match(receiver, /energy: channel\(current\.energy, target\.energy, 12, 112\)/, "the browser must not reintroduce a slow attack after adaptive native analysis");
+  assert.match(receiver, /mid: channel\(current\.mid, target\.mid, 8, 82\)/, "vocal-band updates must reach the renderer on the fast display follower");
+  assert.match(receiver, /peak: channel\(current\.peak, target\.peak, 4, 54\)/, "transient display attack must remain below one 25 ms bridge poll interval");
+  assert.match(receiver, /advanceRadioVisualLiveDynamics/, "the browser must preserve fast per-band articulation after the accepted reaction engine");
+  assert.match(receiver, /snapshot\.player \?\? snapshot\.timeline/, "external tracks must project the same beginning-to-finale clock as embedded players");
   assert.doesNotMatch(receiver, /targetAddressSpace/, "literal 127.0.0.1 must remain compatible with TikTok Studio's embedded Chromium version");
   assert.match(receiver, /if \(!snapshot\.sessionActive\)[\s\S]*setAudioBridgeConnection\("idle"\)/);
   assert.match(engineSource, /source: "analyser" \| "timeline" \| "windows_loopback"/);

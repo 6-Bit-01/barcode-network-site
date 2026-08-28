@@ -15,7 +15,6 @@ const approvedPr374Files = new Map([
   ["src/lib/radio-visuals-audio.ts", "4fc9bf20c79df9df0af2c3e2a0f7a5f662cf81d6570080df88cfa69ba4535b05"],
   ["src/lib/radio-visuals-music-embellishments.ts", "fff665851471e5d39b40b2604c7f7cfeae7cee8f10cac27ae7027937cca7aed5"],
   ["src/lib/radio-visuals-preview.ts", "2ada1cbb8876949ec161385c6e6926223a3b5e9c54dc6df4e5eec5149c4072b7"],
-  ["src/lib/radio-visuals-resolver.ts", "4f675d23ed03bf0f81ad297dab1a3fe1281cecb05ed3ed2a199e51ad42782bd9"],
   ["src/lib/radio-visuals-selection.ts", "fe757321c15b3f9e84870749a31b65a36d4003bf854150a49e74e528e75e0ac2"],
   ["tools/barcode-audio-bridge/AudioSignal.cs", "a2a64869e2ad0dcaf6a8d58decb0e59aad0f218accf76084fe003293e6fef453"],
   ["tools/barcode-audio-bridge/BridgeApplicationContext.cs", "557b14d1fced3e99703d83289a46ef26f630caf2f0117132d5f479cf804d23de"],

@@ -5,6 +5,13 @@ export const SPONSOR_BREAK_DURATION_SECONDS = 11 * 60;
 type SponsorBreakQueueState = Pick<QueueState, "session"> | null | undefined;
 type LocalCommercialStartResponse = Pick<Response, "ok" | "status">;
 
+export async function requireLocalCommercialPlayer(
+  probe: () => Promise<LocalCommercialStartResponse>,
+): Promise<void> {
+  const response = await probe();
+  if (!response.ok) throw new Error(`Commercial Player preflight returned ${response.status}`);
+}
+
 export function isSponsorBreakStartAcknowledged(state: SponsorBreakQueueState): boolean {
   const session = state?.session;
   if (session?.sponsorBreakStatus !== "running") return false;

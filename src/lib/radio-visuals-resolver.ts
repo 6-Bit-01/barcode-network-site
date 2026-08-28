@@ -26,6 +26,13 @@ export interface RadioVisualsPlayerSignal {
   audioPeak: number | null;
 }
 
+export interface RadioVisualsTimelineSignal {
+  playbackState: LiveOverlayPlaybackState;
+  currentTimeSeconds: number;
+  durationSeconds?: number;
+  updatedAt: string;
+}
+
 export interface RadioVisualsQueueSignal {
   acceptedCount: number;
   completedCount: number;
@@ -50,6 +57,7 @@ export interface RadioVisualsSnapshot {
   queue: RadioVisualsQueueSignal;
   signals: RadioVisualsShowSignals;
   player: RadioVisualsPlayerSignal | null;
+  timeline: RadioVisualsTimelineSignal | null;
   cue: RadioVisualCue | null;
   preview: RadioVisualPreview | null;
   events: RadioVisualEvent[];
@@ -182,6 +190,34 @@ function playerSignalForScene(input: {
   };
 }
 
+function positiveSeconds(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+function timelineSignalForTrack(
+  queueState: QueueState,
+  entry: QueueEntry | null,
+): RadioVisualsTimelineSignal | null {
+  if (!entry) return null;
+  const timing = queueState.playbackTiming?.trackId === entry.id
+    ? queueState.playbackTiming
+    : null;
+  const durationSeconds = positiveSeconds(timing?.durationSeconds)
+    ?? positiveSeconds(entry.detectedDurationSeconds)
+    ?? positiveSeconds(entry.estimatedDurationSeconds);
+  const isNowPlaying = queueState.nowPlaying?.id === entry.id;
+  const loadedClockIsPlaying = timing?.source === "loaded_clock" && isNowPlaying && Boolean(entry.playedAt);
+  const playbackState = loadedClockIsPlaying
+    ? "playing"
+    : timing?.playbackState ?? (isNowPlaying && entry.playedAt ? "playing" : "paused");
+  return {
+    playbackState,
+    currentTimeSeconds: Math.max(0, timing?.currentTimeSeconds ?? 0),
+    ...(durationSeconds ? { durationSeconds } : {}),
+    updatedAt: timing?.observedAt ?? entry.playedAt ?? entry.createdAt,
+  };
+}
+
 export function resolveRadioVisualsSnapshot(input: {
   queueState: QueueState;
   scene: ResolvedLiveOverlayScene;
@@ -206,6 +242,9 @@ export function resolveRadioVisualsSnapshot(input: {
     ? playerSignalForScene({ scene, playerSync, currentTrackId, now })
     : null;
   const currentEntry = queueState.nowPlaying ?? queueState.loadedTrack ?? null;
+  const timeline = visualMode === "track"
+    ? timelineSignalForTrack(queueState, currentEntry)
+    : null;
   const trackOccurrence = radioVisualTrackOccurrence(queueState);
   const loadedOccurrence = trackOccurrence?.occurredAt ?? null;
   const wheelOccurrence = visualMode === "wheel"
@@ -266,6 +305,7 @@ export function resolveRadioVisualsSnapshot(input: {
       broadcastPhase: queueState.session?.broadcastPhase ?? null,
     },
     player,
+    timeline,
     cue,
     preview,
     events: sessionActive ? recentVisualEvents(queueState, scene, now) : [],

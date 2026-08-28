@@ -4,7 +4,7 @@ import { resolveRadioVisualsSnapshot } from "./radio-visuals-resolver";
 import type { RadioVisualsSnapshot } from "./radio-visuals-resolver";
 import { hasActiveQueueSession } from "./session-bound-polling";
 
-export type { RadioVisualsMode, RadioVisualsPlayerSignal, RadioVisualsQueueSignal, RadioVisualsShowSignals, RadioVisualsShowStage, RadioVisualsSnapshot } from "./radio-visuals-resolver";
+export type { RadioVisualsMode, RadioVisualsPlayerSignal, RadioVisualsQueueSignal, RadioVisualsShowSignals, RadioVisualsShowStage, RadioVisualsSnapshot, RadioVisualsTimelineSignal } from "./radio-visuals-resolver";
 export type { RadioVisualCue, RadioVisualCueType } from "./radio-visuals-cues";
 export type { RadioVisualPreview } from "./radio-visuals-preview";
 export type { RadioVisualEvent, RadioVisualEventType } from "./radio-visuals-events";

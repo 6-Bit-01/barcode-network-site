@@ -22,12 +22,17 @@ const approvedPr374Files = new Map([
   ["src/lib/radio-visuals-selection.ts", "fe757321c15b3f9e84870749a31b65a36d4003bf854150a49e74e528e75e0ac2"],
   ["tools/barcode-audio-bridge/AudioAnalyzer.cs", "f898ee3fc05e87637dc8af3f51e0f2eb896b1a661530555b9be2ff1348978ba1"],
   ["tools/barcode-audio-bridge/AudioSignal.cs", "a2a64869e2ad0dcaf6a8d58decb0e59aad0f218accf76084fe003293e6fef453"],
+  ["tools/barcode-audio-bridge/Barcode.AudioBridge.csproj", "72cdb2b6ff7e71337457b94eaa0f922781069ff101321bd6f40e888ec97dbcd9"],
+  ["tools/barcode-audio-bridge/BridgeApplicationContext.cs", "557b14d1fced3e99703d83289a46ef26f630caf2f0117132d5f479cf804d23de"],
   ["tools/barcode-audio-bridge/BridgeConstants.cs", "a55d812afc1f3c55eec66876198619b2cb4c1a7c1b3085548515d8dab0a1e6c9"],
+  ["tools/barcode-audio-bridge/BridgeInstaller.cs", "f70bedaa7ec382a9c0d445be91dd1722a2528d440d9f291e7bf2e500aa717f57"],
+  ["tools/barcode-audio-bridge/BridgeLog.cs", "0fb1a1ee1d24886617446fd7e3c2d6d2516ec0d8bacbe35667779e9de3645bf9"],
   ["tools/barcode-audio-bridge/LocalSignalServer.cs", "a3bdc4ec0efe220731a9ceb0c80f6de0bc385a0277017ae05d6cb1a82d17fdcc"],
   ["tools/barcode-audio-bridge/LoopbackCaptureController.cs", "3aa69514dea23322b1bef608cb8b26102dde10c362ced9510d1c87f5849e3dd3"],
+  ["tools/barcode-audio-bridge/Program.cs", "70b4927e05e663a2609a51c4cdebc996c98b4a1915872a4cc830c0c033235bda"],
 ]);
 
-test("the Show Visuals renderer, audio analysis, and signal server remain byte-exact to approved PR #374", () => {
+test("the Show Visuals renderer and complete visual-only Audio Bridge remain byte-exact to approved PR #374", () => {
   for (const [relativePath, expectedHash] of approvedPr374Files) {
     const contents = readFileSync(path.join(projectRoot, relativePath));
     const actualHash = createHash("sha256").update(contents).digest("hex");

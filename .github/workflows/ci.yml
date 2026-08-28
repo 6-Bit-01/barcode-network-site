@@ -53,6 +53,9 @@ jobs:
       - name: Restore Windows audio bridge
         run: dotnet restore tools/barcode-audio-bridge/Barcode.AudioBridge.csproj
 
+      - name: Restore Windows commercial player
+        run: dotnet restore tools/barcode-commercial-player/Barcode.CommercialPlayer.csproj
+
       - name: Restore Windows audio bridge tests
         run: dotnet restore tools/barcode-audio-bridge.Tests/Barcode.AudioBridge.Tests.csproj
 
@@ -62,12 +65,25 @@ jobs:
       - name: Build Windows audio bridge
         run: dotnet build tools/barcode-audio-bridge/Barcode.AudioBridge.csproj -c Release --no-restore
 
+      - name: Build Windows commercial player
+        run: dotnet build tools/barcode-commercial-player/Barcode.CommercialPlayer.csproj -c Release --no-restore
+
       - name: Publish one-click Windows helper
         run: dotnet publish tools/barcode-audio-bridge/Barcode.AudioBridge.csproj -c Release -r win-x64 --self-contained true --no-restore -o artifacts/barcode-audio-bridge
+
+      - name: Publish one-click commercial player
+        run: dotnet publish tools/barcode-commercial-player/Barcode.CommercialPlayer.csproj -c Release -r win-x64 --self-contained true --no-restore -o artifacts/barcode-commercial-player
 
       - name: Upload Windows helper
         uses: actions/upload-artifact@v4
         with:
           name: barcode-audio-bridge-win-x64
           path: artifacts/barcode-audio-bridge/BARCODE.AudioBridge.exe
+          if-no-files-found: error
+
+      - name: Upload Windows commercial player
+        uses: actions/upload-artifact@v4
+        with:
+          name: barcode-commercial-player-win-x64
+          path: artifacts/barcode-commercial-player/BARCODE.CommercialPlayer.exe
           if-no-files-found: error

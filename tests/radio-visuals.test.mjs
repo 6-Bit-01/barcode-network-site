@@ -634,6 +634,100 @@ test("Windows audio transfer suppresses quiet noise and expands loud passages", 
   assert.ok(midpoint >= 0.35 && midpoint <= 0.6);
 });
 
+test("fixed-reference Bridge frames restore the accepted full-scale Show Visuals handoff", () => {
+  const current = entry("track-fixed-reference", { sourceType: "youtube" });
+  const youtube = {
+    provider: "youtube",
+    videoId: "abcDEF12345",
+    trackId: current.id,
+    playbackState: "playing",
+    currentTimeSeconds: 24,
+    durationSeconds: 180,
+    updatedAt: "2026-08-19T18:59:55.000Z",
+    muted: true,
+  };
+  const snapshot = visuals.resolveRadioVisualsSnapshot({
+    queueState: queueState({ nowPlaying: current, loadedTrack: current }),
+    scene: scene("now_playing", {
+      track: { id: current.id, artistName: "Artist", trackTitle: "Track", sourceType: "youtube" },
+      youtube,
+    }),
+    playerSync: youtube,
+    now: new Date("2026-08-19T19:00:00.000Z"),
+  });
+  const rehearsalFrame = {
+    schemaVersion: "barcode_audio_signal_v1",
+    source: "windows_loopback",
+    capturedAtUnixMs: Date.now(),
+    sequence: 22_401,
+    captureActive: true,
+    warmedUp: true,
+    silence: false,
+    energy: 0.395,
+    bass: 0.478,
+    mid: 0.379,
+    treble: 0.26,
+    peak: 0.171,
+    beat: 0,
+    bpm: 120,
+    tempoConfidence: 0.4,
+  };
+  const analysisReferenceGain = Math.pow(10, -9 / 20);
+  const acceptedFullScaleFrame = {
+    ...rehearsalFrame,
+    energy: Math.min(1, rehearsalFrame.energy / Math.pow(analysisReferenceGain, 0.72)),
+    bass: Math.min(1, rehearsalFrame.bass / Math.pow(analysisReferenceGain, 0.58)),
+    mid: Math.min(1, rehearsalFrame.mid / Math.pow(analysisReferenceGain, 0.58)),
+    treble: Math.min(1, rehearsalFrame.treble / Math.pow(analysisReferenceGain, 0.58)),
+    peak: Math.min(1, rehearsalFrame.peak / analysisReferenceGain),
+  };
+  const raw = engine.radioVisualsMusicSignal(snapshot, 24, 100, rehearsalFrame);
+  const fixedReference = engine.radioVisualsMusicSignal(snapshot, 24, 100, {
+    ...rehearsalFrame,
+    analysisCalibration: audioBridge.RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION,
+  });
+  const acceptedFullScale = engine.radioVisualsMusicSignal(snapshot, 24, 100, acceptedFullScaleFrame);
+
+  for (const channel of ["energy", "bass", "mid", "treble", "peak", "accent"]) {
+    assert.ok(
+      Math.abs(fixedReference[channel] - acceptedFullScale[channel]) < 1e-12,
+      `${channel} must exactly recover the pre-reference Show Visuals handoff`,
+    );
+  }
+  assert.ok(fixedReference.energy > raw.energy * 2.5, "the observed 39.5% rehearsal frame must not remain visually light");
+  assert.ok(fixedReference.bass > raw.bass * 2.2, "the observed bass frame must recover its accepted visual authority");
+  const rawDrives = engine.radioVisualAudioDrives(raw);
+  const restoredDrives = engine.radioVisualAudioDrives(fixedReference);
+  assert.ok(restoredDrives.bassLayer > rawDrives.bassLayer + 0.45);
+  assert.ok(restoredDrives.midLayer > rawDrives.midLayer + 0.3);
+  assert.ok(
+    engine.radioVisualMusicSceneVisibility(restoredDrives) > engine.radioVisualMusicSceneVisibility(rawDrives) + 0.25,
+    "the exact rehearsal sample must gain visibly more family mass, not merely change a diagnostic number",
+  );
+
+  const fixedReferenceSilence = engine.radioVisualsMusicSignal(snapshot, 24, 100, {
+    ...rehearsalFrame,
+    analysisCalibration: audioBridge.RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION,
+    silence: true,
+    energy: 0.007,
+    bass: 0.009,
+    mid: 0.006,
+    treble: 0.004,
+    peak: 0.008,
+  });
+  assert.ok(
+    Math.max(
+      fixedReferenceSilence.energy,
+      fixedReferenceSilence.bass,
+      fixedReferenceSilence.mid,
+      fixedReferenceSilence.treble,
+      fixedReferenceSilence.peak,
+      fixedReferenceSilence.accent,
+    ) < 0.001,
+    "restoring musical strength must not turn the Bridge noise floor into visible motion",
+  );
+});
+
 test("Windows levels become quiet, isolated band layers and a full-spectrum tapestry end to end", () => {
   const current = entry("track-loopback-tapestry", { sourceType: "youtube" });
   const youtube = {

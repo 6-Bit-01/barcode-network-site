@@ -108,9 +108,9 @@ function nowPlayingScene(current) {
   };
 }
 
-test("music families are dealt as deterministic twenty-card decks without adjacent repeats", () => {
+test("music families are dealt as deterministic thirty-card decks without adjacent repeats", () => {
   const deckSize = selection.RADIO_VISUAL_MUSIC_FAMILY_COUNT;
-  assert.equal(deckSize, 20);
+  assert.equal(deckSize, 30);
   assert.equal(deckSize, engine.RADIO_VISUAL_MUSIC_SCENES.length);
   const sequence = Array.from({ length: deckSize * 3 }, (_, ordinal) =>
     selection.radioVisualMusicFamilyIndexForOccurrence("session-alpha", ordinal));

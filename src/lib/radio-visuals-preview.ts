@@ -29,6 +29,16 @@ export const RADIO_VISUAL_PREVIEW_CONTROLS = [
   { scene: "holographic_terrain", label: "Holographic Terrain", description: "Signal ridges, beacons and a terrain horizon." },
   { scene: "kinetic_glyph_engine", label: "Kinetic Glyph Engine", description: "Moving glyph plates and a coded signal engine." },
   { scene: "mechanical_iris", label: "Mechanical Iris", description: "Reactive blades, actuators and a reactor aperture." },
+  { scene: "spectral_cathedral", label: "Spectral Cathedral", description: "Signal pillars, vaulted arches and a resonant rose window." },
+  { scene: "ferrofluid_field", label: "Ferrofluid Field", description: "Magnetic wells, liquid spikes and charged droplets." },
+  { scene: "orbital_relay", label: "Orbital Relay", description: "Elliptical relays, satellites and synchronized packet paths." },
+  { scene: "data_loom", label: "Data Loom", description: "Warp rails, woven circuits and accelerating signal shuttles." },
+  { scene: "monolith_array", label: "Monolith Array", description: "Brutalist slabs, indexing seams and a broadcast citadel." },
+  { scene: "plasma_tendrils", label: "Plasma Tendrils", description: "Smooth charged filaments that branch, braid and flare." },
+  { scene: "signal_bloom", label: "Signal Bloom", description: "Radial petals, filament stamens and a full-spectrum rosette." },
+  { scene: "vector_swarm", label: "Vector Swarm", description: "Triangular agents gather into lanes, flocks and a signal sigil." },
+  { scene: "moire_engine", label: "Moiré Engine", description: "Interference rings, phase ticks and a diffraction reactor." },
+  { scene: "eclipse_corona", label: "Eclipse Corona", description: "A black signal sun, crescents, corona arcs and solar flares." },
 ] as const satisfies ReadonlyArray<{
   scene: RadioVisualMusicScene;
   label: string;

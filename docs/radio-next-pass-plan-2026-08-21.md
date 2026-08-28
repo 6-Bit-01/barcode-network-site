@@ -123,6 +123,26 @@ Rollback and deployment boundary:
 - Keep the future 6 Bit camera CRT/hologram overlay in a separate pull request, route, and file set with no dependency on this expansion. Either PR must be independently revertible without reverting the other.
 - Deploy each PR between shows and re-open the saved Studio source before the rehearsal check; do not combine both changes into one live-show rollout.
 
+### 8. Thirty-family music visual expansion — 2026-08-28
+
+Implementation base: production commit `bd45853` after PR `#404` (live visual dynamics and sponsor preflight). Item 7 remains the historical twenty-family checkpoint; this pass extends that accepted system without replacing its renderers or reaction core.
+
+Add Spectral Cathedral, Ferrofluid Field, Orbital Relay, Data Loom, Monolith Array, Plasma Tendrils, Signal Bloom, Vector Swarm, Moiré Engine, and Eclipse Corona as ten genuinely different composite families.
+
+Acceptance:
+
+- Extend the deterministic loaded-track deck from twenty to thirty families while preserving one appearance per family before reuse, adjacent-repeat prevention across deck boundaries, occurrence-stable selection, loaded-song ownership, and the existing previous/current crossfade.
+- Give every new family a distinct Canvas renderer, three-act lifecycle, perimeter motif, and exact two-second authenticated silent preview using the production code path.
+- Preserve independent sustained and transient bass, mid, and treble ownership. The coordinated tapestry layer must still require all three bands, and lifecycle or tempo may change morphology but may not manufacture audio density.
+- Keep all work bounded to the existing portrait-safe Canvas stage, performer-safe field, 30 FPS cap, chroma-safe palette, music-only output gain, and browser-local render loop.
+- Preserve the PR #374 render boundary and the PR #404 reaction, crossfade, dynamics, and sponsor-player preflight behavior with explicit source-level regression checks.
+- Do not change the 40 Hz Audio Bridge poll, bridge calibration or payload, the commercial player on port `43121`, sponsor ownership, overlay access, queue/Wheel/payment/playback ownership, Redis polling, or production capability gates.
+
+Rollback and deployment boundary:
+
+- Ship this as one independently revertible pull request with no migration or production configuration change.
+- Re-open the saved Show Visuals source and rehearse all ten new preview buttons plus live music before any between-show merge or deployment decision.
+
 ## Change-control rule
 
 No pass may silently suppress another system, infer state ownership from event order, or alter queue/Wheel/music behavior outside its acceptance criteria. If a newly discovered dependency would require that expansion, stop that pass and document the dependency before implementation.

@@ -42,28 +42,50 @@ test("the accepted thirty-family render extension remains byte-exact", () => {
   }
 });
 
-test("the original Canvas families and PR #404 reaction path remain exact inside the forty-family extension", () => {
+function extractedRenderer(source, name) {
+  const start = source.indexOf(`function ${name}`);
+  const end = source.indexOf("\nfunction ", start + 10);
+  assert.ok(start >= 0 && end > start, name);
+  return source.slice(start, end);
+}
+
+test("untouched original Canvas families and the PR #404 reaction path remain exact around the perceptual pilots", () => {
   const receiver = readFileSync(path.join(projectRoot, "src/components/RadioVisualsReceiver.tsx"), "utf8");
-  const legacyFamilyRenderers = receiver.slice(
-    receiver.indexOf("function drawEdgeSpectrum"),
-    receiver.indexOf("function perimeterRectanglePoint"),
-  );
+  const untouchedFamilyRenderers = [
+    "drawEdgeSpectrum",
+    "drawTapeFeedback",
+    "drawAsciiTerminal",
+    "drawPixelSortStorm",
+    "drawParticlePressure",
+  ].map((name) => extractedRenderer(receiver, name)).join("\n");
   assert.equal(
-    createHash("sha256").update(legacyFamilyRenderers).digest("hex"),
-    "0e76fd38c6d515e7b629191bfc1bf1495c506dd023628465a3ebd5702344ac32",
-    "the original ten inline Canvas family renderers must remain byte-exact",
+    createHash("sha256").update(untouchedFamilyRenderers).digest("hex"),
+    "a98234c8ecb24da6f180909f6915ff512d380ef3fc73f7d8d50157fec69556a0",
+    "the five original non-pilot inline Canvas renderers must remain byte-exact",
+  );
+  const perceptualPilotRenderers = [
+    "drawOscilloscopeRibbons",
+    "drawMatrixRain",
+    "drawLightningSwitchyard",
+    "drawLaserLattice",
+    "drawSignalConstellation",
+  ].map((name) => extractedRenderer(receiver, name)).join("\n");
+  assert.equal(
+    createHash("sha256").update(perceptualPilotRenderers).digest("hex"),
+    "927d7a924c26f5ff39a43aadcfc59bee5be0d9ee1d3d43dfb7f11e6b89f10b80",
+    "the approved five-family perceptual pilot must remain byte-exact",
   );
 
   const engine = readFileSync(path.join(projectRoot, "src/lib/radio-visuals-engine.ts"), "utf8");
   const reactionCore = engine.slice(
-    engine.indexOf("export interface RadioVisualAudioReactionState"),
-    engine.indexOf("export type RadioVisualLoopbackChannel"),
+    engine.indexOf("export function radioVisualAudioReactionInitialState"),
+    engine.indexOf("export function radioVisualsPalette"),
   );
   const postHandoffEngine = engine.slice(engine.indexOf("export function radioVisualAmbientMoment"));
   assert.equal(
     createHash("sha256").update(reactionCore).digest("hex"),
-    "2a951f6a95fc27bdca7eba14c78e5a5913a773a62cfb88d9a5e58dc95f5b8a69",
-    "the accepted PR #404 reaction, crossfade, and broadcast-FX core must remain exact",
+    "b29c61a28a8cb1d16588a3dd00f5bd50bfaefdea9d92109fe44e2269b43ddd90",
+    "the accepted PR #404 reaction state and follower must remain exact",
   );
   assert.equal(
     createHash("sha256").update(postHandoffEngine).digest("hex"),

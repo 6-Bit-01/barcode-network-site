@@ -2,6 +2,7 @@ import type { RadioVisualCue } from "./radio-visuals-cues";
 import {
   RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION,
   RADIO_AUDIO_BRIDGE_FIXED_REFERENCE_CALIBRATION,
+  type RadioAudioBridgePerceptualFeatures,
   type RadioAudioBridgeSignal,
 } from "./radio-audio-bridge";
 import { hashRadioVisualToken } from "./radio-visuals-events";
@@ -140,6 +141,8 @@ export interface RadioVisualMusicSignal {
   progress: number;
   /** Zero-to-one position through the current four-bar phrase. */
   phrase: number;
+  /** Optional Audio Bridge 1.2 feature frame; absent for older helpers and fallback clocks. */
+  perceptual: RadioAudioBridgePerceptualFeatures | null;
 }
 
 export interface RadioVisualsPalette {
@@ -240,6 +243,16 @@ export function advanceRadioVisualMusicTransition(
 
 export type RadioVisualMusicScene = (typeof RADIO_VISUAL_MUSIC_SCENES)[number];
 
+export const RADIO_VISUAL_PERCEPTUAL_PILOT_SCENES = [
+  "oscilloscope_ribbons",
+  "matrix_rain",
+  "lightning_switchyard",
+  "laser_lattice",
+  "signal_constellation",
+] as const satisfies readonly RadioVisualMusicScene[];
+
+export type RadioVisualPerceptualPilotScene = (typeof RADIO_VISUAL_PERCEPTUAL_PILOT_SCENES)[number];
+
 export interface RadioVisualAudioDrives {
   presence: number;
   /** Broadband mass keeps a loud track visible without pretending every band is loud. */
@@ -261,6 +274,8 @@ export interface RadioVisualAudioDrives {
   build: number;
   progress: number;
   phrase: number;
+  /** Passed through untouched so only explicitly opted-in renderers consume the richer frame. */
+  perceptual: RadioAudioBridgePerceptualFeatures | null;
 }
 
 export const RADIO_VISUAL_BROADCAST_FX_TYPES = [
@@ -317,6 +332,29 @@ export interface RadioVisualMusicSceneLayerPlan {
   mid: number;
   treble: number;
   tapestry: number;
+}
+
+/**
+ * Semantic controls derived from the richer bridge frame. Renderers interpret
+ * these controls differently, so spectral shape and stereo image change the
+ * composition instead of merely scaling every primitive with volume.
+ */
+export interface RadioVisualPerceptualScenePlan {
+  enabled: boolean;
+  foundation: number;
+  structure: number;
+  detail: number;
+  coupling: number;
+  foundationHit: number;
+  structureHit: number;
+  detailHit: number;
+  brightness: number;
+  spectralFocus: number;
+  contrast: number;
+  motion: number;
+  spread: number;
+  balance: number;
+  waveform: readonly number[];
 }
 
 export const RADIO_VISUAL_MUSIC_PERIMETER_MOTIFS = {
@@ -641,6 +679,44 @@ export const RADIO_VISUAL_MUSIC_SCENE_LAYER_LIMITS: Record<RadioVisualMusicScene
   },
 };
 
+/**
+ * Audio Bridge 1.2 pilots get a second, comparable-to-the-dense-families
+ * ceiling. These budgets are intentionally unavailable to legacy/fallback
+ * signals so this pass cannot silently reshape the other thirty-five scenes.
+ */
+export const RADIO_VISUAL_PERCEPTUAL_PILOT_LAYER_LIMITS: Record<RadioVisualPerceptualPilotScene, RadioVisualMusicSceneLayerLimits> = {
+  oscilloscope_ribbons: {
+    bass: { sustained: 8, pulse: 4 },
+    mid: { sustained: 10, pulse: 5 },
+    treble: { sustained: 10, pulse: 6 },
+    tapestry: { sustained: 6, pulse: 3 },
+  },
+  matrix_rain: {
+    bass: { sustained: 7, pulse: 3 },
+    mid: { sustained: 12, pulse: 5 },
+    treble: { sustained: 12, pulse: 7 },
+    tapestry: { sustained: 5, pulse: 2 },
+  },
+  lightning_switchyard: {
+    bass: { sustained: 9, pulse: 4 },
+    mid: { sustained: 12, pulse: 6 },
+    treble: { sustained: 10, pulse: 7 },
+    tapestry: { sustained: 6, pulse: 2 },
+  },
+  laser_lattice: {
+    bass: { sustained: 6, pulse: 3 },
+    mid: { sustained: 14, pulse: 5 },
+    treble: { sustained: 16, pulse: 8 },
+    tapestry: { sustained: 7, pulse: 2 },
+  },
+  signal_constellation: {
+    bass: { sustained: 7, pulse: 3 },
+    mid: { sustained: 14, pulse: 5 },
+    treble: { sustained: 16, pulse: 8 },
+    tapestry: { sustained: 7, pulse: 2 },
+  },
+};
+
 export interface RadioVisualAudioReactionState {
   bassSlow: number;
   midSlow: number;
@@ -792,6 +868,7 @@ export function radioVisualAudioDrives(signal: RadioVisualMusicSignal): RadioVis
     build: clampVisualValue(audioStructure * 0.82 + tapestry * 0.18),
     progress,
     phrase,
+    perceptual: signal.perceptual ?? null,
   };
 }
 
@@ -800,19 +877,146 @@ function dedicatedAudioLayerCount(
   pulse: number,
   limit: RadioVisualMusicSceneLayerLimit,
   threshold = 0.01,
+  responseExponent = 0.62,
 ): number {
   const maximum = limit.sustained + limit.pulse;
   if (maximum <= 0) return 0;
   const boundedLayer = clampVisualValue(layer);
   const sustainedProgress = Math.pow(
     clampVisualValue((boundedLayer - threshold) / Math.max(0.001, 1 - threshold)),
-    0.62,
+    responseExponent,
   );
   const sustained = boundedLayer > threshold && limit.sustained > 0
     ? 1 + Math.round(sustainedProgress * Math.max(0, limit.sustained - 1))
     : 0;
   const transient = Math.floor(clampVisualValue(pulse) * limit.pulse);
   return Math.min(maximum, sustained + transient);
+}
+
+const EMPTY_PERCEPTUAL_WAVEFORM = Object.freeze(Array.from({ length: 16 }, () => 0));
+
+function isPerceptualPilotScene(scene: RadioVisualMusicScene): scene is RadioVisualPerceptualPilotScene {
+  return (RADIO_VISUAL_PERCEPTUAL_PILOT_SCENES as readonly RadioVisualMusicScene[]).includes(scene);
+}
+
+/** Resolve one pilot's deliberately distinct perceptual interpretation. */
+export function radioVisualPerceptualScenePlan(
+  scene: RadioVisualMusicScene,
+  drives: RadioVisualAudioDrives,
+): RadioVisualPerceptualScenePlan {
+  const features = drives.perceptual;
+  if (!features || !isPerceptualPilotScene(scene)) {
+    return {
+      enabled: false,
+      foundation: drives.bassLayer,
+      structure: drives.midLayer,
+      detail: drives.trebleLayer,
+      coupling: drives.tapestry,
+      foundationHit: drives.bassPulse,
+      structureHit: drives.midPulse,
+      detailHit: drives.treblePulse,
+      brightness: drives.treble,
+      spectralFocus: clampVisualValue(drives.mid * 0.45 + drives.treble * 0.55),
+      contrast: drives.body,
+      motion: Math.max(drives.bassPulse, drives.midPulse, drives.treblePulse),
+      spread: 0,
+      balance: 0,
+      waveform: EMPTY_PERCEPTUAL_WAVEFORM,
+    };
+  }
+
+  const levels = features.levels;
+  const onsets = features.onsets;
+  const low = clampVisualValue(levels.subBass * 0.58 + levels.bass * 0.42);
+  const body = clampVisualValue(levels.lowMid * 0.52 + levels.mid * 0.48);
+  const voice = clampVisualValue(levels.highMid * 0.48 + levels.presence * 0.52);
+  const high = clampVisualValue(levels.brilliance * 0.62 + levels.air * 0.38);
+  const lowHit = Math.max(onsets.subBass, onsets.bass);
+  const bodyHit = Math.max(onsets.lowMid, onsets.mid);
+  const voiceHit = Math.max(onsets.highMid, onsets.presence);
+  const highHit = Math.max(onsets.brilliance, onsets.air);
+
+  let foundation: number;
+  let structure: number;
+  let detail: number;
+  let foundationHit: number;
+  let structureHit: number;
+  let detailHit: number;
+  switch (scene) {
+    case "oscilloscope_ribbons":
+      foundation = low * 0.72 + body * 0.28;
+      structure = body * 0.62 + voice * 0.38;
+      detail = voice * 0.35 + high * 0.65;
+      foundationHit = lowHit * 0.7 + bodyHit * 0.3;
+      structureHit = bodyHit * 0.62 + voiceHit * 0.38;
+      detailHit = voiceHit * 0.35 + highHit * 0.65;
+      break;
+    case "matrix_rain":
+      foundation = low * 0.55 + body * 0.45;
+      structure = body * 0.35 + voice * 0.65;
+      detail = voice * 0.25 + high * 0.75;
+      foundationHit = lowHit * 0.55 + bodyHit * 0.45;
+      structureHit = bodyHit * 0.35 + voiceHit * 0.65;
+      detailHit = voiceHit * 0.25 + highHit * 0.75;
+      break;
+    case "lightning_switchyard":
+      foundation = low * 0.82 + body * 0.18;
+      structure = body * 0.68 + voice * 0.32;
+      detail = voice * 0.18 + high * 0.82;
+      foundationHit = lowHit * 0.82 + bodyHit * 0.18;
+      structureHit = bodyHit * 0.68 + voiceHit * 0.32;
+      detailHit = voiceHit * 0.18 + highHit * 0.82;
+      break;
+    case "laser_lattice":
+      foundation = low * 0.4 + body * 0.6;
+      structure = body * 0.2 + voice * 0.8;
+      detail = voice * 0.15 + high * 0.85;
+      foundationHit = lowHit * 0.4 + bodyHit * 0.6;
+      structureHit = bodyHit * 0.2 + voiceHit * 0.8;
+      detailHit = voiceHit * 0.15 + highHit * 0.85;
+      break;
+    case "signal_constellation":
+      foundation = low * 0.3 + body * 0.7;
+      structure = body * 0.45 + voice * 0.55;
+      detail = voice * 0.4 + high * 0.6;
+      foundationHit = lowHit * 0.3 + bodyHit * 0.7;
+      structureHit = bodyHit * 0.45 + voiceHit * 0.55;
+      detailHit = voiceHit * 0.4 + highHit * 0.6;
+      break;
+  }
+
+  foundation = clampVisualValue(foundation);
+  structure = clampVisualValue(structure);
+  detail = clampVisualValue(detail);
+  const sharedSpectrum = Math.min(low, body, voice, high);
+  const spectrumMean = (low + body + voice + high) / 4;
+  const coupling = clampVisualValue(sharedSpectrum * (0.72 + spectrumMean * 0.28));
+  const overall = clampVisualValue((foundation + structure + detail) / 3);
+  const strongestHit = Math.max(foundationHit, structureHit, detailHit);
+
+  return {
+    enabled: true,
+    foundation,
+    structure,
+    detail,
+    coupling,
+    foundationHit: clampVisualValue(foundationHit),
+    structureHit: clampVisualValue(structureHit),
+    detailHit: clampVisualValue(detailHit),
+    brightness: features.brightness,
+    spectralFocus: features.spectralCentroid,
+    contrast: features.dynamicRange,
+    // Transient density is intentionally only a small motion term. A
+    // saturated rate meter cannot create geometry or fake repeated hits.
+    motion: clampVisualValue(
+      strongestHit * 0.72
+        + features.dynamicRange * overall * 0.2
+        + features.transientDensity * overall * 0.08,
+    ),
+    spread: features.stereoWidth,
+    balance: features.stereoBalance,
+    waveform: features.waveform,
+  };
 }
 
 /**
@@ -824,6 +1028,16 @@ export function radioVisualMusicSceneLayerPlan(
   scene: RadioVisualMusicScene,
   drives: RadioVisualAudioDrives,
 ): RadioVisualMusicSceneLayerPlan {
+  const perceptual = radioVisualPerceptualScenePlan(scene, drives);
+  if (perceptual.enabled && isPerceptualPilotScene(scene)) {
+    const limits = RADIO_VISUAL_PERCEPTUAL_PILOT_LAYER_LIMITS[scene];
+    return {
+      bass: dedicatedAudioLayerCount(perceptual.foundation, perceptual.foundationHit, limits.bass, 0.025, 1.12),
+      mid: dedicatedAudioLayerCount(perceptual.structure, perceptual.structureHit, limits.mid, 0.022, 1.08),
+      treble: dedicatedAudioLayerCount(perceptual.detail, perceptual.detailHit, limits.treble, 0.018, 1.04),
+      tapestry: dedicatedAudioLayerCount(perceptual.coupling, Math.min(perceptual.foundationHit, perceptual.structureHit, perceptual.detailHit), limits.tapestry, 0.02, 1.16),
+    };
+  }
   const limits = RADIO_VISUAL_MUSIC_SCENE_LAYER_LIMITS[scene];
   return {
     bass: dedicatedAudioLayerCount(drives.bassLayer, drives.bassPulse, limits.bass),
@@ -1420,6 +1634,7 @@ export function radioVisualsMusicSignal(
       peak: adaptiveAnalysis ? 0 : liveTransient,
       progress,
       phrase,
+      perceptual: adaptiveSilence ? null : bridgeSignal.features ?? null,
     };
   }
   return {
@@ -1434,6 +1649,7 @@ export function radioVisualsMusicSignal(
     peak,
     progress,
     phrase,
+    perceptual: null,
   };
 }
 

@@ -979,6 +979,150 @@ test("Windows levels become quiet, isolated band layers and a full-spectrum tape
   }
 });
 
+test("perceptual pilot scenes distinguish equal-loudness songs and reach calibrated full ceilings", () => {
+  const snapshot = {
+    visualSeed: 41_909,
+    visualMode: "track",
+    sessionActive: true,
+    player: {
+      playbackState: "playing",
+      durationSeconds: 180,
+    },
+  };
+  const bandNames = audioBridge.RADIO_AUDIO_BRIDGE_PERCEPTUAL_BAND_NAMES;
+  const bands = (value) => Object.fromEntries(bandNames.map((name) => [name, value]));
+  const featureFrame = (levels, overrides = {}) => ({
+    version: audioBridge.RADIO_AUDIO_BRIDGE_PERCEPTUAL_FEATURES_VERSION,
+    levels,
+    onsets: bands(0),
+    spectralCentroid: 0.5,
+    brightness: 0.5,
+    dynamicRange: 0.5,
+    transientDensity: 0.5,
+    stereoWidth: 0.5,
+    stereoBalance: 0,
+    waveform: [0, 0.2, -0.3, 0.4, -0.5, 0.6, -0.7, 0.8, -0.8, 0.7, -0.6, 0.5, -0.4, 0.3, -0.2, 0],
+    ...overrides,
+  });
+  const bridge = (features, overrides = {}) => ({
+    schemaVersion: audioBridge.RADIO_AUDIO_BRIDGE_SCHEMA_VERSION,
+    source: "windows_loopback",
+    analysisCalibration: audioBridge.RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION,
+    capturedAtUnixMs: Date.now(),
+    sequence: 9_001,
+    captureActive: true,
+    warmedUp: true,
+    silence: false,
+    energy: 0.62,
+    bass: 0.58,
+    mid: 0.58,
+    treble: 0.58,
+    peak: 0.7,
+    beat: 0,
+    bpm: 122,
+    tempoConfidence: 0.72,
+    ...(features ? { features } : {}),
+    ...overrides,
+  });
+  const drivesFor = (features, overrides) => engine.radioVisualAudioDrives(
+    engine.radioVisualsMusicSignal(snapshot, 48, 100, bridge(features, overrides)),
+  );
+
+  const legacy = drivesFor(null);
+  assert.equal(legacy.perceptual, null, "older bridge frames must keep the accepted legacy renderer path");
+
+  const darkWide = featureFrame({
+    subBass: 0.88,
+    bass: 0.82,
+    lowMid: 0.68,
+    mid: 0.54,
+    highMid: 0.3,
+    presence: 0.22,
+    brilliance: 0.12,
+    air: 0.06,
+  }, {
+    spectralCentroid: 0.2,
+    brightness: 0.12,
+    dynamicRange: 0.74,
+    stereoWidth: 0.86,
+    stereoBalance: -0.28,
+  });
+  const brightNarrow = featureFrame({
+    subBass: 0.12,
+    bass: 0.2,
+    lowMid: 0.36,
+    mid: 0.52,
+    highMid: 0.76,
+    presence: 0.84,
+    brilliance: 0.9,
+    air: 0.72,
+  }, {
+    spectralCentroid: 0.82,
+    brightness: 0.88,
+    dynamicRange: 0.34,
+    stereoWidth: 0.14,
+    stereoBalance: 0.3,
+    waveform: [0, 0.7, 0.3, -0.6, -0.2, 0.8, 0.1, -0.7, 0, 0.6, -0.4, -0.8, 0.2, 0.5, -0.3, 0],
+  });
+  const darkDrives = drivesFor(darkWide);
+  const brightDrives = drivesFor(brightNarrow);
+  assert.deepEqual(darkDrives.perceptual, darkWide, "the validated bridge feature frame must reach renderer drives intact");
+  assert.equal(darkDrives.body, brightDrives.body);
+  assert.equal(darkDrives.bass, brightDrives.bass);
+  assert.equal(darkDrives.mid, brightDrives.mid);
+  assert.equal(darkDrives.treble, brightDrives.treble);
+  for (const sceneName of engine.RADIO_VISUAL_PERCEPTUAL_PILOT_SCENES) {
+    const darkPlan = engine.radioVisualPerceptualScenePlan(sceneName, darkDrives);
+    const brightPlan = engine.radioVisualPerceptualScenePlan(sceneName, brightDrives);
+    assert.equal(darkPlan.enabled, true);
+    assert.equal(brightPlan.enabled, true);
+    assert.notDeepEqual(darkPlan, brightPlan, `${sceneName} must react to spectral/stereo/waveform identity even when legacy loudness is identical`);
+  }
+  const sceneFoundations = engine.RADIO_VISUAL_PERCEPTUAL_PILOT_SCENES.map((sceneName) => (
+    engine.radioVisualPerceptualScenePlan(sceneName, darkDrives).foundation.toFixed(4)
+  ));
+  assert.ok(new Set(sceneFoundations).size >= 3, "pilot families must not share one generic band-weight profile");
+
+  const fullFeatures = featureFrame(bands(1), {
+    onsets: bands(1),
+    brightness: 1,
+    spectralCentroid: 1,
+    dynamicRange: 1,
+    transientDensity: 1,
+    stereoWidth: 1,
+  });
+  const fullDrives = drivesFor(fullFeatures, { energy: 1, bass: 1, mid: 1, treble: 1, peak: 1, beat: 1 });
+  for (const sceneName of engine.RADIO_VISUAL_PERCEPTUAL_PILOT_SCENES) {
+    const plan = engine.radioVisualMusicSceneLayerPlan(sceneName, fullDrives);
+    const limits = engine.RADIO_VISUAL_PERCEPTUAL_PILOT_LAYER_LIMITS[sceneName];
+    for (const layer of ["bass", "mid", "treble", "tapestry"]) {
+      assert.equal(plan[layer], limits[layer].sustained + limits[layer].pulse, `${sceneName} ${layer} must reach its calibrated full ceiling`);
+    }
+    const legacyTotal = Object.values(engine.radioVisualMusicSceneLayerPlan(sceneName, legacy)).reduce((sum, value) => sum + value, 0);
+    const fullTotal = Object.values(plan).reduce((sum, value) => sum + value, 0);
+    assert.ok(fullTotal > legacyTotal + 20, `${sceneName} must have materially more headroom than its sparse legacy ceiling`);
+    assert.ok(fullTotal <= 70, `${sceneName} must stay inside the existing dense-family performance envelope`);
+  }
+
+  const emptyFeatures = featureFrame(bands(0), {
+    transientDensity: 1,
+    dynamicRange: 1,
+    brightness: 1,
+    spectralCentroid: 1,
+    stereoWidth: 1,
+  });
+  const emptyDrives = drivesFor(emptyFeatures, { energy: 0, bass: 0, mid: 0, treble: 0, peak: 0, beat: 0 });
+  for (const sceneName of engine.RADIO_VISUAL_PERCEPTUAL_PILOT_SCENES) {
+    const semanticPlan = engine.radioVisualPerceptualScenePlan(sceneName, emptyDrives);
+    assert.equal(semanticPlan.motion, 0, "a saturated transient-rate meter without musical level cannot manufacture motion");
+    assert.deepEqual(
+      engine.radioVisualMusicSceneLayerPlan(sceneName, emptyDrives),
+      { bass: 0, mid: 0, treble: 0, tapestry: 0 },
+      `${sceneName} cannot turn transient-density saturation into geometry`,
+    );
+  }
+});
+
 test("Windows loopback signal contract rejects malformed and stale local data", () => {
   const now = 1_782_000_000_000;
   const valid = {
@@ -2098,6 +2242,54 @@ test("the square Studio source contains a centered 3:4 portrait-safe visual stag
   });
 });
 
+test("perceptual pilot renderers consume distinct compositional controls", () => {
+  const receiver = fs.readFileSync(path.join(projectRoot, "src/components/RadioVisualsReceiver.tsx"), "utf8");
+  const pilots = [
+    {
+      renderer: "drawSignalConstellation",
+      next: "chromaCoreAlpha",
+      scene: "signal_constellation",
+      controls: ["structure", "detail", "spectralFocus", "spread", "balance"],
+    },
+    {
+      renderer: "drawMatrixRain",
+      next: "drawTapeFeedback",
+      scene: "matrix_rain",
+      controls: ["foundation", "structure", "detail", "brightness", "spread", "balance"],
+    },
+    {
+      renderer: "drawOscilloscopeRibbons",
+      next: "drawLightningSwitchyard",
+      scene: "oscilloscope_ribbons",
+      controls: ["waveform", "foundation", "detail", "contrast", "spectralFocus", "spread"],
+    },
+    {
+      renderer: "drawLightningSwitchyard",
+      next: "drawPixelSortStorm",
+      scene: "lightning_switchyard",
+      controls: ["foundation", "structure", "detail", "brightness", "motion", "balance"],
+    },
+    {
+      renderer: "drawLaserLattice",
+      next: "drawParticlePressure",
+      scene: "laser_lattice",
+      controls: ["foundation", "structure", "detail", "brightness", "spectralFocus", "spread", "balance"],
+    },
+  ];
+  for (const pilot of pilots) {
+    const start = receiver.indexOf(`function ${pilot.renderer}`);
+    const end = receiver.indexOf(`function ${pilot.next}`, start + 10);
+    const renderer = receiver.slice(start, end);
+    assert.ok(start >= 0 && end > start, `${pilot.renderer} must remain independently implemented`);
+    assert.match(renderer, new RegExp(`radioVisualPerceptualScenePlan\\("${pilot.scene}", drives\\)`));
+    for (const control of pilot.controls) {
+      assert.match(renderer, new RegExp(`perceptual\\.${control}\\b`), `${pilot.renderer} must consume ${control} as geometry or motion`);
+    }
+  }
+  assert.match(receiver, /samplePerceptualWaveform\(perceptual\.waveform, progress\)/,
+    "the oscilloscope must use the bridge waveform shape instead of a volume-scaled synthetic sine alone");
+});
+
 test("permanent receiver is a pure portrait-safe effects surface with a stable link and bounded standby polling", () => {
   const receiver = fs.readFileSync(path.join(projectRoot, "src/components/RadioVisualsReceiver.tsx"), "utf8");
   const expansion = fs.readFileSync(path.join(projectRoot, "src/components/radio-visuals-music-expansion.ts"), "utf8");
@@ -2224,6 +2416,13 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.match(receiver, /radioVisualMusicSceneVisibility\(musicDrives\)/, "track scenes must retain a tested visible identity floor while expanding with all three audio bands");
   assert.equal((receiver.match(/drawEdgeSpectrum\(/g) ?? []).length, 2, "spectrum meters must only be defined and invoked by the music dispatcher");
   assert.equal((receiver.match(/drawOscilloscopeRibbons\(/g) ?? []).length, 2, "waveform ribbons must only be defined and invoked by the music dispatcher");
+  const perceptualPilotRenderers = new Set([
+    "drawOscilloscopeRibbons",
+    "drawMatrixRain",
+    "drawLightningSwitchyard",
+    "drawLaserLattice",
+    "drawSignalConstellation",
+  ]);
   for (const rendererName of [
     "drawEdgeSpectrum",
     "drawOscilloscopeRibbons",
@@ -2240,8 +2439,13 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
     const end = receiver.indexOf("\nfunction ", start + 10);
     const renderer = receiver.slice(start, end);
     assert.ok(start >= 0 && end > start, `${rendererName} must be independently implemented`);
-    for (const structuralDrive of ["bass", "mid", "treble", "bassPulse", "midPulse", "treblePulse", "tapestry", "tapestryPulse", "build", "progress"]) {
-      assert.match(renderer, new RegExp(`drives\\.${structuralDrive}\\b`), `${rendererName} must structurally respond to ${structuralDrive}`);
+    if (perceptualPilotRenderers.has(rendererName)) {
+      assert.match(renderer, /radioVisualPerceptualScenePlan\(/,
+        `${rendererName} must route legacy and richer audio through the pilot's accepted semantic adapter`);
+    } else {
+      for (const structuralDrive of ["bass", "mid", "treble", "bassPulse", "midPulse", "treblePulse", "tapestry", "tapestryPulse", "build", "progress"]) {
+        assert.match(renderer, new RegExp(`drives\\.${structuralDrive}\\b`), `${rendererName} must structurally respond to ${structuralDrive}`);
+      }
     }
     for (const audioLayer of ["bass", "mid", "treble", "tapestry"]) {
       assert.match(renderer, new RegExp(`layerPlan\\.${audioLayer}\\b`), `${rendererName} must consume its tested ${audioLayer} density budget`);

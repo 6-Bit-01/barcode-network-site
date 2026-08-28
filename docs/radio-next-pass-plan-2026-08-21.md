@@ -185,6 +185,25 @@ Rollback and deployment boundary:
 - The site contract may deploy before or after the helper because the feature block is optional and the schema remains v1. Install Audio Bridge 1.2.0 only after CI publishes the self-contained artifact.
 - Compare at least two real song traces before a later pilot PR maps these features into selected renderer families.
 
+### 11. Perceptual renderer and fullness pilot — 2026-08-28
+
+Implementation base: production commit `a5974ad` after PR `#407` (perceptual audio signal foundation). Item 10 remains the accepted optional bridge contract; this pass consumes it only in five representative sparse families.
+
+Acceptance:
+
+- Route validated `perceptual_audio_v1` frames through the existing music signal and reaction objects without changing the schema, local endpoint, 40 Hz poll, 30 FPS render cap, selected-family ownership, lifecycle, crossfade, or performer-safe field.
+- Pilot Oscilloscope Ribbons, Matrix Rain, Lightning Switchyard, Laser Lattice, and Signal Constellation. Keep the other thirty-five renderer implementations and every old-helper, analyser, and synthetic fallback path on the accepted legacy mapping.
+- Give each pilot a different weighted interpretation of sub-bass/bass, low-mid/mid, high-mid/presence, brilliance/air, and their independent onset envelopes. Stereo width/balance, spectral centroid, brightness, dynamic contrast, and waveform shape must alter geometry or motion rather than act as another global volume multiplier.
+- Raise only the five pilot density ceilings to the same bounded performance range as the existing dense families. Use a restrained sustained response so medium passages retain headroom while a genuinely full feature frame can reach the complete authored ceiling.
+- Do not use transient density as a primitive count or hit trigger. It may contribute only a small term gated by actual musical level; a saturated transient-density value with zero feature levels must resolve to zero motion and zero geometry.
+- Add numeric regressions proving that equal legacy loudness with different spectral/stereo/waveform features produces different pilot plans, full feature frames reach every calibrated ceiling, silence remains empty, legacy frames remain accepted, and each pilot consumes its intended perceptual controls.
+- Do not change Audio Bridge capture or installers, the commercial player on port `43121`, queue/Wheel/sponsor/payment/playback ownership, Redis or Vercel behavior, overlay access, public payloads, or production capability gates.
+
+Rollback and deployment boundary:
+
+- Ship the five mappings, their shared semantic adapter, bounded pilot ceilings, tests, and documentation as one independently revertible pull request with no migration or configuration change.
+- Re-open the saved Show Visuals source after deployment and compare at least two spectrally different songs through all five pilots. Judge both differentiation and fullness before expanding the adapter to any of the remaining thirty-five families.
+
 ## Change-control rule
 
 No pass may silently suppress another system, infer state ownership from event order, or alter queue/Wheel/music behavior outside its acceptance criteria. If a newly discovered dependency would require that expansion, stop that pass and document the dependency before implementation.

@@ -2,6 +2,7 @@ import type { RadioVisualCue } from "./radio-visuals-cues";
 import {
   RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION,
   RADIO_AUDIO_BRIDGE_FIXED_REFERENCE_CALIBRATION,
+  type RadioAudioBridgePerceptualFeatures,
   type RadioAudioBridgeSignal,
 } from "./radio-audio-bridge";
 import { hashRadioVisualToken } from "./radio-visuals-events";
@@ -140,6 +141,8 @@ export interface RadioVisualMusicSignal {
   progress: number;
   /** Zero-to-one position through the current four-bar phrase. */
   phrase: number;
+  /** Optional Audio Bridge 1.2 feature frame; absent for older helpers and fallback clocks. */
+  perceptual: RadioAudioBridgePerceptualFeatures | null;
 }
 
 export interface RadioVisualsPalette {
@@ -240,6 +243,96 @@ export function advanceRadioVisualMusicTransition(
 
 export type RadioVisualMusicScene = (typeof RADIO_VISUAL_MUSIC_SCENES)[number];
 
+/** Every loaded-track family consumes the optional Audio Bridge 1.2 frame. */
+export const RADIO_VISUAL_PERCEPTUAL_SCENES = RADIO_VISUAL_MUSIC_SCENES;
+
+export interface RadioVisualPerceptualSceneProfile {
+  /** Low-versus-body weighting for the scene's mass/depth channel. */
+  foundationLowWeight: number;
+  /** Body-versus-voice weighting for its structural channel. */
+  structureBodyWeight: number;
+  /** Voice-versus-high weighting for its fine-detail channel. */
+  detailVoiceWeight: number;
+  /** How much broad spectral agreement expands coupled composition. */
+  couplingMeanWeight: number;
+  /** Share of motion owned by real band arrivals. */
+  motionHitWeight: number;
+  /** Bounded stereo-width contribution to sustained structure. */
+  stereoStructureWeight: number;
+  /** Bounded brightness contribution to fine detail. */
+  brightnessDetailWeight: number;
+}
+
+function perceptualSceneProfile(
+  foundationLowWeight: number,
+  structureBodyWeight: number,
+  detailVoiceWeight: number,
+  couplingMeanWeight: number,
+  motionHitWeight: number,
+  stereoStructureWeight: number,
+  brightnessDetailWeight: number,
+): RadioVisualPerceptualSceneProfile {
+  return {
+    foundationLowWeight,
+    structureBodyWeight,
+    detailVoiceWeight,
+    couplingMeanWeight,
+    motionHitWeight,
+    stereoStructureWeight,
+    brightnessDetailWeight,
+  };
+}
+
+/**
+ * Scene-specific musical interpretations. The values are deliberately not a
+ * generic preset shared across the deck: heavy architectural families lean
+ * into low foundations, text/light families favor presence and air, fluid
+ * families favor motion, and spatial families make wider stereo images reveal
+ * more structure. The renderer still owns the visual language.
+ */
+export const RADIO_VISUAL_PERCEPTUAL_SCENE_PROFILES: Record<RadioVisualMusicScene, RadioVisualPerceptualSceneProfile> = {
+  edge_spectrum: perceptualSceneProfile(0.76, 0.48, 0.28, 0.22, 0.76, 0.035, 0.11),
+  oscilloscope_ribbons: perceptualSceneProfile(0.72, 0.62, 0.35, 0.28, 0.72, 0.07, 0.09),
+  tape_feedback: perceptualSceneProfile(0.58, 0.44, 0.46, 0.19, 0.68, 0.045, 0.08),
+  matrix_rain: perceptualSceneProfile(0.55, 0.35, 0.25, 0.24, 0.78, 0.055, 0.12),
+  ascii_terminal: perceptualSceneProfile(0.46, 0.31, 0.38, 0.17, 0.81, 0.03, 0.1),
+  pixel_sort_storm: perceptualSceneProfile(0.64, 0.27, 0.16, 0.3, 0.84, 0.05, 0.14),
+  lightning_switchyard: perceptualSceneProfile(0.82, 0.68, 0.18, 0.2, 0.82, 0.025, 0.13),
+  laser_lattice: perceptualSceneProfile(0.4, 0.2, 0.15, 0.31, 0.79, 0.085, 0.15),
+  particle_pressure: perceptualSceneProfile(0.88, 0.57, 0.33, 0.26, 0.74, 0.065, 0.07),
+  signal_constellation: perceptualSceneProfile(0.3, 0.45, 0.4, 0.34, 0.69, 0.1, 0.08),
+  crt_signal_breach: perceptualSceneProfile(0.61, 0.36, 0.21, 0.18, 0.83, 0.04, 0.13),
+  voxel_megacity: perceptualSceneProfile(0.9, 0.74, 0.42, 0.21, 0.66, 0.035, 0.06),
+  liquid_chrome: perceptualSceneProfile(0.67, 0.52, 0.29, 0.32, 0.7, 0.09, 0.12),
+  cellular_takeover: perceptualSceneProfile(0.71, 0.4, 0.36, 0.29, 0.73, 0.075, 0.09),
+  shattered_broadcast: perceptualSceneProfile(0.62, 0.33, 0.2, 0.16, 0.86, 0.04, 0.14),
+  barcode_foundry: perceptualSceneProfile(0.93, 0.69, 0.48, 0.23, 0.71, 0.025, 0.07),
+  recursive_portal: perceptualSceneProfile(0.79, 0.56, 0.41, 0.35, 0.65, 0.08, 0.08),
+  holographic_terrain: perceptualSceneProfile(0.84, 0.5, 0.24, 0.27, 0.72, 0.06, 0.11),
+  kinetic_glyph_engine: perceptualSceneProfile(0.52, 0.29, 0.34, 0.2, 0.8, 0.045, 0.12),
+  mechanical_iris: perceptualSceneProfile(0.91, 0.63, 0.44, 0.33, 0.67, 0.05, 0.07),
+  spectral_cathedral: perceptualSceneProfile(0.86, 0.66, 0.3, 0.36, 0.64, 0.07, 0.1),
+  ferrofluid_field: perceptualSceneProfile(0.89, 0.47, 0.23, 0.25, 0.77, 0.065, 0.1),
+  orbital_relay: perceptualSceneProfile(0.49, 0.54, 0.31, 0.37, 0.7, 0.11, 0.09),
+  data_loom: perceptualSceneProfile(0.44, 0.38, 0.27, 0.39, 0.75, 0.12, 0.11),
+  monolith_array: perceptualSceneProfile(0.96, 0.78, 0.5, 0.15, 0.63, 0.02, 0.05),
+  plasma_tendrils: perceptualSceneProfile(0.69, 0.42, 0.19, 0.3, 0.85, 0.08, 0.14),
+  signal_bloom: perceptualSceneProfile(0.74, 0.58, 0.37, 0.4, 0.68, 0.095, 0.1),
+  vector_swarm: perceptualSceneProfile(0.38, 0.25, 0.14, 0.28, 0.87, 0.105, 0.15),
+  moire_engine: perceptualSceneProfile(0.77, 0.6, 0.26, 0.38, 0.71, 0.075, 0.12),
+  eclipse_corona: perceptualSceneProfile(0.94, 0.51, 0.17, 0.24, 0.79, 0.055, 0.15),
+  mobius_relay: perceptualSceneProfile(0.73, 0.49, 0.32, 0.41, 0.67, 0.115, 0.09),
+  pendulum_choir: perceptualSceneProfile(0.92, 0.72, 0.45, 0.26, 0.76, 0.045, 0.06),
+  chladni_forge: perceptualSceneProfile(0.8, 0.43, 0.22, 0.42, 0.82, 0.07, 0.13),
+  tesseract_fold: perceptualSceneProfile(0.68, 0.59, 0.28, 0.43, 0.74, 0.1, 0.12),
+  kintsugi_mainframe: perceptualSceneProfile(0.95, 0.76, 0.47, 0.14, 0.62, 0.03, 0.06),
+  sonic_calligraphy: perceptualSceneProfile(0.57, 0.34, 0.18, 0.33, 0.88, 0.09, 0.14),
+  rube_signalworks: perceptualSceneProfile(0.87, 0.64, 0.39, 0.18, 0.78, 0.04, 0.08),
+  shadow_zoetrope: perceptualSceneProfile(0.6, 0.26, 0.13, 0.12, 0.89, 0.05, 0.15),
+  prism_labyrinth: perceptualSceneProfile(0.42, 0.23, 0.12, 0.44, 0.84, 0.125, 0.16),
+  helix_sequencer: perceptualSceneProfile(0.7, 0.55, 0.3, 0.45, 0.73, 0.13, 0.11),
+};
+
 export interface RadioVisualAudioDrives {
   presence: number;
   /** Broadband mass keeps a loud track visible without pretending every band is loud. */
@@ -261,6 +354,8 @@ export interface RadioVisualAudioDrives {
   build: number;
   progress: number;
   phrase: number;
+  /** Passed through untouched so every family can derive its own perceptual interpretation. */
+  perceptual: RadioAudioBridgePerceptualFeatures | null;
 }
 
 export const RADIO_VISUAL_BROADCAST_FX_TYPES = [
@@ -317,6 +412,29 @@ export interface RadioVisualMusicSceneLayerPlan {
   mid: number;
   treble: number;
   tapestry: number;
+}
+
+/**
+ * Semantic controls derived from the richer bridge frame. Renderers interpret
+ * these controls differently, so spectral shape and stereo image change the
+ * composition instead of merely scaling every primitive with volume.
+ */
+export interface RadioVisualPerceptualScenePlan {
+  enabled: boolean;
+  foundation: number;
+  structure: number;
+  detail: number;
+  coupling: number;
+  foundationHit: number;
+  structureHit: number;
+  detailHit: number;
+  brightness: number;
+  spectralFocus: number;
+  contrast: number;
+  motion: number;
+  spread: number;
+  balance: number;
+  waveform: readonly number[];
 }
 
 export const RADIO_VISUAL_MUSIC_PERIMETER_MOTIFS = {
@@ -641,6 +759,86 @@ export const RADIO_VISUAL_MUSIC_SCENE_LAYER_LIMITS: Record<RadioVisualMusicScene
   },
 };
 
+const RADIO_VISUAL_PERCEPTUAL_CUSTOM_LAYER_LIMITS: Partial<Record<RadioVisualMusicScene, RadioVisualMusicSceneLayerLimits>> = {
+  oscilloscope_ribbons: {
+    bass: { sustained: 8, pulse: 4 },
+    mid: { sustained: 10, pulse: 5 },
+    treble: { sustained: 10, pulse: 6 },
+    tapestry: { sustained: 6, pulse: 3 },
+  },
+  matrix_rain: {
+    bass: { sustained: 7, pulse: 3 },
+    mid: { sustained: 12, pulse: 5 },
+    treble: { sustained: 12, pulse: 7 },
+    tapestry: { sustained: 5, pulse: 2 },
+  },
+  lightning_switchyard: {
+    bass: { sustained: 9, pulse: 4 },
+    mid: { sustained: 12, pulse: 6 },
+    treble: { sustained: 10, pulse: 7 },
+    tapestry: { sustained: 6, pulse: 2 },
+  },
+  laser_lattice: {
+    bass: { sustained: 6, pulse: 3 },
+    mid: { sustained: 14, pulse: 5 },
+    treble: { sustained: 16, pulse: 8 },
+    tapestry: { sustained: 7, pulse: 2 },
+  },
+  signal_constellation: {
+    bass: { sustained: 7, pulse: 3 },
+    mid: { sustained: 14, pulse: 5 },
+    treble: { sustained: 16, pulse: 8 },
+    tapestry: { sustained: 7, pulse: 2 },
+  },
+};
+
+const RADIO_VISUAL_PERCEPTUAL_LAYER_FLOOR: RadioVisualMusicSceneLayerLimits = {
+  bass: { sustained: 8, pulse: 4 },
+  mid: { sustained: 11, pulse: 5 },
+  treble: { sustained: 12, pulse: 6 },
+  tapestry: { sustained: 5, pulse: 2 },
+};
+
+const RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION = {
+  foundation: { threshold: 0.014, ceiling: 0.56 },
+  structure: { threshold: 0.012, ceiling: 0.52 },
+  detail: { threshold: 0.01, ceiling: 0.46 },
+  coupling: { threshold: 0.012, ceiling: 0.5 },
+} as const;
+
+function liftedPerceptualLayerLimits(scene: RadioVisualMusicScene): RadioVisualMusicSceneLayerLimits {
+  const custom = RADIO_VISUAL_PERCEPTUAL_CUSTOM_LAYER_LIMITS[scene];
+  if (custom) return custom;
+  const legacy = RADIO_VISUAL_MUSIC_SCENE_LAYER_LIMITS[scene];
+  return {
+    bass: {
+      sustained: Math.max(legacy.bass.sustained, RADIO_VISUAL_PERCEPTUAL_LAYER_FLOOR.bass.sustained),
+      pulse: Math.max(legacy.bass.pulse, RADIO_VISUAL_PERCEPTUAL_LAYER_FLOOR.bass.pulse),
+    },
+    mid: {
+      sustained: Math.max(legacy.mid.sustained, RADIO_VISUAL_PERCEPTUAL_LAYER_FLOOR.mid.sustained),
+      pulse: Math.max(legacy.mid.pulse, RADIO_VISUAL_PERCEPTUAL_LAYER_FLOOR.mid.pulse),
+    },
+    treble: {
+      sustained: Math.max(legacy.treble.sustained, RADIO_VISUAL_PERCEPTUAL_LAYER_FLOOR.treble.sustained),
+      pulse: Math.max(legacy.treble.pulse, RADIO_VISUAL_PERCEPTUAL_LAYER_FLOOR.treble.pulse),
+    },
+    tapestry: {
+      sustained: Math.max(legacy.tapestry.sustained, RADIO_VISUAL_PERCEPTUAL_LAYER_FLOOR.tapestry.sustained),
+      pulse: Math.max(legacy.tapestry.pulse, RADIO_VISUAL_PERCEPTUAL_LAYER_FLOOR.tapestry.pulse),
+    },
+  };
+}
+
+/**
+ * Audio Bridge 1.2 frames give every family a bounded ceiling comparable to
+ * the established dense families. The legacy table remains authoritative for
+ * older helpers and synthetic/analyser fallback input.
+ */
+export const RADIO_VISUAL_PERCEPTUAL_SCENE_LAYER_LIMITS = Object.fromEntries(
+  RADIO_VISUAL_MUSIC_SCENES.map((scene) => [scene, liftedPerceptualLayerLimits(scene)]),
+) as Record<RadioVisualMusicScene, RadioVisualMusicSceneLayerLimits>;
+
 export interface RadioVisualAudioReactionState {
   bassSlow: number;
   midSlow: number;
@@ -792,6 +990,7 @@ export function radioVisualAudioDrives(signal: RadioVisualMusicSignal): RadioVis
     build: clampVisualValue(audioStructure * 0.82 + tapestry * 0.18),
     progress,
     phrase,
+    perceptual: signal.perceptual ?? null,
   };
 }
 
@@ -800,19 +999,183 @@ function dedicatedAudioLayerCount(
   pulse: number,
   limit: RadioVisualMusicSceneLayerLimit,
   threshold = 0.01,
+  responseExponent = 0.62,
 ): number {
   const maximum = limit.sustained + limit.pulse;
   if (maximum <= 0) return 0;
   const boundedLayer = clampVisualValue(layer);
   const sustainedProgress = Math.pow(
     clampVisualValue((boundedLayer - threshold) / Math.max(0.001, 1 - threshold)),
-    0.62,
+    responseExponent,
   );
   const sustained = boundedLayer > threshold && limit.sustained > 0
     ? 1 + Math.round(sustainedProgress * Math.max(0, limit.sustained - 1))
     : 0;
   const transient = Math.floor(clampVisualValue(pulse) * limit.pulse);
   return Math.min(maximum, sustained + transient);
+}
+
+const EMPTY_PERCEPTUAL_WAVEFORM = Object.freeze(Array.from({ length: 16 }, () => 0));
+
+/** Resolve one family's deliberately distinct perceptual interpretation. */
+export function radioVisualPerceptualScenePlan(
+  scene: RadioVisualMusicScene,
+  drives: RadioVisualAudioDrives,
+): RadioVisualPerceptualScenePlan {
+  const features = drives.perceptual;
+  if (!features) {
+    return {
+      enabled: false,
+      foundation: drives.bassLayer,
+      structure: drives.midLayer,
+      detail: drives.trebleLayer,
+      coupling: drives.tapestry,
+      foundationHit: drives.bassPulse,
+      structureHit: drives.midPulse,
+      detailHit: drives.treblePulse,
+      brightness: drives.treble,
+      spectralFocus: clampVisualValue(drives.mid * 0.45 + drives.treble * 0.55),
+      contrast: drives.body,
+      motion: Math.max(drives.bassPulse, drives.midPulse, drives.treblePulse),
+      spread: 0,
+      balance: 0,
+      waveform: EMPTY_PERCEPTUAL_WAVEFORM,
+    };
+  }
+
+  const levels = features.levels;
+  const onsets = features.onsets;
+  const low = clampVisualValue(levels.subBass * 0.58 + levels.bass * 0.42);
+  const body = clampVisualValue(levels.lowMid * 0.52 + levels.mid * 0.48);
+  const voice = clampVisualValue(levels.highMid * 0.48 + levels.presence * 0.52);
+  const high = clampVisualValue(levels.brilliance * 0.62 + levels.air * 0.38);
+  const lowHit = Math.max(onsets.subBass, onsets.bass);
+  const bodyHit = Math.max(onsets.lowMid, onsets.mid);
+  const voiceHit = Math.max(onsets.highMid, onsets.presence);
+  const highHit = Math.max(onsets.brilliance, onsets.air);
+  const profile = RADIO_VISUAL_PERCEPTUAL_SCENE_PROFILES[scene];
+  const foundationBase = low * profile.foundationLowWeight + body * (1 - profile.foundationLowWeight);
+  const structureBase = body * profile.structureBodyWeight + voice * (1 - profile.structureBodyWeight);
+  const detailBase = voice * profile.detailVoiceWeight + high * (1 - profile.detailVoiceWeight);
+  const foundation = clampVisualValue(foundationBase * (0.94 + features.dynamicRange * 0.06));
+  const structure = clampVisualValue(
+    structureBase * (1 - profile.stereoStructureWeight + features.stereoWidth * profile.stereoStructureWeight),
+  );
+  const detail = clampVisualValue(
+    detailBase * (1 - profile.brightnessDetailWeight + features.brightness * profile.brightnessDetailWeight),
+  );
+  const foundationHit = lowHit * profile.foundationLowWeight + bodyHit * (1 - profile.foundationLowWeight);
+  const structureHit = bodyHit * profile.structureBodyWeight + voiceHit * (1 - profile.structureBodyWeight);
+  const detailHit = voiceHit * profile.detailVoiceWeight + highHit * (1 - profile.detailVoiceWeight);
+  const sharedSpectrum = Math.min(foundation, structure, detail);
+  const spectrumMean = (foundation + structure + detail) / 3;
+  const coupling = clampVisualValue(
+    sharedSpectrum * (1 - profile.couplingMeanWeight + spectrumMean * profile.couplingMeanWeight),
+  );
+  const overall = clampVisualValue((foundation + structure + detail) / 3);
+  const strongestHit = Math.max(foundationHit, structureHit, detailHit);
+  const densityMotionWeight = 0.08;
+  const contrastMotionWeight = Math.max(0, 1 - profile.motionHitWeight - densityMotionWeight);
+
+  return {
+    enabled: true,
+    foundation,
+    structure,
+    detail,
+    coupling,
+    foundationHit: clampVisualValue(foundationHit),
+    structureHit: clampVisualValue(structureHit),
+    detailHit: clampVisualValue(detailHit),
+    brightness: features.brightness,
+    spectralFocus: features.spectralCentroid,
+    contrast: features.dynamicRange,
+    // Transient density is intentionally only a small motion term. A
+    // saturated rate meter cannot create geometry or fake repeated hits.
+    motion: clampVisualValue(
+      strongestHit * profile.motionHitWeight
+        + features.dynamicRange * overall * contrastMotionWeight
+        + features.transientDensity * overall * densityMotionWeight,
+    ),
+    spread: features.stereoWidth,
+    balance: features.stereoBalance,
+    waveform: features.waveform,
+  };
+}
+
+/**
+ * Feed the existing renderer hooks with one scene-specific semantic signal.
+ * This preserves every authored Canvas family while replacing the shared
+ * three-band interpretation only when the validated Audio Bridge 1.2 block is
+ * present. Older helpers and fallback sources return the original object.
+ */
+export function radioVisualPerceptualAudioDrives(
+  scene: RadioVisualMusicScene,
+  drives: RadioVisualAudioDrives,
+): RadioVisualAudioDrives {
+  const perceptual = radioVisualPerceptualScenePlan(scene, drives);
+  if (!perceptual.enabled) return drives;
+  const bassLayer = bandLayerActivation(
+    perceptual.foundation,
+    RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.foundation.threshold,
+    RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.foundation.ceiling,
+  );
+  const midLayer = bandLayerActivation(
+    perceptual.structure,
+    RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.structure.threshold,
+    RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.structure.ceiling,
+  );
+  const trebleLayer = bandLayerActivation(
+    perceptual.detail,
+    RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.detail.threshold,
+    RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.detail.ceiling,
+  );
+  const tapestry = bandLayerActivation(
+    perceptual.coupling,
+    RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.coupling.threshold,
+    RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.coupling.ceiling,
+  );
+  const tapestryPulse = clampVisualValue(
+    Math.min(perceptual.foundationHit, perceptual.structureHit, perceptual.detailHit),
+  );
+  const impact = clampVisualValue(
+    Math.max(perceptual.foundationHit, perceptual.structureHit, perceptual.detailHit),
+  );
+  const body = clampVisualValue(
+    (perceptual.foundation * 0.34
+      + perceptual.structure * 0.4
+      + perceptual.detail * 0.18
+      + perceptual.coupling * 0.08)
+      * (0.92 + perceptual.contrast * 0.08),
+  );
+  const presence = clampVisualValue(
+    body * 0.72
+      + Math.max(perceptual.foundation, perceptual.structure, perceptual.detail) * 0.2
+      + impact * 0.08,
+  );
+  return {
+    ...drives,
+    presence,
+    body,
+    bass: perceptual.foundation,
+    mid: perceptual.structure,
+    treble: perceptual.detail,
+    bassLayer,
+    midLayer,
+    trebleLayer,
+    tapestry,
+    impact,
+    bassPulse: perceptual.foundationHit,
+    midPulse: perceptual.structureHit,
+    treblePulse: perceptual.detailHit,
+    tapestryPulse,
+    build: clampVisualValue(
+      body * 0.32
+        + perceptual.foundation * 0.2
+        + perceptual.structure * 0.25
+        + perceptual.detail * 0.13
+        + perceptual.coupling * 0.1,
+    ),
+  };
 }
 
 /**
@@ -824,6 +1187,36 @@ export function radioVisualMusicSceneLayerPlan(
   scene: RadioVisualMusicScene,
   drives: RadioVisualAudioDrives,
 ): RadioVisualMusicSceneLayerPlan {
+  const perceptual = radioVisualPerceptualScenePlan(scene, drives);
+  if (perceptual.enabled) {
+    const limits = RADIO_VISUAL_PERCEPTUAL_SCENE_LAYER_LIMITS[scene];
+    const foundationLayer = bandLayerActivation(
+      perceptual.foundation,
+      RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.foundation.threshold,
+      RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.foundation.ceiling,
+    );
+    const structureLayer = bandLayerActivation(
+      perceptual.structure,
+      RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.structure.threshold,
+      RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.structure.ceiling,
+    );
+    const detailLayer = bandLayerActivation(
+      perceptual.detail,
+      RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.detail.threshold,
+      RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.detail.ceiling,
+    );
+    const couplingLayer = bandLayerActivation(
+      perceptual.coupling,
+      RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.coupling.threshold,
+      RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.coupling.ceiling,
+    );
+    return {
+      bass: dedicatedAudioLayerCount(foundationLayer, perceptual.foundationHit, limits.bass, 0.025, 1.12),
+      mid: dedicatedAudioLayerCount(structureLayer, perceptual.structureHit, limits.mid, 0.022, 1.08),
+      treble: dedicatedAudioLayerCount(detailLayer, perceptual.detailHit, limits.treble, 0.018, 1.04),
+      tapestry: dedicatedAudioLayerCount(couplingLayer, Math.min(perceptual.foundationHit, perceptual.structureHit, perceptual.detailHit), limits.tapestry, 0.02, 1.16),
+    };
+  }
   const limits = RADIO_VISUAL_MUSIC_SCENE_LAYER_LIMITS[scene];
   return {
     bass: dedicatedAudioLayerCount(drives.bassLayer, drives.bassPulse, limits.bass),
@@ -1420,6 +1813,7 @@ export function radioVisualsMusicSignal(
       peak: adaptiveAnalysis ? 0 : liveTransient,
       progress,
       phrase,
+      perceptual: adaptiveSilence ? null : bridgeSignal.features ?? null,
     };
   }
   return {
@@ -1434,6 +1828,7 @@ export function radioVisualsMusicSignal(
     peak,
     progress,
     phrase,
+    perceptual: null,
   };
 }
 

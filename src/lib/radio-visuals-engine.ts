@@ -1,6 +1,7 @@
 import type { RadioVisualCue } from "./radio-visuals-cues";
 import {
   RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION,
+  RADIO_AUDIO_BRIDGE_FIXED_REFERENCE_CALIBRATION,
   type RadioAudioBridgeSignal,
 } from "./radio-audio-bridge";
 import { hashRadioVisualToken } from "./radio-visuals-events";
@@ -1115,8 +1116,15 @@ export function radioVisualLoopbackLevel(
   analysisCalibration?: RadioAudioBridgeSignal["analysisCalibration"],
 ): number {
   const calibration = LOOPBACK_LEVEL_CALIBRATION[channel];
+  if (analysisCalibration === RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION) {
+    // Audio Bridge 1.1+ already combines absolute musical level with a
+    // per-band recent-range follower. Consume that live visual drive exactly
+    // once; another knee here would erase the quiet fades and vocal detail the
+    // adaptive analyser deliberately preserved.
+    return clampVisualValue(value);
+  }
   const restoredValue = clampVisualValue(value) * (
-    analysisCalibration === RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION
+    analysisCalibration === RADIO_AUDIO_BRIDGE_FIXED_REFERENCE_CALIBRATION
       ? LOOPBACK_FIXED_REFERENCE_RESTORE_SCALE[channel]
       : 1
   );
@@ -1133,8 +1141,11 @@ function radioVisualLoopbackPeak(
   value: number,
   analysisCalibration?: RadioAudioBridgeSignal["analysisCalibration"],
 ): number {
+  if (analysisCalibration === RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION) {
+    return clampVisualValue(value);
+  }
   const restoredValue = clampVisualValue(value) * (
-    analysisCalibration === RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION
+    analysisCalibration === RADIO_AUDIO_BRIDGE_FIXED_REFERENCE_CALIBRATION
       ? 1 / LOOPBACK_FIXED_REFERENCE_GAIN
       : 1
   );
@@ -1217,12 +1228,17 @@ export function radioVisualsMusicSignal(
   if (hasLoopback && bridgeSignal) {
     const confidence = clampVisualValue(bridgeSignal.tempoConfidence);
     const analysisCalibration = bridgeSignal.analysisCalibration;
-    const liveEnergy = radioVisualLoopbackLevel(bridgeSignal.energy, "energy", analysisCalibration);
-    const liveBass = radioVisualLoopbackLevel(bridgeSignal.bass, "bass", analysisCalibration);
-    const liveMid = radioVisualLoopbackLevel(bridgeSignal.mid, "mid", analysisCalibration);
-    const liveTreble = radioVisualLoopbackLevel(bridgeSignal.treble, "treble", analysisCalibration);
-    const livePeak = radioVisualLoopbackPeak(bridgeSignal.peak, analysisCalibration);
-    const liveBeat = Math.pow(clampVisualValue(bridgeSignal.beat), 1.15);
+    // Only the adaptive helper's lower, peak-aware silence flag is a hard
+    // zero. Earlier helpers used a higher energy-only threshold that could
+    // label a real fade-in silent while still publishing useful band values.
+    const adaptiveSilence = analysisCalibration === RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION
+      && bridgeSignal.silence;
+    const liveEnergy = adaptiveSilence ? 0 : radioVisualLoopbackLevel(bridgeSignal.energy, "energy", analysisCalibration);
+    const liveBass = adaptiveSilence ? 0 : radioVisualLoopbackLevel(bridgeSignal.bass, "bass", analysisCalibration);
+    const liveMid = adaptiveSilence ? 0 : radioVisualLoopbackLevel(bridgeSignal.mid, "mid", analysisCalibration);
+    const liveTreble = adaptiveSilence ? 0 : radioVisualLoopbackLevel(bridgeSignal.treble, "treble", analysisCalibration);
+    const livePeak = adaptiveSilence ? 0 : radioVisualLoopbackPeak(bridgeSignal.peak, analysisCalibration);
+    const liveBeat = adaptiveSilence ? 0 : Math.pow(clampVisualValue(bridgeSignal.beat), 1.15);
     const liveTransient = Math.max(liveBeat, livePeak);
     return {
       source: "windows_loopback",

@@ -5,6 +5,7 @@ namespace Barcode.AudioBridge;
 internal sealed class AudioAnalyzer
 {
     private const int FftSize = 2_048;
+    private const int AnalysisHopSize = FftSize / 2;
     private const int SpectrumBins = FftSize / 2;
     private readonly object _sync = new();
     private readonly double[] _window = new double[FftSize];
@@ -20,10 +21,19 @@ internal sealed class AudioAnalyzer
     private double _mid;
     private double _treble;
     private double _peak;
-    private double _energyFloor = 0.05;
-    private double _fluxFloor = 0.01;
+    private double _visualEnergy;
+    private double _visualBass;
+    private double _visualMid;
+    private double _visualTreble;
+    private double _visualPeak;
+    private double _energyFloor = 0.01;
+    private double _fluxFloor = 0.004;
     private double _bpm = 112;
     private double _tempoConfidence;
+    private readonly AdaptiveVisualLevel _energyLevel = new(minimumCeiling: 0.18, nominalCeiling: 0.38);
+    private readonly AdaptiveVisualLevel _bassLevel = new(minimumCeiling: 0.20, nominalCeiling: 0.50);
+    private readonly AdaptiveVisualLevel _midLevel = new(minimumCeiling: 0.14, nominalCeiling: 0.42);
+    private readonly AdaptiveVisualLevel _trebleLevel = new(minimumCeiling: 0.11, nominalCeiling: 0.32);
 
     public void AddSamples(
         byte[] buffer,
@@ -61,7 +71,13 @@ internal sealed class AudioAnalyzer
                 if (_windowIndex == FftSize)
                 {
                     AnalyzeWindow(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-                    _windowIndex = 0;
+                    // Keep half the previous FFT window. The 2,048-sample
+                    // frequency resolution stays intact while levels refresh
+                    // every 1,024 samples (~21 ms at 48 kHz) instead of every
+                    // ~43 ms. This materially reduces visible lag without
+                    // weakening bass-bin resolution.
+                    Array.Copy(_window, AnalysisHopSize, _window, 0, AnalysisHopSize);
+                    _windowIndex = AnalysisHopSize;
                 }
             }
         }
@@ -73,9 +89,9 @@ internal sealed class AudioAnalyzer
         {
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var age = _lastDataUnixMs == 0 ? long.MaxValue : Math.Max(0, now - _lastDataUnixMs);
-            var silence = age > 650 || _energy < 0.008;
+            var silence = age > 650 || (_energy < 0.0015 && _peak < 0.002);
             var decay = age <= 650 ? 1 : Math.Exp(-(age - 650) / 480d);
-            var beat = _lastBeatUnixMs == 0 ? 0 : Math.Exp(-Math.Max(0, now - _lastBeatUnixMs) / 145d);
+            var beat = _lastBeatUnixMs == 0 ? 0 : Math.Exp(-Math.Max(0, now - _lastBeatUnixMs) / 120d);
             if (silence) beat = 0;
 
             return new AudioSignal(
@@ -87,11 +103,11 @@ internal sealed class AudioAnalyzer
                 captureActive,
                 _sequence >= 3,
                 silence,
-                Unit(_energy * decay),
-                Unit(_bass * decay),
-                Unit(_mid * decay),
-                Unit(_treble * decay),
-                Unit(_peak * decay),
+                Unit(_visualEnergy * decay),
+                Unit(_visualBass * decay),
+                Unit(_visualMid * decay),
+                Unit(_visualTreble * decay),
+                Unit(_visualPeak * decay),
                 Unit(beat),
                 Math.Clamp(_bpm, 40, 240),
                 Unit(_tempoConfidence));
@@ -126,24 +142,36 @@ internal sealed class AudioAnalyzer
         var rms = Math.Sqrt(squared / FftSize);
         var energy = Unit(Math.Pow(rms * 3.9, 0.72));
         var bass = BandEnergy(spectrum, 30, 250, 5.4);
-        var mid = BandEnergy(spectrum, 250, 2_400, 4.6);
-        var treble = BandEnergy(spectrum, 2_400, Math.Min(14_000, _sampleRate / 2d), 4.2);
+        // Visual bands deliberately overlap at their shoulders. Vocals carry
+        // useful body below 250 Hz and intelligibility above 2.4 kHz; the old
+        // hard split could therefore leave vocal-led passages with no owned
+        // visual layer even though the song was plainly audible.
+        var mid = BandEnergy(spectrum, 180, 4_000, 4.35);
+        var treble = BandEnergy(spectrum, 2_800, Math.Min(16_000, _sampleRate / 2d), 4.1);
         var normalizedFlux = Unit(Math.Pow(flux * 3.2, 0.58));
 
-        _energy = Smooth(_energy, energy, 0.62, 0.22);
-        _bass = Smooth(_bass, bass, 0.65, 0.2);
-        _mid = Smooth(_mid, mid, 0.54, 0.2);
-        _treble = Smooth(_treble, treble, 0.48, 0.24);
-        _peak = Math.Max(Unit(peak), _peak * 0.72);
-        _energyFloor = _energyFloor * 0.965 + energy * 0.035;
-        _fluxFloor = _fluxFloor * 0.955 + normalizedFlux * 0.045;
+        _energy = Smooth(_energy, energy, 0.72, 0.28);
+        _bass = Smooth(_bass, bass, 0.74, 0.24);
+        _mid = Smooth(_mid, mid, 0.8, 0.27);
+        _treble = Smooth(_treble, treble, 0.82, 0.3);
+        _peak = Math.Max(Unit(peak), _peak * 0.58);
+
+        var audibility = MusicalAudibility(_energy, _peak);
+        _visualEnergy = _energyLevel.Map(_energy, audibility);
+        _visualBass = _bassLevel.Map(_bass, audibility);
+        _visualMid = _midLevel.Map(_mid, audibility);
+        _visualTreble = _trebleLevel.Map(_treble, audibility);
+        _visualPeak = VisualPeak(_peak, audibility);
+
+        _energyFloor = _energyFloor * 0.982 + energy * 0.018;
+        _fluxFloor = _fluxFloor * 0.975 + normalizedFlux * 0.025;
         _lastDataUnixMs = nowUnixMs;
         _sequence += 1;
 
         var sinceBeat = _lastBeatUnixMs == 0 ? long.MaxValue : nowUnixMs - _lastBeatUnixMs;
-        var energetic = energy > Math.Max(0.075, _energyFloor * 1.18);
-        var transient = normalizedFlux > Math.Max(0.055, _fluxFloor * 1.28);
-        if (sinceBeat >= 240 && energetic && transient)
+        var energetic = energy > Math.Max(0.006, _energyFloor * 1.08);
+        var transient = normalizedFlux > Math.Max(0.008, _fluxFloor * 1.15);
+        if (sinceBeat >= 180 && energetic && transient)
         {
             RegisterBeat(nowUnixMs, sinceBeat);
         }
@@ -248,6 +276,68 @@ internal sealed class AudioAnalyzer
         while (bpm < 72) bpm *= 2;
         while (bpm > 176) bpm /= 2;
         return bpm;
+    }
+
+    private static double Unit(double value) => double.IsFinite(value) ? Math.Clamp(value, 0, 1) : 0;
+
+    private static double MusicalAudibility(double energy, double peak)
+    {
+        var evidence = Math.Max(Unit(energy), Unit(peak));
+        if (evidence <= 0.001) return 0;
+        return Unit(Math.Pow((evidence - 0.001) / 0.05, 0.45));
+    }
+
+    private static double VisualPeak(double peak, double audibility)
+    {
+        if (peak <= 0.001 || audibility <= 0) return 0;
+        return Unit(Math.Pow(Unit(peak / 0.35), 0.75) * (0.38 + audibility * 0.62));
+    }
+}
+
+/// <summary>
+/// Maps one already-compressed analyser channel against both a stable musical
+/// reference and its own recent peak. Absolute level preserves real song
+/// dynamics; the slowly adapting peak keeps quieter masters, fade-ins, and
+/// vocal-dominant bands visibly legible without turning digital silence into
+/// synthetic motion.
+/// </summary>
+internal sealed class AdaptiveVisualLevel
+{
+    private readonly double _minimumCeiling;
+    private readonly double _nominalCeiling;
+    private double _recentCeiling;
+
+    public AdaptiveVisualLevel(double minimumCeiling, double nominalCeiling)
+    {
+        _minimumCeiling = minimumCeiling;
+        _nominalCeiling = nominalCeiling;
+        _recentCeiling = minimumCeiling;
+    }
+
+    public double Map(double value, double audibility)
+    {
+        var input = Unit(value);
+        var audible = Unit(audibility);
+        if (input <= 0.001 || audible <= 0) return 0;
+
+        if (input > _recentCeiling)
+        {
+            _recentCeiling += (input - _recentCeiling) * 0.78;
+        }
+        else
+        {
+            // Roughly a seven-second release at the 1,024-sample analysis hop.
+            // This follows song sections while refusing to pump on each word.
+            _recentCeiling = Math.Max(_minimumCeiling, _recentCeiling * 0.997);
+        }
+
+        var relative = Math.Pow(Unit(input / Math.Max(_minimumCeiling, _recentCeiling)), 0.72);
+        var absolute = Math.Pow(Unit(input / _nominalCeiling), 0.86);
+        // Relative lift is deliberately capped below full scale. It reveals a
+        // quiet but real band while the absolute branch preserves the audible
+        // difference between a fade, a verse, and a loud chorus.
+        var adaptive = relative * (0.22 + audible * 0.33);
+        return Unit(Math.Max(absolute, adaptive));
     }
 
     private static double Unit(double value) => double.IsFinite(value) ? Math.Clamp(value, 0, 1) : 0;

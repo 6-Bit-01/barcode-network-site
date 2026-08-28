@@ -684,7 +684,7 @@ test("fixed-reference Bridge frames restore the accepted full-scale Show Visuals
   const raw = engine.radioVisualsMusicSignal(snapshot, 24, 100, rehearsalFrame);
   const fixedReference = engine.radioVisualsMusicSignal(snapshot, 24, 100, {
     ...rehearsalFrame,
-    analysisCalibration: audioBridge.RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION,
+    analysisCalibration: audioBridge.RADIO_AUDIO_BRIDGE_FIXED_REFERENCE_CALIBRATION,
   });
   const acceptedFullScale = engine.radioVisualsMusicSignal(snapshot, 24, 100, acceptedFullScaleFrame);
 
@@ -707,7 +707,7 @@ test("fixed-reference Bridge frames restore the accepted full-scale Show Visuals
 
   const fixedReferenceSilence = engine.radioVisualsMusicSignal(snapshot, 24, 100, {
     ...rehearsalFrame,
-    analysisCalibration: audioBridge.RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION,
+    analysisCalibration: audioBridge.RADIO_AUDIO_BRIDGE_FIXED_REFERENCE_CALIBRATION,
     silence: true,
     energy: 0.007,
     bass: 0.009,
@@ -726,6 +726,42 @@ test("fixed-reference Bridge frames restore the accepted full-scale Show Visuals
     ) < 0.001,
     "restoring musical strength must not turn the Bridge noise floor into visible motion",
   );
+});
+
+test("adaptive Bridge frames pass quiet fades and vocal bands through without a second suppressive knee", () => {
+  const adaptive = audioBridge.RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION;
+  const levels = {
+    energy: 0.09,
+    bass: 0.035,
+    mid: 0.31,
+    treble: 0.12,
+  };
+
+  for (const [channel, value] of Object.entries(levels)) {
+    assert.equal(
+      engine.radioVisualLoopbackLevel(value, channel, adaptive),
+      value,
+      `${channel} must consume the helper's adaptive value exactly once`,
+    );
+  }
+
+  const fadeDrives = engine.radioVisualAudioDrives({
+    source: "windows_loopback",
+    bpm: 112,
+    energy: levels.energy,
+    bass: levels.bass,
+    mid: levels.mid,
+    treble: levels.treble,
+    beat: 0,
+    accent: 0.08,
+    peak: 0.08,
+    progress: 0.1,
+    phrase: 0.2,
+  });
+  assert.ok(fadeDrives.presence > 0.12, "a real quiet fade must create visual presence");
+  assert.ok(fadeDrives.midLayer > 0.35, "a vocal-dominant adaptive frame must reveal its mid system");
+  assert.ok(fadeDrives.trebleLayer > 0.1, "vocal intelligibility must retain treble detail");
+  assert.ok(fadeDrives.bassLayer > 0, "a quiet real bass band must not be rounded down to no layer");
 });
 
 test("Windows levels become quiet, isolated band layers and a full-spectrum tapestry end to end", () => {
@@ -865,6 +901,20 @@ test("Windows loopback signal contract rejects malformed and stale local data", 
     tempoConfidence: 0.64,
   };
   assert.deepEqual(audioBridge.normalizeRadioAudioBridgeSignal(valid), valid);
+  assert.equal(
+    audioBridge.normalizeRadioAudioBridgeSignal({
+      ...valid,
+      analysisCalibration: audioBridge.RADIO_AUDIO_BRIDGE_FIXED_REFERENCE_CALIBRATION,
+    })?.analysisCalibration,
+    audioBridge.RADIO_AUDIO_BRIDGE_FIXED_REFERENCE_CALIBRATION,
+  );
+  assert.equal(
+    audioBridge.normalizeRadioAudioBridgeSignal({
+      ...valid,
+      analysisCalibration: audioBridge.RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION,
+    })?.analysisCalibration,
+    audioBridge.RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION,
+  );
   assert.deepEqual(audioBridge.freshRadioAudioBridgeSignal(valid, now), valid);
   assert.equal(audioBridge.freshRadioAudioBridgeSignal({ ...valid, capturedAtUnixMs: now - 1_201 }, now), null);
   assert.equal(audioBridge.normalizeRadioAudioBridgeSignal({ ...valid, energy: 4 }), null);
@@ -892,7 +942,7 @@ test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a
   assert.match(project, /<TargetFramework>net8\.0-windows<\/TargetFramework>/);
   assert.match(project, /<SelfContained>true<\/SelfContained>/);
   assert.match(project, /<PublishSingleFile>true<\/PublishSingleFile>/);
-  assert.match(project, /<Version>1\.0\.4<\/Version>/, "the visual executable must retain the accepted 20-family checkpoint build contract");
+  assert.match(project, /<Version>1\.1\.0<\/Version>/, "the adaptive visual executable must have an unmistakable upgrade version");
   assert.match(project, /PackageReference Include="NAudio" Version="2\.3\.0"/);
   assert.match(commercialProject, /<AssemblyName>BARCODE\.CommercialPlayer<\/AssemblyName>/);
   assert.match(capture, /GetDefaultAudioEndpoint\(DataFlow\.Render, Role\.Multimedia\)/, "capture must resolve the default Windows Speakers render endpoint");
@@ -903,6 +953,9 @@ test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a
   assert.match(capture, /SampleGainFromEndpointDecibels[\s\S]*_analyzer\.AddSamples/, "endpoint attenuation must be removed before analysis");
   assert.match(analyzer, /Math\.Pow\(10, decibels \/ 20d\)[\s\S]*1 \/ endpointAmplitude/, "endpoint decibels must be converted to inverse linear sample gain");
   assert.match(analyzer, /EndpointVolumeCompensation\.Apply[\s\S]*AnalyzeWindow/, "normalization must happen before RMS, FFT, peak, flux, and beat analysis");
+  assert.match(analyzer, /AnalysisHopSize = FftSize \/ 2[\s\S]*Array\.Copy\(_window, AnalysisHopSize/, "the analyser must publish overlapped FFT updates instead of waiting a full window");
+  assert.match(analyzer, /AdaptiveVisualLevel[\s\S]*recent peak[\s\S]*absolute level/i, "live levels must combine recent-range response with real absolute dynamics");
+  assert.match(analyzer, /BandEnergy\(spectrum, 180, 4_000[\s\S]*BandEnergy\(spectrum, 2_800/, "vocal body and intelligibility must reach the visual mid and treble shoulders");
   assert.match(capture, /TouchClient\(\)[\s\S]*EnsureStarted\(\)/, "visual-source requests must wake capture automatically");
   assert.match(capture, /ClientIdleCaptureStopMilliseconds/, "capture must stop after the visual source becomes idle");
   assert.match(capture, /no Speakers audio detected[\s\S]*Speakers audio detected/, "helper status must report actual audio detection instead of capture startup");
@@ -915,7 +968,7 @@ test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a
   assert.doesNotMatch(application, /CaptureActive \? "BARCODE Audio Bridge — LIVE"/, "active capture without audible samples must not show a false LIVE tray tooltip");
   assert.match(analyzer, /WaveFormatExtensible[\s\S]*ToStandardWaveFormat\(\)/, "32-bit extensible PCM must not be decoded as IEEE float");
   assert.doesNotMatch(analyzer, /WaveFormatEncoding\.Extensible && format\.BitsPerSample == 32/);
-  assert.match(analyzer, /_energy < 0\.008/, "quiet but audible speaker output must remain available to the visuals");
+  assert.match(analyzer, /_energy < 0\.0015 && _peak < 0\.002/, "quiet fade-ins must remain available while digital silence stays gated");
   assert.match(server, /new TcpListener\(IPAddress\.Loopback, BridgeConstants\.Port\)/, "the signal endpoint must never bind to the LAN");
   assert.match(server, /Task\.Run\(\(\) => HandleClient\(client, cancellationToken\), cancellationToken\)/, "visual signal clients retain the approved PR #374 request handling");
   assert.doesNotMatch(server, /Commercial|commercial|\/commercials|HttpByteRange/, "the visual signal server must contain no sponsor-player code");
@@ -1266,7 +1319,9 @@ test("additive recovery cannot gate, transform, or replace the checkpoint render
   );
   assert.match(receiver, /drawRadioVisualMusicCenterEmbellishments[\s\S]*applyPerformerIntrusionField\(intrusionLayer\.context, width, height\)/, "center events must remain behind the existing bounded intrusion mask");
   assert.equal(engine.RADIO_VISUAL_MUSIC_OUTPUT_GAIN, 2, "the accepted checkpoint output gain cannot change");
-  assert.equal(audioBridge.RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION, "fixed_reference_v1", "the corrected Windows volume-neutral calibration must remain active");
+  assert.equal(audioBridge.RADIO_AUDIO_BRIDGE_FIXED_REFERENCE_CALIBRATION, "fixed_reference_v1", "the corrected legacy Windows volume-neutral calibration must remain compatible");
+  assert.equal(audioBridge.RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION, "adaptive_reference_v2", "the current helper must identify its adaptive per-band visual response");
+  assert.equal(audioBridge.RADIO_AUDIO_BRIDGE_POLL_INTERVAL_MS, 40, "the local signal handoff must refresh at 25 Hz");
 });
 
 test("broadcast FX exhaust a twelve-effect shuffle bag before repeating", () => {
@@ -1797,6 +1852,9 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.match(receiver, /PALETTE_TRANSITION_MS = 2_400|PARTICLE_TRANSITION_MS = 2_000|radioVisualCueEnvelope/);
   assert.match(receiver, /smoothMusicSignal|radioVisualsMusicSignal/);
   assert.match(receiver, /RADIO_AUDIO_BRIDGE_URL|4_000|data-audio-bridge/);
+  assert.match(receiver, /energy: channel\(current\.energy, target\.energy, 24, 190\)/, "the browser must not reintroduce a slow attack after adaptive native analysis");
+  assert.match(receiver, /mid: channel\(current\.mid, target\.mid, 14, 135\)/, "vocal-band updates must reach the renderer on the fast display follower");
+  assert.match(receiver, /peak: channel\(current\.peak, target\.peak, 6, 75\)/, "transient display attack must remain below one 40 ms bridge poll interval");
   assert.doesNotMatch(receiver, /targetAddressSpace/, "literal 127.0.0.1 must remain compatible with TikTok Studio's embedded Chromium version");
   assert.match(receiver, /if \(!snapshot\.sessionActive\)[\s\S]*setAudioBridgeConnection\("idle"\)/);
   assert.match(engineSource, /source: "analyser" \| "timeline" \| "windows_loopback"/);

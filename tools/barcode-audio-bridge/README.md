@@ -23,9 +23,9 @@ Double-clicking the accepted build replaces the installed copy and relaunches it
 
 ## Volume handling
 
-The bridge analyzes the program signal rather than the operator's Windows listening level. It reads the default Speakers endpoint level in decibels, removes that known attenuation from each loopback buffer, and places the reconstructed program at one fixed -9 dB internal analysis reference before calculating energy, bass, mids, treble, peak, flux, or beat.
+The bridge analyzes the program signal rather than the operator's Windows listening level. It reads the default Speakers endpoint level in decibels, removes that known attenuation from each loopback buffer, and places the reconstructed program at one fixed -9 dB internal analysis reference before calculating energy, bass, mids, treble, peak, flux, or beat. Its 2,048-sample FFT now advances in overlapping 1,024-sample hops, and each output band combines real absolute level with a bounded recent-range follower. Quiet fade-ins and vocal-led passages therefore remain legible while loud sections still earn materially stronger motion.
 
-Version 1.0.4 is the accepted `fixed_reference_v1` visual-only checkpoint used with the completed 20-family renderer.
+Version 1.1.0 publishes `adaptive_reference_v2`. The website remains compatible with the earlier `fixed_reference_v1` 1.0.4 helper, but 1.1.0 is required for the faster adaptive fade/vocal response. The twenty completed visual-family renderers are unchanged.
 
 Muted or digitally silent output remains silent; the bridge never invents audio activity. If Windows briefly cannot provide the endpoint-volume reading during a device or driver transition, that frame is analyzed at neutral gain instead of interrupting capture.
 

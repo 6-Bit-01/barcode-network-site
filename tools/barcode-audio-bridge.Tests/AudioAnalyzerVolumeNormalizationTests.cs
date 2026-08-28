@@ -53,15 +53,16 @@ public sealed class AudioAnalyzerVolumeNormalizationTests
     }
 
     [Fact]
-    public void FixedAnalysisReferencePreventsFullScaleProgramFromStartingAtTheCeiling()
+    public void AdaptiveVisualResponseMakesFullScaleProgramStrongWithoutFlatteningEveryChannel()
     {
         var signal = Analyze(endpointDecibels: 0, amplitude: 1, windowCount: 24);
 
-        Assert.InRange(signal.Energy, 0.2, 0.4);
-        Assert.InRange(signal.Bass, 0.2, 0.5);
-        Assert.InRange(signal.Mid, 0.15, 0.4);
-        Assert.InRange(signal.Treble, 0.1, 0.3);
-        Assert.InRange(signal.Peak, 0.05, 0.2);
+        Assert.InRange(signal.Energy, 0.55, 1);
+        Assert.InRange(signal.Bass, 0.5, 1);
+        Assert.InRange(signal.Mid, 0.4, 1);
+        Assert.InRange(signal.Treble, 0.3, 1);
+        Assert.InRange(signal.Peak, 0.15, 0.85);
+        Assert.True(signal.Bass > signal.Treble, "the adaptive map must not flatten spectral balance");
     }
 
     [Fact]

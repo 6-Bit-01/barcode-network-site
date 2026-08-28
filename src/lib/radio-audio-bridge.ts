@@ -1,7 +1,8 @@
 export const RADIO_AUDIO_BRIDGE_SCHEMA_VERSION = "barcode_audio_signal_v1" as const;
-export const RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION = "fixed_reference_v1" as const;
+export const RADIO_AUDIO_BRIDGE_FIXED_REFERENCE_CALIBRATION = "fixed_reference_v1" as const;
+export const RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION = "adaptive_reference_v2" as const;
 export const RADIO_AUDIO_BRIDGE_URL = "http://127.0.0.1:43120/v1/signal";
-export const RADIO_AUDIO_BRIDGE_POLL_INTERVAL_MS = 100;
+export const RADIO_AUDIO_BRIDGE_POLL_INTERVAL_MS = 40;
 export const RADIO_AUDIO_BRIDGE_RETRY_INTERVAL_MS = 2_000;
 export const RADIO_AUDIO_BRIDGE_STALE_AFTER_MS = 1_200;
 
@@ -9,7 +10,9 @@ export interface RadioAudioBridgeSignal {
   schemaVersion: typeof RADIO_AUDIO_BRIDGE_SCHEMA_VERSION;
   source: "windows_loopback";
   /** Absent only on the legacy full-scale 1.0.3 helper. */
-  analysisCalibration?: typeof RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION;
+  analysisCalibration?:
+    | typeof RADIO_AUDIO_BRIDGE_FIXED_REFERENCE_CALIBRATION
+    | typeof RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION;
   capturedAtUnixMs: number;
   sequence: number;
   captureActive: boolean;
@@ -51,6 +54,7 @@ export function normalizeRadioAudioBridgeSignal(value: unknown): RadioAudioBridg
 
   const analysisCalibration = candidate.analysisCalibration;
   if (analysisCalibration !== undefined
+    && analysisCalibration !== RADIO_AUDIO_BRIDGE_FIXED_REFERENCE_CALIBRATION
     && analysisCalibration !== RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION) return null;
 
   const capturedAtUnixMs = finiteNumber(candidate.capturedAtUnixMs);
@@ -82,7 +86,8 @@ export function normalizeRadioAudioBridgeSignal(value: unknown): RadioAudioBridg
   return {
     schemaVersion: RADIO_AUDIO_BRIDGE_SCHEMA_VERSION,
     source: "windows_loopback",
-    ...(analysisCalibration === RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION
+    ...(analysisCalibration === RADIO_AUDIO_BRIDGE_FIXED_REFERENCE_CALIBRATION
+      || analysisCalibration === RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION
       ? { analysisCalibration }
       : {}),
     capturedAtUnixMs,

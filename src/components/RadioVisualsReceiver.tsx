@@ -180,16 +180,17 @@ function smoothMusicSignal(current: RadioVisualMusicSignal, target: RadioVisualM
   return {
     source: target.source,
     bpm: channel(current.bpm, target.bpm, 420, 720),
-    // The native helper already smooths its analyser values. This shorter
-    // browser follower preserves impact while still easing releases between
-    // the helper's 100 ms updates.
-    energy: channel(current.energy, target.energy, 55, 260),
-    bass: channel(current.bass, target.bass, 45, 240),
-    mid: channel(current.mid, target.mid, 38, 180),
-    treble: channel(current.treble, target.treble, 25, 110),
-    beat: channel(current.beat, target.beat, 10, 70),
-    accent: channel(current.accent, target.accent, 12, 85),
-    peak: channel(current.peak, target.peak, 10, 100),
+    // The adaptive native helper now refreshes about every 21 ms and the
+    // receiver reads it at 25 Hz. Keep only a short display follower here so
+    // Studio sees fade-ins, words, and transients promptly without flickering
+    // between adjacent samples.
+    energy: channel(current.energy, target.energy, 24, 190),
+    bass: channel(current.bass, target.bass, 20, 175),
+    mid: channel(current.mid, target.mid, 14, 135),
+    treble: channel(current.treble, target.treble, 10, 90),
+    beat: channel(current.beat, target.beat, 6, 65),
+    accent: channel(current.accent, target.accent, 7, 70),
+    peak: channel(current.peak, target.peak, 6, 75),
     progress: target.progress,
     phrase: target.phrase,
   };
@@ -4315,7 +4316,7 @@ export function RadioVisualsReceiver() {
       controller = new AbortController();
       // The first Studio request can include Chromium's local-network
       // permission/preflight work. Give that handshake time to finish; steady
-      // 10 Hz polling is still scheduled only after a valid signal arrives.
+      // 25 Hz polling is still scheduled only after a valid signal arrives.
       const abortId = window.setTimeout(() => controller?.abort(), 4_000);
       try {
         // 127.0.0.1 is an explicit loopback address, so Chromium already knows

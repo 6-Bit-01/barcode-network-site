@@ -1164,8 +1164,9 @@ export function radioVisualsMusicSignal(
   const fallbackRhythm = radioVisualFallbackRhythm(seed);
   const rhythmProfile = FALLBACK_RHYTHM_PROFILES[fallbackRhythm];
   const bpm = rhythmProfile.bpmMin + Math.round(seededUnit(seed, 30_001) * rhythmProfile.bpmSpan);
-  const playing = snapshot.player?.playbackState === "playing";
-  const paused = snapshot.player?.playbackState === "paused";
+  const playbackState = snapshot.player?.playbackState ?? snapshot.timeline?.playbackState;
+  const playing = playbackState === "playing";
+  const paused = playbackState === "paused";
   const automaticTrack = snapshot.visualMode === "track" && !snapshot.player;
   const anchoredTrackSeconds = typeof trackElapsedSeconds === "number" && Number.isFinite(trackElapsedSeconds)
     ? Math.max(0, trackElapsedSeconds)
@@ -1186,7 +1187,7 @@ export function radioVisualsMusicSignal(
   const patternHit = seededUnit(seed + bar, 30_100 + sixteenthStep) > patternThreshold;
   const sixteenth = patternHit ? rhythmPulse(sixteenthPosition + rhythmProfile.swing * (sixteenthStep % 2 ? 0.2 : 0), 7.4 + rhythmProfile.hats * 2.2) : 0;
   const barBreath = 0.5 + 0.5 * Math.sin(beatPosition / 4 * Math.PI * 2 + seededUnit(seed, 30_003) * Math.PI * 2);
-  const knownDuration = snapshot.player?.durationSeconds;
+  const knownDuration = snapshot.player?.durationSeconds ?? snapshot.timeline?.durationSeconds;
   const fallbackProgressBeats = 384 + Math.floor(seededUnit(seed, 30_004) * 256);
   const fallbackProgressSeconds = snapshot.player && Number.isFinite(playbackSeconds)
     ? Math.max(0, playbackSeconds)

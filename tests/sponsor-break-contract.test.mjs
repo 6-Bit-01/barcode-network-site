@@ -31,6 +31,14 @@ test("website sponsor duration matches the exact 11-minute local-player contract
   assert.equal(contract.SPONSOR_BREAK_DURATION_SECONDS, 11 * 60);
 });
 
+test("commercial-player preflight blocks the website timer when the separate process is unavailable", async () => {
+  await contract.requireLocalCommercialPlayer(async () => ({ ok: true, status: 204 }));
+  await assert.rejects(
+    () => contract.requireLocalCommercialPlayer(async () => ({ ok: false, status: 503 })),
+    /Commercial Player preflight returned 503/,
+  );
+});
+
 test("only an authoritative running state with a valid start time acknowledges local playback", () => {
   assert.equal(contract.isSponsorBreakStartAcknowledged(state("running")), true);
   assert.equal(contract.isSponsorBreakStartAcknowledged(state("running", null)), false);

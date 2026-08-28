@@ -42,6 +42,11 @@ import {
   RADIO_AUDIO_BRIDGE_URL,
 } from "@/lib/radio-audio-bridge";
 import type { RadioAudioBridgeSignal } from "@/lib/radio-audio-bridge";
+import {
+  advanceRadioVisualLiveDynamics,
+  radioVisualLiveDynamicsInitialState,
+} from "@/lib/radio-visuals-live-dynamics";
+import type { RadioVisualLiveDynamicsState } from "@/lib/radio-visuals-live-dynamics";
 import { radioVisualMusicEmbellishmentPlan } from "@/lib/radio-visuals-music-embellishments";
 import { radioVisualPreviewEnvelope, radioVisualPreviewProgress, RADIO_VISUAL_PREVIEW_DURATION_MS } from "@/lib/radio-visuals-preview";
 import {
@@ -69,7 +74,7 @@ interface VisualSignalMemory {
   wheelSpinsOwed: number;
 }
 
-interface VisualRuntime {
+interface VisualRuntime extends RadioVisualLiveDynamicsState {
   lastFrameMs: number;
   wheelPhase: number;
   wheelVelocity: number;
@@ -116,6 +121,7 @@ const PALETTE_TRANSITION_MS = 2_400;
 const PARTICLE_TRANSITION_MS = 2_000;
 const TRACK_BLOOM_MS = 1_700;
 const INITIAL_AUDIO_REACTION = radioVisualAudioReactionInitialState();
+const INITIAL_LIVE_DYNAMICS = radioVisualLiveDynamicsInitialState();
 
 function fallbackSnapshot(): RadioVisualsSnapshot {
   return {
@@ -138,6 +144,7 @@ function fallbackSnapshot(): RadioVisualsSnapshot {
       broadcastPhase: null,
     },
     player: null,
+    timeline: null,
     cue: null,
     preview: null,
     events: [],
@@ -181,16 +188,16 @@ function smoothMusicSignal(current: RadioVisualMusicSignal, target: RadioVisualM
     source: target.source,
     bpm: channel(current.bpm, target.bpm, 420, 720),
     // The adaptive native helper now refreshes about every 21 ms and the
-    // receiver reads it at 25 Hz. Keep only a short display follower here so
+    // receiver reads it at 40 Hz. Keep only a short display follower here so
     // Studio sees fade-ins, words, and transients promptly without flickering
     // between adjacent samples.
-    energy: channel(current.energy, target.energy, 24, 190),
-    bass: channel(current.bass, target.bass, 20, 175),
-    mid: channel(current.mid, target.mid, 14, 135),
-    treble: channel(current.treble, target.treble, 10, 90),
-    beat: channel(current.beat, target.beat, 6, 65),
-    accent: channel(current.accent, target.accent, 7, 70),
-    peak: channel(current.peak, target.peak, 6, 75),
+    energy: channel(current.energy, target.energy, 12, 112),
+    bass: channel(current.bass, target.bass, 10, 104),
+    mid: channel(current.mid, target.mid, 8, 82),
+    treble: channel(current.treble, target.treble, 6, 62),
+    beat: channel(current.beat, target.beat, 4, 48),
+    accent: channel(current.accent, target.accent, 4, 52),
+    peak: channel(current.peak, target.peak, 4, 54),
     progress: target.progress,
     phrase: target.phrase,
   };
@@ -217,7 +224,14 @@ function reactiveAudioDrives(
   runtime.midOnset = reaction.state.midOnset;
   runtime.trebleOnset = reaction.state.trebleOnset;
   runtime.buildMemory = reaction.state.buildMemory;
-  return reaction.drives;
+  const dynamics = advanceRadioVisualLiveDynamics(runtime, music, reaction.drives, reaction.state, elapsedMs);
+  runtime.bassFast = dynamics.state.bassFast;
+  runtime.midFast = dynamics.state.midFast;
+  runtime.trebleFast = dynamics.state.trebleFast;
+  runtime.bassFlux = dynamics.state.bassFlux;
+  runtime.midFlux = dynamics.state.midFlux;
+  runtime.trebleFlux = dynamics.state.trebleFlux;
+  return dynamics.drives;
 }
 
 function randomUnit(seed: number, index: number): number {
@@ -352,7 +366,7 @@ function estimatedServerNowMs(anchor: ServerClockAnchor | null, nowPerformanceMs
     : Date.now();
 }
 
-function projectedPlaybackSeconds(player: RadioVisualsPlayerSignal | null, anchor: ServerClockAnchor | null, nowPerformanceMs: number): number {
+function projectedPlaybackSeconds(player: Pick<RadioVisualsPlayerSignal, "playbackState" | "currentTimeSeconds" | "durationSeconds" | "updatedAt"> | null, anchor: ServerClockAnchor | null, nowPerformanceMs: number): number {
   if (!player) return 0;
   const updatedAtMs = Date.parse(player.updatedAt);
   const elapsedSeconds = player.playbackState === "playing" && Number.isFinite(updatedAtMs)
@@ -3859,6 +3873,12 @@ function drawVisualFrame(
       audioBands: null,
       audioPeak: null,
     },
+    timeline: {
+      playbackState: "playing",
+      currentTimeSeconds: visualPreview.elapsedSeconds,
+      durationSeconds: 120,
+      updatedAt: visualPreview.preview.requestedAt,
+    },
     cue: null,
     events: [],
     visualSeed: visualPreview.preview.visualSeed,
@@ -3896,10 +3916,19 @@ function drawVisualFrame(
     runtime.currentMusicSeed = musicTransition.currentSeed;
     runtime.previousMusicSeed = musicTransition.previousSeed;
     runtime.musicTransitionStartedAtMs = musicTransition.startedAtMs;
-    runtime.buildMemory *= 0.28;
-    runtime.bassOnset = 0;
-    runtime.midOnset = 0;
-    runtime.trebleOnset = 0;
+    Object.assign(runtime, INITIAL_AUDIO_REACTION, INITIAL_LIVE_DYNAMICS);
+    runtime.music = {
+      ...runtime.music,
+      energy: 0,
+      bass: 0,
+      mid: 0,
+      treble: 0,
+      beat: 0,
+      accent: 0,
+      peak: 0,
+      progress: 0,
+      phrase: 0,
+    };
     if (snapshot.visualMode === "track") runtime.bloomStartedAtMs = timestampMs;
   }
   if (snapshot.visualMode === "track" && runtime.trackProgressSeed !== snapshot.visualSeed) {
@@ -3911,7 +3940,7 @@ function drawVisualFrame(
   }
 
   const musicSeedBlend = ease((timestampMs - runtime.musicTransitionStartedAtMs) / PARTICLE_TRANSITION_MS);
-  const playbackSeconds = projectedPlaybackSeconds(snapshot.player, anchor, timestampMs);
+  const playbackSeconds = projectedPlaybackSeconds(snapshot.player ?? snapshot.timeline, anchor, timestampMs);
   const transportSeconds = timestampMs / 1_000;
   const trackElapsedSeconds = runtime.trackProgressSeed === snapshot.visualSeed
     ? Math.max(0, timestampMs - runtime.trackProgressStartedAtMs) / 1_000
@@ -4281,6 +4310,7 @@ export function RadioVisualsReceiver() {
       phrase: 0,
     },
     ...INITIAL_AUDIO_REACTION,
+    ...INITIAL_LIVE_DYNAMICS,
     observedSnapshotKey: "",
     observedSignals: null,
     syntheticEvents: [],
@@ -4316,7 +4346,7 @@ export function RadioVisualsReceiver() {
       controller = new AbortController();
       // The first Studio request can include Chromium's local-network
       // permission/preflight work. Give that handshake time to finish; steady
-      // 25 Hz polling is still scheduled only after a valid signal arrives.
+      // 40 Hz polling is still scheduled only after a valid signal arrives.
       const abortId = window.setTimeout(() => controller?.abort(), 4_000);
       try {
         // 127.0.0.1 is an explicit loopback address, so Chromium already knows

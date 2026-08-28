@@ -2,7 +2,7 @@ export const RADIO_AUDIO_BRIDGE_SCHEMA_VERSION = "barcode_audio_signal_v1" as co
 export const RADIO_AUDIO_BRIDGE_FIXED_REFERENCE_CALIBRATION = "fixed_reference_v1" as const;
 export const RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION = "adaptive_reference_v2" as const;
 export const RADIO_AUDIO_BRIDGE_URL = "http://127.0.0.1:43120/v1/signal";
-export const RADIO_AUDIO_BRIDGE_POLL_INTERVAL_MS = 40;
+export const RADIO_AUDIO_BRIDGE_POLL_INTERVAL_MS = 25;
 export const RADIO_AUDIO_BRIDGE_RETRY_INTERVAL_MS = 2_000;
 export const RADIO_AUDIO_BRIDGE_STALE_AFTER_MS = 1_200;
 

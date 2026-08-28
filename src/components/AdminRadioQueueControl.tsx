@@ -18,7 +18,7 @@ import { ADMIN_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 import { hasActiveQueueSession, notifyQueueSessionChanged, startSessionBoundPolling } from "@/lib/session-bound-polling";
 import { analyzeRadioVisualFrequencyData, smoothRadioVisualAudioAnalysis } from "@/lib/radio-visuals-audio";
 import type { RadioVisualAudioAnalysis } from "@/lib/radio-visuals-audio";
-import { launchLocalCommercialBreakIfAcknowledged } from "@/lib/sponsor-break-contract";
+import { launchLocalCommercialBreakIfAcknowledged, requireLocalCommercialPlayer } from "@/lib/sponsor-break-contract";
 
 type Tab = "active" | "completed" | "removed" | "spotlight";
 type AdminQueueAction = "pullNext" | "pullWheelChosen" | "pullFreeTransmission" | "startShow" | "addWheelSpinOwed" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "resolvePaidPriority" | "pausePriority" | "resumePriority" | "useSignalHold";
@@ -454,12 +454,23 @@ export function AdminRadioQueueControl() {
       sponsorActionPendingRef.current = true;
       setSponsorActionPending(true);
     }
+    let websiteTimerStarted = false;
     try {
+      if (isStart) {
+        await requireLocalCommercialPlayer(() => fetch(LOCAL_COMMERCIAL_START_URL, {
+          method: "OPTIONS",
+          mode: "cors",
+          cache: "no-store",
+        }));
+      }
       const updated = await post({ action: "updateSponsorBreakState", sponsorAction });
       if (!isStart || !updated) return;
+      websiteTimerStarted = true;
       await launchLocalCommercialBreakIfAcknowledged(updated, () => fetch(LOCAL_COMMERCIAL_START_URL, { method: "POST", mode: "cors", cache: "no-store" }));
     } catch {
-      setActionError("The sponsor timer started, but BARCODE Commercial Player could not be reached. Confirm the Commercial Player is running, then use its tray menu → Start Commercial Break.");
+      setActionError(websiteTimerStarted
+        ? "The sponsor timer started, but BARCODE Commercial Player stopped before playback began. Restart the separate Commercial Player, then use its tray menu → Start Commercial Break."
+        : "The sponsor timer was not started because BARCODE Commercial Player is not running. Run the separate BARCODE.CommercialPlayer.exe once, then try Start Sponsor Break again.");
     } finally {
       if (isStart) {
         sponsorActionPendingRef.current = false;

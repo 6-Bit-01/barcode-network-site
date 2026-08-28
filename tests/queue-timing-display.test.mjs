@@ -295,12 +295,22 @@ test("admin top bar renders pressure chip from timingSummary", () => {
 
 test("admin top bar surfaces the existing sponsor start action only when due", () => {
   const source = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioQueueControl.tsx"), "utf8");
+  const sponsorAction = source.slice(
+    source.indexOf("async function updateSponsorBreakState"),
+    source.indexOf("function openSessionOptions"),
+  );
   assert.ok(source.includes("const sponsorBreakDue = timingSummary.sponsorBreakSummary.dueNow;"));
   assert.ok(source.includes('{sponsorBreakDue && <button type="button" disabled={sponsorActionPending} onClick={() => updateSponsorBreakState("start")}'));
   assert.ok(source.includes('sponsorActionPending ? "Starting Sponsor Break…" : "Start Sponsor Break"'));
   assert.match(source, /if \(isStart && sponsorActionPendingRef\.current\) return;[\s\S]*?sponsorActionPendingRef\.current = true;/);
   assert.match(source, /const updated = await post\(\{ action: "updateSponsorBreakState", sponsorAction \}\);[\s\S]*?launchLocalCommercialBreakIfAcknowledged\(updated, \(\) => fetch\(LOCAL_COMMERCIAL_START_URL/);
   assert.match(source, /LOCAL_COMMERCIAL_START_URL = "http:\/\/127\.0\.0\.1:43121\/v1\/commercials\/start"/);
+  assert.ok(
+    sponsorAction.indexOf('method: "OPTIONS"') < sponsorAction.indexOf('post({ action: "updateSponsorBreakState"'),
+    "the separate Commercial Player must answer preflight before the website sponsor timer starts",
+  );
+  assert.match(sponsorAction, /sponsor timer was not started[\s\S]*BARCODE\.CommercialPlayer\.exe/);
+  assert.doesNotMatch(sponsorAction, /43120|Audio Bridge/, "sponsor controls must never share the Show Visuals audio process");
   assert.doesNotMatch(source, /skipLoadedTrackForSponsorBreak|interruptedTrack/);
   assert.ok(source.includes('className="flex flex-wrap items-center justify-end gap-2"'));
 });

@@ -20,5 +20,6 @@
 
   <ItemGroup>
     <ProjectReference Include="../barcode-audio-bridge/Barcode.AudioBridge.csproj" />
+    <ProjectReference Include="../barcode-commercial-player/Barcode.CommercialPlayer.csproj" />
   </ItemGroup>
 </Project>

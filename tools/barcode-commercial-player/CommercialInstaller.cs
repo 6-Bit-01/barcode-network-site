@@ -3,10 +3,11 @@ using Microsoft.Win32;
 
 namespace Barcode.AudioBridge;
 
-internal static class BridgeInstaller
+internal static class CommercialInstaller
 {
+    private const string AutoStartValueName = "BARCODE Commercial Player";
     private static string InstallDirectory => BridgeLog.DirectoryPath;
-    private static string InstalledExecutable => Path.Combine(InstallDirectory, "BARCODE.AudioBridge.exe");
+    private static string InstalledExecutable => Path.Combine(InstallDirectory, "BARCODE.CommercialPlayer.exe");
 
     public static bool IsInstalledExecutable
     {
@@ -22,7 +23,7 @@ internal static class BridgeInstaller
 
     public static void InstallAndLaunch()
     {
-        var current = Environment.ProcessPath ?? throw new InvalidOperationException("The helper executable path is unavailable.");
+        var current = Environment.ProcessPath ?? throw new InvalidOperationException("The commercial player executable path is unavailable.");
         Directory.CreateDirectory(InstallDirectory);
         StopInstalledInstance();
         var temporary = InstalledExecutable + ".new";
@@ -31,8 +32,8 @@ internal static class BridgeInstaller
         RegisterAutoStart();
         Process.Start(new ProcessStartInfo(InstalledExecutable, "--background") { UseShellExecute = true });
         MessageBox.Show(
-            "BARCODE Audio Bridge is installed and running. It will start with Windows and automatically wake only while the Show Visuals source has an active session.",
-            "BARCODE Audio Bridge",
+            "BARCODE Commercial Player is installed and running. It will start with Windows and host only the separate sponsor/commercial overlay.",
+            "BARCODE Commercial Player",
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);
     }
@@ -40,7 +41,7 @@ internal static class BridgeInstaller
     private static void StopInstalledInstance()
     {
         var currentProcessId = Environment.ProcessId;
-        foreach (var process in Process.GetProcessesByName("BARCODE.AudioBridge"))
+        foreach (var process in Process.GetProcessesByName("BARCODE.CommercialPlayer"))
         {
             using (process)
             {
@@ -61,12 +62,12 @@ internal static class BridgeInstaller
     public static void RegisterAutoStart()
     {
         using var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
-        key?.SetValue(BridgeConstants.AutoStartValueName, $"\"{InstalledExecutable}\" --background");
+        key?.SetValue(AutoStartValueName, $"\"{InstalledExecutable}\" --background");
     }
 
     public static void RemoveAutoStart()
     {
         using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true);
-        key?.DeleteValue(BridgeConstants.AutoStartValueName, false);
+        key?.DeleteValue(AutoStartValueName, false);
     }
 }

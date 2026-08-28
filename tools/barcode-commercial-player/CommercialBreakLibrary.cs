@@ -152,7 +152,7 @@ while a hidden safety bleed keeps the background from showing at any bezel edge.
 No per-file fit list is required. Only the current sequence clip supplies audio.
 
 PLAYBACK
-Right-click the BARCODE Audio Bridge tray icon and choose Start Commercial Break.
+Right-click the BARCODE Commercial Player tray icon and choose Start Commercial Break.
 The selected media is frozen into a local playback snapshot at start, so moving
 files between Active and Inactive while a break runs affects only the next break.
 The Playback Snapshots folder is managed and cleaned automatically.

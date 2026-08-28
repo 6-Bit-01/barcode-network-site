@@ -459,7 +459,7 @@ export function AdminRadioQueueControl() {
       if (!isStart || !updated) return;
       await launchLocalCommercialBreakIfAcknowledged(updated, () => fetch(LOCAL_COMMERCIAL_START_URL, { method: "POST", mode: "cors", cache: "no-store" }));
     } catch {
-      setActionError("The sponsor timer started, but BARCODE Audio Bridge could not be reached. Confirm the bridge is running, then use its tray menu → Start Commercial Break.");
+      setActionError("The sponsor timer started, but BARCODE Commercial Player could not be reached. Confirm the Commercial Player is running, then use its tray menu → Start Commercial Break.");
     } finally {
       if (isStart) {
         sponsorActionPendingRef.current = false;

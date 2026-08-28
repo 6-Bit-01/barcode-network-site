@@ -27,20 +27,50 @@ internal sealed class CommercialPlayerServer : IDisposable
 
     public void Start()
     {
-        _listener = new TcpListener(IPAddress.Loopback, CommercialBreakPaths.LocalPlayerPort);
-        _listener.Start(64);
-        _acceptLoop = AcceptLoop(_cancellation.Token);
-        BridgeLog.Write($"Local commercial player listening on 127.0.0.1:{CommercialBreakPaths.LocalPlayerPort}.");
+        if (_acceptLoop is not null) return;
+        _acceptLoop = StartAndAcceptLoop(_cancellation.Token);
     }
 
-    private async Task AcceptLoop(CancellationToken cancellationToken)
+    private async Task StartAndAcceptLoop(CancellationToken cancellationToken)
     {
-        if (_listener is null) return;
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var listener = new TcpListener(IPAddress.Loopback, CommercialBreakPaths.LocalPlayerPort);
+            try
+            {
+                listener.Start(64);
+                _listener = listener;
+                BridgeLog.Write($"Local commercial player listening on 127.0.0.1:{CommercialBreakPaths.LocalPlayerPort}.");
+                await AcceptLoop(listener, cancellationToken);
+                return;
+            }
+            catch (SocketException error) when (
+                error.SocketErrorCode == SocketError.AddressAlreadyInUse
+                && !cancellationToken.IsCancellationRequested)
+            {
+                listener.Stop();
+                BridgeLog.Write(
+                    $"Commercial player port {CommercialBreakPaths.LocalPlayerPort} is still owned by the legacy combined Audio Bridge; retrying.",
+                    error);
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+            }
+        }
+    }
+
+    private async Task AcceptLoop(TcpListener listener, CancellationToken cancellationToken)
+    {
         while (!cancellationToken.IsCancellationRequested)
         {
             try
             {
-                var client = await _listener.AcceptTcpClientAsync(cancellationToken);
+                var client = await listener.AcceptTcpClientAsync(cancellationToken);
                 _ = Task.Run(() => HandleClient(client, cancellationToken), cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

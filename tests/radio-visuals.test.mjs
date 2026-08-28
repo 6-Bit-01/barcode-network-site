@@ -780,14 +780,17 @@ test("Windows loopback signal contract rejects malformed and stale local data", 
 
 test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a one-click artifact", () => {
   const helperRoot = path.join(projectRoot, "tools/barcode-audio-bridge");
+  const commercialRoot = path.join(projectRoot, "tools/barcode-commercial-player");
   const project = fs.readFileSync(path.join(helperRoot, "Barcode.AudioBridge.csproj"), "utf8");
+  const commercialProject = fs.readFileSync(path.join(commercialRoot, "Barcode.CommercialPlayer.csproj"), "utf8");
   const program = fs.readFileSync(path.join(helperRoot, "Program.cs"), "utf8");
   const installer = fs.readFileSync(path.join(helperRoot, "BridgeInstaller.cs"), "utf8");
   const application = fs.readFileSync(path.join(helperRoot, "BridgeApplicationContext.cs"), "utf8");
   const capture = fs.readFileSync(path.join(helperRoot, "LoopbackCaptureController.cs"), "utf8");
   const analyzer = fs.readFileSync(path.join(helperRoot, "AudioAnalyzer.cs"), "utf8");
   const server = fs.readFileSync(path.join(helperRoot, "LocalSignalServer.cs"), "utf8");
-  const commercialServer = fs.readFileSync(path.join(helperRoot, "CommercialPlayerServer.cs"), "utf8");
+  const commercialApplication = fs.readFileSync(path.join(commercialRoot, "CommercialApplicationContext.cs"), "utf8");
+  const commercialServer = fs.readFileSync(path.join(commercialRoot, "CommercialPlayerServer.cs"), "utf8");
   const readme = fs.readFileSync(path.join(helperRoot, "README.md"), "utf8");
   const workflow = fs.readFileSync(path.join(projectRoot, ".github/workflows/ci.yml"), "utf8");
   const productionContract = fs.readFileSync(path.join(projectRoot, "docs/queue-production-capability.md"), "utf8");
@@ -795,8 +798,9 @@ test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a
   assert.match(project, /<TargetFramework>net8\.0-windows<\/TargetFramework>/);
   assert.match(project, /<SelfContained>true<\/SelfContained>/);
   assert.match(project, /<PublishSingleFile>true<\/PublishSingleFile>/);
-  assert.match(project, /<Version>1\.0\.24<\/Version>/);
+  assert.match(project, /<Version>1\.0\.4<\/Version>/, "the visual executable must retain the accepted 20-family checkpoint build contract");
   assert.match(project, /PackageReference Include="NAudio" Version="2\.3\.0"/);
+  assert.match(commercialProject, /<AssemblyName>BARCODE\.CommercialPlayer<\/AssemblyName>/);
   assert.match(capture, /GetDefaultAudioEndpoint\(DataFlow\.Render, Role\.Multimedia\)/, "capture must resolve the default Windows Speakers render endpoint");
   assert.match(capture, /new WasapiLoopbackCapture\(renderDevice\)/, "capture and endpoint-volume compensation must use the same Speakers endpoint");
   assert.doesNotMatch(capture, /new (?:WaveIn|WasapiCapture)\(/, "the helper must not open a microphone capture endpoint");
@@ -811,8 +815,9 @@ test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a
   assert.doesNotMatch(capture, /Live — Speakers loopback is driving the visuals/, "opening WASAPI alone must not claim that music is driving visuals");
   assert.match(capture, /TrayTooltip[\s\S]*WarmedUp[\s\S]*Silence[\s\S]*LIVE audio/, "tray tooltip must reflect actual analyzed speaker audio");
   assert.match(application, /_notifyIcon\.Text = _capture\.TrayTooltip/);
-  assert.match(application, /Copy permanent TikTok Studio source URL/);
-  assert.match(application, /Open diagnostic preview \(not Studio source\)/);
+  assert.doesNotMatch(application, /Commercial|commercial|Sponsor|sponsor/, "the visual application process must contain no sponsor-player lifecycle");
+  assert.match(commercialApplication, /Copy permanent TikTok Studio source URL/);
+  assert.match(commercialApplication, /Open diagnostic preview \(not Studio source\)/);
   assert.doesNotMatch(application, /CaptureActive \? "BARCODE Audio Bridge — LIVE"/, "active capture without audible samples must not show a false LIVE tray tooltip");
   assert.match(analyzer, /WaveFormatExtensible[\s\S]*ToStandardWaveFormat\(\)/, "32-bit extensible PCM must not be decoded as IEEE float");
   assert.doesNotMatch(analyzer, /WaveFormatEncoding\.Extensible && format\.BitsPerSample == 32/);
@@ -821,8 +826,12 @@ test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a
   assert.match(server, /Task\.Run\(\(\) => HandleClient\(client, cancellationToken\), cancellationToken\)/, "visual signal clients retain the approved PR #374 request handling");
   assert.doesNotMatch(server, /Commercial|commercial|\/commercials|HttpByteRange/, "the visual signal server must contain no sponsor-player code");
   assert.match(commercialServer, /new TcpListener\(IPAddress\.Loopback, CommercialBreakPaths\.LocalPlayerPort\)/, "the sponsor player must use its own listener");
+  assert.match(commercialServer, /SocketError\.AddressAlreadyInUse[\s\S]*Task\.Delay\(TimeSpan\.FromSeconds\(2\)/, "the sponsor player must survive either two-artifact upgrade order while the legacy combined bridge releases its port");
   assert.doesNotMatch(commercialServer, /LoopbackCaptureController|\/v1\/signal|TouchClient|ReportBrowserHandshake|BridgeConstants\.Port/, "the sponsor player must contain no Show Visuals signal code");
-  assert.match(application, /new LocalSignalServer\(_capture\)[\s\S]*new CommercialPlayerServer\(_commercials\)/, "the two independent overlays must start independent local servers");
+  assert.match(application, /new LocalSignalServer\(_capture\)/);
+  assert.doesNotMatch(application, /CommercialPlayerServer|CommercialBreakService/, "the visual process must not construct the sponsor player");
+  assert.match(commercialApplication, /new CommercialPlayerServer\(_commercials\)/);
+  assert.doesNotMatch(commercialApplication, /LoopbackCaptureController|LocalSignalServer|AudioAnalyzer/, "the sponsor process must not construct Show Visuals capture or analysis");
   assert.match(server, /Access-Control-Allow-Private-Network: true/);
   assert.match(server, /www\.barcode-network\.com|barcode-network\.com/);
   assert.match(server, /barcode-network-site-cpps\.vercel\.app|-6-bits-projects\.vercel\.app/);
@@ -834,7 +843,7 @@ test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a
   assert.match(readme, /There is no capture button/);
   assert.match(readme, /No audio samples leave the computer/);
   assert.match(readme, /program signal rather than the operator's Windows listening level/);
-  assert.match(workflow, /windows-audio-bridge:[\s\S]*dotnet test tools\/barcode-audio-bridge\.Tests[\s\S]*dotnet publish[\s\S]*BARCODE\.AudioBridge\.exe/);
+  assert.match(workflow, /windows-audio-bridge:[\s\S]*dotnet test tools\/barcode-audio-bridge\.Tests[\s\S]*BARCODE\.AudioBridge\.exe[\s\S]*BARCODE\.CommercialPlayer\.exe/);
   assert.match(productionContract, /BARCODE Audio Bridge[\s\S]*WASAPI loopback[\s\S]*volume-neutral program signal[\s\S]*creates no Redis or Vercel traffic/);
 });
 

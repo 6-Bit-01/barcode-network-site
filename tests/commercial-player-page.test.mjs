@@ -7,11 +7,11 @@ import { fileURLToPath } from "node:url";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const pageSource = readFileSync(
-  path.join(projectRoot, "tools/barcode-audio-bridge/CommercialPlayerPage.cs"),
+  path.join(projectRoot, "tools/barcode-commercial-player/CommercialPlayerPage.cs"),
   "utf8",
 );
 const librarySource = readFileSync(
-  path.join(projectRoot, "tools/barcode-audio-bridge/CommercialBreakLibrary.cs"),
+  path.join(projectRoot, "tools/barcode-commercial-player/CommercialBreakLibrary.cs"),
   "utf8",
 );
 const studioRouteSource = readFileSync(
@@ -19,7 +19,7 @@ const studioRouteSource = readFileSync(
   "utf8",
 );
 const commercialServerSource = readFileSync(
-  path.join(projectRoot, "tools/barcode-audio-bridge/CommercialPlayerServer.cs"),
+  path.join(projectRoot, "tools/barcode-commercial-player/CommercialPlayerServer.cs"),
   "utf8",
 );
 const visualServerSource = readFileSync(

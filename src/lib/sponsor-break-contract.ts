@@ -18,6 +18,6 @@ export async function launchLocalCommercialBreakIfAcknowledged(
 ): Promise<"not_acknowledged" | "started"> {
   if (!isSponsorBreakStartAcknowledged(state)) return "not_acknowledged";
   const response = await launch();
-  if (!response.ok) throw new Error(`Audio Bridge returned ${response.status}`);
+  if (!response.ok) throw new Error(`Commercial Player returned ${response.status}`);
   return "started";
 }

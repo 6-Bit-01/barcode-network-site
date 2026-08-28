@@ -116,7 +116,7 @@ export function AdminRadioVisualsControl() {
       <section className="space-y-3 border border-accent/35 bg-surface p-4">
         <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
           <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-accent">30 Silent Song Tests</p>
+            <p className="text-xs uppercase tracking-[0.3em] text-accent">40 Silent Song Tests</p>
             <p className="mt-1 text-sm text-muted">Each button temporarily runs that exact production family with a synthetic fake-song rhythm. A newer test replaces an older test; queue, player, Wheel, and live audio state are untouched.</p>
           </div>
           <p className="text-xs uppercase tracking-widest text-accent">{queuedPreviewFamily ? `Queued: ${sceneLabel(queuedPreviewFamily)}` : "Ready"}</p>

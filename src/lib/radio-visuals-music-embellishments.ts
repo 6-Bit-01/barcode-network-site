@@ -39,6 +39,16 @@ export const RADIO_VISUAL_MUSIC_LIFECYCLE_VARIANTS = {
   vector_swarm: "scouts_to_signal_sigil",
   moire_engine: "rings_to_diffraction_reactor",
   eclipse_corona: "crescent_to_corona",
+  mobius_relay: "strip_to_mobius_circuit",
+  pendulum_choir: "bobs_to_phase_choir",
+  chladni_forge: "grains_to_resonant_mandala",
+  tesseract_fold: "cube_to_tesseract_gate",
+  kintsugi_mainframe: "plates_to_repaired_mainframe",
+  sonic_calligraphy: "marks_to_signal_script",
+  rube_signalworks: "parts_to_chain_reaction",
+  shadow_zoetrope: "frames_to_shadow_procession",
+  prism_labyrinth: "beam_to_prism_maze",
+  helix_sequencer: "strands_to_sequence_crown",
 } as const satisfies Record<RadioVisualMusicScene, string>;
 
 export type RadioVisualMusicLifecycleVariant =
@@ -97,6 +107,16 @@ const EMBELLISHMENT_PROFILES: Record<RadioVisualMusicScene, RadioVisualMusicEmbe
   vector_swarm: { breathBeats: 1, breathDepth: 0.56, morphBias: 0.96, glowBias: 0.72, glareBias: 0.88, movementBias: 0.94, deformationBias: 0.86, bassScale: 0.52, trebleHue: 0.98, startMotion: 0.86, endMotion: 1.95, startJitter: 0.12, endJitter: 0.72, beatReach: 0.9, beatWeight: 0.68, impactMotion: 0.96, edgeBudget: 15 },
   moire_engine: { breathBeats: 4, breathDepth: 0.88, morphBias: 0.98, glowBias: 0.88, glareBias: 0.92, movementBias: 0.44, deformationBias: 0.96, bassScale: 0.76, trebleHue: 0.96, startMotion: 0.48, endMotion: 1.52, startJitter: 0.01, endJitter: 0.16, beatReach: 0.86, beatWeight: 0.82, impactMotion: 0.74, edgeBudget: 12 },
   eclipse_corona: { breathBeats: 8, breathDepth: 0.76, morphBias: 0.96, glowBias: 1, glareBias: 1, movementBias: 0.4, deformationBias: 0.74, bassScale: 0.96, trebleHue: 0.92, startMotion: 0.34, endMotion: 1.42, startJitter: 0.01, endJitter: 0.22, beatReach: 1, beatWeight: 0.9, impactMotion: 0.9, edgeBudget: 14 },
+  mobius_relay: { breathBeats: 8, breathDepth: 0.72, morphBias: 1, glowBias: 0.86, glareBias: 0.82, movementBias: 0.48, deformationBias: 0.94, bassScale: 0.82, trebleHue: 0.9, startMotion: 0.38, endMotion: 1.38, startJitter: 0.01, endJitter: 0.12, beatReach: 0.9, beatWeight: 0.84, impactMotion: 0.68, edgeBudget: 12 },
+  pendulum_choir: { breathBeats: 4, breathDepth: 0.54, morphBias: 0.88, glowBias: 0.7, glareBias: 0.76, movementBias: 0.82, deformationBias: 0.62, bassScale: 0.96, trebleHue: 0.78, startMotion: 0.52, endMotion: 1.72, startJitter: 0.01, endJitter: 0.16, beatReach: 0.78, beatWeight: 1, impactMotion: 0.92, edgeBudget: 14 },
+  chladni_forge: { breathBeats: 2, breathDepth: 0.82, morphBias: 1, glowBias: 0.8, glareBias: 0.88, movementBias: 0.72, deformationBias: 1, bassScale: 0.64, trebleHue: 0.96, startMotion: 0.7, endMotion: 1.82, startJitter: 0.08, endJitter: 0.52, beatReach: 0.84, beatWeight: 0.72, impactMotion: 0.9, edgeBudget: 15 },
+  tesseract_fold: { breathBeats: 8, breathDepth: 0.68, morphBias: 1, glowBias: 0.84, glareBias: 0.9, movementBias: 0.5, deformationBias: 0.98, bassScale: 0.76, trebleHue: 0.96, startMotion: 0.42, endMotion: 1.54, startJitter: 0.01, endJitter: 0.18, beatReach: 0.92, beatWeight: 0.8, impactMotion: 0.72, edgeBudget: 12 },
+  kintsugi_mainframe: { breathBeats: 8, breathDepth: 0.44, morphBias: 0.94, glowBias: 0.92, glareBias: 0.8, movementBias: 0.26, deformationBias: 0.72, bassScale: 1, trebleHue: 0.74, startMotion: 0.28, endMotion: 1.06, startJitter: 0.01, endJitter: 0.08, beatReach: 0.96, beatWeight: 1, impactMotion: 0.58, edgeBudget: 14 },
+  sonic_calligraphy: { breathBeats: 2, breathDepth: 0.92, morphBias: 0.98, glowBias: 0.76, glareBias: 0.94, movementBias: 0.88, deformationBias: 1, bassScale: 0.9, trebleHue: 0.92, startMotion: 0.64, endMotion: 1.88, startJitter: 0.03, endJitter: 0.4, beatReach: 0.98, beatWeight: 0.9, impactMotion: 0.94, edgeBudget: 11 },
+  rube_signalworks: { breathBeats: 4, breathDepth: 0.48, morphBias: 0.9, glowBias: 0.68, glareBias: 0.78, movementBias: 0.76, deformationBias: 0.7, bassScale: 0.94, trebleHue: 0.82, startMotion: 0.5, endMotion: 1.76, startJitter: 0.01, endJitter: 0.2, beatReach: 0.82, beatWeight: 0.96, impactMotion: 1, edgeBudget: 15 },
+  shadow_zoetrope: { breathBeats: 1, breathDepth: 0.5, morphBias: 0.92, glowBias: 0.66, glareBias: 0.9, movementBias: 0.98, deformationBias: 0.84, bassScale: 0.72, trebleHue: 0.98, startMotion: 0.9, endMotion: 1.96, startJitter: 0.06, endJitter: 0.6, beatReach: 0.86, beatWeight: 0.76, impactMotion: 0.98, edgeBudget: 16 },
+  prism_labyrinth: { breathBeats: 4, breathDepth: 0.64, morphBias: 0.96, glowBias: 0.94, glareBias: 1, movementBias: 0.62, deformationBias: 0.86, bassScale: 0.58, trebleHue: 1, startMotion: 0.54, endMotion: 1.7, startJitter: 0.02, endJitter: 0.28, beatReach: 0.94, beatWeight: 0.7, impactMotion: 0.88, edgeBudget: 13 },
+  helix_sequencer: { breathBeats: 8, breathDepth: 0.78, morphBias: 1, glowBias: 0.88, glareBias: 0.86, movementBias: 0.58, deformationBias: 0.92, bassScale: 0.8, trebleHue: 0.94, startMotion: 0.46, endMotion: 1.6, startJitter: 0.01, endJitter: 0.2, beatReach: 0.9, beatWeight: 0.84, impactMotion: 0.78, edgeBudget: 13 },
 };
 
 export interface RadioVisualMusicEmbellishmentPlan {

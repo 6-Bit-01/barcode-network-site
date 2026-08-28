@@ -39,6 +39,16 @@ export const RADIO_VISUAL_PREVIEW_CONTROLS = [
   { scene: "vector_swarm", label: "Vector Swarm", description: "Triangular agents gather into lanes, flocks and a signal sigil." },
   { scene: "moire_engine", label: "Moiré Engine", description: "Interference rings, phase ticks and a diffraction reactor." },
   { scene: "eclipse_corona", label: "Eclipse Corona", description: "A black signal sun, crescents, corona arcs and solar flares." },
+  { scene: "mobius_relay", label: "Möbius Relay", description: "One continuous signal band twists through depth and closes into an impossible circuit." },
+  { scene: "pendulum_choir", label: "Pendulum Choir", description: "Suspended oscillators phase into traveling waves and coordinated strikes." },
+  { scene: "chladni_forge", label: "Chladni Forge", description: "Resonant grains migrate into changing nodal figures across a vibrating plate." },
+  { scene: "tesseract_fold", label: "Tesseract Fold", description: "Projected hypercube frames unfold, cross-connect and turn through dimensional states." },
+  { scene: "kintsugi_mainframe", label: "Kintsugi Mainframe", description: "Massive dark plates separate and reconnect along luminous repaired seams." },
+  { scene: "sonic_calligraphy", label: "Sonic Calligraphy", description: "Nonsemantic brush gestures sweep, pool and flick with musical inertia." },
+  { scene: "rube_signalworks", label: "Rube Signalworks", description: "Gears, cams, pistons and carriers pass one reaction through a linked machine." },
+  { scene: "shadow_zoetrope", label: "Shadow Zoetrope", description: "Abstract silhouettes advance around a rotating slotted animation drum." },
+  { scene: "prism_labyrinth", label: "Prism Labyrinth", description: "Signal rays split and bend through a changing maze of discrete prisms." },
+  { scene: "helix_sequencer", label: "Helix Sequencer", description: "Depth-sorted twin strands carry packets across a twisting rung sequence." },
 ] as const satisfies ReadonlyArray<{
   scene: RadioVisualMusicScene;
   label: string;

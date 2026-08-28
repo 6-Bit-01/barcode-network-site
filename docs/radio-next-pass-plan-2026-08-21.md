@@ -204,6 +204,26 @@ Rollback and deployment boundary:
 - Ship the forty profiles, shared semantic adapter, bounded fullness ceilings, tests, and documentation as one independently revertible pull request with no migration or configuration change.
 - Re-open the saved Show Visuals source after deployment and let the ordinary shuffled deck run. Compare several spectrally different songs across whichever families are dealt; no named-scene targeting or production selector is required.
 
+### 12. Dynamic song tapestry and rendered-visibility correction — 2026-08-28
+
+Implementation base: production commit `8d4485e` after PR `#408` (all-forty perceptual renderer rollout). The owner rehearsal found that five consecutive families driven by the same real song produced two acceptable compositions and three scenes that were too light to remain legible. The prior regression measured requested primitive totals under an evenly balanced synthetic spectrum; it did not measure uneven mastered-song spectra or the resulting pixels after stroke width, alpha, chroma keying, and performer-center attenuation.
+
+Acceptance:
+
+- Replace the evenly balanced fullness assumption with a bounded real-song visibility reserve. A representative low/body-led mastered spectrum must retain at least 23 primitives in every family before correction, while silence remains zero and no absent all-band tapestry is manufactured.
+- Isolate music rendering in one reusable offscreen layer. Retain one half-resolution previous-frame buffer and apply exactly one bounded family-specific feedback transform before the current renderer, providing the persistent visual memory used by classic modular visualizers without adding another animation loop or renderer stack.
+- Learn a browser-local rolling fingerprint from low/body/voice/high balance, brightness, dynamic contrast, transient density, stereo image, and waveform roughness. Reset it on loaded-track change; never store, transmit, publish, or add it to the overlay payload.
+- Give every family a distinct feedback grammar and let the rolling fingerprint control persistence, drift, rotation, scale, ripple, echo, mirroring, and restrained sonic tint. Current band onsets remain authoritative and the fingerprint cannot manufacture bass, mid, treble, or tapestry hits.
+- Detect bounded sparse, flow, build, dense, and release states from fast-versus-slow song energy. Use them only to steer persistent morphology; do not claim verse, chorus, stems, vocals, or semantic song structure.
+- Downsample the actual unmasked music layer to `54×72` no more than once every 450 ms, estimate the accepted performer attenuation, and adapt a bounded visibility reserve only when rendered coverage is weak. Reinforce the selected family's own layer plan, perimeter count, reach, thickness, and opacity; do not draw a shared generic rescue overlay.
+- Keep the 30 FPS cap, 40 Hz Audio Bridge poll, `perceptual_audio_v1` contract, forty-card shuffle, loaded-track ownership, sequential crossfade, 20% performer-center retention, permanent source URL, and every queue/Wheel/commercial/payment/playback boundary unchanged.
+- Preserve the exact legacy path for helpers or fallback sources without the optional perceptual block. Feedback history and adaptive visibility must remain off there.
+
+Rollback and deployment boundary:
+
+- Ship the song-memory chain, measured visibility correction, tests, and documentation as one independently revertible pull request with no Audio Bridge reinstall, migration, or configuration change.
+- Re-open the saved Show Visuals source after deployment and run the ordinary shuffled deck. Acceptance is deck-wide: no family may become a near-invisible ghost during ordinary audible music, and contrasting songs must produce visibly different persistence, flow, color balance, section motion, and internal consequences without requiring the operator to identify a family name.
+
 ## Change-control rule
 
 No pass may silently suppress another system, infer state ownership from event order, or alter queue/Wheel/music behavior outside its acceptance criteria. If a newly discovered dependency would require that expansion, stop that pass and document the dependency before implementation.

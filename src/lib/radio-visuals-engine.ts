@@ -1186,6 +1186,7 @@ export function radioVisualPerceptualAudioDrives(
 export function radioVisualMusicSceneLayerPlan(
   scene: RadioVisualMusicScene,
   drives: RadioVisualAudioDrives,
+  visibilityBoost = 0,
 ): RadioVisualMusicSceneLayerPlan {
   const perceptual = radioVisualPerceptualScenePlan(scene, drives);
   if (perceptual.enabled) {
@@ -1210,12 +1211,63 @@ export function radioVisualMusicSceneLayerPlan(
       RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.coupling.threshold,
       RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.coupling.ceiling,
     );
-    return {
+    const plan = {
       bass: dedicatedAudioLayerCount(foundationLayer, perceptual.foundationHit, limits.bass, 0.025, 1.12),
       mid: dedicatedAudioLayerCount(structureLayer, perceptual.structureHit, limits.mid, 0.022, 1.08),
       treble: dedicatedAudioLayerCount(detailLayer, perceptual.detailHit, limits.treble, 0.018, 1.04),
       tapestry: dedicatedAudioLayerCount(couplingLayer, Math.min(perceptual.foundationHit, perceptual.structureHit, perceptual.detailHit), limits.tapestry, 0.02, 1.16),
     };
+    const evidence: Record<keyof RadioVisualMusicSceneLayerPlan, number> = {
+      bass: perceptual.foundation,
+      mid: perceptual.structure,
+      treble: perceptual.detail,
+      // Coupled geometry still requires real broad-spectrum agreement. The
+      // visibility reserve can enlarge it, but cannot create it from one band.
+      tapestry: perceptual.coupling > 0.02 ? perceptual.coupling : 0,
+    };
+    const evidenceValues = [perceptual.foundation, perceptual.structure, perceptual.detail];
+    const audibleEvidence = clampVisualValue(
+      evidenceValues.reduce((sum, value) => sum + value, 0) / evidenceValues.length * 0.65
+        + Math.max(...evidenceValues) * 0.35,
+    );
+    if (audibleEvidence <= 0.018) return plan;
+
+    // The previous regression checked an evenly balanced theoretical frame.
+    // Real songs are uneven, so a normal bass- or vocal-led passage could ask
+    // for only 13 thin primitives and still pass. Reserve a bounded amount of
+    // the selected family's own active layers, distributed only to channels
+    // with real evidence, so every audible song survives the Studio key.
+    const maximums: Record<keyof RadioVisualMusicSceneLayerPlan, number> = {
+      bass: limits.bass.sustained + limits.bass.pulse,
+      mid: limits.mid.sustained + limits.mid.pulse,
+      treble: limits.treble.sustained + limits.treble.pulse,
+      tapestry: limits.tapestry.sustained + limits.tapestry.pulse,
+    };
+    const maximumTotal = Object.values(maximums).reduce((sum, value) => sum + value, 0);
+    const targetTotal = Math.min(
+      maximumTotal,
+      Math.round(11 + Math.pow(audibleEvidence, 0.58) * 28 + clampVisualValue(visibilityBoost) * 10),
+    );
+    const reserved = { ...plan };
+    let currentTotal = Object.values(reserved).reduce((sum, value) => sum + value, 0);
+    const layers = ["bass", "mid", "treble", "tapestry"] as const;
+    while (currentTotal < targetTotal) {
+      let selected: (typeof layers)[number] | null = null;
+      let selectedScore = Number.NEGATIVE_INFINITY;
+      for (const layer of layers) {
+        if (evidence[layer] <= 0.01 || reserved[layer] >= maximums[layer]) continue;
+        const fillRatio = reserved[layer] / Math.max(1, maximums[layer]);
+        const score = evidence[layer] / (0.24 + fillRatio);
+        if (score > selectedScore) {
+          selected = layer;
+          selectedScore = score;
+        }
+      }
+      if (!selected) break;
+      reserved[selected] += 1;
+      currentTotal += 1;
+    }
+    return reserved;
   }
   const limits = RADIO_VISUAL_MUSIC_SCENE_LAYER_LIMITS[scene];
   return {
@@ -1254,7 +1306,9 @@ export function radioVisualMusicSceneVisibility(drives: RadioVisualAudioDrives):
 export function radioVisualMusicPerimeterPlan(
   scene: RadioVisualMusicScene,
   drives: RadioVisualAudioDrives,
+  visibilityBoost = 0,
 ): RadioVisualMusicPerimeterPlan {
+  const boundedVisibilityBoost = clampVisualValue(visibilityBoost);
   const bassDrive = clampVisualValue(
     0.12 + drives.bassLayer * 0.58 + drives.bassPulse * 0.3,
   );
@@ -1274,19 +1328,27 @@ export function radioVisualMusicPerimeterPlan(
       + drives.presence * 0.08
       + sharedBandDrive * 0.1
       + drives.impact * 0.04
-      + tapestryDrive * 0.08,
+      + tapestryDrive * 0.08
+      + boundedVisibilityBoost * 0.16,
     0.64,
     1,
   );
   const reach = clampVisualValue(
-    0.075 + midDrive * 0.055 + trebleDrive * 0.035 + tapestryDrive * 0.035,
+    0.075
+      + midDrive * 0.055
+      + trebleDrive * 0.035
+      + tapestryDrive * 0.035
+      + boundedVisibilityBoost * 0.055,
     0.075,
-    0.2,
+    0.235,
   );
   const thickness = clampVisualValue(
-    0.0035 + bassDrive * 0.0095 + drives.bassPulse * 0.0045,
+    0.0035
+      + bassDrive * 0.0095
+      + drives.bassPulse * 0.0045
+      + boundedVisibilityBoost * 0.006,
     0.0035,
-    0.018,
+    0.022,
   );
   return {
     motif: RADIO_VISUAL_MUSIC_PERIMETER_MOTIFS[scene],
@@ -1297,11 +1359,11 @@ export function radioVisualMusicPerimeterPlan(
     midDrive,
     trebleDrive,
     tapestryDrive,
-    bassElements: Math.min(10, 2 + Math.round(drives.bassLayer * 5 + drives.bassPulse * 3)),
-    midElements: Math.min(14, 3 + Math.round(drives.midLayer * 7 + drives.midPulse * 4)),
-    trebleElements: Math.min(18, 3 + Math.round(drives.trebleLayer * 9 + drives.treblePulse * 6)),
+    bassElements: Math.min(12, 2 + Math.round(drives.bassLayer * 5 + drives.bassPulse * 3 + boundedVisibilityBoost * 3)),
+    midElements: Math.min(17, 3 + Math.round(drives.midLayer * 7 + drives.midPulse * 4 + boundedVisibilityBoost * 4)),
+    trebleElements: Math.min(22, 3 + Math.round(drives.trebleLayer * 9 + drives.treblePulse * 6 + boundedVisibilityBoost * 5)),
     tapestryElements: tapestryDrive > 0.025
-      ? Math.min(6, 1 + Math.round(drives.tapestry * 3 + drives.tapestryPulse * 2))
+      ? Math.min(8, 1 + Math.round(drives.tapestry * 3 + drives.tapestryPulse * 2 + boundedVisibilityBoost * 2))
       : 0,
   };
 }

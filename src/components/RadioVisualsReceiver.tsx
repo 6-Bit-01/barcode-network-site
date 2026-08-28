@@ -18,7 +18,6 @@ import {
   radioVisualCueProgress,
   radioVisualMusicScene,
   radioVisualMusicSceneLayerPlan,
-  radioVisualPerceptualAudioDrives,
   radioVisualPerceptualScenePlan,
   radioVisualMusicPerimeterPlan,
   radioVisualMusicSceneVisibility,
@@ -49,6 +48,17 @@ import {
   radioVisualLiveDynamicsInitialState,
 } from "@/lib/radio-visuals-live-dynamics";
 import type { RadioVisualLiveDynamicsState } from "@/lib/radio-visuals-live-dynamics";
+import {
+  advanceRadioVisualSongFingerprint,
+  advanceRadioVisualVisibilityBoost,
+  RADIO_VISUAL_SONG_FINGERPRINT_INITIAL_STATE,
+  radioVisualSongShapedDrives,
+  radioVisualSongTapestryPlan,
+} from "@/lib/radio-visuals-song-tapestry";
+import type {
+  RadioVisualSongFingerprintState,
+  RadioVisualSongTapestryPlan,
+} from "@/lib/radio-visuals-song-tapestry";
 import { radioVisualMusicEmbellishmentPlan } from "@/lib/radio-visuals-music-embellishments";
 import { radioVisualPreviewEnvelope, radioVisualPreviewProgress, RADIO_VISUAL_PREVIEW_DURATION_MS } from "@/lib/radio-visuals-preview";
 import {
@@ -117,11 +127,21 @@ interface VisualRuntime extends RadioVisualLiveDynamicsState {
   midOnset: number;
   trebleOnset: number;
   buildMemory: number;
+  songFingerprint: RadioVisualSongFingerprintState;
+  musicVisibilityBoost: number;
+  musicVisibilityScore: number;
+  musicVisibilityMeasuredAtMs: number;
   observedSnapshotKey: string;
   observedSignals: VisualSignalMemory | null;
   syntheticEvents: RadioVisualEvent[];
   effectCanvas: HTMLCanvasElement | null;
   effectContext: CanvasRenderingContext2D | null;
+  musicCanvas: HTMLCanvasElement | null;
+  musicContext: CanvasRenderingContext2D | null;
+  musicHistoryCanvas: HTMLCanvasElement | null;
+  musicHistoryContext: CanvasRenderingContext2D | null;
+  musicVisibilityCanvas: HTMLCanvasElement | null;
+  musicVisibilityContext: CanvasRenderingContext2D | null;
   crtCanvas: HTMLCanvasElement | null;
   crtContext: CanvasRenderingContext2D | null;
 }
@@ -130,6 +150,10 @@ const RETRY_POLL_INTERVAL_MS = 5_000;
 const PALETTE_TRANSITION_MS = 2_400;
 const PARTICLE_TRANSITION_MS = 2_000;
 const TRACK_BLOOM_MS = 1_700;
+const MUSIC_HISTORY_SCALE = 0.5;
+const MUSIC_VISIBILITY_SAMPLE_WIDTH = 54;
+const MUSIC_VISIBILITY_SAMPLE_HEIGHT = 72;
+const MUSIC_VISIBILITY_SAMPLE_INTERVAL_MS = 450;
 const INITIAL_AUDIO_REACTION = radioVisualAudioReactionInitialState();
 const INITIAL_LIVE_DYNAMICS = radioVisualLiveDynamicsInitialState();
 
@@ -283,6 +307,248 @@ function prepareEffectLayer(
   context.filter = "none";
   context.clearRect(0, 0, pixelWidth, pixelHeight);
   return { canvas, context };
+}
+
+function prepareMusicLayer(
+  runtime: VisualRuntime,
+  width: number,
+  height: number,
+): { canvas: HTMLCanvasElement; context: CanvasRenderingContext2D } | null {
+  const canvas = runtime.musicCanvas ?? document.createElement("canvas");
+  const context = runtime.musicContext ?? canvas.getContext("2d");
+  if (!context) return null;
+  runtime.musicCanvas = canvas;
+  runtime.musicContext = context;
+  const pixelWidth = Math.max(1, Math.round(width));
+  const pixelHeight = Math.max(1, Math.round(height));
+  if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+    canvas.width = pixelWidth;
+    canvas.height = pixelHeight;
+  }
+  context.setTransform(1, 0, 0, 1, 0, 0);
+  context.globalAlpha = 1;
+  context.globalCompositeOperation = "source-over";
+  context.filter = "none";
+  context.clearRect(0, 0, pixelWidth, pixelHeight);
+  return { canvas, context };
+}
+
+function prepareMusicHistoryLayer(
+  runtime: VisualRuntime,
+  width: number,
+  height: number,
+): { canvas: HTMLCanvasElement; context: CanvasRenderingContext2D } | null {
+  const canvas = runtime.musicHistoryCanvas ?? document.createElement("canvas");
+  const context = runtime.musicHistoryContext ?? canvas.getContext("2d");
+  if (!context) return null;
+  runtime.musicHistoryCanvas = canvas;
+  runtime.musicHistoryContext = context;
+  const pixelWidth = Math.max(1, Math.round(width * MUSIC_HISTORY_SCALE));
+  const pixelHeight = Math.max(1, Math.round(height * MUSIC_HISTORY_SCALE));
+  if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+    canvas.width = pixelWidth;
+    canvas.height = pixelHeight;
+    context.clearRect(0, 0, pixelWidth, pixelHeight);
+  }
+  return { canvas, context };
+}
+
+function prepareMusicVisibilityLayer(
+  runtime: VisualRuntime,
+): { canvas: HTMLCanvasElement; context: CanvasRenderingContext2D } | null {
+  const canvas = runtime.musicVisibilityCanvas ?? document.createElement("canvas");
+  const context = runtime.musicVisibilityContext ?? canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) return null;
+  runtime.musicVisibilityCanvas = canvas;
+  runtime.musicVisibilityContext = context;
+  if (canvas.width !== MUSIC_VISIBILITY_SAMPLE_WIDTH || canvas.height !== MUSIC_VISIBILITY_SAMPLE_HEIGHT) {
+    canvas.width = MUSIC_VISIBILITY_SAMPLE_WIDTH;
+    canvas.height = MUSIC_VISIBILITY_SAMPLE_HEIGHT;
+  }
+  return { canvas, context };
+}
+
+function drawMusicFeedbackMemory(
+  context: CanvasRenderingContext2D,
+  history: HTMLCanvasElement,
+  width: number,
+  height: number,
+  time: number,
+  plan: RadioVisualSongTapestryPlan,
+): void {
+  if (!plan.active || plan.feedbackAlpha < 0.002 || history.width < 1 || history.height < 1) return;
+  const drawTransformed = (alpha: number, offsetMultiplier = 1) => {
+    context.save();
+    context.globalAlpha = clampVisualValue(alpha);
+    context.globalCompositeOperation = plan.additiveMix > 0.68 ? "lighter" : "source-over";
+    context.translate(
+      width * (0.5 + plan.driftX * offsetMultiplier),
+      height * (0.5 + plan.driftY * offsetMultiplier),
+    );
+    context.rotate(plan.rotation * offsetMultiplier);
+    const scale = 1 + (plan.scale - 1) * offsetMultiplier;
+    context.scale(scale, scale);
+    context.drawImage(history, -width * 0.5, -height * 0.5, width, height);
+    context.restore();
+  };
+
+  if (plan.mode === "ripple") {
+    const slices = Math.max(4, plan.sliceCount);
+    const sourceHeight = history.height / slices;
+    const destinationHeight = height / slices;
+    context.save();
+    context.globalAlpha = plan.feedbackAlpha;
+    context.globalCompositeOperation = plan.additiveMix > 0.68 ? "lighter" : "source-over";
+    for (let slice = 0; slice < slices; slice += 1) {
+      const progress = (slice + 0.5) / slices;
+      const offset = Math.sin(
+        progress * Math.PI * 4
+          + time * (0.32 + Math.abs(plan.rotation) * 140),
+      ) * width * plan.ripple;
+      context.drawImage(
+        history,
+        0,
+        slice * sourceHeight,
+        history.width,
+        sourceHeight + 1,
+        offset + width * plan.driftX,
+        slice * destinationHeight,
+        width,
+        destinationHeight + 1,
+      );
+    }
+    context.restore();
+    return;
+  }
+
+  if (plan.mode === "split") {
+    drawTransformed(plan.feedbackAlpha * (0.78 + plan.mirrorMix * 0.16));
+    if (plan.mirrorMix > 0.12) {
+      context.save();
+      context.globalAlpha = plan.feedbackAlpha * plan.mirrorMix * 0.34;
+      context.globalCompositeOperation = plan.additiveMix > 0.54 ? "lighter" : "source-over";
+      context.translate(width, 0);
+      context.scale(-1, 1);
+      context.drawImage(history, 0, 0, width, height);
+      context.restore();
+    }
+    return;
+  }
+
+  if (plan.mode === "echo") {
+    for (let echo = plan.echoCount; echo >= 1; echo -= 1) {
+      drawTransformed(plan.feedbackAlpha / (1 + echo * 0.32), echo);
+    }
+    return;
+  }
+
+  if (plan.mode === "drift") {
+    drawTransformed(plan.feedbackAlpha, 1.45);
+    return;
+  }
+  if (plan.mode === "orbit") {
+    drawTransformed(plan.feedbackAlpha, 1.8);
+    return;
+  }
+  drawTransformed(plan.feedbackAlpha);
+}
+
+function tintMusicLayer(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  plan: RadioVisualSongTapestryPlan,
+  primary: Rgb,
+  secondary: Rgb,
+  highlight: Rgb,
+): void {
+  if (!plan.active || plan.tintMix < 0.002) return;
+  const color = plan.tintBias > 0.22 ? highlight : plan.tintBias < -0.22 ? secondary : primary;
+  context.save();
+  context.globalCompositeOperation = "source-atop";
+  context.fillStyle = rgba(color, plan.tintMix);
+  context.fillRect(0, 0, width, height);
+  context.restore();
+}
+
+function performerRetentionAt(xRatio: number, yRatio: number, width: number, height: number): number {
+  const unit = Math.min(width, height);
+  const dx = (xRatio - 0.5) * width;
+  const dy = (yRatio - 0.44) * height / 1.28;
+  const radius = Math.hypot(dx, dy);
+  const inner = unit * 0.045;
+  const outer = unit * 0.55;
+  const progress = clampVisualValue((radius - inner) / Math.max(1, outer - inner));
+  const stops = [
+    { progress: 0, retention: 0.2 },
+    { progress: 0.2, retention: 0.24 },
+    { progress: 0.44, retention: 0.38 },
+    { progress: 0.68, retention: 0.82 },
+    { progress: 1, retention: 1 },
+  ];
+  for (let index = 1; index < stops.length; index += 1) {
+    if (progress > stops[index].progress) continue;
+    const previous = stops[index - 1];
+    const next = stops[index];
+    const local = (progress - previous.progress) / Math.max(0.001, next.progress - previous.progress);
+    return previous.retention + (next.retention - previous.retention) * local;
+  }
+  return 1;
+}
+
+function measureMusicVisibility(
+  runtime: VisualRuntime,
+  source: HTMLCanvasElement,
+  width: number,
+  height: number,
+): number | null {
+  const layer = prepareMusicVisibilityLayer(runtime);
+  if (!layer) return null;
+  const { context, canvas } = layer;
+  context.setTransform(1, 0, 0, 1, 0, 0);
+  context.globalCompositeOperation = "copy";
+  context.globalAlpha = 1;
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(source, 0, 0, canvas.width, canvas.height);
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+  let alphaMass = 0;
+  let occupied = 0;
+  const pixelCount = canvas.width * canvas.height;
+  for (let y = 0; y < canvas.height; y += 1) {
+    for (let x = 0; x < canvas.width; x += 1) {
+      const alpha = pixels[(y * canvas.width + x) * 4 + 3] / 255;
+      const retainedAlpha = alpha * performerRetentionAt(
+        (x + 0.5) / canvas.width,
+        (y + 0.5) / canvas.height,
+        width,
+        height,
+      );
+      alphaMass += retainedAlpha;
+      if (retainedAlpha >= 0.09) occupied += 1;
+    }
+  }
+  return clampVisualValue(
+    alphaMass / pixelCount * 0.55
+      + occupied / pixelCount * 0.45,
+  );
+}
+
+function updateMusicHistory(
+  history: { canvas: HTMLCanvasElement; context: CanvasRenderingContext2D },
+  source: HTMLCanvasElement,
+): void {
+  history.context.setTransform(1, 0, 0, 1, 0, 0);
+  history.context.globalAlpha = 1;
+  history.context.globalCompositeOperation = "copy";
+  history.context.filter = "none";
+  history.context.clearRect(0, 0, history.canvas.width, history.canvas.height);
+  history.context.drawImage(source, 0, 0, history.canvas.width, history.canvas.height);
+}
+
+function clearMusicHistory(runtime: VisualRuntime): void {
+  if (!runtime.musicHistoryCanvas || !runtime.musicHistoryContext) return;
+  runtime.musicHistoryContext.setTransform(1, 0, 0, 1, 0, 0);
+  runtime.musicHistoryContext.clearRect(0, 0, runtime.musicHistoryCanvas.width, runtime.musicHistoryCanvas.height);
 }
 
 function prepareCrtTexture(
@@ -2121,11 +2387,13 @@ function drawSeededMusicScene(
   secondary: Rgb,
   highlight: Rgb,
   seed: number,
+  fingerprint: RadioVisualSongFingerprintState,
+  visibilityBoost: number,
 ): void {
   if (mix < 0.002) return;
   const scene = radioVisualMusicScene(seed);
-  const sceneDrives = radioVisualPerceptualAudioDrives(scene, drives);
-  const layerPlan = radioVisualMusicSceneLayerPlan(scene, sceneDrives);
+  const sceneDrives = radioVisualSongShapedDrives(scene, drives, fingerprint);
+  const layerPlan = radioVisualMusicSceneLayerPlan(scene, sceneDrives, visibilityBoost);
   if (scene === "edge_spectrum") drawEdgeSpectrum(context, width, height, time, mix, sceneDrives, layerPlan, primary, secondary, highlight, seed);
   if (scene === "oscilloscope_ribbons") drawOscilloscopeRibbons(context, width, height, time, mix, sceneDrives, layerPlan, primary, secondary, highlight, seed);
   if (scene === "tape_feedback") drawTapeFeedback(context, width, height, time, mix, sceneDrives, layerPlan, primary, secondary, highlight, seed);
@@ -2182,7 +2450,7 @@ function drawSeededMusicScene(
     time,
     mix,
     sceneDrives,
-    radioVisualMusicPerimeterPlan(scene, sceneDrives),
+    radioVisualMusicPerimeterPlan(scene, sceneDrives, visibilityBoost),
     primary,
     secondary,
     highlight,
@@ -4054,6 +4322,10 @@ function drawVisualFrame(
     runtime.previousMusicSeed = musicTransition.previousSeed;
     runtime.musicTransitionStartedAtMs = musicTransition.startedAtMs;
     Object.assign(runtime, INITIAL_AUDIO_REACTION, INITIAL_LIVE_DYNAMICS);
+    runtime.songFingerprint = RADIO_VISUAL_SONG_FINGERPRINT_INITIAL_STATE;
+    runtime.musicVisibilityBoost = 0.35;
+    runtime.musicVisibilityScore = 0;
+    runtime.musicVisibilityMeasuredAtMs = timestampMs;
     runtime.music = {
       ...runtime.music,
       energy: 0,
@@ -4128,6 +4400,18 @@ function drawVisualFrame(
   }
   const normalMusicDrives = reactiveAudioDrives(runtime, runtime.music, elapsedMs);
   const musicDrives = visualPreview ? radioVisualAudioDrives(music) : normalMusicDrives;
+  if (!visualPreview && snapshot.visualMode === "track" && musicDrives.perceptual) {
+    runtime.songFingerprint = advanceRadioVisualSongFingerprint(
+      runtime.songFingerprint,
+      musicDrives,
+      elapsedMs,
+    );
+  } else if (snapshot.visualMode !== "track" || !musicDrives.perceptual) {
+    runtime.songFingerprint = RADIO_VISUAL_SONG_FINGERPRINT_INITIAL_STATE;
+  }
+  const songFingerprint = visualPreview
+    ? RADIO_VISUAL_SONG_FINGERPRINT_INITIAL_STATE
+    : runtime.songFingerprint;
   const renderSeed = visualPreview?.preview.visualSeed ?? runtime.currentSeed;
   const previousMusicSeed = visualPreview?.preview.visualSeed ?? runtime.previousMusicSeed;
   const currentMusicSeed = visualPreview?.preview.visualSeed ?? runtime.currentMusicSeed;
@@ -4200,17 +4484,20 @@ function drawVisualFrame(
     renderSeed,
   );
   const activeMusicMix = renderTrackMix * sceneStateMix;
+  const previousMusicScene = radioVisualMusicScene(previousMusicSeed);
+  const currentMusicScene = radioVisualMusicScene(currentMusicSeed);
+  const previousMusicSceneDrives = radioVisualSongShapedDrives(previousMusicScene, musicDrives, songFingerprint);
+  const currentMusicSceneDrives = radioVisualSongShapedDrives(currentMusicScene, musicDrives, songFingerprint);
+  const songTapestryPlan = radioVisualSongTapestryPlan(currentMusicScene, songFingerprint);
+  const effectiveVisibilityBoost = songTapestryPlan.active ? runtime.musicVisibilityBoost : 0;
   const musicCompositionMix = (compositionMix: number) => clampVisualValue(
     activeSurfaceMix
       * activeMusicMix
       * compositionMix
       * musicSceneActivity
-      * RADIO_VISUAL_MUSIC_OUTPUT_GAIN,
+      * RADIO_VISUAL_MUSIC_OUTPUT_GAIN
+      * (1 + effectiveVisibilityBoost * 0.28),
   );
-  const previousMusicScene = radioVisualMusicScene(previousMusicSeed);
-  const currentMusicScene = radioVisualMusicScene(currentMusicSeed);
-  const previousMusicSceneDrives = radioVisualPerceptualAudioDrives(previousMusicScene, musicDrives);
-  const currentMusicSceneDrives = radioVisualPerceptualAudioDrives(currentMusicScene, musicDrives);
   const previousMusicEmbellishmentPlan = radioVisualMusicEmbellishmentPlan(
     previousMusicScene,
     previousMusicSeed,
@@ -4232,15 +4519,41 @@ function drawVisualFrame(
   ) || (
     currentMusicCompositionMix >= 0.06 && currentMusicEmbellishmentPlan.centerActive
   );
+  const musicLayer = prepareMusicLayer(runtime, width, height);
+  const musicHistory = prepareMusicHistoryLayer(runtime, width, height);
+  const musicContext = musicLayer?.context ?? context;
+  if (musicLayer && musicHistory && songTapestryPlan.active) {
+    drawMusicFeedbackMemory(
+      musicContext,
+      musicHistory.canvas,
+      width,
+      height,
+      audioTime,
+      songTapestryPlan,
+    );
+  }
   const drawSeedComposition = (seed: number, compositionMix: number) => {
     if (compositionMix < 0.002) return;
     const musicMix = musicCompositionMix(compositionMix);
     if (musicMix < 0.06) return;
     const scene = radioVisualMusicScene(seed);
-    const sceneDrives = radioVisualPerceptualAudioDrives(scene, musicDrives);
-    drawSeededMusicScene(context, width, height, audioTime, musicMix, musicDrives, primary, secondary, highlight, seed);
+    const sceneDrives = radioVisualSongShapedDrives(scene, musicDrives, songFingerprint);
+    drawSeededMusicScene(
+      musicContext,
+      width,
+      height,
+      audioTime,
+      musicMix,
+      musicDrives,
+      primary,
+      secondary,
+      highlight,
+      seed,
+      songFingerprint,
+      effectiveVisibilityBoost,
+    );
     drawRadioVisualMusicEmbellishments({
-      context,
+      context: musicContext,
       width,
       height,
       time: audioTime,
@@ -4261,6 +4574,36 @@ function drawVisualFrame(
   };
   drawSeedComposition(previousMusicSeed, 1 - renderMusicSeedBlend);
   drawSeedComposition(currentMusicSeed, renderMusicSeedBlend);
+  if (musicLayer) {
+    tintMusicLayer(
+      musicLayer.context,
+      width,
+      height,
+      songTapestryPlan,
+      primary,
+      secondary,
+      highlight,
+    );
+    if (
+      songTapestryPlan.active
+      && timestampMs - runtime.musicVisibilityMeasuredAtMs >= MUSIC_VISIBILITY_SAMPLE_INTERVAL_MS
+    ) {
+      const measuredVisibility = measureMusicVisibility(runtime, musicLayer.canvas, width, height);
+      if (measuredVisibility !== null) {
+        runtime.musicVisibilityScore = measuredVisibility;
+        runtime.musicVisibilityBoost = advanceRadioVisualVisibilityBoost(
+          runtime.musicVisibilityBoost,
+          measuredVisibility,
+          songTapestryPlan.visibilityTarget,
+          timestampMs - runtime.musicVisibilityMeasuredAtMs,
+        );
+      }
+      runtime.musicVisibilityMeasuredAtMs = timestampMs;
+    }
+    context.drawImage(musicLayer.canvas, 0, 0, width, height);
+    if (musicHistory && songTapestryPlan.active) updateMusicHistory(musicHistory, musicLayer.canvas);
+    else clearMusicHistory(runtime);
+  }
   const automaticSceneMix = visualPreview ? 0 : activeSurfaceMix;
   drawQueueLanes(context, width, height, time, runtime.queueMix * automaticSceneMix, primary, secondary, renderSeed);
   drawIntakeAperture(context, width, height, time, runtime.intakeMix * automaticSceneMix, primary, secondary, renderSeed);
@@ -4456,11 +4799,21 @@ export function RadioVisualsReceiver() {
     },
     ...INITIAL_AUDIO_REACTION,
     ...INITIAL_LIVE_DYNAMICS,
+    songFingerprint: RADIO_VISUAL_SONG_FINGERPRINT_INITIAL_STATE,
+    musicVisibilityBoost: 0.35,
+    musicVisibilityScore: 0,
+    musicVisibilityMeasuredAtMs: Number.NEGATIVE_INFINITY,
     observedSnapshotKey: "",
     observedSignals: null,
     syntheticEvents: [],
     effectCanvas: null,
     effectContext: null,
+    musicCanvas: null,
+    musicContext: null,
+    musicHistoryCanvas: null,
+    musicHistoryContext: null,
+    musicVisibilityCanvas: null,
+    musicVisibilityContext: null,
     crtCanvas: null,
     crtContext: null,
   });

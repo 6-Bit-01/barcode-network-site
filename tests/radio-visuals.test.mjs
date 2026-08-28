@@ -28,6 +28,7 @@ const audioVisuals = require("../src/lib/radio-visuals-audio.ts");
 const audioBridge = require("../src/lib/radio-audio-bridge.ts");
 const musicEmbellishments = require("../src/lib/radio-visuals-music-embellishments.ts");
 const liveDynamics = require("../src/lib/radio-visuals-live-dynamics.ts");
+const songTapestry = require("../src/lib/radio-visuals-song-tapestry.ts");
 const liveOverlay = require("../src/lib/live-overlay-resolver.ts");
 
 test.after(() => {
@@ -1175,6 +1176,205 @@ test("all forty perceptual scenes distinguish equal-loudness songs and reach cal
   }
 });
 
+test("uneven real-song spectra retain a visible composition across all forty families", () => {
+  const bandNames = audioBridge.RADIO_AUDIO_BRIDGE_PERCEPTUAL_BAND_NAMES;
+  const zeroOnsets = Object.fromEntries(bandNames.map((name) => [name, 0]));
+  const perceptual = {
+    version: audioBridge.RADIO_AUDIO_BRIDGE_PERCEPTUAL_FEATURES_VERSION,
+    // Representative mastered track: a strong low/body foundation, ordinary
+    // vocal presence, and substantially lighter brilliance/air. The previous
+    // evenly balanced fixture missed this common production shape.
+    levels: {
+      subBass: 0.34,
+      bass: 0.46,
+      lowMid: 0.39,
+      mid: 0.31,
+      highMid: 0.24,
+      presence: 0.18,
+      brilliance: 0.09,
+      air: 0.045,
+    },
+    onsets: zeroOnsets,
+    spectralCentroid: 0.29,
+    brightness: 0.14,
+    dynamicRange: 0.42,
+    transientDensity: 1,
+    stereoWidth: 0.48,
+    stereoBalance: 0,
+    waveform: [0, 0.2, -0.2, 0.4, -0.3, 0.15, -0.1, 0.2, -0.25, 0.3, -0.2, 0.1, -0.1, 0.05, 0, 0],
+  };
+  const drives = engine.radioVisualAudioDrives({
+    source: "windows_loopback",
+    bpm: 92,
+    energy: 0.38,
+    bass: 0.4,
+    mid: 0.31,
+    treble: 0.16,
+    beat: 0,
+    accent: 0,
+    peak: 0.38,
+    progress: 0.45,
+    phrase: 0.3,
+    perceptual,
+  });
+  for (const sceneName of engine.RADIO_VISUAL_MUSIC_SCENES) {
+    const sceneDrives = engine.radioVisualPerceptualAudioDrives(sceneName, drives);
+    const ordinary = engine.radioVisualMusicSceneLayerPlan(sceneName, sceneDrives);
+    const reinforced = engine.radioVisualMusicSceneLayerPlan(sceneName, sceneDrives, 1);
+    const ordinaryTotal = Object.values(ordinary).reduce((sum, value) => sum + value, 0);
+    const reinforcedTotal = Object.values(reinforced).reduce((sum, value) => sum + value, 0);
+    assert.ok(ordinaryTotal >= 23, `${sceneName} must not collapse to the prior 13-to-20 primitive range on an uneven real-song spectrum`);
+    assert.ok(reinforcedTotal >= ordinaryTotal + 8, `${sceneName} must have bounded structural headroom when rendered coverage is weak`);
+
+    const perimeter = engine.radioVisualMusicPerimeterPlan(sceneName, sceneDrives);
+    const reinforcedPerimeter = engine.radioVisualMusicPerimeterPlan(sceneName, sceneDrives, 1);
+    assert.ok(reinforcedPerimeter.strength > perimeter.strength, `${sceneName} must strengthen its own perimeter language when weak`);
+    assert.ok(reinforcedPerimeter.reach > perimeter.reach, `${sceneName} must occupy more keyed edge area when weak`);
+    assert.ok(reinforcedPerimeter.thickness > perimeter.thickness, `${sceneName} must survive stream compression with thicker geometry when weak`);
+  }
+
+  const silentDrives = engine.radioVisualAudioDrives({
+    source: "windows_loopback",
+    bpm: 92,
+    energy: 0,
+    bass: 0,
+    mid: 0,
+    treble: 0,
+    beat: 0,
+    accent: 0,
+    peak: 0,
+    progress: 0.45,
+    phrase: 0.3,
+    perceptual: {
+      ...perceptual,
+      levels: Object.fromEntries(bandNames.map((name) => [name, 0])),
+      transientDensity: 1,
+    },
+  });
+  for (const sceneName of engine.RADIO_VISUAL_MUSIC_SCENES) {
+    assert.deepEqual(
+      engine.radioVisualMusicSceneLayerPlan(sceneName, silentDrives, 1),
+      { bass: 0, mid: 0, treble: 0, tapestry: 0 },
+      `${sceneName} cannot turn the visibility reserve into music during silence`,
+    );
+  }
+});
+
+test("rolling song fingerprints drive persistent family-specific tapestry plans", () => {
+  const bandNames = audioBridge.RADIO_AUDIO_BRIDGE_PERCEPTUAL_BAND_NAMES;
+  const zeros = Object.fromEntries(bandNames.map((name) => [name, 0]));
+  const featureDrives = (levels, overrides = {}) => engine.radioVisualAudioDrives({
+    source: "windows_loopback",
+    bpm: 118,
+    energy: 0.48,
+    bass: 0.48,
+    mid: 0.48,
+    treble: 0.48,
+    beat: 0,
+    accent: 0,
+    peak: 0.48,
+    progress: 0.4,
+    phrase: 0.25,
+    perceptual: {
+      version: audioBridge.RADIO_AUDIO_BRIDGE_PERCEPTUAL_FEATURES_VERSION,
+      levels,
+      onsets: zeros,
+      spectralCentroid: 0.5,
+      brightness: 0.5,
+      dynamicRange: 0.5,
+      transientDensity: 0.5,
+      stereoWidth: 0.5,
+      stereoBalance: 0,
+      waveform: [0, 0.2, -0.3, 0.4, -0.5, 0.6, -0.7, 0.8, -0.8, 0.7, -0.6, 0.5, -0.4, 0.3, -0.2, 0],
+      ...overrides,
+    },
+  });
+  const darkDrives = featureDrives({
+    subBass: 0.82,
+    bass: 0.74,
+    lowMid: 0.58,
+    mid: 0.42,
+    highMid: 0.26,
+    presence: 0.2,
+    brilliance: 0.08,
+    air: 0.04,
+  }, {
+    spectralCentroid: 0.2,
+    brightness: 0.1,
+    dynamicRange: 0.74,
+    transientDensity: 0.32,
+    stereoWidth: 0.82,
+    stereoBalance: -0.24,
+  });
+  const brightDrives = featureDrives({
+    subBass: 0.08,
+    bass: 0.14,
+    lowMid: 0.28,
+    mid: 0.44,
+    highMid: 0.7,
+    presence: 0.82,
+    brilliance: 0.9,
+    air: 0.76,
+  }, {
+    spectralCentroid: 0.84,
+    brightness: 0.9,
+    dynamicRange: 0.28,
+    transientDensity: 0.86,
+    stereoWidth: 0.16,
+    stereoBalance: 0.28,
+    waveform: [0, 0.8, 0.2, -0.7, -0.1, 0.9, 0.1, -0.8, 0, 0.7, -0.5, -0.9, 0.3, 0.6, -0.4, 0],
+  });
+  const learn = (drives) => {
+    let state = songTapestry.RADIO_VISUAL_SONG_FINGERPRINT_INITIAL_STATE;
+    for (let frame = 0; frame < 200; frame += 1) {
+      state = songTapestry.advanceRadioVisualSongFingerprint(state, drives, 50);
+    }
+    return state;
+  };
+  const darkFingerprint = learn(darkDrives);
+  const brightFingerprint = learn(brightDrives);
+  assert.notDeepEqual(darkFingerprint, brightFingerprint, "contrasting songs must learn different slow identities");
+  const familySignatures = [];
+  for (const sceneName of engine.RADIO_VISUAL_MUSIC_SCENES) {
+    const darkPlan = songTapestry.radioVisualSongTapestryPlan(sceneName, darkFingerprint);
+    const brightPlan = songTapestry.radioVisualSongTapestryPlan(sceneName, brightFingerprint);
+    assert.equal(darkPlan.active, true);
+    assert.equal(brightPlan.active, true);
+    assert.notDeepEqual(darkPlan, brightPlan, `${sceneName} must change feedback, flow, tint, or echo behavior with the song fingerprint`);
+    familySignatures.push([
+      darkPlan.mode,
+      darkPlan.feedbackAlpha.toFixed(6),
+      darkPlan.scale.toFixed(6),
+      darkPlan.rotation.toFixed(6),
+      darkPlan.driftX.toFixed(6),
+      darkPlan.driftY.toFixed(6),
+      darkPlan.mirrorMix.toFixed(6),
+    ].join(":"));
+
+    const mapped = engine.radioVisualPerceptualAudioDrives(sceneName, darkDrives);
+    const shaped = songTapestry.radioVisualSongShapedDrives(sceneName, darkDrives, darkFingerprint);
+    assert.equal(shaped.bassPulse, mapped.bassPulse, `${sceneName} song memory cannot fabricate a bass hit`);
+    assert.equal(shaped.midPulse, mapped.midPulse, `${sceneName} song memory cannot fabricate a structural hit`);
+    assert.equal(shaped.treblePulse, mapped.treblePulse, `${sceneName} song memory cannot fabricate a detail hit`);
+  }
+  assert.equal(
+    new Set(familySignatures).size,
+    engine.RADIO_VISUAL_MUSIC_SCENES.length,
+    "the forty families must not share one feedback transform",
+  );
+
+  const noFeatures = { ...darkDrives, perceptual: null };
+  assert.deepEqual(
+    songTapestry.advanceRadioVisualSongFingerprint(darkFingerprint, noFeatures, 50),
+    songTapestry.RADIO_VISUAL_SONG_FINGERPRINT_INITIAL_STATE,
+    "old helpers and fallback sources cannot enter the feedback-memory path",
+  );
+  const raised = songTapestry.advanceRadioVisualVisibilityBoost(0.2, 0.01, 0.08, 450);
+  const lowered = songTapestry.advanceRadioVisualVisibilityBoost(0.8, 0.12, 0.08, 450);
+  assert.ok(raised > 0.2, "actual weak rendered coverage must raise the bounded visual reserve");
+  assert.ok(lowered < 0.8, "already-visible families must release the reserve instead of being overfilled");
+});
+
 test("Windows loopback signal contract rejects malformed and stale local data", () => {
   const now = 1_782_000_000_000;
   const valid = {
@@ -1910,7 +2110,7 @@ test("the receiver renders every planned identity outside the unchanged performe
   for (const motif of Object.values(engine.RADIO_VISUAL_MUSIC_PERIMETER_MOTIFS)) {
     assert.match(perimeterSources, new RegExp(`plan\\.motif === ["']${motif}["']`), `${motif} must own an explicit Canvas branch`);
   }
-  assert.match(receiver, /drawSeededMusicScene[\s\S]*drawMusicPerimeterIdentity\([\s\S]*radioVisualMusicPerimeterPlan\(scene, sceneDrives\)/, "every selected family must render its tested enriched perimeter plan");
+  assert.match(receiver, /drawSeededMusicScene[\s\S]*drawMusicPerimeterIdentity\([\s\S]*radioVisualMusicPerimeterPlan\(scene, sceneDrives, visibilityBoost\)/, "every selected family must render its measured-coverage perimeter plan");
   assert.match(receiver, /if \(renderSnapshot\.showStage !== "intake"\) applyPerformerSafeField\(context, width, height, 0\.2\)/, "the center retention must remain at the approved twenty percent");
   assert.doesNotMatch(perimeterSources, /applyPerformerSafeField|applyPerformerIntrusionField|destination-in/, "perimeter identity cannot weaken or bypass the center mask");
 });
@@ -2360,6 +2560,7 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   const liveCss = fs.readFileSync(path.join(projectRoot, "src/app/overlay/live/overlay-live.css"), "utf8");
   const foregroundCss = fs.readFileSync(path.join(projectRoot, "src/app/overlay/foreground/calibration/foreground-calibration.css"), "utf8");
   const engineSource = fs.readFileSync(path.join(projectRoot, "src/lib/radio-visuals-engine.ts"), "utf8");
+  const songTapestrySource = fs.readFileSync(path.join(projectRoot, "src/lib/radio-visuals-song-tapestry.ts"), "utf8");
   const queueControl = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioQueueControl.tsx"), "utf8");
   const productionContract = fs.readFileSync(path.join(projectRoot, "docs/queue-production-capability.md"), "utf8");
   const render = receiver.slice(receiver.lastIndexOf("return ("));
@@ -2403,6 +2604,13 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.match(receiver, /mid: channel\(current\.mid, target\.mid, 8, 82\)/, "vocal-band updates must reach the renderer on the fast display follower");
   assert.match(receiver, /peak: channel\(current\.peak, target\.peak, 4, 54\)/, "transient display attack must remain below one 25 ms bridge poll interval");
   assert.match(receiver, /advanceRadioVisualLiveDynamics/, "the browser must preserve fast per-band articulation after the accepted reaction engine");
+  assert.match(receiver, /advanceRadioVisualSongFingerprint/, "the browser must retain a bounded rolling song identity instead of redrawing from current loudness alone");
+  assert.match(receiver, /drawMusicFeedbackMemory/, "the selected renderer must feed one bounded previous-frame transform chain");
+  assert.match(receiver, /MUSIC_HISTORY_SCALE = 0\.5/, "feedback history must stay at half resolution for the Studio performance budget");
+  assert.match(receiver, /MUSIC_VISIBILITY_SAMPLE_WIDTH = 54[\s\S]*MUSIC_VISIBILITY_SAMPLE_HEIGHT = 72[\s\S]*MUSIC_VISIBILITY_SAMPLE_INTERVAL_MS = 450/, "actual rendered visibility must be sampled coarsely and infrequently");
+  assert.match(receiver, /getImageData\(0, 0, canvas\.width, canvas\.height\)/, "visibility calibration must inspect the rendered family rather than infer coverage from primitive counts");
+  assert.match(receiver, /songTapestryPlan\.active[\s\S]*advanceRadioVisualVisibilityBoost/, "only the richer live-song path may adapt a weak family's visibility reserve");
+  assert.doesNotMatch(songTapestrySource, /fetch\(|setInterval\(|setTimeout\(|requestAnimationFrame\(|AudioContext|43120|43121|localStorage|sessionStorage/, "song memory cannot create another polling, audio, frame, or storage owner");
   assert.match(receiver, /snapshot\.player \?\? snapshot\.timeline/, "external tracks must project the same beginning-to-finale clock as embedded players");
   assert.doesNotMatch(receiver, /targetAddressSpace/, "literal 127.0.0.1 must remain compatible with TikTok Studio's embedded Chromium version");
   assert.match(receiver, /if \(!snapshot\.sessionActive\)[\s\S]*setAudioBridgeConnection\("idle"\)/);
@@ -2509,8 +2717,8 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   );
   assert.match(
     musicDispatcher,
-    /const sceneDrives = radioVisualPerceptualAudioDrives\(scene, drives\)/,
-    "every selected family must receive its scene-specific eight-band semantic drive before rendering",
+    /const sceneDrives = radioVisualSongShapedDrives\(scene, drives, fingerprint\)/,
+    "every selected family must receive scene-specific eight-band drive plus the rolling song identity before rendering",
   );
   assert.equal(
     (musicDispatcher.match(/drives: sceneDrives/g) ?? []).length,
@@ -2519,8 +2727,8 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   );
   assert.match(
     musicDispatcher,
-    /radioVisualMusicPerimeterPlan\(scene, sceneDrives\)/,
-    "the family perimeter must respond to the same enriched scene drive",
+    /radioVisualMusicPerimeterPlan\(scene, sceneDrives, visibilityBoost\)/,
+    "the family perimeter must respond to the same enriched scene drive and measured coverage reserve",
   );
   const sceneIdentityTokens = {
     drawEdgeSpectrum: ["barCount", "bassPlateCount", "midBridgeCount", "scanCount", "holdReach"],

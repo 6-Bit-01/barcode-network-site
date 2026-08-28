@@ -44,7 +44,7 @@ internal sealed class LocalSignalServer : IDisposable
             try
             {
                 var client = await _listener.AcceptTcpClientAsync(cancellationToken);
-                _ = HandleClient(client, cancellationToken);
+                _ = Task.Run(() => HandleClient(client, cancellationToken), cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

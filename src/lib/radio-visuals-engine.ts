@@ -198,6 +198,16 @@ export const RADIO_VISUAL_MUSIC_SCENES = [
   "vector_swarm",
   "moire_engine",
   "eclipse_corona",
+  "mobius_relay",
+  "pendulum_choir",
+  "chladni_forge",
+  "tesseract_fold",
+  "kintsugi_mainframe",
+  "sonic_calligraphy",
+  "rube_signalworks",
+  "shadow_zoetrope",
+  "prism_labyrinth",
+  "helix_sequencer",
 ] as const;
 
 /** Music-only gain applied after track ownership and scene crossfade. */
@@ -340,12 +350,22 @@ export const RADIO_VISUAL_MUSIC_PERIMETER_MOTIFS = {
   vector_swarm: "swarm_vectors",
   moire_engine: "moire_rings",
   eclipse_corona: "corona_flares",
+  mobius_relay: "mobius_twists",
+  pendulum_choir: "pendulum_bobs",
+  chladni_forge: "chladni_nodes",
+  tesseract_fold: "tesseract_corners",
+  kintsugi_mainframe: "kintsugi_seams",
+  sonic_calligraphy: "calligraphy_flicks",
+  rube_signalworks: "signalwork_cogs",
+  shadow_zoetrope: "zoetrope_slits",
+  prism_labyrinth: "prism_wedges",
+  helix_sequencer: "helix_rungs",
 } as const satisfies Record<RadioVisualMusicScene, string>;
 
 export type RadioVisualMusicPerimeterMotif = (typeof RADIO_VISUAL_MUSIC_PERIMETER_MOTIFS)[RadioVisualMusicScene];
 
 /**
- * Bounded edge-only identity shared by none of the thirty family renderers.
+ * Bounded edge-only identity shared by none of the forty family renderers.
  * Values are normalized so the Canvas implementation can remain entirely in
  * the performer-safe perimeter while bass, mids, treble, and the all-band
  * tapestry still own visibly different parts of that family signature.
@@ -558,6 +578,66 @@ export const RADIO_VISUAL_MUSIC_SCENE_LAYER_LIMITS: Record<RadioVisualMusicScene
     mid: { sustained: 10, pulse: 5 },
     treble: { sustained: 18, pulse: 9 },
     tapestry: { sustained: 5, pulse: 2 },
+  },
+  mobius_relay: {
+    bass: { sustained: 6, pulse: 3 },
+    mid: { sustained: 12, pulse: 5 },
+    treble: { sustained: 14, pulse: 7 },
+    tapestry: { sustained: 5, pulse: 2 },
+  },
+  pendulum_choir: {
+    bass: { sustained: 10, pulse: 4 },
+    mid: { sustained: 14, pulse: 5 },
+    treble: { sustained: 12, pulse: 6 },
+    tapestry: { sustained: 5, pulse: 2 },
+  },
+  chladni_forge: {
+    bass: { sustained: 7, pulse: 4 },
+    mid: { sustained: 16, pulse: 6 },
+    treble: { sustained: 22, pulse: 10 },
+    tapestry: { sustained: 6, pulse: 2 },
+  },
+  tesseract_fold: {
+    bass: { sustained: 8, pulse: 4 },
+    mid: { sustained: 12, pulse: 5 },
+    treble: { sustained: 16, pulse: 8 },
+    tapestry: { sustained: 5, pulse: 2 },
+  },
+  kintsugi_mainframe: {
+    bass: { sustained: 10, pulse: 4 },
+    mid: { sustained: 12, pulse: 5 },
+    treble: { sustained: 14, pulse: 7 },
+    tapestry: { sustained: 5, pulse: 2 },
+  },
+  sonic_calligraphy: {
+    bass: { sustained: 6, pulse: 4 },
+    mid: { sustained: 11, pulse: 5 },
+    treble: { sustained: 18, pulse: 9 },
+    tapestry: { sustained: 4, pulse: 2 },
+  },
+  rube_signalworks: {
+    bass: { sustained: 9, pulse: 4 },
+    mid: { sustained: 14, pulse: 6 },
+    treble: { sustained: 14, pulse: 7 },
+    tapestry: { sustained: 5, pulse: 2 },
+  },
+  shadow_zoetrope: {
+    bass: { sustained: 7, pulse: 3 },
+    mid: { sustained: 12, pulse: 5 },
+    treble: { sustained: 20, pulse: 10 },
+    tapestry: { sustained: 5, pulse: 2 },
+  },
+  prism_labyrinth: {
+    bass: { sustained: 6, pulse: 3 },
+    mid: { sustained: 13, pulse: 6 },
+    treble: { sustained: 20, pulse: 10 },
+    tapestry: { sustained: 6, pulse: 2 },
+  },
+  helix_sequencer: {
+    bass: { sustained: 8, pulse: 4 },
+    mid: { sustained: 14, pulse: 6 },
+    treble: { sustained: 18, pulse: 9 },
+    tapestry: { sustained: 6, pulse: 2 },
   },
 };
 

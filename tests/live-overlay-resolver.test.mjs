@@ -243,7 +243,7 @@ assert.equal(adminQueueControl.includes("Open Wheel Panel") || adminQueueControl
 assert.equal(adminQueueControl.includes("Wheel Overlay — Spin Owed"), true, "wheel overlay utility copy clearly signals an owed spin");
 assert.equal(adminQueueControl.includes("Visual Overlays") && adminQueueControl.includes("AdminRadioVisualsControl"), true, "visual overlays have a separate operator menu");
 assert.equal(adminPanel.includes("Party Burst") || adminPanel.includes("triggerVisualCue"), false, "the Wheel menu no longer contains manual visual controls");
-assert.equal(visualAdminPanel.includes("Party Burst") && visualAdminPanel.includes("triggerVisualCue") && visualAdminPanel.includes("RADIO_VISUAL_PREVIEW_CONTROLS.map"), true, "the Visual Overlays menu owns the five manual cues and thirty family tests");
+assert.equal(visualAdminPanel.includes("Party Burst") && visualAdminPanel.includes("triggerVisualCue") && visualAdminPanel.includes("RADIO_VISUAL_PREVIEW_CONTROLS.map"), true, "the Visual Overlays menu owns the five manual cues and forty family tests");
 assert.equal(adminPanel.includes("Next Action:"), true, "wheel section includes a next action summary for hosts");
 assert.equal(adminQueueControl.includes("top-bar Spin Wheel"), false, "top bar does not include dangerous Spin Wheel action");
 assert.equal(adminQueueControl.includes("top-bar Confirm Wheel"), false, "top bar does not include dangerous Confirm Wheel action");

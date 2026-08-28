@@ -143,6 +143,27 @@ Rollback and deployment boundary:
 - Ship this as one independently revertible pull request with no migration or production configuration change.
 - Re-open the saved Show Visuals source and rehearse all ten new preview buttons plus live music before any between-show merge or deployment decision.
 
+### 9. Forty-family music visual expansion — 2026-08-28
+
+Implementation base: production commit `79ba395` after PR `#405` (thirty-family music visual expansion). Item 8 remains the accepted thirty-family checkpoint; this pass adds ten selected-only Canvas renderers without replacing or layering over the prior thirty.
+
+Add Möbius Relay, Pendulum Choir, Chladni Forge, Tesseract Fold, Kintsugi Mainframe, Sonic Calligraphy, Rube Signalworks, Shadow Zoetrope, Prism Labyrinth, and Helix Sequencer as ten genuinely different composite families. Their dominant grammars are respectively a twisting closed band, hanging phase oscillators, resonant nodal grains, a projected hypercube, repaired structural plates, inertial nonsemantic brushwork, a linked mechanical reaction, a slotted animation drum, refracted ray paths, and depth-sorted twin strands.
+
+Acceptance:
+
+- Extend the deterministic loaded-track deck from thirty to forty families while preserving one appearance per family before reuse, adjacent-repeat prevention across deck boundaries, occurrence-stable selection, loaded-song ownership, and the existing previous/current crossfade.
+- Give every new family a distinct Canvas renderer, three-act lifecycle, perimeter motif, and exact two-second authenticated silent preview using the production code path.
+- Preserve independent sustained and transient bass, mid, and treble ownership. The coordinated tapestry layer must still require all three bands, and lifecycle or tempo may change morphology but may not manufacture audio density.
+- Keep each renderer bounded to its tested layer plan and run only the selected family per frame; do not introduce another render loop, polling path, audio path, storage path, or always-on parallel visual stack.
+- Keep all work inside the existing portrait-safe Canvas stage, performer-safe field, 30 FPS cap, chroma-safe palette, music-only output gain, and browser-local render loop.
+- Preserve the accepted PR `#374` render modules, PR `#404` reaction path, and PR `#405` thirty-family renderer byte-for-byte with explicit checkpoint regressions.
+- Do not change the 40 Hz Audio Bridge poll, bridge calibration or payload, the commercial player on port `43121`, sponsor ownership, overlay access, queue/Wheel/payment/playback ownership, Redis polling, or production capability gates.
+
+Rollback and deployment boundary:
+
+- Ship this as one independently revertible pull request with no migration or production configuration change.
+- Re-open the saved Show Visuals source and rehearse all ten new preview buttons plus live music before any between-show merge or deployment decision.
+
 ## Change-control rule
 
 No pass may silently suppress another system, infer state ownership from event order, or alter queue/Wheel/music behavior outside its acceptance criteria. If a newly discovered dependency would require that expansion, stop that pass and document the dependency before implementation.

@@ -6,7 +6,7 @@ import {
 } from "./radio-visuals-engine";
 
 /**
- * Fast, browser-local articulation layered over the accepted thirty-family
+ * Fast, browser-local articulation layered over the accepted forty-family
  * reaction engine. The native bridge owns analysis; this seam only preserves
  * short band changes that would otherwise disappear inside sustained level.
  */

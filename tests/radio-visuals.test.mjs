@@ -361,14 +361,14 @@ test("manual cue envelopes ease in and out instead of snapping", () => {
   assert.equal(engine.radioVisualCueEnvelope(cue, Date.parse(cue.expiresAt)), 0);
 });
 
-test("all thirty visual tests use one exact two-second silent-preview contract", () => {
+test("all forty visual tests use one exact two-second silent-preview contract", () => {
   assert.equal(previews.RADIO_VISUAL_PREVIEW_DURATION_MS, 2_000);
-  assert.equal(previews.RADIO_VISUAL_PREVIEW_CONTROLS.length, 30);
+  assert.equal(previews.RADIO_VISUAL_PREVIEW_CONTROLS.length, 40);
   assert.deepEqual(
     previews.RADIO_VISUAL_PREVIEW_CONTROLS.map((control) => control.scene),
     engine.RADIO_VISUAL_MUSIC_SCENES,
   );
-  assert.equal(new Set(previews.RADIO_VISUAL_PREVIEW_CONTROLS.map((control) => control.scene)).size, 30);
+  assert.equal(new Set(previews.RADIO_VISUAL_PREVIEW_CONTROLS.map((control) => control.scene)).size, 40);
   for (const control of previews.RADIO_VISUAL_PREVIEW_CONTROLS) {
     const seed = previews.radioVisualPreviewSeed(control.scene, `test-${control.scene}`);
     assert.equal(engine.radioVisualMusicScene(seed), control.scene, `${control.scene} test seed must select its exact production family`);
@@ -1137,7 +1137,7 @@ test("every scene palette survives the Studio orange key with restrained green a
   }
 });
 
-test("music scene selection is deterministic and spans thirty genuinely different families", () => {
+test("music scene selection is deterministic and spans forty genuinely different families", () => {
   assert.deepEqual(engine.RADIO_VISUAL_MUSIC_SCENES, [
     "edge_spectrum",
     "oscilloscope_ribbons",
@@ -1169,6 +1169,16 @@ test("music scene selection is deterministic and spans thirty genuinely differen
     "vector_swarm",
     "moire_engine",
     "eclipse_corona",
+    "mobius_relay",
+    "pendulum_choir",
+    "chladni_forge",
+    "tesseract_fold",
+    "kintsugi_mainframe",
+    "sonic_calligraphy",
+    "rube_signalworks",
+    "shadow_zoetrope",
+    "prism_labyrinth",
+    "helix_sequencer",
   ]);
   for (let seed = 0; seed < 32; seed += 1) {
     assert.equal(engine.radioVisualMusicScene(seed), engine.radioVisualMusicScene(seed));
@@ -1502,7 +1512,7 @@ test("broadcast FX cadence is deterministic, audio-earned, center-bounded, and i
   assert.equal(cue.centerStrength, 0);
 });
 
-test("all thirty music families retain a distinct bounded perimeter identity from quiet through full audio", () => {
+test("all forty music families retain a distinct bounded perimeter identity from quiet through full audio", () => {
   const signal = (level, overrides = {}) => ({
     source: "windows_loopback",
     bpm: 120,
@@ -1574,11 +1584,12 @@ test("the receiver renders every planned identity outside the unchanged performe
   const receiver = fs.readFileSync(path.join(projectRoot, "src/components/RadioVisualsReceiver.tsx"), "utf8");
   const expansion = fs.readFileSync(path.join(projectRoot, "src/components/radio-visuals-music-expansion.ts"), "utf8");
   const expansion30 = fs.readFileSync(path.join(projectRoot, "src/components/radio-visuals-music-expansion-30.ts"), "utf8");
+  const expansion40 = fs.readFileSync(path.join(projectRoot, "src/components/radio-visuals-music-expansion-40.ts"), "utf8");
   const perimeterRenderer = receiver.slice(
     receiver.indexOf("function perimeterRectanglePoint"),
     receiver.indexOf("function drawSeededMusicScene"),
   );
-  const perimeterSources = `${perimeterRenderer}\n${expansion}\n${expansion30}`;
+  const perimeterSources = `${perimeterRenderer}\n${expansion}\n${expansion30}\n${expansion40}`;
   for (const motif of Object.values(engine.RADIO_VISUAL_MUSIC_PERIMETER_MOTIFS)) {
     assert.match(perimeterSources, new RegExp(`plan\\.motif === ["']${motif}["']`), `${motif} must own an explicit Canvas branch`);
   }
@@ -1970,6 +1981,7 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   const receiver = fs.readFileSync(path.join(projectRoot, "src/components/RadioVisualsReceiver.tsx"), "utf8");
   const expansion = fs.readFileSync(path.join(projectRoot, "src/components/radio-visuals-music-expansion.ts"), "utf8");
   const expansion30 = fs.readFileSync(path.join(projectRoot, "src/components/radio-visuals-music-expansion-30.ts"), "utf8");
+  const expansion40 = fs.readFileSync(path.join(projectRoot, "src/components/radio-visuals-music-expansion-40.ts"), "utf8");
   const builder = fs.readFileSync(path.join(projectRoot, "src/lib/radio-visuals.ts"), "utf8");
   const admin = fs.readFileSync(path.join(projectRoot, "src/components/AdminLiveOverlayControl.tsx"), "utf8");
   const visualAdmin = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioVisualsControl.tsx"), "utf8");
@@ -1986,6 +1998,14 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   const queueControl = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioQueueControl.tsx"), "utf8");
   const productionContract = fs.readFileSync(path.join(projectRoot, "docs/queue-production-capability.md"), "utf8");
   const render = receiver.slice(receiver.lastIndexOf("return ("));
+  assert.match(receiver, /drawRadioVisualMusicExpansion40Scene\(scene,/,
+    "the selected production scene must reach the forty-family renderer");
+  assert.match(receiver, /drawRadioVisualMusicExpansion40Perimeter\(\{/,
+    "the selected production scene must reach its forty-family perimeter identity");
+  assert.doesNotMatch(expansion40, /fetch\(|setInterval\(|setTimeout\(|requestAnimationFrame\(|AudioContext|43120|43121|localStorage|sessionStorage/,
+    "the new renderer module cannot create another polling, audio, frame, or storage path");
+  assert.doesNotMatch(expansion40, /fillText\(|strokeText\(/,
+    "the new effects-only families cannot render semantic or pseudo-semantic copy");
   assert.doesNotMatch(`${receiver}\n${page}`, /forcedScene|selectedScene|sceneOverride|\.get\(["']scene["']\)/, "the production URL cannot gain a query-string family selector");
   assert.match(visualAdmin, /RADIO_VISUAL_PREVIEW_CONTROLS\.map/);
   assert.match(visualAdmin, /action: "previewRadioVisual"[\s\S]*visualFamily: scene/);
@@ -2073,7 +2093,7 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.match(receiver, /runtime\.wheelPhase \+= runtime\.wheelVelocity \* elapsedMs \/ 1_000/);
   assert.match(receiver, /drawWheelScene\([\s\S]*?runtime\.wheelPhase[\s\S]*?runtime\.wheelMix \* automaticSceneMix/);
   assert.match(receiver, /snapshot\.signals\.wheelCandidateCount/);
-  assert.doesNotMatch(receiver, /drawTrackSignature|drawLiveMusicResponse/, "one shared layer must not flatten the thirty scene silhouettes");
+  assert.doesNotMatch(receiver, /drawTrackSignature|drawLiveMusicResponse/, "one shared layer must not flatten the forty scene silhouettes");
   assert.doesNotMatch(receiver, /globalCompositeOperation = "screen"/);
   assert.match(receiver, /radioVisualMusicScene\(seed\)/);
   assert.match(receiver, /trackProgressSeed !== snapshot\.visualSeed[\s\S]*?trackProgressStartedAtMs = timestampMs/, "unknown-duration builds must reset on each track occurrence");
@@ -2134,13 +2154,19 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
     expansion30.indexOf("function activity"),
     expansion30.indexOf("function familyAlpha"),
   );
+  const expansion40Activity = expansion40.slice(
+    expansion40.indexOf("function activity"),
+    expansion40.indexOf("function familyAlpha"),
+  );
   for (const structuralDrive of ["bass", "mid", "treble", "bassLayer", "midLayer", "trebleLayer", "bassPulse", "midPulse", "treblePulse", "tapestry", "tapestryPulse", "build", "progress", "phrase"]) {
     assert.match(expansionActivity, new RegExp(`drives\\.${structuralDrive}\\b`), `expanded families must retain ${structuralDrive} in their shared audio activity map`);
-    assert.match(expansion30Activity, new RegExp(`drives\\.${structuralDrive}\\b`), `new families must retain ${structuralDrive} in their shared audio activity map`);
+    assert.match(expansion30Activity, new RegExp(`drives\\.${structuralDrive}\\b`), `thirty-family expansion must retain ${structuralDrive} in its shared audio activity map`);
+    assert.match(expansion40Activity, new RegExp(`drives\\.${structuralDrive}\\b`), `forty-family expansion must retain ${structuralDrive} in its shared audio activity map`);
   }
   for (const audioLayer of ["bass", "mid", "treble", "tapestry"]) {
     assert.match(expansionActivity, new RegExp(`layerPlan\\.${audioLayer}\\b`), `expanded families must consume the ${audioLayer} density budget`);
-    assert.match(expansion30Activity, new RegExp(`layerPlan\\.${audioLayer}\\b`), `new families must consume the ${audioLayer} density budget`);
+    assert.match(expansion30Activity, new RegExp(`layerPlan\\.${audioLayer}\\b`), `thirty-family expansion must consume the ${audioLayer} density budget`);
+    assert.match(expansion40Activity, new RegExp(`layerPlan\\.${audioLayer}\\b`), `forty-family expansion must consume the ${audioLayer} density budget`);
   }
   const expandedSceneIdentityTokens = {
     drawCrtSignalBreach: ["bandCount", "columnCount", "dropoutCount", "breachY"],
@@ -2197,15 +2223,44 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
       assert.match(renderer, new RegExp(`\\b${identityToken}\\b`), `${rendererName} must retain its ${identityToken} visual language`);
     }
   }
-  for (const scene of engine.RADIO_VISUAL_MUSIC_SCENES.slice(20)) {
+  for (const scene of engine.RADIO_VISUAL_MUSIC_SCENES.slice(20, 30)) {
     assert.match(expansion30, new RegExp(`scene === ["']${scene}["']`), `${scene} must own a production Canvas dispatch branch`);
   }
-  assert.doesNotMatch(`${expansion}\n${expansion30}`, /B4RC0DE\/\/LIVE|SIGNAL\/\/ARMED/, "the effects-only visual source cannot render semantic status copy");
+  const expansion40SceneIdentityTokens = {
+    drawMobiusRelay: ["bandSegmentCount", "twistCount", "ribbonHalfWidth", "relayPacketCount"],
+    drawPendulumChoir: ["pendulumCount", "phaseSpread", "bobRadius", "strikeCount"],
+    drawChladniForge: ["nodalGrainCount", "nodalModeX", "nodalModeY", "resonancePlateInset"],
+    drawTesseractFold: ["hypercubeVertexCount", "hypercubeEdgeCount", "foldAngle", "dimensionGateCount"],
+    drawKintsugiMainframe: ["mainframePlateCount", "repairSeamCount", "seamClosure", "plateOffset"],
+    drawSonicCalligraphy: ["brushStrokeCount", "strokeMomentum", "inkPoolCount", "flickCount"],
+    drawRubeSignalworks: ["gearCount", "pistonCount", "carrierCount", "chainReactionIndex"],
+    drawShadowZoetrope: ["frameCount", "drumPhase", "silhouetteStep", "strobeWindowCount"],
+    drawPrismLabyrinth: ["prismCount", "rayBranchCount", "refractionDepth", "labyrinthTurnCount"],
+    drawHelixSequencer: ["helixRungCount", "strandTurnCount", "sequencePacketCount", "depthPhase"],
+  };
+  const expansion40RendererNames = Object.keys(expansion40SceneIdentityTokens);
+  for (const [index, rendererName] of expansion40RendererNames.entries()) {
+    const start = expansion40.indexOf(`function ${rendererName}`);
+    const nextName = expansion40RendererNames[index + 1];
+    const end = nextName
+      ? expansion40.indexOf(`function ${nextName}`, start + 10)
+      : expansion40.indexOf("export function drawRadioVisualMusicExpansion40Scene", start + 10);
+    const renderer = expansion40.slice(start, end);
+    assert.ok(start >= 0 && end > start, `${rendererName} must be independently implemented`);
+    assert.match(renderer, /const a = activity\(input\)/, `${rendererName} must use the tested audio and layer-plan activity map`);
+    for (const identityToken of expansion40SceneIdentityTokens[rendererName]) {
+      assert.match(renderer, new RegExp(`\\b${identityToken}\\b`), `${rendererName} must retain its ${identityToken} visual language`);
+    }
+  }
+  for (const scene of engine.RADIO_VISUAL_MUSIC_SCENES.slice(30)) {
+    assert.match(expansion40, new RegExp(`scene === ["']${scene}["']`), `${scene} must own a production Canvas dispatch branch`);
+  }
+  assert.doesNotMatch(`${expansion}\n${expansion30}\n${expansion40}`, /B4RC0DE\/\/LIVE|SIGNAL\/\/ARMED/, "the effects-only visual source cannot render semantic status copy");
   assert.match(receiver.slice(receiver.indexOf("function drawMatrixRain"), receiver.indexOf("function drawTapeFeedback")), /drives\.phrase/);
   assert.match(receiver.slice(receiver.indexOf("function drawLaserLattice"), receiver.indexOf("function drawParticlePressure")), /drives\.progress/);
   assert.match(receiver, /sceneStateMix = visualPreview \? 1 : clampVisualValue\(1 - Math\.max\(runtime\.wheelMix, runtime\.systemMix\), 0, 1\)/);
   assert.match(receiver, /activeMusicMix = renderTrackMix \* sceneStateMix/, "music output must fade with track ownership or the bounded preview envelope");
-  assert.match(receiver, /RADIO_VISUAL_MUSIC_OUTPUT_GAIN/, "the thirty music families must share one explicit two-times output gain");
+  assert.match(receiver, /RADIO_VISUAL_MUSIC_OUTPUT_GAIN/, "the forty music families must share one explicit two-times output gain");
   assert.equal(engine.RADIO_VISUAL_MUSIC_OUTPUT_GAIN, 2);
   assert.match(receiver, /drawSeedComposition\(previousMusicSeed, 1 - renderMusicSeedBlend\)/);
   assert.match(receiver, /drawSeedComposition\(currentMusicSeed, renderMusicSeedBlend\)/);

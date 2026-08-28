@@ -22,6 +22,10 @@ const approvedPr374ExactFiles = new Map([
   ["tools/barcode-audio-bridge/Program.cs", "70b4927e05e663a2609a51c4cdebc996c98b4a1915872a4cc830c0c033235bda"],
 ]);
 
+const approvedPr405ExactFiles = new Map([
+  ["src/components/radio-visuals-music-expansion-30.ts", "08532932a7bdfae284560917e7c8136a10ca65aeb59e922af907933baa01482d"],
+]);
+
 test("the accepted twenty-family render modules and visual-only process boundary remain byte-exact", () => {
   for (const [relativePath, expectedHash] of approvedPr374ExactFiles) {
     const contents = readFileSync(path.join(projectRoot, relativePath));
@@ -30,7 +34,15 @@ test("the accepted twenty-family render modules and visual-only process boundary
   }
 });
 
-test("the original Canvas families and PR #404 reaction path remain exact inside the thirty-family extension", () => {
+test("the accepted thirty-family render extension remains byte-exact", () => {
+  for (const [relativePath, expectedHash] of approvedPr405ExactFiles) {
+    const contents = readFileSync(path.join(projectRoot, relativePath));
+    const actualHash = createHash("sha256").update(contents).digest("hex");
+    assert.equal(actualHash, expectedHash, relativePath);
+  }
+});
+
+test("the original Canvas families and PR #404 reaction path remain exact inside the forty-family extension", () => {
   const receiver = readFileSync(path.join(projectRoot, "src/components/RadioVisualsReceiver.tsx"), "utf8");
   const legacyFamilyRenderers = receiver.slice(
     receiver.indexOf("function drawEdgeSpectrum"),

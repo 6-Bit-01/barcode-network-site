@@ -61,6 +61,10 @@ import {
   drawRadioVisualMusicExpansion30Perimeter,
   drawRadioVisualMusicExpansion30Scene,
 } from "./radio-visuals-music-expansion-30";
+import {
+  drawRadioVisualMusicExpansion40Perimeter,
+  drawRadioVisualMusicExpansion40Scene,
+} from "./radio-visuals-music-expansion-40";
 
 type ServerClockAnchor = { serverNowMs: number; receivedAtPerformanceMs: number };
 type ConnectionState = "connected" | "reconnecting" | "standby";
@@ -1736,6 +1740,23 @@ function drawMusicPerimeterIdentity(
   context.lineCap = "square";
   context.lineJoin = "miter";
 
+  if (drawRadioVisualMusicExpansion40Perimeter({
+    context,
+    width,
+    height,
+    time,
+    mix,
+    drives,
+    plan,
+    primary,
+    secondary,
+    highlight,
+    seed,
+  })) {
+    context.restore();
+    return;
+  }
+
   if (drawRadioVisualMusicExpansion30Perimeter({
     context,
     width,
@@ -2061,6 +2082,19 @@ function drawSeededMusicScene(
     seed,
   });
   drawRadioVisualMusicExpansion30Scene(scene, {
+    context,
+    width,
+    height,
+    time,
+    mix,
+    drives,
+    layerPlan,
+    primary,
+    secondary,
+    highlight,
+    seed,
+  });
+  drawRadioVisualMusicExpansion40Scene(scene, {
     context,
     width,
     height,
@@ -4081,7 +4115,7 @@ function drawVisualFrame(
     ? radioVisualMusicSceneVisibility(musicDrives)
     : 0;
   // Keep the strong BARCODE transmission bed between songs, but let each
-  // track's own scene language take over instead of flattening all thirty into
+  // track's own scene language take over instead of flattening all forty into
   // the same bars, tracking lines, corners, and flecks.
   const sharedTransmissionRetention = clampVisualValue(1 - renderTrackMix * 0.78, 0.22, 1);
   drawIdleTransmission(

@@ -49,7 +49,7 @@ function extractedRenderer(source, name) {
   return source.slice(start, end);
 }
 
-test("untouched original Canvas families and the PR #404 reaction path remain exact around the perceptual pilots", () => {
+test("the original Canvas families and PR #404 reaction path remain exact around the all-family adapter", () => {
   const receiver = readFileSync(path.join(projectRoot, "src/components/RadioVisualsReceiver.tsx"), "utf8");
   const untouchedFamilyRenderers = [
     "drawEdgeSpectrum",
@@ -61,7 +61,7 @@ test("untouched original Canvas families and the PR #404 reaction path remain ex
   assert.equal(
     createHash("sha256").update(untouchedFamilyRenderers).digest("hex"),
     "a98234c8ecb24da6f180909f6915ff512d380ef3fc73f7d8d50157fec69556a0",
-    "the five original non-pilot inline Canvas renderers must remain byte-exact",
+    "the five inline renderers without specialist geometry changes must remain byte-exact",
   );
   const perceptualPilotRenderers = [
     "drawOscilloscopeRibbons",
@@ -73,7 +73,7 @@ test("untouched original Canvas families and the PR #404 reaction path remain ex
   assert.equal(
     createHash("sha256").update(perceptualPilotRenderers).digest("hex"),
     "927d7a924c26f5ff39a43aadcfc59bee5be0d9ee1d3d43dfb7f11e6b89f10b80",
-    "the approved five-family perceptual pilot must remain byte-exact",
+    "the five specialist perceptual renderers must remain byte-exact",
   );
 
   const engine = readFileSync(path.join(projectRoot, "src/lib/radio-visuals-engine.ts"), "utf8");

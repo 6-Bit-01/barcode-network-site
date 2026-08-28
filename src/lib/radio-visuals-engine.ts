@@ -243,15 +243,95 @@ export function advanceRadioVisualMusicTransition(
 
 export type RadioVisualMusicScene = (typeof RADIO_VISUAL_MUSIC_SCENES)[number];
 
-export const RADIO_VISUAL_PERCEPTUAL_PILOT_SCENES = [
-  "oscilloscope_ribbons",
-  "matrix_rain",
-  "lightning_switchyard",
-  "laser_lattice",
-  "signal_constellation",
-] as const satisfies readonly RadioVisualMusicScene[];
+/** Every loaded-track family consumes the optional Audio Bridge 1.2 frame. */
+export const RADIO_VISUAL_PERCEPTUAL_SCENES = RADIO_VISUAL_MUSIC_SCENES;
 
-export type RadioVisualPerceptualPilotScene = (typeof RADIO_VISUAL_PERCEPTUAL_PILOT_SCENES)[number];
+export interface RadioVisualPerceptualSceneProfile {
+  /** Low-versus-body weighting for the scene's mass/depth channel. */
+  foundationLowWeight: number;
+  /** Body-versus-voice weighting for its structural channel. */
+  structureBodyWeight: number;
+  /** Voice-versus-high weighting for its fine-detail channel. */
+  detailVoiceWeight: number;
+  /** How much broad spectral agreement expands coupled composition. */
+  couplingMeanWeight: number;
+  /** Share of motion owned by real band arrivals. */
+  motionHitWeight: number;
+  /** Bounded stereo-width contribution to sustained structure. */
+  stereoStructureWeight: number;
+  /** Bounded brightness contribution to fine detail. */
+  brightnessDetailWeight: number;
+}
+
+function perceptualSceneProfile(
+  foundationLowWeight: number,
+  structureBodyWeight: number,
+  detailVoiceWeight: number,
+  couplingMeanWeight: number,
+  motionHitWeight: number,
+  stereoStructureWeight: number,
+  brightnessDetailWeight: number,
+): RadioVisualPerceptualSceneProfile {
+  return {
+    foundationLowWeight,
+    structureBodyWeight,
+    detailVoiceWeight,
+    couplingMeanWeight,
+    motionHitWeight,
+    stereoStructureWeight,
+    brightnessDetailWeight,
+  };
+}
+
+/**
+ * Scene-specific musical interpretations. The values are deliberately not a
+ * generic preset shared across the deck: heavy architectural families lean
+ * into low foundations, text/light families favor presence and air, fluid
+ * families favor motion, and spatial families make wider stereo images reveal
+ * more structure. The renderer still owns the visual language.
+ */
+export const RADIO_VISUAL_PERCEPTUAL_SCENE_PROFILES: Record<RadioVisualMusicScene, RadioVisualPerceptualSceneProfile> = {
+  edge_spectrum: perceptualSceneProfile(0.76, 0.48, 0.28, 0.22, 0.76, 0.035, 0.11),
+  oscilloscope_ribbons: perceptualSceneProfile(0.72, 0.62, 0.35, 0.28, 0.72, 0.07, 0.09),
+  tape_feedback: perceptualSceneProfile(0.58, 0.44, 0.46, 0.19, 0.68, 0.045, 0.08),
+  matrix_rain: perceptualSceneProfile(0.55, 0.35, 0.25, 0.24, 0.78, 0.055, 0.12),
+  ascii_terminal: perceptualSceneProfile(0.46, 0.31, 0.38, 0.17, 0.81, 0.03, 0.1),
+  pixel_sort_storm: perceptualSceneProfile(0.64, 0.27, 0.16, 0.3, 0.84, 0.05, 0.14),
+  lightning_switchyard: perceptualSceneProfile(0.82, 0.68, 0.18, 0.2, 0.82, 0.025, 0.13),
+  laser_lattice: perceptualSceneProfile(0.4, 0.2, 0.15, 0.31, 0.79, 0.085, 0.15),
+  particle_pressure: perceptualSceneProfile(0.88, 0.57, 0.33, 0.26, 0.74, 0.065, 0.07),
+  signal_constellation: perceptualSceneProfile(0.3, 0.45, 0.4, 0.34, 0.69, 0.1, 0.08),
+  crt_signal_breach: perceptualSceneProfile(0.61, 0.36, 0.21, 0.18, 0.83, 0.04, 0.13),
+  voxel_megacity: perceptualSceneProfile(0.9, 0.74, 0.42, 0.21, 0.66, 0.035, 0.06),
+  liquid_chrome: perceptualSceneProfile(0.67, 0.52, 0.29, 0.32, 0.7, 0.09, 0.12),
+  cellular_takeover: perceptualSceneProfile(0.71, 0.4, 0.36, 0.29, 0.73, 0.075, 0.09),
+  shattered_broadcast: perceptualSceneProfile(0.62, 0.33, 0.2, 0.16, 0.86, 0.04, 0.14),
+  barcode_foundry: perceptualSceneProfile(0.93, 0.69, 0.48, 0.23, 0.71, 0.025, 0.07),
+  recursive_portal: perceptualSceneProfile(0.79, 0.56, 0.41, 0.35, 0.65, 0.08, 0.08),
+  holographic_terrain: perceptualSceneProfile(0.84, 0.5, 0.24, 0.27, 0.72, 0.06, 0.11),
+  kinetic_glyph_engine: perceptualSceneProfile(0.52, 0.29, 0.34, 0.2, 0.8, 0.045, 0.12),
+  mechanical_iris: perceptualSceneProfile(0.91, 0.63, 0.44, 0.33, 0.67, 0.05, 0.07),
+  spectral_cathedral: perceptualSceneProfile(0.86, 0.66, 0.3, 0.36, 0.64, 0.07, 0.1),
+  ferrofluid_field: perceptualSceneProfile(0.89, 0.47, 0.23, 0.25, 0.77, 0.065, 0.1),
+  orbital_relay: perceptualSceneProfile(0.49, 0.54, 0.31, 0.37, 0.7, 0.11, 0.09),
+  data_loom: perceptualSceneProfile(0.44, 0.38, 0.27, 0.39, 0.75, 0.12, 0.11),
+  monolith_array: perceptualSceneProfile(0.96, 0.78, 0.5, 0.15, 0.63, 0.02, 0.05),
+  plasma_tendrils: perceptualSceneProfile(0.69, 0.42, 0.19, 0.3, 0.85, 0.08, 0.14),
+  signal_bloom: perceptualSceneProfile(0.74, 0.58, 0.37, 0.4, 0.68, 0.095, 0.1),
+  vector_swarm: perceptualSceneProfile(0.38, 0.25, 0.14, 0.28, 0.87, 0.105, 0.15),
+  moire_engine: perceptualSceneProfile(0.77, 0.6, 0.26, 0.38, 0.71, 0.075, 0.12),
+  eclipse_corona: perceptualSceneProfile(0.94, 0.51, 0.17, 0.24, 0.79, 0.055, 0.15),
+  mobius_relay: perceptualSceneProfile(0.73, 0.49, 0.32, 0.41, 0.67, 0.115, 0.09),
+  pendulum_choir: perceptualSceneProfile(0.92, 0.72, 0.45, 0.26, 0.76, 0.045, 0.06),
+  chladni_forge: perceptualSceneProfile(0.8, 0.43, 0.22, 0.42, 0.82, 0.07, 0.13),
+  tesseract_fold: perceptualSceneProfile(0.68, 0.59, 0.28, 0.43, 0.74, 0.1, 0.12),
+  kintsugi_mainframe: perceptualSceneProfile(0.95, 0.76, 0.47, 0.14, 0.62, 0.03, 0.06),
+  sonic_calligraphy: perceptualSceneProfile(0.57, 0.34, 0.18, 0.33, 0.88, 0.09, 0.14),
+  rube_signalworks: perceptualSceneProfile(0.87, 0.64, 0.39, 0.18, 0.78, 0.04, 0.08),
+  shadow_zoetrope: perceptualSceneProfile(0.6, 0.26, 0.13, 0.12, 0.89, 0.05, 0.15),
+  prism_labyrinth: perceptualSceneProfile(0.42, 0.23, 0.12, 0.44, 0.84, 0.125, 0.16),
+  helix_sequencer: perceptualSceneProfile(0.7, 0.55, 0.3, 0.45, 0.73, 0.13, 0.11),
+};
 
 export interface RadioVisualAudioDrives {
   presence: number;
@@ -274,7 +354,7 @@ export interface RadioVisualAudioDrives {
   build: number;
   progress: number;
   phrase: number;
-  /** Passed through untouched so only explicitly opted-in renderers consume the richer frame. */
+  /** Passed through untouched so every family can derive its own perceptual interpretation. */
   perceptual: RadioAudioBridgePerceptualFeatures | null;
 }
 
@@ -679,12 +759,7 @@ export const RADIO_VISUAL_MUSIC_SCENE_LAYER_LIMITS: Record<RadioVisualMusicScene
   },
 };
 
-/**
- * Audio Bridge 1.2 pilots get a second, comparable-to-the-dense-families
- * ceiling. These budgets are intentionally unavailable to legacy/fallback
- * signals so this pass cannot silently reshape the other thirty-five scenes.
- */
-export const RADIO_VISUAL_PERCEPTUAL_PILOT_LAYER_LIMITS: Record<RadioVisualPerceptualPilotScene, RadioVisualMusicSceneLayerLimits> = {
+const RADIO_VISUAL_PERCEPTUAL_CUSTOM_LAYER_LIMITS: Partial<Record<RadioVisualMusicScene, RadioVisualMusicSceneLayerLimits>> = {
   oscilloscope_ribbons: {
     bass: { sustained: 8, pulse: 4 },
     mid: { sustained: 10, pulse: 5 },
@@ -716,6 +791,53 @@ export const RADIO_VISUAL_PERCEPTUAL_PILOT_LAYER_LIMITS: Record<RadioVisualPerce
     tapestry: { sustained: 7, pulse: 2 },
   },
 };
+
+const RADIO_VISUAL_PERCEPTUAL_LAYER_FLOOR: RadioVisualMusicSceneLayerLimits = {
+  bass: { sustained: 8, pulse: 4 },
+  mid: { sustained: 11, pulse: 5 },
+  treble: { sustained: 12, pulse: 6 },
+  tapestry: { sustained: 5, pulse: 2 },
+};
+
+const RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION = {
+  foundation: { threshold: 0.014, ceiling: 0.56 },
+  structure: { threshold: 0.012, ceiling: 0.52 },
+  detail: { threshold: 0.01, ceiling: 0.46 },
+  coupling: { threshold: 0.012, ceiling: 0.5 },
+} as const;
+
+function liftedPerceptualLayerLimits(scene: RadioVisualMusicScene): RadioVisualMusicSceneLayerLimits {
+  const custom = RADIO_VISUAL_PERCEPTUAL_CUSTOM_LAYER_LIMITS[scene];
+  if (custom) return custom;
+  const legacy = RADIO_VISUAL_MUSIC_SCENE_LAYER_LIMITS[scene];
+  return {
+    bass: {
+      sustained: Math.max(legacy.bass.sustained, RADIO_VISUAL_PERCEPTUAL_LAYER_FLOOR.bass.sustained),
+      pulse: Math.max(legacy.bass.pulse, RADIO_VISUAL_PERCEPTUAL_LAYER_FLOOR.bass.pulse),
+    },
+    mid: {
+      sustained: Math.max(legacy.mid.sustained, RADIO_VISUAL_PERCEPTUAL_LAYER_FLOOR.mid.sustained),
+      pulse: Math.max(legacy.mid.pulse, RADIO_VISUAL_PERCEPTUAL_LAYER_FLOOR.mid.pulse),
+    },
+    treble: {
+      sustained: Math.max(legacy.treble.sustained, RADIO_VISUAL_PERCEPTUAL_LAYER_FLOOR.treble.sustained),
+      pulse: Math.max(legacy.treble.pulse, RADIO_VISUAL_PERCEPTUAL_LAYER_FLOOR.treble.pulse),
+    },
+    tapestry: {
+      sustained: Math.max(legacy.tapestry.sustained, RADIO_VISUAL_PERCEPTUAL_LAYER_FLOOR.tapestry.sustained),
+      pulse: Math.max(legacy.tapestry.pulse, RADIO_VISUAL_PERCEPTUAL_LAYER_FLOOR.tapestry.pulse),
+    },
+  };
+}
+
+/**
+ * Audio Bridge 1.2 frames give every family a bounded ceiling comparable to
+ * the established dense families. The legacy table remains authoritative for
+ * older helpers and synthetic/analyser fallback input.
+ */
+export const RADIO_VISUAL_PERCEPTUAL_SCENE_LAYER_LIMITS = Object.fromEntries(
+  RADIO_VISUAL_MUSIC_SCENES.map((scene) => [scene, liftedPerceptualLayerLimits(scene)]),
+) as Record<RadioVisualMusicScene, RadioVisualMusicSceneLayerLimits>;
 
 export interface RadioVisualAudioReactionState {
   bassSlow: number;
@@ -895,17 +1017,13 @@ function dedicatedAudioLayerCount(
 
 const EMPTY_PERCEPTUAL_WAVEFORM = Object.freeze(Array.from({ length: 16 }, () => 0));
 
-function isPerceptualPilotScene(scene: RadioVisualMusicScene): scene is RadioVisualPerceptualPilotScene {
-  return (RADIO_VISUAL_PERCEPTUAL_PILOT_SCENES as readonly RadioVisualMusicScene[]).includes(scene);
-}
-
-/** Resolve one pilot's deliberately distinct perceptual interpretation. */
+/** Resolve one family's deliberately distinct perceptual interpretation. */
 export function radioVisualPerceptualScenePlan(
   scene: RadioVisualMusicScene,
   drives: RadioVisualAudioDrives,
 ): RadioVisualPerceptualScenePlan {
   const features = drives.perceptual;
-  if (!features || !isPerceptualPilotScene(scene)) {
+  if (!features) {
     return {
       enabled: false,
       foundation: drives.bassLayer,
@@ -935,64 +1053,29 @@ export function radioVisualPerceptualScenePlan(
   const bodyHit = Math.max(onsets.lowMid, onsets.mid);
   const voiceHit = Math.max(onsets.highMid, onsets.presence);
   const highHit = Math.max(onsets.brilliance, onsets.air);
-
-  let foundation: number;
-  let structure: number;
-  let detail: number;
-  let foundationHit: number;
-  let structureHit: number;
-  let detailHit: number;
-  switch (scene) {
-    case "oscilloscope_ribbons":
-      foundation = low * 0.72 + body * 0.28;
-      structure = body * 0.62 + voice * 0.38;
-      detail = voice * 0.35 + high * 0.65;
-      foundationHit = lowHit * 0.7 + bodyHit * 0.3;
-      structureHit = bodyHit * 0.62 + voiceHit * 0.38;
-      detailHit = voiceHit * 0.35 + highHit * 0.65;
-      break;
-    case "matrix_rain":
-      foundation = low * 0.55 + body * 0.45;
-      structure = body * 0.35 + voice * 0.65;
-      detail = voice * 0.25 + high * 0.75;
-      foundationHit = lowHit * 0.55 + bodyHit * 0.45;
-      structureHit = bodyHit * 0.35 + voiceHit * 0.65;
-      detailHit = voiceHit * 0.25 + highHit * 0.75;
-      break;
-    case "lightning_switchyard":
-      foundation = low * 0.82 + body * 0.18;
-      structure = body * 0.68 + voice * 0.32;
-      detail = voice * 0.18 + high * 0.82;
-      foundationHit = lowHit * 0.82 + bodyHit * 0.18;
-      structureHit = bodyHit * 0.68 + voiceHit * 0.32;
-      detailHit = voiceHit * 0.18 + highHit * 0.82;
-      break;
-    case "laser_lattice":
-      foundation = low * 0.4 + body * 0.6;
-      structure = body * 0.2 + voice * 0.8;
-      detail = voice * 0.15 + high * 0.85;
-      foundationHit = lowHit * 0.4 + bodyHit * 0.6;
-      structureHit = bodyHit * 0.2 + voiceHit * 0.8;
-      detailHit = voiceHit * 0.15 + highHit * 0.85;
-      break;
-    case "signal_constellation":
-      foundation = low * 0.3 + body * 0.7;
-      structure = body * 0.45 + voice * 0.55;
-      detail = voice * 0.4 + high * 0.6;
-      foundationHit = lowHit * 0.3 + bodyHit * 0.7;
-      structureHit = bodyHit * 0.45 + voiceHit * 0.55;
-      detailHit = voiceHit * 0.4 + highHit * 0.6;
-      break;
-  }
-
-  foundation = clampVisualValue(foundation);
-  structure = clampVisualValue(structure);
-  detail = clampVisualValue(detail);
-  const sharedSpectrum = Math.min(low, body, voice, high);
-  const spectrumMean = (low + body + voice + high) / 4;
-  const coupling = clampVisualValue(sharedSpectrum * (0.72 + spectrumMean * 0.28));
+  const profile = RADIO_VISUAL_PERCEPTUAL_SCENE_PROFILES[scene];
+  const foundationBase = low * profile.foundationLowWeight + body * (1 - profile.foundationLowWeight);
+  const structureBase = body * profile.structureBodyWeight + voice * (1 - profile.structureBodyWeight);
+  const detailBase = voice * profile.detailVoiceWeight + high * (1 - profile.detailVoiceWeight);
+  const foundation = clampVisualValue(foundationBase * (0.94 + features.dynamicRange * 0.06));
+  const structure = clampVisualValue(
+    structureBase * (1 - profile.stereoStructureWeight + features.stereoWidth * profile.stereoStructureWeight),
+  );
+  const detail = clampVisualValue(
+    detailBase * (1 - profile.brightnessDetailWeight + features.brightness * profile.brightnessDetailWeight),
+  );
+  const foundationHit = lowHit * profile.foundationLowWeight + bodyHit * (1 - profile.foundationLowWeight);
+  const structureHit = bodyHit * profile.structureBodyWeight + voiceHit * (1 - profile.structureBodyWeight);
+  const detailHit = voiceHit * profile.detailVoiceWeight + highHit * (1 - profile.detailVoiceWeight);
+  const sharedSpectrum = Math.min(foundation, structure, detail);
+  const spectrumMean = (foundation + structure + detail) / 3;
+  const coupling = clampVisualValue(
+    sharedSpectrum * (1 - profile.couplingMeanWeight + spectrumMean * profile.couplingMeanWeight),
+  );
   const overall = clampVisualValue((foundation + structure + detail) / 3);
   const strongestHit = Math.max(foundationHit, structureHit, detailHit);
+  const densityMotionWeight = 0.08;
+  const contrastMotionWeight = Math.max(0, 1 - profile.motionHitWeight - densityMotionWeight);
 
   return {
     enabled: true,
@@ -1009,13 +1092,89 @@ export function radioVisualPerceptualScenePlan(
     // Transient density is intentionally only a small motion term. A
     // saturated rate meter cannot create geometry or fake repeated hits.
     motion: clampVisualValue(
-      strongestHit * 0.72
-        + features.dynamicRange * overall * 0.2
-        + features.transientDensity * overall * 0.08,
+      strongestHit * profile.motionHitWeight
+        + features.dynamicRange * overall * contrastMotionWeight
+        + features.transientDensity * overall * densityMotionWeight,
     ),
     spread: features.stereoWidth,
     balance: features.stereoBalance,
     waveform: features.waveform,
+  };
+}
+
+/**
+ * Feed the existing renderer hooks with one scene-specific semantic signal.
+ * This preserves every authored Canvas family while replacing the shared
+ * three-band interpretation only when the validated Audio Bridge 1.2 block is
+ * present. Older helpers and fallback sources return the original object.
+ */
+export function radioVisualPerceptualAudioDrives(
+  scene: RadioVisualMusicScene,
+  drives: RadioVisualAudioDrives,
+): RadioVisualAudioDrives {
+  const perceptual = radioVisualPerceptualScenePlan(scene, drives);
+  if (!perceptual.enabled) return drives;
+  const bassLayer = bandLayerActivation(
+    perceptual.foundation,
+    RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.foundation.threshold,
+    RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.foundation.ceiling,
+  );
+  const midLayer = bandLayerActivation(
+    perceptual.structure,
+    RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.structure.threshold,
+    RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.structure.ceiling,
+  );
+  const trebleLayer = bandLayerActivation(
+    perceptual.detail,
+    RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.detail.threshold,
+    RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.detail.ceiling,
+  );
+  const tapestry = bandLayerActivation(
+    perceptual.coupling,
+    RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.coupling.threshold,
+    RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.coupling.ceiling,
+  );
+  const tapestryPulse = clampVisualValue(
+    Math.min(perceptual.foundationHit, perceptual.structureHit, perceptual.detailHit),
+  );
+  const impact = clampVisualValue(
+    Math.max(perceptual.foundationHit, perceptual.structureHit, perceptual.detailHit),
+  );
+  const body = clampVisualValue(
+    (perceptual.foundation * 0.34
+      + perceptual.structure * 0.4
+      + perceptual.detail * 0.18
+      + perceptual.coupling * 0.08)
+      * (0.92 + perceptual.contrast * 0.08),
+  );
+  const presence = clampVisualValue(
+    body * 0.72
+      + Math.max(perceptual.foundation, perceptual.structure, perceptual.detail) * 0.2
+      + impact * 0.08,
+  );
+  return {
+    ...drives,
+    presence,
+    body,
+    bass: perceptual.foundation,
+    mid: perceptual.structure,
+    treble: perceptual.detail,
+    bassLayer,
+    midLayer,
+    trebleLayer,
+    tapestry,
+    impact,
+    bassPulse: perceptual.foundationHit,
+    midPulse: perceptual.structureHit,
+    treblePulse: perceptual.detailHit,
+    tapestryPulse,
+    build: clampVisualValue(
+      body * 0.32
+        + perceptual.foundation * 0.2
+        + perceptual.structure * 0.25
+        + perceptual.detail * 0.13
+        + perceptual.coupling * 0.1,
+    ),
   };
 }
 
@@ -1029,13 +1188,33 @@ export function radioVisualMusicSceneLayerPlan(
   drives: RadioVisualAudioDrives,
 ): RadioVisualMusicSceneLayerPlan {
   const perceptual = radioVisualPerceptualScenePlan(scene, drives);
-  if (perceptual.enabled && isPerceptualPilotScene(scene)) {
-    const limits = RADIO_VISUAL_PERCEPTUAL_PILOT_LAYER_LIMITS[scene];
+  if (perceptual.enabled) {
+    const limits = RADIO_VISUAL_PERCEPTUAL_SCENE_LAYER_LIMITS[scene];
+    const foundationLayer = bandLayerActivation(
+      perceptual.foundation,
+      RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.foundation.threshold,
+      RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.foundation.ceiling,
+    );
+    const structureLayer = bandLayerActivation(
+      perceptual.structure,
+      RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.structure.threshold,
+      RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.structure.ceiling,
+    );
+    const detailLayer = bandLayerActivation(
+      perceptual.detail,
+      RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.detail.threshold,
+      RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.detail.ceiling,
+    );
+    const couplingLayer = bandLayerActivation(
+      perceptual.coupling,
+      RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.coupling.threshold,
+      RADIO_VISUAL_PERCEPTUAL_LAYER_CALIBRATION.coupling.ceiling,
+    );
     return {
-      bass: dedicatedAudioLayerCount(perceptual.foundation, perceptual.foundationHit, limits.bass, 0.025, 1.12),
-      mid: dedicatedAudioLayerCount(perceptual.structure, perceptual.structureHit, limits.mid, 0.022, 1.08),
-      treble: dedicatedAudioLayerCount(perceptual.detail, perceptual.detailHit, limits.treble, 0.018, 1.04),
-      tapestry: dedicatedAudioLayerCount(perceptual.coupling, Math.min(perceptual.foundationHit, perceptual.structureHit, perceptual.detailHit), limits.tapestry, 0.02, 1.16),
+      bass: dedicatedAudioLayerCount(foundationLayer, perceptual.foundationHit, limits.bass, 0.025, 1.12),
+      mid: dedicatedAudioLayerCount(structureLayer, perceptual.structureHit, limits.mid, 0.022, 1.08),
+      treble: dedicatedAudioLayerCount(detailLayer, perceptual.detailHit, limits.treble, 0.018, 1.04),
+      tapestry: dedicatedAudioLayerCount(couplingLayer, Math.min(perceptual.foundationHit, perceptual.structureHit, perceptual.detailHit), limits.tapestry, 0.02, 1.16),
     };
   }
   const limits = RADIO_VISUAL_MUSIC_SCENE_LAYER_LIMITS[scene];

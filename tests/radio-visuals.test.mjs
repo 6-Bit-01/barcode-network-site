@@ -979,7 +979,7 @@ test("Windows levels become quiet, isolated band layers and a full-spectrum tape
   }
 });
 
-test("perceptual pilot scenes distinguish equal-loudness songs and reach calibrated full ceilings", () => {
+test("all forty perceptual scenes distinguish equal-loudness songs and reach calibrated full ceilings", () => {
   const snapshot = {
     visualSeed: 41_909,
     visualMode: "track",
@@ -1071,17 +1071,43 @@ test("perceptual pilot scenes distinguish equal-loudness songs and reach calibra
   assert.equal(darkDrives.bass, brightDrives.bass);
   assert.equal(darkDrives.mid, brightDrives.mid);
   assert.equal(darkDrives.treble, brightDrives.treble);
-  for (const sceneName of engine.RADIO_VISUAL_PERCEPTUAL_PILOT_SCENES) {
+  assert.deepEqual(
+    engine.RADIO_VISUAL_PERCEPTUAL_SCENES,
+    engine.RADIO_VISUAL_MUSIC_SCENES,
+    "the real shuffled deck cannot leave any family on the old mapping when perceptual features are available",
+  );
+  const sceneSignatures = [];
+  for (const sceneName of engine.RADIO_VISUAL_PERCEPTUAL_SCENES) {
     const darkPlan = engine.radioVisualPerceptualScenePlan(sceneName, darkDrives);
     const brightPlan = engine.radioVisualPerceptualScenePlan(sceneName, brightDrives);
     assert.equal(darkPlan.enabled, true);
     assert.equal(brightPlan.enabled, true);
     assert.notDeepEqual(darkPlan, brightPlan, `${sceneName} must react to spectral/stereo/waveform identity even when legacy loudness is identical`);
+    const darkSceneDrives = engine.radioVisualPerceptualAudioDrives(sceneName, darkDrives);
+    const brightSceneDrives = engine.radioVisualPerceptualAudioDrives(sceneName, brightDrives);
+    assert.notDeepEqual(
+      [darkSceneDrives.bass, darkSceneDrives.mid, darkSceneDrives.treble, darkSceneDrives.build],
+      [brightSceneDrives.bass, brightSceneDrives.mid, brightSceneDrives.treble, brightSceneDrives.build],
+      `${sceneName} must feed its existing renderer hooks a song-specific semantic signal`,
+    );
+    sceneSignatures.push([
+      darkPlan.foundation,
+      darkPlan.structure,
+      darkPlan.detail,
+      darkPlan.coupling,
+      darkPlan.motion,
+    ].map((value) => value.toFixed(6)).join(":"));
   }
-  const sceneFoundations = engine.RADIO_VISUAL_PERCEPTUAL_PILOT_SCENES.map((sceneName) => (
-    engine.radioVisualPerceptualScenePlan(sceneName, darkDrives).foundation.toFixed(4)
-  ));
-  assert.ok(new Set(sceneFoundations).size >= 3, "pilot families must not share one generic band-weight profile");
+  assert.equal(
+    new Set(sceneSignatures).size,
+    engine.RADIO_VISUAL_MUSIC_SCENES.length,
+    "all forty families must own a distinct perceptual weighting profile",
+  );
+  assert.strictEqual(
+    engine.radioVisualPerceptualAudioDrives("edge_spectrum", legacy),
+    legacy,
+    "older helpers and fallback sources must retain the exact accepted drive object",
+  );
 
   const fullFeatures = featureFrame(bands(1), {
     onsets: bands(1),
@@ -1092,16 +1118,42 @@ test("perceptual pilot scenes distinguish equal-loudness songs and reach calibra
     stereoWidth: 1,
   });
   const fullDrives = drivesFor(fullFeatures, { energy: 1, bass: 1, mid: 1, treble: 1, peak: 1, beat: 1 });
-  for (const sceneName of engine.RADIO_VISUAL_PERCEPTUAL_PILOT_SCENES) {
+  for (const sceneName of engine.RADIO_VISUAL_PERCEPTUAL_SCENES) {
     const plan = engine.radioVisualMusicSceneLayerPlan(sceneName, fullDrives);
-    const limits = engine.RADIO_VISUAL_PERCEPTUAL_PILOT_LAYER_LIMITS[sceneName];
+    const limits = engine.RADIO_VISUAL_PERCEPTUAL_SCENE_LAYER_LIMITS[sceneName];
     for (const layer of ["bass", "mid", "treble", "tapestry"]) {
       assert.equal(plan[layer], limits[layer].sustained + limits[layer].pulse, `${sceneName} ${layer} must reach its calibrated full ceiling`);
     }
     const legacyTotal = Object.values(engine.radioVisualMusicSceneLayerPlan(sceneName, legacy)).reduce((sum, value) => sum + value, 0);
     const fullTotal = Object.values(plan).reduce((sum, value) => sum + value, 0);
-    assert.ok(fullTotal > legacyTotal + 20, `${sceneName} must have materially more headroom than its sparse legacy ceiling`);
-    assert.ok(fullTotal <= 70, `${sceneName} must stay inside the existing dense-family performance envelope`);
+    assert.ok(fullTotal >= legacyTotal, `${sceneName} cannot lose fullness headroom on the richer signal path`);
+    assert.ok(fullTotal >= 44, `${sceneName} must reach a clearly authored full composition instead of remaining sparse at maximum`);
+    assert.ok(fullTotal <= 80, `${sceneName} must stay inside the existing dense-family performance envelope`);
+  }
+
+  const sustainedStrongFeatures = featureFrame(bands(0.42), {
+    onsets: bands(0),
+    brightness: 0.42,
+    dynamicRange: 0.5,
+    transientDensity: 0.6,
+    stereoWidth: 0.5,
+  });
+  const sustainedStrongDrives = drivesFor(sustainedStrongFeatures, {
+    energy: 0.52,
+    bass: 0.52,
+    mid: 0.52,
+    treble: 0.52,
+    peak: 0.52,
+    beat: 0,
+  });
+  for (const sceneName of engine.RADIO_VISUAL_PERCEPTUAL_SCENES) {
+    const sustainedPlan = engine.radioVisualMusicSceneLayerPlan(sceneName, sustainedStrongDrives);
+    const sustainedTotal = Object.values(sustainedPlan).reduce((sum, value) => sum + value, 0);
+    assert.ok(
+      sustainedTotal >= 27,
+      `${sceneName} must look substantially filled during a representative strong sustained passage without requiring a pulse`,
+    );
+    assert.ok(sustainedTotal <= 46, `${sceneName} must retain visible headroom above an ordinary strong passage`);
   }
 
   const emptyFeatures = featureFrame(bands(0), {
@@ -1112,7 +1164,7 @@ test("perceptual pilot scenes distinguish equal-loudness songs and reach calibra
     stereoWidth: 1,
   });
   const emptyDrives = drivesFor(emptyFeatures, { energy: 0, bass: 0, mid: 0, treble: 0, peak: 0, beat: 0 });
-  for (const sceneName of engine.RADIO_VISUAL_PERCEPTUAL_PILOT_SCENES) {
+  for (const sceneName of engine.RADIO_VISUAL_PERCEPTUAL_SCENES) {
     const semanticPlan = engine.radioVisualPerceptualScenePlan(sceneName, emptyDrives);
     assert.equal(semanticPlan.motion, 0, "a saturated transient-rate meter without musical level cannot manufacture motion");
     assert.deepEqual(
@@ -1858,7 +1910,7 @@ test("the receiver renders every planned identity outside the unchanged performe
   for (const motif of Object.values(engine.RADIO_VISUAL_MUSIC_PERIMETER_MOTIFS)) {
     assert.match(perimeterSources, new RegExp(`plan\\.motif === ["']${motif}["']`), `${motif} must own an explicit Canvas branch`);
   }
-  assert.match(receiver, /drawSeededMusicScene[\s\S]*drawMusicPerimeterIdentity\([\s\S]*radioVisualMusicPerimeterPlan\(scene, drives\)/, "every selected family must render its tested perimeter plan");
+  assert.match(receiver, /drawSeededMusicScene[\s\S]*drawMusicPerimeterIdentity\([\s\S]*radioVisualMusicPerimeterPlan\(scene, sceneDrives\)/, "every selected family must render its tested enriched perimeter plan");
   assert.match(receiver, /if \(renderSnapshot\.showStage !== "intake"\) applyPerformerSafeField\(context, width, height, 0\.2\)/, "the center retention must remain at the approved twenty percent");
   assert.doesNotMatch(perimeterSources, /applyPerformerSafeField|applyPerformerIntrusionField|destination-in/, "perimeter identity cannot weaken or bypass the center mask");
 });
@@ -2242,9 +2294,9 @@ test("the square Studio source contains a centered 3:4 portrait-safe visual stag
   });
 });
 
-test("perceptual pilot renderers consume distinct compositional controls", () => {
+test("waveform and spatial specialist renderers consume their direct perceptual controls", () => {
   const receiver = fs.readFileSync(path.join(projectRoot, "src/components/RadioVisualsReceiver.tsx"), "utf8");
-  const pilots = [
+  const specialists = [
     {
       renderer: "drawSignalConstellation",
       next: "chromaCoreAlpha",
@@ -2276,14 +2328,14 @@ test("perceptual pilot renderers consume distinct compositional controls", () =>
       controls: ["foundation", "structure", "detail", "brightness", "spectralFocus", "spread", "balance"],
     },
   ];
-  for (const pilot of pilots) {
-    const start = receiver.indexOf(`function ${pilot.renderer}`);
-    const end = receiver.indexOf(`function ${pilot.next}`, start + 10);
+  for (const specialist of specialists) {
+    const start = receiver.indexOf(`function ${specialist.renderer}`);
+    const end = receiver.indexOf(`function ${specialist.next}`, start + 10);
     const renderer = receiver.slice(start, end);
-    assert.ok(start >= 0 && end > start, `${pilot.renderer} must remain independently implemented`);
-    assert.match(renderer, new RegExp(`radioVisualPerceptualScenePlan\\("${pilot.scene}", drives\\)`));
-    for (const control of pilot.controls) {
-      assert.match(renderer, new RegExp(`perceptual\\.${control}\\b`), `${pilot.renderer} must consume ${control} as geometry or motion`);
+    assert.ok(start >= 0 && end > start, `${specialist.renderer} must remain independently implemented`);
+    assert.match(renderer, new RegExp(`radioVisualPerceptualScenePlan\\("${specialist.scene}", drives\\)`));
+    for (const control of specialist.controls) {
+      assert.match(renderer, new RegExp(`perceptual\\.${control}\\b`), `${specialist.renderer} must consume ${control} as geometry or motion`);
     }
   }
   assert.match(receiver, /samplePerceptualWaveform\(perceptual\.waveform, progress\)/,
@@ -2416,7 +2468,7 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
   assert.match(receiver, /radioVisualMusicSceneVisibility\(musicDrives\)/, "track scenes must retain a tested visible identity floor while expanding with all three audio bands");
   assert.equal((receiver.match(/drawEdgeSpectrum\(/g) ?? []).length, 2, "spectrum meters must only be defined and invoked by the music dispatcher");
   assert.equal((receiver.match(/drawOscilloscopeRibbons\(/g) ?? []).length, 2, "waveform ribbons must only be defined and invoked by the music dispatcher");
-  const perceptualPilotRenderers = new Set([
+  const directPerceptualRenderers = new Set([
     "drawOscilloscopeRibbons",
     "drawMatrixRain",
     "drawLightningSwitchyard",
@@ -2439,9 +2491,9 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
     const end = receiver.indexOf("\nfunction ", start + 10);
     const renderer = receiver.slice(start, end);
     assert.ok(start >= 0 && end > start, `${rendererName} must be independently implemented`);
-    if (perceptualPilotRenderers.has(rendererName)) {
+    if (directPerceptualRenderers.has(rendererName)) {
       assert.match(renderer, /radioVisualPerceptualScenePlan\(/,
-        `${rendererName} must route legacy and richer audio through the pilot's accepted semantic adapter`);
+        `${rendererName} must retain its specialist perceptual geometry controls`);
     } else {
       for (const structuralDrive of ["bass", "mid", "treble", "bassPulse", "midPulse", "treblePulse", "tapestry", "tapestryPulse", "build", "progress"]) {
         assert.match(renderer, new RegExp(`drives\\.${structuralDrive}\\b`), `${rendererName} must structurally respond to ${structuralDrive}`);
@@ -2451,6 +2503,25 @@ test("permanent receiver is a pure portrait-safe effects surface with a stable l
       assert.match(renderer, new RegExp(`layerPlan\\.${audioLayer}\\b`), `${rendererName} must consume its tested ${audioLayer} density budget`);
     }
   }
+  const musicDispatcher = receiver.slice(
+    receiver.indexOf("function drawSeededMusicScene"),
+    receiver.indexOf("function drawQueueLanes"),
+  );
+  assert.match(
+    musicDispatcher,
+    /const sceneDrives = radioVisualPerceptualAudioDrives\(scene, drives\)/,
+    "every selected family must receive its scene-specific eight-band semantic drive before rendering",
+  );
+  assert.equal(
+    (musicDispatcher.match(/drives: sceneDrives/g) ?? []).length,
+    3,
+    "all three expansion modules must receive the enriched scene drive",
+  );
+  assert.match(
+    musicDispatcher,
+    /radioVisualMusicPerimeterPlan\(scene, sceneDrives\)/,
+    "the family perimeter must respond to the same enriched scene drive",
+  );
   const sceneIdentityTokens = {
     drawEdgeSpectrum: ["barCount", "bassPlateCount", "midBridgeCount", "scanCount", "holdReach"],
     drawOscilloscopeRibbons: ["ribbonCount", "carrierY", "harmonicCount", "knotCount", "cycles"],

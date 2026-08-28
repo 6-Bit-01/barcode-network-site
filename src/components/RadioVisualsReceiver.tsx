@@ -18,6 +18,7 @@ import {
   radioVisualCueProgress,
   radioVisualMusicScene,
   radioVisualMusicSceneLayerPlan,
+  radioVisualPerceptualAudioDrives,
   radioVisualPerceptualScenePlan,
   radioVisualMusicPerimeterPlan,
   radioVisualMusicSceneVisibility,
@@ -2123,24 +2124,25 @@ function drawSeededMusicScene(
 ): void {
   if (mix < 0.002) return;
   const scene = radioVisualMusicScene(seed);
-  const layerPlan = radioVisualMusicSceneLayerPlan(scene, drives);
-  if (scene === "edge_spectrum") drawEdgeSpectrum(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
-  if (scene === "oscilloscope_ribbons") drawOscilloscopeRibbons(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
-  if (scene === "tape_feedback") drawTapeFeedback(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
-  if (scene === "matrix_rain") drawMatrixRain(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
-  if (scene === "ascii_terminal") drawAsciiTerminal(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
-  if (scene === "pixel_sort_storm") drawPixelSortStorm(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
-  if (scene === "lightning_switchyard") drawLightningSwitchyard(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
-  if (scene === "laser_lattice") drawLaserLattice(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
-  if (scene === "particle_pressure") drawParticlePressure(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
-  if (scene === "signal_constellation") drawSignalConstellation(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
+  const sceneDrives = radioVisualPerceptualAudioDrives(scene, drives);
+  const layerPlan = radioVisualMusicSceneLayerPlan(scene, sceneDrives);
+  if (scene === "edge_spectrum") drawEdgeSpectrum(context, width, height, time, mix, sceneDrives, layerPlan, primary, secondary, highlight, seed);
+  if (scene === "oscilloscope_ribbons") drawOscilloscopeRibbons(context, width, height, time, mix, sceneDrives, layerPlan, primary, secondary, highlight, seed);
+  if (scene === "tape_feedback") drawTapeFeedback(context, width, height, time, mix, sceneDrives, layerPlan, primary, secondary, highlight, seed);
+  if (scene === "matrix_rain") drawMatrixRain(context, width, height, time, mix, sceneDrives, layerPlan, primary, secondary, highlight, seed);
+  if (scene === "ascii_terminal") drawAsciiTerminal(context, width, height, time, mix, sceneDrives, layerPlan, primary, secondary, highlight, seed);
+  if (scene === "pixel_sort_storm") drawPixelSortStorm(context, width, height, time, mix, sceneDrives, layerPlan, primary, secondary, highlight, seed);
+  if (scene === "lightning_switchyard") drawLightningSwitchyard(context, width, height, time, mix, sceneDrives, layerPlan, primary, secondary, highlight, seed);
+  if (scene === "laser_lattice") drawLaserLattice(context, width, height, time, mix, sceneDrives, layerPlan, primary, secondary, highlight, seed);
+  if (scene === "particle_pressure") drawParticlePressure(context, width, height, time, mix, sceneDrives, layerPlan, primary, secondary, highlight, seed);
+  if (scene === "signal_constellation") drawSignalConstellation(context, width, height, time, mix, sceneDrives, layerPlan, primary, secondary, highlight, seed);
   drawExpandedRadioVisualMusicScene(scene, {
     context,
     width,
     height,
     time,
     mix,
-    drives,
+    drives: sceneDrives,
     layerPlan,
     primary,
     secondary,
@@ -2153,7 +2155,7 @@ function drawSeededMusicScene(
     height,
     time,
     mix,
-    drives,
+    drives: sceneDrives,
     layerPlan,
     primary,
     secondary,
@@ -2166,7 +2168,7 @@ function drawSeededMusicScene(
     height,
     time,
     mix,
-    drives,
+    drives: sceneDrives,
     layerPlan,
     primary,
     secondary,
@@ -2179,8 +2181,8 @@ function drawSeededMusicScene(
     height,
     time,
     mix,
-    drives,
-    radioVisualMusicPerimeterPlan(scene, drives),
+    sceneDrives,
+    radioVisualMusicPerimeterPlan(scene, sceneDrives),
     primary,
     secondary,
     highlight,
@@ -4205,18 +4207,22 @@ function drawVisualFrame(
       * musicSceneActivity
       * RADIO_VISUAL_MUSIC_OUTPUT_GAIN,
   );
+  const previousMusicScene = radioVisualMusicScene(previousMusicSeed);
+  const currentMusicScene = radioVisualMusicScene(currentMusicSeed);
+  const previousMusicSceneDrives = radioVisualPerceptualAudioDrives(previousMusicScene, musicDrives);
+  const currentMusicSceneDrives = radioVisualPerceptualAudioDrives(currentMusicScene, musicDrives);
   const previousMusicEmbellishmentPlan = radioVisualMusicEmbellishmentPlan(
-    radioVisualMusicScene(previousMusicSeed),
+    previousMusicScene,
     previousMusicSeed,
     audioTime,
-    musicDrives,
+    previousMusicSceneDrives,
     music.bpm,
   );
   const currentMusicEmbellishmentPlan = radioVisualMusicEmbellishmentPlan(
-    radioVisualMusicScene(currentMusicSeed),
+    currentMusicScene,
     currentMusicSeed,
     audioTime,
-    musicDrives,
+    currentMusicSceneDrives,
     music.bpm,
   );
   const previousMusicCompositionMix = musicCompositionMix(1 - renderMusicSeedBlend);
@@ -4230,6 +4236,8 @@ function drawVisualFrame(
     if (compositionMix < 0.002) return;
     const musicMix = musicCompositionMix(compositionMix);
     if (musicMix < 0.06) return;
+    const scene = radioVisualMusicScene(seed);
+    const sceneDrives = radioVisualPerceptualAudioDrives(scene, musicDrives);
     drawSeededMusicScene(context, width, height, audioTime, musicMix, musicDrives, primary, secondary, highlight, seed);
     drawRadioVisualMusicEmbellishments({
       context,
@@ -4237,12 +4245,12 @@ function drawVisualFrame(
       height,
       time: audioTime,
       mix: musicMix,
-      drives: musicDrives,
+      drives: sceneDrives,
       plan: radioVisualMusicEmbellishmentPlan(
-        radioVisualMusicScene(seed),
+        scene,
         seed,
         audioTime,
-        musicDrives,
+        sceneDrives,
         music.bpm,
       ),
       primary,
@@ -4310,7 +4318,7 @@ function drawVisualFrame(
       time: audioTime,
       sceneMix: activeSurfaceMix * sceneStateMix,
       trackMix: renderTrackMix,
-      drives: musicDrives,
+      drives: currentMusicSceneDrives,
       musicScene,
       seed: renderSeed,
       cueType: activeCue?.type ?? null,
@@ -4346,7 +4354,7 @@ function drawVisualFrame(
             height,
             time: audioTime,
             mix: previousMusicCompositionMix,
-            drives: musicDrives,
+            drives: previousMusicSceneDrives,
             plan: previousMusicEmbellishmentPlan,
             primary,
             secondary,
@@ -4361,7 +4369,7 @@ function drawVisualFrame(
             height,
             time: audioTime,
             mix: currentMusicCompositionMix,
-            drives: musicDrives,
+            drives: currentMusicSceneDrives,
             plan: currentMusicEmbellishmentPlan,
             primary,
             secondary,

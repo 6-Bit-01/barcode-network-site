@@ -5745,6 +5745,7 @@ const OPERATIONAL_SHOW_LOG_EVENT_TYPES = new Set<QueueShowLogEventType>([
 export interface QueueOperationalShowLogEventInput {
   eventType: QueueShowLogEventType;
   occurredAt: string;
+  trackId?: string | null;
   details?: QueueShowLogEventDetails | null;
 }
 
@@ -5755,12 +5756,17 @@ export async function recordQueueOperationalShowEvent(input: QueueOperationalSho
     const found = findSession(store);
     if (!found || found.status === "archived") return false;
     const session = normalizeSession(found);
-    const showLog = appendQueueShowLogEvents(session.showLog, [{
+    const trackEntry = input.trackId
+      ? queueShowLogTracks(session).get(input.trackId)?.entry ?? null
+      : null;
+    if (input.trackId && input.eventType !== "wheel_confirmed") return false;
+    if (input.eventType === "wheel_confirmed" && input.trackId && !trackEntry) return false;
+    const showLog = appendQueueShowLogEvent(session.showLog, {
       eventType: input.eventType,
       occurredAt: new Date(input.occurredAt).toISOString(),
-      track: null,
+      trackEntry: input.eventType === "wheel_confirmed" ? trackEntry : null,
       details: input.details ?? null,
-    }]);
+    });
     if ((showLog.at(-1)?.sequence ?? 0) <= (session.showLog.at(-1)?.sequence ?? 0)) return false;
     const updated = normalizeSession({ ...session, showLog });
     const nextStore = replaceSession(store, updated);

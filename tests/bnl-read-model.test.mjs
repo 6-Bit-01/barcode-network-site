@@ -386,6 +386,10 @@ test("BNL access is exactly none, private, or public, with legacy recap approval
   assert.equal(model.accessScope, "public");
   assert.equal(model.sections.queue.publication.accessLevel, "public");
   assert.ok(allTrackIds(model).includes(queued.id));
+  const authenticatedPublicResponse = await modelResponse("test-bnl-read-model-key");
+  const authenticatedPublicModel = await authenticatedPublicResponse.json();
+  assert.equal(authenticatedPublicModel.accessScope, "public");
+  assert.match(authenticatedPublicResponse.headers.get("cache-control"), /no-store/);
 
   updated = await queue.updateQueueSessionProvenance({
     sessionId: state.session.sessionId,
@@ -527,7 +531,7 @@ test("BNL read model preserves v1 compatibility and adds semantic sections", asy
 
   assert.equal(model.ok, true);
   assert.equal(model.version, 1);
-  assert.equal(model.schemaRevision, "1.7");
+  assert.equal(model.schemaRevision, "1.8");
   assert.equal(model.publicOnly, true);
   assert.ok(model.sections.sourceContext);
   assert.ok(model.sections.queue);
@@ -985,6 +989,62 @@ test("BNL read model labels now playing and up next as runtime context", async (
   assert.equal(model.sections.queue.upNext.id, upNext.id);
   assert.equal(model.sections.queue.upNext.bnlContext.status, "upNext");
   assert.equal(model.sections.queue.upNext.bnlContext.contextRole, "runtime");
+});
+
+test("BNL read model exposes the complete active order through position 44", async () => {
+  await freshReadModelSession();
+  const submitted = [];
+  for (let index = 1; index <= 44; index += 1) {
+    submitted.push(await addTrack(`Order ${index}`, {
+      artist: `Ordered Artist ${index}`,
+      submittedSongTitle: `Ordered Track ${index}`,
+    }));
+  }
+
+  const model = await modelJson();
+  const queueSection = model.sections.queue;
+  const activeOrder = [queueSection.upNext, ...queueSection.queue]
+    .filter(Boolean)
+    .sort((left, right) => left.queuePosition - right.queuePosition);
+
+  assert.equal(queueSection.queueUrl, "https://www.barcode-network.com/queue");
+  assert.equal(activeOrder.length, 44);
+  assert.deepEqual(activeOrder.map((track) => track.queuePosition), Array.from({ length: 44 }, (_, index) => index + 1));
+  assert.equal(activeOrder.at(-1).id, submitted.at(-1).id);
+  assert.equal(activeOrder.at(-1).submittedArtistName, "Ordered Artist 44");
+  assert.equal(activeOrder.at(-1).submittedSongTitle, "Ordered Track 44");
+});
+
+test("BNL read model binds the latest confirmed Wheel winner to current track truth", async () => {
+  await freshReadModelSession();
+  const winner = await addTrack("Confirmed Wheel", {
+    artist: "Confirmed Wheel Artist",
+    submittedSongTitle: "Confirmed Wheel Track",
+  });
+  await queue.updateRadioTrack("", "addWheelSpinOwed");
+  const confirmedAt = new Date().toISOString();
+  assert.equal(await queue.recordQueueOperationalShowEvent({
+    eventType: "wheel_confirmed",
+    occurredAt: confirmedAt,
+    trackId: winner.id,
+    details: { wheelCandidateCount: 9 },
+  }), true);
+
+  const model = await modelJson();
+  const queueSection = model.sections.queue;
+  const confirmed = queueSection.wheel.lastConfirmedWinner;
+  const event = queueSection.recentEvents.find((item) => item.eventType === "wheel_confirmed");
+
+  assert.equal(confirmed.trackId, winner.id);
+  assert.equal(confirmed.artist, "Confirmed Wheel Artist");
+  assert.equal(confirmed.title, "Confirmed Wheel Track");
+  assert.equal(confirmed.occurredAt, confirmedAt);
+  assert.equal(confirmed.currentQueuePosition, 1);
+  assert.equal(confirmed.currentLane, "regular");
+  assert.equal(event.track.trackId, winner.id);
+  assert.equal(event.details.wheelCandidateCount, 9);
+  assert.ok(queueSection.wheel.recentEvents.some((item) => item.eventType === "wheel_confirmed"));
+  assert.equal(typeof queueSection.operationalEventsSourceRevision, "number");
 });
 
 test("BNL read model excludes simulation/test tracks from all public semantic surfaces", async () => {

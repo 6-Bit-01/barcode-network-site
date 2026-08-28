@@ -181,8 +181,9 @@ function normalizeEvent(value: unknown): QueueShowLogEvent | null {
   if (!sequence || !occurredAt || !eventType) return null;
   const track = raw.track === null || raw.track === undefined ? null : normalizeTrack(raw.track);
   if (raw.track && !track) return null;
+  const trackAllowed = eventType.startsWith("track_") || eventType === "wheel_confirmed";
   if (eventType.startsWith("track_") && !track) return null;
-  if (!eventType.startsWith("track_") && track) return null;
+  if (!trackAllowed && track) return null;
   return { sequence, eventType, occurredAt, track, details: normalizeDetails(raw.details) };
 }
 

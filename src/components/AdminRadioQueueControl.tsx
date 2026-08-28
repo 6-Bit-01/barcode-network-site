@@ -1,1761 +1,31 @@
-/* eslint-disable react-hooks/set-state-in-effect */
-"use client";
-
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { AdminLiveOverlayControl } from "@/components/AdminLiveOverlayControl";
-import { AdminRehearsalShareLink } from "@/components/AdminRehearsalShareLink";
-import { AdminRadioVisualsControl } from "@/components/AdminRadioVisualsControl";
-import { buildQueueTimingDisplay, formatHoursMinutes, queueTimingInputFromAdminState } from "@/lib/queue-timing-display";
-import { combineQueueTimeBankEvents, deriveQueuePaceBankEvent, deriveQueueTimeBankEvent, type QueueTimeBankEvent, type QueueTimeBankObservation } from "@/lib/queue-time-bank-events";
-import { queuePlaybackHasBegun } from "@/lib/queue-playback-lifecycle";
-import { parseYouTubeVideoId } from "@/lib/track-duration";
-import { confirmedPriorityPurchaseDisplay, formatRuntime, getTrackRuntimeSeconds, parseTikTokVideoUrl } from "@/lib/queue-types";
-import { detectMaterialPlaybackSeek, estimateOneWayNetworkTransitMs, projectObservedPlaybackTime, updateTransitEstimateMs, YOUTUBE_SYNC_STALE_AFTER_MS } from "@/lib/live-overlay-resolver";
-import type { QueueEntry, QueueLane, QueuePlaybackDiagnostics, QueuePlaybackErrorCode, QueuePlaybackLifecycleEventInput, QueueState } from "@/lib/queue-types";
-import type { LiveOverlayPlaybackState, LiveOverlaySyncCorrectionReason } from "@/lib/live-overlay-resolver";
-import { ADMIN_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
-import { hasActiveQueueSession, notifyQueueSessionChanged, startSessionBoundPolling } from "@/lib/session-bound-polling";
-import { analyzeRadioVisualFrequencyData, smoothRadioVisualAudioAnalysis } from "@/lib/radio-visuals-audio";
-import type { RadioVisualAudioAnalysis } from "@/lib/radio-visuals-audio";
-import { launchLocalCommercialBreakIfAcknowledged } from "@/lib/sponsor-break-contract";
-
-type Tab = "active" | "completed" | "removed" | "spotlight";
-type AdminQueueAction = "pullNext" | "pullWheelChosen" | "pullFreeTransmission" | "startShow" | "addWheelSpinOwed" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "resolvePaidPriority" | "pausePriority" | "resumePriority" | "useSignalHold";
-type SimulationSpeed = "slow" | "normal" | "fast";
-type SimulationAction = "addSimulationFreeTrack" | "addSimulationPaidPriority" | "addSimulationCheckoutPending" | "addSimulationPaymentFailed" | "addSimulationHeldPriority" | "clearSimulationTracks";
-
-const LANE_LABELS: Record<QueueLane, string> = { priority: "Priority Signal", wheel: "Wheel Winner", regular: "Regular Queue" };
-const FIXED_PRIORITY_LABEL = "Priority Signal Upgrade";
-const FIXED_PRIORITY_INSTRUCTIONS = "Moves this track into the Priority Signal lane after payment confirmation.";
-const SAME_BROWSER_DIFFERENT_ARTISTS_FLAG = "Same browser token using different artist names";
-const LOCAL_COMMERCIAL_START_URL = "http://127.0.0.1:43120/v1/commercials/start";
-
-const YOUTUBE_SYNC_HEARTBEAT_MS = 1_000;
-const TIKTOK_SYNC_HEARTBEAT_MS = 1_000;
-const PUBLISH_PRIORITY: Record<LiveOverlaySyncCorrectionReason, number> = { heartbeat: 1, state_change: 2, seek: 3 };
-
-type QueuedOverlayPublish = { playbackState: LiveOverlayPlaybackState; currentTimeSeconds: number; observedAtMs?: number; correctionReason: LiveOverlaySyncCorrectionReason };
-
-function parseServerTimingHeader(response: Response, name: string): number {
-  const value = response.headers.get(name);
-  if (!value) return Number.NaN;
-  return new Date(value).getTime();
-}
-
-type OverlayPublishResult<T> = { sync: T | null; outboundTransitMs: number };
-
-async function postOverlayPlayerSync<T>(sync: T | null): Promise<OverlayPublishResult<T>> {
-  if (!sync) return { sync: null, outboundTransitMs: 0 };
-  const requestStartedAtPerformanceMs = performance.now();
-  const response = await fetch("/api/admin/overlay/live", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "updatePlayerSync", sync }) });
-  const responseReceivedAtPerformanceMs = performance.now();
-  const requestReceivedAtMs = parseServerTimingHeader(response, "X-BNL-Request-Received-At");
-  const responseGeneratedAtMs = parseServerTimingHeader(response, "X-BNL-Response-Generated-At");
-  const serverProcessingMs = responseGeneratedAtMs - requestReceivedAtMs;
-  const outboundTransitMs = estimateOneWayNetworkTransitMs(responseReceivedAtPerformanceMs - requestStartedAtPerformanceMs, serverProcessingMs);
-  if (!response.ok) throw new Error("Overlay player sync update failed.");
-  return { sync, outboundTransitMs };
-}
-
-async function postQueuePlaybackLifecycleEvent(input: QueuePlaybackLifecycleEventInput): Promise<void> {
-  await fetch("/api/admin/queue/playback", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  }).catch(() => undefined);
-}
-
-function htmlMediaErrorCode(error: MediaError | null): QueuePlaybackErrorCode {
-  if (error?.code === 1) return "media_aborted";
-  if (error?.code === 2) return "network_error";
-  if (error?.code === 3) return "decode_error";
-  if (error?.code === 4) return "source_unsupported";
-  return "unknown";
-}
-
-function shouldReplaceQueuedPublish(current: QueuedOverlayPublish | null, next: QueuedOverlayPublish): boolean {
-  return !current || PUBLISH_PRIORITY[next.correctionReason] >= PUBLISH_PRIORITY[current.correctionReason];
-}
-const YOUTUBE_PLAYER_READY_TIMEOUT_MS = 9_000;
-const TIKTOK_PLAYER_READY_TIMEOUT_MS = 10_000;
-
-function youtubeErrorLabel(code?: number | null): string {
-  if (code === 2) return "Invalid video ID";
-  if (code === 5) return "HTML5 playback unavailable";
-  if (code === 100) return "Video not found/private";
-  if (code === 101 || code === 150) return "Embedding disabled by owner";
-  return code ? `YouTube error ${code}` : "YouTube unavailable";
-}
-
-const SIMULATION_SPEEDS: Record<SimulationSpeed, { label: string; minDelayMs: number; maxDelayMs: number; priorityChance: number }> = {
-  slow: { label: "Slow", minDelayMs: 40_000, maxDelayMs: 90_000, priorityChance: 0.15 },
-  normal: { label: "Normal", minDelayMs: 20_000, maxDelayMs: 60_000, priorityChance: 0.25 },
-  fast: { label: "Fast", minDelayMs: 5_000, maxDelayMs: 15_000, priorityChance: 0.4 },
-};
-
-function sourceLabel(entry: QueueEntry): string {
-  if (entry.sourceType === "tiktok") return "TikTok";
-  return (entry.sourceType ?? "other").toUpperCase();
-}
-function formatPrice(cents = 0, currency = "usd"): string { return `${new Intl.NumberFormat("en-US", { style: "currency", currency: currency.toUpperCase() }).format(Math.max(0, cents) / 100)} ${currency.toUpperCase()}`; }
-function adminAudioUrl(entry: QueueEntry): string {
-  const params = new URLSearchParams({ id: entry.id });
-  const sessionId = initialSessionIdFromUrl();
-  if (sessionId) params.set("sessionId", sessionId);
-  return `/api/admin/queue/file?${params.toString()}`;
-}
-function openUrl(entry: QueueEntry): string { return entry.sourceType === "upload" ? adminAudioUrl(entry) : entry.link; }
-function submittedArtist(entry: QueueEntry): string { return entry.submittedArtistName ?? entry.artist; }
-function submittedTitle(entry: QueueEntry): string { return entry.submittedSongTitle ?? entry.title; }
-function collaboratorNames(entry: QueueEntry): string | null { return entry.collaboratorNames?.trim() || null; }
-function AdminCollaboratorLine({ entry, className = "" }: { entry: QueueEntry; className?: string }) {
-  const names = collaboratorNames(entry);
-  if (!names) return null;
-  return <p className={`text-sm font-bold text-accent ${className}`}><span className="uppercase tracking-widest">Featuring:</span> {names}</p>;
-}
-function entryLane(entry: QueueEntry): QueueLane { return entry.lane ?? "regular"; }
-function durationSourceLabel(entry: QueueEntry): string { return (entry.durationSource ?? "internal_estimate").replace(/_/g, " "); }
-function canPausePriority(entry: QueueEntry): boolean { return entry.lane === "priority" && !entry.priorityPausedAt && (entry.priorityUpgradeStatus === "paid" || entry.priorityUpgradeStatus === "manual"); }
-function canResumePriority(entry: QueueEntry): boolean { return entry.lane === "priority" && Boolean(entry.priorityPausedAt) && (entry.priorityUpgradeStatus === "paid" || entry.priorityUpgradeStatus === "manual"); }
-function isPaidPriorityTrack(entry: QueueEntry): boolean { return entry.lane === "priority" && (entry.priorityUpgradeStatus === "paid" || entry.priorityUpgradeStatus === "manual"); }
-function wasPrioritySignal(entry: QueueEntry): boolean { return entry.lane === "priority" || entry.priorityUpgradeStatus === "paid" || entry.priorityUpgradeStatus === "manual"; }
-function isWheelEligibleTrack(entry: QueueEntry): boolean { return (!entry.lane || entry.lane === "regular") && entry.status === "queued" && (entry.priorityUpgradeStatus ?? "none") === "none" && !entry.priorityPausedAt; }
-function canUseSignalHold(entry: QueueEntry): boolean { return entry.signalHoldStatus === "active" && (entry.status === "queued" || entry.status === "next"); }
-function canUseSignalHoldFromPlayer(entry: QueueEntry, diagnostics: QueuePlaybackDiagnostics | null): boolean { return entry.signalHoldStatus === "active" && !queuePlaybackHasBegun(diagnostics, entry.id); }
-function queueTrackVisual(entry: QueueEntry): { label: string; badgeClass: string; cardClass: string; sectionClass: string } {
-  if (entry.signalHoldStatus === "paid_needs_attention") return { label: "Signal Hold Needs Attention", badgeClass: "border-danger bg-danger text-background", cardClass: "border-danger/60 bg-danger/10 shadow-[inset_4px_0_0_rgba(255,0,0,0.8)]", sectionClass: "border-danger/50 bg-danger/5" };
-  if (entry.signalHoldStatus === "checkout_pending") return { label: "Signal Hold Payment Processing", badgeClass: "border-cyan-300 bg-cyan-300/20 text-cyan-100", cardClass: "border-cyan-300/60 bg-cyan-300/10 shadow-[inset_4px_0_0_rgba(103,232,249,0.8)]", sectionClass: "border-cyan-300/50 bg-cyan-300/5" };
-  if (entry.signalHoldStatus === "active") return { label: "Signal Hold Active", badgeClass: "border-cyan-300 bg-cyan-300 text-background", cardClass: "border-cyan-300/70 bg-cyan-300/10 shadow-[inset_4px_0_0_rgba(103,232,249,1)]", sectionClass: "border-cyan-300/60 bg-cyan-300/5" };
-  if (entry.signalHoldStatus === "fulfilled") return { label: "Signal Hold Fulfilled", badgeClass: "border-accent/60 bg-accent/10 text-accent", cardClass: "border-accent/40 bg-accent/5", sectionClass: "border-accent/40 bg-accent/5" };
-  if (entry.signalHoldStatus === "expired") return { label: "Signal Hold Expired", badgeClass: "border-border bg-surface text-muted", cardClass: "border-border bg-background/40", sectionClass: "border-border bg-surface" };
-  const status = entry.priorityUpgradeStatus ?? "none";
-  if (status === "failed" || status === "refunded") return { label: "Payment Failed", badgeClass: "border-danger bg-danger text-background", cardClass: "border-danger/60 bg-danger/10 shadow-[inset_4px_0_0_rgba(255,0,0,0.8)]", sectionClass: "border-danger/50 bg-danger/5" };
-  if (status === "paid_needs_attention") return { label: "Paid Needs Attention", badgeClass: "border-danger bg-danger text-background", cardClass: "border-danger/60 bg-danger/10 shadow-[inset_4px_0_0_rgba(255,0,0,0.8)]", sectionClass: "border-danger/50 bg-danger/5" };
-  if (status === "checkout_pending") return { label: "Checkout Pending", badgeClass: "border-[#ff8a00] bg-[#ff8a00]/90 text-background", cardClass: "border-[#ff8a00]/60 bg-[#ff8a00]/10 shadow-[inset_4px_0_0_rgba(255,138,0,0.8)]", sectionClass: "border-[#ff8a00]/50 bg-[#ff8a00]/5" };
-  if (status === "requested") return { label: "Payment Requested", badgeClass: "border-[#c27803] bg-[#c27803]/85 text-background", cardClass: "border-[#c27803]/60 bg-[#c27803]/10 shadow-[inset_4px_0_0_rgba(194,120,3,0.8)]", sectionClass: "border-[#c27803]/50 bg-[#c27803]/5" };
-  if (entry.priorityPausedAt) return { label: "Paused Priority", badgeClass: "border-[#8a5a00] bg-[#ffaa00] text-background", cardClass: "border-[#ffaa00]/80 bg-[#ffaa00]/15 shadow-[inset_4px_0_0_rgba(255,170,0,1)]", sectionClass: "border-[#ffaa00]/70 bg-[#ffaa00]/10" };
-  if (status === "paid") return { label: "Paid Priority", badgeClass: "border-[#ffaa00] bg-[#ffaa00]/20 text-[#ffaa00]", cardClass: "border-[#ffaa00]/70 bg-[#ffaa00]/10 shadow-[inset_4px_0_0_rgba(255,170,0,0.85)]", sectionClass: "border-[#ffaa00]/60 bg-[#ffaa00]/5" };
-  if (status === "manual" || entry.lane === "priority") return { label: "Manual Priority", badgeClass: "border-[#ffaa00] bg-[#ffaa00]/15 text-[#ffaa00]", cardClass: "border-[#ffaa00]/60 bg-[#ffaa00]/10 shadow-[inset_4px_0_0_rgba(255,170,0,0.7)]", sectionClass: "border-[#ffaa00]/60 bg-[#ffaa00]/5" };
-  if (entry.lane === "wheel") return { label: "Wheel Chosen", badgeClass: "border-cyan-300 bg-cyan-300/15 text-cyan-200", cardClass: "border-cyan-300/60 bg-cyan-300/10 shadow-[inset_4px_0_0_rgba(103,232,249,0.8)]", sectionClass: "border-cyan-300/50 bg-cyan-300/5" };
-  return { label: "Free Submission", badgeClass: "border-foreground/40 bg-foreground/10 text-foreground", cardClass: "border-border bg-background/40 shadow-[inset_4px_0_0_rgba(255,255,255,0.25)]", sectionClass: "border-border bg-surface" };
-}
-function LaneStatusBadge({ entry }: { entry: QueueEntry }) {
-  const visual = queueTrackVisual(entry);
-  return <p className={`mt-2 inline-flex px-2 py-1 text-[10px] uppercase tracking-widest ${visual.badgeClass}`}>{visual.label}</p>;
-}
-function AdminPriorityPurchaseBanner({ entry, compact = false }: { entry: QueueEntry; compact?: boolean }) {
-  const purchase = confirmedPriorityPurchaseDisplay(entry);
-  const gift = entry.priorityGiftAttribution;
-  const giftCheckoutPending = Boolean(gift) && (entry.priorityUpgradeStatus === "requested" || entry.priorityUpgradeStatus === "checkout_pending");
-  if (!purchase && !giftCheckoutPending) return null;
-  const text = purchase?.text ?? `GIFTED PRIORITY CHECKOUT Â· FROM ${gift?.supporterName} Â· FOR ${gift?.recipientName}`;
-  return <p className={`${compact ? "mt-1 text-[10px]" : "mt-3 text-xs"} border border-[#ffaa00]/70 bg-[#ffaa00]/15 px-3 py-2 font-black uppercase tracking-widest text-[#ffaa00]`}>{text}</p>;
-}
-function AdminSubmissionNote({ entry, compact = false }: { entry: QueueEntry; compact?: boolean }) {
-  const note = entry.note?.trim();
-  if (!note) return null;
-  return <div className={`${compact ? "mt-2 max-w-3xl p-2" : "mt-3 p-3"} border-2 border-accent bg-accent/10 text-left shadow-[0_0_20px_rgba(255,0,0,0.12)]`}><p className="text-[10px] font-black uppercase tracking-[0.2em] text-accent">Submission Note Â· Read Before Playing</p><p className={`${compact ? "mt-1 max-h-24 overflow-y-auto text-xs" : "mt-2 text-sm"} whitespace-pre-wrap break-words font-bold text-foreground`}>{note}</p></div>;
-}
-function browserArtistSubmissionSummary(entry: QueueEntry, sessionEntries: QueueEntry[]): Array<{ artistName: string; trackCount: number }> {
-  if (!(entry.suspiciousFlags ?? []).includes(SAME_BROWSER_DIFFERENT_ARTISTS_FLAG)) return [];
-  const browserToken = entry.submitterToken?.trim();
-  if (!browserToken) return [];
-  const uniqueTracks = new Map<string, QueueEntry>();
-  for (const candidate of sessionEntries) {
-    if (candidate.submitterToken?.trim() === browserToken) uniqueTracks.set(candidate.id, candidate);
-  }
-  const grouped = new Map<string, { artistName: string; trackCount: number }>();
-  for (const candidate of [...uniqueTracks.values()].sort((left, right) => left.createdAt.localeCompare(right.createdAt))) {
-    const artistName = (candidate.submitterArtistName ?? candidate.submittedArtistName ?? candidate.artist).trim();
-    const key = artistName.toLocaleLowerCase();
-    const existing = grouped.get(key);
-    if (existing) existing.trackCount += 1;
-    else grouped.set(key, { artistName, trackCount: 1 });
-  }
-  return grouped.size > 1 ? [...grouped.values()] : [];
-}
-function AdminBrowserArtistNotice({ entry, sessionEntries }: { entry: QueueEntry; sessionEntries: QueueEntry[] }) {
-  const artists = browserArtistSubmissionSummary(entry, sessionEntries);
-  if (artists.length < 2) return null;
-  const summary = artists.map(({ artistName, trackCount }) => `${artistName} (${trackCount} ${trackCount === 1 ? "track" : "tracks"})`).join(" / ");
-  return <div className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 p-2 text-xs text-[#ffaa00]">Same browser submitted multiple artist names: {summary}</div>;
-}
-function durationLabel(entry: QueueEntry): string {
-  const duration = formatRuntime(getTrackRuntimeSeconds(entry));
-  return entry.durationIsEstimate ? `${duration} estimated / pending Â· ${durationSourceLabel(entry)}` : `${duration} detected Â· ${durationSourceLabel(entry)}`;
-}
-function detectedLabel(entry: QueueEntry): string | null {
-  if (!entry.detectedArtistName && !entry.detectedSongTitle && !entry.providerTitle) return null;
-  return `${entry.detectedArtistName || "Unknown artist"} â€” ${entry.detectedSongTitle || entry.providerTitle || "Unknown title"}`;
-}
-type OverlayYouTubeTrackInput = { id: string; link: string; sourceType: QueueEntry["sourceType"]; videoId: string | null };
-function buildOverlayYouTubeSync(track: OverlayYouTubeTrackInput, playbackState: LiveOverlayPlaybackState, currentTimeSeconds = 0, durationSeconds?: number, correctionReason?: LiveOverlaySyncCorrectionReason) {
-  if (track.sourceType !== "youtube" || !track.videoId) return null;
-  const duration = typeof durationSeconds === "number" && Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : undefined;
-  return { provider: "youtube" as const, videoId: track.videoId, trackId: track.id, playbackState, currentTimeSeconds: Math.max(0, currentTimeSeconds), durationSeconds: duration, updatedAt: new Date().toISOString(), muted: true, correctionReason };
-}
-async function publishOverlayYouTubeSync(track: OverlayYouTubeTrackInput, playbackState: LiveOverlayPlaybackState, currentTimeSeconds = 0, durationSeconds?: number, correctionReason?: LiveOverlaySyncCorrectionReason) {
-  const sync = buildOverlayYouTubeSync(track, playbackState, currentTimeSeconds, durationSeconds, correctionReason);
-  if (!sync) return null;
-  return postOverlayPlayerSync(sync);
-}
-type OverlayTikTokTrackInput = { id: string; link: string; sourceType: QueueEntry["sourceType"]; postId: string | null };
-function buildOverlayTikTokSync(track: OverlayTikTokTrackInput, playbackState: LiveOverlayPlaybackState, currentTimeSeconds = 0, durationSeconds?: number, correctionReason?: LiveOverlaySyncCorrectionReason) {
-  if (track.sourceType !== "tiktok" || !track.postId || !/^\d{8,32}$/.test(track.postId)) return null;
-  if (!Number.isFinite(currentTimeSeconds) || currentTimeSeconds < 0) return null;
-  const duration = typeof durationSeconds === "number" && Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : undefined;
-  return { provider: "tiktok" as const, postId: track.postId, trackId: track.id, playbackState, currentTimeSeconds, durationSeconds: duration, updatedAt: new Date().toISOString(), muted: true, correctionReason };
-}
-async function publishOverlayTikTokSync(track: OverlayTikTokTrackInput, playbackState: LiveOverlayPlaybackState, currentTimeSeconds = 0, durationSeconds?: number, correctionReason?: LiveOverlaySyncCorrectionReason) {
-  const sync = buildOverlayTikTokSync(track, playbackState, currentTimeSeconds, durationSeconds, correctionReason);
-  if (!sync) return null;
-  return postOverlayPlayerSync(sync);
-}
-
-async function clearOverlayPlayerSync() {
-  await fetch("/api/admin/overlay/live", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "clearPlayerSync" }) });
-}
-
-function embedUrl(entry: QueueEntry): string | null {
-  const url = openUrl(entry);
-  if (!url) return null;
-  try {
-    const parsed = new URL(url);
-    if (entry.sourceType === "youtube") {
-      const id = parseYouTubeVideoId(url);
-      return id ? `https://www.youtube.com/embed/${id}` : null;
-    }
-    if (entry.sourceType === "spotify") return `https://open.spotify.com/embed${parsed.pathname}`;
-    if (entry.sourceType === "soundcloud") return `https://w.soundcloud.com/player/?url=${encodeURIComponent(url)}`;
-  } catch { return null; }
-  return null;
-}
-function initialSessionIdFromUrl(): string | undefined {
-  if (typeof window === "undefined") return undefined;
-  return new URLSearchParams(window.location.search).get("sessionId") ?? undefined;
-}
-
-export function AdminRadioQueueControl() {
-  const [state, setState] = useState<QueueState | null>(null);
-  const [tab, setTab] = useState<Tab>("active");
-  const [loadingPlayerId, setLoadingPlayerId] = useState<string | null>(null);
-  const [clearingPlayerId, setClearingPlayerId] = useState<string | null>(null);
-  const [playerActionPending, setPlayerActionPending] = useState(false);
-  const [sponsorActionPending, setSponsorActionPending] = useState(false);
-  const [minimized, setMinimized] = useState(false);
-  const [topBarMinimized, setTopBarMinimized] = useState(false);
-  const [railMinimized, setRailMinimized] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [mounted, setMounted] = useState(false);
-  const [clockNow, setClockNow] = useState(() => Date.now());
-  const [endConfirmOpen, setEndConfirmOpen] = useState(false);
-  const [endingSession, setEndingSession] = useState(false);
-  const [sessionOptionsOpen, setSessionOptionsOpen] = useState(false);
-  const [priorityEnabled, setPriorityEnabled] = useState(false);
-  const [priorityPriceCents, setPriorityPriceCents] = useState(0);
-  const [priorityCurrency, setPriorityCurrency] = useState("usd");
-  const [signalHoldEnabled, setSignalHoldEnabled] = useState(false);
-  const [signalHoldPriceCents, setSignalHoldPriceCents] = useState(0);
-  const [signalHoldCurrency, setSignalHoldCurrency] = useState("usd");
-  const [sessionCooldownSeconds, setSessionCooldownSeconds] = useState(300);
-  const [prioritySaving, setPrioritySaving] = useState(false);
-  const [priorityMessage, setPriorityMessage] = useState<string | null>(null);
-  const [prioritySaveError, setPrioritySaveError] = useState<string | null>(null);
-  const [simulationRunning, setSimulationRunning] = useState(false);
-  const [simulationSpeed, setSimulationSpeed] = useState<SimulationSpeed>("normal");
-  const [simulationMessage, setSimulationMessage] = useState<string | null>(null);
-  const [activeUtilityPanel, setActiveUtilityPanel] = useState<"session" | "visuals" | "visualOverlays" | "overlay" | null>(null);
-  const [overlayWheelFocusTick, setOverlayWheelFocusTick] = useState(0);
-  const simulationTimerRef = useRef<number | null>(null);
-  const simulationRunningRef = useRef(false);
-  const simulationSpeedRef = useRef<SimulationSpeed>("normal");
-  const sponsorActionPendingRef = useRef(false);
-  const mutationEpochRef = useRef(0);
-  const mutationInFlightRef = useRef(0);
-  const latestAppliedMutationEpochRef = useRef(0);
-
-  function applyMutationState(next: QueueState, epoch: number): void {
-    if (epoch < latestAppliedMutationEpochRef.current) return;
-    latestAppliedMutationEpochRef.current = epoch;
-    setState((current) => ({ ...next, playbackTiming: next.playbackTiming ?? current?.playbackTiming ?? null, wheelTiming: next.wheelTiming ?? current?.wheelTiming ?? null }));
-  }
-
-  function applyPollingStateIfFresh(next: QueueState, requestEpoch: number): void {
-    if (mutationInFlightRef.current > 0) return;
-    if (requestEpoch !== mutationEpochRef.current) return;
-    if (requestEpoch < latestAppliedMutationEpochRef.current) return;
-    setState(next);
-  }
-
-  async function load(sessionId?: string) {
-    const requestEpoch = mutationEpochRef.current;
-    const suffix = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : "";
-    const res = await fetch(`/api/admin/queue${suffix}`, { cache: "no-store" });
-    if (!res.ok) {
-      if (mutationInFlightRef.current > 0) return null;
-      if (requestEpoch !== mutationEpochRef.current) return null;
-      setError(res.status === 401 ? "Admin authentication required. Log in at /admin first." : "Queue control unavailable.");
-      return null;
-    }
-    setError(null);
-    const next = await res.json() as QueueState;
-    applyPollingStateIfFresh(next, requestEpoch);
-    return hasActiveQueueSession(next);
-  }
-
-  useEffect(() => {
-    setMounted(true);
-    return startSessionBoundPolling({
-      intervalMs: ADMIN_QUEUE_POLL_INTERVAL_MS,
-      poll: () => load(initialSessionIdFromUrl()),
-    });
-  }, []);
-
-  useEffect(() => {
-    const interval = window.setInterval(() => setClockNow(Date.now()), 1_000);
-    return () => window.clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    if (!state?.session || sessionOptionsOpen) return;
-    setPriorityEnabled(state.session.priorityUpgradePaymentsEnabled === true);
-    setPriorityPriceCents(state.session.priorityUpgradePriceCents ?? 0);
-    setPriorityCurrency(state.session.priorityUpgradeCurrency ?? "usd");
-    setSignalHoldEnabled(state.session.signalHoldPaymentsEnabled === true);
-    setSignalHoldPriceCents(state.session.signalHoldPriceCents ?? 0);
-    setSignalHoldCurrency(state.session.signalHoldCurrency ?? "usd");
-    setSessionCooldownSeconds(state.session.submissionCooldownSeconds ?? 300);
-  }, [sessionOptionsOpen, state?.session]);
-
-  useEffect(() => () => {
-    simulationRunningRef.current = false;
-    if (simulationTimerRef.current) window.clearTimeout(simulationTimerRef.current);
-  }, []);
-
-  async function post(body: Record<string, unknown>): Promise<QueueState | null> {
-    mutationEpochRef.current += 1;
-    const epoch = mutationEpochRef.current;
-    mutationInFlightRef.current += 1;
-    try {
-      const res = await fetch("/api/admin/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setActionError(typeof payload?.error === "string" ? payload.error : "Queue action failed. Please retry.");
-        return null;
-      }
-      setActionError(null);
-      applyMutationState(payload, epoch);
-      return payload;
-    } catch {
-      setActionError("Queue action could not reach the server. Please retry.");
-      return null;
-    } finally {
-      mutationInFlightRef.current = Math.max(0, mutationInFlightRef.current - 1);
-    }
-  }
-  async function action(id: string, next: AdminQueueAction): Promise<QueueState | null> { return post(next === "pullNext" || next === "pullWheelChosen" || next === "pullFreeTransmission" || next === "startShow" || next === "addWheelSpinOwed" ? { action: next } : { id, action: next }); }
-  async function simulationAction(next: SimulationAction, label: string) {
-    const updated = await post({ action: next });
-    setSimulationMessage(updated ? label : "Simulation action failed. Confirm admin auth and active session.");
-    return updated;
-  }
-  function simulationDelay(speed: SimulationSpeed): number {
-    const config = SIMULATION_SPEEDS[speed];
-    return config.minDelayMs + Math.floor(Math.random() * (config.maxDelayMs - config.minDelayMs));
-  }
-  function queueSimulationTick() {
-    if (!simulationRunningRef.current) return;
-    const speed = simulationSpeedRef.current;
-    simulationTimerRef.current = window.setTimeout(async () => {
-      if (!simulationRunningRef.current) return;
-      await simulationAction("addSimulationFreeTrack", "Simulation added a Free SIM track.");
-      if (Math.random() < SIMULATION_SPEEDS[speed].priorityChance) await simulationAction("addSimulationPaidPriority", "Simulation added a paid Priority SIM track.");
-      queueSimulationTick();
-    }, simulationDelay(speed));
-  }
-  function startSimulation() {
-    if (simulationRunningRef.current) return;
-    simulationRunningRef.current = true;
-    setSimulationRunning(true);
-    setSimulationMessage("Simulation running. Free SIM tracks will arrive over time.");
-    queueSimulationTick();
-  }
-  function stopSimulation() {
-    simulationRunningRef.current = false;
-    setSimulationRunning(false);
-    if (simulationTimerRef.current) window.clearTimeout(simulationTimerRef.current);
-    simulationTimerRef.current = null;
-    setSimulationMessage("Simulation stopped.");
-  }
-  function updateSimulationSpeed(next: SimulationSpeed) {
-    simulationSpeedRef.current = next;
-    setSimulationSpeed(next);
-  }
-  async function playerAction(id: string, next: AdminQueueAction) {
-    if (playerActionPending) return;
-    const isClearingAction = next === "finish" || next === "remove" || next === "moveBack" || next === "pausePriority" || next === "useSignalHold";
-    if (isClearingAction) {
-      setLoadingPlayerId(null);
-      setClearingPlayerId(id);
-    }
-    setPlayerActionPending(true);
-    const updated = await action(id, next);
-    if (isClearingAction) {
-      const clearingTarget = state?.nowPlaying?.id === id ? state.nowPlaying : null;
-      const didClearPlayer = Boolean(updated && updated.nowPlaying?.id !== id);
-      if (didClearPlayer && (clearingTarget?.sourceType === "youtube" || clearingTarget?.sourceType === "tiktok" || clearingTarget?.sourceType === "upload")) await clearOverlayPlayerSync();
-      if (!didClearPlayer) setLoadingPlayerId(null);
-      setClearingPlayerId(null);
-    }
-    setPlayerActionPending(false);
-  }
-  useEffect(() => {
-    if (!loadingPlayerId) return;
-    if (state?.nowPlaying?.id === loadingPlayerId) setLoadingPlayerId(null);
-    if (!state?.nowPlaying && loadingPlayerId) setLoadingPlayerId(null);
-  }, [loadingPlayerId, state?.nowPlaying]);
-  useEffect(() => {
-    if (!clearingPlayerId) return;
-    if (!state?.nowPlaying || state.nowPlaying.id !== clearingPlayerId) setClearingPlayerId(null);
-  }, [clearingPlayerId, state?.nowPlaying]);
-
-  async function endCurrentSession() {
-    setEndingSession(true);
-    const ended = await post({ action: "archiveSession", sessionId: state?.session?.sessionId });
-    setEndingSession(false);
-    if (!ended) return;
-    notifyQueueSessionChanged();
-    setEndConfirmOpen(false);
-    await load();
-  }
-  async function toggleOpen(isOpen: boolean) { await post({ action: "setOpen", isOpen }); }
-  async function copy(entry: QueueEntry) { await navigator.clipboard.writeText(openUrl(entry)); }
-  async function loadPlayer(entry: QueueEntry) {
-    if (playerActionPending) return;
-    setPlayerActionPending(true);
-    setLoadingPlayerId(entry.id);
-    setClearingPlayerId(null);
-    setMinimized(false);
-    if (entry.sourceType !== "youtube") await clearOverlayPlayerSync();
-    const updated = await action(entry.id, "load");
-    if (updated?.nowPlaying?.id === entry.id) {
-      setPlayerActionPending(false);
-      return;
-    }
-    if (!updated) setLoadingPlayerId(null);
-    setPlayerActionPending(false);
-  }
-  async function updateSponsorBreakState(sponsorAction: "start" | "complete" | "skip" | "reset") {
-    const isStart = sponsorAction === "start";
-    if (isStart && sponsorActionPendingRef.current) return;
-    if (isStart) {
-      sponsorActionPendingRef.current = true;
-      setSponsorActionPending(true);
-    }
-    try {
-      const updated = await post({ action: "updateSponsorBreakState", sponsorAction });
-      if (!isStart || !updated) return;
-      await launchLocalCommercialBreakIfAcknowledged(updated, () => fetch(LOCAL_COMMERCIAL_START_URL, { method: "POST", mode: "cors", cache: "no-store" }));
-    } catch {
-      setActionError("The sponsor timer started, but BARCODE Audio Bridge could not be reached. Confirm the bridge is running, then use its tray menu â†’ Start Commercial Break.");
-    } finally {
-      if (isStart) {
-        sponsorActionPendingRef.current = false;
-        setSponsorActionPending(false);
-      }
-    }
-  }
-
-  function openSessionOptions() {
-    if (state?.session) {
-      setPriorityEnabled(state.session.priorityUpgradePaymentsEnabled === true);
-      setPriorityPriceCents(state.session.priorityUpgradePriceCents ?? 0);
-      setPriorityCurrency(state.session.priorityUpgradeCurrency ?? "usd");
-      setSignalHoldEnabled(state.session.signalHoldPaymentsEnabled === true);
-      setSignalHoldPriceCents(state.session.signalHoldPriceCents ?? 0);
-      setSignalHoldCurrency(state.session.signalHoldCurrency ?? "usd");
-      setSessionCooldownSeconds(state.session.submissionCooldownSeconds ?? 300);
-    }
-    setPriorityMessage(null);
-    setPrioritySaveError(null);
-    setSessionOptionsOpen((value) => !value);
-  }
-  async function savePrioritySettings() {
-    if (priorityEnabled && priorityPriceCents <= 0) {
-      setPrioritySaveError("Checkout requires a price above 0.");
-      setPriorityMessage(null);
-      return;
-    }
-    if (signalHoldEnabled && signalHoldPriceCents <= 0) {
-      setPrioritySaveError("Signal Hold checkout requires a price above 0.");
-      setPriorityMessage(null);
-      return;
-    }
-    const paidUpgradesEnabled = priorityEnabled && priorityPriceCents > 0;
-    const paidSignalHoldEnabled = signalHoldEnabled && signalHoldPriceCents > 0;
-    setPrioritySaving(true);
-    setPrioritySaveError(null);
-    setPriorityMessage(null);
-    const cooldownNext = await post({ action: "updateSubmissionCooldownSettings", submissionCooldownSeconds: sessionCooldownSeconds });
-    const priorityNext = cooldownNext ? await post({ action: "updatePriorityUpgradeSettings", enabled: paidUpgradesEnabled, label: FIXED_PRIORITY_LABEL, instructions: FIXED_PRIORITY_INSTRUCTIONS, priceCents: priorityPriceCents, currency: priorityCurrency, paymentsEnabled: paidUpgradesEnabled }) : null;
-    const next = priorityNext ? await post({ action: "updateSignalHoldSettings", enabled: paidSignalHoldEnabled, priceCents: signalHoldPriceCents, currency: signalHoldCurrency, paymentsEnabled: paidSignalHoldEnabled }) : null;
-    setPrioritySaving(false);
-    if (!next) {
-      setPrioritySaveError("Session options could not be saved.");
-      return;
-    }
-    setPriorityMessage("Session options saved.");
-    window.setTimeout(() => setPriorityMessage(null), 3500);
-  }
-
-  const lanes = useMemo(() => {
-    const active = state?.queue ?? [];
-    return {
-      priority: active.filter(isPaidPriorityTrack),
-      wheel: active.filter((entry) => entry.lane === "wheel"),
-      regular: active.filter((entry) => !entry.lane || entry.lane === "regular" || (entry.lane === "priority" && !isPaidPriorityTrack(entry))),
-      spotlight: state?.spotlight ?? [],
-    };
-  }, [state]);
-  const sessionEntries = useMemo(() => {
-    const entries = [
-      ...(state?.queue ?? []),
-      ...(state?.nextInLine ? [state.nextInLine] : []),
-      ...(state?.nowPlaying ? [state.nowPlaying] : []),
-      ...(state?.history ?? []),
-      ...(state?.removed ?? []),
-      ...(state?.spotlight ?? []),
-    ];
-    return [...new Map(entries.map((entry) => [entry.id, entry])).values()];
-  }, [state]);
-
-  if (error) return <div className="border border-danger/40 bg-danger/5 p-6 text-danger">{error}</div>;
-  const readOnly = state?.readOnly ?? false;
-  const hasSession = Boolean(state?.session);
-  const hasCurrentSession = Boolean(state?.session && state.isCurrentSession && state.session.status !== "archived" && !readOnly);
-  const simulationCreationAllowed = Boolean(hasCurrentSession && state?.session?.status === "open" && state?.session?.queueOpen);
-  const canControlSession = hasCurrentSession;
-  const isPrivateTestSession = Boolean(
-    hasCurrentSession &&
-    state?.session &&
-    (state.session.purpose === "rehearsal" ||
-      state.session.purpose === "simulation" ||
-      state.session.purpose === "internal_test"),
-  );
-  const testBroadcastDeckHref = isPrivateTestSession && state?.session
-    ? `/admin/queue/broadcast-test?sessionId=${encodeURIComponent(state.session.sessionId)}&surface=deck`
-    : null;
-  const isArchivedReview = Boolean(state?.session?.status === "archived" || readOnly);
-  const nextInLine = state?.nextInLine ?? null;
-  const confirmedPlayer = state?.nowPlaying ?? null;
-  const hasClearingTransition = Boolean(clearingPlayerId);
-  const pendingPlayerLoad = Boolean(loadingPlayerId && (!confirmedPlayer || confirmedPlayer.id !== loadingPlayerId));
-  const loadedPlayer = hasClearingTransition ? null : pendingPlayerLoad ? (confirmedPlayer?.id === loadingPlayerId ? confirmedPlayer : null) : confirmedPlayer;
-  const playerPadding = loadedPlayer ? (minimized ? "pb-32" : "pb-[20rem]") : "pb-16";
-  const isExplicitReview = Boolean(initialSessionIdFromUrl());
-  const showQueueReview = hasCurrentSession || isExplicitReview;
-  const phaseLabel = state?.session?.broadcastPhase === "ended" ? "Ended / Disconnecting" : state?.session?.broadcastPhase === "broadcast_active" ? "Broadcast Active" : state?.session?.broadcastPhase === "submission_window" ? "Submission Window" : "Warmup";
-  const heldPriorityCount = (state?.queue ?? []).filter((entry) => isPaidPriorityTrack(entry) && Boolean(entry.priorityPausedAt)).length;
-  const nextInLineHasActivePriority = Boolean(nextInLine && nextInLine.lane === "priority" && !nextInLine.priorityPausedAt && (nextInLine.priorityUpgradeStatus === "paid" || nextInLine.priorityUpgradeStatus === "manual"));
-  const queuedActivePriorityExists = (state?.queue ?? []).some((entry) => entry.lane === "priority" && !entry.priorityPausedAt && (entry.priorityUpgradeStatus === "paid" || entry.priorityUpgradeStatus === "manual") && entry.status === "queued");
-  const resolverOverrideBlocked = nextInLineHasActivePriority || queuedActivePriorityExists;
-  const canPullWheelChosen = !resolverOverrideBlocked && (state?.queue ?? []).some((entry) => entry.lane === "wheel" && entry.status === "queued");
-  const canPullFreeTransmission = !resolverOverrideBlocked && (state?.queue ?? []).some((entry) => (!entry.lane || entry.lane === "regular") && entry.status === "queued");
-  const timingSummary = buildQueueTimingDisplay(queueTimingInputFromAdminState(state), { now: new Date(clockNow) });
-  const topPressure = timingSummary.pressureSummary;
-  const sponsorBreakDue = timingSummary.sponsorBreakSummary.dueNow;
-  const requestedCount = (state?.queue ?? []).filter((entry) => (entry.priorityUpgradeStatus ?? "none") === "requested").length;
-  const checkoutPendingCount = (state?.queue ?? []).filter((entry) => (entry.priorityUpgradeStatus ?? "none") === "checkout_pending").length;
-  const paidNeedsAttentionCount = (state?.queue ?? []).filter((entry) => (entry.priorityUpgradeStatus ?? "none") === "paid_needs_attention").length;
-  const signalHoldActiveCount = (state?.queue ?? []).filter((entry) => entry.signalHoldStatus === "active").length + (nextInLine?.signalHoldStatus === "active" ? 1 : 0);
-  const signalHoldProcessingCount = (state?.queue ?? []).filter((entry) => entry.signalHoldStatus === "checkout_pending").length + (nextInLine?.signalHoldStatus === "checkout_pending" ? 1 : 0);
-  const signalHoldNeedsAttentionCount = (state?.queue ?? []).filter((entry) => entry.signalHoldStatus === "paid_needs_attention").length + (nextInLine?.signalHoldStatus === "paid_needs_attention" ? 1 : 0);
-  const wheelSpinsUnlocked = state?.session?.wheelSpinsOwed ?? 0;
-  const wheelOverlayReady = wheelSpinsUnlocked > 0;
-  const wheelOverlayStatusLabel = "Wheel spin ready";
-  const activeTrackIds = new Set<string>();
-  if (state?.nowPlaying?.id && !state.nowPlaying.isTestTrack) activeTrackIds.add(state.nowPlaying.id);
-  if (nextInLine?.id && !nextInLine.isTestTrack) activeTrackIds.add(nextInLine.id);
-  for (const entry of state?.queue ?? []) {
-    if (entry.status === "queued" && !entry.isTestTrack) activeTrackIds.add(entry.id);
-  }
-  const activeTrackCount = activeTrackIds.size;
-  const acceptedTrackCount = state?.publicStatus?.acceptedCount ?? state?.session?.acceptedCount ?? activeTrackCount;
-  const projectedRuntimeLabel = timingSummary.showRuntimeSummary.publicProjectedLabel ?? timingSummary.showRuntimeSummary.projectedLabel ?? "â€”";
-  const capacityCount = state?.publicStatus?.capacity ?? state?.session?.queueCapacity ?? null;
-  const acceptedCapacityLabel = capacityCount ? `${acceptedTrackCount} / ${capacityCount}` : `${acceptedTrackCount}`;
-  const completedActiveAcceptedLabel = `${state?.session?.completedCount ?? 0} / ${activeTrackCount} / ${acceptedTrackCount}`;
-  const openWheelPanel = () => {
-    setActiveUtilityPanel("overlay");
-    setOverlayWheelFocusTick((value) => value + 1);
-  };
-
-  const railBottomOffsetClass = loadedPlayer ? (minimized ? "bottom-24" : "bottom-[12.5rem]") : "bottom-5";
-  const topOverlayPaddingClass = topBarMinimized ? "pt-[4.5rem] md:pt-[4.75rem]" : "pt-[7.25rem] md:pt-[7.5rem]";
-  const showLogSessionQuery = state?.session?.sessionId
-    ? `&sessionId=${encodeURIComponent(state.session.sessionId)}`
-    : "";
-
-  return (
-    <div className={`${playerPadding} ${topOverlayPaddingClass} space-y-2 xl:pr-[26rem]`}>
-      {actionError && <div role="alert" className="border border-danger/50 bg-danger/10 p-3 text-sm text-danger">{actionError}</div>}
-      <section className="border border-border bg-surface p-1.5">
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => setActiveUtilityPanel((value) => value === "session" ? null : "session")} className="min-h-9 border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted">{activeUtilityPanel === "session" ? "Hide Session Setup" : "Session Setup"}</button>
-          <button type="button" onClick={() => setActiveUtilityPanel((value) => value === "visuals" ? null : "visuals")} className="min-h-9 border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted">{activeUtilityPanel === "visuals" ? "Hide Diagnostics" : "Diagnostics"}</button>
-          <button type="button" onClick={() => setActiveUtilityPanel((value) => value === "visualOverlays" ? null : "visualOverlays")} className="min-h-9 border border-violet-400/60 px-3 py-1.5 text-xs uppercase tracking-widest text-violet-200">{activeUtilityPanel === "visualOverlays" ? "Hide Visual Overlays" : "Visual Overlays"}</button>
-          <button
-            type="button"
-            onClick={() => setActiveUtilityPanel((value) => value === "overlay" ? null : "overlay")}
-            className={`min-h-9 border px-3 py-1.5 text-xs uppercase tracking-widest ${wheelOverlayReady ? "border-cyan-300 bg-cyan-300/25 text-cyan-100 shadow-[0_0_20px_rgba(103,232,249,0.22)]" : "border-border text-muted"}`}
-          >
-            {activeUtilityPanel === "overlay" ? "Hide Wheel Overlay" : wheelOverlayReady ? "Wheel Overlay â€” Spin Owed" : "Wheel Overlay"}
-          </button>
-          {hasSession && <a href={`/api/admin/queue/show-log?format=csv${showLogSessionQuery}`} className="inline-flex min-h-9 items-center border border-accent/60 px-3 py-1.5 text-xs uppercase tracking-widest text-accent">Show Log CSV</a>}
-          {hasSession && <a href={`/api/admin/queue/show-log?format=json${showLogSessionQuery}`} className="inline-flex min-h-9 items-center border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted">Show Log JSON</a>}
-        </div>
-      </section>
-
-      {activeUtilityPanel === "session" && hasCurrentSession && <section className="border border-accent/40 bg-surface p-3 space-y-3"><div><p className="text-xs uppercase tracking-[0.4em] text-accent">Session Setup</p><h2 className="text-lg font-bold text-foreground mt-1">{state?.session?.title}</h2><p className="text-xs text-muted">{state?.session?.showDate} Â· {state?.session?.status}</p>{state?.session?.description && <p className="text-xs text-muted mt-2 max-w-2xl">{state.session.description}</p>}</div><div className="flex flex-wrap gap-2"><a href="/admin/show-management" className="border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Show Management</a><button type="button" onClick={openSessionOptions} className="border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">{sessionOptionsOpen ? "Hide Session Options" : "Edit Session Options"}</button></div>{canControlSession && sessionOptionsOpen && <section className="space-y-3 border border-border bg-background/40 p-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div><p className="text-xs uppercase tracking-[0.3em] text-accent">Session Options</p><h3 className="mt-1 text-lg font-bold text-foreground">Session Options</h3><p className="mt-1 text-xs text-muted">Only the verified Stripe webhook marks a track paid or moves it into Priority Signal.</p></div><div className="border border-border bg-surface p-3 text-sm"><p className="text-xs uppercase tracking-widest text-muted">Submission Delay</p><p className="mt-1 font-bold text-foreground">{sessionCooldownSeconds === 0 ? "Disabled" : `${sessionCooldownSeconds}s`}</p></div><div className="border border-border bg-surface p-3 text-sm"><p className="text-xs uppercase tracking-widest text-muted">Display price</p><p className="mt-1 font-bold text-foreground">{formatPrice(priorityPriceCents, priorityCurrency)}</p></div></div><div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(10rem,0.35fr)]"><label className="space-y-2 block md:col-span-2"><span className="text-xs uppercase tracking-widest text-muted">Submission Delay</span><input type="number" min={0} max={3600} value={sessionCooldownSeconds} onChange={(event) => setSessionCooldownSeconds(Math.max(0, Math.min(3600, Number(event.target.value))))} className="w-full bg-background border border-border px-3 py-2 text-sm" /><span className="block text-xs text-muted">Delay between accepted submissions from the same source. Set to 0 to disable during testing.</span></label><label className="flex items-center justify-between gap-3 border border-border bg-surface p-3 text-sm"><span><span className="block font-bold text-foreground">Paid upgrades {priorityEnabled ? "enabled" : "disabled"}</span><span className="text-xs text-muted">Controls Stripe checkout availability for this session.</span></span><input type="checkbox" checked={priorityEnabled} onChange={(event) => setPriorityEnabled(event.target.checked)} /></label><label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Price</span><input type="number" min={0} value={priorityPriceCents} onChange={(event) => setPriorityPriceCents(Math.max(0, Number(event.target.value)))} className="w-full bg-background border border-border px-3 py-2 text-sm" /><span className="block text-xs text-muted">Enter cents. Example: 1000 = $10.00.</span></label></div>{prioritySaveError && <p className="border border-danger/40 bg-danger/10 p-2 text-sm text-danger">{prioritySaveError}</p>}{priorityMessage && <p className="border border-accent/50 bg-accent/10 p-2 text-sm font-bold text-accent">{priorityMessage}</p>}<div className="flex flex-wrap gap-2"><button type="button" onClick={savePrioritySettings} disabled={prioritySaving} className="border border-accent bg-accent/10 px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{prioritySaving ? "Savingâ€¦" : "Save Settings"}</button><button type="button" onClick={() => setSessionOptionsOpen(false)} disabled={prioritySaving} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent disabled:opacity-50">Close</button></div></section>}</section>}
-
-      {activeUtilityPanel === "session" && canControlSession && sessionOptionsOpen && <section className="space-y-3 border border-cyan-300/40 bg-cyan-300/5 p-4">
-        <div><p className="text-xs uppercase tracking-[0.3em] text-cyan-200">Signal Hold</p><p className="mt-1 text-xs text-muted">Disabled by default. If an absent artist is called, this lets the host move the protected track to the bottom instead of removing it. One show only; no place preservation or guaranteed play.</p></div>
-        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(10rem,0.35fr)]">
-          <label className="flex items-center justify-between gap-3 border border-border bg-surface p-3 text-sm"><span><span className="block font-bold text-foreground">Signal Hold {signalHoldEnabled ? "enabled" : "disabled"}</span><span className="text-xs text-muted">Requires a price above 0 and paid webhook confirmation.</span></span><input type="checkbox" checked={signalHoldEnabled} onChange={(event) => setSignalHoldEnabled(event.target.checked)} /></label>
-          <label className="space-y-2 block"><span className="text-xs uppercase tracking-widest text-muted">Signal Hold price</span><input type="number" min={0} value={signalHoldPriceCents} onChange={(event) => setSignalHoldPriceCents(Math.max(0, Number(event.target.value)))} className="w-full border border-border bg-background px-3 py-2 text-sm" /><span className="block text-xs text-muted">{formatPrice(signalHoldPriceCents, signalHoldCurrency)}</span></label>
-        </div>
-      </section>}
-
-      {activeUtilityPanel === "visuals" && canControlSession && <section className="border border-border/80 bg-surface/70 p-3"><AdminRuntimeDiagnostics timingSummary={timingSummary} canControl={canControlSession} onSponsorAction={updateSponsorBreakState} sponsorActionPending={sponsorActionPending} sessionId={state?.session?.sessionId ?? null} playbackDiagnostics={state?.playbackDiagnostics ?? null} /></section>}
-
-      {activeUtilityPanel === "visualOverlays" && canControlSession && <section className="border border-violet-400/30 bg-surface/70 p-3"><AdminRadioVisualsControl /></section>}
-
-      {activeUtilityPanel === "overlay" && canControlSession && <section className="border border-border/80 bg-surface/70 p-3"><AdminLiveOverlayControl focusWheelTick={overlayWheelFocusTick} /></section>}
-
-      {isArchivedReview && hasSession && <div className="border border-danger/40 bg-danger/10 p-3 text-xs uppercase tracking-widest text-danger">ARCHIVED / READ ONLY â€” viewing {state?.session?.title ?? "finished session"}. Queue review actions are locked for this finished session.</div>}
-
-      {mounted && canControlSession && createPortal(<section className="fixed left-4 right-4 top-[calc(3.5rem+env(safe-area-inset-top))] z-[8500] space-y-1.5 border border-border bg-background/95 p-2.5 text-sm shadow-2xl backdrop-blur">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="min-w-0">
-            <p className="truncate text-[11px] uppercase tracking-[0.2em] text-muted">{state?.session?.title} Â· {state?.session?.showDate}</p>
-          </div>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            {sponsorBreakDue && <button type="button" disabled={sponsorActionPending} onClick={() => updateSponsorBreakState("start")} className="min-h-10 border-2 border-[#ffaa00] bg-[#ffaa00] px-3 py-2 font-black uppercase tracking-widest text-background shadow-[0_0_28px_rgba(255,170,0,0.55)] animate-pulse hover:bg-[#ffbd4a] disabled:cursor-wait disabled:opacity-70 motion-reduce:animate-none sm:px-4"><span className="sm:hidden">{sponsorActionPending ? "Startingâ€¦" : "Start Break"}</span><span className="hidden sm:inline">{sponsorActionPending ? "Starting Sponsor Breakâ€¦" : "Start Sponsor Break"}</span></button>}
-            {state?.session?.purpose === "rehearsal" && <AdminRehearsalShareLink sessionId={state.session.sessionId} compact />}
-            {testBroadcastDeckHref && <a href={testBroadcastDeckHref} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center border-2 border-cyan-300 bg-cyan-300/15 px-3 py-2 font-black uppercase tracking-widest text-cyan-100 hover:bg-cyan-300 hover:text-background sm:px-4">Open Test Broadcast Deck</a>}
-            <button type="button" onClick={() => setTopBarMinimized((value) => !value)} className="min-h-10 border border-border px-3 py-2 uppercase tracking-widest text-muted">{topBarMinimized ? "Expand" : "Minimize"}</button>
-          </div>
-        </div>
-        {topBarMinimized ? <div className="flex flex-wrap items-center gap-2">
-          <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Phase: {phaseLabel}</span>
-          <span className={`border px-2 py-1 uppercase tracking-widest ${state?.publicStatus?.isOpen ? "border-accent/50 text-accent" : "border-danger/50 text-danger"}`}>Submissions: {state?.publicStatus?.isOpen ? "Open" : "Closed"}</span>
-          <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Accepted / Capacity: {acceptedCapacityLabel}</span>
-          <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Completed / Active / Accepted: {completedActiveAcceptedLabel}</span>
-          <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Elapsed: {timingSummary.showRuntimeSummary.elapsedLabel}</span>
-          <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Remaining: {timingSummary.showRuntimeSummary.remainingLabel}</span>
-          <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">End: {timingSummary.showRuntimeSummary.estimatedEndLabel}</span>
-          <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Projected: {projectedRuntimeLabel}</span>
-          <TopBarCommercialChip summary={timingSummary.sponsorBreakSummary} />
-          <TopBarPressureChip pressure={topPressure} minimized />
-          {wheelSpinsUnlocked > 0 && <>
-            <span className="border border-cyan-300/50 bg-cyan-300/10 px-2 py-1 uppercase tracking-widest text-cyan-200">Wheel: {wheelSpinsUnlocked} owed</span>
-            <button type="button" onClick={openWheelPanel} className="min-h-9 border border-cyan-300/70 bg-cyan-300/15 px-2.5 py-1 uppercase tracking-widest text-cyan-100 hover:bg-cyan-300 hover:text-background">Open Wheel</button>
-          </>}
-          {nextInLine && <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Next: {submittedArtist(nextInLine)} â€” {submittedTitle(nextInLine)}</span>}
-        </div> : <>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-          <div><p className="text-[10px] uppercase tracking-widest text-muted">Show Phase</p><p className="mt-1 font-bold text-foreground">{phaseLabel}</p></div>
-          <div><p className="text-[10px] uppercase tracking-widest text-muted">Submissions</p><p className={`mt-1 font-bold ${state?.publicStatus?.isOpen ? "text-accent" : "text-danger"}`}>{state?.publicStatus?.isOpen ? "Open" : "Closed"}</p></div>
-          <div><p className="text-[10px] uppercase tracking-widest text-muted">Accepted / Capacity</p><p className="mt-1 font-bold text-foreground">{acceptedCapacityLabel}</p></div>
-          <div><p className="text-[10px] uppercase tracking-widest text-muted">Completed / Active / Accepted</p><p className="mt-1 font-bold text-foreground">{completedActiveAcceptedLabel}</p></div>
-          <div><p className="text-[10px] uppercase tracking-widest text-muted">Elapsed</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.elapsedLabel}</p></div>
-          <div><p className="text-[10px] uppercase tracking-widest text-muted">Projected Remaining</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.remainingLabel}</p></div>
-          <div><p className="text-[10px] uppercase tracking-widest text-muted">Estimated End</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.estimatedEndLabel}</p></div>
-          <div><p className="text-[10px] uppercase tracking-widest text-muted">Projected Runtime</p><p className="mt-1 font-bold text-foreground">{projectedRuntimeLabel}</p></div>
-          <TopBarCommercialChip summary={timingSummary.sponsorBreakSummary} />
-          <TopBarPressureChip pressure={topPressure} />
-          {wheelSpinsUnlocked > 0 && <div className="space-y-1"><p className="text-[10px] uppercase tracking-widest text-muted">Wheel</p><p className="font-bold text-cyan-200">{wheelSpinsUnlocked} owed</p><button type="button" onClick={openWheelPanel} className="min-h-9 border border-cyan-300/70 bg-cyan-300/15 px-3 py-1 text-[10px] uppercase tracking-widest text-cyan-100 hover:bg-cyan-300 hover:text-background">Open Wheel Panel</button></div>}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button onClick={() => toggleOpen(!state?.publicStatus?.isOpen)} className={`${state?.publicStatus?.isOpen ? "border-danger/50 text-danger hover:bg-danger" : "border-accent text-accent hover:bg-accent"} min-h-10 border px-3 py-2 uppercase tracking-widest hover:text-background`}>{state?.publicStatus?.isOpen ? "Close Submissions" : "Open Submissions"}</button>
-          {state?.session?.showStarted !== true && <button onClick={() => action("", "startShow")} className="min-h-10 border border-foreground/50 px-3 py-2 uppercase tracking-widest text-foreground hover:bg-foreground hover:text-background">Start Broadcast</button>}
-          <button onClick={() => action("", "addWheelSpinOwed")} className="min-h-10 border border-cyan-300/60 px-3 py-2 uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background">Add Wheel Spin</button>
-          <details className="group relative"><summary className="list-none cursor-pointer min-h-10 border border-border/80 px-3 py-2 uppercase tracking-widest text-muted hover:border-foreground/60 hover:text-foreground">Resolver Override â–¾</summary><div className="absolute left-0 z-30 mt-2 w-64 space-y-2 border border-border bg-background p-3 shadow-xl"><p className="text-[10px] uppercase tracking-[0.2em] text-muted">Use for live manual correction. This does not count the current slot as played.</p><button type="button" onClick={() => action("", "pullWheelChosen")} disabled={!canPullWheelChosen} className="block w-full min-h-10 border border-cyan-300/60 px-3 py-2 text-left uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Pull Wheel Chosen</button><button type="button" onClick={() => action("", "pullFreeTransmission")} disabled={!canPullFreeTransmission} className="block w-full min-h-10 border border-foreground/40 px-3 py-2 text-left uppercase tracking-widest text-foreground hover:bg-foreground hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Pull Free Transmission</button>{resolverOverrideBlocked && <p className="text-[10px] uppercase tracking-[0.16em] text-[#ffaa00]">Blocked while active Priority owns the resolver.</p>}</div></details>
-          <button onClick={() => setEndConfirmOpen(true)} className="ml-auto min-h-10 border border-danger/60 px-3 py-2 text-sm uppercase tracking-widest text-danger hover:bg-danger hover:text-background">End Broadcast</button>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Phase: {phaseLabel}</span>
-          {requestedCount > 0 && <span className="border border-[#c27803]/40 bg-[#c27803]/10 px-2 py-1 uppercase tracking-widest text-[#c27803]">Payment Requested: {requestedCount}</span>}
-          {checkoutPendingCount > 0 && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 uppercase tracking-widest text-[#ffaa00]">Checkout Pending: {checkoutPendingCount}</span>}
-          {paidNeedsAttentionCount > 0 && <span className="border border-danger/60 bg-danger/15 px-2 py-1 uppercase tracking-widest text-danger">Paid Needs Attention: {paidNeedsAttentionCount}</span>}
-          {heldPriorityCount > 0 && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 uppercase tracking-widest text-[#ffaa00]">Paused Priority: {heldPriorityCount}</span>}
-          {signalHoldActiveCount > 0 && <span className="border border-cyan-300/50 bg-cyan-300/10 px-2 py-1 uppercase tracking-widest text-cyan-200">Signal Hold Active: {signalHoldActiveCount}</span>}
-          {signalHoldProcessingCount > 0 && <span className="border border-cyan-300/40 bg-cyan-300/5 px-2 py-1 uppercase tracking-widest text-cyan-200">Signal Hold Payment Processing: {signalHoldProcessingCount}</span>}
-          {signalHoldNeedsAttentionCount > 0 && <span className="border border-danger/60 bg-danger/15 px-2 py-1 uppercase tracking-widest text-danger">Signal Hold Needs Attention: {signalHoldNeedsAttentionCount}</span>}
-          {!nextInLine && <span className="border border-border bg-surface px-2 py-1 uppercase tracking-widest text-muted">No Next In Line</span>}
-          {resolverOverrideBlocked && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 uppercase tracking-widest text-[#ffaa00]">Resolver Override Blocked</span>}
-        </div>
-        </>}
-      </section>, document.body)}
-
-      {mounted && canControlSession && <AdminTimeBankToast timing={timingSummary.timeBankSummary} sessionId={state?.session?.sessionId ?? null} />}
-
-      {mounted && endConfirmOpen && createPortal(<div className="fixed inset-0 z-[100000] grid place-items-center bg-black/80 p-4 backdrop-blur-sm"><div role="dialog" aria-modal="true" aria-labelledby="end-session-confirm-title" className="w-full max-w-md border border-danger/50 bg-background p-5 shadow-[0_0_70px_rgba(255,0,0,0.24)]"><p className="text-xs uppercase tracking-[0.35em] text-danger">End Broadcast</p><h2 id="end-session-confirm-title" className="mt-3 text-2xl font-bold text-foreground">End this broadcast?</h2><p className="mt-2 text-sm text-muted">This will stop routing, close submissions, and move the broadcast session to the archive.</p><div className="mt-5 flex flex-wrap justify-end gap-2"><a href="/admin/queue" className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Return to Queue Dashboard</a><button type="button" onClick={() => setEndConfirmOpen(false)} disabled={endingSession} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted disabled:opacity-50">No, Cancel</button><button type="button" onClick={endCurrentSession} disabled={endingSession} className="border border-danger px-4 py-2 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background disabled:opacity-50">{endingSession ? "Endingâ€¦" : "Yes, End Broadcast"}</button></div></div></div>, document.body)}
-
-
-
-      {canControlSession && <details className="border border-[#ffaa00]/40 bg-[#ffaa00]/5 p-3">
-        <summary className="cursor-pointer text-xs uppercase tracking-[0.32em] text-[#ffaa00]">Testing / Simulation Mode</summary>
-        <div className="mt-4 space-y-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><p className="text-sm text-muted">Creates fake SIM tracks for testing. Keep disabled during live broadcasts.</p><div className="border border-[#ffaa00]/40 bg-background/60 p-3 text-sm"><p className="text-xs uppercase tracking-widest text-muted">Status</p><p className={simulationRunning ? "font-bold text-[#ffaa00]" : "font-bold text-muted"}>{simulationRunning ? "Running" : "Stopped"}</p></div></div>{!simulationCreationAllowed && <p className="text-xs uppercase tracking-[0.16em] text-[#ffaa00]">Open submissions before running simulation tracks.</p>}<div className="flex flex-wrap items-end gap-3"><label className="space-y-1 text-xs uppercase tracking-widest text-muted"><span>Simulation speed</span><select value={simulationSpeed} onChange={(event) => updateSimulationSpeed(event.target.value as SimulationSpeed)} className="block border border-border bg-background px-3 py-2 text-sm normal-case tracking-normal text-foreground">{(Object.keys(SIMULATION_SPEEDS) as SimulationSpeed[]).map((speed) => <option key={speed} value={speed}>{SIMULATION_SPEEDS[speed].label}</option>)}</select></label><button type="button" onClick={startSimulation} disabled={simulationRunning || !simulationCreationAllowed} className="border border-[#ffaa00] px-4 py-2 text-xs uppercase tracking-widest text-[#ffaa00] disabled:cursor-not-allowed disabled:opacity-40">Start Simulation</button><button type="button" onClick={stopSimulation} disabled={!simulationRunning} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted disabled:cursor-not-allowed disabled:opacity-40">Stop Simulation</button><button type="button" onClick={() => simulationAction("addSimulationFreeTrack", "Added one Free SIM submission.")} disabled={!simulationCreationAllowed} className="border border-accent/50 px-4 py-2 text-xs uppercase tracking-widest text-accent disabled:cursor-not-allowed disabled:opacity-40">Add Free Test Submission Now</button><button type="button" onClick={() => simulationAction("addSimulationPaidPriority", "Sent one paid Priority SIM skip.")} disabled={!simulationCreationAllowed} className="border border-[#ffaa00]/60 px-4 py-2 text-xs uppercase tracking-widest text-[#ffaa00] disabled:cursor-not-allowed disabled:opacity-40">Send Paid Priority Skip Now</button><button type="button" onClick={() => simulationAction("addSimulationCheckoutPending", "Sent one checkout-pending SIM track.")} disabled={!simulationCreationAllowed} className="border border-[#ffaa00]/40 px-4 py-2 text-xs uppercase tracking-widest text-[#ffaa00] disabled:cursor-not-allowed disabled:opacity-40">Send Checkout Pending Test Now</button><button type="button" onClick={() => simulationAction("addSimulationPaymentFailed", "Sent one failed-payment SIM track.")} disabled={!simulationCreationAllowed} className="border border-danger/50 px-4 py-2 text-xs uppercase tracking-widest text-danger disabled:cursor-not-allowed disabled:opacity-40">Send Failed Payment Test Now</button><button type="button" onClick={() => simulationAction("addSimulationHeldPriority", "Sent one paused paid Priority SIM track.")} disabled={!simulationCreationAllowed} className="border border-[#ffaa00]/60 px-4 py-2 text-xs uppercase tracking-widest text-[#ffaa00] disabled:cursor-not-allowed disabled:opacity-40">Send Paused Priority Test Now</button><button type="button" onClick={() => simulationAction("clearSimulationTracks", "Cleared SIM/test tracks only.")} className="border border-danger px-4 py-2 text-xs uppercase tracking-widest text-danger">Clear Simulation Tracks</button></div>{simulationMessage && <p className="border border-[#ffaa00]/30 bg-background/40 p-2 text-sm text-[#ffaa00]">{simulationMessage}</p>}</div>
-      </details>}
-
-      {!showQueueReview ? (
-        <section className="border border-border bg-surface p-6">
-          <h2 className="text-2xl font-bold text-foreground">No active session.</h2>
-          <p className="text-sm text-muted mt-2">Start a new session from Show Management.</p>
-          <a href="/admin/show-management" className="inline-flex mt-4 border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Go to Show Management</a>
-        </section>
-      ) : <>
-        <div className="flex gap-2 border-b border-border">
-          {(["active", "completed", "removed", "spotlight"] as Tab[]).map((key) => <button key={key} onClick={() => setTab(key)} className={`px-4 py-3 text-xs uppercase tracking-widest ${tab === key ? "text-accent border-b border-accent" : "text-muted"}`}>{key === "active" ? "Active Queue" : key === "completed" ? "Completed Tracks" : key === "removed" ? "Removed" : "Spotlight"}</button>)}
-        </div>
-
-        {tab === "active" && <div className="grid gap-5">
-          <div className="space-y-5"><Lane title="Priority Signal" tracks={lanes.priority} sessionEntries={sessionEntries} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="active" readOnly={readOnly} /><Lane title="Wheel Winners" tracks={lanes.wheel} sessionEntries={sessionEntries} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="active" readOnly={readOnly} /><Lane title="Regular Queue" tracks={lanes.regular} sessionEntries={sessionEntries} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="active" readOnly={readOnly} /></div>
-          <aside className="xl:hidden space-y-3">
-            <section className="border border-border bg-surface p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <p className="text-sm uppercase tracking-[0.24em] text-muted">Next In Line Rail</p>
-                <button type="button" onClick={() => setRailMinimized((value) => !value)} className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">{railMinimized ? "Expand" : "Minimize"}</button>
-              </div>
-              {railMinimized ? <div className="space-y-2">
-                <p className="text-xs text-muted">{nextInLine ? `${submittedArtist(nextInLine)} â€” ${submittedTitle(nextInLine)}` : "No Next In Line"}</p>
-                <span className="inline-flex border border-cyan-300/30 bg-cyan-300/5 px-2 py-1 text-[10px] uppercase tracking-widest text-cyan-200">Wheel Spins: {state?.session?.wheelSpinsOwed ?? 0}</span>
-              </div> : <>
-            <NextInLineBox entry={nextInLine} playerOccupied={Boolean(loadedPlayer)} readOnly={readOnly} onAction={action} onPlayer={loadPlayer} onCopy={copy} />
-            <section className="border border-border bg-surface p-3 space-y-2">
-              <p className="text-sm uppercase tracking-[0.24em] text-muted">Next In Line Actions</p>
-              {!nextInLine && <><p className="text-sm text-muted">No Next In Line â€” Pull Next Track when ready.</p><button onClick={() => action("", "pullNext")} className="min-h-10 border border-accent px-3 py-2 text-sm uppercase tracking-widest text-accent">Pull Next Track</button></>}
-              <div className="flex flex-wrap gap-2"><span className="border border-cyan-300/30 bg-cyan-300/5 px-2 py-1 text-[10px] uppercase tracking-widest text-cyan-200">Wheel Spins Unlocked: {state?.session?.wheelSpinsOwed ?? 0}</span><span className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">Next Owed: {state?.nextNonPriorityLane === "regular" ? "Free" : "Wheel"}</span></div>
-              {wheelOverlayReady && <div className="space-y-2 border border-cyan-300/50 bg-cyan-300/10 p-2.5 animate-pulse">
-                <p className="text-[10px] uppercase tracking-[0.2em] text-cyan-100">{wheelOverlayStatusLabel}</p>
-                <button type="button" onClick={openWheelPanel} className="min-h-10 w-full border border-cyan-300/70 bg-cyan-300/10 px-3 py-2 text-xs uppercase tracking-widest text-cyan-100 hover:bg-cyan-300 hover:text-background">Open Wheel Panel</button>
-              </div>}
-              <div className="flex flex-wrap gap-2">{requestedCount > 0 && <span className="border border-[#c27803]/40 bg-[#c27803]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#c27803]">Payment Requested: {requestedCount}</span>}{checkoutPendingCount > 0 && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Checkout Pending: {checkoutPendingCount}</span>}{paidNeedsAttentionCount > 0 && <span className="border border-danger/60 bg-danger/15 px-2 py-1 text-[10px] uppercase tracking-widest text-danger">Paid Needs Attention: {paidNeedsAttentionCount}</span>}{heldPriorityCount > 0 && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Paused Priority: {heldPriorityCount}</span>}{signalHoldActiveCount > 0 && <span className="border border-cyan-300/50 bg-cyan-300/10 px-2 py-1 text-[10px] uppercase tracking-widest text-cyan-200">Signal Hold Active: {signalHoldActiveCount}</span>}{signalHoldProcessingCount > 0 && <span className="border border-cyan-300/40 bg-cyan-300/5 px-2 py-1 text-[10px] uppercase tracking-widest text-cyan-200">Signal Hold Payment Processing: {signalHoldProcessingCount}</span>}{signalHoldNeedsAttentionCount > 0 && <span className="border border-danger/60 bg-danger/15 px-2 py-1 text-[10px] uppercase tracking-widest text-danger">Signal Hold Needs Attention: {signalHoldNeedsAttentionCount}</span>}{resolverOverrideBlocked && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Resolver Override Blocked</span>}{!nextInLine && <span className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">No Next In Line</span>}</div>
-            </section>
-              </>}
-            </section>
-          </aside>
-        </div>}
-        {tab === "completed" && <Lane title="Completed Tracks" tracks={state?.history ?? []} sessionEntries={sessionEntries} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="completed" readOnly={readOnly} />}
-        {tab === "removed" && <Lane title="Removed Tracks" tracks={state?.removed ?? []} sessionEntries={sessionEntries} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="removed" readOnly={readOnly} />}
-        {tab === "spotlight" && <Lane title="Spotlight List" tracks={lanes.spotlight} sessionEntries={sessionEntries} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="spotlight" readOnly={readOnly} />}
-      </>}
-
-      {mounted && loadedPlayer && createPortal(<PlayerDock key={loadedPlayer.id} player={loadedPlayer} sessionId={state?.session?.sessionId ?? null} playbackDiagnostics={state?.playbackDiagnostics ?? null} minimized={minimized} setMinimized={setMinimized} readOnly={readOnly} actionPending={playerActionPending} onAction={playerAction} onCopy={() => copy(loadedPlayer)} />, document.body)}
-      {mounted && !loadedPlayer && pendingPlayerLoad && createPortal(<section className="fixed bottom-5 left-4 right-4 z-[8600] border border-border bg-background/95 px-4 py-3 text-xs uppercase tracking-widest text-muted shadow-2xl backdrop-blur md:left-8 md:right-8 lg:left-auto lg:right-6 lg:w-[24rem]">Loading Playerâ€¦</section>, document.body)}
-      {mounted && !loadedPlayer && hasClearingTransition && !pendingPlayerLoad && createPortal(<section className="fixed bottom-5 left-4 right-4 z-[8600] border border-border bg-background/95 px-4 py-3 text-xs uppercase tracking-widest text-muted shadow-2xl backdrop-blur md:left-8 md:right-8 lg:left-auto lg:right-6 lg:w-[24rem]">Updating Playerâ€¦</section>, document.body)}
-
-      {mounted && canControlSession && createPortal(<aside className={`hidden xl:block fixed right-4 top-[calc(10.25rem+env(safe-area-inset-top))] ${railBottomOffsetClass} max-h-[calc(100dvh-11rem)] w-[24rem] z-[8400] border border-border bg-background/95 shadow-2xl backdrop-blur overflow-y-auto p-3 space-y-3`}>
-        <section className="border border-border bg-surface p-3 space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="text-sm uppercase tracking-[0.24em] text-muted">Next In Line Rail</p>
-            <button type="button" onClick={() => setRailMinimized((value) => !value)} className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">{railMinimized ? "Expand" : "Minimize"}</button>
-          </div>
-          {railMinimized ? <div className="space-y-2">
-            <p className="text-xs text-muted">{nextInLine ? `${submittedArtist(nextInLine)} â€” ${submittedTitle(nextInLine)}` : "No Next In Line"}</p>
-            <span className="inline-flex border border-cyan-300/30 bg-cyan-300/5 px-2 py-1 text-[10px] uppercase tracking-widest text-cyan-200">Wheel Spins: {state?.session?.wheelSpinsOwed ?? 0}</span>
-          </div> : <>
-            <div className="pt-12"><NextInLineBox entry={nextInLine} playerOccupied={Boolean(loadedPlayer)} readOnly={readOnly} onAction={action} onPlayer={loadPlayer} onCopy={copy} /></div>
-            <section className="border border-border bg-surface p-3 space-y-2">
-              <p className="text-sm uppercase tracking-[0.24em] text-muted">Next In Line Actions</p>
-              {!nextInLine && <><p className="text-sm text-muted">No Next In Line â€” Pull Next Track when ready.</p><button onClick={() => action("", "pullNext")} className="min-h-10 border border-accent px-3 py-2 text-sm uppercase tracking-widest text-accent">Pull Next Track</button></>}
-              <div className="flex flex-wrap gap-2"><span className="border border-cyan-300/30 bg-cyan-300/5 px-2 py-1 text-[10px] uppercase tracking-widest text-cyan-200">Wheel Spins Unlocked: {state?.session?.wheelSpinsOwed ?? 0}</span><span className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">Next Owed: {state?.nextNonPriorityLane === "regular" ? "Free" : "Wheel"}</span></div>
-              {wheelOverlayReady && <div className="space-y-2 border border-cyan-300/50 bg-cyan-300/10 p-2.5 animate-pulse">
-                <p className="text-[10px] uppercase tracking-[0.2em] text-cyan-100">{wheelOverlayStatusLabel}</p>
-                <button type="button" onClick={openWheelPanel} className="min-h-10 w-full border border-cyan-300/70 bg-cyan-300/10 px-3 py-2 text-xs uppercase tracking-widest text-cyan-100 hover:bg-cyan-300 hover:text-background">Open Wheel Panel</button>
-              </div>}
-              <div className="flex flex-wrap gap-2">{requestedCount > 0 && <span className="border border-[#c27803]/40 bg-[#c27803]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#c27803]">Payment Requested: {requestedCount}</span>}{checkoutPendingCount > 0 && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Checkout Pending: {checkoutPendingCount}</span>}{paidNeedsAttentionCount > 0 && <span className="border border-danger/60 bg-danger/15 px-2 py-1 text-[10px] uppercase tracking-widest text-danger">Paid Needs Attention: {paidNeedsAttentionCount}</span>}{heldPriorityCount > 0 && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Paused Priority: {heldPriorityCount}</span>}{signalHoldActiveCount > 0 && <span className="border border-cyan-300/50 bg-cyan-300/10 px-2 py-1 text-[10px] uppercase tracking-widest text-cyan-200">Signal Hold Active: {signalHoldActiveCount}</span>}{signalHoldProcessingCount > 0 && <span className="border border-cyan-300/40 bg-cyan-300/5 px-2 py-1 text-[10px] uppercase tracking-widest text-cyan-200">Signal Hold Payment Processing: {signalHoldProcessingCount}</span>}{signalHoldNeedsAttentionCount > 0 && <span className="border border-danger/60 bg-danger/15 px-2 py-1 text-[10px] uppercase tracking-widest text-danger">Signal Hold Needs Attention: {signalHoldNeedsAttentionCount}</span>}{resolverOverrideBlocked && <span className="border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-[10px] uppercase tracking-widest text-[#ffaa00]">Resolver Override Blocked</span>}{!nextInLine && <span className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">No Next In Line</span>}</div>
-            </section>
-          </>}
-        </section>
-      </aside>, document.body)}
-    </div>
-  );
-}
-
-function AdminTimeBankToast({ timing, sessionId }: { timing: ReturnType<typeof buildQueueTimingDisplay>["timeBankSummary"]; sessionId: string | null }) {
-  const lastObservationRef = useRef<QueueTimeBankObservation | null>(null);
-  const driftBankRef = useRef<number | null>(null);
-  const activeToastRef = useRef<QueueTimeBankEvent | null>(null);
-  const dismissTimerRef = useRef<number | null>(null);
-  const [toast, setToast] = useState<QueueTimeBankEvent | null>(null);
-  const observation = useMemo<QueueTimeBankObservation>(() => ({
-    sessionId,
-    bankSeconds: timing.bankSeconds,
-    activePlayableCount: timing.activePlayableCount,
-    completedPlayableCount: timing.completedPlayableCount,
-    removedCount: timing.removedCount,
-    knownDurationCount: timing.knownDurationCount,
-    wheelSpinsOwed: timing.wheelSpinsOwed,
-    wheelSecondsBudgeted: timing.wheelSecondsBudgeted,
-    sponsorStatus: timing.sponsorStatus,
-    isLive: timing.isLive,
-  }), [sessionId, timing]);
-
-  useEffect(() => {
-    const previous = lastObservationRef.current;
-    if (!previous || !sessionId || previous.sessionId !== sessionId) {
-      lastObservationRef.current = observation;
-      driftBankRef.current = observation.bankSeconds;
-      activeToastRef.current = null;
-      setToast(null);
-      if (dismissTimerRef.current) window.clearTimeout(dismissTimerRef.current);
-      dismissTimerRef.current = null;
-      return;
-    }
-
-    const event = deriveQueueTimeBankEvent(previous, observation)
-      ?? deriveQueuePaceBankEvent(driftBankRef.current ?? previous.bankSeconds, observation);
-    lastObservationRef.current = observation;
-    if (!event) return;
-    driftBankRef.current = observation.bankSeconds;
-
-    const combined = activeToastRef.current ? combineQueueTimeBankEvents(activeToastRef.current, event) : event;
-    if (Math.abs(combined.bankDeltaSeconds) < 30) {
-      activeToastRef.current = null;
-      setToast(null);
-      return;
-    }
-    activeToastRef.current = combined;
-    setToast(combined);
-    if (dismissTimerRef.current) window.clearTimeout(dismissTimerRef.current);
-    dismissTimerRef.current = window.setTimeout(() => {
-      activeToastRef.current = null;
-      setToast(null);
-      dismissTimerRef.current = null;
-    }, 4_800);
-  }, [observation, sessionId]);
-
-  useEffect(() => () => {
-    if (dismissTimerRef.current) window.clearTimeout(dismissTimerRef.current);
-  }, []);
-
-  if (!toast) return null;
-  const positive = toast.bankDeltaSeconds > 0;
-  return <div className="pointer-events-none fixed right-4 top-[calc(7rem+env(safe-area-inset-top))] z-[9000] max-w-[min(24rem,calc(100vw-2rem))]">
-    <div role="status" aria-live="polite" className={`border bg-background/95 px-4 py-3 text-xs font-bold uppercase tracking-[0.16em] shadow-2xl backdrop-blur ${positive ? "border-[#3ddc97]/70 text-[#3ddc97]" : "border-[#ff9f43]/80 text-[#ff9f43]"}`}>{timeBankToastCopy(toast)}</div>
-  </div>;
-}
-
-function timeBankToastCopy(event: QueueTimeBankEvent): string {
-  const seconds = Math.abs(event.bankDeltaSeconds);
-  const delta = `${Math.floor(seconds / 60)}:${Math.round(seconds % 60).toString().padStart(2, "0")}`;
-  if (event.bankDeltaSeconds > 0) return `${event.label} Â· +${delta} BANKED`;
-  if (event.kind === "submission" || event.kind === "duration" || event.kind === "wheel" || event.kind === "commercial" || event.kind === "combined") return `${event.label} Â· +${delta} COMMITTED`;
-  return `${event.label} Â· âˆ’${delta}`;
-}
-
-function TopBarPressureChip({ pressure, minimized = false }: { pressure: ReturnType<typeof buildQueueTimingDisplay>["pressureSummary"]; minimized?: boolean }) {
-  const label = pressure.mode === "pre_show" ? "PRE-SHOW" : pressure.mode === "ended" ? "ENDED" : pressure.label;
-  const tone = pressure.mode === "ended" || pressure.mode === "pre_show"
-    ? "border-border text-muted"
-    : pressure.level === "critical"
-      ? "border-danger/60 text-danger"
-      : pressure.level === "high"
-        ? "border-[#ff9f43]/70 text-[#ff9f43]"
-        : pressure.level === "medium"
-          ? "border-[#f6c744]/60 text-[#f6c744]"
-          : "border-[#3ddc97]/60 text-[#3ddc97]";
-  if (minimized) return <span className={`border px-2 py-1 uppercase tracking-widest ${tone}`}>Pressure: {label}{pressure.mode === "live" ? ` ${pressure.score}/100` : ""}</span>;
-  return <div><p className="text-[10px] uppercase tracking-widest text-muted">Pressure</p><p className={`mt-1 inline-flex border px-2 py-1 font-bold uppercase tracking-widest ${tone}`}>{label}{pressure.mode === "live" ? ` ${pressure.score}/100` : ""}</p></div>;
-}
-
-function TopBarCommercialChip({ summary, minimized = false }: { summary: ReturnType<typeof buildQueueTimingDisplay>["sponsorBreakSummary"]; minimized?: boolean }) {
-  const compact = summary.compactLabel;
-  const tone = compact === "Due" || compact.startsWith("Running")
-    ? "border-[#ffaa00]/60 text-[#ffaa00]"
-    : compact === "Done"
-      ? "border-[#3ddc97]/60 text-[#3ddc97]"
-      : compact === "Skipped"
-        ? "border-danger/50 text-danger"
-        : "border-border text-muted";
-  if (minimized) return <span className={`border px-2 py-1 uppercase tracking-widest ${tone}`}>Commercial: {compact}</span>;
-  return <div><p className="text-[10px] uppercase tracking-widest text-muted">Commercial</p><p className={`mt-1 inline-flex border px-2 py-1 font-bold uppercase tracking-widest ${tone}`}>{compact}</p></div>;
-}
-
-
-function NextInLineBox({ entry, playerOccupied, readOnly, onAction, onPlayer, onCopy }: { entry: QueueEntry | null; playerOccupied: boolean; readOnly: boolean; onAction: (id: string, action: AdminQueueAction) => void; onPlayer: (entry: QueueEntry) => void; onCopy: (entry: QueueEntry) => void }) {
-  const visual = entry ? queueTrackVisual(entry) : null;
-  return <section className={`p-5 space-y-4 ${visual?.sectionClass ?? "border border-accent/60 bg-accent/5"}`}><div><p className="text-xs uppercase tracking-[0.4em] text-accent">Next in Line</p>{!entry ? <p className="mt-3 text-lg text-muted">No Next In Line â€” Pull Next Track when ready.</p> : <><div className="mt-3"><LaneStatusBadge entry={entry} /></div><AdminPriorityPurchaseBanner entry={entry} /><h2 className="mt-3 text-2xl font-bold text-foreground">{submittedArtist(entry)} â€” {submittedTitle(entry)}</h2><AdminCollaboratorLine entry={entry} className="mt-1" /><p className="text-sm text-muted mt-1">Lane: {LANE_LABELS[entryLane(entry)]} Â· Source: {sourceLabel(entry)} Â· Duration: {durationLabel(entry)}</p>{detectedLabel(entry) && <p className="text-xs text-muted mt-1">Detected / Provider: {detectedLabel(entry)}</p>}<AdminSubmissionNote entry={entry} /></>}</div>{entry && <TrackActions entry={entry} mode="next" playerOccupied={playerOccupied} readOnly={readOnly} onAction={onAction} onPlayer={onPlayer} onCopy={onCopy} />}</section>;
-}
-
-type AdminYTPlayer = {
-  loadVideoById: (options: { videoId: string; startSeconds?: number }) => void;
-  cueVideoById: (options: { videoId: string; startSeconds?: number }) => void;
-  playVideo: () => void;
-  pauseVideo: () => void;
-  stopVideo: () => void;
-  seekTo: (seconds: number, allowSeekAhead: boolean) => void;
-  getCurrentTime: () => number;
-  getDuration?: () => number;
-  getVideoData?: () => { video_id?: string };
-  mute: () => void;
-  destroy?: () => void;
-};
-
-declare global {
-  interface Window {
-    onYouTubeIframeAPIReady?: () => void;
-  }
-}
-
-function ensureAdminYouTubeApi(): Promise<void> {
-  if (typeof window === "undefined") return Promise.resolve();
-  if ((window as Window & { YT?: { Player: new (elementId: string | HTMLElement, options: Record<string, unknown>) => AdminYTPlayer } }).YT?.Player) return Promise.resolve();
-  return new Promise((resolve) => {
-    const previous = window.onYouTubeIframeAPIReady;
-    window.onYouTubeIframeAPIReady = () => {
-      previous?.();
-      resolve();
-    };
-    if (!document.querySelector('script[src="https://www.youtube.com/iframe_api"]')) {
-      const script = document.createElement("script");
-      script.src = "https://www.youtube.com/iframe_api";
-      document.head.appendChild(script);
-    }
-  });
-}
-
-function AdminYouTubePlayer({ entry, sessionId }: { entry: QueueEntry; sessionId: string | null }) {
-  const playerRef = useRef<AdminYTPlayer | null>(null);
-  const playerHostRef = useRef<HTMLDivElement | null>(null);
-  const generationRef = useRef(0);
-  const playbackStateRef = useRef<LiveOverlayPlaybackState>("stopped");
-  const publishInFlightRef = useRef(false);
-  const queuedPublishRef = useRef<QueuedOverlayPublish | null>(null);
-  const outboundTransitEstimateMsRef = useRef<number | null>(null);
-  const previousObservedTimeRef = useRef<number | null>(null);
-  const previousObservedAtRef = useRef<number | null>(null);
-  const bufferingRef = useRef(false);
-  const youtubeGenerationActiveRef = useRef(true);
-  const [diagnostics, setDiagnostics] = useState<{ provider: string; videoId: string; trackId: string; playbackState: "playing" | "paused" | "stopped"; currentTimeSeconds: number; durationSeconds?: number; updatedAt: string; status: "Fresh" | "Stale" | "Missing" | "Mismatch" | "Error"; ready: boolean; errorCode?: number; publishStatus?: "success" | "failed" } | null>(null);
-  const [outboundTransitDiagnosticMs, setOutboundTransitDiagnosticMs] = useState<number | null>(null);
-  const [diagnosticsNow, setDiagnosticsNow] = useState(() => Date.now());
-  const trackId = entry.id;
-  const trackLink = entry.link;
-  const sourceType = entry.sourceType;
-  const videoId = parseYouTubeVideoId(trackLink);
-  const reportLifecycle = useCallback((eventType: QueuePlaybackLifecycleEventInput["eventType"], currentTimeSeconds = 0, errorCode: QueuePlaybackErrorCode | null = null) => {
-    let durationSeconds: number | undefined;
-    try {
-      const duration = playerRef.current?.getDuration?.();
-      durationSeconds = typeof duration === "number" && Number.isFinite(duration) && duration > 0 ? duration : undefined;
-    } catch {
-      durationSeconds = undefined;
-    }
-    void postQueuePlaybackLifecycleEvent({ sessionId, trackId, provider: "youtube", eventType, currentTimeSeconds, durationSeconds, errorCode });
-  }, [sessionId, trackId]);
-  const trackSyncInput = useMemo<OverlayYouTubeTrackInput>(() => ({ id: trackId, link: trackLink, sourceType, videoId }), [trackId, trackLink, sourceType, videoId]);
-  const containerId = `admin-youtube-player-${trackId}-${videoId ?? "unknown"}`;
-  const clearImperativeHost = useCallback(() => {
-    if (playerHostRef.current) playerHostRef.current.replaceChildren();
-  }, []);
-  const publishNow = useCallback(async (playbackState: LiveOverlayPlaybackState, currentTimeSeconds = 0, correctionReason: LiveOverlaySyncCorrectionReason = "heartbeat") => {
-    let actualVideoId = videoId;
-    try {
-      actualVideoId = playerRef.current?.getVideoData?.().video_id || videoId;
-    } catch {
-      setDiagnostics((current) => current ? { ...current, status: "Error", publishStatus: "failed" } : null);
-      return;
-    }
-    if (!actualVideoId || actualVideoId !== videoId) {
-      setDiagnostics(actualVideoId ? { provider: "youtube", videoId: actualVideoId, trackId, playbackState, currentTimeSeconds, updatedAt: new Date().toISOString(), status: "Mismatch", ready: Boolean(playerRef.current), publishStatus: "failed" } : null);
-      return;
-    }
-    const outboundTransitSeconds = playbackState === "playing" ? (outboundTransitEstimateMsRef.current ?? 0) / 1000 : 0;
-    const publishTime = Math.max(0, currentTimeSeconds + outboundTransitSeconds);
-    let durationSeconds: number | undefined;
-    try {
-      const duration = playerRef.current?.getDuration?.();
-      durationSeconds = typeof duration === "number" && Number.isFinite(duration) && duration > 0 ? duration : undefined;
-    } catch {
-      durationSeconds = undefined;
-    }
-    try {
-      const { sync, outboundTransitMs } = await publishOverlayYouTubeSync(trackSyncInput, playbackState, publishTime, durationSeconds, correctionReason) ?? { sync: null, outboundTransitMs: 0 };
-      outboundTransitEstimateMsRef.current = updateTransitEstimateMs(outboundTransitEstimateMsRef.current, outboundTransitMs);
-      setOutboundTransitDiagnosticMs(Math.round(outboundTransitEstimateMsRef.current));
-      if (sync) setDiagnostics({ ...sync, currentTimeSeconds: publishTime, status: "Fresh", ready: Boolean(playerRef.current), publishStatus: "success" });
-    } catch {
-      outboundTransitEstimateMsRef.current = updateTransitEstimateMs(outboundTransitEstimateMsRef.current, 0);
-      setOutboundTransitDiagnosticMs(Math.round(outboundTransitEstimateMsRef.current));
-      setDiagnostics((current) => current ? { ...current, status: "Error", publishStatus: "failed" } : null);
-    }
-  }, [trackId, trackSyncInput, videoId]);
-
-  const publish = useCallback((playbackState: LiveOverlayPlaybackState, currentTimeSeconds = 0, correctionReason: LiveOverlaySyncCorrectionReason = "heartbeat") => {
-    const next = { playbackState, currentTimeSeconds, correctionReason };
-    if (publishInFlightRef.current) {
-      if (shouldReplaceQueuedPublish(queuedPublishRef.current, next)) queuedPublishRef.current = next;
-      return;
-    }
-    publishInFlightRef.current = true;
-    void (async () => {
-      let current: QueuedOverlayPublish | null = next;
-      while (current && youtubeGenerationActiveRef.current) {
-        await publishNow(current.playbackState, current.currentTimeSeconds, current.correctionReason);
-        current = queuedPublishRef.current;
-        queuedPublishRef.current = null;
-      }
-      publishInFlightRef.current = false;
-    })();
-  }, [publishNow]);
-
-  useEffect(() => {
-    if (!videoId) return;
-    let cancelled = false;
-    youtubeGenerationActiveRef.current = true;
-    const generation = generationRef.current + 1;
-    generationRef.current = generation;
-    clearImperativeHost();
-    const mount = document.createElement("div");
-    mount.id = `${containerId}-yt-${generation}`;
-    playerHostRef.current?.appendChild(mount);
-    let readyTimer: number | null = window.setTimeout(() => {
-      if (cancelled || generationRef.current !== generation) return;
-      playbackStateRef.current = "stopped";
-      setDiagnostics({ provider: "youtube", videoId, trackId, playbackState: "stopped", currentTimeSeconds: 0, updatedAt: new Date().toISOString(), status: "Error", ready: false, publishStatus: "failed" });
-      publish("stopped", 0, "state_change");
-      reportLifecycle("error", 0, "ready_timeout");
-    }, YOUTUBE_PLAYER_READY_TIMEOUT_MS);
-    ensureAdminYouTubeApi().then(() => {
-      const yt = (window as Window & { YT?: { Player: new (elementId: string | HTMLElement, options: Record<string, unknown>) => AdminYTPlayer } }).YT;
-      if (cancelled || generationRef.current !== generation || playerRef.current || !yt?.Player || !mount.isConnected) return;
-      playerRef.current = new yt.Player(mount, {
-        videoId,
-        playerVars: { autoplay: 0, controls: 1, modestbranding: 1, playsinline: 1, rel: 0 },
-        events: {
-          onReady: () => {
-            if (cancelled || generationRef.current !== generation) return;
-            if (readyTimer) window.clearTimeout(readyTimer);
-            readyTimer = null;
-            setDiagnostics((current) => current ? { ...current, ready: true } : { provider: "youtube", videoId, trackId, playbackState: "stopped", currentTimeSeconds: 0, updatedAt: new Date().toISOString(), status: "Missing", ready: true });
-            reportLifecycle("ready", 0);
-          },
-          onError: (event: { data: number }) => {
-            if (cancelled || generationRef.current !== generation) return;
-            if (readyTimer) window.clearTimeout(readyTimer);
-            readyTimer = null;
-            bufferingRef.current = false;
-            playbackStateRef.current = "stopped";
-            setDiagnostics({ provider: "youtube", videoId, trackId, playbackState: "stopped", currentTimeSeconds: 0, updatedAt: new Date().toISOString(), status: "Error", ready: false, errorCode: event.data, publishStatus: "failed" });
-            publish("stopped", 0, "state_change");
-            reportLifecycle("error", 0, "provider_error");
-          },
-          onStateChange: (event: { data: number }) => {
-            if (cancelled || generationRef.current !== generation) return;
-            const previous = playbackStateRef.current;
-            const next = event.data === 1 ? "playing" : event.data === 2 ? "paused" : event.data === 0 ? "stopped" : null;
-            let eventTime = 0;
-            try {
-              eventTime = playerRef.current?.getCurrentTime() ?? 0;
-            } catch {
-              playbackStateRef.current = "stopped";
-              setDiagnostics((current) => current ? { ...current, status: "Error", publishStatus: "failed" } : null);
-              reportLifecycle("error", 0, "sync_error");
-              return;
-            }
-            if (event.data === 3) {
-              bufferingRef.current = true;
-              reportLifecycle("stall", eventTime);
-              return;
-            }
-            if (event.data === 5) {
-              reportLifecycle("ready", eventTime);
-              return;
-            }
-            if (!next) return;
-            playbackStateRef.current = next;
-            if (event.data === 1) reportLifecycle(bufferingRef.current || previous === "paused" ? "resume" : "play", eventTime);
-            else if (event.data === 2) reportLifecycle("pause", eventTime);
-            else if (event.data === 0) reportLifecycle("ended", eventTime);
-            bufferingRef.current = false;
-            publish(next, eventTime, "state_change");
-          },
-        },
-      });
-    });
-    const interval = window.setInterval(() => {
-      let currentTime = 0;
-      try {
-        currentTime = playerRef.current?.getCurrentTime() ?? 0;
-      } catch {
-        playbackStateRef.current = "stopped";
-        setDiagnostics((current) => current ? { ...current, status: "Error", publishStatus: "failed" } : null);
-      }
-      const observedAt = Date.now();
-      const wasSeek = previousObservedTimeRef.current !== null && previousObservedAtRef.current !== null && detectMaterialPlaybackSeek({ playbackState: playbackStateRef.current, previousTimeSeconds: previousObservedTimeRef.current, previousObservedAtMs: previousObservedAtRef.current, currentTimeSeconds: currentTime, currentObservedAtMs: observedAt });
-      if (playbackStateRef.current === "playing" || playbackStateRef.current === "paused") publish(playbackStateRef.current, currentTime, wasSeek ? "seek" : "heartbeat");
-      if (wasSeek) reportLifecycle("seek", currentTime);
-      previousObservedTimeRef.current = currentTime;
-      previousObservedAtRef.current = observedAt;
-      setDiagnosticsNow(observedAt);
-      setDiagnostics((current) => current ? { ...current, status: current.status === "Error" || current.status === "Mismatch" ? current.status : observedAt - new Date(current.updatedAt).getTime() > YOUTUBE_SYNC_STALE_AFTER_MS ? "Stale" : "Fresh" } : null);
-      // Stopped/ended publishes immediately from onStateChange, then intentionally falls back after staleness.
-      // Playing and paused continue heartbeating while the authoritative host player remains mounted.
-    }, YOUTUBE_SYNC_HEARTBEAT_MS);
-    return () => {
-      cancelled = true;
-      youtubeGenerationActiveRef.current = false;
-      bufferingRef.current = false;
-      queuedPublishRef.current = null;
-      generationRef.current += 1;
-      window.clearInterval(interval);
-      if (readyTimer) window.clearTimeout(readyTimer);
-      try {
-        if (playerRef.current?.destroy) playerRef.current.destroy();
-      } catch {
-        // YouTube iframe cleanup is best-effort.
-      }
-      playerRef.current = null;
-      clearImperativeHost();
-    };
-  }, [clearImperativeHost, containerId, publish, reportLifecycle, trackId, videoId]);
-
-  if (!videoId) return <div className="border border-border p-3 text-sm text-muted">No playable YouTube video ID found. Use Open Link.</div>;
-  const syncAge = diagnostics ? Math.max(0, Math.round((diagnosticsNow - new Date(diagnostics.updatedAt).getTime()) / 1000)) : null;
-  return <div className="space-y-2"><div className="relative h-56 w-full border border-border"><div ref={playerHostRef} className="h-full w-full" data-youtube-host={containerId} /></div><div className="grid gap-1 border border-border/60 bg-surface/80 p-2 text-[10px] uppercase tracking-widest text-muted sm:grid-cols-3"><span>Provider: {diagnostics?.provider ?? "youtube"}</span><span>Video ID: {diagnostics?.videoId ?? videoId}</span><span>Track ID: {diagnostics?.trackId ?? trackId}</span><span>State: {diagnostics?.playbackState ?? "Missing"}</span><span>Host time: {Math.round(diagnostics?.currentTimeSeconds ?? 0)}s</span><span>Sync: {diagnostics?.status ?? "Missing"}{syncAge !== null ? ` Â· ${syncAge}s` : ""}</span><span>Ready: {diagnostics?.ready ? "yes" : "no"}</span><span>Error: {diagnostics?.errorCode ? `${diagnostics.errorCode} Â· ${youtubeErrorLabel(diagnostics.errorCode)}` : "â€”"}</span><span>Publish: {diagnostics?.publishStatus ?? "â€”"}</span><span>Outbound transit: {outboundTransitDiagnosticMs !== null ? `${outboundTransitDiagnosticMs}ms` : "â€”"}</span></div></div>;
-}
-
-
-type TikTokPlayerStatus = "loading" | "ready" | "error";
-
-function isPlainTikTokObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function tiktokErrorLabel(code?: number | null, name?: string | null): string {
-  if (code === 1001 || name === "INVALID_VIDEO") return "Invalid or unavailable video";
-  if (code === 2001 || name === "SERVER_ERROR") return "TikTok server error";
-  if (code === 3001 || name === "PLAYBACK_ERROR") return "Playback error";
-  return "TikTok player unavailable";
-}
-
-function AdminTikTokPlayer({ entry, sessionId }: { entry: QueueEntry; sessionId: string | null }) {
-  const parsed = useMemo(() => parseTikTokVideoUrl(entry.link), [entry.link]);
-  const parsedPostId = parsed?.postId ?? null;
-  const parsedPlayerUrl = parsed?.playerUrl ?? null;
-  const hasParsedTikTokUrl = Boolean(parsedPostId && parsedPlayerUrl);
-  const trackSyncInput = useMemo<OverlayTikTokTrackInput>(() => ({ id: entry.id, link: entry.link, sourceType: entry.sourceType, postId: parsedPostId }), [entry.id, entry.link, entry.sourceType, parsedPostId]);
-  const iframeRef = useRef<HTMLIFrameElement | null>(null);
-  const statusRef = useRef<TikTokPlayerStatus>(hasParsedTikTokUrl ? "loading" : "error");
-  const generationRef = useRef(0);
-  const readyRef = useRef(false);
-  const latestTimeRef = useRef(0);
-  const durationRef = useRef<number | undefined>(undefined);
-  const lastStablePlaybackStateRef = useRef<"playing" | "paused" | "stopped">("stopped");
-  const lastTimeEventAtRef = useRef<number | null>(null);
-  const lastPublishedAtRef = useRef<string | null>(null);
-  const hasObservedCurrentTimeRef = useRef(false);
-  const pendingPlaybackStateRef = useRef<LiveOverlayPlaybackState | null>(null);
-  const pendingCorrectionReasonRef = useRef<LiveOverlaySyncCorrectionReason>("state_change");
-  const latestTimeObservedAtRef = useRef<number | null>(null);
-  const publishInFlightRef = useRef(false);
-  const queuedPublishRef = useRef<QueuedOverlayPublish | null>(null);
-  const outboundTransitEstimateMsRef = useRef<number | null>(null);
-  const tiktokGenerationActiveRef = useRef(true);
-  const [status, setStatus] = useState<TikTokPlayerStatus>(hasParsedTikTokUrl ? "loading" : "error");
-  const [notice, setNotice] = useState<string | null>(null);
-  const [errorLabel, setErrorLabel] = useState<string | null>(hasParsedTikTokUrl ? null : "No valid TikTok video ID found. Use Open Link.");
-  const [diagnostics, setDiagnostics] = useState<{ provider: "tiktok"; postId?: string | null; trackId: string; ready: boolean; playbackState: "playing" | "paused" | "stopped"; currentTimeSeconds: number; durationSeconds?: number; updatedAt?: string | null; syncAgeSeconds?: number | null; status: "Fresh" | "Stale" | "Missing" | "Mismatch" | "Error"; publishStatus?: "ok" | "failed" } | null>(null);
-  const [outboundTransitDiagnosticMs, setOutboundTransitDiagnosticMs] = useState<number | null>(null);
-  const src = useMemo(() => {
-    if (!parsedPlayerUrl) return null;
-    const params = new URLSearchParams({ controls: "1", progress_bar: "1", play_button: "1", volume_control: "1", fullscreen_button: "1", timestamp: "1", autoplay: "0", music_info: "1", description: "1", rel: "0", native_context_menu: "1", closed_caption: "1", muted: "0" });
-    return `${parsedPlayerUrl}?${params.toString()}`;
-  }, [parsedPlayerUrl]);
-  const reportLifecycle = useCallback((eventType: QueuePlaybackLifecycleEventInput["eventType"], errorCode: QueuePlaybackErrorCode | null = null) => {
-    void postQueuePlaybackLifecycleEvent({
-      sessionId,
-      trackId: entry.id,
-      provider: "tiktok",
-      eventType,
-      currentTimeSeconds: latestTimeRef.current,
-      durationSeconds: durationRef.current,
-      errorCode,
-    });
-  }, [entry.id, sessionId]);
-  const publishNow = useCallback(async (playbackState: LiveOverlayPlaybackState, observedTimeSeconds: number, observedAtMs: number | undefined, correctionReason: LiveOverlaySyncCorrectionReason = "heartbeat") => {
-    if (!readyRef.current || !hasObservedCurrentTimeRef.current || observedAtMs === undefined || trackSyncInput.sourceType !== "tiktok" || !trackSyncInput.postId) return null;
-    const nowMs = Date.now();
-    const projected = projectObservedPlaybackTime(playbackState, observedTimeSeconds, observedAtMs, nowMs, durationRef.current);
-    if (projected === null) return null;
-    const outboundTransitSeconds = playbackState === "playing" ? (outboundTransitEstimateMsRef.current ?? 0) / 1000 : 0;
-    let publishTime = playbackState === "playing" ? projected + outboundTransitSeconds : observedTimeSeconds;
-    if (typeof durationRef.current === "number" && Number.isFinite(durationRef.current) && durationRef.current > 0) publishTime = Math.min(publishTime, durationRef.current);
-    publishTime = Math.max(0, publishTime);
-    try {
-      const { sync, outboundTransitMs } = await publishOverlayTikTokSync(trackSyncInput, playbackState, publishTime, durationRef.current, correctionReason) ?? { sync: null, outboundTransitMs: 0 };
-      outboundTransitEstimateMsRef.current = updateTransitEstimateMs(outboundTransitEstimateMsRef.current, outboundTransitMs);
-      setOutboundTransitDiagnosticMs(Math.round(outboundTransitEstimateMsRef.current));
-      lastPublishedAtRef.current = sync?.updatedAt ?? new Date().toISOString();
-      setDiagnostics({ provider: "tiktok", postId: trackSyncInput.postId, trackId: trackSyncInput.id, ready: readyRef.current, playbackState, currentTimeSeconds: publishTime, durationSeconds: durationRef.current, updatedAt: lastPublishedAtRef.current, syncAgeSeconds: 0, status: sync ? "Fresh" : "Mismatch", publishStatus: sync ? "ok" : "failed" });
-      return sync;
-    } catch {
-      outboundTransitEstimateMsRef.current = updateTransitEstimateMs(outboundTransitEstimateMsRef.current, 0);
-      setOutboundTransitDiagnosticMs(Math.round(outboundTransitEstimateMsRef.current));
-      setDiagnostics({ provider: "tiktok", postId: trackSyncInput.postId, trackId: trackSyncInput.id, ready: readyRef.current, playbackState, currentTimeSeconds: observedTimeSeconds, durationSeconds: durationRef.current, updatedAt: lastPublishedAtRef.current, syncAgeSeconds: null, status: "Error", publishStatus: "failed" });
-      return null;
-    }
-  }, [trackSyncInput]);
-
-  const publish = useCallback((playbackState: LiveOverlayPlaybackState, observedTimeSeconds = latestTimeRef.current, correctionReason: LiveOverlaySyncCorrectionReason = "heartbeat", observedAtMs = latestTimeObservedAtRef.current ?? undefined) => {
-    const next = { playbackState, currentTimeSeconds: observedTimeSeconds, observedAtMs, correctionReason };
-    if (publishInFlightRef.current) {
-      if (shouldReplaceQueuedPublish(queuedPublishRef.current, next)) queuedPublishRef.current = next;
-      return;
-    }
-    publishInFlightRef.current = true;
-    void (async () => {
-      let current: QueuedOverlayPublish | null = next;
-      while (current && tiktokGenerationActiveRef.current) {
-        await publishNow(current.playbackState, current.currentTimeSeconds, current.observedAtMs, current.correctionReason);
-        current = queuedPublishRef.current;
-        queuedPublishRef.current = null;
-      }
-      publishInFlightRef.current = false;
-    })();
-  }, [publishNow]);
-
-  useEffect(() => {
-    statusRef.current = hasParsedTikTokUrl ? "loading" : "error";
-    readyRef.current = false;
-    latestTimeRef.current = 0;
-    durationRef.current = undefined;
-    lastStablePlaybackStateRef.current = "stopped";
-    lastTimeEventAtRef.current = null;
-    hasObservedCurrentTimeRef.current = false;
-    pendingPlaybackStateRef.current = null;
-    pendingCorrectionReasonRef.current = "state_change";
-    latestTimeObservedAtRef.current = null;
-    queuedPublishRef.current = null;
-    publishInFlightRef.current = false;
-    tiktokGenerationActiveRef.current = true;
-    generationRef.current += 1;
-    setStatus(statusRef.current);
-    setNotice(null);
-    setDiagnostics(hasParsedTikTokUrl ? { provider: "tiktok", postId: parsedPostId, trackId: entry.id, ready: false, playbackState: "stopped", currentTimeSeconds: 0, status: "Missing" } : null);
-    setErrorLabel(hasParsedTikTokUrl ? null : "No valid TikTok video ID found. Use Open Link.");
-    if (!hasParsedTikTokUrl) return;
-
-    const generation = generationRef.current;
-    let readyTimer: number | null = window.setTimeout(() => {
-      if (readyTimer === null || generationRef.current !== generation) return;
-      readyTimer = null;
-      statusRef.current = "error";
-      setStatus("error");
-      setDiagnostics({ provider: "tiktok", postId: parsedPostId, trackId: entry.id, ready: false, playbackState: "stopped", currentTimeSeconds: latestTimeRef.current, durationSeconds: durationRef.current, status: "Error", publishStatus: "failed" });
-      setErrorLabel((existing) => existing ?? "TikTok player did not become ready. Open Link remains available.");
-      reportLifecycle("error", "ready_timeout");
-    }, TIKTOK_PLAYER_READY_TIMEOUT_MS);
-
-    const clearReadyTimer = () => { if (readyTimer !== null) { window.clearTimeout(readyTimer); readyTimer = null; } };
-    const publishObservedState = (state: LiveOverlayPlaybackState, correctionReason: LiveOverlaySyncCorrectionReason = "state_change") => {
-      lastStablePlaybackStateRef.current = state;
-      if (hasObservedCurrentTimeRef.current) publish(state, latestTimeRef.current, correctionReason);
-      else { pendingPlaybackStateRef.current = state; pendingCorrectionReasonRef.current = correctionReason; }
-    };
-
-    function onMessage(event: MessageEvent) {
-      if (event.origin !== "https://www.tiktok.com") return;
-      if (event.source !== iframeRef.current?.contentWindow) return;
-      const payload = event.data;
-      if (!isPlainTikTokObject(payload)) return;
-      if (payload["x-tiktok-player"] !== true) return;
-      const type = payload.type;
-      if (type !== "onPlayerReady" && type !== "onStateChange" && type !== "onCurrentTime" && type !== "onPlayerError") return;
-      if (type === "onPlayerReady") {
-        clearReadyTimer();
-        readyRef.current = true;
-        statusRef.current = "ready";
-        setStatus("ready");
-        setNotice(null);
-        setErrorLabel(null);
-        reportLifecycle("ready");
-        return;
-      }
-      if (type === "onCurrentTime") {
-        const value = payload.value;
-        if (!isPlainTikTokObject(value)) return;
-        const currentTime = typeof value.currentTime === "number" ? value.currentTime : Number(value.currentTime);
-        const duration = typeof value.duration === "number" ? value.duration : Number(value.duration);
-        if (!Number.isFinite(currentTime) || currentTime < 0) return;
-        const firstObservedTime = !hasObservedCurrentTimeRef.current;
-        const nowMs = Date.now();
-        const previous = latestTimeRef.current;
-        const previousAt = lastTimeEventAtRef.current;
-        latestTimeRef.current = currentTime;
-        latestTimeObservedAtRef.current = nowMs;
-        if (Number.isFinite(duration) && duration > 0) durationRef.current = duration;
-        hasObservedCurrentTimeRef.current = true;
-        const pendingState = pendingPlaybackStateRef.current;
-        if (pendingState) {
-          const pendingReason = pendingCorrectionReasonRef.current;
-          pendingPlaybackStateRef.current = null;
-          pendingCorrectionReasonRef.current = "state_change";
-          publish(pendingState, currentTime, pendingReason, nowMs);
-          reportLifecycle(pendingState === "playing" ? "play" : pendingState === "paused" ? "pause" : "ready");
-          return;
-        }
-        if (firstObservedTime) reportLifecycle("ready");
-        lastTimeEventAtRef.current = nowMs;
-        if (previousAt !== null && detectMaterialPlaybackSeek({ playbackState: lastStablePlaybackStateRef.current, previousTimeSeconds: previous, previousObservedAtMs: previousAt, currentTimeSeconds: currentTime, currentObservedAtMs: nowMs })) {
-          publish(lastStablePlaybackStateRef.current, currentTime, "seek", nowMs);
-          reportLifecycle("seek");
-        }
-        return;
-      }
-      if (type === "onStateChange") {
-        const stateValue = typeof payload.value === "number" ? payload.value : Number(payload.value);
-        const previousState = lastStablePlaybackStateRef.current;
-        if (stateValue === 1) {
-          publishObservedState("playing", "state_change");
-          reportLifecycle(previousState === "paused" ? "resume" : "play");
-        }
-        else if (stateValue === 2) {
-          publishObservedState("paused", "state_change");
-          reportLifecycle("pause");
-        }
-        else if (stateValue === 0) {
-          publishObservedState("stopped", "state_change");
-          reportLifecycle("ended");
-        }
-        else if (stateValue === -1) lastStablePlaybackStateRef.current = "stopped";
-        return;
-      }
-      if (type === "onPlayerError") {
-        const value = payload.value;
-        if (!isPlainTikTokObject(value)) return;
-        const code = typeof value.errorCode === "number" ? value.errorCode : Number(value.errorCode);
-        const errorType = typeof value.errorType === "string" ? value.errorType : null;
-        const safeCode = Number.isFinite(code) ? code : null;
-        if (safeCode === 3002 || errorType === "AUTOPLAY_ERROR") {
-          setNotice("Automatic playback was blocked. Use the playerâ€™s Play control.");
-          setErrorLabel(null);
-          return;
-        }
-        clearReadyTimer();
-        statusRef.current = "error";
-        setNotice(null);
-        setStatus("error");
-        setDiagnostics({ provider: "tiktok", postId: parsedPostId, trackId: entry.id, ready: readyRef.current, playbackState: lastStablePlaybackStateRef.current, currentTimeSeconds: latestTimeRef.current, durationSeconds: durationRef.current, updatedAt: lastPublishedAtRef.current, syncAgeSeconds: null, status: "Error", publishStatus: "failed" });
-        setErrorLabel(tiktokErrorLabel(safeCode, errorType));
-        reportLifecycle("error", "provider_error");
-        if (safeCode === 1001 || safeCode === 2001 || safeCode === 3001 || errorType === "INVALID_VIDEO" || errorType === "SERVER_ERROR" || errorType === "PLAYBACK_ERROR") void clearOverlayPlayerSync();
-      }
-    }
-    window.addEventListener("message", onMessage);
-    const heartbeat = window.setInterval(() => {
-      if (readyRef.current && hasObservedCurrentTimeRef.current && (lastStablePlaybackStateRef.current === "playing" || lastStablePlaybackStateRef.current === "paused")) publish(lastStablePlaybackStateRef.current, latestTimeRef.current, "heartbeat", latestTimeObservedAtRef.current ?? undefined);
-    }, TIKTOK_SYNC_HEARTBEAT_MS);
-    return () => { clearReadyTimer(); window.removeEventListener("message", onMessage); tiktokGenerationActiveRef.current = false; queuedPublishRef.current = null; window.clearInterval(heartbeat); };
-    // Effect lifecycle is keyed by the parsed TikTok media URL; PlayerDock remounts on queue-track identity changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [parsedPostId, parsedPlayerUrl, hasParsedTikTokUrl, entry.link]);
-  if (!src) return <div className="border border-border p-3 text-sm text-muted">No valid TikTok video ID found. Use Open Link.</div>;
-  return <div className="space-y-2"><div className="mx-auto max-h-[62vh] min-h-[360px] w-full max-w-[420px] overflow-hidden border border-border bg-black"><iframe ref={iframeRef} title={`TikTok player for ${submittedArtist(entry)} â€” ${submittedTitle(entry)}`} src={src} className="h-[62vh] min-h-[360px] max-h-[620px] w-full" allow="fullscreen; autoplay; encrypted-media; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" /></div>{status === "loading" && <p className="text-xs text-muted">Loading TikTok playerâ€¦ Open Link and Copy Link remain available.</p>}{status === "ready" && <p className="text-xs text-muted">TikTok player ready. Use the native controls.</p>}{notice && <p className="border border-accent/40 bg-accent/10 p-2 text-xs text-accent">{notice}</p>}{status === "error" && <p className="border border-danger/40 bg-danger/10 p-2 text-xs text-danger">{errorLabel ?? "TikTok player unavailable."} Use Open Link or Copy Link.</p>}<div className="grid gap-1 border border-border/60 bg-surface/80 p-2 text-[10px] uppercase tracking-widest text-muted sm:grid-cols-3"><span>Provider: {diagnostics?.provider ?? "tiktok"}</span><span>Post ID: {diagnostics?.postId ?? parsedPostId ?? "â€”"}</span><span>Track ID: {diagnostics?.trackId ?? entry.id}</span><span>Ready: {diagnostics?.ready ? "yes" : "no"}</span><span>State: {diagnostics?.playbackState ?? "Missing"}</span><span>Host time: {Math.round(diagnostics?.currentTimeSeconds ?? 0)}s</span><span>Duration: {diagnostics?.durationSeconds ? `${Math.round(diagnostics.durationSeconds)}s` : "â€”"}</span><span>Sync: {diagnostics?.status ?? "Missing"}{diagnostics?.syncAgeSeconds !== null && diagnostics?.syncAgeSeconds !== undefined ? ` Â· ${diagnostics.syncAgeSeconds}s` : ""}</span><span>Publish: {diagnostics?.publishStatus ?? "â€”"}</span><span>Outbound transit: {outboundTransitDiagnosticMs !== null ? `${outboundTransitDiagnosticMs}ms` : "â€”"}</span></div></div>;
-}
-
-function AdminAudioPlayer({ entry, sessionId }: { entry: QueueEntry; sessionId: string | null }) {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const analysisRef = useRef<RadioVisualAudioAnalysis | null>(null);
-  const analysisGraphRef = useRef<{
-    element: HTMLAudioElement;
-    context: AudioContext;
-    source: MediaElementAudioSourceNode;
-    analyser: AnalyserNode;
-    bins: Uint8Array<ArrayBuffer>;
-  } | null>(null);
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    let lifecycleState: "loaded" | "ready" | "playing" | "paused" | "stalled" | "ended" | "error" = "loaded";
-    const playbackState = (): LiveOverlayPlaybackState => audio.ended ? "stopped" : audio.paused ? (audio.currentTime > 0 ? "paused" : "stopped") : "playing";
-    const ensureAnalysis = async () => {
-      const existing = analysisGraphRef.current;
-      if (existing && existing.element !== audio) {
-        existing.source.disconnect();
-        existing.analyser.disconnect();
-        void existing.context.close();
-        analysisGraphRef.current = null;
-        analysisRef.current = null;
-      }
-      let graph = analysisGraphRef.current;
-      if (!graph) {
-        const audioWindow = window as unknown as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext };
-        const AudioContextConstructor = audioWindow.AudioContext ?? audioWindow.webkitAudioContext;
-        if (!AudioContextConstructor) return null;
-        const context = new AudioContextConstructor();
-        try {
-          const source = context.createMediaElementSource(audio);
-          const analyser = context.createAnalyser();
-          analyser.fftSize = 1_024;
-          analyser.smoothingTimeConstant = 0.78;
-          analyser.minDecibels = -90;
-          analyser.maxDecibels = -15;
-          source.connect(analyser);
-          analyser.connect(context.destination);
-          graph = { element: audio, context, source, analyser, bins: new Uint8Array(analyser.frequencyBinCount) };
-          analysisGraphRef.current = graph;
-        } catch {
-          void context.close();
-          return null;
-        }
-      }
-      if (graph.context.state === "suspended") await graph.context.resume().catch(() => undefined);
-      return graph;
-    };
-    const sampleAnalysis = () => {
-      const graph = analysisGraphRef.current;
-      if (!graph || graph.element !== audio || audio.paused || audio.ended || graph.context.state !== "running") return;
-      graph.analyser.getByteFrequencyData(graph.bins);
-      const sample = analyzeRadioVisualFrequencyData(graph.bins, graph.context.sampleRate, graph.analyser.fftSize);
-      if (sample) analysisRef.current = smoothRadioVisualAudioAnalysis(analysisRef.current, sample);
-    };
-    const startAnalysis = () => {
-      void ensureAnalysis().then((graph) => { if (graph) sampleAnalysis(); });
-    };
-    const publish = (correctionReason: LiveOverlaySyncCorrectionReason) => {
-      const durationSeconds = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : undefined;
-      const state = playbackState();
-      const audioAnalysis = state === "playing" ? analysisRef.current : null;
-      void postOverlayPlayerSync({ provider: "audio" as const, trackId: entry.id, playbackState: state, currentTimeSeconds: Math.max(0, audio.currentTime || 0), durationSeconds, updatedAt: new Date().toISOString(), muted: audio.muted, ...(audioAnalysis ? { audioAnalysis } : {}), correctionReason }).catch(() => undefined);
-    };
-    const report = (eventType: QueuePlaybackLifecycleEventInput["eventType"], errorCode: QueuePlaybackErrorCode | null = null) => {
-      const durationSeconds = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : undefined;
-      void postQueuePlaybackLifecycleEvent({
-        sessionId,
-        trackId: entry.id,
-        provider: "audio",
-        eventType,
-        currentTimeSeconds: Math.max(0, audio.currentTime || 0),
-        durationSeconds,
-        readyState: audio.readyState,
-        networkState: audio.networkState,
-        errorCode,
-      });
-    };
-    const ready = () => {
-      lifecycleState = "ready";
-      publish("state_change");
-      report("ready");
-    };
-    const play = () => {
-      startAnalysis();
-      publish("state_change");
-    };
-    const playing = () => {
-      const eventType = lifecycleState === "paused" || lifecycleState === "stalled" ? "resume" : "play";
-      lifecycleState = "playing";
-      startAnalysis();
-      publish("state_change");
-      report(eventType);
-    };
-    const pause = () => {
-      if (audio.ended) return;
-      lifecycleState = "paused";
-      publish("state_change");
-      report("pause");
-    };
-    const stall = () => {
-      if (lifecycleState === "stalled" || lifecycleState === "ended" || lifecycleState === "error") return;
-      lifecycleState = "stalled";
-      publish("state_change");
-      report("stall");
-    };
-    const ended = () => {
-      lifecycleState = "ended";
-      publish("state_change");
-      report("ended");
-    };
-    const error = () => {
-      lifecycleState = "error";
-      publish("state_change");
-      report("error", htmlMediaErrorCode(audio.error));
-    };
-    const seek = () => {
-      publish("seek");
-      report("seek");
-    };
-    audio.addEventListener("loadedmetadata", ready);
-    audio.addEventListener("canplay", ready);
-    audio.addEventListener("play", play);
-    audio.addEventListener("playing", playing);
-    audio.addEventListener("pause", pause);
-    audio.addEventListener("waiting", stall);
-    audio.addEventListener("stalled", stall);
-    audio.addEventListener("ended", ended);
-    audio.addEventListener("error", error);
-    audio.addEventListener("seeked", seek);
-    const interval = window.setInterval(() => {
-      if (!audio.paused || audio.currentTime > 0) publish("heartbeat");
-    }, YOUTUBE_SYNC_HEARTBEAT_MS);
-    const analysisInterval = window.setInterval(sampleAnalysis, 80);
-    return () => {
-      window.clearInterval(interval);
-      window.clearInterval(analysisInterval);
-      audio.removeEventListener("loadedmetadata", ready);
-      audio.removeEventListener("canplay", ready);
-      audio.removeEventListener("play", play);
-      audio.removeEventListener("playing", playing);
-      audio.removeEventListener("pause", pause);
-      audio.removeEventListener("waiting", stall);
-      audio.removeEventListener("stalled", stall);
-      audio.removeEventListener("ended", ended);
-      audio.removeEventListener("error", error);
-      audio.removeEventListener("seeked", seek);
-      window.setTimeout(() => {
-        const graph = analysisGraphRef.current;
-        if (!audio.isConnected && graph?.element === audio) {
-          graph.source.disconnect();
-          graph.analyser.disconnect();
-          void graph.context.close();
-          analysisGraphRef.current = null;
-          analysisRef.current = null;
-        }
-      }, 0);
-    };
-  }, [entry.id, sessionId]);
-  return <audio ref={audioRef} key={`${entry.id}-${adminAudioUrl(entry)}`} src={adminAudioUrl(entry)} controls preload="metadata" className="w-full" />;
-}
-
-function PlaybackLifecycleBanner({ diagnostics, trackId }: { diagnostics: QueuePlaybackDiagnostics | null; trackId: string }) {
-  if (!diagnostics || diagnostics.currentTrackId !== trackId) return <p className="border border-border/60 bg-surface/70 p-2 text-xs text-muted">Player loaded. Playback has not reported a state yet.</p>;
-  const state = diagnostics.lifecycleState;
-  if (state === "ended") return <p className="border border-accent/60 bg-accent/10 p-2 text-xs font-bold text-accent">Playback ended â€” choose Finish Track to count it and advance. The queue has not advanced automatically.</p>;
-  if (state === "error") return <p className="border border-danger/60 bg-danger/10 p-2 text-xs font-bold text-danger">Playback error â€” the track is still loaded. Retry playback, use Open Link, Finish Track if it aired, or Remove Track.</p>;
-  if (state === "stalled") return <p className="border border-[#ffaa00]/60 bg-[#ffaa00]/10 p-2 text-xs font-bold text-[#ffaa00]">Playback stalled â€” waiting for media. The queue has not advanced.</p>;
-  if (state === "paused") return <p className="border border-border/70 bg-surface/70 p-2 text-xs text-muted">Playback paused. The queue has not advanced.</p>;
-  if (state === "playing") return <p className="border border-[#3ddc97]/50 bg-[#3ddc97]/10 p-2 text-xs font-bold text-[#3ddc97]">Playback active.</p>;
-  if (state === "ready") return <p className="border border-accent/40 bg-accent/5 p-2 text-xs text-accent">Player ready.</p>;
-  return <p className="border border-border/60 bg-surface/70 p-2 text-xs text-muted">Player loaded. Start playback when ready.</p>;
-}
-
-function PlayerDock({ player, sessionId, playbackDiagnostics, minimized, setMinimized, readOnly, actionPending, onAction, onCopy }: { player: QueueEntry; sessionId: string | null; playbackDiagnostics: QueuePlaybackDiagnostics | null; minimized: boolean; setMinimized: (value: boolean) => void; readOnly: boolean; actionPending: boolean; onAction: (id: string, action: AdminQueueAction) => void; onCopy: () => void }) {
-  const embedded = embedUrl(player);
-  return (
-    <div className={`fixed inset-x-0 bottom-0 z-[9999] w-screen border-t bg-background/95 p-3 shadow-[0_-20px_60px_rgba(0,0,0,0.45)] backdrop-blur ${queueTrackVisual(player).sectionClass}`}>
-      <div className="w-full px-2 sm:px-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-[0.35em] text-accent">{minimized ? "Queue Player Dock" : "Command Deck Player"}</p>
-            <h3 className="text-lg font-bold">{submittedArtist(player)} â€” {submittedTitle(player)}</h3><AdminCollaboratorLine entry={player} className="mt-1" /><LaneStatusBadge entry={player} /><AdminPriorityPurchaseBanner entry={player} compact /><AdminSubmissionNote entry={player} compact />
-            {detectedLabel(player) && <p className="text-xs text-muted mt-1">Detected / Provider: {detectedLabel(player)}</p>}
-            <p className="text-xs text-muted mt-1">{sourceLabel(player)} Â· {durationLabel(player)}</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => setMinimized(!minimized)} className="border border-border px-3 py-2 text-xs text-muted">{minimized ? "Expand Player" : "Minimize Player"}</button>
-            <a href={openUrl(player)} target="_blank" rel="noreferrer" className="border border-accent px-3 py-2 text-xs text-accent">Open Link</a>
-            <button type="button" onClick={onCopy} className="border border-border px-3 py-2 text-xs text-muted">Copy Link</button>
-          </div>
-        </div>
-        <div className={`${minimized ? "h-0 overflow-hidden opacity-0" : "mt-3 opacity-100"} grid w-full items-end gap-3 xl:grid-cols-[minmax(0,1fr)_auto]`} aria-hidden={minimized}>
-          <div className="w-full min-w-0">
-            <PlaybackLifecycleBanner diagnostics={playbackDiagnostics} trackId={player.id} />
-            <div className="mt-2">
-            {player.sourceType === "upload" && player.fileUrl && <AdminAudioPlayer entry={player} sessionId={sessionId} />}
-            {player.sourceType === "youtube" && <AdminYouTubePlayer key={player.id} entry={player} sessionId={sessionId} />}
-            {player.sourceType === "tiktok" && <AdminTikTokPlayer key={player.id} entry={player} sessionId={sessionId} />}
-            {player.sourceType !== "upload" && player.sourceType !== "youtube" && player.sourceType !== "tiktok" && embedded && <iframe key={`${player.id}-${embedded}`} title="Queue preview" src={embedded} className="h-56 w-full border border-border" allow="clipboard-write; encrypted-media; picture-in-picture" />}
-            {player.sourceType !== "upload" && player.sourceType !== "youtube" && player.sourceType !== "tiktok" && !embedded && <div className="border border-border p-2 text-sm text-muted">No embeddable preview for this source. Use Open Link or Copy Link.</div>}
-            {player.sourceType !== "upload" && player.sourceType !== "youtube" && player.sourceType !== "tiktok" && <p className="mt-2 text-xs text-muted">This provider does not expose reliable playback events. Use the explicit Finish or Remove outcome.</p>}
-            </div>
-          </div>
-          <div className="space-y-2 xl:max-w-[34rem]">
-            {!readOnly && <p className="text-[10px] uppercase tracking-widest text-muted">Finish = completed Â· Remove = removed + frees slot Â· Undo = return to queue</p>}
-            <div className="flex flex-wrap gap-2">
-            <a href={openUrl(player)} target="_blank" rel="noreferrer" className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent">Open Link</a>
-            <button type="button" onClick={onCopy} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted">Copy Link</button>
-            {!readOnly && <>{canUseSignalHoldFromPlayer(player, playbackDiagnostics) && <button type="button" disabled={actionPending} onClick={() => onAction(player.id, "useSignalHold")} className="border-2 border-cyan-300 bg-cyan-300/15 px-4 py-2 text-xs font-black uppercase tracking-widest text-cyan-100 hover:bg-cyan-300 hover:text-background disabled:opacity-50">USE SIGNAL HOLD â€” MOVE TO BOTTOM</button>}<button type="button" disabled={actionPending} onClick={() => onAction(player.id, "finish")} className="border border-accent bg-accent px-4 py-2 text-xs uppercase tracking-widest text-background disabled:opacity-50">Finish Track</button><button type="button" disabled={actionPending} onClick={() => onAction(player.id, "remove")} className="border border-danger/40 px-4 py-2 text-xs uppercase tracking-widest text-danger disabled:opacity-50">Remove Track</button><button type="button" disabled={actionPending} onClick={() => onAction(player.id, "moveBack")} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted disabled:opacity-50">Undo Load</button>{canPausePriority(player) && <button type="button" disabled={actionPending} onClick={() => onAction(player.id, "pausePriority")} className="border border-[#ffaa00]/50 px-4 py-2 text-xs uppercase tracking-widest text-[#ffaa00] disabled:opacity-50">Pause Priority</button>}<button type="button" disabled={actionPending} onClick={() => onAction(player.id, "spotlight")} className="border border-foreground/40 px-4 py-2 text-xs uppercase tracking-widest text-foreground disabled:opacity-50">Spotlight</button></>}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-
-function AdminTrackMetadata({ entry }: { entry: QueueEntry }) {
-  const detected = detectedLabel(entry);
-  const paidAtLabel = entry.priorityUpgradePaidAt ? new Date(entry.priorityUpgradePaidAt).toLocaleString() : "â€”";
-  const amountLabel = typeof entry.priorityUpgradeAmountCents === "number" ? formatPrice(entry.priorityUpgradeAmountCents, entry.priorityUpgradeCurrency ?? "usd") : "â€”";
-  const needsAttentionReason = entry.priorityUpgradeStatus === "paid_needs_attention" ? "Payment confirmed after track left safe queued lanes. Manual review required." : null;
-  const signalHoldPaidAtLabel = entry.signalHoldPaidAt ? new Date(entry.signalHoldPaidAt).toLocaleString() : "â€”";
-  const signalHoldAmountLabel = typeof entry.signalHoldAmountCents === "number" ? formatPrice(entry.signalHoldAmountCents, entry.signalHoldCurrency ?? "usd") : "â€”";
-  return (
-    <div className="grid gap-3 text-xs md:grid-cols-[1.2fr_1fr]">
-      <div className="border border-border/60 p-3">
-        <span className="block text-muted uppercase tracking-widest">Submitted</span>
-        <p className="mt-1 font-bold text-foreground">{submittedArtist(entry)} â€” {submittedTitle(entry)}</p>
-        {entry.tiktokHandle && <p className="mt-1 text-muted">TikTok: {entry.tiktokHandle.startsWith("@") ? entry.tiktokHandle : `@${entry.tiktokHandle}`}</p>}
-        {entry.contactEmail && <p className="mt-1 text-muted">Contact: {entry.contactEmail}</p>}
-        {entry.submitterArtistName && <p className="mt-1 text-muted">Submitted by: {entry.submitterArtistName}</p>}
-        <LaneStatusBadge entry={entry} />
-        <AdminPriorityPurchaseBanner entry={entry} />
-      </div>
-      <div className="border border-border/60 p-3">
-        <span className="block text-muted uppercase tracking-widest">Detected source</span>
-        <p className="mt-1 text-foreground">{detected ?? "Pending provider metadata"}</p>
-        <p className="mt-1 text-muted">{sourceLabel(entry)} Â· {durationLabel(entry)}</p>
-        {entry.fileName && <p className="mt-1 text-muted">File: {entry.fileName}</p>}
-        {entry.playbackOutcome && <p className="mt-2 border border-border/60 bg-background/40 p-2 uppercase tracking-widest text-muted">Playback outcome: {entry.playbackOutcome}{entry.playbackEndedNaturally ? " Â· natural end" : entry.playbackEarlyCutoff ? " Â· early cutoff" : ""}{entry.playbackIssueCode ? ` Â· ${entry.playbackIssueCode.replace(/_/g, " ")}` : ""}</p>}
-        {(entry.priorityUpgradeStatus === "paid_needs_attention" || entry.priorityUpgradeStatus === "checkout_pending" || entry.priorityUpgradeStatus === "requested" || entry.priorityUpgradeStatus === "paid") && (
-          <div className={`mt-2 space-y-1 border p-2 ${entry.priorityUpgradeStatus === "paid_needs_attention" ? "border-danger/60 bg-danger/10 text-danger" : "border-[#ffaa00]/40 bg-[#ffaa00]/10 text-[#ffaa00]"}`}>
-            <p>Priority Payment Status: {entry.priorityUpgradeStatus}</p>
-            <p>Lane/Track status: {entryLane(entry)} / {entry.status}</p>
-            <p>Paid Amount: {amountLabel}</p>
-            <p>Paid At: {paidAtLabel}</p>
-            {needsAttentionReason && <p>Reason: {needsAttentionReason}</p>}
-          </div>
-        )}
-        {entry.signalHoldStatus && entry.signalHoldStatus !== "none" && (
-          <div className={`mt-2 space-y-1 border p-2 ${entry.signalHoldStatus === "paid_needs_attention" ? "border-danger/60 bg-danger/10 text-danger" : "border-cyan-300/40 bg-cyan-300/10 text-cyan-100"}`}>
-            <p>Signal Hold Status: {entry.signalHoldStatus.replace(/_/g, " ")}</p>
-            <p>Lane/Track status: {entryLane(entry)} / {entry.status}</p>
-            <p>Paid Amount: {signalHoldAmountLabel}</p>
-            <p>Paid At: {signalHoldPaidAtLabel}</p>
-            <p>Applications this show: {entry.signalHoldApplicationCount ?? 0}</p>
-            {entry.signalHoldStatus === "checkout_pending" && <p>Checkout pending is not active protection.</p>}
-            {entry.signalHoldStatus === "paid_needs_attention" && <p>Payment confirmed after the track or session became ineligible. Review/refund handling is required; live order was not changed.</p>}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction, sponsorActionPending, sessionId, playbackDiagnostics }: { timingSummary: ReturnType<typeof buildQueueTimingDisplay>; canControl: boolean; onSponsorAction: (action: "start" | "complete" | "skip" | "reset") => void; sponsorActionPending: boolean; sessionId: string | null; playbackDiagnostics: QueuePlaybackDiagnostics | null }) {
-  const sponsor = timingSummary.sponsorBreakSummary;
-  const wheel = timingSummary.wheelTimingSummary;
-  const pressure = timingSummary.pressureSummary;
-  const needleDeg = -90 + (pressure.score / 100) * 180;
-  const pressureHeading = pressure.mode === "live" ? "Live Pressure" : pressure.mode === "ended" ? "Ended" : "Pre-show Projection";
-  const sponsorStartDisabled = sponsorActionPending || !sponsor.dueNow || sponsor.status === "running" || sponsor.status === "completed" || sponsor.status === "skipped";
-  const sponsorStartLabel = sponsorActionPending
-    ? "Starting Commercial Breakâ€¦"
-    : sponsor.status === "running"
-    ? `Commercial Break Running${sponsor.diagnosticLabel.includes("remaining") ? ` Â· ${sponsor.diagnosticLabel.split("Â·")[1]?.trim().replace("remaining", "").trim()}` : ""}`
-    : sponsor.status === "completed"
-      ? "Commercial Break Done"
-      : sponsor.status === "skipped"
-        ? "Commercial Break Skipped"
-        : sponsor.dueNow
-          ? "Start Sponsor Break"
-          : "Sponsor Break Available at Midpoint";
-  const playbackExportUrl = `/api/admin/queue/playback${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ""}`;
-  const playbackStateLabel = (playbackDiagnostics?.lifecycleState ?? "idle").replace(/_/g, " ");
-  return (
-    <section className="space-y-3 border border-accent/30 bg-background/40 p-4 text-xs">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <p className="uppercase tracking-[0.28em] text-accent">Runtime Diagnostics</p>
-          <p className="mt-1 text-sm text-muted">{pressure.mode === "live" ? "Live pressure from broadcast timing + queue state." : pressure.mode === "ended" ? "Broadcast has ended." : "Pre-show projection from queue state. Pressure activates when broadcast starts."}</p>
-        </div>
-        {canControl && <div className="flex flex-wrap gap-2"><a href={playbackExportUrl} className="border border-accent/50 px-3 py-1.5 uppercase tracking-widest text-accent">Download Playback Diagnostics</a><button type="button" disabled={sponsorStartDisabled} onClick={() => !sponsorStartDisabled && onSponsorAction("start")} className={`px-3 py-1.5 uppercase tracking-widest ${sponsorStartDisabled ? "cursor-not-allowed border border-border text-muted opacity-70" : "border border-[#ffaa00]/50 text-[#ffaa00]"}`}>{sponsorStartLabel}</button><button type="button" onClick={() => onSponsorAction("reset")} className="border border-border px-3 py-1.5 uppercase tracking-widest text-muted">Reset Commercial Break State</button></div>}
-      </div>
-      <div className="grid gap-3 md:grid-cols-4 lg:grid-cols-7">
-        <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Projected Show Time</p><p className="mt-1 text-lg font-bold text-foreground">{timingSummary.showRuntimeSummary.projectedLabel}</p></div>
-        <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Elapsed</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.elapsedLabel}</p></div>
-        <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Projected Remaining</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.remainingLabel}</p></div>
-        <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Estimated End</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.estimatedEndLabel}</p></div>
-        <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Target</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.targetLabel}</p></div>
-        <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Target Status</p><p className="mt-1 font-bold text-accent">{timingSummary.showRuntimeSummary.targetStatusLabel}</p></div>
-        <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Line Fit</p><p className="mt-1 font-bold text-foreground">{timingSummary.lineFitCopy}</p></div>
-      </div>
-      <div className="grid gap-3 md:grid-cols-[1.1fr_2fr]">
-        <div className="border border-border bg-surface p-3">
-          <p className="text-[10px] uppercase tracking-widest text-muted">{pressureHeading}</p>
-          <div className="mt-2">
-            <svg viewBox="0 0 220 140" className="w-full max-w-[14rem]" role="img" aria-label={`Runtime pressure ${pressure.label} ${pressure.score} out of 100`}>
-              <path d="M20 120 A90 90 0 0 1 200 120" fill="none" stroke="#2e2e2e" strokeWidth="14" />
-              <path d="M20 120 A90 90 0 0 1 74 42" fill="none" stroke="#3ddc97" strokeWidth="14" />
-              <path d="M74 42 A90 90 0 0 1 126 33" fill="none" stroke="#f6c744" strokeWidth="14" />
-              <path d="M126 33 A90 90 0 0 1 168 53" fill="none" stroke="#ff9f43" strokeWidth="14" />
-              <path d="M168 53 A90 90 0 0 1 200 120" fill="none" stroke="#ff4d4f" strokeWidth="14" />
-              <line x1="110" y1="120" x2="110" y2="44" stroke="#fafafa" strokeWidth="3" transform={`rotate(${needleDeg} 110 120)`} />
-              <circle cx="110" cy="120" r="6" fill="#fafafa" />
-              <text x="20" y="136" fill="#9ca3af" fontSize="10">LOW</text><text x="74" y="20" fill="#9ca3af" fontSize="10">MED</text><text x="132" y="20" fill="#9ca3af" fontSize="10">HIGH</text><text x="182" y="136" fill="#9ca3af" fontSize="10">CRIT</text>
-            </svg>
-          </div>
-          <p className="mt-1 font-bold text-foreground">{pressure.label} Â· {pressure.score}/100</p>
-          <p className="mt-1 text-muted">{pressure.recommendation}</p>
-        </div>
-        <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Pressure Factors</p><p className="mt-1 font-bold text-foreground">{pressure.description}</p><ul className="mt-2 list-disc space-y-1 pl-5 text-muted">{pressure.factors.map((factor) => <li key={factor}>{factor}</li>)}</ul></div>
-      </div>
-      <div className="grid gap-3 md:grid-cols-4">
-        <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Sponsor Break</p><p className="mt-1 font-bold text-foreground">{sponsor.diagnosticLabel}</p><p className="mt-1 text-muted">Exactly {sponsor.durationLabel} Â· due at counted midpoint {sponsor.dueAfterTracks ?? "â€”"} Â· completed {sponsor.completedPlayableCount}</p></div>
-        <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Wheel Timing</p><p className="mt-1 font-bold text-foreground">{wheel.owed} wheel spins owed</p><p className="mt-1 text-muted">{wheel.overheadLabel} ceremony overhead included</p></div>
-        <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Unknown Durations</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.unknownDurationCount}</p><p className="mt-1 text-muted">Tracks using est. 5:00</p></div>
-        <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Known Durations</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.knownDurationCount}</p><p className="mt-1 text-muted">Detected/provider/upload durations</p></div>
-      </div>
-      <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Playback Lifecycle</p><p className="mt-1 font-bold capitalize text-foreground">{playbackStateLabel}</p><p className="mt-1 text-muted">{playbackDiagnostics?.events.length ?? 0} bounded lifecycle events Â· last issue {playbackDiagnostics?.lastErrorCode ?? "none"}. Natural end, Finish, and Remove remain distinct.</p></div>
-      <div className="grid gap-3 md:grid-cols-3"><div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Talk Room to 5h</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.talkRoomLabel}</p><p className="mt-1 text-muted">{timingSummary.showRuntimeSummary.talkPerTrackLabel}</p></div><div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Room to 6h</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.warningRoomLabel}</p><p className="mt-1 text-muted">Operational redline only; the show continues past it.</p></div><div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Runtime Confidence</p><p className="mt-1 font-bold text-foreground">{timingSummary.showRuntimeSummary.confidenceLabel}</p><p className="mt-1 text-muted">Unknown durations widen timing uncertainty without adding a pressure penalty.</p></div></div>
-      <div className="border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-widest text-muted">Current Runtime Notes</p><p className="mt-1 text-muted">Sponsor: {sponsor.diagnosticLabel} Â· Wheel overhead: {formatHoursMinutes(wheel.overheadSeconds)} Â· {timingSummary.showRuntimeSummary.notes[0] ?? "No projection warnings."}</p></div>
-    </section>
-  );
-}
-
-function Lane({ title, tracks, sessionEntries, onAction, onPlayer, onCopy, mode, readOnly }: { title: string; tracks: QueueEntry[]; sessionEntries: QueueEntry[]; onAction: (id: string, action: AdminQueueAction) => void; onPlayer: (entry: QueueEntry) => void; onCopy: (entry: QueueEntry) => void; mode: "next" | "active" | "spotlight" | "completed" | "removed"; readOnly: boolean }) {
-  const sectionClass = title.includes("Priority") ? "border-[#ffaa00]/50 bg-[#ffaa00]/5" : title.includes("Wheel") ? "border-cyan-300/50 bg-cyan-300/5" : title.includes("Regular") ? "border-border bg-surface" : "border-border bg-surface";
-  const titleClass = title.includes("Priority") ? "text-[#ffaa00]" : title.includes("Wheel") ? "text-cyan-200" : "text-foreground";
-  return (
-    <section className={`border p-3 ${sectionClass}`}>
-      <div className="mb-2 flex items-center justify-between">
-        <h2 className={`text-sm uppercase tracking-[0.25em] ${titleClass}`}>{title}</h2>
-        <span className="text-xs text-muted">{tracks.length}</span>
-      </div>
-      <div className="space-y-3">
-        {tracks.length === 0 ? (
-          <p className="border border-border/60 p-3 text-sm text-muted">No tracks in this lane.</p>
-        ) : (
-          tracks.map((entry) => (
-            <article key={`${title}-${entry.id}`} className={`space-y-2 border-2 p-3 ${queueTrackVisual(entry).cardClass}`}>
-              <div className="space-y-2">
-                <div>
-                  <p className="font-bold">{submittedArtist(entry)} â€” {submittedTitle(entry)}</p>
-                  <AdminCollaboratorLine entry={entry} className="mt-1" />
-                  <p className="text-xs text-muted">{sourceLabel(entry)} Â· {durationLabel(entry)}</p>
-                </div>
-                <AdminTrackMetadata entry={entry} />
-                <AdminBrowserArtistNotice entry={entry} sessionEntries={sessionEntries} />
-                <AdminSubmissionNote entry={entry} />
-              </div>
-              <TrackActions entry={entry} onAction={onAction} onPlayer={onPlayer} onCopy={onCopy} mode={mode} readOnly={readOnly} />
-            </article>
-          ))
-        )}
-      </div>
-    </section>
-  );
-}
-
-function TrackActions({ entry, onAction, onPlayer, onCopy, mode, readOnly, playerOccupied = false }: { entry: QueueEntry; onAction: (id: string, action: AdminQueueAction) => void; onPlayer: (entry: QueueEntry) => void; onCopy: (entry: QueueEntry) => void; mode: "next" | "active" | "spotlight" | "completed" | "removed"; readOnly: boolean; playerOccupied?: boolean }) {
-  const lane = entryLane(entry);
-  return (
-    <div className="flex flex-wrap gap-2">
-      {mode === "next" && <button type="button" onClick={() => onPlayer(entry)} disabled={playerOccupied} className="border border-accent px-3 py-1.5 text-xs text-accent disabled:cursor-not-allowed disabled:border-border disabled:text-muted">{playerOccupied ? "Player Occupied" : "Load in Player"}</button>}
-      <a href={openUrl(entry)} target="_blank" rel="noreferrer" className="border border-border px-3 py-1.5 text-xs text-muted">{entry.sourceType === "upload" ? "Open Admin Audio" : "Open Link"}</a>
-      <button type="button" onClick={() => onCopy(entry)} className="border border-border px-3 py-1.5 text-xs text-muted">Copy {entry.sourceType === "upload" ? "Admin Audio Link" : "Link"}</button>
-      {!readOnly && (mode === "next" || mode === "active") && canUseSignalHold(entry) && <button type="button" onClick={() => onAction(entry.id, "useSignalHold")} className="border-2 border-cyan-300 bg-cyan-300/15 px-3 py-1.5 text-xs font-black uppercase tracking-widest text-cyan-100 hover:bg-cyan-300 hover:text-background">USE SIGNAL HOLD â€” MOVE TO BOTTOM</button>}
-      {!readOnly && mode === "next" && <>{lane !== "priority" && <button type="button" onClick={() => onAction(entry.id, "moveBack")} className="border border-border px-3 py-1.5 text-xs text-muted">Return to Queue</button>}{canPausePriority(entry) && <button type="button" onClick={() => onAction(entry.id, "pausePriority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Pause Priority</button>}{canResumePriority(entry) && <button type="button" onClick={() => onAction(entry.id, "resumePriority")} className="border border-[#ffaa00] bg-[#ffaa00] px-3 py-1.5 text-xs text-background">Unpause Priority</button>}<button type="button" onClick={() => onAction(entry.id, "remove")} className="border border-danger/40 px-3 py-1.5 text-xs text-danger">Remove</button><button type="button" onClick={() => onAction(entry.id, "spotlight")} className="border border-foreground/40 px-3 py-1.5 text-xs text-foreground">Spotlight</button></>}
-      {!readOnly && mode === "active" && <><button type="button" onClick={() => onAction(entry.id, "remove")} className="border border-danger/40 px-3 py-1.5 text-xs text-danger">Remove</button>{entry.priorityUpgradeStatus === "paid_needs_attention" && <button type="button" onClick={() => onAction(entry.id, "resolvePaidPriority")} className="border border-danger bg-danger px-3 py-1.5 text-xs text-background">Move Paid Track to Priority</button>}{lane === "regular" ? <><button type="button" onClick={() => onAction(entry.id, "priority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Move to Priority Signal</button>{isWheelEligibleTrack(entry) && <button type="button" onClick={() => onAction(entry.id, "wheel")} className="border border-accent/50 px-3 py-1.5 text-xs text-accent">Mark Wheel Chosen</button>}</> : <><button type="button" onClick={() => onAction(entry.id, "regular")} className="border border-accent/50 px-3 py-1.5 text-xs text-accent">Move to Regular Queue</button>{lane === "wheel" && <button type="button" onClick={() => onAction(entry.id, "priority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Move to Priority Signal</button>}{canPausePriority(entry) && <button type="button" onClick={() => onAction(entry.id, "pausePriority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Pause Priority</button>}{canResumePriority(entry) && <button type="button" onClick={() => onAction(entry.id, "resumePriority")} className="border border-[#ffaa00] bg-[#ffaa00] px-3 py-1.5 text-xs text-background">Unpause Priority</button>}</>}<button type="button" onClick={() => onAction(entry.id, "spotlight")} className="border border-foreground/40 px-3 py-1.5 text-xs text-foreground">Spotlight</button></>}
-      {!readOnly && mode === "spotlight" && <button type="button" onClick={() => onAction(entry.id, "removeSpotlight")} className="border border-danger/40 px-3 py-1.5 text-xs text-danger">Remove from Spotlight</button>}
-      {!readOnly && mode === "completed" && <><button type="button" onClick={() => onAction(entry.id, "restoreRegular")} className="border border-accent/50 px-3 py-1.5 text-xs text-accent">Move back to Regular Queue</button>{wasPrioritySignal(entry) && <button type="button" onClick={() => onAction(entry.id, "restorePriority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Move back to Priority Signal</button>}</>}
-      {!readOnly && mode === "removed" && <><button type="button" onClick={() => onAction(entry.id, "restoreRegular")} className="border border-accent/50 px-3 py-1.5 text-xs text-accent">Restore to Regular Queue</button>{wasPrioritySignal(entry) && <button type="button" onClick={() => onAction(entry.id, "restorePriority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Restore to Priority Signal</button>}</>}
-    </div>
-  );
-}
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíç^uå:-jZ.¶›­–)Ş³Rò¢W6Æ–çBÖF—6&ÆR&V7BÖ†öö·2÷6WB×7FFRÖ–âÖVffV7B¢ğ¢'W6R6Æ–VçB#° ¦–×÷'B²W6T6ÆÆ&6²ÂW6TVffV7BÂW6TÖVÖòÂW6U&VbÂW6U7FFRÒg&öÒ'&V7B#°¦–×÷'B²7&VFU÷'FÂÒg&öÒ'&V7BÖFöÒ#°¦–×÷'B²FÖ–äÆ—fT÷fW&Æ”6öçG&öÂÒg&öÒ$ö6ö×öæVçG2ôFÖ–äÆ—fT÷fW&Æ”6öçG&öÂ#°¦–×÷'B²FÖ–å&V†V'6Å6†&TÆ–æ²Òg&öÒ$ö6ö×öæVçG2ôFÖ–å&V†V'6Å6†&TÆ–æ²#°¦–×÷'B²FÖ–å&F–õf—7VÇ46öçG&öÂÒg&öÒ$ö6ö×öæVçG2ôFÖ–å&F–õf—7VÇ46öçG&öÂ#°¦–×÷'B²'V–ÆEVWVUF–Ö–ætF—7Æ’Âf÷&ÖD†÷W'4Ö–çWFW2ÂVWVUF–Ö–æt–çWDg&öÔFÖ–å7FFRÒg&öÒ$öÆ–"÷VWVR×F–Ö–ærÖF—7Æ’#°¦–×÷'B²6öÖ&–æUVWVUF–ÖT&æ´WfVçG2ÂFW&—fUVWVU6T&æ´WfVçBÂFW&—fUVWVUF–ÖT&æ´WfVçBÂG—RVWVUF–ÖT&æ´WfVçBÂG—RVWVUF–ÖT&æ´ö'6W'fF–öâÒg&öÒ$öÆ–"÷VWVR×F–ÖRÖ&æ²ÖWfVçG2#°¦–×÷'B²VWVUÆ–&6´†4&VwVâÒg&öÒ$öÆ–"÷VWVR×Æ–&6²ÖÆ–fV7–6ÆR#°¦–×÷'B²'6U–÷UGV&Uf–FVô–BÒg&öÒ$öÆ–"÷G&6²ÖGW&F–öâ#°¦–×÷'B²6öæf—&ÖVE&–÷&—G•W&6†6TF—7Æ’Âf÷&ÖE'VçF–ÖRÂvWEG&6µ'VçF–ÖU6V6öæG2Â'6UF–µFöµf–FVõW&ÂÒg&öÒ$öÆ–"÷VWVR×G—W2#°¦–×÷'B²FWFV7DÖFW&–ÅÆ–&6µ6VV²ÂW7F–ÖFTöæUv”æWGv÷&µG&ç6—D×2Â&ö¦V7Dö'6W'fVEÆ–&6µF–ÖRÂWFFUG&ç6—DW7F–ÖFT×2Â”õUET$Uõ5”ä5õ5DÄUôeDU%ôÕ2Òg&öÒ$öÆ–"öÆ—fRÖ÷fW&Æ’×&W6öÇfW"#°¦–×÷'BG—R²VWVTVçG'’ÂVWVTÆæRÂVWVUÆ–&6´F–væ÷7F–72ÂVWVUÆ–&6´W'&÷$6öFRÂVWVUÆ–&6´Æ–fV7–6ÆTWfVçD–çWBÂVWVU7FFRÒg&öÒ$öÆ–"÷VWVR×G—W2#°¦–×÷'BG—R²Æ—fT÷fW&Æ•Æ–&6µ7FFRÂÆ—fT÷fW&Æ•7–æ46÷'&V7F–öå&V6öâÒg&öÒ$öÆ–"öÆ—fRÖ÷fW&Æ’×&W6öÇfW"#°¦–×÷'B²DÔ”åõTUTUõôÄÅô”åDU%dÅôÕ2Òg&öÒ$öÆ–"÷&VF—2×öÆÆ–ærÖ'VFvWB#°¦–×÷'B²†47F—fUVWVU6W76–öâÂæ÷F–g•VWVU6W76–öä6†ævVBÂ7F'E6W76–öä&÷VæEöÆÆ–ærÒg&öÒ$öÆ–"÷6W76–öâÖ&÷VæB×öÆÆ–ær#°¦–×÷'B²æÇ—¦U&F–õf—7VÄg&WVVæ7”FFÂ6Öö÷F…&F–õf—7VÄVF–ôæÇ—6—2Òg&öÒ$öÆ–"÷&F–ò×f—7VÇ2ÖVF–ò#°¦–×÷'BG—R²&F–õf—7VÄVF–ôæÇ—6—2Òg&öÒ$öÆ–"÷&F–ò×f—7VÇ2ÖVF–ò#°¦–×÷'B²ÆVæ6„Æö6Ä6öÖÖW&6–Ä'&V´–d6¶æ÷vÆVFvVBÒg&öÒ$öÆ–"÷7öç6÷"Ö'&V²Ö6öçG&7B#° §G—RF"Ò&7F—fR"Â&6ö×ÆWFVB"Â'&VÖ÷fVB"Â'7÷FÆ–v‡B#°§G—RFÖ–åVWVT7F–öâÒ'VÆÄæW‡B"Â'VÆÅv†VVÄ6†÷6Vâ"Â'VÆÄg&VUG&ç6Ö—76–öâ"Â'7F'E6†÷r"Â&FEv†VVÅ7–ä÷vVB"Â&ÆöB"Â&f–æ—6‚"Â'&VÖ÷fR"Â'&–÷&—G’"Â'&VwVÆ""Â'v†VVÂ"Â&Ö÷fT&6²"Â'7÷FÆ–v‡B"Â'&VÖ÷fU7÷FÆ–v‡B"Â'&W7F÷&U&VwVÆ""Â'&W7F÷&U&–÷&—G’"Â'&W6öÇfU–E&–÷&—G’"Â'W6U&–÷&—G’"Â'&W7VÖU&–÷&—G’"Â'W6U6–væÄ†öÆB#°§G—R6–×VÆF–öå7VVBÒ'6Æ÷r"Â&æ÷&ÖÂ"Â&f7B#°§G—R6–×VÆF–öä7F–öâÒ&FE6–×VÆF–öäg&VUG&6²"Â&FE6–×VÆF–öå–E&–÷&—G’"Â&FE6–×VÆF–öä6†V6¶÷WEVæF–ær"Â&FE6–×VÆF–öå–ÖVçDf–ÆVB"Â&FE6–×VÆF–öä†VÆE&–÷&—G’"Â&6ÆV%6–×VÆF–öåG&6·2#° ¦6öç7BÄäUôÄ$TÅ3¢&V6÷&CÅVWVTÆæRÂ7G&–æsâÒ²&–÷&—G“¢%&–÷&—G’6–væÂ"Âv†VVÃ¢%v†VVÂv–ææW""Â&VwVÆ#¢%&VwVÆ"VWVR"Ó°¦6öç7Bd•„TEõ$”õ$•E•ôÄ$TÂÒ%&–÷&—G’6–væÂWw&FR#°¦6öç7Bd•„TEõ$”õ$•E•ô”å5E%T5D”ôå2Ò$Ö÷fW2F†—2G&6²–çFòF†R&–÷&—G’6–væÂÆæRgFW"–ÖVçB6öæf—&ÖF–öââ#°¦6öç7B4ÔUô%$õu4U%ôD”ddU$TåEô%D•5E5ôdÄrÒ%6ÖR'&÷w6W"Fö¶VâW6–ærF–ffW&VçB'F—7BæÖW2#°¦6öç7BÄô4Åô4ôÔÔU$4”Åõ5D%EõU$ÂÒ&‡GG¢òó#rããã£C3#÷cö6öÖÖW&6–Ç2÷7F'B#° ¦6öç7B”õUET$Uõ5”ä5ô„T%D$TEôÕ2Òó°¦6öç7BD”µDôµõ5”ä5ô„T%D$TEôÕ2Òó°¦6öç7BT$Ä•4…õ$”õ$•E“¢&V6÷&CÄÆ—fT÷fW&Æ•7–æ46÷'&V7F–öå&V6öâÂçVÖ&W#âÒ²†V'F&VC¢Â7FFUö6†ævS¢"Â6VV³¢2Ó° §G—RVWVVD÷fW&Æ•V&Æ—6‚Ò²Æ–&6µ7FFS¢Æ—fT÷fW&Æ•Æ–&6µ7FFS²7W'&VçEF–ÖU6V6öæG3¢çVÖ&W#²ö'6W'fVDD×3ó¢çVÖ&W#²6÷'&V7F–öå&V6öã¢Æ—fT÷fW&Æ•7–æ46÷'&V7F–öå&V6öâÓ° ¦gVæ7F–öâ'6U6W'fW%F–Ö–æt†VFW"‡&W7öç6S¢&W7öç6RÂæÖS¢7G&–ær“¢çVÖ&W"°¢6öç7BfÇVRÒ&W7öç6Ræ†VFW'2ævWB†æÖR“°¢–b‚fÇVR’&WGW&âçVÖ&W"äæã°¢&WGW&âæWrFFR‡fÇVR’ævWEF–ÖR‚“°§Ğ §G—R÷fW&Æ•V&Æ—6…&W7VÇCÅCâÒ²7–æ3¢BÂçVÆÃ²÷WF&÷VæEG&ç6—D×3¢çVÖ&W"Ó° ¦7–æ2gVæ7F–öâ÷7D÷fW&Æ•Æ–W%7–æ3ÅCâ‡7–æ3¢BÂçVÆÂ“¢&öÖ—6SÄ÷fW&Æ•V&Æ—6…&W7VÇCÅCãâ°¢–b‚7–æ2’&WGW&â²7–æ3¢çVÆÂÂ÷WF&÷VæEG&ç6—D×3¢Ó°¢6öç7B&WVW7E7F'FVDEW&f÷&Öæ6T×2ÒW&f÷&Öæ6Rææ÷r‚“°¢6öç7B&W7öç6RÒv—BfWF6‚‚"ö’öFÖ–âö÷fW&Æ’öÆ—fR"Â²ÖWF†öC¢%õ5B"Â†VFW'3¢²$6öçFVçBÕG—R#¢&Æ–6F–öâö§6öâ"ÒÂ&öG“¢¥4ôâç7G&–æv–g’‡²7F–öã¢'WFFUÆ–W%7–æ2"Â7–æ2Ò’Ò“°¢6öç7B&W7öç6U&V6V—fVDEW&f÷&Öæ6T×2ÒW&f÷&Öæ6Rææ÷r‚“°¢6öç7B&WVW7E&V6V—fVDD×2Ò'6U6W'fW%F–Ö–æt†VFW"‡&W7öç6RÂ%‚Ô$äÂÕ&WVW7BÕ&V6V—fVBÔB"“°¢6öç7B&W7öç6TvVæW&FVDD×2Ò'6U6W'fW%F–Ö–æt†VFW"‡&W7öç6RÂ%‚Ô$äÂÕ&W7öç6RÔvVæW&FVBÔB"“°¢6öç7B6W'fW%&ö6W76–æt×2Ò&W7öç6TvVæW&FVDD×2Ò&WVW7E&V6V—fVDD×3°¢6öç7B÷WF&÷VæEG&ç6—D×2ÒW7F–ÖFTöæUv”æWGv÷&µG&ç6—D×2‡&W7öç6U&V6V—fVDEW&f÷&Öæ6T×2Ò&WVW7E7F'FVDEW&f÷&Öæ6T×2Â6W'fW%&ö6W76–æt×2“°¢–b‚&W7öç6Ræö²’F‡&÷ræWrW'&÷"‚$÷fW&Æ’Æ–W"7–æ2WFFRf–ÆVBâ"“°¢&WGW&â²7–æ2Â÷WF&÷VæEG&ç6—D×2Ó°§Ğ ¦7–æ2gVæ7F–öâ÷7EVWVUÆ–&6´Æ–fV7–6ÆTWfVçB†–çWC¢VWVUÆ–&6´Æ–fV7–6ÆTWfVçD–çWB“¢&öÖ—6SÇfö–Câ°¢v—BfWF6‚‚"ö’öFÖ–â÷VWVR÷Æ–&6²"Â°¢ÖWF†öC¢%õ5B"À¢†VFW'3¢²$6öçFVçBÕG—R#¢&Æ–6F–öâö§6öâ"ÒÀ¢&öG“¢¥4ôâç7G&–æv–g’†–çWB’À¢Ò’æ6F6‚‚‚’ÓâVæFVf–æVB“°§Ğ ¦gVæ7F–öâ‡FÖÄÖVF–W'&÷$6öFR†W'&÷#¢ÖVF–W'&÷"ÂçVÆÂ“¢VWVUÆ–&6´W'&÷$6öFR°¢–b†W'&÷#òæ6öFRÓÓÒ’&WGW&â&ÖVF–ö&÷'FVB#°¢–b†W'&÷#òæ6öFRÓÓÒ"’&WGW&â&æWGv÷&µöW'&÷"#°¢–b†W'&÷#òæ6öFRÓÓÒ2’&WGW&â&FV6öFUöW'&÷"#°¢–b†W'&÷#òæ6öFRÓÓÒB’&WGW&â'6÷W&6U÷Vç7W÷'FVB#°¢&WGW&â'Væ¶æ÷vâ#°§Ğ ¦gVæ7F–öâ6†÷VÆE&WÆ6UVWVVEV&Æ—6‚†7W'&VçC¢VWVVD÷fW&Æ•V&Æ—6‚ÂçVÆÂÂæW‡C¢VWVVD÷fW&Æ•V&Æ—6‚“¢&ööÆVâ°¢&WGW&â7W'&VçBÇÂT$Ä•4…õ$”õ$•E•¶æW‡Bæ6÷'&V7F–öå&V6öåÒãÒT$Ä•4…õ$”õ$•E•¶7W'&VçBæ6÷'&V7F–öå&V6öåÓ°§Ğ¦6öç7B”õUET$UõÄ”U%õ$TE•õD”ÔTõUEôÕ2Ò•ó°¦6öç7BD”µDôµõÄ”U%õ$TE•õD”ÔTõUEôÕ2Òó° ¦gVæ7F–öâ–÷WGV&TW'&÷$Æ&VÂ†6öFSó¢çVÖ&W"ÂçVÆÂ“¢7G&–ær°¢–b†6öFRÓÓÒ"’&WGW&â$–çfÆ–Bf–FVò”B#°¢–b†6öFRÓÓÒR’&WGW&â$…DÔÃRÆ–&6²Væf–Æ&ÆR#°¢–b†6öFRÓÓÒ’&WGW&â%f–FVòæ÷Bf÷VæB÷&—fFR#°¢–b†6öFRÓÓÒÇÂ6öFRÓÓÒS’&WGW&â$VÖ&VFF–ærF—6&ÆVB'’÷væW"#°¢&WGW&â6öFRò–÷UGV&RW'&÷"G¶6öFWÖ¢%–÷UGV&RVæf–Æ&ÆR#°§Ğ ¦6öç7B4”ÕTÄD”ôåõ5TTE3¢&V6÷&CÅ6–×VÆF–öå7VVBÂ²Æ&VÃ¢7G&–æs²Ö–äFVÆ”×3¢çVÖ&W#²Ö„FVÆ”×3¢çVÖ&W#²&–÷&—G”6†æ6S¢çVÖ&W"ÓâÒ°¢6Æ÷s¢²Æ&VÃ¢%6Æ÷r"ÂÖ–äFVÆ”×3¢CóÂÖ„FVÆ”×3¢“óÂ&–÷&—G”6†æ6S¢ãRÒÀ¢æ÷&ÖÃ¢²Æ&VÃ¢$æ÷&ÖÂ"ÂÖ–äFVÆ”×3¢#óÂÖ„FVÆ”×3¢cóÂ&–÷&—G”6†æ6S¢ã#RÒÀ¢f7C¢²Æ&VÃ¢$f7B"ÂÖ–äFVÆ”×3¢UóÂÖ„FVÆ”×3¢UóÂ&–÷&—G”6†æ6S¢ãBÒÀ§Ó° ¦gVæ7F–öâ6÷W&6TÆ&VÂ†VçG'“¢VWVTVçG'’“¢7G&–ær°¢–b†VçG'’ç6÷W&6UG—RÓÓÒ'F–·Fö²"’&WGW&â%F–µFö²#°¢&WGW&â†VçG'’ç6÷W&6UG—Róò&÷F†W""’çFõWW$66R‚“°§Ğ¦gVæ7F–öâf÷&ÖE&–6R†6VçG2ÒÂ7W'&Væ7’Ò'W6B"“¢7G&–ær²&WGW&âG¶æWr–çFÂäçVÖ&W$f÷&ÖB‚&VâÕU2"Â²7G–ÆS¢&7W'&Væ7’"Â7W'&Væ7“¢7W'&Væ7’çFõWW$66R‚’Ò’æf÷&ÖB„ÖF‚æÖ‚ƒÂ6VçG2’ò—ÒG¶7W'&Væ7’çFõWW$66R‚—Ö²Ğ¦gVæ7F–öâFÖ–äVF–õW&Â†VçG'“¢VWVTVçG'’“¢7G&–ær°¢6öç7B&×2ÒæWrU$Å6V&6…&×2‡²–C¢VçG'’æ–BÒ“°¢6öç7B6W76–öä–BÒ–æ—F–Å6W76–öä–Dg&öÕW&Â‚“°¢–b‡6W76–öä–B’&×2ç6WB‚'6W76–öä–B"Â6W76–öä–B“°¢&WGW&âö’öFÖ–â÷VWVRöf–ÆSòG·&×2çFõ7G&–ær‚—Ö°§Ğ¦gVæ7F–öâ÷VåW&Â†VçG'“¢VWVTVçG'’“¢7G&–ær²&WGW&âVçG'’ç6÷W&6UG—RÓÓÒ'WÆöB"òFÖ–äVF–õW&Â†VçG'’’¢VçG'’æÆ–æ³²Ğ¦gVæ7F–öâ7V&Ö—GFVD'F—7B†VçG'“¢VWVTVçG'’“¢7G&–ær²&WGW&âVçG'’ç7V&Ö—GFVD'F—7DæÖRóòVçG'’æ'F—7C²Ğ¦gVæ7F–öâ7V&Ö—GFVEF—FÆR†VçG'“¢VWVTVçG'’“¢7G&–ær²&WGW&âVçG'’ç7V&Ö—GFVE6öæuF—FÆRóòVçG'’çF—FÆS²Ğ¦gVæ7F–öâ6öÆÆ&÷&F÷$æÖW2†VçG'“¢VWVTVçG'’“¢7G&–ærÂçVÆÂ²&WGW&âVçG'’æ6öÆÆ&÷&F÷$æÖW3òçG&–Ò‚’ÇÂçVÆÃ²Ğ¦gVæ7F–öâFÖ–ä6öÆÆ&÷&F÷$Æ–æR‡²VçG'’Â6Æ74æÖRÒ""Ó¢²VçG'“¢VWVTVçG'“²6Æ74æÖSó¢7G&–ærÒ’°¢6öç7BæÖW2Ò6öÆÆ&÷&F÷$æÖW2†VçG'’“°¢–b‚æÖW2’&WGW&âçVÆÃ°¢&WGW&âÇ6Æ74æÖS×¶FW‡B×6ÒföçBÖ&öÆBFW‡BÖ66VçBG¶6Æ74æÖWÖÓãÇ7â6Æ74æÖSÒ'WW&66RG&6¶–ær×v–FW7B#äfVGW&–æs£Â÷7ãâ¶æÖW7ÓÂ÷ã°§Ğ¦gVæ7F–öâVçG'”ÆæR†VçG'“¢VWVTVçG'’“¢VWVTÆæR²&WGW&âVçG'’æÆæRóò'&VwVÆ"#²Ğ¦gVæ7F–öâGW&F–öå6÷W&6TÆ&VÂ†VçG'“¢VWVTVçG'’“¢7G&–ær²&WGW&â†VçG'’æGW&F–öå6÷W&6Róò&–çFW&æÅöW7F–ÖFR"’ç&WÆ6R‚õòörÂ""“²Ğ¦gVæ7F–öâ6åW6U&–÷&—G’†VçG'“¢VWVTVçG'’“¢&ööÆVâ²&WGW&âVçG'’æÆæRÓÓÒ'&–÷&—G’"bbVçG'’ç&–÷&—G•W6VDBbb†VçG'’ç&–÷&—G•Ww&FU7FGW2ÓÓÒ'–B"ÇÂVçG'’ç&–÷&—G•Ww&FU7FGW2ÓÓÒ&ÖçVÂ"“²Ğ¦gVæ7F–öâ6å&W7VÖU&–÷&—G’†VçG'“¢VWVTVçG'’“¢&ööÆVâ²&WGW&âVçG'’æÆæRÓÓÒ'&–÷&—G’"bb&ööÆVâ†VçG'’ç&–÷&—G•W6VDB’bb†VçG'’ç&–÷&—G•Ww&FU7FGW2ÓÓÒ'–B"ÇÂVçG'’ç&–÷&—G•Ww&FU7FGW2ÓÓÒ&ÖçVÂ"“²Ğ¦gVæ7F–öâ—5–E&–÷&—G•G&6²†VçG'“¢VWVTVçG'’“¢&ööÆVâ²&WGW&âVçG'’æÆæRÓÓÒ'&–÷&—G’"bb†VçG'’ç&–÷&—G•Ww&FU7FGW2ÓÓÒ'–B"ÇÂVçG'’ç&–÷&—G•Ww&FU7FGW2ÓÓÒ&ÖçVÂ"“²Ğ¦gVæ7F–öâv5&–÷&—G•6–væÂ†VçG'“¢VWVTVçG'’“¢&ööÆVâ²&WGW&âVçG'’æÆæRÓÓÒ'&–÷&—G’"ÇÂVçG'’ç&–÷&—G•Ww&FU7FGW2ÓÓÒ'–B"ÇÂVçG'’ç&–÷&—G•Ww&FU7FGW2ÓÓÒ&ÖçVÂ#²Ğ¦gVæ7F–öâ—5v†VVÄVÆ–v–&ÆUG&6²†VçG'“¢VWVTVçG'’“¢&ööÆVâ²&WGW&â‚VçG'’æÆæRÇÂVçG'’æÆæRÓÓÒ'&VwVÆ""’bbVçG'’ç7FGW2ÓÓÒ'VWVVB"bb†VçG'’ç&–÷&—G•Ww&FU7FGW2óò&æöæR"’ÓÓÒ&æöæR"bbVçG'’ç&–÷&—G•W6VDC²Ğ¦gVæ7F–öâ6åW6U6–væÄ†öÆB†VçG'“¢VWVTVçG'’“¢&ööÆVâ²&WGW&âVçG'’ç6–væÄ†öÆE7FGW2ÓÓÒ&7F—fR"bb†VçG'’ç7FGW2ÓÓÒ'VWVVB"ÇÂVçG'’ç7FGW2ÓÓÒ&æW‡B"“²Ğ¦gVæ7F–öâ6åW6U6–væÄ†öÆDg&öÕÆ–W"†VçG'“¢VWVTVçG'’ÂF–væ÷7F–73¢VWVUÆ–&6´F–væ÷7F–72ÂçVÆÂ“¢&ööÆVâ²&WGW&âVçG'’ç6–væÄ†öÆE7FGW2ÓÓÒ&7F—fR"bbVWVUÆ–&6´†4&VwVâ†F–væ÷7F–72ÂVçG'’æ–B“²Ğ¦gVæ7F–öâVWVUG&6µf—7VÂ†VçG'“¢VWVTVçG'’“¢²Æ&VÃ¢7G&–æs²&FvT6Æ73¢7G&–æs²6&D6Æ73¢7G&–æs²6V7F–öä6Æ73¢7G&–ærÒ°¢–b†VçG'’ç6–væÄ†öÆE7FGW2ÓÓÒ'–EöæVVG5öGFVçF–öâ"’&WGW&â²Æ&VÃ¢%6–væÂ†öÆBæVVG2GFVçF–öâ"Â&FvT6Æ73¢&&÷&FW"ÖFævW"&rÖFævW"FW‡BÖ&6¶w&÷VæB"Â6&D6Æ73¢&&÷&FW"ÖFævW"óc&rÖFævW"ó6†F÷rÕ¶–ç6WEóG…óó÷&v&ƒ#SRÃÃÃã‚•Ò"Â6V7F–öä6Æ73¢&&÷&FW"ÖFævW"óS&rÖFævW"óR"Ó°¢–b†VçG'’ç6–væÄ†öÆE7FGW2ÓÓÒ&6†V6¶÷WE÷VæF–ær"’&WGW&â²Æ&VÃ¢%6–væÂ†öÆB–ÖVçB&ö6W76–ær"Â&FvT6Æ73¢&&÷&FW"Ö7–âÓ3&rÖ7–âÓ3ó#FW‡BÖ7–âÓ"Â6&D6Æ73¢&&÷&FW"Ö7–âÓ3óc&rÖ7–âÓ3ó6†F÷rÕ¶–ç6WEóG…óó÷&v&ƒ2Ã#3"Ã#C’Ãã‚•Ò"Â6V7F–öä6Æ73¢&&÷&FW"Ö7–âÓ3óS&rÖ7–âÓ3óR"Ó°¢–b†VçG'’ç6–væÄ†öÆE7FGW2ÓÓÒ&7F—fR"’&WGW&â²Æ&VÃ¢%6–væÂ†öÆB7F—fR"Â&FvT6Æ73¢&&÷&FW"Ö7–âÓ3&rÖ7–âÓ3FW‡BÖ&6¶w&÷VæB"Â6&D6Æ73¢&&÷&FW"Ö7–âÓ3ós&rÖ7–âÓ3ó6†F÷rÕ¶–ç6WEóG…óó÷&v&ƒ2Ã#3"Ã#C’Ã•Ò"Â6V7F–öä6Æ73¢&&÷&FW"Ö7–âÓ3óc&rÖ7–âÓ3óR"Ó°¢–b†VçG'’ç6–væÄ†öÆE7FGW2ÓÓÒ&gVÆf–ÆÆVB"’&WGW&â²Æ&VÃ¢%6–væÂ†öÆBgVÆf–ÆÆVB"Â&FvT6Æ73¢&&÷&FW"Ö66VçBóc&rÖ66VçBóFW‡BÖ66VçB"Â6&D6Æ73¢&&÷&FW"Ö66VçBóC&rÖ66VçBóR"Â6V7F–öä6Æ73¢&&÷&FW"Ö66VçBóC&rÖ66VçBóR"Ó°¢–b†VçG'’ç6–væÄ†öÆE7FGW2ÓÓÒ&W‡—&VB"’&WGW&â²Æ&VÃ¢%6–væÂ†öÆBW‡—&VB"Â&FvT6Æ73¢&&÷&FW"Ö&÷&FW"&r×7W&f6RFW‡BÖ×WFVB"Â6&D6Æ73¢&&÷&FW"Ö&÷&FW"&rÖ&6¶w&÷VæBóC"Â6V7F–öä6Æ73¢&&÷&FW"Ö&÷&FW"&r×7W&f6R"Ó°¢6öç7B7FGW2ÒVçG'’ç&–÷&—G•Ww&FU7FGW2óò&æöæR#°¢–b‡7FGW2ÓÓÒ&f–ÆVB"ÇÂ7FGW2ÓÓÒ'&VgVæFVB"’&WGW&â²Æ&VÃ¢%–ÖVçBf–ÆVB"Â&FvT6Æ73¢&&÷&FW"ÖFævW"&rÖFævW"FW‡BÖ&6¶w&÷VæB"Â6&D6Æ73¢&&÷&FW"ÖFævW"óc&rÖFævW"ó6†F÷rÕ¶–ç6WEóG…óó÷&v&ƒ#SRÃÃÃã‚•Ò"Â6V7F–öä6Æ73¢&&÷&FW"ÖFævW"óS&rÖFævW"óR"Ó°¢–b‡7FGW2ÓÓÒ'–EöæVVG5öGFVçF–öâ"’&WGW&â²Æ&VÃ¢%–BæVVG2GFVçF–öâ"Â&FvT6Æ73¢&&÷&FW"ÖFævW"&rÖFævW"FW‡BÖ&6¶w&÷VæB"Â6&D6Æ73¢&&÷&FW"ÖFævW"óc&rÖFævW"ó6†F÷rÕ¶–ç6WEóG…óó÷&v&ƒ#SRÃÃÃã‚•Ò"Â6V7F–öä6Æ73¢&&÷&FW"ÖFævW"óS&rÖFævW"óR"Ó°¢–b‡7FGW2ÓÓÒ&6†V6¶÷WE÷VæF–ær"’&WGW&â²Æ&VÃ¢$6†V6¶÷WBVæF–ær"Â&FvT6Æ73¢&&÷&FW"Õ²6fc†Ò&rÕ²6fc†Òó“FW‡BÖ&6¶w&÷VæB"Â6&D6Æ73¢&&÷&FW"Õ²6fc†Òóc&rÕ²6fc†Òó6†F÷rÕ¶–ç6WEóG…óó÷&v&ƒ#SRÃ3‚ÃÃã‚•Ò"Â6V7F–öä6Æ73¢&&÷&FW"Õ²6fc†ÒóS&rÕ²6fc†ÒóR"Ó°¢–b‡7FGW2ÓÓÒ'&WVW7FVB"’&WGW&â²Æ&VÃ¢%–ÖVçB&WVW7FVB"Â&FvT6Æ73¢&&÷&FW"Õ²63#sƒ5Ò&rÕ²63#sƒ5ÒóƒRFW‡BÖ&6¶w&÷VæB"Â6&D6Æ73¢&&÷&FW"Õ²63#sƒ5Òóc&rÕ²63#sƒ5Òó6†F÷rÕ¶–ç6WEóG…óó÷&v&ƒ“BÃ#Ã2Ãã‚•Ò"Â6V7F–öä6Æ73¢&&÷&FW"Õ²63#sƒ5ÒóS&rÕ²63#sƒ5ÒóR"Ó°¢–b†VçG'’ç&–÷&—G•W6VDB’&WGW&â²Æ&VÃ¢%W6VB&–÷&—G’"Â&FvT6Æ73¢&&÷&FW"Õ²3†VÒ&rÕ²6ffÒFW‡BÖ&6¶w&÷VæB"Â6&D6Æ73¢&&÷&FW"Õ²6ffÒóƒ&rÕ²6ffÒóR6†F÷rÕ¶–ç6WEóG…óó÷&v&ƒ#SRÃsÃÃ•Ò"Â6V7F–öä6Æ73¢&&÷&FW"Õ²6ffÒós&rÕ²6ffÒó"Ó°¢–b‡7FGW2ÓÓÒ'–B"’&WGW&â²Æ&VÃ¢%–B&–÷&—G’"Â&FvT6Æ73¢&&÷&FW"Õ²6ffÒ&rÕ²6ffÒó#FW‡BÕ²6ffÒ"Â6&D6Æ73¢&&÷&FW"Õ²6ffÒós&rÕ²6ffÒó6†F÷rÕ¶–ç6WEóG…óó÷&v&ƒ#SRÃsÃÃãƒR•Ò"Â6V7F–öä6Æ73¢&&÷&FW"Õ²6ffÒóc&rÕ²6ffÒóR"Ó°¢–b‡7FGW2ÓÓÒ&ÖçVÂ"ÇÂVçG'’æÆæRÓÓÒ'&–÷&—G’"’&WGW&â²Æ&VÃ¢$ÖçVÂ&–÷&—G’"Â&FvT6Æ73¢&&÷&FW"Õ²6ffÒ&rÕ²6ffÒóRFW‡BÕ²6ffÒ"Â6&D6Æ73¢&&÷&FW"Õ²6ffÒóc&rÕ²6ffÒó6†F÷rÕ¶–ç6WEóG…óó÷&v&ƒ#SRÃsÃÃãr•Ò"Â6V7F–öä6Æ73¢&&÷&FW"Õ²6ffÒóc&rÕ²6ffÒóR"Ó°¢–b†VçG'’æÆæRÓÓÒ'v†VVÂ"’&WGW&â²Æ&VÃ¢%v†VVÂ6†÷6Vâ"Â&FvT6Æ73¢&&÷&FW"Ö7–âÓ3&rÖ7–âÓ3óRFW‡BÖ7–âÓ#"Â6&D6Æ73¢&&÷&FW"Ö7–âÓ3óc&rÖ7–âÓ3ó6†F÷rÕ¶–ç6WEóG…óó÷&v&ƒ2Ã#3"Ã#C’Ãã‚•Ò"Â6V7F–öä6Æ73¢&&÷&FW"Ö7–âÓ3óS&rÖ7–âÓ3óR"Ó°¢&WGW&â²Æ&VÃ¢$g&VR7V&Ö—76–öâ"Â&FvT6Æ73¢&&÷&FW"Öf÷&Vw&÷VæBóC&rÖf÷&Vw&÷VæBóFW‡BÖf÷&Vw&÷VæB"Â6&D6Æ73¢&&÷&FW"Ö&÷&FW"&rÖ&6¶w&÷VæBóC6†F÷rÕ¶–ç6WEóG…óó÷&v&ƒ#SRÃ#SRÃ#SRÃã#R•Ò"Â6V7F–öä6Æ73¢&&÷&FW"Ö&÷&FW"&r×7W&f6R"Ó°§Ğ¦gVæ7F–öâÆæU7FGW4&FvR‡²VçG'’Ó¢²VçG'“¢VWVTVçG'’Ò’°¢6öç7Bf—7VÂÒVWVUG&6µf—7VÂ†VçG'’“°¢&WGW&âÇ6Æ74æÖS×¶×BÓ"–æÆ–æRÖfÆW‚‚Ó"’ÓFW‡BÕ³…ÒWW&66RG&6¶–ær×v–FW7BG·f—7VÂæ&FvT6Æ77ÖÓç·f—7VÂæÆ&VÇÓÂ÷ã°§Ğ¦gVæ7F–öâFÖ–å&–÷&—G•W&6†6T&ææW"‡²VçG'’Â6ö×7BÒfÇ6RÓ¢²VçG'“¢VWVTVçG'“²6ö×7Có¢&ööÆVâÒ’°¢6öç7BW&6†6RÒ6öæf—&ÖVE&–÷&—G•W&6†6TF—7Æ’†VçG'’“°¢6öç7Bv–gBÒVçG'’ç&–÷&—G”v–gDGG&–'WF–öã°¢6öç7Bv–gD6†V6¶÷WEVæF–ærÒ&ööÆVâ†v–gB’bb†VçG'’ç&–÷&—G•Ww&FU7FGW2ÓÓÒ'&WVW7FVB"ÇÂVçG'’ç&–÷&—G•Ww&FU7FGW2ÓÓÒ&6†V6¶÷WE÷VæF–ær"“°¢–b‚W&6†6Rbbv–gD6†V6¶÷WEVæF–ær’&WGW&âçVÆÃ°¢6öç7BFW‡BÒW&6†6SòçFW‡Bóòt”eDTB$”õ$•E’4„T4´õUB+re$ôÒG¶v–gCòç7W÷'FW$æÖWÒ+rdõ"G¶v–gCòç&V6—–VçDæÖWÖ°¢&WGW&âÇ6Æ74æÖS×¶G¶6ö×7Bò&×BÓFW‡BÕ³…Ò"¢&×BÓ2FW‡B×‡2'Ò&÷&FW"&÷&FW"Õ²6ffÒós&rÕ²6ffÒóR‚Ó2’Ó"föçBÖ&Æ6²WW&66RG&6¶–ær×v–FW7BFW‡BÕ²6ffÖÓç·FW‡GÓÂ÷ã°§Ğ¦gVæ7F–öâFÖ–å7V&Ö—76–öäæ÷FR‡²VçG'’Â6ö×7BÒfÇ6RÓ¢²VçG'“¢VWVTVçG'“²6ö×7Có¢&ööÆVâÒ’°¢6öç7Bæ÷FRÒVçG'’ææ÷FSòçG&–Ò‚“°¢–b‚æ÷FR’&WGW&âçVÆÃ°¢&WGW&âÆF—b6Æ74æÖS×¶G¶6ö×7Bò&×BÓ"Ö‚×rÓ7†ÂÓ""¢&×BÓ2Ó2'Ò&÷&FW"Ó"&÷&FW"Ö66VçB&rÖ66VçBóFW‡BÖÆVgB6†F÷rÕ³óó#…÷&v&ƒ#SRÃÃÃã"•ÖÓãÇ6Æ74æÖSÒ'FW‡BÕ³…ÒföçBÖ&Æ6²WW&66RG&6¶–ærÕ³ã&VÕÒFW‡BÖ66VçB#å7V&Ö—76–öâæ÷FR+r&VB&Vf÷&RÆ––æsÂ÷ãÇ6Æ74æÖS×¶G¶6ö×7Bò&×BÓÖ‚Ö‚Ó#B÷fW&fÆ÷r×’ÖWFòFW‡B×‡2"¢&×BÓ"FW‡B×6Ò'Òv†—FW76R×&R×w&'&V²×v÷&G2föçBÖ&öÆBFW‡BÖf÷&Vw&÷VæFÓç¶æ÷FWÓÂ÷ãÂöF—cã°§Ğ¦gVæ7F–öâ'&÷w6W$'F—7E7V&Ö—76–öå7VÖÖ'’†VçG'“¢VWVTVçG'’Â6W76–öäVçG&–W3¢VWVTVçG'•µÒ“¢'&“Ç²'F—7DæÖS¢7G&–æs²G&6´6÷VçC¢çVÖ&W"Óâ°¢–b‚†VçG'’ç7W7–6–÷W4fÆw2óòµÒ’æ–æ6ÇVFW2…4ÔUô%$õu4U%ôD”ddU$TåEô%D•5E5ôdÄr’’&WGW&âµÓ°¢6öç7B'&÷w6W%Fö¶VâÒVçG'’ç7V&Ö—GFW%Fö¶VãòçG&–Ò‚“°¢–b‚'&÷w6W%Fö¶Vâ’&WGW&âµÓ°¢6öç7BVæ—VUG&6·2ÒæWrÖÇ7G&–ærÂVWVTVçG'“â‚“°¢f÷"†6öç7B6æF–FFRöb6W76–öäVçG&–W2’°¢–b†6æF–FFRç7V&Ö—GFW%Fö¶VãòçG&–Ò‚’ÓÓÒ'&÷w6W%Fö¶Vâ’Væ—VUG&6·2ç6WB†6æF–FFRæ–BÂ6æF–FFR“°¢Ğ¢6öç7Bw&÷WVBÒæWrÖÇ7G&–ærÂ²'F—7DæÖS¢7G&–æs²G&6´6÷VçC¢çVÖ&W"Óâ‚“°¢f÷"†6öç7B6æF–FFRöb²ââçVæ—VUG&6·2çfÇVW2‚•Òç6÷'B‚†ÆVgBÂ&–v‡B’ÓâÆVgBæ7&VFVDBæÆö6ÆT6ö×&R‡&–v‡Bæ7&VFVDB’’’°¢6öç7B'F—7DæÖRÒ†6æF–FFRç7V&Ö—GFW$'F—7DæÖRóò6æF–FFRç7V&Ö—GFVD'F—7DæÖRóò6æF–FFRæ'F—7B’çG&–Ò‚“°¢6öç7B¶W’Ò'F—7DæÖRçFôÆö6ÆTÆ÷vW$66R‚“°¢6öç7BW†—7F–ærÒw&÷WVBævWB†¶W’“°¢–b†W†—7F–ær’W†—7F–ærçG&6´6÷VçB³Ò°¢VÇ6Rw&÷WVBç6WB†¶W’Â²'F—7DæÖRÂG&6´6÷VçC¢Ò“°¢Ğ¢&WGW&âw&÷WVBç6—¦Râò²ââæw&÷WVBçfÇVW2‚•Ò¢µÓ°§Ğ¦gVæ7F–öâFÖ–ä'&÷w6W$'F—7Dæ÷F–6R‡²VçG'’Â6W76–öäVçG&–W2Ó¢²VçG'“¢VWVTVçG'“²6W76–öäVçG&–W3¢VWVTVçG'•µÒÒ’°¢6öç7B'F—7G2Ò'&÷w6W$'F—7E7V&Ö—76–öå7VÖÖ'’†VçG'’Â6W76–öäVçG&–W2“°¢–b†'F—7G2æÆVæwF‚Â"’&WGW&âçVÆÃ°¢6öç7B7VÖÖ'’Ò'F—7G2æÖ‚‡²'F—7DæÖRÂG&6´6÷VçBÒ’ÓâG¶'F—7DæÖWÒ‚G·G&6´6÷VçGÒG·G&6´6÷VçBÓÓÒò'G&6²"¢'G&6·2'Ò–’æ¦ö–â‚"ò"“°¢&WGW&âÆF—b6Æ74æÖSÒ&&÷&FW"&÷&FW"Õ²6ffÒóC&rÕ²6ffÒóÓ"FW‡B×‡2FW‡BÕ²6ffÒ#å6ÖR'&÷w6W"7V&Ö—GFVB×VÇF—ÆR'F—7BæÖW3¢·7VÖÖ'—ÓÂöF—cã°§Ğ¦gVæ7F–öâGW&F–öäÆ&VÂ†VçG'“¢VWVTVçG'’“¢7G&–ær°¢6öç7BGW&F–öâÒf÷&ÖE'VçF–ÖR†vWEG&6µ'VçF–ÖU6V6öæG2†VçG'’’“°¢&WGW&âVçG'’æGW&F–öä—4W7F–ÖFRòG¶GW&F–öçÒW7F–ÖFVBòVæF–ær+rG¶GW&F–öå6÷W&6TÆ&VÂ†VçG'’—Ö¢G¶GW&F–öçÒFWFV7FVB+rG¶GW&F–öå6÷W&6TÆ&VÂ†VçG'’—Ö°§Ğ¦gVæ7F–öâFWFV7FVDÆ&VÂ†VçG'“¢VWVTVçG'’“¢7G&–ærÂçVÆÂ°¢–b‚VçG'’æFWFV7FVD'F—7DæÖRbbVçG'’æFWFV7FVE6öæuF—FÆRbbVçG'’ç&÷f–FW%F—FÆR’&WGW&âçVÆÃ°¢&WGW&âG¶VçG'’æFWFV7FVD'F—7DæÖRÇÂ%Væ¶æ÷vâ'F—7B'Ò(	BG¶VçG'’æFWFV7FVE6öæuF—FÆRÇÂVçG'’ç&÷f–FW%F—FÆRÇÂ%Væ¶æ÷vâF—FÆR'Ö°§Ğ§G—R÷fW&Æ•–÷UGV&UG&6´–çWBÒ²–C¢7G&–æs²Æ–æ³¢7G&–æs²6÷W&6UG—S¢VWVTVçG'•²'6÷W&6UG—R%Ó²f–FVô–C¢7G&–ærÂçVÆÂÓ°¦gVæ7F–öâ'V–ÆD÷fW&Æ•–÷UGV&U7–æ2‡G&6³¢÷fW&Æ•–÷UGV&UG&6´–çWBÂÆ–&6µ7FFS¢Æ—fT÷fW&Æ•Æ–&6µ7FFRÂ7W'&VçEF–ÖU6V6öæG2ÒÂGW&F–öå6V6öæG3ó¢çVÖ&W"Â6÷'&V7F–öå&V6öãó¢Æ—fT÷fW&Æ•7–æ46÷'&V7F–öå&V6öâ’°¢–b‡G&6²ç6÷W&6UG—RÓÒ'–÷WGV&R"ÇÂG&6²çf–FVô–B’&WGW&âçVÆÃ°¢6öç7BGW&F–öâÒG—VöbGW&F–öå6V6öæG2ÓÓÒ&çVÖ&W""bbçVÖ&W"æ—4f–æ—FR†GW&F–öå6V6öæG2’bbGW&F–öå6V6öæG2âòGW&F–öå6V6öæG2¢VæFVf–æVC°¢&WGW&â²&÷f–FW#¢'–÷WGV&R"26öç7BÂf–FVô–C¢G&6²çf–FVô–BÂG&6´–C¢G&6²æ–BÂÆ–&6µ7FFRÂ7W'&VçEF–ÖU6V6öæG3¢ÖF‚æÖ‚ƒÂ7W'&VçEF–ÖU6V6öæG2’ÂGW&F–öå6V6öæG3¢GW&F–öâÂWFFVDC¢æWrFFR‚’çFô•4õ7G&–ær‚’Â×WFVC¢G'VRÂ6÷'&V7F–öå&V6öâÓ°§Ğ¦7–æ2gVæ7F–öâV&Æ—6„÷fW&Æ•–÷UGV&U7–æ2‡G&6³¢÷fW&Æ•–÷UGV&UG&6´–çWBÂÆ–&6µ7FFS¢Æ—fT÷fW&Æ•Æ–&6µ7FFRÂ7W'&VçEF–ÖU6V6öæG2ÒÂGW&F–öå6V6öæG3ó¢çVÖ&W"Â6÷'&V7F–öå&V6öãó¢Æ—fT÷fW&Æ•7–æ46÷'&V7F–öå&V6öâ’°¢6öç7B7–æ2Ò'V–ÆD÷fW&Æ•–÷UGV&U7–æ2‡G&6²ÂÆ–&6µ7FFRÂ7W'&VçEF–ÖU6V6öæG2ÂGW&F–öå6V6öæG2Â6÷'&V7F–öå&V6öâ“°¢–b‚7–æ2’&WGW&âçVÆÃ°¢&WGW&â÷7D÷fW&Æ•Æ–W%7–æ2‡7–æ2“°§Ğ§G—R÷fW&Æ•F–µFöµG&6´–çWBÒ²–C¢7G&–æs²Æ–æ³¢7G&–æs²6÷W&6UG—S¢VWVTVçG'•²'6÷W&6UG—R%Ó²÷7D–C¢7G&–ærÂçVÆÂÓ°¦gVæ7F–öâ'V–ÆD÷fW&Æ•F–µFöµ7–æ2‡G&6³¢÷fW&Æ•F–µFöµG&6´–çWBÂÆ–&6µ7FFS¢Æ—fT÷fW&Æ•Æ–&6µ7FFRÂ7W'&VçEF–ÖU6V6öæG2ÒÂGW&F–öå6V6öæG3ó¢çVÖ&W"Â6÷'&V7F–öå&V6öãó¢Æ—fT÷fW&Æ•7–æ46÷'&V7F–öå&V6öâ’°¢–b‡G&6²ç6÷W&6UG—RÓÒ'F–·Fö²"ÇÂG&6²ç÷7D–BÇÂõåÆG³‚Ã3'ÒBòçFW7B‡G&6²ç÷7D–B’’&WGW&âçVÆÃ°¢–b‚çVÖ&W"æ—4f–æ—FR†7W'&VçEF–ÖU6V6öæG2’ÇÂ7W'&VçEF–ÖU6V6öæG2Â’&WGW&âçVÆÃ°¢6öç7BGW&F–öâÒG—VöbGW&F–öå6V6öæG2ÓÓÒ&çVÖ&W""bbçVÖ&W"æ—4f–æ—FR†GW&F–öå6V6öæG2’bbGW&F–öå6V6öæG2âòGW&F–öå6V6öæG2¢VæFVf–æVC°¢&WGW&â²&÷f–FW#¢'F–·Fö²"26öç7BÂ÷7D–C¢G&6²ç÷7D–BÂG&6´–C¢G&6²æ–BÂÆ–&6µ7FFRÂ7W'&VçEF–ÖU6V6öæG2ÂGW&F–öå6V6öæG3¢GW&F–öâÂWFFVDC¢æWrFFR‚’çFô•4õ7G&–ær‚’Â×WFVC¢G'VRÂ6÷'&V7F–öå&V6öâÓ°§Ğ¦7–æ2gVæ7F–öâV&Æ—6„÷fW&Æ•F–µFöµ7–æ2‡G&6³¢÷fW&Æ•F–µFöµG&6´–çWBÂÆ–&6µ7FFS¢Æ—fT÷fW&Æ•Æ–&6µ7FFRÂ7W'&VçEF–ÖU6V6öæG2ÒÂGW&F–öå6V6öæG3ó¢çVÖ&W"Â6÷'&V7F–öå&V6öãó¢Æ—fT÷fW&Æ•7–æ46÷'&V7F–öå&V6öâ’°¢6öç7B7–æ2Ò'V–ÆD÷fW&Æ•F–µFöµ7–æ2‡G&6²ÂÆ–&6µ7FFRÂ7W'&VçEF–ÖU6V6öæG2ÂGW&F–öå6V6öæG2Â6÷'&V7F–öå&V6öâ“°¢–b‚7–æ2’&WGW&âçVÆÃ°¢&WGW&â÷7D÷fW&Æ•Æ–W%7–æ2‡7–æ2“°§Ğ ¦7–æ2gVæ7F–öâ6ÆV$÷fW&Æ•Æ–W%7–æ2‚’°¢v—BfWF6‚‚"ö’öFÖ–âö÷fW&Æ’öÆ—fR"Â²ÖWF†öC¢%õ5B"Â†VFW'3¢²$6öçFVçBÕG—R#¢&Æ–6F–öâö§6öâ"ÒÂ&öG“¢¥4ôâç7G&–æv–g’‡²7F–öã¢&6ÆV%Æ–W%7–æ2"Ò’Ò“°§Ğ ¦gVæ7F–öâVÖ&VEW&Â†VçG'“¢VWVTVçG'’“¢7G&–ærÂçVÆÂ°¢6öç7BW&ÂÒ÷VåW&Â†VçG'’“°¢–b‚W&Â’&WGW&âçVÆÃ°¢G'’°¢6öç7B'6VBÒæWrU$Â‡W&Â“°¢–b†VçG'’ç6÷W&6UG—RÓÓÒ'–÷WGV&R"’°¢6öç7B–BÒ'6U–÷UGV&Uf–FVô–B‡W&Â“°¢&WGW&â–Bò‡GG3¢ò÷wwrç–÷WGV&Ræ6öÒöVÖ&VBòG¶–GÖ¢çVÆÃ°¢Ğ¢–b†VçG'’ç6÷W&6UG—RÓÓÒ'7÷F–g’"’&WGW&â‡GG3¢òö÷Vâç7÷F–g’æ6öÒöVÖ&VBG·'6VBçF†æÖWÖ°¢–b†VçG'’ç6÷W&6UG—RÓÓÒ'6÷VæF6Æ÷VB"’&WGW&â‡GG3¢ò÷rç6÷VæF6Æ÷VBæ6öÒ÷Æ–W"ó÷W&ÃÒG¶Væ6öFUU$”6ö×öæVçB‡W&Â—Ö°¢Ò6F6‚²&WGW&âçVÆÃ²Ğ¢&WGW&âçVÆÃ°§Ğ¦gVæ7F–öâ–æ—F–Å6W76–öä–Dg&öÕW&Â‚“¢7G&–ærÂVæFVf–æVB°¢–b‡G—Vöbv–æF÷rÓÓÒ'VæFVf–æVB"’&WGW&âVæFVf–æVC°¢&WGW&âæWrU$Å6V&6…&×2‡v–æF÷ræÆö6F–öâç6V&6‚’ævWB‚'6W76–öä–B"’óòVæFVf–æVC°§Ğ ¦W‡÷'BgVæ7F–öâFÖ–å&F–õVWVT6öçG&öÂ‚’°¢6öç7B·7FFRÂ6WE7FFUÒÒW6U7FFSÅVWVU7FFRÂçVÆÃâ†çVÆÂ“°¢6öç7B·F"Â6WEF%ÒÒW6U7FFSÅF#â‚&7F—fR"“°¢6öç7B¶ÆöF–æuÆ–W$–BÂ6WDÆöF–æuÆ–W$–EÒÒW6U7FFSÇ7G&–ærÂçVÆÃâ†çVÆÂ“°¢6öç7B¶6ÆV&–æuÆ–W$–BÂ6WD6ÆV&–æuÆ–W$–EÒÒW6U7FFSÇ7G&–ærÂçVÆÃâ†çVÆÂ“°¢6öç7B·Æ–W$7F–öåVæF–ærÂ6WEÆ–W$7F–öåVæF–æuÒÒW6U7FFR†fÇ6R“°¢6öç7B·7öç6÷$7F–öåVæF–ærÂ6WE7öç6÷$7F–öåVæF–æuÒÒW6U7FFR†fÇ6R“°¢6öç7B¶Ö–æ–Ö—¦VBÂ6WDÖ–æ–Ö—¦VEÒÒW6U7FFR†fÇ6R“°¢6öç7B·F÷&$Ö–æ–Ö—¦VBÂ6WEF÷&$Ö–æ–Ö—¦VEÒÒW6U7FFR†fÇ6R“°¢6öç7B·&–ÄÖ–æ–Ö—¦VBÂ6WE&–ÄÖ–æ–Ö—¦VEÒÒW6U7FFR†fÇ6R“°¢6öç7B¶W'&÷"Â6WDW'&÷%ÒÒW6U7FFSÇ7G&–ærÂçVÆÃâ†çVÆÂ“°¢6öç7B¶7F–öäW'&÷"Â6WD7F–öäW'&÷%ÒÒW6U7FFSÇ7G&–ærÂçVÆÃâ†çVÆÂ“°¢6öç7B¶Ö÷VçFVBÂ6WDÖ÷VçFVEÒÒW6U7FFR†fÇ6R“°¢6öç7B¶6Æö6´æ÷rÂ6WD6Æö6´æ÷uÒÒW6U7FFR‚‚’ÓâFFRææ÷r‚’“°¢6öç7B¶VæD6öæf—&Ô÷VâÂ6WDVæD6öæf—&Ô÷VåÒÒW6U7FFR†fÇ6R“°¢6öç7B¶VæF–æu6W76–öâÂ6WDVæF–æu6W76–öåÒÒW6U7FFR†fÇ6R“°¢6öç7B·6W76–öä÷F–öç4÷VâÂ6WE6W76–öä÷F–öç4÷VåÒÒW6U7FFR†fÇ6R“°¢6öç7B·&–÷&—G”Væ&ÆVBÂ6WE&–÷&—G”Væ&ÆVEÒÒW6U7FFR†fÇ6R“°¢6öç7B·&–÷&—G•&–6T6VçG2Â6WE&–÷&—G•&–6T6VçG5ÒÒW6U7FFRƒ“°¢6öç7B·&–÷&—G”7W'&Væ7’Â6WE&–÷&—G”7W'&Væ7•ÒÒW6U7FFR‚'W6B"“°¢6öç7B·6–væÄ†öÆDVæ&ÆVBÂ6WE6–væÄ†öÆDVæ&ÆVEÒÒW6U7FFR†fÇ6R“°¢6öç7B·6–væÄ†öÆE&–6T6VçG2Â6WE6–væÄ†öÆE&–6T6VçG5ÒÒW6U7FFRƒ“°¢6öç7B·6–væÄ†öÆD7W'&Væ7’Â6WE6–væÄ†öÆD7W'&Væ7•ÒÒW6U7FFR‚'W6B"“°¢6öç7B·6W76–öä6ööÆF÷vå6V6öæG2Â6WE6W76–öä6ööÆF÷vå6V6öæG5ÒÒW6U7FFRƒ3“°¢6öç7B·&–÷&—G•6f–ærÂ6WE&–÷&—G•6f–æuÒÒW6U7FFR†fÇ6R“°¢6öç7B·&–÷&—G”ÖW76vRÂ6WE&–÷&—G”ÖW76vUÒÒW6U7FFSÇ7G&–ærÂçVÆÃâ†çVÆÂ“°¢6öç7B·&–÷&—G•6fTW'&÷"Â6WE&–÷&—G•6fTW'&÷%ÒÒW6U7FFSÇ7G&–ærÂçVÆÃâ†çVÆÂ“°¢6öç7B·6–×VÆF–öå'Vææ–ærÂ6WE6–×VÆF–öå'Vææ–æuÒÒW6U7FFR†fÇ6R“°¢6öç7B·6–×VÆF–öå7VVBÂ6WE6–×VÆF–öå7VVEÒÒW6U7FFSÅ6–×VÆF–öå7VVCâ‚&æ÷&ÖÂ"“°¢6öç7B·6–×VÆF–öäÖW76vRÂ6WE6–×VÆF–öäÖW76vUÒÒW6U7FFSÇ7G&–ærÂçVÆÃâ†çVÆÂ“°¢6öç7B¶7F—fUWF–Æ—G•æVÂÂ6WD7F—fUWF–Æ—G•æVÅÒÒW6U7FFSÂ'6W76–öâ"Â'f—7VÇ2"Â'f—7VÄ÷fW&Æ—2"Â&÷fW&Æ’"ÂçVÆÃâ†çVÆÂ“°¢6öç7B¶÷fW&Æ•v†VVÄfö7W5F–6²Â6WD÷fW&Æ•v†VVÄfö7W5F–6µÒÒW6U7FFRƒ“°¢6öç7B6–×VÆF–öåF–ÖW%&VbÒW6U&VcÆçVÖ&W"ÂçVÆÃâ†çVÆÂ“°¢6öç7B6–×VÆF–öå'Vææ–æu&VbÒW6U&Vb†fÇ6R“°¢6öç7B6–×VÆF–öå7VVE&VbÒW6U&VcÅ6–×VÆF–öå7VVCâ‚&æ÷&ÖÂ"“°¢6öç7B7öç6÷$7F–öåVæF–æu&VbÒW6U&Vb†fÇ6R“°¢6öç7B×WFF–öäWö6…&VbÒW6U&Vbƒ“°¢6öç7B×WFF–öä–äfÆ–v‡E&VbÒW6U&Vbƒ“°¢6öç7BÆFW7DÆ–VD×WFF–öäWö6…&VbÒW6U&Vbƒ“° ¢gVæ7F–öâÇ”×WFF–öå7FFR†æW‡C¢VWVU7FFRÂWö6ƒ¢çVÖ&W"“¢fö–B°¢–b†Wö6‚ÂÆFW7DÆ–VD×WFF–öäWö6…&Vbæ7W'&VçB’&WGW&ã°¢ÆFW7DÆ–VD×WFF–öäWö6…&Vbæ7W'&VçBÒWö6ƒ°¢6WE7FFR‚†7W'&VçB’Óâ‡²ââææW‡BÂÆ–&6µF–Ö–æs¢æW‡BçÆ–&6µF–Ö–æróò7W'&VçCòçÆ–&6µF–Ö–æróòçVÆÂÂv†VVÅF–Ö–æs¢æW‡Bçv†VVÅF–Ö–æróò7W'&VçCòçv†VVÅF–Ö–æróòçVÆÂÒ’“°¢Ğ ¢gVæ7F–öâÇ•öÆÆ–æu7FFT–dg&W6‚†æW‡C¢VWVU7FFRÂ&WVW7DWö6ƒ¢çVÖ&W"“¢fö–B°¢–b†×WFF–öä–äfÆ–v‡E&Vbæ7W'&VçBâ’&WGW&ã°¢–b‡&WVW7DWö6‚ÓÒ×WFF–öäWö6…&Vbæ7W'&VçB’&WGW&ã°¢–b‡&WVW7DWö6‚ÂÆFW7DÆ–VD×WFF–öäWö6…&Vbæ7W'&VçB’&WGW&ã°¢6WE7FFR†æW‡B“°¢Ğ ¢7–æ2gVæ7F–öâÆöB‡6W76–öä–Có¢7G&–ær’°¢6öç7B&WVW7DWö6‚Ò×WFF–öäWö6…&Vbæ7W'&VçC°¢6öç7B7Vff—‚Ò6W76–öä–Bò÷6W76–öä–CÒG¶Væ6öFUU$”6ö×öæVçB‡6W76–öä–B—Ö¢"#°¢6öç7B&W2Òv—BfWF6‚†ö’öFÖ–â÷VWVRG·7Vff—‡ÖÂ²66†S¢&æò×7F÷&R"Ò“°¢–b‚&W2æö²’°¢–b†×WFF–öä–äfÆ–v‡E&Vbæ7W'&VçBâ’&WGW&âçVÆÃ°¢–b‡&WVW7DWö6‚ÓÒ×WFF–öäWö6…&Vbæ7W'&VçB’&WGW&âçVÆÃ°¢6WDW'&÷"‡&W2ç7FGW2ÓÓÒCò$FÖ–âWF†VçF–6F–öâ&WV—&VBâÆör–âBöFÖ–âf—'7Bâ"¢%VWVR6öçG&öÂVæf–Æ&ÆRâ"“°¢&WGW&âçVÆÃ°¢Ğ¢6WDW'&÷"†çVÆÂ“°¢6öç7BæW‡BÒv—B&W2æ§6öâ‚’2VWVU7FFS°¢Ç•öÆÆ–æu7FFT–dg&W6‚†æW‡BÂ&WVW7DWö6‚“°¢&WGW&â†47F—fUVWVU6W76–öâ†æW‡B“°¢Ğ ¢W6TVffV7B‚‚’Óâ°¢6WDÖ÷VçFVB‡G'VR“°¢&WGW&â7F'E6W76–öä&÷VæEöÆÆ–ær‡°¢–çFW'fÄ×3¢DÔ”åõTUTUõôÄÅô”åDU%dÅôÕ2À¢öÆÃ¢‚’ÓâÆöB†–æ—F–Å6W76–öä–Dg&öÕW&Â‚’’À¢Ò“°¢ÒÂµÒ“° ¢W6TVffV7B‚‚’Óâ°¢6öç7B–çFW'fÂÒv–æF÷rç6WD–çFW'fÂ‚‚’Óâ6WD6Æö6´æ÷r„FFRææ÷r‚’’Âó“°¢&WGW&â‚’Óâv–æF÷ræ6ÆV$–çFW'fÂ†–çFW'fÂ“°¢ÒÂµÒ“° ¢W6TVffV7B‚‚’Óâ°¢–b‚7FFSòç6W76–öâÇÂ6W76–öä÷F–öç4÷Vâ’&WGW&ã°¢6WE&–÷&—G”Væ&ÆVB‡7FFRç6W76–öâç&–÷&—G•Ww&FU–ÖVçG4Væ&ÆVBÓÓÒG'VR“°¢6WE&–÷&—G•&–6T6VçG2‡7FFRç6W76–öâç&–÷&—G•Ww&FU&–6T6VçG2óò“°¢6WE&–÷&—G”7W'&Væ7’‡7FFRç6W76–öâç&–÷&—G•Ww&FT7W'&Væ7’óò'W6B"“°¢6WE6–væÄ†öÆDVæ&ÆVB‡7FFRç6W76–öâç6–væÄ†öÆE–ÖVçG4Væ&ÆVBÓÓÒG'VR“°¢6WE6–væÄ†öÆE&–6T6VçG2‡7FFRç6W76–öâç6–væÄ†öÆE&–6T6VçG2óò“°¢6WE6–væÄ†öÆD7W'&Væ7’‡7FFRç6W76–öâç6–væÄ†öÆD7W'&Væ7’óò'W6B"“°¢6WE6W76–öä6ööÆF÷vå6V6öæG2‡7FFRç6W76–öâç7V&Ö—76–öä6ööÆF÷vå6V6öæG2óò3“°¢ÒÂ·6W76–öä÷F–öç4÷VâÂ7FFSòç6W76–öåÒ“° ¢W6TVffV7B‚‚’Óâ‚’Óâ°¢6–×VÆF–öå'Vææ–æu&Vbæ7W'&VçBÒfÇ6S°¢–b‡6–×VÆF–öåF–ÖW%&Vbæ7W'&VçB’v–æF÷ræ6ÆV%F–ÖV÷WB‡6–×VÆF–öåF–ÖW%&Vbæ7W'&VçB“°¢ÒÂµÒ“° ¢7–æ2gVæ7F–öâ÷7B†&öG“¢&V6÷&CÇ7G&–ærÂVæ¶æ÷vãâ“¢&öÖ—6SÅVWVU7FFRÂçVÆÃâ°¢×WFF–öäWö6…&Vbæ7W'&VçB³Ò°¢6öç7BWö6‚Ò×WFF–öäWö6…&Vbæ7W'&VçC°¢×WFF–öä–äfÆ–v‡E&Vbæ7W'&VçB³Ò°¢G'’°¢6öç7B&W2Òv—BfWF6‚‚"ö’öFÖ–â÷VWVR"Â²ÖWF†öC¢%õ5B"Â†VFW'3¢²$6öçFVçBÕG—R#¢&Æ–6F–öâö§6öâ"ÒÂ&öG“¢¥4ôâç7G&–æv–g’†&öG’’Ò“°¢6öç7B–ÆöBÒv—B&W2æ§6öâ‚’æ6F6‚‚‚’Óâ‡·Ò’“°¢–b‚&W2æö²’°¢6WD7F–öäW'&÷"‡G—Vöb–ÆöCòæW'&÷"ÓÓÒ'7G&–ær"ò–ÆöBæW'&÷"¢%VWVR7F–öâf–ÆVBâÆV6R&WG'’â"“°¢&WGW&âçVÆÃ°¢Ğ¢6WD7F–öäW'&÷"†çVÆÂ“°¢Ç”×WFF–öå7FFR‡–ÆöBÂWö6‚“°¢&WGW&â–ÆöC°¢Ò6F6‚°¢6WD7F–öäW'&÷"‚%VWVR7F–öâ6÷VÆBæ÷B&V6‚F†R6W'fW"âÆV6R&WG'’â"“°¢&WGW&âçVÆÃ°¢Òf–æÆÇ’°¢×WFF–öä–äfÆ–v‡E&Vbæ7W'&VçBÒÖF‚æÖ‚ƒÂ×WFF–öä–äfÆ–v‡E&Vbæ7W'&VçBÒ“°¢Ğ¢Ğ¢7–æ2gVæ7F–öâ7F–öâ†–C¢7G&–ærÂæW‡C¢FÖ–åVWVT7F–öâ“¢&öÖ—6SÅVWVU7FFRÂçVÆÃâ²&WGW&â÷7B†æW‡BÓÓÒ'VÆÄæW‡B"ÇÂæW‡BÓÓÒ'VÆÅv†VVÄ6†÷6Vâ"ÇÂæW‡BÓÓÒ'VÆÄg&VUG&ç6Ö—76–öâ"ÇÂæW‡BÓÓÒ'7F'E6†÷r"ÇÂæW‡BÓÓÒ&FEv†VVÅ7–ä÷vVB"ò²7F–öã¢æW‡BÒ¢²–BÂ7F–öã¢æW‡BÒ“²Ğ¢7–æ2gVæ7F–öâ6–×VÆF–öä7F–öâ†æW‡C¢6–×VÆF–öä7F–öâÂÆ&VÃ¢7G&–ær’°¢6öç7BWFFVBÒv—B÷7B‡²7F–öã¢æW‡BÒ“°¢6WE6–×VÆF–öäÖW76vR‡WFFVBòÆ&VÂ¢%6–×VÆF–öâ7F–öâf–ÆVBâ6öæf—&ÒFÖ–âWF‚æB7F—fR6W76–öââ"“°¢&WGW&âWFFVC°¢Ğ¢gVæ7F–öâ6–×VÆF–öäFVÆ’‡7VVC¢6–×VÆF–öå7VVB“¢çVÖ&W"°¢6öç7B6öæf–rÒ4”ÕTÄD”ôåõ5TTE5·7VVEÓ°¢&WGW&â6öæf–ræÖ–äFVÆ”×2²ÖF‚æfÆö÷"„ÖF‚ç&æFöÒ‚’¢†6öæf–ræÖ„FVÆ”×2Ò6öæf–ræÖ–äFVÆ”×2’“°¢Ğ¢gVæ7F–öâVWVU6–×VÆF–öåF–6²‚’°¢–b‚6–×VÆF–öå'Vææ–æu&Vbæ7W'&VçB’&WGW&ã°¢6öç7B7VVBÒ6–×VÆF–öå7VVE&Vbæ7W'&VçC°¢6–×VÆF–öåF–ÖW%&Vbæ7W'&VçBÒv–æF÷rç6WEF–ÖV÷WB†7–æ2‚’Óâ°¢–b‚6–×VÆF–öå'Vææ–æu&Vbæ7W'&VçB’&WGW&ã°¢v—B6–×VÆF–öä7F–öâ‚&FE6–×VÆF–öäg&VUG&6²"Â%6–×VÆF–öâFFVBg&VR4”ÒG&6²â"“°¢–b„ÖF‚ç&æFöÒ‚’Â4”ÕTÄD”ôåõ5TTE5·7VVEÒç&–÷&—G”6†æ6R’v—B6–×VÆF–öä7F–öâ‚&FE6–×VÆF–öå–E&–÷&—G’"Â%6–×VÆF–öâFFVB–B&–÷&—G’4”ÒG&6²â"“°¢VWVU6–×VÆF–öåF–6²‚“°¢ÒÂ6–×VÆF–öäFVÆ’‡7VVB’“°¢Ğ¢gVæ7F–öâ7F'E6–×VÆF–öâ‚’°¢–b‡6–×VÆF–öå'Vææ–æu&Vbæ7W'&VçB’&WGW&ã°¢6–×VÆF–öå'Vææ–æu&Vbæ7W'&VçBÒG'VS°¢6WE6–×VÆF–öå'Vææ–ær‡G'VR“°¢6WE6–×VÆF–öäÖW76vR‚%6–×VÆF–öâ'Vææ–ærâg&VR4”ÒG&6·2v–ÆÂ'&—fR÷fW"F–ÖRâ"“°¢VWVU6–×VÆF–öåF–6²‚“°¢Ğ¢gVæ7F–öâ7F÷6–×VÆF–öâ‚’°¢6–×VÆF–öå'Vææ–æu&Vbæ7W'&VçBÒfÇ6S°¢6WE6–×VÆF–öå'Vææ–ær†fÇ6R“°¢–b‡6–×VÆF–öåF–ÖW%&Vbæ7W'&VçB’v–æF÷ræ6ÆV%F–ÖV÷WB‡6–×VÆF–öåF–ÖW%&Vbæ7W'&VçB“°¢6–×VÆF–öåF–ÖW%&Vbæ7W'&VçBÒçVÆÃ°¢6WE6–×VÆF–öäÖW76vR‚%6–×VÆF–öâ7F÷VBâ"“°¢Ğ¢gVæ7F–öâWFFU6–×VÆF–öå7VVB†æW‡C¢6–×VÆF–öå7VVB’°¢6–×VÆF–öå7VVE&Vbæ7W'&VçBÒæW‡C°¢6WE6–×VÆF–öå7VVB†æW‡B“°¢Ğ¢7–æ2gVæ7F–öâÆ–W$7F–öâ†–C¢7G&–ærÂæW‡C¢FÖ–åVWVT7F–öâ’°¢–b‡Æ–W$7F–öåVæF–ær’&WGW&ã°¢6öç7B—46ÆV&–æt7F–öâÒæW‡BÓÓÒ&f–æ—6‚"ÇÂæW‡BÓÓÒ'&VÖ÷fR"ÇÂæW‡BÓÓÒ&Ö÷fT&6²"ÇÂæW‡BÓÓÒ'W6U&–÷&—G’"ÇÂæW‡BÓÓÒ'W6U6–væÄ†öÆB#°¢–b†—46ÆV&–æt7F–öâ’°¢6WDÆöF–æuÆ–W$–B†çVÆÂ“°¢6WD6ÆV&–æuÆ–W$–B†–B“°¢Ğ¢6WEÆ–W$7F–öåVæF–ær‡G'VR“°¢6öç7BWFFVBÒv—B7F–öâ†–BÂæW‡B“°¢–b†—46ÆV&–æt7F–öâ’°¢6öç7B6ÆV&–æuF&vWBÒ7FFSòææ÷uÆ––æsòæ–BÓÓÒ–Bò7FFRææ÷uÆ––ær¢çVÆÃ°¢6öç7BF–D6ÆV%Æ–W"Ò&ööÆVâ‡WFFVBbbWFFVBææ÷uÆ––æsòæ–BÓÒ–B“°¢–b†F–D6ÆV%Æ–W"bb†6ÆV&–æuF&vWCòç6÷W&6UG—RÓÓÒ'–÷WGV&R"ÇÂ6ÆV&–æuF&vWCòç6÷W&6UG—RÓÓÒ'F–·Fö²"ÇÂ6ÆV&–æuF&vWCòç6÷W&6UG—RÓÓÒ'WÆöB"’’v—B6ÆV$÷fW&Æ•Æ–W%7–æ2‚“°¢–b‚F–D6ÆV%Æ–W"’6WDÆöF–æuÆ–W$–B†çVÆÂ“°¢6WD6ÆV&–æuÆ–W$–B†çVÆÂ“°¢Ğ¢6WEÆ–W$7F–öåVæF–ær†fÇ6R“°¢Ğ¢W6TVffV7B‚‚’Óâ°¢–b‚ÆöF–æuÆ–W$–B’&WGW&ã°¢–b‡7FFSòææ÷uÆ––æsòæ–BÓÓÒÆöF–æuÆ–W$–B’6WDÆöF–æuÆ–W$–B†çVÆÂ“°¢–b‚7FFSòææ÷uÆ––ærbbÆöF–æuÆ–W$–B’6WDÆöF–æuÆ–W$–B†çVÆÂ“°¢ÒÂ¶ÆöF–æuÆ–W$–BÂ7FFSòææ÷uÆ––æuÒ“°¢W6TVffV7B‚‚’Óâ°¢–b‚6ÆV&–æuÆ–W$–B’&WGW&ã°¢–b‚7FFSòææ÷uÆ––ærÇÂ7FFRææ÷uÆ––æræ–BÓÒ6ÆV&–æuÆ–W$–B’6WD6ÆV&–æuÆ–W$–B†çVÆÂ“°¢ÒÂ¶6ÆV&–æuÆ–W$–BÂ7FFSòææ÷uÆ––æuÒ“° ¢7–æ2gVæ7F–öâVæD7W'&VçE6W76–öâ‚’°¢6WDVæF–æu6W76–öâ‡G'VR“°¢6öç7BVæFVBÒv—B÷7B‡²7F–öã¢&&6†—fU6W76–öâ"Â6W76–öä–C¢7FFSòç6W76–öãòç6W76–öä–BÒ“°¢6WDVæF–æu6W76–öâ†fÇ6R“°¢–b‚VæFVB’&WGW&ã°¢æ÷F–g•VWVU6W76–öä6†ævVB‚“°¢6WDVæD6öæf—&Ô÷Vâ†fÇ6R“°¢v—BÆöB‚“°¢Ğ¢7–æ2gVæ7F–öâFövvÆT÷Vâ†—4÷Vã¢&ööÆVâ’²v—B÷7B‡²7F–öã¢'6WD÷Vâ"Â—4÷VâÒ“²Ğ¢7–æ2gVæ7F–öâ6÷’†VçG'“¢VWVTVçG'’’²v—Bæf–vF÷"æ6Æ—&ö&Bçw&—FUFW‡B†÷VåW&Â†VçG'’’“²Ğ¢7–æ2gVæ7F–öâÆöEÆ–W"†VçG'“¢VWVTVçG'’’°¢–b‡Æ–W$7F–öåVæF–ær’&WGW&ã°¢6WEÆ–W$7F–öåVæF–ær‡G'VR“°¢6WDÆöF–æuÆ–W$–B†VçG'’æ–B“°¢6WD6ÆV&–æuÆ–W$–B†çVÆÂ“°¢6WDÖ–æ–Ö—¦VB†fÇ6R“°¢–b†VçG'’ç6÷W&6UG—RÓÒ'–÷WGV&R"’v—B6ÆV$÷fW&Æ•Æ–W%7–æ2‚“°¢6öç7BWFFVBÒv—B7F–öâ†VçG'’æ–BÂ&ÆöB"“°¢–b‡WFFVCòææ÷uÆ––æsòæ–BÓÓÒVçG'’æ–B’°¢6WEÆ–W$7F–öåVæF–ær†fÇ6R“°¢&WGW&ã°¢Ğ¢–b‚WFFVB’6WDÆöF–æuÆ–W$–B†çVÆÂ“°¢6WEÆ–W$7F–öåVæF–ær†fÇ6R“°¢Ğ¢7–æ2gVæ7F–öâWFFU7öç6÷$'&Vµ7FFR‡7öç6÷$7F–öã¢'7F'B"Â&6ö×ÆWFR"Â'6¶—"Â'&W6WB"’°¢6öç7B—57F'BÒ7öç6÷$7F–öâÓÓÒ'7F'B#°¢–b†—57F'Bbb7öç6÷$7F–öåVæF–æu&Vbæ7W'&VçB’&WGW&ã°¢–b†—57F'B’°¢7öç6÷$7F–öåVæF–æu&Vbæ7W'&VçBÒG'VS°¢6WE7öç6÷$7F–öåVæF–ær‡G'VR“°¢Ğ¢G'’°¢6öç7BWFFVBÒv—B÷7B‡²7F–öã¢'WFFU7öç6÷$'&Vµ7FFR"Â7öç6÷$7F–öâÒ“°¢–b‚—57F'BÇÂWFFVB’&WGW&ã°¢v—BÆVæ6„Æö6Ä6öÖÖW&6–Ä'&V´–d6¶æ÷vÆVFvVB‡WFFVBÂ‚’ÓâfWF6‚„Äô4Åô4ôÔÔU$4”Åõ5D%EõU$ÂÂ²ÖWF†öC¢%õ5B"ÂÖöFS¢&6÷'2"Â66†S¢&æò×7F÷&R"Ò’“°¢Ò6F6‚°¢6WD7F–öäW'&÷"‚%F†R7öç6÷"F–ÖW"7F'FVBÂ'WB$$4ôDRVF–ò'&–FvR6÷VÆBæ÷B&R&V6†VBâ6öæf—&ÒF†R'&–FvR—2'Vææ–ærÂF†VâW6R—G2G&’ÖVçR(i"7F'B6öÖÖW&6–Â'&V²â"“°¢Òf–æÆÇ’°¢–b†—57F'B’°¢7öç6÷$7F–öåVæF–æu&Vbæ7W'&VçBÒfÇ6S°¢6WE7öç6÷$7F–öåVæF–ær†fÇ6R“°¢Ğ¢Ğ¢Ğ ¢gVæ7F–öâ÷Vå6W76–öä÷F–öç2‚’°¢–b‡7FFSòç6W76–öâ’°¢6WE&–÷&—G”Væ&ÆVB‡7FFRç6W76–öâç&–÷&—G•Ww&FU–ÖVçG4Væ&ÆVBÓÓÒG'VR“°¢6WE&–÷&—G•&–6T6VçG2‡7FFRç6W76–öâç&–÷&—G•Ww&FU&–6T6VçG2óò“°¢6WE&–÷&—G”7W'&Væ7’‡7FFRç6W76–öâç&–÷&—G•Ww&FT7W'&Væ7’óò'W6B"“°¢6WE6–væÄ†öÆDVæ&ÆVB‡7FFRç6W76–öâç6–væÄ†öÆE–ÖVçG4Væ&ÆVBÓÓÒG'VR“°¢6WE6–væÄ†öÆE&–6T6VçG2‡7FFRç6W76–öâç6–væÄ†öÆE&–6T6VçG2óò“°¢6WE6–væÄ†öÆD7W'&Væ7’‡7FFRç6W76–öâç6–væÄ†öÆD7W'&Væ7’óò'W6B"“°¢6WE6W76–öä6ööÆF÷vå6V6öæG2‡7FFRç6W76–öâç7V&Ö—76–öä6ööÆF÷vå6V6öæG2óò3“°¢Ğ¢6WE&–÷&—G”ÖW76vR†çVÆÂ“°¢6WE&–÷&—G•6fTW'&÷"†çVÆÂ“°¢6WE6W76–öä÷F–öç4÷Vâ‚‡fÇVR’ÓâfÇVR“°¢Ğ¢7–æ2gVæ7F–öâ6fU&–÷&—G•6WGF–æw2‚’°¢–b‡&–÷&—G”Væ&ÆVBbb&–÷&—G•&–6T6VçG2ÃÒ’°¢6WE&–÷&—G•6fTW'&÷"‚$6†V6¶÷WB&WV—&W2&–6R&÷fRâ"“°¢6WE&–÷&—G”ÖW76vR†çVÆÂ“°¢&WGW&ã°¢Ğ¢–b‡6–væÄ†öÆDVæ&ÆVBbb6–væÄ†öÆE&–6T6VçG2ÃÒ’°¢6WE&–÷&—G•6fTW'&÷"‚%6–væÂ†öÆB6†V6¶÷WB&WV—&W2&–6R&÷fRâ"“°¢6WE&–÷&—G”ÖW76vR†çVÆÂ“°¢&WGW&ã°¢Ğ¢6öç7B–EWw&FW4Væ&ÆVBÒ&–÷&—G”Væ&ÆVBbb&–÷&—G•&–6T6VçG2â°¢6öç7B–E6–væÄ†öÆDVæ&ÆVBÒ6–væÄ†öÆDVæ&ÆVBbb6–væÄ†öÆE&–6T6VçG2â°¢6WE&–÷&—G•6f–ær‡G'VR“°¢6WE&–÷&—G•6fTW'&÷"†çVÆÂ“°¢6WE&–÷&—G”ÖW76vR†çVÆÂ“°¢6öç7B6ööÆF÷väæW‡BÒv—B÷7B‡²7F–öã¢'WFFU7V&Ö—76–öä6ööÆF÷vå6WGF–æw2"Â7V&Ö—76–öä6ööÆF÷vå6V6öæG3¢6W76–öä6ööÆF÷vå6V6öæG2Ò“°¢6öç7B&–÷&—G”æW‡BÒ6ööÆF÷väæW‡Bòv—B÷7B‡²7F–öã¢'WFFU&–÷&—G•Ww&FU6WGF–æw2"ÂVæ&ÆVC¢–EWw&FW4Væ&ÆVBÂÆ&VÃ¢d•„TEõ$”õ$•E•ôÄ$TÂÂ–ç7G'V7F–öç3¢d•„TEõ$”õ$•E•ô”å5E%T5D”ôå2Â&–6T6VçG3¢&–÷&—G•&–6T6VçG2Â7W'&Væ7“¢&–÷&—G”7W'&Væ7’Â–ÖVçG4Væ&ÆVC¢–EWw&FW4Væ&ÆVBÒ’¢çVÆÃ°¢6öç7BæW‡BÒ&–÷&—G”æW‡Bòv—B÷7B‡²7F–öã¢'WFFU6–væÄ†öÆE6WGF–æw2"ÂVæ&ÆVC¢–E6–væÄ†öÆDVæ&ÆVBÂ&–6T6VçG3¢6–væÄ†öÆE&–6T6VçG2Â7W'&Væ7“¢6–væÄ†öÆD7W'&Væ7’Â–ÖVçG4Væ&ÆVC¢–E6–væÄ†öÆDVæ&ÆVBÒ’¢çVÆÃ°¢6WE&–÷&—G•6f–ær†fÇ6R“°¢–b‚æW‡B’°¢6WE&–÷&—G•6fTW'&÷"‚%6W76–öâ÷F–öç26÷VÆBæ÷B&R6fVBâ"“°¢&WGW&ã°¢Ğ¢6WE&–÷&—G”ÖW76vR‚%6W76–öâ÷F–öç26fVBâ"“°¢v–æF÷rç6WEF–ÖV÷WB‚‚’Óâ6WE&–÷&—G”ÖW76vR†çVÆÂ’Â3S“°¢Ğ ¢6öç7BÆæW2ÒW6TÖVÖò‚‚’Óâ°¢6öç7B7F—fRÒ7FFSòçVWVRóòµÓ°¢&WGW&â°¢&–÷&—G“¢7F—fRæf–ÇFW"†—5–E&–÷&—G•G&6²’À¢v†VVÃ¢7F—fRæf–ÇFW"‚†VçG'’’ÓâVçG'’æÆæRÓÓÒ'v†VVÂ"’À¢&VwVÆ#¢7F—fRæf–ÇFW"‚†VçG'’’ÓâVçG'’æÆæRÇÂVçG'’æÆæRÓÓÒ'&VwVÆ""ÇÂ†VçG'’æÆæRÓÓÒ'&–÷&—G’"bb—5–E&–÷&—G•G&6²†VçG'’’’’À¢7÷FÆ–v‡C¢7FFSòç7÷FÆ–v‡BóòµÒÀ¢Ó°¢ÒÂ·7FFUÒ“°¢6öç7B6W76–öäVçG&–W2ÒW6TÖVÖò‚‚’Óâ°¢6öç7BVçG&–W2Ò°¢âââ‡7FFSòçVWVRóòµÒ’À¢âââ‡7FFSòææW‡D–äÆ–æRò·7FFRææW‡D–äÆ–æUÒ¢µÒ’À¢âââ‡7FFSòææ÷uÆ––ærò·7FFRææ÷uÆ––æuÒ¢µÒ’À¢âââ‡7FFSòæ†—7F÷'’óòµÒ’À¢âââ‡7FFSòç&VÖ÷fVBóòµÒ’À¢âââ‡7FFSòç7÷FÆ–v‡BóòµÒ’À¢Ó°¢&WGW&â²ââææWrÖ†VçG&–W2æÖ‚†VçG'’’Óâ¶VçG'’æ–BÂVçG'•Ò’’çfÇVW2‚•Ó°¢ÒÂ·7FFUÒ“° ¢–b†W'&÷"’&WGW&âÆF—b6Æ74æÖSÒ&&÷&FW"&÷&FW"ÖFævW"óC&rÖFævW"óRÓbFW‡BÖFævW"#ç¶W'&÷'ÓÂöF—cã°¢6öç7B&VDöæÇ’Ò7FFSòç&VDöæÇ’óòfÇ6S°¢6öç7B†56W76–öâÒ&ööÆVâ‡7FFSòç6W76–öâ“°¢6öç7B†47W'&VçE6W76–öâÒ&ööÆVâ‡7FFSòç6W76–öâbb7FFRæ—47W'&VçE6W76–öâbb7FFRç6W76–öâç7FGW2ÓÒ&&6†—fVB"bb&VDöæÇ’“°¢6öç7B6–×VÆF–öä7&VF–öäÆÆ÷vVBÒ&ööÆVâ††47W'&VçE6W76–öâbb7FFSòç6W76–öãòç7FGW2ÓÓÒ&÷Vâ"bb7FFSòç6W76–öãòçVWVT÷Vâ“°¢6öç7B6ä6öçG&öÅ6W76–öâÒ†47W'&VçE6W76–öã°¢6öç7B—5&—fFUFW7E6W76–öâÒ&ööÆVâ€¢†47W'&VçE6W76–öâb`¢7FFSòç6W76–öâb`¢‡7FFRç6W76–öâçW'÷6RÓÓÒ'&V†V'6Â"ÇÀ¢7FFRç6W76–öâçW'÷6RÓÓÒ'6–×VÆF–öâ"ÇÀ¢7FFRç6W76–öâçW'÷6RÓÓÒ&–çFW&æÅ÷FW7B"’À¢“°¢6öç7BFW7D'&öF67DFV6´‡&VbÒ—5&—fFUFW7E6W76–öâbb7FFSòç6W76–öà¢òöFÖ–â÷VWVRö'&öF67B×FW7C÷6W76–öä–CÒG¶Væ6öFUU$”6ö×öæVçB‡7FFRç6W76–öâç6W76–öä–B—Òg7W&f6SÖFV6¶ ¢¢çVÆÃ°¢6öç7B—4&6†—fVE&Wf–WrÒ&ööÆVâ‡7FFSòç6W76–öãòç7FGW2ÓÓÒ&&6†—fVB"ÇÂ&VDöæÇ’“°¢6öç7BæW‡D–äÆ–æRÒ7FFSòææW‡D–äÆ–æRóòçVÆÃ°¢6öç7B6öæf—&ÖVEÆ–W"Ò7FFSòææ÷uÆ––æróòçVÆÃ°¢6öç7B†46ÆV&–æuG&ç6—F–öâÒ&ööÆVâ†6ÆV&–æuÆ–W$–B“°¢6öç7BVæF–æuÆ–W$ÆöBÒ&ööÆVâ†ÆöF–æuÆ–W$–Bbb‚6öæf—&ÖVEÆ–W"ÇÂ6öæf—&ÖVEÆ–W"æ–BÓÒÆöF–æuÆ–W$–B’“°¢6öç7BÆöFVEÆ–W"Ò†46ÆV&–æuG&ç6—F–öâòçVÆÂ¢VæF–æuÆ–W$ÆöBò†6öæf—&ÖVEÆ–W#òæ–BÓÓÒÆöF–æuÆ–W$–Bò6öæf—&ÖVEÆ–W"¢çVÆÂ’¢6öæf—&ÖVEÆ–W#°¢6öç7BÆ–W%FF–ærÒÆöFVEÆ–W"ò†Ö–æ–Ö—¦VBò'"Ó3""¢'"Õ³#&VÕÒ"’¢'"Ób#°¢6öç7B—4W‡Æ–6—E&Wf–WrÒ&ööÆVâ†–æ—F–Å6W76–öä–Dg&öÕW&Â‚’“°¢6öç7B6†÷uVWVU&Wf–WrÒ†47W'&VçE6W76–öâÇÂ—4W‡Æ–6—E&Wf–Ws°¢6öç7B†6TÆ&VÂÒ7FFSòç6W76–öãòæ'&öF67E†6RÓÓÒ&VæFVB"ò$VæFVBòF—66öææV7F–ær"¢7FFSòç6W76–öãòæ'&öF67E†6RÓÓÒ&'&öF67Eö7F—fR"ò$'&öF67B7F—fR"¢7FFSòç6W76–öãòæ'&öF67E†6RÓÓÒ'7V&Ö—76–öå÷v–æF÷r"ò%7V&Ö—76–öâv–æF÷r"¢%v&×W#°¢6öç7B†VÆE&–÷&—G”6÷VçBÒ‡7FFSòçVWVRóòµÒ’æf–ÇFW"‚†VçG'’’Óâ—5–E&–÷&—G•G&6²†VçG'’’bb&ööÆVâ†VçG'’ç&–÷&—G•W6VDB’’æÆVæwFƒ°¢6öç7BæW‡D–äÆ–æT†47F—fU&–÷&—G’Ò&ööÆVâ†æW‡D–äÆ–æRbbæW‡D–äÆ–æRæÆæRÓÓÒ'&–÷&—G’"bbæW‡D–äÆ–æRç&–÷&—G•W6VDBbb†æW‡D–äÆ–æRç&–÷&—G•Ww&FU7FGW2ÓÓÒ'–B"ÇÂæW‡D–äÆ–æRç&–÷&—G•Ww&FU7FGW2ÓÓÒ&ÖçVÂ"’“°¢6öç7BVWVVD7F—fU&–÷&—G”W†—7G2Ò‡7FFSòçVWVRóòµÒ’ç6öÖR‚†VçG'’’ÓâVçG'’æÆæRÓÓÒ'&–÷&—G’"bbVçG'’ç&–÷&—G•W6VDBbb†VçG'’ç&–÷&—G•Ww&FU7FGW2ÓÓÒ'–B"ÇÂVçG'’ç&–÷&—G•Ww&FU7FGW2ÓÓÒ&ÖçVÂ"’bbVçG'’ç7FGW2ÓÓÒ'VWVVB"“°¢6öç7B&W6öÇfW$÷fW'&–FT&Æö6¶VBÒæW‡D–äÆ–æT†47F—fU&–÷&—G’ÇÂVWVVD7F—fU&–÷&—G”W†—7G3°¢6öç7B6åVÆÅv†VVÄ6†÷6VâÒ&W6öÇfW$÷fW'&–FT&Æö6¶VBbb‡7FFSòçVWVRóòµÒ’ç6öÖR‚†VçG'’’ÓâVçG'’æÆæRÓÓÒ'v†VVÂ"bbVçG'’ç7FGW2ÓÓÒ'VWVVB"“°¢6öç7B6åVÆÄg&VUG&ç6Ö—76–öâÒ&W6öÇfW$÷fW'&–FT&Æö6¶VBbb‡7FFSòçVWVRóòµÒ’ç6öÖR‚†VçG'’’Óâ‚VçG'’æÆæRÇÂVçG'’æÆæRÓÓÒ'&VwVÆ""’bbVçG'’ç7FGW2ÓÓÒ'VWVVB"“°¢6öç7BF–Ö–æu7VÖÖ'’Ò'V–ÆEVWVUF–Ö–ætF—7Æ’‡VWVUF–Ö–æt–çWDg&öÔFÖ–å7FFR‡7FFR’Â²æ÷s¢æWrFFR†6Æö6´æ÷r’Ò“°¢6öç7BF÷&W77W&RÒF–Ö–æu7VÖÖ'’ç&W77W&U7VÖÖ'“°¢6öç7B7öç6÷$'&V´GVRÒF–Ö–æu7VÖÖ'’ç7öç6÷$'&Vµ7VÖÖ'’æGVTæ÷s°¢6öç7B&WVW7FVD6÷VçBÒ‡7FFSòçVWVRóòµÒ’æf–ÇFW"‚†VçG'’’Óâ†VçG'’ç&–÷&—G•Ww&FU7FGW2óò&æöæR"’ÓÓÒ'&WVW7FVB"’æÆVæwFƒ°¢6öç7B6†V6¶÷WEVæF–æt6÷VçBÒ‡7FFSòçVWVRóòµÒ’æf–ÇFW"‚†VçG'’’Óâ†VçG'’ç&–÷&—G•Ww&FU7FGW2óò&æöæR"’ÓÓÒ&6†V6¶÷WE÷VæF–ær"’æÆVæwFƒ°¢6öç7B–DæVVG4GFVçF–öä6÷VçBÒ‡7FFSòçVWVRóòµÒ’æf–ÇFW"‚†VçG'’’Óâ†VçG'’ç&–÷&—G•Ww&FU7FGW2óò&æöæR"’ÓÓÒ'–EöæVVG5öGFVçF–öâ"’æÆVæwFƒ°¢6öç7B6–væÄ†öÆD7F—fT6÷VçBÒ‡7FFSòçVWVRóòµÒ’æf–ÇFW"‚†VçG'’’ÓâVçG'’ç6–væÄ†öÆE7FGW2ÓÓÒ&7F—fR"’æÆVæwF‚²†æW‡D–äÆ–æSòç6–væÄ†öÆE7FGW2ÓÓÒ&7F—fR"ò¢“°¢6öç7B6–væÄ†öÆE&ö6W76–æt6÷VçBÒ‡7FFSòçVWVRóòµÒ’æf–ÇFW"‚†VçG'’’ÓâVçG'’ç6–væÄ†öÆE7FGW2ÓÓÒ&6†V6¶÷WE÷VæF–ær"’æÆVæwF‚²†æW‡D–äÆ–æSòç6–væÄ†öÆE7FGW2ÓÓÒ&6†V6¶÷WE÷VæF–ær"ò¢“°¢6öç7B6–væÄ†öÆDæVVG4GFVçF–öä6÷VçBÒ‡7FFSòçVWVRóòµÒ’æf–ÇFW"‚†VçG'’’ÓâVçG'’ç6–væÄ†öÆE7FGW2ÓÓÒ'–EöæVVG5öGFVçF–öâ"’æÆVæwF‚²†æW‡D–äÆ–æSòç6–væÄ†öÆE7FGW2ÓÓÒ'–EöæVVG5öGFVçF–öâ"ò¢“°¢6öç7Bv†VVÅ7–ç5VæÆö6¶VBÒ7FFSòç6W76–öãòçv†VVÅ7–ç4÷vVBóò°¢6öç7Bv†VVÄ÷fW&Æ•&VG’Òv†VVÅ7–ç5VæÆö6¶VBâ°¢6öç7Bv†VVÄ÷fW&Æ•7FGW4Æ&VÂÒ%v†VVÂ7–â&VG’#°¢6öç7B7F—fUG&6´–G2ÒæWr6WCÇ7G&–æsâ‚“°¢–b‡7FFSòææ÷uÆ––æsòæ–Bbb7FFRææ÷uÆ––æræ—5FW7EG&6²’7F—fUG&6´–G2æFB‡7FFRææ÷uÆ––æræ–B“°¢–b†æW‡D–äÆ–æSòæ–BbbæW‡D–äÆ–æRæ—5FW7EG&6²’7F—fUG&6´–G2æFB†æW‡D–äÆ–æRæ–B“°¢f÷"†6öç7BVçG'’öb7FFSòçVWVRóòµÒ’°¢–b†VçG'’ç7FGW2ÓÓÒ'VWVVB"bbVçG'’æ—5FW7EG&6²’7F—fUG&6´–G2æFB†VçG'’æ–B“°¢Ğ¢6öç7B7F—fUG&6´6÷VçBÒ7F—fUG&6´–G2ç6—¦S°¢6öç7B66WFVEG&6´6÷VçBÒ7FFSòçV&Æ–57FGW3òæ66WFVD6÷VçBóò7FFSòç6W76–öãòæ66WFVD6÷VçBóò7F—fUG&6´6÷VçC°¢6öç7B&ö¦V7FVE'VçF–ÖTÆ&VÂÒF–Ö–æu7VÖÖ'’ç6†÷u'VçF–ÖU7VÖÖ'’çV&Æ–5&ö¦V7FVDÆ&VÂóòF–Ö–æu7VÖÖ'’ç6†÷u'VçF–ÖU7VÖÖ'’ç&ö¦V7FVDÆ&VÂóò.(	B#°¢6öç7B66—G”6÷VçBÒ7FFSòçV&Æ–57FGW3òæ66—G’óò7FFSòç6W76–öãòçVWVT66—G’óòçVÆÃ°¢6öç7B66WFVD66—G”Æ&VÂÒ66—G”6÷VçBòG¶66WFVEG&6´6÷VçGÒòG¶66—G”6÷VçGÖ¢G¶66WFVEG&6´6÷VçGÖ°¢6öç7B6ö×ÆWFVD7F—fT66WFVDÆ&VÂÒG·7FFSòç6W76–öãòæ6ö×ÆWFVD6÷VçBóòÒòG¶7F—fUG&6´6÷VçGÒòG¶66WFVEG&6´6÷VçGÖ°¢6öç7B÷Våv†VVÅæVÂÒ‚’Óâ°¢6WD7F—fUWF–Æ—G•æVÂ‚&÷fW&Æ’"“°¢6WD÷fW&Æ•v†VVÄfö7W5F–6²‚‡fÇVR’ÓâfÇVR²“°¢Ó° ¢6öç7B&–Ä&÷GFöÔöfg6WD6Æ72ÒÆöFVEÆ–W"ò†Ö–æ–Ö—¦VBò&&÷GFöÒÓ#B"¢&&÷GFöÒÕ³"ãW&VÕÒ"’¢&&÷GFöÒÓR#°¢6öç7BF÷÷fW&Æ•FF–æt6Æ72ÒF÷&$Ö–æ–Ö—¦VBò'BÕ³BãW&VÕÒÖC§BÕ³BãsW&VÕÒ"¢'BÕ³rã#W&VÕÒÖC§BÕ³rãW&VÕÒ#°¢6öç7B6†÷tÆöu6W76–öåVW'’Ò7FFSòç6W76–öãòç6W76–öä–@¢òg6W76–öä–CÒG¶Væ6öFUU$”6ö×öæVçB‡7FFRç6W76–öâç6W76–öä–B—Ö ¢¢"#° ¢&WGW&â€¢ÆF—b6Æ74æÖS×¶G·Æ–W%FF–æwÒG·F÷÷fW&Æ•FF–æt6Æ77Ò76R×’Ó"†Ã§"Õ³#g&VÕÖÓà¢¶7F–öäW'&÷"bbÆF—b&öÆSÒ&ÆW'B"6Æ74æÖSÒ&&÷&FW"&÷&FW"ÖFævW"óS&rÖFævW"óÓ2FW‡B×6ÒFW‡BÖFævW"#ç¶7F–öäW'&÷'ÓÂöF—cçĞ¢Ç6V7F–öâ6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö&÷&FW"&r×7W&f6RÓãR#à¢ÆF—b6Æ74æÖSÒ&fÆW‚fÆW‚×w&vÓ"#à¢Æ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×²‚’Óâ6WD7F—fUWF–Æ—G•æVÂ‚‡fÇVR’ÓâfÇVRÓÓÒ'6W76–öâ"òçVÆÂ¢'6W76–öâ"—Ò6Æ74æÖSÒ&Ö–âÖ‚Ó’&÷&FW"&÷&FW"Ö&÷&FW"‚Ó2’ÓãRFW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#ç¶7F—fUWF–Æ—G•æVÂÓÓÒ'6W76–öâ"ò$†–FR6W76–öâ6WGW"¢%6W76–öâ6WGW'ÓÂö'WGFöãà¢Æ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×²‚’Óâ6WD7F—fUWF–Æ—G•æVÂ‚‡fÇVR’ÓâfÇVRÓÓÒ'f—7VÇ2"òçVÆÂ¢'f—7VÇ2"—Ò6Æ74æÖSÒ&Ö–âÖ‚Ó’&÷&FW"&÷&FW"Ö&÷&FW"‚Ó2’ÓãRFW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#ç¶7F—fUWF–Æ—G•æVÂÓÓÒ'f—7VÇ2"ò$†–FRF–væ÷7F–72"¢$F–væ÷7F–72'ÓÂö'WGFöãà¢Æ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×²‚’Óâ6WD7F—fUWF–Æ—G•æVÂ‚‡fÇVR’ÓâfÇVRÓÓÒ'f—7VÄ÷fW&Æ—2"òçVÆÂ¢'f—7VÄ÷fW&Æ—2"—Ò6Æ74æÖSÒ&Ö–âÖ‚Ó’&÷&FW"&÷&FW"×f–öÆWBÓCóc‚Ó2’ÓãRFW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡B×f–öÆWBÓ##ç¶7F—fUWF–Æ—G•æVÂÓÓÒ'f—7VÄ÷fW&Æ—2"ò$†–FRf—7VÂ÷fW&Æ—2"¢%f—7VÂ÷fW&Æ—2'ÓÂö'WGFöãà¢Æ'WGFöà¢G—SÒ&'WGFöâ ¢öä6Æ–6³×²‚’Óâ6WD7F—fUWF–Æ—G•æVÂ‚‡fÇVR’ÓâfÇVRÓÓÒ&÷fW&Æ’"òçVÆÂ¢&÷fW&Æ’"—Ğ¢6Æ74æÖS×¶Ö–âÖ‚Ó’&÷&FW"‚Ó2’ÓãRFW‡B×‡2WW&66RG&6¶–ær×v–FW7BG·v†VVÄ÷fW&Æ•&VG’ò&&÷&FW"Ö7–âÓ3&rÖ7–âÓ3ó#RFW‡BÖ7–âÓ6†F÷rÕ³óó#…÷&v&ƒ2Ã#3"Ã#C’Ãã#"•Ò"¢&&÷&FW"Ö&÷&FW"FW‡BÖ×WFVB'ÖĞ¢à¢¶7F—fUWF–Æ—G•æVÂÓÓÒ&÷fW&Æ’"ò$†–FRv†VVÂ÷fW&Æ’"¢v†VVÄ÷fW&Æ•&VG’ò%v†VVÂ÷fW&Æ’(	B7–â÷vVB"¢%v†VVÂ÷fW&Æ’'Ğ¢Âö'WGFöãà¢¶†56W76–öâbbÆ‡&Vc×¶ö’öFÖ–â÷VWVR÷6†÷rÖÆösöf÷&ÖCÖ77bG·6†÷tÆöu6W76–öåVW'—ÖÒ6Æ74æÖSÒ&–æÆ–æRÖfÆW‚Ö–âÖ‚Ó’—FV×2Ö6VçFW"&÷&FW"&÷&FW"Ö66VçBóc‚Ó2’ÓãRFW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡BÖ66VçB#å6†÷rÆör55cÂöçĞ¢¶†56W76–öâbbÆ‡&Vc×¶ö’öFÖ–â÷VWVR÷6†÷rÖÆösöf÷&ÖCÖ§6öâG·6†÷tÆöu6W76–öåVW'—ÖÒ6Æ74æÖSÒ&–æÆ–æRÖfÆW‚Ö–âÖ‚Ó’—FV×2Ö6VçFW"&÷&FW"&÷&FW"Ö&÷&FW"‚Ó2’ÓãRFW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#å6†÷rÆör¥4ôãÂöçĞ¢ÂöF—cà¢Â÷6V7F–öãà ¢¶7F—fUWF–Æ—G•æVÂÓÓÒ'6W76–öâ"bb†47W'&VçE6W76–öâbbÇ6V7F–öâ6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö66VçBóC&r×7W&f6RÓ276R×’Ó2#ãÆF—cãÇ6Æ74æÖSÒ'FW‡B×‡2WW&66RG&6¶–ærÕ³ãFVÕÒFW‡BÖ66VçB#å6W76–öâ6WGWÂ÷ãÆƒ"6Æ74æÖSÒ'FW‡BÖÆrföçBÖ&öÆBFW‡BÖf÷&Vw&÷VæB×BÓ#ç·7FFSòç6W76–öãòçF—FÆWÓÂöƒ#ãÇ6Æ74æÖSÒ'FW‡B×‡2FW‡BÖ×WFVB#ç·7FFSòç6W76–öãòç6†÷tFFWÒ+r·7FFSòç6W76–öãòç7FGW7ÓÂ÷ç·7FFSòç6W76–öãòæFW67&—F–öâbbÇ6Æ74æÖSÒ'FW‡B×‡2FW‡BÖ×WFVB×BÓ"Ö‚×rÓ'†Â#ç·7FFRç6W76–öâæFW67&—F–öçÓÂ÷çÓÂöF—cãÆF—b6Æ74æÖSÒ&fÆW‚fÆW‚×w&vÓ"#ãÆ‡&VcÒ"öFÖ–â÷6†÷rÖÖævVÖVçB"6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö66VçB‚Ó2’Ó"FW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡BÖ66VçB†÷fW#¦&rÖ66VçB†÷fW#§FW‡BÖ&6¶w&÷VæB#å6†÷rÖævVÖVçCÂöãÆ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×¶÷Vå6W76–öä÷F–öç7Ò6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö&÷&FW"‚Ó2’Ó"FW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB†÷fW#¦&÷&FW"Ö66VçB†÷fW#§FW‡BÖ66VçB#ç·6W76–öä÷F–öç4÷Vâò$†–FR6W76–öâ÷F–öç2"¢$VF—B6W76–öâ÷F–öç2'ÓÂö'WGFöããÂöF—cç¶6ä6öçG&öÅ6W76–öâbb6W76–öä÷F–öç4÷VâbbÇ6V7F–öâ6Æ74æÖSÒ'76R×’Ó2&÷&FW"&÷&FW"Ö&÷&FW"&rÖ&6¶w&÷VæBóCÓB#ãÆF—b6Æ74æÖSÒ&fÆW‚fÆW‚Ö6öÂvÓ2Æs¦fÆW‚×&÷rÆs¦—FV×2×7F'BÆs¦§W7F–g’Ö&WGvVVâ#ãÆF—cãÇ6Æ74æÖSÒ'FW‡B×‡2WW&66RG&6¶–ærÕ³ã6VÕÒFW‡BÖ66VçB#å6W76–öâ÷F–öç3Â÷ãÆƒ26Æ74æÖSÒ&×BÓFW‡BÖÆrföçBÖ&öÆBFW‡BÖf÷&Vw&÷VæB#å6W76–öâ÷F–öç3Âöƒ3ãÇ6Æ74æÖSÒ&×BÓFW‡B×‡2FW‡BÖ×WFVB#äöæÇ’F†RfW&–f–VB7G&—RvV&†öö²Ö&·2G&6²–B÷"Ö÷fW2—B–çFò&–÷&—G’6–væÂãÂ÷ãÂöF—cãÆF—b6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö&÷&FW"&r×7W&f6RÓ2FW‡B×6Ò#ãÇ6Æ74æÖSÒ'FW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#å7V&Ö—76–öâFVÆ“Â÷ãÇ6Æ74æÖSÒ&×BÓföçBÖ&öÆBFW‡BÖf÷&Vw&÷VæB#ç·6W76–öä6ööÆF÷vå6V6öæG2ÓÓÒò$F—6&ÆVB"¢G·6W76–öä6ööÆF÷vå6V6öæG7×6ÓÂ÷ãÂöF—cãÆF—b6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö&÷&FW"&r×7W&f6RÓ2FW‡B×6Ò#ãÇ6Æ74æÖSÒ'FW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#äF—7Æ’&–6SÂ÷ãÇ6Æ74æÖSÒ&×BÓföçBÖ&öÆBFW‡BÖf÷&Vw&÷VæB#ç¶f÷&ÖE&–6R‡&–÷&—G•&–6T6VçG2Â&–÷&—G”7W'&Væ7’—ÓÂ÷ãÂöF—cãÂöF—cãÆF—b6Æ74æÖSÒ&w&–BvÓ2ÖC¦w&–BÖ6öÇ2Õ¶Ö–æÖ‚ƒÃg"•öÖ–æÖ‚ƒ&VÒÃã3Vg"•Ò#ãÆÆ&VÂ6Æ74æÖSÒ'76R×’Ó"&Æö6²ÖC¦6öÂ×7âÓ"#ãÇ7â6Æ74æÖSÒ'FW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#å7V&Ö—76–öâFVÆ“Â÷7ããÆ–çWBG—SÒ&çVÖ&W""Ö–ã×³ÒÖƒ×³3cÒfÇVS×·6W76–öä6ööÆF÷vå6V6öæG7Òöä6†ævS×²†WfVçB’Óâ6WE6W76–öä6ööÆF÷vå6V6öæG2„ÖF‚æÖ‚ƒÂÖF‚æÖ–âƒ3cÂçVÖ&W"†WfVçBçF&vWBçfÇVR’’’—Ò6Æ74æÖSÒ'rÖgVÆÂ&rÖ&6¶w&÷VæB&÷&FW"&÷&FW"Ö&÷&FW"‚Ó2’Ó"FW‡B×6Ò"óãÇ7â6Æ74æÖSÒ&&Æö6²FW‡B×‡2FW‡BÖ×WFVB#äFVÆ’&WGvVVâ66WFVB7V&Ö—76–öç2g&öÒF†R6ÖR6÷W&6Râ6WBFòFòF—6&ÆRGW&–ærFW7F–ærãÂ÷7ããÂöÆ&VÃãÆÆ&VÂ6Æ74æÖSÒ&fÆW‚—FV×2Ö6VçFW"§W7F–g’Ö&WGvVVâvÓ2&÷&FW"&÷&FW"Ö&÷&FW"&r×7W&f6RÓ2FW‡B×6Ò#ãÇ7ããÇ7â6Æ74æÖSÒ&&Æö6²föçBÖ&öÆBFW‡BÖf÷&Vw&÷VæB#å–BWw&FW2·&–÷&—G”Væ&ÆVBò&Væ&ÆVB"¢&F—6&ÆVB'ÓÂ÷7ããÇ7â6Æ74æÖSÒ'FW‡B×‡2FW‡BÖ×WFVB#ä6öçG&öÇ27G&—R6†V6¶÷WBf–Æ&–Æ—G’f÷"F†—26W76–öâãÂ÷7ããÂ÷7ããÆ–çWBG—SÒ&6†V6¶&÷‚"6†V6¶VC×·&–÷&—G”Væ&ÆVGÒöä6†ævS×²†WfVçB’Óâ6WE&–÷&—G”Væ&ÆVB†WfVçBçF&vWBæ6†V6¶VB—ÒóãÂöÆ&VÃãÆÆ&VÂ6Æ74æÖSÒ'76R×’Ó"&Æö6²#ãÇ7â6Æ74æÖSÒ'FW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#å&–6SÂ÷7ããÆ–çWBG—SÒ&çVÖ&W""Ö–ã×³ÒfÇVS×·&–÷&—G•&–6T6VçG7Òöä6†ævS×²†WfVçB’Óâ6WE&–÷&—G•&–6T6VçG2„ÖF‚æÖ‚ƒÂçVÖ&W"†WfVçBçF&vWBçfÇVR’’—Ò6Æ74æÖSÒ'rÖgVÆÂ&rÖ&6¶w&÷VæB&÷&FW"&÷&FW"Ö&÷&FW"‚Ó2’Ó"FW‡B×6Ò"óãÇ7â6Æ74æÖSÒ&&Æö6²FW‡B×‡2FW‡BÖ×WFVB#äVçFW"6VçG2âW†×ÆS¢ÒCããÂ÷7ããÂöÆ&VÃãÂöF—cç·&–÷&—G•6fTW'&÷"bbÇ6Æ74æÖSÒ&&÷&FW"&÷&FW"ÖFævW"óC&rÖFævW"óÓ"FW‡B×6ÒFW‡BÖFævW"#ç·&–÷&—G•6fTW'&÷'ÓÂ÷ç×·&–÷&—G”ÖW76vRbbÇ6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö66VçBóS&rÖ66VçBóÓ"FW‡B×6ÒföçBÖ&öÆBFW‡BÖ66VçB#ç·&–÷&—G”ÖW76vWÓÂ÷çÓÆF—b6Æ74æÖSÒ&fÆW‚fÆW‚×w&vÓ"#ãÆ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×·6fU&–÷&—G•6WGF–æw7ÒF—6&ÆVC×·&–÷&—G•6f–æwÒ6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö66VçB&rÖ66VçBó‚ÓB’Ó"FW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡BÖ66VçB†÷fW#¦&rÖ66VçB†÷fW#§FW‡BÖ&6¶w&÷VæBF—6&ÆVC¦÷6—G’ÓS#ç·&–÷&—G•6f–ærò%6f–æ~(
+b"¢%6fR6WGF–æw2'ÓÂö'WGFöããÆ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×²‚’Óâ6WE6W76–öä÷F–öç4÷Vâ†fÇ6R—ÒF—6&ÆVC×·&–÷&—G•6f–æwÒ6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö&÷&FW"‚ÓB’Ó"FW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB†÷fW#¦&÷&FW"Ö66VçB†÷fW#§FW‡BÖ66VçBF—6&ÆVC¦÷6—G’ÓS#ä6Æ÷6SÂö'WGFöããÂöF—cãÂ÷6V7F–öãçÓÂ÷6V7F–öãçĞ ¢¶7F—fUWF–Æ—G•æVÂÓÓÒ'6W76–öâ"bb6ä6öçG&öÅ6W76–öâbb6W76–öä÷F–öç4÷VâbbÇ6V7F–öâ6Æ74æÖSÒ'76R×’Ó2&÷&FW"&÷&FW"Ö7–âÓ3óC&rÖ7–âÓ3óRÓB#à¢ÆF—cãÇ6Æ74æÖSÒ'FW‡B×‡2WW&66RG&6¶–ærÕ³ã6VÕÒFW‡BÖ7–âÓ##å6–væÂ†öÆCÂ÷ãÇ6Æ74æÖSÒ&×BÓFW‡B×‡2FW‡BÖ×WFVB#äF—6&ÆVB'’FVfVÇBâ–bâ'6VçB'F—7B—26ÆÆVBÂF†—2ÆWG2F†R†÷7BÖ÷fRF†R&÷FV7FVBG&6²FòF†R&÷GFöÒ–ç7FVBöb&VÖ÷f–ær—BâöæR6†÷röæÇ“²æòÆ6R&W6W'fF–öâ÷"wV&çFVVBÆ’ãÂ÷ãÂöF—cà¢ÆF—b6Æ74æÖSÒ&w&–BvÓ2ÖC¦w&–BÖ6öÇ2Õ¶Ö–æÖ‚ƒÃg"•öÖ–æÖ‚ƒ&VÒÃã3Vg"•Ò#à¢ÆÆ&VÂ6Æ74æÖSÒ&fÆW‚—FV×2Ö6VçFW"§W7F–g’Ö&WGvVVâvÓ2&÷&FW"&÷&FW"Ö&÷&FW"&r×7W&f6RÓ2FW‡B×6Ò#ãÇ7ããÇ7â6Æ74æÖSÒ&&Æö6²föçBÖ&öÆBFW‡BÖf÷&Vw&÷VæB#å6–væÂ†öÆB·6–væÄ†öÆDVæ&ÆVBò&Væ&ÆVB"¢&F—6&ÆVB'ÓÂ÷7ããÇ7â6Æ74æÖSÒ'FW‡B×‡2FW‡BÖ×WFVB#å&WV—&W2&–6R&÷fRæB–BvV&†öö²6öæf—&ÖF–öâãÂ÷7ããÂ÷7ããÆ–çWBG—SÒ&6†V6¶&÷‚"6†V6¶VC×·6–væÄ†öÆDVæ&ÆVGÒöä6†ævS×²†WfVçB’Óâ6WE6–væÄ†öÆDVæ&ÆVB†WfVçBçF&vWBæ6†V6¶VB—ÒóãÂöÆ&VÃà¢ÆÆ&VÂ6Æ74æÖSÒ'76R×’Ó"&Æö6²#ãÇ7â6Æ74æÖSÒ'FW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#å6–væÂ†öÆB&–6SÂ÷7ããÆ–çWBG—SÒ&çVÖ&W""Ö–ã×³ÒfÇVS×·6–væÄ†öÆE&–6T6VçG7Òöä6†ævS×²†WfVçB’Óâ6WE6–væÄ†öÆE&–6T6VçG2„ÖF‚æÖ‚ƒÂçVÖ&W"†WfVçBçF&vWBçfÇVR’’—Ò6Æ74æÖSÒ'rÖgVÆÂ&÷&FW"&÷&FW"Ö&÷&FW"&rÖ&6¶w&÷VæB‚Ó2’Ó"FW‡B×6Ò"óãÇ7â6Æ74æÖSÒ&&Æö6²FW‡B×‡2FW‡BÖ×WFVB#ç¶f÷&ÖE&–6R‡6–væÄ†öÆE&–6T6VçG2Â6–væÄ†öÆD7W'&Væ7’—ÓÂ÷7ããÂöÆ&VÃà¢ÂöF—cà¢Â÷6V7F–öãçĞ ¢¶7F—fUWF–Æ—G•æVÂÓÓÒ'f—7VÇ2"bb6ä6öçG&öÅ6W76–öâbbÇ6V7F–öâ6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö&÷&FW"óƒ&r×7W&f6RósÓ2#ãÄFÖ–å'VçF–ÖTF–væ÷7F–72F–Ö–æu7VÖÖ'“×·F–Ö–æu7VÖÖ'—Ò6ä6öçG&öÃ×¶6ä6öçG&öÅ6W76–öçÒöå7öç6÷$7F–öã×·WFFU7öç6÷$'&Vµ7FFWÒ7öç6÷$7F–öåVæF–æs×·7öç6÷$7F–öåVæF–æwÒ6W76–öä–C×·7FFSòç6W76–öãòç6W76–öä–BóòçVÆÇÒÆ–&6´F–væ÷7F–73×·7FFSòçÆ–&6´F–væ÷7F–72óòçVÆÇÒóãÂ÷6V7F–öãçĞ ¢¶7F—fUWF–Æ—G•æVÂÓÓÒ'f—7VÄ÷fW&Æ—2"bb6ä6öçG&öÅ6W76–öâbbÇ6V7F–öâ6Æ74æÖSÒ&&÷&FW"&÷&FW"×f–öÆWBÓCó3&r×7W&f6RósÓ2#ãÄFÖ–å&F–õf—7VÇ46öçG&öÂóãÂ÷6V7F–öãçĞ ¢¶7F—fUWF–Æ—G•æVÂÓÓÒ&÷fW&Æ’"bb6ä6öçG&öÅ6W76–öâbbÇ6V7F–öâ6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö&÷&FW"óƒ&r×7W&f6RósÓ2#ãÄFÖ–äÆ—fT÷fW&Æ”6öçG&öÂfö7W5v†VVÅF–6³×¶÷fW&Æ•v†VVÄfö7W5F–6·ÒóãÂ÷6V7F–öãçĞ ¢¶—4&6†—fVE&Wf–Wrbb†56W76–öâbbÆF—b6Æ74æÖSÒ&&÷&FW"&÷&FW"ÖFævW"óC&rÖFævW"óÓ2FW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡BÖFævW"#ä$4„•dTBò$TBôäÅ’(	Bf–Wv–ær·7FFSòç6W76–öãòçF—FÆRóò&f–æ—6†VB6W76–öâ'ÒâVWVR&Wf–Wr7F–öç2&RÆö6¶VBf÷"F†—2f–æ—6†VB6W76–öâãÂöF—cçĞ ¢¶Ö÷VçFVBbb6ä6öçG&öÅ6W76–öâbb7&VFU÷'FÂƒÇ6V7F–öâ6Æ74æÖSÒ&f—†VBÆVgBÓB&–v‡BÓBF÷Õ¶6Æ2ƒ2ãW&VÒ¶Vçb‡6fRÖ&VÖ–ç6WB×F÷’•Ò¢Õ³ƒSÒ76R×’ÓãR&÷&FW"&÷&FW"Ö&÷&FW"&rÖ&6¶w&÷VæBó“RÓ"ãRFW‡B×6Ò6†F÷rÓ'†Â&6¶G&÷Ö&ÇW"#à¢ÆF—b6Æ74æÖSÒ&fÆW‚fÆW‚×w&—FV×2Ö6VçFW"§W7F–g’Ö&WGvVVâvÓ"#à¢ÆF—b6Æ74æÖSÒ&Ö–â×rÓ#à¢Ç6Æ74æÖSÒ'G'Væ6FRFW‡BÕ³…ÒWW&66RG&6¶–ærÕ³ã&VÕÒFW‡BÖ×WFVB#ç·7FFSòç6W76–öãòçF—FÆWÒ+r·7FFSòç6W76–öãòç6†÷tFFWÓÂ÷à¢ÂöF—cà¢ÆF—b6Æ74æÖSÒ&fÆW‚fÆW‚×w&—FV×2Ö6VçFW"§W7F–g’ÖVæBvÓ"#à¢·7öç6÷$'&V´GVRbbÆ'WGFöâG—SÒ&'WGFöâ"F—6&ÆVC×·7öç6÷$7F–öåVæF–æwÒöä6Æ–6³×²‚’ÓâWFFU7öç6÷$'&Vµ7FFR‚'7F'B"—Ò6Æ74æÖSÒ&Ö–âÖ‚Ó&÷&FW"Ó"&÷&FW"Õ²6ffÒ&rÕ²6ffÒ‚Ó2’Ó"föçBÖ&Æ6²WW&66RG&6¶–ær×v–FW7BFW‡BÖ&6¶w&÷VæB6†F÷rÕ³óó#‡…÷&v&ƒ#SRÃsÃÃãSR•Òæ–ÖFR×VÇ6R†÷fW#¦&rÕ²6ff&CFÒF—6&ÆVC¦7W'6÷"×v—BF—6&ÆVC¦÷6—G’ÓsÖ÷F–öâ×&VGV6S¦æ–ÖFRÖæöæR6Ó§‚ÓB#ãÇ7â6Æ74æÖSÒ'6Ó¦†–FFVâ#ç·7öç6÷$7F–öåVæF–ærò%7F'F–æ~(
+b"¢%7F'B'&V²'ÓÂ÷7ããÇ7â6Æ74æÖSÒ&†–FFVâ6Ó¦–æÆ–æR#ç·7öç6÷$7F–öåVæF–ærò%7F'F–ær7öç6÷"'&V¾(
+b"¢%7F'B7öç6÷"'&V²'ÓÂ÷7ããÂö'WGFöãçĞ¢·7FFSòç6W76–öãòçW'÷6RÓÓÒ'&V†V'6Â"bbÄFÖ–å&V†V'6Å6†&TÆ–æ²6W76–öä–C×·7FFRç6W76–öâç6W76–öä–GÒ6ö×7BóçĞ¢·FW7D'&öF67DFV6´‡&VbbbÆ‡&Vc×·FW7D'&öF67DFV6´‡&VgÒF&vWCÒ%ö&Ææ²"&VÃÒ&æ÷&VfW'&W""6Æ74æÖSÒ&–æÆ–æRÖfÆW‚Ö–âÖ‚Ó—FV×2Ö6VçFW"&÷&FW"Ó"&÷&FW"Ö7–âÓ3&rÖ7–âÓ3óR‚Ó2’Ó"föçBÖ&Æ6²WW&66RG&6¶–ær×v–FW7BFW‡BÖ7–âÓ†÷fW#¦&rÖ7–âÓ3†÷fW#§FW‡BÖ&6¶w&÷VæB6Ó§‚ÓB#ä÷VâFW7B'&öF67BFV6³ÂöçĞ¢Æ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×²‚’Óâ6WEF÷&$Ö–æ–Ö—¦VB‚‡fÇVR’ÓâfÇVR—Ò6Æ74æÖSÒ&Ö–âÖ‚Ó&÷&FW"&÷&FW"Ö&÷&FW"‚Ó2’Ó"WW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#ç·F÷&$Ö–æ–Ö—¦VBò$W‡æB"¢$Ö–æ–Ö—¦R'ÓÂö'WGFöãà¢ÂöF—cà¢ÂöF—cà¢·F÷&$Ö–æ–Ö—¦VBòÆF—b6Æ74æÖSÒ&fÆW‚fÆW‚×w&—FV×2Ö6VçFW"vÓ"#à¢Ç7â6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö&÷&FW"‚Ó"’ÓWW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#å†6S¢·†6TÆ&VÇÓÂ÷7ãà¢Ç7â6Æ74æÖS×¶&÷&FW"‚Ó"’ÓWW&66RG&6¶–ær×v–FW7BG·7FFSòçV&Æ–57FGW3òæ—4÷Vâò&&÷&FW"Ö66VçBóSFW‡BÖ66VçB"¢&&÷&FW"ÖFævW"óSFW‡BÖFævW"'ÖÓå7V&Ö—76–öç3¢·7FFSòçV&Æ–57FGW3òæ—4÷Vâò$÷Vâ"¢$6Æ÷6VB'ÓÂ÷7ãà¢Ç7â6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö&÷&FW"‚Ó"’ÓWW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#ä66WFVBò66—G“¢¶66WFVD66—G”Æ&VÇÓÂ÷7ãà¢Ç7â6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö&÷&FW"‚Ó"’ÓWW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#ä6ö×ÆWFVBò7F—fRò66WFVC¢¶6ö×ÆWFVD7F—fT66WFVDÆ&VÇÓÂ÷7ãà¢Ç7â6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö&÷&FW"‚Ó"’ÓWW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#äVÆ6VC¢·F–Ö–æu7VÖÖ'’ç6†÷u'VçF–ÖU7VÖÖ'’æVÆ6VDÆ&VÇÓÂ÷7ãà¢Ç7â6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö&÷&FW"‚Ó"’ÓWW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#å&VÖ–æ–æs¢·F–Ö–æu7VÖÖ'’ç6†÷u'VçF–ÖU7VÖÖ'’ç&VÖ–æ–ætÆ&VÇÓÂ÷7ãà¢Ç7â6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö&÷&FW"‚Ó"’ÓWW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#äVæC¢·F–Ö–æu7VÖÖ'’ç6†÷u'VçF–ÖU7VÖÖ'’æW7F–ÖFVDVæDÆ&VÇÓÂ÷7ãà¢Ç7â6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö&÷&FW"‚Ó"’ÓWW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#å&ö¦V7FVC¢·&ö¦V7FVE'VçF–ÖTÆ&VÇÓÂ÷7ãà¢ÅF÷&$6öÖÖW&6–Ä6†—7VÖÖ'“×·F–Ö–æu7VÖÖ'’ç7öç6÷$'&Vµ7VÖÖ'—Òóà¢ÅF÷&%&W77W&T6†—&W77W&S×·F÷&W77W&WÒÖ–æ–Ö—¦VBóà¢·v†VVÅ7–ç5VæÆö6¶VBâbbÃà¢Ç7â6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö7–âÓ3óS&rÖ7–âÓ3ó‚Ó"’ÓWW&66RG&6¶–ær×v–FW7BFW‡BÖ7–âÓ##åv†VVÃ¢·v†VVÅ7–ç5VæÆö6¶VGÒ÷vVCÂ÷7ãà¢Æ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×¶÷Våv†VVÅæVÇÒ6Æ74æÖSÒ&Ö–âÖ‚Ó’&÷&FW"&÷&FW"Ö7–âÓ3ós&rÖ7–âÓ3óR‚Ó"ãR’ÓWW&66RG&6¶–ær×v–FW7BFW‡BÖ7–âÓ†÷fW#¦&rÖ7–âÓ3†÷fW#§FW‡BÖ&6¶w&÷VæB#ä÷Vâv†VVÃÂö'WGFöãà¢ÂóçĞ¢¶æW‡D–äÆ–æRbbÇ7â6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö&÷&FW"‚Ó"’ÓWW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#äæW‡C¢·7V&Ö—GFVD'F—7B†æW‡D–äÆ–æR—Ò(	B·7V&Ö—GFVEF—FÆR†æW‡D–äÆ–æR—ÓÂ÷7ãçĞ¢ÂöF—câ¢Ãà¢ÆF—b6Æ74æÖSÒ&fÆW‚fÆW‚×w&—FV×2Ö6VçFW"v×‚ÓBv×’Ó#à¢ÆF—cãÇ6Æ74æÖSÒ'FW‡BÕ³…ÒWW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#å6†÷r†6SÂ÷ãÇ6Æ74æÖSÒ&×BÓföçBÖ&öÆBFW‡BÖf÷&Vw&÷VæB#ç·†6TÆ&VÇÓÂ÷ãÂöF—cà¢ÆF—cãÇ6Æ74æÖSÒ'FW‡BÕ³…ÒWW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#å7V&Ö—76–öç3Â÷ãÇ6Æ74æÖS×¶×BÓföçBÖ&öÆBG·7FFSòçV&Æ–57FGW3òæ—4÷Vâò'FW‡BÖ66VçB"¢'FW‡BÖFævW"'ÖÓç·7FFSòçV&Æ–57FGW3òæ—4÷Vâò$÷Vâ"¢$6Æ÷6VB'ÓÂ÷ãÂöF—cà¢ÆF—cãÇ6Æ74æÖSÒ'FW‡BÕ³…ÒWW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#ä66WFVBò66—G“Â÷ãÇ6Æ74æÖSÒ&×BÓföçBÖ&öÆBFW‡BÖf÷&Vw&÷VæB#ç¶66WFVD66—G”Æ&VÇÓÂ÷ãÂöF—cà¢ÆF—cãÇ6Æ74æÖSÒ'FW‡BÕ³…ÒWW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#ä6ö×ÆWFVBò7F—fRò66WFVCÂ÷ãÇ6Æ74æÖSÒ&×BÓföçBÖ&öÆBFW‡BÖf÷&Vw&÷VæB#ç¶6ö×ÆWFVD7F—fT66WFVDÆ&VÇÓÂ÷ãÂöF—cà¢ÆF—cãÇ6Æ74æÖSÒ'FW‡BÕ³…ÒWW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#äVÆ6VCÂ÷ãÇ6Æ74æÖSÒ&×BÓföçBÖ&öÆBFW‡BÖf÷&Vw&÷VæB#ç·F–Ö–æu7VÖÖ'’ç6†÷u'VçF–ÖU7VÖÖ'’æVÆ6VDÆ&VÇÓÂ÷ãÂöF—cà¢ÆF—cãÇ6Æ74æÖSÒ'FW‡BÕ³…ÒWW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#å&ö¦V7FVB&VÖ–æ–æsÂ÷ãÇ6Æ74æÖSÒ&×BÓföçBÖ&öÆBFW‡BÖf÷&Vw&÷VæB#ç·F–Ö–æu7VÖÖ'’ç6†÷u'VçF–ÖU7VÖÖ'’ç&VÖ–æ–ætÆ&VÇÓÂ÷ãÂöF—cà¢ÆF—cãÇ6Æ74æÖSÒ'FW‡BÕ³…ÒWW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#äW7F–ÖFVBVæCÂ÷ãÇ6Æ74æÖSÒ&×BÓföçBÖ&öÆBFW‡BÖf÷&Vw&÷VæB#ç·F–Ö–æu7VÖÖ'’ç6†÷u'VçF–ÖU7VÖÖ'’æW7F–ÖFVDVæDÆ&VÇÓÂ÷ãÂöF—cà¢ÆF—cãÇ6Æ74æÖSÒ'FW‡BÕ³…ÒWW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#å&ö¦V7FVB'VçF–ÖSÂ÷ãÇ6Æ74æÖSÒ&×BÓföçBÖ&öÆBFW‡BÖf÷&Vw&÷VæB#ç·&ö¦V7FVE'VçF–ÖTÆ&VÇÓÂ÷ãÂöF—cà¢ÅF÷&$6öÖÖW&6–Ä6†—7VÖÖ'“×·F–Ö–æu7VÖÖ'’ç7öç6÷$'&Vµ7VÖÖ'—Òóà¢ÅF÷&%&W77W&T6†—&W77W&S×·F÷&W77W&WÒóà¢·v†VVÅ7–ç5VæÆö6¶VBâbbÆF—b6Æ74æÖSÒ'76R×’Ó#ãÇ6Æ74æÖSÒ'FW‡BÕ³…ÒWW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#åv†VVÃÂ÷ãÇ6Æ74æÖSÒ&föçBÖ&öÆBFW‡BÖ7–âÓ##ç·v†VVÅ7–ç5VæÆö6¶VGÒ÷vVCÂ÷ãÆ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×¶÷Våv†VVÅæVÇÒ6Æ74æÖSÒ&Ö–âÖ‚Ó’&÷&FW"&÷&FW"Ö7–âÓ3ós&rÖ7–âÓ3óR‚Ó2’ÓFW‡BÕ³…ÒWW&66RG&6¶–ær×v–FW7BFW‡BÖ7–âÓ†÷fW#¦&rÖ7–âÓ3†÷fW#§FW‡BÖ&6¶w&÷VæB#ä÷Vâv†VVÂæVÃÂö'WGFöããÂöF—cçĞ¢ÂöF—cà¢ÆF—b6Æ74æÖSÒ&fÆW‚fÆW‚×w&vÓ"#à¢Æ'WGFöâöä6Æ–6³×²‚’ÓâFövvÆT÷Vâ‚7FFSòçV&Æ–57FGW3òæ—4÷Vâ—Ò6Æ74æÖS×¶G·7FFSòçV&Æ–57FGW3òæ—4÷Vâò&&÷&FW"ÖFævW"óSFW‡BÖFævW"†÷fW#¦&rÖFævW""¢&&÷&FW"Ö66VçBFW‡BÖ66VçB†÷fW#¦&rÖ66VçB'ÒÖ–âÖ‚Ó&÷&FW"‚Ó2’Ó"WW&66RG&6¶–ær×v–FW7B†÷fW#§FW‡BÖ&6¶w&÷VæFÓç·7FFSòçV&Æ–57FGW3òæ—4÷Vâò$6Æ÷6R7V&Ö—76–öç2"¢$÷Vâ7V&Ö—76–öç2'ÓÂö'WGFöãà¢·7FFSòç6W76–öãòç6†÷u7F'FVBÓÒG'VRbbÆ'WGFöâöä6Æ–6³×²‚’Óâ7F–öâ‚""Â'7F'E6†÷r"—Ò6Æ74æÖSÒ&Ö–âÖ‚Ó&÷&FW"&÷&FW"Öf÷&Vw&÷VæBóS‚Ó2’Ó"WW&66RG&6¶–ær×v–FW7BFW‡BÖf÷&Vw&÷VæB†÷fW#¦&rÖf÷&Vw&÷VæB†÷fW#§FW‡BÖ&6¶w&÷VæB#å7F'B'&öF67CÂö'WGFöãçĞ¢Æ'WGFöâöä6Æ–6³×²‚’Óâ7F–öâ‚""Â&FEv†VVÅ7–ä÷vVB"—Ò6Æ74æÖSÒ&Ö–âÖ‚Ó&÷&FW"&÷&FW"Ö7–âÓ3óc‚Ó2’Ó"WW&66RG&6¶–ær×v–FW7BFW‡BÖ7–âÓ#†÷fW#¦&rÖ7–âÓ3†÷fW#§FW‡BÖ&6¶w&÷VæB#äFBv†VVÂ7–ãÂö'WGFöãà¢ÆFWF–Ç26Æ74æÖSÒ&w&÷W&VÆF—fR#ãÇ7VÖÖ'’6Æ74æÖSÒ&Æ—7BÖæöæR7W'6÷"×ö–çFW"Ö–âÖ‚Ó&÷&FW"&÷&FW"Ö&÷&FW"óƒ‚Ó2’Ó"WW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB†÷fW#¦&÷&FW"Öf÷&Vw&÷VæBóc†÷fW#§FW‡BÖf÷&Vw&÷VæB#å&W6öÇfW"÷fW'&–FR)kãÂ÷7VÖÖ'“ãÆF—b6Æ74æÖSÒ&'6öÇWFRÆVgBÓ¢Ó3×BÓ"rÓcB76R×’Ó"&÷&FW"&÷&FW"Ö&÷&FW"&rÖ&6¶w&÷VæBÓ26†F÷r×†Â#ãÇ6Æ74æÖSÒ'FW‡BÕ³…ÒWW&66RG&6¶–ærÕ³ã&VÕÒFW‡BÖ×WFVB#åW6Rf÷"Æ—fRÖçVÂ6÷'&V7F–öââF†—2FöW2æ÷B6÷VçBF†R7W'&VçB6Æ÷B2Æ–VBãÂ÷ãÆ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×²‚’Óâ7F–öâ‚""Â'VÆÅv†VVÄ6†÷6Vâ"—ÒF—6&ÆVC×²6åVÆÅv†VVÄ6†÷6VçÒ6Æ74æÖSÒ&&Æö6²rÖgVÆÂÖ–âÖ‚Ó&÷&FW"&÷&FW"Ö7–âÓ3óc‚Ó2’Ó"FW‡BÖÆVgBWW&66RG&6¶–ær×v–FW7BFW‡BÖ7–âÓ#†÷fW#¦&rÖ7–âÓ3†÷fW#§FW‡BÖ&6¶w&÷VæBF—6&ÆVC¦7W'6÷"Öæ÷BÖÆÆ÷vVBF—6&ÆVC¦÷6—G’ÓC#åVÆÂv†VVÂ6†÷6VãÂö'WGFöããÆ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×²‚’Óâ7F–öâ‚""Â'VÆÄg&VUG&ç6Ö—76–öâ"—ÒF—6&ÆVC×²6åVÆÄg&VUG&ç6Ö—76–öçÒ6Æ74æÖSÒ&&Æö6²rÖgVÆÂÖ–âÖ‚Ó&÷&FW"&÷&FW"Öf÷&Vw&÷VæBóC‚Ó2’Ó"FW‡BÖÆVgBWW&66RG&6¶–ær×v–FW7BFW‡BÖf÷&Vw&÷VæB†÷fW#¦&rÖf÷&Vw&÷VæB†÷fW#§FW‡BÖ&6¶w&÷VæBF—6&ÆVC¦7W'6÷"Öæ÷BÖÆÆ÷vVBF—6&ÆVC¦÷6—G’ÓC#åVÆÂg&VRG&ç6Ö—76–öãÂö'WGFöãç·&W6öÇfW$÷fW'&–FT&Æö6¶VBbbÇ6Æ74æÖSÒ'FW‡BÕ³…ÒWW&66RG&6¶–ærÕ³ãfVÕÒFW‡BÕ²6ffÒ#ä&Æö6¶VBv†–ÆR7F—fR&–÷&—G’÷vç2F†R&W6öÇfW"ãÂ÷çÓÂöF—cãÂöFWF–Ç3à¢Æ'WGFöâöä6Æ–6³×²‚’Óâ6WDVæD6öæf—&Ô÷Vâ‡G'VR—Ò6Æ74æÖSÒ&ÖÂÖWFòÖ–âÖ‚Ó&÷&FW"&÷&FW"ÖFævW"óc‚Ó2’Ó"FW‡B×6ÒWW&66RG&6¶–ær×v–FW7BFW‡BÖFævW"†÷fW#¦&rÖFævW"†÷fW#§FW‡BÖ&6¶w&÷VæB#äVæB'&öF67CÂö'WGFöãà¢ÂöF—cà¢ÆF—b6Æ74æÖSÒ&fÆW‚fÆW‚×w&vÓ"#à¢Ç7â6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö&÷&FW"‚Ó"’ÓWW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#å†6S¢·†6TÆ&VÇÓÂ÷7ãà¢·&WVW7FVD6÷VçBâbbÇ7â6Æ74æÖSÒ&&÷&FW"&÷&FW"Õ²63#sƒ5ÒóC&rÕ²63#sƒ5Òó‚Ó"’ÓWW&66RG&6¶–ær×v–FW7BFW‡BÕ²63#sƒ5Ò#å–ÖVçB&WVW7FVC¢·&WVW7FVD6÷VçGÓÂ÷7ãçĞ¢¶6†V6¶÷WEVæF–æt6÷VçBâbbÇ7â6Æ74æÖSÒ&&÷&FW"&÷&FW"Õ²6ffÒóC&rÕ²6ffÒó‚Ó"’ÓWW&66RG&6¶–ær×v–FW7BFW‡BÕ²6ffÒ#ä6†V6¶÷WBVæF–æs¢¶6†V6¶÷WEVæF–æt6÷VçGÓÂ÷7ãçĞ¢·–DæVVG4GFVçF–öä6÷VçBâbbÇ7â6Æ74æÖSÒ&&÷&FW"&÷&FW"ÖFævW"óc&rÖFævW"óR‚Ó"’ÓWW&66RG&6¶–ær×v–FW7BFW‡BÖFævW"#å–BæVVG2GFVçF–öã¢·–DæVVG4GFVçF–öä6÷VçGÓÂ÷7ãçĞ¢¶†VÆE&–÷&—G”6÷VçBâbbÇ7â6Æ74æÖSÒ&&÷&FW"&÷&FW"Õ²6ffÒóC&rÕ²6ffÒó‚Ó"’ÓWW&66RG&6¶–ær×v–FW7BFW‡BÕ²6ffÒ#åW6VB&–÷&—G“¢¶†VÆE&–÷&—G”6÷VçGÓÂ÷7ãçĞ¢·6–væÄ†öÆD7F—fT6÷VçBâbbÇ7â6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö7–âÓ3óS&rÖ7–âÓ3ó‚Ó"’ÓWW&66RG&6¶–ær×v–FW7BFW‡BÖ7–âÓ##å6–væÂ†öÆB7F—fS¢·6–væÄ†öÆD7F—fT6÷VçGÓÂ÷7ãçĞ¢·6–væÄ†öÆE&ö6W76–æt6÷VçBâbbÇ7â6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö7–âÓ3óC&rÖ7–âÓ3óR‚Ó"’ÓWW&66RG&6¶–ær×v–FW7BFW‡BÖ7–âÓ##å6–væÂ†öÆB–ÖVçB&ö6W76–æs¢·6–væÄ†öÆE&ö6W76–æt6÷VçGÓÂ÷7ãçĞ¢·6–væÄ†öÆDæVVG4GFVçF–öä6÷VçBâbbÇ7â6Æ74æÖSÒ&&÷&FW"&÷&FW"ÖFævW"óc&rÖFævW"óR‚Ó"’ÓWW&66RG&6¶–ær×v–FW7BFW‡BÖFævW"#å6–væÂ†öÆBæVVG2GFVçF–öã¢·6–væÄ†öÆDæVVG4GFVçF–öä6÷VçGÓÂ÷7ãçĞ¢²æW‡D–äÆ–æRbbÇ7â6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö&÷&FW"&r×7W&f6R‚Ó"’ÓWW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#äæòæW‡B–âÆ–æSÂ÷7ãçĞ¢·&W6öÇfW$÷fW'&–FT&Æö6¶VBbbÇ7â6Æ74æÖSÒ&&÷&FW"&÷&FW"Õ²6ffÒóC&rÕ²6ffÒó‚Ó"’ÓWW&66RG&6¶–ær×v–FW7BFW‡BÕ²6ffÒ#å&W6öÇfW"÷fW'&–FR&Æö6¶VCÂ÷7ãçĞ¢ÂöF—cà¢ÂóçĞ¢Â÷6V7F–öãâÂFö7VÖVçBæ&öG’—Ğ ¢¶Ö÷VçFVBbb6ä6öçG&öÅ6W76–öâbbÄFÖ–åF–ÖT&æµFö7BF–Ö–æs×·F–Ö–æu7VÖÖ'’çF–ÖT&æµ7VÖÖ'—Ò6W76–öä–C×·7FFSòç6W76–öãòç6W76–öä–BóòçVÆÇÒóçĞ ¢¶Ö÷VçFVBbbVæD6öæf—&Ô÷Vâbb7&VFU÷'FÂƒÆF—b6Æ74æÖSÒ&f—†VB–ç6WBÓ¢Õ³Òw&–BÆ6RÖ—FV×2Ö6VçFW"&rÖ&Æ6²óƒÓB&6¶G&÷Ö&ÇW"×6Ò#ãÆF—b&öÆSÒ&F–Æör"&–ÖÖöFÃÒ'G'VR"&–ÖÆ&VÆÆVF'“Ò&VæB×6W76–öâÖ6öæf—&Ò×F—FÆR"6Æ74æÖSÒ'rÖgVÆÂÖ‚×rÖÖB&÷&FW"&÷&FW"ÖFævW"óS&rÖ&6¶w&÷VæBÓR6†F÷rÕ³óós…÷&v&ƒ#SRÃÃÃã#B•Ò#ãÇ6Æ74æÖSÒ'FW‡B×‡2WW&66RG&6¶–ærÕ³ã3VVÕÒFW‡BÖFævW"#äVæB'&öF67CÂ÷ãÆƒ"–CÒ&VæB×6W76–öâÖ6öæf—&Ò×F—FÆR"6Æ74æÖSÒ&×BÓ2FW‡BÓ'†ÂföçBÖ&öÆBFW‡BÖf÷&Vw&÷VæB#äVæBF†—2'&öF67CóÂöƒ#ãÇ6Æ74æÖSÒ&×BÓ"FW‡B×6ÒFW‡BÖ×WFVB#åF†—2v–ÆÂ7F÷&÷WF–ærÂ6Æ÷6R7V&Ö—76–öç2ÂæBÖ÷fRF†R'&öF67B6W76–öâFòF†R&6†—fRãÂ÷ãÆF—b6Æ74æÖSÒ&×BÓRfÆW‚fÆW‚×w&§W7F–g’ÖVæBvÓ"#ãÆ‡&VcÒ"öFÖ–â÷VWVR"6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö66VçB‚ÓB’Ó"FW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡BÖ66VçB†÷fW#¦&rÖ66VçB†÷fW#§FW‡BÖ&6¶w&÷VæB#å&WGW&âFòVWVRF6†&ö&CÂöãÆ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×²‚’Óâ6WDVæD6öæf—&Ô÷Vâ†fÇ6R—ÒF—6&ÆVC×¶VæF–æu6W76–öçÒ6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö&÷&FW"‚ÓB’Ó"FW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVBF—6&ÆVC¦÷6—G’ÓS#äæòÂ6æ6VÃÂö'WGFöããÆ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×¶VæD7W'&VçE6W76–öçÒF—6&ÆVC×¶VæF–æu6W76–öçÒ6Æ74æÖSÒ&&÷&FW"&÷&FW"ÖFævW"‚ÓB’Ó"FW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡BÖFævW"†÷fW#¦&rÖFævW"†÷fW#§FW‡BÖ&6¶w&÷VæBF—6&ÆVC¦÷6—G’ÓS#ç¶VæF–æu6W76–öâò$VæF–æ~(
+b"¢%–W2ÂVæB'&öF67B'ÓÂö'WGFöããÂöF—cãÂöF—cãÂöF—câÂFö7VÖVçBæ&öG’—Ğ   ¢¶6ä6öçG&öÅ6W76–öâbbÆFWF–Ç26Æ74æÖSÒ&&÷&FW"&÷&FW"Õ²6ffÒóC&rÕ²6ffÒóRÓ2#à¢Ç7VÖÖ'’6Æ74æÖSÒ&7W'6÷"×ö–çFW"FW‡B×‡2WW&66RG&6¶–ærÕ³ã3&VÕÒFW‡BÕ²6ffÒ#åFW7F–ærò6–×VÆF–öâÖöFSÂ÷7VÖÖ'“à¢ÆF—b6Æ74æÖSÒ&×BÓB76R×’ÓB#ãÆF—b6Æ74æÖSÒ&fÆW‚fÆW‚Ö6öÂvÓ2Æs¦fÆW‚×&÷rÆs¦—FV×2×7F'BÆs¦§W7F–g’Ö&WGvVVâ#ãÇ6Æ74æÖSÒ'FW‡B×6ÒFW‡BÖ×WFVB#ä7&VFW2f¶R4”ÒG&6·2f÷"FW7F–ærâ¶VWF—6&ÆVBGW&–ærÆ—fR'&öF67G2ãÂ÷ãÆF—b6Æ74æÖSÒ&&÷&FW"&÷&FW"Õ²6ffÒóC&rÖ&6¶w&÷VæBócÓ2FW‡B×6Ò#ãÇ6Æ74æÖSÒ'FW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#å7FGW3Â÷ãÇ6Æ74æÖS×·6–×VÆF–öå'Vææ–ærò&föçBÖ&öÆBFW‡BÕ²6ffÒ"¢&föçBÖ&öÆBFW‡BÖ×WFVB'Óç·6–×VÆF–öå'Vææ–ærò%'Vææ–ær"¢%7F÷VB'ÓÂ÷ãÂöF—cãÂöF—cç²6–×VÆF–öä7&VF–öäÆÆ÷vVBbbÇ6Æ74æÖSÒ'FW‡B×‡2WW&66RG&6¶–ærÕ³ãfVÕÒFW‡BÕ²6ffÒ#ä÷Vâ7V&Ö—76–öç2&Vf÷&R'Vææ–ær6–×VÆF–öâG&6·2ãÂ÷çÓÆF—b6Æ74æÖSÒ&fÆW‚fÆW‚×w&—FV×2ÖVæBvÓ2#ãÆÆ&VÂ6Æ74æÖSÒ'76R×’ÓFW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#ãÇ7ãå6–×VÆF–öâ7VVCÂ÷7ããÇ6VÆV7BfÇVS×·6–×VÆF–öå7VVGÒöä6†ævS×²†WfVçB’ÓâWFFU6–×VÆF–öå7VVB†WfVçBçF&vWBçfÇVR26–×VÆF–öå7VVB—Ò6Æ74æÖSÒ&&Æö6²&÷&FW"&÷&FW"Ö&÷&FW"&rÖ&6¶w&÷VæB‚Ó2’Ó"FW‡B×6Òæ÷&ÖÂÖ66RG&6¶–ærÖæ÷&ÖÂFW‡BÖf÷&Vw&÷VæB#ç²„ö&¦V7Bæ¶W—2…4”ÕTÄD”ôåõ5TTE2’26–×VÆF–öå7VVEµÒ’æÖ‚‡7VVB’ÓâÆ÷F–öâ¶W“×·7VVGÒfÇVS×·7VVGÓçµ4”ÕTÄD”ôåõ5TTE5·7VVEÒæÆ&VÇÓÂö÷F–öãâ—ÓÂ÷6VÆV7CãÂöÆ&VÃãÆ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×·7F'E6–×VÆF–öçÒF—6&ÆVC×·6–×VÆF–öå'Vææ–ærÇÂ6–×VÆF–öä7&VF–öäÆÆ÷vVGÒ6Æ74æÖSÒ&&÷&FW"&÷&FW"Õ²6ffÒ‚ÓB’Ó"FW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡BÕ²6ffÒF—6&ÆVC¦7W'6÷"Öæ÷BÖÆÆ÷vVBF—6&ÆVC¦÷6—G’ÓC#å7F'B6–×VÆF–öãÂö'WGFöããÆ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×·7F÷6–×VÆF–öçÒF—6&ÆVC×²6–×VÆF–öå'Vææ–æwÒ6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö&÷&FW"‚ÓB’Ó"FW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVBF—6&ÆVC¦7W'6÷"Öæ÷BÖÆÆ÷vVBF—6&ÆVC¦÷6—G’ÓC#å7F÷6–×VÆF–öãÂö'WGFöããÆ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×²‚’Óâ6–×VÆF–öä7F–öâ‚&FE6–×VÆF–öäg&VUG&6²"Â$FFVBöæRg&VR4”Ò7V&Ö—76–öââ"—ÒF—6&ÆVC×²6–×VÆF–öä7&VF–öäÆÆ÷vVGÒ6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö66VçBóS‚ÓB’Ó"FW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡BÖ66VçBF—6&ÆVC¦7W'6÷"Öæ÷BÖÆÆ÷vVBF—6&ÆVC¦÷6—G’ÓC#äFBg&VRFW7B7V&Ö—76–öâæ÷sÂö'WGFöããÆ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×²‚’Óâ6–×VÆF–öä7F–öâ‚&FE6–×VÆF–öå–E&–÷&—G’"Â%6VçBöæR–B&–÷&—G’4”Ò6¶—â"—ÒF—6&ÆVC×²6–×VÆF–öä7&VF–öäÆÆ÷vVGÒ6Æ74æÖSÒ&&÷&FW"&÷&FW"Õ²6ffÒóc‚ÓB’Ó"FW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡BÕ²6ffÒF—6&ÆVC¦7W'6÷"Öæ÷BÖÆÆ÷vVBF—6&ÆVC¦÷6—G’ÓC#å6VæB–B&–÷&—G’6¶—æ÷sÂö'WGFöããÆ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×²‚’Óâ6–×VÆF–öä7F–öâ‚&FE6–×VÆF–öä6†V6¶÷WEVæF–ær"Â%6VçBöæR6†V6¶÷WB×VæF–ær4”ÒG&6²â"—ÒF—6&ÆVC×²6–×VÆF–öä7&VF–öäÆÆ÷vVGÒ6Æ74æÖSÒ&&÷&FW"&÷&FW"Õ²6ffÒóC‚ÓB’Ó"FW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡BÕ²6ffÒF—6&ÆVC¦7W'6÷"Öæ÷BÖÆÆ÷vVBF—6&ÆVC¦÷6—G’ÓC#å6VæB6†V6¶÷WBVæF–ærFW7Bæ÷sÂö'WGFöããÆ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×²‚’Óâ6–×VÆF–öä7F–öâ‚&FE6–×VÆF–öå–ÖVçDf–ÆVB"Â%6VçBöæRf–ÆVB×–ÖVçB4”ÒG&6²â"—ÒF—6&ÆVC×²6–×VÆF–öä7&VF–öäÆÆ÷vVGÒ6Æ74æÖSÒ&&÷&FW"&÷&FW"ÖFævW"óS‚ÓB’Ó"FW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡BÖFævW"F—6&ÆVC¦7W'6÷"Öæ÷BÖÆÆ÷vVBF—6&ÆVC¦÷6—G’ÓC#å6VæBf–ÆVB–ÖVçBFW7Bæ÷sÂö'WGFöããÆ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×²‚’Óâ6–×VÆF–öä7F–öâ‚&FE6–×VÆF–öä†VÆE&–÷&—G’"Â%6VçBöæRW6VB–B&–÷&—G’4”ÒG&6²â"—ÒF—6&ÆVC×²6–×VÆF–öä7&VF–öäÆÆ÷vVGÒ6Æ74æÖSÒ&&÷&FW"&÷&FW"Õ²6ffÒóc‚ÓB’Ó"FW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡BÕ²6ffÒF—6&ÆVC¦7W'6÷"Öæ÷BÖÆÆ÷vVBF—6&ÆVC¦÷6—G’ÓC#å6VæBW6VB&–÷&—G’FW7Bæ÷sÂö'WGFöããÆ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×²‚’Óâ6–×VÆF–öä7F–öâ‚&6ÆV%6–×VÆF–öåG&6·2"Â$6ÆV&VB4”Ò÷FW7BG&6·2öæÇ’â"—Ò6Æ74æÖSÒ&&÷&FW"&÷&FW"ÖFævW"‚ÓB’Ó"FW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡BÖFævW"#ä6ÆV"6–×VÆF–öâG&6·3Âö'WGFöããÂöF—cç·6–×VÆF–öäÖW76vRbbÇ6Æ74æÖSÒ&&÷&FW"&÷&FW"Õ²6ffÒó3&rÖ&6¶w&÷VæBóCÓ"FW‡B×6ÒFW‡BÕ²6ffÒ#ç·6–×VÆF–öäÖW76vWÓÂ÷çÓÂöF—cà¢ÂöFWF–Ç3çĞ ¢²6†÷uVWVU&Wf–Wrò€¢Ç6V7F–öâ6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö&÷&FW"&r×7W&f6RÓb#à¢Æƒ"6Æ74æÖSÒ'FW‡BÓ'†ÂföçBÖ&öÆBFW‡BÖf÷&Vw&÷VæB#äæò7F—fR6W76–öâãÂöƒ#à¢Ç6Æ74æÖSÒ'FW‡B×6ÒFW‡BÖ×WFVB×BÓ"#å7F'BæWr6W76–öâg&öÒ6†÷rÖævVÖVçBãÂ÷à¢Æ‡&VcÒ"öFÖ–â÷6†÷rÖÖævVÖVçB"6Æ74æÖSÒ&–æÆ–æRÖfÆW‚×BÓB&÷&FW"&÷&FW"Ö66VçB‚ÓB’Ó"FW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡BÖ66VçB†÷fW#¦&rÖ66VçB†÷fW#§FW‡BÖ&6¶w&÷VæB#ävòFò6†÷rÖævVÖVçCÂöà¢Â÷6V7F–öãà¢’¢Ãà¢ÆF—b6Æ74æÖSÒ&fÆW‚vÓ"&÷&FW"Ö"&÷&FW"Ö&÷&FW"#à¢²…²&7F—fR"Â&6ö×ÆWFVB"Â'&VÖ÷fVB"Â'7÷FÆ–v‡B%Ò2F%µÒ’æÖ‚†¶W’’ÓâÆ'WGFöâ¶W“×¶¶W—Òöä6Æ–6³×²‚’Óâ6WEF"†¶W’—Ò6Æ74æÖS×¶‚ÓB’Ó2FW‡B×‡2WW&66RG&6¶–ær×v–FW7BG·F"ÓÓÒ¶W’ò'FW‡BÖ66VçB&÷&FW"Ö"&÷&FW"Ö66VçB"¢'FW‡BÖ×WFVB'ÖÓç¶¶W’ÓÓÒ&7F—fR"ò$7F—fRVWVR"¢¶W’ÓÓÒ&6ö×ÆWFVB"ò$6ö×ÆWFVBG&6·2"¢¶W’ÓÓÒ'&VÖ÷fVB"ò%&VÖ÷fVB"¢%7÷FÆ–v‡B'ÓÂö'WGFöãâ—Ğ¢ÂöF—cà ¢·F"ÓÓÒ&7F—fR"bbÆF—b6Æ74æÖSÒ&w&–BvÓR#à¢ÆF—b6Æ74æÖSÒ'76R×’ÓR#ãÄÆæRF—FÆSÒ%&–÷&—G’6–væÂ"G&6·3×¶ÆæW2ç&–÷&—G—Ò6W76–öäVçG&–W3×·6W76–öäVçG&–W7Òöä7F–öã×¶7F–öçÒöåÆ–W#×¶ÆöEÆ–W'Òöä6÷“×¶6÷—ÒÖöFSÒ&7F—fR"&VDöæÇ“×·&VDöæÇ—ÒóãÄÆæRF—FÆSÒ%v†VVÂv–ææW'2"G&6·3×¶ÆæW2çv†VVÇÒ6W76–öäVçG&–W3×·6W76–öäVçG&–W7Òöä7F–öã×¶7F–öçÒöåÆ–W#×¶ÆöEÆ–W'Òöä6÷“×¶6÷—ÒÖöFSÒ&7F—fR"&VDöæÇ“×·&VDöæÇ—ÒóãÄÆæRF—FÆSÒ%&VwVÆ"VWVR"G&6·3×¶ÆæW2ç&VwVÆ'Ò6W76–öäVçG&–W3×·6W76–öäVçG&–W7Òöä7F–öã×¶7F–öçÒöåÆ–W#×¶ÆöEÆ–W'Òöä6÷“×¶6÷—ÒÖöFSÒ&7F—fR"&VDöæÇ“×·&VDöæÇ—ÒóãÂöF—cà¢Æ6–FR6Æ74æÖSÒ'†Ã¦†–FFVâ76R×’Ó2#à¢Ç6V7F–öâ6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö&÷&FW"&r×7W&f6RÓ276R×’Ó"#à¢ÆF—b6Æ74æÖSÒ&fÆW‚—FV×2Ö6VçFW"§W7F–g’Ö&WGvVVâ#à¢Ç6Æ74æÖSÒ'FW‡B×6ÒWW&66RG&6¶–ærÕ³ã#FVÕÒFW‡BÖ×WFVB#äæW‡B–âÆ–æR&–ÃÂ÷à¢Æ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×²‚’Óâ6WE&–ÄÖ–æ–Ö—¦VB‚‡fÇVR’ÓâfÇVR—Ò6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö&÷&FW"‚Ó"’ÓFW‡BÕ³…ÒWW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#ç·&–ÄÖ–æ–Ö—¦VBò$W‡æB"¢$Ö–æ–Ö—¦R'ÓÂö'WGFöãà¢ÂöF—cà¢·&–ÄÖ–æ–Ö—¦VBòÆF—b6Æ74æÖSÒ'76R×’Ó"#à¢Ç6Æ74æÖSÒ'FW‡B×‡2FW‡BÖ×WFVB#ç¶æW‡D–äÆ–æRòG·7V&Ö—GFVD'F—7B†æW‡D–äÆ–æR—Ò(	BG·7V&Ö—GFVEF—FÆR†æW‡D–äÆ–æR—Ö¢$æòæW‡B–âÆ–æR'ÓÂ÷à¢Ç7â6Æ74æÖSÒ&–æÆ–æRÖfÆW‚&÷&FW"&÷&FW"Ö7–âÓ3ó3&rÖ7–âÓ3óR‚Ó"’ÓFW‡BÕ³…ÒWW&66RG&6¶–ær×v–FW7BFW‡BÖ7–âÓ##åv†VVÂ7–ç3¢·7FFSòç6W76–öãòçv†VVÅ7–ç4÷vVBóòÓÂ÷7ãà¢ÂöF—câ¢Ãà¢ÄæW‡D–äÆ–æT&÷‚VçG'“×¶æW‡D–äÆ–æWÒÆ–W$ö67W–VC×´&ööÆVâ†ÆöFVEÆ–W"—Ò&VDöæÇ“×·&VDöæÇ—Òöä7F–öã×¶7F–öçÒöåÆ–W#×¶ÆöEÆ–W'Òöä6÷“×¶6÷—Òóà¢Ç6V7F–öâ6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö&÷&FW"&r×7W&f6RÓ276R×’Ó"#à¢Ç6Æ74æÖSÒ'FW‡B×6ÒWW&66RG&6¶–ærÕ³ã#FVÕÒFW‡BÖ×WFVB#äæW‡B–âÆ–æR7F–öç3Â÷à¢²æW‡D–äÆ–æRbbÃãÇ6Æ74æÖSÒ'FW‡B×6ÒFW‡BÖ×WFVB#äæòæW‡B–âÆ–æR(	BVÆÂæW‡BG&6²v†Vâ&VG’ãÂ÷ãÆ'WGFöâöä6Æ–6³×²‚’Óâ7F–öâ‚""Â'VÆÄæW‡B"—Ò6Æ74æÖSÒ&Ö–âÖ‚Ó&÷&FW"&÷&FW"Ö66VçB‚Ó2’Ó"FW‡B×6ÒWW&66RG&6¶–ær×v–FW7BFW‡BÖ66VçB#åVÆÂæW‡BG&6³Âö'WGFöããÂóçĞ¢ÆF—b6Æ74æÖSÒ&fÆW‚fÆW‚×w&vÓ"#ãÇ7â6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö7–âÓ3ó3&rÖ7–âÓ3óR‚Ó"’ÓFW‡BÕ³…ÒWW&66RG&6¶–ær×v–FW7BFW‡BÖ7–âÓ##åv†VVÂ7–ç2VæÆö6¶VC¢·7FFSòç6W76–öãòçv†VVÅ7–ç4÷vVBóòÓÂ÷7ããÇ7â6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö&÷&FW"‚Ó"’ÓFW‡BÕ³…ÒWW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#äæW‡B÷vVC¢·7FFSòææW‡Dæöå&–÷&—G”ÆæRÓÓÒ'&VwVÆ""ò$g&VR"¢%v†VVÂ'ÓÂ÷7ããÂöF—cà¢·v†VVÄ÷fW&Æ•&VG’bbÆF—b6Æ74æÖSÒ'76R×’Ó"&÷&FW"&÷&FW"Ö7–âÓ3óS&rÖ7–âÓ3óÓ"ãRæ–ÖFR×VÇ6R#à¢Ç6Æ74æÖSÒ'FW‡BÕ³…ÒWW&66RG&6¶–ærÕ³ã&VÕÒFW‡BÖ7–âÓ#ç·v†VVÄ÷fW&Æ•7FGW4Æ&VÇÓÂ÷à¢Æ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×¶÷Våv†VVÅæVÇÒ6Æ74æÖSÒ&Ö–âÖ‚ÓrÖgVÆÂ&÷&FW"&÷&FW"Ö7–âÓ3ós&rÖ7–âÓ3ó‚Ó2’Ó"FW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡BÖ7–âÓ†÷fW#¦&rÖ7–âÓ3†÷fW#§FW‡BÖ&6¶w&÷VæB#ä÷Vâv†VVÂæVÃÂö'WGFöãà¢ÂöF—cçĞ¢ÆF—b6Æ74æÖSÒ&fÆW‚fÆW‚×w&vÓ"#ç·&WVW7FVD6÷VçBâbbÇ7â6Æ74æÖSÒ&&÷&FW"&÷&FW"Õ²63#sƒ5ÒóC&rÕ²63#sƒ5Òó‚Ó"’ÓFW‡BÕ³…ÒWW&66RG&6¶–ær×v–FW7BFW‡BÕ²63#sƒ5Ò#å–ÖVçB&WVW7FVC¢·&WVW7FVD6÷VçGÓÂ÷7ãç×¶6†V6¶÷WEVæF–æt6÷VçBâbbÇ7â6Æ74æÖSÒ&&÷&FW"&÷&FW"Õ²6ffÒóC&rÕ²6ffÒó‚Ó"’ÓFW‡BÕ³…ÒWW&66RG&6¶–ær×v–FW7BFW‡BÕ²6ffÒ#ä6†V6¶÷WBVæF–æs¢¶6†V6¶÷WEVæF–æt6÷VçGÓÂ÷7ãç×·–DæVVG4GFVçF–öä6÷VçBâbbÇ7â6Æ74æÖSÒ&&÷&FW"&÷&FW"ÖFævW"óc&rÖFævW"óR‚Ó"’ÓFW‡BÕ³…ÒWW&66RG&6¶–ær×v–FW7BFW‡BÖFævW"#å–BæVVG2GFVçF–öã¢·–DæVVG4GFVçF–öä6÷VçGÓÂ÷7ãç×¶†VÆE&–÷&—G”6÷VçBâbbÇ7â6Æ74æÖSÒ&&÷&FW"&÷&FW"Õ²6ffÒóC&rÕ²6ffÒó‚Ó"’ÓFW‡BÕ³…ÒWW&66RG&6¶–ær×v–FW7BFW‡BÕ²6ffÒ#åW6VB&–÷&—G“¢¶†VÆE&–÷&—G”6÷VçGÓÂ÷7ãç×·6–væÄ†öÆD7F—fT6÷VçBâbbÇ7â6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö7–âÓ3óS&rÖ7–âÓ3ó‚Ó"’ÓFW‡BÕ³…ÒWW&66RG&6¶–ær×v–FW7BFW‡BÖ7–âÓ##å6–væÂ†öÆB7F—fS¢·6–væÄ†öÆD7F—fT6÷VçGÓÂ÷7ãç×·6–væÄ†öÆE&ö6W76–æt6÷VçBâbbÇ7â6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö7–âÓ3óC&rÖ7–âÓ3óR‚Ó"’ÓFW‡BÕ³…ÒWW&66RG&6¶–ær×v–FW7BFW‡BÖ7–âÓ##å6–væÂ†öÆB–ÖVçB&ö6W76–æs¢·6–væÄ†öÆE&ö6W76–æt6÷VçGÓÂ÷7ãç×·6–væÄ†öÆDæVVG4GFVçF–öä6÷VçBâbbÇ7â6Æ74æÖSÒ&&÷&FW"&÷&FW"ÖFævW"óc&rÖFævW"óR‚Ó"’ÓFW‡BÕ³…ÒWW&66RG&6¶–ær×v–FW7BFW‡BÖFævW"#å6–væÂ†öÆBæVVG2GFVçF–öã¢·6–væÄ†öÆDæVVG4GFVçF–öä6÷VçGÓÂ÷7ãç×·&W6öÇfW$÷fW'&–FT&Æö6¶VBbbÇ7â6Æ74æÖSÒ&&÷&FW"&÷&FW"Õ²6ffÒóC&rÕ²6ffÒó‚Ó"’ÓFW‡BÕ³…ÒWW&66RG&6¶–ær×v–FW7BFW‡BÕ²6ffÒ#å&W6öÇfW"÷fW'&–FR&Æö6¶VCÂ÷7ãç×²æW‡D–äÆ–æRbbÇ7â6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö&÷&FW"‚Ó"’ÓFW‡BÕ³…ÒWW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB#äæòæW‡B–âÆ–æSÂ÷7ãçÓÂöF—cà¢Â÷6V7F–öãà¢ÂóçĞ¢Â÷6V7F–öãà¢Âö6–FSà¢ÂöF—cçĞ¢·F"ÓÓÒ&6ö×ÆWFVB"bbÄÆæRF—FÆSÒ$6ö×ÆWFVBG&6·2"G&6·3×·7FFSòæ†—7F÷'’óòµ×Ò6W76–öäVçG&–W3×·6W76–öäVçG&–W7Òöä7F–öã×¶7F–öçÒöåÆ–W#×¶ÆöEÆ–W'Òöä6÷“×¶6÷—ÒÖöFSÒ&6ö×ÆWFVB"&VDöæÇ“×·&VDöæÇ—ÒóçĞ¢·F"ÓÓÒ'&VÖ÷fVB"bbÄÆæRF—FÆSÒ%&VÖ÷fVBG&6·2"G&6·3×·7FFSòç&VÖ÷fVBóòµ×Ò6W76–öäVçG&–W3×·6W76–öäVçG&–W7Òöä7F–öã×¶7F–öçÒöåÆ–W#×¶ÆöEÆ–W'Òöä6÷“×¶6÷—ÒÖöFSÒ'&VÖ÷fVB"&VDöæÇ“×·&VDöæÇ—ÒóçĞ¢·F"ÓÓÒ'7÷FÆ–v‡B"bbÄÆæRF—FÆSÒ%7÷FÆ–v‡BÆ—7B"G&6·3×¶ÆæW2ç7÷FÆ–v‡GÒ6W76–öäVçG&–W3×·6W76–öäVçG&–W7Òöä7F–öã×¶7F–öçÒöåÆ–W#×¶ÆöEÆ–W'Òöä6÷“×¶6÷—ÒÖöFSÒ'7÷FÆ–v‡B"&VDöæÇ“×·&VDöæÇ—ÒóçĞ¢ÂóçĞ ¢¶Ö÷VçFVBbbÆöFVEÆ–W"bb7&VFU÷'FÂƒÅÆ–W$Fö6²¶W“×¶ÆöFVEÆ–W"æ–GÒÆ–W#×¶ÆöFVEÆ–W'Ò6W76–öä–C×·7FFSòç6W76–öãòç6W76–öä–BóòçVÆÇÒÆ–&6´F–væ÷7F–73×·7FFSòçÆ–&6´F–væ÷7F–72óòçVÆÇÒÖ–æ–Ö—¦VC×¶Ö–æ–Ö—¦VGÒ6WDÖ–æ–Ö—¦VC×·6WDÖ–æ–Ö—¦VGÒ&VDöæÇ“×·&VDöæÇ—Ò7F–öåVæF–æs×·Æ–W$7F–öåVæF–æwÒöä7F–öã×·Æ–W$7F–öçÒöä6÷“×²‚’Óâ6÷’†ÆöFVEÆ–W"—ÒóâÂFö7VÖVçBæ&öG’—Ğ¢¶Ö÷VçFVBbbÆöFVEÆ–W"bbVæF–æuÆ–W$ÆöBbb7&VFU÷'FÂƒÇ6V7F–öâ6Æ74æÖSÒ&f—†VB&÷GFöÒÓRÆVgBÓB&–v‡BÓB¢Õ³ƒcÒ&÷&FW"&÷&FW"Ö&÷&FW"&rÖ&6¶w&÷VæBó“R‚ÓB’Ó2FW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB6†F÷rÓ'†Â&6¶G&÷Ö&ÇW"ÖC¦ÆVgBÓ‚ÖC§&–v‡BÓ‚Æs¦ÆVgBÖWFòÆs§&–v‡BÓbÆs§rÕ³#G&VÕÒ#äÆöF–ærÆ–W.(
+cÂ÷6V7F–öãâÂFö7VÖVçBæ&öG’—Ğ¢¶Ö÷VçFVBbbÆöFVEÆ–W"bb†46ÆV&–æuG&ç6—F–öâbbVæF–æuÆ–W$ÆöBbb7&VFU÷'FÂƒÇ6V7F–öâ6Æ74æÖSÒ&f—†VB&÷GFöÒÓRÆVgBÓB&–v‡BÓB¢Õ³ƒcÒ&÷&FW"&÷&FW"Ö&÷&FW"&rÖ&6¶w&÷VæBó“R‚ÓB’Ó2FW‡B×‡2WW&66RG&6¶–ær×v–FW7BFW‡BÖ×WFVB6†F÷rÓ'†Â&6¶G&÷Ö&ÇW"ÖC¦ÆVgBÓ‚ÖC§&–v‡BÓ‚Æs¦ÆVgBÖWFòÆs§&–v‡BÓbÆs§rÕ³#G&VÕÒ#åWFF–ærÆ–W.(
+cÂ÷6V7F–öãâÂFö7VÖVçBæ&öG’—Ğ ¢¶Ö÷VçFVBbb6ä6öçG&öÅ6W76–öâbb7&VFU÷'FÂƒÆ6–FR6Æ74æÖS×¶†–FFVâ†Ã¦&Æö6²f—†VB&–v‡BÓBF÷Õ¶6Æ2ƒã#W&VÒ¶Vçb‡6fRÖ&VÖ–ç6WB×F÷’•ÒG·&–Ä&÷GFöÔöfg6WD6Æ77ÒÖ‚Ö‚Õ¶6Æ2ƒGf‚Ó&VÒ•ÒrÕ³#G&VÕÒ¢Õ³ƒCÒ&÷&FW"&÷&FW"Ö&÷&FW"&rÖ&6¶w&÷VæBó“R6†F÷rÓ'†Â&6¶G&÷Ö&ÇW"÷fW&fÆ÷r×’ÖWFòÓ276R×’Ó6Óà¢Ç6V7F–öâ6Æ74æÖSÒ&&÷&FW"&÷&FW"Ö&÷&FW"&r×7W&f6RÓ276R×’Ó"-y×›h‘éì¶»§q«^u˜ñEÕ•Õ•Q¥µ•	…¹­=‰Í•ÉÙ…Ñ¥½¸ğ¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍĞ‘É¥™Ñ	…¹­I•˜€ôÕÍ•I•˜ñ¹Õµ‰•Èğ¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍĞ…Ñ¥Ù•Q½…ÍÑI•˜€ôÕÍ•I•˜ñEÕ•Õ•Q¥µ•	…¹­Ù•¹Ğğ¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍĞ‘¥Íµ¥ÍÍQ¥µ•ÉI•˜€ôÕÍ•I•˜ñ¹Õµ‰•Èğ¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍĞmÑ½…ÍĞ°Í•ÑQ½…ÍÑt€ôÕÍ•MÑ…Ñ”ñEÕ•Õ•Q¥µ•	…¹­Ù•¹Ğğ¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍĞ½‰Í•ÉÙ…Ñ¥½¸€ôÕÍ•5•µ¼ñEÕ•Õ•Q¥µ•	…¹­=‰Í•ÉÙ…Ñ¥½¸ø  ¤€ôø€¡ì(€€€Í•ÍÍ¥½¹%°(€€€‰…¹­M•½¹‘ÌèÑ¥µ¥¹œ¹‰…¹­M•½¹‘Ì°(€€€…Ñ¥Ù•A±…å…‰±•½Õ¹ĞèÑ¥µ¥¹œ¹…Ñ¥Ù•A±…å…‰±•½Õ¹Ğ°(€€€½µÁ±•Ñ•‘A±…å…‰±•½Õ¹ĞèÑ¥µ¥¹œ¹½µÁ±•Ñ•‘A±…å…‰±•½Õ¹Ğ°(€€€É•µ½Ù•‘½Õ¹ĞèÑ¥µ¥¹œ¹É•µ½Ù•‘½Õ¹Ğ°(€€€­¹½İ¹ÕÉ…Ñ¥½¹½Õ¹ĞèÑ¥µ¥¹œ¹­¹½İ¹ÕÉ…Ñ¥½¹½Õ¹Ğ°(€€€İ¡••±MÁ¥¹Í=İ•èÑ¥µ¥¹œ¹İ¡••±MÁ¥¹Í=İ•°(€€€İ¡••±M•½¹‘Í	Õ‘•Ñ•èÑ¥µ¥¹œ¹İ¡••±M•½¹‘Í	Õ‘•Ñ•°(€€€ÍÁ½¹Í½ÉMÑ…ÑÕÌèÑ¥µ¥¹œ¹ÍÁ½¹Í½ÉMÑ…ÑÕÌ°(€€€¥Í1¥Ù”èÑ¥µ¥¹œ¹¥Í1¥Ù”°(€ô¤°mÍ•ÍÍ¥½¹%°Ñ¥µ¥¹t¤ì((€ÕÍ•™™•Ğ  ¤€ôøì(€€€½¹ÍĞÁÉ•Ù¥½ÕÌ€ô±…ÍÑ=‰Í•ÉÙ…Ñ¥½¹I•˜¹ÕÉÉ•¹Ğì(€€€¥˜€ …ÁÉ•Ù¥½ÕÌñğ€…Í•ÍÍ¥½¹%ñğÁÉ•Ù¥½ÕÌ¹Í•ÍÍ¥½¹%€„ôôÍ•ÍÍ¥½¹%¤ì(€€€€€±…ÍÑ=‰Í•ÉÙ…Ñ¥½¹I•˜¹ÕÉÉ•¹Ğ€ô½‰Í•ÉÙ…Ñ¥½¸ì(€€€€€‘É¥™Ñ	…¹­I•˜¹ÕÉÉ•¹Ğ€ô½‰Í•ÉÙ…Ñ¥½¸¹‰…¹­M•½¹‘Ìì(€€€€€…Ñ¥Ù•Q½…ÍÑI•˜¹ÕÉÉ•¹Ğ€ô¹Õ±°ì(€€€€€Í•ÑQ½…ÍĞ¡¹Õ±°¤ì(€€€€€¥˜€¡‘¥Íµ¥ÍÍQ¥µ•ÉI•˜¹ÕÉÉ•¹Ğ¤İ¥¹‘½Ü¹±•…ÉQ¥µ•½ÕĞ¡‘¥Íµ¥ÍÍQ¥µ•ÉI•˜¹ÕÉÉ•¹Ğ¤ì(€€€€€‘¥Íµ¥ÍÍQ¥µ•ÉI•˜¹ÕÉÉ•¹Ğ€ô¹Õ±°ì(€€€€€É•ÑÕÉ¸ì(€€€ô((€€€½¹ÍĞ•Ù•¹Ğ€ô‘•É¥Ù•EÕ•Õ•Q¥µ•	…¹­Ù•¹Ğ¡ÁÉ•Ù¥½ÕÌ°½‰Í•ÉÙ…Ñ¥½¸¤(€€€€€€üü‘•É¥Ù•EÕ•Õ•A…•	…¹­Ù•¹Ğ¡‘É¥™Ñ	…¹­I•˜¹ÕÉÉ•¹Ğ€üüÁÉ•Ù¥½ÕÌ¹‰…¹­M•½¹‘Ì°½‰Í•ÉÙ…Ñ¥½¸¤ì(€€€±…ÍÑ=‰Í•ÉÙ…Ñ¥½¹I•˜¹ÕÉÉ•¹Ğ€ô½‰Í•ÉÙ…Ñ¥½¸ì(€€€¥˜€ …•Ù•¹Ğ¤É•ÑÕÉ¸ì(€€€‘É¥™Ñ	…¹­I•˜¹ÕÉÉ•¹Ğ€ô½‰Í•ÉÙ…Ñ¥½¸¹‰…¹­M•½¹‘Ìì((€€€½¹ÍĞ½µ‰¥¹•€ô…Ñ¥Ù•Q½…ÍÑI•˜¹ÕÉÉ•¹Ğ€ü½µ‰¥¹•EÕ•Õ•Q¥µ•	…¹­Ù•¹ÑÌ¡…Ñ¥Ù•Q½…ÍÑI•˜¹ÕÉÉ•¹Ğ°•Ù•¹Ğ¤€è•Ù•¹Ğì(€€€¥˜€¡5…Ñ ¹…‰Ì¡½µ‰¥¹•¹‰…¹­•±Ñ…M•½¹‘Ì¤€ğ€ÌÀ¤ì(€€€€€…Ñ¥Ù•Q½…ÍÑI•˜¹ÕÉÉ•¹Ğ€ô¹Õ±°ì(€€€€€Í•ÑQ½…ÍĞ¡¹Õ±°¤ì(€€€€€É•ÑÕÉ¸ì(€€€ô(€€€…Ñ¥Ù•Q½…ÍÑI•˜¹ÕÉÉ•¹Ğ€ô½µ‰¥¹•ì(€€€Í•ÑQ½…ÍĞ¡½µ‰¥¹•¤ì(€€€¥˜€¡‘¥Íµ¥ÍÍQ¥µ•ÉI•˜¹ÕÉÉ•¹Ğ¤İ¥¹‘½Ü¹±•…ÉQ¥µ•½ÕĞ¡‘¥Íµ¥ÍÍQ¥µ•ÉI•˜¹ÕÉÉ•¹Ğ¤ì(€€€‘¥Íµ¥ÍÍQ¥µ•ÉI•˜¹ÕÉÉ•¹Ğ€ôİ¥¹‘½Ü¹Í•ÑQ¥µ•½ÕĞ  ¤€ôøì(€€€€€…Ñ¥Ù•Q½…ÍÑI•˜¹ÕÉÉ•¹Ğ€ô¹Õ±°ì(€€€€€Í•ÑQ½…ÍĞ¡¹Õ±°¤ì(€€€€€‘¥Íµ¥ÍÍQ¥µ•ÉI•˜¹ÕÉÉ•¹Ğ€ô¹Õ±°ì(€€€ô°€Ñ|àÀÀ¤ì(€ô°m½‰Í•ÉÙ…Ñ¥½¸°Í•ÍÍ¥½¹%‘t¤ì((€ÕÍ•™™•Ğ  ¤€ôø€ ¤€ôøì(€€€¥˜€¡‘¥Íµ¥ÍÍQ¥µ•ÉI•˜¹ÕÉÉ•¹Ğ¤İ¥¹‘½Ü¹±•…ÉQ¥µ•½ÕĞ¡‘¥Íµ¥ÍÍQ¥µ•ÉI•˜¹ÕÉÉ•¹Ğ¤ì(€ô°mt¤ì((€¥˜€ …Ñ½…ÍĞ¤É•ÑÕÉ¸¹Õ±°ì(€½¹ÍĞÁ½Í¥Ñ¥Ù”€ôÑ½…ÍĞ¹‰…¹­•±Ñ…M•½¹‘Ì€ø€Àì(€É•ÑÕÉ¸€ñ‘¥Ø±…ÍÍ9…µ”ô‰Á½¥¹Ñ•Èµ•Ù•¹ÑÌµ¹½¹”™¥á•É¥¡Ğ´ĞÑ½Àµm…±Œ İÉ•´­•¹Ø¡Í…™”µ…É•„µ¥¹Í•ĞµÑ½À¤¥tèµläÀÀÁtµ…àµÜµmµ¥¸ ÈÑÉ•´±…±Œ ÄÀÁÙÜ´ÉÉ•´¤¥tˆø(€€€€ñ‘¥ØÉ½±”ô‰ÍÑ…ÑÕÌˆ…É¥„µ±¥Ù”ô‰Á½±¥Ñ”ˆ±…ÍÍ9…µ”õí‰½É‘•È‰œµ‰…­É½Õ¹¼äÔÁà´ĞÁä´ÌÑ•áĞµáÌ™½¹Ğµ‰½±ÕÁÁ•É…Í”ÑÉ…­¥¹œµlÀ¸ÄÙ•µtÍ¡…‘½Ü´Éá°‰…­‘É½Àµ‰±ÕÈ€‘íÁ½Í¥Ñ¥Ù”€ü€‰‰½É‘•ÈµlŒÍ‘‘Œäİt¼ÜÀÑ•áĞµlŒÍ‘‘Œäİtˆ€è€‰‰½É‘•Èµl™˜å˜ĞÍt¼àÀÑ•áĞµl™˜å˜ĞÍt‰õôùíÑ¥µ•	…¹­Q½…ÍÑ½Áä¡Ñ½…ÍĞ¥ôğ½‘¥Øø(€€ğ½‘¥Øøì)ô()™Õ¹Ñ¥½¸Ñ¥µ•	…¹­Q½…ÍÑ½Áä¡•Ù•¹ĞèEÕ•Õ•Q¥µ•	…¹­Ù•¹Ğ¤èÍÑÉ¥¹œì(€½¹ÍĞÍ•½¹‘Ì€ô5…Ñ ¹…‰Ì¡•Ù•¹Ğ¹‰…¹­•±Ñ…M•½¹‘Ì¤ì(€½¹ÍĞ‘•±Ñ„€ô€‘í5…Ñ ¹™±½½È¡Í•½¹‘Ì€¼€ØÀ¥ôè‘í5…Ñ ¹É½Õ¹¡Í•½¹‘Ì€”€ØÀ¤¹Ñ½MÑÉ¥¹œ ¤¹Á…‘MÑ…ÉĞ È°€ˆÀˆ¥õ€ì(€¥˜€¡•Ù•¹Ğ¹‰…¹­•±Ñ…M•½¹‘Ì€ø€À¤É•ÑÕÉ¸€‘í•Ù•¹Ğ¹±…‰•±ôƒ
+Ü€¬‘í‘•±Ñ…ô	9-€ì(€¥˜€¡•Ù•¹Ğ¹­¥¹€ôôô€‰ÍÕ‰µ¥ÍÍ¥½¸ˆñğ•Ù•¹Ğ¹­¥¹€ôôô€‰‘ÕÉ…Ñ¥½¸ˆñğ•Ù•¹Ğ¹­¥¹€ôôô€‰İ¡••°ˆñğ•Ù•¹Ğ¹­¥¹€ôôô€‰½µµ•É¥…°ˆñğ•Ù•¹Ğ¹­¥¹€ôôô€‰½µ‰¥¹•ˆ¤É•ÑÕÉ¸€‘í•Ù•¹Ğ¹±…‰•±ôƒ
+Ü€¬‘í‘•±Ñ…ô=55%QQ€ì(€É•ÑÕÉ¸€‘í•Ù•¹Ğ¹±…‰•±ôƒ
+ÜƒŠ"H‘í‘•±Ñ…õ€ì)ô()™Õ¹Ñ¥½¸Q½Á	…ÉAÉ•ÍÍÕÉ•¡¥À¡ìÁÉ•ÍÍÕÉ”°µ¥¹¥µ¥é•€ô™…±Í”ôèìÁÉ•ÍÍÕÉ”èI•ÑÕÉ¹QåÁ”ñÑåÁ•½˜‰Õ¥±‘EÕ•Õ•Q¥µ¥¹¥ÍÁ±…äùl‰ÁÉ•ÍÍÕÉ•MÕµµ…Éä‰tìµ¥¹¥µ¥é•üè‰½½±•…¸ô¤ì(€½¹ÍĞ±…‰•°€ôÁÉ•ÍÍÕÉ”¹µ½‘”€ôôô€‰ÁÉ•}Í¡½Üˆ€ü€‰AIµM!=\ˆ€èÁÉ•ÍÍÕÉ”¹µ½‘”€ôôô€‰•¹‘•ˆ€ü€‰9ˆ€èÁÉ•ÍÍÕÉ”¹±…‰•°ì(€½¹ÍĞÑ½¹”€ôÁÉ•ÍÍÕÉ”¹µ½‘”€ôôô€‰•¹‘•ˆñğÁÉ•ÍÍÕÉ”¹µ½‘”€ôôô€‰ÁÉ•}Í¡½Üˆ(€€€€ü€‰‰½É‘•Èµ‰½É‘•ÈÑ•áĞµµÕÑ•ˆ(€€€€èÁÉ•ÍÍÕÉ”¹±•Ù•°€ôôô€‰É¥Ñ¥…°ˆ(€€€€€€ü€‰‰½É‘•Èµ‘…¹•È¼ØÀÑ•áĞµ‘…¹•Èˆ(€€€€€€èÁÉ•ÍÍÕÉ”¹±•Ù•°€ôôô€‰¡¥ ˆ(€€€€€€€€ü€‰‰½É‘•Èµl™˜å˜ĞÍt¼ÜÀÑ•áĞµl™˜å˜ĞÍtˆ(€€€€€€€€èÁÉ•ÍÍÕÉ”¹±•Ù•°€ôôô€‰µ•‘¥Õ´ˆ(€€€€€€€€€€ü€‰‰½É‘•Èµl˜ÙŒÜĞÑt¼ØÀÑ•áĞµl˜ÙŒÜĞÑtˆ(€€€€€€€€€€è€‰‰½É‘•ÈµlŒÍ‘‘Œäİt¼ØÀÑ•áĞµlŒÍ‘‘Œäİtˆì(€¥˜€¡µ¥¹¥µ¥é•¤É•ÑÕÉ¸€ñÍÁ…¸±…ÍÍ9…µ”õí‰½É‘•ÈÁà´ÈÁä´ÄÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞ€‘íÑ½¹•õôùAÉ•ÍÍÕÉ”èí±…‰•±õíÁÉ•ÍÍÕÉ”¹µ½‘”€ôôô€‰±¥Ù”ˆ€ü€€‘íÁÉ•ÍÍÕÉ”¹Í½É•ô¼ÄÀÁ€€è€ˆ‰ôğ½ÍÁ…¸øì(€É•ÑÕÉ¸€ñ‘¥ØøñÀ±…ÍÍ9…µ”ô‰Ñ•áĞµlÄÁÁátÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµµÕÑ•ˆùAÉ•ÍÍÕÉ”ğ½ÀøñÀ±…ÍÍ9…µ”õíµĞ´Ä¥¹±¥¹”µ™±•à‰½É‘•ÈÁà´ÈÁä´Ä™½¹Ğµ‰½±ÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞ€‘íÑ½¹•õôùí±…‰•±õíÁÉ•ÍÍÕÉ”¹µ½‘”€ôôô€‰±¥Ù”ˆ€ü€€‘íÁÉ•ÍÍÕÉ”¹Í½É•ô¼ÄÀÁ€€è€ˆ‰ôğ½Àøğ½‘¥Øøì)ô()™Õ¹Ñ¥½¸Q½Á	…É½µµ•É¥…±¡¥À¡ìÍÕµµ…Éä°µ¥¹¥µ¥é•€ô™…±Í”ôèìÍÕµµ…ÉäèI•ÑÕÉ¹QåÁ”ñÑåÁ•½˜‰Õ¥±‘EÕ•Õ•Q¥µ¥¹¥ÍÁ±…äùl‰ÍÁ½¹Í½É	É•…­MÕµµ…Éä‰tìµ¥¹¥µ¥é•üè‰½½±•…¸ô¤ì(€½¹ÍĞ½µÁ…Ğ€ôÍÕµµ…Éä¹½µÁ…Ñ1…‰•°ì(€½¹ÍĞÑ½¹”€ô½µÁ…Ğ€ôôô€‰Õ”ˆñğ½µÁ…Ğ¹ÍÑ…ÉÑÍ]¥Ñ  ‰IÕ¹¹¥¹œˆ¤(€€€€ü€‰‰½É‘•Èµl™™…„ÀÁt¼ØÀÑ•áĞµl™™…„ÀÁtˆ(€€€€è½µÁ…Ğ€ôôô€‰½¹”ˆ(€€€€€€ü€‰‰½É‘•ÈµlŒÍ‘‘Œäİt¼ØÀÑ•áĞµlŒÍ‘‘Œäİtˆ(€€€€€€è½µÁ…Ğ€ôôô€‰M­¥ÁÁ•ˆ(€€€€€€€€ü€‰‰½É‘•Èµ‘…¹•È¼ÔÀÑ•áĞµ‘…¹•Èˆ(€€€€€€€€è€‰‰½É‘•Èµ‰½É‘•ÈÑ•áĞµµÕÑ•ˆì(€¥˜€¡µ¥¹¥µ¥é•¤É•ÑÕÉ¸€ñÍÁ…¸±…ÍÍ9…µ”õí‰½É‘•ÈÁà´ÈÁä´ÄÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞ€‘íÑ½¹•õôù½µµ•É¥…°èí½µÁ…Ñôğ½ÍÁ…¸øì(€É•ÑÕÉ¸€ñ‘¥ØøñÀ±…ÍÍ9…µ”ô‰Ñ•áĞµlÄÁÁátÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµµÕÑ•ˆù½µµ•É¥…°ğ½ÀøñÀ±…ÍÍ9…µ”õíµĞ´Ä¥¹±¥¹”µ™±•à‰½É‘•ÈÁà´ÈÁä´Ä™½¹Ğµ‰½±ÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞ€‘íÑ½¹•õôùí½µÁ…Ñôğ½Àøğ½‘¥Øøì)ô(()™Õ¹Ñ¥½¸9•áÑ%¹1¥¹•	½à¡ì•¹ÑÉä°Á±…å•É=ÕÁ¥•°É•…‘=¹±ä°½¹Ñ¥½¸°½¹A±…å•È°½¹½Áäôèì•¹ÑÉäèEÕ•Õ•¹ÑÉäğ¹Õ±°ìÁ±…å•É=ÕÁ¥•è‰½½±•…¸ìÉ•…‘=¹±äè‰½½±•…¸ì½¹Ñ¥½¸è€¡¥èÍÑÉ¥¹œ°…Ñ¥½¸è‘µ¥¹EÕ•Õ•Ñ¥½¸¤€ôøÙ½¥ì½¹A±…å•Èè€¡•¹ÑÉäèEÕ•Õ•¹ÑÉä¤€ôøÙ½¥ì½¹½Áäè€¡•¹ÑÉäèEÕ•Õ•¹ÑÉä¤€ôøÙ½¥ô¤ì(€½¹ÍĞÙ¥ÍÕ…°€ô•¹ÑÉä€üÅÕ•Õ•QÉ…­Y¥ÍÕ…°¡•¹ÑÉä¤€è¹Õ±°ì(€É•ÑÕÉ¸€ñÍ•Ñ¥½¸±…ÍÍ9…µ”õíÀ´ÔÍÁ…”µä´Ğ€‘íÙ¥ÍÕ…°ü¹Í•Ñ¥½¹±…ÍÌ€üü€‰‰½É‘•È‰½É‘•Èµ…•¹Ğ¼ØÀ‰œµ…•¹Ğ¼Ô‰õôøñ‘¥ØøñÀ±…ÍÍ9…µ”ô‰Ñ•áĞµáÌÕÁÁ•É…Í”ÑÉ…­¥¹œµlÀ¸Ñ•µtÑ•áĞµ…•¹Ğˆù9•áĞ¥¸1¥¹”ğ½Àùì…•¹ÑÉä€ü€ñÀ±…ÍÍ9…µ”ô‰µĞ´ÌÑ•áĞµ±œÑ•áĞµµÕÑ•ˆù9¼9•áĞ%¸1¥¹”ƒŠPAÕ±°9•áĞQÉ…¬İ¡•¸É•…‘ä¸ğ½Àø€è€ğøñ‘¥Ø±…ÍÍ9…µ”ô‰µĞ´Ìˆøñ1…¹•MÑ…ÑÕÍ	…‘”•¹ÑÉäõí•¹ÑÉåô€¼øğ½‘¥Øøñ‘µ¥¹AÉ¥½É¥ÑåAÕÉ¡…Í•	…¹¹•È•¹ÑÉäõí•¹ÑÉåô€¼øñ È±…ÍÍ9…µ”ô‰µĞ´ÌÑ•áĞ´Éá°™½¹Ğµ‰½±Ñ•áĞµ™½É•É½Õ¹ˆùíÍÕ‰µ¥ÑÑ•‘ÉÑ¥ÍĞ¡•¹ÑÉä¥ôƒŠPíÍÕ‰µ¥ÑÑ•‘Q¥Ñ±”¡•¹ÑÉä¥ôğ½ Èøñ‘µ¥¹½±±…‰½É…Ñ½É1¥¹”•¹ÑÉäõí•¹ÑÉåô±…ÍÍ9…µ”ô‰µĞ´Äˆ€¼øñÀ±…ÍÍ9…µ”ô‰Ñ•áĞµÍ´Ñ•áĞµµÕÑ•µĞ´Äˆù1…¹”èí19}1	1Mm•¹ÑÉå1…¹”¡•¹ÑÉä¥uôƒ
+ÜM½ÕÉ”èíÍ½ÕÉ•1…‰•°¡•¹ÑÉä¥ôƒ
+ÜÕÉ…Ñ¥½¸èí‘ÕÉ…Ñ¥½¹1…‰•°¡•¹ÑÉä¥ôğ½Àùí‘•Ñ•Ñ•‘1…‰•°¡•¹ÑÉä¤€˜˜€ñÀ±…ÍÍ9…µ”ô‰Ñ•áĞµáÌÑ•áĞµµÕÑ•µĞ´Äˆù•Ñ•Ñ•€¼AÉ½Ù¥‘•Èèí‘•Ñ•Ñ•‘1…‰•°¡•¹ÑÉä¥ôğ½Àùôñ‘µ¥¹MÕ‰µ¥ÍÍ¥½¹9½Ñ”•¹ÑÉäõí•¹ÑÉåô€¼øğ¼ùôğ½‘¥Øùí•¹ÑÉä€˜˜€ñQÉ…­Ñ¥½¹Ì•¹ÑÉäõí•¹ÑÉåôµ½‘”ô‰¹•áĞˆÁ±…å•É=ÕÁ¥•õíÁ±…å•É=ÕÁ¥•‘ôÉ•…‘=¹±äõíÉ•…‘=¹±åô½¹Ñ¥½¸õí½¹Ñ¥½¹ô½¹A±…å•Èõí½¹A±…å•Éô½¹½Áäõí½¹½Áåô€¼ùôğ½Í•Ñ¥½¸øì)ô()ÑåÁ”‘µ¥¹eQA±…å•È€ôì(€±½…‘Y¥‘•½	å%è€¡½ÁÑ¥½¹ÌèìÙ¥‘•½%èÍÑÉ¥¹œìÍÑ…ÉÑM•½¹‘Ìüè¹Õµ‰•Èô¤€ôøÙ½¥ì(€Õ•Y¥‘•½	å%è€¡½ÁÑ¥½¹ÌèìÙ¥‘•½%èÍÑÉ¥¹œìÍÑ…ÉÑM•½¹‘Ìüè¹Õµ‰•Èô¤€ôøÙ½¥ì(€Á±…åY¥‘•¼è€ ¤€ôøÙ½¥ì(€Á…ÕÍ•Y¥‘•¼è€ ¤€ôøÙ½¥ì(€ÍÑ½ÁY¥‘•¼è€ ¤€ôøÙ½¥ì(€Í••­Q¼è€¡Í•½¹‘Ìè¹Õµ‰•È°…±±½İM••­¡•…è‰½½±•…¸¤€ôøÙ½¥ì(€•ÑÕÉÉ•¹ÑQ¥µ”è€ ¤€ôø¹Õµ‰•Èì(€•ÑÕÉ…Ñ¥½¸üè€ ¤€ôø¹Õµ‰•Èì(€•ÑY¥‘•½…Ñ„üè€ ¤€ôøìÙ¥‘•½}¥üèÍÑÉ¥¹œôì(€µÕÑ”è€ ¤€ôøÙ½¥ì(€‘•ÍÑÉ½äüè€ ¤€ôøÙ½¥ì)ôì()‘•±…É”±½‰…°ì(€¥¹Ñ•É™…”]¥¹‘½Üì(€€€½¹e½ÕQÕ‰•%™É…µ•A%I•…‘äüè€ ¤€ôøÙ½¥ì(€ô)ô()™Õ¹Ñ¥½¸•¹ÍÕÉ•‘µ¥¹e½ÕQÕ‰•Á¤ ¤èAÉ½µ¥Í”ñÙ½¥øì(€¥˜€¡ÑåÁ•½˜İ¥¹‘½Ü€ôôô€‰Õ¹‘•™¥¹•ˆ¤É•ÑÕÉ¸AÉ½µ¥Í”¹É•Í½±Ù” ¤ì(€¥˜€ ¡İ¥¹‘½Ü…Ì]¥¹‘½Ü€˜ìePüèìA±…å•Èè¹•Ü€¡•±•µ•¹Ñ%èÍÑÉ¥¹œğ!Q51±•µ•¹Ğ°½ÁÑ¥½¹ÌèI•½ÉñÍÑÉ¥¹œ°Õ¹­¹½İ¸ø¤€ôø‘µ¥¹eQA±…å•Èôô¤¹ePü¹A±…å•È¤É•ÑÕÉ¸AÉ½µ¥Í”¹É•Í½±Ù” ¤ì(€É•ÑÕÉ¸¹•ÜAÉ½µ¥Í” ¡É•Í½±Ù”¤€ôøì(€€€½¹ÍĞÁÉ•Ù¥½ÕÌ€ôİ¥¹‘½Ü¹½¹e½ÕQÕ‰•%™É…µ•A%I•…‘äì(€€€İ¥¹‘½Ü¹½¹e½ÕQÕ‰•%™É…µ•A%I•…‘ä€ô€ ¤€ôøì(€€€€€ÁÉ•Ù¥½ÕÌü¸ ¤ì(€€€€€É•Í½±Ù” ¤ì(€€€ôì(€€€¥˜€ …‘½Õµ•¹Ğ¹ÅÕ•ÉåM•±•Ñ½È ÍÉ¥ÁÑmÍÉŒô‰¡ÑÑÁÌè¼½İİÜ¹å½ÕÑÕ‰”¹½´½¥™É…µ•}…Á¤‰tœ¤¤ì(€€€€€½¹ÍĞÍÉ¥ÁĞ€ô‘½Õµ•¹Ğ¹É•…Ñ•±•µ•¹Ğ ‰ÍÉ¥ÁĞˆ¤ì(€€€€€ÍÉ¥ÁĞ¹ÍÉŒ€ô€‰¡ÑÑÁÌè¼½İİÜ¹å½ÕÑÕ‰”¹½´½¥™É…µ•}…Á¤ˆì(€€€€€‘½Õµ•¹Ğ¹¡•…¹…ÁÁ•¹‘¡¥±¡ÍÉ¥ÁĞ¤ì(€€€ô(€ô¤ì)ô()™Õ¹Ñ¥½¸‘µ¥¹e½ÕQÕ‰•A±…å•È¡ì•¹ÑÉä°Í•ÍÍ¥½¹%ôèì•¹ÑÉäèEÕ•Õ•¹ÑÉäìÍ•ÍÍ¥½¹%èÍÑÉ¥¹œğ¹Õ±°ô¤ì(€½¹ÍĞÁ±…å•ÉI•˜€ôÕÍ•I•˜ñ‘µ¥¹eQA±…å•Èğ¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍĞÁ±…å•É!½ÍÑI•˜€ôÕÍ•I•˜ñ!Q51¥Ù±•µ•¹Ğğ¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍĞ•¹•É…Ñ¥½¹I•˜€ôÕÍ•I•˜ À¤ì(€½¹ÍĞÁ±…å‰…­MÑ…Ñ•I•˜€ôÕÍ•I•˜ñ1¥Ù•=Ù•É±…åA±…å‰…­MÑ…Ñ”ø ‰ÍÑ½ÁÁ•ˆ¤ì(€½¹ÍĞÁÕ‰±¥Í¡%¹±¥¡ÑI•˜€ôÕÍ•I•˜¡™…±Í”¤ì(€½¹ÍĞÅÕ•Õ•‘AÕ‰±¥Í¡I•˜€ôÕÍ•I•˜ñEÕ•Õ•‘=Ù•É±…åAÕ‰±¥Í ğ¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍĞ½ÕÑ‰½Õ¹‘QÉ…¹Í¥ÑÍÑ¥µ…Ñ•5ÍI•˜€ôÕÍ•I•˜ñ¹Õµ‰•Èğ¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍĞÁÉ•Ù¥½ÕÍ=‰Í•ÉÙ•‘Q¥µ•I•˜€ôÕÍ•I•˜ñ¹Õµ‰•Èğ¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍĞÁÉ•Ù¥½ÕÍ=‰Í•ÉÙ•‘ÑI•˜€ôÕÍ•I•˜ñ¹Õµ‰•Èğ¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍĞ‰Õ™™•É¥¹I•˜€ôÕÍ•I•˜¡™…±Í”¤ì(€½¹ÍĞå½ÕÑÕ‰••¹•É…Ñ¥½¹Ñ¥Ù•I•˜€ôÕÍ•I•˜¡ÑÉÕ”¤ì(€½¹ÍĞm‘¥…¹½ÍÑ¥Ì°Í•Ñ¥…¹½ÍÑ¥Ít€ôÕÍ•MÑ…Ñ”ñìÁÉ½Ù¥‘•ÈèÍÑÉ¥¹œìÙ¥‘•½%èÍÑÉ¥¹œìÑÉ…­%èÍÑÉ¥¹œìÁ±…å‰…­MÑ…Ñ”è€‰Á±…å¥¹œˆğ€‰Á…ÕÍ•ˆğ€‰ÍÑ½ÁÁ•ˆìÕÉÉ•¹ÑQ¥µ•M•½¹‘Ìè¹Õµ‰•Èì‘ÕÉ…Ñ¥½¹M•½¹‘Ìüè¹Õµ‰•ÈìÕÁ‘…Ñ•‘ĞèÍÑÉ¥¹œìÍÑ…ÑÕÌè€‰É•Í ˆğ€‰MÑ…±”ˆğ€‰5¥ÍÍ¥¹œˆğ€‰5¥Íµ…Ñ ˆğ€‰ÉÉ½ÈˆìÉ•…‘äè‰½½±•…¸ì•ÉÉ½É½‘”üè¹Õµ‰•ÈìÁÕ‰±¥Í¡MÑ…ÑÕÌüè€‰ÍÕ•ÍÌˆğ€‰™…¥±•ˆôğ¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍĞm½ÕÑ‰½Õ¹‘QÉ…¹Í¥Ñ¥…¹½ÍÑ¥5Ì°Í•Ñ=ÕÑ‰½Õ¹‘QÉ…¹Í¥Ñ¥…¹½ÍÑ¥5Ít€ôÕÍ•MÑ…Ñ”ñ¹Õµ‰•Èğ¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍĞm‘¥…¹½ÍÑ¥Í9½Ü°Í•Ñ¥…¹½ÍÑ¥Í9½İt€ôÕÍ•MÑ…Ñ”  ¤€ôø…Ñ”¹¹½Ü ¤¤ì(€½¹ÍĞÑÉ…­%€ô•¹ÑÉä¹¥ì(€½¹ÍĞÑÉ…­1¥¹¬€ô•¹ÑÉä¹±¥¹¬ì(€½¹ÍĞÍ½ÕÉ•QåÁ”€ô•¹ÑÉä¹Í½ÕÉ•QåÁ”ì(€½¹ÍĞÙ¥‘•½%€ôÁ…ÉÍ•e½ÕQÕ‰•Y¥‘•½%¡ÑÉ…­1¥¹¬¤ì(€½¹ÍĞÉ•Á½ÉÑ1¥™•å±”€ôÕÍ•…±±‰…¬ ¡•Ù•¹ÑQåÁ”èEÕ•Õ•A±…å‰…­1¥™•å±•Ù•¹Ñ%¹ÁÕÑl‰•Ù•¹ÑQåÁ”‰t°ÕÉÉ•¹ÑQ¥µ•M•½¹‘Ì€ô€À°•ÉÉ½É½‘”èEÕ•Õ•A±…å‰…­ÉÉ½É½‘”ğ¹Õ±°€ô¹Õ±°¤€ôøì(€€€±•Ğ‘ÕÉ…Ñ¥½¹M•½¹‘Ìè¹Õµ‰•ÈğÕ¹‘•™¥¹•ì(€€€ÑÉäì(€€€€€½¹ÍĞ‘ÕÉ…Ñ¥½¸€ôÁ±…å•ÉI•˜¹ÕÉÉ•¹Ğü¹•ÑÕÉ…Ñ¥½¸ü¸ ¤ì(€€€€€‘ÕÉ…Ñ¥½¹M•½¹‘Ì€ôÑåÁ•½˜‘ÕÉ…Ñ¥½¸€ôôô€‰¹Õµ‰•Èˆ€˜˜9Õµ‰•È¹¥Í¥¹¥Ñ”¡‘ÕÉ…Ñ¥½¸¤€˜˜‘ÕÉ…Ñ¥½¸€ø€À€ü‘ÕÉ…Ñ¥½¸€èÕ¹‘•™¥¹•ì(€€€ô…Ñ ì(€€€€€‘ÕÉ…Ñ¥½¹M•½¹‘Ì€ôÕ¹‘•™¥¹•ì(€€€ô(€€€Ù½¥Á½ÍÑEÕ•Õ•A±…å‰…­1¥™•å±•Ù•¹Ğ¡ìÍ•ÍÍ¥½¹%°ÑÉ…­%°ÁÉ½Ù¥‘•Èè€‰å½ÕÑÕ‰”ˆ°•Ù•¹ÑQåÁ”°ÕÉÉ•¹ÑQ¥µ•M•½¹‘Ì°‘ÕÉ…Ñ¥½¹M•½¹‘Ì°•ÉÉ½É½‘”ô¤ì(€ô°mÍ•ÍÍ¥½¹%°ÑÉ…­%‘t¤ì(€½¹ÍĞÑÉ…­Må¹%¹ÁÕĞ€ôÕÍ•5•µ¼ñ=Ù•É±…åe½ÕQÕ‰•QÉ…­%¹ÁÕĞø  ¤€ôø€¡ì¥èÑÉ…­%°±¥¹¬èÑÉ…­1¥¹¬°Í½ÕÉ•QåÁ”°Ù¥‘•½%ô¤°mÑÉ…­%°ÑÉ…­1¥¹¬°Í½ÕÉ•QåÁ”°Ù¥‘•½%‘t¤ì(€½¹ÍĞ½¹Ñ…¥¹•É%€ô…‘µ¥¸µå½ÕÑÕ‰”µÁ±…å•È´‘íÑÉ…­%‘ô´‘íÙ¥‘•½%€üü€‰Õ¹­¹½İ¸‰õ€ì(€½¹ÍĞ±•…É%µÁ•É…Ñ¥Ù•!½ÍĞ€ôÕÍ•…±±‰…¬  ¤€ôøì(€€€¥˜€¡Á±…å•É!½ÍÑI•˜¹ÕÉÉ•¹Ğ¤Á±…å•É!½ÍÑI•˜¹ÕÉÉ•¹Ğ¹É•Á±…•¡¥±‘É•¸ ¤ì(€ô°mt¤ì(€½¹ÍĞÁÕ‰±¥Í¡9½Ü€ôÕÍ•…±±‰…¬¡…Íå¹Œ€¡Á±…å‰…­MÑ…Ñ”è1¥Ù•=Ù•É±…åA±…å‰…­MÑ…Ñ”°ÕÉÉ•¹ÑQ¥µ•M•½¹‘Ì€ô€À°½ÉÉ•Ñ¥½¹I•…Í½¸è1¥Ù•=Ù•É±…åMå¹½ÉÉ•Ñ¥½¹I•…Í½¸€ô€‰¡•…ÉÑ‰•…Ğˆ¤€ôøì(€€€±•Ğ…ÑÕ…±Y¥‘•½%€ôÙ¥‘•½%ì(€€€ÑÉäì(€€€€€…ÑÕ…±Y¥‘•½%€ôÁ±…å•ÉI•˜¹ÕÉÉ•¹Ğü¹•ÑY¥‘•½…Ñ„ü¸ ¤¹Ù¥‘•½}¥ñğÙ¥‘•½%ì(€€€ô…Ñ ì(€€€€€Í•Ñ¥…¹½ÍÑ¥Ì ¡ÕÉÉ•¹Ğ¤€ôøÕÉÉ•¹Ğ€üì€¸¸¹ÕÉÉ•¹Ğ°ÍÑ…ÑÕÌè€‰ÉÉ½Èˆ°ÁÕ‰±¥Í¡MÑ…ÑÕÌè€‰™…¥±•ˆô€è¹Õ±°¤ì(€€€€€É•ÑÕÉ¸ì(€€€ô(€€€¥˜€ ……ÑÕ…±Y¥‘•½%ñğ…ÑÕ…±Y¥‘•½%€„ôôÙ¥‘•½%¤ì(€€€€€Í•Ñ¥…¹½ÍÑ¥Ì¡…ÑÕ…±Y¥‘•½%€üìÁÉ½Ù¥‘•Èè€‰å½ÕÑÕ‰”ˆ°Ù¥‘•½%è…ÑÕ…±Y¥‘•½%°ÑÉ…­%°Á±…å‰…­MÑ…Ñ”°ÕÉÉ•¹ÑQ¥µ•M•½¹‘Ì°ÕÁ‘…Ñ•‘Ğè¹•Ü…Ñ” ¤¹Ñ½%M=MÑÉ¥¹œ ¤°ÍÑ…ÑÕÌè€‰5¥Íµ…Ñ ˆ°É•…‘äè	½½±•…¸¡Á±…å•ÉI•˜¹ÕÉÉ•¹Ğ¤°ÁÕ‰±¥Í¡MÑ…ÑÕÌè€‰™…¥±•ˆô€è¹Õ±°¤ì(€€€€€É•ÑÕÉ¸ì(€€€ô(€€€½¹ÍĞ½ÕÑ‰½Õ¹‘QÉ…¹Í¥ÑM•½¹‘Ì€ôÁ±…å‰…­MÑ…Ñ”€ôôô€‰Á±…å¥¹œˆ€ü€¡½ÕÑ‰½Õ¹‘QÉ…¹Í¥ÑÍÑ¥µ…Ñ•5ÍI•˜¹ÕÉÉ•¹Ğ€üü€À¤€¼€ÄÀÀÀ€è€Àì(€€€½¹ÍĞÁÕ‰±¥Í¡Q¥µ”€ô5…Ñ ¹µ…à À°ÕÉÉ•¹ÑQ¥µ•M•½¹‘Ì€¬½ÕÑ‰½Õ¹‘QÉ…¹Í¥ÑM•½¹‘Ì¤ì(€€€±•Ğ‘ÕÉ…Ñ¥½¹M•½¹‘Ìè¹Õµ‰•ÈğÕ¹‘•™¥¹•ì(€€€ÑÉäì(€€€€€½¹ÍĞ‘ÕÉ…Ñ¥½¸€ôÁ±…å•ÉI•˜¹ÕÉÉ•¹Ğü¹•ÑÕÉ…Ñ¥½¸ü¸ ¤ì(€€€€€‘ÕÉ…Ñ¥½¹M•½¹‘Ì€ôÑåÁ•½˜‘ÕÉ…Ñ¥½¸€ôôô€‰¹Õµ‰•Èˆ€˜˜9Õµ‰•È¹¥Í¥¹¥Ñ”¡‘ÕÉ…Ñ¥½¸¤€˜˜‘ÕÉ…Ñ¥½¸€ø€À€ü‘ÕÉ…Ñ¥½¸€èÕ¹‘•™¥¹•ì(€€€ô…Ñ ì(€€€€€‘ÕÉ…Ñ¥½¹M•½¹‘Ì€ôÕ¹‘•™¥¹•ì(€€€ô(€€€ÑÉäì(€€€€€½¹ÍĞìÍå¹Œ°½ÕÑ‰½Õ¹‘QÉ…¹Í¥Ñ5Ìô€ô…İ…¥ĞÁÕ‰±¥Í¡=Ù•É±…åe½ÕQÕ‰•Må¹Œ¡ÑÉ…­Må¹%¹ÁÕĞ°Á±…å‰…­MÑ…Ñ”°ÁÕ‰±¥Í¡Q¥µ”°‘ÕÉ…Ñ¥½¹M•½¹‘Ì°½ÉÉ•Ñ¥½¹I•…Í½¸¤€üüìÍå¹Œè¹Õ±°°½ÕÑ‰½Õ¹‘QÉ…¹Í¥Ñ5Ìè€Àôì(€€€€€½ÕÑ‰½Õ¹‘QÉ…¹Í¥ÑÍÑ¥µ…Ñ•5ÍI•˜¹ÕÉÉ•¹Ğ€ôÕÁ‘…Ñ•QÉ…¹Í¥ÑÍÑ¥µ…Ñ•5Ì¡½ÕÑ‰½Õ¹‘QÉ…¹Í¥ÑÍÑ¥µ…Ñ•5ÍI•˜¹ÕÉÉ•¹Ğ°½ÕÑ‰½Õ¹‘QÉ…¹Í¥Ñ5Ì¤ì(€€€€€Í•Ñ=ÕÑ‰½Õ¹‘QÉ…¹Í¥Ñ¥…¹½ÍÑ¥5Ì¡5…Ñ ¹É½Õ¹¡½ÕÑ‰½Õ¹‘QÉ…¹Í¥ÑÍÑ¥µ…Ñ•5ÍI•˜¹ÕÉÉ•¹Ğ¤¤ì(€€€€€¥˜€¡Íå¹Œ¤Í•Ñ¥…¹½ÍÑ¥Ì¡ì€¸¸¹Íå¹Œ°ÕÉÉ•¹ÑQ¥µ•M•½¹‘ÌèÁÕ‰±¥Í¡Q¥µ”°ÍÑ…ÑÕÌè€‰É•Í ˆ°É•…‘äè	½½±•…¸¡Á±…å•ÉI•˜¹ÕÉÉ•¹Ğ¤°ÁÕ‰±¥Í¡MÑ…ÑÕÌè€‰ÍÕ•ÍÌˆô¤ì(€€€ô…Ñ ì(€€€€€½ÕÑ‰½Õ¹‘QÉ…¹Í¥ÑÍÑ¥µ…Ñ•5ÍI•˜¹ÕÉÉ•¹Ğ€ôÕÁ‘…Ñ•QÉ…¹Í¥ÑÍÑ¥µ…Ñ•5Ì¡½ÕÑ‰½Õ¹‘QÉ…¹Í¥ÑÍÑ¥µ…Ñ•5ÍI•˜¹ÕÉÉ•¹Ğ°€À¤ì(€€€€€Í•Ñ=ÕÑ‰½Õ¹‘QÉ…¹Í¥Ñ¥…¹½ÍÑ¥5Ì¡5…Ñ ¹É½Õ¹¡½ÕÑ‰½Õ¹‘QÉ…¹Í¥ÑÍÑ¥µ…Ñ•5ÍI•˜¹ÕÉÉ•¹Ğ¤¤ì(€€€€€Í•Ñ¥…¹½ÍÑ¥Ì ¡ÕÉÉ•¹Ğ¤€ôøÕÉÉ•¹Ğ€üì€¸¸¹ÕÉÉ•¹Ğ°ÍÑ…ÑÕÌè€‰ÉÉ½Èˆ°ÁÕ‰±¥Í¡MÑ…ÑÕÌè€‰™…¥±•ˆô€è¹Õ±°¤ì(€€€ô(€ô°mÑÉ…­%°ÑÉ…­Må¹%¹ÁÕĞ°Ù¥‘•½%‘t¤ì((€½¹ÍĞÁÕ‰±¥Í €ôÕÍ•…±±‰…¬ ¡Á±…å‰…­MÑ…Ñ”è1¥Ù•=Ù•É±…åA±…å‰…­MÑ…Ñ”°ÕÉÉ•¹ÑQ¥µ•M•½¹‘Ì€ô€À°½ÉÉ•Ñ¥½¹I•…Í½¸è1¥Ù•=Ù•É±…åMå¹½ÉÉ•Ñ¥½¹I•…Í½¸€ô€‰¡•…ÉÑ‰•…Ğˆ¤€ôøì(€€€½¹ÍĞ¹•áĞ€ôìÁ±…å‰…­MÑ…Ñ”°ÕÉÉ•¹ÑQ¥µ•M•½¹‘Ì°½ÉÉ•Ñ¥½¹I•…Í½¸ôì(€€€¥˜€¡ÁÕ‰±¥Í¡%¹±¥¡ÑI•˜¹ÕÉÉ•¹Ğ¤ì(€€€€€¥˜€¡Í¡½Õ±‘I•Á±…•EÕ•Õ•‘AÕ‰±¥Í ¡ÅÕ•Õ•‘AÕ‰±¥Í¡I•˜¹ÕÉÉ•¹Ğ°¹•áĞ¤¤ÅÕ•Õ•‘AÕ‰±¥Í¡I•˜¹ÕÉÉ•¹Ğ€ô¹•áĞì(€€€€€É•ÑÕÉ¸ì(€€€ô(€€€ÁÕ‰±¥Í¡%¹±¥¡ÑI•˜¹ÕÉÉ•¹Ğ€ôÑÉÕ”ì(€€€Ù½¥€¡…Íå¹Œ€ ¤€ôøì(€€€€€±•ĞÕÉÉ•¹ĞèEÕ•Õ•‘=Ù•É±…åAÕ‰±¥Í ğ¹Õ±°€ô¹•áĞì(€€€€€İ¡¥±”€¡ÕÉÉ•¹Ğ€˜˜å½ÕÑÕ‰••¹•É…Ñ¥½¹Ñ¥Ù•I•˜¹ÕÉÉ•¹Ğ¤ì(€€€€€€€…İ…¥ĞÁÕ‰±¥Í¡9½Ü¡ÕÉÉ•¹Ğ¹Á±…å‰…­MÑ…Ñ”°ÕÉÉ•¹Ğ¹ÕÉÉ•¹ÑQ¥µ•M•½¹‘Ì°ÕÉÉ•¹Ğ¹½ÉÉ•Ñ¥½¹I•…Í½¸¤ì(€€€€€€€ÕÉÉ•¹Ğ€ôÅÕ•Õ•‘AÕ‰±¥Í¡I•˜¹ÕÉÉ•¹Ğì(€€€€€€€ÅÕ•Õ•‘AÕ‰±¥Í¡I•˜¹ÕÉÉ•¹Ğ€ô¹Õ±°ì(€€€€€ô(€€€€€ÁÕ‰±¥Í¡%¹±¥¡ÑI•˜¹ÕÉÉ•¹Ğ€ô™…±Í”ì(€€€ô¤ ¤ì(€ô°mÁÕ‰±¥Í¡9½İt¤ì((€ÕÍ•™™•Ğ  ¤€ôøì(€€€¥˜€ …Ù¥‘•½%¤É•ÑÕÉ¸ì(€€€±•Ğ…¹•±±•€ô™…±Í”ì(€€€å½ÕÑÕ‰••¹•É…Ñ¥½¹Ñ¥Ù•I•˜¹ÕÉÉ•¹Ğ€ôÑÉÕ”ì(€€€½¹ÍĞ•¹•É…Ñ¥½¸€ô•¹•É…Ñ¥½¹I•˜¹ÕÉÉ•¹Ğ€¬€Äì(€€€•¹•É…Ñ¥½¹I•˜¹ÕÉÉ•¹Ğ€ô•¹•É…Ñ¥½¸ì(€€€±•…É%µÁ•É…Ñ¥Ù•!½ÍĞ ¤ì(€€€½¹ÍĞµ½Õ¹Ğ€ô‘½Õµ•¹Ğ¹É•…Ñ•±•µ•¹Ğ ‰‘¥Øˆ¤ì(€€€µ½Õ¹Ğ¹¥€ô€‘í½¹Ñ…¥¹•É%‘ôµåĞ´‘í•¹•É…Ñ¥½¹õ€ì(€€€Á±…å•É!½ÍÑI•˜¹ÕÉÉ•¹Ğü¹…ÁÁ•¹‘¡¥±¡µ½Õ¹Ğ¤ì(€€€±•ĞÉ•…‘åQ¥µ•Èè¹Õµ‰•Èğ¹Õ±°€ôİ¥¹‘½Ü¹Í•ÑQ¥µ•½ÕĞ  ¤€ôøì(€€€€€¥˜€¡…¹•±±•ñğ•¹•É…Ñ¥½¹I•˜¹ÕÉÉ•¹Ğ€„ôô•¹•É…Ñ¥½¸¤É•ÑÕÉ¸ì(€€€€€Á±…å‰…­MÑ…Ñ•I•˜¹ÕÉÉ•¹Ğ€ô€‰ÍÑ½ÁÁ•ˆì(€€€€€Í•Ñ¥…¹½ÍÑ¥Ì¡ìÁÉ½Ù¥‘•Èè€‰å½ÕÑÕ‰”ˆ°Ù¥‘•½%°ÑÉ…­%°Á±…å‰…­MÑ…Ñ”è€‰ÍÑ½ÁÁ•ˆ°ÕÉÉ•¹ÑQ¥µ•M•½¹‘Ìè€À°ÕÁ‘…Ñ•‘Ğè¹•Ü…Ñ” ¤¹Ñ½%M=MÑÉ¥¹œ ¤°ÍÑ…ÑÕÌè€‰ÉÉ½Èˆ°É•…‘äè™…±Í”°ÁÕ‰±¥Í¡MÑ…ÑÕÌè€‰™…¥±•ˆô¤ì(€€€€€ÁÕ‰±¥Í  ‰ÍÑ½ÁÁ•ˆ°€À°€‰ÍÑ…Ñ•}¡…¹”ˆ¤ì(€€€€€É•Á½ÉÑ1¥™•å±” ‰•ÉÉ½Èˆ°€À°€‰É•…‘å}Ñ¥µ•½ÕĞˆ¤ì(€€€ô°e=UQU	}A1eI}Ie}Q%5=UQ}5L¤ì(€€€•¹ÍÕÉ•‘µ¥¹e½ÕQÕ‰•Á¤ ¤¹Ñ¡•¸  ¤€ôøì(€€€€€½¹ÍĞåĞ€ô€¡İ¥¹‘½Ü…Ì]¥¹‘½Ü€˜ìePüèìA±…å•Èè¹•Ü€¡•±•µ•¹Ñ%èÍÑÉ¥¹œğ!Q51±•µ•¹Ğ°½ÁÑ¥½¹ÌèI•½ÉñÍÑÉ¥¹œ°Õ¹­¹½İ¸ø¤€ôø‘µ¥¹eQA±…å•Èôô¤¹ePì(€€€€€¥˜€¡…¹•±±•ñğ•¹•É…Ñ¥½¹I•˜¹ÕÉÉ•¹Ğ€„ôô•¹•É…Ñ¥½¸ñğÁ±…å•ÉI•˜¹ÕÉÉ•¹Ğñğ€…åĞü¹A±…å•Èñğ€…µ½Õ¹Ğ¹¥Í½¹¹•Ñ•¤É•ÑÕÉ¸ì(€€€€€Á±…å•ÉI•˜¹ÕÉÉ•¹Ğ€ô¹•ÜåĞ¹A±…å•È¡µ½Õ¹Ğ°ì(€€€€€€€Ù¥‘•½%°(€€€€€€€Á±…å•ÉY…ÉÌèì…ÕÑ½Á±…äè€À°½¹ÑÉ½±Ìè€Ä°µ½‘•ÍÑ‰É…¹‘¥¹œè€Ä°Á±…åÍ¥¹±¥¹”è€Ä°É•°è€Àô°(€€€€€€€•Ù•¹ÑÌèì(€€€€€€€€€½¹I•…‘äè€ ¤€ôøì(€€€€€€€€€€€¥˜€¡…¹•±±•ñğ•¹•É…Ñ¥½¹I•˜¹ÕÉÉ•¹Ğ€„ôô•¹•É…Ñ¥½¸¤É•ÑÕÉ¸ì(€€€€€€€€€€€¥˜€¡É•…‘åQ¥µ•È¤İ¥¹‘½Ü¹±•…ÉQ¥µ•½ÕĞ¡É•…‘åQ¥µ•È¤ì(€€€€€€€€€€€É•…‘åQ¥µ•È€ô¹Õ±°ì(€€€€€€€€€€€Í•Ñ¥…¹½ÍÑ¥Ì ¡ÕÉÉ•¹Ğ¤€ôøÕÉÉ•¹Ğ€üì€¸¸¹ÕÉÉ•¹Ğ°É•…‘äèÑÉÕ”ô€èìÁÉ½Ù¥‘•Èè€‰å½ÕÑÕ‰”ˆ°Ù¥‘•½%°ÑÉ…­%°Á±…å‰…­MÑ…Ñ”è€‰ÍÑ½ÁÁ•ˆ°ÕÉÉ•¹ÑQ¥µ•M•½¹‘Ìè€À°ÕÁ‘…Ñ•‘Ğè¹•Ü…Ñ” ¤¹Ñ½%M=MÑÉ¥¹œ ¤°ÍÑ…ÑÕÌè€‰5¥ÍÍ¥¹œˆ°É•…‘äèÑÉÕ”ô¤ì(€€€€€€€€€€€É•Á½ÉÑ1¥™•å±” ‰É•…‘äˆ°€À¤ì(€€€€€€€€€ô°(€€€€€€€€€½¹ÉÉ½Èè€¡•Ù•¹Ğèì‘…Ñ„è¹Õµ‰•Èô¤€ôøì(€€€€€€€€€€€¥˜€¡…¹•±±•ñğ•¹•É…Ñ¥½¹I•˜¹ÕÉÉ•¹Ğ€„ôô•¹•É…Ñ¥½¸¤É•ÑÕÉ¸ì(€€€€€€€€€€€¥˜€¡É•…‘åQ¥µ•È¤İ¥¹‘½Ü¹±•…ÉQ¥µ•½ÕĞ¡É•…‘åQ¥µ•È¤ì(€€€€€€€€€€€É•…‘åQ¥µ•È€ô¹Õ±°ì(€€€€€€€€€€€‰Õ™™•É¥¹I•˜¹ÕÉÉ•¹Ğ€ô™…±Í”ì(€€€€€€€€€€€Á±…å‰…­MÑ…Ñ•I•˜¹ÕÉÉ•¹Ğ€ô€‰ÍÑ½ÁÁ•ˆì(€€€€€€€€€€€Í•Ñ¥…¹½ÍÑ¥Ì¡ìÁÉ½Ù¥‘•Èè€‰å½ÕÑÕ‰”ˆ°Ù¥‘•½%°ÑÉ…­%°Á±…å‰…­MÑ…Ñ”è€‰ÍÑ½ÁÁ•ˆ°ÕÉÉ•¹ÑQ¥µ•M•½¹‘Ìè€À°ÕÁ‘…Ñ•‘Ğè¹•Ü…Ñ” ¤¹Ñ½%M=MÑÉ¥¹œ ¤°ÍÑ…ÑÕÌè€‰ÉÉ½Èˆ°É•…‘äè™…±Í”°•ÉÉ½É½‘”è•Ù•¹Ğ¹‘…Ñ„°ÁÕ‰±¥Í¡MÑ…ÑÕÌè€‰™…¥±•ˆô¤ì(€€€€€€€€€€€ÁÕ‰±¥Í  ‰ÍÑ½ÁÁ•ˆ°€À°€‰ÍÑ…Ñ•}¡…¹”ˆ¤ì(€€€€€€€€€€€É•Á½ÉÑ1¥™•å±” ‰•ÉÉ½Èˆ°€À°€‰ÁÉ½Ù¥‘•É}•ÉÉ½Èˆ¤ì(€€€€€€€€€ô°(€€€€€€€€€½¹MÑ…Ñ•¡…¹”è€¡•Ù•¹Ğèì‘…Ñ„è¹Õµ‰•Èô¤€ôøì(€€€€€€€€€€€¥˜€¡…¹•±±•ñğ•¹•É…Ñ¥½¹I•˜¹ÕÉÉ•¹Ğ€„ôô•¹•É…Ñ¥½¸¤É•ÑÕÉ¸ì(€€€€€€€€€€€½¹ÍĞÁÉ•Ù¥½ÕÌ€ôÁ±…å‰…­MÑ…Ñ•I•˜¹ÕÉÉ•¹Ğì(€€€€€€€€€€€½¹ÍĞ¹•áĞ€ô•Ù•¹Ğ¹‘…Ñ„€ôôô€Ä€ü€‰Á±…å¥¹œˆ€è•Ù•¹Ğ¹‘…Ñ„€ôôô€È€ü€‰Á…ÕÍ•ˆ€è•Ù•¹Ğ¹‘…Ñ„€ôôô€À€ü€‰ÍÑ½ÁÁ•ˆ€è¹Õ±°ì(€€€€€€€€€€€±•Ğ•Ù•¹ÑQ¥µ”€ô€Àì(€€€€€€€€€€€ÑÉäì(€€€€€€€€€€€€€•Ù•¹ÑQ¥µ”€ôÁ±…å•ÉI•˜¹ÕÉÉ•¹Ğü¹•ÑÕÉÉ•¹ÑQ¥µ” ¤€üü€Àì(€€€€€€€€€€€ô…Ñ ì(€€€€€€€€€€€€€Á±…å‰…­MÑ…Ñ•I•˜¹ÕÉÉ•¹Ğ€ô€‰ÍÑ½ÁÁ•ˆì(€€€€€€€€€€€€€Í•Ñ¥…¹½ÍÑ¥Ì ¡ÕÉÉ•¹Ğ¤€ôøÕÉÉ•¹Ğ€üì€¸¸¹ÕÉÉ•¹Ğ°ÍÑ…ÑÕÌè€‰ÉÉ½Èˆ°ÁÕ‰±¥Í¡MÑ…ÑÕÌè€‰™…¥±•ˆô€è¹Õ±°¤ì(€€€€€€€€€€€€€É•Á½ÉÑ1¥™•å±” ‰•ÉÉ½Èˆ°€À°€‰Íå¹}•ÉÉ½Èˆ¤ì(€€€€€€€€€€€€€É•ÑÕÉ¸ì(€€€€€€€€€€€ô(€€€€€€€€€€€¥˜€¡•Ù•¹Ğ¹‘…Ñ„€ôôô€Ì¤ì(€€€€€€€€€€€€€‰Õ™™•É¥¹I•˜¹ÕÉÉ•¹Ğ€ôÑÉÕ”ì(€€€€€€€€€€€€€É•Á½ÉÑ1¥™•å±” ‰ÍÑ…±°ˆ°•Ù•¹ÑQ¥µ”¤ì(€€€€€€€€€€€€€É•ÑÕÉ¸ì(€€€€€€€€€€€ô(€€€€€€€€€€€¥˜€¡•Ù•¹Ğ¹‘…Ñ„€ôôô€Ô¤ì(€€€€€€€€€€€€€É•Á½ÉÑ1¥™•å±” ‰É•…‘äˆ°•Ù•¹ÑQ¥µ”¤ì(€€€€€€€€€€€€€É•ÑÕÉ¸ì(€€€€€€€€€€€ô(€€€€€€€€€€€¥˜€ …¹•áĞ¤É•ÑÕÉ¸ì(€€€€€€€€€€€Á±…å‰…­MÑ…Ñ•I•˜¹ÕÉÉ•¹Ğ€ô¹•áĞì(€€€€€€€€€€€¥˜€¡•Ù•¹Ğ¹‘…Ñ„€ôôô€Ä¤É•Á½ÉÑ1¥™•å±”¡‰Õ™™•É¥¹I•˜¹ÕÉÉ•¹ĞñğÁÉ•Ù¥½ÕÌ€ôôô€‰Á…ÕÍ•ˆ€ü€‰É•ÍÕµ”ˆ€è€‰Á±…äˆ°•Ù•¹ÑQ¥µ”¤ì(€€€€€€€€€€€•±Í”¥˜€¡•Ù•¹Ğ¹‘…Ñ„€ôôô€È¤É•Á½ÉÑ1¥™•å±” ‰Á…ÕÍ”ˆ°•Ù•¹ÑQ¥µ”¤ì(€€€€€€€€€€€•±Í”¥˜€¡•Ù•¹Ğ¹‘…Ñ„€ôôô€À¤É•Á½ÉÑ1¥™•å±” ‰•¹‘•ˆ°•Ù•¹ÑQ¥µ”¤ì(€€€€€€€€€€€‰Õ™™•É¥¹I•˜¹ÕÉÉ•¹Ğ€ô™…±Í”ì(€€€€€€€€€€€ÁÕ‰±¥Í ¡¹•áĞ°•Ù•¹ÑQ¥µ”°€‰ÍÑ…Ñ•}¡…¹”ˆ¤ì(€€€€€€€€€ô°(€€€€€€€ô°(€€€€€ô¤ì(€€€ô¤ì(€€€½¹ÍĞ¥¹Ñ•ÉÙ…°€ôİ¥¹‘½Ü¹Í•Ñ%¹Ñ•ÉÙ…°  ¤€ôøì(€€€€€±•ĞÕÉÉ•¹ÑQ¥µ”€ô€Àì(€€€€€ÑÉäì(€€€€€€€ÕÉÉ•¹ÑQ¥µ”€ôÁ±…å•ÉI•˜¹ÕÉÉ•¹Ğü¹•ÑÕÉÉ•¹ÑQ¥µ” ¤€üü€Àì(€€€€€ô…Ñ ì(€€€€€€€Á±…å‰…­MÑ…Ñ•I•˜¹ÕÉÉ•¹Ğ€ô€‰ÍÑ½ÁÁ•ˆì(€€€€€€€Í•Ñ¥…¹½ÍÑ¥Ì ¡ÕÉÉ•¹Ğ¤€ôøÕÉÉ•¹Ğ€üì€¸¸¹ÕÉÉ•¹Ğ°ÍÑ…ÑÕÌè€‰ÉÉ½Èˆ°ÁÕ‰±¥Í¡MÑ…ÑÕÌè€‰™…¥±•ˆô€è¹Õ±°¤ì(€€€€€ô(€€€€€½¹ÍĞ½‰Í•ÉÙ•‘Ğ€ô…Ñ”¹¹½Ü ¤ì(€€€€€½¹ÍĞİ…ÍM••¬€ôÁÉ•Ù¥½ÕÍ=‰Í•ÉÙ•‘Q¥µ•I•˜¹ÕÉÉ•¹Ğ€„ôô¹Õ±°€˜˜ÁÉ•Ù¥½ÕÍ=‰Í•ÉÙ•‘ÑI•˜¹ÕÉÉ•¹Ğ€„ôô¹Õ±°€˜˜‘•Ñ•Ñ5…Ñ•É¥…±A±…å‰…­M••¬¡ìÁ±…å‰…­MÑ…Ñ”èÁ±…å‰…­MÑ…Ñ•I•˜¹ÕÉÉ•¹Ğ°ÁÉ•Ù¥½ÕÍQ¥µ•M•½¹‘ÌèÁÉ•Ù¥½ÕÍ=‰Í•ÉÙ•‘Q¥µ•I•˜¹ÕÉÉ•¹Ğ°ÁÉ•Ù¥½ÕÍ=‰Í•ÉÙ•‘Ñ5ÌèÁÉ•Ù¥½ÕÍ=‰Í•ÉÙ•‘ÑI•˜¹ÕÉÉ•¹Ğ°ÕÉÉ•¹ÑQ¥µ•M•½¹‘ÌèÕÉÉ•¹ÑQ¥µ”°ÕÉÉ•¹Ñ=‰Í•ÉÙ•‘Ñ5Ìè½‰Í•ÉÙ•‘Ğô¤ì(€€€€€¥˜€¡Á±…å‰…­MÑ…Ñ•I•˜¹ÕÉÉ•¹Ğ€ôôô€‰Á±…å¥¹œˆñğÁ±…å‰…­MÑ…Ñ•I•˜¹ÕÉÉ•¹Ğ€ôôô€‰Á…ÕÍ•ˆ¤ÁÕ‰±¥Í ¡Á±…å‰…­MÑ…Ñ•I•˜¹ÕÉÉ•¹Ğ°ÕÉÉ•¹ÑQ¥µ”°İ…ÍM••¬€ü€‰Í••¬ˆ€è€‰¡•…ÉÑ‰•…Ğˆ¤ì(€€€€€¥˜€¡İ…ÍM••¬¤É•Á½ÉÑ1¥™•å±” ‰Í••¬ˆ°ÕÉÉ•¹ÑQ¥µ”¤ì(€€€€€ÁÉ•Ù¥½ÕÍ=‰Í•ÉÙ•‘Q¥µ•I•˜¹ÕÉÉ•¹Ğ€ôÕÉÉ•¹ÑQ¥µ”ì(€€€€€ÁÉ•Ù¥½ÕÍ=‰Í•ÉÙ•‘ÑI•˜¹ÕÉÉ•¹Ğ€ô½‰Í•ÉÙ•‘Ğì(€€€€€Í•Ñ¥…¹½ÍÑ¥Í9½Ü¡½‰Í•ÉÙ•‘Ğ¤ì(€€€€€Í•Ñ¥…¹½ÍÑ¥Ì ¡ÕÉÉ•¹Ğ¤€ôøÕÉÉ•¹Ğ€üì€¸¸¹ÕÉÉ•¹Ğ°ÍÑ…ÑÕÌèÕÉÉ•¹Ğ¹ÍÑ…ÑÕÌ€ôôô€‰ÉÉ½ÈˆñğÕÉÉ•¹Ğ¹ÍÑ…ÑÕÌ€ôôô€‰5¥Íµ…Ñ ˆ€üÕÉÉ•¹Ğ¹ÍÑ…ÑÕÌ€è½‰Í•ÉÙ•‘Ğ€´¹•Ü…Ñ”¡ÕÉÉ•¹Ğ¹ÕÁ‘…Ñ•‘Ğ¤¹•ÑQ¥µ” ¤€øe=UQU	}Me9}MQ1}QI}5L€ü€‰MÑ…±”ˆ€è€‰É•Í ˆô€è¹Õ±°¤ì(€€€€€€¼¼MÑ½ÁÁ•½•¹‘•ÁÕ‰±¥Í¡•Ì¥µµ•‘¥…Ñ•±ä™É½´½¹MÑ…Ñ•¡…¹”°Ñ¡•¸¥¹Ñ•¹Ñ¥½¹…±±ä™…±±Ì‰…¬…™Ñ•ÈÍÑ…±•¹•ÍÌ¸(€€€€€€¼¼A±…å¥¹œ…¹Á…ÕÍ•½¹Ñ¥¹Õ”¡•…ÉÑ‰•…Ñ¥¹œİ¡¥±”Ñ¡”…ÕÑ¡½É¥Ñ…Ñ¥Ù”¡½ÍĞÁ±…å•ÈÉ•µ…¥¹Ìµ½Õ¹Ñ•¸(€€€ô°e=UQU	}Me9}!IQ	Q}5L¤ì(€€€É•ÑÕÉ¸€ ¤€ôøì(€€€€€…¹•±±•€ôÑÉÕ”ì(€€€€€å½ÕÑÕ‰••¹•É…Ñ¥½¹Ñ¥Ù•I•˜¹ÕÉÉ•¹Ğ€ô™…±Í”ì(€€€€€‰Õ™™•É¥¹I•˜¹ÕÉÉ•¹Ğ€ô™…±Í”ì(€€€€€ÅÕ•Õ•‘AÕ‰±¥Í¡I•˜¹ÕÉÉ•¹Ğ€ô¹Õ±°ì(€€€€€•¹•É…Ñ¥½¹I•˜¹ÕÉÉ•¹Ğ€¬ô€Äì(€€€€€İ¥¹‘½Ü¹±•…É%¹Ñ•ÉÙ…°¡¥¹Ñ•ÉÙ…°¤ì(€€€€€¥˜€¡É•…‘åQ¥µ•È¤İ¥¹‘½Ü¹±•…ÉQ¥µ•½ÕĞ¡É•…‘åQ¥µ•È¤ì(€€€€€ÑÉäì(€€€€€€€¥˜€¡Á±…å•ÉI•˜¹ÕÉÉ•¹Ğü¹‘•ÍÑÉ½ä¤Á±…å•ÉI•˜¹ÕÉÉ•¹Ğ¹‘•ÍÑÉ½ä ¤ì(€€€€€ô…Ñ ì(€€€€€€€€¼¼e½ÕQÕ‰”¥™É…µ”±•…¹ÕÀ¥Ì‰•ÍĞµ•™™½ÉĞ¸(€€€€€ô(€€€€€Á±…å•ÉI•˜¹ÕÉÉ•¹Ğ€ô¹Õ±°ì(€€€€€±•…É%µÁ•É…Ñ¥Ù•!½ÍĞ ¤ì(€€€ôì(€ô°m±•…É%µÁ•É…Ñ¥Ù•!½ÍĞ°½¹Ñ…¥¹•É%°ÁÕ‰±¥Í °É•Á½ÉÑ1¥™•å±”°ÑÉ…­%°Ù¥‘•½%‘t¤ì((€¥˜€ …Ù¥‘•½%¤É•ÑÕÉ¸€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•ÈÀ´ÌÑ•áĞµÍ´Ñ•áĞµµÕÑ•ˆù9¼Á±…å…‰±”e½ÕQÕ‰”Ù¥‘•¼%™½Õ¹¸UÍ”=Á•¸1¥¹¬¸ğ½‘¥Øøì(€½¹ÍĞÍå¹”€ô‘¥…¹½ÍÑ¥Ì€ü5…Ñ ¹µ…à À°5…Ñ ¹É½Õ¹ ¡‘¥…¹½ÍÑ¥Í9½Ü€´¹•Ü…Ñ”¡‘¥…¹½ÍÑ¥Ì¹ÕÁ‘…Ñ•‘Ğ¤¹•ÑQ¥µ” ¤¤€¼€ÄÀÀÀ¤¤€è¹Õ±°ì(€É•ÑÕÉ¸€ñ‘¥Ø±…ÍÍ9…µ”ô‰ÍÁ…”µä´Èˆøñ‘¥Ø±…ÍÍ9…µ”ô‰É•±…Ñ¥Ù” ´ÔØÜµ™Õ±°‰½É‘•È‰½É‘•Èµ‰½É‘•Èˆøñ‘¥ØÉ•˜õíÁ±…å•É!½ÍÑI•™ô±…ÍÍ9…µ”ô‰ µ™Õ±°Üµ™Õ±°ˆ‘…Ñ„µå½ÕÑÕ‰”µ¡½ÍĞõí½¹Ñ…¥¹•É%‘ô€¼øğ½‘¥Øøñ‘¥Ø±…ÍÍ9…µ”ô‰É¥…À´Ä‰½É‘•È‰½É‘•Èµ‰½É‘•È¼ØÀ‰œµÍÕÉ™…”¼àÀÀ´ÈÑ•áĞµlÄÁÁátÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµµÕÑ•Í´éÉ¥µ½±Ì´ÌˆøñÍÁ…¸ùAÉ½Ù¥‘•Èèí‘¥…¹½ÍÑ¥Ìü¹ÁÉ½Ù¥‘•È€üü€‰å½ÕÑÕ‰”‰ôğ½ÍÁ…¸øñÍÁ…¸ùY¥‘•¼%èí‘¥…¹½ÍÑ¥Ìü¹Ù¥‘•½%€üüÙ¥‘•½%‘ôğ½ÍÁ…¸øñÍÁ…¸ùQÉ…¬%èí‘¥…¹½ÍÑ¥Ìü¹ÑÉ…­%€üüÑÉ…­%‘ôğ½ÍÁ…¸øñÍÁ…¸ùMÑ…Ñ”èí‘¥…¹½ÍÑ¥Ìü¹Á±…å‰…­MÑ…Ñ”€üü€‰5¥ÍÍ¥¹œ‰ôğ½ÍÁ…¸øñÍÁ…¸ù!½ÍĞÑ¥µ”èí5…Ñ ¹É½Õ¹¡‘¥…¹½ÍÑ¥Ìü¹ÕÉÉ•¹ÑQ¥µ•M•½¹‘Ì€üü€À¥õÌğ½ÍÁ…¸øñÍÁ…¸ùMå¹Œèí‘¥…¹½ÍÑ¥Ìü¹ÍÑ…ÑÕÌ€üü€‰5¥ÍÍ¥¹œ‰õíÍå¹”€„ôô¹Õ±°€ü€ƒ
+Ü€‘íÍå¹•õÍ€€è€ˆ‰ôğ½ÍÁ…¸øñÍÁ…¸ùI•…‘äèí‘¥…¹½ÍÑ¥Ìü¹É•…‘ä€ü€‰å•Ìˆ€è€‰¹¼‰ôğ½ÍÁ…¸øñÍÁ…¸ùÉÉ½Èèí‘¥…¹½ÍÑ¥Ìü¹•ÉÉ½É½‘”€ü€‘í‘¥…¹½ÍÑ¥Ì¹•ÉÉ½É½‘•ôƒ
+Ü€‘íå½ÕÑÕ‰•ÉÉ½É1…‰•°¡‘¥…¹½ÍÑ¥Ì¹•ÉÉ½É½‘”¥õ€€è€‹ŠP‰ôğ½ÍÁ…¸øñÍÁ…¸ùAÕ‰±¥Í èí‘¥…¹½ÍÑ¥Ìü¹ÁÕ‰±¥Í¡MÑ…ÑÕÌ€üü€‹ŠP‰ôğ½ÍÁ…¸øñÍÁ…¸ù=ÕÑ‰½Õ¹ÑÉ…¹Í¥Ğèí½ÕÑ‰½Õ¹‘QÉ…¹Í¥Ñ¥…¹½ÍÑ¥5Ì€„ôô¹Õ±°€ü€‘í½ÕÑ‰½Õ¹‘QÉ…¹Í¥Ñ¥…¹½ÍÑ¥5ÍõµÍ€€è€‹ŠP‰ôğ½ÍÁ…¸øğ½‘¥Øøğ½‘¥Øøì)ô(()ÑåÁ”Q¥­Q½­A±…å•ÉMÑ…ÑÕÌ€ô€‰±½…‘¥¹œˆğ€‰É•…‘äˆğ€‰•ÉÉ½Èˆì()™Õ¹Ñ¥½¸¥ÍA±…¥¹Q¥­Q½­=‰©•Ğ¡Ù…±Õ”èÕ¹­¹½İ¸¤èÙ…±Õ”¥ÌI•½ÉñÍÑÉ¥¹œ°Õ¹­¹½İ¸øì(€É•ÑÕÉ¸	½½±•…¸¡Ù…±Õ”¤€˜˜ÑåÁ•½˜Ù…±Õ”€ôôô€‰½‰©•Ğˆ€˜˜€…ÉÉ…ä¹¥ÍÉÉ…ä¡Ù…±Õ”¤ì)ô()™Õ¹Ñ¥½¸Ñ¥­Ñ½­ÉÉ½É1…‰•°¡½‘”üè¹Õµ‰•Èğ¹Õ±°°¹…µ”üèÍÑÉ¥¹œğ¹Õ±°¤èÍÑÉ¥¹œì(€¥˜€¡½‘”€ôôô€ÄÀÀÄñğ¹…µ”€ôôô€‰%9Y1%}Y%<ˆ¤É•ÑÕÉ¸€‰%¹Ù…±¥½ÈÕ¹…Ù…¥±…‰±”Ù¥‘•¼ˆì(€¥˜€¡½‘”€ôôô€ÈÀÀÄñğ¹…µ”€ôôô€‰MIYI}II=Hˆ¤É•ÑÕÉ¸€‰Q¥­Q½¬Í•ÉÙ•È•ÉÉ½Èˆì(€¥˜€¡½‘”€ôôô€ÌÀÀÄñğ¹…µ”€ôôô€‰A1e	-}II=Hˆ¤É•ÑÕÉ¸€‰A±…å‰…¬•ÉÉ½Èˆì(€É•ÑÕÉ¸€‰Q¥­Q½¬Á±…å•ÈÕ¹…Ù…¥±…‰±”ˆì)ô()™Õ¹Ñ¥½¸‘µ¥¹Q¥­Q½­A±…å•È¡ì•¹ÑÉä°Í•ÍÍ¥½¹%ôèì•¹ÑÉäèEÕ•Õ•¹ÑÉäìÍ•ÍÍ¥½¹%èÍÑÉ¥¹œğ¹Õ±°ô¤ì(€½¹ÍĞÁ…ÉÍ•€ôÕÍ•5•µ¼  ¤€ôøÁ…ÉÍ•Q¥­Q½­Y¥‘•½UÉ°¡•¹ÑÉä¹±¥¹¬¤°m•¹ÑÉä¹±¥¹­t¤ì(€½¹ÍĞÁ…ÉÍ•‘A½ÍÑ%€ôÁ…ÉÍ•ü¹Á½ÍÑ%€üü¹Õ±°ì(€½¹ÍĞÁ…ÉÍ•‘A±…å•ÉUÉ°€ôÁ…ÉÍ•ü¹Á±…å•ÉUÉ°€üü¹Õ±°ì(€½¹ÍĞ¡…ÍA…ÉÍ•‘Q¥­Q½­UÉ°€ô	½½±•…¸¡Á…ÉÍ•‘A½ÍÑ%€˜˜Á…ÉÍ•‘A±…å•ÉUÉ°¤ì(€½¹ÍĞÑÉ…­Må¹%¹ÁÕĞ€ôÕÍ•5•µ¼ñ=Ù•É±…åQ¥­Q½­QÉ…­%¹ÁÕĞø  ¤€ôø€¡ì¥è•¹ÑÉä¹¥°±¥¹¬è•¹ÑÉä¹±¥¹¬°Í½ÕÉ•QåÁ”è•¹ÑÉä¹Í½ÕÉ•QåÁ”°Á½ÍÑ%èÁ…ÉÍ•‘A½ÍÑ%ô¤°m•¹ÑÉä¹¥°•¹ÑÉä¹±¥¹¬°•¹ÑÉä¹Í½ÕÉ•QåÁ”°Á…ÉÍ•‘A½ÍÑ%‘t¤ì(€½¹ÍĞ¥™É…µ•I•˜€ôÕÍ•I•˜ñ!Q51%É…µ•±•µ•¹Ğğ¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍĞÍÑ…ÑÕÍI•˜€ôÕÍ•I•˜ñQ¥­Q½­A±…å•ÉMÑ…ÑÕÌø¡¡…ÍA…ÉÍ•‘Q¥­Q½­UÉ°€ü€‰±½…‘¥¹œˆ€è€‰•ÉÉ½Èˆ¤ì(€½¹ÍĞ•¹•É…Ñ¥½¹I•˜€ôÕÍ•I•˜ À¤ì(€½¹ÍĞÉ•…‘åI•˜€ôÕÍ•I•˜¡™…±Í”¤ì(€½¹ÍĞ±…Ñ•ÍÑQ¥µ•I•˜€ôÕÍ•I•˜ À¤ì(€½¹ÍĞ‘ÕÉ…Ñ¥½¹I•˜€ôÕÍ•I•˜ñ¹Õµ‰•ÈğÕ¹‘•™¥¹•ø¡Õ¹‘•™¥¹•¤ì(€½¹ÍĞ±…ÍÑMÑ…‰±•A±…å‰…­MÑ…Ñ•I•˜€ôÕÍ•I•˜ğ‰Á±…å¥¹œˆğ€‰Á…ÕÍ•ˆğ€‰ÍÑ½ÁÁ•ˆø ‰ÍÑ½ÁÁ•ˆ¤ì(€½¹ÍĞ±…ÍÑQ¥µ•Ù•¹ÑÑI•˜€ôÕÍ•I•˜ñ¹Õµ‰•Èğ¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍĞ±…ÍÑAÕ‰±¥Í¡•‘ÑI•˜€ôÕÍ•I•˜ñÍÑÉ¥¹œğ¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍĞ¡…Í=‰Í•ÉÙ•‘ÕÉÉ•¹ÑQ¥µ•I•˜€ôÕÍ•I•˜¡™…±Í”¤ì(€½¹ÍĞÁ•¹‘¥¹A±…å‰…­MÑ…Ñ•I•˜€ôÕÍ•I•˜ñ1¥Ù•=Ù•É±…åA±…å‰…­MÑ…Ñ”ğ¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍĞÁ•¹‘¥¹½ÉÉ•Ñ¥½¹I•…Í½¹I•˜€ôÕÍ•I•˜ñ1¥Ù•=Ù•É±…åMå¹½ÉÉ•Ñ¥½¹I•…Í½¸ø ‰ÍÑ…Ñ•}¡…¹”ˆ¤ì(€½¹ÍĞ±…Ñ•ÍÑQ¥µ•=‰Í•ÉÙ•‘ÑI•˜€ôÕÍ•I•˜ñ¹Õµ‰•Èğ¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍĞÁÕ‰±¥Í¡%¹±¥¡ÑI•˜€ôÕÍ•I•˜¡™…±Í”¤ì(€½¹ÍĞÅÕ•Õ•‘AÕ‰±¥Í¡I•˜€ôÕÍ•I•˜ñEÕ•Õ•‘=Ù•É±…åAÕ‰±¥Í ğ¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍĞ½ÕÑ‰½Õ¹‘QÉ…¹Í¥ÑÍÑ¥µ…Ñ•5ÍI•˜€ôÕÍ•I•˜ñ¹Õµ‰•Èğ¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍĞÑ¥­Ñ½­•¹•É…Ñ¥½¹Ñ¥Ù•I•˜€ôÕÍ•I•˜¡ÑÉÕ”¤ì(€½¹ÍĞmÍÑ…ÑÕÌ°Í•ÑMÑ…ÑÕÍt€ôÕÍ•MÑ…Ñ”ñQ¥­Q½­A±…å•ÉMÑ…ÑÕÌø¡¡…ÍA…ÉÍ•‘Q¥­Q½­UÉ°€ü€‰±½…‘¥¹œˆ€è€‰•ÉÉ½Èˆ¤ì(€½¹ÍĞm¹½Ñ¥”°Í•Ñ9½Ñ¥•t€ôÕÍ•MÑ…Ñ”ñÍÑÉ¥¹œğ¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍĞm•ÉÉ½É1…‰•°°Í•ÑÉÉ½É1…‰•±t€ôÕÍ•MÑ…Ñ”ñÍÑÉ¥¹œğ¹Õ±°ø¡¡…ÍA…ÉÍ•‘Q¥­Q½­UÉ°€ü¹Õ±°€è€‰9¼Ù…±¥Q¥­Q½¬Ù¥‘•¼%™½Õ¹¸UÍ”=Á•¸1¥¹¬¸ˆ¤ì(€½¹ÍĞm‘¥…¹½ÍÑ¥Ì°Í•Ñ¥…¹½ÍÑ¥Ít€ôÕÍ•MÑ…Ñ”ñìÁÉ½Ù¥‘•Èè€‰Ñ¥­Ñ½¬ˆìÁ½ÍÑ%üèÍÑÉ¥¹œğ¹Õ±°ìÑÉ…­%èÍÑÉ¥¹œìÉ•…‘äè‰½½±•…¸ìÁ±…å‰…­MÑ…Ñ”è€‰Á±…å¥¹œˆğ€‰Á…ÕÍ•ˆğ€‰ÍÑ½ÁÁ•ˆìÕÉÉ•¹ÑQ¥µ•M•½¹‘Ìè¹Õµ‰•Èì‘ÕÉ…Ñ¥½¹M•½¹‘Ìüè¹Õµ‰•ÈìÕÁ‘…Ñ•‘ĞüèÍÑÉ¥¹œğ¹Õ±°ìÍå¹•M•½¹‘Ìüè¹Õµ‰•Èğ¹Õ±°ìÍÑ…ÑÕÌè€‰É•Í ˆğ€‰MÑ…±”ˆğ€‰5¥ÍÍ¥¹œˆğ€‰5¥Íµ…Ñ ˆğ€‰ÉÉ½ÈˆìÁÕ‰±¥Í¡MÑ…ÑÕÌüè€‰½¬ˆğ€‰™…¥±•ˆôğ¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍĞm½ÕÑ‰½Õ¹‘QÉ…¹Í¥Ñ¥…¹½ÍÑ¥5Ì°Í•Ñ=ÕÑ‰½Õ¹‘QÉ…¹Í¥Ñ¥…¹½ÍÑ¥5Ít€ôÕÍ•MÑ…Ñ”ñ¹Õµ‰•Èğ¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍĞÍÉŒ€ôÕÍ•5•µ¼  ¤€ôøì(€€€¥˜€ …Á…ÉÍ•‘A±…å•ÉUÉ°¤É•ÑÕÉ¸¹Õ±°ì(€€€½¹ÍĞÁ…É…µÌ€ô¹•ÜUI1M•…É¡A…É…µÌ¡ì½¹ÑÉ½±Ìè€ˆÄˆ°ÁÉ½É•ÍÍ}‰…Èè€ˆÄˆ°Á±…å}‰ÕÑÑ½¸è€ˆÄˆ°Ù½±Õµ•}½¹ÑÉ½°è€ˆÄˆ°™Õ±±ÍÉ••¹}‰ÕÑÑ½¸è€ˆÄˆ°Ñ¥µ•ÍÑ…µÀè€ˆÄˆ°…ÕÑ½Á±…äè€ˆÀˆ°µÕÍ¥}¥¹™¼è€ˆÄˆ°‘•ÍÉ¥ÁÑ¥½¸è€ˆÄˆ°É•°è€ˆÀˆ°¹…Ñ¥Ù•}½¹Ñ•áÑ}µ•¹Ôè€ˆÄˆ°±½Í•‘}…ÁÑ¥½¸è€ˆÄˆ°µÕÑ•è€ˆÀˆô¤ì(€€€É•ÑÕÉ¸€‘íÁ…ÉÍ•‘A±…å•ÉUÉ±ôü‘íÁ…É…µÌ¹Ñ½MÑÉ¥¹œ ¥õ€ì(€ô°mÁ…ÉÍ•‘A±…å•ÉUÉ±t¤ì(€½¹ÍĞÉ•Á½ÉÑ1¥™•å±”€ôÕÍ•…±±‰…¬ ¡•Ù•¹ÑQåÁ”èEÕ•Õ•A±…å‰…­1¥™•å±•Ù•¹Ñ%¹ÁÕÑl‰•Ù•¹ÑQåÁ”‰t°•ÉÉ½É½‘”èEÕ•Õ•A±…å‰…­ÉÉ½É½‘”ğ¹Õ±°€ô¹Õ±°¤€ôøì(€€€Ù½¥Á½ÍÑEÕ•Õ•A±…å‰…­1¥™•å±•Ù•¹Ğ¡ì(€€€€€Í•ÍÍ¥½¹%°(€€€€€ÑÉ…­%è•¹ÑÉä¹¥°(€€€€€ÁÉ½Ù¥‘•Èè€‰Ñ¥­Ñ½¬ˆ°(€€€€€•Ù•¹ÑQåÁ”°(€€€€€ÕÉÉ•¹ÑQ¥µ•M•½¹‘Ìè±…Ñ•ÍÑQ¥µ•I•˜¹ÕÉÉ•¹Ğ°(€€€€€‘ÕÉ…Ñ¥½¹M•½¹‘Ìè‘ÕÉ…Ñ¥½¹I•˜¹ÕÉÉ•¹Ğ°(€€€€€•ÉÉ½É½‘”°(€€€ô¤ì(€ô°m•¹ÑÉä¹¥°Í•ÍÍ¥½¹%‘t¤ì(€½¹ÍĞÁÕ‰±¥Í¡9½Ü€ôÕÍ•…±±‰…¬¡…Íå¹Œ€¡Á±…å‰…­MÑ…Ñ”è1¥Ù•=Ù•É±…åA±…å‰…­MÑ…Ñ”°½‰Í•ÉÙ•‘Q¥µ•M•½¹‘Ìè¹Õµ‰•È°½‰Í•ÉÙ•‘Ñ5Ìè¹Õµ‰•ÈğÕ¹‘•™¥¹•°½ÉÉ•Ñ¥½¹I•…Í½¸è1¥Ù•=Ù•É±…åMå¹½ÉÉ•Ñ¥½¹I•…Í½¸€ô€‰¡•…ÉÑ‰•…Ğˆ¤€ôøì(€€€¥˜€ …É•…‘åI•˜¹ÕÉÉ•¹Ğñğ€…¡…Í=‰Í•ÉÙ•‘ÕÉÉ•¹ÑQ¥µ•I•˜¹ÕÉÉ•¹Ğñğ½‰Í•ÉÙ•‘Ñ5Ì€ôôôÕ¹‘•™¥¹•ñğÑÉ…­Må¹%¹ÁÕĞ¹Í½ÕÉ•QåÁ”€„ôô€‰Ñ¥­Ñ½¬ˆñğ€…ÑÉ…­Må¹%¹ÁÕĞ¹Á½ÍÑ%¤É•ÑÕÉ¸¹Õ±°ì(€€€½¹ÍĞ¹½İ5Ì€ô…Ñ”¹¹½Ü ¤ì(€€€½¹ÍĞÁÉ½©•Ñ•€ôÁÉ½©•Ñ=‰Í•ÉÙ•‘A±…å‰…­Q¥µ”¡Á±…å‰…­MÑ…Ñ”°½‰Í•ÉÙ•‘Q¥µ•M•½¹‘Ì°½‰Í•ÉÙ•‘Ñ5Ì°¹½İ5Ì°‘ÕÉ…Ñ¥½¹I•˜¹ÕÉÉ•¹Ğ¤ì(€€€¥˜€¡ÁÉ½©•Ñ•€ôôô¹Õ±°¤É•ÑÕÉ¸¹Õ±°ì(€€€½¹ÍĞ½ÕÑ‰½Õ¹‘QÉ…¹Í¥ÑM•½¹‘Ì€ôÁ±…å‰…­MÑ…Ñ”€ôôô€‰Á±…å¥¹œˆ€ü€¡½ÕÑ‰½Õ¹‘QÉ…¹Í¥ÑÍÑ¥µ…Ñ•5ÍI•˜¹ÕÉÉ•¹Ğ€üü€À¤€¼€ÄÀÀÀ€è€Àì(€€€±•ĞÁÕ‰±¥Í¡Q¥µ”€ôÁ±…å‰…­MÑ…Ñ”€ôôô€‰Á±…å¥¹œˆ€üÁÉ½©•Ñ•€¬½ÕÑ‰½Õ¹‘QÉ…¹Í¥ÑM•½¹‘Ì€è½‰Í•ÉÙ•‘Q¥µ•M•½¹‘Ìì(€€€¥˜€¡ÑåÁ•½˜‘ÕÉ…Ñ¥½¹I•˜¹ÕÉÉ•¹Ğ€ôôô€‰¹Õµ‰•Èˆ€˜˜9Õµ‰•È¹¥Í¥¹¥Ñ”¡‘ÕÉ…Ñ¥½¹I•˜¹ÕÉÉ•¹Ğ¤€˜˜‘ÕÉ…Ñ¥½¹I•˜¹ÕÉÉ•¹Ğ€ø€À¤ÁÕ‰±¥Í¡Q¥µ”€ô5…Ñ ¹µ¥¸¡ÁÕ‰±¥Í¡Q¥µ”°‘ÕÉ…Ñ¥½¹I•˜¹ÕÉÉ•¹Ğ¤ì(€€€ÁÕ‰±¥Í¡Q¥µ”€ô5…Ñ ¹µ…à À°ÁÕ‰±¥Í¡Q¥µ”¤ì(€€€ÑÉäì(€€€€€½¹ÍĞìÍå¹Œ°½ÕÑ‰½Õ¹‘QÉ…¹Í¥Ñ5Ìô€ô…İ…¥ĞÁÕ‰±¥Í¡=Ù•É±…åQ¥­Q½­Må¹Œ¡ÑÉ…­Må¹%¹ÁÕĞ°Á±…å‰…­MÑ…Ñ”°ÁÕ‰±¥Í¡Q¥µ”°‘ÕÉ…Ñ¥½¹I•˜¹ÕÉÉ•¹Ğ°½ÉÉ•Ñ¥½¹I•…Í½¸¤€üüìÍå¹Œè¹Õ±°°½ÕÑ‰½Õ¹‘QÉ…¹Í¥Ñ5Ìè€Àôì(€€€€€½ÕÑ‰½Õ¹‘QÉ…¹Í¥ÑÍÑ¥µ…Ñ•5ÍI•˜¹ÕÉÉ•¹Ğ€ôÕÁ‘…Ñ•QÉ…¹Í¥ÑÍÑ¥µ…Ñ•5Ì¡½ÕÑ‰½Õ¹‘QÉ…¹Í¥ÑÍÑ¥µ…Ñ•5ÍI•˜¹ÕÉÉ•¹Ğ°½ÕÑ‰½Õ¹‘QÉ…¹Í¥Ñ5Ì¤ì(€€€€€Í•Ñ=ÕÑ‰½Õ¹‘QÉ…¹Í¥Ñ¥…¹½ÍÑ¥5Ì¡5…Ñ ¹É½Õ¹¡½ÕÑ‰½Õ¹‘QÉ…¹Í¥ÑÍÑ¥µ…Ñ•5ÍI•˜¹ÕÉÉ•¹Ğ¤¤ì(€€€€€±…ÍÑAÕ‰±¥Í¡•‘ÑI•˜¹ÕÉÉ•¹Ğ€ôÍå¹Œü¹ÕÁ‘…Ñ•‘Ğ€üü¹•Ü…Ñ” ¤¹Ñ½%M=MÑÉ¥¹œ ¤ì(€€€€€Í•Ñ¥…¹½ÍÑ¥Ì¡ìÁÉ½Ù¥‘•Èè€‰Ñ¥­Ñ½¬ˆ°Á½ÍÑ%èÑÉ…­Må¹%¹ÁÕĞ¹Á½ÍÑ%°ÑÉ…­%èÑÉ…­Må¹%¹ÁÕĞ¹¥°É•…‘äèÉ•…‘åI•˜¹ÕÉÉ•¹Ğ°Á±…å‰…­MÑ…Ñ”°ÕÉÉ•¹ÑQ¥µ•M•½¹‘ÌèÁÕ‰±¥Í¡Q¥µ”°‘ÕÉ…Ñ¥½¹M•½¹‘Ìè‘ÕÉ…Ñ¥½¹I•˜¹ÕÉÉ•¹Ğ°ÕÁ‘…Ñ•‘Ğè±…ÍÑAÕ‰±¥Í¡•‘ÑI•˜¹ÕÉÉ•¹Ğ°Íå¹•M•½¹‘Ìè€À°ÍÑ…ÑÕÌèÍå¹Œ€ü€‰É•Í ˆ€è€‰5¥Íµ…Ñ ˆ°ÁÕ‰±¥Í¡MÑ…ÑÕÌèÍå¹Œ€ü€‰½¬ˆ€è€‰™…¥±•ˆô¤ì(€€€€€É•ÑÕÉ¸Íå¹Œì(€€€ô…Ñ ì(€€€€€½ÕÑ‰½Õ¹‘QÉ…¹Í¥ÑÍÑ¥µ…Ñ•5ÍI•˜¹ÕÉÉ•¹Ğ€ôÕÁ‘…Ñ•QÉ…¹Í¥ÑÍÑ¥µ…Ñ•5Ì¡½ÕÑ‰½Õ¹‘QÉ…¹Í¥ÑÍÑ¥µ…Ñ•5ÍI•˜¹ÕÉÉ•¹Ğ°€À¤ì(€€€€€Í•Ñ=ÕÑ‰½Õ¹‘QÉ…¹Í¥Ñ¥…¹½ÍÑ¥5Ì¡5…Ñ ¹É½Õ¹¡½ÕÑ‰½Õ¹‘QÉ…¹Í¥ÑÍÑ¥µ…Ñ•5ÍI•˜¹ÕÉÉ•¹Ğ¤¤ì(€€€€€Í•Ñ¥…¹½ÍÑ¥Ì¡ìÁÉ½Ù¥‘•Èè€‰Ñ¥­Ñ½¬ˆ°Á½ÍÑ%èÑÉ…­Må¹%¹ÁÕĞ¹Á½ÍÑ%°ÑÉ…­%èÑÉ…­Må¹%¹ÁÕĞ¹¥°É•…‘äèÉ•…‘åI•˜¹ÕÉÉ•¹Ğ°Á±…å‰…­MÑ…Ñ”°ÕÉÉ•¹ÑQ¥µ•M•½¹‘Ìè½‰Í•ÉÙ•‘Q¥µ•M•½¹‘Ì°‘ÕÉ…Ñ¥½¹M•½¹‘Ìè‘ÕÉ…Ñ¥½¹I•˜¹ÕÉÉ•¹Ğ°ÕÁ‘…Ñ•‘Ğè±…ÍÑAÕ‰±¥Í¡•‘ÑI•˜¹ÕÉÉ•¹Ğ°Íå¹•M•½¹‘Ìè¹Õ±°°ÍÑ…ÑÕÌè€‰ÉÉ½Èˆ°ÁÕ‰±¥Í¡MÑ…ÑÕÌè€‰™…¥±•ˆô¤ì(€€€€€É•ÑÕÉ¸¹Õ±°ì(€€€ô(€ô°mÑÉ…­Må¹%¹ÁÕÑt¤ì((€½¹ÍĞÁÕ‰±¥Í €ôÕÍ•…±±‰…¬ ¡Á±…å‰…­MÑ…Ñ”è1¥Ù•=Ù•É±…åA±…å‰…­MÑ…Ñ”°½‰Í•ÉÙ•‘Q¥µ•M•½¹‘Ì€ô±…Ñ•ÍÑQ¥µ•I•˜¹ÕÉÉ•¹Ğ°½ÉÉ•Ñ¥½¹I•…Í½¸è1¥Ù•=Ù•É±…åMå¹½ÉÉ•Ñ¥½¹I•…Í½¸€ô€‰¡•…ÉÑ‰•…Ğˆ°½‰Í•ÉÙ•‘Ñ5Ì€ô±…Ñ•ÍÑQ¥µ•=‰Í•ÉÙ•‘ÑI•˜¹ÕÉÉ•¹Ğ€üüÕ¹‘•™¥¹•¤€ôøì(€€€½¹ÍĞ¹•áĞ€ôìÁ±…å‰…­MÑ…Ñ”°ÕÉÉ•¹ÑQ¥µ•M•½¹‘Ìè½‰Í•ÉÙ•‘Q¥µ•M•½¹‘Ì°½‰Í•ÉÙ•‘Ñ5Ì°½ÉÉ•Ñ¥½¹I•…Í½¸ôì(€€€¥˜€¡ÁÕ‰±¥Í¡%¹±¥¡ÑI•˜¹ÕÉÉ•¹Ğ¤ì(€€€€€¥˜€¡Í¡½Õ±‘I•Á±…•EÕ•Õ•‘AÕ‰±¥Í ¡ÅÕ•Õ•‘AÕ‰±¥Í¡I•˜¹ÕÉÉ•¹Ğ°¹•áĞ¤¤ÅÕ•Õ•‘AÕ‰±¥Í¡I•˜¹ÕÉÉ•¹Ğ€ô¹•áĞì(€€€€€É•ÑÕÉ¸ì(€€€ô(€€€ÁÕ‰±¥Í¡%¹±¥¡ÑI•˜¹ÕÉÉ•¹Ğ€ôÑÉÕ”ì(€€€Ù½¥€¡…Íå¹Œ€ ¤€ôøì(€€€€€±•ĞÕÉÉ•¹ĞèEÕ•Õ•‘=Ù•É±…åAÕ‰±¥Í ğ¹Õ±°€ô¹•áĞì(€€€€€İ¡¥±”€¡ÕÉÉ•¹Ğ€˜˜Ñ¥­Ñ½­•¹•É…Ñ¥½¹Ñ¥Ù•I•˜¹ÕÉÉ•¹Ğ¤ì(€€€€€€€…İ…¥ĞÁÕ‰±¥Í¡9½Ü¡ÕÉÉ•¹Ğ¹Á±…å‰…­MÑ…Ñ”°ÕÉÉ•¹Ğ¹ÕÉÉ•¹ÑQ¥µ•M•½¹‘Ì°ÕÉÉ•¹Ğ¹½‰Í•ÉÙ•‘Ñ5Ì°ÕÉÉ•¹Ğ¹½ÉÉ•Ñ¥½¹I•…Í½¸¤ì(€€€€€€€ÕÉÉ•¹Ğ€ôÅÕ•Õ•‘AÕ‰±¥Í¡I•˜¹ÕÉÉ•¹Ğì(€€€€€€€ÅÕ•Õ•‘AÕ‰±¥Í¡I•˜¹ÕÉÉ•¹Ğ€ô¹Õ±°ì(€€€€€ô(€€€€€ÁÕ‰±¥Í¡%¹±¥¡ÑI•˜¹ÕÉÉ•¹Ğ€ô™…±Í”ì(€€€ô¤ ¤ì(€ô°mÁÕ‰±¥Í¡9½İt¤ì((€ÕÍ•™™•Ğ  ¤€ôøì(€€€ÍÑ…ÑÕÍI•˜¹ÕÉÉ•¹Ğ€ô¡…ÍA…ÉÍ•‘Q¥­Q½­UÉ°€ü€‰±½…‘¥¹œˆ€è€‰•ÉÉ½Èˆì(€€€É•…‘åI•˜¹ÕÉÉ•¹Ğ€ô™…±Í”ì(€€€±…Ñ•ÍÑQ¥µ•I•˜¹ÕÉÉ•¹Ğ€ô€Àì(€€€‘ÕÉ…Ñ¥½¹I•˜¹ÕÉÉ•¹Ğ€ôÕ¹‘•™¥¹•ì(€€€±…ÍÑMÑ…‰±•A±…å‰…­MÑ…Ñ•I•˜¹ÕÉÉ•¹Ğ€ô€‰ÍÑ½ÁÁ•ˆì(€€€±…ÍÑQ¥µ•Ù•¹ÑÑI•˜¹ÕÉÉ•¹Ğ€ô¹Õ±°ì(€€€¡…Í=‰Í•ÉÙ•‘ÕÉÉ•¹ÑQ¥µ•I•˜¹ÕÉÉ•¹Ğ€ô™…±Í”ì(€€€Á•¹‘¥¹A±…å‰…­MÑ…Ñ•I•˜¹ÕÉÉ•¹Ğ€ô¹Õ±°ì(€€€Á•¹‘¥¹½ÉÉ•Ñ¥½¹I•…Í½¹I•˜¹ÕÉÉ•¹Ğ€ô€‰ÍÑ…Ñ•}¡…¹”ˆì(€€€±…Ñ•ÍÑQ¥µ•=‰Í•ÉÙ•‘ÑI•˜¹ÕÉÉ•¹Ğ€ô¹Õ±°ì(€€€ÅÕ•Õ•‘AÕ‰±¥Í¡I•˜¹ÕÉÉ•¹Ğ€ô¹Õ±°ì(€€€ÁÕ‰±¥Í¡%¹±¥¡ÑI•˜¹ÕÉÉ•¹Ğ€ô™…±Í”ì(€€€Ñ¥­Ñ½­•¹•É…Ñ¥½¹Ñ¥Ù•I•˜¹ÕÉÉ•¹Ğ€ôÑÉÕ”ì(€€€•¹•É…Ñ¥½¹I•˜¹ÕÉÉ•¹Ğ€¬ô€Äì(€€€Í•ÑMÑ…ÑÕÌ¡ÍÑ…ÑÕÍI•˜¹ÕÉÉ•¹Ğ¤ì(€€€Í•Ñ9½Ñ¥”¡¹Õ±°¤ì(€€€Í•Ñ¥…¹½ÍÑ¥Ì¡¡…ÍA…ÉÍ•‘Q¥­Q½­UÉ°€üìÁÉ½Ù¥‘•Èè€‰Ñ¥­Ñ½¬ˆ°Á½ÍÑ%èÁ…ÉÍ•‘A½ÍÑ%°ÑÉ…­%è•¹ÑÉä¹¥°É•…‘äè™…±Í”°Á±…å‰…­MÑ…Ñ”è€‰ÍÑ½ÁÁ•ˆ°ÕÉÉ•¹ÑQ¥µ•M•½¹‘Ìè€À°ÍÑ…ÑÕÌè€‰5¥ÍÍ¥¹œˆô€è¹Õ±°¤ì(€€€Í•ÑÉÉ½É1…‰•°¡¡…ÍA…ÉÍ•‘Q¥­Q½­UÉ°€ü¹Õ±°€è€‰9¼Ù…±¥Q¥­Q½¬Ù¥‘•¼%™½Õ¹¸UÍ”=Á•¸1¥¹¬¸ˆ¤ì(€€€¥˜€ …¡…ÍA…ÉÍ•‘Q¥­Q½­UÉ°¤É•ÑÕÉ¸ì((€€€½¹ÍĞ•¹•É…Ñ¥½¸€ô•¹•É…Ñ¥½¹I•˜¹ÕÉÉ•¹Ğì(€€€±•ĞÉ•…‘åQ¥µ•Èè¹Õµ‰•Èğ¹Õ±°€ôİ¥¹‘½Ü¹Í•ÑQ¥µ•½ÕĞ  ¤€ôøì(€€€€€¥˜€¡É•…‘åQ¥µ•È€ôôô¹Õ±°ñğ•¹•É…Ñ¥½¹I•˜¹ÕÉÉ•¹Ğ€„ôô•¹•É…Ñ¥½¸¤É•ÑÕÉ¸ì(€€€€€É•…‘åQ¥µ•È€ô¹Õ±°ì(€€€€€ÍÑ…ÑÕÍI•˜¹ÕÉÉ•¹Ğ€ô€‰•ÉÉ½Èˆì(€€€€€Í•ÑMÑ…ÑÕÌ ‰•ÉÉ½Èˆ¤ì(€€€€€Í•Ñ¥…¹½ÍÑ¥Ì¡ìÁÉ½Ù¥‘•Èè€‰Ñ¥­Ñ½¬ˆ°Á½ÍÑ%èÁ…ÉÍ•‘A½ÍÑ%°ÑÉ…­%è•¹ÑÉä¹¥°É•…‘äè™…±Í”°Á±…å‰…­MÑ…Ñ”è€‰ÍÑ½ÁÁ•ˆ°ÕÉÉ•¹ÑQ¥µ•M•½¹‘Ìè±…Ñ•ÍÑQ¥µ•I•˜¹ÕÉÉ•¹Ğ°‘ÕÉ…Ñ¥½¹M•½¹‘Ìè‘ÕÉ…Ñ¥½¹I•˜¹ÕÉÉ•¹Ğ°ÍÑ…ÑÕÌè€‰ÉÉ½Èˆ°ÁÕ‰±¥Í¡MÑ…ÑÕÌè€‰™…¥±•ˆô¤ì(€€€€€Í•ÑÉÉ½É1…‰•° ¡•á¥ÍÑ¥¹œ¤€ôø•á¥ÍÑ¥¹œ€üü€‰Q¥­Q½¬Á±…å•È‘¥¹½Ğ‰•½µ”É•…‘ä¸=Á•¸1¥¹¬É•µ…¥¹Ì…Ù…¥±…‰±”¸ˆ¤ì(€€€€€É•Á½ÉÑ1¥™•å±” ‰•ÉÉ½Èˆ°€‰É•…‘å}Ñ¥µ•½ÕĞˆ¤ì(€€€ô°Q%-Q=-}A1eI}Ie}Q%5=UQ}5L¤ì((€€€½¹ÍĞ±•…ÉI•…‘åQ¥µ•È€ô€ ¤€ôøì¥˜€¡É•…‘åQ¥µ•È€„ôô¹Õ±°¤ìİ¥¹‘½Ü¹±•…ÉQ¥µ•½ÕĞ¡É•…‘åQ¥µ•È¤ìÉ•…‘åQ¥µ•È€ô¹Õ±°ìôôì(€€€½¹ÍĞÁÕ‰±¥Í¡=‰Í•ÉÙ•‘MÑ…Ñ”€ô€¡ÍÑ…Ñ”è1¥Ù•=Ù•É±…åA±…å‰…­MÑ…Ñ”°½ÉÉ•Ñ¥½¹I•…Í½¸è1¥Ù•=Ù•É±…åMå¹½ÉÉ•Ñ¥½¹I•…Í½¸€ô€‰ÍÑ…Ñ•}¡…¹”ˆ¤€ôøì(€€€€€±…ÍÑMÑ…‰±•A±…å‰…­MÑ…Ñ•I•˜¹ÕÉÉ•¹Ğ€ôÍÑ…Ñ”ì(€€€€€¥˜€¡¡…Í=‰Í•ÉÙ•‘ÕÉÉ•¹ÑQ¥µ•I•˜¹ÕÉÉ•¹Ğ¤ÁÕ‰±¥Í ¡ÍÑ…Ñ”°±…Ñ•ÍÑQ¥µ•I•˜¹ÕÉÉ•¹Ğ°½ÉÉ•Ñ¥½¹I•…Í½¸¤ì(€€€€€•±Í”ìÁ•¹‘¥¹A±…å‰…­MÑ…Ñ•I•˜¹ÕÉÉ•¹Ğ€ôÍÑ…Ñ”ìÁ•¹‘¥¹½ÉÉ•Ñ¥½¹I•…Í½¹I•˜¹ÕÉÉ•¹Ğ€ô½ÉÉ•Ñ¥½¹I•…Í½¸ìô(€€€ôì((€€€™Õ¹Ñ¥½¸½¹5•ÍÍ…”¡•Ù•¹Ğè5•ÍÍ…•Ù•¹Ğ¤ì(€€€€€¥˜€¡•Ù•¹Ğ¹½É¥¥¸€„ôô€‰¡ÑÑÁÌè¼½İİÜ¹Ñ¥­Ñ½¬¹½´ˆ¤É•ÑÕÉ¸ì(€€€€€¥˜€¡•Ù•¹Ğ¹Í½ÕÉ”€„ôô¥™É…µ•I•˜¹ÕÉÉ•¹Ğü¹½¹Ñ•¹Ñ]¥¹‘½Ü¤É•ÑÕÉ¸ì(€€€€€½¹ÍĞÁ…å±½…€ô•Ù•¹Ğ¹‘…Ñ„ì(€€€€€¥˜€ …¥ÍA±…¥¹Q¥­Q½­=‰©•Ğ¡Á…å±½…¤¤É•ÑÕÉ¸ì(€€€€€¥˜€¡Á…å±½…‘l‰àµÑ¥­Ñ½¬µÁ±…å•È‰t€„ôôÑÉÕ”¤É•ÑÕÉ¸ì(€€€€€½¹ÍĞÑåÁ”€ôÁ…å±½…¹ÑåÁ”ì(€€€€€¥˜€¡ÑåÁ”€„ôô€‰½¹A±…å•ÉI•…‘äˆ€˜˜ÑåÁ”€„ôô€‰½¹MÑ…Ñ•¡…¹”ˆ€˜˜ÑåÁ”€„ôô€‰½¹ÕÉÉ•¹ÑQ¥µ”ˆ€˜˜ÑåÁ”€„ôô€‰½¹A±…å•ÉÉÉ½Èˆ¤É•ÑÕÉ¸ì(€€€€€¥˜€¡ÑåÁ”€ôôô€‰½¹A±…å•ÉI•…‘äˆ¤ì(€€€€€€€±•…ÉI•…‘åQ¥µ•È ¤ì(€€€€€€€É•…‘åI•˜¹ÕÉÉ•¹Ğ€ôÑÉÕ”ì(€€€€€€€ÍÑ…ÑÕÍI•˜¹ÕÉÉ•¹Ğ€ô€‰É•…‘äˆì(€€€€€€€Í•ÑMÑ…ÑÕÌ ‰É•…‘äˆ¤ì(€€€€€€€Í•Ñ9½Ñ¥”¡¹Õ±°¤ì(€€€€€€€Í•ÑÉÉ½É1…‰•°¡¹Õ±°¤ì(€€€€€€€É•Á½ÉÑ1¥™•å±” ‰É•…‘äˆ¤ì(€€€€€€€É•ÑÕÉ¸ì(€€€€€ô(€€€€€¥˜€¡ÑåÁ”€ôôô€‰½¹ÕÉÉ•¹ÑQ¥µ”ˆ¤ì(€€€€€€€½¹ÍĞÙ…±Õ”€ôÁ…å±½…¹Ù…±Õ”ì(€€€€€€€¥˜€ …¥ÍA±…¥¹Q¥­Q½­=‰©•Ğ¡Ù…±Õ”¤¤É•ÑÕÉ¸ì(€€€€€€€½¹ÍĞÕÉÉ•¹ÑQ¥µ”€ôÑåÁ•½˜Ù…±Õ”¹ÕÉÉ•¹ÑQ¥µ”€ôôô€‰¹Õµ‰•Èˆ€üÙ…±Õ”¹ÕÉÉ•¹ÑQ¥µ”€è9Õµ‰•È¡Ù…±Õ”¹ÕÉÉ•¹ÑQ¥µ”¤ì(€€€€€€€½¹ÍĞ‘ÕÉ…Ñ¥½¸€ôÑåÁ•½˜Ù…±Õ”¹‘ÕÉ…Ñ¥½¸€ôôô€‰¹Õµ‰•Èˆ€üÙ…±Õ”¹‘ÕÉ…Ñ¥½¸€è9Õµ‰•È¡Ù…±Õ”¹‘ÕÉ…Ñ¥½¸¤ì(€€€€€€€¥˜€ …9Õµ‰•È¹¥Í¥¹¥Ñ”¡ÕÉÉ•¹ÑQ¥µ”¤ñğÕÉÉ•¹ÑQ¥µ”€ğ€À¤É•ÑÕÉ¸ì(€€€€€€€½¹ÍĞ™¥ÉÍÑ=‰Í•ÉÙ•‘Q¥µ”€ô€…¡…Í=‰Í•ÉÙ•‘ÕÉÉ•¹ÑQ¥µ•I•˜¹ÕÉÉ•¹Ğì(€€€€€€€½¹ÍĞ¹½İ5Ì€ô…Ñ”¹¹½Ü ¤ì(€€€€€€€½¹ÍĞÁÉ•Ù¥½ÕÌ€ô±…Ñ•ÍÑQ¥µ•I•˜¹ÕÉÉ•¹Ğì(€€€€€€€½¹ÍĞÁÉ•Ù¥½ÕÍĞ€ô±…ÍÑQ¥µ•Ù•¹ÑÑI•˜¹ÕÉÉ•¹Ğì(€€€€€€€±…Ñ•ÍÑQ¥µ•I•˜¹ÕÉÉ•¹Ğ€ôÕÉÉ•¹ÑQ¥µ”ì(€€€€€€€±…Ñ•ÍÑQ¥µ•=‰Í•ÉÙ•‘ÑI•˜¹ÕÉÉ•¹Ğ€ô¹½İ5Ìì(€€€€€€€¥˜€¡9Õµ‰•È¹¥Í¥¹¥Ñ”¡‘ÕÉ…Ñ¥½¸¤€˜˜‘ÕÉ…Ñ¥½¸€ø€À¤‘ÕÉ…Ñ¥½¹I•˜¹ÕÉÉ•¹Ğ€ô‘ÕÉ…Ñ¥½¸ì(€€€€€€€¡…Í=‰Í•ÉÙ•‘ÕÉÉ•¹ÑQ¥µ•I•˜¹ÕÉÉ•¹Ğ€ôÑÉÕ”ì(€€€€€€€½¹ÍĞÁ•¹‘¥¹MÑ…Ñ”€ôÁ•¹‘¥¹A±…å‰…­MÑ…Ñ•I•˜¹ÕÉÉ•¹Ğì(€€€€€€€¥˜€¡Á•¹‘¥¹MÑ…Ñ”¤ì(€€€€€€€€€½¹ÍĞÁ•¹‘¥¹I•…Í½¸€ôÁ•¹‘¥¹½ÉÉ•Ñ¥½¹I•…Í½¹I•˜¹ÕÉÉ•¹Ğì(€€€€€€€€€Á•¹‘¥¹A±…å‰…­MÑ…Ñ•I•˜¹ÕÉÉ•¹Ğ€ô¹Õ±°ì(€€€€€€€€€Á•¹‘¥¹½ÉÉ•Ñ¥½¹I•…Í½¹I•˜¹ÕÉÉ•¹Ğ€ô€‰ÍÑ…Ñ•}¡…¹”ˆì(€€€€€€€€€ÁÕ‰±¥Í ¡Á•¹‘¥¹MÑ…Ñ”°ÕÉÉ•¹ÑQ¥µ”°Á•¹‘¥¹I•…Í½¸°¹½İ5Ì¤ì(€€€€€€€€€É•Á½ÉÑ1¥™•å±”¡Á•¹‘¥¹MÑ…Ñ”€ôôô€‰Á±…å¥¹œˆ€ü€‰Á±…äˆ€èÁ•¹‘¥¹MÑ…Ñ”€ôôô€‰Á…ÕÍ•ˆ€ü€‰Á…ÕÍ”ˆ€è€‰É•…‘äˆ¤ì(€€€€€€€€€É•ÑÕÉ¸ì(€€€€€€€ô(€€€€€€€¥˜€¡™¥ÉÍÑ=‰Í•ÉÙ•‘Q¥µ”¤É•Á½ÉÑ1¥™•å±” ‰É•…‘äˆ¤ì(€€€€€€€±…ÍÑQ¥µ•Ù•¹ÑÑI•˜¹ÕÉÉ•¹Ğ€ô¹½İ5Ìì(€€€€€€€¥˜€¡ÁÉ•Ù¥½ÕÍĞ€„ôô¹Õ±°€˜˜‘•Ñ•Ñ5…Ñ•É¥…±A±…å‰…­M••¬¡ìÁ±…å‰…­MÑ…Ñ”è±…ÍÑMÑ…‰±•A±…å‰…­MÑ…Ñ•I•˜¹ÕÉÉ•¹Ğ°ÁÉ•Ù¥½ÕÍQ¥µ•M•½¹‘ÌèÁÉ•Ù¥½ÕÌ°ÁÉ•Ù¥½ÕÍ=‰Í•ÉÙ•‘Ñ5ÌèÁÉ•Ù¥½ÕÍĞ°ÕÉÉ•¹ÑQ¥µ•M•½¹‘ÌèÕÉÉ•¹ÑQ¥µ”°ÕÉÉ•¹Ñ=‰Í•ÉÙ•‘Ñ5Ìè¹½İ5Ìô¤¤ì(€€€€€€€€€ÁÕ‰±¥Í ¡±…ÍÑMÑ…‰±•A±…å‰…­MÑ…Ñ•I•˜¹ÕÉÉ•¹Ğ°ÕÉÉ•¹ÑQ¥µ”°€‰Í••¬ˆ°¹½İ5Ì¤ì(€€€€€€€€€É•Á½ÉÑ1¥™•å±” ‰Í••¬ˆ¤ì(€€€€€€€ô(€€€€€€€É•ÑÕÉ¸ì(€€€€€ô(€€€€€¥˜€¡ÑåÁ”€ôôô€‰½¹MÑ…Ñ•¡…¹”ˆ¤ì(€€€€€€€½¹ÍĞÍÑ…Ñ•Y…±Õ”€ôÑåÁ•½˜Á…å±½…¹Ù…±Õ”€ôôô€‰¹Õµ‰•Èˆ€üÁ…å±½…¹Ù…±Õ”€è9Õµ‰•È¡Á…å±½…¹Ù…±Õ”¤ì(€€€€€€€½¹ÍĞÁÉ•Ù¥½ÕÍMÑ…Ñ”€ô±…ÍÑMÑ…‰±•A±…å‰…­MÑ…Ñ•I•˜¹ÕÉÉ•¹Ğì(€€€€€€€¥˜€¡ÍÑ…Ñ•Y…±Õ”€ôôô€Ä¤ì(€€€€€€€€€ÁÕ‰±¥Í¡=‰Í•ÉÙ•‘MÑ…Ñ” ‰Á±…å¥¹œˆ°€‰ÍÑ…Ñ•}¡…¹”ˆ¤ì(€€€€€€€€€É•Á½ÉÑ1¥™•å±”¡ÁÉ•Ù¥½ÕÍMÑ…Ñ”€ôôô€‰Á…ÕÍ•ˆ€ü€‰É•ÍÕµ”ˆ€è€‰Á±…äˆ¤ì(€€€€€€€ô(€€€€€€€•±Í”¥˜€¡ÍÑ…Ñ•Y…±Õ”€ôôô€È¤ì(€€€€€€€€€ÁÕ‰±¥Í¡=‰Í•ÉÙ•‘MÑ…Ñ” ‰Á…ÕÍ•ˆ°€‰ÍÑ…Ñ•}¡…¹”ˆ¤ì(€€€€€€€€€É•Á½ÉÑ1¥™•å±” ‰Á…ÕÍ”ˆ¤ì(€€€€€€€ô(€€€€€€€•±Í”¥˜€¡ÍÑ…Ñ•Y…±Õ”€ôôô€À¤ì(€€€€€€€€€ÁÕ‰±¥Í¡=‰Í•ÉÙ•‘MÑ…Ñ” ‰ÍÑ½ÁÁ•ˆ°€‰ÍÑ…Ñ•}¡…¹”ˆ¤ì(€€€€€€€€€É•Á½ÉÑ1¥™•å±” ‰•¹‘•ˆ¤ì(€€€€€€€ô(€€€€€€€•±Í”¥˜€¡ÍÑ…Ñ•Y…±Õ”€ôôô€´Ä¤±…ÍÑMÑ…‰±•A±…å‰…­MÑ…Ñ•I•˜¹ÕÉÉ•¹Ğ€ô€‰ÍÑ½ÁÁ•ˆì(€€€€€€€É•ÑÕÉ¸ì(€€€€€ô(€€€€€¥˜€¡ÑåÁ”€ôôô€‰½¹A±…å•ÉÉÉ½Èˆ¤ì(€€€€€€€½¹ÍĞÙ…±Õ”€ôÁ…å±½…¹Ù…±Õ”ì(€€€€€€€¥˜€ …¥ÍA±…¥¹Q¥­Q½­=‰©•Ğ¡Ù…±Õ”¤¤É•ÑÕÉ¸ì(€€€€€€€½¹ÍĞ½‘”€ôÑåÁ•½˜Ù…±Õ”¹•ÉÉ½É½‘”€ôôô€‰¹Õµ‰•Èˆ€üÙ…±Õ”¹•ÉÉ½É½‘”€è9Õµ‰•È¡Ù…±Õ”¹•ÉÉ½É½‘”¤ì(€€€€€€€½¹ÍĞ•ÉÉ½ÉQåÁ”€ôÑåÁ•½˜Ù…±Õ”¹•ÉÉ½ÉQåÁ”€ôôô€‰ÍÑÉ¥¹œˆ€üÙ…±Õ”¹•ÉÉ½ÉQåÁ”€è¹Õ±°ì(€€€€€€€½¹ÍĞÍ…™•½‘”€ô9Õµ‰•È¹¥Í¥¹¥Ñ”¡½‘”¤€ü½‘”€è¹Õ±°ì(€€€€€€€¥˜€¡Í…™•½‘”€ôôô€ÌÀÀÈñğ•ÉÉ½ÉQåÁ”€ôôô€‰UQ=A1e}II=Hˆ¤ì(€€€€€€€€€Í•Ñ9½Ñ¥” ‰ÕÑ½µ…Ñ¥ŒÁ±…å‰…¬İ…Ì‰±½­•¸UÍ”Ñ¡”Á±…å•ËŠeÌA±…ä½¹ÑÉ½°¸ˆ¤ì(€€€€€€€€€Í•ÑÉÉ½É1…‰•°¡¹Õ±°¤ì(€€€€€€€€€É•ÑÕÉ¸ì(€€€€€€€ô(€€€€€€€±•…ÉI•…‘åQ¥µ•È ¤ì(€€€€€€€ÍÑ…ÑÕÍI•˜¹ÕÉÉ•¹Ğ€ô€‰•ÉÉ½Èˆì(€€€€€€€Í•Ñ9½Ñ¥”¡¹Õ±°¤ì(€€€€€€€Í•ÑMÑ…ÑÕÌ ‰•ÉÉ½Èˆ¤ì(€€€€€€€Í•Ñ¥…¹½ÍÑ¥Ì¡ìÁÉ½Ù¥‘•Èè€‰Ñ¥­Ñ½¬ˆ°Á½ÍÑ%èÁ…ÉÍ•‘A½ÍÑ%°ÑÉ…­%è•¹ÑÉä¹¥°É•…‘äèÉ•…‘åI•˜¹ÕÉÉ•¹Ğ°Á±…å‰…­MÑ…Ñ”è±…ÍÑMÑ…‰±•A±…å‰…­MÑ…Ñ•I•˜¹ÕÉÉ•¹Ğ°ÕÉÉ•¹ÑQ¥µ•M•½¹‘Ìè±…Ñ•ÍÑQ¥µ•I•˜¹ÕÉÉ•¹Ğ°‘ÕÉ…Ñ¥½¹M•½¹‘Ìè‘ÕÉ…Ñ¥½¹I•˜¹ÕÉÉ•¹Ğ°ÕÁ‘…Ñ•‘Ğè±…ÍÑAÕ‰±¥Í¡•‘ÑI•˜¹ÕÉÉ•¹Ğ°Íå¹•M•½¹‘Ìè¹Õ±°°ÍÑ…ÑÕÌè€‰ÉÉ½Èˆ°ÁÕ‰±¥Í¡MÑ…ÑÕÌè€‰™…¥±•ˆô¤ì(€€€€€€€Í•ÑÉÉ½É1…‰•°¡Ñ¥­Ñ½­ÉÉ½É1…‰•°¡Í…™•½‘”°•ÉÉ½ÉQåÁ”¤¤ì(€€€€€€€É•Á½ÉÑ1¥™•å±” ‰•ÉÉ½Èˆ°€‰ÁÉ½Ù¥‘•É}•ÉÉ½Èˆ¤ì(€€€€€€€¥˜€¡Í…™•½‘”€ôôô€ÄÀÀÄñğÍ…™•½‘”€ôôô€ÈÀÀÄñğÍ…™•½‘”€ôôô€ÌÀÀÄñğ•ÉÉ½ÉQåÁ”€ôôô€‰%9Y1%}Y%<ˆñğ•ÉÉ½ÉQåÁ”€ôôô€‰MIYI}II=Hˆñğ•ÉÉ½ÉQåÁ”€ôôô€‰A1e	-}II=Hˆ¤Ù½¥±•…É=Ù•É±…åA±…å•ÉMå¹Œ ¤ì(€€€€€ô(€€€ô(€€€İ¥¹‘½Ü¹…‘‘Ù•¹Ñ1¥ÍÑ•¹•È ‰µ•ÍÍ…”ˆ°½¹5•ÍÍ…”¤ì(€€€½¹ÍĞ¡•…ÉÑ‰•…Ğ€ôİ¥¹‘½Ü¹Í•Ñ%¹Ñ•ÉÙ…°  ¤€ôøì(€€€€€¥˜€¡É•…‘åI•˜¹ÕÉÉ•¹Ğ€˜˜¡…Í=‰Í•ÉÙ•‘ÕÉÉ•¹ÑQ¥µ•I•˜¹ÕÉÉ•¹Ğ€˜˜€¡±…ÍÑMÑ…‰±•A±…å‰…­MÑ…Ñ•I•˜¹ÕÉÉ•¹Ğ€ôôô€‰Á±…å¥¹œˆñğ±…ÍÑMÑ…‰±•A±…å‰…­MÑ…Ñ•I•˜¹ÕÉÉ•¹Ğ€ôôô€‰Á…ÕÍ•ˆ¤¤ÁÕ‰±¥Í ¡±…ÍÑMÑ…‰±•A±…å‰…­MÑ…Ñ•I•˜¹ÕÉÉ•¹Ğ°±…Ñ•ÍÑQ¥µ•I•˜¹ÕÉÉ•¹Ğ°€‰¡•…ÉÑ‰•…Ğˆ°±…Ñ•ÍÑQ¥µ•=‰Í•ÉÙ•‘ÑI•˜¹ÕÉÉ•¹Ğ€üüÕ¹‘•™¥¹•¤ì(€€€ô°Q%-Q=-}Me9}!IQ	Q}5L¤ì(€€€É•ÑÕÉ¸€ ¤€ôøì±•…ÉI•…‘åQ¥µ•È ¤ìİ¥¹‘½Ü¹É•µ½Ù•Ù•¹Ñ1¥ÍÑ•¹•È ‰µ•ÍÍ…”ˆ°½¹5•ÍÍ…”¤ìÑ¥­Ñ½­•¹•É…Ñ¥½¹Ñ¥Ù•I•˜¹ÕÉÉ•¹Ğ€ô™…±Í”ìÅÕ•Õ•‘AÕ‰±¥Í¡I•˜¹ÕÉÉ•¹Ğ€ô¹Õ±°ìİ¥¹‘½Ü¹±•…É%¹Ñ•ÉÙ…°¡¡•…ÉÑ‰•…Ğ¤ìôì(€€€€¼¼™™•Ğ±¥™•å±”¥Ì­•å•‰äÑ¡”Á…ÉÍ•Q¥­Q½¬µ•‘¥„UI0ìA±…å•É½¬É•µ½Õ¹ÑÌ½¸ÅÕ•Õ”µÑÉ…¬¥‘•¹Ñ¥Ñä¡…¹•Ì¸(€€€€¼¼•Í±¥¹Ğµ‘¥Í…‰±”µ¹•áĞµ±¥¹”É•…Ğµ¡½½­Ì½•á¡…ÕÍÑ¥Ù”µ‘•ÁÌ(€ô°mÁ…ÉÍ•‘A½ÍÑ%°Á…ÉÍ•‘A±…å•ÉUÉ°°¡…ÍA…ÉÍ•‘Q¥­Q½­UÉ°°•¹ÑÉä¹±¥¹­t¤ì(€¥˜€ …ÍÉŒ¤É•ÑÕÉ¸€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•ÈÀ´ÌÑ•áĞµÍ´Ñ•áĞµµÕÑ•ˆù9¼Ù…±¥Q¥­Q½¬Ù¥‘•¼%™½Õ¹¸UÍ”=Á•¸1¥¹¬¸ğ½‘¥Øøì(€É•ÑÕÉ¸€ñ‘¥Ø±…ÍÍ9…µ”ô‰ÍÁ…”µä´Èˆøñ‘¥Ø±…ÍÍ9…µ”ô‰µàµ…ÕÑ¼µ…àµ µlØÉÙ¡tµ¥¸µ µlÌØÁÁátÜµ™Õ±°µ…àµÜµlĞÈÁÁát½Ù•É™±½Üµ¡¥‘‘•¸‰½É‘•È‰½É‘•Èµ‰½É‘•È‰œµ‰±…¬ˆøñ¥™É…µ”É•˜õí¥™É…µ•I•™ôÑ¥Ñ±”õíQ¥­Q½¬Á±…å•È™½È€‘íÍÕ‰µ¥ÑÑ•‘ÉÑ¥ÍĞ¡•¹ÑÉä¥ôƒŠP€‘íÍÕ‰µ¥ÑÑ•‘Q¥Ñ±”¡•¹ÑÉä¥õôÍÉŒõíÍÉô±…ÍÍ9…µ”ô‰ µlØÉÙ¡tµ¥¸µ µlÌØÁÁátµ…àµ µlØÈÁÁátÜµ™Õ±°ˆ…±±½Üô‰™Õ±±ÍÉ••¸ì…ÕÑ½Á±…äì•¹ÉåÁÑ•µµ•‘¥„ìÁ¥ÑÕÉ”µ¥¸µÁ¥ÑÕÉ”ˆ…±±½İÕ±±MÉ••¸É•™•ÉÉ•ÉA½±¥äô‰ÍÑÉ¥Ğµ½É¥¥¸µİ¡•¸µÉ½ÍÌµ½É¥¥¸ˆ€¼øğ½‘¥ØùíÍÑ…ÑÕÌ€ôôô€‰±½…‘¥¹œˆ€˜˜€ñÀ±…ÍÍ9…µ”ô‰Ñ•áĞµáÌÑ•áĞµµÕÑ•ˆù1½…‘¥¹œQ¥­Q½¬Á±…å•ËŠ˜=Á•¸1¥¹¬…¹½Áä1¥¹¬É•µ…¥¸…Ù…¥±…‰±”¸ğ½ÀùõíÍÑ…ÑÕÌ€ôôô€‰É•…‘äˆ€˜˜€ñÀ±…ÍÍ9…µ”ô‰Ñ•áĞµáÌÑ•áĞµµÕÑ•ˆùQ¥­Q½¬Á±…å•ÈÉ•…‘ä¸UÍ”Ñ¡”¹…Ñ¥Ù”½¹ÑÉ½±Ì¸ğ½Àùõí¹½Ñ¥”€˜˜€ñÀ±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ…•¹Ğ¼ĞÀ‰œµ…•¹Ğ¼ÄÀÀ´ÈÑ•áĞµáÌÑ•áĞµ…•¹Ğˆùí¹½Ñ¥•ôğ½ÀùõíÍÑ…ÑÕÌ€ôôô€‰•ÉÉ½Èˆ€˜˜€ñÀ±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‘…¹•È¼ĞÀ‰œµ‘…¹•È¼ÄÀÀ´ÈÑ•áĞµáÌÑ•áĞµ‘…¹•Èˆùí•ÉÉ½É1…‰•°€üü€‰Q¥­Q½¬Á±…å•ÈÕ¹…Ù…¥±…‰±”¸‰ôUÍ”=Á•¸1¥¹¬½È½Áä1¥¹¬¸ğ½Àùôñ‘¥Ø±…ÍÍ9…µ”ô‰É¥…À´Ä‰½É‘•È‰½É‘•Èµ‰½É‘•È¼ØÀ‰œµÍÕÉ™…”¼àÀÀ´ÈÑ•áĞµlÄÁÁátÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµµÕÑ•Í´éÉ¥µ½±Ì´ÌˆøñÍÁ…¸ùAÉ½Ù¥‘•Èèí‘¥…¹½ÍÑ¥Ìü¹ÁÉ½Ù¥‘•È€üü€‰Ñ¥­Ñ½¬‰ôğ½ÍÁ…¸øñÍÁ…¸ùA½ÍĞ%èí‘¥…¹½ÍÑ¥Ìü¹Á½ÍÑ%€üüÁ…ÉÍ•‘A½ÍÑ%€üü€‹ŠP‰ôğ½ÍÁ…¸øñÍÁ…¸ùQÉ…¬%èí‘¥…¹½ÍÑ¥Ìü¹ÑÉ…­%€üü•¹ÑÉä¹¥‘ôğ½ÍÁ…¸øñÍÁ…¸ùI•…‘äèí‘¥…¹½ÍÑ¥Ìü¹É•…‘ä€ü€‰å•Ìˆ€è€‰¹¼‰ôğ½ÍÁ…¸øñÍÁ…¸ùMÑ…Ñ”èí‘¥…¹½ÍÑ¥Ìü¹Á±…å‰…­MÑ…Ñ”€üü€‰5¥ÍÍ¥¹œ‰ôğ½ÍÁ…¸øñÍÁ…¸ù!½ÍĞÑ¥µ”èí5…Ñ ¹É½Õ¹¡‘¥…¹½ÍÑ¥Ìü¹ÕÉÉ•¹ÑQ¥µ•M•½¹‘Ì€üü€À¥õÌğ½ÍÁ…¸øñÍÁ…¸ùÕÉ…Ñ¥½¸èí‘¥…¹½ÍÑ¥Ìü¹‘ÕÉ…Ñ¥½¹M•½¹‘Ì€ü€‘í5…Ñ ¹É½Õ¹¡‘¥…¹½ÍÑ¥Ì¹‘ÕÉ…Ñ¥½¹M•½¹‘Ì¥õÍ€€è€‹ŠP‰ôğ½ÍÁ…¸øñÍÁ…¸ùMå¹Œèí‘¥…¹½ÍÑ¥Ìü¹ÍÑ…ÑÕÌ€üü€‰5¥ÍÍ¥¹œ‰õí‘¥…¹½ÍÑ¥Ìü¹Íå¹•M•½¹‘Ì€„ôô¹Õ±°€˜˜‘¥…¹½ÍÑ¥Ìü¹Íå¹•M•½¹‘Ì€„ôôÕ¹‘•™¥¹•€ü€ƒ
+Ü€‘í‘¥…¹½ÍÑ¥Ì¹Íå¹•M•½¹‘ÍõÍ€€è€ˆ‰ôğ½ÍÁ…¸øñÍÁ…¸ùAÕ‰±¥Í èí‘¥…¹½ÍÑ¥Ìü¹ÁÕ‰±¥Í¡MÑ…ÑÕÌ€üü€‹ŠP‰ôğ½ÍÁ…¸øñÍÁ…¸ù=ÕÑ‰½Õ¹ÑÉ…¹Í¥Ğèí½ÕÑ‰½Õ¹‘QÉ…¹Í¥Ñ¥…¹½ÍÑ¥5Ì€„ôô¹Õ±°€ü€‘í½ÕÑ‰½Õ¹‘QÉ…¹Í¥Ñ¥…¹½ÍÑ¥5ÍõµÍ€€è€‹ŠP‰ôğ½ÍÁ…¸øğ½‘¥Øøğ½‘¥Øøì)ô()™Õ¹Ñ¥½¸‘µ¥¹Õ‘¥½A±…å•È¡ì•¹ÑÉä°Í•ÍÍ¥½¹%ôèì•¹ÑÉäèEÕ•Õ•¹ÑÉäìÍ•ÍÍ¥½¹%èÍÑÉ¥¹œğ¹Õ±°ô¤ì(€½¹ÍĞ…Õ‘¥½I•˜€ôÕÍ•I•˜ñ!Q51Õ‘¥½±•µ•¹Ğğ¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍĞ…¹…±åÍ¥ÍI•˜€ôÕÍ•I•˜ñI…‘¥½Y¥ÍÕ…±Õ‘¥½¹…±åÍ¥Ìğ¹Õ±°ø¡¹Õ±°¤ì(€½¹ÍĞ…¹…±åÍ¥ÍÉ…Á¡I•˜€ôÕÍ•I•˜ñì(€€€•±•µ•¹Ğè!Q51Õ‘¥½±•µ•¹Ğì(€€€½¹Ñ•áĞèÕ‘¥½½¹Ñ•áĞì(€€€Í½ÕÉ”è5•‘¥…±•µ•¹ÑÕ‘¥½M½ÕÉ•9½‘”ì(€€€…¹…±åÍ•Èè¹…±åÍ•É9½‘”ì(€€€‰¥¹ÌèU¥¹ĞáÉÉ…äñÉÉ…å	Õ™™•Èøì(€ôğ¹Õ±°ø¡¹Õ±°¤ì(€ÕÍ•™™•Ğ  ¤€ôøì(€€€½¹ÍĞ…Õ‘¥¼€ô…Õ‘¥½I•˜¹ÕÉÉ•¹Ğì(€€€¥˜€ ……Õ‘¥¼¤É•ÑÕÉ¸ì(€€€±•Ğ±¥™•å±•MÑ…Ñ”è€‰±½…‘•ˆğ€‰É•…‘äˆğ€‰Á±…å¥¹œˆğ€‰Á…ÕÍ•ˆğ€‰ÍÑ…±±•ˆğ€‰•¹‘•ˆğ€‰•ÉÉ½Èˆ€ô€‰±½…‘•ˆì(€€€½¹ÍĞÁ±…å‰…­MÑ…Ñ”€ô€ ¤è1¥Ù•=Ù•É±…åA±…å‰…­MÑ…Ñ”€ôø…Õ‘¥¼¹•¹‘•€ü€‰ÍÑ½ÁÁ•ˆ€è…Õ‘¥¼¹Á…ÕÍ•€ü€¡…Õ‘¥¼¹ÕÉÉ•¹ÑQ¥µ”€ø€À€ü€‰Á…ÕÍ•ˆ€è€‰ÍÑ½ÁÁ•ˆ¤€è€‰Á±…å¥¹œˆì(€€€½¹ÍĞ•¹ÍÕÉ•¹…±åÍ¥Ì€ô…Íå¹Œ€ ¤€ôøì(€€€€€½¹ÍĞ•á¥ÍÑ¥¹œ€ô…¹…±åÍ¥ÍÉ…Á¡I•˜¹ÕÉÉ•¹Ğì(€€€€€¥˜€¡•á¥ÍÑ¥¹œ€˜˜•á¥ÍÑ¥¹œ¹•±•µ•¹Ğ€„ôô…Õ‘¥¼¤ì(€€€€€€€•á¥ÍÑ¥¹œ¹Í½ÕÉ”¹‘¥Í½¹¹•Ğ ¤ì(€€€€€€€•á¥ÍÑ¥¹œ¹…¹…±åÍ•È¹‘¥Í½¹¹•Ğ ¤ì(€€€€€€€Ù½¥•á¥ÍÑ¥¹œ¹½¹Ñ•áĞ¹±½Í” ¤ì(€€€€€€€…¹…±åÍ¥ÍÉ…Á¡I•˜¹ÕÉÉ•¹Ğ€ô¹Õ±°ì(€€€€€€€…¹…±åÍ¥ÍI•˜¹ÕÉÉ•¹Ğ€ô¹Õ±°ì(€€€€€ô(€€€€€±•ĞÉ…Á €ô…¹…±åÍ¥ÍÉ…Á¡I•˜¹ÕÉÉ•¹Ğì(€€€€€¥˜€ …É…Á ¤ì(€€€€€€€½¹ÍĞ…Õ‘¥½]¥¹‘½Ü€ôİ¥¹‘½Ü…ÌÕ¹­¹½İ¸…ÌìÕ‘¥½½¹Ñ•áĞüèÑåÁ•½˜Õ‘¥½½¹Ñ•áĞìİ•‰­¥ÑÕ‘¥½½¹Ñ•áĞüèÑåÁ•½˜Õ‘¥½½¹Ñ•áĞôì(€€€€€€€½¹ÍĞÕ‘¥½½¹Ñ•áÑ½¹ÍÑÉÕÑ½È€ô…Õ‘¥½]¥¹‘½Ü¹Õ‘¥½½¹Ñ•áĞ€üü…Õ‘¥½]¥¹‘½Ü¹İ•‰­¥ÑÕ‘¥½½¹Ñ•áĞì(€€€€€€€¥˜€ …Õ‘¥½½¹Ñ•áÑ½¹ÍÑÉÕÑ½È¤É•ÑÕÉ¸¹Õ±°ì(€€€€€€€½¹ÍĞ½¹Ñ•áĞ€ô¹•ÜÕ‘¥½½¹Ñ•áÑ½¹ÍÑÉÕÑ½È ¤ì(€€€€€€€ÑÉäì(€€€€€€€€€½¹ÍĞÍ½ÕÉ”€ô½¹Ñ•áĞ¹É•…Ñ•5•‘¥…±•µ•¹ÑM½ÕÉ”¡…Õ‘¥¼¤ì(€€€€€€€€€½¹ÍĞ…¹…±åÍ•È€ô½¹Ñ•áĞ¹É•…Ñ•¹…±åÍ•È ¤ì(€€€€€€€€€…¹…±åÍ•È¹™™ÑM¥é”€ô€Å|ÀÈĞì(€€€€€€€€€…¹…±åÍ•È¹Íµ½½Ñ¡¥¹Q¥µ•½¹ÍÑ…¹Ğ€ô€À¸Üàì(€€€€€€€€€…¹…±åÍ•È¹µ¥¹•¥‰•±Ì€ô€´äÀì(€€€€€€€€€…¹…±åÍ•È¹µ…á•¥‰•±Ì€ô€´ÄÔì(€€€€€€€€€Í½ÕÉ”¹½¹¹•Ğ¡…¹…±åÍ•È¤ì(€€€€€€€€€…¹…±åÍ•È¹½¹¹•Ğ¡½¹Ñ•áĞ¹‘•ÍÑ¥¹…Ñ¥½¸¤ì(€€€€€€€€€É…Á €ôì•±•µ•¹Ğè…Õ‘¥¼°½¹Ñ•áĞ°Í½ÕÉ”°…¹…±åÍ•È°‰¥¹Ìè¹•ÜU¥¹ĞáÉÉ…ä¡…¹…±åÍ•È¹™É•ÅÕ•¹å	¥¹½Õ¹Ğ¤ôì(€€€€€€€€€…¹…±åÍ¥ÍÉ…Á¡I•˜¹ÕÉÉ•¹Ğ€ôÉ…Á ì(€€€€€€€ô…Ñ ì(€€€€€€€€€Ù½¥½¹Ñ•áĞ¹±½Í” ¤ì(€€€€€€€€€É•ÑÕÉ¸¹Õ±°ì(€€€€€€€ô(€€€€€ô(€€€€€¥˜€¡É…Á ¹½¹Ñ•áĞ¹ÍÑ…Ñ”€ôôô€‰ÍÕÍÁ•¹‘•ˆ¤…İ…¥ĞÉ…Á ¹½¹Ñ•áĞ¹É•ÍÕµ” ¤¹…Ñ   ¤€ôøÕ¹‘•™¥¹•¤ì(€€€€€É•ÑÕÉ¸É…Á ì(€€€ôì(€€€½¹ÍĞÍ…µÁ±•¹…±åÍ¥Ì€ô€ ¤€ôøì(€€€€€½¹ÍĞÉ…Á €ô…¹…±åÍ¥ÍÉ…Á¡I•˜¹ÕÉÉ•¹Ğì(€€€€€¥˜€ …É…Á ñğÉ…Á ¹•±•µ•¹Ğ€„ôô…Õ‘¥¼ñğ…Õ‘¥¼¹Á…ÕÍ•ñğ…Õ‘¥¼¹•¹‘•ñğÉ…Á ¹½¹Ñ•áĞ¹ÍÑ…Ñ”€„ôô€‰ÉÕ¹¹¥¹œˆ¤É•ÑÕÉ¸ì(€€€€€É…Á ¹…¹…±åÍ•È¹•Ñ	åÑ•É•ÅÕ•¹å…Ñ„¡É…Á ¹‰¥¹Ì¤ì(€€€€€½¹ÍĞÍ…µÁ±”€ô…¹…±åé•I…‘¥½Y¥ÍÕ…±É•ÅÕ•¹å…Ñ„¡É…Á ¹‰¥¹Ì°É…Á ¹½¹Ñ•áĞ¹Í…µÁ±•I…Ñ”°É…Á ¹…¹…±åÍ•È¹™™ÑM¥é”¤ì(€€€€€¥˜€¡Í…µÁ±”¤…¹…±åÍ¥ÍI•˜¹ÕÉÉ•¹Ğ€ôÍµ½½Ñ¡I…‘¥½Y¥ÍÕ…±Õ‘¥½¹…±åÍ¥Ì¡…¹…±åÍ¥ÍI•˜¹ÕÉÉ•¹Ğ°Í…µÁ±”¤ì(€€€ôì(€€€½¹ÍĞÍÑ…ÉÑ¹…±åÍ¥Ì€ô€ ¤€ôøì(€€€€€Ù½¥•¹ÍÕÉ•¹…±åÍ¥Ì ¤¹Ñ¡•¸ ¡É…Á ¤€ôøì¥˜€¡É…Á ¤Í…µÁ±•¹…±åÍ¥Ì ¤ìô¤ì(€€€ôì(€€€½¹ÍĞÁÕ‰±¥Í €ô€¡½ÉÉ•Ñ¥½¹I•…Í½¸è1¥Ù•=Ù•É±…åMå¹½ÉÉ•Ñ¥½¹I•…Í½¸¤€ôøì(€€€€€½¹ÍĞ‘ÕÉ…Ñ¥½¹M•½¹‘Ì€ô9Õµ‰•È¹¥Í¥¹¥Ñ”¡…Õ‘¥¼¹‘ÕÉ…Ñ¥½¸¤€˜˜…Õ‘¥¼¹‘ÕÉ…Ñ¥½¸€ø€À€ü…Õ‘¥¼¹‘ÕÉ…Ñ¥½¸€èÕ¹‘•™¥¹•ì(€€€€€½¹ÍĞÍÑ…Ñ”€ôÁ±…å‰…­MÑ…Ñ” ¤ì(€€€€€½¹ÍĞ…Õ‘¥½¹…±åÍ¥Ì€ôÍÑ…Ñ”€ôôô€‰Á±…å¥¹œˆ€ü…¹…±åÍ¥ÍI•˜¹ÕÉÉ•¹Ğ€è¹Õ±°ì(€€€€€Ù½¥Á½ÍÑ=Ù•É±…åA±…å•ÉMå¹Œ¡ìÁÉ½Ù¥‘•Èè€‰…Õ‘¥¼ˆ…Ì½¹ÍĞ°ÑÉ…­%è•¹ÑÉä¹¥°Á±…å‰…­MÑ…Ñ”èÍÑ…Ñ”°ÕÉÉ•¹ÑQ¥µ•M•½¹‘Ìè5…Ñ ¹µ…à À°…Õ‘¥¼¹ÕÉÉ•¹ÑQ¥µ”ñğ€À¤°‘ÕÉ…Ñ¥½¹M•½¹‘Ì°ÕÁ‘…Ñ•‘Ğè¹•Ü…Ñ” ¤¹Ñ½%M=MÑÉ¥¹œ ¤°µÕÑ•è…Õ‘¥¼¹µÕÑ•°€¸¸¸¡…Õ‘¥½¹…±åÍ¥Ì€üì…Õ‘¥½¹…±åÍ¥Ìô€èíô¤°½ÉÉ•Ñ¥½¹I•…Í½¸ô¤¹…Ñ   ¤€ôøÕ¹‘•™¥¹•¤ì(€€€ôì(€€€½¹ÍĞÉ•Á½ÉĞ€ô€¡•Ù•¹ÑQåÁ”èEÕ•Õ•A±…å‰…­1¥™•å±•Ù•¹Ñ%¹ÁÕÑl‰•Ù•¹ÑQåÁ”‰t°•ÉÉ½É½‘”èEÕ•Õ•A±…å‰…­ÉÉ½É½‘”ğ¹Õ±°€ô¹Õ±°¤€ôøì(€€€€€½¹ÍĞ‘ÕÉ…Ñ¥½¹M•½¹‘Ì€ô9Õµ‰•È¹¥Í¥¹¥Ñ”¡…Õ‘¥¼¹‘ÕÉ…Ñ¥½¸¤€˜˜…Õ‘¥¼¹‘ÕÉ…Ñ¥½¸€ø€À€ü…Õ‘¥¼¹‘ÕÉ…Ñ¥½¸€èÕ¹‘•™¥¹•ì(€€€€€Ù½¥Á½ÍÑEÕ•Õ•A±…å‰…­1¥™•å±•Ù•¹Ğ¡ì(€€€€€€€Í•ÍÍ¥½¹%°(€€€€€€€ÑÉ…­%è•¹ÑÉä¹¥°(€€€€€€€ÁÉ½Ù¥‘•Èè€‰…Õ‘¥¼ˆ°(€€€€€€€•Ù•¹ÑQåÁ”°(€€€€€€€ÕÉÉ•¹ÑQ¥µ•M•½¹‘Ìè5…Ñ ¹µ…à À°…Õ‘¥¼¹ÕÉÉ•¹ÑQ¥µ”ñğ€À¤°(€€€€€€€‘ÕÉ…Ñ¥½¹M•½¹‘Ì°(€€€€€€€É•…‘åMÑ…Ñ”è…Õ‘¥¼¹É•…‘åMÑ…Ñ”°(€€€€€€€¹•Ñİ½É­MÑ…Ñ”è…Õ‘¥¼¹¹•Ñİ½É­MÑ…Ñ”°(€€€€€€€•ÉÉ½É½‘”°(€€€€€ô¤ì(€€€ôì(€€€½¹ÍĞÉ•…‘ä€ô€ ¤€ôøì(€€€€€±¥™•å±•MÑ…Ñ”€ô€‰É•…‘äˆì(€€€€€ÁÕ‰±¥Í  ‰ÍÑ…Ñ•}¡…¹”ˆ¤ì(€€€€€É•Á½ÉĞ ‰É•…‘äˆ¤ì(€€€ôì(€€€½¹ÍĞÁ±…ä€ô€ ¤€ôøì(€€€€€ÍÑ…ÉÑ¹…±åÍ¥Ì ¤ì(€€€€€ÁÕ‰±¥Í  ‰ÍÑ…Ñ•}¡…¹”ˆ¤ì(€€€ôì(€€€½¹ÍĞÁ±…å¥¹œ€ô€ ¤€ôøì(€€€€€½¹ÍĞ•Ù•¹ÑQåÁ”€ô±¥™•å±•MÑ…Ñ”€ôôô€‰Á…ÕÍ•ˆñğ±¥™•å±•MÑ…Ñ”€ôôô€‰ÍÑ…±±•ˆ€ü€‰É•ÍÕµ”ˆ€è€‰Á±…äˆì(€€€€€±¥™•å±•MÑ…Ñ”€ô€‰Á±…å¥¹œˆì(€€€€€ÍÑ…ÉÑ¹…±åÍ¥Ì ¤ì(€€€€€ÁÕ‰±¥Í  ‰ÍÑ…Ñ•}¡…¹”ˆ¤ì(€€€€€É•Á½ÉĞ¡•Ù•¹ÑQåÁ”¤ì(€€€ôì(€€€½¹ÍĞÁ…ÕÍ”€ô€ ¤€ôøì(€€€€€¥˜€¡…Õ‘¥¼¹•¹‘•¤É•ÑÕÉ¸ì(€€€€€±¥™•å±•MÑ…Ñ”€ô€‰Á…ÕÍ•ˆì(€€€€€ÁÕ‰±¥Í  ‰ÍÑ…Ñ•}¡…¹”ˆ¤ì(€€€€€É•Á½ÉĞ ‰Á…ÕÍ”ˆ¤ì(€€€ôì(€€€½¹ÍĞÍÑ…±°€ô€ ¤€ôøì(€€€€€¥˜€¡±¥™•å±•MÑ…Ñ”€ôôô€‰ÍÑ…±±•ˆñğ±¥™•å±•MÑ…Ñ”€ôôô€‰•¹‘•ˆñğ±¥™•å±•MÑ…Ñ”€ôôô€‰•ÉÉ½Èˆ¤É•ÑÕÉ¸ì(€€€€€±¥™•å±•MÑ…Ñ”€ô€‰ÍÑ…±±•ˆì(€€€€€ÁÕ‰±¥Í  ‰ÍÑ…Ñ•}¡…¹”ˆ¤ì(€€€€€É•Á½ÉĞ ‰ÍÑ…±°ˆ¤ì(€€€ôì(€€€½¹ÍĞ•¹‘•€ô€ ¤€ôøì(€€€€€±¥™•å±•MÑ…Ñ”€ô€‰•¹‘•ˆì(€€€€€ÁÕ‰±¥Í  ‰ÍÑ…Ñ•}¡…¹”ˆ¤ì(€€€€€É•Á½ÉĞ ‰•¹‘•ˆ¤ì(€€€ôì(€€€½¹ÍĞ•ÉÉ½È€ô€ ¤€ôøì(€€€€€±¥™•å±•MÑ…Ñ”€ô€‰•ÉÉ½Èˆì(€€€€€ÁÕ‰±¥Í  ‰ÍÑ…Ñ•}¡…¹”ˆ¤ì(€€€€€É•Á½ÉĞ ‰•ÉÉ½Èˆ°¡Ñµ±5•‘¥…ÉÉ½É½‘”¡…Õ‘¥¼¹•ÉÉ½È¤¤ì(€€€ôì(€€€½¹ÍĞÍ••¬€ô€ ¤€ôøì(€€€€€ÁÕ‰±¥Í  ‰Í••¬ˆ¤ì(€€€€€É•Á½ÉĞ ‰Í••¬ˆ¤ì(€€€ôì(€€€…Õ‘¥¼¹…‘‘Ù•¹Ñ1¥ÍÑ•¹•È ‰±½…‘•‘µ•Ñ…‘…Ñ„ˆ°É•…‘ä¤ì(€€€…Õ‘¥¼¹…‘‘Ù•¹Ñ1¥ÍÑ•¹•È ‰…¹Á±…äˆ°É•…‘ä¤ì(€€€…Õ‘¥¼¹…‘‘Ù•¹Ñ1¥ÍÑ•¹•È ‰Á±…äˆ°Á±…ä¤ì(€€€…Õ‘¥¼¹…‘‘Ù•¹Ñ1¥ÍÑ•¹•È ‰Á±…å¥¹œˆ°Á±…å¥¹œ¤ì(€€€…Õ‘¥¼¹…‘‘Ù•¹Ñ1¥ÍÑ•¹•È ‰Á…ÕÍ”ˆ°Á…ÕÍ”¤ì(€€€…Õ‘¥¼¹…‘‘Ù•¹Ñ1¥ÍÑ•¹•È ‰İ…¥Ñ¥¹œˆ°ÍÑ…±°¤ì(€€€…Õ‘¥¼¹…‘‘Ù•¹Ñ1¥ÍÑ•¹•È ‰ÍÑ…±±•ˆ°ÍÑ…±°¤ì(€€€…Õ‘¥¼¹…‘‘Ù•¹Ñ1¥ÍÑ•¹•È ‰•¹‘•ˆ°•¹‘•¤ì(€€€…Õ‘¥¼¹…‘‘Ù•¹Ñ1¥ÍÑ•¹•È ‰•ÉÉ½Èˆ°•ÉÉ½È¤ì(€€€…Õ‘¥¼¹…‘‘Ù•¹Ñ1¥ÍÑ•¹•È ‰Í••­•ˆ°Í••¬¤ì(€€€½¹ÍĞ¥¹Ñ•ÉÙ…°€ôİ¥¹‘½Ü¹Í•Ñ%¹Ñ•ÉÙ…°  ¤€ôøì(€€€€€¥˜€ ……Õ‘¥¼¹Á…ÕÍ•ñğ…Õ‘¥¼¹ÕÉÉ•¹ÑQ¥µ”€ø€À¤ÁÕ‰±¥Í  ‰¡•…ÉÑ‰•…Ğˆ¤ì(€€€ô°e=UQU	}Me9}!IQ	Q}5L¤ì(€€€½¹ÍĞ…¹…±åÍ¥Í%¹Ñ•ÉÙ…°€ôİ¥¹‘½Ü¹Í•Ñ%¹Ñ•ÉÙ…°¡Í…µÁ±•¹…±åÍ¥Ì°€àÀ¤ì(€€€É•ÑÕÉ¸€ ¤€ôøì(€€€€€İ¥¹‘½Ü¹±•…É%¹Ñ•ÉÙ…°¡¥¹Ñ•ÉÙ…°¤ì(€€€€€İ¥¹‘½Ü¹±•…É%¹Ñ•ÉÙ…°¡…¹…±åÍ¥Í%¹Ñ•ÉÙ…°¤ì(€€€€€…Õ‘¥¼¹É•µ½Ù•Ù•¹Ñ1¥ÍÑ•¹•È ‰±½…‘•‘µ•Ñ…‘…Ñ„ˆ°É•…‘ä¤ì(€€€€€…Õ‘¥¼¹É•µ½Ù•Ù•¹Ñ1¥ÍÑ•¹•È ‰…¹Á±…äˆ°É•…‘ä¤ì(€€€€€…Õ‘¥¼¹É•µ½Ù•Ù•¹Ñ1¥ÍÑ•¹•È ‰Á±…äˆ°Á±…ä¤ì(€€€€€…Õ‘¥¼¹É•µ½Ù•Ù•¹Ñ1¥ÍÑ•¹•È ‰Á±…å¥¹œˆ°Á±…å¥¹œ¤ì(€€€€€…Õ‘¥¼¹É•µ½Ù•Ù•¹Ñ1¥ÍÑ•¹•È ‰Á…ÕÍ”ˆ°Á…ÕÍ”¤ì(€€€€€…Õ‘¥¼¹É•µ½Ù•Ù•¹Ñ1¥ÍÑ•¹•È ‰İ…¥Ñ¥¹œˆ°ÍÑ…±°¤ì(€€€€€…Õ‘¥¼¹É•µ½Ù•Ù•¹Ñ1¥ÍÑ•¹•È ‰ÍÑ…±±•ˆ°ÍÑ…±°¤ì(€€€€€…Õ‘¥¼¹É•µ½Ù•Ù•¹Ñ1¥ÍÑ•¹•È ‰•¹‘•ˆ°•¹‘•¤ì(€€€€€…Õ‘¥¼¹É•µ½Ù•Ù•¹Ñ1¥ÍÑ•¹•È ‰•ÉÉ½Èˆ°•ÉÉ½È¤ì(€€€€€…Õ‘¥¼¹É•µ½Ù•Ù•¹Ñ1¥ÍÑ•¹•È ‰Í••­•ˆ°Í••¬¤ì(€€€€€İ¥¹‘½Ü¹Í•ÑQ¥µ•½ÕĞ  ¤€ôøì(€€€€€€€½¹ÍĞÉ…Á €ô…¹…±åÍ¥ÍÉ…Á¡I•˜¹ÕÉÉ•¹Ğì(€€€€€€€¥˜€ ……Õ‘¥¼¹¥Í½¹¹•Ñ•€˜˜É…Á ü¹•±•µ•¹Ğ€ôôô…Õ‘¥¼¤ì(€€€€€€€€€É…Á ¹Í½ÕÉ”¹‘¥Í½¹¹•Ğ ¤ì(€€€€€€€€€É…Á ¹…¹…±åÍ•È¹‘¥Í½¹¹•Ğ ¤ì(€€€€€€€€€Ù½¥É…Á ¹½¹Ñ•áĞ¹±½Í” ¤ì(€€€€€€€€€…¹…±åÍ¥ÍÉ…Á¡I•˜¹ÕÉÉ•¹Ğ€ô¹Õ±°ì(€€€€€€€€€…¹…±åÍ¥ÍI•˜¹ÕÉÉ•¹Ğ€ô¹Õ±°ì(€€€€€€€ô(€€€€€ô°€À¤ì(€€€ôì(€ô°m•¹ÑÉä¹¥°Í•ÍÍ¥½¹%‘t¤ì(€É•ÑÕÉ¸€ñ…Õ‘¥¼É•˜õí…Õ‘¥½I•™ô­•äõí€‘í•¹ÑÉä¹¥‘ô´‘í…‘µ¥¹Õ‘¥½UÉ°¡•¹ÑÉä¥õôÍÉŒõí…‘µ¥¹Õ‘¥½UÉ°¡•¹ÑÉä¥ô½¹ÑÉ½±ÌÁÉ•±½…ô‰µ•Ñ…‘…Ñ„ˆ±…ÍÍ9…µ”ô‰Üµ™Õ±°ˆ€¼øì)ô()™Õ¹Ñ¥½¸A±…å‰…­1¥™•å±•	…¹¹•È¡ì‘¥…¹½ÍÑ¥Ì°ÑÉ…­%ôèì‘¥…¹½ÍÑ¥ÌèEÕ•Õ•A±…å‰…­¥…¹½ÍÑ¥Ìğ¹Õ±°ìÑÉ…­%èÍÑÉ¥¹œô¤ì(€¥˜€ …‘¥…¹½ÍÑ¥Ìñğ‘¥…¹½ÍÑ¥Ì¹ÕÉÉ•¹ÑQÉ…­%€„ôôÑÉ…­%¤É•ÑÕÉ¸€ñÀ±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•È¼ØÀ‰œµÍÕÉ™…”¼ÜÀÀ´ÈÑ•áĞµáÌÑ•áĞµµÕÑ•ˆùA±…å•È±½…‘•¸A±…å‰…¬¡…Ì¹½ĞÉ•Á½ÉÑ•„ÍÑ…Ñ”å•Ğ¸ğ½Àøì(€½¹ÍĞÍÑ…Ñ”€ô‘¥…¹½ÍÑ¥Ì¹±¥™•å±•MÑ…Ñ”ì(€¥˜€¡ÍÑ…Ñ”€ôôô€‰•¹‘•ˆ¤É•ÑÕÉ¸€ñÀ±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ…•¹Ğ¼ØÀ‰œµ…•¹Ğ¼ÄÀÀ´ÈÑ•áĞµáÌ™½¹Ğµ‰½±Ñ•áĞµ…•¹ĞˆùA±…å‰…¬•¹‘•ƒŠP¡½½Í”¥¹¥Í QÉ…¬Ñ¼½Õ¹Ğ¥Ğ…¹…‘Ù…¹”¸Q¡”ÅÕ•Õ”¡…Ì¹½Ğ…‘Ù…¹•…ÕÑ½µ…Ñ¥…±±ä¸ğ½Àøì(€¥˜€¡ÍÑ…Ñ”€ôôô€‰•ÉÉ½Èˆ¤É•ÑÕÉ¸€ñÀ±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‘…¹•È¼ØÀ‰œµ‘…¹•È¼ÄÀÀ´ÈÑ•áĞµáÌ™½¹Ğµ‰½±Ñ•áĞµ‘…¹•ÈˆùA±…å‰…¬•ÉÉ½ÈƒŠPÑ¡”ÑÉ…¬¥ÌÍÑ¥±°±½…‘•¸I•ÑÉäÁ±…å‰…¬°ÕÍ”=Á•¸1¥¹¬°¥¹¥Í QÉ…¬¥˜¥Ğ…¥É•°½ÈI•µ½Ù”QÉ…¬¸ğ½Àøì(€¥˜€¡ÍÑ…Ñ”€ôôô€‰ÍÑ…±±•ˆ¤É•ÑÕÉ¸€ñÀ±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµl™™…„ÀÁt¼ØÀ‰œµl™™…„ÀÁt¼ÄÀÀ´ÈÑ•áĞµáÌ™½¹Ğµ‰½±Ñ•áĞµl™™…„ÀÁtˆùA±…å‰…¬ÍÑ…±±•ƒŠPİ…¥Ñ¥¹œ™½Èµ•‘¥„¸Q¡”ÅÕ•Õ”¡…Ì¹½Ğ…‘Ù…¹•¸ğ½Àøì(€¥˜€¡ÍÑ…Ñ”€ôôô€‰Á…ÕÍ•ˆ¤É•ÑÕÉ¸€ñÀ±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•È¼ÜÀ‰œµÍÕÉ™…”¼ÜÀÀ´ÈÑ•áĞµáÌÑ•áĞµµÕÑ•ˆùA±…å‰…¬Á…ÕÍ•¸Q¡”ÅÕ•Õ”¡…Ì¹½Ğ…‘Ù…¹•¸ğ½Àøì(€¥˜€¡ÍÑ…Ñ”€ôôô€‰Á±…å¥¹œˆ¤É•ÑÕÉ¸€ñÀ±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•ÈµlŒÍ‘‘Œäİt¼ÔÀ‰œµlŒÍ‘‘Œäİt¼ÄÀÀ´ÈÑ•áĞµáÌ™½¹Ğµ‰½±Ñ•áĞµlŒÍ‘‘ŒäİtˆùA±…å‰…¬…Ñ¥Ù”¸ğ½Àøì(€¥˜€¡ÍÑ…Ñ”€ôôô€‰É•…‘äˆ¤É•ÑÕÉ¸€ñÀ±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ…•¹Ğ¼ĞÀ‰œµ…•¹Ğ¼ÔÀ´ÈÑ•áĞµáÌÑ•áĞµ…•¹ĞˆùA±…å•ÈÉ•…‘ä¸ğ½Àøì(€É•ÑÕÉ¸€ñÀ±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•È¼ØÀ‰œµÍÕÉ™…”¼ÜÀÀ´ÈÑ•áĞµáÌÑ•áĞµµÕÑ•ˆùA±…å•È±½…‘•¸MÑ…ÉĞÁ±…å‰…¬İ¡•¸É•…‘ä¸ğ½Àøì)ô()™Õ¹Ñ¥½¸A±…å•É½¬¡ìÁ±…å•È°Í•ÍÍ¥½¹%°Á±…å‰…­¥…¹½ÍÑ¥Ì°µ¥¹¥µ¥é•°Í•Ñ5¥¹¥µ¥é•°É•…‘=¹±ä°…Ñ¥½¹A•¹‘¥¹œ°½¹Ñ¥½¸°½¹½ÁäôèìÁ±…å•ÈèEÕ•Õ•¹ÑÉäìÍ•ÍÍ¥½¹%èÍÑÉ¥¹œğ¹Õ±°ìÁ±…å‰…­¥…¹½ÍÑ¥ÌèEÕ•Õ•A±…å‰…­¥…¹½ÍÑ¥Ìğ¹Õ±°ìµ¥¹¥µ¥é•è‰½½±•…¸ìÍ•Ñ5¥¹¥µ¥é•è€¡Ù…±Õ”è‰½½±•…¸¤€ôøÙ½¥ìÉ•…‘=¹±äè‰½½±•…¸ì…Ñ¥½¹A•¹‘¥¹œè‰½½±•…¸ì½¹Ñ¥½¸è€¡¥èÍÑÉ¥¹œ°…Ñ¥½¸è‘µ¥¹EÕ•Õ•Ñ¥½¸¤€ôøÙ½¥ì½¹½Áäè€ ¤€ôøÙ½¥ô¤ì(€½¹ÍĞ•µ‰•‘‘•€ô•µ‰•‘UÉ°¡Á±…å•È¤ì(€É•ÑÕÉ¸€ (€€€€ñ‘¥Ø±…ÍÍ9…µ”õí™¥á•¥¹Í•Ğµà´À‰½ÑÑ½´´ÀèµläääåtÜµÍÉ••¸‰½É‘•ÈµĞ‰œµ‰…­É½Õ¹¼äÔÀ´ÌÍ¡…‘½ÜµlÁ|´ÈÁÁá|ØÁÁá}É‰„ À°À°À°À¸ĞÔ¥t‰…­‘É½Àµ‰±ÕÈ€‘íÅÕ•Õ•QÉ…­Y¥ÍÕ…°¡Á±…å•È¤¹Í•Ñ¥½¹±…ÍÍõôø(€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰Üµ™Õ±°Áà´ÈÍ´éÁà´Ğˆø(€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰™±•à™±•àµ½°…À´ÌÍ´é™±•àµÉ½ÜÍ´é¥Ñ•µÌµÍÑ…ÉĞÍ´é©ÕÍÑ¥™äµ‰•Ñİ••¸ˆø(€€€€€€€€€€ñ‘¥Øø(€€€€€€€€€€€€ñÀ±…ÍÍ9…µ”ô‰Ñ•áĞµáÌÕÁÁ•É…Í”ÑÉ…­¥¹œµlÀ¸ÌÕ•µtÑ•áĞµ…•¹Ğˆùíµ¥¹¥µ¥é•€ü€‰EÕ•Õ”A±…å•È½¬ˆ€è€‰½µµ…¹•¬A±…å•È‰ôğ½Àø(€€€€€€€€€€€€ñ Ì±…ÍÍ9…µ”ô‰Ñ•áĞµ±œ™½¹Ğµ‰½±ˆùíÍÕ‰µ¥ÑÑ•‘ÉÑ¥ÍĞ¡Á±…å•È¥ôƒŠPíÍÕ‰µ¥ÑÑ•‘Q¥Ñ±”¡Á±…å•È¥ôğ½ Ìøñ‘µ¥¹½±±…‰½É…Ñ½É1¥¹”•¹ÑÉäõíÁ±…å•Éô±…ÍÍ9…µ”ô‰µĞ´Äˆ€¼øñ1…¹•MÑ…ÑÕÍ	…‘”•¹ÑÉäõíÁ±…å•Éô€¼øñ‘µ¥¹AÉ¥½É¥ÑåAÕÉ¡…Í•	…¹¹•È•¹ÑÉäõíÁ±…å•Éô½µÁ…Ğ€¼øñ‘µ¥¹MÕ‰µ¥ÍÍ¥½¹9½Ñ”•¹ÑÉäõíÁ±…å•Éô½µÁ…Ğ€¼ø(€€€€€€€€€€€í‘•Ñ•Ñ•‘1…‰•°¡Á±…å•È¤€˜˜€ñÀ±…ÍÍ9…µ”ô‰Ñ•áĞµáÌÑ•áĞµµÕÑ•µĞ´Äˆù•Ñ•Ñ•€¼AÉ½Ù¥‘•Èèí‘•Ñ•Ñ•‘1…‰•°¡Á±…å•È¥ôğ½Àùô(€€€€€€€€€€€€ñÀ±…ÍÍ9…µ”ô‰Ñ•áĞµáÌÑ•áĞµµÕÑ•µĞ´ÄˆùíÍ½ÕÉ•1…‰•°¡Á±…å•È¥ôƒ
+Üí‘ÕÉ…Ñ¥½¹1…‰•°¡Á±…å•È¥ôğ½Àø(€€€€€€€€€€ğ½‘¥Øø(€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰™±•à™±•àµİÉ…À…À´Èˆø(€€€€€€€€€€€€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôøÍ•Ñ5¥¹¥µ¥é• …µ¥¹¥µ¥é•¥ô±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•ÈÁà´ÌÁä´ÈÑ•áĞµáÌÑ•áĞµµÕÑ•ˆùíµ¥¹¥µ¥é•€ü€‰áÁ…¹A±…å•Èˆ€è€‰5¥¹¥µ¥é”A±…å•È‰ôğ½‰ÕÑÑ½¸ø(€€€€€€€€€€€€ñ„¡É•˜õí½Á•¹UÉ°¡Á±…å•È¥ôÑ…É•Ğô‰}‰±…¹¬ˆÉ•°ô‰¹½É•™•ÉÉ•Èˆ±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ…•¹ĞÁà´ÌÁä´ÈÑ•áĞµáÌÑ•áĞµ…•¹Ğˆù=Á•¸1¥¹¬ğ½„ø(€€€€€€€€€€€€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õí½¹½Áåô±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•ÈÁà´ÌÁä´ÈÑ•áĞµáÌÑ•áĞµµÕÑ•ˆù½Áä1¥¹¬ğ½‰ÕÑÑ½¸ø(€€€€€€€€€€ğ½‘¥Øø(€€€€€€€€ğ½‘¥Øø(€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”õí€‘íµ¥¹¥µ¥é•€ü€‰ ´À½Ù•É™±½Üµ¡¥‘‘•¸½Á…¥Ñä´Àˆ€è€‰µĞ´Ì½Á…¥Ñä´ÄÀÀ‰ôÉ¥Üµ™Õ±°¥Ñ•µÌµ•¹…À´Ìá°éÉ¥µ½±Ìµmµ¥¹µ…à À°Å™È¥}…ÕÑ½uô…É¥„µ¡¥‘‘•¸õíµ¥¹¥µ¥é•‘ôø(€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰Üµ™Õ±°µ¥¸µÜ´Àˆø(€€€€€€€€€€€€ñA±…å‰…­1¥™•å±•	…¹¹•È‘¥…¹½ÍÑ¥ÌõíÁ±…å‰…­¥…¹½ÍÑ¥ÍôÑÉ…­%õíÁ±…å•È¹¥‘ô€¼ø(€€€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰µĞ´Èˆø(€€€€€€€€€€€íÁ±…å•È¹Í½ÕÉ•QåÁ”€ôôô€‰ÕÁ±½…ˆ€˜˜Á±…å•È¹™¥±•UÉ°€˜˜€ñ‘µ¥¹Õ‘¥½A±…å•È•¹ÑÉäõíÁ±…å•ÉôÍ•ÍÍ¥½¹%õíÍ•ÍÍ¥½¹%‘ô€¼ùô(€€€€€€€€€€€íÁ±…å•È¹Í½ÕÉ•QåÁ”€ôôô€‰å½ÕÑÕ‰”ˆ€˜˜€ñ‘µ¥¹e½ÕQÕ‰•A±…å•È­•äõíÁ±…å•È¹¥‘ô•¹ÑÉäõíÁ±…å•ÉôÍ•ÍÍ¥½¹%õíÍ•ÍÍ¥½¹%‘ô€¼ùô(€€€€€€€€€€€íÁ±…å•È¹Í½ÕÉ•QåÁ”€ôôô€‰Ñ¥­Ñ½¬ˆ€˜˜€ñ‘µ¥¹Q¥­Q½­A±…å•È­•äõíÁ±…å•È¹¥‘ô•¹ÑÉäõíÁ±…å•ÉôÍ•ÍÍ¥½¹%õíÍ•ÍÍ¥½¹%‘ô€¼ùô(€€€€€€€€€€€íÁ±…å•È¹Í½ÕÉ•QåÁ”€„ôô€‰ÕÁ±½…ˆ€˜˜Á±…å•È¹Í½ÕÉ•QåÁ”€„ôô€‰å½ÕÑÕ‰”ˆ€˜˜Á±…å•È¹Í½ÕÉ•QåÁ”€„ôô€‰Ñ¥­Ñ½¬ˆ€˜˜•µ‰•‘‘•€˜˜€ñ¥™É…µ”­•äõí€‘íÁ±…å•È¹¥‘ô´‘í•µ‰•‘‘•‘õôÑ¥Ñ±”ô‰EÕ•Õ”ÁÉ•Ù¥•ÜˆÍÉŒõí•µ‰•‘‘•‘ô±…ÍÍ9…µ”ô‰ ´ÔØÜµ™Õ±°‰½É‘•È‰½É‘•Èµ‰½É‘•Èˆ…±±½Üô‰±¥Á‰½…ÉµİÉ¥Ñ”ì•¹ÉåÁÑ•µµ•‘¥„ìÁ¥ÑÕÉ”µ¥¸µÁ¥ÑÕÉ”ˆ€¼ùô(€€€€€€€€€€€íÁ±…å•È¹Í½ÕÉ•QåÁ”€„ôô€‰ÕÁ±½…ˆ€˜˜Á±…å•È¹Í½ÕÉ•QåÁ”€„ôô€‰å½ÕÑÕ‰”ˆ€˜˜Á±…å•È¹Í½ÕÉ•QåÁ”€„ôô€‰Ñ¥­Ñ½¬ˆ€˜˜€…•µ‰•‘‘•€˜˜€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•ÈÀ´ÈÑ•áĞµÍ´Ñ•áĞµµÕÑ•ˆù9¼•µ‰•‘‘…‰±”ÁÉ•Ù¥•Ü™½ÈÑ¡¥ÌÍ½ÕÉ”¸UÍ”=Á•¸1¥¹¬½È½Áä1¥¹¬¸ğ½‘¥Øùô(€€€€€€€€€€€íÁ±…å•È¹Í½ÕÉ•QåÁ”€„ôô€‰ÕÁ±½…ˆ€˜˜Á±…å•È¹Í½ÕÉ•QåÁ”€„ôô€‰å½ÕÑÕ‰”ˆ€˜˜Á±…å•È¹Í½ÕÉ•QåÁ”€„ôô€‰Ñ¥­Ñ½¬ˆ€˜˜€ñÀ±…ÍÍ9…µ”ô‰µĞ´ÈÑ•áĞµáÌÑ•áĞµµÕÑ•ˆùQ¡¥ÌÁÉ½Ù¥‘•È‘½•Ì¹½Ğ•áÁ½Í”É•±¥…‰±”Á±…å‰…¬•Ù•¹ÑÌ¸UÍ”Ñ¡”•áÁ±¥¥Ğ¥¹¥Í ½ÈI•µ½Ù”½ÕÑ½µ”¸ğ½Àùô(€€€€€€€€€€€€ğ½‘¥Øø(€€€€€€€€€€ğ½‘¥Øø(€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰ÍÁ…”µä´Èá°éµ…àµÜµlÌÑÉ•µtˆø(€€€€€€€€€€€ì…É•…‘=¹±ä€˜˜€ñÀ±…ÍÍ9…µ”ô‰Ñ•áĞµlÄÁÁátÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµµÕÑ•ˆù¥¹¥Í €ô½µÁ±•Ñ•ƒ
+ÜI•µ½Ù”€ôÉ•µ½Ù•€¬™É••ÌÍ±½Ğƒ
+ÜU¹‘¼€ôÉ•ÑÕÉ¸Ñ¼ÅÕ•Õ”ğ½Àùô(€€€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰™±•à™±•àµİÉ…À…À´Èˆø(€€€€€€€€€€€€ñ„¡É•˜õí½Á•¹UÉ°¡Á±…å•È¥ôÑ…É•Ğô‰}‰±…¹¬ˆÉ•°ô‰¹½É•™•ÉÉ•Èˆ±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ…•¹ĞÁà´ĞÁä´ÈÑ•áĞµáÌÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµ…•¹Ğˆù=Á•¸1¥¹¬ğ½„ø(€€€€€€€€€€€€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õí½¹½Áåô±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•ÈÁà´ĞÁä´ÈÑ•áĞµáÌÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµµÕÑ•ˆù½Áä1¥¹¬ğ½‰ÕÑÑ½¸ø(€€€€€€€€€€€ì…É•…‘=¹±ä€˜˜€ğùí…¹UÍ•M¥¹…±!½±‘É½µA±…å•È¡Á±…å•È°Á±…å‰…­¥…¹½ÍÑ¥Ì¤€˜˜€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ‘¥Í…‰±•õí…Ñ¥½¹A•¹‘¥¹ô½¹±¥¬õì ¤€ôø½¹Ñ¥½¸¡Á±…å•È¹¥°€‰ÕÍ•M¥¹…±!½±ˆ¥ô±…ÍÍ9…µ”ô‰‰½É‘•È´È‰½É‘•Èµå…¸´ÌÀÀ‰œµå…¸´ÌÀÀ¼ÄÔÁà´ĞÁä´ÈÑ•áĞµáÌ™½¹Ğµ‰±…¬ÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµå…¸´ÄÀÀ¡½Ù•Èé‰œµå…¸´ÌÀÀ¡½Ù•ÈéÑ•áĞµ‰…­É½Õ¹‘¥Í…‰±•é½Á…¥Ñä´ÔÀˆùUMM%90!=1ƒŠP5=YQ<	=QQ=4ğ½‰ÕÑÑ½¸ùôñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ‘¥Í…‰±•õí…Ñ¥½¹A•¹‘¥¹ô½¹±¥¬õì ¤€ôø½¹Ñ¥½¸¡Á±…å•È¹¥°€‰™¥¹¥Í ˆ¥ô±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ…•¹Ğ‰œµ…•¹ĞÁà´ĞÁä´ÈÑ•áĞµáÌÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµ‰…­É½Õ¹‘¥Í…‰±•é½Á…¥Ñä´ÔÀˆù¥¹¥Í QÉ…¬ğ½‰ÕÑÑ½¸øñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ‘¥Í…‰±•õí…Ñ¥½¹A•¹‘¥¹ô½¹±¥¬õì ¤€ôø½¹Ñ¥½¸¡Á±…å•È¹¥°€‰É•µ½Ù”ˆ¥ô±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‘…¹•È¼ĞÀÁà´ĞÁä´ÈÑ•áĞµáÌÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµ‘…¹•È‘¥Í…‰±•é½Á…¥Ñä´ÔÀˆùI•µ½Ù”QÉ…¬ğ½‰ÕÑÑ½¸øñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ‘¥Í…‰±•õí…Ñ¥½¹A•¹‘¥¹ô½¹±¥¬õì ¤€ôø½¹Ñ¥½¸¡Á±…å•È¹¥°€‰µ½Ù•	…¬ˆ¥ô±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•ÈÁà´ĞÁä´ÈÑ•áĞµáÌÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµµÕÑ•‘¥Í…‰±•é½Á…¥Ñä´ÔÀˆùU¹‘¼1½…ğ½‰ÕÑÑ½¸ùí…¹A…ÕÍ•AÉ¥½É¥Ñä¡Á±…å•È¤€˜˜€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ‘¥Í…‰±•õí…Ñ¥½¹A•¹‘¥¹ô½¹±¥¬õì ¤€ôø½¹Ñ¥½¸¡Á±…å•È¹¥°€‰Á…ÕÍ•AÉ¥½É¥Ñäˆ¥ô±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµl™™…„ÀÁt¼ÔÀÁà´ĞÁä´ÈÑ•áĞµáÌÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµl™™…„ÀÁt‘¥Í…‰±•é½Á…¥Ñä´ÔÀˆùA…ÕÍ”AÉ¥½É¥Ñäğ½‰ÕÑÑ½¸ùôñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ‘¥Í…‰±•õí…Ñ¥½¹A•¹‘¥¹ô½¹±¥¬õì ¤€ôø½¹Ñ¥½¸¡Á±…å•È¹¥°€‰ÍÁ½Ñ±¥¡Ğˆ¥ô±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ™½É•É½Õ¹¼ĞÀÁà´ĞÁä´ÈÑ•áĞµáÌÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµ™½É•É½Õ¹‘¥Í…‰±•é½Á…¥Ñä´ÔÀˆùMÁ½Ñ±¥¡Ğğ½‰ÕÑÑ½¸øğ¼ùô(€€€€€€€€€€€€ğ½‘¥Øø(€€€€€€€€€€ğ½‘¥Øø(€€€€€€€€ğ½‘¥Øø(€€€€€€ğ½‘¥Øø(€€€€ğ½‘¥Øø(€€¤ì)ô(()™Õ¹Ñ¥½¸‘µ¥¹QÉ…­5•Ñ…‘…Ñ„¡ì•¹ÑÉäôèì•¹ÑÉäèEÕ•Õ•¹ÑÉäô¤ì(€½¹ÍĞ‘•Ñ•Ñ•€ô‘•Ñ•Ñ•‘1…‰•°¡•¹ÑÉä¤ì(€½¹ÍĞÁ…¥‘Ñ1…‰•°€ô•¹ÑÉä¹ÁÉ¥½É¥ÑåUÁÉ…‘•A…¥‘Ğ€ü¹•Ü…Ñ”¡•¹ÑÉä¹ÁÉ¥½É¥ÑåUÁÉ…‘•A…¥‘Ğ¤¹Ñ½1½…±•MÑÉ¥¹œ ¤€è€‹ŠPˆì(€½¹ÍĞ…µ½Õ¹Ñ1…‰•°€ôÑåÁ•½˜•¹ÑÉä¹ÁÉ¥½É¥ÑåUÁÉ…‘•µ½Õ¹Ñ•¹ÑÌ€ôôô€‰¹Õµ‰•Èˆ€ü™½Éµ…ÑAÉ¥”¡•¹ÑÉä¹ÁÉ¥½É¥ÑåUÁÉ…‘•µ½Õ¹Ñ•¹ÑÌ°•¹ÑÉä¹ÁÉ¥½É¥ÑåUÁÉ…‘•ÕÉÉ•¹ä€üü€‰ÕÍˆ¤€è€‹ŠPˆì(€½¹ÍĞ¹••‘ÍÑÑ•¹Ñ¥½¹I•…Í½¸€ô•¹ÑÉä¹ÁÉ¥½É¥ÑåUÁÉ…‘•MÑ…ÑÕÌ€ôôô€‰Á…¥‘}¹••‘Í}…ÑÑ•¹Ñ¥½¸ˆ€ü€‰A…åµ•¹Ğ½¹™¥Éµ•…™Ñ•ÈÑÉ…¬±•™ĞÍ…™”ÅÕ•Õ•±…¹•Ì¸5…¹Õ…°É•Ù¥•ÜÉ•ÅÕ¥É•¸ˆ€è¹Õ±°ì(€½¹ÍĞÍ¥¹…±!½±‘A…¥‘Ñ1…‰•°€ô•¹ÑÉä¹Í¥¹…±!½±‘A…¥‘Ğ€ü¹•Ü…Ñ”¡•¹ÑÉä¹Í¥¹…±!½±‘A…¥‘Ğ¤¹Ñ½1½…±•MÑÉ¥¹œ ¤€è€‹ŠPˆì(€½¹ÍĞÍ¥¹…±!½±‘µ½Õ¹Ñ1…‰•°€ôÑåÁ•½˜•¹ÑÉä¹Í¥¹…±!½±‘µ½Õ¹Ñ•¹ÑÌ€ôôô€‰¹Õµ‰•Èˆ€ü™½Éµ…ÑAÉ¥”¡•¹ÑÉä¹Í¥¹…±!½±‘µ½Õ¹Ñ•¹ÑÌ°•¹ÑÉä¹Í¥¹…±!½±‘ÕÉÉ•¹ä€üü€‰ÕÍˆ¤€è€‹ŠPˆì(€É•ÑÕÉ¸€ (€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰É¥…À´ÌÑ•áĞµáÌµéÉ¥µ½±ÌµlÄ¸É™É|Å™Étˆø(€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•È¼ØÀÀ´Ìˆø(€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰‰±½¬Ñ•áĞµµÕÑ•ÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞˆùMÕ‰µ¥ÑÑ•ğ½ÍÁ…¸ø(€€€€€€€€ñÀ±…ÍÍ9…µ”ô‰µĞ´Ä™½¹Ğµ‰½±Ñ•áĞµ™½É•É½Õ¹ˆùíÍÕ‰µ¥ÑÑ•‘ÉÑ¥ÍĞ¡•¹ÑÉä¥ôƒŠPíÍÕ‰µ¥ÑÑ•‘Q¥Ñ±”¡•¹ÑÉä¥ôğ½Àø(€€€€€€€í•¹ÑÉä¹Ñ¥­Ñ½­!…¹‘±”€˜˜€ñÀ±…ÍÍ9…µ”ô‰µĞ´ÄÑ•áĞµµÕÑ•ˆùQ¥­Q½¬èí•¹ÑÉä¹Ñ¥­Ñ½­!…¹‘±”¹ÍÑ…ÉÑÍ]¥Ñ  ‰ ˆ¤€ü•¹ÑÉä¹Ñ¥­Ñ½­!…¹‘±”€è ‘í•¹ÑÉä¹Ñ¥­Ñ½­!…¹‘±•õôğ½Àùô(€€€€€€€í•¹ÑÉä¹½¹Ñ…Ñµ…¥°€˜˜€ñÀ±…ÍÍ9…µ”ô‰µĞ´ÄÑ•áĞµµÕÑ•ˆù½¹Ñ…Ğèí•¹ÑÉä¹½¹Ñ…Ñµ…¥±ôğ½Àùô(€€€€€€€í•¹ÑÉä¹ÍÕ‰µ¥ÑÑ•ÉÉÑ¥ÍÑ9…µ”€˜˜€ñÀ±…ÍÍ9…µ”ô‰µĞ´ÄÑ•áĞµµÕÑ•ˆùMÕ‰µ¥ÑÑ•‰äèí•¹ÑÉä¹ÍÕ‰µ¥ÑÑ•ÉÉÑ¥ÍÑ9…µ•ôğ½Àùô(€€€€€€€€ñ1…¹•MÑ…ÑÕÍ	…‘”•¹ÑÉäõí•¹ÑÉåô€¼ø(€€€€€€€€ñ‘µ¥¹AÉ¥½É¥ÑåAÕÉ¡…Í•	…¹¹•È•¹ÑÉäõí•¹ÑÉåô€¼ø(€€€€€€ğ½‘¥Øø(€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•È¼ØÀÀ´Ìˆø(€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰‰±½¬Ñ•áĞµµÕÑ•ÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞˆù•Ñ•Ñ•Í½ÕÉ”ğ½ÍÁ…¸ø(€€€€€€€€ñÀ±…ÍÍ9…µ”ô‰µĞ´ÄÑ•áĞµ™½É•É½Õ¹ˆùí‘•Ñ•Ñ•€üü€‰A•¹‘¥¹œÁÉ½Ù¥‘•Èµ•Ñ…‘…Ñ„‰ôğ½Àø(€€€€€€€€ñÀ±…ÍÍ9…µ”ô‰µĞ´ÄÑ•áĞµµÕÑ•ˆùíÍ½ÕÉ•1…‰•°¡•¹ÑÉä¥ôƒ
+Üí‘ÕÉ…Ñ¥½¹1…‰•°¡•¹ÑÉä¥ôğ½Àø(€€€€€€€í•¹ÑÉä¹™¥±•9…µ”€˜˜€ñÀ±…ÍÍ9…µ”ô‰µĞ´ÄÑ•áĞµµÕÑ•ˆù¥±”èí•¹ÑÉä¹™¥±•9…µ•ôğ½Àùô(€€€€€€€í•¹ÑÉä¹Á±…å‰…­=ÕÑ½µ”€˜˜€ñÀ±…ÍÍ9…µ”ô‰µĞ´È‰½É‘•È‰½É‘•Èµ‰½É‘•È¼ØÀ‰œµ‰…­É½Õ¹¼ĞÀÀ´ÈÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµµÕÑ•ˆùA±…å‰…¬½ÕÑ½µ”èí•¹ÑÉä¹Á±…å‰…­=ÕÑ½µ•õí•¹ÑÉä¹Á±…å‰…­¹‘•‘9…ÑÕÉ…±±ä€ü€ˆƒ
+Ü¹…ÑÕÉ…°•¹ˆ€è•¹ÑÉä¹Á±…å‰…­…É±åÕÑ½™˜€ü€ˆƒ
+Ü•…É±äÕÑ½™˜ˆ€è€ˆ‰õí•¹ÑÉä¹Á±…å‰…­%ÍÍÕ•½‘”€ü€ƒ
+Ü€‘í•¹ÑÉä¹Á±…å‰…­%ÍÍÕ•½‘”¹É•Á±…” ½|½œ°€ˆ€ˆ¥õ€€è€ˆ‰ôğ½Àùô(€€€€€€€ì¡•¹ÑÉä¹ÁÉ¥½É¥ÑåUÁÉ…‘•MÑ…ÑÕÌ€ôôô€‰Á…¥‘}¹••‘Í}…ÑÑ•¹Ñ¥½¸ˆñğ•¹ÑÉä¹ÁÉ¥½É¥ÑåUÁÉ…‘•MÑ…ÑÕÌ€ôôô€‰¡•­½ÕÑ}Á•¹‘¥¹œˆñğ•¹ÑÉä¹ÁÉ¥½É¥ÑåUÁÉ…‘•MÑ…ÑÕÌ€ôôô€‰É•ÅÕ•ÍÑ•ˆñğ•¹ÑÉä¹ÁÉ¥½É¥ÑåUÁÉ…‘•MÑ…ÑÕÌ€ôôô€‰Á…¥ˆ¤€˜˜€ (€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”õíµĞ´ÈÍÁ…”µä´Ä‰½É‘•ÈÀ´È€‘í•¹ÑÉä¹ÁÉ¥½É¥ÑåUÁÉ…‘•MÑ…ÑÕÌ€ôôô€‰Á…¥‘}¹••‘Í}…ÑÑ•¹Ñ¥½¸ˆ€ü€‰‰½É‘•Èµ‘…¹•È¼ØÀ‰œµ‘…¹•È¼ÄÀÑ•áĞµ‘…¹•Èˆ€è€‰‰½É‘•Èµl™™…„ÀÁt¼ĞÀ‰œµl™™…„ÀÁt¼ÄÀÑ•áĞµl™™…„ÀÁt‰õôø(€€€€€€€€€€€€ñÀùAÉ¥½É¥ÑäA…åµ•¹ĞMÑ…ÑÕÌèí•¹ÑÉä¹ÁÉ¥½É¥ÑåUÁÉ…‘•MÑ…ÑÕÍôğ½Àø(€€€€€€€€€€€€ñÀù1…¹”½QÉ…¬ÍÑ…ÑÕÌèí•¹ÑÉå1…¹”¡•¹ÑÉä¥ô€¼í•¹ÑÉä¹ÍÑ…ÑÕÍôğ½Àø(€€€€€€€€€€€€ñÀùA…¥µ½Õ¹Ğèí…µ½Õ¹Ñ1…‰•±ôğ½Àø(€€€€€€€€€€€€ñÀùA…¥ĞèíÁ…¥‘Ñ1…‰•±ôğ½Àø(€€€€€€€€€€€í¹••‘ÍÑÑ•¹Ñ¥½¹I•…Í½¸€˜˜€ñÀùI•…Í½¸èí¹••‘ÍÑÑ•¹Ñ¥½¹I•…Í½¹ôğ½Àùô(€€€€€€€€€€ğ½‘¥Øø(€€€€€€€€¥ô(€€€€€€€í•¹ÑÉä¹Í¥¹…±!½±‘MÑ…ÑÕÌ€˜˜•¹ÑÉä¹Í¥¹…±!½±‘MÑ…ÑÕÌ€„ôô€‰¹½¹”ˆ€˜˜€ (€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”õíµĞ´ÈÍÁ…”µä´Ä‰½É‘•ÈÀ´È€‘í•¹ÑÉä¹Í¥¹…±!½±‘MÑ…ÑÕÌ€ôôô€‰Á…¥‘}¹••‘Í}…ÑÑ•¹Ñ¥½¸ˆ€ü€‰‰½É‘•Èµ‘…¹•È¼ØÀ‰œµ‘…¹•È¼ÄÀÑ•áĞµ‘…¹•Èˆ€è€‰‰½É‘•Èµå…¸´ÌÀÀ¼ĞÀ‰œµå…¸´ÌÀÀ¼ÄÀÑ•áĞµå…¸´ÄÀÀ‰õôø(€€€€€€€€€€€€ñÀùM¥¹…°!½±MÑ…ÑÕÌèí•¹ÑÉä¹Í¥¹…±!½±‘MÑ…ÑÕÌ¹É•Á±…” ½|½œ°€ˆ€ˆ¥ôğ½Àø(€€€€€€€€€€€€ñÀù1…¹”½QÉ…¬ÍÑ…ÑÕÌèí•¹ÑÉå1…¹”¡•¹ÑÉä¥ô€¼í•¹ÑÉä¹ÍÑ…ÑÕÍôğ½Àø(€€€€€€€€€€€€ñÀùA…¥µ½Õ¹ĞèíÍ¥¹…±!½±‘µ½Õ¹Ñ1…‰•±ôğ½Àø(€€€€€€€€€€€€ñÀùA…¥ĞèíÍ¥¹…±!½±‘A…¥‘Ñ1…‰•±ôğ½Àø(€€€€€€€€€€€€ñÀùÁÁ±¥…Ñ¥½¹ÌÑ¡¥ÌÍ¡½Üèí•¹ÑÉä¹Í¥¹…±!½±‘ÁÁ±¥…Ñ¥½¹½Õ¹Ğ€üü€Áôğ½Àø(€€€€€€€€€€€í•¹ÑÉä¹Í¥¹…±!½±‘MÑ…ÑÕÌ€ôôô€‰¡•­½ÕÑ}Á•¹‘¥¹œˆ€˜˜€ñÀù¡•­½ÕĞÁ•¹‘¥¹œ¥Ì¹½Ğ…Ñ¥Ù”ÁÉ½Ñ•Ñ¥½¸¸ğ½Àùô(€€€€€€€€€€€í•¹ÑÉä¹Í¥¹…±!½±‘MÑ…ÑÕÌ€ôôô€‰Á…¥‘}¹••‘Í}…ÑÑ•¹Ñ¥½¸ˆ€˜˜€ñÀùA…åµ•¹Ğ½¹™¥Éµ•…™Ñ•ÈÑ¡”ÑÉ…¬½ÈÍ•ÍÍ¥½¸‰•…µ”¥¹•±¥¥‰±”¸I•Ù¥•Ü½É•™Õ¹¡…¹‘±¥¹œ¥ÌÉ•ÅÕ¥É•ì±¥Ù”½É‘•Èİ…Ì¹½Ğ¡…¹•¸ğ½Àùô(€€€€€€€€€€ğ½‘¥Øø(€€€€€€€€¥ô(€€€€€€ğ½‘¥Øø(€€€€ğ½‘¥Øø(€€¤ì)ô()™Õ¹Ñ¥½¸‘µ¥¹IÕ¹Ñ¥µ•¥…¹½ÍÑ¥Ì¡ìÑ¥µ¥¹MÕµµ…Éä°…¹½¹ÑÉ½°°½¹MÁ½¹Í½ÉÑ¥½¸°ÍÁ½¹Í½ÉÑ¥½¹A•¹‘¥¹œ°Í•ÍÍ¥½¹%°Á±…å‰…­¥…¹½ÍÑ¥ÌôèìÑ¥µ¥¹MÕµµ…ÉäèI•ÑÕÉ¹QåÁ”ñÑåÁ•½˜‰Õ¥±‘EÕ•Õ•Q¥µ¥¹¥ÍÁ±…äøì…¹½¹ÑÉ½°è‰½½±•…¸ì½¹MÁ½¹Í½ÉÑ¥½¸è€¡…Ñ¥½¸è€‰ÍÑ…ÉĞˆğ€‰½µÁ±•Ñ”ˆğ€‰Í­¥Àˆğ€‰É•Í•Ğˆ¤€ôøÙ½¥ìÍÁ½¹Í½ÉÑ¥½¹A•¹‘¥¹œè‰½½±•…¸ìÍ•ÍÍ¥½¹%èÍÑÉ¥¹œğ¹Õ±°ìÁ±…å‰…­¥…¹½ÍÑ¥ÌèEÕ•Õ•A±…å‰…­¥…¹½ÍÑ¥Ìğ¹Õ±°ô¤ì(€½¹ÍĞÍÁ½¹Í½È€ôÑ¥µ¥¹MÕµµ…Éä¹ÍÁ½¹Í½É	É•…­MÕµµ…Éäì(€½¹ÍĞİ¡••°€ôÑ¥µ¥¹MÕµµ…Éä¹İ¡••±Q¥µ¥¹MÕµµ…Éäì(€½¹ÍĞÁÉ•ÍÍÕÉ”€ôÑ¥µ¥¹MÕµµ…Éä¹ÁÉ•ÍÍÕÉ•MÕµµ…Éäì(€½¹ÍĞ¹••‘±••œ€ô€´äÀ€¬€¡ÁÉ•ÍÍÕÉ”¹Í½É”€¼€ÄÀÀ¤€¨€ÄàÀì(€½¹ÍĞÁÉ•ÍÍÕÉ•!•…‘¥¹œ€ôÁÉ•ÍÍÕÉ”¹µ½‘”€ôôô€‰±¥Ù”ˆ€ü€‰1¥Ù”AÉ•ÍÍÕÉ”ˆ€èÁÉ•ÍÍÕÉ”¹µ½‘”€ôôô€‰•¹‘•ˆ€ü€‰¹‘•ˆ€è€‰AÉ”µÍ¡½ÜAÉ½©•Ñ¥½¸ˆì(€½¹ÍĞÍÁ½¹Í½ÉMÑ…ÉÑ¥Í…‰±•€ôÍÁ½¹Í½ÉÑ¥½¹A•¹‘¥¹œñğ€…ÍÁ½¹Í½È¹‘Õ•9½ÜñğÍÁ½¹Í½È¹ÍÑ…ÑÕÌ€ôôô€‰ÉÕ¹¹¥¹œˆñğÍÁ½¹Í½È¹ÍÑ…ÑÕÌ€ôôô€‰½µÁ±•Ñ•ˆñğÍÁ½¹Í½È¹ÍÑ…ÑÕÌ€ôôô€‰Í­¥ÁÁ•ˆì(€½¹ÍĞÍÁ½¹Í½ÉMÑ…ÉÑ1…‰•°€ôÍÁ½¹Í½ÉÑ¥½¹A•¹‘¥¹œ(€€€€ü€‰MÑ…ÉÑ¥¹œ½µµ•É¥…°	É•…¯Š˜ˆ(€€€€èÍÁ½¹Í½È¹ÍÑ…ÑÕÌ€ôôô€‰ÉÕ¹¹¥¹œˆ(€€€€ü½µµ•É¥…°	É•…¬IÕ¹¹¥¹œ‘íÍÁ½¹Í½È¹‘¥…¹½ÍÑ¥1…‰•°¹¥¹±Õ‘•Ì ‰É•µ…¥¹¥¹œˆ¤€ü€ƒ
+Ü€‘íÍÁ½¹Í½È¹‘¥…¹½ÍÑ¥1…‰•°¹ÍÁ±¥Ğ ‹
+Üˆ¥lÅtü¹ÑÉ¥´ ¤¹É•Á±…” ‰É•µ…¥¹¥¹œˆ°€ˆˆ¤¹ÑÉ¥´ ¥õ€€è€ˆ‰õ€(€€€€èÍÁ½¹Í½È¹ÍÑ…ÑÕÌ€ôôô€‰½µÁ±•Ñ•ˆ(€€€€€€ü€‰½µµ•É¥…°	É•…¬½¹”ˆ(€€€€€€èÍÁ½¹Í½È¹ÍÑ…ÑÕÌ€ôôô€‰Í­¥ÁÁ•ˆ(€€€€€€€€ü€‰½µµ•É¥…°	É•…¬M­¥ÁÁ•ˆ(€€€€€€€€èÍÁ½¹Í½È¹‘Õ•9½Ü(€€€€€€€€€€ü€‰MÑ…ÉĞMÁ½¹Í½È	É•…¬ˆ(€€€€€€€€€€è€‰MÁ½¹Í½È	É•…¬Ù…¥±…‰±”…Ğ5¥‘Á½¥¹Ğˆì(€½¹ÍĞÁ±…å‰…­áÁ½ÉÑUÉ°€ô€½…Á¤½…‘µ¥¸½ÅÕ•Õ”½Á±…å‰…¬‘íÍ•ÍÍ¥½¹%€ü€ıÍ•ÍÍ¥½¹%ô‘í•¹½‘•UI%½µÁ½¹•¹Ğ¡Í•ÍÍ¥½¹%¥õ€€è€ˆ‰õ€ì(€½¹ÍĞÁ±…å‰…­MÑ…Ñ•1…‰•°€ô€¡Á±…å‰…­¥…¹½ÍÑ¥Ìü¹±¥™•å±•MÑ…Ñ”€üü€‰¥‘±”ˆ¤¹É•Á±…” ½|½œ°€ˆ€ˆ¤ì(€É•ÑÕÉ¸€ (€€€€ñÍ•Ñ¥½¸±…ÍÍ9…µ”ô‰ÍÁ…”µä´Ì‰½É‘•È‰½É‘•Èµ…•¹Ğ¼ÌÀ‰œµ‰…­É½Õ¹¼ĞÀÀ´ĞÑ•áĞµáÌˆø(€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰™±•à™±•àµ½°…À´Ì±œé™±•àµÉ½Ü±œé¥Ñ•µÌµÍÑ…ÉĞ±œé©ÕÍÑ¥™äµ‰•Ñİ••¸ˆø(€€€€€€€€ñ‘¥Øø(€€€€€€€€€€ñÀ±…ÍÍ9…µ”ô‰ÕÁÁ•É…Í”ÑÉ…­¥¹œµlÀ¸Èá•µtÑ•áĞµ…•¹ĞˆùIÕ¹Ñ¥µ”¥…¹½ÍÑ¥Ìğ½Àø(€€€€€€€€€€ñÀ±…ÍÍ9…µ”ô‰µĞ´ÄÑ•áĞµÍ´Ñ•áĞµµÕÑ•ˆùíÁÉ•ÍÍÕÉ”¹µ½‘”€ôôô€‰±¥Ù”ˆ€ü€‰1¥Ù”ÁÉ•ÍÍÕÉ”™É½´‰É½…‘…ÍĞÑ¥µ¥¹œ€¬ÅÕ•Õ”ÍÑ…Ñ”¸ˆ€èÁÉ•ÍÍÕÉ”¹µ½‘”€ôôô€‰•¹‘•ˆ€ü€‰	É½…‘…ÍĞ¡…Ì•¹‘•¸ˆ€è€‰AÉ”µÍ¡½ÜÁÉ½©•Ñ¥½¸™É½´ÅÕ•Õ”ÍÑ…Ñ”¸AÉ•ÍÍÕÉ”…Ñ¥Ù…Ñ•Ìİ¡•¸‰É½…‘…ÍĞÍÑ…ÉÑÌ¸‰ôğ½Àø(€€€€€€€€ğ½‘¥Øø(€€€€€€€í…¹½¹ÑÉ½°€˜˜€ñ‘¥Ø±…ÍÍ9…µ”ô‰™±•à™±•àµİÉ…À…À´Èˆøñ„¡É•˜õíÁ±…å‰…­áÁ½ÉÑUÉ±ô±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ…•¹Ğ¼ÔÀÁà´ÌÁä´Ä¸ÔÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµ…•¹Ğˆù½İ¹±½…A±…å‰…¬¥…¹½ÍÑ¥Ìğ½„øñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ‘¥Í…‰±•õíÍÁ½¹Í½ÉMÑ…ÉÑ¥Í…‰±•‘ô½¹±¥¬õì ¤€ôø€…ÍÁ½¹Í½ÉMÑ…ÉÑ¥Í…‰±•€˜˜½¹MÁ½¹Í½ÉÑ¥½¸ ‰ÍÑ…ÉĞˆ¥ô±…ÍÍ9…µ”õíÁà´ÌÁä´Ä¸ÔÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞ€‘íÍÁ½¹Í½ÉMÑ…ÉÑ¥Í…‰±•€ü€‰ÕÉÍ½Èµ¹½Ğµ…±±½İ•‰½É‘•È‰½É‘•Èµ‰½É‘•ÈÑ•áĞµµÕÑ•½Á…¥Ñä´ÜÀˆ€è€‰‰½É‘•È‰½É‘•Èµl™™…„ÀÁt¼ÔÀÑ•áĞµl™™…„ÀÁt‰õôùíÍÁ½¹Í½ÉMÑ…ÉÑ1…‰•±ôğ½‰ÕÑÑ½¸øñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôø½¹MÁ½¹Í½ÉÑ¥½¸ ‰É•Í•Ğˆ¥ô±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•ÈÁà´ÌÁä´Ä¸ÔÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµµÕÑ•ˆùI•Í•Ğ½µµ•É¥…°	É•…¬MÑ…Ñ”ğ½‰ÕÑÑ½¸øğ½‘¥Øùô(€€€€€€ğ½‘¥Øø(€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰É¥…À´ÌµéÉ¥µ½±Ì´Ğ±œéÉ¥µ½±Ì´Üˆø(€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•È‰œµÍÕÉ™…”À´ÌˆøñÀ±…ÍÍ9…µ”ô‰Ñ•áĞµlÄÁÁátÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµµÕÑ•ˆùAÉ½©•Ñ•M¡½ÜQ¥µ”ğ½ÀøñÀ±…ÍÍ9…µ”ô‰µĞ´ÄÑ•áĞµ±œ™½¹Ğµ‰½±Ñ•áĞµ™½É•É½Õ¹ˆùíÑ¥µ¥¹MÕµµ…Éä¹Í¡½İIÕ¹Ñ¥µ•MÕµµ…Éä¹ÁÉ½©•Ñ•‘1…‰•±ôğ½Àøğ½‘¥Øø(€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•È‰œµÍÕÉ™…”À´ÌˆøñÀ±…ÍÍ9…µ”ô‰Ñ•áĞµlÄÁÁátÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµµÕÑ•ˆù±…ÁÍ•ğ½ÀøñÀ±…ÍÍ9…µ”ô‰µĞ´Ä™½¹Ğµ‰½±Ñ•áĞµ™½É•É½Õ¹ˆùíÑ¥µ¥¹MÕµµ…Éä¹Í¡½İIÕ¹Ñ¥µ•MÕµµ…Éä¹•±…ÁÍ•‘1…‰•±ôğ½Àøğ½‘¥Øø(€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•È‰œµÍÕÉ™…”À´ÌˆøñÀ±…ÍÍ9…µ”ô‰Ñ•áĞµlÄÁÁátÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµµÕÑ•ˆùAÉ½©•Ñ•I•µ…¥¹¥¹œğ½ÀøñÀ±…ÍÍ9…µ”ô‰µĞ´Ä™½¹Ğµ‰½±Ñ•áĞµ™½É•É½Õ¹ˆùíÑ¥µ¥¹MÕµµ…Éä¹Í¡½İIÕ¹Ñ¥µ•MÕµµ…Éä¹É•µ…¥¹¥¹1…‰•±ôğ½Àøğ½‘¥Øø(€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•È‰œµÍÕÉ™…”À´ÌˆøñÀ±…ÍÍ9…µ”ô‰Ñ•áĞµlÄÁÁátÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµµÕÑ•ˆùÍÑ¥µ…Ñ•¹ğ½ÀøñÀ±…ÍÍ9…µ”ô‰µĞ´Ä™½¹Ğµ‰½±Ñ•áĞµ™½É•É½Õ¹ˆùíÑ¥µ¥¹MÕµµ…Éä¹Í¡½İIÕ¹Ñ¥µ•MÕµµ…Éä¹•ÍÑ¥µ…Ñ•‘¹‘1…‰•±ôğ½Àøğ½‘¥Øø(€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•È‰œµÍÕÉ™…”À´ÌˆøñÀ±…ÍÍ9…µ”ô‰Ñ•áĞµlÄÁÁátÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµµÕÑ•ˆùQ…É•Ğğ½ÀøñÀ±…ÍÍ9…µ”ô‰µĞ´Ä™½¹Ğµ‰½±Ñ•áĞµ™½É•É½Õ¹ˆùíÑ¥µ¥¹MÕµµ…Éä¹Í¡½İIÕ¹Ñ¥µ•MÕµµ…Éä¹Ñ…É•Ñ1…‰•±ôğ½Àøğ½‘¥Øø(€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•È‰œµÍÕÉ™…”À´ÌˆøñÀ±…ÍÍ9…µ”ô‰Ñ•áĞµlÄÁÁátÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµµÕÑ•ˆùQ…É•ĞMÑ…ÑÕÌğ½ÀøñÀ±…ÍÍ9…µ”ô‰µĞ´Ä™½¹Ğµ‰½±Ñ•áĞµ…•¹ĞˆùíÑ¥µ¥¹MÕµµ…Éä¹Í¡½İIÕ¹Ñ¥µ•MÕµµ…Éä¹Ñ…É•ÑMÑ…ÑÕÍ1…‰•±ôğ½Àøğ½‘¥Øø(€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•È‰œµÍÕÉ™…”À´ÌˆøñÀ±…ÍÍ9…µ”ô‰Ñ•áĞµlÄÁÁátÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµµÕÑ•ˆù1¥¹”¥Ğğ½ÀøñÀ±…ÍÍ9…µ”ô‰µĞ´Ä™½¹Ğµ‰½±Ñ•áĞµ™½É•É½Õ¹ˆùíÑ¥µ¥¹MÕµµ…Éä¹±¥¹•¥Ñ½Áåôğ½Àøğ½‘¥Øø(€€€€€€ğ½‘¥Øø(€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰É¥…À´ÌµéÉ¥µ½±ÌµlÄ¸Å™É|É™Étˆø(€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•È‰œµÍÕÉ™…”À´Ìˆø(€€€€€€€€€€ñÀ±…ÍÍ9…µ”ô‰Ñ•áĞµlÄÁÁátÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµµÕÑ•ˆùíÁÉ•ÍÍÕÉ•!•…‘¥¹ôğ½Àø(€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰µĞ´Èˆø(€€€€€€€€€€€€ñÍÙœÙ¥•İ	½àôˆÀ€À€ÈÈÀ€ÄĞÀˆ±…ÍÍ9…µ”ô‰Üµ™Õ±°µ…àµÜµlÄÑÉ•µtˆÉ½±”ô‰¥µœˆ…É¥„µ±…‰•°õíIÕ¹Ñ¥µ”ÁÉ•ÍÍÕÉ”€‘íÁÉ•ÍÍÕÉ”¹±…‰•±ô€‘íÁÉ•ÍÍÕÉ”¹Í½É•ô½ÕĞ½˜€ÄÀÁôø(€€€€€€€€€€€€€€ñÁ…Ñ ô‰4ÈÀ€ÄÈÀäÀ€äÀ€À€À€Ä€ÈÀÀ€ÄÈÀˆ™¥±°ô‰¹½¹”ˆÍÑÉ½­”ôˆŒÉ”É”É”ˆÍÑÉ½­•]¥‘Ñ ôˆÄĞˆ€¼ø(€€€€€€€€€€€€€€ñÁ…Ñ ô‰4ÈÀ€ÄÈÀäÀ€äÀ€À€À€Ä€ÜĞ€ĞÈˆ™¥±°ô‰¹½¹”ˆÍÑÉ½­”ôˆŒÍ‘‘ŒäÜˆÍÑÉ½­•]¥‘Ñ ôˆÄĞˆ€¼ø(€€€€€€€€€€€€€€ñÁ…Ñ ô‰4ÜĞ€ĞÈäÀ€äÀ€À€À€Ä€ÄÈØ€ÌÌˆ™¥±°ô‰¹½¹”ˆÍÑÉ½­”ôˆ˜ÙŒÜĞĞˆÍÑÉ½­•]¥‘Ñ ôˆÄĞˆ€¼ø(€€€€€€€€€€€€€€ñÁ…Ñ ô‰4ÄÈØ€ÌÌäÀ€äÀ€À€À€Ä€ÄØà€ÔÌˆ™¥±°ô‰¹½¹”ˆÍÑÉ½­”ôˆ™˜å˜ĞÌˆÍÑÉ½­•]¥‘Ñ ôˆÄĞˆ€¼ø(€€€€€€€€€€€€€€ñÁ…Ñ ô‰4ÄØà€ÔÌäÀ€äÀ€À€À€Ä€ÈÀÀ€ÄÈÀˆ™¥±°ô‰¹½¹”ˆÍÑÉ½­”ôˆ™˜ÑÑ˜ˆÍÑÉ½­•]¥‘Ñ ôˆÄĞˆ€¼ø(€€€€€€€€€€€€€€ñ±¥¹”àÄôˆÄÄÀˆäÄôˆÄÈÀˆàÈôˆÄÄÀˆäÈôˆĞĞˆÍÑÉ½­”ôˆ™…™…™„ˆÍÑÉ½­•]¥‘Ñ ôˆÌˆÑÉ…¹Í™½É´õíÉ½Ñ…Ñ” ‘í¹••‘±••ô€ÄÄÀ€ÄÈÀ¥ô€¼ø(€€€€€€€€€€€€€€ñ¥É±”àôˆÄÄÀˆäôˆÄÈÀˆÈôˆØˆ™¥±°ôˆ™…™…™„ˆ€¼ø(€€€€€€€€€€€€€€ñÑ•áĞàôˆÈÀˆäôˆÄÌØˆ™¥±°ôˆŒå„Í…˜ˆ™½¹ÑM¥é”ôˆÄÀˆù1=\ğ½Ñ•áĞøñÑ•áĞàôˆÜĞˆäôˆÈÀˆ™¥±°ôˆŒå„Í…˜ˆ™½¹ÑM¥é”ôˆÄÀˆù5ğ½Ñ•áĞøñÑ•áĞàôˆÄÌÈˆäôˆÈÀˆ™¥±°ôˆŒå„Í…˜ˆ™½¹ÑM¥é”ôˆÄÀˆù!% ğ½Ñ•áĞøñÑ•áĞàôˆÄàÈˆäôˆÄÌØˆ™¥±°ôˆŒå„Í…˜ˆ™½¹ÑM¥é”ôˆÄÀˆùI%Pğ½Ñ•áĞø(€€€€€€€€€€€€ğ½ÍÙœø(€€€€€€€€€€ğ½‘¥Øø(€€€€€€€€€€ñÀ±…ÍÍ9…µ”ô‰µĞ´Ä™½¹Ğµ‰½±Ñ•áĞµ™½É•É½Õ¹ˆùíÁÉ•ÍÍÕÉ”¹±…‰•±ôƒ
+ÜíÁÉ•ÍÍÕÉ”¹Í½É•ô¼ÄÀÀğ½Àø(€€€€€€€€€€ñÀ±…ÍÍ9…µ”ô‰µĞ´ÄÑ•áĞµµÕÑ•ˆùíÁÉ•ÍÍÕÉ”¹É•½µµ•¹‘…Ñ¥½¹ôğ½Àø(€€€€€€€€ğ½‘¥Øø(€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•È‰œµÍÕÉ™…”À´ÌˆøñÀ±…ÍÍ9…µ”ô‰Ñ•áĞµlÄÁÁátÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµµÕÑ•ˆùAÉ•ÍÍÕÉ”…Ñ½ÉÌğ½ÀøñÀ±…ÍÍ9…µ”ô‰µĞ´Ä™½¹Ğµ‰½±Ñ•áĞµ™½É•É½Õ¹ˆùíÁÉ•ÍÍÕÉ”¹‘•ÍÉ¥ÁÑ¥½¹ôğ½ÀøñÕ°±…ÍÍ9…µ”ô‰µĞ´È±¥ÍĞµ‘¥ÍŒÍÁ…”µä´ÄÁ°´ÔÑ•áĞµµÕÑ•ˆùíÁÉ•ÍÍÕÉ”¹™…Ñ½ÉÌ¹µ…À ¡™…Ñ½È¤€ôø€ñ±¤­•äõí™…Ñ½Éôùí™…Ñ½Éôğ½±¤ø¥ôğ½Õ°øğ½‘¥Øø(€€€€€€ğ½‘¥Øø(€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰É¥…À´ÌµéÉ¥µ½±Ì´Ğˆø(€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•È‰œµÍÕÉ™…”À´ÌˆøñÀ±…ÍÍ9…µ”ô‰Ñ•áĞµlÄÁÁátÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµµÕÑ•ˆùMÁ½¹Í½È	É•…¬ğ½ÀøñÀ±…ÍÍ9…µ”ô‰µĞ´Ä™½¹Ğµ‰½±Ñ•áĞµ™½É•É½Õ¹ˆùíÍÁ½¹Í½È¹‘¥…¹½ÍÑ¥1…‰•±ôğ½ÀøñÀ±…ÍÍ9…µ”ô‰µĞ´ÄÑ•áĞµµÕÑ•ˆùá…Ñ±äíÍÁ½¹Í½È¹‘ÕÉ…Ñ¥½¹1…‰•±ôƒ
+Ü‘Õ”…Ğ½Õ¹Ñ•µ¥‘Á½¥¹ĞíÍÁ½¹Í½È¹‘Õ•™Ñ•ÉQÉ…­Ì€üü€‹ŠP‰ôƒ
+Ü½µÁ±•Ñ•íÍÁ½¹Í½È¹½µÁ±•Ñ•‘A±…å…‰±•½Õ¹Ñôğ½Àøğ½‘¥Øø(€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•È‰œµÍÕÉ™…”À´ÌˆøñÀ±…ÍÍ9…µ”ô‰Ñ•áĞµlÄÁÁátÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµµÕÑ•ˆù]¡••°Q¥µ¥¹œğ½ÀøñÀ±…ÍÍ9…µ”ô‰µĞ´Ä™½¹Ğµ‰½±Ñ•áĞµ™½É•É½Õ¹ˆùíİ¡••°¹½İ•‘ôİ¡••°ÍÁ¥¹Ì½İ•ğ½ÀøñÀ±…ÍÍ9…µ”ô‰µĞ´ÄÑ•áĞµµÕÑ•ˆùíİ¡••°¹½Ù•É¡•…‘1…‰•±ô•É•µ½¹ä½Ù•É¡•…¥¹±Õ‘•ğ½Àøğ½‘¥Øø(€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•È‰œµÍÕÉ™…”À´ÌˆøñÀ±…ÍÍ9…µ”ô‰Ñ•áĞµlÄÁÁátÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµµÕÑ•ˆùU¹­¹½İ¸ÕÉ…Ñ¥½¹Ìğ½ÀøñÀ±…ÍÍ9…µ”ô‰µĞ´Ä™½¹Ğµ‰½±Ñ•áĞµ™½É•É½Õ¹ˆùíÑ¥µ¥¹MÕµµ…Éä¹Í¡½İIÕ¹Ñ¥µ•MÕµµ…Éä¹Õ¹­¹½İ¹ÕÉ…Ñ¥½¹½Õ¹Ñôğ½ÀøñÀ±…ÍÍ9…µ”ô‰µĞ´ÄÑ•áĞµµÕÑ•ˆùQÉ…­ÌÕÍ¥¹œ•ÍĞ¸€ÔèÀÀğ½Àøğ½‘¥Øø(€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•È‰œµÍÕÉ™…”À´ÌˆøñÀ±…ÍÍ9…µ”ô‰Ñ•áĞµlÄÁÁátÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµµÕÑ•ˆù-¹½İ¸ÕÉ…Ñ¥½¹Ìğ½ÀøñÀ±…ÍÍ9…µ”ô‰µĞ´Ä™½¹Ğµ‰½±Ñ•áĞµ™½É•É½Õ¹ˆùíÑ¥µ¥¹MÕµµ…Éä¹Í¡½İIÕ¹Ñ¥µ•MÕµµ…Éä¹­¹½İ¹ÕÉ…Ñ¥½¹½Õ¹Ñôğ½ÀøñÀ±…ÍÍ9…µ”ô‰µĞ´ÄÑ•áĞµµÕÑ•ˆù•Ñ•Ñ•½ÁÉ½Ù¥‘•È½ÕÁ±½…‘ÕÉ…Ñ¥½¹Ìğ½Àøğ½‘¥Øø(€€€€€€ğ½‘¥Øø(€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•È‰œµÍÕÉ™…”À´ÌˆøñÀ±…ÍÍ9…µ”ô‰Ñ•áĞµlÄÁÁátÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµµÕÑ•ˆùA±…å‰…¬1¥™•å±”ğ½ÀøñÀ±…ÍÍ9…µ”ô‰µĞ´Ä™½¹Ğµ‰½±…Á¥Ñ…±¥é”Ñ•áĞµ™½É•É½Õ¹ˆùíÁ±…å‰…­MÑ…Ñ•1…‰•±ôğ½ÀøñÀ±…ÍÍ9…µ”ô‰µĞ´ÄÑ•áĞµµÕÑ•ˆùíÁ±…å‰…­¥…¹½ÍÑ¥Ìü¹•Ù•¹ÑÌ¹±•¹Ñ €üü€Áô‰½Õ¹‘•±¥™•å±”•Ù•¹ÑÌƒ
+Ü±…ÍĞ¥ÍÍÕ”íÁ±…å‰…­¥…¹½ÍÑ¥Ìü¹±…ÍÑÉÉ½É½‘”€üü€‰¹½¹”‰ô¸9…ÑÕÉ…°•¹°¥¹¥Í °…¹I•µ½Ù”É•µ…¥¸‘¥ÍÑ¥¹Ğ¸ğ½Àøğ½‘¥Øø(€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰É¥…À´ÌµéÉ¥µ½±Ì´Ìˆøñ‘¥Ø±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•È‰œµÍÕÉ™…”À´ÌˆøñÀ±…ÍÍ9…µ”ô‰Ñ•áĞµlÄÁÁátÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµµÕÑ•ˆùQ…±¬I½½´Ñ¼€Õ ğ½ÀøñÀ±…ÍÍ9…µ”ô‰µĞ´Ä™½¹Ğµ‰½±Ñ•áĞµ™½É•É½Õ¹ˆùíÑ¥µ¥¹MÕµµ…Éä¹Í¡½İIÕ¹Ñ¥µ•MÕµµ…Éä¹Ñ…±­I½½µ1…‰•±ôğ½ÀøñÀ±…ÍÍ9…µ”ô‰µĞ´ÄÑ•áĞµµÕÑ•ˆùíÑ¥µ¥¹MÕµµ…Éä¹Í¡½İIÕ¹Ñ¥µ•MÕµµ…Éä¹Ñ…±­A•ÉQÉ…­1…‰•±ôğ½Àøğ½‘¥Øøñ‘¥Ø±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•È‰œµÍÕÉ™…”À´ÌˆøñÀ±…ÍÍ9…µ”ô‰Ñ•áĞµlÄÁÁátÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµµÕÑ•ˆùI½½´Ñ¼€Ù ğ½ÀøñÀ±…ÍÍ9…µ”ô‰µĞ´Ä™½¹Ğµ‰½±Ñ•áĞµ™½É•É½Õ¹ˆùíÑ¥µ¥¹MÕµµ…Éä¹Í¡½İIÕ¹Ñ¥µ•MÕµµ…Éä¹İ…É¹¥¹I½½µ1…‰•±ôğ½ÀøñÀ±…ÍÍ9…µ”ô‰µĞ´ÄÑ•áĞµµÕÑ•ˆù=Á•É…Ñ¥½¹…°É•‘±¥¹”½¹±äìÑ¡”Í¡½Ü½¹Ñ¥¹Õ•ÌÁ…ÍĞ¥Ğ¸ğ½Àøğ½‘¥Øøñ‘¥Ø±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•È‰œµÍÕÉ™…”À´ÌˆøñÀ±…ÍÍ9…µ”ô‰Ñ•áĞµlÄÁÁátÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµµÕÑ•ˆùIÕ¹Ñ¥µ”½¹™¥‘•¹”ğ½ÀøñÀ±…ÍÍ9…µ”ô‰µĞ´Ä™½¹Ğµ‰½±Ñ•áĞµ™½É•É½Õ¹ˆùíÑ¥µ¥¹MÕµµ…Éä¹Í¡½İIÕ¹Ñ¥µ•MÕµµ…Éä¹½¹™¥‘•¹•1…‰•±ôğ½ÀøñÀ±…ÍÍ9…µ”ô‰µĞ´ÄÑ•áĞµµÕÑ•ˆùU¹­¹½İ¸‘ÕÉ…Ñ¥½¹Ìİ¥‘•¸Ñ¥µ¥¹œÕ¹•ÉÑ…¥¹Ñäİ¥Ñ¡½ÕĞ…‘‘¥¹œ„ÁÉ•ÍÍÕÉ”Á•¹…±Ñä¸ğ½Àøğ½‘¥Øøğ½‘¥Øø(€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•È‰œµÍÕÉ™…”À´ÌˆøñÀ±…ÍÍ9…µ”ô‰Ñ•áĞµlÄÁÁátÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµµÕÑ•ˆùÕÉÉ•¹ĞIÕ¹Ñ¥µ”9½Ñ•Ìğ½ÀøñÀ±…ÍÍ9…µ”ô‰µĞ´ÄÑ•áĞµµÕÑ•ˆùMÁ½¹Í½ÈèíÍÁ½¹Í½È¹‘¥…¹½ÍÑ¥1…‰•±ôƒ
+Ü]¡••°½Ù•É¡•…èí™½Éµ…Ñ!½ÕÉÍ5¥¹ÕÑ•Ì¡İ¡••°¹½Ù•É¡•…‘M•½¹‘Ì¥ôƒ
+ÜíÑ¥µ¥¹MÕµµ…Éä¹Í¡½İIÕ¹Ñ¥µ•MÕµµ…Éä¹¹½Ñ•ÍlÁt€üü€‰9¼ÁÉ½©•Ñ¥½¸İ…É¹¥¹Ì¸‰ôğ½Àøğ½‘¥Øø(€€€€ğ½Í•Ñ¥½¸ø(€€¤ì)ô()™Õ¹Ñ¥½¸1…¹”¡ìÑ¥Ñ±”°ÑÉ…­Ì°Í•ÍÍ¥½¹¹ÑÉ¥•Ì°½¹Ñ¥½¸°½¹A±…å•È°½¹½Áä°µ½‘”°É•…‘=¹±äôèìÑ¥Ñ±”èÍÑÉ¥¹œìÑÉ…­ÌèEÕ•Õ•¹ÑÉåmtìÍ•ÍÍ¥½¹¹ÑÉ¥•ÌèEÕ•Õ•¹ÑÉåmtì½¹Ñ¥½¸è€¡¥èÍÑÉ¥¹œ°…Ñ¥½¸è‘µ¥¹EÕ•Õ•Ñ¥½¸¤€ôøÙ½¥ì½¹A±…å•Èè€¡•¹ÑÉäèEÕ•Õ•¹ÑÉä¤€ôøÙ½¥ì½¹½Áäè€¡•¹ÑÉäèEÕ•Õ•¹ÑÉä¤€ôøÙ½¥ìµ½‘”è€‰¹•áĞˆğ€‰…Ñ¥Ù”ˆğ€‰ÍÁ½Ñ±¥¡Ğˆğ€‰½µÁ±•Ñ•ˆğ€‰É•µ½Ù•ˆìÉ•…‘=¹±äè‰½½±•…¸ô¤ì(€½¹ÍĞÍ•Ñ¥½¹±…ÍÌ€ôÑ¥Ñ±”¹¥¹±Õ‘•Ì ‰AÉ¥½É¥Ñäˆ¤€ü€‰‰½É‘•Èµl™™…„ÀÁt¼ÔÀ‰œµl™™…„ÀÁt¼Ôˆ€èÑ¥Ñ±”¹¥¹±Õ‘•Ì ‰]¡••°ˆ¤€ü€‰‰½É‘•Èµå…¸´ÌÀÀ¼ÔÀ‰œµå…¸´ÌÀÀ¼Ôˆ€èÑ¥Ñ±”¹¥¹±Õ‘•Ì ‰I•Õ±…Èˆ¤€ü€‰‰½É‘•Èµ‰½É‘•È‰œµÍÕÉ™…”ˆ€è€‰‰½É‘•Èµ‰½É‘•È‰œµÍÕÉ™…”ˆì(€½¹ÍĞÑ¥Ñ±•±…ÍÌ€ôÑ¥Ñ±”¹¥¹±Õ‘•Ì ‰AÉ¥½É¥Ñäˆ¤€ü€‰Ñ•áĞµl™™…„ÀÁtˆ€èÑ¥Ñ±”¹¥¹±Õ‘•Ì ‰]¡••°ˆ¤€ü€‰Ñ•áĞµå…¸´ÈÀÀˆ€è€‰Ñ•áĞµ™½É•É½Õ¹ˆì(€É•ÑÕÉ¸€ (€€€€ñÍ•Ñ¥½¸±…ÍÍ9…µ”õí‰½É‘•ÈÀ´Ì€‘íÍ•Ñ¥½¹±…ÍÍõôø(€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰µˆ´È™±•à¥Ñ•µÌµ•¹Ñ•È©ÕÍÑ¥™äµ‰•Ñİ••¸ˆø(€€€€€€€€ñ È±…ÍÍ9…µ”õíÑ•áĞµÍ´ÕÁÁ•É…Í”ÑÉ…­¥¹œµlÀ¸ÈÕ•µt€‘íÑ¥Ñ±•±…ÍÍõôùíÑ¥Ñ±•ôğ½ Èø(€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰Ñ•áĞµáÌÑ•áĞµµÕÑ•ˆùíÑÉ…­Ì¹±•¹Ñ¡ôğ½ÍÁ…¸ø(€€€€€€ğ½‘¥Øø(€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰ÍÁ…”µä´Ìˆø(€€€€€€€íÑÉ…­Ì¹±•¹Ñ €ôôô€À€ü€ (€€€€€€€€€€ñÀ±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•È¼ØÀÀ´ÌÑ•áĞµÍ´Ñ•áĞµµÕÑ•ˆù9¼ÑÉ…­Ì¥¸Ñ¡¥Ì±…¹”¸ğ½Àø(€€€€€€€€¤€è€ (€€€€€€€€€ÑÉ…­Ì¹µ…À ¡•¹ÑÉä¤€ôø€ (€€€€€€€€€€€€ñ…ÉÑ¥±”­•äõí€‘íÑ¥Ñ±•ô´‘í•¹ÑÉä¹¥‘õô±…ÍÍ9…µ”õíÍÁ…”µä´È‰½É‘•È´ÈÀ´Ì€‘íÅÕ•Õ•QÉ…­Y¥ÍÕ…°¡•¹ÑÉä¤¹…É‘±…ÍÍõôø(€€€€€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰ÍÁ…”µä´Èˆø(€€€€€€€€€€€€€€€€ñ‘¥Øø(€€€€€€€€€€€€€€€€€€ñÀ±…ÍÍ9…µ”ô‰™½¹Ğµ‰½±ˆùíÍÕ‰µ¥ÑÑ•‘ÉÑ¥ÍĞ¡•¹ÑÉä¥ôƒŠPíÍÕ‰µ¥ÑÑ•‘Q¥Ñ±”¡•¹ÑÉä¥ôğ½Àø(€€€€€€€€€€€€€€€€€€ñ‘µ¥¹½±±…‰½É…Ñ½É1¥¹”•¹ÑÉäõí•¹ÑÉåô±…ÍÍ9…µ”ô‰µĞ´Äˆ€¼ø(€€€€€€€€€€€€€€€€€€ñÀ±…ÍÍ9…µ”ô‰Ñ•áĞµáÌÑ•áĞµµÕÑ•ˆùíÍ½ÕÉ•1…‰•°¡•¹ÑÉä¥ôƒ
+Üí‘ÕÉ…Ñ¥½¹1…‰•°¡•¹ÑÉä¥ôğ½Àø(€€€€€€€€€€€€€€€€ğ½‘¥Øø(€€€€€€€€€€€€€€€€ñ‘µ¥¹QÉ…­5•Ñ…‘…Ñ„•¹ÑÉäõí•¹ÑÉåô€¼ø(€€€€€€€€€€€€€€€€ñ‘µ¥¹	É½İÍ•ÉÉÑ¥ÍÑ9½Ñ¥”•¹ÑÉäõí•¹ÑÉåôÍ•ÍÍ¥½¹¹ÑÉ¥•ÌõíÍ•ÍÍ¥½¹¹ÑÉ¥•Íô€¼ø(€€€€€€€€€€€€€€€€ñ‘µ¥¹MÕ‰µ¥ÍÍ¥½¹9½Ñ”•¹ÑÉäõí•¹ÑÉåô€¼ø(€€€€€€€€€€€€€€ğ½‘¥Øø(€€€€€€€€€€€€€€ñQÉ…­Ñ¥½¹Ì•¹ÑÉäõí•¹ÑÉåô½¹Ñ¥½¸õí½¹Ñ¥½¹ô½¹A±…å•Èõí½¹A±…å•Éô½¹½Áäõí½¹½Áåôµ½‘”õíµ½‘•ôÉ•…‘=¹±äõíÉ•…‘=¹±åô€¼ø(€€€€€€€€€€€€ğ½…ÉÑ¥±”ø(€€€€€€€€€€¤¤(€€€€€€€€¥ô(€€€€€€ğ½‘¥Øø(€€€€ğ½Í•Ñ¥½¸ø(€€¤ì)ô()™Õ¹Ñ¥½¸QÉ…­Ñ¥½¹Ì¡ì•¹ÑÉä°½¹Ñ¥½¸°½¹A±…å•È°½¹½Áä°µ½‘”°É•…‘=¹±ä°Á±…å•É=ÕÁ¥•€ô™…±Í”ôèì•¹ÑÉäèEÕ•Õ•¹ÑÉäì½¹Ñ¥½¸è€¡¥èÍÑÉ¥¹œ°…Ñ¥½¸è‘µ¥¹EÕ•Õ•Ñ¥½¸¤€ôøÙ½¥ì½¹A±…å•Èè€¡•¹ÑÉäèEÕ•Õ•¹ÑÉä¤€ôøÙ½¥ì½¹½Áäè€¡•¹ÑÉäèEÕ•Õ•¹ÑÉä¤€ôøÙ½¥ìµ½‘”è€‰¹•áĞˆğ€‰…Ñ¥Ù”ˆğ€‰ÍÁ½Ñ±¥¡Ğˆğ€‰½µÁ±•Ñ•ˆğ€‰É•µ½Ù•ˆìÉ•…‘=¹±äè‰½½±•…¸ìÁ±…å•É=ÕÁ¥•üè‰½½±•…¸ô¤ì(€½¹ÍĞ±…¹”€ô•¹ÑÉå1…¹”¡•¹ÑÉä¤ì(€É•ÑÕÉ¸€ (€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰™±•à™±•àµİÉ…À…À´Èˆø(€€€€€íµ½‘”€ôôô€‰¹•áĞˆ€˜˜€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôø½¹A±…å•È¡•¹ÑÉä¥ô‘¥Í…‰±•õíÁ±…å•É=ÕÁ¥•‘ô±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ…•¹ĞÁà´ÌÁä´Ä¸ÔÑ•áĞµáÌÑ•áĞµ…•¹Ğ‘¥Í…‰±•éÕÉÍ½Èµ¹½Ğµ…±±½İ•‘¥Í…‰±•é‰½É‘•Èµ‰½É‘•È‘¥Í…‰±•éÑ•áĞµµÕÑ•ˆùíÁ±…å•É=ÕÁ¥•€ü€‰A±…å•È=ÕÁ¥•ˆ€è€‰1½…¥¸A±…å•È‰ôğ½‰ÕÑÑ½¸ùô(€€€€€€ñ„¡É•˜õí½Á•¹UÉ°¡•¹ÑÉä¥ôÑ…É•Ğô‰}‰±…¹¬ˆÉ•°ô‰¹½É•™•ÉÉ•Èˆ±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•ÈÁà´ÌÁä´Ä¸ÔÑ•áĞµáÌÑ•áĞµµÕÑ•ˆùí•¹ÑÉä¹Í½ÕÉ•QåÁ”€ôôô€‰ÕÁ±½…ˆ€ü€‰=Á•¸‘µ¥¸Õ‘¥¼ˆ€è€‰=Á•¸1¥¹¬‰ôğ½„ø(€€€€€€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôø½¹½Áä¡•¹ÑÉä¥ô±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•ÈÁà´ÌÁä´Ä¸ÔÑ•áĞµáÌÑ•áĞµµÕÑ•ˆù½Áäí•¹ÑÉä¹Í½ÕÉ•QåÁ”€ôôô€‰ÕÁ±½…ˆ€ü€‰‘µ¥¸Õ‘¥¼1¥¹¬ˆ€è€‰1¥¹¬‰ôğ½‰ÕÑÑ½¸ø(€€€€€ì…É•…‘=¹±ä€˜˜€¡µ½‘”€ôôô€‰¹•áĞˆñğµ½‘”€ôôô€‰…Ñ¥Ù”ˆ¤€˜˜…¹UÍ•M¥¹…±!½±¡•¹ÑÉä¤€˜˜€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôø½¹Ñ¥½¸¡•¹ÑÉä¹¥°€‰ÕÍ•M¥¹…±!½±ˆ¥ô±…ÍÍ9…µ”ô‰‰½É‘•È´È‰½É‘•Èµå…¸´ÌÀÀ‰œµå…¸´ÌÀÀ¼ÄÔÁà´ÌÁä´Ä¸ÔÑ•áĞµáÌ™½¹Ğµ‰±…¬ÕÁÁ•É…Í”ÑÉ…­¥¹œµİ¥‘•ÍĞÑ•áĞµå…¸´ÄÀÀ¡½Ù•Èé‰œµå…¸´ÌÀÀ¡½Ù•ÈéÑ•áĞµ‰…­É½Õ¹ˆùUMM%90!=1ƒŠP5=YQ<	=QQ=4ğ½‰ÕÑÑ½¸ùô(€€€€€ì…É•…‘=¹±ä€˜˜µ½‘”€ôôô€‰¹•áĞˆ€˜˜€ğùí±…¹”€„ôô€‰ÁÉ¥½É¥Ñäˆ€˜˜€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôø½¹Ñ¥½¸¡•¹ÑÉä¹¥°€‰µ½Ù•	…¬ˆ¥ô±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‰½É‘•ÈÁà´ÌÁä´Ä¸ÔÑ•áĞµáÌÑ•áĞµµÕÑ•ˆùI•ÑÕÉ¸Ñ¼EÕ•Õ”ğ½‰ÕÑÑ½¸ùõí…¹A…ÕÍ•AÉ¥½É¥Ñä¡•¹ÑÉä¤€˜˜€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôø½¹Ñ¥½¸¡•¹ÑÉä¹¥°€‰Á…ÕÍ•AÉ¥½É¥Ñäˆ¥ô±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµl™™…„ÀÁt¼ÔÀÁà´ÌÁä´Ä¸ÔÑ•áĞµáÌÑ•áĞµl™™…„ÀÁtˆùA…ÕÍ”AÉ¥½É¥Ñäğ½‰ÕÑÑ½¸ùõí…¹I•ÍÕµ•AÉ¥½É¥Ñä¡•¹ÑÉä¤€˜˜€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôø½¹Ñ¥½¸¡•¹ÑÉä¹¥°€‰É•ÍÕµ•AÉ¥½É¥Ñäˆ¥ô±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµl™™…„ÀÁt‰œµl™™…„ÀÁtÁà´ÌÁä´Ä¸ÔÑ•áĞµáÌÑ•áĞµ‰…­É½Õ¹ˆùU¹Á…ÕÍ”AÉ¥½É¥Ñäğ½‰ÕÑÑ½¸ùôñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôø½¹Ñ¥½¸¡•¹ÑÉä¹¥°€‰É•µ½Ù”ˆ¥ô±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‘…¹•È¼ĞÀÁà´ÌÁä´Ä¸ÔÑ•áĞµáÌÑ•áĞµ‘…¹•ÈˆùI•µ½Ù”ğ½‰ÕÑÑ½¸øñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôø½¹Ñ¥½¸¡•¹ÑÉä¹¥°€‰ÍÁ½Ñ±¥¡Ğˆ¥ô±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ™½É•É½Õ¹¼ĞÀÁà´ÌÁä´Ä¸ÔÑ•áĞµáÌÑ•áĞµ™½É•É½Õ¹ˆùMÁ½Ñ±¥¡Ğğ½‰ÕÑÑ½¸øğ¼ùô(€€€€€ì…É•…‘=¹±ä€˜˜µ½‘”€ôôô€‰…Ñ¥Ù”ˆ€˜˜€ğøñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôø½¹Ñ¥½¸¡•¹ÑÉä¹¥°€‰É•µ½Ù”ˆ¥ô±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‘…¹•È¼ĞÀÁà´ÌÁä´Ä¸ÔÑ•áĞµáÌÑ•áĞµ‘…¹•ÈˆùI•µ½Ù”ğ½‰ÕÑÑ½¸ùí•¹ÑÉä¹ÁÉ¥½É¥ÑåUÁÉ…‘•MÑ…ÑÕÌ€ôôô€‰Á…¥‘}¹••‘Í}…ÑÑ•¹Ñ¥½¸ˆ€˜˜€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôø½¹Ñ¥½¸¡•¹ÑÉä¹¥°€‰É•Í½±Ù•A…¥‘AÉ¥½É¥Ñäˆ¥ô±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‘…¹•È‰œµ‘…¹•ÈÁà´ÌÁä´Ä¸ÔÑ•áĞµáÌÑ•áĞµ‰…­É½Õ¹ˆù5½Ù”A…¥QÉ…¬Ñ¼AÉ¥½É¥Ñäğ½‰ÕÑÑ½¸ùõí±…¹”€ôôô€‰É•Õ±…Èˆ€ü€ğøñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôø½¹Ñ¥½¸¡•¹ÑÉä¹¥°€‰ÁÉ¥½É¥Ñäˆ¥ô±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµl™™…„ÀÁt¼ÔÀÁà´ÌÁä´Ä¸ÔÑ•áĞµáÌÑ•áĞµl™™…„ÀÁtˆù5½Ù”Ñ¼AÉ¥½É¥ÑäM¥¹…°ğ½‰ÕÑÑ½¸ùí¥Í]¡••±±¥¥‰±•QÉ…¬¡•¹ÑÉä¤€˜˜€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôø½¹Ñ¥½¸¡•¹ÑÉä¹¥°€‰İ¡••°ˆ¥ô±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ…•¹Ğ¼ÔÀÁà´ÌÁä´Ä¸ÔÑ•áĞµáÌÑ•áĞµ…•¹Ğˆù5…É¬]¡••°¡½Í•¸ğ½‰ÕÑÑ½¸ùôğ¼ø€è€ğøñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôø½¹Ñ¥½¸¡•¹ÑÉä¹¥°€‰É•Õ±…Èˆ¥ô±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ…•¹Ğ¼ÔÀÁà´ÌÁä´Ä¸ÔÑ•áĞµáÌÑ•áĞµ…•¹Ğˆù5½Ù”Ñ¼I•Õ±…ÈEÕ•Õ”ğ½‰ÕÑÑ½¸ùí±…¹”€ôôô€‰İ¡••°ˆ€˜˜€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôø½¹Ñ¥½¸¡•¹ÑÉä¹¥°€‰ÁÉ¥½É¥Ñäˆ¥ô±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµl™™…„ÀÁt¼ÔÀÁà´ÌÁä´Ä¸ÔÑ•áĞµáÌÑ•áĞµl™™…„ÀÁtˆù5½Ù”Ñ¼AÉ¥½É¥ÑäM¥¹…°ğ½‰ÕÑÑ½¸ùõí…¹A…ÕÍ•AÉ¥½É¥Ñä¡•¹ÑÉä¤€˜˜€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôø½¹Ñ¥½¸¡•¹ÑÉä¹¥°€‰Á…ÕÍ•AÉ¥½É¥Ñäˆ¥ô±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµl™™…„ÀÁt¼ÔÀÁà´ÌÁä´Ä¸ÔÑ•áĞµáÌÑ•áĞµl™™…„ÀÁtˆùA…ÕÍ”AÉ¥½É¥Ñäğ½‰ÕÑÑ½¸ùõí…¹I•ÍÕµ•AÉ¥½É¥Ñä¡•¹ÑÉä¤€˜˜€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôø½¹Ñ¥½¸¡•¹ÑÉä¹¥°€‰É•ÍÕµ•AÉ¥½É¥Ñäˆ¥ô±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµl™™…„ÀÁt‰œµl™™…„ÀÁtÁà´ÌÁä´Ä¸ÔÑ•áĞµáÌÑ•áĞµ‰…­É½Õ¹ˆùU¹Á…ÕÍ”AÉ¥½É¥Ñäğ½‰ÕÑÑ½¸ùôğ¼ùôñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôø½¹Ñ¥½¸¡•¹ÑÉä¹¥°€‰ÍÁ½Ñ±¥¡Ğˆ¥ô±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ™½É•É½Õ¹¼ĞÀÁà´ÌÁä´Ä¸ÔÑ•áĞµáÌÑ•áĞµ™½É•É½Õ¹ˆùMÁ½Ñ±¥¡Ğğ½‰ÕÑÑ½¸øğ¼ùô(€€€€€ì…É•…‘=¹±ä€˜˜µ½‘”€ôôô€‰ÍÁ½Ñ±¥¡Ğˆ€˜˜€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôø½¹Ñ¥½¸¡•¹ÑÉä¹¥°€‰É•µ½Ù•MÁ½Ñ±¥¡Ğˆ¥ô±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ‘…¹•È¼ĞÀÁà´ÌÁä´Ä¸ÔÑ•áĞµáÌÑ•áĞµ‘…¹•ÈˆùI•µ½Ù”™É½´MÁ½Ñ±¥¡Ğğ½‰ÕÑÑ½¸ùô(€€€€€ì…É•…‘=¹±ä€˜˜µ½‘”€ôôô€‰½µÁ±•Ñ•ˆ€˜˜€ğøñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôø½¹Ñ¥½¸¡•¹ÑÉä¹¥°€‰É•ÍÑ½É•I•Õ±…Èˆ¥ô±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ…•¹Ğ¼ÔÀÁà´ÌÁä´Ä¸ÔÑ•áĞµáÌÑ•áĞµ…•¹Ğˆù5½Ù”‰…¬Ñ¼I•Õ±…ÈEÕ•Õ”ğ½‰ÕÑÑ½¸ùíİ…ÍAÉ¥½É¥ÑåM¥¹…°¡•¹ÑÉä¤€˜˜€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôø½¹Ñ¥½¸¡•¹ÑÉä¹¥°€‰É•ÍÑ½É•AÉ¥½É¥Ñäˆ¥ô±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµl™™…„ÀÁt¼ÔÀÁà´ÌÁä´Ä¸ÔÑ•áĞµáÌÑ•áĞµl™™…„ÀÁtˆù5½Ù”‰…¬Ñ¼AÉ¥½É¥ÑäM¥¹…°ğ½‰ÕÑÑ½¸ùôğ¼ùô(€€€€€ì…É•…‘=¹±ä€˜˜µ½‘”€ôôô€‰É•µ½Ù•ˆ€˜˜€ğøñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôø½¹Ñ¥½¸¡•¹ÑÉä¹¥°€‰É•ÍÑ½É•I•Õ±…Èˆ¥ô±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµ…•¹Ğ¼ÔÀÁà´ÌÁä´Ä¸ÔÑ•áĞµáÌÑ•áĞµ…•¹ĞˆùI•ÍÑ½É”Ñ¼I•Õ±…ÈEÕ•Õ”ğ½‰ÕÑÑ½¸ùíİ…ÍAÉ¥½É¥ÑåM¥¹…°¡•¹ÑÉä¤€˜˜€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôø½¹Ñ¥½¸¡•¹ÑÉä¹¥°€‰É•ÍÑ½É•AÉ¥½É¥Ñäˆ¥ô±…ÍÍ9…µ”ô‰‰½É‘•È‰½É‘•Èµl™™…„ÀÁt¼ÔÀÁà´ÌÁä´Ä¸ÔÑ•áĞµáÌÑ•áĞµl™™…„ÀÁtˆùI•ÍÑ½É”Ñ¼AÉ¥½É¥ÑäM¥¹…°ğ½‰ÕÑÑ½¸ùôğ¼ùô(€€€€ğ½‘¥Øø(€€¤ì)ô(

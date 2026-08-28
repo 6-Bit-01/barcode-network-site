@@ -300,7 +300,7 @@ test("admin top bar surfaces the existing sponsor start action only when due", (
   assert.ok(source.includes('sponsorActionPending ? "Starting Sponsor Break…" : "Start Sponsor Break"'));
   assert.match(source, /if \(isStart && sponsorActionPendingRef\.current\) return;[\s\S]*?sponsorActionPendingRef\.current = true;/);
   assert.match(source, /const updated = await post\(\{ action: "updateSponsorBreakState", sponsorAction \}\);[\s\S]*?launchLocalCommercialBreakIfAcknowledged\(updated, \(\) => fetch\(LOCAL_COMMERCIAL_START_URL/);
-  assert.match(source, /LOCAL_COMMERCIAL_START_URL = "http:\/\/127\.0\.0\.1:43120\/v1\/commercials\/start"/);
+  assert.match(source, /LOCAL_COMMERCIAL_START_URL = "http:\/\/127\.0\.0\.1:43121\/v1\/commercials\/start"/);
   assert.doesNotMatch(source, /skipLoadedTrackForSponsorBreak|interruptedTrack/);
   assert.ok(source.includes('className="flex flex-wrap items-center justify-end gap-2"'));
 });

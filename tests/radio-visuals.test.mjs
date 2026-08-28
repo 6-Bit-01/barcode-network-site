@@ -787,6 +787,7 @@ test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a
   const capture = fs.readFileSync(path.join(helperRoot, "LoopbackCaptureController.cs"), "utf8");
   const analyzer = fs.readFileSync(path.join(helperRoot, "AudioAnalyzer.cs"), "utf8");
   const server = fs.readFileSync(path.join(helperRoot, "LocalSignalServer.cs"), "utf8");
+  const commercialServer = fs.readFileSync(path.join(helperRoot, "CommercialPlayerServer.cs"), "utf8");
   const readme = fs.readFileSync(path.join(helperRoot, "README.md"), "utf8");
   const workflow = fs.readFileSync(path.join(projectRoot, ".github/workflows/ci.yml"), "utf8");
   const productionContract = fs.readFileSync(path.join(projectRoot, "docs/queue-production-capability.md"), "utf8");
@@ -794,7 +795,7 @@ test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a
   assert.match(project, /<TargetFramework>net8\.0-windows<\/TargetFramework>/);
   assert.match(project, /<SelfContained>true<\/SelfContained>/);
   assert.match(project, /<PublishSingleFile>true<\/PublishSingleFile>/);
-  assert.match(project, /<Version>1\.0\.23<\/Version>/);
+  assert.match(project, /<Version>1\.0\.24<\/Version>/);
   assert.match(project, /PackageReference Include="NAudio" Version="2\.3\.0"/);
   assert.match(capture, /GetDefaultAudioEndpoint\(DataFlow\.Render, Role\.Multimedia\)/, "capture must resolve the default Windows Speakers render endpoint");
   assert.match(capture, /new WasapiLoopbackCapture\(renderDevice\)/, "capture and endpoint-volume compensation must use the same Speakers endpoint");
@@ -817,7 +818,11 @@ test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a
   assert.doesNotMatch(analyzer, /WaveFormatEncoding\.Extensible && format\.BitsPerSample == 32/);
   assert.match(analyzer, /_energy < 0\.008/, "quiet but audible speaker output must remain available to the visuals");
   assert.match(server, /new TcpListener\(IPAddress\.Loopback, BridgeConstants\.Port\)/, "the signal endpoint must never bind to the LAN");
-  assert.match(server, /Task\.Run\(\(\) => HandleClient\(client, cancellationToken\), cancellationToken\)/, "commercial media streams must not block visual signal polling in the accept loop");
+  assert.match(server, /Task\.Run\(\(\) => HandleClient\(client, cancellationToken\), cancellationToken\)/, "visual signal clients retain the approved PR #374 request handling");
+  assert.doesNotMatch(server, /Commercial|commercial|\/commercials|HttpByteRange/, "the visual signal server must contain no sponsor-player code");
+  assert.match(commercialServer, /new TcpListener\(IPAddress\.Loopback, CommercialBreakPaths\.LocalPlayerPort\)/, "the sponsor player must use its own listener");
+  assert.doesNotMatch(commercialServer, /LoopbackCaptureController|\/v1\/signal|TouchClient|ReportBrowserHandshake|BridgeConstants\.Port/, "the sponsor player must contain no Show Visuals signal code");
+  assert.match(application, /new LocalSignalServer\(_capture\)[\s\S]*new CommercialPlayerServer\(_commercials\)/, "the two independent overlays must start independent local servers");
   assert.match(server, /Access-Control-Allow-Private-Network: true/);
   assert.match(server, /www\.barcode-network\.com|barcode-network\.com/);
   assert.match(server, /barcode-network-site-cpps\.vercel\.app|-6-bits-projects\.vercel\.app/);

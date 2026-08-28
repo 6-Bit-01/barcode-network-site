@@ -6,7 +6,8 @@ internal sealed class BridgeApplicationContext : ApplicationContext
 {
     private readonly LoopbackCaptureController _capture = new();
     private readonly CommercialBreakService _commercials;
-    private readonly LocalSignalServer _server;
+    private readonly LocalSignalServer _visualServer;
+    private readonly CommercialPlayerServer _commercialServer;
     private readonly NotifyIcon _notifyIcon;
     private readonly ToolStripMenuItem _captureStatusItem;
     private readonly ToolStripMenuItem _commercialStatusItem;
@@ -18,8 +19,10 @@ internal sealed class BridgeApplicationContext : ApplicationContext
     public BridgeApplicationContext()
     {
         _commercials = new CommercialBreakService(CommercialBreakLibrary.CreateDefault());
-        _server = new LocalSignalServer(_capture, _commercials);
-        _server.Start();
+        _visualServer = new LocalSignalServer(_capture);
+        _commercialServer = new CommercialPlayerServer(_commercials);
+        _visualServer.Start();
+        _commercialServer.Start();
 
         _captureStatusItem = new ToolStripMenuItem(_capture.Status) { Enabled = false };
         _commercialStatusItem = new ToolStripMenuItem(_commercials.StatusText) { Enabled = false };
@@ -152,7 +155,8 @@ internal sealed class BridgeApplicationContext : ApplicationContext
         _statusTimer.Dispose();
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
-        _server.Dispose();
+        _commercialServer.Dispose();
+        _visualServer.Dispose();
         _capture.Dispose();
         BridgeLog.Write("BARCODE Audio Bridge exited.");
         base.ExitThreadCore();

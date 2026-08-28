@@ -31,13 +31,15 @@ internal sealed record CommercialBreakLibraryResult(
 
 internal static class CommercialBreakPaths
 {
+    public const int LocalPlayerPort = 43121;
+
     public static string RootDirectory { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "BARCODE Network",
         "Commercials");
 
     public const string PlayerUrl = "https://www.barcode-network.com/overlay/commercials?studioSource=v1";
-    public static string LocalPlayerUrl => $"http://127.0.0.1:{BridgeConstants.Port}/commercials";
+    public static string LocalPlayerUrl => $"http://127.0.0.1:{LocalPlayerPort}/commercials";
     public static string PreviewUrl => LocalPlayerUrl + "?debug=1";
 
     public static void EnsureCreated() => CommercialBreakLibrary.CreateDefault().EnsureLayout();

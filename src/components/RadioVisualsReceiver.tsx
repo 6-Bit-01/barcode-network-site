@@ -57,6 +57,10 @@ import {
   drawExpandedRadioVisualMusicPerimeter,
   drawExpandedRadioVisualMusicScene,
 } from "./radio-visuals-music-expansion";
+import {
+  drawRadioVisualMusicExpansion30Perimeter,
+  drawRadioVisualMusicExpansion30Scene,
+} from "./radio-visuals-music-expansion-30";
 
 type ServerClockAnchor = { serverNowMs: number; receivedAtPerformanceMs: number };
 type ConnectionState = "connected" | "reconnecting" | "standby";
@@ -1732,6 +1736,23 @@ function drawMusicPerimeterIdentity(
   context.lineCap = "square";
   context.lineJoin = "miter";
 
+  if (drawRadioVisualMusicExpansion30Perimeter({
+    context,
+    width,
+    height,
+    time,
+    mix,
+    drives,
+    plan,
+    primary,
+    secondary,
+    highlight,
+    seed,
+  })) {
+    context.restore();
+    return;
+  }
+
   if (drawExpandedRadioVisualMusicPerimeter({
     context,
     width,
@@ -2027,6 +2048,19 @@ function drawSeededMusicScene(
   if (scene === "particle_pressure") drawParticlePressure(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
   if (scene === "signal_constellation") drawSignalConstellation(context, width, height, time, mix, drives, layerPlan, primary, secondary, highlight, seed);
   drawExpandedRadioVisualMusicScene(scene, {
+    context,
+    width,
+    height,
+    time,
+    mix,
+    drives,
+    layerPlan,
+    primary,
+    secondary,
+    highlight,
+    seed,
+  });
+  drawRadioVisualMusicExpansion30Scene(scene, {
     context,
     width,
     height,
@@ -4047,7 +4081,7 @@ function drawVisualFrame(
     ? radioVisualMusicSceneVisibility(musicDrives)
     : 0;
   // Keep the strong BARCODE transmission bed between songs, but let each
-  // track's own scene language take over instead of flattening all twenty into
+  // track's own scene language take over instead of flattening all thirty into
   // the same bars, tracking lines, corners, and flecks.
   const sharedTransmissionRetention = clampVisualValue(1 - renderTrackMix * 0.78, 0.22, 1);
   drawIdleTransmission(

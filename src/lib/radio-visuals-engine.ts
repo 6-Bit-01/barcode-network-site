@@ -188,6 +188,16 @@ export const RADIO_VISUAL_MUSIC_SCENES = [
   "holographic_terrain",
   "kinetic_glyph_engine",
   "mechanical_iris",
+  "spectral_cathedral",
+  "ferrofluid_field",
+  "orbital_relay",
+  "data_loom",
+  "monolith_array",
+  "plasma_tendrils",
+  "signal_bloom",
+  "vector_swarm",
+  "moire_engine",
+  "eclipse_corona",
 ] as const;
 
 /** Music-only gain applied after track ownership and scene crossfade. */
@@ -320,12 +330,22 @@ export const RADIO_VISUAL_MUSIC_PERIMETER_MOTIFS = {
   holographic_terrain: "terrain_shelves",
   kinetic_glyph_engine: "glyph_marquee",
   mechanical_iris: "iris_blades",
+  spectral_cathedral: "cathedral_buttresses",
+  ferrofluid_field: "ferrofluid_spikes",
+  orbital_relay: "orbital_ticks",
+  data_loom: "loom_shuttles",
+  monolith_array: "monolith_slabs",
+  plasma_tendrils: "plasma_filaments",
+  signal_bloom: "bloom_petals",
+  vector_swarm: "swarm_vectors",
+  moire_engine: "moire_rings",
+  eclipse_corona: "corona_flares",
 } as const satisfies Record<RadioVisualMusicScene, string>;
 
 export type RadioVisualMusicPerimeterMotif = (typeof RADIO_VISUAL_MUSIC_PERIMETER_MOTIFS)[RadioVisualMusicScene];
 
 /**
- * Bounded edge-only identity shared by none of the twenty family renderers.
+ * Bounded edge-only identity shared by none of the thirty family renderers.
  * Values are normalized so the Canvas implementation can remain entirely in
  * the performer-safe perimeter while bass, mids, treble, and the all-band
  * tapestry still own visibly different parts of that family signature.
@@ -477,6 +497,66 @@ export const RADIO_VISUAL_MUSIC_SCENE_LAYER_LIMITS: Record<RadioVisualMusicScene
     bass: { sustained: 8, pulse: 4 },
     mid: { sustained: 10, pulse: 4 },
     treble: { sustained: 10, pulse: 6 },
+    tapestry: { sustained: 5, pulse: 2 },
+  },
+  spectral_cathedral: {
+    bass: { sustained: 8, pulse: 4 },
+    mid: { sustained: 10, pulse: 4 },
+    treble: { sustained: 12, pulse: 6 },
+    tapestry: { sustained: 5, pulse: 2 },
+  },
+  ferrofluid_field: {
+    bass: { sustained: 7, pulse: 4 },
+    mid: { sustained: 10, pulse: 4 },
+    treble: { sustained: 16, pulse: 7 },
+    tapestry: { sustained: 5, pulse: 2 },
+  },
+  orbital_relay: {
+    bass: { sustained: 6, pulse: 3 },
+    mid: { sustained: 9, pulse: 4 },
+    treble: { sustained: 14, pulse: 7 },
+    tapestry: { sustained: 5, pulse: 2 },
+  },
+  data_loom: {
+    bass: { sustained: 6, pulse: 3 },
+    mid: { sustained: 12, pulse: 5 },
+    treble: { sustained: 14, pulse: 7 },
+    tapestry: { sustained: 6, pulse: 2 },
+  },
+  monolith_array: {
+    bass: { sustained: 9, pulse: 4 },
+    mid: { sustained: 8, pulse: 4 },
+    treble: { sustained: 10, pulse: 6 },
+    tapestry: { sustained: 4, pulse: 2 },
+  },
+  plasma_tendrils: {
+    bass: { sustained: 6, pulse: 4 },
+    mid: { sustained: 11, pulse: 5 },
+    treble: { sustained: 16, pulse: 8 },
+    tapestry: { sustained: 5, pulse: 2 },
+  },
+  signal_bloom: {
+    bass: { sustained: 7, pulse: 4 },
+    mid: { sustained: 12, pulse: 5 },
+    treble: { sustained: 16, pulse: 7 },
+    tapestry: { sustained: 6, pulse: 2 },
+  },
+  vector_swarm: {
+    bass: { sustained: 5, pulse: 3 },
+    mid: { sustained: 14, pulse: 6 },
+    treble: { sustained: 20, pulse: 10 },
+    tapestry: { sustained: 5, pulse: 2 },
+  },
+  moire_engine: {
+    bass: { sustained: 7, pulse: 4 },
+    mid: { sustained: 12, pulse: 5 },
+    treble: { sustained: 14, pulse: 7 },
+    tapestry: { sustained: 5, pulse: 2 },
+  },
+  eclipse_corona: {
+    bass: { sustained: 8, pulse: 4 },
+    mid: { sustained: 10, pulse: 5 },
+    treble: { sustained: 18, pulse: 9 },
     tapestry: { sustained: 5, pulse: 2 },
   },
 };

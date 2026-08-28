@@ -1,6 +1,6 @@
 import { hashRadioVisualToken } from "./radio-visuals-events";
 
-export const RADIO_VISUAL_MUSIC_FAMILY_COUNT = 20;
+export const RADIO_VISUAL_MUSIC_FAMILY_COUNT = 30;
 
 type PlaybackOccurrenceEvent = {
   sequence?: number;
@@ -98,7 +98,7 @@ function shuffledFamilyDeck(sessionToken: string, deckIndex: number, previousLas
   return deck;
 }
 
-/** One deterministic permutation per twenty occurrences, without a deck-boundary repeat. */
+/** One deterministic permutation per thirty occurrences, without a deck-boundary repeat. */
 export function radioVisualMusicFamilyIndexForOccurrence(sessionToken: string, occurrenceOrdinal: number): number {
   const safeSessionToken = sessionToken || "radio-session";
   const safeOrdinal = Math.max(0, Math.min(100_000, Math.floor(Number.isFinite(occurrenceOrdinal) ? occurrenceOrdinal : 0)));
@@ -133,7 +133,7 @@ export function radioVisualSeedForMusicFamily(trackOccurrenceToken: string, fami
     const candidate = hashRadioVisualToken(`${trackOccurrenceToken}:family:${targetFamily}:${nonce}`);
     if (radioVisualMusicFamilyIndexForSeed(candidate) === targetFamily) return candidate;
   }
-  // Twenty evenly distributed buckets make this unreachable in practice, while
+  // Thirty evenly distributed buckets make this unreachable in practice, while
   // retaining a deterministic non-throwing fallback for a live receiver.
   return baseSeed;
 }

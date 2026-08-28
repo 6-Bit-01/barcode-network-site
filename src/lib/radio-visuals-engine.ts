@@ -1,5 +1,8 @@
 import type { RadioVisualCue } from "./radio-visuals-cues";
-import type { RadioAudioBridgeSignal } from "./radio-audio-bridge";
+import {
+  RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION,
+  type RadioAudioBridgeSignal,
+} from "./radio-audio-bridge";
 import { hashRadioVisualToken } from "./radio-visuals-events";
 import type { RadioVisualsShowStage, RadioVisualsSnapshot } from "./radio-visuals-resolver";
 
@@ -1087,6 +1090,17 @@ function rhythmPulse(phase: number, power: number): number {
 
 export type RadioVisualLoopbackChannel = "energy" | "bass" | "mid" | "treble";
 
+const LOOPBACK_FIXED_REFERENCE_GAIN = Math.pow(10, -9 / 20);
+const LOOPBACK_FIXED_REFERENCE_RESTORE_SCALE: Record<RadioVisualLoopbackChannel, number> = {
+  // Audio Bridge 1.0.4+ applies a -9 dB sample reference before the analyser.
+  // Restore the accepted PR #353/#354 visual handoff in the analyser's
+  // compressed output domain: RMS uses a 0.72 exponent and each FFT band 0.58.
+  energy: 1 / Math.pow(LOOPBACK_FIXED_REFERENCE_GAIN, 0.72),
+  bass: 1 / Math.pow(LOOPBACK_FIXED_REFERENCE_GAIN, 0.58),
+  mid: 1 / Math.pow(LOOPBACK_FIXED_REFERENCE_GAIN, 0.58),
+  treble: 1 / Math.pow(LOOPBACK_FIXED_REFERENCE_GAIN, 0.58),
+};
+
 const LOOPBACK_LEVEL_CALIBRATION: Record<RadioVisualLoopbackChannel, { floor: number; ceiling: number; gamma: number }> = {
   energy: { floor: 0.025, ceiling: 1, gamma: 1.25 },
   bass: { floor: 0.03, ceiling: 1, gamma: 1.3 },
@@ -1095,10 +1109,19 @@ const LOOPBACK_LEVEL_CALIBRATION: Record<RadioVisualLoopbackChannel, { floor: nu
 };
 
 /** Map the installed bridge's already-compressed bands through one quiet-knee curve. */
-export function radioVisualLoopbackLevel(value: number, channel: RadioVisualLoopbackChannel = "energy"): number {
+export function radioVisualLoopbackLevel(
+  value: number,
+  channel: RadioVisualLoopbackChannel = "energy",
+  analysisCalibration?: RadioAudioBridgeSignal["analysisCalibration"],
+): number {
   const calibration = LOOPBACK_LEVEL_CALIBRATION[channel];
+  const restoredValue = clampVisualValue(value) * (
+    analysisCalibration === RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION
+      ? LOOPBACK_FIXED_REFERENCE_RESTORE_SCALE[channel]
+      : 1
+  );
   const normalized = clampVisualValue(
-    (clampVisualValue(value) - calibration.floor) / (calibration.ceiling - calibration.floor),
+    (restoredValue - calibration.floor) / (calibration.ceiling - calibration.floor),
   );
   // The helper already compresses FFT/RMS values. A second smoothstep made
   // ordinary 20-50% live readings visually tiny; a power knee still rejects
@@ -1106,8 +1129,16 @@ export function radioVisualLoopbackLevel(value: number, channel: RadioVisualLoop
   return clampVisualValue(Math.pow(normalized, calibration.gamma));
 }
 
-function radioVisualLoopbackPeak(value: number): number {
-  const normalized = clampVisualValue((clampVisualValue(value) - 0.02) / 0.94);
+function radioVisualLoopbackPeak(
+  value: number,
+  analysisCalibration?: RadioAudioBridgeSignal["analysisCalibration"],
+): number {
+  const restoredValue = clampVisualValue(value) * (
+    analysisCalibration === RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION
+      ? 1 / LOOPBACK_FIXED_REFERENCE_GAIN
+      : 1
+  );
+  const normalized = clampVisualValue((restoredValue - 0.02) / 0.94);
   return clampVisualValue(Math.pow(smoothstep(normalized), 1.15));
 }
 
@@ -1185,11 +1216,12 @@ export function radioVisualsMusicSignal(
   );
   if (hasLoopback && bridgeSignal) {
     const confidence = clampVisualValue(bridgeSignal.tempoConfidence);
-    const liveEnergy = radioVisualLoopbackLevel(bridgeSignal.energy, "energy");
-    const liveBass = radioVisualLoopbackLevel(bridgeSignal.bass, "bass");
-    const liveMid = radioVisualLoopbackLevel(bridgeSignal.mid, "mid");
-    const liveTreble = radioVisualLoopbackLevel(bridgeSignal.treble, "treble");
-    const livePeak = radioVisualLoopbackPeak(bridgeSignal.peak);
+    const analysisCalibration = bridgeSignal.analysisCalibration;
+    const liveEnergy = radioVisualLoopbackLevel(bridgeSignal.energy, "energy", analysisCalibration);
+    const liveBass = radioVisualLoopbackLevel(bridgeSignal.bass, "bass", analysisCalibration);
+    const liveMid = radioVisualLoopbackLevel(bridgeSignal.mid, "mid", analysisCalibration);
+    const liveTreble = radioVisualLoopbackLevel(bridgeSignal.treble, "treble", analysisCalibration);
+    const livePeak = radioVisualLoopbackPeak(bridgeSignal.peak, analysisCalibration);
     const liveBeat = Math.pow(clampVisualValue(bridgeSignal.beat), 1.15);
     const liveTransient = Math.max(liveBeat, livePeak);
     return {

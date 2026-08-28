@@ -15,7 +15,6 @@ const approvedPr374Files = new Map([
   ["src/components/radio-visuals-music-embellishments.ts", "940b35aa6d3ef55c32337380e681aaa4a655441728bd96e549d08bfdbb0a0d15"],
   ["src/lib/radio-audio-bridge.ts", "2a55f53d33feb530bf61e51402c10f4b88cd7bc5fcc168980d39e193beb3f4f0"],
   ["src/lib/radio-visuals-audio.ts", "4fc9bf20c79df9df0af2c3e2a0f7a5f662cf81d6570080df88cfa69ba4535b05"],
-  ["src/lib/radio-visuals-engine.ts", "653c95b7d15c2a4b13c3676af2f59109c0c86a9ed106c9f27e7548079c4e9b44"],
   ["src/lib/radio-visuals-music-embellishments.ts", "fff665851471e5d39b40b2604c7f7cfeae7cee8f10cac27ae7027937cca7aed5"],
   ["src/lib/radio-visuals-preview.ts", "2ada1cbb8876949ec161385c6e6926223a3b5e9c54dc6df4e5eec5149c4072b7"],
   ["src/lib/radio-visuals-resolver.ts", "4f675d23ed03bf0f81ad297dab1a3fe1281cecb05ed3ed2a199e51ad42782bd9"],
@@ -32,10 +31,16 @@ const approvedPr374Files = new Map([
   ["tools/barcode-audio-bridge/Program.cs", "70b4927e05e663a2609a51c4cdebc996c98b4a1915872a4cc830c0c033235bda"],
 ]);
 
-test("the Show Visuals renderer and complete visual-only Audio Bridge remain byte-exact to approved PR #374", () => {
+test("the Show Visuals renderers and complete visual-only Audio Bridge remain byte-exact to approved PR #374", () => {
   for (const [relativePath, expectedHash] of approvedPr374Files) {
     const contents = readFileSync(path.join(projectRoot, relativePath));
     const actualHash = createHash("sha256").update(contents).digest("hex");
     assert.equal(actualHash, expectedHash, relativePath);
   }
+});
+
+test("the visual engine remains locked to PR #374 plus the corrected fixed-reference handoff", () => {
+  const contents = readFileSync(path.join(projectRoot, "src/lib/radio-visuals-engine.ts"));
+  const actualHash = createHash("sha256").update(contents).digest("hex");
+  assert.equal(actualHash, "900c2e0f0ee665b1102d82d9299fa00f2e73faab3cd162e072c8c9deffba859f");
 });

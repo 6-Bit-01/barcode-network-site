@@ -764,6 +764,61 @@ test("adaptive Bridge frames pass quiet fades and vocal bands through without a 
   assert.ok(fadeDrives.bassLayer > 0, "a quiet real bass band must not be rounded down to no layer");
 });
 
+test("adaptive held sample peak cannot become a permanent all-band visual pulse", () => {
+  const current = entry("track-adaptive-peak", { sourceType: "youtube" });
+  const youtube = {
+    provider: "youtube",
+    videoId: "abcDEF12345",
+    trackId: current.id,
+    playbackState: "playing",
+    currentTimeSeconds: 24,
+    durationSeconds: 180,
+    updatedAt: "2026-08-19T18:59:55.000Z",
+    muted: true,
+  };
+  const snapshot = visuals.resolveRadioVisualsSnapshot({
+    queueState: queueState({ nowPlaying: current, loadedTrack: current }),
+    scene: scene("now_playing", {
+      track: { id: current.id, artistName: "Artist", trackTitle: "Track", sourceType: "youtube" },
+      youtube,
+    }),
+    playerSync: youtube,
+    now: new Date("2026-08-19T19:00:00.000Z"),
+  });
+  const bridge = {
+    schemaVersion: "barcode_audio_signal_v1",
+    source: "windows_loopback",
+    analysisCalibration: audioBridge.RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION,
+    capturedAtUnixMs: Date.now(),
+    sequence: 2_755,
+    captureActive: true,
+    warmedUp: true,
+    silence: false,
+    energy: 0.62,
+    bass: 0.7,
+    mid: 0.52,
+    treble: 0.4,
+    peak: 0.92,
+    beat: 0,
+    bpm: 120,
+    tempoConfidence: 0.6,
+  };
+
+  const sustained = engine.radioVisualsMusicSignal(snapshot, 24, 100, bridge);
+  const sustainedDrives = engine.radioVisualAudioDrives(sustained);
+  assert.equal(sustained.peak, 0, "held sample peak is level evidence, not a repeating treble hit");
+  assert.equal(sustained.accent, 0, "held sample peak cannot counterfeit a mid-band arrival");
+  assert.equal(sustainedDrives.impact, 0, "steady program level cannot become permanent impact");
+  assert.ok(sustainedDrives.treblePulse < 0.04, "steady treble may retain structure but cannot keep flashing");
+  assert.ok(sustainedDrives.tapestryPulse < 0.01, "steady full-spectrum music cannot repeatedly fire the coupled pulse");
+
+  const arrival = engine.radioVisualsMusicSignal(snapshot, 24, 100, { ...bridge, beat: 1 });
+  const arrivalDrives = engine.radioVisualAudioDrives(arrival);
+  assert.ok(arrivalDrives.bassPulse > arrivalDrives.midPulse + 0.5,
+    "a native arrival must enter through its hit owner instead of firing every band together");
+  assert.ok(arrivalDrives.bassPulse > arrivalDrives.treblePulse + 0.5);
+});
+
 test("Windows levels become quiet, isolated band layers and a full-spectrum tapestry end to end", () => {
   const current = entry("track-loopback-tapestry", { sourceType: "youtube" });
   const youtube = {
@@ -942,7 +997,7 @@ test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a
   assert.match(project, /<TargetFramework>net8\.0-windows<\/TargetFramework>/);
   assert.match(project, /<SelfContained>true<\/SelfContained>/);
   assert.match(project, /<PublishSingleFile>true<\/PublishSingleFile>/);
-  assert.match(project, /<Version>1\.1\.0<\/Version>/, "the adaptive visual executable must have an unmistakable upgrade version");
+  assert.match(project, /<Version>1\.1\.1<\/Version>/, "the spectral-separation hotfix must have an unmistakable upgrade version");
   assert.match(project, /PackageReference Include="NAudio" Version="2\.3\.0"/);
   assert.match(commercialProject, /<AssemblyName>BARCODE\.CommercialPlayer<\/AssemblyName>/);
   assert.match(capture, /GetDefaultAudioEndpoint\(DataFlow\.Render, Role\.Multimedia\)/, "capture must resolve the default Windows Speakers render endpoint");
@@ -954,7 +1009,8 @@ test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a
   assert.match(analyzer, /Math\.Pow\(10, decibels \/ 20d\)[\s\S]*1 \/ endpointAmplitude/, "endpoint decibels must be converted to inverse linear sample gain");
   assert.match(analyzer, /EndpointVolumeCompensation\.Apply[\s\S]*AnalyzeWindow/, "normalization must happen before RMS, FFT, peak, flux, and beat analysis");
   assert.match(analyzer, /AnalysisHopSize = FftSize \/ 2[\s\S]*Array\.Copy\(_window, AnalysisHopSize/, "the analyser must publish overlapped FFT updates instead of waiting a full window");
-  assert.match(analyzer, /AdaptiveVisualLevel[\s\S]*recent peak[\s\S]*absolute level/i, "live levels must combine recent-range response with real absolute dynamics");
+  assert.match(analyzer, /AdaptiveProgramGain[\s\S]*complete already-compressed program[\s\S]*same multiplier/i,
+    "one shared adaptive gain must preserve the real relationship between every band");
   assert.match(analyzer, /BandEnergy\(spectrum, 180, 4_000[\s\S]*BandEnergy\(spectrum, 2_800/, "vocal body and intelligibility must reach the visual mid and treble shoulders");
   assert.match(capture, /TouchClient\(\)[\s\S]*EnsureStarted\(\)/, "visual-source requests must wake capture automatically");
   assert.match(capture, /ClientIdleCaptureStopMilliseconds/, "capture must stop after the visual source becomes idle");

@@ -26,14 +26,14 @@ internal sealed class AudioAnalyzer
     private double _visualMid;
     private double _visualTreble;
     private double _visualPeak;
-    private double _energyFloor = 0.01;
-    private double _fluxFloor = 0.004;
+    private double _energyFloor = 0.05;
+    private double _fluxFloor = 0.01;
     private double _bpm = 112;
     private double _tempoConfidence;
-    private readonly AdaptiveVisualLevel _energyLevel = new(minimumCeiling: 0.18, nominalCeiling: 0.38);
-    private readonly AdaptiveVisualLevel _bassLevel = new(minimumCeiling: 0.20, nominalCeiling: 0.50);
-    private readonly AdaptiveVisualLevel _midLevel = new(minimumCeiling: 0.14, nominalCeiling: 0.42);
-    private readonly AdaptiveVisualLevel _trebleLevel = new(minimumCeiling: 0.11, nominalCeiling: 0.32);
+    private readonly AdaptiveProgramGain _programGain = new(
+        minimumCeiling: 0.16,
+        targetLevel: 0.58,
+        maximumGain: 2.6);
 
     public void AddSamples(
         byte[] buffer,
@@ -91,7 +91,7 @@ internal sealed class AudioAnalyzer
             var age = _lastDataUnixMs == 0 ? long.MaxValue : Math.Max(0, now - _lastDataUnixMs);
             var silence = age > 650 || (_energy < 0.0015 && _peak < 0.002);
             var decay = age <= 650 ? 1 : Math.Exp(-(age - 650) / 480d);
-            var beat = _lastBeatUnixMs == 0 ? 0 : Math.Exp(-Math.Max(0, now - _lastBeatUnixMs) / 120d);
+            var beat = _lastBeatUnixMs == 0 ? 0 : Math.Exp(-Math.Max(0, now - _lastBeatUnixMs) / 145d);
             if (silence) beat = 0;
 
             return new AudioSignal(
@@ -157,11 +157,18 @@ internal sealed class AudioAnalyzer
         _peak = Math.Max(Unit(peak), _peak * 0.58);
 
         var audibility = MusicalAudibility(_energy, _peak);
-        _visualEnergy = _energyLevel.Map(_energy, audibility);
-        _visualBass = _bassLevel.Map(_bass, audibility);
-        _visualMid = _midLevel.Map(_mid, audibility);
-        _visualTreble = _trebleLevel.Map(_treble, audibility);
-        _visualPeak = VisualPeak(_peak, audibility);
+        // One shared adaptive gain follows the complete program. Applying a
+        // different recent-range normalizer to every FFT band made ordinary
+        // music publish bass, mids, and treble at nearly the same hot level,
+        // erasing the spectral contrast the twenty renderers rely on. A common
+        // gain still reveals a quiet master or fade-in while preserving the
+        // real relationship and movement between every band.
+        var visualGain = _programGain.Resolve(_energy, audibility);
+        _visualEnergy = VisualLevel(_energy, visualGain, audibility);
+        _visualBass = VisualLevel(_bass, visualGain, audibility);
+        _visualMid = VisualLevel(_mid, visualGain, audibility);
+        _visualTreble = VisualLevel(_treble, visualGain, audibility);
+        _visualPeak = VisualLevel(_peak, visualGain, audibility);
 
         _energyFloor = _energyFloor * 0.982 + energy * 0.018;
         _fluxFloor = _fluxFloor * 0.975 + normalizedFlux * 0.025;
@@ -169,9 +176,13 @@ internal sealed class AudioAnalyzer
         _sequence += 1;
 
         var sinceBeat = _lastBeatUnixMs == 0 ? long.MaxValue : nowUnixMs - _lastBeatUnixMs;
-        var energetic = energy > Math.Max(0.006, _energyFloor * 1.08);
-        var transient = normalizedFlux > Math.Max(0.008, _fluxFloor * 1.15);
-        if (sinceBeat >= 180 && energetic && transient)
+        // Fade and vocal visibility belong to the sustained band channels;
+        // they must not lower the hit detector until every spectral change is
+        // promoted into a metronomic pulse. Keep the accepted refractory and
+        // relative transient gate for actual arrivals.
+        var energetic = energy > Math.Max(0.075, _energyFloor * 1.18);
+        var transient = normalizedFlux > Math.Max(0.055, _fluxFloor * 1.28);
+        if (sinceBeat >= 240 && energetic && transient)
         {
             RegisterBeat(nowUnixMs, sinceBeat);
         }
@@ -287,57 +298,51 @@ internal sealed class AudioAnalyzer
         return Unit(Math.Pow((evidence - 0.001) / 0.05, 0.45));
     }
 
-    private static double VisualPeak(double peak, double audibility)
+    private static double VisualLevel(double level, double visualGain, double audibility)
     {
-        if (peak <= 0.001 || audibility <= 0) return 0;
-        return Unit(Math.Pow(Unit(peak / 0.35), 0.75) * (0.38 + audibility * 0.62));
+        if (level <= 0.001 || audibility <= 0) return 0;
+        return Unit(level * visualGain);
     }
 }
 
 /// <summary>
-/// Maps one already-compressed analyser channel against both a stable musical
-/// reference and its own recent peak. Absolute level preserves real song
-/// dynamics; the slowly adapting peak keeps quieter masters, fade-ins, and
-/// vocal-dominant bands visibly legible without turning digital silence into
-/// synthetic motion.
+/// Resolves one bounded gain for the complete already-compressed program.
+/// Quiet masters and fade-ins receive useful lift, but every spectral band
+/// receives exactly the same multiplier so their real balance and dynamics
+/// cannot be flattened into one generic pulse.
 /// </summary>
-internal sealed class AdaptiveVisualLevel
+internal sealed class AdaptiveProgramGain
 {
     private readonly double _minimumCeiling;
-    private readonly double _nominalCeiling;
+    private readonly double _targetLevel;
+    private readonly double _maximumGain;
     private double _recentCeiling;
 
-    public AdaptiveVisualLevel(double minimumCeiling, double nominalCeiling)
+    public AdaptiveProgramGain(double minimumCeiling, double targetLevel, double maximumGain)
     {
         _minimumCeiling = minimumCeiling;
-        _nominalCeiling = nominalCeiling;
+        _targetLevel = targetLevel;
+        _maximumGain = maximumGain;
         _recentCeiling = minimumCeiling;
     }
 
-    public double Map(double value, double audibility)
+    public double Resolve(double programLevel, double audibility)
     {
-        var input = Unit(value);
+        var input = Unit(programLevel);
         var audible = Unit(audibility);
-        if (input <= 0.001 || audible <= 0) return 0;
-
-        if (input > _recentCeiling)
+        if (input > 0.001 && audible > 0 && input > _recentCeiling)
         {
-            _recentCeiling += (input - _recentCeiling) * 0.78;
+            _recentCeiling += (input - _recentCeiling) * 0.72;
         }
         else
         {
-            // Roughly a seven-second release at the 1,024-sample analysis hop.
-            // This follows song sections while refusing to pump on each word.
-            _recentCeiling = Math.Max(_minimumCeiling, _recentCeiling * 0.997);
+            // Roughly a fourteen-second release at the 1,024-sample hop. A
+            // quiet verse after a chorus therefore remains visibly quieter
+            // instead of being normalized back to the same apparent volume.
+            _recentCeiling = Math.Max(_minimumCeiling, _recentCeiling * 0.9985);
         }
 
-        var relative = Math.Pow(Unit(input / Math.Max(_minimumCeiling, _recentCeiling)), 0.72);
-        var absolute = Math.Pow(Unit(input / _nominalCeiling), 0.86);
-        // Relative lift is deliberately capped below full scale. It reveals a
-        // quiet but real band while the absolute branch preserves the audible
-        // difference between a fade, a verse, and a loud chorus.
-        var adaptive = relative * (0.22 + audible * 0.33);
-        return Unit(Math.Max(absolute, adaptive));
+        return Math.Clamp(_targetLevel / Math.Max(_minimumCeiling, _recentCeiling), 1, _maximumGain);
     }
 
     private static double Unit(double value) => double.IsFinite(value) ? Math.Clamp(value, 0, 1) : 0;

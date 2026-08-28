@@ -23,9 +23,9 @@ Double-clicking the accepted build replaces the installed copy and relaunches it
 
 ## Volume handling
 
-The bridge analyzes the program signal rather than the operator's Windows listening level. It reads the default Speakers endpoint level in decibels, removes that known attenuation from each loopback buffer, and places the reconstructed program at one fixed -9 dB internal analysis reference before calculating energy, bass, mids, treble, peak, flux, or beat. Its 2,048-sample FFT now advances in overlapping 1,024-sample hops, and each output band combines real absolute level with a bounded recent-range follower. Quiet fade-ins and vocal-led passages therefore remain legible while loud sections still earn materially stronger motion.
+The bridge analyzes the program signal rather than the operator's Windows listening level. It reads the default Speakers endpoint level in decibels, removes that known attenuation from each loopback buffer, and places the reconstructed program at one fixed -9 dB internal analysis reference before calculating energy, bass, mids, treble, peak, flux, or beat. Its 2,048-sample FFT advances in overlapping 1,024-sample hops. One bounded recent-program gain lifts quiet masters and fade-ins equally across the complete spectrum, preserving the real separation and movement between bass, mids, and treble instead of independently normalizing them toward the same level. Held sample peak remains level evidence; only detected arrivals and live band onsets create hard visual hits.
 
-Version 1.1.0 publishes `adaptive_reference_v2`. The website remains compatible with the earlier `fixed_reference_v1` 1.0.4 helper, but 1.1.0 is required for the faster adaptive fade/vocal response. The twenty completed visual-family renderers are unchanged.
+Version 1.1.1 publishes `adaptive_reference_v2`. The website remains compatible with the earlier `fixed_reference_v1` 1.0.4 helper, but 1.1.1 is required for the adaptive fade/vocal response with preserved spectral separation. The twenty completed visual-family renderers are unchanged.
 
 Muted or digitally silent output remains silent; the bridge never invents audio activity. If Windows briefly cannot provide the endpoint-volume reading during a device or driver transition, that frame is analyzed at neutral gain instead of interrupting capture.
 

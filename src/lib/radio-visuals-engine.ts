@@ -1239,7 +1239,14 @@ export function radioVisualsMusicSignal(
     const liveTreble = adaptiveSilence ? 0 : radioVisualLoopbackLevel(bridgeSignal.treble, "treble", analysisCalibration);
     const livePeak = adaptiveSilence ? 0 : radioVisualLoopbackPeak(bridgeSignal.peak, analysisCalibration);
     const liveBeat = adaptiveSilence ? 0 : Math.pow(clampVisualValue(bridgeSignal.beat), 1.15);
-    const liveTransient = Math.max(liveBeat, livePeak);
+    const adaptiveAnalysis = analysisCalibration === RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION;
+    // In adaptive_reference_v2, peak is retained by the native helper as
+    // broadband level evidence; it is not a transient envelope. Reusing that
+    // held value as bass, mid, treble, and tapestry impact made every family
+    // throb continuously. Actual native beat arrivals still drive the bass
+    // hit channel, while the renderer's independent band-onset followers own
+    // mid, treble, and coupled arrivals.
+    const liveTransient = adaptiveAnalysis ? liveBeat : Math.max(liveBeat, livePeak);
     return {
       source: "windows_loopback",
       bpm: confidence >= 0.28 ? bridgeSignal.bpm : bpm,
@@ -1248,8 +1255,8 @@ export function radioVisualsMusicSignal(
       mid: liveMid,
       treble: liveTreble,
       beat: liveBeat,
-      accent: liveTransient,
-      peak: liveTransient,
+      accent: adaptiveAnalysis ? 0 : liveTransient,
+      peak: adaptiveAnalysis ? 0 : liveTransient,
       progress,
       phrase,
     };

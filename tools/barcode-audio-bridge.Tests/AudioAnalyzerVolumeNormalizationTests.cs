@@ -62,7 +62,10 @@ public sealed class AudioAnalyzerVolumeNormalizationTests
         Assert.InRange(signal.Mid, 0.4, 1);
         Assert.InRange(signal.Treble, 0.3, 1);
         Assert.InRange(signal.Peak, 0.15, 0.85);
-        Assert.True(signal.Bass > signal.Treble, "the adaptive map must not flatten spectral balance");
+        Assert.True(signal.Bass > signal.Mid + 0.12,
+            $"shared gain flattened bass and mids: bass={signal.Bass}, mid={signal.Mid}");
+        Assert.True(signal.Mid > signal.Treble + 0.08,
+            $"shared gain flattened mids and treble: mid={signal.Mid}, treble={signal.Treble}");
     }
 
     [Fact]

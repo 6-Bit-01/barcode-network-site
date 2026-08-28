@@ -164,6 +164,27 @@ Rollback and deployment boundary:
 - Ship this as one independently revertible pull request with no migration or production configuration change.
 - Re-open the saved Show Visuals source and rehearse all ten new preview buttons plus live music before any between-show merge or deployment decision.
 
+### 10. Perceptual audio signal foundation — 2026-08-28
+
+Implementation base: production commit `05514be` after PR `#406` (forty-family music visual expansion). This is a measurement and contract pass only; it must not change the accepted renderer output.
+
+Add one backward-compatible optional feature block to the existing local Audio Bridge payload. Preserve `barcode_audio_signal_v1`, every required legacy field, and the permanent `/v1/signal` endpoint so old and new helper/site combinations continue to operate during the manual Windows upgrade.
+
+Acceptance:
+
+- Publish eight non-overlapping perceptual levels (`subBass`, `bass`, `lowMid`, `mid`, `highMid`, `presence`, `brilliance`, `air`) and one separately decaying onset envelope for each band.
+- Publish normalized spectral centroid, brightness, crest-based dynamic contrast, recent transient density, stereo width, signed stereo balance, and sixteen bounded waveform-shape samples.
+- Preserve the volume-neutral -9 dB program reference and one shared adaptive gain. Perceptual levels must remain comparable across Windows endpoint volume changes without independently normalizing every band toward the same value.
+- Keep silence at zero across the optional feature block and never record, persist, transmit, or expose raw audio samples.
+- Accept installed helpers without the optional feature block. Reject a present but malformed block rather than partially trusting it.
+- Add an explicit PowerShell numeric-trace capture and a local replay report that runs those frames through the production browser signal/reaction functions. Trace files remain ignored by Git.
+- Do not consume the new features in any of the forty renderers in this pass. Do not change render modules, scene selection, transitions, lifecycle, Canvas density, the 30 FPS cap, the existing 40 Hz local poll, Wheel/commercial/queue/playback ownership, Redis, Vercel, or production gates.
+
+Rollback and deployment boundary:
+
+- The site contract may deploy before or after the helper because the feature block is optional and the schema remains v1. Install Audio Bridge 1.2.0 only after CI publishes the self-contained artifact.
+- Compare at least two real song traces before a later pilot PR maps these features into selected renderer families.
+
 ## Change-control rule
 
 No pass may silently suppress another system, infer state ownership from event order, or alter queue/Wheel/music behavior outside its acceptance criteria. If a newly discovered dependency would require that expansion, stop that pass and document the dependency before implementation.

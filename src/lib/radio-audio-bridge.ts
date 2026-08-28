@@ -1,10 +1,45 @@
 export const RADIO_AUDIO_BRIDGE_SCHEMA_VERSION = "barcode_audio_signal_v1" as const;
 export const RADIO_AUDIO_BRIDGE_FIXED_REFERENCE_CALIBRATION = "fixed_reference_v1" as const;
 export const RADIO_AUDIO_BRIDGE_ANALYSIS_CALIBRATION = "adaptive_reference_v2" as const;
+export const RADIO_AUDIO_BRIDGE_PERCEPTUAL_FEATURES_VERSION = "perceptual_audio_v1" as const;
+export const RADIO_AUDIO_BRIDGE_PERCEPTUAL_BAND_NAMES = [
+  "subBass",
+  "bass",
+  "lowMid",
+  "mid",
+  "highMid",
+  "presence",
+  "brilliance",
+  "air",
+] as const;
 export const RADIO_AUDIO_BRIDGE_URL = "http://127.0.0.1:43120/v1/signal";
 export const RADIO_AUDIO_BRIDGE_POLL_INTERVAL_MS = 25;
 export const RADIO_AUDIO_BRIDGE_RETRY_INTERVAL_MS = 2_000;
 export const RADIO_AUDIO_BRIDGE_STALE_AFTER_MS = 1_200;
+
+export type RadioAudioBridgePerceptualBandName = (typeof RADIO_AUDIO_BRIDGE_PERCEPTUAL_BAND_NAMES)[number];
+
+export type RadioAudioBridgePerceptualBands = Record<RadioAudioBridgePerceptualBandName, number>;
+
+export interface RadioAudioBridgePerceptualFeatures {
+  version: typeof RADIO_AUDIO_BRIDGE_PERCEPTUAL_FEATURES_VERSION;
+  levels: RadioAudioBridgePerceptualBands;
+  onsets: RadioAudioBridgePerceptualBands;
+  /** Log-frequency centroid, normalized to the analyser's usable spectrum. */
+  spectralCentroid: number;
+  /** Share of spectral power above 3 kHz. */
+  brightness: number;
+  /** Crest-based short-window dynamic contrast, independent of loudness. */
+  dynamicRange: number;
+  /** Bounded recent rate of distinct per-band arrivals. */
+  transientDensity: number;
+  /** Mid/side spread: zero is mono, one is maximally wide. */
+  stereoWidth: number;
+  /** Signed left/right balance: -1 left, 0 centered, 1 right. */
+  stereoBalance: number;
+  /** Sixteen bounded, signed program-shape samples; never raw audio. */
+  waveform: number[];
+}
 
 export interface RadioAudioBridgeSignal {
   schemaVersion: typeof RADIO_AUDIO_BRIDGE_SCHEMA_VERSION;
@@ -26,6 +61,8 @@ export interface RadioAudioBridgeSignal {
   beat: number;
   bpm: number;
   tempoConfidence: number;
+  /** Optional so installed v1 helpers and new browser code remain mutually compatible. */
+  features?: RadioAudioBridgePerceptualFeatures;
 }
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -41,6 +78,58 @@ function finiteNumber(value: unknown): number | null {
 function unitInterval(value: unknown): number | null {
   const numeric = finiteNumber(value);
   return numeric !== null && numeric >= 0 && numeric <= 1 ? numeric : null;
+}
+
+function signedUnitInterval(value: unknown): number | null {
+  const numeric = finiteNumber(value);
+  return numeric !== null && numeric >= -1 && numeric <= 1 ? numeric : null;
+}
+
+function normalizePerceptualBands(value: unknown): RadioAudioBridgePerceptualBands | null {
+  const candidate = record(value);
+  if (!candidate) return null;
+  const entries = RADIO_AUDIO_BRIDGE_PERCEPTUAL_BAND_NAMES.map((name) => [name, unitInterval(candidate[name])] as const);
+  if (entries.some(([, level]) => level === null)) return null;
+  return Object.fromEntries(entries) as RadioAudioBridgePerceptualBands;
+}
+
+function normalizePerceptualFeatures(value: unknown): RadioAudioBridgePerceptualFeatures | null {
+  const candidate = record(value);
+  if (!candidate || candidate.version !== RADIO_AUDIO_BRIDGE_PERCEPTUAL_FEATURES_VERSION) return null;
+  const levels = normalizePerceptualBands(candidate.levels);
+  const onsets = normalizePerceptualBands(candidate.onsets);
+  const spectralCentroid = unitInterval(candidate.spectralCentroid);
+  const brightness = unitInterval(candidate.brightness);
+  const dynamicRange = unitInterval(candidate.dynamicRange);
+  const transientDensity = unitInterval(candidate.transientDensity);
+  const stereoWidth = unitInterval(candidate.stereoWidth);
+  const stereoBalance = signedUnitInterval(candidate.stereoBalance);
+  const waveform = Array.isArray(candidate.waveform)
+    && candidate.waveform.length === 16
+    ? candidate.waveform.map(signedUnitInterval)
+    : null;
+  if (!levels
+    || !onsets
+    || spectralCentroid === null
+    || brightness === null
+    || dynamicRange === null
+    || transientDensity === null
+    || stereoWidth === null
+    || stereoBalance === null
+    || !waveform
+    || waveform.some((sample) => sample === null)) return null;
+  return {
+    version: RADIO_AUDIO_BRIDGE_PERCEPTUAL_FEATURES_VERSION,
+    levels,
+    onsets,
+    spectralCentroid,
+    brightness,
+    dynamicRange,
+    transientDensity,
+    stereoWidth,
+    stereoBalance,
+    waveform: waveform as number[],
+  };
 }
 
 export function normalizeRadioAudioBridgeSignal(value: unknown): RadioAudioBridgeSignal | null {
@@ -67,6 +156,9 @@ export function normalizeRadioAudioBridgeSignal(value: unknown): RadioAudioBridg
   const beat = unitInterval(candidate.beat);
   const bpm = finiteNumber(candidate.bpm);
   const tempoConfidence = unitInterval(candidate.tempoConfidence);
+  const features = candidate.features === undefined
+    ? undefined
+    : normalizePerceptualFeatures(candidate.features);
   if (capturedAtUnixMs === null
     || capturedAtUnixMs <= 0
     || sequence === null
@@ -81,7 +173,8 @@ export function normalizeRadioAudioBridgeSignal(value: unknown): RadioAudioBridg
     || bpm === null
     || bpm < 40
     || bpm > 240
-    || tempoConfidence === null) return null;
+    || tempoConfidence === null
+    || (candidate.features !== undefined && !features)) return null;
 
   return {
     schemaVersion: RADIO_AUDIO_BRIDGE_SCHEMA_VERSION,
@@ -103,6 +196,7 @@ export function normalizeRadioAudioBridgeSignal(value: unknown): RadioAudioBridg
     beat,
     bpm,
     tempoConfidence,
+    ...(features ? { features } : {}),
   };
 }
 

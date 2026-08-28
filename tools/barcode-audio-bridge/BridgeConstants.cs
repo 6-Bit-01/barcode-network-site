@@ -6,6 +6,7 @@ internal static class BridgeConstants
     public const string SchemaVersion = "barcode_audio_signal_v1";
     public const string Source = "windows_loopback";
     public const string AnalysisCalibration = "adaptive_reference_v2";
+    public const string PerceptualFeaturesVersion = "perceptual_audio_v1";
     public const string AutoStartValueName = "BARCODE Audio Bridge";
     public const string MutexName = @"Local\BARCODE.AudioBridge.Singleton";
     public const int ClientIdleCaptureStopMilliseconds = 4_000;

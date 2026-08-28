@@ -58,9 +58,9 @@ test("stale and rejected website responses never launch the local commercial pla
   assert.equal(launchCount, 1);
 });
 
-test("acknowledged local bridge failures remain visible to the admin caller", async () => {
+test("acknowledged local commercial-player failures remain visible to the admin caller", async () => {
   await assert.rejects(
     () => contract.launchLocalCommercialBreakIfAcknowledged(state("running"), async () => ({ ok: false, status: 409 })),
-    /Audio Bridge returned 409/,
+    /Commercial Player returned 409/,
   );
 });

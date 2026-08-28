@@ -826,6 +826,7 @@ test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a
   assert.match(server, /Task\.Run\(\(\) => HandleClient\(client, cancellationToken\), cancellationToken\)/, "visual signal clients retain the approved PR #374 request handling");
   assert.doesNotMatch(server, /Commercial|commercial|\/commercials|HttpByteRange/, "the visual signal server must contain no sponsor-player code");
   assert.match(commercialServer, /new TcpListener\(IPAddress\.Loopback, CommercialBreakPaths\.LocalPlayerPort\)/, "the sponsor player must use its own listener");
+  assert.match(commercialServer, /SocketError\.AddressAlreadyInUse[\s\S]*Task\.Delay\(TimeSpan\.FromSeconds\(2\)/, "the sponsor player must survive either two-artifact upgrade order while the legacy combined bridge releases its port");
   assert.doesNotMatch(commercialServer, /LoopbackCaptureController|\/v1\/signal|TouchClient|ReportBrowserHandshake|BridgeConstants\.Port/, "the sponsor player must contain no Show Visuals signal code");
   assert.match(application, /new LocalSignalServer\(_capture\)/);
   assert.doesNotMatch(application, /CommercialPlayerServer|CommercialBreakService/, "the visual process must not construct the sponsor player");

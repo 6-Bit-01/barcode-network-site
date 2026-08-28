@@ -30,7 +30,14 @@ import {
   isHiddenFromBnl,
   isPublicDatabasePageVisible,
 } from "@/lib/database-visibility";
-import { getQueueBnlReadProjections, getRadioQueueState, toPublicQueueTrack } from "@/lib/queue";
+import {
+  getQueueBnlReadProjections,
+  getQueueSessionShowLog,
+  getRadioQueueState,
+  toPublicQueueTrack,
+} from "@/lib/queue";
+import { getLiveOverlayRuntimeState } from "@/lib/live-overlay";
+import { attachQueueLiveTiming } from "@/lib/queue-live-timing";
 import {
   isQueueProductionEnabled,
   queueProductionCapability,
@@ -43,6 +50,9 @@ import type {
   QueuePlaybackTiming,
   QueuePublicTrack,
   QueueSessionBnlPublicationAccess,
+  QueueShowLogEvent,
+  QueueShowLogEventDetails,
+  QueueShowLogEventType,
   QueueSourceType,
 } from "@/lib/queue-types";
 import {
@@ -57,6 +67,38 @@ const PUBLIC_CACHE_CONTROL = "public, max-age=15, s-maxage=30";
 const PRIVATE_CACHE_CONTROL = "private, no-store, max-age=0";
 const MAX_ARTISTS = 25;
 const MAX_TRACKS_PER_ARTIST = 5;
+const MAX_BNL_OPERATIONAL_EVENTS = 30;
+const MAX_BNL_WHEEL_EVENTS = 12;
+
+const BNL_OPERATIONAL_EVENT_TYPES = new Set<QueueShowLogEventType>([
+  "submissions_opened",
+  "submissions_closed",
+  "broadcast_started",
+  "track_loaded",
+  "track_play_started",
+  "track_paused",
+  "track_stalled",
+  "track_resumed",
+  "track_playback_error",
+  "track_finished",
+  "track_skipped",
+  "track_removed",
+  "track_returned",
+  "track_restored",
+  "track_signal_hold_applied",
+  "wheel_spin_unlocked",
+  "wheel_launched",
+  "wheel_reencrypted",
+  "wheel_spun",
+  "wheel_result_rejected",
+  "wheel_confirmed",
+  "wheel_cancelled",
+  "sponsor_break_started",
+  "sponsor_break_completed",
+  "sponsor_break_skipped",
+  "sponsor_break_reset",
+  "session_archived",
+]);
 
 type BnlReadModelTrackStatus = "queued" | "completed" | "nowPlaying" | "upNext";
 
@@ -155,6 +197,74 @@ type BnlQueueTrack = Pick<
 
 type BnlQueueTrackStage = BnlQueueTrack["stage"];
 type BnlQueueAccessScope = "none" | "private" | "public";
+
+type BnlOperationalEventTrack = {
+  trackId: string;
+  artist: string;
+  title: string;
+  currentStage: BnlQueueTrackStage | null;
+  currentQueuePosition: number | null;
+  currentLane: QueueLane | null;
+};
+
+type BnlOperationalEvent = {
+  sequence: number;
+  eventType: QueueShowLogEventType;
+  occurredAt: string;
+  track: BnlOperationalEventTrack | null;
+  details: QueueShowLogEventDetails | null;
+};
+
+function bnlOperationalEventDetails(
+  details: QueueShowLogEventDetails | null | undefined,
+): QueueShowLogEventDetails | null {
+  if (!details) return null;
+  const safe: QueueShowLogEventDetails = {
+    playbackProvider: details.playbackProvider ?? null,
+    playbackPositionSeconds: details.playbackPositionSeconds ?? null,
+    playbackDurationSeconds: details.playbackDurationSeconds ?? null,
+    playbackErrorCode: details.playbackErrorCode ?? null,
+    wheelCandidateCount: details.wheelCandidateCount ?? null,
+    wheelSpinDurationMs: details.wheelSpinDurationMs ?? null,
+    wheelSpinsAdded: details.wheelSpinsAdded ?? null,
+    wheelSpinsOwed: details.wheelSpinsOwed ?? null,
+    signalHoldPreviousLane: details.signalHoldPreviousLane ?? null,
+    signalHoldApplicationCount: details.signalHoldApplicationCount ?? null,
+  };
+  return Object.values(safe).some((value) => value !== null) ? safe : null;
+}
+
+function bnlOperationalEvents(
+  events: readonly QueueShowLogEvent[],
+  currentTracks: ReadonlyMap<string, BnlQueueTrack>,
+): BnlOperationalEvent[] {
+  return events
+    .filter((event) =>
+      BNL_OPERATIONAL_EVENT_TYPES.has(event.eventType)
+      && (!event.track || currentTracks.has(event.track.trackId)))
+    .slice(-MAX_BNL_OPERATIONAL_EVENTS)
+    .map((event) => {
+      const current = event.track?.trackId
+        ? currentTracks.get(event.track.trackId) ?? null
+        : null;
+      return {
+        sequence: event.sequence,
+        eventType: event.eventType,
+        occurredAt: event.occurredAt,
+        track: event.track
+          ? {
+              trackId: event.track.trackId,
+              artist: event.track.artist,
+              title: event.track.title,
+              currentStage: current?.stage ?? null,
+              currentQueuePosition: current?.queuePosition ?? null,
+              currentLane: current?.lane ?? null,
+            }
+          : null,
+        details: bnlOperationalEventDetails(event.details),
+      };
+    });
+}
 
 function bnlTrackContext(
   status: BnlReadModelTrackStatus,
@@ -349,7 +459,7 @@ function runtimeSecondsFor(entries: readonly QueueEntry[]): number {
 }
 
 async function readQueueForBnl(authenticated: boolean) {
-  const state = await getRadioQueueState();
+  let state = await getRadioQueueState();
   const publication = queueSessionBnlPublicationAccess(state.session);
   const accessScope: BnlQueueAccessScope = publication.accessLevel === "public"
     ? "public"
@@ -373,6 +483,30 @@ async function readQueueForBnl(authenticated: boolean) {
       operatorQueue: null,
       publication: null,
     };
+  }
+
+  let showLogEvents: QueueShowLogEvent[] = [];
+  let showLogRevision: number | null = null;
+  const sessionId = state.session?.sessionId ?? null;
+  if (sessionId) {
+    const [runtimeResult, showLogResult] = await Promise.allSettled([
+      getLiveOverlayRuntimeState(),
+      getQueueSessionShowLog(sessionId),
+    ]);
+    if (runtimeResult.status === "fulfilled") {
+      state = attachQueueLiveTiming(
+        state,
+        runtimeResult.value.playerSync,
+        runtimeResult.value.overlayState,
+      );
+    }
+    if (
+      showLogResult.status === "fulfilled"
+      && showLogResult.value.session.sessionId === sessionId
+    ) {
+      showLogEvents = showLogResult.value.events;
+      showLogRevision = showLogResult.value.revision;
+    }
   }
 
   const readableScope = accessScope as Exclude<BnlQueueAccessScope, "none">;
@@ -426,13 +560,70 @@ async function readQueueForBnl(authenticated: boolean) {
   const publicCompletedTracks = completedEntries.map(toPublicQueueTrack);
   const nowPlaying = nowPlayingEntry ? toPublicQueueTrack(nowPlayingEntry) : null;
   const upNext = upNextEntry ? toPublicQueueTrack(upNextEntry) : null;
+  const operationalNowPlaying = operationalTrack(
+    nowPlayingEntry,
+    "nowPlaying",
+    readableScope,
+  );
+  const operationalUpNext = operationalTrack(
+    upNextEntry,
+    "upNext",
+    readableScope,
+    upNextEntry ? 1 : null,
+  );
+  const operationalQueue = queueEntries
+    .map((entry, index) => operationalTrack(
+      entry,
+      "queued",
+      readableScope,
+      index + (upNextEntry ? 2 : 1),
+    ))
+    .filter((track): track is BnlQueueTrack => Boolean(track));
+  const operationalCompleted = completedEntries
+    .map((entry) => operationalTrack(entry, "completed", readableScope))
+    .filter((track): track is BnlQueueTrack => Boolean(track));
+  const operationalRemoved = removedEntries
+    .map((entry) => operationalTrack(entry, "removed", readableScope))
+    .filter((track): track is BnlQueueTrack => Boolean(track));
+  const operationalSpotlight = spotlightEntries
+    .map((entry) => operationalTrack(entry, "spotlight", readableScope))
+    .filter((track): track is BnlQueueTrack => Boolean(track));
+  const currentTracks = new Map<string, BnlQueueTrack>();
+  for (const track of [
+    ...operationalSpotlight,
+    ...operationalRemoved,
+    ...operationalCompleted,
+    ...operationalQueue,
+    operationalUpNext,
+    operationalNowPlaying,
+  ]) {
+    if (track) currentTracks.set(track.id, track);
+  }
+  const recentEvents = bnlOperationalEvents(showLogEvents, currentTracks);
+  const wheelEvents = recentEvents
+    .filter((event) => event.eventType.startsWith("wheel_"))
+    .slice(-MAX_BNL_WHEEL_EVENTS);
+  const lastConfirmedWinnerRaw = [...showLogEvents]
+    .reverse()
+    .find((event) =>
+      event.eventType === "wheel_confirmed"
+      && event.track
+      && currentTracks.has(event.track.trackId));
+  const lastConfirmedWinnerEvent = lastConfirmedWinnerRaw
+    ? bnlOperationalEvents([lastConfirmedWinnerRaw], currentTracks)[0]
+    : undefined;
+  const wheelSpinsOwed = sessionEnded
+    ? 0
+    : state.session?.wheelSpinsOwed ?? 0;
 
   const queue = {
     available: true,
     accessScope: readableScope,
     mutationAllowed: false,
+    queueUrl: `${siteConfig.domain}/queue`,
     publication,
     revision: state.revision ?? 0,
+    operationalEventsSourceRevision: showLogRevision,
     session: {
       sessionId: state.session?.sessionId ?? "",
       title: state.session?.title ?? "",
@@ -452,9 +643,7 @@ async function readQueueForBnl(authenticated: boolean) {
       estimatedActiveRuntimeSeconds,
       completedRuntimeSeconds,
       submissionClosureReason: state.session?.submissionClosureReason ?? null,
-      wheelSpinsOwed: sessionEnded
-        ? 0
-        : state.session?.wheelSpinsOwed ?? 0,
+      wheelSpinsOwed,
       nextNonPriorityLane: state.nextNonPriorityLane ?? state.session?.nextNonPriorityLane ?? "wheel",
       autoRoutingPaused: state.autoRoutingPaused === true,
       priorityUpgradesEnabled:
@@ -480,20 +669,12 @@ async function readQueueForBnl(authenticated: boolean) {
       pressure: pressureFor(activeCount, capacity),
       estimatedRuntimeSeconds: estimatedActiveRuntimeSeconds,
     },
-    nowPlaying: operationalTrack(nowPlayingEntry, "nowPlaying", readableScope),
-    upNext: operationalTrack(upNextEntry, "upNext", readableScope, upNextEntry ? 1 : null),
-    queue: queueEntries
-      .map((entry, index) => operationalTrack(entry, "queued", readableScope, index + (upNextEntry ? 2 : 1)))
-      .filter((track): track is BnlQueueTrack => Boolean(track)),
-    completed: completedEntries
-      .map((entry) => operationalTrack(entry, "completed", readableScope))
-      .filter((track): track is BnlQueueTrack => Boolean(track)),
-    removed: removedEntries
-      .map((entry) => operationalTrack(entry, "removed", readableScope))
-      .filter((track): track is BnlQueueTrack => Boolean(track)),
-    spotlight: spotlightEntries
-      .map((entry) => operationalTrack(entry, "spotlight", readableScope))
-      .filter((track): track is BnlQueueTrack => Boolean(track)),
+    nowPlaying: operationalNowPlaying,
+    upNext: operationalUpNext,
+    queue: operationalQueue,
+    completed: operationalCompleted,
+    removed: operationalRemoved,
+    spotlight: operationalSpotlight,
     wheelEligibleArtists: sessionEnded ? [] : (state.wheelEligibleArtists ?? []).flatMap((artist) => {
       const trackIds = artist.trackIds.filter((trackId) => readableActiveTrackIds.has(trackId));
       return trackIds.length > 0 ? [{
@@ -503,6 +684,20 @@ async function readQueueForBnl(authenticated: boolean) {
         trackCount: trackIds.length,
       }] : [];
     }),
+    wheel: {
+      spinsOwed: wheelSpinsOwed,
+      status: state.wheelTiming?.status ?? "idle",
+      timing: state.wheelTiming ?? null,
+      lastConfirmedWinner: lastConfirmedWinnerEvent?.track
+        ? {
+            ...lastConfirmedWinnerEvent.track,
+            sequence: lastConfirmedWinnerEvent.sequence,
+            occurredAt: lastConfirmedWinnerEvent.occurredAt,
+          }
+        : null,
+      recentEvents: wheelEvents,
+    },
+    recentEvents,
     playbackTiming: safePlaybackTiming(state.playbackTiming, nowPlayingEntry?.id ?? null),
     wheelTiming: state.wheelTiming ?? null,
     playbackDiagnostics: safePlaybackDiagnostics(state.playbackDiagnostics, readableTrackIds),
@@ -1368,12 +1563,13 @@ export async function GET(req?: Request) {
       };
   const dossiers = publicDossiers();
   const privateResponse = accessScope === "private";
+  const noStoreResponse = authenticated || privateResponse;
 
   return NextResponse.json(
     {
       ok: true,
       version: 1,
-      schemaRevision: "1.7",
+      schemaRevision: "1.8",
       generatedAt: new Date().toISOString(),
       scope: privateResponse ? "bnl_private_read_model" : "bnl_public_read_model",
       source: "barcode-network-site",
@@ -1414,7 +1610,7 @@ export async function GET(req?: Request) {
     },
     {
       headers: {
-        "Cache-Control": privateResponse ? PRIVATE_CACHE_CONTROL : PUBLIC_CACHE_CONTROL,
+        "Cache-Control": noStoreResponse ? PRIVATE_CACHE_CONTROL : PUBLIC_CACHE_CONTROL,
         Vary: "x-api-key",
         ...(privateResponse ? { "X-Robots-Tag": "noindex, nofollow, noarchive" } : {}),
       },

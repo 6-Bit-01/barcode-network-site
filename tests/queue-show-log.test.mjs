@@ -244,6 +244,13 @@ test("simulation tracks are omitted from the operator show log", async () => {
 test("low-frequency Wheel actions are retained for finished-show timing", async () => {
   const started = await startFreshSession("Wheel timing log");
   const sessionId = started.session.sessionId;
+  const winner = await addTrack({
+    label: "Wheel Winner",
+    sourceType: "youtube",
+    link: "https://www.youtube.com/watch?v=wheelwinner1",
+    tiktokHandle: "@Wheel.Winner",
+    contactEmail: "wheel-winner@example.test",
+  });
   const launchedAt = new Date().toISOString();
   const spunAt = new Date(Date.parse(launchedAt) + 10_000).toISOString();
   const confirmedAt = new Date(Date.parse(launchedAt) + 120_000).toISOString();
@@ -263,6 +270,7 @@ test("low-frequency Wheel actions are retained for finished-show timing", async 
   assert.equal(await queue.recordQueueOperationalShowEvent({
     eventType: "wheel_confirmed",
     occurredAt: confirmedAt,
+    trackId: winner.id,
     details: { wheelCandidateCount: 8 },
   }), true);
 
@@ -271,6 +279,10 @@ test("low-frequency Wheel actions are retained for finished-show timing", async 
   const unlocked = exported.events.find((event) => event.eventType === "wheel_spin_unlocked");
   assert.equal(unlocked.details.wheelSpinsAdded, 1);
   assert.equal(unlocked.details.wheelSpinsOwed, 1);
+  const confirmed = exported.events.find((event) => event.eventType === "wheel_confirmed");
+  assert.equal(confirmed.track.trackId, winner.id);
+  assert.equal(confirmed.track.artist, "Wheel Winner Artist");
+  assert.equal(confirmed.track.title, "Wheel Winner Song");
   assert.equal(exported.report.operations.wheel.completedCeremonies, 1);
   assert.equal(exported.report.operations.wheel.ceremonySeconds, 120);
   assert.equal(exported.report.operations.wheel.plannedSpinSeconds, 12);
@@ -323,4 +335,8 @@ test("the download surface is private and confined to authenticated admin UI", (
     assert.match(liveOverlay, new RegExp(`payload\\.action === "${action}"`));
   }
   assert.match(liveOverlay, /recordQueueOperationalShowEvent/);
+  assert.match(
+    liveOverlay,
+    /trackId:\s*payload\.action === "confirmWheel"[\s\S]*?next\.wheelCeremonyChosenTrackId/,
+  );
 });

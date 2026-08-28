@@ -878,6 +878,9 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload, receivedA
       await recordQueueOperationalShowEvent({
         eventType: wheelEventType,
         occurredAt: now,
+        trackId: payload.action === "confirmWheel"
+          ? next.wheelCeremonyChosenTrackId ?? null
+          : null,
         details: {
           wheelCandidateCount: next.wheelCeremonyCandidateOrder?.length ?? null,
           wheelSpinDurationMs: payload.action === "spinWheel" ? next.wheelCeremonySpinDurationMs ?? null : null,

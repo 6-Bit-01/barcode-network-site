@@ -17,11 +17,21 @@ export async function getRadioVisualsSnapshot(now = new Date()): Promise<RadioVi
       queueState,
       playerSync: null,
       now,
+      ignoreSponsorBreak: true,
     });
     return resolveRadioVisualsSnapshot({ queueState, scene, overlayState: null, playerSync: null, now });
   }
 
   const { overlayState, playerSync } = await getLiveOverlayRuntimeState();
-  const scene = resolveLiveOverlaySceneFromQueueState({ overlayState, queueState, playerSync, now });
+  // Commercials are a separate TikTok Studio source layered above Show
+  // Visuals. Sponsor-break state must never select, dim, stop, or otherwise
+  // influence the visual source underneath it.
+  const scene = resolveLiveOverlaySceneFromQueueState({
+    overlayState,
+    queueState,
+    playerSync,
+    now,
+    ignoreSponsorBreak: true,
+  });
   return resolveRadioVisualsSnapshot({ queueState, scene, overlayState, playerSync, now });
 }

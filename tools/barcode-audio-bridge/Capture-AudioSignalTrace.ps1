@@ -3,7 +3,7 @@ param(
     [ValidateRange(5, 900)]
     [int]$Seconds = 120,
 
-    [ValidateRange(20, 1_000)]
+    [ValidateRange(20, 1000)]
     [int]$PollMilliseconds = 25,
 
     [string]$OutputPath = ""

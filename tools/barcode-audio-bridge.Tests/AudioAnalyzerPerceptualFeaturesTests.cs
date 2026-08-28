@@ -48,7 +48,7 @@ public sealed class AudioAnalyzerPerceptualFeaturesTests
     }
 
     [Fact]
-    public void BandArrivalPublishesAOwnedOnsetInsteadOfOneGlobalPulse()
+    public void BandArrivalPublishesAnOwnedOnsetInsteadOfOneGlobalPulse()
     {
         var analyzer = new AudioAnalyzer();
         var cursor = 0;
@@ -61,6 +61,8 @@ public sealed class AudioAnalyzerPerceptualFeaturesTests
         var unrelatedHighArrival = Math.Max(arrival.Brilliance, arrival.Air);
 
         Assert.True(ownedBassArrival > 0.2, $"bass arrival was not exposed: {arrival}");
+        Assert.True(unrelatedHighArrival < 0.2,
+            $"FFT leakage became a false high-band arrival: {arrival}");
         Assert.True(ownedBassArrival > unrelatedHighArrival + 0.12,
             $"bass arrival leaked into unrelated high bands: {arrival}");
     }

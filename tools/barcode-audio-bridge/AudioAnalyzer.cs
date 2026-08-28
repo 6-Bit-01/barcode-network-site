@@ -237,7 +237,8 @@ internal sealed class AudioAnalyzer
         double visualGain,
         double audibility)
     {
-        var strongestArrival = 0d;
+        var rawBandLevels = new double[PerceptualBandCount];
+        var totalBandLevel = 0d;
         for (var index = 0; index < PerceptualBandDefinitions.Length; index += 1)
         {
             var definition = PerceptualBandDefinitions[index];
@@ -245,6 +246,8 @@ internal sealed class AudioAnalyzer
             var rawLevel = upperHz > definition.StartHz
                 ? BandEnergy(spectrum, definition.StartHz, upperHz, definition.LevelSensitivity)
                 : 0;
+            rawBandLevels[index] = rawLevel;
+            totalBandLevel += rawLevel;
             _perceptualBandLevels[index] = Smooth(
                 _perceptualBandLevels[index],
                 rawLevel,
@@ -255,17 +258,34 @@ internal sealed class AudioAnalyzer
                 visualGain,
                 audibility);
 
+        }
+
+        var strongestArrival = 0d;
+        for (var index = 0; index < PerceptualBandDefinitions.Length; index += 1)
+        {
+            var definition = PerceptualBandDefinitions[index];
+            var upperHz = Math.Min(definition.EndHz, _sampleRate / 2d);
             var novelty = upperHz > definition.StartHz
                 ? BandNovelty(spectrum, definition.StartHz, upperHz)
                 : 0;
+            // A sharp arrival leaks a small amount of FFT energy into many
+            // bins even with the Hann window. Weight local novelty by the
+            // band's perceptually compressed share of the current spectrum,
+            // so tiny leakage cannot turn one bass hit into eight simultaneous
+            // full-band onsets. A genuinely broadband arrival can still own
+            // several bands because each meaningful share remains visible.
+            var bandOwnership = totalBandLevel > 1e-8
+                ? Unit(rawBandLevels[index] / totalBandLevel * PerceptualBandCount)
+                : 0;
+            var onsetEvidence = novelty * bandOwnership * bandOwnership;
             var noveltyFloor = _perceptualNoveltyFloors[index];
             var onsetTarget = _sequence >= 2 && _visualPerceptualBandLevels[index] > 0.012
-                ? Unit(Math.Max(0, novelty - Math.Max(0.018, noveltyFloor * 1.12)) * 2.75)
+                ? Unit(Math.Max(0, onsetEvidence - Math.Max(0.018, noveltyFloor * 1.12)) * 2.75)
                 : 0;
             _perceptualBandOnsets[index] = Math.Max(
                 onsetTarget,
                 _perceptualBandOnsets[index] * definition.OnsetRelease);
-            _perceptualNoveltyFloors[index] = noveltyFloor * 0.985 + novelty * 0.015;
+            _perceptualNoveltyFloors[index] = noveltyFloor * 0.985 + onsetEvidence * 0.015;
             strongestArrival = Math.Max(strongestArrival, onsetTarget);
         }
 

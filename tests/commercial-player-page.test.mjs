@@ -18,7 +18,11 @@ const studioRouteSource = readFileSync(
   path.join(projectRoot, "src/app/overlay/commercials/route.ts"),
   "utf8",
 );
-const localServerSource = readFileSync(
+const commercialServerSource = readFileSync(
+  path.join(projectRoot, "tools/barcode-audio-bridge/CommercialPlayerServer.cs"),
+  "utf8",
+);
+const visualServerSource = readFileSync(
   path.join(projectRoot, "tools/barcode-audio-bridge/LocalSignalServer.cs"),
   "utf8",
 );
@@ -118,7 +122,7 @@ test("idle shows only the animated background and a CSS CRT power-on precedes th
   assert.match(pageSource, /animation:\s*crt-power-on 880ms/);
   assert.match(playerScript, /tvStage\.hidden = false;[\s\S]*?await runCrtPowerOn\(token\);[\s\S]*?post\(`\/v1\/commercials\/clip-started/);
   assert.doesNotMatch(pageSource, /<video id="crt-power-on/);
-  assert.match(localServerSource, /path == "\/v1\/commercials\/idle-background"[\s\S]*?_commercials\.TryGetIdleBackground/);
+  assert.match(commercialServerSource, /path == "\/v1\/commercials\/idle-background"[\s\S]*?_commercials\.TryGetIdleBackground/);
 });
 
 test("corner logos pre-roll without ever rendering two marks together", () => {
@@ -256,20 +260,26 @@ test("BCN and BLVCKL!GHT logos remain enlarged while the cropped TV fills more o
 
 test("TikTok Studio receives a versioned reusable HTTPS source that redirects to the local-only player", () => {
   assert.match(librarySource, /PlayerUrl = "https:\/\/www\.barcode-network\.com\/overlay\/commercials\?studioSource=v1"/);
-  assert.match(librarySource, /LocalPlayerUrl => \$"http:\/\/127\.0\.0\.1:\{BridgeConstants\.Port\}\/commercials"/);
+  assert.match(librarySource, /LocalPlayerUrl => \$"http:\/\/127\.0\.0\.1:\{LocalPlayerPort\}\/commercials"/);
   assert.match(librarySource, /PreviewUrl => LocalPlayerUrl \+ "\?debug=1"/);
-  assert.match(studioRouteSource, /LOCAL_COMMERCIAL_PLAYER_URL = "http:\/\/127\.0\.0\.1:43120\/commercials"/);
+  assert.match(studioRouteSource, /LOCAL_COMMERCIAL_PLAYER_URL = "http:\/\/127\.0\.0\.1:43121\/commercials"/);
   assert.match(studioRouteSource, /status: 307/);
   assert.match(studioRouteSource, /Location: LOCAL_COMMERCIAL_PLAYER_URL/);
   assert.match(studioRouteSource, /Cache-Control": "private, no-store, max-age=0"/);
 });
 
 test("the existing queue button can start the local player without a second browser window", () => {
-  assert.match(localServerSource, /path == "\/v1\/commercials\/start" && method == "POST"/);
-  assert.match(localServerSource, /isCommercialStartRoute[\s\S]*VisualOriginAllowed\(origin\)/);
-  assert.match(localServerSource, /var result = _commercials\.Start\(\)/);
-  assert.doesNotMatch(localServerSource, /StartFromQueue|queue trigger/i);
+  assert.match(commercialServerSource, /path == "\/v1\/commercials\/start" && method == "POST"/);
+  assert.match(commercialServerSource, /isCommercialStartRoute[\s\S]*AdminOriginAllowed\(origin\)/);
+  assert.match(commercialServerSource, /var result = _commercials\.Start\(\)/);
+  assert.doesNotMatch(commercialServerSource, /StartFromQueue|queue trigger/i);
   assert.doesNotMatch(playerScript, /barcode-network\.com\/api\/overlay\/commercials|pollQueueSignal/);
+});
+
+test("commercial playback and Show Visuals use completely separate local servers", () => {
+  assert.doesNotMatch(visualServerSource, /Commercial|commercial|\/commercials|media\/|HttpByteRange/);
+  assert.doesNotMatch(commercialServerSource, /LoopbackCaptureController|\/v1\/signal|TouchClient|ReportBrowserHandshake|BridgeConstants\.Port/);
+  assert.match(commercialServerSource, /TcpListener\(IPAddress\.Loopback, CommercialBreakPaths\.LocalPlayerPort\)/);
 });
 
 test("Chrome autoplay denial holds the current commercial until one click instead of failing the break", async () => {

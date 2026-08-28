@@ -29,7 +29,7 @@ const LANE_LABELS: Record<QueueLane, string> = { priority: "Priority Signal", wh
 const FIXED_PRIORITY_LABEL = "Priority Signal Upgrade";
 const FIXED_PRIORITY_INSTRUCTIONS = "Moves this track into the Priority Signal lane after payment confirmation.";
 const SAME_BROWSER_DIFFERENT_ARTISTS_FLAG = "Same browser token using different artist names";
-const LOCAL_COMMERCIAL_START_URL = "http://127.0.0.1:43120/v1/commercials/start";
+const LOCAL_COMMERCIAL_START_URL = "http://127.0.0.1:43121/v1/commercials/start";
 
 const YOUTUBE_SYNC_HEARTBEAT_MS = 1_000;
 const TIKTOK_SYNC_HEARTBEAT_MS = 1_000;

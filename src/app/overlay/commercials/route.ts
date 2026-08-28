@@ -1,4 +1,4 @@
-const LOCAL_COMMERCIAL_PLAYER_URL = "http://127.0.0.1:43120/commercials";
+const LOCAL_COMMERCIAL_PLAYER_URL = "http://127.0.0.1:43121/commercials";
 
 export const dynamic = "force-dynamic";
 

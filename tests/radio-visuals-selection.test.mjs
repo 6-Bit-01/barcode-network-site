@@ -258,6 +258,36 @@ test("a loaded song owns visuals regardless of Wheel timestamps or queue alias",
   }).mode, "now_playing", "loadedTrack must remain a complete current-song alias");
 });
 
+test("the Show Visuals scene completely ignores sponsor-break state", () => {
+  const current = entry("sponsor-independent-song", 5);
+  const state = queueState(current, 5, []);
+  state.session.sponsorBreakStatus = "running";
+  const overlayState = {};
+
+  assert.equal(liveOverlay.resolveLiveOverlaySceneFromQueueState({
+    overlayState,
+    queueState: state,
+    now: new Date("2026-08-21T19:10:30.000Z"),
+  }).mode, "sponsor", "the commercial/live-overlay source retains sponsor behavior");
+
+  const visualScene = liveOverlay.resolveLiveOverlaySceneFromQueueState({
+    overlayState,
+    queueState: state,
+    now: new Date("2026-08-21T19:10:30.000Z"),
+    ignoreSponsorBreak: true,
+  });
+  assert.equal(visualScene.mode, "now_playing", "Show Visuals must keep following the loaded song");
+  assert.equal(visuals.resolveRadioVisualsSnapshot({ queueState: state, scene: visualScene }).visualMode, "track");
+
+  const betweenSongs = queueState(null, 6, []);
+  betweenSongs.session.sponsorBreakStatus = "running";
+  assert.equal(liveOverlay.resolveLiveOverlaySceneFromQueueState({
+    overlayState,
+    queueState: betweenSongs,
+    ignoreSponsorBreak: true,
+  }).mode, "session_active", "sponsor state must not even replace the visual idle scene");
+});
+
 test("the Wheel exists only when explicitly active between songs", () => {
   const betweenSongs = queueState(null, 4, []);
   const launchedWheel = {

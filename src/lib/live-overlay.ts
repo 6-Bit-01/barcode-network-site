@@ -536,11 +536,14 @@ export function resolveLiveOverlaySceneFromQueueState(input: {
   queueState: QueueState;
   playerSync?: LiveOverlayPlayerSync | null;
   now?: Date;
+  /** Show Visuals is a separate Studio source underneath commercials. */
+  ignoreSponsorBreak?: boolean;
 }): ResolvedLiveOverlayScene {
   const { overlayState, queueState, playerSync = null, now = new Date() } = input;
   const wheelCandidates = getWheelCandidatesFromQueue(queueState.queue);
   const session = queueState.session ?? null;
   const loadedTrack = queueState.nowPlaying ?? queueState.loadedTrack ?? null;
+  const sponsorBreakStatus = input.ignoreSponsorBreak ? "completed" : session?.sponsorBreakStatus;
   const resolved = resolveLiveOverlayScene({
     overlayState,
     currentSession: session ? {
@@ -550,14 +553,14 @@ export function resolveLiveOverlaySceneFromQueueState(input: {
       queueOpen: session.queueOpen,
       broadcastPhase: session.broadcastPhase,
       wheelSpinsOwed: session.wheelSpinsOwed ?? 0,
-      sponsorBreakStatus: session.sponsorBreakStatus,
+      sponsorBreakStatus,
     } : null,
     nowPlaying: loadedTrack ? overlayTrackInput(loadedTrack) : null,
     upNext: queueState.nextInLine ? overlayTrackInput(queueState.nextInLine) : null,
     playerSync,
     wheelCandidates,
     wheelSpinsOwed: session?.wheelSpinsOwed ?? 0,
-    sponsorBreakStatus: session?.sponsorBreakStatus,
+    sponsorBreakStatus,
     broadcastPhase: session?.broadcastPhase,
     queueOpen: session?.queueOpen,
     now,

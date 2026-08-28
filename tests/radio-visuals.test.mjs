@@ -794,7 +794,7 @@ test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a
   assert.match(project, /<TargetFramework>net8\.0-windows<\/TargetFramework>/);
   assert.match(project, /<SelfContained>true<\/SelfContained>/);
   assert.match(project, /<PublishSingleFile>true<\/PublishSingleFile>/);
-  assert.match(project, /<Version>1\.0\.22<\/Version>/);
+  assert.match(project, /<Version>1\.0\.23<\/Version>/);
   assert.match(project, /PackageReference Include="NAudio" Version="2\.3\.0"/);
   assert.match(capture, /GetDefaultAudioEndpoint\(DataFlow\.Render, Role\.Multimedia\)/, "capture must resolve the default Windows Speakers render endpoint");
   assert.match(capture, /new WasapiLoopbackCapture\(renderDevice\)/, "capture and endpoint-volume compensation must use the same Speakers endpoint");
@@ -817,6 +817,7 @@ test("Windows helper is automatic, Speakers-only, loopback-bound, and built as a
   assert.doesNotMatch(analyzer, /WaveFormatEncoding\.Extensible && format\.BitsPerSample == 32/);
   assert.match(analyzer, /_energy < 0\.008/, "quiet but audible speaker output must remain available to the visuals");
   assert.match(server, /new TcpListener\(IPAddress\.Loopback, BridgeConstants\.Port\)/, "the signal endpoint must never bind to the LAN");
+  assert.match(server, /Task\.Run\(\(\) => HandleClient\(client, cancellationToken\), cancellationToken\)/, "commercial media streams must not block visual signal polling in the accept loop");
   assert.match(server, /Access-Control-Allow-Private-Network: true/);
   assert.match(server, /www\.barcode-network\.com|barcode-network\.com/);
   assert.match(server, /barcode-network-site-cpps\.vercel\.app|-6-bits-projects\.vercel\.app/);

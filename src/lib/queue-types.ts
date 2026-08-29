@@ -759,7 +759,28 @@ export interface QueuePublicHistoryEvent {
   occurredAt: string;
   headline: string;
   detail: string;
-  track: { projectLabel: string; title: string } | null;
+  track: {
+    trackId: string;
+    projectLabel: string;
+    title: string;
+    submittedByTikTokHandle: string;
+    lane: QueueLane;
+    outcome: QueuePublicHistoryOutcome;
+    submissionOrder: number | null;
+    playedOrder: number | null;
+  } | null;
+  details: {
+    playbackProvider: QueuePlaybackProvider | null;
+    playbackPositionSeconds: number | null;
+    playbackDurationSeconds: number | null;
+    playbackErrorCode: QueuePlaybackErrorCode | null;
+    wheelCandidateCount: number | null;
+    wheelSpinDurationMs: number | null;
+    wheelSpinsAdded: number | null;
+    wheelSpinsOwed: number | null;
+    signalHoldPreviousLane: QueueLane | null;
+    signalHoldApplicationCount: number | null;
+  } | null;
 }
 
 export interface QueuePublicStats {

@@ -4399,6 +4399,25 @@ function publicHistoryEventCopy(
   return { headline: "Broadcast archived", detail: "The show moved into retained after-show history." };
 }
 
+function publicHistoryEventDetails(
+  details: QueueShowLogEventDetails | null | undefined,
+): QueuePublicHistoryEvent["details"] {
+  if (!details) return null;
+  const safe: NonNullable<QueuePublicHistoryEvent["details"]> = {
+    playbackProvider: details.playbackProvider ?? null,
+    playbackPositionSeconds: details.playbackPositionSeconds ?? null,
+    playbackDurationSeconds: details.playbackDurationSeconds ?? null,
+    playbackErrorCode: details.playbackErrorCode ?? null,
+    wheelCandidateCount: details.wheelCandidateCount ?? null,
+    wheelSpinDurationMs: details.wheelSpinDurationMs ?? null,
+    wheelSpinsAdded: details.wheelSpinsAdded ?? null,
+    wheelSpinsOwed: details.wheelSpinsOwed ?? null,
+    signalHoldPreviousLane: details.signalHoldPreviousLane ?? null,
+    signalHoldApplicationCount: details.signalHoldApplicationCount ?? null,
+  };
+  return Object.values(safe).some((value) => value !== null) ? safe : null;
+}
+
 function publicHistoryEventsForSession(session: QueueSession, records: QueuePublicStatsRecord[]): QueuePublicHistoryEvent[] {
   const recordsById = new Map(records.map((record) => [record.entry.id, record]));
   return normalizeQueueShowLog(session.showLog).flatMap((event) => {
@@ -4406,7 +4425,16 @@ function publicHistoryEventsForSession(session: QueueSession, records: QueuePubl
     const eventType = event.eventType as QueuePublicHistoryEventType;
     const record = event.track?.trackId ? recordsById.get(event.track.trackId) : null;
     if (event.track?.trackId && !record) return [];
-    const track = record ? { projectLabel: publicHistoryProjectLabel(record.entry), title: record.entry.submittedSongTitle ?? record.entry.title } : null;
+    const track = record ? {
+      trackId: record.entry.id,
+      projectLabel: publicHistoryProjectLabel(record.entry),
+      title: record.entry.submittedSongTitle ?? record.entry.title,
+      submittedByTikTokHandle: publicStatsHandleForEntry(record.entry),
+      lane: record.entry.lane ?? "regular",
+      outcome: record.outcome,
+      submissionOrder: event.track?.submissionOrder ?? null,
+      playedOrder: event.track?.playedOrder ?? null,
+    } : null;
     const copy = publicHistoryEventCopy(eventType, track, event.details);
     return [{
       eventId: `${session.sessionId}:${event.sequence}`,
@@ -4418,6 +4446,7 @@ function publicHistoryEventsForSession(session: QueueSession, records: QueuePubl
       headline: copy.headline,
       detail: copy.detail,
       track,
+      details: publicHistoryEventDetails(event.details),
     }];
   });
 }

@@ -224,9 +224,18 @@ test("Broadcast Archive projects only retained live shows into separate Shows an
   assert.equal(result.currentShow.trackRoster.find((track) => track.trackId === "waiting").publicSourceUrl, "https://music.example.test/waiting");
   assert.equal(result.currentShow.trackRoster.find((track) => track.trackId === "next").publicSourceUrl, null);
   assert.deepEqual(result.currentShow.milestones.map((event) => event.eventType), currentLog.map((event) => event.eventType));
-  assert.equal(result.currentShow.milestones.find((event) => event.eventType === "wheel_spin_unlocked").detail, "2 Wheel spins are waiting.");
+  const wheelUnlocked = result.currentShow.milestones.find((event) => event.eventType === "wheel_spin_unlocked");
+  assert.equal(wheelUnlocked.detail, "2 Wheel spins are waiting.");
+  assert.equal(wheelUnlocked.details.wheelSpinsAdded, 1);
+  assert.equal(wheelUnlocked.details.wheelSpinsOwed, 2);
   assert.equal(result.currentShow.milestones.find((event) => event.eventType === "track_skipped").headline, "Track skipped");
   assert.equal(result.currentShow.milestones.find((event) => event.eventType === "track_playback_error").headline, "Playback issue detected");
+  const submittedMilestone = result.currentShow.milestones.find((event) => event.eventType === "track_submitted");
+  assert.equal(submittedMilestone.track.trackId, "waiting");
+  assert.equal(submittedMilestone.track.submittedByTikTokHandle, "@submitter.one");
+  assert.equal(submittedMilestone.track.lane, "regular");
+  assert.equal(submittedMilestone.track.outcome, "active");
+  assert.equal(submittedMilestone.track.submissionOrder, 3);
   assert.equal(result.shows[0].trackRoster.find((track) => track.trackId === "finished").wheelChosen, true);
 
   const neon = result.artists.find((artist) => artist.projectKey === "neon signal");

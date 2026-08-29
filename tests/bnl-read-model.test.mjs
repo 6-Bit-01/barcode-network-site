@@ -531,7 +531,7 @@ test("BNL read model preserves v1 compatibility and adds semantic sections", asy
 
   assert.equal(model.ok, true);
   assert.equal(model.version, 1);
-  assert.equal(model.schemaRevision, "1.8");
+  assert.equal(model.schemaRevision, "1.9");
   assert.equal(model.publicOnly, true);
   assert.ok(model.sections.sourceContext);
   assert.ok(model.sections.queue);

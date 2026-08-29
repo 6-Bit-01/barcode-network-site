@@ -32,6 +32,8 @@ Authenticated operators can verify the same queue-to-companion pipeline at Admin
 
 `stream-engine/`, `discord-bot/`, and `_archive/` are historical references. They are not production services and do not define current queue contracts.
 
+Archived public show milestones retain stable track links, play/submission order, lifecycle outcomes, and bounded operational details so authorized BNL consumers can reconstruct the same public-safe show sequence after the live snapshot expires.
+
 ## Requirements
 
 - Node.js 22 is the development and CI baseline. Next.js requires Node.js 20.9 or newer.

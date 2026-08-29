@@ -1569,7 +1569,7 @@ export async function GET(req?: Request) {
     {
       ok: true,
       version: 1,
-      schemaRevision: "1.8",
+      schemaRevision: "1.9",
       generatedAt: new Date().toISOString(),
       scope: privateResponse ? "bnl_private_read_model" : "bnl_public_read_model",
       source: "barcode-network-site",

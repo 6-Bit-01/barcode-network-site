@@ -190,6 +190,43 @@ test("disabled BNL read model does not read queue storage or expose queue-derive
       assert.equal(model.capabilities.queueProduction, false);
       assert.equal(model.sections.queue.available, false);
       assert.equal(model.sections.queue.reason, "queue_production_disabled");
+      assert.deepEqual(model.sections.archive, {
+        available: false,
+        reason: "queue_production_disabled",
+        schemaVersion: "queue_public_history_projection_v1",
+        source: "queue_bnl_history_projection",
+        visibility: "public_safe",
+        accessScope: "none",
+        historyCoverageStartedAt: "2026-08-24",
+        builtAt: null,
+        sourceRevision: null,
+        sourceDigest: null,
+        memoryDefault: "do_not_store",
+        sourceFileDefault: "review_evidence_only",
+        publicDossierDefault: "not_automatic",
+        overview: null,
+        currentShow: null,
+        latestShow: null,
+        shows: [],
+        artists: [],
+        recentEvents: [],
+        personalHistory: null,
+      });
+      assert.deepEqual(model.sections.artistMemory, {
+        available: false,
+        reason: "queue_production_disabled",
+        schemaVersion: "queue_artist_memory_v1",
+        source: "queue_public_artist_memory",
+        visibility: "public_safe",
+        durableMemoryAuthorized: false,
+        sourceRevision: null,
+        sourceDigest: null,
+        builtAt: null,
+        truncated: false,
+        identityPolicy: "provider_identity_then_submission_attribution_never_discord_merge",
+        lifecyclePolicy: "accepted_is_provisional_played_is_confirmed",
+        records: [],
+      });
       assert.deepEqual(model.sections.artists, []);
       assert.deepEqual(model.sections.operatorLanes.temporaryRuntimeContext, []);
       assert.deepEqual(model.sections.operatorLanes.recapCandidates, []);
@@ -257,6 +294,118 @@ test("enabled capability plus public BNL access restores public-facing queue beh
     const radioContext = model.sections.sourceContext.find((item) => item.id === "barcode_radio");
     assert.match(radioContext.summary, /native BARCODE Radio queue/);
     assert.doesNotMatch(radioContext.summary, /Auxchord/);
+  });
+});
+
+test("durable projection read failure returns versioned unavailable lanes without hiding healthy site context", async () => {
+  await withQueueProduction("true", async () => {
+    await startFreshQueueSession({
+      title: "Projection Read Failure",
+      purpose: "live_broadcast",
+      bnlPublicationStatus: "public_copy_approved",
+    });
+    await queue.setQueueOpen(true);
+    const original = queue.getQueueBnlReadProjections;
+    queue.getQueueBnlReadProjections = async () => {
+      throw new Error("simulated durable projection read failure");
+    };
+    try {
+      const response = await readModel.GET(
+        new Request("https://example.test/api/bnl/read-model"),
+      );
+      const model = await response.json();
+      assert.equal(response.status, 200);
+      assert.match(response.headers.get("cache-control"), /no-store/);
+      assert.equal(model.sections.queue.available, true);
+      assert.ok(model.sections.sourceContext.length > 0);
+      assert.ok(model.sections.dossiers.public.length > 0);
+      assert.deepEqual(
+        {
+          available: model.sections.archive.available,
+          reason: model.sections.archive.reason,
+          schemaVersion: model.sections.archive.schemaVersion,
+          sourceRevision: model.sections.archive.sourceRevision,
+          sourceDigest: model.sections.archive.sourceDigest,
+          builtAt: model.sections.archive.builtAt,
+          shows: model.sections.archive.shows,
+        },
+        {
+          available: false,
+          reason: "queue_projection_unavailable",
+          schemaVersion: "queue_public_history_projection_v1",
+          sourceRevision: null,
+          sourceDigest: null,
+          builtAt: null,
+          shows: [],
+        },
+      );
+      assert.deepEqual(
+        {
+          available: model.sections.artistMemory.available,
+          reason: model.sections.artistMemory.reason,
+          schemaVersion: model.sections.artistMemory.schemaVersion,
+          durableMemoryAuthorized:
+            model.sections.artistMemory.durableMemoryAuthorized,
+          sourceRevision: model.sections.artistMemory.sourceRevision,
+          sourceDigest: model.sections.artistMemory.sourceDigest,
+          builtAt: model.sections.artistMemory.builtAt,
+          records: model.sections.artistMemory.records,
+        },
+        {
+          available: false,
+          reason: "queue_projection_unavailable",
+          schemaVersion: "queue_artist_memory_v1",
+          durableMemoryAuthorized: false,
+          sourceRevision: null,
+          sourceDigest: null,
+          builtAt: null,
+          records: [],
+        },
+      );
+    } finally {
+      queue.getQueueBnlReadProjections = original;
+    }
+  });
+});
+
+test("queue store read failure fails every queue-owned lane closed without fabricating freshness", async () => {
+  await withQueueProduction("true", async () => {
+    const originalQueueRead = queue.getRadioQueueState;
+    const originalProjectionRead = queue.getQueueBnlReadProjections;
+    let durableProjectionReads = 0;
+    queue.getRadioQueueState = async () => {
+      throw new Error("simulated queue store read failure");
+    };
+    queue.getQueueBnlReadProjections = async () => {
+      durableProjectionReads += 1;
+      throw new Error("durable projection read should be skipped");
+    };
+    try {
+      const response = await readModel.GET(
+        new Request("https://example.test/api/bnl/read-model"),
+      );
+      const model = await response.json();
+      assert.equal(response.status, 200);
+      assert.match(response.headers.get("cache-control"), /no-store/);
+      assert.equal(durableProjectionReads, 0);
+      assert.deepEqual(model.sections.queue, {
+        available: false,
+        reason: "queue_projection_unavailable",
+        message: "The BARCODE Radio queue projection is temporarily unavailable.",
+      });
+      for (const section of [model.sections.archive, model.sections.artistMemory]) {
+        assert.equal(section.available, false);
+        assert.equal(section.reason, "queue_projection_unavailable");
+        assert.equal(section.sourceRevision, null);
+        assert.equal(section.sourceDigest, null);
+        assert.equal(section.builtAt, null);
+      }
+      assert.ok(model.sections.sourceContext.length > 0);
+      assert.ok(model.sections.dossiers.public.length > 0);
+    } finally {
+      queue.getRadioQueueState = originalQueueRead;
+      queue.getQueueBnlReadProjections = originalProjectionRead;
+    }
   });
 });
 

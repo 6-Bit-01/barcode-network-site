@@ -4162,6 +4162,7 @@ function publicSubmitterStatus(session: QueueSession, identity?: { submitterToke
   };
 }
 
+export const QUEUE_PUBLIC_HISTORY_SCHEMA_VERSION = "queue_public_history_projection_v1" as const;
 export const QUEUE_PUBLIC_HISTORY_COVERAGE_STARTED_AT = "2026-08-24" as const;
 
 type QueuePublicStatsStage = "waiting" | "up_next" | "now_playing" | "terminal";
@@ -4559,7 +4560,7 @@ function buildQueueStatsProjection(input: {
   const sourceRevision = Math.max(0, Math.floor(input.revision));
   const builtAt = eligibleSessions.map(({ session }) => session.updatedAt).filter(Boolean).sort().at(-1) ?? null;
   const digestInput = {
-    schemaVersion: "queue_public_history_projection_v1",
+    schemaVersion: QUEUE_PUBLIC_HISTORY_SCHEMA_VERSION,
     historyCoverageStartedAt: QUEUE_PUBLIC_HISTORY_COVERAGE_STARTED_AT,
     sourceRevision,
     sessions: eligibleSessions.map(({ session, records, events }) => ({
@@ -4579,7 +4580,7 @@ function buildQueueStatsProjection(input: {
     .slice(0, 16);
 
   return {
-    schemaVersion: "queue_public_history_projection_v1",
+    schemaVersion: QUEUE_PUBLIC_HISTORY_SCHEMA_VERSION,
     source: "queue_public_history_projection",
     visibility: "public_safe",
     historyCoverageStartedAt: QUEUE_PUBLIC_HISTORY_COVERAGE_STARTED_AT,

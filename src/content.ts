@@ -463,7 +463,7 @@ export const databasePage = {
       role: "Community Radio Program",
       origin: "KNOWN" as const,
       summary:
-        "Community-powered live radio program. Accepts submissions via Auxchord. Broadcasts every Friday.",
+        "Community-powered weekly live radio program. Current submission instructions are published through the official BARCODE Radio route.",
       tags: ["radio", "broadcast", "producer"],
       notes:
         "Submissions open 6:40 PM PT. Show starts 7:00 PM PT. Music starts 7:05 PM PT.",
@@ -511,9 +511,9 @@ export const databasePage = {
       role: "Music Submission Platform",
       origin: "KNOWN" as const,
       summary:
-        "Music platform integration for submissions. Primary intake for BARCODE Radio queue.",
+        "External music-submission platform retained as a historical BARCODE Radio intake interface record.",
       tags: ["tech", "automation", "systems"],
-      notes: "External partner. Submission pipeline is automated.",
+      notes: "Historical integration record. Current submission instructions live on BARCODE Radio.",
       link: "https://aux.fan/@barcode_radio",
       files: [] as {
         name: string;

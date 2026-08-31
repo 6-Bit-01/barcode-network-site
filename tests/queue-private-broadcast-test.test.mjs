@@ -7,6 +7,7 @@ import ts from "typescript";
 
 delete process.env.UPSTASH_REDIS_REST_URL;
 delete process.env.UPSTASH_REDIS_REST_TOKEN;
+process.env.BARCODE_QUEUE_PRODUCTION_ENABLED = "true";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const originalResolveFilename = Module._resolveFilename;
@@ -298,8 +299,8 @@ test("only a signed rehearsal link extends private intake and checkout beyond au
   assert.match(publicQueueRoute, /allowAdminPrivateSession/);
   assert.match(publicQueueRoute, /allowRehearsalSession/);
   assert.match(uploadRoute, /requestHasRehearsalQueueAccess\(request, snapshot\.session, snapshot\.sessionActive === true\)/);
-  assert.match(priorityRoute, /requestHasRehearsalQueueAccess\(req, snapshot\.session, snapshot\.sessionActive === true\)/);
-  assert.match(signalHoldRoute, /requestHasRehearsalQueueAccess\(req, snapshot\.session, snapshot\.sessionActive === true\)/);
+  assert.match(priorityRoute, /resolveQueueRequestAccess\(req, snapshot\.session, snapshot\.sessionActive === true\)/);
+  assert.match(signalHoldRoute, /resolveQueueRequestAccess\(req, snapshot\.session, snapshot\.sessionActive === true\)/);
   assert.match(accessBoundary, /isCurrentSession/);
   assert.match(accessBoundary, /session\.purpose === "rehearsal"/);
   assert.match(accessBoundary, /session\.status !== "archived"/);

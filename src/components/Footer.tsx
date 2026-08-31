@@ -1,11 +1,10 @@
 import Link from "next/link";
 import Image from "next/image";
 import { siteConfig, externalLinks } from "@/content";
-import { getRadioSubmissionRouting } from "@/lib/radio-submission-routing";
+import type { RadioSubmissionRouting } from "@/lib/radio-submission-routing";
 
-export function Footer() {
+export function Footer({ submission }: { submission: RadioSubmissionRouting }) {
   const currentYear = new Date().getFullYear();
-  const submission = getRadioSubmissionRouting();
 
   return (
     <footer className="border-t border-border bg-background pb-10">

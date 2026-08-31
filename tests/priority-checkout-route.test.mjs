@@ -58,9 +58,11 @@ async function withCheckoutMocks(mocks, callback) {
     createPrioritySignalCheckoutSession: stripe.createPrioritySignalCheckoutSession,
     secret: process.env.STRIPE_SECRET_KEY,
     webhook: process.env.STRIPE_WEBHOOK_SECRET,
+    queueProduction: process.env.BARCODE_QUEUE_PRODUCTION_ENABLED,
   };
   process.env.STRIPE_SECRET_KEY = "sk_test_priority_boundary";
   process.env.STRIPE_WEBHOOK_SECRET = "whsec_priority_boundary";
+  process.env.BARCODE_QUEUE_PRODUCTION_ENABLED = "true";
   queue.getPublicQueueSnapshot = mocks.getPublicQueueSnapshot ?? (async (sessionId) => ({ session: { sessionId, purpose: "live_broadcast" } }));
   queue.requestPriorityCheckout = mocks.requestPriorityCheckout ?? originals.requestPriorityCheckout;
   queue.markPriorityUpgradeCheckoutPending = mocks.markPriorityUpgradeCheckoutPending ?? originals.markPriorityUpgradeCheckoutPending;
@@ -76,6 +78,8 @@ async function withCheckoutMocks(mocks, callback) {
     else process.env.STRIPE_SECRET_KEY = originals.secret;
     if (originals.webhook === undefined) delete process.env.STRIPE_WEBHOOK_SECRET;
     else process.env.STRIPE_WEBHOOK_SECRET = originals.webhook;
+    if (originals.queueProduction === undefined) delete process.env.BARCODE_QUEUE_PRODUCTION_ENABLED;
+    else process.env.BARCODE_QUEUE_PRODUCTION_ENABLED = originals.queueProduction;
   }
 }
 

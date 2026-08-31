@@ -1,12 +1,34 @@
 /* eslint-disable react/jsx-no-comment-textnodes */
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { PublicQueueGateway } from "@/components/PublicQueueGateway";
+import { COOKIE_NAME, REHEARSAL_QUEUE_COOKIE_NAME } from "@/lib/auth";
+import { getPublicQueueSnapshot } from "@/lib/queue";
+import { resolveQueueCookieAccess } from "@/lib/queue-rehearsal-access";
 
 export const metadata = {
   title: "BARCODE Radio Queue | BARCODE Network",
   description: "BARCODE Radio public queue gateway.",
 };
 
-export default function QueuePage() {
+export default async function QueuePage() {
+  const cookieStore = await cookies();
+  const adminToken = cookieStore.get(COOKIE_NAME)?.value;
+  const rehearsalToken = cookieStore.get(REHEARSAL_QUEUE_COOKIE_NAME)?.value;
+  let access = await resolveQueueCookieAccess({ adminToken, rehearsalToken });
+
+  if (!access.authorized && rehearsalToken) {
+    const snapshot = await getPublicQueueSnapshot();
+    access = await resolveQueueCookieAccess({
+      adminToken,
+      rehearsalToken,
+      session: snapshot.session,
+      isCurrentSession: snapshot.sessionActive === true,
+    });
+  }
+
+  if (!access.authorized) redirect("/radio");
+
   return (
     <main className="pt-14 min-h-screen">
       <section className="border-b border-border noise-bg">

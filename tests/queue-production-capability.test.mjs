@@ -86,6 +86,21 @@ test("queue production capability defaults false and only exact true enables it"
   assert.equal(capability.isQueueProductionEnabled({ BARCODE_QUEUE_PRODUCTION_ENABLED: "true" }), true);
 });
 
+test("one operational access decision admits only production, admin, or a valid rehearsal capability", () => {
+  const disabled = {};
+  assert.deepEqual(capability.resolveQueueOperationalAccess({}, disabled), {
+    authorized: false,
+    authority: null,
+    productionEnabled: false,
+    isAdmin: false,
+    hasRehearsalAccess: false,
+  });
+  assert.equal(capability.resolveQueueOperationalAccess({ isAdmin: true }, disabled).authority, "admin");
+  assert.equal(capability.resolveQueueOperationalAccess({ hasRehearsalAccess: true }, disabled).authority, "rehearsal");
+  assert.equal(capability.resolveQueueOperationalAccess({}, { BARCODE_QUEUE_PRODUCTION_ENABLED: "true" }).authority, "production");
+  assert.equal(capability.resolveQueueOperationalAccess({}, { BARCODE_QUEUE_PRODUCTION_ENABLED: "TRUE" }).authorized, false);
+});
+
 test("Radio submission routing falls back to Auxchord and only exact true cuts over to the native queue", () => {
   for (const value of [undefined, "", "TRUE", "1", "yes"]) {
     const env = value === undefined ? {} : { BARCODE_QUEUE_PRODUCTION_ENABLED: value };

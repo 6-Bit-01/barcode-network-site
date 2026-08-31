@@ -55,3 +55,34 @@ test("the rehearsal cookie authorizes only the current active rehearsal session"
   assert.equal(await access.requestHasRehearsalQueueAccess(request, { ...base, broadcastPhase: "ended" }, true), false);
   assert.equal(await access.requestHasRehearsalQueueAccess(request, { ...base, sessionId: "session_other" }, true), false);
 });
+
+test("cookie access preserves admin and exact current rehearsal paths while production is disabled", async () => {
+  const sessionId = "session_rehearsal_cookie_access";
+  const session = { sessionId, purpose: "rehearsal", status: "open", broadcastPhase: "submission_window" };
+  const adminToken = await auth.createAdminToken();
+  const rehearsalToken = await auth.createRehearsalQueueToken(sessionId);
+  const disabled = {};
+
+  assert.equal((await access.resolveQueueCookieAccess({}, disabled)).authorized, false);
+  assert.equal((await access.resolveQueueCookieAccess({ adminToken }, disabled)).authority, "admin");
+  assert.equal((await access.resolveQueueCookieAccess({
+    rehearsalToken,
+    session,
+    isCurrentSession: true,
+    requestedSessionId: sessionId,
+  }, disabled)).authority, "rehearsal");
+  assert.equal((await access.resolveQueueCookieAccess({
+    rehearsalToken,
+    session,
+    isCurrentSession: true,
+    requestedSessionId: "session_other",
+  }, disabled)).authorized, false);
+  assert.equal((await access.resolveQueueCookieAccess({
+    rehearsalToken,
+    session: { ...session, broadcastPhase: "ended" },
+    isCurrentSession: true,
+  }, disabled)).authorized, false);
+  assert.equal((await access.resolveQueueCookieAccess({}, {
+    BARCODE_QUEUE_PRODUCTION_ENABLED: "true",
+  })).authority, "production");
+});

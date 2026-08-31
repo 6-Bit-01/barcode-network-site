@@ -99,14 +99,20 @@ test("BNL relay surfaces loading, confirmed, degraded sync, and unavailable retr
 });
 
 test("operational Radio submission surfaces share the gated route while historical Auxchord identity remains intact", () => {
+  const layout = read("src/app/layout.tsx");
   const radio = read("src/app/radio/page.tsx");
   const footer = read("src/components/Footer.tsx");
+  const siteChrome = read("src/components/SiteChrome.tsx");
   const terminal = read("src/app/terminal/page.tsx");
   const readModel = read("src/app/api/bnl/read-model/route.ts");
   const content = read("src/content.ts");
 
   assert.match(radio, /getRadioSubmissionRouting/);
-  assert.match(footer, /getRadioSubmissionRouting/);
+  assert.match(layout, /getRadioSubmissionRouting/);
+  assert.match(layout, /radioSubmission=\{radioSubmission\}/);
+  assert.doesNotMatch(footer, /getRadioSubmissionRouting/);
+  assert.match(footer, /submission: RadioSubmissionRouting/);
+  assert.match(siteChrome, /<Footer submission=\{radioSubmission\}/);
   assert.match(terminal, /getRadioSubmissionRouting/);
   assert.match(readModel, /getRadioSubmissionRouting/);
   assert.doesNotMatch(radio, /externalLinks\.auxchord/);

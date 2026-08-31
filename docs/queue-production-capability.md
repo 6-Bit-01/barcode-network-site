@@ -12,6 +12,8 @@ The public queue history projection also returns an empty, revision-free result 
 
 Operational Radio submission surfaces also remain on the established Auxchord route while disabled. This includes the Radio page, Footer resource and description, Terminal `RADIO` response, and the BARCODE Radio sentence in BNL's public source context. Historical Auxchord database records and dossiers are canon records, not operational routing, and are unchanged by the capability.
 
+Direct native entry points use the same outer boundary. Anonymous `/queue` and `/queue/[sessionId]` visits return to Radio, legacy `/obs` is unavailable, and `/api/queue`, upload-token generation, Priority checkout initiation, and Signal Hold checkout initiation return a private no-store `404`. Authenticated admin access and a valid capability for the exact current rehearsal remain the only private exceptions. Stripe webhook reconciliation is deliberately outside this presentation/intake gate so an already-started payment can still settle idempotently during rollback.
+
 ## Authorized testing that remains available
 
 Queue testing and admin workflows may continue in their existing authorized surfaces. Admin → Queue Control → Private Broadcast Test is the verification lane for rehearsal, simulation, internal-test, and normalized legacy/unknown sessions. It selects one persisted session and reuses the production Broadcast Deck and Broadcast Archive components through an authenticated, no-store, noindex API. Its readback reports the fresh queue-store revision, provenance, persisted track/event counts, and projection digest so the operator can verify that queue writes were saved and then read by the companion projection.
@@ -151,6 +153,7 @@ Every access mode is read-only. BNL never receives queue mutation or playback co
 11. Confirm `/radio`, the Footer, and Terminal `RADIO` route submission to `/queue` as internal links.
 12. Confirm `/queue` shows an honest closed/waiting state when no session is open and the active session when one is open.
 13. Keep the bot's separate queue-production gate disabled until the site and private-channel boundary are verified and the owner explicitly approves bot queue context.
+14. Disable the capability in a preview and confirm anonymous `/queue`, `/queue/<active-session>`, `/api/queue`, upload initiation, both checkout-initiation routes, and `/obs` fail closed while the admin surface and a current signed rehearsal invitation still work. Confirm signed Stripe webhooks continue to reconcile.
 
 ## Rollback
 

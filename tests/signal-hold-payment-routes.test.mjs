@@ -110,9 +110,11 @@ async function withCheckoutMocks(mocks, callback) {
     createSignalHoldCheckoutSession: stripe.createSignalHoldCheckoutSession,
     secret: process.env.STRIPE_SECRET_KEY,
     webhook: process.env.STRIPE_WEBHOOK_SECRET,
+    queueProduction: process.env.BARCODE_QUEUE_PRODUCTION_ENABLED,
   };
   process.env.STRIPE_SECRET_KEY = "sk_test_signal_hold_boundary";
   process.env.STRIPE_WEBHOOK_SECRET = "whsec_signal_hold_boundary";
+  process.env.BARCODE_QUEUE_PRODUCTION_ENABLED = "true";
   queue.getPublicQueueSnapshot = mocks.getPublicQueueSnapshot ?? (async (sessionId) => ({ session: { sessionId, purpose: "live_broadcast" } }));
   queue.requestSignalHoldCheckout = mocks.requestSignalHoldCheckout ?? originals.requestSignalHoldCheckout;
   queue.markSignalHoldCheckoutPending = mocks.markSignalHoldCheckoutPending ?? originals.markSignalHoldCheckoutPending;
@@ -128,6 +130,8 @@ async function withCheckoutMocks(mocks, callback) {
     else process.env.STRIPE_SECRET_KEY = originals.secret;
     if (originals.webhook === undefined) delete process.env.STRIPE_WEBHOOK_SECRET;
     else process.env.STRIPE_WEBHOOK_SECRET = originals.webhook;
+    if (originals.queueProduction === undefined) delete process.env.BARCODE_QUEUE_PRODUCTION_ENABLED;
+    else process.env.BARCODE_QUEUE_PRODUCTION_ENABLED = originals.queueProduction;
   }
 }
 

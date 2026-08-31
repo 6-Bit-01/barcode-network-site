@@ -4,6 +4,7 @@ import "./globals.css";
 import { LiveStatusProvider } from "@/components/LiveStatusProvider";
 import { BNLStatusProvider } from "@/components/BNLStatusProvider";
 import { SiteChrome } from "@/components/SiteChrome";
+import { getRadioSubmissionRouting } from "@/lib/radio-submission-routing";
 
 const fontVariables = {
   "--font-geist-mono": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace",
@@ -45,6 +46,8 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const radioSubmission = getRadioSubmissionRouting();
+
   return (
     <html lang="en" className="dark">
       <head>
@@ -61,7 +64,7 @@ export default function RootLayout({
       >
         <LiveStatusProvider>
           <BNLStatusProvider>
-            <SiteChrome>{children}</SiteChrome>
+            <SiteChrome radioSubmission={radioSubmission}>{children}</SiteChrome>
           </BNLStatusProvider>
         </LiveStatusProvider>
       </body>

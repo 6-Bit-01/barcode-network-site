@@ -3,9 +3,9 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { PublicQueueSession } from "@/components/PublicQueueSession";
-import { COOKIE_NAME, REHEARSAL_QUEUE_COOKIE_NAME, verifyAdminToken, verifyRehearsalQueueToken } from "@/lib/auth";
+import { COOKIE_NAME, REHEARSAL_QUEUE_COOKIE_NAME } from "@/lib/auth";
 import { getPublicQueueSnapshot, sanitizeQueueSnapshotForPublic } from "@/lib/queue";
-import { isActiveRehearsalSession } from "@/lib/queue-rehearsal-access";
+import { resolveQueueCookieAccess } from "@/lib/queue-rehearsal-access";
 
 export const metadata = {
   title: "BARCODE Radio Broadcast Queue | BARCODE Network",
@@ -16,13 +16,24 @@ export default async function QueueSessionPage({ params }: { params: Promise<{ s
   const cookieStore = await cookies();
   const token = cookieStore.get(COOKIE_NAME)?.value;
   const rehearsalToken = cookieStore.get(REHEARSAL_QUEUE_COOKIE_NAME)?.value;
-  const isAdmin = Boolean(token && await verifyAdminToken(token));
+  const preliminaryAccess = await resolveQueueCookieAccess({
+    adminToken: token,
+    rehearsalToken,
+  });
+  if (!preliminaryAccess.authorized && !rehearsalToken) redirect("/radio");
+
   const rawSnapshot = await getPublicQueueSnapshot();
-  const hasRehearsalAccess = isActiveRehearsalSession(rawSnapshot.session, rawSnapshot.sessionActive === true)
-    && rawSnapshot.session.sessionId === sessionId
-    && Boolean(rehearsalToken)
-    && await verifyRehearsalQueueToken(rehearsalToken ?? "", sessionId);
-  const snapshot = isAdmin || hasRehearsalAccess ? rawSnapshot : sanitizeQueueSnapshotForPublic(rawSnapshot);
+  const access = await resolveQueueCookieAccess({
+    adminToken: token,
+    rehearsalToken,
+    session: rawSnapshot.session,
+    isCurrentSession: rawSnapshot.sessionActive === true,
+    requestedSessionId: sessionId,
+  });
+  if (!access.authorized) redirect("/radio");
+  const snapshot = access.isAdmin || access.hasRehearsalAccess
+    ? rawSnapshot
+    : sanitizeQueueSnapshotForPublic(rawSnapshot);
   if (!snapshot.session) {
     return (
       <main className="pt-14 min-h-screen">
@@ -67,7 +78,7 @@ export default async function QueueSessionPage({ params }: { params: Promise<{ s
       <section className="mx-auto max-w-6xl px-4 pb-8 pt-0 sm:px-6">
         <PublicQueueSession
           sessionId={sessionId}
-          snapshotEndpoint={isAdmin && snapshot.session?.purpose !== "live_broadcast"
+          snapshotEndpoint={access.isAdmin && snapshot.session?.purpose !== "live_broadcast"
             ? `/api/admin/queue/broadcast-preview?kind=snapshot&sessionId=${encodeURIComponent(sessionId)}`
             : "/api/queue"}
         />

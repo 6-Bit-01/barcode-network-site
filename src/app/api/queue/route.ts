@@ -5,6 +5,7 @@ import { getLiveOverlayRuntimeState } from "@/lib/live-overlay";
 import { attachQueueLiveTiming } from "@/lib/queue-live-timing";
 import { verifyAdminRequest, verifyRehearsalQueueToken } from "@/lib/auth";
 import { isActiveRehearsalSession, requestHasRehearsalQueueAccess, requestRehearsalQueueToken } from "@/lib/queue-rehearsal-access";
+import { QUEUE_OPERATIONAL_UNAVAILABLE_CODE, QUEUE_OPERATIONAL_UNAVAILABLE_MESSAGE, resolveQueueOperationalAccess } from "@/lib/queue-production";
 import type { QueueEntry } from "@/lib/queue-types";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +19,13 @@ const BLOB_HOST_SUFFIX = ".private.blob.vercel-storage.com";
 const UPLOAD_PREFIX = "/barcode-radio-queue/";
 const SESSION_SYNC_MESSAGE = "This session has changed. Re-enter the current BARCODE Radio queue and submit again.";
 const QUEUE_ACCEPTANCE_UNCONFIRMED_MESSAGE = "Submission could not be confirmed in the queue. Please try again.";
+
+function queueUnavailableResponse(): NextResponse {
+  return NextResponse.json(
+    { error: QUEUE_OPERATIONAL_UNAVAILABLE_MESSAGE, code: QUEUE_OPERATIONAL_UNAVAILABLE_CODE },
+    { status: 404, headers: { "Cache-Control": "private, no-store, max-age=0" } },
+  );
+}
 
 function validateUploadedBlobUrl(value: unknown): string {
   if (typeof value !== "string" || !value.trim()) throw new Error("Uploaded audio file is missing.");
@@ -115,6 +123,11 @@ async function hasDuplicateUploadSubmission(fileName: string, fileSize: number, 
 }
 
 export async function GET(req: Request) {
+  const isAdmin = await verifyAdminRequest(req);
+  const rehearsalAccessToken = requestRehearsalQueueToken(req);
+  const preliminaryAccess = resolveQueueOperationalAccess({ isAdmin });
+  if (!preliminaryAccess.authorized && !rehearsalAccessToken) return queueUnavailableResponse();
+
   const params = new URL(req.url).searchParams;
   const sessionId = params.get("sessionId") ?? undefined;
   const now = new Date();
@@ -125,7 +138,11 @@ export async function GET(req: Request) {
     artist: params.get("artist"),
   });
   const hasRehearsalAccess = await requestHasRehearsalQueueAccess(req, rawSnapshot.session, rawSnapshot.sessionActive === true);
-  const snapshot = hasRehearsalAccess ? rawSnapshot : sanitizeQueueSnapshotForPublic(rawSnapshot);
+  const access = resolveQueueOperationalAccess({ isAdmin, hasRehearsalAccess });
+  if (!access.authorized) return queueUnavailableResponse();
+  const snapshot = access.isAdmin || access.hasRehearsalAccess
+    ? rawSnapshot
+    : sanitizeQueueSnapshotForPublic(rawSnapshot);
   if (snapshot.sessionActive !== true) {
     return NextResponse.json(attachQueueLiveTiming(snapshot, null, null, now));
   }
@@ -137,12 +154,19 @@ export async function POST(req: Request) {
   try {
     const allowAdminPrivateSession = await verifyAdminRequest(req);
     const rehearsalAccessToken = requestRehearsalQueueToken(req);
+    const preliminaryAccess = resolveQueueOperationalAccess({ isAdmin: allowAdminPrivateSession });
+    if (!preliminaryAccess.authorized && !rehearsalAccessToken) return queueUnavailableResponse();
     const contentType = req.headers.get("content-type") ?? "";
     if (contentType.includes("application/json")) {
       const body = await req.json().catch(() => ({}));
       if (body.action === "priorityUpgradePlaceholder" && typeof body.id === "string") {
         const active = await getPublicQueueSnapshot();
         const allowRehearsalSession = await requestHasRehearsalQueueAccess(req, active.session, active.sessionActive === true);
+        const access = resolveQueueOperationalAccess({
+          isAdmin: allowAdminPrivateSession,
+          hasRehearsalAccess: allowRehearsalSession,
+        });
+        if (!access.authorized) return queueUnavailableResponse();
         if (active.session?.purpose !== "live_broadcast" && !allowAdminPrivateSession && !allowRehearsalSession) {
           return NextResponse.json({ error: SESSION_SYNC_MESSAGE, code: "private_session" }, { status: 409 });
         }
@@ -178,6 +202,9 @@ export async function submitTrackFromBody(
   body: Record<string, unknown>,
   options: { allowAdminPrivateSession?: boolean; rehearsalAccessToken?: string } = {},
 ): Promise<NextResponse> {
+  const preliminaryAccess = resolveQueueOperationalAccess({ isAdmin: options.allowAdminPrivateSession });
+  if (!preliminaryAccess.authorized && !options.rehearsalAccessToken) return queueUnavailableResponse();
+
   const artist = cleanBodyText(body.artist);
   const title = cleanBodyText(body.title);
   const mode = cleanBodyText(body.mode);
@@ -224,6 +251,11 @@ export async function submitTrackFromBody(
   const allowRehearsalSession = isActiveRehearsalSession(active.session, active.sessionActive === true)
     && Boolean(options.rehearsalAccessToken)
     && await verifyRehearsalQueueToken(options.rehearsalAccessToken ?? "", active.session.sessionId);
+  const access = resolveQueueOperationalAccess({
+    isAdmin: options.allowAdminPrivateSession,
+    hasRehearsalAccess: allowRehearsalSession,
+  });
+  if (!access.authorized) return queueUnavailableResponse();
   if (active.session.purpose !== "live_broadcast" && options.allowAdminPrivateSession !== true && !allowRehearsalSession) {
     return NextResponse.json({ error: SESSION_SYNC_MESSAGE, code: "private_session" }, { status: 409 });
   }

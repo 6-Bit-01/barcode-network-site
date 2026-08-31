@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { verifyAdminRequest } from "@/lib/auth";
 import { getPublicQueueSnapshot } from "@/lib/queue";
 import { requestHasRehearsalQueueAccess } from "@/lib/queue-rehearsal-access";
+import { QUEUE_OPERATIONAL_UNAVAILABLE_CODE, QUEUE_OPERATIONAL_UNAVAILABLE_MESSAGE, resolveQueueOperationalAccess } from "@/lib/queue-production";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -42,6 +43,7 @@ export function assertUploadSessionOpen(isOpen: boolean, isFull: boolean | undef
 export async function POST(request: Request): Promise<NextResponse> {
   const body = (await request.json()) as HandleUploadBody;
   const allowAdminPrivateSession = await verifyAdminRequest(request);
+  let queueAccessDenied = false;
 
   try {
     const jsonResponse = await handleUpload({
@@ -50,8 +52,18 @@ export async function POST(request: Request): Promise<NextResponse> {
       onBeforeGenerateToken: async (pathname, clientPayload) => {
         const payload = parseClientPayload(clientPayload);
         const snapshot = await getPublicQueueSnapshot();
+        const allowRehearsalSession = snapshot.session
+          ? await requestHasRehearsalQueueAccess(request, snapshot.session, snapshot.sessionActive === true)
+          : false;
+        const access = resolveQueueOperationalAccess({
+          isAdmin: allowAdminPrivateSession,
+          hasRehearsalAccess: allowRehearsalSession,
+        });
+        if (!access.authorized) {
+          queueAccessDenied = true;
+          throw new Error(QUEUE_OPERATIONAL_UNAVAILABLE_MESSAGE);
+        }
         if (!snapshot.session) throw new Error(SESSION_SYNC_MESSAGE);
-        const allowRehearsalSession = await requestHasRehearsalQueueAccess(request, snapshot.session, snapshot.sessionActive === true);
         if (snapshot.session.purpose !== "live_broadcast" && !allowAdminPrivateSession && !allowRehearsalSession) throw new Error(SESSION_SYNC_MESSAGE);
 
         assertCurrentUploadSession(payload.sessionId, snapshot.session.sessionId);
@@ -77,6 +89,12 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json(jsonResponse);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Upload could not be completed.";
+    if (queueAccessDenied || message === QUEUE_OPERATIONAL_UNAVAILABLE_MESSAGE) {
+      return NextResponse.json(
+        { error: QUEUE_OPERATIONAL_UNAVAILABLE_MESSAGE, code: QUEUE_OPERATIONAL_UNAVAILABLE_CODE },
+        { status: 404, headers: { "Cache-Control": "private, no-store, max-age=0" } },
+      );
+    }
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

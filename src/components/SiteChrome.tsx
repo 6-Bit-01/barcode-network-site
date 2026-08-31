@@ -2,12 +2,13 @@
 
 import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
+import type { RadioSubmissionRouting } from "@/lib/radio-submission-routing";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { DataStream } from "@/components/DataStream";
 import { BNLNetworkRelayShell } from "@/components/BNLNetworkRelayShell";
 
-export function SiteChrome({ children }: { children: ReactNode }) {
+export function SiteChrome({ children, radioSubmission }: { children: ReactNode; radioSubmission: RadioSubmissionRouting }) {
   const pathname = usePathname();
 
   if (pathname === "/world/playtest" || pathname.startsWith("/overlay/")) {
@@ -29,7 +30,7 @@ export function SiteChrome({ children }: { children: ReactNode }) {
       >
         {children}
       </main>
-      <Footer />
+      <Footer submission={radioSubmission} />
     </>
   );
 }

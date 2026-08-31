@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { createHash, timingSafeEqual } from "node:crypto";
-import { verifyAdminRequest } from "@/lib/auth";
 import { createSignalHoldCheckoutSession } from "@/lib/stripe";
 import { getPublicQueueSnapshot, markSignalHoldCheckoutPending, requestSignalHoldCheckout } from "@/lib/queue";
-import { requestHasRehearsalQueueAccess } from "@/lib/queue-rehearsal-access";
+import { resolveQueueRequestAccess } from "@/lib/queue-rehearsal-access";
+import { QUEUE_OPERATIONAL_UNAVAILABLE_CODE, QUEUE_OPERATIONAL_UNAVAILABLE_MESSAGE } from "@/lib/queue-production";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -48,16 +48,24 @@ function storedCheckoutStillUsable(track: {
   return Number.isFinite(expiresAt) && expiresAt > Date.now() + 60_000;
 }
 
+function queueUnavailableResponse(): NextResponse {
+  return NextResponse.json(
+    { error: QUEUE_OPERATIONAL_UNAVAILABLE_MESSAGE, code: QUEUE_OPERATIONAL_UNAVAILABLE_CODE },
+    { status: 404, headers: { "Cache-Control": "private, no-store, max-age=0" } },
+  );
+}
+
 export async function POST(req: Request) {
   try {
-    if (!stripeReady()) return NextResponse.json({ error: "Signal Hold checkout is temporarily unavailable. Please try again later." }, { status: 503 });
     const body = await req.json().catch(() => ({}));
     const trackId = cleanText(body.trackId);
     const sessionId = cleanText(body.sessionId);
     if (!trackId || !sessionId) return NextResponse.json({ error: "Signal Hold is not available for this track." }, { status: 400 });
     const snapshot = await getPublicQueueSnapshot(sessionId);
-    const allowPrivateSession = await verifyAdminRequest(req) || await requestHasRehearsalQueueAccess(req, snapshot.session, snapshot.sessionActive === true);
-    if (snapshot.session?.sessionId !== sessionId || (snapshot.session.purpose !== "live_broadcast" && !allowPrivateSession)) {
+    const access = await resolveQueueRequestAccess(req, snapshot.session, snapshot.sessionActive === true);
+    if (!access.authorized) return queueUnavailableResponse();
+    if (!stripeReady()) return NextResponse.json({ error: "Signal Hold checkout is temporarily unavailable. Please try again later." }, { status: 503 });
+    if (snapshot.session?.sessionId !== sessionId || (snapshot.session.purpose !== "live_broadcast" && !access.isAdmin && !access.hasRehearsalAccess)) {
       return NextResponse.json({ error: "Signal Hold is not available for this track." }, { status: 409 });
     }
     const checkoutOwnerToken = cleanCheckoutOwnerToken(body.checkoutOwnerToken);

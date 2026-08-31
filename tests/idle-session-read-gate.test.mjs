@@ -43,7 +43,21 @@ function loadQueueRoute(snapshot) {
       toPublicQueueTrack: (value) => value,
     };
     if (request === "@/lib/auth") return { verifyAdminRequest: async () => false };
-    if (request === "@/lib/queue-rehearsal-access") return { requestHasRehearsalQueueAccess: async () => false };
+    if (request === "@/lib/queue-rehearsal-access") return {
+      requestHasRehearsalQueueAccess: async () => false,
+      requestRehearsalQueueToken: () => "",
+    };
+    if (request === "@/lib/queue-production") return {
+      QUEUE_OPERATIONAL_UNAVAILABLE_CODE: "queue_production_disabled",
+      QUEUE_OPERATIONAL_UNAVAILABLE_MESSAGE: "The native BARCODE Radio queue is not available.",
+      resolveQueueOperationalAccess: ({ isAdmin = false, hasRehearsalAccess = false } = {}) => ({
+        authorized: true,
+        authority: isAdmin ? "admin" : hasRehearsalAccess ? "rehearsal" : "production",
+        productionEnabled: true,
+        isAdmin,
+        hasRehearsalAccess,
+      }),
+    };
     if (request === "@/lib/live-overlay") return {
       getLiveOverlayRuntimeState: async () => {
         calls.runtime += 1;

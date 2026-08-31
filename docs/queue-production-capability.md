@@ -10,6 +10,15 @@ While disabled, queue sessions and tracks do not affect global live status, publ
 
 The public queue history projection also returns an empty, revision-free result while disabled. This keeps `/api/queue/stats`, the Broadcast Deck, and the public Broadcast Archive dark even if a live-broadcast session exists in the queue store. The authenticated Admin → Queue Control preview uses its separate private projection and remains available for rehearsal verification.
 
+The BNL read model distinguishes an empty durable projection from an unavailable
+one. `sections.archive` and `sections.artistMemory` always retain their versioned
+schema/source/policy envelope. While disabled, unauthorized, or temporarily
+unreadable, they report `available=false` with an explicit reason and `null`
+source revision, digest, and build time. They never substitute the request-time
+`generatedAt` value or a zero revision as evidence of durable freshness. A
+transient queue/projection read failure is returned no-store and does not make
+unrelated BNL sections unavailable.
+
 Operational Radio submission surfaces also remain on the established Auxchord route while disabled. This includes the Radio page, Footer resource and description, Terminal `RADIO` response, and the BARCODE Radio sentence in BNL's public source context. Historical Auxchord database records and dossiers are canon records, not operational routing, and are unchanged by the capability.
 
 ## Authorized testing that remains available

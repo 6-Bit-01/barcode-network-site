@@ -313,6 +313,18 @@ test("private BNL access requires the shared API key and includes private test e
   assert.equal(anonymous.accessScope, "none");
   assert.equal(anonymous.sections.queue.available, false);
   assert.equal(anonymous.sections.queue.reason, "queue_data_unavailable");
+  assert.equal(anonymous.sections.archive.available, false);
+  assert.equal(
+    anonymous.sections.archive.reason,
+    "current_session_does_not_authorize_bnl_queue_access",
+  );
+  assert.equal(
+    anonymous.sections.archive.schemaVersion,
+    "queue_public_history_projection_v1",
+  );
+  assert.equal(anonymous.sections.archive.sourceRevision, null);
+  assert.equal(anonymous.sections.archive.sourceDigest, null);
+  assert.equal(anonymous.sections.archive.builtAt, null);
   assert.equal(Object.hasOwn(anonymous.sections.queue, "publication"), false);
   assert.equal(JSON.stringify(anonymous.sections.queue).includes("rehearsal"), false);
   assert.equal(JSON.stringify(anonymous).includes("private_authentication_required"), false);
@@ -339,6 +351,7 @@ test("private BNL access requires the shared API key and includes private test e
     ...privateModel.sections.queue.completed,
   ].filter(Boolean).some((item) => item.isSimulation === true));
   assert.equal(privateModel.sections.archive.available, true);
+  assert.equal(privateModel.sections.archive.reason, null);
   assert.equal(privateModel.sections.archive.currentShow.sessionId, state.session.sessionId);
   assert.ok(privateModel.sections.archive.currentShow.trackRoster.some((item) => item.isSimulation === true));
   assert.match(privateResponse.headers.get("cache-control"), /no-store/);
@@ -430,6 +443,8 @@ test("public production artist memory keeps structured identity, song, album, an
 
   let model = await modelJson();
   const projection = model.sections.artistMemory;
+  assert.equal(projection.available, true);
+  assert.equal(projection.reason, null);
   assert.equal(projection.schemaVersion, "queue_artist_memory_v1");
   assert.equal(projection.visibility, "public_safe");
   assert.equal(projection.durableMemoryAuthorized, true);
@@ -531,7 +546,7 @@ test("BNL read model preserves v1 compatibility and adds semantic sections", asy
 
   assert.equal(model.ok, true);
   assert.equal(model.version, 1);
-  assert.equal(model.schemaRevision, "1.9");
+  assert.equal(model.schemaRevision, "1.10");
   assert.equal(model.publicOnly, true);
   assert.ok(model.sections.sourceContext);
   assert.ok(model.sections.queue);

@@ -31,6 +31,9 @@ import {
   isPublicDatabasePageVisible,
 } from "@/lib/database-visibility";
 import {
+  QUEUE_BNL_ARTIST_MEMORY_SCHEMA_VERSION,
+  QUEUE_PUBLIC_HISTORY_COVERAGE_STARTED_AT,
+  QUEUE_PUBLIC_HISTORY_SCHEMA_VERSION,
   getQueueBnlReadProjections,
   getQueueSessionShowLog,
   getRadioQueueState,
@@ -197,6 +200,10 @@ type BnlQueueTrack = Pick<
 
 type BnlQueueTrackStage = BnlQueueTrack["stage"];
 type BnlQueueAccessScope = "none" | "private" | "public";
+type BnlDurableProjectionUnavailableReason =
+  | "queue_production_disabled"
+  | "current_session_does_not_authorize_bnl_queue_access"
+  | "queue_projection_unavailable";
 
 type BnlOperationalEventTrack = {
   trackId: string;
@@ -394,6 +401,56 @@ function unavailableQueueProjection() {
     available: false,
     reason: "queue_data_unavailable",
     message: "No public BNL queue data is available.",
+  };
+}
+
+function unavailableArchiveProjection(
+  reason: BnlDurableProjectionUnavailableReason,
+  accessScope: BnlQueueAccessScope,
+) {
+  return {
+    available: false as const,
+    reason,
+    schemaVersion: QUEUE_PUBLIC_HISTORY_SCHEMA_VERSION,
+    source: "queue_bnl_history_projection" as const,
+    visibility:
+      accessScope === "private" ? "bnl_private_safe" as const : "public_safe" as const,
+    accessScope,
+    historyCoverageStartedAt: QUEUE_PUBLIC_HISTORY_COVERAGE_STARTED_AT,
+    builtAt: null,
+    sourceRevision: null,
+    sourceDigest: null,
+    memoryDefault: "do_not_store" as const,
+    sourceFileDefault: "review_evidence_only" as const,
+    publicDossierDefault: "not_automatic" as const,
+    overview: null,
+    currentShow: null,
+    latestShow: null,
+    shows: [],
+    artists: [],
+    recentEvents: [],
+    personalHistory: null,
+  };
+}
+
+function unavailableArtistMemoryProjection(
+  reason: BnlDurableProjectionUnavailableReason,
+) {
+  return {
+    available: false as const,
+    reason,
+    schemaVersion: QUEUE_BNL_ARTIST_MEMORY_SCHEMA_VERSION,
+    source: "queue_public_artist_memory" as const,
+    visibility: "public_safe" as const,
+    durableMemoryAuthorized: false as const,
+    sourceRevision: null,
+    sourceDigest: null,
+    builtAt: null,
+    truncated: false,
+    identityPolicy:
+      "provider_identity_then_submission_attribution_never_discord_merge" as const,
+    lifecyclePolicy: "accepted_is_provisional_played_is_confirmed" as const,
+    records: [],
   };
 }
 
@@ -1532,44 +1589,70 @@ function rulesForAccess(accessScope: BnlQueueAccessScope) {
 export async function GET(req?: Request) {
   const authenticated = authenticateBNLJournalRequest(req?.headers.get("x-api-key") ?? null);
   const queueProductionEnabled = isQueueProductionEnabled();
-  const liveQueue = queueProductionEnabled
-    ? await readQueueForBnl(authenticated)
-    : {
+  let queueReadFailed = false;
+  let durableProjectionReadFailed = false;
+  let liveQueue;
+  if (!queueProductionEnabled) {
+    liveQueue = {
+      accessScope: "none" as const,
+      queue: disabledQueueProjection(),
+      artists: [] as BnlReadModelArtist[],
+      operatorQueue: null,
+      publication: null,
+    };
+  } else {
+    try {
+      liveQueue = await readQueueForBnl(authenticated);
+    } catch {
+      queueReadFailed = true;
+      liveQueue = {
         accessScope: "none" as const,
-        queue: disabledQueueProjection(),
+        queue: {
+          available: false as const,
+          reason: "queue_projection_unavailable",
+          message: "The BARCODE Radio queue projection is temporarily unavailable.",
+        },
         artists: [] as BnlReadModelArtist[],
         operatorQueue: null,
         publication: null,
       };
+    }
+  }
   const accessScope = liveQueue.accessScope;
-  const queueProjections = queueProductionEnabled
-    ? await getQueueBnlReadProjections(accessScope === "none" ? null : accessScope)
-    : null;
+  let queueProjections = null;
+  if (queueProductionEnabled && !queueReadFailed) {
+    try {
+      queueProjections = await getQueueBnlReadProjections(
+        accessScope === "none" ? null : accessScope,
+      );
+    } catch {
+      durableProjectionReadFailed = true;
+    }
+  }
+  const projectionUnavailableReason: BnlDurableProjectionUnavailableReason =
+    !queueProductionEnabled
+      ? "queue_production_disabled"
+      : queueReadFailed || durableProjectionReadFailed
+        ? "queue_projection_unavailable"
+        : "current_session_does_not_authorize_bnl_queue_access";
   const artistMemory = queueProjections
-    ? queueProjections.artistMemory
-    : {
-        available: false,
-        reason: "queue_production_disabled",
-        durableMemoryAuthorized: false,
-        records: [],
-      };
+    ? { ...queueProjections.artistMemory, reason: null }
+    : unavailableArtistMemoryProjection(projectionUnavailableReason);
   const archive = queueProjections?.archive
-    ? { available: true, ...queueProjections.archive }
-    : {
-        available: false,
-        reason: queueProductionEnabled
-          ? "current_session_does_not_authorize_bnl_queue_access"
-          : "queue_production_disabled",
-      };
+    ? { available: true as const, reason: null, ...queueProjections.archive }
+    : unavailableArchiveProjection(projectionUnavailableReason, accessScope);
   const dossiers = publicDossiers();
   const privateResponse = accessScope === "private";
-  const noStoreResponse = authenticated || privateResponse;
+  const noStoreResponse = authenticated
+    || privateResponse
+    || queueReadFailed
+    || durableProjectionReadFailed;
 
   return NextResponse.json(
     {
       ok: true,
       version: 1,
-      schemaRevision: "1.9",
+      schemaRevision: "1.10",
       generatedAt: new Date().toISOString(),
       scope: privateResponse ? "bnl_private_read_model" : "bnl_public_read_model",
       source: "barcode-network-site",

@@ -64,7 +64,7 @@ export function JournalArticle({
         className="mt-3 block font-mono text-xs uppercase tracking-widest text-muted"
         value={entry.publishedAt}
       />
-      <div className="font-jon-hand">
+      <div className="font-oxanium">
         <Title className="mt-5 text-3xl font-normal leading-tight text-foreground sm:text-5xl">
           {entry.title}
         </Title>
@@ -114,7 +114,7 @@ export function JournalArchiveCard({
         />
         <JournalKindBadge entry={entry} />
       </div>
-      <div className="font-jon-hand">
+      <div className="font-oxanium">
         <h2 className="mt-2 text-lg font-normal leading-tight text-foreground">
           {entry.title}
         </h2>

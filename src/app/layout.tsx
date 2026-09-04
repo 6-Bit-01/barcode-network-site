@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { CSSProperties } from "react";
+import "@fontsource-variable/oxanium";
 import "./globals.css";
 import { LiveStatusProvider } from "@/components/LiveStatusProvider";
 import { BNLStatusProvider } from "@/components/BNLStatusProvider";

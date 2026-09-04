@@ -1,13 +1,5 @@
 @import "tailwindcss";
 
-@font-face {
-  font-family: "Jon Hand Light";
-  src: url("/fonts/jon-hand-light.woff2") format("woff2");
-  font-display: swap;
-  font-style: normal;
-  font-weight: 400;
-}
-
 @theme inline {
   --color-background: #0a0a0a;
   --color-foreground: #e0e0e0;
@@ -44,8 +36,8 @@ body {
   overflow-x: hidden;
 }
 
-.font-jon-hand {
-  font-family: "Jon Hand Light", var(--font-geist-mono), monospace;
+.font-oxanium {
+  font-family: "Oxanium Variable", var(--font-geist-mono), monospace;
   font-style: normal;
   font-synthesis: none;
   font-weight: 400;

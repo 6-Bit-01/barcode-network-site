@@ -1035,7 +1035,7 @@ test("React server rendering exposes only display data and escapes hostile text"
   assert.equal(article.JournalArticle.toString().includes("useRouter"), false);
 });
 
-test("the handwriting font stays scoped to authored Journal copy", () => {
+test("the Oxanium font stays scoped to authored Journal copy", () => {
   const entry = {
     ...makeEntry(),
     publishedAt: "2026-07-18T12:30:00Z",
@@ -1047,16 +1047,18 @@ test("the handwriting font stays scoped to authored Journal copy", () => {
     React.createElement(article.JournalArchiveCard, { entry }),
   );
   const globals = awaitFs("src/app/globals.css");
+  const layout = awaitFs("src/app/layout.tsx");
 
-  assert.match(globals, /font-family:\s*"Jon Hand Light"/);
-  assert.match(globals, /url\("\/fonts\/jon-hand-light\.woff2"\)/);
-  assert.match(articleHtml, /class="font-jon-hand"/);
-  assert.match(cardHtml, /class="font-jon-hand"/);
+  assert.match(layout, /import "@fontsource-variable\/oxanium";/);
+  assert.match(globals, /\.font-oxanium\s*{/);
+  assert.match(globals, /font-family:\s*"Oxanium Variable"/);
+  assert.match(articleHtml, /class="font-oxanium"/);
+  assert.match(cardHtml, /class="font-oxanium"/);
   assert.match(
     articleHtml,
-    /<p class="(?![^"]*font-jon-hand)[^"]*">By BNL-01\.<\/p>/,
+    /<p class="(?![^"]*font-oxanium)[^"]*">By BNL-01\.<\/p>/,
   );
-  assert.doesNotMatch(articleHtml, /font-jon-hand[^>]*>By BNL-01\./);
+  assert.doesNotMatch(articleHtml, /font-oxanium[^>]*>By BNL-01\./);
 });
 
 test("public archive UI exposes server-backed filters and preserves them in navigation", () => {

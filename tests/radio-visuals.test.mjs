@@ -2943,7 +2943,8 @@ test("show-long live and Wheel source wakes with the session and clears when it 
   assert.match(css, /--wheel-overlay-key: #ff5a00/);
   assert.match(css, /width: min\(100vw, 100vh\);\s*height: min\(100vw, 100vh\)/);
   assert.match(admin, /sourceLinks\?\.wheel/);
-  assert.match(sourceAccess, /\/overlay\/wheel\$\{STUDIO_SOURCE_QUERY\}\$\{fragment\}/);
+  assert.match(sourceAccess, /WHEEL_STUDIO_SOURCE_QUERY = "\?studioSource=v4"/);
+  assert.match(sourceAccess, /\/overlay\/wheel\$\{WHEEL_STUDIO_SOURCE_QUERY\}\$\{fragment\}/);
   assert.match(admin, /1080 × 1080 · key #FF5A00 · sound on/);
   assert.match(admin, /Live Overlay \+ Wheel \+ Audio/);
   assert.match(admin, /wake when the session opens/);

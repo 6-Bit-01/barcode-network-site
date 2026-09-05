@@ -108,9 +108,6 @@ const TIKTOK_AHEAD_THRESHOLD_SECONDS = 0.85;
 const TIKTOK_PAUSED_DRIFT_THRESHOLD_SECONDS = 0.35;
 const TIKTOK_MAX_CATCH_UP_SECONDS = 0.30;
 const PLAYER_CORRECTION_COOLDOWN_MS = 1_500;
-const YOUTUBE_HEARTBEAT_DRIFT_THRESHOLD_SECONDS = 2.5;
-const TIKTOK_HEARTBEAT_DRIFT_THRESHOLD_SECONDS = 2.5;
-const PLAYER_HEARTBEAT_CORRECTION_COOLDOWN_MS = 10_000;
 
 type OverlaySyncDiagnostic = { driftSeconds?: number; driftDirection?: "ahead" | "behind" | "aligned"; correctionTargetSeconds?: number; correctionCount: number; correctionReason?: string };
 type OverlayServerClockAnchor = { serverNowMs: number; receivedAtPerformanceMs: number; responseTransitEstimateMs: number };
@@ -666,10 +663,8 @@ function YouTubeOverlayPlayer({ sync, clockAnchorRef, clockAnchored, responseTra
       } else {
         const current = player.getCurrentTime();
         drift = Number.isFinite(current) ? current - expected : null;
-        const heartbeatPlaying = reason === "heartbeat" && nextSync.playbackState === "playing";
-        const correctionCooldownMs = heartbeatPlaying ? PLAYER_HEARTBEAT_CORRECTION_COOLDOWN_MS : PLAYER_CORRECTION_COOLDOWN_MS;
-        const bypassCooldown = reason === "seek" || reason === "state_change" || nextSync.playbackState !== "playing" || lastCorrectionAtRef.current === null || nowMs - lastCorrectionAtRef.current >= correctionCooldownMs;
-        const shouldCorrect = drift !== null && shouldCorrectPlaybackDrift({ playbackState: nextSync.playbackState, driftSeconds: drift, behindThresholdSeconds: heartbeatPlaying ? YOUTUBE_HEARTBEAT_DRIFT_THRESHOLD_SECONDS : YOUTUBE_BEHIND_THRESHOLD_SECONDS, aheadThresholdSeconds: heartbeatPlaying ? YOUTUBE_HEARTBEAT_DRIFT_THRESHOLD_SECONDS : YOUTUBE_AHEAD_THRESHOLD_SECONDS, pausedThresholdSeconds: YOUTUBE_PAUSED_DRIFT_THRESHOLD_SECONDS });
+        const bypassCooldown = reason === "seek" || nextSync.playbackState !== "playing" || lastCorrectionAtRef.current === null || nowMs - lastCorrectionAtRef.current >= PLAYER_CORRECTION_COOLDOWN_MS;
+        const shouldCorrect = drift !== null && shouldCorrectPlaybackDrift({ playbackState: nextSync.playbackState, driftSeconds: drift, behindThresholdSeconds: YOUTUBE_BEHIND_THRESHOLD_SECONDS, aheadThresholdSeconds: YOUTUBE_AHEAD_THRESHOLD_SECONDS, pausedThresholdSeconds: YOUTUBE_PAUSED_DRIFT_THRESHOLD_SECONDS });
         if (shouldCorrect && bypassCooldown) {
           const target = nextSync.playbackState === "playing" ? playbackCorrectionTarget({ expectedTimeSeconds: expected, driftSeconds: drift ?? 0, playbackState: nextSync.playbackState, maximumCatchUpSeconds: YOUTUBE_MAX_CATCH_UP_SECONDS }) ?? expected : nextSync.currentTimeSeconds;
           player.seekTo(target, true);
@@ -876,10 +871,8 @@ function TikTokOverlayPlayer({ sync, artistName, trackTitle, clockAnchorRef, clo
     const reason = nextSync.correctionReason ?? "heartbeat";
     const nowMs = Date.now();
     const drift = Number.isFinite(localTimeRef.current) ? localTimeRef.current - expected : null;
-    const heartbeatPlaying = reason === "heartbeat" && nextSync.playbackState === "playing";
-    const correctionCooldownMs = heartbeatPlaying ? PLAYER_HEARTBEAT_CORRECTION_COOLDOWN_MS : PLAYER_CORRECTION_COOLDOWN_MS;
-    const bypassCooldown = !Number.isFinite(localTimeRef.current) || reason === "seek" || reason === "state_change" || nextSync.playbackState !== "playing" || lastCorrectionAtRef.current === null || nowMs - lastCorrectionAtRef.current >= correctionCooldownMs;
-    const shouldCorrect = drift !== null && shouldCorrectPlaybackDrift({ playbackState: nextSync.playbackState, driftSeconds: drift, behindThresholdSeconds: heartbeatPlaying ? TIKTOK_HEARTBEAT_DRIFT_THRESHOLD_SECONDS : TIKTOK_BEHIND_THRESHOLD_SECONDS, aheadThresholdSeconds: heartbeatPlaying ? TIKTOK_HEARTBEAT_DRIFT_THRESHOLD_SECONDS : TIKTOK_AHEAD_THRESHOLD_SECONDS, pausedThresholdSeconds: TIKTOK_PAUSED_DRIFT_THRESHOLD_SECONDS });
+    const bypassCooldown = !Number.isFinite(localTimeRef.current) || reason === "seek" || nextSync.playbackState !== "playing" || lastCorrectionAtRef.current === null || nowMs - lastCorrectionAtRef.current >= PLAYER_CORRECTION_COOLDOWN_MS;
+    const shouldCorrect = drift !== null && shouldCorrectPlaybackDrift({ playbackState: nextSync.playbackState, driftSeconds: drift, behindThresholdSeconds: TIKTOK_BEHIND_THRESHOLD_SECONDS, aheadThresholdSeconds: TIKTOK_AHEAD_THRESHOLD_SECONDS, pausedThresholdSeconds: TIKTOK_PAUSED_DRIFT_THRESHOLD_SECONDS });
     const correctionTarget = drift !== null && nextSync.playbackState === "playing" ? playbackCorrectionTarget({ expectedTimeSeconds: expected, driftSeconds: drift, playbackState: nextSync.playbackState, maximumCatchUpSeconds: TIKTOK_MAX_CATCH_UP_SECONDS, durationSeconds: nextSync.durationSeconds }) : null;
     const seekTarget = nextSync.playbackState === "playing" ? correctionTarget ?? expected : nextSync.currentTimeSeconds;
     const mustSeek = !Number.isFinite(localTimeRef.current) || nextSync.playbackState === "stopped" || (shouldCorrect && bypassCooldown);

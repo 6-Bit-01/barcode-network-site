@@ -37,9 +37,10 @@ test("permanent Studio links are private, stable, and use one authoritative stat
   assert.match(access, /createStudioOverlayToken/);
   assert.match(access, /https:\/\/www\.barcode-network\.com/);
   assert.match(access, /STUDIO_SOURCE_QUERY = "\?studioSource=v1"/);
+  assert.match(access, /WHEEL_STUDIO_SOURCE_QUERY = "\?studioSource=v4"/);
   assert.match(access, /foreground: `\$\{PRODUCTION_ORIGIN\}\/overlay\/foreground\$\{STUDIO_SOURCE_QUERY\}\$\{fragment\}`/);
   assert.match(access, /radioVisuals: `\$\{PRODUCTION_ORIGIN\}\/overlay\/radio-visuals\$\{STUDIO_SOURCE_QUERY\}\$\{fragment\}`/);
-  assert.match(access, /wheel: `\$\{PRODUCTION_ORIGIN\}\/overlay\/wheel\$\{STUDIO_SOURCE_QUERY\}\$\{fragment\}`/);
+  assert.match(access, /wheel: `\$\{PRODUCTION_ORIGIN\}\/overlay\/wheel\$\{WHEEL_STUDIO_SOURCE_QUERY\}\$\{fragment\}`/);
   assert.match(legacyLivePage, /query\.studioSource === "v2"/);
   assert.match(legacyLivePage, /return null/);
   assert.match(foreground, /data-session-active=\{sessionActive \? "true" : "false"\}/);

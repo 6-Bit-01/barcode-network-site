@@ -102,7 +102,8 @@ test("square live and Wheel source follows session lifecycle, resolved ceremony 
   assert.match(receiver, /elapsedSinceSpinStartMs/);
   assert.match(receiver, /initialProgress/);
   assert.match(receiver, /let combinedVideoActive = false/);
-  assert.match(receiver, /combinedVideoActive = wheelOnly[\s\S]*?resolvedScene\.youtube \|\| resolvedScene\.tiktok/);
+  assert.match(receiver, /stabilizeLiveOverlayMediaScene\(displayedScene, resolvedScene\)/);
+  assert.match(receiver, /combinedVideoActive = wheelOnly[\s\S]*?displayScene\.youtube \|\| displayScene\.tiktok/);
   assert.match(receiver, /combinedVideoActive[\s\S]*?LIVE_OVERLAY_POLL_INTERVAL_MS[\s\S]*?wheelSessionActive[\s\S]*?WHEEL_OVERLAY_SHOW_IDLE_POLL_INTERVAL_MS/);
   assert.match(receiver, /wheelElementRef\.current\.style\.transform = `rotate\(\$\{rotationDeg\}deg\)`/);
   assert.match(receiver, /labelElement\.style\.setProperty\("--wheel-label-rotation", position\.rotation\)/);

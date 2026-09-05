@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MutableRefObject } from "react";
-import { buildWheelSegments, estimateOneWayNetworkTransitMs, playbackCorrectionTarget, roundPlaybackDriftSeconds, serverRelativeSyncAgeSeconds, shouldCorrectPlaybackDrift, updateTransitEstimateMs, wheelFinalRotationForSegment, wheelUprightLabelRotationDegrees } from "@/lib/live-overlay-resolver";
+import { buildWheelSegments, estimateOneWayNetworkTransitMs, playbackCorrectionTarget, roundPlaybackDriftSeconds, serverRelativeSyncAgeSeconds, shouldCorrectPlaybackDrift, stabilizeLiveOverlayMediaScene, updateTransitEstimateMs, wheelFinalRotationForSegment, wheelUprightLabelRotationDegrees } from "@/lib/live-overlay-resolver";
 import type { LiveOverlayPlaybackState, LiveOverlayTikTokSync, LiveOverlayYouTubeSync, ResolvedLiveOverlayScene } from "@/lib/live-overlay";
 import { LIVE_OVERLAY_POLL_INTERVAL_MS, LIVE_OVERLAY_STANDBY_POLL_INTERVAL_MS, WHEEL_OVERLAY_ACTIVE_POLL_INTERVAL_MS, WHEEL_OVERLAY_SHOW_IDLE_POLL_INTERVAL_MS, WHEEL_OVERLAY_STANDBY_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 import { hasActiveQueueSession, startPermanentOverlayPolling } from "@/lib/session-bound-polling";
@@ -108,6 +108,9 @@ const TIKTOK_AHEAD_THRESHOLD_SECONDS = 0.85;
 const TIKTOK_PAUSED_DRIFT_THRESHOLD_SECONDS = 0.35;
 const TIKTOK_MAX_CATCH_UP_SECONDS = 0.30;
 const PLAYER_CORRECTION_COOLDOWN_MS = 1_500;
+const YOUTUBE_HEARTBEAT_DRIFT_THRESHOLD_SECONDS = 2.5;
+const TIKTOK_HEARTBEAT_DRIFT_THRESHOLD_SECONDS = 2.5;
+const PLAYER_HEARTBEAT_CORRECTION_COOLDOWN_MS = 10_000;
 
 type OverlaySyncDiagnostic = { driftSeconds?: number; driftDirection?: "ahead" | "behind" | "aligned"; correctionTargetSeconds?: number; correctionCount: number; correctionReason?: string };
 type OverlayServerClockAnchor = { serverNowMs: number; receivedAtPerformanceMs: number; responseTransitEstimateMs: number };
@@ -663,8 +666,10 @@ function YouTubeOverlayPlayer({ sync, clockAnchorRef, clockAnchored, responseTra
       } else {
         const current = player.getCurrentTime();
         drift = Number.isFinite(current) ? current - expected : null;
-        const bypassCooldown = reason === "seek" || nextSync.playbackState !== "playing" || lastCorrectionAtRef.current === null || nowMs - lastCorrectionAtRef.current >= PLAYER_CORRECTION_COOLDOWN_MS;
-        const shouldCorrect = drift !== null && shouldCorrectPlaybackDrift({ playbackState: nextSync.playbackState, driftSeconds: drift, behindThresholdSeconds: YOUTUBE_BEHIND_THRESHOLD_SECONDS, aheadThresholdSeconds: YOUTUBE_AHEAD_THRESHOLD_SECONDS, pausedThresholdSeconds: YOUTUBE_PAUSED_DRIFT_THRESHOLD_SECONDS });
+        const heartbeatPlaying = reason === "heartbeat" && nextSync.playbackState === "playing";
+        const correctionCooldownMs = heartbeatPlaying ? PLAYER_HEARTBEAT_CORRECTION_COOLDOWN_MS : PLAYER_CORRECTION_COOLDOWN_MS;
+        const bypassCooldown = reason === "seek" || reason === "state_change" || nextSync.playbackState !== "playing" || lastCorrectionAtRef.current === null || nowMs - lastCorrectionAtRef.current >= correctionCooldownMs;
+        const shouldCorrect = drift !== null && shouldCorrectPlaybackDrift({ playbackState: nextSync.playbackState, driftSeconds: drift, behindThresholdSeconds: heartbeatPlaying ? YOUTUBE_HEARTBEAT_DRIFT_THRESHOLD_SECONDS : YOUTUBE_BEHIND_THRESHOLD_SECONDS, aheadThresholdSeconds: heartbeatPlaying ? YOUTUBE_HEARTBEAT_DRIFT_THRESHOLD_SECONDS : YOUTUBE_AHEAD_THRESHOLD_SECONDS, pausedThresholdSeconds: YOUTUBE_PAUSED_DRIFT_THRESHOLD_SECONDS });
         if (shouldCorrect && bypassCooldown) {
           const target = nextSync.playbackState === "playing" ? playbackCorrectionTarget({ expectedTimeSeconds: expected, driftSeconds: drift ?? 0, playbackState: nextSync.playbackState, maximumCatchUpSeconds: YOUTUBE_MAX_CATCH_UP_SECONDS }) ?? expected : nextSync.currentTimeSeconds;
           player.seekTo(target, true);
@@ -871,8 +876,10 @@ function TikTokOverlayPlayer({ sync, artistName, trackTitle, clockAnchorRef, clo
     const reason = nextSync.correctionReason ?? "heartbeat";
     const nowMs = Date.now();
     const drift = Number.isFinite(localTimeRef.current) ? localTimeRef.current - expected : null;
-    const bypassCooldown = !Number.isFinite(localTimeRef.current) || reason === "seek" || nextSync.playbackState !== "playing" || lastCorrectionAtRef.current === null || nowMs - lastCorrectionAtRef.current >= PLAYER_CORRECTION_COOLDOWN_MS;
-    const shouldCorrect = drift !== null && shouldCorrectPlaybackDrift({ playbackState: nextSync.playbackState, driftSeconds: drift, behindThresholdSeconds: TIKTOK_BEHIND_THRESHOLD_SECONDS, aheadThresholdSeconds: TIKTOK_AHEAD_THRESHOLD_SECONDS, pausedThresholdSeconds: TIKTOK_PAUSED_DRIFT_THRESHOLD_SECONDS });
+    const heartbeatPlaying = reason === "heartbeat" && nextSync.playbackState === "playing";
+    const correctionCooldownMs = heartbeatPlaying ? PLAYER_HEARTBEAT_CORRECTION_COOLDOWN_MS : PLAYER_CORRECTION_COOLDOWN_MS;
+    const bypassCooldown = !Number.isFinite(localTimeRef.current) || reason === "seek" || reason === "state_change" || nextSync.playbackState !== "playing" || lastCorrectionAtRef.current === null || nowMs - lastCorrectionAtRef.current >= correctionCooldownMs;
+    const shouldCorrect = drift !== null && shouldCorrectPlaybackDrift({ playbackState: nextSync.playbackState, driftSeconds: drift, behindThresholdSeconds: heartbeatPlaying ? TIKTOK_HEARTBEAT_DRIFT_THRESHOLD_SECONDS : TIKTOK_BEHIND_THRESHOLD_SECONDS, aheadThresholdSeconds: heartbeatPlaying ? TIKTOK_HEARTBEAT_DRIFT_THRESHOLD_SECONDS : TIKTOK_AHEAD_THRESHOLD_SECONDS, pausedThresholdSeconds: TIKTOK_PAUSED_DRIFT_THRESHOLD_SECONDS });
     const correctionTarget = drift !== null && nextSync.playbackState === "playing" ? playbackCorrectionTarget({ expectedTimeSeconds: expected, driftSeconds: drift, playbackState: nextSync.playbackState, maximumCatchUpSeconds: TIKTOK_MAX_CATCH_UP_SECONDS, durationSeconds: nextSync.durationSeconds }) : null;
     const seekTarget = nextSync.playbackState === "playing" ? correctionTarget ?? expected : nextSync.currentTimeSeconds;
     const mustSeek = !Number.isFinite(localTimeRef.current) || nextSync.playbackState === "stopped" || (shouldCorrect && bypassCooldown);
@@ -1072,6 +1079,7 @@ export function LiveOverlayReceiver({ wheelOnly = false }: { wheelOnly?: boolean
     let wheelSessionActive = false;
     let wheelCeremonyActive = false;
     let combinedVideoActive = false;
+    let displayedScene = fallbackScene();
 
     async function poll(): Promise<boolean | null> {
       if (cancelled) return null;
@@ -1098,15 +1106,20 @@ export function LiveOverlayReceiver({ wheelOnly = false }: { wheelOnly?: boolean
           ? wheelSnapshot?.scene ?? fallbackScene()
           : next.scene ?? (next as unknown as ResolvedLiveOverlayScene);
         const resolvedScene = nextScene ?? fallbackScene();
-        const nextSessionActive = wheelOnly ? wheelSnapshot?.sessionActive === true : hasActiveQueueSession(resolvedScene);
+        const stabilizedMedia = wheelOnly
+          ? stabilizeLiveOverlayMediaScene(displayedScene, resolvedScene)
+          : { scene: resolvedScene, retainedProvider: null };
+        const displayScene = stabilizedMedia.scene;
+        displayedScene = displayScene;
+        const nextSessionActive = wheelOnly ? wheelSnapshot?.sessionActive === true : hasActiveQueueSession(displayScene);
         wheelSessionActive = nextSessionActive;
-        wheelCeremonyActive = wheelOnly ? wheelSnapshot?.wheelActive === true : Boolean(resolvedScene.wheelCeremony);
+        wheelCeremonyActive = wheelOnly ? wheelSnapshot?.wheelActive === true : Boolean(displayScene.wheelCeremony);
         // This is an internal cadence lane, not a second Studio source. Video,
         // track cards, Wheel visuals, and Wheel audio remain in /overlay/wheel.
         combinedVideoActive = wheelOnly
           && !wheelCeremonyActive
-          && resolvedScene.mode === "now_playing"
-          && Boolean(resolvedScene.youtube || resolvedScene.tiktok);
+          && displayScene.mode === "now_playing"
+          && Boolean(displayScene.youtube || displayScene.tiktok);
         if (!cancelled && seq > latestAppliedSeq) {
           latestAppliedSeq = seq;
           const clockAnchor = Number.isFinite(serverNowMs) && Number.isFinite(serverRequestReceivedAtMs) ? { serverNowMs, receivedAtPerformanceMs: responseReceivedAtPerformanceMs, responseTransitEstimateMs: responseTransitEstimateMsRef.current ?? 0 } : null;
@@ -1115,7 +1128,7 @@ export function LiveOverlayReceiver({ wheelOnly = false }: { wheelOnly?: boolean
           setServerClockAnchored((current) => current === nextAnchored ? current : nextAnchored);
           const nextTransitDiagnosticMs = clockAnchor ? Math.round(clockAnchor.responseTransitEstimateMs) : null;
           setResponseTransitDiagnosticMs((current) => current === nextTransitDiagnosticMs ? current : nextTransitDiagnosticMs);
-          setScene((current) => nextScene ?? current);
+          setScene(displayScene);
           setConnected(true);
         }
         return nextSessionActive;

@@ -483,6 +483,58 @@ export interface ResolvedLiveOverlayScene {
   updatedAt: string;
 }
 
+export interface StabilizedLiveOverlayMediaScene {
+  scene: ResolvedLiveOverlayScene;
+  retainedProvider: "youtube" | "tiktok" | null;
+}
+
+/**
+ * Keep an already-mounted provider player alive while the exact same queue
+ * track remains authoritative. Player sync controls transport; it does not own
+ * the iframe lifecycle. A missing/stale/mismatched heartbeat must therefore
+ * never destroy and recreate the player or expose the artwork underneath it.
+ * Real scene, track, provider, Wheel, and override changes still replace it
+ * immediately.
+ */
+export function stabilizeLiveOverlayMediaScene(
+  previous: ResolvedLiveOverlayScene,
+  next: ResolvedLiveOverlayScene,
+): StabilizedLiveOverlayMediaScene {
+  if (next.youtube || next.tiktok) {
+    return { scene: next, retainedProvider: null };
+  }
+
+  const previousProvider = previous.youtube ? "youtube" : previous.tiktok ? "tiktok" : null;
+  const previousTrackId = previous.track?.id?.trim();
+  const nextTrackId = next.track?.id?.trim();
+  const canRetain = Boolean(
+    previousProvider
+    && previous.mode === "now_playing"
+    && next.mode === "now_playing"
+    && previous.automatic
+    && next.automatic
+    && !next.overrideActive
+    && !next.wheelCeremony
+    && previousTrackId
+    && nextTrackId
+    && previousTrackId === nextTrackId
+    && next.track?.sourceType === previousProvider,
+  );
+
+  if (!canRetain || !previousProvider) {
+    return { scene: next, retainedProvider: null };
+  }
+
+  return {
+    scene: {
+      ...next,
+      ...(previousProvider === "youtube" ? { youtube: previous.youtube } : { tiktok: previous.tiktok }),
+      priority: Math.max(previous.priority, next.priority),
+    },
+    retainedProvider: previousProvider,
+  };
+}
+
 const MAX_URL_LENGTH = 600;
 const BLOCKED_HOSTS = ["drive.google.com", "dropbox.com", "wetransfer.com", "bit.ly", "tinyurl.com", "t.co", "goo.gl", "private.blob.vercel-storage.com"];
 const DEFAULT_WHEEL_SPIN_DURATION_MS = 24000;

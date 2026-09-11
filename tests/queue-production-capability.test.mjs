@@ -305,10 +305,13 @@ test("durable projection read failure returns versioned unavailable lanes withou
       bnlPublicationStatus: "public_copy_approved",
     });
     await queue.setQueueOpen(true);
-    const original = queue.getQueueBnlReadProjections;
-    queue.getQueueBnlReadProjections = async () => {
-      throw new Error("simulated durable projection read failure");
-    };
+    const original = queue.getQueueBnlReadSnapshot;
+    queue.getQueueBnlReadSnapshot = async () => ({
+      ...(await original()),
+      getProjections: async () => {
+        throw new Error("simulated durable projection read failure");
+      },
+    });
     try {
       const response = await readModel.GET(
         new Request("https://example.test/api/bnl/read-model"),
@@ -363,23 +366,27 @@ test("durable projection read failure returns versioned unavailable lanes withou
         },
       );
     } finally {
-      queue.getQueueBnlReadProjections = original;
+      queue.getQueueBnlReadSnapshot = original;
     }
   });
 });
 
-test("queue store read failure fails every queue-owned lane closed without fabricating freshness", async () => {
+test("queue state read failure fails every queue-owned lane closed without fabricating freshness", async () => {
   await withQueueProduction("true", async () => {
-    const originalQueueRead = queue.getRadioQueueState;
-    const originalProjectionRead = queue.getQueueBnlReadProjections;
+    const original = queue.getQueueBnlReadSnapshot;
     let durableProjectionReads = 0;
-    queue.getRadioQueueState = async () => {
-      throw new Error("simulated queue store read failure");
-    };
-    queue.getQueueBnlReadProjections = async () => {
-      durableProjectionReads += 1;
-      throw new Error("durable projection read should be skipped");
-    };
+    queue.getQueueBnlReadSnapshot = async () => ({
+      getState: async () => {
+        throw new Error("simulated queue state read failure");
+      },
+      getShowLog: async () => {
+        throw new Error("show log read should be skipped");
+      },
+      getProjections: async () => {
+        durableProjectionReads += 1;
+        throw new Error("durable projection read should be skipped");
+      },
+    });
     try {
       const response = await readModel.GET(
         new Request("https://example.test/api/bnl/read-model"),
@@ -403,8 +410,7 @@ test("queue store read failure fails every queue-owned lane closed without fabri
       assert.ok(model.sections.sourceContext.length > 0);
       assert.ok(model.sections.dossiers.public.length > 0);
     } finally {
-      queue.getRadioQueueState = originalQueueRead;
-      queue.getQueueBnlReadProjections = originalProjectionRead;
+      queue.getQueueBnlReadSnapshot = original;
     }
   });
 });

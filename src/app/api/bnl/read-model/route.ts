@@ -34,9 +34,7 @@ import {
   QUEUE_BNL_ARTIST_MEMORY_SCHEMA_VERSION,
   QUEUE_PUBLIC_HISTORY_COVERAGE_STARTED_AT,
   QUEUE_PUBLIC_HISTORY_SCHEMA_VERSION,
-  getQueueBnlReadProjections,
-  getQueueSessionShowLog,
-  getRadioQueueState,
+  getQueueBnlReadSnapshot,
   toPublicQueueTrack,
 } from "@/lib/queue";
 import { getLiveOverlayRuntimeState } from "@/lib/live-overlay";
@@ -515,8 +513,11 @@ function runtimeSecondsFor(entries: readonly QueueEntry[]): number {
   }, 0);
 }
 
-async function readQueueForBnl(authenticated: boolean) {
-  let state = await getRadioQueueState();
+async function readQueueForBnl(
+  authenticated: boolean,
+  snapshot: Awaited<ReturnType<typeof getQueueBnlReadSnapshot>>,
+) {
+  let state = await snapshot.getState();
   const publication = queueSessionBnlPublicationAccess(state.session);
   const accessScope: BnlQueueAccessScope = publication.accessLevel === "public"
     ? "public"
@@ -548,7 +549,7 @@ async function readQueueForBnl(authenticated: boolean) {
   if (sessionId) {
     const [runtimeResult, showLogResult] = await Promise.allSettled([
       getLiveOverlayRuntimeState(),
-      getQueueSessionShowLog(sessionId),
+      snapshot.getShowLog(sessionId),
     ]);
     if (runtimeResult.status === "fulfilled") {
       state = attachQueueLiveTiming(
@@ -1591,6 +1592,7 @@ export async function GET(req?: Request) {
   const queueProductionEnabled = isQueueProductionEnabled();
   let queueReadFailed = false;
   let durableProjectionReadFailed = false;
+  let queueSnapshot: Awaited<ReturnType<typeof getQueueBnlReadSnapshot>> | null = null;
   let liveQueue;
   if (!queueProductionEnabled) {
     liveQueue = {
@@ -1602,7 +1604,8 @@ export async function GET(req?: Request) {
     };
   } else {
     try {
-      liveQueue = await readQueueForBnl(authenticated);
+      queueSnapshot = await getQueueBnlReadSnapshot();
+      liveQueue = await readQueueForBnl(authenticated, queueSnapshot);
     } catch {
       queueReadFailed = true;
       liveQueue = {
@@ -1620,9 +1623,9 @@ export async function GET(req?: Request) {
   }
   const accessScope = liveQueue.accessScope;
   let queueProjections = null;
-  if (queueProductionEnabled && !queueReadFailed) {
+  if (queueProductionEnabled && !queueReadFailed && queueSnapshot) {
     try {
-      queueProjections = await getQueueBnlReadProjections(
+      queueProjections = await queueSnapshot.getProjections(
         accessScope === "none" ? null : accessScope,
       );
     } catch {

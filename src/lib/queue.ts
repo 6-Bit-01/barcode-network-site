@@ -3603,8 +3603,7 @@ function queueStateWithoutSession(store: QueueStore): QueueState {
   };
 }
 
-export async function getRadioQueueState(sessionId?: string): Promise<QueueState> {
-  const store = await readStore();
+function radioQueueStateFromStore(store: QueueStore, sessionId?: string): QueueState {
   const found = findSession(store, sessionId) ?? (sessionId ? findSession(store) : null);
   if (!found) return queueStateWithoutSession(store);
   const session = normalizeSession(found);
@@ -3614,6 +3613,10 @@ export async function getRadioQueueState(sessionId?: string): Promise<QueueState
     pullNextInLine(session);
   }
   return queueStateFromSession(session, store, sessionId ?? store.activeSessionId ?? session.sessionId);
+}
+
+export async function getRadioQueueState(sessionId?: string): Promise<QueueState> {
+  return radioQueueStateFromStore(await readStore(), sessionId);
 }
 
 /**
@@ -4963,19 +4966,36 @@ export async function getQueueBnlArtistMemory(): Promise<QueueBnlArtistMemoryPro
   });
 }
 
-export async function getQueueBnlReadProjections(
+function queueBnlReadProjectionsFromStore(
+  store: QueueStore,
   accessScope: Exclude<QueueSessionBnlAccessLevel, "none"> | null,
-): Promise<{
+): {
   archive: QueueBnlStats | null;
   artistMemory: QueueBnlArtistMemoryProjection;
-}> {
-  const store = await readStore();
+} {
   return {
     archive: accessScope ? buildQueueBnlStatsFromStore(store, accessScope) : null,
     artistMemory: buildQueueBnlArtistMemory({
       revision: store.revision,
       sessions: store.sessions,
     }),
+  };
+}
+
+export async function getQueueBnlReadProjections(
+  accessScope: Exclude<QueueSessionBnlAccessLevel, "none"> | null,
+) {
+  return queueBnlReadProjectionsFromStore(await readStore(), accessScope);
+}
+
+/** Read the queue once for one BNL request and derive its projections together. */
+export async function getQueueBnlReadSnapshot() {
+  const store = await readStore();
+  return {
+    getState: async () => radioQueueStateFromStore(store),
+    getShowLog: async (sessionId: string) => queueSessionShowLogFromStore(store, sessionId),
+    getProjections: async (accessScope: Exclude<QueueSessionBnlAccessLevel, "none"> | null) =>
+      queueBnlReadProjectionsFromStore(store, accessScope),
   };
 }
 
@@ -5688,8 +5708,7 @@ export interface QueueSessionShowLogExport {
   events: QueueShowLogEvent[];
 }
 
-export async function getQueueSessionShowLog(sessionId?: string): Promise<QueueSessionShowLogExport> {
-  const store = await readStore();
+function queueSessionShowLogFromStore(store: QueueStore, sessionId?: string): QueueSessionShowLogExport {
   const session = normalizeSession(getSession(store, sessionId));
   const events = normalizeQueueShowLog(session.showLog);
   const exportedEvents = events.length > 0 ? events : initialQueueShowLog(session);
@@ -5706,6 +5725,10 @@ export async function getQueueSessionShowLog(sessionId?: string): Promise<QueueS
     report: buildQueueShowReport(session, exportedEvents),
     events: exportedEvents,
   };
+}
+
+export async function getQueueSessionShowLog(sessionId?: string): Promise<QueueSessionShowLogExport> {
+  return queueSessionShowLogFromStore(await readStore(), sessionId);
 }
 
 export async function getQueueSessionShowLogCsv(sessionId?: string): Promise<{ filename: string; csv: string }> {

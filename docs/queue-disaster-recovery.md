@@ -27,6 +27,36 @@ The corrected source capture records both the immutable source date/status and t
 - If a durable write fails, the fenced Redis mutation is rolled back before the caller receives an error.
 - Uploaded audio is never deleted from an unarchived session. Archived audio is retained for at least 30 days, and cleanup refuses to run in production without first saving the complete queue snapshot.
 
+## BNL read-model refresh investigation — September 11, 2026
+
+Three authenticated, cache-bypassing HTTP/1.1 requests from the BNL VPS at
+02:50 UTC each returned HTTP 200 with 947,488 response bytes. Connection setup
+through TLS took 15–18 ms. Time to first byte was 2.20–2.91 seconds, followed by
+0.17–0.19 seconds of body transfer. These samples locate most of their latency
+before the first response byte; they do not reproduce a failed request or
+identify a specific upstream dependency. BNL's existing three-second socket
+timeout is not a three-second total-request deadline.
+
+The BNL endpoint previously read and normalized the full queue store separately
+for current state, the selected show's log, and archive/artist-memory
+projections. It now obtains one request-local snapshot through the existing
+queue owner and derives all three from it. Each new request reads again through
+the same Redis/recovery path. There is no cross-request snapshot cache or new
+storage authority. Existing standalone queue getters retain their fresh-read
+behavior, and overlay timing remains an independent read.
+
+Publication/authentication decisions, sanitized fields, durable catalog policy,
+unavailable envelopes, response cache headers, and read-derived timers keep
+their existing behavior. The snapshot is server-side only. This change does
+not adjust the bot's timeout, cache lifetime, memory behavior or launch gates.
+
+After the website PR is merged and its normal Vercel production deployment is
+Ready, repeat the same three authenticated VPS timing requests and inspect the
+next two normal bot queue/show sync cycles. Confirm complete responses and
+successful sync, and retain any remaining timeout as an open finding. Local
+read-count/parity proof does not establish the production latency improvement.
+No bot restart, queue mutation, test-show launch, or forced publication is needed.
+
 ## Required production configuration
 
 1. Keep the existing private `BLOB_READ_WRITE_TOKEN` connected to the Vercel project.

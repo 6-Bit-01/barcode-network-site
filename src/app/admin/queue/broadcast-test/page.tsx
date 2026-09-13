@@ -57,8 +57,8 @@ export default async function PrivateBroadcastTestPage({
 
   const preview = selectedSession
     ? await Promise.all([
-      getQueueAdminPreviewStats(selectedSession.sessionId),
-      getQueueAdminPreviewReadback(selectedSession.sessionId),
+      getQueueAdminPreviewStats(selectedSession.sessionId, null, surface === "archive"),
+      getQueueAdminPreviewReadback(selectedSession.sessionId, surface === "archive"),
     ])
     : null;
   const stats = preview?.[0] ?? null;
@@ -133,7 +133,7 @@ export default async function PrivateBroadcastTestPage({
             initialView={initialView}
             initialShowId={typeof params.show === "string" ? params.show : ""}
             initialArtistKey={typeof params.artist === "string" ? params.artist : ""}
-            refreshEndpoint={`${previewApi}&kind=stats`}
+            refreshEndpoint={`${previewApi}&kind=stats&view=played`}
             archiveBaseHref={archiveHref}
             deckHref={deckHref}
             queueHref={queueHref}

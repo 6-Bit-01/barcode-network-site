@@ -7,7 +7,7 @@ import { createPortal } from "react-dom";
 import { buildQueueTimingDisplay, priorityDisplayFromImpact, queueTimingInputFromPublicSnapshot } from "@/lib/queue-timing-display";
 import { clearPriorityCheckoutOwnerToken, getOrCreatePriorityCheckoutOwnerToken } from "@/lib/priority-checkout-client";
 import { cooldownDeadlineFromRemaining, cooldownRemainingFromDeadline } from "@/lib/queue-cooldown";
-import { APPLE_MUSIC_QUEUE_UNSUPPORTED_MESSAGE, PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT, PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION, PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION, PUBLIC_QUEUE_LEGAL_TERMS_VERSION, formatRuntime, isAppleMusicUrl, PRIORITY_DISCLOSURE_TEXT, PRIORITY_TERMS_VERSION } from "@/lib/queue-types";
+import { assertQueueTrackDuration, QUEUE_TRACK_DURATION_LIMIT_MESSAGE, QUEUE_TRACK_DURATION_UNVERIFIED_MESSAGE, MAX_QUEUE_TRACK_DURATION_SECONDS, APPLE_MUSIC_QUEUE_UNSUPPORTED_MESSAGE, PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT, PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION, PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION, PUBLIC_QUEUE_LEGAL_TERMS_VERSION, formatRuntime, isAppleMusicUrl, PRIORITY_DISCLOSURE_TEXT, PRIORITY_TERMS_VERSION } from "@/lib/queue-types";
 import type { QueuePublicSnapshot, QueuePublicStatus, QueuePublicTrack } from "@/lib/queue-types";
 import { PUBLIC_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 import { hasActiveQueueSession, startSessionBoundPolling } from "@/lib/session-bound-polling";
@@ -71,7 +71,7 @@ function readAudioDuration(file: File): Promise<number | null> {
       if (settled) return;
       settled = true;
       URL.revokeObjectURL(url);
-      resolve(duration && Number.isFinite(duration) && duration > 0 ? Math.round(duration) : null);
+      resolve(duration && Number.isFinite(duration) && duration > 0 ? duration : null);
     };
     const read = () => {
       if (Number.isFinite(audio.duration) && audio.duration > 0) finish(audio.duration);
@@ -311,13 +311,17 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
     return new Promise((resolve) => window.setTimeout(resolve, ms));
   }
 
+  const fileSelectionGeneration = useRef(0);
   async function onFileSelected(next: File | null) {
+    const generation = ++fileSelectionGeneration.current;
     setFile(next);
     setDetectedDuration(null);
     setUploadProgress(null);
     setReadState(next ? "reading" : "idle");
     if (!next) return;
     const duration = await readAudioDuration(next);
+    if (generation !== fileSelectionGeneration.current) return;
+    setError(duration !== null && duration > MAX_QUEUE_TRACK_DURATION_SECONDS ? QUEUE_TRACK_DURATION_LIMIT_MESSAGE : null);
     setDetectedDuration(duration);
     setReadState(duration ? "detected" : "pending");
   }
@@ -457,6 +461,11 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
       if (detectedDuration) body.detectedDurationSeconds = detectedDuration;
       if (mode === "upload") {
         if (!file) throw new Error("Select an MP3/WAV file before final routing.");
+        // Recheck the selected file at the upload boundary, including after slow metadata reads.
+        const measuredDuration = await readAudioDuration(file);
+        assertQueueTrackDuration(measuredDuration);
+        if (measuredDuration !== null) body.detectedDurationSeconds = measuredDuration;
+        else delete body.detectedDurationSeconds;
         const blob = await uploadAudioPacket(file);
         body.uploadedBlobUrl = blob.url;
         body.uploadOriginalName = file.name;
@@ -602,6 +611,14 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
       setError("Select an MP3/WAV file before final routing.");
       return;
     }
+    if (mode === "upload" && readState === "reading") {
+      setError("Wait for the file duration check to finish.");
+      return;
+    }
+    if (mode === "upload" && detectedDuration !== null && detectedDuration > MAX_QUEUE_TRACK_DURATION_SECONDS) {
+      setError(QUEUE_TRACK_DURATION_LIMIT_MESSAGE);
+      return;
+    }
     setError(null);
     setStep("routing");
   }
@@ -630,6 +647,7 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
           <p className="text-xs text-muted">{step === "track" ? "Song info" : "Private if needed"}</p>
         </div>
 
+        <p className="mb-3 text-xs text-foreground">6 minutes (6:00) maximum per track, for free and Priority submissions. If duration cannot be read, the host must verify it before playback.</p>
         {error && <div className="mb-2 border border-danger/40 bg-danger/5 p-2 text-xs text-danger">{error}</div>}
 
         {step === "track" ? (
@@ -675,6 +693,7 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
                 </div>
               </div>
               <div className="space-y-1 leading-relaxed lg:self-end">
+                <p>{QUEUE_TRACK_DURATION_UNVERIFIED_MESSAGE}</p>
                 <p>Some accepted services currently open externally and may not provide automatic artwork, duration, or embedded playback. Expanded player and metadata support is planned.</p>
                 <p className="text-foreground">Send a direct song, track, or video link—not an artist profile, playlist, channel, general homepage, or album page that does not identify a specific track.</p>
               </div>

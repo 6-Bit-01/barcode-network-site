@@ -124,7 +124,7 @@ function TrackRow({ track, showLink = true, archiveBaseHref }: { track: QueuePub
 }
 
 function ShowDetail({ show, archiveBaseHref }: { show: QueuePublicShowStats; archiveBaseHref: string }) {
-  const didNotPlay = show.skippedTrackCount + show.removedTrackCount + show.unknownOutcomeTrackCount;
+  const incomplete = show.skippedTrackCount + show.removedTrackCount + show.unknownOutcomeTrackCount;
   return (
     <section aria-labelledby="selected-show-heading" className="border border-border bg-surface p-5 sm:p-6">
       <div className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-start sm:justify-between">
@@ -136,9 +136,9 @@ function ShowDetail({ show, archiveBaseHref }: { show: QueuePublicShowStats; arc
         <button type="button" onClick={() => navigator.clipboard?.writeText(window.location.href)} className="border border-border px-3 py-2 text-[10px] uppercase tracking-widest text-muted hover:border-accent hover:text-accent">Copy show link</button>
       </div>
       <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Submitted" value={show.submittedTrackCount} detail="Tracks retained in this show record." />
-        <Stat label="Played" value={show.finishedTrackCount} detail="Tracks with a completed-play outcome." />
-        <Stat label="Did not play" value={didNotPlay} detail="Ended, removed, or unresolved—not counted as played." />
+        <Stat label="Broadcast tracks" value={show.submittedTrackCount} detail="Tracks with recorded playback evidence." />
+        <Stat label="Finished" value={show.finishedTrackCount} detail="Tracks with a completed-play outcome." />
+        <Stat label="Partial / unresolved" value={incomplete} detail="Playback began; completion is not confirmed." />
         <Stat label="Wheel Chosen" value={show.wheelChosenTrackCount} detail="Tracks selected through the Wheel." />
       </div>
       <div className="mt-6">
@@ -157,7 +157,7 @@ function ShowDetail({ show, archiveBaseHref }: { show: QueuePublicShowStats; arc
 
 function ArtistDetail({ artist, archiveBaseHref }: { artist: QueuePublicProjectHistory; archiveBaseHref: string }) {
   const handles = [...new Set(artist.tracks.map((track) => track.submittedByTikTokHandle).filter(Boolean))].sort();
-  const didNotPlay = artist.skippedTrackCount + artist.removedTrackCount + artist.unknownOutcomeTrackCount;
+  const incomplete = artist.skippedTrackCount + artist.removedTrackCount + artist.unknownOutcomeTrackCount;
   return (
     <section aria-labelledby="selected-artist-heading" className="border border-border bg-surface p-5 sm:p-6">
       <div className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-start sm:justify-between">
@@ -170,9 +170,9 @@ function ArtistDetail({ artist, archiveBaseHref }: { artist: QueuePublicProjectH
       </div>
       <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Shows" value={artist.showCount} detail={`${displayDate(artist.firstShowDate)} through ${displayDate(artist.latestShowDate)}.`} />
-        <Stat label="Tracks" value={artist.submittedTrackCount} detail="All retained submissions under this project label." />
-        <Stat label="Played" value={artist.finishedTrackCount} detail="Tracks with a completed-play outcome." />
-        <Stat label="Did not play" value={didNotPlay} detail="Ended, removed, or unresolved—not counted as played." />
+        <Stat label="Tracks" value={artist.submittedTrackCount} detail="Broadcast tracks under this project label." />
+        <Stat label="Finished" value={artist.finishedTrackCount} detail="Tracks with a completed-play outcome." />
+        <Stat label="Partial / unresolved" value={incomplete} detail="Playback began; completion is not confirmed." />
       </div>
       <div className="mt-5 border border-border bg-background/45 p-4">
         <p className="text-[10px] uppercase tracking-[0.25em] text-muted">Submitting TikTok handles</p>
@@ -180,7 +180,7 @@ function ArtistDetail({ artist, archiveBaseHref }: { artist: QueuePublicProjectH
         <p className="mt-3 text-xs leading-relaxed text-muted">Handles identify who submitted each track. They do not establish ownership of this project or verify an account.</p>
       </div>
       <div className="mt-6">
-        <div className="flex flex-wrap items-end justify-between gap-3 border-b-2 border-cyan-200/40 pb-3"><div><p className="text-xs uppercase tracking-[0.3em] text-muted">Appearance history</p><p className="mt-1 text-xs text-muted">Every retained show appearance and track.</p></div><span className="font-mono text-xs text-muted">{artist.tracks.length} records</span></div>
+        <div className="flex flex-wrap items-end justify-between gap-3 border-b-2 border-cyan-200/40 pb-3"><div><p className="text-xs uppercase tracking-[0.3em] text-muted">Appearance history</p><p className="mt-1 text-xs text-muted">Every evidenced broadcast appearance and track.</p></div><span className="font-mono text-xs text-muted">{artist.tracks.length} records</span></div>
         <div className="pt-4">{artist.tracks.map((track) => <TrackRow key={`${track.sessionId}:${track.trackId}`} track={track} archiveBaseHref={archiveBaseHref} />)}</div>
       </div>
     </section>
@@ -192,7 +192,7 @@ export function BroadcastArchive({
   initialView = "shows",
   initialShowId = "",
   initialArtistKey = "",
-  refreshEndpoint = "/api/queue/stats",
+  refreshEndpoint = "/api/queue/stats?view=played",
   archiveBaseHref = "/radio/archive",
   deckHref,
   queueHref = "/queue",
@@ -278,7 +278,7 @@ export function BroadcastArchive({
             <div className="max-w-3xl">
               <p className="text-xs font-bold uppercase tracking-[0.38em] text-accent">{previewMode ? "Private post-show readback" : "Post-show database"}</p>
               <h1 className="mt-3 text-3xl font-black tracking-tight text-foreground sm:text-5xl">{previewMode ? "Broadcast Archive Preview" : "The Broadcast Archive"}</h1>
-              <p className="mt-4 max-w-2xl text-sm leading-relaxed text-muted sm:text-base">Search {previewMode ? "this test session" : "BARCODE Radio"} by individual show or by artist/project. Follow who submitted each track, public music links, collaborators, exact outcomes, Wheel selections, and repeat appearances.</p>
+              <p className="mt-4 max-w-2xl text-sm leading-relaxed text-muted sm:text-base">Search {previewMode ? "this test session" : "BARCODE Radio"} by individual show or by artist/project. Includes tracks with recorded playback evidence, including partial plays. Follow who submitted each track, public music links, collaborators, exact outcomes, Wheel selections, and repeat appearances.</p>
             </div>
             <div className="flex flex-wrap gap-2">
               {deckHref && <Link href={deckHref} className="border border-[#ffaa00]/55 px-4 py-3 text-xs font-bold uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background">Open Deck Preview</Link>}
@@ -289,9 +289,9 @@ export function BroadcastArchive({
         </div>
         <div className="grid grid-cols-2 gap-px bg-border sm:grid-cols-4">
           <Stat label="Shows" value={stats.overview.showCount} detail={previewMode ? "Selected persisted test record." : "Retained live broadcasts."} />
-          <Stat label="Artists" value={stats.overview.artistCount} detail="Distinct submitted project labels." />
-          <Stat label="Tracks" value={stats.overview.submittedTrackCount} detail="Public-safe show records." />
-          <Stat label="Played" value={stats.overview.finishedTrackCount} detail="Completed-play outcomes only." />
+          <Stat label="Artists" value={stats.overview.artistCount} detail="Project labels on broadcast tracks." />
+          <Stat label="Tracks" value={stats.overview.submittedTrackCount} detail="Tracks with recorded playback evidence." />
+          <Stat label="Finished" value={stats.overview.finishedTrackCount} detail="Completed-play outcomes only." />
         </div>
       </section>
 

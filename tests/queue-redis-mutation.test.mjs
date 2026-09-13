@@ -961,6 +961,49 @@ test("Redis fencing serializes independent queue workers without overfill, lost 
   await assert.rejects(() => second.setQueueOpen(false), /revision is inconsistent/i);
 });
 
+test("Wheel selection order and absent-winner receipts survive fresh Redis workers and durable recovery", async () => {
+  resetQueueTestState();
+  delete process.env.QUEUE_REDIS_REST_URL;
+  delete process.env.QUEUE_REDIS_REST_TOKEN;
+  process.env.UPSTASH_REDIS_REST_URL = "https://wheel-order.example.test";
+  process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
+  process.env.BLOB_READ_WRITE_TOKEN = "mock-wheel-snapshot";
+  try {
+    const { first } = loadIndependentQueueModules();
+    await first.startNewQueueSession({ title: "Wheel order recovery", purpose: "rehearsal" });
+    const priority = await first.addToQueue(legacyEntry(1));
+    await first.updateRadioTrack(priority.id, "priority");
+    const older = await first.addToQueue(legacyEntry(2));
+    const newer = await first.addToQueue(legacyEntry(3));
+    await first.updateRadioTrack(newer.id, "wheel");
+    await first.updateRadioTrack(older.id, "wheel");
+    const absentFirst = await first.addToQueue(legacyEntry(4));
+    const absentSibling = await first.addToQueue(legacyEntry(5));
+    const beforeRemoval = await first.getRadioQueueState();
+    await first.removeEarliestWheelCandidateTrack([absentFirst.id, absentSibling.id], beforeRemoval.session.sessionId, "durable-spin");
+    const committed = await first.getRadioQueueState();
+    await waitForCondition(() => durableCurrentRevision() === committed.revision, "Wheel win order to reach the durable snapshot");
+    const expected = committed.queue.map((entry) => [entry.id, entry.wheelQueueOrderAt]);
+    assert.deepEqual(expected.map(([id]) => id), [newer.id, older.id, absentSibling.id]);
+    assert.ok(expected.slice(0, 2).every(([, order]) => Number.isFinite(Date.parse(order))));
+
+    const freshWorker = loadIndependentQueueModules().first;
+    const freshRedis = await freshWorker.getRadioQueueState();
+    assert.deepEqual(freshRedis.queue.map((entry) => [entry.id, entry.wheelQueueOrderAt]), expected);
+    await assert.rejects(() => freshWorker.removeEarliestWheelCandidateTrack([absentSibling.id], committed.session.sessionId, "durable-spin"), /already handled/);
+    FakeRedis.failAllCommands = true;
+    const recovered = await loadIndependentQueueModules().first.getRadioQueueState();
+    assert.deepEqual(recovered.queue.map((entry) => [entry.id, entry.wheelQueueOrderAt]), expected);
+    assert.equal(recovered.nextInLine.id, priority.id);
+    assert.equal(recovered.removed[0].wheelRejectedSpinKey, "durable-spin");
+  } finally {
+    FakeRedis.failAllCommands = false;
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    delete process.env.BLOB_READ_WRITE_TOKEN;
+  }
+});
+
 test("read-only queue snapshots retain the last confirmed Redis state while quota errors still block mutations", async () => {
   FakeRedis.values.clear();
   FakeRedis.calls.length = 0;

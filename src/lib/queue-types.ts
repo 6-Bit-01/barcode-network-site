@@ -465,6 +465,10 @@ export interface QueueEntry {
   priorityPausedAt?: string | null;
   priorityResumedAt?: string | null;
   priorityQueueOrderAt?: string | null;
+  /** Persisted Wheel selection order; legacy winners fall back to their existing queue order. */
+  wheelQueueOrderAt?: string | null;
+  /** Private idempotency receipt for Winner Not Here; never projected publicly. */
+  wheelRejectedSpinKey?: string | null;
   legalAcceptance?: QueueLegalAcceptance | null;
   priorityLegalAcceptance?: PriorityLegalAcceptance | null;
   signalHoldStatus?: SignalHoldStatus;

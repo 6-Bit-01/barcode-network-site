@@ -1,5 +1,5 @@
 import { Redis } from "@upstash/redis";
-import { getRadioLiveQueueState, getRadioQueueState, isWheelEligibleTrack, recordQueueOperationalShowEvent, updateRadioTrack } from "./queue";
+import { getRadioLiveQueueState, getRadioQueueState, isWheelEligibleTrack, recordQueueOperationalShowEvent, removeEarliestWheelCandidateTrack, updateRadioTrack } from "./queue";
 import { getTrackArtworkUrl, getTrackDurationLabel, parseTikTokVideoUrl } from "./queue-types";
 import { buildWheelSegments, derangedWheelCandidateOrder, orderedWheelCandidateIds, resolveLiveOverlayScene, safeLiveOverlayUrl, normalizeLiveOverlaySyncCorrectionReason, serverStampLiveOverlayPlayerSync, wheelFinalRotationForSegment } from "./live-overlay-resolver";
 import { parseYouTubeVideoId } from "./track-duration";
@@ -232,35 +232,56 @@ function submitterIdentityKeys(entry: QueueEntry): string[] {
 }
 
 export function getWheelCandidatesFromQueue(queue: QueueEntry[]): ResolvedWheelCeremonyTrack[] {
-  const groups: ResolvedWheelCeremonyTrack[] = [];
-  const groupByKey = new Map<string, ResolvedWheelCeremonyTrack>();
+  const eligible = queue.filter(isWheelEligibleTrack);
+  const identities = eligible.map(submitterIdentityKeys);
+  const parents = eligible.map((_, index) => index);
+  const entryByKey = new Map<string, number>();
+  const rootFor = (index: number): number => {
+    while (parents[index] !== index) {
+      parents[index] = parents[parents[index]];
+      index = parents[index];
+    }
+    return index;
+  };
 
-  for (const entry of queue.filter(isWheelEligibleTrack)) {
+  // An entry can connect two groups that were already seen. Resolve the full
+  // component before emitting entrants, using only the existing identity keys.
+  identities.forEach((keys, index) => {
+    for (const key of keys) {
+      const previous = entryByKey.get(key);
+      if (previous !== undefined) {
+        const left = rootFor(previous);
+        const right = rootFor(index);
+        parents[Math.max(left, right)] = Math.min(left, right);
+      }
+      entryByKey.set(key, index);
+    }
+  });
+  const groups = new Map<number, ResolvedWheelCeremonyTrack>();
+
+  eligible.forEach((entry, index) => {
     const track = wheelCandidateFromEntry(entry);
-    const keys = submitterIdentityKeys(entry);
-    const existing = keys.map((key) => groupByKey.get(key)).find((group): group is ResolvedWheelCeremonyTrack => Boolean(group));
+    const root = rootFor(index);
+    const existing = groups.get(root);
     if (existing) {
       existing.tracks = [...(existing.tracks ?? []), track];
       existing.trackIds = [...(existing.trackIds ?? []), entry.id];
       existing.trackCount = existing.trackIds.length;
       existing.trackTitle = `${existing.trackCount} eligible tracks`;
-      keys.forEach((key) => groupByKey.set(key, existing));
-      continue;
+      return;
     }
 
-    const group: ResolvedWheelCeremonyTrack = {
-      id: `person:${hashWheelIdentity(keys.join("|"))}`,
+    groups.set(root, {
+      id: `person:${hashWheelIdentity(identities[index].join("|"))}`,
       artistName: displayArtist(entry),
       trackTitle: displayTitle(entry),
       trackIds: [entry.id],
       trackCount: 1,
       tracks: [track],
-    };
-    groups.push(group);
-    keys.forEach((key) => groupByKey.set(key, group));
-  }
+    });
+  });
 
-  return groups.map((group) => ({ ...group, trackTitle: (group.trackCount ?? 1) > 1 ? `${group.trackCount} eligible tracks` : group.trackTitle }));
+  return [...groups.values()];
 }
 
 function randomSeed(): string {
@@ -756,9 +777,10 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload, receivedA
     if (currentStatus !== "result_pending") throw new Error("Winner Not Here is only available for a pending wheel result.");
     const queueState = await getRadioQueueState();
     const selected = getWheelCandidatesFromQueue(queueState.queue).find((candidate) => candidate.id === resultTrackId);
-    if (!selected) throw new Error("The selected wheel result is no longer removable from the active queue.");
-    const trackIdsToRemove = selected.trackIds?.length ? selected.trackIds : [resultTrackId];
-    for (const trackId of trackIdsToRemove) await updateRadioTrack(trackId, "remove");
+    if (!selected || !queueState.session) throw new Error("The selected wheel result is no longer removable from the active queue.");
+    const spinKey = current.wheelCeremonySeed ?? current.wheelCeremonySpinStartedAt ?? current.wheelCeremonyResultSelectedAt;
+    if (!spinKey) throw new Error("The selected wheel result is no longer removable from the active queue.");
+    await removeEarliestWheelCandidateTrack(selected.trackIds ?? [], queueState.session.sessionId, spinKey);
     next = {
       ...current,
       mode: "wheel_ready",

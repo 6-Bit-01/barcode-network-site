@@ -284,6 +284,8 @@ export interface LiveOverlayYouTubeSync {
   muted: boolean;
   clientUpdatedAt?: string;
   correctionReason?: LiveOverlaySyncCorrectionReason;
+  scheduledStartAt?: string;
+  startToken?: string;
 }
 
 export interface LiveOverlayTikTokSync {
@@ -297,6 +299,8 @@ export interface LiveOverlayTikTokSync {
   muted: true;
   clientUpdatedAt?: string;
   correctionReason?: LiveOverlaySyncCorrectionReason;
+  scheduledStartAt?: string;
+  startToken?: string;
 }
 
 export interface LiveOverlayAudioSync {
@@ -335,7 +339,22 @@ function cleanSyncTrackId(value: unknown): string | undefined {
   return typeof value === "string" ? value.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim() || undefined : undefined;
 }
 
-export function serverStampYouTubeSync(input: unknown, receivedAt: Date = new Date()): LiveOverlayYouTubeSync | null {
+function videoStartFields(raw: Partial<LiveOverlayYouTubeSync | LiveOverlayTikTokSync>, receivedAt: Date, startDelayMs?: number): { scheduledStartAt?: string; startToken?: string } {
+  if (raw.playbackState !== "playing") return {};
+  if (typeof startDelayMs === "number" && Number.isFinite(startDelayMs) && startDelayMs > 0) {
+    const delayMs = Math.max(1_500, Math.min(6_000, startDelayMs));
+    const mediaId = raw.provider === "youtube" ? raw.videoId : raw.provider === "tiktok" ? raw.postId : undefined;
+    return { scheduledStartAt: new Date(receivedAt.getTime() + delayMs).toISOString(), startToken: `video-start-${receivedAt.getTime().toString(36)}-${mediaId}` };
+  }
+  // Re-normalizing the stored server packet must not move its deadline forward.
+  if (raw.updatedAt === receivedAt.toISOString() && typeof raw.scheduledStartAt === "string" && typeof raw.startToken === "string" && /^video-start-[a-zA-Z0-9_-]+$/.test(raw.startToken)) {
+    const delayMs = Date.parse(raw.scheduledStartAt) - receivedAt.getTime();
+    if (Number.isFinite(delayMs) && delayMs >= 1_500 && delayMs <= 6_000) return { scheduledStartAt: raw.scheduledStartAt, startToken: raw.startToken };
+  }
+  return {};
+}
+
+export function serverStampYouTubeSync(input: unknown, receivedAt: Date = new Date(), startDelayMs?: number): LiveOverlayYouTubeSync | null {
   const raw = input as Partial<LiveOverlayYouTubeSync> | null;
   if (!raw || typeof raw !== "object" || raw.provider !== "youtube") return null;
   const videoId = typeof raw.videoId === "string" ? raw.videoId : "";
@@ -351,6 +370,7 @@ export function serverStampYouTubeSync(input: unknown, receivedAt: Date = new Da
     durationSeconds,
     updatedAt: receivedAt.toISOString(),
     muted: true,
+    ...videoStartFields(raw, receivedAt, startDelayMs),
     correctionReason: normalizeLiveOverlaySyncCorrectionReason(raw.correctionReason),
   };
 }
@@ -377,7 +397,7 @@ export function serverStampAudioSync(input: unknown, receivedAt: Date = new Date
   };
 }
 
-export function serverStampTikTokSync(input: unknown, receivedAt: Date = new Date()): LiveOverlayTikTokSync | null {
+export function serverStampTikTokSync(input: unknown, receivedAt: Date = new Date(), startDelayMs?: number): LiveOverlayTikTokSync | null {
   const raw = input as Partial<LiveOverlayTikTokSync> | null;
   if (!raw || typeof raw !== "object" || raw.provider !== "tiktok") return null;
   const postId = typeof raw.postId === "string" && /^\d{8,32}$/.test(raw.postId) ? raw.postId : null;
@@ -394,14 +414,15 @@ export function serverStampTikTokSync(input: unknown, receivedAt: Date = new Dat
     durationSeconds,
     updatedAt: receivedAt.toISOString(),
     muted: true,
+    ...videoStartFields(raw, receivedAt, startDelayMs),
     correctionReason: normalizeLiveOverlaySyncCorrectionReason(raw.correctionReason),
   };
 }
 
-export function serverStampLiveOverlayPlayerSync(input: unknown, receivedAt: Date = new Date()): LiveOverlayPlayerSync | null {
+export function serverStampLiveOverlayPlayerSync(input: unknown, receivedAt: Date = new Date(), startDelayMs?: number): LiveOverlayPlayerSync | null {
   const provider = (input as { provider?: unknown } | null)?.provider;
-  if (provider === "youtube") return serverStampYouTubeSync(input, receivedAt);
-  if (provider === "tiktok") return serverStampTikTokSync(input, receivedAt);
+  if (provider === "youtube") return serverStampYouTubeSync(input, receivedAt, startDelayMs);
+  if (provider === "tiktok") return serverStampTikTokSync(input, receivedAt, startDelayMs);
   if (provider === "audio") return serverStampAudioSync(input, receivedAt);
   return null;
 }
@@ -659,7 +680,7 @@ function youtubeSyncForTrack(track: LiveOverlayTrackInput, playerSync?: LiveOver
   const syncTrackMatches = !playerSync.trackId || !track.id || playerSync.trackId === track.id;
   const syncAgeMs = now.getTime() - new Date(playerSync.updatedAt).getTime();
   const syncIsFresh = Number.isFinite(syncAgeMs) && syncAgeMs >= 0 && syncAgeMs <= YOUTUBE_SYNC_STALE_AFTER_MS;
-  // YouTube host sync heartbeats every 2.5s while playing; 12s tolerates brief polling/network delays
+  // YouTube host sync heartbeats every 1s while playing or paused; 12s tolerates brief polling/network delays
   // but prevents old or mismatched player state from restarting a new overlay video at 0s.
   if (playerSync.videoId !== videoId || !syncTrackMatches || !syncIsFresh) return undefined;
   return { ...playerSync, muted: true };

@@ -38,8 +38,10 @@ public sealed class CommercialBreakServiceTests
         Assert.True(preflight.Ready, preflight.Message);
         Assert.Equal(new[] { "a.mp4", "b.mp4", "c.mp4", "d.mp4" }, preflight.ActiveFileNames);
         File.Move(Path.Combine(fixture.ActiveDirectory, "a.mp4"), Path.Combine(fixture.InactiveDirectory, "a.mp4"));
+        fixture.AddActiveSponsor("replacement.mp4"); // Keep the established four content blocks valid.
         service.Snapshot(playerHeartbeat: true);
-        Assert.True(service.Start(requireConnectedPlayer: true).Started);
+        var started = service.Start(requireConnectedPlayer: true);
+        Assert.True(started.Started, started.Message);
         Assert.DoesNotContain(service.Snapshot().Items, item => item.Name is "a" or "old-sponsor" or "nested-old");
         Assert.False(service.Preflight().Ready, "preflight cannot allow a duplicate while queued");
     }

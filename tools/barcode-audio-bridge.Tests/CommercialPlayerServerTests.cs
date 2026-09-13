@@ -11,7 +11,7 @@ public sealed class CommercialPlayerServerTests
     public async Task QueuePreflightUsesTheRealServiceAndApprovedOriginsWithoutFakingAPlayerHeartbeat()
     {
         using var fixture = new TemporaryCommercialLibrary();
-        fixture.AddActiveSponsor("eligible.mp4");
+        foreach (var name in new[] { "eligible-a.mp4", "eligible-b.mp4", "eligible-c.mp4", "eligible-d.mp4" }) fixture.AddActiveSponsor(name);
         fixture.AddInactiveSponsor("inactive.mp4");
         var service = new CommercialBreakService(new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()));
         using var server = new CommercialPlayerServer(service);
@@ -26,11 +26,12 @@ public sealed class CommercialPlayerServerTests
 
         service.Snapshot(playerHeartbeat: true);
         using var ready = await client.GetAsync("/v1/commercials/preflight");
-        Assert.Equal(HttpStatusCode.OK, ready.StatusCode);
         using var body = JsonDocument.Parse(await ready.Content.ReadAsStringAsync());
+        Assert.True(ready.IsSuccessStatusCode, body.RootElement.GetProperty("message").GetString());
+        Assert.Equal(HttpStatusCode.OK, ready.StatusCode);
         Assert.Equal("barcode_commercial_start_v1", body.RootElement.GetProperty("protocol").GetString());
         Assert.True(body.RootElement.GetProperty("ready").GetBoolean());
-        Assert.Equal(new[] { "eligible.mp4" }, body.RootElement.GetProperty("activeFileNames").EnumerateArray().Select(item => item.GetString()));
+        Assert.Equal(new[] { "eligible-a.mp4", "eligible-b.mp4", "eligible-c.mp4", "eligible-d.mp4" }, body.RootElement.GetProperty("activeFileNames").EnumerateArray().Select(item => item.GetString()));
         Assert.Equal(0, service.Snapshot().Generation);
 
         client.DefaultRequestHeaders.Remove("Origin");

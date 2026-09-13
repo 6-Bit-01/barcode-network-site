@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import vm from "node:vm";
+import ts from "typescript";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const source = (relativePath) => fs.readFileSync(path.join(projectRoot, relativePath), "utf8");
@@ -85,7 +87,25 @@ test("admin UI keeps Signal Hold statuses narrow and renames visible Held Priori
 
 test("public UI does not present relinquished historical Priority as active", () => {
   assert.match(publicQueue, /function isActivePublicPriority[\s\S]{0,300}track\.lane === "priority"/);
-  assert.match(publicQueue, /const priorityActiveTrack = allSubmitted\.find\(\(track\) => isActivePublicPriority\(track\)\)/);
+  const parsed = ts.createSourceFile("PublicQueueSession.tsx", publicQueue, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let predicate;
+  let selection;
+  function visit(node) {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === "isActivePublicPriority") predicate = node.getText(parsed);
+    if (ts.isVariableDeclaration(node) && node.name.getText(parsed) === "priorityActiveTrack") selection = node.initializer.getText(parsed);
+    ts.forEachChild(node, visit);
+  }
+  visit(parsed);
+  assert.ok(predicate && selection);
+  const javascript = ts.transpileModule(`${predicate}\n(allSubmitted, activeIds) => ${selection}`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const selectActivePriority = vm.runInNewContext(javascript);
+  const removed = { id: "removed", lane: "priority", priorityUpgradeStatus: "paid" };
+  const relinquished = { id: "regular", lane: "regular", priorityUpgradeStatus: "paid" };
+  const pending = { id: "pending", lane: "priority", priorityUpgradeStatus: "checkout_pending" };
+  const active = { id: "active", lane: "priority", priorityUpgradeStatus: "manual" };
+  const visibleActiveIds = new Set(["regular", "pending", "active"]);
+  assert.equal(selectActivePriority([removed, relinquished, pending, active], visibleActiveIds), active);
+  assert.equal(selectActivePriority([removed, relinquished, pending], visibleActiveIds), undefined);
   assert.match(publicQueue, /function submittedPublicTrack[\s\S]{0,900}signalHoldStatus: submitted\.signalHoldStatus/);
   assert.match(publicQueue, /PRIORITY PAYMENT RECORDED · POSITION NOT ACTIVE/);
   assert.match(publicQueue, /PAYMENT CONFIRMED — PRIORITY NOT ACTIVE/);

@@ -542,6 +542,16 @@ function getPriorityOrderTime(entry: QueueEntry): number {
   return new Date(entry.priorityQueueOrderAt ?? entry.priorityUpgradePaidAt ?? entry.priorityUpgradeAt ?? entry.createdAt).getTime();
 }
 
+function nextWheelQueueOrderAt(session: QueueSession): string {
+  const existingTimes = [...session.queue, session.nextInLineTrack, session.loadedTrack]
+    .filter((entry): entry is QueueEntry => Boolean(entry && entry.lane === "wheel"))
+    .map((entry) => Date.parse(entry.wheelQueueOrderAt ?? entry.signalHoldQueueOrderAt ?? entry.createdAt))
+    .filter(Number.isFinite);
+  // Mutations are serialized. Advancing past the last waiting win also handles
+  // equal/backwards clocks and keeps legacy winners ahead of new selections.
+  return new Date(Math.max(Date.now(), Math.max(0, ...existingTimes) + 1)).toISOString();
+}
+
 function queueRank(entry: QueueEntry): number {
   if (isActivePriorityTrack(entry)) return 0;
   if (entry.displacedFromNextInLineAt) return 1;
@@ -552,7 +562,7 @@ function queueRank(entry: QueueEntry): number {
 function queueOrderTime(entry: QueueEntry): number {
   if (isActivePriorityTrack(entry)) return getPriorityOrderTime(entry);
   if ((entry.lane ?? "regular") === "priority") return new Date(entry.priorityPausedAt ?? entry.priorityQueueOrderAt ?? entry.priorityUpgradePaidAt ?? entry.createdAt).getTime();
-  return new Date(entry.displacedFromNextInLineAt ?? entry.signalHoldQueueOrderAt ?? entry.createdAt).getTime();
+  return new Date(entry.displacedFromNextInLineAt ?? (entry.lane === "wheel" ? entry.wheelQueueOrderAt : null) ?? entry.signalHoldQueueOrderAt ?? entry.createdAt).getTime();
 }
 
 function sortActive(entries: QueueEntry[]): QueueEntry[] {
@@ -1334,6 +1344,8 @@ function normalizeEntry(entry: QueueEntry): QueueEntry {
     priorityPausedAt: entry.priorityPausedAt ?? null,
     priorityResumedAt: entry.priorityResumedAt ?? null,
     priorityQueueOrderAt: entry.priorityQueueOrderAt ?? entry.priorityUpgradePaidAt ?? null,
+    wheelQueueOrderAt: typeof entry.wheelQueueOrderAt === "string" && Number.isFinite(Date.parse(entry.wheelQueueOrderAt)) ? new Date(entry.wheelQueueOrderAt).toISOString() : null,
+    wheelRejectedSpinKey: typeof entry.wheelRejectedSpinKey === "string" ? entry.wheelRejectedSpinKey.trim().slice(0, 180) || null : null,
     priorityLegalAcceptance: entry.priorityLegalAcceptance ?? null,
     signalHoldStatus: normalizeSignalHoldStatus(entry.signalHoldStatus),
     signalHoldRequestedAt: entry.signalHoldRequestedAt ?? null,
@@ -6464,7 +6476,7 @@ function applySignalHoldToMoveTrackToBottom(session: QueueSession, trackId: stri
   return true;
 }
 
-async function updateRadioTrackMutation(id: string, action: QueueAdminAction, playbackSnapshot: QueuePlaybackEndpointSnapshot | null = null): Promise<QueueState> {
+async function updateRadioTrackMutation(id: string, action: QueueAdminAction, playbackSnapshot: QueuePlaybackEndpointSnapshot | null = null, wheelRejectedSpinKey?: string): Promise<QueueState> {
   const store = await readStore();
   const session = getSession(store);
   if (session.status === "archived") return queueStateFromSession(session, store);
@@ -6684,8 +6696,9 @@ async function updateRadioTrackMutation(id: string, action: QueueAdminAction, pl
     session.queue.push(normalizeEntry({ ...active, lane: "regular", tier: "free", status: "queued", ...priorityUpgradeMetadata(active, "regular") }));
   }
   if (action === "wheel" && isWheelEligibleTrack(active)) {
+    const wheelQueueOrderAt = nextWheelQueueOrderAt(session);
     session.queue.splice(index, 1);
-    session.queue.push(normalizeEntry({ ...active, lane: "wheel", tier: "frontrow", status: "queued", displacedFromNextInLineAt: null, stagedAsFallbackForLane: null, priorityPausedAt: null, priorityResumedAt: null, priorityQueueOrderAt: null }));
+    session.queue.push(normalizeEntry({ ...active, lane: "wheel", tier: "frontrow", status: "queued", wheelQueueOrderAt, displacedFromNextInLineAt: null, stagedAsFallbackForLane: null, priorityPausedAt: null, priorityResumedAt: null, priorityQueueOrderAt: null }));
     session.wheelSpinsOwed = Math.max(0, normalizeWheelSpinsOwed(session.wheelSpinsOwed) - 1);
     handleWheelWinnerSelected(session);
   }
@@ -6700,7 +6713,7 @@ async function updateRadioTrackMutation(id: string, action: QueueAdminAction, pl
     session.queue.splice(index, 1);
     removeTrackFromActiveLocations(session, active.id);
     const removed = entryWithPlaybackOutcome(session, active, "removed");
-    session.removed.unshift({ ...removed, status: "removed", removedAt: new Date().toISOString() });
+    session.removed.unshift({ ...removed, status: "removed", removedAt: new Date().toISOString(), wheelRejectedSpinKey: wheelRejectedSpinKey ?? removed.wheelRejectedSpinKey });
   }
   pullNextInLine(session);
   await writeStore(replaceSession(store, session));
@@ -6740,6 +6753,26 @@ export async function recordQueuePlaybackEvent(input: QueuePlaybackLifecycleEven
 
 export async function updateRadioTrack(id: string, action: QueueAdminAction, playbackSnapshot: QueuePlaybackEndpointSnapshot | null = null): Promise<QueueState> {
   return withQueueMutation(() => updateRadioTrackMutation(id, action, playbackSnapshot));
+}
+
+export async function removeEarliestWheelCandidateTrack(trackIds: readonly string[], sessionId: string, spinKey: string): Promise<QueueState> {
+  return withQueueMutation(async () => {
+    const session = getSession(await readStore());
+    const spinReceipt = spinKey.trim().slice(0, 180);
+    const tracks = [...session.queue, ...session.removed, ...session.completed, session.nextInLineTrack, session.loadedTrack];
+    if (!spinReceipt || tracks.some((entry) => entry?.wheelRejectedSpinKey === spinReceipt)) {
+      throw new Error("This wheel result was already handled or is no longer removable. Refresh the wheel.");
+    }
+    const ids = new Set(trackIds);
+    const earliest = session.sessionId === sessionId && session.status !== "archived"
+      ? sortActive(session.queue).find((entry) => ids.has(entry.id) && isWheelEligibleTrack(entry))
+      : undefined;
+    if (!earliest || earliest.id !== trackIds[0]) throw new Error("The selected wheel result is no longer removable from the active queue.");
+    // Reuse the ordinary Remove lifecycle under the same mutation lease. A
+    // concurrent Priority/Load or repeated click must not remove another song
+    // from a stale candidate list; the operator must refresh that result first.
+    return updateRadioTrackMutation(earliest.id, "remove", null, spinReceipt);
+  });
 }
 
 // Legacy-compatible helpers used by archived/OBS components.

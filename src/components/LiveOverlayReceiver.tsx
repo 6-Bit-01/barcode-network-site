@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MutableRefObject } from "react";
-import { buildWheelSegments, estimateOneWayNetworkTransitMs, playbackCorrectionTarget, roundPlaybackDriftSeconds, serverRelativeSyncAgeSeconds, shouldCorrectPlaybackDrift, stabilizeLiveOverlayMediaScene, updateTransitEstimateMs, wheelFinalRotationForSegment, wheelUprightLabelRotationDegrees } from "@/lib/live-overlay-resolver";
+import { buildWheelSegments, estimateOneWayNetworkTransitMs, playbackCorrectionTarget, roundPlaybackDriftSeconds, serverRelativeSyncAgeSeconds, shouldCorrectPlaybackDrift, stabilizeLiveOverlayMediaScene, updateTransitEstimateMs, wheelClockwiseTargetRotation, wheelFinalRotationForSegment, wheelUprightLabelRotationDegrees } from "@/lib/live-overlay-resolver";
 import type { LiveOverlayPlaybackState, LiveOverlayTikTokSync, LiveOverlayYouTubeSync, ResolvedLiveOverlayScene } from "@/lib/live-overlay";
 import { LIVE_OVERLAY_POLL_INTERVAL_MS, LIVE_OVERLAY_STANDBY_POLL_INTERVAL_MS, WHEEL_OVERLAY_ACTIVE_POLL_INTERVAL_MS, WHEEL_OVERLAY_SHOW_IDLE_POLL_INTERVAL_MS, WHEEL_OVERLAY_STANDBY_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 import { hasActiveQueueSession, startPermanentOverlayPolling } from "@/lib/session-bound-polling";
@@ -335,6 +335,7 @@ function WheelCeremonyOverlay({ scene, clockAnchorRef, audioArmed, audioNotice, 
   const wheelElementRef = useRef<HTMLDivElement | null>(null);
   const wheelLabelElementsRef = useRef<Map<string, HTMLSpanElement>>(new Map());
   const wheelRotationValueRef = useRef(0);
+  const wheelSpinPlanRef = useRef<{ key: string; startRotation: number; targetRotation: number } | null>(null);
   const candidateCount = Math.max(1, candidates.length);
   const wheelSegments = buildWheelSegments(candidates.map((candidate) => ({ id: candidate.id, label: candidate.artistName, weight: candidate.weight })));
   const resultSegment = wheelSegments.find((segment) => segment.candidateId === result?.id) ?? wheelSegments[0];
@@ -446,10 +447,20 @@ function WheelCeremonyOverlay({ scene, clockAnchorRef, audioArmed, audioNotice, 
       window.cancelAnimationFrame(spinRafRef.current);
       spinRafRef.current = null;
     }
-    if (ceremony?.status !== "spinning") return;
+    const spinKey = `${ceremony?.seed ?? ""}:${ceremony?.spinStartedAt ?? ""}`;
+    if (ceremony?.status !== "spinning") {
+      if (ceremony?.status === "result_pending" || ceremony?.status === "confirmed") {
+        const plan = wheelSpinPlanRef.current;
+        applyWheelRotation(plan?.key === spinKey ? plan.targetRotation : finalRotationDeg);
+      }
+      return;
+    }
     const unfreezeTimer = window.setTimeout(() => setWheelFrozen(false), 0);
-    const startRotation = wheelRotationValueRef.current;
-    const targetRotation = finalRotationDeg;
+    if (wheelSpinPlanRef.current?.key !== spinKey) {
+      const startRotation = wheelRotationValueRef.current;
+      wheelSpinPlanRef.current = { key: spinKey, startRotation, targetRotation: wheelClockwiseTargetRotation(startRotation, finalRotationDeg) };
+    }
+    const { startRotation, targetRotation } = wheelSpinPlanRef.current;
     const duration = Math.max(16_000, ceremony?.spinDurationMs ?? 24_000);
     const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
     const clientNow = performance.now();
@@ -486,7 +497,7 @@ function WheelCeremonyOverlay({ scene, clockAnchorRef, audioArmed, audioNotice, 
       if (spinRafRef.current !== null) window.cancelAnimationFrame(spinRafRef.current);
       spinRafRef.current = null;
     };
-  }, [ceremony?.status, ceremony?.spinStartedAt, ceremony?.spinDurationMs, finalRotationDeg, clockAnchorRef, spinStartedAtMs, applyWheelRotation]);
+  }, [ceremony?.status, ceremony?.seed, ceremony?.spinStartedAt, ceremony?.spinDurationMs, finalRotationDeg, clockAnchorRef, spinStartedAtMs, applyWheelRotation]);
 
   useEffect(() => {
     if (resultRevealTimeoutRef.current !== null) {

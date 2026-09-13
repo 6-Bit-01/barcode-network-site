@@ -91,6 +91,12 @@ export function wheelFinalRotationForSegment(segment: WheelSegment, fullTurns = 
   return (Math.max(0, Math.floor(fullTurns)) * 360) + pointerAngleDegrees - segment.centerAngle;
 }
 
+export function wheelClockwiseTargetRotation(currentRotation: number, landingRotation: number, fullTurns = 4): number {
+  const start = Number.isFinite(currentRotation) ? currentRotation : 0;
+  const turns = Number.isFinite(fullTurns) ? Math.max(1, Math.floor(fullTurns)) : 4;
+  return start + turns * 360 + normalizeWheelAngle(landingRotation - start);
+}
+
 export function wheelFinalRotationForSlice(entryCount: number, index: number, fullTurns = 4, pointerAngleDegrees = WHEEL_RIGHT_POINTER_ANGLE_DEGREES): number {
   const count = Math.max(1, Math.floor(entryCount));
   const safeIndex = Math.max(0, Math.min(count - 1, Math.floor(index)));

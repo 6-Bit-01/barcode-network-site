@@ -9,7 +9,11 @@ It does not capture Speakers audio, analyze music, serve Show Visuals, or bind t
 1. Run `BARCODE.CommercialPlayer.exe` once. It installs for the current Windows account and starts with Windows.
 2. Right-click the **BARCODE Commercial Player** tray icon to open the commercial folder, copy the permanent TikTok Studio source URL, or open the diagnostic preview.
 3. Keep the saved TikTok Studio source at `https://www.barcode-network.com/overlay/commercials?studioSource=v1` with custom resolution `1080 × 1920`.
-4. Start the break with the existing queue **Start Sponsor Break** button or the tray's **Start Commercial Break** command. The sequence and manual-start behavior are unchanged.
+4. With Commercial Player **1.0.25 or later**, the queue **Start Sponsor Break** button checks the real Active library and a recent player-source heartbeat before starting its timer. Keep the saved Studio source loaded. The tray's **Start Commercial Break** remains available for manual operation.
+
+The queue's preflight does not open a second browser or start a break. A missing source, invalid library or older helper stops the request before a timer begins. A definite rejection after the timer starts cancels only that exact failed timer; a lost response leaves an explicit uncertain status for the operator to inspect.
+
+Only MP4s directly inside `Sponsors\Active` are eligible; `Sponsors\Inactive` and nested folders are excluded. Each actual Start scans again. Moving a file before Start excludes it. An already queued/playing break uses its frozen media snapshot, so moving a file during that break affects the next plan. The selected Active filenames are logged with the run's generation; use that record when investigating an unexpected commercial.
 
 The established folder contract remains under `%LOCALAPPDATA%\BARCODE Network\Commercials`. Sponsor media never leaves the show computer.
 

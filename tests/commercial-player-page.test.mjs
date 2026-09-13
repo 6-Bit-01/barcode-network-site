@@ -271,7 +271,7 @@ test("TikTok Studio receives a versioned reusable HTTPS source that redirects to
 test("the existing queue button can start the local player without a second browser window", () => {
   assert.match(commercialServerSource, /path == "\/v1\/commercials\/start" && method == "POST"/);
   assert.match(commercialServerSource, /isCommercialStartRoute[\s\S]*AdminOriginAllowed\(origin\)/);
-  assert.match(commercialServerSource, /var result = _commercials\.Start\(\)/);
+  assert.match(commercialServerSource, /var result = _commercials\.Start\(requireConnectedPlayer: true\)/);
   assert.doesNotMatch(commercialServerSource, /StartFromQueue|queue trigger/i);
   assert.doesNotMatch(playerScript, /barcode-network\.com\/api\/overlay\/commercials|pollQueueSignal/);
 });

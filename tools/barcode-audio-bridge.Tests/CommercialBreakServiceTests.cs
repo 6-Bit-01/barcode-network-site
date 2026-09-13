@@ -5,6 +5,61 @@ namespace Barcode.AudioBridge.Tests;
 public sealed class CommercialBreakServiceTests
 {
     [Fact]
+    public void PreflightRequiresARealPlayerHeartbeatAndDoesNotStartOrRenewIt()
+    {
+        using var fixture = CreateReadyFixture();
+        var now = DateTimeOffset.Parse("2026-09-13T12:00:00Z");
+        var service = new CommercialBreakService(new CommercialBreakLibrary(fixture.RootDirectory, Durations()), () => now);
+        Assert.False(service.Preflight().PlayerConnected);
+        Assert.False(service.Start(requireConnectedPlayer: true).Started);
+        service.Snapshot(playerHeartbeat: true);
+        var ready = service.Preflight();
+        Assert.True(ready.Ready, ready.Message);
+        Assert.Equal(4, ready.SponsorCount);
+        Assert.Equal("idle", service.Snapshot().Status);
+        Assert.Equal(0, service.Snapshot().Generation);
+        now += TimeSpan.FromSeconds(6);
+        Assert.False(service.Preflight().PlayerConnected);
+        Assert.False(service.Start(requireConnectedPlayer: true).Started);
+        Assert.Equal("idle", service.Snapshot().Status);
+    }
+
+    [Fact]
+    public void PreflightValidatesTheActualActiveFolderAndStartRescansIt()
+    {
+        using var fixture = CreateReadyFixture();
+        fixture.AddInactiveSponsor("old-sponsor.mp4");
+        var nested = Path.Combine(fixture.ActiveDirectory, "Inactive");
+        Directory.CreateDirectory(nested);
+        TemporaryCommercialLibrary.AddFile(nested, "nested-old.mp4");
+        var service = new CommercialBreakService(new CommercialBreakLibrary(fixture.RootDirectory, Durations()));
+        service.Snapshot(playerHeartbeat: true);
+        var preflight = service.Preflight();
+        Assert.True(preflight.Ready, preflight.Message);
+        Assert.Equal(new[] { "a.mp4", "b.mp4", "c.mp4", "d.mp4" }, preflight.ActiveFileNames);
+        File.Move(Path.Combine(fixture.ActiveDirectory, "a.mp4"), Path.Combine(fixture.InactiveDirectory, "a.mp4"));
+        service.Snapshot(playerHeartbeat: true);
+        Assert.True(service.Start(requireConnectedPlayer: true).Started);
+        Assert.DoesNotContain(service.Snapshot().Items, item => item.Name is "a" or "old-sponsor" or "nested-old");
+        Assert.False(service.Preflight().Ready, "preflight cannot allow a duplicate while queued");
+    }
+
+    [Fact]
+    public void MissingFixedMediaIsRejectedByPreflightWithoutChangingPlaybackState()
+    {
+        using var fixture = new TemporaryCommercialLibrary(createFixed: false);
+        fixture.AddActiveSponsor("a.mp4");
+        var service = new CommercialBreakService(new CommercialBreakLibrary(fixture.RootDirectory, Durations()));
+        service.Snapshot(playerHeartbeat: true);
+        var result = service.Preflight();
+        Assert.False(result.Ready);
+        Assert.True(result.PlayerConnected);
+        Assert.Contains("START.mp4", result.Message);
+        Assert.Equal("idle", service.Snapshot().Status);
+        Assert.Equal(0, service.Snapshot().Generation);
+    }
+
+    [Fact]
     public void StartQueuesOneFrozenPlanAndRejectsASecondStartUntilCompletion()
     {
         using var fixture = CreateReadyFixture();

@@ -118,7 +118,8 @@ internal sealed class CommercialPlayerServer : IDisposable
                 var method = parts[0].ToUpperInvariant();
                 var path = requestUri.AbsolutePath;
                 headers.TryGetValue("Origin", out var origin);
-                var isCommercialStartRoute = path.Equals("/v1/commercials/start", StringComparison.OrdinalIgnoreCase);
+                var isCommercialStartRoute = path.Equals("/v1/commercials/start", StringComparison.OrdinalIgnoreCase)
+                    || path.Equals("/v1/commercials/preflight", StringComparison.OrdinalIgnoreCase);
                 var originAllowed = isCommercialStartRoute
                     ? AdminOriginAllowed(origin)
                     : CommercialOriginAllowed(origin);
@@ -174,9 +175,28 @@ internal sealed class CommercialPlayerServer : IDisposable
                     return;
                 }
 
+                if (path == "/v1/commercials/preflight" && method == "GET")
+                {
+                    var result = _commercials.Preflight();
+                    var body = JsonSerializer.Serialize(new
+                    {
+                        protocol = "barcode_commercial_start_v1",
+                        ready = result.Ready,
+                        playerConnected = result.PlayerConnected,
+                        message = result.Message,
+                        sponsorCount = result.SponsorCount,
+                        interstitialCount = result.InterstitialCount,
+                        activeFileNames = result.ActiveFileNames,
+                        warnings = result.Warnings,
+                    }, JsonOptions);
+                    await WriteTextResponse(stream, result.Ready ? 200 : 409,
+                        "application/json; charset=utf-8", body, origin, cancellationToken);
+                    return;
+                }
+
                 if (path == "/v1/commercials/start" && method == "POST")
                 {
-                    var result = _commercials.Start();
+                    var result = _commercials.Start(requireConnectedPlayer: true);
                     var body = JsonSerializer.Serialize(new
                     {
                         ok = result.Started,

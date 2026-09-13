@@ -23,6 +23,15 @@ internal sealed record CommercialBreakStartResult(
     IReadOnlyList<string> OmittedInterstitials,
     IReadOnlyList<string> Warnings);
 
+internal sealed record CommercialBreakPreflightResult(
+    bool Ready,
+    bool PlayerConnected,
+    string Message,
+    int SponsorCount,
+    int InterstitialCount,
+    IReadOnlyList<string> ActiveFileNames,
+    IReadOnlyList<string> Warnings);
+
 internal sealed record CommercialPlaybackItemSnapshot(
     string Id,
     string Name,
@@ -163,6 +172,7 @@ internal sealed class CommercialBreakService
 
     private readonly object _sync = new();
     private readonly CommercialBreakLibrary _library;
+    private readonly Func<DateTimeOffset> _utcNow;
     private CommercialBreakPlan? _plan;
     private CommercialMediaSnapshot? _mediaSnapshot;
     private CommercialBreakPlaybackStatus _status = CommercialBreakPlaybackStatus.Idle;
@@ -176,10 +186,11 @@ internal sealed class CommercialBreakService
     private bool _building;
     private DateTimeOffset _lastPlayerHeartbeat = DateTimeOffset.MinValue;
 
-    public CommercialBreakService(CommercialBreakLibrary library)
+    public CommercialBreakService(CommercialBreakLibrary library, Func<DateTimeOffset>? utcNow = null)
     {
         ArgumentNullException.ThrowIfNull(library);
         _library = library;
+        _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
         _library.EnsureLayout();
     }
 
@@ -215,7 +226,7 @@ internal sealed class CommercialBreakService
                 return _status switch
                 {
                     CommercialBreakPlaybackStatus.Idle => "Commercials: ready",
-                    CommercialBreakPlaybackStatus.Queued when DateTimeOffset.UtcNow - _lastPlayerHeartbeat > TimeSpan.FromSeconds(3)
+                    CommercialBreakPlaybackStatus.Queued when _utcNow() - _lastPlayerHeartbeat > TimeSpan.FromSeconds(3)
                         => "Commercials: queued — player source not connected",
                     CommercialBreakPlaybackStatus.Queued => "Commercials: queued",
                     CommercialBreakPlaybackStatus.Playing => $"Commercials: playing {_currentIndex + 1}/{_plan?.Items.Count ?? 0}",
@@ -227,13 +238,57 @@ internal sealed class CommercialBreakService
         }
     }
 
-    public CommercialBreakStartResult Start()
+    private bool PlayerConnectedLocked()
+    {
+        var age = _utcNow() - _lastPlayerHeartbeat;
+        return age >= TimeSpan.Zero && age <= TimeSpan.FromSeconds(5);
+    }
+
+    public CommercialBreakPreflightResult Preflight()
+    {
+        int bcnLogoIndex;
+        int cornerLogoIndex;
+        lock (_sync)
+        {
+            if (!PlayerConnectedLocked()) return new(false, false,
+                "The commercial browser source is not connected. Open the saved Commercial Player source in TikTok Studio, then retry.",
+                0, 0, Array.Empty<string>(), Array.Empty<string>());
+            if (_building || _status is CommercialBreakPlaybackStatus.Queued or CommercialBreakPlaybackStatus.Playing)
+                return new(false, true, "A commercial break is already queued or playing.", 0, 0, Array.Empty<string>(), Array.Empty<string>());
+            bcnLogoIndex = _nextBcnLogoIndex;
+            cornerLogoIndex = _nextCornerLogoIndex;
+        }
+        try
+        {
+            var library = _library.Load();
+            if (!library.Success || library.FixedClips is null || library.Visuals is null)
+                return new(false, true, library.Message, 0, 0, Array.Empty<string>(), library.Warnings);
+            // Use the same scanner and planner as Start; this does not queue playback,
+            // consume logo rotation, or create/replace a frozen playback snapshot.
+            var plan = CommercialBreakPlaylistBuilder.Build(library.FixedClips, library.Sponsors,
+                library.Interstitials, library.Visuals, new Random(0), bcnLogoIndex, cornerLogoIndex);
+            var names = library.Sponsors.Concat(library.Interstitials)
+                .Select(clip => Path.GetFileName(clip.FilePath)).OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToArray();
+            return new(true, true,
+                $"Ready: {plan.SponsorCount} sponsors and {plan.InterstitialCount} trailers from Sponsors\\Active.",
+                plan.SponsorCount, plan.InterstitialCount, names, library.Warnings);
+        }
+        catch (Exception error)
+        {
+            BridgeLog.Write("Commercial preflight failed.", error);
+            return new(false, true, $"Commercial library validation failed. {error.Message}", 0, 0, Array.Empty<string>(), Array.Empty<string>());
+        }
+    }
+
+    public CommercialBreakStartResult Start(bool requireConnectedPlayer = false)
     {
         int bcnLogoIndex;
         int cornerLogoIndex;
         CommercialMediaSnapshot? pendingMediaSnapshot = null;
         lock (_sync)
         {
+            if (requireConnectedPlayer && !PlayerConnectedLocked())
+                return StartResult(false, "The commercial browser source disconnected before start. Reopen the saved Studio source and retry.");
             if (_building || _status is CommercialBreakPlaybackStatus.Queued or CommercialBreakPlaybackStatus.Playing)
             {
                 return StartResult(false, "A commercial break is already queued or playing.");
@@ -308,7 +363,8 @@ internal sealed class CommercialBreakService
                 $"target_seconds={plan.TargetDuration.TotalSeconds.ToString("F1", CultureInfo.InvariantCulture)} " +
                 $"blocks={string.Join(",", plan.ContentBlockDurations.Select(duration => duration.TotalSeconds.ToString("F1", CultureInfo.InvariantCulture)))} " +
                 $"bumpers={string.Join("|", plan.SelectedBumpers)} " +
-                $"omitted={string.Join("|", plan.OmittedInterstitials)}.");
+                $"omitted={string.Join("|", plan.OmittedInterstitials)} " +
+                $"active_files={string.Join("|", libraryResult.Sponsors.Concat(libraryResult.Interstitials).Select(clip => Path.GetFileName(clip.FilePath)))}.");
             return new CommercialBreakStartResult(
                 true,
                 message,
@@ -348,7 +404,7 @@ internal sealed class CommercialBreakService
     {
         lock (_sync)
         {
-            if (playerHeartbeat) _lastPlayerHeartbeat = DateTimeOffset.UtcNow;
+            if (playerHeartbeat) _lastPlayerHeartbeat = _utcNow();
             var plan = _plan;
             var items = plan?.Items.Select(item => new CommercialPlaybackItemSnapshot(
                 item.Id,

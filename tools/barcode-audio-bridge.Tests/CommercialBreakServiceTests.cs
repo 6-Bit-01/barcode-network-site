@@ -5,6 +5,71 @@ namespace Barcode.AudioBridge.Tests;
 public sealed class CommercialBreakServiceTests
 {
     [Fact]
+    public void AFileMovedAfterPlanningIsNotReadIntoThePlaybackSnapshot()
+    {
+        using var fixture = CreateReadyFixture();
+        var library = new CommercialBreakLibrary(fixture.RootDirectory, Durations());
+        var loaded = library.Load();
+        var plan = CommercialBreakPlaylistBuilder.Build(loaded.FixedClips!, loaded.Sponsors,
+            loaded.Interstitials, loaded.Visuals!, new Random(0), 0, 0);
+        var item = plan.Items.Single(entry => entry.Name == "a");
+        var inactive = Path.Combine(fixture.InactiveDirectory, "a.mp4");
+        File.Move(item.FilePath, inactive);
+        using var lockedInactive = File.Open(inactive, FileMode.Open, FileAccess.Read, FileShare.None);
+        using var snapshot = CommercialMediaSnapshot.Create(plan, library.PlaybackSnapshotsDirectory,
+            (path, id) => library.IsActiveCommercial(path, id));
+        Assert.False(snapshot.MediaById.ContainsKey(item.Id));
+        Assert.True(snapshot.MediaById.ContainsKey(plan.Items.Single(entry => entry.Name == "b").Id));
+    }
+
+    [Fact]
+    public void ReportedInactiveCommercialsAreNeverReadOrIncludedEvenWithOldPlaybackCopies()
+    {
+        using var fixture = CreateReadyFixture();
+        var reader = Durations();
+        var library = new CommercialBreakLibrary(fixture.RootDirectory, reader);
+        // Simulate leftover copies; only the live Active scan may create a new plan.
+        var oldCopies = Path.Combine(library.PlaybackSnapshotsDirectory, Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(oldCopies);
+        foreach (var name in new[] { "ForbesFiberLOW.mp4", "NovaCordova.mp4" })
+        {
+            fixture.AddInactiveSponsor(name);
+            TemporaryCommercialLibrary.AddFile(oldCopies, name);
+        }
+        using var first = File.Open(Path.Combine(fixture.InactiveDirectory, "ForbesFiberLOW.mp4"), FileMode.Open, FileAccess.Read, FileShare.None);
+        using var second = File.Open(Path.Combine(fixture.InactiveDirectory, "NovaCordova.mp4"), FileMode.Open, FileAccess.Read, FileShare.None);
+        var service = new CommercialBreakService(library);
+        service.Snapshot(playerHeartbeat: true);
+        Assert.Equal(new[] { "a.mp4", "b.mp4", "c.mp4", "d.mp4" }, service.Preflight().ActiveFileNames);
+        Assert.True(service.Start(requireConnectedPlayer: true).Started);
+        Assert.Equal(new[] { "a", "b", "c", "d" }, service.Snapshot().Items.Where(item => item.Kind == "sponsor").Select(item => item.Name).Order());
+        Assert.DoesNotContain(reader.ReadPaths, path => path.Contains("Inactive") || path.Contains("Playback Snapshots"));
+        Assert.DoesNotContain(reader.ReadPaths, path => Path.GetFileName(path) is "ForbesFiberLOW.mp4" or "NovaCordova.mp4");
+        Assert.True(service.MarkCompleted(service.Snapshot().Generation));
+        Assert.True(service.Start().Started, "tray starts use the same Active-only selection");
+        Assert.DoesNotContain(service.Snapshot().Items, item => item.Name is "ForbesFiberLOW" or "NovaCordova");
+        service.Stop();
+    }
+
+    [Fact]
+    public void ACommercialMovedWhilePlayingIsExcludedButTheNextClipCanStillPlay()
+    {
+        using var fixture = CreateReadyFixture();
+        var service = new CommercialBreakService(new CommercialBreakLibrary(fixture.RootDirectory, Durations()));
+        Assert.True(service.Start().Started);
+        var state = service.Snapshot();
+        var index = state.Items.ToList().FindIndex(item => item.Kind == "sponsor");
+        Assert.True(service.MarkClipStarted(state.Generation, index));
+        var item = state.Items[index];
+        File.Move(Path.Combine(fixture.ActiveDirectory, item.Name + ".mp4"), Path.Combine(fixture.InactiveDirectory, item.Name + ".mp4"));
+        Assert.True(service.Snapshot().Items[index].Excluded);
+        Assert.False(service.TryGetMedia(item.Id, out _));
+        Assert.True(service.MarkClipStarted(state.Generation, index + 1));
+        Assert.Equal("playing", service.Snapshot().Status);
+        service.Stop();
+    }
+
+    [Fact]
     public void PreflightRequiresARealPlayerHeartbeatAndDoesNotStartOrRenewIt()
     {
         using var fixture = CreateReadyFixture();
@@ -158,18 +223,18 @@ public sealed class CommercialBreakServiceTests
 
         Assert.True(service.TryGetMedia(item.Id, out var video));
         Assert.Equal("video/mp4", video.ContentType);
-        var backgroundId = snapshot.BackgroundUrl![snapshot.BackgroundUrl.LastIndexOf('/')..].TrimStart('/');
+        var backgroundId = MediaId(snapshot.BackgroundUrl!);
         Assert.True(service.TryGetMedia(backgroundId, out var background));
         Assert.Equal("video/mp4", background.ContentType);
-        var tvOverlayId = snapshot.TvOverlayUrl![snapshot.TvOverlayUrl.LastIndexOf('/')..].TrimStart('/');
+        var tvOverlayId = MediaId(snapshot.TvOverlayUrl!);
         Assert.True(service.TryGetMedia(tvOverlayId, out var tvOverlay));
         Assert.Equal("video/mp4", tvOverlay.ContentType);
-        var logoId = tagged.LogoUrl![tagged.LogoUrl.LastIndexOf('/')..].TrimStart('/');
+        var logoId = MediaId(tagged.LogoUrl!);
         Assert.True(service.TryGetMedia(logoId, out var logo));
         Assert.Equal("image/png", logo.ContentType);
         Assert.NotNull(item.LogoUrl);
         Assert.Equal(item.LogoUrl, ending.LogoUrl);
-        var iconId = item.LogoUrl![item.LogoUrl.LastIndexOf('/')..].TrimStart('/');
+        var iconId = MediaId(item.LogoUrl!);
         Assert.True(service.TryGetMedia(iconId, out var icon));
         Assert.Equal("image/png", icon.ContentType);
         Assert.False(service.TryGetMedia("not-a-current-media-id", out _));
@@ -216,7 +281,7 @@ public sealed class CommercialBreakServiceTests
         var firstAlux = first.Items.Single(entry => entry.Name == "Alux");
         var firstCorner = firstAlux.CornerLogoUrl;
         Assert.NotNull(firstCorner);
-        var firstCornerId = firstCorner![firstCorner.LastIndexOf('/')..].TrimStart('/');
+        var firstCornerId = MediaId(firstCorner!);
         Assert.True(service.TryGetMedia(firstCornerId, out var cornerAsset));
         Assert.Equal("image/png", cornerAsset.ContentType);
         Assert.True(service.MarkCompleted(first.Generation));
@@ -231,7 +296,7 @@ public sealed class CommercialBreakServiceTests
     }
 
     [Fact]
-    public void MovingAnActiveFileDuringPlaybackOnlyChangesTheNextPlan()
+    public void MovingAnActiveFileToInactiveRevokesItsSnapshotWithoutStoppingTheBreak()
     {
         using var fixture = CreateReadyFixture();
         var service = new CommercialBreakService(new CommercialBreakLibrary(
@@ -243,11 +308,18 @@ public sealed class CommercialBreakServiceTests
         var originalPath = Path.Combine(fixture.ActiveDirectory, "a.mp4");
         var inactivePath = Path.Combine(fixture.InactiveDirectory, "a.mp4");
 
+        Assert.True(service.TryGetMedia(activeItem.Id, out var frozenMedia));
+        Assert.NotEqual(originalPath, frozenMedia.FilePath);
         File.Move(originalPath, inactivePath);
 
-        Assert.True(service.TryGetMedia(activeItem.Id, out var frozenMedia));
-        Assert.True(File.Exists(frozenMedia.FilePath));
-        Assert.NotEqual(originalPath, frozenMedia.FilePath);
+        Assert.True(File.Exists(frozenMedia.FilePath), "snapshots remain supported");
+        Assert.False(service.TryGetMedia(activeItem.Id, out _));
+        var index = snapshot.Items.ToList().FindIndex(item => item.Id == activeItem.Id);
+        Assert.False(service.MarkClipStarted(snapshot.Generation, index, out var skipped));
+        Assert.True(skipped);
+        Assert.True(service.Snapshot().Items.Single(item => item.Id == activeItem.Id).Excluded);
+        Assert.Equal("queued", service.Snapshot().Status);
+        Assert.True(service.TryGetMedia(snapshot.Items[^1].Id, out _));
         Assert.True(service.MarkCompleted(snapshot.Generation));
         Assert.False(service.TryGetMedia(activeItem.Id, out _));
 
@@ -255,6 +327,8 @@ public sealed class CommercialBreakServiceTests
         Assert.True(service.Start().Started);
         Assert.DoesNotContain(service.Snapshot().Items, entry => entry.Name == "a");
     }
+
+    private static string MediaId(string url) => new Uri(new Uri("http://localhost"), url).AbsolutePath.Split('/')[^1];
 
     private static TemporaryCommercialLibrary CreateReadyFixture()
     {

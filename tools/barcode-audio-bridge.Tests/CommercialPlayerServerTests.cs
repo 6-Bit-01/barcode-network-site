@@ -8,6 +8,35 @@ namespace Barcode.AudioBridge.Tests;
 public sealed class CommercialPlayerServerTests
 {
     [Fact]
+    public async Task SavedMediaAndClipStartCannotBypassActiveEligibility()
+    {
+        using var fixture = new TemporaryCommercialLibrary();
+        foreach (var name in new[] { "ForbesFiberLOW.mp4", "NovaCordova.mp4", "c.mp4", "d.mp4" }) fixture.AddActiveSponsor(name);
+        var service = new CommercialBreakService(new CommercialBreakLibrary(fixture.RootDirectory, new TestDurationReader()));
+        using var server = new CommercialPlayerServer(service);
+        server.Start();
+        using var client = new HttpClient { BaseAddress = new Uri("http://127.0.0.1:43121"), Timeout = TimeSpan.FromSeconds(10) };
+        Assert.True(service.Start().Started);
+        var state = service.Snapshot();
+        var index = state.Items.ToList().FindIndex(item => item.Name == "ForbesFiberLOW");
+        var item = state.Items[index];
+        using var playable = await client.GetAsync(item.Url);
+        Assert.Equal(HttpStatusCode.OK, playable.StatusCode);
+        Assert.True(playable.Headers.CacheControl!.NoStore);
+        File.Move(Path.Combine(fixture.ActiveDirectory, "ForbesFiberLOW.mp4"), Path.Combine(fixture.InactiveDirectory, "ForbesFiberLOW.mp4"));
+        using var revoked = await client.GetAsync(item.Url);
+        Assert.Equal(HttpStatusCode.NotFound, revoked.StatusCode);
+        using var skip = await client.PostAsync($"/v1/commercials/clip-started?generation={state.Generation}&index={index}", null);
+        Assert.Equal(HttpStatusCode.OK, skip.StatusCode);
+        using var body = JsonDocument.Parse(await skip.Content.ReadAsStringAsync());
+        Assert.True(body.RootElement.GetProperty("skipped").GetBoolean());
+        Assert.Equal("queued", service.Snapshot().Status);
+        using var remaining = await client.GetAsync(state.Items.Single(entry => entry.Name == "NovaCordova").Url);
+        Assert.Equal(HttpStatusCode.OK, remaining.StatusCode);
+        service.Stop();
+    }
+
+    [Fact]
     public async Task QueuePreflightUsesTheRealServiceAndApprovedOriginsWithoutFakingAPlayerHeartbeat()
     {
         using var fixture = new TemporaryCommercialLibrary();

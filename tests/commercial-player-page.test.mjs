@@ -382,3 +382,65 @@ test("Chrome autoplay denial holds the current commercial until one click instea
   assert.ok(posts.some((url) => url.includes("/complete?generation=42")));
   assert.ok(posts.every((url) => !url.includes("/failed")));
 });
+
+function inactivePlaybackHarness(items, skippedIndex = -1) {
+  const ids = ["stage", "background-video", "tv-stage", "tv-overlay-video", "player", "video-window", "crt-power-on", "corner-logo-a", "corner-logo-b", "logo", "audio-gate", "status"];
+  const elements = new Map(ids.map(id => [id, new FakeElement(id)]));
+  const state = { status: "queued", generation: 73, currentIndex: 0, sponsorCount: 2, interstitialCount: 0,
+    message: "Ready", backgroundUrl: "/background", tvOverlayUrl: "/tv", items };
+  const played = [];
+  const posts = [];
+  const polls = [];
+  const player = elements.get("player");
+  player.play = () => { played.push(player.src); player.paused = false; return Promise.resolve(); };
+  const context = vm.createContext({
+    URLSearchParams, DOMException, Promise, clearTimeout, console,
+    document: { body: new FakeElement("body"), getElementById: id => elements.get(id) },
+    location: { search: "" }, navigator: { userActivation: { hasBeenActive: true } },
+    fetch: async (url, options = {}) => {
+      if (options.method === "POST") {
+        posts.push(url);
+        return { ok: true, status: 200, json: async () => ({ skipped: url.includes(`/clip-started?generation=73&index=${skippedIndex}`) }) };
+      }
+      return { ok: true, status: 200, json: async () => structuredClone(state) };
+    },
+    setInterval: callback => { polls.push(callback); return 0; },
+    setTimeout: callback => { queueMicrotask(callback); return 0; },
+  });
+  new vm.Script(playerScript, { filename: "CommercialPlayerPage.inactive.js" }).runInContext(context);
+  return { state, player, played, posts, poll: () => polls[0]() };
+}
+
+const playbackItem = (id, excluded = false) => ({ id, name: id, url: `/media/${id}`, durationSeconds: 10, excluded });
+
+test("inactive entries from stale state never load their media and the normal break completes", async () => {
+  const run = inactivePlaybackHarness([
+    playbackItem("START"), playbackItem("ForbesFiberLOW", true), playbackItem("NovaCordova"), playbackItem("END"),
+  ], 2);
+  await flushTasks();
+  assert.deepEqual(run.played, ["/media/START"]);
+  run.player.dispatch("ended");
+  await flushTasks();
+  assert.deepEqual(run.played, ["/media/START", "/media/END"]);
+  run.player.dispatch("ended");
+  await flushTasks();
+  assert.ok(run.posts.some(url => url.includes("/complete?generation=73")));
+  assert.ok(run.posts.every(url => !url.includes("/failed")));
+});
+
+for (const signal of ["state poll", "media response ended"]) {
+  test(`a commercial moved to Inactive stops on ${signal} and playback continues`, async () => {
+    const run = inactivePlaybackHarness([playbackItem("ForbesFiberLOW"), playbackItem("END")]);
+    await flushTasks();
+    assert.deepEqual(run.played, ["/media/ForbesFiberLOW"]);
+    run.state.items[0].excluded = true;
+    if (signal === "state poll") run.poll();
+    else run.player.dispatch("error");
+    await flushTasks();
+    assert.deepEqual(run.played, ["/media/ForbesFiberLOW", "/media/END"]);
+    run.player.dispatch("ended");
+    await flushTasks();
+    assert.ok(run.posts.some(url => url.includes("/complete?generation=73")));
+    assert.ok(run.posts.every(url => !url.includes("/failed")));
+  });
+}

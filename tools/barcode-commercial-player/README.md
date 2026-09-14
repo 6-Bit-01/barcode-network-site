@@ -13,7 +13,7 @@ It does not capture Speakers audio, analyze music, serve Show Visuals, or bind t
 
 The queue's preflight does not open a second browser or start a break. A missing source, invalid library or older helper stops the request before a timer begins. A definite rejection after the timer starts cancels only that exact failed timer; a lost response leaves an explicit uncertain status for the operator to inspect.
 
-Only MP4s directly inside `Sponsors\Active` are eligible; `Sponsors\Inactive` and nested folders are excluded. Each actual Start scans again. Moving a file before Start excludes it. An already queued/playing break uses its frozen media snapshot, so moving a file during that break affects the next plan. The selected Active filenames are logged with the run's generation; use that record when investigating an unexpected commercial.
+Only MP4s directly inside `Sponsors\Active` are eligible; `Sponsors\Inactive` and nested folders are excluded. Each actual Start scans again. Moving a file before Start excludes it. Playback snapshots remain supported, but a copy is playable only while its original remains the same eligible file in Active. Moving that original out of Active excludes it from the running break too, and the remaining clips continue. Inactive is never enumerated or read as a fallback. Commercial Player 1.0.26 includes this exclusion fix. The selected Active filenames are logged with the run's generation; use that record when investigating an unexpected commercial.
 
 The established folder contract remains under `%LOCALAPPDATA%\BARCODE Network\Commercials`. Sponsor media never leaves the show computer.
 

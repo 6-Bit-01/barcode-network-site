@@ -12,7 +12,7 @@ The website requests a fresh backend timer before launching the local player. An
 
 ## Active/Inactive evidence
 
-Current source selects MP4 files directly in `Sponsors\Active`, excluding `Sponsors\Inactive` and nested directories. The existing service intentionally snapshots a queued break, so moving a file after the break was queued affects the next break. This behavior is covered by existing tests and retained. New tests check both preflight and the actual start after a file moves from Active to Inactive. Each real start now logs its scanned Active filenames with the generation.
+Current source selects MP4 files directly in `Sponsors\Active`, excluding `Sponsors\Inactive` and nested directories. Owner clarification on September 14: preserve the existing player and snapshots; fix only Inactive exclusion. Commercial Player 1.0.26 checks the Active directory before enumeration so a redirected folder cannot read Inactive. A saved copy remains playable only while its original is the same eligible file directly in Active. This is enforced at clip start, media serving and existing state polling. A file moved out of Active during a break is excluded automatically while the remaining clips continue. No new operator gate, reconnect rule, protocol requirement or snapshot cleanup behavior is added. New tests check both preflight and the actual start after a file moves from Active to Inactive. Each real start now logs its scanned Active filenames with the generation.
 
 The reported installed-player behavior is still unconfirmed. Collect the installed Commercial Player version, its actual folder layout, and the relevant generation/filename lines from `%LOCALAPPDATA%\BARCODE Network\Commercial Player\commercial-player.log`. Check whether the move happened before or after the break was queued. Do not represent source tests as proof of what the show computer ran.
 
@@ -24,9 +24,17 @@ The reported installed-player behavior is still unconfirmed. Collect the install
 | `src/components/AdminRadioQueueControl.tsx` | Existing queue button invokes the coordinated helper and guarded timer actions. |
 | `src/lib/queue.ts`, `src/app/api/admin/queue/route.ts` | Fresh-start requirement and exact-attempt failed-timer cancellation inside existing mutation authority. |
 | `tools/barcode-commercial-player/CommercialBreakService.cs`, `CommercialPlayerServer.cs` | Actual planner preflight, recent source heartbeat, same approved origins, fresh Start scan and generation evidence. |
-| `tools/barcode-commercial-player/Barcode.CommercialPlayer.csproj`, `README.md` | Standalone Commercial Player 1.0.25 and its operating instructions. |
+| `tools/barcode-commercial-player/Barcode.CommercialPlayer.csproj`, `README.md` | Standalone Commercial Player 1.0.26 and its operating instructions. |
 | `tests/sponsor-break-contract.test.mjs`, `tests/queue-playback.test.mjs`, `tests/queue-timing-display.test.mjs`, `tests/commercial-player-page.test.mjs` | Startup ordering, no timer on rejected preflight, known/unknown outcomes, stale cancellation and preserved submissions/history. |
 | `tools/barcode-audio-bridge.Tests/CommercialBreakServiceTests.cs`, `CommercialPlayerServerTests.cs` | Real scanner/planner, heartbeat expiry, missing Fixed media, Active-only selection and changes before Start. |
+
+## September 14 focused exclusion correction
+
+New regressions use `ForbesFiberLOW.mp4` and `NovaCordova.mp4` already in Inactive with old playback copies present: neither may reach the duration reader or the new playlist. Tests also cover an Active directory junction into Inactive, a move after queuing/while playing, denial of saved-media HTTP requests, and automatic continuation of remaining clips. Media responses use `no-store`; a versioned query bypasses immutable responses cached by older helpers. The existing appearance, timing rules, controls, snapshot copying, queue timer protocol and Show Visuals service are preserved.
+
+The September 11 log shows a fresh queued generation and completed prior runs. It does not record individual paths or the installed helper version. These source tests do not establish that incident's exact cause. Obtain the installed version and actual Active root during private acceptance; no inactive files need to be opened for the test.
+
+Focused correction local validation: `npm ci`, `npm run check` (1,128 tests; zero failures; zero TypeScript/ESLint errors; 36 existing lint warnings), and `npm run build` passed. The browser suite passed 14/14; its three new regressions fail against the previous player script. Five new Windows tests plus the corrected move-after-planning test are awaiting the existing Windows CI job. No Windows runtime is available locally. The results below describe the original PR425 head, before this correction.
 
 ## Validation
 
@@ -48,7 +56,7 @@ Do not mark Windows verification complete until that job passes. Exact results, 
 
 ## Normal post-merge deployment and combined acceptance
 
-Keep the PR in draft for the agreed batch. After review, merge dependencies in order, allow the existing Vercel integration to deploy `main`, and verify Ready status and the served commit. Use the Commercial Player artifact from the successful Windows job for that reviewed source. Close the old Commercial Player from its tray menu and run the new `BARCODE.CommercialPlayer.exe` under the same Windows account. Verify installed version 1.0.25. The existing audio/Show Visuals helper has its own installation and is not replaced by this update.
+Keep the PR in draft for the agreed batch. After review, merge dependencies in order, allow the existing Vercel integration to deploy `main`, and verify Ready status and the served commit. Use the Commercial Player artifact from the successful Windows job for that reviewed source. Close the old Commercial Player from its tray menu and run the new `BARCODE.CommercialPlayer.exe` under the same Windows account. Verify installed version 1.0.26. The existing audio/Show Visuals helper has its own installation and is not replaced by this update.
 
 Keep the saved Studio source `https://www.barcode-network.com/overlay/commercials?studioSource=v1`, resolution 1080 × 1920, connected to the existing local player. Refresh the admin queue. The new website fails before starting a timer if the old helper is still installed.
 
@@ -61,7 +69,7 @@ Invoke-RestMethod http://127.0.0.1:43121/v1/commercials/preflight | ConvertTo-Js
 At the later combined private rehearsal, record the site commit, installed helper version, CI artifact run, session ID, local generation and timestamps. Use controlled fixtures to verify:
 
 1. Missing helper, old helper, missing START/END/bumper/visual asset, empty Active sponsor set and disconnected source: useful error and no website timer.
-2. Eligible Active sponsor and trailer clips plus separate Inactive and nested-folder fixtures: only direct Active files appear in preflight and the actual run. Move one before Start, then compare the next scan.
+2. Eligible Active sponsor and trailer clips plus separate Inactive and nested-folder fixtures: only direct Active files appear in preflight and the actual run. Keep the two reported filenames in Inactive for repeated starts and confirm neither appears in Active names or playback. Separately, move a controlled Active fixture out after queuing and while playing: its saved copy must stop being served, and the remaining clips must continue.
 3. Successful button start: one timer and one local generation, current playlist visible in the saved source, no second browser window, and expected audio/visual playback.
 4. Definite local rejection after acknowledgement: only that timer is cancelled; previously submitted/played/removed and newly submitted tracks remain current; the show log retains the start/reset events.
 5. Lost response, stale failure, a replacement timer and an already completed break: no automatic cancellation of uncertain or newer activity. Use automated fixtures for these races instead of disturbing live playback.

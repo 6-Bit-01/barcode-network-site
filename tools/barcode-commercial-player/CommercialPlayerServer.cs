@@ -250,16 +250,21 @@ internal sealed class CommercialPlayerServer : IDisposable
                         range,
                         method == "HEAD",
                         origin,
-                        cancellationToken);
+                        cancellationToken,
+                        () => _commercials.TryGetMedia(id, out _));
                     return;
                 }
 
                 if (path == "/v1/commercials/clip-started" && method == "POST")
                 {
+                    var skipped = false;
                     var accepted = TryGetLong(requestUri, "generation", out var generation)
                         && TryGetInt(requestUri, "index", out var index)
-                        && _commercials.MarkClipStarted(generation, index);
-                    await WriteJsonResult(stream, accepted, origin, cancellationToken);
+                        && _commercials.MarkClipStarted(generation, index, out skipped);
+                    await WriteTextResponse(stream, accepted || skipped ? 200 : 409,
+                        "application/json; charset=utf-8",
+                        JsonSerializer.Serialize(new { ok = accepted || skipped, skipped }, JsonOptions),
+                        origin, cancellationToken);
                     return;
                 }
 
@@ -394,8 +399,14 @@ internal sealed class CommercialPlayerServer : IDisposable
         string? rangeHeader,
         bool headOnly,
         string? origin,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<bool>? canServe = null)
     {
+        if (canServe is not null && !canServe())
+        {
+            await WriteTextResponse(stream, 404, "text/plain", "Not Found", origin, cancellationToken);
+            return;
+        }
         await using var file = new FileStream(
             filePath,
             FileMode.Open,
@@ -440,7 +451,7 @@ internal sealed class CommercialPlayerServer : IDisposable
             contentType,
             selection.Length,
             origin,
-            "private, max-age=3600, immutable",
+            "no-store",
             extraHeaders,
             cancellationToken);
         if (headOnly)
@@ -456,9 +467,11 @@ internal sealed class CommercialPlayerServer : IDisposable
         {
             while (remaining > 0)
             {
+                if (canServe is not null && !canServe()) break;
                 var requested = (int)Math.Min(buffer.Length, remaining);
                 var read = await file.ReadAsync(buffer.AsMemory(0, requested), cancellationToken);
                 if (read <= 0) break;
+                if (canServe is not null && !canServe()) break;
                 await stream.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
                 remaining -= read;
             }

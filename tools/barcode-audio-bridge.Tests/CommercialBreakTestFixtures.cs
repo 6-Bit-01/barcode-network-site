@@ -84,6 +84,7 @@ internal sealed class TemporaryCommercialLibrary : IDisposable
 
 internal sealed class TestDurationReader : ICommercialDurationReader
 {
+    public List<string> ReadPaths { get; } = new();
     private readonly Dictionary<string, TimeSpan> _durations = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _failures = new(StringComparer.OrdinalIgnoreCase);
 
@@ -101,6 +102,7 @@ internal sealed class TestDurationReader : ICommercialDurationReader
 
     public TimeSpan ReadDuration(string filePath)
     {
+        ReadPaths.Add(filePath);
         var name = Path.GetFileName(filePath);
         if (_failures.Contains(name)) throw new InvalidDataException("fixture unreadable");
         return _durations.TryGetValue(name, out var duration)

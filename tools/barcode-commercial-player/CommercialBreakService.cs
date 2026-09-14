@@ -42,7 +42,8 @@ internal sealed record CommercialPlaybackItemSnapshot(
     string? LogoUrl,
     string? LogoBrand,
     string? CornerLogoUrl,
-    int? CornerLogoVariant);
+    int? CornerLogoVariant,
+    bool Excluded);
 
 internal sealed record CommercialBreakSnapshot(
     string Schema,
@@ -78,7 +79,8 @@ internal sealed class CommercialMediaSnapshot : IDisposable
 
     public IReadOnlyDictionary<string, CommercialMediaResource> MediaById { get; }
 
-    public static CommercialMediaSnapshot Create(CommercialBreakPlan plan, string snapshotsRoot)
+    public static CommercialMediaSnapshot Create(CommercialBreakPlan plan, string snapshotsRoot,
+        Func<string, string, bool> isActiveCommercial)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentException.ThrowIfNullOrWhiteSpace(snapshotsRoot);
@@ -93,14 +95,16 @@ internal sealed class CommercialMediaSnapshot : IDisposable
         try
         {
             var sources = plan.Items
-                .Select(item => (Id: item.Id, FilePath: item.FilePath, ContentType: "video/mp4"))
+                .Select(item => (Id: item.Id, FilePath: item.FilePath, ContentType: "video/mp4",
+                    IsCommercial: item.Kind is CommercialClipKind.Sponsor or CommercialClipKind.Interstitial))
                 .Concat(plan.UsedVisualAssets.Select(asset =>
-                    (Id: asset.Id, FilePath: asset.FilePath, ContentType: asset.ContentType)))
+                    (Id: asset.Id, FilePath: asset.FilePath, ContentType: asset.ContentType, IsCommercial: false)))
                 .DistinctBy(source => source.Id)
                 .ToArray();
             var media = new Dictionary<string, CommercialMediaResource>(StringComparer.Ordinal);
             foreach (var source in sources)
             {
+                if (source.IsCommercial && !isActiveCommercial(source.FilePath, source.Id)) continue;
                 var extension = Path.GetExtension(source.FilePath);
                 var destination = Path.Combine(runDirectory, source.Id + extension);
                 if (!TryCreateHardLink(destination, source.FilePath))
@@ -177,6 +181,8 @@ internal sealed class CommercialBreakService
     private CommercialMediaSnapshot? _mediaSnapshot;
     private CommercialBreakPlaybackStatus _status = CommercialBreakPlaybackStatus.Idle;
     private Dictionary<string, CommercialMediaResource> _mediaById = new(StringComparer.Ordinal);
+    private Dictionary<string, CommercialPlaylistItem> _commercialSources = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _excludedCommercialIds = new(StringComparer.Ordinal);
     private IReadOnlyList<string> _warnings = Array.Empty<string>();
     private long _generation;
     private int _currentIndex = -1;
@@ -329,7 +335,8 @@ internal sealed class CommercialBreakService
                 .Concat(plan.OmittedInterstitials.Select(name =>
                     $"{name} was omitted to keep the complete break closest to 11:00."))
                 .ToArray();
-            pendingMediaSnapshot = CommercialMediaSnapshot.Create(plan, _library.PlaybackSnapshotsDirectory);
+            pendingMediaSnapshot = CommercialMediaSnapshot.Create(plan, _library.PlaybackSnapshotsDirectory,
+                (path, id) => _library.IsActiveCommercial(path, id));
 
             long generation;
             string message;
@@ -339,6 +346,10 @@ internal sealed class CommercialBreakService
                 generation = _generation;
                 _plan = plan;
                 DisposeMediaSnapshotLocked();
+                _commercialSources = plan.Items
+                    .Where(item => item.Kind is CommercialClipKind.Sponsor or CommercialClipKind.Interstitial)
+                    .ToDictionary(item => item.Id, StringComparer.Ordinal);
+                _excludedCommercialIds.Clear();
                 _mediaSnapshot = pendingMediaSnapshot;
                 _mediaById = pendingMediaSnapshot.MediaById.ToDictionary(
                     pair => pair.Key,
@@ -416,7 +427,8 @@ internal sealed class CommercialBreakService
                 item.LogoAssetId is null ? null : MediaUrl(item.LogoAssetId),
                 item.LogoBrand?.ToString().ToLowerInvariant(),
                 item.CornerLogoAssetId is null ? null : MediaUrl(item.CornerLogoAssetId),
-                item.CornerLogoVariant))
+                item.CornerLogoVariant,
+                IsCommercialExcludedLocked(item.Id)))
                 .ToArray() ?? Array.Empty<CommercialPlaybackItemSnapshot>();
 
             return new CommercialBreakSnapshot(
@@ -438,13 +450,21 @@ internal sealed class CommercialBreakService
         }
     }
 
-    public bool MarkClipStarted(long generation, int index)
+    public bool MarkClipStarted(long generation, int index) => MarkClipStarted(generation, index, out _);
+
+    public bool MarkClipStarted(long generation, int index, out bool skipped)
     {
+        skipped = false;
         lock (_sync)
         {
             if (generation != _generation || _plan is null || index < 0 || index >= _plan.Items.Count) return false;
             if (_status is not CommercialBreakPlaybackStatus.Queued and not CommercialBreakPlaybackStatus.Playing) return false;
             if (_status == CommercialBreakPlaybackStatus.Playing && index < _currentIndex) return false;
+            if (IsCommercialExcludedLocked(_plan.Items[index].Id))
+            {
+                skipped = true;
+                return false;
+            }
             _status = CommercialBreakPlaybackStatus.Playing;
             _currentIndex = index;
             _message = $"Playing {_plan.Items[index].Name}.";
@@ -500,7 +520,8 @@ internal sealed class CommercialBreakService
     {
         lock (_sync)
         {
-            if (_mediaById.TryGetValue(id, out var candidate) && File.Exists(candidate.FilePath))
+            if (!IsCommercialExcludedLocked(id)
+                && _mediaById.TryGetValue(id, out var candidate) && File.Exists(candidate.FilePath))
             {
                 resource = candidate;
                 return true;
@@ -538,7 +559,18 @@ internal sealed class CommercialBreakService
             _warnings);
     }
 
-    private static string MediaUrl(string id) => $"/v1/commercials/media/{id}";
+    // Bypass immutable responses cached by older helpers; new responses use no-store.
+    private static string MediaUrl(string id) => $"/v1/commercials/media/{id}?active=1";
+
+    private bool IsCommercialExcludedLocked(string id)
+    {
+        if (_excludedCommercialIds.Contains(id)) return true;
+        if (!_commercialSources.TryGetValue(id, out var original)
+            || _library.IsActiveCommercial(original.FilePath, original.Id)) return false;
+        _excludedCommercialIds.Add(id);
+        BridgeLog.Write($"Commercial skipped generation={_generation} file={Path.GetFileName(original.FilePath)} reason=no-longer-in-Active.");
+        return true;
+    }
 
     private static string FormatDuration(TimeSpan duration) =>
         $"{(int)duration.TotalMinutes}:{duration.Seconds:00}";

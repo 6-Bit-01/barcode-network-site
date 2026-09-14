@@ -194,7 +194,7 @@ function AdminBrowserArtistNotice({ entry, sessionEntries }: { entry: QueueEntry
 }
 function durationLabel(entry: QueueEntry): string {
   const duration = formatRuntime(getTrackRuntimeSeconds(entry));
-  return entry.durationIsEstimate ? `${duration} estimated / pending · ${durationSourceLabel(entry)}` : `${duration} detected · ${durationSourceLabel(entry)}`;
+  return entry.durationIsEstimate ? `${duration} estimated / pending · verify 6-minute limit before playback · ${durationSourceLabel(entry)}` : `${duration} detected · ${durationSourceLabel(entry)}`;
 }
 function detectedLabel(entry: QueueEntry): string | null {
   if (!entry.detectedArtistName && !entry.detectedSongTitle && !entry.providerTitle) return null;

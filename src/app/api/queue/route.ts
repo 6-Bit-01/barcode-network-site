@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { APPLE_MUSIC_QUEUE_UNSUPPORTED_MESSAGE, PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT, PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION, PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION, PUBLIC_QUEUE_LEGAL_TERMS_VERSION, detectQueueSourceType, isAppleMusicUrl } from "@/lib/queue-types";
+import { assertQueueTrackDuration, QueueTrackDurationError, QUEUE_TRACK_DURATION_UNVERIFIED_MESSAGE, APPLE_MUSIC_QUEUE_UNSUPPORTED_MESSAGE, PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT, PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION, PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION, PUBLIC_QUEUE_LEGAL_TERMS_VERSION, detectQueueSourceType, isAppleMusicUrl } from "@/lib/queue-types";
 import { getPublicQueueSnapshot, getRadioQueueState, isTrackPersistedInSessionQueue, normalizeQueueSourceKey, requestPriorityUpgradePlaceholder, sanitizeQueueSnapshotForPublic, submitRadioTrack, toPublicQueueTrack } from "@/lib/queue";
 import { getLiveOverlayRuntimeState } from "@/lib/live-overlay";
 import { attachQueueLiveTiming } from "@/lib/queue-live-timing";
@@ -78,7 +78,7 @@ function validateLegalAcceptance(body: Record<string, unknown>) {
 
 function parseBodyDuration(value: unknown): number | null {
   const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
-  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
 function duplicateResponse(): NextResponse {
@@ -86,7 +86,7 @@ function duplicateResponse(): NextResponse {
 }
 
 function acceptedResponse(track: ReturnType<typeof toPublicQueueTrack>, cooldownSeconds: number): NextResponse {
-  return NextResponse.json({ track, message: "Track entered Free Transmissions.", ...(cooldownSeconds > 0 ? { cooldownRemainingSeconds: cooldownSeconds } : {}) }, { status: 201 });
+  return NextResponse.json({ track, message: track.durationIsEstimate ? `Track entered Free Transmissions. ${QUEUE_TRACK_DURATION_UNVERIFIED_MESSAGE}` : "Track entered Free Transmissions.", ...(cooldownSeconds > 0 ? { cooldownRemainingSeconds: cooldownSeconds } : {}) }, { status: 201 });
 }
 
 function queueEntriesForDuplicatePreflight(state: Awaited<ReturnType<typeof getRadioQueueState>>): QueueEntry[] {
@@ -117,7 +117,7 @@ async function hasDuplicateUploadSubmission(fileName: string, fileSize: number, 
     if (entry.sourceType !== "upload") return false;
     if (!entry.fileName || entry.fileName.toLowerCase() !== normalizedFileName) return false;
     if (entry.fileSize !== fileSize) return false;
-    if (detectedDurationSeconds && entry.detectedDurationSeconds && entry.detectedDurationSeconds !== detectedDurationSeconds) return false;
+    if (detectedDurationSeconds && entry.detectedDurationSeconds && entry.detectedDurationSeconds !== Math.round(detectedDurationSeconds)) return false;
     return true;
   });
 }
@@ -182,6 +182,9 @@ export async function POST(req: Request) {
     const body = Object.fromEntries(form.entries());
     return await submitTrackFromBody(body, { allowAdminPrivateSession, rehearsalAccessToken });
   } catch (error) {
+    if (error instanceof QueueTrackDurationError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: 400 });
+    }
     const message = error instanceof Error ? error.message : "Submission failed";
     const reasons = Array.isArray((error as { reasons?: unknown }).reasons) ? (error as { reasons: string[] }).reasons : [];
     const code = typeof (error as { code?: unknown }).code === "string" ? (error as { code: string }).code : undefined;
@@ -209,6 +212,8 @@ export async function submitTrackFromBody(
   const title = cleanBodyText(body.title);
   const mode = cleanBodyText(body.mode);
   const detectedDurationSeconds = parseBodyDuration(body.detectedDurationSeconds);
+  // Link duration comes from provider lookup; uploaded measurements are supplied by the browser.
+  if (mode === "upload") assertQueueTrackDuration(detectedDurationSeconds);
   const note = cleanBodyText(body.note).slice(0, 500);
   const tiktokHandle = cleanBodyText(body.tiktokHandle);
   const collaboratorNames = cleanBodyText(body.collaboratorNames).slice(0, 200);

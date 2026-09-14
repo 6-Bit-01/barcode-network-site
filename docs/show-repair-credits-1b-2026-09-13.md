@@ -24,9 +24,19 @@ BNL's existing `wheelEligibleArtists` remains a summary by submitted artist labe
 
 Q03 remains unresolved: the September 11 WittyF0x interruption requires the focused private show-log evidence. Existing Priority interruption/restoration regressions remain the generic contract, not proof of that incident's cause.
 
+## September 14 release-review correction
+
+The release review reproduced a Deck fallback error: three submitted tracks with one removal could display only two Received when show statistics were unavailable, because `acceptedCount` measures occupied capacity and excludes removals. A failed statistics refresh could also keep older removal counts visible. Queue terminal counts likewise cannot stand in for finished-play outcomes.
+
+The Deck now displays unavailable totals/progress until matching show statistics return. HTTP, network and malformed-JSON statistics failures clear stale totals while successful queue reads continue updating the live line. The existing polling interval, authoritative counts, submission limits, queue/resolver mutations and stored records are unchanged. `tests/broadcast-deck-counts.test.mjs` exercises the actual component expressions and polling callback with isolated fixtures; both regressions failed before the correction and passed afterward.
+
+Correction validation: `npm ci`, `npm run check` (1,108 passing tests; zero TypeScript/ESLint errors and 36 existing ESLint warnings), and `npm run build` all passed. The two new focused regression tests passed. These are local automated receipts, not production or Studio acceptance.
+
+At combined rehearsal, temporarily block only the Deck statistics request in the operator's test browser. Confirm Received, Played and progress show unavailable, the queue still refreshes, and totals recover after unblocking. This is a browser-only fault test: never alter or restore queue data to simulate failure. Keep this correction when combining dependent PRs424–426; their original published heads and original integrated-test receipt predate it.
+
 ## Verification
 
-Run the focused command below plus `npm ci`, `npm run check`, and `npm run build`. Final local results: `npm ci` passed; `npm run check` passed all 1,106 tests with zero TypeScript/ESLint errors (36 existing ESLint warnings); `npm run build` passed. The focused credit/Wheel/read-model run passed 65 tests, and the Priority UI behavior run passed five. Exact tested source/tree are recorded in the draft PR and source pack. All fixtures use isolated in-memory stores; they do not use live submissions or provider requests.
+Run the focused command below plus `npm ci`, `npm run check`, and `npm run build`. Initial September 13 results: `npm ci` passed; `npm run check` passed all 1,106 tests with zero TypeScript/ESLint errors (36 existing ESLint warnings); `npm run build` passed. The focused credit/Wheel/read-model run passed 65 tests, and the Priority UI behavior run passed five. The September 14 correction results are recorded above. Exact tested source/tree are recorded in the draft PR and source pack. All fixtures use isolated in-memory stores; they do not use live submissions or provider requests.
 
 ```bash
 node --test tests/queue-credits-counts.test.mjs tests/wheel-integrity.test.mjs tests/live-overlay-resolver.test.mjs tests/bnl-read-model.test.mjs tests/queue-public-stats.test.mjs tests/queue-playback.test.mjs

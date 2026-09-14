@@ -106,12 +106,12 @@ export function BroadcastDeck({
         fetch(statsEndpoint, {
           cache: "no-store",
           headers: submitterToken ? { "x-barcode-submitter-token": submitterToken } : undefined,
-        }),
+        }).catch(() => null),
       ]);
       if (!queueResponse.ok) throw new Error("Queue unavailable");
       const nextSnapshot = await queueResponse.json() as QueuePublicSnapshot;
       setSnapshot(nextSnapshot);
-      if (statsResponse.ok) setStats(await statsResponse.json() as QueuePublicStats);
+      setStats(statsResponse?.ok ? await statsResponse.json().catch(() => null) as QueuePublicStats | null : null);
       setLoadError(false);
       setLoaded(true);
       setClockNow(Date.now());
@@ -133,9 +133,11 @@ export function BroadcastDeck({
   const timing = useMemo(() => snapshot ? buildQueueTimingDisplay(queueTimingInputFromPublicSnapshot(snapshot), clockNow ? { now: new Date(clockNow) } : {}) : null, [clockNow, snapshot]);
   const queueHref = queueHrefOverride ?? (snapshot?.session && snapshot.session.status !== "archived" ? `/queue/${encodeURIComponent(snapshot.session.sessionId)}` : "/queue");
   const isLive = Boolean(snapshot?.session && snapshot.session.status !== "archived" && snapshot.session.broadcastPhase !== "ended");
-  const finishedCount = currentShow?.finishedTrackCount ?? snapshot?.session?.completedCount ?? 0;
-  const submittedCount = currentShow?.submittedTrackCount ?? ((snapshot?.session?.acceptedCount ?? 0) || liveTracks.length + finishedCount);
-  const progress = submittedCount > 0 ? Math.min(100, Math.round((finishedCount / submittedCount) * 100)) : 0;
+  // Queue capacity excludes removals, and terminal queue entries include skips.
+  // Neither is a substitute for the full show's explicit lifecycle totals.
+  const finishedCount = currentShow?.finishedTrackCount ?? null;
+  const submittedCount = currentShow?.submittedTrackCount ?? null;
+  const progress = submittedCount === null || finishedCount === null ? null : submittedCount > 0 ? Math.min(100, Math.round((finishedCount / submittedCount) * 100)) : 0;
   const personalHandles = stats?.personalHistory?.handles ?? [];
 
   function dismissOrientation() {
@@ -164,8 +166,8 @@ export function BroadcastDeck({
           </div>
         </div>
         <div className="grid grid-cols-2 gap-px bg-border lg:grid-cols-4">
-          <DeckMetric label="Received" value={submittedCount} note={`${currentShow?.removedTrackCount ?? snapshot?.session?.removedCount ?? 0} removed · cumulative submissions, including removals.`} />
-          <DeckMetric label="Played" value={finishedCount} note="Completed-play outcomes only." />
+          <DeckMetric label="Received" value={submittedCount ?? "—"} note={currentShow ? `${currentShow.removedTrackCount} removed · cumulative submissions, including removals.` : "Show totals unavailable; retrying."} />
+          <DeckMetric label="Played" value={finishedCount ?? "—"} note={currentShow ? "Completed-play outcomes only." : "Show totals unavailable; retrying."} />
           <DeckMetric label="Still active" value={liveTracks.length} note="Now Playing, Next In Line, and waiting." />
           <DeckMetric label="Projected runtime" value={timing ? formatRuntime(timing.timeBankSummary.remainingProjectionSeconds) : "—"} note="Estimate for the active line." />
         </div>
@@ -190,8 +192,8 @@ export function BroadcastDeck({
         </section>
 
         <section className="border border-border bg-surface p-5">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs uppercase tracking-[0.3em] text-muted">Show progress</p><p className="mt-2 text-sm text-muted">{finishedCount} of {submittedCount || "—"} retained tracks have a completed-play outcome.</p></div><span className="font-mono text-xl font-black text-[#ffaa00]">{progress}%</span></div>
-          <div className="mt-4 h-2 overflow-hidden border border-border bg-background"><div className="h-full bg-[linear-gradient(90deg,#ff2a2a,#ffaa00)] transition-[width] duration-500" style={{ width: `${progress}%` }} /></div>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs uppercase tracking-[0.3em] text-muted">Show progress</p><p className="mt-2 text-sm text-muted">{currentShow ? `${finishedCount} of ${submittedCount} retained tracks have a completed-play outcome.` : "Show totals unavailable; retrying."}</p></div><span className="font-mono text-xl font-black text-[#ffaa00]">{progress === null ? "—" : `${progress}%`}</span></div>
+          <div className="mt-4 h-2 overflow-hidden border border-border bg-background"><div className="h-full bg-[linear-gradient(90deg,#ff2a2a,#ffaa00)] transition-[width] duration-500" style={{ width: `${progress ?? 0}%` }} /></div>
           <div className="mt-4 grid gap-3 text-xs sm:grid-cols-3"><div className="border border-border bg-background/55 p-3"><p className="uppercase tracking-widest text-muted">Wheel</p><p className="mt-2 font-bold text-foreground">{snapshot?.wheelTiming?.status ?? "idle"} · {snapshot?.session?.wheelSpinsOwed ?? 0} owed</p></div><div className="border border-border bg-background/55 p-3"><p className="uppercase tracking-widest text-muted">Sponsor break</p><p className="mt-2 font-bold text-foreground">{snapshot?.session?.sponsorBreakStatus?.replaceAll("_", " ") ?? "not due"}</p></div><div className="border border-border bg-background/55 p-3"><p className="uppercase tracking-widest text-muted">Last refresh</p><p className="mt-2 font-bold text-foreground">{clockNow ? displayTime(new Date(clockNow).toISOString()) : "—"}</p></div></div>
         </section>
 

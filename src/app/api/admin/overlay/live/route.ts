@@ -29,9 +29,9 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   try {
     if (body?.action === "updatePlayerSync") {
-      await updateLiveOverlayPlayerSync(body.sync, serverRequestReceivedAt);
+      const sync = await updateLiveOverlayPlayerSync(body.sync, serverRequestReceivedAt, body.startDelayMs);
       const serverResponseGeneratedAt = new Date();
-      return NextResponse.json({ ok: true }, { headers: transportHeaders(serverRequestReceivedAt, serverResponseGeneratedAt) });
+      return NextResponse.json({ ok: true, ...(body.startDelayMs !== undefined ? { sync } : {}) }, { headers: transportHeaders(serverRequestReceivedAt, serverResponseGeneratedAt) });
     }
     if (body?.action === "clearPlayerSync") {
       await setLiveOverlayPlayerSync(null, serverRequestReceivedAt);

@@ -1017,6 +1017,43 @@ test("commercial start is idempotent when already running/completed/skipped", as
   });
 });
 
+test("rejected commercial start cancels only its own timer and preserves newer submissions and history", async () => {
+  await freshOpenSession("commercial rejected start recovery");
+  const initial = await queue.getRadioQueueState();
+  const eligibleNow = new Date(Date.parse(initial.session.broadcastStartedAt) + 2 * 60 * 60 * 1000 + 1000);
+  await withFakeNow(eligibleNow, async () => {
+    await reachSponsorMidpoint("commercial guarded recovery");
+    const started = await queue.updateSponsorBreakState("start", true);
+    const attempt = { sessionId: started.session.sessionId, startedAt: started.session.sponsorBreakStartedAt };
+    const submittedLater = await addTrack("submission after sponsor request");
+    await queue.updateRadioTrack(submittedLater.id, "priority");
+    const before = await queue.getRadioQueueState();
+    const beforeLog = await queue.getQueueSessionShowLog(attempt.sessionId);
+    await assert.rejects(() => queue.updateSponsorBreakState("start", true), /already running/);
+    const wrongSession = await queue.cancelFailedSponsorStart({ ...attempt, sessionId: "other-session" });
+    assert.equal(wrongSession.session.sponsorBreakStartedAt, attempt.startedAt);
+    const wrongAttempt = await queue.cancelFailedSponsorStart({ ...attempt, startedAt: new Date(eligibleNow.getTime() - 1000).toISOString() });
+    assert.equal(wrongAttempt.session.sponsorBreakStartedAt, attempt.startedAt);
+    const repaired = await queue.cancelFailedSponsorStart(attempt);
+    assert.equal(repaired.session.sponsorBreakStartedAt, null);
+    assert.notEqual(repaired.session.sponsorBreakStatus, "running");
+    for (const key of ["queue", "nowPlaying", "nextInLine", "completed"]) assert.deepEqual(repaired[key], before[key], `${key} must remain current`);
+    assert.ok([repaired.nowPlaying, repaired.nextInLine, ...repaired.queue].some((entry) => entry?.id === submittedLater.id), "the submission made after the failed request remains present");
+    const afterLog = await queue.getQueueSessionShowLog(attempt.sessionId);
+    assert.deepEqual(afterLog.events.slice(0, beforeLog.events.length), beforeLog.events, "existing show events are not restored or rewritten");
+    assert.equal(afterLog.events.at(-1).eventType, "sponsor_break_reset");
+    await withFakeNow(new Date(eligibleNow.getTime() + 1000), async () => {
+      const replacement = await queue.updateSponsorBreakState("start", true);
+      assert.equal(replacement.session.sponsorBreakStatus, "running");
+      const lateRejection = await queue.cancelFailedSponsorStart(attempt);
+      assert.equal(lateRejection.session.sponsorBreakStartedAt, replacement.session.sponsorBreakStartedAt, "an old rejection cannot cancel a newer timer");
+      await queue.updateSponsorBreakState("complete");
+      const afterComplete = await queue.cancelFailedSponsorStart({ sessionId: attempt.sessionId, startedAt: replacement.session.sponsorBreakStartedAt });
+      assert.equal(afterComplete.session.sponsorBreakStatus, "completed");
+    });
+  });
+});
+
 test("ending broadcast is separate from closing submissions", async () => {
   await freshOpenSession("end broadcast separate");
   let state = await queue.getRadioQueueState();

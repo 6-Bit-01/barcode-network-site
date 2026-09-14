@@ -4147,11 +4147,13 @@ function publicSubmitterStatus(session: QueueSession, identity?: { submitterToke
   const cooldownSeconds = normalizeSubmissionCooldownSeconds(session.submissionCooldownSeconds);
   const cooldownRemainingSeconds = latest && cooldownSeconds > 0 ? Math.max(0, cooldownSeconds - Math.floor((Date.now() - latest) / 1000)) : 0;
   const limit = normalizeTrackLimitPerArtist(session.trackLimitPerArtist);
+  const visibleIds = new Set(directMatching.map((entry) => entry.id));
   return {
     used: connectedMatching.length,
     limit,
     remaining: Math.max(0, limit - connectedMatching.length),
     cooldownRemainingSeconds,
+    lifecycleCounts: publicStatsCounts(publicStatsRecordsForSession(session).filter(({ entry }) => visibleIds.has(entry.id))),
     submitted: directMatching.slice(0, limit).map((entry) => {
       const { id, submittedArtistName, submittedSongTitle, collaboratorNames, sourceType, lane, durationLabel, detectedDurationSeconds, estimatedDurationSeconds, durationIsEstimate, durationSource, priorityUpgradeStatus } = toPublicQueueTrack(entry);
       const ownsSignalHoldDetails = Boolean(token && entry.submitterToken?.trim() && token === entry.submitterToken.trim());

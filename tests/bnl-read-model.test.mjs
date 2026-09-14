@@ -189,7 +189,7 @@ async function addTrack(label, options = {}) {
     stripeSessionId: options.stripeSessionId ?? null,
     createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, sequence)).toISOString(),
     contactEmail: `${label.toLowerCase().replace(/[^a-z0-9]/g, "")}${sequence}@example.com`,
-    submitterToken: `token-${label}-${sequence}`,
+    submitterToken: options.submitterToken ?? `token-${label}-${sequence}`,
     fileUrl: "https://private.example.test/upload.mp3",
     fileName: "upload.mp3",
     fileSize: 123456,
@@ -1910,4 +1910,24 @@ test("BNL dossier primary link resolves to the absolute public Hub URL", () => {
   const dossierPageSource = fs.readFileSync(path.join(projectRoot, "src/components/DossierPageView.tsx"), "utf8");
   assert.match(dossierPageSource, /dossier\.primaryLink &&/);
   assert.match(dossierPageSource, /href=\{dossier\.primaryLink\.url\}/);
+});
+
+test("live BNL credits preserve submission labels and distinguish artists from actual Wheel entrants", async () => {
+  await startFreshQueueSession({ purpose: "live_broadcast", bnlPublicationStatus: "public_copy_approved", submissionCooldownSeconds: 0 });
+  await queue.setQueueOpen(true);
+  const first = await addTrack("Credit One", { artist: "First Credit", submitterToken: "credits-shared-test", sourceType: "youtube", detectedArtistName: "Shared Upload Channel", detectedSongTitle: "Provider Caption" });
+  const second = await addTrack("Credit Two", { artist: "Second Credit", submitterToken: "credits-shared-test", sourceType: "youtube", detectedArtistName: "Shared Upload Channel" });
+  // These helper entries share their existing private test submitter token.
+  const model = await modelJson();
+  const q = model.sections.queue;
+  assert.match(q.creditPolicy, /submitted_broadcast_labels/);
+  assert.equal(model.sections.artists.some((artist) => artist.name === "Shared Upload Channel"), false);
+  assert.equal(model.sections.artists.some((artist) => artist.name === "First Credit"), true);
+  assert.equal(q.wheelEligibleArtistsBasis, "submitted_artist_labels_not_draw_entrants");
+  const entrant = q.wheel.eligibleEntrants.find((candidate) => candidate.trackIds.includes(first.id));
+  assert.ok(entrant.trackIds.includes(second.id));
+  assert.equal(entrant.tracks[0].artistName, "First Credit");
+  assert.equal(entrant.tracks[1].artistName, "Second Credit");
+  assert.equal(q.queue.find((track) => track.id === first.id).detectedArtistName, "Shared Upload Channel", "secondary provider provenance is retained");
+  assert.deepEqual(findForbiddenKeys(q.wheel.eligibleEntrants), []);
 });

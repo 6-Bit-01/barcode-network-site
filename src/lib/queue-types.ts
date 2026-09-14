@@ -631,6 +631,9 @@ export interface QueuePublicSubmitterStatus {
   limit: number;
   remaining: number;
   cooldownRemainingSeconds: number;
+  // Full-session counts for directly visible submissions, independent of the
+  // recent-play list and the connected-identity submission allowance.
+  lifecycleCounts?: QueuePublicStatsCounts;
   submitted: Array<Pick<QueuePublicTrack, "id" | "submittedArtistName" | "submittedSongTitle" | "collaboratorNames" | "sourceType" | "lane" | "durationLabel" | "detectedDurationSeconds" | "estimatedDurationSeconds" | "durationIsEstimate" | "durationSource" | "priorityUpgradeStatus"> & {
     signalHoldStatus?: SignalHoldStatus;
     signalHoldApplicationCount?: number;
@@ -823,6 +826,7 @@ export interface QueueWheelArtistOption {
   trackIds: string[];
   trackCount: number;
 }
+
 
 export interface QueueState {
   revision?: number;

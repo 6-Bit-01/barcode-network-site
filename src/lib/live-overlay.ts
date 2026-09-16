@@ -1,7 +1,7 @@
 import { Redis } from "@upstash/redis";
 import { getRadioLiveQueueState, getRadioQueueState, isWheelEligibleTrack, recordQueueOperationalShowEvent, removeEarliestWheelCandidateTrack, updateRadioTrack } from "./queue";
 import { getTrackArtworkUrl, getTrackDurationLabel, parseTikTokVideoUrl } from "./queue-types";
-import { getQueueTrackCredits, buildWheelSegments, derangedWheelCandidateOrder, orderedWheelCandidateIds, resolveLiveOverlayScene, safeLiveOverlayUrl, normalizeLiveOverlaySyncCorrectionReason, serverStampLiveOverlayPlayerSync, wheelFinalRotationForSegment } from "./live-overlay-resolver";
+import { getQueueTrackCredits, buildWheelSegments, derangedWheelCandidateOrder, orderedWheelCandidateIds, resolveLiveOverlayScene, safeLiveOverlayUrl, serverStampLiveOverlayPlayerSync, wheelFinalRotationForSegment } from "./live-overlay-resolver";
 import { parseYouTubeVideoId } from "./track-duration";
 import type { QueueEntry, QueueSourceType, QueueState } from "./queue-types";
 import { hasActiveQueueSession } from "./session-bound-polling";
@@ -346,30 +346,12 @@ function normalizeWheelCeremonyStatus(value: unknown): WheelCeremonyStatus {
 }
 
 
-function normalizePlaybackState(value: unknown): LiveOverlayPlaybackState {
-  return value === "paused" || value === "stopped" || value === "playing" ? value : "stopped";
-}
-
 function normalizePlayerSync(input: unknown, receivedAt?: Date): LiveOverlayPlayerSync | null {
   const raw = input as Partial<LiveOverlayPlayerSync> | null;
   if (!raw || typeof raw !== "object") return null;
-  if (raw.provider === "tiktok" || raw.provider === "audio") return serverStampLiveOverlayPlayerSync(raw, receivedAt ?? (typeof raw.updatedAt === "string" ? new Date(raw.updatedAt) : new Date()));
-  if (raw.provider !== "youtube") return null;
-  const videoId = typeof raw.videoId === "string" && parseYouTubeVideoId(`https://www.youtube.com/watch?v=${raw.videoId}`) ? raw.videoId : null;
-  if (!videoId) return null;
-  const currentTimeSeconds = typeof raw.currentTimeSeconds === "number" && Number.isFinite(raw.currentTimeSeconds) ? Math.max(0, raw.currentTimeSeconds) : 0;
-  const durationSeconds = typeof raw.durationSeconds === "number" && Number.isFinite(raw.durationSeconds) && raw.durationSeconds > 0 ? raw.durationSeconds : undefined;
-  return {
-    provider: "youtube",
-    videoId,
-    trackId: cleanText(raw.trackId),
-    playbackState: normalizePlaybackState(raw.playbackState),
-    currentTimeSeconds,
-    durationSeconds,
-    updatedAt: receivedAt ? receivedAt.toISOString() : typeof raw.updatedAt === "string" ? raw.updatedAt : new Date().toISOString(),
-    muted: true,
-    correctionReason: normalizeLiveOverlaySyncCorrectionReason(raw.correctionReason),
-  };
+  const stamp = receivedAt ?? (typeof raw.updatedAt === "string" ? new Date(raw.updatedAt) : new Date());
+  if (!Number.isFinite(stamp.getTime())) return null;
+  return serverStampLiveOverlayPlayerSync(raw, stamp);
 }
 
 export function youtubeSyncFromTrack(entry: QueueEntry, playbackState: LiveOverlayPlaybackState = "playing", currentTimeSeconds = 0): LiveOverlayYouTubeSync | null {
@@ -472,8 +454,8 @@ export async function getLiveOverlayPlayerSync(): Promise<LiveOverlayPlayerSync 
   }
 }
 
-export async function setLiveOverlayPlayerSync(sync: LiveOverlayPlayerSync | null, receivedAt = new Date()): Promise<LiveOverlayPlayerSync | null> {
-  const normalized = serverStampLiveOverlayPlayerSync(sync, receivedAt);
+export async function setLiveOverlayPlayerSync(sync: LiveOverlayPlayerSync | null, receivedAt = new Date(), startDelayMs?: number): Promise<LiveOverlayPlayerSync | null> {
+  const normalized = serverStampLiveOverlayPlayerSync(sync, receivedAt, startDelayMs);
   const redis = getRedis();
   if (redis) {
     if (normalized) await redis.set(PLAYER_SYNC_KEY, JSON.stringify(normalized));
@@ -483,8 +465,8 @@ export async function setLiveOverlayPlayerSync(sync: LiveOverlayPlayerSync | nul
   return normalized;
 }
 
-export async function updateLiveOverlayPlayerSync(input: unknown, receivedAt = new Date()): Promise<LiveOverlayPlayerSync | null> {
-  return setLiveOverlayPlayerSync(normalizePlayerSync(input, receivedAt), receivedAt);
+export async function updateLiveOverlayPlayerSync(input: unknown, receivedAt = new Date(), startDelayMs?: number): Promise<LiveOverlayPlayerSync | null> {
+  return setLiveOverlayPlayerSync(normalizePlayerSync(input, receivedAt), receivedAt, startDelayMs);
 }
 
 export async function getStoredLiveOverlayState(): Promise<LiveOverlayState> {

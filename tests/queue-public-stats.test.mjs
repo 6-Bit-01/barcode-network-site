@@ -485,3 +485,58 @@ test("Broadcast Deck exposes only valid external links as music actions", () => 
   assert.match(deck, /deckExternalTrackHref/);
   assert.doesNotMatch(deck, /fileUrl|AdminAudioPlayer|\/api\/admin\/queue\/file/);
 });
+
+test("played archive excludes loaded-only and unplayed removals without changing source or full Deck history", () => {
+  const waiting = entry("never-submitted-play", "@never", { artist: "Never Aired" });
+  const loaded = { ...entry("loaded-only", "@loaded", { status: "playing" }), playedAt: at(3) };
+  const removed = entry("removed-before-play", "@removed", { outcome: "removed", status: "removed" });
+  const manualFinish = entry("manual-finish-no-play", "@manual", { outcome: "finished" });
+  const finished = entry("started-finished", "@finished", { outcome: "finished" });
+  const partial = entry("partial-removed", "@partial", { outcome: "removed", status: "removed" });
+  const natural = { ...entry("natural-finish", "@natural", { outcome: "finished" }), playbackEndedNaturally: true };
+  const showLog = [
+    showLogEvent(1, "track_loaded", loaded),
+    showLogEvent(2, "track_finished", manualFinish),
+    showLogEvent(3, "track_play_started", finished),
+    showLogEvent(4, "track_resumed", finished),
+    showLogEvent(5, "track_play_started", partial),
+    showLogEvent(6, "track_removed", removed),
+    showLogEvent(7, "track_removed", partial),
+  ];
+  const input = { revision: 19, sessions: [session("evidence-show", "live_broadcast", {
+    queue: [waiting], loadedTrack: loaded, completed: [manualFinish, finished, natural], removed: [removed, partial], showLog,
+  })] };
+  const original = JSON.stringify(input);
+  const allBefore = queue.buildQueuePublicStats(input);
+  const played = queue.buildQueuePublicStats({ ...input, playedOnly: true });
+  assert.equal(played.catalogScope, "played_broadcast");
+  assert.deepEqual(played.shows[0].trackRoster.map(x => x.trackId).sort(), [finished.id, partial.id, natural.id].sort());
+  assert.equal(played.overview.submittedTrackCount, 3);
+  assert.equal(played.overview.artistCount, 3);
+  assert.equal(played.overview.finishedTrackCount, 2);
+  assert.equal(played.overview.removedTrackCount, 1);
+  assert.ok(played.recentEvents.every(e => !e.track || [finished.id, partial.id, natural.id].includes(e.track.trackId)));
+  assert.equal(allBefore.overview.submittedTrackCount, 7);
+  assert.deepEqual(queue.buildQueuePublicStats(input), allBefore);
+  assert.equal(JSON.stringify(input), original);
+  assert.notEqual(played.sourceDigest, allBefore.sourceDigest);
+  assert.equal(queue.buildQueuePublicStats({ ...input, playedOnly: true }).sourceDigest, played.sourceDigest);
+  const privateShow = { ...input.sessions[0], purpose: "rehearsal" };
+  assert.equal(queue.buildQueuePublicStats({ revision: 19, sessions: [privateShow], playedOnly: true }).shows.length, 0);
+  const preview = queue.buildQueueAdminPreviewStats({ revision: 19, selectedSession: privateShow, playedOnly: true });
+  assert.equal(preview.overview.submittedTrackCount, 3);
+  assert.equal(queue.buildQueueAdminPreviewStats({ revision: 19, selectedSession: privateShow }).overview.submittedTrackCount, 7);
+});
+
+test("archive refresh requests played projection; ordinary stats remain the complete history", async () => {
+  const route = require("../src/app/api/queue/stats/route.ts");
+  const played = await route.GET(new Request("https://example.test/api/queue/stats?view=played"));
+  assert.equal(played.status, 200);
+  assert.equal((await played.json()).catalogScope, "played_broadcast");
+  const all = await route.GET(new Request("https://example.test/api/queue/stats"));
+  assert.equal((await all.json()).catalogScope, undefined);
+  const page = fs.readFileSync(path.join(projectRoot, "src/app/radio/archive/page.tsx"), "utf8");
+  const component = fs.readFileSync(path.join(projectRoot, "src/components/BroadcastArchive.tsx"), "utf8");
+  assert.match(page, /getPublicQueueStats\(null, true\)/);
+  assert.match(component, /refreshEndpoint = "\/api\/queue\/stats\?view=played"/);
+});

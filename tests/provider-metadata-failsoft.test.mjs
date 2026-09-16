@@ -224,3 +224,15 @@ test("SoundCloud account metadata stays uploader provenance rather than artist i
   assert.equal(track.detectedDurationSeconds, 181);
   assert.equal(track.durationSource, "soundcloud_api");
 }));
+
+test("Spotify fractions above six minutes are rejected before display rounding", async () => withProviderEnv({ SPOTIFY_CLIENT_ID: "client", SPOTIFY_CLIENT_SECRET: "secret" }, async () => {
+  await assert.rejects(withFetch(async (url) => String(url).includes("accounts.spotify.com")
+    ? jsonResponse({ access_token: "duration-token" })
+    : jsonResponse({ duration_ms: 360010, name: "Fractional Overrun", artists: [], album: {} }),
+  () => queue.createQueueTrack(trackInput("SpotifyOverrun", "https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC", "spotify"))), e => e.code === "track_too_long");
+}));
+
+test("SoundCloud fractions above six minutes are rejected before display rounding", async () => withProviderEnv({ SOUNDCLOUD_CLIENT_ID: "client" }, async () => {
+  await assert.rejects(withFetch(async () => jsonResponse({ id: 9123, duration: 360010, title: "Fractional Overrun", user: {} }),
+    () => queue.createQueueTrack(trackInput("SoundCloudOverrun", "https://soundcloud.com/test/overrun", "soundcloud"))), e => e.code === "track_too_long");
+}));

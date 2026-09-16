@@ -4,7 +4,7 @@ import { COOKIE_NAME, verifyAdminToken } from "@/lib/auth";
 import { getLiveOverlayRuntimeState, resetWheelCeremonyStateForNewSession } from "@/lib/live-overlay";
 import { attachQueueLiveTiming } from "@/lib/queue-live-timing";
 import { resolveQueueArchiveSessionId } from "@/lib/queue-admin-session-target";
-import { archiveCurrentQueueSession, clearArchivedQueueSessions, getRadioQueueState, normalizeTrackLimitPerArtist, setQueueOpen, startNewQueueSession, activateQueueSession, updatePriorityUpgradeSettings, updateQueueSessionProvenance, updateRadioTrack, updateSignalHoldSettings, updateSponsorBreakState, updateSubmissionCooldownSettings } from "@/lib/queue";
+import { cancelFailedSponsorStart, archiveCurrentQueueSession, clearArchivedQueueSessions, getRadioQueueState, normalizeTrackLimitPerArtist, setQueueOpen, startNewQueueSession, activateQueueSession, updatePriorityUpgradeSettings, updateQueueSessionProvenance, updateRadioTrack, updateSignalHoldSettings, updateSponsorBreakState, updateSubmissionCooldownSettings } from "@/lib/queue";
 import { isQueueSessionBnlPublicationStatus, isQueueSessionPurpose } from "@/lib/queue-types";
 
 export const dynamic = "force-dynamic";
@@ -154,7 +154,8 @@ export async function POST(req: Request) {
       paymentsEnabled: signalHoldPaidEnabled,
     }));
   }
-  if (body.action === "updateSponsorBreakState" && ["start", "complete", "skip", "reset"].includes(body.sponsorAction)) return NextResponse.json(await updateSponsorBreakState(body.sponsorAction));
+  if (body.action === "cancelFailedSponsorStart" && typeof body.sessionId === "string" && typeof body.startedAt === "string" && Number.isFinite(Date.parse(body.startedAt))) return NextResponse.json(await cancelFailedSponsorStart({ sessionId: body.sessionId, startedAt: body.startedAt }));
+  if (body.action === "updateSponsorBreakState" && ["start", "complete", "skip", "reset"].includes(body.sponsorAction)) return NextResponse.json(await updateSponsorBreakState(body.sponsorAction, body.requireNewStart === true));
   if (body.action === "archiveSession") {
     try {
       const requestedSessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";

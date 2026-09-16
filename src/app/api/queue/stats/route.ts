@@ -14,5 +14,5 @@ export async function GET(req: Request) {
   if (submitterToken.length > 512) {
     return NextResponse.json({ error: "Invalid submission browser token." }, { status: 400, headers: NO_STORE_HEADERS });
   }
-  return NextResponse.json(await getPublicQueueStats(submitterToken || null), { headers: NO_STORE_HEADERS });
+  return NextResponse.json(await getPublicQueueStats(submitterToken || null, new URL(req.url).searchParams.get("view") === "played"), { headers: NO_STORE_HEADERS });
 }

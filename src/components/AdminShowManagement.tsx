@@ -8,7 +8,7 @@ import { notifyQueueSessionChanged } from "@/lib/session-bound-polling";
 import { AdminQueueSessionProvenance } from "@/components/AdminQueueSessionProvenance";
 import { AdminRehearsalShareLink } from "@/components/AdminRehearsalShareLink";
 import { formatRuntime } from "@/lib/queue-types";
-import { pacificDateString } from "@/lib/pacific-time";
+import { defaultBroadcastShowTitle, isDefaultBroadcastShowTitle, pacificDateString } from "@/lib/pacific-time";
 import type { QueueSessionBnlPublicationStatus, QueueSessionPurpose, QueueSessionSummary, QueueState } from "@/lib/queue-types";
 
 const SESSION_DESCRIPTION_OPTIONS = [
@@ -46,7 +46,7 @@ export function AdminShowManagement() {
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [showDate] = useState(todayDate());
-  const [title, setTitle] = useState(`BARCODE Radio — ${todayDate()}`);
+  const [title, setTitle] = useState(defaultBroadcastShowTitle(showDate));
   const [description, setDescription] = useState(defaultDescription(todayDate()));
   const [trackLimitPerArtist, setTrackLimitPerArtist] = useState(3);
   const [queueCapacity, setQueueCapacity] = useState(44);
@@ -111,7 +111,9 @@ export function AdminShowManagement() {
     setSignalHoldStartError(null);
     const paidUpgradesEnabled = priorityUpgradesEnabled && priorityUpgradePriceCents > 0;
     const paidSignalHoldEnabled = signalHoldEnabled && signalHoldPriceCents > 0;
-    const next = await post({ action: "startSession", title, showDate, description, purpose, bnlPublicationStatus, trackLimitPerArtist, queueCapacity, submissionCooldownSeconds, priorityUpgradesEnabled: paidUpgradesEnabled, priorityUpgradeLabel: FIXED_PRIORITY_LABEL, priorityUpgradeInstructions: FIXED_PRIORITY_INSTRUCTIONS, priorityUpgradePriceCents, priorityUpgradeCurrency, priorityUpgradePaymentsEnabled: paidUpgradesEnabled, signalHoldEnabled: paidSignalHoldEnabled, signalHoldPriceCents, signalHoldCurrency, signalHoldPaymentsEnabled: paidSignalHoldEnabled });
+    const currentShowDate = todayDate();
+    const currentTitle = isDefaultBroadcastShowTitle(title, showDate) ? defaultBroadcastShowTitle(currentShowDate) : title;
+    const next = await post({ action: "startSession", title: currentTitle, showDate: currentShowDate, description, purpose, bnlPublicationStatus, trackLimitPerArtist, queueCapacity, submissionCooldownSeconds, priorityUpgradesEnabled: paidUpgradesEnabled, priorityUpgradeLabel: FIXED_PRIORITY_LABEL, priorityUpgradeInstructions: FIXED_PRIORITY_INSTRUCTIONS, priorityUpgradePriceCents, priorityUpgradeCurrency, priorityUpgradePaymentsEnabled: paidUpgradesEnabled, signalHoldEnabled: paidSignalHoldEnabled, signalHoldPriceCents, signalHoldCurrency, signalHoldPaymentsEnabled: paidSignalHoldEnabled });
     if (next?.session?.sessionId) {
       notifyQueueSessionChanged();
       router.push(`/admin/queue?sessionId=${encodeURIComponent(next.session.sessionId)}`);

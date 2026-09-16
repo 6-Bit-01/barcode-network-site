@@ -157,7 +157,22 @@ export interface QueueWheelTiming {
 
 export const PUBLIC_QUEUE_LEGAL_TERMS_VERSION = "1.2";
 export const PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION = "1.1";
-export const PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION = "1.0";
+export const PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION = "1.1";
+export const MAX_QUEUE_TRACK_DURATION_SECONDS = 360;
+export const QUEUE_TRACK_DURATION_LIMIT_MESSAGE = "Tracks must be 6 minutes (6:00) or less. Submit a shorter version.";
+export const QUEUE_TRACK_DURATION_UNVERIFIED_MESSAGE = "Duration unverified: the host must check the 6-minute limit before playback.";
+
+export class QueueTrackDurationError extends Error {
+  readonly code = "track_too_long";
+  constructor() { super(QUEUE_TRACK_DURATION_LIMIT_MESSAGE); }
+}
+
+// Validate raw measurements before display/storage rounding. Null is unknown, not proof of compliance.
+export function assertQueueTrackDuration(duration: unknown): void {
+  if (typeof duration === "number" && Number.isFinite(duration) && duration > MAX_QUEUE_TRACK_DURATION_SECONDS) {
+    throw new QueueTrackDurationError();
+  }
+}
 export const PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT = "I agree to the BARCODE Network Terms, Queue Submission Terms, and Privacy Policy. I confirm I am 13+ and, if under 18, have parent/guardian permission. I confirm I have the rights to submit this track, and I understand uploads are temporary and may be used for BARCODE Radio/live show-related playback, clips, recaps, platform replays, and related BARCODE Network features as described in the terms.";
 export const PRIORITY_TERMS_VERSION = "1.1";
 export const PRIORITY_DISCLOSURE_TEXT = "Priority Signal moves an eligible submission closer to the front after payment clears. It does not guarantee approval, airplay, promotion, review, a specific stream time, permanent placement, or interruption of the track currently playing. By continuing to checkout, I confirm that I am at least 18 years old or have permission from a parent or legal guardian to make this payment.";
@@ -791,6 +806,7 @@ export interface QueuePublicHistoryEvent {
 }
 
 export interface QueuePublicStats {
+  catalogScope?: "played_broadcast";
   schemaVersion: "queue_public_history_projection_v1";
   source: "queue_public_history_projection";
   visibility: "public_safe";

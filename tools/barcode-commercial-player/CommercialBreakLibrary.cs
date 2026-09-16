@@ -111,7 +111,7 @@ Every bumper receives corner-logo coverage whenever it is selected.
 
 ACTIVE CONTENT
 Put every video eligible for the next break in Sponsors\Active.
-Move any file to Sponsors\Inactive to remove it from the next break.
+Only Sponsors\Active is scanned. Sponsors\Inactive is never scanned or played.
 
 Files with parentheses are treated as fake commercials/trailers, not sponsors.
 Use these tags anywhere in the file name to show a logo during that clip:
@@ -153,8 +153,10 @@ No per-file fit list is required. Only the current sequence clip supplies audio.
 
 PLAYBACK
 Right-click the BARCODE Commercial Player tray icon and choose Start Commercial Break.
-The selected media is frozen into a local playback snapshot at start, so moving
-files between Active and Inactive while a break runs affects only the next break.
+The selected media is frozen into a local playback snapshot at start. A copy
+is playable only while its original remains the same eligible file in Active.
+Moving that original out of Active excludes it; the remaining clips continue.
+Inactive is never scanned, read, or used as a fallback.
 The Playback Snapshots folder is managed and cleaned automatically.
 
 PLAYER SOURCE
@@ -202,6 +204,35 @@ Recommended video format: H.264 video + AAC audio in an .mp4 container.
     private string LogosDirectory => Path.Combine(VisualsDirectory, "Logos");
     private string InstructionsPath => Path.Combine(_rootDirectory, "README.txt");
     public string PlaybackSnapshotsDirectory => Path.Combine(_rootDirectory, "Playback Snapshots");
+
+    // A saved playback copy is eligible only while its original remains in Active.
+    public bool IsActiveCommercial(string path, string? expectedMediaId = null)
+    {
+        try
+        {
+            var fullPath = Path.GetFullPath(path);
+            if (!string.Equals(Path.GetDirectoryName(fullPath), ActiveDirectory, StringComparison.OrdinalIgnoreCase)
+                || !HasNoRedirects(fullPath) || !File.Exists(fullPath)) return false;
+            // Do not let a file link or a redirected Active folder reach Inactive.
+            return expectedMediaId is null || BuildMediaId(fullPath) == expectedMediaId;
+        }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
+    }
+
+    private static bool HasNoRedirects(string path)
+    {
+        var parent = Path.GetDirectoryName(path);
+        return (parent is null || HasNoRedirects(parent))
+            && (File.GetAttributes(path) & FileAttributes.ReparsePoint) == 0;
+    }
+
+    private IEnumerable<string> EnumerateActiveCommercials()
+    {
+        // Check Active itself before enumeration, so a junction cannot scan Inactive.
+        if (!HasNoRedirects(ActiveDirectory)) return Array.Empty<string>();
+        return EnumerateMp4(ActiveDirectory);
+    }
 
     public void EnsureLayout()
     {
@@ -285,7 +316,7 @@ Recommended video format: H.264 video + AAC audio in an .mp4 container.
 
         var sponsors = new List<CommercialClip>();
         var interstitials = new List<CommercialClip>();
-        foreach (var path in EnumerateMp4(ActiveDirectory))
+        foreach (var path in EnumerateActiveCommercials())
         {
             var name = Path.GetFileNameWithoutExtension(path);
             var cutPriority = GetOptionalCutPriority(name);
@@ -401,6 +432,9 @@ Recommended video format: H.264 video + AAC audio in an .mp4 container.
     {
         try
         {
+            if (kind is CommercialClipKind.Sponsor or CommercialClipKind.Interstitial
+                && !IsActiveCommercial(path))
+                return (null, "not a current file directly in Sponsors\\Active");
             var duration = _durationReader.ReadDuration(path);
             if (duration <= TimeSpan.Zero || duration > TimeSpan.FromHours(1))
             {

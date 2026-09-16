@@ -6,7 +6,11 @@ export class VideoStartGate {
 
   private schedule: typeof setTimeout;
   private unschedule: typeof clearTimeout;
-  constructor(schedule = setTimeout, unschedule = clearTimeout) { this.schedule = schedule; this.unschedule = unschedule; }
+  constructor(schedule = setTimeout, unschedule = clearTimeout) {
+    // Window timer methods cannot be invoked with the gate as their receiver.
+    this.schedule = schedule.bind(globalThis);
+    this.unschedule = unschedule.bind(globalThis);
+  }
 
   get holding(): boolean { return this.phase !== "idle"; }
   get preparing(): boolean { return this.phase === "waiting" || this.phase === "armed"; }
@@ -20,13 +24,15 @@ export class VideoStartGate {
 
   arm(id: number, delayMs: number, play: () => void): boolean {
     if (!this.isCurrent(id) || !Number.isFinite(delayMs)) return false;
-    this.phase = "armed";
     this.timer = this.schedule(() => {
       if (id !== this.requestId || this.phase !== "armed") return;
       this.timer = null;
       this.phase = "released";
       play();
     }, Math.max(0, delayMs));
+    // A failed registration must remain current so the publisher can cancel
+    // preparation and show its retry message instead of leaving a stuck hold.
+    this.phase = "armed";
     return true;
   }
 
@@ -58,7 +64,10 @@ export class VideoReceiverStartGate {
   private waiting = false;
   private schedule: typeof setTimeout;
   private unschedule: typeof clearTimeout;
-  constructor(schedule = setTimeout, unschedule = clearTimeout) { this.schedule = schedule; this.unschedule = unschedule; }
+  constructor(schedule = setTimeout, unschedule = clearTimeout) {
+    this.schedule = schedule.bind(globalThis);
+    this.unschedule = unschedule.bind(globalThis);
+  }
 
   apply(token: string | undefined, delayMs: number | null, playing: boolean, prepare: () => void, play: () => void): boolean {
     if (!playing || !token) { this.cancel(); return false; }

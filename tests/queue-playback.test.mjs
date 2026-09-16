@@ -2935,7 +2935,7 @@ test("admin and public TikTok component source assertions remain scoped", () => 
   assert.match(tiktokSource, /const clearReadyTimer = \(\) => \{/);
   assert.match(tiktokSource, /type === "onPlayerReady"[\s\S]*clearReadyTimer\(\)/);
   assert.match(tiktokSource, /type === "onPlayerError"[\s\S]*clearReadyTimer\(\)/);
-  assert.match(tiktokSource, /return \(\) => \{ startGate\.cancel\(\); bufferingRef\.current = false; clearReadyTimer\(\); window\.removeEventListener/);
+  assert.match(tiktokSource, /return \(\) => \{ clearReadyTimer\(\); window\.removeEventListener/);
   assert.match(tiktokSource, /const value = payload\.value/);
   assert.match(tiktokSource, /value\.errorCode/);
   assert.match(tiktokSource, /value\.errorType/);

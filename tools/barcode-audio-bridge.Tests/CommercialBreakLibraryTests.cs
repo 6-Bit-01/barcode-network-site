@@ -5,6 +5,41 @@ namespace Barcode.AudioBridge.Tests;
 public sealed class CommercialBreakLibraryTests
 {
     [Fact]
+    public void ActiveDirectoryAliasCannotEnumerateOrReadInactiveCommercials()
+    {
+        using var fixture = new TemporaryCommercialLibrary();
+        fixture.AddInactiveSponsor("ForbesFiberLOW.mp4");
+        fixture.AddInactiveSponsor("NovaCordova.mp4");
+        Directory.Delete(fixture.ActiveDirectory);
+        if (OperatingSystem.IsWindows())
+        {
+            using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = $"/c mklink /J \"{fixture.ActiveDirectory}\" \"{fixture.InactiveDirectory}\"",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            })!;
+            Assert.True(process.WaitForExit(5_000));
+            Assert.Equal(0, process.ExitCode);
+        }
+        else Directory.CreateSymbolicLink(fixture.ActiveDirectory, fixture.InactiveDirectory);
+        try
+        {
+            var reader = new TestDurationReader();
+            var library = new CommercialBreakLibrary(fixture.RootDirectory, reader);
+            var result = library.Load();
+            Assert.Empty(result.Sponsors);
+            Assert.Empty(result.Interstitials);
+            Assert.DoesNotContain(reader.ReadPaths, path => Path.GetFileName(path) is "ForbesFiberLOW.mp4" or "NovaCordova.mp4");
+            Assert.False(library.IsActiveCommercial(Path.Combine(fixture.ActiveDirectory, "ForbesFiberLOW.mp4")));
+        }
+        finally { Directory.Delete(fixture.ActiveDirectory); }
+    }
+
+    [Fact]
     public void ActiveFolderControlsEligibilityAndParenthesesSeparateHouseContentFromSponsors()
     {
         using var fixture = new TemporaryCommercialLibrary();

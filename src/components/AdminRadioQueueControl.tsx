@@ -19,7 +19,7 @@ import { ADMIN_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 import { hasActiveQueueSession, notifyQueueSessionChanged, startSessionBoundPolling } from "@/lib/session-bound-polling";
 import { analyzeRadioVisualFrequencyData, smoothRadioVisualAudioAnalysis } from "@/lib/radio-visuals-audio";
 import type { RadioVisualAudioAnalysis } from "@/lib/radio-visuals-audio";
-import { launchLocalCommercialBreakIfAcknowledged, requireLocalCommercialPlayer } from "@/lib/sponsor-break-contract";
+import { startSponsorBreakWithLocalPlayer } from "@/lib/sponsor-break-contract";
 
 type Tab = "active" | "completed" | "removed" | "spotlight";
 type AdminQueueAction = "pullNext" | "pullWheelChosen" | "pullFreeTransmission" | "startShow" | "addWheelSpinOwed" | "load" | "finish" | "remove" | "priority" | "regular" | "wheel" | "moveBack" | "spotlight" | "removeSpotlight" | "restoreRegular" | "restorePriority" | "resolvePaidPriority" | "pausePriority" | "resumePriority" | "useSignalHold";
@@ -465,23 +465,19 @@ export function AdminRadioQueueControl() {
       sponsorActionPendingRef.current = true;
       setSponsorActionPending(true);
     }
-    let websiteTimerStarted = false;
     try {
       if (isStart) {
-        await requireLocalCommercialPlayer(() => fetch(LOCAL_COMMERCIAL_START_URL, {
-          method: "OPTIONS",
-          mode: "cors",
-          cache: "no-store",
-        }));
+        await startSponsorBreakWithLocalPlayer({
+          probe: () => fetch(LOCAL_COMMERCIAL_START_URL.replace("/start", "/preflight"), { method: "GET", mode: "cors", cache: "no-store", signal: AbortSignal.timeout(15_000) }),
+          startWebsite: () => post({ action: "updateSponsorBreakState", sponsorAction, requireNewStart: true }),
+          launch: () => fetch(LOCAL_COMMERCIAL_START_URL, { method: "POST", mode: "cors", cache: "no-store", signal: AbortSignal.timeout(15_000) }),
+          cancelRejectedStart: (attempt) => post({ action: "cancelFailedSponsorStart", ...attempt }),
+        });
+      } else {
+        await post({ action: "updateSponsorBreakState", sponsorAction });
       }
-      const updated = await post({ action: "updateSponsorBreakState", sponsorAction });
-      if (!isStart || !updated) return;
-      websiteTimerStarted = true;
-      await launchLocalCommercialBreakIfAcknowledged(updated, () => fetch(LOCAL_COMMERCIAL_START_URL, { method: "POST", mode: "cors", cache: "no-store" }));
-    } catch {
-      setActionError(websiteTimerStarted
-        ? "The sponsor timer started, but BARCODE Commercial Player stopped before playback began. Restart the separate Commercial Player, then use its tray menu → Start Commercial Break."
-        : "The sponsor timer was not started because BARCODE Commercial Player is not running. Run the separate BARCODE.CommercialPlayer.exe once, then try Start Sponsor Break again.");
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Commercial Player could not be started. Check its local diagnostic preview.");
     } finally {
       if (isStart) {
         sponsorActionPendingRef.current = false;

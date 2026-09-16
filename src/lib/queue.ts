@@ -5897,13 +5897,14 @@ export async function updateSignalHoldSettings(input: SignalHoldSettingsInput): 
 }
 
 
-async function updateSponsorBreakStateMutation(action: "start" | "complete" | "skip" | "reset"): Promise<QueueState> {
+async function updateSponsorBreakStateMutation(action: "start" | "complete" | "skip" | "reset", requireNewStart = false): Promise<QueueState> {
   const store = await readStore();
   const session = getSession(store);
   if (session.status === "archived") return queueStateFromSession(session, store);
   applySponsorBreakDueState(session);
   const now = new Date().toISOString();
   const completedPlayable = completedCountedTrackCountForSession(session);
+  if (action === "start" && requireNewStart && session.sponsorBreakStatus === "running") throw new Error("A sponsor timer is already running. Check the current commercial source before retrying.");
   if (action === "start" && session.sponsorBreakStatus !== "due") return queueStateFromSession(session, store);
   if (action === "start" && (session.sponsorBreakStatus === "running" || session.sponsorBreakStatus === "completed" || session.sponsorBreakStatus === "skipped")) {
     return queueStateFromSession(session, store);
@@ -5923,8 +5924,30 @@ async function updateSponsorBreakStateMutation(action: "start" | "complete" | "s
   return queueStateFromSession(next, nextStore);
 }
 
-export async function updateSponsorBreakState(action: "start" | "complete" | "skip" | "reset"): Promise<QueueState> {
-  return withQueueMutation(() => updateSponsorBreakStateMutation(action));
+export async function updateSponsorBreakState(action: "start" | "complete" | "skip" | "reset", requireNewStart = false): Promise<QueueState> {
+  return withQueueMutation(() => updateSponsorBreakStateMutation(action, requireNewStart));
+}
+
+/** Cancel only the timer created by a definitively rejected local-player start. */
+export async function cancelFailedSponsorStart(input: { sessionId: string; startedAt: string }): Promise<QueueState> {
+  return withQueueMutation(async () => {
+    const store = await readStore();
+    const session = getSession(store);
+    if (session.status === "archived" || session.sessionId !== input.sessionId || session.sponsorBreakStatus !== "running" || session.sponsorBreakStartedAt !== input.startedAt) return queueStateFromSession(session, store);
+    const next = normalizeSession({
+      ...session,
+      sponsorBreakStatus: "not_due",
+      sponsorBreakStartedAt: null,
+      sponsorBreakCompletedAt: null,
+      sponsorBreakCompletedAfterPlayableCount: null,
+      sponsorBreakManualNote: "Local Commercial Player rejected this start. Only its sponsor timer was cancelled; the attempt remains in show history.",
+      updatedAt: new Date().toISOString(),
+    });
+    applySponsorBreakDueState(next);
+    const nextStore = replaceSession(store, next);
+    await writeStore(nextStore);
+    return queueStateFromSession(next, nextStore);
+  });
 }
 
 async function updateSubmissionCooldownSettingsMutation(input: { submissionCooldownSeconds?: number }): Promise<QueueState> {

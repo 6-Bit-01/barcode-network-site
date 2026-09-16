@@ -324,6 +324,7 @@ internal static class CommercialPlayerPage
     let activeCornerLogo = null;
     let primedCornerLogo = null;
     let pendingAudioGate = null;
+    let currentPlayback = null;
     let idleBackgroundStarting = false;
 
     const automaticFitMaximumDistortion = 1.085;
@@ -337,6 +338,7 @@ internal static class CommercialPlayerPage
     async function post(path) {
       const response = await fetch(path, { method: 'POST', cache: 'no-store' });
       if (!response.ok) throw new Error(`local player update failed (${response.status})`);
+      return response.status === 204 ? null : response.json();
     }
 
     function clearLogo() {
@@ -550,6 +552,7 @@ internal static class CommercialPlayerPage
     function clearPlayer(resumeIdleBackground = true) {
       runToken += 1;
       running = false;
+      currentPlayback = null;
       cancelAudioGate();
       player.pause();
       player.removeAttribute('src');
@@ -713,15 +716,40 @@ internal static class CommercialPlayerPage
 
     function playItem(item, nextItem, token) {
       return new Promise((resolve, reject) => {
-        if (token !== runToken) { resolve(); return; }
+        if (token !== runToken || item.excluded) { resolve(); return; }
+        let settled = false;
         activateCornerLogoForItem(item, token);
         const cleanup = () => {
+          settled = true;
+          if (currentPlayback?.token === token && currentPlayback?.id === item.id) currentPlayback = null;
           player.removeEventListener('ended', onEnded);
           player.removeEventListener('error', onError);
           player.removeEventListener('loadedmetadata', onMetadata);
         };
         const onEnded = () => { cleanup(); clearLogo(); resolve(); };
-        const onError = () => {
+        const exclude = () => {
+          if (settled) return;
+          cleanup();
+          cancelAudioGate();
+          player.pause();
+          player.removeAttribute('src');
+          player.load();
+          clearLogo();
+          clearCornerLogo();
+          resolve();
+        };
+        currentPlayback = { id: item.id, token, exclude };
+        const onError = async () => {
+          // A revoked Active source can end an in-flight range response.
+          try {
+            const response = await fetch('/v1/commercials/state', { cache: 'no-store' });
+            const state = response.ok ? await response.json() : null;
+            if (state?.generation === activeGeneration && state.items.some(entry => entry.id === item.id && entry.excluded)) {
+              exclude();
+              return;
+            }
+          } catch {}
+          if (settled || token !== runToken) return;
           cleanup();
           clearLogo();
           clearCornerLogo();
@@ -736,8 +764,8 @@ internal static class CommercialPlayerPage
         player.src = item.url;
         player.load();
         playWithAudioRecovery(item, token)
-          .then(() => { scheduleCornerLogoPrime(item, nextItem, token); showLogo(item, token); })
-          .catch(error => { cleanup(); clearLogo(); clearCornerLogo(); reject(error); });
+          .then(() => { if (!settled) { scheduleCornerLogoPrime(item, nextItem, token); showLogo(item, token); } })
+          .catch(error => { if (!settled) { cleanup(); clearLogo(); clearCornerLogo(); reject(error); } });
       });
     }
 
@@ -765,7 +793,9 @@ internal static class CommercialPlayerPage
           const item = state.items[index];
           const nextItem = state.items[index + 1] || null;
           showStatus(`BREAK ${state.generation} · ${index + 1}/${state.items.length}\n${item.name}`);
-          await post(`/v1/commercials/clip-started?generation=${state.generation}&index=${index}`);
+          if (item.excluded) continue;
+          const result = await post(`/v1/commercials/clip-started?generation=${state.generation}&index=${index}`);
+          if (result?.skipped) continue;
           await playItem(item, nextItem, token);
         }
         if (token !== runToken) return;
@@ -786,6 +816,10 @@ internal static class CommercialPlayerPage
         const response = await fetch('/v1/commercials/state', { cache: 'no-store' });
         if (!response.ok) throw new Error(`state ${response.status}`);
         const state = await response.json();
+        if (state.generation === activeGeneration && currentPlayback
+            && state.items.some(item => item.id === currentPlayback.id && item.excluded)) {
+          currentPlayback.exclude();
+        }
         if ((state.status === 'queued' || state.status === 'playing')
             && state.items.length > 0
             && state.backgroundUrl

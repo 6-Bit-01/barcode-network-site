@@ -7,7 +7,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { normalizeBroadcastArchiveProjectKey } from "./broadcast-archive";
 import { createProviderFetchBudget, fetchProviderJson } from "./provider-fetch";
-import { pacificDateString } from "./pacific-time";
+import { defaultBroadcastShowTitle, isDefaultBroadcastShowTitle, pacificDateString } from "./pacific-time";
 import {
   captureQueueDurableSnapshotIfNeeded,
   isQueueDurableSnapshotConfigured,
@@ -36,6 +36,7 @@ import { SPONSOR_BREAK_DURATION_SECONDS } from "./sponsor-break-contract";
 import { parseIso8601DurationToSeconds, parseSpotifyTrackId, parseYouTubeVideoId as parseTrackDurationYouTubeVideoId } from "./track-duration";
 import {
   INTERNAL_BUFFER_DURATION_SECONDS,
+  assertQueueTrackDuration,
   PRIORITY_DISCLOSURE_TEXT,
   PRIORITY_GIFT_ANONYMOUS_NAME,
   PRIORITY_GIFT_ATTRIBUTION_DISCLOSURE_TEXT,
@@ -194,6 +195,7 @@ interface QueueMutationLease {
 }
 
 interface ProviderMetadata {
+  rawDurationSeconds?: number | null;
   detectedArtistName: string | null;
   detectedSongTitle: string | null;
   detectedAlbumName: string | null;
@@ -360,7 +362,7 @@ function defaultSession(options: QueueSessionOptions = {}): QueueSession {
   const purpose = options.purpose ?? "rehearsal";
   return normalizeSession({
     sessionId: makeSessionId(),
-    title: options.title?.trim() || `BARCODE Radio — ${date}`,
+    title: options.title?.trim() || defaultBroadcastShowTitle(date),
     status: "prepared",
     purpose,
     bnlPublicationStatus: normalizeQueueSessionBnlPublicationStatus(
@@ -2475,7 +2477,7 @@ function isEmptyRevisionZeroPlaceholder(store: QueueStore): boolean {
   if (store.revision !== 0 || store.sessions.length !== 1 || queueStoreTrackRecordCount(store) !== 0) return false;
   const session = store.sessions[0];
   return store.activeSessionId === session.sessionId
-    && session.title === `BARCODE Radio — ${session.showDate}`
+    && isDefaultBroadcastShowTitle(session.title, session.showDate)
     && session.description === sessionDescriptionFor(session.showDate)
     && session.createdAt === session.updatedAt
     && session.status === "prepared"
@@ -2972,6 +2974,7 @@ async function lookupSpotifyMetadata(link: string, budget = createProviderFetchB
     providerArtistIdentities,
     providerReleaseId: providerReleaseId ? `spotify:album:${providerReleaseId}` : null,
     detectedDurationSeconds: seconds,
+    rawDurationSeconds: typeof track.duration_ms === "number" ? track.duration_ms / 1000 : null,
     durationSource: seconds ? "spotify_api" : "internal_estimate",
     artworkUrl,
   };
@@ -3051,6 +3054,7 @@ async function lookupSoundCloudMetadata(link: string, budget = createProviderFet
       : [],
     providerReleaseId: null,
     detectedDurationSeconds: seconds,
+    rawDurationSeconds: typeof track.duration === "number" ? track.duration / 1000 : null,
     durationSource: seconds ? "soundcloud_api" : "internal_estimate",
     artworkUrl,
   };
@@ -3284,10 +3288,12 @@ export async function createQueueTrack(input: {
   const normalizedTikTokHandle = normalizeTikTokHandle(input.tiktokHandle);
   if (!normalizedTikTokHandle) throw new Error("TikTok handle is required.");
   const providerMetadata = sourceType === "upload" ? blankProvider() : await detectProviderMetadata(sourceType, input.link ?? "");
+  assertQueueTrackDuration(input.detectedDurationSeconds);
+  assertQueueTrackDuration(providerMetadata.rawDurationSeconds ?? providerMetadata.detectedDurationSeconds);
   const providerId = parseProviderId(sourceType, input.link ?? input.fileUrl ?? "");
   const normalizedSourceKey = normalizeQueueSourceKey(input.fileUrl || input.link || "");
   const fileMetadata = sourceType === "upload" ? parseFilenameMetadata(input.fileName) : { artist: null, title: null, providerTitle: null };
-  const detectedDurationSeconds = typeof input.detectedDurationSeconds === "number" && Number.isFinite(input.detectedDurationSeconds)
+  const detectedDurationSeconds = typeof input.detectedDurationSeconds === "number" && Number.isFinite(input.detectedDurationSeconds) && input.detectedDurationSeconds > 0
     ? Math.max(1, Math.round(input.detectedDurationSeconds))
     : providerMetadata.detectedDurationSeconds;
   const durationSource = detectedDurationSeconds
@@ -4555,17 +4561,25 @@ function buildPublicPersonalHistory(
   };
 }
 
+function hasBroadcastPlaybackEvidence(session: QueueSession, entry: QueueEntry): boolean {
+  return queuePlaybackHasBegun(session.playbackDiagnostics, entry.id)
+    || normalizeQueueShowLog(session.showLog).some((event) => event.track?.trackId === entry.id
+      && (event.eventType === "track_play_started" || event.eventType === "track_resumed"))
+    || entry.playbackEndedNaturally === true;
+}
+
 function buildQueueStatsProjection(input: {
   revision: number;
   activeSessionId?: string | null;
   submitterToken?: string | null;
-}, selectedSessions: QueueSession[], includeSimulationTracks: boolean | ((session: QueueSession) => boolean)): QueuePublicStats {
+}, selectedSessions: QueueSession[], includeSimulationTracks: boolean | ((session: QueueSession) => boolean), playedOnly = false): QueuePublicStats {
   const eligibleSessions: QueuePublicStatsSession[] = selectedSessions
     .map((session) => {
       const includeSessionSimulationTracks = typeof includeSimulationTracks === "function"
         ? includeSimulationTracks(session)
         : includeSimulationTracks;
-      const records = publicStatsRecordsForSession(session, includeSessionSimulationTracks);
+      const allRecords = publicStatsRecordsForSession(session, includeSessionSimulationTracks);
+      const records = playedOnly ? allRecords.filter(({ entry }) => hasBroadcastPlaybackEvidence(session, entry)) : allRecords;
       return { session, records, events: publicHistoryEventsForSession(session, records) };
     })
     .sort((left, right) => publicStatsSessionTime(right.session) - publicStatsSessionTime(left.session));
@@ -4578,6 +4592,7 @@ function buildQueueStatsProjection(input: {
   const builtAt = eligibleSessions.map(({ session }) => session.updatedAt).filter(Boolean).sort().at(-1) ?? null;
   const digestInput = {
     schemaVersion: QUEUE_PUBLIC_HISTORY_SCHEMA_VERSION,
+    ...(playedOnly ? { catalogScope: "played_broadcast" } : {}),
     historyCoverageStartedAt: QUEUE_PUBLIC_HISTORY_COVERAGE_STARTED_AT,
     sourceRevision,
     sessions: eligibleSessions.map(({ session, records, events }) => ({
@@ -4599,6 +4614,7 @@ function buildQueueStatsProjection(input: {
   return {
     schemaVersion: QUEUE_PUBLIC_HISTORY_SCHEMA_VERSION,
     source: "queue_public_history_projection",
+    ...(playedOnly ? { catalogScope: "played_broadcast" as const } : {}),
     visibility: "public_safe",
     historyCoverageStartedAt: QUEUE_PUBLIC_HISTORY_COVERAGE_STARTED_AT,
     builtAt,
@@ -4624,6 +4640,7 @@ function buildQueueStatsProjection(input: {
 }
 
 export function buildQueuePublicStats(input: {
+  playedOnly?: boolean;
   revision: number;
   activeSessionId?: string | null;
   sessions: QueueSession[];
@@ -4635,10 +4652,11 @@ export function buildQueuePublicStats(input: {
   const sessions = input.sessions
     .map((session) => normalizeSession(session))
     .filter((session) => session.purpose === "live_broadcast" && session.showDate >= QUEUE_PUBLIC_HISTORY_COVERAGE_STARTED_AT);
-  return buildQueueStatsProjection(input, sessions, false);
+  return buildQueueStatsProjection(input, sessions, false, input.playedOnly);
 }
 
 export function buildQueueAdminPreviewStats(input: {
+  playedOnly?: boolean;
   revision: number;
   selectedSession: QueueSession;
   submitterToken?: string | null;
@@ -4648,15 +4666,16 @@ export function buildQueueAdminPreviewStats(input: {
     revision: input.revision,
     activeSessionId: selectedSession.status === "archived" ? null : selectedSession.sessionId,
     submitterToken: input.submitterToken,
-  }, [selectedSession], true);
+  }, [selectedSession], true, input.playedOnly);
 }
 
-export async function getPublicQueueStats(submitterToken?: string | null): Promise<QueuePublicStats> {
+export async function getPublicQueueStats(submitterToken?: string | null, playedOnly = false): Promise<QueuePublicStats> {
   if (!isQueueProductionEnabled()) {
     return buildQueueStatsProjection({ revision: 0, activeSessionId: null }, [], false);
   }
   const store = await readStore();
   return buildQueuePublicStats({
+    playedOnly,
     revision: store.revision,
     activeSessionId: store.activeSessionId,
     sessions: store.sessions.map((session) => normalizeSession(session)),
@@ -5060,20 +5079,20 @@ function activeQueueSessionEntries(session: QueueSession): QueueEntry[] {
   return [...unique.values()];
 }
 
-export async function getQueueAdminPreviewStats(sessionId?: string | null, submitterToken?: string | null): Promise<QueuePublicStats> {
+export async function getQueueAdminPreviewStats(sessionId?: string | null, submitterToken?: string | null, playedOnly = false): Promise<QueuePublicStats> {
   const store = await readStore();
   const selected = findSession(store, sessionId?.trim() || undefined);
   if (!selected) throw new Error("Queue session not found.");
-  return buildQueueAdminPreviewStats({ revision: store.revision, selectedSession: normalizeSession(selected), submitterToken });
+  return buildQueueAdminPreviewStats({ revision: store.revision, selectedSession: normalizeSession(selected), submitterToken, playedOnly });
 }
 
-export async function getQueueAdminPreviewReadback(sessionId?: string | null): Promise<QueueAdminPreviewReadback> {
+export async function getQueueAdminPreviewReadback(sessionId?: string | null, playedOnly = false): Promise<QueueAdminPreviewReadback> {
   const store = await readStore();
   const selected = findSession(store, sessionId?.trim() || undefined);
   if (!selected) throw new Error("Queue session not found.");
   const session = normalizeSession(selected);
   const entries = queueSessionEntries(session);
-  const stats = buildQueueAdminPreviewStats({ revision: store.revision, selectedSession: session });
+  const stats = buildQueueAdminPreviewStats({ revision: store.revision, selectedSession: session, playedOnly });
   return {
     schemaVersion: "queue_admin_broadcast_preview_readback_v1",
     readAuthority: "queue_store_fresh_read",
@@ -5897,13 +5916,14 @@ export async function updateSignalHoldSettings(input: SignalHoldSettingsInput): 
 }
 
 
-async function updateSponsorBreakStateMutation(action: "start" | "complete" | "skip" | "reset"): Promise<QueueState> {
+async function updateSponsorBreakStateMutation(action: "start" | "complete" | "skip" | "reset", requireNewStart = false): Promise<QueueState> {
   const store = await readStore();
   const session = getSession(store);
   if (session.status === "archived") return queueStateFromSession(session, store);
   applySponsorBreakDueState(session);
   const now = new Date().toISOString();
   const completedPlayable = completedCountedTrackCountForSession(session);
+  if (action === "start" && requireNewStart && session.sponsorBreakStatus === "running") throw new Error("A sponsor timer is already running. Check the current commercial source before retrying.");
   if (action === "start" && session.sponsorBreakStatus !== "due") return queueStateFromSession(session, store);
   if (action === "start" && (session.sponsorBreakStatus === "running" || session.sponsorBreakStatus === "completed" || session.sponsorBreakStatus === "skipped")) {
     return queueStateFromSession(session, store);
@@ -5923,8 +5943,30 @@ async function updateSponsorBreakStateMutation(action: "start" | "complete" | "s
   return queueStateFromSession(next, nextStore);
 }
 
-export async function updateSponsorBreakState(action: "start" | "complete" | "skip" | "reset"): Promise<QueueState> {
-  return withQueueMutation(() => updateSponsorBreakStateMutation(action));
+export async function updateSponsorBreakState(action: "start" | "complete" | "skip" | "reset", requireNewStart = false): Promise<QueueState> {
+  return withQueueMutation(() => updateSponsorBreakStateMutation(action, requireNewStart));
+}
+
+/** Cancel only the timer created by a definitively rejected local-player start. */
+export async function cancelFailedSponsorStart(input: { sessionId: string; startedAt: string }): Promise<QueueState> {
+  return withQueueMutation(async () => {
+    const store = await readStore();
+    const session = getSession(store);
+    if (session.status === "archived" || session.sessionId !== input.sessionId || session.sponsorBreakStatus !== "running" || session.sponsorBreakStartedAt !== input.startedAt) return queueStateFromSession(session, store);
+    const next = normalizeSession({
+      ...session,
+      sponsorBreakStatus: "not_due",
+      sponsorBreakStartedAt: null,
+      sponsorBreakCompletedAt: null,
+      sponsorBreakCompletedAfterPlayableCount: null,
+      sponsorBreakManualNote: "Local Commercial Player rejected this start. Only its sponsor timer was cancelled; the attempt remains in show history.",
+      updatedAt: new Date().toISOString(),
+    });
+    applySponsorBreakDueState(next);
+    const nextStore = replaceSession(store, next);
+    await writeStore(nextStore);
+    return queueStateFromSession(next, nextStore);
+  });
 }
 
 async function updateSubmissionCooldownSettingsMutation(input: { submissionCooldownSeconds?: number }): Promise<QueueState> {
@@ -6779,6 +6821,7 @@ export async function removeEarliestWheelCandidateTrack(trackIds: readonly strin
 
 // Legacy-compatible helpers used by archived/OBS components.
 export async function addToQueue(entry: Omit<QueueEntry, "id" | "status" | "playedAt">): Promise<QueueEntry> {
+  assertQueueTrackDuration(entry.detectedDurationSeconds);
   const track = normalizeEntry({ ...entry, id: generateQueueId(), status: "queued", playedAt: null, lane: entry.lane ?? (normalizeTier(entry.tier) === "fastlane" ? "priority" : "regular"), sourceType: entry.sourceType ?? detectQueueSourceType(entry.link) });
   return withQueueMutation(async () => {
     const store = await readStore();

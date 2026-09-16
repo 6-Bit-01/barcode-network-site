@@ -3,6 +3,7 @@ import fs from "node:fs";
 import Module, { createRequire } from "node:module";
 import path from "node:path";
 import test from "node:test";
+import vm from "node:vm";
 import ts from "typescript";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
@@ -100,6 +101,18 @@ test("the 1 Hz player-sync path uses one shared Redis command per heartbeat and 
     assert.equal(JSON.parse(FakeRedis.calls[0][2]).updatedAt, receivedAt.toISOString());
     assert.equal(JSON.parse(FakeRedis.calls[0][2]).audioAnalysis.bass, 0.82, "analysis piggybacks on the existing heartbeat instead of adding writes");
 
+    for (const media of [{ provider: "youtube", videoId: "abcdefghijk" }, { provider: "tiktok", postId: "6718335390845095173" }]) {
+      FakeRedis.calls.length = 0;
+      const planned = await overlay.updateLiveOverlayPlayerSync({ ...media, trackId: "track-1", playbackState: "playing", currentTimeSeconds: 12.5 }, receivedAt, 3000);
+      assert.equal(planned.scheduledStartAt, "2026-08-16T12:34:59.789Z");
+      assert.deepEqual(FakeRedis.calls.map(([operation]) => operation), ["set"], "preparation shares the one-write path and never reads or mutates the queue");
+      FakeRedis.values.set("barcode:live-overlay:player-sync", FakeRedis.calls[0][2]);
+      FakeRedis.calls.length = 0;
+      const runtime = await overlay.getLiveOverlayRuntimeState();
+      assert.deepEqual(runtime.playerSync, planned, "stored normalizer preserves the original start token and deadline");
+      assert.deepEqual(FakeRedis.calls.map(([operation]) => operation), ["mget"]);
+    }
+
     FakeRedis.calls.length = 0;
     await overlay.setLiveOverlayPlayerSync(null, receivedAt);
     assert.deepEqual(FakeRedis.calls, [["del", "barcode:live-overlay:player-sync"]], "clear performs exactly one DEL and zero reads");
@@ -152,15 +165,33 @@ test("active readers fetch overlay state and player sync with one MGET", async (
   }
 });
 
-test("the admin route keeps player-sync writes on the acknowledgement fast path", () => {
-  const route = fs.readFileSync(path.join(projectRoot, "src/app/api/admin/overlay/live/route.ts"), "utf8");
-  const updateStart = route.indexOf('body?.action === "updatePlayerSync"');
-  const clearStart = route.indexOf('body?.action === "clearPlayerSync"');
-  const snapshotStart = route.indexOf("setLiveOverlayState(body, serverRequestReceivedAt)");
-  assert.ok(updateStart >= 0 && clearStart > updateStart && snapshotStart > clearStart, "sync update and clear return before the snapshot-building action path");
-  const fastPath = route.slice(updateStart, snapshotStart);
-  assert.match(fastPath, /updateLiveOverlayPlayerSync\(body\.sync, serverRequestReceivedAt\)/);
-  assert.match(fastPath, /setLiveOverlayPlayerSync\(null, serverRequestReceivedAt\)/);
-  assert.equal((fastPath.match(/NextResponse\.json\(\{ ok: true \}/g) ?? []).length, 2);
-  assert.doesNotMatch(fastPath, /getLiveOverlayAdminSnapshot|setLiveOverlayState/);
+test("the admin route returns scheduled acknowledgements without a queue snapshot and keeps legacy heartbeats compact", async () => {
+  const source = fs.readFileSync(path.join(projectRoot, "src/app/api/admin/overlay/live/route.ts"), "utf8");
+  const root = ts.createSourceFile("route.ts", source, ts.ScriptTarget.Latest, true);
+  const code = root.statements.filter((node) => !ts.isImportDeclaration(node)).map((node) => node.getText().replace(/^export /, "")).join("\n");
+  const writes = [];
+  const stamped = { provider: "youtube", startToken: "video-start-test", scheduledStartAt: "2026-09-13T12:00:03Z" };
+  const globals = {
+    cookies: async () => ({ get: () => ({ value: "admin-test-token" }) }), COOKIE_NAME: "admin", verifyAdminToken: () => true,
+    NextResponse: { json: (body, options) => ({ body, ...options }) },
+    updateLiveOverlayPlayerSync: async (...args) => { writes.push(args); return stamped; },
+    setLiveOverlayPlayerSync: async (...args) => { writes.push(args); },
+    getLiveOverlayAdminSnapshot: () => { throw new Error("snapshot read on sync path"); },
+    setLiveOverlayState: () => { throw new Error("snapshot mutation on sync path"); },
+  };
+  const js = ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const post = vm.runInNewContext(`${js}\nPOST`, globals);
+  const normal = await post({ json: async () => ({ action: "updatePlayerSync", sync: { provider: "youtube" } }) });
+  assert.deepEqual(JSON.parse(JSON.stringify(normal.body)), { ok: true });
+  const planned = await post({ json: async () => ({ action: "updatePlayerSync", sync: { provider: "youtube" }, startDelayMs: 3000 }) });
+  assert.equal(planned.body.sync, stamped);
+  assert.equal(writes[1][2], 3000);
+  assert.equal(writes[1][1].toISOString(), planned.headers["X-BNL-Request-Received-At"]);
+  const cleared = await post({ json: async () => ({ action: "clearPlayerSync" }) });
+  assert.deepEqual(JSON.parse(JSON.stringify(cleared.body)), { ok: true });
+  assert.equal(writes[2][0], null);
+  globals.verifyAdminToken = () => false;
+  const denied = await post({ json: async () => ({ action: "updatePlayerSync", startDelayMs: 3000 }) });
+  assert.equal(denied.status, 401);
+  assert.equal(writes.length, 3, "unauthorized requests cannot schedule or clear players");
 });

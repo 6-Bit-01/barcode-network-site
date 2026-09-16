@@ -40,10 +40,10 @@ export async function GET(request: Request) {
       if (submitterToken.length > 512) {
         return NextResponse.json({ error: "Invalid submission browser token." }, { status: 400, headers: NO_STORE_HEADERS });
       }
-      return NextResponse.json(await getQueueAdminPreviewStats(sessionId, submitterToken || null), { headers: NO_STORE_HEADERS });
+      return NextResponse.json(await getQueueAdminPreviewStats(sessionId, submitterToken || null, params.get("view") === "played"), { headers: NO_STORE_HEADERS });
     }
     if (kind === "readback") {
-      return NextResponse.json(await getQueueAdminPreviewReadback(sessionId), { headers: NO_STORE_HEADERS });
+      return NextResponse.json(await getQueueAdminPreviewReadback(sessionId, params.get("view") === "played"), { headers: NO_STORE_HEADERS });
     }
     if (kind !== "snapshot") {
       return NextResponse.json({ error: "Unknown preview read." }, { status: 400, headers: NO_STORE_HEADERS });

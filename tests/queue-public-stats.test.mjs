@@ -403,7 +403,7 @@ test("public history route is GET-only, token-bounded, and never cacheable", asy
   assert.equal((await response.json()).schemaVersion, "queue_public_history_projection_v1");
 });
 
-test("the active queue is the only public Broadcast Deck entry point", () => {
+test("the Radio feature joins the active queue as a Deck entry while archive pages stay post-show", () => {
   const archivePage = fs.readFileSync(path.join(projectRoot, "src/app/radio/archive/page.tsx"), "utf8");
   const archive = fs.readFileSync(path.join(projectRoot, "src/components/BroadcastArchive.tsx"), "utf8");
   const deckPage = fs.readFileSync(path.join(projectRoot, "src/app/radio/deck/page.tsx"), "utf8");
@@ -454,8 +454,7 @@ test("the active queue is the only public Broadcast Deck entry point", () => {
   assert.match(publicQueue, /Song submissions stay here in the queue/);
   assert.match(publicQueue, /Submission complete · follow the show on the Deck/);
   assert.match(publicQueue, /\/radio\/archive/);
-  assert.doesNotMatch(radio, /\/radio\/deck/);
-  assert.match(radio, /\/radio\/archive/);
+  assert.match(radio, /<RadioBroadcastFeature \/>/);
   assert.doesNotMatch(archivePage, /deckHref|\/radio\/deck/);
   assert.doesNotMatch(sitemap, /\/radio\/deck/);
   assert.match(sitemap, /\/radio\/archive/);
@@ -539,4 +538,100 @@ test("archive refresh requests played projection; ordinary stats remain the comp
   const component = fs.readFileSync(path.join(projectRoot, "src/components/BroadcastArchive.tsx"), "utf8");
   assert.match(page, /getPublicQueueStats\(null, true\)/);
   assert.match(component, /refreshEndpoint = "\/api\/queue\/stats\?view=played"/);
+});
+
+test("Radio switches from the live Deck to the exact archived show using observed playback", () => {
+  const { buildRadioShowFeature } = require("../src/lib/radio-show-feature.ts");
+  const silent = entry("silent-finish", "@silent", { outcome: "finished" });
+  const complete = { ...entry("complete", "@artist", { artist: "Signal Artist", outcome: "finished" }), playbackEndedNaturally: true };
+  const partial = entry("partial", "@artist", { artist: "Signal Artist", outcome: "removed", status: "removed" });
+  const simulated = { ...entry("simulation", "@simulation", { outcome: "finished", isTestTrack: true }), playbackEndedNaturally: true };
+  const live = session("public-night", "live_broadcast", {
+    status: "open", queueOpen: true, showStarted: true, broadcastPhase: "broadcast_active",
+    completed: [silent, complete, simulated], removed: [partial],
+    showLog: [
+      showLogEvent(1, "broadcast_started", null, at(0)),
+      showLogEvent(2, "track_loaded", silent),
+      showLogEvent(3, "track_finished", silent),
+      showLogEvent(4, "track_play_started", complete),
+      showLogEvent(5, "track_play_started", partial),
+      showLogEvent(6, "track_resumed", partial),
+      showLogEvent(7, "wheel_spun"),
+      showLogEvent(8, "wheel_cancelled"),
+      showLogEvent(9, "wheel_spun"),
+    ],
+  });
+  const original = JSON.stringify(live);
+  const stats = queue.buildQueuePublicStats({ revision: 20, activeSessionId: live.sessionId, sessions: [live], playedOnly: true });
+  const feature = buildRadioShowFeature(stats, Date.parse(at(45)));
+  assert.equal(feature.mode, "live");
+  assert.equal(feature.show.href, "/radio/deck");
+  assert.equal(feature.queueHref, "/queue/public-night");
+  assert.equal(feature.submissionsOpen, true);
+  assert.equal(feature.show.tracksPlayed, 2, "a silent Finish and a simulation must not inflate playback");
+  assert.equal(feature.show.artistsHeard, 1);
+  assert.equal(feature.show.wheelSpins, 2, "cancelled selections still count as real spins");
+  assert.equal(feature.show.durationSeconds, 45 * 60);
+  assert.deepEqual(feature.show.artists, [{ name: "Signal Artist", href: "/radio/archive?view=artists&artist=signal%20artist" }]);
+  assert.doesNotMatch(JSON.stringify(feature), /private-browser-token|private@example|storage.example|pi_private|submittedByTikTokHandle|sourceRevision/);
+
+  const ended = { ...live, status: "archived", broadcastPhase: "ended", queueOpen: false,
+    showLog: [...live.showLog, showLogEvent(10, "session_archived", null, at(90))] };
+  const archive = buildRadioShowFeature(queue.buildQueuePublicStats({ revision: 21, sessions: [ended], playedOnly: true }), Date.parse(at(180)));
+  assert.equal(archive.mode, "archive");
+  assert.equal(archive.show.href, "/radio/archive?view=shows&show=public-night");
+  assert.equal(archive.show.durationSeconds, 90 * 60, "an archived duration must stop advancing");
+  assert.equal(archive.show.tracksPlayed, 2);
+  assert.equal(archive.queueHref, null);
+  assert.equal(archive.submissionsOpen, false);
+  assert.equal(JSON.stringify(live), original, "the feature never changes queue history");
+});
+
+test("Radio keeps private rehearsals dark and retains the last public show during intake", () => {
+  const { buildRadioShowFeature } = require("../src/lib/radio-show-feature.ts");
+  const heard = { ...entry("public-track", "@public", { outcome: "finished" }), playbackEndedNaturally: true };
+  const archived = session("public-archive", "live_broadcast", { completed: [heard], broadcastPhase: "ended" });
+  const privateShow = session("secret-rehearsal", "rehearsal", {
+    title: "Private rehearsal title", showDate: "2026-09-01", status: "open", queueOpen: true,
+    completed: [{ ...heard, id: "private-track" }],
+  });
+  const publicStats = (sessions, activeSessionId) => queue.buildQueuePublicStats({ revision: 22, sessions, activeSessionId, playedOnly: true });
+  const feature = buildRadioShowFeature(publicStats([archived, privateShow], privateShow.sessionId));
+  assert.equal(feature.mode, "archive");
+  assert.equal(feature.show.title, archived.title);
+  assert.equal(feature.show.durationSeconds, null, "missing broadcast events do not fabricate a duration");
+  assert.equal(feature.queueHref, null);
+  assert.doesNotMatch(JSON.stringify(feature), /secret-rehearsal|Private rehearsal title|private-track/);
+  const empty = buildRadioShowFeature(publicStats([privateShow], privateShow.sessionId));
+  assert.equal(empty.mode, "archive");
+  assert.equal(empty.show, null);
+
+  const intake = session("next-public-show", "live_broadcast", { status: "open", queueOpen: true, broadcastPhase: "submission_window" });
+  const beforeShow = buildRadioShowFeature(publicStats([archived, intake], intake.sessionId));
+  assert.equal(beforeShow.mode, "archive", "opening submissions alone is not an on-air claim");
+  assert.equal(beforeShow.show.title, archived.title);
+  assert.equal(beforeShow.submissionsOpen, true);
+  assert.equal(beforeShow.queueHref, "/queue/next-public-show");
+  assert.equal(buildRadioShowFeature(queue.buildQueuePublicStats({ revision: 22, sessions: [archived] })).show, null, "full outcome counts are not a substitute for playback evidence");
+});
+
+test("Radio feature endpoint shares only a compact anonymous public summary and honors the production gate", async () => {
+  const route = require("../src/app/api/queue/stats/route.ts");
+  const response = await route.GET(new Request("https://example.test/api/queue/stats?view=feature", {
+    headers: { "x-barcode-submitter-token": "private-browser-token", cookie: "barcode-admin=private" },
+  }));
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("cache-control"), /public.*s-maxage=30/);
+  assert.equal(response.headers.get("vary"), null);
+  const result = await response.json();
+  assert.equal(result.schemaVersion, "radio_show_feature_v1");
+  assert.deepEqual(Object.keys(result).sort(), ["mode", "queueHref", "schemaVersion", "show", "submissionsOpen"]);
+  assert.doesNotMatch(JSON.stringify(result), /private-browser-token|personalHistory|sourceRevision|trackRoster/);
+  process.env.BARCODE_QUEUE_PRODUCTION_ENABLED = "false";
+  try {
+    const disabled = await route.GET(new Request("https://example.test/api/queue/stats?view=feature"));
+    assert.deepEqual(await disabled.json(), { schemaVersion: "radio_show_feature_v1", mode: "archive", submissionsOpen: false, queueHref: null, show: null });
+  } finally {
+    process.env.BARCODE_QUEUE_PRODUCTION_ENABLED = "true";
+  }
 });

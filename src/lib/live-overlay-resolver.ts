@@ -623,12 +623,32 @@ function cleanDisplay(value: string | null | undefined): string | undefined {
   return cleaned || undefined;
 }
 
+type QueueCreditInput = {
+  submittedArtistName?: string | null;
+  submittedSongTitle?: string | null;
+  artist?: string | null;
+  title?: string | null;
+  artistName?: string | null;
+  trackTitle?: string | null;
+};
+
+// Broadcast credits follow the explicit submission, as on the queue and Deck.
+// A filename or provider uploader is not evidence that somebody made a song.
+// Keep provider metadata and durable catalog identities separate and intact.
+export function getQueueTrackCredits(track: QueueCreditInput): { artist: string; title: string } {
+  const clean = (value: string | null | undefined) => value?.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+  return {
+    artist: clean(track.submittedArtistName) || clean(track.artistName) || clean(track.artist) || "Unknown artist",
+    title: clean(track.submittedSongTitle) || clean(track.trackTitle) || clean(track.title) || "Untitled transmission",
+  };
+}
+
 function displayArtist(track: LiveOverlayTrackInput | LiveOverlayWheelCandidateInput): string {
-  return cleanDisplay(track.detectedArtistName) || cleanDisplay(track.submittedArtistName) || cleanDisplay("artistName" in track ? track.artistName : undefined) || cleanDisplay(track.artist) || "Unknown artist";
+  return getQueueTrackCredits(track).artist;
 }
 
 function displayTitle(track: LiveOverlayTrackInput | LiveOverlayWheelCandidateInput): string {
-  return cleanDisplay(track.detectedSongTitle) || cleanDisplay(track.submittedSongTitle) || cleanDisplay("trackTitle" in track ? track.trackTitle : undefined) || cleanDisplay(track.title) || "Untitled transmission";
+  return getQueueTrackCredits(track).title;
 }
 
 function youtubeSyncForTrack(track: LiveOverlayTrackInput, playerSync?: LiveOverlayPlayerSync | null, now: Date = new Date()): LiveOverlayYouTubeSync | undefined {

@@ -1,3 +1,4 @@
+import { getQueueTrackCredits } from "@/lib/live-overlay-resolver";
 import { NextResponse } from "next/server";
 import { databasePage, siteConfig } from "@/content";
 import { dossierAuthoringGuide } from "@/lib/dossier-authoring-guide";
@@ -37,7 +38,7 @@ import {
   getQueueBnlReadSnapshot,
   toPublicQueueTrack,
 } from "@/lib/queue";
-import { getLiveOverlayRuntimeState } from "@/lib/live-overlay";
+import { getLiveOverlayRuntimeState, getWheelCandidatesFromQueue } from "@/lib/live-overlay";
 import { attachQueueLiveTiming } from "@/lib/queue-live-timing";
 import {
   isQueueProductionEnabled,
@@ -675,6 +676,7 @@ async function readQueueForBnl(
     : state.session?.wheelSpinsOwed ?? 0;
 
   const queue = {
+    creditPolicy: "submitted_broadcast_labels_provider_metadata_is_secondary_not_identity_verification",
     available: true,
     accessScope: readableScope,
     mutationAllowed: false,
@@ -733,6 +735,7 @@ async function readQueueForBnl(
     completed: operationalCompleted,
     removed: operationalRemoved,
     spotlight: operationalSpotlight,
+    wheelEligibleArtistsBasis: "submitted_artist_labels_not_draw_entrants",
     wheelEligibleArtists: sessionEnded ? [] : (state.wheelEligibleArtists ?? []).flatMap((artist) => {
       const trackIds = artist.trackIds.filter((trackId) => readableActiveTrackIds.has(trackId));
       return trackIds.length > 0 ? [{
@@ -743,6 +746,7 @@ async function readQueueForBnl(
       }] : [];
     }),
     wheel: {
+      eligibleEntrants: sessionEnded ? [] : getWheelCandidatesFromQueue(state.queue.filter((track) => readableActiveTrackIds.has(track.id))),
       spinsOwed: wheelSpinsOwed,
       status: state.wheelTiming?.status ?? "idle",
       timing: state.wheelTiming ?? null,
@@ -800,16 +804,11 @@ function normalizeArtistName(name: string): string {
 }
 
 function artistNameForTrack(track: QueuePublicTrack): string {
-  return (track.detectedArtistName || track.submittedArtistName).trim();
+  return getQueueTrackCredits(track).artist;
 }
 
 function titleForTrack(track: QueuePublicTrack): string {
-  return (
-    track.detectedSongTitle ||
-    track.submittedSongTitle ||
-    track.providerTitle ||
-    "Untitled track"
-  ).trim();
+  return getQueueTrackCredits(track).title;
 }
 
 function addArtistTrack(
@@ -1337,13 +1336,7 @@ function trackLaneItem(
     | "recapCandidates"
     | "publicSafeCopyCandidates",
 ): OperatorLaneItem {
-  const title =
-    track.detectedSongTitle ||
-    track.submittedSongTitle ||
-    track.providerTitle ||
-    "Untitled track";
-  const artist =
-    track.detectedArtistName || track.submittedArtistName || "Unknown artist";
+  const { artist, title } = getQueueTrackCredits(track);
   return {
     id: `${lane}:${track.id}:${status}`,
     label: `${artist} — ${title}`,

@@ -1,7 +1,7 @@
 import { Redis } from "@upstash/redis";
 import { getRadioLiveQueueState, getRadioQueueState, isWheelEligibleTrack, recordQueueOperationalShowEvent, removeEarliestWheelCandidateTrack, updateRadioTrack } from "./queue";
 import { getTrackArtworkUrl, getTrackDurationLabel, parseTikTokVideoUrl } from "./queue-types";
-import { buildWheelSegments, derangedWheelCandidateOrder, orderedWheelCandidateIds, resolveLiveOverlayScene, safeLiveOverlayUrl, normalizeLiveOverlaySyncCorrectionReason, serverStampLiveOverlayPlayerSync, wheelFinalRotationForSegment } from "./live-overlay-resolver";
+import { getQueueTrackCredits, buildWheelSegments, derangedWheelCandidateOrder, orderedWheelCandidateIds, resolveLiveOverlayScene, safeLiveOverlayUrl, normalizeLiveOverlaySyncCorrectionReason, serverStampLiveOverlayPlayerSync, wheelFinalRotationForSegment } from "./live-overlay-resolver";
 import { parseYouTubeVideoId } from "./track-duration";
 import type { QueueEntry, QueueSourceType, QueueState } from "./queue-types";
 import { hasActiveQueueSession } from "./session-bound-polling";
@@ -172,11 +172,11 @@ function safeArtworkUrl(value: unknown): string | null {
 }
 
 function displayArtist(entry: QueueEntry): string {
-  return entry.detectedArtistName?.trim() || entry.submittedArtistName?.trim() || entry.artist;
+  return getQueueTrackCredits(entry).artist;
 }
 
 function displayTitle(entry: QueueEntry): string {
-  return entry.detectedSongTitle?.trim() || entry.submittedSongTitle?.trim() || entry.title;
+  return getQueueTrackCredits(entry).title;
 }
 
 function overlayTrackInput(entry: QueueEntry) {

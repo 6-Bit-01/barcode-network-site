@@ -106,12 +106,12 @@ export function BroadcastDeck({
         fetch(statsEndpoint, {
           cache: "no-store",
           headers: submitterToken ? { "x-barcode-submitter-token": submitterToken } : undefined,
-        }),
+        }).catch(() => null),
       ]);
       if (!queueResponse.ok) throw new Error("Queue unavailable");
       const nextSnapshot = await queueResponse.json() as QueuePublicSnapshot;
       setSnapshot(nextSnapshot);
-      if (statsResponse.ok) setStats(await statsResponse.json() as QueuePublicStats);
+      setStats(statsResponse?.ok ? await statsResponse.json().catch(() => null) as QueuePublicStats | null : null);
       setLoadError(false);
       setLoaded(true);
       setClockNow(Date.now());
@@ -133,9 +133,11 @@ export function BroadcastDeck({
   const timing = useMemo(() => snapshot ? buildQueueTimingDisplay(queueTimingInputFromPublicSnapshot(snapshot), clockNow ? { now: new Date(clockNow) } : {}) : null, [clockNow, snapshot]);
   const queueHref = queueHrefOverride ?? (snapshot?.session && snapshot.session.status !== "archived" ? `/queue/${encodeURIComponent(snapshot.session.sessionId)}` : "/queue");
   const isLive = Boolean(snapshot?.session && snapshot.session.status !== "archived" && snapshot.session.broadcastPhase !== "ended");
-  const finishedCount = currentShow?.finishedTrackCount ?? snapshot?.session?.completedCount ?? 0;
-  const submittedCount = currentShow?.submittedTrackCount ?? ((snapshot?.session?.acceptedCount ?? 0) || liveTracks.length + finishedCount);
-  const progress = submittedCount > 0 ? Math.min(100, Math.round((finishedCount / submittedCount) * 100)) : 0;
+  // Queue capacity excludes removals, and terminal queue entries include skips.
+  // Neither is a substitute for the full show's explicit lifecycle totals.
+  const finishedCount = currentShow?.finishedTrackCount ?? null;
+  const submittedCount = currentShow?.submittedTrackCount ?? null;
+  const progress = submittedCount === null || finishedCount === null ? null : submittedCount > 0 ? Math.min(100, Math.round((finishedCount / submittedCount) * 100)) : 0;
   const personalHandles = stats?.personalHistory?.handles ?? [];
 
   function dismissOrientation() {
@@ -164,8 +166,8 @@ export function BroadcastDeck({
           </div>
         </div>
         <div className="grid grid-cols-2 gap-px bg-border lg:grid-cols-4">
-          <DeckMetric label="Received" value={submittedCount} note="Tracks in the current retained show record." />
-          <DeckMetric label="Played" value={finishedCount} note="Completed-play outcomes only." />
+          <DeckMetric label="Received" value={submittedCount ?? "—"} note={currentShow ? `${currentShow.removedTrackCount} removed · cumulative submissions, including removals.` : "Show totals unavailable; retrying."} />
+          <DeckMetric label="Played" value={finishedCount ?? "—"} note={currentShow ? "Completed-play outcomes only." : "Show totals unavailable; retrying."} />
           <DeckMetric label="Still active" value={liveTracks.length} note="Now Playing, Next In Line, and waiting." />
           <DeckMetric label="Projected runtime" value={timing ? formatRuntime(timing.timeBankSummary.remainingProjectionSeconds) : "—"} note="Estimate for the active line." />
         </div>
@@ -190,8 +192,8 @@ export function BroadcastDeck({
         </section>
 
         <section className="border border-border bg-surface p-5">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs uppercase tracking-[0.3em] text-muted">Show progress</p><p className="mt-2 text-sm text-muted">{finishedCount} of {submittedCount || "—"} retained tracks have a completed-play outcome.</p></div><span className="font-mono text-xl font-black text-[#ffaa00]">{progress}%</span></div>
-          <div className="mt-4 h-2 overflow-hidden border border-border bg-background"><div className="h-full bg-[linear-gradient(90deg,#ff2a2a,#ffaa00)] transition-[width] duration-500" style={{ width: `${progress}%` }} /></div>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs uppercase tracking-[0.3em] text-muted">Show progress</p><p className="mt-2 text-sm text-muted">{currentShow ? `${finishedCount} of ${submittedCount} retained tracks have a completed-play outcome.` : "Show totals unavailable; retrying."}</p></div><span className="font-mono text-xl font-black text-[#ffaa00]">{progress === null ? "—" : `${progress}%`}</span></div>
+          <div className="mt-4 h-2 overflow-hidden border border-border bg-background"><div className="h-full bg-[linear-gradient(90deg,#ff2a2a,#ffaa00)] transition-[width] duration-500" style={{ width: `${progress ?? 0}%` }} /></div>
           <div className="mt-4 grid gap-3 text-xs sm:grid-cols-3"><div className="border border-border bg-background/55 p-3"><p className="uppercase tracking-widest text-muted">Wheel</p><p className="mt-2 font-bold text-foreground">{snapshot?.wheelTiming?.status ?? "idle"} · {snapshot?.session?.wheelSpinsOwed ?? 0} owed</p></div><div className="border border-border bg-background/55 p-3"><p className="uppercase tracking-widest text-muted">Sponsor break</p><p className="mt-2 font-bold text-foreground">{snapshot?.session?.sponsorBreakStatus?.replaceAll("_", " ") ?? "not due"}</p></div><div className="border border-border bg-background/55 p-3"><p className="uppercase tracking-widest text-muted">Last refresh</p><p className="mt-2 font-bold text-foreground">{clockNow ? displayTime(new Date(clockNow).toISOString()) : "—"}</p></div></div>
         </section>
 
@@ -204,7 +206,7 @@ export function BroadcastDeck({
           <div className="p-5 sm:p-6">
             {view === "feed" && <BroadcastActivityLog events={currentShow?.milestones ?? []} archiveHref={archiveHref} live={isLive} />}
             {view === "line" && <div><div className="border-b-2 border-accent/45 pb-3"><p className="text-xs font-bold uppercase tracking-[0.3em] text-accent">Queue map</p><p className="mt-1 text-xs text-muted">{previewMode ? "Private test order from the selected persisted session." : "Public order only. Priority and Wheel positions can change as the host routes the show."}</p></div><div className="mt-4 space-y-2">{liveTracks.map((track, index) => <div key={track.id} className="grid gap-2 border border-border bg-background/55 p-3 sm:grid-cols-[4rem_minmax(0,1fr)_auto] sm:items-center"><span className="font-mono text-xs text-muted">{track.id === snapshot?.nowPlaying?.id ? "LIVE" : track.id === snapshot?.upNext?.id ? "NEXT" : `#${Math.max(1, index - 1)}`}</span><div><Link href={projectLink(track.submittedArtistName, archiveHref)} className="font-bold text-foreground hover:text-accent">{track.submittedArtistName}</Link><p className="text-xs text-muted">{track.submittedSongTitle}</p></div><span className="text-[10px] uppercase tracking-widest text-muted">{track.lane}</span></div>)}</div></div>}
-            {view === "mine" && <div><div className="border-b-2 border-cyan-200/40 pb-3"><p className="text-xs font-bold uppercase tracking-[0.3em] text-cyan-200">From this browser</p><p className="mt-1 text-xs text-muted">Useful when one device submits for multiple artists. This confirms a browser submission, not identity or account ownership.</p></div><div className="mt-4 space-y-3">{personalHandles.length > 0 ? personalHandles.map((handle) => <section key={handle.tiktokHandle} className="border border-border bg-background/55 p-4"><div className="flex flex-wrap items-center justify-between gap-2"><p className="font-mono text-sm font-bold text-cyan-200">{handle.tiktokHandle}</p><span className="text-[10px] uppercase tracking-widest text-muted">{handle.submittedTrackCount} tracks · {handle.projectCount} projects</span></div><div className="mt-3 flex flex-wrap gap-2">{handle.projects.map((project) => <Link key={project.projectKey} href={previewMode ? projectLink(project.projectKey, archiveHref) : broadcastArchiveArtistHref(project.projectKey)} className="border border-cyan-200/30 px-2 py-1 text-xs text-foreground hover:border-cyan-200 hover:text-cyan-200">{project.projectLabel} · {project.submittedTrackCount}</Link>)}</div></section>) : <p className="text-sm text-muted">Submit from this browser to see its {previewMode ? "test" : "public"} handles and project records grouped here.</p>}</div></div>}
+            {view === "mine" && <div><div className="border-b-2 border-cyan-200/40 pb-3"><p className="text-xs font-bold uppercase tracking-[0.3em] text-cyan-200">From this browser</p><p className="mt-1 text-xs text-muted">Useful when one device submits for multiple artists. This confirms a browser submission, not identity or account ownership.</p></div><div className="mt-4 space-y-3">{personalHandles.length > 0 ? personalHandles.map((handle) => <section key={handle.tiktokHandle} className="border border-border bg-background/55 p-4"><div className="flex flex-wrap items-center justify-between gap-2"><p className="font-mono text-sm font-bold text-cyan-200">{handle.tiktokHandle}</p><span className="text-[10px] uppercase tracking-widest text-muted">{handle.currentShow ? `${handle.currentShow.activeTrackCount} active · ${handle.currentShow.finishedTrackCount} finished · ${handle.currentShow.skippedTrackCount} skipped · ${handle.currentShow.removedTrackCount} removed this show` : "No tracks this show"} · {handle.submittedTrackCount} submitted across shows</span></div><div className="mt-3 flex flex-wrap gap-2">{handle.projects.map((project) => <Link key={project.projectKey} href={previewMode ? projectLink(project.projectKey, archiveHref) : broadcastArchiveArtistHref(project.projectKey)} className="border border-cyan-200/30 px-2 py-1 text-xs text-foreground hover:border-cyan-200 hover:text-cyan-200">{project.projectLabel} · {project.submittedTrackCount} submitted</Link>)}</div></section>) : <p className="text-sm text-muted">Submit from this browser to see its {previewMode ? "test" : "public"} handles and project records grouped here.</p>}</div></div>}
           </div>
         </section>
       </>}

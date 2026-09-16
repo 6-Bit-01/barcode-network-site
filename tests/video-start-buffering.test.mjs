@@ -35,6 +35,104 @@ function timers() {
   };
 }
 
+function windowTimers(context) {
+  const clock = timers();
+  // Window timer methods reject an arbitrary object as `this`. Node timers and
+  // arrow-function fakes do not, so they missed the production gate regression.
+  // https://webidl.spec.whatwg.org/#es-operations
+  const checkReceiver = (value) => {
+    if (value != null && value !== globalThis) throw new TypeError("Illegal invocation");
+  };
+  context.mock.method(globalThis, "setTimeout", function (...args) {
+    checkReceiver(this);
+    return clock.set(...args);
+  });
+  context.mock.method(globalThis, "clearTimeout", function (id) {
+    checkReceiver(this);
+    clock.clear(id);
+  });
+  return clock;
+}
+
+test("default host and receiver timers support Window receiver checks for start and cancellation", (context) => {
+  const clock = windowTimers(context);
+  const host = new VideoStartGate();
+  const overlay = new VideoReceiverStartGate();
+  const played = [];
+  const start = (token) => {
+    host.arm(host.begin(), 3000, () => played.push("host"));
+    overlay.apply(token, 3000, true, noop, () => played.push("overlay"));
+  };
+  start("cancelled");
+  const cancelledCallbacks = [...clock.pending.values()];
+  host.cancel();
+  overlay.cancel();
+  assert.equal(clock.pending.size, 0, "both browser timers were cleared");
+  for (const { callback } of cancelledCallbacks) callback();
+  assert.deepEqual(played, [], "cancelled starts cannot play");
+  start("current");
+  assert.deepEqual(played, [], "both players wait for their deadline");
+  assert.equal(clock.pending.size, 2);
+  clock.fire();
+  assert.deepEqual(played, ["host", "overlay"]);
+  assert.equal(host.consumeRelease(), true);
+  assert.equal(host.holding, false);
+  assert.equal(overlay.apply("current", 0, true, noop, noop), false);
+});
+
+function hostPublisher(provider, gate) {
+  const calls = [];
+  const trackSyncInput = { id: "track-1", sourceType: provider, videoId: "abcdefghijk", postId: "6718335390845095173" };
+  const ack = {
+    sync: { ...trackSyncInput, startToken: "start-one", scheduledStartAt: "2026-09-13T12:00:03Z" },
+    serverResponseGeneratedAtMs: Date.parse("2026-09-13T12:00:00Z"), responseReceivedAtPerformanceMs: 0, outboundTransitMs: 0,
+  };
+  let notice = "Preparing overlay";
+  let diagnostics = {};
+  const globals = {
+    ...resolver, scheduledVideoStartDelayMs, performance: { now: () => 0 },
+    startGateRef: ref(gate), videoId: trackSyncInput.videoId, trackId: trackSyncInput.id, trackSyncInput,
+    playerRef: ref({ playVideo: () => calls.push("play") }), sendHostCommand: (command) => calls.push(command),
+    readyRef: ref(true), hasObservedCurrentTimeRef: ref(true), durationRef: ref(194),
+    youtubeGenerationActiveRef: ref(true), tiktokGenerationActiveRef: ref(true),
+    outboundTransitEstimateMsRef: ref(null), lastPublishedAtRef: ref(null),
+    publishOverlayYouTubeSync: async () => ack, publishOverlayTikTokSync: async () => ack,
+    VIDEO_SYNCHRONIZED_START_DELAY_MS: 3000,
+    setStartNotice: (value) => { notice = value; }, setOutboundTransitDiagnosticMs: noop,
+    setDiagnostics: (value) => { diagnostics = typeof value === "function" ? value(diagnostics) : value; },
+  };
+  globals.armVideoStartAfterAck = evaluate(component(admin, "armVideoStartAfterAck").getText(), globals);
+  const root = component(admin, provider === "youtube" ? "AdminYouTubePlayer" : "AdminTikTokPlayer");
+  const publish = evaluate(variable(root, "publishNow").initializer.arguments[0].getText(), globals);
+  return {
+    calls, get notice() { return notice; }, get diagnostics() { return diagnostics; },
+    start: (id) => provider === "youtube" ? publish("playing", 3, "state_change", id) : publish("playing", 3, Date.now(), "state_change", id),
+  };
+}
+
+for (const provider of ["youtube", "tiktok"]) {
+  test(`${provider} host exits preparation after timer registration fails and can retry`, async () => {
+    const clock = timers();
+    let fail = true;
+    const gate = new VideoStartGate((...args) => {
+      if (fail) throw new TypeError("Timer registration failed");
+      return clock.set(...args);
+    }, clock.clear);
+    const host = hostPublisher(provider, gate);
+    await host.start(gate.begin());
+    assert.equal(gate.holding, false, "failed registration must not suppress heartbeats indefinitely");
+    assert.match(host.notice, /Could not schedule both players.*retry/);
+    assert.equal(host.diagnostics.publishStatus, "failed");
+    assert.deepEqual(host.calls, [], "failure leaves playback paused");
+    fail = false;
+    await host.start(gate.begin());
+    clock.fire();
+    assert.deepEqual(host.calls, ["play"]);
+    assert.equal(host.notice, null);
+    assert.equal(gate.consumeRelease(), true);
+  });
+}
+
 test("both providers receive bounded server deadlines and stored normalization preserves them", () => {
   const at = new Date("2026-09-13T12:00:00.000Z");
   for (const raw of [{ provider: "youtube", videoId: "abcdefghijk" }, { provider: "tiktok", postId: "6718335390845095173" }]) {
@@ -252,6 +350,21 @@ function receiverHarness(provider) {
 }
 
 for (const provider of ["youtube", "tiktok"]) {
+  test(`${provider} production receiver prepares and starts with Window timer receiver checks`, (context) => {
+    const clock = windowTimers(context);
+    const h = receiverHarness(provider);
+    h.globals.startGateRef.current = new VideoReceiverStartGate();
+    const planned = { ...h.sync, scheduledStartAt: "2026-09-13T12:00:03Z", startToken: "start-window-timer" };
+    h.globals.latestSyncRef.current = planned;
+    h.apply(planned);
+    h.apply(planned);
+    assert.equal(h.calls.filter(([type]) => type === "seek").length, 1);
+    assert.equal(h.calls.some(([type]) => type === "play"), false);
+    assert.equal(clock.pending.size, 1);
+    clock.fire();
+    assert.equal(h.calls.filter(([type]) => type === "play").length, 1);
+  });
+
   test(`${provider} production receiver does not repeatedly seek the same packet or a buffering heartbeat`, () => {
     const h = receiverHarness(provider);
     h.apply(h.sync);

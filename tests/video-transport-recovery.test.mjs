@@ -196,7 +196,7 @@ test("host provider callback holds an intentional play without publishing a fals
   assert.equal(globals.queuedPublishRef.current, null);
 });
 
-test("actual TikTok receiver uses trusted playing/pause events for readiness and honors the shared deadline", async () => {
+function tiktokHarness(overrides = {}) {
   const root = component(receiver, "TikTokOverlayPlayer");
   const sync = { provider: "tiktok", postId: "6718335390845095173", trackId: "C3", playbackState: "paused", currentTimeSeconds: 12, prepareToken: "prepare-12345678-1234-1234-1234-123456789012", updatedAt: new Date().toISOString() };
   const calls = [], timers = new Map(); let timer = 0;
@@ -213,6 +213,7 @@ test("actual TikTok receiver uses trusted playing/pause events for readiness and
     markTrustedPlayerEvent: noop, updateDiagnostics: noop, isPlainTikTokMessage: (value) => !!value && typeof value === "object",
     TIKTOK_ORIGIN: "https://www.tiktok.com", PLAYER_CORRECTION_COOLDOWN_MS: 1500, TIKTOK_BEHIND_THRESHOLD_SECONDS: .3, TIKTOK_AHEAD_THRESHOLD_SECONDS: .85,
     TIKTOK_PAUSED_DRIFT_THRESHOLD_SECONDS: .35, TIKTOK_MAX_CATCH_UP_SECONDS: .3, TIKTOK_DELAYED_PLAY_MS: 100,
+    ...overrides,
   };
   globals.startDeadlineRef.current = new VideoStartDeadline({ schedule: globals.window.setTimeout, clear: globals.window.clearTimeout });
   for (const name of ["overlayServerNow", "serverRelativeAgeFromAnchor", "expectedTikTokTime", "roundedFiniteSeconds", "driftDirectionFromRoundedDrift"]) globals[name] = evaluate(component(receiver, name), globals);
@@ -220,6 +221,21 @@ test("actual TikTok receiver uses trusted playing/pause events for readiness and
   globals.applySyncRef.current = globals.applyTikTokSync;
   const onMessage = evaluate(find(root, (n) => ts.isFunctionDeclaration(n) && n.name?.text === "onMessage"), globals);
   const event = (type, value, source = frame) => onMessage({ origin: "https://www.tiktok.com", source, data: { "x-tiktok-player": true, type, value } });
+  const playerUrl = (initialSync = sync) => {
+    const initial = root.body.statements.filter(ts.isVariableStatement)
+      .flatMap((statement) => [...statement.declarationList.declarations])
+      .find((node) => node.name.getText() === "[initialAutoplay]");
+    return evaluate(variable(root, "src").initializer.arguments[0], {
+      URLSearchParams, TIKTOK_ORIGIN: "https://www.tiktok.com", sync: initialSync,
+      // Read the previous implementation's mount switch when comparing it.
+      initialAutoplay: initial ? evaluate(initial.initializer.arguments[0], { sync: initialSync })() : undefined,
+    })();
+  };
+  return { globals, calls, timers, sync, event, playerUrl };
+}
+
+test("actual TikTok receiver uses trusted playing/pause events for readiness and honors the shared deadline", async () => {
+  const { globals, calls, timers, sync, event } = tiktokHarness();
   globals.applyTikTokSync(sync);
   assert.deepEqual(calls.slice(0, 3), [["mute"], ["seek", 12], ["play"]]);
   event("onStateChange", 1, {}); event("onStateChange", 2, {});
@@ -235,6 +251,66 @@ test("actual TikTok receiver uses trusted playing/pause events for readiness and
   const [id, release] = [...timers][0]; timers.delete(id); release();
   assert.equal(calls.at(-1)[0], "play");
   globals.startDeadlineRef.current.cancel();
+});
+
+test("cold TikTok preparation initializes the lazy player before waiting for readiness", async () => {
+  const h = tiktokHarness();
+  const params = new URL(h.playerUrl()).searchParams;
+  // TikTok drops postMessage controls before its first native/autoplay start.
+  // Model that boundary instead of injecting successful playback unconditionally.
+  h.globals.applyTikTokSync(h.sync);
+  if (params.get("autoplay") === "1") {
+    h.event("onStateChange", 1);
+    h.event("onStateChange", 2);
+  }
+  await Promise.resolve();
+  assert.equal(params.get("muted"), "1", "overlay warm-up must stay silent");
+  assert.equal(h.calls.filter(([type]) => type === "ack").length, 1, "a cold player must finish the preparation handshake");
+  const plainPause = { ...h.sync, prepareToken: undefined };
+  assert.equal(h.playerUrl(plainPause), h.playerUrl(h.sync), "preparation arriving after a paused mount must not reload the iframe");
+  const playing = { ...h.sync, playbackState: "playing", currentTimeSeconds: 30, updatedAt: new Date(Date.now() + 1000).toISOString(), startToken: "video-start-test", scheduledStartAt: new Date(Date.now() + 3000).toISOString() };
+  assert.equal(h.playerUrl(playing), h.playerUrl(plainPause), "start and heartbeat packets must preserve the iframe URL");
+});
+
+test("TikTok playing may be the first trusted event, before onPlayerReady", async () => {
+  const h = tiktokHarness({ readyRef: ref(false) });
+  h.globals.markTrustedPlayerEvent = () => { h.globals.readyRef.current = true; };
+  h.event("onStateChange", 1, {});
+  assert.equal(h.calls.length, 0, "another frame cannot initialize playback");
+  h.event("onStateChange", 1);
+  assert.ok(h.calls.some(([type]) => type === "pause"), "the first playing event must be held immediately");
+  h.event("onStateChange", 2);
+  await Promise.resolve();
+  assert.equal(h.calls.filter(([type]) => type === "ack").length, 1);
+});
+
+test("TikTok late autoplay is paused after cancellation and before a scheduled start", () => {
+  for (const scheduled of [false, true]) {
+    const h = tiktokHarness();
+    h.globals.latestSyncRef.current = {
+      ...h.sync, prepareToken: undefined, playbackState: scheduled ? "playing" : "paused",
+      ...(scheduled ? { startToken: "video-start-late", scheduledStartAt: new Date(Date.now() + 3000).toISOString() } : {}),
+    };
+    h.globals.applyTikTokSync(h.globals.latestSyncRef.current);
+    const before = h.calls.length;
+    h.event("onStateChange", 1);
+    assert.ok(h.calls.slice(before).some(([type]) => type === "pause"), "late autoplay must not bypass the hold");
+    assert.equal(h.calls.slice(before).some(([type]) => type === "play"), false);
+    h.globals.startDeadlineRef.current.cancel();
+  }
+});
+
+test("TikTok autoplay rejection releases the host controls before offering Play again", () => {
+  const calls = [], frame = {};
+  const root = component(admin, "AdminTikTokPlayer");
+  const globals = {
+    iframeRef: ref({ contentWindow: frame }), isPlainTikTokObject: (value) => !!value && typeof value === "object",
+    coordinatedStartRef: ref({ cancel: () => calls.push("cancel") }),
+    setNotice: () => calls.push("notice"), setErrorLabel: noop,
+  };
+  const event = evaluate(find(root, (n) => ts.isFunctionDeclaration(n) && n.name?.text === "onMessage"), globals);
+  event({ origin: "https://www.tiktok.com", source: frame, data: { "x-tiktok-player": true, type: "onPlayerError", value: { errorCode: 3002, errorType: "AUTOPLAY_ERROR" } } });
+  assert.deepEqual(calls, ["cancel", "notice"], "retry guidance must not leave pointer events disabled");
 });
 
 test("cancelling during a YouTube warmup explicitly stops the overlay and cannot acknowledge late playing", async () => {

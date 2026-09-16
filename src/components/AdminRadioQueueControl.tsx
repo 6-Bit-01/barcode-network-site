@@ -1423,6 +1423,7 @@ function AdminTikTokPlayer({ entry, sessionId }: { entry: QueueEntry; sessionId:
         const errorType = typeof value.errorType === "string" ? value.errorType : null;
         const safeCode = Number.isFinite(code) ? code : null;
         if (safeCode === 3002 || errorType === "AUTOPLAY_ERROR") {
+          coordinatedStartRef.current?.cancel();
           setNotice("Automatic playback was blocked. Use the player’s Play control.");
           setErrorLabel(null);
           return;

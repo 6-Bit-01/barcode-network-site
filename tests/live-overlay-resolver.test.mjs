@@ -526,8 +526,8 @@ assert.equal(tiktokLifecycleEffect.includes("Provider lifecycle is keyed only by
 assert.equal(sourceReceiver.includes("data-overlay-server-clock={clockAnchored ? \"anchored\" : \"missing\"}") && sourceReceiver.includes("data-overlay-response-transit-ms={responseTransitMs ?? undefined}") && !sourceReceiver.includes("data-youtube-rtt-ms") && !sourceReceiver.includes("data-tiktok-rtt-ms"), true, "receiver exposes safe server-clock and response-transit diagnostics and omits unpopulated RTT attributes");
 assert.equal(sourceReceiver.includes("failedPostRef.current = null") && sourceReceiver.includes("setPlayerError(null)"), true, "failedPostRef resets for new track/post identity");
 assert.equal(sourceReceiver.includes('key={`${scene.tiktok.trackId ?? "trackless"}:${scene.tiktok.postId}`}'), true, "Component key uses track ID and post ID");
-assert.equal(sourceReceiver.includes("latestSyncRef.current = sync") && sourceReceiver.includes("useMemo(() =>") && sourceReceiver.includes("}, [initialAutoplay, sync.postId])"), true, "Heartbeats do not alter iframe src/key");
-assert.equal(sourceReceiver.includes('initialAutoplay ? "1" : "0"'), true, "Initial playing sync sets iframe autoplay=1 and paused/stopped set autoplay=0");
+// Cold startup and stable iframe URLs across sync changes are exercised through
+// the production TikTok callbacks in video-transport-recovery.test.mjs.
 assert.equal(sourceReceiver.includes('muted: "1"'), true, "Muted remains 1 for every overlay iframe");
 assert.equal(sourceReceiver.includes("sendTikTokVoidCommand") && sourceReceiver.includes('postMessage({ type, "x-tiktok-player": true }, TIKTOK_ORIGIN)'), true, "Void commands omit value and use exact TikTok origin");
 assert.equal(sourceReceiver.includes("sendTikTokSeekCommand") && sourceReceiver.includes('postMessage({ type: "seekTo", value: seconds, "x-tiktok-player": true }, TIKTOK_ORIGIN)'), true, "seekTo includes numeric value and exact TikTok origin");

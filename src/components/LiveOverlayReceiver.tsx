@@ -890,13 +890,15 @@ function TikTokOverlayPlayer({ sync, artistName, trackTitle, clockAnchorRef, clo
   const iframeLoadTimerRef = useRef<number | null>(null);
   const playerEventTimerRef = useRef<number | null>(null);
   const failedPostRef = useRef<string | null>(null);
-  const [initialAutoplay] = useState(() => sync.playbackState === "playing" && !sync.scheduledStartAt);
   const [playerError, setPlayerError] = useState<{ code?: number; message: string; reason: Exclude<TikTokFailureReason, null>; errorType?: string } | null>(null);
   const [diagnostics, setDiagnostics] = useState<TikTokDiagnosticState>({ iframeLoaded: false, trustedEventSeen: false, postId: sync.postId, trackId: sync.trackId, playbackState: sync.playbackState, bootstrapAttempt: 0, correctionCount: 0, failureReason: null, status: "bootstrapping" });
   const src = useMemo(() => {
-    const params = new URLSearchParams({ controls: "0", progress_bar: "0", play_button: "0", volume_control: "0", fullscreen_button: "0", timestamp: "0", autoplay: initialAutoplay ? "1" : "0", music_info: "0", description: "0", rel: "0", native_context_menu: "0", closed_caption: "0", muted: "1" });
+    // TikTok creates its media player lazily and can drop postMessage controls
+    // before the first playback. Bootstrap muted even for a paused preparation;
+    // trusted playing/pause events still own readiness and the shared start.
+    const params = new URLSearchParams({ controls: "0", progress_bar: "0", play_button: "0", volume_control: "0", fullscreen_button: "0", timestamp: "0", autoplay: "1", music_info: "0", description: "0", rel: "0", native_context_menu: "0", closed_caption: "0", muted: "1" });
     return `${TIKTOK_ORIGIN}/player/v1/${sync.postId}?${params.toString()}`;
-  }, [initialAutoplay, sync.postId]);
+  }, [sync.postId]);
 
   const updateDiagnostics = useCallback((patch: Partial<TikTokDiagnosticState>) => {
     setDiagnostics((current) => ({ ...current, ...patch, postId: latestSyncRef.current.postId, trackId: latestSyncRef.current.trackId, playbackState: latestSyncRef.current.playbackState }));
@@ -1065,7 +1067,21 @@ function TikTokOverlayPlayer({ sync, artistName, trackTitle, clockAnchorRef, clo
         applyTikTokSync(latestSyncRef.current);
         return;
       }
-      if (type === "onStateChange") preparationRef.current.onState(Number(payload.value), (seconds) => { sendTikTokVoidCommand("pause"); sendTikTokSeekCommand(seconds); });
+      if (type === "onStateChange") {
+        // Playing can arrive before onPlayerReady. Arm the preparation before
+        // consuming that first event, otherwise its pause acknowledgement is lost.
+        applyTikTokSync(latestSyncRef.current);
+        const state = Number(payload.value);
+        preparationRef.current.onState(state, (seconds) => { sendTikTokVoidCommand("pause"); sendTikTokSeekCommand(seconds); });
+        const next = latestSyncRef.current;
+        const awaitingStart = Boolean(next.scheduledStartAt && Date.parse(next.scheduledStartAt) > overlayServerNow(clockAnchorRef.current));
+        if (state === 1 && !preparationRef.current.token && (next.playbackState !== "playing" || awaitingStart)) {
+          // An earlier pause command may have preceded media initialization.
+          // Enforce the hold on actual playback, including a cancelled warm-up.
+          sendTikTokVoidCommand("pause");
+          lastAppliedPlaybackStateRef.current = null;
+        }
+      }
       if (type === "onStateChange" || type === "onMute" || type === "onVolumeChange") {
         applyTikTokSync(latestSyncRef.current);
         return;

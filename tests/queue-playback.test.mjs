@@ -2961,3 +2961,64 @@ test("admin and public TikTok component source assertions remain scoped", () => 
   assert.match(formSource, /TikTok video or Short/);
   assert.match(publicSource, /WATCH ON TIKTOK/);
 });
+
+test("six-minute intake validates raw duration and preserves existing queue on rejection", async () => {
+  const sessionId = await freshOpenSession("duration-boundary", { submissionCooldownSeconds: 0 });
+  const make = (seconds, suffix) => ({ artist: `Runtime ${suffix}`, title: suffix, tiktokHandle: `@runtime${suffix}`, sourceType: "upload", fileUrl: `https://blob.example/${suffix}.mp3`, fileName: `${suffix}.mp3`, detectedDurationSeconds: seconds, sessionId });
+  const allowed = await queue.submitRadioTrack(make(360, "exact"));
+  assert.equal(allowed.detectedDurationSeconds, 360);
+  const before = await queue.getRadioQueueState();
+  for (const seconds of [360.01, 361, 600]) {
+    await assert.rejects(queue.submitRadioTrack(make(seconds, `over${seconds}`)), e => e.code === "track_too_long");
+  }
+  await assert.rejects(queue.addToQueue({ ...make(600, "legacy"), tier: "free", amount: 0, stripeSessionId: null, createdAt: new Date().toISOString(), link: "https://example.test/legacy" }), /6 minutes/);
+  const after = await queue.getRadioQueueState();
+  assert.equal(after.revision, before.revision);
+  assert.deepEqual(after.queue, before.queue);
+  assert.deepEqual(after.session.showLog, before.session.showLog);
+  const retry = await queue.submitRadioTrack(make(359.9, "repaired"));
+  assert.equal(retry.durationIsEstimate, false);
+  const unknown = await queue.submitRadioTrack(make(null, "unknown"));
+  assert.equal(unknown.detectedDurationSeconds, null);
+  assert.equal(unknown.durationIsEstimate, true);
+  assert.equal(unknown.durationSource, "internal_estimate");
+});
+
+test("public POST reports over-limit uploads as 400 before any queue write", async () => {
+  const sessionId = await freshOpenSession("duration-api");
+  const before = await queue.getRadioQueueState();
+  const response = await queueApi.POST(new Request("https://example.test/api/queue", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ mode: "upload", artist: "Over Limit", title: "Long Version", tiktokHandle: "@overlimit", sessionId, detectedDurationSeconds: "360.01", ...legalAcceptanceBody() }),
+  }));
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).code, "track_too_long");
+  assert.equal((await queue.getRadioQueueState()).revision, before.revision);
+});
+
+test("provider duration cannot be bypassed by a shorter supplied duration", async () => {
+  const originalFetch = globalThis.fetch;
+  const previousKey = process.env.YOUTUBE_API_KEY;
+  process.env.YOUTUBE_API_KEY = "duration-test";
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ title: "Long source", items: [{ contentDetails: { duration: "PT6M1S" }, snippet: { title: "Long source", channelTitle: "Uploader" } }] }) });
+  try {
+    await assert.rejects(queue.createQueueTrack({ artist: "Artist", title: "Title", tiktokHandle: "@artist", sourceType: "youtube", link: "https://www.youtube.com/watch?v=abc123_DEF45", detectedDurationSeconds: 120 }), e => e.code === "track_too_long");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousKey === undefined) delete process.env.YOUTUBE_API_KEY; else process.env.YOUTUBE_API_KEY = previousKey;
+  }
+});
+
+test("new automatic titles use Pacific show date while custom and historical titles survive", async () => {
+  const time = require("../src/lib/pacific-time.ts");
+  assert.equal(time.pacificDateString(new Date("2026-09-12T02:00:00Z")), "2026-09-11");
+  assert.equal(time.defaultBroadcastShowTitle("2026-09-11"), "BARCODE Radio [09-11-2026]");
+  assert.equal(time.isDefaultBroadcastShowTitle("BARCODE Radio — 2026-09-11", "2026-09-11"), true);
+  assert.equal(time.isDefaultBroadcastShowTitle("Special Show", "2026-09-11"), false);
+  const old = await startFreshQueueSession({ title: "BARCODE Radio — 2026-09-10", showDate: "2026-09-10" });
+  const next = await startFreshQueueSession({ showDate: "2026-09-11" });
+  assert.equal(next.session.title, "BARCODE Radio [09-11-2026]");
+  assert.equal((await queue.getRadioQueueState(old.session.sessionId)).session.title, "BARCODE Radio — 2026-09-10");
+  const custom = await startFreshQueueSession({ title: "  Anniversary Special  ", showDate: "2026-09-12" });
+  assert.equal(custom.session.title, "Anniversary Special");
+});

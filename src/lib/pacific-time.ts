@@ -11,6 +11,15 @@ export function pacificDateString(date = new Date()): string {
   return `${value("year")}-${value("month")}-${value("day")}`;
 }
 
+export function defaultBroadcastShowTitle(showDate = pacificDateString()): string {
+  const [year, month, day] = showDate.split("-");
+  return `BARCODE Radio [${month}-${day}-${year}]`;
+}
+
+export function isDefaultBroadcastShowTitle(title: string, showDate: string): boolean {
+  return title.trim() === defaultBroadcastShowTitle(showDate) || title.trim() === `BARCODE Radio — ${showDate}`;
+}
+
 export function pacificClockLabel(iso: string | null | undefined, now = new Date()): string | null {
   if (!iso || !Number.isFinite(Date.parse(iso))) return null;
   const date = new Date(iso);

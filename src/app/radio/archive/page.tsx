@@ -17,7 +17,7 @@ export default async function BroadcastArchivePage({
 }: {
   searchParams: Promise<{ view?: string; show?: string; artist?: string }>;
 }) {
-  const [stats, params] = await Promise.all([getPublicQueueStats(), searchParams]);
+  const [stats, params] = await Promise.all([getPublicQueueStats(null, true), searchParams]);
   const initialView: BroadcastArchiveView = params.view === "artists" ? "artists" : "shows";
   return (
     <main className="min-h-screen pt-14">

@@ -246,6 +246,8 @@ Continued use of BARCODE Network after changes means you accept the updated Term
 
 # Queue Submission Terms
 
+Queue Submission Terms version 1.1 — track runtime rule updated September 13, 2026.
+
 These Queue Submission Terms apply when you submit music, links, files, artist information, payment, or related material to the BARCODE Network queue.
 
 ## 1. Submission Permission
@@ -275,6 +277,8 @@ BARCODE Network is built around artist participation, community, and real creati
 AI-assisted music is allowed only if you have the rights needed to submit and share it.
 
 ## 4. Accepted Submission Types
+
+Tracks must be 6 minutes (6:00 / 360 seconds) or less, including free and Priority submissions. Submit a shorter version if needed. Known durations over this limit are rejected before entering the queue. When duration cannot be measured, an estimate does not confirm eligibility; the host must verify the duration before playback. Paying for Priority does not waive the runtime rule.
 
 BARCODE Network may accept:
 

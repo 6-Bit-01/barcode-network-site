@@ -286,6 +286,7 @@ export interface LiveOverlayYouTubeSync {
   correctionReason?: LiveOverlaySyncCorrectionReason;
   scheduledStartAt?: string;
   startToken?: string;
+  prepareToken?: string;
 }
 
 export interface LiveOverlayTikTokSync {
@@ -301,6 +302,7 @@ export interface LiveOverlayTikTokSync {
   correctionReason?: LiveOverlaySyncCorrectionReason;
   scheduledStartAt?: string;
   startToken?: string;
+  prepareToken?: string;
 }
 
 export interface LiveOverlayAudioSync {
@@ -339,19 +341,20 @@ function cleanSyncTrackId(value: unknown): string | undefined {
   return typeof value === "string" ? value.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim() || undefined : undefined;
 }
 
-function videoStartFields(raw: Partial<LiveOverlayYouTubeSync | LiveOverlayTikTokSync>, receivedAt: Date, startDelayMs?: number): { scheduledStartAt?: string; startToken?: string } {
-  if (raw.playbackState !== "playing") return {};
+function videoStartFields(raw: Partial<LiveOverlayYouTubeSync | LiveOverlayTikTokSync>, receivedAt: Date, startDelayMs?: number): { scheduledStartAt?: string; startToken?: string; prepareToken?: string } {
+  const preparation = typeof raw.prepareToken === "string" && /^prepare-[a-zA-Z0-9-]{16,80}$/.test(raw.prepareToken) ? { prepareToken: raw.prepareToken } : {};
+  if (raw.playbackState !== "playing") return raw.playbackState === "paused" ? preparation : {};
   if (typeof startDelayMs === "number" && Number.isFinite(startDelayMs) && startDelayMs > 0) {
     const delayMs = Math.max(1_500, Math.min(6_000, startDelayMs));
     const mediaId = raw.provider === "youtube" ? raw.videoId : raw.provider === "tiktok" ? raw.postId : undefined;
-    return { scheduledStartAt: new Date(receivedAt.getTime() + delayMs).toISOString(), startToken: `video-start-${receivedAt.getTime().toString(36)}-${mediaId}` };
+    return { ...preparation, scheduledStartAt: new Date(receivedAt.getTime() + delayMs).toISOString(), startToken: `video-start-${receivedAt.getTime().toString(36)}-${mediaId}` };
   }
   // Re-normalizing the stored server packet must not move its deadline forward.
   if (raw.updatedAt === receivedAt.toISOString() && typeof raw.scheduledStartAt === "string" && typeof raw.startToken === "string" && /^video-start-[a-zA-Z0-9_-]+$/.test(raw.startToken)) {
     const delayMs = Date.parse(raw.scheduledStartAt) - receivedAt.getTime();
-    if (Number.isFinite(delayMs) && delayMs >= 1_500 && delayMs <= 6_000) return { scheduledStartAt: raw.scheduledStartAt, startToken: raw.startToken };
+    if (Number.isFinite(delayMs) && delayMs >= 1_500 && delayMs <= 6_000) return { ...preparation, scheduledStartAt: raw.scheduledStartAt, startToken: raw.startToken };
   }
-  return {};
+  return preparation;
 }
 
 export function serverStampYouTubeSync(input: unknown, receivedAt: Date = new Date(), startDelayMs?: number): LiveOverlayYouTubeSync | null {
@@ -679,7 +682,8 @@ function youtubeSyncForTrack(track: LiveOverlayTrackInput, playerSync?: LiveOver
   const videoId = track.youtubeVideoId;
   const syncTrackMatches = !playerSync.trackId || !track.id || playerSync.trackId === track.id;
   const syncAgeMs = now.getTime() - new Date(playerSync.updatedAt).getTime();
-  const syncIsFresh = Number.isFinite(syncAgeMs) && syncAgeMs >= 0 && syncAgeMs <= YOUTUBE_SYNC_STALE_AFTER_MS;
+  const staleAfterMs = playerSync.prepareToken && playerSync.playbackState === "paused" ? 25_000 : YOUTUBE_SYNC_STALE_AFTER_MS;
+  const syncIsFresh = Number.isFinite(syncAgeMs) && syncAgeMs >= 0 && syncAgeMs <= staleAfterMs;
   // YouTube host sync heartbeats every 1s while playing or paused; 12s tolerates brief polling/network delays
   // but prevents old or mismatched player state from restarting a new overlay video at 0s.
   if (playerSync.videoId !== videoId || !syncTrackMatches || !syncIsFresh) return undefined;
@@ -692,7 +696,8 @@ export function tiktokSyncForTrack(track: LiveOverlayTrackInput, playerSync?: Li
   if (!postId || !/^\d{8,32}$/.test(postId) || playerSync?.provider !== "tiktok") return undefined;
   const syncTrackMatches = !playerSync.trackId || !track.id || playerSync.trackId === track.id;
   const syncAgeMs = now.getTime() - new Date(playerSync.updatedAt).getTime();
-  const syncIsFresh = Number.isFinite(syncAgeMs) && syncAgeMs >= 0 && syncAgeMs <= YOUTUBE_SYNC_STALE_AFTER_MS;
+  const staleAfterMs = playerSync.prepareToken && playerSync.playbackState === "paused" ? 25_000 : YOUTUBE_SYNC_STALE_AFTER_MS;
+  const syncIsFresh = Number.isFinite(syncAgeMs) && syncAgeMs >= 0 && syncAgeMs <= staleAfterMs;
   if (playerSync.postId !== postId || !syncTrackMatches || !syncIsFresh) return undefined;
   return { ...playerSync, muted: true };
 }

@@ -25,6 +25,7 @@ class FakeRedis {
 
   async set(key, value) {
     FakeRedis.calls.push(["set", key, value]);
+    FakeRedis.values.set(key, value);
     return "OK";
   }
 
@@ -194,4 +195,52 @@ test("the admin route returns scheduled acknowledgements without a queue snapsho
   const denied = await post({ json: async () => ({ action: "updatePlayerSync", startDelayMs: 3000 }) });
   assert.equal(denied.status, 401);
   assert.equal(writes.length, 3, "unauthorized requests cannot schedule or clear players");
+});
+
+test("preparation readiness is scoped to the current paused token and does not read the queue", async () => {
+  const oldUrl = process.env.UPSTASH_REDIS_REST_URL, oldToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+  process.env.UPSTASH_REDIS_REST_URL = "https://shared-overlay-redis.example.test";
+  process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
+  try {
+    const overlay = loadLiveOverlayWithFakeRedis();
+    const prepareToken = "prepare-12345678-1234-1234-1234-123456789012";
+    FakeRedis.values.clear();
+    await overlay.updateLiveOverlayPlayerSync({ provider: "youtube", videoId: "PWYFa2OCWj0", trackId: "C1", playbackState: "paused", currentTimeSeconds: 0, prepareToken });
+    assert.equal(await overlay.acknowledgeVideoPreparation("invalid"), false);
+    assert.equal(await overlay.acknowledgeVideoPreparation(prepareToken + "-old"), false);
+    assert.equal(await overlay.isVideoPreparationReady(prepareToken), false);
+    FakeRedis.calls.length = 0;
+    assert.equal(await overlay.acknowledgeVideoPreparation(prepareToken), true);
+    assert.deepEqual(FakeRedis.calls.map(([op]) => op), ["get", "set"]);
+    FakeRedis.calls.length = 0;
+    assert.equal(await overlay.isVideoPreparationReady(prepareToken), true);
+    assert.deepEqual(FakeRedis.calls.map(([op]) => op), ["get"]);
+    await overlay.updateLiveOverlayPlayerSync({ provider: "youtube", videoId: "PWYFa2OCWj0", trackId: "C1", playbackState: "playing", currentTimeSeconds: 0 });
+    assert.equal(await overlay.acknowledgeVideoPreparation(prepareToken), false, "a late acknowledgement cannot change playback");
+    FakeRedis.values.set("barcode:live-overlay:player-ready", JSON.stringify({ token: prepareToken, expiresAt: Date.now() - 1 }));
+    assert.equal(await overlay.isVideoPreparationReady(prepareToken), false);
+  } finally {
+    FakeRedis.values.clear();
+    if (oldUrl === undefined) delete process.env.UPSTASH_REDIS_REST_URL; else process.env.UPSTASH_REDIS_REST_URL = oldUrl;
+    if (oldToken === undefined) delete process.env.UPSTASH_REDIS_REST_TOKEN; else process.env.UPSTASH_REDIS_REST_TOKEN = oldToken;
+  }
+});
+
+test("readiness endpoint requires the Studio capability and can only acknowledge a preparation token", async () => {
+  const source = fs.readFileSync(path.join(projectRoot, "src/app/api/overlay/player-ready/route.ts"), "utf8");
+  const root = ts.createSourceFile("route.ts", source, ts.ScriptTarget.Latest, true);
+  const code = root.statements.filter((node) => !ts.isImportDeclaration(node)).map((node) => node.getText().replace(/^export /, "")).join("\n");
+  const calls = [];
+  const globals = {
+    verifyStudioOverlayToken: async (token) => token === "valid-studio", NextResponse: { json: (body, options) => ({ body, ...options }) },
+    acknowledgeVideoPreparation: async (token) => { calls.push(token); return token === "current"; },
+  };
+  const post = vm.runInNewContext(ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText + "\nPOST", globals);
+  const req = (auth, prepareToken) => ({ headers: new Headers(auth ? { Authorization: `Bearer ${auth}` } : {}), json: async () => ({ prepareToken, action: "load", trackId: "injected" }) });
+  assert.equal((await post(req(null, "current"))).status, 401);
+  assert.equal((await post(req("wrong", "current"))).status, 401);
+  assert.deepEqual(calls, []);
+  assert.equal((await post(req("valid-studio", "stale"))).status, 409);
+  assert.equal((await post(req("valid-studio", "current"))).status, 200);
+  assert.deepEqual(calls, ["stale", "current"]);
 });

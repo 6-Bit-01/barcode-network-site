@@ -99,6 +99,27 @@ export interface LiveOverlayRuntimeState {
 
 const OVERLAY_STATE_KEY = "barcode:live-overlay:state";
 const PLAYER_SYNC_KEY = "barcode:live-overlay:player-sync";
+const PLAYER_READY_KEY = "barcode:live-overlay:player-ready";
+let memoryPlayerReady: { token: string; expiresAt: number } | null = null;
+
+export async function acknowledgeVideoPreparation(token: unknown): Promise<boolean> {
+  if (typeof token !== "string" || !/^prepare-[a-zA-Z0-9-]{16,80}$/.test(token)) return false;
+  const sync = await getLiveOverlayPlayerSync();
+  if (!sync || sync.provider === "audio" || sync.playbackState !== "paused" || sync.prepareToken !== token || Date.now() - Date.parse(sync.updatedAt) > 25_000) return false;
+  const receipt = { token, expiresAt: Date.now() + 30_000 };
+  const redis = getRedis();
+  if (redis) await redis.set(PLAYER_READY_KEY, JSON.stringify(receipt), { ex: 30 });
+  memoryPlayerReady = receipt;
+  return true;
+}
+
+export async function isVideoPreparationReady(token: unknown): Promise<boolean> {
+  if (typeof token !== "string" || !/^prepare-[a-zA-Z0-9-]{16,80}$/.test(token)) return false;
+  const redis = getRedis();
+  const raw = redis ? await redis.get<{ token: string; expiresAt: number } | string>(PLAYER_READY_KEY) : memoryPlayerReady;
+  const receipt = typeof raw === "string" ? JSON.parse(raw) as { token: string; expiresAt: number } : raw;
+  return receipt?.token === token && receipt.expiresAt > Date.now();
+}
 const MAX_TEXT_LENGTH = 180;
 const WHEEL_AUDIO_FILES = [
   "/audio/wheel/142.mp3",

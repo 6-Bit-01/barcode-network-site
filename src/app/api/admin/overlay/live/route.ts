@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { COOKIE_NAME, verifyAdminToken } from "@/lib/auth";
-import { getLiveOverlayAdminSnapshot, setLiveOverlayPlayerSync, setLiveOverlayState, updateLiveOverlayPlayerSync } from "@/lib/live-overlay";
+import { getLiveOverlayAdminSnapshot, isVideoPreparationReady, setLiveOverlayPlayerSync, setLiveOverlayState, updateLiveOverlayPlayerSync } from "@/lib/live-overlay";
 
 export const dynamic = "force-dynamic";
 
@@ -28,8 +28,15 @@ export async function POST(req: Request) {
   if (!(await assertAdmin())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json().catch(() => ({}));
   try {
+    if (body?.action === "videoPreparationReady") {
+      return NextResponse.json({ ready: await isVideoPreparationReady(body.prepareToken) }, { headers: { "Cache-Control": "no-store" } });
+    }
     if (body?.action === "updatePlayerSync") {
-      const sync = await updateLiveOverlayPlayerSync(body.sync, serverRequestReceivedAt, body.startDelayMs);
+      if (body.startDelayMs !== undefined && body.sync?.prepareToken && !(await isVideoPreparationReady(body.sync.prepareToken))) {
+        return NextResponse.json({ error: "Overlay is not ready for this start." }, { status: 409 });
+      }
+      const syncReceivedAt = body.sync?.prepareToken && body.startDelayMs !== undefined ? new Date() : serverRequestReceivedAt;
+      const sync = await updateLiveOverlayPlayerSync(body.sync, syncReceivedAt, body.startDelayMs);
       const serverResponseGeneratedAt = new Date();
       return NextResponse.json({ ok: true, ...(body.startDelayMs !== undefined ? { sync } : {}) }, { headers: transportHeaders(serverRequestReceivedAt, serverResponseGeneratedAt) });
     }

@@ -41,6 +41,7 @@
 .stats > div:last-child { border-right: 0; }
 .stats dt { color: #94a6aa; font-size: .58rem; }
 .stats dd { margin-top: .45rem; font-size: clamp(1.55rem, 3vw, 2.2rem); font-weight: 900; line-height: 1.15; letter-spacing: -.04em; color: var(--signal); }
+.countNote { padding: .65rem 1.5rem; border-top: 1px solid rgb(255 255 255 / 10%); color: #94a6aa; font-size: .7rem; line-height: 1.6; }
 .artists { display: flex; flex-wrap: wrap; gap: .45rem .6rem; align-items: center; padding: 1rem 1.5rem; border-top: 1px solid rgb(255 255 255 / 10%); }
 .artists > span { margin-right: .5rem; color: #94a6aa; font-size: .58rem; }
 .artists a { display: inline-flex; align-items: center; min-height: 2.5rem; gap: .35rem; padding: .45rem .6rem; border: 1px solid rgb(255 255 255 / 15%); color: #d0dcde; font-size: .7rem; overflow-wrap: anywhere; }

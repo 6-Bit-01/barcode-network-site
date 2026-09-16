@@ -444,7 +444,7 @@ test("the Radio feature joins the active queue as a Deck entry while archive pag
   assert.match(archive, /Submitted by/);
   assert.match(archive, /Wheel Chosen/);
   assert.match(archive, /not a verified artist account/);
-  assert.match(archive, /Completed-play outcomes only/);
+  assert.match(archive, /Finish outcomes; full playback is not implied/);
   assert.match(archive, /deckHref &&/);
 
   assert.doesNotMatch(gateway, /href="\/radio\/deck"/);
@@ -540,6 +540,87 @@ test("archive refresh requests played projection; ordinary stats remain the comp
   assert.match(component, /refreshEndpoint = "\/api\/queue\/stats\?view=played"/);
 });
 
+test("external host-finished records stay distinct from playback receipts and never credit mere load or removal", () => {
+  const externalTypes = ["spotify", "soundcloud", "link", "other"];
+  const completed = externalTypes.flatMap((sourceType) => [
+    entry(`${sourceType}-finished`, "@external", { sourceType, outcome: "finished" }),
+    entry(`${sourceType}-skipped`, "@external", { sourceType, outcome: "skipped" }),
+    entry(`${sourceType}-unknown`, "@external", { sourceType, status: "completed" }),
+  ]);
+  const nativeSilent = ["upload", "youtube", "tiktok"].map((sourceType) =>
+    entry(`${sourceType}-silent`, "@native", { sourceType, outcome: "finished" }));
+  const removed = externalTypes.map((sourceType) => entry(`${sourceType}-removed`, "@external", { sourceType, outcome: "removed", status: "removed" }));
+  const partial = entry("external-partial", "@partial", { sourceType: "spotify", outcome: "removed", status: "removed" });
+  const loaded = { ...entry("external-loaded", "@loaded", { sourceType: "spotify", status: "playing" }), playedAt: at(3) };
+  const simulation = entry("external-simulation", "@simulation", { sourceType: "spotify", outcome: "finished", isTestTrack: true });
+  const source = session("external-show", "live_broadcast", {
+    queue: externalTypes.map((sourceType) => entry(`${sourceType}-waiting`, "@waiting", { sourceType })),
+    loadedTrack: loaded, completed: [...completed, ...nativeSilent, simulation], removed: [...removed, partial],
+    showLog: [showLogEvent(1, "track_loaded", loaded), showLogEvent(2, "track_play_started", partial), showLogEvent(3, "track_resumed", partial)],
+  });
+  const original = JSON.stringify(source);
+  const stats = queue.buildQueuePublicStats({ revision: 40, sessions: [source], playedOnly: true });
+  const roster = stats.shows[0].trackRoster;
+  assert.deepEqual(roster.map((track) => track.trackId).sort(), [...externalTypes.map((type) => `${type}-finished`), partial.id].sort());
+  assert.ok(roster.filter((track) => track.outcome === "finished").every((track) => track.broadcastEvidence === "external_host_finished"));
+  assert.equal(roster.find((track) => track.trackId === partial.id).broadcastEvidence, "playback_recorded");
+  assert.equal(stats.shows[0].milestones.filter((event) => event.eventType === "track_play_started").length, 1, "do not synthesize playback events for host-finished tracks");
+  assert.equal(JSON.stringify(source), original, "history reads never backfill playback or natural completion");
+  const privateShow = { ...source, purpose: "rehearsal" };
+  assert.equal(queue.buildQueuePublicStats({ revision: 40, sessions: [privateShow], playedOnly: true }).shows.length, 0);
+  const preview = queue.buildQueueAdminPreviewStats({ revision: 40, selectedSession: privateShow, playedOnly: true });
+  assert.equal(preview.shows[0].trackRoster.length, 6, "only the authorized preview may also include its simulation");
+});
+
+test("Radio and Archive reconcile a 50-submission show: 21 playback receipts plus 20 external finishes, nine removals excluded", () => {
+  const { buildRadioShowFeature } = require("../src/lib/radio-show-feature.ts");
+  const observed = Array.from({ length: 21 }, (_, i) => entry(`observed-${i}`, `@artist${i % 11}`, {
+    artist: `Project ${i % 11}`, sourceType: i < 18 ? "upload" : "youtube", outcome: "finished", createdAt: at(i),
+  }));
+  observed[0].playbackEndedNaturally = true;
+  const external = Array.from({ length: 20 }, (_, i) => entry(`external-${i}`, `@artist${11 + i % 14}`, {
+    artist: `Project ${11 + i % 14}`, sourceType: i < 11 ? "spotify" : "other", outcome: "finished", createdAt: at(i + 21),
+  }));
+  const removed = Array.from({ length: 9 }, (_, i) => entry(`removed-${i}`, `@removed${i}`, { sourceType: "spotify", outcome: "removed", status: "removed" }));
+  let sequence = 0;
+  const log = (eventType, track, occurredAt) => showLogEvent(++sequence, eventType, track, occurredAt);
+  const show = session("mixed-source-show", "live_broadcast", {
+    completed: [...observed, ...external], removed,
+    showLog: [
+      log("broadcast_started", null, at(0)),
+      ...observed.slice(1).map((track, i) => log("track_play_started", track, at(i + 1))),
+      log("track_resumed", observed[1], at(23)),
+      ...external.flatMap((track, i) => [log("track_loaded", track, at(25 + i * 5)), log("track_finished", track, at(29 + i * 5))]),
+      ...Array.from({ length: 14 }, (_, i) => log("wheel_spun", null, at(130 + i))),
+      log("session_archived", null, at(288)),
+    ],
+  });
+  const input = { revision: 41, sessions: [show] };
+  const original = JSON.stringify(input);
+  const all = queue.buildQueuePublicStats(input);
+  const archive = queue.buildQueuePublicStats({ ...input, playedOnly: true });
+  const feature = buildRadioShowFeature(archive);
+  assert.equal(all.latestShow.submittedTrackCount, 50);
+  assert.equal(all.latestShow.finishedTrackCount, 41);
+  assert.equal(all.latestShow.removedTrackCount, 9);
+  assert.equal(archive.latestShow.trackRoster.length, 41);
+  assert.equal(archive.latestShow.trackRoster.filter((track) => track.broadcastEvidence === "playback_recorded").length, 21);
+  assert.equal(archive.latestShow.trackRoster.filter((track) => track.broadcastEvidence === "external_host_finished").length, 20);
+  assert.equal(archive.artists.length, 25);
+  assert.equal(feature.show.tracksInShow, 41);
+  assert.equal(feature.show.artistCredits, 25);
+  assert.equal(feature.show.hostFinishedExternalTracks, 20);
+  assert.equal(feature.show.wheelSpins, 14);
+  assert.equal(feature.show.durationSeconds, 288 * 60);
+  assert.equal(feature.show.href, "/radio/archive?view=shows&show=mixed-source-show");
+  for (const track of external) {
+    assert.ok(archive.artists.some((artist) => artist.tracks.some((record) => record.trackId === track.id)), "external tracks and their music links must be discoverable in the artist catalog too");
+    assert.equal(archive.latestShow.trackRoster.find((record) => record.trackId === track.id).publicSourceUrl, track.link);
+  }
+  assert.deepEqual(queue.buildQueuePublicStats(input), all, "complete Deck/BNL history stays intact");
+  assert.equal(JSON.stringify(input), original);
+});
+
 test("Radio switches from the live Deck to the exact archived show using observed playback", () => {
   const { buildRadioShowFeature } = require("../src/lib/radio-show-feature.ts");
   const silent = entry("silent-finish", "@silent", { outcome: "finished" });
@@ -568,8 +649,8 @@ test("Radio switches from the live Deck to the exact archived show using observe
   assert.equal(feature.show.href, "/radio/deck");
   assert.equal(feature.queueHref, "/queue/public-night");
   assert.equal(feature.submissionsOpen, true);
-  assert.equal(feature.show.tracksPlayed, 2, "a silent Finish and a simulation must not inflate playback");
-  assert.equal(feature.show.artistsHeard, 1);
+  assert.equal(feature.show.tracksInShow, 2, "a silent Finish and a simulation must not inflate playback");
+  assert.equal(feature.show.artistCredits, 1);
   assert.equal(feature.show.wheelSpins, 2, "cancelled selections still count as real spins");
   assert.equal(feature.show.durationSeconds, 45 * 60);
   assert.deepEqual(feature.show.artists, [{ name: "Signal Artist", href: "/radio/archive?view=artists&artist=signal%20artist" }]);
@@ -581,7 +662,7 @@ test("Radio switches from the live Deck to the exact archived show using observe
   assert.equal(archive.mode, "archive");
   assert.equal(archive.show.href, "/radio/archive?view=shows&show=public-night");
   assert.equal(archive.show.durationSeconds, 90 * 60, "an archived duration must stop advancing");
-  assert.equal(archive.show.tracksPlayed, 2);
+  assert.equal(archive.show.tracksInShow, 2);
   assert.equal(archive.queueHref, null);
   assert.equal(archive.submissionsOpen, false);
   assert.equal(JSON.stringify(live), original, "the feature never changes queue history");
@@ -624,13 +705,13 @@ test("Radio feature endpoint shares only a compact anonymous public summary and 
   assert.match(response.headers.get("cache-control"), /public.*s-maxage=30/);
   assert.equal(response.headers.get("vary"), null);
   const result = await response.json();
-  assert.equal(result.schemaVersion, "radio_show_feature_v1");
+  assert.equal(result.schemaVersion, "radio_show_feature_v2");
   assert.deepEqual(Object.keys(result).sort(), ["mode", "queueHref", "schemaVersion", "show", "submissionsOpen"]);
   assert.doesNotMatch(JSON.stringify(result), /private-browser-token|personalHistory|sourceRevision|trackRoster/);
   process.env.BARCODE_QUEUE_PRODUCTION_ENABLED = "false";
   try {
     const disabled = await route.GET(new Request("https://example.test/api/queue/stats?view=feature"));
-    assert.deepEqual(await disabled.json(), { schemaVersion: "radio_show_feature_v1", mode: "archive", submissionsOpen: false, queueHref: null, show: null });
+    assert.deepEqual(await disabled.json(), { schemaVersion: "radio_show_feature_v2", mode: "archive", submissionsOpen: false, queueHref: null, show: null });
   } finally {
     process.env.BARCODE_QUEUE_PRODUCTION_ENABLED = "true";
   }

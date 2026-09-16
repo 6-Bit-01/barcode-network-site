@@ -2,6 +2,8 @@
 
 This draft follows the commercial PR 425 source `95e5115ce1971374a61fb871761238544b526594` and contains the existing credits/video/commercial stack. It changes three related show rules in their existing owners. No deployed queue, submission, payment, BNL memory, upload, or show-log record was edited or restored.
 
+September 16 correction: the automatic-receipt-only filter below omitted host-finished external players (Spotify, Suno, and other links). The current Archive retains those as separately labeled host-finished records without asserting automatic playback or natural completion. See `radio-external-show-history-2026-09-16.md`; native silent Finish exclusions remain intact.
+
 ## Evidence and behavior
 
 Known overlong uploads were accepted by authoritative intake. `createQueueTrack` now rejects raw upload or provider measurements above 360 seconds before rounding or queue writes; the legacy `addToQueue` intake also rejects known overlong tracks. Provider metadata cannot be bypassed by supplying a shorter measurement. Exactly 360 seconds is allowed; 360.01 seconds is rejected. The public API returns 400 / `track_too_long`. Browser file reads retain fractions, ignore stale selection responses and recheck the selected file before upload. Duplicate-upload matching continues to use normalized duration after the raw limit check.

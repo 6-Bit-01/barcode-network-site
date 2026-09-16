@@ -15,7 +15,7 @@ export function RadioBroadcastFeature() {
       const response = await fetch("/api/queue/stats?view=feature", { credentials: "omit" });
       if (!response.ok) throw new Error("Show details unavailable");
       const next = await response.json() as RadioShowFeature;
-      if (next.schemaVersion !== "radio_show_feature_v1") throw new Error("Unrecognized show details");
+      if (next.schemaVersion !== "radio_show_feature_v2") throw new Error("Unrecognized show details");
       setFeature(next);
       setUnavailable(false);
       return next.mode === "live" || next.submissionsOpen;
@@ -76,9 +76,10 @@ export function RadioBroadcastFeatureView({ feature, unavailable = false }: {
       </div>
       {show && <>
         <dl className={styles.stats} aria-label={live ? "Current show statistics" : "Latest show statistics"}>
-          {[["Tracks played", show.tracksPlayed], ["Artists heard", show.artistsHeard], ["Wheel spins", show.wheelSpins], [live ? "On air so far" : "Show duration", radioShowDuration(show.durationSeconds)]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+          {[["Show tracks", show.tracksInShow], ["Artist credits", show.artistCredits], ["Wheel spins", show.wheelSpins], [live ? "On air so far" : "Show duration", radioShowDuration(show.durationSeconds)]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
         </dl>
-        {show.artists.length > 0 && <div className={styles.artists}><span>{live ? "Heard tonight" : "Heard at the show"}</span>{show.artists.map((artist) => <Link key={artist.href} href={artist.href}>{artist.name}<span aria-hidden="true"> ↗</span></Link>)}</div>}
+        {show.hostFinishedExternalTracks > 0 && <p className={styles.countNote}>Includes {show.hostFinishedExternalTracks} external {show.hostFinishedExternalTracks === 1 ? "track" : "tracks"} marked finished by the host. Full-length playback is not confirmed for every track.</p>}
+        {show.artists.length > 0 && <div className={styles.artists}><span>{live ? "In tonight’s show" : "From the show"}</span>{show.artists.map((artist) => <Link key={artist.href} href={artist.href}>{artist.name}<span aria-hidden="true"> ↗</span></Link>)}</div>}
       </>}
       {feature?.submissionsOpen && feature.queueHref && <div className={styles.intake}><span>Submissions are open. Bring your next track.</span><Link href={feature.queueHref}>Enter the queue →</Link></div>}
     </section>

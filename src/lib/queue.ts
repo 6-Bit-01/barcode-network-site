@@ -4195,6 +4195,7 @@ interface QueuePublicStatsRecord {
   outcome: QueuePublicHistoryOutcome;
   stage: QueuePublicStatsStage;
   wheelChosen: boolean;
+  broadcastEvidence?: QueuePublicHistoryTrack["broadcastEvidence"];
 }
 
 interface QueuePublicStatsSession {
@@ -4369,6 +4370,7 @@ function publicHistoryTrackForRecord(session: QueueSession, record: QueuePublicS
     submittedAt: record.entry.createdAt,
     resolvedAt,
     outcome: record.outcome,
+    broadcastEvidence: record.broadcastEvidence ?? null,
     lane: record.entry.lane ?? "regular",
     wheelChosen: record.wheelChosen,
     ...(isSimulationTrack(record.entry) ? { isSimulation: true } : {}),
@@ -4568,6 +4570,18 @@ function hasBroadcastPlaybackEvidence(session: QueueSession, entry: QueueEntry):
     || entry.playbackEndedNaturally === true;
 }
 
+function broadcastHistoryEvidence(session: QueueSession, record: QueuePublicStatsRecord): QueuePublicHistoryTrack["broadcastEvidence"] {
+  if (hasBroadcastPlaybackEvidence(session, record.entry)) return "playback_recorded";
+  // External players cannot send our automatic playback receipts. Keep the
+  // host's explicit Finish as a separate kind of show record, never as a
+  // fabricated play event or evidence of natural completion. Native players
+  // still require real playback evidence, including a loaded-but-silent Finish.
+  if (record.outcome === "finished" && queuePlaybackProviderForSourceType(record.entry.sourceType) === "external") {
+    return "external_host_finished";
+  }
+  return null;
+}
+
 function buildQueueStatsProjection(input: {
   revision: number;
   activeSessionId?: string | null;
@@ -4578,8 +4592,9 @@ function buildQueueStatsProjection(input: {
       const includeSessionSimulationTracks = typeof includeSimulationTracks === "function"
         ? includeSimulationTracks(session)
         : includeSimulationTracks;
-      const allRecords = publicStatsRecordsForSession(session, includeSessionSimulationTracks);
-      const records = playedOnly ? allRecords.filter(({ entry }) => hasBroadcastPlaybackEvidence(session, entry)) : allRecords;
+      const allRecords = publicStatsRecordsForSession(session, includeSessionSimulationTracks)
+        .map((record) => ({ ...record, broadcastEvidence: broadcastHistoryEvidence(session, record) }));
+      const records = playedOnly ? allRecords.filter((record) => record.broadcastEvidence !== null) : allRecords;
       return { session, records, events: publicHistoryEventsForSession(session, records) };
     })
     .sort((left, right) => publicStatsSessionTime(right.session) - publicStatsSessionTime(left.session));

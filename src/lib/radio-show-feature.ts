@@ -5,15 +5,16 @@ export interface RadioFeaturedShow {
   title: string;
   showDate: string;
   href: string;
-  tracksPlayed: number;
-  artistsHeard: number;
+  tracksInShow: number;
+  artistCredits: number;
+  hostFinishedExternalTracks: number;
   wheelSpins: number;
   durationSeconds: number | null;
   artists: Array<{ name: string; href: string }>;
 }
 
 export interface RadioShowFeature {
-  schemaVersion: "radio_show_feature_v1";
+  schemaVersion: "radio_show_feature_v2";
   mode: "live" | "archive";
   submissionsOpen: boolean;
   queueHref: string | null;
@@ -22,10 +23,10 @@ export interface RadioShowFeature {
 
 export function buildRadioShowFeature(stats: QueuePublicStats, now = Date.now()): RadioShowFeature {
   const empty: RadioShowFeature = {
-    schemaVersion: "radio_show_feature_v1", mode: "archive", submissionsOpen: false, queueHref: null, show: null,
+    schemaVersion: "radio_show_feature_v2", mode: "archive", submissionsOpen: false, queueHref: null, show: null,
   };
-  // This feature accepts only the same public, actually-played projection as
-  // the Archive. A Finish outcome or a private preview is not an alternative.
+  // Share the Archive's public catalog: recorded playback plus explicitly
+  // host-finished external tracks. Full intake and private previews are excluded.
   if (stats.visibility !== "public_safe" || stats.catalogScope !== "played_broadcast") return empty;
   const current = stats.currentShow && stats.currentShow.status !== "archived" && stats.currentShow.broadcastPhase !== "ended"
     ? stats.currentShow : null;
@@ -60,8 +61,9 @@ function summarizeShow(show: QueuePublicShowStats, live: boolean, now: number): 
     title: show.title,
     showDate: show.showDate,
     href: live ? "/radio/deck" : broadcastArchiveShowHref(show.sessionId),
-    tracksPlayed: tracks.length,
-    artistsHeard: artists.length,
+    tracksInShow: tracks.length,
+    artistCredits: artists.length,
+    hostFinishedExternalTracks: tracks.filter((track) => track.broadcastEvidence === "external_host_finished").length,
     wheelSpins: events.filter((event) => event.eventType === "wheel_spun").length,
     durationSeconds: start !== null && end !== null && end >= start ? Math.floor((end - start) / 1000) : null,
     artists: artists.slice(0, 4).map((name) => ({ name, href: broadcastArchiveArtistHref(name) })),

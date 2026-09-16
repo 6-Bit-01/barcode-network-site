@@ -35,7 +35,7 @@ function sourceLabel(sourceType: QueuePublicHistoryTrack["sourceType"]): string 
 }
 
 function outcomeLabel(outcome: QueuePublicHistoryOutcome): string {
-  if (outcome === "finished") return "Played";
+  if (outcome === "finished") return "Finished";
   if (outcome === "skipped") return "Ended without completion";
   if (outcome === "removed") return "Removed";
   if (outcome === "unknown") return "Outcome not recorded";
@@ -109,7 +109,7 @@ function TrackRow({ track, showLink = true, archiveBaseHref }: { track: QueuePub
         <div className="flex shrink-0 flex-wrap gap-2 sm:max-w-[17rem] sm:justify-end">
           {track.wheelChosen && <span className="border border-cyan-200/45 bg-cyan-200/5 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-cyan-200">Wheel Chosen</span>}
           {track.isSimulation && <span className="border border-violet-300/45 bg-violet-300/5 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-violet-200">Simulation</span>}
-          <span className={`border px-2 py-1 text-[10px] font-bold uppercase tracking-widest ${outcomeTone(track.outcome)}`}>{outcomeLabel(track.outcome)}</span>
+          <span className={`border px-2 py-1 text-[10px] font-bold uppercase tracking-widest ${outcomeTone(track.outcome)}`}>{track.broadcastEvidence === "external_host_finished" ? "Host marked finished" : outcomeLabel(track.outcome)}</span>
           {track.publicSourceUrl ? (
             <a href={track.publicSourceUrl} target="_blank" rel="noopener noreferrer" className="border border-accent/45 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-accent hover:bg-accent hover:text-background">
               Open {sourceLabel(track.sourceType)} ↗
@@ -136,8 +136,8 @@ function ShowDetail({ show, archiveBaseHref }: { show: QueuePublicShowStats; arc
         <button type="button" onClick={() => navigator.clipboard?.writeText(window.location.href)} className="border border-border px-3 py-2 text-[10px] uppercase tracking-widest text-muted hover:border-accent hover:text-accent">Copy show link</button>
       </div>
       <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Broadcast tracks" value={show.submittedTrackCount} detail="Tracks with recorded playback evidence." />
-        <Stat label="Finished" value={show.finishedTrackCount} detail="Tracks with a completed-play outcome." />
+        <Stat label="Broadcast tracks" value={show.submittedTrackCount} detail="Recorded playback and host-finished external tracks." />
+        <Stat label="Finished" value={show.finishedTrackCount} detail="Finish outcomes; full playback is not implied." />
         <Stat label="Partial / unresolved" value={incomplete} detail="Playback began; completion is not confirmed." />
         <Stat label="Wheel Chosen" value={show.wheelChosenTrackCount} detail="Tracks selected through the Wheel." />
       </div>
@@ -171,7 +171,7 @@ function ArtistDetail({ artist, archiveBaseHref }: { artist: QueuePublicProjectH
       <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Shows" value={artist.showCount} detail={`${displayDate(artist.firstShowDate)} through ${displayDate(artist.latestShowDate)}.`} />
         <Stat label="Tracks" value={artist.submittedTrackCount} detail="Broadcast tracks under this project label." />
-        <Stat label="Finished" value={artist.finishedTrackCount} detail="Tracks with a completed-play outcome." />
+        <Stat label="Finished" value={artist.finishedTrackCount} detail="Finish outcomes; full playback is not implied." />
         <Stat label="Partial / unresolved" value={incomplete} detail="Playback began; completion is not confirmed." />
       </div>
       <div className="mt-5 border border-border bg-background/45 p-4">
@@ -278,7 +278,7 @@ export function BroadcastArchive({
             <div className="max-w-3xl">
               <p className="text-xs font-bold uppercase tracking-[0.38em] text-accent">{previewMode ? "Private post-show readback" : "Post-show database"}</p>
               <h1 className="mt-3 text-3xl font-black tracking-tight text-foreground sm:text-5xl">{previewMode ? "Broadcast Archive Preview" : "The Broadcast Archive"}</h1>
-              <p className="mt-4 max-w-2xl text-sm leading-relaxed text-muted sm:text-base">Search {previewMode ? "this test session" : "BARCODE Radio"} by individual show or by artist/project. Includes tracks with recorded playback evidence, including partial plays. Follow who submitted each track, public music links, collaborators, exact outcomes, Wheel selections, and repeat appearances.</p>
+              <p className="mt-4 max-w-2xl text-sm leading-relaxed text-muted sm:text-base">Search {previewMode ? "this test session" : "BARCODE Radio"} by individual show or by artist/project. Includes recorded playback, partial plays, and external tracks marked finished by the host. A Finish does not confirm full-length playback. Follow who submitted each track, public music links, collaborators, exact outcomes, Wheel selections, and repeat appearances.</p>
             </div>
             <div className="flex flex-wrap gap-2">
               {deckHref && <Link href={deckHref} className="border border-[#ffaa00]/55 px-4 py-3 text-xs font-bold uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background">Open Deck Preview</Link>}
@@ -290,8 +290,8 @@ export function BroadcastArchive({
         <div className="grid grid-cols-2 gap-px bg-border sm:grid-cols-4">
           <Stat label="Shows" value={stats.overview.showCount} detail={previewMode ? "Selected persisted test record." : "Retained live broadcasts."} />
           <Stat label="Artists" value={stats.overview.artistCount} detail="Project labels on broadcast tracks." />
-          <Stat label="Tracks" value={stats.overview.submittedTrackCount} detail="Tracks with recorded playback evidence." />
-          <Stat label="Finished" value={stats.overview.finishedTrackCount} detail="Completed-play outcomes only." />
+          <Stat label="Tracks" value={stats.overview.submittedTrackCount} detail="Recorded playback and host-finished external tracks." />
+          <Stat label="Finished" value={stats.overview.finishedTrackCount} detail="Finish outcomes; full playback is not implied." />
         </div>
       </section>
 
@@ -310,16 +310,16 @@ export function BroadcastArchive({
       {view === "shows" ? (
         <div className="grid gap-5 lg:grid-cols-[minmax(16rem,0.34fr)_minmax(0,1fr)]">
           <aside className="border border-border bg-surface p-4 lg:sticky lg:top-20 lg:self-start">
-            <div className="flex items-center justify-between gap-3 border-b border-border pb-3"><div><p className="text-xs font-bold uppercase tracking-[0.25em] text-accent">Shows</p><p className="mt-1 text-[11px] text-muted">{shows.length} matching records</p></div><label><span className="sr-only">Sort shows</span><select value={showSort} onChange={(event) => setShowSort(event.target.value as ShowSort)} className="border border-border bg-background px-2 py-2 text-xs text-muted"><option value="newest">Newest</option><option value="tracks">Most tracks</option><option value="played">Most played</option></select></label></div>
-            <div className="mt-3 max-h-[62vh] space-y-2 overflow-y-auto pr-1">{shows.map((show) => <button key={show.sessionId} type="button" onClick={() => chooseShow(show.sessionId)} className={`${selectedShow?.sessionId === show.sessionId ? "border-accent bg-accent/10" : "border-border hover:border-accent/55"} w-full border p-3 text-left`}><p className="font-bold text-foreground">{show.title}</p><p className="mt-1 text-xs text-muted">{displayDate(show.showDate)}</p><p className="mt-2 font-mono text-[10px] uppercase tracking-widest text-muted">{show.submittedTrackCount} tracks · {show.finishedTrackCount} played</p></button>)}{shows.length === 0 && <p className="p-3 text-sm text-muted">No shows match this search.</p>}</div>
+            <div className="flex items-center justify-between gap-3 border-b border-border pb-3"><div><p className="text-xs font-bold uppercase tracking-[0.25em] text-accent">Shows</p><p className="mt-1 text-[11px] text-muted">{shows.length} matching records</p></div><label><span className="sr-only">Sort shows</span><select value={showSort} onChange={(event) => setShowSort(event.target.value as ShowSort)} className="border border-border bg-background px-2 py-2 text-xs text-muted"><option value="newest">Newest</option><option value="tracks">Most tracks</option><option value="played">Most finished</option></select></label></div>
+            <div className="mt-3 max-h-[62vh] space-y-2 overflow-y-auto pr-1">{shows.map((show) => <button key={show.sessionId} type="button" onClick={() => chooseShow(show.sessionId)} className={`${selectedShow?.sessionId === show.sessionId ? "border-accent bg-accent/10" : "border-border hover:border-accent/55"} w-full border p-3 text-left`}><p className="font-bold text-foreground">{show.title}</p><p className="mt-1 text-xs text-muted">{displayDate(show.showDate)}</p><p className="mt-2 font-mono text-[10px] uppercase tracking-widest text-muted">{show.submittedTrackCount} tracks · {show.finishedTrackCount} finished</p></button>)}{shows.length === 0 && <p className="p-3 text-sm text-muted">No shows match this search.</p>}</div>
           </aside>
           {selectedShow ? <ShowDetail show={selectedShow} archiveBaseHref={archiveBaseHref} /> : <EmptyArchive kind="show" previewMode={previewMode} />}
         </div>
       ) : (
         <div className="grid gap-5 lg:grid-cols-[minmax(16rem,0.34fr)_minmax(0,1fr)]">
           <aside className="border border-border bg-surface p-4 lg:sticky lg:top-20 lg:self-start">
-            <div className="flex items-center justify-between gap-3 border-b border-border pb-3"><div><p className="text-xs font-bold uppercase tracking-[0.25em] text-cyan-200">Artists</p><p className="mt-1 text-[11px] text-muted">{artists.length} matching records</p></div><label><span className="sr-only">Sort artists</span><select value={artistSort} onChange={(event) => setArtistSort(event.target.value as ArtistSort)} className="border border-border bg-background px-2 py-2 text-xs text-muted"><option value="alphabetical">A–Z</option><option value="tracks">Most tracks</option><option value="played">Most played</option><option value="recent">Most recent</option></select></label></div>
-            <div className="mt-3 max-h-[62vh] space-y-2 overflow-y-auto pr-1">{artists.map((artist) => <button key={artist.projectKey} type="button" onClick={() => chooseArtist(artist.projectKey)} className={`${selectedArtist?.projectKey === artist.projectKey ? "border-cyan-200 bg-cyan-200/5" : "border-border hover:border-cyan-200/55"} w-full border p-3 text-left`}><p className="font-bold text-foreground">{artist.projectLabel}</p><p className="mt-1 text-xs text-muted">{artist.showCount} {artist.showCount === 1 ? "show" : "shows"}</p><p className="mt-2 font-mono text-[10px] uppercase tracking-widest text-muted">{artist.submittedTrackCount} tracks · {artist.finishedTrackCount} played</p></button>)}{artists.length === 0 && <p className="p-3 text-sm text-muted">No artists match this search.</p>}</div>
+            <div className="flex items-center justify-between gap-3 border-b border-border pb-3"><div><p className="text-xs font-bold uppercase tracking-[0.25em] text-cyan-200">Artists</p><p className="mt-1 text-[11px] text-muted">{artists.length} matching records</p></div><label><span className="sr-only">Sort artists</span><select value={artistSort} onChange={(event) => setArtistSort(event.target.value as ArtistSort)} className="border border-border bg-background px-2 py-2 text-xs text-muted"><option value="alphabetical">A–Z</option><option value="tracks">Most tracks</option><option value="played">Most finished</option><option value="recent">Most recent</option></select></label></div>
+            <div className="mt-3 max-h-[62vh] space-y-2 overflow-y-auto pr-1">{artists.map((artist) => <button key={artist.projectKey} type="button" onClick={() => chooseArtist(artist.projectKey)} className={`${selectedArtist?.projectKey === artist.projectKey ? "border-cyan-200 bg-cyan-200/5" : "border-border hover:border-cyan-200/55"} w-full border p-3 text-left`}><p className="font-bold text-foreground">{artist.projectLabel}</p><p className="mt-1 text-xs text-muted">{artist.showCount} {artist.showCount === 1 ? "show" : "shows"}</p><p className="mt-2 font-mono text-[10px] uppercase tracking-widest text-muted">{artist.submittedTrackCount} tracks · {artist.finishedTrackCount} finished</p></button>)}{artists.length === 0 && <p className="p-3 text-sm text-muted">No artists match this search.</p>}</div>
           </aside>
           {selectedArtist ? <ArtistDetail artist={selectedArtist} archiveBaseHref={archiveBaseHref} /> : <EmptyArchive kind="artist" previewMode={previewMode} />}
         </div>

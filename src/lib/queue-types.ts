@@ -713,6 +713,7 @@ export interface QueuePublicHistoryTrack {
   submittedAt: string;
   resolvedAt: string | null;
   outcome: QueuePublicHistoryOutcome;
+  broadcastEvidence?: "playback_recorded" | "external_host_finished" | null;
   lane: QueueLane;
   wheelChosen: boolean;
   isSimulation?: boolean;

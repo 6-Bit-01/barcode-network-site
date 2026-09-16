@@ -5,7 +5,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MutableRefObject } from "react";
 import { buildWheelSegments, estimateOneWayNetworkTransitMs, playbackCorrectionTarget, roundPlaybackDriftSeconds, serverRelativeSyncAgeSeconds, shouldCorrectPlaybackDrift, stabilizeLiveOverlayMediaScene, updateTransitEstimateMs, wheelClockwiseTargetRotation, wheelFinalRotationForSegment, wheelUprightLabelRotationDegrees } from "@/lib/live-overlay-resolver";
 import type { LiveOverlayPlaybackState, LiveOverlayTikTokSync, LiveOverlayYouTubeSync, ResolvedLiveOverlayScene } from "@/lib/live-overlay";
-import { VideoReceiverStartGate, scheduledVideoStartDelayMs } from "@/lib/video-start-gate";
 import { LIVE_OVERLAY_POLL_INTERVAL_MS, LIVE_OVERLAY_STANDBY_POLL_INTERVAL_MS, WHEEL_OVERLAY_ACTIVE_POLL_INTERVAL_MS, WHEEL_OVERLAY_SHOW_IDLE_POLL_INTERVAL_MS, WHEEL_OVERLAY_STANDBY_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 import { hasActiveQueueSession, startPermanentOverlayPolling } from "@/lib/session-bound-polling";
 import { studioOverlayRequestHeaders } from "@/lib/studio-overlay-client";
@@ -576,9 +575,7 @@ function WheelCeremonyOverlay({ scene, clockAnchorRef, audioArmed, audioNotice, 
   );
 }
 
-function serverNowFromAnchor(clockAnchor: OverlayServerClockAnchor | null): number {
-  return clockAnchor ? clockAnchor.serverNowMs + clockAnchor.responseTransitEstimateMs + Math.max(0, performance.now() - clockAnchor.receivedAtPerformanceMs) : Number.NaN;
-}
+
 
 function serverRelativeAgeFromAnchor(updatedAt: string, clockAnchor: OverlayServerClockAnchor | null): number | null {
   if (!clockAnchor) return null;
@@ -597,7 +594,7 @@ function roundedFiniteSeconds(value: number | null): number | undefined {
 
 function expectedYouTubeTime(sync: LiveOverlayYouTubeSync, clockAnchor: OverlayServerClockAnchor | null): number {
   if (sync.playbackState !== "playing") return sync.currentTimeSeconds;
-  const ageSeconds = serverRelativeAgeFromAnchor(sync.scheduledStartAt ?? sync.updatedAt, clockAnchor);
+  const ageSeconds = serverRelativeAgeFromAnchor(sync.updatedAt, clockAnchor);
   return ageSeconds === null ? sync.currentTimeSeconds : sync.currentTimeSeconds + ageSeconds;
 }
 
@@ -618,14 +615,21 @@ function ensureYouTubeApi(): Promise<void> {
   });
 }
 
+type YouTubeFailurePhase = "api_load" | "player_create" | "ready_timeout" | "sync_command" | "provider_error";
+
+function youtubeFailureLabel(phase: YouTubeFailurePhase, code?: number): string {
+  if (phase === "provider_error") return youtubeErrorLabel(code);
+  if (phase === "api_load") return "YOUTUBE API FAILED TO LOAD";
+  if (phase === "player_create") return "YOUTUBE PLAYER COULD NOT START";
+  if (phase === "ready_timeout") return "YOUTUBE PLAYER STARTUP TIMED OUT";
+  return "YOUTUBE PLAYER SYNC FAILED";
+}
+
 function YouTubeOverlayPlayer({ sync, clockAnchorRef, clockAnchored, responseTransitMs }: { sync: LiveOverlayYouTubeSync; clockAnchorRef: OverlayServerClockAnchorRef; clockAnchored: boolean; responseTransitMs: number | null }) {
   const playerRef = useRef<YTPlayer | null>(null);
   const playerHostRef = useRef<HTMLDivElement | null>(null);
   const readyRef = useRef(false);
   const destroyedRef = useRef(false);
-  const startGateRef = useRef(new VideoReceiverStartGate());
-  const bufferingRef = useRef(false);
-  const lastSeekPacketRef = useRef<string | null>(null);
   const loadedVideoRef = useRef<string | null>(null);
   const latestSyncRef = useRef(sync);
   const generationRef = useRef(0);
@@ -635,7 +639,7 @@ function YouTubeOverlayPlayer({ sync, clockAnchorRef, clockAnchored, responseTra
   const lastCorrectionAtRef = useRef<number | null>(null);
   const correctionCountRef = useRef(0);
   const lastCorrectionReasonRef = useRef<string | null>(null);
-  const [playerError, setPlayerError] = useState<{ code?: number; message: string } | null>(null);
+  const [playerError, setPlayerError] = useState<{ code?: number; message: string; phase: YouTubeFailurePhase } | null>(null);
   const [syncDiagnostic, setSyncDiagnostic] = useState<OverlaySyncDiagnostic>({ correctionCount: 0 });
   const containerId = "live-overlay-youtube-player";
 
@@ -648,12 +652,11 @@ function YouTubeOverlayPlayer({ sync, clockAnchorRef, clockAnchored, responseTra
     readyTimerRef.current = null;
   }, []);
 
-  const markPlayerUnavailable = useCallback((message: string, code?: number) => {
+  const markPlayerUnavailable = useCallback((message: string, code?: number, phase: YouTubeFailurePhase = "sync_command") => {
     clearReadyTimer();
-    startGateRef.current.cancel();
     readyRef.current = false;
     failedVideoRef.current = latestSyncRef.current.videoId;
-    setPlayerError({ code, message });
+    setPlayerError({ code, message, phase });
     try {
       playerRef.current?.destroy?.();
     } catch {
@@ -667,42 +670,23 @@ function YouTubeOverlayPlayer({ sync, clockAnchorRef, clockAnchored, responseTra
     const player = playerRef.current;
     if (!player || !readyRef.current || destroyedRef.current || failedVideoRef.current === nextSync.videoId) return;
     try {
-      const holding = startGateRef.current.apply(nextSync.startToken, scheduledVideoStartDelayMs(nextSync.scheduledStartAt, serverNowFromAnchor(clockAnchorRef.current)), nextSync.playbackState === "playing", () => {
-        player.mute();
-        if (loadedVideoRef.current !== nextSync.videoId) player.cueVideoById({ videoId: nextSync.videoId, startSeconds: nextSync.currentTimeSeconds });
-        loadedVideoRef.current = nextSync.videoId;
-        player.seekTo(nextSync.currentTimeSeconds, true);
-        player.pauseVideo();
-        lastAppliedPlaybackStateRef.current = "paused";
-        lastCorrectionAtRef.current = Date.now();
-      }, () => {
-        if (destroyedRef.current || !readyRef.current || latestSyncRef.current.playbackState !== "playing" || latestSyncRef.current.startToken !== nextSync.startToken || latestSyncRef.current.videoId !== nextSync.videoId || latestSyncRef.current.trackId !== nextSync.trackId) return;
-        lastAppliedPlaybackStateRef.current = "playing";
-        player.playVideo();
-      });
-      if (holding) return;
       const expected = expectedYouTubeTime(nextSync, clockAnchorRef.current);
       const isNewVideo = loadedVideoRef.current !== nextSync.videoId;
       const previousState = lastAppliedPlaybackStateRef.current;
       const reason = nextSync.correctionReason ?? "heartbeat";
       const nowMs = Date.now();
-      const packetKey = `${nextSync.updatedAt}:${nextSync.playbackState}:${nextSync.currentTimeSeconds}`;
-      const newSeek = reason === "seek" && lastSeekPacketRef.current !== packetKey;
       let corrected = false;
       let drift: number | null = null;
       let correctionTarget: number | null = null;
       if (isNewVideo) {
         if (nextSync.playbackState === "playing") player.loadVideoById({ videoId: nextSync.videoId, startSeconds: expected });
-        else {
-          player.cueVideoById({ videoId: nextSync.videoId, startSeconds: nextSync.currentTimeSeconds });
-          player.seekTo(nextSync.currentTimeSeconds, true); // cue alone loads only the thumbnail.
-        }
+        else player.cueVideoById({ videoId: nextSync.videoId, startSeconds: nextSync.currentTimeSeconds });
         loadedVideoRef.current = nextSync.videoId;
         corrected = true;
       } else {
         const current = player.getCurrentTime();
         drift = Number.isFinite(current) ? current - expected : null;
-        const bypassCooldown = newSeek || (!bufferingRef.current && (lastCorrectionAtRef.current === null || nowMs - lastCorrectionAtRef.current >= PLAYER_CORRECTION_COOLDOWN_MS));
+        const bypassCooldown = reason === "seek" || nextSync.playbackState !== "playing" || lastCorrectionAtRef.current === null || nowMs - lastCorrectionAtRef.current >= PLAYER_CORRECTION_COOLDOWN_MS;
         const shouldCorrect = drift !== null && shouldCorrectPlaybackDrift({ playbackState: nextSync.playbackState, driftSeconds: drift, behindThresholdSeconds: YOUTUBE_BEHIND_THRESHOLD_SECONDS, aheadThresholdSeconds: YOUTUBE_AHEAD_THRESHOLD_SECONDS, pausedThresholdSeconds: YOUTUBE_PAUSED_DRIFT_THRESHOLD_SECONDS });
         if (shouldCorrect && bypassCooldown) {
           const target = nextSync.playbackState === "playing" ? playbackCorrectionTarget({ expectedTimeSeconds: expected, driftSeconds: drift ?? 0, playbackState: nextSync.playbackState, maximumCatchUpSeconds: YOUTUBE_MAX_CATCH_UP_SECONDS }) ?? expected : nextSync.currentTimeSeconds;
@@ -722,13 +706,12 @@ function YouTubeOverlayPlayer({ sync, clockAnchorRef, clockAnchored, responseTra
         correctionCountRef.current += 1;
         lastCorrectionAtRef.current = nowMs;
         lastCorrectionReasonRef.current = reason;
-        if (reason === "seek") lastSeekPacketRef.current = packetKey;
       }
       lastAppliedPlaybackStateRef.current = nextSync.playbackState;
       const roundedDrift = roundedFiniteSeconds(drift);
       setSyncDiagnostic({ driftSeconds: roundedDrift, driftDirection: driftDirectionFromRoundedDrift(roundedDrift), correctionTargetSeconds: roundedFiniteSeconds(correctionTarget), correctionCount: correctionCountRef.current, correctionReason: lastCorrectionReasonRef.current ?? undefined });
     } catch {
-      markPlayerUnavailable("VIDEO PLAYBACK UNAVAILABLE — HOST USING EXTERNAL SOURCE");
+      markPlayerUnavailable("VIDEO PLAYBACK UNAVAILABLE");
     }
   }, [clockAnchorRef, markPlayerUnavailable]);
 
@@ -741,7 +724,6 @@ function YouTubeOverlayPlayer({ sync, clockAnchorRef, clockAnchored, responseTra
   // Provider lifecycle is keyed only by media identity.
   // Clock and heartbeat updates are read through stable refs.
   useEffect(() => {
-    const startGate = startGateRef.current;
     let cancelled = false;
     destroyedRef.current = false;
     const generation = generationRef.current + 1;
@@ -753,7 +735,7 @@ function YouTubeOverlayPlayer({ sync, clockAnchorRef, clockAnchored, responseTra
     mount.id = `${containerId}-yt-${generation}`;
     playerHostRef.current?.appendChild(mount);
     readyTimerRef.current = window.setTimeout(() => {
-      if (!cancelled && generationRef.current === generation) markPlayerUnavailable("VIDEO PLAYBACK UNAVAILABLE — HOST USING EXTERNAL SOURCE");
+      if (!cancelled && generationRef.current === generation) markPlayerUnavailable("VIDEO PLAYBACK UNAVAILABLE", undefined, "ready_timeout");
     }, YOUTUBE_OVERLAY_READY_TIMEOUT_MS);
     ensureYouTubeApi().then(() => {
       if (cancelled || generationRef.current !== generation || playerRef.current || !window.YT?.Player || failedVideoRef.current === latestSyncRef.current.videoId || !mount.isConnected) return;
@@ -762,10 +744,6 @@ function YouTubeOverlayPlayer({ sync, clockAnchorRef, clockAnchored, responseTra
           videoId: latestSyncRef.current.videoId,
           playerVars: { autoplay: 0, controls: 0, modestbranding: 1, playsinline: 1, rel: 0, mute: 1 },
           events: {
-            onStateChange: (event: { data: number }) => {
-              if (cancelled || generationRef.current !== generation) return;
-              bufferingRef.current = event.data === 3;
-            },
             onReady: () => {
               if (cancelled || generationRef.current !== generation) return;
               readyRef.current = true;
@@ -773,28 +751,25 @@ function YouTubeOverlayPlayer({ sync, clockAnchorRef, clockAnchored, responseTra
               try {
                 playerRef.current?.mute();
               } catch {
-                markPlayerUnavailable("VIDEO PLAYBACK UNAVAILABLE — HOST USING EXTERNAL SOURCE");
+                markPlayerUnavailable("VIDEO PLAYBACK UNAVAILABLE");
                 return;
               }
               applyYouTubeSync(latestSyncRef.current);
             },
             onError: (event: { data: number }) => {
               if (cancelled || generationRef.current !== generation) return;
-              markPlayerUnavailable("VIDEO PLAYBACK UNAVAILABLE — HOST USING EXTERNAL SOURCE", event.data);
+              markPlayerUnavailable("VIDEO PLAYBACK UNAVAILABLE", event.data, "provider_error");
             },
           },
         });
       } catch {
-        markPlayerUnavailable("VIDEO PLAYBACK UNAVAILABLE — HOST USING EXTERNAL SOURCE");
+        markPlayerUnavailable("VIDEO PLAYBACK UNAVAILABLE", undefined, "player_create");
       }
     }).catch(() => {
-      if (!cancelled && generationRef.current === generation) markPlayerUnavailable("VIDEO PLAYBACK UNAVAILABLE — HOST USING EXTERNAL SOURCE");
+      if (!cancelled && generationRef.current === generation) markPlayerUnavailable("VIDEO PLAYBACK UNAVAILABLE", undefined, "api_load");
     });
     return () => {
       cancelled = true;
-      startGate.cancel();
-      bufferingRef.current = false;
-      lastSeekPacketRef.current = null;
       generationRef.current += 1;
       destroyedRef.current = true;
       clearReadyTimer();
@@ -814,11 +789,11 @@ function YouTubeOverlayPlayer({ sync, clockAnchorRef, clockAnchored, responseTra
     };
   }, [applyYouTubeSync, clearImperativeHost, clearReadyTimer, containerId, markPlayerUnavailable, sync.trackId, sync.videoId]);
 
-  return <div className="live-overlay-youtube-player" data-youtube-wrapper={containerId} aria-label="Muted YouTube overlay player" data-youtube-drift-seconds={syncDiagnostic.driftSeconds} data-youtube-drift-direction={syncDiagnostic.driftDirection} data-youtube-correction-target={syncDiagnostic.correctionTargetSeconds} data-youtube-correction-count={syncDiagnostic.correctionCount} data-youtube-correction-reason={syncDiagnostic.correctionReason} data-overlay-server-clock={clockAnchored ? "anchored" : "missing"} data-overlay-response-transit-ms={responseTransitMs ?? undefined}><div ref={playerHostRef} className={playerError ? "live-overlay-youtube-host live-overlay-youtube-host--hidden" : "live-overlay-youtube-host"} />{playerError && <div className="live-overlay-youtube-fallback" role="status"><p>{playerError.message}</p><span>{playerError.code ? youtubeErrorLabel(playerError.code) : youtubeErrorLabel()}</span></div>}</div>;
+  return <div className="live-overlay-youtube-player" data-youtube-wrapper={containerId} aria-label="Muted YouTube overlay player" data-youtube-failure-phase={playerError?.phase} data-youtube-error-code={playerError?.code} data-youtube-drift-seconds={syncDiagnostic.driftSeconds} data-youtube-drift-direction={syncDiagnostic.driftDirection} data-youtube-correction-target={syncDiagnostic.correctionTargetSeconds} data-youtube-correction-count={syncDiagnostic.correctionCount} data-youtube-correction-reason={syncDiagnostic.correctionReason} data-overlay-server-clock={clockAnchored ? "anchored" : "missing"} data-overlay-response-transit-ms={responseTransitMs ?? undefined}><div ref={playerHostRef} className={playerError ? "live-overlay-youtube-host live-overlay-youtube-host--hidden" : "live-overlay-youtube-host"} />{playerError && <div className="live-overlay-youtube-fallback" role="status"><p>{playerError.message}</p><span>{youtubeFailureLabel(playerError.phase, playerError.code)}</span></div>}</div>;
 }
 
 function expectedTikTokTime(sync: LiveOverlayTikTokSync, clockAnchor: OverlayServerClockAnchor | null): number {
-  const ageSeconds = sync.playbackState === "playing" ? serverRelativeAgeFromAnchor(sync.scheduledStartAt ?? sync.updatedAt, clockAnchor) : 0;
+  const ageSeconds = sync.playbackState === "playing" ? serverRelativeAgeFromAnchor(sync.updatedAt, clockAnchor) : 0;
   const expected = sync.currentTimeSeconds + (ageSeconds ?? 0);
   return typeof sync.durationSeconds === "number" && Number.isFinite(sync.durationSeconds) && sync.durationSeconds > 0 ? Math.min(expected, sync.durationSeconds) : expected;
 }
@@ -851,9 +826,6 @@ type TikTokDiagnosticState = {
 };
 
 function TikTokOverlayPlayer({ sync, artistName, trackTitle, clockAnchorRef, clockAnchored, responseTransitMs }: { sync: LiveOverlayTikTokSync; artistName: string; trackTitle: string; clockAnchorRef: OverlayServerClockAnchorRef; clockAnchored: boolean; responseTransitMs: number | null }) {
-  const startGateRef = useRef(new VideoReceiverStartGate());
-  const bufferingRef = useRef(false);
-  const lastSeekPacketRef = useRef<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const iframeLoadedRef = useRef(false);
   const trustedEventSeenRef = useRef(false);
@@ -872,7 +844,7 @@ function TikTokOverlayPlayer({ sync, artistName, trackTitle, clockAnchorRef, clo
   const iframeLoadTimerRef = useRef<number | null>(null);
   const playerEventTimerRef = useRef<number | null>(null);
   const failedPostRef = useRef<string | null>(null);
-  const [initialAutoplay] = useState(() => sync.playbackState === "playing" && !sync.startToken);
+  const [initialAutoplay] = useState(() => sync.playbackState === "playing");
   const [playerError, setPlayerError] = useState<{ code?: number; message: string; reason: Exclude<TikTokFailureReason, null>; errorType?: string } | null>(null);
   const [diagnostics, setDiagnostics] = useState<TikTokDiagnosticState>({ iframeLoaded: false, trustedEventSeen: false, postId: sync.postId, trackId: sync.trackId, playbackState: sync.playbackState, bootstrapAttempt: 0, correctionCount: 0, failureReason: null, status: "bootstrapping" });
   const src = useMemo(() => {
@@ -897,7 +869,6 @@ function TikTokOverlayPlayer({ sync, artistName, trackTitle, clockAnchorRef, clo
   const markPlayerUnavailable = useCallback((message: string, reason: Exclude<TikTokFailureReason, null>, code?: number, errorType?: string) => {
     clearIframeLoadTimer();
     clearPlayerEventTimer();
-    startGateRef.current.cancel();
     readyRef.current = false;
     failedPostRef.current = latestSyncRef.current.postId;
     setPlayerError({ code, message, reason, errorType });
@@ -918,31 +889,16 @@ function TikTokOverlayPlayer({ sync, artistName, trackTitle, clockAnchorRef, clo
   const applyTikTokSync = useCallback((nextSync: LiveOverlayTikTokSync) => {
     const generation = generationRef.current;
     if (!readyRef.current || destroyedRef.current || failedPostRef.current === nextSync.postId) return;
-    const holding = startGateRef.current.apply(nextSync.startToken, scheduledVideoStartDelayMs(nextSync.scheduledStartAt, serverNowFromAnchor(clockAnchorRef.current)), nextSync.playbackState === "playing", () => {
-      sendTikTokVoidCommand("mute");
-      sendTikTokSeekCommand(nextSync.currentTimeSeconds);
-      localTimeRef.current = nextSync.currentTimeSeconds;
-      sendTikTokVoidCommand("pause");
-      lastAppliedPlaybackStateRef.current = "paused";
-      lastCorrectionAtRef.current = Date.now();
-    }, () => {
-      if (destroyedRef.current || !readyRef.current || latestSyncRef.current.playbackState !== "playing" || latestSyncRef.current.startToken !== nextSync.startToken || latestSyncRef.current.postId !== nextSync.postId || latestSyncRef.current.trackId !== nextSync.trackId || latestSyncRef.current.playbackState !== "playing" || latestSyncRef.current.startToken !== nextSync.startToken) return;
-      lastAppliedPlaybackStateRef.current = "playing";
-      sendTikTokVoidCommand("play");
-    });
-    if (holding) return;
     const expected = expectedTikTokTime(nextSync, clockAnchorRef.current);
     const previousState = lastAppliedPlaybackStateRef.current;
     const reason = nextSync.correctionReason ?? "heartbeat";
     const nowMs = Date.now();
-    const packetKey = `${nextSync.updatedAt}:${nextSync.playbackState}:${nextSync.currentTimeSeconds}`;
-    const newSeek = reason === "seek" && lastSeekPacketRef.current !== packetKey;
     const drift = Number.isFinite(localTimeRef.current) ? localTimeRef.current - expected : null;
-    const bypassCooldown = newSeek || (!bufferingRef.current && (lastCorrectionAtRef.current === null || nowMs - lastCorrectionAtRef.current >= PLAYER_CORRECTION_COOLDOWN_MS));
+    const bypassCooldown = !Number.isFinite(localTimeRef.current) || reason === "seek" || nextSync.playbackState !== "playing" || lastCorrectionAtRef.current === null || nowMs - lastCorrectionAtRef.current >= PLAYER_CORRECTION_COOLDOWN_MS;
     const shouldCorrect = drift !== null && shouldCorrectPlaybackDrift({ playbackState: nextSync.playbackState, driftSeconds: drift, behindThresholdSeconds: TIKTOK_BEHIND_THRESHOLD_SECONDS, aheadThresholdSeconds: TIKTOK_AHEAD_THRESHOLD_SECONDS, pausedThresholdSeconds: TIKTOK_PAUSED_DRIFT_THRESHOLD_SECONDS });
     const correctionTarget = drift !== null && nextSync.playbackState === "playing" ? playbackCorrectionTarget({ expectedTimeSeconds: expected, driftSeconds: drift, playbackState: nextSync.playbackState, maximumCatchUpSeconds: TIKTOK_MAX_CATCH_UP_SECONDS, durationSeconds: nextSync.durationSeconds }) : null;
     const seekTarget = nextSync.playbackState === "playing" ? correctionTarget ?? expected : nextSync.currentTimeSeconds;
-    const mustSeek = (!Number.isFinite(localTimeRef.current) || shouldCorrect) && bypassCooldown;
+    const mustSeek = !Number.isFinite(localTimeRef.current) || nextSync.playbackState === "stopped" || (shouldCorrect && bypassCooldown);
     sendTikTokVoidCommand("mute");
     if (mustSeek) {
       sendTikTokSeekCommand(seekTarget);
@@ -950,14 +906,13 @@ function TikTokOverlayPlayer({ sync, artistName, trackTitle, clockAnchorRef, clo
       correctionCountRef.current += 1;
       lastCorrectionAtRef.current = nowMs;
       lastCorrectionReasonRef.current = reason;
-      if (reason === "seek") lastSeekPacketRef.current = packetKey;
     }
     const roundedDrift = roundedFiniteSeconds(drift);
     updateDiagnostics({ expectedTime: expected, localObservedTime: Number.isFinite(localTimeRef.current) ? localTimeRef.current : undefined, driftSeconds: roundedDrift, driftDirection: driftDirectionFromRoundedDrift(roundedDrift), correctionTargetSeconds: roundedFiniteSeconds(mustSeek ? seekTarget : null), correctionCount: correctionCountRef.current, lastCorrectionAt: lastCorrectionAtRef.current ?? undefined, correctionReason: lastCorrectionReasonRef.current ?? undefined, status: nextSync.playbackState });
     const stateChanged = previousState !== nextSync.playbackState;
     if (nextSync.playbackState === "playing") {
       const play = () => {
-        if (destroyedRef.current || generationRef.current !== generation || failedPostRef.current === nextSync.postId || latestSyncRef.current.postId !== nextSync.postId || latestSyncRef.current.trackId !== nextSync.trackId || latestSyncRef.current.playbackState !== "playing" || latestSyncRef.current.startToken !== nextSync.startToken) return;
+        if (destroyedRef.current || generationRef.current !== generation || failedPostRef.current === nextSync.postId || latestSyncRef.current.postId !== nextSync.postId || latestSyncRef.current.trackId !== nextSync.trackId) return;
         sendTikTokVoidCommand("play");
       };
       if (stateChanged || mustSeek) {
@@ -1001,7 +956,6 @@ function TikTokOverlayPlayer({ sync, artistName, trackTitle, clockAnchorRef, clo
   // Provider lifecycle is keyed only by media identity.
   // Clock and heartbeat updates are read through stable refs.
   useEffect(() => {
-    const startGate = startGateRef.current;
     destroyedRef.current = false;
     iframeLoadedRef.current = false;
     trustedEventSeenRef.current = false;
@@ -1049,7 +1003,6 @@ function TikTokOverlayPlayer({ sync, artistName, trackTitle, clockAnchorRef, clo
         return;
       }
       if (type === "onStateChange" || type === "onMute" || type === "onVolumeChange") {
-        if (type === "onStateChange") bufferingRef.current = Number(payload.value) === 3;
         applyTikTokSync(latestSyncRef.current);
         return;
       }
@@ -1066,9 +1019,8 @@ function TikTokOverlayPlayer({ sync, artistName, trackTitle, clockAnchorRef, clo
             sendTikTokVoidCommand("mute");
             window.setTimeout(() => {
               if (destroyedRef.current || generationRef.current !== generation || failedPostRef.current === latestSyncRef.current.postId) return;
-              if (latestSyncRef.current.playbackState !== "playing") return;
-              lastAppliedPlaybackStateRef.current = null;
-              applyTikTokSync(latestSyncRef.current);
+              sendTikTokSeekCommand(expectedTikTokTime(latestSyncRef.current, clockAnchorRef.current));
+              sendTikTokVoidCommand("play");
             }, TIKTOK_DELAYED_PLAY_MS);
             return;
           }
@@ -1081,9 +1033,6 @@ function TikTokOverlayPlayer({ sync, artistName, trackTitle, clockAnchorRef, clo
     window.addEventListener("message", onMessage);
     return () => {
       destroyedRef.current = true;
-      startGate.cancel();
-      bufferingRef.current = false;
-      lastSeekPacketRef.current = null;
       generationRef.current += 1;
       readyRef.current = false;
       clearIframeLoadTimer();
@@ -1094,6 +1043,15 @@ function TikTokOverlayPlayer({ sync, artistName, trackTitle, clockAnchorRef, clo
 
   const safeStatus = playerError ? "failed" : diagnostics.status;
   return <div className="live-overlay-tiktok-player" aria-label="Muted TikTok overlay player" data-tiktok-status={safeStatus} data-tiktok-failure-reason={playerError?.reason ?? diagnostics.failureReason ?? undefined} data-tiktok-error-code={playerError?.code ?? diagnostics.errorCode ?? undefined} data-tiktok-first-event={diagnostics.firstTrustedEventType} data-tiktok-last-event={diagnostics.lastTrustedEventType} data-tiktok-drift-seconds={diagnostics.driftSeconds} data-tiktok-drift-direction={diagnostics.driftDirection} data-tiktok-correction-target={diagnostics.correctionTargetSeconds} data-tiktok-correction-count={diagnostics.correctionCount} data-tiktok-correction-reason={diagnostics.correctionReason} data-overlay-server-clock={clockAnchored ? "anchored" : "missing"} data-overlay-response-transit-ms={responseTransitMs ?? undefined}><iframe ref={iframeRef} onLoad={handleIframeLoad} title={`TikTok overlay for ${artistName} — ${trackTitle}`} src={src} className={playerError ? "live-overlay-tiktok-iframe live-overlay-tiktok-iframe--hidden" : "live-overlay-tiktok-iframe"} allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" />{playerError && <div className="live-overlay-tiktok-fallback" role="status" data-tiktok-status="failed" data-tiktok-failure-reason={playerError.reason} data-tiktok-error-code={playerError.code} data-tiktok-first-event={diagnostics.firstTrustedEventType} data-tiktok-last-event={diagnostics.lastTrustedEventType} data-tiktok-drift-seconds={diagnostics.driftSeconds} data-tiktok-drift-direction={diagnostics.driftDirection} data-tiktok-correction-target={diagnostics.correctionTargetSeconds} data-tiktok-correction-count={diagnostics.correctionCount} data-tiktok-correction-reason={diagnostics.correctionReason} data-overlay-server-clock={clockAnchored ? "anchored" : "missing"} data-overlay-response-transit-ms={responseTransitMs ?? undefined}><p>{artistName}</p><strong>{trackTitle}</strong><span>{playerError.message}</span></div>}</div>;
+}
+
+function OverlayClock() {
+  const [now, setNow] = useState<Date | null>(null);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 1_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  return <span aria-label="Current time">{now ? now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "--:--"}</span>;
 }
 
 export function LiveOverlayReceiver({ wheelOnly = false }: { wheelOnly?: boolean }) {
@@ -1441,7 +1399,7 @@ export function LiveOverlayReceiver({ wheelOnly = false }: { wheelOnly?: boolean
 
         {!wheelVisible && <div className="live-overlay-footer">
           <span>{scene.automatic ? "AUTO LIVE SOURCE" : "OVERRIDE LIVE SOURCE"} / 1:1</span>
-          <span>{new Date(scene.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+          <OverlayClock />
         </div>}
         {!wheelOnly && !audioArmed && <div className="live-overlay-wheel-audio-modal" role="dialog" aria-modal="true" aria-label="Enable live overlay audio"><div className="live-overlay-wheel-audio-modal-card"><p>ENABLE LIVE OVERLAY AUDIO</p><span>Required for wheel music, winner sounds, and broadcast effects.</span><span>Click once before the show.</span><button type="button" className="live-overlay-wheel-audio-arm" onClick={() => { void enableOverlayAudio(); }}>ENABLE AUDIO</button>{audioNotice && <em>{audioNotice}</em>}</div></div>}
       </section>

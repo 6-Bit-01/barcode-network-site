@@ -4,6 +4,7 @@ import { RadioHero, SectionDot } from "@/components/LiveEffects";
 import { LocalSchedule } from "@/components/LocalSchedule";
 import type { Metadata } from "next";
 import { BNLRelayModule } from "@/components/BNLRelay";
+import { RadioBroadcastFeature } from "@/components/RadioBroadcastFeature";
 import { getRadioSubmissionRouting } from "@/lib/radio-submission-routing";
 
 export const metadata: Metadata = {
@@ -101,6 +102,8 @@ export default function RadioPage() {
             </div>
           </div>
 
+          <RadioBroadcastFeature />
+
           {submission.mode === "native_queue" && submission.radioPageGuide ? (
             <section
               aria-label="BARCODE Radio queue guide"
@@ -129,9 +132,6 @@ export default function RadioPage() {
             </section>
           ) : null}
 
-          <section aria-label="BARCODE Radio archive" className="mt-6 max-w-3xl">
-            <Link href="/radio/archive" className="group border border-cyan-200/40 bg-cyan-200/5 p-5 transition-colors hover:border-cyan-200"><p className="text-xs font-bold uppercase tracking-[0.3em] text-cyan-200">After the show</p><h2 className="mt-2 text-xl font-black text-foreground group-hover:text-cyan-200">The Broadcast Archive</h2><p className="mt-2 text-sm leading-relaxed text-muted">Search shows and artists, then trace tracks, submitting TikTok handles, public links, outcomes, and Wheel selections.</p><span className="mt-4 inline-flex text-xs font-bold uppercase tracking-widest text-cyan-200">Browse Archive →</span></Link>
-          </section>
         </div>
       </section>
 

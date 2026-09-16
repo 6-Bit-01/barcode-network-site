@@ -103,6 +103,39 @@ test("an active queue keeps the exact interval and stops immediately after archi
   }
 });
 
+test("Radio standby discovers a show, slows after it ends, and stops while hidden", async () => {
+  const browser = browserHarness();
+  const results = [false, true, false];
+  let calls = 0;
+  try {
+    const stop = polling.startSessionBoundPolling({
+      intervalMs: 30_000, standbyIntervalMs: 60_000,
+      poll: async () => results[calls++] ?? false,
+    });
+    await browser.flush();
+    assert.equal(calls, 1);
+    assert.equal(await browser.runNextTimer(), 60_000);
+    assert.equal(calls, 2);
+    assert.equal(await browser.runNextTimer(), 30_000);
+    assert.equal(calls, 3);
+    assert.equal([...browser.timers.values()][0].delay, 60_000);
+    browser.document.visibilityState = "hidden";
+    browser.document.dispatchEvent(new Event("visibilitychange"));
+    assert.equal(browser.timers.size, 0);
+    browser.document.visibilityState = "visible";
+    browser.document.dispatchEvent(new Event("visibilitychange"));
+    await browser.flush();
+    assert.equal(calls, 4);
+    stop();
+    assert.equal(browser.timers.size, 0);
+    browser.browserWindow.dispatchEvent(new Event("focus"));
+    await browser.flush();
+    assert.equal(calls, 4);
+  } finally {
+    browser.restore();
+  }
+});
+
 test("hidden tabs do not poll and resume with one visibility check", async () => {
   const browser = browserHarness("hidden");
   let calls = 0;

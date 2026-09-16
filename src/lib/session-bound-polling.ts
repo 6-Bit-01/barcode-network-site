@@ -20,6 +20,7 @@ export function notifyQueueSessionChanged(): void {
 
 type SessionBoundPollingOptions = {
   intervalMs: number;
+  standbyIntervalMs?: number;
   poll: () => Promise<boolean | null>;
 };
 
@@ -96,7 +97,7 @@ export function startPermanentOverlayPolling({ activeIntervalMs, standbyInterval
   };
 }
 
-export function startSessionBoundPolling({ intervalMs, poll }: SessionBoundPollingOptions): () => void {
+export function startSessionBoundPolling({ intervalMs, standbyIntervalMs, poll }: SessionBoundPollingOptions): () => void {
   if (typeof window === "undefined" || typeof document === "undefined") return () => {};
 
   let stopped = false;
@@ -114,8 +115,10 @@ export function startSessionBoundPolling({ intervalMs, poll }: SessionBoundPolli
 
   const schedule = () => {
     clearScheduledPoll();
-    if (stopped || !sessionActive || !isVisible()) return;
-    timeoutId = window.setTimeout(() => { void run(); }, intervalMs);
+    if (stopped || !isVisible()) return;
+    const delay = sessionActive ? intervalMs : standbyIntervalMs;
+    if (delay === undefined) return;
+    timeoutId = window.setTimeout(() => { void run(); }, delay);
   };
 
   const run = async () => {

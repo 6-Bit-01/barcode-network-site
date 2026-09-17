@@ -131,6 +131,7 @@ function ShowDetail({ show, archiveBaseHref }: { show: QueuePublicShowStats; arc
         <div>
           <p className="text-xs uppercase tracking-[0.35em] text-accent">Show Record</p>
           <h2 id="selected-show-heading" className="mt-2 text-2xl font-black text-foreground">{show.title}</h2>
+          {archiveBaseHref === "/radio/archive" && <Link href={`/radio/ballads?show=${encodeURIComponent(show.sessionId)}`} className="mt-2 inline-block text-xs font-bold text-accent">This show’s BNL Broadcast Ballad ↗</Link>}
           <p className="mt-1 text-sm text-muted">{displayDate(show.showDate)} · {show.status === "archived" ? "After-show record" : "Show in progress"}</p>
         </div>
         <button type="button" onClick={() => navigator.clipboard?.writeText(window.location.href)} className="border border-border px-3 py-2 text-[10px] uppercase tracking-widest text-muted hover:border-accent hover:text-accent">Copy show link</button>
@@ -278,6 +279,7 @@ export function BroadcastArchive({
             <div className="max-w-3xl">
               <p className="text-xs font-bold uppercase tracking-[0.38em] text-accent">{previewMode ? "Private post-show readback" : "Post-show database"}</p>
               <h1 className="mt-3 text-3xl font-black tracking-tight text-foreground sm:text-5xl">{previewMode ? "Broadcast Archive Preview" : "The Broadcast Archive"}</h1>
+              {!previewMode && <Link href="/radio/ballads" className="mt-3 inline-block text-xs font-bold text-accent">BNL-01 · Broadcast Ballads ↗</Link>}
               <p className="mt-4 max-w-2xl text-sm leading-relaxed text-muted sm:text-base">Search {previewMode ? "this test session" : "BARCODE Radio"} by individual show or by artist/project. Includes recorded playback, partial plays, and external tracks marked finished by the host. A Finish does not confirm full-length playback. Follow who submitted each track, public music links, collaborators, exact outcomes, Wheel selections, and repeat appearances.</p>
             </div>
             <div className="flex flex-wrap gap-2">

@@ -25,6 +25,7 @@ export default async function BroadcastArchivePage({
     <main className="min-h-screen pt-14">
       <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-14">
         <BroadcastArchive
+          key={JSON.stringify([initialView, params.show ?? "", params.artist ?? ""])}
           initialStats={stats}
           initialBallads={ballads.ballads}
           initialBalladsUnavailable={ballads.unavailable}

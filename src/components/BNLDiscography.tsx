@@ -1,5 +1,6 @@
 /* eslint-disable @next/next/no-img-element */
 import Link from "next/link";
+import Form from "next/form";
 import type { PublicBallad } from "@/lib/bnl-ballads";
 import { broadcastArchiveShowHref } from "@/lib/broadcast-archive";
 import { BalladLinkedText } from "@/components/BalladArtistLinks";
@@ -39,11 +40,11 @@ export function BNLDiscography({ releases, query = "", unavailable = false }: {
         </div>
         {!unavailable && <p className="text-xs uppercase tracking-widest text-accent">{releases.length} released {releases.length === 1 ? "song" : "songs"}</p>}
       </div>
-      {!unavailable && releases.length > 0 && <form action="/bnl/music" className="mt-6 flex flex-wrap gap-2" role="search">
+      {!unavailable && releases.length > 0 && <Form action="/bnl/music" className="mt-6 flex flex-wrap gap-2" role="search">
         <label className="min-w-0 flex-1"><span className="sr-only">Search BNL’s discography</span><input type="search" name="q" defaultValue={query} placeholder="Search titles, sound, people or broadcasts…" className="w-full rounded border border-border bg-background px-4 py-3 text-sm text-foreground focus:border-accent" /></label>
         <button type="submit" className="rounded border border-accent px-4 py-3 text-sm font-bold text-accent hover:bg-accent/10">Search</button>
         {term && <Link href="/bnl/music" className="px-3 py-3 text-sm text-muted underline">Clear</Link>}
-      </form>}
+      </Form>}
 
       {unavailable ? <p role="status" className="mt-8 border border-border p-6 text-muted">The discography is temporarily unavailable. Please reload to try again.</p>
         : releases.length === 0 ? <p className="mt-8 border border-border p-6 text-muted">No songs have been published yet.</p>

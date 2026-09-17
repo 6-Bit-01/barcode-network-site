@@ -1,6 +1,9 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { externalLinks } from "@/content";
@@ -105,6 +108,8 @@ function publicCounts(snapshot: QueuePublicSnapshot | null) {
 }
 
 export function PublicQueueGateway() {
+  const router = useRouter();
+  const navigationTimer = useRef<number | null>(null);
   const [snapshot, setSnapshot] = useState<QueuePublicSnapshot | null>(null);
   const [portalState, setPortalState] = useState<"sealed" | "opening" | "open">("sealed");
   const [transitionPulse, setTransitionPulse] = useState<GatewayPhase | null>(null);
@@ -150,22 +155,31 @@ export function PublicQueueGateway() {
     });
   }, []);
 
+  useEffect(() => () => { if (navigationTimer.current !== null) window.clearTimeout(navigationTimer.current); }, []);
+
+  function finishNavigation(href: string) {
+    if (navigationTimer.current !== null) window.clearTimeout(navigationTimer.current);
+    navigationTimer.current = null;
+    router.push(href);
+  }
+
   function beginNavigation(event: React.MouseEvent<HTMLAnchorElement>, href: string, activeSessionId: string) {
     if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
     event.preventDefault();
     const storageKey = `${ENTRY_STORAGE_PREFIX}${activeSessionId}`;
     try {
       if (window.localStorage.getItem(storageKey)) {
-        window.location.assign(href);
+        finishNavigation(href);
         return;
       }
       window.localStorage.setItem(storageKey, "1");
     } catch {
-      window.location.assign(href);
+      finishNavigation(href);
       return;
     }
     setPendingNavigation({ href, ...navigationVariant(snapshot, session?.sessionId ?? href) });
-    window.setTimeout(() => { window.location.assign(href); }, 6000);
+    if (navigationTimer.current !== null) window.clearTimeout(navigationTimer.current);
+    navigationTimer.current = window.setTimeout(() => finishNavigation(href), 6000);
   }
 
   const phase = phaseForSnapshot(snapshot);
@@ -193,7 +207,7 @@ export function PublicQueueGateway() {
           <span className={`${snapshot?.status.isOpen ? "border-accent/60 text-accent" : "border-border text-muted"} border px-2 py-1`}>Submissions: {snapshot?.status.isOpen ? "Open" : "Closed"}</span>
           <span className={`${isBroadcastActive(snapshot) ? "border-[#ffaa00]/55 text-[#ffaa00]" : "border-border text-muted"} border px-2 py-1`}>Broadcast: {isBroadcastActive(snapshot) ? "Active" : "Standby"}</span>
         </div>
-        <a href={queueHref ?? "#"} onClick={(event) => queueHref && activeSessionId && beginNavigation(event, queueHref, activeSessionId)} aria-busy={Boolean(pendingNavigation)} className="nav-corridor-link mt-4 inline-flex w-full cursor-pointer items-center justify-center border border-accent bg-accent px-4 py-3 text-xs font-bold uppercase tracking-[0.22em] text-white transition hover:bg-red-700 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">OPEN CURRENT QUEUE</a>
+        <Link href={queueHref ?? "#"} onClick={(event) => queueHref && activeSessionId && beginNavigation(event, queueHref, activeSessionId)} aria-busy={Boolean(pendingNavigation)} className="nav-corridor-link mt-4 inline-flex w-full cursor-pointer items-center justify-center border border-accent bg-accent px-4 py-3 text-xs font-bold uppercase tracking-[0.22em] text-white transition hover:bg-red-700 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">OPEN CURRENT QUEUE</Link>
       </section> : <section className="border border-border bg-surface p-5">
         <p className="text-xs uppercase tracking-[0.35em] text-muted">Queue Status</p>
         <p className="mt-2 text-xs uppercase tracking-[0.35em] text-muted">BARCODE Radio Queue</p>
@@ -201,7 +215,7 @@ export function PublicQueueGateway() {
         <p className="mt-3 text-sm text-muted">No active BARCODE Radio queue is available right now.</p>
       </section>}
       <section aria-label="BARCODE Radio companion destinations">
-        <a href="/radio/archive" className="group border border-cyan-200/40 bg-cyan-200/5 p-5 transition hover:border-cyan-200 hover:bg-cyan-200/10"><p className="text-xs font-bold uppercase tracking-[0.3em] text-cyan-200">Post-show database</p><h2 className="mt-2 text-xl font-black text-foreground group-hover:text-cyan-200">The Broadcast Archive</h2><p className="mt-2 text-sm leading-relaxed text-muted">Search completed shows and artist histories, including submitting TikTok handles, tracks, links, outcomes, and Wheel selections.</p><span className="mt-4 inline-flex text-xs font-bold uppercase tracking-widest text-cyan-200">Browse Archive →</span></a>
+        <Link href="/radio/archive" className="group border border-cyan-200/40 bg-cyan-200/5 p-5 transition hover:border-cyan-200 hover:bg-cyan-200/10"><p className="text-xs font-bold uppercase tracking-[0.3em] text-cyan-200">Post-show database</p><h2 className="mt-2 text-xl font-black text-foreground group-hover:text-cyan-200">The Broadcast Archive</h2><p className="mt-2 text-sm leading-relaxed text-muted">Search completed shows and artist histories, including submitting TikTok handles, tracks, links, outcomes, and Wheel selections.</p><span className="mt-4 inline-flex text-xs font-bold uppercase tracking-widest text-cyan-200">Browse Archive →</span></Link>
       </section>
       <section className="border border-border bg-surface p-5 space-y-5">
       <section>
@@ -244,16 +258,16 @@ export function PublicQueueGateway() {
         <div className="border border-border bg-background/40 p-4"><p className="text-xs uppercase tracking-[0.25em] text-muted">Discord Signal Alerts</p><p className="mt-2 text-sm text-muted">Join Discord for queue updates and BARCODE Radio signal alerts.</p><a href={externalLinks.discord} target="_blank" rel="noreferrer" className="mt-3 inline-flex border border-accent px-3 py-2 text-xs uppercase tracking-widest text-accent">Join Discord</a></div>
       </section>
       </section>
-      {hasActiveSession && queueHref && activeSessionId && <section className="fixed inset-x-0 bottom-0 z-40 border-t border-accent/40 bg-background/95 px-3 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] backdrop-blur-md">
+      {mounted && hasActiveSession && queueHref && activeSessionId && createPortal(<section style={{ bottom: "var(--barcode-player-space, 0px)" }} className="fixed inset-x-0 bottom-0 z-40 border-t border-accent/40 bg-background/95 px-3 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] backdrop-blur-md">
         <div className="mx-auto flex w-full max-w-5xl items-center gap-2 sm:gap-3">
           <div className="min-w-0 flex-1">
             <p className="truncate text-[10px] uppercase tracking-[0.2em] text-accent">BARCODE Radio Queue</p>
             <p className="text-[11px] text-muted">Submissions: {snapshot?.status.isOpen ? "Open" : "Closed"}</p>
           </div>
-          <a href={queueHref} onClick={(event) => beginNavigation(event, queueHref, activeSessionId)} aria-busy={Boolean(pendingNavigation)} className="nav-corridor-link inline-flex shrink-0 cursor-pointer items-center justify-center border border-accent bg-accent px-3 py-2 text-[11px] font-bold uppercase tracking-[0.2em] text-white transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">OPEN CURRENT QUEUE</a>
+          <Link href={queueHref} onClick={(event) => beginNavigation(event, queueHref, activeSessionId)} aria-busy={Boolean(pendingNavigation)} className="nav-corridor-link inline-flex shrink-0 cursor-pointer items-center justify-center border border-accent bg-accent px-3 py-2 text-[11px] font-bold uppercase tracking-[0.2em] text-white transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">OPEN CURRENT QUEUE</Link>
         </div>
-      </section>}
-      {mounted && pendingNavigation && createPortal(<AsciiSessionPortalIntro label={pendingNavigation.label} detail={pendingNavigation.detail} mode={pendingNavigation.mode} seed={pendingNavigation.href} href={pendingNavigation.href} onSkip={() => { window.location.assign(pendingNavigation.href); }} />, document.body)}
+      </section>, document.body)}
+      {mounted && pendingNavigation && createPortal(<AsciiSessionPortalIntro label={pendingNavigation.label} detail={pendingNavigation.detail} mode={pendingNavigation.mode} seed={pendingNavigation.href} href={pendingNavigation.href} onSkip={() => finishNavigation(pendingNavigation.href)} />, document.body)}
       <style jsx>{`.queue-machine{transition:border-color .7s ease,box-shadow .7s ease,filter .7s ease}.gateway-scanlines{background:linear-gradient(transparent 50%,rgba(255,255,255,.07) 50%);background-size:100% 7px;animation:gateway-scan 3s linear infinite;opacity:.18}.route-field span{position:absolute;left:12%;right:12%;height:1px;background:linear-gradient(90deg,transparent,rgba(255,0,0,.55),transparent);animation:route-energy 2.6s ease-in-out infinite}.queue-machine[data-pressure="low"] .gateway-scanlines{animation-duration:4.8s;opacity:.11}.queue-machine[data-pressure="low"] .route-field span{animation-duration:3.8s;opacity:.45}.queue-machine[data-pressure="medium"] .gateway-scanlines{animation-duration:3s;opacity:.18}.queue-machine[data-pressure="high"] .gateway-scanlines{animation-duration:1.8s;opacity:.26}.queue-machine[data-pressure="high"] .route-field span{animation-duration:1.55s;box-shadow:0 0 14px rgba(255,170,0,.28)}.route-field span:nth-child(1){top:32%}.route-field span:nth-child(2){top:50%;animation-delay:.35s}.route-field span:nth-child(3){top:68%;animation-delay:.7s}.gate-bar{transition:transform .7s ease,opacity .7s ease,background-color .7s ease}.queue-machine[data-phase="archived"]{filter:saturate(.55)}.queue-machine[data-phase="archived"] .gateway-scanlines{opacity:.08;animation-duration:5s}.queue-machine[data-phase="closed"] .gate-bar{background:rgba(103,232,249,.10)}.queue-machine[data-phase="open"] .gate-bar{transform:scaleY(.45);background:rgba(255,0,0,.16)}.queue-machine[data-phase="liveOpen"] .gate-bar,.queue-machine[data-phase="liveClosed"] .gate-bar{background:rgba(255,170,0,.14)}.queue-machine[data-phase="liveClosed"] .gate-bar:nth-child(even){transform:scaleY(.35);opacity:.45}.queue-machine[data-transition]{animation:terminal-mode-swap 1.2s ease-out}.submission-window{animation:window-arrive .9s ease-out}.nav-corridor-link{position:relative;overflow:hidden}.nav-corridor-link::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,0,0,.24),transparent);transform:translateX(-110%);transition:transform .55s ease}.nav-corridor-link[aria-busy="true"]::after{transform:translateX(110%)}.nav-corridor-overlay{animation:nav-corridor-fade .18s ease-out}.nav-corridor-panel{animation:nav-corridor-enter .72s ease-out}.nav-corridor-bit{animation:nav-bit-converge .72s ease-in-out forwards}.nav-corridor-bit:nth-child(even){animation-delay:.04s}.stat-card{transition:border-color .35s ease,transform .35s ease}.stat-card:hover{transform:translateY(-1px);border-color:rgba(255,0,0,.45)}.portal-frame{perspective:900px;box-shadow:inset 0 0 34px rgba(255,255,255,.05)}.portal-tunnel{background:radial-gradient(ellipse at center,rgba(255,255,255,.08),transparent 18%,rgba(255,0,0,.12) 28%,transparent 52%),repeating-linear-gradient(90deg,transparent 0 7%,rgba(255,255,255,.06) 7% calc(7% + 1px),transparent calc(7% + 1px) 14%);transform:scale(.96);animation:portal-breathe 3.2s ease-in-out infinite}.portal-grid{background:linear-gradient(115deg,transparent 46%,rgba(255,0,0,.20) 50%,transparent 54%),linear-gradient(65deg,transparent 46%,rgba(255,255,255,.12) 50%,transparent 54%);clip-path:polygon(12% 0,88% 0,58% 100%,42% 100%);opacity:.6;animation:portal-grid-drift 2.8s linear infinite}.portal-rings span{position:absolute;inset:18%;border:1px solid rgba(255,255,255,.16);box-shadow:0 0 28px rgba(255,0,0,.16);animation:portal-ring 2.6s ease-in-out infinite}.portal-rings span:nth-child(2){inset:27%;border-color:rgba(255,0,0,.42);animation-delay:.22s}.portal-rings span:nth-child(3){inset:38%;border-color:rgba(255,255,255,.28);animation-delay:.44s}.portal-wave{display:flex;align-items:center;justify-content:center;gap:4px}.portal-wave span{width:3px;height:18%;background:rgba(255,170,0,.75);box-shadow:0 0 14px rgba(255,170,0,.35);animation:portal-wave 900ms ease-in-out infinite}.portal-packets span{position:absolute;left:8%;top:50%;width:22%;height:1px;background:linear-gradient(90deg,transparent,rgba(255,0,0,.85),#fff);transform-origin:right center;animation:portal-packet 1.6s ease-in-out infinite}.portal-packets span:nth-child(even){left:auto;right:8%;background:linear-gradient(270deg,transparent,rgba(255,0,0,.85),#fff);transform-origin:left center}.portal-shutters span{position:absolute;left:8%;right:8%;height:44%;border:1px solid rgba(255,255,255,.12);background:linear-gradient(rgba(0,0,0,.72),rgba(255,255,255,.04));transition:transform .7s ease,opacity .7s ease}.portal-shutters span:first-child{top:0}.portal-shutters span:last-child{bottom:0}.portal-aperture[data-phase="open"] .portal-shutters span,.portal-aperture[data-phase="liveOpen"] .portal-shutters span{transform:translateY(-76%);opacity:.38}.portal-aperture[data-phase="open"] .portal-shutters span:last-child,.portal-aperture[data-phase="liveOpen"] .portal-shutters span:last-child{transform:translateY(76%)}.portal-aperture[data-phase="liveClosed"] .portal-shutters span:first-child{transform:translateY(-55%);opacity:.42}.portal-aperture[data-phase="liveClosed"] .portal-shutters span:last-child{transform:translateY(55%);opacity:.42}.portal-aperture[data-phase="closed"] .portal-rings span{border-color:rgba(103,232,249,.22);box-shadow:0 0 24px rgba(103,232,249,.12)}.portal-aperture[data-phase="syncing"] .portal-frame{animation:receiver-tune .9s steps(2,end) infinite}.portal-aperture[data-phase="syncing"] .portal-shutters span{opacity:.65}.portal-aperture[data-phase="archived"] .portal-tunnel,.portal-aperture[data-phase="archived"] .portal-grid,.portal-aperture[data-phase="archived"] .portal-packets{opacity:.12;animation-duration:6s}.archive-seal span{border:1px solid rgba(255,0,0,.45);background:rgba(0,0,0,.72);padding:.75rem 1rem;color:#ff3b3b;font-size:.7rem;letter-spacing:.32em;transform:rotate(-8deg);box-shadow:0 0 34px rgba(255,0,0,.14)}.portal-handshake{animation:portal-handshake 1s steps(2,end) infinite}.portal-relay-line{box-shadow:0 0 18px rgba(255,170,0,.55)}.portal-wheel-line{box-shadow:0 0 18px rgba(103,232,249,.55)}.nav-route-lines span{position:absolute;left:50%;top:50%;width:58vw;height:1px;background:linear-gradient(90deg,transparent,rgba(255,0,0,.45),transparent);transform-origin:left center;animation:nav-route-converge .72s ease-in forwards}.nav-route-lines span:nth-child(odd){background:linear-gradient(90deg,transparent,rgba(255,255,255,.32),transparent)}.nav-route-lines span:nth-child(1){transform:rotate(0deg)}.nav-route-lines span:nth-child(2){transform:rotate(18deg)}.nav-route-lines span:nth-child(3){transform:rotate(36deg)}.nav-route-lines span:nth-child(4){transform:rotate(54deg)}.nav-route-lines span:nth-child(5){transform:rotate(72deg)}.nav-route-lines span:nth-child(6){transform:rotate(90deg)}.nav-route-lines span:nth-child(7){transform:rotate(108deg)}.nav-route-lines span:nth-child(8){transform:rotate(126deg)}.nav-route-lines span:nth-child(9){transform:rotate(144deg)}.nav-route-lines span:nth-child(10){transform:rotate(162deg)}.nav-aperture{position:relative;width:9rem;height:5rem;border:1px solid rgba(255,0,0,.42);box-shadow:0 0 42px rgba(255,0,0,.22),inset 0 0 24px rgba(255,255,255,.06);animation:nav-aperture-open .72s ease-out}.nav-aperture span{position:absolute;inset:18%;border:1px solid rgba(255,255,255,.20);animation:portal-ring 1.1s ease-in-out infinite}.nav-corridor-overlay[data-kind="monitor"] .nav-route-lines span{background:linear-gradient(90deg,transparent,rgba(103,232,249,.32),transparent);animation-name:receiver-scan-lock}.nav-corridor-overlay[data-kind="monitor"] .nav-aperture{border-color:rgba(103,232,249,.45);box-shadow:0 0 42px rgba(103,232,249,.16),inset 0 0 24px rgba(255,255,255,.06)}@keyframes gateway-scan{from{background-position:0 0}to{background-position:0 56px}}@keyframes route-energy{0%,100%{opacity:.08;transform:scaleX(.15)}45%{opacity:.75;transform:scaleX(1)}}@keyframes terminal-mode-swap{0%{clip-path:inset(0 100% 0 0);filter:brightness(1.7)}38%{clip-path:inset(0 0 0 0);filter:brightness(1.25)}100%{filter:brightness(1)}}@keyframes window-arrive{0%{opacity:0;transform:translateY(8px);box-shadow:0 0 0 rgba(255,0,0,0)}100%{opacity:1;transform:translateY(0);box-shadow:0 0 26px rgba(255,0,0,.16)}}@keyframes nav-corridor-fade{from{opacity:0}to{opacity:1}}@keyframes nav-corridor-enter{0%{transform:scale(.98);filter:brightness(1.8)}100%{transform:scale(1);filter:brightness(1)}}@keyframes nav-bit-converge{0%{transform:scaleY(.25);opacity:.35}55%{transform:scaleY(1);opacity:1}100%{transform:scaleY(.45);opacity:.72}}@keyframes portal-breathe{0%,100%{transform:scale(.94);opacity:.68}50%{transform:scale(1.02);opacity:1}}@keyframes portal-grid-drift{from{background-position:0 0}to{background-position:42px 0}}@keyframes portal-ring{0%,100%{transform:scale(.92);opacity:.38}50%{transform:scale(1.06);opacity:.95}}@keyframes portal-wave{0%,100%{height:16%;opacity:.45}50%{height:86%;opacity:1}}@keyframes portal-packet{0%{opacity:0;transform:translateX(-30%) scaleX(.18)}45%{opacity:1}100%{opacity:0;transform:translateX(155%) scaleX(.04)}}@keyframes receiver-tune{0%,100%{filter:brightness(1) contrast(1)}50%{filter:brightness(1.8) contrast(1.35)}}@keyframes portal-handshake{0%,100%{opacity:.55}50%{opacity:1}}@keyframes nav-route-converge{0%{opacity:0;transform:scaleX(1.2)}60%{opacity:.9}100%{opacity:0;transform:scaleX(.06)}}@keyframes receiver-scan-lock{0%{opacity:0;transform:scaleX(.1)}55%{opacity:.8;transform:scaleX(1)}100%{opacity:0;transform:scaleX(.4)}}@keyframes nav-aperture-open{0%{transform:scale(.55);filter:brightness(1.8)}100%{transform:scale(1);filter:brightness(1)}}@media (prefers-reduced-motion: reduce){.gateway-scanlines,.route-field span,.queue-machine[data-transition],.submission-window,.nav-corridor-overlay,.nav-corridor-panel,.nav-corridor-bit,.portal-tunnel,.portal-grid,.portal-rings span,.portal-wave span,.portal-packets span,.portal-handshake,.nav-route-lines span,.nav-aperture,.nav-aperture span{animation:none}.nav-corridor-link::after{display:none}.stat-card:hover{transform:none}.gate-bar{transition:none}}`}</style>
     </div>
   );
@@ -293,7 +307,7 @@ function AsciiSessionPortalIntro({ label, detail, mode, seed, href, onSkip }: { 
         <div className="ascii-barcode-band">B A R C O D E</div>
       </div>
       <button type="button" onClick={onSkip} className="absolute right-4 top-4 z-30 border border-emerald-300/60 px-3 py-1 text-xs uppercase tracking-[0.2em] text-emerald-200 hover:bg-emerald-200 hover:text-black">Enter Now</button>
-      <a href={href} className="sr-only">Enter current queue now</a>
+      <Link href={href} onClick={event => { event.preventDefault(); onSkip(); }} className="sr-only">Enter current queue now</Link>
       <div className="ascii-phase-stack absolute inset-x-3 bottom-[clamp(1.5rem,8vh,5rem)] z-20 mx-auto grid min-h-[8.25rem] max-w-4xl place-items-center sm:inset-x-6">
         {phases.map((phase, index) => <div key={`${phase.label}:${index}`} className={`ascii-phase ${index === phases.length - 1 ? "ascii-phase-final" : ""}`} style={{ animationDelay: `${phaseTimings[index]}s` }}><p className="ascii-phase-label uppercase tracking-[0.34em]">{phase.label}</p><p className="ascii-phase-detail mt-2 uppercase tracking-[0.28em] text-emerald-200/75">{phase.chatter}</p></div>)}
       </div>

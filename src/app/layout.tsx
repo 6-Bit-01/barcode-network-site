@@ -5,6 +5,7 @@ import "./globals.css";
 import { LiveStatusProvider } from "@/components/LiveStatusProvider";
 import { BNLStatusProvider } from "@/components/BNLStatusProvider";
 import { SiteChrome } from "@/components/SiteChrome";
+import { SiteAudioProvider } from "@/components/SiteAudioProvider";
 import { getRadioSubmissionRouting } from "@/lib/radio-submission-routing";
 
 const fontVariables = {
@@ -65,7 +66,9 @@ export default function RootLayout({
       >
         <LiveStatusProvider>
           <BNLStatusProvider>
-            <SiteChrome radioSubmission={radioSubmission}>{children}</SiteChrome>
+            <SiteAudioProvider>
+              <SiteChrome radioSubmission={radioSubmission}>{children}</SiteChrome>
+            </SiteAudioProvider>
           </BNLStatusProvider>
         </LiveStatusProvider>
       </body>

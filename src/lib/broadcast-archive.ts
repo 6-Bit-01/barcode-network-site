@@ -20,3 +20,12 @@ export function broadcastArchiveArtistHref(projectLabelOrKey: string): string {
 export function broadcastArchiveShowHref(sessionId: string): string {
   return `/radio/archive?view=shows&show=${encodeURIComponent(sessionId)}`;
 }
+
+/** Current exact names win. An ambiguous retired label never chooses arbitrarily. */
+export function resolveArchiveArtist<T extends { projectKey: string; aliases?: string[] }>(artists: readonly T[], labelOrKey: string): T | undefined {
+  const key = normalizeBroadcastArchiveProjectKey(labelOrKey);
+  const exact = artists.find(artist => artist.projectKey === key);
+  if (exact) return exact;
+  const matches = artists.filter(artist => artist.aliases?.some(alias => normalizeBroadcastArchiveProjectKey(alias) === key));
+  return matches.length === 1 ? matches[0] : undefined;
+}

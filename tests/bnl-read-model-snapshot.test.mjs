@@ -298,7 +298,7 @@ test("published song awareness shares public show eligibility and exposes metada
     assert.equal(body.sections.ballads.available, true);
     assert.deepEqual(body.sections.ballads.songs.map(song => song.showId), ["history"]);
     assert.equal(body.sections.ballads.songs[0].title, "Released song");
-    assert.match(body.sections.ballads.songs[0].url, /radio\/ballads\?show=history$/);
+    assert.match(body.sections.ballads.songs[0].url, /radio\/archive\?view=shows&show=history#broadcast-ballad$/);
     assert.ok(!JSON.stringify(body).includes("PRIVATE_CREATIVE_TEXT"));
     assert.ok(!JSON.stringify(body).includes("RAW_OUTPUT"));
   } finally { balladFixture = null; }

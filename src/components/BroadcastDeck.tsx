@@ -51,16 +51,18 @@ function projectLink(artistName: string, archiveHref: string): string {
   return `${url.pathname}${url.search}`;
 }
 
-function LiveTrackCard({ label, track, tone, archiveHref }: { label: string; track: QueuePublicTrack | null | undefined; tone: "amber" | "red" | "cyan"; archiveHref: string }) {
+function LiveTrackCard({ label, track, tone, archiveHref, credit }: { credit?: import("@/lib/queue-types").QueuePublicHistoryTrack; label: string; track: QueuePublicTrack | null | undefined; tone: "amber" | "red" | "cyan"; archiveHref: string }) {
   const toneClass = tone === "amber" ? "border-[#ffaa00]/55 text-[#ffaa00]" : tone === "cyan" ? "border-cyan-200/45 text-cyan-200" : "border-accent/55 text-accent";
   const externalHref = deckExternalTrackHref(track);
+  const primary = credit?.projectLabel ?? track?.submittedArtistName ?? "";
+  const collaborators = credit?.collaboratorNames ?? track?.collaboratorNames;
   return (
     <article className={`border bg-background/60 p-5 ${toneClass}`}>
       <p className="text-[10px] font-black uppercase tracking-[0.3em]">{label}</p>
       {track ? <>
-        <Link href={projectLink(track.submittedArtistName, archiveHref)} className="mt-4 block text-xl font-black text-foreground hover:text-accent">{track.submittedArtistName}</Link>
+        <Link href={projectLink(primary, archiveHref)} className="mt-4 block text-xl font-black text-foreground hover:text-accent">{primary}</Link>
         <p className="mt-1 text-sm text-foreground/80">{track.submittedSongTitle}</p>
-        {track.collaboratorNames && <p className="mt-2 text-xs text-muted"><span className="uppercase tracking-widest">Featuring</span> {track.collaboratorNames}</p>}
+        {collaborators && <p className="mt-2 text-xs text-muted"><span className="uppercase tracking-widest">Featuring</span> {collaborators.split(/[,;]+/).map((name, index) => <span key={index}>{index > 0 && ", "}<Link className="underline underline-offset-4 hover:text-accent" href={projectLink(`featured:${name.trim()}`, archiveHref)}>{name.trim()}</Link></span>)}</p>}
         <div className="mt-4 flex flex-wrap gap-2 text-[10px] uppercase tracking-widest">
           <span className="border border-border px-2 py-1 text-muted">{track.durationLabel}</span>
           {track.lane === "wheel" && <span className="border border-cyan-200/45 px-2 py-1 text-cyan-200">Wheel Chosen</span>}
@@ -187,8 +189,8 @@ export function BroadcastDeck({
 
       {isLive && <>
         <section className="grid gap-4 lg:grid-cols-2">
-          <LiveTrackCard label="Now Playing" track={snapshot?.nowPlaying} tone="amber" archiveHref={archiveHref} />
-          <LiveTrackCard label="Next In Line" track={snapshot?.upNext} tone="red" archiveHref={archiveHref} />
+          <LiveTrackCard label="Now Playing" track={snapshot?.nowPlaying} tone="amber" archiveHref={archiveHref} credit={currentShow?.trackRoster.find(track => track.trackId === snapshot?.nowPlaying?.id)} />
+          <LiveTrackCard label="Next In Line" track={snapshot?.upNext} tone="red" archiveHref={archiveHref} credit={currentShow?.trackRoster.find(track => track.trackId === snapshot?.upNext?.id)} />
         </section>
 
         <section className="border border-border bg-surface p-5">

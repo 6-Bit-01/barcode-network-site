@@ -606,7 +606,7 @@ export const databasePage = {
       role: "BARCODE Network Liaison Entity",
       origin: "UNKNOWN" as const,
       summary:
-        "BNL-01 watches public movement around BARCODE—community discussion, recurring questions, and changes around BARCODE Radio—then turns approved readings into relays and Journal entries for the website. People speak with BNL-01 in Discord; the site is the deeper reading and exploration layer.",
+        "BNL-01 watches public movement around BARCODE—community discussion, recurring questions, and changes around BARCODE Radio—then turns approved readings into relays and Journal entries for the website. BNL also writes Broadcast Ballads, original songs inspired by BARCODE Radio; each released song lives with its show in the Broadcast Archive. People speak with BNL-01 in Discord; the site is the deeper reading and exploration layer.",
       tags: ["ai", "systems", "handler", "broadcast"],
       notes:
         "Known across the Network as the voice that answers when records fragment. BNL-01 maintains canon continuity between BARCODE Radio and community channels, but sealed archives remain inaccessible under current clearance.",

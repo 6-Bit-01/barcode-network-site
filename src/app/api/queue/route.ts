@@ -216,6 +216,8 @@ export async function submitTrackFromBody(
   if (mode === "upload") assertQueueTrackDuration(detectedDurationSeconds);
   const note = cleanBodyText(body.note).slice(0, 500);
   const tiktokHandle = cleanBodyText(body.tiktokHandle);
+  const artistCreditDecision = body.artistCreditDecision === "whole" || body.artistCreditDecision === "split" ? body.artistCreditDecision as "whole" | "split" : undefined;
+  const originalArtistName = cleanBodyText(body.originalArtistName).slice(0, 400);
   const collaboratorNames = cleanBodyText(body.collaboratorNames).slice(0, 200);
   const contactEmail = cleanBodyText(body.contactEmail).slice(0, 200);
   const submitterToken = cleanBodyText(body.submitterToken).slice(0, 120);
@@ -290,7 +292,7 @@ export async function submitTrackFromBody(
       note,
       submitterArtistName: artist,
       tiktokHandle,
-      collaboratorNames,
+      collaboratorNames, artistCreditDecision, originalArtistName,
       contactEmail,
       submitterToken,
       legalAcceptance,
@@ -305,7 +307,7 @@ export async function submitTrackFromBody(
   if (await hasDuplicateLinkSubmission(link)) return duplicateResponse();
 
   const sourceType = detectQueueSourceType(link);
-  const track = await submitRadioTrack({ artist, title, link, sourceType, note, submitterArtistName: artist, tiktokHandle, collaboratorNames, contactEmail, submitterToken, legalAcceptance, sessionId });
+  const track = await submitRadioTrack({ artist, title, link, sourceType, note, submitterArtistName: artist, tiktokHandle, collaboratorNames, artistCreditDecision, originalArtistName, contactEmail, submitterToken, legalAcceptance, sessionId });
   if (!(await isTrackPersistedInSessionQueue(track.id, active.session.sessionId))) {
     return NextResponse.json({ error: QUEUE_ACCEPTANCE_UNCONFIRMED_MESSAGE, code: "queue_acceptance_unconfirmed" }, { status: 500 });
   }

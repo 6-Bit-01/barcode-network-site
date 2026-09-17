@@ -21,8 +21,7 @@ export async function balladWorkspaceCatalog() {
   // Existing public archive is the sole eligibility/visibility authority, including production gating.
   const stats = await getPublicQueueStats(null, true);
   const shows = stats.shows.filter(show => show.status === "archived").map(({ sessionId, title, showDate }) => ({ sessionId, title, showDate }));
-  const archivedIds = new Set(shows.map(show => show.sessionId));
-  const artists = balladArtistProfiles((stats.artists ?? []).filter(artist => artist.tracks.some(track => archivedIds.has(track.sessionId))));
+  const artists = balladArtistProfiles(stats.artists ?? []);
   return { shows, artists };
 }
 export async function eligibleBalladShows(): Promise<BalladShow[]> {

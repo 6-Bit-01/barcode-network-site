@@ -2,9 +2,10 @@
 // BARCODE RADIO QUEUE OPERATIONS — session-based Redis + memory
 // ============================================================
 
+import { artistCreditResolver, normalizeArtistCredit, collaboratorList, type ArtistCredit, type ArtistCreditRevision } from "./artist-credits";
 import { Redis } from "@upstash/redis";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { normalizeBroadcastArchiveProjectKey } from "./broadcast-archive";
 import { createProviderFetchBudget, fetchProviderJson } from "./provider-fetch";
 import { defaultBroadcastShowTitle, isDefaultBroadcastShowTitle, pacificDateString } from "./pacific-time";
@@ -1298,6 +1299,7 @@ function normalizeEntry(entry: QueueEntry): QueueEntry {
     submittedSongTitle,
     submittedAlbumName: sanitizeProviderText(entry.submittedAlbumName, 200),
     collaboratorNames: entry.collaboratorNames?.trim() || null,
+    artistCredit: normalizeArtistCredit(entry.artistCredit),
     detectedArtistName: entry.detectedArtistName ?? null,
     detectedSongTitle: entry.detectedSongTitle ?? null,
     detectedAlbumName: entry.detectedAlbumName ?? null,
@@ -3263,6 +3265,8 @@ export async function createQueueTrack(input: {
   submitterArtistName?: string;
   tiktokHandle: string;
   collaboratorNames?: string | null;
+  artistCreditDecision?: "whole" | "split";
+  originalArtistName?: string;
   contactEmail?: string | null;
   submitterToken?: string | null;
   link?: string;
@@ -3322,6 +3326,7 @@ export async function createQueueTrack(input: {
     submittedSongTitle,
     submittedAlbumName,
     collaboratorNames: input.collaboratorNames?.trim() || null,
+    artistCredit: input.artistCreditDecision ? normalizeArtistCredit({ primary: submittedArtistName, collaborators: collaboratorList(input.collaboratorNames ?? ""), original: input.originalArtistName || submittedArtistName, decision: input.artistCreditDecision, source: "submitter" }) : null,
     tiktokHandle: normalizedTikTokHandle,
     normalizedTikTokHandle,
     contactEmail: input.contactEmail?.trim() || null,
@@ -4332,7 +4337,7 @@ function publicStatsHandleForEntry(entry: QueueEntry): string {
 }
 
 function publicHistoryProjectLabel(entry: QueueEntry): string {
-  return (entry.submittedArtistName ?? entry.artist).normalize("NFKC").replace(/\s+/g, " ").trim() || "Unknown project";
+  return (entry.artistCredit?.primary ?? entry.submittedArtistName ?? entry.artist).normalize("NFKC").replace(/\s+/g, " ").trim() || "Unknown project";
 }
 
 export const normalizeQueueProjectKey = normalizeBroadcastArchiveProjectKey;
@@ -4364,7 +4369,8 @@ function publicHistoryTrackForRecord(session: QueueSession, record: QueuePublicS
     projectKey: normalizeQueueProjectKey(publicHistoryProjectLabel(record.entry)),
     title: (record.entry.submittedSongTitle ?? record.entry.title).normalize("NFKC").replace(/\s+/g, " ").trim() || "Untitled track",
     submittedByTikTokHandle: publicStatsHandleForEntry(record.entry),
-    collaboratorNames: record.entry.collaboratorNames?.normalize("NFKC").replace(/\s+/g, " ").trim() || null,
+    collaboratorNames: record.entry.artistCredit ? record.entry.artistCredit.collaborators.join(", ") || null : record.entry.collaboratorNames?.normalize("NFKC").replace(/\s+/g, " ").trim() || null,
+    ...(record.entry.artistCredit ? { artistCredit: normalizeArtistCredit(record.entry.artistCredit)! } : {}),
     sourceType: record.entry.sourceType ?? "other",
     publicSourceUrl: publicSourceUrlForTrack(record.entry),
     submittedAt: record.entry.createdAt,
@@ -4492,6 +4498,7 @@ function buildPublicArtistCatalog(sessions: QueuePublicStatsSession[]): QueuePub
     return {
       projectKey,
       projectLabel: publicHistoryProjectLabel(sortedItems[0].record.entry),
+      aliases: [...new Set(items.flatMap(({ record }) => [record.entry.artistCredit?.original ?? record.entry.submittedArtistName ?? record.entry.artist, ...(record.entry.artistCreditHistory ?? []).flatMap(revision => revision.credit?.primary ? [revision.credit.primary] : [])]).filter(name => normalizeQueueProjectKey(name) !== projectKey))],
       showCount: dates.length,
       firstShowDate: dates[0],
       latestShowDate: dates.at(-1)!,
@@ -4587,28 +4594,39 @@ function buildQueueStatsProjection(input: {
   activeSessionId?: string | null;
   submitterToken?: string | null;
 }, selectedSessions: QueueSession[], includeSimulationTracks: boolean | ((session: QueueSession) => boolean), playedOnly = false): QueuePublicStats {
-  const eligibleSessions: QueuePublicStatsSession[] = selectedSessions
+  const resolveCredit = artistCreditResolver(selectedSessions.flatMap(session => publicStatsRecordsForSession(session, false).map(record => record.entry)));
+  const eligibleSessions = selectedSessions
     .map((session) => {
       const includeSessionSimulationTracks = typeof includeSimulationTracks === "function"
         ? includeSimulationTracks(session)
         : includeSimulationTracks;
       const allRecords = publicStatsRecordsForSession(session, includeSessionSimulationTracks)
-        .map((record) => ({ ...record, broadcastEvidence: broadcastHistoryEvidence(session, record) }));
+        .map((record) => ({ ...record, entry: { ...record.entry, artistCredit: resolveCredit(record.entry) }, broadcastEvidence: broadcastHistoryEvidence(session, record) }));
       const records = playedOnly ? allRecords.filter((record) => record.broadcastEvidence !== null) : allRecords;
-      return { session, records, events: publicHistoryEventsForSession(session, records) };
+      return { session, records, allRecords, events: publicHistoryEventsForSession(session, records) };
     })
     .sort((left, right) => publicStatsSessionTime(right.session) - publicStatsSessionTime(left.session));
   const archiveSessions = eligibleSessions.filter(({ session }) => session.status === "archived");
   const archivedRecords = archiveSessions.flatMap(({ records }) => records);
   const current = eligibleSessions.find(({ session }) => session.sessionId === input.activeSessionId && session.status !== "archived") ?? null;
   const shows = archiveSessions.map(({ session, records, events }) => publicShowStats(session, records, events));
-  const artists = buildPublicArtistCatalog(archiveSessions);
+  const historyArtists = buildPublicArtistCatalog(archiveSessions);
+  const artists = buildPublicArtistCatalog(eligibleSessions.map(item => ({ ...item, records: item.allRecords }))).map(artist => {
+    const history = historyArtists.find(item => item.projectKey === artist.projectKey);
+    return { ...artist, ...publicStatsCounts([]), showCount: 0, tracks: [] as QueuePublicHistoryTrack[], ...history, aliases: artist.aliases, acceptedSubmissionCount: artist.submittedTrackCount };
+  });
+  const currentShow = current ? publicShowStats(current.session, current.records, current.events) : null;
+  const artistKeys = new Set(artists.map(artist => artist.projectKey));
+  for (const track of [...(currentShow?.trackRoster ?? []), ...shows.flatMap(show => show.trackRoster), ...artists.flatMap(artist => artist.tracks)]) {
+    track.featuredArtists = collaboratorList(track.collaboratorNames ?? "").map(name => ({ name, projectKey: artistKeys.has(normalizeQueueProjectKey(name)) ? normalizeQueueProjectKey(name) : null }));
+  }
   const sourceRevision = Math.max(0, Math.floor(input.revision));
   const builtAt = eligibleSessions.map(({ session }) => session.updatedAt).filter(Boolean).sort().at(-1) ?? null;
   const digestInput = {
     schemaVersion: QUEUE_PUBLIC_HISTORY_SCHEMA_VERSION,
     ...(playedOnly ? { catalogScope: "played_broadcast" } : {}),
     historyCoverageStartedAt: QUEUE_PUBLIC_HISTORY_COVERAGE_STARTED_AT,
+    artists,
     sourceRevision,
     sessions: eligibleSessions.map(({ session, records, events }) => ({
       session: publicShowStats(session, records, events),
@@ -4640,12 +4658,12 @@ function buildQueueStatsProjection(input: {
     publicDossierDefault: "not_automatic",
     overview: {
       showCount: archiveSessions.length,
-      artistCount: artists.length,
+      artistCount: historyArtists.length,
       submitterHandleCount: new Set(archivedRecords.map(({ entry }) => publicStatsHandleForEntry(entry)).filter(Boolean)).size,
       publicTrackLinkCount: archivedRecords.filter(({ entry }) => Boolean(publicSourceUrlForTrack(entry))).length,
       ...publicStatsCounts(archivedRecords),
     },
-    currentShow: current ? publicShowStats(current.session, current.records, current.events) : null,
+    currentShow,
     latestShow: shows[0] ?? null,
     shows,
     artists,
@@ -4744,6 +4762,7 @@ const MAX_QUEUE_BNL_ARTIST_MEMORY_RECORDS = 1000;
 export interface QueueBnlArtistMemoryRecord {
   recordId: string;
   sourceRevision: string;
+  catalogCredit?: ArtistCredit;
   artist: {
     identityKey: string;
     identityBasis: "provider_artist_id" | "submitted_tiktok_attribution" | "normalized_submitted_name";
@@ -4966,7 +4985,8 @@ function queueArtistMemoryRecord(
   };
   return {
     ...recordBody,
-    sourceRevision: createHash("sha256").update(canonicalJson(recordBody)).digest("hex"),
+    ...(entry.artistCredit ? { catalogCredit: normalizeArtistCredit(entry.artistCredit)! } : {}),
+    sourceRevision: createHash("sha256").update(canonicalJson({ ...recordBody, ...(entry.artistCredit ? { catalogCredit: normalizeArtistCredit(entry.artistCredit) } : {}) })).digest("hex"),
   };
 }
 
@@ -4979,10 +4999,11 @@ export function buildQueueBnlArtistMemory(input: {
     .filter((session) => queueSessionBnlPublicationAccess(session).accessLevel === "public"
       && session.showDate >= QUEUE_PUBLIC_HISTORY_COVERAGE_STARTED_AT)
     .sort((left, right) => publicStatsSessionTime(right) - publicStatsSessionTime(left));
+  const resolveCredit = artistCreditResolver(eligibleSessions.flatMap(session => publicStatsRecordsForSession(session, false).map(record => record.entry)));
   const allRecords = eligibleSessions.flatMap((session) =>
     publicStatsRecordsForSession(session, false)
       .sort((left, right) => Date.parse(right.entry.createdAt) - Date.parse(left.entry.createdAt))
-      .map((record) => queueArtistMemoryRecord(session, record)),
+      .map((record) => queueArtistMemoryRecord(session, { ...record, entry: { ...record.entry, artistCredit: resolveCredit(record.entry) } })),
   );
   const records = allRecords.slice(0, MAX_QUEUE_BNL_ARTIST_MEMORY_RECORDS);
   const sourceRevision = Math.max(0, Math.floor(input.revision));
@@ -6902,3 +6923,56 @@ export async function upgradeEntryTier(id: string, newTier: QueueTier, additiona
 const stripeSessions = new Map<string, string>();
 export async function storeStripeSession(sessionId: string, entryId: string): Promise<void> { stripeSessions.set(sessionId, entryId); }
 export async function getStripeSessionEntry(sessionId: string): Promise<string | null> { return stripeSessions.get(sessionId) ?? null; }
+
+/** Artist corrections live with their original queue records and use the same
+ * fenced mutation/recovery path as the rest of the queue. */
+export async function getQueueArtistCreditReview() {
+  const store = await readStore();
+  const sessions = store.sessions.filter(s => s.purpose === "live_broadcast" && s.showDate >= QUEUE_PUBLIC_HISTORY_COVERAGE_STARTED_AT);
+  const rows = sessions.flatMap(session => publicStatsRecordsForSession(session, false).map(record => ({ session, entry: record.entry })));
+  const resolve = artistCreditResolver(rows.map(row => row.entry));
+  return { revision: store.revision, records: rows.map(({ session, entry }) => ({ sessionId: session.sessionId, showTitle: session.title, trackId: entry.id, title: entry.submittedSongTitle ?? entry.title, original: entry.artistCredit?.original ?? entry.submittedArtistName ?? entry.artist, credit: resolve(entry), history: entry.artistCreditHistory ?? [] })) };
+}
+
+export async function correctQueueArtistCredit(input: { revision: number; sessionId: string; trackId: string; primary?: string; collaborators?: string; decision?: "whole" | "split" | "alias"; applyToMatching?: boolean; undo?: boolean }) {
+  return withQueueMutation(async () => {
+    const store = await readStore();
+    if (!Number.isInteger(input.revision) || input.revision !== store.revision) throw new Error("The queue changed. Reload before saving artist credits.");
+    const eligible = store.sessions.filter(s => s.purpose === "live_broadcast" && s.showDate >= QUEUE_PUBLIC_HISTORY_COVERAGE_STARTED_AT);
+    const selected = eligible.find(s => s.sessionId === input.sessionId);
+    const entry = selected && publicStatsRecordsForSession(selected, false).find(r => r.entry.id === input.trackId)?.entry;
+    if (!entry) throw new Error("Choose an existing public submission.");
+    const original = entry.artistCredit?.original ?? entry.submittedArtistName ?? entry.artist;
+    const correction = input.undo ? null : normalizeArtistCredit({ primary: input.primary, collaborators: collaboratorList(input.collaborators ?? ""), original, decision: input.decision, source: "admin" });
+    if (!input.undo && !correction) throw new Error("Enter a primary artist and valid credit names.");
+    if (input.undo && !entry.artistCreditHistory?.length) throw new Error("There is no previous credit decision to restore.");
+    if (correction?.decision === "whole" && normalizeQueueProjectKey(correction.primary) !== normalizeQueueProjectKey(original)) throw new Error("To keep this name together, retain its original wording. Use Alias / merge to rename it.");
+    const targetKey = normalizeQueueProjectKey(original);
+    const undoBatch = input.undo ? entry.artistCreditHistory?.at(-1)?.changeId : null;
+    const changeId = randomUUID();
+    let changed = 0;
+    const now = new Date().toISOString();
+    for (const session of eligible) {
+      const targetIds = new Set(publicStatsRecordsForSession(session, false).filter(({ entry: item }) => undoBatch ? item.artistCreditHistory?.at(-1)?.changeId === undoBatch : input.applyToMatching && !input.undo ? normalizeQueueProjectKey(item.artistCredit?.original ?? item.submittedArtistName ?? item.artist) === targetKey : session.sessionId === input.sessionId && item.id === input.trackId).map(r => r.entry.id));
+      if (!targetIds.size) continue;
+      const patch = (item: QueueEntry): QueueEntry => {
+        if (!targetIds.has(item.id)) return item;
+        const history: ArtistCreditRevision[] = [...(item.artistCreditHistory ?? [])];
+        const previous = normalizeArtistCredit(item.artistCredit);
+        const next = input.undo ? normalizeArtistCredit(history.at(-1)?.credit) : { ...correction!, original: item.artistCredit?.original ?? item.submittedArtistName ?? item.artist };
+        history.push({ at: now, changeId, credit: previous });
+        return { ...item, artistCredit: next, artistCreditHistory: history };
+      };
+      session.queue = session.queue.map(patch);
+      session.completed = session.completed.map(patch);
+      session.removed = session.removed.map(patch);
+      session.spotlight = session.spotlight.map(patch);
+      if (session.loadedTrack) session.loadedTrack = patch(session.loadedTrack);
+      if (session.nextInLineTrack) session.nextInLineTrack = patch(session.nextInLineTrack);
+      session.updatedAt = now;
+      changed += targetIds.size;
+    }
+    await writeStore(store);
+    return { changed, revision: store.revision };
+  });
+}

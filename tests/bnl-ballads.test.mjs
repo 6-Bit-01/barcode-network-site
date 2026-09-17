@@ -69,11 +69,11 @@ class Redis {
 }
 const artistTools = load("src/lib/bnl-ballad-artists.ts");
 const profile = label => ({ projectKey: label.toLocaleLowerCase(), projectLabel: label });
-const artistFixtures = ["LostMarbles", "Mr Nice Guy", "Ash Flowers", "WittyF0x", "antigrain", "Mr Nice Guy and LostMarbles", "Ash Flowers & WittyF0x"].map(label => ({ ...profile(label), tracks: [{ sessionId: "show-1" }], privateNotes: "must not leak" }));
+const artistFixtures = ["LostMarbles", "Mr Nice Guy", "Ash Flowers", "WittyF0x", "antigrain", "AI/ML Music", "6 X Bit"].map(label => ({ ...profile(label), tracks: [{ sessionId: "show-1" }], privateNotes: "must not leak" }));
 function setup() {
   const redis = new Redis();
   let shows = [{ sessionId: "show-1", title: "Radio", showDate: "2026-09-11", status: "archived" }, { sessionId: "live-show", title: "Live", showDate: "2026-09-17", status: "open" }];
-  let artists = [...artistFixtures, { ...profile("Private Persona"), tracks: [{ sessionId: "private-rehearsal" }] }];
+  let artists = [...artistFixtures]; // The queue public projection owns private-session exclusion.
   const store = load("src/lib/bnl-ballads-store.ts", { "@/lib/bnl-journal-store": { getBNLJournalRedis: () => redis }, "@/lib/queue": { getPublicQueueStats: async () => ({ shows, artists }) }, "@/lib/bnl-ballads": contract });
   return { store, redis, setShows: v => { shows = v; }, setArtists: v => { artists = v; } };
 }
@@ -216,19 +216,18 @@ test("authenticated Save track story persists only to its requested version and 
   assert.equal((await save(1)).status, 409);
   assert.equal((await save(2, "other-show-draft")).status, 400);
 });
-test("public page shows and searches the released story while escaping text and omitting empty notes", async () => {
+test("show card shows the released story while escaping text and omitting empty notes", async () => {
   const story = load("src/components/BalladTrackStory.tsx", { "@/lib/bnl-ballads": contract });
   assert.equal(renderToStaticMarkup(React.createElement(story.BalladTrackStory, { notes: undefined })), "");
   let doc = draft(); doc.versions[0].linerNotes = { ...notes, about: "<script>not markup</script>" }; doc.audio.push(audio);
   doc = contract.publishBallad(contract.selectBalladAudio(doc, audio.id));
-  const page = load("src/app/radio/ballads/page.tsx", { "next/link": ({ href, children, ...props }) => React.createElement("a", { href, ...props }, children), "@/components/BalladTrackStory": story, "@/lib/bnl-ballads-store": { listPublicBallads: async () => [contract.publicBallad(doc, show)] } });
-  const html = renderToStaticMarkup(await page.default({ searchParams: Promise.resolve({ q: "Test Member" }) }));
+  const page = load("src/components/BroadcastBallad.tsx", { "next/link": ({ href, children, ...props }) => React.createElement("a", { href, ...props }, children), "@/components/BalladTrackStory": story, "@/lib/bnl-ballads-store": { listPublicBallads: async () => [contract.publicBallad(doc, show)] } });
+  const html = renderToStaticMarkup(React.createElement(page.BroadcastBallad, { ballad: contract.publicBallad(doc, show) }));
   for (const label of Object.values(contract.BALLAD_LINER_NOTE_FIELDS)) assert.ok(html.includes(label.replaceAll("&", "&amp;")));
   assert.ok(html.includes(notes.inspiration));
   assert.ok(html.includes("&lt;script&gt;not markup&lt;/script&gt;"));
   assert.equal(html.includes("<script>not markup</script>"), false);
-  const absent = renderToStaticMarkup(await page.default({ searchParams: Promise.resolve({ q: "private producer feedback" }) }));
-  assert.ok(absent.includes("No ballads match"));
+  assert.ok(!html.includes("private producer feedback"));
 });
 
 test("polish uses the viewed version while concurrency stays pinned to latest", async () => {
@@ -256,14 +255,13 @@ test("editing an older working version inherits that version's story overrides",
 });
 
 
-test("artist suggestions rank aliases and typos while excluding combined listings", () => {
+test("artist suggestions rank aliases and typos without excluding punctuation in primary names", () => {
   const catalog = artistTools.balladArtistProfiles(artistFixtures);
-  assert.equal(catalog.length, 5);
+  assert.equal(catalog.length, 7);
   assert.equal(artistTools.suggestBalladArtists("Lost Marbles", catalog)[0].projectKey, "lostmarbles");
   assert.equal(artistTools.suggestBalladArtists("Mr. Nice Guy", catalog)[0].projectKey, "mr nice guy");
   assert.equal(artistTools.suggestBalladArtists("WittyFox", catalog)[0].projectKey, "wittyf0x");
   assert.equal(artistTools.suggestBalladArtists("Nobody similar", catalog).length, 0);
-  for (const label of ["A and B", "A & B", "A x B", "A feat. B", "A featuring B", "A + B", "A/B", "A, B"]) assert.equal(artistTools.isCombinedBalladArtist(label), true);
   const names = Array.from(artistTools.suggestedBalladNames("Mr Nice Guy and Lost Marbles — the studio duo; WittyFox — a remake; antigrain — wheel jokes.", catalog));
   for (const name of ["Mr Nice Guy", "Lost Marbles", "WittyFox", "antigrain"]) assert.ok(names.includes(name), name);
   assert.equal(names.some(name => name.includes(" and ")), false);
@@ -275,7 +273,7 @@ test("workspace artist catalog contains only individual public Archive destinati
   const response = await route.GET(new Request("https://test/api/admin/ballads?showId=show-1"));
   assert.equal(response.status, 200);
   const data = await response.json();
-  assert.equal(data.artists.length, 5);
+  assert.equal(data.artists.length, 7);
   assert.equal(JSON.stringify(data.artists).includes("private"), false);
   assert.equal(JSON.stringify(data.artists).includes("tracks"), false);
   assert.equal(JSON.stringify(data.artists).includes(" and "), false);
@@ -356,18 +354,32 @@ test("literal name rendering preserves words, escapes text and does not link par
   assert.equal(artistTools.balladLinkedTextParts("A.* B", [{ name: "A.*", ...profile("Ash Flowers") }]).filter(part => part.link).length, 1);
 });
 
-test("public artist cards and linked story/lyrics use only the published links and are searchable", async () => {
+test("show card artist links use only the published snapshot", async () => {
   let doc = draft(); doc.versions[0].lyrics = "Lost Marbles left the light on.";
   doc.versions[0].linerNotes = { ...notes, mentions: "Lost Marbles — the last listener." };
   doc.audio.push(audio);
   doc = contract.publishBallad(contract.selectBalladAudio(contract.saveBalladArtistLinks(doc, "draft-1", [lostLink, { name: "", ...profile("Ash Flowers") }]), audio.id));
   doc = contract.saveBalladArtistLinks(doc, "draft-1", [{ name: "Private Alias", ...profile("WittyF0x") }]);
-  const page = load("src/app/radio/ballads/page.tsx", { "next/link": ({ href, children, ...props }) => React.createElement("a", { href, ...props }, children), "@/lib/bnl-ballads-store": { listPublicBallads: async () => [contract.publicBallad(doc, show)] } });
-  const html = renderToStaticMarkup(await page.default({ searchParams: Promise.resolve({ q: "Ash Flowers" }) }));
+  const page = load("src/components/BroadcastBallad.tsx", { "next/link": ({ href, children, ...props }) => React.createElement("a", { href, ...props }, children), "@/lib/bnl-ballads-store": { listPublicBallads: async () => [contract.publicBallad(doc, show)] } });
+  const html = renderToStaticMarkup(React.createElement(page.BroadcastBallad, { ballad: contract.publicBallad(doc, show) }));
   assert.equal((html.match(/artist=lostmarbles/g) ?? []).length, 3);
   assert.ok(html.includes("Explore the artists"));
   assert.ok(html.includes("artist=ash%20flowers"));
   assert.equal(html.includes("Private Alias"), false);
   delete doc.published.artistLinks;
   assert.equal(contract.publicBallad(doc, show).artistLinks.length, 0);
+});
+
+test("reviewed names persist with the working version and empty choices are not refilled", () => {
+  const doc = contract.saveBalladArtistLinks(draft(), version.id, [], ["AI/ML Music"]);
+  assert.deepEqual(Array.from(doc.artistNamesReviewedByVersion[version.id]), ["AI/ML Music"]);
+  assert.equal(artistTools.autofillBalladArtistLinks(["AI/ML Music"], [profile("AI/ML Music")], contract.balladArtistLinksForVersion(doc, version.id), doc.artistNamesReviewedByVersion[version.id]).length, 0);
+});
+
+test("old Ballad URLs land on their show and the Ballad explainer has no duplicate player", async () => {
+  const page = load("src/app/radio/ballads/page.tsx", { "next/navigation": { redirect: href => { throw new Error(href); } }, "next/link": ({ href, children }) => React.createElement("a", { href }, children) });
+  await assert.rejects(page.default({ searchParams: Promise.resolve({ show: "show-1" }) }), /radio\/archive\?view=shows&show=show-1#broadcast-ballad/);
+  const html = renderToStaticMarkup(await page.default({ searchParams: Promise.resolve({}) }));
+  assert.ok(html.includes('href="/radio/archive"'));
+  assert.ok(!html.includes("<audio"));
 });

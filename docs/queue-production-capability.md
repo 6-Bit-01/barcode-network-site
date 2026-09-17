@@ -169,3 +169,7 @@ Every access mode is read-only. BNL never receives queue mutation or playback co
 ## Rollback
 
 Unset `BARCODE_QUEUE_PRODUCTION_ENABLED` or set it to anything other than exact `true`, then redeploy. The default-off behavior resumes, operational submission links return to Auxchord, and queue testing data is quarantined from public and BNL signals. The bot's separate queue-production gate must remain disabled during rollback.
+
+## Primary and featured credits
+
+The submission form offers optional collaboration-marker guidance and preserves an explicit keep-whole or split choice. Public artist cards are established by accepted primary submissions; played history and Radio feature counts retain their evidence gate. Credit corrections and their history live on existing queue entries and use the same mutation/recovery boundary. Admin corrections never rewrite payment, playback or original submitted labels. See [artist credits and Ballad Archive integration](ballad-archive-artist-credits.md) for resolution precedence, public aliases, rollback and deployment checks.

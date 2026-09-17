@@ -53,7 +53,9 @@ export async function POST(req: Request) {
       doc = saveBalladLinerNotes(doc, string(body.versionId, 160), notes);
     } else if (body.action === "saveArtistLinks") {
       const { artists } = await balladWorkspaceCatalog();
-      doc = saveBalladArtistLinks(doc, string(body.versionId, 160), resolveBalladArtistLinks(body.artistLinks, artists));
+      const reviewed = body.artistNamesReviewed;
+      if (reviewed !== undefined && (!Array.isArray(reviewed) || reviewed.length > 100 || reviewed.some((name: unknown) => typeof name !== "string" || name.length > 120))) throw new Error("Invalid reviewed artist names.");
+      doc = saveBalladArtistLinks(doc, string(body.versionId, 160), resolveBalladArtistLinks(body.artistLinks, artists), reviewed);
     } else if (["generate", "polish", "edit", "restore"].includes(body.action)) {
       if (doc.commands.some(c => c.status === "queued")) return json({ error: "BNL is still handling the previous request. Your current edits can stay here." }, 409);
       if ((body.action === "generate" || body.action === "polish") && body.options) {

@@ -1645,7 +1645,7 @@ export async function GET(req?: Request) {
     available: true, authority: "published creative releases; not evidence of broadcast events",
     songs: entries.map(entry => ({ showId: entry.show.sessionId, showDate: entry.show.showDate,
       showTitle: entry.show.title, title: entry.version.title, artist: "BNL-01",
-      url: `${siteConfig.domain}/radio/ballads?show=${encodeURIComponent(entry.show.sessionId)}` })),
+      url: `${siteConfig.domain}/radio/archive?view=shows&show=${encodeURIComponent(entry.show.sessionId)}#broadcast-ballad` })),
   })).catch(() => ({ available: false, authority: "published creative releases; not evidence of broadcast events", songs: [] }));
   const dossiers = publicDossiers();
   const privateResponse = accessScope === "private";

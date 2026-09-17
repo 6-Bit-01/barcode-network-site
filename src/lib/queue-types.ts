@@ -1,3 +1,4 @@
+import type { ArtistCredit, ArtistCreditRevision } from "./artist-credits";
 // ============================================================
 // BARCODE RADIO QUEUE — TYPE DEFINITIONS
 // ============================================================
@@ -430,6 +431,8 @@ export interface QueueEntry {
   submittedSongTitle?: string;
   submittedAlbumName?: string | null;
   collaboratorNames?: string | null;
+  artistCredit?: ArtistCredit | null;
+  artistCreditHistory?: ArtistCreditRevision[];
   tiktokHandle?: string;
   normalizedTikTokHandle?: string;
   contactEmail?: string | null;
@@ -708,6 +711,8 @@ export interface QueuePublicHistoryTrack {
   title: string;
   submittedByTikTokHandle: string;
   collaboratorNames: string | null;
+  artistCredit?: ArtistCredit;
+  featuredArtists?: { name: string; projectKey: string | null }[];
   sourceType: QueueSourceType;
   publicSourceUrl: string | null;
   submittedAt: string;
@@ -722,6 +727,8 @@ export interface QueuePublicHistoryTrack {
 }
 
 export interface QueuePublicProjectHistory extends QueuePublicStatsCounts {
+  aliases?: string[];
+  acceptedSubmissionCount?: number;
   projectKey: string;
   projectLabel: string;
   showCount: number;

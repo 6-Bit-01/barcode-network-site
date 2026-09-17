@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { broadcastArchiveArtistHref } from "@/lib/broadcast-archive";
-import { balladArtistProfiles, suggestBalladArtists, suggestedBalladNames, type BalladArtistLink, type BalladArtistProfile } from "@/lib/bnl-ballad-artists";
+import { autofillBalladArtistLinks, balladArtistProfiles, suggestBalladArtists, suggestedBalladNames, type BalladArtistLink, type BalladArtistProfile } from "@/lib/bnl-ballad-artists";
 
 const buttonClass = "rounded border border-border px-3 py-2 text-xs font-bold text-foreground hover:border-accent disabled:opacity-40";
 const inputClass = "min-w-0 w-full rounded border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:border-accent";
@@ -26,11 +26,18 @@ function ArtistPicker({ label, name, profiles, value, onChange }: { label: strin
   </div>;
 }
 
-export function BalladArtistLinkEditor({ mentions, profiles: suppliedProfiles, links, onChange, open, onOpenChange }: { mentions: string; profiles: BalladArtistProfile[]; links: BalladArtistLink[]; onChange: (links: BalladArtistLink[]) => void; open: boolean; onOpenChange: (open: boolean) => void }) {
+export function BalladArtistLinkEditor({ mentions, profiles: suppliedProfiles, links, reviewed = [], onChange, open, onOpenChange }: { mentions: string; profiles: BalladArtistProfile[]; links: BalladArtistLink[]; reviewed?: string[]; onChange: (links: BalladArtistLink[]) => void; open: boolean; onOpenChange: (open: boolean) => void }) {
   const profiles = useMemo(() => balladArtistProfiles(suppliedProfiles), [suppliedProfiles]);
   const [manualNames, setManualNames] = useState<string[]>([]);
   const [newName, setNewName] = useState("");
   const candidates = useMemo(() => suggestedBalladNames(mentions, profiles), [mentions, profiles]);
+  const filled = useRef(false);
+  useEffect(() => {
+    if (!open || filled.current || !profiles.length) return;
+    filled.current = true;
+    const next = autofillBalladArtistLinks(candidates, profiles, links, reviewed);
+    if (next.length !== links.length) onChange(next);
+  }, [open, profiles, candidates, links, reviewed, onChange]);
   const names = [...new Map([...candidates, ...links.filter(link => link.name).map(link => link.name), ...manualNames].map(name => [name.toLocaleLowerCase(), name])).values()];
   function choose(name: string, projectKey: string) {
     const profile = profiles.find(profile => profile.projectKey === projectKey);
@@ -39,7 +46,8 @@ export function BalladArtistLinkEditor({ mentions, profiles: suppliedProfiles, l
   return <div className="space-y-4">
     <div className="flex flex-wrap items-center justify-between gap-3"><div><h4 className="text-base font-bold text-foreground">Artist linking</h4><p className="mt-1 text-xs text-muted">{links.length ? `${links.length} artist tags / cards selected` : "No artist links selected yet"}</p></div><button type="button" className={buttonClass} aria-expanded={open} onClick={() => onOpenChange(!open)}>{open ? "Close linking mode" : "Link artist profiles"}</button></div>
     {open && <div className="space-y-5">
-      <p className="text-sm text-muted">Choose a profile beside a name. Similar names appear first; nothing is linked automatically. Combined listings such as “Mr Nice Guy and LostMarbles” are omitted. Tag each artist separately.</p>
+      <p className="text-sm text-muted">Clear suggested matches are filled in for you. Change any dropdown or leave a name unlinked, then save. Your saved choices are preserved. Artist cards follow primary credits; featured credits do not create extra cards.</p>
+      <a href="/admin/artist-credits" target="_blank" rel="noopener noreferrer" className="inline-block text-xs text-accent">Correct a split name, alias or artist credit ↗</a>
       {!profiles.length && <p role="status" className="text-sm text-amber-300">No individual Archive artist cards are available. You can remove existing links or leave names unlinked.</p>}
       <div className="space-y-3">{names.map(name => {
         const link = links.find(link => link.name.toLocaleLowerCase() === name.toLocaleLowerCase());

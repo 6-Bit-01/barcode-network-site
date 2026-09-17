@@ -41,6 +41,7 @@ export type BalladDocument = {
   versions: BalladVersion[]; commands: BalladCommand[]; audio: BalladAudio[];
   selectedAudioId: string | null; selectedAt: string | null; archivedSongs: ArchivedBallad[];
   linerNotesByVersion?: Record<string, BalladLinerNotes>;
+  artistNamesReviewedByVersion?: Record<string, string[]>;
   artistLinksByVersion?: Record<string, BalladArtistLink[]>;
   published: { versionId: string; audioId: string; at: string; presentation: BalladPresentation; linerNotes?: BalladLinerNotes; artistLinks?: BalladArtistLink[] } | null;
 };
@@ -57,9 +58,9 @@ export function saveBalladLinerNotes(doc: BalladDocument, versionId: string, not
 export function balladArtistLinksForVersion(doc: BalladDocument, versionId: string): BalladArtistLink[] {
   return normalizeBalladArtistLinks(doc.artistLinksByVersion?.[versionId]);
 }
-export function saveBalladArtistLinks(doc: BalladDocument, versionId: string, links: BalladArtistLink[]): BalladDocument {
+export function saveBalladArtistLinks(doc: BalladDocument, versionId: string, links: BalladArtistLink[], reviewedNames?: string[]): BalladDocument {
   if (!doc.versions.some(v => v.id === versionId)) throw new Error("Choose a saved song version for these artist links.");
-  return { ...doc, artistLinksByVersion: { ...doc.artistLinksByVersion, [versionId]: normalizeBalladArtistLinks(links) } };
+  return { ...doc, ...(reviewedNames ? { artistNamesReviewedByVersion: { ...doc.artistNamesReviewedByVersion, [versionId]: reviewedNames } } : {}), artistLinksByVersion: { ...doc.artistLinksByVersion, [versionId]: normalizeBalladArtistLinks(links) } };
 }
 export function newBallad(showId: string): BalladDocument {
   return { showId, revision: 0, options: { ...DEFAULT_BALLAD_OPTIONS }, presentation: { ...DEFAULT_BALLAD_PRESENTATION }, versions: [], commands: [], audio: [], selectedAudioId: null, selectedAt: null, archivedSongs: [], published: null };
@@ -117,6 +118,7 @@ export function applyBalladReceipt(doc: BalladDocument, receipt: { commandId: st
     next.versions.push(receipt.version);
     const notesSource = command.kind === "restore" ? command.restoreVersion : command.kind === "edit" ? (command.sourceVersion ?? command.baseVersion) : null;
     if (notesSource && doc.artistLinksByVersion?.[notesSource]) {
+      next.artistNamesReviewedByVersion = { ...next.artistNamesReviewedByVersion, [receipt.version.id]: doc.artistNamesReviewedByVersion?.[notesSource] ?? [] };
       next.artistLinksByVersion = { ...next.artistLinksByVersion, [receipt.version.id]: balladArtistLinksForVersion(doc, notesSource) };
     }
     if (notesSource && doc.linerNotesByVersion?.[notesSource]) {

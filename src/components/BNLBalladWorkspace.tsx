@@ -3,8 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { upload } from "@vercel/blob/client";
 import Link from "next/link";
-import { DEFAULT_BALLAD_OPTIONS, DEFAULT_BALLAD_PRESENTATION, BALLAD_LINER_NOTE_FIELDS, balladLinerNotesForVersion, normalizeBalladLinerNotes, type BalladLinerNotes, type BalladCommand, type BalladConfig, type BalladDocument, type BalladOptions, type BalladPresentation, type BalladShow } from "@/lib/bnl-ballads";
+import { DEFAULT_BALLAD_OPTIONS, DEFAULT_BALLAD_PRESENTATION, BALLAD_LINER_NOTE_FIELDS, balladLinerNotesForVersion, balladArtistLinksForVersion, normalizeBalladLinerNotes, type BalladLinerNotes, type BalladCommand, type BalladConfig, type BalladDocument, type BalladOptions, type BalladPresentation, type BalladShow } from "@/lib/bnl-ballads";
 import { balladPublishTasks, type BalladPublishTask, type BalladStage } from "@/lib/bnl-ballad-workflow";
+import { BalladArtistLinkEditor } from "@/components/BalladArtistLinkEditor";
+import { BalladLinkedText } from "@/components/BalladArtistLinks";
+import type { BalladArtistLink, BalladArtistProfile } from "@/lib/bnl-ballad-artists";
 import { BalladTrackStory } from "@/components/BalladTrackStory";
 
 const inputClass = "w-full rounded border border-border bg-background px-3 py-2.5 text-sm text-foreground outline-none focus:border-accent";
@@ -51,7 +54,7 @@ function requestStatus(command: BalladCommand, hasVersions: boolean) {
   return `${reason} ${hasVersions ? "Your saved versions are intact. " : ""}${retry}`;
 }
 
-type Snapshot = { shows: BalladShow[]; show: BalladShow | null; document: BalladDocument | null; config: BalladConfig };
+type Snapshot = { artists?: BalladArtistProfile[]; shows: BalladShow[]; show: BalladShow | null; document: BalladDocument | null; config: BalladConfig };
 type PendingUpload = { url: string; filename: string; duration: number | null; versionId: string };
 export function BNLBalladWorkspace({ initialShowId = "" }: { initialShowId?: string }) {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
@@ -66,6 +69,8 @@ export function BNLBalladWorkspace({ initialShowId = "" }: { initialShowId?: str
   const notesVersionId = versionChoice;
   const [stage, setStage] = useState<BalladStage>("Song");
   const [linerNotes, setLinerNotes] = useState<BalladLinerNotes>(() => normalizeBalladLinerNotes(null));
+  const [linkingMode, setLinkingMode] = useState(false);
+  const [artistLinks, setArtistLinks] = useState<BalladArtistLink[]>([]);
   const [automation, setAutomation] = useState(false);
   const [audioChoice, setAudioChoice] = useState("");
   const uploadVersion = versionChoice;
@@ -100,6 +105,8 @@ export function BNLBalladWorkspace({ initialShowId = "" }: { initialShowId?: str
       setPresentation(data.document?.presentation ?? { ...DEFAULT_BALLAD_PRESENTATION });
       const notesVersion = latest?.id ?? "";
       setLinerNotes(data.document ? balladLinerNotesForVersion(data.document, notesVersion) : normalizeBalladLinerNotes(null));
+      setLinkingMode(false);
+      setArtistLinks(data.document ? balladArtistLinksForVersion(data.document, notesVersion) : []);
       setAudioChoice(data.document?.audio.find(a => a.versionId === latest?.id && a.id === data.document?.selectedAudioId)?.id ?? data.document?.audio.find(a => a.versionId === latest?.id)?.id ?? "");
       setAutomation(data.config.enabled);
       setShowChoice(data.show?.sessionId ?? initialShowId);
@@ -133,6 +140,9 @@ export function BNLBalladWorkspace({ initialShowId = "" }: { initialShowId?: str
       if (!response.ok) throw new Error(data.error || "Could not save.");
       if (data.document && snapshot) {
         setSnapshot({ ...snapshot, document: data.document });
+        if (!dirtyParts.current.has("artistLinks") || action === "saveArtistLinks") {
+          setArtistLinks(balladArtistLinksForVersion(data.document, versionChoice));
+        }
         if (!dirtyParts.current.has("linerNotes") || action === "saveLinerNotes") {
           const saved: BalladDocument = data.document;
           const target = versionChoice;
@@ -141,6 +151,7 @@ export function BNLBalladWorkspace({ initialShowId = "" }: { initialShowId?: str
       }
       if (data.config && snapshot) setSnapshot({ ...snapshot, config: data.config });
       setMessage(["generate", "polish", "edit", "restore"].includes(action) ? "" : action === "saveOptions" ? "Directions saved for this show. Choose Generate new song when you’re ready for BNL to write." : action === "saveAutomation" ? `After-show automation ${payload.enabled ? "enabled" : "disabled"}.` : action === "savePresentation" ? "Release details saved. Follow Next step to finish preparing the release." : action === "publish" ? "Ballad published with the confirmed audio and its saved lyrics." : action === "archive" ? "Song archived. This show’s single song slot is empty." : action === "archiveReplace" ? "Previous song archived. Replacement confirmed in this show’s song slot." : "Saved and confirmed.");
+      if (action === "saveArtistLinks") setMessage("Artist links saved for this version. Publish its confirmed recording to update the public song.");
       if (action === "saveLinerNotes") setMessage(`Track story saved for Version ${data.document?.versions.find((v: { id: string }) => v.id === payload.versionId)?.ordinal}. It will appear when you publish that version’s confirmed recording.`);
       return true;
     } catch (e) { setError(e instanceof Error ? e.message : "Could not save."); return false; }
@@ -169,13 +180,15 @@ export function BNLBalladWorkspace({ initialShowId = "" }: { initialShowId?: str
     finally { setBusy(false); }
   }
   function chooseVersion(id: string) {
-    if (!doc || pending || pendingUpload) return;
-    if ((dirtyParts.current.has("draft") || dirtyParts.current.has("linerNotes")) && !window.confirm("Discard unsaved song and story edits and open this saved version?")) return;
+    if (!doc || pending || pendingUpload) return false;
+    if ((dirtyParts.current.has("draft") || dirtyParts.current.has("linerNotes") || dirtyParts.current.has("artistLinks")) && !window.confirm("Discard unsaved song, story and artist links and open this saved version?")) return false;
     const version = doc.versions.find(v => v.id === id);
-    if (!version) return;
+    if (!version) return false;
+    setLinkingMode(false);
     setVersionChoice(id); setTitle(version.title); setLyrics(version.lyrics); setStyle(version.style); setPalette(version.palette);
-    setLinerNotes(balladLinerNotesForVersion(doc, id)); clearDirty("draft"); clearDirty("linerNotes");
+    setLinerNotes(balladLinerNotesForVersion(doc, id)); setArtistLinks(balladArtistLinksForVersion(doc, id)); clearDirty("draft"); clearDirty("linerNotes"); clearDirty("artistLinks");
     setAudioChoice(doc.audio.find(a => a.versionId === id && a.id === doc.selectedAudioId)?.id ?? doc.audio.find(a => a.versionId === id)?.id ?? "");
+    return true;
   }
   const workingVersion = doc?.versions.find(v => v.id === versionChoice);
   const releaseTake = doc?.audio.find(a => a.id === doc.selectedAudioId);
@@ -197,6 +210,7 @@ export function BNLBalladWorkspace({ initialShowId = "" }: { initialShowId?: str
       options: ["saveOptions", { options }],
       automation: ["saveAutomation", { enabled: automation, revision: snapshot?.config.revision }],
       linerNotes: ["saveLinerNotes", { versionId: notesVersionId, linerNotes }],
+      artistLinks: ["saveArtistLinks", { versionId: notesVersionId, artistLinks }],
       presentation: ["savePresentation", { presentation }],
       draft: ["edit", { sourceVersion: versionChoice || undefined, content: { title, lyrics, style, palette } }],
     };
@@ -275,7 +289,7 @@ export function BNLBalladWorkspace({ initialShowId = "" }: { initialShowId?: str
           {pendingUpload && <div id="ballad-upload-confirmation" tabIndex={-1} className="space-y-2 rounded border border-accent/50 p-3"><p className="text-sm text-foreground">{pendingUpload.filename} → {snapshot.show.title} · Version {doc.versions.find(v => v.id === pendingUpload.versionId)?.ordinal}</p><button type="button" disabled={busy} className={primaryClass} onClick={async () => { if (await act("attachAudio", pendingUpload)) setPendingUpload(null); }}>Confirm upload & show attachment</button></div>}
           {!!doc.audio.length && <><Field label="Saved takes"><select className={inputClass} value={audioChoice} onChange={e => setAudioChoice(e.target.value)}><option value="">Choose a take</option>{doc.audio.filter(a => a.versionId === versionChoice).map(a => <option key={a.id} value={a.id}>{a.filename} · Version {doc.versions.find(v => v.id === a.versionId)?.ordinal}{a.id === doc.selectedAudioId ? " · Confirmed" : ""}</option>)}</select></Field>{selectedTake && <><audio className="w-full" controls preload="metadata" src={mediaUrl(doc.showId, selectedTake.id)} /><p className="text-xs text-muted">{selectedTakeVersion?.title} · {selectedTake.duration ? `${Math.floor(selectedTake.duration / 60)}:${String(Math.floor(selectedTake.duration % 60)).padStart(2, "0")}` : "Duration available in player"}</p></>}{!doc.selectedAudioId ? <button type="button" disabled={busy || !audioChoice} className={primaryClass} onClick={() => act("selectAudio", { audioId: audioChoice })}>Use this recording</button> : <div className="space-y-3"><p className="text-sm font-bold text-accent">One song slot · selection locked</p><p className="text-xs text-muted">Chosen: {doc.audio.find(a => a.id === doc.selectedAudioId)?.filename}. It stays this show’s song until you archive it.</p><details><summary className="cursor-pointer text-xs text-muted">Archive or replace song</summary><div className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={busy} className={buttonClass} onClick={() => { if (window.confirm("Archive the chosen song and clear this show’s song slot? Its audio and lyrics stay in history; the public release is removed.")) void act("archive"); }}>Archive song</button><button type="button" disabled={busy || !audioChoice || audioChoice === doc.selectedAudioId} className={primaryClass} onClick={() => { if (window.confirm("Archive the chosen song and put this take in the single song slot? The replacement stays private until you publish it.")) void act("archiveReplace", { audioId: audioChoice }); }}>Archive & replace with this take</button></div></details></div>}</>}
         </section>
-        {!!doc.archivedSongs.length && <details hidden={stage !== "Recording"} className="rounded border border-border p-5"><summary className="cursor-pointer text-sm font-bold text-foreground">Archived songs · {doc.archivedSongs.length}</summary><div className="mt-4 space-y-3">{doc.archivedSongs.map((entry, i) => { const v = doc.versions.find(v => v.id === entry.versionId); const a = doc.audio.find(a => a.id === entry.audioId); return <div key={`${entry.audioId}-${i}`} className="rounded border border-border p-3"><p className="text-sm text-foreground">BNL-01 — {v?.title} · Version {v?.ordinal}</p><p className="mt-1 text-xs text-muted">Archived {new Date(entry.archivedAt).toLocaleString()} · {a?.filename}</p>{a && <audio className="mt-3 w-full" controls preload="none" src={mediaUrl(doc.showId, a.id)} />}<details className="mt-3 text-xs text-muted"><summary className="cursor-pointer">Archived lyrics, Style & track story</summary><p className="mt-3 whitespace-pre-wrap">{v?.lyrics}</p><p className="mt-3">{v?.style}</p><BalladTrackStory notes={entry.linerNotes} /></details></div>; })}</div></details>}
+        {!!doc.archivedSongs.length && <details hidden={stage !== "Recording"} className="rounded border border-border p-5"><summary className="cursor-pointer text-sm font-bold text-foreground">Archived songs · {doc.archivedSongs.length}</summary><div className="mt-4 space-y-3">{doc.archivedSongs.map((entry, i) => { const v = doc.versions.find(v => v.id === entry.versionId); const a = doc.audio.find(a => a.id === entry.audioId); return <div key={`${entry.audioId}-${i}`} className="rounded border border-border p-3"><p className="text-sm text-foreground">BNL-01 — {v?.title} · Version {v?.ordinal}</p><p className="mt-1 text-xs text-muted">Archived {new Date(entry.archivedAt).toLocaleString()} · {a?.filename}</p>{a && <audio className="mt-3 w-full" controls preload="none" src={mediaUrl(doc.showId, a.id)} />}<details className="mt-3 text-xs text-muted"><summary className="cursor-pointer">Archived lyrics, Style & track story</summary><p className="mt-3 whitespace-pre-wrap"><BalladLinkedText text={v?.lyrics ?? ""} artistLinks={entry.artistLinks} /></p><p className="mt-3">{v?.style}</p><BalladTrackStory notes={entry.linerNotes} artistLinks={entry.artistLinks} /></details></div>; })}</div></details>}
         <section id="ballad-story" tabIndex={-1} hidden={stage !== "Song"} className="space-y-4 rounded border border-border p-5">
           <div><h3 className="text-lg font-bold text-foreground">Track story & people</h3><p className="mt-1 text-sm text-muted">BNL writes these with each new draft. Edit freely, or add notes to an earlier song. The confirmed recording’s story appears on its public page.</p></div>
           <p className="text-xs text-accent">Story for working Version {workingVersion?.ordinal ?? "—"}</p>
@@ -283,9 +297,18 @@ export function BNLBalladWorkspace({ initialShowId = "" }: { initialShowId?: str
           <div className="flex flex-wrap items-center gap-3"><button type="button" disabled={busy || !notesVersionId} className={primaryClass} onClick={async () => { if (await act("saveLinerNotes", { versionId: notesVersionId, linerNotes })) clearDirty("linerNotes"); }}>Save track story</button>{dirtySections.includes("linerNotes") && <span className="text-xs text-amber-300">Unsaved track story</span>}</div>
           <p className="text-xs text-muted">Save keeps your notes here. Publish below updates the public page. Recording credits are separate from lyrical mentions and inspiration.</p>
         </section>
+        <section id="ballad-artist-links" tabIndex={-1} hidden={stage !== "Song"} className="space-y-4 rounded border border-border p-5">
+          <p className="text-xs text-accent">Artist links for working Version {workingVersion?.ordinal ?? "—"}</p>
+          <fieldset disabled={!versionChoice}>
+            <BalladArtistLinkEditor key={`${doc.showId}:${versionChoice}`} mentions={linerNotes.mentions} profiles={snapshot.artists ?? []} links={artistLinks} open={linkingMode} onOpenChange={setLinkingMode} onChange={links => { setArtistLinks(links); markDirty("artistLinks"); }} />
+          </fieldset>
+          <p className="text-xs text-muted">Save these selections, then publish the confirmed recording to update the public song. Reopen linking mode any time to change or remove a tag. Lyrics stay unchanged.</p>
+          <button type="button" disabled={busy || !versionChoice} className={primaryClass} onClick={async () => { if (await act("saveArtistLinks", { versionId: versionChoice, artistLinks })) clearDirty("artistLinks"); }}>Save artist links</button>
+          {dirtySections.includes("artistLinks") && <p className="text-xs text-amber-300">Unsaved artist links</p>}
+        </section>
         <section id="ballad-release" tabIndex={-1} hidden={stage !== "Publish"} className="space-y-4 rounded border border-border p-5"><h3 className="text-lg font-bold text-foreground">Release details</h3>
           {([ ["credits", "Credits"], ["artworkUrl", "Artwork URL (optional, HTTPS)"], ["sunoUrl", "Suno song link (optional)"], ["sunoModel", "Suno model (optional)"], ["sunoSettings", "Suno settings / production notes (optional)"] ] as [keyof BalladPresentation, string][]).map(([key, label]) => <Field key={key} label={label}><input className={inputClass} value={presentation[key]} onChange={e => { setPresentation({ ...presentation, [key]: e.target.value }); markDirty("presentation"); }} /></Field>)}
-          {releaseTake && releaseVersion ? <div className="space-y-3 rounded border border-accent/40 p-4"><h4 className="text-lg font-bold text-foreground">Release preview: {releaseVersion.title}</h4><p className="text-xs text-muted">Version {releaseVersion.ordinal} · {releaseTake.filename}</p>{versionChoice !== releaseVersion.id && <p className="text-sm text-amber-300">Your working version is different. This release uses the recording’s saved Version {releaseVersion.ordinal}.</p>}<audio controls className="w-full" preload="none" src={mediaUrl(doc.showId, releaseTake.id)} /><details><summary className="cursor-pointer text-sm">Preview saved lyrics & Style</summary><p className="whitespace-pre-wrap text-sm">{releaseVersion.lyrics}</p><p className="mt-4 text-sm">{releaseVersion.style}</p></details><BalladTrackStory notes={balladLinerNotesForVersion(doc, releaseVersion.id)} /><p className="text-xs text-muted">Credits: {doc.presentation.credits}</p>{doc.published && <p className="text-xs text-accent">Currently published: {doc.versions.find(v => v.id === doc.published?.versionId)?.title}. Changes go live only when you publish.</p>}</div> : <p className="text-sm text-muted">Choose a recording in Recording to prepare this release.</p>}
+          {releaseTake && releaseVersion ? <div className="space-y-3 rounded border border-accent/40 p-4"><h4 className="text-lg font-bold text-foreground">Release preview: {releaseVersion.title}</h4><p className="text-xs text-muted">Version {releaseVersion.ordinal} · {releaseTake.filename}</p>{versionChoice !== releaseVersion.id && <p className="text-sm text-amber-300">Your working version is different. This release uses the recording’s saved Version {releaseVersion.ordinal}.</p>}<audio controls className="w-full" preload="none" src={mediaUrl(doc.showId, releaseTake.id)} /><details><summary className="cursor-pointer text-sm">Preview saved lyrics & Style</summary><p className="whitespace-pre-wrap text-sm"><BalladLinkedText text={releaseVersion.lyrics} artistLinks={balladArtistLinksForVersion(doc, releaseVersion.id)} /></p><p className="mt-4 text-sm">{releaseVersion.style}</p></details><BalladTrackStory notes={balladLinerNotesForVersion(doc, releaseVersion.id)} artistLinks={balladArtistLinksForVersion(doc, releaseVersion.id)} /><button type="button" className={buttonClass} onClick={() => { if (versionChoice === releaseVersion.id || chooseVersion(releaseVersion.id)) { setLinkingMode(true); goToStep("Song", "ballad-artist-links"); } }}>Edit this recording’s artist links</button><p className="text-xs text-muted">Credits: {doc.presentation.credits}</p>{doc.published && <p className="text-xs text-accent">Currently published: {doc.versions.find(v => v.id === doc.published?.versionId)?.title}. Changes go live only when you publish.</p>}</div> : <p className="text-sm text-muted">Choose a recording in Recording to prepare this release.</p>}
           <div id="ballad-publish-requirements" className="space-y-3 rounded border border-border p-4">
             <h4 className="text-sm font-bold text-foreground">{nextTask ? "Before you can publish" : "Everything is saved and a recording is selected"}</h4>
             {nextTask && <ol className="space-y-3">{publishTasks.map((task, i) => <li key={task.id} className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-bold text-foreground">{i + 1}. {task.title}</p><p className="mt-1 max-w-xl text-xs text-muted">{task.detail}</p></div>{task.action && <button type="button" className={i === 0 ? primaryClass : buttonClass} disabled={i > 0} onClick={() => completeTask(task)}>{task.action} →</button>}</li>)}</ol>}

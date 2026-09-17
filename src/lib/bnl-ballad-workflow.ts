@@ -24,6 +24,7 @@ export function balladPublishTasks(input: {
     { id: "options", title: "Save your creative directions", detail: "Keep your direction and feedback changes before continuing.", action: "Save directions", stage: "Song", target: "ballad-writing" },
     { id: "automation", title: "Save your automation setting", detail: "Confirm the after-show automation choice you changed.", action: "Save automation", stage: "Song", target: "ballad-automation" },
     { id: "linerNotes", title: "Save your track story", detail: "The people and story notes still have unsaved changes.", action: "Save track story", stage: "Song", target: "ballad-story" },
+    { id: "artistLinks", title: "Save your artist links", detail: "Keep the artist tags and cards selected for this version before publishing.", action: "Save artist links", stage: "Song", target: "ballad-artist-links" },
     { id: "presentation", title: "Save your release details", detail: "Your credits, links or recording details have unsaved changes.", action: "Save release details", stage: "Publish", target: "ballad-release" },
     { id: "draft", title: "Save your song edits", detail: "Save the title, lyrics and Style as a version before continuing.", action: "Save song edits", stage: "Song", target: "ballad-song" },
   ];

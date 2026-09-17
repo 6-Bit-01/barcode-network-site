@@ -1,3 +1,4 @@
+import { balladArtistProfiles } from "@/lib/bnl-ballad-artists";
 import { getBNLJournalRedis } from "@/lib/bnl-journal-store";
 import { getPublicQueueStats } from "@/lib/queue";
 import { newBallad, publicBallad, validId, type BalladDocument, type BalladConfig, type BalladShow } from "@/lib/bnl-ballads";
@@ -16,10 +17,16 @@ export function balladRedis() {
   if (!redis) throw new Error("Ballad storage is unavailable.");
   return redis;
 }
-export async function eligibleBalladShows(): Promise<BalladShow[]> {
+export async function balladWorkspaceCatalog() {
   // Existing public archive is the sole eligibility/visibility authority, including production gating.
   const stats = await getPublicQueueStats(null, true);
-  return stats.shows.filter(show => show.status === "archived").map(({ sessionId, title, showDate }) => ({ sessionId, title, showDate }));
+  const shows = stats.shows.filter(show => show.status === "archived").map(({ sessionId, title, showDate }) => ({ sessionId, title, showDate }));
+  const archivedIds = new Set(shows.map(show => show.sessionId));
+  const artists = balladArtistProfiles((stats.artists ?? []).filter(artist => artist.tracks.some(track => archivedIds.has(track.sessionId))));
+  return { shows, artists };
+}
+export async function eligibleBalladShows(): Promise<BalladShow[]> {
+  return (await balladWorkspaceCatalog()).shows;
 }
 export async function requireBalladShow(showId: string) {
   if (!validId(showId)) throw new Error("Invalid show.");

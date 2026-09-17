@@ -3,13 +3,39 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { upload } from "@vercel/blob/client";
 import Link from "next/link";
-import { DEFAULT_BALLAD_OPTIONS, DEFAULT_BALLAD_PRESENTATION, type BalladConfig, type BalladDocument, type BalladOptions, type BalladPresentation, type BalladShow } from "@/lib/bnl-ballads";
+import { DEFAULT_BALLAD_OPTIONS, DEFAULT_BALLAD_PRESENTATION, type BalladCommand, type BalladConfig, type BalladDocument, type BalladOptions, type BalladPresentation, type BalladShow } from "@/lib/bnl-ballads";
 
 const inputClass = "w-full rounded border border-border bg-background px-3 py-2.5 text-sm text-foreground outline-none focus:border-accent";
 const buttonClass = "rounded border border-border px-3 py-2 text-xs font-bold text-foreground hover:border-accent disabled:opacity-40 disabled:cursor-wait";
 const primaryClass = `${buttonClass} border-accent/60 bg-accent/10 text-accent`;
 function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="block space-y-2 text-xs text-muted"><span>{label}</span>{children}</label>; }
 function mediaUrl(showId: string, audioId: string) { return `/api/ballads/media?showId=${encodeURIComponent(showId)}&audioId=${encodeURIComponent(audioId)}`; }
+function requestStatus(command: BalladCommand, hasVersions: boolean) {
+  if (command.status === "queued") {
+    return {
+      generate: "Draft requested. BNL will use your directions to write lyrics and a Style prompt. They’ll appear below automatically.",
+      polish: "Polish requested. BNL will return one light revision below. Your original stays saved.",
+      edit: "Saving your edits. This page will update when the new version is saved.",
+      restore: "Restoring the selected version. It will appear below as a new saved version.",
+    }[command.kind];
+  }
+  const reasons: Record<string, string> = {
+    generation_unavailable_try_manually: "BNL couldn’t generate this draft.",
+    finalized_public_show_evidence_unavailable: "BNL couldn’t load this show’s source record.",
+    local_model_budget_exhausted: "BNL’s model budget is currently unavailable. Try again when it resets.",
+    draft_changed_reload_workspace: "A newer draft was saved. Reload the workspace before trying again.",
+    interrupted_generation_use_generate_to_retry: "The writing request was interrupted.",
+    TimeoutError: "The writing request timed out.",
+  };
+  const reason = reasons[command.error ?? ""] ?? "The last request couldn’t finish.";
+  const retry = {
+    generate: `Choose ${hasVersions ? "Generate new draft" : "Generate draft"} to try again.`,
+    polish: "Choose Polish saved draft to try again.",
+    edit: "Choose Save edits to try again.",
+    restore: "Choose Confirm restore as new version to try again.",
+  }[command.kind];
+  return `${reason} ${hasVersions ? "Your saved versions are intact. " : ""}${retry}`;
+}
 
 type Snapshot = { shows: BalladShow[]; show: BalladShow | null; document: BalladDocument | null; config: BalladConfig };
 type PendingUpload = { url: string; filename: string; duration: number | null; versionId: string };
@@ -30,13 +56,14 @@ export function BNLBalladWorkspace({ initialShowId = "" }: { initialShowId?: str
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [dirty, setDirty] = useState(false);
+  const [dirtySections, setDirtySections] = useState<string[]>([]);
+  const dirty = dirtySections.length > 0;
   const dirtyRef = useRef(false);
   const dirtyParts = useRef(new Set<string>());
-  const markDirty = (part = "draft") => { dirtyParts.current.add(part); dirtyRef.current = true; setDirty(true); };
+  const markDirty = (part = "draft") => { dirtyParts.current.add(part); dirtyRef.current = true; setDirtySections([...dirtyParts.current]); };
   const clearDirty = (part?: string) => {
     if (part) dirtyParts.current.delete(part); else dirtyParts.current.clear();
-    dirtyRef.current = dirtyParts.current.size > 0; setDirty(dirtyRef.current);
+    dirtyRef.current = dirtyParts.current.size > 0; setDirtySections([...dirtyParts.current]);
   };
   const doc = snapshot?.document;
   const pending = Boolean(doc?.commands.some(c => c.status === "queued"));
@@ -84,7 +111,7 @@ export function BNLBalladWorkspace({ initialShowId = "" }: { initialShowId?: str
       if (!response.ok) throw new Error(data.error || "Could not save.");
       if (data.document && snapshot) setSnapshot({ ...snapshot, document: data.document });
       if (data.config && snapshot) setSnapshot({ ...snapshot, config: data.config });
-      setMessage(["generate", "polish", "edit", "restore"].includes(action) ? "Request saved. BNL will return the saved draft here; you can leave this page." : action === "publish" ? "Ballad published with the confirmed audio and its saved lyrics." : action === "archive" ? "Song archived. This show’s single song slot is empty." : action === "archiveReplace" ? "Previous song archived. Replacement confirmed in this show’s song slot." : "Saved and confirmed.");
+      setMessage(["generate", "polish", "edit", "restore"].includes(action) ? "" : action === "saveOptions" ? `Directions saved for this show. Choose ${doc?.versions.length ? "Generate new draft" : "Generate draft"} when you’re ready for BNL to write.` : action === "saveAutomation" ? `After-show automation ${payload.enabled ? "enabled" : "disabled"}.` : action === "savePresentation" ? `Release details saved. Use ${doc?.published ? "Publish updated details" : "Publish ballad"} to put them on the site.` : action === "publish" ? "Ballad published with the confirmed audio and its saved lyrics." : action === "archive" ? "Song archived. This show’s single song slot is empty." : action === "archiveReplace" ? "Previous song archived. Replacement confirmed in this show’s song slot." : "Saved and confirmed.");
       return true;
     } catch (e) { setError(e instanceof Error ? e.message : "Could not save."); return false; }
     finally { setBusy(false); }
@@ -117,7 +144,7 @@ export function BNLBalladWorkspace({ initialShowId = "" }: { initialShowId?: str
   return <fieldset disabled={busy} className="space-y-6" aria-label="BNL Broadcast Ballads workspace">
     <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border pb-5">
       <div><p className="text-xs uppercase tracking-[0.28em] text-accent">BNL-01 / Recording desk</p><h2 className="mt-2 text-3xl font-black text-foreground">Broadcast Ballads</h2><p className="mt-2 max-w-2xl text-sm text-muted">One broadcast. A new BNL original. Shape the words, find the sound, choose the take.</p></div>
-      <Link href="/radio/ballads" className={buttonClass}>View discography ↗</Link>
+      <div className="flex flex-wrap gap-2"><Link href="/admin" className={buttonClass}>Admin dashboard</Link><Link href="/radio/ballads" className={buttonClass}>View discography ↗</Link></div>
     </div>
     {error && <p role="alert" className="rounded border border-red-400/50 bg-red-400/5 p-3 text-sm text-red-300">{error}</p>}
     {message && <p role="status" className="rounded border border-accent/40 p-3 text-sm text-accent">{message}</p>}
@@ -126,7 +153,7 @@ export function BNLBalladWorkspace({ initialShowId = "" }: { initialShowId?: str
         <Field label="Selected broadcast"><select className={inputClass} value={showChoice} onChange={e => setShowChoice(e.target.value)}><option value="">Choose a finalized public show</option>{snapshot.shows.map(show => <option key={show.sessionId} value={show.sessionId}>{show.title}</option>)}</select></Field>
         <button type="button" className={primaryClass} disabled={busy || !showChoice} onClick={() => {
           if ((dirty || pendingUpload) && !window.confirm("Switch shows and discard unsaved local changes? Saved drafts remain available.")) return;
-          clearDirty(); setPendingUpload(null); load(showChoice, true).catch(e => setError(e.message));
+          clearDirty(); setPendingUpload(null); setMessage(""); setError(""); load(showChoice, true).catch(e => setError(e.message));
         }}>Confirm show</button>
       </div>
       <details className="rounded border border-border p-4"><summary className="cursor-pointer text-sm font-bold text-foreground">After-show automation · {snapshot.config.enabled ? "On" : "Off"}</summary>
@@ -135,33 +162,34 @@ export function BNLBalladWorkspace({ initialShowId = "" }: { initialShowId?: str
       </details>
       {doc && snapshot.show ? <>
         <div className="flex flex-wrap items-center justify-between gap-3 text-sm"><div><span className="font-bold text-foreground">{snapshot.show.title}</span><span className="ml-3 text-muted">{doc.published ? "Published" : "Private draft"} · {doc.versions.length} saved versions</span></div><Link href={`/admin/show-management/session/${encodeURIComponent(doc.showId)}`} className="text-xs text-accent">Show report ↗</Link></div>
-        {pending && <p role="status" className="text-sm text-accent">Request queued for BNL. This desk will update when the saved draft arrives.</p>}
-        {lastCommand?.status === "failed" && <p role="alert" className="text-sm text-amber-300">The last request could not finish ({lastCommand.error?.replaceAll("_", " ")}). Saved versions are intact. Use Generate or Save to try again.</p>}
+        {lastCommand && (pending || lastCommand.status === "failed") && <div role={pending ? "status" : "alert"} className={`rounded border p-3 text-sm ${pending ? "border-accent/40 text-accent" : "border-amber-300/40 text-amber-300"}`}><p>{requestStatus(lastCommand, Boolean(doc.versions.length))}</p>{lastCommand.status === "failed" && lastCommand.error && <details className="mt-2 text-xs text-muted"><summary className="cursor-pointer">Error details</summary><p className="mt-2 break-words font-mono">{lastCommand.error}</p></details>}</div>}
         <section className="space-y-4 rounded border border-border p-5">
-          <h3 className="text-lg font-bold text-foreground">Creative direction</h3>
+          <div><h3 className="text-lg font-bold text-foreground">Creative direction</h3><p className="mt-1 text-sm text-muted">Optional. Leave these blank to let BNL choose the sound and angle.</p></div>
           <div className="grid gap-4 md:grid-cols-2"><Field label="Genre blend / musical direction"><input className={inputClass} value={options.genres} placeholder="Let BNL choose, or give the sound a direction" onChange={e => { setOptions({ ...options, genres: e.target.value }); markDirty("options"); }} /></Field><Field label="Era"><input className={inputClass} value={options.era} placeholder="BNL chooses within 1970–2010 by default" onChange={e => { setOptions({ ...options, era: e.target.value }); markDirty("options"); }} /></Field></div>
           <Field label="Angle, mood, moments or a wild idea"><textarea rows={3} className={inputClass} value={options.direction} onChange={e => { setOptions({ ...options, direction: e.target.value }); markDirty("options"); }} placeholder="Give BNL a starting point—or leave him room to surprise you." /></Field>
-          <Field label="Feedback to carry into the next draft"><textarea rows={2} className={inputClass} value={options.feedback} onChange={e => { setOptions({ ...options, feedback: e.target.value }); markDirty("options"); }} placeholder="What worked? What should he try differently?" /></Field>
-          <div className="flex flex-wrap gap-2"><button type="button" disabled={busy} className={buttonClass} onClick={async () => { if (await act("saveOptions", { options })) clearDirty("options"); }}>Save direction & feedback</button><button type="button" disabled={busy || pending} className={primaryClass} onClick={async () => { if (await act("generate", { options })) clearDirty("options"); }}>Save & generate draft</button></div>
-          <p className="text-xs text-muted">Generation saves and uses the direction above. Each new draft keeps the previous version.</p>
+          {(doc.versions.length > 0 || options.feedback) && <Field label="Feedback for the next draft or polish"><textarea rows={2} className={inputClass} value={options.feedback} onChange={e => { setOptions({ ...options, feedback: e.target.value }); markDirty("options"); }} placeholder="What should BNL keep? What should change?" /></Field>}
+          <div className="flex flex-wrap items-start justify-between gap-5 border-t border-border pt-4">
+            <div className="space-y-2"><button type="button" disabled={busy} className={buttonClass} onClick={async () => { if (await act("saveOptions", { options })) clearDirty("options"); }}>Save directions</button><p className="text-xs text-muted">Keep these notes for later.</p>{dirtySections.includes("options") && <p className="text-xs text-amber-300">Unsaved directions</p>}</div>
+            <div className="max-w-sm space-y-2"><button type="button" disabled={busy || pending} className={primaryClass} onClick={async () => { if (await act("generate", { options })) clearDirty("options"); }}>{doc.versions.length ? "Generate new draft" : "Generate draft"}</button><p className="text-xs text-muted">Saves these directions and writes lyrics + a Style prompt.{doc.versions.length > 0 && " Previous versions stay saved."}</p></div>
+          </div>
         </section>
         <section className="space-y-4 rounded border border-border p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="text-lg font-bold text-foreground">The song</h3><a href="https://suno.com/create" target="_blank" rel="noopener noreferrer" className={primaryClass}>Open Suno ↗</a></div>
+          <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="text-lg font-bold text-foreground">Lyrics & Style</h3><a href="https://suno.com/create" target="_blank" rel="noopener noreferrer" className={primaryClass}>Open Suno ↗</a></div>
           <Field label="Title"><input className={inputClass} value={title} onChange={e => { setTitle(e.target.value); markDirty(); }} placeholder="BNL-01 — your next original" /></Field>
           <div className="grid gap-5 lg:grid-cols-[1.5fr_1fr]">
             <div><div className="mb-2 flex items-center justify-between"><label htmlFor={`lyrics-${doc.showId}`} className="text-xs font-bold text-muted">Lyrics</label><button type="button" className={buttonClass} onClick={() => copy(lyrics, "Lyrics")}>Copy lyrics</button></div><textarea id={`lyrics-${doc.showId}`} rows={22} value={lyrics} onChange={e => { setLyrics(e.target.value); markDirty(); }} className={`${inputClass} font-mono leading-relaxed`} placeholder="BNL’s lyrics arrive here. Edit freely." /></div>
             <div className="space-y-3"><div className="flex items-center justify-between"><label htmlFor={`style-${doc.showId}`} className="text-xs font-bold text-muted">Style prompt</label><button type="button" className={buttonClass} onClick={() => copy(style, "Style prompt")}>Copy style</button></div><textarea id={`style-${doc.showId}`} rows={9} value={style} onChange={e => { setStyle(e.target.value); markDirty(); }} className={`${inputClass} leading-relaxed`} placeholder="The separate, paste-ready sound direction." /><p className="text-xs text-muted">{style.length} characters · BNL aims for 250–400</p>
               <p className="text-xs leading-relaxed text-muted">Save the exact lyrics and Style you use in Suno. Your chosen audio will be linked to that saved version.</p>
               {doc.versions.find(v => v.id === versionChoice)?.note && <p className="text-xs text-muted">{doc.versions.find(v => v.id === versionChoice)?.note}</p>}
-              <button type="button" disabled={busy || pending || !doc.versions.length} className={buttonClass} onClick={async () => { if (await act("polish", { options })) clearDirty("options"); }}>Request one light polish</button>
-              <p className="text-xs text-muted">Polishes the latest saved draft once, using saved feedback. The original stays available.</p>
+              <button type="button" disabled={busy || pending || !doc.versions.length} className={buttonClass} onClick={async () => { if (await act("polish", { options })) clearDirty("options"); }}>Polish saved draft</button>
+              <p className="text-xs text-muted">Saves your directions and feedback, then lightly revises the latest saved draft once. Keeps the original.</p>
             </div>
           </div>
           <details className="rounded border border-border p-3"><summary className="cursor-pointer text-sm text-foreground">Catalog notes · topics, hooks & sound</summary><div className="mt-4 grid gap-3 md:grid-cols-2">{["angle", "hook", "topics", "imagery", "genres", "era", "arrangement"].map(key => <Field key={key} label={key.charAt(0).toUpperCase() + key.slice(1)}><input className={inputClass} value={palette[key] ?? ""} onChange={e => { setPalette({ ...palette, [key]: e.target.value }); markDirty("draft"); }} /></Field>)}</div><p className="mt-3 text-xs text-muted">Saved with the draft. These describe the song and help BNL explore different ideas next time.</p></details>
-          <div className="flex flex-wrap items-center gap-3"><button type="button" disabled={busy || pending || !title.trim() || !lyrics.trim()} className={primaryClass} onClick={async () => { if (await act("edit", { content: { title, lyrics, style, palette } })) clearDirty("draft"); }}>Save draft</button><button type="button" className={buttonClass} onClick={() => copy(`${title}\n\n${lyrics}\n\nStyle\n${style}`, "Song package")}>Copy full package</button>{dirty && <span className="text-xs text-amber-300">You have local changes. Save each edited section.</span>}</div>
+          <div className="flex flex-wrap items-center gap-3"><button type="button" disabled={busy || pending || !title.trim() || !lyrics.trim()} className={primaryClass} onClick={async () => { if (await act("edit", { content: { title, lyrics, style, palette } })) clearDirty("draft"); }}>Save edits</button><button type="button" className={buttonClass} onClick={() => copy(`${title}\n\n${lyrics}\n\nStyle\n${style}`, "Song package")}>Copy full package</button>{dirtySections.includes("draft") && <span className="text-xs text-amber-300">Unsaved lyric, Style or catalog edits</span>}</div>
           {!!doc.versions.length && <div className="flex flex-wrap items-end gap-2 border-t border-border pt-4"><div className="min-w-64 flex-1"><Field label="Version history"><select className={inputClass} value={versionChoice} onChange={e => setVersionChoice(e.target.value)}>{doc.versions.map(v => <option value={v.id} key={v.id}>Version {v.ordinal} · {v.kind} · {v.title}</option>)}</select></Field></div><button type="button" className={buttonClass} onClick={() => { const v = doc.versions.find(v => v.id === versionChoice); if (v && (!dirty || window.confirm("Load this version over unsaved local changes?"))) { setTitle(v.title); setLyrics(v.lyrics); setStyle(v.style); setPalette(v.palette); markDirty("draft"); } }}>Load version</button><button type="button" disabled={busy || pending} className={buttonClass} onClick={() => act("restore", { restoreVersion: versionChoice })}>Confirm restore as new version</button></div>}
         </section>
-        <section className="space-y-4 rounded border border-border p-5"><h3 className="text-lg font-bold text-foreground">Choose the take</h3><p className="text-sm text-muted">Create and select your song in Suno, then bring the MP3 or WAV here. Alternate takes stay available.</p>
+        <section className="space-y-4 rounded border border-border p-5"><h3 className="text-lg font-bold text-foreground">Upload & choose audio</h3><p className="text-sm text-muted">Create and select your song in Suno, then bring the MP3 or WAV here. Alternate takes stay available.</p>
           <Field label="Saved prompt version used for this audio"><select className={inputClass} value={uploadVersion} onChange={e => setUploadVersion(e.target.value)}><option value="">Choose a saved version</option>{doc.versions.map(v => <option key={v.id} value={v.id}>Version {v.ordinal} · {v.title}</option>)}</select></Field>
           <Field label="Upload audio · MP3 / WAV · up to 100 MB"><input type="file" accept=".mp3,.wav,audio/mpeg,audio/wav" disabled={busy || !uploadVersion} className={inputClass} onChange={e => { const file = e.target.files?.[0]; if (file) void uploadAudio(file); e.target.value = ""; }} /></Field>
           {pendingUpload && <div className="space-y-2 rounded border border-accent/50 p-3"><p className="text-sm text-foreground">{pendingUpload.filename} → {snapshot.show.title} · Version {doc.versions.find(v => v.id === pendingUpload.versionId)?.ordinal}</p><button type="button" disabled={busy} className={primaryClass} onClick={async () => { if (await act("attachAudio", pendingUpload)) setPendingUpload(null); }}>Confirm upload & show attachment</button></div>}

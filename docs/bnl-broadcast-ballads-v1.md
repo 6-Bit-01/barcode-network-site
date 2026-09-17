@@ -252,3 +252,7 @@ mobile widths, including failed saves, manual aliases/cards and later removal.
 No production generation, upload, profile tagging or publication was performed.
 Rollback: revert the site PR and redeploy. Retain existing Ballad documents and
 audio; the optional link fields need no data cleanup.
+
+## Archive placement and reviewed autofill
+
+Each released song is presented inside its Broadcast Archive show card. Old show-specific Ballad URLs redirect there. The Hub, Terminal and BNL dossier explain the feature without duplicating songs. The public media endpoint and publication snapshot remain authoritative. The linking picker now reads the primary artist catalog, accepts complete names containing punctuation, and prefills clear matches on opening linking mode. Explicitly unlinked names are remembered per version when saved. Catalog corrections are separate admin operations in the queue store, not side effects of tagging a song. See [implementation and deployment checks](ballad-archive-artist-credits.md).

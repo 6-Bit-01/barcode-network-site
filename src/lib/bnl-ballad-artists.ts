@@ -1,22 +1,18 @@
-import { normalizeBroadcastArchiveProjectKey } from "@/lib/broadcast-archive";
+import { normalizeBroadcastArchiveProjectKey, resolveArchiveArtist } from "@/lib/broadcast-archive";
 
-export type BalladArtistProfile = { projectKey: string; projectLabel: string };
+export type BalladArtistProfile = { projectKey: string; projectLabel: string; aliases?: string[] };
 /** An empty name adds an artist card without tagging any words in the song. */
 export type BalladArtistLink = BalladArtistProfile & { name: string };
 const nameKey = (value: string) => normalizeBroadcastArchiveProjectKey(value);
 const searchKey = (value: string) => nameKey(value).normalize("NFKD").replace(/\p{M}/gu, "").replace(/[^\p{L}\p{N}]/gu, "");
 
-export function isCombinedBalladArtist(label: string): boolean {
-  return /(?:\s+(?:and|with|x|vs\.?|feat\.?|featuring|ft\.?)\s+|[&+,/;|])/iu.test(label);
-}
-
 /** Only the existing public Archive projection supplies selectable destinations. */
 export function balladArtistProfiles(artists: readonly BalladArtistProfile[]): BalladArtistProfile[] {
   const unique = new Map<string, BalladArtistProfile>();
   for (const artist of artists) {
-    if (!artist.projectLabel?.trim() || artist.projectLabel.length > 200 || isCombinedBalladArtist(artist.projectLabel)) continue;
+    if (!artist.projectLabel?.trim() || artist.projectLabel.length > 200) continue;
     if (artist.projectKey !== nameKey(artist.projectLabel)) continue;
-    unique.set(artist.projectKey, { projectKey: artist.projectKey, projectLabel: artist.projectLabel });
+    unique.set(artist.projectKey, { projectKey: artist.projectKey, projectLabel: artist.projectLabel, ...(artist.aliases ? { aliases: artist.aliases.filter(alias => typeof alias === "string" && alias.length <= 200).slice(0, 100) } : {}) });
   }
   return [...unique.values()].sort((a, b) => a.projectLabel.localeCompare(b.projectLabel));
 }
@@ -44,7 +40,7 @@ export function resolveBalladArtistLinks(value: unknown, profiles: readonly Ball
   const allowed = new Map(balladArtistProfiles(profiles).map(profile => [profile.projectKey, profile]));
   const links = value.map(item => {
     if (!item || typeof item !== "object" || typeof item.name !== "string" || item.name.trim().length > 120 || /[\r\n]/.test(item.name)) throw new Error("Use a short name for each artist tag.");
-    const profile = allowed.get(item.projectKey);
+    const profile = resolveArchiveArtist([...allowed.values()], item.projectKey);
     if (!profile) throw new Error("An artist card is no longer available. Choose an individual artist from the current Archive, or remove that link.");
     return { ...profile, name: item.name.trim() };
   });
@@ -63,13 +59,13 @@ function distance(a: string, b: string): number {
   return previous[b.length];
 }
 
-/** Suggestions rank similar labels; only an explicit operator choice creates a link. */
+/** Rank the current primary catalog and reviewed aliases, never infer a global merge. */
 export function suggestBalladArtists(name: string, profiles: readonly BalladArtistProfile[]): BalladArtistProfile[] {
   const needle = searchKey(name).slice(0, 120);
   if (!needle) return [];
   return balladArtistProfiles(profiles).map(profile => {
     const label = searchKey(profile.projectLabel);
-    const score = label === needle ? 1 : (label.includes(needle) || needle.includes(label)) && Math.min(label.length, needle.length) >= 3 ? 0.85 : Math.abs(label.length - needle.length) <= 4 ? 1 - distance(needle, label) / Math.max(needle.length, label.length) : 0;
+    const score = label === needle || profile.aliases?.some(alias => searchKey(alias) === needle) ? 1 : (label.includes(needle) || needle.includes(label)) && Math.min(label.length, needle.length) >= 3 ? 0.85 : Math.abs(label.length - needle.length) <= 4 ? 1 - distance(needle, label) / Math.max(needle.length, label.length) : 0;
     return { profile, score };
   }).filter(item => item.score >= 0.68).sort((a, b) => b.score - a.score || a.profile.projectLabel.localeCompare(b.profile.projectLabel)).slice(0, 8).map(item => item.profile);
 }
@@ -102,11 +98,26 @@ export function suggestedBalladNames(text: string, profiles: readonly BalladArti
   const chunks = text.slice(0, 1500).split(/[,;\n|]|\s+(?:and|with)\s+|\s*&\s*/iu);
   for (const chunk of chunks) {
     const lead = chunk.split(/\s+[—–-]\s+|:/u)[0];
-    for (const match of lead.matchAll(/[\p{Lu}\p{N}][\p{L}\p{N}’'._-]*(?:\s+[\p{Lu}\p{N}][\p{L}\p{N}’'._-]*){0,5}/gu)) {
+    for (const match of lead.matchAll(/[\p{Lu}\p{N}][\p{L}\p{N}’'._/-]*(?:\s+[\p{Lu}\p{N}][\p{L}\p{N}’'._/-]*){0,5}/gu)) {
       const name = match[0].replace(/[.]+$/, "").trim();
       if (name.length >= 2 && !/^(?:The|A|An|I|BNL-01|People|Lyrics|Verse|Chorus|Bridge)$/i.test(name)) names.push(name);
     }
   }
   const unique = [...new Map(names.map(name => [nameKey(name), name])).values()];
   return unique.filter(name => !unique.some(other => name !== other && nameKey(other).includes(nameKey(name)))).sort((a, b) => text.toLocaleLowerCase().indexOf(a.toLocaleLowerCase()) - text.toLocaleLowerCase().indexOf(b.toLocaleLowerCase())).slice(0, 50);
+}
+
+/** Autofill only a clear best match; the saved version remains the publication boundary. */
+export function autofillBalladArtistLinks(names: string[], profiles: readonly BalladArtistProfile[], links: BalladArtistLink[], reviewed: readonly string[] = []): BalladArtistLink[] {
+  const result = [...links];
+  const decided = new Set([...reviewed, ...links.map(link => link.name)].map(nameKey));
+  for (const name of names) {
+    if (decided.has(nameKey(name))) continue;
+    const suggestions = suggestBalladArtists(name, profiles);
+    if (!suggestions.length) continue;
+    const exact = suggestions.filter(profile => [profile.projectLabel, ...(profile.aliases ?? [])].some(label => searchKey(label) === searchKey(name)));
+    const best = exact.length === 1 ? exact[0] : suggestions.length === 1 ? suggestions[0] : null;
+    if (best) result.push({ name, projectKey: best.projectKey, projectLabel: best.projectLabel });
+  }
+  return result.slice(0, 50);
 }

@@ -240,6 +240,7 @@ export function DossierPageView({ dossier }: { dossier: DossierPageViewModel }) 
                     Summary
                   </p>
                   <p>{dossier.summary}</p>
+                  {dossier.id === "EN-011" && <a className="mt-4 inline-block font-bold text-accent underline underline-offset-4" href="/radio/archive">Explore Broadcast Ballads with their shows in the Archive →</a>}
                 </div>
 
                 {dossier.notes && (

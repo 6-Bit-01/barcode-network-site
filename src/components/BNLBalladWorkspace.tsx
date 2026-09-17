@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { suggestedBalladNames } from "@/lib/bnl-ballad-artists";
 import { upload } from "@vercel/blob/client";
 import Link from "next/link";
 import { DEFAULT_BALLAD_OPTIONS, DEFAULT_BALLAD_PRESENTATION, BALLAD_LINER_NOTE_FIELDS, balladLinerNotesForVersion, balladArtistLinksForVersion, normalizeBalladLinerNotes, type BalladLinerNotes, type BalladCommand, type BalladConfig, type BalladDocument, type BalladOptions, type BalladPresentation, type BalladShow } from "@/lib/bnl-ballads";
@@ -190,6 +191,7 @@ export function BNLBalladWorkspace({ initialShowId = "" }: { initialShowId?: str
     setAudioChoice(doc.audio.find(a => a.versionId === id && a.id === doc.selectedAudioId)?.id ?? doc.audio.find(a => a.versionId === id)?.id ?? "");
     return true;
   }
+  const artistNamesReviewed = [...new Set([...(doc?.artistNamesReviewedByVersion?.[versionChoice] ?? []), ...suggestedBalladNames(linerNotes.mentions, snapshot?.artists ?? []), ...artistLinks.map(link => link.name).filter(Boolean)])].slice(0, 100);
   const workingVersion = doc?.versions.find(v => v.id === versionChoice);
   const releaseTake = doc?.audio.find(a => a.id === doc.selectedAudioId);
   const releaseVersion = doc?.versions.find(v => v.id === releaseTake?.versionId);
@@ -210,7 +212,7 @@ export function BNLBalladWorkspace({ initialShowId = "" }: { initialShowId?: str
       options: ["saveOptions", { options }],
       automation: ["saveAutomation", { enabled: automation, revision: snapshot?.config.revision }],
       linerNotes: ["saveLinerNotes", { versionId: notesVersionId, linerNotes }],
-      artistLinks: ["saveArtistLinks", { versionId: notesVersionId, artistLinks }],
+      artistLinks: ["saveArtistLinks", { versionId: notesVersionId, artistLinks, artistNamesReviewed }],
       presentation: ["savePresentation", { presentation }],
       draft: ["edit", { sourceVersion: versionChoice || undefined, content: { title, lyrics, style, palette } }],
     };
@@ -231,7 +233,7 @@ export function BNLBalladWorkspace({ initialShowId = "" }: { initialShowId?: str
   return <fieldset disabled={busy || pending} className="space-y-6" aria-label="BNL Broadcast Ballads workspace">
     <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border pb-5">
       <div><p className="text-xs uppercase tracking-[0.28em] text-accent">BNL-01 / Recording desk</p><h2 className="mt-2 text-3xl font-black text-foreground">Broadcast Ballads</h2><p className="mt-2 max-w-2xl text-sm text-muted">One broadcast. A new BNL original. Shape the words, find the sound, choose the take.</p></div>
-      <div className="flex flex-wrap gap-2"><Link href="/admin" className={buttonClass}>Admin dashboard</Link><Link href="/radio/ballads" className={buttonClass}>View discography ↗</Link></div>
+      <div className="flex flex-wrap gap-2"><Link href="/admin" className={buttonClass}>Admin dashboard</Link><Link href="/radio/archive" className={buttonClass}>Broadcast Archive ↗</Link></div>
     </div>
     {error && <p role="alert" className="rounded border border-red-400/50 bg-red-400/5 p-3 text-sm text-red-300">{error}</p>}
     {message && <p role="status" className="rounded border border-accent/40 p-3 text-sm text-accent">{message}</p>}
@@ -300,10 +302,10 @@ export function BNLBalladWorkspace({ initialShowId = "" }: { initialShowId?: str
         <section id="ballad-artist-links" tabIndex={-1} hidden={stage !== "Song"} className="space-y-4 rounded border border-border p-5">
           <p className="text-xs text-accent">Artist links for working Version {workingVersion?.ordinal ?? "—"}</p>
           <fieldset disabled={!versionChoice}>
-            <BalladArtistLinkEditor key={`${doc.showId}:${versionChoice}`} mentions={linerNotes.mentions} profiles={snapshot.artists ?? []} links={artistLinks} open={linkingMode} onOpenChange={setLinkingMode} onChange={links => { setArtistLinks(links); markDirty("artistLinks"); }} />
+            <BalladArtistLinkEditor key={`${doc.showId}:${versionChoice}`} mentions={linerNotes.mentions} profiles={snapshot.artists ?? []} links={artistLinks} reviewed={doc.artistNamesReviewedByVersion?.[versionChoice]} open={linkingMode} onOpenChange={setLinkingMode} onChange={links => { setArtistLinks(links); markDirty("artistLinks"); }} />
           </fieldset>
           <p className="text-xs text-muted">Save these selections, then publish the confirmed recording to update the public song. Reopen linking mode any time to change or remove a tag. Lyrics stay unchanged.</p>
-          <button type="button" disabled={busy || !versionChoice} className={primaryClass} onClick={async () => { if (await act("saveArtistLinks", { versionId: versionChoice, artistLinks })) clearDirty("artistLinks"); }}>Save artist links</button>
+          <button type="button" disabled={busy || !versionChoice} className={primaryClass} onClick={async () => { if (await act("saveArtistLinks", { versionId: versionChoice, artistLinks, artistNamesReviewed })) clearDirty("artistLinks"); }}>Save artist links</button>
           {dirtySections.includes("artistLinks") && <p className="text-xs text-amber-300">Unsaved artist links</p>}
         </section>
         <section id="ballad-release" tabIndex={-1} hidden={stage !== "Publish"} className="space-y-4 rounded border border-border p-5"><h3 className="text-lg font-bold text-foreground">Release details</h3>

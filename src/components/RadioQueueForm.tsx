@@ -1,6 +1,7 @@
 /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps, @next/next/no-img-element */
 "use client";
 
+import { ArtistCreditFields } from "@/components/ArtistCreditFields";
 import { upload } from "@vercel/blob/client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -129,6 +130,8 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
   const [routingLockRemaining, setRoutingLockRemaining] = useState(0);
   const finalSubmitIntent = useRef(false);
   const [artist, setArtist] = useState("");
+  const [creditDecision, setCreditDecision] = useState<"whole" | "split" | "">("");
+  const [originalArtist, setOriginalArtist] = useState("");
   const [title, setTitle] = useState("");
   const [link, setLink] = useState("");
   const [tiktokHandle, setTikTokHandle] = useState("");
@@ -378,6 +381,8 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
     setTitle("");
     setLink("");
     setCollaboratorNames("");
+    setCreditDecision("");
+    setOriginalArtist("");
     setNote("");
     setFile(null);
     setFileInputKey((value) => value + 1);
@@ -448,6 +453,8 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
         title: title.trim(),
         tiktokHandle: tiktokHandle.trim(),
         collaboratorNames: collaboratorNames.trim(),
+        artistCreditDecision: creditDecision,
+        originalArtistName: originalArtist || artist.trim(),
         contactEmail: contactEmail.trim(),
         submitterToken,
         acceptedLegal: true,
@@ -653,10 +660,9 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
         {step === "track" ? (
           <div className="space-y-3">
             <div className="grid gap-2.5 sm:grid-cols-2">
-              <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Artist name</span><input value={artist} onChange={(e) => setArtist(e.target.value)} className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
+              <ArtistCreditFields artist={artist} collaborators={collaboratorNames} decision={creditDecision} onChange={(name, features, decision, original) => { setArtist(name); setCollaboratorNames(features); setCreditDecision(decision); if (original) setOriginalArtist(original); }} />
               <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Song title</span><input value={title} onChange={(e) => setTitle(e.target.value)} className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
               <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">TikTok handle</span><input value={tiktokHandle} onChange={(e) => setTikTokHandle(e.target.value)} placeholder="@six.bit" className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
-              <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Featured/collaborator artist(s)</span><input value={collaboratorNames} onChange={(e) => setCollaboratorNames(e.target.value)} placeholder="Optional" className="w-full bg-background border border-border px-3 py-2 text-sm" /></label>
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
               <button type="button" onClick={() => setMode("link")} aria-pressed={mode === "link"} className={`flex min-h-[44px] items-center cursor-pointer border p-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${mode === "link" ? "border-accent bg-accent text-background" : "border-border hover:border-accent/50 hover:bg-accent/10"}`}><span className={`text-xs uppercase tracking-widest ${mode === "link" ? "text-background" : "text-muted"}`}>Use Track Link</span></button>

@@ -606,7 +606,8 @@ test("Radio and Archive reconcile a 50-submission show: 21 playback receipts plu
   assert.equal(archive.latestShow.trackRoster.length, 41);
   assert.equal(archive.latestShow.trackRoster.filter((track) => track.broadcastEvidence === "playback_recorded").length, 21);
   assert.equal(archive.latestShow.trackRoster.filter((track) => track.broadcastEvidence === "external_host_finished").length, 20);
-  assert.equal(archive.artists.length, 25);
+  assert.equal(archive.artists.length, 34, "accepted primary artists retain cards before airplay");
+  assert.equal(archive.artists.filter(artist => artist.tracks.length > 0).length, 25);
   assert.equal(feature.show.tracksInShow, 41);
   assert.equal(feature.show.artistCredits, 25);
   assert.equal(feature.show.hostFinishedExternalTracks, 20);

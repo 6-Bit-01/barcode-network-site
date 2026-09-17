@@ -14,7 +14,7 @@ export function normalizeBroadcastArchiveProjectKey(value: unknown): string {
 
 export function broadcastArchiveArtistHref(projectLabelOrKey: string): string {
   const key = normalizeBroadcastArchiveProjectKey(projectLabelOrKey);
-  return `/radio/archive?view=artists&artist=${encodeURIComponent(key)}`;
+  return `/radio/archive?view=artists&artist=${encodeURIComponent(key)}#artist-card`;
 }
 
 export function broadcastArchiveShowHref(sessionId: string): string {

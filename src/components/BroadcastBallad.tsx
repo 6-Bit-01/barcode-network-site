@@ -8,7 +8,7 @@ export function BroadcastBallad({ ballad }: { ballad: PublicBallad }) {
   return <section id="broadcast-ballad" className="mt-6 scroll-mt-24 overflow-hidden rounded border border-accent/50 bg-accent/5" aria-label="This broadcast’s Ballad">
     <div className="space-y-4 p-5"><div className="flex flex-col gap-4 sm:flex-row sm:items-center">
       {ballad.presentation.artworkUrl && <img src={ballad.presentation.artworkUrl} alt={`Cover for ${ballad.version.title}`} className="h-24 w-24 shrink-0 rounded object-cover" />}
-      <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-widest text-accent">This broadcast’s Ballad</p><h3 className="mt-2 break-words text-2xl font-black text-foreground">{ballad.version.title}</h3><p className="mt-1 text-sm text-muted">By <Link href={`/bnl/music#release-${encodeURIComponent(ballad.show.sessionId)}`} className="text-accent underline underline-offset-4">BNL-01 · View discography</Link></p></div>
+      <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-widest text-accent">This broadcast’s Ballad</p><h3 className="mt-2 break-words text-2xl font-black text-foreground">{ballad.version.title}</h3><p className="mt-1 text-sm text-muted">By <Link href={`/bnl/music?release=${encodeURIComponent(ballad.show.sessionId)}#release-${encodeURIComponent(ballad.show.sessionId)}`} className="text-accent underline underline-offset-4">BNL-01 · View discography</Link></p></div>
       </div>
       <BalladPlayback ballad={ballad} />
       <p className="text-xs text-muted">{ballad.presentation.credits}</p>

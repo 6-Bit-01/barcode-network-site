@@ -10,7 +10,7 @@ const require = createRequire(import.meta.url);
 function load(file, mocks = {}) {
   const code = ts.transpileModule(readFileSync(file, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } }).outputText;
   const cjsModule = { exports: {} };
-  vm.runInNewContext(code, { module: cjsModule, exports: cjsModule.exports, require: id => mocks[id] ?? (id === "@/components/SiteAudioProvider" ? { useSiteAudio: () => ({ track: null, currentTime: 0, duration: 0, status: "idle", controller: {} }) } : id === "next/link" ? (({ href, children, ...props }) => React.createElement("a", { href, ...props }, children)) : id === "next/form" ? (({ children, ...props }) => React.createElement("form", props, children)) : undefined) ?? (id.startsWith("@/") ? load(`src/${id.slice(2)}${existsSync(`src/${id.slice(2)}.tsx`) ? ".tsx" : ".ts"}`, mocks) : require(id)), structuredClone, process, console, Buffer, URL, Request, Response, Date, JSON, Set }, { filename: file });
+  vm.runInNewContext(code, { module: cjsModule, exports: cjsModule.exports, require: id => mocks[id] ?? (id === "@/components/SiteAudioProvider" ? { useSiteAudio: () => ({ track: null, currentTime: 0, duration: 0, status: "idle", controller: {} }) } : id === "next/link" ? (({ href, children, ...props }) => React.createElement("a", { href, ...props }, children)) : id === "next/form" ? (({ children, ...props }) => React.createElement("form", props, children)) : undefined) ?? (id.startsWith("@/") ? load(`src/${id.slice(2)}${existsSync(`src/${id.slice(2)}.tsx`) ? ".tsx" : ".ts"}`, mocks) : require(id)), structuredClone, process, console, Buffer, URL, URLSearchParams, Request, Response, Date, JSON, Set }, { filename: file });
   return cjsModule.exports;
 }
 const contract = load("src/lib/bnl-ballads.ts");
@@ -434,7 +434,7 @@ test("show card has a directly visible Play control for the shared player and it
   const { BroadcastBallad } = load("src/components/BroadcastBallad.tsx", { "next/link": linkMock });
   const html = renderToStaticMarkup(React.createElement(BroadcastBallad, { ballad: contract.publicBallad(doc, show) }));
   assert.ok(html.indexOf("Play song") < html.indexOf("<details"));
-  assert.ok(html.includes('href="/bnl/music#release-show-1"'));
+  assert.ok(html.includes('href="/bnl/music?release=show-1#release-show-1"'));
   assert.ok(html.includes(`aria-label="Play ${version.title}"`));
   assert.equal((html.match(/<audio/g) ?? []).length, 0);
 });

@@ -1,9 +1,12 @@
 import type { PublicBallad } from "@/lib/bnl-ballads";
 import { broadcastArchiveShowHref } from "@/lib/broadcast-archive";
+import { balladGenres } from "@/lib/ballad-catalog";
+import { balladDownloadHref } from "@/lib/ballad-download";
 
 export type SiteAudioTrack = {
   key: string; src: string; title: string; artist: string;
   artworkUrl: string; showHref: string; duration: number | null;
+  showTitle?: string; showDate?: string; about?: string; genres?: string[]; credits?: string; downloadHref?: string;
 };
 export type SiteAudioSnapshot = {
   track: SiteAudioTrack | null;
@@ -28,6 +31,9 @@ export function balladAudioTrack(ballad: PublicBallad): SiteAudioTrack {
     src: `/api/ballads/media?showId=${encodeURIComponent(ballad.show.sessionId)}&audioId=${encodeURIComponent(ballad.audioId)}`,
     title: ballad.version.title, artist: "BNL-01", artworkUrl: ballad.presentation.artworkUrl,
     showHref: `${broadcastArchiveShowHref(ballad.show.sessionId)}#broadcast-ballad`, duration: ballad.duration,
+    showTitle: ballad.show.title, showDate: ballad.show.showDate,
+    about: ballad.linerNotes?.about?.slice(0, 320), genres: balladGenres(ballad), credits: ballad.presentation.credits,
+    downloadHref: balladDownloadHref(ballad.show.sessionId, ballad.audioId),
   };
 }
 

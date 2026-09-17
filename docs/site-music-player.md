@@ -1,7 +1,7 @@
 # BARCODE site music player
 
-The Archive show card remains the entry point for its published song. Pressing
-Play starts one audio element in the root layout and opens the BARCODE mini-player.
+The Archive show card and BNL’s discography both play the same published song.
+Pressing Play starts one audio element in the root layout and opens the BARCODE mini-player.
 The same recording and position survive internal navigation, artist links,
 discography searches and browser Back/Forward. Returning to the show exposes
 controls for the same player; it does not start a second recording.
@@ -9,7 +9,15 @@ controls for the same player; it does not start a second recording.
 ## Controls and presentation
 
 - Black/green BARCODE panel with Oxanium, release artwork or a barcode fallback,
-  title/artist, a link to the originating show, play/pause, seek, volume and mute.
+  title/artist, an explicit dated Show link, play/pause, seek, volume and mute.
+- Song info opens a short, dismissible popover with the published description,
+  genre tags, credits and links to the originating show/full story. Escape, outside
+  click and Close dismiss it. A different song or page closes the old popover.
+- Free download streams the same published recording for listening. Its filename
+  is `BARCODE_RADIO_<Song_Title>_<YYYY-MM-DD>.<mp3|wav>`, using the show date,
+  published title and delivered format. The attachment endpoint supports ranges
+  and UTF-8 filenames, sanitizes unsafe characters, and rechecks public eligibility.
+  It does not convert the audio or change embedded audio metadata.
 - Mobile starts compact; Expand exposes seeking and volume. Measured bottom space
   and safe-area padding keep the document's final controls reachable. The normal
   header/menu remain above the player.
@@ -69,7 +77,7 @@ Temporary fixture routes/audio are excluded from the published tree.
 After merging, wait for the normal Vercel Production deployment of `main` to be
 Ready. No VPS restart, migration, environment change or republishing is required.
 
-1. Open the published show's Archive card and press Play. Confirm the mini-player
+1. Open the published show’s Archive card or its Discography entry and press Play. Confirm the mini-player
    appears, identifies the released song and plays the existing recording.
 2. Use site links to visit BNL Hub, Discography, Database and an artist profile;
    use Back. Confirm the song continues without restarting. Its title returns to
@@ -81,3 +89,7 @@ Ready. No VPS restart, migration, environment change or republishing is required
 
 Rollback: revert this PR and redeploy. Published songs and saved artist links need
 no changes; the preceding version's inline show-card player returns.
+
+5. Open Song info, check its show/date and close with Escape. Use Free download
+   while playing: audio must continue and the filename must match the published
+   title/show date. An archived or unpublished recording must remain unavailable.

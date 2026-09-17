@@ -31,6 +31,8 @@ occupying the show slot. Archived material remains available in the admin worksp
   Feedback appears once there is a draft to discuss (or existing saved feedback).
   Pending and failed requests identify the actual action; errors offer the matching
   retry button, with the operational code tucked into expandable Error details.
+  Budget refusals identify the spending restriction and explain that Gemini was not
+  called. They do not encourage immediate retries or change BNL’s spending policy.
 - BNL makes one strong first draft. A producer can request one light polish.
   Neither operation invokes a judge or quality/rewrite loop. Original versions stay.
 - Suno creation/selection remains manual. This feature neither signs into Suno nor

@@ -19,10 +19,22 @@ function requestStatus(command: BalladCommand, hasVersions: boolean) {
       restore: "Restoring the selected version. It will appear below as a new saved version.",
     }[command.kind];
   }
+  if (command.error?.startsWith("budget_restricted:") || command.error === "local_model_budget_exhausted") {
+    const budgetReasons: Record<string, string> = {
+      monthly_target_pace: "Monthly spending is ahead of BNL’s target pace.",
+      daily_soft_limit: "BNL’s daily spending allowance is used up.",
+      monthly_hard_limit: "BNL’s monthly spending limit has been reached.",
+      interactive_and_journal_reserve: "The remaining budget is reserved for conversation and the Journal.",
+      journal_reserve: "The remaining budget is reserved for the Journal.",
+      unpriced_request_model: "The model’s cost could not be estimated.",
+      unpriced_monthly_usage: "Some recorded usage still needs a cost estimate.",
+    };
+    const reason = budgetReasons[command.error.split(":")[1]] ?? "BNL’s model budget is currently unavailable.";
+    return `Budget protection stopped this request before it reached Gemini. ${reason} ${hasVersions ? "Your saved versions are intact. " : ""}Try again once budget is available.`;
+  }
   const reasons: Record<string, string> = {
     generation_unavailable_try_manually: "BNL couldn’t generate this draft.",
     finalized_public_show_evidence_unavailable: "BNL couldn’t load this show’s source record.",
-    local_model_budget_exhausted: "BNL’s model budget is currently unavailable. Try again when it resets.",
     draft_changed_reload_workspace: "A newer draft was saved. Reload the workspace before trying again.",
     interrupted_generation_use_generate_to_retry: "The writing request was interrupted.",
     TimeoutError: "The writing request timed out.",

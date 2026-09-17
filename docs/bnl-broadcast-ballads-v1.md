@@ -29,6 +29,23 @@ controls stay collapsed. Publish previews the confirmed recording's saved title,
 lyrics, Style, story and credits, and explicitly flags a different working version.
 Publishing remains explicit and disabled with unsaved changes.
 
+The Next step panel and sticky action bar identify the first unfinished prerequisite
+in plain language. Publish lists every remaining prerequisite beside its disabled
+button, with direct Save / Confirm upload actions or a focused jump to Recording.
+Other changed sections save before a canonical song edit; the guide then waits for
+BNL's receipt. Failed saves retain the edits and their prerequisite. An uploaded
+file must be attached, and a saved take must explicitly be chosen with Use this
+recording. A Suno link is release metadata, not an audio attachment. Pending uploads
+also keep Publish disabled, even when an older recording is already confirmed.
+Once ready, the guide opens the exact release preview; it never publishes or starts
+a model request automatically. The Song, Recording and Publish tabs remain available
+for normal browsing. The displayed recording preview is labeled Release preview
+rather than claiming readiness while other steps remain.
+
+People in the lyrics remains public text, not an automatic artist identity match.
+The existing Deck/Archive artist URLs use the archive's normalized artist key;
+Ballad liner notes do not currently store a reviewed link to that key.
+
 Publish snapshots only the confirmed audio version's story in `published.linerNotes`.
 Saving later notes or generating another draft cannot change public text until an
 explicit Publish. Archive retains that published snapshot; an unpublished selection

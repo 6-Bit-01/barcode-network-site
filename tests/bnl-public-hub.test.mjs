@@ -405,7 +405,7 @@ test("Terminal BNL public experience uses bounded readers, commands, timestamps,
   assert.doesNotMatch(page, /sourceClass|trigger|adminNote|sections|hash|sourceWindow|memory/i);
 
   assert.match(terminal, /const primaryButtons = \["HELP", "MAP", "ORIGINS"\]/);
-  assert.match(terminal, /const bnlButtons = \[\{ label: "STATUS", command: "STATUS" \}, \{ label: "TRACE", command: "BNL-01" \}, \{ label: "RELAYS", command: "RELAYS" \}, \{ label: "JOURNAL", command: "BNL LOG" \}, \{ label: "HUB", command: "BNL HUB" \}, \{ label: "BALLADS", command: "BNL BALLADS" \}\]/);
+  assert.match(terminal, /const bnlButtons = \[\{ label: "STATUS", command: "STATUS" \}, \{ label: "TRACE", command: "BNL-01" \}, \{ label: "RELAYS", command: "RELAYS" \}, \{ label: "JOURNAL", command: "BNL LOG" \}, \{ label: "HUB", command: "BNL HUB" \}, \{ label: "MUSIC", command: "BNL MUSIC" \}\]/);
   assert.match(terminal, /const archiveButtons = \["DATABASE", "WHOIS 6 BIT", "TRANSMISSIONS", "RADIO", "RELEASES", "CLEAR", "LOCK"\]/);
   assert.match(terminal, /<nav aria-label="Archive command shortcuts"/);
   assert.match(terminal, /role="group" aria-labelledby="archive-index-bnl"/);

@@ -132,10 +132,16 @@ occupying the show slot. Archived material remains available in the admin worksp
 - Suno creation/selection remains manual. This feature neither signs into Suno nor
   calls an unofficial API. Optional model/settings/song URL and artwork URL are
   release details; the app hosts the uploaded audio using existing private Blob.
-- Public collection: `/radio/ballads`, optionally `?show=<sessionId>` or `?q=...`.
-  Entries credit BNL-01, play the chosen audio, and display its matching saved
-  lyrics, Style, catalog notes, credits and production details. Unpublished raw
-  drafts, feedback, source identifiers and private Blob URLs are not projected.
+- BNL’s discography: `/bnl/music`, optionally `?q=...`, presents his released
+  body of work: titles, artwork, publication dates, sound, credits and creative
+  notes. Broadcast Ballads is its current collection. Each entry links to its
+  broadcast’s show card, where the recording is directly playable above the
+  expandable lyrics/story. The show card links back to that discography entry.
+  Both views use the same public release snapshot; no second song store exists.
+  `/radio/ballads` redirects to the discography, preserving searches; legacy
+  `?show=<sessionId>` links still open the corresponding Archive player.
+  Unpublished drafts, feedback, source identifiers and private Blob URLs are
+  not projected.
 
 ## Contract and persistence
 
@@ -255,4 +261,4 @@ audio; the optional link fields need no data cleanup.
 
 ## Archive placement and reviewed autofill
 
-Each released song is presented inside its Broadcast Archive show card. Old show-specific Ballad URLs redirect there. The Hub, Terminal and BNL dossier explain the feature without duplicating songs. The public media endpoint and publication snapshot remain authoritative. The linking picker now reads the primary artist catalog, accepts complete names containing punctuation, and prefills clear matches on opening linking mode. Explicitly unlinked names are remembered per version when saved. Catalog corrections are separate admin operations in the queue store, not side effects of tagging a song. See [implementation and deployment checks](ballad-archive-artist-credits.md).
+A show card presents its Ballad as part of that broadcast, with the player immediately visible. BNL’s discography at `/bnl/music` presents the same release as part of his creative body of work, with artwork, publication date, sound, credits and creative notes. These are separate, linked perspectives: the discography links to the show’s player; the show’s BNL credit links to the exact discography entry. Hub navigation includes Discography. Terminal’s `BNL MUSIC` command opens it (`BNL BALLADS` remains an alias). The Database dossier retains its existing Hub link without an additional Ballad promotion. Old show-specific Ballad URLs redirect to their show; the old collection URL redirects to the discography. The public media endpoint and publication snapshot remain authoritative. The linking picker now reads the primary artist catalog, accepts complete names containing punctuation, and prefills clear matches on opening linking mode. Explicitly unlinked names are remembered per version when saved. Catalog corrections are separate admin operations in the queue store, not side effects of tagging a song. See [implementation and deployment checks](ballad-archive-artist-credits.md).

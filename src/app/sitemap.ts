@@ -20,6 +20,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${base}/radio/archive`, changeFrequency: "weekly", priority: 0.8 },
     { url: `${base}/database`, changeFrequency: "weekly", priority: 0.8 },
     { url: `${base}/bnl`, changeFrequency: "weekly", priority: 0.8 },
+    { url: `${base}/bnl/music`, changeFrequency: "weekly", priority: 0.7 },
     { url: `${base}/journal`, changeFrequency: "weekly", priority: 0.8 },
     { url: `${base}/releases`, changeFrequency: "monthly", priority: 0.7 },
     { url: `${base}/merch`, changeFrequency: "monthly", priority: 0.6 },

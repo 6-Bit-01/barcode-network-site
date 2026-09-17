@@ -9,15 +9,25 @@ is a short first-person note about the broadcast and creative direction; lyrical
 mentions and inspirations remain separate from recording credits. Search includes
 the released story and people. Empty fields do not produce blank public sections.
 
-The workspace's Track story & people section loads notes for the confirmed take's
-saved version, or the latest draft when no take is chosen. The producer can choose
-another saved version, edit four optional fields, and click Save track story.
-This uses the authenticated `saveLinerNotes` action with `versionId` and
-`linerNotes`; each field is bounded to 1,500 characters and the existing optimistic
-document revision applies. It stores overrides in optional `linerNotesByVersion`.
-Saving notes neither changes lyrics/audio nor queues a model request. Existing
-songs can receive manually entered notes without regeneration. Unsaved story edits
-participate in the workspace's existing dirty-state protection.
+The workspace has one working version. Broadcast selection and after-show automation
+stay at the top, followed by a large selected-show heading, Write with BNL,
+Version history, and Song / Recording / Publish. Generate new song is always
+visible. Optional creative direction is collapsible. Version selection loads
+lyrics, Style, catalog notes and story together and sets the upload's version.
+Polish this version targets the viewed saved version. Generation, polish and edit
+receipts automatically select the new saved version; pending/failed polls keep the
+current selection. Unsaved song/story edits require an explicit discard when
+switching versions; generation and publishing wait for saved changes. Pending
+uploads retain their exact version and block version switching.
+
+The four story fields remain optional and limited to 1,500 characters each.
+Save track story uses the authenticated `saveLinerNotes` action and optimistic
+revision check. It stores `linerNotesByVersion` overrides without a model call.
+Save other changed sections before Save edits, which queues a new canonical version.
+The Recording stage lists takes for the working version; archive/replacement
+controls stay collapsed. Publish previews the confirmed recording's saved title,
+lyrics, Style, story and credits, and explicitly flags a different working version.
+Publishing remains explicit and disabled with unsaved changes.
 
 Publish snapshots only the confirmed audio version's story in `published.linerNotes`.
 Saving later notes or generating another draft cannot change public text until an
@@ -59,10 +69,10 @@ occupying the show slot. Archived material remains available in the admin worksp
   returns its durable receipt; it does not pretend the canonical save completed.
   Reload does not overwrite dirty local fields. Draft edits, presentation edits
   and automation choices have explicit Save controls.
-- `Save directions` keeps the show’s notes for later. `Generate draft` saves and
-  uses the current directions to write lyrics and Style in one action; after a
-  saved version exists it reads `Generate new draft`. `Save edits` preserves
-  producer text changes, while `Polish saved draft` requests one light revision.
+- `Save directions` keeps the show’s notes for later. `Generate new song` saves and
+  uses the current directions to write lyrics and Style in one action. `Save edits`
+  preserves producer text changes, while `Polish this version` requests one light
+  revision of the selected saved version.
   Feedback appears once there is a draft to discuss (or existing saved feedback).
   Pending and failed requests identify the actual action; errors offer the matching
   retry button, with the operational code tucked into expandable Error details.
@@ -83,7 +93,7 @@ occupying the show slot. Archived material remains available in the admin worksp
 `GET /api/bnl/ballads`, authenticated with the existing `BNL_API_KEY`, returns
 `contractVersion: 1`, up to two pending `commands`, and `catalogVersions` selecting
 accepted/public songs for BNL's creative history. Commands carry an immutable ID,
-show ID/date, kind (`generate`, `polish`, `edit`, `restore`), expected `baseVersion`,
+show ID/date, kind (`generate`, `polish`, `edit`, `restore`), expected `baseVersion`, optional `sourceVersion` for the viewed edit/polish source,
 saved producer options and applicable content/restore target.
 
 `POST /api/bnl/ballads` accepts a saved bot receipt: `showId`, `commandId`,
@@ -102,9 +112,14 @@ prefix. Audio delivery reuses the existing byte-range response implementation.
 Anonymous playback checks current public-show eligibility and the one published
 song on every request. Archiving immediately removes that public access.
 
-The catalog is creative publication history, never evidence for facts, show events,
-Journal, canon, memory governance or a source dossier. No new fact memory adapter
-is registered.
+The catalog is creative publication history, never corroboration of show events,
+Journal, canon, memory governance or a source dossier. `sections.ballads` in the
+existing website read model exposes published title, artist, show identity/date and
+public song link only. It reuses the request's queue snapshot and the public archive
+eligibility filter. Missing storage produces an unavailable section and no-store
+response. No draft, raw output, lyrics, feedback or private audio URL is included.
+BNL renders this as release metadata with an explicit creative-authority boundary;
+no new fact-memory adapter is registered.
 
 ## Automation
 
@@ -147,3 +162,15 @@ Redis keys, private audio and bot SQLite tables; no history deletion is necessar
 
 Unchanged: native queue behavior, payment/Stripe, show lifecycle, production gates,
 Journal, Relay, factual memory, global Header/Footer/navigation and existing releases.
+
+## Workspace deployment and rollback
+
+Deploy the paired bot source-version support before merging/deploying the workspace.
+Old clients remain compatible with the new bot. No migration, credentials, budget,
+automation or publication setting changes are required. Revert the site first, then
+the bot if needed; retain all stored songs, receipts and audio. Validation uses
+isolated fixtures only. Owner acceptance after deployment: choose an older saved
+version and verify all Song fields plus the Recording version; switch versions with
+unsaved edits and cancel; inspect Publish's confirmed-version preview. A later
+explicit Generate or Polish should open its receipt's new version automatically.
+Publishing a real recording and public BNL interaction remain owner actions.

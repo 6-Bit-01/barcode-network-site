@@ -22,7 +22,7 @@ export type BalladCommand = {
   id: string; showId: string; showDate: string; kind: BalladVersion["kind"];
   baseVersion: string | null; options: BalladOptions; requestedAt: string;
   status: "queued" | "complete" | "failed"; error?: string;
-  content?: Pick<BalladVersion, "title" | "lyrics" | "style"> & { palette?: Record<string, string> }; restoreVersion?: string;
+  content?: Pick<BalladVersion, "title" | "lyrics" | "style"> & { palette?: Record<string, string> }; restoreVersion?: string; sourceVersion?: string;
 };
 export type BalladAudio = {
   id: string; versionId: string; url: string; pathname: string; filename: string;
@@ -105,7 +105,7 @@ export function applyBalladReceipt(doc: BalladDocument, receipt: { commandId: st
     if (!validVersion(receipt.version, doc.showId, command, doc.versions.length + 1)) throw new Error("Invalid draft receipt.");
     if (command.baseVersion !== (doc.versions.at(-1)?.id ?? null)) throw new Error("Draft changed.");
     next.versions.push(receipt.version);
-    const notesSource = command.kind === "restore" ? command.restoreVersion : command.kind === "edit" ? command.baseVersion : null;
+    const notesSource = command.kind === "restore" ? command.restoreVersion : command.kind === "edit" ? (command.sourceVersion ?? command.baseVersion) : null;
     if (notesSource && doc.linerNotesByVersion?.[notesSource]) {
       next.linerNotesByVersion = { ...next.linerNotesByVersion, [receipt.version.id]: normalizeBalladLinerNotes(doc.linerNotesByVersion[notesSource]) };
     }

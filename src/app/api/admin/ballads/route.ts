@@ -57,6 +57,10 @@ export async function POST(req: Request) {
         doc = { ...doc, options: { direction: string(o.direction, 6000), genres: string(o.genres, 1000), era: string(o.era, 150), feedback: string(o.feedback, 4000) } };
       }
       const command: BalladCommand = { id: randomUUID(), showId: show.sessionId, showDate: show.showDate, kind: body.action, baseVersion: doc.versions.at(-1)?.id ?? null, options: { ...doc.options }, requestedAt: new Date().toISOString(), status: "queued" };
+      if ((body.action === "polish" || body.action === "edit") && body.sourceVersion) {
+        if (!doc.versions.some(v => v.id === body.sourceVersion)) throw new Error("Saved version not found.");
+        command.sourceVersion = string(body.sourceVersion, 160);
+      }
       if (body.action === "edit") {
         command.content = { title: string(body.content?.title, 180), lyrics: string(body.content?.lyrics, 60000), style: string(body.content?.style, 10000) };
         if (!command.content.title.trim() || !command.content.lyrics.trim()) throw new Error("Give the draft a title and lyrics.");

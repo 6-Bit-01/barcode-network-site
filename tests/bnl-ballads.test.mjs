@@ -226,3 +226,27 @@ test("public page shows and searches the released story while escaping text and 
   const absent = renderToStaticMarkup(await page.default({ searchParams: Promise.resolve({ q: "private producer feedback" }) }));
   assert.ok(absent.includes("No ballads match"));
 });
+
+test("polish uses the viewed version while concurrency stays pinned to latest", async () => {
+  const { store } = setup();
+  const doc = draft(); doc.versions.push({ ...version, id: "draft-2", ordinal: 2, parentId: "draft-1" });
+  await store.saveBallad(doc, 0);
+  const route = load("src/app/api/admin/ballads/route.ts", { "@vercel/blob": {}, "@/lib/auth": { verifyAdminRequest: async () => true }, "@/lib/bnl-ballads-store": store, "@/lib/bnl-ballads": contract });
+  const request = sourceVersion => route.POST(new Request("https://test/api/admin/ballads", { method: "POST", body: JSON.stringify({ action: "polish", showId: "show-1", revision: 1, sourceVersion }) }));
+  assert.equal((await request("other-show-version")).status, 400);
+  const response = await request("draft-1");
+  assert.equal(response.status, 200);
+  const queued = (await response.json()).document.commands.at(-1);
+  assert.equal(queued.sourceVersion, "draft-1");
+  assert.equal(queued.baseVersion, "draft-2");
+});
+
+test("editing an older working version inherits that version's story overrides", () => {
+  let doc = draft();
+  doc = contract.saveBalladLinerNotes(doc, "draft-1", notes);
+  doc.versions.push({ ...version, id: "draft-2", ordinal: 2 });
+  doc = contract.saveBalladLinerNotes(doc, "draft-2", { ...notes, about: "Newer different story" });
+  doc.commands.push({ ...command, id: "edit-3", kind: "edit", sourceVersion: "draft-1", baseVersion: "draft-2" });
+  doc = contract.applyBalladReceipt(doc, { commandId: "edit-3", outcome: "complete", version: { ...version, id: "edit-3", ordinal: 3, parentId: "draft-2", kind: "edit" } });
+  assert.equal(contract.balladLinerNotesForVersion(doc, "edit-3").about, notes.about);
+});

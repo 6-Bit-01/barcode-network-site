@@ -5040,6 +5040,7 @@ export async function getQueueBnlReadProjections(
 export async function getQueueBnlReadSnapshot() {
   const store = await readStore();
   return {
+    getPublicBalladShows: () => buildQueuePublicStats({ ...store, playedOnly: true }).shows.filter(show => show.status === "archived").map(({ sessionId, title, showDate }) => ({ sessionId, title, showDate })),
     getState: async () => radioQueueStateFromStore(store),
     getShowLog: async (sessionId: string) => queueSessionShowLogFromStore(store, sessionId),
     getProjections: async (accessScope: Exclude<QueueSessionBnlAccessLevel, "none"> | null) =>

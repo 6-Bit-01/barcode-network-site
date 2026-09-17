@@ -16,14 +16,23 @@ occupying the show slot. Archived material remains available in the admin worksp
 - BNL's existing SQLite database owns immutable lyrics/Style revisions and command
   receipts. This site's Redis stores that projection, producer controls, audio
   attachments, the single selected song and public release snapshots.
-- Admin workspace: `/admin/ballads?show=<sessionId>`, linked from the existing
-  finished-session review. Confirm show selection, save direction/feedback,
+- Admin workspace: `/admin/ballads?show=<sessionId>`, linked directly from the
+  admin dashboard and the existing finished-session review. Confirm show selection, save direction/feedback,
   generate or edit lyrics, copy lyrics/Style separately, save the exact prompt
   version used in Suno, upload MP3/WAV, confirm attachment, confirm the song, publish.
 - Manual Save queues a canonical bot revision. The UI says queued until the bot
   returns its durable receipt; it does not pretend the canonical save completed.
   Reload does not overwrite dirty local fields. Draft edits, presentation edits
   and automation choices have explicit Save controls.
+- `Save directions` keeps the show’s notes for later. `Generate draft` saves and
+  uses the current directions to write lyrics and Style in one action; after a
+  saved version exists it reads `Generate new draft`. `Save edits` preserves
+  producer text changes, while `Polish saved draft` requests one light revision.
+  Feedback appears once there is a draft to discuss (or existing saved feedback).
+  Pending and failed requests identify the actual action; errors offer the matching
+  retry button, with the operational code tucked into expandable Error details.
+  Budget refusals identify the spending restriction and explain that Gemini was not
+  called. They do not encourage immediate retries or change BNL’s spending policy.
 - BNL makes one strong first draft. A producer can request one light polish.
   Neither operation invokes a judge or quality/rewrite loop. Original versions stay.
 - Suno creation/selection remains manual. This feature neither signs into Suno nor

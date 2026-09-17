@@ -42,9 +42,41 @@ a model request automatically. The Song, Recording and Publish tabs remain avail
 for normal browsing. The displayed recording preview is labeled Release preview
 rather than claiming readiness while other steps remain.
 
-People in the lyrics remains public text, not an automatic artist identity match.
-The existing Deck/Archive artist URLs use the archive's normalized artist key;
-Ballad liner notes do not currently store a reviewed link to that key.
+Artist linking is an optional mode beneath Track story & people. It suggests name
+chips from BNL's People in the lyrics text, then ranks similar Archive labels in a
+dropdown beside each name. An operator must choose every match. Search, Add a
+missing name or alias, and Add an artist card cover names not recognized in prose
+and cards without an inline mention. Reopen the mode to change a match or choose
+Leave this name unlinked; standalone cards have Remove controls. Save artist links
+is a first-class prerequisite in the publication guide when selections are dirty.
+Switching versions asks before discarding unsaved links. Publish also offers Edit
+this recording's artist links, selecting the exact recording's version first.
+
+The selectable catalog is a minimal projection of existing public Archive artists
+with tracks in eligible archived broadcasts: only normalized `projectKey` and
+`projectLabel`. It excludes combined listings with and, with, x, vs, feat/featuring/ft,
+ampersands, plus signs, commas, slashes, semicolons or pipes. For example, Mr Nice
+Guy and LostMarbles is omitted while the individual profiles remain selectable.
+This filters the Ballad picker only; it does not rewrite the Archive or merge
+artist identities. Similarity is a suggestion, never an automatic identity claim.
+
+Authenticated `saveArtistLinks` validates at most 50 choices against that catalog
+and uses server-owned labels, ignoring supplied URLs/extra fields. Stale revisions,
+unknown/combined profiles and wrong-show versions fail without saving. Optional
+`artistLinksByVersion` holds reviewed `{name, projectKey, projectLabel}` records;
+an empty name represents a standalone artist card. Legacy documents remain valid.
+Edit/restore receipts inherit their explicit source version's reviewed links;
+Generate/Polish do not infer or copy identity matches. The bot cannot supply reviewed
+links through its generated version payload.
+
+Publish validates destinations again and snapshots only the confirmed recording's
+saved links in `published.artistLinks`. Saving/removing links does not update an
+already-public song until Publish updated song. Archive preserves the released
+links; replacement uses its own version. Public story and lyrics render literal,
+whole-name links plus deduplicated artist cards using the same Archive destination
+as the Deck. Text remains escaped, lyrics are not rewritten, and public search
+includes only released names/profile labels. Draft links stay private. No new artist
+store, profile/account authority, BNL prompt or memory connection is introduced.
 
 Publish snapshots only the confirmed audio version's story in `published.linerNotes`.
 Saving later notes or generating another draft cannot change public text until an
@@ -191,3 +223,32 @@ version and verify all Song fields plus the Recording version; switch versions w
 unsaved edits and cancel; inspect Publish's confirmed-version preview. A later
 explicit Generate or Polish should open its receipt's new version automatically.
 Publishing a real recording and public BNL interaction remain owner actions.
+
+## Artist linking deployment and acceptance
+
+This extension is site-only. Merge the reviewed site PR and confirm the normal
+Vercel production deployment; no bot/VPS restart, environment change or migration
+is required. Existing released songs remain unchanged until explicitly republished.
+
+1. Open a saved version in `/admin/ballads`, then Song → Artist linking → Link
+   artist profiles. Names should have dropdowns with suggested individual profiles;
+   combined entries such as Mr Nice Guy and LostMarbles must be absent.
+2. Choose a profile, add a missing alias or standalone artist card if needed, and
+   inspect Preview artist card. Unsaved choices must block Publish; switching
+   versions must ask before discarding them. Save artist links and reload to verify
+   persistence. A failed/stale save must keep the local choices.
+3. In Publish, verify the links/cards belong to the confirmed audio's version. Edit
+   this recording's artist links must open that version's linking mode. Merely
+   viewing another version must not change the release.
+4. When ready, explicitly Publish updated song, open its public Ballad, and follow
+   a linked name/card to the same Archive artist destination used by the Deck.
+   Subsequent changed/removed links must remain private until another Publish.
+
+Focused regressions cover catalog filtering, similar-name suggestions, server
+validation/auth/concurrency, edit/restore inheritance, generated-payload isolation,
+publication/archive snapshots, escaped whole-name rendering and public search.
+The actual workspace was exercised with isolated browser fixtures at desktop and
+mobile widths, including failed saves, manual aliases/cards and later removal.
+No production generation, upload, profile tagging or publication was performed.
+Rollback: revert the site PR and redeploy. Retain existing Ballad documents and
+audio; the optional link fields need no data cleanup.

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import test from "node:test";
 import vm from "node:vm";
@@ -10,7 +10,7 @@ const require = createRequire(import.meta.url);
 function load(file, mocks = {}) {
   const code = ts.transpileModule(readFileSync(file, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } }).outputText;
   const cjsModule = { exports: {} };
-  vm.runInNewContext(code, { module: cjsModule, exports: cjsModule.exports, require: id => mocks[id] ?? require(id), structuredClone, process, console, Buffer, URL, Request, Response, Date, JSON, Set }, { filename: file });
+  vm.runInNewContext(code, { module: cjsModule, exports: cjsModule.exports, require: id => mocks[id] ?? (id.startsWith("@/") ? load(`src/${id.slice(2)}${existsSync(`src/${id.slice(2)}.tsx`) ? ".tsx" : ".ts"}`, mocks) : require(id)), structuredClone, process, console, Buffer, URL, Request, Response, Date, JSON, Set }, { filename: file });
   return cjsModule.exports;
 }
 const contract = load("src/lib/bnl-ballads.ts");
@@ -67,11 +67,15 @@ class Redis {
     return 1;
   }
 }
+const artistTools = load("src/lib/bnl-ballad-artists.ts");
+const profile = label => ({ projectKey: label.toLocaleLowerCase(), projectLabel: label });
+const artistFixtures = ["LostMarbles", "Mr Nice Guy", "Ash Flowers", "WittyF0x", "antigrain", "Mr Nice Guy and LostMarbles", "Ash Flowers & WittyF0x"].map(label => ({ ...profile(label), tracks: [{ sessionId: "show-1" }], privateNotes: "must not leak" }));
 function setup() {
   const redis = new Redis();
   let shows = [{ sessionId: "show-1", title: "Radio", showDate: "2026-09-11", status: "archived" }, { sessionId: "live-show", title: "Live", showDate: "2026-09-17", status: "open" }];
-  const store = load("src/lib/bnl-ballads-store.ts", { "@/lib/bnl-journal-store": { getBNLJournalRedis: () => redis }, "@/lib/queue": { getPublicQueueStats: async () => ({ shows }) }, "@/lib/bnl-ballads": contract });
-  return { store, redis, setShows: v => { shows = v; } };
+  let artists = [...artistFixtures, { ...profile("Private Persona"), tracks: [{ sessionId: "private-rehearsal" }] }];
+  const store = load("src/lib/bnl-ballads-store.ts", { "@/lib/bnl-journal-store": { getBNLJournalRedis: () => redis }, "@/lib/queue": { getPublicQueueStats: async () => ({ shows, artists }) }, "@/lib/bnl-ballads": contract });
+  return { store, redis, setShows: v => { shows = v; }, setArtists: v => { artists = v; } };
 }
 test("optimistic saves preserve the winner and reject stale edits", async () => {
   const { store } = setup();
@@ -249,4 +253,121 @@ test("editing an older working version inherits that version's story overrides",
   doc.commands.push({ ...command, id: "edit-3", kind: "edit", sourceVersion: "draft-1", baseVersion: "draft-2" });
   doc = contract.applyBalladReceipt(doc, { commandId: "edit-3", outcome: "complete", version: { ...version, id: "edit-3", ordinal: 3, parentId: "draft-2", kind: "edit" } });
   assert.equal(contract.balladLinerNotesForVersion(doc, "edit-3").about, notes.about);
+});
+
+
+test("artist suggestions rank aliases and typos while excluding combined listings", () => {
+  const catalog = artistTools.balladArtistProfiles(artistFixtures);
+  assert.equal(catalog.length, 5);
+  assert.equal(artistTools.suggestBalladArtists("Lost Marbles", catalog)[0].projectKey, "lostmarbles");
+  assert.equal(artistTools.suggestBalladArtists("Mr. Nice Guy", catalog)[0].projectKey, "mr nice guy");
+  assert.equal(artistTools.suggestBalladArtists("WittyFox", catalog)[0].projectKey, "wittyf0x");
+  assert.equal(artistTools.suggestBalladArtists("Nobody similar", catalog).length, 0);
+  for (const label of ["A and B", "A & B", "A x B", "A feat. B", "A featuring B", "A + B", "A/B", "A, B"]) assert.equal(artistTools.isCombinedBalladArtist(label), true);
+  const names = Array.from(artistTools.suggestedBalladNames("Mr Nice Guy and Lost Marbles — the studio duo; WittyFox — a remake; antigrain — wheel jokes.", catalog));
+  for (const name of ["Mr Nice Guy", "Lost Marbles", "WittyFox", "antigrain"]) assert.ok(names.includes(name), name);
+  assert.equal(names.some(name => name.includes(" and ")), false);
+});
+
+test("workspace artist catalog contains only individual public Archive destinations", async () => {
+  const { store } = setup();
+  const route = load("src/app/api/admin/ballads/route.ts", { "@vercel/blob": {}, "@/lib/auth": { verifyAdminRequest: async () => true }, "@/lib/bnl-ballads-store": store, "@/lib/bnl-ballads": contract });
+  const response = await route.GET(new Request("https://test/api/admin/ballads?showId=show-1"));
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.artists.length, 5);
+  assert.equal(JSON.stringify(data.artists).includes("private"), false);
+  assert.equal(JSON.stringify(data.artists).includes("tracks"), false);
+  assert.equal(JSON.stringify(data.artists).includes(" and "), false);
+});
+
+const lostLink = { name: "Lost Marbles", ...profile("LostMarbles") };
+const ashLink = { name: "Ash", ...profile("Ash Flowers") };
+test("artist link API validates current destinations and uses canonical labels with stale-write protection", async () => {
+  const { store, setArtists } = setup();
+  await store.saveBallad(draft(), 0);
+  const route = load("src/app/api/admin/ballads/route.ts", { "@vercel/blob": {}, "@/lib/auth": { verifyAdminRequest: async () => true }, "@/lib/bnl-ballads-store": store, "@/lib/bnl-ballads": contract });
+  const post = body => route.POST(new Request("https://test/api/admin/ballads", { method: "POST", body: JSON.stringify({ showId: "show-1", revision: 1, versionId: "draft-1", action: "saveArtistLinks", ...body }) }));
+  for (const bad of [[{ name: "Lost Marbles", projectKey: "private persona" }], [{ name: "Both", projectKey: "mr nice guy and lostmarbles" }], [{ name: "Wrong", projectKey: "javascript:alert(1)" }], [lostLink, lostLink], Array.from({ length: 51 }, () => lostLink), "not a list"]) {
+    assert.equal((await post({ artistLinks: bad })).status, 400);
+    assert.equal((await store.readBallad("show-1")).revision, 1);
+  }
+  assert.equal((await post({ versionId: "other-show-version", artistLinks: [lostLink] })).status, 400);
+  const response = await post({ artistLinks: [{ ...lostLink, projectLabel: "Forged label", url: "https://evil.test", privateNotes: "secret" }] });
+  assert.equal(response.status, 200);
+  const saved = await store.readBallad("show-1");
+  assert.equal(JSON.stringify(saved.artistLinksByVersion["draft-1"]), JSON.stringify([lostLink]));
+  assert.equal(saved.versions.length, 1);
+  assert.equal(saved.commands.length, 1);
+  assert.equal(saved.published, null);
+  assert.equal((await post({ artistLinks: [] })).status, 409);
+  saved.audio.push(audio);
+  await store.saveBallad(contract.selectBalladAudio(saved, audio.id), 2);
+  setArtists([]);
+  const invalidPublish = await post({ revision: 3, action: "publish" });
+  assert.equal(invalidPublish.status, 400);
+  assert.equal((await store.readBallad("show-1")).published, null);
+  assert.equal((await post({ revision: 3, artistLinks: [] })).status, 200);
+  assert.equal((await post({ revision: 4, action: "publish" })).status, 200);
+});
+
+test("artist links freeze with the exact confirmed version until republish and survive archive/replacement", () => {
+  let doc = contract.saveBalladArtistLinks(draft(), "draft-1", [lostLink]);
+  doc.audio.push(audio);
+  doc = contract.publishBallad(contract.selectBalladAudio(doc, audio.id));
+  doc.versions.push({ ...version, id: "draft-2", ordinal: 2 });
+  doc.audio.push({ ...audio, id: "take-2", versionId: "draft-2" });
+  doc = contract.saveBalladArtistLinks(doc, "draft-1", [ashLink]);
+  doc = contract.saveBalladArtistLinks(doc, "draft-2", [{ name: "", ...profile("WittyF0x") }]);
+  assert.equal(contract.publicBallad(doc, show).artistLinks[0].projectKey, "lostmarbles");
+  const published = contract.publishBallad(doc);
+  assert.equal(contract.publicBallad(published, show).artistLinks[0].projectKey, "ash flowers");
+  const replaced = contract.archiveBallad(doc, "take-2");
+  assert.equal(replaced.archivedSongs[0].artistLinks[0].projectKey, "lostmarbles");
+  assert.equal(replaced.published, null);
+  assert.equal(contract.publicBallad(contract.publishBallad(replaced), show).artistLinks[0].projectKey, "wittyf0x");
+  assert.equal(doc.versions[0].lyrics, version.lyrics);
+});
+
+test("reviewed links follow explicit edit/restore sources but never model-generated identity guesses", () => {
+  let doc = contract.saveBalladArtistLinks(draft(), "draft-1", [lostLink]);
+  for (const [kind, source, id] of [["edit", "draft-1", "edit-2"], ["restore", "draft-1", "restore-3"], ["polish", "draft-1", "polish-4"], ["generate", null, "generate-5"]]) {
+    const base = doc.versions.at(-1).id;
+    doc.commands.push({ ...command, id, kind, baseVersion: base, sourceVersion: source, restoreVersion: source });
+    doc = contract.applyBalladReceipt(doc, { commandId: id, outcome: "complete", version: { ...version, id, kind, ordinal: doc.versions.length + 1, parentId: base, artistLinks: [ashLink] } });
+    const expected = ["edit", "restore"].includes(kind) ? [lostLink] : [];
+    assert.equal(JSON.stringify(contract.balladArtistLinksForVersion(doc, id)), JSON.stringify(expected));
+  }
+  assert.equal(contract.balladArtistLinksForVersion(doc, "draft-1")[0].projectKey, "lostmarbles");
+});
+
+test("literal name rendering preserves words, escapes text and does not link partial names", () => {
+  const { BalladLinkedText } = load("src/components/BalladArtistLinks.tsx");
+  const text = "Ash Flowers, Ash, Ashley, LOST MARBLES and <script>keep as text</script>.";
+  const links = [ashLink, { ...ashLink, name: "Ash Flowers" }, lostLink];
+  const parts = artistTools.balladLinkedTextParts(text, links);
+  assert.equal(parts.map(part => part.text).join(""), text);
+  assert.equal(parts.filter(part => part.link).length, 3);
+  const html = renderToStaticMarkup(React.createElement(BalladLinkedText, { text, artistLinks: links }));
+  assert.ok(html.includes("artist=ash%20flowers"));
+  assert.ok(html.includes("artist=lostmarbles"));
+  assert.ok(html.includes("&lt;script&gt;"));
+  assert.equal(html.includes(">Ashley</a>"), false);
+  assert.equal(artistTools.balladLinkedTextParts("A.* B", [{ name: "A.*", ...profile("Ash Flowers") }]).filter(part => part.link).length, 1);
+});
+
+test("public artist cards and linked story/lyrics use only the published links and are searchable", async () => {
+  let doc = draft(); doc.versions[0].lyrics = "Lost Marbles left the light on.";
+  doc.versions[0].linerNotes = { ...notes, mentions: "Lost Marbles — the last listener." };
+  doc.audio.push(audio);
+  doc = contract.publishBallad(contract.selectBalladAudio(contract.saveBalladArtistLinks(doc, "draft-1", [lostLink, { name: "", ...profile("Ash Flowers") }]), audio.id));
+  doc = contract.saveBalladArtistLinks(doc, "draft-1", [{ name: "Private Alias", ...profile("WittyF0x") }]);
+  const page = load("src/app/radio/ballads/page.tsx", { "next/link": ({ href, children, ...props }) => React.createElement("a", { href, ...props }, children), "@/lib/bnl-ballads-store": { listPublicBallads: async () => [contract.publicBallad(doc, show)] } });
+  const html = renderToStaticMarkup(await page.default({ searchParams: Promise.resolve({ q: "Ash Flowers" }) }));
+  assert.equal((html.match(/artist=lostmarbles/g) ?? []).length, 3);
+  assert.ok(html.includes("Explore the artists"));
+  assert.ok(html.includes("artist=ash%20flowers"));
+  assert.equal(html.includes("Private Alias"), false);
+  delete doc.published.artistLinks;
+  assert.equal(contract.publicBallad(doc, show).artistLinks.length, 0);
 });

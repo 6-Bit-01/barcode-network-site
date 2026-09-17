@@ -1,9 +1,10 @@
+import { resolveBalladArtistLinks } from "@/lib/bnl-ballad-artists";
 import { randomUUID } from "crypto";
 import { head } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import { verifyAdminRequest } from "@/lib/auth";
-import { readBallad, saveBallad, readBalladConfig, saveBalladConfig, eligibleBalladShows, requireBalladShow } from "@/lib/bnl-ballads-store";
-import { publishBallad, selectBalladAudio, archiveBallad, saveBalladLinerNotes, BALLAD_LINER_NOTE_FIELDS, type BalladOptions, type BalladPresentation, type BalladCommand } from "@/lib/bnl-ballads";
+import { readBallad, saveBallad, readBalladConfig, saveBalladConfig, balladWorkspaceCatalog, requireBalladShow } from "@/lib/bnl-ballads-store";
+import { publishBallad, selectBalladAudio, archiveBallad, saveBalladLinerNotes, saveBalladArtistLinks, balladArtistLinksForVersion, BALLAD_LINER_NOTE_FIELDS, type BalladOptions, type BalladPresentation, type BalladCommand } from "@/lib/bnl-ballads";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,10 +21,10 @@ function httpsUrl(value: unknown, host?: string) {
 export async function GET(req: Request) {
   if (!await verifyAdminRequest(req)) return json({ error: "Unauthorized" }, 401);
   try {
-    const shows = await eligibleBalladShows();
+    const { shows, artists } = await balladWorkspaceCatalog();
     const id = new URL(req.url).searchParams.get("showId") || shows[0]?.sessionId;
     const show = shows.find(s => s.sessionId === id) ?? null;
-    return json({ shows, show, document: show ? await readBallad(show.sessionId) : null, config: await readBalladConfig() });
+    return json({ shows, artists, show, document: show ? await readBallad(show.sessionId) : null, config: await readBalladConfig() });
   } catch { return json({ error: "Ballad workspace is temporarily unavailable." }, 503); }
 }
 export async function POST(req: Request) {
@@ -50,6 +51,9 @@ export async function POST(req: Request) {
     } else if (body.action === "saveLinerNotes") {
       const notes = Object.fromEntries(Object.keys(BALLAD_LINER_NOTE_FIELDS).map(key => [key, string(body.linerNotes?.[key] ?? "", 1500)]));
       doc = saveBalladLinerNotes(doc, string(body.versionId, 160), notes);
+    } else if (body.action === "saveArtistLinks") {
+      const { artists } = await balladWorkspaceCatalog();
+      doc = saveBalladArtistLinks(doc, string(body.versionId, 160), resolveBalladArtistLinks(body.artistLinks, artists));
     } else if (["generate", "polish", "edit", "restore"].includes(body.action)) {
       if (doc.commands.some(c => c.status === "queued")) return json({ error: "BNL is still handling the previous request. Your current edits can stay here." }, 409);
       if ((body.action === "generate" || body.action === "polish") && body.options) {
@@ -84,7 +88,15 @@ export async function POST(req: Request) {
       const duration = typeof body.duration === "number" && Number.isFinite(body.duration) && body.duration > 0 ? body.duration : null;
       doc = { ...doc, audio: [...doc.audio, { id: randomUUID(), versionId: body.versionId, url: blob.url, pathname: blob.pathname, filename: string(body.filename, 250), contentType: blob.contentType, bytes: blob.size, duration, createdAt: new Date().toISOString() }] };
     } else if (body.action === "selectAudio") doc = selectBalladAudio(doc, body.audioId);
-    else if (body.action === "publish") doc = publishBallad(doc);
+    else if (body.action === "publish") {
+      const versionId = doc.audio.find(audio => audio.id === doc.selectedAudioId)?.versionId;
+      const links = versionId ? balladArtistLinksForVersion(doc, versionId) : [];
+      if (versionId && links.length) {
+        const { artists } = await balladWorkspaceCatalog();
+        doc = saveBalladArtistLinks(doc, versionId, resolveBalladArtistLinks(links, artists));
+      }
+      doc = publishBallad(doc);
+    }
     else if (body.action === "archive") doc = archiveBallad(doc);
     else if (body.action === "archiveReplace") doc = archiveBallad(doc, string(body.audioId, 160));
     else throw new Error("Unknown workspace action.");

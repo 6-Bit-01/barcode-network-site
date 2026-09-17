@@ -1,3 +1,5 @@
+import { normalizeBalladArtistLinks, type BalladArtistLink } from "@/lib/bnl-ballad-artists";
+
 /** Shared Ballad contract. Creative publication history never grants factual authority. */
 export type BalladOptions = { direction: string; genres: string; era: string; feedback: string };
 export const DEFAULT_BALLAD_OPTIONS: BalladOptions = { direction: "", genres: "", era: "", feedback: "" };
@@ -33,23 +35,31 @@ export const DEFAULT_BALLAD_PRESENTATION: BalladPresentation = {
   credits: "Lyrics and creative direction: BNL-01 · Audio created with Suno · Selection and production: 6 Bit",
   sunoUrl: "", sunoModel: "", sunoSettings: "", artworkUrl: "",
 };
-export type ArchivedBallad = { audioId: string; versionId: string; selectedAt: string; archivedAt: string; publishedAt: string | null; presentation: BalladPresentation; linerNotes?: BalladLinerNotes };
+export type ArchivedBallad = { audioId: string; versionId: string; selectedAt: string; archivedAt: string; publishedAt: string | null; presentation: BalladPresentation; linerNotes?: BalladLinerNotes; artistLinks?: BalladArtistLink[] };
 export type BalladDocument = {
   showId: string; revision: number; options: BalladOptions; presentation: BalladPresentation;
   versions: BalladVersion[]; commands: BalladCommand[]; audio: BalladAudio[];
   selectedAudioId: string | null; selectedAt: string | null; archivedSongs: ArchivedBallad[];
   linerNotesByVersion?: Record<string, BalladLinerNotes>;
-  published: { versionId: string; audioId: string; at: string; presentation: BalladPresentation; linerNotes?: BalladLinerNotes } | null;
+  artistLinksByVersion?: Record<string, BalladArtistLink[]>;
+  published: { versionId: string; audioId: string; at: string; presentation: BalladPresentation; linerNotes?: BalladLinerNotes; artistLinks?: BalladArtistLink[] } | null;
 };
 export type BalladConfig = { revision: number; enabled: boolean; enabledSince: string | null };
 export type BalladShow = { sessionId: string; title: string; showDate: string };
-export type PublicBallad = { show: BalladShow; version: Pick<BalladVersion, "id" | "title" | "lyrics" | "style" | "palette" | "author">; presentation: BalladPresentation; linerNotes: BalladLinerNotes; publishedAt: string; duration: number | null; audioId: string };
+export type PublicBallad = { show: BalladShow; version: Pick<BalladVersion, "id" | "title" | "lyrics" | "style" | "palette" | "author">; presentation: BalladPresentation; linerNotes: BalladLinerNotes; artistLinks: BalladArtistLink[]; publishedAt: string; duration: number | null; audioId: string };
 export function balladLinerNotesForVersion(doc: BalladDocument, versionId: string): BalladLinerNotes {
   return normalizeBalladLinerNotes(doc.linerNotesByVersion?.[versionId] ?? doc.versions.find(v => v.id === versionId)?.linerNotes);
 }
 export function saveBalladLinerNotes(doc: BalladDocument, versionId: string, notes: unknown): BalladDocument {
   if (!doc.versions.some(v => v.id === versionId)) throw new Error("Choose a saved song version for these notes.");
   return { ...doc, linerNotesByVersion: { ...doc.linerNotesByVersion, [versionId]: normalizeBalladLinerNotes(notes) } };
+}
+export function balladArtistLinksForVersion(doc: BalladDocument, versionId: string): BalladArtistLink[] {
+  return normalizeBalladArtistLinks(doc.artistLinksByVersion?.[versionId]);
+}
+export function saveBalladArtistLinks(doc: BalladDocument, versionId: string, links: BalladArtistLink[]): BalladDocument {
+  if (!doc.versions.some(v => v.id === versionId)) throw new Error("Choose a saved song version for these artist links.");
+  return { ...doc, artistLinksByVersion: { ...doc.artistLinksByVersion, [versionId]: normalizeBalladArtistLinks(links) } };
 }
 export function newBallad(showId: string): BalladDocument {
   return { showId, revision: 0, options: { ...DEFAULT_BALLAD_OPTIONS }, presentation: { ...DEFAULT_BALLAD_PRESENTATION }, versions: [], commands: [], audio: [], selectedAudioId: null, selectedAt: null, archivedSongs: [], published: null };
@@ -73,7 +83,7 @@ export function publicBallad(doc: BalladDocument, show: BalladShow): PublicBalla
   const version = doc.versions.find(v => v.id === release.versionId);
   const audio = doc.audio.find(a => a.id === release.audioId && a.versionId === release.versionId);
   if (!version || !audio) return null;
-  return { show, version: { id: version.id, title: version.title, lyrics: version.lyrics, style: version.style, palette: version.palette, author: version.author }, presentation: release.presentation, linerNotes: normalizeBalladLinerNotes(release.linerNotes), publishedAt: release.at, duration: audio.duration, audioId: audio.id };
+  return { show, version: { id: version.id, title: version.title, lyrics: version.lyrics, style: version.style, palette: version.palette, author: version.author }, presentation: release.presentation, linerNotes: normalizeBalladLinerNotes(release.linerNotes), artistLinks: normalizeBalladArtistLinks(release.artistLinks), publishedAt: release.at, duration: audio.duration, audioId: audio.id };
 }
 export function selectBalladAudio(doc: BalladDocument, audioId: string) {
   if (!doc.audio.some(a => a.id === audioId && doc.versions.some(v => v.id === a.versionId))) throw new Error("Choose an uploaded take attached to a saved draft.");
@@ -86,14 +96,14 @@ export function archiveBallad(doc: BalladDocument, replacementAudioId?: string, 
   if (!chosen) throw new Error("No chosen song to archive.");
   if (replacementAudioId !== undefined && !validId(replacementAudioId)) throw new Error("Choose a valid replacement take.");
   if (replacementAudioId === chosen.id) throw new Error("Choose a different replacement take.");
-  const archived: ArchivedBallad = { audioId: chosen.id, versionId: chosen.versionId, selectedAt: doc.selectedAt ?? now, archivedAt: now, publishedAt: doc.published?.at ?? null, presentation: { ...(doc.published?.presentation ?? doc.presentation) }, linerNotes: doc.published ? normalizeBalladLinerNotes(doc.published.linerNotes) : balladLinerNotesForVersion(doc, chosen.versionId) };
+  const archived: ArchivedBallad = { audioId: chosen.id, versionId: chosen.versionId, selectedAt: doc.selectedAt ?? now, archivedAt: now, publishedAt: doc.published?.at ?? null, presentation: { ...(doc.published?.presentation ?? doc.presentation) }, linerNotes: doc.published ? normalizeBalladLinerNotes(doc.published.linerNotes) : balladLinerNotesForVersion(doc, chosen.versionId), artistLinks: doc.published ? normalizeBalladArtistLinks(doc.published.artistLinks) : balladArtistLinksForVersion(doc, chosen.versionId) };
   const next: BalladDocument = { ...doc, selectedAudioId: null, selectedAt: null, published: null, archivedSongs: [...doc.archivedSongs, archived] };
   return replacementAudioId ? selectBalladAudio(next, replacementAudioId) : next;
 }
 export function publishBallad(doc: BalladDocument, now = new Date().toISOString()): BalladDocument {
   const audio = doc.audio.find(a => a.id === doc.selectedAudioId);
   if (!audio || !doc.versions.some(v => v.id === audio.versionId)) throw new Error("Confirm an audio take before publishing.");
-  return { ...doc, published: { versionId: audio.versionId, audioId: audio.id, at: now, presentation: { ...doc.presentation }, linerNotes: balladLinerNotesForVersion(doc, audio.versionId) } };
+  return { ...doc, published: { versionId: audio.versionId, audioId: audio.id, at: now, presentation: { ...doc.presentation }, linerNotes: balladLinerNotesForVersion(doc, audio.versionId), artistLinks: balladArtistLinksForVersion(doc, audio.versionId) } };
 }
 export function applyBalladReceipt(doc: BalladDocument, receipt: { commandId: string; outcome: string; version?: unknown; error?: string }): BalladDocument {
   const command = doc.commands.find(c => c.id === receipt.commandId);
@@ -106,6 +116,9 @@ export function applyBalladReceipt(doc: BalladDocument, receipt: { commandId: st
     if (command.baseVersion !== (doc.versions.at(-1)?.id ?? null)) throw new Error("Draft changed.");
     next.versions.push(receipt.version);
     const notesSource = command.kind === "restore" ? command.restoreVersion : command.kind === "edit" ? (command.sourceVersion ?? command.baseVersion) : null;
+    if (notesSource && doc.artistLinksByVersion?.[notesSource]) {
+      next.artistLinksByVersion = { ...next.artistLinksByVersion, [receipt.version.id]: balladArtistLinksForVersion(doc, notesSource) };
+    }
     if (notesSource && doc.linerNotesByVersion?.[notesSource]) {
       next.linerNotesByVersion = { ...next.linerNotesByVersion, [receipt.version.id]: normalizeBalladLinerNotes(doc.linerNotesByVersion[notesSource]) };
     }

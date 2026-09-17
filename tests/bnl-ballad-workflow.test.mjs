@@ -43,3 +43,10 @@ test("a new workspace starts at Song; an existing confirmed release needs no new
   assert.equal(balladPublishTasks({ ...ready, hasVersion: false, hasConfirmedRecording: false })[0].action, "Go to Song");
   assert.equal(balladPublishTasks({ ...ready, hasWorkingTakes: false }).length, 0);
 });
+
+
+test("artist choices must be saved before canonical edits or publishing", () => {
+  const tasks = balladPublishTasks({ pending: false, dirtySections: ["draft", "artistLinks"], hasVersion: true, pendingUpload: false, hasWorkingTakes: true, hasConfirmedRecording: true });
+  assert.deepEqual(Array.from(tasks, task => task.id), ["artistLinks", "draft"]);
+  assert.equal(tasks[0].action, "Save artist links");
+});

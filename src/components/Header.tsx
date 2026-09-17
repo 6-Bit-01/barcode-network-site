@@ -89,7 +89,7 @@ export function Header() {
 
           <div className="flex items-center gap-4">
             {liveHref && liveLabel && (
-              <a
+              <Link
                 href={liveHref}
                 target={isExternalLiveHref ? "_blank" : undefined}
                 rel={isExternalLiveHref ? "noopener noreferrer" : undefined}
@@ -98,7 +98,7 @@ export function Header() {
                 <span className="w-2 h-2 rounded-full bg-danger" />
                 <span className="sm:hidden">{siteShowMode === "broadcast_live" ? "LIVE" : "SUBMIT"}</span>
                 <span className="hidden sm:inline">{liveLabel}</span>
-              </a>
+              </Link>
             )}
 
             <MobileMenu pathname={pathname} />

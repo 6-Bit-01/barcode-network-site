@@ -1,6 +1,8 @@
 /* eslint-disable react-hooks/exhaustive-deps, @next/next/no-img-element */
 "use client";
 
+import Link from "next/link";
+
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { createPortal } from "react-dom";
@@ -602,7 +604,7 @@ export function PublicQueueSession({ sessionId, snapshotEndpoint = "/api/queue" 
           <div className="mt-4 border border-[#ffaa00]/40 bg-[#ffaa00]/5 p-3">
             <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#ffaa00]">Done submitting—or just watching?</p>
             <p className="mt-1 text-xs leading-relaxed text-muted">Open the Broadcast Deck to follow Now Playing, the queue route, Wheel movement, and show activity. Song submissions stay here in the queue.</p>
-            <div className="mt-3 flex flex-wrap gap-2"><a href="/radio/deck" className="border border-[#ffaa00]/55 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background">Open Broadcast Deck</a><a href="/radio/archive" className="border border-cyan-200/45 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-cyan-200 hover:bg-cyan-200 hover:text-background">Broadcast Archive</a></div>
+            <div className="mt-3 flex flex-wrap gap-2"><Link href="/radio/deck" className="border border-[#ffaa00]/55 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background">Open Broadcast Deck</Link><Link href="/radio/archive" className="border border-cyan-200/45 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-cyan-200 hover:bg-cyan-200 hover:text-background">Broadcast Archive</Link></div>
           </div>
         </section>
         {sponsorBreakRunning && <section className="sponsor-mode-banner border border-[#ffaa00]/45 bg-[#ffaa00]/8 p-3" role="status" aria-live="polite"><p className="text-xs font-bold uppercase tracking-[0.34em] text-[#ffaa00]">A WORD FROM OUR SPONSOR</p><p className="mt-1 text-sm text-muted">The 11:00 sponsor break is in progress. The queue, submissions, status, and navigation stay live.</p></section>}
@@ -620,7 +622,7 @@ export function PublicQueueSession({ sessionId, snapshotEndpoint = "/api/queue" 
         </div>
       )}
         {checkoutNotice && <div className="border border-[#ffaa00]/40 bg-[#ffaa00]/5 p-3 text-sm text-[#ffaa00]">{checkoutNotice}</div>}
-        {acceptedReceipt && <div className="relative z-20 border border-accent/80 bg-accent/15 p-3 text-sm text-foreground shadow-[0_0_30px_rgba(255,0,0,0.18)]"><div className="flex items-start justify-between gap-3"><div><p className="font-bold uppercase tracking-[0.18em] text-accent">Submission accepted</p><p className="mt-1">{acceptedReceipt.artist} — {acceptedReceipt.title}</p><p className="text-xs text-muted">{acceptedReceipt.sessionTitle} · {acceptedReceipt.sessionDate}</p><p className="text-xs">Confirmation: {acceptedReceipt.trackCode}</p><a href="/radio/deck" className="mt-3 inline-flex border border-[#ffaa00]/60 bg-[#ffaa00]/10 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background">Submission complete · follow the show on the Deck</a></div><button type="button" onClick={() => setAcceptedReceipt(null)} className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">Close</button></div></div>}
+        {acceptedReceipt && <div className="relative z-20 border border-accent/80 bg-accent/15 p-3 text-sm text-foreground shadow-[0_0_30px_rgba(255,0,0,0.18)]"><div className="flex items-start justify-between gap-3"><div><p className="font-bold uppercase tracking-[0.18em] text-accent">Submission accepted</p><p className="mt-1">{acceptedReceipt.artist} — {acceptedReceipt.title}</p><p className="text-xs text-muted">{acceptedReceipt.sessionTitle} · {acceptedReceipt.sessionDate}</p><p className="text-xs">Confirmation: {acceptedReceipt.trackCode}</p><Link href="/radio/deck" className="mt-3 inline-flex border border-[#ffaa00]/60 bg-[#ffaa00]/10 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background">Submission complete · follow the show on the Deck</Link></div><button type="button" onClick={() => setAcceptedReceipt(null)} className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">Close</button></div></div>}
 
         <SessionPhasePanel snapshot={snapshot} timingSummary={timingSummary} submissionsOpen={isOpen} canSubmit={canSubmitFromHud} isBroadcastActive={isBroadcastActive} />
 
@@ -784,7 +786,7 @@ function SourceArt({ track, className = "h-full w-full" }: { track: QueuePublicT
     ? <img src={artworkUrl} alt="" className={`${className} object-cover`} onError={() => setFailed(true)} />
     : <div className={`${className} flex items-center justify-center bg-[radial-gradient(circle_at_center,rgba(255,0,0,0.25),transparent_60%)] text-4xl text-accent`}>▦</div>;
   if (!track) return artwork;
-  return <a href={broadcastArchiveArtistHref(track.submittedArtistName)} aria-label={`Open ${track.submittedArtistName} in the Broadcast Archive`} className="group relative block h-full w-full overflow-hidden">{artwork}<span className="absolute inset-x-0 bottom-0 bg-black/85 px-2 py-1 text-center text-[8px] font-bold uppercase tracking-[0.16em] text-cyan-200 opacity-90 transition group-hover:bg-cyan-200 group-hover:text-background">Artist Archive ↗</span></a>;
+  return <Link href={broadcastArchiveArtistHref(track.submittedArtistName)} aria-label={`Open ${track.submittedArtistName} in the Broadcast Archive`} className="group relative block h-full w-full overflow-hidden">{artwork}<span className="absolute inset-x-0 bottom-0 bg-black/85 px-2 py-1 text-center text-[8px] font-bold uppercase tracking-[0.16em] text-cyan-200 opacity-90 transition group-hover:bg-cyan-200 group-hover:text-background">Artist Archive ↗</span></Link>;
 }
 
 function tiktokHref(handle?: string | null): string | null { const cleaned = (handle ?? "").trim().replace(/^@+/, "").split(/[/?#]/)[0]?.replace(/[^a-zA-Z0-9._-]/g, ""); return cleaned ? `https://www.tiktok.com/@${cleaned}` : null; }

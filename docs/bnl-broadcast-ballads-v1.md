@@ -261,4 +261,8 @@ audio; the optional link fields need no data cleanup.
 
 ## Archive placement and reviewed autofill
 
+Playback now uses the [persistent site music player](site-music-player.md).
+The show card's Play control starts a shared root player that stays available
+during public navigation. Song metadata and publication authority are unchanged.
+
 A show card presents its Ballad as part of that broadcast, with the player immediately visible. BNL’s discography at `/bnl/music` presents the same release as part of his creative body of work, with artwork, publication date, sound, credits and creative notes. These are separate, linked perspectives: the discography links to the show’s player; the show’s BNL credit links to the exact discography entry. Hub navigation includes Discography. Terminal’s `BNL MUSIC` command opens it (`BNL BALLADS` remains an alias). The Database dossier retains its existing Hub link without an additional Ballad promotion. Old show-specific Ballad URLs redirect to their show; the old collection URL redirects to the discography. The public media endpoint and publication snapshot remain authoritative. The linking picker now reads the primary artist catalog, accepts complete names containing punctuation, and prefills clear matches on opening linking mode. Explicitly unlinked names are remembered per version when saved. Catalog corrections are separate admin operations in the queue store, not side effects of tagging a song. See [implementation and deployment checks](ballad-archive-artist-credits.md).

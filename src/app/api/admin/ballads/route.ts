@@ -3,7 +3,7 @@ import { head } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import { verifyAdminRequest } from "@/lib/auth";
 import { readBallad, saveBallad, readBalladConfig, saveBalladConfig, eligibleBalladShows, requireBalladShow } from "@/lib/bnl-ballads-store";
-import { publishBallad, selectBalladAudio, archiveBallad, type BalladOptions, type BalladPresentation, type BalladCommand } from "@/lib/bnl-ballads";
+import { publishBallad, selectBalladAudio, archiveBallad, saveBalladLinerNotes, BALLAD_LINER_NOTE_FIELDS, type BalladOptions, type BalladPresentation, type BalladCommand } from "@/lib/bnl-ballads";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,6 +47,9 @@ export async function POST(req: Request) {
       const p = body.presentation || {};
       const presentation: BalladPresentation = { credits: string(p.credits, 1500), sunoUrl: httpsUrl(p.sunoUrl, "suno.com"), sunoModel: string(p.sunoModel, 150), sunoSettings: string(p.sunoSettings, 1500), artworkUrl: httpsUrl(p.artworkUrl) };
       doc = { ...doc, presentation };
+    } else if (body.action === "saveLinerNotes") {
+      const notes = Object.fromEntries(Object.keys(BALLAD_LINER_NOTE_FIELDS).map(key => [key, string(body.linerNotes?.[key] ?? "", 1500)]));
+      doc = saveBalladLinerNotes(doc, string(body.versionId, 160), notes);
     } else if (["generate", "polish", "edit", "restore"].includes(body.action)) {
       if (doc.commands.some(c => c.status === "queued")) return json({ error: "BNL is still handling the previous request. Your current edits can stay here." }, 409);
       if ((body.action === "generate" || body.action === "polish") && body.options) {

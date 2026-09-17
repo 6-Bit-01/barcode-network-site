@@ -53,8 +53,8 @@ export async function saveBalladConfig(enabled: boolean, expected: number) {
   return config;
 }
 export async function automationBaseline(): Promise<string[]> { return await balladRedis().get<string[]>(PREFIX + "baseline") ?? []; }
-export async function listPublicBallads() {
-  const shows = await eligibleBalladShows();
+export async function listPublicBallads(eligibleShows?: BalladShow[]) {
+  const shows = eligibleShows ?? await eligibleBalladShows();
   const entries = await Promise.all(shows.map(async show => publicBallad(await readBallad(show.sessionId), show)));
   return entries.filter(entry => entry !== null);
 }

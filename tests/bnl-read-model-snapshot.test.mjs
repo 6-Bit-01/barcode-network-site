@@ -42,8 +42,10 @@ Module._resolveFilename = function resolve(request, parent, isMain, options) {
   }
   return originalResolve.call(this, request, parent, isMain, options);
 };
+let balladFixture = null;
 const originalLoad = Module._load;
 Module._load = function load(request, parent, isMain) {
+  if (request === "@/lib/bnl-ballads-store" && balladFixture) return { listPublicBallads: async shows => shows.map(show => ({ show, ...balladFixture })) };
   if (request === "@upstash/redis") return { Redis: FakeRedis };
   return originalLoad.call(this, request, parent, isMain);
 };
@@ -282,4 +284,22 @@ test("derived show-log and durable projection failures keep their separate envel
       assertSanitized(body);
     });
   }
+});
+
+
+test("published song awareness shares public show eligibility and exposes metadata only", async () => {
+  balladFixture = { version: { title: "Released song", lyrics: "PRIVATE_CREATIVE_TEXT", rawOutput: "RAW_OUTPUT" }, presentation: { credits: "BNL-01" }, audioId: "take-1" };
+  try {
+    const store = fixture();
+    store.sessions.push(session("sealed", "private_only", { purpose: "rehearsal", status: "archived" }));
+    const { route } = loadHarness(store);
+    const { body } = await request(route);
+    assert.equal(FakeRedis.reads, 1);
+    assert.equal(body.sections.ballads.available, true);
+    assert.deepEqual(body.sections.ballads.songs.map(song => song.showId), ["history"]);
+    assert.equal(body.sections.ballads.songs[0].title, "Released song");
+    assert.match(body.sections.ballads.songs[0].url, /radio\/ballads\?show=history$/);
+    assert.ok(!JSON.stringify(body).includes("PRIVATE_CREATIVE_TEXT"));
+    assert.ok(!JSON.stringify(body).includes("RAW_OUTPUT"));
+  } finally { balladFixture = null; }
 });

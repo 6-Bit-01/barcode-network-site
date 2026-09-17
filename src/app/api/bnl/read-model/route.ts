@@ -1,3 +1,4 @@
+import { listPublicBallads } from "@/lib/bnl-ballads-store";
 import { getQueueTrackCredits } from "@/lib/live-overlay-resolver";
 import { NextResponse } from "next/server";
 import { databasePage, siteConfig } from "@/content";
@@ -1637,9 +1638,18 @@ export async function GET(req?: Request) {
   const archive = queueProjections?.archive
     ? { available: true as const, reason: null, ...queueProjections.archive }
     : unavailableArchiveProjection(projectionUnavailableReason, accessScope);
+  const ballads = await Promise.resolve().then(() => {
+    if (queueProductionEnabled && (queueReadFailed || !queueSnapshot)) throw new Error("queue unavailable");
+    return listPublicBallads(queueSnapshot?.getPublicBalladShows() ?? []);
+  }).then(entries => ({
+    available: true, authority: "published creative releases; not evidence of broadcast events",
+    songs: entries.map(entry => ({ showId: entry.show.sessionId, showDate: entry.show.showDate,
+      showTitle: entry.show.title, title: entry.version.title, artist: "BNL-01",
+      url: `${siteConfig.domain}/radio/ballads?show=${encodeURIComponent(entry.show.sessionId)}` })),
+  })).catch(() => ({ available: false, authority: "published creative releases; not evidence of broadcast events", songs: [] }));
   const dossiers = publicDossiers();
   const privateResponse = accessScope === "private";
-  const noStoreResponse = authenticated
+  const noStoreResponse = !ballads.available || authenticated
     || privateResponse
     || queueReadFailed
     || durableProjectionReadFailed;
@@ -1665,6 +1675,7 @@ export async function GET(req?: Request) {
       },
       sections: {
         sourceContext: buildSourceContext(),
+        ballads,
         queue: liveQueue.queue,
         archive,
         artists: liveQueue.artists,

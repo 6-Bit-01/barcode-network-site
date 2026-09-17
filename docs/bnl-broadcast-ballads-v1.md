@@ -1,5 +1,40 @@
 # BNL Broadcast Ballads v1
 
+## Track story and people
+
+The public Ballad card now includes About the track, BNL's inspiration, People in
+the lyrics, and People & moments behind it. BNL supplies these optional
+`linerNotes` strings alongside lyrics/Style in the same generation call. Inspiration
+is a short first-person note about the broadcast and creative direction; lyrical
+mentions and inspirations remain separate from recording credits. Search includes
+the released story and people. Empty fields do not produce blank public sections.
+
+The workspace's Track story & people section loads notes for the confirmed take's
+saved version, or the latest draft when no take is chosen. The producer can choose
+another saved version, edit four optional fields, and click Save track story.
+This uses the authenticated `saveLinerNotes` action with `versionId` and
+`linerNotes`; each field is bounded to 1,500 characters and the existing optimistic
+document revision applies. It stores overrides in optional `linerNotesByVersion`.
+Saving notes neither changes lyrics/audio nor queues a model request. Existing
+songs can receive manually entered notes without regeneration. Unsaved story edits
+participate in the workspace's existing dirty-state protection.
+
+Publish snapshots only the confirmed audio version's story in `published.linerNotes`.
+Saving later notes or generating another draft cannot change public text until an
+explicit Publish. Archive retains that published snapshot; an unpublished selection
+archives its saved story. A replacement resolves its own version's notes and remains
+private until Publish. Producer note overrides follow edit/restore receipts, while
+generated/polished drafts get their own story. Public projection includes only the
+four known text fields; draft notes, producer feedback, and raw output stay private.
+Legacy documents and receipts without the new optional fields remain valid; legacy
+publications show no story until notes are saved and the release is republished.
+
+The paired bot prompt revision is `broadcast-ballad-2`. Both deployment orders are
+compatible and require no migration, new credential or provider. Deploying does
+not regenerate existing songs or publish changes. Validation covers receipt/edit/
+restore compatibility, version-bound publication, archive/replacement, authenticated
+Save with stale-write rejection, public rendering/search, and escaped text.
+
 A show has one song slot. The first confirmed audio selection locks that slot.
 Another take cannot silently replace it. `Archive song` preserves the old audio,
 its exact prompt version and release details, removes the public release and clears

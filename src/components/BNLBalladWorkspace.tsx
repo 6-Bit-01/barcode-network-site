@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { upload } from "@vercel/blob/client";
 import Link from "next/link";
-import { DEFAULT_BALLAD_OPTIONS, DEFAULT_BALLAD_PRESENTATION, type BalladCommand, type BalladConfig, type BalladDocument, type BalladOptions, type BalladPresentation, type BalladShow } from "@/lib/bnl-ballads";
+import { DEFAULT_BALLAD_OPTIONS, DEFAULT_BALLAD_PRESENTATION, BALLAD_LINER_NOTE_FIELDS, balladLinerNotesForVersion, normalizeBalladLinerNotes, type BalladLinerNotes, type BalladCommand, type BalladConfig, type BalladDocument, type BalladOptions, type BalladPresentation, type BalladShow } from "@/lib/bnl-ballads";
+import { BalladTrackStory } from "@/components/BalladTrackStory";
 
 const inputClass = "w-full rounded border border-border bg-background px-3 py-2.5 text-sm text-foreground outline-none focus:border-accent";
 const buttonClass = "rounded border border-border px-3 py-2 text-xs font-bold text-foreground hover:border-accent disabled:opacity-40 disabled:cursor-wait";
@@ -61,6 +62,8 @@ export function BNLBalladWorkspace({ initialShowId = "" }: { initialShowId?: str
   const [palette, setPalette] = useState<Record<string, string>>({});
   const [options, setOptions] = useState<BalladOptions>({ ...DEFAULT_BALLAD_OPTIONS });
   const [presentation, setPresentation] = useState<BalladPresentation>({ ...DEFAULT_BALLAD_PRESENTATION });
+  const [notesVersionId, setNotesVersionId] = useState("");
+  const [linerNotes, setLinerNotes] = useState<BalladLinerNotes>(() => normalizeBalladLinerNotes(null));
   const [automation, setAutomation] = useState(false);
   const [audioChoice, setAudioChoice] = useState("");
   const [uploadVersion, setUploadVersion] = useState("");
@@ -92,6 +95,9 @@ export function BNLBalladWorkspace({ initialShowId = "" }: { initialShowId?: str
       setVersionChoice(latest?.id ?? ""); setUploadVersion(latest?.id ?? "");
       setOptions(data.document?.options ?? { ...DEFAULT_BALLAD_OPTIONS });
       setPresentation(data.document?.presentation ?? { ...DEFAULT_BALLAD_PRESENTATION });
+      const notesVersion = data.document?.audio.find(a => a.id === data.document?.selectedAudioId)?.versionId ?? latest?.id ?? "";
+      setNotesVersionId(notesVersion);
+      setLinerNotes(data.document ? balladLinerNotesForVersion(data.document, notesVersion) : normalizeBalladLinerNotes(null));
       setAudioChoice(data.document?.selectedAudioId ?? "");
       setAutomation(data.config.enabled);
       setShowChoice(data.show?.sessionId ?? initialShowId);
@@ -121,9 +127,17 @@ export function BNLBalladWorkspace({ initialShowId = "" }: { initialShowId?: str
       const response = await fetch("/api/admin/ballads", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ showId: doc?.showId, revision: doc?.revision, action, ...payload }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not save.");
-      if (data.document && snapshot) setSnapshot({ ...snapshot, document: data.document });
+      if (data.document && snapshot) {
+        setSnapshot({ ...snapshot, document: data.document });
+        if (!dirtyParts.current.has("linerNotes") || action === "saveLinerNotes") {
+          const saved: BalladDocument = data.document;
+          const target = action === "saveLinerNotes" ? String(payload.versionId) : saved.audio.find(a => a.id === saved.selectedAudioId)?.versionId ?? saved.versions.at(-1)?.id ?? "";
+          setNotesVersionId(target); setLinerNotes(balladLinerNotesForVersion(saved, target));
+        }
+      }
       if (data.config && snapshot) setSnapshot({ ...snapshot, config: data.config });
       setMessage(["generate", "polish", "edit", "restore"].includes(action) ? "" : action === "saveOptions" ? `Directions saved for this show. Choose ${doc?.versions.length ? "Generate new draft" : "Generate draft"} when you’re ready for BNL to write.` : action === "saveAutomation" ? `After-show automation ${payload.enabled ? "enabled" : "disabled"}.` : action === "savePresentation" ? `Release details saved. Use ${doc?.published ? "Publish updated details" : "Publish ballad"} to put them on the site.` : action === "publish" ? "Ballad published with the confirmed audio and its saved lyrics." : action === "archive" ? "Song archived. This show’s single song slot is empty." : action === "archiveReplace" ? "Previous song archived. Replacement confirmed in this show’s song slot." : "Saved and confirmed.");
+      if (action === "saveLinerNotes") setMessage(`Track story saved for Version ${data.document?.versions.find((v: { id: string }) => v.id === payload.versionId)?.ordinal}. It will appear when you publish that version’s confirmed recording.`);
       return true;
     } catch (e) { setError(e instanceof Error ? e.message : "Could not save."); return false; }
     finally { setBusy(false); }
@@ -207,7 +221,17 @@ export function BNLBalladWorkspace({ initialShowId = "" }: { initialShowId?: str
           {pendingUpload && <div className="space-y-2 rounded border border-accent/50 p-3"><p className="text-sm text-foreground">{pendingUpload.filename} → {snapshot.show.title} · Version {doc.versions.find(v => v.id === pendingUpload.versionId)?.ordinal}</p><button type="button" disabled={busy} className={primaryClass} onClick={async () => { if (await act("attachAudio", pendingUpload)) setPendingUpload(null); }}>Confirm upload & show attachment</button></div>}
           {!!doc.audio.length && <><Field label="Saved takes"><select className={inputClass} value={audioChoice} onChange={e => setAudioChoice(e.target.value)}><option value="">Choose a take</option>{doc.audio.map(a => <option key={a.id} value={a.id}>{a.filename} · Version {doc.versions.find(v => v.id === a.versionId)?.ordinal}{a.id === doc.selectedAudioId ? " · Confirmed" : ""}</option>)}</select></Field>{selectedTake && <><audio className="w-full" controls preload="metadata" src={mediaUrl(doc.showId, selectedTake.id)} /><p className="text-xs text-muted">{selectedTakeVersion?.title} · {selectedTake.duration ? `${Math.floor(selectedTake.duration / 60)}:${String(Math.floor(selectedTake.duration % 60)).padStart(2, "0")}` : "Duration available in player"}</p></>}{!doc.selectedAudioId ? <button type="button" disabled={busy || !audioChoice} className={primaryClass} onClick={() => act("selectAudio", { audioId: audioChoice })}>Confirm song for this show</button> : <div className="space-y-3"><p className="text-sm font-bold text-accent">One song slot · selection locked</p><p className="text-xs text-muted">Chosen: {doc.audio.find(a => a.id === doc.selectedAudioId)?.filename}. It stays this show’s song until you archive it.</p><div className="flex flex-wrap gap-2"><button type="button" disabled={busy} className={buttonClass} onClick={() => { if (window.confirm("Archive the chosen song and clear this show’s song slot? Its audio and lyrics stay in history; the public release is removed.")) void act("archive"); }}>Archive song</button><button type="button" disabled={busy || !audioChoice || audioChoice === doc.selectedAudioId} className={primaryClass} onClick={() => { if (window.confirm("Archive the chosen song and put this take in the single song slot? The replacement stays private until you publish it.")) void act("archiveReplace", { audioId: audioChoice }); }}>Archive & replace with this take</button></div></div>}</>}
         </section>
-        {!!doc.archivedSongs.length && <details className="rounded border border-border p-5"><summary className="cursor-pointer text-sm font-bold text-foreground">Archived songs · {doc.archivedSongs.length}</summary><div className="mt-4 space-y-3">{doc.archivedSongs.map((entry, i) => { const v = doc.versions.find(v => v.id === entry.versionId); const a = doc.audio.find(a => a.id === entry.audioId); return <div key={`${entry.audioId}-${i}`} className="rounded border border-border p-3"><p className="text-sm text-foreground">BNL-01 — {v?.title} · Version {v?.ordinal}</p><p className="mt-1 text-xs text-muted">Archived {new Date(entry.archivedAt).toLocaleString()} · {a?.filename}</p>{a && <audio className="mt-3 w-full" controls preload="none" src={mediaUrl(doc.showId, a.id)} />}<details className="mt-3 text-xs text-muted"><summary className="cursor-pointer">Archived lyrics & Style</summary><p className="mt-3 whitespace-pre-wrap">{v?.lyrics}</p><p className="mt-3">{v?.style}</p></details></div>; })}</div></details>}
+        {!!doc.archivedSongs.length && <details className="rounded border border-border p-5"><summary className="cursor-pointer text-sm font-bold text-foreground">Archived songs · {doc.archivedSongs.length}</summary><div className="mt-4 space-y-3">{doc.archivedSongs.map((entry, i) => { const v = doc.versions.find(v => v.id === entry.versionId); const a = doc.audio.find(a => a.id === entry.audioId); return <div key={`${entry.audioId}-${i}`} className="rounded border border-border p-3"><p className="text-sm text-foreground">BNL-01 — {v?.title} · Version {v?.ordinal}</p><p className="mt-1 text-xs text-muted">Archived {new Date(entry.archivedAt).toLocaleString()} · {a?.filename}</p>{a && <audio className="mt-3 w-full" controls preload="none" src={mediaUrl(doc.showId, a.id)} />}<details className="mt-3 text-xs text-muted"><summary className="cursor-pointer">Archived lyrics, Style & track story</summary><p className="mt-3 whitespace-pre-wrap">{v?.lyrics}</p><p className="mt-3">{v?.style}</p><BalladTrackStory notes={entry.linerNotes} /></details></div>; })}</div></details>}
+        <section className="space-y-4 rounded border border-border p-5">
+          <div><h3 className="text-lg font-bold text-foreground">Track story & people</h3><p className="mt-1 text-sm text-muted">BNL writes these with each new draft. Edit freely, or add notes to an earlier song. The confirmed recording’s story appears on its public page.</p></div>
+          <Field label="Song version for these notes"><select className={inputClass} value={notesVersionId} disabled={!doc.versions.length} onChange={e => {
+            if (dirtyParts.current.has("linerNotes") && !window.confirm("Load this song’s saved story and discard unsaved story edits?")) return;
+            setNotesVersionId(e.target.value); setLinerNotes(balladLinerNotesForVersion(doc, e.target.value)); clearDirty("linerNotes");
+          }}><option value="">Generate or save a draft first</option>{doc.versions.map(v => <option key={v.id} value={v.id}>Version {v.ordinal} · {v.title}{doc.audio.some(a => a.id === doc.selectedAudioId && a.versionId === v.id) ? " · Confirmed recording" : ""}</option>)}</select></Field>
+          <div className="grid gap-4 md:grid-cols-2">{(Object.entries(BALLAD_LINER_NOTE_FIELDS) as [keyof BalladLinerNotes, string][]).map(([key, label]) => <Field key={key} label={label}><textarea rows={key === "inspiration" ? 5 : 3} maxLength={1500} disabled={!notesVersionId} className={inputClass} value={linerNotes[key]} onChange={e => { setLinerNotes({ ...linerNotes, [key]: e.target.value }); markDirty("linerNotes"); }} placeholder={key === "inspiration" ? "BNL’s own words about the broadcast and why he took the song in this direction." : key === "mentions" ? "Names mentioned in the lyrics and their place in the song." : key === "inspiredBy" ? "People, jokes or moments that shaped this Ballad." : "A short introduction to the track’s story and sound."} /></Field>)}</div>
+          <div className="flex flex-wrap items-center gap-3"><button type="button" disabled={busy || !notesVersionId} className={primaryClass} onClick={async () => { if (await act("saveLinerNotes", { versionId: notesVersionId, linerNotes })) clearDirty("linerNotes"); }}>Save track story</button>{dirtySections.includes("linerNotes") && <span className="text-xs text-amber-300">Unsaved track story</span>}</div>
+          <p className="text-xs text-muted">Save keeps your notes here. Publish below updates the public page. Recording credits are separate from lyrical mentions and inspiration.</p>
+        </section>
         <section className="space-y-4 rounded border border-border p-5"><h3 className="text-lg font-bold text-foreground">Release details</h3>
           {([ ["credits", "Credits"], ["artworkUrl", "Artwork URL (optional, HTTPS)"], ["sunoUrl", "Suno song link (optional)"], ["sunoModel", "Suno model (optional)"], ["sunoSettings", "Suno settings / production notes (optional)"] ] as [keyof BalladPresentation, string][]).map(([key, label]) => <Field key={key} label={label}><input className={inputClass} value={presentation[key]} onChange={e => { setPresentation({ ...presentation, [key]: e.target.value }); markDirty("presentation"); }} /></Field>)}
           <div className="flex flex-wrap gap-2"><button type="button" disabled={busy} className={buttonClass} onClick={async () => { if (await act("savePresentation", { presentation })) clearDirty("presentation"); }}>Save release details</button><button type="button" disabled={busy || !doc.selectedAudioId} className={primaryClass} onClick={() => { if (window.confirm("Publish the confirmed take, its saved lyrics and the saved release details?")) void act("publish"); }}>{doc.published ? "Publish updated details" : "Publish ballad"}</button></div>

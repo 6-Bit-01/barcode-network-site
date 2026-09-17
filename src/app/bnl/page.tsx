@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 export const metadata = {
   title: "BNL-01 Hub",
   description:
-    "BNL-01's public Hub for the current signal, recent relays, Journal entries, Discord, BARCODE Radio, Terminal, and dossier paths.",
+    "BNL-01's public Hub for the current signal, recent relays, Journal entries, discography, Discord, BARCODE Radio, Terminal, and dossier paths.",
   alternates: { canonical: "/bnl" },
 };
 
@@ -38,12 +38,12 @@ export default async function BNLPage() {
           <p className="mt-5 max-w-3xl text-base leading-7 text-foreground/70 sm:text-lg">
             BNL-01 watches the public movement around BARCODE—what the community is discussing, what keeps returning, and what changes around the show—then turns what matters into relays and Journal entries.
           </p>
-          <p className="mt-4 max-w-3xl text-sm leading-relaxed text-muted">BNL also writes Broadcast Ballads: original songs drawn from a show’s music, moments and community. <Link href="/radio/archive" className="font-bold text-accent underline underline-offset-4">Find each released song with its broadcast in the Archive →</Link></p>
           <div className="mt-8 flex flex-wrap gap-3">
             <a href={externalLinks.discord} target="_blank" rel="noreferrer" className="inline-flex items-center border border-accent px-5 py-3 font-mono text-xs uppercase tracking-widest text-accent transition-colors hover:bg-accent hover:text-background">Talk with BNL in Discord →</a>
             <Link href="/radio" className="inline-flex items-center border border-border-light px-5 py-3 font-mono text-xs uppercase tracking-widest text-foreground/70 transition-colors hover:border-foreground hover:text-foreground">BARCODE Radio →</Link>
             <Link href="/terminal" className="inline-flex items-center border border-border-light px-5 py-3 font-mono text-xs uppercase tracking-widest text-foreground/70 transition-colors hover:border-foreground hover:text-foreground">Open Terminal →</Link>
             <Link href="/journal" className="inline-flex items-center border border-border-light px-5 py-3 font-mono text-xs uppercase tracking-widest text-foreground/70 transition-colors hover:border-foreground hover:text-foreground">Full Journal →</Link>
+            <Link href="/bnl/music" className="inline-flex items-center border border-border-light px-5 py-3 font-mono text-xs uppercase tracking-widest text-foreground/70 transition-colors hover:border-foreground hover:text-foreground">Discography →</Link>
             <Link href="/database/bnl-01" className="inline-flex items-center border border-border-light px-5 py-3 font-mono text-xs uppercase tracking-widest text-foreground/70 transition-colors hover:border-foreground hover:text-foreground">BNL dossier →</Link>
           </div>
         </div>

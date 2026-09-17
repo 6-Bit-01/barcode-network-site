@@ -376,10 +376,65 @@ test("reviewed names persist with the working version and empty choices are not 
   assert.equal(artistTools.autofillBalladArtistLinks(["AI/ML Music"], [profile("AI/ML Music")], contract.balladArtistLinksForVersion(doc, version.id), doc.artistNamesReviewedByVersion[version.id]).length, 0);
 });
 
-test("old Ballad URLs land on their show and the Ballad explainer has no duplicate player", async () => {
+test("legacy Ballad URLs preserve show destinations and discography searches", async () => {
   const page = load("src/app/radio/ballads/page.tsx", { "next/navigation": { redirect: href => { throw new Error(href); } }, "next/link": ({ href, children }) => React.createElement("a", { href }, children) });
   await assert.rejects(page.default({ searchParams: Promise.resolve({ show: "show-1" }) }), /radio\/archive\?view=shows&show=show-1#broadcast-ballad/);
+  await assert.rejects(page.default({ searchParams: Promise.resolve({}) }), /^Error: \/bnl\/music$/);
+  await assert.rejects(page.default({ searchParams: Promise.resolve({ q: "AI/ML Music & light" }) }), /^Error: \/bnl\/music\?q=AI%2FML%20Music%20%26%20light$/);
+});
+
+const linkMock = ({ href, children, ...props }) => React.createElement("a", { href, ...props }, children);
+test("discography presents released work and links to its show without exposing working drafts", async () => {
+  const { store } = setup();
+  let doc = draft(); doc.audio.push(audio); doc.versions[0].linerNotes = { ...notes, about: "A song about <night>" };
+  doc = contract.publishBallad(contract.selectBalladAudio(doc, audio.id));
+  doc.versions.push({ ...version, id: "private-draft", title: "Unreleased title" });
+  doc.presentation.credits = "Private credit edit";
+  await store.saveBallad(doc, 0);
+  const page = load("src/app/bnl/music/page.tsx", { "next/link": linkMock, "@/lib/bnl-ballads-store": store });
   const html = renderToStaticMarkup(await page.default({ searchParams: Promise.resolve({}) }));
-  assert.ok(html.includes('href="/radio/archive"'));
-  assert.ok(!html.includes("<audio"));
+  for (const text of [version.title, version.style, "1 released song", "BNL-01", "A song about &lt;night&gt;", "BNL’s creative notes"]) assert.ok(html.includes(text), text);
+  assert.ok(html.includes('id="release-show-1"'));
+  assert.ok(html.includes('href="/radio/archive?view=shows&amp;show=show-1#broadcast-ballad"'));
+  assert.equal(html.includes("<audio"), false);
+  assert.equal(html.includes("Unreleased title"), false);
+  assert.equal(html.includes("Private credit edit"), false);
+  assert.equal(html.includes("private.blob"), false);
+  assert.equal(html.includes("Original output"), false);
+});
+
+test("discography sorts publication dates and searches released names and sound", () => {
+  const { BNLDiscography } = load("src/components/BNLDiscography.tsx", { "next/link": linkMock });
+  let doc = draft(); doc.audio.push(audio);
+  doc = contract.publishBallad(contract.selectBalladAudio(doc, audio.id));
+  const older = { ...contract.publicBallad(doc, show), publishedAt: "2026-09-12T03:00:00Z" };
+  const newer = { ...older, show: { ...show, sessionId: "second-show" }, version: { ...older.version, title: "Second release", style: "Industrial swing" }, artistLinks: [{ name: "AI/ML Music", ...profile("AI/ML Music") }], publishedAt: "2026-09-17T03:00:00Z" };
+  const render = query => renderToStaticMarkup(React.createElement(BNLDiscography, { releases: [older, newer], query }));
+  assert.ok(render("").indexOf("Second release") < render("").indexOf(version.title));
+  for (const query of ["industrial", "AI/ML Music"]) {
+    assert.ok(render(query).includes("Second release"));
+    assert.equal(render(query).includes(version.title), false);
+  }
+  assert.ok(render("no such title").includes("No releases match"));
+});
+
+test("discography distinguishes unavailable catalog from no released songs", async () => {
+  for (const unavailable of [false, true]) {
+    const page = load("src/app/bnl/music/page.tsx", { "next/link": linkMock, "@/lib/bnl-ballads-store": { listPublicBallads: async () => { if (unavailable) throw new Error("storage unavailable"); return []; } } });
+    const html = renderToStaticMarkup(await page.default({ searchParams: Promise.resolve({}) }));
+    assert.equal(html.includes("temporarily unavailable"), unavailable);
+    assert.equal(html.includes("No songs have been published yet"), !unavailable);
+    assert.equal(html.includes("0 released songs"), !unavailable);
+  }
+});
+
+test("show card has a directly visible player and links to the matching discography entry", () => {
+  let doc = draft(); doc.audio.push(audio);
+  doc = contract.publishBallad(contract.selectBalladAudio(doc, audio.id));
+  const { BroadcastBallad } = load("src/components/BroadcastBallad.tsx", { "next/link": linkMock });
+  const html = renderToStaticMarkup(React.createElement(BroadcastBallad, { ballad: contract.publicBallad(doc, show) }));
+  assert.ok(html.indexOf("<audio") < html.indexOf("<details"));
+  assert.ok(html.includes('href="/bnl/music#release-show-1"'));
+  assert.ok(html.includes("/api/ballads/media?showId=show-1&amp;audioId=take-1"));
+  assert.equal((html.match(/<audio/g) ?? []).length, 1);
 });

@@ -233,7 +233,7 @@ export function BNLBalladWorkspace({ initialShowId = "" }: { initialShowId?: str
   return <fieldset disabled={busy || pending} className="space-y-6" aria-label="BNL Broadcast Ballads workspace">
     <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border pb-5">
       <div><p className="text-xs uppercase tracking-[0.28em] text-accent">BNL-01 / Recording desk</p><h2 className="mt-2 text-3xl font-black text-foreground">Broadcast Ballads</h2><p className="mt-2 max-w-2xl text-sm text-muted">One broadcast. A new BNL original. Shape the words, find the sound, choose the take.</p></div>
-      <div className="flex flex-wrap gap-2"><Link href="/admin" className={buttonClass}>Admin dashboard</Link><Link href="/radio/archive" className={buttonClass}>Broadcast Archive ↗</Link></div>
+      <div className="flex flex-wrap gap-2"><Link href="/admin" className={buttonClass}>Admin dashboard</Link><Link href="/bnl/music" className={buttonClass}>BNL discography ↗</Link><Link href="/radio/archive" className={buttonClass}>Broadcast Archive ↗</Link></div>
     </div>
     {error && <p role="alert" className="rounded border border-red-400/50 bg-red-400/5 p-3 text-sm text-red-300">{error}</p>}
     {message && <p role="status" className="rounded border border-accent/40 p-3 text-sm text-accent">{message}</p>}

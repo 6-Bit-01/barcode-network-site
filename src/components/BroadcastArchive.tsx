@@ -298,7 +298,6 @@ export function BroadcastArchive({
             <div className="max-w-3xl">
               <p className="text-xs font-bold uppercase tracking-[0.38em] text-accent">{previewMode ? "Private post-show readback" : "Post-show database"}</p>
               <h1 className="mt-3 text-3xl font-black tracking-tight text-foreground sm:text-5xl">{previewMode ? "Broadcast Archive Preview" : "The Broadcast Archive"}</h1>
-              {!previewMode && <p className="mt-3 text-sm text-muted">Some shows have an original song by BNL-01. Open a show and look for <strong className="text-accent">This broadcast’s Ballad</strong>.</p>}
               <p className="mt-4 max-w-2xl text-sm leading-relaxed text-muted sm:text-base">Search {previewMode ? "this test session" : "BARCODE Radio"} by individual show or by artist/project. Includes recorded playback, partial plays, and external tracks marked finished by the host. A Finish does not confirm full-length playback. Follow who submitted each track, public music links, collaborators, exact outcomes, Wheel selections, and repeat appearances.</p>
             </div>
             <div className="flex flex-wrap gap-2">

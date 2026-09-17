@@ -2,17 +2,22 @@
 /* eslint-disable @next/next/no-img-element */
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { audioTime } from "@/lib/site-audio-player";
 import { useSiteAudio } from "@/components/SiteAudioProvider";
 import styles from "./SiteAudioDock.module.css";
+import { balladDateLabel } from "@/lib/ballad-catalog";
 
 export function SiteAudioDock() {
   const audio = useSiteAudio();
   const { track, controller, status } = audio;
   const [expanded, setExpanded] = useState(false);
   const dock = useRef<HTMLElement>(null);
+  const info = useRef<HTMLDivElement>(null);
+  const pathname = usePathname();
   const active = status === "playing" || status === "loading";
+  useEffect(() => { info.current?.hidePopover?.(); }, [track?.key, pathname]);
 
   useEffect(() => {
     if (!track || !dock.current) return;
@@ -91,6 +96,19 @@ export function SiteAudioDock() {
         </div>
         <button type="button" className={`${styles.smallButton} ${styles.expand}`} aria-label={expanded ? "Collapse player controls" : "Expand player controls"} aria-expanded={expanded} aria-controls="barcode-player-controls" onClick={() => setExpanded(value => !value)}><span aria-hidden="true">{expanded ? "⌄" : "⌃"}</span></button>
         <button type="button" className={styles.smallButton} aria-label="Close player and stop music" onClick={controller.close}><span aria-hidden="true">×</span></button>
+        <div className={styles.links}>
+          <Link href={track.showHref} className={styles.showLink}>Show · {track.showDate ? balladDateLabel(track.showDate) : "View broadcast"} ↗</Link>
+          <button type="button" popoverTarget="barcode-song-info" className={styles.textButton}>Song info</button>
+          {track.downloadHref && <a href={track.downloadHref} download className={styles.textButton} aria-label={`Download ${track.title} free`}>↓ Free download</a>}
+        </div>
+      </div>
+      <div ref={info} id="barcode-song-info" popover="auto" role="dialog" aria-label="About this song" className={styles.info}>
+        <div className={styles.infoHeading}><h2>{track.title}</h2><button type="button" popoverTarget="barcode-song-info" popoverTargetAction="hide" aria-label="Close song info" className={styles.smallButton}>×</button></div>
+        {track.about && <p>{track.about}{track.about.length === 320 ? "…" : ""}</p>}
+        {track.genres?.length ? <p className={styles.infoGenres}>{track.genres.join(" · ")}</p> : null}
+        <Link href={track.showHref} onClick={() => info.current?.hidePopover?.()} className={styles.infoShow}>{track.showTitle || "View the broadcast"} →</Link>
+        {track.credits && <p className={styles.infoCredits}>{track.credits}</p>}
+        <p className={styles.infoCredits}>Free to download for listening. <Link href={track.showHref} onClick={() => info.current?.hidePopover?.()}>Full story & credits →</Link></p>
       </div>
       <p className={audio.error ? styles.error : styles.srOnly} role={audio.error ? "alert" : "status"}>{audio.error ?? (status === "loading" ? "Loading recording…" : status === "playing" ? `Playing ${track.title}` : status === "ended" ? "Song finished" : "Music paused")}</p>
     </section>

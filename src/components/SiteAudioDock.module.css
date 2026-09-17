@@ -8,7 +8,19 @@
   padding-bottom: env(safe-area-inset-bottom, 0px);
   font-family: "Oxanium Variable", ui-monospace, monospace;
 }
-.inner { display: flex; align-items: center; gap: 16px; max-width: 1440px; margin: auto; padding: 14px 24px; }
+.inner { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; max-width: 1440px; margin: auto; padding: 12px 24px; }
+.links { order: 2; display: flex; align-items: center; gap: 16px; width: 100%; font-size: 11px; color: #8effc1; }
+.showLink { margin-right: auto; }
+.textButton, .showLink { min-height: 32px; display: inline-flex; align-items: center; cursor: pointer; }
+.textButton:hover, .showLink:hover { text-decoration: underline; text-underline-offset: 4px; }
+.info { position: fixed; inset: auto 16px var(--barcode-player-space, 140px) auto; margin: 0; width: min(440px, calc(100vw - 32px)); max-height: 55dvh; overflow-y: auto; padding: 20px; border: 1px solid #00ff8866; border-radius: 6px; background: #0b1510; color: #dceae3; box-shadow: 0 8px 40px #000b; font-family: "Oxanium Variable", ui-monospace, monospace; font-size: 13px; line-height: 1.6; }
+.info::backdrop { background: transparent; }
+.infoHeading { display: flex; align-items: start; gap: 10px; font-size: 16px; font-weight: 700; }
+.infoHeading h2 { flex: 1; overflow-wrap: anywhere; }
+.info p { margin-top: 12px; }
+.infoGenres, .infoShow, .info a { color: #8effc1; }
+.infoShow { display: inline-block; margin-top: 14px; text-decoration: underline; text-underline-offset: 3px; }
+.info .infoCredits { color: #a5baaf; font-size: 11px; }
 .identity { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1 1 35%; }
 .artwork, .cover { width: 52px; height: 52px; flex-shrink: 0; object-fit: cover; border: 1px solid #00ff883b; border-radius: 3px; }
 .cover { display: grid; place-items: center; padding: 10px; background: #00ff880b; }
@@ -57,5 +69,6 @@
   .tools[data-expanded="false"] { display: none; }
   .volume { width: 125px; }
   .error { padding: 0 14px 10px; }
+  .links { gap: 12px; font-size: 10px; }
 }
 @media (prefers-reduced-motion: reduce) { .meter[data-playing="true"] i { animation: none; transform: scaleY(.55); } }

@@ -654,7 +654,7 @@ test("Radio switches from the live Deck to the exact archived show using observe
   assert.equal(feature.show.artistCredits, 1);
   assert.equal(feature.show.wheelSpins, 2, "cancelled selections still count as real spins");
   assert.equal(feature.show.durationSeconds, 45 * 60);
-  assert.deepEqual(feature.show.artists, [{ name: "Signal Artist", href: "/radio/archive?view=artists&artist=signal%20artist" }]);
+  assert.deepEqual(feature.show.artists, [{ name: "Signal Artist", href: "/radio/archive?view=artists&artist=signal%20artist#artist-card" }]);
   assert.doesNotMatch(JSON.stringify(feature), /private-browser-token|private@example|storage.example|pi_private|submittedByTikTokHandle|sourceRevision/);
 
   const ended = { ...live, status: "archived", broadcastPhase: "ended", queueOpen: false,

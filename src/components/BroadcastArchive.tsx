@@ -4,6 +4,7 @@ import { BroadcastBallad } from "@/components/BroadcastBallad";
 import type { PublicBallad } from "@/lib/bnl-ballads";
 import { normalizeBroadcastArchiveProjectKey, resolveArchiveArtist } from "@/lib/broadcast-archive";
 import { useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   broadcastArchiveArtistHref,
@@ -77,12 +78,7 @@ function archiveSelectionHref(baseHref: string, view: BroadcastArchiveView, valu
     url.searchParams.set("artist", value);
     url.searchParams.delete("show");
   }
-  return `${url.pathname}${url.search}`;
-}
-
-function setArchiveUrl(href: string): void {
-  if (typeof window === "undefined") return;
-  window.history.replaceState(window.history.state, "", href);
+  return `${url.pathname}${url.search}${view === "artists" ? "#artist-card" : "#show-card"}`;
 }
 
 function Stat({ label, value, detail }: { label: string; value: number | string; detail: string }) {
@@ -129,7 +125,7 @@ function TrackRow({ track, showLink = true, archiveBaseHref }: { track: QueuePub
 function ShowDetail({ show, archiveBaseHref, ballad }: { show: QueuePublicShowStats; archiveBaseHref: string; ballad?: PublicBallad }) {
   const incomplete = show.skippedTrackCount + show.removedTrackCount + show.unknownOutcomeTrackCount;
   return (
-    <section aria-labelledby="selected-show-heading" className="border border-border bg-surface p-5 sm:p-6">
+    <section id="show-card" aria-labelledby="selected-show-heading" className="order-first scroll-mt-24 lg:order-last border border-border bg-surface p-5 sm:p-6">
       <div className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.35em] text-accent">Show Record</p>
@@ -163,7 +159,7 @@ function ArtistDetail({ artist, archiveBaseHref }: { artist: QueuePublicProjectH
   const handles = [...new Set(artist.tracks.map((track) => track.submittedByTikTokHandle).filter(Boolean))].sort();
   const incomplete = artist.skippedTrackCount + artist.removedTrackCount + artist.unknownOutcomeTrackCount;
   return (
-    <section aria-labelledby="selected-artist-heading" className="border border-border bg-surface p-5 sm:p-6">
+    <section id="artist-card" aria-labelledby="selected-artist-heading" className="order-first scroll-mt-24 lg:order-last border border-border bg-surface p-5 sm:p-6">
       <div className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.35em] text-cyan-200">Artist / Project Record</p>
@@ -221,12 +217,14 @@ export function BroadcastArchive({
   const [ballads, setBallads] = useState(initialBallads);
   const [balladsUnavailable, setBalladsUnavailable] = useState(initialBalladsUnavailable);
   const [stats, setStats] = useState(initialStats);
-  const [view, setView] = useState<BroadcastArchiveView>(initialView);
+  const router = useRouter();
+  const params = useSearchParams();
+  const view: BroadcastArchiveView = params.get("view") === "artists" ? "artists" : params.get("view") === "shows" ? "shows" : initialView;
   const [search, setSearch] = useState("");
   const [showSort, setShowSort] = useState<ShowSort>("newest");
   const [artistSort, setArtistSort] = useState<ArtistSort>("alphabetical");
-  const [selectedShowId, setSelectedShowId] = useState(initialShowId || initialStats.shows[0]?.sessionId || "");
-  const [selectedArtistKey, setSelectedArtistKey] = useState(initialArtistKey || initialStats.artists[0]?.projectKey || "");
+  const selectedShowId = params.get("show") ?? (initialShowId || initialStats.shows[0]?.sessionId || "");
+  const selectedArtistKey = params.get("artist") ?? (initialArtistKey || initialStats.artists[0]?.projectKey || "");
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState(false);
 
@@ -251,22 +249,19 @@ export function BroadcastArchive({
 
   const featuredName = selectedArtistKey.startsWith("featured:") ? selectedArtistKey.slice(9) : "";
   const featuredTracks = featuredName ? stats.shows.flatMap(show => show.trackRoster).filter(track => track.featuredArtists?.some(credit => normalizeBroadcastArchiveProjectKey(credit.name) === featuredName)) : [];
-  const selectedShow = shows.find((show) => show.sessionId === selectedShowId) ?? shows[0] ?? null;
-  const selectedArtist = resolveArchiveArtist(artists, featuredName || selectedArtistKey) ?? (!selectedArtistKey ? artists[0] : null);
+  const selectedShow = stats.shows.find((show) => show.sessionId === selectedShowId) ?? shows[0] ?? null;
+  const selectedArtist = resolveArchiveArtist(stats.artists, featuredName || selectedArtistKey) ?? (!selectedArtistKey ? artists[0] : null);
 
   function chooseView(next: BroadcastArchiveView) {
-    setView(next);
-    setArchiveUrl(archiveSelectionHref(archiveBaseHref, next, next === "shows" ? selectedShow?.sessionId ?? "" : selectedArtist?.projectKey ?? ""));
+    router.push(archiveSelectionHref(archiveBaseHref, next, next === "shows" ? selectedShow?.sessionId ?? "" : selectedArtist?.projectKey ?? ""));
   }
 
   function chooseShow(sessionId: string) {
-    setSelectedShowId(sessionId);
-    setArchiveUrl(archiveSelectionHref(archiveBaseHref, "shows", sessionId));
+    router.push(archiveSelectionHref(archiveBaseHref, "shows", sessionId));
   }
 
   function chooseArtist(projectKey: string) {
-    setSelectedArtistKey(projectKey);
-    setArchiveUrl(archiveSelectionHref(archiveBaseHref, "artists", projectKey));
+    router.push(archiveSelectionHref(archiveBaseHref, "artists", projectKey));
   }
 
   async function refresh() {
@@ -341,7 +336,7 @@ export function BroadcastArchive({
             <div className="flex items-center justify-between gap-3 border-b border-border pb-3"><div><p className="text-xs font-bold uppercase tracking-[0.25em] text-cyan-200">Artists</p><p className="mt-1 text-[11px] text-muted">{artists.length} matching records</p></div><label><span className="sr-only">Sort artists</span><select value={artistSort} onChange={(event) => setArtistSort(event.target.value as ArtistSort)} className="border border-border bg-background px-2 py-2 text-xs text-muted"><option value="alphabetical">A–Z</option><option value="tracks">Most tracks</option><option value="played">Most finished</option><option value="recent">Most recent</option></select></label></div>
             <div className="mt-3 max-h-[62vh] space-y-2 overflow-y-auto pr-1">{artists.map((artist) => <button key={artist.projectKey} type="button" onClick={() => chooseArtist(artist.projectKey)} className={`${selectedArtist?.projectKey === artist.projectKey ? "border-cyan-200 bg-cyan-200/5" : "border-border hover:border-cyan-200/55"} w-full border p-3 text-left`}><p className="font-bold text-foreground">{artist.projectLabel}</p><p className="mt-1 text-xs text-muted">{artist.showCount} {artist.showCount === 1 ? "show" : "shows"}</p><p className="mt-2 font-mono text-[10px] uppercase tracking-widest text-muted">{artist.submittedTrackCount} tracks · {artist.finishedTrackCount} finished</p></button>)}{artists.length === 0 && <p className="p-3 text-sm text-muted">No artists match this search.</p>}</div>
           </aside>
-          {selectedArtist ? <ArtistDetail artist={selectedArtist} archiveBaseHref={archiveBaseHref} /> : featuredName ? <section className="border border-border p-5"><h2 className="text-2xl font-bold text-foreground">Featured appearances: {featuredTracks.flatMap(track => track.featuredArtists ?? []).find(credit => normalizeBroadcastArchiveProjectKey(credit.name) === featuredName)?.name ?? featuredName}</h2><p className="my-4 text-sm text-muted">Featured credit only. An artist card becomes available when this artist submits as primary.</p>{featuredTracks.map(track => <TrackRow key={`${track.sessionId}:${track.trackId}`} track={track} archiveBaseHref={archiveBaseHref} />)}</section> : <EmptyArchive kind="artist" previewMode={previewMode} />}
+          {selectedArtist ? <ArtistDetail artist={selectedArtist} archiveBaseHref={archiveBaseHref} /> : featuredName ? <section id="artist-card" className="order-first scroll-mt-24 border border-border p-5 lg:order-last"><h2 className="text-2xl font-bold text-foreground">Featured appearances: {featuredTracks.flatMap(track => track.featuredArtists ?? []).find(credit => normalizeBroadcastArchiveProjectKey(credit.name) === featuredName)?.name ?? featuredName}</h2><p className="my-4 text-sm text-muted">Featured credit only. An artist card becomes available when this artist submits as primary.</p>{featuredTracks.map(track => <TrackRow key={`${track.sessionId}:${track.trackId}`} track={track} archiveBaseHref={archiveBaseHref} />)}</section> : selectedArtistKey && stats.artists.length > 0 ? <section id="artist-card" role="status" className="order-first scroll-mt-24 border border-border p-5 lg:order-last"><h2 className="text-xl font-bold text-foreground">Artist card unavailable</h2><p className="mt-3 text-sm text-muted">No current card matches “{selectedArtistKey}”. Search the artist list to find their current profile.</p></section> : <EmptyArchive kind="artist" previewMode={previewMode} />}
         </div>
       )}
     </div>

@@ -2,6 +2,8 @@ import { get } from "@vercel/blob";
 import { verifyAdminRequest } from "@/lib/auth";
 import { requireBalladShow, readBallad } from "@/lib/bnl-ballads-store";
 import { serveAdminQueueAudio } from "@/lib/queue-audio-response";
+import { publicBallad } from "@/lib/bnl-ballads";
+import { balladDownloadDisposition, balladDownloadFilename } from "@/lib/ballad-download";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
@@ -11,6 +13,11 @@ export async function GET(req: Request) {
     const doc = await readBallad(show.sessionId);
     const audio = doc.audio.find(a => a.id === params.get("audioId"));
     if (!audio || (doc.published?.audioId !== audio.id && !await verifyAdminRequest(req))) return new Response("Audio unavailable.", { status: 404 });
-    return serveAdminQueueAudio({ entry: { id: audio.id, sourceType: "upload", fileUrl: audio.url, fileName: audio.filename, mimeType: audio.contentType }, rangeHeader: req.headers.get("range"), getBlob: (url, options) => get(url, options) });
+    const download = params.get("download") === "1";
+    const release = download ? publicBallad(doc, show) : null;
+    if (download && (!release || release.audioId !== audio.id)) return new Response("Download unavailable.", { status: 404, headers: { "Cache-Control": "no-store" } });
+    const response = await serveAdminQueueAudio({ entry: { id: audio.id, sourceType: "upload", fileUrl: audio.url, fileName: audio.filename, mimeType: audio.contentType }, rangeHeader: req.headers.get("range"), getBlob: (url, options) => get(url, options) });
+    if (release && response.ok) response.headers.set("content-disposition", balladDownloadDisposition(balladDownloadFilename(release.version.title, show.showDate, response.headers.get("content-type") ?? audio.contentType)));
+    return response;
   } catch { return new Response("Audio unavailable.", { status: 404, headers: { "Cache-Control": "no-store" } }); }
 }

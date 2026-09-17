@@ -132,10 +132,11 @@ occupying the show slot. Archived material remains available in the admin worksp
 - Suno creation/selection remains manual. This feature neither signs into Suno nor
   calls an unofficial API. Optional model/settings/song URL and artwork URL are
   release details; the app hosts the uploaded audio using existing private Blob.
-- BNL’s discography: `/bnl/music`, optionally `?q=...`, presents his released
+- BNL’s discography: `/bnl/music`, with URL-backed search and filters, presents his released
   body of work: titles, artwork, publication dates, sound, credits and creative
   notes. Broadcast Ballads is its current collection. Each entry links to its
-  broadcast’s show card, where the recording is directly playable above the
+  broadcast’s show card. Both the discography and show card control one shared
+  player; the show recording remains directly playable above the
   expandable lyrics/story. The show card links back to that discography entry.
   Both views use the same public release snapshot; no second song store exists.
   `/radio/ballads` redirects to the discography, preserving searches; legacy
@@ -266,3 +267,40 @@ The show card's Play control starts a shared root player that stays available
 during public navigation. Song metadata and publication authority are unchanged.
 
 A show card presents its Ballad as part of that broadcast, with the player immediately visible. BNL’s discography at `/bnl/music` presents the same release as part of his creative body of work, with artwork, publication date, sound, credits and creative notes. These are separate, linked perspectives: the discography links to the show’s player; the show’s BNL credit links to the exact discography entry. Hub navigation includes Discography. Terminal’s `BNL MUSIC` command opens it (`BNL BALLADS` remains an alias). The Database dossier retains its existing Hub link without an additional Ballad promotion. Old show-specific Ballad URLs redirect to their show; the old collection URL redirects to the discography. The public media endpoint and publication snapshot remain authoritative. The linking picker now reads the primary artist catalog, accepts complete names containing punctuation, and prefills clear matches on opening linking mode. Explicitly unlinked names are remembered per version when saved. Catalog corrections are separate admin operations in the queue store, not side effects of tagging a song. See [implementation and deployment checks](ballad-archive-artist-credits.md).
+
+
+## Discography browsing and artist navigation
+
+The public discography uses compact release entries (small cover, title, show date,
+saved genres, Play and Free download) with collapsed lyrics/story/people/credits.
+Chronological views group entries in collapsible show-year sections. A page holds
+at most 12 songs; explicit release links choose the page containing that song.
+
+Search matches all entered terms across published title, lyrics, sound/palette,
+credits, liner notes, linked names and show metadata. Quoted phrases stay together;
+case and accents do not matter. Filters combine saved genre tags, reviewed artist
+profile keys, show year and inclusive show date range. Sort supports newest/oldest
+show, title and publication date. Queries survive pagination, sharing and Back.
+Empty/unavailable catalogs and zero matches have separate states. No private
+working options, unreleased drafts or inferred identities enter the search model.
+
+Artist URLs use `?view=artists&artist=<encoded-key>#artist-card`. Archive selection
+reads the current URL, including browser Back/Forward. Existing exact identities
+and unique reviewed aliases retain precedence. A search of the sidebar cannot
+hide the selected card. On mobile the selected detail precedes the browse list.
+Missing identities show an unavailable-card state rather than a different artist.
+No saved artist tag, correction or identity is rewritten by navigation.
+
+Downloads reuse `/api/ballads/media?showId=…&audioId=…&download=1` (query parameters include showId
+and audioId) and the existing protected streaming/range implementation. Only the
+currently published, public-eligible take can be downloaded. `Content-Disposition`
+sets the sanitized `BARCODE_RADIO_<title>_<show-date>` filename, with the original
+MP3/WAV extension and UTF-8 support. This adds a free-listening download, not a new
+licensing declaration or a second media store. No migrations or bot changes.
+
+After the normal Vercel deployment, test an artist link from lyrics and another
+from the Archive roster, then Back/Forward; each must show the named artist card.
+Test combined genre/person/date filters and Clear all, expand a song’s details,
+and start playback on the discography. Use Song info → Show, then Download free;
+verify the filename and uninterrupted playback. Repeat on a phone. Existing songs
+and profile links require no republishing.

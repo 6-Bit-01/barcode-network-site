@@ -138,6 +138,7 @@ test("invalid replacement cannot partially archive the existing song", () => {
   const doc = draft(); doc.audio.push(audio);
   const chosen = contract.selectBalladAudio(doc, audio.id);
   assert.throws(() => contract.archiveBallad(chosen, "missing-take"), /Choose/);
+  assert.throws(() => contract.archiveBallad(chosen, ""), /Choose/);
   assert.equal(chosen.selectedAudioId, audio.id);
   assert.equal(chosen.archivedSongs.length, 0);
 });

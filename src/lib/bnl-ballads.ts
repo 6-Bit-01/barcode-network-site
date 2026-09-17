@@ -66,6 +66,7 @@ export function selectBalladAudio(doc: BalladDocument, audioId: string) {
 export function archiveBallad(doc: BalladDocument, replacementAudioId?: string, now = new Date().toISOString()): BalladDocument {
   const chosen = doc.audio.find(a => a.id === doc.selectedAudioId);
   if (!chosen) throw new Error("No chosen song to archive.");
+  if (replacementAudioId !== undefined && !validId(replacementAudioId)) throw new Error("Choose a valid replacement take.");
   if (replacementAudioId === chosen.id) throw new Error("Choose a different replacement take.");
   const archived: ArchivedBallad = { audioId: chosen.id, versionId: chosen.versionId, selectedAt: doc.selectedAt ?? now, archivedAt: now, publishedAt: doc.published?.at ?? null, presentation: { ...(doc.published?.presentation ?? doc.presentation) } };
   const next: BalladDocument = { ...doc, selectedAudioId: null, selectedAt: null, published: null, archivedSongs: [...doc.archivedSongs, archived] };

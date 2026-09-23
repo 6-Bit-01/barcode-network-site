@@ -450,3 +450,108 @@ test("published song awareness shares public show eligibility and exposes metada
     assert.ok(!JSON.stringify(body).includes("RAW_OUTPUT"));
   } finally { balladFixture = null; }
 });
+
+test("show-log normalization does not multiply with the number of projected tracks", async (t) => {
+  const log = require(path.join(projectRoot, "src/lib/queue-show-log.ts"));
+  const normalize = log.normalizeQueueShowLog;
+  let calls = 0;
+  t.mock.method(log, "normalizeQueueShowLog", (value) => {
+    calls += 1;
+    return normalize(value);
+  });
+  const measurements = [];
+  for (const count of [1, 48]) {
+    const tracks = Array.from({ length: count }, (_,i) => ({
+      ...track(`performance-${i}`), status: "played", playbackOutcome: "finished",
+      completedAt: fixedNow,
+    }));
+    const history = session("history", "public_copy_approved", {
+      status: "archived", queueOpen: false, queue: [], completed: tracks,
+      showLog: Array.from({ length: 48 }, (_,i) => ["track_submitted", "track_play_started", "track_finished"].map((eventType, j) => ({
+        sequence: i * 3 + j + 1, eventType, occurredAt: fixedNow,
+        track: { trackId: `performance-${i}`, artist: `Artist performance-${i}`, title: `Song performance-${i}` },
+        details: null,
+      }))).flat(),
+    });
+    const { queue } = loadHarness({ revision: 50, activeSessionId: null, sessions: [history] });
+    calls = 0;
+    const snapshot = await queue.getQueueBnlReadSnapshot();
+    const projections = await snapshot.getProjections("public");
+    const balladShows = snapshot.getPublicBalladShows();
+    assert.equal(projections.publicHistory.shows[0].trackRoster.length, count);
+    assert.equal(projections.artistMemory.records.length, count);
+    assert.equal(balladShows.length, 1);
+    measurements.push(calls);
+  }
+  assert.ok(measurements[1] <= measurements[0] * 2,
+    `48 tracks must not repeatedly normalize the same log: ${measurements.join(" -> ")} calls`);
+});
+
+test("track event lookups retain normalization, latest sequence, earliest play, and fresh corrections", async () => {
+  const item = { ...track("event-track"), status: "played", playbackOutcome: "finished", completedAt: fixedNow };
+  const at = minute => `2026-09-10T23:${String(minute).padStart(2, "0")}:00.000Z`;
+  const event = (sequence, eventType, minute, id = item.id) => ({
+    sequence, eventType, occurredAt: at(minute),
+    track: { trackId: id, artist: item.artist, title: item.title }, details: null,
+  });
+  const history = session("history", "public_copy_approved", {
+    status: "archived", queueOpen: false, queue: [], completed: [item],
+    showLog: [event(8, "track_finished", 50), event(2, "track_play_started", 20),
+      event(1, "track_submitted", 1), event(3, "track_play_started", 10),
+      event(7, "track_finished", 40), event(6, "track_submitted", 30),
+      event(8, "track_removed", 55), event(9, "track_finished", 59, "another-track"),
+      { ...event(99, "track_finished", 50), occurredAt: "invalid" }],
+  });
+  const store = { revision: 60, activeSessionId: null, sessions: [history] };
+  const { queue } = loadHarness(store);
+  const first = await queue.getQueueBnlReadProjections("public");
+  const projected = first.publicHistory.shows[0].trackRoster[0];
+  assert.equal(projected.submissionEventSequence, 6);
+  assert.equal(projected.outcomeEventSequence, 8);
+  assert.equal(projected.broadcastEvidence, "playback_recorded");
+  assert.equal(first.artistMemory.records[0].lifecycle.playedAt, at(10));
+  assert.equal(JSON.stringify(first).includes('"trackEvents"'), false);
+  assert.equal(first.publicHistory.shows[0].milestones.some(e => e.sequence === 99), false);
+  assert.deepEqual(first.archive.shows[0], first.publicHistory.shows[0]);
+  history.showLog = [event(1, "track_submitted", 1), event(10, "track_finished", 45)];
+  FakeRedis.raw = JSON.stringify({ ...store, revision: 61 });
+  const corrected = await queue.getQueueBnlReadProjections("public");
+  assert.equal(corrected.publicHistory.shows[0].trackRoster[0].outcomeEventSequence, 10);
+  assert.equal(corrected.publicHistory.shows[0].trackRoster[0].broadcastEvidence, "external_host_finished");
+  assert.equal(corrected.artistMemory.records[0].lifecycle.playedAt, null);
+  assert.equal(corrected.artistMemory.records[0].lifecycle.memoryState, "provisional");
+  assert.notEqual(corrected.publicHistory.sourceDigest, first.publicHistory.sourceDigest);
+  history.completed[0].playedAt = at(25);
+  FakeRedis.raw = JSON.stringify({ ...store, revision: 62 });
+  const explicit = await queue.getQueueBnlReadProjections("public");
+  assert.equal(explicit.artistMemory.records[0].lifecycle.playedAt, at(25));
+});
+
+test("read-model phase timings require the service credential and retain no-store", async () => {
+  const { route } = loadHarness();
+  for (const token of [false, "invalid-key", true]) {
+    const { response, body } = await request(route, token);
+    const timing = response.headers.get("server-timing");
+    assertSanitized(body);
+    assert.equal(body.schemaRevision, "1.11");
+    if (token !== true) {
+      assert.equal(timing, null);
+      continue;
+    }
+    assert.match(response.headers.get("cache-control"), /no-store/);
+    assert.match(response.headers.get("vary"), /x-api-key/i);
+    const phases = timing.split(", ").map(metric => {
+      assert.match(metric, /^(queue_snapshot|live_queue|projections|ballads|render|total);dur=\d+\.\d{2}$/);
+      return metric.split(";")[0];
+    });
+    assert.deepEqual(phases, ["queue_snapshot", "live_queue", "projections", "ballads", "render", "total"]);
+    assert.equal(Object.hasOwn(body, "timings"), false);
+  }
+  const { route: failingRoute } = loadHarness();
+  FakeRedis.takeRead = () => { throw new Error("queue unavailable"); };
+  const { response, body } = await request(failingRoute, true);
+  assert.equal(body.sections.queue.available, false);
+  assert.match(response.headers.get("cache-control"), /no-store/);
+  assert.match(response.headers.get("server-timing"), /^queue_snapshot;dur=/);
+  assert.doesNotMatch(response.headers.get("server-timing"), /live_queue|projections|unavailable/);
+});

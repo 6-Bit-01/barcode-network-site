@@ -1607,6 +1607,16 @@ function rulesForAccess(accessScope: BnlQueueAccessScope) {
 }
 
 export async function GET(req?: Request) {
+  const startedAt = performance.now();
+  const timings: string[] = [];
+  async function measure<T>(stage: string, read: () => T | Promise<T>): Promise<T> {
+    const started = performance.now();
+    try {
+      return await read();
+    } finally {
+      timings.push(`${stage};dur=${(performance.now() - started).toFixed(2)}`);
+    }
+  }
   const authenticated = authenticateBNLJournalRequest(req?.headers.get("x-api-key") ?? null);
   const queueProductionEnabled = isQueueProductionEnabled();
   let queueReadFailed = false;
@@ -1623,8 +1633,9 @@ export async function GET(req?: Request) {
     };
   } else {
     try {
-      queueSnapshot = await getQueueBnlReadSnapshot();
-      liveQueue = await readQueueForBnl(authenticated, queueSnapshot);
+      const snapshot = await measure("queue_snapshot", getQueueBnlReadSnapshot);
+      queueSnapshot = snapshot;
+      liveQueue = await measure("live_queue", () => readQueueForBnl(authenticated, snapshot));
     } catch {
       queueReadFailed = true;
       liveQueue = {
@@ -1644,9 +1655,10 @@ export async function GET(req?: Request) {
   let queueProjections = null;
   if (queueProductionEnabled && !queueReadFailed && queueSnapshot) {
     try {
-      queueProjections = await queueSnapshot.getProjections(
+      const snapshot = queueSnapshot;
+      queueProjections = await measure("projections", () => snapshot.getProjections(
         accessScope === "none" ? null : accessScope,
-      );
+      ));
     } catch {
       durableProjectionReadFailed = true;
     }
@@ -1666,7 +1678,7 @@ export async function GET(req?: Request) {
   const publicHistory = queueProjections
     ? { available: true as const, reason: null, ...queueProjections.publicHistory }
     : unavailablePublicHistoryProjection(projectionUnavailableReason);
-  const ballads = await Promise.resolve().then(() => {
+  const ballads = await measure("ballads", () => Promise.resolve().then(() => {
     if (queueProductionEnabled && (queueReadFailed || !queueSnapshot)) throw new Error("queue unavailable");
     return listPublicBallads(queueSnapshot?.getPublicBalladShows() ?? []);
   }).then(entries => ({
@@ -1674,7 +1686,8 @@ export async function GET(req?: Request) {
     songs: entries.map(entry => ({ showId: entry.show.sessionId, showDate: entry.show.showDate,
       showTitle: entry.show.title, title: entry.version.title, artist: "BNL-01",
       url: `${siteConfig.domain}/radio/archive?view=shows&show=${encodeURIComponent(entry.show.sessionId)}#broadcast-ballad` })),
-  })).catch(() => ({ available: false, authority: "published creative releases; not evidence of broadcast events", songs: [] }));
+  })).catch(() => ({ available: false, authority: "published creative releases; not evidence of broadcast events", songs: [] })));
+  const renderStartedAt = performance.now();
   const dossiers = publicDossiers();
   const privateResponse = accessScope === "private";
   const noStoreResponse = !ballads.available || authenticated
@@ -1682,7 +1695,7 @@ export async function GET(req?: Request) {
     || queueReadFailed
     || durableProjectionReadFailed;
 
-  return NextResponse.json(
+  const response = NextResponse.json(
     {
       ok: true,
       version: 1,
@@ -1735,4 +1748,12 @@ export async function GET(req?: Request) {
       },
     },
   );
+  // Service-only timings contain fixed phase names and durations, never source
+  // data or credentials. Authenticated responses already require no-store.
+  if (authenticated) {
+    timings.push(`render;dur=${(performance.now() - renderStartedAt).toFixed(2)}`);
+    timings.push(`total;dur=${(performance.now() - startedAt).toFixed(2)}`);
+    response.headers.set("Server-Timing", timings.join(", "));
+  }
+  return response;
 }

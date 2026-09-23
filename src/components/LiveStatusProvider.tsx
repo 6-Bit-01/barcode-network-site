@@ -3,9 +3,9 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import type { QueueBroadcastPhase, QueuePublicSnapshot } from "@/lib/queue-types";
-import { derivePublicShowState } from "@/lib/live-status-public";
+import { derivePublicShowState, deriveRadioQueueEntryState, type QueueReadState, type RadioQueueEntryState } from "@/lib/live-status-public";
 import { SITE_LIVE_STATUS_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
-import { hasActiveQueueSession as responseHasActiveQueueSession, startSessionBoundPolling } from "@/lib/session-bound-polling";
+import { hasActiveQueueSession as responseHasActiveQueueSession, notifyQueueSessionChanged, startSessionBoundPolling } from "@/lib/session-bound-polling";
 
 type SiteShowMode = "offline" | "intake_open" | "broadcast_live";
 
@@ -25,6 +25,8 @@ interface LiveStatusContextType {
   queueSubmissionsOpen: boolean;
   queueBroadcastPhase: QueueBroadcastPhase | null;
   siteShowMode: SiteShowMode;
+  radioQueueEntry: RadioQueueEntryState;
+  refreshQueueStatus: () => void;
 }
 
 const LiveStatusContext = createContext<LiveStatusContextType>({
@@ -43,6 +45,8 @@ const LiveStatusContext = createContext<LiveStatusContextType>({
   queueSubmissionsOpen: false,
   queueBroadcastPhase: null,
   siteShowMode: "offline",
+  radioQueueEntry: { status: "loading", href: null },
+  refreshQueueStatus: () => {},
 });
 
 export function useLiveStatus() {
@@ -61,6 +65,13 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
   const [persisted, setPersisted] = useState<boolean | null>(null);
   const [queueProductionEnabled, setQueueProductionEnabled] = useState(false);
   const [queueSnapshot, setQueueSnapshot] = useState<QueuePublicSnapshot | null>(null);
+  const [queueReadState, setQueueReadState] = useState<QueueReadState>("loading");
+
+  const refreshQueueStatus = useCallback(() => {
+    if (isolatedPrototype) return;
+    setQueueReadState("loading");
+    notifyQueueSessionChanged();
+  }, [isolatedPrototype]);
 
   const fetchStatus = useCallback(async () => {
     if (isolatedPrototype) return false;
@@ -79,6 +90,7 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
         const queueProduction = data?.capabilities?.queueProduction === true;
         setQueueProductionEnabled(queueProduction);
         if (!queueProduction) {
+          setQueueReadState("disabled");
           setQueueSnapshot(null);
           sessionActive = false;
         } else {
@@ -87,20 +99,25 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
             if (queueRes.ok) {
               const queueData = (await queueRes.json()) as QueuePublicSnapshot;
               setQueueSnapshot(queueData);
+              setQueueReadState("ready");
               sessionActive = responseHasActiveQueueSession(queueData);
             } else {
+              setQueueReadState("unavailable");
               queueError = "Failed to fetch queue status";
             }
           } catch {
+            setQueueReadState("unavailable");
             queueError = "Failed to fetch queue status";
           }
         }
       } else {
+        setQueueReadState("unavailable");
         setQueueProductionEnabled(false);
         setQueueSnapshot(null);
         adminError = "Failed to fetch live status";
       }
     } catch {
+      setQueueReadState("unavailable");
       setQueueProductionEnabled(false);
       setQueueSnapshot(null);
       adminError = "Failed to fetch live status";
@@ -205,6 +222,12 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
       queueBroadcastPhase:
         isolatedPrototype ? null : queueBroadcastPhase,
       siteShowMode: isolatedPrototype ? "offline" : siteShowMode,
+      radioQueueEntry: deriveRadioQueueEntryState({
+        queueProductionEnabled: !isolatedPrototype && queueProductionEnabled,
+        queueSnapshot,
+        readState: queueReadState,
+      }),
+      refreshQueueStatus,
     }}>
       {children}
     </LiveStatusContext.Provider>

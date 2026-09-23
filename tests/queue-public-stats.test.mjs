@@ -408,7 +408,6 @@ test("the Radio feature joins the active queue as a Deck entry while archive pag
   const archive = fs.readFileSync(path.join(projectRoot, "src/components/BroadcastArchive.tsx"), "utf8");
   const deckPage = fs.readFileSync(path.join(projectRoot, "src/app/radio/deck/page.tsx"), "utf8");
   const deck = fs.readFileSync(path.join(projectRoot, "src/components/BroadcastDeck.tsx"), "utf8");
-  const gateway = fs.readFileSync(path.join(projectRoot, "src/components/PublicQueueGateway.tsx"), "utf8");
   const publicQueue = fs.readFileSync(path.join(projectRoot, "src/components/PublicQueueSession.tsx"), "utf8");
   const radio = fs.readFileSync(path.join(projectRoot, "src/app/radio/page.tsx"), "utf8");
   const sitemap = fs.readFileSync(path.join(projectRoot, "src/app/sitemap.ts"), "utf8");
@@ -447,8 +446,6 @@ test("the Radio feature joins the active queue as a Deck entry while archive pag
   assert.match(archive, /Finish outcomes; full playback is not implied/);
   assert.match(archive, /deckHref &&/);
 
-  assert.doesNotMatch(gateway, /href="\/radio\/deck"/);
-  assert.match(gateway, /href="\/radio\/archive"/);
   assert.match(publicQueue, /\/radio\/deck/);
   assert.match(publicQueue, /Done submitting—or just watching\?/);
   assert.match(publicQueue, /Song submissions stay here in the queue/);

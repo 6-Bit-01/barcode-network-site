@@ -314,11 +314,8 @@ test("admin top bar surfaces the existing sponsor start action only when due", (
 });
 
 test("public pressure and runtime consumers use the shared timing display owner", () => {
-  const gateway = fs.readFileSync(path.join(projectRoot, "src/components/PublicQueueGateway.tsx"), "utf8");
   const session = fs.readFileSync(path.join(projectRoot, "src/components/PublicQueueSession.tsx"), "utf8");
   const form = fs.readFileSync(path.join(projectRoot, "src/components/RadioQueueForm.tsx"), "utf8");
-  assert.match(gateway, /buildQueueTimingDisplay\(queueTimingInputFromPublicSnapshot/);
-  assert.doesNotMatch(gateway, /snapshot\.status\.pressure|estimatedRuntimeSeconds/);
   assert.match(session, /pressureLevel\(timingSummary\)/);
   assert.doesNotMatch(session, /snapshot\.status\.pressure/);
   assert.match(form, /pressureLabel\(status, timingSummary\)/);

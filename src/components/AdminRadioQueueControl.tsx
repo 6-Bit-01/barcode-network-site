@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useClientAction } from "@/components/useClientAction";
 import { AdminLiveOverlayControl } from "@/components/AdminLiveOverlayControl";
 import { AdminRehearsalShareLink } from "@/components/AdminRehearsalShareLink";
 import { AdminRadioVisualsControl } from "@/components/AdminRadioVisualsControl";
@@ -178,8 +179,12 @@ function AdminPriorityPurchaseBanner({ entry, compact = false }: { entry: QueueE
   const gift = entry.priorityGiftAttribution;
   const giftCheckoutPending = Boolean(gift) && (entry.priorityUpgradeStatus === "requested" || entry.priorityUpgradeStatus === "checkout_pending");
   if (!purchase && !giftCheckoutPending) return null;
-  const text = purchase?.text ?? `GIFTED PRIORITY CHECKOUT · FROM ${gift?.supporterName} · FOR ${gift?.recipientName}`;
-  return <p className={`${compact ? "mt-1 text-[10px]" : "mt-3 text-xs"} border border-[#ffaa00]/70 bg-[#ffaa00]/15 px-3 py-2 font-black uppercase tracking-widest text-[#ffaa00]`}>{text}</p>;
+  const text = purchase?.text ?? `GIFT CHECKOUT · FROM ${gift?.supporterName || "Anonymous"} · FOR ${gift?.recipientName}`;
+  return <div className={`${compact ? "mt-1" : "mt-3"} break-words border-2 ${purchase ? "border-[#ffaa00]/70 bg-[#ffaa00]/15 text-[#ffaa00]" : "border-border bg-surface text-muted"} px-3 py-2`}>
+    <p className={`${purchase?.kind === "gift" ? "text-base" : "text-xs"} font-black uppercase tracking-wide`}>{text}</p>
+    {giftCheckoutPending && <p className="mt-1 text-xs">Payment pending · skip not active.</p>}
+    {entry.priorityUpgradeStatus === "paid_needs_attention" && <p className="mt-1 text-xs text-danger">Payment confirmed · Priority needs host review.</p>}
+  </div>;
 }
 function AdminSubmissionNote({ entry, compact = false }: { entry: QueueEntry; compact?: boolean }) {
   const note = entry.note?.trim();
@@ -265,7 +270,43 @@ function initialSessionIdFromUrl(): string | undefined {
   return new URLSearchParams(window.location.search).get("sessionId") ?? undefined;
 }
 
+// Fixed panels can wrap at browser zoom; reserve their actual rendered height.
+function usePanelHeight() {
+  const [height, setHeight] = useState(0);
+  const observer = useRef<ResizeObserver | null>(null);
+  const panelRef = useCallback((node: HTMLElement | null) => {
+    observer.current?.disconnect();
+    observer.current = null;
+    if (!node) { setHeight(0); return; }
+    const measure = () => setHeight(Math.ceil(node.getBoundingClientRect().height));
+    measure();
+    observer.current = new ResizeObserver(measure);
+    observer.current.observe(node);
+  }, []);
+  return { height, panelRef };
+}
+
+const HOST_ACTION_LABELS: Record<string, string> = {
+  setOpen: "Update submissions", startShow: "Start broadcast", archiveSession: "End broadcast",
+  addWheelSpinOwed: "Add wheel spin", pullNext: "Pull next track", pullWheelChosen: "Pull wheel chosen",
+  pullFreeTransmission: "Pull free transmission", load: "Load player", finish: "Finish track",
+  remove: "Remove track", moveBack: "Return track", priority: "Move to Priority", regular: "Move to Regular",
+  wheel: "Mark wheel chosen", spotlight: "Add spotlight", removeSpotlight: "Remove spotlight",
+  restoreRegular: "Restore to Regular", restorePriority: "Restore to Priority", resolvePaidPriority: "Resolve paid Priority",
+  pausePriority: "Pause Priority", resumePriority: "Unpause Priority", useSignalHold: "Use Signal Hold",
+  updateSubmissionCooldownSettings: "Save submission delay", updatePriorityUpgradeSettings: "Save Priority settings",
+  updateSignalHoldSettings: "Save Signal Hold settings", updateSponsorBreakState: "Update sponsor break",
+  cancelFailedSponsorStart: "Cancel rejected sponsor start",
+};
+
 export function AdminRadioQueueControl() {
+  const { actions, runAction, isPending } = useClientAction();
+  const toolbar = usePanelHeight();
+  const playerDock = usePanelHeight();
+  const playerActionPendingRef = useRef(false);
+  const prioritySavingRef = useRef(false);
+  const endingSessionRef = useRef(false);
+
   const [state, setState] = useState<QueueState | null>(null);
   const [tab, setTab] = useState<Tab>("active");
   const [loadingPlayerId, setLoadingPlayerId] = useState<string | null>(null);
@@ -364,25 +405,29 @@ export function AdminRadioQueueControl() {
   }, []);
 
   async function post(body: Record<string, unknown>): Promise<QueueState | null> {
-    mutationEpochRef.current += 1;
-    const epoch = mutationEpochRef.current;
-    mutationInFlightRef.current += 1;
-    try {
-      const res = await fetch("/api/admin/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setActionError(typeof payload?.error === "string" ? payload.error : "Queue action failed. Please retry.");
+    const actionName = typeof body.action === "string" && Object.hasOwn(HOST_ACTION_LABELS, body.action) ? body.action : "queue";
+    const label = HOST_ACTION_LABELS[actionName] ?? "Update queue";
+    return runAction(typeof body.id === "string" ? `track:${body.id}` : "session", { label: `${label}…`, success: `${label} confirmed.`, metric: `host_${actionName}` }, async () => {
+      mutationEpochRef.current += 1;
+      const epoch = mutationEpochRef.current;
+      mutationInFlightRef.current += 1;
+      try {
+        const res = await fetch("/api/admin/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setActionError(typeof payload?.error === "string" ? payload.error : "Queue action failed. Please retry.");
+          return null;
+        }
+        setActionError(null);
+        applyMutationState(payload, epoch);
+        return payload;
+      } catch {
+        setActionError("Queue action could not be confirmed. Check the refreshed queue before trying again.");
         return null;
+      } finally {
+        mutationInFlightRef.current = Math.max(0, mutationInFlightRef.current - 1);
       }
-      setActionError(null);
-      applyMutationState(payload, epoch);
-      return payload;
-    } catch {
-      setActionError("Queue action could not reach the server. Please retry.");
-      return null;
-    } finally {
-      mutationInFlightRef.current = Math.max(0, mutationInFlightRef.current - 1);
-    }
+    });
   }
   async function action(id: string, next: AdminQueueAction): Promise<QueueState | null> { return post(next === "pullNext" || next === "pullWheelChosen" || next === "pullFreeTransmission" || next === "startShow" || next === "addWheelSpinOwed" ? { action: next } : { id, action: next }); }
   async function simulationAction(next: SimulationAction, label: string) {
@@ -423,22 +468,30 @@ export function AdminRadioQueueControl() {
     setSimulationSpeed(next);
   }
   async function playerAction(id: string, next: AdminQueueAction) {
-    if (playerActionPending) return;
+    if (playerActionPendingRef.current) return;
+    playerActionPendingRef.current = true;
     const isClearingAction = next === "finish" || next === "remove" || next === "moveBack" || next === "pausePriority" || next === "useSignalHold";
     if (isClearingAction) {
       setLoadingPlayerId(null);
       setClearingPlayerId(id);
     }
     setPlayerActionPending(true);
-    const updated = await action(id, next);
-    if (isClearingAction) {
-      const clearingTarget = state?.nowPlaying?.id === id ? state.nowPlaying : null;
-      const didClearPlayer = Boolean(updated && updated.nowPlaying?.id !== id);
-      if (didClearPlayer && (clearingTarget?.sourceType === "youtube" || clearingTarget?.sourceType === "tiktok" || clearingTarget?.sourceType === "upload")) await clearOverlayPlayerSync();
-      if (!didClearPlayer) setLoadingPlayerId(null);
+    try {
+      const updated = await action(id, next);
+      if (isClearingAction) {
+        const clearingTarget = state?.nowPlaying?.id === id ? state.nowPlaying : null;
+        const didClearPlayer = Boolean(updated && updated.nowPlaying?.id !== id);
+        if (didClearPlayer && (clearingTarget?.sourceType === "youtube" || clearingTarget?.sourceType === "tiktok" || clearingTarget?.sourceType === "upload")) await clearOverlayPlayerSync();
+        if (!didClearPlayer) setLoadingPlayerId(null);
+        setClearingPlayerId(null);
+      }
+    } catch {
+      setActionError("Queue updated, but overlay sync could not be confirmed. Check the player before continuing.");
+    } finally {
+      playerActionPendingRef.current = false;
       setClearingPlayerId(null);
+      setPlayerActionPending(false);
     }
-    setPlayerActionPending(false);
   }
   useEffect(() => {
     if (!loadingPlayerId) return;
@@ -451,30 +504,47 @@ export function AdminRadioQueueControl() {
   }, [clearingPlayerId, state?.nowPlaying]);
 
   async function endCurrentSession() {
+    if (endingSessionRef.current) return;
+    endingSessionRef.current = true;
     setEndingSession(true);
-    const ended = await post({ action: "archiveSession", sessionId: state?.session?.sessionId });
-    setEndingSession(false);
-    if (!ended) return;
-    notifyQueueSessionChanged();
-    setEndConfirmOpen(false);
-    await load();
+    try {
+      const ended = await post({ action: "archiveSession", sessionId: state?.session?.sessionId });
+      if (!ended) return;
+      notifyQueueSessionChanged();
+      setEndConfirmOpen(false);
+      await load();
+    } catch {
+      setActionError("Broadcast ended, but the latest queue could not be loaded. Refresh the dashboard.");
+    } finally {
+      endingSessionRef.current = false;
+      setEndingSession(false);
+    }
   }
   async function toggleOpen(isOpen: boolean) { await post({ action: "setOpen", isOpen }); }
-  async function copy(entry: QueueEntry) { await navigator.clipboard.writeText(openUrl(entry)); }
+  async function copy(entry: QueueEntry) {
+    await runAction("copy", { label: "Copying link…", success: "Link copied.", metric: "host_copy_link" }, async () => {
+      try { await navigator.clipboard.writeText(openUrl(entry)); setActionError(null); return true; }
+      catch { setActionError("Link could not be copied. Use Open Link instead."); return null; }
+    });
+  }
   async function loadPlayer(entry: QueueEntry) {
-    if (playerActionPending) return;
+    if (playerActionPendingRef.current) return;
+    playerActionPendingRef.current = true;
     setPlayerActionPending(true);
     setLoadingPlayerId(entry.id);
     setClearingPlayerId(null);
     setMinimized(false);
-    if (entry.sourceType !== "youtube") await clearOverlayPlayerSync();
-    const updated = await action(entry.id, "load");
-    if (updated?.nowPlaying?.id === entry.id) {
+    try {
+      if (entry.sourceType !== "youtube") await clearOverlayPlayerSync();
+      const updated = await action(entry.id, "load");
+      if (!updated) setLoadingPlayerId(null);
+    } catch {
+      setLoadingPlayerId(null);
+      setActionError("Player load could not be confirmed. Check the player and overlay before trying again.");
+    } finally {
+      playerActionPendingRef.current = false;
       setPlayerActionPending(false);
-      return;
     }
-    if (!updated) setLoadingPlayerId(null);
-    setPlayerActionPending(false);
   }
   async function updateSponsorBreakState(sponsorAction: "start" | "complete" | "skip" | "reset") {
     const isStart = sponsorAction === "start";
@@ -519,6 +589,7 @@ export function AdminRadioQueueControl() {
     setSessionOptionsOpen((value) => !value);
   }
   async function savePrioritySettings() {
+    if (prioritySavingRef.current) return;
     if (priorityEnabled && priorityPriceCents <= 0) {
       setPrioritySaveError("Checkout requires a price above 0.");
       setPriorityMessage(null);
@@ -531,12 +602,14 @@ export function AdminRadioQueueControl() {
     }
     const paidUpgradesEnabled = priorityEnabled && priorityPriceCents > 0;
     const paidSignalHoldEnabled = signalHoldEnabled && signalHoldPriceCents > 0;
+    prioritySavingRef.current = true;
     setPrioritySaving(true);
     setPrioritySaveError(null);
     setPriorityMessage(null);
     const cooldownNext = await post({ action: "updateSubmissionCooldownSettings", submissionCooldownSeconds: sessionCooldownSeconds });
     const priorityNext = cooldownNext ? await post({ action: "updatePriorityUpgradeSettings", enabled: paidUpgradesEnabled, label: FIXED_PRIORITY_LABEL, instructions: FIXED_PRIORITY_INSTRUCTIONS, priceCents: priorityPriceCents, currency: priorityCurrency, paymentsEnabled: paidUpgradesEnabled }) : null;
     const next = priorityNext ? await post({ action: "updateSignalHoldSettings", enabled: paidSignalHoldEnabled, priceCents: signalHoldPriceCents, currency: signalHoldCurrency, paymentsEnabled: paidSignalHoldEnabled }) : null;
+    prioritySavingRef.current = false;
     setPrioritySaving(false);
     if (!next) {
       setPrioritySaveError("Session options could not be saved.");
@@ -589,7 +662,6 @@ export function AdminRadioQueueControl() {
   const hasClearingTransition = Boolean(clearingPlayerId);
   const pendingPlayerLoad = Boolean(loadingPlayerId && (!confirmedPlayer || confirmedPlayer.id !== loadingPlayerId));
   const loadedPlayer = hasClearingTransition ? null : pendingPlayerLoad ? (confirmedPlayer?.id === loadingPlayerId ? confirmedPlayer : null) : confirmedPlayer;
-  const playerPadding = loadedPlayer ? (minimized ? "pb-32" : "pb-[20rem]") : "pb-16";
   const isExplicitReview = Boolean(initialSessionIdFromUrl());
   const showQueueReview = hasCurrentSession || isExplicitReview;
   const phaseLabel = state?.session?.broadcastPhase === "ended" ? "Ended / Disconnecting" : state?.session?.broadcastPhase === "broadcast_active" ? "Broadcast Active" : state?.session?.broadcastPhase === "submission_window" ? "Submission Window" : "Warmup";
@@ -628,15 +700,27 @@ export function AdminRadioQueueControl() {
     setOverlayWheelFocusTick((value) => value + 1);
   };
 
-  const railBottomOffsetClass = loadedPlayer ? (minimized ? "bottom-24" : "bottom-[12.5rem]") : "bottom-5";
-  const topOverlayPaddingClass = topBarMinimized ? "pt-[4.5rem] md:pt-[4.75rem]" : "pt-[7.25rem] md:pt-[7.5rem]";
+  const latestAction = Object.values(actions).sort((a, b) => Number(b.phase === "pending") - Number(a.phase === "pending") || b.startedAt - a.startedAt)[0];
+  const trackPending = (id: string) => isPending(`track:${id}`) || (playerActionPending && (loadingPlayerId === id || clearingPlayerId === id));
+  const confirmedGifts = [...new Map(sessionEntries.map((entry) => [entry.id, entry])).values()]
+    .filter((entry) => !entry.isTestTrack && confirmedPriorityPurchaseDisplay(entry)?.kind === "gift")
+    .sort((a, b) => (b.priorityUpgradePaidAt ?? "").localeCompare(a.priorityUpgradePaidAt ?? ""));
+  const actionFeedback = <>
+    {latestAction && <p role="status" aria-live="polite" className="text-xs text-foreground">{latestAction.label}{latestAction.phase === "pending" ? " Please wait." : latestAction.durationMs !== undefined ? ` (${(latestAction.durationMs / 1000).toFixed(1)}s)` : ""}</p>}
+    {actionError && <p role="alert" className="text-sm text-danger">{actionError}</p>}
+  </>;
   const showLogSessionQuery = state?.session?.sessionId
     ? `&sessionId=${encodeURIComponent(state.session.sessionId)}`
     : "";
 
   return (
-    <div className={`${playerPadding} ${topOverlayPaddingClass} space-y-2 xl:pr-[26rem]`}>
-      {actionError && <div role="alert" className="border border-danger/50 bg-danger/10 p-3 text-sm text-danger">{actionError}</div>}
+    <div className="min-w-0 space-y-2 break-words xl:pr-[26rem]" style={{ paddingTop: canControlSession ? toolbar.height + 16 : 0, paddingBottom: playerDock.height + 64 }}>
+      {!canControlSession && actionFeedback}
+      {confirmedGifts.length > 0 && <section aria-label="Confirmed gifted skips" className="border-2 border-[#ffaa00]/70 bg-[#ffaa00]/10 p-3">
+        <h2 className="text-sm font-black uppercase tracking-widest text-[#ffaa00]">Gifted skips this show · {confirmedGifts.length}</h2>
+        <p className="mt-1 text-xs text-muted">Confirmed purchases stay here after their track leaves the queue.</p>
+        <div className="max-h-48 overflow-y-auto">{confirmedGifts.map((entry) => <AdminPriorityPurchaseBanner key={entry.id} entry={entry} />)}</div>
+      </section>}
       <section className="border border-border bg-surface p-1.5">
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => setActiveUtilityPanel((value) => value === "session" ? null : "session")} className="min-h-9 border border-border px-3 py-1.5 text-xs uppercase tracking-widest text-muted">{activeUtilityPanel === "session" ? "Hide Session Setup" : "Session Setup"}</button>
@@ -672,7 +756,7 @@ export function AdminRadioQueueControl() {
 
       {isArchivedReview && hasSession && <div className="border border-danger/40 bg-danger/10 p-3 text-xs uppercase tracking-widest text-danger">ARCHIVED / READ ONLY — viewing {state?.session?.title ?? "finished session"}. Queue review actions are locked for this finished session.</div>}
 
-      {mounted && canControlSession && createPortal(<section className="fixed left-4 right-4 top-[calc(3.5rem+env(safe-area-inset-top))] z-[8500] space-y-1.5 border border-border bg-background/95 p-2.5 text-sm shadow-2xl backdrop-blur">
+      {mounted && canControlSession && createPortal(<section ref={toolbar.panelRef} aria-label="Live show controls" className="fixed left-4 right-4 max-h-[35dvh] overflow-y-auto break-words top-[calc(3.5rem+env(safe-area-inset-top))] z-[8500] space-y-1.5 border border-border bg-background/95 p-2.5 text-sm shadow-2xl backdrop-blur">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="min-w-0">
             <p className="truncate text-[11px] uppercase tracking-[0.2em] text-muted">{state?.session?.title} · {state?.session?.showDate}</p>
@@ -684,17 +768,12 @@ export function AdminRadioQueueControl() {
             <button type="button" onClick={() => setTopBarMinimized((value) => !value)} className="min-h-10 border border-border px-3 py-2 uppercase tracking-widest text-muted">{topBarMinimized ? "Expand" : "Minimize"}</button>
           </div>
         </div>
+        {actionFeedback}
         {topBarMinimized ? <div className="flex flex-wrap items-center gap-2">
+          <TopBarPressureChip pressure={topPressure} minimized />
+          <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Projected: {projectedRuntimeLabel}</span>
           <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Phase: {phaseLabel}</span>
           <span className={`border px-2 py-1 uppercase tracking-widest ${state?.publicStatus?.isOpen ? "border-accent/50 text-accent" : "border-danger/50 text-danger"}`}>Submissions: {state?.publicStatus?.isOpen ? "Open" : "Closed"}</span>
-          <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Accepted / Capacity: {acceptedCapacityLabel}</span>
-          <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Completed / Active / Accepted: {completedActiveAcceptedLabel}</span>
-          <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Elapsed: {timingSummary.showRuntimeSummary.elapsedLabel}</span>
-          <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Remaining: {timingSummary.showRuntimeSummary.remainingLabel}</span>
-          <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">End: {timingSummary.showRuntimeSummary.estimatedEndLabel}</span>
-          <span className="border border-border px-2 py-1 uppercase tracking-widest text-muted">Projected: {projectedRuntimeLabel}</span>
-          <TopBarCommercialChip summary={timingSummary.sponsorBreakSummary} />
-          <TopBarPressureChip pressure={topPressure} minimized />
           {wheelSpinsUnlocked > 0 && <>
             <span className="border border-cyan-300/50 bg-cyan-300/10 px-2 py-1 uppercase tracking-widest text-cyan-200">Wheel: {wheelSpinsUnlocked} owed</span>
             <button type="button" onClick={openWheelPanel} className="min-h-9 border border-cyan-300/70 bg-cyan-300/15 px-2.5 py-1 uppercase tracking-widest text-cyan-100 hover:bg-cyan-300 hover:text-background">Open Wheel</button>
@@ -715,10 +794,10 @@ export function AdminRadioQueueControl() {
           {wheelSpinsUnlocked > 0 && <div className="space-y-1"><p className="text-[10px] uppercase tracking-widest text-muted">Wheel</p><p className="font-bold text-cyan-200">{wheelSpinsUnlocked} owed</p><button type="button" onClick={openWheelPanel} className="min-h-9 border border-cyan-300/70 bg-cyan-300/15 px-3 py-1 text-[10px] uppercase tracking-widest text-cyan-100 hover:bg-cyan-300 hover:text-background">Open Wheel Panel</button></div>}
         </div>
         <div className="flex flex-wrap gap-2">
-          <button onClick={() => toggleOpen(!state?.publicStatus?.isOpen)} className={`${state?.publicStatus?.isOpen ? "border-danger/50 text-danger hover:bg-danger" : "border-accent text-accent hover:bg-accent"} min-h-10 border px-3 py-2 uppercase tracking-widest hover:text-background`}>{state?.publicStatus?.isOpen ? "Close Submissions" : "Open Submissions"}</button>
-          {state?.session?.showStarted !== true && <button onClick={() => action("", "startShow")} className="min-h-10 border border-foreground/50 px-3 py-2 uppercase tracking-widest text-foreground hover:bg-foreground hover:text-background">Start Broadcast</button>}
-          <button onClick={() => action("", "addWheelSpinOwed")} className="min-h-10 border border-cyan-300/60 px-3 py-2 uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background">Add Wheel Spin</button>
-          <details className="group relative"><summary className="list-none cursor-pointer min-h-10 border border-border/80 px-3 py-2 uppercase tracking-widest text-muted hover:border-foreground/60 hover:text-foreground">Resolver Override ▾</summary><div className="absolute left-0 z-30 mt-2 w-64 space-y-2 border border-border bg-background p-3 shadow-xl"><p className="text-[10px] uppercase tracking-[0.2em] text-muted">Use for live manual correction. This does not count the current slot as played.</p><button type="button" onClick={() => action("", "pullWheelChosen")} disabled={!canPullWheelChosen} className="block w-full min-h-10 border border-cyan-300/60 px-3 py-2 text-left uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Pull Wheel Chosen</button><button type="button" onClick={() => action("", "pullFreeTransmission")} disabled={!canPullFreeTransmission} className="block w-full min-h-10 border border-foreground/40 px-3 py-2 text-left uppercase tracking-widest text-foreground hover:bg-foreground hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Pull Free Transmission</button>{resolverOverrideBlocked && <p className="text-[10px] uppercase tracking-[0.16em] text-[#ffaa00]">Blocked while active Priority owns the resolver.</p>}</div></details>
+          <button disabled={isPending("session")} onClick={() => toggleOpen(!state?.publicStatus?.isOpen)} className={`${state?.publicStatus?.isOpen ? "border-danger/50 text-danger hover:bg-danger" : "border-accent text-accent hover:bg-accent"} min-h-10 border px-3 py-2 uppercase tracking-widest hover:text-background`}>{state?.publicStatus?.isOpen ? "Close Submissions" : "Open Submissions"}</button>
+          {state?.session?.showStarted !== true && <button disabled={isPending("session")} onClick={() => action("", "startShow")} className="min-h-10 border border-foreground/50 px-3 py-2 uppercase tracking-widest text-foreground hover:bg-foreground hover:text-background">Start Broadcast</button>}
+          <button disabled={isPending("session")} onClick={() => action("", "addWheelSpinOwed")} className="min-h-10 border border-cyan-300/60 px-3 py-2 uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background">Add Wheel Spin</button>
+          <details className="group relative"><summary className="list-none cursor-pointer min-h-10 border border-border/80 px-3 py-2 uppercase tracking-widest text-muted hover:border-foreground/60 hover:text-foreground">Resolver Override ▾</summary><div className="mt-2 w-64 max-w-full space-y-2 border border-border bg-background p-3 shadow-xl"><p className="text-[10px] uppercase tracking-[0.2em] text-muted">Use for live manual correction. This does not count the current slot as played.</p><button type="button" onClick={() => action("", "pullWheelChosen")} disabled={isPending("session") || !canPullWheelChosen} className="block w-full min-h-10 border border-cyan-300/60 px-3 py-2 text-left uppercase tracking-widest text-cyan-200 hover:bg-cyan-300 hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Pull Wheel Chosen</button><button type="button" onClick={() => action("", "pullFreeTransmission")} disabled={isPending("session") || !canPullFreeTransmission} className="block w-full min-h-10 border border-foreground/40 px-3 py-2 text-left uppercase tracking-widest text-foreground hover:bg-foreground hover:text-background disabled:cursor-not-allowed disabled:opacity-40">Pull Free Transmission</button>{resolverOverrideBlocked && <p className="text-[10px] uppercase tracking-[0.16em] text-[#ffaa00]">Blocked while active Priority owns the resolver.</p>}</div></details>
           <button onClick={() => setEndConfirmOpen(true)} className="ml-auto min-h-10 border border-danger/60 px-3 py-2 text-sm uppercase tracking-widest text-danger hover:bg-danger hover:text-background">End Broadcast</button>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -754,13 +833,13 @@ export function AdminRadioQueueControl() {
           <a href="/admin/show-management" className="inline-flex mt-4 border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Go to Show Management</a>
         </section>
       ) : <>
-        <div className="flex gap-2 border-b border-border">
+        <div className="flex flex-wrap gap-2 border-b border-border">
           {(["active", "completed", "removed", "spotlight"] as Tab[]).map((key) => <button key={key} onClick={() => setTab(key)} className={`px-4 py-3 text-xs uppercase tracking-widest ${tab === key ? "text-accent border-b border-accent" : "text-muted"}`}>{key === "active" ? "Active Queue" : key === "completed" ? "Completed Tracks" : key === "removed" ? "Removed" : "Spotlight"}</button>)}
         </div>
 
         {tab === "active" && <div className="grid gap-5">
-          <div className="space-y-5"><Lane title="Priority Signal" tracks={lanes.priority} sessionEntries={sessionEntries} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="active" readOnly={readOnly} /><Lane title="Wheel Winners" tracks={lanes.wheel} sessionEntries={sessionEntries} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="active" readOnly={readOnly} /><Lane title="Regular Queue" tracks={lanes.regular} sessionEntries={sessionEntries} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="active" readOnly={readOnly} /></div>
-          <aside className="xl:hidden space-y-3">
+          <div className="space-y-5"><Lane title="Priority Signal" tracks={lanes.priority} sessionEntries={sessionEntries} trackPending={trackPending} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="active" readOnly={readOnly} /><Lane title="Wheel Winners" tracks={lanes.wheel} sessionEntries={sessionEntries} trackPending={trackPending} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="active" readOnly={readOnly} /><Lane title="Regular Queue" tracks={lanes.regular} sessionEntries={sessionEntries} trackPending={trackPending} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="active" readOnly={readOnly} /></div>
+          <aside className="order-first xl:hidden space-y-3">
             <section className="border border-border bg-surface p-3 space-y-2">
               <div className="flex items-center justify-between">
                 <p className="text-sm uppercase tracking-[0.24em] text-muted">Next In Line Rail</p>
@@ -770,7 +849,7 @@ export function AdminRadioQueueControl() {
                 <p className="text-xs text-muted">{nextInLine ? `${submittedArtist(nextInLine)} — ${submittedTitle(nextInLine)}` : "No Next In Line"}</p>
                 <span className="inline-flex border border-cyan-300/30 bg-cyan-300/5 px-2 py-1 text-[10px] uppercase tracking-widest text-cyan-200">Wheel Spins: {state?.session?.wheelSpinsOwed ?? 0}</span>
               </div> : <>
-            <NextInLineBox entry={nextInLine} playerOccupied={Boolean(loadedPlayer)} readOnly={readOnly} onAction={action} onPlayer={loadPlayer} onCopy={copy} />
+            <NextInLineBox entry={nextInLine} pending={Boolean(nextInLine && trackPending(nextInLine.id))} playerOccupied={Boolean(loadedPlayer) || playerActionPending} readOnly={readOnly} onAction={action} onPlayer={loadPlayer} onCopy={copy} />
             <section className="border border-border bg-surface p-3 space-y-2">
               <p className="text-sm uppercase tracking-[0.24em] text-muted">Next In Line Actions</p>
               {!nextInLine && <><p className="text-sm text-muted">No Next In Line — Pull Next Track when ready.</p><button onClick={() => action("", "pullNext")} className="min-h-10 border border-accent px-3 py-2 text-sm uppercase tracking-widest text-accent">Pull Next Track</button></>}
@@ -785,16 +864,16 @@ export function AdminRadioQueueControl() {
             </section>
           </aside>
         </div>}
-        {tab === "completed" && <Lane title="Completed Tracks" tracks={state?.history ?? []} sessionEntries={sessionEntries} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="completed" readOnly={readOnly} />}
-        {tab === "removed" && <Lane title="Removed Tracks" tracks={state?.removed ?? []} sessionEntries={sessionEntries} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="removed" readOnly={readOnly} />}
-        {tab === "spotlight" && <Lane title="Spotlight List" tracks={lanes.spotlight} sessionEntries={sessionEntries} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="spotlight" readOnly={readOnly} />}
+        {tab === "completed" && <Lane title="Completed Tracks" tracks={state?.history ?? []} sessionEntries={sessionEntries} trackPending={trackPending} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="completed" readOnly={readOnly} />}
+        {tab === "removed" && <Lane title="Removed Tracks" tracks={state?.removed ?? []} sessionEntries={sessionEntries} trackPending={trackPending} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="removed" readOnly={readOnly} />}
+        {tab === "spotlight" && <Lane title="Spotlight List" tracks={lanes.spotlight} sessionEntries={sessionEntries} trackPending={trackPending} onAction={action} onPlayer={loadPlayer} onCopy={copy} mode="spotlight" readOnly={readOnly} />}
       </>}
 
-      {mounted && loadedPlayer && createPortal(<PlayerDock key={loadedPlayer.id} player={loadedPlayer} sessionId={state?.session?.sessionId ?? null} playbackDiagnostics={state?.playbackDiagnostics ?? null} minimized={minimized} setMinimized={setMinimized} readOnly={readOnly} actionPending={playerActionPending} onAction={playerAction} onCopy={() => copy(loadedPlayer)} />, document.body)}
+      {mounted && loadedPlayer && createPortal(<PlayerDock dockRef={playerDock.panelRef} key={loadedPlayer.id} player={loadedPlayer} sessionId={state?.session?.sessionId ?? null} playbackDiagnostics={state?.playbackDiagnostics ?? null} minimized={minimized} setMinimized={setMinimized} readOnly={readOnly} actionPending={playerActionPending} onAction={playerAction} onCopy={() => copy(loadedPlayer)} />, document.body)}
       {mounted && !loadedPlayer && pendingPlayerLoad && createPortal(<section className="fixed bottom-5 left-4 right-4 z-[8600] border border-border bg-background/95 px-4 py-3 text-xs uppercase tracking-widest text-muted shadow-2xl backdrop-blur md:left-8 md:right-8 lg:left-auto lg:right-6 lg:w-[24rem]">Loading Player…</section>, document.body)}
       {mounted && !loadedPlayer && hasClearingTransition && !pendingPlayerLoad && createPortal(<section className="fixed bottom-5 left-4 right-4 z-[8600] border border-border bg-background/95 px-4 py-3 text-xs uppercase tracking-widest text-muted shadow-2xl backdrop-blur md:left-8 md:right-8 lg:left-auto lg:right-6 lg:w-[24rem]">Updating Player…</section>, document.body)}
 
-      {mounted && canControlSession && createPortal(<aside className={`hidden xl:block fixed right-4 top-[calc(10.25rem+env(safe-area-inset-top))] ${railBottomOffsetClass} max-h-[calc(100dvh-11rem)] w-[24rem] z-[8400] border border-border bg-background/95 shadow-2xl backdrop-blur overflow-y-auto p-3 space-y-3`}>
+      {mounted && canControlSession && createPortal(<aside aria-label="Next in line controls" style={{ top: `calc(3.5rem + env(safe-area-inset-top) + ${toolbar.height + 12}px)`, bottom: playerDock.height + 12 }} className="hidden xl:block fixed right-4 w-[24rem] z-[8400] border border-border bg-background/95 shadow-2xl backdrop-blur overflow-y-auto p-3 space-y-3">
         <section className="border border-border bg-surface p-3 space-y-2">
           <div className="flex items-center justify-between">
             <p className="text-sm uppercase tracking-[0.24em] text-muted">Next In Line Rail</p>
@@ -804,7 +883,7 @@ export function AdminRadioQueueControl() {
             <p className="text-xs text-muted">{nextInLine ? `${submittedArtist(nextInLine)} — ${submittedTitle(nextInLine)}` : "No Next In Line"}</p>
             <span className="inline-flex border border-cyan-300/30 bg-cyan-300/5 px-2 py-1 text-[10px] uppercase tracking-widest text-cyan-200">Wheel Spins: {state?.session?.wheelSpinsOwed ?? 0}</span>
           </div> : <>
-            <div className="pt-12"><NextInLineBox entry={nextInLine} playerOccupied={Boolean(loadedPlayer)} readOnly={readOnly} onAction={action} onPlayer={loadPlayer} onCopy={copy} /></div>
+            <div><NextInLineBox entry={nextInLine} pending={Boolean(nextInLine && trackPending(nextInLine.id))} playerOccupied={Boolean(loadedPlayer) || playerActionPending} readOnly={readOnly} onAction={action} onPlayer={loadPlayer} onCopy={copy} /></div>
             <section className="border border-border bg-surface p-3 space-y-2">
               <p className="text-sm uppercase tracking-[0.24em] text-muted">Next In Line Actions</p>
               {!nextInLine && <><p className="text-sm text-muted">No Next In Line — Pull Next Track when ready.</p><button onClick={() => action("", "pullNext")} className="min-h-10 border border-accent px-3 py-2 text-sm uppercase tracking-widest text-accent">Pull Next Track</button></>}
@@ -923,9 +1002,9 @@ function TopBarCommercialChip({ summary, minimized = false }: { summary: ReturnT
 }
 
 
-function NextInLineBox({ entry, playerOccupied, readOnly, onAction, onPlayer, onCopy }: { entry: QueueEntry | null; playerOccupied: boolean; readOnly: boolean; onAction: (id: string, action: AdminQueueAction) => void; onPlayer: (entry: QueueEntry) => void; onCopy: (entry: QueueEntry) => void }) {
+function NextInLineBox({ entry, pending, playerOccupied, readOnly, onAction, onPlayer, onCopy }: { entry: QueueEntry | null; pending: boolean; playerOccupied: boolean; readOnly: boolean; onAction: (id: string, action: AdminQueueAction) => void; onPlayer: (entry: QueueEntry) => void; onCopy: (entry: QueueEntry) => void }) {
   const visual = entry ? queueTrackVisual(entry) : null;
-  return <section className={`p-5 space-y-4 ${visual?.sectionClass ?? "border border-accent/60 bg-accent/5"}`}><div><p className="text-xs uppercase tracking-[0.4em] text-accent">Next in Line</p>{!entry ? <p className="mt-3 text-lg text-muted">No Next In Line — Pull Next Track when ready.</p> : <><div className="mt-3"><LaneStatusBadge entry={entry} /></div><AdminPriorityPurchaseBanner entry={entry} /><h2 className="mt-3 text-2xl font-bold text-foreground">{submittedArtist(entry)} — {submittedTitle(entry)}</h2><AdminCollaboratorLine entry={entry} className="mt-1" /><p className="text-sm text-muted mt-1">Lane: {LANE_LABELS[entryLane(entry)]} · Source: {sourceLabel(entry)} · Duration: {durationLabel(entry)}</p>{detectedLabel(entry) && <p className="text-xs text-muted mt-1">Source metadata (not verified credit): {detectedLabel(entry)}</p>}<AdminSubmissionNote entry={entry} /></>}</div>{entry && <TrackActions entry={entry} mode="next" playerOccupied={playerOccupied} readOnly={readOnly} onAction={onAction} onPlayer={onPlayer} onCopy={onCopy} />}</section>;
+  return <section className={`p-5 space-y-4 ${visual?.sectionClass ?? "border border-accent/60 bg-accent/5"}`}><div><p className="text-xs uppercase tracking-[0.4em] text-accent">Next in Line</p>{!entry ? <p className="mt-3 text-lg text-muted">No Next In Line — Pull Next Track when ready.</p> : <><div className="mt-3"><LaneStatusBadge entry={entry} /></div><AdminPriorityPurchaseBanner entry={entry} /><h2 className="mt-3 text-2xl font-bold text-foreground">{submittedArtist(entry)} — {submittedTitle(entry)}</h2><AdminCollaboratorLine entry={entry} className="mt-1" /><p className="text-sm text-muted mt-1">Lane: {LANE_LABELS[entryLane(entry)]} · Source: {sourceLabel(entry)} · Duration: {durationLabel(entry)}</p>{detectedLabel(entry) && <p className="text-xs text-muted mt-1">Source metadata (not verified credit): {detectedLabel(entry)}</p>}<AdminSubmissionNote entry={entry} /></>}</div>{entry && <TrackActions entry={entry} pending={pending} mode="next" playerOccupied={playerOccupied} readOnly={readOnly} onAction={onAction} onPlayer={onPlayer} onCopy={onCopy} />}</section>;
 }
 
 type AdminYTPlayer = {
@@ -1627,25 +1706,25 @@ function PlaybackLifecycleBanner({ diagnostics, trackId }: { diagnostics: QueueP
   return <p className="border border-border/60 bg-surface/70 p-2 text-xs text-muted">Player loaded. Start playback when ready.</p>;
 }
 
-function PlayerDock({ player, sessionId, playbackDiagnostics, minimized, setMinimized, readOnly, actionPending, onAction, onCopy }: { player: QueueEntry; sessionId: string | null; playbackDiagnostics: QueuePlaybackDiagnostics | null; minimized: boolean; setMinimized: (value: boolean) => void; readOnly: boolean; actionPending: boolean; onAction: (id: string, action: AdminQueueAction) => void; onCopy: () => void }) {
+function PlayerDock({ dockRef, player, sessionId, playbackDiagnostics, minimized, setMinimized, readOnly, actionPending, onAction, onCopy }: { dockRef: (node: HTMLDivElement | null) => void; player: QueueEntry; sessionId: string | null; playbackDiagnostics: QueuePlaybackDiagnostics | null; minimized: boolean; setMinimized: (value: boolean) => void; readOnly: boolean; actionPending: boolean; onAction: (id: string, action: AdminQueueAction) => void; onCopy: () => void }) {
   const embedded = embedUrl(player);
   return (
-    <div className={`fixed inset-x-0 bottom-0 z-[9999] w-screen border-t bg-background/95 p-3 shadow-[0_-20px_60px_rgba(0,0,0,0.45)] backdrop-blur ${queueTrackVisual(player).sectionClass}`}>
+    <div ref={dockRef} aria-label="Queue player" className={`fixed inset-x-0 bottom-0 z-[9999] max-h-[40dvh] overflow-y-auto break-words w-full border-t bg-background/95 p-3 shadow-[0_-20px_60px_rgba(0,0,0,0.45)] backdrop-blur ${queueTrackVisual(player).sectionClass}`}>
       <div className="w-full px-2 sm:px-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
+          <div className="min-w-0 flex-1">
             <p className="text-xs uppercase tracking-[0.35em] text-accent">{minimized ? "Queue Player Dock" : "Command Deck Player"}</p>
-            <h3 className="text-lg font-bold">{submittedArtist(player)} — {submittedTitle(player)}</h3><AdminCollaboratorLine entry={player} className="mt-1" /><LaneStatusBadge entry={player} /><AdminPriorityPurchaseBanner entry={player} compact /><AdminSubmissionNote entry={player} compact />
+            <h3 className="text-lg font-bold">{submittedArtist(player)} — {submittedTitle(player)}</h3><div hidden={minimized}><AdminCollaboratorLine entry={player} className="mt-1" /><LaneStatusBadge entry={player} /><AdminPriorityPurchaseBanner entry={player} compact /><AdminSubmissionNote entry={player} compact />
             {detectedLabel(player) && <p className="text-xs text-muted mt-1">Source metadata (not verified credit): {detectedLabel(player)}</p>}
-            <p className="text-xs text-muted mt-1">{sourceLabel(player)} · {durationLabel(player)}</p>
+            <p className="text-xs text-muted mt-1">{sourceLabel(player)} · {durationLabel(player)}</p></div>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="order-first flex shrink-0 flex-wrap gap-2 sm:order-last">
             <button type="button" onClick={() => setMinimized(!minimized)} className="border border-border px-3 py-2 text-xs text-muted">{minimized ? "Expand Player" : "Minimize Player"}</button>
             <a href={openUrl(player)} target="_blank" rel="noreferrer" className="border border-accent px-3 py-2 text-xs text-accent">Open Link</a>
             <button type="button" onClick={onCopy} className="border border-border px-3 py-2 text-xs text-muted">Copy Link</button>
           </div>
         </div>
-        <div className={`${minimized ? "h-0 overflow-hidden opacity-0" : "mt-3 opacity-100"} grid w-full items-end gap-3 xl:grid-cols-[minmax(0,1fr)_auto]`} aria-hidden={minimized}>
+        <div className={`${minimized ? "h-0 overflow-hidden opacity-0" : "mt-3 opacity-100"} grid w-full items-end gap-3 xl:grid-cols-[minmax(0,1fr)_auto]`} aria-hidden={minimized} inert={minimized}>
           <div className="w-full min-w-0">
             <PlaybackLifecycleBanner diagnostics={playbackDiagnostics} trackId={player.id} />
             <div className="mt-2">
@@ -1792,7 +1871,7 @@ function AdminRuntimeDiagnostics({ timingSummary, canControl, onSponsorAction, s
   );
 }
 
-function Lane({ title, tracks, sessionEntries, onAction, onPlayer, onCopy, mode, readOnly }: { title: string; tracks: QueueEntry[]; sessionEntries: QueueEntry[]; onAction: (id: string, action: AdminQueueAction) => void; onPlayer: (entry: QueueEntry) => void; onCopy: (entry: QueueEntry) => void; mode: "next" | "active" | "spotlight" | "completed" | "removed"; readOnly: boolean }) {
+function Lane({ title, tracks, sessionEntries, trackPending, onAction, onPlayer, onCopy, mode, readOnly }: { title: string; tracks: QueueEntry[]; sessionEntries: QueueEntry[]; trackPending: (id: string) => boolean; onAction: (id: string, action: AdminQueueAction) => void; onPlayer: (entry: QueueEntry) => void; onCopy: (entry: QueueEntry) => void; mode: "next" | "active" | "spotlight" | "completed" | "removed"; readOnly: boolean }) {
   const sectionClass = title.includes("Priority") ? "border-[#ffaa00]/50 bg-[#ffaa00]/5" : title.includes("Wheel") ? "border-cyan-300/50 bg-cyan-300/5" : title.includes("Regular") ? "border-border bg-surface" : "border-border bg-surface";
   const titleClass = title.includes("Priority") ? "text-[#ffaa00]" : title.includes("Wheel") ? "text-cyan-200" : "text-foreground";
   return (
@@ -1817,7 +1896,7 @@ function Lane({ title, tracks, sessionEntries, onAction, onPlayer, onCopy, mode,
                 <AdminBrowserArtistNotice entry={entry} sessionEntries={sessionEntries} />
                 <AdminSubmissionNote entry={entry} />
               </div>
-              <TrackActions entry={entry} onAction={onAction} onPlayer={onPlayer} onCopy={onCopy} mode={mode} readOnly={readOnly} />
+              <TrackActions entry={entry} pending={trackPending(entry.id)} onAction={onAction} onPlayer={onPlayer} onCopy={onCopy} mode={mode} readOnly={readOnly} />
             </article>
           ))
         )}
@@ -1826,11 +1905,12 @@ function Lane({ title, tracks, sessionEntries, onAction, onPlayer, onCopy, mode,
   );
 }
 
-function TrackActions({ entry, onAction, onPlayer, onCopy, mode, readOnly, playerOccupied = false }: { entry: QueueEntry; onAction: (id: string, action: AdminQueueAction) => void; onPlayer: (entry: QueueEntry) => void; onCopy: (entry: QueueEntry) => void; mode: "next" | "active" | "spotlight" | "completed" | "removed"; readOnly: boolean; playerOccupied?: boolean }) {
+function TrackActions({ entry, pending, onAction, onPlayer, onCopy, mode, readOnly, playerOccupied = false }: { entry: QueueEntry; pending: boolean; onAction: (id: string, action: AdminQueueAction) => void; onPlayer: (entry: QueueEntry) => void; onCopy: (entry: QueueEntry) => void; mode: "next" | "active" | "spotlight" | "completed" | "removed"; readOnly: boolean; playerOccupied?: boolean }) {
   const lane = entryLane(entry);
   return (
-    <div className="flex flex-wrap gap-2">
-      {mode === "next" && <button type="button" onClick={() => onPlayer(entry)} disabled={playerOccupied} className="border border-accent px-3 py-1.5 text-xs text-accent disabled:cursor-not-allowed disabled:border-border disabled:text-muted">{playerOccupied ? "Player Occupied" : "Load in Player"}</button>}
+    <fieldset disabled={pending} aria-busy={pending} className="flex min-w-0 flex-wrap gap-2 disabled:opacity-60">
+      {pending && <p role="status" className="w-full text-xs text-accent">Updating track… Please wait.</p>}
+      {mode === "next" && <button type="button" onClick={() => onPlayer(entry)} disabled={playerOccupied || readOnly} className="border border-accent px-3 py-1.5 text-xs text-accent disabled:cursor-not-allowed disabled:border-border disabled:text-muted">{playerOccupied ? "Player Occupied" : "Load in Player"}</button>}
       <a href={openUrl(entry)} target="_blank" rel="noreferrer" className="border border-border px-3 py-1.5 text-xs text-muted">{entry.sourceType === "upload" ? "Open Admin Audio" : "Open Link"}</a>
       <button type="button" onClick={() => onCopy(entry)} className="border border-border px-3 py-1.5 text-xs text-muted">Copy {entry.sourceType === "upload" ? "Admin Audio Link" : "Link"}</button>
       {!readOnly && (mode === "next" || mode === "active") && canUseSignalHold(entry) && <button type="button" onClick={() => onAction(entry.id, "useSignalHold")} className="border-2 border-cyan-300 bg-cyan-300/15 px-3 py-1.5 text-xs font-black uppercase tracking-widest text-cyan-100 hover:bg-cyan-300 hover:text-background">USE SIGNAL HOLD — MOVE TO BOTTOM</button>}
@@ -1839,6 +1919,6 @@ function TrackActions({ entry, onAction, onPlayer, onCopy, mode, readOnly, playe
       {!readOnly && mode === "spotlight" && <button type="button" onClick={() => onAction(entry.id, "removeSpotlight")} className="border border-danger/40 px-3 py-1.5 text-xs text-danger">Remove from Spotlight</button>}
       {!readOnly && mode === "completed" && <><button type="button" onClick={() => onAction(entry.id, "restoreRegular")} className="border border-accent/50 px-3 py-1.5 text-xs text-accent">Move back to Regular Queue</button>{wasPrioritySignal(entry) && <button type="button" onClick={() => onAction(entry.id, "restorePriority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Move back to Priority Signal</button>}</>}
       {!readOnly && mode === "removed" && <><button type="button" onClick={() => onAction(entry.id, "restoreRegular")} className="border border-accent/50 px-3 py-1.5 text-xs text-accent">Restore to Regular Queue</button>{wasPrioritySignal(entry) && <button type="button" onClick={() => onAction(entry.id, "restorePriority")} className="border border-[#ffaa00]/50 px-3 py-1.5 text-xs text-[#ffaa00]">Restore to Priority Signal</button>}</>}
-    </div>
+    </fieldset>
   );
 }

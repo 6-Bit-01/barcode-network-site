@@ -377,10 +377,28 @@ function operationalActions(state: QueueState, scene: ResolvedLiveOverlayScene, 
   return [
     wheelStatusAction(state, scene),
     sponsorStatusAction(state),
+    currentGiftAction(state),
     ...(showJustStarted ? [show, intake] : [intake, show]),
     nextSignalAction(state),
     ...queueStatusActions(state),
   ].filter((action): action is ForegroundOverlayAction => Boolean(action));
+}
+
+// Keep the current track's confirmed public attribution in the normal rotation.
+// This does not extend or restart the separate three-second purchase popup.
+function currentGiftAction(state: QueueState): ForegroundOverlayAction | null {
+  const track = state.nowPlaying ?? state.loadedTrack;
+  if (state.isCurrentSession === false || !state.session || state.session.status === "archived" || !track || track.isTestTrack || track.priorityUpgradeStatus !== "paid") return null;
+  const purchase = confirmedPriorityPurchaseDisplay(track);
+  if (purchase?.kind !== "gift") return null;
+  return {
+    id: `current-gift:${track.id}`,
+    label: "GIFTED SKIP",
+    message: purchase.text,
+    tone: "skip",
+    source: "priority",
+    occurredAt: track.priorityUpgradePaidAt ?? null,
+  };
 }
 
 function sponsorEndsAt(state: QueueState): string | null {

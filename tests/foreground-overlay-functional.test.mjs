@@ -358,3 +358,31 @@ test("functional receiver is a permanent session-driven Studio source", () => {
   assert.match(css, /padding: 6px 18px 0/);
   assert.doesNotMatch(combined, /current[- ](?:song|track).*remaining|time left in (?:this|current) (?:song|track)/i);
 });
+
+test("current gifted track retains confirmed credit after the popup without taking over scenes", () => {
+  const gift = entry("gift", {
+    priorityUpgradeStatus: "paid", priorityUpgradePaidAt: "2026-08-09T03:00:00.000Z",
+    priorityGiftAttribution: { version: "1.0", supporterName: "Listener", recipientName: "Artist", capturedAt: "2026-08-09T02:59:00.000Z" },
+    contactEmail: "private@example.com", priorityUpgradePaymentId: "pi_private",
+  });
+  const now = new Date("2026-08-09T03:00:03.000Z");
+  const resolve = (overrides = {}, mode = "now_playing") => foreground.resolveForegroundOverlaySnapshot({ queueState: queueState({ nowPlaying: gift, ...overrides }), scene: scene(mode) }, now);
+  const snapshot = resolve();
+  const credit = snapshot.actions.find((action) => action.id === "current-gift:gift");
+  assert.equal(credit.message, "Listener BOUGHT A SKIP FOR Artist");
+  assert.equal(credit.expiresAt, undefined);
+  assert.ok(snapshot.actions.every((action) => !action.id.startsWith("priority-purchase:")), "purchase popup still ends at exactly three seconds");
+  assert.doesNotMatch(JSON.stringify(snapshot), /private@example|pi_private/);
+  for (const mode of ["wheel_spinning", "sponsor"]) {
+    assert.ok(resolve({}, mode).actions.every((action) => !action.id.startsWith("current-gift:")), mode);
+  }
+  for (const status of ["requested", "checkout_pending", "failed", "refunded", "manual", "paid_needs_attention"]) {
+    assert.ok(resolve({ nowPlaying: { ...gift, priorityUpgradeStatus: status } }).actions.every((action) => !action.id.startsWith("current-gift:")), status);
+  }
+  for (const overrides of [
+    { nowPlaying: null }, { nowPlaying: { ...gift, isTestTrack: true } },
+    { isCurrentSession: false }, { session: { ...queueState().session, status: "archived" } },
+    { nowPlaying: entry("next-track"), loadedTrack: gift },
+  ]) assert.ok(resolve(overrides).actions.every((action) => !action.id.startsWith("current-gift:")));
+  assert.equal(resolve({ nowPlaying: null, loadedTrack: gift }).actions.some((action) => action.id === "current-gift:gift"), true);
+});

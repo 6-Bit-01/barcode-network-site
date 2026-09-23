@@ -1,6 +1,7 @@
 "use client";
 
 import { BroadcastBallad } from "@/components/BroadcastBallad";
+import { useClientAction } from "@/components/useClientAction";
 import type { PublicBallad } from "@/lib/bnl-ballads";
 import { normalizeBroadcastArchiveProjectKey, resolveArchiveArtist } from "@/lib/broadcast-archive";
 import { useMemo, useState } from "react";
@@ -225,7 +226,8 @@ export function BroadcastArchive({
   const [artistSort, setArtistSort] = useState<ArtistSort>("alphabetical");
   const selectedShowId = params.get("show") ?? (initialShowId || initialStats.shows[0]?.sessionId || "");
   const selectedArtistKey = params.get("artist") ?? (initialArtistKey || initialStats.artists[0]?.projectKey || "");
-  const [refreshing, setRefreshing] = useState(false);
+  const { actions, runAction, isPending } = useClientAction();
+  const refreshing = isPending("refresh");
   const [refreshError, setRefreshError] = useState(false);
 
   const query = search.trim().toLocaleLowerCase("en-US");
@@ -265,22 +267,25 @@ export function BroadcastArchive({
   }
 
   async function refresh() {
-    setRefreshing(true);
-    setRefreshError(false);
-    try {
-      const response = await fetch(refreshEndpoint, { cache: "no-store" });
-      if (!response.ok) throw new Error("Archive refresh failed");
-      setStats(await response.json() as QueuePublicStats);
-      if (!previewMode) {
-        const releaseResponse = await fetch("/api/ballads/catalog", { cache: "no-store" });
-        if (releaseResponse.ok) { setBallads((await releaseResponse.json()).ballads); setBalladsUnavailable(false); }
-        else setBalladsUnavailable(true);
+    await runAction("refresh", { label: "Refreshing archive…", success: "Show history refreshed.", metric: "archive_refresh" }, async () => {
+      setRefreshError(false);
+      try {
+        const response = await fetch(refreshEndpoint, { cache: "no-store" });
+        if (!response.ok) throw new Error("Archive refresh failed");
+        setStats(await response.json() as QueuePublicStats);
+        if (!previewMode) {
+          try {
+            const releaseResponse = await fetch("/api/ballads/catalog", { cache: "no-store" });
+            if (releaseResponse.ok) { setBallads((await releaseResponse.json()).ballads); setBalladsUnavailable(false); }
+            else setBalladsUnavailable(true);
+          } catch { setBalladsUnavailable(true); }
+        }
+        return true;
+      } catch {
+        setRefreshError(true);
+        return null;
       }
-    } catch {
-      setRefreshError(true);
-    } finally {
-      setRefreshing(false);
-    }
+    });
   }
 
   return (
@@ -316,6 +321,7 @@ export function BroadcastArchive({
           <button type="button" onClick={refresh} disabled={refreshing} className="border border-border px-4 py-3 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent disabled:opacity-50">{refreshing ? "Refreshing…" : "Refresh archive"}</button>
         </div>
         {refreshError && <p role="alert" className="mt-3 text-xs text-danger">The refresh did not complete. The last loaded Archive remains on screen.</p>}
+        {!refreshError && actions.refresh && <p role="status" className="mt-3 text-xs text-muted">{actions.refresh.label}</p>}
         <div className="mt-4 grid grid-cols-2 gap-2">
           <button type="button" aria-pressed={view === "shows"} onClick={() => chooseView("shows")} className={`${view === "shows" ? "border-accent bg-accent text-background" : "border-border text-muted hover:border-accent hover:text-accent"} border px-4 py-3 text-xs font-black uppercase tracking-[0.24em]`}>Shows · {stats.overview.showCount}</button>
           <button type="button" aria-pressed={view === "artists"} onClick={() => chooseView("artists")} className={`${view === "artists" ? "border-cyan-200 bg-cyan-200 text-background" : "border-border text-muted hover:border-cyan-200 hover:text-cyan-200"} border px-4 py-3 text-xs font-black uppercase tracking-[0.24em]`}>Artists · {stats.artists.length}</button>
@@ -324,7 +330,20 @@ export function BroadcastArchive({
 
       {view === "shows" ? (
         <div className="grid gap-5 lg:grid-cols-[minmax(16rem,0.34fr)_minmax(0,1fr)]">
-          <aside className="border border-border bg-surface p-4 lg:sticky lg:top-20 lg:self-start">
+          <div className="order-first min-w-0 border border-border bg-surface p-4 lg:hidden">
+            <label className="block text-xs font-bold uppercase tracking-widest text-accent">Choose a show
+              <select value={selectedShow?.sessionId ?? ""} onChange={(event) => chooseShow(event.target.value)} disabled={!selectedShow} className="mt-2 w-full min-w-0 border border-border bg-background px-3 py-3 text-sm text-foreground">
+                {!selectedShow && <option value="">No shows available</option>}
+                {selectedShow && !shows.some((show) => show.sessionId === selectedShow.sessionId) && <option value={selectedShow.sessionId}>{displayDate(selectedShow.showDate)} · {selectedShow.title} (selected; outside search)</option>}
+                {shows.map((show) => <option key={show.sessionId} value={show.sessionId}>{displayDate(show.showDate)} · {show.title}</option>)}
+              </select>
+            </label>
+            <label className="mt-3 block text-xs text-muted">Sort shows
+              <select value={showSort} onChange={(event) => setShowSort(event.target.value as ShowSort)} className="ml-2 border border-border bg-background p-2"><option value="newest">Newest</option><option value="tracks">Most tracks</option><option value="played">Most finished</option></select>
+            </label>
+            <p className="mt-2 text-xs text-muted">{shows.length === 0 ? "No shows match this search." : `${shows.length} matching records`}</p>
+          </div>
+          <aside className="hidden border border-border bg-surface p-4 lg:sticky lg:top-20 lg:block lg:self-start">
             <div className="flex items-center justify-between gap-3 border-b border-border pb-3"><div><p className="text-xs font-bold uppercase tracking-[0.25em] text-accent">Shows</p><p className="mt-1 text-[11px] text-muted">{shows.length} matching records</p></div><label><span className="sr-only">Sort shows</span><select value={showSort} onChange={(event) => setShowSort(event.target.value as ShowSort)} className="border border-border bg-background px-2 py-2 text-xs text-muted"><option value="newest">Newest</option><option value="tracks">Most tracks</option><option value="played">Most finished</option></select></label></div>
             <div className="mt-3 max-h-[62vh] space-y-2 overflow-y-auto pr-1">{shows.map((show) => <button key={show.sessionId} type="button" onClick={() => chooseShow(show.sessionId)} className={`${selectedShow?.sessionId === show.sessionId ? "border-accent bg-accent/10" : "border-border hover:border-accent/55"} w-full border p-3 text-left`}><p className="font-bold text-foreground">{show.title}</p><p className="mt-1 text-xs text-muted">{displayDate(show.showDate)}</p><p className="mt-2 font-mono text-[10px] uppercase tracking-widest text-muted">{show.submittedTrackCount} tracks · {show.finishedTrackCount} finished</p></button>)}{shows.length === 0 && <p className="p-3 text-sm text-muted">No shows match this search.</p>}</div>
           </aside>

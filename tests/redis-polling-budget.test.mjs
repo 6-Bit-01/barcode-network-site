@@ -27,7 +27,6 @@ test("Redis-backed browser surfaces share a bounded polling budget", () => {
   assert.match(liveOverlay, /startPermanentOverlayPolling\(\{[\s\S]*activeIntervalMs: OVERLAY_POLL_DELAY_MS,[\s\S]*standbyIntervalMs: LIVE_OVERLAY_STANDBY_POLL_INTERVAL_MS/);
 
   for (const path of [
-    "src/components/PublicQueueGateway.tsx",
     "src/components/PublicQueueSession.tsx",
     "src/components/RadioQueueForm.tsx",
     "src/components/useQueue.ts",
@@ -59,7 +58,6 @@ test("Redis-backed browser surfaces share a bounded polling budget", () => {
   assert.match(source("src/components/LiveStatusProvider.tsx"), /SITE_LIVE_STATUS_POLL_INTERVAL_MS/);
 
   for (const path of [
-    "src/components/PublicQueueGateway.tsx",
     "src/components/PublicQueueSession.tsx",
     "src/components/RadioQueueForm.tsx",
     "src/components/useQueue.ts",

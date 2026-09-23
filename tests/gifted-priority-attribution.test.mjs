@@ -44,7 +44,6 @@ test("direct Priority submission carries self-ownership and checkout-resume owne
 test("confirmed own and gifted purchases use one safe display rule across queue and host surfaces but stay excluded from BNL", () => {
   const queueTypes = source("src/lib/queue-types.ts");
   const publicQueue = source("src/components/PublicQueueSession.tsx");
-  const publicGateway = source("src/components/PublicQueueGateway.tsx");
   const admin = source("src/components/AdminRadioQueueControl.tsx");
   const foreground = source("src/lib/foreground-overlay-resolver.ts");
   const bnl = source("src/app/api/bnl/read-model/route.ts");
@@ -56,7 +55,6 @@ test("confirmed own and gifted purchases use one safe display rule across queue 
   assert.match(queueTypes, /\$\{supporterName\} BOUGHT A SKIP FOR \$\{recipientName\}/);
   assert.match(publicQueue, /function PriorityPurchaseTag/);
   assert.match(publicQueue, /confirmedPriorityPurchaseDisplay\(track\)/);
-  assert.match(publicGateway, /confirmedPriorityPurchaseDisplay\(track\)/);
   assert.match(admin, /function AdminPriorityPurchaseBanner/);
   assert.match(admin, /<AdminPriorityPurchaseBanner entry=\{player\}/);
   assert.match(admin, /<AdminPriorityPurchaseBanner entry=\{entry\}/);

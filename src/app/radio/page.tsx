@@ -5,6 +5,7 @@ import { LocalSchedule } from "@/components/LocalSchedule";
 import type { Metadata } from "next";
 import { BNLRelayModule } from "@/components/BNLRelay";
 import { RadioBroadcastFeature } from "@/components/RadioBroadcastFeature";
+import { RadioQueueEntry } from "@/components/RadioQueueEntry";
 import { getRadioSubmissionRouting } from "@/lib/radio-submission-routing";
 
 export const metadata: Metadata = {
@@ -48,6 +49,8 @@ export default function RadioPage() {
             description={submission.heroDescription}
           />
 
+          {submission.mode === "native_queue" && <div className="max-w-xl"><RadioQueueEntry /></div>}
+
           {/* Schedule notice — auto-converts to visitor's timezone */}
           <LocalSchedule
             day={radioPage.schedule.day}
@@ -70,15 +73,7 @@ export default function RadioPage() {
                   <span className="text-lg">{radioPage.hero.submitButton.emoji}</span>
                   {submission.heroSubmitLabel}
                 </a>
-              ) : (
-                <Link
-                  href={submission.href}
-                  className="flex-1 inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold bg-accent text-background hover:bg-accent-dim transition-all text-center"
-                >
-                  <span className="text-lg">{radioPage.hero.submitButton.emoji}</span>
-                  {submission.heroSubmitLabel}
-                </Link>
-              )}
+              ) : null}
               <a
                 href={externalLinks.discord}
                 target="_blank"

@@ -2,6 +2,28 @@ import type { QueueBroadcastPhase, QueuePublicSnapshot } from "@/lib/queue-types
 
 export type SiteShowMode = "offline" | "intake_open" | "broadcast_live";
 
+export type QueueReadState = "loading" | "ready" | "unavailable" | "disabled";
+export type RadioQueueEntryState = {
+  status: "loading" | "unavailable" | "closed" | "standby" | "open" | "live_open" | "live_closed" | "full";
+  href: string | null;
+};
+
+// Radio reuses the global queue read, but never advertises an authenticated
+// operator's private session as a public destination.
+export function deriveRadioQueueEntryState({ queueSnapshot, queueProductionEnabled, readState }: Pick<PublicShowStateInput, "queueSnapshot" | "queueProductionEnabled"> & { readState: QueueReadState }): RadioQueueEntryState {
+  if (readState === "loading") return { status: "loading", href: null };
+  if (!queueProductionEnabled || readState !== "ready") return { status: "unavailable", href: null };
+  const session = queueSnapshot?.session;
+  if (!session || queueSnapshot?.sessionActive !== true || session.purpose !== "live_broadcast" || session.status === "archived" || session.broadcastPhase === "ended") {
+    return { status: "closed", href: null };
+  }
+  const href = `/queue/${encodeURIComponent(session.sessionId)}`;
+  if (queueSnapshot.status.isFull) return { status: "full", href };
+  const live = session.broadcastPhase === "broadcast_active" || session.showStarted;
+  const open = queueSnapshot.status.isOpen;
+  return { status: live ? open ? "live_open" : "live_closed" : open ? "open" : "standby", href };
+}
+
 export type PublicShowStateInput = {
   queueProductionEnabled: boolean;
   isLive: boolean;

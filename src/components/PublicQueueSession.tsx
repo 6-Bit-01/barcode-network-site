@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { createPortal } from "react-dom";
+import { useClientAction } from "@/components/useClientAction";
 import { RadioQueueForm } from "@/components/RadioQueueForm";
 import { useLiveStatus } from "@/components/LiveStatusProvider";
 import { externalLinks } from "@/content";
@@ -212,11 +213,12 @@ export function PublicQueueSession({ sessionId, snapshotEndpoint = "/api/queue" 
   const [view, setView] = useState<QueueView>("active");
   const [mounted, setMounted] = useState(false);
   const [priorityModalTrack, setPriorityModalTrack] = useState<QueuePublicTrack | null>(null);
-  const [priorityRequestPending, setPriorityRequestPending] = useState(false);
+  const { runAction, isPending } = useClientAction();
+  const priorityRequestPending = isPending("checkout");
   const [priorityRequestMessage, setPriorityRequestMessage] = useState<string | null>(null);
   const [priorityCheckoutOwnerTrackIds, setPriorityCheckoutOwnerTrackIds] = useState<Set<string>>(() => new Set());
   const [signalHoldModalTrack, setSignalHoldModalTrack] = useState<PublicTrackSummary | null>(null);
-  const [signalHoldRequestPending, setSignalHoldRequestPending] = useState(false);
+  const signalHoldRequestPending = isPending("checkout");
   const [signalHoldRequestMessage, setSignalHoldRequestMessage] = useState<string | null>(null);
   const [signalHoldCheckoutOwnerTrackIds, setSignalHoldCheckoutOwnerTrackIds] = useState<Set<string>>(() => new Set());
   const [checkoutNotice, setCheckoutNotice] = useState<string | null>(null);
@@ -479,35 +481,38 @@ export function PublicQueueSession({ sessionId, snapshotEndpoint = "/api/queue" 
       setPriorityRequestMessage("Priority Signal upgrades unavailable.");
       return;
     }
-    setPriorityRequestPending(true);
-    const checkoutOwnerToken = getOrCreatePriorityCheckoutOwnerToken(sessionId, track.id);
-    const priorityGift = !viewerSubmittedTrackIds.has(track.id);
-    const res = await fetch("/api/queue/priority-checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trackId: track.id, sessionId, submitterToken, checkoutOwnerToken, acceptedPriorityTerms: true, priorityTermsVersion: PRIORITY_TERMS_VERSION, priorityDisclosureText: PRIORITY_DISCLOSURE_TEXT, priorityGift, priorityGiftSupporterName: priorityGift ? priorityGiftSupporterName : "", priorityGiftAttributionVersion: PRIORITY_GIFT_ATTRIBUTION_VERSION, priorityGiftAttributionDisclosureText: PRIORITY_GIFT_ATTRIBUTION_DISCLOSURE_TEXT }) });
-    const payload = await res.json().catch(() => ({}));
-    setPriorityRequestPending(false);
-    if (res.ok && typeof payload.url === "string") {
-      setPriorityRequestMessage(payload.message ?? "Checkout started. Skip is not active yet.");
-      window.location.href = payload.url;
-      return;
-    }
-    if (payload.code === "checkout_owned_elsewhere") {
-      clearPriorityCheckoutOwnerToken(sessionId, track.id);
-      setPriorityCheckoutOwnerTrackIds((current) => {
-        const next = new Set(current);
-        next.delete(track.id);
-        return next;
-      });
-    }
-    setPriorityRequestMessage(payload.error ?? "Priority Signal checkout is not available right now.");
-    await load();
+    await runAction("checkout", { label: "Opening checkout…", success: "Checkout opened.", metric: "priority_checkout" }, async () => {
+      try {
+        const checkoutOwnerToken = getOrCreatePriorityCheckoutOwnerToken(sessionId, track.id);
+        const priorityGift = !viewerSubmittedTrackIds.has(track.id);
+        const res = await fetch("/api/queue/priority-checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trackId: track.id, sessionId, submitterToken, checkoutOwnerToken, acceptedPriorityTerms: true, priorityTermsVersion: PRIORITY_TERMS_VERSION, priorityDisclosureText: PRIORITY_DISCLOSURE_TEXT, priorityGift, priorityGiftSupporterName: priorityGift ? priorityGiftSupporterName : "", priorityGiftAttributionVersion: PRIORITY_GIFT_ATTRIBUTION_VERSION, priorityGiftAttributionDisclosureText: PRIORITY_GIFT_ATTRIBUTION_DISCLOSURE_TEXT }) });
+        const payload = await res.json().catch(() => ({}));
+        if (res.ok && typeof payload.url === "string") {
+          setPriorityRequestMessage(payload.message ?? "Checkout started. Skip is not active yet.");
+          window.location.href = payload.url;
+          return true;
+        }
+        if (payload.code === "checkout_owned_elsewhere") {
+          clearPriorityCheckoutOwnerToken(sessionId, track.id);
+          setPriorityCheckoutOwnerTrackIds((current) => {
+            const next = new Set(current);
+            next.delete(track.id);
+            return next;
+          });
+        }
+        setPriorityRequestMessage(payload.error ?? "Priority Signal checkout is not available right now.");
+        await load();
+        return null;
+      } catch {
+        setPriorityRequestMessage("Checkout could not be confirmed. Refresh the queue before trying again; no payment has been confirmed here.");
+        return null;
+      }
+    });
   }
 
   async function resumePriorityPayment(track: QueuePublicTrack) {
-    setPriorityModalTrack(null);
+    setPriorityModalTrack(track);
     setPriorityRequestMessage(null);
-    setActionTransition(actionVariant(`${sessionId}:${track.id}`, "resume"));
-    window.setTimeout(() => setActionTransition(null), 1200);
-    await new Promise((resolve) => window.setTimeout(resolve, 1200));
     await beginPriorityCheckout(track);
   }
 
@@ -551,26 +556,32 @@ export function PublicQueueSession({ sessionId, snapshotEndpoint = "/api/queue" 
       setSignalHoldRequestMessage("Signal Hold is not available for this track.");
       return;
     }
-    setSignalHoldRequestPending(true);
-    const checkoutOwnerToken = getOrCreateSignalHoldCheckoutOwnerToken(sessionId, track.id);
-    const res = await fetch("/api/queue/signal-hold-checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trackId: track.id, sessionId, submitterToken, checkoutOwnerToken, acceptedSignalHoldTerms: true, signalHoldTermsVersion: SIGNAL_HOLD_TERMS_VERSION, signalHoldDisclosureText: SIGNAL_HOLD_DISCLOSURE_TEXT }) });
-    const payload = await res.json().catch(() => ({}));
-    setSignalHoldRequestPending(false);
-    if (res.ok && typeof payload.url === "string") {
-      setSignalHoldRequestMessage(payload.message ?? "Checkout started. Signal Hold is not active yet.");
-      window.location.href = payload.url;
-      return;
-    }
-    if (payload.code === "checkout_owned_elsewhere") {
-      clearSignalHoldCheckoutOwnerToken(sessionId, track.id);
-      setSignalHoldCheckoutOwnerTrackIds((current) => {
-        const next = new Set(current);
-        next.delete(track.id);
-        return next;
-      });
-    }
-    setSignalHoldRequestMessage(payload.error ?? "Signal Hold checkout is not available right now.");
-    await load();
+    await runAction("checkout", { label: "Opening checkout…", success: "Checkout opened.", metric: "signal_hold_checkout" }, async () => {
+      try {
+        const checkoutOwnerToken = getOrCreateSignalHoldCheckoutOwnerToken(sessionId, track.id);
+        const res = await fetch("/api/queue/signal-hold-checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trackId: track.id, sessionId, submitterToken, checkoutOwnerToken, acceptedSignalHoldTerms: true, signalHoldTermsVersion: SIGNAL_HOLD_TERMS_VERSION, signalHoldDisclosureText: SIGNAL_HOLD_DISCLOSURE_TEXT }) });
+        const payload = await res.json().catch(() => ({}));
+        if (res.ok && typeof payload.url === "string") {
+          setSignalHoldRequestMessage(payload.message ?? "Checkout started. Signal Hold is not active yet.");
+          window.location.href = payload.url;
+          return true;
+        }
+        if (payload.code === "checkout_owned_elsewhere") {
+          clearSignalHoldCheckoutOwnerToken(sessionId, track.id);
+          setSignalHoldCheckoutOwnerTrackIds((current) => {
+            const next = new Set(current);
+            next.delete(track.id);
+            return next;
+          });
+        }
+        setSignalHoldRequestMessage(payload.error ?? "Signal Hold checkout is not available right now.");
+        await load();
+        return null;
+      } catch {
+        setSignalHoldRequestMessage("Checkout could not be confirmed. Refresh the queue before trying again; no payment has been confirmed here.");
+        return null;
+      }
+    });
   }
 
   async function resumeSignalHoldPayment(track: PublicTrackSummary) {
@@ -1251,7 +1262,7 @@ function PriorityUpgradeModal({ track, price, priorityImpact, pending, message, 
           <p className="mt-2">Payment may take a moment to clear. Queue position may shift during checkout.</p>
           <p className="mt-3 border border-[#ffaa00]/30 bg-[#ffaa00]/5 p-2 leading-relaxed text-muted">{PRIORITY_DISCLOSURE_TEXT}</p>
         </div>
-        {message && <p className="mt-3 border border-accent/30 bg-accent/5 p-2 text-xs text-accent">{message}</p>}
+        {message && <p role="status" className="mt-3 border border-accent/30 bg-accent/5 p-2 text-xs text-accent">{message}</p>}
         <div className="mt-5 flex flex-wrap justify-end gap-2"><button type="button" onClick={onClose} disabled={pending} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted disabled:opacity-50">Cancel</button><button type="button" onClick={() => onConfirm(supporterName)} disabled={pending} className="border border-[#ffaa00]/60 px-4 py-2 text-xs uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background disabled:opacity-50">{pending ? "Opening checkout…" : "Continue to Payment"}</button></div>
       </div>
     </div>
@@ -1274,7 +1285,7 @@ function SignalHoldModal({ track, price, pending, message, onConfirm, onClose }:
           <p>Checkout pending is not active protection. Protection starts only after signed payment confirmation.</p>
           <p className="mt-3 border border-cyan-200/25 bg-cyan-200/5 p-2">{SIGNAL_HOLD_DISCLOSURE_TEXT}</p>
         </div>
-        {message && <p className="mt-3 border border-accent/30 bg-accent/5 p-2 text-xs text-accent">{message}</p>}
+        {message && <p role="status" className="mt-3 border border-accent/30 bg-accent/5 p-2 text-xs text-accent">{message}</p>}
         <div className="mt-5 flex flex-wrap justify-end gap-2"><button type="button" onClick={onClose} disabled={pending} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted disabled:opacity-50">Cancel</button><button type="button" onClick={onConfirm} disabled={pending} className="border border-cyan-200/60 px-4 py-2 text-xs uppercase tracking-widest text-cyan-200 hover:bg-cyan-200 hover:text-background disabled:opacity-50">{pending ? "Opening checkout…" : "Continue to Payment"}</button></div>
       </div>
     </div>

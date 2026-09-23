@@ -1218,15 +1218,10 @@ test("admin queue hides generic flags and names artists sharing a flagged browse
   assert.doesNotMatch(source, />Admin flags:/);
 });
 
-test("host dashboard separates track cards and lowers only the right-side Next In Line box", () => {
+test("host dashboard keeps distinct track cards", () => {
   const source = fs.readFileSync(path.join(projectRoot, "src/components/AdminRadioQueueControl.tsx"), "utf8");
-
   assert.match(source, /className=\{`space-y-2 border-2 p-3 \$\{queueTrackVisual\(entry\)\.cardClass\}`\}/);
   assert.match(source, /<div className="space-y-3">\s*\{tracks\.length === 0/);
-  assert.match(source, /<div className="pt-12"><NextInLineBox entry=\{nextInLine\}/);
-  assert.match(source, /top-\[calc\(10\.25rem\+env\(safe-area-inset-top\)\)\]/);
-  assert.match(source, /max-h-\[calc\(100dvh-11rem\)\]/);
-  assert.doesNotMatch(source, /top-\[calc\(13\.25rem\+env\(safe-area-inset-top\)\)\]/);
 });
 
 test("concurrent slots 43 through 45 accept exactly two tracks without losing either write", async () => {

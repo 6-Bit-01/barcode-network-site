@@ -129,6 +129,7 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
   const [step, setStep] = useState<IntakeStep>("track");
   const [routingLockRemaining, setRoutingLockRemaining] = useState(0);
   const finalSubmitIntent = useRef(false);
+  const submissionInFlight = useRef(false);
   const [artist, setArtist] = useState("");
   const [creditDecision, setCreditDecision] = useState<"whole" | "split" | "">("");
   const [originalArtist, setOriginalArtist] = useState("");
@@ -428,7 +429,7 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
       continueToRouting();
       return;
     }
-    if (!finalSubmitIntent.current || routingLockRemaining > 0) {
+    if (submissionInFlight.current || !finalSubmitIntent.current || routingLockRemaining > 0) {
       finalSubmitIntent.current = false;
       return;
     }
@@ -439,6 +440,7 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
       setLegalError("You must agree to the BARCODE Network Terms, Queue Submission Terms, and Privacy Policy before submitting.");
       return;
     }
+    submissionInFlight.current = true;
     setSubmitting(true);
     try {
       const refreshedBeforeSubmit = await loadStatus();
@@ -596,6 +598,7 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
       setError(err instanceof Error ? err.message : "Submission failed");
     } finally {
       finalSubmitIntent.current = false;
+      submissionInFlight.current = false;
       setSubmitting(false);
     }
   }

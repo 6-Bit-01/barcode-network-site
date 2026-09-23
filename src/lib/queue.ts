@@ -4589,13 +4589,13 @@ function broadcastHistoryEvidence(session: QueueSession, record: QueuePublicStat
   return null;
 }
 
-function buildQueueStatsProjection(input: {
-  revision: number;
-  activeSessionId?: string | null;
-  submitterToken?: string | null;
-}, selectedSessions: QueueSession[], includeSimulationTracks: boolean | ((session: QueueSession) => boolean), playedOnly = false): QueuePublicStats {
+function publicStatsSessions(
+  selectedSessions: QueueSession[],
+  includeSimulationTracks: boolean | ((session: QueueSession) => boolean),
+  playedOnly = false,
+) {
   const resolveCredit = artistCreditResolver(selectedSessions.flatMap(session => publicStatsRecordsForSession(session, false).map(record => record.entry)));
-  const eligibleSessions = selectedSessions
+  return selectedSessions
     .map((session) => {
       const includeSessionSimulationTracks = typeof includeSimulationTracks === "function"
         ? includeSimulationTracks(session)
@@ -4606,6 +4606,14 @@ function buildQueueStatsProjection(input: {
       return { session, records, allRecords, events: publicHistoryEventsForSession(session, records) };
     })
     .sort((left, right) => publicStatsSessionTime(right.session) - publicStatsSessionTime(left.session));
+}
+
+function buildQueueStatsProjection(input: {
+  revision: number;
+  activeSessionId?: string | null;
+  submitterToken?: string | null;
+}, selectedSessions: QueueSession[], includeSimulationTracks: boolean | ((session: QueueSession) => boolean), playedOnly = false): QueuePublicStats {
+  const eligibleSessions = publicStatsSessions(selectedSessions, includeSimulationTracks, playedOnly);
   const archiveSessions = eligibleSessions.filter(({ session }) => session.status === "archived");
   const archivedRecords = archiveSessions.flatMap(({ records }) => records);
   const current = eligibleSessions.find(({ session }) => session.sessionId === input.activeSessionId && session.status !== "archived") ?? null;
@@ -4754,6 +4762,52 @@ export async function getQueueBnlStats(
   accessScope: Exclude<QueueSessionBnlAccessLevel, "none">,
 ): Promise<QueueBnlStats> {
   return buildQueueBnlStatsFromStore(await readStore(), accessScope);
+}
+
+export const QUEUE_BNL_PUBLIC_HISTORY_SCHEMA_VERSION = "queue_bnl_public_history_v1" as const;
+
+/** Public history has its own authority, independent of the current queue's access. */
+function buildQueueBnlPublicHistoryFromStore(store: QueueStore) {
+  const selectedSessions = store.sessions
+    .map((session) => normalizeSession(session))
+    .filter((session) => queueSessionBnlPublicationAccess(session).accessLevel === "public"
+      && session.showDate >= QUEUE_PUBLIC_HISTORY_COVERAGE_STARTED_AT);
+  const eligibleSessions = publicStatsSessions(selectedSessions, false);
+  const shows = eligibleSessions
+    .filter(({ session }) => session.status === "archived" || session.sessionId === store.activeSessionId)
+    .map(({ session, records, events }) => publicShowStats(session, records, events));
+  const artistKeys = new Set(eligibleSessions.flatMap(({ records }) =>
+    records.map((record) => normalizeQueueProjectKey(publicHistoryProjectLabel(record.entry)))));
+  for (const show of shows) {
+    for (const track of show.trackRoster) {
+      track.featuredArtists = collaboratorList(track.collaboratorNames ?? "").map(name => ({ name, projectKey: artistKeys.has(normalizeQueueProjectKey(name)) ? normalizeQueueProjectKey(name) : null }));
+    }
+  }
+  const currentSessionId = shows.find((show) => show.sessionId === store.activeSessionId && show.status !== "archived")?.sessionId ?? null;
+  // Hash only public content; private queue activity must not churn this history.
+  const sourceDigest = createHash("sha256").update(canonicalJson({
+    schemaVersion: QUEUE_BNL_PUBLIC_HISTORY_SCHEMA_VERSION,
+    historyCoverageStartedAt: QUEUE_PUBLIC_HISTORY_COVERAGE_STARTED_AT,
+    currentSessionId,
+    shows,
+  })).digest("hex");
+  return {
+    schemaVersion: QUEUE_BNL_PUBLIC_HISTORY_SCHEMA_VERSION,
+    source: "queue_bnl_public_history_projection" as const,
+    visibility: "public_safe" as const,
+    accessScope: "public" as const,
+    publicOnly: true as const,
+    mutationAllowed: false as const,
+    historyCoverageStartedAt: QUEUE_PUBLIC_HISTORY_COVERAGE_STARTED_AT,
+    sourceRevision: Math.max(0, Math.floor(store.revision)),
+    sourceDigest,
+    builtAt: shows.map((show) => show.sourceUpdatedAt).filter(Boolean).sort().at(-1) ?? null,
+    memoryDefault: "do_not_store" as const,
+    sourceFileDefault: "review_evidence_only" as const,
+    publicDossierDefault: "not_automatic" as const,
+    currentSessionId,
+    shows,
+  };
 }
 
 export const QUEUE_BNL_ARTIST_MEMORY_SCHEMA_VERSION = "queue_artist_memory_v1" as const;
@@ -5040,10 +5094,12 @@ function queueBnlReadProjectionsFromStore(
   accessScope: Exclude<QueueSessionBnlAccessLevel, "none"> | null,
 ): {
   archive: QueueBnlStats | null;
+  publicHistory: ReturnType<typeof buildQueueBnlPublicHistoryFromStore>;
   artistMemory: QueueBnlArtistMemoryProjection;
 } {
   return {
     archive: accessScope ? buildQueueBnlStatsFromStore(store, accessScope) : null,
+    publicHistory: buildQueueBnlPublicHistoryFromStore(store),
     artistMemory: buildQueueBnlArtistMemory({
       revision: store.revision,
       sessions: store.sessions,

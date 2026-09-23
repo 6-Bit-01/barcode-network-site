@@ -113,7 +113,7 @@ function fixture(revision = 12, publication = "public_copy_approved", id = "curr
 
 async function request(route, authenticated = false) {
   const response = await route.GET(new Request("https://example.test/api/bnl/read-model", {
-    headers: authenticated ? { "x-api-key": "snapshot-service-key" } : {},
+    headers: authenticated ? { "x-api-key": typeof authenticated === "string" ? authenticated : "snapshot-service-key" } : {},
   }));
   assert.equal(response.status, 200);
   return { response, body: await response.json() };
@@ -132,7 +132,7 @@ function deferred() {
   return { promise, resolve };
 }
 
-test("one queue read supplies live state, show log, archive, and artist memory", async (t) => {
+test("one queue read supplies live state, show log, archive, public history, and artist memory", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: Date.parse(fixedNow) });
   const { route } = loadHarness();
   const before = FakeRedis.raw;
@@ -142,6 +142,10 @@ test("one queue read supplies live state, show log, archive, and artist memory",
   assert.equal(body.sections.artistMemory.available, true);
   assert.equal(body.sections.queue.operationalEventsSourceRevision, 12);
   assert.equal(body.sections.archive.sourceRevision, 12);
+  assert.equal(body.sections.publicHistory.sourceRevision, 12);
+  assert.equal(body.sections.publicHistory.available, true);
+  assert.deepEqual(body.sections.publicHistory.shows, [body.sections.archive.currentShow, ...body.sections.archive.shows]);
+  assert.equal(body.sections.publicHistory.currentSessionId, "current");
   assert.equal(body.sections.artistMemory.sourceRevision, 12);
   assert.equal(FakeRedis.raw, before, "timer-derived live state must not persist a mutation");
   assertSanitized(body);
@@ -193,6 +197,11 @@ test("each request sees the new revision and current public/private/no-access de
     assert.equal(body.accessScope, expectedScope);
     assert.equal(body.sections.queue.available, expectedScope !== "none");
     assert.equal(body.sections.artistMemory.sourceRevision, revision);
+    assert.equal(body.sections.publicHistory.available, true);
+    assert.equal(body.sections.publicHistory.accessScope, "public");
+    assert.equal(body.sections.publicHistory.sourceRevision, revision);
+    assert.ok(body.sections.publicHistory.shows.some((show) => show.sessionId === "history"));
+    assert.equal(body.sections.publicHistory.shows.some((show) => show.sessionId === id), expectedScope === "public");
     assert.ok(body.sections.artistMemory.records.some((record) => record.track.title === "Song historical"));
     if (expectedScope === "none") {
       assert.equal(body.sections.archive.available, false);
@@ -227,6 +236,8 @@ test("overlapping requests keep separate revisions and authorization scopes", as
     const { body } = results[i];
     assert.equal(body.accessScope, scope);
     assert.equal(body.sections.artistMemory.sourceRevision, 30 + i);
+    assert.equal(body.sections.publicHistory.sourceRevision, 30 + i);
+    assert.equal(body.sections.publicHistory.currentSessionId, scope === "public" ? "public30" : null);
     if (scope !== "none") assert.equal(body.sections.queue.operationalEventsSourceRevision, 30 + i);
     assertSanitized(body);
   }
@@ -241,7 +252,7 @@ test("failed initial queue read keeps nonqueue context and unavailable durable e
   const { response, body } = await request(route);
   assert.equal(FakeRedis.reads, 1);
   assert.equal(body.sections.queue.available, false);
-  for (const section of [body.sections.archive, body.sections.artistMemory]) {
+  for (const section of [body.sections.archive, body.sections.publicHistory, body.sections.artistMemory]) {
     assert.equal(section.available, false);
     assert.equal(section.reason, "queue_projection_unavailable");
     assert.equal(section.sourceRevision, null);
@@ -271,10 +282,11 @@ test("derived show-log and durable projection failures keep their separate envel
       if (method === "getShowLog") {
         assert.equal(body.sections.queue.operationalEventsSourceRevision, null);
         assert.equal(body.sections.archive.available, true);
+        assert.equal(body.sections.publicHistory.available, true);
         assert.equal(body.sections.artistMemory.available, true);
       } else {
         assert.equal(body.sections.queue.operationalEventsSourceRevision, 12);
-        for (const section of [body.sections.archive, body.sections.artistMemory]) {
+        for (const section of [body.sections.archive, body.sections.publicHistory, body.sections.artistMemory]) {
           assert.equal(section.available, false);
           assert.equal(section.reason, "queue_projection_unavailable");
           assert.equal(section.sourceRevision, null);
@@ -286,6 +298,141 @@ test("derived show-log and durable projection failures keep their separate envel
   }
 });
 
+
+test("public history remains independently public during private rehearsal and invalid-key reads", async () => {
+  const store = fixture(40, "runtime_only", "sealed-current");
+  store.sessions[0].purpose = "rehearsal";
+  for (const [id, purpose, publication, showDate] of [
+    ["sealed-archive", "rehearsal", "runtime_only", "2026-09-15"],
+    ["no-access", "live_broadcast", "private", "2026-09-14"],
+    ["simulation", "simulation", "public_copy_approved", "2026-09-13"],
+    ["internal", "internal_test", "runtime_only", "2026-09-12"],
+    ["legacy", "unknown", "public_copy_approved", "2026-09-11"],
+    ["before-coverage", "live_broadcast", "public_copy_approved", "2026-08-23"],
+  ]) store.sessions.push(session(id, publication, { purpose, showDate, status: "archived" }));
+  store.sessions.push(session("older-public", "recap_approved", { status: "archived", showDate: "2026-09-04" }));
+  const { route } = loadHarness(store);
+  let publicHistory;
+  for (const token of [false, true, "invalid-key"]) {
+    const { body, response } = await request(route, token);
+    const history = body.sections.publicHistory;
+    assert.equal(body.accessScope, token === true ? "private" : "none");
+    assert.equal(body.sections.archive.available, token === true);
+    assert.equal(history.available, true);
+    assert.equal(history.reason, null);
+    assert.equal(history.schemaVersion, "queue_bnl_public_history_v1");
+    assert.equal(history.source, "queue_bnl_public_history_projection");
+    assert.equal(history.visibility, "public_safe");
+    assert.equal(history.accessScope, "public");
+    assert.equal(history.publicOnly, true);
+    assert.equal(history.mutationAllowed, false);
+    assert.equal(history.memoryDefault, "do_not_store");
+    assert.equal(history.sourceFileDefault, "review_evidence_only");
+    assert.equal(history.publicDossierDefault, "not_automatic");
+    assert.equal(history.historyCoverageStartedAt, "2026-08-24");
+    assert.equal(history.currentSessionId, null);
+    assert.deepEqual(history.shows.map((show) => show.sessionId), ["history", "older-public"]);
+    assert.match(history.sourceDigest, /^[a-f0-9]{64}$/);
+    assert.equal(history.sourceRevision, 40);
+    if (publicHistory) assert.deepEqual(history, publicHistory);
+    publicHistory = history;
+    for (const key of ["currentShow", "latestShow", "artists", "recentEvents", "personalHistory", "overview"]) {
+      assert.equal(Object.hasOwn(history, key), false, "compact history must not duplicate show or artist collections");
+    }
+    assertSanitized(body);
+    assert.match(response.headers.get("vary"), /x-api-key/i);
+    if (token === true) assert.match(response.headers.get("cache-control"), /no-store/);
+    else assert.match(response.headers.get("cache-control"), body.sections.ballads.available ? /public/ : /no-store/);
+    if (token === true) assert.match(response.headers.get("x-robots-tag"), /noindex/);
+  }
+  assert.equal(FakeRedis.reads, 3);
+  store.revision += 1;
+  store.sessions[0].title = "Changed private rehearsal";
+  store.sessions[0].updatedAt = "2026-09-15T21:00:00.000Z";
+  FakeRedis.raw = JSON.stringify(store);
+  const afterPrivateChange = (await request(route, true)).body.sections.publicHistory;
+  assert.equal(afterPrivateChange.sourceRevision, 41);
+  assert.equal(afterPrivateChange.sourceDigest, publicHistory.sourceDigest);
+  assert.equal(afterPrivateChange.builtAt, publicHistory.builtAt);
+  store.revision += 1;
+  store.sessions[1].completed[0].submittedSongTitle = "Corrected public title";
+  FakeRedis.raw = JSON.stringify(store);
+  const corrected = (await request(route)).body.sections.publicHistory;
+  assert.notEqual(corrected.sourceDigest, publicHistory.sourceDigest);
+  assert.equal(corrected.shows[0].trackRoster[0].title, "Corrected public title");
+  store.revision += 1;
+  store.sessions[1].bnlPublicationStatus = "private";
+  FakeRedis.raw = JSON.stringify(store);
+  const revoked = (await request(route)).body.sections.publicHistory;
+  assert.notEqual(revoked.sourceDigest, corrected.sourceDigest);
+  assert.deepEqual(revoked.shows.map((show) => show.sessionId), ["older-public"]);
+});
+
+test("public history preserves sanitized chronology without simulation or upload leakage", async () => {
+  const store = fixture();
+  const simulated = { ...track("simulation-secret"), isTestTrack: true };
+  const uploaded = { ...track("upload"), sourceType: "upload" };
+  store.sessions[1].queue = [simulated, uploaded];
+  store.sessions[1].completed[0].playbackOutcome = "finished";
+  store.sessions[1].completed[0].completedAt = fixedNow;
+  store.sessions[1].removed = [{ ...track("removed"), status: "removed", removedAt: fixedNow }];
+  store.sessions[1].showLog = [
+    { sequence: 1, eventType: "broadcast_started", occurredAt: fixedNow, track: null, details: null },
+    { sequence: 2, eventType: "track_submitted", occurredAt: fixedNow, track: { trackId: simulated.id, artist: simulated.artist, title: simulated.title }, details: null },
+    { sequence: 3, eventType: "track_finished", occurredAt: fixedNow, track: { trackId: "historical", artist: "Artist historical", title: "Song historical", submissionOrder: 1, playedOrder: 1 }, details: null },
+  ];
+  const { route } = loadHarness(store);
+  const { body } = await request(route);
+  const history = body.sections.publicHistory;
+  const show = history.shows.find((show) => show.sessionId === "history");
+  assert.deepEqual(show, body.sections.archive.shows[0], "shared public projection must preserve the existing chronology and credits");
+  assert.equal(show.submittedTrackCount, 3);
+  assert.equal(show.removedTrackCount, 1);
+  assert.equal(show.finishedTrackCount, 1);
+  assert.equal(show.trackRoster.find((track) => track.trackId === "upload").publicSourceUrl, null);
+  assert.equal(show.trackRoster.find((track) => track.trackId === "removed").outcome, "removed");
+  assert.deepEqual(show.milestones.map((event) => event.sequence), [1, 3]);
+  assert.equal(show.milestones[1].track.playedOrder, 1);
+  assert.equal(JSON.stringify(history).includes("simulation-secret"), false);
+  assert.equal(new Set(history.shows.map((show) => show.sessionId)).size, history.shows.length);
+  assertSanitized(body);
+  assert.equal(FakeRedis.reads, 1);
+});
+
+test("disabled production keeps public history unavailable without reading the queue", async (t) => {
+  const previous = process.env.BARCODE_QUEUE_PRODUCTION_ENABLED;
+  process.env.BARCODE_QUEUE_PRODUCTION_ENABLED = "false";
+  t.after(() => { process.env.BARCODE_QUEUE_PRODUCTION_ENABLED = previous; });
+  const { route } = loadHarness();
+  const { body } = await request(route, true);
+  const history = body.sections.publicHistory;
+  assert.equal(history.available, false);
+  assert.equal(history.reason, "queue_production_disabled");
+  assert.equal(history.schemaVersion, "queue_bnl_public_history_v1");
+  assert.equal(history.sourceRevision, null);
+  assert.equal(history.sourceDigest, null);
+  assert.equal(history.builtAt, null);
+  assert.equal(history.currentSessionId, null);
+  assert.deepEqual(history.shows, []);
+  assert.equal(FakeRedis.reads, 0);
+});
+
+test("an empty public history is available and sealed without exposing a hidden current session", async () => {
+  const store = fixture(50, "private", "hidden");
+  store.sessions = [store.sessions[0]];
+  const { route } = loadHarness(store);
+  const { body } = await request(route);
+  const history = body.sections.publicHistory;
+  assert.equal(history.available, true);
+  assert.equal(history.reason, null);
+  assert.equal(history.sourceRevision, 50);
+  assert.match(history.sourceDigest, /^[a-f0-9]{64}$/);
+  assert.equal(history.builtAt, null);
+  assert.equal(history.currentSessionId, null);
+  assert.deepEqual(history.shows, []);
+  assert.equal(JSON.stringify(history).includes("hidden"), false);
+  assert.equal(FakeRedis.reads, 1);
+});
 
 test("published song awareness shares public show eligibility and exposes metadata only", async () => {
   balladFixture = { version: { title: "Released song", lyrics: "PRIVATE_CREATIVE_TEXT", rawOutput: "RAW_OUTPUT" }, presentation: { credits: "BNL-01" }, audioId: "take-1" };

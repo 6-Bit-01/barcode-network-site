@@ -34,6 +34,7 @@ import {
 } from "@/lib/database-visibility";
 import {
   QUEUE_BNL_ARTIST_MEMORY_SCHEMA_VERSION,
+  QUEUE_BNL_PUBLIC_HISTORY_SCHEMA_VERSION,
   QUEUE_PUBLIC_HISTORY_COVERAGE_STARTED_AT,
   QUEUE_PUBLIC_HISTORY_SCHEMA_VERSION,
   getQueueBnlReadSnapshot,
@@ -430,6 +431,28 @@ function unavailableArchiveProjection(
     artists: [],
     recentEvents: [],
     personalHistory: null,
+  };
+}
+
+function unavailablePublicHistoryProjection(reason: BnlDurableProjectionUnavailableReason) {
+  return {
+    available: false as const,
+    reason,
+    schemaVersion: QUEUE_BNL_PUBLIC_HISTORY_SCHEMA_VERSION,
+    source: "queue_bnl_public_history_projection" as const,
+    visibility: "public_safe" as const,
+    accessScope: "public" as const,
+    publicOnly: true as const,
+    mutationAllowed: false as const,
+    historyCoverageStartedAt: QUEUE_PUBLIC_HISTORY_COVERAGE_STARTED_AT,
+    builtAt: null,
+    sourceRevision: null,
+    sourceDigest: null,
+    memoryDefault: "do_not_store" as const,
+    sourceFileDefault: "review_evidence_only" as const,
+    publicDossierDefault: "not_automatic" as const,
+    currentSessionId: null,
+    shows: [],
   };
 }
 
@@ -1536,6 +1559,7 @@ function rulesForAccess(accessScope: BnlQueueAccessScope) {
       "operatorLanes are hints, not actions",
       "temporary queue context should not be stored",
       "sections.artistMemory alone authorizes durable public artist, song, album, and show-lifecycle facts",
+      "sections.publicHistory independently permits public show reference and the existing source-linked show-episode chronology; it does not authorize private queue use or general durable memory",
       "public database page visibility permits only the same public-safe summary fields",
       "queue-derived artists are not dossier records",
     ],
@@ -1561,6 +1585,7 @@ function rulesForAccess(accessScope: BnlQueueAccessScope) {
       "inferring hidden details from restricted/internal dossier clearance labels",
     ],
     sourceAuthority: {
+      publicHistory: "independently public sanitized show rosters and milestones; validate this section's availability and authority without inheriting the current queue's access scope",
       queue: accessScope === "none"
         ? "current session does not authorize BNL queue access"
         : `${accessScope} read-only sanitized operational queue snapshot`,
@@ -1638,6 +1663,9 @@ export async function GET(req?: Request) {
   const archive = queueProjections?.archive
     ? { available: true as const, reason: null, ...queueProjections.archive }
     : unavailableArchiveProjection(projectionUnavailableReason, accessScope);
+  const publicHistory = queueProjections
+    ? { available: true as const, reason: null, ...queueProjections.publicHistory }
+    : unavailablePublicHistoryProjection(projectionUnavailableReason);
   const ballads = await Promise.resolve().then(() => {
     if (queueProductionEnabled && (queueReadFailed || !queueSnapshot)) throw new Error("queue unavailable");
     return listPublicBallads(queueSnapshot?.getPublicBalladShows() ?? []);
@@ -1658,7 +1686,7 @@ export async function GET(req?: Request) {
     {
       ok: true,
       version: 1,
-      schemaRevision: "1.10",
+      schemaRevision: "1.11",
       generatedAt: new Date().toISOString(),
       scope: privateResponse ? "bnl_private_read_model" : "bnl_public_read_model",
       source: "barcode-network-site",
@@ -1678,6 +1706,7 @@ export async function GET(req?: Request) {
         ballads,
         queue: liveQueue.queue,
         archive,
+        publicHistory,
         artists: liveQueue.artists,
         artistMemory,
         dossiers,

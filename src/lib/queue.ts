@@ -4200,6 +4200,7 @@ interface QueuePublicStatsRecord {
   outcome: QueuePublicHistoryOutcome;
   stage: QueuePublicStatsStage;
   wheelChosen: boolean;
+  trackEvents: readonly QueueShowLogEvent[];
   broadcastEvidence?: QueuePublicHistoryTrack["broadcastEvidence"];
 }
 
@@ -4250,8 +4251,20 @@ function publicStatsOutcomeForEntry(entry: QueueEntry, location: "active" | "com
 }
 
 function publicStatsRecordsForSession(session: QueueSession, includeSimulationTracks = false): QueuePublicStatsRecord[] {
+  // Normalize once for this read, then share only each track's events across
+  // its roster, artist, personal-history, and memory projections. Never cache
+  // across requests: corrections and access changes must be read afresh.
+  const showLog = normalizeQueueShowLog(session.showLog);
+  const eventsByTrack = new Map<string, QueueShowLogEvent[]>();
+  for (const event of showLog) {
+    const trackId = event.track?.trackId;
+    if (!trackId) continue;
+    const events = eventsByTrack.get(trackId) ?? [];
+    events.push(event);
+    eventsByTrack.set(trackId, events);
+  }
   const wheelChosenIds = new Set(
-    normalizeQueueShowLog(session.showLog)
+    showLog
       .filter((event) => event.eventType === "track_signal_hold_applied" && event.details?.signalHoldPreviousLane === "wheel" && event.track?.trackId)
       .map((event) => event.track!.trackId),
   );
@@ -4280,10 +4293,11 @@ function publicStatsRecordsForSession(session: QueueSession, includeSimulationTr
       outcome: publicStatsOutcomeForEntry(entry, location),
       stage,
       wheelChosen: wheelChosenIds.has(entry.id) || entry.lane === "wheel",
+      trackEvents: eventsByTrack.get(entry.id) ?? [],
       precedence,
     });
   }
-  return [...unique.values()].map(({ entry, outcome, stage, wheelChosen }) => ({ entry, outcome, stage, wheelChosen }));
+  return [...unique.values()].map(({ entry, outcome, stage, wheelChosen, trackEvents }) => ({ entry, outcome, stage, wheelChosen, trackEvents }));
 }
 
 function publicStatsCounts(records: QueuePublicStatsRecord[]): QueuePublicStatsCounts {
@@ -4342,9 +4356,9 @@ function publicHistoryProjectLabel(entry: QueueEntry): string {
 
 export const normalizeQueueProjectKey = normalizeBroadcastArchiveProjectKey;
 
-function historyEventSequence(session: QueueSession, trackId: string, eventTypes: QueueShowLogEventType[]): number | null {
-  const event = normalizeQueueShowLog(session.showLog)
-    .filter((item) => item.track?.trackId === trackId && eventTypes.includes(item.eventType))
+function historyEventSequence(record: QueuePublicStatsRecord, eventTypes: QueueShowLogEventType[]): number | null {
+  const event = record.trackEvents
+    .filter((item) => eventTypes.includes(item.eventType))
     .sort((left, right) => right.sequence - left.sequence)[0];
   return event?.sequence ?? null;
 }
@@ -4380,9 +4394,9 @@ function publicHistoryTrackForRecord(session: QueueSession, record: QueuePublicS
     lane: record.entry.lane ?? "regular",
     wheelChosen: record.wheelChosen,
     ...(isSimulationTrack(record.entry) ? { isSimulation: true } : {}),
-    submissionEventSequence: historyEventSequence(session, record.entry.id, ["track_submitted"]),
+    submissionEventSequence: historyEventSequence(record, ["track_submitted"]),
     outcomeEventSequence: outcomeEvents[record.outcome]
-      ? historyEventSequence(session, record.entry.id, outcomeEvents[record.outcome]!)
+      ? historyEventSequence(record, outcomeEvents[record.outcome]!)
       : null,
   };
 }
@@ -4570,15 +4584,14 @@ function buildPublicPersonalHistory(
   };
 }
 
-function hasBroadcastPlaybackEvidence(session: QueueSession, entry: QueueEntry): boolean {
-  return queuePlaybackHasBegun(session.playbackDiagnostics, entry.id)
-    || normalizeQueueShowLog(session.showLog).some((event) => event.track?.trackId === entry.id
-      && (event.eventType === "track_play_started" || event.eventType === "track_resumed"))
-    || entry.playbackEndedNaturally === true;
+function hasBroadcastPlaybackEvidence(session: QueueSession, record: QueuePublicStatsRecord): boolean {
+  return queuePlaybackHasBegun(session.playbackDiagnostics, record.entry.id)
+    || record.trackEvents.some((event) => event.eventType === "track_play_started" || event.eventType === "track_resumed")
+    || record.entry.playbackEndedNaturally === true;
 }
 
 function broadcastHistoryEvidence(session: QueueSession, record: QueuePublicStatsRecord): QueuePublicHistoryTrack["broadcastEvidence"] {
-  if (hasBroadcastPlaybackEvidence(session, record.entry)) return "playback_recorded";
+  if (hasBroadcastPlaybackEvidence(session, record)) return "playback_recorded";
   // External players cannot send our automatic playback receipts. Keep the
   // host's explicit Finish as a separate kind of show record, never as a
   // fabricated play event or evidence of natural completion. Native players
@@ -4954,9 +4967,9 @@ function artistMemoryIdentity(entry: QueueEntry): QueueBnlArtistMemoryRecord["ar
   };
 }
 
-function queueArtistMemoryPlayedAt(session: QueueSession, entry: QueueEntry): string | null {
+function queueArtistMemoryPlayedAt(entry: QueueEntry, events: readonly QueueShowLogEvent[]): string | null {
   if (entry.playedAt) return entry.playedAt;
-  const playStarted = normalizeQueueShowLog(session.showLog)
+  const playStarted = events
     .filter((event) => event.eventType === "track_play_started" && event.track?.trackId === entry.id)
     .sort((left, right) => Date.parse(left.occurredAt) - Date.parse(right.occurredAt))[0];
   return playStarted?.occurredAt ?? null;
@@ -4987,7 +5000,7 @@ function queueArtistMemoryRecord(
     && normalizeIdentity(submittedAlbumName) !== normalizeIdentity(detectedAlbumName)
       ? "submitted_provider_mismatch"
       : "none";
-  const playedAt = queueArtistMemoryPlayedAt(session, entry);
+  const playedAt = queueArtistMemoryPlayedAt(entry, record.trackEvents);
   const memoryState = playedAt ? "confirmed" : "provisional";
   const outcome = queueArtistMemoryOutcome(record);
   const providerTrackId = sourceType === "upload"

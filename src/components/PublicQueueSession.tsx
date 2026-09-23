@@ -4,11 +4,11 @@
 import Link from "next/link";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useClientAction } from "@/components/useClientAction";
 import { RadioQueueForm } from "@/components/RadioQueueForm";
-import { useLiveStatus } from "@/components/LiveStatusProvider";
+import { RadioTikTokLink } from "@/components/RadioTikTokLink";
 import { externalLinks } from "@/content";
 import { estimateExistingTrackTiming, estimatePriorityImpact } from "@/lib/queue-timing";
 import { clearPriorityCheckoutOwnerToken, getOrCreatePriorityCheckoutOwnerToken, getPriorityCheckoutOwnerToken } from "@/lib/priority-checkout-client";
@@ -204,7 +204,6 @@ function sourceTypeLabel(track: QueuePublicTrack): string {
 
 export function PublicQueueSession({ sessionId, snapshotEndpoint = "/api/queue" }: { sessionId: string; snapshotEndpoint?: string }) {
   const [snapshot, setSnapshot] = useState<QueuePublicSnapshot | null>(null);
-  const { streamUrl } = useLiveStatus();
   const [submitOpen, setSubmitOpen] = useState(false);
   const [intakeScrollLocked, setIntakeScrollLocked] = useState(false);
   const [lastSubmittedTrackId, setLastSubmittedTrackId] = useState<string | null>(null);
@@ -230,6 +229,7 @@ export function PublicQueueSession({ sessionId, snapshotEndpoint = "/api/queue" 
   const [wheelUnlockPulse, setWheelUnlockPulse] = useState(false);
   const [routingGhosts, setRoutingGhosts] = useState<RoutingGhost[]>([]);
   const [publicHudMinimized, setPublicHudMinimized] = useState(false);
+  const [publicHudHeight, setPublicHudHeight] = useState(0);
   const [acceptedReceipt, setAcceptedReceipt] = useState<PublicSubmissionReceipt | null>(null);
   const previousSnapshotRef = useRef<QueuePublicSnapshot | null>(null);
   const snapshotMovementKey = useMemo(() => publicSnapshotMovementKey(snapshot), [snapshot]);
@@ -590,24 +590,23 @@ export function PublicQueueSession({ sessionId, snapshotEndpoint = "/api/queue" 
     await beginSignalHoldCheckout(track);
   }
 
-  const liveShowHref = streamUrl || externalLinks.tiktokLive;
-  const showWatchLiveLink = Boolean(snapshot && !isEnded && liveShowHref);
-  const contentOffsetClass = publicHudMinimized ? "pt-[2.25rem] sm:pt-[2.75rem]" : "pt-[4.25rem] sm:pt-[4.75rem]";
+  const contentOffsetStyle = { paddingTop: `calc(${publicHudHeight}px + 2.875rem + env(safe-area-inset-top))` };
 
   if (snapshot && !snapshot.session) {
     return <section className="border border-border bg-surface p-6"><p className="text-xs uppercase tracking-[0.35em] text-muted">NO ACTIVE QUEUE</p><h2 className="mt-3 text-2xl font-bold text-foreground">No BARCODE Radio session exists</h2><p className="mt-2 text-sm text-muted">The queue service is online and waiting for the next session.</p></section>;
   }
 
   if (isEnded) {
-    return <div className="space-y-6"><ReceiverHudPortal snapshot={snapshot} submissionsOpen={false} isBroadcastActive={false} pulse={false} mounted={mounted} minimized={false} onToggleMinimized={() => {}} canSubmit={false} submitLabel="Submissions Closed" onSubmit={() => {}} /><PersonalSignalStatusBar snapshot={snapshot} mounted={mounted} timingSummary={timingSummary} minimized={false} onToggleMinimized={() => {}} canSubmit={false} submitLabel="Submissions Closed" onSubmit={() => {}} /><div className={contentOffsetClass}><SessionPhasePanel snapshot={snapshot} submissionsOpen={false} canSubmit={false} isBroadcastActive={false} /><section className="border border-border bg-surface p-6 space-y-4"><p className="text-xs uppercase tracking-[0.35em] text-danger">SESSION ENDED</p><h2 className="text-3xl font-bold text-foreground">{snapshot?.session?.title ?? "BARCODE Radio"}</h2><p className="text-sm text-muted">This song window has collapsed. Temporal alignment for this broadcast has expired. Review the completed signal log below.</p><div className="grid gap-3 sm:grid-cols-3 text-sm"><div className="border border-border p-3"><p className="text-xs text-muted">Show date</p><p>{snapshot?.session?.showDate ?? "—"}</p></div><div className="border border-border p-3"><p className="text-xs text-muted">Completed tracks</p><p>{snapshot?.session?.completedCount ?? snapshot?.completed.length ?? 0}</p></div><div className="border border-border p-3"><p className="text-xs text-muted">Completed runtime</p><p>{snapshot ? formatRuntime(completedRuntime) : "—"}</p></div></div></section><PublicLane title="Completed Signal Log" tracks={snapshot?.completed ?? []} lastSubmittedTrackId={null} viewerSubmittedTrackIds={viewerSubmittedTrackIds} canPriorityUpgrade={() => false} canResumePriorityPayment={() => false} priorityPriceCents={0} priorityCurrency="usd" onPriorityUpgrade={() => {}} onPriorityPayment={() => {}} /></div></div>;
+    return <div className="space-y-6"><MeasuredQueueHud mounted={mounted} onHeightChange={setPublicHudHeight}><PersonalSignalStatusBar snapshot={snapshot} timingSummary={timingSummary} minimized={publicHudMinimized} onToggleMinimized={() => setPublicHudMinimized((current) => !current)} canSubmit={false} submitLabel="Submissions Closed" onSubmit={() => {}} /><ReceiverStatusPanel snapshot={snapshot} submissionsOpen={false} isBroadcastActive={false} pulse={false} minimized={publicHudMinimized} /></MeasuredQueueHud><div style={contentOffsetStyle}><SessionPhasePanel snapshot={snapshot} submissionsOpen={false} canSubmit={false} isBroadcastActive={false} /><section className="border border-border bg-surface p-6 space-y-4"><p className="text-xs uppercase tracking-[0.35em] text-danger">SESSION ENDED</p><h2 className="text-3xl font-bold text-foreground">{snapshot?.session?.title ?? "BARCODE Radio"}</h2><p className="text-sm text-muted">This song window has collapsed. Temporal alignment for this broadcast has expired. Review the completed signal log below.</p><div className="grid gap-3 sm:grid-cols-3 text-sm"><div className="border border-border p-3"><p className="text-xs text-muted">Show date</p><p>{snapshot?.session?.showDate ?? "—"}</p></div><div className="border border-border p-3"><p className="text-xs text-muted">Completed tracks</p><p>{snapshot?.session?.completedCount ?? snapshot?.completed.length ?? 0}</p></div><div className="border border-border p-3"><p className="text-xs text-muted">Completed runtime</p><p>{snapshot ? formatRuntime(completedRuntime) : "—"}</p></div></div></section><PublicLane title="Completed Signal Log" tracks={snapshot?.completed ?? []} lastSubmittedTrackId={null} viewerSubmittedTrackIds={viewerSubmittedTrackIds} canPriorityUpgrade={() => false} canResumePriorityPayment={() => false} priorityPriceCents={0} priorityCurrency="usd" onPriorityUpgrade={() => {}} onPriorityPayment={() => {}} /></div></div>;
   }
 
   return (
-    <div className={`space-y-6 ${sponsorBreakRunning ? "sponsor-mode" : ""}`}>
-      <ReceiverHudPortal snapshot={snapshot} submissionsOpen={isOpen} isBroadcastActive={isBroadcastActive} pulse={broadcastStartPulse} mounted={mounted} minimized={publicHudMinimized} onToggleMinimized={() => setPublicHudMinimized((current) => !current)} canSubmit={canSubmitFromHud} submitLabel={hudSubmitLabel} onSubmit={openIntakeCorridor} />
-
-      <PersonalSignalStatusBar snapshot={snapshot} mounted={mounted} timingSummary={timingSummary} minimized={publicHudMinimized} onToggleMinimized={() => setPublicHudMinimized((current) => !current)} canSubmit={canSubmitFromHud} submitLabel={hudSubmitLabel} onSubmit={openIntakeCorridor} />
-      <div className={`space-y-6 ${contentOffsetClass}`}>
+    <div className={`min-w-0 space-y-6 [overflow-wrap:anywhere] max-sm:[&_button]:min-h-[44px] ${sponsorBreakRunning ? "sponsor-mode" : ""}`} style={{ "--queue-content-top": `calc(${publicHudHeight}px + 6.375rem + env(safe-area-inset-top))` } as CSSProperties}>
+      <MeasuredQueueHud mounted={mounted} onHeightChange={setPublicHudHeight}>
+        <PersonalSignalStatusBar snapshot={snapshot} timingSummary={timingSummary} minimized={publicHudMinimized} onToggleMinimized={() => setPublicHudMinimized((current) => !current)} canSubmit={canSubmitFromHud} submitLabel={hudSubmitLabel} onSubmit={openIntakeCorridor} />
+        <ReceiverStatusPanel snapshot={snapshot} submissionsOpen={isOpen} isBroadcastActive={isBroadcastActive} pulse={broadcastStartPulse} minimized={publicHudMinimized} />
+      </MeasuredQueueHud>
+      <div className="space-y-6" style={contentOffsetStyle}>
         <section className="border-b border-border/70 pb-4">
           <p className="text-xs uppercase tracking-[0.35em] text-muted">{"//"} BARCODE RADIO</p>
           <h1 className="mt-3 text-3xl font-bold tracking-tight text-foreground sm:text-4xl"><span className="text-accent text-glow">Broadcast</span> Queue</h1>
@@ -619,19 +618,13 @@ export function PublicQueueSession({ sessionId, snapshotEndpoint = "/api/queue" 
           </div>
         </section>
         {sponsorBreakRunning && <section className="sponsor-mode-banner border border-[#ffaa00]/45 bg-[#ffaa00]/8 p-3" role="status" aria-live="polite"><p className="text-xs font-bold uppercase tracking-[0.34em] text-[#ffaa00]">A WORD FROM OUR SPONSOR</p><p className="mt-1 text-sm text-muted">The 11:00 sponsor break is in progress. The queue, submissions, status, and navigation stay live.</p></section>}
-        {showWatchLiveLink && (
         <div className="-mt-2 mb-1 flex justify-start">
-          <a
-            href={liveShowHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={`inline-flex cursor-pointer items-center gap-2 border border-[#ffaa00]/60 bg-[#ffaa00] font-bold uppercase tracking-[0.18em] text-background transition-colors hover:bg-[#ffb733] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ffaa00]/70 ${sponsorBreakRunning ? "sponsor-live-cta px-6 py-3 text-sm shadow-[0_0_34px_rgba(255,170,0,0.30)]" : "px-3 py-1.5 text-xs"}`}
-          >
-            <span aria-hidden="true">📺</span>
-            <span>WATCH ON TIKTOK</span>
-          </a>
+          <RadioTikTokLink
+            className="max-w-full cursor-pointer border px-3 py-2 text-xs font-bold uppercase tracking-[0.18em] transition-colors hover:border-[#ffaa00] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ffaa00]/70"
+            offlineClassName="border-border text-foreground"
+            liveClassName={`border-[#ffaa00]/60 bg-[#ffaa00] text-background hover:bg-[#ffb733] ${sponsorBreakRunning ? "sponsor-live-cta shadow-[0_0_34px_rgba(255,170,0,0.30)]" : ""}`}
+          />
         </div>
-      )}
         {checkoutNotice && <div className="border border-[#ffaa00]/40 bg-[#ffaa00]/5 p-3 text-sm text-[#ffaa00]">{checkoutNotice}</div>}
         {acceptedReceipt && <div className="relative z-20 border border-accent/80 bg-accent/15 p-3 text-sm text-foreground shadow-[0_0_30px_rgba(255,0,0,0.18)]"><div className="flex items-start justify-between gap-3"><div><p className="font-bold uppercase tracking-[0.18em] text-accent">Submission accepted</p><p className="mt-1">{acceptedReceipt.artist} — {acceptedReceipt.title}</p><p className="text-xs text-muted">{acceptedReceipt.sessionTitle} · {acceptedReceipt.sessionDate}</p><p className="text-xs">Confirmation: {acceptedReceipt.trackCode}</p><Link href="/radio/deck" className="mt-3 inline-flex border border-[#ffaa00]/60 bg-[#ffaa00]/10 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background">Submission complete · follow the show on the Deck</Link></div><button type="button" onClick={() => setAcceptedReceipt(null)} className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">Close</button></div></div>}
 
@@ -664,6 +657,7 @@ export function PublicQueueSession({ sessionId, snapshotEndpoint = "/api/queue" 
 
       {view === "active" ? <div id="active-queue-panel" className="space-y-3"><PublicLane title="Priority Signal" tracks={lanes.priority} lastSubmittedTrackId={lastSubmittedTrackId} viewerSubmittedTrackIds={viewerSubmittedTrackIds} collapsible domId="priority-lane" canPriorityUpgrade={() => false} canResumePriorityPayment={canResumePriorityPayment} priorityPriceCents={priorityPriceCents} priorityCurrency={priorityCurrency} onPriorityUpgrade={requestPriorityUpgrade} onPriorityPayment={resumePriorityPayment} residueMap={residueMap} getPriorityImpact={() => null} /><PublicLane title="Wheel Chosen" subtitle="Tracks selected by the 10K tap wheel." tracks={lanes.wheel} lastSubmittedTrackId={lastSubmittedTrackId} viewerSubmittedTrackIds={viewerSubmittedTrackIds} collapsible domId="wheel-lane" canPriorityUpgrade={() => false} canResumePriorityPayment={canResumePriorityPayment} priorityPriceCents={priorityPriceCents} priorityCurrency={priorityCurrency} onPriorityUpgrade={requestPriorityUpgrade} onPriorityPayment={resumePriorityPayment} residueMap={residueMap} getPriorityImpact={() => null} /><PublicLane title="Free Transmissions" tracks={lanes.regular} lastSubmittedTrackId={lastSubmittedTrackId} viewerSubmittedTrackIds={viewerSubmittedTrackIds} domId="free-transmissions-lane" canPriorityUpgrade={canShowPriorityUpgrade} canResumePriorityPayment={canResumePriorityPayment} priorityPriceCents={priorityPriceCents} priorityCurrency={priorityCurrency} onPriorityUpgrade={requestPriorityUpgrade} onPriorityPayment={resumePriorityPayment} residueMap={residueMap} getPriorityImpact={(track) => priorityDisplayFromImpact(estimatePriorityImpactForTrack(timingSummary, track))} /></div> : <PublicLane title="Recently Played" tracks={snapshot?.completed ?? []} lastSubmittedTrackId={null} viewerSubmittedTrackIds={viewerSubmittedTrackIds} canPriorityUpgrade={() => false} canResumePriorityPayment={() => false} priorityPriceCents={priorityPriceCents} priorityCurrency={priorityCurrency} onPriorityUpgrade={requestPriorityUpgrade} onPriorityPayment={resumePriorityPayment} residueMap={residueMap} getPriorityImpact={() => null} />}
         <style jsx>{`
+          .queue-live-system :global([id]){scroll-margin-top:var(--queue-content-top,6.375rem)}
           .queue-live-system{border:1px solid transparent;padding:0;transition:border-color .5s ease,box-shadow .5s ease,filter .5s ease}
           .sponsor-mode{background:linear-gradient(180deg,rgba(255,170,0,.035),transparent 24rem)}
           .sponsor-mode-banner{box-shadow:0 0 30px rgba(255,170,0,.09)}
@@ -747,17 +741,32 @@ export function PublicQueueSession({ sessionId, snapshotEndpoint = "/api/queue" 
 
       {mounted && signalHoldModalTrack && createPortal(<SignalHoldModal track={signalHoldModalTrack} price={formatPrice(signalHoldPriceCents, signalHoldCurrency)} pending={signalHoldRequestPending} message={signalHoldRequestMessage} onConfirm={() => beginSignalHoldCheckout(signalHoldModalTrack)} onClose={() => setSignalHoldModalTrack(null)} />, document.body)}
 
-      {mounted && submitOpen && createPortal(<div className="fixed inset-0 z-[10000] grid place-items-center overscroll-contain bg-black/75 p-2 backdrop-blur-md"><div className="flex max-h-[calc(100dvh-1rem)] w-full max-w-[920px] flex-col overflow-hidden border border-accent/50 bg-background/95 p-3 shadow-[0_0_70px_rgba(255,0,0,0.22)]"><div className="mb-2 flex shrink-0 items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[0.35em] text-accent">Submission Intake</p><p className="mt-0.5 text-[11px] text-muted">Send your song into the free queue.</p></div><button type="button" onClick={() => { setSubmitOpen(false); setIntakeScrollLocked(false); }} className="cursor-pointer border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted transition-colors hover:border-foreground/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-muted/50">Collapse Intake</button></div><div className="overflow-y-auto pr-1"><RadioQueueForm sessionId={sessionId} snapshotEndpoint={snapshotEndpoint} onCancel={() => { setSubmitOpen(false); setIntakeScrollLocked(false); }} onAcceptedReceipt={(receipt) => setAcceptedReceipt(receipt)} onSubmitted={(trackId, phase, targetId) => { setLastSubmittedTrackId(trackId ?? null); setSubmitterToken(window.localStorage.getItem("barcode-radio-submitter-token") ?? ""); setView("active"); if (phase === "resolved") { setIntakeScrollLocked(false); load(); window.setTimeout(() => document.getElementById(targetId ?? "active-queue-panel")?.scrollIntoView({ behavior: "smooth", block: "center" }), 250); } if (phase === "complete") { setSubmitOpen(false); setIntakeScrollLocked(false); load(); } }} /></div></div></div>, document.body)}
+      {mounted && submitOpen && createPortal(<div className="fixed inset-0 z-[10000] grid place-items-center overscroll-contain bg-black/75 p-2 backdrop-blur-md"><div className="flex max-h-[calc(100dvh-1rem)] w-full max-w-[920px] flex-col overflow-hidden border border-accent/50 bg-background/95 p-3 shadow-[0_0_70px_rgba(255,0,0,0.22)]"><div className="mb-2 flex shrink-0 items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[0.35em] text-accent">Submission Intake</p><p className="mt-0.5 text-[11px] text-muted">Send your song into the free queue.</p></div><button type="button" onClick={() => { setSubmitOpen(false); setIntakeScrollLocked(false); }} className="min-h-[44px] cursor-pointer border border-border px-3 py-2 text-xs uppercase tracking-widest text-muted transition-colors hover:border-foreground/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-muted/50">Collapse Intake</button></div><div className="overflow-y-auto pr-1"><RadioQueueForm sessionId={sessionId} snapshotEndpoint={snapshotEndpoint} onCancel={() => { setSubmitOpen(false); setIntakeScrollLocked(false); }} onAcceptedReceipt={(receipt) => setAcceptedReceipt(receipt)} onSubmitted={(trackId, phase, targetId) => { setLastSubmittedTrackId(trackId ?? null); setSubmitterToken(window.localStorage.getItem("barcode-radio-submitter-token") ?? ""); setView("active"); if (phase === "resolved") { setIntakeScrollLocked(false); load(); window.setTimeout(() => document.getElementById(targetId ?? "active-queue-panel")?.scrollIntoView({ behavior: "smooth", block: "center" }), 250); } if (phase === "complete") { setSubmitOpen(false); setIntakeScrollLocked(false); load(); } }} /></div></div></div>, document.body)}
     </div>
   );
 }
 
-function ReceiverHudPortal({ snapshot, submissionsOpen, isBroadcastActive, pulse, mounted, minimized, onToggleMinimized, canSubmit, submitLabel, onSubmit }: { snapshot: QueuePublicSnapshot | null; submissionsOpen: boolean; isBroadcastActive: boolean; pulse: boolean; mounted: boolean; minimized: boolean; onToggleMinimized: () => void; canSubmit: boolean; submitLabel: string; onSubmit: () => void }) {
+function MeasuredQueueHud({ children, mounted, onHeightChange }: { children: ReactNode; mounted: boolean; onHeightChange: (height: number) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const measure = () => onHeightChange(Math.ceil(element.getBoundingClientRect().height));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [mounted, onHeightChange]);
+  if (!mounted) return null;
+  return createPortal(<div ref={ref} data-queue-hud className="fixed inset-x-0 z-30 max-h-[42dvh] overflow-y-auto overscroll-contain bg-black/95" style={{ top: "calc(5.375rem + env(safe-area-inset-top))" }}>{children}</div>, document.body);
+}
+
+function ReceiverStatusPanel({ snapshot, submissionsOpen, isBroadcastActive, pulse, minimized }: { snapshot: QueuePublicSnapshot | null; submissionsOpen: boolean; isBroadcastActive: boolean; pulse: boolean; minimized: boolean }) {
   const counts = publicQueueCounts(snapshot);
   const nowPlaying = snapshot?.nowPlaying ?? null;
   const upNext = snapshot?.upNext ?? null;
-  const hud = (
-    <section data-live={isBroadcastActive ? "true" : "false"} data-pulse={pulse ? "true" : undefined} data-minimized={minimized ? "true" : undefined} className="receiver-hud fixed inset-x-3 z-[9000] border border-border bg-background/95 p-2 shadow-[0_0_28px_rgba(255,0,0,0.10)] backdrop-blur-md sm:inset-x-4" aria-label="BARCODE receiver status">
+  return (
+    <section data-live={isBroadcastActive ? "true" : "false"} data-pulse={pulse ? "true" : undefined} data-minimized={minimized ? "true" : undefined} className="receiver-hud relative border border-border bg-background/95 p-2 shadow-[0_0_28px_rgba(255,0,0,0.10)] backdrop-blur-md" aria-label="BARCODE receiver status">
       <div className="receiver-hud-scan pointer-events-none absolute inset-0" aria-hidden="true" />
       <div className="receiver-hud-packet pointer-events-none absolute right-2 top-2 h-2 w-2 border border-accent bg-accent/60 shadow-[0_0_14px_rgba(255,0,0,0.55)]" aria-hidden="true" />
       <div className="relative space-y-2 text-[10px] uppercase tracking-[0.18em] text-muted">
@@ -769,17 +778,14 @@ function ReceiverHudPortal({ snapshot, submissionsOpen, isBroadcastActive, pulse
           {!minimized && counts.pending > 0 && <span className="text-[#ffaa00]">Payment Processing: {counts.pending}</span>}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {!minimized && canSubmit && <button type="button" onClick={onSubmit} className="border border-accent/60 bg-accent/10 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-accent hover:bg-accent hover:text-background">Submit Track</button>}
-          {!minimized && !canSubmit && <span className="border border-border px-2.5 py-1.5 text-[10px]">{submitLabel}</span>}
-          <button type="button" onClick={onToggleMinimized} className="border border-border px-2.5 py-1.5 text-[10px] uppercase tracking-[0.2em] text-muted hover:text-foreground">{minimized ? "Expand" : "Minimize"}</button>
-          {!minimized && nowPlaying && <span className="min-w-[9rem] truncate text-[#ffaa00]">Now: {nowPlaying.submittedArtistName} — {nowPlaying.submittedSongTitle}</span>}
-          {!minimized && upNext && <span className="hidden min-w-[9rem] truncate text-accent sm:inline">Next: {upNext.submittedArtistName} — {upNext.submittedSongTitle}</span>}
+          {!minimized && nowPlaying && <span className="min-w-0 max-w-full truncate text-[#ffaa00]">Now: {nowPlaying.submittedArtistName} — {nowPlaying.submittedSongTitle}</span>}
+          {!minimized && upNext && <span className="hidden min-w-0 max-w-full truncate text-accent sm:inline">Next: {upNext.submittedArtistName} — {upNext.submittedSongTitle}</span>}
         </div>
       </div>
       {pulse && <div className="receiver-hud-banner mt-2 border border-[#ffaa00]/40 bg-[#ffaa00]/10 px-2 py-1 text-center text-[10px] font-bold uppercase tracking-[0.28em] text-[#ffaa00]">HOST BAND LOCKED · BROADCAST PROTOCOL ONLINE</div>}
+      <style jsx>{`.receiver-hud{min-width:0;overflow:hidden;transition:padding .2s ease}.receiver-hud[data-minimized="true"]{padding:.35rem .55rem}.receiver-hud-scan{background:linear-gradient(transparent 50%,rgba(255,255,255,.055) 50%);background-size:100% 6px;opacity:.12}.receiver-hud[data-live="true"]{border-color:rgba(255,170,0,.42);box-shadow:0 0 34px rgba(255,170,0,.14)}.receiver-hud[data-pulse="true"]{animation:receiver-hud-lock 1.2s ease-out}.receiver-hud-packet{animation:receiver-hud-packet 1.4s ease-in-out infinite}.receiver-hud-banner{animation:receiver-hud-banner .9s ease-out}@keyframes receiver-hud-lock{0%{filter:brightness(1)}28%{filter:brightness(1.6)}100%{filter:brightness(1)}}@keyframes receiver-hud-banner{0%{opacity:0;transform:translateY(-4px)}100%{opacity:1;transform:translateY(0)}}@keyframes receiver-hud-packet{0%,100%{opacity:.45;transform:scale(.85)}50%{opacity:1;transform:scale(1.18)}}@media (prefers-reduced-motion: reduce){.receiver-hud,.receiver-hud[data-pulse="true"],.receiver-hud-banner,.receiver-hud-packet{animation:none;transition:none}}`}</style>
     </section>
   );
-  return <>{mounted && createPortal(hud, document.body)}<style jsx>{`.receiver-hud{top:calc(10.75rem + env(safe-area-inset-top));overflow:visible;transition:top .2s ease,padding .2s ease}.receiver-hud[data-minimized="true"]{top:calc(8.2rem + env(safe-area-inset-top));padding:.35rem .55rem}.receiver-hud-scan{background:linear-gradient(transparent 50%,rgba(255,255,255,.055) 50%);background-size:100% 6px;opacity:.12}.receiver-hud[data-live="true"]{border-color:rgba(255,170,0,.42);box-shadow:0 0 34px rgba(255,170,0,.14)}.receiver-hud[data-pulse="true"]{animation:receiver-hud-lock 1.2s ease-out}.receiver-hud-packet{animation:receiver-hud-packet 1.4s ease-in-out infinite}.receiver-hud-banner{animation:receiver-hud-banner .9s ease-out}@keyframes receiver-hud-lock{0%{filter:brightness(1)}28%{filter:brightness(1.6)}100%{filter:brightness(1)}}@keyframes receiver-hud-banner{0%{opacity:0;transform:translateY(-4px)}100%{opacity:1;transform:translateY(0)}}@keyframes receiver-hud-packet{0%,100%{opacity:.45;transform:scale(.85)}50%{opacity:1;transform:scale(1.18)}}@media (min-width: 900px){.receiver-hud{top:calc(11.5rem + env(safe-area-inset-top))}.receiver-hud[data-minimized="true"]{top:calc(8.4rem + env(safe-area-inset-top))}}@media (prefers-reduced-motion: reduce){.receiver-hud,.receiver-hud[data-pulse="true"],.receiver-hud-banner,.receiver-hud-packet{animation:none;transition:none}}`}</style></>;
 }
 
 function BroadcastStartOverlay() {
@@ -1165,7 +1171,7 @@ function SignalHoldOwnerPanel({ snapshot, paymentsAvailable, priceCents, currenc
   );
 }
 
-function PersonalSignalStatusBar({ snapshot, mounted, timingSummary, minimized, onToggleMinimized, canSubmit, submitLabel, onSubmit }: { snapshot: QueuePublicSnapshot | null; mounted: boolean; timingSummary: QueueTimingDisplaySummary | null; minimized: boolean; onToggleMinimized: () => void; canSubmit: boolean; submitLabel: string; onSubmit: () => void }) {
+function PersonalSignalStatusBar({ snapshot, timingSummary, minimized, onToggleMinimized, canSubmit, submitLabel, onSubmit }: { snapshot: QueuePublicSnapshot | null; timingSummary: QueueTimingDisplaySummary | null; minimized: boolean; onToggleMinimized: () => void; canSubmit: boolean; submitLabel: string; onSubmit: () => void }) {
   const status = snapshot?.submitterStatus ?? null;
   let main = "No songs submitted yet.";
   let detail = "Submit a track to enter the free queue.";
@@ -1203,8 +1209,7 @@ function PersonalSignalStatusBar({ snapshot, mounted, timingSummary, minimized, 
     else if (closestEstimate) detail = `Closest track: ${closestEstimate.songsAhead} ${closestEstimate.songsAhead === 1 ? "song" : "songs"} away · ${closestEstimate.label.toLowerCase()}.`;
     detail = `${countDetail} ${detail}`;
   }
-  const band = <section data-minimized={minimized ? "true" : undefined} className="personal-signal-bar fixed inset-x-0 z-[9050] w-screen overflow-hidden border-b border-accent/35 border-t border-border/70 bg-black/95 font-mono text-white backdrop-blur-md" aria-label="Your Signal Status" role="status" aria-live="polite"><div className="personal-signal-scan pointer-events-none absolute inset-0" aria-hidden="true" /><div className="personal-signal-line pointer-events-none absolute inset-x-0 bottom-0 h-px bg-accent/55" aria-hidden="true" /><div className="relative mx-auto flex min-h-[5rem] max-w-7xl flex-col justify-center gap-2 px-3 py-3 sm:min-h-[6rem] sm:px-4"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-[10px] font-bold uppercase tracking-[0.34em] text-accent sm:text-xs">Your Signal Status</p>{!minimized && <p className="mt-1 truncate text-sm font-bold text-foreground sm:text-lg">{main}</p>}</div><div className="flex flex-wrap items-center gap-2">{!minimized && canSubmit && <button type="button" onClick={onSubmit} className="border border-accent/60 bg-accent/10 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-accent hover:bg-accent hover:text-background">Submit Track</button>}{!minimized && !canSubmit && <span className="border border-border px-2.5 py-1.5 text-[10px] uppercase tracking-[0.2em] text-muted">{submitLabel}</span>}<button type="button" onClick={onToggleMinimized} className="border border-border px-2.5 py-1.5 text-[10px] uppercase tracking-[0.2em] text-muted hover:text-foreground">{minimized ? "Expand" : "Minimize"}</button></div></div>{!minimized && <p className="line-clamp-2 text-[11px] leading-snug text-muted sm:text-sm">{detail}</p>}</div><style jsx>{`.personal-signal-bar{top:calc(5.375rem + env(safe-area-inset-top));transition:min-height .2s ease,padding .2s ease}.personal-signal-bar[data-minimized="true"] :global(.relative.mx-auto){min-height:2.5rem;padding-top:.35rem;padding-bottom:.35rem;gap:.25rem}.personal-signal-scan{background:linear-gradient(transparent 50%,rgba(255,255,255,.06) 50%);background-size:100% 6px;opacity:.14}@media (max-width:640px){.personal-signal-bar p{max-width:100%}}`}</style></section>;
-  return <>{mounted && createPortal(band, document.body)}</>;
+  return <section data-minimized={minimized ? "true" : undefined} className="personal-signal-bar relative w-full overflow-hidden border-b border-accent/35 border-t border-border/70 bg-black/95 font-mono text-white backdrop-blur-md" aria-label="Your Signal Status" role="status" aria-live="polite"><div className="personal-signal-scan pointer-events-none absolute inset-0" aria-hidden="true" /><div className="personal-signal-line pointer-events-none absolute inset-x-0 bottom-0 h-px bg-accent/55" aria-hidden="true" /><div className="relative mx-auto flex min-h-[5rem] max-w-7xl flex-col justify-center gap-2 px-3 py-3 sm:min-h-[6rem] sm:px-4"><div className="flex flex-wrap items-center justify-between gap-2"><div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.34em] text-accent sm:text-xs">Your Signal Status</p>{!minimized && <p className="mt-1 truncate text-sm font-bold text-foreground sm:text-lg">{main}</p>}</div><div className="flex flex-wrap items-center gap-2">{!minimized && canSubmit && <button type="button" onClick={onSubmit} className="min-h-[44px] border border-accent/60 bg-accent/10 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-accent hover:bg-accent hover:text-background">Submit Track</button>}{!minimized && !canSubmit && <span className="min-h-[44px] border border-border px-2.5 py-1.5 text-[10px] uppercase tracking-[0.2em] text-muted">{submitLabel}</span>}<button type="button" onClick={onToggleMinimized} className="min-h-[44px] border border-border px-2.5 py-1.5 text-[10px] uppercase tracking-[0.2em] text-muted hover:text-foreground">{minimized ? "Expand" : "Minimize"}</button></div></div>{!minimized && <p className="line-clamp-2 text-[11px] leading-snug text-muted sm:text-sm">{detail}</p>}</div><style jsx>{`.personal-signal-bar{transition:min-height .2s ease,padding .2s ease}.personal-signal-bar[data-minimized="true"] :global(.relative.mx-auto){min-height:2.5rem;padding-top:.35rem;padding-bottom:.35rem;gap:.25rem}.personal-signal-scan{background:linear-gradient(transparent 50%,rgba(255,255,255,.06) 50%);background-size:100% 6px;opacity:.14}@media (max-width:640px){.personal-signal-bar p{max-width:100%}}`}</style></section>;
 }
 
 function estimateExistingTrackForDisplay(timingSummary: QueueTimingDisplaySummary | null, trackId: string) {

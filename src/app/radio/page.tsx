@@ -6,6 +6,7 @@ import type { Metadata } from "next";
 import { BNLRelayModule } from "@/components/BNLRelay";
 import { RadioBroadcastFeature } from "@/components/RadioBroadcastFeature";
 import { RadioQueueEntry } from "@/components/RadioQueueEntry";
+import { RadioTikTokLink } from "@/components/RadioTikTokLink";
 import { getRadioSubmissionRouting } from "@/lib/radio-submission-routing";
 
 export const metadata: Metadata = {
@@ -85,15 +86,11 @@ export default function RadioPage() {
               </a>
             </div>
             <div className="mt-4">
-              <a
-                href={externalLinks.tiktokLive}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold border border-border-light text-foreground/80 hover:border-accent hover:text-accent transition-all text-center"
-              >
-                <span className="text-lg">{radioPage.hero.tiktokButton.emoji}</span>
-                {radioPage.hero.tiktokButton.text}
-              </a>
+              <RadioTikTokLink
+                className="w-full px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold border hover:border-accent hover:text-accent transition-all text-center"
+                offlineClassName="border-border-light text-foreground/80"
+                liveClassName="border-accent text-accent"
+              />
             </div>
           </div>
 

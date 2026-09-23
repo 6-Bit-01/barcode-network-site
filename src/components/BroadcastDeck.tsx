@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { BroadcastActivityLog } from "@/components/BroadcastActivityLog";
 import { broadcastArchiveArtistHref, normalizeBroadcastArchiveProjectKey } from "@/lib/broadcast-archive";
@@ -148,7 +149,7 @@ export function BroadcastDeck({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6 [overflow-wrap:anywhere]">
       {previewMode && <section className="border-2 border-cyan-200 bg-cyan-200/10 p-4 text-center"><p className="text-xs font-black uppercase tracking-[0.32em] text-cyan-200">Private Broadcast Test · Admin Only</p><p className="mt-2 text-xs text-muted">Fresh queue-store preview. This surface is not the public Deck and does not publish this session to the public Archive.</p></section>}
       <section className="overflow-hidden border border-[#ffaa00]/45 bg-surface">
         <div className="relative border-b border-[#ffaa00]/20 bg-[linear-gradient(110deg,rgba(255,170,0,0.12),transparent_52%)] p-5 sm:p-7">
@@ -213,7 +214,7 @@ export function BroadcastDeck({
         </section>
       </>}
 
-      {orientationOpen && <section className="fixed inset-0 z-[10000] grid place-items-center bg-black/80 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="deck-orientation-title"><div className="w-full max-w-xl border border-[#ffaa00]/55 bg-background p-6 shadow-[0_0_70px_rgba(255,170,0,0.18)]"><p className="text-xs uppercase tracking-[0.35em] text-[#ffaa00]">Deck orientation</p><h2 id="deck-orientation-title" className="mt-3 text-2xl font-black text-foreground">Your companion during the show</h2><ul className="mt-5 space-y-3 text-sm leading-relaxed text-muted"><li className="border-l-2 border-[#ffaa00]/45 pl-3"><strong className="text-foreground">Follow live movement.</strong> Now Playing, Next In Line, the public queue map, Wheel state, and show progress update here.</li><li className="border-l-2 border-accent/45 pl-3"><strong className="text-foreground">Submissions happen in the queue.</strong> The Deck is a read-only watch-along; jump back to the queue if you still need to submit or inspect a track.</li><li className="border-l-2 border-cyan-200/45 pl-3"><strong className="text-foreground">Open the separate Archive.</strong> Search completed shows and artist histories during or after the broadcast.</li><li className="border-l-2 border-border pl-3"><strong className="text-foreground">This browser groups its submissions.</strong> It does not verify a TikTok account or artist identity.</li></ul><button type="button" onClick={dismissOrientation} className="mt-6 w-full border border-[#ffaa00] bg-[#ffaa00] px-4 py-3 text-xs font-black uppercase tracking-widest text-background">Enter the Broadcast Deck</button></div></section>}
+      {orientationOpen && createPortal(<section className="fixed inset-0 z-[10000] grid place-items-center bg-black/80 overflow-y-auto overscroll-contain p-3 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="deck-orientation-title"><div className="max-h-[calc(100dvh-1.5rem)] w-full max-w-xl overflow-y-auto border border-[#ffaa00]/55 bg-background p-4 sm:p-6 shadow-[0_0_70px_rgba(255,170,0,0.18)]"><p className="text-xs uppercase tracking-[0.35em] text-[#ffaa00]">Deck orientation</p><h2 id="deck-orientation-title" className="mt-3 text-2xl font-black text-foreground">Your companion during the show</h2><ul className="mt-5 space-y-3 text-sm leading-relaxed text-muted"><li className="border-l-2 border-[#ffaa00]/45 pl-3"><strong className="text-foreground">Follow live movement.</strong> Now Playing, Next In Line, the public queue map, Wheel state, and show progress update here.</li><li className="border-l-2 border-accent/45 pl-3"><strong className="text-foreground">Submissions happen in the queue.</strong> The Deck is a read-only watch-along; jump back to the queue if you still need to submit or inspect a track.</li><li className="border-l-2 border-cyan-200/45 pl-3"><strong className="text-foreground">Open the separate Archive.</strong> Search completed shows and artist histories during or after the broadcast.</li><li className="border-l-2 border-border pl-3"><strong className="text-foreground">This browser groups its submissions.</strong> It does not verify a TikTok account or artist identity.</li></ul><button type="button" onClick={dismissOrientation} className="mt-6 w-full border border-[#ffaa00] bg-[#ffaa00] px-4 py-3 text-xs font-black uppercase tracking-widest text-background">Enter the Broadcast Deck</button></div></section>, document.body)}
     </div>
   );
 }

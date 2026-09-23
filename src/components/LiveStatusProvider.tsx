@@ -3,7 +3,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import type { QueueBroadcastPhase, QueuePublicSnapshot } from "@/lib/queue-types";
-import { derivePublicShowState, deriveRadioQueueEntryState, type QueueReadState, type RadioQueueEntryState } from "@/lib/live-status-public";
+import { derivePublicShowState, deriveRadioQueueEntryState, isPublicTikTokBroadcastLive, type QueueReadState, type RadioQueueEntryState } from "@/lib/live-status-public";
 import { SITE_LIVE_STATUS_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 import { hasActiveQueueSession as responseHasActiveQueueSession, notifyQueueSessionChanged, startSessionBoundPolling } from "@/lib/session-bound-polling";
 
@@ -26,6 +26,7 @@ interface LiveStatusContextType {
   queueBroadcastPhase: QueueBroadcastPhase | null;
   siteShowMode: SiteShowMode;
   radioQueueEntry: RadioQueueEntryState;
+  tiktokBroadcastLive: boolean;
   refreshQueueStatus: () => void;
 }
 
@@ -46,6 +47,7 @@ const LiveStatusContext = createContext<LiveStatusContextType>({
   queueBroadcastPhase: null,
   siteShowMode: "offline",
   radioQueueEntry: { status: "loading", href: null },
+  tiktokBroadcastLive: false,
   refreshQueueStatus: () => {},
 });
 
@@ -223,6 +225,11 @@ export function LiveStatusProvider({ children }: { children: ReactNode }) {
         isolatedPrototype ? null : queueBroadcastPhase,
       siteShowMode: isolatedPrototype ? "offline" : siteShowMode,
       radioQueueEntry: deriveRadioQueueEntryState({
+        queueProductionEnabled: !isolatedPrototype && queueProductionEnabled,
+        queueSnapshot,
+        readState: queueReadState,
+      }),
+      tiktokBroadcastLive: isPublicTikTokBroadcastLive({
         queueProductionEnabled: !isolatedPrototype && queueProductionEnabled,
         queueSnapshot,
         readState: queueReadState,

@@ -24,6 +24,16 @@ export function deriveRadioQueueEntryState({ queueSnapshot, queueProductionEnabl
   return { status: live ? open ? "live_open" : "live_closed" : open ? "open" : "standby", href };
 }
 
+// A schedule window or private rehearsal is not evidence of a public broadcast.
+// Reuse the current queue read and drop the live destination on a failed read.
+export function isPublicTikTokBroadcastLive({ queueSnapshot, queueProductionEnabled, readState }: Pick<PublicShowStateInput, "queueSnapshot" | "queueProductionEnabled"> & { readState: QueueReadState }): boolean {
+  const session = queueSnapshot?.session;
+  return Boolean(queueProductionEnabled && readState === "ready" && queueSnapshot?.sessionActive === true &&
+    !queueSnapshot.suppressPublicLiveStatus && session?.purpose === "live_broadcast" &&
+    session.status !== "archived" && session.broadcastPhase !== "ended" &&
+    (session.broadcastPhase === "broadcast_active" || session.showStarted));
+}
+
 export type PublicShowStateInput = {
   queueProductionEnabled: boolean;
   isLive: boolean;

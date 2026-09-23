@@ -289,7 +289,7 @@ export function BroadcastArchive({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6 [overflow-wrap:anywhere] max-sm:[&_input]:min-h-[44px] max-sm:[&_input]:text-[16px] max-sm:[&_select]:min-h-[44px] max-sm:[&_select]:max-w-full max-sm:[&_select]:text-[16px]">
       {!previewMode && balladsUnavailable && <p role="status" className="text-sm text-muted">Published Ballads could not be refreshed. Show history is still available; use Refresh archive to retry.</p>}
       {previewMode && <section className="border-2 border-violet-300 bg-violet-300/10 p-4 text-center"><p className="text-xs font-black uppercase tracking-[0.32em] text-violet-200">Private Archive Preview · Admin Only</p><p className="mt-2 text-xs text-muted">This reads the selected persisted test session, including simulation records. It does not add the session to the public Broadcast Archive.</p></section>}
       <section className="overflow-hidden border border-accent/45 bg-surface">

@@ -1,6 +1,6 @@
 # Direct queue entry — September 23, 2026
 
-Website item **13** removes the extra queue page and its six-second entry animation. Radio becomes the public starting point, with actual queue status and a direct session link. This continues the authorized 13 + 3 package, but does **not** claim item 3 is complete: the September notes describe the prerecorded submission-screen buildup, not a form loop. Its current media/source and a concrete visual change are needed before that separate part can be implemented. Preserve the preparation window, music changes, chat/countdown and intro; do not substitute a form redesign or add an earlier hosting segment.
+Website item **13** removes the extra queue page. The owner correction preserves the original six-second digital portal at the authorized current-session entrance; see `queue-entry-portal-2026-09-23.md`. Item **3 is paused by the owner**. Radio becomes the public starting point, with actual queue status and a direct session link. This continues the authorized 13 + 3 package, but does **not** claim item 3 is complete: the September notes describe the prerecorded submission-screen buildup, not a form loop. Do not resume item 3 or request its assets while it is paused. Preserve the preparation window, music changes, chat/countdown and intro; do not substitute a form redesign or add an earlier hosting segment.
 
 ## Changed files and existing owners
 
@@ -8,7 +8,7 @@ Website item **13** removes the extra queue page and its six-second entry animat
 |---|---|
 | `src/app/queue/page.tsx` | Read the current queue once, retain production/admin/current-rehearsal access checks, sanitize ordinary public reads, and redirect directly to the encoded current session URL. Missing, ended or unavailable sessions return to Radio. Disabled anonymous access still returns before reading storage. |
 | `src/app/queue/[sessionId]/page.tsx` | Empty/ended session links return to Radio instead of the removed gateway. |
-| `src/components/PublicQueueGateway.tsx` | Removed the unused gateway, independent poller, entry storage and animation. |
+| `src/components/PublicQueueGateway.tsx` | Removed the unused gateway and independent poller. Its digital portal and entry-storage key now belong to the authorized session page. |
 | `src/app/radio/page.tsx`, `src/components/RadioQueueEntry.tsx` | The native-mode primary card distinguishes checking, failed read, closed, standby, open, full and live states. Open sessions lead straight to submission/queue; full or closed-intake sessions remain viewable. The schedule, TikTok, Discord, Deck/Archive feature and guide remain available. Auxchord mode retains its established CTA. |
 | `src/components/LiveStatusProvider.tsx`, `src/lib/live-status-public.ts` | Reuse the existing queue read and wake event. Track its read outcome for Radio, hide stale entry links after failure, and provide an explicit retry with pending feedback. Private/unknown-purpose sessions never become public Radio links, even when an operator is signed in. No additional polling loop or API is introduced. |
 | `tests/direct-queue-entry.test.mjs` | Behavioral redirect, gate, current-session, private-scope, read-failure, state and rendered-link regressions. Existing signed-token tests retain cryptographic coverage. |
@@ -25,7 +25,7 @@ Website item **13** removes the extra queue page and its six-second entry animat
 
 ## Intentionally untouched
 
-The submission form and receipt, checkout/return URLs, legal acceptance, uploads, Free/Wheel ordering, backend payment confirmation, displacement/restoration, Finish versus Remove, Redis/Blob persistence, queue APIs, Header/Footer/Terminal routing, BNL/Journal/memory and production settings retain their owners and behavior. No new provider, tier, overflow rule or queue mutation is included. The prerecorded submission-screen loop remains pending.
+The submission form and receipt, checkout/return URLs, legal acceptance, uploads, Free/Wheel ordering, backend payment confirmation, displacement/restoration, Finish versus Remove, Redis/Blob persistence, queue APIs, Header/Footer/Terminal routing, BNL/Journal/memory and production settings retain their owners and behavior. No new provider, tier, overflow rule or queue mutation is included. The prerecorded submission-screen loop is paused by the owner.
 
 ## Normal post-merge deployment
 
@@ -33,7 +33,7 @@ After owner review and merge, the existing Vercel main-branch workflow deploys t
 
 ## Focused post-deploy evidence
 
-1. Visit Radio on mobile and desktop. For the current state, capture the status card and its destination. During an existing public session, its primary CTA must link directly to `/queue/<current-id>` with no intermediary page/entry animation. With no public session, it should show **Queue closed** and a status-check action, without an active queue link.
+1. Visit Radio on mobile and desktop. For the current state, capture the status card and its destination. During an existing public session, its primary CTA must link directly to `/queue/<current-id>` with no intermediary page. On first entry in that browser/session, the original digital BARCODE portal plays before revealing the queue. With no public session, it should show **Queue closed** and a status-check action, without an active queue link.
 2. Open `/queue` from an existing Footer/Terminal/bookmark link. It should resolve immediately to the same current session, including when intake is closed or full; without a current session it returns to Radio’s status. Record the final URL. Existing form, receipt and checkout return pages should remain familiar.
 3. Use browser request blocking for `/api/queue` on Radio, then check status/refocus. Capture **Status unavailable** with no stale entry link; unblock and choose **Check queue status** to recover. Do not treat a failed read as a confirmed closed queue.
 4. Reuse an already owner-authorized private rehearsal and its signed link if available: Radio must not advertise it publicly, while authorized direct `/queue` entry retains the private session. Do not create a new rehearsal or toggle production gates for this check. Automated tests cover disabled anonymous and stale/invalid rehearsal access.

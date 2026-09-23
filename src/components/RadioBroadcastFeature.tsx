@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { externalLinks } from "@/content";
+import { RadioTikTokLink } from "@/components/RadioTikTokLink";
 import { radioShowDate, radioShowDuration, type RadioShowFeature } from "@/lib/radio-show-feature";
 import { startSessionBoundPolling } from "@/lib/session-bound-polling";
 import styles from "./RadioBroadcastFeature.module.css";
@@ -55,7 +55,7 @@ export function RadioBroadcastFeatureView({ feature, unavailable = false }: {
           <div className={styles.actions}>
             <Link href={href} className={styles.primary}>{live ? "Enter the live Deck" : show ? "Explore the latest show" : "Explore the Archive"}<span aria-hidden="true">↗</span></Link>
             {live
-              ? <a href={externalLinks.tiktokLive} target="_blank" rel="noopener noreferrer" className={styles.secondary}>Watch on TikTok ↗</a>
+              ? <RadioTikTokLink className={styles.secondary} />
               : <Link href="/radio/archive?view=artists" className={styles.secondary}>Discover the artists →</Link>}
           </div>
           <p className={styles.footnote}>{live ? "A live companion to the broadcast. Submit your music through the queue." : "Show histories, artist credits & available music links."}</p>

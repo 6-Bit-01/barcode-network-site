@@ -2951,7 +2951,7 @@ test("admin and public TikTok component source assertions remain scoped", () => 
   assert.doesNotMatch(overlaySource, /provider: "tiktok"|tiktokVideoId|TikTok player/i);
   assert.match(adminSource, /function AdminYouTubePlayer/);
   assert.match(formSource, /TikTok video or Short/);
-  assert.match(publicSource, /WATCH ON TIKTOK/);
+  assert.match(publicSource, /<RadioTikTokLink/);
 });
 
 test("six-minute intake validates raw duration and preserves existing queue on rejection", async () => {

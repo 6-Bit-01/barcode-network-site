@@ -118,7 +118,7 @@ test("operational Radio submission surfaces share the gated route while historic
   assert.doesNotMatch(radio, /externalLinks\.auxchord/);
   assert.doesNotMatch(footer, /externalLinks\.auxchord/);
   assert.doesNotMatch(terminal, /externalLinks\.auxchord/);
-  assert.match(radio, /externalLinks\.tiktokLive/);
+  assert.match(radio, /<RadioTikTokLink/);
   assert.match(radio, /externalLinks\.discord/);
   assert.match(content, /auxchord: "https:\/\/www\.auxchord\.app\/91"/);
   assert.match(content, /tiktokLive: "https:\/\/www\.tiktok\.com\/@six\.bit\/live"/);

@@ -19,7 +19,7 @@ function load(file, mocks = {}) {
   }, { filename: file });
   return cjsModule.exports;
 }
-const { deriveRadioQueueEntryState } = load("src/lib/live-status-public.ts");
+const { deriveRadioQueueEntryState, isPublicTikTokBroadcastLive } = load("src/lib/live-status-public.ts");
 const { resolveQueueOperationalAccess } = load("src/lib/queue-production.ts");
 const snapshot = (overrides = {}) => ({
   sessionActive: true,
@@ -29,6 +29,34 @@ const snapshot = (overrides = {}) => ({
   ...overrides,
 });
 const entry = (queueSnapshot = snapshot(), overrides = {}) => deriveRadioQueueEntryState({ queueProductionEnabled: true, readState: "ready", queueSnapshot, ...overrides });
+
+test("TikTok live entry requires a current real broadcast, including full or closed intake", () => {
+  const base = snapshot();
+  const live = (queueSnapshot, overrides = {}) => isPublicTikTokBroadcastLive({ queueProductionEnabled: true, readState: "ready", queueSnapshot, ...overrides });
+  assert.equal(live(base), false, "opening intake is not going live");
+  const active = snapshot({ session: { ...base.session, broadcastPhase: "broadcast_active" } });
+  for (const status of [{ isOpen: true, isFull: false }, { isOpen: false, isFull: false }, { isOpen: false, isFull: true }]) assert.equal(live({ ...active, status }), true);
+  assert.equal(live(snapshot({ session: { ...base.session, showStarted: true } })), true);
+  for (const purpose of ["rehearsal", "simulation", "internal_test", null, undefined]) assert.equal(live({ ...active, session: { ...active.session, purpose } }), false);
+  for (const raw of [null, { ...active, session: null }, { ...active, sessionActive: false }, { ...active, suppressPublicLiveStatus: true }, { ...active, session: { ...active.session, status: "archived" } }, { ...active, session: { ...active.session, broadcastPhase: "ended" } }]) assert.equal(live(raw), false);
+  for (const readState of ["loading", "unavailable", "disabled"]) assert.equal(live(active, { readState }), false, "failed reads must drop a stale live destination");
+  assert.equal(live(active, { queueProductionEnabled: false }), false);
+});
+
+test("TikTok links render the profile offline and the configured live destination only on air", () => {
+  let tiktokBroadcastLive = false;
+  const { RadioTikTokLink } = load("src/components/RadioTikTokLink.tsx", {
+    "@/content": { externalLinks: { tiktok: "https://www.tiktok.com/@six.bit", tiktokLive: "https://www.tiktok.com/@six.bit/live" } },
+    "@/components/LiveStatusProvider": { useLiveStatus: () => ({ tiktokBroadcastLive, streamUrl: "https://www.tiktok.com/@six.bit/live?source=radio" }) },
+  });
+  const render = () => require("react-dom/server").renderToStaticMarkup(require("react").createElement(RadioTikTokLink));
+  assert.match(render(), /href="https:\/\/www.tiktok.com\/@six.bit"/);
+  assert.match(render(), /Visit TikTok/);
+  assert.doesNotMatch(render(), /Watch LIVE/);
+  tiktokBroadcastLive = true;
+  assert.match(render(), /href="https:\/\/www.tiktok.com\/@six.bit\/live\?source=radio"/);
+  assert.match(render(), /Watch LIVE on TikTok/);
+});
 
 test("Radio never mistakes initial, failed, or disabled reads for an open or closed queue", () => {
   for (const readState of ["loading", "unavailable", "disabled"]) {
@@ -68,7 +96,7 @@ test("Radio does not advertise private, missing, stale, archived, ended or unkno
   assert.equal(entry(snapshot({ session: { ...base.session, sessionId: "show / one" } })).href, "/queue/show%20%2F%20one");
 });
 
-async function route({ raw = snapshot(), production = true, adminToken, rehearsalToken, readFails = false } = {}) {
+async function route({ raw = snapshot(), production = true, adminToken, rehearsalToken, readFails = false, sessionPageId } = {}) {
   let reads = 0, sanitizations = 0;
   const env = { BARCODE_QUEUE_PRODUCTION_ENABLED: production ? "true" : "false" };
   const auth = {
@@ -80,7 +108,11 @@ async function route({ raw = snapshot(), production = true, adminToken, rehearsa
     "@/lib/auth": auth,
     "@/lib/queue-production": { resolveQueueOperationalAccess: (authorities) => resolveQueueOperationalAccess(authorities, env) },
   });
-  const page = load("src/app/queue/page.tsx", {
+  const React = require("react");
+  const page = load(sessionPageId ? "src/app/queue/[sessionId]/page.tsx" : "src/app/queue/page.tsx", {
+    "next/link": ({ children, ...props }) => React.createElement("a", props, children),
+    "@/components/QueueEntryPortal": { QueueEntryPortal: ({ sessionId, detail }) => React.createElement("div", { "data-portal-session": sessionId, "data-portal-detail": detail }) },
+    "@/components/PublicQueueSession": { PublicQueueSession: ({ sessionId }) => React.createElement("div", { "data-queue-session": sessionId }) },
     "next/headers": { cookies: async () => ({ get: (name) => ({ value: name === "admin" ? adminToken : rehearsalToken }) }) },
     "next/navigation": { redirect: (href) => { throw Object.assign(new Error("redirect"), { href }); } },
     "@/lib/auth": auth,
@@ -95,7 +127,11 @@ async function route({ raw = snapshot(), production = true, adminToken, rehearsa
     },
   });
   let href;
-  try { await page.default(); assert.fail("queue entry must redirect without rendering a gateway"); }
+  try {
+    const result = await page.default({ params: Promise.resolve({ sessionId: sessionPageId }) });
+    assert.ok(sessionPageId, "queue entry must redirect without rendering a gateway");
+    return { markup: require("react-dom/server").renderToStaticMarkup(result), reads, sanitizations };
+  }
   catch (error) { if (!error.href) throw error; href = error.href; }
   return { href, reads, sanitizations };
 }
@@ -104,6 +140,29 @@ test("/queue immediately redirects open, closed-intake and full sessions after o
   for (const status of [{ isOpen: true }, { isOpen: false }, { isOpen: false, isFull: true }]) {
     assert.deepEqual(await route({ raw: snapshot({ status }) }), { href: "/queue/public-night", reads: 1, sanitizations: 1 });
   }
+});
+
+test("the digital portal belongs to the current authorized session, including closed and full intake", async () => {
+  for (const status of [{ isOpen: true, isFull: false }, { isOpen: false, isFull: false }, { isOpen: false, isFull: true }]) {
+    const result = await route({ raw: snapshot({ status }), sessionPageId: "public-night" });
+    assert.match(result.markup, /data-portal-session="public-night"/);
+    assert.match(result.markup, /data-queue-session="public-night"/);
+    assert.equal(result.reads, 1, "the portal adds no queue read");
+    assert.equal(result.sanitizations, 1);
+  }
+  const live = snapshot({ session: { ...snapshot().session, broadcastPhase: "broadcast_active" }, status: { isOpen: false } });
+  assert.match((await route({ raw: live, sessionPageId: "public-night" })).markup, /BROADCAST LIVE \/ INTAKE SEALED/);
+});
+
+test("portal rendering cannot bypass access, current-session routing or private isolation", async () => {
+  const privateSnapshot = snapshot({ session: { ...snapshot().session, sessionId: "private-night", purpose: "rehearsal" } });
+  assert.equal((await route({ production: false, sessionPageId: "public-night" })).href, "/radio");
+  assert.equal((await route({ sessionPageId: "old-night" })).href, "/queue/public-night");
+  for (const raw of [snapshot({ session: null }), privateSnapshot, snapshot({ session: { ...snapshot().session, status: "archived" } })]) {
+    assert.doesNotMatch((await route({ raw, sessionPageId: "public-night" })).markup, /data-portal-session|data-queue-session/);
+  }
+  assert.match((await route({ raw: privateSnapshot, production: false, rehearsalToken: "signed:private-night", sessionPageId: "private-night" })).markup, /data-portal-session="private-night"/);
+  assert.equal((await route({ raw: privateSnapshot, production: false, rehearsalToken: "signed:old-night", sessionPageId: "private-night" })).href, "/radio");
 });
 
 test("/queue sends missing, ended and private public sessions back to Radio without a redirect loop", async () => {

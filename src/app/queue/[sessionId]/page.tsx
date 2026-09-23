@@ -3,6 +3,7 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { PublicQueueSession } from "@/components/PublicQueueSession";
+import { QueueEntryPortal } from "@/components/QueueEntryPortal";
 import { COOKIE_NAME, REHEARSAL_QUEUE_COOKIE_NAME } from "@/lib/auth";
 import { getPublicQueueSnapshot, sanitizeQueueSnapshotForPublic } from "@/lib/queue";
 import { resolveQueueCookieAccess } from "@/lib/queue-rehearsal-access";
@@ -73,8 +74,13 @@ export default async function QueueSessionPage({ params }: { params: Promise<{ s
     );
   }
   if (sessionId !== activeSessionId) redirect(`/queue/${activeSessionId}`);
+  const broadcastActive = Boolean(snapshot.nowPlaying || snapshot.session.broadcastPhase === "broadcast_active" || snapshot.session.showStarted);
+  const portalDetail = broadcastActive
+    ? snapshot.status.isOpen ? "HOST BAND LIVE" : "BROADCAST LIVE / INTAKE SEALED"
+    : snapshot.status.isOpen ? "INTAKE CORRIDOR ACTIVE" : "RECEIVER STANDBY ONLINE";
   return (
     <main className="pt-14 min-h-screen">
+      <QueueEntryPortal key={sessionId} sessionId={sessionId} detail={portalDetail} />
       <section className="mx-auto max-w-6xl px-4 pb-8 pt-0 sm:px-6">
         <PublicQueueSession
           sessionId={sessionId}

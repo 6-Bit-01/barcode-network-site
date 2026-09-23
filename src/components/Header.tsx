@@ -117,7 +117,7 @@ function MobileMenu({ pathname }: { pathname: string }) {
     <div className="xl:hidden">
       <button
         onClick={() => setOpen(!open)}
-        className="p-2 text-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent transition-colors"
+        className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center p-2 text-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent transition-colors"
         aria-label={open ? "Close primary navigation" : "Open primary navigation"}
         aria-expanded={open}
         aria-controls={menuId}
@@ -136,7 +136,7 @@ function MobileMenu({ pathname }: { pathname: string }) {
       </button>
 
       {open && (
-        <div id={menuId} className="absolute top-14 left-0 right-0 bg-background border-b border-border p-4">
+        <div id={menuId} className="absolute top-14 left-0 right-0 max-h-[calc(100dvh-3.5rem)] overflow-y-auto overscroll-contain bg-background border-b border-border p-4">
           <nav className="flex flex-col gap-2" aria-label="Mobile primary navigation">
             {mobileNavItems.map((item) => {
               const isActive = isNavItemActive(pathname, item.href);

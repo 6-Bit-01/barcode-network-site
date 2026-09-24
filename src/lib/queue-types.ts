@@ -442,6 +442,8 @@ export interface QueueEntry {
   /** Private browser capability hash; never accepted from a request body. */
   submissionOwnerHash?: string | null;
   replacementRevision?: number;
+  /** Private allowance consumed only by a committed submitter change. */
+  submitterEditUsed?: boolean;
   /** Near-playback or selection cutoff; permanent after returns/displacement. */
   replacementLockedAt?: string | null;
   replacedAt?: string | null;
@@ -700,6 +702,7 @@ export interface QueueOwnedTrack {
   /** Original-browser response only. Never include in public queue/Deck/BNL projections. */
   note: string;
   replacementRevision: number;
+  editUsed: boolean;
   canReplace: boolean;
   unavailableReason: string | null;
 }

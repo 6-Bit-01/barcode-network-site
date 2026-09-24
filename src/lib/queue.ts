@@ -3466,6 +3466,7 @@ function applyReplacementCutoffLocks(session: QueueSession): void {
 }
 
 function replacementUnavailable(session: QueueSession, entry: QueueEntry): string | null {
+  if (entry.submitterEditUsed === true) return "Edit used. Each track can be updated once.";
   if (session.status === "archived" || session.broadcastPhase === "ended") return "This show has ended.";
   if (!session.queue.some(track => track.id === entry.id) || isTrackActiveForPlayback(session, entry.id)) return "This song is already staged, playing, or finished.";
   if (entry.replacementLockedAt || entry.lane === "wheel" || entry.wheelQueueOrderAt || entry.displacedFromNextInLineAt || replacementCutoffIds(session).has(entry.id)) return QUEUE_REPLACEMENT_CLOSED_MESSAGE;
@@ -3539,7 +3540,13 @@ export async function recordQueueReplacementUpload(input: { sessionId: string; t
 /** Edit a waiting song's details and optionally its media; primary identity, slot and purchases stay attached. */
 export async function replaceOwnRadioTrack(input: Parameters<typeof createQueueTrack>[0] & QueueReplacementRequest & { purpose: QueueSessionPurpose; detailsOnly?: boolean }): Promise<QueueEntry> {
   const before = await getQueueReplacementTarget(input);
-  const candidate = input.detailsOnly ? null : await createQueueTrack({ ...input,
+  // An unchanged source must not turn a provider refresh or renewed legal
+  // timestamp into a consumed edit. A new upload URL is a new source.
+  const canonicalUrl = (value?: string) => { const url = value?.trim() ?? ""; try { return new URL(url).href; } catch { return url; } };
+  const sourceChanged = !input.detailsOnly && (input.fileUrl
+    ? input.fileUrl !== before.fileUrl
+    : Boolean(before.fileUrl) || canonicalUrl(input.link) !== canonicalUrl(before.link));
+  const candidate = sourceChanged ? await createQueueTrack({ ...input,
     artist: before.submittedArtistName ?? before.artist,
     submitterArtistName: before.submitterArtistName,
     tiktokHandle: before.tiktokHandle ?? "",
@@ -3547,14 +3554,11 @@ export async function replaceOwnRadioTrack(input: Parameters<typeof createQueueT
     contactEmail: before.contactEmail,
     submitterToken: before.submitterToken,
     submissionOwnerHash: before.submissionOwnerHash,
-  });
+  }) : null;
   return withQueueMutation(async () => {
     const store = await readStore();
     const { session, entry } = replacementTarget(store, input);
     if (session.purpose !== input.purpose) throw new QueueReplacementError("stale_session", "This session has changed. Refresh the queue.");
-    const otherEntries = { ...session, queue: session.queue.filter(track => track.id !== entry.id) };
-    const duplicates = findDuplicateSubmissionReasons(otherEntries, candidate ?? { ...entry, title: input.title.trim(), submittedSongTitle: input.title.trim() });
-    if (duplicates.length) throw new QueueSubmissionBlockedError("duplicate_transmission", duplicates);
     const supersededUploads = [...(entry.supersededUploads ?? [])].filter(upload => !candidate || upload.fileUrl !== candidate.fileUrl);
     if (candidate && entry.fileUrl && entry.fileUrl !== candidate.fileUrl && !supersededUploads.some(upload => upload.fileUrl === entry.fileUrl)) {
       supersededUploads.push({ fileUrl: entry.fileUrl });
@@ -3575,6 +3579,15 @@ export async function replaceOwnRadioTrack(input: Parameters<typeof createQueueT
         details.artistCreditHistory = [...(entry.artistCreditHistory ?? []), { at: new Date().toISOString(), changeId: randomUUID(), credit: previous }];
       }
     }
+    const detailsChanged = input.title.trim() !== (entry.submittedSongTitle ?? entry.title).trim()
+      || (input.note !== undefined && (input.note?.trim() || "") !== (entry.note?.trim() || ""))
+      || details.artistCredit !== undefined;
+    // Recheck all guards first, but leave the record, revision, history and
+    // allowance untouched when there is nothing for the submitter to save.
+    if (!candidate && !detailsChanged) return entry;
+    const otherEntries = { ...session, queue: session.queue.filter(track => track.id !== entry.id) };
+    const duplicates = findDuplicateSubmissionReasons(otherEntries, candidate ?? { ...entry, ...details });
+    if (duplicates.length) throw new QueueSubmissionBlockedError("duplicate_transmission", duplicates);
     // Whitelist changed fields. In-flight/confirmed Stripe records and routing metadata are never replaced.
     const updated = normalizeEntry({ ...entry,
       ...(candidate ? {
@@ -3592,7 +3605,7 @@ export async function replaceOwnRadioTrack(input: Parameters<typeof createQueueT
         legalAcceptance: candidate.legalAcceptance,
         replacedAt: new Date().toISOString(),
       } : {}),
-      ...details, replacementRevision: (entry.replacementRevision ?? 0) + 1,
+      ...details, replacementRevision: (entry.replacementRevision ?? 0) + 1, submitterEditUsed: true,
     });
     session.queue = session.queue.map(track => track.id === entry.id ? updated : track);
     await writeStore(replaceSession(store, session));
@@ -3606,7 +3619,7 @@ function ownedQueueTracks(session: QueueSession, ownerHash?: string | null): imp
     const unavailableReason = replacementUnavailable(session, entry);
     return { id: entry.id, artist: entry.submittedArtistName ?? entry.artist, title: entry.submittedSongTitle ?? entry.title,
       collaboratorNames: entry.artistCredit?.collaborators.join(", ") ?? entry.collaboratorNames ?? "", note: entry.note ?? "",
-      replacementRevision: entry.replacementRevision ?? 0, canReplace: !unavailableReason, unavailableReason };
+      replacementRevision: entry.replacementRevision ?? 0, editUsed: entry.submitterEditUsed === true, canReplace: !unavailableReason, unavailableReason };
   });
 }
 

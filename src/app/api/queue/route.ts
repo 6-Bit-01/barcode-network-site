@@ -302,7 +302,7 @@ export async function submitTrackFromBody(
     ? replaceOwnRadioTrack({ ...input, ...replacement, detailsOnly, sessionId, purpose: active.session!.purpose })
     : submitRadioTrack({ ...input, submissionOwnerHash: options.ownerHash });
   const accepted = (track: QueueEntry) => replacement
-    ? NextResponse.json({ track: toPublicQueueTrack(track), replacementRevision: track.replacementRevision, message: "Song updated. Your queue slot and purchases are unchanged." }, { headers: { "Cache-Control": "private, no-store" } })
+    ? NextResponse.json({ track: toPublicQueueTrack(track), replacementRevision: track.replacementRevision ?? 0, editUsed: track.submitterEditUsed === true, message: track.submitterEditUsed === true ? "Song updated. Your one edit has been used. Your queue slot and purchases are unchanged." : "No changes to save. Your one edit is still available." }, { headers: { "Cache-Control": "private, no-store" } })
     : acceptedResponse(toPublicQueueTrack(track), active.session!.submissionCooldownSeconds);
 
   const discordConnectionId = options.connectionRequest && preliminaryAccess.productionEnabled && active.session.purpose === "live_broadcast"

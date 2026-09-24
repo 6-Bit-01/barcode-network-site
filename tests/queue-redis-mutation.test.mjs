@@ -16,6 +16,7 @@ class FakeRedis {
   static failAllCommands = false;
   static failOnConstruct = false;
   static getFailure = null;
+  static failNextCommit = false;
 
   constructor() {
     if (FakeRedis.failOnConstruct) throw new Error("Redis client URL is invalid");
@@ -51,6 +52,7 @@ class FakeRedis {
     FakeRedis.calls.push(["eval", keys]);
     if (FakeRedis.failAllCommands) throw FakeRedis.quotaError();
     if (script.includes("current_revision")) {
+      if (FakeRedis.failNextCommit) { FakeRedis.failNextCommit = false; throw new Error("Fixture commit rejected before persistence"); }
       const [lockKey, stateKey, revisionKey, liveStateKey] = keys;
       const [token, expectedRevision, stateJson, nextRevision, liveStateJson] = args;
       if (FakeRedis.values.get(lockKey) !== token) return -1;
@@ -522,6 +524,7 @@ function resetQueueTestState() {
   FakeRedis.failAllCommands = false;
   FakeRedis.failOnConstruct = false;
   FakeRedis.getFailure = null;
+  FakeRedis.failNextCommit = false;
   FakeBlob.values.clear();
   FakeBlob.calls.length = 0;
   FakeBlob.failPuts = false;
@@ -579,6 +582,41 @@ function seedDurableCurrentSnapshot(state) {
     etag: `etag-seeded-${state.revision}`,
   });
 }
+
+test("submitter edit allowance commits atomically and survives another worker after a rejected write", async () => {
+  resetQueueTestState();
+  delete process.env.BLOB_READ_WRITE_TOKEN;
+  delete process.env.QUEUE_REDIS_REST_URL;
+  delete process.env.QUEUE_REDIS_REST_TOKEN;
+  process.env.UPSTASH_REDIS_REST_URL = "https://redis.example.test";
+  process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
+  try {
+    const { first, second } = loadIndependentQueueModules();
+    const state = await first.startNewQueueSession({ purpose: "live_broadcast", submissionCooldownSeconds: 0 });
+    await first.setQueueOpen(true);
+    for (let i = 0; i < 3; i++) await first.addToQueue(legacyEntry(i, { detectedDurationSeconds: 240 }));
+    const ownerHash = "a".repeat(64);
+    const track = await first.addToQueue(legacyEntry(10, { submissionOwnerHash: ownerHash, replacementRevision: 3 }));
+    const input = { sessionId: state.session.sessionId, trackId: track.id, ownerHash, expectedRevision: 3, purpose: "live_broadcast", detailsOnly: true, artist: track.artist, title: "Saved details", link: track.link, sourceType: track.sourceType, note: "Private changed note" };
+    FakeRedis.failNextCommit = true;
+    await assert.rejects(() => first.replaceOwnRadioTrack(input), /commit rejected/);
+    assert.equal((await second.getQueueReplacementTarget(input)).title, track.title);
+    assert.notEqual((await second.getQueueReplacementTarget(input)).submitterEditUsed, true);
+    const attempts = await Promise.allSettled([first.replaceOwnRadioTrack(input), second.replaceOwnRadioTrack(input)]);
+    assert.equal(attempts.filter(result => result.status === "fulfilled").length, 1);
+    assert.equal(attempts.filter(result => result.status === "rejected").length, 1);
+    const third = loadIndependentQueueModules().first;
+    const current = (await third.getRadioQueueState()).queue.find(row => row.id === track.id);
+    assert.equal(current.title, "Saved details");
+    assert.equal(current.submitterEditUsed, true);
+    assert.equal(current.replacementRevision, 4);
+    await assert.rejects(() => third.replaceOwnRadioTrack({ ...input, expectedRevision: 4, title: "Second save" }), /edit used/i);
+  } finally {
+    FakeRedis.failNextCommit = false;
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+  }
+});
 
 test("Vercel Production requires an isolated dedicated queue Redis endpoint", async () => {
   resetQueueTestState();

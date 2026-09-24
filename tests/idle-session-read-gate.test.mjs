@@ -74,6 +74,7 @@ function loadQueueRoute(snapshot) {
       detectQueueSourceType: () => "other",
       isAppleMusicUrl: () => false,
     };
+    if (request === "@/lib/discord-connection") return { requestDiscordConnectionId: async () => { assert.fail("queue GET must never read private Discord connection storage"); } };
     return originalLoad.call(this, request, parent, isMain);
   };
   try {

@@ -71,6 +71,7 @@ Do not commit secrets. Configure only the integrations needed for the surface be
 | Queue operations | `QUEUE_API_KEY`, `CRON_SECRET`, `BARCODE_QUEUE_PRODUCTION_ENABLED` |
 | Provider metadata | `YOUTUBE_DATA_API_KEY` or `YOUTUBE_API_KEY`, `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, optional `SOUNDCLOUD_CLIENT_ID` |
 | BNL connection | `BNL_API_KEY`, `BNL_TOKEN`, force-pull and Source File credentials |
+| Optional Discord connection (off by default) | `BARCODE_DISCORD_CONNECTION_ENABLED`, `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, canonical `NEXT_PUBLIC_SITE_URL`; [scope and activation boundary](docs/optional-discord-connection-2026-09-24.md) |
 
 YouTube Music watch links use the same YouTube video-ID and Data API path as ordinary YouTube links. Provider metadata is optional and fail-soft: unavailable, slow, malformed, or oversized responses fall back to submitted track details and the queue's internal duration estimate instead of blocking intake. Apple Music is not accepted for BARCODE Radio intake because the host cannot reliably access the full submitted track. Apple Music links used elsewhere for releases, catalogs, dossiers, or historical records are unaffected.
 

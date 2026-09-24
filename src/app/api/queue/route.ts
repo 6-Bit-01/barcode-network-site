@@ -7,6 +7,7 @@ import { verifyAdminRequest, verifyRehearsalQueueToken } from "@/lib/auth";
 import { isActiveRehearsalSession, requestHasRehearsalQueueAccess, requestRehearsalQueueToken } from "@/lib/queue-rehearsal-access";
 import { QUEUE_OPERATIONAL_UNAVAILABLE_CODE, QUEUE_OPERATIONAL_UNAVAILABLE_MESSAGE, resolveQueueOperationalAccess } from "@/lib/queue-production";
 import type { QueueEntry } from "@/lib/queue-types";
+import { requestDiscordConnectionId } from "@/lib/discord-connection";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -175,12 +176,12 @@ export async function POST(req: Request) {
         return NextResponse.json({ track, message: "Priority Signal Upgrade is being prepared. No payment has been processed." });
       }
       if (typeof body.action === "string") return NextResponse.json({ error: "Unknown queue action" }, { status: 400 });
-      return await submitTrackFromBody(body, { allowAdminPrivateSession, rehearsalAccessToken });
+      return await submitTrackFromBody(body, { allowAdminPrivateSession, rehearsalAccessToken, connectionRequest: req });
     }
 
     const form = await req.formData();
     const body = Object.fromEntries(form.entries());
-    return await submitTrackFromBody(body, { allowAdminPrivateSession, rehearsalAccessToken });
+    return await submitTrackFromBody(body, { allowAdminPrivateSession, rehearsalAccessToken, connectionRequest: req });
   } catch (error) {
     if (error instanceof QueueTrackDurationError) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: 400 });
@@ -203,7 +204,7 @@ export async function POST(req: Request) {
 
 export async function submitTrackFromBody(
   body: Record<string, unknown>,
-  options: { allowAdminPrivateSession?: boolean; rehearsalAccessToken?: string } = {},
+  options: { allowAdminPrivateSession?: boolean; rehearsalAccessToken?: string; connectionRequest?: Request } = {},
 ): Promise<NextResponse> {
   const preliminaryAccess = resolveQueueOperationalAccess({ isAdmin: options.allowAdminPrivateSession });
   if (!preliminaryAccess.authorized && !options.rehearsalAccessToken) return queueUnavailableResponse();
@@ -273,6 +274,9 @@ export async function submitTrackFromBody(
     return NextResponse.json({ error: "This broadcast queue is full for new transmissions." }, { status: 409 });
   }
 
+  const discordConnectionId = options.connectionRequest && preliminaryAccess.productionEnabled && active.session.purpose === "live_broadcast"
+    ? await requestDiscordConnectionId(options.connectionRequest) : null;
+
   if (upload) {
     const { fileUrl, fileName, fileSize, mimeType } = upload;
 
@@ -295,6 +299,7 @@ export async function submitTrackFromBody(
       collaboratorNames, artistCreditDecision, originalArtistName,
       contactEmail,
       submitterToken,
+      discordConnectionId,
       legalAcceptance,
       sessionId,
     });
@@ -307,7 +312,7 @@ export async function submitTrackFromBody(
   if (await hasDuplicateLinkSubmission(link)) return duplicateResponse();
 
   const sourceType = detectQueueSourceType(link);
-  const track = await submitRadioTrack({ artist, title, link, sourceType, note, submitterArtistName: artist, tiktokHandle, collaboratorNames, artistCreditDecision, originalArtistName, contactEmail, submitterToken, legalAcceptance, sessionId });
+  const track = await submitRadioTrack({ artist, title, link, sourceType, note, submitterArtistName: artist, tiktokHandle, collaboratorNames, artistCreditDecision, originalArtistName, contactEmail, submitterToken, discordConnectionId, legalAcceptance, sessionId });
   if (!(await isTrackPersistedInSessionQueue(track.id, active.session.sessionId))) {
     return NextResponse.json({ error: QUEUE_ACCEPTANCE_UNCONFIRMED_MESSAGE, code: "queue_acceptance_unconfirmed" }, { status: 500 });
   }

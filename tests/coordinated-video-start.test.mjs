@@ -80,6 +80,49 @@ test("receiver readiness requires real playing then pause, never just iframe/API
   assert.equal(prep.token, null);
 });
 
+for (const provider of ["youtube", "tiktok"]) {
+  test(`${provider}: repeated playing stays held throughout preparation and stops holding after release`, async () => {
+    const prep = new VideoReceiverPreparation(), holds = [], acknowledgements = [];
+    const sync = packet(provider);
+    const hold = (seconds) => holds.push(seconds);
+    const apply = () => prep.apply(sync, () => {}, async (id) => { acknowledgements.push(id); return true; });
+    apply();
+    prep.onState(1, hold); // warming
+    prep.onState(1, hold); // waiting for pause
+    prep.onState(2, hold);
+    prep.onState(1, hold); // held, before acknowledgement
+    apply();
+    assert.equal(acknowledgements.length, 0, "playing cannot count as confirmed pause");
+    prep.onState(2, hold); apply(); await flush();
+    prep.onState(1, hold); // already acknowledged ready
+    apply();
+    assert.deepEqual(holds, [12, 12, 12, 12]);
+    assert.equal(acknowledgements.length, 1);
+    prep.onState(2, hold); apply(); await flush();
+    prep.onState(1, hold); prep.onState(2, hold); apply(); await flush();
+    assert.equal(acknowledgements.length, 2, "the existing acknowledgement budget stays bounded");
+    assert.equal(prep.apply({ ...sync, playbackState: "playing", scheduledStartAt: new Date().toISOString() }, () => assert.fail(), async () => false), false);
+    prep.onState(1, () => assert.fail("released playback must not be held"));
+  });
+
+  test(`${provider}: a late acknowledgement cannot skip the repeated-play pause confirmation`, async () => {
+    const prep = new VideoReceiverPreparation();
+    let resolve, acknowledgements = 0;
+    const apply = () => prep.apply(packet(provider), () => {}, () => {
+      acknowledgements++;
+      return new Promise((done) => { resolve = done; });
+    });
+    apply(); prep.onState(1, () => {}); prep.onState(2, () => {}); apply();
+    prep.onState(1, () => {});
+    resolve(true); await flush(); apply();
+    assert.equal(acknowledgements, 1);
+    prep.onState(2, () => {}); apply();
+    assert.equal(acknowledgements, 2, "readiness must follow a fresh confirmed pause");
+    prep.cancel(); resolve(true); await flush();
+    prep.onState(1, () => assert.fail("cancelled preparation must not intercept playback"));
+  });
+}
+
 test("Cancel during an outstanding start response serializes pause last and never releases", async () => {
   let resolve;
   const writes = [];

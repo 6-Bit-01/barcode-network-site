@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { DiscordConnection } from "@/components/DiscordConnection";
 
 export const metadata = { title: "Connect Discord | BARCODE Network", robots: { index: false, follow: false } };
@@ -13,6 +14,6 @@ export default async function DiscordConnectionPage({ searchParams }: { searchPa
     <h1 className="text-3xl font-bold">Connect with the community</h1>
     {messages[result ?? ""] && <p role="status" className="text-muted">{messages[result ?? ""]}</p>}
     <DiscordConnection />
-    <p className="text-sm text-muted">When you’re done, return to your queue tab. Your song details stay there.</p>
+    <Link href="/radio/deck" className="inline-flex min-h-11 items-center text-sm text-accent underline underline-offset-4">Return to the Broadcast Deck →</Link>
   </main>;
 }

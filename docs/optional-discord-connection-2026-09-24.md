@@ -24,8 +24,13 @@ retain submitter versus artist attribution and revalidate at send time.
 
 ## Flow and private data
 
-- Intake opens `/connect/discord` in another tab, preserving song inputs and
-  the existing player. The feature is hidden in intake when unconfigured.
+- The public Broadcast Deck offers an optional connection panel below the show
+  content. It opens `/connect/discord` in another tab, preserving the Deck and
+  existing player, with a return link to the Deck. It remains available between
+  shows, is hidden when unconfigured, and is not added to the private test Deck.
+- The submission form has no Discord connection link, panel or status request.
+  People can submit first and connect later from the Deck; only submissions made
+  after connecting can receive the verified reference. There is no backfill.
 - Discord's authorization-code flow requests only `identify`. A 256-bit state
   is bound to a separate 256-bit HttpOnly browser cookie, valid ten minutes,
   and atomically claimed before exchange. New attempts supersede old ones.
@@ -68,9 +73,11 @@ remain a separate, supervised integration check after configuration approval.
 ## Focused acceptance
 
 1. With the feature disabled, verify ordinary link/upload intake and the
-   existing player. No connection is required and no extra intake step appears.
+   existing player. With it enabled, verify intake still has no Discord prompt
+   or connection-status request. It remains focused on submitting music.
 2. Once explicitly configured in an isolated preview, open the connection tab
-   from a filled form, cancel Discord authorization, and return; retain inputs.
+   from the public Broadcast Deck, cancel Discord authorization, and return to
+   the Deck. Check live and standby layouts, including narrow mobile screens.
 3. Verify a test Discord account, confirm the correct username, and submit a
    future test fixture through an isolated local production-mode fixture. Keep
    private rehearsal records out of public production and canonical BNL data.

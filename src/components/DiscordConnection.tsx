@@ -49,11 +49,11 @@ export function DiscordConnection({ compact = false }: { compact?: boolean }) {
     finally { inFlight.current = false; setBusy(false); }
   }
 
-  // Absent configuration does not advertise an unavailable feature in intake.
+  // Absent configuration does not advertise an unavailable feature on the Deck.
   if (compact && !status?.configured && !status?.connected) return null;
   return <section className="space-y-3 border border-border bg-background/40 p-4 text-sm" aria-label="Discord connection">
     <h2 className="font-bold text-foreground">Discord connection{compact ? " · optional" : ""}</h2>
-    <p className="text-muted">Keep your Discord identity connected to the music you submit here. You can submit music without connecting.</p>
+    <p className="text-muted">Connect your Discord account to BARCODE. You can submit music without connecting.</p>
     <div aria-live="polite">
       {!status && !error && <p className="text-muted">Checking connection…</p>}
       {status?.connected && <p className="break-words text-cyan-200">Connected as @{status.connected.username}</p>}

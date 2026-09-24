@@ -3269,6 +3269,7 @@ export async function createQueueTrack(input: {
   originalArtistName?: string;
   contactEmail?: string | null;
   submitterToken?: string | null;
+  discordConnectionId?: string | null;
   link?: string;
   note?: string | null;
   fileUrl?: string | null;
@@ -3331,6 +3332,7 @@ export async function createQueueTrack(input: {
     normalizedTikTokHandle,
     contactEmail: input.contactEmail?.trim() || null,
     submitterToken: input.submitterToken?.trim() || null,
+    discordConnectionId: /^[a-f0-9]{64}\.[a-f0-9]{64}$/.test(input.discordConnectionId ?? "") ? input.discordConnectionId : null,
     normalizedSourceKey,
     providerId,
     sourceArtworkUrl: sourceType === "youtube" && providerId?.startsWith("youtube:") ? `https://img.youtube.com/vi/${providerId.slice("youtube:".length)}/hqdefault.jpg` : providerMetadata.artworkUrl ?? null,

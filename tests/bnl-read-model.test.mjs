@@ -62,6 +62,7 @@ function canonicalJson(value) {
 }
 
 const forbiddenKeys = [
+  "discordConnectionId",
   "contactEmail",
   "submitterToken",
   "stripeSessionId",
@@ -190,6 +191,7 @@ async function addTrack(label, options = {}) {
     createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, sequence)).toISOString(),
     contactEmail: `${label.toLowerCase().replace(/[^a-z0-9]/g, "")}${sequence}@example.com`,
     submitterToken: options.submitterToken ?? `token-${label}-${sequence}`,
+    discordConnectionId: `${"a".repeat(64)}.${"b".repeat(64)}`,
     fileUrl: "https://private.example.test/upload.mp3",
     fileName: "upload.mp3",
     fileSize: 123456,

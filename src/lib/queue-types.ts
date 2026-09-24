@@ -437,6 +437,8 @@ export interface QueueEntry {
   normalizedTikTokHandle?: string;
   contactEmail?: string | null;
   submitterToken?: string | null;
+  /** Private, revocable website-auth reference; never artist ownership or public output. */
+  discordConnectionId?: string | null;
   normalizedSourceKey?: string | null;
   providerId?: string | null;
   sourceArtworkUrl?: string | null;

@@ -85,6 +85,7 @@ function track(id) {
     sourceType: "other", tier: "free", lane: "regular", amount: 0,
     createdAt: "2026-09-10T23:00:00.000Z", status: "queued",
     contactEmail: "private@example.test", submitterToken: "private-submitter-token",
+    discordConnectionId: "private-discord-reference",
     adminNote: "private-note", fileUrl: "https://private.example.test/hidden.mp3",
   };
 }
@@ -122,7 +123,7 @@ async function request(route, authenticated = false) {
 function assertSanitized(body) {
   const text = JSON.stringify(body);
   for (const secret of ["private@example.test", "private-submitter-token", "private-note",
-    "https://private.example.test/hidden.mp3"]) assert.ok(!text.includes(secret), secret);
+    "https://private.example.test/hidden.mp3", "private-discord-reference", "discordConnectionId"]) assert.ok(!text.includes(secret), secret);
   assert.equal(body.mutationAllowed, false);
 }
 

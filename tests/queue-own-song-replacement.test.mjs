@@ -288,6 +288,36 @@ test("other submissions remain duplicate-protected; own source can be corrected 
   assert.equal(events.find(event => event.track?.trackId === own.id && event.eventType === "track_submitted").track.title, own.title);
 });
 
+test("signed rehearsal access exposes replacement for the original browser's fourth song beyond ten known minutes", async () => {
+  const previousSecret = process.env.JWT_SECRET;
+  const previousGate = process.env.BARCODE_QUEUE_PRODUCTION_ENABLED;
+  process.env.JWT_SECRET = "replacement-rehearsal-fixture-secret";
+  process.env.BARCODE_QUEUE_PRODUCTION_ENABLED = "false";
+  try {
+    const auth = require("../src/lib/auth.ts");
+    const sessionId = await fresh({ purpose: "rehearsal" });
+    const track = await add();
+    const rehearsalToken = await auth.createRehearsalQueueToken(sessionId);
+    const rehearsalCookie = `${auth.REHEARSAL_QUEUE_COOKIE_NAME}=${rehearsalToken}`;
+    const browser = `${cookie}; ${rehearsalCookie}`;
+    const response = await route.GET(new Request(`https://example.test/api/queue?sessionId=${sessionId}`, { headers: { cookie: browser } }));
+    assert.equal(response.status, 200);
+    const snapshot = await response.json();
+    assert.equal(snapshot.queue[3].id, track.id);
+    assert.equal(snapshot.ownedTracks.find(row => row.id === track.id).canReplace, true);
+    const visitor = await route.GET(new Request(`https://example.test/api/queue?sessionId=${sessionId}`, { headers: { cookie: rehearsalCookie } }));
+    assert.deepEqual((await visitor.json()).ownedTracks ?? [], [], "a rehearsal invitation does not confer song ownership");
+    const replacement = await route.POST(request(replaceBody(sessionId, track), browser));
+    assert.equal(replacement.status, 200);
+    assert.equal((await stored(track.id, sessionId)).replacementRevision, 1);
+    assert.equal((await queue.getRadioQueueState(sessionId)).session.acceptedCount, 4);
+    assert.equal((await route.POST(request(replaceBody(sessionId, track), rehearsalCookie))).status, 409);
+  } finally {
+    if (previousSecret === undefined) delete process.env.JWT_SECRET; else process.env.JWT_SECRET = previousSecret;
+    process.env.BARCODE_QUEUE_PRODUCTION_ENABLED = previousGate;
+  }
+});
+
 test("upload/link replacements retain retired sources privately and cleanup never marks the new source deleted", async () => {
   const sessionId = await fresh();
   const oldUrl = "https://fixture.private.blob.vercel-storage.com/barcode-radio-queue/old.mp3";

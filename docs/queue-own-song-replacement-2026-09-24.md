@@ -100,6 +100,51 @@ without granting it new announcement or memory authority.
 
 ## Verification and deployment
 
+### September 24 follow-up: price display, intake and rehearsal visibility
+
+PR451 was still open and unmerged when the owner reported a missing replacement
+button. The normal production site therefore did not yet contain this feature.
+Rehearsal is supported: an integration regression uses the signed current
+rehearsal cookie plus the separate submission-owner cookie, with production
+presentation disabled, and successfully replaces the fourth song behind three
+known four-minute songs. A rehearsal invitation alone does not own a song.
+The action is in **Your songs** above the queue, not on every public track card.
+Older submissions without the new ownership cookie cannot be claimed after
+deployment; public ETA over ten minutes does not override the safety guard.
+
+The current replacement form changes song title and media together. A title
+can be corrected by supplying the same link, but there is no separate
+submitter details-only editor for primary/featured credits or notes. Existing
+admin artist-credit corrections remain available. No new credit-editing
+authority is inferred from this report.
+
+Show Management previously displayed a disabled new-session form with its own
+default prices above the current show's independently saved settings. It now
+hides those unused controls while a session exists. Current-session price
+inputs preview immediately, remain editable before enabling Signal Hold, and
+retain typed values during server refreshes. Save applies them; Cancel returns
+to the saved values. Intermediate responses during Save cannot reset the draft.
+
+Intake now offers **Free queue + Signal Hold** when enabled, with the current
+saved price, absence-only/one-show disclosure and existing Signal Hold Terms.
+It is a choice alongside Free and Priority, not an extra queue lane or bundled
+charge. The song must be accepted and confirmed in the queue before opening
+the existing Signal Hold checkout. The next-two cutoff, original submitter
+check, checkout-owner proof and signed paid webhook remain authoritative.
+There must be at least two upcoming songs ahead of a new submission before
+the option is available; Now Playing does not count. Priority may be bought
+separately from the accepted track. Failed/uncertain checkout keeps the accepted
+song and instructs the submitter to check its payment state, not submit again.
+
+Focused follow-up deployment checks: in a private rehearsal, type 725 cents
+and verify $7.25 immediately, Cancel and verify the saved price returns, then
+save the intended price and verify it on intake. Check a fresh fourth owned
+song behind three known four-minute songs in the same browser. Select Signal
+Hold during intake and verify one accepted song followed by the existing
+checkout. Cancel checkout and confirm the song remains without protection;
+verify pending is not active. Use an isolated Stripe test setup for payment
+confirmation; no real payment is required merely to check this UI update.
+
 Run `npm ci`, `npm run check`, and `npm run build`. Focused behavioral coverage
 is in `tests/queue-own-song-replacement.test.mjs`; Wheel routing, playback,
 cleanup, payments and public/BNL projection suites remain required.

@@ -7,24 +7,23 @@ import { safeFileName, audioMimeTypeForFile, readAudioDuration } from "@/lib/que
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { buildQueueTimingDisplay, priorityDisplayFromImpact, queueTimingInputFromPublicSnapshot } from "@/lib/queue-timing-display";
-import { clearPriorityCheckoutOwnerToken, getOrCreatePriorityCheckoutOwnerToken } from "@/lib/priority-checkout-client";
+import { startQueueSubmissionCheckout } from "@/lib/queue-submission-checkout";
 import { cooldownDeadlineFromRemaining, cooldownRemainingFromDeadline } from "@/lib/queue-cooldown";
-import { assertQueueTrackDuration, QUEUE_TRACK_DURATION_LIMIT_MESSAGE, QUEUE_TRACK_DURATION_UNVERIFIED_MESSAGE, MAX_QUEUE_TRACK_DURATION_SECONDS, APPLE_MUSIC_QUEUE_UNSUPPORTED_MESSAGE, PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT, PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION, PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION, PUBLIC_QUEUE_LEGAL_TERMS_VERSION, formatRuntime, isAppleMusicUrl, PRIORITY_DISCLOSURE_TEXT, PRIORITY_TERMS_VERSION } from "@/lib/queue-types";
+import { assertQueueTrackDuration, QUEUE_TRACK_DURATION_LIMIT_MESSAGE, QUEUE_TRACK_DURATION_UNVERIFIED_MESSAGE, MAX_QUEUE_TRACK_DURATION_SECONDS, APPLE_MUSIC_QUEUE_UNSUPPORTED_MESSAGE, PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT, PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION, PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION, PUBLIC_QUEUE_LEGAL_TERMS_VERSION, formatRuntime, isAppleMusicUrl, PRIORITY_DISCLOSURE_TEXT, SIGNAL_HOLD_DISCLOSURE_TEXT, SIGNAL_HOLD_CHECKOUT_POSITION_CUTOFF } from "@/lib/queue-types";
 import type { QueuePublicSnapshot, QueuePublicStatus, QueuePublicTrack } from "@/lib/queue-types";
 import { PUBLIC_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 import { hasActiveQueueSession, startSessionBoundPolling } from "@/lib/session-bound-polling";
 
 type Mode = "link" | "upload";
 type ReadState = "idle" | "checking" | "reading" | "detected" | "pending" | "uploading";
-type TransmissionState = "idle" | "priority_requested" | "signal" | "received" | "encoded" | "converting" | "temporal" | "aligning" | "confirmed";
+type TransmissionState = "idle" | "priority_requested" | "signal_hold_requested" | "signal" | "received" | "encoded" | "converting" | "temporal" | "aligning" | "confirmed";
 type SubmitPhase = "resolved" | "complete";
 type AcceptedReceipt = { artist: string; title: string; sessionTitle: string; sessionDate: string; trackCode: string };
 type IntakeStep = "track" | "routing";
-type RouteChoice = "free" | "priority";
+type RouteChoice = "free" | "priority" | "signal_hold";
 
 const UPLOAD_FALLBACK_MESSAGE = "Upload could not be completed. Please try again or submit a Spotify, SoundCloud, YouTube, or direct track link.";
 const PRIORITY_SIGNAL_LABEL = "Priority Signal";
-const PRIORITY_CHECKOUT_UNAVAILABLE_MESSAGE = "Priority checkout could not be started. Your song stays in the free queue if still active.";
 const PRIORITY_DEPTH_UNAVAILABLE_MESSAGE = "Priority Signal opens when there are enough songs waiting.";
 const SESSION_SYNC_REQUIRED_MESSAGE = "Session sync required. Refresh the queue and try again.";
 const SESSION_CHANGED_MESSAGE = "This session has changed. Re-enter the current BARCODE Radio queue and submit again.";
@@ -333,10 +332,16 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
   const priorityPaymentsAvailable = session?.priorityUpgradesEnabled === true && session?.priorityUpgradePaymentsEnabled === true && priorityPriceCents > 0;
   const priorityDepthAvailable = (status?.activeCount ?? 0) >= MIN_PRIORITY_ACTIVE_DEPTH;
   const priorityCheckoutAvailable = priorityPaymentsAvailable && status?.isOpen === true && priorityDepthAvailable;
+  const signalHoldPriceCents = session?.signalHoldPriceCents ?? 0;
+  const signalHoldCurrency = session?.signalHoldCurrency ?? "usd";
+  const signalHoldPaymentsAvailable = session?.signalHoldEnabled === true && session?.signalHoldPaymentsEnabled === true && signalHoldPriceCents > 0;
+  // A new submission goes behind the upcoming line. Now Playing does not count.
+  const signalHoldDepthAvailable = publicQueue.length + (upNext ? 1 : 0) >= SIGNAL_HOLD_CHECKOUT_POSITION_CUTOFF;
+  const signalHoldCheckoutAvailable = signalHoldPaymentsAvailable && status?.isOpen === true && signalHoldDepthAvailable;
   const timingSnapshot = useMemo<QueuePublicSnapshot | null>(() => session && status ? { revision: 0, session, status, queue: publicQueue, completed: [], nowPlaying, upNext, submitterStatus, playbackTiming, wheelTiming } : null, [session, status, publicQueue, nowPlaying, upNext, submitterStatus, playbackTiming, wheelTiming]);
   const timingSummary = useMemo(() => buildQueueTimingDisplay(queueTimingInputFromPublicSnapshot(timingSnapshot), { priorityEligible: priorityCheckoutAvailable, now: new Date(clockNow) }), [timingSnapshot, priorityCheckoutAvailable, clockNow]);
   const submitPriorityImpact = priorityCheckoutAvailable ? priorityDisplayFromImpact(timingSummary.priorityImpactEstimate) : null;
-  const selectedRoute: RouteChoice = priorityCheckoutAvailable ? routeChoice : "free";
+  const selectedRoute: RouteChoice = routeChoice === "priority" && priorityCheckoutAvailable ? "priority" : routeChoice === "signal_hold" && signalHoldCheckoutAvailable ? "signal_hold" : "free";
 
   function clearTrackDraftFields() {
     setTitle("");
@@ -364,23 +369,6 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
       if (attempt < 4) await wait(500);
     }
     return null;
-  }
-
-  async function startPriorityCheckout(trackId: string): Promise<boolean> {
-    const checkoutSessionId = sessionId ?? session?.sessionId;
-    if (!checkoutSessionId) return false;
-    const checkoutOwnerToken = getOrCreatePriorityCheckoutOwnerToken(checkoutSessionId, trackId);
-    setTransmissionState("priority_requested");
-    await wait(650);
-    const res = await fetch("/api/queue/priority-checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trackId, sessionId: checkoutSessionId, submitterToken, checkoutOwnerToken, acceptedPriorityTerms: true, priorityTermsVersion: PRIORITY_TERMS_VERSION, priorityDisclosureText: PRIORITY_DISCLOSURE_TEXT }) });
-    const payload = await res.json().catch(() => ({}));
-    if (res.ok && typeof payload.url === "string") {
-      window.location.href = payload.url;
-      return true;
-    }
-    if (payload.code === "checkout_owned_elsewhere") clearPriorityCheckoutOwnerToken(checkoutSessionId, trackId);
-    setTransmissionState("idle");
-    return false;
   }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -474,7 +462,7 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
         window.localStorage.setItem("barcode-radio-submit-email", contactEmail.trim());
         const nextCooldown = typeof payload.cooldownRemainingSeconds === "number" ? payload.cooldownRemainingSeconds : 0;
         setAuthoritativeCooldown(nextCooldown);
-        if (selectedRoute === "priority") {
+        if (selectedRoute !== "free") {
           setWarpData({
             artist: artist.trim(),
             title: title.trim(),
@@ -485,14 +473,16 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
             sessionDate: session?.showDate ?? "ACTIVE SESSION",
             queueStatus: status ? `${(status.acceptedCount ?? status.activeCount) + 1}/${status.capacity}` : "SYNCING",
             submissionSlot: "CHECKOUT_PENDING",
-            lane: "FREE QUEUE / PAYMENT REQUIRED",
+            lane: selectedRoute === "signal_hold" ? "FREE QUEUE / SIGNAL HOLD NOT ACTIVE" : "FREE QUEUE / PAYMENT REQUIRED",
             artworkUrl: submitted.sourceArtworkUrl ?? null,
           });
-          const checkoutStarted = await startPriorityCheckout(submitted.id);
-          if (checkoutStarted) return;
-          setError(PRIORITY_CHECKOUT_UNAVAILABLE_MESSAGE);
+          setTransmissionState(selectedRoute === "signal_hold" ? "signal_hold_requested" : "priority_requested");
+          const checkout = await startQueueSubmissionCheckout({ choice: selectedRoute, trackId: submitted.id, sessionId: latestSessionId, submitterToken });
+          if (checkout.url) { window.location.href = checkout.url; return; }
+          setTransmissionState("idle");
+          setError(checkout.message);
           setPublicQueue((current) => [submitted, ...current.filter((entry) => entry.id !== submitted.id)]);
-          await loadStatus();
+          await loadStatus().catch(() => null);
           onSubmitted?.(submitted.id, "resolved", "free-transmissions-lane");
           setArtist(window.localStorage.getItem("barcode-radio-submit-artist") ?? artist.trim());
           setTikTokHandle(window.localStorage.getItem("barcode-radio-submit-tiktok") ?? tiktokHandle.trim());
@@ -612,7 +602,7 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
         <div className="mb-3 flex items-center justify-between gap-3 border-b border-border pb-2">
           <div>
             <p className="text-[10px] uppercase tracking-[0.35em] text-muted">{step === "track" ? "Step 1 / Track" : "Step 2 / Submit"}</p>
-            <h3 className="mt-1 text-lg font-bold text-foreground">{step === "track" ? "Add your song" : "Pick free or Priority"}</h3>
+            <h3 className="mt-1 text-lg font-bold text-foreground">{step === "track" ? "Add your song" : "Choose submission options"}</h3>
           </div>
           <p className="text-xs text-muted">{step === "track" ? "Song info" : "Private if needed"}</p>
         </div>
@@ -697,6 +687,13 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
               <button type="button" onClick={() => setRouteChoice("free")} aria-pressed={selectedRoute === "free"} className={`cursor-pointer border p-4 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${selectedRoute === "free" ? "border-accent bg-accent/10 text-foreground shadow-[0_0_24px_rgba(255,0,0,0.16)]" : "border-border bg-background/40 text-muted hover:border-accent/45"}`}><span className="text-sm font-bold text-foreground">Free queue</span><span className="mt-2 block">No payment required.</span><span className="mt-3 block text-muted">{timingSummary.submitNowFreeEstimate ? `If you submit now: ${timingSummary.submitNowFreeEstimate.songsAhead} ${timingSummary.submitNowFreeEstimate.songsAhead === 1 ? "song" : "songs"} ahead · ${timingSummary.submitNowFreeEstimate.label}.` : `If you submit now, you’ll enter around position #${estimatedPosition} in the free queue. Estimated wait may shift during the show.`}</span></button>
               {priorityCheckoutAvailable ? <button type="button" onClick={() => setRouteChoice("priority")} aria-pressed={selectedRoute === "priority"} className={`cursor-pointer border p-4 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ffaa00]/60 ${selectedRoute === "priority" ? "border-[#ffaa00] bg-[#ffaa00]/10 text-foreground shadow-[0_0_24px_rgba(255,170,0,0.2)]" : "border-[#ffaa00]/40 bg-background/40 text-muted hover:border-[#ffaa00]/70"}`}><span className="text-sm font-bold text-[#ffaa00]">{PRIORITY_SIGNAL_LABEL}</span><span className="mt-2 block">Paid skip after payment clears.</span><span className="mt-3 block text-[#ffaa00]">{formatPrice(priorityPriceCents, priorityCurrency)}</span>{submitPriorityImpact && <div className="mt-3 grid grid-cols-2 gap-2 border border-[#ffaa00]/25 bg-[#ffaa00]/5 p-2"><div><span className="block text-[10px] uppercase tracking-widest text-muted">Free queue</span><span className="font-bold text-foreground">{submitPriorityImpact.freeLabel}</span></div><div><span className="block text-[10px] uppercase tracking-widest text-muted">Priority Signal</span><span className="font-bold text-[#ffaa00]">{submitPriorityImpact.priorityLabel}</span></div></div>}<span className="mt-2 block text-muted">Moves your track closer to the front. Does not interrupt the song currently playing.</span><span className="mt-3 block border border-[#ffaa00]/30 bg-[#ffaa00]/5 p-2 text-[11px] leading-relaxed text-muted">{PRIORITY_DISCLOSURE_TEXT}</span></button> : priorityPaymentsAvailable && <div className="border border-[#ffaa00]/30 bg-background/40 p-4 text-left text-muted"><span className="text-sm font-bold text-[#ffaa00]/70">{PRIORITY_SIGNAL_LABEL}</span><span className="mt-2 block">{PRIORITY_DEPTH_UNAVAILABLE_MESSAGE}</span><span className="mt-3 block text-[#ffaa00]/70">{formatPrice(priorityPriceCents, priorityCurrency)}</span></div>}
             </div>
+            {signalHoldPaymentsAvailable && <button type="button" onClick={() => setRouteChoice("signal_hold")} disabled={!signalHoldCheckoutAvailable} aria-pressed={selectedRoute === "signal_hold"} className={`w-full border p-4 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/60 disabled:opacity-60 ${selectedRoute === "signal_hold" ? "border-cyan-200 bg-cyan-200/10" : "border-cyan-200/40 bg-background/40 hover:border-cyan-200"}`}>
+              <span className="text-sm font-bold text-cyan-200">Free queue + Signal Hold · {formatPrice(signalHoldPriceCents, signalHoldCurrency)}</span>
+              <span className="mt-2 block text-muted">If you might leave, the host can move this song to the bottom instead of removing it when you are called and absent. One song, this show only. It does not move you forward, hold your place or guarantee play.</span>
+              <span className="mt-2 block text-muted">Your song is submitted first. Protection starts only after payment is confirmed. Priority Signal is purchased separately from your track.</span>
+              {!signalHoldDepthAvailable && <span className="mt-2 block text-cyan-200">Available when at least two songs are ahead of your new submission. Signal Hold closes for the next two to play.</span>}
+            </button>}
+            {selectedRoute === "signal_hold" && <div className="border border-cyan-200/30 bg-cyan-200/5 p-3 text-xs leading-relaxed text-muted"><p>{SIGNAL_HOLD_DISCLOSURE_TEXT}</p><a href="/legal#signal-hold" target="_blank" rel="noreferrer" className="mt-2 inline-block text-cyan-200 underline underline-offset-2">Signal Hold Terms</a><p className="mt-2">By selecting Submit &amp; Continue to Signal Hold Payment, you accept these terms.</p></div>}
             <div className="border border-border bg-background/40 p-3 text-xs text-muted">
               <label className="flex items-start gap-3">
                 <input type="checkbox" checked={acceptedLegal} onChange={(event) => { setAcceptedLegal(event.target.checked); if (event.target.checked) setLegalError(null); }} className="mt-1 h-4 w-4 accent-accent" aria-describedby="queue-legal-helper queue-legal-error" />
@@ -715,7 +712,7 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
             </div>
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
               <button type="button" onClick={() => setStep("track")} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted">Back</button>
-              <button type="submit" onClick={() => { finalSubmitIntent.current = true; }} disabled={submitting || readState === "uploading" || routingLockRemaining > 0 || effectiveCooldown > 0 || submissionLimitReached || status?.isOpen === false || status?.isFull === true} className="border border-accent px-5 py-2.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{readState === "uploading" ? "Uploading audio…" : submitting ? "Submitting…" : routingLockRemaining > 0 ? `Submit lock: ${routingLockRemaining}` : effectiveCooldown > 0 ? `Next submission available in ${formatCooldown(effectiveCooldown)}` : submissionLimitReached ? "Submission Limit Reached" : status?.isFull ? "Queue Full" : selectedRoute === "priority" ? "Submit & Continue to Payment" : "Submit Free"}</button>
+              <button type="submit" onClick={() => { finalSubmitIntent.current = true; }} disabled={submitting || readState === "uploading" || routingLockRemaining > 0 || effectiveCooldown > 0 || submissionLimitReached || status?.isOpen === false || status?.isFull === true} className="border border-accent px-5 py-2.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{readState === "uploading" ? "Uploading audio…" : submitting ? "Submitting…" : routingLockRemaining > 0 ? `Submit lock: ${routingLockRemaining}` : effectiveCooldown > 0 ? `Next submission available in ${formatCooldown(effectiveCooldown)}` : submissionLimitReached ? "Submission Limit Reached" : status?.isFull ? "Queue Full" : selectedRoute === "signal_hold" ? "Submit & Continue to Signal Hold Payment" : selectedRoute === "priority" ? "Submit & Continue to Payment" : "Submit Free"}</button>
             </div>
           </div>
         )}
@@ -732,6 +729,7 @@ function formatCooldown(seconds: number): string {
 
 function warpLabel(state: TransmissionState): string {
   if (state === "priority_requested") return "PRIORITY SIGNAL REQUESTED";
+  if (state === "signal_hold_requested") return "OPENING SIGNAL HOLD CHECKOUT";
   if (state === "signal") return "SIGNAL LOCKED";
   if (state === "received") return "SOURCE ARTIFACT CAPTURED";
   if (state === "encoded") return "AUDIO BODY DISASSEMBLED";
@@ -743,7 +741,8 @@ function warpLabel(state: TransmissionState): string {
 }
 
 function warpDescription(state: TransmissionState, data: WarpData | null): string {
-  if (state === "priority_requested") return "Checkout started. Skip is not active yet.";
+  if (state === "priority_requested") return "Opening checkout. Skip is not active yet.";
+  if (state === "signal_hold_requested") return "Your song is accepted. Opening payment; Signal Hold is not active yet.";
   if (state === "signal") return "Song details received. Preparing your submission.";
   if (state === "received") return "Source artwork is ready.";
   if (state === "encoded") return "Audio details are being prepared.";
@@ -769,18 +768,18 @@ function WarpSequence({ state, data }: { state: TransmissionState; data: WarpDat
   const submissionProgressSteps: TransmissionState[] = steps.filter((step) => step !== "priority_requested");
   const activeProgressIndex = Math.max(0, submissionProgressSteps.indexOf(state));
   const isConfirmed = state === "confirmed";
-  const isPriorityRequested = state === "priority_requested";
+  const isCheckoutRequested = state === "priority_requested" || state === "signal_hold_requested";
   const isSignal = state === "signal";
   const isArtifact = state === "received";
   const isDisassembling = state === "encoded";
   const isPacket = state === "converting";
   const isRoute = state === "temporal";
   const isTransfer = state === "aligning";
-  const motionClass = isPriorityRequested || isSignal ? "signal-lock" : isRoute || isTransfer ? "barcode-warp power-instability" : "barcode-warp";
-  const packetClass = isPriorityRequested || isSignal || isArtifact || isDisassembling ? "packet-forming" : isPacket || isRoute ? "packet-charging" : isTransfer ? "packet-transfer" : "packet-landed";
-  const artClass = isPriorityRequested || isSignal ? "art-source" : isArtifact ? "art-captured" : isDisassembling || isPacket ? "art-disassemble" : "art-compressed";
+  const motionClass = isCheckoutRequested || isSignal ? "signal-lock" : isRoute || isTransfer ? "barcode-warp power-instability" : "barcode-warp";
+  const packetClass = isCheckoutRequested || isSignal || isArtifact || isDisassembling ? "packet-forming" : isPacket || isRoute ? "packet-charging" : isTransfer ? "packet-transfer" : "packet-landed";
+  const artClass = isCheckoutRequested || isSignal ? "art-source" : isArtifact ? "art-captured" : isDisassembling || isPacket ? "art-disassemble" : "art-compressed";
   const landingClass = isConfirmed ? "landing-card landing-impact" : isTransfer ? "landing-card landing-armed" : "landing-card";
-  const priorityTone = isPriorityRequested ? "border-[#ffaa00]/75 shadow-[0_0_120px_rgba(255,170,0,0.26)]" : "border-accent/70 shadow-[0_0_120px_rgba(255,0,0,0.34)]";
+  const priorityTone = isCheckoutRequested ? "border-[#ffaa00]/75 shadow-[0_0_120px_rgba(255,170,0,0.26)]" : "border-accent/70 shadow-[0_0_120px_rgba(255,0,0,0.34)]";
   const fragments = [
     ["ARTIST", data?.artist ?? "SIGNAL SOURCE"],
     ["TITLE", data?.title ?? "UNKNOWN TRACK"],
@@ -815,10 +814,10 @@ function WarpSequence({ state, data }: { state: TransmissionState; data: WarpDat
             <div className="warp-status-cluster">
               <div className="flex items-start justify-between gap-4">
                 <div><p className="text-xs uppercase tracking-[0.4em] text-accent">BARCODE Network Submission</p><h2 className="mt-2 text-2xl font-bold text-foreground sm:text-3xl">{warpLabel(state)}</h2><p className="mt-1 text-xs text-muted">{warpDescription(state, data)}</p></div>
-                <div className={`hidden border px-3 py-2 text-xs uppercase tracking-widest sm:block ${isPriorityRequested ? "border-[#ffaa00]/50 bg-[#ffaa00]/5 text-[#ffaa00]" : "border-accent/40 bg-accent/5 text-accent"}`}>{isPriorityRequested ? "CHECKOUT STARTED" : isConfirmed ? "TRANSMISSION RECEIVED" : "SUBMISSION READY"}</div>
+                <div className={`hidden border px-3 py-2 text-xs uppercase tracking-widest sm:block ${isCheckoutRequested ? "border-[#ffaa00]/50 bg-[#ffaa00]/5 text-[#ffaa00]" : "border-accent/40 bg-accent/5 text-accent"}`}>{isCheckoutRequested ? "OPENING CHECKOUT" : isConfirmed ? "TRANSMISSION RECEIVED" : "SUBMISSION READY"}</div>
               </div>
               <div className="mt-4 grid gap-1" style={{ gridTemplateColumns: `repeat(${submissionProgressSteps.length}, minmax(0, 1fr))` }}>
-                {submissionProgressSteps.map((step, index) => <span key={step} className={`h-1.5 ${index <= activeProgressIndex ? isPriorityRequested ? "bg-[#ffaa00] shadow-[0_0_14px_rgba(255,170,0,0.75)]" : "bg-accent shadow-[0_0_14px_rgba(255,0,0,0.75)]" : "bg-border"}`} />)}
+                {submissionProgressSteps.map((step, index) => <span key={step} className={`h-1.5 ${index <= activeProgressIndex ? isCheckoutRequested ? "bg-[#ffaa00] shadow-[0_0_14px_rgba(255,170,0,0.75)]" : "bg-accent shadow-[0_0_14px_rgba(255,0,0,0.75)]" : "bg-border"}`} />)}
               </div>
               {isConfirmed && <div className="mt-1 h-1.5 w-full bg-accent shadow-[0_0_18px_rgba(255,0,0,0.72)]" aria-label="Transmission received" />}
             </div>
@@ -835,7 +834,7 @@ function WarpSequence({ state, data }: { state: TransmissionState; data: WarpDat
                 <div className={`${packetClass} absolute left-[12%] top-1/2 z-30 w-28 -translate-y-1/2 border border-accent bg-background/92 p-2 shadow-[0_0_34px_rgba(255,0,0,0.62)]`}><div className="relative h-12 overflow-hidden border border-accent/30"><PacketArtwork data={data} /><div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(255,0,0,0.18),transparent)]" /></div><p className="mt-1 font-mono text-[9px] uppercase tracking-widest text-accent">song packet</p></div>
                 <div className="absolute bottom-4 left-4 right-4 grid grid-cols-16 items-end gap-1">{[18, 44, 28, 70, 34, 82, 30, 62, 46, 76, 32, 56, 40, 68, 24, 50].map((height, index) => <span key={index} className="wave-fragment bg-accent/70 shadow-[0_0_10px_rgba(255,0,0,0.45)]" style={{ height: `${height / 2}px`, animationDelay: `${index * 45}ms` }} />)}</div>
               </div>
-              <div className="space-y-1 font-mono text-[10px] uppercase leading-relaxed text-accent/80"><div className="hidden lg:block">{fragments.slice(4).map(([key, value]) => <p key={key}><span className="text-muted">{key}:</span> {value}</p>)}</div><div className={`${landingClass} mt-4 border border-accent/50 bg-background/80 p-3`}><p className="text-xs uppercase tracking-widest text-accent">Destination card</p><div className="mt-2 grid grid-cols-[3rem_minmax(0,1fr)] gap-2"><div className="relative h-12 overflow-hidden border border-accent/30"><PacketArtwork data={data} /></div><div><p className="truncate text-sm font-bold text-foreground">{data?.artist ?? "Submitted artist"}</p><p className="truncate text-xs text-muted">{data?.title ?? "Submitted track"}</p></div></div><p className="mt-2 text-[10px] text-accent">{isConfirmed ? `ROUTED TO ${data?.lane ?? "FREE_QUEUE"}` : isPriorityRequested ? "PAYMENT REQUIRED" : "AWAITING LOCK"}</p></div></div>
+              <div className="space-y-1 font-mono text-[10px] uppercase leading-relaxed text-accent/80"><div className="hidden lg:block">{fragments.slice(4).map(([key, value]) => <p key={key}><span className="text-muted">{key}:</span> {value}</p>)}</div><div className={`${landingClass} mt-4 border border-accent/50 bg-background/80 p-3`}><p className="text-xs uppercase tracking-widest text-accent">Destination card</p><div className="mt-2 grid grid-cols-[3rem_minmax(0,1fr)] gap-2"><div className="relative h-12 overflow-hidden border border-accent/30"><PacketArtwork data={data} /></div><div><p className="truncate text-sm font-bold text-foreground">{data?.artist ?? "Submitted artist"}</p><p className="truncate text-xs text-muted">{data?.title ?? "Submitted track"}</p></div></div><p className="mt-2 text-[10px] text-accent">{isConfirmed ? `ROUTED TO ${data?.lane ?? "FREE_QUEUE"}` : isCheckoutRequested ? "PAYMENT REQUIRED" : "AWAITING LOCK"}</p></div></div>
             </div>
           </div>
         </div>

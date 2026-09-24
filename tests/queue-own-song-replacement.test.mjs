@@ -284,7 +284,7 @@ test("other submissions remain duplicate-protected; own source can be corrected 
   const report = await queue.getQueueSessionShowLog(sessionId);
   const events = report.events ?? report.showLog;
   assert.equal(events.filter(event => event.track?.trackId === own.id && event.eventType === "track_submitted").length, 1);
-  assert.equal(events.filter(event => event.track?.trackId === own.id && event.eventType === "track_replaced").length, 1);
+  assert.equal(events.filter(event => event.track?.trackId === own.id && event.eventType === "track_details_updated").length, 1);
   assert.equal(events.find(event => event.track?.trackId === own.id && event.eventType === "track_submitted").track.title, own.title);
 });
 
@@ -331,15 +331,19 @@ test("upload/link replacements retain retired sources privately and cleanup neve
   const removed = [];
   await queue.cleanupExpiredQueueUploads({ now: new Date(Date.now() + 40 * 86400000), deleteBlob: async url => { removed.push(url); } });
   assert.ok(!removed.includes(oldUrl) && !removed.includes(newUrl), "active-show sources are retained");
-  assert.equal((await replace(sessionId, current)).response.status, 200);
-  current = await stored(track.id);
+  assert.equal((await replace(sessionId, current)).response.status, 409, "cleanup cannot restore the edit allowance");
+  const linkOldUrl = "https://fixture.private.blob.vercel-storage.com/barcode-radio-queue/link-old.mp3";
+  const legacyUrl = "https://fixture.private.blob.vercel-storage.com/barcode-radio-queue/legacy.mp3";
+  const linkTrack = await add({ sourceType: "upload", fileUrl: linkOldUrl, link: linkOldUrl, fileName: "link-old.mp3", fileSize: 300, mimeType: "audio/mpeg", detectedDurationSeconds: 100, supersededUploads: [{ fileUrl: legacyUrl }] });
+  assert.equal((await replace(sessionId, linkTrack)).response.status, 200);
+  current = await stored(linkTrack.id);
   assert.equal(current.fileUrl, null);
   assert.equal(current.fileName, null);
   assert.equal(current.detectedDurationSeconds, null);
   assert.equal(current.supersededUploads.length, 2);
   await queue.archiveCurrentQueueSession();
   await queue.cleanupExpiredQueueUploads({ now: new Date(Date.now() + 40 * 86400000), deleteBlob: async url => { removed.push(url); } });
-  current = await stored(track.id, sessionId);
+  current = await stored(linkTrack.id, sessionId);
   assert.ok(removed.includes(oldUrl) && removed.includes(newUrl));
   assert.ok(current.supersededUploads.every(upload => upload.deletedAt));
   assert.notEqual(current.uploadedFileDeletionStatus, "deleted", "retired-file cleanup must not mark the replacement source deleted");
@@ -622,6 +626,77 @@ test("a fresh submitter edits its own details immediately without staff access o
   assert.equal((await queue.getPublicQueueSnapshot()).status.acceptedCount, 4);
 });
 
+test("one committed submitter edit uses the track allowance even with a fresh revision", async () => {
+  for (const mode of ["details", "link"]) {
+    const sessionId = await fresh();
+    const track = await add();
+    const first = await replace(sessionId, track, { mode, title: "Saved once", collaboratorNames: "Guest", note: "Saved note" });
+    assert.equal(first.response.status, 200);
+    const saved = await stored(track.id);
+    const second = await replace(sessionId, saved, { mode, title: "Do not save twice" });
+    assert.equal(second.response.status, 409);
+    assert.match(second.body.error, /edit used/i);
+    assert.equal((await stored(track.id)).title, "Saved once");
+    const own = (await queue.getPublicQueueSnapshot(sessionId, { ownerHash })).ownedTracks.find(item => item.id === track.id);
+    assert.equal(own.editUsed, true);
+    assert.equal(own.canReplace, false);
+    assert.equal(first.body.editUsed, true);
+  }
+});
+
+test("unchanged details, equivalent field formatting and unchanged media leave the edit, revision and history untouched", async () => {
+  for (const mode of ["details", "link", "upload"]) {
+    const sessionId = await fresh();
+    const uploadUrl = "https://fixture.private.blob.vercel-storage.com/barcode-radio-queue/unchanged.mp3";
+    const track = await add({ collaboratorNames: "Guest A, Guest B", note: "Existing note", ...(mode === "upload" ? { sourceType: "upload", link: uploadUrl, fileUrl: uploadUrl, fileName: "unchanged.mp3", fileSize: 100, mimeType: "audio/mpeg", detectedDurationSeconds: 100 } : {}) });
+    const before = await stored(track.id);
+    const snapshot = await queue.getPublicQueueSnapshot();
+    const log = await queue.getQueueSessionShowLog(sessionId);
+    const result = await replace(sessionId, track, { mode, title: `  ${track.title}  `, collaboratorNames: " Guest A; Guest B; Guest A ", note: " Existing note ", link: track.link, ...(mode === "upload" ? { uploadedBlobUrl: uploadUrl, uploadOriginalName: "renamed.mp3", fileSize: 100, mimeType: "audio/mpeg", detectedDurationSeconds: 200 } : {}) });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.editUsed, false);
+    assert.match(result.body.message, /no changes/i);
+    assert.deepEqual(await stored(track.id), before);
+    assert.equal((await queue.getPublicQueueSnapshot()).revision, snapshot.revision);
+    assert.deepEqual((await queue.getQueueSessionShowLog(sessionId)).events, log.events);
+    assert.equal(await editable(sessionId, track), true);
+    assert.equal((await replace(sessionId, track, { mode: "details", note: "Actual change" })).response.status, 200);
+  }
+});
+
+test("validation, duplicate and stale-save rejection do not spend the one edit; a forged reset cannot restore it", async () => {
+  const sessionId = await fresh(); const track = await add(); const other = await add();
+  for (const fields of [{ mode: "details", note: "x".repeat(501) }, { mode: "upload", uploadedBlobUrl: "https://invalid.test/file.mp3" }, { link: other.link }, { expectedRevision: 99 }]) {
+    assert.ok((await replace(sessionId, track, fields)).response.status >= 400);
+    assert.notEqual((await stored(track.id)).submitterEditUsed, true);
+    assert.equal(await editable(sessionId, track), true);
+  }
+  const saved = await replace(sessionId, track, { mode: "details", title: track.title, note: "One note-only edit" });
+  assert.equal(saved.response.status, 200);
+  const current = await stored(track.id);
+  assert.equal((await replace(sessionId, current, { submitterEditUsed: false, editUsed: false, replacementRevision: 0 })).response.status, 409);
+  await queue.updateRadioTrack(track.id, "moveBack");
+  assert.equal((await stored(track.id)).submitterEditUsed, true);
+  assert.equal(await editable(sessionId, current), false);
+});
+
+test("upload completion alone leaves the edit available; a late callback cannot restore a used edit or replace its source", async () => {
+  const sessionId = await fresh(); const track = await add();
+  const firstUrl = "https://fixture.private.blob.vercel-storage.com/barcode-radio-queue/first-finished.mp3";
+  const lateUrl = "https://fixture.private.blob.vercel-storage.com/barcode-radio-queue/late-finished.mp3";
+  await queue.recordQueueReplacementUpload({ sessionId, trackId: track.id, ownerHash, fileUrl: firstUrl });
+  assert.equal(await editable(sessionId, track), true);
+  assert.notEqual((await stored(track.id)).submitterEditUsed, true);
+  assert.equal((await replace(sessionId, track, { mode: "details", title: "Saved once" })).response.status, 200);
+  await queue.recordQueueReplacementUpload({ sessionId, trackId: track.id, ownerHash, fileUrl: lateUrl });
+  const current = await stored(track.id);
+  assert.equal(current.link, track.link);
+  assert.equal(current.submitterEditUsed, true);
+  assert.equal(await editable(sessionId, current), false);
+  assert.equal(current.supersededUploads.length, 2);
+  for (const value of [queue.toPublicQueueTrack(current), await queue.getPublicQueueStats(), await queue.getQueueBnlArtistMemory()]) assert.doesNotMatch(JSON.stringify(value), /submitterEditUsed|editUsed|first-finished|late-finished/);
+});
+
 test("details-only edits retain audio, duration, upload retention, legal receipt and purchases without a provider lookup", async () => {
   for (const media of [{ sourceType: "soundcloud", link: "https://soundcloud.com/fixture/keep-audio" }, { sourceType: "upload", link: "https://demo.private.blob.vercel-storage.com/barcode-radio-queue/keep.mp3", fileUrl: "https://demo.private.blob.vercel-storage.com/barcode-radio-queue/keep.mp3", fileName: "keep.mp3", fileSize: 12000, mimeType: "audio/mpeg" }]) {
     const sessionId = await fresh();
@@ -669,8 +744,10 @@ test("feature edits preserve admin primary/alias corrections and history, and su
   updated = await stored(track.id);
   assert.deepEqual(updated.artistCredit, corrected.artistCredit);
   assert.equal(queue.toPublicQueueTrack(updated).collaboratorNames, "Corrected guest");
-  assert.equal((await replace(sessionId, updated, { mode: "details", collaboratorNames: "", note: "" })).response.status, 200);
-  updated = await stored(track.id);
+  assert.equal((await replace(sessionId, updated, { mode: "details", collaboratorNames: "", note: "" })).response.status, 409, "credit history changes never restore a spent allowance");
+  const clearable = await add({ artistCredit: corrected.artistCredit, collaboratorNames: "Corrected guest", note: "Original note" });
+  assert.equal((await replace(sessionId, clearable, { mode: "details", collaboratorNames: "", note: "" })).response.status, 200);
+  updated = await stored(clearable.id);
   assert.deepEqual(updated.artistCredit.collaborators, []);
   assert.equal(updated.artistCredit.primary, "Corrected primary");
   assert.equal(updated.artistCredit.decision, "alias");
@@ -685,9 +762,10 @@ test("media replacements can save features and notes atomically; omitted details
   const updated = await stored(track.id);
   assert.equal(updated.collaboratorNames, "Guest");
   assert.equal(updated.note, "Updated host note");
-  assert.equal((await replace(sessionId, updated)).response.status, 200);
-  const latest = await stored(track.id);
-  for (const field of ["collaboratorNames", "artistCredit", "artistCreditHistory", "note"]) assert.deepEqual(latest[field], updated[field]);
+  const preserve = await add({ collaboratorNames: "Existing guest", note: "Existing note", artistCredit: { primary: "Existing artist", collaborators: ["Existing guest"], original: "Existing artist", source: "submitter", decision: "whole" }, artistCreditHistory: [] });
+  assert.equal((await replace(sessionId, preserve)).response.status, 200);
+  const latest = await stored(preserve.id);
+  for (const field of ["collaboratorNames", "artistCredit", "artistCreditHistory", "note"]) assert.deepEqual(latest[field], preserve[field]);
 });
 
 test("host notes are original-browser-only and never enter Deck, show logs, Archive or BNL; note-only changes add no public event", async () => {

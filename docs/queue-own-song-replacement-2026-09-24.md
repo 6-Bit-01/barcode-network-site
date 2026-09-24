@@ -16,6 +16,36 @@ This is submitter self-service: it adds no host editor, correction task, review
 queue or approval step. An eligible save applies directly to the submitter's
 own song after the existing server checks.
 
+## One saved edit per track
+
+The September 24 follow-up limits each track to **one committed submitter
+update**, shared across title, featured artists, private note and audio. A
+details-only change uses the same allowance as a media replacement. The form
+warns: “You can update this submission once. Review your title, features, note
+and audio before saving.” Eligible songs show **1 edit available**, then
+**Edit used** after a change is saved.
+
+The private `submitterEditUsed` marker is stored on the existing queue record
+in the same fenced commit as the changed song. It is independent of
+`replacementRevision`, which also protects against other changes. Request-body
+flags cannot reset it. Another tab, fresh revision, process restart, queue move,
+credit-history operation or late upload callback cannot restore the allowance.
+No host reset or approval workflow is added.
+
+Unchanged titles/notes, equivalent feature formatting and the same media URL
+return a no-change result without a write, revision increment, new history
+event or consumed allowance. Upload completion alone retains the file for
+cleanup but does not consume the edit. Validation/selection/storage rejection
+before commit also leaves it unused. If persistence succeeds but the response
+is lost, the saved edit remains used; refreshing reads that truth. A confirmed
+save also disables the local action even if the subsequent refresh fails.
+
+The allowance applies from this policy release. Existing owned songs start
+with one allowance if still eligible; prior revisions are not retrospectively
+charged because they do not reliably distinguish submitter edits. No data
+migration or retroactive ownership claim is performed. The existing safety
+cutoffs always remain authoritative.
+
 ## Selection rules
 
 The owner explicitly required Now Playing, Next in Line and Wheel Chosen songs
@@ -43,7 +73,8 @@ normalization uses a stable existing session timestamp; polling adds no write.
 
 | Situation | Result |
 |---|---|
-| Mid/back waiting song, original browser, outside the safety cutoff | Replace allowed. |
+| Mid/back waiting song, original browser, outside the safety cutoff, edit unused | One combined update allowed. |
+| One update already saved | No more edits, including requests with a fresh revision. |
 | First three upcoming songs in its lane, or 10 minutes or less of known music ahead | Permanently closed, even if a long ETA, pre-show countdown or commercial makes it appear safe. |
 | Waiting paid/pending Priority or Signal Hold song | Replace only outside the safety cutoff; existing purchases and checkout receipts remain attached. |
 | Intake closed/full, artist at three songs or on cooldown | Replacement can proceed; adding another song still follows all admission rules. |
@@ -176,10 +207,12 @@ Use an isolated non-production store or the normal authorized private rehearsal
 for the following focused evidence, without mutating a live show for testing:
 
 1. Submit a new link from browser A behind at least three known four-minute
-   songs in the same lane. Edit title, features and host note with Keep current
-   audio, reload, then clear the optional fields and save. Capture the same
+   songs in the same lane. Save the unchanged form and confirm the allowance
+   remains. Edit title, features and note with Keep current audio, then reload
+   and verify **Edit used** and rejection of a second save. Capture the same
    track ID/count, unchanged audio/duration/purchases, and the current private
-   note on Admin Queue Control. Separately replace media and confirm its source.
+   note on Admin Queue Control. Use separate fresh tracks to verify clearing
+   optional fields and replacing media in their one permitted update.
    Public queue/Deck/Archive/BNL must never expose the note. Browser B must have no edit
    authority, including when using the same typed artist/handle.
 2. Verify the first three upcoming songs are unavailable. With three known

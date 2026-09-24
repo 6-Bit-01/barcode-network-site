@@ -7,6 +7,7 @@ import {
   getQueueAdminPreviewReadback,
   getQueueAdminPreviewStats,
 } from "@/lib/queue";
+import { queueOwnerHash } from "@/lib/queue-submitter-auth";
 import { attachQueueLiveTiming } from "@/lib/queue-live-timing";
 
 export const dynamic = "force-dynamic";
@@ -50,6 +51,7 @@ export async function GET(request: Request) {
     }
 
     const snapshot = await getPublicQueueSnapshot(sessionId, {
+      ownerHash: queueOwnerHash(request),
       submitterToken: params.get("submitterToken"),
       tiktokHandle: params.get("tiktokHandle"),
       contactEmail: params.get("contactEmail"),

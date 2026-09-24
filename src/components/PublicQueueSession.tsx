@@ -7,6 +7,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useClientAction } from "@/components/useClientAction";
+import { QueueSongManager } from "@/components/QueueSongManager";
 import { RadioQueueForm } from "@/components/RadioQueueForm";
 import { RadioTikTokLink } from "@/components/RadioTikTokLink";
 import { externalLinks } from "@/content";
@@ -629,6 +630,8 @@ export function PublicQueueSession({ sessionId, snapshotEndpoint = "/api/queue" 
         {acceptedReceipt && <div className="relative z-20 border border-accent/80 bg-accent/15 p-3 text-sm text-foreground shadow-[0_0_30px_rgba(255,0,0,0.18)]"><div className="flex items-start justify-between gap-3"><div><p className="font-bold uppercase tracking-[0.18em] text-accent">Submission accepted</p><p className="mt-1">{acceptedReceipt.artist} — {acceptedReceipt.title}</p><p className="text-xs text-muted">{acceptedReceipt.sessionTitle} · {acceptedReceipt.sessionDate}</p><p className="text-xs">Confirmation: {acceptedReceipt.trackCode}</p><Link href="/radio/deck" className="mt-3 inline-flex border border-[#ffaa00]/60 bg-[#ffaa00]/10 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background">Submission complete · follow the show on the Deck</Link></div><button type="button" onClick={() => setAcceptedReceipt(null)} className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">Close</button></div></div>}
 
         <SessionPhasePanel snapshot={snapshot} timingSummary={timingSummary} submissionsOpen={isOpen} canSubmit={canSubmitFromHud} isBroadcastActive={isBroadcastActive} />
+
+        <QueueSongManager sessionId={sessionId} tracks={snapshot?.ownedTracks ?? []} canAdd={canSubmitFromHud} onAdd={openIntakeCorridor} onRefresh={load} />
 
         <SubmissionActivity items={activity} />
 

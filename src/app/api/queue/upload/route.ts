@@ -1,7 +1,8 @@
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { NextResponse } from "next/server";
 import { verifyAdminRequest } from "@/lib/auth";
-import { getPublicQueueSnapshot } from "@/lib/queue";
+import { getPublicQueueSnapshot, getQueueReplacementTarget, recordQueueReplacementUpload } from "@/lib/queue";
+import { queueOwnerHash } from "@/lib/queue-submitter-auth";
 import { requestHasRehearsalQueueAccess } from "@/lib/queue-rehearsal-access";
 import { QUEUE_OPERATIONAL_UNAVAILABLE_CODE, QUEUE_OPERATIONAL_UNAVAILABLE_MESSAGE, resolveQueueOperationalAccess } from "@/lib/queue-production";
 
@@ -14,6 +15,8 @@ const UPLOAD_PREFIX = "barcode-radio-queue/";
 const SESSION_SYNC_MESSAGE = "This session has changed. Re-enter the current BARCODE Radio queue and submit again.";
 
 type ClientPayload = {
+  replaceTrackId?: string;
+  expectedRevision?: number;
   sessionId?: string;
   uploadOriginalName?: string;
   fileSize?: number;
@@ -67,7 +70,12 @@ export async function POST(request: Request): Promise<NextResponse> {
         if (snapshot.session.purpose !== "live_broadcast" && !allowAdminPrivateSession && !allowRehearsalSession) throw new Error(SESSION_SYNC_MESSAGE);
 
         assertCurrentUploadSession(payload.sessionId, snapshot.session.sessionId);
-        assertUploadSessionOpen(snapshot.status.isOpen, snapshot.status.isFull, snapshot.status.acceptedCount ?? snapshot.status.activeCount, snapshot.status.capacity);
+        if (payload.replaceTrackId) {
+          if (request.headers.get("origin") !== new URL(request.url).origin) throw new Error("Use the BARCODE queue page to replace a song.");
+          await getQueueReplacementTarget({ sessionId: payload.sessionId!, trackId: payload.replaceTrackId, expectedRevision: payload.expectedRevision!, ownerHash: queueOwnerHash(request) });
+        } else {
+          assertUploadSessionOpen(snapshot.status.isOpen, snapshot.status.isFull, snapshot.status.acceptedCount ?? snapshot.status.activeCount, snapshot.status.capacity);
+        }
         if (!pathname.startsWith(UPLOAD_PREFIX)) throw new Error("Invalid upload path.");
         if (!payload.uploadOriginalName?.trim()) throw new Error("Uploaded audio file name is missing.");
         if (!payload.mimeType || !AUDIO_MIME_TYPES.includes(payload.mimeType)) throw new Error("Only MP3 and WAV uploads are accepted.");
@@ -78,11 +86,15 @@ export async function POST(request: Request): Promise<NextResponse> {
           allowedContentTypes: AUDIO_MIME_TYPES,
           maximumSizeInBytes: MAX_UPLOAD_BYTES,
           addRandomSuffix: true,
-          tokenPayload: JSON.stringify({ sessionId: payload.sessionId ?? snapshot.session.sessionId }),
+          tokenPayload: JSON.stringify({ sessionId: payload.sessionId ?? snapshot.session.sessionId, ...(payload.replaceTrackId ? { replaceTrackId: payload.replaceTrackId, ownerHash: queueOwnerHash(request) } : {}) }),
         };
       },
-      onUploadCompleted: async () => {
-        // Queue entries are created by /api/queue after the browser receives the private Blob URL.
+      onUploadCompleted: async ({ blob, tokenPayload }) => {
+        // handleUpload verifies this provider callback. Its signed token data,
+        // not browser JSON, binds abandoned replacement files to their owner.
+        const payload = JSON.parse(tokenPayload || "{}") as { sessionId?: string; replaceTrackId?: string; ownerHash?: string };
+        if (payload.sessionId && payload.replaceTrackId && payload.ownerHash) await recordQueueReplacementUpload({ sessionId: payload.sessionId, trackId: payload.replaceTrackId, ownerHash: payload.ownerHash, fileUrl: blob.url });
+        // Acceptance still happens only in /api/queue after the final lock check.
       },
     });
 

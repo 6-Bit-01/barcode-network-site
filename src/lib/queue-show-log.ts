@@ -18,6 +18,7 @@ const EVENT_TYPES = new Set<QueueShowLogEventType>([
   "submissions_closed",
   "broadcast_started",
   "track_submitted",
+  "track_replaced",
   "track_loaded",
   "track_play_started",
   "track_paused",

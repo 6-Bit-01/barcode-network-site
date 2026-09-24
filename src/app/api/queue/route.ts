@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { assertQueueTrackDuration, QueueTrackDurationError, QUEUE_TRACK_DURATION_UNVERIFIED_MESSAGE, APPLE_MUSIC_QUEUE_UNSUPPORTED_MESSAGE, PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT, PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION, PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION, PUBLIC_QUEUE_LEGAL_TERMS_VERSION, detectQueueSourceType, isAppleMusicUrl } from "@/lib/queue-types";
-import { getPublicQueueSnapshot, getRadioQueueState, isTrackPersistedInSessionQueue, normalizeQueueSourceKey, requestPriorityUpgradePlaceholder, sanitizeQueueSnapshotForPublic, submitRadioTrack, toPublicQueueTrack } from "@/lib/queue";
+import { getPublicQueueSnapshot, getRadioQueueState, getQueueReplacementTarget, replaceOwnRadioTrack, QueueReplacementError, isTrackPersistedInSessionQueue, normalizeQueueSourceKey, requestPriorityUpgradePlaceholder, sanitizeQueueSnapshotForPublic, submitRadioTrack, toPublicQueueTrack } from "@/lib/queue";
 import { getLiveOverlayRuntimeState } from "@/lib/live-overlay";
 import { attachQueueLiveTiming } from "@/lib/queue-live-timing";
 import { verifyAdminRequest, verifyRehearsalQueueToken } from "@/lib/auth";
@@ -8,6 +8,7 @@ import { isActiveRehearsalSession, requestHasRehearsalQueueAccess, requestRehear
 import { QUEUE_OPERATIONAL_UNAVAILABLE_CODE, QUEUE_OPERATIONAL_UNAVAILABLE_MESSAGE, resolveQueueOperationalAccess } from "@/lib/queue-production";
 import type { QueueEntry } from "@/lib/queue-types";
 import { requestDiscordConnectionId } from "@/lib/discord-connection";
+import { queueOwnerHash, queueSubmissionOwner } from "@/lib/queue-submitter-auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -129,10 +130,12 @@ export async function GET(req: Request) {
   const preliminaryAccess = resolveQueueOperationalAccess({ isAdmin });
   if (!preliminaryAccess.authorized && !rehearsalAccessToken) return queueUnavailableResponse();
 
+  const owner = queueSubmissionOwner(req);
   const params = new URL(req.url).searchParams;
   const sessionId = params.get("sessionId") ?? undefined;
   const now = new Date();
   const rawSnapshot = await getPublicQueueSnapshot(sessionId, {
+    ownerHash: queueOwnerHash(req),
     submitterToken: params.get("submitterToken"),
     tiktokHandle: params.get("tiktokHandle"),
     contactEmail: params.get("contactEmail"),
@@ -145,10 +148,10 @@ export async function GET(req: Request) {
     ? rawSnapshot
     : sanitizeQueueSnapshotForPublic(rawSnapshot);
   if (snapshot.sessionActive !== true) {
-    return NextResponse.json(attachQueueLiveTiming(snapshot, null, null, now));
+    return owner.attach(NextResponse.json(attachQueueLiveTiming(snapshot, null, null, now), { headers: { "Cache-Control": "private, no-store" } }));
   }
   const { playerSync, overlayState } = await getLiveOverlayRuntimeState();
-  return NextResponse.json(attachQueueLiveTiming(snapshot, playerSync, overlayState, now));
+  return owner.attach(NextResponse.json(attachQueueLiveTiming(snapshot, playerSync, overlayState, now), { headers: { "Cache-Control": "private, no-store" } }));
 }
 
 export async function POST(req: Request) {
@@ -175,14 +178,24 @@ export async function POST(req: Request) {
         if (!track) return NextResponse.json({ error: "Priority Signal Upgrade is not available for this track." }, { status: 409 });
         return NextResponse.json({ track, message: "Priority Signal Upgrade is being prepared. No payment has been processed." });
       }
+      if (body.action === "replace") {
+        if (req.headers.get("origin") !== new URL(req.url).origin) return NextResponse.json({ error: "Use the BARCODE queue page to replace a song." }, { status: 403 });
+        return await submitTrackFromBody(body, { allowAdminPrivateSession, rehearsalAccessToken,
+          replacement: { trackId: cleanBodyText(body.trackId), ownerHash: queueOwnerHash(req), expectedRevision: body.expectedRevision } });
+      }
       if (typeof body.action === "string") return NextResponse.json({ error: "Unknown queue action" }, { status: 400 });
-      return await submitTrackFromBody(body, { allowAdminPrivateSession, rehearsalAccessToken, connectionRequest: req });
+      const owner = queueSubmissionOwner(req);
+      const response = await submitTrackFromBody(body, { allowAdminPrivateSession, rehearsalAccessToken, connectionRequest: req, ownerHash: owner.hash });
+      return response.status === 201 ? owner.attach(response) : response;
     }
 
     const form = await req.formData();
     const body = Object.fromEntries(form.entries());
-    return await submitTrackFromBody(body, { allowAdminPrivateSession, rehearsalAccessToken, connectionRequest: req });
+    const owner = queueSubmissionOwner(req);
+    const response = await submitTrackFromBody(body, { allowAdminPrivateSession, rehearsalAccessToken, connectionRequest: req, ownerHash: owner.hash });
+    return response.status === 201 ? owner.attach(response) : response;
   } catch (error) {
+    if (error instanceof QueueReplacementError) return NextResponse.json({ error: error.message, code: error.code }, { status: 409, headers: { "Cache-Control": "private, no-store" } });
     if (error instanceof QueueTrackDurationError) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: 400 });
     }
@@ -204,24 +217,26 @@ export async function POST(req: Request) {
 
 export async function submitTrackFromBody(
   body: Record<string, unknown>,
-  options: { allowAdminPrivateSession?: boolean; rehearsalAccessToken?: string; connectionRequest?: Request } = {},
+  options: { allowAdminPrivateSession?: boolean; rehearsalAccessToken?: string; connectionRequest?: Request; ownerHash?: string; replacement?: { trackId: string; ownerHash: string | null; expectedRevision: number } } = {},
 ): Promise<NextResponse> {
   const preliminaryAccess = resolveQueueOperationalAccess({ isAdmin: options.allowAdminPrivateSession });
   if (!preliminaryAccess.authorized && !options.rehearsalAccessToken) return queueUnavailableResponse();
 
-  const artist = cleanBodyText(body.artist);
+  const replacement = options.replacement;
+  const original = replacement ? await getQueueReplacementTarget({ ...replacement, sessionId: cleanBodyText(body.sessionId) }) : null;
+  const artist = original ? original.submittedArtistName ?? original.artist : cleanBodyText(body.artist);
   const title = cleanBodyText(body.title);
   const mode = cleanBodyText(body.mode);
   const detectedDurationSeconds = parseBodyDuration(body.detectedDurationSeconds);
   // Link duration comes from provider lookup; uploaded measurements are supplied by the browser.
   if (mode === "upload") assertQueueTrackDuration(detectedDurationSeconds);
   const note = cleanBodyText(body.note).slice(0, 500);
-  const tiktokHandle = cleanBodyText(body.tiktokHandle);
+  const tiktokHandle = original ? original.tiktokHandle ?? "" : cleanBodyText(body.tiktokHandle);
   const artistCreditDecision = body.artistCreditDecision === "whole" || body.artistCreditDecision === "split" ? body.artistCreditDecision as "whole" | "split" : undefined;
   const originalArtistName = cleanBodyText(body.originalArtistName).slice(0, 400);
-  const collaboratorNames = cleanBodyText(body.collaboratorNames).slice(0, 200);
-  const contactEmail = cleanBodyText(body.contactEmail).slice(0, 200);
-  const submitterToken = cleanBodyText(body.submitterToken).slice(0, 120);
+  const collaboratorNames = original ? original.collaboratorNames ?? "" : cleanBodyText(body.collaboratorNames).slice(0, 200);
+  const contactEmail = original ? original.contactEmail ?? "" : cleanBodyText(body.contactEmail).slice(0, 200);
+  const submitterToken = original ? original.submitterToken ?? "" : cleanBodyText(body.submitterToken).slice(0, 120);
   const sessionId = cleanBodyText(body.sessionId);
   let legalAcceptance;
   try {
@@ -267,12 +282,19 @@ export async function submitTrackFromBody(
   if (active.session.purpose !== "live_broadcast" && options.allowAdminPrivateSession !== true && !allowRehearsalSession) {
     return NextResponse.json({ error: SESSION_SYNC_MESSAGE, code: "private_session" }, { status: 409 });
   }
-  if (!active.status.isOpen) {
+  if (!replacement && !active.status.isOpen) {
     return NextResponse.json({ error: active.status.isFull ? "This broadcast queue is full for new transmissions." : "This broadcast queue is closed." }, { status: 409 });
   }
-  if (active.status.isFull || (active.status.acceptedCount ?? active.status.activeCount) >= active.status.capacity) {
+  if (!replacement && (active.status.isFull || (active.status.acceptedCount ?? active.status.activeCount) >= active.status.capacity)) {
     return NextResponse.json({ error: "This broadcast queue is full for new transmissions." }, { status: 409 });
   }
+
+  const saveTrack = (input: Parameters<typeof submitRadioTrack>[0]) => replacement
+    ? replaceOwnRadioTrack({ ...input, ...replacement, sessionId, purpose: active.session!.purpose })
+    : submitRadioTrack({ ...input, submissionOwnerHash: options.ownerHash });
+  const accepted = (track: QueueEntry) => replacement
+    ? NextResponse.json({ track: toPublicQueueTrack(track), replacementRevision: track.replacementRevision, message: "Song replaced. Your queue slot and purchases are unchanged." }, { headers: { "Cache-Control": "private, no-store" } })
+    : acceptedResponse(toPublicQueueTrack(track), active.session!.submissionCooldownSeconds);
 
   const discordConnectionId = options.connectionRequest && preliminaryAccess.productionEnabled && active.session.purpose === "live_broadcast"
     ? await requestDiscordConnectionId(options.connectionRequest) : null;
@@ -280,9 +302,9 @@ export async function submitTrackFromBody(
   if (upload) {
     const { fileUrl, fileName, fileSize, mimeType } = upload;
 
-    if (await hasDuplicateUploadSubmission(fileName, fileSize, detectedDurationSeconds)) return duplicateResponse();
+    if (!replacement && await hasDuplicateUploadSubmission(fileName, fileSize, detectedDurationSeconds)) return duplicateResponse();
 
-    const track = await submitRadioTrack({
+    const track = await saveTrack({
       artist,
       title,
       link: fileUrl,
@@ -303,18 +325,18 @@ export async function submitTrackFromBody(
       legalAcceptance,
       sessionId,
     });
-    if (!(await isTrackPersistedInSessionQueue(track.id, active.session.sessionId))) {
+    if (!(await isTrackPersistedInSessionQueue(track.id, active.session.sessionId, replacement ? track.replacementRevision : undefined))) {
       return NextResponse.json({ error: QUEUE_ACCEPTANCE_UNCONFIRMED_MESSAGE, code: "queue_acceptance_unconfirmed" }, { status: 500 });
     }
-    return acceptedResponse(toPublicQueueTrack(track), active.session.submissionCooldownSeconds);
+    return accepted(track);
   }
 
-  if (await hasDuplicateLinkSubmission(link)) return duplicateResponse();
+  if (!replacement && await hasDuplicateLinkSubmission(link)) return duplicateResponse();
 
   const sourceType = detectQueueSourceType(link);
-  const track = await submitRadioTrack({ artist, title, link, sourceType, note, submitterArtistName: artist, tiktokHandle, collaboratorNames, artistCreditDecision, originalArtistName, contactEmail, submitterToken, discordConnectionId, legalAcceptance, sessionId });
-  if (!(await isTrackPersistedInSessionQueue(track.id, active.session.sessionId))) {
+  const track = await saveTrack({ artist, title, link, sourceType, note, submitterArtistName: artist, tiktokHandle, collaboratorNames, artistCreditDecision, originalArtistName, contactEmail, submitterToken, discordConnectionId, legalAcceptance, sessionId });
+  if (!(await isTrackPersistedInSessionQueue(track.id, active.session.sessionId, replacement ? track.replacementRevision : undefined))) {
     return NextResponse.json({ error: QUEUE_ACCEPTANCE_UNCONFIRMED_MESSAGE, code: "queue_acceptance_unconfirmed" }, { status: 500 });
   }
-  return acceptedResponse(toPublicQueueTrack(track), active.session.submissionCooldownSeconds);
+  return accepted(track);
 }

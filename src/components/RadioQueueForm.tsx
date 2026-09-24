@@ -3,6 +3,7 @@
 
 import { ArtistCreditFields } from "@/components/ArtistCreditFields";
 import { upload } from "@vercel/blob/client";
+import { safeFileName, audioMimeTypeForFile, readAudioDuration } from "@/lib/queue-upload-client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { buildQueueTimingDisplay, priorityDisplayFromImpact, queueTimingInputFromPublicSnapshot } from "@/lib/queue-timing-display";
@@ -49,47 +50,6 @@ function pressureLabel(status: QueuePublicStatus | null, timingSummary: ReturnTy
   if (!status) return "Syncing";
   const label = timingSummary?.pressureSummary.isLive ? timingSummary.pressureSummary.label : "PRE-SHOW";
   return `${label} / ${status.activeCount} ACTIVE`;
-}
-
-function safeFileName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/-+/g, "-").slice(0, 120) || "track";
-}
-
-function audioMimeTypeForFile(file: File): string {
-  const browserType = file.type.toLowerCase();
-  if (["audio/mpeg", "audio/mp3", "audio/wav", "audio/wave", "audio/x-wav"].includes(browserType)) return browserType;
-  if (/\.mp3$/i.test(file.name)) return "audio/mpeg";
-  if (/\.wav$/i.test(file.name)) return "audio/wav";
-  return browserType || "application/octet-stream";
-}
-
-function readAudioDuration(file: File): Promise<number | null> {
-  return new Promise((resolve) => {
-    const audio = document.createElement("audio");
-    const url = URL.createObjectURL(file);
-    let settled = false;
-    const finish = (duration: number | null) => {
-      if (settled) return;
-      settled = true;
-      URL.revokeObjectURL(url);
-      resolve(duration && Number.isFinite(duration) && duration > 0 ? duration : null);
-    };
-    const read = () => {
-      if (Number.isFinite(audio.duration) && audio.duration > 0) finish(audio.duration);
-    };
-    audio.preload = "metadata";
-    audio.onloadedmetadata = () => {
-      read();
-      if (!settled && audio.duration === Infinity) {
-        audio.currentTime = 24 * 60 * 60;
-      }
-    };
-    audio.ondurationchange = read;
-    audio.ontimeupdate = read;
-    audio.onerror = () => finish(null);
-    window.setTimeout(() => finish(null), 5000);
-    audio.src = url;
-  });
 }
 
 function publicTrackFromApi(track: { id: string; submittedArtistName?: string; submittedSongTitle?: string; submittedAlbumName?: string | null; artist?: string; title?: string; sourceType?: QueuePublicTrack["sourceType"]; lane?: QueuePublicTrack["lane"]; detectedArtistName?: string | null; detectedSongTitle?: string | null; detectedAlbumName?: string | null; detectedDurationSeconds?: number | null; estimatedDurationSeconds?: number; durationLabel?: string; durationIsEstimate?: boolean; durationSource?: QueuePublicTrack["durationSource"]; sourceArtworkUrl?: string | null; publicSourceUrl?: string | null; tiktokHandle?: string | null; priorityUpgradeRequested?: boolean; priorityUpgradeStatus?: QueuePublicTrack["priorityUpgradeStatus"] }): QueuePublicTrack {

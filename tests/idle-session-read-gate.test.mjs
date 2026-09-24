@@ -43,6 +43,10 @@ function loadQueueRoute(snapshot) {
       toPublicQueueTrack: (value) => value,
     };
     if (request === "@/lib/auth") return { verifyAdminRequest: async () => false };
+    if (request === "@/lib/queue-submitter-auth") return {
+      queueOwnerHash: () => null,
+      queueSubmissionOwner: () => ({ hash: "fixture", attach: response => response }),
+    };
     if (request === "@/lib/queue-rehearsal-access") return {
       requestHasRehearsalQueueAccess: async () => false,
       requestRehearsalQueueToken: () => "",

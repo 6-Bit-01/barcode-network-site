@@ -1,5 +1,5 @@
 import { Redis } from "@upstash/redis";
-import { getRadioLiveQueueState, getRadioQueueState, isWheelEligibleTrack, recordQueueOperationalShowEvent, removeEarliestWheelCandidateTrack, updateRadioTrack } from "./queue";
+import { getRadioLiveQueueState, getRadioQueueState, isWheelEligibleTrack, recordQueueOperationalShowEvent, removeEarliestWheelCandidateTrack, setQueueReplacementWheelHold, updateRadioTrack, withQueueSelectionMutation } from "./queue";
 import { getTrackArtworkUrl, getTrackDurationLabel, parseTikTokVideoUrl } from "./queue-types";
 import { getQueueTrackCredits, buildWheelSegments, derangedWheelCandidateOrder, orderedWheelCandidateIds, resolveLiveOverlayScene, safeLiveOverlayUrl, serverStampLiveOverlayPlayerSync, wheelFinalRotationForSegment } from "./live-overlay-resolver";
 import { parseYouTubeVideoId } from "./track-duration";
@@ -655,6 +655,14 @@ export async function getLiveOverlayAdminSnapshot(): Promise<LiveOverlayAdminSna
 }
 
 export async function setLiveOverlayState(payload: LiveOverlayPayload, receivedAt?: Date): Promise<LiveOverlayAdminSnapshot> {
+  // Full overlay writes carry Wheel fields too: serialize them so an unrelated
+  // override cannot revive a stale ceremony after confirmation/cancellation.
+  // The separate high-frequency player-sync key keeps its existing write path.
+  if (payload.action === "updatePlayerSync" || payload.action === "clearPlayerSync") return setLiveOverlayStateMutation(payload, receivedAt);
+  return withQueueSelectionMutation(() => setLiveOverlayStateMutation(payload, receivedAt));
+}
+
+async function setLiveOverlayStateMutation(payload: LiveOverlayPayload, receivedAt?: Date): Promise<LiveOverlayAdminSnapshot> {
   const current = await getStoredLiveOverlayState();
   const now = new Date().toISOString();
   let next: LiveOverlayState = { ...current, updatedAt: now };
@@ -773,6 +781,11 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload, receivedA
       trackTitle: selected?.trackTitle,
       updatedAt: now,
     };
+    if (!reencrypting) {
+      // Reserve the entire candidate pool before publishing the animation. An
+      // overlay write failure leaves edits paused until an explicit host reset.
+      await setQueueReplacementWheelHold(next.wheelCeremonySeed!, candidates.flatMap(candidate => candidate.trackIds ?? []));
+    }
   } else if (payload.action === "wheelWinnerNotHere") {
     const resultTrackId = cleanText(current.wheelCeremonyResultTrackId);
     if (!resultTrackId) throw new Error("No wheel result is ready to remove.");
@@ -885,6 +898,11 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload, receivedA
   }
 
   await writeLiveOverlayState(next);
+  if (["launchWheel", "confirmWheel", "wheelWinnerNotHere", "cancelWheel", "clearWheel", "clearAllOverrides"].includes(payload.action ?? "")) {
+    // Only release after the overlay acknowledges the resolved/reset ceremony.
+    // Confirmed songs already carry their permanent queue-entry selection lock.
+    await setQueueReplacementWheelHold(null);
+  }
   const wheelEventType = payload.action === "launchWheel"
     ? "wheel_launched"
     : payload.action === "reencryptWheel"
@@ -919,6 +937,10 @@ export async function setLiveOverlayState(payload: LiveOverlayPayload, receivedA
 }
 
 export async function resetWheelCeremonyStateForNewSession(): Promise<void> {
+  return withQueueSelectionMutation(resetWheelCeremonyStateMutation);
+}
+
+async function resetWheelCeremonyStateMutation(): Promise<void> {
   const current = await getStoredLiveOverlayState();
   const now = new Date().toISOString();
   const next: LiveOverlayState = {
@@ -959,4 +981,5 @@ export async function resetWheelCeremonyStateForNewSession(): Promise<void> {
     updatedAt: now,
   };
   await writeLiveOverlayState(next);
+  await setQueueReplacementWheelHold(null);
 }

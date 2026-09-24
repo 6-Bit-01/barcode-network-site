@@ -1,8 +1,56 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { createRequire } from "node:module";
+import vm from "node:vm";
+import ts from "typescript";
 
 const read = (path) => fs.readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+
+const require = createRequire(import.meta.url);
+const React = require("react");
+let renderedPathname = "/";
+const headerModule = { exports: {} };
+const headerMocks = {
+  react: { ...React, useState: () => [true, () => {}] },
+  "next/link": ({ children, ...props }) => React.createElement("a", props, children),
+  "next/image": ({ unoptimized: _unoptimized, ...props }) => React.createElement("img", props),
+  "next/navigation": { usePathname: () => renderedPathname },
+  "./LiveStatusProvider": { useLiveStatus: () => ({ siteShowMode: "standby", queueHref: null, streamUrl: null }) },
+  "./GlitchText": { GlitchText: ({ text }) => React.createElement("span", null, text) },
+  "@/content": { siteConfig: { logo: "/logo.png", name: "BARCODE Network" } },
+};
+vm.runInNewContext(ts.transpileModule(read("src/components/Header.tsx"), {
+  fileName: "Header.tsx",
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
+}).outputText, {
+  module: headerModule,
+  exports: headerModule.exports,
+  require: (id) => Object.hasOwn(headerMocks, id) ? headerMocks[id] : require(id),
+});
+
+function assertActiveNavigation(pathname, expectedHref) {
+  renderedPathname = pathname;
+  const markup = require("react-dom/server").renderToStaticMarkup(React.createElement(headerModule.exports.Header));
+  for (const label of ["Primary navigation", "Mobile primary navigation"]) {
+    const nav = markup.match(new RegExp(`<nav[^>]*aria-label="${label}"[^>]*>([\\s\\S]*?)</nav>`))?.[1];
+    assert.ok(nav, `${label} renders at ${pathname}`);
+    const active = [...nav.matchAll(/<a\b([^>]*)>/g)]
+      .filter((match) => match[1].includes('aria-current="page"'))
+      .map((match) => match[1].match(/href="([^"]+)"/)?.[1]);
+    assert.deepEqual(active, expectedHref ? [expectedHref] : [], `${label} at ${pathname}`);
+  }
+}
+
+test("desktop and mobile navigation retain Radio and BNL parent sections on child pages", () => {
+  for (const pathname of ["/radio", "/radio/", "/radio/archive", "/radio/deck"]) assertActiveNavigation(pathname, "/radio");
+  for (const pathname of ["/bnl", "/bnl/", "/bnl/music", "/journal", "/journal/saved-entry"]) assertActiveNavigation(pathname, "/bnl");
+});
+
+test("parent navigation matches whole path segments and preserves other exact destinations", () => {
+  for (const pathname of ["/radioactive", "/bnl-old", "/journalism", "/admin/queue", "/admin/ballads", "/queue", "/releases/other"]) assertActiveNavigation(pathname, null);
+  for (const pathname of ["/", "/terminal", "/database", "/releases", "/transmissions", "/merch"]) assertActiveNavigation(pathname, pathname);
+});
 
 test("fabricated SystemTicker metrics and duplicate LiveBanner surfaces are not rendered globally", () => {
   const layout = read("src/app/layout.tsx");

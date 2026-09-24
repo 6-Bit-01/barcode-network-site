@@ -24,9 +24,13 @@ const mobileNavItems = navItems.map((item) =>
 );
 
 function isNavItemActive(pathname: string, href: string) {
+  if (href === "/radio") {
+    return pathname === "/radio" || pathname.startsWith("/radio/");
+  }
   if (href === "/bnl") {
     return (
       pathname === "/bnl" ||
+      pathname.startsWith("/bnl/") ||
       pathname === "/journal" ||
       pathname.startsWith("/journal/")
     );

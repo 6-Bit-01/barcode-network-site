@@ -30,7 +30,7 @@ import {
   QUEUE_SHOW_LOG_SCHEMA_VERSION,
 } from "./queue-show-log";
 import type { QueueShowLogEventInput } from "./queue-show-log";
-import { isQueueProductionEnabled } from "./queue-production";
+import { isQueueProductionEnabled, isQueueSubmitterEditingEnabled, QUEUE_SUBMITTER_EDITING_DISABLED_MESSAGE } from "./queue-production";
 import { buildQueueShowReport } from "./queue-show-report";
 import type { QueueShowReport } from "./queue-show-report";
 import { SPONSOR_BREAK_DURATION_SECONDS } from "./sponsor-break-contract";
@@ -3466,6 +3466,7 @@ function applyReplacementCutoffLocks(session: QueueSession): void {
 }
 
 function replacementUnavailable(session: QueueSession, entry: QueueEntry): string | null {
+  if (!isQueueSubmitterEditingEnabled()) return QUEUE_SUBMITTER_EDITING_DISABLED_MESSAGE;
   if (entry.submitterEditUsed === true) return "Edit used. Each track can be updated once.";
   if (session.status === "archived" || session.broadcastPhase === "ended") return "This show has ended.";
   if (!session.queue.some(track => track.id === entry.id) || isTrackActiveForPlayback(session, entry.id)) return "This song is already staged, playing, or finished.";
@@ -3477,6 +3478,7 @@ function replacementUnavailable(session: QueueSession, entry: QueueEntry): strin
 }
 
 function replacementTarget(store: QueueStore, input: QueueReplacementRequest): { session: QueueSession; entry: QueueEntry } {
+  if (!isQueueSubmitterEditingEnabled()) throw new QueueReplacementError("submitter_editing_disabled", QUEUE_SUBMITTER_EDITING_DISABLED_MESSAGE);
   if (store.activeSessionId !== input.sessionId) throw new QueueReplacementError("stale_session", "This session has changed. Refresh the queue.");
   const session = getSession(store);
   // Match the read model's timer-driven routing before deciding what is waiting.
@@ -5537,7 +5539,7 @@ export async function getPublicQueueSnapshot(sessionId?: string, identity?: { ow
       submitterStatus: null,
     };
   }
-  return { revision: store.revision, ...(identity?.ownerHash ? { ownedTracks: ownedQueueTracks(normalized, identity.ownerHash) } : {}), sessionActive: normalized.sessionId === store.activeSessionId, session: summarizeSession(normalized), status: normalized.publicStatus, queue: normalized.queue.map(toPublicQueueTrack), completed: normalized.completed.slice(0, 10).map(toPublicQueueTrack), nowPlaying: normalized.loadedTrack ? toPublicQueueTrack(normalized.loadedTrack) : null, upNext: normalized.nextInLineTrack ? toPublicQueueTrack(normalized.nextInLineTrack) : null, submitterStatus: publicSubmitterStatus(normalized, identity) };
+  return { revision: store.revision, ...(identity?.ownerHash ? { submitterEditingEnabled: isQueueSubmitterEditingEnabled(), ownedTracks: ownedQueueTracks(normalized, identity.ownerHash) } : {}), sessionActive: normalized.sessionId === store.activeSessionId, session: summarizeSession(normalized), status: normalized.publicStatus, queue: normalized.queue.map(toPublicQueueTrack), completed: normalized.completed.slice(0, 10).map(toPublicQueueTrack), nowPlaying: normalized.loadedTrack ? toPublicQueueTrack(normalized.loadedTrack) : null, upNext: normalized.nextInLineTrack ? toPublicQueueTrack(normalized.nextInLineTrack) : null, submitterStatus: publicSubmitterStatus(normalized, identity) };
 }
 
 function isPublicSimulationTrack(track: QueuePublicTrack | null | undefined): boolean {

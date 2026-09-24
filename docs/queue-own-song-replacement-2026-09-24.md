@@ -16,6 +16,28 @@ This is submitter self-service: it adds no host editor, correction task, review
 queue or approval step. An eligible save applies directly to the submitter's
 own song after the existing server checks.
 
+## Rollout status: paused pending private rehearsal
+
+The owner requested that submitter editing and replacement remain off while
+private acceptance is outstanding. `BARCODE_QUEUE_SUBMITTER_EDITING_ENABLED`
+must be exactly `true` to enable them; unset, false or malformed values disable
+them. This server capability is independent of queue intake and the native
+queue production gate. It changes no queue open/closed setting, host control,
+submission limit, payment setting or persisted song.
+
+While disabled, the UI hides edit controls and forms, and server guards reject
+details saves, link replacements and replacement upload authorization, including
+stale browser requests. The final mutation guard checks again after provider
+lookup. An already-issued upload completion can still enter cleanup inventory,
+but cannot replace audio or consume/reset the one-edit allowance. Viewing owned
+songs and Add another song keep their existing intake rules. Admin/rehearsal
+access does not bypass this separate editing capability.
+
+Leave the capability unset in production. It may be explicitly enabled in an
+isolated preview/test environment for the private checks below. Automated tests
+explicitly enable the feature to retain coverage of its original behavior;
+they also verify default-off UI/API behavior and unchanged intake rules.
+
 ## One saved edit per track
 
 The September 24 follow-up limits each track to **one committed submitter
@@ -201,10 +223,11 @@ is in `tests/queue-own-song-replacement.test.mjs`; Wheel routing, playback,
 cleanup, payments and public/BNL projection suites remain required.
 
 After owner review/merge, let the normal website Vercel deployment reach Ready.
-No new environment variables, schema migration, bot deployment/restart,
-production-gate change, Discord activation or public announcement is required.
-Use an isolated non-production store or the normal authorized private rehearsal
-for the following focused evidence, without mutating a live show for testing:
+The pause takes effect with the new editing capability unset; no environment
+change is required to disable it. No schema migration, bot deployment/restart,
+existing production-gate change, Discord activation or public announcement is
+required. Enable editing only in an isolated preview/test environment for the
+following private evidence, without mutating a live show for testing:
 
 1. Submit a new link from browser A behind at least three known four-minute
    songs in the same lane. Save the unchanged form and confirm the allowance

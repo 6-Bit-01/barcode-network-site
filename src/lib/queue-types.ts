@@ -677,6 +677,8 @@ export interface QueuePublicSnapshot {
   revision: number;
   /** Included only for the requesting browser's verified queue cookie. */
   ownedTracks?: QueueOwnedTrack[];
+  /** Explicit server capability; omission disables the submitter editor. */
+  submitterEditingEnabled?: boolean;
   sessionActive?: boolean;
   suppressPublicLiveStatus?: boolean;
   session: Pick<QueueSessionSummary, "sessionId" | "title" | "showDate" | "status" | "purpose" | "description" | "completedCount" | "completedRuntimeSeconds" | "activeCount" | "acceptedCount" | "submissionClosureReason" | "removedCount" | "submissionCooldownSeconds" | "queueOpen" | "showStarted" | "preShowEndsAt" | "broadcastPhase" | "broadcastStartedAt" | "nextInLineTrackId" | "loadedTrackId" | "wheelSpinsOwed" | "priorityUpgradesEnabled" | "priorityUpgradeLabel" | "priorityUpgradeInstructions" | "priorityUpgradePriceCents" | "priorityUpgradeCurrency" | "priorityUpgradePaymentsEnabled" | "signalHoldEnabled" | "signalHoldLabel" | "signalHoldInstructions" | "signalHoldPriceCents" | "signalHoldCurrency" | "signalHoldPaymentsEnabled" | "sponsorBreakSeconds" | "sponsorBreakMode" | "sponsorBreakStatus" | "sponsorBreakStartedAt" | "sponsorBreakCompletedAt" | "sponsorBreakCompletedAfterPlayableCount" | "sponsorBreakDueAfterPlayableCount" | "sponsorBreakManualNote"> | null;

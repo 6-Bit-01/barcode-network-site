@@ -34,6 +34,13 @@ log metadata and the hash-pinned existing health reader. It uses read-only SQLit
 row/time bounds and explicit unavailable/truncated markers. It never copies the
 database, configuration, private chat or raw service messages.
 
+Discord capture follows the current conversations schema: the three existing
+public channel policies are mandatory; `public_usable` and `visibility` are
+additional restrictions when those optional columns exist. It does not require
+the source-archive table's `public_usable` column on conversations. Text attachments
+are base64-encoded from the exact UTF-8 bytes recorded in the manifest and local
+ZIP, so SMTP newline conversion cannot invalidate their byte counts or hashes.
+
 ## One-time off-air setup
 
 1. Merge/deploy this PR through the normal website workflow.

@@ -34,6 +34,7 @@ export type QueueShowLogEventType =
   | "broadcast_started"
   | "track_submitted"
   | "track_replaced"
+  | "track_details_updated"
   | "track_loaded"
   | "track_play_started"
   | "track_paused"
@@ -689,12 +690,15 @@ export interface QueuePublicSnapshot {
 
 export const QUEUE_REPLACEMENT_CUTOFF_SECONDS = 10 * 60;
 export const QUEUE_REPLACEMENT_FRONT_TRACKS = 3;
-export const QUEUE_REPLACEMENT_CLOSED_MESSAGE = "Replacement is closed once a song reaches the front or the 10-minute safety window, or is selected for Next in Line, Now Playing or the Wheel. Moving back does not reopen it.";
+export const QUEUE_REPLACEMENT_CLOSED_MESSAGE = "Editing and replacement are closed once a song reaches the front or the 10-minute safety window, or is selected for Next in Line, Now Playing or the Wheel. Moving back does not reopen them.";
 
 export interface QueueOwnedTrack {
   id: string;
   artist: string;
   title: string;
+  collaboratorNames: string;
+  /** Original-browser response only. Never include in public queue/Deck/BNL projections. */
+  note: string;
   replacementRevision: number;
   canReplace: boolean;
   unavailableReason: string | null;
@@ -783,6 +787,7 @@ export type QueuePublicHistoryEventType =
   | "broadcast_started"
   | "track_submitted"
   | "track_replaced"
+  | "track_details_updated"
   | "track_loaded"
   | "track_play_started"
   | "track_paused"

@@ -9,6 +9,7 @@ import { QUEUE_OPERATIONAL_UNAVAILABLE_CODE, QUEUE_OPERATIONAL_UNAVAILABLE_MESSA
 import type { QueueEntry } from "@/lib/queue-types";
 import { requestDiscordConnectionId } from "@/lib/discord-connection";
 import { queueOwnerHash, queueSubmissionOwner } from "@/lib/queue-submitter-auth";
+import { collaboratorList } from "@/lib/artist-credits";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -179,7 +180,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ track, message: "Priority Signal Upgrade is being prepared. No payment has been processed." });
       }
       if (body.action === "replace") {
-        if (req.headers.get("origin") !== new URL(req.url).origin) return NextResponse.json({ error: "Use the BARCODE queue page to replace a song." }, { status: 403 });
+        if (req.headers.get("origin") !== new URL(req.url).origin) return NextResponse.json({ error: "Use the BARCODE queue page to edit a song." }, { status: 403 });
         return await submitTrackFromBody(body, { allowAdminPrivateSession, rehearsalAccessToken,
           replacement: { trackId: cleanBodyText(body.trackId), ownerHash: queueOwnerHash(req), expectedRevision: body.expectedRevision } });
       }
@@ -227,20 +228,28 @@ export async function submitTrackFromBody(
   const artist = original ? original.submittedArtistName ?? original.artist : cleanBodyText(body.artist);
   const title = cleanBodyText(body.title);
   const mode = cleanBodyText(body.mode);
+  const detailsOnly = Boolean(replacement && mode === "details");
+  if (replacement && (!["details", "link", "upload"].includes(mode) || !title || title.length > 200)) {
+    return NextResponse.json({ error: "Choose an edit option and enter a song title of 200 characters or less." }, { status: 400 });
+  }
+  if (replacement && ((body.note !== undefined && (typeof body.note !== "string" || body.note.trim().length > 500))
+    || (body.collaboratorNames !== undefined && (typeof body.collaboratorNames !== "string" || body.collaboratorNames.trim().length > 200 || collaboratorList(body.collaboratorNames).length > 20 || collaboratorList(body.collaboratorNames).join(", ").length > 200)))) {
+    return NextResponse.json({ error: "Use up to 200 characters and 20 featured artists, and a note of 500 characters or less." }, { status: 400 });
+  }
   const detectedDurationSeconds = parseBodyDuration(body.detectedDurationSeconds);
   // Link duration comes from provider lookup; uploaded measurements are supplied by the browser.
   if (mode === "upload") assertQueueTrackDuration(detectedDurationSeconds);
-  const note = cleanBodyText(body.note).slice(0, 500);
+  const note = replacement && body.note === undefined ? undefined : cleanBodyText(body.note).slice(0, 500);
   const tiktokHandle = original ? original.tiktokHandle ?? "" : cleanBodyText(body.tiktokHandle);
   const artistCreditDecision = body.artistCreditDecision === "whole" || body.artistCreditDecision === "split" ? body.artistCreditDecision as "whole" | "split" : undefined;
   const originalArtistName = cleanBodyText(body.originalArtistName).slice(0, 400);
-  const collaboratorNames = original ? original.collaboratorNames ?? "" : cleanBodyText(body.collaboratorNames).slice(0, 200);
+  const collaboratorNames = replacement && body.collaboratorNames === undefined ? undefined : cleanBodyText(body.collaboratorNames).slice(0, 200);
   const contactEmail = original ? original.contactEmail ?? "" : cleanBodyText(body.contactEmail).slice(0, 200);
   const submitterToken = original ? original.submitterToken ?? "" : cleanBodyText(body.submitterToken).slice(0, 120);
   const sessionId = cleanBodyText(body.sessionId);
   let legalAcceptance;
   try {
-    legalAcceptance = validateLegalAcceptance(body);
+    if (!detailsOnly) legalAcceptance = validateLegalAcceptance(body);
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Legal acceptance is required before submitting to the queue." }, { status: 400 });
   }
@@ -257,7 +266,7 @@ export async function submitTrackFromBody(
       fileSize: validateUploadFileSize(body.fileSize),
       mimeType: validateUploadMimeType(body.mimeType),
     };
-  } else {
+  } else if (!detailsOnly) {
     link = cleanBodyText(body.link);
     if (!link) return NextResponse.json({ error: "Paste a track link." }, { status: 400 });
     try { new URL(link); } catch { return NextResponse.json({ error: "Enter a valid track URL." }, { status: 400 }); }
@@ -290,10 +299,10 @@ export async function submitTrackFromBody(
   }
 
   const saveTrack = (input: Parameters<typeof submitRadioTrack>[0]) => replacement
-    ? replaceOwnRadioTrack({ ...input, ...replacement, sessionId, purpose: active.session!.purpose })
+    ? replaceOwnRadioTrack({ ...input, ...replacement, detailsOnly, sessionId, purpose: active.session!.purpose })
     : submitRadioTrack({ ...input, submissionOwnerHash: options.ownerHash });
   const accepted = (track: QueueEntry) => replacement
-    ? NextResponse.json({ track: toPublicQueueTrack(track), replacementRevision: track.replacementRevision, message: "Song replaced. Your queue slot and purchases are unchanged." }, { headers: { "Cache-Control": "private, no-store" } })
+    ? NextResponse.json({ track: toPublicQueueTrack(track), replacementRevision: track.replacementRevision, message: "Song updated. Your queue slot and purchases are unchanged." }, { headers: { "Cache-Control": "private, no-store" } })
     : acceptedResponse(toPublicQueueTrack(track), active.session!.submissionCooldownSeconds);
 
   const discordConnectionId = options.connectionRequest && preliminaryAccess.productionEnabled && active.session.purpose === "live_broadcast"

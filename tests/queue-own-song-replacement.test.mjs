@@ -444,7 +444,7 @@ test("upload authorization checks ownership and selection; signed completion ret
     const tokenPayload = approved.tokenPayload;
     assert.equal(JSON.parse(tokenPayload).ownerHash, ownerHash);
     await loadedModule.exports.POST(request({}, ""));
-    await assert.rejects(() => callbacks.onBeforeGenerateToken("barcode-radio-queue/late.mp3", payload), /browser cannot replace/);
+    await assert.rejects(() => callbacks.onBeforeGenerateToken("barcode-radio-queue/late.mp3", payload), /browser cannot edit/);
     await loadedModule.exports.POST(request({}));
     if (cutoff === "selection") await pullTarget(track);
     else await queue.updateRadioTrack((await queue.getRadioQueueState()).queue[0].id, "remove");
@@ -590,4 +590,193 @@ test("cutoff polling is read-only, stable, private and does not expose replaceme
   const publicTrack = first.queue.find(row => row.id === track.id);
   assert.doesNotMatch(JSON.stringify(publicTrack), /replacement|OwnerHash/);
   assert.doesNotMatch(JSON.stringify(await queue.getQueueBnlArtistMemory()), /replacementLockedAt|submissionOwnerHash/);
+});
+
+
+test("a fresh submitter edits its own details immediately without staff access or approval", async () => {
+  const sessionId = await fresh();
+  const intake = await route.POST(request({ sessionId, mode: "link", artist: "Self-service artist", title: "Initial title", collaboratorNames: "Initial guest", note: "Initial private note", tiktokHandle: "@selfservice", link: "https://example.test/selfservice", ...legal }, ""));
+  assert.equal(intake.status, 201);
+  const { track } = await intake.json();
+  const browser = intake.headers.get("set-cookie").split(";")[0];
+  const save = await route.POST(request(replaceBody(sessionId, track, { mode: "details", title: "Updated title", collaboratorNames: "New guest", note: "Updated private note", acceptedLegal: false }), browser));
+  assert.equal(save.status, 200);
+  const after = await stored(track.id);
+  assert.equal(after.title, "Updated title");
+  assert.equal(after.collaboratorNames, "New guest");
+  assert.equal(after.note, "Updated private note");
+  assert.equal(after.link, "https://example.test/selfservice");
+  assert.equal(after.id, track.id);
+  const response = await route.GET(new Request(`https://example.test/api/queue?sessionId=${sessionId}`, { headers: { cookie: browser } }));
+  const own = (await response.json()).ownedTracks;
+  assert.equal(own.length, 1);
+  assert.equal(own[0].note, "Updated private note");
+  assert.equal((await route.POST(request(replaceBody(sessionId, after, { mode: "details", note: "Unrelated browser" })))).status, 409);
+  const events = (await queue.getQueueSessionShowLog(sessionId)).events;
+  const original = events.find(event => event.eventType === "track_submitted" && event.track?.trackId === track.id);
+  const changed = events.filter(event => event.eventType === "track_details_updated" && event.track?.trackId === track.id);
+  assert.equal(original.track.title, "Initial title");
+  assert.equal(changed.length, 1);
+  assert.equal(changed[0].track.title, "Updated title");
+  assert.doesNotMatch(JSON.stringify(events), /private note/);
+  assert.equal((await queue.getPublicQueueSnapshot()).status.acceptedCount, 4);
+});
+
+test("details-only edits retain audio, duration, upload retention, legal receipt and purchases without a provider lookup", async () => {
+  for (const media of [{ sourceType: "soundcloud", link: "https://soundcloud.com/fixture/keep-audio" }, { sourceType: "upload", link: "https://demo.private.blob.vercel-storage.com/barcode-radio-queue/keep.mp3", fileUrl: "https://demo.private.blob.vercel-storage.com/barcode-radio-queue/keep.mp3", fileName: "keep.mp3", fileSize: 12000, mimeType: "audio/mpeg" }]) {
+    const sessionId = await fresh();
+    const track = await add({ ...media, collaboratorNames: "Old guest", note: "Old host note", detectedDurationSeconds: 240, durationIsEstimate: false, legalAcceptance: { acceptedAt: "2026-09-23T00:00:00.000Z", ...legal }, signalHoldStatus: "active", signalHoldPaymentId: "pi_keep" });
+    const before = await stored(track.id);
+    const oldFetch = global.fetch;
+    global.fetch = async () => { throw new Error("Details must not fetch media"); };
+    let result;
+    try {
+      result = await replace(sessionId, track, { mode: "details", title: "Corrected title", collaboratorNames: "Guest A; Guest B", note: "Read before playing", acceptedLegal: false, artist: "Forged primary", artistCreditDecision: "split", originalArtistName: "Forged original", artistCredit: { primary: "Forged" }, link: "https://attacker.test/new-audio", fileUrl: "https://attacker.test/new.mp3", detectedDurationSeconds: 1 });
+    } finally { global.fetch = oldFetch; }
+    assert.equal(result.response.status, 200, JSON.stringify(result.body));
+    const after = await stored(track.id);
+    for (const field of Object.keys(before).filter(field => !["title", "submittedSongTitle", "collaboratorNames", "artistCredit", "artistCreditHistory", "note", "replacementRevision"].includes(field))) assert.deepEqual(after[field], before[field], field);
+    assert.equal(after.title, "Corrected title");
+    assert.equal(after.collaboratorNames, "Guest A, Guest B");
+    assert.equal(after.artistCredit.primary, before.submittedArtistName);
+    assert.deepEqual(after.artistCredit.collaborators, ["Guest A", "Guest B"]);
+    assert.equal(after.note, "Read before playing");
+    assert.equal(after.replacementRevision, 1);
+    assert.equal((await queue.getPublicQueueSnapshot()).status.acceptedCount, 4);
+    assert.doesNotMatch(JSON.stringify(result.body), /Read before playing|private.blob|fileName/);
+  }
+});
+
+test("feature edits preserve admin primary/alias corrections and history, and support clearing and undo", async () => {
+  const sessionId = await fresh();
+  const track = await add({ collaboratorNames: "Original guest", note: "Old note" });
+  const review = await queue.getQueueArtistCreditReview();
+  await queue.correctQueueArtistCredit({ revision: review.revision, sessionId, trackId: track.id, primary: "Corrected primary", collaborators: "Corrected guest", decision: "alias" });
+  const corrected = await stored(track.id);
+  assert.equal((await replace(sessionId, track, { mode: "details", collaboratorNames: "Stale guest" })).response.status, 409);
+  const owned = (await queue.getPublicQueueSnapshot(sessionId, { ownerHash })).ownedTracks.find(t => t.id === track.id);
+  assert.equal(owned.collaboratorNames, "Corrected guest");
+  const result = await replace(sessionId, corrected, { mode: "details", collaboratorNames: "New guest", note: "", artist: "Forged primary" });
+  assert.equal(result.response.status, 200);
+  let updated = await stored(track.id);
+  assert.deepEqual(updated.artistCredit, { ...corrected.artistCredit, collaborators: ["New guest"] });
+  assert.deepEqual(updated.artistCreditHistory.slice(0, -1), corrected.artistCreditHistory);
+  assert.deepEqual(updated.artistCreditHistory.at(-1).credit, corrected.artistCredit);
+  assert.equal(updated.note, null);
+  assert.equal(queue.toPublicQueueTrack(updated).collaboratorNames, "New guest");
+  const undoReview = await queue.getQueueArtistCreditReview();
+  await queue.correctQueueArtistCredit({ revision: undoReview.revision, sessionId, trackId: track.id, undo: true });
+  updated = await stored(track.id);
+  assert.deepEqual(updated.artistCredit, corrected.artistCredit);
+  assert.equal(queue.toPublicQueueTrack(updated).collaboratorNames, "Corrected guest");
+  assert.equal((await replace(sessionId, updated, { mode: "details", collaboratorNames: "", note: "" })).response.status, 200);
+  updated = await stored(track.id);
+  assert.deepEqual(updated.artistCredit.collaborators, []);
+  assert.equal(updated.artistCredit.primary, "Corrected primary");
+  assert.equal(updated.artistCredit.decision, "alias");
+  assert.equal(updated.collaboratorNames, null);
+});
+
+test("media replacements can save features and notes atomically; omitted details preserve current values", async () => {
+  const sessionId = await fresh();
+  const track = await add();
+  const result = await replace(sessionId, track, { collaboratorNames: "Guest", note: "Updated host note" });
+  assert.equal(result.response.status, 200);
+  const updated = await stored(track.id);
+  assert.equal(updated.collaboratorNames, "Guest");
+  assert.equal(updated.note, "Updated host note");
+  assert.equal((await replace(sessionId, updated)).response.status, 200);
+  const latest = await stored(track.id);
+  for (const field of ["collaboratorNames", "artistCredit", "artistCreditHistory", "note"]) assert.deepEqual(latest[field], updated[field]);
+});
+
+test("host notes are original-browser-only and never enter Deck, show logs, Archive or BNL; note-only changes add no public event", async () => {
+  const sessionId = await fresh({ bnlPublicationStatus: "public_copy_approved" });
+  const track = await add({ note: "private-note-before" });
+  const report = await queue.getQueueSessionShowLog(sessionId);
+  assert.equal((await replace(sessionId, track, { mode: "details", title: track.title, note: "private-note-after" })).response.status, 200);
+  assert.deepEqual((await queue.getQueueSessionShowLog(sessionId)).events, report.events);
+  for (const browser of [cookie, "", `barcode_queue_owner=${"d".repeat(64)}`]) {
+    const response = await route.GET(new Request(`https://example.test/api/queue?sessionId=${sessionId}`, { headers: { cookie: browser } }));
+    const body = await response.json();
+    assert.match(response.headers.get("cache-control"), /private, no-store/);
+    if (browser === cookie) assert.equal(body.ownedTracks[0].note, "private-note-after");
+    else assert.doesNotMatch(JSON.stringify(body), /private-note/);
+    assert.doesNotMatch(JSON.stringify(body.queue), /private-note/);
+  }
+  for (const projection of [await queue.getPublicQueueSnapshot(), await queue.getPublicQueueStats(), await queue.getQueueSessionShowLog(sessionId), await queue.getQueueBnlStats(), await queue.getQueueBnlArtistMemory(), await queue.getQueueBnlReadProjections("public")]) assert.doesNotMatch(JSON.stringify(projection), /private-note/);
+  await queue.archiveCurrentQueueSession();
+  assert.doesNotMatch(JSON.stringify(await queue.getPublicQueueStats()), /private-note/);
+});
+
+test("details-only edits share ownership, Origin, session, Wheel and permanent cutoff protections", async () => {
+  let sessionId = await fresh();
+  let track = await add();
+  const body = replaceBody(sessionId, track, { mode: "details", collaboratorNames: "Guest", note: "Draft note" });
+  assert.equal((await route.POST(request(body, ""))).status, 409);
+  assert.equal((await route.POST(request(body, cookie, "https://attacker.test"))).status, 403);
+  await spin();
+  assert.equal((await route.POST(request(body))).status, 409);
+  await overlay.setLiveOverlayState({ action: "cancelWheel" });
+  assert.equal((await route.POST(request(body))).status, 200);
+  for (const transition of ["front", "next", "wheel", "ended", "session"]) {
+    sessionId = await fresh(); track = await add();
+    const before = await stored(track.id);
+    if (transition === "front") await queue.updateRadioTrack((await queue.getRadioQueueState()).queue[0].id, "remove");
+    if (transition === "next") await pullTarget(track);
+    if (transition === "wheel") await queue.updateRadioTrack(track.id, "wheel");
+    if (transition === "ended") await queue.archiveCurrentQueueSession();
+    if (transition === "session") await fresh();
+    assert.equal((await replace(sessionId, track, { mode: "details", collaboratorNames: "Too late", note: "Too late" })).response.status, 409, transition);
+    const after = await stored(track.id, sessionId);
+    for (const field of ["title", "collaboratorNames", "note", "replacementRevision"]) assert.deepEqual(after[field], before[field], transition + " " + field);
+  }
+});
+
+test("details validation rejects invalid types and oversized fields without changing the song", async () => {
+  const sessionId = await fresh(); const track = await add();
+  for (const fields of [{ title: "" }, { title: "x".repeat(201) }, { collaboratorNames: {} }, { collaboratorNames: "x".repeat(201) }, { collaboratorNames: "ﷺ".repeat(30) }, { collaboratorNames: Array.from({ length: 21 }, (_, i) => `G${i}`).join(",") }, { note: 123 }, { note: "x".repeat(501) }, { mode: "unknown" }]) {
+    assert.equal((await replace(sessionId, track, { mode: "details", ...fields })).response.status, 400, JSON.stringify(fields));
+  }
+  assert.equal((await stored(track.id)).replacementRevision ?? 0, 0);
+});
+
+test("a details save and a delayed media replacement cannot overwrite one another", async () => {
+  const sessionId = await fresh(); const track = await add();
+  let release, entered;
+  const blocked = new Promise(resolve => { release = resolve; });
+  const started = new Promise(resolve => { entered = resolve; });
+  const oldFetch = global.fetch;
+  global.fetch = async () => { entered(); await blocked; return new Response("{}"); };
+  try {
+    const pending = replace(sessionId, track, { link: "https://soundcloud.com/fixture/edit-race", collaboratorNames: "Stale guest", note: "Stale note" });
+    await started;
+    assert.equal((await replace(sessionId, track, { mode: "details", title: "Saved details", collaboratorNames: "Saved guest", note: "Saved note" })).response.status, 200);
+    release();
+    assert.equal((await pending).response.status, 409);
+    const updated = await stored(track.id);
+    assert.equal(updated.title, "Saved details"); assert.equal(updated.link, track.link);
+    assert.equal(updated.note, "Saved note"); assert.equal(updated.collaboratorNames, "Saved guest");
+  } finally { release(); global.fetch = oldFetch; }
+});
+
+test("an admin correction during slow replacement rejects the entire stale media/details draft", async () => {
+  const sessionId = await fresh(); const track = await add();
+  let release, entered;
+  const blocked = new Promise(resolve => { release = resolve; });
+  const started = new Promise(resolve => { entered = resolve; });
+  const oldFetch = global.fetch;
+  global.fetch = async () => { entered(); await blocked; return new Response("{}"); };
+  try {
+    const pending = replace(sessionId, track, { link: "https://soundcloud.com/fixture/credit-race", collaboratorNames: "Stale guest", note: "Stale note" });
+    await started;
+    const review = await queue.getQueueArtistCreditReview();
+    await queue.correctQueueArtistCredit({ revision: review.revision, sessionId, trackId: track.id, primary: "Corrected primary", collaborators: "Host corrected guest", decision: "alias" });
+    release();
+    assert.equal((await pending).response.status, 409);
+    const updated = await stored(track.id);
+    assert.equal(updated.title, track.title); assert.equal(updated.link, track.link);
+    assert.equal(updated.artistCredit.primary, "Corrected primary"); assert.deepEqual(updated.artistCredit.collaborators, ["Host corrected guest"]);
+    assert.notEqual(updated.note, "Stale note");
+  } finally { release(); global.fetch = oldFetch; }
 });

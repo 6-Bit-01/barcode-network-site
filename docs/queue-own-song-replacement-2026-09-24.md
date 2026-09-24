@@ -9,8 +9,12 @@ remains on the public Broadcast Deck and dedicated connection page.
 The existing queue already supports adding another song. Its existing intake,
 three-song limit, cooldown, 44 accepted slots and payment rules remain the
 authority. The new **Your songs** section reuses that add flow and lets a
-submitter replace an eligible mid/back-of-queue song's title and link or MP3/WAV source.
+submitter edit an eligible mid/back-of-queue song's title, featured artists and
+private host note, optionally replacing its link or MP3/WAV source.
 It does not add another queue record or charge for replacement.
+This is submitter self-service: it adds no host editor, correction task, review
+queue or approval step. An eligible save applies directly to the submitter's
+own song after the existing server checks.
 
 ## Selection rules
 
@@ -56,7 +60,7 @@ normalization uses a stable existing session timestamp; polling adds no write.
 | Slow media lookup/upload races the cutoff, a removal ahead, host load, paid skip or selection | Queue change first: reject the save, keep the original song. Replacement first: select the committed new song. |
 | Two tabs, duplicate click or delayed retry | One expected revision can commit once; a stale request gets 409 and must refresh. |
 | Response or refresh lost | UI does not promise an unconfirmed save; reload from the server before retrying. |
-| Other browser/device, cleared cookies or pre-release submission | No automatic ownership claim. Use the original browser or contact the host. |
+| Other browser/device, cleared cookies or pre-release submission | No automatic ownership claim. Use the original submitting browser with its ownership cookie. |
 
 ## Existing authority and retained data
 
@@ -65,14 +69,17 @@ record. Artist names, TikTok handles, the older localStorage submitter label,
 Discord identity, and request-body ownership fields do not authorize edits.
 Mutating browser requests require a matching Origin. Cookie-bearing snapshots
 are private/no-store and expose only that browser's safe titles, IDs, revisions
-and eligibility reasons. Public queue tracks, Deck, Archive and BNL projections
+and eligibility reasons, plus current featured credits and that owner's private
+submission note. Public queue tracks, Deck, Archive and BNL projections
 never contain the capability, selection lock, pending/retired upload URLs or
 payment records. Discord remains independent and default-off.
 
 Replacement preserves the entry ID, original accepted slot/time, lane/order,
-artist credit and corrections, submitter/contact/Discord references, notes,
-Priority/Signal Hold state and Stripe idempotency records. It changes title,
-source/provider metadata, duration and file fields. Existing duplicate checks,
+primary artist credit and corrections, submitter/contact/Discord references,
+Priority/Signal Hold state and Stripe idempotency records. The submitter may change
+title, features and the private host note. Optional media replacement also changes
+source/provider metadata, duration and file fields; details-only edits keep them
+and the original legal acceptance intact, without a new upload/provider lookup. Existing duplicate checks,
 Apple Music rejection, MP3/WAV/100MB/six-minute limits and legal acceptance
 apply. A replacement cannot start a payment or grant Priority.
 
@@ -92,7 +99,9 @@ never by the reused song ID. A late upload callback cannot overwrite the
 current source. Partial uploads remain under the existing Blob provider's
 multipart lifecycle.
 
-One `track_replaced` show-log event records each successful edit. Original
+A `track_replaced` show-log event records a media change; a
+`track_details_updated` event records a public title/credit change. Note-only
+edits produce no public event and no note content enters the Deck, Archive or BNL. Original
 submission events retain their original titles and the new event has the new
 title. Counts remain one accepted submission. Current queue/catalog readers
 see the latest song; existing BNL consumers can ignore the additive event type
@@ -112,11 +121,22 @@ The action is in **Your songs** above the queue, not on every public track card.
 Older submissions without the new ownership cookie cannot be claimed after
 deployment; public ETA over ten minutes does not override the safety guard.
 
-The current replacement form changes song title and media together. A title
-can be corrected by supplying the same link, but there is no separate
-submitter details-only editor for primary/featured credits or notes. Existing
-admin artist-credit corrections remain available. No new credit-editing
-authority is inferred from this report.
+The owner subsequently authorized featured-artist and note editing and merging
+PR451. **Edit / replace song** opens with **Keep current audio** selected.
+Title, featured artists/collaborators (200 characters, up to 20 names), and the
+private host note (500 characters) prefill from the original-browser read model.
+An empty optional field clears it; omitted API fields preserve it. Details-only
+saves require no link, file or repeated legal checkbox. Replacing media retains
+the existing upload/link validation and legal acceptance.
+
+Primary artist identity cannot be changed by this editor. Feature changes
+preserve existing primary/alias decisions and append to existing credit history.
+The edit revision prevents stale drafts from overwriting a newer saved version.
+Details and media saves share ownership,
+Origin, rehearsal access, final fenced checks, permanent cutoffs and Wheel holds.
+No draft or upload reserves the song. Failed/stale saves leave the accepted
+version in place. Public events preserve original submission titles and counts;
+note-only changes remain private even in the activity history.
 
 Show Management previously displayed a disabled new-session form with its own
 default prices above the current show's independently saved settings. It now
@@ -156,8 +176,11 @@ Use an isolated non-production store or the normal authorized private rehearsal
 for the following focused evidence, without mutating a live show for testing:
 
 1. Submit a new link from browser A behind at least three known four-minute
-   songs in the same lane; replace it while waiting. Capture the
-   same track ID/count and changed title/source. Browser B must have no edit
+   songs in the same lane. Edit title, features and host note with Keep current
+   audio, reload, then clear the optional fields and save. Capture the same
+   track ID/count, unchanged audio/duration/purchases, and the current private
+   note on Admin Queue Control. Separately replace media and confirm its source.
+   Public queue/Deck/Archive/BNL must never expose the note. Browser B must have no edit
    authority, including when using the same typed artist/handle.
 2. Verify the first three upcoming songs are unavailable. With three known
    durations totaling exactly 600 seconds ahead, verify replacement is closed;
@@ -173,8 +196,10 @@ for the following focused evidence, without mutating a live show for testing:
    eligible unselected waiting songs unlock.
 4. Verify Add another song still enters the existing intake and its normal
    limits apply; replacement does not change accepted count or payments.
-5. Check the Deck history shows original submission plus replacement, with one
-   submission count and no private fields. Keep upload URLs and ownership
+5. Check the Deck history shows original submission plus public details/media
+   changes, with one submission count. A note-only change must add no public
+   event. Open the song in two tabs, save in one and confirm the old
+   draft gets 409 without overwriting the saved version. Keep upload URLs and ownership
    proofs out of evidence shared publicly.
 
 Retain deployment URL/commit, session/track IDs, HTTP statuses, before/after

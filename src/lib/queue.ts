@@ -3469,9 +3469,9 @@ function replacementUnavailable(session: QueueSession, entry: QueueEntry): strin
   if (session.status === "archived" || session.broadcastPhase === "ended") return "This show has ended.";
   if (!session.queue.some(track => track.id === entry.id) || isTrackActiveForPlayback(session, entry.id)) return "This song is already staged, playing, or finished.";
   if (entry.replacementLockedAt || entry.lane === "wheel" || entry.wheelQueueOrderAt || entry.displacedFromNextInLineAt || replacementCutoffIds(session).has(entry.id)) return QUEUE_REPLACEMENT_CLOSED_MESSAGE;
-  if (entry.playedAt || entry.completedAt || entry.removedAt || queuePlaybackHasBegun(session.playbackDiagnostics, entry.id)) return "A song that has already entered playback cannot be replaced.";
-  if (isSimulationTrack(entry)) return "Simulation tracks cannot be replaced here.";
-  if (session.replacementWheelHold && (isWheelEligibleTrack(entry) || session.replacementWheelHold.trackIds.includes(entry.id))) return "Replacements are paused while the Wheel spins or awaits confirmation.";
+  if (entry.playedAt || entry.completedAt || entry.removedAt || queuePlaybackHasBegun(session.playbackDiagnostics, entry.id)) return "A song that has already entered playback cannot be edited or replaced.";
+  if (isSimulationTrack(entry)) return "Simulation tracks cannot be edited here.";
+  if (session.replacementWheelHold && (isWheelEligibleTrack(entry) || session.replacementWheelHold.trackIds.includes(entry.id))) return "Edits and replacements are paused while the Wheel spins or awaits confirmation.";
   return null;
 }
 
@@ -3486,12 +3486,12 @@ function replacementTarget(store: QueueStore, input: QueueReplacementRequest): {
   }
   const entry = submissionCheckEntries(session).find(track => track.id === input.trackId);
   if (!input.ownerHash || !/^[a-f0-9]{64}$/.test(input.ownerHash) || !entry?.submissionOwnerHash || entry.submissionOwnerHash !== input.ownerHash) {
-    throw new QueueReplacementError("replacement_unavailable", "This browser cannot replace that song. Use the original submission browser or contact the host.");
+    throw new QueueReplacementError("replacement_unavailable", "This browser cannot edit that song. Use the browser where you originally submitted it.");
   }
   const unavailable = replacementUnavailable(session, entry);
   if (unavailable) throw new QueueReplacementError("replacement_unavailable", unavailable);
   if (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0 || (entry.replacementRevision ?? 0) !== input.expectedRevision) {
-    throw new QueueReplacementError("replacement_changed", "This song changed. Refresh to review it before replacing it again.");
+    throw new QueueReplacementError("replacement_changed", "This song changed. Refresh to review it before editing it again.");
   }
   return { session, entry };
 }
@@ -3536,10 +3536,10 @@ export async function recordQueueReplacementUpload(input: { sessionId: string; t
   });
 }
 
-/** Changes only a waiting song's source/title; identity, credits, slot and purchases stay attached. */
-export async function replaceOwnRadioTrack(input: Parameters<typeof createQueueTrack>[0] & QueueReplacementRequest & { purpose: QueueSessionPurpose }): Promise<QueueEntry> {
+/** Edit a waiting song's details and optionally its media; primary identity, slot and purchases stay attached. */
+export async function replaceOwnRadioTrack(input: Parameters<typeof createQueueTrack>[0] & QueueReplacementRequest & { purpose: QueueSessionPurpose; detailsOnly?: boolean }): Promise<QueueEntry> {
   const before = await getQueueReplacementTarget(input);
-  const candidate = await createQueueTrack({ ...input,
+  const candidate = input.detailsOnly ? null : await createQueueTrack({ ...input,
     artist: before.submittedArtistName ?? before.artist,
     submitterArtistName: before.submitterArtistName,
     tiktokHandle: before.tiktokHandle ?? "",
@@ -3553,28 +3553,46 @@ export async function replaceOwnRadioTrack(input: Parameters<typeof createQueueT
     const { session, entry } = replacementTarget(store, input);
     if (session.purpose !== input.purpose) throw new QueueReplacementError("stale_session", "This session has changed. Refresh the queue.");
     const otherEntries = { ...session, queue: session.queue.filter(track => track.id !== entry.id) };
-    const duplicates = findDuplicateSubmissionReasons(otherEntries, candidate);
+    const duplicates = findDuplicateSubmissionReasons(otherEntries, candidate ?? { ...entry, title: input.title.trim(), submittedSongTitle: input.title.trim() });
     if (duplicates.length) throw new QueueSubmissionBlockedError("duplicate_transmission", duplicates);
-    const supersededUploads = [...(entry.supersededUploads ?? [])].filter(upload => upload.fileUrl !== candidate.fileUrl);
-    if (entry.fileUrl && entry.fileUrl !== candidate.fileUrl && !supersededUploads.some(upload => upload.fileUrl === entry.fileUrl)) {
+    const supersededUploads = [...(entry.supersededUploads ?? [])].filter(upload => !candidate || upload.fileUrl !== candidate.fileUrl);
+    if (candidate && entry.fileUrl && entry.fileUrl !== candidate.fileUrl && !supersededUploads.some(upload => upload.fileUrl === entry.fileUrl)) {
       supersededUploads.push({ fileUrl: entry.fileUrl });
+    }
+    const details: Partial<QueueEntry> = { title: input.title.trim(), submittedSongTitle: input.title.trim() };
+    if (input.note !== undefined) details.note = input.note?.trim() || null;
+    if (input.collaboratorNames !== undefined) {
+      const collaborators = collaboratorList(input.collaboratorNames ?? "");
+      const previous = normalizeArtistCredit(entry.artistCredit) ?? {
+        primary: entry.submittedArtistName ?? entry.artist, original: entry.submittedArtistName ?? entry.artist,
+        collaborators: collaboratorList(entry.collaboratorNames ?? ""), decision: "whole" as const, source: "submitter" as const,
+      };
+      // Retain admin primary/alias decisions and their history. Omitted or unchanged
+      // features cannot overwrite a correction; clearing the field is explicit.
+      if (JSON.stringify(collaborators) !== JSON.stringify(previous.collaborators)) {
+        details.collaboratorNames = collaborators.join(", ") || null;
+        details.artistCredit = { ...previous, collaborators };
+        details.artistCreditHistory = [...(entry.artistCreditHistory ?? []), { at: new Date().toISOString(), changeId: randomUUID(), credit: previous }];
+      }
     }
     // Whitelist changed fields. In-flight/confirmed Stripe records and routing metadata are never replaced.
     const updated = normalizeEntry({ ...entry,
-      title: candidate.title, submittedSongTitle: candidate.submittedSongTitle,
-      submittedAlbumName: null, link: candidate.link, sourceType: candidate.sourceType,
-      normalizedSourceKey: candidate.normalizedSourceKey, providerId: candidate.providerId,
-      sourceArtworkUrl: candidate.sourceArtworkUrl, detectedArtistName: candidate.detectedArtistName,
-      detectedSongTitle: candidate.detectedSongTitle, detectedAlbumName: candidate.detectedAlbumName,
-      providerTitle: candidate.providerTitle, providerArtistIdentities: candidate.providerArtistIdentities,
-      providerReleaseId: candidate.providerReleaseId, detectedDurationSeconds: candidate.detectedDurationSeconds,
-      estimatedDurationSeconds: candidate.estimatedDurationSeconds, durationIsEstimate: candidate.durationIsEstimate,
-      durationSource: candidate.durationSource, fileUrl: candidate.fileUrl, fileName: candidate.fileName,
-      fileSize: candidate.fileSize, mimeType: candidate.mimeType,
-      uploadedFileDeleteAfter: candidate.uploadedFileDeleteAfter, uploadedFileDeletedAt: null,
-      uploadedFileDeletionStatus: null, uploadedFileDeletionError: null, supersededUploads,
-      legalAcceptance: candidate.legalAcceptance, replacementRevision: (entry.replacementRevision ?? 0) + 1,
-      replacedAt: new Date().toISOString(),
+      ...(candidate ? {
+        submittedAlbumName: null, link: candidate.link, sourceType: candidate.sourceType,
+        normalizedSourceKey: candidate.normalizedSourceKey, providerId: candidate.providerId,
+        sourceArtworkUrl: candidate.sourceArtworkUrl, detectedArtistName: candidate.detectedArtistName,
+        detectedSongTitle: candidate.detectedSongTitle, detectedAlbumName: candidate.detectedAlbumName,
+        providerTitle: candidate.providerTitle, providerArtistIdentities: candidate.providerArtistIdentities,
+        providerReleaseId: candidate.providerReleaseId, detectedDurationSeconds: candidate.detectedDurationSeconds,
+        estimatedDurationSeconds: candidate.estimatedDurationSeconds, durationIsEstimate: candidate.durationIsEstimate,
+        durationSource: candidate.durationSource, fileUrl: candidate.fileUrl, fileName: candidate.fileName,
+        fileSize: candidate.fileSize, mimeType: candidate.mimeType,
+        uploadedFileDeleteAfter: candidate.uploadedFileDeleteAfter, uploadedFileDeletedAt: null,
+        uploadedFileDeletionStatus: null, uploadedFileDeletionError: null, supersededUploads,
+        legalAcceptance: candidate.legalAcceptance,
+        replacedAt: new Date().toISOString(),
+      } : {}),
+      ...details, replacementRevision: (entry.replacementRevision ?? 0) + 1,
     });
     session.queue = session.queue.map(track => track.id === entry.id ? updated : track);
     await writeStore(replaceSession(store, session));
@@ -3587,6 +3605,7 @@ function ownedQueueTracks(session: QueueSession, ownerHash?: string | null): imp
   return submissionCheckEntries(session).filter(entry => entry.submissionOwnerHash === ownerHash && !isSimulationTrack(entry)).map(entry => {
     const unavailableReason = replacementUnavailable(session, entry);
     return { id: entry.id, artist: entry.submittedArtistName ?? entry.artist, title: entry.submittedSongTitle ?? entry.title,
+      collaboratorNames: entry.artistCredit?.collaborators.join(", ") ?? entry.collaboratorNames ?? "", note: entry.note ?? "",
       replacementRevision: entry.replacementRevision ?? 0, canReplace: !unavailableReason, unavailableReason };
   });
 }
@@ -4129,7 +4148,11 @@ function queueShowLogMutationEvents(
       });
     }
     if (before && (before.entry.replacementRevision ?? 0) < (located.entry.replacementRevision ?? 0)) {
-      events = appendQueueShowLogEvent(events, { eventType: "track_replaced", occurredAt: located.entry.replacedAt ?? occurredAt, trackEntry: located.entry });
+      const mediaChanged = before.entry.link !== located.entry.link || before.entry.fileUrl !== located.entry.fileUrl || before.entry.sourceType !== located.entry.sourceType;
+      const detailsChanged = before.entry.title !== located.entry.title || before.entry.submittedSongTitle !== located.entry.submittedSongTitle
+        || before.entry.collaboratorNames !== located.entry.collaboratorNames || JSON.stringify(before.entry.artistCredit) !== JSON.stringify(located.entry.artistCredit);
+      // Host-note-only edits stay private, including their occurrence.
+      if (mediaChanged || detailsChanged) events = appendQueueShowLogEvent(events, { eventType: mediaChanged ? "track_replaced" : "track_details_updated", occurredAt, trackEntry: located.entry });
     }
     if (before?.location !== "loaded" && located.location === "loaded") {
       events = appendQueueShowLogEvent(events, {
@@ -4327,7 +4350,7 @@ export function toPublicQueueTrack(entry: QueueEntry): QueuePublicTrack {
     submittedArtistName: normalized.submittedArtistName ?? normalized.artist,
     submittedSongTitle: normalized.submittedSongTitle ?? normalized.title,
     submittedAlbumName: normalized.submittedAlbumName ?? null,
-    collaboratorNames: normalized.collaboratorNames ?? null,
+    collaboratorNames: normalized.artistCredit?.collaborators.join(", ") ?? normalized.collaboratorNames ?? null,
     detectedArtistName: isUpload ? null : normalized.detectedArtistName ?? null,
     detectedSongTitle: isUpload ? null : normalized.detectedSongTitle ?? null,
     detectedAlbumName: isUpload ? null : normalized.detectedAlbumName ?? null,
@@ -4420,7 +4443,7 @@ interface QueuePublicStatsSession {
 }
 
 const PUBLIC_HISTORY_EVENT_TYPES = new Set<QueuePublicHistoryEventType>([
-  "track_replaced",  "session_created",
+  "track_replaced", "track_details_updated", "session_created",
   "submissions_opened",
   "submissions_closed",
   "broadcast_started",
@@ -4621,6 +4644,7 @@ function publicHistoryEventCopy(
   if (eventType === "submissions_closed") return { headline: "Submissions closed", detail: "The intake window is closed." };
   if (eventType === "broadcast_started") return { headline: "Broadcast started", detail: "The live BARCODE Radio show is underway." };
   if (eventType === "track_replaced") return { headline: "Waiting song replaced", detail: trackText };
+  if (eventType === "track_details_updated") return { headline: "Song details updated", detail: trackText };
   if (eventType === "track_submitted") return { headline: "Submission received", detail: trackText };
   if (eventType === "track_loaded") return { headline: "Track loaded", detail: trackText };
   if (eventType === "track_play_started") return { headline: "Now playing", detail: trackText };
@@ -7240,7 +7264,7 @@ export async function correctQueueArtistCredit(input: { revision: number; sessio
         const previous = normalizeArtistCredit(item.artistCredit);
         const next = input.undo ? normalizeArtistCredit(history.at(-1)?.credit) : { ...correction!, original: item.artistCredit?.original ?? item.submittedArtistName ?? item.artist };
         history.push({ at: now, changeId, credit: previous });
-        return { ...item, artistCredit: next, artistCreditHistory: history };
+        return { ...item, artistCredit: next, artistCreditHistory: history, replacementRevision: (item.replacementRevision ?? 0) + 1 };
       };
       session.queue = session.queue.map(patch);
       session.completed = session.completed.map(patch);

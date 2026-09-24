@@ -79,6 +79,7 @@ function loadQueueRoute(snapshot) {
       isAppleMusicUrl: () => false,
     };
     if (request === "@/lib/discord-connection") return { requestDiscordConnectionId: async () => { assert.fail("queue GET must never read private Discord connection storage"); } };
+    if (request === "@/lib/artist-credits") return { collaboratorList: () => { assert.fail("queue GET must not validate submitted feature edits"); } };
     return originalLoad.call(this, request, parent, isMain);
   };
   try {

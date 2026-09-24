@@ -63,11 +63,40 @@ class CaptureTests(unittest.TestCase):
             self.assertNotIn('user_id', discord[0])
             self.assertFalse(result['journalRuns']['available'])
 
-    def test_limits_are_reported_and_missing_public_flag_fails_closed(self):
+    def test_current_conversation_schema_public_policy_and_window(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'current.sqlite'
+            with sqlite3.connect(path) as conn:
+                # Current BNL schema: no public_usable or visibility columns.
+                conn.execute('CREATE TABLE conversations(id INTEGER PRIMARY KEY, guild_id INTEGER, user_id INTEGER, user_name TEXT, role TEXT, content TEXT, channel_id INTEGER, channel_name TEXT, channel_policy TEXT, timestamp TEXT, message_id INTEGER)')
+                base = [1, 1, 456, 'Fixture Artist', 'user', 'public words', 123, 'public-stage', 'public_home', '2026-09-26T02:00:00Z', 1001]
+                rows = [base]
+                changes = [
+                    {8: 'public_context', 5: 'public context'},
+                    {8: 'public_selective', 5: 'public selective'},
+                    {8: 'sealed_test', 5: 'sealed words'},
+                    {8: 'internal_controlled'}, {8: 'unknown'}, {8: None},
+                    {1: 2, 5: 'other guild'}, {4: 'system'},
+                    {9: '2026-09-25T18:59:59Z'}, {9: '2026-09-26T09:00:00Z'},
+                ]
+                for index, changeset in enumerate(changes, 2):
+                    row = base.copy(); row[0] = index
+                    for key, value in changeset.items(): row[key] = value
+                    rows.append(row)
+                conn.executemany('INSERT INTO conversations VALUES(?,?,?,?,?,?,?,?,?,?,?)', rows)
+            before = hashlib.sha256(path.read_bytes()).hexdigest()
+            start, end = capture.window('2026-09-25', datetime(2026, 9, 26, 9, tzinfo=timezone.utc))
+            result = capture.db_capture(path, 1, start, end, '2026-09-25', 50)['publicDiscord']
+            self.assertTrue(result['available'])
+            self.assertEqual([row['text'] for row in result['rows']], ['public words', 'public context', 'public selective'])
+            self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), before)
+            self.assertNotIn('Fixture Artist', json.dumps(result))
+
+    def test_limits_are_reported_and_missing_channel_policy_fails_closed(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'fixture.sqlite'
             with sqlite3.connect(path) as conn:
-                conn.execute('CREATE TABLE conversations(id INTEGER, guild_id INTEGER, timestamp TEXT, role TEXT, channel_id INTEGER, user_id INTEGER, content TEXT, channel_policy TEXT)')
+                conn.execute('CREATE TABLE conversations(id INTEGER, guild_id INTEGER, timestamp TEXT, role TEXT, channel_id INTEGER, user_id INTEGER, content TEXT, public_usable INTEGER)')
                 conn.execute('CREATE TABLE bnl_journal_source_events(event_seq INTEGER, source_key TEXT, occurred_at_ms INTEGER, subject_ref TEXT, raw_text TEXT, guild_id INTEGER, source_kind TEXT, public_usable INTEGER)')
                 stamp = int(datetime(2026, 9, 26, 2, tzinfo=timezone.utc).timestamp()*1000)
                 conn.executemany('INSERT INTO bnl_journal_source_events VALUES(?,?,?,?,?,?,?,?)', [(i,str(i),stamp,'subject','x'*7000,1,'tiktok_live_chat',1) for i in range(3)])

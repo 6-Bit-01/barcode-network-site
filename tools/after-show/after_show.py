@@ -229,7 +229,9 @@ def message(cfg: dict, manifest: dict, files: dict[str, bytes]) -> bytes:
     result["Date"] = format_datetime(utc(manifest["collectedAt"]))
     result.set_content(f"Private BARCODE evidence packet. Status: {manifest['status']}.\nPacket: {manifest['packetId']}\nRead all three text attachments and coverage markers. No recording is attached.\nThis packet does not establish a feature or show acceptance pass.\n")
     for name, data in files.items():
-        result.add_attachment(data.decode("utf-8"), subtype="plain", charset="utf-8", filename=name, cte="base64")
+        # Pass bytes so SMTP policy cannot rewrite LF to CRLF inside the payload.
+        # Keep text/plain UTF-8 so the receiving attachment reader can extract it.
+        result.add_attachment(data, maintype="text", subtype="plain", params={"charset": "utf-8"}, filename=name, cte="base64")
     return result.as_bytes()
 
 

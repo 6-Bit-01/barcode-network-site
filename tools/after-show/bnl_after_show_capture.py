@@ -140,10 +140,14 @@ def db_capture(db_path: Path, guild: int, start: datetime, end: datetime, show_d
         fields = ["id", "timestamp", "role", "channel_id", "user_id", "content"]
         if "message_id" in cols:
             fields.append("message_id")
-        where = "guild_id=? AND public_usable=1 AND channel_policy IN (?,?,?) AND role IN ('user','assistant') AND julianday(timestamp)>=julianday(?) AND julianday(timestamp)<julianday(?)"
+        # The live conversations table uses channel_policy. Like BNL's existing
+        # Journal reader, honor public_usable when present without requiring it.
+        where = "guild_id=? AND channel_policy IN (?,?,?) AND role IN ('user','assistant') AND julianday(timestamp)>=julianday(?) AND julianday(timestamp)<julianday(?)"
+        if "public_usable" in cols:
+            where += " AND public_usable=1"
         if "visibility" in cols:
             where += " AND visibility IN ('public','public_safe')"
-        rows = read("publicDiscord", "conversations", fields + ["guild_id", "public_usable", "channel_policy"],
+        rows = read("publicDiscord", "conversations", fields + ["guild_id", "channel_policy"],
                     ",".join(fields), where, (guild, *PUBLIC_POLICIES, start.isoformat(), end.isoformat()), "timestamp,id")
         for row in rows:
             row["speakerKey"] = speaker_key("discord_user:" + str(row.pop("user_id")))

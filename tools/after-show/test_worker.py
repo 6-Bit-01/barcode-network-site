@@ -50,10 +50,15 @@ class WorkerTests(unittest.TestCase):
         result = self.run_worker()
         self.assertEqual(result["results"][0]["status"], "smtp_accepted")
         message = BytesParser(policy=policy.default).parsebytes(self.sent[0])
-        parts = {part.get_filename(): part.get_payload(decode=True).decode().replace('\r\n', '\n').encode() for part in message.iter_attachments()}
+        attachments = list(message.iter_attachments())
+        for part in attachments:
+            self.assertEqual(part.get_content_type(), "text/plain")
+            self.assertEqual(part.get_content_charset(), "utf-8")
+        parts = {part.get_filename(): part.get_payload(decode=True) for part in attachments}
         self.assertEqual(len(parts), 3)
         manifest = json.loads(parts["manifest.txt"])
         for name, details in manifest["files"].items():
+            self.assertEqual(len(parts[name]), details["bytes"])
             self.assertEqual(hashlib.sha256(parts[name]).hexdigest(), details["sha256"])
         self.assertEqual(manifest["show"]["showDate"], "2026-09-25")
         self.assertFalse(manifest["acceptancePassed"])

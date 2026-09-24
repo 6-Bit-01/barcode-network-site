@@ -631,7 +631,7 @@ export function PublicQueueSession({ sessionId, snapshotEndpoint = "/api/queue" 
 
         <SessionPhasePanel snapshot={snapshot} timingSummary={timingSummary} submissionsOpen={isOpen} canSubmit={canSubmitFromHud} isBroadcastActive={isBroadcastActive} />
 
-        <QueueSongManager sessionId={sessionId} tracks={snapshot?.ownedTracks ?? []} canAdd={canSubmitFromHud} onAdd={openIntakeCorridor} onRefresh={load} />
+        <QueueSongManager sessionId={sessionId} tracks={snapshot?.ownedTracks ?? []} editingEnabled={snapshot?.submitterEditingEnabled === true} canAdd={canSubmitFromHud} onAdd={openIntakeCorridor} onRefresh={load} />
 
         <SubmissionActivity items={activity} />
 

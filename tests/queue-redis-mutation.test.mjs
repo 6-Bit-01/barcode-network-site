@@ -584,6 +584,8 @@ function seedDurableCurrentSnapshot(state) {
 }
 
 test("submitter edit allowance commits atomically and survives another worker after a rejected write", async () => {
+  const previousEditingGate = process.env.BARCODE_QUEUE_SUBMITTER_EDITING_ENABLED;
+  process.env.BARCODE_QUEUE_SUBMITTER_EDITING_ENABLED = "true";
   resetQueueTestState();
   delete process.env.BLOB_READ_WRITE_TOKEN;
   delete process.env.QUEUE_REDIS_REST_URL;
@@ -613,6 +615,8 @@ test("submitter edit allowance commits atomically and survives another worker af
     await assert.rejects(() => third.replaceOwnRadioTrack({ ...input, expectedRevision: 4, title: "Second save" }), /edit used/i);
   } finally {
     FakeRedis.failNextCommit = false;
+    if (previousEditingGate === undefined) delete process.env.BARCODE_QUEUE_SUBMITTER_EDITING_ENABLED;
+    else process.env.BARCODE_QUEUE_SUBMITTER_EDITING_ENABLED = previousEditingGate;
     delete process.env.UPSTASH_REDIS_REST_URL;
     delete process.env.UPSTASH_REDIS_REST_TOKEN;
   }

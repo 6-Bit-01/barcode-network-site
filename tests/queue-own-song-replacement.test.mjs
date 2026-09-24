@@ -10,6 +10,7 @@ import ts from "typescript";
 // Real queue/routes/ceremony, isolated in memory. Never use live services.
 for (const key of ["UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN", "QUEUE_REDIS_REST_URL", "QUEUE_REDIS_REST_TOKEN", "BLOB_READ_WRITE_TOKEN", "VERCEL"]) delete process.env[key];
 process.env.BARCODE_QUEUE_PRODUCTION_ENABLED = "true";
+process.env.BARCODE_QUEUE_SUBMITTER_EDITING_ENABLED = "true";
 const root = path.resolve(import.meta.dirname, "..");
 const resolve = Module._resolveFilename;
 Module._resolveFilename = function (request, parent, ...args) {
@@ -83,6 +84,89 @@ async function at(now, run) {
   };
   try { return await run(); } finally { global.Date = RealDate; }
 }
+
+test("submitter editing defaults off independently of native queue access", () => {
+  const capability = require("../src/lib/queue-production.ts");
+  for (const value of [undefined, "false", "TRUE", "1", " true "]) {
+    const env = { BARCODE_QUEUE_PRODUCTION_ENABLED: "true", ...(value === undefined ? {} : { BARCODE_QUEUE_SUBMITTER_EDITING_ENABLED: value }) };
+    assert.equal(capability.isQueueSubmitterEditingEnabled(env), false);
+    assert.equal(capability.resolveQueueOperationalAccess({}, env).authorized, true);
+  }
+  assert.equal(capability.isQueueSubmitterEditingEnabled({ BARCODE_QUEUE_SUBMITTER_EDITING_ENABLED: "true" }), true);
+});
+
+test("disabled editing rejects every save without consuming an edit or changing intake's open/closed state", async () => {
+  const sessionId = await fresh();
+  const track = await add();
+  const before = await queue.getRadioQueueState();
+  delete process.env.BARCODE_QUEUE_SUBMITTER_EDITING_ENABLED;
+  try {
+    const response = await route.GET(new Request(`https://example.test/api/queue?sessionId=${sessionId}`, { headers: { cookie } }));
+    const snapshot = await response.json();
+    assert.equal(snapshot.submitterEditingEnabled, false);
+    assert.equal(snapshot.ownedTracks.find(row => row.id === track.id).canReplace, false);
+    assert.equal(snapshot.status.isOpen, true);
+    for (const mode of ["details", "link", "upload"]) {
+      const denied = await replace(sessionId, track, { mode, submitterEditingEnabled: true });
+      assert.equal(denied.response.status, 409, mode);
+      assert.equal(denied.body.code, "submitter_editing_disabled");
+    }
+    await assert.rejects(() => queue.replaceOwnRadioTrack({ sessionId, trackId: track.id, ownerHash, expectedRevision: 0, purpose: "live_broadcast", artist: track.artist, title: "Bypass attempt", detailsOnly: true }), /temporarily unavailable/);
+    assert.equal((await queue.getRadioQueueState()).revision, before.revision);
+    assert.equal((await stored(track.id)).title, track.title);
+    assert.notEqual((await stored(track.id)).submitterEditUsed, true);
+    const intake = () => route.POST(request({ sessionId, mode: "link", artist: `Intake ${++seq}`, title: `Song ${seq}`, tiktokHandle: `@intake${seq}`, link: `https://example.test/intake-${seq}`, ...legal }));
+    assert.equal((await intake()).status, 201, "existing open intake still accepts a new song");
+    await queue.setQueueOpen(false);
+    assert.equal((await intake()).status, 409, "existing closed intake still rejects a new song");
+    assert.equal((await queue.getPublicQueueSnapshot(sessionId)).status.isOpen, false);
+  } finally { process.env.BARCODE_QUEUE_SUBMITTER_EDITING_ENABLED = "true"; }
+  assert.equal(await editable(sessionId, track), true, "the pause did not consume the allowance");
+});
+
+test("disabling editing during provider lookup prevents the final replacement commit", async () => {
+  const sessionId = await fresh();
+  const track = await add();
+  let release;
+  let entered;
+  const blocked = new Promise(resolve => { release = resolve; });
+  const started = new Promise(resolve => { entered = resolve; });
+  const oldFetch = global.fetch;
+  global.fetch = async () => { entered(); await blocked; return new Response("{}", { headers: { "content-type": "application/json" } }); };
+  try {
+    const pending = replace(sessionId, track, { link: "https://soundcloud.com/fixture/paused-edit" });
+    await started;
+    delete process.env.BARCODE_QUEUE_SUBMITTER_EDITING_ENABLED;
+    release();
+    const result = await pending;
+    assert.equal(result.response.status, 409);
+    assert.equal(result.body.code, "submitter_editing_disabled");
+    assert.equal((await stored(track.id)).title, track.title);
+    assert.notEqual((await stored(track.id)).submitterEditUsed, true);
+  } finally { release(); global.fetch = oldFetch; process.env.BARCODE_QUEUE_SUBMITTER_EDITING_ENABLED = "true"; }
+});
+
+test("the song manager hides editing unless the server enables it and preserves Add another's existing state", () => {
+  const filename = path.join(root, "src/components/QueueSongManager.tsx");
+  const loadedModule = { exports: {} };
+  const localRequire = createRequire(filename);
+  const source = ts.transpileModule(fs.readFileSync(filename, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true, jsx: ts.JsxEmit.ReactJSX } }).outputText;
+  vm.runInNewContext(source, { module: loadedModule, exports: loadedModule.exports, require: localRequire });
+  const React = require("react");
+  const { renderToStaticMarkup } = require("react-dom/server");
+  const props = { sessionId: "fixture", tracks: [{ id: "owned", artist: "Artist", title: "Song", canReplace: true, editUsed: false, replacementRevision: 0, collaboratorNames: "", note: "" }], onAdd() {}, onRefresh: async () => {} };
+  for (const editingEnabled of [undefined, false]) {
+    for (const canAdd of [false, true]) {
+      const html = renderToStaticMarkup(React.createElement(loadedModule.exports.QueueSongManager, { ...props, editingEnabled, canAdd }));
+      assert.match(html, /Editing and replacement are temporarily unavailable/);
+      assert.doesNotMatch(html, /Edit \/ replace song|1 edit available|Save changes|<form/);
+      assert.match(html, /Add another song/);
+      assert.equal(/<button[^>]*disabled=""/.test(html), !canAdd);
+    }
+  }
+  const enabled = renderToStaticMarkup(React.createElement(loadedModule.exports.QueueSongManager, { ...props, editingEnabled: true, canAdd: true }));
+  assert.match(enabled, /Edit \/ replace song/);
+});
 
 test("intake issues a strong private cookie; a typed identity or old browser label cannot authorize edits", async () => {
   const sessionId = await fresh();
@@ -433,8 +517,8 @@ test("failed Wheel publishing or cancellation keeps edits paused; successful hos
   assert.equal(await editable(sessionId, track), true);
 });
 
-test("upload authorization checks ownership and selection; signed completion retains an upload rejected by later selection", async () => {
-  for (const cutoff of ["selection", "near_front"]) {
+test("upload authorization checks ownership, selection and the editing gate; signed completion retains rejected uploads", async () => {
+  for (const cutoff of ["selection", "near_front", "editing_disabled"]) {
     const sessionId = await fresh();
     const track = await add();
     let callbacks;
@@ -451,15 +535,25 @@ test("upload authorization checks ownership and selection; signed completion ret
     await assert.rejects(() => callbacks.onBeforeGenerateToken("barcode-radio-queue/late.mp3", payload), /browser cannot edit/);
     await loadedModule.exports.POST(request({}));
     if (cutoff === "selection") await pullTarget(track);
-    else await queue.updateRadioTrack((await queue.getRadioQueueState()).queue[0].id, "remove");
-    await assert.rejects(() => callbacks.onBeforeGenerateToken("barcode-radio-queue/late.mp3", payload), /staged|10-minute/);
-    const url = "https://fixture.private.blob.vercel-storage.com/barcode-radio-queue/late.mp3";
-    assert.equal((await replace(sessionId, track, { mode: "upload", uploadedBlobUrl: url, uploadOriginalName: "late.mp3", fileSize: 100, mimeType: "audio/mpeg", detectedDurationSeconds: 120 })).response.status, 409);
-    await callbacks.onUploadCompleted({ blob: { url }, tokenPayload });
-    assert.deepEqual((await stored(track.id)).supersededUploads, [{ fileUrl: url }]);
-    assert.equal((await stored(track.id)).fileUrl ?? null, null);
-    await callbacks.onUploadCompleted({ blob: { url }, tokenPayload });
-    assert.equal((await stored(track.id)).supersededUploads.length, 1);
+    else if (cutoff === "near_front") await queue.updateRadioTrack((await queue.getRadioQueueState()).queue[0].id, "remove");
+    else delete process.env.BARCODE_QUEUE_SUBMITTER_EDITING_ENABLED;
+    try {
+      await assert.rejects(() => callbacks.onBeforeGenerateToken("barcode-radio-queue/late.mp3", payload), /staged|10-minute|temporarily unavailable/);
+      if (cutoff === "editing_disabled") {
+        const intakePayload = JSON.parse(payload);
+        delete intakePayload.replaceTrackId;
+        const intake = await callbacks.onBeforeGenerateToken("barcode-radio-queue/new.mp3", JSON.stringify(intakePayload));
+        assert.equal(JSON.parse(intake.tokenPayload).replaceTrackId, undefined, "ordinary upload authorization follows the existing intake setting");
+      }
+      const url = "https://fixture.private.blob.vercel-storage.com/barcode-radio-queue/late.mp3";
+      assert.equal((await replace(sessionId, track, { mode: "upload", uploadedBlobUrl: url, uploadOriginalName: "late.mp3", fileSize: 100, mimeType: "audio/mpeg", detectedDurationSeconds: 120 })).response.status, 409);
+      await callbacks.onUploadCompleted({ blob: { url }, tokenPayload });
+      assert.deepEqual((await stored(track.id)).supersededUploads, [{ fileUrl: url }]);
+      assert.equal((await stored(track.id)).fileUrl ?? null, null);
+      await callbacks.onUploadCompleted({ blob: { url }, tokenPayload });
+      assert.equal((await stored(track.id)).supersededUploads.length, 1);
+      assert.notEqual((await stored(track.id)).submitterEditUsed, true);
+    } finally { process.env.BARCODE_QUEUE_SUBMITTER_EDITING_ENABLED = "true"; }
   }
 });
 

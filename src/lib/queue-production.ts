@@ -1,6 +1,12 @@
 export const QUEUE_PRODUCTION_ENV = "BARCODE_QUEUE_PRODUCTION_ENABLED";
 export const QUEUE_OPERATIONAL_UNAVAILABLE_CODE = "queue_production_disabled";
 export const QUEUE_OPERATIONAL_UNAVAILABLE_MESSAGE = "The native BARCODE Radio queue is not available.";
+export const QUEUE_SUBMITTER_EDITING_DISABLED_MESSAGE = "Song editing and replacement are temporarily unavailable.";
+
+/** Separate from queue intake and the native queue production capability. */
+export function isQueueSubmitterEditingEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.BARCODE_QUEUE_SUBMITTER_EDITING_ENABLED === "true";
+}
 
 export type QueueOperationalAuthority = "production" | "admin" | "rehearsal" | null;
 

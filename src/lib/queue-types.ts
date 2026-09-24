@@ -33,6 +33,8 @@ export type QueueShowLogEventType =
   | "submissions_closed"
   | "broadcast_started"
   | "track_submitted"
+  | "track_replaced"
+  | "track_details_updated"
   | "track_loaded"
   | "track_play_started"
   | "track_paused"
@@ -437,6 +439,13 @@ export interface QueueEntry {
   normalizedTikTokHandle?: string;
   contactEmail?: string | null;
   submitterToken?: string | null;
+  /** Private browser capability hash; never accepted from a request body. */
+  submissionOwnerHash?: string | null;
+  replacementRevision?: number;
+  /** Near-playback or selection cutoff; permanent after returns/displacement. */
+  replacementLockedAt?: string | null;
+  replacedAt?: string | null;
+  supersededUploads?: Array<{ fileUrl: string; deletedAt?: string | null; deletionError?: string | null }>;
   /** Private, revocable website-auth reference; never artist ownership or public output. */
   discordConnectionId?: string | null;
   normalizedSourceKey?: string | null;
@@ -597,6 +606,8 @@ export interface QueueHistoricalRecoveryProvenance {
 }
 
 export interface QueueSession extends QueueSessionSummary {
+  /** Private, fail-closed edit hold while the existing Wheel ceremony resolves. */
+  replacementWheelHold?: { spinKey: string; trackIds: string[] } | null;
   queue: QueueEntry[];
   spotlight: QueueEntry[];
   completed: QueueEntry[];
@@ -662,6 +673,8 @@ export interface QueuePublicSubmitterStatus {
 
 export interface QueuePublicSnapshot {
   revision: number;
+  /** Included only for the requesting browser's verified queue cookie. */
+  ownedTracks?: QueueOwnedTrack[];
   sessionActive?: boolean;
   suppressPublicLiveStatus?: boolean;
   session: Pick<QueueSessionSummary, "sessionId" | "title" | "showDate" | "status" | "purpose" | "description" | "completedCount" | "completedRuntimeSeconds" | "activeCount" | "acceptedCount" | "submissionClosureReason" | "removedCount" | "submissionCooldownSeconds" | "queueOpen" | "showStarted" | "preShowEndsAt" | "broadcastPhase" | "broadcastStartedAt" | "nextInLineTrackId" | "loadedTrackId" | "wheelSpinsOwed" | "priorityUpgradesEnabled" | "priorityUpgradeLabel" | "priorityUpgradeInstructions" | "priorityUpgradePriceCents" | "priorityUpgradeCurrency" | "priorityUpgradePaymentsEnabled" | "signalHoldEnabled" | "signalHoldLabel" | "signalHoldInstructions" | "signalHoldPriceCents" | "signalHoldCurrency" | "signalHoldPaymentsEnabled" | "sponsorBreakSeconds" | "sponsorBreakMode" | "sponsorBreakStatus" | "sponsorBreakStartedAt" | "sponsorBreakCompletedAt" | "sponsorBreakCompletedAfterPlayableCount" | "sponsorBreakDueAfterPlayableCount" | "sponsorBreakManualNote"> | null;
@@ -673,6 +686,22 @@ export interface QueuePublicSnapshot {
   submitterStatus?: QueuePublicSubmitterStatus | null;
   playbackTiming?: QueuePlaybackTiming | null;
   wheelTiming?: QueueWheelTiming | null;
+}
+
+export const QUEUE_REPLACEMENT_CUTOFF_SECONDS = 10 * 60;
+export const QUEUE_REPLACEMENT_FRONT_TRACKS = 3;
+export const QUEUE_REPLACEMENT_CLOSED_MESSAGE = "Editing and replacement are closed once a song reaches the front or the 10-minute safety window, or is selected for Next in Line, Now Playing or the Wheel. Moving back does not reopen them.";
+
+export interface QueueOwnedTrack {
+  id: string;
+  artist: string;
+  title: string;
+  collaboratorNames: string;
+  /** Original-browser response only. Never include in public queue/Deck/BNL projections. */
+  note: string;
+  replacementRevision: number;
+  canReplace: boolean;
+  unavailableReason: string | null;
 }
 
 export interface QueuePublicStatsCounts {
@@ -757,6 +786,8 @@ export type QueuePublicHistoryEventType =
   | "submissions_closed"
   | "broadcast_started"
   | "track_submitted"
+  | "track_replaced"
+  | "track_details_updated"
   | "track_loaded"
   | "track_play_started"
   | "track_paused"

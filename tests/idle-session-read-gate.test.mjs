@@ -43,6 +43,10 @@ function loadQueueRoute(snapshot) {
       toPublicQueueTrack: (value) => value,
     };
     if (request === "@/lib/auth") return { verifyAdminRequest: async () => false };
+    if (request === "@/lib/queue-submitter-auth") return {
+      queueOwnerHash: () => null,
+      queueSubmissionOwner: () => ({ hash: "fixture", attach: response => response }),
+    };
     if (request === "@/lib/queue-rehearsal-access") return {
       requestHasRehearsalQueueAccess: async () => false,
       requestRehearsalQueueToken: () => "",
@@ -75,6 +79,7 @@ function loadQueueRoute(snapshot) {
       isAppleMusicUrl: () => false,
     };
     if (request === "@/lib/discord-connection") return { requestDiscordConnectionId: async () => { assert.fail("queue GET must never read private Discord connection storage"); } };
+    if (request === "@/lib/artist-credits") return { collaboratorList: () => { assert.fail("queue GET must not validate submitted feature edits"); } };
     return originalLoad.call(this, request, parent, isMain);
   };
   try {

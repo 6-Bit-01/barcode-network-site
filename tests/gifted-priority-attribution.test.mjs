@@ -36,9 +36,11 @@ test("gifted Priority checkout captures only the explicit public name and binds 
 
 test("direct Priority submission carries self-ownership and checkout-resume ownership", () => {
   const form = source("src/components/RadioQueueForm.tsx");
+  const checkout = source("src/lib/queue-submission-checkout.ts");
 
-  assert.match(form, /getOrCreatePriorityCheckoutOwnerToken\(checkoutSessionId, trackId\)/);
-  assert.match(form, /JSON\.stringify\(\{ trackId, sessionId: checkoutSessionId, submitterToken, checkoutOwnerToken,/);
+  assert.match(form, /startQueueSubmissionCheckout\(\{ choice: selectedRoute, trackId: submitted\.id, sessionId: latestSessionId, submitterToken \}\)/);
+  assert.match(checkout, /getOrCreatePriorityCheckoutOwnerToken\(sessionId, trackId\)/);
+  assert.match(checkout, /JSON\.stringify\(\{ sessionId, trackId, submitterToken, checkoutOwnerToken,/);
 });
 
 test("confirmed own and gifted purchases use one safe display rule across queue and host surfaces but stay excluded from BNL", () => {

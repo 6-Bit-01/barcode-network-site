@@ -181,13 +181,15 @@ export class VideoReceiverPreparation {
       const token = this.token;
       this.inFlight = true;
       this.attempts++;
-      void acknowledge(token).then((ready) => { if (ready && this.token === token) this.phase = "ready"; }).catch(() => undefined).finally(() => { if (this.token === token) this.inFlight = false; });
+      void acknowledge(token).then((ready) => { if (ready && this.token === token && this.phase === "held") this.phase = "ready"; }).catch(() => undefined).finally(() => { if (this.token === token) this.inFlight = false; });
     }
     return true;
   }
 
   onState(state: number, hold: (seconds: number) => void) {
-    if (this.phase === "warming" && state === 1) { this.phase = "pausing"; hold(this.position); }
+    // A provider can emit playing again after its first pause/readiness receipt.
+    // Keep every active preparation held until a scheduled packet releases it.
+    if (this.phase !== null && state === 1) { this.phase = "pausing"; hold(this.position); }
     else if (this.phase === "pausing" && state === 2) this.phase = "held";
   }
 

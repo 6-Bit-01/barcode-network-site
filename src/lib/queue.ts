@@ -23,15 +23,18 @@ import {
   queuePlaybackOutcomeFields,
   queuePlaybackProviderForSourceType,
   type QueuePlaybackEndpointSnapshot,
+  MAX_QUEUE_PLAYBACK_EVENTS,
 } from "./queue-playback-lifecycle";
 import {
   appendQueueShowLogEvents,
   normalizeQueueShowLog,
   QUEUE_SHOW_LOG_SCHEMA_VERSION,
+  MAX_QUEUE_SHOW_LOG_EVENTS,
 } from "./queue-show-log";
 import type { QueueShowLogEventInput } from "./queue-show-log";
 import { isQueueProductionEnabled, isQueueSubmitterEditingEnabled, QUEUE_SUBMITTER_EDITING_DISABLED_MESSAGE } from "./queue-production";
 import { buildQueueShowReport } from "./queue-show-report";
+import { buildQueuePlaybackDiagnosticExport, MAX_DIAGNOSTIC_TRACKS } from "./queue-playback-diagnostics";
 import type { QueueShowReport } from "./queue-show-report";
 import { SPONSOR_BREAK_DURATION_SECONDS } from "./sponsor-break-contract";
 import { parseIso8601DurationToSeconds, parseSpotifyTrackId, parseYouTubeVideoId as parseTrackDurationYouTubeVideoId } from "./track-duration";
@@ -6117,6 +6120,67 @@ function queueSessionShowLogFromStore(store: QueueStore, sessionId?: string): Qu
 
 export async function getQueueSessionShowLog(sessionId?: string): Promise<QueueSessionShowLogExport> {
   return queueSessionShowLogFromStore(await readStore(), sessionId);
+}
+
+/** Owner evidence only. One read snapshot, no live runtime or queue mutation. */
+export async function getAfterShowEvidence(sessionId?: string) {
+  const store = await readStore();
+  const eligible = store.sessions.map(normalizeSession).filter((session) =>
+    session.status === "archived" && session.purpose === "live_broadcast"
+    && queueSessionBnlPublicationAccess(session).publicUse
+    && session.showDate >= QUEUE_PUBLIC_HISTORY_COVERAGE_STARTED_AT
+    && Boolean(session.broadcastStartedAt && Number.isFinite(Date.parse(session.broadcastStartedAt))),
+  );
+  const descriptor = (session: QueueSession) => {
+    const archived = normalizeQueueShowLog(session.showLog).filter((event) => event.eventType === "session_archived").at(-1);
+    return {
+      sessionId: session.sessionId, showDate: session.showDate,
+      startedAt: session.broadcastStartedAt!,
+      endedAt: archived?.occurredAt ?? session.updatedAt,
+      endSource: archived ? "session_archived_event" : "archived_session_updated_at",
+    };
+  };
+  const common = {
+    schemaVersion: "barcode_after_show_export_v1", generatedAt: new Date().toISOString(),
+    sourceRevision: store.revision, sourceCommit: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
+  };
+  if (sessionId === undefined) {
+    const shows = eligible.map(descriptor).sort((a, b) => b.endedAt.localeCompare(a.endedAt) || a.sessionId.localeCompare(b.sessionId));
+    return { ...common, kind: "index", shows: shows.slice(0, 100), truncated: shows.length > 100 };
+  }
+  const original = eligible.find((session) => session.sessionId === sessionId);
+  if (!original) return null; // Never fall back to the active session.
+  const simulationIds = new Set(sessionEntriesForExport(original).filter(isSimulationTrack).map((entry) => entry.id));
+  const diagnostics = normalizeQueuePlaybackDiagnostics(original.playbackDiagnostics);
+  const session = normalizeSession({
+    ...original,
+    queue: original.queue.filter((entry) => !isSimulationTrack(entry)),
+    completed: original.completed.filter((entry) => !isSimulationTrack(entry)),
+    removed: original.removed.filter((entry) => !isSimulationTrack(entry)),
+    spotlight: original.spotlight.filter((entry) => !isSimulationTrack(entry)),
+    loadedTrack: isSimulationTrack(original.loadedTrack) ? null : original.loadedTrack,
+    nextInLineTrack: isSimulationTrack(original.nextInLineTrack) ? null : original.nextInLineTrack,
+    showLog: original.showLog.filter((event) => !event.track || !simulationIds.has(event.track.trackId)),
+    playbackDiagnostics: {
+      ...diagnostics,
+      currentTrackId: diagnostics.currentTrackId && simulationIds.has(diagnostics.currentTrackId) ? null : diagnostics.currentTrackId,
+      events: diagnostics.events.filter((event) => !simulationIds.has(event.trackId)),
+    },
+  });
+  const snapshot = { ...store, sessions: [session] };
+  const showLog = queueSessionShowLogFromStore(snapshot, sessionId);
+  const playback = buildQueuePlaybackDiagnosticExport(queueStateFromSession(session, snapshot));
+  return {
+    ...common, kind: "show", show: descriptor(original), showLog, playback,
+    coverage: {
+      showLogEventLimit: MAX_QUEUE_SHOW_LOG_EVENTS, showLogAtLimit: original.showLog.length >= MAX_QUEUE_SHOW_LOG_EVENTS,
+      showLogFirstSequence: showLog.events[0]?.sequence ?? null,
+      playbackEventLimit: MAX_QUEUE_PLAYBACK_EVENTS, playbackAtLimit: diagnostics.events.length >= MAX_QUEUE_PLAYBACK_EVENTS,
+      diagnosticTrackLimit: MAX_DIAGNOSTIC_TRACKS, diagnosticTracksAtLimit: playback.tracks.length >= MAX_DIAGNOSTIC_TRACKS,
+      simulationTracksExcluded: simulationIds.size,
+      completeShowTraceGuaranteed: false,
+    },
+  };
 }
 
 export async function getQueueSessionShowLogCsv(sessionId?: string): Promise<{ filename: string; csv: string }> {

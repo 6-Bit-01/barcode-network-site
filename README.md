@@ -52,6 +52,7 @@ Archived public show milestones retain stable track links, play/submission order
 
 - Node.js 22 is the development and CI baseline. Next.js requires Node.js 20.9 or newer.
 - npm, using the committed root `package-lock.json`.
+- Python 3.9+ for the standard-library after-show worker checks.
 
 ```bash
 nvm use
@@ -74,6 +75,7 @@ Do not commit secrets. Configure only the integrations needed for the surface be
 | Payments | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `NEXT_PUBLIC_SITE_URL` |
 | Queue operations | `QUEUE_API_KEY`, `CRON_SECRET`, `BARCODE_QUEUE_PRODUCTION_ENABLED` |
 | Submitter editing (default off) | `BARCODE_QUEUE_SUBMITTER_EDITING_ENABLED` |
+| Private after-show evidence export | `BARCODE_AFTER_SHOW_EXPORT_TOKEN` (separate read-only credential; at least 32 characters) |
 | Provider metadata | `YOUTUBE_DATA_API_KEY` or `YOUTUBE_API_KEY`, `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, optional `SOUNDCLOUD_CLIENT_ID` |
 | BNL connection | `BNL_API_KEY`, `BNL_TOKEN`, force-pull and Source File credentials |
 | Optional Discord connection (off by default) | `BARCODE_DISCORD_CONNECTION_ENABLED`, `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, canonical `NEXT_PUBLIC_SITE_URL`; [scope and activation boundary](docs/optional-discord-connection-2026-09-24.md) |
@@ -93,7 +95,7 @@ npm run check
 npm run build
 ```
 
-`npm run check` runs TypeScript, ESLint, and every tracked Node test file. Focused suites remain available:
+`npm run check` runs TypeScript, ESLint, every tracked Node test file and the after-show Python fixtures. The optional unattended evidence handoff uses [the existing exports and a separate VPS outbox](docs/after-show-evidence.md). It requires one-time setup and an off-air delivery test; deploying the website does not install the sender. Focused suites remain available:
 
 ```bash
 npm run test:shell

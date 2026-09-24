@@ -73,7 +73,7 @@ export function QueueSongManager({ sessionId, tracks, canAdd, onAdd, onRefresh }
   const fieldClass = "mt-1 w-full border border-border bg-background px-3 py-2 text-base text-foreground";
   return <section className="space-y-4 border border-cyan-200/35 bg-surface p-4 sm:p-5" aria-label="Manage your songs">
     <div className="flex flex-wrap items-start justify-between gap-3">
-      <div><h2 className="text-xl font-bold text-foreground">Your songs</h2><p className="mt-1 text-sm text-muted">Replace a waiting song from this browser. Your artist credit, place in line and purchases stay with it.</p></div>
+      <div><h2 className="text-xl font-bold text-foreground">Your songs</h2><p className="mt-1 text-sm text-muted">Track replacement is an optional convenience for songs in the middle or back of the queue. It closes near the front or within the 10-minute safety window and stays closed if your song moves back.</p></div>
       <button type="button" disabled={!canAdd || busy} onClick={() => { setTarget(null); onAdd(); }} className="min-h-11 border border-accent px-4 py-2 text-sm text-accent disabled:opacity-50">Add another song</button>
     </div>
     {message && <p role="status" className="text-sm text-cyan-200">{message}</p>}
@@ -82,8 +82,9 @@ export function QueueSongManager({ sessionId, tracks, canAdd, onAdd, onRefresh }
       {track.canReplace && <button type="button" disabled={busy} onClick={() => begin(track)} className="min-h-11 border border-cyan-200/40 px-3 py-2 text-sm text-cyan-200 disabled:opacity-50" aria-label={`Replace ${track.title}`}>Replace song</button>}
     </li>)}</ul>
     {target && <form onSubmit={save} className="space-y-4 border-t border-border pt-4" aria-label={`Replace ${target.title}`}>
-      <p className="text-sm text-muted">Replacing <strong className="text-foreground">{target.artist} — {target.title}</strong>. Changes lock at Next in Line, Now Playing, or Wheel selection. Replacements pause during a Wheel spin and confirmation.</p>
-      {!canReplace && <p role="alert" className="text-sm text-accent">This song changed or is no longer waiting. Close this form and review your songs.</p>}
+      <p className="text-sm text-muted">Replacing <strong className="text-foreground">{target.artist} — {target.title}</strong>. Your artist credit, queue slot and purchases stay with it.</p>
+      <p className="border-l-2 border-accent pl-3 text-sm text-foreground">Editing or uploading does not reserve your song or delay the host. Skips and removals can move the line forward without warning. If your song gets too close or the host or Wheel selects it, replacement closes even while this form is open. Wheel spins also pause candidate edits until confirmation. Only a confirmed save changes your track.</p>
+      {!canReplace && <p role="alert" className="text-sm text-accent">{current?.unavailableReason || "This song changed or is no longer available for replacement. Close this form and review your songs."}</p>}
       <fieldset disabled={busy || !canReplace} className="min-w-0 space-y-4 disabled:opacity-60">
         <label className="block text-sm">Replacement song title<input className={fieldClass} value={title} maxLength={200} onChange={event => setTitle(event.target.value)} required /></label>
         <div className="flex flex-wrap gap-2"><button type="button" aria-pressed={mode === "link"} onClick={() => setMode("link")} className="min-h-11 border border-border px-4 py-2 text-sm aria-pressed:border-cyan-200">Track link</button><button type="button" aria-pressed={mode === "upload"} onClick={() => setMode("upload")} className="min-h-11 border border-border px-4 py-2 text-sm aria-pressed:border-cyan-200">Upload MP3/WAV</button></div>

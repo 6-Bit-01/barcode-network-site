@@ -28,12 +28,15 @@ const ownerHash = createHash("sha256").update(token).digest("hex");
 const cookie = `barcode_queue_owner=${token}`;
 let seq = 0;
 const legal = { acceptedLegal: true, termsVersion: types.PUBLIC_QUEUE_LEGAL_TERMS_VERSION, privacyVersion: types.PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION, queueTermsVersion: types.PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION, acceptedCheckboxText: types.PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT };
-async function fresh(extra = {}) {
+async function fresh(extra = {}, padding = true) {
   const state = await queue.getRadioQueueState();
   if (state.session.status !== "archived") await queue.archiveCurrentQueueSession();
   const next = await queue.startNewQueueSession({ purpose: "live_broadcast", submissionCooldownSeconds: 0, ...extra });
   await queue.setQueueOpen(true);
   await overlay.resetWheelCeremonyStateForNewSession();
+  // Eligible replacement fixtures must really be mid-queue. These three real
+  // four-minute songs have pending upgrades, so they do not enter test spins.
+  if (padding) for (let i = 0; i < 3; i++) await add({ submissionOwnerHash: null, detectedDurationSeconds: 240, durationIsEstimate: false, priorityUpgradeStatus: "checkout_pending" });
   return next.session.sessionId;
 }
 async function add(extra = {}) {
@@ -57,6 +60,14 @@ async function replace(sessionId, track, extra = {}) {
 async function editable(sessionId, track) {
   const snapshot = await queue.getPublicQueueSnapshot(sessionId, { ownerHash });
   return snapshot.ownedTracks.find(row => row.id === track.id)?.canReplace;
+}
+async function pullTarget(track) {
+  const state = await queue.getRadioQueueState();
+  for (const ahead of state.queue) {
+    if (ahead.id === track.id) break;
+    await queue.updateRadioTrack(ahead.id, "remove");
+  }
+  await queue.updateRadioTrack("", "pullFreeTransmission");
 }
 async function spin() {
   await queue.updateRadioTrack("", "addWheelSpinOwed");
@@ -123,17 +134,17 @@ test("replacement preserves the slot, order, identity, corrections, purchases an
   assert.equal(after.replacementRevision, 1);
   assert.notEqual(after.title, before.title);
   assert.deepEqual((await queue.getRadioQueueState()).queue.map(row => row.id), state.queue.map(row => row.id));
-  assert.equal((await queue.getPublicQueueSnapshot()).status.acceptedCount, 3);
+  assert.equal((await queue.getPublicQueueSnapshot()).status.acceptedCount, 6);
 });
 
 test("closed/full intake and the three-song artist limit block adds, not an eligible slot replacement", async () => {
-  const sessionId = await fresh({ queueCapacity: 3 });
+  const sessionId = await fresh({ queueCapacity: 6 });
   const rows = [];
   for (let i = 0; i < 3; i++) rows.push(await add({ artist: "Same artist", tiktokHandle: "@same", submitterToken: "same" }));
   await queue.setQueueOpen(false);
   const result = await replace(sessionId, rows[1]);
   assert.equal(result.response.status, 200);
-  assert.equal((await queue.getPublicQueueSnapshot()).status.acceptedCount, 3);
+  assert.equal((await queue.getPublicQueueSnapshot()).status.acceptedCount, 6);
   const denied = await route.POST(request({ sessionId, mode: "link", artist: "Same artist", title: "Fourth", tiktokHandle: "@same", link: "https://example.test/fourth", ...legal }));
   assert.equal(denied.status, 409);
 });
@@ -142,7 +153,7 @@ test("Next in Line and Now Playing lock immediately and stay locked after return
   for (const action of ["moveBack", "load", "priority_displacement"]) {
     const sessionId = await fresh();
     const track = await add();
-    await queue.updateRadioTrack("", "pullFreeTransmission");
+    await pullTarget(track);
     assert.equal(await editable(sessionId, track), false);
     assert.equal((await replace(sessionId, track)).response.status, 409);
     if (action === "priority_displacement") {
@@ -228,7 +239,7 @@ test("selection and slow provider resolution race under the same fence", async (
     try {
       const pending = replace(sessionId, track, { link: "https://soundcloud.com/fixture/new-track" });
       await started;
-      if (selection === "next") await queue.updateRadioTrack("", "pullFreeTransmission");
+      if (selection === "next") await pullTarget(track);
       else await spin();
       release();
       const result = await pending;
@@ -242,7 +253,7 @@ test("edits committed first are exactly the version later selected and locked", 
   const sessionId = await fresh();
   const track = await add();
   assert.equal((await replace(sessionId, track, { title: "Final version" })).response.status, 200);
-  await queue.updateRadioTrack("", "pullFreeTransmission");
+  await pullTarget(track);
   assert.equal((await queue.getRadioQueueState()).nextInLine.title, "Final version");
   assert.equal((await replace(sessionId, await stored(track.id))).response.status, 409);
 });
@@ -307,7 +318,7 @@ test("upload/link replacements retain retired sources privately and cleanup neve
 test("the actual 44-slot show stays at 44 when a waiting song is replaced", async () => {
   const sessionId = await fresh();
   const target = await add();
-  for (let index = 1; index < 44; index++) await add();
+  for (let index = 4; index < 44; index++) await add();
   assert.equal((await queue.getPublicQueueSnapshot()).status.isFull, true);
   assert.equal((await replace(sessionId, target)).response.status, 200);
   assert.equal((await queue.getPublicQueueSnapshot()).status.acceptedCount, 44);
@@ -353,7 +364,7 @@ test("public Deck/history preserves each version's event title without exposing 
   const track = await add();
   await replace(sessionId, track, { title: "New public title" });
   const stats = await queue.getPublicQueueStats();
-  assert.equal(stats.currentShow.submittedTrackCount, 1);
+  assert.equal(stats.currentShow.submittedTrackCount, 4);
   const milestones = stats.currentShow.milestones.filter(event => event.track?.trackId === track.id);
   assert.equal(milestones.find(event => event.eventType === "track_submitted").track.title, track.title);
   assert.equal(milestones.find(event => event.eventType === "track_replaced").track.title, "New public title");
@@ -389,29 +400,33 @@ test("failed Wheel publishing or cancellation keeps edits paused; successful hos
 });
 
 test("upload authorization checks ownership and selection; signed completion retains an upload rejected by later selection", async () => {
-  const sessionId = await fresh();
-  const track = await add();
-  let callbacks;
-  const filename = path.join(root, "src/app/api/queue/upload/route.ts");
-  const loadedModule = { exports: {} };
-  const localRequire = createRequire(filename);
-  vm.runInNewContext(ts.transpileModule(fs.readFileSync(filename, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText, { module: loadedModule, exports: loadedModule.exports, require: name => name === "@vercel/blob/client" ? { handleUpload: async input => { callbacks = input; return {}; } } : localRequire(name), process, console, URL, Number, JSON });
-  const payload = JSON.stringify({ sessionId, replaceTrackId: track.id, expectedRevision: 0, uploadOriginalName: "late.mp3", fileSize: 100, mimeType: "audio/mpeg" });
-  await loadedModule.exports.POST(request({}));
-  const approved = await callbacks.onBeforeGenerateToken("barcode-radio-queue/late.mp3", payload);
-  const tokenPayload = approved.tokenPayload;
-  assert.equal(JSON.parse(tokenPayload).ownerHash, ownerHash);
-  await loadedModule.exports.POST(request({}, ""));
-  await assert.rejects(() => callbacks.onBeforeGenerateToken("barcode-radio-queue/late.mp3", payload), /browser cannot replace/);
-  await loadedModule.exports.POST(request({}));
-  await queue.updateRadioTrack("", "pullFreeTransmission");
-  await assert.rejects(() => callbacks.onBeforeGenerateToken("barcode-radio-queue/late.mp3", payload), /staged/);
-  const url = "https://fixture.private.blob.vercel-storage.com/barcode-radio-queue/late.mp3";
-  await callbacks.onUploadCompleted({ blob: { url }, tokenPayload });
-  assert.deepEqual((await stored(track.id)).supersededUploads, [{ fileUrl: url }]);
-  assert.equal((await stored(track.id)).fileUrl ?? null, null);
-  await callbacks.onUploadCompleted({ blob: { url }, tokenPayload });
-  assert.equal((await stored(track.id)).supersededUploads.length, 1);
+  for (const cutoff of ["selection", "near_front"]) {
+    const sessionId = await fresh();
+    const track = await add();
+    let callbacks;
+    const filename = path.join(root, "src/app/api/queue/upload/route.ts");
+    const loadedModule = { exports: {} };
+    const localRequire = createRequire(filename);
+    vm.runInNewContext(ts.transpileModule(fs.readFileSync(filename, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText, { module: loadedModule, exports: loadedModule.exports, require: name => name === "@vercel/blob/client" ? { handleUpload: async input => { callbacks = input; return {}; } } : localRequire(name), process, console, URL, Number, JSON });
+    const payload = JSON.stringify({ sessionId, replaceTrackId: track.id, expectedRevision: 0, uploadOriginalName: "late.mp3", fileSize: 100, mimeType: "audio/mpeg" });
+    await loadedModule.exports.POST(request({}));
+    const approved = await callbacks.onBeforeGenerateToken("barcode-radio-queue/late.mp3", payload);
+    const tokenPayload = approved.tokenPayload;
+    assert.equal(JSON.parse(tokenPayload).ownerHash, ownerHash);
+    await loadedModule.exports.POST(request({}, ""));
+    await assert.rejects(() => callbacks.onBeforeGenerateToken("barcode-radio-queue/late.mp3", payload), /browser cannot replace/);
+    await loadedModule.exports.POST(request({}));
+    if (cutoff === "selection") await pullTarget(track);
+    else await queue.updateRadioTrack((await queue.getRadioQueueState()).queue[0].id, "remove");
+    await assert.rejects(() => callbacks.onBeforeGenerateToken("barcode-radio-queue/late.mp3", payload), /staged|10-minute/);
+    const url = "https://fixture.private.blob.vercel-storage.com/barcode-radio-queue/late.mp3";
+    assert.equal((await replace(sessionId, track, { mode: "upload", uploadedBlobUrl: url, uploadOriginalName: "late.mp3", fileSize: 100, mimeType: "audio/mpeg", detectedDurationSeconds: 120 })).response.status, 409);
+    await callbacks.onUploadCompleted({ blob: { url }, tokenPayload });
+    assert.deepEqual((await stored(track.id)).supersededUploads, [{ fileUrl: url }]);
+    assert.equal((await stored(track.id)).fileUrl ?? null, null);
+    await callbacks.onUploadCompleted({ blob: { url }, tokenPayload });
+    assert.equal((await stored(track.id)).supersededUploads.length, 1);
+  }
 });
 
 test("a retired URL reused by a newer archive retains that archive's recovery window", async () => {
@@ -434,4 +449,115 @@ test("a retired URL reused by a newer archive retains that archive's recovery wi
   assert.equal(deleted.filter(value => value === url).length, 1);
   assert.ok((await stored(old.id, oldSession)).supersededUploads[0].deletedAt);
   assert.equal((await stored(newer.id, newerSession)).uploadedFileDeletionStatus, "deleted");
+});
+
+test("the first three upcoming songs stay protected even with long known tracks ahead", async () => {
+  const sessionId = await fresh({}, false);
+  const rows = [];
+  for (let i = 0; i < 4; i++) rows.push(await add({ detectedDurationSeconds: 360, durationIsEstimate: false }));
+  for (const track of rows.slice(0, 3)) {
+    assert.equal(await editable(sessionId, track), false);
+    const result = await replace(sessionId, track);
+    assert.equal(result.response.status, 409);
+    assert.match(result.body.error, /front or the 10-minute safety window/);
+  }
+  assert.equal(await editable(sessionId, rows[3]), true);
+  assert.equal((await replace(sessionId, rows[3])).response.status, 200);
+});
+
+test("the 10-minute boundary is inclusive and protects short-song queues deeper than three", async () => {
+  for (const [durations, allowed] of [[[200, 200, 199], false], [[200, 200, 200], false], [[200, 200, 201], true], [Array(10).fill(60), false], [Array(11).fill(60), true]]) {
+    const sessionId = await fresh({}, false);
+    for (const duration of durations) await add({ detectedDurationSeconds: duration, durationIsEstimate: false });
+    const track = await add();
+    assert.equal(await editable(sessionId, track), allowed, String(durations));
+    assert.equal((await replace(sessionId, track)).response.status, allowed ? 200 : 409);
+  }
+});
+
+test("unknown and estimated durations, pre-show time and Wheel overhead cannot extend replacement", async () => {
+  const sessionId = await fresh({}, false);
+  for (let i = 0; i < 5; i++) await add({ detectedDurationSeconds: i % 2 ? 300 : null, durationIsEstimate: true, estimatedDurationSeconds: 300 });
+  const track = await add();
+  await queue.updateRadioTrack("", "addWheelSpinOwed");
+  const snapshot = await queue.getPublicQueueSnapshot(sessionId, { ownerHash });
+  const timing = require("../src/lib/queue-timing.ts").estimateExistingTrackTiming(snapshot, track.id);
+  assert.ok(timing.estimatedSecondsUntilPlay > 600, "the ordinary ETA looks safe but is not edit permission");
+  assert.equal(await editable(sessionId, track), false);
+  assert.equal((await replace(sessionId, track)).response.status, 409);
+});
+
+test("other lanes cannot hide a front-of-Free song behind a long Priority/Wheel list", async () => {
+  const sessionId = await fresh({}, false);
+  for (const lane of ["priority", "wheel"]) for (let i = 0; i < 4; i++) await add({ lane, priorityUpgradeStatus: lane === "priority" ? "paid" : "none", detectedDurationSeconds: 360, durationIsEstimate: false });
+  const track = await add();
+  assert.ok((await queue.getPublicQueueSnapshot()).queue.findIndex(row => row.id === track.id) >= 3);
+  assert.equal(await editable(sessionId, track), false);
+  assert.equal((await replace(sessionId, track)).response.status, 409);
+});
+
+test("entering the cutoff latches even if Signal Hold then moves the song safely to the back", async () => {
+  const sessionId = await fresh();
+  const track = await add({ signalHoldStatus: "active" });
+  for (let i = 0; i < 4; i++) await add({ detectedDurationSeconds: 240, durationIsEstimate: false });
+  assert.equal(await editable(sessionId, track), true);
+  const ahead = (await queue.getRadioQueueState()).queue[0];
+  await queue.updateRadioTrack(ahead.id, "remove");
+  const locked = await stored(track.id);
+  assert.ok(locked.replacementLockedAt);
+  await queue.updateRadioTrack(track.id, "useSignalHold");
+  assert.equal((await queue.getRadioQueueState()).queue.at(-1).id, track.id);
+  assert.equal((await stored(track.id)).replacementLockedAt, locked.replacementLockedAt);
+  assert.equal((await replace(sessionId, track)).response.status, 409);
+});
+
+test("a removal or confirmed paid skip during media lookup closes replacement before commit", async () => {
+  for (const change of ["near_front", "paid_skip", "host_load"]) {
+    const sessionId = await fresh();
+    const track = await add();
+    let release;
+    let entered;
+    const started = new Promise(resolve => { entered = resolve; });
+    const blocked = new Promise(resolve => { release = resolve; });
+    const oldFetch = global.fetch;
+    global.fetch = async () => { entered(); await blocked; return new Response("{}"); };
+    try {
+      const pending = replace(sessionId, track, { link: "https://soundcloud.com/fixture/cutoff-race" });
+      await started;
+      if (change === "near_front") await queue.updateRadioTrack((await queue.getRadioQueueState()).queue[0].id, "remove");
+      else if (change === "paid_skip") await queue.markPriorityUpgradePaidFromStripe(track.id, sessionId, { paymentId: `pi_${track.id}`, amountCents: 1000, currency: "usd" });
+      else await queue.updateRadioTrack(track.id, "load");
+      release();
+      assert.equal((await pending).response.status, 409, change);
+      assert.equal((await stored(track.id)).link, track.link);
+      assert.equal((await stored(track.id)).replacementRevision ?? 0, 0);
+      assert.equal(await editable(sessionId, track), false);
+    } finally { release(); global.fetch = oldFetch; }
+  }
+});
+
+test("Now Playing time and paused Priority do not provide spare editing time", async () => {
+  const sessionId = await fresh({}, false);
+  const loaded = await add({ detectedDurationSeconds: 360, durationIsEstimate: false });
+  await queue.updateRadioTrack(loaded.id, "load");
+  for (let i = 0; i < 3; i++) {
+    const paused = await add({ lane: "priority", priorityUpgradeStatus: "paid", detectedDurationSeconds: 360, durationIsEstimate: false });
+    await queue.updateRadioTrack(paused.id, "pausePriority");
+  }
+  const target = await add({ lane: "priority", priorityUpgradeStatus: "paid" });
+  assert.equal(await editable(sessionId, target), false);
+  assert.equal((await replace(sessionId, target)).response.status, 409);
+});
+
+test("cutoff polling is read-only, stable, private and does not expose replacement authority to BNL", async () => {
+  const sessionId = await fresh({}, false);
+  const track = await add();
+  const first = await queue.getPublicQueueSnapshot(sessionId, { ownerHash });
+  const second = await at(new Date(Date.now() + 1000), () => queue.getPublicQueueSnapshot(sessionId, { ownerHash }));
+  assert.equal(first.revision, second.revision);
+  assert.deepEqual(first.ownedTracks, second.ownedTracks);
+  assert.equal(first.ownedTracks[0].canReplace, false);
+  const publicTrack = first.queue.find(row => row.id === track.id);
+  assert.doesNotMatch(JSON.stringify(publicTrack), /replacement|OwnerHash/);
+  assert.doesNotMatch(JSON.stringify(await queue.getQueueBnlArtistMemory()), /replacementLockedAt|submissionOwnerHash/);
 });

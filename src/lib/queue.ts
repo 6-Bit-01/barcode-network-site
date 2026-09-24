@@ -37,6 +37,10 @@ import { SPONSOR_BREAK_DURATION_SECONDS } from "./sponsor-break-contract";
 import { parseIso8601DurationToSeconds, parseSpotifyTrackId, parseYouTubeVideoId as parseTrackDurationYouTubeVideoId } from "./track-duration";
 import {
   INTERNAL_BUFFER_DURATION_SECONDS,
+  MAX_QUEUE_TRACK_DURATION_SECONDS,
+  QUEUE_REPLACEMENT_CUTOFF_SECONDS,
+  QUEUE_REPLACEMENT_FRONT_TRACKS,
+  QUEUE_REPLACEMENT_CLOSED_MESSAGE,
   assertQueueTrackDuration,
   PRIORITY_DISCLOSURE_TEXT,
   PRIORITY_GIFT_ANONYMOUS_NAME,
@@ -1497,6 +1501,7 @@ function normalizeSession(raw: Partial<QueueSession> & { sessionId: string; titl
   } as QueueSession;
   applySubmissionAcceptanceState(session, raw.submissionClosureReason);
   applySponsorBreakDueState(session);
+  applyReplacementCutoffLocks(session);
   const summary = summarizeSession(session);
   return { ...session, ...summary, publicStatus: publicStatusForSession(session) };
 }
@@ -3424,10 +3429,46 @@ export class QueueReplacementError extends Error {
 
 type QueueReplacementRequest = { sessionId: string; trackId: string; ownerHash: string | null; expectedRevision: number };
 
+/** Eligibility guard, not an airplay ETA. Other lanes, the current player,
+ * talking, pre-show time, commercials and unconfirmed Wheel work cannot buy
+ * more editing time. Unknown/estimated durations contribute no safety time.
+ * Use the existing lane order so a long Wheel/Priority list cannot hide an
+ * imminent Free track. Host pulls and promotions still win at final commit. */
+function replacementCutoffIds(session: QueueSession): Set<string> {
+  const locked = new Set<string>();
+  const ahead = new Map<QueueLane, { count: number; seconds: number }>();
+  const seen = new Set<string>();
+  for (const entry of [session.nextInLineTrack, ...sortActive(session.queue)]) {
+    if (!entry || seen.has(entry.id) || entry.id === session.loadedTrack?.id || entry.id === session.loadedTrackId) continue;
+    seen.add(entry.id);
+    if (entry.status !== "queued" && entry.status !== "next") continue;
+    if (isSimulationTrack(entry) && session.purpose === "live_broadcast") continue;
+    const lane = entry.lane ?? "regular";
+    const prior = ahead.get(lane) ?? { count: 0, seconds: 0 };
+    if (prior.count < QUEUE_REPLACEMENT_FRONT_TRACKS || prior.seconds <= QUEUE_REPLACEMENT_CUTOFF_SECONDS) locked.add(entry.id);
+    // A paused Priority song is not a commitment ahead of another song.
+    if (lane === "priority" && !isActivePriorityTrack(entry)) continue;
+    const duration = entry.detectedDurationSeconds;
+    const knownSeconds = typeof duration === "number" && Number.isFinite(duration) && duration > 0 && entry.durationIsEstimate !== true
+      ? Math.min(duration, MAX_QUEUE_TRACK_DURATION_SECONDS) : 0;
+    ahead.set(lane, { count: prior.count + 1, seconds: prior.seconds + knownSeconds });
+  }
+  return locked;
+}
+
+function applyReplacementCutoffLocks(session: QueueSession): void {
+  if (session.status === "archived" || session.broadcastPhase === "ended") return;
+  const cutoffIds = replacementCutoffIds(session);
+  session.queue = session.queue.map(entry => entry.submissionOwnerHash && !entry.replacementLockedAt && cutoffIds.has(entry.id)
+    // Stable normalization: the next existing queue mutation persists this
+    // private latch. Reads never add a write or generate changing timestamps.
+    ? { ...entry, replacementLockedAt: session.updatedAt || session.createdAt } : entry);
+}
+
 function replacementUnavailable(session: QueueSession, entry: QueueEntry): string | null {
   if (session.status === "archived" || session.broadcastPhase === "ended") return "This show has ended.";
   if (!session.queue.some(track => track.id === entry.id) || isTrackActiveForPlayback(session, entry.id)) return "This song is already staged, playing, or finished.";
-  if (entry.replacementLockedAt || entry.lane === "wheel" || entry.wheelQueueOrderAt || entry.displacedFromNextInLineAt) return "Locked after Next in Line, Now Playing, or Wheel selection, even if returned to the queue.";
+  if (entry.replacementLockedAt || entry.lane === "wheel" || entry.wheelQueueOrderAt || entry.displacedFromNextInLineAt || replacementCutoffIds(session).has(entry.id)) return QUEUE_REPLACEMENT_CLOSED_MESSAGE;
   if (entry.playedAt || entry.completedAt || entry.removedAt || queuePlaybackHasBegun(session.playbackDiagnostics, entry.id)) return "A song that has already entered playback cannot be replaced.";
   if (isSimulationTrack(entry)) return "Simulation tracks cannot be replaced here.";
   if (session.replacementWheelHold && (isWheelEligibleTrack(entry) || session.replacementWheelHold.trackIds.includes(entry.id))) return "Replacements are paused while the Wheel spins or awaits confirmation.";

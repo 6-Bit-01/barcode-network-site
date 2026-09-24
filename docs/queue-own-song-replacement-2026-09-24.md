@@ -9,32 +9,51 @@ remains on the public Broadcast Deck and dedicated connection page.
 The existing queue already supports adding another song. Its existing intake,
 three-song limit, cooldown, 44 accepted slots and payment rules remain the
 authority. The new **Your songs** section reuses that add flow and lets a
-submitter replace an eligible waiting song's title and link or MP3/WAV source.
+submitter replace an eligible mid/back-of-queue song's title and link or MP3/WAV source.
 It does not add another queue record or charge for replacement.
 
 ## Selection rules
 
 The owner explicitly required Now Playing, Next in Line and Wheel Chosen songs
-to lock, including edits racing a spin or a transition into Next in Line.
+to lock, including edits racing a spin or a transition into Next in Line. The
+September 24 follow-up also requires replacement to close before selection:
+anything that could approach playback within ten minutes is too late. This is
+an optional convenience for the middle/back of the queue, not a last-minute
+change service.
 Opening an edit form or starting an upload never reserves a song or delays the
 host. The server decides eligibility again immediately before committing.
 
+The safety guard protects the first three upcoming songs **in each lane** and
+any song with at most 600 seconds of known music ahead in that lane. It uses
+the existing queue ordering; it does not change routing or the public ETA.
+Now Playing's remaining time, other lanes, paused Priority, host talk,
+pre-show time, commercials and unconfirmed Wheel work add no editing time.
+Unknown/estimated durations also add no safety time. This deliberately closes
+early when timing is uncertain, including during pre-show or paused routing.
+It cannot predict an arbitrary host pull, future winner, removal or gifted
+skip. Those operations remain authoritative, with the same final atomic check.
+
+The near-playback cutoff reuses the private permanent replacement lock. Normal
+queue mutations retain it even after demotion or a move to the back. Read-only
+normalization uses a stable existing session timestamp; polling adds no write.
+
 | Situation | Result |
 |---|---|
-| Ordinary waiting song, original browser | Replace allowed. |
-| Waiting paid/pending Priority or Signal Hold song | Replace allowed until selected; existing purchases and checkout receipts remain attached. |
+| Mid/back waiting song, original browser, outside the safety cutoff | Replace allowed. |
+| First three upcoming songs in its lane, or 10 minutes or less of known music ahead | Permanently closed, even if a long ETA, pre-show countdown or commercial makes it appear safe. |
+| Waiting paid/pending Priority or Signal Hold song | Replace only outside the safety cutoff; existing purchases and checkout receipts remain attached. |
 | Intake closed/full, artist at three songs or on cooldown | Replacement can proceed; adding another song still follows all admission rules. |
 | Next in Line, loaded/Now Playing, paused, stalled, or playback error | Locked. Loading is the cutoff; audible playback is not required. |
 | Next in Line displaced by Priority or manually returned | Stays locked; the host may have prepared that version. |
 | Wheel Chosen waiting behind other songs | Locked immediately, even before Next in Line. |
 | Selected song demoted, held with Signal Hold, or returned/restored | Selection lock persists. No automatic public unlock. |
-| Wheel ready or re-encrypting, before a spin | Waiting songs remain editable. |
+| Wheel ready or re-encrypting, before a spin | Otherwise eligible mid/back songs remain editable. |
 | Wheel spinning or awaiting host confirmation | Candidate songs pause edits, including late eligible intake. No winner is revealed through edit availability. |
 | Artist has multiple candidate songs | All participating songs pause; host confirmation permanently locks the chosen song and releases the others. |
 | Confirm, Winner Not Here, cancel, clear or full overlay reset | Release the temporary hold after the overlay write succeeds; permanent selection locks remain. |
 | Wheel store update/reset fails | Leave edits paused. Retry the existing host Cancel/Clear action after storage recovers; no automatic timeout unlock. |
 | Completed, removed, archived, ended or different session | No replacement. A restored previously selected/finished song remains locked. |
-| Slow media lookup/upload races selection | Selection first: reject the save, keep the original song. Replacement first: select the committed new song. |
+| Slow media lookup/upload races the cutoff, a removal ahead, host load, paid skip or selection | Queue change first: reject the save, keep the original song. Replacement first: select the committed new song. |
 | Two tabs, duplicate click or delayed retry | One expected revision can commit once; a stale request gets 409 and must refresh. |
 | Response or refresh lost | UI does not promise an unconfirmed save; reload from the server before retrying. |
 | Other browser/device, cleared cookies or pre-release submission | No automatic ownership claim. Use the original browser or contact the host. |
@@ -91,15 +110,22 @@ production-gate change, Discord activation or public announcement is required.
 Use an isolated non-production store or the normal authorized private rehearsal
 for the following focused evidence, without mutating a live show for testing:
 
-1. Submit one new link from browser A; replace it while waiting. Capture the
+1. Submit a new link from browser A behind at least three known four-minute
+   songs in the same lane; replace it while waiting. Capture the
    same track ID/count and changed title/source. Browser B must have no edit
    authority, including when using the same typed artist/handle.
-2. Open an edit in A; put the song in Next in Line, then try Save. Capture 409,
+2. Verify the first three upcoming songs are unavailable. With three known
+   durations totaling exactly 600 seconds ahead, verify replacement is closed;
+   with 601 seconds ahead on a fresh song, verify it is available. Open an edit
+   on an eligible song, remove a song ahead, then try Save: capture 409 and the
+   unchanged original. Move it back and verify it stays locked. Separately put
+   an eligible song in Next in Line, then try Save. Capture 409,
    unchanged selected source, and the locked UI after refresh. Return it and
    confirm it stays locked. Repeat with a completed upload finishing late.
 3. Use two songs for one Wheel entrant. During spin and pending confirmation,
-   edits must be paused. Confirm one: chosen stays locked, sibling unlocks.
-   Cancel a separate spin: unselected waiting songs unlock.
+   edits must be paused. Confirm one: chosen stays locked, sibling unlocks
+   only if still outside the safety cutoff. Cancel a separate spin: otherwise
+   eligible unselected waiting songs unlock.
 4. Verify Add another song still enters the existing intake and its normal
    limits apply; replacement does not change accepted count or payments.
 5. Check the Deck history shows original submission plus replacement, with one

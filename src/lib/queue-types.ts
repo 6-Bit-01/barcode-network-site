@@ -441,7 +441,7 @@ export interface QueueEntry {
   /** Private browser capability hash; never accepted from a request body. */
   submissionOwnerHash?: string | null;
   replacementRevision?: number;
-  /** Selection is a permanent cutoff, including after host returns/displacement. */
+  /** Near-playback or selection cutoff; permanent after returns/displacement. */
   replacementLockedAt?: string | null;
   replacedAt?: string | null;
   supersededUploads?: Array<{ fileUrl: string; deletedAt?: string | null; deletionError?: string | null }>;
@@ -686,6 +686,10 @@ export interface QueuePublicSnapshot {
   playbackTiming?: QueuePlaybackTiming | null;
   wheelTiming?: QueueWheelTiming | null;
 }
+
+export const QUEUE_REPLACEMENT_CUTOFF_SECONDS = 10 * 60;
+export const QUEUE_REPLACEMENT_FRONT_TRACKS = 3;
+export const QUEUE_REPLACEMENT_CLOSED_MESSAGE = "Replacement is closed once a song reaches the front or the 10-minute safety window, or is selected for Next in Line, Now Playing or the Wheel. Moving back does not reopen it.";
 
 export interface QueueOwnedTrack {
   id: string;

@@ -53,7 +53,18 @@ export default function RadioPage() {
                 description={submission.heroDescription}
               />
 
-              {submission.mode === "native_queue" && <RadioQueueEntry />}
+              {submission.mode === "native_queue" && (
+                <RadioQueueEntry>
+                  <LocalSchedule
+                    embedded
+                    day={radioPage.schedule.day}
+                    queueOpens={radioPage.schedule.queueOpens}
+                    showBegins={radioPage.schedule.showBegins}
+                    firstTrack={radioPage.schedule.firstTrack}
+                    notice={radioPage.schedule.notice}
+                  />
+                </RadioQueueEntry>
+              )}
               {submission.external && <a
                 href={submission.href}
                 target="_blank"
@@ -65,19 +76,20 @@ export default function RadioPage() {
               </a>}
             </div>
 
-            <div className={styles.feature}>
-              <RadioBroadcastFeature />
+            <div id="broadcast-archive" tabIndex={-1} className={`${styles.feature} scroll-mt-24`}>
+              <RadioBroadcastFeature archiveOnly />
             </div>
 
             <div className={styles.schedule}>
-              {/* Schedule notice — auto-converts to visitor's timezone */}
-              <LocalSchedule
-                day={radioPage.schedule.day}
-                queueOpens={radioPage.schedule.queueOpens}
-                showBegins={radioPage.schedule.showBegins}
-                firstTrack={radioPage.schedule.firstTrack}
-                notice={radioPage.schedule.notice}
-              />
+              {submission.external && (
+                <LocalSchedule
+                  day={radioPage.schedule.day}
+                  queueOpens={radioPage.schedule.queueOpens}
+                  showBegins={radioPage.schedule.showBegins}
+                  firstTrack={radioPage.schedule.firstTrack}
+                  notice={radioPage.schedule.notice}
+                />
+              )}
 
               {/* Community and broadcast destinations */}
               <div>

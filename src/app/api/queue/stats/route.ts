@@ -16,7 +16,7 @@ export async function GET(req: Request) {
       // The Radio landing feature never consumes browser-personal history or
       // admin previews. Share this compact public result across viewers.
       const stats = await getPublicQueueStats(null, true);
-      return NextResponse.json(buildRadioShowFeature(stats), {
+      return NextResponse.json(buildRadioShowFeature(stats, Date.now(), new URL(req.url).searchParams.get("mode") === "archive"), {
         headers: { "Cache-Control": "public, max-age=0, s-maxage=30, stale-while-revalidate=30" },
       });
     } catch {

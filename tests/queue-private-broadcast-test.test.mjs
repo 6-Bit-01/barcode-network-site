@@ -180,7 +180,7 @@ test("the public queue API and public schedule consume only the sanitized public
   assert.equal(payload.session, null);
   assert.equal(payload.suppressPublicLiveStatus, true);
   assert.deepEqual(payload.queue, []);
-  assert.match(schedule, /siteShowMode\s*===\s*"broadcast_live"/);
+  assert.doesNotMatch(schedule, /ACTIVE|siteShowMode|isWithinBroadcastWindow/, "planned times never claim live status");
   assert.doesNotMatch(schedule, /const\s*\{\s*isLive\s*\}\s*=\s*useLiveStatus/);
 });
 

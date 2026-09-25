@@ -1,22 +1,23 @@
 "use client";
 
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { useLiveStatus } from "@/components/LiveStatusProvider";
 import type { RadioQueueEntryState } from "@/lib/live-status-public";
 
 const COPY: Record<RadioQueueEntryState["status"], { label: string; title: string; detail: string; action: string }> = {
   loading: { label: "Checking the queue", title: "Find your place in the show.", detail: "Reading the current submission status…", action: "" },
   unavailable: { label: "Status unavailable", title: "The queue could not be checked.", detail: "Try the status check again before entering the current queue.", action: "" },
-  closed: { label: "Queue closed", title: "Catch up before the next show.", detail: "There is no active public queue right now. Explore past shows, find a song you heard, and discover the artists in the Broadcast Archive.", action: "" },
+  closed: { label: "Next broadcast", title: "Meet us at the next transmission.", detail: "Bring your music or just yourself. Submissions open when the host opens the queue.", action: "" },
   standby: { label: "Submissions closed", title: "The queue is on standby.", detail: "You can view the current queue. Submissions begin when the host opens intake.", action: "View current queue" },
-  open: { label: "Submissions open", title: "Your music. The next transmission.", detail: "Enter the current queue and submit your original track for free. Follow your song from the same page.", action: "Enter current queue" },
-  live_open: { label: "On air · Submissions open", title: "The show is live. Bring your music.", detail: "Submit your original track for free, then follow Now Playing and Next In Line while you watch.", action: "Enter current queue" },
+  open: { label: "Submissions open", title: "Your music. The next transmission.", detail: "Enter the current queue and submit your original track for free. Follow your song from the same page.", action: "Submit a track" },
+  live_open: { label: "On air · Submissions open", title: "The show is live. Bring your music.", detail: "Submit your original track for free, then follow Now Playing and Next In Line while you watch.", action: "Submit a track" },
   live_closed: { label: "On air · Submissions closed", title: "The music is still moving.", detail: "Intake is closed. Follow accepted tracks, Now Playing, and Next In Line in the current queue.", action: "View current queue" },
   full: { label: "Queue full · Submissions closed", title: "Tonight’s slots are filled.", detail: "New tracks cannot enter right now. Accepted songs and the current running order remain in the queue.", action: "View current queue" },
 };
 
-export function RadioQueueEntry() {
-  const { radioQueueEntry, refreshQueueStatus } = useLiveStatus();
+export function RadioQueueEntry({ children }: { children?: ReactNode }) {
+  const { radioQueueEntry, refreshQueueStatus, tiktokBroadcastLive } = useLiveStatus();
   const copy = COPY[radioQueueEntry.status];
   const open = radioQueueEntry.status === "open" || radioQueueEntry.status === "live_open";
   return (
@@ -31,12 +32,14 @@ export function RadioQueueEntry() {
         </p>
         <h2 id="radio-queue-heading" className="mt-3 text-2xl font-bold leading-tight text-foreground sm:text-3xl">{copy.title}</h2>
         <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted">{copy.detail}</p>
-        <div className="mt-5 flex flex-wrap items-center gap-3">
+        {(radioQueueEntry.href || radioQueueEntry.status === "unavailable") && <div className="mt-5 flex flex-wrap items-center gap-3">
           {radioQueueEntry.href ? <Link href={radioQueueEntry.href} prefetch={false} className="inline-flex min-h-12 w-full items-center justify-center gap-3 bg-accent px-5 py-3 text-center text-sm font-bold uppercase tracking-widest text-background transition hover:bg-accent-dim focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent sm:w-auto">{copy.action}<span aria-hidden="true">→</span></Link>
-            : radioQueueEntry.status === "closed" ? <Link href="/radio/archive" className="inline-flex min-h-12 w-full items-center justify-center gap-3 bg-accent px-5 py-3 text-center text-sm font-bold uppercase tracking-widest text-background transition hover:bg-accent-dim focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent sm:w-auto">Open Broadcast Archive<span aria-hidden="true">→</span></Link> : null}
-          {!radioQueueEntry.href && radioQueueEntry.status !== "loading" && <button type="button" onClick={refreshQueueStatus} className="inline-flex min-h-12 items-center border border-border-light px-4 py-3 text-sm font-bold text-foreground transition hover:border-accent focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent">Check queue status</button>}
-        </div>
+            : null}
+          {radioQueueEntry.status === "unavailable" && <button type="button" onClick={refreshQueueStatus} className="inline-flex min-h-12 items-center border border-border-light px-4 py-3 text-sm font-bold text-foreground transition hover:border-accent focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent">Check queue status</button>}
+        </div>}
         {open && <p className="mt-3 text-xs leading-relaxed text-muted">Free submissions. Optional Priority Signal activates only after payment clears.</p>}
+        {!tiktokBroadcastLive && children}
+        {!tiktokBroadcastLive && radioQueueEntry.status !== "loading" && radioQueueEntry.status !== "unavailable" && <a href="#broadcast-archive" className="mt-5 flex min-h-11 items-center justify-between gap-3 border-t border-cyan-200/20 pt-4 text-sm font-bold text-cyan-200 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-cyan-200">Explore past broadcasts<span aria-hidden="true"><span className="hidden lg:inline">→</span><span className="lg:hidden">↓</span></span></a>}
       </div>
     </section>
   );

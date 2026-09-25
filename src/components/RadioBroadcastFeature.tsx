@@ -7,12 +7,12 @@ import { radioShowDate, radioShowDuration, type RadioShowFeature } from "@/lib/r
 import { startSessionBoundPolling } from "@/lib/session-bound-polling";
 import styles from "./RadioBroadcastFeature.module.css";
 
-export function RadioBroadcastFeature({ compact = false }: { compact?: boolean }) {
+export function RadioBroadcastFeature({ compact = false, archiveOnly = false }: { compact?: boolean; archiveOnly?: boolean }) {
   const [feature, setFeature] = useState<RadioShowFeature | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const load = useCallback(async () => {
     try {
-      const response = await fetch("/api/queue/stats?view=feature", { credentials: "omit" });
+      const response = await fetch(`/api/queue/stats?view=feature${archiveOnly ? "&mode=archive" : ""}`, { credentials: "omit" });
       if (!response.ok) throw new Error("Show details unavailable");
       const next = await response.json() as RadioShowFeature;
       if (next.schemaVersion !== "radio_show_feature_v2") throw new Error("Unrecognized show details");
@@ -24,20 +24,21 @@ export function RadioBroadcastFeature({ compact = false }: { compact?: boolean }
       setUnavailable(true);
       return false;
     }
-  }, []);
+  }, [archiveOnly]);
 
   useEffect(() => startSessionBoundPolling({ intervalMs: 30_000, standbyIntervalMs: 60_000, poll: load }), [load]);
 
-  return <RadioBroadcastFeatureView feature={feature} unavailable={unavailable} compact={compact} />;
+  return <RadioBroadcastFeatureView feature={feature} unavailable={unavailable} compact={compact} archiveOnly={archiveOnly} />;
 }
 
-export function RadioBroadcastFeatureView({ feature, unavailable = false, compact = false }: {
+export function RadioBroadcastFeatureView({ feature, unavailable = false, compact = false, archiveOnly = false }: {
   feature: RadioShowFeature | null;
   unavailable?: boolean;
   compact?: boolean;
+  archiveOnly?: boolean;
 }) {
-  const live = feature?.mode === "live";
-  const show = feature?.show;
+  const live = !archiveOnly && feature?.mode === "live";
+  const show = archiveOnly && feature?.mode !== "archive" ? null : feature?.show;
   const title = live ? "The Broadcast Deck" : "The Broadcast Archive";
   const href = live ? "/radio/deck" : show?.href ?? "/radio/archive";
   if (compact) return (
@@ -61,7 +62,7 @@ export function RadioBroadcastFeatureView({ feature, unavailable = false, compac
   return (
     <section className={styles.feature} data-mode={live ? "live" : "archive"} aria-labelledby="radio-feature-title">
       <div className={styles.topline}>
-        <span className={styles.status}><span aria-hidden="true" />{live ? "On air now · BARCODE Radio" : feature ? "Between broadcasts · Keep discovering" : "Explore BARCODE Radio"}</span>
+        <span className={styles.status}><span aria-hidden="true" />{archiveOnly ? "Past broadcasts · Keep discovering" : live ? "On air now · BARCODE Radio" : feature ? "Between broadcasts · Keep discovering" : "Explore BARCODE Radio"}</span>
       </div>
       <div className={styles.body}>
         <div className={styles.intro}>
@@ -100,7 +101,7 @@ export function RadioBroadcastFeatureView({ feature, unavailable = false, compac
         {show.artists.length > 0 && <div className={styles.artists}><span>{live ? "In tonight’s show" : "From the show"}</span>{show.artists.map((artist) => <Link key={artist.href} href={artist.href}>{artist.name}<span aria-hidden="true"> ↗</span></Link>)}</div>}
       </>}
       {!live && <div className={styles.music}><div><p>Music from BNL-01</p><span>Explore released Ballads and build your own playlist.</span></div><Link href="/bnl/music">Explore the music <span aria-hidden="true">→</span></Link></div>}
-      {feature?.submissionsOpen && feature.queueHref && <div className={styles.intake}><span>Submissions are open. Bring your next track.</span><Link href={feature.queueHref}>Enter the queue →</Link></div>}
+      {!archiveOnly && feature?.submissionsOpen && feature.queueHref && <div className={styles.intake}><span>Submissions are open. Bring your next track.</span><Link href={feature.queueHref}>Enter the queue →</Link></div>}
     </section>
   );
 }

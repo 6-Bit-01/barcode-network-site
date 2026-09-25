@@ -6,26 +6,36 @@ now explicitly includes stronger Archive invitations between broadcasts and
 where past-show context is relevant, plus a review of unused space across the
 existing music, Deck/Archive and BNL surfaces.
 
-## First slice
+## Radio destination clarity — September 25 correction
 
-- On desktop, Radio's existing broadcast feature sits beside the introduction,
-  queue status and schedule. On smaller screens it follows the queue, ahead of
-  the schedule and community links. The queue guide uses the available width.
-- A confirmed absent public queue offers **Open Broadcast Archive** and keeps
-  **Check queue status**. Current open, standby, full and live queue actions
-  retain their direct session link. A failed read stays unavailable, not closed.
-- The existing public feature projection chooses the latest archived show
-  between broadcasts and the Deck during a real public broadcast. It retains
-  exact show/artist links, public counts and the external-Finish qualification.
-  Missing details keep an honest loading/unavailable state and an Archive link.
-- Between shows, the feature also links to BNL's existing released music and
-  browser-local playlists. This is a music destination, not a show replay.
-- The Deck already offers the Archive when on standby and in its navigation;
-  those existing contextual paths remain in place.
-
-The first slice introduced no new data source or polling loop. Private/test
-exclusion and live-state authority remain in the existing public projection.
-No recording is uploaded or advertised.
+- Keep two distinct panels: the left holds the next scheduled broadcast and
+  current submission action; the right always holds the Broadcast Archive.
+  Radio never switches the archive to the Deck, even while a public show is live.
+- Fold the native queue's separate Live Schedule into the left card off-air,
+  showing the next Pacific Friday date, Pacific and visitor-local times, and a
+  minute-resolution countdown. A local clock adds no network polling. Scheduled
+  times never establish live status or open submissions.
+- Remove the duplicate large closed-queue Archive button. A subtle **Explore past
+  broadcasts** link points to the right-hand panel on desktop and downward when
+  the panels stack on phones. It scrolls to the panel, rather than duplicating
+  the panel's archive destination. Hide this pointer during a real live show.
+- Open intake uses **Submit a track**. Standby, full and closed-intake sessions
+  retain their direct viewable queue link. Loading and failed reads remain
+  distinct; failed reads retain **Check queue status**.
+- No Deck link, Deck mention or **Watch & follow the show** button appears on
+  Radio. Keep its existing external TikTok link. The queue's separate **Done
+  submitting—or just watching?** card remains the Deck handoff after all songs
+  have been added or for viewers; individual acceptance receipts no longer link
+  to the Deck.
+- Reuse the public feature endpoint with `view=feature&mode=archive`, selecting
+  the latest archived public show even during current playback. Preserve exact
+  show/artist links, played evidence, public counts and the external-Finish
+  qualification. An active show cannot substitute for missing archive history.
+  Loading/unavailable states retain honest text and Archive navigation.
+- HQ retains its default compact feature behavior. No new data source, network
+  polling loop, queue state, payment behavior or feature gate is introduced.
+  Private/test exclusion stays in the existing public projection. No recording
+  is uploaded or advertised.
 
 ## HQ and BNL discovery
 
@@ -66,14 +76,15 @@ do not close the overall presentation pass or priorities 8, 9 and 12.
 ## Verification
 
 Run `npm ci`, `npm run check` and `npm run build`. Focused rendered regressions
-cover the closed queue Archive action, retained current-session actions, failed
-and loading feature reads, latest-show links, pre-show intake and live Deck.
+cover the in-page Archive pointer, retained current-session actions, failed
+and loading feature reads, exact archived-show links during live/intake states,
+no Deck content on Radio, retained HQ live behavior and Pacific DST rollover.
 Browser fixtures use the real Radio page and mocked public reads at desktop,
 tablet/zoom and narrow phone widths; check bounds and actual action destinations
 in archive, intake, live, full, unavailable and empty states. No public show is
 started and no production mutation is needed.
 
-Local results: `npm ci`, `npm run check` and `npm run build` passed: 1,342 Node tests, 20 Python
+Previous first-slice results (before the September 25 correction): `npm ci`, `npm run check` and `npm run build` passed: 1,342 Node tests, 20 Python
 fixtures, TypeScript, and lint with 0 errors / 37 existing warnings. Chromium
 passed at 1440×1000, 1024×900, 720×500, 390×844 and 320×740 across the six states
 above, including a manual status refresh into intake, exact action destinations,
@@ -90,12 +101,13 @@ No VPS commands, environment changes or migrations are required.
 ## Focused post-deploy evidence
 
 1. Read `/radio` between broadcasts. Verify the Archive fills the desktop right
-   column, follows the queue on phones, and is directly linked from the closed
-   queue. Follow the latest-show, all-shows, artist and BNL music destinations.
+   column, follows the queue on phones, and is reached by the off-air pointer in the left
+   card. Follow the latest-show, all-shows, artist and BNL music destinations.
 2. Verify the feature response still supplies the same exact archived session
    and public counts. Unavailable details must not claim a live or ended show.
-3. The next naturally occurring public broadcast should show the Deck and live
-   TikTok destination, even when intake is closed/full. This remains a natural
+3. During the next naturally occurring public broadcast, Radio must keep the
+   Archive panel and use the existing live TikTok destination, including when
+   intake is closed/full. No Deck content should appear on Radio. This remains a natural
    observation, not a request to start a session or test during the show.
 
 Local browser evidence is not physical-device or live-show acceptance. Revert

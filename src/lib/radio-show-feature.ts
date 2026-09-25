@@ -21,7 +21,7 @@ export interface RadioShowFeature {
   show: RadioFeaturedShow | null;
 }
 
-export function buildRadioShowFeature(stats: QueuePublicStats, now = Date.now()): RadioShowFeature {
+export function buildRadioShowFeature(stats: QueuePublicStats, now = Date.now(), archiveOnly = false): RadioShowFeature {
   const empty: RadioShowFeature = {
     schemaVersion: "radio_show_feature_v2", mode: "archive", submissionsOpen: false, queueHref: null, show: null,
   };
@@ -30,14 +30,14 @@ export function buildRadioShowFeature(stats: QueuePublicStats, now = Date.now())
   if (stats.visibility !== "public_safe" || stats.catalogScope !== "played_broadcast") return empty;
   const current = stats.currentShow && stats.currentShow.status !== "archived" && stats.currentShow.broadcastPhase !== "ended"
     ? stats.currentShow : null;
-  const live = current?.broadcastPhase === "broadcast_active";
+  const live = !archiveOnly && current?.broadcastPhase === "broadcast_active";
   const archived = stats.latestShow?.status === "archived" ? stats.latestShow : null;
   const show = live ? current : archived;
   return {
     ...empty,
     mode: live ? "live" : "archive",
-    submissionsOpen: Boolean(current?.submissionsOpen),
-    queueHref: current ? `/queue/${encodeURIComponent(current.sessionId)}` : null,
+    submissionsOpen: !archiveOnly && Boolean(current?.submissionsOpen),
+    queueHref: !archiveOnly && current ? `/queue/${encodeURIComponent(current.sessionId)}` : null,
     show: show ? summarizeShow(show, live, now) : null,
   };
 }

@@ -200,13 +200,14 @@ test("Radio's primary card renders a direct session link only from current publi
     return renderToStaticMarkup(React.createElement(RadioQueueEntry));
   };
   assert.match(render(entry()), /href="\/queue\/public-night"/);
-  assert.match(render(entry()), /Enter current queue/);
+  assert.match(render(entry()), /Submit a track/);
   assert.match(render(entry(snapshot({ status: { isOpen: false } }))), /View current queue/);
   assert.doesNotMatch(render(entry(snapshot({ session: null }))), /href="\/queue/);
   const closed = render(entry(snapshot({ session: null })));
-  assert.match(closed, /href="\/radio\/archive"/);
-  assert.match(closed, /Open Broadcast Archive/);
-  assert.match(closed, /Check queue status/);
+  assert.match(closed, /href="#broadcast-archive"/);
+  assert.match(closed, /Explore past broadcasts/);
+  assert.match(closed, /Next broadcast/);
+  assert.doesNotMatch(closed, /href="\/radio\/archive"|Open Broadcast Archive/);
   for (const status of ["loading", "unavailable", "standby", "open", "live_open", "live_closed", "full"]) {
     assert.doesNotMatch(render({ status, href: ["loading", "unavailable"].includes(status) ? null : "/queue/public-night" }), /Open Broadcast Archive/, `${status} must retain its current queue action`);
   }
@@ -283,5 +284,37 @@ test("HQ compact discovery preserves exact archived-show links and only uses the
     assert.match(html, /href="\/radio\/archive"/);
     assert.doesNotMatch(html, /On air now|Current show|Latest archived show|Public night/);
     assert.match(html, props.unavailable ? /temporarily unavailable/ : props.feature ? /as new broadcasts are added/ : /Loading the latest show/);
+  }
+});
+
+test("Radio keeps the Archive panel during live shows and never offers the Deck", () => {
+  const React = require("react");
+  const render = require("react-dom/server").renderToStaticMarkup;
+  const { RadioBroadcastFeatureView } = load("src/components/RadioBroadcastFeature.tsx", {
+    "next/link": ({ children, ...props }) => React.createElement("a", props, children),
+    "@/components/RadioTikTokLink": { RadioTikTokLink: () => null },
+    "@/lib/radio-show-feature": { radioShowDate: value => value, radioShowDuration: seconds => String(seconds) },
+    "@/lib/session-bound-polling": {},
+    "./RadioBroadcastFeature.module.css": {},
+  });
+  for (const mode of ["live", "archive"]) {
+    const feature = { mode, submissionsOpen: true, queueHref: "/queue/live-show", show: {
+      title: mode === "live" ? "Current live show" : "Previous public show", href: mode === "live" ? "/radio/deck" : "/radio/archive?show=past",
+      showDate: "2026-09-18", artists: [], tracksInShow: 12,
+    } };
+    const html = render(React.createElement(RadioBroadcastFeatureView, { feature, archiveOnly: true }));
+    assert.match(html, /The Broadcast Archive/);
+    assert.doesNotMatch(html, /Broadcast Deck|\/radio\/deck|\/queue\/live-show|Current live show|Between broadcasts/);
+  }
+  for (const live of [false, true]) {
+    const { RadioQueueEntry } = load("src/components/RadioQueueEntry.tsx", {
+      "next/link": ({ children, prefetch, ...props }) => { void prefetch; return React.createElement("a", props, children); },
+      "@/components/LiveStatusProvider": { useLiveStatus: () => ({ radioQueueEntry: { status: live ? "live_open" : "closed", href: live ? "/queue/live-show" : null }, tiktokBroadcastLive: live, refreshQueueStatus() {} }) },
+    });
+    const html = render(React.createElement(RadioQueueEntry, null, "Scheduled show date"));
+    assert.doesNotMatch(html, /Broadcast Deck|\/radio\/deck|Watch &amp; follow/);
+    assert.equal(html.includes('href="#broadcast-archive"'), !live);
+    assert.equal(html.includes("Scheduled show date"), !live);
+    if (live) assert.match(html, /Submit a track/);
   }
 });

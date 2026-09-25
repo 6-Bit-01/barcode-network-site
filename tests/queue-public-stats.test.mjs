@@ -449,9 +449,9 @@ test("the Radio feature joins the active queue as a Deck entry while archive pag
   assert.match(publicQueue, /\/radio\/deck/);
   assert.match(publicQueue, /Done submitting—or just watching\?/);
   assert.match(publicQueue, /Song submissions stay here in the queue/);
-  assert.match(publicQueue, /Submission complete · follow the show on the Deck/);
+  assert.doesNotMatch(publicQueue.slice(publicQueue.indexOf("{acceptedReceipt &&"), publicQueue.indexOf("<SessionPhasePanel")), /\/radio\/deck/);
   assert.match(publicQueue, /\/radio\/archive/);
-  assert.match(radio, /<RadioBroadcastFeature \/>/);
+  assert.match(radio, /<RadioBroadcastFeature archiveOnly \/>/);
   assert.doesNotMatch(archivePage, /deckHref|\/radio\/deck/);
   assert.doesNotMatch(sitemap, /\/radio\/deck/);
   assert.match(sitemap, /\/radio\/archive/);
@@ -712,5 +712,40 @@ test("Radio feature endpoint shares only a compact anonymous public summary and 
     assert.deepEqual(await disabled.json(), { schemaVersion: "radio_show_feature_v2", mode: "archive", submissionsOpen: false, queueHref: null, show: null });
   } finally {
     process.env.BARCODE_QUEUE_PRODUCTION_ENABLED = "true";
+  }
+});
+
+test("Radio archive-only projection retains the previous public show while current intake and playback continue", async () => {
+  const { buildRadioShowFeature } = require("../src/lib/radio-show-feature.ts");
+  const heard = { ...entry("old-track", "@public", { outcome: "finished" }), playbackEndedNaturally: true };
+  const previous = session("previous-show", "live_broadcast", { showDate: "2026-09-11", completed: [heard], broadcastPhase: "ended" });
+  const current = session("current-show", "live_broadcast", { showDate: "2026-09-18", status: "open", queueOpen: true, showStarted: true, broadcastPhase: "broadcast_active" });
+  const stats = queue.buildQueuePublicStats({ revision: 31, sessions: [previous, current], activeSessionId: current.sessionId, playedOnly: true });
+  const before = JSON.stringify(stats);
+  assert.equal(buildRadioShowFeature(stats).mode, "live", "HQ retains its automatic live feature");
+  const pinned = buildRadioShowFeature(stats, Date.now(), true);
+  assert.equal(pinned.mode, "archive");
+  assert.equal(pinned.show.href, "/radio/archive?view=shows&show=previous-show");
+  assert.equal(pinned.submissionsOpen, false);
+  assert.equal(pinned.queueHref, null);
+  assert.equal(JSON.stringify(stats), before);
+  const emptyHistory = queue.buildQueuePublicStats({ revision: 32, sessions: [current], activeSessionId: current.sessionId, playedOnly: true });
+  assert.equal(buildRadioShowFeature(emptyHistory, Date.now(), true).show, null, "a live show cannot substitute for missing archived history");
+
+  const route = require("../src/app/api/queue/stats/route.ts");
+  const originalRead = queue.getPublicQueueStats;
+  queue.getPublicQueueStats = async (token, playedOnly) => {
+    assert.equal(token, null, "feature reads never carry a browser identity");
+    assert.equal(playedOnly, true, "archive cards use actual show evidence");
+    return stats;
+  };
+  try {
+    const archivedResponse = await route.GET(new Request("https://example.test/api/queue/stats?view=feature&mode=archive"));
+    assert.equal(archivedResponse.status, 200);
+    assert.deepEqual(await archivedResponse.json(), pinned);
+    const defaultResponse = await route.GET(new Request("https://example.test/api/queue/stats?view=feature"));
+    assert.equal((await defaultResponse.json()).mode, "live", "HQ retains the default endpoint behavior");
+  } finally {
+    queue.getPublicQueueStats = originalRead;
   }
 });

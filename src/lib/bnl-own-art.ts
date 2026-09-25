@@ -66,7 +66,12 @@ export async function publishOwnArt(art: BNLOwnArt, png: Buffer) {
   // Immutable metadata makes ambiguous delivery safely retryable by exact packet.
   const serialized = canonicalJSON(art);
   const existing = await redis.get<BNLOwnArt>(PREFIX + art.artId);
-  if (existing && canonicalJSON(existing) !== serialized) return { ok: false, conflict: true };
+  if (existing) {
+    if (canonicalJSON(existing) !== serialized) return { ok: false, conflict: true };
+    // A receipt acknowledges an already committed packet. Later visibility
+    // changes affect reads, not whether that exact packet was accepted.
+    return { ok: true, artId: existing.artId, sha256: existing.sha256 };
+  }
   if (!await journalEligible(art, true)) return { ok: false, conflict: true };
   await put(pathFor(art), png, { access: "private", addRandomSuffix: false, allowOverwrite: true, contentType: "image/png", cacheControlMaxAge: 60 });
   // Recheck publication controls after the external upload; no public blob URL.

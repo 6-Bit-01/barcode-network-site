@@ -20,7 +20,10 @@ export async function POST(req: Request) {
       if (bytes > MAX_ART_BODY) { await reader.cancel(); return json({ ok: false }, 413); }
       chunks.push(next.value);
     }
-    const parsed = validateOwnArt(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+    let body: unknown;
+    try { body = JSON.parse(Buffer.concat(chunks).toString("utf8")); }
+    catch { return json({ ok: false }, 400); }
+    const parsed = validateOwnArt(body);
     if (!parsed) return json({ ok: false }, 400);
     const result = await publishOwnArt(parsed.art, parsed.png);
     return json(result, result.ok ? 200 : 409);

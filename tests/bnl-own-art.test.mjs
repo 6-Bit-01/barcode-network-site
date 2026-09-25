@@ -101,6 +101,7 @@ test('authenticated endpoint rejects unauthorized, disabled, oversized and inval
   enabled = true;
   assert.equal((await route.POST(request(' '.repeat(2_850_001)))).status, 413);
   assert.equal((await route.POST(request('{}'))).status, 400);
+  assert.equal((await route.POST(request('{broken'))).status, 400);
   assert.equal(published, 0);
   assert.equal((await route.POST(request(JSON.stringify(payload(original))))).status, 200);
   assert.equal(published, 1);
@@ -125,5 +126,17 @@ test('unlinked artwork still respects every Journal provided as creative input',
   state.art = { ...original, journal: null, sourceJournals: [journal] };
   assert.ok(await lib.readOwnArt(original.artId));
   state.visible = false;
+  assert.equal(await lib.readOwnArt(original.artId), null);
+});
+
+test('lost-response exact retry acknowledges stored acceptance despite later Journal withdrawal', async () => {
+  const { state, lib, journal } = fixture();
+  const packet = { ...original, journal, sourceJournals: [journal] };
+  assert.equal((await lib.publishOwnArt(packet, png)).ok, true);
+  state.visible = false;
+  state.reusable = false;
+  assert.equal((await lib.publishOwnArt(packet, png)).ok, true);
+  assert.equal(state.put, 1);
+  assert.equal(state.eval, 1);
   assert.equal(await lib.readOwnArt(original.artId), null);
 });

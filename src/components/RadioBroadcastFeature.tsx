@@ -42,8 +42,7 @@ export function RadioBroadcastFeatureView({ feature, unavailable = false }: {
   return (
     <section className={styles.feature} data-mode={live ? "live" : "archive"} aria-labelledby="radio-feature-title">
       <div className={styles.topline}>
-        <span className={styles.status}><span aria-hidden="true" />{live ? "On air now · BARCODE Radio" : "BARCODE Radio · After the show"}</span>
-        <span className={styles.edition}>{live ? "Follow the night as it happens" : "The music. The artists. The night."}</span>
+        <span className={styles.status}><span aria-hidden="true" />{live ? "On air now · BARCODE Radio" : feature ? "Between broadcasts · Keep discovering" : "Explore BARCODE Radio"}</span>
       </div>
       <div className={styles.body}>
         <div className={styles.intro}>
@@ -81,6 +80,7 @@ export function RadioBroadcastFeatureView({ feature, unavailable = false }: {
         {show.hostFinishedExternalTracks > 0 && <p className={styles.countNote}>Includes {show.hostFinishedExternalTracks} external {show.hostFinishedExternalTracks === 1 ? "track" : "tracks"} marked finished by the host. Full-length playback is not confirmed for every track.</p>}
         {show.artists.length > 0 && <div className={styles.artists}><span>{live ? "In tonight’s show" : "From the show"}</span>{show.artists.map((artist) => <Link key={artist.href} href={artist.href}>{artist.name}<span aria-hidden="true"> ↗</span></Link>)}</div>}
       </>}
+      {!live && <div className={styles.music}><div><p>Music from BNL-01</p><span>Explore released Ballads and build your own playlist.</span></div><Link href="/bnl/music">Explore the music <span aria-hidden="true">→</span></Link></div>}
       {feature?.submissionsOpen && feature.queueHref && <div className={styles.intake}><span>Submissions are open. Bring your next track.</span><Link href={feature.queueHref}>Enter the queue →</Link></div>}
     </section>
   );

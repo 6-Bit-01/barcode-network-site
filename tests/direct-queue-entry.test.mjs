@@ -203,9 +203,52 @@ test("Radio's primary card renders a direct session link only from current publi
   assert.match(render(entry()), /Enter current queue/);
   assert.match(render(entry(snapshot({ status: { isOpen: false } }))), /View current queue/);
   assert.doesNotMatch(render(entry(snapshot({ session: null }))), /href="\/queue/);
+  const closed = render(entry(snapshot({ session: null })));
+  assert.match(closed, /href="\/radio\/archive"/);
+  assert.match(closed, /Open Broadcast Archive/);
+  assert.match(closed, /Check queue status/);
+  for (const status of ["loading", "unavailable", "standby", "open", "live_open", "live_closed", "full"]) {
+    assert.doesNotMatch(render({ status, href: ["loading", "unavailable"].includes(status) ? null : "/queue/public-night" }), /Open Broadcast Archive/, `${status} must retain its current queue action`);
+  }
   assert.match(render(entry(snapshot(), { readState: "unavailable" })), /Status unavailable/);
   assert.match(render(entry(snapshot(), { readState: "loading" })), /Checking the queue/);
   const source = fs.readFileSync(new URL("../src/components/RadioQueueEntry.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(source, /fetch\(|setInterval|startSessionBoundPolling/, "the card must reuse the existing queue read");
   assert.equal(fs.existsSync(new URL("../src/components/PublicQueueGateway.tsx", import.meta.url)), false);
+});
+
+test("Radio discovery retains Archive paths without claiming a broadcast from missing data", () => {
+  const React = require("react");
+  const { renderToStaticMarkup } = require("react-dom/server");
+  const { RadioBroadcastFeatureView } = load("src/components/RadioBroadcastFeature.tsx", {
+    "next/link": ({ children, ...props }) => React.createElement("a", props, children),
+    "@/components/RadioTikTokLink": { RadioTikTokLink: () => React.createElement("a", { href: "https://www.tiktok.com/@six.bit/live" }, "Watch LIVE on TikTok") },
+    "@/lib/radio-show-feature": { radioShowDate: value => value, radioShowDuration: seconds => String(seconds) },
+    "@/lib/session-bound-polling": {},
+    "./RadioBroadcastFeature.module.css": new Proxy({}, { get: (_, key) => String(key) }),
+  });
+  const render = props => renderToStaticMarkup(React.createElement(RadioBroadcastFeatureView, props));
+  for (const unavailable of [false, true]) {
+    const html = render({ feature: null, unavailable });
+    assert.match(html, /href="\/radio\/archive"/);
+    assert.match(html, /Explore BARCODE Radio/);
+    assert.doesNotMatch(html, /On air now|Between broadcasts|href="\/radio\/deck"/);
+    assert.match(html, unavailable ? /temporarily unavailable/ : /Loading the latest show/);
+  }
+  const show = { title: "Public show", showDate: "2026-09-18", href: "/radio/archive?show=public-night", tracksInShow: 44, artistCredits: 30, wheelSpins: 10, durationSeconds: 20000, hostFinishedExternalTracks: 2, artists: [{ name: "Public artist", href: "/radio/archive?artist=public-artist" }] };
+  const base = { schemaVersion: "radio_show_feature_v2", mode: "archive", show, submissionsOpen: false, queueHref: null };
+  const archive = render({ feature: base });
+  assert.match(archive, /href="\/radio\/archive\?show=public-night"/);
+  assert.match(archive, /href="\/radio\/archive\?view=artists"/);
+  assert.match(archive, /href="\/bnl\/music"/);
+  assert.match(archive, /Full-length playback is not confirmed/);
+  assert.doesNotMatch(archive, /Watch LIVE|Enter the live Deck/);
+  const intake = render({ feature: { ...base, submissionsOpen: true, queueHref: "/queue/next-night" } });
+  assert.match(intake, /href="\/queue\/next-night"/);
+  assert.match(intake, /The Broadcast Archive/);
+  const live = render({ feature: { ...base, mode: "live", show: { ...show, href: "/radio/deck" } } });
+  assert.match(live, /href="\/radio\/deck"/);
+  assert.match(live, /On air now/);
+  assert.match(live, /Browse all past shows/);
+  assert.doesNotMatch(live, /Between broadcasts|href="\/bnl\/music"/);
 });

@@ -25,14 +25,14 @@ export async function POST(req: Request) {
     catch { return json({ ok: false }, 400); }
     const parsed = validateOwnArt(body);
     if (!parsed) return json({ ok: false }, 400);
-    const result = await publishOwnArt(parsed.art, parsed.png);
+    const result = await publishOwnArt(parsed.art, parsed.image);
     return json(result, result.ok ? 200 : 409);
   } catch { return json({ ok: false, error: "Art publication unavailable." }, 503); }
 }
 export async function GET(req: Request) {
   try {
     const image = await readOwnArtImage(new URL(req.url).searchParams.get("id") || "");
-    if (image) return new Response(image.stream, { headers: { ...headers, "Content-Type": "image/png", "Content-Security-Policy": "default-src 'none'; sandbox" } });
+    if (image) return new Response(image.stream, { headers: { ...headers, "Content-Type": image.mimeType, "Content-Security-Policy": "default-src 'none'; sandbox" } });
   } catch { /* Missing media remains unavailable, never a broken public URL. */ }
   return new Response(null, { status: 404, headers });
 }

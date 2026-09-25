@@ -16,6 +16,7 @@ function load(file, mocks) {
   return cjsModule.exports;
 }
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aN7sAAAAASUVORK5CYII=', 'base64');
+const jpeg = Buffer.from(JSON.parse(fs.readFileSync('tests/fixtures/bnl-art-jpeg.json', 'utf8')).jpegBase64, 'base64');
 const original = { artId: 'bnl-art-2026-09-25', title: 'Space Between', meaning: 'An imagined room made of rhythm.', createdAt: '2026-09-25T23:00:00Z', sha256: crypto.createHash('sha256').update(png).digest('hex'), journal: null, sourceJournals: [] };
 const payload = art => ({ contractVersion: 1, kind: 'bnl_own_art', art, pngBase64: png.toString('base64') });
 const canonicalJSON = x => x && typeof x === 'object' ? Array.isArray(x) ? '[' + x.map(canonicalJSON).join(',') + ']' : '{' + Object.keys(x).sort().map(k => JSON.stringify(k) + ':' + canonicalJSON(x[k])).join(',') + '}' : JSON.stringify(x);
@@ -31,7 +32,7 @@ function fixture() {
       listJournalEntryControls: async () => [{ entryId: journal.entryId, memoryEligible: state.reusable }],
     },
     '@vercel/blob': {
-      put: async (_path, _bytes, opts) => { state.put++; assert.equal(opts.access, 'private'); state.afterUpload?.(); },
+      put: async (path, bytes, opts) => { state.put++; state.saved = { path, bytes, opts }; assert.equal(opts.access, 'private'); state.afterUpload?.(); },
       get: async () => { state.get++; state.afterGet?.(); return { statusCode: 200, stream: new Response(png).body }; },
     },
   });
@@ -43,6 +44,39 @@ test('bounded PNG packet verifies decoded original hash and Pacific creation day
   for (const mutated of [ { ...original, sha256: 'f'.repeat(64) }, { ...original, artId: 'bnl-art-2026-09-26' }, { ...original, privateNotes: 'secret' }, { ...original, journal: { entryId: 'bad' } } ]) assert.equal(lib.validateOwnArt(payload(mutated)), null);
   assert.equal(lib.validateOwnArt({ ...payload(original), pngBase64: 'a'.repeat(2_800_001) }), null);
   assert.equal(lib.validateOwnArt({ ...payload(original), pngBase64: Buffer.from('<svg/>').toString('base64') }), null);
+});
+test('v2 accepts original JPEG and PNG bytes, rejects wrong types and truncated JPEGs', () => {
+  const { lib } = fixture();
+  for (const [bytes, mimeType] of [[jpeg, 'image/jpeg'], [png, 'image/png']]) {
+    const art = { ...original, mimeType, sha256: crypto.createHash('sha256').update(bytes).digest('hex') };
+    const packet = { contractVersion: 2, kind: 'bnl_own_art', art, imageBase64: bytes.toString('base64') };
+    const parsed = lib.validateOwnArt(packet);
+    assert.ok(parsed);
+    assert.deepEqual(parsed.image, bytes);
+    assert.equal(parsed.art.mimeType, mimeType);
+    assert.equal(lib.validateOwnArt({ ...packet, art: { ...art, mimeType: mimeType === 'image/png' ? 'image/jpeg' : 'image/png' } }), null);
+    assert.equal(lib.validateOwnArt({ ...packet, art: { ...art, mimeType: 'image/svg+xml' } }), null);
+  }
+  const cut = jpeg.subarray(0, jpeg.length - 2);
+  assert.equal(lib.validateOwnArt({ contractVersion: 2, kind: 'bnl_own_art', art: { ...original, mimeType: 'image/jpeg', sha256: crypto.createHash('sha256').update(cut).digest('hex') }, imageBase64: cut.toString('base64') }), null);
+});
+test('JPEG publication preserves jpg path, stored bytes and public response Content-Type', async () => {
+  const { state, lib } = fixture();
+  const art = { ...original, mimeType: 'image/jpeg', sha256: crypto.createHash('sha256').update(jpeg).digest('hex') };
+  const route = load('src/app/api/bnl/art/route.ts', {
+    '@/lib/bnl-journal-contract': { authenticateBNLJournalRequest: k => k === 'test-key' },
+    '@/lib/bnl-own-art': lib,
+  });
+  const response = await route.POST(new Request('https://example.test/api/bnl/art', { method: 'POST', headers: { 'x-api-key': 'test-key', 'content-type': 'application/json' }, body: JSON.stringify({ contractVersion: 2, kind: 'bnl_own_art', art, imageBase64: jpeg.toString('base64') }) }));
+  assert.equal(response.status, 200);
+  assert.match(state.saved.path, /\.jpg$/);
+  assert.deepEqual(state.saved.bytes, jpeg);
+  assert.equal(state.saved.opts.contentType, 'image/jpeg');
+  const media = await route.GET(new Request('https://example.test/api/bnl/art?id=' + art.artId));
+  assert.equal(media.status, 200);
+  assert.equal(media.headers.get('content-type'), 'image/jpeg');
+  assert.equal(media.headers.get('cache-control'), 'no-store');
+  assert.equal(media.headers.get('x-content-type-options'), 'nosniff');
 });
 test('UTC midnight still belongs to previous Pacific day', () => {
   const { lib } = fixture();

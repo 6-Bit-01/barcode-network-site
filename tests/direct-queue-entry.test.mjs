@@ -252,3 +252,36 @@ test("Radio discovery retains Archive paths without claiming a broadcast from mi
   assert.match(live, /Browse all past shows/);
   assert.doesNotMatch(live, /Between broadcasts|href="\/bnl\/music"/);
 });
+
+
+test("HQ compact discovery preserves exact archived-show links and only uses the Deck for live broadcasts", () => {
+  const React = require("react");
+  const { RadioBroadcastFeatureView } = load("src/components/RadioBroadcastFeature.tsx", {
+    "next/link": ({ children, ...props }) => React.createElement("a", props, children),
+    "@/components/RadioTikTokLink": { RadioTikTokLink: () => React.createElement("a", { href: "https://www.tiktok.com/@six.bit/live" }, "Watch LIVE on TikTok") },
+    "@/lib/radio-show-feature": { radioShowDate: value => value, radioShowDuration: seconds => String(seconds) },
+    "@/lib/session-bound-polling": {},
+    "./RadioBroadcastFeature.module.css": new Proxy({}, { get: (_, key) => String(key) }),
+  });
+  const render = props => require("react-dom/server").renderToStaticMarkup(React.createElement(RadioBroadcastFeatureView, { ...props, compact: true }));
+  const feature = { mode: "archive", show: { title: "Public night", showDate: "2026-09-18", href: "/radio/archive?view=shows&show=public-night" }, submissionsOpen: false };
+  for (const submissionsOpen of [false, true]) {
+    const html = render({ feature: { ...feature, submissionsOpen } });
+    assert.ok(html.includes('href="/radio/archive?view=shows&amp;show=public-night"'));
+    assert.match(html, /Latest archived show/);
+    assert.match(html, /Public night/);
+    assert.match(html, /href="\/radio\/archive\?view=artists"/);
+    assert.match(html, /href="\/bnl\/music"/);
+    assert.doesNotMatch(html, /On air now|Watch LIVE|href="\/radio\/deck"/);
+  }
+  const live = render({ feature: { ...feature, mode: "live", show: { ...feature.show, href: "/radio/deck" } } });
+  assert.match(live, /href="\/radio\/deck"/);
+  assert.match(live, /Watch LIVE|Current show/);
+  assert.match(live, /All past shows/);
+  for (const props of [{ feature: null }, { feature: null, unavailable: true }, { feature: { ...feature, show: null } }]) {
+    const html = render(props);
+    assert.match(html, /href="\/radio\/archive"/);
+    assert.doesNotMatch(html, /On air now|Current show|Latest archived show|Public night/);
+    assert.match(html, props.unavailable ? /temporarily unavailable/ : props.feature ? /as new broadcasts are added/ : /Loading the latest show/);
+  }
+});

@@ -12,6 +12,9 @@ export async function GET(req: Request) {
     const show = await requireBalladShow(params.get("showId") || "");
     const doc = await readBallad(show.sessionId);
     const audio = doc.audio.find(a => a.id === params.get("audioId"));
+    // The public player must never inherit the owner's draft-preview permission.
+    const publicOnly = params.get("public") === "1";
+    if (publicOnly && (!audio || publicBallad(doc, show)?.audioId !== audio.id)) return new Response("Audio unavailable.", { status: 404, headers: { "Cache-Control": "no-store" } });
     if (!audio || (doc.published?.audioId !== audio.id && !await verifyAdminRequest(req))) return new Response("Audio unavailable.", { status: 404 });
     const download = params.get("download") === "1";
     const release = download ? publicBallad(doc, show) : null;

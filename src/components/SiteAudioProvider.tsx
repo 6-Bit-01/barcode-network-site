@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, us
 import { usePathname } from "next/navigation";
 import { publicAudioAllowed, SiteAudioController } from "@/lib/site-audio-player";
 import { SiteAudioDock } from "@/components/SiteAudioDock";
+import { encodePlaylist, PLAYLIST_STORAGE_KEY } from "@/lib/site-audio-playlist";
 
 const AudioContext = createContext<SiteAudioController | null>(null);
 
@@ -20,6 +21,21 @@ export function SiteAudioProvider({ children }: { children: ReactNode }) {
   const allowed = publicAudioAllowed(usePathname());
   const attach = useCallback((audio: HTMLAudioElement | null) => { element.current = audio; controller.attach(audio); }, [controller]);
   useEffect(() => { controller.setEnabled(allowed); }, [controller, allowed]);
+
+  useEffect(() => {
+    try { controller.restorePlaylist(window.localStorage.getItem(PLAYLIST_STORAGE_KEY)); }
+    catch { controller.setPlaylistNotice("Browser storage is unavailable. This playlist will last for this visit."); }
+    let saved = encodePlaylist(controller.getSnapshot().playlist);
+    const unsubscribe = controller.subscribe(() => {
+      const next = encodePlaylist(controller.getSnapshot().playlist);
+      if (next === saved) return;
+      saved = next;
+      try { window.localStorage.setItem(PLAYLIST_STORAGE_KEY, next); }
+      catch { controller.setPlaylistNotice("Your playlist could not be saved in this browser. It will last for this visit."); }
+    });
+    if (controller.getSnapshot().playlist.length) void controller.refreshCatalog();
+    return unsubscribe;
+  }, [controller]);
 
   useEffect(() => {
     const arbitrate = (event: Event) => {

@@ -48,7 +48,8 @@ The mini-player pauses and hides on `/admin`, `/overlay`, `/obs`, and
 to resume. It neither operates nor changes the broadcast, OBS or game audio.
 
 Playback state is in this tab's current page session. A full refresh, external
-navigation or closing the tab ends it; it does not resume automatically later.
+navigation or closing the tab ends playback. The local playlist survives a refresh
+in the same browser; audio never resumes automatically.
 The Radio queue entrance retains its existing intro, Skip and seen-session
 behavior, using client navigation so the music can continue. Checkout redirects
 and external destinations retain their existing behavior.
@@ -57,8 +58,9 @@ and external destinations retain their existing behavior.
 
 Track metadata comes from the existing public release. Playback continues through
 `/api/ballads/media`, which retains its public eligibility and publication checks
-and range responses. There is no new audio store, copied recording, persistence,
-permission, provider, generation, publication or BNL-memory behavior. As before,
+and range responses. The playlist persists only bounded public show/audio references and a display title
+in browser storage. It creates no new audio store, copied recording, permission,
+provider, generation, publication or BNL-memory behavior. As before,
 already-buffered public audio is not remotely revoked; later media requests still
 check current eligibility.
 
@@ -93,3 +95,46 @@ no changes; the preceding version's inline show-card player returns.
 5. Open Song info, check its show/date and close with Escape. Use Free download
    while playing: audio must continue and the filename must match the published
    title/show date. An archived or unpublished recording must remain unavailable.
+
+## Local playlist — priority 8, first slice
+
++ Playlist on each public Ballad adds that exact recording without starting audio.
+The dock's Playlist panel shows ordered songs and Up next; each song has Play,
+Move up/down and Remove controls. Duplicate recordings are not added twice. The
+first slice holds up to 100 published Ballads in one browser-local list. It does
+not require accounts or add shared/cross-device lists. Header/navigation, show
+submissions, payments and host playback are outside this change.
+
+Previous/Next and supported OS media controls use the current playlist order.
+A listed song's natural end advances to its successor; the final song stops.
+Playing a song outside the list does not start that list afterward. Errors and
+unavailable recordings stop with a message; they are not silently skipped. Next
+lets the visitor explicitly continue. Reordering/removing a different entry does
+not restart the current recording. Removing the current song stops it; Clear
+stops playback and empties the list. Close stops and hides the player while
+retaining the saved list. + Playlist (including In playlist) shows the dock again.
+
+Refresh restores references only, without loading audio. The existing public
+catalog refreshes metadata/availability; catalog failure retains the list with an
+honest warning. Refresh availability retries that read. Unpublished/replaced takes
+remain labeled unavailable, rather than silently switching to another recording.
+Every public player media request adds `public=1`: the existing media route checks
+the exact current public release, even for a signed-in administrator. Admin draft
+previews keep their existing separate request behavior. Already-buffered public
+audio retains the existing revocation limitation. Stored URLs, artwork, lyrics and
+private fields are never trusted or persisted as playback authority.
+
+Deployment: merge the scoped site PR and wait for its normal Vercel Production
+Ready status. No bot deploy, VPS commands, migration, new environment variables,
+payment changes or publication changes are needed. Casting remains a separate
+slice requiring actual Chromecast and AirPlay acceptance.
+
+Focused post-deploy check (off air): on /bnl/music or a published Archive Ballad,
+add two different released recordings if available. Verify Add is silent, reorder,
+Play, Next/Previous, navigation and Back; remove the current item and confirm stop.
+Refresh: the list returns but remains silent. Check on a phone that the playlist
+panel scrolls and all controls fit. Existing local fixtures verify ended/error and
+unpublished cases without changing any production release. Physical-device sound
+and the first production observation must be recorded separately from fixture tests.
+Rollback: revert this playlist PR and redeploy; keep all released songs/data.
+The previous player ignores the versioned local playlist key.

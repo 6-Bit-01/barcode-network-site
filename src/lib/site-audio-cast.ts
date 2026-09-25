@@ -42,7 +42,7 @@ let initialized: Promise<CastPicker> | null = null;
 
 export function prepareCast(): Promise<CastPicker> {
   if (initialized) return initialized;
-  initialized = new Promise((resolve, reject) => {
+  initialized = new Promise<CastPicker>((resolve, reject) => {
     const target = window as CastWindow;
     const timer = window.setTimeout(() => reject(new Error("Cast unavailable")), 15000);
     const ready = (available: boolean) => {
@@ -73,7 +73,7 @@ export function prepareCast(): Promise<CastPicker> {
     script.async = true;
     script.onerror = () => { window.clearTimeout(timer); reject(new Error("Cast unavailable")); };
     document.head.appendChild(script);
-  });
+  }).catch(error => { initialized = null; throw error; });
   return initialized;
 }
 
@@ -103,7 +103,7 @@ class GoogleCastOutput implements SiteAudioOutput {
   getState(): AudioOutputState {
     const media = this.session.getMediaSession();
     const state = this.player.playerState;
-    return { connected: !this.closed && this.context.getCurrentSession() === this.session,
+    return { connected: !this.closed && this.player.isConnected && this.context.getCurrentSession() === this.session,
       contentId: media?.media.contentId ?? null,
       status: this.commandFailed ? "error" : state === "IDLE" && media?.idleReason === "FINISHED" ? "ended"
         : state === "IDLE" && media?.idleReason === "ERROR" ? "error"

@@ -145,7 +145,10 @@ The existing player offers AirPlay when Safari reports an available wireless
 target, and Cast when Google's sender reports an available device. Google's SDK
 loads once, after a song is selected in a compatible Chromium browser. A device
 picker opens only on a visitor's click. No automatic reconnect or saved-session
-resume is requested. Unsupported browsers retain ordinary playback.
+resume is requested. Unsupported browsers retain ordinary playback. A transient
+sender-script failure offers Retry Cast; retry is explicit, without polling or a
+page refresh. Receiver connection loss returns the player locally paused even
+when Google's context still retains the session object.
 
 AirPlay uses the existing audio element and Safari's native picker. Chromecast
 uses Google's Default Media Receiver. It receives only the same anonymous

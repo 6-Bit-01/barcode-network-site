@@ -10,6 +10,8 @@ export function SiteAudioOutputControls() {
   const [picker, setPicker] = useState<CastPicker | null>(null);
   const [available, setAvailable] = useState(false);
   const [choosing, setChoosing] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [retry, setRetry] = useState(0);
   const hasTrack = !!audio.track;
   useEffect(() => {
     // Load Google's sender only after a public recording has been selected in
@@ -18,12 +20,13 @@ export function SiteAudioOutputControls() {
     let disposed = false, unwatch: (() => void) | undefined;
     void prepareCast().then(next => {
       if (disposed) return;
+      setLoadFailed(false);
       setPicker(next);
       const refresh = () => setAvailable(next.available());
       refresh(); unwatch = next.watch(refresh);
-    }).catch(() => { /* Other browser playback remains available. */ });
+    }).catch(() => { if (!disposed) setLoadFailed(true); });
     return () => { disposed = true; unwatch?.(); };
-  }, [hasTrack]);
+  }, [hasTrack, retry]);
   function choose() {
     if (!picker || !audio.track || choosing) return;
     const key = audio.track.key;
@@ -38,5 +41,6 @@ export function SiteAudioOutputControls() {
     {(audio.airPlayAvailable || audio.airPlayActive) && !audio.outputLabel && <button type="button" className={styles.textButton} onClick={audio.controller.requestAirPlay} aria-label="Choose AirPlay output">{audio.airPlayActive ? "AirPlay connected" : "AirPlay"}</button>}
     {audio.outputLabel ? <button type="button" className={styles.textButton} style={{ maxWidth: "100%", whiteSpace: "normal", overflowWrap: "anywhere" }} onClick={() => audio.controller.disconnectOutput()} aria-label="Stop casting">Stop casting · {audio.outputLabel}</button>
       : available && !audio.airPlayActive && <button type="button" className={styles.textButton} disabled={choosing} onClick={choose}>{choosing ? "Connecting…" : "Cast"}</button>}
+    {loadFailed && !audio.outputLabel && !audio.airPlayActive && <button type="button" className={styles.textButton} onClick={() => { setLoadFailed(false); setRetry(value => value + 1); }}>Retry Cast</button>}
   </>;
 }

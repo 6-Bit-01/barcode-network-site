@@ -6,6 +6,17 @@ import { publicBallad } from "@/lib/bnl-ballads";
 import { balladDownloadDisposition, balladDownloadFilename } from "@/lib/ballad-download";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+const publicMediaCors = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+  "Access-Control-Allow-Headers": "Range",
+  "Access-Control-Expose-Headers": "Accept-Ranges, Content-Length, Content-Range, Content-Type",
+};
+export function OPTIONS(req: Request) {
+  return new URL(req.url).searchParams.get("public") === "1"
+    ? new Response(null, { status: 204, headers: publicMediaCors })
+    : new Response(null, { status: 404 });
+}
 export async function GET(req: Request) {
   const params = new URL(req.url).searchParams;
   try {
@@ -20,6 +31,9 @@ export async function GET(req: Request) {
     const release = download ? publicBallad(doc, show) : null;
     if (download && (!release || release.audioId !== audio.id)) return new Response("Download unavailable.", { status: 404, headers: { "Cache-Control": "no-store" } });
     const response = await serveAdminQueueAudio({ entry: { id: audio.id, sourceType: "upload", fileUrl: audio.url, fileName: audio.filename, mimeType: audio.contentType }, rangeHeader: req.headers.get("range"), getBlob: (url, options) => get(url, options) });
+    // Only exact, currently published recordings permit anonymous receivers.
+    // Admin preview responses keep their existing origin boundary.
+    if (publicOnly && response.ok) for (const [key, value] of Object.entries(publicMediaCors)) response.headers.set(key, value);
     if (release && response.ok) response.headers.set("content-disposition", balladDownloadDisposition(balladDownloadFilename(release.version.title, show.showDate, response.headers.get("content-type") ?? audio.contentType)));
     return response;
   } catch { return new Response("Audio unavailable.", { status: 404, headers: { "Cache-Control": "no-store" } }); }

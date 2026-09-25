@@ -21,6 +21,11 @@ export function SiteAudioProvider({ children }: { children: ReactNode }) {
   const allowed = publicAudioAllowed(usePathname());
   const attach = useCallback((audio: HTMLAudioElement | null) => { element.current = audio; controller.attach(audio); }, [controller]);
   useEffect(() => { controller.setEnabled(allowed); }, [controller, allowed]);
+  useEffect(() => {
+    const stopOutput = () => controller.disconnectOutput();
+    window.addEventListener("pagehide", stopOutput);
+    return () => { window.removeEventListener("pagehide", stopOutput); controller.disconnectOutput(); };
+  }, [controller]);
 
   useEffect(() => {
     try { controller.restorePlaylist(window.localStorage.getItem(PLAYLIST_STORAGE_KEY)); }

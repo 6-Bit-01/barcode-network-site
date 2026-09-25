@@ -165,3 +165,15 @@ test("public playlist media rejects draft/admin previews and revoked shows befor
   assert.equal((await route.GET(new Request(url))).status, 404); assert.equal(reads(), before);
   assert.equal((await route.GET(new Request(url.replace("&public=1", "")))).status, 200);
 });
+
+test('Cast CORS is restricted to the exact public recording and never admin preview audio',async()=>{
+  const url='https://test/api/ballads/media?showId=show-1&audioId=take-1&public=1';
+  const {route,doc}=mediaRoute({admin:true});
+  const partial=await route.GET(new Request(url,{headers:{Origin:'https://receiver.test',Range:'bytes=0-1'}}));
+  assert.equal(partial.status,206);assert.equal(partial.headers.get('access-control-allow-origin'),'*');assert.equal(partial.headers.get('content-range'),'bytes 0-1/4');
+  assert.equal(route.OPTIONS(new Request(url,{method:'OPTIONS'})).status,204);
+  assert.equal(route.OPTIONS(new Request(url.replace('&public=1',''),{method:'OPTIONS'})).status,404);
+  doc.published=null;
+  const hidden=await route.GET(new Request(url));assert.equal(hidden.status,404);assert.equal(hidden.headers.get('access-control-allow-origin'),null);
+  const preview=await route.GET(new Request(url.replace('&public=1','')));assert.equal(preview.status,200);assert.equal(preview.headers.get('access-control-allow-origin'),null);
+});

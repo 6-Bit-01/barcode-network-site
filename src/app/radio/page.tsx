@@ -8,6 +8,7 @@ import { RadioBroadcastFeature } from "@/components/RadioBroadcastFeature";
 import { RadioQueueEntry } from "@/components/RadioQueueEntry";
 import { RadioTikTokLink } from "@/components/RadioTikTokLink";
 import { getRadioSubmissionRouting } from "@/lib/radio-submission-routing";
+import styles from "./page.module.css";
 
 export const metadata: Metadata = {
   title: "BARCODE Radio — Submit Music & Listen Live",
@@ -40,66 +41,72 @@ export default function RadioPage() {
 
   return (
     <div className="pt-14">
-      {/* Hero — Submit buttons FIRST, zero friction */}
+      {/* Current participation and past shows share the first screen. */}
       <section className="border-b border-border noise-bg">
         <div className="mx-auto max-w-7xl px-4 pb-14 pt-12 sm:px-6 sm:pb-16 sm:pt-14">
-          <RadioHero
-            label={radioPage.hero.label}
-            heading1={radioPage.hero.heading1}
-            heading2={radioPage.hero.heading2}
-            description={submission.heroDescription}
-          />
+          <div className={styles.discovery}>
+            <div className={styles.intro}>
+              <RadioHero
+                label={radioPage.hero.label}
+                heading1={radioPage.hero.heading1}
+                heading2={radioPage.hero.heading2}
+                description={submission.heroDescription}
+              />
 
-          {submission.mode === "native_queue" && <div className="max-w-xl"><RadioQueueEntry /></div>}
-
-          {/* Schedule notice — auto-converts to visitor's timezone */}
-          <LocalSchedule
-            day={radioPage.schedule.day}
-            queueOpens={radioPage.schedule.queueOpens}
-            showBegins={radioPage.schedule.showBegins}
-            firstTrack={radioPage.schedule.firstTrack}
-            notice={radioPage.schedule.notice}
-          />
-
-          {/* Primary CTAs — above the fold */}
-          <div className="max-w-lg">
-            <div className="flex flex-col sm:flex-row gap-4">
-              {submission.external ? (
-                <a
-                  href={submission.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold bg-accent text-background hover:bg-accent-dim transition-all text-center"
-                >
-                  <span className="text-lg">{radioPage.hero.submitButton.emoji}</span>
-                  {submission.heroSubmitLabel}
-                </a>
-              ) : null}
-              <a
-                href={externalLinks.discord}
+              {submission.mode === "native_queue" && <RadioQueueEntry />}
+              {submission.external && <a
+                href={submission.href}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex-1 inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold border border-border-light text-foreground/80 hover:border-accent hover:text-accent transition-all text-center"
+                className="inline-flex min-h-12 w-full items-center justify-center gap-3 bg-accent px-6 py-4 text-center text-sm font-bold uppercase tracking-widest text-background transition hover:bg-accent-dim sm:w-auto sm:text-base"
               >
-                <span className="text-lg">{radioPage.hero.discordButton.emoji}</span>
-                {radioPage.hero.discordButton.text}
-              </a>
+                <span className="text-lg">{radioPage.hero.submitButton.emoji}</span>
+                {submission.heroSubmitLabel}
+              </a>}
             </div>
-            <div className="mt-4">
-              <RadioTikTokLink
-                className="w-full px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold border hover:border-accent hover:text-accent transition-all text-center"
-                offlineClassName="border-border-light text-foreground/80"
-                liveClassName="border-accent text-accent"
+
+            <div className={styles.feature}>
+              <RadioBroadcastFeature />
+            </div>
+
+            <div className={styles.schedule}>
+              {/* Schedule notice — auto-converts to visitor's timezone */}
+              <LocalSchedule
+                day={radioPage.schedule.day}
+                queueOpens={radioPage.schedule.queueOpens}
+                showBegins={radioPage.schedule.showBegins}
+                firstTrack={radioPage.schedule.firstTrack}
+                notice={radioPage.schedule.notice}
               />
+
+              {/* Community and broadcast destinations */}
+              <div>
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <a
+                    href={externalLinks.discord}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold border border-border-light text-foreground/80 hover:border-accent hover:text-accent transition-all text-center"
+                  >
+                    <span className="text-lg">{radioPage.hero.discordButton.emoji}</span>
+                    {radioPage.hero.discordButton.text}
+                  </a>
+                </div>
+                <div className="mt-4">
+                  <RadioTikTokLink
+                    className="w-full px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold border hover:border-accent hover:text-accent transition-all text-center"
+                    offlineClassName="border-border-light text-foreground/80"
+                    liveClassName="border-accent text-accent"
+                  />
+                </div>
+              </div>
             </div>
           </div>
-
-          <RadioBroadcastFeature />
 
           {submission.mode === "native_queue" && submission.radioPageGuide ? (
             <section
               aria-label="BARCODE Radio queue guide"
-              className="mt-6 max-w-3xl border border-accent/35 bg-surface/80 p-5 sm:p-6"
+              className="mt-6 border border-accent/35 bg-surface/80 p-5 sm:p-6"
             >
               <p className="text-xs font-bold uppercase tracking-[0.35em] text-accent">
                 {submission.radioPageGuide.label}

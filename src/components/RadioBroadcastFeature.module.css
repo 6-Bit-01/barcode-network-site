@@ -2,7 +2,6 @@
   --signal: #a5f3fc;
   --wash: rgb(165 243 252 / 8%);
   position: relative;
-  margin-top: 2rem;
   overflow: hidden;
   border: 1px solid rgb(165 243 252 / 45%);
   background: #0b1012;
@@ -11,15 +10,14 @@
 }
 .feature[data-mode="live"] { --signal: #00ff87; --wash: rgb(0 255 135 / 8%); border-color: rgb(0 255 135 / 50%); }
 .topline { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; padding: 1rem 1.5rem; background: var(--wash); border-bottom: 1px solid rgb(255 255 255 / 12%); }
-.status, .edition, .kicker, .showLabel, .stats dt, .artists > span { font-size: .65rem; font-weight: 800; letter-spacing: .17em; text-transform: uppercase; }
+.status, .kicker, .showLabel, .stats dt, .artists > span { font-size: .65rem; font-weight: 800; letter-spacing: .17em; text-transform: uppercase; }
 .status { display: inline-flex; align-items: center; gap: .6rem; color: var(--signal); }
 .status > span { width: .45rem; height: .45rem; background: var(--signal); border-radius: 50%; }
 .feature[data-mode="live"] .status > span { box-shadow: 0 0 12px var(--signal); }
-.edition { color: #a0b2b4; }
-.body { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }
-.intro { min-width: 0; padding: 2.2rem; }
+.body { display: grid; grid-template-columns: minmax(0, 1fr); }
+.intro { min-width: 0; padding: 1.6rem 1.5rem; }
 .kicker { color: var(--signal); }
-.intro h2 { max-width: 11ch; margin-top: .85rem; font-size: clamp(2.2rem, 4.5vw, 3.7rem); font-weight: 950; letter-spacing: -.045em; line-height: 1.02; }
+.intro h2 { max-width: 14ch; margin-top: .85rem; font-size: clamp(2.2rem, 3.6vw, 3rem); font-weight: 950; letter-spacing: -.045em; line-height: 1.02; }
 .description { max-width: 36rem; margin-top: 1.25rem; color: #b0bdc0; font-size: .94rem; line-height: 1.75; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 1.25rem; margin-top: 1.6rem; }
 .primary { display: inline-flex; align-items: center; justify-content: space-between; gap: 1.75rem; min-height: 3.2rem; padding: .85rem 1.1rem; background: var(--signal); border: 1px solid var(--signal); color: #07100b; font-size: .74rem; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; transition: background .15s, color .15s; }
@@ -28,8 +26,8 @@
 .secondary, .allShows, .intake a { display: inline-flex; align-items: center; min-height: 2.75rem; font-size: .72rem; font-weight: 800; color: var(--signal); }
 .secondary:hover, .allShows:hover, .artists a:hover, .intake a:hover { text-decoration: underline; text-underline-offset: .25rem; }
 .footnote { margin-top: .7rem; max-width: 35rem; color: #94a6aa; font-size: .68rem; line-height: 1.6; }
-.show { position: relative; display: flex; flex-direction: column; justify-content: flex-end; min-width: 0; overflow: hidden; padding: 2rem; border-left: 1px solid rgb(255 255 255 / 12%); background: radial-gradient(ellipse at 65% 10%, var(--wash), transparent 65%), repeating-linear-gradient(0deg, transparent, transparent 23px, rgb(255 255 255 / 3%) 24px); }
-.signal { display: flex; align-items: end; gap: 5px; height: 78px; margin-bottom: 2rem; opacity: .55; }
+.show { position: relative; display: flex; flex-direction: column; justify-content: flex-end; min-width: 0; overflow: hidden; padding: 1.3rem 1.5rem; border-top: 1px solid rgb(255 255 255 / 12%); background: radial-gradient(ellipse at 65% 10%, var(--wash), transparent 65%), repeating-linear-gradient(0deg, transparent, transparent 23px, rgb(255 255 255 / 3%) 24px); }
+.signal { position: absolute; display: flex; align-items: end; right: 1.5rem; top: 1.3rem; width: 30%; gap: 3px; height: 42px; opacity: .13; pointer-events: none; }
 .signal i { flex: 1; max-width: 12px; background: var(--signal); }
 .showLabel { color: var(--signal); }
 .date { margin-top: .65rem; font-size: clamp(1.35rem, 2vw, 1.85rem); font-weight: 900; letter-spacing: -.035em; }
@@ -37,10 +35,10 @@
 .recordLabel { margin-top: .65rem; color: #94a6aa; font-size: .72rem; line-height: 1.6; }
 .allShows { justify-content: space-between; gap: 1rem; margin-top: 1rem; border-top: 1px solid rgb(255 255 255 / 12%); }
 .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid rgb(255 255 255 / 12%); background: rgb(0 0 0 / 20%); }
-.stats > div { padding: 1.2rem 1.5rem; border-right: 1px solid rgb(255 255 255 / 10%); }
+.stats > div { min-width: 0; padding: 1rem; border-right: 1px solid rgb(255 255 255 / 10%); }
 .stats > div:last-child { border-right: 0; }
 .stats dt { color: #94a6aa; font-size: .58rem; }
-.stats dd { margin-top: .45rem; font-size: clamp(1.55rem, 3vw, 2.2rem); font-weight: 900; line-height: 1.15; letter-spacing: -.04em; color: var(--signal); }
+.stats dd { margin-top: .45rem; font-size: clamp(1.3rem, 2.2vw, 1.85rem); font-weight: 900; line-height: 1.15; letter-spacing: -.04em; color: var(--signal); overflow-wrap: anywhere; }
 .countNote { padding: .65rem 1.5rem; border-top: 1px solid rgb(255 255 255 / 10%); color: #94a6aa; font-size: .7rem; line-height: 1.6; }
 .artists { display: flex; flex-wrap: wrap; gap: .45rem .6rem; align-items: center; padding: 1rem 1.5rem; border-top: 1px solid rgb(255 255 255 / 10%); }
 .artists > span { margin-right: .5rem; color: #94a6aa; font-size: .58rem; }
@@ -48,11 +46,15 @@
 .artists a span { color: var(--signal); }
 .intake { display: flex; align-items: center; justify-content: space-between; gap: .7rem; flex-wrap: wrap; padding: .6rem 1.5rem; background: rgb(0 255 135 / 7%); border-top: 1px solid rgb(0 255 135 / 25%); color: #d2f8e4; font-size: .75rem; }
 .intake a { color: #00ff87; }
+.music { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .6rem 1rem; padding: 1rem 1.5rem; border-top: 1px solid rgb(255 255 255 / 12%); background: var(--wash); }
+.music p { color: #d0dcde; font-size: .8rem; font-weight: 800; }
+.music div > span { display: block; margin-top: .3rem; color: #94a6aa; font-size: .72rem; line-height: 1.6; }
+.music a { display: inline-flex; align-items: center; gap: 1rem; min-height: 2.75rem; color: var(--signal); font-size: .72rem; font-weight: 800; }
+.music a:hover { text-decoration: underline; text-underline-offset: .25rem; }
 .feature a:focus-visible { outline: 2px solid #fff; outline-offset: 4px; }
 @media (max-width: 700px) {
   .body { grid-template-columns: 1fr; }
   .topline, .artists, .intake { padding-left: 1.2rem; padding-right: 1.2rem; }
-  .edition { display: none; }
   .intro { padding: 1.6rem 1.2rem; }
   .intro h2 { font-size: clamp(2.2rem, 9vw, 3.3rem); max-width: 13ch; }
   .primary { width: 100%; }

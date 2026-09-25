@@ -1,0 +1,18 @@
+.discovery {
+  display: grid;
+  grid-template-areas: "intro" "feature" "schedule";
+  gap: 1.5rem;
+  align-items: start;
+}
+.intro { grid-area: intro; min-width: 0; }
+.feature { grid-area: feature; min-width: 0; }
+.schedule { grid-area: schedule; min-width: 0; }
+
+@media (min-width: 1024px) {
+  .discovery {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: min-content 1fr;
+    grid-template-areas: "intro feature" "schedule feature";
+    column-gap: 2rem;
+  }
+}

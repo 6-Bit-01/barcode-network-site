@@ -101,7 +101,7 @@ test("Archive follows the current URL instead of stale initial selection and nev
   const { BroadcastArchive } = load("src/components/BroadcastArchive.tsx", {
     "next/navigation": { useSearchParams: () => new URLSearchParams(url), useRouter: () => ({ push() {} }) },
     "next/link": ({ href, children, ...props }) => React.createElement("a", { href, ...props }, children),
-    "@/components/SiteAudioProvider": { useSiteAudio: () => ({ track: null, currentTime: 0, duration: 0, status: "idle", controller: {} }) },
+    "@/components/SiteAudioProvider": { useSiteAudio: () => ({ track: null, playlist: [], currentTime: 0, duration: 0, status: "idle", controller: {} }) },
   });
   const render = () => renderToStaticMarkup(React.createElement(BroadcastArchive, { initialStats: stats, initialView: "shows", initialArtistKey: "skella" }));
   assert.match(render(), /id="selected-artist-heading"[^>]*>AI\/ML Music<\/h2>/);
@@ -110,4 +110,17 @@ test("Archive follows the current URL instead of stale initial selection and nev
   url = "view=artists&artist=retired-unknown";
   assert.ok(render().includes("Artist card unavailable"));
   assert.equal(render().includes('id="selected-artist-heading"'), false);
+});
+
+test("public playlist media rejects draft/admin previews and revoked shows before reading audio", async () => {
+  const url = "https://test/api/ballads/media?showId=show-1&audioId=take-1&public=1";
+  for (const options of [{ published: false }, { published: false, admin: true }, { eligible: false, admin: true }]) {
+    const { route, reads } = mediaRoute(options);
+    assert.equal((await route.GET(new Request(url))).status, 404); assert.equal(reads(), 0);
+  }
+  const { route, doc, reads } = mediaRoute({ admin: true });
+  assert.equal((await route.GET(new Request(url, { headers: { Range: "bytes=0-1" } }))).status, 206);
+  const before = reads(); doc.published = null;
+  assert.equal((await route.GET(new Request(url))).status, 404); assert.equal(reads(), before);
+  assert.equal((await route.GET(new Request(url.replace("&public=1", "")))).status, 200);
 });

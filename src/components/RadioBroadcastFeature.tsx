@@ -7,7 +7,7 @@ import { radioShowDate, radioShowDuration, type RadioShowFeature } from "@/lib/r
 import { startSessionBoundPolling } from "@/lib/session-bound-polling";
 import styles from "./RadioBroadcastFeature.module.css";
 
-export function RadioBroadcastFeature() {
+export function RadioBroadcastFeature({ compact = false }: { compact?: boolean }) {
   const [feature, setFeature] = useState<RadioShowFeature | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const load = useCallback(async () => {
@@ -28,17 +28,36 @@ export function RadioBroadcastFeature() {
 
   useEffect(() => startSessionBoundPolling({ intervalMs: 30_000, standbyIntervalMs: 60_000, poll: load }), [load]);
 
-  return <RadioBroadcastFeatureView feature={feature} unavailable={unavailable} />;
+  return <RadioBroadcastFeatureView feature={feature} unavailable={unavailable} compact={compact} />;
 }
 
-export function RadioBroadcastFeatureView({ feature, unavailable = false }: {
+export function RadioBroadcastFeatureView({ feature, unavailable = false, compact = false }: {
   feature: RadioShowFeature | null;
   unavailable?: boolean;
+  compact?: boolean;
 }) {
   const live = feature?.mode === "live";
   const show = feature?.show;
   const title = live ? "The Broadcast Deck" : "The Broadcast Archive";
   const href = live ? "/radio/deck" : show?.href ?? "/radio/archive";
+  if (compact) return (
+    <section className={styles.feature} data-mode={live ? "live" : "archive"} aria-labelledby="radio-feature-title">
+      <div className={styles.topline}><span className={styles.status}><span aria-hidden="true" />{live ? "On air now · BARCODE Radio" : "Keep exploring BARCODE Radio"}</span></div>
+      <div className={`${styles.intro} ${styles.compactIntro}`}>
+        <h2 id="radio-feature-title">{title}</h2>
+        <p className={styles.description}>{live ? "Follow the music, the queue and the Wheel alongside TikTok Live." : "Find the songs, artists and moments from past BARCODE Radio shows."}</p>
+        <div className={styles.compactShow}>
+          {show ? <><p className={styles.showLabel}>{live ? "Current show" : "Latest archived show"} · <time dateTime={show.showDate}>{radioShowDate(show.showDate)}</time></p><p className={styles.compactShowTitle}>{show.title}</p></>
+            : <p role="status" className={styles.recordLabel}>{unavailable ? "Latest show details are temporarily unavailable. You can still open the Archive." : feature ? "Explore the Archive as new broadcasts are added." : "Loading the latest show…"}</p>}
+        </div>
+        <div className={styles.actions}>
+          <Link href={href} className={styles.primary}>{live ? "Enter the live Deck" : show ? "Explore the latest show" : "Open Broadcast Archive"}<span aria-hidden="true">↗</span></Link>
+          {live ? <RadioTikTokLink className={styles.secondary} /> : <Link href="/radio/archive?view=artists" className={styles.secondary}>Discover the artists →</Link>}
+        </div>
+      </div>
+      <div className={styles.compactLinks}><Link href="/radio/archive?view=shows">All past shows →</Link><Link href="/bnl/music">BNL&apos;s music →</Link></div>
+    </section>
+  );
   return (
     <section className={styles.feature} data-mode={live ? "live" : "archive"} aria-labelledby="radio-feature-title">
       <div className={styles.topline}>

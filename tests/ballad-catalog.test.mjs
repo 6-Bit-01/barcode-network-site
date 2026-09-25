@@ -16,9 +16,50 @@ function load(file, mocks = {}) {
 const catalog = load("src/lib/ballad-catalog.ts");
 const download = load("src/lib/ballad-download.ts");
 const archive = load("src/lib/broadcast-archive.ts");
+function featuredBallad(listPublicBallads = async () => []) {
+  return load("src/components/BNLFeaturedBallad.tsx", {
+    "@/lib/bnl-ballads-store": { listPublicBallads },
+    "next/link": ({ href, children, ...props }) => React.createElement("a", { href, ...props }, children),
+    "@/components/SiteAudioProvider": { useSiteAudio: () => ({ track: null, playlist: [], currentTime: 0, duration: 0, status: "idle", controller: {} }) },
+  });
+}
 function release(n = 1) {
   return { show: { sessionId: `show-${n}`, title: `Radio ${n}`, showDate: `2026-09-${String(n).padStart(2, "0")}` }, version: { id: `draft-${n}`, title: `Song ${n}`, lyrics: "[Chorus]\nCafé signals after midnight", style: "Breakbeats and warm bass", palette: { genres: "Trip-Hop, Industrial Rock", topics: "studio rats" }, author: "BNL-01" }, presentation: { credits: "Production: 6 Bit", artworkUrl: "" }, linerNotes: { about: "A night on air", mentions: "AI/ML Music and Chris", inspiration: "Floorboards", inspiredBy: "Chris" }, artistLinks: [{ name: "AI/ML Music", projectKey: "ai/ml music", projectLabel: "AI/ML Music" }], audioId: `take-${n}`, duration: 150, publishedAt: `2026-09-${String(n).padStart(2, "0")}T12:00:00Z` };
 }
+test("BNL featured music selects the latest publication and links the exact song's original show", async () => {
+  const newlyPublished = { ...release(1), publishedAt: "2026-09-24T20:00:00Z" };
+  let reads = 0;
+  const { BNLFeaturedBallad } = featuredBallad(async () => { reads++; return [release(18), newlyPublished]; });
+  const html = renderToStaticMarkup(await BNLFeaturedBallad());
+  assert.equal(reads, 1);
+  assert.match(html, /Song 1<\/h2>/);
+  assert.doesNotMatch(html, /Song 18/);
+  assert.match(html, /Published <time dateTime="2026-09-24T20:00:00Z"/);
+  assert.match(html, /From the broadcast · <time dateTime="2026-09-01"/);
+  assert.ok(html.includes('href="/radio/archive?view=shows&amp;show=show-1#broadcast-ballad"'));
+  assert.match(html, /aria-label="Play Song 1"/);
+  assert.match(html, /aria-label="Add to playlist: Song 1"/);
+  assert.match(html, /aria-label="Download Song 1 free"/);
+  assert.doesNotMatch(html, /<audio|autoplay/i);
+});
+test("featured music distinguishes collection failure from an empty public catalog", async () => {
+  for (const unavailable of [false, true]) {
+    const { BNLFeaturedBallad } = featuredBallad(async () => { if (unavailable) throw Error("private storage detail"); return []; });
+    const html = renderToStaticMarkup(await BNLFeaturedBallad());
+    assert.match(html, unavailable ? /could not be loaded/ : /No Ballads have been published/);
+    assert.match(html, /href="\/bnl\/music"/);
+    assert.match(html, /href="\/radio\/archive"/);
+    assert.doesNotMatch(html, /private storage detail|<button|<audio|api\/ballads\/media/);
+  }
+});
+test("featured music loading and unavailable states never expose stale song controls", () => {
+  const { BNLFeaturedBalladView } = featuredBallad();
+  for (const flags of [{ loading: true }, { unavailable: true }]) {
+    const html = renderToStaticMarkup(React.createElement(BNLFeaturedBalladView, { releases: [release()], ...flags }));
+    assert.match(html, flags.loading ? /Loading released music/ : /could not be loaded/);
+    assert.doesNotMatch(html, /Song 1|<button|api\/ballads\/media/);
+  }
+});
 test("catalog search combines words and quoted phrases across released lyrics, people, credits and notes", () => {
   const songs = [release(), { ...release(2), version: { ...release(2).version, lyrics: "A different chorus" }, linerNotes: {} }];
   for (const q of ['cafe "after midnight"', "Chris studio", "AI/ML Music Floorboards", '"6 Bit" cafe']) assert.equal(catalog.selectCatalog(songs, catalog.catalogFilters({ q })).total, 1, q);

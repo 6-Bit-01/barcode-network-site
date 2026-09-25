@@ -52,11 +52,20 @@
 .music a { display: inline-flex; align-items: center; gap: 1rem; min-height: 2.75rem; color: var(--signal); font-size: .72rem; font-weight: 800; }
 .music a:hover { text-decoration: underline; text-underline-offset: .25rem; }
 .feature a:focus-visible { outline: 2px solid #fff; outline-offset: 4px; }
+.compactIntro h2 { margin-top: 0; max-width: none; font-size: 2rem; }
+.compactIntro .description { margin-top: .85rem; font-size: .875rem; }
+.compactIntro .actions { margin-top: 1rem; gap: .4rem 1rem; }
+.compactShow { margin-top: 1.1rem; padding-top: 1rem; border-top: 1px solid rgb(255 255 255 / 12%); }
+.compactShowTitle { margin-top: .5rem; color: #d0dcde; font-size: .875rem; line-height: 1.6; overflow-wrap: anywhere; }
+.compactLinks { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem 1rem; padding: .5rem 1.5rem; border-top: 1px solid rgb(255 255 255 / 12%); background: var(--wash); }
+.compactLinks a { display: inline-flex; align-items: center; min-height: 2.75rem; font-size: .75rem; font-weight: 800; color: var(--signal); }
+.compactLinks a:hover { text-decoration: underline; text-underline-offset: .25rem; }
 @media (max-width: 700px) {
   .body { grid-template-columns: 1fr; }
   .topline, .artists, .intake { padding-left: 1.2rem; padding-right: 1.2rem; }
   .intro { padding: 1.6rem 1.2rem; }
   .intro h2 { font-size: clamp(2.2rem, 9vw, 3.3rem); max-width: 13ch; }
+  .compactIntro h2 { font-size: 2rem; max-width: none; }
   .primary { width: 100%; }
   .actions { gap: .35rem; }
   .show { padding: 1.3rem 1.2rem; border-left: 0; border-top: 1px solid rgb(255 255 255 / 12%); }

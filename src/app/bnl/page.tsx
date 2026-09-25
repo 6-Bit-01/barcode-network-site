@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { externalLinks } from "@/content";
 import { BNLRelayHistoryModule } from "@/components/BNLRelayHistory";
 import {
@@ -7,6 +8,7 @@ import {
 } from "@/components/journal/JournalArticle";
 import { listBNLJournalArchive } from "@/lib/bnl-journal-store";
 import { listBNLPublicRelayHistory } from "@/lib/bnl-status-store";
+import { BNLFeaturedBallad, BNLFeaturedBalladView } from "@/components/BNLFeaturedBallad";
 
 export const dynamic = "force-dynamic";
 
@@ -28,24 +30,29 @@ export default async function BNLPage() {
   return (
     <div className="pt-14">
       <section className="border-b border-border noise-bg">
-        <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6">
-          <p className="text-xs uppercase tracking-[0.45em] text-accent">
-            {"// BNL-01 HUB // PUBLIC SIGNAL"}
-          </p>
-          <h1 className="mt-4 text-4xl font-black tracking-tight text-foreground sm:text-6xl">
-            BNL-01 Hub
-          </h1>
-          <p className="mt-5 max-w-3xl text-base leading-7 text-foreground/70 sm:text-lg">
-            BNL-01 watches the public movement around BARCODE—what the community is discussing, what keeps returning, and what changes around the show—then turns what matters into relays and Journal entries.
-          </p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <a href={externalLinks.discord} target="_blank" rel="noreferrer" className="inline-flex items-center border border-accent px-5 py-3 font-mono text-xs uppercase tracking-widest text-accent transition-colors hover:bg-accent hover:text-background">Talk with BNL in Discord →</a>
-            <Link href="/radio" className="inline-flex items-center border border-border-light px-5 py-3 font-mono text-xs uppercase tracking-widest text-foreground/70 transition-colors hover:border-foreground hover:text-foreground">BARCODE Radio →</Link>
-            <Link href="/terminal" className="inline-flex items-center border border-border-light px-5 py-3 font-mono text-xs uppercase tracking-widest text-foreground/70 transition-colors hover:border-foreground hover:text-foreground">Open Terminal →</Link>
-            <Link href="/journal" className="inline-flex items-center border border-border-light px-5 py-3 font-mono text-xs uppercase tracking-widest text-foreground/70 transition-colors hover:border-foreground hover:text-foreground">Full Journal →</Link>
-            <Link href="/bnl/music" className="inline-flex items-center border border-border-light px-5 py-3 font-mono text-xs uppercase tracking-widest text-foreground/70 transition-colors hover:border-foreground hover:text-foreground">Discography →</Link>
-            <Link href="/database/bnl-01" className="inline-flex items-center border border-border-light px-5 py-3 font-mono text-xs uppercase tracking-widest text-foreground/70 transition-colors hover:border-foreground hover:text-foreground">BNL dossier →</Link>
+        <div className="mx-auto grid max-w-7xl gap-8 px-4 py-12 sm:px-6 sm:py-16 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] lg:items-start">
+          <div className="min-w-0">
+            <p className="text-xs uppercase tracking-[0.45em] text-accent">
+              {"// BNL-01 HUB // PUBLIC SIGNAL"}
+            </p>
+            <h1 className="mt-4 text-4xl font-black tracking-tight text-foreground sm:text-6xl">
+              BNL-01 Hub
+            </h1>
+            <p className="mt-5 max-w-3xl text-base leading-7 text-foreground/70 sm:text-lg">
+              BNL-01 watches the public movement around BARCODE—what the community is discussing, what keeps returning, and what changes around the show—then turns what matters into relays, Journal entries and original Broadcast Ballads.
+            </p>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <a href={externalLinks.discord} target="_blank" rel="noreferrer" className="inline-flex items-center border border-accent px-5 py-3 font-mono text-xs uppercase tracking-widest text-accent transition-colors hover:bg-accent hover:text-background">Talk with BNL in Discord →</a>
+              <Link href="/radio" className="inline-flex items-center border border-border-light px-5 py-3 font-mono text-xs uppercase tracking-widest text-foreground/70 transition-colors hover:border-foreground hover:text-foreground">BARCODE Radio →</Link>
+              <Link href="/terminal" className="inline-flex items-center border border-border-light px-5 py-3 font-mono text-xs uppercase tracking-widest text-foreground/70 transition-colors hover:border-foreground hover:text-foreground">Open Terminal →</Link>
+              <Link href="/journal" className="inline-flex items-center border border-border-light px-5 py-3 font-mono text-xs uppercase tracking-widest text-foreground/70 transition-colors hover:border-foreground hover:text-foreground">Full Journal →</Link>
+              <Link href="/bnl/music" className="inline-flex items-center border border-border-light px-5 py-3 font-mono text-xs uppercase tracking-widest text-foreground/70 transition-colors hover:border-foreground hover:text-foreground">Discography →</Link>
+              <Link href="/database/bnl-01" className="inline-flex items-center border border-border-light px-5 py-3 font-mono text-xs uppercase tracking-widest text-foreground/70 transition-colors hover:border-foreground hover:text-foreground">BNL dossier →</Link>
+            </div>
           </div>
+          <Suspense fallback={<BNLFeaturedBalladView releases={[]} loading />}>
+            <BNLFeaturedBallad />
+          </Suspense>
         </div>
       </section>
 

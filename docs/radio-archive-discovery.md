@@ -23,18 +23,45 @@ existing music, Deck/Archive and BNL surfaces.
 - The Deck already offers the Archive when on standby and in its navigation;
   those existing contextual paths remain in place.
 
-No new data source, polling loop, public content, playback, submission or payment
-behavior is introduced. Private/test exclusion and live-state authority remain
-in the existing public projection. No recording is uploaded or advertised.
+The first slice introduced no new data source or polling loop. Private/test
+exclusion and live-state authority remain in the existing public projection.
+No recording is uploaded or advertised.
+
+## HQ and BNL discovery
+
+- HQ previously had no direct Archive path in its main content. A compact form
+  of the existing Radio feature now uses the hero's right column on wide
+  screens and follows the introduction on smaller screens. It links the exact
+  latest archived show, all shows, artists and BNL music. Only a real public
+  broadcast changes its primary destination to the Deck; pre-show intake does
+  not imply a live broadcast.
+- This reuses `RadioBroadcastFeature` and its existing public feature read and
+  session-bound polling policy (30 seconds active, 60 seconds standby). Mounting
+  it on HQ adds that public read on HQ; it does not create another endpoint or
+  an independent polling implementation.
+- The BNL Hub now features the most recently **published** eligible Ballad beside
+  its introduction. Publication date and original show date remain distinct.
+  Its existing shared Play, Playlist and Free download controls accompany an
+  exact link to the song's broadcast and the full discography.
+- The card reads the existing public catalog in a separate Suspense boundary;
+  a slow or failed music read does not hold up the Hub's Journal and relays.
+  Empty, loading and unavailable states offer honest text and navigation without
+  song controls. There is no automatic playback or new player/store.
+
+Header/Footer, Deck, Archive and music pages retain their existing layouts and
+routes. Submission, payment, edit gates, BNL generation/publication and weekly
+after-show delivery are outside this presentation change.
 
 ## Remaining item 7 plan
 
-Inspect the actual HQ, Deck/Archive, music and BNL layouts for gaps in the visitor
-journey. Use available space for relevant existing published songs, past shows,
+HQ and BNL's initial discovery gaps are addressed. The existing Deck standby
+Archive path, compact discography rows and show/song crosslinks were inspected
+and remain in place. Continue with specific observed presentation gaps, using
+available space for relevant existing published songs, past shows,
 artist discovery and BNL output, with truthful loading/empty/off-air states and
 usable phone layouts. Choose concrete pages and outcomes before each bounded
-change. Avoid duplicating navigation/cards merely to fill pixels. The Radio
-slice does not close the overall presentation pass or priorities 8, 9 and 12.
+change. Avoid duplicating navigation/cards merely to fill pixels. These slices
+do not close the overall presentation pass or priorities 8, 9 and 12.
 
 ## Verification
 
@@ -74,3 +101,22 @@ No VPS commands, environment changes or migrations are required.
 Local browser evidence is not physical-device or live-show acceptance. Revert
 the PR through the normal site workflow if necessary; stored shows, queue state,
 playlists and BNL evidence need no migration or repair.
+
+For the HQ/BNL slice, the focused regressions additionally cover compact live,
+archive, intake, empty, loading and unavailable states; selection by publication
+date; exact show links; shared music controls; and Journal/relay rendering while
+music is pending. Local `npm ci`, `npm run check` and `npm run build` passed:
+1,347 Node tests, 20 Python fixtures, TypeScript, and lint with 0 errors / 37
+existing warnings. The 40 focused checks also passed separately. Browser preview
+and production observations are recorded in the release handoff, not inferred
+from these test results. After the normal Vercel merge deployment:
+
+1. Open `/` off-air. Check the Archive card beside the introduction at desktop
+   width and below it at narrower widths; follow its latest-show and artist links.
+2. Open `/bnl`. Match the featured title/publication date against `/bnl/music`,
+   follow its original show link, and verify Play/Playlist use the shared dock
+   through navigation. A fresh visit must stay silent until Play is chosen.
+3. Check narrow layouts for wrapped headings and reachable controls, plus the
+   existing Journal and relays beneath the feature. Inspect public-page console
+   errors. Leave real live-state and physical audio/device acceptance as natural
+   observations; no live-show chores or server commands are needed.

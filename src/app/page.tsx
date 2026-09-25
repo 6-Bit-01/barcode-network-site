@@ -5,6 +5,7 @@ import Image from "next/image";
 import { StatusBadge, SectionDot } from "@/components/LiveEffects";
 import { homePage, siteConfig, externalLinks } from "@/content";
 import { BNLRelayModule } from "@/components/BNLRelay";
+import { RadioBroadcastFeature } from "@/components/RadioBroadcastFeature";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/" },
@@ -60,8 +61,8 @@ export default function Home() {
     <div className="pt-14">
       {/* Public-access Hero */}
       <section className="relative noise-bg border-b border-border">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-24 sm:py-32">
-          <div className="max-w-4xl">
+        <div className="mx-auto grid max-w-7xl gap-10 px-4 py-16 sm:px-6 sm:py-20 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] xl:items-center">
+          <div className="min-w-0 max-w-4xl">
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 mb-6">
               <Image
                 src={siteConfig.logo}
@@ -76,7 +77,7 @@ export default function Home() {
                 <p className="text-xs uppercase tracking-[0.45em] text-muted mb-3 animate-flicker">
                   {homePage.hero.label}
                 </p>
-                <h1 className="text-[clamp(1.9rem,9vw,4.5rem)] sm:text-[clamp(2.75rem,6vw,4.75rem)] font-black uppercase leading-[0.9] tracking-[-0.08em] text-foreground">
+                <h1 className="text-[clamp(1.9rem,9vw,4.5rem)] sm:text-[clamp(2.75rem,6vw,4.75rem)] xl:text-[clamp(2.75rem,4.4vw,4rem)] font-black uppercase leading-[0.9] tracking-[-0.08em] text-foreground">
                   <span className="block whitespace-nowrap">{homePage.hero.heading1}</span>
                   <span className="block whitespace-nowrap text-accent">{homePage.hero.heading2}</span>
                 </h1>
@@ -100,6 +101,7 @@ export default function Home() {
               </Link>
             </div>
           </div>
+          <div className="min-w-0"><RadioBroadcastFeature compact /></div>
         </div>
       </section>
 

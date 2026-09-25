@@ -14,6 +14,7 @@ const read = (path) =>
 function loadHub(
   readArchive,
   readRelayHistory = async () => ({ ok: true, value: [] }),
+  featuredBallad = () => React.createElement("div", { "data-featured-ballad": true }),
 ) {
   const file = "src/app/bnl/page.tsx";
   const code = ts.transpileModule(read(file), {
@@ -28,6 +29,11 @@ function loadHub(
   const req = (id) => {
     if (id === "react/jsx-runtime") return require("react/jsx-runtime");
     if (id === "react") return React;
+    if (id === "@/components/BNLFeaturedBallad")
+      return {
+        BNLFeaturedBallad: featuredBallad,
+        BNLFeaturedBalladView: ({ loading }) => React.createElement("div", { "data-music-loading": loading }),
+      };
     if (id === "next/link")
       return function LinkMock({ href, children, ...props }) {
         return React.createElement(
@@ -233,6 +239,19 @@ test("public BNL hub renders the newest entry and a bounded recent list", async 
   assert.match(html, /data-recent-entry="journal-recent-3"/);
   assert.match(html, /data-recent-entry="journal-recent-4"/);
   assert.doesNotMatch(html, /data-recent-entry="journal-recent-5"/);
+});
+
+test("pending featured music leaves public Journal and relays readable", async () => {
+  const pending = new Promise(() => {});
+  const hub = loadHub(
+    async () => ({ ok: true, value: { entries: [entry("ready-journal", "Ready Journal")] } }),
+    async () => ({ ok: true, value: [{ message: "Ready relay" }] }),
+    () => { throw pending; },
+  );
+  const html = renderToStaticMarkup(await hub.default());
+  assert.match(html, /data-music-loading="true"/);
+  assert.match(html, /data-latest-entry="ready-journal"/);
+  assert.match(html, /data-relay-count="1"/);
 });
 
 test("public BNL hub distinguishes an unavailable Journal from an empty one", async () => {

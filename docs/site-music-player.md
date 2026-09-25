@@ -126,8 +126,8 @@ private fields are never trusted or persisted as playback authority.
 
 Deployment: merge the scoped site PR and wait for its normal Vercel Production
 Ready status. No bot deploy, VPS commands, migration, new environment variables,
-payment changes or publication changes are needed. Casting remains a separate
-slice requiring actual Chromecast and AirPlay acceptance.
+payment changes or publication changes are needed. Casting is the next slice
+below; actual Chromecast and AirPlay acceptance remains separate from fixtures.
 
 Focused post-deploy check (off air): on /bnl/music or a published Archive Ballad,
 add two different released recordings if available. Verify Add is silent, reorder,
@@ -138,3 +138,44 @@ unpublished cases without changing any production release. Physical-device sound
 and the first production observation must be recorded separately from fixture tests.
 Rollback: revert this playlist PR and redeploy; keep all released songs/data.
 The previous player ignores the versioned local playlist key.
+
+## Chromecast and AirPlay — priority 8, second slice
+
+The existing player offers AirPlay when Safari reports an available wireless
+target, and Cast when Google's sender reports an available device. Google's SDK
+loads once, after a song is selected in a compatible Chromium browser. A device
+picker opens only on a visitor's click. No automatic reconnect or saved-session
+resume is requested. Unsupported browsers retain ordinary playback.
+
+AirPlay uses the existing audio element and Safari's native picker. Chromecast
+uses Google's Default Media Receiver. It receives only the same anonymous
+`public=1` recording URL after a HEAD check confirms public availability and the
+audio MIME type. Public, successful media responses permit receiver CORS/range
+access. Admin previews and unavailable/private recordings receive no new access.
+No credentials, arbitrary stored URL, private Blob URL, audio conversion or new
+published recording is sent to the receiver.
+
+Cast controls use receiver state for play/pause, position, seeking, volume and
+mute. Selecting another song and Previous/Next use the same playlist. A natural
+FINISHED event may advance once; an error does not skip to another recording.
+Receiver loads are serialized and initially paused; only the latest still-active
+selection may start. Closing the player, pausing during a load or entering an
+operational route cannot be undone by a late completion. Casting pauses local
+audio. Stop casting and disconnect retain the song/position but require an
+explicit Play to return to this browser. Another sender taking over does not
+cause local autoplay or stop its unrelated media.
+
+Keep this page open for Cast playlist progression. Internal site navigation
+retains the player; closing/refreshing the page requests an end to its Cast
+session. Abrupt network/device/browser loss can prevent that stop request from
+reaching the receiver; its own controls remain available. Cast and AirPlay do not
+operate the broadcast or the host's queue/OBS player.
+
+Verification distinguishes controller/SDK fixtures and browser layout/interaction
+from physical devices. Actual Chromecast/Google TV playback and Safari-to-AirPlay
+sound, device discovery, seeking and reconnection remain unobserved until an
+off-air device check. They are not show acceptance or a requirement during the
+Friday broadcast. Production deployment uses the existing Vercel workflow; no
+VPS restart, migration, environment variable or submission gate change is needed.
+Rollback: revert this casting PR and redeploy; the existing local player and saved
+playlist remain intact.

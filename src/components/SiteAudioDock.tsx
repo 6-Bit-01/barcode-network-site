@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { audioTime } from "@/lib/site-audio-player";
 import { useSiteAudio } from "@/components/SiteAudioProvider";
 import styles from "./SiteAudioDock.module.css";
+import { SiteAudioOutputControls } from "@/components/SiteAudioOutputControls";
 import { balladDateLabel } from "@/lib/ballad-catalog";
 
 export function SiteAudioDock() {
@@ -108,6 +109,7 @@ export function SiteAudioDock() {
           <Link href={track.showHref} className={styles.showLink}>Show · {track.showDate ? balladDateLabel(track.showDate) : "View broadcast"} ↗</Link>
           <button type="button" popoverTarget="barcode-playlist" className={styles.textButton}>Playlist ({audio.playlist.length})</button>
           <button type="button" popoverTarget="barcode-song-info" className={styles.textButton}>Song info</button>
+          <SiteAudioOutputControls />
           {track.downloadHref && <a href={track.downloadHref} download className={styles.textButton} aria-label={`Download ${track.title} free`}>↓ Free download</a>}
         </div>
       </div>
@@ -139,6 +141,7 @@ export function SiteAudioDock() {
         <p className={styles.infoCredits}>Free to download for listening. <Link href={track.showHref} onClick={() => info.current?.hidePopover?.()}>Full story & credits →</Link></p>
       </div>
       {audio.playlistNotice && <p className={styles.notice} role="status">{audio.playlistNotice}</p>}
+      {audio.outputNotice && <p className={styles.notice} role="status">{audio.outputNotice}</p>}
       <p className={audio.error ? styles.error : styles.srOnly} role={audio.error ? "alert" : "status"}>{audio.error ?? (status === "loading" ? "Loading recording…" : status === "playing" ? `Playing ${track.title}` : status === "ended" ? "Song finished" : audio.track ? "Music paused" : "Playlist ready")}</p>
     </section>
   </>;

@@ -9,7 +9,7 @@ let catalogFetch;
 function load(file) {
   const code = ts.transpileModule(readFileSync(file, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const mod = { exports: {} };
-  vm.runInNewContext(code, { module: mod, exports: mod.exports, require: id => id.startsWith("@/") ? load(`src/${id.slice(2)}.ts`) : require(id), Set, Number, AbortSignal, fetch: (...args) => catalogFetch(...args) }, { filename: file });
+  vm.runInNewContext(code, { module: mod, exports: mod.exports, require: id => id.startsWith("@/") ? load(`src/${id.slice(2)}.ts`) : require(id), Set, Number, URL, window: { location: { origin: "https://barcode.test" } }, AbortSignal, fetch: (...args) => catalogFetch(...args) }, { filename: file });
   return mod.exports;
 }
 const { SiteAudioController, balladAudioTrack, publicAudioAllowed, audioTime } = load("src/lib/site-audio-player.ts");
@@ -193,4 +193,80 @@ test("late catalog refresh cannot restore removed entries or reopen a closed pla
   controller.remove(track.key); controller.add(second); controller.close(); resolve({ ok: true, json: async () => ({ ballads: [] }) }); await pending;
   assert.equal(controller.getSnapshot().playlist.length, 1); assert.equal(controller.getSnapshot().playlist[0].key, second.key);
   assert.notEqual(controller.getSnapshot().playlist[0].availability, "unavailable"); assert.equal(controller.getSnapshot().visible, false);
+});
+
+class Output {
+  label = 'Test speaker'; listeners = new Set(); loads = []; starts = 0; stops = 0; pending = null;
+  state = { connected:true, contentId:null, status:'paused', currentTime:0, duration:150, canSeek:true, volume:0.5, muted:false };
+  subscribe = fn => { this.listeners.add(fn); return () => this.listeners.delete(fn); };
+  getState = () => this.state;
+  emit(patch) { Object.assign(this.state,patch); for(const fn of this.listeners) fn(); }
+  async load(song,position) {
+    this.loads.push([song.key,position]);
+    if(this.pending) await this.pending;
+    this.emit({contentId:`https://barcode.test/api/ballads/media?showId=${song.showId}&audioId=${song.audioId}&public=1`,currentTime:position,status:'paused'});
+  }
+  play() { this.starts++; this.emit({status:'playing'}); }
+  pause() { this.emit({status:'paused'}); }
+  seek(currentTime) { this.emit({currentTime}); }
+  setVolume(volume) { this.emit({volume}); }
+  setMuted(muted) { this.emit({muted}); }
+  disconnect() { this.stops++; this.emit({connected:false}); }
+}
+const settle = () => new Promise(resolve=>setImmediate(resolve));
+test('Cast transfers the same song/position, routes controls, and returns locally paused', async()=>{
+  const {controller,audio}=setup(), output=new Output();controller.play(track);audio.metadata();controller.seek(35);
+  controller.connectOutput(output,track.key);await settle();
+  assert.equal(audio.paused,true);assert.deepEqual(output.loads,[[track.key,35]]);assert.equal(output.starts,1);
+  assert.equal(controller.getSnapshot().outputLabel,'Test speaker');
+  controller.pause();assert.equal(output.state.status,'paused');controller.play();assert.equal(output.state.status,'playing');
+  controller.seek(80);controller.setVolume(0.7);controller.toggleMute();assert.equal(output.state.currentTime,80);assert.equal(output.state.volume,0.7);assert.equal(output.state.muted,true);
+  const starts=audio.starts;controller.disconnectOutput();assert.equal(output.stops,1);assert.equal(controller.getSnapshot().status,'paused');assert.equal(audio.starts,starts);
+  controller.play();audio.metadata();assert.equal(audio.currentTime,80);assert.equal(controller.getSnapshot().outputLabel,null);
+});
+test('paused songs stay paused when connected; source callbacks from local audio are ignored during Cast',async()=>{
+  const {controller,audio}=setup(),output=new Output();controller.add(track);controller.add(second);controller.play(track);controller.pause();controller.connectOutput(output,track.key);await settle();
+  assert.equal(output.starts,0);assert.equal(controller.getSnapshot().status,'paused');
+  audio.ended=true;audio.emit('ended');audio.emit('playing');assert.equal(controller.getSnapshot().track.key,track.key);assert.equal(controller.getSnapshot().status,'paused');
+});
+test('only receiver FINISHED advances the playlist once; receiver errors never skip songs',async()=>{
+  const {controller}=setup(),output=new Output();controller.add(track);controller.add(second);controller.add(third);controller.play(track);controller.connectOutput(output,track.key);await settle();
+  output.emit({status:'ended',currentTime:150});output.emit({status:'ended'});await settle();
+  assert.equal(controller.getSnapshot().track.key,second.key);assert.equal(output.loads.length,2);
+  output.emit({status:'error'});await settle();assert.equal(controller.getSnapshot().track.key,second.key);assert.equal(output.loads.length,2);assert.equal(controller.getSnapshot().status,'error');
+});
+test('a newer song wins serialized Cast loading and the old recording never starts',async()=>{
+  const {controller}=setup(),output=new Output();let release;output.pending=new Promise(resolve=>release=resolve);
+  controller.play(track);controller.connectOutput(output,track.key);await settle();controller.play(second);output.pending=null;release();await settle();
+  assert.equal(output.loads.length,2);assert.equal(output.starts,1);assert.equal(controller.getSnapshot().track.key,second.key);assert.match(output.state.contentId,/showId=second/);
+});
+test('pause, close and operational-route entry cannot be undone by a delayed receiver load',async()=>{
+  for(const action of ['pause','close','admin']){
+    const {controller,audio}=setup(),output=new Output();let release;output.pending=new Promise(resolve=>release=resolve);
+    controller.play(track);controller.connectOutput(output,track.key);await settle();
+    if(action==='admin')controller.setEnabled(false);else controller[action]();
+    release();await settle();assert.equal(output.starts,0);assert.equal(audio.paused,true);assert.notEqual(controller.getSnapshot().status,'playing');
+    if(action!=='pause')assert.equal(output.stops,1);
+  }
+});
+test('a closed player or a different selected song rejects a late device-picker result',()=>{
+  for(const action of ['close','change','admin']){
+    const {controller}=setup(),output=new Output();controller.play(track);
+    if(action==='change')controller.play(second);else if(action==='admin')controller.setEnabled(false);else controller.close();
+    controller.connectOutput(output,track.key);assert.equal(output.stops,1);assert.equal(output.loads.length,0);assert.equal(controller.getSnapshot().outputLabel,null);
+  }
+});
+test('a receiver disconnect or another sender taking over never starts local music or stops unrelated media',async()=>{
+  for(const patch of [{connected:false},{contentId:'https://other.test/song.mp3'}]){
+    const {controller,audio}=setup(),output=new Output();controller.play(track);controller.connectOutput(output,track.key);await settle();const starts=audio.starts;
+    output.emit(patch);assert.equal(controller.getSnapshot().outputLabel,null);assert.equal(controller.getSnapshot().status,'paused');assert.equal(audio.starts,starts);assert.equal(output.stops,0);
+  }
+});
+test('AirPlay availability/connection events use the existing audio and open only on a user action',()=>{
+  const {controller,audio}=setup();let picks=0;audio.webkitShowPlaybackTargetPicker=()=>picks++;
+  const availability=new Event('webkitplaybacktargetavailabilitychanged');availability.availability='available';audio.dispatchEvent(availability);
+  assert.equal(controller.getSnapshot().airPlayAvailable,true);assert.equal(picks,0);
+  controller.play(track);controller.requestAirPlay();assert.equal(picks,1);
+  audio.webkitCurrentPlaybackTargetIsWireless=true;audio.emit('webkitcurrentplaybacktargetiswirelesschanged');assert.equal(controller.getSnapshot().airPlayActive,true);
+  controller.close();assert.equal(audio.src,'');assert.equal(audio.paused,true);assert.equal(controller.getSnapshot().airPlayAvailable,true);
 });

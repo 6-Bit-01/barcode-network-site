@@ -261,7 +261,7 @@ test("public BNL hub distinguishes an unavailable Journal from an empty one", as
   }));
   const unavailable = renderToStaticMarkup(await unavailableHub.default());
   assert.match(unavailable, /Journal signal unavailable/);
-  assert.match(unavailable, /recent BNL-01 relay history above remains available/);
+  assert.match(unavailable, /recent BNL-01 relay history remains available/);
 
   const combinedFailureHub = loadHub(
     async () => ({ ok: false, unavailable: true }),
@@ -281,7 +281,7 @@ test("public BNL hub distinguishes an unavailable Journal from an empty one", as
   );
   assert.doesNotMatch(
     combinedFailure,
-    /relay history above remains available/,
+    /relay history remains available/,
   );
 
   const emptyHub = loadHub(async () => ({

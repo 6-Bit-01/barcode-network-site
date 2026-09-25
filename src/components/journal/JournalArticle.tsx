@@ -42,11 +42,13 @@ export function JournalArticle({
   prominent = false,
   titleLevel = "h1",
   archiveFilter = "all",
+  preview = false,
 }: {
   entry: PublicBNLJournalEntry;
   prominent?: boolean;
   titleLevel?: "h1" | "h2";
   archiveFilter?: JournalArchiveFilter;
+  preview?: boolean;
 }) {
   const Title = titleLevel;
   const SectionTitle = titleLevel === "h1" ? "h2" : "h3";
@@ -65,13 +67,13 @@ export function JournalArticle({
         value={entry.publishedAt}
       />
       <div className="font-oxanium">
-        <Title className="mt-5 text-3xl font-normal leading-tight text-foreground sm:text-5xl">
+        <Title className={`mt-5 break-words font-normal leading-tight text-foreground ${preview ? "text-2xl sm:text-3xl" : "text-3xl sm:text-5xl"}`}>
           {entry.title}
         </Title>
-        <p className="mt-5 max-w-3xl text-xl leading-7 text-foreground/75">
+        <p className={`mt-5 max-w-3xl leading-7 text-foreground/75 ${preview ? "text-base" : "text-xl"}`}>
           {entry.excerpt}
         </p>
-        <div className="mt-8 space-y-8">
+        {!preview && <div className="mt-8 space-y-8">
           {entry.sections.map((section) => (
             <section key={section.heading} className="space-y-3">
               <SectionTitle className="text-lg font-normal uppercase text-accent sm:text-xl">
@@ -82,14 +84,14 @@ export function JournalArticle({
               </p>
             </section>
           ))}
-        </div>
+        </div>}
       </div>
-      {prominent && (
+      {(prominent || preview) && (
         <Link
           href={journalEntryHref(entry.entryId, archiveFilter)}
           className="mt-8 inline-flex font-mono text-xs uppercase tracking-widest text-accent hover:text-foreground"
         >
-          Open this entry →
+          {preview ? "Read the full entry →" : "Open this entry →"}
         </Link>
       )}
     </article>

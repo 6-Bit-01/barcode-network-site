@@ -1,3 +1,5 @@
+import { Suspense } from "react";
+import { JournalArtwork } from "@/components/BNLOwnArt";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { externalLinks } from "@/content";
@@ -73,6 +75,7 @@ export default async function JournalEntryPage({
         </Link><Link href="/bnl" className="font-mono text-xs uppercase tracking-widest text-accent">BNL-01 Hub</Link><a href={externalLinks.discord} target="_blank" rel="noreferrer" className="font-mono text-xs uppercase tracking-widest text-accent">Discord</a><Link href="/radio" className="font-mono text-xs uppercase tracking-widest text-accent">Radio</Link></div>
         <div className="mt-6">
           <JournalArticle entry={result.value} archiveFilter={filter} />
+          <Suspense fallback={null}><JournalArtwork entryId={entryId} /></Suspense>
         </div>
         {neighbors.ok && (
           <nav

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BNLOwnArtGallery } from "@/components/BNLOwnArt";
 import { Suspense } from "react";
 import { externalLinks } from "@/content";
 import { BNLRelayHistoryModule } from "@/components/BNLRelayHistory";
@@ -56,6 +57,7 @@ export default async function BNLPage() {
         </div>
       </section>
 
+      <Suspense fallback={null}><BNLOwnArtGallery /></Suspense>
       <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-12" aria-label="Latest from BNL">
         <div className="grid gap-6 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:items-start">
           <div className="min-w-0">

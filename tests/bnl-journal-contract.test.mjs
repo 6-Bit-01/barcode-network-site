@@ -20,6 +20,7 @@ function loadTs(file, mocks = {}, globals = {}) {
   const exports = {};
   const cjsModule = { exports };
   const req = (id) => {
+    if (id === "@/components/BNLOwnArt") return { JournalArtwork: () => null };
     if (mocks[id]) return mocks[id];
     if (id === "crypto") return crypto;
     if (id === "react/jsx-runtime") return awaitImport("react/jsx-runtime");

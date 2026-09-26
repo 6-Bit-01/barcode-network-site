@@ -135,6 +135,10 @@ def collect_bnl(cfg: dict, show: dict) -> dict:
             "--root", cfg["root"], "--guild-id", str(cfg["guild_id"]),
             "--show-date", show["showDate"], "--session-id", show["sessionId"],
             "--row-limit", str(cfg.get("row_limit", 5000)), "--stdout-json"]
+    if cfg.get("include_recent_observation") is True:
+        args.append("--include-recent-observation")
+        if cfg.get("observation_start") is not None:
+            args.extend(("--observation-start", cfg["observation_start"]))
     result = subprocess.run(args, capture_output=True, timeout=120, check=False)
     if result.returncode:
         raise RuntimeError("BNL capture failed")
@@ -183,13 +187,16 @@ def bundle(site: dict, bnl: dict, now: datetime, is_test=False) -> tuple[dict, d
     # Explicit transport truncation rather than a silent rejected oversized mail.
     omitted = {}
     while sum(len(encode(part)) for part in parts.values()) > MAX_ATTACHMENTS:
-        candidates = [(key, item) for key, item in bnl.get("database", {}).items()
-                      if isinstance(item, dict) and len(item.get("rows", [])) > 1]
-        candidates += [("journal", bnl["journal"])] if len(bnl.get("journal", {}).get("records", [])) > 1 else []
+        candidates = []
+        for prefix, evidence in (("", bnl), ("operatorObservation.", bnl.get("operatorObservation", {}))):
+            candidates.extend((prefix + key, item) for key, item in evidence.get("database", {}).items()
+                              if isinstance(item, dict) and len(item.get("rows", [])) > 1)
+            if len(evidence.get("journal", {}).get("records", [])) > 1:
+                candidates.append((prefix + "journal", evidence["journal"]))
         if not candidates:
             raise ValueError("Evidence exceeds delivery limit")
         key, section = max(candidates, key=lambda pair: len(encode(pair[1])))
-        field = "records" if key == "journal" else "rows"
+        field = "records" if key.endswith("journal") else "rows"
         keep = max(1, len(section[field]) // 2)
         omitted[key] = omitted.get(key, 0) + len(section[field]) - keep
         section[field] = section[field][:keep]
@@ -214,6 +221,9 @@ def bundle(site: dict, bnl: dict, now: datetime, is_test=False) -> tuple[dict, d
                 "acceptancePassed": False,
                 "limits": "Existing source retention applies; collection does not prove full-show playback or publication delivery.",
                 "files": {name: {"sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)} for name, data in files.items()}}
+    if "operatorObservation" in bnl:
+        observation = bnl["operatorObservation"]
+        manifest["operatorObservationWindow"] = {"start": observation.get("startInclusive"), "end": observation.get("endExclusive")}
     manifest["packetId"] = hashlib.sha256(encode(manifest)).hexdigest()
     files["manifest.txt"] = encode(manifest)
     return manifest, files
@@ -253,8 +263,12 @@ def stage(directory: Path, cfg: dict, manifest: dict, files: dict[str, bytes]):
     atomic(directory / "manifest.json", encode(manifest))
 
 
-def run(cfg: dict, *, now=None, is_test=False, fetcher=fetch, collector=collect_bnl, sender=deliver):
+def run(cfg: dict, *, now=None, is_test=False, observation_start=None, fetcher=fetch, collector=collect_bnl, sender=deliver):
     now = now or datetime.now(UTC)
+    if observation_start is not None:
+        if not is_test:
+            raise ValueError("An observation start requires TEST mode")
+        capture.observation_window(now, observation_start)
     state_dir = Path(cfg["state_dir"])
     state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     with (state_dir / "worker.lock").open("a") as lock:
@@ -287,7 +301,7 @@ def run(cfg: dict, *, now=None, is_test=False, fetcher=fetch, collector=collect_
                 validate_export(site, show)
                 if entry.get("status") != "pending_send":
                     try:
-                        bnl = collector(cfg, show)
+                        bnl = collector({**cfg, "include_recent_observation": bool(is_test), "observation_start": observation_start}, show)
                     except Exception as error:
                         bnl = {"sessionId": session_id, "showDatePacific": show["showDate"],
                                "available": False, "errorType": type(error).__name__}
@@ -320,11 +334,12 @@ def run(cfg: dict, *, now=None, is_test=False, fetcher=fetch, collector=collect_
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=Path.home() / ".config/barcode-after-show/config.json")
-    parser.add_argument("--test", action="store_true", help="Capture and mail the latest archived public show as TEST; do not mark it sent for normal operation")
+    parser.add_argument("--test", action="store_true", help="Capture the latest archived public show plus a separate recent two-hour observation as TEST; do not mark it sent for normal operation")
+    parser.add_argument("--observation-start", help="With --test, select an earlier two-hour observation start, including timezone")
     args = parser.parse_args()
     os.umask(0o077)
     try:
-        result = run(config(args.config), is_test=args.test)
+        result = run(config(args.config), is_test=args.test, observation_start=args.observation_start)
         print(json.dumps(result))
         if any(row.get("status") == "retry_pending" for row in result.get("results", [])):
             raise SystemExit(1)

@@ -41,6 +41,61 @@ the source-archive table's `public_usable` column on conversations. Text attachm
 are base64-encoded from the exact UTF-8 bytes recorded in the manifest and local
 ZIP, so SMTP newline conversion cannot invalidate their byte counts or hashes.
 
+The collector version `shared_brain_receipts_2026_09_26` includes BNL's actual
+`model` conversation rows as well as human `user` rows and legacy `assistant`
+rows. BNL's stored `user_id` identifies an addressed member, not the speaker;
+model rows therefore use a stable bot `speakerKey` and a separate hashed
+`addressedSpeakerKey` when one exists. Public-policy, guild, time, redaction and
+row limits apply equally to both sides. `deliveryVerified=false` remains explicit.
+
+`sharedBrainReceipts` retains packet/run IDs, route and authority metadata,
+selected/rendered lane counts, final response hash, candidate/live flags,
+source/frame checks, final guard, fallback reason and corrective-call counts.
+`intelligencePacketReceipts` exports the corresponding packet-run metadata and
+selection/validation counters. Counts are an allowlisted projection; unknown
+keys, malformed counters and missing schema fields are reported as unavailable
+coverage, never silently treated as zero. Neither section exports prompts,
+member identities, private facts or source text. They show selection and
+application, not whether the resulting response understood the source well.
+
+Join synthesis to packet receipts by `packet_run_id`/`run_id` and `packet_id`.
+A public model row's `responseReceiptHash` uses the existing synthesis digest
+encoding and can match `final_response_hash` for exact stored response text.
+Do not guess a join from nearby timestamps: splitting, grouping, persistence
+failures or later redaction can prevent a one-row match. The hash is computed
+before redaction; the attachment is not the original Discord message.
+
+Read `source_revalidation_status` alongside `guard_status`, `fallback_reason`,
+`corrective_call_count`, `candidate_selected` and `live_applied`. A rejected
+source basis can remain recorded after a successful source-neutral rewrite.
+Thus `subject_ambiguous` plus `response_sent=1` alone proves neither that the
+bad packet was sent nor that the repair was useful. The final prose is needed.
+
+The health reader remains hash-pinned. The reviewed shared-input reader at bot
+revision `48a225f` (unchanged at `ca52801`) is now accepted alongside the original
+reader, and the export identifies its hash/version. Unknown revisions still
+remain unavailable. Only its read-only `inspect()` entry point runs; no bot
+import, process environment read, provider call or runtime gate change occurs.
+
+## Updating an existing installation
+
+A website deployment does not update the VPS copy in
+`~/.local/share/barcode-after-show/`. After merging this change, replace only
+`bnl_after_show_capture.py` there with the verified main-branch file. Keep the
+existing worker, configuration, timer and `state.json`. Do not rerun setup or
+erase accepted-delivery state. No BNL restart is required. The PR handoff includes
+the exact file hash and an inline installation command.
+
+For the next normal packet, check `collectorVersion`, public model rows,
+`existingHealth.available`, both receipt sections and their `fieldCoverage`.
+Old schemas, expired records, missing permissions and unavailable readers remain
+coverage gaps, not passing checks. To recover the most recently archived show's
+evidence immediately using the existing private mail path, the established
+`after_show.py --test` command sends a newly captured TEST packet and preserves
+normal delivery deduplication. Retain the original packet and all its coverage
+markers; this supplemental packet does not replace its historical evidence or
+retroactively establish feature acceptance.
+
 ## One-time off-air setup
 
 1. Merge/deploy this PR through the normal website workflow.

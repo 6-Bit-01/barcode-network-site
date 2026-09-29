@@ -182,3 +182,43 @@ Friday broadcast. Production deployment uses the existing Vercel workflow; no
 VPS restart, migration, environment variable or submission gate change is needed.
 Rollback: revert this casting PR and redeploy; the existing local player and saved
 playlist remain intact.
+
+## Cast playback recovery — September 29, 2026
+
+The owner reported that selecting Cast stopped a song and left it unplayable at
+0:00 / 0:00. Anonymous production HEAD and two-byte range reads of a published
+recording returned valid audio and CORS headers, but still inherited
+`Cross-Origin-Resource-Policy: same-origin` from the private audio helper. A
+receiver's cross-origin native media request can therefore be blocked even when
+the sender's same-origin HEAD succeeds. Successful, exactly published `public=1`
+responses now use `cross-origin`; private previews, eligibility checks and the
+underlying queue audio helper retain their existing boundaries.
+
+Google's sender also removes idle recordings from `getMediaSession()`. The
+adapter previously lost both FINISHED and ERROR, reported empty media as paused,
+and made Play a silent no-op. It now retains the loaded media reference and its
+terminal reason, reads the media session's playback state while RemotePlayer
+fields update, and treats missing or failed media as a recoverable failure.
+FINISHED still advances the playlist once. A failed load or receiver error ends
+that Cast output and returns locally paused, preserving known duration and
+position. The visitor can press Play locally or select Cast again. Transient
+zero metadata and delayed local reset events cannot erase that return position.
+
+Focused regressions cover public versus private resource policy, the real SDK's
+null-on-idle behavior, terminal errors/completion, stale remote state, failed
+loads, empty metadata, local retry and the existing late-load/playlist controls.
+The owner’s reported device result is failed acceptance; local tests do not
+replace a new physical-device result after this repair.
+
+Normal deployment is the website PR, required checks/build, then the existing
+Vercel Production deployment. No VPS restart, migration, configuration, audio
+replacement or feature activation is needed.
+
+Focused post-deploy evidence: confirm published HEAD/range responses carry the
+cross-origin resource policy. Play a published song, seek forward, then choose
+Cast on the same device that failed. Confirm audible receiver playback, a
+nonzero duration, progressing time, pause/resume and seeking. Stop casting and
+press Play to confirm local recovery at the retained position. If it still
+fails, retain the browser/device, song, visible notice and approximate time;
+do not label a code-only result physical acceptance. No live-show testing is
+required.

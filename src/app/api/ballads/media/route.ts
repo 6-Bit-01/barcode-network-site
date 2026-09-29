@@ -33,7 +33,12 @@ export async function GET(req: Request) {
     const response = await serveAdminQueueAudio({ entry: { id: audio.id, sourceType: "upload", fileUrl: audio.url, fileName: audio.filename, mimeType: audio.contentType }, rangeHeader: req.headers.get("range"), getBlob: (url, options) => get(url, options) });
     // Only exact, currently published recordings permit anonymous receivers.
     // Admin preview responses keep their existing origin boundary.
-    if (publicOnly && response.ok) for (const [key, value] of Object.entries(publicMediaCors)) response.headers.set(key, value);
+    if (publicOnly && response.ok) {
+      for (const [key, value] of Object.entries(publicMediaCors)) response.headers.set(key, value);
+      // Native receiver media loads may use no-cors. The private audio helper's
+      // same-origin CORP would block them even with the CORS headers above.
+      response.headers.set("Cross-Origin-Resource-Policy", "cross-origin");
+    }
     if (release && response.ok) response.headers.set("content-disposition", balladDownloadDisposition(balladDownloadFilename(release.version.title, show.showDate, response.headers.get("content-type") ?? audio.contentType)));
     return response;
   } catch { return new Response("Audio unavailable.", { status: 404, headers: { "Cache-Control": "no-store" } }); }

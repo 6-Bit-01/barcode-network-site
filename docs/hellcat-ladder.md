@@ -2,6 +2,10 @@
 
 Hellcat's read-only KOTH ladder appears on its own `/contests` page, linked from desktop/mobile navigation, the Footer and the sitemap. It does not appear on Radio. HellcatNZ remains the source of the ranks and official 0–100 scores. The website does not calculate results or connect these entries to BARCODE queue tracks, Archive history, BNL memory, dossiers or identities. The Contests page can host future community contests without making them part of BARCODE Radio.
 
+The page also presents the community information supplied by the owner: daily KOTH submissions played on community radio and reviewed by `@reviewcrew`, live feedback and a winner shout-out, daily Community Radio, weekly Artist Features, and rotating Song Creation Challenges. Numbered panels use BARCODE's existing dark palette and green terminal-style accents. The explicit **Join HellcatNZ's Discord** link points to the supplied `https://discord.gg/HellcatNZ` invite; it does not join a server automatically. The contest and these activities remain attributed to HellcatNZ.
+
+The shared desktop/mobile main menu places Database immediately after Releases: BNL-01 Hub → Contests → Releases → Database.
+
 ## Configuration and rollout
 
 Set these **server-only** environment variables in the intended Vercel environment:

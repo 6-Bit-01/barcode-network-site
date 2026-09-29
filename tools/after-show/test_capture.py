@@ -25,13 +25,98 @@ class CaptureTests(unittest.TestCase):
         start, end = capture.window('2026-10-31', datetime(2026, 11, 2, tzinfo=timezone.utc))
         self.assertEqual((end-start).total_seconds(), 25*3600)
 
+    def test_explicit_observation_recovers_earlier_test_and_is_always_bounded(self):
+        now = datetime(2026, 9, 28, 20, tzinfo=timezone.utc)
+        start, end = capture.observation_window(now, '2026-09-26T12:54:00-07:00')
+        self.assertEqual(start.isoformat(), '2026-09-26T19:54:00+00:00')
+        self.assertEqual(end.isoformat(), '2026-09-26T21:54:00+00:00')
+        early_now = datetime(2026, 9, 26, 20, 1, tzinfo=timezone.utc)
+        self.assertEqual(capture.observation_window(early_now, '2026-09-26T19:54:00Z')[1], early_now)
+        for invalid in ('2026-09-26T19:54:00', '2026-09-29T00:00:00Z', 'invalid'):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                capture.observation_window(now, invalid)
+
     def test_missing_db_is_not_created(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'absent.sqlite'
             start, end = capture.window('2026-09-25', datetime(2026, 9, 26, 9, tzinfo=timezone.utc))
             result = capture.db_capture(path, 1, start, end, '2026-09-25', 5)
             self.assertFalse(result['available'])
+            self.assertEqual(result['errorCategory'], 'cannot_open')
+            self.assertEqual(result['errorStage'], 'open')
             self.assertFalse(path.exists())
+
+    def test_test_observation_recovers_post_noon_public_replies_without_changing_show_window(self):
+        observed = datetime(2026, 9, 26, 20, 1, tzinfo=timezone.utc)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / 'bnl01_conversations.db'
+            with sqlite3.connect(path) as conn:
+                conn.execute('CREATE TABLE conversations(id INTEGER, guild_id INTEGER, timestamp TEXT, role TEXT, channel_id INTEGER, user_id INTEGER, content TEXT, channel_policy TEXT)')
+                conn.executemany('INSERT INTO conversations VALUES(?,?,?,?,?,?,?,?)', [
+                    (1, 1, '2026-09-26T02:00:00Z', 'user', 123, 456, 'Original show comment', 'public_home'),
+                    (2, 1, '2026-09-26T19:55:00Z', 'user', 123, 456, 'What stood out last night?', 'public_home'),
+                    (3, 1, '2026-09-26T19:55:20Z', 'model', 123, 456, 'The audience supported each other.', 'public_home'),
+                    (4, 1, '2026-09-26T19:56:00Z', 'user', 123, 456, 'PRIVATE_TEST_WORDS', 'sealed_test'),
+                    (5, 2, '2026-09-26T19:56:00Z', 'user', 123, 456, 'OTHER_GUILD_WORDS', 'public_home'),
+                    (6, 1, '2026-09-26T20:01:00Z', 'user', 123, 456, 'EXCLUDED_AT_END', 'public_home'),
+                ])
+            before = path.read_bytes()
+            with patch.object(capture, 'datetime', wraps=datetime) as clock, \
+                 patch.object(capture, 'runtime', return_value={}), \
+                 patch.object(capture, 'existing_health', return_value={'available': True}), \
+                 patch.object(capture, 'capture_journal', return_value={'available': True, 'records': []}) as journal:
+                clock.now.return_value = observed
+                ordinary = capture.collect(root, 1, '2026-09-25')
+                test = capture.collect(root, 1, '2026-09-25', include_recent_observation=True)
+                selected = capture.collect(root, 1, '2026-09-25', include_recent_observation=True, observation_start='2026-09-26T19:54:00Z')
+            self.assertNotIn('operatorObservation', ordinary)
+            self.assertEqual(test['endExclusive'], '2026-09-26T19:00:00+00:00')
+            self.assertEqual(test['database'], ordinary['database'])
+            self.assertEqual([r['id'] for r in test['database']['publicDiscord']['rows']], [1])
+            recent = test['operatorObservation']
+            self.assertEqual(recent['startInclusive'], '2026-09-26T18:01:00+00:00')
+            self.assertEqual(recent['endExclusive'], observed.isoformat())
+            self.assertEqual([r['id'] for r in recent['database']['publicDiscord']['rows']], [2, 3])
+            self.assertIn(((datetime(2026, 9, 26, 18, 1, tzinfo=timezone.utc), observed),), journal.call_args_list)
+            self.assertEqual(journal.call_args.args, (datetime(2026, 9, 26, 19, 54, tzinfo=timezone.utc), observed))
+            self.assertEqual(selected['operatorObservation']['windowSelection'], 'explicit_start')
+            self.assertEqual([r['id'] for r in selected['operatorObservation']['database']['publicDiscord']['rows']], [2, 3])
+            self.assertEqual(recent['database']['publicDiscord']['rowLimit'], 1000)
+            self.assertFalse(recent['database']['publicDiscord']['rows'][1]['deliveryVerified'])
+            for private in ('PRIVATE_TEST_WORDS', 'OTHER_GUILD_WORDS', 'EXCLUDED_AT_END'):
+                self.assertNotIn(private, json.dumps(test))
+            self.assertEqual(path.read_bytes(), before)
+
+    def test_locked_database_is_distinct_from_missing_database_and_does_not_export_error_text(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'fixture.sqlite'
+            with sqlite3.connect(path) as writer:
+                writer.execute('CREATE TABLE fixture(value TEXT)')
+                writer.commit()
+                writer.execute('BEGIN EXCLUSIVE')
+                start, end = capture.window('2026-09-25', datetime(2026, 9, 26, 9, tzinfo=timezone.utc))
+                result = capture.db_capture(path, 1, start, end, '2026-09-25', 5)
+                self.assertFalse(result['available'])
+                self.assertEqual(result['errorCategory'], 'busy')
+                self.assertEqual(result['errorStage'], 'schema')
+                self.assertNotIn(directory, json.dumps(result))
+                writer.rollback()
+        result = capture.sqlite_failure(sqlite3.OperationalError('no such table: PRIVATE_SQL_OR_PATH'), 'schema')
+        self.assertEqual(result['errorCategory'], 'schema_unavailable')
+        self.assertNotIn('PRIVATE_SQL_OR_PATH', json.dumps(result))
+
+    def test_health_sqlite_failure_uses_the_same_safe_diagnostic(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); (root / 'scripts').mkdir()
+            source = b'import sqlite3\ndef inspect(*args, **kwargs):\n    raise sqlite3.OperationalError("unable to open database file PRIVATE_PATH")\n'
+            digest = hashlib.sha256(source).hexdigest()
+            (root / 'scripts/journal_relay_health.py').write_bytes(source)
+            with patch.object(capture, 'HEALTH_READERS', {digest: 'reviewed_fixture'}):
+                result = capture.existing_health(root, root / 'missing.db', 1, datetime.now(timezone.utc))
+            self.assertEqual(result['errorCategory'], 'cannot_open')
+            self.assertEqual(result['errorStage'], 'existing_health')
+            self.assertNotIn('PRIVATE_PATH', json.dumps(result))
 
     def test_public_window_filter_redaction_and_read_only_database(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -207,6 +292,17 @@ class CaptureTests(unittest.TestCase):
         self.assertTrue(sanitized['textRedacted'])
         self.assertNotIn('abc', sanitized['text'])
         self.assertNotIn('example', sanitized['text'])
+
+    def test_response_stage_timings_export_numbers_and_known_stages_only(self):
+        result = capture.journal_metadata({'MESSAGE': 'response_stage_timing stage=message_capture source_row_id=123 original_ms=4 journal_ms=9 ledger_moment_ms=12 maintenance_ms=2 total_ms=27 token=PRIVATE_TOKEN user_text=PRIVATE_TEXT', '__REALTIME_TIMESTAMP': '999'})
+        self.assertEqual(result, {'event': 'response_stage_timing', 'stage': 'message_capture', 'timestampUs': '999', 'source_row_id': '123', 'original_ms': '4', 'journal_ms': '9', 'ledger_moment_ms': '12', 'maintenance_ms': '2', 'total_ms': '27'})
+        show = capture.journal_metadata({'MESSAGE': 'response_stage_timing stage=show_source_read elapsed_ms=3 context_chars=400'})
+        self.assertEqual(show['stage'], 'show_source_read')
+        self.assertEqual(show['elapsed_ms'], '3')
+        self.assertEqual(show['context_chars'], '400')
+        unknown = capture.journal_metadata({'MESSAGE': 'response_stage_timing stage=PRIVATE_STAGE'})
+        self.assertNotIn('stage', unknown)
+        self.assertNotIn('PRIVATE_STAGE', json.dumps(unknown))
 
     def test_journal_permission_failure_is_visible(self):
         with patch.object(capture, 'command', return_value={'available':False,'exitCode':1,'stdout':'','stderrPresent':True}):

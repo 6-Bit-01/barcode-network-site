@@ -41,7 +41,7 @@ the source-archive table's `public_usable` column on conversations. Text attachm
 are base64-encoded from the exact UTF-8 bytes recorded in the manifest and local
 ZIP, so SMTP newline conversion cannot invalidate their byte counts or hashes.
 
-The collector version `shared_brain_receipts_2026_09_26` includes BNL's actual
+The collector version `post_show_observation_2026_09_26` retains BNL's actual
 `model` conversation rows as well as human `user` rows and legacy `assistant`
 rows. BNL's stored `user_id` identifies an addressed member, not the speaker;
 model rows therefore use a stable bot `speakerKey` and a separate hashed
@@ -77,14 +77,55 @@ reader, and the export identifies its hash/version. Unknown revisions still
 remain unavailable. Only its read-only `inspect()` entry point runs; no bot
 import, process environment read, provider call or runtime gate change occurs.
 
+## Later operator observations
+
+Normal scheduled packets retain the original noon-to-next-noon Pacific show
+window. A manual `after_show.py --test` additionally captures a separate
+`operatorObservation` for the most recent two hours, with its own start/end
+timestamps and `operatorObservationWindow` in the manifest. It uses the same
+public-policy reader, exact session reference and allowlisted logs, with at most
+1,000 rows per database section. These recent comments are observation activity;
+they must not be attributed to the archived show's live chat. Delivery size
+limits and omitted-row counts apply to both windows. TEST mode still does not
+consume normal delivery state.
+
+To recover a specific earlier test without repeating its questions, TEST mode
+accepts `--observation-start TIMESTAMP_WITH_TIMEZONE`. It captures from that
+start to the earlier of capture time or two hours later. Future/naive starts
+and use outside TEST mode are rejected. This explicit window remains subject
+to existing source retention and public eligibility.
+
+This repairs the September 26 20:01:11 UTC TEST packet
+`ce7bfbfd4b2971bfb0b874679de54670df76baea5f29f25aefa66c5e1f86e541`'s
+observation gap. Its BNL evidence stopped at 19:00 UTC, before the supplied
+19:55/19:56 UTC questions. Its repository was clean on bot merge revision
+`1aa775dc2b8409c0cf5ba22c7db7a6c59c411ceb`, and the service start was 19:54:50 UTC.
+Both evidence attachment hashes/byte counts verified, but the database and
+health reader each returned only `OperationalError`. The packet cannot settle
+whether the follow-ups were received, answered, blocked or timed out. It does
+not prove that the show ledger or conversation data is absent.
+
+SQLite failures now report an allowlisted category and stage, plus a numeric
+SQLite result code when the interpreter supplies it. Python 3.9 also receives
+the category. Lock contention, open failures, readonly errors, interruption and
+schema failures can be distinguished without exporting exception messages,
+SQL, paths or private data. This is diagnostic coverage; it does not claim to
+repair the VPS error whose cause was absent from that packet.
+
+The log projection also keeps BNL's `response_stage_timing` numeric fields and
+the known `message_capture` / `show_source_read` stages. Raw log text, arbitrary
+stage strings and prompts remain excluded. Missing timing records do not prove
+that a stage never ran.
+
 ## Updating an existing installation
 
 A website deployment does not update the VPS copy in
-`~/.local/share/barcode-after-show/`. After merging this change, replace only
-`bnl_after_show_capture.py` there with the verified main-branch file. Keep the
-existing worker, configuration, timer and `state.json`. Do not rerun setup or
+`~/.local/share/barcode-after-show/`. This update replaces both
+`bnl_after_show_capture.py` and `after_show.py` there with verified files. Install
+the capture module first; it remains compatible with the older worker. Keep the
+existing configuration, timer and `state.json`. Do not rerun setup or
 erase accepted-delivery state. No BNL restart is required. The PR handoff includes
-the exact file hash and an inline installation command.
+the exact file hashes and one inline installation/capture command.
 
 For the next normal packet, check `collectorVersion`, public model rows,
 `existingHealth.available`, both receipt sections and their `fieldCoverage`.
@@ -95,6 +136,15 @@ evidence immediately using the existing private mail path, the established
 normal delivery deduplication. Retain the original packet and all its coverage
 markers; this supplemental packet does not replace its historical evidence or
 retroactively establish feature acceptance.
+
+For the current post-deploy check, run the updated
+`--test --observation-start 2026-09-26T19:54:00Z`; there is no need to repeat the
+already-sent questions. Verify the deployed
+bot revision and service start, the observation window containing the actual
+question times, public human/model rows, receipt-hash joins and stage timings.
+If either reader remains unavailable, inspect its category/stage before making
+a runtime fix or asking for another conversation test. The previous packet's
+noon cutoff and database error are separate problems.
 
 ## One-time off-air setup
 
@@ -155,7 +205,8 @@ and [Google SMTP guidance](https://support.google.com/a/answer/176600).
 - Capture gaps and size truncation are labeled partial. Attachments are bounded
   to10MiB before MIME encoding; delivery truncation records omitted row counts.
   Source retention and noon-to-next-noon Pacific capture bounds remain explicit.
-  A recap posted after capture or a later Daily/Weekly requires later evidence.
+  A recap posted after capture or a later Daily/Weekly requires later evidence;
+  TEST packets additionally label the recent two-hour operator observation.
 - Per-show failures retain retry state; endpoint/config failures exit nonzero
   into the separate systemd service log. A broken sender cannot promise an
   email failure notification. Check service health in the off-air acceptance.

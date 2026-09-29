@@ -45,12 +45,38 @@ EVENTS = (
     "gemini_generation_completed", "response_send_commit_complete", "response_send_failed",
     "batch_response_persistence_skipped", "bnl_read_model_fetch_completed",
     "bnl_read_model_fetch_failed", "ambient_source_read", "ambient_source_check",
-    "ambient_delivery", "website_relay_event",
+    "ambient_delivery", "website_relay_event", "response_stage_timing",
 )
 EVENT_PATTERN = re.compile(r"\b(" + "|".join(EVENTS) + r")\b")
 NUMERIC_PATTERN = re.compile(r"\b(elapsed_seconds|selected_wait_seconds|headers_seconds|bytes|shows|"
     r"subject_match|subject_count|query_terms|chars|same_pairs|cross_pairs|payload_count|"
-    r"generation_id|channel_id|guild_id|source_count|message_id)=([0-9]+(?:\.[0-9]+)?)(?=[;\s,]|$)")
+    r"generation_id|channel_id|guild_id|source_count|message_id|source_row_id|"
+    r"elapsed_ms|context_chars|original_ms|journal_ms|ledger_moment_ms|maintenance_ms|total_ms)=([0-9]+(?:\.[0-9]+)?)(?=[;\s,]|$)")
+
+
+def sqlite_failure(error: sqlite3.Error, stage: str) -> dict:
+    """Useful on Python 3.9 too; never export exception text, SQL or paths."""
+    detail = str(error).lower()
+    category = "sqlite_error"
+    for fragments, label in (
+        (("database is locked",), "busy"),
+        (("database table is locked", "database schema is locked"), "locked"),
+        (("unable to open database file",), "cannot_open"),
+        (("attempt to write a readonly database",), "read_only"),
+        (("database disk image is malformed",), "corrupt"),
+        (("file is not a database",), "not_a_database"),
+        (("interrupted",), "interrupted"),
+        (("no such table:", "no such column:", "no such function:"), "schema_unavailable"),
+    ):
+        if any(detail.startswith(fragment) for fragment in fragments):
+            category = label
+            break
+    result = {"available": False, "errorType": type(error).__name__,
+              "errorCategory": category, "errorStage": stage}
+    code = getattr(error, "sqlite_errorcode", None)
+    if type(code) is int and 0 <= code <= 65535:
+        result["sqliteErrorCode"] = code
+    return result
 
 
 def window(show_date: str, now: datetime) -> tuple[datetime, datetime]:
@@ -61,6 +87,19 @@ def window(show_date: str, now: datetime) -> tuple[datetime, datetime]:
     if end <= start:
         raise ValueError("Capture after the selected show's noon-Pacific window begins.")
     return start, end
+
+
+def observation_window(now: datetime, selected_start: str | None = None) -> tuple[datetime, datetime]:
+    end = now.astimezone(timezone.utc)
+    if selected_start is None:
+        return end - timedelta(hours=2), end
+    start = datetime.fromisoformat(selected_start.replace("Z", "+00:00"))
+    if start.tzinfo is None:
+        raise ValueError("Observation start requires a timezone")
+    start = start.astimezone(timezone.utc)
+    if start >= end:
+        raise ValueError("Observation start must be before capture time")
+    return start, min(end, start + timedelta(hours=2))
 
 
 def safe_text(value: object, limit: int = 6000) -> dict:
@@ -111,6 +150,10 @@ def journal_metadata(row: dict) -> dict | None:
         return None
     record = {"event": match.group(1), "timestampUs": str(row.get("__REALTIME_TIMESTAMP", ""))}
     record.update(dict(NUMERIC_PATTERN.findall(message)))
+    if match.group(1) == "response_stage_timing":
+        stage = re.search(r"\bstage=(message_capture|show_source_read)(?=[;\s,]|$)", message)
+        if stage:
+            record["stage"] = stage.group(1)
     return record
 
 
@@ -138,7 +181,8 @@ def db_capture(db_path: Path, guild: int, start: datetime, end: datetime, show_d
     try:
         conn = sqlite3.connect(db_path.resolve().as_uri() + "?mode=ro", uri=True, timeout=3)
     except sqlite3.Error as exc:
-        return {**result, "available": False, "errorType": type(exc).__name__}
+        return {**result, **sqlite_failure(exc, "open")}
+    stage = "schema"
     try:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA query_only=ON")
@@ -148,18 +192,22 @@ def db_capture(db_path: Path, guild: int, start: datetime, end: datetime, show_d
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
 
         def columns(table):
+            nonlocal stage
+            stage = "schema"
             return {r[1] for r in conn.execute(f"PRAGMA table_info({table})")} if table in tables else set()
 
         def read(key, table, required, selection, where, args, order):
+            nonlocal stage
             if not set(required) <= columns(table):
                 result[key] = {"available": False, "reason": "table_or_required_columns_missing"}
                 return []
             try:
+                stage = key
                 rows = conn.execute(f"SELECT {selection} FROM {table} WHERE {where} ORDER BY {order} LIMIT ?", (*args, limit + 1)).fetchall()
                 result[key] = {"available": True, "rowLimit": limit, "truncated": len(rows) > limit, "rows": [dict(r) for r in rows[:limit]]}
                 return result[key]["rows"]
             except sqlite3.Error as exc:
-                result[key] = {"available": False, "errorType": type(exc).__name__}
+                result[key] = sqlite_failure(exc, key)
                 return []
 
         cols = columns("conversations")
@@ -275,6 +323,7 @@ def db_capture(db_path: Path, guild: int, start: datetime, end: datetime, show_d
             if required <= columns("memory_ledger_entries"):
                 counts = {"barcode_radio.show_episode": 0, "barcode_radio.show_participation": 0}
                 if keys:
+                    stage = "episodeProjections"
                     slots = ",".join("?" for _ in keys)
                     query = f"SELECT predicate_key, COUNT(*) FROM memory_ledger_entries WHERE guild_id=? AND source_event_key IN ({slots}) AND public_usable=1 AND visibility IN ('public','public_safe') AND lifecycle_status='active' AND predicate_key IN ('barcode_radio.show_episode','barcode_radio.show_participation') GROUP BY predicate_key"
                     counts.update(dict(conn.execute(query, (guild, *keys)).fetchall()))
@@ -283,7 +332,7 @@ def db_capture(db_path: Path, guild: int, start: datetime, end: datetime, show_d
                 result["episodeProjections"] = {"available": False, "reason": "table_or_required_columns_missing"}
         result["available"] = True
     except sqlite3.Error as exc:
-        result.update(available=False, errorType=type(exc).__name__)
+        result.update(sqlite_failure(exc, stage))
     finally:
         conn.close()
     return result
@@ -301,6 +350,8 @@ def existing_health(root: Path, db: Path, guild: int, end: datetime) -> dict:
         return {"available": True, "readerSha256": digest, "readerVersion": HEALTH_READERS[digest],
                 "report": module.inspect(str(db), guild, now=end),
                 "meaning": "Existing content-free health reader. Its recent window is the 24 hours ending at capture/window end; this differs from the show-text window."}
+    except sqlite3.Error as exc:
+        return sqlite_failure(exc, "existing_health")
     except Exception as exc:
         return {"available": False, "errorType": type(exc).__name__}
 
@@ -328,11 +379,14 @@ def pack(report: dict) -> bytes:
     return output.getvalue()
 
 
-def collect(root: Path, guild: int, show_date: str, limit: int = 5000, session_id: str | None = None, skip_journal: bool = False) -> dict:
+def collect(root: Path, guild: int, show_date: str, limit: int = 5000, session_id: str | None = None, skip_journal: bool = False, include_recent_observation: bool = False, observation_start: str | None = None) -> dict:
     now = datetime.now(timezone.utc)
     start, end = window(show_date, now)
+    if observation_start is not None and not include_recent_observation:
+        raise ValueError("An explicit observation start requires observation capture")
+    observation_range = observation_window(now, observation_start) if include_recent_observation else None
     db = root / "bnl01_conversations.db"
-    return {"schema": "barcode_after_show_evidence_v1", "collectorVersion": "shared_brain_receipts_2026_09_26", "generatedAt": now.isoformat(),
+    report = {"schema": "barcode_after_show_evidence_v1", "collectorVersion": "post_show_observation_2026_09_26", "generatedAt": now.isoformat(),
             "sessionId": session_id, "showDatePacific": show_date,
             "startInclusive": start.isoformat(), "endExclusive": end.isoformat(),
             "coverage": "Pacific noon before the show to capture time, capped at next-day noon. No boot/PID filter: restarts remain visible. Separate services are not an atomic snapshot.",
@@ -340,6 +394,16 @@ def collect(root: Path, guild: int, show_date: str, limit: int = 5000, session_i
             "database": db_capture(db, guild, start, end, show_date, limit, session_id),
             "existingHealth": existing_health(root, db, guild, end),
             "journal": {"available": False, "reason": "explicitly_skipped"} if skip_journal else capture_journal(start, end)}
+    if include_recent_observation:
+        observation_begin, observation_end = observation_range
+        report["operatorObservation"] = {
+            "startInclusive": observation_begin.isoformat(), "endExclusive": observation_end.isoformat(),
+            "windowSelection": "explicit_start" if observation_start is not None else "recent",
+            "scope": "At most two hours of public activity and service metadata for operator review. This is a separate observation window, not activity attributed to the archived show.",
+            "database": db_capture(db, guild, observation_begin, observation_end, show_date, min(limit, 1000), session_id),
+            "journal": {"available": False, "reason": "explicitly_skipped"} if skip_journal else capture_journal(observation_begin, observation_end),
+        }
+    return report
 
 
 def main() -> None:
@@ -349,6 +413,8 @@ def main() -> None:
     parser.add_argument("--guild-id", type=int, default=GUILD)
     parser.add_argument("--row-limit", type=int, default=5000)
     parser.add_argument("--skip-journal", action="store_true")
+    parser.add_argument("--include-recent-observation", action="store_true", help="Include a separate two-hour public observation for later operator tests")
+    parser.add_argument("--observation-start", help="Select the start of that bounded two-hour observation, with timezone")
     parser.add_argument("--session-id")
     output = parser.add_mutually_exclusive_group(required=True)
     output.add_argument("--output", type=Path)
@@ -358,7 +424,7 @@ def main() -> None:
     if not 1 <= args.row_limit <= 20000:
         parser.error("row-limit must be between 1 and 20000")
     try:
-        report = collect(args.root, args.guild_id, args.show_date, args.row_limit, args.session_id, args.skip_journal)
+        report = collect(args.root, args.guild_id, args.show_date, args.row_limit, args.session_id, args.skip_journal, args.include_recent_observation, args.observation_start)
     except ValueError as exc:
         parser.error(str(exc))
     if args.stdout_json:

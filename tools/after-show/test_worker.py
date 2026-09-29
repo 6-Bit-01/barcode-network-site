@@ -126,6 +126,40 @@ class WorkerTests(unittest.TestCase):
         self.run_worker()
         self.assertEqual(len(self.sent), 2)
 
+    def test_recent_observation_is_selected_by_test_mode_without_changing_saved_config(self):
+        flags = []
+        def collector(cfg, show):
+            flags.append(cfg['include_recent_observation'])
+            return bnl(show)
+        self.run_worker(is_test=True, collector=collector)
+        self.run_worker(collector=collector)
+        self.assertEqual(flags, [True, False])
+        self.assertNotIn('include_recent_observation', self.cfg)
+
+    def test_test_flag_reaches_the_capture_subprocess(self):
+        with patch.object(worker.subprocess, 'run') as run:
+            run.return_value.returncode = 0
+            run.return_value.stdout = json.dumps(bnl()).encode()
+            cfg = {**self.cfg, 'root': self.temp.name, 'guild_id': 1, 'include_recent_observation': True, 'observation_start': '2026-09-26T06:00:00Z'}
+            worker.collect_bnl(cfg, SHOW)
+            self.assertIn('--include-recent-observation', run.call_args.args[0])
+            self.assertEqual(run.call_args.args[0][-2:], ['--observation-start', '2026-09-26T06:00:00Z'])
+            worker.collect_bnl({**cfg, 'include_recent_observation': False}, SHOW)
+            self.assertNotIn('--include-recent-observation', run.call_args.args[0])
+            self.assertNotIn('--observation-start', run.call_args.args[0])
+
+    def test_invalid_observation_window_does_not_fetch_or_send(self):
+        for is_test, start in ((False, '2026-09-26T06:00:00Z'), (True, '2026-09-26T06:00:00'), (True, '2026-09-27T00:00:00Z')):
+            with self.subTest(is_test=is_test, start=start), self.assertRaises(ValueError):
+                self.run_worker(is_test=is_test, observation_start=start)
+        self.assertFalse(self.sent)
+        captured = []
+        def collector(cfg, show):
+            captured.append(cfg['observation_start'])
+            return bnl(show)
+        self.run_worker(is_test=True, observation_start='2026-09-26T06:00:00Z', collector=collector)
+        self.assertEqual(captured, ['2026-09-26T06:00:00Z'])
+
     def test_delivery_bound_is_marked_not_silently_complete(self):
         source = bnl()
         source["database"]["publicDiscord"] = {"rows": [{"text": "x"*1000} for _ in range(30)]}
@@ -134,6 +168,27 @@ class WorkerTests(unittest.TestCase):
         self.assertTrue(manifest["deliveryRowsOmitted"])
         self.assertEqual(manifest["status"], "partial")
         self.assertLess(sum(len(data) for name, data in files.items() if name != "manifest.txt"), 8000)
+
+    def test_recent_observation_has_separate_manifest_window_and_delivery_truncation(self):
+        source = bnl()
+        source['operatorObservation'] = {
+            'startInclusive': '2026-09-26T18:01:00Z', 'endExclusive': '2026-09-26T20:01:00Z',
+            'database': {'available': True, 'publicDiscord': {'rows': [{'text': 'x'*1000} for _ in range(30)]}},
+            'journal': {'available': True, 'records': [{'event': 'response_stage_timing', 'elapsed_ms': '3'} for _ in range(100)]},
+        }
+        with patch.object(worker, 'MAX_ATTACHMENTS', 5000):
+            manifest, files = worker.bundle(website(), source, NOW, is_test=True)
+        self.assertEqual(manifest['captureWindow']['end'], source['endExclusive'])
+        self.assertEqual(manifest['operatorObservationWindow'], {'start': '2026-09-26T18:01:00Z', 'end': '2026-09-26T20:01:00Z'})
+        self.assertIn('operatorObservation.publicDiscord', manifest['deliveryRowsOmitted'])
+        self.assertIn('operatorObservation.journal', manifest['deliveryRowsOmitted'])
+        self.assertTrue(manifest['isTest'])
+        self.assertFalse(manifest['acceptancePassed'])
+        self.assertEqual(manifest['status'], 'partial')
+        self.assertLess(sum(len(data) for name, data in files.items() if name != 'manifest.txt'), 5000)
+        for name, expected in manifest['files'].items():
+            self.assertEqual(expected['bytes'], len(files[name]))
+            self.assertEqual(expected['sha256'], hashlib.sha256(files[name]).hexdigest())
 
     def test_credentials_require_private_config_and_https(self):
         path = Path(self.temp.name)/"config.json"

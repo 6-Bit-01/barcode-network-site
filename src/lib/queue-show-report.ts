@@ -1,4 +1,5 @@
 import { getTrackRuntimeSeconds } from "./queue-types";
+import { normalizeQueuePlaybackDiagnostics } from "./queue-playback-lifecycle";
 import type {
   QueueEntry,
   QueueLane,
@@ -19,12 +20,15 @@ export interface QueueShowReportTrackOutcome {
   lane: QueueLane;
   sourceType: QueueSourceType;
   outcome: "finished" | "skipped";
+  finalStatus: QueueEntry["status"];
+  loadedAt: string | null;
   playedAt: string | null;
   completedAt: string | null;
   modeledMusicSeconds: number;
   directlyObserved: boolean;
   wallClockSlotSeconds: number | null;
   transitionAfterSeconds: number | null;
+  nextLoadAfterSeconds: number | null;
   earlyCutoff: boolean | null;
   playbackIssueCode: string | null;
   durationIsEstimate: boolean;
@@ -61,6 +65,9 @@ export interface QueueShowReport {
     returnedToQueue: number;
     restored: number;
     spotlight: number;
+    completedAtClose: number;
+    finishActions: number;
+    skipActions: number;
   };
   pacing: {
     modeledMusicAirtimeSeconds: number;
@@ -136,6 +143,13 @@ export interface QueueShowReport {
     reasons: string[];
   };
   trackOutcomes: QueueShowReportTrackOutcome[];
+  unfinishedPlayback: Array<{
+    trackId: string;
+    artist: string;
+    title: string;
+    finalStatus: QueueEntry["status"];
+    naturallyEndedAt: string;
+  }>;
 }
 
 const SOURCE_TYPES: QueueSourceType[] = ["upload", "link", "youtube", "soundcloud", "spotify", "tiktok", "other"];
@@ -228,8 +242,9 @@ function submissionWindowSeconds(events: QueueShowLogEvent[], fallbackEnd: strin
   return sawWindow ? total : null;
 }
 
-function modeledMusic(entry: QueueEntry): { seconds: number; observedSeconds: number; directlyObserved: boolean } {
+function modeledMusic(entry: QueueEntry, useStoredPlayback: boolean): { seconds: number; observedSeconds: number; directlyObserved: boolean } {
   const scheduled = getTrackRuntimeSeconds(entry);
+  if (!useStoredPlayback) return { seconds: scheduled, observedSeconds: 0, directlyObserved: false };
   const observedDuration = typeof entry.playbackObservedDurationSeconds === "number" && Number.isFinite(entry.playbackObservedDurationSeconds)
     ? Math.max(0, entry.playbackObservedDurationSeconds)
     : null;
@@ -316,29 +331,111 @@ function intervalOverlapSeconds(start: string, end: string, intervals: TimedInte
   }, 0);
 }
 
-function trackEventPairs(events: QueueShowLogEvent[], operationalIntervals: TimedInterval[]): Map<string, {
-  startedAt: string;
-  endedAt: string | null;
-  wallClockSeconds: number | null;
-  transitionAfterSeconds: number | null;
-}> {
-  const starts = events.filter((event) => event.eventType === "track_play_started" && event.track);
-  const outcomes = events.filter((event) => (event.eventType === "track_finished" || event.eventType === "track_skipped") && event.track);
-  const result = new Map<string, { startedAt: string; endedAt: string | null; wallClockSeconds: number | null; transitionAfterSeconds: number | null }>();
-  starts.forEach((start, index) => {
-    const endedAt = outcomes.find((event) => event.track?.trackId === start.track?.trackId && Date.parse(event.occurredAt) >= Date.parse(start.occurredAt))?.occurredAt ?? null;
-    const nextStartedAt = starts[index + 1]?.occurredAt ?? null;
-    const rawTransitionSeconds = endedAt && nextStartedAt ? secondsBetween(endedAt, nextStartedAt) : null;
-    result.set(start.track!.trackId, {
-      startedAt: start.occurredAt,
-      endedAt,
-      wallClockSeconds: secondsBetween(start.occurredAt, endedAt),
-      transitionAfterSeconds: rawTransitionSeconds === null || !endedAt || !nextStartedAt
+interface TrackAttempt {
+  trackId: string;
+  loaded: QueueShowLogEvent | null;
+  started: QueueShowLogEvent | null;
+  outcome: QueueShowLogEvent | null;
+  closed: boolean;
+}
+
+function continuousEventsBetween(events: QueueShowLogEvent[], first: QueueShowLogEvent, last: QueueShowLogEvent): boolean {
+  const range = events.filter((event) => event.sequence >= first.sequence && event.sequence <= last.sequence);
+  return range.length === last.sequence - first.sequence + 1;
+}
+
+function trackEventPairs(events: QueueShowLogEvent[], operationalIntervals: TimedInterval[]) {
+  const attempts: TrackAttempt[] = [];
+  let current: TrackAttempt | null = null;
+  for (const event of events) {
+    const trackId = event.track?.trackId;
+    if (event.eventType === "session_archived") {
+      if (current) current.closed = true;
+      current = null;
+    }
+    if (!trackId) continue;
+    const loaded = event.eventType === "track_loaded";
+    const started = event.eventType === "track_play_started";
+    const completed = event.eventType === "track_finished" || event.eventType === "track_skipped";
+    if (loaded || started || completed) {
+      // Every load (including an external player or a reload of the same song)
+      // bounds the next attempt. A later play receipt cannot skip over it.
+      if (loaded || !current || current.trackId !== trackId || current.closed) {
+        current = { trackId, loaded: null, started: null, outcome: null, closed: false };
+        attempts.push(current);
+      }
+      if (loaded) current.loaded = event;
+      if (started && !current.started) current.started = event;
+      if (completed) {
+        current.outcome = event;
+        current.closed = true;
+      }
+    } else if (current?.trackId === trackId && (event.eventType === "track_returned" || event.eventType === "track_removed" || event.eventType === "track_restored")) {
+      current.closed = true;
+      current = null;
+    }
+  }
+
+  const result = new Map<string, {
+    loadedAt: string | null;
+    startedAt: string | null;
+    endedAt: string | null;
+    outcome: "finished" | "skipped";
+    wallClockSeconds: number | null;
+    transitionAfterSeconds: number | null;
+    nextLoadAfterSeconds: number | null;
+  }>();
+  attempts.forEach((attempt, index) => {
+    const end = attempt.outcome;
+    if (!end) return;
+    const next = attempts[index + 1];
+    const nextStart = next?.started;
+    const nextLoad = next?.loaded;
+    const rawTransitionSeconds = nextStart && continuousEventsBetween(events, end, nextStart)
+      ? secondsBetween(end.occurredAt, nextStart.occurredAt) : null;
+    // One row per song, using its latest completed attempt. A later unfinished
+    // attempt never overwrites or lends timing to that historical outcome.
+    result.set(attempt.trackId, {
+      loadedAt: iso(attempt.loaded?.occurredAt),
+      startedAt: iso(attempt.started?.occurredAt),
+      endedAt: iso(end.occurredAt),
+      outcome: end.eventType === "track_skipped" ? "skipped" : "finished",
+      wallClockSeconds: attempt.started && continuousEventsBetween(events, attempt.started, end)
+        ? secondsBetween(attempt.started.occurredAt, end.occurredAt) : null,
+      transitionAfterSeconds: rawTransitionSeconds === null || !nextStart
         ? null
-        : Math.max(0, rawTransitionSeconds - intervalOverlapSeconds(endedAt, nextStartedAt, operationalIntervals)),
+        : Math.max(0, rawTransitionSeconds - intervalOverlapSeconds(end.occurredAt, nextStart.occurredAt, operationalIntervals)),
+      nextLoadAfterSeconds: nextLoad && continuousEventsBetween(events, end, nextLoad)
+        ? secondsBetween(end.occurredAt, nextLoad.occurredAt) : null,
     });
   });
   return result;
+}
+
+function unfinishedNaturalEnds(session: QueueSession, active: QueueEntry[], events: QueueShowLogEvent[]): QueueShowReport["unfinishedPlayback"] {
+  const diagnostics = normalizeQueuePlaybackDiagnostics(session.playbackDiagnostics);
+  return active.flatMap((entry) => {
+    const trackEvents = diagnostics.events.filter((event) => event.trackId === entry.id);
+    const latest = trackEvents.at(-1);
+    const naturalEnd = trackEvents.findLast((event) => event.eventType === "ended");
+    // A final seek receipt can preserve the ended state (September 25). Keep
+    // the actual natural-end timestamp rather than mistaking that seek for play.
+    if (latest?.lifecycleState !== "ended" || !naturalEnd) return [];
+    const endedAt = Date.parse(naturalEnd.observedAt);
+    // A restore/reload after an older natural end invalidates that receipt for
+    // the current attempt, even if the bounded player log lost its reset event.
+    const resetAfterEnd = events.some((event) => event.track?.trackId === entry.id
+      && ["track_loaded", "track_returned", "track_restored", "track_finished", "track_skipped", "track_removed"].includes(event.eventType)
+      && Date.parse(event.occurredAt) > endedAt);
+    if (resetAfterEnd || (entry.playedAt && Date.parse(entry.playedAt) > endedAt)) return [];
+    return [{
+      trackId: entry.id,
+      artist: entry.submittedArtistName ?? entry.artist,
+      title: entry.submittedSongTitle ?? entry.title,
+      finalStatus: entry.status,
+      naturallyEndedAt: naturalEnd.observedAt,
+    }];
+  });
 }
 
 function paceThirds(broadcastStartedAt: string | null, trackOutcomes: QueueShowReportTrackOutcome[]): QueueShowReport["pacing"]["thirds"] {
@@ -367,7 +464,6 @@ export function buildQueueShowReport(session: QueueSession, inputEvents: QueueSh
   const entries = uniqueRealEntries(session);
   const completedIds = new Set(session.completed.filter((entry) => !isSimulationTrack(entry)).map((entry) => entry.id));
   const removedIds = new Set(session.removed.filter((entry) => !isSimulationTrack(entry)).map((entry) => entry.id));
-  const completed = entries.filter((entry) => completedIds.has(entry.id) && !removedIds.has(entry.id));
   const removed = entries.filter((entry) => removedIds.has(entry.id));
   const active = entries.filter((entry) => !completedIds.has(entry.id) && !removedIds.has(entry.id));
   const broadcastStartedAt = iso(session.broadcastStartedAt) ?? firstEventAt(events, "broadcast_started");
@@ -381,26 +477,37 @@ export function buildQueueShowReport(session: QueueSession, inputEvents: QueueSh
   const ceremonies = clipIntervalsToWindow(wheelCeremonies(events), broadcastStartedAt, broadcastEndedAt);
   const spinTimings = wheelSpinTimings(events);
   const eventPairs = trackEventPairs(events, [...sponsorInterval, ...ceremonies]);
+  const completed = entries.filter((entry) => eventPairs.has(entry.id) || (completedIds.has(entry.id) && !removedIds.has(entry.id)));
+  const historicalCompletedIds = new Set(completed.map((entry) => entry.id));
+  const unfinishedPlayback = unfinishedNaturalEnds(session, active, events);
+  const realIds = new Set(entries.map((entry) => entry.id));
+  const completionEvents = events.filter((event) => event.track && realIds.has(event.track.trackId)
+    && (event.eventType === "track_finished" || event.eventType === "track_skipped"));
 
   const trackOutcomes: QueueShowReportTrackOutcome[] = completed
     .map((entry) => {
-      const music = modeledMusic(entry);
       const pair = eventPairs.get(entry.id);
+      const storedOutcomeMatches = (entry.playbackOutcome === "finished" || entry.playbackOutcome === "skipped")
+        && (!pair || (iso(entry.completedAt) === pair.endedAt && entry.playbackOutcome === pair.outcome));
+      const music = modeledMusic(entry, storedOutcomeMatches);
       return {
         trackId: entry.id,
         artist: entry.submittedArtistName ?? entry.artist,
         title: entry.submittedSongTitle ?? entry.title,
         lane: entry.lane ?? "regular",
         sourceType: entry.sourceType ?? "other",
-        outcome: entry.playbackOutcome === "skipped" ? "skipped" : "finished",
-        playedAt: pair?.startedAt ?? iso(entry.playedAt),
+        outcome: pair?.outcome ?? (entry.playbackOutcome === "skipped" ? "skipped" : "finished"),
+        finalStatus: entry.status,
+        loadedAt: pair?.loadedAt ?? (storedOutcomeMatches ? iso(entry.playedAt) : null),
+        playedAt: pair?.startedAt ?? null,
         completedAt: pair?.endedAt ?? iso(entry.completedAt),
         modeledMusicSeconds: rounded(music.seconds),
         directlyObserved: music.directlyObserved,
         wallClockSlotSeconds: pair?.wallClockSeconds ?? null,
         transitionAfterSeconds: pair?.transitionAfterSeconds ?? null,
-        earlyCutoff: typeof entry.playbackEarlyCutoff === "boolean" ? entry.playbackEarlyCutoff : null,
-        playbackIssueCode: entry.playbackIssueCode ?? null,
+        nextLoadAfterSeconds: pair?.nextLoadAfterSeconds ?? null,
+        earlyCutoff: storedOutcomeMatches && typeof entry.playbackEarlyCutoff === "boolean" ? entry.playbackEarlyCutoff : null,
+        playbackIssueCode: storedOutcomeMatches ? entry.playbackIssueCode ?? null : null,
         durationIsEstimate: entry.durationIsEstimate === true,
       } satisfies QueueShowReportTrackOutcome;
     })
@@ -444,6 +551,9 @@ export function buildQueueShowReport(session: QueueSession, inputEvents: QueueSh
   };
 
   const calibrationReasons: string[] = [];
+  if (events[0]?.sequence > 1 || events.some((event, index) => index > 0 && event.sequence !== events[index - 1].sequence + 1)) calibrationReasons.push("The retained Show Log is incomplete; missing events cannot establish playback or transition timing.");
+  if (unfinishedPlayback.length > 0) calibrationReasons.push(`${unfinishedPlayback.length} track${unfinishedPlayback.length === 1 ? " has" : "s have"} a natural playback end without a Finish or Skip action; final queue status is unchanged.`);
+  if (completionEvents.length > new Set(completionEvents.map((event) => event.track!.trackId)).size) calibrationReasons.push("Repeated Finish / Skip actions exist; per-track timing uses each song's latest completed attempt, not total replay airtime.");
   if (session.status !== "archived") calibrationReasons.push("The show is not archived yet.");
   if (broadcastDurationSeconds === null) calibrationReasons.push("Broadcast start/end timestamps are incomplete.");
   if (trackOutcomes.length < 5) calibrationReasons.push("Fewer than five played tracks makes the pacing sample too small.");
@@ -480,11 +590,14 @@ export function buildQueueShowReport(session: QueueSession, inputEvents: QueueSh
       finished: trackOutcomes.filter((track) => track.outcome === "finished").length,
       skipped: trackOutcomes.filter((track) => track.outcome === "skipped").length,
       removed: removed.length,
-      unplayed: active.length,
+      unplayed: active.filter((entry) => !historicalCompletedIds.has(entry.id)).length,
       lateSubmissions,
       returnedToQueue: eventCount(events, "track_returned"),
       restored: eventCount(events, "track_restored"),
       spotlight: new Set(session.spotlight.filter((entry) => !isSimulationTrack(entry)).map((entry) => entry.id)).size,
+      completedAtClose: entries.filter((entry) => completedIds.has(entry.id) && !removedIds.has(entry.id)).length,
+      finishActions: eventCount(completionEvents, "track_finished"),
+      skipActions: eventCount(completionEvents, "track_skipped"),
     },
     pacing: {
       modeledMusicAirtimeSeconds,
@@ -542,5 +655,6 @@ export function buildQueueShowReport(session: QueueSession, inputEvents: QueueSh
       reasons: calibrationReasons,
     },
     trackOutcomes,
+    unfinishedPlayback,
   };
 }

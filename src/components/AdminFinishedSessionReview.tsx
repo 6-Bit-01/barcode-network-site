@@ -102,11 +102,11 @@ export function AdminFinishedSessionReview({ sessionId }: { sessionId: string })
         <AdminQueueSessionProvenance session={session} onSave={post} />
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Metric label="Broadcast duration" value={duration(report.timeline.broadcastDurationSeconds)} accent />
-          <Metric label="Played tracks" value={report.outcomes.played} note={`${report.outcomes.finished} finished · ${report.outcomes.skipped} skipped`} />
-          <Metric label="Unplayed at close" value={report.outcomes.unplayed} />
+          <Metric label="Tracks with Finish / Skip" value={report.outcomes.played} note={`${report.outcomes.finished} finished · ${report.outcomes.skipped} skipped · latest outcome per song`} />
+          <Metric label="Still awaiting Finish / Skip" value={report.outcomes.unplayed} note="Remaining songs with no recorded completion; this does not prove they were silent" />
           <Metric label="Late additions" value={report.outcomes.lateSubmissions} note="Submitted after broadcast start" />
-          <Metric label="Music airtime" value={duration(report.pacing.modeledMusicAirtimeSeconds)} note="Observed where available; duration fallback otherwise" />
-          <Metric label="Host / transitions / operations" value={duration(report.pacing.unattributedBroadcastSeconds)} note="Broadcast minus music, sponsor, and captured Wheel time" />
+          <Metric label="Modeled music time" value={duration(report.pacing.modeledMusicAirtimeSeconds)} note="Observed where available; duration fallback otherwise; latest completed attempt per song" />
+          <Metric label="Unattributed broadcast time" value={duration(report.pacing.unattributedBroadcastSeconds)} note="Broadcast minus modeled music, sponsor, and captured Wheel time; not a measure of silence" />
           <Metric label="Direct playback coverage" value={`${report.pacing.observedTrackCoveragePercent}%`} note={`${report.pacing.directlyObservedTrackCount} observed · ${report.pacing.fallbackTrackCount} fallback`} />
           <Metric label="Tracks per broadcast hour" value={report.pacing.tracksPerBroadcastHour ?? "—"} />
         </div>
@@ -134,7 +134,9 @@ export function AdminFinishedSessionReview({ sessionId }: { sessionId: string })
         <div><p className="text-xs uppercase tracking-[0.35em] text-muted">Show happenings</p><p className="mt-2 text-sm text-muted">Automatic operational totals from queue, playback, sponsor, and Wheel events.</p></div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <Metric label="Total submitted" value={report.outcomes.totalSubmitted || fallbackSummary.total} />
-          <Metric label="Removed" value={report.outcomes.removed} />
+          <Metric label="Completed at close" value={report.outcomes.completedAtClose} note="Final queue disposition" />
+          <Metric label="Removed at close" value={report.outcomes.removed} note="May include songs that finished earlier" />
+          <Metric label="Finish / Skip actions" value={`${report.outcomes.finishActions} / ${report.outcomes.skipActions}`} note="Retained events; repeat actions count separately" />
           <Metric label="Returned / restored" value={`${report.outcomes.returnedToQueue} / ${report.outcomes.restored}`} />
           <Metric label="Early cutoffs" value={report.operations.earlyCutoffs} />
           <Metric label="Playback issues" value={report.operations.issueTracks} />
@@ -159,12 +161,18 @@ export function AdminFinishedSessionReview({ sessionId }: { sessionId: string })
         </div>
       </section>
 
+      {report.unfinishedPlayback.length > 0 && <section className="border border-[#ffaa00]/50 bg-[#ffaa00]/5 p-5 space-y-3">
+        <h3 className="text-lg font-bold text-foreground">Playback ended without Finish / Skip</h3>
+        <p className="text-sm text-muted">The player recorded a natural ending for these remaining songs. No completion action followed for that attempt, so their saved queue status is still shown below.</p>
+        <ul className="space-y-2 text-sm">{report.unfinishedPlayback.map((track) => <li key={track.trackId}><strong>{track.artist} — {track.title}</strong> · ended {timestamp(track.naturallyEndedAt)} · saved status: {track.finalStatus}</li>)}</ul>
+      </section>}
+
       <section className="border border-border bg-surface p-5 space-y-4">
-        <div><p className="text-xs uppercase tracking-[0.35em] text-muted">Per-track timing</p><p className="mt-2 text-sm text-muted">Played-track outcomes used to understand playback coverage, slot length, transitions, and technical issues.</p></div>
+        <div><p className="text-xs uppercase tracking-[0.35em] text-muted">Per-track timing</p><p className="mt-2 text-sm text-muted">Each song&apos;s latest completed attempt, including songs later removed or restored. Transitions use only the adjacent attempt&apos;s recorded play-start; missing timing stays blank. Next load gap is a queue-action proxy, not proof of audible play.</p></div>
         <div className="overflow-x-auto border border-border bg-background/40">
           <table className="min-w-full text-left text-xs">
-            <thead className="text-muted"><tr><th className="p-2">Artist / track</th><th className="p-2">Outcome</th><th className="p-2">Lane / source</th><th className="p-2">Music time</th><th className="p-2">Wall slot</th><th className="p-2">Next ordinary transition</th><th className="p-2">Issue</th></tr></thead>
-            <tbody>{report.trackOutcomes.length === 0 ? <tr><td colSpan={7} className="p-3 text-muted">No played-track timing records found.</td></tr> : report.trackOutcomes.map((track) => <tr key={track.trackId} className="border-t border-border/60"><td className="p-2"><span className="font-bold text-foreground">{track.artist}</span><br /><span className="text-muted">{track.title}</span></td><td className="p-2">{track.outcome}{track.earlyCutoff ? " · early cutoff" : ""}</td><td className="p-2">{track.lane} · {track.sourceType}</td><td className="p-2">{duration(track.modeledMusicSeconds)}<br /><span className="text-muted">{track.directlyObserved ? "observed" : track.durationIsEstimate ? "estimated fallback" : "duration fallback"}</span></td><td className="p-2">{duration(track.wallClockSlotSeconds)}</td><td className="p-2">{duration(track.transitionAfterSeconds)}</td><td className="p-2">{track.playbackIssueCode?.replace(/_/g, " ") ?? "—"}</td></tr>)}</tbody>
+            <thead className="text-muted"><tr><th className="p-2">Artist / track</th><th className="p-2">Outcome / final status</th><th className="p-2">Lane / source</th><th className="p-2">Music time</th><th className="p-2">Wall slot</th><th className="p-2">Next ordinary transition</th><th className="p-2">Next load gap (proxy)</th><th className="p-2">Issue</th></tr></thead>
+            <tbody>{report.trackOutcomes.length === 0 ? <tr><td colSpan={8} className="p-3 text-muted">No completed-track timing records found.</td></tr> : report.trackOutcomes.map((track) => <tr key={track.trackId} className="border-t border-border/60"><td className="p-2"><span className="font-bold text-foreground">{track.artist}</span><br /><span className="text-muted">{track.title}</span></td><td className="p-2">{track.outcome}{track.earlyCutoff ? " · early cutoff" : ""}<br /><span className="text-muted">Saved: {track.finalStatus}</span></td><td className="p-2">{track.lane} · {track.sourceType}</td><td className="p-2">{duration(track.modeledMusicSeconds)}<br /><span className="text-muted">{track.directlyObserved ? "observed" : track.durationIsEstimate ? "estimated fallback" : "duration fallback"}</span></td><td className="p-2">{duration(track.wallClockSlotSeconds)}</td><td className="p-2">{duration(track.transitionAfterSeconds)}</td><td className="p-2">{duration(track.nextLoadAfterSeconds)}</td><td className="p-2">{track.playbackIssueCode?.replace(/_/g, " ") ?? "—"}</td></tr>)}</tbody>
           </table>
         </div>
       </section>

@@ -105,3 +105,48 @@ test("missing or malformed exact session never falls back to a live show", async
   assert.equal((await route.GET(request("missing-session"))).status, 404);
   assert.equal((await route.GET(request("../private"))).status, 400);
 });
+
+test("admin and after-show reports preserve completed-then-removed history and an unfinished natural end", async () => {
+  const id = await session();
+  const tracks = [];
+  for (const title of ["Finished then removed", "Ended without Finish"]) {
+    tracks.push(await queue.addToQueue({
+      artist: "Report Fixture", title, submittedArtistName: "Report Fixture", submittedSongTitle: title,
+      link: "https://private.example/upload.mp3", sourceType: "upload", fileUrl: "https://private.example/upload.mp3",
+      detectedDurationSeconds: 180, contactEmail: "private-contact@example.test", submitterToken: "private-browser-token",
+      note: "private-admin-note", stripeSessionId: "private-stripe-id", tier: "free", lane: "regular", amount: 0,
+      createdAt: new Date().toISOString(),
+    }));
+  }
+  for (const [index, entry] of tracks.entries()) {
+    await queue.updateRadioTrack(entry.id, "load");
+    assert.equal((await queue.recordQueuePlaybackEvent({ sessionId: id, trackId: entry.id, provider: "audio", eventType: "play", currentTimeSeconds: 0, durationSeconds: 180 })).accepted, true);
+    assert.equal((await queue.recordQueuePlaybackEvent({ sessionId: id, trackId: entry.id, provider: "audio", eventType: "ended", currentTimeSeconds: 180, durationSeconds: 180 })).accepted, true);
+    if (index === 0) {
+      await queue.updateRadioTrack(entry.id, "finish");
+      await queue.updateRadioTrack(entry.id, "restoreRegular");
+      await queue.updateRadioTrack(entry.id, "remove");
+    }
+  }
+  await queue.archiveCurrentQueueSession();
+  const before = await queue.getRadioQueueState(id);
+  const admin = await queue.getQueueSessionShowLog(id);
+  const response = await route.GET(request(id));
+  assert.equal(response.status, 200);
+  const exported = await response.json();
+  assert.deepEqual(exported.showLog.report, admin.report);
+  assert.equal(admin.report.outcomes.played, 1);
+  assert.equal(admin.report.outcomes.finishActions, 1);
+  assert.equal(admin.report.outcomes.completedAtClose, 0);
+  assert.equal(admin.report.outcomes.removed, 1);
+  assert.equal(admin.report.trackOutcomes[0].trackId, tracks[0].id);
+  assert.equal(admin.report.trackOutcomes[0].outcome, "finished");
+  assert.equal(admin.report.trackOutcomes[0].finalStatus, "removed");
+  assert.equal(admin.report.unfinishedPlayback.length, 1);
+  assert.equal(admin.report.unfinishedPlayback[0].trackId, tracks[1].id);
+  assert.equal(admin.report.unfinishedPlayback[0].finalStatus, "playing");
+  for (const forbidden of ["private.example", "private-contact", "private-browser-token", "private-admin-note", "private-stripe-id"]) assert.equal(JSON.stringify(exported).includes(forbidden), false, forbidden);
+  const publicSnapshot = await queue.getPublicQueueSnapshot(id);
+  assert.doesNotMatch(JSON.stringify(publicSnapshot), /unfinishedPlayback|finishActions|nextLoadAfterSeconds|barcode_queue_show_report/);
+  assert.deepEqual(await queue.getRadioQueueState(id), before);
+});

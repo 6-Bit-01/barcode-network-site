@@ -171,6 +171,9 @@ test("finished-session report separates music, ordinary transitions, sponsor tim
     returnedToQueue: 0,
     restored: 0,
     spotlight: 1,
+    completedAtClose: 6,
+    finishActions: 5,
+    skipActions: 1,
   });
   assert.equal(report.pacing.modeledMusicAirtimeSeconds, 1_080);
   assert.equal(report.pacing.directlyObservedMusicAirtimeSeconds, 1_080);
@@ -196,6 +199,229 @@ test("finished-session report separates music, ordinary transitions, sponsor tim
 
   const serialized = JSON.stringify(report);
   assert.doesNotMatch(serialized, /do-not-export@example\.test|private-submitter-token|private-payment-id|private-storage\.example\.test/);
+});
+
+function reportFixture(completed, eventRows, overrides = {}) {
+  const { session } = fixture();
+  Object.assign(session, { completed, queue: [], removed: [], spotlight: [], sponsorBreakStatus: "not_due", sponsorBreakStartedAt: null, sponsorBreakCompletedAt: null, ...overrides });
+  const events = eventRows.map(([eventType, occurredAt, entry], index) => ({
+    sequence: index + 1,
+    eventType,
+    occurredAt,
+    track: entry ? publicTrack(entry) : null,
+    details: null,
+  }));
+  return { session, events };
+}
+
+test("September 25 Lullaby transition stops at White Monster's external attempt", () => {
+  // Minimal reproduction from the saved September 25 review, not a complete
+  // packet replay. These recorded timestamps exposed the false 506-second gap.
+  const lullaby = track("lullaby", 0, 3);
+  const external = track("white-monster", 4, 7, { sourceType: "soundcloud" });
+  const binary = track("binary-love", 8, 11);
+  const finish = "2026-09-26T04:04:20.878Z";
+  const load = "2026-09-26T04:04:46.548Z";
+  const externalFinish = "2026-09-26T04:12:06.259Z";
+  const nextPlay = "2026-09-26T04:12:46.512Z";
+  const { session, events } = reportFixture([lullaby, external, binary], [
+    ["track_play_started", "2026-09-26T04:01:00.000Z", lullaby],
+    ["track_finished", finish, lullaby],
+    ["track_loaded", load, external],
+    ["track_finished", externalFinish, external],
+    ["track_loaded", "2026-09-26T04:12:20.000Z", binary],
+    ["track_play_started", nextPlay, binary],
+    ["track_finished", "2026-09-26T04:15:46.512Z", binary],
+  ]);
+  const report = buildQueueShowReport(session, events);
+  const byId = new Map(report.trackOutcomes.map((row) => [row.trackId, row]));
+  assert.equal(byId.get(lullaby.id).transitionAfterSeconds, null);
+  assert.equal(byId.get(lullaby.id).nextLoadAfterSeconds, 26);
+  assert.equal(byId.get(external.id).loadedAt, load);
+  assert.equal(byId.get(external.id).playedAt, null, "load is not an audible start");
+  assert.equal(byId.get(external.id).wallClockSlotSeconds, null);
+  assert.equal(byId.get(external.id).transitionAfterSeconds, 40);
+  assert.equal(report.pacing.averageTransitionSeconds, 40);
+});
+
+test("multiple intervening external tracks cannot become one long transition", () => {
+  const tracks = [track("calm-vs-chaos", 0, 3), track("external-1", 4, 7), track("external-2", 8, 11), track("next-native", 12, 15)];
+  const { session, events } = reportFixture(tracks, tracks.flatMap((entry, index) => [
+    ["track_loaded", at(index * 4), entry],
+    ...([0, 3].includes(index) ? [["track_play_started", at(index * 4, 5), entry]] : []),
+    ["track_finished", at(index * 4 + 3), entry],
+  ]));
+  const report = buildQueueShowReport(session, events);
+  assert.deepEqual(report.trackOutcomes.map((row) => row.transitionAfterSeconds), [null, null, 65, null]);
+  assert.deepEqual(report.trackOutcomes.map((row) => row.nextLoadAfterSeconds), [60, 60, 60, null]);
+});
+
+test("Space Vibe's finish survives a later removal without borrowing removal telemetry", () => {
+  const entry = track("space-vibe", 0, 3);
+  const removed = { ...entry, status: "removed", playbackOutcome: "removed", playbackEndPositionSeconds: 0, playbackEndPositionObservedAt: at(20), removedAt: at(20) };
+  const { session, events } = reportFixture([], [
+    ["track_play_started", at(0), entry],
+    ["track_finished", at(3), entry],
+    ["track_removed", at(20), entry],
+  ], { removed: [removed] });
+  const before = structuredClone(session);
+  const report = buildQueueShowReport(session, events);
+  assert.equal(report.outcomes.played, 1);
+  assert.equal(report.outcomes.finished, 1);
+  assert.equal(report.outcomes.finishActions, 1);
+  assert.equal(report.outcomes.completedAtClose, 0);
+  assert.equal(report.outcomes.removed, 1);
+  assert.equal(report.trackOutcomes[0].outcome, "finished");
+  assert.equal(report.trackOutcomes[0].finalStatus, "removed");
+  assert.equal(report.trackOutcomes[0].completedAt, at(3));
+  assert.equal(report.trackOutcomes[0].directlyObserved, false);
+  assert.equal(report.trackOutcomes[0].modeledMusicSeconds, 180);
+  assert.deepEqual(session, before, "report never rewrites queue history");
+});
+
+test("repeated finishes count actions separately and use the latest completed attempt", () => {
+  const entry = track("replayed", 6, 9);
+  const { session, events } = reportFixture([entry], [
+    ["track_loaded", at(0), entry],
+    ["track_play_started", at(0, 5), entry],
+    ["track_finished", at(3), entry],
+    ["track_restored", at(4), entry],
+    ["track_loaded", at(6), entry],
+    ["track_play_started", at(6, 10), entry],
+    ["track_finished", at(9), entry],
+  ]);
+  const report = buildQueueShowReport(session, events);
+  assert.equal(report.outcomes.played, 1);
+  assert.equal(report.outcomes.finishActions, 2);
+  assert.equal(report.trackOutcomes[0].playedAt, at(6, 10));
+  assert.equal(report.trackOutcomes[0].completedAt, at(9));
+  assert.equal(report.trackOutcomes[0].wallClockSlotSeconds, 170);
+  assert.ok(report.calibration.reasons.some((reason) => reason.includes("Repeated Finish / Skip")));
+});
+
+test("a returned attempt never borrows the finish of a later load of the same song", () => {
+  const entry = track("returned", 6, 9);
+  const { session, events } = reportFixture([entry], [
+    ["track_loaded", at(0), entry],
+    ["track_play_started", at(0, 5), entry],
+    ["track_returned", at(1), entry],
+    ["track_loaded", at(6), entry],
+    ["track_finished", at(9), entry],
+  ]);
+  const report = buildQueueShowReport(session, events);
+  assert.equal(report.trackOutcomes[0].loadedAt, at(6));
+  assert.equal(report.trackOutcomes[0].playedAt, null);
+  assert.equal(report.trackOutcomes[0].wallClockSlotSeconds, null);
+});
+
+test("an abandoned next load stops transitions, while repeated play receipts keep the first start", () => {
+  const first = track("first", 0, 3);
+  const abandoned = track("abandoned", null, null);
+  const last = track("last", 6, 9);
+  const { session, events } = reportFixture([first, last], [
+    ["track_play_started", at(0), first],
+    ["track_play_started", at(1), first],
+    ["track_finished", at(3), first],
+    ["track_loaded", at(4), abandoned],
+    ["track_returned", at(5), abandoned],
+    ["track_play_started", at(6), last],
+    ["track_finished", at(9), last],
+  ], { queue: [abandoned] });
+  const report = buildQueueShowReport(session, events);
+  assert.equal(report.trackOutcomes[0].wallClockSlotSeconds, 180);
+  assert.equal(report.trackOutcomes[0].transitionAfterSeconds, null);
+  assert.equal(report.trackOutcomes[0].nextLoadAfterSeconds, 60);
+});
+
+test("unfinished replay preserves an earlier skip and does not relabel its start or outcome", () => {
+  const entry = track("skipped-then-restored", null, null, { status: "playing" });
+  entry.playedAt = at(6);
+  const { session, events } = reportFixture([], [
+    ["track_play_started", at(0), entry],
+    ["track_skipped", at(1), entry],
+    ["track_restored", at(4), entry],
+    ["track_loaded", at(6), entry],
+    ["track_play_started", at(6, 10), entry],
+  ], { loadedTrack: entry });
+  const report = buildQueueShowReport(session, events);
+  assert.equal(report.outcomes.played, 1);
+  assert.equal(report.outcomes.skipped, 1);
+  assert.equal(report.outcomes.unplayed, 0);
+  assert.equal(report.outcomes.skipActions, 1);
+  assert.equal(report.trackOutcomes[0].playedAt, at(0));
+  assert.equal(report.trackOutcomes[0].completedAt, at(1));
+  assert.equal(report.trackOutcomes[0].finalStatus, "playing");
+});
+
+function endedDiagnostics(entry, endedAt) {
+  return {
+    schemaVersion: "queue_playback_lifecycle_v1", currentTrackId: entry.id,
+    lifecycleState: "ended", lastEventAt: endedAt, lastErrorCode: null, nextSequence: 2,
+    events: [{ sequence: 1, trackId: entry.id, provider: "audio", eventType: "ended", lifecycleState: "ended", observedAt: endedAt, currentTimeSeconds: 180, durationSeconds: 180, readyState: 4, networkState: 1, errorCode: null }],
+  };
+}
+
+test("Galaxy Song's natural end without Finish is explicit and never auto-completes the queue", () => {
+  const entry = track("galaxy-song", null, null, { status: "playing" });
+  entry.playedAt = at(26);
+  const { session, events } = reportFixture([], [
+    ["track_loaded", at(26), entry],
+    ["track_play_started", at(26, 5), entry],
+    ["session_archived", at(30)],
+  ], { loadedTrack: entry, playbackDiagnostics: endedDiagnostics(entry, at(29)) });
+  const before = structuredClone({ session, events });
+  const report = buildQueueShowReport(session, events);
+  assert.deepEqual(report.unfinishedPlayback, [{ trackId: entry.id, artist: entry.submittedArtistName, title: entry.submittedSongTitle, finalStatus: "playing", naturallyEndedAt: at(29) }]);
+  assert.equal(report.outcomes.played, 0);
+  assert.equal(report.outcomes.finishActions, 0);
+  assert.ok(report.calibration.reasons.some((reason) => reason.includes("natural playback end without a Finish")));
+  assert.deepEqual({ session, events }, before);
+
+  // The original packet ends with a seek receipt while lifecycleState remains
+  // ended: sequence 256 at 07:48:05.043Z, then 257 at 07:48:06.514Z.
+  session.playbackDiagnostics.events = [
+    { ...session.playbackDiagnostics.events[0], sequence: 256, provider: "youtube", observedAt: "2026-09-26T07:48:05.043Z", currentTimeSeconds: 163.901, durationSeconds: 163.901 },
+    { ...session.playbackDiagnostics.events[0], sequence: 257, provider: "youtube", eventType: "seek", lifecycleState: "ended", observedAt: "2026-09-26T07:48:06.514Z", currentTimeSeconds: 163.901, durationSeconds: 163.901 },
+  ];
+  assert.equal(buildQueueShowReport(session, events).unfinishedPlayback[0]?.naturallyEndedAt, "2026-09-26T07:48:05.043Z");
+  session.playbackDiagnostics.events.push({ ...session.playbackDiagnostics.events[1], sequence: 258, eventType: "play", lifecycleState: "playing", observedAt: "2026-09-26T07:48:10.000Z" });
+  assert.deepEqual(buildQueueShowReport(session, events).unfinishedPlayback, [], "a new playback receipt invalidates the ended state");
+
+  session.loadedTrack = null;
+  session.completed = [{ ...entry, status: "completed", completedAt: at(29, 10), playbackOutcome: "finished" }];
+  assert.deepEqual(buildQueueShowReport(session, events).unfinishedPlayback, []);
+});
+
+test("a stale natural end cannot describe a restored or reloaded attempt", () => {
+  const entry = track("restored-after-end", null, null, { status: "playing" });
+  entry.playedAt = at(6);
+  const { session, events } = reportFixture([], [
+    ["track_loaded", at(0), entry],
+    ["track_play_started", at(0, 5), entry],
+    ["track_returned", at(4), entry],
+    ["track_loaded", at(6), entry],
+  ], { loadedTrack: entry, playbackDiagnostics: endedDiagnostics(entry, at(3)) });
+  assert.deepEqual(buildQueueShowReport(session, events).unfinishedPlayback, []);
+});
+
+test("missing log events keep timing unknown and simulated outcomes stay excluded", () => {
+  const first = track("first", 0, 3);
+  const simulated = { ...track("simulation", 4, 7), isTestTrack: true };
+  const last = track("last", 8, 11);
+  const { session, events } = reportFixture([first, simulated, last], [
+    ["track_play_started", at(0), first],
+    ["track_finished", at(3), first],
+    ["track_play_started", at(4), simulated],
+    ["track_finished", at(7), simulated],
+    ["track_play_started", at(8), last],
+    ["track_finished", at(11), last],
+  ]);
+  events.splice(2, 2); // Preserve sequence numbers: the missing interval is unknown.
+  const report = buildQueueShowReport(session, events);
+  assert.equal(report.outcomes.played, 2);
+  assert.equal(report.outcomes.finishActions, 2);
+  assert.equal(report.trackOutcomes[0].transitionAfterSeconds, null);
+  assert.ok(report.calibration.reasons.some((reason) => reason.includes("retained Show Log is incomplete")));
 });
 
 test("finished-session report surfaces ordinary playback data-quality problems", () => {

@@ -35,7 +35,11 @@ function assertActiveNavigation(pathname, expectedHref) {
   for (const label of ["Primary navigation", "Mobile primary navigation"]) {
     const nav = markup.match(new RegExp(`<nav[^>]*aria-label="${label}"[^>]*>([\\s\\S]*?)</nav>`))?.[1];
     assert.ok(nav, `${label} renders at ${pathname}`);
-    const active = [...nav.matchAll(/<a\b([^>]*)>/g)]
+    const links = [...nav.matchAll(/<a\b([^>]*)>/g)];
+    const destinations = links.map((match) => match[1].match(/href="([^"]+)"/)?.[1]);
+    const bnlIndex = destinations.indexOf("/bnl");
+    assert.deepEqual(destinations.slice(bnlIndex, bnlIndex + 4), ["/bnl", "/contests", "/releases", "/database"], `${label} preserves the requested section order at ${pathname}`);
+    const active = links
       .filter((match) => match[1].includes('aria-current="page"'))
       .map((match) => match[1].match(/href="([^"]+)"/)?.[1]);
     assert.deepEqual(active, expectedHref ? [expectedHref] : [], `${label} at ${pathname}`);

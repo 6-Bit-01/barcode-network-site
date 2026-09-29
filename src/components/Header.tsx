@@ -13,9 +13,9 @@ const navItems = [
   { href: "/terminal", label: "Terminal" },
   { href: "/radio", label: "Radio" },
   { href: "/bnl", label: "BNL-01 Hub" },
-  { href: "/database", label: "Database" },
   { href: "/contests", label: "Contests" },
   { href: "/releases", label: "Releases" },
+  { href: "/database", label: "Database" },
   { href: "/transmissions", label: "Transmissions" },
   { href: "/merch", label: "Merch" },
 ];

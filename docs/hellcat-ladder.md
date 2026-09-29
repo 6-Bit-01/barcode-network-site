@@ -34,7 +34,23 @@ Implementation, merge and live configuration remain separate steps. Until config
 - Next may serve a previous snapshot while refreshing it. Responses at least three minutes old are explicitly marked stale; at ten minutes the server withholds all rows even if the framework still retains them. When an expired snapshot or cached outage has a refresh already in flight, the request waits for that bounded refresh so the first visitor can recover immediately. A failed refresh replaces the cached snapshot with unavailable. Both success and failure are briefly cached to avoid per-view upstream requests.
 - The public endpoint returns only `status`, `snapshot` (tracks and `fetchedAt`) and, when available, server-calculated `ageMs`. Its response is `Cache-Control: no-store`, so a CDN/browser cannot extend the snapshot's lifetime. Unavailable results use HTTP 503 and `snapshot: null`; a valid empty ladder is HTTP 200 with `tracks: []`.
 - The page uses the existing visibility-aware polling helper at a three-minute cadence. It cancels on unmount, bounds browser requests to twelve seconds, clears failed reads and ages displayed results using server age rather than the visitor's wall clock. A loaded tab marks old standings as refresh-pending and removes them at the age limit.
-- The server does not log fetch errors, response bodies, endpoint values or credentials. Diagnose a failed live connection in the protected operator environment by checking the environment values and Hellcat's endpoint availability; public responses deliberately do not distinguish auth failure from other upstream failures.
+- The server logs only fixed failure reason codes and, when relevant, a numeric upstream HTTP status under `[hellcat-ladder]`. It never logs original errors, response bodies, endpoint values or credentials. These diagnostics stay in private runtime logs; public responses deliberately do not distinguish auth failure from other upstream failures. Cached failed reads do not emit another upstream warning until a fresh request is attempted.
+
+## Diagnosing a configured preview
+
+Open `/contests` on the intended branch preview and inspect that deployment's runtime logs for `/api/hellcat/ladder`, searching for `[hellcat-ladder]`. An upstream failure can be cached for three minutes, so an immediate repeat may not produce a new warning. Use logs from the deployed request; an unauthenticated probe from a different environment does not establish why Vercel's authenticated request failed.
+
+| Private reason code | What it establishes / next check |
+| --- | --- |
+| `configuration_missing` | At least one variable is absent or blank in this deployment. Check Preview/branch scope and redeploy after saving. |
+| `configuration_invalid` | Both values exist but fail validation. Check the exact HTTPS `/ladder` URL and a raw token without `Bearer `, quotes or internal whitespace. |
+| `upstream_unauthorized` | HTTP 401/403 or Hellcat's `unauthorized` JSON response. Recheck the saved token through the platform's private settings. |
+| `upstream_http_error` | The deployed server received another non-success HTTP status. The log includes its number; a 502 here is evidence from Vercel's request. |
+| `upstream_timeout` / `upstream_network_error` | The request timed out or failed in transport. Verify the current tunnel URL and server availability with Hellcat; a network error alone does not identify which side failed. |
+| `upstream_empty_response` / `upstream_invalid_json` / `upstream_invalid_tracks` / `upstream_body_too_large` | The response did not meet the bounded JSON ladder contract. Inspect it only in the protected operator environment. |
+| `cache_error` | The site's cache operation failed. Investigate the deployment runtime. |
+
+The token setting contains only the raw token because the server adds `Bearer ` when constructing the `Authorization` header. Never share token values or raw upstream bodies to diagnose a failure; the reason code and numeric status are sufficient for the first check.
 
 ## Verification and remaining evidence
 

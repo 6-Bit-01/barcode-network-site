@@ -35,6 +35,7 @@ const env = { HELLCAT_LADDER_URL: config.url, HELLCAT_LADDER_TOKEN: config.token
 
 function server({ fetcher = async () => Response.json({ tracks }), cache, environment = env } = {}) {
   const records = [];
+  const warnings = [];
   const memory = new Map();
   const cacheFactory = cache ?? ((fn, keys, options) => {
     records.push({ keys, options });
@@ -46,8 +47,8 @@ function server({ fetcher = async () => Response.json({ tracks }), cache, enviro
   });
   const api = load("src/lib/hellcat-ladder.server.ts", {
     "server-only": {}, "@/lib/hellcat-ladder": contract, "next/cache": { unstable_cache: cacheFactory },
-  }, { fetch: fetcher, process: { env: { ...environment } } });
-  return { ...api, records, memory };
+  }, { fetch: fetcher, process: { env: { ...environment } }, console: { warn: (...args) => warnings.push(plain(args)) } });
+  return { ...api, records, memory, warnings };
 }
 
 test("official order, gaps, nullable credits and zero/decimal scores survive; extra fields do not", () => {
@@ -125,6 +126,7 @@ test("cache reuses sanitized success and failure, varies with configuration, and
   assert.equal((await h.getHellcatLadder()).status, "ready");
   await h.getHellcatLadder();
   assert.equal(calls, 1);
+  assert.deepEqual(h.warnings, []);
   assert.equal(h.records[0].options.revalidate, 180);
   assert.doesNotMatch(JSON.stringify([...h.memory]) + JSON.stringify(h.records), /fixture-secret|ladder\.example/);
   const originalKey = h.records[0].keys;
@@ -138,8 +140,45 @@ test("cache reuses sanitized success and failure, varies with configuration, and
   assert.equal((await failed.getHellcatLadder()).status, "unavailable");
   assert.equal((await failed.getHellcatLadder()).status, "unavailable");
   assert.equal(failures, 1);
+  assert.deepEqual(failed.warnings, [["[hellcat-ladder]", { reason: "upstream_unauthorized", status: 200 }]], "cached failures do not emit a new upstream warning on every public read");
   const missing = server({ environment: {}, fetcher: async () => { assert.fail("must not fetch without configuration"); } });
   assert.equal((await missing.getHellcatLadder()).status, "unavailable");
+});
+
+test("private diagnostics identify failure stages without logging credentials, URLs, bodies or raw errors", async () => {
+  const privateDetail = `${config.token} ${config.url} PRIVATE_RESPONSE_DETAIL`;
+  for (const [make, reason, status] of [
+    [() => Response.json({ error: "unauthorized", detail: privateDetail }, { status: 401 }), "upstream_unauthorized", 401],
+    [() => Response.json({ error: "unauthorized", detail: privateDetail }), "upstream_unauthorized", 200],
+    [() => new Response(privateDetail, { status: 502 }), "upstream_http_error", 502],
+    [() => new Response(null, { status: 204 }), "upstream_empty_response", 204],
+    [() => new Response(privateDetail), "upstream_invalid_json"],
+    [() => Response.json({ tracks: [{ ...tracks[0], score: 200 }], detail: privateDetail }), "upstream_invalid_tracks"],
+    [() => new Response(privateDetail + "x".repeat(512 * 1024)), "upstream_body_too_large"],
+    [() => { throw new DOMException(privateDetail, "TimeoutError"); }, "upstream_timeout"],
+    [() => { throw new DOMException(privateDetail, "AbortError"); }, "upstream_timeout"],
+    [() => { throw new Error(privateDetail); }, "upstream_network_error"],
+  ]) {
+    const h = server({ fetcher: async () => make() });
+    const result = await h.getHellcatLadder();
+    assert.deepEqual(plain(result), { status: "unavailable", snapshot: null });
+    assert.deepEqual(h.warnings, [["[hellcat-ladder]", status === undefined ? { reason } : { reason, status }]]);
+    assert.doesNotMatch(JSON.stringify([h.warnings, result, [...h.memory]]), /fixture-secret|example\.test|PRIVATE_RESPONSE_DETAIL/);
+  }
+  for (const [environment, reason] of [
+    [{}, "configuration_missing"],
+    [{ ...env, HELLCAT_LADDER_TOKEN: "" }, "configuration_missing"],
+    [{ ...env, HELLCAT_LADDER_URL: "" }, "configuration_missing"],
+    [{ ...env, HELLCAT_LADDER_TOKEN: `Bearer ${config.token}` }, "configuration_invalid"],
+    [{ ...env, HELLCAT_LADDER_URL: "https://ladder.example.test/wrong-path" }, "configuration_invalid"],
+  ]) {
+    const h = server({ environment, fetcher: async () => { assert.fail("invalid configuration must not fetch"); } });
+    assert.deepEqual(plain(await h.getHellcatLadder()), { status: "unavailable", snapshot: null });
+    assert.deepEqual(h.warnings, [["[hellcat-ladder]", { reason }]]);
+  }
+  const h = server({ cache: () => async () => { throw new Error(privateDetail); } });
+  assert.deepEqual(plain(await h.getHellcatLadder()), { status: "unavailable", snapshot: null });
+  assert.deepEqual(h.warnings, [["[hellcat-ladder]", { reason: "cache_error" }]]);
 });
 
 test("concurrent cold reads or revalidations share a single upstream request in one instance", async () => {

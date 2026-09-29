@@ -14,6 +14,23 @@ type Configuration = { url: string; token: string };
 const MAX_BODY_BYTES = 512 * 1024;
 const pending = new Map<string, Promise<HellcatLadderSnapshot | null>>();
 
+type FailureReason = "configuration_missing" | "configuration_invalid" | "upstream_unauthorized"
+  | "upstream_http_error" | "upstream_empty_response" | "upstream_body_too_large"
+  | "upstream_invalid_json" | "upstream_invalid_tracks" | "upstream_timeout"
+  | "upstream_network_error" | "cache_error";
+
+class LadderReadError extends Error {
+  constructor(readonly reason: FailureReason, readonly status?: number) {
+    super("Hellcat ladder unavailable");
+  }
+}
+
+function reportFailure(reason: FailureReason, status?: number): void {
+  // Only fixed reason codes and numeric HTTP statuses reach private server logs.
+  // Never pass configuration, response bodies or original errors to the logger.
+  console.warn("[hellcat-ladder]", status === undefined ? { reason } : { reason, status });
+}
+
 export function hellcatLadderConfig(env: NodeJS.ProcessEnv = process.env): Configuration | null {
   try {
     const url = new URL(env.HELLCAT_LADDER_URL ?? "");
@@ -29,7 +46,11 @@ export function hellcatLadderConfig(env: NodeJS.ProcessEnv = process.env): Confi
 async function readBoundedJson(response: Response): Promise<unknown> {
   if (!response.ok || !response.body) {
     await response.body?.cancel().catch(() => {});
-    throw new Error("Ladder unavailable");
+    throw new LadderReadError(
+      response.status === 401 || response.status === 403 ? "upstream_unauthorized"
+        : !response.ok ? "upstream_http_error" : "upstream_empty_response",
+      response.status,
+    );
   }
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -39,10 +60,11 @@ async function readBoundedJson(response: Response): Promise<unknown> {
       const { done, value } = await reader.read();
       if (done) break;
       size += value.byteLength;
-      if (size > MAX_BODY_BYTES) throw new Error("Ladder response too large");
+      if (size > MAX_BODY_BYTES) throw new LadderReadError("upstream_body_too_large");
       chunks.push(value);
     }
-    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    try { return JSON.parse(Buffer.concat(chunks).toString("utf8")); }
+    catch { throw new LadderReadError("upstream_invalid_json"); }
   } finally { await reader.cancel().catch(() => {}); }
 }
 
@@ -59,18 +81,31 @@ export async function fetchHellcatLadder(
       cache: "no-store",
       signal: AbortSignal.timeout(8000),
     });
-    const tracks = parseHellcatTracks(await readBoundedJson(response));
-    return tracks ? { tracks, fetchedAt: new Date(now()).toISOString() } : null;
-  } catch {
-    // Never log upstream bodies, URLs, credentials or fetch errors. A failed
-    // read is not an empty ladder and is cached briefly to avoid retry storms.
+    const payload = await readBoundedJson(response);
+    if (payload && typeof payload === "object" && "error" in payload && payload.error === "unauthorized") {
+      throw new LadderReadError("upstream_unauthorized", response.status);
+    }
+    const tracks = parseHellcatTracks(payload);
+    if (!tracks) throw new LadderReadError("upstream_invalid_tracks");
+    return { tracks, fetchedAt: new Date(now()).toISOString() };
+  } catch (error) {
+    if (error instanceof LadderReadError) reportFailure(error.reason, error.status);
+    else {
+      const name = error && typeof error === "object" && "name" in error ? error.name : null;
+      reportFailure(name === "TimeoutError" || name === "AbortError" ? "upstream_timeout" : "upstream_network_error");
+    }
+    // A failed read is not an empty ladder and is cached briefly to avoid retry storms.
     return null;
   }
 }
 
 export async function getHellcatLadder(): Promise<HellcatLadderResult> {
   const config = hellcatLadderConfig();
-  if (!config) return hellcatLadderResult(null);
+  if (!config) {
+    reportFailure(!process.env.HELLCAT_LADDER_URL?.trim() || !process.env.HELLCAT_LADDER_TOKEN?.trim()
+      ? "configuration_missing" : "configuration_invalid");
+    return hellcatLadderResult(null);
+  }
   // Include configuration changes without putting secrets in cache arguments,
   // diagnostic keys or the cached value. Only sanitized public data is stored.
   const key = createHash("sha256").update(JSON.stringify([config.url, config.token])).digest("hex");
@@ -96,6 +131,7 @@ export async function getHellcatLadder(): Promise<HellcatLadderResult> {
       ? hellcatLadderResult(await refresh)
       : result;
   } catch {
+    reportFailure("cache_error");
     return hellcatLadderResult(null);
   }
 }

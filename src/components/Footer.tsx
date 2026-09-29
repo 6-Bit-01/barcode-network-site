@@ -71,6 +71,11 @@ export function Footer({ submission }: { submission: RadioSubmissionRouting }) {
             </h4>
             <ul className="space-y-2">
               <li>
+                <Link href="/contests" className="text-sm text-foreground/70 hover:text-accent transition-colors">
+                  Community Contests
+                </Link>
+              </li>
+              <li>
                 <Link href="/releases" className="text-sm text-foreground/70 hover:text-accent transition-colors">
                   Releases
                 </Link>

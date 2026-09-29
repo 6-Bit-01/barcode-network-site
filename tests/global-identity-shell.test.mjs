@@ -49,7 +49,7 @@ test("desktop and mobile navigation retain Radio and BNL parent sections on chil
 
 test("parent navigation matches whole path segments and preserves other exact destinations", () => {
   for (const pathname of ["/radioactive", "/bnl-old", "/journalism", "/admin/queue", "/admin/ballads", "/queue", "/releases/other"]) assertActiveNavigation(pathname, null);
-  for (const pathname of ["/", "/terminal", "/database", "/releases", "/transmissions", "/merch"]) assertActiveNavigation(pathname, pathname);
+  for (const pathname of ["/", "/terminal", "/contests", "/database", "/releases", "/transmissions", "/merch"]) assertActiveNavigation(pathname, pathname);
 });
 
 test("fabricated SystemTicker metrics and duplicate LiveBanner surfaces are not rendered globally", () => {

@@ -79,7 +79,7 @@ export default function ContestsPage() {
             </li>
             {communityActivities.map((activity) => (
               <li key={activity.number} className="border border-border border-l-2 border-l-accent/50 bg-background/70 p-5 sm:p-6">
-                <p className="font-mono text-[11px] uppercase tracking-widest text-accent">{activity.number} // {activity.label}</p>
+                <p className="font-mono text-[11px] uppercase tracking-widest text-accent">{activity.number}{" // "}{activity.label}</p>
                 <h3 className="mt-2 text-lg font-bold text-foreground sm:text-xl">{activity.title}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-foreground/75">{activity.description}</p>
               </li>

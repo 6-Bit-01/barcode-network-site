@@ -22,6 +22,7 @@ function load(file, mocks = {}, globals = {}) {
 }
 
 const contract = load("src/lib/hellcat-ladder.ts");
+const schedule = load("src/lib/hellcat-schedule.ts");
 const at = Date.parse("2026-09-29T12:00:00Z");
 const tracks = [
   { rank: 1, title: "First song", artist: "HΞLLCΛT", score: 78.5 },
@@ -323,6 +324,7 @@ test("Contests has its own canonical page and discovery links, with no ladder on
   const render = require("react-dom/server").renderToStaticMarkup;
   const page = load("src/app/contests/page.tsx", {
     "@/components/HellcatLadder": { HellcatLadder: () => React.createElement("section", { id: "hellcat-fixture" }) },
+    "@/components/HellcatSchedule": load("src/components/HellcatSchedule.tsx", { "@/lib/hellcat-schedule": schedule }),
   });
   assert.equal(page.metadata.alternates.canonical, "/contests");
   const html = render(React.createElement(page.default));
@@ -336,14 +338,16 @@ test("Contests has its own canonical page and discovery links, with no ladder on
   assert.match(invite, /target="_blank"/);
   assert.match(invite, /rel="(?=[^"]*\bnoopener\b)(?=[^"]*\bnoreferrer\b)[^"]*"/);
   const communityText = community.replace(/<[^>]*>/g, " ").replaceAll("&#x27;", "'").replace(/\s+/g, " ");
-  assert.match(communityText, /Inside HellcatNZ's community/);
+  assert.match(communityText, /Tune into HellcatNZ's frequency/);
   assert.match(communityText, /King of the Hill/);
-  assert.match(communityText, /Every day,.*KOTH channel.*community radio.*@reviewcrew.*judged in real time/);
-  assert.match(communityText, /Live listening.*Honest feedback.*A unique shout-out for the winner/);
+  assert.match(communityText, /Weekly contest.*Saturdays at 2:45 PM NZST.*UTC\+12/);
+  assert.match(communityText, /KOTH channel.*community radio live.*reviewed by @reviewcrew.*verdict in real time/);
+  assert.doesNotMatch(communityText, /Every day|Daily contest/);
+  assert.match(communityText, /Live listening.*Honest feedback.*A unique winner shout-out/);
   assert.match(communityText, /Zero toxicity.*All vibes/);
   assert.match(communityText, /Daily broadcast.*Community Radio.*listen together.*discover new tracks/);
-  assert.match(communityText, /Weekly spotlight.*Artist Features.*Spotlighting creators from the community/);
-  assert.match(communityText, /Rotating challenges.*Song Creation Challenges.*Curated challenges.*creativity without pressure/);
+  assert.match(communityText, /Weekly signal boost.*Artist Features.*Weekly features spotlight.*real attention/);
+  assert.match(communityText, /Rotating challenges.*Song Creation Challenges.*Curated, rotating song creation challenges.*creativity.*without pressure/);
   assert.doesNotMatch(read("src/app/radio/page.tsx"), /Hellcat|hellcat|\/contests/);
 
   const { Footer } = load("src/components/Footer.tsx", {
@@ -363,4 +367,79 @@ test("Contests has its own canonical page and discovery links, with no ladder on
   });
   const urls = (await sitemap.default()).map((entry) => entry.url);
   assert.equal(urls.filter((url) => url === "https://www.barcode-network.com/contests").length, 1);
+});
+
+test("the next KOTH start remains Saturday 14:45 NZST through week and year boundaries", () => {
+  for (const [now, expected] of [
+    ["2026-09-29T07:21:00Z", "2026-10-03T02:45:00.000Z"],
+    ["2026-10-03T02:44:59Z", "2026-10-03T02:45:00.000Z"],
+    ["2026-10-03T02:45:00Z", "2026-10-03T02:45:00.000Z"],
+    ["2026-10-03T02:45:00.001Z", "2026-10-10T02:45:00.000Z"],
+    ["2026-12-31T23:59:00Z", "2027-01-02T02:45:00.000Z"],
+    ["2027-06-01T12:00:00Z", "2027-06-05T02:45:00.000Z"],
+  ]) {
+    const instant = new Date(now);
+    assert.equal(schedule.nextHellcatContest(instant).toISOString(), expected);
+    assert.equal(instant.getTime(), Date.parse(now), "calculating the start does not mutate the clock");
+  }
+});
+
+test("KOTH server HTML keeps NZST while browsers use their own zone and the event's DST offset", () => {
+  const React = require("react");
+  const render = require("react-dom/server").renderToStaticMarkup;
+  const serverView = load("src/components/HellcatSchedule.tsx", { "@/lib/hellcat-schedule": schedule });
+  const serverHtml = render(React.createElement(serverView.HellcatSchedule));
+  assert.match(serverHtml, /Saturdays at 2:45 PM NZST/);
+  assert.doesNotMatch(serverHtml, /Next in your time|<time\b/);
+
+  for (const [now, zone, expected] of [
+    ["2026-09-29T07:21:00Z", "America/Los_Angeles", /Friday.*Oct 2.*7:45.*PM PDT/],
+    ["2026-10-31T02:46:00Z", "America/Los_Angeles", /Friday.*Nov 6.*6:45.*PM PST/],
+    ["2027-03-13T02:46:00Z", "America/Los_Angeles", /Friday.*Mar 19.*7:45.*PM PDT/],
+    ["2026-09-29T07:21:00Z", "Asia/Kolkata", /Saturday.*Oct 3.*8:15.*AM GMT\+5:30/],
+    ["2026-09-29T07:21:00Z", "Pacific/Auckland", /Saturday.*Oct 3.*3:45.*PM GMT\+13/],
+  ]) {
+    const view = load("src/components/HellcatSchedule.tsx", {
+      "@/lib/hellcat-schedule": schedule,
+      react: { ...React, useState: () => [Date.parse(now), () => {}], useEffect: () => {}, useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot() },
+    }, {
+      Intl: { DateTimeFormat: class extends Intl.DateTimeFormat {
+        constructor(locale, options) {
+          assert.equal(locale, undefined, "formatting uses the browser's locale");
+          assert.equal(options.timeZone, undefined, "formatting uses the browser's timezone");
+          super("en-US", { ...options, timeZone: zone });
+        }
+      } },
+    });
+    const html = render(React.createElement(view.HellcatSchedule));
+    assert.match(html, expected, zone);
+    assert.match(html, /Next in your time: <time dateTime="\d{4}-\d\d-\d\dT02:45:00\.000Z">/);
+  }
+});
+
+test("an open KOTH page advances to the next week locally and clears its minute timer on unmount", () => {
+  const React = require("react");
+  const render = require("react-dom/server").renderToStaticMarkup;
+  let clock = Date.parse("2026-10-03T02:44:30Z"), state = clock, effect, tick, cleared;
+  const view = load("src/components/HellcatSchedule.tsx", {
+    "@/lib/hellcat-schedule": schedule,
+    react: {
+      ...React, useState: () => [state, (value) => { state = value; }],
+      useEffect: (callback) => { effect = callback; },
+      useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot(),
+    },
+  }, {
+    Date: class extends Date { static now() { return clock; } },
+    window: {
+      setInterval: (callback, ms) => { assert.equal(ms, 60_000); tick = callback; return 17; },
+      clearInterval: (id) => { cleared = id; },
+    },
+  });
+  assert.match(render(React.createElement(view.HellcatSchedule)), /dateTime="2026-10-03T02:45:00\.000Z"/);
+  const cleanup = effect();
+  clock += 60_000;
+  tick();
+  assert.match(render(React.createElement(view.HellcatSchedule)), /dateTime="2026-10-10T02:45:00\.000Z"/);
+  cleanup();
+  assert.equal(cleared, 17);
 });

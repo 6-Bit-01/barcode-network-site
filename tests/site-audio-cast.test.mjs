@@ -9,8 +9,10 @@ function fixture({mime='audio/mpeg',status=200,sdkReady=true}={}){
   const events=new Map(),requests=[],loads=[],commands=[];let current,options;
   const player={isConnected:true,isPaused:true,playerState:'PAUSED',currentTime:0,duration:150,canSeek:true,volumeLevel:.5,isMuted:false};
   const emit=()=>{for(const fn of events.get('change')??[])fn();};
-  const media={media:{contentId:''},idleReason:undefined,play(_r,ok){commands.push('play');player.isPaused=false;player.playerState='PLAYING';emit();ok();},pause(_r,ok){commands.push('pause');player.isPaused=true;player.playerState='PAUSED';emit();ok();}};
-  const session={loadMedia:async request=>{loads.push(request);media.media=request.media;player.currentTime=request.currentTime;player.isPaused=true;player.playerState='PAUSED';emit();},getMediaSession:()=>media,getCastDevice:()=>({friendlyName:'Fixture receiver'})};
+  const media={media:{contentId:''},idleReason:undefined,playerState:'PAUSED',play(_r,ok){commands.push('play');player.isPaused=false;media.playerState=player.playerState='PLAYING';emit();ok();},pause(_r,ok){commands.push('pause');player.isPaused=true;media.playerState=player.playerState='PAUSED';emit();ok();}};
+  // Google's CastSession omits idle media from getMediaSession(), including
+  // recordings that finished or failed. Retained media objects keep idleReason.
+  const session={loadMedia:async request=>{loads.push(request);media.idleReason=undefined;media.media=request.media;player.currentTime=request.currentTime;player.isPaused=true;media.playerState=player.playerState='PAUSED';emit();},getMediaSession:()=>media.idleReason ? null : media,getCastDevice:()=>({friendlyName:'Fixture receiver'})};
   const add=(type,fn)=>{if(!events.has(type))events.set(type,new Set());events.get(type).add(fn);};
   const remove=(type,fn)=>events.get(type)?.delete(fn);
   const context={setOptions:v=>options=v,getCastState:()=> 'NOT_CONNECTED',getCurrentSession:()=>current,requestSession:()=>{commands.push('picker');current=session;return Promise.resolve();},endCurrentSession:stop=>{commands.push(['disconnect',stop]);current=null;},addEventListener:add,removeEventListener:remove};
@@ -21,7 +23,7 @@ function fixture({mime='audio/mpeg',status=200,sdkReady=true}={}){
   const installSDK=()=>{target.cast=readyCast;target.chrome.cast=readyChrome;};
   if(!sdkReady){delete target.cast;delete target.chrome.cast;}
   function load(file){const mod={exports:{}};vm.runInNewContext(ts.transpileModule(readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{module:mod,exports:mod.exports,URL,AbortSignal,Set,window:target,document:{createElement:()=>({}),head:{appendChild:s=>scripts.push(s)}},fetch:async(...args)=>{requests.push(args);return new Response(null,{status,headers:{'Content-Type':mime}});},require:id=>id.startsWith('@/')?load('src/'+id.slice(2)+'.ts'):require(id)});return mod.exports;}
-  return {api:load('src/lib/site-audio-cast.ts'),requests,loads,commands,options:()=>options,media,player,emit,events,context,target,scripts,installSDK};
+  return {api:load('src/lib/site-audio-cast.ts'),requests,loads,commands,options:()=>options,media,player,emit,events,context,session,target,scripts,installSDK};
 }
 const track={showId:'show & 1',audioId:'take/2',key:'show:take',availability:'available',src:'https://private.test/admin?token=never-forward',title:'Test music',artist:'BNL-01'};
 test('Cast initialization stays silent; the explicit picker uses the default receiver without automatic joining',async()=>{
@@ -51,8 +53,29 @@ test('unpublished responses and unsupported media never reach the receiver',asyn
 });
 test('only natural completion maps to ended; receiver errors, cancellation and session ending remain distinct',async()=>{
   const f=fixture(), output=await(await f.api.prepareCast()).choose();await output.load(track,0);f.player.playerState='IDLE';
-  f.media.idleReason='FINISHED';assert.equal(output.getState().status,'ended');f.media.idleReason='ERROR';assert.equal(output.getState().status,'error');f.media.idleReason='CANCELLED';assert.equal(output.getState().status,'paused');
+  f.media.idleReason='FINISHED';assert.equal(output.getState().status,'ended');f.media.idleReason='ERROR';assert.equal(output.getState().status,'error');f.media.idleReason='CANCELLED';assert.equal(output.getState().status,'error');
   let updates=0;const detach=output.subscribe(()=>updates++);f.emit();assert.equal(updates,1);detach();f.emit();assert.equal(updates,1);assert.equal(f.events.get('session').size,0);
   f.player.isConnected=false;assert.equal(output.getState().connected,false);assert.ok(f.context.getCurrentSession());f.player.isConnected=true;
   output.disconnect();assert.equal(output.getState().connected,false);assert.deepEqual(f.commands.at(-1),['disconnect',true]);
+});
+test('lost receiver media cannot become a zero-duration paused song with a no-op Play',async()=>{
+  const f=fixture(), output=await(await f.api.prepareCast()).choose();await output.load(track,39);
+  f.media.idleReason='ERROR';Object.assign(f.player,{playerState:'IDLE',currentTime:0,duration:0,canSeek:false});
+  assert.equal(output.getState().status,'error');
+  let updates=0;output.subscribe(()=>updates++);output.play();
+  assert.equal(updates,1);assert.equal(output.getState().status,'error');
+  await output.load(track,39);output.play();assert.equal(output.getState().status,'playing');
+});
+test('the loaded media status wins while RemotePlayer fields are still catching up',async()=>{
+  const f=fixture(), output=await(await f.api.prepareCast()).choose();await output.load(track,39);
+  f.player.playerState='IDLE';f.media.playerState='PAUSED';
+  assert.equal(output.getState().status,'paused');
+  f.media.playerState='BUFFERING';assert.equal(output.getState().status,'loading');
+});
+test('another sender taking over during loading is never played or stopped by recovery',async()=>{
+  const f=fixture(), output=await(await f.api.prepareCast()).choose();
+  f.session.loadMedia=async()=>{f.media.media.contentId='https://other.test/unrelated.mp3';};
+  await assert.rejects(output.load(track,39));
+  output.play();output.disconnect();
+  assert.equal(output.getState().connected,false);assert.deepEqual(f.commands,['picker']);
 });

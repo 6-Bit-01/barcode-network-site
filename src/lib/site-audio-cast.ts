@@ -3,7 +3,7 @@ import { castMediaUrl, type AudioOutputState, type SiteAudioOutput } from "@/lib
 
 type Listener = () => void;
 type MediaInfo = { contentId: string; contentType?: string; metadata?: object };
-type MediaSession = { media: MediaInfo; idleReason?: string;
+type MediaSession = { media: MediaInfo; idleReason?: string; playerState: string;
   play(request: null, success: Listener, error: Listener): void;
   pause(request: null, success: Listener, error: Listener): void;
 };
@@ -83,6 +83,7 @@ class GoogleCastOutput implements SiteAudioOutput {
   private controller: RemoteController;
   private closed = false;
   private commandFailed = false;
+  private media: MediaSession | null = null;
   private listeners = new Set<Listener>();
   constructor(private sdk: CastSdk, private context: CastContext, private session: Session) {
     this.label = session.getCastDevice().friendlyName || "Chromecast";
@@ -101,18 +102,23 @@ class GoogleCastOutput implements SiteAudioOutput {
     };
   }
   getState(): AudioOutputState {
-    const media = this.session.getMediaSession();
-    const state = this.player.playerState;
+    const activeMedia = this.session.getMediaSession();
+    // CastSession omits idle media. Keep the loaded object so FINISHED and
+    // ERROR do not disappear into an empty, uncontrollable paused state.
+    if (activeMedia) this.media = activeMedia;
+    const media = activeMedia ?? this.media;
+    const state = media?.playerState ?? this.player.playerState;
     return { connected: !this.closed && this.player.isConnected && this.context.getCurrentSession() === this.session,
       contentId: media?.media.contentId ?? null,
-      status: this.commandFailed ? "error" : state === "IDLE" && media?.idleReason === "FINISHED" ? "ended"
-        : state === "IDLE" && media?.idleReason === "ERROR" ? "error"
-        : state === "BUFFERING" ? "loading" : state === "PLAYING" ? "playing" : "paused",
+      status: this.commandFailed ? "error" : media?.idleReason === "FINISHED" ? "ended"
+        : media?.idleReason || (this.media && !activeMedia) || state === "IDLE" ? "error"
+        : state === "PLAYING" ? "playing" : state === "PAUSED" ? "paused" : "loading",
       currentTime: this.player.currentTime || 0, duration: this.player.duration || 0,
       canSeek: this.player.canSeek, volume: this.player.volumeLevel, muted: this.player.isMuted };
   }
   async load(track: SiteAudioTrack, position: number) {
     this.commandFailed = false;
+    this.media = null;
     const url = castMediaUrl(track, window.location.origin);
     const response = await fetch(url, { method: "HEAD", credentials: "omit", cache: "no-store", signal: AbortSignal.timeout(10000) });
     if (!response.ok || this.closed) throw new Error("Public recording unavailable");
@@ -124,9 +130,22 @@ class GoogleCastOutput implements SiteAudioOutput {
     request.autoplay = false;
     request.currentTime = Math.max(0, position);
     await this.session.loadMedia(request);
+    this.media = this.session.getMediaSession();
+    if (!this.media) throw new Error("Cast recording unavailable");
+    if (this.media.media.contentId !== url) {
+      // Another sender took over while the load was pending. Relinquish this
+      // output without letting failure recovery stop its unrelated recording.
+      this.closed = true;
+      throw new Error("Cast recording changed");
+    }
   }
   private failCommand = () => { this.commandFailed = true; this.listeners.forEach(listener => listener()); };
-  play() { if (!this.closed) this.session.getMediaSession()?.play(null, () => {}, this.failCommand); }
+  play() {
+    if (this.closed) return;
+    const media = this.session.getMediaSession();
+    if (media) media.play(null, () => {}, this.failCommand);
+    else this.failCommand();
+  }
   pause() { if (!this.closed) this.session.getMediaSession()?.pause(null, () => {}, this.failCommand); }
   seek(position: number) { if (!this.closed && this.player.canSeek) { this.player.currentTime = position; this.controller.seek(); } }
   setVolume(volume: number) { if (!this.closed) { this.player.volumeLevel = volume; this.controller.setVolumeLevel(); } }

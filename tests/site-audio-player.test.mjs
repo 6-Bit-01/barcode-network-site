@@ -233,7 +233,36 @@ test('only receiver FINISHED advances the playlist once; receiver errors never s
   const {controller}=setup(),output=new Output();controller.add(track);controller.add(second);controller.add(third);controller.play(track);controller.connectOutput(output,track.key);await settle();
   output.emit({status:'ended',currentTime:150});output.emit({status:'ended'});await settle();
   assert.equal(controller.getSnapshot().track.key,second.key);assert.equal(output.loads.length,2);
-  output.emit({status:'error'});await settle();assert.equal(controller.getSnapshot().track.key,second.key);assert.equal(output.loads.length,2);assert.equal(controller.getSnapshot().status,'error');
+  output.emit({status:'error'});await settle();assert.equal(controller.getSnapshot().track.key,second.key);assert.equal(output.loads.length,2);assert.equal(controller.getSnapshot().status,'paused');assert.equal(controller.getSnapshot().outputLabel,null);assert.match(controller.getSnapshot().outputNotice,/Cast/);
+});
+test('a failed or lost Cast recording returns locally paused with known duration and position intact',async()=>{
+  for(const failure of ['load','receiver']){
+    const {controller,audio}=setup(),output=new Output();
+    output.state.duration=192.8;
+    controller.play({...track,duration:null});audio.metadata(192.8);controller.seek(39);
+    if(failure==='load') output.load=async()=>{throw new Error('LOAD_FAILED');};
+    controller.connectOutput(output,track.key);await settle();
+    if(failure==='receiver') output.emit({status:'error',contentId:null,currentTime:0,duration:0,canSeek:false});
+    audio.duration=NaN;audio.currentTime=0;audio.emit('durationchange');audio.emit('timeupdate');
+    const state=controller.getSnapshot();
+    assert.equal(state.outputLabel,null);assert.equal(state.status,'paused');
+    assert.equal(state.currentTime,39);assert.equal(state.duration,192.8);
+    assert.equal(state.canSeek,false);assert.equal(output.stops,1);assert.equal(audio.starts,1);
+    assert.match(state.outputNotice,/Press Play/);
+    controller.play();assert.equal(audio.starts,2);assert.equal(audio.src,track.src);
+    audio.duration=0;audio.emit('durationchange');audio.emit('timeupdate');
+    assert.equal(controller.getSnapshot().duration,192.8);
+    assert.equal(controller.getSnapshot().currentTime,39);
+    audio.metadata(192.8);assert.equal(audio.currentTime,39);assert.equal(controller.getSnapshot().status,'playing');
+  }
+});
+test('empty receiver metadata during loading does not erase the known song timeline',async()=>{
+  const {controller,audio}=setup(),output=new Output();controller.play(track);audio.metadata();controller.seek(35);
+  controller.connectOutput(output,track.key);await settle();
+  output.emit({status:'loading',currentTime:0,duration:0,canSeek:false});
+  assert.equal(controller.getSnapshot().currentTime,35);assert.equal(controller.getSnapshot().duration,150);assert.equal(controller.getSnapshot().canSeek,false);
+  output.emit({status:'playing',currentTime:36,duration:150,canSeek:true});
+  assert.equal(controller.getSnapshot().currentTime,36);assert.equal(controller.getSnapshot().canSeek,true);
 });
 test('a newer song wins serialized Cast loading and the old recording never starts',async()=>{
   const {controller}=setup(),output=new Output();let release;output.pending=new Promise(resolve=>release=resolve);

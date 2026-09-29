@@ -77,11 +77,12 @@ export class SiteAudioController {
     this.audio = audio;
     if (!audio) return;
     const duration = () => {
-      if (this.returnPosition !== null && Number.isFinite(audio.duration)) {
+      if (!audio.getAttribute("src")) return;
+      if (this.returnPosition !== null && Number.isFinite(audio.duration) && audio.duration > 0) {
         try { audio.currentTime = Math.min(this.returnPosition, audio.duration); this.returnPosition = null; } catch { /* Metadata may still be loading. */ }
       }
       this.update({
-      duration: Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : (this.snapshot.track?.duration ?? 0),
+      duration: Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : this.snapshot.duration,
       canSeek: Number.isFinite(audio.duration) && audio.duration > 0,
       });
     };
@@ -98,7 +99,7 @@ export class SiteAudioController {
         const index = this.snapshot.playlist.findIndex(item => item.key === this.snapshot.track?.key);
         if (advance && index >= 0 && index + 1 < this.snapshot.playlist.length) this.play(this.snapshot.playlist[index + 1]);
       },
-      timeupdate: () => this.update({ currentTime: Number.isFinite(audio.currentTime) ? audio.currentTime : 0 }),
+      timeupdate: () => { if (audio.getAttribute("src") && this.returnPosition === null) this.update({ currentTime: Number.isFinite(audio.currentTime) ? audio.currentTime : 0 }); },
       durationchange: duration, loadedmetadata: duration,
       volumechange: () => this.update({ volume: audio.volume, muted: audio.muted }),
       error: () => { if (this.snapshot.track && audio.error) { this.pause(); this.update({ status: "error", error: "This recording could not be loaded. Try Play again or return to the show." }); } },
@@ -143,12 +144,16 @@ export class SiteAudioController {
     this.detachOutput?.(); this.detachOutput = null;
     this.output = null; this.outputMediaKey = null;
     if (stop) output.disconnect();
-    const position = this.snapshot.currentTime;
+    const position = this.snapshot.currentTime, duration = this.snapshot.duration;
     this.returnPosition = position;
     this.audio?.removeAttribute("src"); this.audio?.load();
-    this.update({ outputLabel: null, currentTime: position, canSeek: false, status: this.snapshot.track ? "paused" : "idle", error: null,
+    this.update({ outputLabel: null, currentTime: position, duration, canSeek: false, status: this.snapshot.track ? "paused" : "idle", error: null,
       volume: this.audio?.volume ?? this.snapshot.volume, muted: this.audio?.muted ?? this.snapshot.muted });
   };
+  private failOutput() {
+    this.disconnectOutput();
+    this.setOutputNotice("Cast could not play this recording. Press Play to continue on this device, or try Cast again.");
+  }
   private loadOutput(track: SiteAudioTrack, position: number, autoplay: boolean) {
     const output = this.output;
     const request = ++this.request;
@@ -165,8 +170,7 @@ export class SiteAudioController {
       this.syncOutput();
     }).catch(() => {
       if (output === this.output && request === this.request) {
-        this.advanceOnEnd = false;
-        this.update({ status: "error", error: "This recording could not play on the Cast device. Try Play again or stop casting." });
+        this.failOutput();
       }
     });
   }
@@ -177,11 +181,14 @@ export class SiteAudioController {
     if (!state.connected) { this.disconnectOutput(false); return; }
     if (this.outputMediaKey !== track.key) return;
     if (state.contentId && state.contentId !== castMediaUrl(track, window.location.origin)) { this.disconnectOutput(false); return; }
+    if (state.status === "error") { this.failOutput(); return; }
     const advance = state.status === "ended" && this.advanceOnEnd && this.enabled;
-    if (state.status === "ended" || state.status === "error") this.advanceOnEnd = false;
-    this.update({ status: state.status, currentTime: state.currentTime, duration: state.duration,
-      canSeek: state.canSeek, volume: state.volume, muted: state.muted,
-      error: state.status === "error" ? "The Cast device could not play this recording. Try Play again or choose another song." : null });
+    if (state.status === "ended") this.advanceOnEnd = false;
+    const hasDuration = Number.isFinite(state.duration) && state.duration > 0;
+    this.update({ status: state.status,
+      currentTime: state.status === "loading" && !hasDuration ? this.snapshot.currentTime : state.currentTime,
+      duration: hasDuration ? state.duration : this.snapshot.duration,
+      canSeek: state.canSeek && hasDuration, volume: state.volume, muted: state.muted, error: null });
     if (advance) {
       const index = this.snapshot.playlist.findIndex(item => item.key === track.key);
       if (index >= 0 && index + 1 < this.snapshot.playlist.length) this.play(this.snapshot.playlist[index + 1]);
@@ -264,13 +271,15 @@ export class SiteAudioController {
     if (changing) {
       this.pause();
       if (track.key !== this.snapshot.track?.key) this.returnPosition = null;
-      this.update({ track, visible: true, status: "loading", currentTime: this.returnPosition ?? 0, duration: track.duration ?? 0, canSeek: false, error: null });
+      this.update({ track, visible: true, status: "loading", currentTime: this.returnPosition ?? 0,
+        duration: track.key === this.snapshot.track?.key ? this.snapshot.duration : track.duration ?? 0,
+        canSeek: false, error: null, outputNotice: null });
       audio.src = track.src;
       audio.load();
     } else {
       if (audio.error) audio.load();
       if (audio.ended || this.snapshot.status === "ended") audio.currentTime = 0;
-      this.update({ status: "loading", error: null });
+      this.update({ status: "loading", error: null, outputNotice: null });
     }
     const request = ++this.request;
     this.advanceOnEnd = true;

@@ -171,9 +171,13 @@ test('Cast CORS is restricted to the exact public recording and never admin prev
   const {route,doc}=mediaRoute({admin:true});
   const partial=await route.GET(new Request(url,{headers:{Origin:'https://receiver.test',Range:'bytes=0-1'}}));
   assert.equal(partial.status,206);assert.equal(partial.headers.get('access-control-allow-origin'),'*');assert.equal(partial.headers.get('content-range'),'bytes 0-1/4');
+  assert.equal(partial.headers.get('cross-origin-resource-policy'),'cross-origin');
+  const full=await route.GET(new Request(url));
+  assert.equal(full.status,200);assert.equal(full.headers.get('cross-origin-resource-policy'),'cross-origin');
   assert.equal(route.OPTIONS(new Request(url,{method:'OPTIONS'})).status,204);
   assert.equal(route.OPTIONS(new Request(url.replace('&public=1',''),{method:'OPTIONS'})).status,404);
   doc.published=null;
   const hidden=await route.GET(new Request(url));assert.equal(hidden.status,404);assert.equal(hidden.headers.get('access-control-allow-origin'),null);
   const preview=await route.GET(new Request(url.replace('&public=1','')));assert.equal(preview.status,200);assert.equal(preview.headers.get('access-control-allow-origin'),null);
+  assert.equal(preview.headers.get('cross-origin-resource-policy'),'same-origin');
 });

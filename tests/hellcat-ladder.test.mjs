@@ -325,8 +325,25 @@ test("Contests has its own canonical page and discovery links, with no ladder on
     "@/components/HellcatLadder": { HellcatLadder: () => React.createElement("section", { id: "hellcat-fixture" }) },
   });
   assert.equal(page.metadata.alternates.canonical, "/contests");
-  assert.match(render(React.createElement(page.default)), /<h1[^>]*>Contests<\/h1>/);
-  assert.match(render(React.createElement(page.default)), /hellcat-fixture/);
+  const html = render(React.createElement(page.default));
+  assert.match(html, /<h1[^>]*>Contests<\/h1>/);
+  assert.match(html, /hellcat-fixture/);
+  const community = html.match(/<section\b[^>]*aria-labelledby="hellcat-community-title"[^>]*>([\s\S]*?)<\/section>/)?.[1];
+  assert.ok(community, "community activities have their own attributed section");
+  const invite = community.match(/<a\b[^>]*href="https:\/\/discord\.gg\/HellcatNZ"[^>]*>[\s\S]*?<\/a>/)?.[0];
+  assert.ok(invite, "the supplied HellcatNZ invite is the public destination");
+  assert.match(invite, /Join HellcatNZ&#x27;s Discord/);
+  assert.match(invite, /target="_blank"/);
+  assert.match(invite, /rel="(?=[^"]*\bnoopener\b)(?=[^"]*\bnoreferrer\b)[^"]*"/);
+  const communityText = community.replace(/<[^>]*>/g, " ").replaceAll("&#x27;", "'").replace(/\s+/g, " ");
+  assert.match(communityText, /Inside HellcatNZ's community/);
+  assert.match(communityText, /King of the Hill/);
+  assert.match(communityText, /Every day,.*KOTH channel.*community radio.*@reviewcrew.*judged in real time/);
+  assert.match(communityText, /Live listening.*Honest feedback.*A unique shout-out for the winner/);
+  assert.match(communityText, /Zero toxicity.*All vibes/);
+  assert.match(communityText, /Daily broadcast.*Community Radio.*listen together.*discover new tracks/);
+  assert.match(communityText, /Weekly spotlight.*Artist Features.*Spotlighting creators from the community/);
+  assert.match(communityText, /Rotating challenges.*Song Creation Challenges.*Curated challenges.*creativity without pressure/);
   assert.doesNotMatch(read("src/app/radio/page.tsx"), /Hellcat|hellcat|\/contests/);
 
   const { Footer } = load("src/components/Footer.tsx", {

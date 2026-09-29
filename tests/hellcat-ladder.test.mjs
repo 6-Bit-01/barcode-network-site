@@ -188,6 +188,30 @@ test("public route ignores visitor credentials and URLs, returns no-store JSON a
   assert.deepEqual(Object.keys(route).sort(), ["GET", "runtime"]);
 });
 
+test("an expired snapshot or cached outage waits for the existing refresh so the first visitor can recover", async () => {
+  for (const previous of [null, { ...snapshot, fetchedAt: new Date(Date.now() - 600001).toISOString() }]) {
+    let release, background;
+    let calls = 0;
+    const h = server({
+      cache: (fn) => async () => { background = fn(); return previous; },
+      fetcher: async () => {
+        calls++;
+        await new Promise((resolve) => { release = resolve; });
+        return Response.json({ tracks });
+      },
+    });
+    let finished = false;
+    const result = h.getHellcatLadder().then((value) => { finished = true; return value; });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(finished, false, "withheld data must await the already-started bounded refresh");
+    assert.equal(calls, 1);
+    release();
+    assert.equal((await result).status, "ready");
+    await background;
+    assert.equal(calls, 1, "recovery must not start a duplicate upstream request");
+  }
+});
+
 test("table renders official order, nulls, zero and escaped text, with distinct loading/empty/error/stale states", () => {
   const { HellcatLadderView } = load("src/components/HellcatLadder.tsx", {
     "@/lib/hellcat-ladder": contract, "@/lib/session-bound-polling": {},

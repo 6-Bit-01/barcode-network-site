@@ -88,7 +88,13 @@ export async function getHellcatLadder(): Promise<HellcatLadderResult> {
     );
     // Next can return a stale value while revalidating. Label that state and
     // withhold snapshots older than ten minutes even if its cache retains them.
-    return hellcatLadderResult(await cached());
+    const result = hellcatLadderResult(await cached());
+    const refresh = pending.get(key);
+    // After a long quiet period (or a cached outage), the first visitor should
+    // receive the refresh already in flight instead of waiting another poll.
+    return result.status === "unavailable" && refresh
+      ? hellcatLadderResult(await refresh)
+      : result;
   } catch {
     return hellcatLadderResult(null);
   }

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { HellcatLadder } from "@/components/HellcatLadder";
 
 export const metadata: Metadata = {
-  title: "Community Contests — BARCODE Network",
+  title: "Community Contests",
   description: "Follow HellcatNZ's KOTH contest ladder, with official rankings and scores supplied by HellcatNZ.",
   alternates: { canonical: "/contests" },
   openGraph: {

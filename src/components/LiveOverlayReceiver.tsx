@@ -809,7 +809,8 @@ function YouTubeOverlayPlayer({ sync, clockAnchorRef, clockAnchored, responseTra
                 const recovered = providerBufferingRef.current && event.data === 1;
                 if (event.data === 3) providerBufferingRef.current = true;
                 else if (event.data === 1 || event.data === 2 || event.data === 0) providerBufferingRef.current = false;
-                if (recovered) lastCorrectionAtRef.current = null;
+                // A correction can itself buffer. Preserve its cooldown when
+                // playing returns so recovery cannot immediately seek again.
                 preparationRef.current.onState(event.data, (seconds) => {
                   const player = playerRef.current;
                   const current = player?.getCurrentTime();
@@ -1115,7 +1116,7 @@ function TikTokOverlayPlayer({ sync, artistName, trackTitle, clockAnchorRef, clo
           if (awaitingRecoveryTimeRef.current) {
             awaitingRecoveryTimeRef.current = false;
             providerBufferingRef.current = false;
-            lastCorrectionAtRef.current = null;
+            // Fresh time releases the buffer hold, not the last seek's cooldown.
           }
           updateDiagnostics({ localObservedTime: currentTime });
         }

@@ -126,6 +126,66 @@ for (const provider of ["youtube", "tiktok"]) {
     assert.ok(h.calls.find(([type]) => type === "seek")[1] >= 33, "recover to latest packet, not first stalled packet");
   });
 
+  test(`${provider}: rapid buffer recoveries cannot amplify one correction into a seek/play burst`, () => {
+    const h = harness(provider);
+    h.globals.clockAnchorRef.current = { serverNowMs: 1_000_000, receivedAtPerformanceMs: 1_000_000, responseTransitEstimateMs: 0 };
+    h.state(3);
+    h.apply({ currentTimeSeconds: 40, correctionReason: "heartbeat" });
+    h.calls.length = 0;
+    // A seek may briefly buffer, then report playing before its position settles.
+    // Repeated recovery events must not erase the command's existing cooldown.
+    for (let i = 0; i < 5; i++) {
+      h.tick(100);
+      h.observe(39.4 + i * .1);
+      h.state(1);
+      if (provider === "tiktok") h.currentTime(39.4 + i * .1);
+      h.flushTimers();
+      h.state(3);
+    }
+    assert.equal(h.calls.filter(([type]) => type === "seek").length, 1);
+    assert.equal(h.calls.filter(([type]) => type === "play").length, 1);
+    assert.equal(h.globals.lastCorrectionAtRef.current, 1_000_100);
+  });
+
+  test(`${provider}: recovery after the correction cooldown still seeks to the newest host position`, () => {
+    const h = harness(provider);
+    h.apply({ currentTimeSeconds: 40, correctionReason: "heartbeat" });
+    h.flushTimers();
+    h.state(3);
+    h.calls.length = 0;
+    h.tick(2000);
+    h.apply({ currentTimeSeconds: 55, updatedAt: new Date(1_002_000).toISOString() });
+    assert.equal(h.calls.some(([type]) => type === "seek" || type === "play"), false, "buffered heartbeat cannot issue a correction");
+    h.state(1);
+    if (provider === "tiktok") h.currentTime(20);
+    h.flushTimers();
+    const seeks = h.calls.filter(([type]) => type === "seek");
+    assert.equal(seeks.length, 1);
+    assert.ok(seeks[0][1] >= 55);
+    assert.equal(h.calls.filter(([type]) => type === "play").length, 1);
+  });
+
+  test(`${provider}: fresh manual seeks bypass recovery cooldown once per intent`, () => {
+    const h = harness(provider);
+    h.apply({ currentTimeSeconds: 40, correctionReason: "heartbeat" });
+    h.flushTimers();
+    h.state(3);
+    h.calls.length = 0;
+    h.tick(100);
+    h.apply({ currentTimeSeconds: 60, correctionReason: "seek", updatedAt: new Date(1_000_100).toISOString() });
+    h.flushTimers();
+    h.state(1);
+    if (provider === "tiktok") h.currentTime(20);
+    h.apply();
+    h.flushTimers();
+    assert.equal(h.calls.filter(([type]) => type === "seek").length, 1, "recovery cannot replay an already consumed manual seek");
+    h.state(3);
+    h.tick(100);
+    h.apply({ currentTimeSeconds: 70, updatedAt: new Date(1_000_200).toISOString() });
+    h.flushTimers();
+    assert.equal(h.calls.filter(([type]) => type === "seek").length, 2, "a new manual seek stays immediate during buffering");
+  });
+
   test(`${provider}: one fresh manual seek bypasses cooldown but repeated copies do not`, () => {
     const h = harness(provider);
     h.apply({ currentTimeSeconds: 40, correctionReason: "seek" });

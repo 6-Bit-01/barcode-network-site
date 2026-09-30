@@ -1060,6 +1060,9 @@ function AdminYouTubePlayer({ entry, sessionId }: { entry: QueueEntry; sessionId
   const previousObservedTimeRef = useRef<number | null>(null);
   const previousObservedAtRef = useRef<number | null>(null);
   const bufferingRef = useRef(false);
+  const bufferedTimeRef = useRef(0);
+  const heldSeekTargetRef = useRef<number | null>(null);
+  const [bufferNotice, setBufferNotice] = useState("");
   const youtubeGenerationActiveRef = useRef(true);
   const [diagnostics, setDiagnostics] = useState<{ provider: string; videoId: string; trackId: string; playbackState: "playing" | "paused" | "stopped"; currentTimeSeconds: number; durationSeconds?: number; updatedAt: string; status: "Fresh" | "Stale" | "Missing" | "Mismatch" | "Error"; ready: boolean; errorCode?: number; publishStatus?: "success" | "failed" } | null>(null);
   const [outboundTransitDiagnosticMs, setOutboundTransitDiagnosticMs] = useState<number | null>(null);
@@ -1142,12 +1145,25 @@ function AdminYouTubePlayer({ entry, sessionId }: { entry: QueueEntry; sessionId
     const generation = generationRef.current + 1;
     generationRef.current = generation;
     coordinatedStartRef.current = new CoordinatedVideoStart({
-      hold: (seconds) => { playerRef.current?.mute(); playerRef.current?.pauseVideo(); playerRef.current?.seekTo(seconds, true); },
+      hold: (seconds) => {
+        const player = playerRef.current;
+        player?.mute();
+        player?.pauseVideo();
+        const observed = player?.getCurrentTime();
+        if (typeof observed === "number" && Number.isFinite(observed) && Math.abs(observed - seconds) > 0.25 && heldSeekTargetRef.current !== seconds) {
+          heldSeekTargetRef.current = seconds;
+          player?.seekTo(seconds, true);
+        }
+      },
       play: () => { playerRef.current?.unMute?.(); playerRef.current?.playVideo(); },
       drain: () => publishTaskRef.current,
       write: (state, seconds, token, delay) => writeCoordinatedVideoSync(buildOverlayYouTubeSync(trackSyncInput, state, seconds, playerRef.current?.getDuration?.(), "state_change")!, state, seconds, token, delay),
       ready: videoPreparationReady,
-      changed: (phase, message) => { setStartNotice(message); setStartPending(phase === "preparing" || phase === "scheduled" || phase === "released"); },
+      changed: (phase, message) => {
+        if (phase === "preparing" || phase === "released" || phase === "idle") heldSeekTargetRef.current = null;
+        setStartNotice(message);
+        setStartPending(phase === "preparing" || phase === "scheduled" || phase === "released");
+      },
     });
     clearImperativeHost();
     const mount = document.createElement("div");
@@ -1181,6 +1197,7 @@ function AdminYouTubePlayer({ entry, sessionId }: { entry: QueueEntry; sessionId
             readyTimer = null;
             coordinatedStartRef.current?.cancel();
             bufferingRef.current = false;
+            setBufferNotice("");
             playbackStateRef.current = "stopped";
             setDiagnostics({ provider: "youtube", videoId, trackId, playbackState: "stopped", currentTimeSeconds: 0, updatedAt: new Date().toISOString(), status: "Error", ready: false, errorCode: event.data, publishStatus: "failed" });
             publish("stopped", 0, "state_change");
@@ -1205,8 +1222,16 @@ function AdminYouTubePlayer({ entry, sessionId }: { entry: QueueEntry; sessionId
             if (event.data === 0) coordinatedStartRef.current?.cancel();
             if (coordinatedStartRef.current?.blocksPublish) return;
             if (event.data === 3) {
-              bufferingRef.current = true;
-              reportLifecycle("stall", eventTime);
+              if (!bufferingRef.current && previous === "playing") {
+                bufferingRef.current = true;
+                bufferedTimeRef.current = eventTime;
+                playbackStateRef.current = "paused";
+                previousObservedTimeRef.current = null;
+                previousObservedAtRef.current = null;
+                publish("paused", eventTime, "state_change");
+                reportLifecycle("stall", eventTime);
+              }
+              setBufferNotice(bufferingRef.current ? "Video buffering — overlay time is held until playback resumes." : "Loading video…");
               return;
             }
             if (event.data === 5) {
@@ -1219,6 +1244,9 @@ function AdminYouTubePlayer({ entry, sessionId }: { entry: QueueEntry; sessionId
             else if (event.data === 2) reportLifecycle("pause", eventTime);
             else if (event.data === 0) reportLifecycle("ended", eventTime);
             bufferingRef.current = false;
+            setBufferNotice("");
+            previousObservedTimeRef.current = null;
+            previousObservedAtRef.current = null;
             publish(next, eventTime, "state_change");
           },
         },
@@ -1228,13 +1256,13 @@ function AdminYouTubePlayer({ entry, sessionId }: { entry: QueueEntry; sessionId
       if (coordinatedStartRef.current?.blocksPublish) return;
       let currentTime = 0;
       try {
-        currentTime = playerRef.current?.getCurrentTime() ?? 0;
+        currentTime = bufferingRef.current ? bufferedTimeRef.current : playerRef.current?.getCurrentTime() ?? 0;
       } catch {
         playbackStateRef.current = "stopped";
         setDiagnostics((current) => current ? { ...current, status: "Error", publishStatus: "failed" } : null);
       }
       const observedAt = Date.now();
-      const wasSeek = previousObservedTimeRef.current !== null && previousObservedAtRef.current !== null && detectMaterialPlaybackSeek({ playbackState: playbackStateRef.current, previousTimeSeconds: previousObservedTimeRef.current, previousObservedAtMs: previousObservedAtRef.current, currentTimeSeconds: currentTime, currentObservedAtMs: observedAt });
+      const wasSeek = !bufferingRef.current && previousObservedTimeRef.current !== null && previousObservedAtRef.current !== null && detectMaterialPlaybackSeek({ playbackState: playbackStateRef.current, previousTimeSeconds: previousObservedTimeRef.current, previousObservedAtMs: previousObservedAtRef.current, currentTimeSeconds: currentTime, currentObservedAtMs: observedAt });
       if (playbackStateRef.current === "playing" || playbackStateRef.current === "paused") publish(playbackStateRef.current, currentTime, wasSeek ? "seek" : "heartbeat");
       if (wasSeek) reportLifecycle("seek", currentTime);
       previousObservedTimeRef.current = currentTime;
@@ -1265,7 +1293,7 @@ function AdminYouTubePlayer({ entry, sessionId }: { entry: QueueEntry; sessionId
 
   if (!videoId) return <div className="border border-border p-3 text-sm text-muted">No playable YouTube video ID found. Use Open Link.</div>;
   const syncAge = diagnostics ? Math.max(0, Math.round((diagnosticsNow - new Date(diagnostics.updatedAt).getTime()) / 1000)) : null;
-  return <div className="space-y-2">{startNotice && <p role="status" className="border border-accent/40 p-2 text-xs">{startNotice} {startPending && <button type="button" className="underline" onClick={() => coordinatedStartRef.current?.cancel()}>Cancel start</button>}</p>}<div style={{ pointerEvents: startPending ? "none" : undefined }} className="relative h-56 w-full border border-border"><div ref={playerHostRef} className="h-full w-full" data-youtube-host={containerId} /></div><div className="grid gap-1 border border-border/60 bg-surface/80 p-2 text-[10px] uppercase tracking-widest text-muted sm:grid-cols-3"><span>Provider: {diagnostics?.provider ?? "youtube"}</span><span>Video ID: {diagnostics?.videoId ?? videoId}</span><span>Track ID: {diagnostics?.trackId ?? trackId}</span><span>State: {diagnostics?.playbackState ?? "Missing"}</span><span>Host time: {Math.round(diagnostics?.currentTimeSeconds ?? 0)}s</span><span>Sync: {diagnostics?.status ?? "Missing"}{syncAge !== null ? ` · ${syncAge}s` : ""}</span><span>Ready: {diagnostics?.ready ? "yes" : "no"}</span><span>Error: {diagnostics?.errorCode ? `${diagnostics.errorCode} · ${youtubeErrorLabel(diagnostics.errorCode)}` : "—"}</span><span>Publish: {diagnostics?.publishStatus ?? "—"}</span><span>Outbound transit: {outboundTransitDiagnosticMs !== null ? `${outboundTransitDiagnosticMs}ms` : "—"}</span></div></div>;
+  return <div className="space-y-2">{bufferNotice && <p role="status" className="border border-accent/40 p-2 text-xs">{bufferNotice}</p>}{startNotice && <p role="status" className="border border-accent/40 p-2 text-xs">{startNotice} {startPending && <button type="button" className="underline" onClick={() => coordinatedStartRef.current?.cancel()}>Cancel start</button>}</p>}<div style={{ pointerEvents: startPending ? "none" : undefined }} className="relative h-56 w-full border border-border"><div ref={playerHostRef} className="h-full w-full" data-youtube-host={containerId} /></div><div className="grid gap-1 border border-border/60 bg-surface/80 p-2 text-[10px] uppercase tracking-widest text-muted sm:grid-cols-3"><span>Provider: {diagnostics?.provider ?? "youtube"}</span><span>Video ID: {diagnostics?.videoId ?? videoId}</span><span>Track ID: {diagnostics?.trackId ?? trackId}</span><span>State: {diagnostics?.playbackState ?? "Missing"}</span><span>Host time: {Math.round(diagnostics?.currentTimeSeconds ?? 0)}s</span><span>Sync: {diagnostics?.status ?? "Missing"}{syncAge !== null ? ` · ${syncAge}s` : ""}</span><span>Ready: {diagnostics?.ready ? "yes" : "no"}</span><span>Error: {diagnostics?.errorCode ? `${diagnostics.errorCode} · ${youtubeErrorLabel(diagnostics.errorCode)}` : "—"}</span><span>Publish: {diagnostics?.publishStatus ?? "—"}</span><span>Outbound transit: {outboundTransitDiagnosticMs !== null ? `${outboundTransitDiagnosticMs}ms` : "—"}</span></div></div>;
 }
 
 
@@ -1301,6 +1329,11 @@ function AdminTikTokPlayer({ entry, sessionId }: { entry: QueueEntry; sessionId:
   const pendingPlaybackStateRef = useRef<LiveOverlayPlaybackState | null>(null);
   const pendingCorrectionReasonRef = useRef<LiveOverlaySyncCorrectionReason>("state_change");
   const latestTimeObservedAtRef = useRef<number | null>(null);
+  const bufferingRef = useRef(false);
+  const bufferedTimeRef = useRef(0);
+  const awaitingBufferRecoveryRef = useRef(false);
+  const heldSeekTargetRef = useRef<number | null>(null);
+  const [bufferNotice, setBufferNotice] = useState("");
   const publishInFlightRef = useRef(false);
   const publishTaskRef = useRef<Promise<unknown>>(Promise.resolve());
   const coordinatedStartRef = useRef<CoordinatedVideoStart | null>(null);
@@ -1384,6 +1417,10 @@ function AdminTikTokPlayer({ entry, sessionId }: { entry: QueueEntry; sessionId:
     pendingPlaybackStateRef.current = null;
     pendingCorrectionReasonRef.current = "state_change";
     latestTimeObservedAtRef.current = null;
+    bufferingRef.current = false;
+    awaitingBufferRecoveryRef.current = false;
+    heldSeekTargetRef.current = null;
+    setBufferNotice("");
     queuedPublishRef.current = null;
     publishInFlightRef.current = false;
     tiktokGenerationActiveRef.current = true;
@@ -1397,12 +1434,23 @@ function AdminTikTokPlayer({ entry, sessionId }: { entry: QueueEntry; sessionId:
     const generation = generationRef.current;
     const command = (type: string, value?: number) => iframeRef.current?.contentWindow?.postMessage({ type, ...(value === undefined ? {} : { value }), "x-tiktok-player": true }, "https://www.tiktok.com");
     coordinatedStartRef.current = new CoordinatedVideoStart({
-      hold: (seconds) => { command("mute"); command("pause"); command("seekTo", seconds); },
+      hold: (seconds) => {
+        command("mute");
+        command("pause");
+        if ((!hasObservedCurrentTimeRef.current || Math.abs(latestTimeRef.current - seconds) > 0.25) && heldSeekTargetRef.current !== seconds) {
+          heldSeekTargetRef.current = seconds;
+          command("seekTo", seconds);
+        }
+      },
       play: () => { command("unMute"); command("play"); },
       drain: () => publishTaskRef.current,
       write: (state, seconds, token, delay) => writeCoordinatedVideoSync(buildOverlayTikTokSync(trackSyncInput, state, seconds, durationRef.current, "state_change")!, state, seconds, token, delay),
       ready: videoPreparationReady,
-      changed: (phase, message) => { setStartNotice(message); setStartPending(phase === "preparing" || phase === "scheduled" || phase === "released"); },
+      changed: (phase, message) => {
+        if (phase === "preparing" || phase === "released" || phase === "idle") heldSeekTargetRef.current = null;
+        setStartNotice(message);
+        setStartPending(phase === "preparing" || phase === "scheduled" || phase === "released");
+      },
     });
     let readyTimer: number | null = window.setTimeout(() => {
       if (readyTimer === null || generationRef.current !== generation) return;
@@ -1440,6 +1488,9 @@ function AdminTikTokPlayer({ entry, sessionId }: { entry: QueueEntry; sessionId:
         reportLifecycle("ready");
         return;
       }
+      // A failed iframe can still send delayed time/state messages. Only a new
+      // ready event may reopen publication after a fatal provider error.
+      if (statusRef.current === "error" && type !== "onPlayerError") return;
       if (type === "onCurrentTime") {
         const value = payload.value;
         if (!isPlainTikTokObject(value)) return;
@@ -1455,11 +1506,24 @@ function AdminTikTokPlayer({ entry, sessionId }: { entry: QueueEntry; sessionId:
         if (Number.isFinite(duration) && duration > 0) durationRef.current = duration;
         hasObservedCurrentTimeRef.current = true;
         if (coordinatedStartRef.current?.blocksPublish) { lastTimeEventAtRef.current = nowMs; return; }
+        if (awaitingBufferRecoveryRef.current) {
+          awaitingBufferRecoveryRef.current = false;
+          bufferingRef.current = false;
+          setBufferNotice("");
+          pendingPlaybackStateRef.current = null;
+          lastStablePlaybackStateRef.current = "playing";
+          lastTimeEventAtRef.current = nowMs;
+          publish("playing", currentTime, "state_change", nowMs);
+          reportLifecycle("resume");
+          return;
+        }
+        if (bufferingRef.current) { lastTimeEventAtRef.current = null; return; }
         const pendingState = pendingPlaybackStateRef.current;
         if (pendingState) {
           const pendingReason = pendingCorrectionReasonRef.current;
           pendingPlaybackStateRef.current = null;
           pendingCorrectionReasonRef.current = "state_change";
+          lastTimeEventAtRef.current = nowMs;
           publish(pendingState, currentTime, pendingReason, nowMs);
           reportLifecycle(pendingState === "playing" ? "play" : pendingState === "paused" ? "pause" : "ready");
           return;
@@ -1480,19 +1544,57 @@ function AdminTikTokPlayer({ entry, sessionId }: { entry: QueueEntry; sessionId:
         if (stateValue === 0) coordinatedStartRef.current?.cancel();
         if (coordinatedStartRef.current?.blocksPublish) return;
         const previousState = lastStablePlaybackStateRef.current;
+        if (stateValue === 3) {
+          awaitingBufferRecoveryRef.current = false;
+          if (!bufferingRef.current && previousState === "playing") {
+            bufferingRef.current = true;
+            bufferedTimeRef.current = latestTimeRef.current;
+            lastStablePlaybackStateRef.current = "paused";
+            lastTimeEventAtRef.current = null;
+            pendingPlaybackStateRef.current = null;
+            publish("paused", bufferedTimeRef.current, "state_change", Date.now());
+            reportLifecycle("stall");
+          }
+          setBufferNotice(bufferingRef.current ? "Video buffering — overlay time is held until playback resumes." : "Loading video…");
+          return;
+        }
         if (stateValue === 1) {
+          if (bufferingRef.current) {
+            awaitingBufferRecoveryRef.current = true;
+            setBufferNotice("Playback resumed — waiting for the video’s current position.");
+            return;
+          }
+          lastTimeEventAtRef.current = null;
+          setBufferNotice("");
           publishObservedState("playing", "state_change");
           reportLifecycle(previousState === "paused" ? "resume" : "play");
         }
         else if (stateValue === 2) {
+          bufferingRef.current = false;
+          awaitingBufferRecoveryRef.current = false;
+          lastTimeEventAtRef.current = null;
+          setBufferNotice("");
           publishObservedState("paused", "state_change");
           reportLifecycle("pause");
         }
         else if (stateValue === 0) {
+          bufferingRef.current = false;
+          awaitingBufferRecoveryRef.current = false;
+          lastTimeEventAtRef.current = null;
+          setBufferNotice("");
           publishObservedState("stopped", "state_change");
           reportLifecycle("ended");
         }
-        else if (stateValue === -1) lastStablePlaybackStateRef.current = "stopped";
+        else if (stateValue === -1) {
+          bufferingRef.current = false;
+          awaitingBufferRecoveryRef.current = false;
+          pendingPlaybackStateRef.current = null;
+          lastTimeEventAtRef.current = null;
+          hasObservedCurrentTimeRef.current = false;
+          latestTimeObservedAtRef.current = null;
+          lastStablePlaybackStateRef.current = "stopped";
+          setBufferNotice("");
+        }
         return;
       }
       if (type === "onPlayerError") {
@@ -1501,7 +1603,14 @@ function AdminTikTokPlayer({ entry, sessionId }: { entry: QueueEntry; sessionId:
         const code = typeof value.errorCode === "number" ? value.errorCode : Number(value.errorCode);
         const errorType = typeof value.errorType === "string" ? value.errorType : null;
         const safeCode = Number.isFinite(code) ? code : null;
+        bufferingRef.current = false;
+        awaitingBufferRecoveryRef.current = false;
+        pendingPlaybackStateRef.current = null;
+        queuedPublishRef.current = null;
+        lastTimeEventAtRef.current = null;
+        setBufferNotice("");
         if (safeCode === 3002 || errorType === "AUTOPLAY_ERROR") {
+          lastStablePlaybackStateRef.current = "paused";
           coordinatedStartRef.current?.cancel();
           setNotice("Automatic playback was blocked. Use the player’s Play control.");
           setErrorLabel(null);
@@ -1509,18 +1618,31 @@ function AdminTikTokPlayer({ entry, sessionId }: { entry: QueueEntry; sessionId:
         }
         coordinatedStartRef.current?.cancel();
         clearReadyTimer();
+        readyRef.current = false;
+        hasObservedCurrentTimeRef.current = false;
+        latestTimeObservedAtRef.current = null;
+        lastStablePlaybackStateRef.current = "stopped";
         statusRef.current = "error";
         setNotice(null);
         setStatus("error");
         setDiagnostics({ provider: "tiktok", postId: parsedPostId, trackId: entry.id, ready: readyRef.current, playbackState: lastStablePlaybackStateRef.current, currentTimeSeconds: latestTimeRef.current, durationSeconds: durationRef.current, updatedAt: lastPublishedAtRef.current, syncAgeSeconds: null, status: "Error", publishStatus: "failed" });
         setErrorLabel(tiktokErrorLabel(safeCode, errorType));
         reportLifecycle("error", "provider_error");
-        if (safeCode === 1001 || safeCode === 2001 || safeCode === 3001 || errorType === "INVALID_VIDEO" || errorType === "SERVER_ERROR" || errorType === "PLAYBACK_ERROR") void clearOverlayPlayerSync();
+        if (safeCode === 1001 || safeCode === 2001 || safeCode === 3001 || errorType === "INVALID_VIDEO" || errorType === "SERVER_ERROR" || errorType === "PLAYBACK_ERROR") {
+          // Do not let an already running heartbeat recreate sync after clear.
+          void publishTaskRef.current.catch(() => undefined).then(() => {
+            if (tiktokGenerationActiveRef.current && generationRef.current === generation && statusRef.current === "error") return clearOverlayPlayerSync();
+          });
+        }
       }
     }
     window.addEventListener("message", onMessage);
     const heartbeat = window.setInterval(() => {
       if (coordinatedStartRef.current?.blocksPublish) return;
+      if (bufferingRef.current) {
+        if (readyRef.current && hasObservedCurrentTimeRef.current) publish("paused", bufferedTimeRef.current, "heartbeat", Date.now());
+        return;
+      }
       if (readyRef.current && hasObservedCurrentTimeRef.current && (lastStablePlaybackStateRef.current === "playing" || lastStablePlaybackStateRef.current === "paused")) publish(lastStablePlaybackStateRef.current, latestTimeRef.current, "heartbeat", latestTimeObservedAtRef.current ?? undefined);
     }, TIKTOK_SYNC_HEARTBEAT_MS);
     return () => { coordinatedStartRef.current?.cancel(true); clearReadyTimer(); window.removeEventListener("message", onMessage); tiktokGenerationActiveRef.current = false; queuedPublishRef.current = null; window.clearInterval(heartbeat); };
@@ -1528,7 +1650,7 @@ function AdminTikTokPlayer({ entry, sessionId }: { entry: QueueEntry; sessionId:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [parsedPostId, parsedPlayerUrl, hasParsedTikTokUrl, entry.link]);
   if (!src) return <div className="border border-border p-3 text-sm text-muted">No valid TikTok video ID found. Use Open Link.</div>;
-  return <div className="space-y-2">{startNotice && <p role="status" className="border border-accent/40 p-2 text-xs">{startNotice} {startPending && <button type="button" className="underline" onClick={() => coordinatedStartRef.current?.cancel()}>Cancel start</button>}</p>}<div style={{ pointerEvents: startPending ? "none" : undefined }} className="mx-auto max-h-[62vh] min-h-[360px] w-full max-w-[420px] overflow-hidden border border-border bg-black"><iframe ref={iframeRef} title={`TikTok player for ${submittedArtist(entry)} — ${submittedTitle(entry)}`} src={src} className="h-[62vh] min-h-[360px] max-h-[620px] w-full" allow="fullscreen; autoplay; encrypted-media; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" /></div>{status === "loading" && <p className="text-xs text-muted">Loading TikTok player… Open Link and Copy Link remain available.</p>}{status === "ready" && <p className="text-xs text-muted">TikTok player ready. Use the native controls.</p>}{notice && <p className="border border-accent/40 bg-accent/10 p-2 text-xs text-accent">{notice}</p>}{status === "error" && <p className="border border-danger/40 bg-danger/10 p-2 text-xs text-danger">{errorLabel ?? "TikTok player unavailable."} Use Open Link or Copy Link.</p>}<div className="grid gap-1 border border-border/60 bg-surface/80 p-2 text-[10px] uppercase tracking-widest text-muted sm:grid-cols-3"><span>Provider: {diagnostics?.provider ?? "tiktok"}</span><span>Post ID: {diagnostics?.postId ?? parsedPostId ?? "—"}</span><span>Track ID: {diagnostics?.trackId ?? entry.id}</span><span>Ready: {diagnostics?.ready ? "yes" : "no"}</span><span>State: {diagnostics?.playbackState ?? "Missing"}</span><span>Host time: {Math.round(diagnostics?.currentTimeSeconds ?? 0)}s</span><span>Duration: {diagnostics?.durationSeconds ? `${Math.round(diagnostics.durationSeconds)}s` : "—"}</span><span>Sync: {diagnostics?.status ?? "Missing"}{diagnostics?.syncAgeSeconds !== null && diagnostics?.syncAgeSeconds !== undefined ? ` · ${diagnostics.syncAgeSeconds}s` : ""}</span><span>Publish: {diagnostics?.publishStatus ?? "—"}</span><span>Outbound transit: {outboundTransitDiagnosticMs !== null ? `${outboundTransitDiagnosticMs}ms` : "—"}</span></div></div>;
+  return <div className="space-y-2">{bufferNotice && <p role="status" className="border border-accent/40 p-2 text-xs">{bufferNotice}</p>}{startNotice && <p role="status" className="border border-accent/40 p-2 text-xs">{startNotice} {startPending && <button type="button" className="underline" onClick={() => coordinatedStartRef.current?.cancel()}>Cancel start</button>}</p>}<div style={{ pointerEvents: startPending ? "none" : undefined }} className="mx-auto max-h-[62vh] min-h-[360px] w-full max-w-[420px] overflow-hidden border border-border bg-black"><iframe ref={iframeRef} title={`TikTok player for ${submittedArtist(entry)} — ${submittedTitle(entry)}`} src={src} className="h-[62vh] min-h-[360px] max-h-[620px] w-full" allow="fullscreen; autoplay; encrypted-media; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" /></div>{status === "loading" && <p className="text-xs text-muted">Loading TikTok player… Open Link and Copy Link remain available.</p>}{status === "ready" && <p className="text-xs text-muted">TikTok player ready. Use the native controls.</p>}{notice && <p className="border border-accent/40 bg-accent/10 p-2 text-xs text-accent">{notice}</p>}{status === "error" && <p className="border border-danger/40 bg-danger/10 p-2 text-xs text-danger">{errorLabel ?? "TikTok player unavailable."} Use Open Link or Copy Link.</p>}<div className="grid gap-1 border border-border/60 bg-surface/80 p-2 text-[10px] uppercase tracking-widest text-muted sm:grid-cols-3"><span>Provider: {diagnostics?.provider ?? "tiktok"}</span><span>Post ID: {diagnostics?.postId ?? parsedPostId ?? "—"}</span><span>Track ID: {diagnostics?.trackId ?? entry.id}</span><span>Ready: {diagnostics?.ready ? "yes" : "no"}</span><span>State: {diagnostics?.playbackState ?? "Missing"}</span><span>Host time: {Math.round(diagnostics?.currentTimeSeconds ?? 0)}s</span><span>Duration: {diagnostics?.durationSeconds ? `${Math.round(diagnostics.durationSeconds)}s` : "—"}</span><span>Sync: {diagnostics?.status ?? "Missing"}{diagnostics?.syncAgeSeconds !== null && diagnostics?.syncAgeSeconds !== undefined ? ` · ${diagnostics.syncAgeSeconds}s` : ""}</span><span>Publish: {diagnostics?.publishStatus ?? "—"}</span><span>Outbound transit: {outboundTransitDiagnosticMs !== null ? `${outboundTransitDiagnosticMs}ms` : "—"}</span></div></div>;
 }
 
 function AdminAudioPlayer({ entry, sessionId }: { entry: QueueEntry; sessionId: string | null }) {

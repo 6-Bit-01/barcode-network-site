@@ -31,6 +31,7 @@ test("YouTube host publishes the observed position once the coordinated start ha
   const calls = [];
   const globals = {
     generationRef: ref(1), generation: 1, cancelled: false, playbackStateRef: ref("stopped"), bufferingRef: ref(false),
+    bufferedTimeRef: ref(0), previousObservedTimeRef: ref(null), previousObservedAtRef: ref(null), setBufferNotice: noop,
     playerRef: ref({ getCurrentTime: () => 28, mute: noop, pauseVideo: () => calls.push(["pause"]) }),
     publish: (...args) => calls.push(["publish", ...args]), reportLifecycle: (...args) => calls.push(["lifecycle", ...args]),
     setDiagnostics: noop, coordinatedStartRef: ref({ onPlaying: () => false, onPaused: () => false }),
@@ -66,6 +67,7 @@ function youtubeHarness() {
     generationRef: ref(0), latestSyncRef: ref(sync), clockAnchorRef: ref(null),
     loadedVideoRef: ref(null), lastAppliedPlaybackStateRef: ref(null), lastCorrectionAtRef: ref(null),
     correctionCountRef: ref(0), lastCorrectionReasonRef: ref(null), playerRef: ref(null), readyTimerRef: ref(null),
+    providerBufferingRef: ref(false), lastSeekPacketRef: ref(null), lastHeldTargetRef: ref(null), preparationSeekTargetRef: ref(null),
     setSyncDiagnostic: noop, setPlayerError: (next) => { error = typeof next === "function" ? next(error) : next; },
     clearImperativeHost: () => calls.push(["clear"]),
     document: { createElement: () => ({ isConnected: true }) },
@@ -164,7 +166,8 @@ test("actual YouTube receiver warms once, confirms pause, and holds a prepared s
   assert.equal(h.calls.filter(([type]) => type === "load").length, 1);
   assert.equal(acknowledgements.length, 0);
   h.options.events.onStateChange({ data: 1 });
-  assert.equal(h.calls.at(-2)[0], "pause");
+  assert.equal(h.calls.at(-1)[0], "pause");
+  assert.equal(h.calls.some(([type]) => type === "seek"), false, "already aligned preparation only needs to pause");
   h.options.events.onStateChange({ data: 2 }); await Promise.resolve();
   assert.deepEqual(acknowledgements, [token]);
   h.globals.applyYouTubeSync(prepared);
@@ -204,9 +207,10 @@ function tiktokHarness(overrides = {}) {
   const globals = {
     ...resolver, Date, Number, performance: { now: () => 0 },
     window: { setTimeout: (fn) => { timers.set(++timer, fn); return timer; }, clearTimeout: (id) => timers.delete(id) },
-    readyRef: ref(true), destroyedRef: ref(false), failedPostRef: ref(null), iframeRef: ref({ contentWindow: frame }),
+    readyRef: ref(true), destroyedRef: ref(false), failedPostRef: ref(null), iframeRef: ref({ contentWindow: frame }), awaitingRecoveryTimeRef: ref(false),
     generationRef: ref(1), generation: 1, latestSyncRef: ref(sync), clockAnchorRef: ref(null),
     localTimeRef: ref(12), lastAppliedPlaybackStateRef: ref(null), lastCorrectionAtRef: ref(null), correctionCountRef: ref(0), lastCorrectionReasonRef: ref(null),
+    providerBufferingRef: ref(false), lastSeekPacketRef: ref(null), lastHeldTargetRef: ref(null), preparationSeekTargetRef: ref(null),
     applySyncRef: ref(null), preparationRef: ref(new VideoReceiverPreparation()), startDeadlineRef: ref(null),
     acknowledgePreparedVideo: async (id) => { calls.push(["ack", id]); return true; },
     sendTikTokVoidCommand: (type) => calls.push([type]), sendTikTokSeekCommand: (value) => calls.push(["seek", value]),
@@ -306,6 +310,9 @@ test("TikTok autoplay rejection releases the host controls before offering Play 
   const globals = {
     iframeRef: ref({ contentWindow: frame }), isPlainTikTokObject: (value) => !!value && typeof value === "object",
     coordinatedStartRef: ref({ cancel: () => calls.push("cancel") }),
+    statusRef: ref("ready"), bufferingRef: ref(false), awaitingBufferRecoveryRef: ref(false),
+    pendingPlaybackStateRef: ref(null), queuedPublishRef: ref(null), lastTimeEventAtRef: ref(null),
+    lastStablePlaybackStateRef: ref("playing"), setBufferNotice: noop,
     setNotice: () => calls.push("notice"), setErrorLabel: noop,
   };
   const event = evaluate(find(root, (n) => ts.isFunctionDeclaration(n) && n.name?.text === "onMessage"), globals);

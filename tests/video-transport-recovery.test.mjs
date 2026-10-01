@@ -67,7 +67,7 @@ function youtubeHarness() {
     generationRef: ref(0), latestSyncRef: ref(sync), clockAnchorRef: ref(null),
     loadedVideoRef: ref(null), lastAppliedPlaybackStateRef: ref(null), lastCorrectionAtRef: ref(null),
     correctionCountRef: ref(0), lastCorrectionReasonRef: ref(null), playerRef: ref(null), readyTimerRef: ref(null),
-    providerBufferingRef: ref(false), lastSeekPacketRef: ref(null), lastHeldTargetRef: ref(null), preparationSeekTargetRef: ref(null),
+    providerBufferingRef: ref(false), lastSeekPacketRef: ref(null), lastHeldTargetRef: ref(null), preparationSeekTargetRef: ref(null), seekSettlementRef: ref({ pending: null, leadSeconds: 0, misses: 0, limited: false, lastSeekAtMs: null }),
     setSyncDiagnostic: noop, setPlayerError: (next) => { error = typeof next === "function" ? next(error) : next; },
     clearImperativeHost: () => calls.push(["clear"]),
     document: { createElement: () => ({ isConnected: true }) },
@@ -75,7 +75,7 @@ function youtubeHarness() {
     PLAYER_CORRECTION_COOLDOWN_MS: 1500, YOUTUBE_BEHIND_THRESHOLD_SECONDS: 0.2, YOUTUBE_AHEAD_THRESHOLD_SECONDS: 0.7,
     YOUTUBE_PAUSED_DRIFT_THRESHOLD_SECONDS: 0.25, YOUTUBE_MAX_CATCH_UP_SECONDS: 0.2,
   };
-  for (const name of ["overlayServerNow", "serverRelativeAgeFromAnchor", "expectedYouTubeTime", "roundedFiniteSeconds", "driftDirectionFromRoundedDrift"])
+  for (const name of ["observeReceiverSeekSettlement", "overlayServerNow", "serverRelativeAgeFromAnchor", "expectedYouTubeTime", "roundedFiniteSeconds", "driftDirectionFromRoundedDrift"])
     globals[name] = evaluate(component(receiver, name), globals);
   const root = component(receiver, "YouTubeOverlayPlayer");
   for (const name of ["clearReadyTimer", "markPlayerUnavailable", "applyYouTubeSync"])
@@ -210,7 +210,7 @@ function tiktokHarness(overrides = {}) {
     readyRef: ref(true), destroyedRef: ref(false), failedPostRef: ref(null), iframeRef: ref({ contentWindow: frame }), awaitingRecoveryTimeRef: ref(false),
     generationRef: ref(1), generation: 1, latestSyncRef: ref(sync), clockAnchorRef: ref(null),
     localTimeRef: ref(12), lastAppliedPlaybackStateRef: ref(null), lastCorrectionAtRef: ref(null), correctionCountRef: ref(0), lastCorrectionReasonRef: ref(null),
-    providerBufferingRef: ref(false), lastSeekPacketRef: ref(null), lastHeldTargetRef: ref(null), preparationSeekTargetRef: ref(null),
+    providerBufferingRef: ref(false), lastSeekPacketRef: ref(null), lastHeldTargetRef: ref(null), preparationSeekTargetRef: ref(null), seekSettlementRef: ref({ pending: null, leadSeconds: 0, misses: 0, limited: false, lastSeekAtMs: null }),
     applySyncRef: ref(null), preparationRef: ref(new VideoReceiverPreparation()), startDeadlineRef: ref(null),
     acknowledgePreparedVideo: async (id) => { calls.push(["ack", id]); return true; },
     sendTikTokVoidCommand: (type) => calls.push([type]), sendTikTokSeekCommand: (value) => calls.push(["seek", value]),
@@ -220,7 +220,7 @@ function tiktokHarness(overrides = {}) {
     ...overrides,
   };
   globals.startDeadlineRef.current = new VideoStartDeadline({ schedule: globals.window.setTimeout, clear: globals.window.clearTimeout });
-  for (const name of ["overlayServerNow", "serverRelativeAgeFromAnchor", "expectedTikTokTime", "roundedFiniteSeconds", "driftDirectionFromRoundedDrift"]) globals[name] = evaluate(component(receiver, name), globals);
+  for (const name of ["observeReceiverSeekSettlement", "overlayServerNow", "serverRelativeAgeFromAnchor", "expectedTikTokTime", "roundedFiniteSeconds", "driftDirectionFromRoundedDrift"]) globals[name] = evaluate(component(receiver, name), globals);
   globals.applyTikTokSync = evaluate(variable(root, "applyTikTokSync").initializer.arguments[0], globals);
   globals.applySyncRef.current = globals.applyTikTokSync;
   const onMessage = evaluate(find(root, (n) => ts.isFunctionDeclaration(n) && n.name?.text === "onMessage"), globals);

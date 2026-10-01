@@ -3,7 +3,10 @@ import { randomUUID } from "crypto";
 import type { BNLJournalEntry } from "@/lib/bnl-journal-contract";
 import type { JournalArchiveFilter } from "@/lib/bnl-journal-navigation";
 
-export type PublicBNLJournalEntry = BNLJournalEntry & { publishedAt: string };
+export type PublicBNLJournalEntry = BNLJournalEntry & {
+  publishedAt: string;
+  correctedAt?: string;
+};
 export type JournalEntryControl = {
   entryId: string;
   publicVisible: boolean;
@@ -29,7 +32,7 @@ export type JournalWriteResult =
       idempotent: boolean;
       entry: Pick<
         PublicBNLJournalEntry,
-        "entryId" | "revision" | "contentHash" | "publishedAt"
+        "entryId" | "revision" | "contentHash" | "publishedAt" | "correctedAt"
       >;
     }
   | { ok: false; conflict: true }
@@ -88,6 +91,7 @@ local revision = tonumber(ARGV[2])
 local contentHash = ARGV[3]
 local recordJson = ARGV[4]
 local score = tonumber(ARGV[5])
+local incoming = cjson.decode(recordJson)
 local controlsRaw = redis.call("GET", controlsKey)
 local controls = controlsRaw and cjson.decode(controlsRaw) or {}
 local control = controls[entryId]
@@ -108,6 +112,13 @@ local existingJson = redis.call("GET", recordKey)
 if existingJson then
   local existing = cjson.decode(existingJson)
   if existing.contentHash ~= contentHash then
+    return cjson.encode({ status = "conflict" })
+  end
+  if incoming.correction and (
+    incoming.authoredAt ~= existing.authoredAt
+    or incoming.sourceWindowStart ~= existing.sourceWindowStart
+    or incoming.sourceWindowEnd ~= existing.sourceWindowEnd
+    or incoming.entryKind ~= existing.entryKind) then
     return cjson.encode({ status = "conflict" })
   end
   local latestJson = redis.call("GET", latestKey)
@@ -152,6 +163,24 @@ if existingJson then
   repairKindIndexes(repairedLatestEntry)
   return cjson.encode({ status = "idempotent", publishedAt = existing.publishedAt })
 end
+-- Corrections append an immutable revision and compare against the exact
+-- current predecessor inside the same publication transaction.
+if incoming.correction then
+  local predecessorJson = redis.call("GET", latestKey)
+  if not predecessorJson then return cjson.encode({ status = "conflict" }) end
+  local predecessor = cjson.decode(predecessorJson)
+  local correction = incoming.correction
+  if predecessor.revision ~= correction.previousRevision
+    or predecessor.contentHash ~= correction.previousContentHash
+    or revision ~= predecessor.revision + 1
+    or incoming.sourceWindowStart ~= predecessor.sourceWindowStart
+    or incoming.sourceWindowEnd ~= predecessor.sourceWindowEnd
+    or (incoming.entryKind or "manual") ~= (predecessor.entryKind or "manual")
+    or incoming.publishedAt ~= predecessor.publishedAt
+    or incoming._score ~= predecessor._score then
+    return cjson.encode({ status = "conflict" })
+  end
+end
 redis.call("SET", recordKey, recordJson, "NX")
 local storedJson = redis.call("GET", recordKey)
 if storedJson ~= recordJson then
@@ -194,6 +223,7 @@ function normalize(
   entry: BNLJournalEntry,
   publishedAt: string,
   score?: number,
+  correctedAt?: string,
 ): PublicBNLJournalEntry & { _score?: number } {
   return {
     entryId: entry.entryId,
@@ -206,6 +236,14 @@ function normalize(
     sourceWindowStart: entry.sourceWindowStart,
     sourceWindowEnd: entry.sourceWindowEnd,
     contentHash: entry.contentHash,
+    ...(entry.correction === undefined ? {} : {
+      correction: {
+        previousRevision: entry.correction.previousRevision,
+        previousContentHash: entry.correction.previousContentHash,
+        note: entry.correction.note,
+      },
+      ...(correctedAt === undefined ? {} : { correctedAt }),
+    }),
     publishedAt,
     ...(score === undefined ? {} : { _score: score }),
   };
@@ -213,9 +251,7 @@ function normalize(
 function publicEntry(
   entry: PublicBNLJournalEntry & { _score?: number },
 ): PublicBNLJournalEntry {
-  const { _score, ...rest } = entry;
-  void _score;
-  return rest;
+  return normalize(entry, entry.publishedAt, undefined, entry.correctedAt);
 }
 function samePublic(a: PublicBNLJournalEntry, b: PublicBNLJournalEntry) {
   return JSON.stringify(a) === JSON.stringify(b);
@@ -253,9 +289,23 @@ export async function publishBNLJournalEntry(
 ): Promise<JournalWriteResult> {
   if (!redis?.eval) return { ok: false, unavailable: true };
   try {
-    const publishedAt = new Date().toISOString();
-    const score = scoreOf(publishedAt, entry.revision);
-    const stored = normalize(entry, publishedAt, score);
+    const receivedAt = new Date().toISOString();
+    let publishedAt = receivedAt;
+    let score = scoreOf(publishedAt, entry.revision);
+    if (entry.correction) {
+      const previous = await redis.get<PublicBNLJournalEntry & { _score: number }>(
+        journalEntryKey(entry.entryId, entry.correction.previousRevision),
+      );
+      if (!previous || previous.contentHash !== entry.correction.previousContentHash)
+        return { ok: false, conflict: true };
+      if (!Number.isFinite(previous._score) || !Number.isFinite(Date.parse(previous.publishedAt)))
+        return { ok: false, unavailable: true };
+      publishedAt = previous.publishedAt;
+      score = previous._score;
+    }
+    // Serialize with JavaScript's full number precision; Lua verifies these
+    // server-derived fields against the current predecessor atomically.
+    const stored = normalize(entry, publishedAt, score, entry.correction ? receivedAt : undefined);
     const result = parseAtomicResult(
       await redis.eval(
         PUBLISH_SCRIPT,
@@ -288,6 +338,7 @@ export async function publishBNLJournalEntry(
       entry,
       result.publishedAt ?? confirmed.publishedAt,
       confirmed._score,
+      confirmed.correctedAt,
     );
     if (
       confirmed.contentHash !== entry.contentHash ||
@@ -313,6 +364,7 @@ export async function publishBNLJournalEntry(
         revision: confirmed.revision,
         contentHash: confirmed.contentHash,
         publishedAt: confirmed.publishedAt,
+        ...(confirmed.correctedAt ? { correctedAt: confirmed.correctedAt } : {}),
       },
     };
   } catch {

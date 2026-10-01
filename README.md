@@ -20,6 +20,23 @@ Production: <https://www.barcode-network.com>
 | Internal dossier workflow | Admin dossier routes and `dossier-workflow*` modules |
 | Public dossier rendering | Static entries adapted through `dossier-page-view-model.ts` into `DossierPageView.tsx` |
 
+Published Journal corrections use the existing authenticated Journal publication
+endpoint and immutable revision records. A correction keeps the same `entryId`,
+entry kind and source window, increments the revision by one, and supplies
+`correction: { previousRevision, previousContentHash, note }`. The public note is
+bounded to 600 characters and cannot contain links, pings or source identifiers.
+Its content hash includes the correction object: SHA-256 of
+`title|excerpt|canonicalJSON(sections)|canonicalJSON(correction)`, using sorted
+keys and compact UTF-8 JSON. Ordinary publication hashes remain unchanged.
+The store atomically verifies the current predecessor, preserves its original
+publication date and exact archive position, and assigns `correctedAt` itself.
+Client-supplied publication/correction dates are rejected. The public article
+shows the correction note, date and original coverage; earlier revisions remain
+stored, and stale or conflicting corrections cannot overwrite them. Visibility
+and memory eligibility remain independent entry-level controls. This supports
+owner-reviewed corrections from the bot; it does not automatically rewrite
+history or add an admin content editor.
+
 The native queue exists and is tested, but native presentation remains quarantined unless `BARCODE_QUEUE_PRODUCTION_ENABLED` is exactly `true`. Until the owner approves the native cutover, operational Radio submission links and copy continue to point to Auxchord. When enabled, the server-side capability moves the Radio page, Footer, Terminal, and BNL public source context to the native `/queue` route; historical Auxchord records remain intact. Each session then has one plain BNL queue-access choice: no access, private read-only access, or public read-only access. Private access uses the existing BNL service credential and is restricted to owner/admin test operators; regular members are not BNL testers. Public access is available only to live broadcasts and may support public BNL output. Both readable modes use the same sanitized operational queue contract, exclude payment and sensitive fields, and never grant BNL mutation or playback authority. The only durable-memory exception is the separate versioned `sections.artistMemory` catalog described below; no other queue section gains memory, dossier, Source File, relationship, or canon authority. Legacy stored publication values are normalized into those three meanings and are not separate admin options.
 
 That capability also seals direct native entry points: while disabled, anonymous queue pages return to Radio, legacy `/obs` is unavailable, and queue read/write, upload-token, Priority checkout-initiation, and Signal Hold checkout-initiation APIs fail closed. Admin access and a signed capability for the exact current rehearsal remain available; Stripe webhook reconciliation remains active so rollback cannot strand an already-started payment.

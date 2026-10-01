@@ -2,6 +2,11 @@ import { createHash, timingSafeEqual } from "crypto";
 
 export type BNLJournalSection = { heading: string; body: string };
 export type BNLJournalEntryKind = "daily" | "weekly" | "manual";
+export type BNLJournalCorrection = {
+  previousRevision: number;
+  previousContentHash: string;
+  note: string;
+};
 export type BNLJournalEntry = {
   entryId: string;
   revision: number;
@@ -13,6 +18,7 @@ export type BNLJournalEntry = {
   sourceWindowStart: string;
   sourceWindowEnd: string;
   contentHash: string;
+  correction?: BNLJournalCorrection;
 };
 export type BNLJournalEnvelope = {
   contractVersion: 1;
@@ -59,11 +65,11 @@ export function canonicalJSON(value: unknown): string {
   return JSON.stringify(value);
 }
 export function computeBNLJournalContentHash(
-  entry: Pick<BNLJournalEntry, "title" | "excerpt" | "sections">,
+  entry: Pick<BNLJournalEntry, "title" | "excerpt" | "sections" | "correction">,
 ) {
   return createHash("sha256")
     .update(
-      `${entry.title}|${entry.excerpt}|${canonicalJSON(entry.sections)}`,
+      `${entry.title}|${entry.excerpt}|${canonicalJSON(entry.sections)}${entry.correction === undefined ? "" : `|${canonicalJSON(entry.correction)}`}`,
       "utf8",
     )
     .digest("hex");
@@ -102,6 +108,8 @@ export function validateBNLJournalPayload(
     "sourceWindowEnd",
     "contentHash",
   ];
+  if (Object.prototype.hasOwnProperty.call(entry, "correction"))
+    entryKeys.push("correction");
   if (
     !exactKeys(
       entry,
@@ -118,6 +126,22 @@ export function validateBNLJournalPayload(
     return { ok: false, reason: "invalid_entry" };
   if (!Number.isInteger(entry.revision) || Number(entry.revision) <= 0)
     return { ok: false, reason: "invalid_revision" };
+  if (entry.correction !== undefined) {
+    const correction = entry.correction;
+    if (
+      !isRecord(correction) ||
+      !exactKeys(correction, ["previousRevision", "previousContentHash", "note"]) ||
+      !Number.isSafeInteger(entry.revision) ||
+      !Number.isSafeInteger(correction.previousRevision) ||
+      Number(correction.previousRevision) < 1 ||
+      entry.revision !== Number(correction.previousRevision) + 1 ||
+      typeof correction.previousContentHash !== "string" ||
+      !HASH.test(correction.previousContentHash) ||
+      !boundedString(correction.note, 600) ||
+      /https?:\/\/|<@!?\d+>|@\w+|\b\d{12,}\b|participant-[a-f0-9]{8}|\b(?:fresh|reflection|room):/i.test(String(correction.note))
+    )
+      return { ok: false, reason: "invalid_correction" };
+  }
   if (
     entry.entryKind !== undefined &&
     entry.entryKind !== "daily" &&

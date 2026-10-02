@@ -218,7 +218,8 @@ class FakeRedis {
     }
     const [recordKey, latestKey, indexKey, dailyIndexKey, weeklyIndexKey, controlsKey] =
       keys;
-    const [entryId, revision, contentHash, recordJson, score] = args;
+    const [entryId, revision, contentHash, recordJson] = args;
+    const incoming = JSON.parse(recordJson);
     const controls = this.kv.get(controlsKey)
       ? JSON.parse(this.kv.get(controlsKey))
       : {};
@@ -245,6 +246,11 @@ class FakeRedis {
     if (existingJson) {
       const existing = JSON.parse(existingJson);
       if (existing.contentHash !== contentHash)
+        return JSON.stringify({ status: "conflict" });
+      if (incoming.correction && (incoming.authoredAt !== existing.authoredAt ||
+          incoming.sourceWindowStart !== existing.sourceWindowStart ||
+          incoming.sourceWindowEnd !== existing.sourceWindowEnd ||
+          incoming.entryKind !== existing.entryKind))
         return JSON.stringify({ status: "conflict" });
       const latestJson = this.kv.get(latestKey);
       const zset = this.z.get(indexKey);
@@ -294,6 +300,21 @@ class FakeRedis {
         publishedAt: existing.publishedAt,
       });
     }
+    if (incoming.correction) {
+      const previous = this.kv.get(latestKey);
+      if (!previous) return JSON.stringify({ status: "conflict" });
+      const predecessor = JSON.parse(previous);
+      const correction = incoming.correction;
+      if (predecessor.revision !== correction.previousRevision ||
+          predecessor.contentHash !== correction.previousContentHash ||
+          Number(revision) !== predecessor.revision + 1 ||
+          incoming.sourceWindowStart !== predecessor.sourceWindowStart ||
+          incoming.sourceWindowEnd !== predecessor.sourceWindowEnd ||
+          (incoming.entryKind ?? "manual") !== (predecessor.entryKind ?? "manual") ||
+          incoming.publishedAt !== predecessor.publishedAt ||
+          incoming._score !== predecessor._score)
+        return JSON.stringify({ status: "conflict" });
+    }
     this.kv.set(recordKey, recordJson);
     const latestJson = this.kv.get(latestKey);
     if (!latestJson || JSON.parse(latestJson).revision <= Number(revision)) {
@@ -304,6 +325,168 @@ class FakeRedis {
   }
 }
 const store = loadTs("src/lib/bnl-journal-store.ts");
+
+function storeAt(iso) {
+  return loadTs("src/lib/bnl-journal-store.ts", {}, {
+    Date: class extends Date {
+      constructor(...args) { super(...(args.length ? args : [iso])); }
+    },
+  });
+}
+function correctedEntry(previous, overrides = {}) {
+  return makeEntry({
+    ...previous,
+    revision: previous.revision + 1,
+    title: "A Chorus Corrected",
+    correction: {
+      previousRevision: previous.revision,
+      previousContentHash: previous.contentHash,
+      note: "Corrected the speaker attribution.",
+    },
+    ...overrides,
+  });
+}
+
+test("correction contract binds public note and exact predecessor while rejecting private/server fields", () => {
+  // Shared Python/TypeScript fixture: sorted keys, compact JSON, UTF-8.
+  assert.equal(contract.computeBNLJournalContentHash({
+    title: "A Chorus Corrected", excerpt: "A corrected attribution.",
+    sections: [{ heading: "A Second Listen", body: "Test Listener described an unfinished chorus." }],
+    correction: { previousRevision: 1, previousContentHash: "a".repeat(64), note: "Corrected the speaker attribution." },
+  }), "511bdfa845aa7403bc7cb156f08ccef9907b296080ef779c2c121766a554b789");
+  const original = makeEntry();
+  const corrected = correctedEntry(original);
+  assert.equal(contract.validateBNLJournalPayload(env(corrected)).ok, true);
+  const changed = structuredClone(corrected);
+  changed.correction.note = "Changed correction note.";
+  assert.equal(contract.validateBNLJournalPayload(env(changed)).reason, "invalid_hash");
+  for (const correction of [null, {}, { ...corrected.correction, previousRevision: 0 },
+    { ...corrected.correction, previousRevision: 3 },
+    { ...corrected.correction, previousContentHash: "invalid" },
+    { ...corrected.correction, sourceRefs: ["private:1"] },
+    { ...corrected.correction, note: "" },
+    { ...corrected.correction, note: "x".repeat(601) },
+    { ...corrected.correction, note: "See https://private.test/source" },
+    { ...corrected.correction, note: "Corrected <@123456789012345678>." },
+    { ...corrected.correction, note: "Internal fresh:123 evidence." },
+    { ...corrected.correction, note: "Changed participant-1234abcd." }]) {
+    const candidate = makeEntry({ ...corrected, correction });
+    assert.equal(contract.validateBNLJournalPayload(env(candidate)).ok, false);
+  }
+  for (const field of ["publishedAt", "correctedAt", "privateMetadata", "correctionHistory"])
+    assert.equal(contract.validateBNLJournalPayload(env({ ...corrected, [field]: "injected" })).ok, false);
+});
+
+test("correction preserves URL identity, original date, archive position, and immutable history", async () => {
+  const redis = new FakeRedis();
+  const original = makeEntry({ entryKind: "daily" });
+  await storeAt("2026-07-18T19:00:00.123Z").publishBNLJournalEntry(original, redis);
+  await storeAt("2026-07-19T19:00:00.000Z").publishBNLJournalEntry(makeEntry({ entryId: "newer-entry", entryKind: "daily" }), redis);
+  const originalRecord = redis.kv.get(store.journalEntryKey(original.entryId, 1));
+  const archiveBefore = [...redis.z.get(store.BNL_JOURNAL_INDEX_KEY)];
+  const dailyBefore = [...redis.z.get(store.BNL_JOURNAL_DAILY_INDEX_KEY)];
+  const corrected = correctedEntry(original);
+  const writer = storeAt("2026-10-01T19:00:00.000Z");
+  const receipt = await writer.publishBNLJournalEntry(corrected, redis);
+  assert.equal(receipt.ok, true);
+  assert.equal(receipt.entry.correctedAt, "2026-10-01T19:00:00.000Z");
+  assert.equal(receipt.entry.publishedAt, "2026-07-18T19:00:00.123Z");
+  const entry = (await store.getBNLJournalEntry(original.entryId, redis)).value;
+  assert.equal(entry.revision, 2);
+  assert.equal(entry.correction.note, corrected.correction.note);
+  assert.equal(entry.sourceWindowStart, original.sourceWindowStart);
+  assert.equal(entry.sourceWindowEnd, original.sourceWindowEnd);
+  assert.equal(navigation.journalEntryHref(entry.entryId), navigation.journalEntryHref(original.entryId));
+  assert.equal(redis.kv.get(store.journalEntryKey(original.entryId, 1)), originalRecord);
+  assert.deepEqual([...redis.z.get(store.BNL_JOURNAL_INDEX_KEY)].sort(), archiveBefore.sort());
+  assert.deepEqual([...redis.z.get(store.BNL_JOURNAL_DAILY_INDEX_KEY)].sort(), dailyBefore.sort());
+  assert.equal((await store.listBNLJournalArchive(1, redis)).value.entries[0].entryId, "newer-entry");
+  const correctionRecord = redis.kv.get(store.journalEntryKey(original.entryId, 2));
+  assert.equal((await storeAt("2026-10-02T19:00:00.000Z").publishBNLJournalEntry(corrected, redis)).idempotent, true);
+  assert.equal(redis.kv.get(store.journalEntryKey(original.entryId, 2)), correctionRecord);
+  const again = correctedEntry(corrected, { title: "A Further Clarification" });
+  assert.equal((await writer.publishBNLJournalEntry(again, redis)).ok, true);
+  assert.equal((await writer.publishBNLJournalEntry(corrected, redis)).idempotent, true);
+  assert.equal((await store.getBNLJournalEntry(original.entryId, redis)).value.revision, 3);
+  assert.equal(redis.kv.get(store.journalEntryKey(original.entryId, 2)), correctionRecord);
+});
+
+test("correction fails atomically for stale, conflicting, missing, or changed-window predecessors", async () => {
+  const redis = new FakeRedis();
+  const original = makeEntry({ entryKind: "daily" });
+  await store.publishBNLJournalEntry(original, redis);
+  const correction = correctedEntry(original);
+  for (const candidate of [
+    correctedEntry(original, { entryId: "missing-entry" }),
+    correctedEntry(original, { sourceWindowStart: "2026-07-10T00:00:00Z" }),
+    correctedEntry(original, { sourceWindowEnd: "2026-07-18T10:00:00Z" }),
+    correctedEntry(original, { entryKind: "weekly" }),
+    correctedEntry(original, { correction: { ...correction.correction, previousContentHash: "a".repeat(64) } }),
+  ]) {
+    const before = new Map(redis.kv);
+    assert.equal((await store.publishBNLJournalEntry(candidate, redis)).conflict, true);
+    assert.deepEqual(redis.kv, before);
+  }
+  await store.publishBNLJournalEntry(correction, redis);
+  for (const candidate of [
+    correctedEntry(original, { title: "Competing correction" }),
+    correctedEntry(original, { correction: { ...correction.correction, note: "Changed note." } }),
+    correctedEntry(original, { authoredAt: "2026-10-01T19:00:00Z" }),
+    correctedEntry(original, { sourceWindowStart: "2026-07-10T00:00:00Z" }),
+    correctedEntry(correction, { correction: { ...correction.correction } }),
+  ]) {
+    const before = new Map(redis.kv);
+    assert.equal((await store.publishBNLJournalEntry(candidate, redis)).conflict, true);
+    assert.deepEqual(redis.kv, before);
+  }
+});
+
+test("concurrent correction cannot replace a predecessor changed after the server read", async () => {
+  const redis = new FakeRedis();
+  const original = makeEntry();
+  await store.publishBNLJournalEntry(original, redis);
+  const wanted = correctedEntry(original);
+  const competing = correctedEntry(original, { title: "Another approved correction" });
+  const atomicEval = redis.eval.bind(redis);
+  redis.eval = async (...args) => {
+    redis.eval = atomicEval;
+    assert.equal((await store.publishBNLJournalEntry(competing, redis)).ok, true);
+    return atomicEval(...args);
+  };
+  assert.equal((await store.publishBNLJournalEntry(wanted, redis)).conflict, true);
+  assert.equal((await store.getBNLJournalEntry(original.entryId, redis)).value.title, competing.title);
+});
+
+test("correction respects independent visibility and memory exclusions", async () => {
+  const redis = new FakeRedis();
+  const original = makeEntry({ entryKind: "daily" });
+  await store.publishBNLJournalEntry(original, redis);
+  assert.equal((await store.updateJournalEntryControl(original.entryId, false, false, redis)).ok, true);
+  const controls = redis.kv.get(store.BNL_JOURNAL_ENTRY_CONTROLS_KEY);
+  assert.equal((await store.publishBNLJournalEntry(correctedEntry(original), redis)).ok, true);
+  assert.equal(redis.kv.get(store.BNL_JOURNAL_ENTRY_CONTROLS_KEY), controls);
+  assert.equal((await store.getBNLJournalEntry(original.entryId, redis)).value, null);
+  assert.equal((await store.listBNLJournalArchive(1, redis)).value.entries.length, 0);
+  await store.updateJournalEntryControl(original.entryId, true, false, redis);
+  assert.equal((await store.getBNLJournalEntry(original.entryId, redis)).value.revision, 2);
+  assert.equal((await store.listJournalEntryControls(redis))[0].memoryEligible, false);
+});
+
+test("public article identifies correction while retaining original publication and coverage dates", () => {
+  const entry = { ...correctedEntry(makeEntry()), publishedAt: "2026-07-18T19:00:00Z", correctedAt: "2026-10-01T19:00:00Z" };
+  const html = renderToStaticMarkup(React.createElement(article.JournalArticle, { entry }));
+  assert.match(html, /aria-label="Journal correction"/);
+  assert.match(html, /Corrected the speaker attribution/);
+  assert.match(html, /dateTime="2026-07-18T19:00:00Z"/i);
+  assert.match(html, /dateTime="2026-10-01T19:00:00Z"/i);
+  assert.match(html, /Original coverage:/);
+  assert.ok(html.includes(entry.sourceWindowStart));
+  assert.ok(html.includes(entry.sourceWindowEnd));
+  assert.ok(!html.includes(entry.correction.previousContentHash));
+  assert.ok(!html.includes("previousRevision"));
+  const ordinary = renderToStaticMarkup(React.createElement(article.JournalArticle, { entry: { ...makeEntry(), publishedAt: entry.publishedAt } }));
+  assert.ok(!ordinary.includes("Journal correction"));
+});
 
 test("contract executes bot-compatible validation, hashes, auth, and exact envelope boundary", () => {
   assert.equal(

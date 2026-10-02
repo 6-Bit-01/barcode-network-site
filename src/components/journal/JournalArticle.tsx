@@ -66,6 +66,12 @@ export function JournalArticle({
         className="mt-3 block font-mono text-xs uppercase tracking-widest text-muted"
         value={entry.publishedAt}
       />
+      {entry.correction && entry.correctedAt && (
+        <aside className="mt-4 border-l-2 border-accent/40 pl-3 text-sm leading-6 text-muted" aria-label="Journal correction">
+          <p>Corrected <JournalDate value={entry.correctedAt} />: {entry.correction.note}</p>
+          <p>Original coverage: <JournalDate value={entry.sourceWindowStart} /> – <JournalDate value={entry.sourceWindowEnd} />.</p>
+        </aside>
+      )}
       <div className="font-oxanium">
         <Title className={`mt-5 break-words font-normal leading-tight text-foreground ${preview ? "text-2xl sm:text-3xl" : "text-3xl sm:text-5xl"}`}>
           {entry.title}

@@ -24,6 +24,14 @@ from zoneinfo import ZoneInfo
 sys.dont_write_bytecode = True
 PACIFIC = ZoneInfo("America/Los_Angeles")
 GUILD = 1288269405209235551
+LEDGER_STORAGE_BYTE_LIMIT = 8 * 1024 * 1024
+LEDGER_COUNT_FIELDS = ("operationalEvents", "trackRoster", "discordInteractions", "messages")
+LEDGER_PROJECTION_FAILURES = frozenset((
+    "invalid_ledger_json_type", "ledger_storage_byte_limit", "invalid_ledger_json",
+    "ledger_json_not_object", "duplicate_ledger_metadata_keys",
+    "invalid_ledger_metadata_keys", "invalid_ledger_metadata_values",
+    "ledger_schema_mismatch", "ledger_session_mismatch",
+))
 # Reviewed, content-free inspect() implementations. Never import an unknown
 # revision merely because it has the same filename. No runtime_configuration()
 # call here: the collector neither imports BNL nor reads service credentials.
@@ -127,6 +135,60 @@ def lane_counts(raw: object) -> dict:
               if key in PACKET_LANES and type(count) is int and 0 <= count <= 1_000_000}
     omitted = len(value) - len(counts)
     return {"available": not omitted, "counts": counts, "omittedEntries": omitted}
+
+
+def ledger_projection_selection() -> str:
+    """Project only bounded metadata in SQLite; never transfer raw ledger JSON.
+
+    CASE evaluates the size/type guards before JSON1 sees the source. The bound
+    measures SQLite storage bytes, not Python characters or assumed UTF-8 bytes.
+    Reject duplicate projected keys, raw NULs and decoded top-level key NULs:
+    JSON1 otherwise reads a first duplicate, source prefix or key alias
+    differently from Python's JSON reader. Older JSON1 truncates decoded keys,
+    so also inspect raw top-level fullkey tokens: remove paired backslashes
+    before checking for a NUL escape. The multipath JSON array also preserves
+    raw binding values before historical JSON1 can truncate decoded strings.
+    Nested source text stays unexported.
+    """
+    keys = ("schemaVersion", "showKey", *LEDGER_COUNT_FIELDS)
+    quoted_keys = ",".join("'" + key + "'" for key in keys)
+    counts = ",".join(
+        f"'{field}Count',CASE WHEN json_type(ledger_json,'$.{field}')='array' "
+        f"THEN json_array_length(ledger_json,'$.{field}') ELSE NULL END"
+        for field in LEDGER_COUNT_FIELDS)
+    return f"""length(CAST(ledger_json AS BLOB)) AS ledger_storage_bytes,
+        CASE
+          WHEN typeof(ledger_json)!='text'
+            THEN json_object('available',0,'reason','invalid_ledger_json_type')
+          WHEN length(CAST(ledger_json AS BLOB))>{LEDGER_STORAGE_BYTE_LIMIT}
+            THEN json_object('available',0,'reason','ledger_storage_byte_limit')
+          WHEN instr(ledger_json,char(0))>0
+            THEN json_object('available',0,'reason','invalid_ledger_json')
+          WHEN NOT json_valid(ledger_json)
+            THEN json_object('available',0,'reason','invalid_ledger_json')
+          WHEN json_type(ledger_json)!='object'
+            THEN json_object('available',0,'reason','ledger_json_not_object')
+          WHEN EXISTS (SELECT 1 FROM json_each(ledger_json)
+                       WHERE instr(key,char(0))>0 OR instr(fullkey,char(0))>0
+                          OR instr(replace(fullkey,char(92)||char(92),''),char(92)||'u0000')>0)
+            THEN json_object('available',0,'reason','invalid_ledger_metadata_keys')
+          WHEN EXISTS (SELECT 1 FROM json_each(ledger_json)
+                       WHERE key IN ({quoted_keys}) GROUP BY key HAVING COUNT(*)>1)
+            THEN json_object('available',0,'reason','duplicate_ledger_metadata_keys')
+          WHEN instr(replace(json_extract(ledger_json,'$.schemaVersion','$.showKey'),
+                             char(92)||char(92),''),char(92)||'u0000')>0
+            THEN json_object('available',0,'reason','invalid_ledger_metadata_values')
+          WHEN schema_version IS NOT 'tiktok_show_evidence_ledger_v2'
+               OR json_type(ledger_json,'$.schemaVersion') IS NOT 'text'
+               OR json_extract(ledger_json,'$.schemaVersion') IS NOT 'tiktok_show_evidence_ledger_v2'
+            THEN json_object('available',0,'reason','ledger_schema_mismatch')
+          WHEN typeof(show_key)!='text' OR length(show_key) NOT BETWEEN 1 AND 200
+               OR substr(show_key,1,5)='show:' OR instr(show_key,char(0))>0
+               OR json_type(ledger_json,'$.showKey') IS NOT 'text'
+               OR json_extract(ledger_json,'$.showKey') IS NOT show_key
+            THEN json_object('available',0,'reason','ledger_session_mismatch')
+          ELSE json_object('available',1,'sessionId',show_key,{counts})
+        END AS ledger_projection_json"""
 
 
 def command(args: list[str], timeout: int = 15) -> dict:
@@ -250,7 +312,7 @@ def db_capture(db_path: Path, guild: int, start: datetime, end: datetime, show_d
 
         specs = [
             ("showLedgers", "tiktok_show_evidence_ledgers", "ended_at_ms", True,
-             ["show_key", "schema_version", "show_date", "lifecycle_status", "started_at_ms", "ended_at_ms", "event_count", "participant_count", "topic_count", "track_count", "source_digest", "ledger_json"]),
+             ["show_key", "schema_version", "show_date", "lifecycle_status", "started_at_ms", "ended_at_ms", "event_count", "participant_count", "topic_count", "track_count", "source_digest"]),
             ("journalRuns", "bnl_journal_automation_runs", "updated_at", False,
              ["run_id", "cadence", "source_window_start", "source_window_end", "lifecycle_state", "reason", "journal_entry_id", "attempt_count", "created_at", "updated_at"]),
             ("relayPublications", "website_relay_history", "published_timestamp", False,
@@ -285,7 +347,14 @@ def db_capture(db_path: Path, guild: int, start: datetime, end: datetime, show_d
             if key == "showLedgers" and "show_date" in present:
                 predicate = "guild_id=? AND show_date=?"
                 params = (guild, show_date)
-            rows = read(key, table, ["guild_id", stamp], ",".join(selected), predicate, params, stamp)
+            required = ["guild_id", stamp]
+            if key == "showLedgers":
+                required.extend(("show_key", "schema_version", "lifecycle_status", "ledger_json"))
+                if session_id is not None:
+                    predicate += " AND show_key=?"
+                    params += (session_id,)
+                selected.append(ledger_projection_selection())
+            rows = read(key, table, required, ",".join(selected), predicate, params, stamp)
             if key in {"sharedBrainReceipts", "intelligencePacketReceipts"}:
                 missing = [field for field in wanted if field not in present]
                 result[key]["fieldCoverage"] = {"available": not missing, "missingFields": missing}
@@ -295,24 +364,26 @@ def db_capture(db_path: Path, guild: int, start: datetime, end: datetime, show_d
                             row[field.removesuffix("_json")] = lane_counts(row.pop(field))
             if key == "showLedgers":
                 for row in rows:
-                    raw = row.pop("ledger_json", "")
-                    try:
-                        ledger = json.loads(raw) if isinstance(raw, str) and len(raw) <= 4_000_000 else {}
-                        if not isinstance(ledger, dict):
-                            ledger = {}
-                    except (ValueError, TypeError):
-                        ledger = {}
-                    # Current v2 stores the website session ID as showKey. Never
-                    # infer a session from the date or a legacy show:<hash> key.
-                    ledger_key = str(row.get("show_key") or "")
-                    bound = (ledger.get("schemaVersion") == "tiktok_show_evidence_ledger_v2"
-                             and ledger.get("showKey") == ledger_key and not ledger_key.startswith("show:"))
-                    row["sessionId"] = ledger_key if bound else ""
-                    for field in ("operationalEvents", "trackRoster", "discordInteractions", "messages"):
-                        row[field + "Count"] = len(ledger[field]) if isinstance(ledger.get(field), list) else None
-                if session_id is not None and result[key].get("available"):
-                    rows = [row for row in rows if row.get("sessionId") == session_id]
-                    result[key]["rows"] = rows
+                    projection = json.loads(row.pop("ledger_projection_json"))
+                    available = projection["available"] == 1
+                    row["sessionId"] = projection.get("sessionId", "") if available else ""
+                    row["ledgerProjection"] = {
+                        "available": available,
+                        "storageBytes": row.pop("ledger_storage_bytes"),
+                        "storageByteLimit": LEDGER_STORAGE_BYTE_LIMIT,
+                        "scope": "Metadata and array counts only; original ledger is unchanged.",
+                    }
+                    if not available:
+                        row["ledgerProjection"]["reason"] = projection["reason"]
+                    missing = []
+                    for field in LEDGER_COUNT_FIELDS:
+                        row[field + "Count"] = projection.get(field + "Count")
+                        if row[field + "Count"] is None:
+                            missing.append(field)
+                    if available:
+                        row["ledgerProjection"]["countCoverage"] = {
+                            "available": not missing, "missingOrNonArrayFields": missing,
+                        }
             for row in rows:
                 for field, value in row.items():
                     if isinstance(value, str) and not re.fullmatch(r"[A-Za-z0-9_ .:+/=-]{0,200}", value):
@@ -321,13 +392,16 @@ def db_capture(db_path: Path, guild: int, start: datetime, end: datetime, show_d
             keys = [row["show_key"] for row in result.get("showLedgers", {}).get("rows", []) if row.get("sessionId") == session_id and row.get("show_key")]
             required = {"guild_id", "source_event_key", "predicate_key", "public_usable", "visibility", "lifecycle_status"}
             if required <= columns("memory_ledger_entries"):
-                counts = {"barcode_radio.show_episode": 0, "barcode_radio.show_participation": 0}
                 if keys:
+                    counts = {"barcode_radio.show_episode": 0, "barcode_radio.show_participation": 0}
                     stage = "episodeProjections"
                     slots = ",".join("?" for _ in keys)
                     query = f"SELECT predicate_key, COUNT(*) FROM memory_ledger_entries WHERE guild_id=? AND source_event_key IN ({slots}) AND public_usable=1 AND visibility IN ('public','public_safe') AND lifecycle_status='active' AND predicate_key IN ('barcode_radio.show_episode','barcode_radio.show_participation') GROUP BY predicate_key"
                     counts.update(dict(conn.execute(query, (guild, *keys)).fetchall()))
-                result["episodeProjections"] = {"available": True, "sessionId": session_id, "counts": counts}
+                    result["episodeProjections"] = {"available": True, "sessionId": session_id, "counts": counts}
+                else:
+                    result["episodeProjections"] = {"available": False, "sessionId": session_id,
+                                                    "reason": "exact_session_ledger_unavailable"}
             else:
                 result["episodeProjections"] = {"available": False, "reason": "table_or_required_columns_missing"}
         result["available"] = True
@@ -386,7 +460,7 @@ def collect(root: Path, guild: int, show_date: str, limit: int = 5000, session_i
         raise ValueError("An explicit observation start requires observation capture")
     observation_range = observation_window(now, observation_start) if include_recent_observation else None
     db = root / "bnl01_conversations.db"
-    report = {"schema": "barcode_after_show_evidence_v1", "collectorVersion": "post_show_observation_2026_09_26", "generatedAt": now.isoformat(),
+    report = {"schema": "barcode_after_show_evidence_v1", "collectorVersion": "bounded_ledger_projection_2026_10_03", "generatedAt": now.isoformat(),
             "sessionId": session_id, "showDatePacific": show_date,
             "startInclusive": start.isoformat(), "endExclusive": end.isoformat(),
             "coverage": "Pacific noon before the show to capture time, capped at next-day noon. No boot/PID filter: restarts remain visible. Separate services are not an atomic snapshot.",

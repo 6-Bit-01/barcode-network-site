@@ -34,6 +34,45 @@ log metadata and the hash-pinned existing health reader. It uses read-only SQLit
 row/time bounds and explicit unavailable/truncated markers. It never copies the
 database, configuration, private chat or raw service messages.
 
+Collector version `bounded_ledger_projection_2026_10_03` projects ledger metadata
+inside SQLite instead of transferring and decoding the entire ledger in Python.
+Its 8 MiB limit applies to `length(CAST(ledger_json AS BLOB))`, the database's
+storage bytes; this is not a character count or an assumed UTF-8 byte count.
+Type and size guards run before JSON parsing. Exact guild, show date (when the
+column exists), and requested table `show_key` filters run before the row limit.
+The stored and nested v2 schemas and nested `showKey` must match; a date or legacy
+`show:<hash>` key never establishes session binding. Malformed JSON, raw NULs,
+decoded top-level keys containing NUL, duplicate projected keys, schema/key
+mismatches and oversized JSON keep an explicit unavailable projection on the
+requested row rather than disappearing. The decoded-key guard runs before
+metadata path lookups because SQLite can interpret a NUL-containing key as an
+alias for a shorter key. It checks decoded keys and raw top-level `fullkey`
+tokens, preserving escaped-backslash parity for older SQLite versions that
+truncate decoded keys. A literal backslash followed by `u0000` remains allowed.
+The failure returns only `invalid_ledger_metadata_keys`, never the offending
+keys. A multipath JSON array checks the two binding values before older SQLite
+can truncate their decoded strings; a NUL in those values reports only
+`invalid_ledger_metadata_values`. Escaped NULs inside nested source keys or values
+remain allowed when outside the projected metadata; their contents are not exported.
+
+The projection exports only array counts and existing table metadata, including
+the unchanged `source_digest`. It does not export or truncate the original JSON,
+alter records, or claim that `source_digest` is a hash of the JSON file. Missing
+or non-array fields retain `null` counts and unavailable `countCoverage`, not
+invented zeroes. A valid finalized ledger can release collection even if count
+coverage is partial; the packet still reports that gap. Original source evidence,
+attachment hashing and the independent public-chat/privacy filters are preserved.
+Without a bound exact-session ledger, `episodeProjections` is unavailable rather
+than presenting unchecked projection counts as zero.
+
+Before the unchanged two-hour deadline, failed collection/database/ledger reads
+or rejected projections report `waiting_for_bnl_evidence`; projection failures
+include allowlisted `ledgerProjectionReasons`. A readable missing or active
+ledger still reports `waiting_for_bnl_finalization`. Neither status forces
+finalization or sends early. At the deadline, the existing routine may send an
+explicitly partial packet. Packet staging, retry identity and the accepted-send
+ledger remain unchanged; this repair grants no resend authority.
+
 Discord capture follows the current conversations schema: the three existing
 public channel policies are mandatory; `public_usable` and `visibility` are
 additional restrictions when those optional columns exist. It does not require
@@ -41,7 +80,7 @@ the source-archive table's `public_usable` column on conversations. Text attachm
 are base64-encoded from the exact UTF-8 bytes recorded in the manifest and local
 ZIP, so SMTP newline conversion cannot invalidate their byte counts or hashes.
 
-The collector version `post_show_observation_2026_09_26` retains BNL's actual
+The collector preserves `post_show_observation_2026_09_26`'s capture of BNL's actual
 `model` conversation rows as well as human `user` rows and legacy `assistant`
 rows. BNL's stored `user_id` identifies an addressed member, not the speaker;
 model rows therefore use a stable bot `speakerKey` and a separate hashed
@@ -127,7 +166,8 @@ existing configuration, timer and `state.json`. Do not rerun setup or
 erase accepted-delivery state. No BNL restart is required. The PR handoff includes
 the exact file hashes and one inline installation/capture command.
 
-For the next normal packet, check `collectorVersion`, public model rows,
+For the next normal packet, check `collectorVersion`, `ledgerProjection`
+availability/count coverage, public model rows,
 `existingHealth.available`, both receipt sections and their `fieldCoverage`.
 Old schemas, expired records, missing permissions and unavailable readers remain
 coverage gaps, not passing checks. To recover the most recently archived show's
@@ -137,7 +177,7 @@ normal delivery deduplication. Retain the original packet and all its coverage
 markers; this supplemental packet does not replace its historical evidence or
 retroactively establish feature acceptance.
 
-For the current post-deploy check, run the updated
+For the September 26 post-deploy check, run the updated
 `--test --observation-start 2026-09-26T19:54:00Z`; there is no need to repeat the
 already-sent questions. Verify the deployed
 bot revision and service start, the observation window containing the actual

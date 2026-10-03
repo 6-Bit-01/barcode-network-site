@@ -12,6 +12,212 @@ import bnl_after_show_capture as capture
 
 
 class CaptureTests(unittest.TestCase):
+    def ledger_capture(self, raw, *, encoding='UTF-8', schema='tiktok_show_evidence_ledger_v2',
+                       lifecycle='finalized', show_key='session_fixture', extra_rows=(), limit=5):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'ledger.sqlite'
+            stamp = int(datetime(2026, 9, 26, 8, tzinfo=timezone.utc).timestamp()*1000)
+            with sqlite3.connect(path) as conn:
+                conn.execute('PRAGMA encoding="' + encoding + '"')
+                conn.execute('CREATE TABLE tiktok_show_evidence_ledgers(guild_id INTEGER, show_key TEXT, schema_version TEXT, show_date TEXT, lifecycle_status TEXT, ended_at_ms INTEGER, source_digest TEXT, ledger_json TEXT)')
+                conn.execute('INSERT INTO tiktok_show_evidence_ledgers VALUES(?,?,?,?,?,?,?,?)',
+                             (1, show_key, schema, '2026-09-25', lifecycle, stamp, 'a'*64, raw))
+                conn.executemany('INSERT INTO tiktok_show_evidence_ledgers VALUES(?,?,?,?,?,?,?,?)', extra_rows)
+                conn.execute('CREATE TABLE memory_ledger_entries(guild_id INTEGER, source_event_key TEXT, predicate_key TEXT, public_usable INTEGER, visibility TEXT, lifecycle_status TEXT)')
+            before = hashlib.sha256(path.read_bytes()).hexdigest()
+            start, end = capture.window('2026-09-25', datetime(2026, 9, 26, 9, tzinfo=timezone.utc))
+            result = capture.db_capture(path, 1, start, end, '2026-09-25', limit, 'session_fixture')
+            self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), before)
+            return result
+
+    def test_large_finalized_ledger_projects_without_exporting_source_text(self):
+        doc = {'schemaVersion': 'tiktok_show_evidence_ledger_v2', 'showKey': 'session_fixture',
+               'operationalEvents': [1, 2], 'trackRoster': [1], 'discordInteractions': [],
+               'messages': ['PRIVATE_LEDGER_TEXT'], 'padding': ''}
+        prefix = json.dumps(doc, separators=(',', ':'))
+        for chars in (3_999_999, 4_000_000, 4_000_001, 5_214_732,
+                      capture.LEDGER_STORAGE_BYTE_LIMIT-1, capture.LEDGER_STORAGE_BYTE_LIMIT,
+                      capture.LEDGER_STORAGE_BYTE_LIMIT+1):
+            with self.subTest(chars=chars):
+                doc['padding'] = 'x'*(chars-len(prefix))
+                raw = json.dumps(doc, separators=(',', ':'))
+                self.assertEqual(len(raw), chars)
+                result = self.ledger_capture(raw)
+                row = result['showLedgers']['rows'][0]
+                self.assertEqual(row['source_digest'], 'a'*64)
+                if chars <= capture.LEDGER_STORAGE_BYTE_LIMIT:
+                    self.assertEqual(row['sessionId'], 'session_fixture')
+                    self.assertEqual([row[field+'Count'] for field in capture.LEDGER_COUNT_FIELDS], [2, 1, 0, 1])
+                    self.assertTrue(row['ledgerProjection']['available'])
+                    self.assertTrue(row['ledgerProjection']['countCoverage']['available'])
+                else:
+                    self.assertEqual(row['sessionId'], '')
+                    self.assertFalse(row['ledgerProjection']['available'])
+                    self.assertEqual(row['ledgerProjection']['reason'], 'ledger_storage_byte_limit')
+                self.assertEqual(row['ledgerProjection']['storageBytes'], chars)
+                self.assertNotIn('ledger_json', row)
+                self.assertNotIn('PRIVATE_LEDGER_TEXT', json.dumps(result))
+                self.assertLess(len(json.dumps(row)), 2000)
+
+    def test_storage_byte_limit_at_below_and_above_with_multibyte_json(self):
+        raw = json.dumps({'schemaVersion': 'tiktok_show_evidence_ledger_v2', 'showKey': 'session_fixture',
+                          'operationalEvents': [], 'trackRoster': [], 'discordInteractions': [],
+                          'messages': ['漢🙂'*100]}, ensure_ascii=False)
+        for encoding, python_encoding in (('UTF-8', 'utf-8'), ('UTF-16le', 'utf-16le')):
+            size = len(raw.encode(python_encoding))
+            self.assertGreater(size, len(raw))
+            for cap in (size-1, size, size+1):
+                with self.subTest(encoding=encoding, cap=cap), patch.object(capture, 'LEDGER_STORAGE_BYTE_LIMIT', cap):
+                    row = self.ledger_capture(raw, encoding=encoding)['showLedgers']['rows'][0]
+                    projection = row['ledgerProjection']
+                    self.assertEqual(projection['storageBytes'], size)
+                    self.assertEqual(projection['storageByteLimit'], cap)
+                    self.assertEqual(projection['available'], size <= cap)
+                    self.assertEqual(row['sessionId'], 'session_fixture' if size <= cap else '')
+                    if size > cap:
+                        self.assertEqual(projection['reason'], 'ledger_storage_byte_limit')
+
+    def test_size_type_and_raw_nul_guards_precede_json_parsing(self):
+        with sqlite3.connect(':memory:') as conn, patch.object(capture, 'LEDGER_STORAGE_BYTE_LIMIT', 512):
+            conn.execute('CREATE TABLE fixture(show_key TEXT, schema_version TEXT, ledger_json)')
+            conn.create_function('json_valid', 1, lambda _: self.fail('guarded source reached JSON parser'))
+            for raw, reason in (('x'*513, 'ledger_storage_byte_limit'),
+                                (b'private bytes', 'invalid_ledger_json_type'),
+                                ('{}\x00PRIVATE_SUFFIX', 'invalid_ledger_json')):
+                with self.subTest(reason=reason):
+                    conn.execute('DELETE FROM fixture')
+                    conn.execute('INSERT INTO fixture VALUES(?,?,?)', ('session_fixture', 'tiktok_show_evidence_ledger_v2', raw))
+                    _, summary = conn.execute('SELECT '+capture.ledger_projection_selection()+' FROM fixture').fetchone()
+                    self.assertEqual(json.loads(summary), {'available': 0, 'reason': reason})
+
+    def test_invalid_ledger_keeps_safe_exact_session_diagnostics(self):
+        valid = '{"schemaVersion":"tiktok_show_evidence_ledger_v2","showKey":"session_fixture","messages":[]}'
+        cases = (
+            ('not JSON PRIVATE_TEXT', 'invalid_ledger_json'),
+            ('[]', 'ledger_json_not_object'),
+            (valid+'\x00PRIVATE_SUFFIX', 'invalid_ledger_json'),
+            (valid.replace('"showKey":', '"showKey":"other","showKey":'), 'duplicate_ledger_metadata_keys'),
+            (valid.replace('"showKey":', '"show\\u004bey":"other","showKey":'), 'duplicate_ledger_metadata_keys'),
+            (valid.replace('"messages":[]', '"messages":[],"messages":["PRIVATE_TEXT"]'), 'duplicate_ledger_metadata_keys'),
+            (valid.replace('tiktok_show_evidence_ledger_v2', 'legacy'), 'ledger_schema_mismatch'),
+            (valid.replace('"showKey":"session_fixture"', '"showKey":"other"'), 'ledger_session_mismatch'),
+            (valid.replace('"showKey":"session_fixture"', '"showKey":null'), 'ledger_session_mismatch'),
+        )
+        for raw, reason in cases:
+            with self.subTest(reason=reason, raw=raw[:30]):
+                result = self.ledger_capture(raw)
+                self.assertTrue(result['showLedgers']['available'])
+                self.assertEqual(len(result['showLedgers']['rows']), 1)
+                row = result['showLedgers']['rows'][0]
+                self.assertEqual(row['show_key'], 'session_fixture')
+                self.assertEqual(row['sessionId'], '')
+                self.assertFalse(row['ledgerProjection']['available'])
+                self.assertEqual(row['ledgerProjection']['reason'], reason)
+                self.assertFalse(result['episodeProjections']['available'])
+                self.assertEqual(result['episodeProjections']['reason'], 'exact_session_ledger_unavailable')
+                self.assertNotIn('counts', result['episodeProjections'])
+                self.assertNotIn('PRIVATE', json.dumps(result))
+        row = self.ledger_capture(valid, schema='legacy')['showLedgers']['rows'][0]
+        self.assertEqual(row['ledgerProjection']['reason'], 'ledger_schema_mismatch')
+
+    def test_exact_session_predicate_precedes_limit_and_other_guild_date_exclusion(self):
+        raw = json.dumps({'schemaVersion': 'tiktok_show_evidence_ledger_v2', 'showKey': 'session_fixture'})
+        other = json.dumps({'schemaVersion': 'tiktok_show_evidence_ledger_v2', 'showKey': 'other'})
+        stamp = int(datetime(2026, 9, 26, 2, tzinfo=timezone.utc).timestamp()*1000)
+        extra = [(1, 'other', 'tiktok_show_evidence_ledger_v2', '2026-09-25', 'finalized', stamp, 'b'*64, other),
+                 (2, 'session_fixture', 'tiktok_show_evidence_ledger_v2', '2026-09-25', 'finalized', stamp, 'c'*64, raw),
+                 (1, 'session_fixture', 'tiktok_show_evidence_ledger_v2', '2026-09-24', 'finalized', stamp, 'd'*64, raw)]
+        result = self.ledger_capture(raw, extra_rows=extra, limit=1)['showLedgers']
+        self.assertEqual(len(result['rows']), 1)
+        self.assertFalse(result['truncated'])
+        self.assertEqual(result['rows'][0]['source_digest'], 'a'*64)
+
+    def test_decoded_top_level_nul_keys_cannot_alias_binding_or_counts(self):
+        base = {'schemaVersion': 'tiktok_show_evidence_ledger_v2', 'showKey': 'session_fixture',
+                'operationalEvents': [], 'trackRoster': [1], 'discordInteractions': [], 'messages': []}
+        cases = []
+        for field in ('showKey', 'schemaVersion'):
+            others = {key: value for key, value in base.items() if key != field}
+            alias_only = {field+'\x00PRIVATE_SUFFIX': base[field], **others}
+            cases.append(alias_only)
+            cases.append({**alias_only, field: 'conflicting_value'})
+        for field in capture.LEDGER_COUNT_FIELDS:
+            cases.append({field+'\x00PRIVATE_SUFFIX': [1, 2, 3], **base})
+        cases.append({'UNRELATED_PRIVATE\x00KEY': 'PRIVATE_VALUE', **base})
+        for slashes in range(1, 6):
+            cases.append({'UNRELATED'+'\\'*slashes+'\x00PRIVATE': 'PRIVATE_VALUE', **base})
+        for doc in cases:
+            with self.subTest(keys=tuple(doc)):
+                raw = json.dumps(doc)
+                self.assertIn('\\u0000', raw)
+                self.assertNotIn('\x00', raw)
+                result = self.ledger_capture(raw)
+                row = result['showLedgers']['rows'][0]
+                self.assertEqual(row['sessionId'], '')
+                self.assertFalse(row['ledgerProjection']['available'])
+                self.assertEqual(row['ledgerProjection']['reason'], 'invalid_ledger_metadata_keys')
+                self.assertTrue(all(row[field+'Count'] is None for field in capture.LEDGER_COUNT_FIELDS))
+                self.assertFalse(result['episodeProjections']['available'])
+                self.assertNotIn('PRIVATE', json.dumps(result))
+
+    def test_binding_value_nul_cannot_match_a_valid_prefix(self):
+        base = {'schemaVersion': 'tiktok_show_evidence_ledger_v2', 'showKey': 'session_fixture',
+                'operationalEvents': [], 'trackRoster': [], 'discordInteractions': [], 'messages': []}
+        for field in ('schemaVersion', 'showKey'):
+            for slashes in range(6):
+                for actual_nul in (True, False):
+                    with self.subTest(field=field, slashes=slashes, actual_nul=actual_nul):
+                        suffix = '\x00PRIVATE_SUFFIX' if actual_nul else 'u0000PRIVATE_SUFFIX'
+                        doc = {**base, field: base[field]+'\\'*slashes+suffix}
+                        result = self.ledger_capture(json.dumps(doc))
+                        row = result['showLedgers']['rows'][0]
+                        self.assertEqual(row['sessionId'], '')
+                        self.assertFalse(row['ledgerProjection']['available'])
+                        reason = row['ledgerProjection']['reason']
+                        expected = 'invalid_ledger_metadata_values' if actual_nul else (
+                            'ledger_schema_mismatch' if field == 'schemaVersion' else 'ledger_session_mismatch')
+                        self.assertEqual(reason, expected)
+                        self.assertNotIn('PRIVATE', json.dumps(result))
+
+    def test_literal_nul_escape_keys_do_not_invalidate_safe_metadata(self):
+        base = {'schemaVersion': 'tiktok_show_evidence_ledger_v2', 'showKey': 'session_fixture',
+                'operationalEvents': [], 'trackRoster': [], 'discordInteractions': [], 'messages': []}
+        for slashes in range(1, 6):
+            with self.subTest(slashes=slashes):
+                doc = {'showKey'+'\\'*slashes+'u0000PRIVATE_SUFFIX': 'PRIVATE_VALUE', **base}
+                result = self.ledger_capture(json.dumps(doc))
+                row = result['showLedgers']['rows'][0]
+                self.assertEqual(row['sessionId'], 'session_fixture')
+                self.assertTrue(row['ledgerProjection']['available'])
+                self.assertTrue(row['ledgerProjection']['countCoverage']['available'])
+                self.assertNotIn('PRIVATE', json.dumps(result))
+
+    def test_nested_escaped_nul_keys_and_values_do_not_invalidate_safe_metadata(self):
+        doc = {'schemaVersion': 'tiktok_show_evidence_ledger_v2', 'showKey': 'session_fixture',
+               'operationalEvents': [], 'trackRoster': [], 'discordInteractions': [],
+               'messages': [{'NESTED_PRIVATE\x00KEY': 'PRIVATE\x00VALUE'}, 'PRIVATE\x00VALUE']}
+        result = self.ledger_capture(json.dumps(doc))
+        row = result['showLedgers']['rows'][0]
+        self.assertEqual(row['sessionId'], 'session_fixture')
+        self.assertTrue(row['ledgerProjection']['available'])
+        self.assertTrue(row['ledgerProjection']['countCoverage']['available'])
+        self.assertEqual(row['messagesCount'], 2)
+        self.assertNotIn('PRIVATE', json.dumps(result))
+
+    def test_missing_nonarray_counts_are_unavailable_without_zero_or_lost_binding(self):
+        raw = json.dumps({'schemaVersion': 'tiktok_show_evidence_ledger_v2', 'showKey': 'session_fixture',
+                          'operationalEvents': [], 'trackRoster': {}, 'messages': None})
+        row = self.ledger_capture(raw, lifecycle='active')['showLedgers']['rows'][0]
+        self.assertEqual(row['sessionId'], 'session_fixture')
+        self.assertEqual(row['lifecycle_status'], 'active')
+        self.assertEqual(row['operationalEventsCount'], 0)
+        self.assertIsNone(row['trackRosterCount'])
+        self.assertIsNone(row['discordInteractionsCount'])
+        self.assertIsNone(row['messagesCount'])
+        self.assertFalse(row['ledgerProjection']['countCoverage']['available'])
+        self.assertEqual(row['ledgerProjection']['countCoverage']['missingOrNonArrayFields'],
+                         ['trackRoster', 'discordInteractions', 'messages'])
+
     def test_friday_pacific_window_and_midnight(self):
         start, end = capture.window('2026-09-25', datetime(2026, 9, 26, 9, tzinfo=timezone.utc))
         self.assertEqual(start.isoformat(), '2026-09-25T19:00:00+00:00')

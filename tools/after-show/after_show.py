@@ -152,7 +152,31 @@ def finalized(bnl: dict, show: dict) -> bool:
     rows = bnl.get("database", {}).get("showLedgers", {}).get("rows", [])
     return any(row.get("sessionId") == show["sessionId"]
                and row.get("schema_version") == "tiktok_show_evidence_ledger_v2"
-               and row.get("lifecycle_status") == "finalized" for row in rows)
+               and row.get("lifecycle_status") == "finalized"
+               and row.get("ledgerProjection", {}).get("available") is not False
+               for row in rows)
+
+
+def finalization_wait(bnl: dict, show: dict) -> dict:
+    """Distinguish unreadable evidence from a readable ledger awaiting completion.
+
+    This changes diagnostics only: the two-hour deadline, packet staging and
+    accepted-delivery ledger remain the same, including older collector support.
+    """
+    database = bnl.get("database", {})
+    ledgers = database.get("showLedgers", {})
+    if (bnl.get("available") is False or database.get("available") is False
+            or ledgers.get("available") is False):
+        return {"status": "waiting_for_bnl_evidence", "reason": "bnl_evidence_unavailable"}
+    rejected = [row["ledgerProjection"] for row in ledgers.get("rows", [])
+                if row.get("show_key") == show["sessionId"]
+                and row.get("ledgerProjection", {}).get("available") is False]
+    if rejected:
+        reasons = sorted({projection.get("reason") for projection in rejected
+                          if projection.get("reason") in getattr(capture, "LEDGER_PROJECTION_FAILURES", ())})
+        return {"status": "waiting_for_bnl_evidence", "reason": "ledger_projection_unavailable",
+                "ledgerProjectionReasons": reasons}
+    return {"status": "waiting_for_bnl_finalization"}
 
 
 def redact(value):
@@ -306,7 +330,7 @@ def run(cfg: dict, *, now=None, is_test=False, observation_start=None, fetcher=f
                         bnl = {"sessionId": session_id, "showDatePacific": show["showDate"],
                                "available": False, "errorType": type(error).__name__}
                     if not is_test and not finalized(bnl, show) and now < ended + timedelta(hours=2):
-                        outcomes.append({"sessionId": session_id, "status": "waiting_for_bnl_finalization"})
+                        outcomes.append({"sessionId": session_id, **finalization_wait(bnl, show)})
                         continue
                     manifest, files = bundle(site, bnl, now, is_test)
                     stage(directory, cfg, manifest, files)

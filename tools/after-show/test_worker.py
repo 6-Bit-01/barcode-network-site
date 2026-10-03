@@ -46,6 +46,126 @@ class WorkerTests(unittest.TestCase):
     def run_worker(self, **kwargs):
         return worker.run(self.cfg, now=kwargs.pop("now", NOW), fetcher=kwargs.pop("fetcher", self.fetch), collector=kwargs.pop("collector", lambda cfg, show: bnl(show)), sender=kwargs.pop("sender", lambda cfg, raw: self.sent.append(raw)), **kwargs)
 
+    def ledger_bnl(self, raw, lifecycle='finalized'):
+        path = Path(self.temp.name)/'source-ledger.sqlite'
+        with sqlite3.connect(path) as conn:
+            conn.execute('CREATE TABLE tiktok_show_evidence_ledgers(guild_id INTEGER, show_key TEXT, schema_version TEXT, show_date TEXT, lifecycle_status TEXT, ended_at_ms INTEGER, source_digest TEXT, ledger_json TEXT)')
+            conn.execute('INSERT INTO tiktok_show_evidence_ledgers VALUES(?,?,?,?,?,?,?,?)',
+                         (1, SHOW['sessionId'], 'tiktok_show_evidence_ledger_v2', SHOW['showDate'], lifecycle,
+                          int(worker.utc(SHOW['endedAt']).timestamp()*1000), 'e'*64, raw))
+        before = hashlib.sha256(path.read_bytes()).hexdigest()
+        start, end = capture.window(SHOW['showDate'], NOW)
+        captured = capture.db_capture(path, 1, start, end, SHOW['showDate'], 5, SHOW['sessionId'])
+        self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), before)
+        result = bnl()
+        result['database']['showLedgers'] = captured['showLedgers']
+        return result
+
+    def test_large_finalized_sql_projection_releases_normal_packet_and_deduplicates(self):
+        doc = {'schemaVersion': 'tiktok_show_evidence_ledger_v2', 'showKey': SHOW['sessionId'],
+               'operationalEvents': [1], 'trackRoster': [1, 2], 'discordInteractions': [],
+               'messages': ['PRIVATE_SOURCE_TEXT'], 'padding': ''}
+        doc['padding'] = 'x'*(5_214_732-len(json.dumps(doc)))
+        raw = json.dumps(doc)
+        self.assertEqual(len(raw), 5_214_732)
+        source = self.ledger_bnl(raw)
+        self.assertTrue(worker.finalized(source, SHOW))
+        result = self.run_worker(collector=lambda *_: source)
+        self.assertEqual(result['results'][0]['status'], 'smtp_accepted')
+        message = BytesParser(policy=policy.default).parsebytes(self.sent[0])
+        parts = {part.get_filename(): part.get_payload(decode=True) for part in message.iter_attachments()}
+        manifest = json.loads(parts['manifest.txt'])
+        evidence = json.loads(parts['bnl-evidence.txt'])
+        self.assertEqual(manifest['status'], 'collected')
+        self.assertFalse(manifest['isTest'])
+        self.assertFalse(manifest['acceptancePassed'])
+        self.assertNotIn('PRIVATE_SOURCE_TEXT', parts['bnl-evidence.txt'].decode())
+        row = evidence['database']['showLedgers']['rows'][0]
+        self.assertEqual(row['source_digest'], 'e'*64)
+        self.assertEqual(row['messagesCount'], 1)
+        for name, details in manifest['files'].items():
+            self.assertEqual(details['bytes'], len(parts[name]))
+            self.assertEqual(details['sha256'], hashlib.sha256(parts[name]).hexdigest())
+        self.run_worker(collector=lambda *_: self.fail('accepted packet must not recapture'))
+        self.assertEqual(len(self.sent), 1)
+
+    def test_rejected_projection_waits_for_evidence_then_partial_at_unchanged_deadline(self):
+        raw = json.dumps({'schemaVersion': 'tiktok_show_evidence_ledger_v2', 'showKey': SHOW['sessionId'],
+                          'messages': ['PRIVATE_SOURCE_TEXT'*30]})
+        with patch.object(capture, 'LEDGER_STORAGE_BYTE_LIMIT', 256):
+            source = self.ledger_bnl(raw)
+        self.assertFalse(worker.finalized(source, SHOW))
+        deadline = worker.utc(SHOW['endedAt'])+timedelta(hours=2)
+        result = self.run_worker(now=deadline-timedelta(seconds=1), collector=lambda *_: source)
+        self.assertEqual(result['results'][0]['status'], 'waiting_for_bnl_evidence')
+        self.assertEqual(result['results'][0]['reason'], 'ledger_projection_unavailable')
+        self.assertEqual(result['results'][0]['ledgerProjectionReasons'], ['ledger_storage_byte_limit'])
+        self.assertFalse(self.sent)
+        result = self.run_worker(now=deadline, collector=lambda *_: source)
+        self.assertEqual(result['results'][0]['status'], 'smtp_accepted')
+        message = BytesParser(policy=policy.default).parsebytes(self.sent[0])
+        parts = {part.get_filename(): part.get_payload(decode=True) for part in message.iter_attachments()}
+        manifest = json.loads(parts['manifest.txt'])
+        self.assertEqual(manifest['status'], 'partial')
+        self.assertIn('exact_session_finalized_ledger_missing', manifest['coverageIssues'])
+        self.assertIn('bnl.database.showLedgers.rows[].ledgerProjection:unavailable', manifest['coverageIssues'])
+        self.assertIn('ledger_storage_byte_limit', parts['bnl-evidence.txt'].decode())
+        self.assertNotIn('PRIVATE_SOURCE_TEXT', parts['bnl-evidence.txt'].decode())
+        self.run_worker(now=deadline+timedelta(minutes=5), collector=lambda *_: self.fail('accepted partial packet must not recapture'))
+        self.assertEqual(len(self.sent), 1)
+
+    def test_readable_active_missing_and_unavailable_evidence_wait_distinctly(self):
+        source = bnl()
+        source['database']['showLedgers']['rows'][0]['lifecycle_status'] = 'active'
+        self.assertFalse(worker.finalized(source, SHOW))
+        self.assertEqual(worker.finalization_wait(source, SHOW), {'status': 'waiting_for_bnl_finalization'})
+        source['database']['showLedgers']['rows'] = []
+        self.assertEqual(worker.finalization_wait(source, SHOW), {'status': 'waiting_for_bnl_finalization'})
+        source['database']['showLedgers']['available'] = False
+        result = self.run_worker(collector=lambda *_: source)
+        self.assertEqual(result['results'][0], {'sessionId': SHOW['sessionId'], 'status': 'waiting_for_bnl_evidence',
+                                              'reason': 'bnl_evidence_unavailable'})
+        self.assertFalse(self.sent)
+        rejected = bnl()
+        row = rejected['database']['showLedgers']['rows'][0]
+        row['show_key'] = SHOW['sessionId']
+        row['ledgerProjection'] = {'available': False, 'reason': 'PRIVATE_UNKNOWN_REASON'}
+        self.assertFalse(worker.finalized(rejected, SHOW))
+        status = worker.finalization_wait(rejected, SHOW)
+        self.assertEqual(status['status'], 'waiting_for_bnl_evidence')
+        self.assertEqual(status['ledgerProjectionReasons'], [])
+        self.assertNotIn('PRIVATE', json.dumps(status))
+
+    def test_escaped_nul_binding_alias_cannot_release_finalized_packet(self):
+        raw = json.dumps({'schemaVersion': 'tiktok_show_evidence_ledger_v2',
+                          'showKey\x00PRIVATE_SUFFIX': SHOW['sessionId'], 'showKey': 'other',
+                          'messages': ['PRIVATE_SOURCE_TEXT']})
+        source = self.ledger_bnl(raw)
+        row = source['database']['showLedgers']['rows'][0]
+        self.assertEqual(row['lifecycle_status'], 'finalized')
+        self.assertEqual(row['sessionId'], '')
+        self.assertFalse(worker.finalized(source, SHOW))
+        result = self.run_worker(collector=lambda *_: source)
+        self.assertEqual(result['results'][0]['status'], 'waiting_for_bnl_evidence')
+        self.assertEqual(result['results'][0]['ledgerProjectionReasons'], ['invalid_ledger_metadata_keys'])
+        self.assertFalse(self.sent)
+        self.assertNotIn('PRIVATE', json.dumps(source))
+        self.assertNotIn('PRIVATE', json.dumps(result))
+
+    def test_escaped_nul_binding_value_cannot_release_finalized_packet(self):
+        raw = json.dumps({'schemaVersion': 'tiktok_show_evidence_ledger_v2',
+                          'showKey': SHOW['sessionId']+'\x00PRIVATE_SUFFIX',
+                          'messages': ['PRIVATE_SOURCE_TEXT']})
+        source = self.ledger_bnl(raw)
+        self.assertEqual(source['database']['showLedgers']['rows'][0]['lifecycle_status'], 'finalized')
+        self.assertFalse(worker.finalized(source, SHOW))
+        result = self.run_worker(collector=lambda *_: source)
+        self.assertEqual(result['results'][0]['status'], 'waiting_for_bnl_evidence')
+        self.assertEqual(result['results'][0]['ledgerProjectionReasons'], ['invalid_ledger_metadata_values'])
+        self.assertFalse(self.sent)
+        self.assertNotIn('PRIVATE', json.dumps(source))
+        self.assertNotIn('PRIVATE', json.dumps(result))
+
     def test_cross_midnight_packet_readable_hashes_and_dedup(self):
         result = self.run_worker()
         self.assertEqual(result["results"][0]["status"], "smtp_accepted")

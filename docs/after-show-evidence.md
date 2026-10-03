@@ -65,6 +65,37 @@ attachment hashing and the independent public-chat/privacy filters are preserved
 Without a bound exact-session ledger, `episodeProjections` is unavailable rather
 than presenting unchecked projection counts as zero.
 
+
+Collector version `canonical_projection_lookup_2026_10_03` retains that bounded
+ledger projection and counts only **current canonical native projection rows**.
+It derives finite episode/participant source keys internally from the same
+validated, finalized exact-session ledger and its matching current native
+`sourceDigest` / `source_digest` revision. Identity fallback, 240 Unicode
+codepoint truncation, hashing and surface separation follow the native writer.
+These counts exclude older revisions and unrelated source rows; they are not the
+previous broad diagnostic totals for every historical row sharing a show event.
+
+The reader checks and forces the existing nonpartial `idx_mle_source` index,
+batches at most 400 source keys per query, and retains guild, source table,
+session event, public eligibility and active lifecycle filters. Episode and
+participation predicates must match their canonical key types. A missing or
+incompatible index makes this section explicitly unavailable; it never falls
+back to a broad predicate scan or creates an index. The shared read deadline
+and source transaction remain unchanged.
+
+Both native participant arrays must be supported arrays, with at most 5,000
+items combined, independent of the packet's exported chat row limit. Each
+internal identity JSON projection is limited to 64 KiB. Non-object items,
+unsupported identity types, duplicate identity keys, escaped immediate key
+spellings, decoded NUL keys/values, digest mismatch, malformed encoding and
+unsupported metadata make the section
+unavailable with no counts. Multipath JSON preserves identity values before
+older SQLite versions can truncate decoded NULs; literal backslash-`u0000`
+text remains supported. Identity strings and derived participant keys stay
+internal; only counts, the expected canonical row count and scope are exported.
+Any section query failure discards its counts and retains safe stage/category
+metadata alongside earlier captured sections.
+
 Before the unchanged two-hour deadline, failed collection/database/ledger reads
 or rejected projections report `waiting_for_bnl_evidence`; projection failures
 include allowlisted `ledgerProjectionReasons`. A readable missing or active
@@ -159,15 +190,17 @@ that a stage never ran.
 ## Updating an existing installation
 
 A website deployment does not update the VPS copy in
-`~/.local/share/barcode-after-show/`. This update replaces both
-`bnl_after_show_capture.py` and `after_show.py` there with verified files. Install
-the capture module first; it remains compatible with the older worker. Keep the
+`~/.local/share/barcode-after-show/`. For this canonical-query follow-up, replace only
+`bnl_after_show_capture.py` there with the verified file; `after_show.py` remains
+unchanged from the bounded-ledger repair. The capture module remains compatible
+with the existing worker. Keep the
 existing configuration, timer and `state.json`. Do not rerun setup or
 erase accepted-delivery state. No BNL restart is required. The PR handoff includes
 the exact file hashes and one inline installation/capture command.
 
 For the next normal packet, check `collectorVersion`, `ledgerProjection`
-availability/count coverage, public model rows,
+availability/count coverage, `episodeProjections` availability and canonical scope,
+public model rows,
 `existingHealth.available`, both receipt sections and their `fieldCoverage`.
 Old schemas, expired records, missing permissions and unavailable readers remain
 coverage gaps, not passing checks. To recover the most recently archived show's

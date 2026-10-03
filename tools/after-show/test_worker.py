@@ -323,18 +323,24 @@ class WorkerTests(unittest.TestCase):
     def test_exact_session_ledger_and_active_public_projections_only(self):
         path=Path(self.temp.name)/"fixture.db"
         with sqlite3.connect(path) as conn:
-            conn.execute("CREATE TABLE tiktok_show_evidence_ledgers(guild_id INTEGER, show_key TEXT, schema_version TEXT, show_date TEXT, lifecycle_status TEXT, ended_at_ms INTEGER, ledger_json TEXT)")
+            digest = "a"*64
+            participant_key = SHOW["sessionId"]+":participant:tiktok:"+hashlib.sha256(b"private-participant").hexdigest()[:32]
+            conn.execute("CREATE TABLE tiktok_show_evidence_ledgers(guild_id INTEGER, show_key TEXT, schema_version TEXT, show_date TEXT, lifecycle_status TEXT, ended_at_ms INTEGER, source_digest TEXT, ledger_json TEXT)")
             for sid in (SHOW["sessionId"], "private-other"):
-                doc={"schemaVersion":"tiktok_show_evidence_ledger_v2","showKey":sid,"operationalEvents":[1,2],"trackRoster":[1],"messages":["not exported raw"]}
-                conn.execute("INSERT INTO tiktok_show_evidence_ledgers VALUES(1,?,?,?,?,?,?)",(sid,"tiktok_show_evidence_ledger_v2",SHOW["showDate"],"finalized",int(NOW.timestamp()*1000),json.dumps(doc)))
-            conn.execute("CREATE TABLE memory_ledger_entries(guild_id INTEGER,source_event_key TEXT,predicate_key TEXT,public_usable INTEGER,visibility TEXT,lifecycle_status TEXT)")
-            conn.executemany("INSERT INTO memory_ledger_entries VALUES(1,?,?,?,?,?)",[(SHOW["sessionId"],"barcode_radio.show_episode",1,"public_safe","active"),(SHOW["sessionId"],"barcode_radio.show_participation",0,"private","active"),("private-other","barcode_radio.show_episode",1,"public_safe","active")])
+                doc={"schemaVersion":"tiktok_show_evidence_ledger_v2","showKey":sid,"sourceDigest":digest,"participants":[{"subjectRef":"private-participant"}],"discordParticipants":[],"operationalEvents":[1,2],"trackRoster":[1],"messages":["not exported raw"]}
+                conn.execute("INSERT INTO tiktok_show_evidence_ledgers VALUES(1,?,?,?,?,?,?,?)",(sid,"tiktok_show_evidence_ledger_v2",SHOW["showDate"],"finalized",int(NOW.timestamp()*1000),digest,json.dumps(doc)))
+            conn.execute("CREATE TABLE memory_ledger_entries(guild_id INTEGER,source_table TEXT,source_row_id TEXT,source_revision TEXT,source_event_key TEXT,predicate_key TEXT,public_usable INTEGER,visibility TEXT,lifecycle_status TEXT)")
+            conn.execute("CREATE INDEX idx_mle_source ON memory_ledger_entries(guild_id,source_table,source_row_id,source_revision)")
+            conn.executemany("INSERT INTO memory_ledger_entries VALUES(1,'tiktok_show_evidence',?,?,?,?,?,?,?)",[(SHOW["sessionId"],digest,SHOW["sessionId"],"barcode_radio.show_episode",1,"public_safe","active"),(participant_key,digest,SHOW["sessionId"],"barcode_radio.show_participation",0,"private","active"),("private-other",digest,"private-other","barcode_radio.show_episode",1,"public_safe","active")])
         before=path.read_bytes()
         start,end=capture.window(SHOW["showDate"],NOW+timedelta(hours=1))
         result=capture.db_capture(path,1,start,end,SHOW["showDate"],50,SHOW["sessionId"])
         self.assertEqual(len(result["showLedgers"]["rows"]),1)
         self.assertEqual(result["showLedgers"]["rows"][0]["operationalEventsCount"],2)
         self.assertNotIn("not exported raw",json.dumps(result))
+        self.assertNotIn("private-participant",json.dumps(result))
+        self.assertNotIn(participant_key,json.dumps(result))
+        self.assertIn("Current canonical native projection rows",result["episodeProjections"]["scope"])
         self.assertEqual(result["episodeProjections"]["counts"],{"barcode_radio.show_episode":1,"barcode_radio.show_participation":0})
         self.assertEqual(path.read_bytes(),before)
 

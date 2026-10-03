@@ -529,5 +529,218 @@ class CaptureTests(unittest.TestCase):
             self.assertEqual(result['reason'], 'health_reader_changed; not imported')
 
 
+
+class CanonicalProjectionTests(unittest.TestCase):
+    SESSION = 'session_fixture'
+    DIGEST = 'a'*64
+
+    def participant_key(self, participant, surface):
+        identity = (participant.get('subjectRef') or participant.get('handle') or 'unknown-viewer')[:240]
+        return self.SESSION+':participant:'+surface+':'+hashlib.sha256(identity.encode()).hexdigest()[:32]
+
+    def native_capture(self, participants=(), discord=(), *, raw=None, rows=None,
+                       index='canonical', extra_rows=(), lifecycle='finalized',
+                       digest=None, limit=5, trace=None):
+        doc = {'schemaVersion': 'tiktok_show_evidence_ledger_v2', 'showKey': self.SESSION,
+               'sourceDigest': self.DIGEST, 'participants': list(participants),
+               'discordParticipants': list(discord), 'operationalEvents': [],
+               'trackRoster': [], 'discordInteractions': [], 'messages': ['PRIVATE_SOURCE_TEXT']}
+        if raw is None:
+            raw = json.dumps(doc)
+        if rows is None:
+            keys = {self.participant_key(item, surface)
+                    for surface, people in (('tiktok', participants), ('discord', discord))
+                    for item in people}
+            rows = [(1, 'tiktok_show_evidence', self.SESSION, self.DIGEST, self.SESSION,
+                     'barcode_radio.show_episode', 1, 'public_safe', 'active')]
+            rows.extend((1, 'tiktok_show_evidence', key, self.DIGEST, self.SESSION,
+                         'barcode_radio.show_participation', 1, 'public_safe', 'active') for key in keys)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/'canonical.sqlite'
+            stamp = int(datetime(2026, 9, 26, 8, tzinfo=timezone.utc).timestamp()*1000)
+            with sqlite3.connect(path) as conn:
+                conn.execute('CREATE TABLE tiktok_show_evidence_ledgers(guild_id INTEGER, show_key TEXT, schema_version TEXT, show_date TEXT, lifecycle_status TEXT, ended_at_ms INTEGER, source_digest TEXT, ledger_json TEXT)')
+                conn.execute('INSERT INTO tiktok_show_evidence_ledgers VALUES(?,?,?,?,?,?,?,?)',
+                             (1, self.SESSION, doc['schemaVersion'], '2026-09-25', lifecycle,
+                              stamp, self.DIGEST if digest is None else digest, raw))
+                conn.execute('CREATE TABLE memory_ledger_entries(guild_id INTEGER, source_table TEXT, source_row_id TEXT, source_revision TEXT, source_event_key TEXT, predicate_key TEXT, public_usable INTEGER, visibility TEXT, lifecycle_status TEXT)')
+                if index == 'canonical':
+                    conn.execute('CREATE INDEX idx_mle_source ON memory_ledger_entries(guild_id,source_table,source_row_id,source_revision)')
+                elif index == 'wrong':
+                    conn.execute('CREATE INDEX idx_mle_source ON memory_ledger_entries(guild_id,predicate_key)')
+                elif index == 'partial':
+                    conn.execute('CREATE INDEX idx_mle_source ON memory_ledger_entries(guild_id,source_table,source_row_id,source_revision) WHERE public_usable=1')
+                conn.execute('CREATE INDEX idx_mle_predicate ON memory_ledger_entries(guild_id,predicate_key)')
+                conn.executemany('INSERT INTO memory_ledger_entries VALUES(?,?,?,?,?,?,?,?,?)', [*rows, *extra_rows])
+            before = hashlib.sha256(path.read_bytes()).hexdigest()
+            start, end = capture.window('2026-09-25', datetime(2026, 9, 26, 9, tzinfo=timezone.utc))
+            original_connect = sqlite3.connect
+            def connect(*args, **kwargs):
+                conn = original_connect(*args, **kwargs)
+                if trace is not None:
+                    conn.set_trace_callback(trace.append)
+                return conn
+            with patch.object(capture.sqlite3, 'connect', side_effect=connect):
+                result = capture.db_capture(path, 1, start, end, '2026-09-25', limit, self.SESSION)
+            self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), before)
+            return result
+
+    def test_current_canonical_counts_and_internal_identity_privacy(self):
+        people = [{'subjectRef': 'PRIVATE_SUBJECT_REF', 'handle': 'PRIVATE_HANDLE'}]
+        result = self.native_capture(people, [{'handle': 'PRIVATE_DISCORD_HANDLE'}])
+        section = result['episodeProjections']
+        self.assertTrue(section['available'])
+        self.assertEqual(section['counts'], {'barcode_radio.show_episode': 1, 'barcode_radio.show_participation': 2})
+        self.assertEqual(section['expectedCanonicalRows'], 3)
+        self.assertIn('Current canonical native projection rows', section['scope'])
+        exported = json.dumps(result)
+        packet = capture.pack({'database': result})
+        with zipfile.ZipFile(io.BytesIO(packet)) as archive:
+            exported += archive.read('evidence.json').decode()
+        for sentinel in ('PRIVATE_SUBJECT_REF', 'PRIVATE_HANDLE', 'PRIVATE_DISCORD_HANDLE',
+                         'PRIVATE_SOURCE_TEXT', ':participant:', 'ledger_json'):
+            self.assertNotIn(sentinel, exported)
+
+    def test_native_fallback_unicode_truncation_and_surface_deduplication(self):
+        people = [{'subjectRef': '🙂'*241}, {'subjectRef': '🙂'*240+'different'},
+                  {'subjectRef': None, 'handle': 'fallback'}, {'subjectRef': '', 'handle': 'fallback'},
+                  {}, {'subjectRef': ' '}, {'subjectRef': r'literal\u0000value'}]
+        result = self.native_capture(people, [{'handle': 'fallback'}])
+        self.assertEqual(result['episodeProjections']['counts']['barcode_radio.show_participation'], 6)
+        self.assertEqual(result['episodeProjections']['expectedCanonicalRows'], 7)
+
+    def test_stale_foreign_ineligible_and_cross_wired_rows_are_excluded(self):
+        person = {'subjectRef': 'PRIVATE_IDENTITY'}
+        key = self.participant_key(person, 'tiktok')
+        episode = (1, 'tiktok_show_evidence', self.SESSION, self.DIGEST, self.SESSION,
+                   'barcode_radio.show_episode', 1, 'public_safe', 'active')
+        participation = (1, 'tiktok_show_evidence', key, self.DIGEST, self.SESSION,
+                         'barcode_radio.show_participation', 1, 'public_safe', 'active')
+        extras = []
+        for base in (episode, participation):
+            for field, value in ((0, 2), (1, 'foreign_source'), (3, 'b'*64),
+                                 (4, 'different_episode'), (6, 0), (7, 'private'), (8, 'superseded')):
+                changed = list(base); changed[field] = value; extras.append(tuple(changed))
+        extras.extend([
+            (1, 'tiktok_show_evidence', key, self.DIGEST, self.SESSION, 'barcode_radio.show_episode', 1, 'public', 'active'),
+            (1, 'tiktok_show_evidence', self.SESSION, self.DIGEST, self.SESSION, 'barcode_radio.show_participation', 1, 'public', 'active'),
+            (1, 'tiktok_show_evidence', 'different_row', self.DIGEST, self.SESSION, 'barcode_radio.show_participation', 1, 'public', 'active'),
+        ])
+        trace = []
+        section = self.native_capture([person], extra_rows=extras, trace=trace)['episodeProjections']
+        self.assertEqual(section['counts'], {'barcode_radio.show_episode': 1, 'barcode_radio.show_participation': 1})
+        count_queries = [query for query in trace if 'SELECT COUNT(*) FROM memory_ledger_entries' in query]
+        self.assertEqual(len(count_queries), 2)
+        self.assertTrue(all('INDEXED BY idx_mle_source' in query and 'source_revision=' in query
+                            and 'source_row_id IN' in query for query in count_queries))
+        self.assertTrue(any('PRAGMA query_only=ON' in query for query in trace))
+
+    def test_missing_wrong_or_partial_index_is_explicitly_unavailable(self):
+        for index in ('missing', 'wrong', 'partial'):
+            with self.subTest(index=index):
+                trace = []
+                result = self.native_capture(index=index, trace=trace)
+                section = result['episodeProjections']
+                self.assertTrue(result['available'])
+                self.assertFalse(section['available'])
+                self.assertEqual(section['reason'], 'native_source_index_unavailable')
+                self.assertNotIn('counts', section)
+                self.assertFalse(any('SELECT COUNT(*) FROM memory_ledger_entries' in query for query in trace))
+
+    def test_missing_unsupported_and_mismatched_native_metadata_never_becomes_zero(self):
+        base = {'schemaVersion': 'tiktok_show_evidence_ledger_v2', 'showKey': self.SESSION,
+                'sourceDigest': self.DIGEST, 'participants': [], 'discordParticipants': []}
+        docs = []
+        for field in ('participants', 'discordParticipants', 'sourceDigest'):
+            missing = dict(base); missing.pop(field); docs.append(missing)
+            for value in (None, {}, 'PRIVATE_VALUE', 3, True):
+                docs.append({**base, field: value})
+        docs.extend({**base, 'participants': [item]} for item in
+                    (None, 'PRIVATE_VALUE', 7, [], {'subjectRef': 7}, {'handle': False},
+                     {'subjectRef': 'PRIVATE\x00VALUE'}, {'handle': '\ud800'}))
+        for doc in docs:
+            with self.subTest(fields=tuple(doc)):
+                result = self.native_capture(raw=json.dumps(doc), rows=[])
+                section = result['episodeProjections']
+                self.assertFalse(section['available'])
+                self.assertNotIn('counts', section)
+                self.assertIn(section['reason'], ('unsupported_native_projection_metadata',
+                                                  'native_projection_digest_mismatch'))
+                self.assertNotIn('PRIVATE', json.dumps(result))
+        section = self.native_capture(raw=json.dumps({**base, 'sourceDigest': 'b'*64}), rows=[])['episodeProjections']
+        self.assertEqual(section['reason'], 'native_projection_digest_mismatch')
+        for digest in ('A'*64, 'a'*63, 'PRIVATE_DIGEST', None):
+            # None uses the fixture default; test missing table digest with an empty string instead.
+            if digest is None:
+                digest = ''
+            section = self.native_capture(digest=digest, rows=[])['episodeProjections']
+            self.assertEqual(section['reason'], 'unsupported_native_projection_metadata')
+            self.assertNotIn('counts', section)
+
+    def test_duplicate_and_nul_alias_identity_metadata_is_rejected(self):
+        base = '{"schemaVersion":"tiktok_show_evidence_ledger_v2","showKey":"session_fixture","sourceDigest":"'+self.DIGEST+'","participants":[ITEM],"discordParticipants":[]}'
+        items = ('{"subject\\u0052ef":"PRIVATE_SUBJECT"}',
+                 '{"ha\\u006edle":"PRIVATE_HANDLE"}',
+                 '{"subject\\u0052ef":7}',
+                 '{"ha\\u006edle":false}',
+                 '{"subject\\u0052ef":"PRIVATE_SUBJECT","handle":"fallback"}',
+                 '{"subjectRef":"first","subjectRef":"PRIVATE_SECOND"}',
+                 '{"subject\\u0052ef":"first","subjectRef":"PRIVATE_SECOND"}',
+                 '{"handle":"first","handle":"PRIVATE_SECOND"}',
+                 '{"subjectRef\\u0000PRIVATE_SUFFIX":"first","subjectRef":"second"}',
+                 '{"handle\\u0000PRIVATE_SUFFIX":"first"}',
+                 '{"subjectRef":"first\\u0000PRIVATE_SUFFIX"}')
+        for item in items:
+            with self.subTest(item=item[:30]):
+                result = self.native_capture(raw=base.replace('ITEM', item), rows=[])
+                self.assertFalse(result['episodeProjections']['available'])
+                self.assertNotIn('counts', result['episodeProjections'])
+                self.assertNotIn('PRIVATE', json.dumps(result))
+        for field, value in (('sourceDigest', '"'+self.DIGEST+'"'),
+                             ('participants', '[]'), ('discordParticipants', '[]')):
+            raw = base.replace('ITEM', '{}').replace('"'+field+'":', '"'+field+'":'+value+',"'+field+'":')
+            section = self.native_capture(raw=raw, rows=[])['episodeProjections']
+            self.assertFalse(section['available'])
+            self.assertNotIn('counts', section)
+
+    def test_participant_bound_and_batching_are_independent_of_export_limit(self):
+        people = [{'subjectRef': 'PRIVATE_REF_'+str(index)} for index in range(7)]
+        with patch.object(capture, 'PROJECTION_PARTICIPANT_LIMIT', 7), \
+             patch.object(capture, 'PROJECTION_QUERY_BATCH', 2):
+            trace = []
+            section = self.native_capture(people, limit=1, trace=trace)['episodeProjections']
+            self.assertTrue(section['available'])
+            self.assertEqual(section['counts']['barcode_radio.show_participation'], 7)
+            self.assertEqual(len([query for query in trace if 'SELECT COUNT(*) FROM memory_ledger_entries' in query]), 5)
+            section = self.native_capture(people, [{}], rows=[], limit=1)['episodeProjections']
+            self.assertFalse(section['available'])
+            self.assertEqual(section['reason'], 'native_projection_participant_limit')
+            self.assertNotIn('counts', section)
+        with patch.object(capture, 'PROJECTION_IDENTITY_BYTE_LIMIT', 32):
+            section = self.native_capture([{'subjectRef': 'PRIVATE_REF_'*10}], rows=[])['episodeProjections']
+            self.assertFalse(section['available'])
+            self.assertEqual(section['reason'], 'unsupported_native_projection_metadata')
+
+    def test_nonfinalized_ledger_and_section_failure_do_not_export_partial_counts(self):
+        result = self.native_capture(lifecycle='active')
+        self.assertEqual(result['episodeProjections']['reason'], 'exact_session_ledger_unavailable')
+        original = capture.canonical_episode_projections
+        def interrupted(conn, *args):
+            class InterruptingConnection:
+                def execute(self, query, params=()):
+                    if 'SELECT COUNT(*) FROM memory_ledger_entries' in query:
+                        raise sqlite3.OperationalError('interrupted PRIVATE_SQL')
+                    return conn.execute(query, params)
+            return original(InterruptingConnection(), *args)
+        with patch.object(capture, 'canonical_episode_projections', side_effect=interrupted):
+            result = self.native_capture([{'handle': 'PRIVATE_HANDLE'}])
+        self.assertTrue(result['available'])
+        self.assertTrue(result['showLedgers']['available'])
+        section = result['episodeProjections']
+        self.assertFalse(section['available'])
+        self.assertEqual((section['errorStage'], section['errorCategory']), ('episodeProjections', 'interrupted'))
+        self.assertNotIn('counts', section)
+        self.assertNotIn('PRIVATE', json.dumps(result))
+
 if __name__ == '__main__':
     unittest.main()

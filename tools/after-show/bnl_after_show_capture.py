@@ -25,6 +25,9 @@ sys.dont_write_bytecode = True
 PACIFIC = ZoneInfo("America/Los_Angeles")
 GUILD = 1288269405209235551
 LEDGER_STORAGE_BYTE_LIMIT = 8 * 1024 * 1024
+PROJECTION_PARTICIPANT_LIMIT = 5000
+PROJECTION_IDENTITY_BYTE_LIMIT = 64 * 1024
+PROJECTION_QUERY_BATCH = 400
 LEDGER_COUNT_FIELDS = ("operationalEvents", "trackRoster", "discordInteractions", "messages")
 LEDGER_PROJECTION_FAILURES = frozenset((
     "invalid_ledger_json_type", "ledger_storage_byte_limit", "invalid_ledger_json",
@@ -191,6 +194,140 @@ def ledger_projection_selection() -> str:
         END AS ledger_projection_json"""
 
 
+
+def canonical_episode_projections(conn, guild, session_id, ledger_rows, ledger_truncated,
+                                  ledger_where, ledger_args, memory_columns) -> dict:
+    """Count current native rows via finite keys, never a historical predicate scan.
+
+    Identity strings are a bounded internal SQL projection. No participant
+    references, derived row keys or source JSON are returned to the packet.
+    """
+    base = {"available": False, "sessionId": session_id,
+            "scope": "Current canonical native projection rows; not historical projection totals.",
+            "participantLimit": PROJECTION_PARTICIPANT_LIMIT}
+    def unavailable(reason):
+        return {**base, "reason": reason}
+
+    if ledger_truncated or len(ledger_rows) != 1:
+        return unavailable("exact_session_ledger_unavailable")
+    ledger = ledger_rows[0]
+    if (ledger.get("sessionId") != session_id or ledger.get("show_key") != session_id
+            or ledger.get("schema_version") != "tiktok_show_evidence_ledger_v2"
+            or ledger.get("lifecycle_status") != "finalized"
+            or not ledger.get("ledgerProjection", {}).get("available")):
+        return unavailable("exact_session_ledger_unavailable")
+    digest = ledger.get("source_digest")
+    if not isinstance(digest, str) or not re.fullmatch(r"[a-f0-9]{64}", digest):
+        return unavailable("unsupported_native_projection_metadata")
+    required = {"guild_id", "source_table", "source_row_id", "source_revision",
+                "source_event_key", "predicate_key", "public_usable", "visibility",
+                "lifecycle_status"}
+    if not required <= memory_columns:
+        return unavailable("table_or_required_columns_missing")
+
+    try:
+        indexes = list(conn.execute("PRAGMA index_list(memory_ledger_entries)"))
+        source_index = next((row for row in indexes if row["name"] == "idx_mle_source"), None)
+        if (source_index is None or source_index["partial"] != 0
+                or [row["name"] for row in conn.execute("PRAGMA index_info(idx_mle_source)")]
+                != ["guild_id", "source_table", "source_row_id", "source_revision"]):
+            return unavailable("native_source_index_unavailable")
+        # The original binding/type/NUL/schema guards already passed in this
+        # transaction. Check only the additional native-writer metadata here.
+        selection = """CASE
+            WHEN EXISTS (SELECT 1 FROM json_each(ledger_json)
+                         WHERE key IN ('sourceDigest','participants','discordParticipants')
+                         GROUP BY key HAVING COUNT(*)>1)
+              THEN NULL
+            WHEN json_type(ledger_json,'$.sourceDigest') IS NOT 'text'
+                 OR json_type(ledger_json,'$.participants') IS NOT 'array'
+                 OR json_type(ledger_json,'$.discordParticipants') IS NOT 'array'
+              THEN NULL
+            ELSE json_object(
+              'digest',json(json_extract(ledger_json,'$.sourceDigest','$.sourceDigest')),
+              'tiktokCount',json_array_length(ledger_json,'$.participants'),
+              'discordCount',json_array_length(ledger_json,'$.discordParticipants'))
+            END"""
+        headers = conn.execute(
+            f"SELECT {selection} FROM tiktok_show_evidence_ledgers WHERE {ledger_where} LIMIT 2",
+            ledger_args).fetchall()
+        if len(headers) != 1 or headers[0][0] is None:
+            return unavailable("unsupported_native_projection_metadata")
+        header = json.loads(headers[0][0])
+        if header["digest"] != [digest, digest]:
+            return unavailable("native_projection_digest_mismatch")
+        participant_count = header["tiktokCount"] + header["discordCount"]
+        if participant_count > PROJECTION_PARTICIPANT_LIMIT:
+            return unavailable("native_projection_participant_limit")
+
+        participant_keys = set()
+        for surface, field in (("tiktok", "participants"), ("discord", "discordParticipants")):
+            # CASE prevents JSON1 parsing scalar items as objects. Inspect raw
+            # immediate key tokens before path extraction on older JSON1, and
+            # retain a multipath JSON array so decoded NUL values cannot truncate.
+            # Escaped key spellings are unsupported: historical JSON1 path
+            # lookup can miss a key that Python decodes as subjectRef/handle.
+            identities = conn.execute(f"""SELECT CASE
+                WHEN participant.type!='object' THEN NULL
+                WHEN EXISTS (SELECT 1 FROM json_each(participant.value)
+                     WHERE instr(key,char(0))>0 OR instr(fullkey,char(0))>0
+                        OR instr(fullkey,char(92))>0
+                        OR instr(replace(fullkey,char(92)||char(92),''),char(92)||'u0000')>0)
+                  THEN NULL
+                WHEN EXISTS (SELECT 1 FROM json_each(participant.value)
+                     WHERE (key='subjectRef' AND json_type(participant.value,'$.subjectRef') IS NULL)
+                        OR (key='handle' AND json_type(participant.value,'$.handle') IS NULL))
+                  THEN NULL
+                WHEN EXISTS (SELECT 1 FROM json_each(participant.value)
+                     WHERE key IN ('subjectRef','handle') GROUP BY key HAVING COUNT(*)>1)
+                  THEN NULL
+                WHEN json_type(participant.value,'$.subjectRef') NOT IN ('text','null')
+                     OR json_type(participant.value,'$.handle') NOT IN ('text','null')
+                  THEN NULL
+                WHEN length(CAST(json_extract(participant.value,'$.subjectRef','$.handle') AS BLOB))>{PROJECTION_IDENTITY_BYTE_LIMIT}
+                  THEN NULL
+                ELSE json_extract(participant.value,'$.subjectRef','$.handle') END
+                FROM tiktok_show_evidence_ledgers,
+                     json_each(ledger_json,'$.{field}') AS participant
+                WHERE {ledger_where} LIMIT ?""",
+                (*ledger_args, PROJECTION_PARTICIPANT_LIMIT + 1)).fetchall()
+            if len(identities) != header[surface + "Count"]:
+                return unavailable("unsupported_native_projection_metadata")
+            for row in identities:
+                if row[0] is None:
+                    return unavailable("unsupported_native_projection_metadata")
+                subject, handle = json.loads(row[0])
+                if any(value is not None and (not isinstance(value, str) or "\x00" in value)
+                       for value in (subject, handle)):
+                    return unavailable("unsupported_native_projection_metadata")
+                identity = (subject or handle or "unknown-viewer")[:240]
+                key_hash = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:32]
+                participant_keys.add(f"{session_id}:participant:{surface}:{key_hash}")
+
+        counts = {}
+        for predicate, keys in (
+                ("barcode_radio.show_episode", [session_id]),
+                ("barcode_radio.show_participation", sorted(participant_keys))):
+            count = 0
+            for offset in range(0, len(keys), PROJECTION_QUERY_BATCH):
+                batch = keys[offset:offset + PROJECTION_QUERY_BATCH]
+                slots = ",".join("?" for _ in batch)
+                query = f"""SELECT COUNT(*) FROM memory_ledger_entries INDEXED BY idx_mle_source
+                    WHERE guild_id=? AND source_table='tiktok_show_evidence'
+                      AND source_row_id IN ({slots}) AND source_revision=?
+                      AND source_event_key=? AND predicate_key=?
+                      AND public_usable=1 AND visibility IN ('public','public_safe')
+                      AND lifecycle_status='active'"""
+                count += conn.execute(query, (guild, *batch, digest, session_id, predicate)).fetchone()[0]
+            counts[predicate] = count
+        return {**base, "available": True, "counts": counts,
+                "expectedCanonicalRows": 1 + len(participant_keys)}
+    except sqlite3.Error as exc:
+        return {**base, **sqlite_failure(exc, "episodeProjections")}
+    except (ValueError, TypeError, KeyError, UnicodeError):
+        return unavailable("unsupported_native_projection_metadata")
+
+
 def command(args: list[str], timeout: int = 15) -> dict:
     try:
         result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
@@ -310,6 +447,8 @@ def db_capture(db_path: Path, guild: int, start: datetime, end: datetime, show_d
             row["speakerKey"] = speaker_key(row.pop("subject_ref"))
             row.update(safe_text(row.pop("raw_text")))
 
+        canonical_ledgers = []
+        canonical_ledger_where, canonical_ledger_args = "", ()
         specs = [
             ("showLedgers", "tiktok_show_evidence_ledgers", "ended_at_ms", True,
              ["show_key", "schema_version", "show_date", "lifecycle_status", "started_at_ms", "ended_at_ms", "event_count", "participant_count", "topic_count", "track_count", "source_digest"]),
@@ -353,6 +492,7 @@ def db_capture(db_path: Path, guild: int, start: datetime, end: datetime, show_d
                 if session_id is not None:
                     predicate += " AND show_key=?"
                     params += (session_id,)
+                canonical_ledger_where, canonical_ledger_args = predicate, params
                 selected.append(ledger_projection_selection())
             rows = read(key, table, required, ",".join(selected), predicate, params, stamp)
             if key in {"sharedBrainReceipts", "intelligencePacketReceipts"}:
@@ -384,26 +524,20 @@ def db_capture(db_path: Path, guild: int, start: datetime, end: datetime, show_d
                         row["ledgerProjection"]["countCoverage"] = {
                             "available": not missing, "missingOrNonArrayFields": missing,
                         }
+            if key == "showLedgers":
+                canonical_ledgers = [dict(row) for row in rows]
             for row in rows:
                 for field, value in row.items():
                     if isinstance(value, str) and not re.fullmatch(r"[A-Za-z0-9_ .:+/=-]{0,200}", value):
                         row[field] = "[unstructured metadata omitted]"
         if session_id is not None:
-            keys = [row["show_key"] for row in result.get("showLedgers", {}).get("rows", []) if row.get("sessionId") == session_id and row.get("show_key")]
-            required = {"guild_id", "source_event_key", "predicate_key", "public_usable", "visibility", "lifecycle_status"}
-            if required <= columns("memory_ledger_entries"):
-                if keys:
-                    counts = {"barcode_radio.show_episode": 0, "barcode_radio.show_participation": 0}
-                    stage = "episodeProjections"
-                    slots = ",".join("?" for _ in keys)
-                    query = f"SELECT predicate_key, COUNT(*) FROM memory_ledger_entries WHERE guild_id=? AND source_event_key IN ({slots}) AND public_usable=1 AND visibility IN ('public','public_safe') AND lifecycle_status='active' AND predicate_key IN ('barcode_radio.show_episode','barcode_radio.show_participation') GROUP BY predicate_key"
-                    counts.update(dict(conn.execute(query, (guild, *keys)).fetchall()))
-                    result["episodeProjections"] = {"available": True, "sessionId": session_id, "counts": counts}
-                else:
-                    result["episodeProjections"] = {"available": False, "sessionId": session_id,
-                                                    "reason": "exact_session_ledger_unavailable"}
-            else:
-                result["episodeProjections"] = {"available": False, "reason": "table_or_required_columns_missing"}
+            stage = "episodeProjections"
+            memory_columns = columns("memory_ledger_entries")
+            stage = "episodeProjections"
+            result["episodeProjections"] = canonical_episode_projections(
+                conn, guild, session_id, canonical_ledgers,
+                result.get("showLedgers", {}).get("truncated", False),
+                canonical_ledger_where, canonical_ledger_args, memory_columns)
         result["available"] = True
     except sqlite3.Error as exc:
         result.update(sqlite_failure(exc, stage))
@@ -460,7 +594,7 @@ def collect(root: Path, guild: int, show_date: str, limit: int = 5000, session_i
         raise ValueError("An explicit observation start requires observation capture")
     observation_range = observation_window(now, observation_start) if include_recent_observation else None
     db = root / "bnl01_conversations.db"
-    report = {"schema": "barcode_after_show_evidence_v1", "collectorVersion": "bounded_ledger_projection_2026_10_03", "generatedAt": now.isoformat(),
+    report = {"schema": "barcode_after_show_evidence_v1", "collectorVersion": "canonical_projection_lookup_2026_10_03", "generatedAt": now.isoformat(),
             "sessionId": session_id, "showDatePacific": show_date,
             "startInclusive": start.isoformat(), "endExclusive": end.isoformat(),
             "coverage": "Pacific noon before the show to capture time, capped at next-day noon. No boot/PID filter: restarts remain visible. Separate services are not an atomic snapshot.",

@@ -132,6 +132,78 @@ class CaptureTests(unittest.TestCase):
         self.assertFalse(result['truncated'])
         self.assertEqual(result['rows'][0]['source_digest'], 'a'*64)
 
+    def test_decoded_top_level_nul_keys_cannot_alias_binding_or_counts(self):
+        base = {'schemaVersion': 'tiktok_show_evidence_ledger_v2', 'showKey': 'session_fixture',
+                'operationalEvents': [], 'trackRoster': [1], 'discordInteractions': [], 'messages': []}
+        cases = []
+        for field in ('showKey', 'schemaVersion'):
+            others = {key: value for key, value in base.items() if key != field}
+            alias_only = {field+'\x00PRIVATE_SUFFIX': base[field], **others}
+            cases.append(alias_only)
+            cases.append({**alias_only, field: 'conflicting_value'})
+        for field in capture.LEDGER_COUNT_FIELDS:
+            cases.append({field+'\x00PRIVATE_SUFFIX': [1, 2, 3], **base})
+        cases.append({'UNRELATED_PRIVATE\x00KEY': 'PRIVATE_VALUE', **base})
+        for slashes in range(1, 6):
+            cases.append({'UNRELATED'+'\\'*slashes+'\x00PRIVATE': 'PRIVATE_VALUE', **base})
+        for doc in cases:
+            with self.subTest(keys=tuple(doc)):
+                raw = json.dumps(doc)
+                self.assertIn('\\u0000', raw)
+                self.assertNotIn('\x00', raw)
+                result = self.ledger_capture(raw)
+                row = result['showLedgers']['rows'][0]
+                self.assertEqual(row['sessionId'], '')
+                self.assertFalse(row['ledgerProjection']['available'])
+                self.assertEqual(row['ledgerProjection']['reason'], 'invalid_ledger_metadata_keys')
+                self.assertTrue(all(row[field+'Count'] is None for field in capture.LEDGER_COUNT_FIELDS))
+                self.assertFalse(result['episodeProjections']['available'])
+                self.assertNotIn('PRIVATE', json.dumps(result))
+
+    def test_binding_value_nul_cannot_match_a_valid_prefix(self):
+        base = {'schemaVersion': 'tiktok_show_evidence_ledger_v2', 'showKey': 'session_fixture',
+                'operationalEvents': [], 'trackRoster': [], 'discordInteractions': [], 'messages': []}
+        for field in ('schemaVersion', 'showKey'):
+            for slashes in range(6):
+                for actual_nul in (True, False):
+                    with self.subTest(field=field, slashes=slashes, actual_nul=actual_nul):
+                        suffix = '\x00PRIVATE_SUFFIX' if actual_nul else 'u0000PRIVATE_SUFFIX'
+                        doc = {**base, field: base[field]+'\\'*slashes+suffix}
+                        result = self.ledger_capture(json.dumps(doc))
+                        row = result['showLedgers']['rows'][0]
+                        self.assertEqual(row['sessionId'], '')
+                        self.assertFalse(row['ledgerProjection']['available'])
+                        reason = row['ledgerProjection']['reason']
+                        expected = 'invalid_ledger_metadata_values' if actual_nul else (
+                            'ledger_schema_mismatch' if field == 'schemaVersion' else 'ledger_session_mismatch')
+                        self.assertEqual(reason, expected)
+                        self.assertNotIn('PRIVATE', json.dumps(result))
+
+    def test_literal_nul_escape_keys_do_not_invalidate_safe_metadata(self):
+        base = {'schemaVersion': 'tiktok_show_evidence_ledger_v2', 'showKey': 'session_fixture',
+                'operationalEvents': [], 'trackRoster': [], 'discordInteractions': [], 'messages': []}
+        for slashes in range(1, 6):
+            with self.subTest(slashes=slashes):
+                doc = {'showKey'+'\\'*slashes+'u0000PRIVATE_SUFFIX': 'PRIVATE_VALUE', **base}
+                result = self.ledger_capture(json.dumps(doc))
+                row = result['showLedgers']['rows'][0]
+                self.assertEqual(row['sessionId'], 'session_fixture')
+                self.assertTrue(row['ledgerProjection']['available'])
+                self.assertTrue(row['ledgerProjection']['countCoverage']['available'])
+                self.assertNotIn('PRIVATE', json.dumps(result))
+
+    def test_nested_escaped_nul_keys_and_values_do_not_invalidate_safe_metadata(self):
+        doc = {'schemaVersion': 'tiktok_show_evidence_ledger_v2', 'showKey': 'session_fixture',
+               'operationalEvents': [], 'trackRoster': [], 'discordInteractions': [],
+               'messages': [{'NESTED_PRIVATE\x00KEY': 'PRIVATE\x00VALUE'}, 'PRIVATE\x00VALUE']}
+        result = self.ledger_capture(json.dumps(doc))
+        row = result['showLedgers']['rows'][0]
+        self.assertEqual(row['sessionId'], 'session_fixture')
+        self.assertTrue(row['ledgerProjection']['available'])
+        self.assertTrue(row['ledgerProjection']['countCoverage']['available'])
+        self.assertEqual(row['messagesCount'], 2)
+        self.assertNotIn('PRIVATE', json.dumps(result))
+
     def test_missing_nonarray_counts_are_unavailable_without_zero_or_lost_binding(self):
         raw = json.dumps({'schemaVersion': 'tiktok_show_evidence_ledger_v2', 'showKey': 'session_fixture',
                           'operationalEvents': [], 'trackRoster': {}, 'messages': None})

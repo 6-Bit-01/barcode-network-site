@@ -42,8 +42,18 @@ Type and size guards run before JSON parsing. Exact guild, show date (when the
 column exists), and requested table `show_key` filters run before the row limit.
 The stored and nested v2 schemas and nested `showKey` must match; a date or legacy
 `show:<hash>` key never establishes session binding. Malformed JSON, raw NULs,
-duplicate projected keys, schema/key mismatches and oversized JSON keep an
-explicit unavailable projection on the requested row rather than disappearing.
+decoded top-level keys containing NUL, duplicate projected keys, schema/key
+mismatches and oversized JSON keep an explicit unavailable projection on the
+requested row rather than disappearing. The decoded-key guard runs before
+metadata path lookups because SQLite can interpret a NUL-containing key as an
+alias for a shorter key. It checks decoded keys and raw top-level `fullkey`
+tokens, preserving escaped-backslash parity for older SQLite versions that
+truncate decoded keys. A literal backslash followed by `u0000` remains allowed.
+The failure returns only `invalid_ledger_metadata_keys`, never the offending
+keys. A multipath JSON array checks the two binding values before older SQLite
+can truncate their decoded strings; a NUL in those values reports only
+`invalid_ledger_metadata_values`. Escaped NULs inside nested source keys or values
+remain allowed when outside the projected metadata; their contents are not exported.
 
 The projection exports only array counts and existing table metadata, including
 the unchanged `source_digest`. It does not export or truncate the original JSON,

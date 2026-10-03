@@ -136,6 +136,36 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(status['ledgerProjectionReasons'], [])
         self.assertNotIn('PRIVATE', json.dumps(status))
 
+    def test_escaped_nul_binding_alias_cannot_release_finalized_packet(self):
+        raw = json.dumps({'schemaVersion': 'tiktok_show_evidence_ledger_v2',
+                          'showKey\x00PRIVATE_SUFFIX': SHOW['sessionId'], 'showKey': 'other',
+                          'messages': ['PRIVATE_SOURCE_TEXT']})
+        source = self.ledger_bnl(raw)
+        row = source['database']['showLedgers']['rows'][0]
+        self.assertEqual(row['lifecycle_status'], 'finalized')
+        self.assertEqual(row['sessionId'], '')
+        self.assertFalse(worker.finalized(source, SHOW))
+        result = self.run_worker(collector=lambda *_: source)
+        self.assertEqual(result['results'][0]['status'], 'waiting_for_bnl_evidence')
+        self.assertEqual(result['results'][0]['ledgerProjectionReasons'], ['invalid_ledger_metadata_keys'])
+        self.assertFalse(self.sent)
+        self.assertNotIn('PRIVATE', json.dumps(source))
+        self.assertNotIn('PRIVATE', json.dumps(result))
+
+    def test_escaped_nul_binding_value_cannot_release_finalized_packet(self):
+        raw = json.dumps({'schemaVersion': 'tiktok_show_evidence_ledger_v2',
+                          'showKey': SHOW['sessionId']+'\x00PRIVATE_SUFFIX',
+                          'messages': ['PRIVATE_SOURCE_TEXT']})
+        source = self.ledger_bnl(raw)
+        self.assertEqual(source['database']['showLedgers']['rows'][0]['lifecycle_status'], 'finalized')
+        self.assertFalse(worker.finalized(source, SHOW))
+        result = self.run_worker(collector=lambda *_: source)
+        self.assertEqual(result['results'][0]['status'], 'waiting_for_bnl_evidence')
+        self.assertEqual(result['results'][0]['ledgerProjectionReasons'], ['invalid_ledger_metadata_values'])
+        self.assertFalse(self.sent)
+        self.assertNotIn('PRIVATE', json.dumps(source))
+        self.assertNotIn('PRIVATE', json.dumps(result))
+
     def test_cross_midnight_packet_readable_hashes_and_dedup(self):
         result = self.run_worker()
         self.assertEqual(result["results"][0]["status"], "smtp_accepted")

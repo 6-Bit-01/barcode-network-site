@@ -29,6 +29,7 @@ LEDGER_COUNT_FIELDS = ("operationalEvents", "trackRoster", "discordInteractions"
 LEDGER_PROJECTION_FAILURES = frozenset((
     "invalid_ledger_json_type", "ledger_storage_byte_limit", "invalid_ledger_json",
     "ledger_json_not_object", "duplicate_ledger_metadata_keys",
+    "invalid_ledger_metadata_keys", "invalid_ledger_metadata_values",
     "ledger_schema_mismatch", "ledger_session_mismatch",
 ))
 # Reviewed, content-free inspect() implementations. Never import an unknown
@@ -141,8 +142,13 @@ def ledger_projection_selection() -> str:
 
     CASE evaluates the size/type guards before JSON1 sees the source. The bound
     measures SQLite storage bytes, not Python characters or assumed UTF-8 bytes.
-    Reject duplicate projected keys and raw NULs: JSON1 otherwise reads a first
-    duplicate or a NUL-terminated prefix differently from Python's JSON reader.
+    Reject duplicate projected keys, raw NULs and decoded top-level key NULs:
+    JSON1 otherwise reads a first duplicate, source prefix or key alias
+    differently from Python's JSON reader. Older JSON1 truncates decoded keys,
+    so also inspect raw top-level fullkey tokens: remove paired backslashes
+    before checking for a NUL escape. The multipath JSON array also preserves
+    raw binding values before historical JSON1 can truncate decoded strings.
+    Nested source text stays unexported.
     """
     keys = ("schemaVersion", "showKey", *LEDGER_COUNT_FIELDS)
     quoted_keys = ",".join("'" + key + "'" for key in keys)
@@ -163,8 +169,15 @@ def ledger_projection_selection() -> str:
           WHEN json_type(ledger_json)!='object'
             THEN json_object('available',0,'reason','ledger_json_not_object')
           WHEN EXISTS (SELECT 1 FROM json_each(ledger_json)
+                       WHERE instr(key,char(0))>0 OR instr(fullkey,char(0))>0
+                          OR instr(replace(fullkey,char(92)||char(92),''),char(92)||'u0000')>0)
+            THEN json_object('available',0,'reason','invalid_ledger_metadata_keys')
+          WHEN EXISTS (SELECT 1 FROM json_each(ledger_json)
                        WHERE key IN ({quoted_keys}) GROUP BY key HAVING COUNT(*)>1)
             THEN json_object('available',0,'reason','duplicate_ledger_metadata_keys')
+          WHEN instr(replace(json_extract(ledger_json,'$.schemaVersion','$.showKey'),
+                             char(92)||char(92),''),char(92)||'u0000')>0
+            THEN json_object('available',0,'reason','invalid_ledger_metadata_values')
           WHEN schema_version IS NOT 'tiktok_show_evidence_ledger_v2'
                OR json_type(ledger_json,'$.schemaVersion') IS NOT 'text'
                OR json_extract(ledger_json,'$.schemaVersion') IS NOT 'tiktok_show_evidence_ledger_v2'

@@ -11,9 +11,11 @@ page explains that existing Makko saves do not transfer automatically.
 The game entry remains outside the primary navigation. The footer's copyright
 symbol is a quiet link to `/system-override`, with an accessible game label and
 a visible keyboard-focus outline. The initial game release was approved and
-merged in PR478. The owner accepted this follow-up's minimal road cues and
-authorized fixing the remaining lag and publishing the update. Final release
-checks and deployment status are recorded separately from that authorization.
+merged in PR478. Minimal road cues, reliable short gear taps and the mirror
+readback repair were published in PR479, merged as
+`c484c6e4f06078df756d712ef2e039b02fa19f74`. The owner authorizes the remaining
+scenery preparation follow-up through publication. Exact release checks and
+deployment results are recorded in its pull request and delivery receipt.
 
 Run the focused page regression with:
 
@@ -36,7 +38,7 @@ its expected consumers and assertions remain intact.
 ## Standalone package
 
 The generated game uses source commit
-`9cdcaad82804472782a1f06b5cfa38fa88f6b45d`, including the reviewed standalone
+`d41be793d35d1d5603255abca8ff80960b9d2653`, including the reviewed standalone
 sprite adapter. The source repository's `tools/build-standalone.py` copies all
 624 tracked asset files from exact Git blobs. These now include the 21 preserved
 external originals and their provenance journal; preserved original sizes and
@@ -109,7 +111,7 @@ standalone document still needs played validation of gameplay, audio,
 controller input, saves and native frame pacing. Hosting and static file
 integrity do not establish a performance improvement.
 
-## Accepted Level 2 follow-up — October 4, 2026
+## Published minimal-cue and mirror baseline — October 4, 2026
 
 The owner reported immediate improvement when road beat and phrase overlays
 were omitted, and selected minimal road cues for this follow-up. The package
@@ -178,3 +180,51 @@ gate. Final source regression, package integrity, website checks, hosted
 delivery verification and CI results must be recorded against the final
 source commit before publication. The accepted follow-up is tracked in
 [source PR183](https://github.com/6-Bit-01/BARCODE-SYSTEM-OVERRIDE/pull/183).
+
+## Scenery preparation follow-up — October 4, 2026
+
+This package prepares original-size bitmaps for three scenery sources tied to
+recurring costly decodes: RepairShop, MarketRFrontGap and StreetBicycleRack.
+Preparation uses the existing shared cache, whole-image factory and original
+draw geometry. Pending, unavailable, failed and over-budget preparations retain
+their original images. Native reservations total 33,290,908 pixels within the
+unchanged 33,554,432-pixel cap; the small-source cap is also unchanged.
+
+Reduced scenery derivatives now prepare only when the existing caller requests
+them. Native-only loads avoid 161 unused quarter images, equivalent to 52.128
+MiB raw RGBA storage. The three new native backings add 4,704,524 pixels; these
+are allocation inventories, not measured resident or net memory savings.
+
+Four hardware-rendered production states matched full-frame RGBA exactly.
+Four software states had mean RGB differences of 0.06983748, 0.23806584,
+0.20520383 and 0.13236706, below the existing whole-scene bound of 1; alpha
+differences were zero. An additional strict-zero software diagnostic failed,
+and is recorded separately. Repeats, native scale 1, gameplay/audio state and
+context attributes matched. Existing source fidelity and performance thresholds
+are unchanged.
+
+Four finite hardware A-B-B-A windows reduced combined matched target decode
+cost from 495.024 to 60.438 ms (87.8%). Decode events remain. Overall CPU draw
+median/p95 pairs were 8.8/44.6 and 9.4/45.6 ms for the baseline, versus
+9.0/28.5 and 12.2/46.8 ms for the candidate. The source work improves, while
+overall cadence is mixed; this is not a universal FPS or complete-race claim.
+
+Only presentation-assets.js and the regenerated package manifest change in the
+hosted game. All 624 assets and 472,322,557 artwork/audio bytes, the other eight
+previously changed runtime files, standalone adapter, entry route and hidden
+footer shortcut remain byte-identical. No Canvas, frame, timer, input or audio
+owner is added. Final source, website and hosted-package results belong to the
+exact revision identified by the manifest; source PR183 stays draft while its
+unchanged software timing gate fails.
+
+The aligned source browser check also retains a failed historical representation
+comparison: adaptive native painting versus bitmap-only painting has mean RGB
+1.2105–1.5021 on the published source9cd and 1.2106–1.5020 on this candidate,
+above its unchanged bound of 1. No new row crosses the bound; differences between
+the old and new results are below 0.0001. The paired fixture deliberately uses
+different sampling quality for those representations. This attribution does not
+make the source browser gate green. Strict pause repetition, one-context/native
+ownership, viewport/single-blur checks, tint, exact world copy and exact mirror
+copy pass independently. The complete source failure remains recorded alongside
+its timing failure; authorized website publication uses its separate green
+checks and verified baseline-to-candidate package evidence.

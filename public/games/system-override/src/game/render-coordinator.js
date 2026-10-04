@@ -55,7 +55,7 @@ window.renderGame = function() {
     contextCreationAttempts++;
     try {
       renderContext = window.renderer?.canvas === renderCanvas && window.renderer.ctx ||
-        renderCanvas.getContext('2d');
+        renderCanvas.getContext('2d', { willReadFrequently: false });
       if (!renderContext) {
         console.error('Failed to get canvas context, attempt', contextCreationAttempts);
         contextCreationAttempts = MAX_CONTEXT_ATTEMPTS;

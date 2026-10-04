@@ -10,8 +10,9 @@ page explains that existing Makko saves do not transfer automatically.
 
 The game entry remains outside the primary navigation. The footer's copyright
 symbol is a quiet link to `/system-override`, with an accessible game label and
-a visible keyboard-focus outline. Release remains a preview until the owner
-finishes testing and approves the live website change.
+a visible keyboard-focus outline. The initial game release was approved and
+merged in PR478. This follow-up remains a preview pending approval to update
+the live website.
 
 Run the focused page regression with:
 
@@ -34,7 +35,7 @@ its expected consumers and assertions remain intact.
 ## Standalone package
 
 The generated game uses source commit
-`90a80762cf919b9f2efb70b95a0a04bfc189542c`, including the reviewed standalone
+`897480fcb16dac428368f8cf8e2ed4b74f57e249`, including the reviewed standalone
 sprite adapter. The source repository's `tools/build-standalone.py` copies all
 624 tracked asset files from exact Git blobs. These now include the 21 preserved
 external originals and their provenance journal; preserved original sizes and
@@ -106,3 +107,45 @@ Linux CI and delivery from the hosted preview remain release checks. The
 standalone document still needs played validation of gameplay, audio,
 controller input, saves and native frame pacing. Hosting and static file
 integrity do not establish a performance improvement.
+
+## Level 2 minimal road cues — October 3, 2026
+
+The owner reported immediate improvement when road beat and phrase overlays
+were omitted, and selected minimal road cues for this follow-up. The package
+retains the authored pad plate, mapped button glyph, live timing ring/countdown,
+active or recently caught tire docks, and existing judgment/adrenaline HUD.
+It omits duplicate energy bands, inactive docks, ground receipt effects and
+captured/queued phrase washes and tiles. Captures and music layers continue
+to update normally.
+
+This follow-up also fixes a confirmed keyboard bug: Up/W and Down/S taps that
+finish between two shared updates now reach the existing gear selection owner.
+Bindings, held steering, once-per-stroke gear behavior and pause controls are
+preserved. Real-listener tests failed before the fix and pass afterward,
+including aliases, repeat events, next-ONE commits, priority, focus loss,
+pause/settings cancellation and Level 1 isolation.
+
+The game keeps its native 1920-by-1080 backing image and scale 1, original
+artwork/audio bytes, scenery, rearview copy and blur, and shared frame/input/audio
+owners. Controlled built-game scenes showed fewer image submissions, from
+340 to 326 and from 377 to 354, with unchanged chart, capture, audio and award
+state. Headless timing remained noisy; these counts do not establish a
+measured device frame-rate gain.
+
+The built-game comparison found a tiny mirror-boundary raster difference also
+present with both overlay groups hidden: at most three RGB levels over thirteen
+pixels in the earned scene. Mirror interior, alpha and retained HUD inputs
+matched. The mirror implementation is unchanged; its low-level cause remains
+unproven. Required native copy/blur checks retain their original assertions.
+
+Final package integrity, source regression, website checks and hosted preview
+verification are recorded for the committed candidate before publication.
+
+The shared game Canvas now explicitly requests `willReadFrequently:false` on
+first acquisition, including alternate-scene and pause fallbacks. This preserves
+the existing alpha/color defaults and avoids Chromium's heuristic readback
+fallback when its default was unspecified. It does not guarantee acceleration.
+Native CI frame medians still exceeded the unchanged 33.3 ms performance gate
+on the pre-inventory candidate; a performance improvement remains unproven.
+The update is a private preview, with source release acceptance recorded in
+[source PR183](https://github.com/6-Bit-01/BARCODE-SYSTEM-OVERRIDE/pull/183).

@@ -310,7 +310,8 @@ window.FILE_MANIFEST.push({ name: 'src/game/pause-menu.js', exports: ['BARCODE.P
       this.sync();
       if (!this.open || !this.dirty) return;
       const canvas = this.canvas(), ctx = this.titleOpen ? this.titleContext :
-        window.renderer?.canvas === canvas && window.renderer.ctx || canvas?.getContext('2d');
+        window.renderer?.canvas === canvas && window.renderer.ctx ||
+        canvas?.getContext('2d', { willReadFrequently: false });
       if (!ctx) return;
       ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
       if (this.snapshot && !this.titleOpen) ctx.drawImage(this.snapshot, 0, 0); else { ctx.fillStyle = '#081321'; ctx.fillRect(0, 0, 1920, 1080); }

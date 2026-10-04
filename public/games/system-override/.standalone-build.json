@@ -1,8 +1,8 @@
 {
   "builder": "barcode-system-override-standalone-v1",
   "status": "complete",
-  "sourceCommit": "90a80762cf919b9f2efb70b95a0a04bfc189542c",
-  "sourceTree": "1b9ae7ce08b63e3682bb984cf2d08619cdf24303",
+  "sourceCommit": "897480fcb16dac428368f8cf8e2ed4b74f57e249",
+  "sourceTree": "d4338720c436370300afa8c90cd663112e99ddbf",
   "builderSHA256": "caf8d8e5323c0a6246c3b77da4b02d175ea78f8a6eb560f3aaae6c9dc7d316d3",
   "files": {
     "assets/audio/broadcast-slum-proof-carrier.wav": {
@@ -2514,8 +2514,8 @@
       "bytes": 14700
     },
     "src/core/action-input.js": {
-      "sha256": "5af5087416ca3ec69b9374272448b7b97b60599ba2b516104eec4f6fcebbe943",
-      "bytes": 11803
+      "sha256": "28bb489e78ca98c362ffcd19b71b7dceb1eb524afad8293a79e0d5b72497d4f7",
+      "bytes": 12284
     },
     "src/core/fullscreen.js": {
       "sha256": "f98f7899d615f1f457790c7929745e0ea0b5d95086324f0cc7559d315ed0b964",
@@ -2534,8 +2534,8 @@
       "bytes": 23034
     },
     "src/core/loop.js": {
-      "sha256": "97786816cf58433ca2832f0e42bdac07dd301231ccc5e95750c147cff4787145",
-      "bytes": 8911
+      "sha256": "dd0de50a62f06d79feeb227af3d000b4ca2f9796e373eef3be59abbc081ef882",
+      "bytes": 9093
     },
     "src/core/runtime-lifecycle.js": {
       "sha256": "c4a33ffd16e512bfede0c48381ac83f6c80307cee74ab7875f3ea9934502e59a",
@@ -2630,8 +2630,8 @@
       "bytes": 61352
     },
     "src/engine/renderer.js": {
-      "sha256": "78c7b45f2734ec3ed9a976d9cc4572b96fe6586671f42bd62a57a6bd0822b874",
-      "bytes": 22695
+      "sha256": "44d7915171bf20b7bdf7d1e0389065fd1ddeaf3238d1645c0a496c408f6ea379",
+      "bytes": 23042
     },
     "src/engine/spaceships.js": {
       "sha256": "ae96798eeb015378058487623ffdde7b6306a646f94a52f6535828baba8c9275",
@@ -2666,12 +2666,12 @@
       "bytes": 5672
     },
     "src/game/cache-road-beat-feedback.js": {
-      "sha256": "d497deee93275139ed2bdaf51eecf9e785d09847c45d67d3472431cc252c1305",
-      "bytes": 16496
+      "sha256": "b15daadc4939e7bdf92966bcecaf2fd223bced6391e1ad52b6f2f37b02a89aed",
+      "bytes": 9822
     },
     "src/game/cache-road-beat-surface.js": {
-      "sha256": "4cddc97c389d1ae9697af6e6187e0c38b9ca2918f98cc944c946281a61763c20",
-      "bytes": 6920
+      "sha256": "9cefbc9bac5072508c511553f7b7a7628145cea0c74a6bb85fa708740f6c28e4",
+      "bytes": 6287
     },
     "src/game/cache-road-boss-art.js": {
       "sha256": "1ee094ebe878668eb276dfd7b3c91e6563ca053aa613fd4e0b06b6d40fe03c8b",
@@ -2722,8 +2722,8 @@
       "bytes": 5250
     },
     "src/game/cache-road-proof.js": {
-      "sha256": "ef32925097307b66e5025523c66d1e38e1aaa33616c836e62c448cccf165dd2e",
-      "bytes": 309912
+      "sha256": "0ca3df74d318fd964e80e1a609e673bc92d1eec2077d8b625e8b31e8c7337ef2",
+      "bytes": 306089
     },
     "src/game/cache-road-puppet-study.js": {
       "sha256": "a1c2795763543cc8ad78d61a39482e372de7e7348316a57de24f66bf7fbd0361",
@@ -2854,8 +2854,8 @@
       "bytes": 7538
     },
     "src/game/pause-menu.js": {
-      "sha256": "43584ad5bc1525ee0294678514ddd5f0bcf24a10ccb8b21119578da2b7407fe2",
-      "bytes": 37189
+      "sha256": "79313181050236cc2b481eb7061f339ab325b2aaaba0a18f311bcf6c2e7e00d9",
+      "bytes": 37228
     },
     "src/game/player-combat.js": {
       "sha256": "668b662c1399a9a784baf105daf32c9f6b3cb6ffcfff28838dab700eb7accea7",
@@ -2870,8 +2870,8 @@
       "bytes": 569
     },
     "src/game/render-coordinator.js": {
-      "sha256": "299576fab8158ce81b6d14412a93f0762af53a5ac7cde9b19dfe66932e3fb1dc",
-      "bytes": 20528
+      "sha256": "b17713437c44805deff105c658c1309eaafe8d115b2dc4510a42934a9348f68c",
+      "bytes": 20559
     },
     "src/game/rhythm-fixed.js": {
       "sha256": "fe9fbdd6aed267dd0c9eed38ecd699d35fe77bb17a6a7ff93e1e6d437bc3586e",

@@ -17,7 +17,7 @@ window.Renderer = class Renderer {
     // Initialization already acquired the context. Do not probe with another
     // canvas when a guarded host refuses this one.
     try {
-      this.ctx = context || canvas.getContext('2d');
+      this.ctx = context || canvas.getContext('2d', { willReadFrequently: false });
       if (!this.ctx) throw new Error('Failed to get 2D context from game canvas');
     } catch (error) {
       console.error('Renderer context creation failed:', error?.message || error?.toString() || 'Unknown error');
@@ -514,10 +514,13 @@ function initializeRenderer() {
       cachedCanvas = canvas;
     }
     
-    // Get context only once
+    // Keep the shared draw-heavy Canvas from opting into Chromium's default
+    // readback fallback. The road reads its small rearview window each frame.
+    // This hint does not promise GPU availability or change color/alpha defaults.
+    // Get context only once; passing it to Renderer preserves that owner.
     if (!cachedContext) {
       try {
-        cachedContext = canvas.getContext('2d');
+        cachedContext = canvas.getContext('2d', { willReadFrequently: false });
         if (!cachedContext) {
           console.error('Failed to get 2D context from canvas');
           createFallbackRenderer();

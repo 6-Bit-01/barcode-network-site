@@ -4522,92 +4522,15 @@ window.FILE_MANIFEST.push({ name: 'src/game/cache-road-proof.js', exports: ['BAR
       const nextPulse = roadPulses(s).find(p => s.pulseTargets[p.id]!==undefined &&
         s.pulseTargets[p.id]>=s.musicBeatFloat-(pulseWindowSec(s)+1e-8)/cueBeatSec&&
         (!s.caughtPulses[p.id]||s.pendingPulseAwards.some(hit=>hit.pulse.id===p.id)));
-      const nextCue=nextPulse&&pulseVisual(nextPulse,s,cueBeatSec);
       // Input calibration adjusts a physical tap only. It must never move
       // the visible countdown away from the song's actual beat.
+      const nextCue=nextPulse&&pulseVisual(nextPulse,s,cueBeatSec);
       const beatDistance=beat=>{
         const at=roadAtBeat(s,beat);
         return at===null?null:STRIKE_DISTANCE+at-progress;
       };
-      const committedEnd=s.driveSections.at(-1)?.beat+4;
-      const floatBar = s.musicBeatFloat / 4;
-      // The confirmed phrase is a continuous four-bar wash, with painted
-      // beat marks placed in each bar below. The wash follows the exact road
-      // curve and stays under cars; upcoming captures keep only their preview.
-      for(let lane=0;lane<4;lane++) {
-        const capture=s.captures.find(c=>c.lane===lane &&
-          c.startBeat<(floatBar+4)*4 && c.endBeat>floatBar*4);
-        if(!capture)continue;
-        const start=Math.max(floatBar,capture.startBeat/4);
-        const end=Math.min(committedEnd/4,capture.endBeat/4,100);
-        if(!Number.isFinite(end)||end<=start)continue;
-        const near=depth(Math.max(-55,beatDistance(start*4)));
-        const far=depth(beatDistance(end*4));
-        if(near<=far)continue;
-        const inset=8;
-        ctx.save();ctx.globalAlpha=.09;ctx.fillStyle=PALETTE[lane];
-        ctx.beginPath();
-        for(let i=0;i<=12;i++) {
-          const t=far+(near-far)*i/12;
-          const px=laneEdge(lane,t)+inset,py=roadY(t);
-          if(!i)ctx.moveTo(px,py);else ctx.lineTo(px,py);
-        }
-        for(let i=12;i>=0;i--) {
-          const t=far+(near-far)*i/12;
-          ctx.lineTo(laneEdge(lane+1,t)-inset,roadY(t));
-        }
-        ctx.closePath();ctx.fill();ctx.restore();
-      }
-      for (let bar = Math.floor(floatBar) + 8; bar >= Math.floor(floatBar); bar--) {
-        if (bar >= 100 || beatDistance(bar*4)===null || beatDistance((bar+1)*4)===null) continue;
-        const near = depth(Math.max(-55,beatDistance(bar*4)));
-        const far = depth(beatDistance((bar+1)*4));
-        if (near <= .12 || near <= far) continue;
-        for (let lane = 0; lane < 4; lane++) {
-          const active = s.captures.find(c => c.lane === lane && c.startBeat < (bar + 1) * 4 && c.endBeat > bar * 4);
-          const queued = !active && s.queuedCaptures.find(c => c.lane === lane &&
-            c.startBeat <= bar * 4 && c.endBeat > bar * 4);
-          if (!active && !queued) continue;
-          const mark = active || queued;
-          const slot = bar - mark.startBeat / 4;
-          const reveal = active || mark.inkAtMs == null ? 1 :
-            clamp((s.elapsedMs - mark.inkAtMs - (3 - slot) * 100) / 260, 0, 1);
-          if (!reveal) continue;
-          // Show the next four lit bars as separate, road-bound ink tiles.
-          // Queued captures keep the thin preview; a successful press swaps
-          // it for the much broader confirmed painting beneath traffic.
-          if(active && bar >= Math.floor(floatBar)+4)continue;
-          const trimFar=far+(near-far)*.08,trimNear=far+(near-far)*.91;
-          const inset=5+near*10;
-          const tile=[
-            [laneEdge(lane,trimNear)+inset,roadY(trimNear)],
-            [laneEdge(lane+1,trimNear)-inset,roadY(trimNear)],
-            [laneEdge(lane+1,trimFar)-inset,roadY(trimFar)],
-            [laneEdge(lane,trimFar)+inset,roadY(trimFar)]];
-          ctx.save();
-          if(active) {
-            ctx.globalAlpha=.30*reveal;
-            if(!paintComicDecal(ctx,'cacheConfirmedBar',tile))
-              polygon(ctx,tile,'#b8ebda');
-          } else {
-            ctx.globalAlpha=.31*reveal;
-            paintComicDecal(ctx,'cachePhraseStrip',tile);
-          }
-          ctx.restore();
-        }
-        if(bar%4===0) {
-          ctx.strokeStyle = '#b4f9ec';
-          ctx.globalAlpha = .25;
-          ctx.lineWidth = 2+near*3;
-          ctx.beginPath();ctx.moveTo(laneEdge(0,near),roadY(near));
-          ctx.lineTo(laneEdge(4,near),roadY(near));ctx.stroke();ctx.globalAlpha=1;
-        }
-        if (bar % 4 === 0 && near > .23 && Math.abs(roadY(near)-strikeY)>50) {
-          ctx.fillStyle = '#d4fff1'; ctx.font = `bold ${Math.round(10 + 17 * near)}px Oxanium, monospace`;
-          ctx.textAlign = 'right'; ctx.fillText(`${songSection(bar)} / ${bar + 1}–${bar + 4}`,
-            laneEdge(0,near)-13, roadY(near)+3);
-        }
-      }
+      // Captures still own the real music layers and duration. Their broad
+      // road washes/tiles duplicated pad/HUD feedback and are omitted here.
       for (const side of [-1, 1]) {
         ctx.strokeStyle = s.fullAdrenaline ? '#ffe4a2' :
           section === 3 ? '#a2f9c9' : '#f0a0ac'; ctx.lineWidth = 4;

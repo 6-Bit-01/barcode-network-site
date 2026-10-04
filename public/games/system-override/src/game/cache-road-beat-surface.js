@@ -1,4 +1,4 @@
-// Authored rhythm hardware and energy stay on the road's existing projection.
+// One authored rhythm plate stays on the road's existing projection.
 // Two clipped triangles per surface; no stored particles or extra frame owner.
 window.FILE_MANIFEST = window.FILE_MANIFEST || [];
 window.FILE_MANIFEST.push({name:'src/game/cache-road-beat-surface.js',
@@ -55,29 +55,19 @@ window.FILE_MANIFEST.push({name:'src/game/cache-road-beat-surface.js',
       [p.laneX(lane,far)+width(far),p.roadY(far)],
       [p.laneX(lane,far)-width(far),p.roadY(far)]];
   }
-  function drawPad(ctx,s,pulse,cue,{projection:p,spent=false,latched=false,quiet=false}={}) {
+  function drawPad(ctx,s,pulse,cue,{projection:p,spent=false,latched=false}={}) {
     if(!available('cacheBeatHardware'))return false;
     const near=p.depth(cue.d-18),far=p.depth(cue.d+18),ready=cue.ready&&!spent;
     const hot=ready&&cue.window,alpha=spent?.30:latched?.82:1;
-    if(p.strikeDepth>far+.005&&available('cacheBeatEnergy')) {
-      paintQuad(ctx,'cacheBeatEnergy',roadQuad(p,pulse.lane,p.strikeDepth,far,
-        {fraction:.34,cap:124}),{frame:pulse.action,opacity:spent?.06:ready?.66:.29});
-      // Three shallow conductive pulses, attached to the actual revealed
-      // runway. Their bounded travel reads song phase, never changes targets.
-      if(ready&&!quiet&&cue.remaining>=0)for(let step=1;step<=3;step++) {
-        const phase=(step+clamp(1-((cue.remaining%1+1)%1)))/5;
-        const t=far+(p.strikeDepth-far)*phase;
-        const distance=p.strikeDistance+(cue.d+18-p.strikeDistance)*(1-phase);
-        const n=p.depth(distance-3),f=p.depth(distance+3);
-        if(n>f)paintQuad(ctx,'cacheBeatEnergy',roadQuad(p,pulse.lane,n,f,
-          {fraction:.26,cap:94}),{frame:pulse.action,opacity:.35+.24*t});
-      }
-    }
+    // The mapped plate and tire target carry the timing. Extra translucent
+    // runway/band layers duplicated that cue's projected texture work.
     const points=roadQuad(p,pulse.lane,near,far,{fraction:.40,cap:130});
     paintQuad(ctx,'cacheBeatHardware',points,{frame:pulse.action+(hot?4:0),opacity:alpha});
     return true;
   }
   function drawDock(ctx,lane,{projection:p,active=false,hot=false,caught=false,action=lane}={}) {
+    // True suppresses the old fallback brackets for an inactive slot.
+    if(!active&&!caught)return true;
     if(!available('cacheBeatHardware'))return false;
     const near=p.depth(p.strikeDistance-7),far=p.depth(p.strikeDistance+7);
     return paintQuad(ctx,'cacheBeatHardware',roadQuad(p,lane,near,far,
@@ -121,6 +111,6 @@ window.FILE_MANIFEST.push({name:'src/game/cache-road-beat-surface.js',
   }
   B.CacheRoadBeatSurface=Object.freeze({available,paintQuad,paintSprite,roadQuad,
     drawPad,drawDock,drawTargetRing,drawImpact,drawSparks,drawShell,drawRelease,drawStreak,
-    limits:Object.freeze({trianglesPerSurface:2,runwayPulses:3,sparkClusters:4,
-      padImageCalls:10,targetImageCalls:14,receiptImageCalls:10})});
+    limits:Object.freeze({trianglesPerSurface:2,runwayPulses:0,sparkClusters:4,
+      padImageCalls:2,targetImageCalls:10,receiptImageCalls:0})});
 })(window.BARCODE=window.BARCODE||{});

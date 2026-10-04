@@ -34,7 +34,9 @@ function getFrameContext() {
   }
   if (!frameContext && !frameContextAttempted) {
     frameContextAttempted = true;
-    try { frameContext = canvas.getContext('2d'); }
+    // Alternate road/bridge startup can acquire before Renderer. Apply the
+    // same draw-heavy hint here; later getContext calls cannot change it.
+    try { frameContext = canvas.getContext('2d', { willReadFrequently: false }); }
     catch (error) { console.error('Game canvas context unavailable:', error?.message || error); }
   }
   return frameContext;

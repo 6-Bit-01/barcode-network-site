@@ -10,8 +10,10 @@ page explains that existing Makko saves do not transfer automatically.
 
 The game entry remains outside the primary navigation. The footer's copyright
 symbol is a quiet link to `/system-override`, with an accessible game label and
-a visible keyboard-focus outline. Release remains a preview until the owner
-finishes testing and approves the live website change.
+a visible keyboard-focus outline. The initial game release was approved and
+merged in PR478. The owner accepted this follow-up's minimal road cues and
+authorized fixing the remaining lag and publishing the update. Final release
+checks and deployment status are recorded separately from that authorization.
 
 Run the focused page regression with:
 
@@ -34,7 +36,7 @@ its expected consumers and assertions remain intact.
 ## Standalone package
 
 The generated game uses source commit
-`90a80762cf919b9f2efb70b95a0a04bfc189542c`, including the reviewed standalone
+`9cdcaad82804472782a1f06b5cfa38fa88f6b45d`, including the reviewed standalone
 sprite adapter. The source repository's `tools/build-standalone.py` copies all
 624 tracked asset files from exact Git blobs. These now include the 21 preserved
 external originals and their provenance journal; preserved original sizes and
@@ -106,3 +108,73 @@ Linux CI and delivery from the hosted preview remain release checks. The
 standalone document still needs played validation of gameplay, audio,
 controller input, saves and native frame pacing. Hosting and static file
 integrity do not establish a performance improvement.
+
+## Accepted Level 2 follow-up — October 4, 2026
+
+The owner reported immediate improvement when road beat and phrase overlays
+were omitted, and selected minimal road cues for this follow-up. The package
+retains the authored pad plate, mapped button glyph, live timing ring/countdown,
+active or recently caught tire docks, and existing judgment/adrenaline HUD.
+It omits duplicate energy bands, inactive docks, ground receipt effects and
+captured/queued phrase washes and tiles. Captures and music layers continue
+to update normally.
+
+This follow-up also fixes a confirmed keyboard bug: Up/W and Down/S taps that
+finish between two shared updates now reach the existing gear selection owner.
+Bindings, held steering, once-per-stroke gear behavior and pause controls are
+preserved. Real-listener tests failed before the fix and pass afterward,
+including aliases, repeat events, next-ONE commits, priority, focus loss,
+pause/settings cancellation and Level 1 isolation.
+
+The game keeps its native 1920-by-1080 backing image and scale 1, original
+artwork/audio bytes, scenery, rearview geometry and blur, and shared
+frame/input/audio owners. Controlled built-game scenes showed fewer image
+submissions, from 340 to 326 and from 377 to 354, with unchanged chart, capture,
+audio and award state. These counts describe the minimal cue change; the
+separate mirror transport comparison below measures the remaining lag fix.
+
+The earlier minimal-cue comparison found a tiny mirror-boundary raster
+difference also present with both overlay groups hidden: at most three RGB levels over thirteen
+pixels in the earned scene. Mirror interior, alpha and retained HUD inputs
+matched. That comparison did not alter the mirror transport; its low-level
+cause remains unproven. Required native copy/blur checks retain their original
+assertions.
+
+The shared game Canvas now explicitly requests `willReadFrequently:false` on
+first acquisition, including alternate-scene and pause fallbacks. This preserves
+the existing alpha/color defaults and avoids Chromium's heuristic readback
+fallback when its default was unspecified. It does not guarantee acceleration.
+
+The final mirror fix uses the existing cropped Canvas self-copy instead of
+reading opaque mirror pixels back to the CPU and constructing a VideoFrame
+each frame. The source-over composition, source/destination coordinates,
+curved glass clip and `blur(2.3px)` are unchanged. Fading and transformed paths
+already used this transport. The sampled-pixel helper remains available for
+its other callers; no extra Canvas, cache, frame owner or resampled asset is
+introduced.
+
+Actual Windows Chrome 154 on the AMD Radeon 660M D3D11 backend produced exactly
+equal full RGBA pixels for the original and direct transports in three native
+views: the actual page view, a curved road in third gear, and a played
+live boss damaged to 9.746 HP. The latter two were pure GPU renders of snapshots
+earned through the existing controlled-input production fixture; page state
+was restored before any update. Repeat originals, alpha, mirror interior,
+HUD labels, gameplay state and context attributes matched. Each original
+render performed one mirror readback; each direct render performed zero.
+
+Four warmed four-second actual-page windows in original/direct/direct/original
+order reduced the average of per-window CPU draw medians from 35.80 to
+11.95 ms (66.6%). The average CPU p95 fell from 74.00 to 54.75 ms; the average
+RAF p95 fell from 75.15 to 58.55 ms. No measurement readbacks were added during
+timing. Gameplay and audio advanced naturally, so geometry was not held
+identical. CPU draw time includes synchronization with queued GPU work, and
+RAF timing measures browser frame opportunities rather than physical scanout.
+This is a bounded improvement on the observed device, with remaining tail
+stalls; it does not establish a universal frame-rate guarantee.
+
+Linux/headless CI native CPU frame medians still exceed the unchanged
+33.33 ms performance budget. The GPU result does not replace or weaken that
+gate. Final source regression, package integrity, website checks, hosted
+delivery verification and CI results must be recorded against the final
+source commit before publication. The accepted follow-up is tracked in
+[source PR183](https://github.com/6-Bit-01/BARCODE-SYSTEM-OVERRIDE/pull/183).

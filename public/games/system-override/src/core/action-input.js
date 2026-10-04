@@ -12,6 +12,7 @@ window.FILE_MANIFEST.push({
     'road_a', 'road_b', 'road_x', 'road_y', 'road_turbo', 'road_echo', 'road_attack', 'road_defend', 'road_disrupt'];
   const EDGE_ACTIONS = new Set(['jump', 'primary', 'interact', 'inspect', 'pause', 'rhythm_mode',
     'road_a', 'road_b', 'road_x', 'road_y', 'road_turbo', 'road_echo', 'road_attack', 'road_defend', 'road_disrupt']);
+  const ROAD_EDGE_ACTIONS = new Set([...EDGE_ACTIONS, 'move_up', 'move_down']);
   // Dropping through a platform is deliberate: at least 70% downward travel,
   // within 35 degrees of straight down. Walking/menu deadzones stay separate.
   const DROP_STICK_MIN = 0.7;
@@ -101,7 +102,12 @@ window.FILE_MANIFEST.push({
       const key = keyName(event);
       if (this.isMappedKey(key) && event.preventDefault) event.preventDefault();
       if (this.keysHeld.has(key) || event?.repeat === true) return;
-      for (const action of EDGE_ACTIONS) {
+      // Gear selection is discrete in the active road. Retain a tap whose
+      // keyup arrives before the next shared update; other movement stays held.
+      const road=BARCODE.CacheRoadProof;
+      const roadGear=road?.active&&road.status==='playing'&&road.introMs===null&&
+        road.handoffMs==null&&!road.exiting&&!(window.isPaused||window.gameState?.paused);
+      for (const action of roadGear ? ROAD_EDGE_ACTIONS : EDGE_ACTIONS) {
         if (!(this.keyboardBindings[action] || []).includes(key) || this.keyboardHeld(action)) continue;
         const queue = this.pendingPresses[action] ||= [];
         if (queue.length < 16) queue.push(this.capturePress(event));

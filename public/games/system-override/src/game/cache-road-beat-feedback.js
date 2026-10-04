@@ -1,5 +1,5 @@
 // Road timing paint reads immutable song targets and earned ONE receipts.
-// Authored shallow hardware/energy use the road's projection and shared clock.
+// Native plates and live tire targets share the original road projection.
 // The same small Canvas paths remain readable while a sheet is unavailable.
 window.FILE_MANIFEST = window.FILE_MANIFEST || [];
 window.FILE_MANIFEST.push({name:'src/game/cache-road-beat-feedback.js',
@@ -153,120 +153,12 @@ window.FILE_MANIFEST.push({name:'src/game/cache-road-beat-feedback.js',
     badge(ctx,pulse.action,0,0,hot&&!calm?107:99,{active:hot,disabled:spent,road});
     ctx.restore();return true;
   }
-  function drawReceipt(ctx,s,{projection,reduced=false,road,nextPulse,nextCue}={}) {
-    const receipt=feedbackPose(s,{reduced});if(!receipt)return false;
-    const p=projection,lane=receipt.lane,x=p.laneX(lane,p.strikeDepth),y=p.strikeY;
-    if(!Number.isInteger(lane)||lane<0||lane>3)return false;
-    ctx.save();ctx.globalAlpha=receipt.alpha;
-    if(nextCue?.ready&&nextPulse?.lane===lane&&nextPulse.id!==receipt.pulseId) {
-      // The next real target always owns its entire timing area. Keep every
-      // previous outcome in a small side ticket, including a genuine miss,
-      // with no old button, impact or correction ink crossing the next cue.
-      const ticketX=x+(lane<2?1:-1)*123,ticketY=y+83,halfWidth=47;
-      const ticket=[[ticketX-halfWidth+6,ticketY-33],[ticketX+halfWidth-6,ticketY-33],
-        [ticketX+halfWidth,ticketY-27],[ticketX+halfWidth,ticketY+27],
-        [ticketX+halfWidth-6,ticketY+33],[ticketX-halfWidth+6,ticketY+33],
-        [ticketX-halfWidth,ticketY+27],[ticketX-halfWidth,ticketY-27]];
-      const authoredTicket=B.CacheRoadBeatSurface?.drawShell(ctx,receipt,ticketX,ticketY,
-        halfWidth*2,88,{compact:true});
-      if(!authoredTicket) {
-        path(ctx,ticket);ctx.fillStyle=INK;ctx.fill();outline(ctx,ticket,receipt.color,1.5);
-      }
-      text(ctx,receipt.success?(receipt.perfect?'PERFECT':'ON BEAT'):'MISSED',
-        ticketX,ticketY-(authoredTicket?13:18),authoredTicket?10:12,receipt.color,authoredTicket?68:84);
-      if(receipt.success) {
-        text(ctx,receipt.delta>0?`+${receipt.delta}`:receipt.value>=100?'MAX':'SYNC',
-          ticketX,ticketY+(authoredTicket?1:2),authoredTicket?17:22,PAPER,authoredTicket?68:84);
-        text(ctx,'ADRENALINE',ticketX,ticketY+(authoredTicket?12:21),authoredTicket?7:9,receipt.color,authoredTicket?68:84);
-      } else if(receipt.delta<0) {
-        text(ctx,receipt.delta,ticketX,ticketY+(authoredTicket?1:2),authoredTicket?17:22,receipt.color,authoredTicket?68:84);
-        text(ctx,'ADRENALINE',ticketX,ticketY+(authoredTicket?12:21),authoredTicket?7:9,receipt.color,authoredTicket?68:84);
-      } else {
-        text(ctx,'NEXT ONE',ticketX,ticketY+6,authoredTicket?12:14,receipt.color,authoredTicket?68:84);
-      }
-      ctx.restore();return true;
-    }
-    if(receipt.success) {
-      const near=p.depth(p.strikeDistance-12-receipt.expansion*38);
-      const far=p.depth(p.strikeDistance+22+receipt.expansion*30);
-      const margin=receipt.perfect?9:25;
-      const corners=[[p.laneEdge(lane,near)+margin,p.roadY(near)],
-        [p.laneEdge(lane+1,near)-margin,p.roadY(near)],
-        [p.laneEdge(lane+1,far)-margin,p.roadY(far)],
-        [p.laneEdge(lane,far)+margin,p.roadY(far)]];
-      const plane=(u,v)=>{
-        const left=[corners[3][0]+(corners[0][0]-corners[3][0])*v,
-          corners[3][1]+(corners[0][1]-corners[3][1])*v];
-        const right=[corners[2][0]+(corners[1][0]-corners[2][0])*v,
-          corners[2][1]+(corners[1][1]-corners[2][1])*v];
-        return [left[0]+(right[0]-left[0])*u,left[1]+(right[1]-left[1])*u];
-      };
-      // A small inked shockwave has a comic silhouette rather than a flat
-      // rectangle. Its whole outline remains projected onto this one lane.
-      const points=(receipt.perfect?[[0,.65],[.10,1],[.32,.91],[.5,1.12],
-        [.66,.93],[.92,1],[1,.65],[1.06,.5],[1,.32],[.89,0],
-        [.64,.07],[.5,-.09],[.33,.06],[.10,0],[0,.31],[-.06,.5]]:
-        [[0,.74],[.13,1],[.5,.94],[.87,1],[1,.74],[1,.26],
-          [.87,0],[.5,.06],[.13,0],[0,.26]]).map(([u,v])=>plane(u,v));
-      if(receipt.age<650) {
-        if(!B.CacheRoadBeatSurface?.drawImpact(ctx,receipt,corners)) {
-          ctx.globalAlpha=receipt.alpha*(receipt.quiet?.16:.12+receipt.impact*.22);
-          path(ctx,points);ctx.fillStyle=receipt.color;ctx.fill();
-          ctx.globalAlpha=receipt.alpha*(receipt.quiet?.7:1-receipt.age/750);
-          outline(ctx,points,receipt.color,receipt.perfect?5:3,4);
-        }
-        ctx.globalAlpha=receipt.alpha;
-        if(!B.CacheRoadBeatSurface?.drawSparks(ctx,receipt,x,y)&&!receipt.quiet) {
-          for(let i=0;i<(receipt.perfect?6:4);i++) {
-            const side=i%2?1:-1,step=Math.floor(i/2),xx=x+side*(65+receipt.expansion*(37+step*15));
-            const yy=y-18+step*19,reach=(receipt.perfect?16:10)*(1-receipt.expansion*.5);
-            ctx.strokeStyle=receipt.perfect?PAPER:receipt.color;ctx.lineWidth=3;
-            ctx.beginPath();ctx.moveTo(xx,yy);ctx.lineTo(xx+side*reach,yy-7+step*5);ctx.stroke();
-          }
-        }
-      }
-      ctx.globalAlpha=receipt.alpha;
-      const authoredReceipt=B.CacheRoadBeatSurface?.available?.('cacheBeatTiming');
-      const badgeY=y+(authoredReceipt?56:70)-receipt.lift*.25;
-      B.CacheRoadBeatSurface?.drawRelease(ctx,receipt,x,badgeY);
-      const badgeSize=authoredReceipt?(receipt.quiet?52:52+receipt.impact*(receipt.perfect?8:4)):
-        receipt.quiet?60:60+receipt.impact*(receipt.perfect?20:10);
-      badge(ctx,receipt.action,x,badgeY,badgeSize,
-        {active:true,road});
-      const cardY=y+110-receipt.lift,cardWidth=receipt.perfect?202:182;
-      const card=[[x-cardWidth/2+8,cardY-13],[x+cardWidth/2-8,cardY-13],
-        [x+cardWidth/2,cardY-5],[x+cardWidth/2,cardY+39],
-        [x-cardWidth/2+8,cardY+39],[x-cardWidth/2,cardY+31],[x-cardWidth/2,cardY-5]];
-      const authoredCard=B.CacheRoadBeatSurface?.drawShell(ctx,receipt,x,cardY+10,cardWidth,76);
-      if(!authoredCard) {
-        path(ctx,card);ctx.fillStyle=INK;ctx.fill();outline(ctx,card,receipt.color,2);
-      }
-      text(ctx,receipt.perfect?'PERFECT':'ON BEAT',x,cardY+1,
-        authoredCard?(receipt.perfect?18:17):(receipt.perfect?23:20),receipt.color,authoredCard?cardWidth-42:185);
-      const reward=receipt.delta>0?`+${receipt.delta} ADRENALINE`:receipt.value>=100?'MAX ADRENALINE':'SYNC HELD';
-      text(ctx,reward,x,cardY+(authoredCard?17:25),authoredCard?11:13,PAPER,authoredCard?cardWidth-42:186);
-      // Four charge sockets answer a connected sequence with finite geometry.
-      if(receipt.chain>1) {
-        const streakY=cardY+(authoredCard?47:45);
-        B.CacheRoadBeatSurface?.drawStreak(ctx,x,streakY);
-        for(let i=0;i<4;i++) {
-          ctx.fillStyle=i<Math.min(4,receipt.chain)?receipt.color:'#355354';
-          ctx.fillRect(x-20+i*11,streakY-1,7,3);
-        }
-      }
-    } else {
-      // A missed real opportunity gives one neutral receipt, no screen kick.
-      const authoredMiss=B.CacheRoadBeatSurface?.drawShell(ctx,receipt,x,y+82,184,88);
-      if(!authoredMiss) {
-        ctx.strokeStyle=receipt.color;ctx.lineWidth=2;
-        for(const side of [-1,1]) {ctx.beginPath();ctx.moveTo(x+side*65,y+18);
-          ctx.lineTo(x+side*91,y+18);ctx.stroke();}
-      }
-      text(ctx,'MISSED',x,y+70,18,receipt.color,150);
-      text(ctx,receipt.delta<0?`${receipt.delta} ADRENALINE`:'NEXT ONE',x,y+(authoredMiss?92:93),12,receipt.color,authoredMiss?146:175);
-    }
-    ctx.restore();return true;
+  function drawReceipt() {
+    // Real judgment and charge feedback remain in the guidance/meter HUD.
+    // True prevents the older ground burst from replacing omitted paint.
+    return true;
   }
   B.CacheRoadBeatFeedback=Object.freeze({feedbackPose,drawTarget,drawPad,drawReceipt,
-    colors:Object.freeze(COLORS),limits:Object.freeze({runwaySteps:3,perfectStreaks:6,goodStreaks:4,chargeSockets:4})});
+    // The three small vector steps are only the missing-sheet fallback.
+    colors:Object.freeze(COLORS),limits:Object.freeze({runwaySteps:3,perfectStreaks:0,goodStreaks:0,chargeSockets:4})});
 })(window.BARCODE=window.BARCODE||{});

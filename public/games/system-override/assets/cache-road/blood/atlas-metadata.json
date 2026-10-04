@@ -1,0 +1,286 @@
+{
+  "version": 1,
+  "generatedAt": "2026-10-02",
+  "method": "Built-in image_gen; originals unchanged; exact rectangular extraction and transparent padding; no resampling, recoloring, alpha editing or creative compositing; exact lossless WebP.",
+  "assets": [
+    {
+      "asset": "blood-splatter-atlas",
+      "key": "cacheBloodSplatter",
+      "generatedOriginal": "assets/cache-road/blood/sources/blood-splatter-atlas.png",
+      "runtime": "assets/cache-road/blood/blood-splatter-atlas.webp",
+      "size": [
+        1728,
+        1024
+      ],
+      "sourceSize": [
+        1672,
+        941
+      ],
+      "mode": "RGBA",
+      "columns": 3,
+      "rows": 2,
+      "frames": 6,
+      "cellSize": [
+        576,
+        512
+      ],
+      "registrationAnchor": [
+        0.5,
+        1
+      ],
+      "cells": [
+        {
+          "frame": 0,
+          "sourceRect": [
+            0,
+            0,
+            557,
+            470
+          ],
+          "insert": [
+            9,
+            21
+          ],
+          "anchor": [
+            0.5,
+            0.86
+          ],
+          "opaqueBounds": [
+            32,
+            50,
+            554,
+            481
+          ]
+        },
+        {
+          "frame": 1,
+          "sourceRect": [
+            557,
+            0,
+            557,
+            470
+          ],
+          "insert": [
+            9,
+            21
+          ],
+          "anchor": [
+            0.5,
+            0.86
+          ],
+          "opaqueBounds": [
+            12,
+            42,
+            565,
+            491
+          ]
+        },
+        {
+          "frame": 2,
+          "sourceRect": [
+            1114,
+            0,
+            558,
+            470
+          ],
+          "insert": [
+            9,
+            21
+          ],
+          "anchor": [
+            0.5,
+            0.86
+          ],
+          "opaqueBounds": [
+            9,
+            54,
+            538,
+            491
+          ]
+        },
+        {
+          "frame": 3,
+          "sourceRect": [
+            0,
+            470,
+            557,
+            471
+          ],
+          "insert": [
+            9,
+            20
+          ],
+          "anchor": [
+            0.5,
+            0.55
+          ],
+          "opaqueBounds": [
+            31,
+            25,
+            566,
+            491
+          ]
+        },
+        {
+          "frame": 4,
+          "sourceRect": [
+            557,
+            470,
+            557,
+            471
+          ],
+          "insert": [
+            9,
+            20
+          ],
+          "anchor": [
+            0.5,
+            0.55
+          ],
+          "opaqueBounds": [
+            12,
+            20,
+            565,
+            491
+          ]
+        },
+        {
+          "frame": 5,
+          "sourceRect": [
+            1114,
+            470,
+            558,
+            471
+          ],
+          "insert": [
+            9,
+            20
+          ],
+          "anchor": [
+            0.5,
+            0.55
+          ],
+          "opaqueBounds": [
+            11,
+            20,
+            550,
+            491
+          ]
+        }
+      ],
+      "sha256": {
+        "source": "3cc72bb165d8bf48601d78521bbbf828822984299063f397b7e308c7d37fe5d5",
+        "runtime": "6f661d1b30f1a6eb989b56b4479dc3608a5d5bf3e75fdb08d089ebd3653250ee"
+      },
+      "bytes": {
+        "encoded": 1038958,
+        "decodedRGBA": 7077888
+      }
+    },
+    {
+      "asset": "crew-callout-portraits",
+      "key": "cacheCrewCallouts",
+      "generatedOriginal": "assets/cache-road/blood/sources/crew-callout-portraits.png",
+      "runtime": "assets/cache-road/blood/crew-callout-portraits.webp",
+      "size": [
+        2304,
+        768
+      ],
+      "sourceSize": [
+        2172,
+        724
+      ],
+      "mode": "RGBA",
+      "columns": 3,
+      "rows": 1,
+      "frames": 3,
+      "cellSize": [
+        768,
+        768
+      ],
+      "registrationAnchor": [
+        0.5,
+        0.5
+      ],
+      "cells": [
+        {
+          "frame": 0,
+          "sourceRect": [
+            0,
+            0,
+            724,
+            724
+          ],
+          "insert": [
+            22,
+            22
+          ],
+          "anchor": [
+            0.5,
+            0.5
+          ],
+          "opaqueBounds": [
+            22,
+            41,
+            746,
+            746
+          ]
+        },
+        {
+          "frame": 1,
+          "sourceRect": [
+            724,
+            0,
+            724,
+            724
+          ],
+          "insert": [
+            22,
+            22
+          ],
+          "anchor": [
+            0.5,
+            0.5
+          ],
+          "opaqueBounds": [
+            22,
+            39,
+            746,
+            746
+          ]
+        },
+        {
+          "frame": 2,
+          "sourceRect": [
+            1448,
+            0,
+            724,
+            724
+          ],
+          "insert": [
+            22,
+            22
+          ],
+          "anchor": [
+            0.5,
+            0.5
+          ],
+          "opaqueBounds": [
+            22,
+            41,
+            746,
+            746
+          ]
+        }
+      ],
+      "sha256": {
+        "source": "5a374d2f73dff4e2f4813866a53c3c236894ef01a8caf300c77f69bcce274398",
+        "runtime": "a2c0f6f9a29312952844842f844d2ca45d4bee2f59e42e0c0d534df761fb7814"
+      },
+      "bytes": {
+        "encoded": 1532828,
+        "decodedRGBA": 7077888
+      }
+    }
+  ]
+}

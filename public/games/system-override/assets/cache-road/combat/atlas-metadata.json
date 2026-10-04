@@ -1,0 +1,1203 @@
+{
+  "version": 1,
+  "generatedAt": "2026-10-01",
+  "method": "Built-in image_gen; original RGBA retained unchanged; noncreative rectangular crop and transparent atlas repack; no resampling, alpha editing, recoloring, procedural or creative compositing; exact lossless WebP",
+  "assets": [
+    {
+      "asset": "bike-rider-atlas",
+      "key": "cacheCombatBike",
+      "generatedOriginal": "assets/cache-road/combat/sources/bike-rider-atlas.png",
+      "runtime": "assets/cache-road/combat/bike-rider-atlas.webp",
+      "size": [
+        1792,
+        1024
+      ],
+      "sourceSize": [
+        1536,
+        1024
+      ],
+      "mode": "RGBA",
+      "columns": 4,
+      "rows": 2,
+      "frames": 8,
+      "cellSize": [
+        448,
+        512
+      ],
+      "registrationAnchor": [
+        0.5,
+        1
+      ],
+      "transparentPixels": 1182836,
+      "partialAlphaPixels": 652172,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "byteIdenticalDecodedRGBA": true,
+      "sha256": {
+        "source": "e7ee393a2651bcb0f91525d69d2e44ce948dd4187b769041ede09eb6b9c51908",
+        "runtime": "938ef4b19f6f9828f62a5cd7af6d7d9f9c5ac9e934b67b7b951f2d8be5c732f7",
+        "decodedRGBA": "d89f00779f3287c8942e101d50287f8d60d606e00ec3112c8eeea492a9f851db"
+      },
+      "bytes": {
+        "source": 2410557,
+        "runtime": 1491256,
+        "decodedRGBA": 7340032
+      },
+      "cells": [
+        {
+          "frame": 0,
+          "state": "neutral",
+          "sourceRect": [
+            31,
+            34,
+            307,
+            478
+          ],
+          "insert": [
+            70,
+            17
+          ],
+          "opaqueBounds": [
+            70,
+            17,
+            377,
+            495
+          ],
+          "contact": [
+            208,
+            473
+          ],
+          "anchorPx": [
+            208,
+            473
+          ],
+          "anchor": [
+            0.4642857142857143,
+            0.923828125
+          ]
+        },
+        {
+          "frame": 1,
+          "state": "lean-left",
+          "sourceRect": [
+            345,
+            5,
+            385,
+            507
+          ],
+          "insert": [
+            31,
+            2
+          ],
+          "opaqueBounds": [
+            31,
+            2,
+            416,
+            509
+          ],
+          "contact": [
+            154,
+            486
+          ],
+          "anchorPx": [
+            154,
+            486
+          ],
+          "anchor": [
+            0.34375,
+            0.94921875
+          ]
+        },
+        {
+          "frame": 2,
+          "state": "lean-right",
+          "sourceRect": [
+            730,
+            9,
+            362,
+            499
+          ],
+          "insert": [
+            43,
+            6
+          ],
+          "opaqueBounds": [
+            43,
+            6,
+            405,
+            505
+          ],
+          "contact": [
+            303,
+            489
+          ],
+          "anchorPx": [
+            303,
+            489
+          ],
+          "anchor": [
+            0.6763392857142857,
+            0.955078125
+          ]
+        },
+        {
+          "frame": 3,
+          "state": "committed-kick",
+          "sourceRect": [
+            1113,
+            5,
+            408,
+            507
+          ],
+          "insert": [
+            20,
+            2
+          ],
+          "opaqueBounds": [
+            20,
+            2,
+            428,
+            509
+          ],
+          "contact": [
+            247,
+            494
+          ],
+          "anchorPx": [
+            247,
+            494
+          ],
+          "anchor": [
+            0.5513392857142857,
+            0.96484375
+          ]
+        },
+        {
+          "frame": 4,
+          "state": "recover",
+          "sourceRect": [
+            0,
+            515,
+            344,
+            509
+          ],
+          "insert": [
+            52,
+            1
+          ],
+          "opaqueBounds": [
+            52,
+            1,
+            396,
+            510
+          ],
+          "contact": [
+            232,
+            450
+          ],
+          "anchorPx": [
+            232,
+            450
+          ],
+          "anchor": [
+            0.5178571428571429,
+            0.87890625
+          ]
+        },
+        {
+          "frame": 5,
+          "state": "impact",
+          "sourceRect": [
+            345,
+            513,
+            377,
+            511
+          ],
+          "insert": [
+            35,
+            0
+          ],
+          "opaqueBounds": [
+            35,
+            0,
+            412,
+            511
+          ],
+          "contact": [
+            224,
+            451
+          ],
+          "anchorPx": [
+            224,
+            451
+          ],
+          "anchor": [
+            0.5,
+            0.880859375
+          ]
+        },
+        {
+          "frame": 6,
+          "state": "damaged",
+          "sourceRect": [
+            743,
+            517,
+            333,
+            507
+          ],
+          "insert": [
+            57,
+            2
+          ],
+          "opaqueBounds": [
+            57,
+            2,
+            390,
+            509
+          ],
+          "contact": [
+            221,
+            449
+          ],
+          "anchorPx": [
+            221,
+            449
+          ],
+          "anchor": [
+            0.49330357142857145,
+            0.876953125
+          ]
+        },
+        {
+          "frame": 7,
+          "state": "empty-ground-wreck",
+          "sourceRect": [
+            1097,
+            517,
+            438,
+            459
+          ],
+          "insert": [
+            5,
+            26
+          ],
+          "opaqueBounds": [
+            5,
+            26,
+            443,
+            485
+          ],
+          "contact": [
+            298,
+            478
+          ],
+          "anchorPx": [
+            298,
+            478
+          ],
+          "anchor": [
+            0.6651785714285714,
+            0.93359375
+          ]
+        }
+      ],
+      "extractionNote": "Separate full sprites at actual transparent or lowest-alpha gaps; preserve complete limbs/wheels/antennas and original per-pixel RGBA in every recorded rectangular crop. Original full generated sheet retained."
+    },
+    {
+      "asset": "hostile-chassis-atlas",
+      "key": "cacheCombatHostiles",
+      "generatedOriginal": "assets/cache-road/combat/sources/hostile-chassis-atlas.png",
+      "runtime": "assets/cache-road/combat/hostile-chassis-atlas.webp",
+      "size": [
+        1728,
+        1200
+      ],
+      "sourceSize": [
+        1536,
+        1024
+      ],
+      "mode": "RGBA",
+      "columns": 4,
+      "rows": 3,
+      "frames": 12,
+      "cellSize": [
+        432,
+        400
+      ],
+      "registrationAnchor": [
+        0.5,
+        1
+      ],
+      "transparentPixels": 1273961,
+      "partialAlphaPixels": 799639,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "byteIdenticalDecodedRGBA": true,
+      "sha256": {
+        "source": "efbb4cb278ba8e48e6a68013421b129aca627b9e4eb349e3fea0b018ba7f9bd6",
+        "runtime": "8be95816fb9eb9010b62f9b4e59eb23afe24a2caa267112d8248624d60412515",
+        "decodedRGBA": "059da27647d193546fde956ad8e07ea98e8bc2608d2475fae4c1a948c4c15134"
+      },
+      "bytes": {
+        "source": 2630571,
+        "runtime": 1687608,
+        "decodedRGBA": 8294400
+      },
+      "cells": [
+        {
+          "frame": 0,
+          "state": "rammer-neutral",
+          "sourceRect": [
+            0,
+            2,
+            358,
+            290
+          ],
+          "insert": [
+            37,
+            55
+          ],
+          "opaqueBounds": [
+            37,
+            55,
+            395,
+            345
+          ],
+          "contact": [
+            232,
+            337
+          ],
+          "anchorPx": [
+            232,
+            337
+          ],
+          "anchor": [
+            0.5370370370370371,
+            0.8425
+          ]
+        },
+        {
+          "frame": 1,
+          "state": "rammer-committed",
+          "sourceRect": [
+            375,
+            21,
+            419,
+            274
+          ],
+          "insert": [
+            6,
+            63
+          ],
+          "opaqueBounds": [
+            6,
+            63,
+            425,
+            337
+          ],
+          "contact": [
+            236,
+            333
+          ],
+          "anchorPx": [
+            236,
+            333
+          ],
+          "anchor": [
+            0.5462962962962963,
+            0.8325
+          ]
+        },
+        {
+          "frame": 2,
+          "state": "rammer-damaged",
+          "sourceRect": [
+            794,
+            41,
+            365,
+            257
+          ],
+          "insert": [
+            33,
+            71
+          ],
+          "opaqueBounds": [
+            33,
+            71,
+            398,
+            328
+          ],
+          "contact": [
+            216,
+            316
+          ],
+          "anchorPx": [
+            216,
+            316
+          ],
+          "anchor": [
+            0.5,
+            0.79
+          ]
+        },
+        {
+          "frame": 3,
+          "state": "rammer-wreck",
+          "sourceRect": [
+            1175,
+            57,
+            343,
+            245
+          ],
+          "insert": [
+            44,
+            77
+          ],
+          "opaqueBounds": [
+            44,
+            77,
+            387,
+            322
+          ],
+          "contact": [
+            306,
+            314
+          ],
+          "anchorPx": [
+            306,
+            314
+          ],
+          "anchor": [
+            0.7083333333333334,
+            0.785
+          ]
+        },
+        {
+          "frame": 4,
+          "state": "escort-neutral",
+          "sourceRect": [
+            0,
+            305,
+            369,
+            319
+          ],
+          "insert": [
+            31,
+            40
+          ],
+          "opaqueBounds": [
+            31,
+            40,
+            400,
+            359
+          ],
+          "contact": [
+            225,
+            344
+          ],
+          "anchorPx": [
+            225,
+            344
+          ],
+          "anchor": [
+            0.5208333333333334,
+            0.86
+          ]
+        },
+        {
+          "frame": 5,
+          "state": "escort-committed",
+          "sourceRect": [
+            382,
+            307,
+            403,
+            327
+          ],
+          "insert": [
+            14,
+            36
+          ],
+          "opaqueBounds": [
+            14,
+            36,
+            417,
+            363
+          ],
+          "contact": [
+            243,
+            338
+          ],
+          "anchorPx": [
+            243,
+            338
+          ],
+          "anchor": [
+            0.5625,
+            0.845
+          ]
+        },
+        {
+          "frame": 6,
+          "state": "escort-damaged",
+          "sourceRect": [
+            785,
+            327,
+            380,
+            311
+          ],
+          "insert": [
+            26,
+            44
+          ],
+          "opaqueBounds": [
+            26,
+            44,
+            406,
+            355
+          ],
+          "contact": [
+            204,
+            325
+          ],
+          "anchorPx": [
+            204,
+            325
+          ],
+          "anchor": [
+            0.4722222222222222,
+            0.8125
+          ]
+        },
+        {
+          "frame": 7,
+          "state": "escort-wreck",
+          "sourceRect": [
+            1165,
+            353,
+            354,
+            285
+          ],
+          "insert": [
+            39,
+            57
+          ],
+          "opaqueBounds": [
+            39,
+            57,
+            393,
+            342
+          ],
+          "contact": [
+            296,
+            332
+          ],
+          "anchorPx": [
+            296,
+            332
+          ],
+          "anchor": [
+            0.6851851851851852,
+            0.83
+          ]
+        },
+        {
+          "frame": 8,
+          "state": "disruptor-neutral",
+          "sourceRect": [
+            0,
+            640,
+            370,
+            384
+          ],
+          "insert": [
+            31,
+            8
+          ],
+          "opaqueBounds": [
+            31,
+            8,
+            401,
+            392
+          ],
+          "contact": [
+            220,
+            317
+          ],
+          "anchorPx": [
+            220,
+            317
+          ],
+          "anchor": [
+            0.5092592592592593,
+            0.7925
+          ]
+        },
+        {
+          "frame": 9,
+          "state": "disruptor-committed",
+          "sourceRect": [
+            379,
+            639,
+            391,
+            385
+          ],
+          "insert": [
+            20,
+            7
+          ],
+          "opaqueBounds": [
+            20,
+            7,
+            411,
+            392
+          ],
+          "contact": [
+            225,
+            317
+          ],
+          "anchorPx": [
+            225,
+            317
+          ],
+          "anchor": [
+            0.5208333333333334,
+            0.7925
+          ]
+        },
+        {
+          "frame": 10,
+          "state": "disruptor-damaged",
+          "sourceRect": [
+            777,
+            639,
+            375,
+            385
+          ],
+          "insert": [
+            28,
+            7
+          ],
+          "opaqueBounds": [
+            28,
+            7,
+            403,
+            392
+          ],
+          "contact": [
+            213,
+            318
+          ],
+          "anchorPx": [
+            213,
+            318
+          ],
+          "anchor": [
+            0.4930555555555556,
+            0.795
+          ]
+        },
+        {
+          "frame": 11,
+          "state": "disruptor-wreck",
+          "sourceRect": [
+            1153,
+            638,
+            367,
+            352
+          ],
+          "insert": [
+            32,
+            24
+          ],
+          "opaqueBounds": [
+            32,
+            24,
+            399,
+            376
+          ],
+          "contact": [
+            261,
+            343
+          ],
+          "anchorPx": [
+            261,
+            343
+          ],
+          "anchor": [
+            0.6041666666666666,
+            0.8575
+          ]
+        }
+      ],
+      "extractionNote": "Separate full sprites at actual transparent or lowest-alpha gaps; preserve complete limbs/wheels/antennas and original per-pixel RGBA in every recorded rectangular crop. Original full generated sheet retained."
+    },
+    {
+      "asset": "bike-crash-atlas",
+      "key": "cacheCombatBikeCrash",
+      "generatedOriginal": "assets/cache-road/combat/sources/bike-crash-atlas.png",
+      "runtime": "assets/cache-road/combat/bike-crash-atlas.webp",
+      "size": [
+        1728,
+        960
+      ],
+      "sourceSize": [
+        1536,
+        1024
+      ],
+      "mode": "RGBA",
+      "columns": 3,
+      "rows": 2,
+      "frames": 6,
+      "cellSize": [
+        576,
+        480
+      ],
+      "registrationAnchor": [
+        0.5,
+        1
+      ],
+      "transparentPixels": 1077777,
+      "partialAlphaPixels": 581103,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "byteIdenticalDecodedRGBA": true,
+      "sha256": {
+        "source": "1d22b87a9bc74e7fb0008716960fdad63f6f447878ea6508c5c329c36eae1d91",
+        "runtime": "a88665419fd43e44b7f74f8ef60450402aa88a89aa0ce89547327796690402bd",
+        "decodedRGBA": "5f2d17eb3c14dd96f90f9afc50f120ef73fd6221d6168aeaaa3ae6754c887662"
+      },
+      "bytes": {
+        "source": 2337637,
+        "runtime": 1400536,
+        "decodedRGBA": 6635520
+      },
+      "cells": [
+        {
+          "frame": 0,
+          "state": "tipped-empty-bike",
+          "sourceRect": [
+            32,
+            127,
+            510,
+            375
+          ],
+          "insert": [
+            33,
+            52
+          ],
+          "opaqueBounds": [
+            33,
+            52,
+            543,
+            427
+          ],
+          "contact": [
+            352,
+            423
+          ],
+          "anchorPx": [
+            352,
+            423
+          ],
+          "anchor": [
+            0.6111111111111112,
+            0.88125
+          ]
+        },
+        {
+          "frame": 1,
+          "state": "airborne-upside-down-bike",
+          "sourceRect": [
+            563,
+            21,
+            450,
+            475
+          ],
+          "insert": [
+            63,
+            2
+          ],
+          "opaqueBounds": [
+            63,
+            2,
+            513,
+            477
+          ],
+          "contact": null,
+          "anchorPx": [
+            288.0,
+            239.5
+          ],
+          "anchor": [
+            0.5,
+            0.49895833333333334
+          ]
+        },
+        {
+          "frame": 2,
+          "state": "crushed-empty-bike",
+          "sourceRect": [
+            1049,
+            39,
+            465,
+            465
+          ],
+          "insert": [
+            55,
+            7
+          ],
+          "opaqueBounds": [
+            55,
+            7,
+            520,
+            472
+          ],
+          "contact": [
+            246,
+            468
+          ],
+          "anchorPx": [
+            246,
+            468
+          ],
+          "anchor": [
+            0.4270833333333333,
+            0.975
+          ]
+        },
+        {
+          "frame": 3,
+          "state": "rider-ejected",
+          "sourceRect": [
+            17,
+            544,
+            562,
+            464
+          ],
+          "insert": [
+            7,
+            8
+          ],
+          "opaqueBounds": [
+            7,
+            8,
+            569,
+            472
+          ],
+          "contact": null,
+          "anchorPx": [
+            288.0,
+            240.0
+          ],
+          "anchor": [
+            0.5,
+            0.5
+          ]
+        },
+        {
+          "frame": 4,
+          "state": "rider-tumble",
+          "sourceRect": [
+            579,
+            554,
+            445,
+            452
+          ],
+          "insert": [
+            65,
+            14
+          ],
+          "opaqueBounds": [
+            65,
+            14,
+            510,
+            466
+          ],
+          "contact": null,
+          "anchorPx": [
+            287.5,
+            240.0
+          ],
+          "anchor": [
+            0.4991319444444444,
+            0.5
+          ]
+        },
+        {
+          "frame": 5,
+          "state": "rider-settled",
+          "sourceRect": [
+            1029,
+            571,
+            490,
+            421
+          ],
+          "insert": [
+            43,
+            29
+          ],
+          "opaqueBounds": [
+            43,
+            29,
+            533,
+            450
+          ],
+          "contact": [
+            443,
+            396
+          ],
+          "anchorPx": [
+            443,
+            396
+          ],
+          "anchor": [
+            0.7690972222222222,
+            0.825
+          ]
+        }
+      ],
+      "extractionNote": "Separate full sprites at actual transparent or lowest-alpha gaps; preserve complete limbs/wheels/antennas and original per-pixel RGBA in every recorded rectangular crop. Original full generated sheet retained."
+    },
+    {
+      "asset": "combat-blast-atlas",
+      "key": "cacheCombatBlast",
+      "generatedOriginal": "assets/cache-road/combat/sources/combat-blast-atlas.png",
+      "runtime": "assets/cache-road/combat/combat-blast-atlas.webp",
+      "size": [
+        1872,
+        1056
+      ],
+      "sourceSize": [
+        1536,
+        1024
+      ],
+      "mode": "RGBA",
+      "columns": 3,
+      "rows": 2,
+      "frames": 6,
+      "cellSize": [
+        624,
+        528
+      ],
+      "registrationAnchor": [
+        0.5,
+        0.5
+      ],
+      "transparentPixels": 1235367,
+      "partialAlphaPixels": 741465,
+      "alphaRange": [
+        0,
+        253
+      ],
+      "byteIdenticalDecodedRGBA": true,
+      "sha256": {
+        "source": "05d833cfcff54e971ca4a4d2c6628f7e1d29c6181a5f28f6c28bd105db64ed39",
+        "runtime": "32b384402d9c84fe5ef44b2604c41cee6e36ec5f4b0763eac18c9632deec5b3d",
+        "decodedRGBA": "db7a491724d48fcfa958c1876e6f2171ca2f79929e99fd7dfe4a7132c6ad36f2"
+      },
+      "bytes": {
+        "source": 2454937,
+        "runtime": 1662254,
+        "decodedRGBA": 7907328
+      },
+      "cells": [
+        {
+          "frame": 0,
+          "state": "ignition",
+          "sourceRect": [
+            0,
+            0,
+            460,
+            496
+          ],
+          "insert": [
+            82,
+            16
+          ],
+          "opaqueBounds": [
+            82,
+            16,
+            542,
+            512
+          ],
+          "contact": null,
+          "anchorPx": [
+            312.0,
+            264.0
+          ],
+          "anchor": [
+            0.5,
+            0.5
+          ]
+        },
+        {
+          "frame": 1,
+          "state": "burst",
+          "sourceRect": [
+            461,
+            21,
+            524,
+            479
+          ],
+          "insert": [
+            50,
+            24
+          ],
+          "opaqueBounds": [
+            50,
+            24,
+            574,
+            503
+          ],
+          "contact": null,
+          "anchorPx": [
+            312.0,
+            263.5
+          ],
+          "anchor": [
+            0.5,
+            0.4990530303030303
+          ]
+        },
+        {
+          "frame": 2,
+          "state": "shattered-panels",
+          "sourceRect": [
+            985,
+            23,
+            539,
+            475
+          ],
+          "insert": [
+            42,
+            26
+          ],
+          "opaqueBounds": [
+            42,
+            26,
+            581,
+            501
+          ],
+          "contact": null,
+          "anchorPx": [
+            311.5,
+            263.5
+          ],
+          "anchor": [
+            0.49919871794871795,
+            0.4990530303030303
+          ]
+        },
+        {
+          "frame": 3,
+          "state": "smoke-expansion",
+          "sourceRect": [
+            0,
+            501,
+            620,
+            523
+          ],
+          "insert": [
+            2,
+            2
+          ],
+          "opaqueBounds": [
+            2,
+            2,
+            622,
+            525
+          ],
+          "contact": null,
+          "anchorPx": [
+            312.0,
+            263.5
+          ],
+          "anchor": [
+            0.5,
+            0.4990530303030303
+          ]
+        },
+        {
+          "frame": 4,
+          "state": "dim-smoke",
+          "sourceRect": [
+            620,
+            500,
+            495,
+            524
+          ],
+          "insert": [
+            64,
+            2
+          ],
+          "opaqueBounds": [
+            64,
+            2,
+            559,
+            526
+          ],
+          "contact": null,
+          "anchorPx": [
+            311.5,
+            264.0
+          ],
+          "anchor": [
+            0.49919871794871795,
+            0.5
+          ]
+        },
+        {
+          "frame": 5,
+          "state": "dissipating-smoke",
+          "sourceRect": [
+            1115,
+            501,
+            399,
+            503
+          ],
+          "insert": [
+            112,
+            12
+          ],
+          "opaqueBounds": [
+            112,
+            12,
+            511,
+            515
+          ],
+          "contact": null,
+          "anchorPx": [
+            311.5,
+            263.5
+          ],
+          "anchor": [
+            0.49919871794871795,
+            0.4990530303030303
+          ]
+        }
+      ],
+      "extractionNote": "Separate full sprites at actual transparent or lowest-alpha gaps; preserve complete limbs/wheels/antennas and original per-pixel RGBA in every recorded rectangular crop. Original full generated sheet retained."
+    }
+  ],
+  "runtimeDecodedBytes": 30177280,
+  "runtimeDecodedMiB": 28.779296875,
+  "budgetNote": "20 MiB was an optimization aim; full sprite/alpha preservation takes precedence. Actual four-atlas decoded total recorded here, each requested once through the existing bounded shared cache.",
+  "generationHistory": [
+    {
+      "asset": "bike-crash-atlas",
+      "initialReview": "assets/cache-road/combat/sources/bike-crash-initial-review.png",
+      "prompt": "assets/cache-road/combat/sources/bike-crash-atlas-prompt.md",
+      "identityReference": "assets/cache-road/combat/sources/bike-rider-atlas.png",
+      "selectedSpacingReview": "assets/cache-road/combat/sources/bike-crash-atlas.png",
+      "spacingPrompt": "assets/cache-road/combat/sources/bike-crash-spacing-prompt.md",
+      "note": "Selected imagegen spacing correction keeps the same identities. Noncreative gap extraction/repack retains complete wheels and rider limbs; the source nominal grid alone is not consumed.",
+      "initialReviewSha256": "a5d7ad77acd030120d9efa00dfa2b3d20fcc629183ea4fa620f9dec724704021"
+    }
+  ]
+}

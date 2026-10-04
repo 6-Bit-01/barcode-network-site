@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="stone-l" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#52616c"/><stop offset=".4" stop-color="#718087"/><stop offset="1" stop-color="#344753"/></linearGradient>
+  </defs>
+  <!-- Only the two sidewalk corners have alpha. The center stays open. -->
+  <path d="M0 0H39Q51 0 52 15Q54 24 49 33L43 244Q42 256 32 256H0Z M217 0H256V256H224Q214 256 213 244L207 33Q202 24 204 15Q205 0 217 0Z" fill="url(#stone-l)"/>
+  <path d="M8 0L6 256M25 0L24 256M232 0L231 256M248 0L247 256" stroke="#243a45" stroke-width="2" opacity=".45"/>
+  <path d="M0 57L47 57M0 125L45 125M0 198L44 198M211 57L256 57M212 125L256 125M213 198L256 198" stroke="#1a323d" stroke-width="4" opacity=".7"/>
+  <path d="M0 61L47 61M0 129L45 129M0 202L44 202M211 61L256 61M212 129L256 129M213 202L256 202" stroke="#9aadaa" stroke-width="2" opacity=".4"/>
+  <path d="M14 31q12-8 22-4M9 169q8-4 22-2M220 95q10-5 24-2M221 228q11-6 23-3" fill="none" stroke="#62b1ad" stroke-width="3" opacity=".17"/>
+  <path d="M48 33Q42 83 42 244M208 33Q214 83 214 244" fill="none" stroke="#aabbb6" stroke-width="2" opacity=".58"/>
+</svg>

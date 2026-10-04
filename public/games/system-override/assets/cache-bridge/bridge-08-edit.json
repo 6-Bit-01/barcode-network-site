@@ -1,0 +1,9 @@
+{
+  "tool": "image_gen.imagegen",
+  "prompt": "Use case: precise-object-edit. Edit target image1: final road departure painting. Supporting reference image2: exact Cache yellow car rear sprite. Change ONLY the missing central white circular black-outlined emblem on the yellow rear hatch of the center car. Copy the same large white round badge with the identical black stylized character from image2, centered on rear hatch between tail lamps, over the diagonal stripes, fitted naturally to hatch surface/perspective. It is a vehicle emblem, not caption text. Keep absolutely everything else from image1 unchanged: car dimensions, position, roof recorder, glass reel equipment, tail lights, tow hook, road four lanes, composition, buildings, lamps, wet reflections, mature inked comic style and panoramic1860x845size. No other new lettering or overlays.",
+  "references": [
+    "generated scene8 initial output (not selected)",
+    "assets/cache-road/vehicles/cache-center.webp"
+  ],
+  "selectedSource": "assets/cache-bridge/sources/bridge-08-cache-line.png"
+}

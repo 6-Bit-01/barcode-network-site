@@ -1,0 +1,164 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Four static illustrations for the authored Level 2 Cache Line ending and Mac street-access handoff",
+  "generator": "image_gen.imagegen (built-in)",
+  "sourceHandling": "Selected ImageGen PNG copied unchanged; WebP quality 92 method 6 format conversion only, no crop or resize",
+  "runtimeOwner": "src/engine/cache-ending.js",
+  "runtimeText": "Scene titles, dialogue, transcript, delivery and verification status and controls supplied by code; canonical costume and vehicle insignia remain",
+  "assets": [
+    {
+      "scene": 1,
+      "source": {
+        "path": "assets/cache-ending/sources/ending-01-delivered.png",
+        "sha256": "f7bab225264a75e3f1a23cf41906c32ec2bdc9dad583a157dcba1851c8a5a924",
+        "bytes": 2762028,
+        "width": 1860,
+        "height": 845
+      },
+      "runtime": {
+        "path": "assets/cache-ending/ending-01-delivered.webp",
+        "sha256": "d351494cc4f3918ebf80fc32e8f3a7f3d98f9cdb61ebce18ee7b520a5f1de35e",
+        "bytes": 541290,
+        "width": 1860,
+        "height": 845
+      },
+      "generatedOutput": "/workspace/scratch/dd1242abe481/generated_images/exec-44d63084-682c-4cde-b058-ca9e909927ca.png",
+      "generationProvenance": "assets/cache-ending/generation-prompts.json",
+      "referenceImages": [
+        {
+          "path": "assets/cache-bridge/sources/bridge-05-keep-it.png",
+          "sha256": "1457b1b4d66a5850792ade4061f634e9089ee50ade2e87210940dfa773b6670e",
+          "bytes": 2729378,
+          "width": 1860,
+          "height": 845
+        },
+        {
+          "path": "assets/cache-bridge/sources/bridge-08-cache-line.png",
+          "sha256": "4aac33600c8fc05b317dc9c9fa7921a0d9a7a72924f7878a255e41d2f30feeae",
+          "bytes": 2999746,
+          "width": 1860,
+          "height": 845
+        }
+      ],
+      "webpQuality": 92,
+      "visualReview": "Matched approved bridge character/costume/car identity; separate objects and coherent hands/occlusion; no in-art dialogue; no new character or antagonist identity."
+    },
+    {
+      "scene": 2,
+      "source": {
+        "path": "assets/cache-ending/sources/ending-02-unverified.png",
+        "sha256": "ee50481fe00988d4b21bb4bc6d80989faabeba138d89fd3171ce75a2afff8db3",
+        "bytes": 2737779,
+        "width": 1860,
+        "height": 845
+      },
+      "runtime": {
+        "path": "assets/cache-ending/ending-02-unverified.webp",
+        "sha256": "98a771fe0497e1ebbf6002008b6d0894e22c38a778581ed49f1473e08f9d410b",
+        "bytes": 508898,
+        "width": 1860,
+        "height": 845
+      },
+      "generatedOutput": "/workspace/scratch/dd1242abe481/generated_images/exec-a8b54d39-23de-4850-bda2-949aa17ec596.png",
+      "generationProvenance": "assets/cache-ending/generation-prompts.json",
+      "referenceImages": [
+        {
+          "path": "assets/cache-bridge/sources/bridge-05-keep-it.png",
+          "sha256": "1457b1b4d66a5850792ade4061f634e9089ee50ade2e87210940dfa773b6670e",
+          "bytes": 2729378,
+          "width": 1860,
+          "height": 845
+        },
+        {
+          "path": "assets/cache-bridge/sources/bridge-03-original.png",
+          "sha256": "1468b86167a5581f66ff79b98fa02280edb621df4d3abcb0a7f3941a101a6bf4",
+          "bytes": 2562972,
+          "width": 1860,
+          "height": 845
+        }
+      ],
+      "webpQuality": 92,
+      "visualReview": "Matched approved bridge character/costume/car identity; separate objects and coherent hands/occlusion; no in-art dialogue; no new character or antagonist identity."
+    },
+    {
+      "scene": 3,
+      "source": {
+        "path": "assets/cache-ending/sources/ending-03-held.png",
+        "sha256": "82a08e60bc79271eb616e22e9bc78cfeaaeacca01941d2cfcfa8da4051896b4b",
+        "bytes": 2712122,
+        "width": 1860,
+        "height": 845
+      },
+      "runtime": {
+        "path": "assets/cache-ending/ending-03-held.webp",
+        "sha256": "f864da0ac3acc3a2db7c6bb8b115be916208ee34369ca92adcc6180ae37800b4",
+        "bytes": 499532,
+        "width": 1860,
+        "height": 845
+      },
+      "generatedOutput": "/workspace/scratch/dd1242abe481/generated_images/exec-95947316-3c02-4d7b-a855-ecd87f2024f6.png",
+      "generationProvenance": "assets/cache-ending/generation-prompts.json",
+      "referenceImages": [
+        {
+          "path": "assets/cache-bridge/sources/bridge-03-original.png",
+          "sha256": "1468b86167a5581f66ff79b98fa02280edb621df4d3abcb0a7f3941a101a6bf4",
+          "bytes": 2562972,
+          "width": 1860,
+          "height": 845
+        },
+        {
+          "path": "assets/cache-bridge/sources/bridge-02-uplink.png",
+          "sha256": "3ccd1b49f80f06f639f64018f21e8599febfdafe270507bbeaef4dfb20a3ec4d",
+          "bytes": 2767310,
+          "width": 1860,
+          "height": 845
+        }
+      ],
+      "webpQuality": 92,
+      "visualReview": "Matched approved bridge character/costume/car identity; separate objects and coherent hands/occlusion; no in-art dialogue; no new character or antagonist identity."
+    },
+    {
+      "scene": 4,
+      "source": {
+        "path": "assets/cache-ending/sources/ending-04-street-access.png",
+        "sha256": "a3a7ad1afcb8bb9c48a5c7a310f4d5b97fbcf135c97e45b8653de517c619b708",
+        "bytes": 3027499,
+        "width": 1860,
+        "height": 845
+      },
+      "runtime": {
+        "path": "assets/cache-ending/ending-04-street-access.webp",
+        "sha256": "83f6f0db54ff13cf43c76488204b7fd09bb190078d4406c8dacbf7a6604557c1",
+        "bytes": 659830,
+        "width": 1860,
+        "height": 845
+      },
+      "generatedOutput": "/workspace/scratch/dd1242abe481/generated_images/exec-1ac6d351-1ec9-45a1-a020-be94cdc36eb1.png",
+      "generationProvenance": "assets/cache-ending/generation-prompts.json",
+      "referenceImages": [
+        {
+          "path": "assets/cache-bridge/sources/bridge-02-uplink.png",
+          "sha256": "3ccd1b49f80f06f639f64018f21e8599febfdafe270507bbeaef4dfb20a3ec4d",
+          "bytes": 2767310,
+          "width": 1860,
+          "height": 845
+        },
+        {
+          "path": "assets/cache-bridge/sources/bridge-08-cache-line.png",
+          "sha256": "4aac33600c8fc05b317dc9c9fa7921a0d9a7a72924f7878a255e41d2f30feeae",
+          "bytes": 2999746,
+          "width": 1860,
+          "height": 845
+        }
+      ],
+      "webpQuality": 92,
+      "visualReview": "Matched approved bridge character/costume/car identity; separate objects and coherent hands/occlusion; no in-art dialogue; no new character or antagonist identity."
+    }
+  ],
+  "reviewNotes": [
+    "Scene 4 is a separate cut to Mac at a street-access gate; it does not place him beside Cache at the receiver.",
+    "Mac wears the approved black cap with red MODEM wordmark, white makeup/red forehead arcs, reddish braids and beard and tattooed arms.",
+    "Scene 2 green and amber monitor surfaces are deliberately blank for runtime status labels.",
+    "No pursuer, villain, Sheila or new revelation is depicted."
+  ]
+}

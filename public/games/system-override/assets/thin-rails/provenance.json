@@ -1,0 +1,76 @@
+{
+  "generator": "built-in image_gen",
+  "reference": "Owner-selected thinner concept, 2026-09-15",
+  "processing": "Whole-part crops; remove generated checkerboard outside closed dark silhouettes; retain enclosed metal/lenses; alpha downsampling under the existing Python preparation authorization.",
+  "parts": {
+    "wall": {
+      "sourceCrop": [
+        260,
+        0,
+        440,
+        750
+      ],
+      "sourceBoundsSize": [
+        131,
+        708
+      ],
+      "preparedSize": [
+        128,
+        692
+      ],
+      "bytes": 30896
+    },
+    "pavement": {
+      "sourceCrop": [
+        830,
+        0,
+        990,
+        750
+      ],
+      "sourceBoundsSize": [
+        115,
+        707
+      ],
+      "preparedSize": [
+        128,
+        787
+      ],
+      "bytes": 29736
+    },
+    "elbow": {
+      "sourceCrop": [
+        230,
+        810,
+        560,
+        1230
+      ],
+      "sourceBoundsSize": [
+        290,
+        378
+      ],
+      "preparedSize": [
+        160,
+        209
+      ],
+      "bytes": 13278
+    },
+    "cap": {
+      "sourceCrop": [
+        820,
+        850,
+        995,
+        1170
+      ],
+      "sourceBoundsSize": [
+        132,
+        254
+      ],
+      "preparedSize": [
+        128,
+        246
+      ],
+      "bytes": 12772
+    }
+  },
+  "prompt": "Production modular atlas matching the owner-selected thin dark gunmetal and violet recessed-lens rail: straight repeating facade module, matching low-profile top-view pavement module, 90-degree wall-to-floor elbow, roof endcap; isolated parts, no text, city, characters or hologram field. Preserve painted graphic-novel steel texture and restrained glow."
+}

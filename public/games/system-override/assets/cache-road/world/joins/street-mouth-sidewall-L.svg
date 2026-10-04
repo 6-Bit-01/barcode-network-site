@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="80" height="160" viewBox="0 0 80 160">
+  <defs>
+    <linearGradient id="wall-l" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#0b1b27"/><stop offset=".32" stop-color="#304656"/><stop offset=".71" stop-color="#1c3543"/><stop offset="1" stop-color="#102633"/></linearGradient>
+  </defs>
+  <path d="M8 18L57 7L75 19L74 135L61 156L10 153L5 136Z" fill="#101f2d" stroke="#465e6b" stroke-width="3"/>
+  <path d="M8 18L57 7L75 19L27 31Z" fill="#526674"/>
+  <path d="M27 31L75 19L74 135L61 156L24 148Z" fill="url(#wall-l)"/>
+  <path d="M8 18L27 31L24 148L10 153Z" fill="#152734"/>
+  <path d="M31 36L68 26M30 48L67 38M29 60L67 50M27 137L62 145" stroke="#9eafb0" stroke-width="2" opacity=".42"/>
+  <path d="M44 61L56 58L55 114L41 117Z" fill="#d8ae78" opacity=".26"/>
+  <path d="M43 66L51 64L50 102L42 103Z" fill="#62b1ad" opacity=".35"/>
+  <path d="M12 52v65M17 45v85M61 42v60" stroke="#061824" stroke-width="4" opacity=".62"/>
+  <path d="M38 30v7m26-14v8M11 135l12-5m29 9 16-7" stroke="#cbbf9f" stroke-width="3" opacity=".54"/>
+</svg>

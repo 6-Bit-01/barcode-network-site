@@ -1,0 +1,227 @@
+{
+  "generator": "Built-in image_gen.imagegen",
+  "productionEncoding": "WebP quality 96; original dimensions, no crop or semantic editing",
+  "shots": [
+    {
+      "filename": "intro-01-broadcast.webp",
+      "prompt": "Create ONE finished landscape cinematic comic illustration for the actual opening of BARCODE: SYSTEM OVERRIDE. This is shot 1 of a connected eight-shot game intro. Use the attached current character models exactly; do not redesign or blend the identities.\nReferences in order: 1 = 6 Bit FACE makeup and glasses; 2 = 6 Bit full costume; 3 = DJ Floppydisc costume and likeness.\nScene: A lived-in underground radio/music studio at night, before any failure. Medium-wide candid two-person composition: 6 Bit at left, waist up in three-quarter view facing his friend, resting one fingerless-gloved hand on an analog mixing console; DJ Floppydisc at right, carefully nudging a fader with one hand and giving 6 Bit an easy, small amused smile. They are actively finishing a recording, not posing for a character lineup. Microphone on a boom, tape reels, stacked chunky CRTs, patch cables, scribbled tape labels with no readable writing, warm room light and cool cyan monitor bounce. The room is improvised and human, belonging to musicians. No other people anywhere.\n6 Bit MUST have long brown hair, black flatbrim cap with white '6 Bit' and green underside, angular black-and-white silver-framed CLEAR glasses, white irises with dark pupils, black paint around BOTH eyes, white paint across nose and cheeks terminating in sharp downward cheek points. The mouth and chin and forehead remain bare human skin. His makeup is not a skull or mask. Black layered open long hooded vest/cardigan over black 6-BIT shirt, black wrist straps, fingerless gloves. Preserve actual facial proportions from reference.\nDJ MUST be a living human with swept short dark brown hair, neat narrow brown moustache, a single dark wraparound visor displaying a thin CYAN waveform, white shirt with rolled sleeves, fitted black waistcoat, black bow tie, a small actual floppy disk pinned at left chest, subtle metallic circuit seams on bare forearms. No skeleton, no skull makeup, no hat, no beard, no headphones added.\nStyle: premium hand-inked 1990s cyberpunk graphic novel / mature arcade comic, confident black contour lines, angular cel-shaded color blocks, restrained printed halftone and paper grain, expressive human faces. Warm amber practical lighting, smoky plum/navy shadows and cyan phosphor, small magenta accents. Cinematic storytelling, strong readable silhouettes. Not a photo, not 3D, not chibi, not an infographic or UI screenshot.\nComposition: very wide landscape, ideally around 2.2:1. Faces and important hand action comfortably inside the central 70% of image height to survive a wide crop. Full-bleed art only, no borders, captions, speech balloons, title, watermark or overlay text. Only established tiny costume lettering may appear.",
+      "references": [
+        "6BitFace(1).png",
+        "6BitFullBodyFront(1).png",
+        "openart-image_H5RWJcvi_1772147226771_raw(1).png"
+      ],
+      "shot": 1,
+      "source": "exec-6ae0a4fb-275c-483f-b2dc-0520c4ddcc0f.png",
+      "dimensions": [
+        1862,
+        845
+      ],
+      "sourceSha256": "27f419750db97ca718f4e149cdc3e901d4cb2fbd8b338908f709d2463c0e3d42",
+      "sha256": "c035a83b1d80ecccc9555e46c9fcdf1a8662f861f478cf46c0010f2ead6fd1f5",
+      "bytes": 623388
+    },
+    {
+      "filename": "intro-02-keep-the-take.webp",
+      "prompt": "Create ONE finished very wide landscape comic illustration, shot 2 of BARCODE: SYSTEM OVERRIDE's opening. Exact aspect 2.2:1, full bleed. Match the hand-inked graphic novel style, rich amber/cyan lighting, paper grain, controlled halftone, chunky analog studio equipment and expressive human proportions of reference 1, but CHANGE the camera, action and characters. Do not include the two people from reference 1.\nReference order: 1 = the prior studio shot, STYLE/SETTING ONLY; 2 = Cache Back identity/costume; 3 = Mac Modem full costume in red; 4 = Mac Modem face markings; 5 = Cliff head/costume.\nScene before the failure, the other end of the same improvised underground music studio. LEFT foreground: Mac Modem in three-quarter waist-up view, working a cable into a chunky wall patch bay, looking across toward Cache with focused confidence. RIGHT foreground: Cache Back seen in three-quarter side/back view just like his reference, turning his masked face toward Mac while operating an open laptop and cassette archive deck, preserving their live broadcast. The laptop partially hides his hands; do not invent gloves. In the middle background, smaller but recognizable, Cliff stands in the doorway with a clipboard, headset and weary, deadpan expression, checking a cable that passes absurdly beneath a coffee mug. His practical staff interruption is a small background visual joke, not a scene-stealing introduction. ONLY these three humans. Any posters show abstract shapes, no other visible characters.\nCache Back MUST retain bright yellow cap with two rounded ear-like side protrusions, short dark hair, brown eyes behind black rectangular CLEAR glasses, angular black lower-face tech mask, broad black mechanical collar with small cyan accents, yellow short-sleeved shirt and black Greek-key sleeve/collar trim, white circle back/shoulder emblem matching model. Keep mask worn; do not reveal his mouth.\nMac MUST retain ginger beard and two thin long side braids, black cap with RED 'MODEM', red eyes, white face paint with thin red nested signal arcs across forehead and asymmetrical fine black circuitry/outline around one eye and along cheeks, burgundy-red sleeveless vest over black shirt with red MODEM lettering, bare tattooed arms and round pendant. He is human in paint, not a skull or robot. Do not use 6 Bit's glasses, white irises or makeup on him.\nCliff MUST have messy thinning short brown hair, tired eyes, salt-and-pepper stubble, beige staff jacket over faded blue polo, black single-ear headset with microphone and a paper clipboard. Translate reference into the SAME drawn comic style, do not paste a photograph or show a green-screen background.\nStrong staging, lived-in creative space, active collaboration; no lineup. Place all faces and important hand actions within central 75% height, with space around hats. Leave lower foreground for equipment. Full bleed illustration only: no panel borders, title, speech balloons or interface overlay. Avoid text except the small established costume lettering.",
+      "references": [
+        "intro-01-broadcast",
+        "openart-image_sUa578AT_1765587750737_raw(1).png",
+        "openart-image_jWL5HfqQ_1771484902321_raw(1).png",
+        "openart-image_y8BzeKUf_1771482003518_raw(1).png",
+        "openart-image_1774326348864_58f1c754_1774326348979_d9679c96(1).png"
+      ],
+      "shot": 2,
+      "source": "exec-d257995c-a1a6-4df3-b1a3-869514205ce6.png",
+      "dimensions": [
+        1860,
+        845
+      ],
+      "sourceSha256": "cd6bfb96924b022d475ba9b183b4e60d575874e913a5bba3a81b54960591c926",
+      "sha256": "dee96b7d5f1ff6f5112cd1a0ec0d5808dfda82ebb165ebf12f4e8a1c50930462",
+      "bytes": 668162
+    },
+    {
+      "filename": "intro-03-dead-return.webp",
+      "prompt": "Draw ONE new very wide cinematic graphic-novel game intro illustration, 2.2:1 landscape, full bleed, shot 3 of BARCODE: SYSTEM OVERRIDE. Reference 1 establishes the same underground analog studio and these exact two characters; refs 2 and 3 reinforce 6 Bit's precise makeup and costume; ref 4 is DJ Floppydisc. Preserve their identities. New camera and action, not a recolor of the previous shot.\nStory moment: the broadcast return abruptly goes silent. A large damaged CRT receiver dominates the LEFT foreground in a low, slightly canted viewpoint; its screen contains fractured cyan static bands and a single thin horizontal line, no face, no monster, no words. On the RIGHT half, 6 Bit leans toward it with one hand planted on the console, face alert and skeptically irritated, eyes narrowing through CLEAR glasses. DJ is smaller in the CENTER background behind the console, one bare hand halted above a fader, expression startled and puzzled. Their hats/heads are fully inside frame with breathing room. Show the creative studio still physically intact: reel tape, cables and familiar console. Warm overhead lights have dimmed; the suddenly harsh CRT casts cold cyan light, thin magenta interference on equipment, a remaining amber doorway light. No explosions, lightning powers, weapons or combat. No other figures or faces, including on screens or posters.\n6 Bit: human with long brown hair; black flat-brim cap white '6 Bit', green underside; thick angular black/silver clear glasses; WHITE irises with small dark pupils; solid black makeup surrounding BOTH eyes; white paint across nose and cheeks tapering into two sharp downward cheek points, bare human mouth/chin/forehead. Not skull makeup, not a mask, not robot skin. Black open long hooded cardigan/vest, black printed 6-BIT shirt, fingerless gloves and black wrist straps.\nDJ: human with swept short dark brown hair and neat narrow moustache; dark wraparound cyan WAVEFORM visor, black waistcoat, white rolled-sleeve shirt, black bow tie and floppy-disk pin, subtle silver circuit seams on his bare forearms. Never a skeleton or masked character.\nStyle matches ref 1: confident hand-inked black contours, angular cel shading, carefully placed halftone/paper grain, expressive mature arcade-comic faces, smoky navy and violet blacks, cyan and restrained magenta, warm amber practical remnants. Rich but legible, cinematic depth. Make the loss of warmth itself the impact. Keep all faces and story action in central 75% height for wide game framing. No panel borders, captions, title, dialogue balloons, watermarks or HUD; only tiny established costume lettering.",
+      "references": [
+        "intro-01-broadcast",
+        "6BitFace(1).png",
+        "6BitFullBodyFront(1).png",
+        "openart-image_H5RWJcvi_1772147226771_raw(1).png"
+      ],
+      "shot": 3,
+      "source": "exec-c155d527-042f-49c1-80ce-faab6693c63b.png",
+      "dimensions": [
+        1862,
+        845
+      ],
+      "sourceSha256": "9a54b11eb98c538282d6736c6506a8afc9342a990556af145d65ce601f6327e5",
+      "sha256": "ed7c3db493ccc228ea1c54ad778b8f5b988fff348cd9a78377847298c68fa834",
+      "bytes": 646918
+    },
+    {
+      "filename": "intro-04-preserve.webp",
+      "prompt": "Make ONE finished very wide 2.2:1 landscape hand-inked comic scene, shot 4 of BARCODE: SYSTEM OVERRIDE. Reference 1 is the established studio, style and correct characters; refs 2,3,4 are current exact models for Cache Back and Mac Modem. KEEP their designs and draw a new camera/action.\nAfter the radio broadcast failure, the two crew members refuse to erase the surviving recording. Dramatic close low angle at the ARCHIVE DESK: Cache Back fills the LEFT half in waist-up three-quarter view, his yellow cap ears and masked face clearly readable. He is carefully sliding the physical write-protect tab on a chunky cassette-sized data cartridge using thumb and forefinger; the cartridge is held just above the open laptop beside a tape deck, so the concrete preservation action is visible and anatomically clear. He looks down, intent and decisive. Mac Modem is on the RIGHT, waist up but slightly farther back at a separate wall access panel, one hand holding aside its open cover and the other reseating a cable, glancing toward the door as a small GREEN practical access lamp comes on. There is NO Cliff in this shot, no other people, no faces on displays. No duplicate characters. The room is in cold cyan emergency glow with amber thin edges and a few restrained magenta faults. Familiar analog gear and cables, intimate working musician space, not a spaceship.\nCache: bright yellow cap with two soft rounded ear-like side protrusions, brown eyes, black rectangular clear glasses, short dark hair, angular black tech lower-face mask fully covering mouth and nose, large dark mechanical collar with tiny cyan accents, yellow short sleeves and black Greek-key trim, model's white circle emblem when visible. Do not unmask him, do not add 6 Bit makeup.\nMac: human with ginger beard and two thin long side braids; black cap red 'MODEM'; WHITE face paint, red eyes, thin red nested radio-signal arcs on forehead, fine asymmetrical black circuitry around one eye and along cheek edges; burgundy red sleeveless vest over black shirt, bare tattooed arms, pendant. Do not make the forehead lines thick, do not blend with 6 Bit, no goggles or respirator.\nMatch reference 1's confident fine-plus-bold black contour inks, rich cel-shaded blocks, restrained printed halftones and paper grain, expressive mature graphic novel rendering. Strong diagonals in equipment guide the eye from protected recording to opening route. Keep faces, caps and hands in central 75% height, avoid excessive foreground blur. Full bleed scene only, no panel borders, title, speech bubbles, readable screens or caption overlays; costume lettering only.",
+      "references": [
+        "intro-02-keep-the-take",
+        "openart-image_sUa578AT_1765587750737_raw(1).png",
+        "openart-image_jWL5HfqQ_1771484902321_raw(1).png",
+        "openart-image_y8BzeKUf_1771482003518_raw(1).png"
+      ],
+      "shot": 4,
+      "source": "exec-ae8c7ae6-4a52-4e0b-9c4b-7ca5769b7592.png",
+      "dimensions": [
+        1860,
+        845
+      ],
+      "sourceSha256": "c041df4f39fb6c10644b7d19ef8b7e3f2c86a03729005962dd944a201b7a441f",
+      "sha256": "6b85f78d01c4e31fccb967f5cb557c1ebc5a3a08f67ada3f5a2d99bd84ed2c3c",
+      "bytes": 587612
+    },
+    {
+      "filename": "intro-05-listen.webp",
+      "prompt": "Create ONE new very wide 2.2:1 landscape cinematic comic illustration, shot 5 of BARCODE: SYSTEM OVERRIDE. Reference 1 = exact established art style and studio, reference 2 = exact DJ Floppydisc model. Show ONLY DJ Floppydisc. Do not include 6 Bit from reference 1; he speaks offscreen in this scene.\nA quiet, intent listening moment after the failure. In an intimate side-three-quarter close-up DJ occupies the LEFT third-to-half, head tilted subtly toward a battered small monitor speaker, mouth still and brows thoughtful. One bare hand with the model's fine metallic forearm seams delicately turns a large analog frequency knob, the other rests naturally on the console. On the RIGHT, a broad chunky oscilloscope with green-cyan phosphor gives a faint clue: two thin pale wave traces amid very subdued fine static, one just above and one just below a middle horizontal line, with no faces and NO text. A reel-to-reel deck and worn patch cables behind it, analog tactile equipment, an improvised musicians' room. The image should feel like he has noticed something that everyone nearly erased. No beams, magical sound powers, blasts or villains.\nExact DJ identity: a living young adult human with swept-back short dark brown hair, narrow neat brown moustache, calm expressive mouth; a single dark wraparound visor with thin glowing cyan waveform; white shirt with rolled sleeves, fitted black waistcoat, black bow tie, physical floppy disk pinned on left chest, subtle metallic circuit seams on bare forearms. No skeleton, no skull, no makeup, no beard, no hat, no added headphones.\nMatch the rich hand-inked comic style of ref 1, crisp black contour linework and angular cel shadows, restrained paper/halftone texture; colder navy/violet studio after interruption, cyan CRT light tracing his face and white sleeve, just one restrained warm amber practical in deep background. Clear, contemplative close-up with purposeful negative space around the waveform screen. Keep full head and hand action in frame. Full bleed original illustration only: no layout frame, caption, speech bubble, watermark or HUD.",
+      "references": [
+        "intro-01-broadcast",
+        "openart-image_H5RWJcvi_1772147226771_raw(1).png"
+      ],
+      "shot": 5,
+      "source": "exec-9aa40604-6d71-452f-b793-702865db50a4.png",
+      "dimensions": [
+        1862,
+        845
+      ],
+      "sourceSha256": "8d467304107c8d5b3420fe559d31e55effc5fa48376eab06818e586ecb2b13fa",
+      "sha256": "f3d428cde3c2c77ae9911284ef69dd74daba50ec4603f7a5c31e62328f3b38ab",
+      "bytes": 511500,
+      "corrections": [
+        {
+          "date": "2026-09-13",
+          "request": "Correct the anatomically wrong hand turning the knob; preserve the rest of the scene.",
+          "method": "Built-in imagegen precise-object edit; WebP encoding only afterward.",
+          "source": "exec-af138cb1-8525-4088-b4d7-52f589f0ec52.png",
+          "sourceSha256": "dec84ac3e9c106399fd45fff76424d66b90fb7a3f8d9ed3a4c7188ad005f7b9b",
+          "previousAssetSha256": "161b9f19d7ed5c6870f7459d9c9e56aea72fc193c2639dd2403eb9ebf513da53",
+          "description": "Anatomically coherent left thumb/index pinch with three curled fingers and aligned wrist; same scene, cast, CRT and 1862x845 composition.",
+          "prompt": "Use case: precise-object-edit. Edit target: the supplied full-width BARCODE game illustration. Make ONE precise anatomical correction only: DJ Floppydisc's hand at screen-right turning the black/silver rotary knob beside the large CRT. This is his LEFT hand, attached to the forearm coming from the lower center. Redraw that hand and its wrist junction with a coherent human left-hand structure, five digits total, correct thumb placement, index finger and opposing thumb naturally pinching the rotary knob, other three fingers softly curled away from the knob. Preserve the angle of the arm, hand position, knob position, circuit-line tattoos, skin tone and warm directional lighting. Make the gesture easy to read; no extra fingers, duplicated knuckles, fused digits, reversed palm, unnatural wrist rotation, or fingers blending into the knob. Preserve EVERYTHING else: DJ's face, swept brown hair, moustache, cyan waveform visor, white rolled-sleeve shirt, black vest and bow tie, floppy-disk badge, his near hand on the mixing console, studio objects, CRT size/corners and existing two traces, camera, composition, exact very-wide 1862:845 aspect ratio, crop, detailed inked/cel-shaded graphic novel style, colors and lighting. No new text, bubbles, caption boxes, HUD, frames or watermark. Return the complete scene, full bleed, with only this corrected hand region changed."
+        }
+      ]
+    },
+    {
+      "filename": "intro-06-refusal.webp",
+      "prompt": "Create ONE new full-bleed very wide 2.2:1 landscape cinematic comic illustration, shot 6 of BARCODE: SYSTEM OVERRIDE. Reference 1 establishes the rendered studio, linework and exact 6 Bit; references 2 and 3 lock his face and full clothing. Only 6 Bit appears; DJ from ref 1 must NOT be included.\nStory: 6 Bit refuses to sit waiting for automatic recovery and makes an active choice to go outside. Dynamic low three-quarter view from inside the underground studio corridor. 6 Bit at center-right pushes open a heavy battered metal exit door with one fingerless-gloved hand, torso moving through the doorway, long black cardigan tail swinging naturally with his stride. He looks back over his shoulder toward his offscreen crew with a dry, determined expression, no yelling. The open door reveals a narrow glimpse of rain-wet purple/cyan city outside. Warm amber studio behind him at left, cool night pouring through the doorway at right. A tiny green access lamp, thick cable conduit, worn soundproofing, a forgotten coffee cup. A small chunky terminal on the LEFT side of frame glows cold magenta with abstract unlettered blocks; it will support a separately rendered recovery caption. Put his face toward upper-middle, keep cap fully in view with safe space. Medium-wide knee-up shot, with purposeful motion and depth. No other people or faces, even on posters/screens; crew remains offscreen.\n6 Bit exact model: long brown hair; BLACK flatbrim cap with white '6 Bit', gray edge and green underside; thick angular black/silver CLEAR glasses; WHITE irises and dark pupils; black eye paint around BOTH eyes, white across nose/cheeks with sharp downward cheek points. Bare human forehead, mouth and chin, light stubble. This is face paint, not a skull mask. Black open long hooded vest/cardigan, black 6-BIT / 0 shirt, fitted black cargo/tech trousers, black fingerless gloves, wide black wrist straps. No weapons, new powers, beard, sunglasses, red face marks or extra costume.\nStyle: same mature 1990s arcade graphic novel as reference1, confident black inks, angular cel-shaded color, restrained halftones and textured paper, expressive human face; rich navy/plum shadows, hard cyan edge light and remaining warm amber. Strong door diagonal and moving coat, no generic superhero pose or blast. Full-bleed illustration, no panel borders, title, speech bubble, caption, watermark or HUD. Make space around the subject, all story action legible inside central 80% height.",
+      "references": [
+        "intro-01-broadcast",
+        "6BitFace(1).png",
+        "6BitFullBodyFront(1).png"
+      ],
+      "shot": 6,
+      "source": "exec-fb1d4d2f-7ec3-4545-9fa8-6234974d2bd1.png",
+      "dimensions": [
+        1862,
+        845
+      ],
+      "sourceSha256": "59cb1a81bf27b244ecbd0aab69b54fb87128b5715d300f218cde9c1c61475ca4",
+      "sha256": "17efe81e22d34becb9c29af9f871a538d37a8d8683c0b5ebfad5f4c91c9f67c3",
+      "bytes": 723744
+    },
+    {
+      "shot": 7,
+      "filename": "intro-07-district.webp",
+      "source": "exec-a4ab1aa9-ed3b-4035-9bfd-8cb391f92535.png",
+      "prompt": "Create ONE very wide 2.2:1 landscape cinematic hand-inked comic illustration, shot 7 of BARCODE: SYSTEM OVERRIDE's opening. References: 1 = new approved-model 6 Bit scene and graphic novel STYLE; 2 = the EXISTING story's lattice BROADCAST TOWER design and interference motif, environment reference only; 3 = 6 Bit's exact full costume. Produce a new city establishing view, not a copy of either reference.\nCamera is now OUTSIDE the studio, behind 6 Bit at street level looking down Dead Air District. He is a SMALL foreground figure at LEFT, clearly continuous with the last shot: back and slight side view of black flat-brim cap, long brown hair, long black open hooded cardigan, black fitted cargo trousers and combat boots. He faces the neighborhood he must restore. His face is turned away, not a new mystery character. In the MIDGROUND are low inhabited music-shop fronts with shuttered windows, battered speakers, rooftop antennas, elevated cables and stair/fire-escape geometry. Glowing dead CRT shop displays contain abstract static, no faces. The path through this local street matters. FAR IN THE DISTANCE above the roofs near center-right stands the existing slender industrial lattice broadcast tower with antenna platforms, purple/cyan interference and broken geometric signal arcs; it is still many blocks away, not reached yet. Translate the old tower into the same inked style as ref1. Wet street reflections, restrained rain, stormy violet/indigo clouds, tiny warm windows, cyan and magenta neon without readable signage. A few bounded pixel-like fractures near the far tower suggest a damaged signal, not exploding reality.\nOnly 6 Bit is present. NO visible other characters, civilians, enemies, humanoid shadows, face billboards or 9 Bit. Do not turn 6 Bit into the old short-shirt silhouette from tower reference. No gun, weapon or new ability. No giant disembodied face in the sky.\nEpic depth with a clear local route leading toward a far-off problem; premium mature 90s arcade graphic novel inks, rich angular cel shading, restrained halftone grain, bold architecture silhouettes. The shot is an environment-first breather after close crew action. Full bleed, no title, text, panel frame, speech bubbles, HUD or watermark. Keep complete tower antenna within frame, generous sky margin, and clear boots/street contact for 6 Bit.",
+      "references": [
+        "intro-06-refusal",
+        "SO10.png (environment only)",
+        "6BitFullBodyFront(1).png"
+      ],
+      "dimensions": [
+        1862,
+        845
+      ],
+      "sourceSha256": "21e484eaedc5bd143035ba4ea58bbbfe0cd788fd6014e3d66dac7f0aac741223",
+      "sha256": "fe75c5d599101be7e662e09fd2449e242967fcf89a07f266f34dd6131c99a740",
+      "bytes": 861348
+    },
+    {
+      "shot": 8,
+      "filename": "intro-08-keep-it-open.webp",
+      "source": "exec-85138007-1484-4c5e-95ce-4c76faa6c598.png",
+      "prompt": "Create ONE new very wide 2.2:1 landscape cinematic comic illustration, final shot 8 of BARCODE: SYSTEM OVERRIDE's opening. Reference 1 = the newly established Dead Air District street and hand-inked graphic novel STYLE; refs 2/3 = exact 6 Bit face and clothes. Only 6 Bit appears. Do not copy the back-facing pose of ref1.\nThe emotional handoff into play: 6 Bit takes his first purposeful step down the rain-wet street, seen in a close medium three-quarter SIDE view at LEFT/CENTER looking toward the RIGHT along the route ahead. Face turned enough toward camera that we read his makeup and clear glasses, a faint confident half-smile toward his still-connected offscreen crew, shoulders relaxed but determined. Black long cardigan trails behind him; one naturally swinging fingerless-gloved hand and wrist strap visible. Compose from about mid-thigh up, with full cap and generous breathing room above it. The RIGHT half shows the neighborhood route continuing between shuttered record/music shops and battered CRT displays, reflections, cables, speakers and fire escapes from reference1; the distant purple lattice tower can be small and softened far back, not the focus. City takes the same cyan/magenta/indigo palette with a warm amber rim from the studio door he has left. No other people, enemy, face screens, hidden new character or 9 Bit. No new wrist gadget, weapon or helmet. Crew voices will be shown in UI outside this illustration, not as portraits embedded into the art.\n6 Bit's model is mandatory: long brown hair, BLACK flat-brim cap white '6 Bit' lettering, gray rim and GREEN underside. Thick angular black-and-silver framed CLEAR glasses, his WHITE IRIS contact lenses visibly white around small black pupils (not brown or black irises and not glowing laser eyes). Black makeup surrounding BOTH eyes, white makeup on nose and cheeks ending in sharp downturned cheek points. Human bare mouth, chin and forehead, very light stubble. Not a skull/robot mask. Black open long hooded vest/cardigan over black '6-BIT / 0' shirt, fitted black cargo trousers, black fingerless gloves and broad wrist straps.\nSame premium mature 90s arcade graphic-novel aesthetic: firm black contour inks, angular cel shading, controlled fine detail and halftone paper texture, expressive human likeness and moody but readable cyan/amber lighting. Warm determination, meaningful forward motion. Full-bleed finished art only, no frame, title, caption, speech balloon, overlay, HUD or watermark.",
+      "references": [
+        "intro-07-district",
+        "6BitFace(1).png",
+        "6BitFullBodyFront(1).png"
+      ],
+      "dimensions": [
+        1860,
+        845
+      ],
+      "sourceSha256": "06174c7c97d90bf0fce555e5ce4d7fbbfd2a10c218718bf351dbb22dd2f9bbbd",
+      "sha256": "aeb1845156539ce1dbb4b8825e1791b73a418ad40d4eb5cfd2a94a416761ce57",
+      "bytes": 794908
+    }
+  ],
+  "referenceFiles": [
+    {
+      "filename": "6BitFace(1).png",
+      "sha256": "d6142bfec816391e08d059b43fd005051888aad591c58ba96a688c535949d726"
+    },
+    {
+      "filename": "6BitFullBodyFront(1).png",
+      "sha256": "74d445beb7a17170b1bc218286113461fdc0d6026676462515cd806b9c9f4380"
+    },
+    {
+      "filename": "6BitFullBodySide(1).png",
+      "sha256": "33032565f5462a131e01972a7d57cd6867a573362d4bd03e5cd984ebbc9b6e37"
+    },
+    {
+      "filename": "6BitWaistUpSide(1).png",
+      "sha256": "9e02f07ae69bda1bfca596ff7df74f29d284a62fc0207aa365c845a05b8f9cd4"
+    },
+    {
+      "filename": "IMG_1178.jpg",
+      "sha256": "0e9702b96e83b0cafb36b3fa0317d6a3c98e7d039681566bfc5cadff0ce313db"
+    },
+    {
+      "filename": "IMG_1347.jpg",
+      "sha256": "d65a86b662aba94dce56a7c49f1f20745e563a0f115851eb3e36f0f5e84f20a7"
+    },
+    {
+      "filename": "openart-image_1774325782002_5beb7f48_1774325782064_ae919329(1).png",
+      "sha256": "204c1b4a3ee1da00430b4cbdefd38d0ac48aefaeba2d18ac65031f646b8a6cf3"
+    },
+    {
+      "filename": "openart-image_1774326321138_f8e15a4f_1774326321204_495d4447(1).png",
+      "sha256": "6baf04bd75f9c9b67382470e7ef5ddde40d4ac1e8dd88ab37e430b95c682922e"
+    },
+    {
+      "filename": "openart-image_1774326335100_0247bd38_1774326335364_cdce817a(1).png",
+      "sha256": "e142d3f0a10d626b20c9b9e404c9a2882fd9f8d1bee353561365faff2953b1e1"
+    },
+    {
+      "filename": "openart-image_1774326348864_58f1c754_1774326348979_d9679c96(1).png",
+      "sha256": "156862391edd1b4a1bbd596159e43773152c710149d4899f12fb10770209ee46"
+    },
+    {
+      "filename": "openart-image_1Jy267qY_1771483756922_raw(1).png",
+      "sha256": "ffbbe39cb07ddd43726a99d63d210205c88f69929c2d95a0dfb9b84f87cfd822"
+    },
+    {
+      "filename": "openart-image_H5RWJcvi_1772147226771_raw(1).png",
+      "sha256": "ad7bf222c0b9ede25762cbc7c908e6fffed80a8ceb5f4efff36c29342c3c32e7"
+    },
+    {
+      "filename": "openart-image_jWL5HfqQ_1771484902321_raw(1).png",
+      "sha256": "2f5473cc410641d15cdb2ead5b6f844d45c8f910fc087e7090c191cb5a5ac8de"
+    },
+    {
+      "filename": "openart-image_sUa578AT_1765587750737_raw(1).png",
+      "sha256": "8841d0693638a0bb618cfbba079c393a82781e6cb95fb0f58591a2501c792305"
+    },
+    {
+      "filename": "openart-image_y8BzeKUf_1771482003518_raw(1).png",
+      "sha256": "c1d952175d4ea08e5fa6c051348d96c351b5999614cabeef21be0627b881ce51"
+    }
+  ]
+}

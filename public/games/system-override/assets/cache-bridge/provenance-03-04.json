@@ -1,0 +1,163 @@
+{
+  "schemaVersion": 1,
+  "purpose": "BARCODE System Override L1-to-L2 narrative bridge: scenes 3 and 4",
+  "createdUtc": "2026-09-30T01:11:14.861Z",
+  "tool": "image_gen.imagegen",
+  "mode": "built-in reference-guided generation",
+  "callsPerDistinctImage": 1,
+  "postprocessing": {
+    "semanticEdits": false,
+    "cropping": false,
+    "resizing": false,
+    "operation": "Copy original PNG unchanged, then encode WebP with Pillow",
+    "format": "WebP",
+    "quality": 92,
+    "method": 6
+  },
+  "assets": [
+    {
+      "scene": 3,
+      "title": "Original protected recording",
+      "prompt": "Use case: illustration-story.\nAsset type: one premium full-bleed wide cinematic graphic-novel panel for page 3 of an eight-page videogame bridge, landscape 2.2:1 (approximately 2112 by 960). Generate a NEW original composition, not a collage or a crop of the references.\nInput images: image 1 establishes DJ Floppydisc's exact living-human identity, wardrobe, ink treatment and studio. Image 2 establishes only Cache Back's exact identity, costume and protected physical tape prop. Image 3 supports Cache and the shared lived-in studio setting. Ignore all other people in references: show exactly DJ and Cache, no other identifiable character.\nScene: inside this intimate cluttered music studio at night, the ORIGINAL protected cassette is playing from a physical, old professional cassette deck. DJ stands on the LEFT behind the mix desk; Cache listens on the RIGHT in a close shoulder/profile view, turned inward toward the deck and DJ. A small CRT scope between them and slightly behind the cassette deck carries a warm amber irregular continuously lively audio trace, only an abstract luminous line on dark glass with no text. The physical cassette deck, tangible hands and attentive human expressions are the visual story. Keep the tape cassette recognizable, with blank unlettered paper label, in its clear protective playback bay. Do not identify whoever made the recording.\nDJ identity: living human man with short swept brown hair, neat narrow moustache, natural skin, dark wraparound visor displaying a thin cyan waveform. Rolled white shirt sleeves, fitted black waistcoat, black bow tie, small floppy-disk pin and subtle silver forearm seams. No headphones, no hat, no skull, no beard. His head should match reference 1. Natural five-fingered hands: one relaxed hand rests on the mixer, the other index finger has just pressed a large physical deck play button. Unforced wrists and believable finger joints.\nCache identity: yellow cap with two rounded ear-like side protrusions, short dark hair, brown eyes behind BLACK RECTANGULAR CLEAR-LENS GLASSES, separate angular black lower-face mask covering mouth and nose, dark mechanical collar with subtle cyan details, yellow short sleeves with black Greek-key trim. Maintain the cap and glasses geometry from references 2 and 3; no visor substitution, exposed mouth or respirator tubes. His visible eye and brow express focused, human recognition; he listens rather than speaks. Keep cap fully within frame and both faces around the middle-upper part of the illustration.\nStyle: premium hand-inked 1990s cyberpunk graphic novel with decisive ink contours, angular cel shading, restrained halftone/paper grain, expressive natural anatomy and tactile worn metal. Match reference rendering closely; not pixel art, 3D, photorealism or an airbrushed anime portrait. Rich amber practical lamp light on faces and hands, cyan equipment accents, plum shadows, warm/cool cinematic depth. Background holds anonymous musical equipment, cable runs, a reel deck, speaker and shadowed shelving; props remain subordinate.\nComposition: a single continuous wide image, no borders or multi-panel divisions. Low three-quarter angle across the cassette/mix desk gives foreground depth; DJ's body and desk occupy the left half, Cache's shoulder and head anchor the right third; the little scope is readable near center without taking over. The lower quarter is mostly physical deck/mixer and hands, faces middle-upper. Strong clean silhouettes and clear separation.\nAbsolute constraints: NO text, words, letters, numbers, logos, subtitles, comic speech balloons, caption boxes, overlay UI, watermark, or recognizable additional people anywhere. Even cassette labels and equipment labels are blank. The waveform is a physical scope trace only. Do not introduce a villain, driver identity, holographic person or mystery face. Preserve the exact two named identities and natural anatomical hands.",
+      "orderedReferences": [
+        {
+          "path": "assets/intro/intro-05-listen.webp",
+          "workspacePath": "/workspace/scratch/dd1242abe481/repo/assets/intro/intro-05-listen.webp",
+          "sha256": "f3d428cde3c2c77ae9911284ef69dd74daba50ec4603f7a5c31e62328f3b38ab",
+          "bytes": 511500,
+          "width": 1862,
+          "height": 845,
+          "mode": "RGB",
+          "format": "WEBP"
+        },
+        {
+          "path": "assets/intro/intro-04-preserve.webp",
+          "workspacePath": "/workspace/scratch/dd1242abe481/repo/assets/intro/intro-04-preserve.webp",
+          "sha256": "6b85f78d01c4e31fccb967f5cb557c1ebc5a3a08f67ada3f5a2d99bd84ed2c3c",
+          "bytes": 587612,
+          "width": 1860,
+          "height": 845,
+          "mode": "RGB",
+          "format": "WEBP"
+        },
+        {
+          "path": "assets/intro/intro-02-keep-the-take.webp",
+          "workspacePath": "/workspace/scratch/dd1242abe481/repo/assets/intro/intro-02-keep-the-take.webp",
+          "sha256": "dee96b7d5f1ff6f5112cd1a0ec0d5808dfda82ebb165ebf12f4e8a1c50930462",
+          "bytes": 668162,
+          "width": 1860,
+          "height": 845,
+          "mode": "RGB",
+          "format": "WEBP"
+        }
+      ],
+      "transparentBackground": false,
+      "generatedSourcePath": "/workspace/scratch/dd1242abe481/generated_images/exec-61d8738e-eeff-4f61-9b61-8d4db14592af.png",
+      "source": {
+        "path": "assets/cache-bridge/sources/bridge-03-original.png",
+        "workspacePath": "/workspace/scratch/dd1242abe481/repo/assets/cache-bridge/sources/bridge-03-original.png",
+        "sha256": "1468b86167a5581f66ff79b98fa02280edb621df4d3abcb0a7f3941a101a6bf4",
+        "bytes": 2562972,
+        "width": 1860,
+        "height": 845,
+        "mode": "RGB",
+        "format": "PNG"
+      },
+      "production": {
+        "path": "assets/cache-bridge/bridge-03-original.webp",
+        "workspacePath": "/workspace/scratch/dd1242abe481/repo/assets/cache-bridge/bridge-03-original.webp",
+        "sha256": "a76f3a1e5374c24708c33150de1facdda67b95737edd00b5500b29cd2b660e62",
+        "bytes": 408208,
+        "width": 1860,
+        "height": 845,
+        "mode": "RGB",
+        "format": "WEBP"
+      },
+      "inspection": {
+        "method": "view_image on the saved original PNG",
+        "cast": "DJ Floppydisc left, Cache Back right; no additional identifiable characters",
+        "narrative": "DJ presses the cassette play control; warm irregular scope trace; Cache listens",
+        "composition": "Wide continuous full-bleed panel, physical deck and hands foreground",
+        "identity": "Cache clear rectangular black glasses and lower-face mask; DJ living human, narrow moustache and waveform visor",
+        "text": "No baked captions, speech balloons or UI; cassette label blank; canonical shoulder emblem preserved"
+      }
+    },
+    {
+      "scene": 4,
+      "title": "Clean copy with missing stretches",
+      "prompt": "Use case: illustration-story.\nAsset type: one premium full-bleed wide cinematic graphic-novel illustration for page 4 of an eight-page videogame bridge, approximately 2.2:1 landscape, same size and visual quality as image 1.\nPrimary request: a distinct reverse-angle reaction shot immediately following image 1. The crew compares the protected original recording against its pristine-looking copy and discovers that the cleaned copy contains missing stretches. Convey only this discovery visually, without identifying a villain, driver, owner or recorded speaker.\nInput image roles: image 1 is the immediately previous scene: use it for the EXACT two character identities, costumes, studio room, lighting language and cassette equipment continuity, but change the camera and composition. Image 2 reinforces DJ Floppydisc's canonical living-human face and outfit. Images 3 and 4 reinforce only Cache Back's identity/outfit and the lived-in studio palette; DO NOT include the other characters shown in those references.\nComposition and action: Move the camera to the monitor side of the mix desk for a tighter reverse angle, not a simple zoom or crop of image 1. Cache is dominant in the RIGHT foreground, head and upper body in attentive three-quarter view. His eyes and tense raised eyebrow are clearly visible through his separate clear rectangular glasses as he looks left and down toward a physically present CRT on the LEFT foreground/middle. DJ remains on the LEFT midground beyond the equipment, partially behind that monitor, operating an unlabeled physical two-position comparison switch on the mixer with ONE natural hand. This is an intimate human realization, not an action pose. Show the switch under a naturally resting index finger, normal thumb and three relaxed fingers with believable wrist anatomy.\nThe CRT glass shows a pale cyan, unnaturally clean low-amplitude line with several definite missing sections: straight smooth stretches, abruptly interrupted by wide dark gaps. A faint physical grid is acceptable, but NO text, numbers, labels, axes, diagrams or floating interface. It reads as missing recorded signal. A clear cassette in the adjacent second playback bay looks immaculate and carefully cased, still unlabeled. The original physical deck remains part of the scene. Keep equipment in plausible perspective, not a collage. No holographic faces or symbolic villains.\nCache's exact identity: yellow cap with two rounded ear-like side protrusions, short dark hair, brown eyes, BLACK RECTANGULAR CLEAR-LENS GLASSES, separate angular black lower-face mask that covers mouth AND nose, dark mechanical collar with small cyan accents, yellow short-sleeved top with black Greek-key trim. Do not turn his glasses into a visor, sunglasses or circles. No exposed mouth, no respirator tubing. Match the cap/outfit of image 1. Frame his face and cap in the middle-upper right with some headroom; avoid cropping the top of the cap.\nDJ's exact identity: living human man, short swept brown hair, neat narrow moustache, dark wraparound visor with a thin cyan waveform, rolled white shirt sleeves, fitted black waistcoat, black bow tie, small floppy-disk pin, subtle silver seams along his forearms. No hat, headphones, skull, full beard or facial mask.\nStyle/medium: match the references' hand-inked 1990s cyberpunk graphic-novel finish: crisp expressive ink contours, angular cel shading, restrained halftone and worn paper/metal texture, natural anatomy, detailed but edited equipment. Rich amber lamp highlights on faces/hands, cool cyan reflection from the damaged clean trace, plum shadows. The mood tightens from focused listening to concerned understanding. NO 3D look, photorealism, pixel art, glossy anime or broad blur.\nEnvironment: same small lived-in music studio with worn reel equipment, dark cables, anonymous speaker stacks, amber practical light and a touch of cyan window slats. No new architecture, costumes or additional people.\nAbsolute constraints: one single continuous full-bleed wide picture; NO split panels, borders, speech balloons, caption boxes, subtitles, overlay HUD, writing, words, letters, numbers, logos or watermark. Blank labels on all cassettes and machines. Only DJ and Cache. Keep both recognizable, keep Cache's eyes readable and show the physical comparison switch and gapped trace.",
+      "orderedReferences": [
+        {
+          "path": "assets/cache-bridge/sources/bridge-03-original.png",
+          "workspacePath": "/workspace/scratch/dd1242abe481/repo/assets/cache-bridge/sources/bridge-03-original.png",
+          "sha256": "1468b86167a5581f66ff79b98fa02280edb621df4d3abcb0a7f3941a101a6bf4",
+          "bytes": 2562972,
+          "width": 1860,
+          "height": 845,
+          "mode": "RGB",
+          "format": "PNG"
+        },
+        {
+          "path": "assets/intro/intro-05-listen.webp",
+          "workspacePath": "/workspace/scratch/dd1242abe481/repo/assets/intro/intro-05-listen.webp",
+          "sha256": "f3d428cde3c2c77ae9911284ef69dd74daba50ec4603f7a5c31e62328f3b38ab",
+          "bytes": 511500,
+          "width": 1862,
+          "height": 845,
+          "mode": "RGB",
+          "format": "WEBP"
+        },
+        {
+          "path": "assets/intro/intro-04-preserve.webp",
+          "workspacePath": "/workspace/scratch/dd1242abe481/repo/assets/intro/intro-04-preserve.webp",
+          "sha256": "6b85f78d01c4e31fccb967f5cb557c1ebc5a3a08f67ada3f5a2d99bd84ed2c3c",
+          "bytes": 587612,
+          "width": 1860,
+          "height": 845,
+          "mode": "RGB",
+          "format": "WEBP"
+        },
+        {
+          "path": "assets/intro/intro-02-keep-the-take.webp",
+          "workspacePath": "/workspace/scratch/dd1242abe481/repo/assets/intro/intro-02-keep-the-take.webp",
+          "sha256": "dee96b7d5f1ff6f5112cd1a0ec0d5808dfda82ebb165ebf12f4e8a1c50930462",
+          "bytes": 668162,
+          "width": 1860,
+          "height": 845,
+          "mode": "RGB",
+          "format": "WEBP"
+        }
+      ],
+      "transparentBackground": false,
+      "generatedSourcePath": "/workspace/scratch/dd1242abe481/generated_images/exec-14430bc5-90ae-4b98-b550-f292a2ef2df6.png",
+      "source": {
+        "path": "assets/cache-bridge/sources/bridge-04-clean-copy.png",
+        "workspacePath": "/workspace/scratch/dd1242abe481/repo/assets/cache-bridge/sources/bridge-04-clean-copy.png",
+        "sha256": "1a0c33784753b21ab41e16a87574e82127c86e86395e1b24509044f96b489a16",
+        "bytes": 2563157,
+        "width": 1862,
+        "height": 845,
+        "mode": "RGB",
+        "format": "PNG"
+      },
+      "production": {
+        "path": "assets/cache-bridge/bridge-04-clean-copy.webp",
+        "workspacePath": "/workspace/scratch/dd1242abe481/repo/assets/cache-bridge/bridge-04-clean-copy.webp",
+        "sha256": "3f5a11e0bd3f83fb328d9a52fb1f73abe291e616cf29d19c24536c53c69ba62c",
+        "bytes": 415212,
+        "width": 1862,
+        "height": 845,
+        "mode": "RGB",
+        "format": "WEBP"
+      },
+      "inspection": {
+        "method": "view_image on the saved original PNG",
+        "cast": "Cache Back foreground right, DJ Floppydisc behind desk on left; no additional identifiable characters",
+        "narrative": "Closer Cache reaction to long flat stretches in the cleaned cyan trace; DJ operates comparison controls",
+        "composition": "Distinct closer monitor-side view, CRT dominating left foreground",
+        "identity": "Same outfits, glasses/masks/visor and studio continuity as scene 3",
+        "text": "No baked captions, speech balloons or UI; equipment labels blank; canonical shoulder emblem preserved"
+      }
+    }
+  ]
+}

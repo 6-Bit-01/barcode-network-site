@@ -1,0 +1,642 @@
+{
+  "sweeper": {
+    "path": "assets/cache-road/world/props/animation/person-sweeper-activity-frames.webp",
+    "cell": [
+      584,
+      384
+    ],
+    "ground": 380,
+    "scale": 0.6335616438356164,
+    "cels": [
+      {
+        "sourceCel": 0,
+        "sourceBounds": [
+          62,
+          25,
+          689,
+          611
+        ],
+        "registration": [
+          237,
+          608
+        ],
+        "offset": [
+          181,
+          11
+        ]
+      },
+      {
+        "sourceCel": 1,
+        "sourceBounds": [
+          685,
+          25,
+          1236,
+          611
+        ],
+        "registration": [
+          864,
+          608
+        ],
+        "offset": [
+          179,
+          11
+        ]
+      },
+      {
+        "sourceCel": 2,
+        "sourceBounds": [
+          66,
+          651,
+          523,
+          1238
+        ],
+        "registration": [
+          238,
+          1235
+        ],
+        "offset": [
+          183,
+          10
+        ]
+      },
+      {
+        "sourceCel": 1,
+        "sourceBounds": [
+          685,
+          25,
+          1236,
+          611
+        ],
+        "registration": [
+          864,
+          608
+        ],
+        "offset": [
+          179,
+          11
+        ]
+      }
+    ],
+    "bytes": 166544
+  },
+  "gardener": {
+    "path": "assets/cache-road/world/props/animation/person-gardener-activity-frames.webp",
+    "cell": [
+      436,
+      384
+    ],
+    "ground": 380,
+    "scale": 0.6115702479338843,
+    "cels": [
+      {
+        "sourceCel": 0,
+        "sourceBounds": [
+          22,
+          0,
+          593,
+          598
+        ],
+        "registration": [
+          276,
+          596
+        ],
+        "offset": [
+          63,
+          16
+        ]
+      },
+      {
+        "sourceCel": 1,
+        "sourceBounds": [
+          669,
+          0,
+          1268,
+          598
+        ],
+        "registration": [
+          921,
+          596
+        ],
+        "offset": [
+          64,
+          16
+        ]
+      },
+      {
+        "sourceCel": 2,
+        "sourceBounds": [
+          22,
+          604,
+          619,
+          1211
+        ],
+        "registration": [
+          277,
+          1208
+        ],
+        "offset": [
+          62,
+          11
+        ]
+      },
+      {
+        "sourceCel": 3,
+        "sourceBounds": [
+          672,
+          603,
+          1262,
+          1212
+        ],
+        "registration": [
+          922,
+          1208
+        ],
+        "offset": [
+          65,
+          10
+        ]
+      }
+    ],
+    "bytes": 205542
+  },
+  "electrician": {
+    "path": "assets/cache-road/world/props/animation/person-electrician-activity-frames.webp",
+    "cell": [
+      368,
+      384
+    ],
+    "ground": 380,
+    "scale": 0.6006493506493507,
+    "cels": [
+      {
+        "sourceCel": 0,
+        "sourceBounds": [
+          43,
+          0,
+          629,
+          618
+        ],
+        "registration": [
+          332,
+          616
+        ],
+        "offset": [
+          10,
+          10
+        ]
+      },
+      {
+        "sourceCel": 1,
+        "sourceBounds": [
+          667,
+          5,
+          1253,
+          617
+        ],
+        "registration": [
+          957,
+          616
+        ],
+        "offset": [
+          10,
+          13
+        ]
+      },
+      {
+        "sourceCel": 2,
+        "sourceBounds": [
+          42,
+          640,
+          628,
+          1244
+        ],
+        "registration": [
+          333,
+          1242
+        ],
+        "offset": [
+          9,
+          18
+        ]
+      },
+      {
+        "sourceCel": 3,
+        "sourceBounds": [
+          669,
+          632,
+          1254,
+          1244
+        ],
+        "registration": [
+          958,
+          1242
+        ],
+        "offset": [
+          10,
+          14
+        ]
+      }
+    ],
+    "bytes": 228456
+  },
+  "street-cook": {
+    "path": "assets/cache-road/world/props/animation/person-street-cook-activity-frames.webp",
+    "cell": [
+      360,
+      384
+    ],
+    "ground": 380,
+    "scale": 0.625,
+    "cels": [
+      {
+        "sourceCel": 0,
+        "sourceBounds": [
+          118,
+          17,
+          642,
+          601
+        ],
+        "registration": [
+          373,
+          598
+        ],
+        "offset": [
+          21,
+          17
+        ]
+      },
+      {
+        "sourceCel": 1,
+        "sourceBounds": [
+          705,
+          17,
+          1228,
+          601
+        ],
+        "registration": [
+          960,
+          598
+        ],
+        "offset": [
+          21,
+          17
+        ]
+      },
+      {
+        "sourceCel": 2,
+        "sourceBounds": [
+          129,
+          621,
+          660,
+          1213
+        ],
+        "registration": [
+          382,
+          1213
+        ],
+        "offset": [
+          22,
+          10
+        ]
+      },
+      {
+        "sourceCel": 3,
+        "sourceBounds": [
+          692,
+          625,
+          1223,
+          1216
+        ],
+        "registration": [
+          946,
+          1213
+        ],
+        "offset": [
+          21,
+          12
+        ]
+      }
+    ],
+    "bytes": 232196
+  },
+  "waving-resident": {
+    "path": "assets/cache-road/world/props/animation/person-waving-resident-activity-frames.webp",
+    "cell": [
+      294,
+      384
+    ],
+    "ground": 380,
+    "scale": 0.5089408528198074,
+    "cels": [
+      {
+        "sourceCel": 0,
+        "sourceBounds": [
+          27,
+          7,
+          499,
+          737
+        ],
+        "registration": [
+          222,
+          734
+        ],
+        "offset": [
+          48,
+          10
+        ]
+      },
+      {
+        "sourceCel": 1,
+        "sourceBounds": [
+          544,
+          30,
+          923,
+          737
+        ],
+        "registration": [
+          739,
+          734
+        ],
+        "offset": [
+          48,
+          22
+        ]
+      },
+      {
+        "sourceCel": 2,
+        "sourceBounds": [
+          27,
+          788,
+          389,
+          1498
+        ],
+        "registration": [
+          222,
+          1495
+        ],
+        "offset": [
+          48,
+          20
+        ]
+      },
+      {
+        "sourceCel": 3,
+        "sourceBounds": [
+          544,
+          788,
+          967,
+          1498
+        ],
+        "registration": [
+          739,
+          1495
+        ],
+        "offset": [
+          48,
+          20
+        ]
+      }
+    ],
+    "bytes": 129964
+  },
+  "board-player": {
+    "path": "assets/cache-road/world/props/animation/person-board-player-activity-frames.webp",
+    "cell": [
+      370,
+      384
+    ],
+    "ground": 380,
+    "scale": 0.5736434108527132,
+    "cels": [
+      {
+        "sourceCel": 0,
+        "sourceBounds": [
+          18,
+          2,
+          606,
+          648
+        ],
+        "registration": [
+          311,
+          646
+        ],
+        "offset": [
+          17,
+          11
+        ]
+      },
+      {
+        "sourceCel": 1,
+        "sourceBounds": [
+          594,
+          1,
+          1187,
+          649
+        ],
+        "registration": [
+          888,
+          646
+        ],
+        "offset": [
+          16,
+          10
+        ]
+      },
+      {
+        "sourceCel": 2,
+        "sourceBounds": [
+          16,
+          638,
+          626,
+          1267
+        ],
+        "registration": [
+          314,
+          1267
+        ],
+        "offset": [
+          14,
+          19
+        ]
+      },
+      {
+        "sourceCel": 3,
+        "sourceBounds": [
+          610,
+          636,
+          1216,
+          1270
+        ],
+        "registration": [
+          913,
+          1267
+        ],
+        "offset": [
+          11,
+          18
+        ]
+      }
+    ],
+    "bytes": 203848
+  },
+  "handheld-player": {
+    "path": "assets/cache-road/world/props/animation/person-handheld-player-activity-frames.webp",
+    "cell": [
+      278,
+      384
+    ],
+    "ground": 380,
+    "scale": 0.5799373040752351,
+    "cels": [
+      {
+        "sourceCel": 0,
+        "sourceBounds": [
+          102,
+          6,
+          541,
+          647
+        ],
+        "registration": [
+          331,
+          644
+        ],
+        "offset": [
+          6,
+          10
+        ]
+      },
+      {
+        "sourceCel": 1,
+        "sourceBounds": [
+          751,
+          7,
+          1102,
+          647
+        ],
+        "registration": [
+          908,
+          644
+        ],
+        "offset": [
+          48,
+          11
+        ]
+      },
+      {
+        "sourceCel": 2,
+        "sourceBounds": [
+          105,
+          661,
+          557,
+          1294
+        ],
+        "registration": [
+          332,
+          1291
+        ],
+        "offset": [
+          7,
+          15
+        ]
+      },
+      {
+        "sourceCel": 3,
+        "sourceBounds": [
+          681,
+          661,
+          1093,
+          1294
+        ],
+        "registration": [
+          909,
+          1291
+        ],
+        "offset": [
+          7,
+          15
+        ]
+      }
+    ],
+    "bytes": 141916
+  },
+  "vendor-cart": {
+    "path": "assets/cache-road/world/props/animation/street-vendor-cart-activity-frames.webp",
+    "cell": [
+      460,
+      384
+    ],
+    "ground": 380,
+    "scale": 0.6666666666666666,
+    "cels": [
+      {
+        "sourceCel": 0,
+        "sourceBounds": [
+          29,
+          2,
+          658,
+          560
+        ],
+        "registration": [
+          333,
+          557
+        ],
+        "offset": [
+          27,
+          10
+        ]
+      },
+      {
+        "sourceCel": 1,
+        "sourceBounds": [
+          684,
+          2,
+          1312,
+          560
+        ],
+        "registration": [
+          989,
+          557
+        ],
+        "offset": [
+          27,
+          10
+        ]
+      },
+      {
+        "sourceCel": 2,
+        "sourceBounds": [
+          28,
+          602,
+          669,
+          1160
+        ],
+        "registration": [
+          333,
+          1157
+        ],
+        "offset": [
+          27,
+          10
+        ]
+      },
+      {
+        "sourceCel": 3,
+        "sourceBounds": [
+          684,
+          603,
+          1312,
+          1160
+        ],
+        "registration": [
+          989,
+          1157
+        ],
+        "offset": [
+          27,
+          11
+        ]
+      }
+    ],
+    "bytes": 279404
+  }
+}

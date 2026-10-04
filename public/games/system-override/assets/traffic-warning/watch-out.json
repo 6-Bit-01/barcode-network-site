@@ -1,0 +1,17 @@
+{
+  "plate": [
+    0,
+    0,
+    768,
+    235
+  ],
+  "arrow": [
+    0,
+    240,
+    384,
+    155
+  ],
+  "source": "exec-1a6510e7-a00e-4c57-b3dd-176a38a8520c.png",
+  "preparation": "RGBA crops and proportional downsample; right arrow mirrored at runtime, label never mirrored",
+  "generator": "built-in image_gen"
+}

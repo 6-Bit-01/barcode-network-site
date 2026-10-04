@@ -1,0 +1,3646 @@
+{
+  "builder": "barcode-system-override-standalone-v1",
+  "status": "complete",
+  "sourceCommit": "90a80762cf919b9f2efb70b95a0a04bfc189542c",
+  "sourceTree": "1b9ae7ce08b63e3682bb984cf2d08619cdf24303",
+  "builderSHA256": "caf8d8e5323c0a6246c3b77da4b02d175ea78f8a6eb560f3aaae6c9dc7d316d3",
+  "files": {
+    "assets/audio/broadcast-slum-proof-carrier.wav": {
+      "sha256": "7d9eb892d074c17ee1047c33f3a4264eeac3d4f954c856ce35745a2a484a901c",
+      "bytes": 392044
+    },
+    "assets/audio/broadcast-slum-proof-pressure.wav": {
+      "sha256": "6dfa2e66fadc32c00d35563a3286536f81367a2ea2b0387c26bda00141813d3a",
+      "bytes": 392044
+    },
+    "assets/audio/cache-breakaway.mp3": {
+      "sha256": "4c40c7f67489d95f6e146bcfb024216863a6d13722c45a97291f0dd59b9f77ed",
+      "bytes": 3751228
+    },
+    "assets/audio/cache-drive.mp3": {
+      "sha256": "da967a6d0dec3adfd4886d0a9dc99f4ee09b49a51f3a70ca429d80c0b9946f34",
+      "bytes": 3751228
+    },
+    "assets/audio/cache-flow.mp3": {
+      "sha256": "2e1aaef56b242c525242b7f8bdb659beb3495207385053aec06c2a0a934a6060",
+      "bytes": 3751228
+    },
+    "assets/audio/cache-pressure.mp3": {
+      "sha256": "e2390841bb9aaac42e1814c8c949a1f7faafe63e286cdb160cc66a28f5c5d696",
+      "bytes": 3751228
+    },
+    "assets/audio/cache-undercurrent.mp3": {
+      "sha256": "9e7c6a4e3278eddd2a8ed5ab5b5c1b4bda40c957e1f18d7658e17bd2ffda9bb4",
+      "bytes": 3751228
+    },
+    "assets/cache-bridge/README.md": {
+      "sha256": "49826fa87561d019cc02f66fb89dcaba0c095053307c489ca999d7a8a17e8f93",
+      "bytes": 2651
+    },
+    "assets/cache-bridge/art-manifest.json": {
+      "sha256": "c97b03352121bd4fe8368242909fc42c17e65f31ae46c7c741756293b5238e9e",
+      "bytes": 8112
+    },
+    "assets/cache-bridge/bridge-01-district.webp": {
+      "sha256": "fe73f4f9d99094d954f7cb7aac7c99642675eaf3cdd33f5fedcffef103fc97af",
+      "bytes": 569664
+    },
+    "assets/cache-bridge/bridge-01-edit.json": {
+      "sha256": "c8ad1a1af96e97bc44087184b1a268a30c99623316fc0820ec8c511f301bb4a3",
+      "bytes": 1349
+    },
+    "assets/cache-bridge/bridge-02-edit.json": {
+      "sha256": "6af813c02987ccf9221bc7d741a1d763468357448c596173f8dd961c60c0ff7b",
+      "bytes": 1559
+    },
+    "assets/cache-bridge/bridge-02-uplink.webp": {
+      "sha256": "830f668f43c3a1105baef7b93b788df6a4f7a31b17bb939e2402babbe085dd2e",
+      "bytes": 520528
+    },
+    "assets/cache-bridge/bridge-03-original.webp": {
+      "sha256": "a76f3a1e5374c24708c33150de1facdda67b95737edd00b5500b29cd2b660e62",
+      "bytes": 408208
+    },
+    "assets/cache-bridge/bridge-04-clean-copy.webp": {
+      "sha256": "3f5a11e0bd3f83fb328d9a52fb1f73abe291e616cf29d19c24536c53c69ba62c",
+      "bytes": 415212
+    },
+    "assets/cache-bridge/bridge-05-keep-it.webp": {
+      "sha256": "08c7e189746f34ba8a1b021cb8326618a59be8641d64fc9a3a312b7ff2ad22b7",
+      "bytes": 498612
+    },
+    "assets/cache-bridge/bridge-06-departure.webp": {
+      "sha256": "cfc655311f786a783fce330d89af459c075a1c690f863c97ac39dc3ad7f02ffa",
+      "bytes": 605690
+    },
+    "assets/cache-bridge/bridge-07-ignition.webp": {
+      "sha256": "4940ef74ef8464ce8b2477f38afe5bccf6cd19097be180f8b3feaa9b57fa676e",
+      "bytes": 540428
+    },
+    "assets/cache-bridge/bridge-07-prompt.json": {
+      "sha256": "4c36c2e93ca11f60fc5b483102ae78c30ab8c0dbad960b2bec6d592f93c6bd60",
+      "bytes": 2756
+    },
+    "assets/cache-bridge/bridge-08-cache-line.webp": {
+      "sha256": "acd64c5f5e958c3905a0da11ebaddc54dc6a4309f893c4dce423ac79a4ec23ab",
+      "bytes": 600228
+    },
+    "assets/cache-bridge/bridge-08-edit.json": {
+      "sha256": "9445c2e4a5b1cbf4533db1f379130c0580161bd0a1cb9eaa7e794b753d5f8b12",
+      "bytes": 1062
+    },
+    "assets/cache-bridge/bridge-08-prompt.json": {
+      "sha256": "69ad3c4f42ef9dbd4177ba3bd2e052b82e4e598cca870268d0746241c6348738",
+      "bytes": 3024
+    },
+    "assets/cache-bridge/provenance-01-02.json": {
+      "sha256": "c686d724d12c811f7307f66c54003a561ae7f2b48b70fed10306d098f781531e",
+      "bytes": 10146
+    },
+    "assets/cache-bridge/provenance-03-04.json": {
+      "sha256": "cd9ab8e3a7d85c9d1c530ba55db2b8057103b237b4f6184e57ee6b5b99ca459b",
+      "bytes": 15171
+    },
+    "assets/cache-bridge/provenance-05-06.json": {
+      "sha256": "ed3f6b64b9a54e80dd88db49d5a99bdde41bc4beb061c2f202eb98825d44e43e",
+      "bytes": 12251
+    },
+    "assets/cache-bridge/provenance-07-08.json": {
+      "sha256": "52ccc64806e36bad646f8133ebbe2203b6284f59537cb321741c4cc5c26f0d97",
+      "bytes": 6739
+    },
+    "assets/cache-bridge/sources/bridge-01-district.png": {
+      "sha256": "d59478dd549acc7b67b2306edb3f446058440b660a6e7d80244baff0fa64af94",
+      "bytes": 2897379
+    },
+    "assets/cache-bridge/sources/bridge-02-uplink.png": {
+      "sha256": "3ccd1b49f80f06f639f64018f21e8599febfdafe270507bbeaef4dfb20a3ec4d",
+      "bytes": 2767310
+    },
+    "assets/cache-bridge/sources/bridge-03-original.png": {
+      "sha256": "1468b86167a5581f66ff79b98fa02280edb621df4d3abcb0a7f3941a101a6bf4",
+      "bytes": 2562972
+    },
+    "assets/cache-bridge/sources/bridge-04-clean-copy.png": {
+      "sha256": "1a0c33784753b21ab41e16a87574e82127c86e86395e1b24509044f96b489a16",
+      "bytes": 2563157
+    },
+    "assets/cache-bridge/sources/bridge-05-keep-it.png": {
+      "sha256": "1457b1b4d66a5850792ade4061f634e9089ee50ade2e87210940dfa773b6670e",
+      "bytes": 2729378
+    },
+    "assets/cache-bridge/sources/bridge-06-departure.png": {
+      "sha256": "a2ae283f84ec3b4fe08761b9cbcba6fbf164f54c8a15817191456724277db42e",
+      "bytes": 2944328
+    },
+    "assets/cache-bridge/sources/bridge-07-ignition.png": {
+      "sha256": "7566daf8fdcac52674374a5e924ceb919d20d3d43a61d67efc6d322eac127461",
+      "bytes": 2810667
+    },
+    "assets/cache-bridge/sources/bridge-08-cache-line.png": {
+      "sha256": "4aac33600c8fc05b317dc9c9fa7921a0d9a7a72924f7878a255e41d2f30feeae",
+      "bytes": 2999746
+    },
+    "assets/cache-ending/README.md": {
+      "sha256": "4ffa53b95c409784f17093bcd881ef0b82bddb5abdde004b369ecd5cedc42a37",
+      "bytes": 1878
+    },
+    "assets/cache-ending/art-manifest.json": {
+      "sha256": "0f4dc8e65e6ccdf4998a1f2aac2e41f549aaa4f1e679fd60ac32fbdce3acfa6c",
+      "bytes": 6985
+    },
+    "assets/cache-ending/ending-01-delivered.webp": {
+      "sha256": "d351494cc4f3918ebf80fc32e8f3a7f3d98f9cdb61ebce18ee7b520a5f1de35e",
+      "bytes": 541290
+    },
+    "assets/cache-ending/ending-02-unverified.webp": {
+      "sha256": "98a771fe0497e1ebbf6002008b6d0894e22c38a778581ed49f1473e08f9d410b",
+      "bytes": 508898
+    },
+    "assets/cache-ending/ending-03-held.webp": {
+      "sha256": "f864da0ac3acc3a2db7c6bb8b115be916208ee34369ca92adcc6180ae37800b4",
+      "bytes": 499532
+    },
+    "assets/cache-ending/ending-04-street-access.webp": {
+      "sha256": "83f6f0db54ff13cf43c76488204b7fd09bb190078d4406c8dacbf7a6604557c1",
+      "bytes": 659830
+    },
+    "assets/cache-ending/generation-prompts.json": {
+      "sha256": "5be0d319f6c0be57eb7066c11c45313124129187c9a7c66afa46e87b4cfeee1e",
+      "bytes": 11453
+    },
+    "assets/cache-ending/sources/ending-01-delivered.png": {
+      "sha256": "f7bab225264a75e3f1a23cf41906c32ec2bdc9dad583a157dcba1851c8a5a924",
+      "bytes": 2762028
+    },
+    "assets/cache-ending/sources/ending-02-unverified.png": {
+      "sha256": "ee50481fe00988d4b21bb4bc6d80989faabeba138d89fd3171ce75a2afff8db3",
+      "bytes": 2737779
+    },
+    "assets/cache-ending/sources/ending-03-held.png": {
+      "sha256": "82a08e60bc79271eb616e22e9bc78cfeaaeacca01941d2cfcfa8da4051896b4b",
+      "bytes": 2712122
+    },
+    "assets/cache-ending/sources/ending-04-street-access.png": {
+      "sha256": "a3a7ad1afcb8bb9c48a5c7a310f4d5b97fbcf135c97e45b8653de517c619b708",
+      "bytes": 3027499
+    },
+    "assets/cache-road/ART_PROMPTS.md": {
+      "sha256": "1bb1b4d036e71adbc2cb8dddf5ad0213a94261fd9017752d8bafd7f9dc08bd9d",
+      "bytes": 3950
+    },
+    "assets/cache-road/beat-system/README.md": {
+      "sha256": "c0e6177b21df0e0a978ae136b2ba7d757444e4ad89ae58c68a85959d0a205265",
+      "bytes": 1428
+    },
+    "assets/cache-road/beat-system/energy-atlas.webp": {
+      "sha256": "f1987640854d632ac49a3a6a1b37b5d1c7701b17b4099a2f4eab50b424161c8b",
+      "bytes": 1665492
+    },
+    "assets/cache-road/beat-system/energy-prompt.txt": {
+      "sha256": "2b8460671a500a0ac785fe5eb300edd06a424abe13466b922ca84f2dd5d2f00f",
+      "bytes": 1998
+    },
+    "assets/cache-road/beat-system/energy-source.png": {
+      "sha256": "693f86a4de02006eb5b0b4fe4abcc937c4d5bf3f3be73ac10c8cd93efb291d25",
+      "bytes": 2055731
+    },
+    "assets/cache-road/beat-system/hardware-atlas.webp": {
+      "sha256": "7aea638f3d9ac810b1a6b6c5f8e4d793bc62929a25f866831f84cccf253b19f5",
+      "bytes": 1423636
+    },
+    "assets/cache-road/beat-system/hardware-prompt.txt": {
+      "sha256": "04e2930eb1921bd2d0dc88b56c62686097346199a44717274d42c984344ef27a",
+      "bytes": 1782
+    },
+    "assets/cache-road/beat-system/hardware-source.png": {
+      "sha256": "2b03fba3400935bac22680606b77aee35111ca8be9c02236856e1d1ba298390d",
+      "bytes": 2000074
+    },
+    "assets/cache-road/beat-system/packing.json": {
+      "sha256": "cb1e3c67cdb25d3ae7c7701026182d3d6d8a3f0421f04a960aea6cfb0dc2f723",
+      "bytes": 19527
+    },
+    "assets/cache-road/beat-system/timing-atlas.webp": {
+      "sha256": "b52a975d0b96c348b76371714ad8254d65c3a0fc0ea3a8900847d37878c79daa",
+      "bytes": 1323714
+    },
+    "assets/cache-road/beat-system/timing-prompt.txt": {
+      "sha256": "c1c517258219222bbe418f7eff4f465202364b97942f402d9188a482d18e4025",
+      "bytes": 1984
+    },
+    "assets/cache-road/beat-system/timing-source.png": {
+      "sha256": "5ed06f8d3181be7569ee52b6a212376d65ec8324895ff74d6a6c6dbfc1bd67a6",
+      "bytes": 1828338
+    },
+    "assets/cache-road/blood/ART_PROMPTS.md": {
+      "sha256": "bc9a93ae027b51a17759cfa0a141a69d1f87f0c10e4f0fcf41232ffc1e54862d",
+      "bytes": 3766
+    },
+    "assets/cache-road/blood/atlas-metadata.json": {
+      "sha256": "6a4e3e71964bb21d5a4194d60a67b021e493c6dbd83fa50d921fd041ec9f99e1",
+      "bytes": 5457
+    },
+    "assets/cache-road/blood/blood-splatter-atlas.webp": {
+      "sha256": "6f661d1b30f1a6eb989b56b4479dc3608a5d5bf3e75fdb08d089ebd3653250ee",
+      "bytes": 1038958
+    },
+    "assets/cache-road/blood/crew-callout-portraits.webp": {
+      "sha256": "a2c0f6f9a29312952844842f844d2ca45d4bee2f59e42e0c0d534df761fb7814",
+      "bytes": 1532828
+    },
+    "assets/cache-road/blood/sources/blood-splatter-atlas.png": {
+      "sha256": "3cc72bb165d8bf48601d78521bbbf828822984299063f397b7e308c7d37fe5d5",
+      "bytes": 1299977
+    },
+    "assets/cache-road/blood/sources/crew-callout-portraits.png": {
+      "sha256": "5a374d2f73dff4e2f4813866a53c3c236894ef01a8caf300c77f69bcce274398",
+      "bytes": 2199276
+    },
+    "assets/cache-road/combat/README.md": {
+      "sha256": "d4da93bf9af1abf4bfe9fb7efd43ce0bce5ae7cccdb44ba40b87b95c275bbbaa",
+      "bytes": 4678
+    },
+    "assets/cache-road/combat/atlas-metadata.json": {
+      "sha256": "a18ae8a0baf69be337ee2738f171ea07f522beb3c5acc55d26b51e4c6c47ea53",
+      "bytes": 25023
+    },
+    "assets/cache-road/combat/bike-crash-atlas.webp": {
+      "sha256": "a88665419fd43e44b7f74f8ef60450402aa88a89aa0ce89547327796690402bd",
+      "bytes": 1400536
+    },
+    "assets/cache-road/combat/bike-rider-atlas.webp": {
+      "sha256": "938ef4b19f6f9828f62a5cd7af6d7d9f9c5ac9e934b67b7b951f2d8be5c732f7",
+      "bytes": 1491256
+    },
+    "assets/cache-road/combat/combat-blast-atlas.webp": {
+      "sha256": "32b384402d9c84fe5ef44b2604c41cee6e36ec5f4b0763eac18c9632deec5b3d",
+      "bytes": 1662254
+    },
+    "assets/cache-road/combat/fx-metadata.json": {
+      "sha256": "c6d06f5e240c7fe2d60633ce91911f9b77b3d199bf283e70198739f818737582",
+      "bytes": 2907
+    },
+    "assets/cache-road/combat/hostile-chassis-atlas.webp": {
+      "sha256": "8be95816fb9eb9010b62f9b4e59eb23afe24a2caa267112d8248624d60412515",
+      "bytes": 1687608
+    },
+    "assets/cache-road/combat/projectile-contact-atlas.webp": {
+      "sha256": "de2389d2e8dbbcb4c8e94406f812bfcbdc100b27320b812f7dec60763b9c2493",
+      "bytes": 1301562
+    },
+    "assets/cache-road/combat/sources/bike-crash-atlas-prompt.md": {
+      "sha256": "196b09a7c3b755c5a7888d535353bbed6569d14f0202ddae730575a2135071cf",
+      "bytes": 1818
+    },
+    "assets/cache-road/combat/sources/bike-crash-atlas.png": {
+      "sha256": "1d22b87a9bc74e7fb0008716960fdad63f6f447878ea6508c5c329c36eae1d91",
+      "bytes": 2337637
+    },
+    "assets/cache-road/combat/sources/bike-crash-initial-review.png": {
+      "sha256": "a5d7ad77acd030120d9efa00dfa2b3d20fcc629183ea4fa620f9dec724704021",
+      "bytes": 2588518
+    },
+    "assets/cache-road/combat/sources/bike-crash-spacing-prompt.md": {
+      "sha256": "fe4975a2320481b8d39027ea9e09dcb179505d0555477fb5680ad3566a978b48",
+      "bytes": 1238
+    },
+    "assets/cache-road/combat/sources/bike-rider-atlas-prompt.md": {
+      "sha256": "1cf60a8d3c9cc444a4cdc517a65eb374f612acd9d87e686677eb39a3167e3b6f",
+      "bytes": 2310
+    },
+    "assets/cache-road/combat/sources/bike-rider-atlas.png": {
+      "sha256": "e7ee393a2651bcb0f91525d69d2e44ce948dd4187b769041ede09eb6b9c51908",
+      "bytes": 2410557
+    },
+    "assets/cache-road/combat/sources/combat-blast-atlas-prompt.md": {
+      "sha256": "2782d5b9897ee53bdce0bc0fe4e8c42633f4a4c52da77a134ea16768f5d5024a",
+      "bytes": 1948
+    },
+    "assets/cache-road/combat/sources/combat-blast-atlas.png": {
+      "sha256": "05d833cfcff54e971ca4a4d2c6628f7e1d29c6181a5f28f6c28bd105db64ed39",
+      "bytes": 2454937
+    },
+    "assets/cache-road/combat/sources/hostile-chassis-atlas-prompt.md": {
+      "sha256": "dab42cc33a6d918abfe4c47c91a7a3ab5d5ff3c68942cf09f1beca216188472b",
+      "bytes": 2668
+    },
+    "assets/cache-road/combat/sources/hostile-chassis-atlas.png": {
+      "sha256": "efbb4cb278ba8e48e6a68013421b129aca627b9e4eb349e3fea0b018ba7f9bd6",
+      "bytes": 2630571
+    },
+    "assets/cache-road/combat/sources/projectile-contact-atlas.png": {
+      "sha256": "aa21978bbc1cbef7652268a0b5df9c86916287b3656326d0870bd065e253bf3c",
+      "bytes": 1598345
+    },
+    "assets/cache-road/combat/sources/projectile-contact-prompt.txt": {
+      "sha256": "149a47e4f4d174ef3934bbd90e1a5850db9a67e40419c3c592606198e34b7d6b",
+      "bytes": 1275
+    },
+    "assets/cache-road/controls/brace.svg": {
+      "sha256": "33748dfe4d8cde7a594b41b7ade3566b95b93ee874f56a2535f04b9fc81dbbda",
+      "bytes": 702
+    },
+    "assets/cache-road/controls/echo.svg": {
+      "sha256": "3a72a6a365401b5958f6821497ef33bb7bbb8b7bbfaa4e73511fb1540e19554e",
+      "bytes": 809
+    },
+    "assets/cache-road/controls/push.svg": {
+      "sha256": "308bb22dc8887dc71d6e532dfacfa786d290ce724d085e1141f957380e5d83a9",
+      "bytes": 671
+    },
+    "assets/cache-road/controls/refill.svg": {
+      "sha256": "4f7b5f3aa3c71a7db1a450ba49b043769dee5eb0cd5117816f46f90f6ea7d26a",
+      "bytes": 699
+    },
+    "assets/cache-road/controls/surge.svg": {
+      "sha256": "dd9fed73a9dc99fd1d34bdde6c40aadc6a0b07c76f113c00d30eca5e822a49f5",
+      "bytes": 688
+    },
+    "assets/cache-road/controls/turbo.svg": {
+      "sha256": "d1f202bcd770fd8bf73535942dbd211b07213877b0ea6274758fd4621e152547",
+      "bytes": 759
+    },
+    "assets/cache-road/effects/README.md": {
+      "sha256": "1e95a4bdf9c8138e141d99d7b3dfef84175fe03a1390e64214a08293f6111ff6",
+      "bytes": 1747
+    },
+    "assets/cache-road/effects/brake-reflection.webp": {
+      "sha256": "aa8ff6f5df2d1b03bfc5d2f06a2325e0beddf6ad262b84d912581a1e512dd172",
+      "bytes": 34100
+    },
+    "assets/cache-road/effects/damaged-exhaust.webp": {
+      "sha256": "1909604c0d66f39da76a46866816d724ec044da2c15f52483d43dbb939ddca5d",
+      "bytes": 15648
+    },
+    "assets/cache-road/effects/impact-grit.webp": {
+      "sha256": "5891a2da0612edf0b3a0e19f899bc03713adab191702591a9d686f8e942f044b",
+      "bytes": 450720
+    },
+    "assets/cache-road/effects/sources/impact-grit.png": {
+      "sha256": "be3198cf6a6abe98e52d51c72b6259ecdbddfa4628ebaf9d7673d0b2c7a84ab1",
+      "bytes": 1784754
+    },
+    "assets/cache-road/effects/sources/speed-mist.png": {
+      "sha256": "a3767a5c517b6f58b2fdb8e47a827e3e1d51080912baa10f3c7d3d532aa674b3",
+      "bytes": 1565513
+    },
+    "assets/cache-road/effects/speed-mist.webp": {
+      "sha256": "b58805e5489a620480774ce37e22ded9a5795f3ed393f1773c82f789f5086ef4",
+      "bytes": 379520
+    },
+    "assets/cache-road/effects/wind-streak-atlas-v2.png": {
+      "sha256": "e4a3c147aeedab3467696a428d23380f0a9b956ac788d6bfece4a7c856108f7f",
+      "bytes": 1366331
+    },
+    "assets/cache-road/effects/wind-whoosh-atlas.png": {
+      "sha256": "76965185a45edaebf792752dc4bd2a077995f8b5016ed0136d77fa425986365a",
+      "bytes": 2061870
+    },
+    "assets/cache-road/encounters/ART_PROMPTS.md": {
+      "sha256": "1773978bba73f3938f114ea76631fb605bc19dbf33c9bd76256af0c5f227a243",
+      "bytes": 9501
+    },
+    "assets/cache-road/encounters/README.md": {
+      "sha256": "54f688033abe2936a852efa3f4d392e28e30ce6cd62da055f02fb4bcdc9a5ddc",
+      "bytes": 2634
+    },
+    "assets/cache-road/encounters/brace-halo.webp": {
+      "sha256": "2a55970a5ce4b506adf6efa907b3208a8b91f774c732d353f899b5a5719be3ec",
+      "bytes": 709158
+    },
+    "assets/cache-road/encounters/delivery-beacon.webp": {
+      "sha256": "e84bd361ccc36ac40454180828b629deab01921a8b9484945989a9cd31595466",
+      "bytes": 1306428
+    },
+    "assets/cache-road/encounters/echo-ribbons.webp": {
+      "sha256": "eaa9c691560ff2b281f5f4399b42ae078b5e3d1a9a0b1db4dd6f79cb294f26ba",
+      "bytes": 624196
+    },
+    "assets/cache-road/encounters/manifest.json": {
+      "sha256": "cfe02c2ae0ffebba9cefdfa75f683490fcd786ea7c6cb30efe1be7ea95d7fcc2",
+      "bytes": 4521
+    },
+    "assets/cache-road/encounters/push-arc.webp": {
+      "sha256": "c4280d4982fa87774f5a06b852fa22f50c53ec0ac74786d65809eb731c8407d4",
+      "bytes": 648380
+    },
+    "assets/cache-road/encounters/sources/brace-halo.png": {
+      "sha256": "4c61df6f1ea6cd88d8b7bfe76183957d533ddfdb5853bd0a778325205ee9d7c1",
+      "bytes": 890112
+    },
+    "assets/cache-road/encounters/sources/delivery-beacon.png": {
+      "sha256": "359afe79be2c7297cb56e29ba71ca0a824ceef865b9cc44b3b3e0b726f04f540",
+      "bytes": 1912869
+    },
+    "assets/cache-road/encounters/sources/echo-ribbons.png": {
+      "sha256": "3a72ba1b31639dea1812da299dab8d3af5e2f93a68f9fd974b8b174450db2d99",
+      "bytes": 763241
+    },
+    "assets/cache-road/encounters/sources/push-arc.png": {
+      "sha256": "c512a4d1732b503ad51f47c4fc6984af7877386bcdc05c75ae1865f8f32e0508",
+      "bytes": 791558
+    },
+    "assets/cache-road/hud/README.md": {
+      "sha256": "b256fc88cad66f24c4822d55fad7c961bab67fed8cef697e2a5cf812db5ca9ba",
+      "bytes": 1061
+    },
+    "assets/cache-road/hud/cache-back-mirror-expressions.webp": {
+      "sha256": "ab22472bd38c5f03afeb4108e31088ea5d983f835b4444adc6963ef171592d15",
+      "bytes": 249390
+    },
+    "assets/cache-road/hud/digital-dashboard/ASSET_PROVENANCE.md": {
+      "sha256": "da271df8d5a622cdc3ec15aca5dc8e2bb80c4b3c47e2ee4afeb74a20fd1e5241",
+      "bytes": 3160
+    },
+    "assets/cache-road/hud/digital-dashboard/instrument-bezel.png": {
+      "sha256": "229d9709de7b488fb2b32a129b560b50d1a03d39bf7219ae77948104af4b46c5",
+      "bytes": 1111818
+    },
+    "assets/cache-road/hud/digital-dashboard/instrument-icons.svg": {
+      "sha256": "d3ee6b027066306f7a613f15d469a7ac6c8154a2cda7aaaf300990d0c01abdaa",
+      "bytes": 5879
+    },
+    "assets/cache-road/hud/digital-dashboard/vfd-digits.svg": {
+      "sha256": "6c3c76556ed59a6b4eba1192344827552182834125c7bb847b97bbe165e15be0",
+      "bytes": 31724
+    },
+    "assets/cache-road/hud/sources/cache-back-mirror-expressions.png": {
+      "sha256": "44793272b656d864f965c7905a6c7e6ee89cbab1c659ceccb5d0d843acb32c71",
+      "bytes": 2508864
+    },
+    "assets/cache-road/pursuit/README.md": {
+      "sha256": "db8472becd24ac74577dc41367237d25e14509322c3637fbd16e492c1065f913",
+      "bytes": 4007
+    },
+    "assets/cache-road/pursuit/atlas-metadata.json": {
+      "sha256": "08c0d7f5d2d95d60a35a0d7e8d2da947ecb4c977f109880a0e461987f92f3b27",
+      "bytes": 9451
+    },
+    "assets/cache-road/pursuit/pursuit-impact-atlas.webp": {
+      "sha256": "c06991e196cda1bb0de088ba9c94d61121fcbebfb82f6676a0fac4466a492ab7",
+      "bytes": 1714216
+    },
+    "assets/cache-road/pursuit/pursuit-rig-atlas.webp": {
+      "sha256": "d5d5351b69f1fda41c5a0a8f910d750953d0ac7f995c4021f542a76673961b6b",
+      "bytes": 1879418
+    },
+    "assets/cache-road/pursuit/sources/pursuit-impact-atlas.png": {
+      "sha256": "67c855265f16ff3b1a1aad0754fc1b1e79a802a96e0821f8950c0c3a5c51f075",
+      "bytes": 2354951
+    },
+    "assets/cache-road/pursuit/sources/pursuit-impact-prompt.md": {
+      "sha256": "e8a31f3fcd8e47e06f738be0776dbc7a5669b2444c4482f48f86e0abcda4a2b1",
+      "bytes": 2414
+    },
+    "assets/cache-road/pursuit/sources/pursuit-rig-atlas.png": {
+      "sha256": "fcbd0a6235c0fe2989d9428293317a018f20e026732cd97f03892d80f4b3d34d",
+      "bytes": 2626895
+    },
+    "assets/cache-road/pursuit/sources/pursuit-rig-prompt.md": {
+      "sha256": "efda2572209891aac582fd2fb37c9ba1af2cda9c3d4eb45de0282b7112ba5736",
+      "bytes": 2950
+    },
+    "assets/cache-road/pursuit/sources/pursuit-rig-spacing-review-prompt.md": {
+      "sha256": "2eec18a59d0abcbca79c8bffdcf600b13cf8a9ae6ddd41f8588617c0090e6f3a",
+      "bytes": 1255
+    },
+    "assets/cache-road/roadside/DIAGONAL_PROMPTS.md": {
+      "sha256": "5ebaa26012a3e0ffe1267063e6693b5174880cca5ab83120246c72bb49613ee7",
+      "bytes": 1952
+    },
+    "assets/cache-road/roadside/README.md": {
+      "sha256": "e31579b0475a3122bd8fda22b807796453eabd45ba9624e975c1d3d5626d26b3",
+      "bytes": 2094
+    },
+    "assets/cache-road/roadside/beat/animation/brace-frames.webp": {
+      "sha256": "ffad8a7b8598bca01cbfd33ec48b0905da207a48eacde8729156f2e844d92f24",
+      "bytes": 247992
+    },
+    "assets/cache-road/roadside/beat/animation/push-frames.webp": {
+      "sha256": "8ec842affd54bf0eb76e7c9686f3c34f2df529ca0304c1d2006d811647210e37",
+      "bytes": 283150
+    },
+    "assets/cache-road/roadside/beat/animation/refill-frames.webp": {
+      "sha256": "f5903fa39f9a367c601f5caaacf0183055a3560f4f810f69006ca0f6757523d8",
+      "bytes": 271066
+    },
+    "assets/cache-road/roadside/beat/animation/surge-frames.webp": {
+      "sha256": "3544950d7ee8d49a9a33930caa9e59718c290fb4b13e3c9d1ac76b7c625b892e",
+      "bytes": 242422
+    },
+    "assets/cache-road/roadside/beat/approach-strip.webp": {
+      "sha256": "79252d12227393e63e4670571b63f381ca69717da6c99c83f1ad6d8b101f2bd5",
+      "bytes": 21372
+    },
+    "assets/cache-road/roadside/beat/beat-phrase.webp": {
+      "sha256": "3020f194e5d9c45be5d574e97fdf35bf22b8e83dcb948f5243058622b9d2b7ae",
+      "bytes": 39238
+    },
+    "assets/cache-road/roadside/beat/brace.webp": {
+      "sha256": "d2970014f46fefffdbc4932452d4f72d584e2402ecaf9c4b3a5287d8c57e6883",
+      "bytes": 18788
+    },
+    "assets/cache-road/roadside/beat/confirmed-bar.webp": {
+      "sha256": "ccf6e6e1741c531238034625a79e532ae32ef6afc5d44e2d68d438170e388305",
+      "bytes": 91114
+    },
+    "assets/cache-road/roadside/beat/pulse-burst.webp": {
+      "sha256": "bb6ff47845db655305c51eaef43a547f74c7b3edec30beb2769a816a89539ca0",
+      "bytes": 66042
+    },
+    "assets/cache-road/roadside/beat/pulse-pad.webp": {
+      "sha256": "e087087d7af7e6d043f8f0ec6425455ccf6d09bd2b85756e9609e6f8821a543b",
+      "bytes": 55096
+    },
+    "assets/cache-road/roadside/beat/push.webp": {
+      "sha256": "4e15b14b236e0d188367ef76649a5eea2c6df1e97d76be5e084e26c1e73b5466",
+      "bytes": 20700
+    },
+    "assets/cache-road/roadside/beat/refill.webp": {
+      "sha256": "b3143b3dbb60fcdc64b50cc05b799301830b20542020d7d9fc7f18f09fa2ec44",
+      "bytes": 22136
+    },
+    "assets/cache-road/roadside/beat/sources/confirmed-bar-prompt.md": {
+      "sha256": "14740cf5a49d13621e27282ce789b4ac28cff862bd54799273da73d401a048f4",
+      "bytes": 716
+    },
+    "assets/cache-road/roadside/beat/sources/confirmed-bar-source.png": {
+      "sha256": "9905a4278d30f1fcce7112028dcb7b7fd76319fbab3b62238693cd4d75dddc4d",
+      "bytes": 113641
+    },
+    "assets/cache-road/roadside/beat/surge.webp": {
+      "sha256": "df7fe62e0fe38fe0e90b7c9c7803b3e8590d37dae1351b5d4c0ca9dc9072550a",
+      "bytes": 19160
+    },
+    "assets/cache-road/roadside/continuous-ground-panel.svg": {
+      "sha256": "9caf9e57c68eabb60ddf857b11880e465a7be884ed323ebffe3971c03a3a282a",
+      "bytes": 383
+    },
+    "assets/cache-road/roadside/green-ground-panel.svg": {
+      "sha256": "b0c9ddf01553d53a03f150d267b41c720e262b34ec00ff52daea9c4db90fb097",
+      "bytes": 1180
+    },
+    "assets/cache-road/roadside/outer-ground-panel.svg": {
+      "sha256": "8aeeb4b360870554baef524bdcdca8cf2ee21f9c6e6d1e297c756377687f2a15",
+      "bytes": 1356
+    },
+    "assets/cache-road/roadside/parapet.webp": {
+      "sha256": "52d5947cacd58f61af3b49eaee5fe14953baeb645c88bf5a9a6b07a71fbae267",
+      "bytes": 254580
+    },
+    "assets/cache-road/roadside/places/README.md": {
+      "sha256": "0c444632be0fae69c6b5c001675a387d898acc08fe938d358fe06f181a6a1b58",
+      "bytes": 5279
+    },
+    "assets/cache-road/roadside/places/apartment.webp": {
+      "sha256": "88876d800e98ff021fcb95ada67dcc8a75d2d586294983ceac350296e5683361",
+      "bytes": 192368
+    },
+    "assets/cache-road/roadside/places/capacitor-exchange.webp": {
+      "sha256": "cc1047d0a9841997606482c812738d299cad5edba3d89fcccc7413b8ee1cbc23",
+      "bytes": 267680
+    },
+    "assets/cache-road/roadside/places/community-garden-horizon.webp": {
+      "sha256": "616bb2a810eb414680c3e9ede521d5ee101d1124052457409b9c0b9231539f20",
+      "bytes": 161318
+    },
+    "assets/cache-road/roadside/places/community-garden-left-compact.webp": {
+      "sha256": "b5d26f3c8d4e762ee8bb617655dfa25cd735fa654bb9ddaef9e775fe48f3197f",
+      "bytes": 215174
+    },
+    "assets/cache-road/roadside/places/community-garden-rounded.webp": {
+      "sha256": "c056ee4ef3e70671d1cb77b51f6044a10654230fb6e8c06d747bd0650dd0b2ba",
+      "bytes": 196718
+    },
+    "assets/cache-road/roadside/places/community-garden.webp": {
+      "sha256": "6ec8c49bbcb0e352d8f46de1825e5d4df9b867bd9c55ba2129ebb68bc4765244",
+      "bytes": 245200
+    },
+    "assets/cache-road/roadside/places/construction-yard-horizon.webp": {
+      "sha256": "18ffea8c4807f310fcde905593f7ab4cb9960ffb3bbabd3132ef31520c197838",
+      "bytes": 146582
+    },
+    "assets/cache-road/roadside/places/construction-yard-right-compact.webp": {
+      "sha256": "88ffba38575687e96b1f0e9d6a5adb7baee75108e72039c2db002352af631987",
+      "bytes": 186042
+    },
+    "assets/cache-road/roadside/places/construction-yard-rounded.webp": {
+      "sha256": "a1a58063ad8f78593824118b08c51fb51d7dd8e2de6adeb8389e0181523b2647",
+      "bytes": 153682
+    },
+    "assets/cache-road/roadside/places/construction-yard.webp": {
+      "sha256": "180919955c2b4e07ec307375a90233f60b23c2a34d79c4ab84befd9c539d77db",
+      "bytes": 212416
+    },
+    "assets/cache-road/roadside/places/corner-market.webp": {
+      "sha256": "3348f8f551828acb47806f2b7ade996b906e6b625cbd7e665737f2844c3b70fd",
+      "bytes": 294078
+    },
+    "assets/cache-road/roadside/places/data-reclamation.webp": {
+      "sha256": "e7cc879cc8fe185e081bbb94b5201c733224f6750230d3e90ac85ebf6359115e",
+      "bytes": 214840
+    },
+    "assets/cache-road/roadside/places/drone-service-node.webp": {
+      "sha256": "6df588ba6420affe3a28ac8d8a60fc8e926e205716b5ccc73be3c6b64bb6c400",
+      "bytes": 186156
+    },
+    "assets/cache-road/roadside/places/encrypted-pump.webp": {
+      "sha256": "bc4aee4e9acb6ace2286813501eb69545417bd58c087f76b786ae3969729f718",
+      "bytes": 212218
+    },
+    "assets/cache-road/roadside/places/fabrication-horizon.webp": {
+      "sha256": "999267b5991066d4d86ca2189ca2eb10fcc47824fe5386087f68b0be170a6da2",
+      "bytes": 160816
+    },
+    "assets/cache-road/roadside/places/hydroponics-horizon.webp": {
+      "sha256": "c753904f0f2c3e808d70e379972bdadc2b35824b959fee1cdb4ef93478b102ee",
+      "bytes": 157504
+    },
+    "assets/cache-road/roadside/places/night-data-market.webp": {
+      "sha256": "3f40308d88132c2c85175c44094bc74d59465e85570246589732f49ba4236741",
+      "bytes": 237408
+    },
+    "assets/cache-road/roadside/places/night-diner.webp": {
+      "sha256": "9657caf7853afcbcbec9c6c822076bc383a0a0bd1bfb651fe0bbb699d9d81550",
+      "bytes": 200882
+    },
+    "assets/cache-road/roadside/places/parking-lot.webp": {
+      "sha256": "bd763fe368a0c250a19a9a997c3ac2277976ee4b29c6d4c1f6b1d903f5c03b9f",
+      "bytes": 207264
+    },
+    "assets/cache-road/roadside/places/pocket-park.webp": {
+      "sha256": "bab6384c0fd32e7c279420dac914ec6f8ca8da8f8fd54123f45833af965158a2",
+      "bytes": 251238
+    },
+    "assets/cache-road/roadside/places/relay-exchange.webp": {
+      "sha256": "c2520d0585acc130e359202e473594a1fab5044bb39e7deb48483a20cadf51ac",
+      "bytes": 370798
+    },
+    "assets/cache-road/roadside/places/repair-garage.webp": {
+      "sha256": "32d9e0728e50ff7eb74c0e9d83e7bb37d4700245d3fb393d541ae2f9b0a00df4",
+      "bytes": 190110
+    },
+    "assets/cache-road/roadside/places/row-house.webp": {
+      "sha256": "5005265ddb8e37cce3afac956451aa22900e9baa87840bb4a4e93984364f7f66",
+      "bytes": 257284
+    },
+    "assets/cache-road/roadside/places/signal-orchard.webp": {
+      "sha256": "bdc89f848f648c9f4b2c6ae4a3e87c4680e3101712dbb48cdb3bd2726a2f7363",
+      "bytes": 252482
+    },
+    "assets/cache-road/roadside/places/sources/apartment.png": {
+      "sha256": "9cc09cb59d0c2b08be8f120aaae3d5e0b32b715c1a634be8a197481ceb009493",
+      "bytes": 1578153
+    },
+    "assets/cache-road/roadside/places/sources/community-garden.png": {
+      "sha256": "dfc3092ccde556f2645a7e9aee8f1c06667b4a50d911303f9500f9244d51272f",
+      "bytes": 1605525
+    },
+    "assets/cache-road/roadside/places/sources/construction-yard.png": {
+      "sha256": "24267bf71d9661b2c98a1e253c92e8f27dc50bc0a7dd541503b5a620c0a4338a",
+      "bytes": 1595008
+    },
+    "assets/cache-road/roadside/places/sources/corner-market.png": {
+      "sha256": "5765b03a958e68b7fb673ecc74f5079e6d91b199e9b2a5cf8df70acc47cb23e5",
+      "bytes": 2367235
+    },
+    "assets/cache-road/roadside/places/sources/night-diner.png": {
+      "sha256": "4cb842df3f9d78e7b0afb2ecf7dc0ef6acf78427dc3a7b59ca4ae1fe23ad54da",
+      "bytes": 1607844
+    },
+    "assets/cache-road/roadside/places/sources/parking-lot.png": {
+      "sha256": "6fa2bb53b9362b0ffdc425eedd28c2c430228b1c36bf582056e91819cc36edf9",
+      "bytes": 1470485
+    },
+    "assets/cache-road/roadside/places/sources/pocket-park.png": {
+      "sha256": "18913ee081449c5141946b44009abd92f7d1e479619fe8a165d402e5f3416afa",
+      "bytes": 1631173
+    },
+    "assets/cache-road/roadside/places/sources/repair-garage.png": {
+      "sha256": "51c1d1233346dc1419c21560875cfe65ea7a4ea017681b8ccc8d8e6302aaf630",
+      "bytes": 1624870
+    },
+    "assets/cache-road/roadside/places/sources/row-house.png": {
+      "sha256": "518f1fb63a4ee17bcd7db0f202a95c6ed18cf54f783c644d67a2d5fadf1f8698",
+      "bytes": 1931105
+    },
+    "assets/cache-road/roadside/places/sources/substation.png": {
+      "sha256": "95a3b711ef869d0bbce3f00f57c5a787ff471fe2f601a0721e5997bfa5fefc21",
+      "bytes": 1485447
+    },
+    "assets/cache-road/roadside/places/substation.webp": {
+      "sha256": "a2a5d053c32d40f34b53b69a9312986b8540cf82d3e1aa7b607149f5408bac14",
+      "bytes": 215772
+    },
+    "assets/cache-road/roadside/rolling-ground-grain.webp": {
+      "sha256": "4eba279201962d7c4feca9b97e053651440f5a6299b7d031308dfad46616183a",
+      "bytes": 1007706
+    },
+    "assets/cache-road/roadside/service-ground-panel.svg": {
+      "sha256": "d924bdad8254eb2eb8c66998105825f5ce458028933baf7a962a88ad5c3865dc",
+      "bytes": 1188
+    },
+    "assets/cache-road/roadside/service-pylon.webp": {
+      "sha256": "7bbd95ef85c6ef1de388b5ec8d3ad6e968ea957e3a93d612ea596dde24e780fb",
+      "bytes": 214552
+    },
+    "assets/cache-road/roadside/sidewalk-slab.svg": {
+      "sha256": "39692ae400675f8e3c10a7bdc71af075616ec82a39f13ea8dc5c4aa7cdc30d1a",
+      "bytes": 1897
+    },
+    "assets/cache-road/roadside/sources/parapet.png": {
+      "sha256": "cae9405edc912143f70609c5a766aee7e61d84d4919919d2dba967a135a938a2",
+      "bytes": 1338038
+    },
+    "assets/cache-road/roadside/sources/rolling-ground-grain.png": {
+      "sha256": "b3c16618f6677312b3c9a6f0ae2a0c42cd247f00b1e39c32ee59b8a31c6ad708",
+      "bytes": 3771427
+    },
+    "assets/cache-road/roadside/sources/service-pylon.png": {
+      "sha256": "6e0a196cd435f00c96cf31b6e02f0b1bca7ee98b9fdb28bd9e95fd9cf3251727",
+      "bytes": 1735192
+    },
+    "assets/cache-road/vehicles/README.md": {
+      "sha256": "3c867d3ab55eb287c1f61bd42d6af915a8ba5d833ca33c37c90b6a28485916c0",
+      "bytes": 2590
+    },
+    "assets/cache-road/vehicles/animation/audit-sedan-frames.webp": {
+      "sha256": "eb74280e77b5d34ef529d38aaaf0755ee4f2454881375bdcf4ccff3fc5870203",
+      "bytes": 200686
+    },
+    "assets/cache-road/vehicles/animation/cache-center-frames.webp": {
+      "sha256": "87345f5145da0ba464cdd0f338fc00e86a79d376383a0dbebe49548dded39027",
+      "bytes": 209480
+    },
+    "assets/cache-road/vehicles/animation/cache-hit-frames.webp": {
+      "sha256": "5a6d8e6b80b6d9a14d6e459f559e62a9744d7812d41228c2ea42ec73ab0af5f0",
+      "bytes": 228816
+    },
+    "assets/cache-road/vehicles/animation/cache-left-frames.webp": {
+      "sha256": "9848f275f15c812a0a81a607991caa7fd1af2c3b9fabe8ac7e9289a61eac4518",
+      "bytes": 246428
+    },
+    "assets/cache-road/vehicles/animation/cache-right-frames.webp": {
+      "sha256": "0ebe5b7655285de1b48e97146c291dd312739ff84c1e6bcc8693fb6745120033",
+      "bytes": 238374
+    },
+    "assets/cache-road/vehicles/animation/courier-frames.webp": {
+      "sha256": "48de313aef6b9c5012ca1fdd6e00dbfa12af336c040b7e926bd90f0e5a629fc4",
+      "bytes": 191964
+    },
+    "assets/cache-road/vehicles/animation/freight-frames.webp": {
+      "sha256": "535ce8752294f914cb9d1de7026d9f05eabd8537993a21c31d2fabcf4a373478",
+      "bytes": 207612
+    },
+    "assets/cache-road/vehicles/animation/night-shuttle-frames.webp": {
+      "sha256": "d83399a14323d8dac11b6fb3bebaba1d3a51ba39c466e7d09fe8b75453d0135b",
+      "bytes": 234400
+    },
+    "assets/cache-road/vehicles/animation/rival-frames.webp": {
+      "sha256": "ad7bf5eb8ac0941c216854001f0418d5875c5b60c4421a6b2ce5bc8597a9e912",
+      "bytes": 164940
+    },
+    "assets/cache-road/vehicles/animation/signal-trike-frames.webp": {
+      "sha256": "d8f9ec5a9f805b4a2c1c2c372781e5bd48c4264095031f2272bce832981d198a",
+      "bytes": 146904
+    },
+    "assets/cache-road/vehicles/animation/sweeper-frames.webp": {
+      "sha256": "7c102c80fe14c8db618ce525bd46a3d64d3ee6901620d6017895dbb9064e1701",
+      "bytes": 289530
+    },
+    "assets/cache-road/vehicles/audit-sedan.webp": {
+      "sha256": "2bfb7793741fb6288ca3492b94a97b82f9a23c99db092ab712af6f2e127390af",
+      "bytes": 118354
+    },
+    "assets/cache-road/vehicles/barricade.webp": {
+      "sha256": "2f8d257037b9879363516895b527585c825a2f8f18c55e6de6207efb14a1690c",
+      "bytes": 91114
+    },
+    "assets/cache-road/vehicles/cache-center.webp": {
+      "sha256": "c95a48698a0ea9af13e7139fdaf12cf0c0a3e773d7ce8892c96290737b45aea5",
+      "bytes": 145854
+    },
+    "assets/cache-road/vehicles/cache-hit.webp": {
+      "sha256": "7e8617fb805a79c4e084d5910945c821769c2a168de6163f3b5435211d409fa6",
+      "bytes": 169364
+    },
+    "assets/cache-road/vehicles/cache-left.webp": {
+      "sha256": "a66a6ff68c749acf669093b51b74878b257682f60be9a2cd3bf7e259d6abf3b0",
+      "bytes": 175954
+    },
+    "assets/cache-road/vehicles/cache-right.webp": {
+      "sha256": "59359b9a40a96ca96afab153364634feb529f0713abc8b0f84cb2316afd3d853",
+      "bytes": 167438
+    },
+    "assets/cache-road/vehicles/courier.webp": {
+      "sha256": "ca7da58ffce79a843e5c269279e2dfca8b6d24f0271d7fa2d695c071b6f66d7c",
+      "bytes": 139904
+    },
+    "assets/cache-road/vehicles/freight.webp": {
+      "sha256": "82933d9985038239e220a31335d46e0639d933047e6f1788765b5c3f1d0ebfd5",
+      "bytes": 104374
+    },
+    "assets/cache-road/vehicles/night-shuttle.webp": {
+      "sha256": "3f9ee14ba964e0ef7d3fa391c21073287a2fca4b335cbd1b4462610d05da5a40",
+      "bytes": 132346
+    },
+    "assets/cache-road/vehicles/rival.webp": {
+      "sha256": "3f2d61e30dd2a26fb94762fdf20eca3fb9e275bdb8436d0a18820dcb15209479",
+      "bytes": 97112
+    },
+    "assets/cache-road/vehicles/signal-trike.webp": {
+      "sha256": "d186b3853a2e7ad7154ee8511c1cf1b4ac67cc98b34ed5378b677ce98c696907",
+      "bytes": 96728
+    },
+    "assets/cache-road/vehicles/sources/audit-sedan.png": {
+      "sha256": "2d4fba5ce0d02ddf7bf2a0370e3183cb49ffe08c5405835da6213363247642d6",
+      "bytes": 650306
+    },
+    "assets/cache-road/vehicles/sources/barricade.png": {
+      "sha256": "45006e6a176b38daae4ccd567ab41430a3250c5da10fbd169ba99a560855ed3a",
+      "bytes": 694545
+    },
+    "assets/cache-road/vehicles/sources/cache-center.png": {
+      "sha256": "0623971f4d7122c50d72e374e3daabfe2e8660e61f38788c438af4cdec8c9ba0",
+      "bytes": 1032727
+    },
+    "assets/cache-road/vehicles/sources/cache-hit.png": {
+      "sha256": "332165e195a6bf4b0b6572429c7540eaf5c2a1237e60de9591d23f2a71e77cf2",
+      "bytes": 1170886
+    },
+    "assets/cache-road/vehicles/sources/cache-left.png": {
+      "sha256": "5eb6a59f7c810967912b98371e0174d5d0f321c23a4214504864468eb95aa2ec",
+      "bytes": 1271417
+    },
+    "assets/cache-road/vehicles/sources/cache-right.png": {
+      "sha256": "97beb84e3af7ec30d7dbf480319ea4960c3f8f436793b0abffb0b5e3bbd9ad3d",
+      "bytes": 1227715
+    },
+    "assets/cache-road/vehicles/sources/courier.png": {
+      "sha256": "307db1303ebfaa0ed47f58dc460177cfff79df9d9da82acd9d1f2ce7d760d9bf",
+      "bytes": 1021373
+    },
+    "assets/cache-road/vehicles/sources/freight.png": {
+      "sha256": "92118ed121d55ee2c823ab5560187f40d56cfe638cd0097f099042bba12c9859",
+      "bytes": 1016407
+    },
+    "assets/cache-road/vehicles/sources/night-shuttle.png": {
+      "sha256": "fef2d5a7835b4ca3b77682770fb118b2cb1f54130fb01ef7639f62351030ff78",
+      "bytes": 543223
+    },
+    "assets/cache-road/vehicles/sources/rival.png": {
+      "sha256": "34a728b60a881cca320cc4abfda29fe09a78d6e7d866dea193586c584a7af7cf",
+      "bytes": 947367
+    },
+    "assets/cache-road/vehicles/sources/signal-trike.png": {
+      "sha256": "57da41fa3de2648a9743541a6a7abaa9b3de7e23ce1fed291102cce63a3de1a6",
+      "bytes": 427173
+    },
+    "assets/cache-road/vehicles/sources/sweeper.png": {
+      "sha256": "328a8b102802a4da2d12a53bee8f32cb74237f8fc1cf2d86e589e086aad7baa3",
+      "bytes": 606337
+    },
+    "assets/cache-road/vehicles/sweeper.webp": {
+      "sha256": "0ff48b869ccc54c280cfa2803195906b54f60f82e9173d2659e38c30f2a97fac",
+      "bytes": 179562
+    },
+    "assets/cache-road/world/README.md": {
+      "sha256": "b4d52facd418e9fe28fe98919cda73c61addbf523081375b393bc6930a8d74bf",
+      "bytes": 3229
+    },
+    "assets/cache-road/world/ambient/data-practicals.svg": {
+      "sha256": "b938ab803f965ef417061c0da741848a87d68f222189682813eef736e83baafe",
+      "bytes": 1859
+    },
+    "assets/cache-road/world/ambient/greenhouse-practicals.svg": {
+      "sha256": "a674826f5bebd31abe27c1b121b98f4bf54874d43da0f27c80e96bfdc8bd17c9",
+      "bytes": 1396
+    },
+    "assets/cache-road/world/ambient/homes-practicals.svg": {
+      "sha256": "809d6fba43836378efa9bf976e2468993af732445b94a4a9c67fe4b638ebac36",
+      "bytes": 1264
+    },
+    "assets/cache-road/world/ambient/market-practicals.svg": {
+      "sha256": "0adf7d8b38f62832b5fda33802f26132c61ded2ce346f7165f418ed06d66f244",
+      "bytes": 1512
+    },
+    "assets/cache-road/world/ambient/transit-practicals.svg": {
+      "sha256": "21597c7d4bc93ccd66488f3322248a5da9b947767ea757c56dab6542a2398a2c",
+      "bytes": 1856
+    },
+    "assets/cache-road/world/ambient/workshop-practicals.svg": {
+      "sha256": "49ff29a2e6620d06c3626813d3d439b23f5a1b51aa4242e5836e9639f0e64587",
+      "bytes": 2279
+    },
+    "assets/cache-road/world/blocks/block-data-L-front-fill.webp": {
+      "sha256": "48ab11fe0e145f0b388b95839b2ccf2ee7cc28a25e39e1f897f1c077f6eaf372",
+      "bytes": 402856
+    },
+    "assets/cache-road/world/blocks/block-data-L-front-gap.webp": {
+      "sha256": "7ca837ae3406be950c2c90577a4a0fb205e6cbe4c9fce4ae40c4a31c6e9ea518",
+      "bytes": 294058
+    },
+    "assets/cache-road/world/blocks/block-data-L-middle.webp": {
+      "sha256": "6e2ed3ba1d37c8c845cc03578b2eefd0a30bbdc4db4cfd66ac602b790498b320",
+      "bytes": 413182
+    },
+    "assets/cache-road/world/blocks/block-data-L-rear.webp": {
+      "sha256": "feba9e2654b338e18c78b09e4ae3b72812e92c1837b2849a6d8a64e61ef71f40",
+      "bytes": 396658
+    },
+    "assets/cache-road/world/blocks/block-data-R-front-fill.webp": {
+      "sha256": "51ffda8591007538538c04e655becb884d9cceec770df402ea56c9b755e8dfe5",
+      "bytes": 487292
+    },
+    "assets/cache-road/world/blocks/block-data-R-front-gap.webp": {
+      "sha256": "0ed806f42daf590797e3170c6af83dfeac17728c9b7c5aabf2fc0d5a9cee3c47",
+      "bytes": 354144
+    },
+    "assets/cache-road/world/blocks/block-data-R-middle.webp": {
+      "sha256": "3567822f9f262134735bae6ad5f778335b0e512feca79f4d91fc706ed4fbe330",
+      "bytes": 456524
+    },
+    "assets/cache-road/world/blocks/block-data-R-rear.webp": {
+      "sha256": "3a79c02efd839e1d307e70936a7fc71131dbbc1413070dc556e7c302b5222693",
+      "bytes": 310758
+    },
+    "assets/cache-road/world/blocks/block-greenhouse-L-front-fill.webp": {
+      "sha256": "659f1c96ed0a9f4529ebe0226ce22086bd06d9935ef706307adab973a60b34dd",
+      "bytes": 540042
+    },
+    "assets/cache-road/world/blocks/block-greenhouse-L-front-gap.webp": {
+      "sha256": "be2740d345582b30ebf7c34070f4553dd940a9b15f0abc3e2a379567a888063e",
+      "bytes": 346860
+    },
+    "assets/cache-road/world/blocks/block-greenhouse-L-middle.webp": {
+      "sha256": "2e543b8dfdb32c9ec586fe4e5404856777d3b814d3d8e7bac8ef804c9151c528",
+      "bytes": 586432
+    },
+    "assets/cache-road/world/blocks/block-greenhouse-L-rear.webp": {
+      "sha256": "29a98503567d34a83c4ab5133a573001d1a5e7e04cea5de7dc920780df51e81b",
+      "bytes": 440900
+    },
+    "assets/cache-road/world/blocks/block-greenhouse-R-front-fill.webp": {
+      "sha256": "d9f8b31809d914d03240c5866bfacba2300f7c2fe024aa8c2c56c1b1c89dfcd8",
+      "bytes": 530554
+    },
+    "assets/cache-road/world/blocks/block-greenhouse-R-front-gap.webp": {
+      "sha256": "1ae78fb8eb056e19327bee53b9a3e64a8718b491bfb2c3cb5e7b4f2dd0bf819f",
+      "bytes": 482068
+    },
+    "assets/cache-road/world/blocks/block-greenhouse-R-middle.webp": {
+      "sha256": "562a2140edaab43113212960f8e3a82a2df757e75894d206b13ba2df41f09589",
+      "bytes": 519784
+    },
+    "assets/cache-road/world/blocks/block-greenhouse-R-rear.webp": {
+      "sha256": "865314a7ae244f5a3d85daed9c6c1a9ee313559e4c5395342a230620e053e651",
+      "bytes": 489998
+    },
+    "assets/cache-road/world/blocks/block-homes-L-front-fill.webp": {
+      "sha256": "24b763fdecc3c21fe7418d6dcc5a61eea03d8a7d2c47be01385ef5cf1943edbf",
+      "bytes": 544838
+    },
+    "assets/cache-road/world/blocks/block-homes-L-front-gap.webp": {
+      "sha256": "eaa6c4779bda0046df7cbeaa9182306adf21dd9cdef9ce22cef3c8246664f7c6",
+      "bytes": 367928
+    },
+    "assets/cache-road/world/blocks/block-homes-L-middle.webp": {
+      "sha256": "f2052fec9a3e824ecff2ef0df25d6b780846df24f3079ffbabeeb69b59e311f6",
+      "bytes": 531544
+    },
+    "assets/cache-road/world/blocks/block-homes-L-rear.webp": {
+      "sha256": "b18b81510e36f338506fca60e07a2edfc4825ac7571aff6062fb1c62c8c2f2ce",
+      "bytes": 387390
+    },
+    "assets/cache-road/world/blocks/block-homes-R-front-fill.webp": {
+      "sha256": "5a7b2acb5f63f14741fa2ecc2019336e0ed59658b8777849283c75181c44c69a",
+      "bytes": 512186
+    },
+    "assets/cache-road/world/blocks/block-homes-R-front-gap.webp": {
+      "sha256": "b3ac861767d39708bacca028567ac16243977d52439756c4590f07f7e8c0f81b",
+      "bytes": 351138
+    },
+    "assets/cache-road/world/blocks/block-homes-R-middle.webp": {
+      "sha256": "3575f76f75156731a567f26ea6e40fe4c2d4395c7812f1bae96a10ec99d6dec5",
+      "bytes": 517178
+    },
+    "assets/cache-road/world/blocks/block-homes-R-rear.webp": {
+      "sha256": "0e8c47bf9d5b2563c5a806863f365591cbe13df9ce4d9cd0837483cfafc95d96",
+      "bytes": 471352
+    },
+    "assets/cache-road/world/blocks/block-market-L-front-fill.webp": {
+      "sha256": "ed70151083ac2dd2439da0951407647ee8451d3d2b043fbaeda8234600610a73",
+      "bytes": 705356
+    },
+    "assets/cache-road/world/blocks/block-market-L-front-gap.webp": {
+      "sha256": "b1d66dc545471a07ed7e8df335362f7dae1558145db709c0cea39137ef64536d",
+      "bytes": 463844
+    },
+    "assets/cache-road/world/blocks/block-market-L-middle.webp": {
+      "sha256": "7025f30903a2d8ebdb016483cde02c53049d4620ded9727dc9023911c885ea2e",
+      "bytes": 638630
+    },
+    "assets/cache-road/world/blocks/block-market-L-rear.webp": {
+      "sha256": "cb9297a84f2b81665bef204b3333e5ad4871dac055c1f6d229501359121abd68",
+      "bytes": 345192
+    },
+    "assets/cache-road/world/blocks/block-market-R-front-fill.webp": {
+      "sha256": "3edc73377f29b3411e21e239669d5a4e3865ee00581f781b08784024cdfee9c9",
+      "bytes": 511122
+    },
+    "assets/cache-road/world/blocks/block-market-R-front-gap.webp": {
+      "sha256": "46d57d5f17463a971de8d57e3164058becd09b896e8d973668e85a72f9f09c0e",
+      "bytes": 374570
+    },
+    "assets/cache-road/world/blocks/block-market-R-middle.webp": {
+      "sha256": "bc399f8428e225d94593902e130034d866ba9d88328515f31cbe4b14a0744ec6",
+      "bytes": 636120
+    },
+    "assets/cache-road/world/blocks/block-market-R-rear.webp": {
+      "sha256": "67b0dab7c43a11e9f8c5c9eff33bdebb7f959a3af935dd7ab92fa6ee8f57b710",
+      "bytes": 451360
+    },
+    "assets/cache-road/world/blocks/block-transit-L-front-fill.webp": {
+      "sha256": "cf31eb4b2a4fb9677375ba893a169d521d222bc98a12096c7fe5dfe93d9bc699",
+      "bytes": 439982
+    },
+    "assets/cache-road/world/blocks/block-transit-L-front-gap.webp": {
+      "sha256": "9d7146e49e9f9bef43e90348ee4e395a2ba2bff3aec2f9caa364033e4531e8e0",
+      "bytes": 309716
+    },
+    "assets/cache-road/world/blocks/block-transit-L-middle.webp": {
+      "sha256": "e49c0d755d4ba93d4071546ce53290355179f1526e9bedb4c02e55c53ee5eeb4",
+      "bytes": 443650
+    },
+    "assets/cache-road/world/blocks/block-transit-L-rear.webp": {
+      "sha256": "f7ce5db0ba8535253b973155980410fa1567093f127ee9bf851401548127534d",
+      "bytes": 500024
+    },
+    "assets/cache-road/world/blocks/block-transit-R-front-fill.webp": {
+      "sha256": "62e12aaf39a0c3d004470b9d43833b145e1aa5681c3f5a6feb75364d728005c9",
+      "bytes": 408032
+    },
+    "assets/cache-road/world/blocks/block-transit-R-front-gap.webp": {
+      "sha256": "86b9e053662ed106d327661b8e15bd9ecec895acea556e17c3f190b92ee0263b",
+      "bytes": 363652
+    },
+    "assets/cache-road/world/blocks/block-transit-R-middle.webp": {
+      "sha256": "62e51b27d815af43a42f7a2bfa886bf9a0e62692de97ddc474803517f3b00810",
+      "bytes": 410882
+    },
+    "assets/cache-road/world/blocks/block-transit-R-rear.webp": {
+      "sha256": "3b2cc0b175c80f670c541978c36b182911a5f1d80a3382c477eb86cd5c233a43",
+      "bytes": 380106
+    },
+    "assets/cache-road/world/blocks/block-workshop-L-front-fill.webp": {
+      "sha256": "78f5cde8a96b5c9bc1cd22b1f6c86a25ab9a5be59f280655e7b3e220c434152a",
+      "bytes": 273304
+    },
+    "assets/cache-road/world/blocks/block-workshop-L-front-gap.webp": {
+      "sha256": "40fc4d7e4b51d339b1cfcb578d59c175d760b01ce8fbc1f3d90efcf71f3cd4eb",
+      "bytes": 206722
+    },
+    "assets/cache-road/world/blocks/block-workshop-L-middle-dense.webp": {
+      "sha256": "39b73b37e044a85e079b9db19c5dbd30f40c385810ee7e04f17a8669f373bad8",
+      "bytes": 691588
+    },
+    "assets/cache-road/world/blocks/block-workshop-L-middle.webp": {
+      "sha256": "0cd3378f77214a9ce8b8538bea6225a171356c73d3e77dbf4f01b4e717e31515",
+      "bytes": 492948
+    },
+    "assets/cache-road/world/blocks/block-workshop-L-rear.webp": {
+      "sha256": "fb7be7b55d0e703bc34a06d8dae50cbf722158a69fef943269cc7a51d0a4c3a8",
+      "bytes": 438426
+    },
+    "assets/cache-road/world/blocks/block-workshop-R-front-fill.webp": {
+      "sha256": "bc07a4c406481a729c60feeece5c8460473f8c64bf1f940af54dd76785422713",
+      "bytes": 288076
+    },
+    "assets/cache-road/world/blocks/block-workshop-R-front-gap.webp": {
+      "sha256": "e37e421fbe3c1eccab1a22b4e1b81e57f5aa8cbf33241470491d5c669fe153f3",
+      "bytes": 217878
+    },
+    "assets/cache-road/world/blocks/block-workshop-R-middle-dense.webp": {
+      "sha256": "a088c6620089305d4412985fc21db6b7f0962df0ac2362b4ce9747ee15ac7910",
+      "bytes": 664718
+    },
+    "assets/cache-road/world/blocks/block-workshop-R-middle.webp": {
+      "sha256": "7ac14eb1d4bfef280f5da87f043dc584c91fe8cf71e5dd5b151b62a1e4b7adf6",
+      "bytes": 412986
+    },
+    "assets/cache-road/world/blocks/block-workshop-R-rear.webp": {
+      "sha256": "27c08c9dfee8c8e8fef651c04b66c935d2a6588270c52b9218392b5e5f2e530e",
+      "bytes": 441188
+    },
+    "assets/cache-road/world/blocks/sources/block-data-L-front-gap.png": {
+      "sha256": "829366a7b1f55904fabd83fcf08012021a5b48c66ccfaa72f66c83d432d5c6cc",
+      "bytes": 1751300
+    },
+    "assets/cache-road/world/blocks/sources/block-data-R-front-gap.png": {
+      "sha256": "ef4a7a59ec3023c50ffc7f0df817857f0c5f0f1bac9d0c08d6de4ead3a41d72f",
+      "bytes": 1771531
+    },
+    "assets/cache-road/world/blocks/sources/block-homes-L-front-gap.png": {
+      "sha256": "199de61c6fe454d9e958e7a7318661f3c7a3c367d911bcd08ef2b5f7106e6fac",
+      "bytes": 1653145
+    },
+    "assets/cache-road/world/blocks/sources/block-homes-R-front-gap.png": {
+      "sha256": "2664885b2999beb46840a0b486aea8c8132a294bb036df49c72a4e97aa90635c",
+      "bytes": 1697869
+    },
+    "assets/cache-road/world/blocks/sources/block-market-L-rear.png": {
+      "sha256": "081c154f4d1480d2e7fc8f8cabf1aed7eba78bc495aa19b94e9259b3816ea832",
+      "bytes": 1622345
+    },
+    "assets/cache-road/world/blocks/sources/block-market-R-front-gap.png": {
+      "sha256": "dec09225403de3ea81af3218044f71214633d180c98e4b2d3052ed7e036cbef4",
+      "bytes": 1720738
+    },
+    "assets/cache-road/world/blocks/sources/block-workshop-L-front-gap.png": {
+      "sha256": "5be94e337585a5a592825f911780dd48cc2482b652690055f9252a3ba6de28dd",
+      "bytes": 1579484
+    },
+    "assets/cache-road/world/blocks/sources/block-workshop-R-front-gap.png": {
+      "sha256": "a77d6f6ae3bc81151eef1bf04ac7d3f910e1c7b553996f8df82bfe738b4c61d3",
+      "bytes": 1526276
+    },
+    "assets/cache-road/world/bridge-free-avenue.webp": {
+      "sha256": "e07884bfd5d2691ffac32711cb9a81c6291658debef514656d5cda1266f1ef88",
+      "bytes": 239918
+    },
+    "assets/cache-road/world/bridge-free-distance.webp": {
+      "sha256": "aca79bde54b8d53bbf9252c2582452ee308dfb59583a2cf2481d82295a247634",
+      "bytes": 249608
+    },
+    "assets/cache-road/world/bridge-free-district.webp": {
+      "sha256": "391ab28a4854de0c0e562ac68180c68397c1523d4678a7d47387d945f48714ed",
+      "bytes": 314140
+    },
+    "assets/cache-road/world/bridge-free-outskirts.webp": {
+      "sha256": "38d8c7e4828ca967a1b1ace2e27da52928e7f1ccfcfe87836c9f7f8724cd330a",
+      "bytes": 232372
+    },
+    "assets/cache-road/world/decals/crosswalk.svg": {
+      "sha256": "21fa5b55049ae2c9bfce6ba3d75d5fb9ec447879b962c57e53045d92d8b76206",
+      "bytes": 522
+    },
+    "assets/cache-road/world/decals/drainage.svg": {
+      "sha256": "7d1d86e673045c44f7b73963feb3a3ec466d1d21eb683f955be9b0ebbb43ced0",
+      "bytes": 993
+    },
+    "assets/cache-road/world/decals/loading-bay.svg": {
+      "sha256": "ec70c9035d4f7e352e1c85335a4635f436c18fd1985b60bb6dcdf3524fce85d6",
+      "bytes": 199
+    },
+    "assets/cache-road/world/decals/service-stencil.svg": {
+      "sha256": "42aee44a31f63f7fc1381b74b82b14dfdd9268d619dd8d47e2b3ea2efc19093a",
+      "bytes": 259
+    },
+    "assets/cache-road/world/decals/stop-line.svg": {
+      "sha256": "0b3b40b197d5b67079fb5522f1d9d5c94d0885c7908d4636e5395475c2337b79",
+      "bytes": 168
+    },
+    "assets/cache-road/world/decals/wet-repair-patch.svg": {
+      "sha256": "cbe0695941a183365c1f075b38d0c85318b03f2d4fd047629b1f0d1028c031bf",
+      "bytes": 312
+    },
+    "assets/cache-road/world/distant-city.webp": {
+      "sha256": "411e6619a7a9d5f26863cac7e085491ffa6183617f62d1c950cd20898a51b5f5",
+      "bytes": 194284
+    },
+    "assets/cache-road/world/greenhouse-workshop.webp": {
+      "sha256": "8c138fd62c3482b531519d59b80ba0104bc8a5684430461ce790ee460340b2a1",
+      "bytes": 585564
+    },
+    "assets/cache-road/world/ground-cluster-left-01.webp": {
+      "sha256": "ad05782c284c2d23196cfc969bf731763eca09ce0e71db886f9e1ea202e48b37",
+      "bytes": 574618
+    },
+    "assets/cache-road/world/ground-cluster-left-02.webp": {
+      "sha256": "72cc08a75b0e5fc70cdebb8bd278dcd551e6623267df13004324c4748a2fdef5",
+      "bytes": 571024
+    },
+    "assets/cache-road/world/ground-cluster-left-03.webp": {
+      "sha256": "2eecc2343c2ad71c0837bd854097256345bfd443fd2c65cdd36763a21aedba44",
+      "bytes": 441634
+    },
+    "assets/cache-road/world/ground-cluster-right-01.webp": {
+      "sha256": "86cb519f147497b45416c6d737f8e43dc4ea699d4f2f9c831cc8b59752171b07",
+      "bytes": 592544
+    },
+    "assets/cache-road/world/ground-cluster-right-02.webp": {
+      "sha256": "2239712fe7999d2411b8dfeb9716254f730754b2feecc6c6371e7b2c2cccf97a",
+      "bytes": 486032
+    },
+    "assets/cache-road/world/ground-cluster-right-03.webp": {
+      "sha256": "1667667c154e4ca9c98432d5666f58f7511064bd8419ba51a43696ab6e842598",
+      "bytes": 477424
+    },
+    "assets/cache-road/world/joins/curb-return-L.svg": {
+      "sha256": "ac6adc24275e64e7969aec0ed3b0e60d71bef86f7ebcaaa0bab7277bada38f74",
+      "bytes": 1031
+    },
+    "assets/cache-road/world/joins/curb-return-R.svg": {
+      "sha256": "1d82e5618769a3c3dbedab50256f48fb29e9f529cd95e65b72d372fce2b0ed29",
+      "bytes": 1031
+    },
+    "assets/cache-road/world/joins/sidewalk-turn-L.svg": {
+      "sha256": "758162c89e988c0dbcc1914dd29030a7626c28d3a168a14be66f6ee918911bd5",
+      "bytes": 1195
+    },
+    "assets/cache-road/world/joins/sidewalk-turn-R.svg": {
+      "sha256": "dc07370b7985a403942703743f68f6c0d55dfc9eb911410abf5614eda07bcac1",
+      "bytes": 1195
+    },
+    "assets/cache-road/world/joins/street-mouth-sidewall-L.svg": {
+      "sha256": "841bc912302f3b3ea733d0f1665206d80f01fd74b41f596797f112aeb45dee4f",
+      "bytes": 1071
+    },
+    "assets/cache-road/world/joins/street-mouth-sidewall-R.svg": {
+      "sha256": "6a8d33642688a0409b4b4aba9c963252b742c6bd0fb681e3134e22ecd9aba307",
+      "bytes": 1071
+    },
+    "assets/cache-road/world/joins/wall-roof-endcap-L.svg": {
+      "sha256": "7975c1c46c5c28329436c7e4340b71351c764dd9b8c9d77cbd5d3f7e9bc2d57f",
+      "bytes": 1257
+    },
+    "assets/cache-road/world/joins/wall-roof-endcap-R.svg": {
+      "sha256": "3e541faacec51be200719d4c4dfee49ce1fdc5be6c71f06769c6f913a7246d7f",
+      "bytes": 1257
+    },
+    "assets/cache-road/world/materials/planted-gravel-court.webp": {
+      "sha256": "8577f15edd2703877009ccbb434489b79647131255b13b33b68620a4ab6469eb",
+      "bytes": 686488
+    },
+    "assets/cache-road/world/materials/residential-paving.webp": {
+      "sha256": "a6828d3c519d2e7549b27896acda942f4360a5d5961ae5781cf61db254b69de9",
+      "bytes": 584674
+    },
+    "assets/cache-road/world/materials/service-court-paving.webp": {
+      "sha256": "e47229c04d00c2a99348c0b98814741364e55bae1e512ff3b3c640596812212b",
+      "bytes": 673466
+    },
+    "assets/cache-road/world/materials/wet-local-street.webp": {
+      "sha256": "35099a1ba7b82d017fa1b1a04b0f7682dc543b57d810d9bb09c1b42abfd96dc2",
+      "bytes": 783250
+    },
+    "assets/cache-road/world/materials/workshop-wet-pavement.webp": {
+      "sha256": "c212a93fb9415f607a9d8e53a843f2ae43dddd8c54a7bbcee9da11ae5022140a",
+      "bytes": 1371842
+    },
+    "assets/cache-road/world/mid-city.webp": {
+      "sha256": "e2dc9466a8e0dcea8760102c890095c76689bb6eaa23c852be29e72b77ce5981",
+      "bytes": 426024
+    },
+    "assets/cache-road/world/neighborhood-repair-shop.webp": {
+      "sha256": "bc507e2257ad2ef2daa1ca4339233e2bdbaf4cb55f87b6d929d5211be326d5f6",
+      "bytes": 571948
+    },
+    "assets/cache-road/world/outskirts-homes.webp": {
+      "sha256": "044d732cf1483c0e9c31983ef9e2806ab8920a348e57d66c52c2c1bdc0876c2a",
+      "bytes": 483582
+    },
+    "assets/cache-road/world/outskirts-workshops.webp": {
+      "sha256": "326fdf69cdb26c2621b3c1f37bb24ab3f3d5c9d1317fad2ea69379df64cf52aa",
+      "bytes": 500238
+    },
+    "assets/cache-road/world/panorama-distance.webp": {
+      "sha256": "65bb63ad8db9ee024e9bfb42d2007e5662b2f2fb4679835f7d925b9789b0a6f4",
+      "bytes": 224214
+    },
+    "assets/cache-road/world/panorama-frontage.webp": {
+      "sha256": "995a99c76f8aba6acb8081f7b1b8eaef6dbabb3da7a9d9cfdc773800d47e0671",
+      "bytes": 262166
+    },
+    "assets/cache-road/world/panorama-skyline.webp": {
+      "sha256": "6645c04616fa6d2106e99dc8babdf3529798f66082d9f0c6e70d4ae89cac7270",
+      "bytes": 395148
+    },
+    "assets/cache-road/world/props/animation/person-bicycle-courier-frames.webp": {
+      "sha256": "c496dea7e63a3118235b0bc4f20452510848f58f43890ae01e1f879d8d2f1a1d",
+      "bytes": 291830
+    },
+    "assets/cache-road/world/props/animation/person-board-player-activity-frames.webp": {
+      "sha256": "0f21267b10bafe1a285eac8ddb4b9fcbbb0812cb928914e58b2a693396613636",
+      "bytes": 203848
+    },
+    "assets/cache-road/world/props/animation/person-crate-carrier-frames.webp": {
+      "sha256": "32f3bfc3af03d3cb0c1883345a90b73c4e3f13b6855770e65a53bad43d4f4633",
+      "bytes": 231674
+    },
+    "assets/cache-road/world/props/animation/person-electrician-activity-frames.webp": {
+      "sha256": "80da18fc8636e7242ef78fff394701d4f0dc20cf2ec2ddd41dc707aecbe09801",
+      "bytes": 228456
+    },
+    "assets/cache-road/world/props/animation/person-gardener-activity-frames.webp": {
+      "sha256": "bceac2ac6b4cdd4d015a7e68c35b31d5982fee174573bdf2055f96446b305173",
+      "bytes": 205542
+    },
+    "assets/cache-road/world/props/animation/person-handheld-player-activity-frames.webp": {
+      "sha256": "ff697af9fd8adda50a05c0855707cb1d028581a422cec915726cee8d2693e195",
+      "bytes": 141916
+    },
+    "assets/cache-road/world/props/animation/person-skateboarder-frames.webp": {
+      "sha256": "1e859a581bfaae28d3c1be24dd83b344cb2d85362dea96a35698c81267221395",
+      "bytes": 179540
+    },
+    "assets/cache-road/world/props/animation/person-street-cook-activity-frames.webp": {
+      "sha256": "59716529785f9c659ae6ea6144a9add4b84b30f72a46459a2e94f64d05053c91",
+      "bytes": 232196
+    },
+    "assets/cache-road/world/props/animation/person-sweeper-activity-frames.webp": {
+      "sha256": "86324a1f5febca30ab6088825788c9df2452f3d0b3b81eba54a5cffd082c56ab",
+      "bytes": 166544
+    },
+    "assets/cache-road/world/props/animation/person-waving-resident-activity-frames.webp": {
+      "sha256": "ead159ff3280aaf7f6f975c43b0aa1ac6c30a737ba68be798dbcd0336ba726c4",
+      "bytes": 129964
+    },
+    "assets/cache-road/world/props/animation/street-crossing-signal-L-frames.webp": {
+      "sha256": "1d1c81b4470f3102b3da24633c56e96fdf0c6ea6254f58ab9a2ef42acaaa411d",
+      "bytes": 155644
+    },
+    "assets/cache-road/world/props/animation/street-crossing-signal-R-frames.webp": {
+      "sha256": "7c9faa09db497f59ff645ce7308ad800249e16f652b89e3cef4d5ceb3d888956",
+      "bytes": 121758
+    },
+    "assets/cache-road/world/props/animation/street-data-kiosk-frames.webp": {
+      "sha256": "a9d95724600e2ba41633218fb106e59a66fff1124c5b22c1e6263905270b49d9",
+      "bytes": 113296
+    },
+    "assets/cache-road/world/props/animation/street-lamp-L-frames.webp": {
+      "sha256": "30155d7484f77d951dc1dde20d928b29b50d27ad059f5fc033f474cb2f8ece0e",
+      "bytes": 127998
+    },
+    "assets/cache-road/world/props/animation/street-lamp-R-frames.webp": {
+      "sha256": "4186b577e22023cad4118be5fe8707a3c344e960d5f56181f65893c0ed01b518",
+      "bytes": 116954
+    },
+    "assets/cache-road/world/props/animation/street-utility-cabinet-frames.webp": {
+      "sha256": "3fb37d6b73e33cbdf8a47cdd6c045f7ab3d99117fcb222738ea6b7cf8141cc8c",
+      "bytes": 133414
+    },
+    "assets/cache-road/world/props/animation/street-vendor-cart-activity-frames.webp": {
+      "sha256": "aeed3ec64f676b4e5f14521994213574805600fc61275d2d1e5e98a079b8a05b",
+      "bytes": 279404
+    },
+    "assets/cache-road/world/props/animation/street-vendor-cart-frames.webp": {
+      "sha256": "d6572830519fa933403fedaabd982596d160c14cc2a20f59e6fb3fa46218a866",
+      "bytes": 161000
+    },
+    "assets/cache-road/world/props/animation/street-wayfinding-sign-frames.webp": {
+      "sha256": "ad98edb3bd41565866efef107a36ef502ff4cc119752703d1c0b83ee63d8758a",
+      "bytes": 125438
+    },
+    "assets/cache-road/world/props/animation/walker-courier-frames.webp": {
+      "sha256": "a6253b01a5bee0450e531beddecf2ec766ee5df2d73468b5b2cb0ae4d25a91b0",
+      "bytes": 189298
+    },
+    "assets/cache-road/world/props/animation/walker-gardener-frames.webp": {
+      "sha256": "31012964f72cf4839281e01d8979d056986002e3393e4c3ea40a271d02b3eb88",
+      "bytes": 176546
+    },
+    "assets/cache-road/world/props/animation/walker-market-worker-frames.webp": {
+      "sha256": "5b63600438f89f3de741cf1b16efbc11d26beba4e4e6763299270946e8671c3a",
+      "bytes": 172660
+    },
+    "assets/cache-road/world/props/animation/walker-mechanic-frames.webp": {
+      "sha256": "2e214635c57dae4b4843eb5dd825689fd4a45214270a3423d4608a29ec53b701",
+      "bytes": 204954
+    },
+    "assets/cache-road/world/props/animation/walker-resident-frames.webp": {
+      "sha256": "1ac202d799809bb8891061c207f51ac784f02e01adc885889a0ed063bbb5d732",
+      "bytes": 221100
+    },
+    "assets/cache-road/world/props/animation/walker-student-frames.webp": {
+      "sha256": "0b9fc45e7d8035b454f1f63bdc2863b678b85277c3b1ab1538a3dd48450b00c5",
+      "bytes": 176800
+    },
+    "assets/cache-road/world/props/person-bicycle-courier.webp": {
+      "sha256": "5b1acdf6354ab04a2d6c26521c43bfa7e24deef5c2b5d32c7d28af43b1e82d1d",
+      "bytes": 256038
+    },
+    "assets/cache-road/world/props/person-board-player.webp": {
+      "sha256": "06927d6bd588d677ea25f9d93d3c4bc06f024c11c61dc7fe51fa99c3c6023c8c",
+      "bytes": 253148
+    },
+    "assets/cache-road/world/props/person-courier.webp": {
+      "sha256": "8144ceed58908574a086ef83474891cbbc756a20441e0079e49d178e2bffe571",
+      "bytes": 200774
+    },
+    "assets/cache-road/world/props/person-crate-carrier.webp": {
+      "sha256": "1f454c8c0c78fb528d32565ca1058b3ffd927e3006ae31ba15f51daa337fcc2b",
+      "bytes": 150256
+    },
+    "assets/cache-road/world/props/person-electrician.webp": {
+      "sha256": "9b944b05f72b56376a4f758194c7774ba60512d68f4d8a8f58e24d0c6d72366c",
+      "bytes": 310124
+    },
+    "assets/cache-road/world/props/person-food-worker.webp": {
+      "sha256": "91c01546b000875cc3439caec8d7bc0a6ee34ec6fb8abd2a6db19b6b7c0895e7",
+      "bytes": 180846
+    },
+    "assets/cache-road/world/props/person-gardener.webp": {
+      "sha256": "eb74fbb1165960cbb5b1ed51f4c0e06c7f2f277132e1dce51e7b2f5e96609ee7",
+      "bytes": 264182
+    },
+    "assets/cache-road/world/props/person-handheld-player.webp": {
+      "sha256": "058ffa0a71b75d57f0e53512c7be58b0ac57f8c0dc3457a6596af4fd63c9bc59",
+      "bytes": 205266
+    },
+    "assets/cache-road/world/props/person-mechanic.webp": {
+      "sha256": "42e0bf8547a4a63a7ada4942c2b97ab5ef893a1a1ead68c1b4bcf05aa52e6cbe",
+      "bytes": 191742
+    },
+    "assets/cache-road/world/props/person-skateboarder.webp": {
+      "sha256": "6ec953315a390475c6acdb31dd539d353882c0ac184442a49585fede96a9eb86",
+      "bytes": 250626
+    },
+    "assets/cache-road/world/props/person-street-cook.webp": {
+      "sha256": "fb83cc2a5883de49d88705aa91d4e25c26bdd7e3bca4888d4b32b5f947d20115",
+      "bytes": 281204
+    },
+    "assets/cache-road/world/props/person-student.webp": {
+      "sha256": "323ce2d4fedbce68c9f1b6d59fcd102595690b4ec11fe487ea879a16da31d8b3",
+      "bytes": 191370
+    },
+    "assets/cache-road/world/props/person-sweeper.webp": {
+      "sha256": "dbbfe17427ad64d8e0ec1250be9aec2ecf250b213cb524cd2eb78a4cfa58ad2e",
+      "bytes": 210166
+    },
+    "assets/cache-road/world/props/person-umbrella.webp": {
+      "sha256": "5ec2f84eed08c4af34948afeb54399a4a1fa49ed3afaa06973d886583893ff2d",
+      "bytes": 205830
+    },
+    "assets/cache-road/world/props/person-waving-resident.webp": {
+      "sha256": "0da5ab4c724832a4fd94d62ccc89af1161c8e35227c3d1c7c9ae6791d1d5ae74",
+      "bytes": 200684
+    },
+    "assets/cache-road/world/props/sources/street-lamp-L.png": {
+      "sha256": "3b556f04468d01e6b60aac904f9b9f79733af0746bdcc4441e3f095c0159db36",
+      "bytes": 1501543
+    },
+    "assets/cache-road/world/props/sources/street-lamp-R.png": {
+      "sha256": "ab2d8b0f19f78c0deee123d6355b4945746cc3f1d2f6b6b4fa72fcc464b38663",
+      "bytes": 1432725
+    },
+    "assets/cache-road/world/props/sources/walker-market-worker-away.png": {
+      "sha256": "1073c753a171a9502272515e5f8e562110676bb767379d39fe7efca5ad0b95c3",
+      "bytes": 1790331
+    },
+    "assets/cache-road/world/props/street-bench-planters.webp": {
+      "sha256": "26e353f97c7aa0d4989ab2320c2170808c0ff5c2e7c767014378eb9b20e757ac",
+      "bytes": 367148
+    },
+    "assets/cache-road/world/props/street-bicycle-rack.webp": {
+      "sha256": "c562703450774f62bbe655ffb6b24c35e9f0688461adc4eac1f3072af97ecb0e",
+      "bytes": 361222
+    },
+    "assets/cache-road/world/props/street-bins-recycling.webp": {
+      "sha256": "f9d9a525987f9ec7716c01f310a6d5e0788e2f11039e3250d4544e3caa8447e4",
+      "bytes": 485632
+    },
+    "assets/cache-road/world/props/street-crossing-signal-L.webp": {
+      "sha256": "74b598e8a13dead9e7337caac1071431c734bfb94d718cc592686fb92e032bc7",
+      "bytes": 237112
+    },
+    "assets/cache-road/world/props/street-crossing-signal-R.webp": {
+      "sha256": "63f4f20d60d95f50b00b3ad91bf7f93538020868f5877e62f621186e2b45c7e9",
+      "bytes": 225704
+    },
+    "assets/cache-road/world/props/street-data-kiosk.webp": {
+      "sha256": "4cb56c2dee97b156dda36aed4aa71fc4fb61306fa07a78ae6e87fa0e0ca48023",
+      "bytes": 200072
+    },
+    "assets/cache-road/world/props/street-delivery-van.webp": {
+      "sha256": "13399616f4f0fdeea0895bab6e05cabfb63d37173ef72c49315438767349ca48",
+      "bytes": 271486
+    },
+    "assets/cache-road/world/props/street-fence-planter.webp": {
+      "sha256": "80d6e53b5b021a6b77946e373e0a2c34207769aacf94f5e87e503e9fb61b5d01",
+      "bytes": 487948
+    },
+    "assets/cache-road/world/props/street-lamp-L.webp": {
+      "sha256": "f9e5077b64c4f7ddae8c5d9a289ad2d9e8f7453b92491c5579b73bd5c58f22f5",
+      "bytes": 162494
+    },
+    "assets/cache-road/world/props/street-lamp-R.webp": {
+      "sha256": "6299f94e1f785484ae1b5e34b333c72937b62462f4ae1de30bfcdaa5a3d1d428",
+      "bytes": 151022
+    },
+    "assets/cache-road/world/props/street-loading-crates.webp": {
+      "sha256": "98df5b15057b5a08a91dd97d83a845790d5bb625b172196658c42f127b57ff4c",
+      "bytes": 474312
+    },
+    "assets/cache-road/world/props/street-utility-cabinet.webp": {
+      "sha256": "08020366db3764272c456ac68527ad362425f0b62e0c487bf4697e3e64fcf3ee",
+      "bytes": 372750
+    },
+    "assets/cache-road/world/props/street-vendor-cart.webp": {
+      "sha256": "96d9ebc2b1d003aa591f5861f6a1470611ed01ac66eef0b225bb7f7c7ca1c323",
+      "bytes": 454562
+    },
+    "assets/cache-road/world/props/street-wayfinding-sign.webp": {
+      "sha256": "36a39bbcc0e1b5f0428b4121ef8533b8df339c0ce7f4b73f65cb6743cdc906aa",
+      "bytes": 215172
+    },
+    "assets/cache-road/world/props/street-work-supplies.webp": {
+      "sha256": "9663d42cce1a4554aef5a4ffa240329a18dfd3d90cbed90270b5aa02176a127f",
+      "bytes": 308680
+    },
+    "assets/cache-road/world/props/walker-courier-away.webp": {
+      "sha256": "5f7e019bc21c0872fccb7303ac90de045b7591084892150d69cc0146e6b55b11",
+      "bytes": 217374
+    },
+    "assets/cache-road/world/props/walker-courier-toward.webp": {
+      "sha256": "8531b0204f0b352a6e6ec7331ea3cedf836d19464278702896a091a3b0c53aaf",
+      "bytes": 189108
+    },
+    "assets/cache-road/world/props/walker-gardener-away.webp": {
+      "sha256": "5dc7a8cc62313ef18af4d3503d3be2deb1824ec70e858abcb0d342b4585f79f8",
+      "bytes": 214160
+    },
+    "assets/cache-road/world/props/walker-gardener-toward.webp": {
+      "sha256": "252adb3d57e0b216c4f2b1d40c7d6b56de9524c0aa7b719ecdcb75d87ec31e65",
+      "bytes": 225738
+    },
+    "assets/cache-road/world/props/walker-market-worker-away.webp": {
+      "sha256": "417d1d4520cb33861017d06f8b7a437676707165d430ee44fb292eb47f3eedbc",
+      "bytes": 184668
+    },
+    "assets/cache-road/world/props/walker-market-worker-toward.webp": {
+      "sha256": "820b0240e3c7299e015d8679e487769458fd83f33ff7fff3b9650335c6aed590",
+      "bytes": 190868
+    },
+    "assets/cache-road/world/props/walker-mechanic-away.webp": {
+      "sha256": "d5039c01fe2fe1e303ef20d730d4ff9f8b2380dbb01755a5ced7583dc53427cc",
+      "bytes": 223404
+    },
+    "assets/cache-road/world/props/walker-mechanic-toward.webp": {
+      "sha256": "00e0a0b3802fed2863747ff11061502e178beeff3d35051727d6bbdadeb4cc93",
+      "bytes": 222574
+    },
+    "assets/cache-road/world/props/walker-resident-away.webp": {
+      "sha256": "c834e327e228048aee8540fef9b1431dcbf5f982383c20c192d0166036a31d2c",
+      "bytes": 228536
+    },
+    "assets/cache-road/world/props/walker-resident-toward.webp": {
+      "sha256": "d655656964e6642458663df3844b6732888528c46acf54fee067749ba5032012",
+      "bytes": 205784
+    },
+    "assets/cache-road/world/props/walker-student-away.webp": {
+      "sha256": "d0b58c3e5d80c86a68765b9ee1b2a4a7320f251c253fa5a67b6620c04af94a02",
+      "bytes": 203798
+    },
+    "assets/cache-road/world/props/walker-student-toward.webp": {
+      "sha256": "ac1bc4d30b005f12937d4cc51f072dd84ab2c6f9cc8d524e87d8536c1d059087",
+      "bytes": 196986
+    },
+    "assets/cache-road/world/service-bus-stop.webp": {
+      "sha256": "061a0c1274aa191c10035adc6c39fd7b1a12aa97a0fa3bd2cbea8003b1c0800c",
+      "bytes": 382946
+    },
+    "assets/cache-road/world/skyline.webp": {
+      "sha256": "edc39489031970763f0e5a041e85951fc28782f3311a428822cda8607cd2c8c6",
+      "bytes": 324490
+    },
+    "assets/cache-road/world/sources/animation/ACTIVITY_PROVENANCE.md": {
+      "sha256": "7d4d3dc456f6976e02d2ec061223b10002ac09c84c68ad4f126cfd8e2f6e8fc8",
+      "bytes": 2936
+    },
+    "assets/cache-road/world/sources/animation/activity-registration.json": {
+      "sha256": "e33d78877066895460c99b051d75366f38a2625ed3fd4a73b3a4d30502d4122d",
+      "bytes": 10342
+    },
+    "assets/cache-road/world/sources/animation/person-bicycle-courier-source.png": {
+      "sha256": "a0ca36f2c0a8518afb77f9de6fc9b896f6830359cd92660d2e50cb13bc686be9",
+      "bytes": 2589446
+    },
+    "assets/cache-road/world/sources/animation/person-board-player-activity-source.png": {
+      "sha256": "814d566a7245acfb380913c68c3b5080c97b7541a36227973e0dc270f7593988",
+      "bytes": 2214311
+    },
+    "assets/cache-road/world/sources/animation/person-crate-carrier-source.png": {
+      "sha256": "d1c7ae37893eabc29187889c48d8138d34a8301eca892c314a8cea6f45c8f36b",
+      "bytes": 1398298
+    },
+    "assets/cache-road/world/sources/animation/person-electrician-activity-source.png": {
+      "sha256": "e1e51bab4ce675d354793950dd273ba1ea6677c2b155a6e9b7d3a45232955bca",
+      "bytes": 2314854
+    },
+    "assets/cache-road/world/sources/animation/person-gardener-activity-source.png": {
+      "sha256": "878f3abd96ed10f4174ae8dd1932e855f170f877a148fee38a6bd1fdd4fe484c",
+      "bytes": 1783793
+    },
+    "assets/cache-road/world/sources/animation/person-handheld-player-activity-source.png": {
+      "sha256": "7bcf172fe60c0eaa5bd4bfa17c0f906b195c22cf1b39c21306408913da1fc2a4",
+      "bytes": 1339130
+    },
+    "assets/cache-road/world/sources/animation/person-skateboarder-source.png": {
+      "sha256": "1b0825074dc3bcb3dd4812d660c297cbd768417aa62581d2428f374adcab4ddf",
+      "bytes": 1068744
+    },
+    "assets/cache-road/world/sources/animation/person-street-cook-activity-source.png": {
+      "sha256": "7317de8ae6f6723f5b0b387e27ae975ebc977a5092194f2f89033c0074967fde",
+      "bytes": 1977404
+    },
+    "assets/cache-road/world/sources/animation/person-sweeper-activity-source.png": {
+      "sha256": "6555819d6711e460ae4d1c9ff200defc5dbb24c3cc8d20c0eb466a2d9839d138",
+      "bytes": 1531777
+    },
+    "assets/cache-road/world/sources/animation/person-waving-resident-activity-source.png": {
+      "sha256": "20502383d2723d140079150e8e0863d4144379e52e859a82bc3144e362a1759d",
+      "bytes": 1601048
+    },
+    "assets/cache-road/world/sources/animation/street-vendor-cart-activity-source.png": {
+      "sha256": "6263ce7397f19f17c3a02ab03eebcde37aba6ef85f71b21b28301a1db59a5ead",
+      "bytes": 2307360
+    },
+    "assets/cache-road/world/sources/animation/walker-courier-source.png": {
+      "sha256": "62405a25c9a942684fd96dced4dde5d3592ff009a8741b09a6414c1cfa66f0b7",
+      "bytes": 2332711
+    },
+    "assets/cache-road/world/sources/animation/walker-gardener-source.png": {
+      "sha256": "8aa4f5ff6e50bb998607bc3c6888102e2218c8097e3b451b186e3e73f7ca7217",
+      "bytes": 1659274
+    },
+    "assets/cache-road/world/sources/animation/walker-market-worker-source.png": {
+      "sha256": "736e4bf8931c440ee7d820d6eba886adb270b86b94e812d4ff7fd187684e0c5e",
+      "bytes": 1788563
+    },
+    "assets/cache-road/world/sources/animation/walker-mechanic-source.png": {
+      "sha256": "e1d114a79c4a6da1672519b93482c8930e7146c57afdb166c80c58c6f91dc9c4",
+      "bytes": 2388670
+    },
+    "assets/cache-road/world/sources/animation/walker-resident-source.png": {
+      "sha256": "109b8c4e838e2c7b8e15a1f40b719a034243342a662d4ecdac3f896252f10e1d",
+      "bytes": 2448902
+    },
+    "assets/cache-road/world/sources/animation/walker-student-source.png": {
+      "sha256": "1192344bd6ac5e67bf371cab17baa86d20b97df4482e95fb71050293a2b21361",
+      "bytes": 1563935
+    },
+    "assets/cache-road/world/sources/bridge-free-avenue.png": {
+      "sha256": "f595517879a96ea0bcfe423529ec375739718f5f7e10f15fabaec137d9b32b11",
+      "bytes": 1169893
+    },
+    "assets/cache-road/world/sources/bridge-free-distance.png": {
+      "sha256": "72718ca1b7da8a125c8c8a63eeab75f367c3a288e1ef6ce3d4b3e8185eeadd16",
+      "bytes": 1120711
+    },
+    "assets/cache-road/world/sources/bridge-free-district.png": {
+      "sha256": "443bcd429534d318b68ff7bc1a75c207acfd7bca2cbd9456fb360c6d7dc4e5f9",
+      "bytes": 1250123
+    },
+    "assets/cache-road/world/sources/bridge-free-outskirts.png": {
+      "sha256": "ffa9b180d36b0d29e5785db745762d42356c99640cb7afbff28b80c19599b43a",
+      "bytes": 1008229
+    },
+    "assets/cache-road/world/sources/distant-city.png": {
+      "sha256": "465bf76bf370d3c1c405e695c07e6228dfc87940f8f2425e92cf1b6cac088ffb",
+      "bytes": 920371
+    },
+    "assets/cache-road/world/sources/greenhouse-workshop.png": {
+      "sha256": "715538e6a0c859cc53c2d6ac075fd8a816d06acfb263f715a0e86a7bc1ed8222",
+      "bytes": 3061749
+    },
+    "assets/cache-road/world/sources/ground-cluster-left-01.png": {
+      "sha256": "bbfa6d0a5479c907c8d1ca864efdfb3099917bdffd67a89097a3fe7e5f3e7df3",
+      "bytes": 2483005
+    },
+    "assets/cache-road/world/sources/ground-cluster-left-02.png": {
+      "sha256": "822a80efff396b2f861761e389fa2b9f3036a2d5ceb3336537edd88ed97deae7",
+      "bytes": 2570225
+    },
+    "assets/cache-road/world/sources/ground-cluster-left-03.png": {
+      "sha256": "1e6daa6b674659dc161f9a3405dcfa09b07eceaa2268d33771f12ef4c4ff8a6c",
+      "bytes": 2024217
+    },
+    "assets/cache-road/world/sources/ground-cluster-right-01.png": {
+      "sha256": "134d33b5e71b92a216539918d3cbc4ccf5a8d1987f6fd8682b924321762b92d0",
+      "bytes": 2653573
+    },
+    "assets/cache-road/world/sources/ground-cluster-right-02.png": {
+      "sha256": "fcf8831c5db74b8434135f057255fd6b62f96352934bf252fd8e4681d660479e",
+      "bytes": 2260434
+    },
+    "assets/cache-road/world/sources/ground-cluster-right-03.png": {
+      "sha256": "4ee141498711fc9b0f4627ff22e971ba2baa506ad90841eb0157a870257b5b0e",
+      "bytes": 2253503
+    },
+    "assets/cache-road/world/sources/mid-city.png": {
+      "sha256": "217a8e2d1ef3fcc856acab4af518354d49a13ba6bd6f479fbf26f6ef714a0a18",
+      "bytes": 2065614
+    },
+    "assets/cache-road/world/sources/neighborhood-repair-shop.png": {
+      "sha256": "5b950b3d38930cc42c77e8677ffa92c1e891bf62554a021b4623c3fcdb5700d3",
+      "bytes": 2514451
+    },
+    "assets/cache-road/world/sources/outskirts-homes.png": {
+      "sha256": "126acec713369f00e79b83e4cc417e0453780c5f3e52f64a8d48351573d887a7",
+      "bytes": 2265060
+    },
+    "assets/cache-road/world/sources/outskirts-workshops.png": {
+      "sha256": "483b6cbbfce0916c0d337023e5e607cfa1b81587fadea9be832e4258b49eeea1",
+      "bytes": 2161035
+    },
+    "assets/cache-road/world/sources/panorama-distance.png": {
+      "sha256": "2bb13d361e703d38fa2e5cd99b7d0a66f6f8b2277d863ea0732372de69ac4330",
+      "bytes": 886179
+    },
+    "assets/cache-road/world/sources/panorama-frontage.png": {
+      "sha256": "6140a3f39f6594a513cd8c5f72b22023e2fe7236d62e656202d470b1035b55ce",
+      "bytes": 1071438
+    },
+    "assets/cache-road/world/sources/panorama-skyline.png": {
+      "sha256": "c775136723b88bce053745f14483a7dbd619afb9db4c87c2368ea333e1330595",
+      "bytes": 1703208
+    },
+    "assets/cache-road/world/sources/person-bicycle-courier.png": {
+      "sha256": "28aff5d3b0e30db940463a7ea9ab89ec09167a940db490dff95624853e45503f",
+      "bytes": 2058770
+    },
+    "assets/cache-road/world/sources/person-board-player.png": {
+      "sha256": "bbc028ef83fdb0a29dd5ed04274e4b69ff2acd45a4ba94dd8d828a332399e4e6",
+      "bytes": 1698534
+    },
+    "assets/cache-road/world/sources/person-courier.png": {
+      "sha256": "d8cfa322ccd1c8382dc416c460edb70b3ef5464fa621744cf9d9fef912eb2ccc",
+      "bytes": 2012078
+    },
+    "assets/cache-road/world/sources/person-crate-carrier.png": {
+      "sha256": "ccde717e0eb31cb42e066e1fef43d86b4403649880a13af0a3cf2ce2c1e60f76",
+      "bytes": 1040766
+    },
+    "assets/cache-road/world/sources/person-electrician.png": {
+      "sha256": "9a840e92e543958e011a2e5b64640138aae92035488fc27f2f36cfcb4bd92914",
+      "bytes": 2120703
+    },
+    "assets/cache-road/world/sources/person-food-worker.png": {
+      "sha256": "555836f4033193ba30ebba15f8220a39c4e05da4dec5f5183b238c016313cc4e",
+      "bytes": 1828047
+    },
+    "assets/cache-road/world/sources/person-gardener.png": {
+      "sha256": "a83941d5dab26e6dd33a24efe1429bf4cafa7881f292afe29cec3c49b4b342d9",
+      "bytes": 1584013
+    },
+    "assets/cache-road/world/sources/person-handheld-player.png": {
+      "sha256": "eb94bdadcd1d0a76f1687c9a0207564ceeb6b3eac17592b6c1b3b9e6698d9b42",
+      "bytes": 2087557
+    },
+    "assets/cache-road/world/sources/person-mechanic.png": {
+      "sha256": "278628b9e337d08883dbb5556bbe36c191071787a2561a07f27630c9a4b4898a",
+      "bytes": 1953965
+    },
+    "assets/cache-road/world/sources/person-skateboarder.png": {
+      "sha256": "7a8282142b1d58c75a8a937f1525a511287134aee50958963ce5aef1ac82ffaa",
+      "bytes": 1578148
+    },
+    "assets/cache-road/world/sources/person-street-cook.png": {
+      "sha256": "88178eecaccff184a09d6e9b38479e3475686b4c1c1e1118b7c3605ea1ed7290",
+      "bytes": 1697841
+    },
+    "assets/cache-road/world/sources/person-student.png": {
+      "sha256": "92bce9b9c86517497922ca0d65970cf2a24ecdcf47f9d9d1fc22a68d186134c6",
+      "bytes": 1932991
+    },
+    "assets/cache-road/world/sources/person-sweeper.png": {
+      "sha256": "fc0d5701817352f5fd637b332ae037a5976858f03c7c882bb2075bbec8572bd9",
+      "bytes": 1280384
+    },
+    "assets/cache-road/world/sources/person-umbrella.png": {
+      "sha256": "4a499089b34eae1a6c9b17bad33ec2bb2e27a2010bc32727b9cbd7408dc934f2",
+      "bytes": 2096758
+    },
+    "assets/cache-road/world/sources/person-waving-resident.png": {
+      "sha256": "9204aa4bf6407c3ea41275c017b1039989d071cab15256e270f0fd845d8df670",
+      "bytes": 2076038
+    },
+    "assets/cache-road/world/sources/service-bus-stop.png": {
+      "sha256": "d1e6b41ff09feab77e80d6dc3430bec9ba1154e21f5c12d182efceb33ff93ac5",
+      "bytes": 2761877
+    },
+    "assets/cache-road/world/sources/skyline.png": {
+      "sha256": "21b7ac7e478cc45c1e4ca43f9b44d2c0d6c6445e2b6638a9ae27b18781806502",
+      "bytes": 1605849
+    },
+    "assets/cache-road/world/sources/street-bench-planters.png": {
+      "sha256": "9fa6d4ab89f5427d2890e821fa9acf5746232730fbb0e25f6cef4a2bc782b4d9",
+      "bytes": 2780758
+    },
+    "assets/cache-road/world/sources/street-bicycle-rack.png": {
+      "sha256": "73dd78dfdff29858a2cb18f0021531612f1708e0966ecc36b5cf1a46d36fa015",
+      "bytes": 2722913
+    },
+    "assets/cache-road/world/sources/street-data-kiosk.png": {
+      "sha256": "8408a1dba06325ad492c34268ec31538f836ad05ad5d9643f3575f904f9dd8a5",
+      "bytes": 1248409
+    },
+    "assets/cache-road/world/sources/street-delivery-van.png": {
+      "sha256": "1cc0778ed7347ce7d225867e6293edc03201fbb87f8d9e60a0ad461b941ef110",
+      "bytes": 2625851
+    },
+    "assets/cache-road/world/sources/street-vendor-people.png": {
+      "sha256": "eca6ee57a8285991696521dfb840a38630307e519061a1e283eb2481ff1ece27",
+      "bytes": 2368099
+    },
+    "assets/cache-road/world/sources/street-work-supplies.png": {
+      "sha256": "db77c051e390103953d5c7e4240e86cff808955fb45eb7f89fe965c685de0630",
+      "bytes": 2666178
+    },
+    "assets/cache-road/world/sources/transit-service-nook.png": {
+      "sha256": "41dc9b8d182998f3ab5b8cdaaff7ad1aed3475cd32ba54ee4895e58c94caec53",
+      "bytes": 2178754
+    },
+    "assets/cache-road/world/sources/utility-service-corner.png": {
+      "sha256": "56d93f8a878d35009435dd83259b04528a70942f5397ae0cb4e9aba060e90bbe",
+      "bytes": 1835784
+    },
+    "assets/cache-road/world/street-vendor-people.webp": {
+      "sha256": "8d0020130b96e168c0a84d18a023bf7e64011ee741abfd7e1d34f068f630844a",
+      "bytes": 401558
+    },
+    "assets/cache-road/world/transit-service-nook.webp": {
+      "sha256": "3d7e1da867d988c569f090415951b936fab22ed054427c5adaee0c7775aa8863",
+      "bytes": 508074
+    },
+    "assets/cache-road/world/utility-service-corner.webp": {
+      "sha256": "125f7c1c2b72f36936c7cbfb38b858e585cbd62e9f511da51533e1a4e0f569b0",
+      "bytes": 408716
+    },
+    "assets/feedback-polish/ASSET_PROVENANCE.md": {
+      "sha256": "e6d84ac2951f6f87179a99b16661be6dcef4d7ce774b2938396aae8e61aa3876",
+      "bytes": 2493
+    },
+    "assets/feedback-polish/asset-manifest.json": {
+      "sha256": "910395969f69dfaeed6de407612fc623ca3fb24b6b0c0bd771c02cbf26932b6b",
+      "bytes": 945
+    },
+    "assets/feedback-polish/hud-expressions.webp": {
+      "sha256": "e664d8faf60561dbfa3b32359980961acb14eac87cf0ce70a1972eb4fafe0393",
+      "bytes": 143196
+    },
+    "assets/feedback-polish/platform-facades.webp": {
+      "sha256": "5a3efa1fad8c9e115a5fc077c63d8dceb3908e4e4f66ee16664b060c07d9a26a",
+      "bytes": 151826
+    },
+    "assets/feedback-polish/platform-side-left.webp": {
+      "sha256": "eb40b8d53ee103404f486c6957c095d0c8e4d445cc2f71c0da001aaec091b4bc",
+      "bytes": 51914
+    },
+    "assets/feedback-polish/platform-side-right.webp": {
+      "sha256": "c2d30320d51cd9fcc0ae538ac3d3d633b37d35070c6ae30def2b6a7c790ec997",
+      "bytes": 54004
+    },
+    "assets/finale/lift-cabin.webp": {
+      "sha256": "4ec8ac439a9f94f6c0f13ee3271eb0930c89ac03a352d4766aa074035060ef28",
+      "bytes": 125242
+    },
+    "assets/finale/lift-track.webp": {
+      "sha256": "b3c8cf8b32fc2e9f8a2f236f8836f800ebdc147f51efa5298cff56213f588f2b",
+      "bytes": 5210
+    },
+    "assets/finale/manifest.json": {
+      "sha256": "2f0cd0aa3f42cbed097788692bbdaab9ca5ecc362d0349d9b3d8fad21e460082",
+      "bytes": 1329
+    },
+    "assets/finale/sources/lift-cabin-source.png": {
+      "sha256": "7730bbd18939254fafd68310fddd873f6c6a1e33376feeac6a5066ee6255ca0c",
+      "bytes": 1318500
+    },
+    "assets/finale/sources/lift-mechanism-source.png": {
+      "sha256": "219c4d1631d9f39cd5f8607c8ebe82807107a7eedf877bb7157a42867ca87662",
+      "bytes": 1561621
+    },
+    "assets/finale/sources/studio-cat-poses-source.png": {
+      "sha256": "1db54084e832d6e6a1e1ec5cf72e7fcaea872e65dc60a1a56a7bfdeb768b2e8d",
+      "bytes": 1218458
+    },
+    "assets/finale/studio-cat-event.webp": {
+      "sha256": "5e3416e9f7ec25b4a24187953170c57779b47c96d684f9c65ae844cbff21d452",
+      "bytes": 276546
+    },
+    "assets/intro/art-manifest.json": {
+      "sha256": "092a05d5d5a198b147e40f1d5605188b877ac111345ead93cba83a41cff21976",
+      "bytes": 29822
+    },
+    "assets/intro/intro-01-broadcast.webp": {
+      "sha256": "c035a83b1d80ecccc9555e46c9fcdf1a8662f861f478cf46c0010f2ead6fd1f5",
+      "bytes": 623388
+    },
+    "assets/intro/intro-02-keep-the-take.webp": {
+      "sha256": "dee96b7d5f1ff6f5112cd1a0ec0d5808dfda82ebb165ebf12f4e8a1c50930462",
+      "bytes": 668162
+    },
+    "assets/intro/intro-03-dead-return.webp": {
+      "sha256": "ed7c3db493ccc228ea1c54ad778b8f5b988fff348cd9a78377847298c68fa834",
+      "bytes": 646918
+    },
+    "assets/intro/intro-04-preserve.webp": {
+      "sha256": "6b85f78d01c4e31fccb967f5cb557c1ebc5a3a08f67ada3f5a2d99bd84ed2c3c",
+      "bytes": 587612
+    },
+    "assets/intro/intro-05-listen.webp": {
+      "sha256": "f3d428cde3c2c77ae9911284ef69dd74daba50ec4603f7a5c31e62328f3b38ab",
+      "bytes": 511500
+    },
+    "assets/intro/intro-06-refusal.webp": {
+      "sha256": "17efe81e22d34becb9c29af9f871a538d37a8d8683c0b5ebfad5f4c91c9f67c3",
+      "bytes": 723744
+    },
+    "assets/intro/intro-07-district.webp": {
+      "sha256": "fe75c5d599101be7e662e09fd2449e242967fcf89a07f266f34dd6131c99a740",
+      "bytes": 861348
+    },
+    "assets/intro/intro-08-keep-it-open.webp": {
+      "sha256": "aeb1845156539ce1dbb4b8825e1791b73a418ad40d4eb5cfd2a94a416761ce57",
+      "bytes": 794908
+    },
+    "assets/level1-rebuild/facade-emitters.webp": {
+      "sha256": "8a02ac44c195fcfa084a1678f23f18cab56dc693e271bec4611d3fc98400d0aa",
+      "bytes": 168942
+    },
+    "assets/level1-rebuild/floor-emitters.webp": {
+      "sha256": "ef8eab7e3fe33dc74b198fe9894330654fbfe758e0608726c048a4f830c5dfb4",
+      "bytes": 195282
+    },
+    "assets/level1-rebuild/prompts.json": {
+      "sha256": "749cd19a66e2370f78c0ae50e709d31153443f69e0b37df350d940cf267b3a21",
+      "bytes": 3597
+    },
+    "assets/level1-rebuild/rooftop-drone.webp": {
+      "sha256": "f3fd3a8c399a3f0c463be25da6ea424354c8d56638b740f02c36720643e51cdc",
+      "bytes": 179258
+    },
+    "assets/level1-run-v2/6_bit_run_run.json": {
+      "sha256": "4e8b62f3e4ba098095610b6be89c4391bf6416b909f8a4236575deb0e074f2a6",
+      "bytes": 4599
+    },
+    "assets/level1-run-v2/6_bit_run_run.webp": {
+      "sha256": "45bb6de6d1aecc6b3b515c572fc763ff8b125e79915dba8a9b255b1251af1471",
+      "bytes": 748292
+    },
+    "assets/level1-run-v2/6_bit_run_source_0.png": {
+      "sha256": "c1d13c72b0be85f34521a8b9df7915169e22f7882d384d080d696ff165c00dd8",
+      "bytes": 1199470
+    },
+    "assets/level1-run-v2/README.md": {
+      "sha256": "e2cc93b341b90490a4c925309ab3e15091e1f6bfe7dec1c3361de7bd985f71dc",
+      "bytes": 2380
+    },
+    "assets/level1-run-v2/calibration.json": {
+      "sha256": "d3098b664344d42a9e6bac6531d57e76e26daf09682b895039cae973f8648170",
+      "bytes": 10747
+    },
+    "assets/level1-run-v2/source-registration.json": {
+      "sha256": "700aa223840ff2a552eee026005e42dc2f75872cae5a3b7404b7c78f91264ac4",
+      "bytes": 7753
+    },
+    "assets/level1-run/6_bit_run_run.json": {
+      "sha256": "7e840f19b444d3ddc73301f6ad6ecbee7ba408c1273fcf825b2da03a7298c5ea",
+      "bytes": 4958
+    },
+    "assets/level1-run/6_bit_run_run.webp": {
+      "sha256": "0184cac322572ab65c6e0cbaa6bc09ad7c24149666ac4010a0b344edbcc1c7e8",
+      "bytes": 1155062
+    },
+    "assets/level1-run/6_bit_run_source.png": {
+      "sha256": "18a4cf5f80556bdc6f9f737e06484e67c5111472efca91b4dff3f9be89cb24e5",
+      "bytes": 1699677
+    },
+    "assets/level1-run/README.md": {
+      "sha256": "f88888e1a628c07b797eb434f4709648940af6d7a0ff151617177bfb05d1d53e",
+      "bytes": 1675
+    },
+    "assets/level1-run/calibration.json": {
+      "sha256": "7a57a518612f271311e395ae8e132d734aeec6f65ef685efb66c2541efaec85e",
+      "bytes": 6380
+    },
+    "assets/level1-signal-art/README.md": {
+      "sha256": "302f4caffd22d85d52241c9c725999beea15e1c7bc9bfb7c70d609d2c9c54144",
+      "bytes": 2185
+    },
+    "assets/level1-signal-art/packing.json": {
+      "sha256": "7f4a231143ed644b715b6e634ba5c5bdec99f9e6628656396f96acb4513d8854",
+      "bytes": 7293
+    },
+    "assets/level1-signal-art/signal-amp-atlas.webp": {
+      "sha256": "7f3b93d03deae27dfe6e789a627407040e9fe9f5b34ee356d4b2a5573456411e",
+      "bytes": 1800634
+    },
+    "assets/level1-signal-art/signal-amp-source.png": {
+      "sha256": "b84a1e71006282a1d6b254bb17f9d02c26fa51c758466cd45afb5d0e7148e6db",
+      "bytes": 2606727
+    },
+    "assets/level1-signal-art/signal-discharge-atlas.webp": {
+      "sha256": "77e41e12ad339128d15011cdcbf2bf29872381041f82f997214a7d58aa2c793c",
+      "bytes": 2163448
+    },
+    "assets/level1-signal-art/signal-discharge-source.png": {
+      "sha256": "8a1b656d1db8cbfda19d20d9b483c8af56a8daff64d55a0ca9f861fa4918de76",
+      "bytes": 2488922
+    },
+    "assets/music/README.md": {
+      "sha256": "50cb4e99d392c2c970921073be93b62d937b9983c2d3b84ad80c1112e9b80da9",
+      "bytes": 1173
+    },
+    "assets/presentation/README.md": {
+      "sha256": "82f02707b609f2850713f2c77f6941550326ec0cfb73aae31119f4cc9c7a787a",
+      "bytes": 1892
+    },
+    "assets/presentation/boss-pulse.webp": {
+      "sha256": "bb14187015f92f1facd68e68e6707c5d7036498d9f8561e599417001c2cab872",
+      "bytes": 192604
+    },
+    "assets/presentation/direction-arrow.webp": {
+      "sha256": "98b1b1edb6ec254944fd50634045ebc0b4d691f701e3871c9ddf9df58ebc7bcd",
+      "bytes": 55462
+    },
+    "assets/presentation/manifest.json": {
+      "sha256": "7291c2d2335a42cbc6000cd6c507ed00275a4c53061ef5b897fd05f00b208482",
+      "bytes": 5775
+    },
+    "assets/presentation/prompts.json": {
+      "sha256": "78eb664708a03f29c58e613bb3ba11d6bcdfb9fa4c21c940f44a8be13c99f1cb",
+      "bytes": 4704
+    },
+    "assets/presentation/studio-cat.webp": {
+      "sha256": "62670cf5b31c96e9c2bc0c0df33e2852b8f88e6c07a615b8c91716fe2a76115e",
+      "bytes": 117878
+    },
+    "assets/review/mode-power/README.md": {
+      "sha256": "a0e53ed8ec25a0cb5d7475fdddaa256202faceddbb6331c5be2eea22f02d0515",
+      "bytes": 1324
+    },
+    "assets/review/mode-power/hack-deflect.webp": {
+      "sha256": "66d486320cc55e43d024fcf5f58a0e84be60c1f820ece7bde11943a2527af1bc",
+      "bytes": 245762
+    },
+    "assets/review/mode-power/hack-entry.webp": {
+      "sha256": "3b7e8249ea25d59870c9505320516e15cc1b382ffdf91825511a37cdd5d519f6",
+      "bytes": 244222
+    },
+    "assets/review/mode-power/hack-held.webp": {
+      "sha256": "764f8358971b4900cf08bbb425826df000e7b75c2df07e3e8d0971a9c1bc656a",
+      "bytes": 243512
+    },
+    "assets/review/mode-power/hack-reduced.webp": {
+      "sha256": "18db34bb6273013d0d9e29dca4b8d4b8669a56fc59c0a86267db086d70613f85",
+      "bytes": 252778
+    },
+    "assets/review/mode-power/mode-power.mp4": {
+      "sha256": "a96c3cb9848090edc3514856b11c741581982c68af072ea75d9132fbb9d169eb",
+      "bytes": 641791
+    },
+    "assets/review/mode-power/mode-sfx-report.json": {
+      "sha256": "4beabb9d12b57d8d0327c82d9f98f9da2a7a791ce1b24b41939611743d25cbd0",
+      "bytes": 1993
+    },
+    "assets/review/mode-power/mode-sfx.wav": {
+      "sha256": "63414baa26b3066f569e2b92f5309ea6f6db9ad4f02eeb192a0e29505148f0b3",
+      "bytes": 529244
+    },
+    "assets/review/mode-power/rhythm-impact.webp": {
+      "sha256": "923228ac54c39cc67b4bc1a717203db2f75ec0a93717eac14ec58fc367d5eaa7",
+      "bytes": 489260
+    },
+    "assets/review/mode-power/rhythm-reduced.webp": {
+      "sha256": "b1e20c6e70e9108cbe1b428d327d346e38b1d05ff5353d9b6754c639c133e11d",
+      "bytes": 491798
+    },
+    "assets/sprites-v3/calibration.json": {
+      "sha256": "f5668bfa7abc73223ee10470efdb3283c4c93f5f3f636210042d09e750f20e1c",
+      "bytes": 227067
+    },
+    "assets/sprites-v3/delivery.json": {
+      "sha256": "fb03385224a59894ce4333e69d0dc554dbcc5707fcfb44098f242816500fca09",
+      "bytes": 523
+    },
+    "assets/sprites-v3/original-manifest.json": {
+      "sha256": "74d67437c3af9cadfcabd3c399b0761b5049290a2f41f508fc0fe18ce4b23688",
+      "bytes": 14143
+    },
+    "assets/sprites-v3/prepared/6_bit_idle_idle.json": {
+      "sha256": "1dd24b7d29f95b5515819d78edadb96926d32cf36af124225e5fb2059f36dad6",
+      "bytes": 10500
+    },
+    "assets/sprites-v3/prepared/6_bit_idle_idle.webp": {
+      "sha256": "05ee59c6f515783769d902deb72108632103887c78eb1d187d359b6c4b48c830",
+      "bytes": 871888
+    },
+    "assets/sprites-v3/prepared/6_bit_jump_jump.json": {
+      "sha256": "14e4587f127274725b43f5497a8d25e6d411935189fb2b9763949cbd5af975c7",
+      "bytes": 10869
+    },
+    "assets/sprites-v3/prepared/6_bit_jump_jump.webp": {
+      "sha256": "3641f63c9c2974c9e11eaa0be447c2e851ee121f98705414c6da65f3d2e71534",
+      "bytes": 811260
+    },
+    "assets/sprites-v3/prepared/6_bit_r__h_mode_rhmode.json": {
+      "sha256": "9ccca35fb252abd2196723c3d1c96032a0ef56289a06f07212bc11f63833de50",
+      "bytes": 19132
+    },
+    "assets/sprites-v3/prepared/6_bit_r__h_mode_rhmode.webp": {
+      "sha256": "c2fb804786477195f5c8f0b2e168d54fb112c5fc60c0cf30d71b5088396c2ccb",
+      "bytes": 1416390
+    },
+    "assets/sprites-v3/prepared/6_bit_walk_walk.json": {
+      "sha256": "3312d26bc969f485140ca6afad14bcd63f975398c7ace18859a3aa3759a84443",
+      "bytes": 24879
+    },
+    "assets/sprites-v3/prepared/6_bit_walk_walk.webp": {
+      "sha256": "61fac570a1c749bc805aeb9cabe888a306c07f34ad37b6a4a1312cd3b33c3381",
+      "bytes": 647730
+    },
+    "assets/sprites-v3/prepared/broadcast_jammer_idle_idle.json": {
+      "sha256": "0485dad1788b4e71f516b84893c796030226c05e2ad083d9c2b01b7e24d66389",
+      "bytes": 19361
+    },
+    "assets/sprites-v3/prepared/broadcast_jammer_idle_idle.webp": {
+      "sha256": "6e3a9af969094492846ea99c5de3f50766eb04eb2566ade7ae8cf5c04664e4ae",
+      "bytes": 6613194
+    },
+    "assets/sprites-v3/prepared/corrupted_idle_idle.json": {
+      "sha256": "fdce6de16085a0acc2a0d1edcc72982ffc375d0070136570aeb6d1b3a4895b06",
+      "bytes": 20139
+    },
+    "assets/sprites-v3/prepared/corrupted_idle_idle.webp": {
+      "sha256": "956404e4935e380e5de6658ad97f4a0359f501b98de0ccc01bc18f79df4f10ee",
+      "bytes": 4333522
+    },
+    "assets/sprites-v3/prepared/corrupted_walk_walk.json": {
+      "sha256": "d8f181b55e5599a9be89c07e55afd27763f08dc5bc13edebd720526e573f3152",
+      "bytes": 18240
+    },
+    "assets/sprites-v3/prepared/corrupted_walk_walk.webp": {
+      "sha256": "f632c92527f2736aa8dcd4b5d51b496ee8ec2eb8c19b308c1b0671af87e60247",
+      "bytes": 4098948
+    },
+    "assets/sprites-v3/prepared/firewall_attack_default.json": {
+      "sha256": "fa68f84543a4818228667df907dee20ae53dad7eb331a5e58b87eafa2cb00908",
+      "bytes": 23434
+    },
+    "assets/sprites-v3/prepared/firewall_attack_default.webp": {
+      "sha256": "5d6079926f4d32c2deaf4524fdb2a6eed79bf2fdd592b3040b3154f75534c540",
+      "bytes": 3006600
+    },
+    "assets/sprites-v3/prepared/firewall_idle_idle.json": {
+      "sha256": "37cfcb4ad58703f73ded559f81c1ccbf3922f0fa6a12d9b4ae2b32ae9c8e780b",
+      "bytes": 24273
+    },
+    "assets/sprites-v3/prepared/firewall_idle_idle.webp": {
+      "sha256": "04d85283e672f45113ee4d55de358b5fe28bb1bbbf2f52447a9e84f2074002eb",
+      "bytes": 6008418
+    },
+    "assets/sprites-v3/prepared/firewall_walk_walk.json": {
+      "sha256": "afd5a2d0846b2c6ff552fbb596ec3a096b9540ffc1fe3dbe3003bf10afd5331d",
+      "bytes": 13237
+    },
+    "assets/sprites-v3/prepared/firewall_walk_walk.webp": {
+      "sha256": "43a3bbc5cd26d4ed7035423ca522b112fd06f0465d73e431c9022aaf23c6570f",
+      "bytes": 2816912
+    },
+    "assets/sprites-v3/prepared/sector_1_boss_attack_attack.json": {
+      "sha256": "76a404079162058ef9ec54dd1908a44895f51289cefe7f7c86e10d941ba7fa81",
+      "bytes": 19412
+    },
+    "assets/sprites-v3/prepared/sector_1_boss_attack_attack.webp": {
+      "sha256": "50f7baf51aaa8fdf8811bdc30b345c2556396ea0c1dc5f703e73848bbf830e50",
+      "bytes": 3142408
+    },
+    "assets/sprites-v3/prepared/sector_1_boss_idle_idle.json": {
+      "sha256": "c7aed9e73888286db2fa1cb1ea66333a5253fa65bce25e09ed640402e70dc69a",
+      "bytes": 19194
+    },
+    "assets/sprites-v3/prepared/sector_1_boss_idle_idle.webp": {
+      "sha256": "d45afb882e23897a98d6c958ed269597afb2574889396d3bbcfbb7d14469b5b5",
+      "bytes": 4750526
+    },
+    "assets/sprites-v3/prepared/virus_idle_idle.json": {
+      "sha256": "2d65b4e8c6109d0b9fe926b987a253b34ec816bf82dcf8431887549d77027ac6",
+      "bytes": 19931
+    },
+    "assets/sprites-v3/prepared/virus_idle_idle.webp": {
+      "sha256": "72bb8990eaa1ac6031bc316574af7275104fae5db97564fb39e9980ebb1825f4",
+      "bytes": 4669198
+    },
+    "assets/sprites-v3/sources/sector_1_boss_attack_attack.original.json": {
+      "sha256": "6fa40630f9c310f1a9c0cd557832df44b5c95e2a5c008d22b3cb6312a91b3551",
+      "bytes": 19377
+    },
+    "assets/sprites-v3/sources/sector_1_boss_attack_attack.original.webp": {
+      "sha256": "9d29bc01b7224ab1cd376577481ff944cdd2f7e5fc16f2fffa7ebae3795b6c6a",
+      "bytes": 410486
+    },
+    "assets/standalone/audio-21dd0b0c-3f5f-4d57-92a8-dc8b7b01be03.mp3": {
+      "sha256": "7487047200757b617f7005693121990ea3b1829ae2954706e1fdf9ee735f07ed",
+      "bytes": 5087886
+    },
+    "assets/standalone/audio-3a9cb68b-091e-4133-9d05-f936a780c605.wav": {
+      "sha256": "a0404664ee0b1eed8daa2a868baa32ddd7776e8926e3bf46ae5bb5c2d4e80d56",
+      "bytes": 72884
+    },
+    "assets/standalone/audio-498c6110-78b1-4452-a6c2-1f4e979e1c5a.mp3": {
+      "sha256": "1c4834a9c54f8a3b3e14d56741db791f727c10c66c18fc772ed0e217c4df5224",
+      "bytes": 160913
+    },
+    "assets/standalone/audio-4e510bfa-7c4c-4cd5-be98-99669e092b21.mp3": {
+      "sha256": "2ea9ab6377f120f03a3a8dcf52a65575facdfc734cf27b2857a35b12f15aa553",
+      "bytes": 160913
+    },
+    "assets/standalone/audio-8d792d94-17c5-43c2-a3b0-b1e1dcf5bff0.wav": {
+      "sha256": "b3a5bff39135c35b62f5b2ef062a08c4be9d1e2dcc0abf4bb1cfa247b5bd356c",
+      "bytes": 44076
+    },
+    "assets/standalone/audio-9c2ff06d-30bf-4e03-a7c2-5cc3636413bf.wav": {
+      "sha256": "1779914fe5835239dc441fe0ff3db41d333b3dcbeb2828c0327d296a903a4b20",
+      "bytes": 58616
+    },
+    "assets/standalone/audio-a26e3d15-d122-4895-81ce-03370b49794f.mp3": {
+      "sha256": "24ea7c267c771d93075b469b6fbef8068f61e7d83410260b960a29c2a13ba22f",
+      "bytes": 160913
+    },
+    "assets/standalone/audio-a9fa8406-26c0-4f8d-b961-70dc99e0f52f.mp3": {
+      "sha256": "7dc1ef4c273ebe74285522c1e9b4eb265d8250143fe94ba302556aea46888645",
+      "bytes": 5868
+    },
+    "assets/standalone/audio-aab8fc0a-ac9b-47f5-9170-e38e4d15e39a.wav": {
+      "sha256": "a5efb8d4393b32b71bcd08181de0f6c71bcec25663f0bdbae69285d6601c0f8c",
+      "bytes": 75268
+    },
+    "assets/standalone/audio-ad312365-af12-4019-a3f5-6ef3841ba959.mp3": {
+      "sha256": "ea0247a22c042547ef71c3143bf626020a1345215a73b468b1ee533688762280",
+      "bytes": 5175136
+    },
+    "assets/standalone/audio-c5fe25ff-72fd-4a40-a30d-70c1a148920a.mp3": {
+      "sha256": "88c75a39de08c980238cabb44cbed5c8fddd4574d0bebe7f2a8516d51d8d9be9",
+      "bytes": 160913
+    },
+    "assets/standalone/audio-cc0b2256-2a0e-41e7-a88f-04d68df83dd5.mp3": {
+      "sha256": "b56dddbca369bc500ff8b92ffa2c1dee8351fee6cb4bde0814060e03ffee6351",
+      "bytes": 160913
+    },
+    "assets/standalone/audio-dc031dbb-5af2-4a78-a93e-f60aff8bb6e6.mp3": {
+      "sha256": "e7ab36d8101a681d979288f12a6cb95a784d179995b7692c905a86db3f39ab9b",
+      "bytes": 160913
+    },
+    "assets/standalone/audio-e39ab293-b53e-41d9-b837-58ab36c027f1.mp3": {
+      "sha256": "d716fa325889450cbd6f71ba76b6705779827d38857f751fb0862165109daafc",
+      "bytes": 4405
+    },
+    "assets/standalone/level1-bass.mp3": {
+      "sha256": "da4da5c1843bf7ea6c4d00896f99aaf544e0e1ed4797cb96f3dcf71f7f5aa24f",
+      "bytes": 3367331
+    },
+    "assets/standalone/level1-foundation.mp3": {
+      "sha256": "c729507ffd948478b1eb7b37530f1938438c0ddebfbde0cd0a6c82357de629af",
+      "bytes": 3393662
+    },
+    "assets/standalone/level1-fx.mp3": {
+      "sha256": "b3e83c57ebbcfbfc3c77b6b45c350719469dd46fb05911f3e0d18f1495924da7",
+      "bytes": 3393662
+    },
+    "assets/standalone/lore.png": {
+      "sha256": "245ef8da8c6d6e66f58a53eb054bd1dcf19820a963e35e2b3e930f8996e687f9",
+      "bytes": 100471
+    },
+    "assets/standalone/originals.json": {
+      "sha256": "b672b64f5e1252e0e5c4f493393d88761b48a93314e5759893879a01498e2304",
+      "bytes": 6970
+    },
+    "assets/standalone/sector_1_boss_walk_walk.json": {
+      "sha256": "cca630edb7968ebc6864ba6cf95b3972c557ebfe7db352f7630c09f50487a5eb",
+      "bytes": 16489
+    },
+    "assets/standalone/sector_1_boss_walk_walk.webp": {
+      "sha256": "5427a001a4c94bcb8667ec94a71866d886194be040040c7c7e4ddaaeea43e04d",
+      "bytes": 588552
+    },
+    "assets/standalone/title-background.png": {
+      "sha256": "22321834fb3e659e6e951621d37215bf8d850af22be5613e6c7729d78fb4d592",
+      "bytes": 2982839
+    },
+    "assets/street-hardware/broadcast-terminal.webp": {
+      "sha256": "2c1a06cf44828cdcbc8044b9cdbf66457b994fbe7e0982f8209df4515d206446",
+      "bytes": 121788
+    },
+    "assets/street-hardware/gate-1.webp": {
+      "sha256": "9f947dc0e7c6a2ea229d48d05037477ea6ee30b488def649503332f39ee416b3",
+      "bytes": 66178
+    },
+    "assets/street-hardware/gate-2.webp": {
+      "sha256": "94bb09650bbf2c0c1817dc0ec1934185b57c3ea90b9bb9b9c23ec4eda2daeed4",
+      "bytes": 59274
+    },
+    "assets/street-hardware/gate-3.webp": {
+      "sha256": "e3798694b599d23744f8d519952e403457280036f0694faf6b2c13b5967b5b43",
+      "bytes": 67524
+    },
+    "assets/street-hardware/gate-4.webp": {
+      "sha256": "c068fda25074d2a1a67000f95f9e93d7e2a9f0957563d1c522efd920123730b5",
+      "bytes": 63714
+    },
+    "assets/street-hardware/geometry.json": {
+      "sha256": "01ce19118d40c96d91c67f6aa356e908857872a34b0edf34276358c1ce6e0896",
+      "bytes": 793
+    },
+    "assets/street-hardware/provenance.json": {
+      "sha256": "9123b5dac7c89b05985ccb4236adcf53fff97c680552e63b931594f18930fd90",
+      "bytes": 3505
+    },
+    "assets/street-hardware/slim-gate-1.webp": {
+      "sha256": "5e072afe922b2c7b8fea4483b0992a9fbef3330291f1287363df061ddbfd33be",
+      "bytes": 30158
+    },
+    "assets/street-hardware/slim-gate-2.webp": {
+      "sha256": "8b8a34119ee68dac395e0a353347b505d7282027de2c06c5d156513736a324e5",
+      "bytes": 20730
+    },
+    "assets/street-hardware/slim-gate-3.webp": {
+      "sha256": "f673c2a30e39e5cd43e0988488a0e1319a3c6f22d2b3cc63ae9b2bcda449706e",
+      "bytes": 31498
+    },
+    "assets/street-hardware/slim-gate-4.webp": {
+      "sha256": "152e494af582368165efa531de89962eedc069349e3d33239124c9995dfd4404",
+      "bytes": 28982
+    },
+    "assets/studies/visual-overhaul/prepared/hud-portrait.webp": {
+      "sha256": "71db469f693dcd91516114e1db318dbeabc9dbbaa1944d5555c1a720d464fe37",
+      "bytes": 1418334
+    },
+    "assets/studies/visual-overhaul/references/fonts/OFL.txt": {
+      "sha256": "fe17c0f2581d71b4e1ea7e636e7f4877c29223e11bb1dd1a871e8c3f2a86336b",
+      "bytes": 4384
+    },
+    "assets/studies/visual-overhaul/references/fonts/Oxanium.ttf": {
+      "sha256": "2ce01d946e1e1ffc8d7eecfffbda8623bedd63eaf811a20488c4b69af45babb0",
+      "bytes": 43536
+    },
+    "assets/thin-rails/cap.webp": {
+      "sha256": "ba3dc5f2ec50f673c7aed1a2cc83a03adfcf1687a0cd5f9339dcd03098019640",
+      "bytes": 12772
+    },
+    "assets/thin-rails/elbow.webp": {
+      "sha256": "8c0ce278ab1ff16f9db91e1ceda5a40adabe074876b0d6e499bf504203ca4c38",
+      "bytes": 13278
+    },
+    "assets/thin-rails/pavement.webp": {
+      "sha256": "f50e6e7d6969ffef0330888b9f9499eb18d2068bbf261d44e62ec286f6a2227a",
+      "bytes": 29736
+    },
+    "assets/thin-rails/provenance.json": {
+      "sha256": "99b5e89be2e14931609cabf939feb4e4454034e2ba617c5d3cef4c86fd894f3b",
+      "bytes": 1668
+    },
+    "assets/thin-rails/wall.webp": {
+      "sha256": "56ec3c57b5054cae6bde656aa3bb194d0b40c1f3019dabd539dd8d9271285b6a",
+      "bytes": 30896
+    },
+    "assets/traffic-warning/PROMPT.md": {
+      "sha256": "cc12433c95739939d5db3f4ca63615b1d768dcd707c88c32d397e2c779614934",
+      "bytes": 1457
+    },
+    "assets/traffic-warning/watch-out.json": {
+      "sha256": "3da83ac3532a01dfa48a12e20710cfbc5abe0471d2f40c4e7e6dad9731ca2874",
+      "bytes": 315
+    },
+    "assets/traffic-warning/watch-out.webp": {
+      "sha256": "8ba07d326813d34c2c85faca991100a74475a194659b4d825f74308fd98ef0c9",
+      "bytes": 68886
+    },
+    "assets/traffic/README.md": {
+      "sha256": "4401e37f19d9309235dadd89c2f35fe91407676ac3d08df1eef76c37a03e0ebe",
+      "bytes": 1526
+    },
+    "assets/traffic/manifest.json": {
+      "sha256": "e45aa2efe8983cd3f17a5221bac9a1e36959869acdc64a208b4ffca57ebd291f",
+      "bytes": 5094
+    },
+    "assets/traffic/ship-1.webp": {
+      "sha256": "2a2d06ad91f8c77f6f8b0ed9d94f3ff3b80a9b42ef7dd9d56b17e36913de06e9",
+      "bytes": 624738
+    },
+    "assets/traffic/ship-2.webp": {
+      "sha256": "0576d28f4d80454e3046ad325abc9b91eb6c6d6de2cfffa4e6ed04804d13707a",
+      "bytes": 1217834
+    },
+    "assets/traffic/ship-3.webp": {
+      "sha256": "011dd38d1d82a84e1566658f902937fcd5c40964f1586a759ac4e9cd3a2b1d46",
+      "bytes": 1298098
+    },
+    "assets/upper-route/boss-flourish.webp": {
+      "sha256": "2e073f1d1732fe1fcd0baeb1cf75ebfafd5a504b3539ed318337c1d60bf0c2f4",
+      "bytes": 1488858
+    },
+    "assets/upper-route/boss-leap.webp": {
+      "sha256": "971e49162de793ef38cc31facc57f91bcbc62233159217cd1a5ee9b151280080",
+      "bytes": 1139168
+    },
+    "assets/upper-route/prompts.json": {
+      "sha256": "a94120cdccaed8d95f4b33458bf5aaf03a29c781efc38e297bbbdddf2ad1c7c8",
+      "bytes": 3831
+    },
+    "assets/upper-route/registration.json": {
+      "sha256": "009cc3e352ab3e3ef6139dd58ef659b236c99887966d5b3e248f6fa5d02763dd",
+      "bytes": 4505
+    },
+    "assets/upper-route/rhythm-lift.webp": {
+      "sha256": "d401e6bf0371d7a1687acbf419fe0c660ecf0acdf130edecea54f2b3af22d608",
+      "bytes": 147142
+    },
+    "assets/wet-street/README.md": {
+      "sha256": "bbd2664f991c83e6464b7e9e38b39925ebc6c90c24355ef3f92d830fba3296d6",
+      "bytes": 1256
+    },
+    "assets/wet-street/rain-blacktop.webp": {
+      "sha256": "46647b60658d07418de68dae3f6cdf0de2e18e9e8bd33bb81cd4a1c492141f23",
+      "bytes": 553890
+    },
+    "assets/world-v3/animated-background/PROMPT.md": {
+      "sha256": "ebd97d31d36751fb8aa1b39f7ac762796113143eb6d460ba2c055e97667c9ac5",
+      "bytes": 2464
+    },
+    "assets/world-v3/animated-background/far-background-loop.mp4": {
+      "sha256": "774c6b4cbe5c063390b6e425f8fd696a5a195b28826207d936974cae65d2031f",
+      "bytes": 1660401
+    },
+    "assets/world-v3/animated-background/keyframe-0.webp": {
+      "sha256": "3ffa2885266b81594fa57f6c1c57598a78addab5015b481a4def1ffb53b403b2",
+      "bytes": 499058
+    },
+    "assets/world-v3/animated-background/keyframe-1.webp": {
+      "sha256": "7505724db971eb673c8c13082659a209d8632a4f0722fa0634ece86c3f7fd2f2",
+      "bytes": 498664
+    },
+    "assets/world-v3/animated-background/keyframe-2.webp": {
+      "sha256": "00ffd2610ccdd34e18b4e320f90426d2d0292d34fd54318e3343eb0538b53a23",
+      "bytes": 499064
+    },
+    "assets/world-v3/animated-background/keyframe-3.webp": {
+      "sha256": "3e6ea6e7752b67bfd3390ddd171be9b41b59ab8beec0d9a03792a0e09a25c4ca",
+      "bytes": 499030
+    },
+    "assets/world-v3/animated-background/manifest.json": {
+      "sha256": "cb505af90b34b8b74c8d32bd8c98b43ae0ff869828a78a3702dae5b9719c0348",
+      "bytes": 839
+    },
+    "assets/world-v3/animated-background/motion-mask-source.png": {
+      "sha256": "27a392e26f881f7d5b2d576eb7ef677735b6748d1b9dce9b3cd098bf66515b22",
+      "bytes": 804047
+    },
+    "assets/world-v3/animated-background/motion-mask.png": {
+      "sha256": "64453784275aa187cf392e2aafb0554bfe44ba2ad3c9e921382ffb93cc236aec",
+      "bytes": 99354
+    },
+    "assets/world-v3/buildings.webp": {
+      "sha256": "36e2e1be9d339195e15bc4a751933373846cad2e17f4506ce5504b4acfc612b0",
+      "bytes": 1791078
+    },
+    "assets/world-v3/far-background.webp": {
+      "sha256": "d768160b5b1e2a9bbbace9545b48b506dea75941b3eb953ee7ef01a161796f35",
+      "bytes": 515770
+    },
+    "index.html": {
+      "sha256": "34fad3dd2b154477fc5e00a681929a3063582a59006009abed28bc4fbf8a20fe",
+      "bytes": 37294
+    },
+    "style.css": {
+      "sha256": "3fa190cef55008dd8524ee46d6456958576a4f0733f776632a5dfc1936e71698",
+      "bytes": 6437
+    },
+    "sprites-manifest.json": {
+      "sha256": "c2666c2bdbf21b4b62c5826ad1740957a357c547a80d0a82cca4fae985fabafb",
+      "bytes": 14700
+    },
+    "src/core/action-input.js": {
+      "sha256": "5af5087416ca3ec69b9374272448b7b97b60599ba2b516104eec4f6fcebbe943",
+      "bytes": 11803
+    },
+    "src/core/fullscreen.js": {
+      "sha256": "f98f7899d615f1f457790c7929745e0ea0b5d95086324f0cc7559d315ed0b964",
+      "bytes": 7533
+    },
+    "src/core/game-manager.js": {
+      "sha256": "98d80f6333b759aced6188c177d6910ddc9b4424d1c5115651b500700e5416fe",
+      "bytes": 5926
+    },
+    "src/core/gamepad-ui.js": {
+      "sha256": "bc023f8481ef5980f7b41df6311db8e5df02e5eab95834e08dc22a788284a348",
+      "bytes": 7762
+    },
+    "src/core/input.js": {
+      "sha256": "ace3c367c93eee9b057ec34d1044323f852c5890bbf5cf3a0f3d2f0a61cbb8d6",
+      "bytes": 23034
+    },
+    "src/core/loop.js": {
+      "sha256": "97786816cf58433ca2832f0e42bdac07dd301231ccc5e95750c147cff4787145",
+      "bytes": 8911
+    },
+    "src/core/runtime-lifecycle.js": {
+      "sha256": "c4a33ffd16e512bfede0c48381ac83f6c80307cee74ab7875f3ea9934502e59a",
+      "bytes": 23344
+    },
+    "src/engine/audio.js": {
+      "sha256": "95a91711958d422578870f6672b38fb0a99586bbf7ccc1c1da286935e2689b6e",
+      "bytes": 159697
+    },
+    "src/engine/boot-loader.js": {
+      "sha256": "fbea0151e80b6e43b3a4c849c8578c073ba3421735a781cc70338298a117b203",
+      "bytes": 29792
+    },
+    "src/engine/broadcast-slum-proof-profile.js": {
+      "sha256": "db1bf060da682ee8b461a182192b4f519504982d140c7ff5c33af3d724e1926c",
+      "bytes": 2057
+    },
+    "src/engine/cache-bridge.js": {
+      "sha256": "a5b8760d549644516c74b9517f6357a1d371e16aad63e002732be24d0ed38e02",
+      "bytes": 16690
+    },
+    "src/engine/cache-ending.js": {
+      "sha256": "4a87a311270809afb1e4344162a9e5b130222771a56f41fbf2eec548c8ef1624",
+      "bytes": 16701
+    },
+    "src/engine/cache-road-proof-profile.js": {
+      "sha256": "a4f5f39dbcff6a0bd1bb693fded027987f40c32821e450fcb576b64b2d528d73",
+      "bytes": 2850
+    },
+    "src/engine/cache-scene-effects.js": {
+      "sha256": "b8a64520815ec647a2421b4fd88e8612c1e6fe33c62ffae4559dd3e21d673738",
+      "bytes": 12646
+    },
+    "src/engine/cache-scene-layouts.js": {
+      "sha256": "c66365d0fb66cfba829a18af2f3e9fe95f75ed1696659db86c2fed31847a60d0",
+      "bytes": 7394
+    },
+    "src/engine/comic-dialogue.js": {
+      "sha256": "72a9af7a538b8d4ce9e2ad29f3f2d4e19464571b055224d6a751bc35495a669f",
+      "bytes": 1525
+    },
+    "src/engine/cutscene.js": {
+      "sha256": "71933a6e2e4b56dfc355bcf4164369a1a4c0b13d7504cbdbeb06b0a89f45e98c",
+      "bytes": 28983
+    },
+    "src/engine/game-logic.js": {
+      "sha256": "0b14f17ff529b8a8a7293e1053f5932744a8486ff4bc7e89401b915e5f6cb21b",
+      "bytes": 2073
+    },
+    "src/engine/intro-sequence.js": {
+      "sha256": "fed9e97c9d8922e26136919999cd3f334c05904f73b795c36ddb71265a03873e",
+      "bytes": 21982
+    },
+    "src/engine/jammer-arrow-indicator.js": {
+      "sha256": "bdce5b4c71267716221609a515e620d7a8f3968586ceb45d579ad70a54233c9b",
+      "bytes": 5799
+    },
+    "src/engine/jammer-indicator.js": {
+      "sha256": "69dda148ed5f2d3c2302ab7379de998c9d32ff5766583c45e6d1999e42ee12f9",
+      "bytes": 10282
+    },
+    "src/engine/level-01-music-profile.js": {
+      "sha256": "5b7a46f7e224530933b22c67c7c081eb6728cffbef0549b7827edc8099937357",
+      "bytes": 5899
+    },
+    "src/engine/lore.js": {
+      "sha256": "3e5a481b0f454bf405c2aa423c379271b1b666756657336b372b2751ad063bb9",
+      "bytes": 5147
+    },
+    "src/engine/music-director.js": {
+      "sha256": "1baeaf1a180e737e0757be809aec8d7f9c65abdde88d94e742cb2a931aa103bb",
+      "bytes": 12519
+    },
+    "src/engine/music-profiles.js": {
+      "sha256": "3260ada02d2c20284303affc5262b1231441361ff6842d7844447bbfad578f2c",
+      "bytes": 11437
+    },
+    "src/engine/music-transport.js": {
+      "sha256": "26c19d8e63871472a91055614b5fafe9fab8216ba16486dc02020e1b76ef41dd",
+      "bytes": 9620
+    },
+    "src/engine/parallax.js": {
+      "sha256": "0798d62a12004823186d165e720ee29fcaec0945f59851fe451a02d072b289f3",
+      "bytes": 37949
+    },
+    "src/engine/particles.js": {
+      "sha256": "e25257fdf46fc5e5ee75da9455a16e1f10777a2c902a9af4d7a8e8c6f15a5e6a",
+      "bytes": 22266
+    },
+    "src/engine/presentation-assets.js": {
+      "sha256": "99a8886e2894480bf4216fc9da05809244a9ffeee26ccf787166e11f1156b2bd",
+      "bytes": 61352
+    },
+    "src/engine/renderer.js": {
+      "sha256": "78c7b45f2734ec3ed9a976d9cc4572b96fe6586671f42bd62a57a6bd0822b874",
+      "bytes": 22695
+    },
+    "src/engine/spaceships.js": {
+      "sha256": "ae96798eeb015378058487623ffdde7b6306a646f94a52f6535828baba8c9275",
+      "bytes": 31296
+    },
+    "src/engine/sprite-playback.js": {
+      "sha256": "9c641b2c652c32020f1d87183d58274f2a1f235fde715350aaa58ade47582ee0",
+      "bytes": 1980
+    },
+    "src/engine/standalone-sprites.js": {
+      "sha256": "5784e13591a6adc43881783592d334922dd749372f09d85c35b1e7d62969d86c",
+      "bytes": 15173
+    },
+    "src/engine/title-screen.js": {
+      "sha256": "008b951db135f3ca11c3e1e23cdc8f451cd26cc3a28d9216946c9e83bf9d9b35",
+      "bytes": 18731
+    },
+    "src/engine/traffic-sheets.js": {
+      "sha256": "c3f024b882e9043a213928a986a69c962c8ee19e3382d8c5de0bc2d34805ef49",
+      "bytes": 5416
+    },
+    "src/game/broadcast-slum-proof.js": {
+      "sha256": "37e5a3f1101afda00768d91531af443ccce7959e31f2b0f00df4a561af038d36",
+      "bytes": 55129
+    },
+    "src/game/cache-chapter.js": {
+      "sha256": "570f2f28c68c9769d09768c36faefbf968a22ede0534644a0a1481d7ac98e55e",
+      "bytes": 7808
+    },
+    "src/game/cache-road-adrenaline.js": {
+      "sha256": "3bdeb9bf5880c8c2f741801a2c374ba3917637a22557da299bef1cc042732b68",
+      "bytes": 5672
+    },
+    "src/game/cache-road-beat-feedback.js": {
+      "sha256": "d497deee93275139ed2bdaf51eecf9e785d09847c45d67d3472431cc252c1305",
+      "bytes": 16496
+    },
+    "src/game/cache-road-beat-surface.js": {
+      "sha256": "4cddc97c389d1ae9697af6e6187e0c38b9ca2918f98cc944c946281a61763c20",
+      "bytes": 6920
+    },
+    "src/game/cache-road-boss-art.js": {
+      "sha256": "1ee094ebe878668eb276dfd7b3c91e6563ca053aa613fd4e0b06b6d40fe03c8b",
+      "bytes": 3243
+    },
+    "src/game/cache-road-cinematics.js": {
+      "sha256": "679dbf25aa7eda45e4129366af1c6753be484120f99afcaa05e221a92e6e494e",
+      "bytes": 5886
+    },
+    "src/game/cache-road-combat-art.js": {
+      "sha256": "9638d7d4510f9d1e2ec578147feebe22a0e427f022b848b83d9e1556800fa1f2",
+      "bytes": 9222
+    },
+    "src/game/cache-road-combat.js": {
+      "sha256": "a6d9420e08e140ebea1801ef9dcb2929fd49d5a3cd8b81f9b560b51041ee1696",
+      "bytes": 36654
+    },
+    "src/game/cache-road-crew-callouts.js": {
+      "sha256": "58fce76966d69d645bfa0d2e6ddb36d4336a462b39c88ffd92716e6191d6accc",
+      "bytes": 5627
+    },
+    "src/game/cache-road-crosswalks.js": {
+      "sha256": "471eed85e70f22b6aa68eec31740cf4222cf0e3f0c66392de0a01965ff77228f",
+      "bytes": 10288
+    },
+    "src/game/cache-road-districts.js": {
+      "sha256": "7158c0400bde34c8366eb52c172639cbec5643d5986259a56e154ea8215dfaeb",
+      "bytes": 36609
+    },
+    "src/game/cache-road-encounters.js": {
+      "sha256": "6466de9becaa7f90303f79d2572ca22a3e981e6059286c05a537da1673fdba54",
+      "bytes": 22072
+    },
+    "src/game/cache-road-guidance.js": {
+      "sha256": "5034d4dc0b16e380af708b9daea34cfae693946fb0e9ebea6a0901ba91d17be1",
+      "bytes": 31350
+    },
+    "src/game/cache-road-instruments.js": {
+      "sha256": "650ed4624532c491d281624f868f08b3c79b24a5557740a553ee5c130d2d5dc0",
+      "bytes": 12550
+    },
+    "src/game/cache-road-landscape.js": {
+      "sha256": "edded8fd194927ea19e3d74156ed694b89cc8337f85eb70347dde78b9f355f03",
+      "bytes": 29782
+    },
+    "src/game/cache-road-mirror.js": {
+      "sha256": "0743a8a3a05c3bd7c46f87cebf0a60e7dd35d7380386a739a7095cd4d1ca669e",
+      "bytes": 5250
+    },
+    "src/game/cache-road-proof.js": {
+      "sha256": "ef32925097307b66e5025523c66d1e38e1aaa33616c836e62c448cccf165dd2e",
+      "bytes": 309912
+    },
+    "src/game/cache-road-puppet-study.js": {
+      "sha256": "a1c2795763543cc8ad78d61a39482e372de7e7348316a57de24f66bf7fbd0361",
+      "bytes": 8313
+    },
+    "src/game/cache-road-pursuit.js": {
+      "sha256": "53ea656d99680c261bf9492ba6373efc5393bca23a34ab4203e8936908b6b00b",
+      "bytes": 24286
+    },
+    "src/game/cache-road-reactions.js": {
+      "sha256": "47748481a8426278bb23f3358916a9c3345c55af7507866bb561a8180ceb4753",
+      "bytes": 5851
+    },
+    "src/game/cache-road-render-budget.js": {
+      "sha256": "187d5d7f98991eae0fdf67011cf068e2abdfd85b00c3d2b76db7553cc18444c2",
+      "bytes": 1193
+    },
+    "src/game/campaign-services.js": {
+      "sha256": "7465a098b6a208168c88f4d2d2b01d7df39839e7e8468fd49dabfe477ed0afc5",
+      "bytes": 11785
+    },
+    "src/game/combat-fx.js": {
+      "sha256": "034e1b5c44f8c2cf9e3235889c6e9cf067dbcc928eb7318faadbfe3560eaf49e",
+      "bytes": 30563
+    },
+    "src/game/comic-hud.js": {
+      "sha256": "bbdedb69d2cbbb8d1e60cfc778c908f3eb20ce66103bb1791d34bb98e7d5e96f",
+      "bytes": 23956
+    },
+    "src/game/debug-commands.js": {
+      "sha256": "7b2eb439b5fde5fb472635ead2a3599caac82fde557fe92590d05b9178c4e08d",
+      "bytes": 6285
+    },
+    "src/game/dependency-validator.js": {
+      "sha256": "22e7fb20f56214d2818c32ddf8a080a118f6509fa6b160b254e0ee7be4d4a68e",
+      "bytes": 1778
+    },
+    "src/game/enemies.js": {
+      "sha256": "aa5570715ec605c3c8ce76cfc9a964988ce575c2216eb961d913648cc287685b",
+      "bytes": 100803
+    },
+    "src/game/game-initializer.js": {
+      "sha256": "23acbfc1041bd99ba3279b8d89b900e89d13ad66c31472db56cd53551d3bf4a5",
+      "bytes": 14875
+    },
+    "src/game/game-state.js": {
+      "sha256": "9fdf43494f31024abc567d800aad52192b9109ce44fb433c6565bb15a1ddac9b",
+      "bytes": 7005
+    },
+    "src/game/hacking.js": {
+      "sha256": "a394b2f9b605c144fa8d6a05fe3ba49c3d6de8e7c43c6b338cb5376b58fc2756",
+      "bytes": 36332
+    },
+    "src/game/jammer-arrow.js": {
+      "sha256": "acef66eff7f5302947804700022a33b084d5efa2bac49ecd9123248f7724be28",
+      "bytes": 524
+    },
+    "src/game/jammer-arrows.js": {
+      "sha256": "f44d7a2b05d2911b41072446a9fb950b8b85fea0431dca8ef1c7fcc4e91a9d1f",
+      "bytes": 525
+    },
+    "src/game/jammer-environment.js": {
+      "sha256": "7ca380b259efb0e3db6f3a6e433eb1d0de9c3d5f3f2aa3e56a932098fe8d95b8",
+      "bytes": 16286
+    },
+    "src/game/jammer-simple.js": {
+      "sha256": "9ecab6a3dcd7309040bf284adf008a71745884fd4036d6a2199d50e3c71723be",
+      "bytes": 557
+    },
+    "src/game/jammer.js": {
+      "sha256": "f85a5f92491da829f78bed0813fa1e338d513255d3c5d75452e9572e8f23725a",
+      "bytes": 550
+    },
+    "src/game/level-01-debug.js": {
+      "sha256": "2dd9cc7b679b31e4a5901eb48e1374ca9fef020d1582f86bbccb90f1a5a48bba",
+      "bytes": 18978
+    },
+    "src/game/level-01-stage-fx.js": {
+      "sha256": "fae6b7ce7730753e226ac921ffb5357fb1d712cf2e38617a2627510fb644130e",
+      "bytes": 25989
+    },
+    "src/game/level-03-debug.js": {
+      "sha256": "2f1f3b29e430b6a86d08b81036f8fc61dc3eba29bcb74ccbf61f25a76760840b",
+      "bytes": 8224
+    },
+    "src/game/level-difficulty.js": {
+      "sha256": "40cc23e2f8289bc466e0c1e74904454d1894d5966247f93a4aed1377bbb3035e",
+      "bytes": 7170
+    },
+    "src/game/level1-signal-art.js": {
+      "sha256": "2bd2b95abc59726701bc23a878aa2c377774ebc0ad767401469a8276ff5576f0",
+      "bytes": 3937
+    },
+    "src/game/lore-collection.js": {
+      "sha256": "3beacb12d2e1b52110bb16b1af59df12eeaf12038956982fad85f2259eb512e4",
+      "bytes": 13356
+    },
+    "src/game/lore-records.js": {
+      "sha256": "3a69c1d7278933e4a9b4b3e691d26c661f42c335d4221ab8e39b9977ba149b9d",
+      "bytes": 6381
+    },
+    "src/game/lost-data.js": {
+      "sha256": "e45f6d064a858250f7aa57914730a0a13570378cea8cdfda48e5f7aaa0b06ea7",
+      "bytes": 14810
+    },
+    "src/game/main-legacy-backup.js": {
+      "sha256": "10f53aa29c246877b5f9b97e38408ca70c74fd682903c74499d61eac76dfb4de",
+      "bytes": 477
+    },
+    "src/game/main-legacy-removed.js": {
+      "sha256": "c6b9b8e7038d45660728a67e323d6a762e0dce6c67caae0386e7a75be3254fc1",
+      "bytes": 870
+    },
+    "src/game/main-new.js": {
+      "sha256": "8ff4b51f2b8812c16aeea561df8bf801c3a9a56a43f0e6c12232f613c61a4c83",
+      "bytes": 3261
+    },
+    "src/game/main.js": {
+      "sha256": "103f5451a360884b9258a13cf045e369907c66fc177c9278b2a55bf5418bff9a",
+      "bytes": 98540
+    },
+    "src/game/music-controls.js": {
+      "sha256": "260b31f7ac9049529a6ef6973412d1763dce0e0cebbd2c96403d23787d170cf8",
+      "bytes": 499
+    },
+    "src/game/objectives.js": {
+      "sha256": "a5591bf3c9f6ddbb8bb8cbc7ffb1710f764decd7dd139ea6544cf9c1fd6a9aa6",
+      "bytes": 7538
+    },
+    "src/game/pause-menu.js": {
+      "sha256": "43584ad5bc1525ee0294678514ddd5f0bcf24a10ccb8b21119578da2b7407fe2",
+      "bytes": 37189
+    },
+    "src/game/player-combat.js": {
+      "sha256": "668b662c1399a9a784baf105daf32c9f6b3cb6ffcfff28838dab700eb7accea7",
+      "bytes": 17244
+    },
+    "src/game/player.js": {
+      "sha256": "1efafc2ef17fb3fee3c15be3b8a4a81e50e8e3778f40c4dddcdd1f9bcca5ccab",
+      "bytes": 82004
+    },
+    "src/game/post-tutorial-objectives.js": {
+      "sha256": "87be5a8a0a4fd6cfbce458af5bb52b1c60887fe5b4fea794e740655efc4048ab",
+      "bytes": 569
+    },
+    "src/game/render-coordinator.js": {
+      "sha256": "299576fab8158ce81b6d14412a93f0762af53a5ac7cde9b19dfe66932e3fb1dc",
+      "bytes": 20528
+    },
+    "src/game/rhythm-fixed.js": {
+      "sha256": "fe9fbdd6aed267dd0c9eed38ecd699d35fe77bb17a6a7ff93e1e6d437bc3586e",
+      "bytes": 30240
+    },
+    "src/game/rhythm.js": {
+      "sha256": "6fabfa4ad3e719cb3b0108cbce83804f9dd3e753084c1ddc82af97cc208f314a",
+      "bytes": 98809
+    },
+    "src/game/sector1-progression.js": {
+      "sha256": "9c97652d5d7c993b3a44d04acf7651e32c73b57220f34a54c7418d4db72a8692",
+      "bytes": 191105
+    },
+    "src/game/simple-jammer.js": {
+      "sha256": "b96d60d1673a9b1401759cde1bcd497fb4c08283bb11a1112375630859989f3d",
+      "bytes": 592
+    },
+    "src/game/tutorial.js": {
+      "sha256": "b3833c289de228d87a57ec95270587e1cfb9282492075332a9ac878b9efa6419",
+      "bytes": 27274
+    },
+    "src/game/ui-manager.js": {
+      "sha256": "06cf3305b445b1ee44dffd0f73607dbdf86d4809e51b93a6b5d0e8936bdc2019",
+      "bytes": 25594
+    },
+    "src/game/update-coordinator.js": {
+      "sha256": "b79cc92a52fa5cbdb000c8ed4c168bc042e58f19cfde041ca4c79c7ef5b15d67",
+      "bytes": 11439
+    },
+    "src/utils/math.js": {
+      "sha256": "84a5934fd4425e7b40fb4089114cc837959fe0fd29486edae95fecd45fd43b7e",
+      "bytes": 2613
+    }
+  },
+  "sourceMode": "working-tree runtime scripts; exact HEAD canonical asset blobs",
+  "canonicalAssetCount": 624,
+  "preservedOriginalCount": 21,
+  "assetBytes": 472322557,
+  "ownedFiles": [
+    ".standalone-build.json",
+    "assets/audio/broadcast-slum-proof-carrier.wav",
+    "assets/audio/broadcast-slum-proof-pressure.wav",
+    "assets/audio/cache-breakaway.mp3",
+    "assets/audio/cache-drive.mp3",
+    "assets/audio/cache-flow.mp3",
+    "assets/audio/cache-pressure.mp3",
+    "assets/audio/cache-undercurrent.mp3",
+    "assets/cache-bridge/README.md",
+    "assets/cache-bridge/art-manifest.json",
+    "assets/cache-bridge/bridge-01-district.webp",
+    "assets/cache-bridge/bridge-01-edit.json",
+    "assets/cache-bridge/bridge-02-edit.json",
+    "assets/cache-bridge/bridge-02-uplink.webp",
+    "assets/cache-bridge/bridge-03-original.webp",
+    "assets/cache-bridge/bridge-04-clean-copy.webp",
+    "assets/cache-bridge/bridge-05-keep-it.webp",
+    "assets/cache-bridge/bridge-06-departure.webp",
+    "assets/cache-bridge/bridge-07-ignition.webp",
+    "assets/cache-bridge/bridge-07-prompt.json",
+    "assets/cache-bridge/bridge-08-cache-line.webp",
+    "assets/cache-bridge/bridge-08-edit.json",
+    "assets/cache-bridge/bridge-08-prompt.json",
+    "assets/cache-bridge/provenance-01-02.json",
+    "assets/cache-bridge/provenance-03-04.json",
+    "assets/cache-bridge/provenance-05-06.json",
+    "assets/cache-bridge/provenance-07-08.json",
+    "assets/cache-bridge/sources/bridge-01-district.png",
+    "assets/cache-bridge/sources/bridge-02-uplink.png",
+    "assets/cache-bridge/sources/bridge-03-original.png",
+    "assets/cache-bridge/sources/bridge-04-clean-copy.png",
+    "assets/cache-bridge/sources/bridge-05-keep-it.png",
+    "assets/cache-bridge/sources/bridge-06-departure.png",
+    "assets/cache-bridge/sources/bridge-07-ignition.png",
+    "assets/cache-bridge/sources/bridge-08-cache-line.png",
+    "assets/cache-ending/README.md",
+    "assets/cache-ending/art-manifest.json",
+    "assets/cache-ending/ending-01-delivered.webp",
+    "assets/cache-ending/ending-02-unverified.webp",
+    "assets/cache-ending/ending-03-held.webp",
+    "assets/cache-ending/ending-04-street-access.webp",
+    "assets/cache-ending/generation-prompts.json",
+    "assets/cache-ending/sources/ending-01-delivered.png",
+    "assets/cache-ending/sources/ending-02-unverified.png",
+    "assets/cache-ending/sources/ending-03-held.png",
+    "assets/cache-ending/sources/ending-04-street-access.png",
+    "assets/cache-road/ART_PROMPTS.md",
+    "assets/cache-road/beat-system/README.md",
+    "assets/cache-road/beat-system/energy-atlas.webp",
+    "assets/cache-road/beat-system/energy-prompt.txt",
+    "assets/cache-road/beat-system/energy-source.png",
+    "assets/cache-road/beat-system/hardware-atlas.webp",
+    "assets/cache-road/beat-system/hardware-prompt.txt",
+    "assets/cache-road/beat-system/hardware-source.png",
+    "assets/cache-road/beat-system/packing.json",
+    "assets/cache-road/beat-system/timing-atlas.webp",
+    "assets/cache-road/beat-system/timing-prompt.txt",
+    "assets/cache-road/beat-system/timing-source.png",
+    "assets/cache-road/blood/ART_PROMPTS.md",
+    "assets/cache-road/blood/atlas-metadata.json",
+    "assets/cache-road/blood/blood-splatter-atlas.webp",
+    "assets/cache-road/blood/crew-callout-portraits.webp",
+    "assets/cache-road/blood/sources/blood-splatter-atlas.png",
+    "assets/cache-road/blood/sources/crew-callout-portraits.png",
+    "assets/cache-road/combat/README.md",
+    "assets/cache-road/combat/atlas-metadata.json",
+    "assets/cache-road/combat/bike-crash-atlas.webp",
+    "assets/cache-road/combat/bike-rider-atlas.webp",
+    "assets/cache-road/combat/combat-blast-atlas.webp",
+    "assets/cache-road/combat/fx-metadata.json",
+    "assets/cache-road/combat/hostile-chassis-atlas.webp",
+    "assets/cache-road/combat/projectile-contact-atlas.webp",
+    "assets/cache-road/combat/sources/bike-crash-atlas-prompt.md",
+    "assets/cache-road/combat/sources/bike-crash-atlas.png",
+    "assets/cache-road/combat/sources/bike-crash-initial-review.png",
+    "assets/cache-road/combat/sources/bike-crash-spacing-prompt.md",
+    "assets/cache-road/combat/sources/bike-rider-atlas-prompt.md",
+    "assets/cache-road/combat/sources/bike-rider-atlas.png",
+    "assets/cache-road/combat/sources/combat-blast-atlas-prompt.md",
+    "assets/cache-road/combat/sources/combat-blast-atlas.png",
+    "assets/cache-road/combat/sources/hostile-chassis-atlas-prompt.md",
+    "assets/cache-road/combat/sources/hostile-chassis-atlas.png",
+    "assets/cache-road/combat/sources/projectile-contact-atlas.png",
+    "assets/cache-road/combat/sources/projectile-contact-prompt.txt",
+    "assets/cache-road/controls/brace.svg",
+    "assets/cache-road/controls/echo.svg",
+    "assets/cache-road/controls/push.svg",
+    "assets/cache-road/controls/refill.svg",
+    "assets/cache-road/controls/surge.svg",
+    "assets/cache-road/controls/turbo.svg",
+    "assets/cache-road/effects/README.md",
+    "assets/cache-road/effects/brake-reflection.webp",
+    "assets/cache-road/effects/damaged-exhaust.webp",
+    "assets/cache-road/effects/impact-grit.webp",
+    "assets/cache-road/effects/sources/impact-grit.png",
+    "assets/cache-road/effects/sources/speed-mist.png",
+    "assets/cache-road/effects/speed-mist.webp",
+    "assets/cache-road/effects/wind-streak-atlas-v2.png",
+    "assets/cache-road/effects/wind-whoosh-atlas.png",
+    "assets/cache-road/encounters/ART_PROMPTS.md",
+    "assets/cache-road/encounters/README.md",
+    "assets/cache-road/encounters/brace-halo.webp",
+    "assets/cache-road/encounters/delivery-beacon.webp",
+    "assets/cache-road/encounters/echo-ribbons.webp",
+    "assets/cache-road/encounters/manifest.json",
+    "assets/cache-road/encounters/push-arc.webp",
+    "assets/cache-road/encounters/sources/brace-halo.png",
+    "assets/cache-road/encounters/sources/delivery-beacon.png",
+    "assets/cache-road/encounters/sources/echo-ribbons.png",
+    "assets/cache-road/encounters/sources/push-arc.png",
+    "assets/cache-road/hud/README.md",
+    "assets/cache-road/hud/cache-back-mirror-expressions.webp",
+    "assets/cache-road/hud/digital-dashboard/ASSET_PROVENANCE.md",
+    "assets/cache-road/hud/digital-dashboard/instrument-bezel.png",
+    "assets/cache-road/hud/digital-dashboard/instrument-icons.svg",
+    "assets/cache-road/hud/digital-dashboard/vfd-digits.svg",
+    "assets/cache-road/hud/sources/cache-back-mirror-expressions.png",
+    "assets/cache-road/pursuit/README.md",
+    "assets/cache-road/pursuit/atlas-metadata.json",
+    "assets/cache-road/pursuit/pursuit-impact-atlas.webp",
+    "assets/cache-road/pursuit/pursuit-rig-atlas.webp",
+    "assets/cache-road/pursuit/sources/pursuit-impact-atlas.png",
+    "assets/cache-road/pursuit/sources/pursuit-impact-prompt.md",
+    "assets/cache-road/pursuit/sources/pursuit-rig-atlas.png",
+    "assets/cache-road/pursuit/sources/pursuit-rig-prompt.md",
+    "assets/cache-road/pursuit/sources/pursuit-rig-spacing-review-prompt.md",
+    "assets/cache-road/roadside/DIAGONAL_PROMPTS.md",
+    "assets/cache-road/roadside/README.md",
+    "assets/cache-road/roadside/beat/animation/brace-frames.webp",
+    "assets/cache-road/roadside/beat/animation/push-frames.webp",
+    "assets/cache-road/roadside/beat/animation/refill-frames.webp",
+    "assets/cache-road/roadside/beat/animation/surge-frames.webp",
+    "assets/cache-road/roadside/beat/approach-strip.webp",
+    "assets/cache-road/roadside/beat/beat-phrase.webp",
+    "assets/cache-road/roadside/beat/brace.webp",
+    "assets/cache-road/roadside/beat/confirmed-bar.webp",
+    "assets/cache-road/roadside/beat/pulse-burst.webp",
+    "assets/cache-road/roadside/beat/pulse-pad.webp",
+    "assets/cache-road/roadside/beat/push.webp",
+    "assets/cache-road/roadside/beat/refill.webp",
+    "assets/cache-road/roadside/beat/sources/confirmed-bar-prompt.md",
+    "assets/cache-road/roadside/beat/sources/confirmed-bar-source.png",
+    "assets/cache-road/roadside/beat/surge.webp",
+    "assets/cache-road/roadside/continuous-ground-panel.svg",
+    "assets/cache-road/roadside/green-ground-panel.svg",
+    "assets/cache-road/roadside/outer-ground-panel.svg",
+    "assets/cache-road/roadside/parapet.webp",
+    "assets/cache-road/roadside/places/README.md",
+    "assets/cache-road/roadside/places/apartment.webp",
+    "assets/cache-road/roadside/places/capacitor-exchange.webp",
+    "assets/cache-road/roadside/places/community-garden-horizon.webp",
+    "assets/cache-road/roadside/places/community-garden-left-compact.webp",
+    "assets/cache-road/roadside/places/community-garden-rounded.webp",
+    "assets/cache-road/roadside/places/community-garden.webp",
+    "assets/cache-road/roadside/places/construction-yard-horizon.webp",
+    "assets/cache-road/roadside/places/construction-yard-right-compact.webp",
+    "assets/cache-road/roadside/places/construction-yard-rounded.webp",
+    "assets/cache-road/roadside/places/construction-yard.webp",
+    "assets/cache-road/roadside/places/corner-market.webp",
+    "assets/cache-road/roadside/places/data-reclamation.webp",
+    "assets/cache-road/roadside/places/drone-service-node.webp",
+    "assets/cache-road/roadside/places/encrypted-pump.webp",
+    "assets/cache-road/roadside/places/fabrication-horizon.webp",
+    "assets/cache-road/roadside/places/hydroponics-horizon.webp",
+    "assets/cache-road/roadside/places/night-data-market.webp",
+    "assets/cache-road/roadside/places/night-diner.webp",
+    "assets/cache-road/roadside/places/parking-lot.webp",
+    "assets/cache-road/roadside/places/pocket-park.webp",
+    "assets/cache-road/roadside/places/relay-exchange.webp",
+    "assets/cache-road/roadside/places/repair-garage.webp",
+    "assets/cache-road/roadside/places/row-house.webp",
+    "assets/cache-road/roadside/places/signal-orchard.webp",
+    "assets/cache-road/roadside/places/sources/apartment.png",
+    "assets/cache-road/roadside/places/sources/community-garden.png",
+    "assets/cache-road/roadside/places/sources/construction-yard.png",
+    "assets/cache-road/roadside/places/sources/corner-market.png",
+    "assets/cache-road/roadside/places/sources/night-diner.png",
+    "assets/cache-road/roadside/places/sources/parking-lot.png",
+    "assets/cache-road/roadside/places/sources/pocket-park.png",
+    "assets/cache-road/roadside/places/sources/repair-garage.png",
+    "assets/cache-road/roadside/places/sources/row-house.png",
+    "assets/cache-road/roadside/places/sources/substation.png",
+    "assets/cache-road/roadside/places/substation.webp",
+    "assets/cache-road/roadside/rolling-ground-grain.webp",
+    "assets/cache-road/roadside/service-ground-panel.svg",
+    "assets/cache-road/roadside/service-pylon.webp",
+    "assets/cache-road/roadside/sidewalk-slab.svg",
+    "assets/cache-road/roadside/sources/parapet.png",
+    "assets/cache-road/roadside/sources/rolling-ground-grain.png",
+    "assets/cache-road/roadside/sources/service-pylon.png",
+    "assets/cache-road/vehicles/README.md",
+    "assets/cache-road/vehicles/animation/audit-sedan-frames.webp",
+    "assets/cache-road/vehicles/animation/cache-center-frames.webp",
+    "assets/cache-road/vehicles/animation/cache-hit-frames.webp",
+    "assets/cache-road/vehicles/animation/cache-left-frames.webp",
+    "assets/cache-road/vehicles/animation/cache-right-frames.webp",
+    "assets/cache-road/vehicles/animation/courier-frames.webp",
+    "assets/cache-road/vehicles/animation/freight-frames.webp",
+    "assets/cache-road/vehicles/animation/night-shuttle-frames.webp",
+    "assets/cache-road/vehicles/animation/rival-frames.webp",
+    "assets/cache-road/vehicles/animation/signal-trike-frames.webp",
+    "assets/cache-road/vehicles/animation/sweeper-frames.webp",
+    "assets/cache-road/vehicles/audit-sedan.webp",
+    "assets/cache-road/vehicles/barricade.webp",
+    "assets/cache-road/vehicles/cache-center.webp",
+    "assets/cache-road/vehicles/cache-hit.webp",
+    "assets/cache-road/vehicles/cache-left.webp",
+    "assets/cache-road/vehicles/cache-right.webp",
+    "assets/cache-road/vehicles/courier.webp",
+    "assets/cache-road/vehicles/freight.webp",
+    "assets/cache-road/vehicles/night-shuttle.webp",
+    "assets/cache-road/vehicles/rival.webp",
+    "assets/cache-road/vehicles/signal-trike.webp",
+    "assets/cache-road/vehicles/sources/audit-sedan.png",
+    "assets/cache-road/vehicles/sources/barricade.png",
+    "assets/cache-road/vehicles/sources/cache-center.png",
+    "assets/cache-road/vehicles/sources/cache-hit.png",
+    "assets/cache-road/vehicles/sources/cache-left.png",
+    "assets/cache-road/vehicles/sources/cache-right.png",
+    "assets/cache-road/vehicles/sources/courier.png",
+    "assets/cache-road/vehicles/sources/freight.png",
+    "assets/cache-road/vehicles/sources/night-shuttle.png",
+    "assets/cache-road/vehicles/sources/rival.png",
+    "assets/cache-road/vehicles/sources/signal-trike.png",
+    "assets/cache-road/vehicles/sources/sweeper.png",
+    "assets/cache-road/vehicles/sweeper.webp",
+    "assets/cache-road/world/README.md",
+    "assets/cache-road/world/ambient/data-practicals.svg",
+    "assets/cache-road/world/ambient/greenhouse-practicals.svg",
+    "assets/cache-road/world/ambient/homes-practicals.svg",
+    "assets/cache-road/world/ambient/market-practicals.svg",
+    "assets/cache-road/world/ambient/transit-practicals.svg",
+    "assets/cache-road/world/ambient/workshop-practicals.svg",
+    "assets/cache-road/world/blocks/block-data-L-front-fill.webp",
+    "assets/cache-road/world/blocks/block-data-L-front-gap.webp",
+    "assets/cache-road/world/blocks/block-data-L-middle.webp",
+    "assets/cache-road/world/blocks/block-data-L-rear.webp",
+    "assets/cache-road/world/blocks/block-data-R-front-fill.webp",
+    "assets/cache-road/world/blocks/block-data-R-front-gap.webp",
+    "assets/cache-road/world/blocks/block-data-R-middle.webp",
+    "assets/cache-road/world/blocks/block-data-R-rear.webp",
+    "assets/cache-road/world/blocks/block-greenhouse-L-front-fill.webp",
+    "assets/cache-road/world/blocks/block-greenhouse-L-front-gap.webp",
+    "assets/cache-road/world/blocks/block-greenhouse-L-middle.webp",
+    "assets/cache-road/world/blocks/block-greenhouse-L-rear.webp",
+    "assets/cache-road/world/blocks/block-greenhouse-R-front-fill.webp",
+    "assets/cache-road/world/blocks/block-greenhouse-R-front-gap.webp",
+    "assets/cache-road/world/blocks/block-greenhouse-R-middle.webp",
+    "assets/cache-road/world/blocks/block-greenhouse-R-rear.webp",
+    "assets/cache-road/world/blocks/block-homes-L-front-fill.webp",
+    "assets/cache-road/world/blocks/block-homes-L-front-gap.webp",
+    "assets/cache-road/world/blocks/block-homes-L-middle.webp",
+    "assets/cache-road/world/blocks/block-homes-L-rear.webp",
+    "assets/cache-road/world/blocks/block-homes-R-front-fill.webp",
+    "assets/cache-road/world/blocks/block-homes-R-front-gap.webp",
+    "assets/cache-road/world/blocks/block-homes-R-middle.webp",
+    "assets/cache-road/world/blocks/block-homes-R-rear.webp",
+    "assets/cache-road/world/blocks/block-market-L-front-fill.webp",
+    "assets/cache-road/world/blocks/block-market-L-front-gap.webp",
+    "assets/cache-road/world/blocks/block-market-L-middle.webp",
+    "assets/cache-road/world/blocks/block-market-L-rear.webp",
+    "assets/cache-road/world/blocks/block-market-R-front-fill.webp",
+    "assets/cache-road/world/blocks/block-market-R-front-gap.webp",
+    "assets/cache-road/world/blocks/block-market-R-middle.webp",
+    "assets/cache-road/world/blocks/block-market-R-rear.webp",
+    "assets/cache-road/world/blocks/block-transit-L-front-fill.webp",
+    "assets/cache-road/world/blocks/block-transit-L-front-gap.webp",
+    "assets/cache-road/world/blocks/block-transit-L-middle.webp",
+    "assets/cache-road/world/blocks/block-transit-L-rear.webp",
+    "assets/cache-road/world/blocks/block-transit-R-front-fill.webp",
+    "assets/cache-road/world/blocks/block-transit-R-front-gap.webp",
+    "assets/cache-road/world/blocks/block-transit-R-middle.webp",
+    "assets/cache-road/world/blocks/block-transit-R-rear.webp",
+    "assets/cache-road/world/blocks/block-workshop-L-front-fill.webp",
+    "assets/cache-road/world/blocks/block-workshop-L-front-gap.webp",
+    "assets/cache-road/world/blocks/block-workshop-L-middle-dense.webp",
+    "assets/cache-road/world/blocks/block-workshop-L-middle.webp",
+    "assets/cache-road/world/blocks/block-workshop-L-rear.webp",
+    "assets/cache-road/world/blocks/block-workshop-R-front-fill.webp",
+    "assets/cache-road/world/blocks/block-workshop-R-front-gap.webp",
+    "assets/cache-road/world/blocks/block-workshop-R-middle-dense.webp",
+    "assets/cache-road/world/blocks/block-workshop-R-middle.webp",
+    "assets/cache-road/world/blocks/block-workshop-R-rear.webp",
+    "assets/cache-road/world/blocks/sources/block-data-L-front-gap.png",
+    "assets/cache-road/world/blocks/sources/block-data-R-front-gap.png",
+    "assets/cache-road/world/blocks/sources/block-homes-L-front-gap.png",
+    "assets/cache-road/world/blocks/sources/block-homes-R-front-gap.png",
+    "assets/cache-road/world/blocks/sources/block-market-L-rear.png",
+    "assets/cache-road/world/blocks/sources/block-market-R-front-gap.png",
+    "assets/cache-road/world/blocks/sources/block-workshop-L-front-gap.png",
+    "assets/cache-road/world/blocks/sources/block-workshop-R-front-gap.png",
+    "assets/cache-road/world/bridge-free-avenue.webp",
+    "assets/cache-road/world/bridge-free-distance.webp",
+    "assets/cache-road/world/bridge-free-district.webp",
+    "assets/cache-road/world/bridge-free-outskirts.webp",
+    "assets/cache-road/world/decals/crosswalk.svg",
+    "assets/cache-road/world/decals/drainage.svg",
+    "assets/cache-road/world/decals/loading-bay.svg",
+    "assets/cache-road/world/decals/service-stencil.svg",
+    "assets/cache-road/world/decals/stop-line.svg",
+    "assets/cache-road/world/decals/wet-repair-patch.svg",
+    "assets/cache-road/world/distant-city.webp",
+    "assets/cache-road/world/greenhouse-workshop.webp",
+    "assets/cache-road/world/ground-cluster-left-01.webp",
+    "assets/cache-road/world/ground-cluster-left-02.webp",
+    "assets/cache-road/world/ground-cluster-left-03.webp",
+    "assets/cache-road/world/ground-cluster-right-01.webp",
+    "assets/cache-road/world/ground-cluster-right-02.webp",
+    "assets/cache-road/world/ground-cluster-right-03.webp",
+    "assets/cache-road/world/joins/curb-return-L.svg",
+    "assets/cache-road/world/joins/curb-return-R.svg",
+    "assets/cache-road/world/joins/sidewalk-turn-L.svg",
+    "assets/cache-road/world/joins/sidewalk-turn-R.svg",
+    "assets/cache-road/world/joins/street-mouth-sidewall-L.svg",
+    "assets/cache-road/world/joins/street-mouth-sidewall-R.svg",
+    "assets/cache-road/world/joins/wall-roof-endcap-L.svg",
+    "assets/cache-road/world/joins/wall-roof-endcap-R.svg",
+    "assets/cache-road/world/materials/planted-gravel-court.webp",
+    "assets/cache-road/world/materials/residential-paving.webp",
+    "assets/cache-road/world/materials/service-court-paving.webp",
+    "assets/cache-road/world/materials/wet-local-street.webp",
+    "assets/cache-road/world/materials/workshop-wet-pavement.webp",
+    "assets/cache-road/world/mid-city.webp",
+    "assets/cache-road/world/neighborhood-repair-shop.webp",
+    "assets/cache-road/world/outskirts-homes.webp",
+    "assets/cache-road/world/outskirts-workshops.webp",
+    "assets/cache-road/world/panorama-distance.webp",
+    "assets/cache-road/world/panorama-frontage.webp",
+    "assets/cache-road/world/panorama-skyline.webp",
+    "assets/cache-road/world/props/animation/person-bicycle-courier-frames.webp",
+    "assets/cache-road/world/props/animation/person-board-player-activity-frames.webp",
+    "assets/cache-road/world/props/animation/person-crate-carrier-frames.webp",
+    "assets/cache-road/world/props/animation/person-electrician-activity-frames.webp",
+    "assets/cache-road/world/props/animation/person-gardener-activity-frames.webp",
+    "assets/cache-road/world/props/animation/person-handheld-player-activity-frames.webp",
+    "assets/cache-road/world/props/animation/person-skateboarder-frames.webp",
+    "assets/cache-road/world/props/animation/person-street-cook-activity-frames.webp",
+    "assets/cache-road/world/props/animation/person-sweeper-activity-frames.webp",
+    "assets/cache-road/world/props/animation/person-waving-resident-activity-frames.webp",
+    "assets/cache-road/world/props/animation/street-crossing-signal-L-frames.webp",
+    "assets/cache-road/world/props/animation/street-crossing-signal-R-frames.webp",
+    "assets/cache-road/world/props/animation/street-data-kiosk-frames.webp",
+    "assets/cache-road/world/props/animation/street-lamp-L-frames.webp",
+    "assets/cache-road/world/props/animation/street-lamp-R-frames.webp",
+    "assets/cache-road/world/props/animation/street-utility-cabinet-frames.webp",
+    "assets/cache-road/world/props/animation/street-vendor-cart-activity-frames.webp",
+    "assets/cache-road/world/props/animation/street-vendor-cart-frames.webp",
+    "assets/cache-road/world/props/animation/street-wayfinding-sign-frames.webp",
+    "assets/cache-road/world/props/animation/walker-courier-frames.webp",
+    "assets/cache-road/world/props/animation/walker-gardener-frames.webp",
+    "assets/cache-road/world/props/animation/walker-market-worker-frames.webp",
+    "assets/cache-road/world/props/animation/walker-mechanic-frames.webp",
+    "assets/cache-road/world/props/animation/walker-resident-frames.webp",
+    "assets/cache-road/world/props/animation/walker-student-frames.webp",
+    "assets/cache-road/world/props/person-bicycle-courier.webp",
+    "assets/cache-road/world/props/person-board-player.webp",
+    "assets/cache-road/world/props/person-courier.webp",
+    "assets/cache-road/world/props/person-crate-carrier.webp",
+    "assets/cache-road/world/props/person-electrician.webp",
+    "assets/cache-road/world/props/person-food-worker.webp",
+    "assets/cache-road/world/props/person-gardener.webp",
+    "assets/cache-road/world/props/person-handheld-player.webp",
+    "assets/cache-road/world/props/person-mechanic.webp",
+    "assets/cache-road/world/props/person-skateboarder.webp",
+    "assets/cache-road/world/props/person-street-cook.webp",
+    "assets/cache-road/world/props/person-student.webp",
+    "assets/cache-road/world/props/person-sweeper.webp",
+    "assets/cache-road/world/props/person-umbrella.webp",
+    "assets/cache-road/world/props/person-waving-resident.webp",
+    "assets/cache-road/world/props/sources/street-lamp-L.png",
+    "assets/cache-road/world/props/sources/street-lamp-R.png",
+    "assets/cache-road/world/props/sources/walker-market-worker-away.png",
+    "assets/cache-road/world/props/street-bench-planters.webp",
+    "assets/cache-road/world/props/street-bicycle-rack.webp",
+    "assets/cache-road/world/props/street-bins-recycling.webp",
+    "assets/cache-road/world/props/street-crossing-signal-L.webp",
+    "assets/cache-road/world/props/street-crossing-signal-R.webp",
+    "assets/cache-road/world/props/street-data-kiosk.webp",
+    "assets/cache-road/world/props/street-delivery-van.webp",
+    "assets/cache-road/world/props/street-fence-planter.webp",
+    "assets/cache-road/world/props/street-lamp-L.webp",
+    "assets/cache-road/world/props/street-lamp-R.webp",
+    "assets/cache-road/world/props/street-loading-crates.webp",
+    "assets/cache-road/world/props/street-utility-cabinet.webp",
+    "assets/cache-road/world/props/street-vendor-cart.webp",
+    "assets/cache-road/world/props/street-wayfinding-sign.webp",
+    "assets/cache-road/world/props/street-work-supplies.webp",
+    "assets/cache-road/world/props/walker-courier-away.webp",
+    "assets/cache-road/world/props/walker-courier-toward.webp",
+    "assets/cache-road/world/props/walker-gardener-away.webp",
+    "assets/cache-road/world/props/walker-gardener-toward.webp",
+    "assets/cache-road/world/props/walker-market-worker-away.webp",
+    "assets/cache-road/world/props/walker-market-worker-toward.webp",
+    "assets/cache-road/world/props/walker-mechanic-away.webp",
+    "assets/cache-road/world/props/walker-mechanic-toward.webp",
+    "assets/cache-road/world/props/walker-resident-away.webp",
+    "assets/cache-road/world/props/walker-resident-toward.webp",
+    "assets/cache-road/world/props/walker-student-away.webp",
+    "assets/cache-road/world/props/walker-student-toward.webp",
+    "assets/cache-road/world/service-bus-stop.webp",
+    "assets/cache-road/world/skyline.webp",
+    "assets/cache-road/world/sources/animation/ACTIVITY_PROVENANCE.md",
+    "assets/cache-road/world/sources/animation/activity-registration.json",
+    "assets/cache-road/world/sources/animation/person-bicycle-courier-source.png",
+    "assets/cache-road/world/sources/animation/person-board-player-activity-source.png",
+    "assets/cache-road/world/sources/animation/person-crate-carrier-source.png",
+    "assets/cache-road/world/sources/animation/person-electrician-activity-source.png",
+    "assets/cache-road/world/sources/animation/person-gardener-activity-source.png",
+    "assets/cache-road/world/sources/animation/person-handheld-player-activity-source.png",
+    "assets/cache-road/world/sources/animation/person-skateboarder-source.png",
+    "assets/cache-road/world/sources/animation/person-street-cook-activity-source.png",
+    "assets/cache-road/world/sources/animation/person-sweeper-activity-source.png",
+    "assets/cache-road/world/sources/animation/person-waving-resident-activity-source.png",
+    "assets/cache-road/world/sources/animation/street-vendor-cart-activity-source.png",
+    "assets/cache-road/world/sources/animation/walker-courier-source.png",
+    "assets/cache-road/world/sources/animation/walker-gardener-source.png",
+    "assets/cache-road/world/sources/animation/walker-market-worker-source.png",
+    "assets/cache-road/world/sources/animation/walker-mechanic-source.png",
+    "assets/cache-road/world/sources/animation/walker-resident-source.png",
+    "assets/cache-road/world/sources/animation/walker-student-source.png",
+    "assets/cache-road/world/sources/bridge-free-avenue.png",
+    "assets/cache-road/world/sources/bridge-free-distance.png",
+    "assets/cache-road/world/sources/bridge-free-district.png",
+    "assets/cache-road/world/sources/bridge-free-outskirts.png",
+    "assets/cache-road/world/sources/distant-city.png",
+    "assets/cache-road/world/sources/greenhouse-workshop.png",
+    "assets/cache-road/world/sources/ground-cluster-left-01.png",
+    "assets/cache-road/world/sources/ground-cluster-left-02.png",
+    "assets/cache-road/world/sources/ground-cluster-left-03.png",
+    "assets/cache-road/world/sources/ground-cluster-right-01.png",
+    "assets/cache-road/world/sources/ground-cluster-right-02.png",
+    "assets/cache-road/world/sources/ground-cluster-right-03.png",
+    "assets/cache-road/world/sources/mid-city.png",
+    "assets/cache-road/world/sources/neighborhood-repair-shop.png",
+    "assets/cache-road/world/sources/outskirts-homes.png",
+    "assets/cache-road/world/sources/outskirts-workshops.png",
+    "assets/cache-road/world/sources/panorama-distance.png",
+    "assets/cache-road/world/sources/panorama-frontage.png",
+    "assets/cache-road/world/sources/panorama-skyline.png",
+    "assets/cache-road/world/sources/person-bicycle-courier.png",
+    "assets/cache-road/world/sources/person-board-player.png",
+    "assets/cache-road/world/sources/person-courier.png",
+    "assets/cache-road/world/sources/person-crate-carrier.png",
+    "assets/cache-road/world/sources/person-electrician.png",
+    "assets/cache-road/world/sources/person-food-worker.png",
+    "assets/cache-road/world/sources/person-gardener.png",
+    "assets/cache-road/world/sources/person-handheld-player.png",
+    "assets/cache-road/world/sources/person-mechanic.png",
+    "assets/cache-road/world/sources/person-skateboarder.png",
+    "assets/cache-road/world/sources/person-street-cook.png",
+    "assets/cache-road/world/sources/person-student.png",
+    "assets/cache-road/world/sources/person-sweeper.png",
+    "assets/cache-road/world/sources/person-umbrella.png",
+    "assets/cache-road/world/sources/person-waving-resident.png",
+    "assets/cache-road/world/sources/service-bus-stop.png",
+    "assets/cache-road/world/sources/skyline.png",
+    "assets/cache-road/world/sources/street-bench-planters.png",
+    "assets/cache-road/world/sources/street-bicycle-rack.png",
+    "assets/cache-road/world/sources/street-data-kiosk.png",
+    "assets/cache-road/world/sources/street-delivery-van.png",
+    "assets/cache-road/world/sources/street-vendor-people.png",
+    "assets/cache-road/world/sources/street-work-supplies.png",
+    "assets/cache-road/world/sources/transit-service-nook.png",
+    "assets/cache-road/world/sources/utility-service-corner.png",
+    "assets/cache-road/world/street-vendor-people.webp",
+    "assets/cache-road/world/transit-service-nook.webp",
+    "assets/cache-road/world/utility-service-corner.webp",
+    "assets/feedback-polish/ASSET_PROVENANCE.md",
+    "assets/feedback-polish/asset-manifest.json",
+    "assets/feedback-polish/hud-expressions.webp",
+    "assets/feedback-polish/platform-facades.webp",
+    "assets/feedback-polish/platform-side-left.webp",
+    "assets/feedback-polish/platform-side-right.webp",
+    "assets/finale/lift-cabin.webp",
+    "assets/finale/lift-track.webp",
+    "assets/finale/manifest.json",
+    "assets/finale/sources/lift-cabin-source.png",
+    "assets/finale/sources/lift-mechanism-source.png",
+    "assets/finale/sources/studio-cat-poses-source.png",
+    "assets/finale/studio-cat-event.webp",
+    "assets/intro/art-manifest.json",
+    "assets/intro/intro-01-broadcast.webp",
+    "assets/intro/intro-02-keep-the-take.webp",
+    "assets/intro/intro-03-dead-return.webp",
+    "assets/intro/intro-04-preserve.webp",
+    "assets/intro/intro-05-listen.webp",
+    "assets/intro/intro-06-refusal.webp",
+    "assets/intro/intro-07-district.webp",
+    "assets/intro/intro-08-keep-it-open.webp",
+    "assets/level1-rebuild/facade-emitters.webp",
+    "assets/level1-rebuild/floor-emitters.webp",
+    "assets/level1-rebuild/prompts.json",
+    "assets/level1-rebuild/rooftop-drone.webp",
+    "assets/level1-run-v2/6_bit_run_run.json",
+    "assets/level1-run-v2/6_bit_run_run.webp",
+    "assets/level1-run-v2/6_bit_run_source_0.png",
+    "assets/level1-run-v2/README.md",
+    "assets/level1-run-v2/calibration.json",
+    "assets/level1-run-v2/source-registration.json",
+    "assets/level1-run/6_bit_run_run.json",
+    "assets/level1-run/6_bit_run_run.webp",
+    "assets/level1-run/6_bit_run_source.png",
+    "assets/level1-run/README.md",
+    "assets/level1-run/calibration.json",
+    "assets/level1-signal-art/README.md",
+    "assets/level1-signal-art/packing.json",
+    "assets/level1-signal-art/signal-amp-atlas.webp",
+    "assets/level1-signal-art/signal-amp-source.png",
+    "assets/level1-signal-art/signal-discharge-atlas.webp",
+    "assets/level1-signal-art/signal-discharge-source.png",
+    "assets/music/README.md",
+    "assets/presentation/README.md",
+    "assets/presentation/boss-pulse.webp",
+    "assets/presentation/direction-arrow.webp",
+    "assets/presentation/manifest.json",
+    "assets/presentation/prompts.json",
+    "assets/presentation/studio-cat.webp",
+    "assets/review/mode-power/README.md",
+    "assets/review/mode-power/hack-deflect.webp",
+    "assets/review/mode-power/hack-entry.webp",
+    "assets/review/mode-power/hack-held.webp",
+    "assets/review/mode-power/hack-reduced.webp",
+    "assets/review/mode-power/mode-power.mp4",
+    "assets/review/mode-power/mode-sfx-report.json",
+    "assets/review/mode-power/mode-sfx.wav",
+    "assets/review/mode-power/rhythm-impact.webp",
+    "assets/review/mode-power/rhythm-reduced.webp",
+    "assets/sprites-v3/calibration.json",
+    "assets/sprites-v3/delivery.json",
+    "assets/sprites-v3/original-manifest.json",
+    "assets/sprites-v3/prepared/6_bit_idle_idle.json",
+    "assets/sprites-v3/prepared/6_bit_idle_idle.webp",
+    "assets/sprites-v3/prepared/6_bit_jump_jump.json",
+    "assets/sprites-v3/prepared/6_bit_jump_jump.webp",
+    "assets/sprites-v3/prepared/6_bit_r__h_mode_rhmode.json",
+    "assets/sprites-v3/prepared/6_bit_r__h_mode_rhmode.webp",
+    "assets/sprites-v3/prepared/6_bit_walk_walk.json",
+    "assets/sprites-v3/prepared/6_bit_walk_walk.webp",
+    "assets/sprites-v3/prepared/broadcast_jammer_idle_idle.json",
+    "assets/sprites-v3/prepared/broadcast_jammer_idle_idle.webp",
+    "assets/sprites-v3/prepared/corrupted_idle_idle.json",
+    "assets/sprites-v3/prepared/corrupted_idle_idle.webp",
+    "assets/sprites-v3/prepared/corrupted_walk_walk.json",
+    "assets/sprites-v3/prepared/corrupted_walk_walk.webp",
+    "assets/sprites-v3/prepared/firewall_attack_default.json",
+    "assets/sprites-v3/prepared/firewall_attack_default.webp",
+    "assets/sprites-v3/prepared/firewall_idle_idle.json",
+    "assets/sprites-v3/prepared/firewall_idle_idle.webp",
+    "assets/sprites-v3/prepared/firewall_walk_walk.json",
+    "assets/sprites-v3/prepared/firewall_walk_walk.webp",
+    "assets/sprites-v3/prepared/sector_1_boss_attack_attack.json",
+    "assets/sprites-v3/prepared/sector_1_boss_attack_attack.webp",
+    "assets/sprites-v3/prepared/sector_1_boss_idle_idle.json",
+    "assets/sprites-v3/prepared/sector_1_boss_idle_idle.webp",
+    "assets/sprites-v3/prepared/virus_idle_idle.json",
+    "assets/sprites-v3/prepared/virus_idle_idle.webp",
+    "assets/sprites-v3/sources/sector_1_boss_attack_attack.original.json",
+    "assets/sprites-v3/sources/sector_1_boss_attack_attack.original.webp",
+    "assets/standalone/audio-21dd0b0c-3f5f-4d57-92a8-dc8b7b01be03.mp3",
+    "assets/standalone/audio-3a9cb68b-091e-4133-9d05-f936a780c605.wav",
+    "assets/standalone/audio-498c6110-78b1-4452-a6c2-1f4e979e1c5a.mp3",
+    "assets/standalone/audio-4e510bfa-7c4c-4cd5-be98-99669e092b21.mp3",
+    "assets/standalone/audio-8d792d94-17c5-43c2-a3b0-b1e1dcf5bff0.wav",
+    "assets/standalone/audio-9c2ff06d-30bf-4e03-a7c2-5cc3636413bf.wav",
+    "assets/standalone/audio-a26e3d15-d122-4895-81ce-03370b49794f.mp3",
+    "assets/standalone/audio-a9fa8406-26c0-4f8d-b961-70dc99e0f52f.mp3",
+    "assets/standalone/audio-aab8fc0a-ac9b-47f5-9170-e38e4d15e39a.wav",
+    "assets/standalone/audio-ad312365-af12-4019-a3f5-6ef3841ba959.mp3",
+    "assets/standalone/audio-c5fe25ff-72fd-4a40-a30d-70c1a148920a.mp3",
+    "assets/standalone/audio-cc0b2256-2a0e-41e7-a88f-04d68df83dd5.mp3",
+    "assets/standalone/audio-dc031dbb-5af2-4a78-a93e-f60aff8bb6e6.mp3",
+    "assets/standalone/audio-e39ab293-b53e-41d9-b837-58ab36c027f1.mp3",
+    "assets/standalone/level1-bass.mp3",
+    "assets/standalone/level1-foundation.mp3",
+    "assets/standalone/level1-fx.mp3",
+    "assets/standalone/lore.png",
+    "assets/standalone/originals.json",
+    "assets/standalone/sector_1_boss_walk_walk.json",
+    "assets/standalone/sector_1_boss_walk_walk.webp",
+    "assets/standalone/title-background.png",
+    "assets/street-hardware/broadcast-terminal.webp",
+    "assets/street-hardware/gate-1.webp",
+    "assets/street-hardware/gate-2.webp",
+    "assets/street-hardware/gate-3.webp",
+    "assets/street-hardware/gate-4.webp",
+    "assets/street-hardware/geometry.json",
+    "assets/street-hardware/provenance.json",
+    "assets/street-hardware/slim-gate-1.webp",
+    "assets/street-hardware/slim-gate-2.webp",
+    "assets/street-hardware/slim-gate-3.webp",
+    "assets/street-hardware/slim-gate-4.webp",
+    "assets/studies/visual-overhaul/prepared/hud-portrait.webp",
+    "assets/studies/visual-overhaul/references/fonts/OFL.txt",
+    "assets/studies/visual-overhaul/references/fonts/Oxanium.ttf",
+    "assets/thin-rails/cap.webp",
+    "assets/thin-rails/elbow.webp",
+    "assets/thin-rails/pavement.webp",
+    "assets/thin-rails/provenance.json",
+    "assets/thin-rails/wall.webp",
+    "assets/traffic-warning/PROMPT.md",
+    "assets/traffic-warning/watch-out.json",
+    "assets/traffic-warning/watch-out.webp",
+    "assets/traffic/README.md",
+    "assets/traffic/manifest.json",
+    "assets/traffic/ship-1.webp",
+    "assets/traffic/ship-2.webp",
+    "assets/traffic/ship-3.webp",
+    "assets/upper-route/boss-flourish.webp",
+    "assets/upper-route/boss-leap.webp",
+    "assets/upper-route/prompts.json",
+    "assets/upper-route/registration.json",
+    "assets/upper-route/rhythm-lift.webp",
+    "assets/wet-street/README.md",
+    "assets/wet-street/rain-blacktop.webp",
+    "assets/world-v3/animated-background/PROMPT.md",
+    "assets/world-v3/animated-background/far-background-loop.mp4",
+    "assets/world-v3/animated-background/keyframe-0.webp",
+    "assets/world-v3/animated-background/keyframe-1.webp",
+    "assets/world-v3/animated-background/keyframe-2.webp",
+    "assets/world-v3/animated-background/keyframe-3.webp",
+    "assets/world-v3/animated-background/manifest.json",
+    "assets/world-v3/animated-background/motion-mask-source.png",
+    "assets/world-v3/animated-background/motion-mask.png",
+    "assets/world-v3/buildings.webp",
+    "assets/world-v3/far-background.webp",
+    "index.html",
+    "sprites-manifest.json",
+    "src/core/action-input.js",
+    "src/core/fullscreen.js",
+    "src/core/game-manager.js",
+    "src/core/gamepad-ui.js",
+    "src/core/input.js",
+    "src/core/loop.js",
+    "src/core/runtime-lifecycle.js",
+    "src/engine/audio.js",
+    "src/engine/boot-loader.js",
+    "src/engine/broadcast-slum-proof-profile.js",
+    "src/engine/cache-bridge.js",
+    "src/engine/cache-ending.js",
+    "src/engine/cache-road-proof-profile.js",
+    "src/engine/cache-scene-effects.js",
+    "src/engine/cache-scene-layouts.js",
+    "src/engine/comic-dialogue.js",
+    "src/engine/cutscene.js",
+    "src/engine/game-logic.js",
+    "src/engine/intro-sequence.js",
+    "src/engine/jammer-arrow-indicator.js",
+    "src/engine/jammer-indicator.js",
+    "src/engine/level-01-music-profile.js",
+    "src/engine/lore.js",
+    "src/engine/music-director.js",
+    "src/engine/music-profiles.js",
+    "src/engine/music-transport.js",
+    "src/engine/parallax.js",
+    "src/engine/particles.js",
+    "src/engine/presentation-assets.js",
+    "src/engine/renderer.js",
+    "src/engine/spaceships.js",
+    "src/engine/sprite-playback.js",
+    "src/engine/standalone-sprites.js",
+    "src/engine/title-screen.js",
+    "src/engine/traffic-sheets.js",
+    "src/game/broadcast-slum-proof.js",
+    "src/game/cache-chapter.js",
+    "src/game/cache-road-adrenaline.js",
+    "src/game/cache-road-beat-feedback.js",
+    "src/game/cache-road-beat-surface.js",
+    "src/game/cache-road-boss-art.js",
+    "src/game/cache-road-cinematics.js",
+    "src/game/cache-road-combat-art.js",
+    "src/game/cache-road-combat.js",
+    "src/game/cache-road-crew-callouts.js",
+    "src/game/cache-road-crosswalks.js",
+    "src/game/cache-road-districts.js",
+    "src/game/cache-road-encounters.js",
+    "src/game/cache-road-guidance.js",
+    "src/game/cache-road-instruments.js",
+    "src/game/cache-road-landscape.js",
+    "src/game/cache-road-mirror.js",
+    "src/game/cache-road-proof.js",
+    "src/game/cache-road-puppet-study.js",
+    "src/game/cache-road-pursuit.js",
+    "src/game/cache-road-reactions.js",
+    "src/game/cache-road-render-budget.js",
+    "src/game/campaign-services.js",
+    "src/game/combat-fx.js",
+    "src/game/comic-hud.js",
+    "src/game/debug-commands.js",
+    "src/game/dependency-validator.js",
+    "src/game/enemies.js",
+    "src/game/game-initializer.js",
+    "src/game/game-state.js",
+    "src/game/hacking.js",
+    "src/game/jammer-arrow.js",
+    "src/game/jammer-arrows.js",
+    "src/game/jammer-environment.js",
+    "src/game/jammer-simple.js",
+    "src/game/jammer.js",
+    "src/game/level-01-debug.js",
+    "src/game/level-01-stage-fx.js",
+    "src/game/level-03-debug.js",
+    "src/game/level-difficulty.js",
+    "src/game/level1-signal-art.js",
+    "src/game/lore-collection.js",
+    "src/game/lore-records.js",
+    "src/game/lost-data.js",
+    "src/game/main-legacy-backup.js",
+    "src/game/main-legacy-removed.js",
+    "src/game/main-new.js",
+    "src/game/main.js",
+    "src/game/music-controls.js",
+    "src/game/objectives.js",
+    "src/game/pause-menu.js",
+    "src/game/player-combat.js",
+    "src/game/player.js",
+    "src/game/post-tutorial-objectives.js",
+    "src/game/render-coordinator.js",
+    "src/game/rhythm-fixed.js",
+    "src/game/rhythm.js",
+    "src/game/sector1-progression.js",
+    "src/game/simple-jammer.js",
+    "src/game/tutorial.js",
+    "src/game/ui-manager.js",
+    "src/game/update-coordinator.js",
+    "src/utils/math.js",
+    "style.css"
+  ],
+  "limitations": [
+    "Historical pinned GitHub URLs were not independently compared with current HEAD blobs.",
+    "Asset hashes and static checks do not establish browser playback, audio, gameplay or native performance.",
+    "Saves belong to the browser origin; this build does not automatically transfer Makko saves."
+  ]
+}

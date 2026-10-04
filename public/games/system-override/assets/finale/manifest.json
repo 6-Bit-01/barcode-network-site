@@ -1,0 +1,36 @@
+{
+  "source": "Generated in this conversation with built-in image generation; whole poses and original RGBA retained.",
+  "processing": "tools/build-level1-finale-assets.py; complete-pose crops and common scale/foot registration. No character part rig.",
+  "assets": [
+    {
+      "path": "assets/finale/lift-cabin.webp",
+      "bytes": 125242,
+      "sha256": "4ec8ac439a9f94f6c0f13ee3271eb0930c89ac03a352d4766aa074035060ef28"
+    },
+    {
+      "path": "assets/finale/lift-track.webp",
+      "bytes": 5210,
+      "sha256": "b3c8cf8b32fc2e9f8a2f236f8836f800ebdc147f51efa5298cff56213f588f2b"
+    },
+    {
+      "path": "assets/finale/sources/lift-cabin-source.png",
+      "bytes": 1318500,
+      "sha256": "7730bbd18939254fafd68310fddd873f6c6a1e33376feeac6a5066ee6255ca0c"
+    },
+    {
+      "path": "assets/finale/sources/lift-mechanism-source.png",
+      "bytes": 1561621,
+      "sha256": "219c4d1631d9f39cd5f8607c8ebe82807107a7eedf877bb7157a42867ca87662"
+    },
+    {
+      "path": "assets/finale/sources/studio-cat-poses-source.png",
+      "bytes": 1218458,
+      "sha256": "1db54084e832d6e6a1e1ec5cf72e7fcaea872e65dc60a1a56a7bfdeb768b2e8d"
+    },
+    {
+      "path": "assets/finale/studio-cat-event.webp",
+      "bytes": 276546,
+      "sha256": "5e3416e9f7ec25b4a24187953170c57779b47c96d684f9c65ae844cbff21d452"
+    }
+  ]
+}

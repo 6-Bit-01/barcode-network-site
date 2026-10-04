@@ -1,0 +1,319 @@
+{
+  "leap": [
+    {
+      "frame": 0,
+      "sourceBox": [
+        19,
+        102,
+        447,
+        424
+      ],
+      "destination": [
+        42,
+        158
+      ],
+      "footY": 480
+    },
+    {
+      "frame": 1,
+      "sourceBox": [
+        496,
+        164,
+        861,
+        434
+      ],
+      "destination": [
+        74,
+        210
+      ],
+      "footY": 480
+    },
+    {
+      "frame": 2,
+      "sourceBox": [
+        889,
+        33,
+        1322,
+        428
+      ],
+      "destination": [
+        40,
+        85
+      ],
+      "footY": 480
+    },
+    {
+      "frame": 3,
+      "sourceBox": [
+        1358,
+        7,
+        1765,
+        366
+      ],
+      "destination": [
+        53,
+        121
+      ],
+      "footY": 480
+    },
+    {
+      "frame": 4,
+      "sourceBox": [
+        9,
+        448,
+        461,
+        728
+      ],
+      "destination": [
+        30,
+        200
+      ],
+      "footY": 480
+    },
+    {
+      "frame": 5,
+      "sourceBox": [
+        459,
+        467,
+        921,
+        829
+      ],
+      "destination": [
+        25,
+        118
+      ],
+      "footY": 480
+    },
+    {
+      "frame": 6,
+      "sourceBox": [
+        892,
+        588,
+        1323,
+        865
+      ],
+      "destination": [
+        41,
+        203
+      ],
+      "footY": 480
+    },
+    {
+      "frame": 7,
+      "sourceBox": [
+        1346,
+        532,
+        1760,
+        855
+      ],
+      "destination": [
+        49,
+        157
+      ],
+      "footY": 480
+    }
+  ],
+  "cell": [
+    512,
+    512
+  ],
+  "anchor": [
+    256,
+    480
+  ],
+  "method": "whole-pose alpha-component extraction; shared scale; foot baseline registration; no limb cutting or pose blending",
+  "flourish": [
+    {
+      "frame": 0,
+      "sourceBox": [
+        16,
+        57,
+        346,
+        322
+      ],
+      "destination": [
+        64,
+        173
+      ],
+      "footY": 480,
+      "scale": 1.16,
+      "rootX": 165.5
+    },
+    {
+      "frame": 1,
+      "sourceBox": [
+        408,
+        66,
+        738,
+        322
+      ],
+      "destination": [
+        118,
+        183
+      ],
+      "footY": 480,
+      "scale": 1.16,
+      "rootX": 119.0
+    },
+    {
+      "frame": 2,
+      "sourceBox": [
+        755,
+        70,
+        1091,
+        322
+      ],
+      "destination": [
+        118,
+        188
+      ],
+      "footY": 480,
+      "scale": 1.16,
+      "rootX": 119.0
+    },
+    {
+      "frame": 3,
+      "sourceBox": [
+        1105,
+        75,
+        1442,
+        322
+      ],
+      "destination": [
+        114,
+        193
+      ],
+      "footY": 480,
+      "scale": 1.16,
+      "rootX": 122.5
+    },
+    {
+      "frame": 4,
+      "sourceBox": [
+        24,
+        408,
+        350,
+        675
+      ],
+      "destination": [
+        29,
+        170
+      ],
+      "footY": 480,
+      "scale": 1.16,
+      "rootX": 196.0
+    },
+    {
+      "frame": 5,
+      "sourceBox": [
+        403,
+        412,
+        703,
+        676
+      ],
+      "destination": [
+        106,
+        174
+      ],
+      "footY": 480,
+      "scale": 1.16,
+      "rootX": 129.0
+    },
+    {
+      "frame": 6,
+      "sourceBox": [
+        756,
+        419,
+        1075,
+        675
+      ],
+      "destination": [
+        107,
+        183
+      ],
+      "footY": 480,
+      "scale": 1.16,
+      "rootX": 128.5
+    },
+    {
+      "frame": 7,
+      "sourceBox": [
+        1082,
+        352,
+        1421,
+        677
+      ],
+      "destination": [
+        15,
+        103
+      ],
+      "footY": 480,
+      "scale": 1.16,
+      "rootX": 207.5
+    },
+    {
+      "frame": 8,
+      "sourceBox": [
+        35,
+        687,
+        340,
+        1035
+      ],
+      "destination": [
+        85,
+        76
+      ],
+      "footY": 480,
+      "scale": 1.16,
+      "rootX": 147.5
+    },
+    {
+      "frame": 9,
+      "sourceBox": [
+        403,
+        691,
+        712,
+        1035
+      ],
+      "destination": [
+        103,
+        81
+      ],
+      "footY": 480,
+      "scale": 1.16,
+      "rootX": 132.0
+    },
+    {
+      "frame": 10,
+      "sourceBox": [
+        738,
+        776,
+        1084,
+        1034
+      ],
+      "destination": [
+        60,
+        181
+      ],
+      "footY": 480,
+      "scale": 1.16,
+      "rootX": 169.0
+    },
+    {
+      "frame": 11,
+      "sourceBox": [
+        1101,
+        773,
+        1433,
+        1034
+      ],
+      "destination": [
+        64,
+        177
+      ],
+      "footY": 480,
+      "scale": 1.16,
+      "rootX": 165.5
+    }
+  ]
+}

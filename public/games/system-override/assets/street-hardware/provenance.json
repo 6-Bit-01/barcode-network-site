@@ -1,0 +1,94 @@
+{
+  "status": "implemented-for-owner-review; Makko acceptance pending",
+  "generator": "OpenAI built-in image generation",
+  "promptSummary": "Battered public-access broadcast terminal with CRT waveform, speaker cones, chipped mint paint, dark chassis and purple side light; flat jumpable top, front horizontal, shallow right/up depth matching sidewalk. Transparent isolated hand-inked game prop. No scenery or antenna.",
+  "sourceImageSha256": "a85eaac39a3eb7e17917b87ef586a9064631f4330be508ab2baa6836d65125b9",
+  "sourcePreservation": "Original generated PNG retained by the generating ChatGPT turn; runtime export tracked here.",
+  "terminalRegistration": {
+    "sourceCrop": [
+      110,
+      202,
+      931,
+      1054
+    ],
+    "sourceFrontLipY": 88,
+    "sourceFootY": 1047,
+    "worldCollider": [
+      3150,
+      650,
+      160,
+      206
+    ],
+    "stableSurfaceId": "tower-utility-unit",
+    "runtimeImageWidth": 194,
+    "runtimeImageHeight": 226.40667361835244,
+    "alpha": "preserved"
+  },
+  "rails": "Offline rendering of unchanged PR58 hardware modules at measured world geometry. Frame 0 powered; frame 1 original saturate(0) brightness(.65). Runtime uses two images only during 650ms opening, otherwise one.",
+  "assets": [
+    {
+      "path": "assets/street-hardware/broadcast-terminal.webp",
+      "bytes": 121788,
+      "sha256": "2c1a06cf44828cdcbc8044b9cdbf66457b994fbe7e0982f8209df4515d206446",
+      "width": 512,
+      "height": 580
+    },
+    {
+      "path": "assets/street-hardware/gate-2.webp",
+      "bytes": 59274,
+      "sha256": "94bb09650bbf2c0c1817dc0ec1934185b57c3ea90b9bb9b9c23ec4eda2daeed4",
+      "width": 1340,
+      "height": 1106
+    },
+    {
+      "path": "assets/street-hardware/gate-4.webp",
+      "bytes": 63714,
+      "sha256": "c068fda25074d2a1a67000f95f9e93d7e2a9f0957563d1c522efd920123730b5",
+      "width": 1340,
+      "height": 1240
+    },
+    {
+      "path": "assets/street-hardware/gate-1.webp",
+      "bytes": 66178,
+      "sha256": "9f947dc0e7c6a2ea229d48d05037477ea6ee30b488def649503332f39ee416b3",
+      "width": 1340,
+      "height": 1334
+    },
+    {
+      "path": "assets/street-hardware/gate-3.webp",
+      "bytes": 67524,
+      "sha256": "e3798694b599d23744f8d519952e403457280036f0694faf6b2c13b5967b5b43",
+      "width": 1340,
+      "height": 1381
+    },
+    {
+      "path": "assets/street-hardware/slim-gate-1.webp",
+      "bytes": 40458,
+      "sha256": "7205e838fc3eb86c4188524d87a4f8ca021299592e5ca2d28e94fd855cf5e60b",
+      "width": 1340,
+      "height": 1334
+    },
+    {
+      "path": "assets/street-hardware/slim-gate-2.webp",
+      "bytes": 36460,
+      "sha256": "d51506bd84af7d85f0ed4704e583e167eff1906f897a78f1b2aa8d5e7c4d2f0a",
+      "width": 1340,
+      "height": 1106
+    },
+    {
+      "path": "assets/street-hardware/slim-gate-3.webp",
+      "bytes": 41260,
+      "sha256": "c9ee91d1f020a4b363458be28a50c24ee83410a3955f27121bed29a24de17ad9",
+      "width": 1340,
+      "height": 1381
+    },
+    {
+      "path": "assets/street-hardware/slim-gate-4.webp",
+      "bytes": 39050,
+      "sha256": "79a3ea59c16b2c0f3360d179188860a054f2b3e83e1f3735c32d5bf266c34e06",
+      "width": 1340,
+      "height": 1240
+    }
+  ],
+  "slimCorrection": "Same approved rail artwork rendered at 14 world units across the full facade and pavement path, with compact 14x22 cap and 22x28 elbow. Existing gate locations/footprints and powered/off states remain. Native bake retains one draw per gate (two during opening); no runtime filters."
+}

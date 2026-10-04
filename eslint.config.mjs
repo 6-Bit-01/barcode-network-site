@@ -27,6 +27,9 @@ const eslintConfig = defineConfig([
     "_archive/**",
     "discord-bot/**",
     "stream-engine/**",
+    // Generated static game scripts retain their browser-global architecture.
+    // Their source repository owns all-file syntax and gameplay checks.
+    "public/games/system-override/**",
   ]),
 ]);
 

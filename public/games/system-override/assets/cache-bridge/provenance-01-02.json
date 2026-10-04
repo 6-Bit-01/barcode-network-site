@@ -1,0 +1,76 @@
+{
+  "kind": "new illustrations from approved reference images",
+  "tool": "image_gen.imagegen",
+  "mode": "built-in",
+  "transparent_background": false,
+  "postprocess": "Original generated PNG copied unchanged; WebP format conversion only with Pillow, quality=92, method=6. No crop, resizing, painting or compositing.",
+  "scenes": [
+    {
+      "scene": 1,
+      "title": "District after the fight",
+      "prompt": "Use case: illustration-story. Create ONE NEW premium hand-inked 1990s cyberpunk graphic-novel illustration, not a recreation of an existing panel. This is page 1 of a level-transition story: a quiet breath after a hard-won street fight. Reference image 1 supplies the approved wet district architecture and distant broadcast tower; reference image 2 supplies the EXACT approved 6 Bit identity and drawing style. These are visual references only, not images to paste or crop.\nCanvas/composition: very wide landscape 2.2:1, ideally 2112x960; one continuous full-bleed scene, no border, no gutters, no montage. Camera at street level, a new angle looking down the wet district as amber lights are coming back on in windows and cyan light returns to the shopfronts. The broadcast tower is distant, with no attack or giant energy explosion. Evening sky in smoky plum and cyan, ink-black industrial architecture and richly textured pavement reflections. 6 Bit is the ONLY person physically in this scene, standing in the left-to-middle foreground looking down the street, body turned away a little but his face visible in three-quarter profile. Keep his head/face in the upper-middle height of the image, with clear unobstructed eyes. Leave the low foreground as atmospheric street, not a face.\nCharacter fidelity is critical: 6 Bit is the same adult man as reference 2. Long brown hair, black flat-brim 6 Bit-style cap with green underside, angular thick black eyeglass frames with CLEAR lenses, visible white irises, white geometric face paint matching the reference with the natural living face and mouth intact. This is face paint, NOT a skull, skeleton, robot head, sunglasses or face mask. Black vest and layered black street clothes, fingerless gloves. Calm alert expression after the fight, not a victory pose. Correct human anatomy, only two arms and natural hands.\nStyle: match the approved references' sophisticated hand-inked drawing, angular cel shading, controlled crosshatching, worn ink grain, amber/cyan/plum palette. Warm light returning to the district is the narrative payoff. No other named characters, no pedestrians, no silhouettes of people.\nNO TEXT anywhere: no captions, speech balloons, UI, readable signage, logotypes, numbers, letters, watermarks or panel labels. Signs may glow as abstract color blocks only. Hat and shirt must not introduce readable lettering. No typography baked into this illustration.",
+      "reference_paths": [
+        "/workspace/scratch/dd1242abe481/repo/assets/intro/intro-07-district.webp",
+        "/workspace/scratch/dd1242abe481/repo/assets/intro/intro-08-keep-it-open.webp"
+      ],
+      "generated_source_path": "/workspace/scratch/dd1242abe481/generated_images/exec-f22a19b5-f45d-4557-9552-ce7787cb7630.png",
+      "source_path": "assets/cache-bridge/sources/bridge-01-district.png",
+      "runtime_path": "assets/cache-bridge/bridge-01-district.webp",
+      "visual_review": "Single full-bleed scene; 6 Bit alone outside, clear eyeglass lenses and visible white irises, living face paint rather than skull; long brown hair, black cap and green underside; returning district lights and distant tower. No caption, balloon or UI.",
+      "source_sha256": "895ab7bb8b85720ad4f30cd00e71ec282e8b7e93654601f235513ed433c71e89",
+      "source_bytes": 3249341,
+      "source_dimensions": [
+        1860,
+        846
+      ],
+      "runtime_sha256": "6f12deac66f9028c3d8d979de8d6afc302da66c124ce7aee73ea6952890ca561",
+      "runtime_bytes": 723864,
+      "runtime_dimensions": [
+        1860,
+        846
+      ],
+      "reference_sha256": {
+        "/workspace/scratch/dd1242abe481/repo/assets/intro/intro-07-district.webp": "fe75c5d599101be7e662e09fd2449e242967fcf89a07f266f34dd6131c99a740",
+        "/workspace/scratch/dd1242abe481/repo/assets/intro/intro-08-keep-it-open.webp": "aeb1845156539ce1dbb4b8825e1791b73a418ad40d4eb5cfd2a94a416761ce57"
+      },
+      "source_copy_verified": true,
+      "selectionStatus": "initial-not-selected",
+      "selectedRevisionRecord": "assets/cache-bridge/bridge-01-edit.json",
+      "pathHistoryNote": "source_path and runtime_path identify the original destinations at initial generation time; those destinations now contain the selected revision. The hashes in this record intentionally describe the initial output."
+    },
+    {
+      "scene": 2,
+      "title": "Outgoing channel",
+      "prompt": "Use case: illustration-story. Create ONE NEW premium hand-inked 1990s cyberpunk graphic-novel illustration, page 2 of a level-transition story: the outgoing studio channel opens and a protected original cassette is prepared for transport. Reference image 1 (intro-02) supplies the EXACT Mac Modem and Cache Back identities and the lived-in analog studio; reference image 2 (intro-04) supplies close facial fidelity, the protected tape object, and approved ink style. Make a new scene from a different camera angle, not a copy or crop of either reference.\nCanvas/composition: very wide landscape 2.2:1, ideally 2112x960. One single continuous full-bleed scene, no border or gutters. Medium-wide, slightly elevated view across an analog transport console so we see Mac on the LEFT reconnecting a patchbay and Cache on the RIGHT leaning over the console. Both faces occupy the middle-upper portion of the picture, unobstructed, large enough for the reference features to read. On the console in front of Cache is ONE SMALL ordinary audio cassette secured inside a compact clear protective case: palm-sized, not a large briefcase, not VHS, not a futuristic glowing cube. Green branching connection traces and a simple green connection light on a CRT suggest that an outgoing channel has just opened, but no legible text, numeric displays or UI labels. Mac's hands connect a patch cable; Cache steadies the transport console next to the little protected cassette. Correct natural hand anatomy, distinct bodies, sensible cable routing.\nExactly TWO adult people in the scene: Mac Modem and Cache Back, no third person from reference 1, no other people or silhouettes anywhere. Cache Back: exact reference face and proportions, yellow cap with its distinctive two yellow ear-like side protrusions, black rectangular eyeglass frames with CLEAR lenses and visible BROWN irises, black angular lower-face technical mask, yellow shirt with black Greek-key trim, dark mechanical collar with restrained cyan accents. No sunglasses, no full-face helmet, no animal head. Mac Modem: exact reference ginger beard and TWO thin long braids, black cap with red accents, visible RED irises, WHITE face paint with RED nested forehead arcs and asymmetric fine dark facial circuitry; bare tattooed arms and red sleeveless vest. Preserve the reference white facial design as makeup on a living man, not a skull. No readable cap or shirt lettering.\nSetting/style: premium hand-inked 1990s cyberpunk graphic novel, precise angular cel shading, ink grain and selective crosshatching; scratched analog racks, patchbay plugs, cassette transport, worn studio surfaces, amber task lights, cyan rim light and plum shadows. Intimate focused working moment with a subtle sense of relief and urgency; high-quality illustration, not photorealistic and not 3D. Faces and eyes stay readable above the foreground console.\nNO TEXT anywhere: no captions, balloons, readable markings, signage, logotypes, numbers, letters, watermarks, UI overlays or panel labels. The CRT shows abstract green connections only. Do not carry text or the background third man from the references into this new scene.",
+      "reference_paths": [
+        "/workspace/scratch/dd1242abe481/repo/assets/intro/intro-02-keep-the-take.webp",
+        "/workspace/scratch/dd1242abe481/repo/assets/intro/intro-04-preserve.webp"
+      ],
+      "generated_source_path": "/workspace/scratch/dd1242abe481/generated_images/exec-73509d03-3861-41a3-ae6e-7e1723deb9d8.png",
+      "source_path": "assets/cache-bridge/sources/bridge-02-uplink.png",
+      "runtime_path": "assets/cache-bridge/bridge-02-uplink.webp",
+      "visual_review": "Single full-bleed scene with exactly Mac and Cache; unobstructed reference-matched faces, Mac's red irises/white face paint/red arcs and tattooed arms, Cache's brown irises/clear glasses/yellow side-protrusion cap/black lower-face mask. Small cassette in clear case, green abstract CRT connections. No readable words, caption, balloon or UI.",
+      "source_sha256": "04708763cd219884aada806b3c3ac6de40315a2f4f4bdb0a0df0ab1e52a79ac8",
+      "source_bytes": 2950082,
+      "source_dimensions": [
+        1860,
+        845
+      ],
+      "runtime_sha256": "2154315c8753d5dde4556c6fc7e20af0e28cc446e80162cab6d1559cc28e5777",
+      "runtime_bytes": 563140,
+      "runtime_dimensions": [
+        1860,
+        845
+      ],
+      "reference_sha256": {
+        "/workspace/scratch/dd1242abe481/repo/assets/intro/intro-02-keep-the-take.webp": "dee96b7d5f1ff6f5112cd1a0ec0d5808dfda82ebb165ebf12f4e8a1c50930462",
+        "/workspace/scratch/dd1242abe481/repo/assets/intro/intro-04-preserve.webp": "6b85f78d01c4e31fccb967f5cb557c1ebc5a3a08f67ada3f5a2d99bd84ed2c3c"
+      },
+      "source_copy_verified": true,
+      "selectionStatus": "initial-not-selected",
+      "selectedRevisionRecord": "assets/cache-bridge/bridge-02-edit.json",
+      "pathHistoryNote": "source_path and runtime_path identify the original destinations at initial generation time; those destinations now contain the selected revision. The hashes in this record intentionally describe the initial output."
+    }
+  ],
+  "selectionStatus": "Initial generation record only; neither initial output is the selected shipped artwork. Selected revisions are documented in bridge-01-edit.json and bridge-02-edit.json."
+}

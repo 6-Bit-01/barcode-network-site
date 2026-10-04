@@ -1,0 +1,19 @@
+{
+  "tool": "image_gen.imagegen",
+  "prompt": "Use case: precise-object-edit. Image1 is the edit target, new studio uplink illustration. Image2 is the original approved character reference. Change ONLY Mac Modem's blank black baseball cap at left: restore the red \"MODEM\" embroidered lettering exactly as on his hat in image2, naturally following cap front and perspective. Established costume logo only, not a caption. Keep absolutely everything else from image1: all character faces and expressions, red signal-arcs facepaint, beard/braids/ginger hair/tattoos, Cache's cap/clear glasses/mask/yellow shirt, hand poses, cables, archive cartridge, console, CRT green circuit trace, lighting and wide 1860x845 composition. No new objects or other text. Match the reference's hand-inked mature cyberpunk graphic-novel rendering.",
+  "references": [
+    "initial generated scene2",
+    "assets/intro/intro-02-keep-the-take.webp"
+  ],
+  "reason": "Restore established costume logo omitted in initial generation",
+  "initialSourceSha256": "04708763cd219884aada806b3c3ac6de40315a2f4f4bdb0a0df0ab1e52a79ac8",
+  "source": "assets/cache-bridge/sources/bridge-02-uplink.png",
+  "runtime": "assets/cache-bridge/bridge-02-uplink.webp",
+  "dimensions": [
+    1860,
+    845
+  ],
+  "sourceSha256": "3ccd1b49f80f06f639f64018f21e8599febfdafe270507bbeaef4dfb20a3ec4d",
+  "runtimeSha256": "830f668f43c3a1105baef7b93b788df6a4f7a31b17bb939e2402babbe085dd2e",
+  "generatedSource": "/workspace/scratch/dd1242abe481/generated_images/exec-2b4dc5bd-ffd6-4deb-9bcf-c388b31edd43.png"
+}

@@ -1,0 +1,300 @@
+/* Enhanced VHS-Era Dystopian Styling for BARCODE: System Override */
+
+/* Full viewport game container - CRITICAL FIX for both modes */
+.game-container {
+    width: 100vw;
+    height: 100vh;
+    position: fixed;
+    top: 0;
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    background: #000;
+    overflow: hidden;
+}
+
+/* Canvas maximization - CRITICAL FIX for proper scaling */
+#gameCanvas {
+    display: block;
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    
+    /* CRITICAL: Use max dimensions for aspect ratio */
+    max-width: 100vw;
+    max-height: calc(100vh - 120px); /* Account for topbar + hint (60px + 60px) */
+    
+    /* Center the canvas within its container */
+    margin: 0 auto;
+    
+    /* Maintain aspect ratio */
+    object-fit: contain;
+    
+    /* High quality rendering */
+    image-rendering: auto;
+    image-rendering: smooth;
+    image-rendering: -webkit-optimize-contrast;
+    
+    /* Prevent stretching */
+    background: #000;
+    
+    /* Ensure proper sizing in flex container */
+    min-height: 0;
+}
+
+/* Glitch Text Effects */
+.glitch-text {
+    position: relative;
+    color: #00ffff;
+    font-weight: 900;
+    text-shadow: 
+        2px 2px 0 #ff00ff,
+        -2px -2px 0 #00ffff;
+    animation: glitch-text 2s infinite;
+}
+
+@keyframes glitch-text {
+    0% { transform: translate(0); }
+    20% { transform: translate(-2px, 2px); }
+    40% { transform: translate(-2px, -2px); }
+    60% { transform: translate(2px, 2px); }
+    80% { transform: translate(2px, -2px); }
+    100% { transform: translate(0); }
+}
+
+/* Holographic Menu Styles */
+.hologram {
+    background: linear-gradient(45deg, 
+        rgba(0,255,255,0.1) 0%, 
+        rgba(255,0,255,0.1) 50%, 
+        rgba(0,255,255,0.1) 100%);
+    border: 2px solid transparent;
+    border-image: linear-gradient(45deg, #00ffff, #ff00ff, #00ffff) 1;
+    backdrop-filter: blur(10px);
+    box-shadow: 
+        0 0 20px rgba(0,255,255,0.5),
+        inset 0 0 20px rgba(255,0,255,0.1);
+}
+
+/* Data Stream Animation */
+.data-stream {
+    position: fixed;
+    top: -100px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    color: #00ff00;
+    text-shadow: 0 0 5px #00ff00;
+    animation: data-fall 3s linear infinite;
+    pointer-events: none;
+    z-index: 999;
+}
+
+@keyframes data-fall {
+    0% { top: -100px; opacity: 0; }
+    10% { opacity: 1; }
+    90% { opacity: 1; }
+    100% { top: 100vh; opacity: 0; }
+}
+
+/* Boss Intro Animation */
+.boss-intro {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 2000;
+    text-align: center;
+    animation: boss-zoom 2s ease-out;
+}
+
+@keyframes boss-zoom {
+    0% { 
+        transform: translate(-50%, -50%) scale(0.1);
+        opacity: 0;
+    }
+    50% {
+        transform: translate(-50%, -50%) scale(1.2);
+        opacity: 1;
+    }
+    100% {
+        transform: translate(-50%, -50%) scale(1);
+        opacity: 1;
+    }
+}
+
+.boss-name {
+    font-size: 4rem;
+    font-weight: 900;
+    color: #ff00ff;
+    text-shadow: 0 0 20px #ff00ff, 0 0 40px #ff00ff;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+}
+
+.boss-title {
+    font-size: 1.5rem;
+    color: #00ffff;
+    margin-top: 10px;
+    letter-spacing: 6px;
+}
+
+/* Mixtape Collectible Effect */
+.mixtape-collect {
+    position: fixed;
+    bottom: 100px;
+    right: -300px;
+    background: linear-gradient(135deg, #ff00ff, #00ffff);
+    padding: 20px 30px;
+    border-radius: 10px;
+    color: #fff;
+    font-weight: bold;
+    animation: mixtape-slide 3s ease-out;
+    z-index: 1500;
+}
+
+@keyframes mixtape-slide {
+    0% { right: -300px; }
+    20% { right: 50px; }
+    80% { right: 50px; }
+    100% { right: -300px; opacity: 0; }
+}
+
+/* Terminal Style */
+.terminal {
+    background: #000;
+    border: 2px solid #00ff00;
+    font-family: 'Share Tech Mono', monospace;
+    color: #00ff00;
+    padding: 20px;
+    text-shadow: 0 0 5px #00ff00;
+}
+
+.terminal-cursor {
+    animation: cursor-blink 1s infinite;
+}
+
+@keyframes cursor-blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+}
+
+/* Rhythm Combat UI */
+.rhythm-track {
+    display: flex;
+    gap: 10px;
+    padding: 20px;
+    background: rgba(0,0,0,0.8);
+    border: 2px solid #ff00ff;
+    border-radius: 10px;
+}
+
+.rhythm-beat {
+    width: 60px;
+    height: 60px;
+    border: 2px solid #00ffff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.1s;
+}
+
+.rhythm-beat.active {
+    background: radial-gradient(circle, #ff00ff, #00ffff);
+    transform: scale(1.2);
+    box-shadow: 0 0 20px #ff00ff;
+}
+
+/* Dialogue System */
+.dialogue-box {
+    position: fixed;
+    bottom: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.9);
+    border: 2px solid #00ffff;
+    padding: 20px 30px;
+    max-width: 800px;
+    color: #fff;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 16px;
+    z-index: 500;
+}
+
+.dialogue-choices {
+    margin-top: 15px;
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+}
+
+.dialogue-choice {
+    background: transparent;
+    border: 1px solid #ff00ff;
+    color: #ff00ff;
+    padding: 8px 16px;
+    cursor: pointer;
+    transition: all 0.3s;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.dialogue-choice:hover {
+    background: rgba(255,0,255,0.2);
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(255,0,255,0.5);
+}
+
+/* Loading Screen */
+.loading-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 3000;
+}
+
+.loading-barcode {
+    font-size: 3rem;
+    font-weight: 900;
+    color: #00ffff;
+    letter-spacing: 4px;
+    margin-bottom: 30px;
+    animation: barcode-scan 2s infinite;
+}
+
+@keyframes barcode-scan {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 1; }
+}
+
+.loading-progress {
+    width: 300px;
+    height: 4px;
+    background: rgba(255,0,255,0.2);
+    border: 1px solid #ff00ff;
+    position: relative;
+    overflow: hidden;
+}
+
+.loading-progress::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, #00ffff, transparent);
+    animation: progress-scan 1.5s infinite;
+}
+
+@keyframes progress-scan {
+    0% { left: -100%; }
+    100% { left: 100%; }
+}

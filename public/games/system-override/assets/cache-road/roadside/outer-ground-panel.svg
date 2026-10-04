@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="verge" x2="1" y2=".12">
+      <stop stop-color="#223745"/><stop offset=".18" stop-color="#30444c"/>
+      <stop offset=".64" stop-color="#2b4147"/><stop offset="1" stop-color="#263b43"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#verge)" d="M0 0h256v256H0z"/>
+  <path fill="#142c3b" d="M0 0h9v256H0z"/>
+  <path fill="#829c9a" fill-opacity=".55" d="M9 0h2v256H9z"/>
+  <path fill="#395050" fill-opacity=".58" d="M11 0h49v256H11z"/>
+  <path fill="#1c343f" fill-opacity=".52" d="M60 0h3v256h-3z"/>
+  <path d="M0 0h256M0 254h256" stroke="#152e3b" stroke-width="3" stroke-opacity=".36"/>
+  <path d="M68 18q47 18 87 0t101 2M64 142q42-24 81-9t111-12M69 229q41 17 88 0t99 4" fill="none" stroke="#8caea6" stroke-width="6" stroke-opacity=".10"/>
+  <path d="M91 24l26 7 20-2 16 8M180 66l24-4 16 9M77 188l19-7 30 8 18-6M176 232l24-12 30 7" fill="none" stroke="#102b38" stroke-width="4" stroke-opacity=".40"/>
+  <path d="M122 93h30l15 4h-40zM205 174l21-5 15 6h-30zM79 54h16l6 3H78z" fill="#7aa69c" fill-opacity=".17"/>
+  <path d="M107 151h7m4 4h4m64-52h6m4 2h7m-96 126h7" stroke="#b29a78" stroke-width="2" stroke-opacity=".36"/>
+  <path d="M64 98l25-2m60 101l31-3m-99-71l14-1" stroke="#6e8d8b" stroke-width="2" stroke-opacity=".40"/>
+</svg>

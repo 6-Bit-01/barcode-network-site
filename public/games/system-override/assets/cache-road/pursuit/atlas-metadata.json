@@ -1,0 +1,482 @@
+{
+  "version": 1,
+  "generatedAt": "2026-10-01",
+  "method": "Built-in image_gen; originals unchanged; noncreative crop/repack for rig; WebP exact lossless conversion",
+  "assets": [
+    {
+      "asset": "pursuit-rig-atlas",
+      "generatedOriginal": "assets/cache-road/pursuit/sources/pursuit-rig-atlas.png",
+      "runtime": "assets/cache-road/pursuit/pursuit-rig-atlas.webp",
+      "size": [
+        2048,
+        1024
+      ],
+      "mode": "RGBA",
+      "columns": 4,
+      "rows": 2,
+      "frames": 8,
+      "cellSize": [
+        512,
+        512
+      ],
+      "transparentPixels": 1142684,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "byteIdenticalDecodedRGBA": true,
+      "sha256": {
+        "source": "fcbd0a6235c0fe2989d9428293317a018f20e026732cd97f03892d80f4b3d34d",
+        "runtime": "d5d5351b69f1fda41c5a0a8f910d750953d0ac7f995c4021f542a76673961b6b",
+        "decodedRGBA": "97ca2d7962a313393587d567126f493773bbe884e5a68e4e6fa2addd72fa73b4"
+      },
+      "bytes": {
+        "source": 2626895,
+        "runtime": 1879418
+      },
+      "cells": [
+        {
+          "frame": 0,
+          "sourceRect": [
+            0,
+            0,
+            512,
+            512
+          ],
+          "opaqueBounds": [
+            78,
+            44,
+            435,
+            473
+          ],
+          "contact": [
+            256,
+            473
+          ]
+        },
+        {
+          "frame": 1,
+          "sourceRect": [
+            512,
+            0,
+            512,
+            512
+          ],
+          "opaqueBounds": [
+            78,
+            38,
+            435,
+            473
+          ],
+          "contact": [
+            256,
+            473
+          ]
+        },
+        {
+          "frame": 2,
+          "sourceRect": [
+            1024,
+            0,
+            512,
+            512
+          ],
+          "opaqueBounds": [
+            76,
+            62,
+            433,
+            473
+          ],
+          "contact": [
+            256,
+            473
+          ]
+        },
+        {
+          "frame": 3,
+          "sourceRect": [
+            1536,
+            0,
+            512,
+            512
+          ],
+          "opaqueBounds": [
+            62,
+            78,
+            443,
+            473
+          ],
+          "contact": [
+            256,
+            473
+          ]
+        },
+        {
+          "frame": 4,
+          "sourceRect": [
+            0,
+            512,
+            512,
+            512
+          ],
+          "opaqueBounds": [
+            75,
+            75,
+            438,
+            473
+          ],
+          "contact": [
+            256,
+            473
+          ]
+        },
+        {
+          "frame": 5,
+          "sourceRect": [
+            512,
+            512,
+            512,
+            512
+          ],
+          "opaqueBounds": [
+            77,
+            75,
+            434,
+            473
+          ],
+          "contact": [
+            256,
+            473
+          ]
+        },
+        {
+          "frame": 6,
+          "sourceRect": [
+            1024,
+            512,
+            512,
+            512
+          ],
+          "opaqueBounds": [
+            77,
+            79,
+            433,
+            473
+          ],
+          "contact": [
+            256,
+            473
+          ]
+        },
+        {
+          "frame": 7,
+          "sourceRect": [
+            1536,
+            512,
+            512,
+            512
+          ],
+          "opaqueBounds": [
+            75,
+            101,
+            434,
+            473
+          ],
+          "contact": [
+            256,
+            473
+          ]
+        }
+      ],
+      "sourceSize": [
+        1536,
+        1024
+      ],
+      "sourceExtraction": [
+        {
+          "frame": 0,
+          "sourceRect": [
+            0,
+            0,
+            384,
+            512
+          ],
+          "insert": [
+            64,
+            0
+          ],
+          "contact": [
+            256,
+            473
+          ],
+          "note": "Preserve painted pixels"
+        },
+        {
+          "frame": 1,
+          "sourceRect": [
+            384,
+            0,
+            384,
+            512
+          ],
+          "insert": [
+            64,
+            0
+          ],
+          "contact": [
+            256,
+            473
+          ],
+          "note": "Preserve painted pixels"
+        },
+        {
+          "frame": 2,
+          "sourceRect": [
+            768,
+            0,
+            370,
+            512
+          ],
+          "insert": [
+            64,
+            0
+          ],
+          "contact": [
+            256,
+            473
+          ],
+          "note": "Preserve painted pixels; retain complete ram wing and omit its fragment from neighbor"
+        },
+        {
+          "frame": 3,
+          "sourceRect": [
+            1138,
+            0,
+            398,
+            512
+          ],
+          "insert": [
+            50,
+            0
+          ],
+          "contact": [
+            256,
+            473
+          ],
+          "note": "Preserve painted pixels; retain complete ram wing and omit its fragment from neighbor"
+        },
+        {
+          "frame": 4,
+          "sourceRect": [
+            0,
+            512,
+            384,
+            511
+          ],
+          "insert": [
+            64,
+            1
+          ],
+          "contact": [
+            256,
+            473
+          ],
+          "note": "Preserve painted pixels; contact-align lower row by one pixel"
+        },
+        {
+          "frame": 5,
+          "sourceRect": [
+            384,
+            512,
+            384,
+            511
+          ],
+          "insert": [
+            64,
+            1
+          ],
+          "contact": [
+            256,
+            473
+          ],
+          "note": "Preserve painted pixels; contact-align lower row by one pixel"
+        },
+        {
+          "frame": 6,
+          "sourceRect": [
+            768,
+            512,
+            384,
+            511
+          ],
+          "insert": [
+            64,
+            1
+          ],
+          "contact": [
+            256,
+            473
+          ],
+          "note": "Preserve painted pixels; contact-align lower row by one pixel"
+        },
+        {
+          "frame": 7,
+          "sourceRect": [
+            1152,
+            512,
+            384,
+            511
+          ],
+          "insert": [
+            64,
+            1
+          ],
+          "contact": [
+            256,
+            473
+          ],
+          "note": "Preserve painted pixels; contact-align lower row by one pixel"
+        }
+      ],
+      "anchor": [
+        0.5,
+        0.923828125
+      ],
+      "rgbaComparedWith": "Noncreative repacked atlas; original retained unchanged"
+    },
+    {
+      "asset": "pursuit-impact-atlas",
+      "generatedOriginal": "assets/cache-road/pursuit/sources/pursuit-impact-atlas.png",
+      "runtime": "assets/cache-road/pursuit/pursuit-impact-atlas.webp",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGBA",
+      "columns": 3,
+      "rows": 2,
+      "frames": 6,
+      "cellSize": [
+        512,
+        512
+      ],
+      "transparentPixels": 921314,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "byteIdenticalDecodedRGBA": true,
+      "sha256": {
+        "source": "67c855265f16ff3b1a1aad0754fc1b1e79a802a96e0821f8950c0c3a5c51f075",
+        "runtime": "c06991e196cda1bb0de088ba9c94d61121fcbebfb82f6676a0fac4466a492ab7",
+        "decodedRGBA": "444ffa8d848d984f2dee6797aa29621d2b49271c3bbac9a35420145d727ec0b9"
+      },
+      "bytes": {
+        "source": 2354951,
+        "runtime": 1714216
+      },
+      "cells": [
+        {
+          "frame": 0,
+          "sourceRect": [
+            0,
+            0,
+            512,
+            512
+          ],
+          "opaqueBounds": [
+            79,
+            105,
+            459,
+            448
+          ],
+          "contact": null
+        },
+        {
+          "frame": 1,
+          "sourceRect": [
+            512,
+            0,
+            512,
+            512
+          ],
+          "opaqueBounds": [
+            38,
+            49,
+            463,
+            481
+          ],
+          "contact": null
+        },
+        {
+          "frame": 2,
+          "sourceRect": [
+            1024,
+            0,
+            512,
+            512
+          ],
+          "opaqueBounds": [
+            42,
+            43,
+            468,
+            469
+          ],
+          "contact": null
+        },
+        {
+          "frame": 3,
+          "sourceRect": [
+            0,
+            512,
+            512,
+            512
+          ],
+          "opaqueBounds": [
+            17,
+            106,
+            498,
+            483
+          ],
+          "contact": null
+        },
+        {
+          "frame": 4,
+          "sourceRect": [
+            512,
+            512,
+            512,
+            512
+          ],
+          "opaqueBounds": [
+            31,
+            140,
+            508,
+            409
+          ],
+          "contact": null
+        },
+        {
+          "frame": 5,
+          "sourceRect": [
+            1024,
+            512,
+            512,
+            512
+          ],
+          "opaqueBounds": [
+            33,
+            15,
+            486,
+            478
+          ],
+          "contact": null
+        }
+      ],
+      "anchor": [
+        0.5,
+        0.5
+      ]
+    }
+  ]
+}

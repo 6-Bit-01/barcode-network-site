@@ -57,7 +57,7 @@ test("only the isolated writer and admin historical routes consume the repositor
       if (entry.isDirectory()) walk(pathname);
       else if (/\.(?:ts|tsx|mjs)$/.test(entry.name)) {
         const source = fs.readFileSync(pathname, "utf8");
-        if (source.includes("queue-historical-evidence-repository")) consumers.push(pathname);
+        if (source.includes("queue-historical-evidence-repository")) consumers.push(pathname.split(path.sep).join("/"));
       }
     }
   };

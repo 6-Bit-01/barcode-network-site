@@ -1,0 +1,100 @@
+{
+  "milestone": "Level 1 to Cache Line bridge",
+  "ownedScenes": [
+    5,
+    6
+  ],
+  "tool": "image_gen.imagegen (built-in)",
+  "createdAt": "2026-09-30",
+  "handling": "Original PNG outputs copied byte-for-byte; WebP exports use Pillow quality=92. No crop, resize, repaint, compositing, or other image editing.",
+  "generationCount": 2,
+  "validationNote": "One successful image generation per distinct scene. A preflight scene-6 call was rejected before generation for exceeding five reference paths; retry omitted the unused DJ reference.",
+  "scenes": [
+    {
+      "scene": 5,
+      "title": "Keep it",
+      "prompt": "Create one finished full-bleed comic illustration, landscape aspect ratio exactly 2.2:1 (for example 2200 x 1000), no border, no panel subdivisions. This is scene 5, \"Keep it\", of a narrative game bridge. Match the premium hand-inked 1990s cyberpunk graphic-novel rendering and the exact established character identities in the supplied approved intro images: expressive black ink contours, angular cel shading with restrained painted texture, fine halftone, warm amber lamps against cyan light and plum shadows. It must feel like the same comic, not photorealistic, not a 3D render, not generic anime.\n\nComposition: a strong medium-close heroic portrait of CACHE BACK, occupying the center-right two thirds in a lived-in cyberpunk recording studio. His head and face sit in the upper-middle portion, fully inside frame. He holds one SMALL BLACK AND YELLOW PROTECTIVE CASSETTE CASE at chest height, approximately palm sized, with both case and his fingers clearly readable. The original physical cassette is ALREADY protected and has been in his possession; he is choosing to carry and preserve it, not recording it, not discovering it, and not newly flipping its switch. A tiny physical write-protect switch on the case is visibly latched. No duplicate tape or duplicate case. His posture is calm, firm, intentional; his eyes carry the resolve because his lower face is masked.\n\nCACHE BACK IDENTITY MUST MATCH the references: yellow cap with two rounded ear-like protrusions, short dark hair, brown eyes, clear-lens black rectangular glasses, black angular technology mask covering mouth AND nose, heavy dark mechanical collar with small cyan accents, yellow short sleeves with black Greek-key trim. Preserve his actual established proportions and costume. The mask never exposes the nose or mouth. Do not substitute a helmet, respirator tube, human beard, transparent face shield or sunglasses.\n\nDJ FLOPPYDISC is the only secondary character, smaller in the LEFT BACKGROUND at his studio console. Use the supplied DJ reference exactly: wavy swept dark brown hair, narrow mustache, dark horizontal visor glasses with cyan accents, white rolled sleeves, black vest, black bow tie. He is attentive and quiet, looking from the console toward Cache. The console has TWO visibly separate abstract cyan signal traces, equally intact, on a small CRT, not readable words or detailed modern UI. They are evidence preserved side by side. The foreground case is the focal story object. Old audio racks, reels, cables and warm practical lamps imply the familiar studio; keep the background quieter and less detailed than Cache. No other people: no Mac, no Cliff, no 6 Bit, no new characters.\n\nABSOLUTELY NO lettering, captions, speech balloons, logos with readable text, numbers, signs, watermark, overlay, dashboard or game HUD. Existing costume graphic motifs can remain as nonverbal shapes. Do not reproduce text appearing in the reference images. No luminous magical tape, no recording laser, no newly recorded media. Full-bleed finished illustration with strong silhouette, generous usable scene edges, exact 2.2:1 wide composition.",
+      "references": [
+        "assets/intro/intro-04-preserve.webp",
+        "assets/intro/intro-02-keep-the-take.webp",
+        "assets/intro/intro-05-listen.webp"
+      ],
+      "generatedSource": "/workspace/scratch/dd1242abe481/generated_images/exec-fde5fe72-bae1-47a3-9b1d-59373131d646.png",
+      "original": "assets/cache-bridge/sources/bridge-05-keep-it.png",
+      "webp": "assets/cache-bridge/bridge-05-keep-it.webp",
+      "inspection": "Generated image visually inspected. Cache's approved cap, glasses, covered lower face and collar are preserved; one protected black/yellow case is held at chest; DJ and two traces are secondary at left. No dialogue or gameplay UI. Cap reaches top crop, face fully visible.",
+      "dimensions": {
+        "width": 1860,
+        "height": 845,
+        "aspectRatio": 2.201183431952663,
+        "mode": "RGB"
+      },
+      "generatedSourceSha256": "1457b1b4d66a5850792ade4061f634e9089ee50ade2e87210940dfa773b6670e",
+      "originalSha256": "1457b1b4d66a5850792ade4061f634e9089ee50ade2e87210940dfa773b6670e",
+      "webpSha256": "08c7e189746f34ba8a1b021cb8326618a59be8641d64fc9a3a312b7ff2ad22b7",
+      "webpQuality": 92,
+      "referenceHashes": [
+        {
+          "path": "assets/intro/intro-04-preserve.webp",
+          "sha256": "6b85f78d01c4e31fccb967f5cb557c1ebc5a3a08f67ada3f5a2d99bd84ed2c3c"
+        },
+        {
+          "path": "assets/intro/intro-02-keep-the-take.webp",
+          "sha256": "dee96b7d5f1ff6f5112cd1a0ec0d5808dfda82ebb165ebf12f4e8a1c50930462"
+        },
+        {
+          "path": "assets/intro/intro-05-listen.webp",
+          "sha256": "f3d428cde3c2c77ae9911284ef69dd74daba50ec4603f7a5c31e62328f3b38ab"
+        }
+      ]
+    },
+    {
+      "scene": 6,
+      "title": "Departure",
+      "prompt": "Create ONE finished wide full-bleed narrative comic illustration at exactly 2.2:1 landscape aspect ratio, for example 2200 x 1000. This is scene 6, \"Departure\", following the recording-studio scene. Match the premium hand-inked 1990s cyberpunk graphic-novel rendering of the supplied approved intro images: precise expressive dark ink contours, angular cel shading, fine halftone and worn printed texture, amber and cyan neon reflected in plum-dark wet pavement. Do not make a photorealistic image, 3D render, generic anime or a flat cartoon.\n\nCAMERA AND COMPOSITION: street-level rear three-quarter view, camera BEHIND the approved yellow car. Its rear hatch, bumper, tail lamps, reel-filled rear window and strapped roof equipment are the visual hero. The car occupies about 55% of the full image width, centered a little right, and rests credibly on the wet road beside the curb outside the established recording studio. Show its LEFT DRIVER SIDE receding away, matching the supplied rear-three-quarter reference; the LEFT DRIVER DOOR is open on the far-forward part of that visible side. The camera must NEVER see the car's front fascia, headlights or grille. We have only approved rear views: faithfully use those views, do not invent a different car model. Keep the vehicle low, broad and squat, not a tall jeep, not a sedan, not a van. All four wheels are realistically grounded; only wheels visible from this angle need appear. Believable vehicle/person scale.\n\nTHE CAR MUST MATCH THE THREE PROVIDED CAR REFERENCES in silhouette, proportions, graphic layout and actual equipment. Saturated yellow broad hatchback with black and cream panels and the Greek-key rear stripe. Two big audio reels visible behind the dark rear window. Large cream circular nonverbal emblem centered on hatch. Chunky rectangular yellow/black roof-mounted equipment box, held with TWO black securing bands/brackets, small red-orange square indicators, center orange horizontal grille, cables at side. Wide black bumper with two rectangular dark recesses. Broad red/amber rear lamps, narrow red center brake lamp over rear window. Large metal exhaust at lower left and yellow tow loop low center. Thick dark tires and low planted stance. Do not replace the roof equipment with a spoiler, taxi sign, light bar, luggage or antenna forest. Reconcile the source car's sharp graphic style into the comic's inked rendering while retaining exact design.\n\nCACHE BACK is the only person, to the LEFT of the vehicle, seen exclusively FROM BEHIND / REAR THREE-QUARTER, walking toward the OPEN LEFT DRIVER DOOR, about one step away from it. His head turns toward the door, not the camera; no frontal face is visible. He is proportionate to the car. Preserve the approved identity visible from behind in the supplied comic references: yellow cap with two rounded ear-like protrusions, short dark hair at nape, thick black mechanical neck collar with cyan details, yellow short sleeves with black Greek-key trim. Dark trousers and practical dark footwear are quiet secondary shapes, partly obscured by door/car/curb if needed; no full-body hero pose or newly invented costume armor. One small protected black-and-yellow cassette case is safely held low at his near side, not being inserted or recorded. Do not add a second case. His purposeful body language makes this the beginning of a drive, not a rescue or gunfight.\n\nSETTING: wet neon city studio curb after rain, amber studio doorway/window behind him at image left, dark cyan windows and dense cables above, pavement reflections leading toward the road ahead. A little atmospheric mist and fine rain residue, no chaotic smoke. Night district has grounded human scale and believable architecture. The street beyond the car leads outward to the next level but remains a subdued composition. No physical 6 Bit: he is on radio elsewhere. NO other people, no new characters, no driver already in seat, no crowd, no pursuers.\n\nABSOLUTELY NO readable text, dialogue balloons, captions, signs with letters, numbers, logos with readable lettering, watermark, game UI or HUD. Preserve recognizable nonverbal costume/vehicle emblems only as graphic motifs. The image itself is one clean uninterrupted cinematic wide comic panel, no border. Keep Cache's head in the upper-middle region and all car roof equipment fully inside the frame. Do not show any new front view of Cache or car.",
+      "references": [
+        "assets/intro/intro-04-preserve.webp",
+        "assets/intro/intro-02-keep-the-take.webp",
+        "assets/cache-road/vehicles/cache-center.webp",
+        "assets/cache-road/vehicles/cache-left.webp",
+        "assets/cache-road/vehicles/cache-right.webp"
+      ],
+      "generatedSource": "/workspace/scratch/dd1242abe481/generated_images/exec-4119501b-2b39-4437-b423-a1433d76fed7.png",
+      "original": "assets/cache-bridge/sources/bridge-06-departure.png",
+      "webp": "assets/cache-bridge/bridge-06-departure.webp",
+      "inspection": "Generated image visually inspected. Cache viewed from rear approaches open left driver door; approved yellow hatchback rear, reel window, roof equipment, broad lamps, exhaust and tow loop are retained in comic rendering. No new front face/car-front design. Wet studio curb composition; no named additional characters or UI. Existing emblem motifs retained as visual design.",
+      "dimensions": {
+        "width": 1859,
+        "height": 846,
+        "aspectRatio": 2.1973995271867612,
+        "mode": "RGB"
+      },
+      "generatedSourceSha256": "a2ae283f84ec3b4fe08761b9cbcba6fbf164f54c8a15817191456724277db42e",
+      "originalSha256": "a2ae283f84ec3b4fe08761b9cbcba6fbf164f54c8a15817191456724277db42e",
+      "webpSha256": "cfc655311f786a783fce330d89af459c075a1c690f863c97ac39dc3ad7f02ffa",
+      "webpQuality": 92,
+      "referenceHashes": [
+        {
+          "path": "assets/intro/intro-04-preserve.webp",
+          "sha256": "6b85f78d01c4e31fccb967f5cb557c1ebc5a3a08f67ada3f5a2d99bd84ed2c3c"
+        },
+        {
+          "path": "assets/intro/intro-02-keep-the-take.webp",
+          "sha256": "dee96b7d5f1ff6f5112cd1a0ec0d5808dfda82ebb165ebf12f4e8a1c50930462"
+        },
+        {
+          "path": "assets/cache-road/vehicles/cache-center.webp",
+          "sha256": "c95a48698a0ea9af13e7139fdaf12cf0c0a3e773d7ce8892c96290737b45aea5"
+        },
+        {
+          "path": "assets/cache-road/vehicles/cache-left.webp",
+          "sha256": "a66a6ff68c749acf669093b51b74878b257682f60be9a2cd3bf7e259d6abf3b0"
+        },
+        {
+          "path": "assets/cache-road/vehicles/cache-right.webp",
+          "sha256": "59359b9a40a96ca96afab153364634feb529f0713abc8b0f84cb2316afd3d853"
+        }
+      ]
+    }
+  ]
+}

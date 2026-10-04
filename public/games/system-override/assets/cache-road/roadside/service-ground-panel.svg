@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs><linearGradient id="g" x2="1" y2=".1">
+    <stop stop-color="#273e4a"/><stop offset=".55" stop-color="#394751"/>
+    <stop offset="1" stop-color="#293b46"/>
+  </linearGradient></defs>
+  <path fill="url(#g)" d="M0 0h256v256H0z"/>
+  <path fill="#162d3b" d="M0 0h14v256H0z"/>
+  <path d="M14 0v256" stroke="#99aaa3" stroke-width="3" stroke-opacity=".51"/>
+  <path d="M26 0v256M101 0v256M205 0v256M16 127h240" stroke="#1b3541" stroke-width="3" stroke-opacity=".49"/>
+  <path d="M29 3v250M104 0v255M207 0v255M16 130h240" stroke="#8fa49e" stroke-width="2" stroke-opacity=".23"/>
+  <path d="M45 21l24-3 7 4 19-5m28 172 25-8 16 3 20-4m14-103 26 5" fill="none" stroke="#182f3b" stroke-width="4" stroke-opacity=".62"/>
+  <path d="M48 86h40v4H48zm128 150h54v4h-54z" fill="#be9870" fill-opacity=".29"/>
+  <path d="M45 153h21m5 3h10m94-109h12m7-2h11M54 226h6m5-3h13" stroke="#8eafb0" stroke-width="2" stroke-opacity=".35"/>
+  <path d="M109 38h47v11h-47zM32 209h35v7H32z" fill="#172d3a" fill-opacity=".39"/>
+  <path d="M113 42h36m-113 171h27" stroke="#b6966e" stroke-width="2" stroke-opacity=".44"/>
+</svg>

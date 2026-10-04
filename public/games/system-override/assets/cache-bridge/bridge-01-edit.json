@@ -1,0 +1,18 @@
+{
+  "tool": "image_gen.imagegen",
+  "prompt": "Use case: precise-object-edit. Image 1 is the edit target, the new wide district illustration. Change only the plain black front panel of 6 Bit's baseball cap: restore his small white embroidered \"6 BIT\" logo, following the cap's curved front surface and perspective. This is his established costume logo, not a caption. Keep the green underside, cap shape, character face/paint/clear glasses/hair/pose/clothing, wet street, tower, architecture, lighting, framing and every other detail unchanged. No new objects or other text. Preserve original 1860x846 panoramic composition and premium hand-inked comic style.",
+  "references": [
+    "initial generated scene1"
+  ],
+  "reason": "Restore established costume logo omitted in initial generation",
+  "initialSourceSha256": "895ab7bb8b85720ad4f30cd00e71ec282e8b7e93654601f235513ed433c71e89",
+  "source": "assets/cache-bridge/sources/bridge-01-district.png",
+  "runtime": "assets/cache-bridge/bridge-01-district.webp",
+  "dimensions": [
+    1859,
+    846
+  ],
+  "sourceSha256": "d59478dd549acc7b67b2306edb3f446058440b660a6e7d80244baff0fa64af94",
+  "runtimeSha256": "fe73f4f9d99094d954f7cb7aac7c99642675eaf3cdd33f5fedcffef103fc97af",
+  "generatedSource": "/workspace/scratch/dd1242abe481/generated_images/exec-85a229ce-6c16-4d2e-bfbb-212b13aab361.png"
+}

@@ -1,0 +1,219 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Eight static illustrations for the Level 1 to Cache Line bridge",
+  "generator": "image_gen.imagegen (built-in)",
+  "sourceHandling": "Selected ImageGen PNG copied unchanged; WebP quality 92 method 6 format conversion only, no crop or resize",
+  "runtimeOwner": "src/engine/cache-bridge.js",
+  "runtimeText": "Scene titles, dialogue, transcript and controls are supplied by code, not baked into the illustrations; established costume/vehicle insignia remain",
+  "assets": [
+    {
+      "scene": 1,
+      "source": {
+        "path": "assets/cache-bridge/sources/bridge-01-district.png",
+        "sha256": "d59478dd549acc7b67b2306edb3f446058440b660a6e7d80244baff0fa64af94",
+        "bytes": 2897379,
+        "width": 1859,
+        "height": 846
+      },
+      "runtime": {
+        "path": "assets/cache-bridge/bridge-01-district.webp",
+        "sha256": "fe73f4f9d99094d954f7cb7aac7c99642675eaf3cdd33f5fedcffef103fc97af",
+        "bytes": 569664,
+        "width": 1859,
+        "height": 846
+      },
+      "generationProvenance": "assets/cache-bridge/provenance-01-02.json",
+      "selectedRevisionProvenance": "assets/cache-bridge/bridge-01-edit.json",
+      "webpQuality": 92
+    },
+    {
+      "scene": 2,
+      "source": {
+        "path": "assets/cache-bridge/sources/bridge-02-uplink.png",
+        "sha256": "3ccd1b49f80f06f639f64018f21e8599febfdafe270507bbeaef4dfb20a3ec4d",
+        "bytes": 2767310,
+        "width": 1860,
+        "height": 845
+      },
+      "runtime": {
+        "path": "assets/cache-bridge/bridge-02-uplink.webp",
+        "sha256": "830f668f43c3a1105baef7b93b788df6a4f7a31b17bb939e2402babbe085dd2e",
+        "bytes": 520528,
+        "width": 1860,
+        "height": 845
+      },
+      "generationProvenance": "assets/cache-bridge/provenance-01-02.json",
+      "selectedRevisionProvenance": "assets/cache-bridge/bridge-02-edit.json",
+      "webpQuality": 92
+    },
+    {
+      "scene": 3,
+      "source": {
+        "path": "assets/cache-bridge/sources/bridge-03-original.png",
+        "sha256": "1468b86167a5581f66ff79b98fa02280edb621df4d3abcb0a7f3941a101a6bf4",
+        "bytes": 2562972,
+        "width": 1860,
+        "height": 845
+      },
+      "runtime": {
+        "path": "assets/cache-bridge/bridge-03-original.webp",
+        "sha256": "a76f3a1e5374c24708c33150de1facdda67b95737edd00b5500b29cd2b660e62",
+        "bytes": 408208,
+        "width": 1860,
+        "height": 845
+      },
+      "generationProvenance": "assets/cache-bridge/provenance-03-04.json",
+      "selectedRevisionProvenance": "assets/cache-bridge/provenance-03-04.json",
+      "webpQuality": 92
+    },
+    {
+      "scene": 4,
+      "source": {
+        "path": "assets/cache-bridge/sources/bridge-04-clean-copy.png",
+        "sha256": "1a0c33784753b21ab41e16a87574e82127c86e86395e1b24509044f96b489a16",
+        "bytes": 2563157,
+        "width": 1862,
+        "height": 845
+      },
+      "runtime": {
+        "path": "assets/cache-bridge/bridge-04-clean-copy.webp",
+        "sha256": "3f5a11e0bd3f83fb328d9a52fb1f73abe291e616cf29d19c24536c53c69ba62c",
+        "bytes": 415212,
+        "width": 1862,
+        "height": 845
+      },
+      "generationProvenance": "assets/cache-bridge/provenance-03-04.json",
+      "selectedRevisionProvenance": "assets/cache-bridge/provenance-03-04.json",
+      "webpQuality": 92
+    },
+    {
+      "scene": 5,
+      "source": {
+        "path": "assets/cache-bridge/sources/bridge-05-keep-it.png",
+        "sha256": "1457b1b4d66a5850792ade4061f634e9089ee50ade2e87210940dfa773b6670e",
+        "bytes": 2729378,
+        "width": 1860,
+        "height": 845
+      },
+      "runtime": {
+        "path": "assets/cache-bridge/bridge-05-keep-it.webp",
+        "sha256": "08c7e189746f34ba8a1b021cb8326618a59be8641d64fc9a3a312b7ff2ad22b7",
+        "bytes": 498612,
+        "width": 1860,
+        "height": 845
+      },
+      "generationProvenance": "assets/cache-bridge/provenance-05-06.json",
+      "selectedRevisionProvenance": "assets/cache-bridge/provenance-05-06.json",
+      "webpQuality": 92
+    },
+    {
+      "scene": 6,
+      "source": {
+        "path": "assets/cache-bridge/sources/bridge-06-departure.png",
+        "sha256": "a2ae283f84ec3b4fe08761b9cbcba6fbf164f54c8a15817191456724277db42e",
+        "bytes": 2944328,
+        "width": 1859,
+        "height": 846
+      },
+      "runtime": {
+        "path": "assets/cache-bridge/bridge-06-departure.webp",
+        "sha256": "cfc655311f786a783fce330d89af459c075a1c690f863c97ac39dc3ad7f02ffa",
+        "bytes": 605690,
+        "width": 1859,
+        "height": 846
+      },
+      "generationProvenance": "assets/cache-bridge/provenance-05-06.json",
+      "selectedRevisionProvenance": "assets/cache-bridge/provenance-05-06.json",
+      "webpQuality": 92
+    },
+    {
+      "scene": 7,
+      "source": {
+        "path": "assets/cache-bridge/sources/bridge-07-ignition.png",
+        "sha256": "7566daf8fdcac52674374a5e924ceb919d20d3d43a61d67efc6d322eac127461",
+        "bytes": 2810667,
+        "width": 1860,
+        "height": 845
+      },
+      "runtime": {
+        "path": "assets/cache-bridge/bridge-07-ignition.webp",
+        "sha256": "4940ef74ef8464ce8b2477f38afe5bccf6cd19097be180f8b3feaa9b57fa676e",
+        "bytes": 540428,
+        "width": 1860,
+        "height": 845
+      },
+      "generationProvenance": "assets/cache-bridge/provenance-07-08.json",
+      "selectedRevisionProvenance": "assets/cache-bridge/provenance-07-08.json",
+      "webpQuality": 92
+    },
+    {
+      "scene": 8,
+      "source": {
+        "path": "assets/cache-bridge/sources/bridge-08-cache-line.png",
+        "sha256": "4aac33600c8fc05b317dc9c9fa7921a0d9a7a72924f7878a255e41d2f30feeae",
+        "bytes": 2999746,
+        "width": 1860,
+        "height": 845
+      },
+      "runtime": {
+        "path": "assets/cache-bridge/bridge-08-cache-line.webp",
+        "sha256": "acd64c5f5e958c3905a0da11ebaddc54dc6a4309f893c4dce423ac79a4ec23ab",
+        "bytes": 600228,
+        "width": 1860,
+        "height": 845
+      },
+      "generationProvenance": "assets/cache-bridge/provenance-07-08.json",
+      "selectedRevisionProvenance": "assets/cache-bridge/bridge-08-edit.json",
+      "webpQuality": 92
+    }
+  ],
+  "promptAndProvenanceFiles": [
+    {
+      "path": "assets/cache-bridge/bridge-01-edit.json",
+      "sha256": "c8ad1a1af96e97bc44087184b1a268a30c99623316fc0820ec8c511f301bb4a3",
+      "bytes": 1349
+    },
+    {
+      "path": "assets/cache-bridge/bridge-02-edit.json",
+      "sha256": "6af813c02987ccf9221bc7d741a1d763468357448c596173f8dd961c60c0ff7b",
+      "bytes": 1559
+    },
+    {
+      "path": "assets/cache-bridge/bridge-07-prompt.json",
+      "sha256": "4c36c2e93ca11f60fc5b483102ae78c30ab8c0dbad960b2bec6d592f93c6bd60",
+      "bytes": 2756
+    },
+    {
+      "path": "assets/cache-bridge/bridge-08-edit.json",
+      "sha256": "9445c2e4a5b1cbf4533db1f379130c0580161bd0a1cb9eaa7e794b753d5f8b12",
+      "bytes": 1062
+    },
+    {
+      "path": "assets/cache-bridge/bridge-08-prompt.json",
+      "sha256": "69ad3c4f42ef9dbd4177ba3bd2e052b82e4e598cca870268d0746241c6348738",
+      "bytes": 3024
+    },
+    {
+      "path": "assets/cache-bridge/provenance-01-02.json",
+      "sha256": "c686d724d12c811f7307f66c54003a561ae7f2b48b70fed10306d098f781531e",
+      "bytes": 10146
+    },
+    {
+      "path": "assets/cache-bridge/provenance-03-04.json",
+      "sha256": "cd9ab8e3a7d85c9d1c530ba55db2b8057103b237b4f6184e57ee6b5b99ca459b",
+      "bytes": 15171
+    },
+    {
+      "path": "assets/cache-bridge/provenance-05-06.json",
+      "sha256": "ed3f6b64b9a54e80dd88db49d5a99bdde41bc4beb061c2f202eb98825d44e43e",
+      "bytes": 12251
+    },
+    {
+      "path": "assets/cache-bridge/provenance-07-08.json",
+      "sha256": "52ccc64806e36bad646f8133ebbe2203b6284f59537cb321741c4cc5c26f0d97",
+      "bytes": 6739
+    }
+  ],
+  "publishedArtworkRevision": "9881bf126f2a529ccfe5c6262d4c1de98990973f",
+  "publicationScope": "This immutable ancestor contains the sixteen selected PNG/WebP artwork files. The prompt/provenance/README/manifest and runtime integration are retained by the final descendant commit."
+}

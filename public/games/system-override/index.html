@@ -1,0 +1,949 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>BARCODE: System Override</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
+        
+        @font-face { font-family: 'Oxanium'; src: url('./assets/studies/visual-overhaul/references/fonts/Oxanium.ttf') format('truetype'), url('assets/studies/visual-overhaul/references/fonts/Oxanium.ttf') format('truetype'); font-weight: 200 800; font-display: swap; }
+
+        /* Preload terminal font for boot screen */
+        @font-face {
+            font-family: 'Terminal';
+            src: local('Share Tech Mono'), local('Courier New'), monospace;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        html, body {
+            background: #000;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+            min-width: 100vw;
+            min-height: 100vh;
+            max-width: 100vw;
+            max-height: 100vh;
+            display: block;
+            position: fixed;
+            top: 0;
+            left: 0;
+            font-family: 'Orbitron', monospace;
+        }
+        
+        /* CRT Effect Overlay */
+        body::before {
+            content: "";
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 255, 255, 0.03) 0px,
+                transparent 1px,
+                transparent 2px,
+                rgba(255, 0, 255, 0.03) 3px
+            );
+            pointer-events: none;
+            z-index: 1000;
+        }
+        
+        /* Scanline effect */
+        @keyframes scanlines {
+            0% { background-position: 0 0; }
+            100% { background-position: 0 10px; }
+        }
+        
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        /* Game UI overlay - positioned over canvas */
+        .topbar {
+            background: linear-gradient(135deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9));
+            border: 4px solid #000000;
+            border-bottom: none;
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            position: relative;
+            z-index: 10;
+            flex-shrink: 0;
+            height: 60px;
+        }
+        
+        .hint {
+            background: linear-gradient(135deg, rgba(16, 18, 24, 0.95), rgba(32, 36, 48, 0.95));
+            border: 4px solid #000000;
+            border-top: none;
+            padding: 12px;
+            text-align: center;
+            color: #ff00ff;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            position: relative;
+            z-index: 10;
+            flex-shrink: 0;
+            height: 60px;
+        }
+        
+        /* Canvas container - fills remaining space */
+        #gameCanvas {
+            display: block;
+            flex: 1;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #0a0a0a, #1a0a1a);
+            border: 2px solid rgba(0,255,255,0.3);
+            border-top: none;
+            border-bottom: none;
+            position: relative;
+        }
+        
+        .topbar {
+            background: linear-gradient(135deg, rgba(0,255,255,0.9), rgba(255,0,255,0.9));
+            border: 4px solid #000000;
+            border-bottom: none;
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.8);
+        }
+        
+        .topbar::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(0,255,255,0.2), transparent);
+            animation: glitch 3s infinite;
+        }
+        
+        @keyframes glitch {
+            0% { left: -100%; }
+            20% { left: -100%; }
+            40% { left: 100%; }
+            100% { left: 100%; }
+        }
+        
+        .topbar span {
+            color: #00ffff;
+            font-weight: 900;
+            text-shadow: 0 0 10px #00ffff, 0 0 20px #00ffff;
+            position: relative;
+            z-index: 1;
+        }
+        
+        .health-bar {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        
+        .health-segment {
+            width: 30px;
+            height: 20px;
+            background: linear-gradient(90deg, #ff00ff, #00ffff);
+            border: 1px solid #00ffff;
+            box-shadow: 0 0 5px #00ffff;
+            transition: all 0.3s;
+        }
+        
+        .health-segment.empty {
+            background: rgba(255,0,255,0.1);
+            border-color: rgba(0,255,255,0.2);
+            box-shadow: none;
+        }
+        
+        .game-container {
+            flex: 1;
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 0;
+        }
+        
+        #gameCanvas {
+            display: none;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #0a0a0a, #1a0a1a);
+            border: 2px solid rgba(0,255,255,0.3);
+            border-top: none;
+            border-bottom: none;
+            position: relative;
+        }
+        
+        .hint {
+            background: linear-gradient(135deg, rgba(16, 18, 24, 0.95), rgba(32, 36, 48, 0.95));
+            border: 4px solid #000000;
+            border-top: none;
+            padding: 12px;
+            text-align: center;
+            color: #ff00ff;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            position: relative;
+            display: none;
+            box-shadow: 0 -2px 8px rgba(0,0,0,0.8);
+        }
+        
+        .hint::before {
+            content: ">";
+            color: #00ffff;
+            margin-right: 8px;
+            animation: blink 1s infinite;
+        }
+        
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+        
+        /* Rhythm Indicator */
+        .rhythm-indicator {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 60px;
+            height: 60px;
+            border: 2px solid #ff00ff;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255,0,255,0.1);
+            z-index: 100;
+        }
+        
+        .rhythm-pulse {
+            width: 20px;
+            height: 20px;
+            background: radial-gradient(circle, #ff00ff, #00ffff);
+            border-radius: 50%;
+            animation: pulse 1s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.5); opacity: 0.5; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        
+        /* Start Button Overlay - FULL SCREEN INTRO */
+        .start-overlay {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            bottom: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            background: radial-gradient(ellipse at center, rgba(0,20,40,0.95) 0%, rgba(0,0,0,0.98) 100%);
+            display: flex !important;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+            transition: opacity 0.8s ease-out;
+            transform: scale(1) !important;
+            overflow: hidden;
+        }
+        
+        /* Force start overlay content to be normal sized */
+        .start-overlay .game-title {
+            font-size: 8vw !important;
+            margin-bottom: 1vw !important;
+            line-height: 0.9 !important;
+        }
+        
+        .start-overlay .game-subtitle {
+            font-size: 2.5vw !important;
+            margin-bottom: 4vw !important;
+            font-family: 'Share Tech Mono', monospace !important;
+            letter-spacing: 0.4vw !important;
+            font-weight: 400 !important;
+            text-transform: uppercase !important;
+        }
+        
+        .start-overlay .start-button {
+            font-size: 2vw !important;
+            padding: 1.5vw 4vw !important;
+            min-width: 280px !important;
+            min-height: 80px !important;
+        }
+        
+        .start-overlay .instructions {
+            font-size: 1.2vw !important;
+            padding: 1.5vw 2.5vw !important;
+            margin-top: 3vw !important;
+        }
+        
+        /* Ensure start overlay content is properly sized */
+        .start-overlay * {
+            box-sizing: border-box;
+        }
+        
+        .start-overlay.hidden {
+            opacity: 0 !important;
+            pointer-events: none;
+        }
+        
+        .game-title {
+            font-size: 12vw;
+            font-weight: 900;
+            color: #00ffff;
+            text-shadow: 
+                0 0 20px #00ffff, 
+                0 0 40px #00ffff,
+                0 0 60px #00ffff,
+                0 0 80px #ff00ff;
+            margin-bottom: 3vw;
+            text-align: center;
+            letter-spacing: 0.5vw;
+            background: linear-gradient(45deg, #00ffff, #ff00ff, #00ffff);
+            background-size: 200% 200%;
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            min-height: auto;
+            line-height: 1.1;
+            z-index: 10;
+            position: relative;
+            text-transform: uppercase;
+            font-family: 'Orbitron', monospace;
+        }
+        
+        @keyframes titleGlow {
+            0% { 
+                text-shadow: 
+                    0 0 20px #00ffff, 
+                    0 0 40px #00ffff, 
+                    0 0 60px #ff00ff;
+            }
+            100% { 
+                text-shadow: 
+                    0 0 30px #00ffff, 
+                    0 0 60px #00ffff, 
+                    0 0 80px #ff00ff, 
+                    0 0 100px #00ffff;
+            }
+        }
+        
+        @keyframes gradientShift {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+        
+        .game-subtitle {
+            font-size: 4vw;
+            color: #ff00ff;
+            text-shadow: 0 0 20px #ff00ff;
+            margin-bottom: 8vw;
+            font-family: 'Share Tech Mono', monospace;
+            letter-spacing: 0.3vw;
+            opacity: 0.9;
+        }
+        
+        .start-button[hidden] { display: none !important; }
+        .start-button {
+            background: linear-gradient(135deg, rgba(0,255,255,0.15), rgba(255,0,255,0.15));
+            border: 2px solid rgba(0,255,255,0.6);
+            color: #00ffff;
+            font-size: 3.5vw;
+            font-weight: 700;
+            padding: 3vw 8vw;
+            text-transform: uppercase;
+            letter-spacing: 0.3vw;
+            cursor: pointer;
+            border-radius: 12px;
+            box-shadow: 
+                0 0 15px rgba(0, 255, 255, 0.3),
+                0 5px 20px rgba(255, 0, 255, 0.2),
+                inset 0 0 20px rgba(0,255,255,0.1);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            font-family: 'Orbitron', monospace;
+            position: relative;
+            overflow: hidden;
+            min-width: 350px;
+            min-height: 100px;
+            backdrop-filter: blur(5px);
+        }
+        
+        .start-button::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+            transition: left 0.6s ease;
+        }
+        
+        .start-button:hover::before {
+            left: 100%;
+        }
+        
+        .start-button:hover {
+            transform: scale(1.05) translateY(-2px);
+            background: linear-gradient(135deg, rgba(0,255,255,0.25), rgba(255,0,255,0.25));
+            border-color: rgba(0,255,255,0.9);
+            box-shadow: 
+                0 0 25px rgba(0, 255, 255, 0.6),
+                0 8px 30px rgba(255, 0, 255, 0.4),
+                inset 0 0 30px rgba(0,255,255,0.2);
+            animation: button-glitch 0.3s infinite;
+        }
+        
+        @keyframes button-glitch {
+            0%, 100% {
+                filter: hue-rotate(0deg) brightness(1);
+                text-shadow: 0 0 10px currentColor;
+            }
+            20% {
+                filter: hue-rotate(90deg) brightness(1.2);
+                transform: translateX(1px) scale(1.05);
+            }
+            40% {
+                filter: hue-rotate(-90deg) brightness(0.9);
+                transform: translateX(-1px) scale(1.05);
+            }
+            60% {
+                filter: hue-rotate(180deg) brightness(1.1);
+                text-shadow: -2px 0 10px #ff00ff, 2px 0 10px #00ffff;
+            }
+            80% {
+                filter: hue-rotate(45deg) brightness(1.05);
+                transform: translateX(0.5px) scale(1.05);
+            }
+        }
+        
+        .start-button:active {
+            transform: scale(0.98);
+        }
+        
+        .instructions {
+            margin-top: 5vw;
+            color: #888;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 1.6vw;
+            text-align: center;
+            line-height: 1.8;
+            background: rgba(0,0,0,0.85);
+            padding: 2.5vw 4vw;
+            border: 1px solid rgba(0,255,255,0.2);
+            border-radius: 8px;
+        }
+        
+        .instructions-line {
+            margin: 0.5vw 0;
+            color: #aaa;
+        }
+        
+        .key, .key * {
+            color: #00ffff !important;
+            font-weight: bold !important;
+            text-shadow: none !important;
+            background: transparent !important;
+            box-shadow: none !important;
+            filter: none !important;
+            text-decoration: none !important;
+            outline: none !important;
+            border: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
+        }
+        
+        /* Loading indicator */
+        .loading-indicator {
+            position: absolute;
+            bottom: 10vh;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #ff00ff;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 1vw;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        
+        .loading-indicator.visible {
+            opacity: 1;
+        }
+        
+        /* Responsive design */
+        @media (max-width: 1200px) {
+            .game-title {
+                font-size: 10vw;
+            }
+            .game-subtitle {
+                font-size: 4vw;
+            }
+            .start-button {
+                font-size: 3vw;
+                padding: 2.5vw 7vw;
+            }
+            .instructions {
+                font-size: 1.5vw;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .game-title {
+                font-size: 12vw;
+            }
+            .game-subtitle {
+                font-size: 5vw;
+            }
+            .start-button {
+                font-size: 4vw;
+                padding: 3vw 8vw;
+            }
+            .instructions {
+                font-size: 2vw;
+                padding: 3vw 5vw;
+            }
+        }
+    </style>
+    <link rel="stylesheet" href="style.css">
+<style id="standalone-viewport-style">
+/* Fit the complete native backing image; runtime owners still control display. */
+.game-container {
+  position: fixed; inset: 0; display: block; flex: none;
+  width: 100vw; height: 100vh; margin: 0; padding: 0;
+  background: #000; overflow: hidden;
+}
+#gameCanvas {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  flex: none; margin: 0; padding: 0; border: 0; box-sizing: border-box;
+  width: min(100vw, 177.777778vh); height: min(100vh, 56.25vw);
+  max-width: none; max-height: none; object-fit: contain; image-rendering: auto;
+}
+/* Keep redundant DOM status and control descriptions available to readers. */
+.game-container > .topbar, .game-container > .hint {
+  display: block !important; position: absolute !important; flex: none;
+  width: 1px !important; height: 1px !important; margin: -1px !important;
+  padding: 0 !important; border: 0 !important; overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important; clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+}
+</style>
+</head>
+<body>
+    <!-- FULL SCREEN INTRO OVERLAY - INITIALLY HIDDEN -->
+    <div id="startOverlay" class="start-overlay" style="display: none; opacity: 0;">
+        <h1 class="game-title">BARCODE</h1>
+        <div class="game-subtitle">System Override</div>
+        <button id="startButton" class="start-button">START SYSTEM</button>
+        <button id="continueButton" class="start-button" hidden style="font-size: 20px; padding: 12px 30px; margin-top: 12px;">CONTINUE SAVED — C / Y</button>
+        <button id="settingsButton" class="start-button" style="font-size:20px;padding:12px 30px;margin-top:12px;">SETTINGS — O</button>
+        <div class="instructions">
+            <div class="instructions-line"><span class="key">Arrow Keys</span> - Move | <span class="key">Space</span> - Action</div>
+            <div class="instructions-line"><span class="key">R</span> - Rhythm Mode | <span class="key">Down Arrow</span> - Beat Attack | <span class="key">H</span> - Hack</div>
+            <div class="instructions-line"><span class="key">Shift+F</span> - Fullscreen</div>
+            <div class="instructions-line"><span class="key">Controller A / Start</span> - Start | A: Jump | B: Rhythm | X: Attack | Y: Hack</div>
+        </div>
+        <div id="loadingIndicator" class="loading-indicator">INITIALIZING SYSTEM...</div>
+    </div>
+
+    <!-- Game Container with Flex Layout -->
+    <div class="game-container">
+        <!-- Game UI Top Bar -->
+        <div class="topbar" style="display: none;">
+            <span style="color: #00ffff;">BARCODE: System Override</span>
+            <div class="health-bar">
+                <div class="health-segment"></div>
+                <div class="health-segment"></div>
+                <div class="health-segment"></div>
+            </div>
+        </div>
+        
+        <!-- Game Canvas - Fills remaining space -->
+        <canvas id="gameCanvas" width="1920" height="1080"></canvas>
+        
+        <!-- Game UI Bottom Hint -->
+        <div class="hint">Left/Right: Move | Up: Jump | Space: Action | R: Rhythm Mode | Down Arrow: Beat Attack | H: Hack</div>
+    </div>
+
+    <!-- MakkoEngine for sprite animations -->
+    <script src="src/engine/standalone-sprites.js"></script>
+    
+    <!-- Core Game Systems -->
+    <script src="src/utils/math.js"></script>
+    <script src="src/engine/sprite-playback.js"></script>
+    <script src="src/core/fullscreen.js"></script>
+    <script src="src/game/lore-records.js"></script>
+    <script src="src/game/pause-menu.js"></script>
+    <script src="src/core/action-input.js"></script>
+    <script src="src/core/gamepad-ui.js"></script>
+    <script src="src/game/player-combat.js"></script>
+    <script src="src/core/input.js"></script>
+    <script src="src/engine/music-profiles.js"></script>
+    <script src="src/engine/music-transport.js"></script>
+    <script src="src/engine/level-01-music-profile.js"></script>
+    <script src="src/engine/cache-road-proof-profile.js"></script>
+    <script src="src/engine/broadcast-slum-proof-profile.js"></script>
+    <script src="src/engine/music-director.js"></script>
+    <script src="src/engine/audio.js"></script>
+    <script src="src/engine/boot-loader.js"></script>
+    <script src="src/engine/particles.js"></script>
+    <script src="src/game/comic-hud.js"></script>
+    <script src="src/game/combat-fx.js"></script>
+    <script src="src/engine/renderer.js"></script>
+    <script src="src/engine/parallax.js"></script>
+    <script src="src/engine/traffic-sheets.js"></script>
+    <script src="src/engine/spaceships.js"></script>
+    <script src="src/engine/lore.js"></script>
+    <script src="src/engine/presentation-assets.js"></script>
+    <script src="src/engine/jammer-indicator.js"></script>
+    <script src="src/engine/title-screen.js"></script>
+    <script src="src/game/objectives.js"></script>
+    <script src="src/engine/intro-sequence.js"></script>
+    <script src="src/engine/cache-scene-layouts.js"></script>
+    <script src="src/engine/cache-scene-effects.js"></script>
+    <script src="src/engine/comic-dialogue.js"></script>
+    <script src="src/engine/cache-bridge.js"></script>
+    <script src="src/engine/cache-ending.js"></script>
+    <script src="src/engine/cutscene.js"></script>
+    <script src="src/core/loop.js"></script>
+    <script src="src/core/runtime-lifecycle.js"></script>
+
+    <!-- Game Systems -->
+    <script src="src/game/player.js"></script>
+    <script src="src/game/enemies.js"></script>
+    <script src="src/game/level1-signal-art.js"></script>
+    <script src="src/game/jammer-environment.js"></script>
+    <script src="src/game/hacking.js"></script>
+    <script src="src/game/rhythm.js"></script>
+    <script src="src/game/tutorial.js"></script>
+    <script src="src/game/post-tutorial-objectives.js"></script>
+    <script src="src/game/lore-collection.js"></script>
+    <script src="src/game/level-difficulty.js"></script>
+    <script src="src/game/campaign-services.js"></script>
+    <script src="src/game/cache-chapter.js"></script>
+    <script src="src/game/cache-road-landscape.js"></script>
+    <script src="src/game/cache-road-encounters.js"></script>
+    <script src="src/game/cache-road-reactions.js"></script>
+    <script src="src/game/cache-road-pursuit.js"></script>
+<script src="src/game/cache-road-adrenaline.js"></script>
+<script src="src/game/cache-road-combat.js"></script>
+<script src="src/game/cache-road-combat-art.js"></script>
+    <script src="src/game/cache-road-crosswalks.js"></script>
+    <script src="src/game/cache-road-crew-callouts.js"></script>
+    <script src="src/game/cache-road-mirror.js"></script>
+    <script src="src/game/cache-road-boss-art.js"></script>
+    <script src="src/game/cache-road-instruments.js"></script>
+    <script src="src/game/cache-road-guidance.js"></script>
+    <script src="src/game/cache-road-beat-surface.js"></script>
+    <script src="src/game/cache-road-beat-feedback.js"></script>
+    <script src="src/game/cache-road-cinematics.js"></script>
+    <script src="src/game/cache-road-render-budget.js"></script>
+    <script src="src/game/cache-road-proof.js"></script>
+    <script src="src/game/broadcast-slum-proof.js"></script>
+    <script src="src/game/lost-data.js"></script>
+    <script src="src/game/sector1-progression.js"></script>
+    <script src="src/game/level-01-stage-fx.js"></script>
+
+    <!-- Game Modules (New Modular Structure) -->
+    <script src="src/game/game-state.js"></script>
+    <script src="src/game/update-coordinator.js"></script>
+    <script src="src/game/render-coordinator.js"></script>
+    <script src="src/game/ui-manager.js"></script>
+    <script src="src/game/game-initializer.js"></script>
+    <script src="src/game/dependency-validator.js"></script>
+    <script src="src/game/debug-commands.js"></script>
+    <script src="src/game/level-01-debug.js"></script>
+    <script src="src/game/level-03-debug.js"></script>
+
+
+    <!-- Main Game (Modular Structure) -->
+    <script>window.autoStartDisabled = true;</script>
+    <script src="src/game/main-new.js"></script>
+    <!-- Legacy main.js removed - now using modular structure -->
+
+    <script>
+        // ========================================
+        // GLOBAL ERROR HANDLING
+        // ========================================
+        
+        // Catch unhandled promise rejections at the page level
+        window.addEventListener('unhandledrejection', function(event) {
+            // Filter out expected permission and fullscreen errors
+            if (event.reason && event.reason.message) {
+                if (event.reason.message.includes('permission') || 
+                    event.reason.message.includes('Permission') ||
+                    event.reason.message.includes('fullscreen') ||
+                    event.reason.message.includes('Fullscreen')) {
+                    console.log('Expected permission/fullscreen rejection:', event.reason.message);
+                    event.preventDefault();
+                    return;
+                }
+                
+                // Handle empty promise rejections
+                if (!event.reason || Object.keys(event.reason).length === 0) {
+                    console.log('Empty promise rejection filtered - ignoring');
+                    event.preventDefault();
+                    return;
+                }
+            }
+            
+            console.error('[PageHandler] Unhandled promise rejection:', {
+                reason: event.reason,
+                stack: event.reason?.stack || 'No stack available'
+            });
+            
+            // Prevent default browser error logging
+            event.preventDefault();
+        });
+        
+        // ========================================
+        // FULLSCREEN MANAGEMENT
+        // ========================================
+        
+        // REMOVED: Auto-enter fullscreen on first user interaction
+        // Users should control fullscreen manually with Shift+F to prevent unwanted fullscreen behavior
+        
+        // ========================================
+        // BOOT LOADER INITIALIZATION
+        // ========================================
+        
+        // Start boot sequence when page loads
+        document.addEventListener('DOMContentLoaded', async function() {
+            // The standalone host preloads through the existing deduplicated initializer.
+            Promise.resolve(window.initSprites?.()).catch(error => console.error('Sprite preload failed:', error));
+            console.log('🚀 Starting boot sequence...');
+            
+            // Start the terminal boot loader
+            if (window.bootLoader) {
+                window.bootLoader.startBootSequence();
+            }
+            
+            // Monitor asset loading and update boot loader status
+            monitorAssetLoading();
+        });
+        
+        // Monitor asset loading progress
+        let assetLoadingMonitor = null;
+        function monitorAssetLoading() {
+            if (assetLoadingMonitor) {
+                console.log('Asset loading monitor already active');
+                return assetLoadingMonitor;
+            }
+
+            const cleanupMonitor = () => {
+                if (!assetLoadingMonitor) {
+                    return;
+                }
+                clearInterval(assetLoadingMonitor.audioInterval);
+                clearInterval(assetLoadingMonitor.spriteInterval);
+                clearTimeout(assetLoadingMonitor.fallbackTimeout);
+                assetLoadingMonitor = null;
+                if (window.BARCODE && window.BARCODE.AssetMonitor) {
+                    window.BARCODE.AssetMonitor.active = false;
+                    window.BARCODE.AssetMonitor.monitor = null;
+                }
+            };
+
+            const completeIfReady = () => {
+                if (window.bootLoader && window.bootLoader.audioLoaded && window.bootLoader.spritesLoaded) {
+                    cleanupMonitor();
+                }
+            };
+
+            assetLoadingMonitor = { cleanup: cleanupMonitor };
+            window.BARCODE = window.BARCODE || {};
+            window.BARCODE.AssetMonitor = { active: true, monitor: assetLoadingMonitor, cleanup: cleanupMonitor, getDiagnostics: () => ({ active: !!assetLoadingMonitor }) };
+
+            // Check audio loading
+            assetLoadingMonitor.audioInterval = setInterval(() => {
+                if (window.audioSystem && window.audioSystem.isInitialized()) {
+                    console.log('🎵 Audio system loaded');
+                    if (window.bootLoader) {
+                        window.bootLoader.setAudioLoaded(true);
+                    }
+                    clearInterval(assetLoadingMonitor.audioInterval);
+                    completeIfReady();
+                }
+            }, 100);
+            
+            // Check sprite loading
+            assetLoadingMonitor.spriteInterval = setInterval(() => {
+                if (window.MakkoEngine && window.MakkoEngine.isLoaded()) {
+                    console.log('🎮 Sprite system loaded');
+                    if (window.bootLoader) {
+                        window.bootLoader.setSpritesLoaded(true);
+                    }
+                    clearInterval(assetLoadingMonitor.spriteInterval);
+                    completeIfReady();
+                }
+            }, 100);
+            
+            // Timeout fallbacks with graceful handling
+            assetLoadingMonitor.fallbackTimeout = setTimeout(() => {
+                if (window.bootLoader && !window.bootLoader.audioLoaded) {
+                    console.log('⚠️ Audio loading timeout - will proceed without audio');
+                    window.bootLoader.setAudioLoaded(true);
+                }
+                if (window.bootLoader && !window.bootLoader.spritesLoaded) {
+                    console.log('⚠️ Sprite loading timeout - proceeding with fallback graphics');
+                    window.bootLoader.setSpritesLoaded(true);
+                }
+                cleanupMonitor();
+            }, 15000); // Increased to 15 second timeout to match other systems
+
+            return assetLoadingMonitor;
+        }
+        
+        // ========================================
+        // INTRO SCENE MANAGEMENT
+        // ========================================
+        
+        window.titleScreenMusicBlocked = !!window.titleScreenMusicBlocked; // Prevent title music from starting after game start
+        
+        document.getElementById('settingsButton').addEventListener('click', () => window.BARCODE?.PauseMenu?.openTitle());
+
+        // START BUTTON HANDLER - USER GESTURE ADAPTER ONLY
+        document.getElementById('startButton').addEventListener('click', async function() {
+            resetStartRetryPresentation();
+
+            // Fullscreen must remain synchronous inside the user gesture.
+            if (window.fullscreenManager && window.BARCODE?.PauseMenu?.fullscreenChoice !== false) {
+                window.fullscreenManager.enter().catch(err => {
+                    if (err.name === 'TypeError' && err.message && err.message.includes('Permissions check failed')) {
+                        return;
+                    }
+                    console.log('🎮 Fullscreen request declined on start:', err.message);
+                });
+            }
+
+            if (!window.BARCODE || !window.BARCODE.RuntimeLifecycle) {
+                console.error('RuntimeLifecycle unavailable; cannot start game.');
+                return;
+            }
+
+            const lifecycle = window.BARCODE.RuntimeLifecycle;
+            const state = lifecycle.getState();
+            const result = state === 'failed' ? await lifecycle.retry() : await lifecycle.start({ initialStart: true });
+            if (!result || result.ok === false) {
+                console.warn('Runtime lifecycle start request did not complete:', result);
+            }
+        });
+
+        document.getElementById('continueButton').addEventListener('click', async function() {
+            if (!window.BARCODE?.Campaign?.readResume()) return;
+            resetStartRetryPresentation();
+            if(window.BARCODE?.PauseMenu?.fullscreenChoice !== false) window.fullscreenManager?.enter?.().catch(() => {});
+            const result = await window.BARCODE.Campaign.continueSaved();
+            if (!result?.ok) console.warn('Continue could not start:', result);
+        });
+
+        function resetStartRetryPresentation() {
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            if (loadingIndicator) {
+                loadingIndicator.textContent = 'INITIALIZING SYSTEM...';
+                loadingIndicator.style.color = '';
+                loadingIndicator.classList.remove('visible');
+            }
+            const startButton = document.getElementById('startButton');
+            if (startButton) {
+                startButton.disabled = false;
+                startButton.textContent = 'START SYSTEM';
+            }
+        }
+
+        // Add keyboard support for start button
+        document.addEventListener('keydown', function(event) {
+            if (window.BARCODE?.PauseMenu?.titleOpen) return;
+            const savedButton = document.getElementById('continueButton');
+            const onTitle = !document.getElementById('startOverlay').classList.contains('hidden');
+            if (onTitle && (event.code === 'KeyO' || event.code === 'Space' && document.activeElement === document.getElementById('settingsButton'))) {
+                event.preventDefault(); event.stopPropagation(); if(!event.repeat) window.BARCODE?.PauseMenu?.openTitle(); return;
+            }
+            if (event.code === 'KeyC' && onTitle && !savedButton.hidden && !event.repeat) {
+                event.preventDefault(); savedButton.click(); return;
+            }
+            if (event.code === 'Space' && onTitle && document.activeElement === savedButton) {
+                event.preventDefault(); if (!event.repeat) savedButton.click(); return;
+            }
+            if (event.code === 'Space' && !document.getElementById('startOverlay').classList.contains('hidden')) {
+                event.preventDefault();
+                document.getElementById('startButton').click();
+            }
+        });
+        
+        // Handle fullscreen changes (using new fullscreen manager)
+        if (window.fullscreenManager) {
+            window.fullscreenManager.onEnter(() => {
+                console.log('🎮 Fullscreen mode entered');
+            });
+            
+            window.fullscreenManager.onExit(() => {
+                console.log('🎮 Exited fullscreen mode - user has full control');
+                // REMOVED: Auto-reenter fullscreen behavior - users should control fullscreen manually
+            });
+            
+            window.fullscreenManager.onError((error) => {
+                // Filter out empty/trusted events that don't contain useful information
+                if (error && (Object.keys(error).length === 0 || (error.isTrusted && Object.keys(error).length === 1))) {
+                    // Skip logging empty/trusted events that are normal browser behavior
+                    return;
+                }
+                console.log('🎮 Fullscreen error:', error?.message || error);
+            });
+        }
+        
+        // Optional recurring state monitor. Disabled by default to avoid normal-play log churn.
+        if (window.BARCODE_DEBUG_FRAME_OWNERSHIP) {
+            window.gameStateDebugInterval = setInterval(() => {
+                const lifecycle = window.BARCODE && window.BARCODE.RuntimeLifecycle;
+                if (lifecycle && window.gameState) {
+                    console.log('Game state:', {
+                        lifecycle: lifecycle.getState(),
+                        running: window.gameState.running,
+                        audioReady: !!(window.audioSystem && window.audioSystem.isInitialized()),
+                        playerReady: !!window.player,
+                        rhythmActive: !!(window.rhythmSystem && window.rhythmSystem.isActive && window.rhythmSystem.isActive()),
+                        fullscreen: !!document.fullscreenElement
+                    });
+                }
+            }, 5000);
+
+            window.addEventListener('beforeunload', () => {
+                if (window.gameStateDebugInterval) {
+                    clearInterval(window.gameStateDebugInterval);
+                    window.gameStateDebugInterval = null;
+                }
+            });
+        }
+    </script>
+</body>
+</html>

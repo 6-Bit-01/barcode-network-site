@@ -1,0 +1,106 @@
+{
+  "host": "Chromium OfflineAudioContext",
+  "source": "production procedural mode SFX, isolated from music",
+  "runs": [
+    {
+      "muted": false,
+      "scheduled": [
+        {
+          "kind": "hack-in",
+          "at": 0.15
+        },
+        {
+          "kind": "hack-guard",
+          "at": 1.35
+        },
+        {
+          "kind": "hack-out",
+          "at": 2.35
+        },
+        {
+          "kind": "rhythm-in",
+          "at": 3.35
+        },
+        {
+          "kind": "rhythm-hit",
+          "at": 4.55
+        }
+      ],
+      "peak": 0.2928222119808197,
+      "windows": [
+        {
+          "kind": "hack-in",
+          "rms": 0.042298774493942856
+        },
+        {
+          "kind": "hack-guard",
+          "rms": 0.03340133728405354
+        },
+        {
+          "kind": "hack-out",
+          "rms": 0.025765346385659877
+        },
+        {
+          "kind": "rhythm-in",
+          "rms": 0.039269649835975
+        },
+        {
+          "kind": "rhythm-hit",
+          "rms": 0.019958736900757012
+        }
+      ],
+      "cachedBuffers": 5,
+      "remainingVoices": 0
+    },
+    {
+      "muted": true,
+      "scheduled": [
+        {
+          "kind": "hack-in",
+          "at": 0.15
+        },
+        {
+          "kind": "hack-guard",
+          "at": 1.35
+        },
+        {
+          "kind": "hack-out",
+          "at": 2.35
+        },
+        {
+          "kind": "rhythm-in",
+          "at": 3.35
+        },
+        {
+          "kind": "rhythm-hit",
+          "at": 4.55
+        }
+      ],
+      "peak": 0,
+      "windows": [
+        {
+          "kind": "hack-in",
+          "rms": 0
+        },
+        {
+          "kind": "hack-guard",
+          "rms": 0
+        },
+        {
+          "kind": "hack-out",
+          "rms": 0
+        },
+        {
+          "kind": "rhythm-in",
+          "rms": 0
+        },
+        {
+          "kind": "rhythm-hit",
+          "rms": 0
+        }
+      ],
+      "cachedBuffers": 5,
+      "remainingVoices": 0
+    }
+  ]
+}

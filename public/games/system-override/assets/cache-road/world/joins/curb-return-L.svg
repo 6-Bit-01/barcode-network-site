@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="curb-l" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#132731"/><stop offset=".48" stop-color="#5d7175"/><stop offset="1" stop-color="#203540"/></linearGradient>
+  </defs>
+  <!-- Two bevels bend around the near and far junction corners. -->
+  <path d="M46 15Q52 27 48 39L44 221Q43 236 36 252L49 256Q58 240 59 222L61 46Q65 28 59 16Z M210 15Q204 27 208 39L212 221Q213 236 220 252L207 256Q198 240 197 222L195 46Q191 28 197 16Z" fill="url(#curb-l)" opacity=".96"/>
+  <path d="M51 23Q55 36 53 53L50 222Q49 238 44 248M205 23Q201 36 203 53L206 222Q207 238 212 248" fill="none" stroke="#aebcb6" stroke-width="3" opacity=".78"/>
+  <path d="M56 50L53 86M53 122L51 145M50 182L48 209M200 50L203 86M203 122L205 145M206 182L208 209" fill="none" stroke="#d8ae78" stroke-width="3" opacity=".7"/>
+  <path d="M60 94l7 3m-9 69 8-3m-7 61 7-2M196 94l-7 3m9 69-8-3m7 61-7-2" stroke="#62b1ad" stroke-width="2" opacity=".55"/>
+</svg>

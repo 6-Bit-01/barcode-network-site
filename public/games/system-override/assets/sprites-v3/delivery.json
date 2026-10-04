@@ -1,0 +1,17 @@
+{
+  "revision": "1edf7fe6a011b88d511b955db9d1342f78912009",
+  "root": "https://raw.githubusercontent.com/6-Bit-01/BARCODE-SYSTEM-OVERRIDE/1edf7fe6a011b88d511b955db9d1342f78912009/",
+  "recoveredClips": 12,
+  "recoveredFrames": 547,
+  "originalClipsRetained": [
+    "sector_1_boss_walk_walk",
+    "sector_1_boss_attack_attack"
+  ],
+  "originalTrafficRetained": true,
+  "missingFinalExports": true,
+  "smoothing": {
+    "version": 1,
+    "method": "premultiplied-rgba-temporal-3-tap",
+    "weights": [0.09, 0.82, 0.09]
+  }
+}

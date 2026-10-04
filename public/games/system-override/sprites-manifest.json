@@ -1,0 +1,541 @@
+{
+  "version": "1.0",
+  "characters": {
+    "6_bit_main": {
+      "animations": {
+        "6_bit_idle_idle": {
+          "fps": 12,
+          "json": "./assets/sprites-v3/prepared/6_bit_idle_idle.json",
+          "image": "./assets/sprites-v3/prepared/6_bit_idle_idle.webp",
+          "anchor": {
+            "x": 160,
+            "y": 308,
+            "normalized": {
+              "x": 0.5,
+              "y": 0.9625
+            },
+            "strategy": "bottom-center"
+          },
+          "metadata": {
+            "anchor": {
+              "x": 160,
+              "y": 308,
+              "normalized": {
+                "x": 0.5,
+                "y": 0.9625
+              },
+              "strategy": "bottom-center"
+            },
+            "scale": 1
+          },
+          "priority": "medium",
+          "dimensions": {
+            "width": 320,
+            "height": 320
+          },
+          "frameCount": 26,
+          "animationLength": 2.1666666666666665
+        },
+        "6_bit_jump_jump": {
+          "fps": 12,
+          "json": "./assets/sprites-v3/prepared/6_bit_jump_jump.json",
+          "image": "./assets/sprites-v3/prepared/6_bit_jump_jump.webp",
+          "anchor": {
+            "x": 96,
+            "y": 308,
+            "normalized": {
+              "x": 0.5,
+              "y": 0.9625
+            },
+            "strategy": "bottom-center"
+          },
+          "metadata": {
+            "anchor": {
+              "x": 96,
+              "y": 308,
+              "normalized": {
+                "x": 0.5,
+                "y": 0.9625
+              },
+              "strategy": "bottom-center"
+            },
+            "scale": 1
+          },
+          "priority": "medium",
+          "dimensions": {
+            "width": 192,
+            "height": 320
+          },
+          "frameCount": 27,
+          "animationLength": 2.25
+        },
+        "6_bit_walk_walk": {
+          "fps": 16,
+          "json": "./assets/sprites-v3/prepared/6_bit_walk_walk.json",
+          "image": "./assets/sprites-v3/prepared/6_bit_walk_walk.webp",
+          "anchor": {
+            "x": 144,
+            "y": 308,
+            "normalized": {
+              "x": 0.5,
+              "y": 0.9625
+            },
+            "strategy": "bottom-center"
+          },
+          "metadata": {
+            "anchor": {
+              "x": 144,
+              "y": 308,
+              "normalized": {
+                "x": 0.5,
+                "y": 0.9625
+              },
+              "strategy": "bottom-center"
+            },
+            "scale": 1
+          },
+          "priority": "medium",
+          "dimensions": {
+            "width": 288,
+            "height": 320
+          },
+          "frameCount": 64,
+          "animationLength": 4
+        },
+        "6_bit_r__h_mode_rhmode": {
+          "fps": 12,
+          "json": "./assets/sprites-v3/prepared/6_bit_r__h_mode_rhmode.json",
+          "image": "./assets/sprites-v3/prepared/6_bit_r__h_mode_rhmode.webp",
+          "anchor": {
+            "x": 96,
+            "y": 308,
+            "normalized": {
+              "x": 0.5,
+              "y": 0.9625
+            },
+            "strategy": "bottom-center"
+          },
+          "metadata": {
+            "anchor": {
+              "x": 96,
+              "y": 308,
+              "normalized": {
+                "x": 0.5,
+                "y": 0.9625
+              },
+              "strategy": "bottom-center"
+            },
+            "scale": 1
+          },
+          "priority": "medium",
+          "dimensions": {
+            "width": 192,
+            "height": 320
+          },
+          "frameCount": 48,
+          "animationLength": 4
+        },
+        "6_bit_run_run": {
+          "fps": 18.333333333333336,
+          "json": "./assets/level1-run-v2/6_bit_run_run.json",
+          "image": "./assets/level1-run-v2/6_bit_run_run.webp",
+          "anchor": {
+            "x": 256,
+            "y": 512,
+            "normalized": {
+              "x": 0.5,
+              "y": 0.8888888888888888
+            },
+            "strategy": "pelvis-registered-gait-ground"
+          },
+          "metadata": {
+            "anchor": {
+              "x": 256,
+              "y": 512,
+              "normalized": {
+                "x": 0.5,
+                "y": 0.8888888888888888
+              },
+              "strategy": "pelvis-registered-gait-ground"
+            },
+            "scale": 1
+          },
+          "priority": "medium",
+          "dimensions": {
+            "width": 512,
+            "height": 576
+          },
+          "frameCount": 11,
+          "animationLength": 0.6
+        }
+      },
+      "metadata": {
+        "character_id": "87f596cb-0d6e-4ad3-8259-869b3538a39c"
+      }
+    },
+    "virus_virus": {
+      "animations": {
+        "virus_idle_idle": {
+          "fps": 12,
+          "json": "./assets/sprites-v3/prepared/virus_idle_idle.json",
+          "image": "./assets/sprites-v3/prepared/virus_idle_idle.webp",
+          "anchor": {
+            "x": 192,
+            "y": 308,
+            "normalized": {
+              "x": 0.5,
+              "y": 0.9625
+            },
+            "strategy": "bottom-center"
+          },
+          "priority": "medium",
+          "dimensions": {
+            "width": 384,
+            "height": 320
+          },
+          "frameCount": 51,
+          "animationLength": 4.25,
+          "metadata": {
+            "anchor": {
+              "x": 192,
+              "y": 308,
+              "normalized": {
+                "x": 0.5,
+                "y": 0.9625
+              },
+              "strategy": "bottom-center"
+            },
+            "scale": 1
+          }
+        }
+      },
+      "metadata": {
+        "character_id": "24202a6a-e2e8-4e4c-94ca-21b0f914935b"
+      }
+    },
+    "corrupted_corrupted": {
+      "animations": {
+        "corrupted_idle_idle": {
+          "fps": 12,
+          "json": "./assets/sprites-v3/prepared/corrupted_idle_idle.json",
+          "image": "./assets/sprites-v3/prepared/corrupted_idle_idle.webp",
+          "anchor": {
+            "x": 192,
+            "y": 308,
+            "normalized": {
+              "x": 0.5,
+              "y": 0.9625
+            },
+            "strategy": "bottom-center"
+          },
+          "priority": "medium",
+          "dimensions": {
+            "width": 384,
+            "height": 320
+          },
+          "frameCount": 51,
+          "animationLength": 4.25,
+          "metadata": {
+            "anchor": {
+              "x": 192,
+              "y": 308,
+              "normalized": {
+                "x": 0.5,
+                "y": 0.9625
+              },
+              "strategy": "bottom-center"
+            },
+            "scale": 1
+          }
+        },
+        "corrupted_walk_walk": {
+          "fps": 12,
+          "json": "./assets/sprites-v3/prepared/corrupted_walk_walk.json",
+          "image": "./assets/sprites-v3/prepared/corrupted_walk_walk.webp",
+          "anchor": {
+            "x": 160,
+            "y": 276,
+            "normalized": {
+              "x": 0.5,
+              "y": 0.9583333333333334
+            },
+            "strategy": "bottom-center"
+          },
+          "priority": "medium",
+          "dimensions": {
+            "width": 320,
+            "height": 288
+          },
+          "frameCount": 46,
+          "animationLength": 3.8333333333333335,
+          "metadata": {
+            "anchor": {
+              "x": 160,
+              "y": 276,
+              "normalized": {
+                "x": 0.5,
+                "y": 0.9583333333333334
+              },
+              "strategy": "bottom-center"
+            },
+            "scale": 1
+          }
+        }
+      },
+      "metadata": {
+        "character_id": "13035fd9-da4e-44a7-8426-37d88f24dd95"
+      }
+    },
+    "firewall_firewall": {
+      "animations": {
+        "firewall_idle_idle": {
+          "fps": 12,
+          "json": "./assets/sprites-v3/prepared/firewall_idle_idle.json",
+          "image": "./assets/sprites-v3/prepared/firewall_idle_idle.webp",
+          "anchor": {
+            "x": 176,
+            "y": 308,
+            "normalized": {
+              "x": 0.5,
+              "y": 0.9625
+            },
+            "strategy": "bottom-center"
+          },
+          "priority": "medium",
+          "dimensions": {
+            "width": 352,
+            "height": 320
+          },
+          "frameCount": 62,
+          "animationLength": 5.166666666666667,
+          "metadata": {
+            "anchor": {
+              "x": 176,
+              "y": 308,
+              "normalized": {
+                "x": 0.5,
+                "y": 0.9625
+              },
+              "strategy": "bottom-center"
+            },
+            "scale": 1
+          }
+        },
+        "firewall_walk_walk": {
+          "fps": 12,
+          "json": "./assets/sprites-v3/prepared/firewall_walk_walk.json",
+          "image": "./assets/sprites-v3/prepared/firewall_walk_walk.webp",
+          "anchor": {
+            "x": 160,
+            "y": 308,
+            "normalized": {
+              "x": 0.5,
+              "y": 0.9625
+            },
+            "strategy": "bottom-center"
+          },
+          "priority": "medium",
+          "dimensions": {
+            "width": 320,
+            "height": 320
+          },
+          "frameCount": 33,
+          "animationLength": 2.75,
+          "metadata": {
+            "anchor": {
+              "x": 160,
+              "y": 308,
+              "normalized": {
+                "x": 0.5,
+                "y": 0.9625
+              },
+              "strategy": "bottom-center"
+            },
+            "scale": 1
+          }
+        },
+        "firewall_attack_default": {
+          "fps": 12,
+          "json": "./assets/sprites-v3/prepared/firewall_attack_default.json",
+          "image": "./assets/sprites-v3/prepared/firewall_attack_default.webp",
+          "anchor": {
+            "x": 176,
+            "y": 244,
+            "normalized": {
+              "x": 0.5,
+              "y": 0.953125
+            },
+            "strategy": "bottom-center"
+          },
+          "priority": "medium",
+          "dimensions": {
+            "width": 352,
+            "height": 256
+          },
+          "frameCount": 59,
+          "animationLength": 4.916666666666667,
+          "metadata": {
+            "anchor": {
+              "x": 176,
+              "y": 244,
+              "normalized": {
+                "x": 0.5,
+                "y": 0.953125
+              },
+              "strategy": "bottom-center"
+            },
+            "scale": 1
+          }
+        }
+      },
+      "metadata": {
+        "character_id": "87c97df3-0f91-4092-ba08-1186b6089d55"
+      }
+    },
+    "broadcast_jammer_broadcastjammer": {
+      "animations": {
+        "broadcast_jammer_idle_idle": {
+          "fps": 12,
+          "json": "./assets/sprites-v3/prepared/broadcast_jammer_idle_idle.json",
+          "image": "./assets/sprites-v3/prepared/broadcast_jammer_idle_idle.webp",
+          "anchor": {
+            "x": 176,
+            "y": 340,
+            "normalized": {
+              "x": 0.5,
+              "y": 0.9659090909090909
+            },
+            "strategy": "bottom-center"
+          },
+          "priority": "medium",
+          "dimensions": {
+            "width": 352,
+            "height": 352
+          },
+          "frameCount": 48,
+          "animationLength": 4,
+          "metadata": {
+            "anchor": {
+              "x": 176,
+              "y": 340,
+              "normalized": {
+                "x": 0.5,
+                "y": 0.9659090909090909
+              },
+              "strategy": "bottom-center"
+            },
+            "scale": 1
+          }
+        }
+      },
+      "metadata": {
+        "character_id": "c28f11ef-56d0-4164-bbc9-70fb4ba18958"
+      }
+    },
+    "sector_1_boss_sector1boss": {
+      "animations": {
+        "sector_1_boss_idle_idle": {
+          "fps": 12,
+          "json": "./assets/sprites-v3/prepared/sector_1_boss_idle_idle.json",
+          "image": "./assets/sprites-v3/prepared/sector_1_boss_idle_idle.webp",
+          "anchor": {
+            "x": 208,
+            "y": 308,
+            "normalized": {
+              "x": 0.5,
+              "y": 0.9625
+            },
+            "strategy": "bottom-center"
+          },
+          "metadata": {
+            "anchor": {
+              "x": 208,
+              "y": 308,
+              "normalized": {
+                "x": 0.5,
+                "y": 0.9625
+              },
+              "strategy": "bottom-center"
+            },
+            "scale": 1
+          },
+          "priority": "medium",
+          "dimensions": {
+            "width": 416,
+            "height": 320
+          },
+          "frameCount": 48,
+          "animationLength": 4
+        },
+        "sector_1_boss_walk_walk": {
+          "fps": 12,
+          "json": "./assets/standalone/sector_1_boss_walk_walk.json",
+          "image": "./assets/standalone/sector_1_boss_walk_walk.webp",
+          "anchor": {
+            "x": 100,
+            "y": 253,
+            "strategy": "bottom-center",
+            "normalized": {
+              "x": 0.5,
+              "y": 0.98828125
+            }
+          },
+          "metadata": {
+            "anchor": {
+              "x": 100,
+              "y": 253,
+              "strategy": "bottom-center",
+              "normalized": {
+                "x": 0.5,
+                "y": 0.98828125
+              }
+            }
+          },
+          "priority": "medium",
+          "dimensions": {
+            "width": 200,
+            "height": 256
+          },
+          "frameCount": 41,
+          "animationLength": 3.4166666666666665
+        },
+        "sector_1_boss_attack_attack": {
+          "fps": 12,
+          "json": "./assets/sprites-v3/prepared/sector_1_boss_attack_attack.json",
+          "image": "./assets/sprites-v3/prepared/sector_1_boss_attack_attack.webp",
+          "anchor": {
+            "x": 256,
+            "y": 308,
+            "normalized": {
+              "x": 0.5,
+              "y": 0.9935483870967742
+            },
+            "strategy": "bottom-center"
+          },
+          "metadata": {
+            "anchor": {
+              "x": 256,
+              "y": 308,
+              "normalized": {
+                "x": 0.5,
+                "y": 0.9935483870967742
+              },
+              "strategy": "bottom-center"
+            },
+            "scale": 1
+          },
+          "priority": "medium",
+          "dimensions": {
+            "width": 512,
+            "height": 310
+          },
+          "frameCount": 48,
+          "animationLength": 4
+        }
+      },
+      "metadata": {
+        "character_id": "3f883188-ce0e-46b9-a12b-ebe6805c7352"
+      }
+    }
+  }
+}

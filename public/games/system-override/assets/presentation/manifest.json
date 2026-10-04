@@ -1,0 +1,293 @@
+{
+  "assets": [
+    {
+      "path": "assets/presentation/studio-cat.webp",
+      "sourceFile": "exec-0350027f-66c4-4731-86b3-b8ff32e3c5f1.png",
+      "sourceSHA256": "0ab92a504137ba69c5713d8d7088ba699b753bde91492a9b11a6b8cf9b7ec9c8",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sha256": "62670cf5b31c96e9c2bc0c0df33e2852b8f88e6c07a615b8c91716fe2a76115e",
+      "bytes": 117878,
+      "columns": 2,
+      "rows": 2,
+      "frameWidth": 256,
+      "frameHeight": 256,
+      "frameCount": 4,
+      "anchor": [
+        128,
+        240
+      ],
+      "packing": [
+        {
+          "sourceCell": [
+            0,
+            0,
+            627,
+            627
+          ],
+          "trim": [
+            20,
+            95,
+            610,
+            555
+          ],
+          "opaqueBounds": [
+            28,
+            116,
+            608,
+            555
+          ],
+          "destination": [
+            10,
+            56,
+            236,
+            184
+          ]
+        },
+        {
+          "sourceCell": [
+            627,
+            0,
+            627,
+            627
+          ],
+          "trim": [
+            20,
+            95,
+            610,
+            555
+          ],
+          "opaqueBounds": [
+            20,
+            112,
+            610,
+            555
+          ],
+          "destination": [
+            10,
+            56,
+            236,
+            184
+          ]
+        },
+        {
+          "sourceCell": [
+            0,
+            627,
+            627,
+            627
+          ],
+          "trim": [
+            20,
+            95,
+            610,
+            536
+          ],
+          "opaqueBounds": [
+            26,
+            95,
+            610,
+            536
+          ],
+          "destination": [
+            10,
+            64,
+            236,
+            176
+          ]
+        },
+        {
+          "sourceCell": [
+            627,
+            627,
+            627,
+            627
+          ],
+          "trim": [
+            20,
+            95,
+            610,
+            536
+          ],
+          "opaqueBounds": [
+            25,
+            96,
+            609,
+            536
+          ],
+          "destination": [
+            10,
+            64,
+            236,
+            176
+          ]
+        }
+      ],
+      "method": "built-in image_gen; alpha-preserving crop/scale/atlas packing only",
+      "approval": "owner review pending"
+    },
+    {
+      "path": "assets/presentation/direction-arrow.webp",
+      "sourceFile": "exec-921ce916-1542-4702-9394-5b2a291118b7.png",
+      "sourceSHA256": "9af049690f894c804078a516a0a50914d881b1300f214cbe6ab60cc7bcabcfd7",
+      "sourceSize": [
+        1536,
+        1024
+      ],
+      "sha256": "98b1b1edb6ec254944fd50634045ebc0b4d691f701e3871c9ddf9df58ebc7bcd",
+      "bytes": 55462,
+      "columns": 1,
+      "rows": 1,
+      "frameWidth": 320,
+      "frameHeight": 196,
+      "frameCount": 1,
+      "anchor": [
+        160.0,
+        98.0
+      ],
+      "packing": [
+        {
+          "trim": [
+            102,
+            106,
+            1434,
+            921
+          ]
+        }
+      ],
+      "method": "built-in image_gen; alpha-preserving crop/scale/atlas packing only",
+      "approval": "owner review pending"
+    },
+    {
+      "path": "assets/presentation/boss-pulse.webp",
+      "sourceFile": "exec-3e68c7ba-fabd-4abf-9e75-3a98289070c1.png",
+      "sourceSHA256": "0daaf5c03990891fe7bf705d3183940062be17b2efc00794ca09f14f10920f11",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sha256": "bb14187015f92f1facd68e68e6707c5d7036498d9f8561e599417001c2cab872",
+      "bytes": 192604,
+      "columns": 2,
+      "rows": 2,
+      "frameWidth": 256,
+      "frameHeight": 256,
+      "frameCount": 4,
+      "anchor": [
+        128,
+        240
+      ],
+      "packing": [
+        {
+          "sourceCell": [
+            0,
+            0,
+            627,
+            627
+          ],
+          "trim": [
+            30,
+            180,
+            613,
+            538
+          ],
+          "opaqueBounds": [
+            40,
+            194,
+            605,
+            538
+          ],
+          "destination": [
+            10,
+            95,
+            236,
+            145
+          ]
+        },
+        {
+          "sourceCell": [
+            627,
+            0,
+            627,
+            627
+          ],
+          "trim": [
+            30,
+            180,
+            613,
+            539
+          ],
+          "opaqueBounds": [
+            30,
+            204,
+            611,
+            539
+          ],
+          "destination": [
+            10,
+            95,
+            236,
+            145
+          ]
+        },
+        {
+          "sourceCell": [
+            0,
+            627,
+            627,
+            627
+          ],
+          "trim": [
+            30,
+            180,
+            613,
+            521
+          ],
+          "opaqueBounds": [
+            44,
+            180,
+            611,
+            521
+          ],
+          "destination": [
+            10,
+            102,
+            236,
+            138
+          ]
+        },
+        {
+          "sourceCell": [
+            627,
+            627,
+            627,
+            627
+          ],
+          "trim": [
+            30,
+            180,
+            613,
+            521
+          ],
+          "opaqueBounds": [
+            32,
+            192,
+            613,
+            521
+          ],
+          "destination": [
+            10,
+            102,
+            236,
+            138
+          ]
+        }
+      ],
+      "method": "built-in image_gen; alpha-preserving crop/scale/atlas packing only",
+      "approval": "owner review pending"
+    }
+  ],
+  "prompts": "prompts.json"
+}

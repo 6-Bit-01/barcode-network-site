@@ -1,0 +1,20 @@
+{
+  "source": "assets/world-v3/far-background.webp",
+  "sourceSHA256": "d768160b5b1e2a9bbbace9545b48b506dea75941b3eb953ee7ef01a161796f35",
+  "contentWidth": 2087,
+  "contentHeight": 754,
+  "encodedWidth": 2088,
+  "encodedHeight": 754,
+  "fps": 24,
+  "frames": 192,
+  "durationSeconds": 8,
+  "asset": "far-background-loop.mp4",
+  "sha256": "774c6b4cbe5c063390b6e425f8fd696a5a195b28826207d936974cae65d2031f",
+  "motion": "Periodic smoke/cloud deformation selected by model mask and protected chimney regions; exact source pixels outside influence.",
+  "verification": {
+    "uncompressedLoopEndpointExact": true,
+    "uncompressedStationaryPixelsExact": true,
+    "stationaryImageFraction": 0.6439
+  },
+  "runtime": "Muted video using the existing camera transform; no rain baked into video, so the game owns rain intensity and layering."
+}

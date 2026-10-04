@@ -1,0 +1,174 @@
+{
+  "version": 1,
+  "generatedOn": "2026-09-30",
+  "generator": "image_gen.imagegen (built-in)",
+  "transparentBackground": true,
+  "promptFile": "ART_PROMPTS.md",
+  "sourceTreatment": "Original PNG bytes preserved unchanged. Lossless WebP format conversion only; original dimensions and alpha retained.",
+  "assets": [
+    {
+      "id": "push-arc",
+      "semanticKey": "cachePushArc",
+      "width": 1774,
+      "height": 887,
+      "normalizedAnchor": [
+        0.5,
+        0.78
+      ],
+      "intendedUse": "Kinetic arc at pushed traffic contact; origin on the road plane.",
+      "alphaBounds": [
+        57,
+        21,
+        1752,
+        887
+      ],
+      "alphaBoundsAt64": [
+        81,
+        271,
+        1687,
+        784
+      ],
+      "transparentPixelCount": 1173793,
+      "translucentPixelCount": 399726,
+      "opaquePixelCount": 19,
+      "source": {
+        "path": "sources/push-arc.png",
+        "bytes": 791558,
+        "sha256": "c512a4d1732b503ad51f47c4fc6984af7877386bcdc05c75ae1865f8f32e0508"
+      },
+      "runtime": {
+        "path": "push-arc.webp",
+        "bytes": 648380,
+        "sha256": "c4280d4982fa87774f5a06b852fa22f50c53ec0ac74786d65809eb731c8407d4"
+      },
+      "verified": {
+        "dimensionsPreserved": true,
+        "alphaBytesIdentical": true,
+        "visibleRgbaPixelsIdentical": true
+      }
+    },
+    {
+      "id": "brace-halo",
+      "semanticKey": "cacheBraceHalo",
+      "width": 1942,
+      "height": 809,
+      "normalizedAnchor": [
+        0.5,
+        0.75
+      ],
+      "intendedUse": "Protective impact halo centered at player vehicle base.",
+      "alphaBounds": [
+        35,
+        21,
+        1894,
+        809
+      ],
+      "alphaBoundsAt64": [
+        40,
+        138,
+        1891,
+        702
+      ],
+      "transparentPixelCount": 1100557,
+      "translucentPixelCount": 470231,
+      "opaquePixelCount": 290,
+      "source": {
+        "path": "sources/brace-halo.png",
+        "bytes": 890112,
+        "sha256": "4c61df6f1ea6cd88d8b7bfe76183957d533ddfdb5853bd0a778325205ee9d7c1"
+      },
+      "runtime": {
+        "path": "brace-halo.webp",
+        "bytes": 709158,
+        "sha256": "2a55970a5ce4b506adf6efa907b3208a8b91f774c732d353f899b5a5719be3ec"
+      },
+      "verified": {
+        "dimensionsPreserved": true,
+        "alphaBytesIdentical": true,
+        "visibleRgbaPixelsIdentical": true
+      }
+    },
+    {
+      "id": "echo-ribbons",
+      "semanticKey": "cacheEchoRibbons",
+      "width": 1535,
+      "height": 1025,
+      "normalizedAnchor": [
+        0.5,
+        0.78
+      ],
+      "intendedUse": "Interference wake underneath the active Echo vehicle.",
+      "alphaBounds": [
+        0,
+        32,
+        1511,
+        1025
+      ],
+      "alphaBoundsAt64": [
+        38,
+        214,
+        1498,
+        900
+      ],
+      "transparentPixelCount": 1240644,
+      "translucentPixelCount": 332711,
+      "opaquePixelCount": 20,
+      "source": {
+        "path": "sources/echo-ribbons.png",
+        "bytes": 763241,
+        "sha256": "3a72ba1b31639dea1812da299dab8d3af5e2f93a68f9fd974b8b174450db2d99"
+      },
+      "runtime": {
+        "path": "echo-ribbons.webp",
+        "bytes": 624196,
+        "sha256": "eaa9c691560ff2b281f5f4399b42ae078b5e3d1a9a0b1db4dd6f79cb294f26ba"
+      },
+      "verified": {
+        "dimensionsPreserved": true,
+        "alphaBytesIdentical": true,
+        "visibleRgbaPixelsIdentical": true
+      }
+    },
+    {
+      "id": "delivery-beacon",
+      "semanticKey": "cacheDeliveryBeacon",
+      "width": 1024,
+      "height": 1536,
+      "normalizedAnchor": [
+        0.5,
+        0.96
+      ],
+      "intendedUse": "Grounded narrow roadside delivery marker, with a reserved footprint.",
+      "alphaBounds": [
+        49,
+        39,
+        1012,
+        1504
+      ],
+      "alphaBoundsAt64": [
+        168,
+        53,
+        871,
+        1477
+      ],
+      "transparentPixelCount": 948937,
+      "translucentPixelCount": 623927,
+      "opaquePixelCount": 0,
+      "source": {
+        "path": "sources/delivery-beacon.png",
+        "bytes": 1912869,
+        "sha256": "359afe79be2c7297cb56e29ba71ca0a824ceef865b9cc44b3b3e0b726f04f540"
+      },
+      "runtime": {
+        "path": "delivery-beacon.webp",
+        "bytes": 1306428,
+        "sha256": "e84bd361ccc36ac40454180828b629deab01921a8b9484945989a9cd31595466"
+      },
+      "verified": {
+        "dimensionsPreserved": true,
+        "alphaBytesIdentical": true,
+        "visibleRgbaPixelsIdentical": true
+      }
+    }
+  ]
+}

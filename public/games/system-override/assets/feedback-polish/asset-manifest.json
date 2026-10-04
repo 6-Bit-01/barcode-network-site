@@ -1,0 +1,40 @@
+{
+  "assets": [
+    {
+      "path": "assets/feedback-polish/hud-expressions.webp",
+      "size": [
+        768,
+        512
+      ],
+      "mode": "RGB",
+      "sha256": "e664d8faf60561dbfa3b32359980961acb14eac87cf0ce70a1972eb4fafe0393"
+    },
+    {
+      "path": "assets/feedback-polish/platform-facades.webp",
+      "size": [
+        1536,
+        512
+      ],
+      "mode": "RGBA",
+      "sha256": "5a3efa1fad8c9e115a5fc077c63d8dceb3908e4e4f66ee16664b060c07d9a26a"
+    },
+    {
+      "path": "assets/feedback-polish/platform-side-left.webp",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "RGBA",
+      "sha256": "eb40b8d53ee103404f486c6957c095d0c8e4d445cc2f71c0da001aaec091b4bc"
+    },
+    {
+      "path": "assets/feedback-polish/platform-side-right.webp",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "RGBA",
+      "sha256": "c2d30320d51cd9fcc0ae538ac3d3d633b37d35070c6ae30def2b6a7c790ec997"
+    }
+  ]
+}

@@ -1,0 +1,451 @@
+{
+  "sources": [
+    {
+      "file": "6_bit_run_source_0.png",
+      "sha256": "c1d13c72b0be85f34521a8b9df7915169e22f7882d384d080d696ff165c00dd8"
+    }
+  ],
+  "contactFrames": [
+    0,
+    5
+  ],
+  "frames": [
+    {
+      "source": 0,
+      "silhouette": 0,
+      "crop": [
+        27,
+        12,
+        396,
+        382
+      ],
+      "phase": "contact",
+      "durationMs": 60,
+      "bobWorldY": 0,
+      "flightLiftWorld": 0,
+      "leadingLeg": "near",
+      "notes": "high for opposing arms and silhouette; near/far leg identity moderate",
+      "pelvis": [
+        158,
+        173
+      ],
+      "nearFist": [
+        75,
+        146
+      ],
+      "farFist": [
+        266,
+        99
+      ],
+      "nearSole": [
+        263,
+        342
+      ],
+      "farSole": [
+        60,
+        341
+      ],
+      "capCrown": [
+        226.7,
+        17.1
+      ]
+    },
+    {
+      "source": 0,
+      "silhouette": 1,
+      "crop": [
+        450,
+        14,
+        730,
+        362
+      ],
+      "phase": "compression",
+      "durationMs": 60,
+      "bobWorldY": 3,
+      "flightLiftWorld": 0,
+      "leadingLeg": "near",
+      "notes": "high for opposing arms and silhouette; near/far leg identity moderate",
+      "pelvis": [
+        107,
+        175
+      ],
+      "nearFist": [
+        29,
+        151
+      ],
+      "farFist": [
+        177,
+        112
+      ],
+      "nearSole": [
+        181,
+        340
+      ],
+      "farSole": [
+        30,
+        319
+      ],
+      "capCrown": [
+        163.4,
+        16.2
+      ]
+    },
+    {
+      "source": 0,
+      "silhouette": 2,
+      "crop": [
+        745,
+        13,
+        1064,
+        371
+      ],
+      "phase": "passing",
+      "durationMs": 60,
+      "bobWorldY": 2,
+      "flightLiftWorld": 0,
+      "leadingLeg": "near",
+      "notes": "arm position clear; projected sole points clear; persistent near/far leg identity uncertain due overlapping/drawing depth",
+      "pelvis": [
+        146,
+        178
+      ],
+      "nearFist": [
+        148,
+        198
+      ],
+      "farFist": [
+        201,
+        138
+      ],
+      "nearSole": [
+        150,
+        341
+      ],
+      "farSole": [
+        118,
+        285
+      ],
+      "capCrown": [
+        200.0,
+        16.2
+      ]
+    },
+    {
+      "source": 0,
+      "silhouette": 3,
+      "crop": [
+        1065,
+        10,
+        1400,
+        395
+      ],
+      "phase": "toe-off",
+      "durationMs": 60,
+      "bobWorldY": -2,
+      "flightLiftWorld": 0,
+      "leadingLeg": "near",
+      "notes": "high for opposing arms and silhouette; near/far leg identity moderate",
+      "pelvis": [
+        200,
+        170
+      ],
+      "nearFist": [
+        285,
+        122
+      ],
+      "farFist": null,
+      "nearSole": [
+        119,
+        339
+      ],
+      "farSole": [
+        258,
+        297
+      ],
+      "capCrown": [
+        266.0,
+        18.0
+      ]
+    },
+    {
+      "source": 0,
+      "silhouette": 4,
+      "crop": [
+        41,
+        372,
+        400,
+        715
+      ],
+      "phase": "early-flight",
+      "durationMs": 60,
+      "bobWorldY": -5,
+      "flightLiftWorld": 5,
+      "leadingLeg": "near",
+      "notes": "high for opposing arms and silhouette; near/far leg identity moderate",
+      "pelvis": [
+        146,
+        171
+      ],
+      "nearFist": [
+        244,
+        93
+      ],
+      "farFist": [
+        70,
+        140
+      ],
+      "nearSole": [
+        72,
+        328
+      ],
+      "farSole": [
+        261,
+        325
+      ],
+      "capCrown": [
+        216.3,
+        22.299999999999997
+      ]
+    },
+    {
+      "source": 0,
+      "silhouette": 5,
+      "crop": [
+        381,
+        373,
+        754,
+        717
+      ],
+      "phase": "contact",
+      "durationMs": 50,
+      "bobWorldY": 0,
+      "flightLiftWorld": 0,
+      "leadingLeg": "far",
+      "notes": "high for opposing arms and silhouette; near/far leg identity moderate",
+      "pelvis": [
+        178,
+        168
+      ],
+      "nearFist": [
+        263,
+        91
+      ],
+      "farFist": [
+        94,
+        137
+      ],
+      "nearSole": [
+        103,
+        302
+      ],
+      "farSole": [
+        294,
+        331
+      ],
+      "capCrown": [
+        237.39999999999998,
+        21.200000000000003
+      ]
+    },
+    {
+      "source": 0,
+      "silhouette": 7,
+      "crop": [
+        1103,
+        363,
+        1416,
+        715
+      ],
+      "phase": "compression",
+      "durationMs": 50,
+      "bobWorldY": 3,
+      "flightLiftWorld": 0,
+      "leadingLeg": "far",
+      "notes": "high for opposing arms and silhouette; near/far leg identity moderate",
+      "pelvis": [
+        173,
+        181
+      ],
+      "nearFist": [
+        251,
+        118
+      ],
+      "farFist": [
+        99,
+        172
+      ],
+      "nearSole": [
+        95,
+        306
+      ],
+      "farSole": [
+        236,
+        341
+      ],
+      "capCrown": [
+        228.4,
+        37.9
+      ]
+    },
+    {
+      "source": 0,
+      "silhouette": 8,
+      "crop": [
+        0,
+        730,
+        354,
+        1075
+      ],
+      "phase": "passing",
+      "durationMs": 50,
+      "bobWorldY": 2,
+      "flightLiftWorld": 0,
+      "leadingLeg": "far",
+      "notes": "arm position clear; projected sole points clear; persistent near/far leg identity uncertain due overlapping/drawing depth",
+      "pelvis": [
+        179,
+        178
+      ],
+      "nearFist": [
+        230,
+        170
+      ],
+      "farFist": [
+        249,
+        127
+      ],
+      "nearSole": [
+        190,
+        337
+      ],
+      "farSole": [
+        156,
+        283
+      ],
+      "capCrown": [
+        251.1,
+        24.1
+      ]
+    },
+    {
+      "source": 0,
+      "silhouette": 9,
+      "crop": [
+        347,
+        734,
+        738,
+        1072
+      ],
+      "phase": "toe-off",
+      "durationMs": 50,
+      "bobWorldY": -2,
+      "flightLiftWorld": 0,
+      "leadingLeg": "far",
+      "notes": "arm position clear; projected sole points clear; persistent near/far leg identity uncertain due overlapping/drawing depth",
+      "pelvis": [
+        200,
+        164
+      ],
+      "nearFist": [
+        202,
+        183
+      ],
+      "farFist": [
+        268,
+        123
+      ],
+      "nearSole": [
+        131,
+        327
+      ],
+      "farSole": [
+        263,
+        255
+      ],
+      "capCrown": [
+        265.3,
+        20.1
+      ]
+    },
+    {
+      "source": 0,
+      "silhouette": 10,
+      "crop": [
+        723,
+        737,
+        1104,
+        1070
+      ],
+      "phase": "early-flight",
+      "durationMs": 50,
+      "bobWorldY": -5,
+      "flightLiftWorld": 5,
+      "leadingLeg": "far",
+      "notes": "high for opposing arms and silhouette; near/far leg identity moderate",
+      "pelvis": [
+        185,
+        164
+      ],
+      "nearFist": [
+        85,
+        142
+      ],
+      "farFist": [
+        273,
+        105
+      ],
+      "nearSole": [
+        283,
+        318
+      ],
+      "farSole": [
+        100,
+        312
+      ],
+      "capCrown": [
+        241.0,
+        17.2
+      ]
+    },
+    {
+      "source": 0,
+      "silhouette": 11,
+      "crop": [
+        1095,
+        733,
+        1423,
+        1075
+      ],
+      "phase": "late-flight",
+      "durationMs": 50,
+      "bobWorldY": -3,
+      "flightLiftWorld": 3,
+      "leadingLeg": "far",
+      "notes": "high for opposing arms and silhouette; near/far leg identity moderate",
+      "pelvis": [
+        188,
+        177
+      ],
+      "nearFist": [
+        84,
+        151
+      ],
+      "farFist": [
+        274,
+        101
+      ],
+      "nearSole": [
+        296,
+        329
+      ],
+      "farSole": [
+        88,
+        322
+      ],
+      "capCrown": [
+        231.9,
+        21.1
+      ]
+    }
+  ]
+}

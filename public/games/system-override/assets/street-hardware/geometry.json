@@ -1,0 +1,42 @@
+[
+  {
+    "id": "gateHardware1",
+    "path": "assets/street-hardware/slim-gate-1.webp",
+    "left": 1077,
+    "top": -221,
+    "width": 333,
+    "height": 1353,
+    "columns": 2,
+    "frames": 2
+  },
+  {
+    "id": "gateHardware2",
+    "path": "assets/street-hardware/slim-gate-2.webp",
+    "left": 1893,
+    "top": 25,
+    "width": 115,
+    "height": 1107,
+    "columns": 2,
+    "frames": 2
+  },
+  {
+    "id": "gateHardware3",
+    "path": "assets/street-hardware/slim-gate-3.webp",
+    "left": 3222,
+    "top": -340,
+    "width": 274,
+    "height": 1472,
+    "columns": 2,
+    "frames": 2
+  },
+  {
+    "id": "gateHardware4",
+    "path": "assets/street-hardware/slim-gate-4.webp",
+    "left": 3802,
+    "top": -112,
+    "width": 308,
+    "height": 1244,
+    "columns": 2,
+    "frames": 2
+  }
+]

@@ -1,0 +1,128 @@
+[
+  {
+    "path": "assets/standalone/sector_1_boss_walk_walk.json",
+    "source": "https://api.makko.ai/storage/v1/object/public/sprite-sheets/761d5e25-3a15-4971-8000-bc3fa795d0fe/sector_1_boss_walk_walk.json?t=1764605128926",
+    "bytes": 16489,
+    "sha256": "cca630edb7968ebc6864ba6cf95b3972c557ebfe7db352f7630c09f50487a5eb"
+  },
+  {
+    "path": "assets/standalone/sector_1_boss_walk_walk.webp",
+    "source": "https://api.makko.ai/storage/v1/object/public/sprite-sheets/761d5e25-3a15-4971-8000-bc3fa795d0fe/sector_1_boss_walk_walk.webp?t=1764605128926",
+    "bytes": 588552,
+    "sha256": "5427a001a4c94bcb8667ec94a71866d886194be040040c7c7e4ddaaeea43e04d"
+  },
+  {
+    "path": "assets/standalone/level1-foundation.mp3",
+    "source": "https://dcnmwoxzefwqmvvkpqap.supabase.co/storage/v1/object/public/audio-assets/e56876ca-50d1-4b32-bcb9-1e37b7d1f822/2133657a-6dbe-47c0-b4c3-4cb9849b3c58.mp3",
+    "bytes": 3393662,
+    "sha256": "c729507ffd948478b1eb7b37530f1938438c0ddebfbde0cd0a6c82357de629af"
+  },
+  {
+    "path": "assets/standalone/level1-bass.mp3",
+    "source": "https://dcnmwoxzefwqmvvkpqap.supabase.co/storage/v1/object/public/audio-assets/e56876ca-50d1-4b32-bcb9-1e37b7d1f822/5089debd-8927-4409-88f1-785be8508686.mp3",
+    "bytes": 3367331,
+    "sha256": "da4da5c1843bf7ea6c4d00896f99aaf544e0e1ed4797cb96f3dcf71f7f5aa24f"
+  },
+  {
+    "path": "assets/standalone/level1-fx.mp3",
+    "source": "https://dcnmwoxzefwqmvvkpqap.supabase.co/storage/v1/object/public/audio-assets/e56876ca-50d1-4b32-bcb9-1e37b7d1f822/1e86d080-84ac-45df-b591-5e433ae5ec8f.mp3",
+    "bytes": 3393662,
+    "sha256": "b3e83c57ebbcfbfc3c77b6b45c350719469dd46fb05911f3e0d18f1495924da7"
+  },
+  {
+    "path": "assets/standalone/title-background.png",
+    "source": "https://i.postimg.cc/g2pD1DgH/openart-89f2eee5-980d-4652-96af-7a1634e44485.png",
+    "bytes": 2982839,
+    "sha256": "22321834fb3e659e6e951621d37215bf8d850af22be5613e6c7729d78fb4d592"
+  },
+  {
+    "path": "assets/standalone/lore.png",
+    "source": "https://i.postimg.cc/2yvHCQhj/Lore.png",
+    "bytes": 100471,
+    "sha256": "245ef8da8c6d6e66f58a53eb054bd1dcf19820a963e35e2b3e930f8996e687f9"
+  },
+  {
+    "path": "assets/standalone/audio-21dd0b0c-3f5f-4d57-92a8-dc8b7b01be03.mp3",
+    "source": "https://api.makko.ai/storage/v1/object/public/audio-assets/e56876ca-50d1-4b32-bcb9-1e37b7d1f822/21dd0b0c-3f5f-4d57-92a8-dc8b7b01be03.mp3",
+    "bytes": 5087886,
+    "sha256": "7487047200757b617f7005693121990ea3b1829ae2954706e1fdf9ee735f07ed"
+  },
+  {
+    "path": "assets/standalone/audio-3a9cb68b-091e-4133-9d05-f936a780c605.wav",
+    "source": "https://api.makko.ai/storage/v1/object/public/audio-assets/e56876ca-50d1-4b32-bcb9-1e37b7d1f822/3a9cb68b-091e-4133-9d05-f936a780c605.wav",
+    "bytes": 72884,
+    "sha256": "a0404664ee0b1eed8daa2a868baa32ddd7776e8926e3bf46ae5bb5c2d4e80d56"
+  },
+  {
+    "path": "assets/standalone/audio-498c6110-78b1-4452-a6c2-1f4e979e1c5a.mp3",
+    "source": "https://api.makko.ai/storage/v1/object/public/audio-assets/e56876ca-50d1-4b32-bcb9-1e37b7d1f822/498c6110-78b1-4452-a6c2-1f4e979e1c5a.mp3",
+    "bytes": 160913,
+    "sha256": "1c4834a9c54f8a3b3e14d56741db791f727c10c66c18fc772ed0e217c4df5224"
+  },
+  {
+    "path": "assets/standalone/audio-4e510bfa-7c4c-4cd5-be98-99669e092b21.mp3",
+    "source": "https://api.makko.ai/storage/v1/object/public/audio-assets/e56876ca-50d1-4b32-bcb9-1e37b7d1f822/4e510bfa-7c4c-4cd5-be98-99669e092b21.mp3",
+    "bytes": 160913,
+    "sha256": "2ea9ab6377f120f03a3a8dcf52a65575facdfc734cf27b2857a35b12f15aa553"
+  },
+  {
+    "path": "assets/standalone/audio-8d792d94-17c5-43c2-a3b0-b1e1dcf5bff0.wav",
+    "source": "https://api.makko.ai/storage/v1/object/public/audio-assets/e56876ca-50d1-4b32-bcb9-1e37b7d1f822/8d792d94-17c5-43c2-a3b0-b1e1dcf5bff0.wav",
+    "bytes": 44076,
+    "sha256": "b3a5bff39135c35b62f5b2ef062a08c4be9d1e2dcc0abf4bb1cfa247b5bd356c"
+  },
+  {
+    "path": "assets/standalone/audio-9c2ff06d-30bf-4e03-a7c2-5cc3636413bf.wav",
+    "source": "https://api.makko.ai/storage/v1/object/public/audio-assets/e56876ca-50d1-4b32-bcb9-1e37b7d1f822/9c2ff06d-30bf-4e03-a7c2-5cc3636413bf.wav",
+    "bytes": 58616,
+    "sha256": "1779914fe5835239dc441fe0ff3db41d333b3dcbeb2828c0327d296a903a4b20"
+  },
+  {
+    "path": "assets/standalone/audio-a26e3d15-d122-4895-81ce-03370b49794f.mp3",
+    "source": "https://api.makko.ai/storage/v1/object/public/audio-assets/e56876ca-50d1-4b32-bcb9-1e37b7d1f822/a26e3d15-d122-4895-81ce-03370b49794f.mp3",
+    "bytes": 160913,
+    "sha256": "24ea7c267c771d93075b469b6fbef8068f61e7d83410260b960a29c2a13ba22f"
+  },
+  {
+    "path": "assets/standalone/audio-a9fa8406-26c0-4f8d-b961-70dc99e0f52f.mp3",
+    "source": "https://api.makko.ai/storage/v1/object/public/audio-assets/e56876ca-50d1-4b32-bcb9-1e37b7d1f822/a9fa8406-26c0-4f8d-b961-70dc99e0f52f.mp3",
+    "bytes": 5868,
+    "sha256": "7dc1ef4c273ebe74285522c1e9b4eb265d8250143fe94ba302556aea46888645"
+  },
+  {
+    "path": "assets/standalone/audio-aab8fc0a-ac9b-47f5-9170-e38e4d15e39a.wav",
+    "source": "https://api.makko.ai/storage/v1/object/public/audio-assets/e56876ca-50d1-4b32-bcb9-1e37b7d1f822/aab8fc0a-ac9b-47f5-9170-e38e4d15e39a.wav",
+    "bytes": 75268,
+    "sha256": "a5efb8d4393b32b71bcd08181de0f6c71bcec25663f0bdbae69285d6601c0f8c"
+  },
+  {
+    "path": "assets/standalone/audio-ad312365-af12-4019-a3f5-6ef3841ba959.mp3",
+    "source": "https://api.makko.ai/storage/v1/object/public/audio-assets/e56876ca-50d1-4b32-bcb9-1e37b7d1f822/ad312365-af12-4019-a3f5-6ef3841ba959.mp3",
+    "bytes": 5175136,
+    "sha256": "ea0247a22c042547ef71c3143bf626020a1345215a73b468b1ee533688762280"
+  },
+  {
+    "path": "assets/standalone/audio-c5fe25ff-72fd-4a40-a30d-70c1a148920a.mp3",
+    "source": "https://api.makko.ai/storage/v1/object/public/audio-assets/e56876ca-50d1-4b32-bcb9-1e37b7d1f822/c5fe25ff-72fd-4a40-a30d-70c1a148920a.mp3",
+    "bytes": 160913,
+    "sha256": "88c75a39de08c980238cabb44cbed5c8fddd4574d0bebe7f2a8516d51d8d9be9"
+  },
+  {
+    "path": "assets/standalone/audio-cc0b2256-2a0e-41e7-a88f-04d68df83dd5.mp3",
+    "source": "https://api.makko.ai/storage/v1/object/public/audio-assets/e56876ca-50d1-4b32-bcb9-1e37b7d1f822/cc0b2256-2a0e-41e7-a88f-04d68df83dd5.mp3",
+    "bytes": 160913,
+    "sha256": "b56dddbca369bc500ff8b92ffa2c1dee8351fee6cb4bde0814060e03ffee6351"
+  },
+  {
+    "path": "assets/standalone/audio-dc031dbb-5af2-4a78-a93e-f60aff8bb6e6.mp3",
+    "source": "https://api.makko.ai/storage/v1/object/public/audio-assets/e56876ca-50d1-4b32-bcb9-1e37b7d1f822/dc031dbb-5af2-4a78-a93e-f60aff8bb6e6.mp3",
+    "bytes": 160913,
+    "sha256": "e7ab36d8101a681d979288f12a6cb95a784d179995b7692c905a86db3f39ab9b"
+  },
+  {
+    "path": "assets/standalone/audio-e39ab293-b53e-41d9-b837-58ab36c027f1.mp3",
+    "source": "https://api.makko.ai/storage/v1/object/public/audio-assets/e56876ca-50d1-4b32-bcb9-1e37b7d1f822/e39ab293-b53e-41d9-b837-58ab36c027f1.mp3",
+    "bytes": 4405,
+    "sha256": "d716fa325889450cbd6f71ba76b6705779827d38857f751fb0862165109daafc"
+  }
+]

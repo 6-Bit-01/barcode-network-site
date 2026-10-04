@@ -1,0 +1,625 @@
+{
+  "version": 2,
+  "clip": "6_bit_run_run",
+  "method": "reviewed-alternating-gait-native-crop-pad-pelvis-registration",
+  "sources": [
+    {
+      "file": "6_bit_run_source_0.png",
+      "sha256": "c1d13c72b0be85f34521a8b9df7915169e22f7882d384d080d696ff165c00dd8"
+    }
+  ],
+  "sha256": "45bb6de6d1aecc6b3b515c572fc763ff8b125e79915dba8a9b255b1251af1471",
+  "frames": 11,
+  "uniquePoses": 11,
+  "width": 512,
+  "height": 576,
+  "columns": 4,
+  "atlasSize": [
+    2048,
+    1728
+  ],
+  "anchorX": 256,
+  "anchorY": 512,
+  "renderScale": 0.6045042570722329,
+  "targetMedianBodyHeight": 200.09090909090907,
+  "sourceMedianBodyHeight": 331,
+  "frameDurationsMs": [
+    60,
+    60,
+    60,
+    60,
+    60,
+    50,
+    50,
+    50,
+    50,
+    50,
+    50
+  ],
+  "gaitDurationMs": 600,
+  "groundSpeed": 450,
+  "pelvisToGroundSource": 173,
+  "contactFrames": [
+    0,
+    5
+  ],
+  "contactStartsMs": [
+    0,
+    300
+  ],
+  "frameScales": [
+    0.5799736495388669,
+    0.5867768595041322,
+    0.5850611376927166,
+    0.5833554200901139,
+    0.6081790549875655,
+    0.602683461117196,
+    0.6175645342312008,
+    0.6063360881542699,
+    0.6100332594235033,
+    0.6137757947573897,
+    0.6045042570722329
+  ],
+  "footRows": [
+    514.0,
+    512.0,
+    508.0,
+    513.0,
+    505.2212630622444,
+    510.0,
+    511.0,
+    504.0,
+    506.0,
+    504.1462971376647,
+    499.96274420717856
+  ],
+  "headColumns": [
+    324.7,
+    312.4,
+    310.0,
+    322.0,
+    326.3,
+    315.4,
+    311.4,
+    328.1,
+    321.3,
+    312.0,
+    299.9
+  ],
+  "headOffsetXWorld": 35.79939759036142,
+  "headOffsetsXWorld": [
+    37.41731444354491,
+    34.71732450463007,
+    34.116959128379534,
+    36.88022164459586,
+    38.5816335804672,
+    35.79939759036142,
+    35.164868632780255,
+    38.966371336586,
+    37.41370729035876,
+    35.22821635678238,
+    32.09473330840526
+  ],
+  "torsoReferenceWeight": 0.6,
+  "presentationRegistration": {
+    "method": "measured-uniform-body-height-cap-column-true-boot-contact",
+    "scaleRatio": 1.0648148148148149,
+    "preservesPixels": true,
+    "usesNoFrameBlend": true
+  },
+  "registration": [
+    {
+      "frame": 0,
+      "sourceCell": 0,
+      "phase": "contact",
+      "leadingLeg": "near",
+      "source": 0,
+      "sourceCrop": [
+        27,
+        12,
+        396,
+        382
+      ],
+      "translate": [
+        98,
+        166
+      ],
+      "pelvis": [
+        256,
+        339
+      ],
+      "bobWorldY": 0,
+      "flightLiftWorld": 0,
+      "headRow": 169,
+      "visibleFootRow": 514,
+      "nearSole": [
+        361,
+        508
+      ],
+      "farSole": [
+        158,
+        507
+      ],
+      "nearFist": [
+        173,
+        312
+      ],
+      "farFist": [
+        364,
+        265
+      ],
+      "capCrown": [
+        324.7,
+        183.1
+      ]
+    },
+    {
+      "frame": 1,
+      "sourceCell": 1,
+      "phase": "compression",
+      "leadingLeg": "near",
+      "source": 0,
+      "sourceCrop": [
+        450,
+        14,
+        730,
+        362
+      ],
+      "translate": [
+        149,
+        169
+      ],
+      "pelvis": [
+        256,
+        344
+      ],
+      "bobWorldY": 3,
+      "flightLiftWorld": 0,
+      "headRow": 171,
+      "visibleFootRow": 512,
+      "nearSole": [
+        330,
+        509
+      ],
+      "farSole": [
+        179,
+        488
+      ],
+      "nearFist": [
+        178,
+        320
+      ],
+      "farFist": [
+        326,
+        281
+      ],
+      "capCrown": [
+        312.4,
+        185.2
+      ]
+    },
+    {
+      "frame": 2,
+      "sourceCell": 2,
+      "phase": "passing",
+      "leadingLeg": "near",
+      "source": 0,
+      "sourceCrop": [
+        745,
+        13,
+        1064,
+        371
+      ],
+      "translate": [
+        110,
+        164
+      ],
+      "pelvis": [
+        256,
+        342
+      ],
+      "bobWorldY": 2,
+      "flightLiftWorld": 0,
+      "headRow": 166,
+      "visibleFootRow": 508,
+      "nearSole": [
+        260,
+        505
+      ],
+      "farSole": [
+        228,
+        449
+      ],
+      "nearFist": [
+        258,
+        362
+      ],
+      "farFist": [
+        311,
+        302
+      ],
+      "capCrown": [
+        310.0,
+        180.2
+      ]
+    },
+    {
+      "frame": 3,
+      "sourceCell": 3,
+      "phase": "toe-off",
+      "leadingLeg": "near",
+      "source": 0,
+      "sourceCrop": [
+        1065,
+        10,
+        1400,
+        395
+      ],
+      "translate": [
+        56,
+        166
+      ],
+      "pelvis": [
+        256,
+        336
+      ],
+      "bobWorldY": -2,
+      "flightLiftWorld": 0,
+      "headRow": 170,
+      "visibleFootRow": 513,
+      "nearSole": [
+        175,
+        505
+      ],
+      "farSole": [
+        314,
+        463
+      ],
+      "nearFist": [
+        341,
+        288
+      ],
+      "farFist": null,
+      "capCrown": [
+        322.0,
+        184.0
+      ]
+    },
+    {
+      "frame": 4,
+      "sourceCell": 4,
+      "phase": "early-flight",
+      "leadingLeg": "near",
+      "source": 0,
+      "sourceCrop": [
+        41,
+        372,
+        400,
+        715
+      ],
+      "translate": [
+        110,
+        160
+      ],
+      "pelvis": [
+        256,
+        331
+      ],
+      "bobWorldY": -5,
+      "flightLiftWorld": 5,
+      "headRow": 168,
+      "visibleFootRow": 497,
+      "nearSole": [
+        182,
+        488
+      ],
+      "farSole": [
+        371,
+        485
+      ],
+      "nearFist": [
+        354,
+        253
+      ],
+      "farFist": [
+        180,
+        300
+      ],
+      "capCrown": [
+        326.3,
+        182.3
+      ]
+    },
+    {
+      "frame": 5,
+      "sourceCell": 5,
+      "phase": "contact",
+      "leadingLeg": "far",
+      "source": 0,
+      "sourceCrop": [
+        381,
+        373,
+        754,
+        717
+      ],
+      "translate": [
+        78,
+        171
+      ],
+      "pelvis": [
+        256,
+        339
+      ],
+      "bobWorldY": 0,
+      "flightLiftWorld": 0,
+      "headRow": 178,
+      "visibleFootRow": 510,
+      "nearSole": [
+        181,
+        473
+      ],
+      "farSole": [
+        372,
+        502
+      ],
+      "nearFist": [
+        341,
+        262
+      ],
+      "farFist": [
+        172,
+        308
+      ],
+      "capCrown": [
+        315.4,
+        192.2
+      ]
+    },
+    {
+      "frame": 6,
+      "sourceCell": 7,
+      "phase": "compression",
+      "leadingLeg": "far",
+      "source": 0,
+      "sourceCrop": [
+        1103,
+        363,
+        1416,
+        715
+      ],
+      "translate": [
+        83,
+        163
+      ],
+      "pelvis": [
+        256,
+        344
+      ],
+      "bobWorldY": 3,
+      "flightLiftWorld": 0,
+      "headRow": 187,
+      "visibleFootRow": 511,
+      "nearSole": [
+        178,
+        469
+      ],
+      "farSole": [
+        319,
+        504
+      ],
+      "nearFist": [
+        334,
+        281
+      ],
+      "farFist": [
+        182,
+        335
+      ],
+      "capCrown": [
+        311.4,
+        200.9
+      ]
+    },
+    {
+      "frame": 7,
+      "sourceCell": 8,
+      "phase": "passing",
+      "leadingLeg": "far",
+      "source": 0,
+      "sourceCrop": [
+        0,
+        730,
+        354,
+        1075
+      ],
+      "translate": [
+        77,
+        164
+      ],
+      "pelvis": [
+        256,
+        342
+      ],
+      "bobWorldY": 2,
+      "flightLiftWorld": 0,
+      "headRow": 174,
+      "visibleFootRow": 504,
+      "nearSole": [
+        267,
+        501
+      ],
+      "farSole": [
+        233,
+        447
+      ],
+      "nearFist": [
+        307,
+        334
+      ],
+      "farFist": [
+        326,
+        291
+      ],
+      "capCrown": [
+        328.1,
+        188.1
+      ]
+    },
+    {
+      "frame": 8,
+      "sourceCell": 9,
+      "phase": "toe-off",
+      "leadingLeg": "far",
+      "source": 0,
+      "sourceCrop": [
+        347,
+        734,
+        738,
+        1072
+      ],
+      "translate": [
+        56,
+        172
+      ],
+      "pelvis": [
+        256,
+        336
+      ],
+      "bobWorldY": -2,
+      "flightLiftWorld": 0,
+      "headRow": 178,
+      "visibleFootRow": 506,
+      "nearSole": [
+        187,
+        499
+      ],
+      "farSole": [
+        319,
+        427
+      ],
+      "nearFist": [
+        258,
+        355
+      ],
+      "farFist": [
+        324,
+        295
+      ],
+      "capCrown": [
+        321.3,
+        192.1
+      ]
+    },
+    {
+      "frame": 9,
+      "sourceCell": 10,
+      "phase": "early-flight",
+      "leadingLeg": "far",
+      "source": 0,
+      "sourceCrop": [
+        723,
+        737,
+        1104,
+        1070
+      ],
+      "translate": [
+        71,
+        167
+      ],
+      "pelvis": [
+        256,
+        331
+      ],
+      "bobWorldY": -5,
+      "flightLiftWorld": 5,
+      "headRow": 170,
+      "visibleFootRow": 496,
+      "nearSole": [
+        354,
+        485
+      ],
+      "farSole": [
+        171,
+        479
+      ],
+      "nearFist": [
+        156,
+        309
+      ],
+      "farFist": [
+        344,
+        272
+      ],
+      "capCrown": [
+        312.0,
+        184.2
+      ]
+    },
+    {
+      "frame": 10,
+      "sourceCell": 11,
+      "phase": "late-flight",
+      "leadingLeg": "far",
+      "source": 0,
+      "sourceCrop": [
+        1095,
+        733,
+        1423,
+        1075
+      ],
+      "translate": [
+        68,
+        157
+      ],
+      "pelvis": [
+        256,
+        334
+      ],
+      "bobWorldY": -3,
+      "flightLiftWorld": 3,
+      "headRow": 164,
+      "visibleFootRow": 495,
+      "nearSole": [
+        364,
+        486
+      ],
+      "farSole": [
+        156,
+        479
+      ],
+      "nearFist": [
+        152,
+        308
+      ],
+      "farFist": [
+        342,
+        258
+      ],
+      "capCrown": [
+        299.9,
+        178.1
+      ]
+    }
+  ],
+  "frameRgbaSha256": [
+    "0617147211c5e7e4716adf8eb3a46093ae25be722dfc9eb5a7d8ea0c69f19788",
+    "656b679abbec99f9a4227d9f0b01d0fbcf6a1e11b88ea9c009cf010975fb6ca3",
+    "d280f3254483c39f6e57c3b179f46ee3269286711aea9ac55dce2df51d4b1079",
+    "3351c9b1c8002739245cb1dd5d0df053bddefef8b0309604732c46dc16994c5d",
+    "10fcc66722d75d0f272fee42fcaab416ffb7124271be07fc71fef2d2bf51b1d8",
+    "5d342faabf93241932970678f922ddce3c70a13089991ddeb06ebf244ef3b84c",
+    "af4b5bd3f11f078bc265dda89748d3be21dc8105f23b229fecdf584933eb0972",
+    "44e589811f41c973495d2a235d8f220e4b7a4f9c881978539501a9871dcfa706",
+    "02ffedfd56c8827fced3c1fa5dbfaac613e50570ac260264dfe3b7347915f5fe",
+    "c54361b7bf7111a9f064cd3979f8d2f815af1b995bfc960c7b6782e34fbde368",
+    "4b19182979ccf1b3b43862062fc789b7410af13d4a9cc16252f5dcab36ad77f5"
+  ],
+  "sourceRegistrationSha256": "700aa223840ff2a552eee026005e42dc2f75872cae5a3b7404b7c78f91264ac4",
+  "preserves": [
+    "all-earlier-raster-bytes",
+    "native-complete-cels",
+    "run-controls-and-speed",
+    "collision-body",
+    "shared-simulation-clock"
+  ]
+}

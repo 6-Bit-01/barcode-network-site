@@ -1,0 +1,368 @@
+{
+  "signal": {
+    "source": "assets/level1-signal-art/signal-discharge-source.png",
+    "sourceSha256": "8a1b656d1db8cbfda19d20d9b483c8af56a8daff64d55a0ca9f861fa4918de76",
+    "atlas": "assets/level1-signal-art/signal-discharge-atlas.webp",
+    "atlasSha256": "77e41e12ad339128d15011cdcbf2bf29872381041f82f997214a7d58aa2c793c",
+    "sourceSize": [
+      1774,
+      887
+    ],
+    "atlasSize": [
+      1776,
+      888
+    ],
+    "cellSize": [
+      444,
+      444
+    ],
+    "columns": 4,
+    "rows": 2,
+    "frames": [
+      {
+        "frame": 0,
+        "sourceCrop": [
+          0,
+          0,
+          444,
+          444
+        ],
+        "padding": [
+          0,
+          0
+        ],
+        "sourcePixelsSha256": "76203174bea246583e4ddbafca6407f9df79341534fe903aa2446ee747642b95",
+        "alphaBounds": [
+          15,
+          11,
+          444,
+          444
+        ]
+      },
+      {
+        "frame": 1,
+        "sourceCrop": [
+          444,
+          0,
+          887,
+          444
+        ],
+        "padding": [
+          0,
+          0
+        ],
+        "sourcePixelsSha256": "8bdc7cc8b66075620d38701438d9aadc8cc4da54c15d907d879973bad04ea11e",
+        "alphaBounds": [
+          0,
+          12,
+          443,
+          444
+        ]
+      },
+      {
+        "frame": 2,
+        "sourceCrop": [
+          887,
+          0,
+          1330,
+          444
+        ],
+        "padding": [
+          0,
+          0
+        ],
+        "sourcePixelsSha256": "b9da31b505610d9b84a087e97a61c41b09834198ca3a97519234f7734982d0b7",
+        "alphaBounds": [
+          0,
+          13,
+          443,
+          444
+        ]
+      },
+      {
+        "frame": 3,
+        "sourceCrop": [
+          1330,
+          0,
+          1774,
+          444
+        ],
+        "padding": [
+          0,
+          0
+        ],
+        "sourcePixelsSha256": "ec1dafafd90de1ecbff0cd39fdcfddd0a57de869c8c7a3045649232a546599ce",
+        "alphaBounds": [
+          0,
+          12,
+          444,
+          444
+        ]
+      },
+      {
+        "frame": 4,
+        "sourceCrop": [
+          0,
+          444,
+          444,
+          887
+        ],
+        "padding": [
+          0,
+          0
+        ],
+        "sourcePixelsSha256": "65ecfc0049e9524f4928b5a3f4e09d08e7fd5cdd06ecca6046029800f5c870d6",
+        "alphaBounds": [
+          0,
+          0,
+          444,
+          443
+        ]
+      },
+      {
+        "frame": 5,
+        "sourceCrop": [
+          444,
+          444,
+          887,
+          887
+        ],
+        "padding": [
+          0,
+          0
+        ],
+        "sourcePixelsSha256": "ff940ca9da6977404faabc4021c8e3da26630da19302a5c5f8f9d3308a32f4b3",
+        "alphaBounds": [
+          0,
+          0,
+          443,
+          443
+        ]
+      },
+      {
+        "frame": 6,
+        "sourceCrop": [
+          887,
+          444,
+          1330,
+          887
+        ],
+        "padding": [
+          0,
+          0
+        ],
+        "sourcePixelsSha256": "5bf182571427d2d8ccd2aa7d5b95893e39e9d634a6169c9a5042370009ecb60d",
+        "alphaBounds": [
+          0,
+          0,
+          443,
+          443
+        ]
+      },
+      {
+        "frame": 7,
+        "sourceCrop": [
+          1330,
+          444,
+          1774,
+          887
+        ],
+        "padding": [
+          0,
+          0
+        ],
+        "sourcePixelsSha256": "b9cb21b7d53e600083a67217748ccd0f3e5c20be7a4fd0e3983b59a577033e73",
+        "alphaBounds": [
+          0,
+          0,
+          436,
+          443
+        ]
+      }
+    ],
+    "process": "Fixed-grid crops, transparent padding <=1px, lossless WebP; every source RGBA pixel preserved."
+  },
+  "amp": {
+    "source": "assets/level1-signal-art/signal-amp-source.png",
+    "sourceSha256": "b84a1e71006282a1d6b254bb17f9d02c26fa51c758466cd45afb5d0e7148e6db",
+    "atlas": "assets/level1-signal-art/signal-amp-atlas.webp",
+    "atlasSha256": "7f3b93d03deae27dfe6e789a627407040e9fe9f5b34ee356d4b2a5573456411e",
+    "sourceSize": [
+      1774,
+      887
+    ],
+    "atlasSize": [
+      1776,
+      888
+    ],
+    "cellSize": [
+      444,
+      444
+    ],
+    "columns": 4,
+    "rows": 2,
+    "frames": [
+      {
+        "frame": 0,
+        "sourceCrop": [
+          0,
+          0,
+          444,
+          444
+        ],
+        "padding": [
+          0,
+          0
+        ],
+        "sourcePixelsSha256": "7249ff488638859002e65116f40ebb8de0c4267aff8958e81ae92bf0f3da1160",
+        "alphaBounds": [
+          0,
+          17,
+          438,
+          442
+        ]
+      },
+      {
+        "frame": 1,
+        "sourceCrop": [
+          444,
+          0,
+          887,
+          444
+        ],
+        "padding": [
+          0,
+          0
+        ],
+        "sourcePixelsSha256": "f8e08aad8595399e4a2237754d5ae1ab06e37f79af55a7397df76b62fffbcd28",
+        "alphaBounds": [
+          23,
+          19,
+          431,
+          421
+        ]
+      },
+      {
+        "frame": 2,
+        "sourceCrop": [
+          887,
+          0,
+          1330,
+          444
+        ],
+        "padding": [
+          0,
+          0
+        ],
+        "sourcePixelsSha256": "c668a3ea57b17612ef7c44d235d25a70ec5151ceb5187b3970b578f6e53ad39a",
+        "alphaBounds": [
+          9,
+          17,
+          440,
+          422
+        ]
+      },
+      {
+        "frame": 3,
+        "sourceCrop": [
+          1330,
+          0,
+          1774,
+          444
+        ],
+        "padding": [
+          0,
+          0
+        ],
+        "sourcePixelsSha256": "5012f3c14ccdd2e15e27f9cbb54b0d11cbcad45c68fdab87b2e800d9b5a15711",
+        "alphaBounds": [
+          22,
+          3,
+          444,
+          434
+        ]
+      },
+      {
+        "frame": 4,
+        "sourceCrop": [
+          0,
+          444,
+          444,
+          887
+        ],
+        "padding": [
+          0,
+          0
+        ],
+        "sourcePixelsSha256": "2be50bbddf023ef2caf146e00641fc90ba32763f2560ef61ab96d039f663bcac",
+        "alphaBounds": [
+          17,
+          21,
+          444,
+          425
+        ]
+      },
+      {
+        "frame": 5,
+        "sourceCrop": [
+          444,
+          444,
+          887,
+          887
+        ],
+        "padding": [
+          0,
+          0
+        ],
+        "sourcePixelsSha256": "5884f3b59a845d7b3e2e88fcedc35506e4caa9524eecd19fb04817c16e1af14d",
+        "alphaBounds": [
+          0,
+          21,
+          443,
+          424
+        ]
+      },
+      {
+        "frame": 6,
+        "sourceCrop": [
+          887,
+          444,
+          1330,
+          887
+        ],
+        "padding": [
+          0,
+          0
+        ],
+        "sourcePixelsSha256": "5f02af4b007a84eb06c9b7dc5e16e073267e1f0392d8ae1ef1c13483d717cd1a",
+        "alphaBounds": [
+          0,
+          21,
+          437,
+          423
+        ]
+      },
+      {
+        "frame": 7,
+        "sourceCrop": [
+          1330,
+          444,
+          1774,
+          887
+        ],
+        "padding": [
+          0,
+          0
+        ],
+        "sourcePixelsSha256": "e9cc70167c732d4da94421f38e90c065a4b9b9e666eb59a4079900bc6a6762b7",
+        "alphaBounds": [
+          4,
+          21,
+          431,
+          425
+        ]
+      }
+    ],
+    "process": "Fixed-grid crops, transparent padding <=1px, lossless WebP; every source RGBA pixel preserved."
+  }
+}

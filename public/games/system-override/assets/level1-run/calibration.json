@@ -1,0 +1,348 @@
+{
+  "clip": "6_bit_run_run",
+  "method": "nearest-opaque-silhouette-native-integer-crop-pad",
+  "sourceSha256": "18a4cf5f80556bdc6f9f737e06484e67c5111472efca91b4dff3f9be89cb24e5",
+  "sha256": "0184cac322572ab65c6e0cbaa6bc09ad7c24149666ac4010a0b344edbcc1c7e8",
+  "frames": 12,
+  "uniquePoses": 12,
+  "width": 512,
+  "height": 512,
+  "columns": 4,
+  "atlasSize": [
+    2048,
+    1536
+  ],
+  "anchorX": 240,
+  "anchorY": 448,
+  "renderScale": 0.5459506387200793,
+  "targetMedianBodyHeight": 200.09090909090907,
+  "sourceMedianBodyHeight": 366.5,
+  "frameDurationMs": 50,
+  "gaitDurationMs": 600,
+  "groundSpeed": 450,
+  "footRows": [
+    448,
+    448,
+    448,
+    448,
+    448,
+    448,
+    448,
+    448,
+    448,
+    448,
+    448,
+    448
+  ],
+  "registration": [
+    {
+      "frame": 0,
+      "sourceBounds": [
+        0,
+        17,
+        318,
+        422
+      ],
+      "sourceOpaqueBounds": [
+        10,
+        30,
+        304,
+        413
+      ],
+      "sourceHipX": 158,
+      "translate": [
+        82,
+        36
+      ],
+      "hipX": 240,
+      "headRow": 66,
+      "visibleFootRow": 448,
+      "flightLiftPx": 0
+    },
+    {
+      "frame": 1,
+      "sourceBounds": [
+        312,
+        30,
+        629,
+        421
+      ],
+      "sourceOpaqueBounds": [
+        363,
+        36,
+        586,
+        414
+      ],
+      "sourceHipX": 451,
+      "translate": [
+        -211,
+        35
+      ],
+      "hipX": 240,
+      "headRow": 71,
+      "visibleFootRow": 448,
+      "flightLiftPx": 0
+    },
+    {
+      "frame": 2,
+      "sourceBounds": [
+        594,
+        31,
+        955,
+        442
+      ],
+      "sourceOpaqueBounds": [
+        601,
+        34,
+        935,
+        413
+      ],
+      "sourceHipX": 750,
+      "translate": [
+        -510,
+        24
+      ],
+      "hipX": 240,
+      "headRow": 58,
+      "visibleFootRow": 436,
+      "flightLiftPx": 12
+    },
+    {
+      "frame": 3,
+      "sourceBounds": [
+        913,
+        16,
+        1254,
+        444
+      ],
+      "sourceOpaqueBounds": [
+        922,
+        23,
+        1250,
+        388
+      ],
+      "sourceHipX": 1071,
+      "translate": [
+        -831,
+        43
+      ],
+      "hipX": 240,
+      "headRow": 66,
+      "visibleFootRow": 430,
+      "flightLiftPx": 18
+    },
+    {
+      "frame": 4,
+      "sourceBounds": [
+        0,
+        422,
+        368,
+        836
+      ],
+      "sourceOpaqueBounds": [
+        8,
+        431,
+        361,
+        792
+      ],
+      "sourceHipX": 174,
+      "translate": [
+        66,
+        -355
+      ],
+      "hipX": 240,
+      "headRow": 76,
+      "visibleFootRow": 436,
+      "flightLiftPx": 12
+    },
+    {
+      "frame": 5,
+      "sourceBounds": [
+        349,
+        411,
+        653,
+        822
+      ],
+      "sourceOpaqueBounds": [
+        354,
+        436,
+        620,
+        810
+      ],
+      "sourceHipX": 453,
+      "translate": [
+        -213,
+        -361
+      ],
+      "hipX": 240,
+      "headRow": 75,
+      "visibleFootRow": 448,
+      "flightLiftPx": 0
+    },
+    {
+      "frame": 6,
+      "sourceBounds": [
+        638,
+        437,
+        965,
+        832
+      ],
+      "sourceOpaqueBounds": [
+        665,
+        447,
+        897,
+        812
+      ],
+      "sourceHipX": 764,
+      "translate": [
+        -524,
+        -363
+      ],
+      "hipX": 240,
+      "headRow": 84,
+      "visibleFootRow": 448,
+      "flightLiftPx": 0
+    },
+    {
+      "frame": 7,
+      "sourceBounds": [
+        877,
+        409,
+        1246,
+        822
+      ],
+      "sourceOpaqueBounds": [
+        904,
+        441,
+        1240,
+        811
+      ],
+      "sourceHipX": 1083,
+      "translate": [
+        -843,
+        -372
+      ],
+      "hipX": 240,
+      "headRow": 69,
+      "visibleFootRow": 438,
+      "flightLiftPx": 10
+    },
+    {
+      "frame": 8,
+      "sourceBounds": [
+        15,
+        789,
+        334,
+        1195
+      ],
+      "sourceOpaqueBounds": [
+        19,
+        836,
+        321,
+        1191
+      ],
+      "sourceHipX": 171,
+      "translate": [
+        69,
+        -760
+      ],
+      "hipX": 240,
+      "headRow": 76,
+      "visibleFootRow": 430,
+      "flightLiftPx": 18
+    },
+    {
+      "frame": 9,
+      "sourceBounds": [
+        272,
+        817,
+        642,
+        1212
+      ],
+      "sourceOpaqueBounds": [
+        316,
+        837,
+        632,
+        1195
+      ],
+      "sourceHipX": 452,
+      "translate": [
+        -212,
+        -758
+      ],
+      "hipX": 240,
+      "headRow": 79,
+      "visibleFootRow": 436,
+      "flightLiftPx": 12
+    },
+    {
+      "frame": 10,
+      "sourceBounds": [
+        621,
+        831,
+        967,
+        1226
+      ],
+      "sourceOpaqueBounds": [
+        633,
+        837,
+        896,
+        1221
+      ],
+      "sourceHipX": 756,
+      "translate": [
+        -516,
+        -778
+      ],
+      "hipX": 240,
+      "headRow": 59,
+      "visibleFootRow": 442,
+      "flightLiftPx": 6
+    },
+    {
+      "frame": 11,
+      "sourceBounds": [
+        911,
+        781,
+        1238,
+        1224
+      ],
+      "sourceOpaqueBounds": [
+        939,
+        854,
+        1234,
+        1212
+      ],
+      "sourceHipX": 1084,
+      "translate": [
+        -844,
+        -763
+      ],
+      "hipX": 240,
+      "headRow": 91,
+      "visibleFootRow": 448,
+      "flightLiftPx": 0
+    }
+  ],
+  "frameRgbaSha256": [
+    "9645a84f90b27406d0a1f99bf7cda7059e09b560712b64a0af44c321913c1d06",
+    "9cf212c0104382439ab2d9df6e8c372b2b8bd36afba878b9167886530623bff7",
+    "e60e748d94c10449c716746e569d9bc978ee443b2c714b2c822f4b206a4a5651",
+    "93fd4c4b12501c05d9bb7dc9939564b3d1477cfcf1cf7a96dfcc661287fb9283",
+    "777ca3967c8e2b8c926473359a437e8b991600f3e2babbf0ecc5fad847cf9e72",
+    "11e7af862027982df10e97e2570e773360d8d68321a9a4943a09d0fc4014e937",
+    "18544b60bd52d4d83e5e10845e67f58b21676f2a10d64e958609e465c41c61be",
+    "be1849616bce8c3303c1a6c73a86a35b9dc240d64cf11409046d1377afa24ad0",
+    "8ea0c5350ff3dec3c8dfa6f9f1303d2623c9334ac527c8e4cbd2dae05452cc50",
+    "c1f5172017a45bcbb60d4e131010d71d84a8c69b3167018c6ce134e2933dd786",
+    "45111e12be42ccc98c94262591803b1c5f268ecf9557a2f5611a373963c6341e",
+    "34ba3c263842e1f8b87622239e12f83888e55b0756701f71e82eb9aaa777a21b"
+  ],
+  "preserves": [
+    "original-thirteen-assets",
+    "native-source-pixels",
+    "canonical-character-reference",
+    "collision-body",
+    "shared-update-clock"
+  ]
+}

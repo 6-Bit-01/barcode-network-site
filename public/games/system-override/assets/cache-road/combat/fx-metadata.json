@@ -1,0 +1,147 @@
+{
+  "generatedOn": "2026-10-01",
+  "tool": "image_gen",
+  "layout": "untouched equal cells; exact lossless RGBA conversion only",
+  "assets": [
+    {
+      "key": "cacheCombatFX",
+      "runtime": "assets/cache-road/combat/projectile-contact-atlas.webp",
+      "generatedOriginal": "assets/cache-road/combat/sources/projectile-contact-atlas.png",
+      "columns": 4,
+      "rows": 3,
+      "frames": 12,
+      "size": [
+        1448,
+        1086
+      ],
+      "registrationAnchor": [
+        0.5,
+        0.5
+      ],
+      "sha256": "de2389d2e8dbbcb4c8e94406f812bfcbdc100b27320b812f7dec60763b9c2493",
+      "sourceSha256": "aa21978bbc1cbef7652268a0b5df9c86916287b3656326d0870bd065e253bf3c",
+      "cells": [
+        {
+          "frame": 0,
+          "name": "player bullet",
+          "alphaBounds": [
+            63,
+            48,
+            340,
+            344
+          ]
+        },
+        {
+          "frame": 1,
+          "name": "hostile bolt",
+          "alphaBounds": [
+            81,
+            31,
+            362,
+            343
+          ]
+        },
+        {
+          "frame": 2,
+          "name": "reflected bullet",
+          "alphaBounds": [
+            42,
+            47,
+            338,
+            346
+          ]
+        },
+        {
+          "frame": 3,
+          "name": "muzzle flash",
+          "alphaBounds": [
+            1,
+            64,
+            340,
+            357
+          ]
+        },
+        {
+          "frame": 4,
+          "name": "contact sparks",
+          "alphaBounds": [
+            31,
+            19,
+            362,
+            362
+          ]
+        },
+        {
+          "frame": 5,
+          "name": "ricochet spread",
+          "alphaBounds": [
+            7,
+            10,
+            362,
+            349
+          ]
+        },
+        {
+          "frame": 6,
+          "name": "dissipating sparks",
+          "alphaBounds": [
+            1,
+            17,
+            322,
+            317
+          ]
+        },
+        {
+          "frame": 7,
+          "name": "smoke puff",
+          "alphaBounds": [
+            1,
+            28,
+            330,
+            361
+          ]
+        },
+        {
+          "frame": 8,
+          "name": "ram pressure",
+          "alphaBounds": [
+            0,
+            0,
+            362,
+            324
+          ]
+        },
+        {
+          "frame": 9,
+          "name": "ram impact",
+          "alphaBounds": [
+            5,
+            10,
+            362,
+            318
+          ]
+        },
+        {
+          "frame": 10,
+          "name": "disrupt arc",
+          "alphaBounds": [
+            0,
+            6,
+            348,
+            362
+          ]
+        },
+        {
+          "frame": 11,
+          "name": "impact residue",
+          "alphaBounds": [
+            1,
+            23,
+            330,
+            330
+          ]
+        }
+      ]
+    }
+  ]
+}

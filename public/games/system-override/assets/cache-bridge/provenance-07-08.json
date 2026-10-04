@@ -1,0 +1,42 @@
+[
+  {
+    "prompt": "Use case: illustration-story.\nAsset type: scene 7 of an eight-scene bridge in the existing BARCODE System Override game, new full-bleed cinematic comic painting.\nPrimary request: IGNITION / ORIGINAL LOADED. Inside Cache Back's yellow 1980s cyberpunk hatchback at night, viewed from the passenger seat looking diagonally toward the driver. Cache sits LEFT in the driver's seat, one hand on the steering wheel, the other carefully sliding the protected chunky black archive cassette from reference 1 into a physical dashboard archive deck. A wide dark beveled digital dashboard glows restrained mint and amber. High on the windshield a narrow rearview shows just Cache's eyes and cap reflected accurately, with softly blurred studio lights behind him. Outside windshield ahead: wet avenue, cyan and plum night city, warm streetlamps, ready to leave. Car is at rest, no motion blur.\nInput images: Image 1 is reference for Cache's exact identity, clothing and original archive cartridge plus established graphic novel rendering. Image 2 is supporting identity reference ONLY for his eyes/eyebrows/glasses/mask and hat; DO NOT draw a grid or multiple heads. Image 3 is the new approved dashboard bezel design reference, adapt naturally into a physical cockpit not a pasted UI panel.\nIdentity: adult human man brown irises visible through CLEAR black rectangular glasses, short dark hair, yellow cap with two small rounded ear-like protrusions, black angular tech mask covering mouth and nose, dark mechanical collar with small cyan edges. Yellow short-sleeve shirt with black Greek-key trim. No unmasking, no 6 Bit face paint, no helmet replacing his hat.\nStyle: match reference 1 premium hand-inked mature 1990s cyberpunk graphic novel, confident black ink contours, angular cel shading, subtle halftone and paper grain, deep plum/navy shadows, warm amber, cyan accents. No photorealism, 3D or anime redesign.\nComposition: panoramic WIDE 2.2:1, about 1860 by 845. One coherent image without panels or gutters. Driver's head in left upper-middle, tape insertion visible center-lower, road and windshield on right. Complete natural arms and five-finger hands, no fused hands/controls. Nothing important hugs canvas border; bottom 15% low detail.\nText: no readable text, no speech balloons, no captions, no titles, no watermarks. Only abstract illuminated segments on dashboard (runtime lettering is added separately). Keep exact established character and cartridge design.",
+    "references": [
+      "assets/intro/intro-04-preserve.webp",
+      "assets/cache-road/hud/cache-back-mirror-expressions.webp",
+      "assets/cache-road/hud/digital-dashboard/instrument-bezel.png"
+    ],
+    "tool": "image_gen.imagegen",
+    "useCase": "illustration-story",
+    "scene": 7,
+    "source": "assets/cache-bridge/sources/bridge-07-ignition.png",
+    "runtime": "assets/cache-bridge/bridge-07-ignition.webp",
+    "dimensions": [
+      1860,
+      845
+    ],
+    "sourceSha256": "7566daf8fdcac52674374a5e924ceb919d20d3d43a61d67efc6d322eac127461",
+    "runtimeSha256": "4940ef74ef8464ce8b2477f38afe5bccf6cd19097be180f8b3feaa9b57fa676e",
+    "derivation": "PNG encoded to WebP quality92 method6; no semantic processing"
+  },
+  {
+    "prompt": "Use case: illustration-story.\nAsset type: eighth and final full-bleed comic illustration for the BARCODE game level-one-to-level-two transition.\nPrimary request: THE CACHE LINE. The exact yellow archival hatchback from image 1 is now centered low in a wide wet four-lane city road, seen from directly behind in an elevated chase camera, small enough that the broad road and towering city breathe. The composition matches the gameplay setting of image 2 but it is a new premium graphic novel painting without any HUD or numbers. Broad road rises gently toward the city horizon, dense modest lived-in warm amber shopfronts and repair garages along both sides, high plum/cyan cyberpunk skyline beyond. Sparse realistically scaled streetlamps farther apart with translucent warm beams descending to subtle wet ground pools. A few distant freight vehicles, all travelling away, no obstacles immediately against our hero. Quiet anticipation of acceleration; headlights of distant cross streets and receding red tail lights.\nInput images: Image 1 is EXACT rear vehicle model; reproduce the yellow body, black/white diagonal stripes, white circular rear emblem, Greek-key edge trim, square amber/red tail lights, roof-mounted recorder box with black retention straps, two large reels visible through rear glass, dark bumper, left exhaust, yellow tow hook. Image 2 is reference for road width, curved world/horizon, bank buildings and skyline color ONLY; DO NOT include any gameplay UI, mirror, button labels, road pads, numbers or letters. Image 3 is reference ONLY for premium inked comic style and cinematic palette.\nComposition/framing: panoramic 2.2:1, approximately 1860x845. Single fullbleed coherent scene no panels or gutters. Rear of yellow car centered x50%, car width about 22% of canvas and height about35%, rear tires at y83%. Horizon y39%. Wet four-lane asphalt strongest clear leading lines center. Natural wheeled ground contact, warm taillight reflections under car, no floating vehicles or unreal oversized lamps. No driver's face visible from behind. Keep important subjects away from image edge; bottom10% road texture.\nStyle/medium: mature hand-inked 1990s cyberpunk graphic novel, confident black contours, angular cel shadows and halftone paper grain. Warm amber lamps and yellow hero against deep plum/navy and mint-cyan light. Match third image's rich linework, no photorealism/3D/anime redesign.\nConstraints: no readable text, labels, captions, dialogue, HUD, progress bars, title card, speed markings or watermark. Preserve car proportions and painted details from image1 (not a generic muscle car). City is inhabited, not apocalyptic. No race begins in this static scene; this is the launch composition before gameplay.",
+    "references": [
+      "assets/cache-road/vehicles/cache-center.webp",
+      "docs/source-pack/review-cache-digital-dashboard/Dashboard-Drive.webp",
+      "assets/intro/intro-04-preserve.webp"
+    ],
+    "tool": "image_gen.imagegen",
+    "useCase": "illustration-story",
+    "scene": 8,
+    "source": "assets/cache-bridge/sources/bridge-08-cache-line.png",
+    "runtime": "assets/cache-bridge/bridge-08-cache-line.webp",
+    "dimensions": [
+      1860,
+      845
+    ],
+    "sourceSha256": "4aac33600c8fc05b317dc9c9fa7921a0d9a7a72924f7878a255e41d2f30feeae",
+    "runtimeSha256": "acd64c5f5e958c3905a0da11ebaddc54dc6a4309f893c4dce423ac79a4ec23ab",
+    "derivation": "PNG encoded to WebP quality92 method6; no semantic processing"
+  }
+]

@@ -1,8 +1,8 @@
 {
   "builder": "barcode-system-override-standalone-v1",
   "status": "complete",
-  "sourceCommit": "897480fcb16dac428368f8cf8e2ed4b74f57e249",
-  "sourceTree": "d4338720c436370300afa8c90cd663112e99ddbf",
+  "sourceCommit": "9cdcaad82804472782a1f06b5cfa38fa88f6b45d",
+  "sourceTree": "e4d3f5757c4fcf7c0fd1491316f467803ebbd809",
   "builderSHA256": "caf8d8e5323c0a6246c3b77da4b02d175ea78f8a6eb560f3aaae6c9dc7d316d3",
   "files": {
     "assets/audio/broadcast-slum-proof-carrier.wav": {
@@ -2722,8 +2722,8 @@
       "bytes": 5250
     },
     "src/game/cache-road-proof.js": {
-      "sha256": "0ca3df74d318fd964e80e1a609e673bc92d1eec2077d8b625e8b31e8c7337ef2",
-      "bytes": 306089
+      "sha256": "411db1a70738e5bacde9fd7dfb87b5cf0b5d4416ec548bb9db0c7da95bee5ceb",
+      "bytes": 306082
     },
     "src/game/cache-road-puppet-study.js": {
       "sha256": "a1c2795763543cc8ad78d61a39482e372de7e7348316a57de24f66bf7fbd0361",

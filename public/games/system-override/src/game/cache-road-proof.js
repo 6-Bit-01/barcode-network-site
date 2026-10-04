@@ -1110,7 +1110,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/cache-road-proof.js', exports: ['BAR
         // Crop the opaque native source before applying the same single blur.
         // Original self-copy preserves all other caller/viewport semantics.
         if(pixelBudget)pixelBudget.mirrorPixelCopyUsed=copyOpaqueCanvasPixels(ctx,
-          sx,sy,right-sx,bottom-sy,sx,sy,right-sx,bottom-sy,pixelBudget,opaqueNative);
+          sx,sy,right-sx,bottom-sy,sx,sy,right-sx,bottom-sy,pixelBudget,false);
         else ctx.drawImage(ctx.canvas,sx,sy,right-sx,bottom-sy,sx,sy,right-sx,bottom-sy);
         ctx.restore();
       }

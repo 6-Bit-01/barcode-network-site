@@ -320,7 +320,10 @@ window.FILE_MANIFEST.push({ name: 'src/engine/presentation-assets.js', exports: 
       ['cacheBlacktop','cacheFly1','cacheFly3'].includes(key))).map(([key])=>key));
   const nativeSmallSources=new Set(['cacheBrakeReflection','cacheDamagedExhaust',
     'cachePhraseStrip','cacheConfirmedBar','cachePulsePad','cachePulseStrip','cachePulseBurst']);
+  const nativeDecodeSources=new Set(['cacheRepairShop','cacheMarketRFrontGap',
+    'cacheStreetBicycleRack']);
   let rasterPixels=0,nativeRasterPixels=0,nativeSmallPixels=0;
+  let backgroundRasterRequested=false,diffuseRasterRequested=false;
   const MAX_NATIVE_SMALL_PIXELS=1536*1024;
   const MAX_NATIVE_RASTER_PIXELS=32*1024*1024;
   function prepareNativeRaster(key,entry,state) {
@@ -335,7 +338,7 @@ window.FILE_MANIFEST.push({ name: 'src/engine/presentation-assets.js', exports: 
       [0,0,194,290]:null;
     const pixels=windowCrop?windowCrop[2]*windowCrop[3]*cells:w*h;
     const smallNative=nativeSmallSources.has(key);
-    if(!/^cache/.test(key)||(!/^assets\/cache-road\/(vehicles\/animation|combat|beat-system|hud)\//.test(entry.path)&&key!=='cachePursuitRig'&&!smallNative)||
+    if(!/^cache/.test(key)||(!/^assets\/cache-road\/(vehicles\/animation|combat|beat-system|hud)\//.test(entry.path)&&key!=='cachePursuitRig'&&!smallNative&&!nativeDecodeSources.has(key))||
       /\.svg$/i.test(entry.path)||!windowCrop&&pixels<(smallNative?32:256)*1024||
       smallNative&&pixels>MAX_NATIVE_SMALL_PIXELS-nativeSmallPixels||
       pixels>MAX_NATIVE_RASTER_PIXELS-nativeRasterPixels||
@@ -423,13 +426,15 @@ window.FILE_MANIFEST.push({ name: 'src/engine/presentation-assets.js', exports: 
       !ctx.shadowBlur&&!ctx.shadowOffsetX&&!ctx.shadowOffsetY&&
       (!ctx.shadowColor||emptyShadows.has(ctx.shadowColor));
   }
-  // Keep the small background working set decoded across animated cels.
-  // Original images remain authoritative for native foreground/HUD paint.
+  // Keep a reduced working set only after a caller actually requests it.
+  // Native-only loads retain their original images without unused thumbnails.
   function prepareBackgroundRaster(key,entry,state) {
+    if(state.rasterAttempted)return;
     const image=state.image,w=image.naturalWidth,h=image.naturalHeight;
     const background=backgroundSources.has(key)||diffuseEffects.has(key);
     if(!background||!/^cache/.test(key)||/\.svg$/i.test(entry.path)||w*h<256*1024||
       typeof window.createImageBitmap!=='function')return;
+    state.rasterAttempted=true;
     const width=entry.columns*Math.ceil(w/entry.columns/4);
     const height=entry.rows*Math.ceil(h/entry.rows/4),pixels=width*height;
     if(rasterPixels+pixels>MAX_RASTER_PIXELS)return;
@@ -445,16 +450,31 @@ window.FILE_MANIFEST.push({ name: 'src/engine/presentation-assets.js', exports: 
       },fallback);
     } catch {fallback();}
   }
+  function prepareRequestedBackgroundRaster(key,entry,state) {
+    if(!state.ready)return;
+    if(backgroundRasterRequested&&(backgroundSources.has(key)||diffuseEffects.has(key))||
+      diffuseRasterRequested&&diffuseEffects.has(key))prepareBackgroundRaster(key,entry,state);
+  }
+  function prepareRequestedBackgroundRasters() {
+    for(const [key,state] of Object.entries(cache))
+      prepareRequestedBackgroundRaster(key,entries[key],state);
+  }
   function setRasterDetail(ctx,scale=1) {
     const previous=rasterDetail.get(ctx)||1;
     if(Number.isFinite(scale)&&scale>0&&scale<1)rasterDetail.set(ctx,scale);
     else rasterDetail.delete(ctx);
+    if(!backgroundRasterRequested&&Number.isFinite(scale)&&scale>0&&scale<=.25) {
+      backgroundRasterRequested=true;prepareRequestedBackgroundRasters();
+    }
     return previous;
   }
   function setDecorationDetail(ctx,scale=1) {
     const previous=decorationDetail.get(ctx)||1;
     if(Number.isFinite(scale)&&scale>0&&scale<1)decorationDetail.set(ctx,scale);
     else decorationDetail.delete(ctx);
+    if(!diffuseRasterRequested&&Number.isFinite(scale)&&scale>0&&scale<1) {
+      diffuseRasterRequested=true;prepareRequestedBackgroundRasters();
+    }
     return previous;
   }
   function preload() {
@@ -479,7 +499,7 @@ window.FILE_MANIFEST.push({ name: 'src/engine/presentation-assets.js', exports: 
               state.ready=true;
             },()=>{state.ready=true;});
           } catch {state.ready=true;}
-        } else {state.ready=true;prepareBackgroundRaster(key,entry,state);prepareNativeRaster(key,entry,state);prepareBrakeTint(key,entry,state);}
+        } else {state.ready=true;prepareRequestedBackgroundRaster(key,entry,state);prepareNativeRaster(key,entry,state);prepareBrakeTint(key,entry,state);}
       };
       image.onerror = () => {
         if (!state.fallback) { state.fallback = true; image.src = entry.path; }

@@ -1,8 +1,8 @@
 {
   "builder": "barcode-system-override-standalone-v1",
   "status": "complete",
-  "sourceCommit": "9cdcaad82804472782a1f06b5cfa38fa88f6b45d",
-  "sourceTree": "e4d3f5757c4fcf7c0fd1491316f467803ebbd809",
+  "sourceCommit": "d41be793d35d1d5603255abca8ff80960b9d2653",
+  "sourceTree": "044f3b30321f2c47a796adefae9280d1eeab7010",
   "builderSHA256": "caf8d8e5323c0a6246c3b77da4b02d175ea78f8a6eb560f3aaae6c9dc7d316d3",
   "files": {
     "assets/audio/broadcast-slum-proof-carrier.wav": {
@@ -2626,8 +2626,8 @@
       "bytes": 22266
     },
     "src/engine/presentation-assets.js": {
-      "sha256": "99a8886e2894480bf4216fc9da05809244a9ffeee26ccf787166e11f1156b2bd",
-      "bytes": 61352
+      "sha256": "cc821a3c3eb9c0115fbcf076691594b5bd5333c3b13dea556016f4052a79987d",
+      "bytes": 62410
     },
     "src/engine/renderer.js": {
       "sha256": "44d7915171bf20b7bdf7d1e0389065fd1ddeaf3238d1645c0a496c408f6ea379",

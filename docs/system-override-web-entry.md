@@ -8,6 +8,11 @@ be generated alongside this entry page before release.
 Browser saves are specific to the website origin and browser profile. The entry
 page explains that existing Makko saves do not transfer automatically.
 
+The game entry remains outside the primary navigation. The footer's copyright
+symbol is a quiet link to `/system-override`, with an accessible game label and
+a visible keyboard-focus outline. Release remains a preview until the owner
+finishes testing and approves the live website change.
+
 Run the focused page regression with:
 
 ```sh

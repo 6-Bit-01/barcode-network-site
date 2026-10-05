@@ -10,7 +10,7 @@ window.FILE_MANIFEST.push({ name: 'src/core/touch-controls.js', exports: ['BARCO
   const pause = () => command('pause', 'Pause', { icon: 'Ⅱ', kind: 'utility', group: 'utility' });
   const T = B.TouchControls = {
     initialized: false, enabled: false, context: null, signature: null,
-    pointers: new Map(), buttons: new Map(), accessHolds: new Map(), runLatched: false, joystickPointer: null, toolsOpen: false, padsOpen: false, ownerSerial: 0,
+    pointers: new Map(), buttons: new Map(), accessHolds: new Map(), runLatched: false, joystickPointer: null, toolsOpen: false, ownerSerial: 0,
     init() {
       if (this.initialized || !document.body) return;
       this.initialized = true;
@@ -140,20 +140,38 @@ window.FILE_MANIFEST.push({ name: 'src/core/touch-controls.js', exports: ['BARCO
       const names = ['A', 'B', 'X', 'Y'], keys = ['road_a', 'road_b', 'road_x', 'road_y'];
       const effects = ['Surge', 'Push', 'Brace', 'Refill'];
       const face = index => a(keys[index], s.combat ? 'Sync' : effects[index], { icon: names[index], tone: names[index].toLowerCase(), aria: `${s.combat ? 'Sync' : effects[index]} ${names[index]}`, kind: 'primary' });
-      if (!this.toolsOpen && next && keys[next.action]) specs.push({ ...face(next.action), id: 'road:beat', ready });
-      if (this.toolsOpen) {
-        if (!s.combat || this.padsOpen) specs.push(...names.map((_, i) => ({ ...face(i), group: 'tools', kind: 'secondary' })));
-        if (s.combat) {
-          if (!this.padsOpen) for (const [id, label, icon] of [['attack', 'Attack', '⌖'], ['defend', 'Guard', '◇'], ['turbo', 'Boost', '»'], ['disrupt', 'Jam', 'ϟ']])
-            specs.push(a(`road_${id}`, label, { icon, group: 'tools', kind: 'secondary', disabled: !live || !!combat && (!combat.skills[id]?.ready || id === 'attack' && (!combat.target || combat.target.attackMode === 'shot' && combat.skills.attack.charges <= 0) || id === 'turbo' && (s.queuedTurbo || combat.skills.turbo.pending)) }));
-          specs.push(command('ui:pads', this.padsOpen ? 'Skills' : 'Beat pads', { icon: this.padsOpen ? '◇' : '♫', group: 'tools' }));
-        } else specs.push(a('road_turbo', 'Boost', { icon: '»', group: 'tools', disabled: s.boost <= 0 || !!s.queuedTurbo }), a('road_echo', 'Echo', { icon: '◎', group: 'tools', disabled: s.echoEnergy < 100 }));
-      } else if (combat && live) {
-        if (combat.target && combat.skills.attack.ready && (combat.target.attackMode === 'strike' || combat.skills.attack.charges > 0)) specs.push(a('road_attack', combat.target.attackMode === 'strike' ? 'Strike' : 'Fire', { icon: '⌖', kind: 'secondary', tone: 'b' }));
+      if (next && keys[next.action]) specs.push({ ...face(next.action), id: 'road:beat', ready });
+      if (combat && live) {
+        // Skills belong under the thumb, never behind an in-action menu.
+        // Each semantic action has a fixed CSS slot; readiness changes its
+        // feedback without repacking the other buttons or moving a held target.
+        const skill = (id, label, icon, tone, usable = true, cue = false, pending = false) => {
+          const state = combat.skills[id] || {}, seconds = Math.ceil((state.cooldownMs || 0) / 1000);
+          const feedback = pending ? 'Next 1' : state.active ? 'Active' : seconds ? `${seconds}s` : state.inFlight ? 'Busy' : '';
+          const disabled = !state.ready || !usable || pending;
+          return a(`road_${id}`, label, { icon, status: feedback, tone, kind: 'secondary', disabled, active: !!state.active, ready: !disabled && cue,
+            aria: `${label}${pending ? ' queued for the next beat' : state.active ? ` active${seconds ? `; ${seconds} seconds until ready` : ''}` : seconds ? ` recharging, ${seconds} seconds` : state.inFlight ? ', shot in flight' : !usable || !state.ready ? ' unavailable' : ' ready'}` });
+        };
+        if (combat.target) {
+          const strike = combat.target.attackMode === 'strike', loaded = strike || combat.skills.attack.charges > 0 && (s.combat.projectiles?.length || 0) < 6;
+          const attack = skill('attack', strike ? 'Strike' : 'Fire', '⌖', 'b', loaded, true);
+          if (!loaded && combat.skills.attack.ready) {
+            const empty = combat.skills.attack.charges <= 0;
+            attack.status = empty ? 'Ammo' : 'Busy'; attack.aria = empty ? 'Fire, ammunition recharging' : 'Fire unavailable, projectile capacity reached';
+          }
+          specs.push(attack);
+        }
         const danger = !!s.combatDanger || combat.actors.some(actor => actor.warning || actor.threatActive) || combat.projectiles.some(shot => !shot.friendly);
-        if (danger && combat.skills.defend.ready) specs.push(a('road_defend', 'Guard', { icon: '◇', kind: 'secondary', tone: 'x' }));
+        specs.push(skill('defend', 'Guard', '◇', 'x', true, danger));
+        specs.push(skill('turbo', 'Boost', '»', 'a', true, true, !!s.queuedTurbo || !!combat.skills.turbo.pending));
+        const jamUseful = combat.actors.some(actor => actor.hp > 0 && Math.abs(actor.distance) <= 260) ||
+          combat.projectiles.some(shot => !shot.friendly && Math.abs(shot.distance) <= 320);
+        if (jamUseful || combat.skills.disrupt.active) specs.push(skill('disrupt', 'Jam', 'ϟ', 'y', true, jamUseful));
+      } else if (!s.combat) {
+        if (s.boost > 0 || s.queuedTurbo) specs.push(a('road_turbo', 'Boost', { icon: '»', status: s.queuedTurbo ? 'Next 1' : '', kind: 'secondary', tone: 'a', disabled: !!s.queuedTurbo }));
+        if (s.echoEnergy >= 100) specs.push(a('road_echo', 'Echo', { icon: '◎', kind: 'secondary', tone: 'y' }));
       }
-      specs.push(a('move_down', 'Gear −', { icon: '−', group: 'gears', kind: 'gear', disabled: (s.pendingGear ?? s.gear) === 0 }), a('move_up', 'Gear +', { icon: '+', group: 'gears', kind: 'gear', disabled: (s.pendingGear ?? s.gear) === 2 }), this.more(), pause());
+      specs.push(a('move_down', 'Gear −', { icon: '−', group: 'gears', kind: 'gear', disabled: (s.pendingGear ?? s.gear) === 0 }), a('move_up', 'Gear +', { icon: '+', group: 'gears', kind: 'gear', disabled: (s.pendingGear ?? s.gear) === 2 }), pause());
       return specs;
     },
     layout(context) {
@@ -177,11 +195,13 @@ window.FILE_MANIFEST.push({ name: 'src/core/touch-controls.js', exports: ['BARCO
         case 'level1': {
           const active = !!window.rhythmSystem?.isActive?.(), hack = window.hackingSystem?.getAvailability?.();
           const rhythmAvailable = active || (window.rhythmSystem?.canEnterRhythmMode?.()?.ok ?? (!window.tutorialSystem?.isActive?.() || window.tutorialSystem.storyChapter >= 2));
+          const fx = B.stageFX, message = fx?.message, readable = message && fx.getMessageLayout?.()?.readable;
+          const inspect = !fx?.isDialogueDeferred?.() && (readable || !message && fx?.findNearby?.());
           return [a('jump', 'Jump', { icon: '↑', kind: 'primary' }), ...(active || !window.rhythmSystem?.isActive ? [a('primary', 'Beat', { icon: '◎', kind: 'secondary' })] : []),
             ...(hack?.canStart ? [a('interact', hack.state === 'linked' ? 'Link' : 'Hack', { icon: '⌘', kind: 'secondary' })] : []),
             ...(rhythmAvailable ? [a('rhythm_mode', active ? 'Exit' : 'Rhythm', { icon: '♫', kind: 'secondary' })] : []),
-            ...(this.toolsOpen ? [a('inspect', 'Inspect', { icon: '◉', group: 'tools' }), a('run', 'Run', { icon: '»', toggle: true, group: 'tools' })] : []),
-            ...(context.dialogue ? [c('tutorial:continue', 'Next', { icon: '›', aria: 'Continue dialogue', group: 'utility' })] : []), this.more(), pause()];
+            ...(inspect ? [a('inspect', readable ? message.line === 0 ? 'Continue' : 'Close' : 'Inspect', { icon: '◉', kind: 'secondary' })] : []),
+            ...(context.dialogue ? [c('tutorial:continue', 'Next', { icon: '›', aria: 'Continue dialogue', group: 'utility' })] : []), pause()];
         }
         default: return [];
       }
@@ -204,7 +224,8 @@ window.FILE_MANIFEST.push({ name: 'src/core/touch-controls.js', exports: ['BARCO
       this.root.classList.toggle('touch-tools-open', this.toolsOpen);
       if (this.tools.hidden !== !this.toolsOpen) this.tools.hidden = !this.toolsOpen;
       this.joystick.hidden = !context.joystick;
-      const label = context.name === 'road' ? 'STEER' : this.runLatched ? 'RUN' : 'MOVE';
+      const running = window.player?.isRunActive?.() ?? window.inputManager?.actionInput?.held('run');
+      const label = context.name === 'road' ? 'STEER' : this.runLatched || this.joystickPointer != null && running ? 'RUN' : 'MOVE';
       if (this.stickLabel.textContent !== label) this.stickLabel.textContent = label;
       if (this.hint.textContent) this.hint.textContent = '';
       this.reconcile(this.layout(context));
@@ -221,10 +242,11 @@ window.FILE_MANIFEST.push({ name: 'src/core/touch-controls.js', exports: ['BARCO
         let current = this.buttons.get(spec.id);
         if (!current) {
           const button = document.createElement('button'); button.type = 'button'; button.dataset.touchAction = spec.id;
-          const icon = document.createElement('span'), label = document.createElement('span');
+          const icon = document.createElement('span'), label = document.createElement('span'), status = document.createElement('span');
           icon.className = 'touch-icon'; icon.setAttribute('aria-hidden', 'true'); label.className = 'touch-label';
-          button.appendChild(icon); button.appendChild(label);
-          current = { node: button, icon, label, spec }; this.buttons.set(spec.id, current);
+          status.className = 'touch-status'; status.setAttribute('aria-hidden', 'true');
+          button.appendChild(icon); button.appendChild(label); button.appendChild(status);
+          current = { node: button, icon, label, status, spec }; this.buttons.set(spec.id, current);
           // Native accessible activation reads the current spec, never a stale cue.
           button.addEventListener('click', e => {
             this.consume(e); const live = this.buttons.get(button.dataset.touchAction)?.spec;
@@ -234,14 +256,15 @@ window.FILE_MANIFEST.push({ name: 'src/core/touch-controls.js', exports: ['BARCO
             this.sync();
           });
         }
-        const { node, icon, label } = current; current.spec = spec;
+        const { node, icon, label, status } = current; current.spec = spec;
         const className = `touch-button${spec.kind === 'primary' ? ' touch-primary' : spec.kind === 'secondary' ? ' touch-secondary' : ''}`;
         // Do not rewrite className on held nodes: pointer feedback belongs to them.
         if (current.visualClass !== className) { node.className = className; current.visualClass = className; }
         if (icon.textContent !== (spec.icon || '')) icon.textContent = spec.icon || '';
         if (icon.hidden !== !spec.icon) icon.hidden = !spec.icon;
         if (label.textContent !== spec.label) label.textContent = spec.label;
-        const attrs = { 'aria-label': spec.aria || spec.label, 'data-kind': spec.kind || 'secondary', 'data-tone': spec.tone || 'neutral', 'data-ready': String(!!spec.ready) };
+        if (status.textContent !== (spec.status || '')) status.textContent = spec.status || '';
+        const attrs = { 'aria-label': spec.aria || spec.label, 'data-kind': spec.kind || 'secondary', 'data-tone': spec.tone || 'neutral', 'data-ready': String(!!spec.ready), 'data-active': String(!!spec.active) };
         if (spec.toggle) attrs['aria-pressed'] = String(this.runLatched);
         if (spec.id === 'ui:more') { attrs['aria-expanded'] = String(this.toolsOpen); attrs['aria-controls'] = 'touchTools'; }
         for (const [name, value] of Object.entries(attrs)) if (node.getAttribute(name) !== value) node.setAttribute(name, value);
@@ -295,17 +318,16 @@ window.FILE_MANIFEST.push({ name: 'src/core/touch-controls.js', exports: ['BARCO
     activate(spec, owner, event, node) {
       const input = window.inputManager;
       if (spec.disabled) return;
-      if (spec.command === 'ui:more' || spec.command === 'ui:pads') {
+      if (spec.command === 'ui:more') {
         // Hiding a panel must release its held controls, without cancelling the
         // other thumb's steering or unrelated physical input.
-        const group = spec.command === 'ui:pads' || this.toolsOpen ? 'tools' : undefined;
+        const group = this.toolsOpen ? 'tools' : undefined;
         for (const [id, entry] of this.pointers) if (!entry.joystick && entry.spec?.group === group) this.releasePointer(id, true);
         for (const [key, entry] of this.accessHolds) if (entry.spec.group === group) {
           this.accessHolds.delete(key); input?.actionInput?.releaseVirtualOwner(key, { discardPresses: true });
           if (entry.spec.hold && !this.controlHeld(entry.spec.id)) input?.touchCommand?.(entry.spec.command, false);
         }
-        if (spec.command === 'ui:pads') this.padsOpen = !this.padsOpen;
-        else { this.toolsOpen = !this.toolsOpen; this.padsOpen = false; }
+        this.toolsOpen = !this.toolsOpen;
       } else if (spec.toggle) {
         this.runLatched = !this.runLatched;
         input?.actionInput?.setVirtualAction('run', 'touch:run-toggle', this.runLatched, event);
@@ -363,7 +385,6 @@ window.FILE_MANIFEST.push({ name: 'src/core/touch-controls.js', exports: ['BARCO
       B.CacheBridge?.holdSkip?.('touch', false); B.CacheEnding?.holdSkip?.('touch', false);
       this.runLatched = false;
       this.toolsOpen = false;
-      this.padsOpen = false;
       this.accessHolds.clear();
       const run = this.buttons.get('run')?.node;
       run?.setAttribute('aria-pressed', 'false'); run?.classList.remove('is-latched');

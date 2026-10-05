@@ -31,8 +31,10 @@
     grid-template-columns: repeat(3, minmax(64px, 1fr));
     gap: var(--touch-gap);
     width: min(300px, calc(100vw - 24px));
+    pointer-events: none;
 }
 .touch-button {
+    pointer-events: auto;
     min-width: 44px;
     min-height: var(--touch-size);
     position: relative;
@@ -52,7 +54,19 @@
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
 }
-.touch-icon, .touch-label { pointer-events: none; }
+.touch-icon, .touch-label, .touch-status { pointer-events: none; }
+.touch-status:empty { display: none; }
+.touch-status {
+    position: absolute;
+    top: -3px;
+    right: -4px;
+    padding: 2px 4px;
+    border-radius: 6px;
+    background: #152a30;
+    color: #e4f3ef;
+    font-size: 9px;
+    line-height: 1;
+}
 .touch-icon { font-size: 22px; line-height: 1; color: var(--touch-tone); }
 .touch-label { font-size: 11px; line-height: 1.15; text-align: center; }
 .touch-button[data-tone="a"] { --touch-tone: #a0ead2; --touch-tone-rgb: 160, 234, 210; }
@@ -67,7 +81,8 @@
     color: #f1fff8;
     box-shadow: inset 0 0 0 1px rgba(var(--touch-tone-rgb), .2);
 }
-.touch-button:disabled { opacity: .34; cursor: default; pointer-events: none; }
+.touch-button:disabled { opacity: .5; cursor: default; }
+.touch-button[data-active="true"] { opacity: .85; border-color: rgba(var(--touch-tone-rgb), .8); }
 .touch-button:focus-visible { outline: 2px solid #f2c38b; outline-offset: 3px; }
 .touch-icon-only .touch-label {
     position: absolute;
@@ -80,6 +95,7 @@
 .touch-gameplay .touch-actions {
     width: 112px;
     grid-template-columns: repeat(2, 52px);
+    grid-template-rows: 52px 52px 64px;
     justify-content: end;
     align-items: end;
 }
@@ -108,10 +124,22 @@
 }
 .touch-primary .touch-icon, [data-kind="primary"] .touch-icon { font-size: 26px; }
 .touch-primary .touch-label, [data-kind="primary"] .touch-label { font-size: 11px; font-weight: 700; }
-.touch-road .touch-actions { width: 64px; grid-template-columns: 64px; grid-template-rows: 52px 52px 64px; }
-.touch-road .touch-actions > [data-touch-action="road:beat"] { grid-row: 3; }
-.touch-road .touch-actions > [data-touch-action="road_attack"] { grid-row: 1; grid-column: 1; }
-.touch-road .touch-actions > [data-touch-action="road_defend"] { grid-row: 2; grid-column: 1; }
+.touch-road .touch-actions { width: 112px; grid-template-columns: 48px 58px; grid-template-rows: 44px 44px 64px; gap: 6px; }
+.touch-road .touch-actions > .touch-button { width: 44px; height: 44px; min-height: 44px; justify-self: end; }
+.touch-road .touch-actions > [data-touch-action="road:beat"] { grid-row: 3; grid-column: 1 / -1; width: 64px; height: 64px; min-height: 64px; }
+.touch-road .touch-actions > [data-touch-action="road_attack"] { grid-row: 2; grid-column: 1; }
+.touch-road .touch-actions > [data-touch-action="road_defend"] { grid-row: 2; grid-column: 2; }
+.touch-road .touch-actions > [data-touch-action="road_turbo"] { grid-row: 1; grid-column: 1; }
+.touch-road .touch-actions > [data-touch-action="road_disrupt"],
+.touch-road .touch-actions > [data-touch-action="road_echo"] { grid-row: 1; grid-column: 2; }
+.touch-road .touch-actions .touch-icon { font-size: 18px; }
+.touch-road .touch-actions .touch-label { font-size: 10px; }
+.touch-road .touch-actions > [data-touch-action="road:beat"] .touch-icon { font-size: 26px; }
+.touch-gameplay .touch-actions > [data-touch-action="jump"] { grid-row: 3; }
+.touch-gameplay .touch-actions > [data-touch-action="primary"] { grid-row: 2; grid-column: 2; }
+.touch-gameplay .touch-actions > [data-touch-action="rhythm_mode"] { grid-row: 2; grid-column: 1; }
+.touch-gameplay .touch-actions > [data-touch-action="interact"] { grid-row: 1; grid-column: 2; }
+.touch-gameplay .touch-actions > [data-touch-action="inspect"] { grid-row: 1; grid-column: 1; }
 .touch-secondary .touch-icon, [data-kind="secondary"] .touch-icon { font-size: 20px; }
 .touch-secondary .touch-label, [data-kind="secondary"] .touch-label { font-size: 10px; }
 .touch-utilities {
@@ -252,13 +280,23 @@
 @media (orientation: portrait) {
     .touch-actions { left: 12px; right: 12px; width: auto; grid-template-columns: repeat(3, 1fr); }
     .touch-gameplay .touch-actions { left: auto; right: max(var(--touch-edge), env(safe-area-inset-right)); width: 112px; }
-    .touch-road .touch-actions { width: 64px; }
+    .touch-road .touch-actions { width: 112px; }
     .touch-readout { left: 12px; right: 12px; width: auto; }
     .touch-keypad .touch-actions { left: 50%; right: auto; transform: translateX(-50%); width: min(276px, calc(100vw - 24px)); }
     .touch-hint { bottom: calc(max(var(--touch-edge), env(safe-area-inset-bottom)) + 154px); left: 84px; width: 144px; }
 }
 @media (orientation: landscape) {
     .touch-utilities { flex-direction: column; }
+}
+@media (orientation: landscape) and (max-aspect-ratio: 21/10) {
+    /* With no wide side gutter, Pause sits above the left-hand gear pair,
+       clear of the native HUD and the active right-thumb skill cluster. */
+    .touch-road .touch-utilities {
+        top: auto;
+        right: auto;
+        left: calc(max(var(--touch-edge), env(safe-area-inset-left)) + var(--touch-stick-width));
+        bottom: calc(max(var(--touch-edge), env(safe-area-inset-bottom)) + 124px);
+    }
 }
 @media (max-height: 450px) and (orientation: landscape) {
     .touch-controls { --touch-size: 44px; }

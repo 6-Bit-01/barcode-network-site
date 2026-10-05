@@ -74,6 +74,14 @@ window.BARCODE = window.BARCODE || {};
     if (button) { button.disabled = false; button.textContent = 'START SYSTEM'; }
   }
 
+  async function awaitStartResource(pending) {
+    let cancel;
+    const stopped=new Promise(resolve=>{cancel=()=>resolve();});
+    cleanupRegistry.push(cancel);
+    try {return await Promise.race([pending,stopped]);}
+    finally {const index=cleanupRegistry.indexOf(cancel);if(index>=0)cleanupRegistry.splice(index,1);}
+  }
+
   function initRuntimeSystems() {
     if (typeof window.initParallax === 'function') window.initParallax();
     if (typeof window.initSpaceShips === 'function') window.initSpaceShips();
@@ -135,8 +143,19 @@ window.BARCODE = window.BARCODE || {};
     const button = document.getElementById('startButton');
     if (button && !options.restart) { button.disabled = true; button.textContent = 'INITIALIZING...'; }
 
+    if(options.resume?.levelId!=='level-02'&&namespace.PresentationAssets?.selectLevel1Scene) {
+      await awaitStartResource(namespace.PresentationAssets.selectLevel1Scene());
+      if (generation !== initializerGeneration || state !== STATES.STARTING) return;
+    }
     if (typeof window.startGameInitialization === 'function') await window.startGameInitialization({ restart: !!options.restart });
     if (generation !== initializerGeneration || state !== STATES.STARTING) return;
+    // The road releases the prior level's shared sprite atlases. The cached
+    // general initializer does not reload them on Return or a new run.
+    if(options.resume?.levelId!=='level-02'&&namespace.StandaloneSprites?.isLoaded?.()===false&&
+        typeof window.initSprites==='function') {
+      await awaitStartResource(window.initSprites());
+      if (generation !== initializerGeneration || state !== STATES.STARTING) return;
+    }
     if (window.audioSystem && typeof window.audioSystem.stopTitleScreenMusic === 'function') window.audioSystem.stopTitleScreenMusic();
     window.titleScreenMusicBlocked = true;
     initRuntimeSystems();
@@ -176,6 +195,10 @@ window.BARCODE = window.BARCODE || {};
     // state before asking audio to start, and keep a completed result silent.
     const roadResume=options.resume?.levelId==='level-02';
     if (roadResume && !namespace.Campaign?.restore(options.resume)) throw new Error('Saved checkpoint could not be restored. Start a new run or retry Continue.');
+    if (roadResume) {
+      await namespace.CacheRoadProof?.preparePresentation?.();
+      if (generation !== initializerGeneration || state !== STATES.STARTING) return;
+    }
     const bridgeResume=options.resume?.levelId==='level-01'&&options.resume.checkpointId==='intermission';
     const completedRoadResume=roadResume&&namespace.CacheRoadProof?.status==='clear';
     if (!bridgeResume && !completedRoadResume && (options.restart || options.resume) && window.audioSystem && typeof window.audioSystem.startRuntimeGameplayMusic === 'function') {
@@ -250,6 +273,8 @@ window.BARCODE = window.BARCODE || {};
   }
 
   function pause(reason) {
+    if(namespace.CacheRoadProof?.presentationPreparing)
+      return Promise.resolve({ok:false,status:'road-preparing',state,generation});
     const joined = joinOrReject('pause', 'pause');
     if (joined) return joined;
     if (state === STATES.PAUSED) return Promise.resolve({ ok: true, status: 'already-paused', state, generation });
@@ -287,7 +312,7 @@ window.BARCODE = window.BARCODE || {};
       // Resuming the audio context must not start a pre-race or completed road clock.
       // Its finite reading cues may be stopped; the next authored cue is fresh.
       if (namespace.CacheEnding?.active || namespace.CacheRoadProof?.active &&
-          (namespace.CacheRoadProof.status === 'clear' || namespace.CacheRoadProof.introMs != null)) {
+          (namespace.CacheRoadProof.presentationPreparing || namespace.CacheRoadProof.status === 'clear' || namespace.CacheRoadProof.introMs != null)) {
         window.audioSystem?.stopRuntimeAudio?.({ stopMusic: true });
         window.audioSystem?.stopRoadEngine?.();
       }
@@ -305,6 +330,7 @@ window.BARCODE = window.BARCODE || {};
     options = options || {};
     namespace.CacheEnding?.dispose?.();
     namespace.CacheRoadProof?.dispose?.();
+    namespace.PresentationAssets?.releaseScene?.();
     namespace.CacheBridge?.dispose?.();
     namespace.RunAndGunProof?.dispose?.();
     namespace.LevelDifficulty?.stop();

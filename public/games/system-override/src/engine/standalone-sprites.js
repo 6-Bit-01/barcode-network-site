@@ -13,6 +13,18 @@ window.FILE_MANIFEST.push({ name: 'src/engine/standalone-sprites.js', exports: [
     return value;
   };
   const positive = (value, fallback = 1) => Number.isFinite(value) && value > 0 ? value : fallback;
+  const releasedImages = new WeakSet();
+  function suspendedError() {
+    const error = new Error('Sprite initialization suspended'); error.name = 'AbortError'; return error;
+  }
+  function releaseImage(loaded) {
+    if (!loaded || releasedImages.has(loaded)) return;
+    releasedImages.add(loaded); loaded.onload = null; loaded.onerror = null;
+    // Cloned playback sheets share this element. Removing its source releases
+    // the decoded atlas even when an inactive actor still holds its sheet.
+    try { if (typeof loaded.removeAttribute === 'function') loaded.removeAttribute('src'); else loaded.src = ''; }
+    catch (_) {}
+  }
   function callbacks(list, ...args) {
     for (const callback of [...list]) {
       try { callback(...args); } catch (error) { window.console?.error?.('Sprite callback failed:', error); }
@@ -65,7 +77,7 @@ window.FILE_MANIFEST.push({ name: 'src/engine/standalone-sprites.js', exports: [
     get playing() { return this._playing; }
     get loop() { return this._loop; }
     get playbackSpeed() { return this._speed; }
-    isLoaded() { return !!this.image && !!this.metadata; }
+    isLoaded() { return !!this.image && !!this.metadata && !releasedImages.has(this.image); }
     getAnchorPoint() { return this.manifestMetadata.anchor || this.metadata.meta?.anchor || null; }
     hasManifestAnchor() { return this.manifestMetadata.anchor !== undefined; }
     getManifestScale() { return positive(this.manifestMetadata.scale); }
@@ -117,7 +129,7 @@ window.FILE_MANIFEST.push({ name: 'src/engine/standalone-sprites.js', exports: [
       }
     }
     draw(ctx, x, y, options = {}) {
-      const data = this._frameData(); if (!data) return false;
+      const data = this._frameData(); if (!data || !this.isLoaded()) return false;
       const scale = positive(options.scale) * this.getManifestScale(), frame = data.frame;
       const trim = data.trimmed ? data.spriteSourceSize : null;
       ctx.save();
@@ -175,11 +187,20 @@ window.FILE_MANIFEST.push({ name: 'src/engine/standalone-sprites.js', exports: [
     if (!response.ok) throw new Error(`Sprite JSON request failed (${response.status}): ${url}`);
     return response.json();
   }
-  function image(url) {
+  function image(url, owner) {
     return new Promise((resolve, reject) => {
       const loaded = new window.Image(); loaded.crossOrigin = 'anonymous';
-      loaded.onload = () => resolve(loaded); loaded.onerror = () => reject(new Error(`Sprite image request failed: ${url}`));
-      loaded.src = url;
+      owner._sourceImages.add(loaded);
+      let settled = false;
+      const finish = (error) => {
+        if (settled) return; settled = true;
+        owner._imageLoads.delete(loaded); loaded.onload = null; loaded.onerror = null;
+        if (error) { releaseImage(loaded); owner._sourceImages.delete(loaded); reject(error); }
+        else resolve(loaded);
+      };
+      owner._imageLoads.set(loaded, () => finish(suspendedError()));
+      loaded.onload = () => finish(); loaded.onerror = () => finish(new Error(`Sprite image request failed: ${url}`));
+      try { loaded.src = url; } catch (error) { finish(error); }
     });
   }
   function validate(metadata, loadedImage, label) {
@@ -200,13 +221,30 @@ window.FILE_MANIFEST.push({ name: 'src/engine/standalone-sprites.js', exports: [
   }
   const engine = B.StandaloneSprites = {
     Character, SpriteSheet, AnimationReference, _characters: new Map(), _manifest: null, _loaded: false, _pending: null,
+    _generation: 0, _sourceImages: new Set(), _imageLoads: new Map(), _cancelInit: null,
+    suspend() {
+      const releasedSources = this._sourceImages.size;
+      this._generation++; this._loaded = false;
+      this._cancelInit?.(); this._cancelInit = null;
+      for (const cancel of [...this._imageLoads.values()]) cancel();
+      for (const loaded of this._sourceImages) releaseImage(loaded);
+      this._sourceImages.clear(); this._imageLoads.clear(); this._characters.clear();
+      this._manifest = null; this._manifestURL = null; this._pendingURL = null; this._pending = null;
+      return { releasedSources };
+    },
     init(manifestURL, options = {}) {
       if (this._pending && this._pendingURL === manifestURL) return this._pending;
       if (this._pending) return Promise.reject(new Error('Another sprite manifest is loading'));
       if (this._loaded && this._manifestURL === manifestURL) { options.onComplete?.(); return Promise.resolve(this); }
       this._loaded = false; this._pendingURL = manifestURL;
-      const pending = (async () => {
+      const generation = ++this._generation;
+      const current = () => { if (generation !== this._generation) throw suspendedError(); };
+      let cancelInit;
+      const cancellation = new Promise((_, reject) => { cancelInit = () => reject(suspendedError()); });
+      this._cancelInit = cancelInit;
+      const work = (async () => {
         const manifest = typeof manifestURL === 'string' ? await json(manifestURL) : copy(manifestURL);
+        current();
         if (!manifest?.characters || typeof manifest.characters !== 'object') throw new Error('Invalid sprite manifest');
         const base = typeof manifestURL === 'string' ? new URL(manifestURL, window.location?.href || 'http://localhost/') :
           new URL(options.baseURL || '.', window.location?.href || 'http://localhost/');
@@ -217,7 +255,8 @@ window.FILE_MANIFEST.push({ name: 'src/engine/standalone-sprites.js', exports: [
         let done = 0; const assets = await Promise.all(records.map(async ({ character, name, entry }) => {
           if (!entry.image || !entry.json) throw new Error(`Missing sprite image/JSON: ${character}/${name}`);
           const imagePath = resolve(entry.image), jsonPath = resolve(entry.json);
-          const [loadedImage, metadata] = await Promise.all([image(imagePath), json(jsonPath)]);
+          const [loadedImage, metadata] = await Promise.all([image(imagePath, this), json(jsonPath)]);
+          current();
           validate(metadata, loadedImage, name);
           const manifestMetadata = copy(entry.metadata || {});
           if (manifestMetadata.anchor === undefined && entry.anchor !== undefined) manifestMetadata.anchor = copy(entry.anchor);
@@ -227,6 +266,7 @@ window.FILE_MANIFEST.push({ name: 'src/engine/standalone-sprites.js', exports: [
           callbacks(options.onProgress ? [options.onProgress] : [], ++done, records.length);
           return { character, name, sheet };
         }));
+        current();
         const characters = new Map();
         for (const { character, name, sheet } of assets) {
           if (!characters.has(character)) characters.set(character, new Map()); characters.get(character).set(name, sheet);
@@ -234,10 +274,13 @@ window.FILE_MANIFEST.push({ name: 'src/engine/standalone-sprites.js', exports: [
         this._characters = characters; this._manifest = freeze(copy(manifest)); this._manifestURL = manifestURL; this._loaded = true;
         callbacks(options.onComplete ? [options.onComplete] : []); return this;
       })();
+      const pending = Promise.race([work, cancellation]);
       this._pending = pending;
-      pending.then(() => { if (this._pending === pending) this._pending = null; }, error => {
-        if (this._pending === pending) this._pending = null;
-        callbacks(options.onError ? [options.onError] : [], error);
+      pending.then(() => {
+        if (this._pending === pending) { this._pending = null; this._cancelInit = null; }
+      }, error => {
+        if (this._pending === pending) { this._pending = null; this._cancelInit = null; }
+        if (generation === this._generation) callbacks(options.onError ? [options.onError] : [], error);
       });
       return pending;
     },

@@ -5,6 +5,7 @@ window.FILE_MANIFEST.push({ name: 'src/core/input.js', exports: ['InputManager',
 window.InputManager = class InputManager {
   constructor() {
     this.keys = {};
+    this.physicalKeys = new Set();
     this.pressedKeys = new Set();
     this.releasedKeys = new Set();
     this.mouse = { x: 0, y: 0, clicked: false, pressed: false };
@@ -26,6 +27,7 @@ window.InputManager = class InputManager {
   init() {
     window.addEventListener('keydown', (e) => {
       const key = e.key.toLowerCase();
+      this.physicalKeys.add(key);
       if (key === ' ' || key === 'enter' || key === 'c' || window.BARCODE?.CacheRoadProof?.active && (key === 'r' || key === 's')) this.resultKeysHeld.add(key);
 
       if (window.BARCODE?.CacheEnding?.active) {
@@ -107,6 +109,7 @@ window.InputManager = class InputManager {
     });
     window.addEventListener('keyup', (e) => {
       const key = e.key.toLowerCase();
+      this.physicalKeys.delete(key);
       this.resultKeysHeld.delete(key);
       window.BARCODE?.CacheEnding?.keyUp(e);
       window.BARCODE?.CacheBridge?.keyUp(e);
@@ -129,6 +132,7 @@ window.InputManager = class InputManager {
       this.terminalKeyLatched = null;
       this.hackEscapeLatched = false;
       this.resultKeysHeld.clear();
+      this.physicalKeys.clear();
       window.BARCODE?.CacheEnding?.releaseInputs();
       window.BARCODE?.CacheBridge?.releaseInputs();
       this.resetActionEdges();
@@ -180,6 +184,7 @@ window.InputManager = class InputManager {
   vibrate(intensity = 0.5, duration = 100) { if (window.BARCODE?.ControllerSettings?.vibration !== false && this.vibrationEnabled && this.gamepad && this.gamepad.vibrationActuator) this.gamepad.vibrationActuator.playEffect('dual-rumble', { startDelay: 0, duration, weakMagnitude: intensity, strongMagnitude: intensity })?.catch?.(() => {}); }
 
   update(options = {}) {
+    window.BARCODE?.TouchControls?.sync();
     this.updateGamepad();
     if (this.routeGamepadUI()) {
       this.actionInput?.reset();
@@ -200,6 +205,7 @@ window.InputManager = class InputManager {
   }
 
   resetActionEdges() {
+    window.BARCODE?.TouchControls?.releaseAll('input-reset');
     this.pressedKeys.clear();
     this.releasedKeys.clear();
     this.keys = {};
@@ -214,6 +220,7 @@ window.InputManager = class InputManager {
   }
 
   updateFrontend(owner) {
+    window.BARCODE?.TouchControls?.sync();
     const menu=window.BARCODE?.PauseMenu;
     if(owner==='title'&&menu?.titleOpen){this.routeGamepadUI();menu.render();return;}
     const input = window.BARCODE?.GamepadUI?.poll(owner);
@@ -316,6 +323,83 @@ window.InputManager = class InputManager {
     if (rhythm.hideRhythmMode) rhythm.hideRhythmMode(); else rhythm.hide?.();
     if (!rhythm.isActive()) window.tutorialSystem?.checkObjective?.('rhythm_exit');
     return !rhythm.isActive();
+  }
+
+  // Touch UI uses each screen's existing owner. It never synthesizes physical
+  // key events, which would release a real key or leak a terminal digit to play.
+  touchCommand(command, held = true) {
+    const B = window.BARCODE || {}, road = B.CacheRoadProof, menu = B.PauseMenu;
+    const intro = window.cutsceneSystem;
+    const comic = B.CacheEnding?.active ? B.CacheEnding : B.CacheBridge?.active ? B.CacheBridge : null;
+    if (command === 'intro:skip') {
+      if (held) intro?.startSkipHold?.('touch'); else intro?.endSkipHold?.('touch');
+      return !!intro?.isActive;
+    }
+    if (command === 'comic:skip') { comic?.holdSkip?.('touch', held); return !!comic; }
+    if (!held) return false;
+    if (command === 'pause') {
+      B.TouchControls?.releaseAll('pause-request');
+      if (intro?.isActive) return intro.togglePresentationPause?.();
+      return B.RuntimeLifecycle?.togglePause?.();
+    }
+    if (command.startsWith('menu:')) {
+      if (!menu?.isPaused?.()) return false;
+      if (command === 'menu:resume') return menu.resume();
+      const key = { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight', select: 'Enter', back: 'Escape' }[command.slice(5)];
+      if (!key || this.physicalKeys.has(key.toLowerCase())) return false;
+      const event = { key, repeat: false, preventDefault() {} };
+      menu.keyDown(event);
+      if (!this.physicalKeys.has(key.toLowerCase())) menu.keyUp(event);
+      return true;
+    }
+    if (window.isPaused || window.gameState?.paused) return false;
+    if (command.startsWith('title:')) {
+      const id = { start: 'startButton', continue: 'continueButton', settings: 'settingsButton' }[command.slice(6)];
+      const button = id && document.getElementById(id);
+      if (!button || button.disabled || button.hidden || document.getElementById('startOverlay')?.classList.contains('hidden')) return false;
+      button.click(); return true;
+    }
+    if (command.startsWith('intro:') && intro?.isActive) {
+      const method = { dialogue: 'skipCutscene', scene: 'nextScene', transcript: 'toggleTranscript', caption: 'inspectCaption' }[command.slice(6)];
+      return method ? intro[method]?.() : false;
+    }
+    if (command.startsWith('difficulty:') && B.LevelDifficulty?.open) {
+      const difficulty = B.LevelDifficulty, action = command.slice(11);
+      if (action === 'begin') return difficulty.confirm();
+      if (action === 'recovery') return difficulty.toggleRecovery();
+      return difficulty.select((difficulty.selected + (action === 'left' ? 2 : 1)) % 3);
+    }
+    if (command.startsWith('comic:') && comic && !comic.pending) {
+      const action = command.slice(6);
+      if (action === 'dialogue') return comic.advance();
+      if (action === 'scene') return comic.advance({ scene: true });
+      if (action === 'transcript') return comic.toggleTranscript();
+      if (action === 'back') return B.CacheEnding?.active ? comic.back() : B.Campaign?.closeIntermission?.();
+      if (action === 'architecture' && comic === B.CacheBridge) return comic.architecture();
+      return false;
+    }
+    if (command.startsWith('hack:') && window.hackingSystem?.isActive?.()) {
+      window.hackingSystem.useKeypad?.();
+      return window.hackingSystem.processInput(command.slice(5));
+    }
+    if (command === 'tutorial:continue') return window.tutorialSystem?.handleSpacePress?.();
+    if (command === 'road:intro' && road?.active) return road.finishIntro();
+    if (command === 'road:outro' && road?.active && road.resultControlsReady !== false) return road.finishOutro();
+    if (command.startsWith('road:result:') && road?.active) return road.resultAction(command.slice(12));
+    if (command.startsWith('proof:') && B.RunAndGunProof?.active && B.RunAndGunProof.status !== 'playing') {
+      return command === 'proof:retry' ? B.RunAndGunProof.retry() : B.RunAndGunProof.exit();
+    }
+    if (command.startsWith('result:') && (window.gameState?.gameOver || window.gameState?.victory)) {
+      if (window.gameState.victory && window.sector1Progression?.areCompletionControlsReady?.() === false) return false;
+      B.TouchControls?.releaseAll('result-choice');
+      if (command === 'result:continue' && window.gameState.victory) return B.Campaign?.openIntermission?.();
+      if (command === 'result:title') return B.RuntimeLifecycle?.returnToTitle?.({ source: 'touch-result' });
+      if (command !== 'result:retry') return false;
+      if (window.sector1Progression?.canRetryBossCheckpoint?.()) return window.sector1Progression.retryBossCheckpoint();
+      if (B.Campaign?.canRetryObjective?.()) return B.Campaign.retryObjective();
+      return B.RuntimeLifecycle?.restart?.({ source: 'touch-result' });
+    }
+    return false;
   }
 
   routeActions(actions, options = {}) {

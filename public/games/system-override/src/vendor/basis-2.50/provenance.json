@@ -1,0 +1,16 @@
+{
+  "name": "basis_universal",
+  "version": "2.50",
+  "releaseTag": "v2_50",
+  "release": "https://github.com/BinomialLLC/basis_universal/releases/tag/v2_50",
+  "sourceCommit": "9bebe16726b3a61c8c213eeee3b7cffb462ef34e",
+  "license": "Apache-2.0",
+  "distribution": "Exact official Git blobs from the release commit; no source rewriting.",
+  "files": {
+    "basis_transcoder.js": {"packagePath": "webgl/transcoder/build/basis_transcoder.js", "gitBlob": "a9fdb085c065eed7d83ae898027db49d581e8c46", "sha256": "720dd9bd09c7cada6d87f1b7b70cec713df04da88cd641ac3212559353834dc8", "bytes": 50538},
+    "basis_transcoder.wasm": {"packagePath": "webgl/transcoder/build/basis_transcoder.wasm", "gitBlob": "fec26f4b68ff8ae5907768eb456efdfcd694bb4d", "sha256": "a0f65d4a30ecb3269d01ead7d0a3477d2b0208146d083625a90623f473f6c139", "bytes": 1060846},
+    "LICENSE": {"packagePath": "LICENSE", "gitBlob": "94ea880430871f065fc4d9aef92fb5854003bd01", "sha256": "065fcf48d6af21c0b75e23be5ed5753aee75c892e1c2cf178fa6736305614a5c", "bytes": 11347}
+  },
+  "embeddedExternalUrls": [],
+  "runtime": "One owned local worker transcodes legacy UASTC KTX2 before gameplay. Decoder and WASM URLs are same-origin, and the worker is terminated after warmup."
+}

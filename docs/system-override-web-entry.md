@@ -1,5 +1,11 @@
 # System Override web entry
 
+## Contextual mobile controls
+
+The owner tested the published joystick release and requested controls that leave Level 2 playable. The new source candidate is PR185 at `71b867b94be3501294b6a8cdc6ac1d3dd1134878`: subtle circular edge controls, separate gear buttons, one mapped Sync cue in a fixed thumb position, contextual Attack/Guard and a compact tabbed More drawer for skills and manual pads. Level 1 exposes Rhythm/Beat/Hack through their actual availability owners; cinematic extras are on demand. Within a gameplay screen, changing buttons preserve steering, held semantic actions and completed taps. Landscape utility controls occupy the side margin; the default road actions use a single narrow edge strip.
+
+All 28 input contracts and actual strict-built Chromium mobile checks pass at the candidate, including portrait 390×844/375×667/320×568 and landscape 844×390, normal title/audio/opening/difficulty, simultaneous movement/jump, independent physical keys, rotation, earned Level 2 Continue, skills/manual pads/gears and pause/resume. The default road panel leaves the central road/car area clear. These are browser emulation checks, not physical-phone FPS evidence. The original artwork/audio, accepted GPU/loading pipeline, judgments, saves, native frame, entry route and quiet footer shortcut are unchanged. Private test evidence remains outside `public/`. Exact source/site CI, guarded merges and deployment remain pending at this preparation snapshot; final results are recorded in the pull request and delivery receipt. Earlier release notes below are historical.
+
 `/system-override` uses the existing BARCODE website layout and links directly to
 `/games/system-override/index.html`. The normal same-tab anchor opens the standalone
 game document. The game bundle belongs in `public/games/system-override/` and must

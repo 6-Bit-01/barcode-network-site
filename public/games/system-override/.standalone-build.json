@@ -1,8 +1,8 @@
 {
   "builder": "barcode-system-override-standalone-v1",
   "status": "complete",
-  "sourceCommit": "3daea2cccd1ad21fe096750dc0fd1a270cc448dd",
-  "sourceTree": "f3ece39747de504720fa4d99d047eca6b2ebdab3",
+  "sourceCommit": "71b867b94be3501294b6a8cdc6ac1d3dd1134878",
+  "sourceTree": "18013a79db37d206c80ff1aa97a641cc16bc5ce0",
   "builderSHA256": "d5e691bf68931baf7002006cab0d5a0a6053fdfa03c68c6bcfc0af75b1325ad6",
   "files": {
     "assets/audio/broadcast-slum-proof-carrier.wav": {
@@ -3106,8 +3106,8 @@
       "bytes": 38050
     },
     "style.css": {
-      "sha256": "6f7008ae0fdf6cd01558dfad4ff5b15e06609fb4f0ecfc9d3acf691cdb873e6d",
-      "bytes": 12163
+      "sha256": "0f74b3e0ca76691c079155e1dec64858886ceedee887548b0465ea83be6e07f1",
+      "bytes": 16881
     },
     "sprites-manifest.json": {
       "sha256": "c2666c2bdbf21b4b62c5826ad1740957a357c547a80d0a82cca4fae985fabafb",
@@ -3142,8 +3142,8 @@
       "bytes": 24797
     },
     "src/core/touch-controls.js": {
-      "sha256": "515c5243dc90b6dc54ec4801e7bfaee3d83c5db9d91ea8ed994b737858490b5a",
-      "bytes": 20596
+      "sha256": "07ff9977520bb4280419cd308bfa8042f54c5d7402fa13d05f681ba6571a24d6",
+      "bytes": 29419
     },
     "src/engine/audio.js": {
       "sha256": "95a91711958d422578870f6672b38fb0a99586bbf7ccc1c1da286935e2689b6e",

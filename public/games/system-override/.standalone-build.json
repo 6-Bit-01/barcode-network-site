@@ -1,9 +1,9 @@
 {
   "builder": "barcode-system-override-standalone-v1",
   "status": "complete",
-  "sourceCommit": "a7b2ba5ed3115bcd24903a7729b5060efacadd92",
-  "sourceTree": "5dbeef35fe2de98fdc5196a509d01493e11a7830",
-  "builderSHA256": "e87247f58f87437e6668b14a10670fde08e3bf0b5e251196a1767b4414cabe0e",
+  "sourceCommit": "3daea2cccd1ad21fe096750dc0fd1a270cc448dd",
+  "sourceTree": "f3ece39747de504720fa4d99d047eca6b2ebdab3",
+  "builderSHA256": "d5e691bf68931baf7002006cab0d5a0a6053fdfa03c68c6bcfc0af75b1325ad6",
   "files": {
     "assets/audio/broadcast-slum-proof-carrier.wav": {
       "sha256": "7d9eb892d074c17ee1047c33f3a4264eeac3d4f954c856ce35745a2a484a901c",
@@ -3102,20 +3102,20 @@
       "bytes": 515770
     },
     "index.html": {
-      "sha256": "f963e1fafbf1e7657669a8b4d037322758eface6ed51f8c1b80797735140308e",
-      "bytes": 38012
+      "sha256": "557ff2a87f02aa255dcccd06bab74c688e898f72f0febb444568122d2b75d408",
+      "bytes": 38050
     },
     "style.css": {
-      "sha256": "3fa190cef55008dd8524ee46d6456958576a4f0733f776632a5dfc1936e71698",
-      "bytes": 6437
+      "sha256": "6f7008ae0fdf6cd01558dfad4ff5b15e06609fb4f0ecfc9d3acf691cdb873e6d",
+      "bytes": 12163
     },
     "sprites-manifest.json": {
       "sha256": "c2666c2bdbf21b4b62c5826ad1740957a357c547a80d0a82cca4fae985fabafb",
       "bytes": 14700
     },
     "src/core/action-input.js": {
-      "sha256": "28bb489e78ca98c362ffcd19b71b7dceb1eb524afad8293a79e0d5b72497d4f7",
-      "bytes": 12284
+      "sha256": "0a792be4e8cff0a81b7c5393bf6b2a8311ccd8d9c66d1901b171b00eb5193a64",
+      "bytes": 14309
     },
     "src/core/fullscreen.js": {
       "sha256": "f98f7899d615f1f457790c7929745e0ea0b5d95086324f0cc7559d315ed0b964",
@@ -3130,8 +3130,8 @@
       "bytes": 7762
     },
     "src/core/input.js": {
-      "sha256": "ace3c367c93eee9b057ec34d1044323f852c5890bbf5cf3a0f3d2f0a61cbb8d6",
-      "bytes": 23034
+      "sha256": "24712228dffb13c3c036a521141baf9c3c0f5a2458d933e04fd27cd6b4ca944e",
+      "bytes": 28044
     },
     "src/core/loop.js": {
       "sha256": "dd0de50a62f06d79feeb227af3d000b4ca2f9796e373eef3be59abbc081ef882",
@@ -3140,6 +3140,10 @@
     "src/core/runtime-lifecycle.js": {
       "sha256": "fd0074acddb182e273f1d3d2fd980a67abcb522ced0ce6fc26343b362a1dc81a",
       "bytes": 24797
+    },
+    "src/core/touch-controls.js": {
+      "sha256": "515c5243dc90b6dc54ec4801e7bfaee3d83c5db9d91ea8ed994b737858490b5a",
+      "bytes": 20596
     },
     "src/engine/audio.js": {
       "sha256": "95a91711958d422578870f6672b38fb0a99586bbf7ccc1c1da286935e2689b6e",
@@ -3474,8 +3478,8 @@
       "bytes": 7538
     },
     "src/game/pause-menu.js": {
-      "sha256": "a9958ebdeb245d21235ab8ac5273d1ae4829764b23b8b3ce1f8c34897e87d786",
-      "bytes": 37357
+      "sha256": "e7b5dbbd321b68e4d0eda073bbad6e005587d9f816518aba2d92df27744b76f5",
+      "bytes": 40351
     },
     "src/game/player-combat.js": {
       "sha256": "668b662c1399a9a784baf105daf32c9f6b3cb6ffcfff28838dab700eb7accea7",
@@ -4343,6 +4347,7 @@
     "src/core/input.js",
     "src/core/loop.js",
     "src/core/runtime-lifecycle.js",
+    "src/core/touch-controls.js",
     "src/engine/audio.js",
     "src/engine/boot-loader.js",
     "src/engine/broadcast-slum-proof-profile.js",

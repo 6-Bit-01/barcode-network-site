@@ -346,6 +346,15 @@ test("System Override launches the standalone adapter first with no host SDK or 
     assert(scripts.includes(required), `Required runtime script is not launched: ${required}`);
   }
   for (const name of scripts) localFile(name, files);
+  const touchScript = "src/core/touch-controls.js";
+  assert.equal(scripts.filter((name) => name === touchScript).length, 1,
+    "Touch controls must have one launched owner");
+  localFile(touchScript, files);
+  for (const name of ["src/core/action-input.js", "src/core/input.js"]) {
+    assert.equal(scripts.filter((script) => script === name).length, 1, name);
+    assert(scripts.indexOf(name) < scripts.indexOf(touchScript),
+      "Touch controls must follow the existing input owners");
+  }
   const gpuScripts = [vendorRoot + "pixi.min.js", "src/engine/cache-road-texture-bank.js", "src/engine/cache-road-gpu-renderer.js",
     "src/engine/cache-road-gpu-context.js", "src/game/cache-road-proof.js"];
   for (const name of gpuScripts) assert.equal(scripts.filter((script) => script === name).length, 1, name);

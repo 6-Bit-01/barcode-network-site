@@ -1,5 +1,147 @@
 /* Enhanced VHS-Era Dystopian Styling for BARCODE: System Override */
 
+/* Native canvas dimensions and fitting stay owned by the renderer. Touch
+   surfaces sit at the viewport edges, including phone safe areas. */
+.touch-controls {
+    position: fixed;
+    inset: 0;
+    z-index: 100010;
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-select: none;
+    color: #eafffa;
+    font-family: Oxanium, system-ui, sans-serif;
+    --touch-gap: 6px;
+    --touch-size: 52px;
+}
+.touch-controls[hidden], .touch-controls [hidden] { display: none !important; }
+.touch-actions, .touch-utilities, .touch-joystick { pointer-events: auto; touch-action: none; }
+.touch-actions {
+    position: absolute;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    right: max(12px, env(safe-area-inset-right));
+    display: grid;
+    grid-template-columns: repeat(3, minmax(64px, 1fr));
+    gap: var(--touch-gap);
+    width: min(300px, calc(100vw - 24px));
+}
+.touch-button {
+    min-width: 44px;
+    min-height: var(--touch-size);
+    padding: 6px 8px;
+    border: 1px solid #8ce7d4;
+    border-radius: 12px;
+    background: rgba(8, 24, 36, .9);
+    color: #eafffa;
+    font: 700 12px/1.2 Oxanium, system-ui, sans-serif;
+    touch-action: none;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.touch-button.is-held, .touch-button.is-latched { background: #266458; border-color: #e9fff6; }
+.touch-button:focus-visible { outline: 3px solid #ffdb8c; outline-offset: 2px; }
+.touch-utilities {
+    position: absolute;
+    top: max(10px, env(safe-area-inset-top));
+    right: max(12px, env(safe-area-inset-right));
+    display: flex;
+    gap: var(--touch-gap);
+}
+.touch-utilities .touch-button { min-width: 64px; }
+.touch-readout {
+    position: absolute;
+    right: max(12px, env(safe-area-inset-right));
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + 124px);
+    width: min(300px, calc(100vw - 24px));
+    max-height: min(240px, calc(100vh - 210px));
+    overflow-y: auto;
+    padding: 12px 14px;
+    border: 1px solid #8ce7d4;
+    border-radius: 12px;
+    background: #081824;
+    font-size: 16px;
+    line-height: 1.45;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+    pointer-events: auto;
+    touch-action: pan-y;
+    user-select: text;
+    -webkit-user-select: text;
+}
+.touch-joystick {
+    position: absolute;
+    left: max(12px, env(safe-area-inset-left));
+    bottom: max(12px, env(safe-area-inset-bottom));
+    width: 164px;
+    height: 164px;
+    border-radius: 24px;
+    background: rgba(5, 18, 29, .3);
+}
+.touch-stick-base {
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 108px; height: 108px;
+    transform: translate(-50%, -50%);
+    border: 2px solid rgba(148, 239, 216, .75);
+    border-radius: 50%;
+    background: rgba(8, 24, 36, .65);
+    pointer-events: none;
+}
+.touch-stick-thumb {
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 48px; height: 48px;
+    transform: translate(-50%, -50%);
+    border: 2px solid #b2ffe4;
+    border-radius: 50%;
+    background: rgba(57, 131, 109, .85);
+}
+.touch-stick-label {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    text-align: center; font-size: 11px; font-weight: 700;
+    text-shadow: 0 1px 3px #000; pointer-events: none;
+}
+.touch-hint {
+    position: absolute;
+    bottom: max(5px, env(safe-area-inset-bottom));
+    left: 50%; transform: translateX(-50%);
+    font-size: 10px; line-height: 1.2;
+    text-align: center; text-shadow: 0 1px 3px #000;
+    pointer-events: none;
+}
+.touch-road .touch-actions { grid-template-columns: repeat(4, minmax(54px, 1fr)); width: 286px; }
+.touch-keypad .touch-actions { grid-template-columns: repeat(3, 1fr); width: 228px; }
+.touch-keypad .touch-button { font-size: 19px; }
+@media (orientation: portrait) {
+    .touch-readout { left: 12px; right: 12px; width: auto; }
+    .touch-actions { left: 12px; right: 12px; width: auto; grid-template-columns: repeat(3, 1fr); }
+    .touch-gameplay .touch-actions { left: auto; right: max(8px, env(safe-area-inset-right)); width: calc(100vw - 184px); grid-template-columns: repeat(2, minmax(44px, 1fr)); }
+    .touch-road .touch-actions { width: calc(100vw - 184px); grid-template-columns: repeat(2, minmax(44px, 1fr)); }
+    .touch-keypad .touch-actions { left: 50%; right: auto; transform: translateX(-50%); width: min(276px, calc(100vw - 24px)); }
+    .touch-joystick { bottom: max(20px, env(safe-area-inset-bottom)); }
+    .touch-hint { bottom: calc(max(20px, env(safe-area-inset-bottom)) + 174px); left: 94px; width: 168px; }
+}
+@media (max-height: 450px) and (orientation: landscape) {
+    .touch-controls { --touch-size: 44px; --touch-gap: 4px; }
+    .touch-actions { bottom: max(6px, env(safe-area-inset-bottom)); }
+    .touch-road .touch-actions { width: 272px; }
+    .touch-joystick { bottom: max(6px, env(safe-area-inset-bottom)); height: 148px; }
+    .touch-hint { display: none; }
+    .touch-button { font-size: 11px; padding: 4px; }
+    .touch-readout { bottom: calc(max(6px, env(safe-area-inset-bottom)) + 106px); font-size: 14px; padding: 8px 10px; max-height: calc(100vh - 172px); }
+}
+@media (max-width: 360px) and (orientation: portrait) {
+    .touch-joystick { left: max(4px, env(safe-area-inset-left)); width: 136px; }
+    .touch-gameplay .touch-actions, .touch-road .touch-actions { width: calc(100vw - 152px); }
+}
+@media (orientation: portrait) and (max-height: 700px) {
+    .touch-road { --touch-size: 44px; --touch-gap: 4px; }
+    .touch-road .touch-actions { width: calc(100vw - 152px); grid-template-columns: repeat(3, minmax(44px, 1fr)); }
+    .touch-road .touch-button { padding: 4px; font-size: 11px; }
+    .touch-road .touch-joystick { left: max(4px, env(safe-area-inset-left)); width: 136px; height: 148px; }
+    .touch-road .touch-hint { display: none; }
+}
+
 /* Full viewport game container - CRITICAL FIX for both modes */
 .game-container {
     width: 100vw;

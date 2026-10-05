@@ -70,6 +70,54 @@ window.FILE_MANIFEST.push({ name: 'src/game/pause-menu.js', exports: ['BARCODE.P
     controllerControls() { return this.combatControls()?roadSkillControls:levelControls; },
     controllerRowCount() { return this.controllerControls().length+5; },
     controllerRowStep() { return this.controllerControls().length > 5 ? 42 : 46; },
+    controllerLabels() {
+      return ['Stick deadzone', 'Button prompts', 'Vibration', ...this.controllerControls().map(([,label]) => label),
+        this.combatControls() ? 'Reset skill mapping' : 'Reset controller defaults', this.titleOpen ? 'Back to settings' : 'Back to pause'];
+    },
+    timingLabels() {
+      return ['Input compensation', 'Visual beat delay', 'Reset timing to zero', this.titleOpen ? 'Back to title' : 'Test in play / Resume', this.titleOpen ? 'Back to settings' : 'Back to pause'];
+    },
+    // A phone readout exposes the selected native menu item, using the same
+    // labels and saved values as the canvas. It owns no settings or input.
+    touchReadout() {
+      if (!this.isPaused()) return '';
+      let label = '', value = '';
+      if (this.view === 'controller') {
+        const c = BARCODE.ControllerSettings, i = this.controllerFocus;
+        label = this.controllerLabels()[i] || 'Controller settings';
+        if (i === 0) value = `${Math.round((c?.deadzone || 0) * 100)}%`;
+        else if (i === 1) value = c?.labels === 'playstation' ? 'PlayStation' : c?.labels === 'xbox' ? 'Xbox' : 'Automatic';
+        else if (i === 2) value = c?.vibration === false ? 'OFF' : 'ON';
+        else {
+          const control = this.controllerControls()[i - 3];
+          if (control) value = this.captureAction === control[0] ? 'Press a controller button. Back cancels.' : c?.button?.(c.bindings[control[0]]) || '';
+        }
+      } else if (this.view === 'timing') {
+        label = this.timingLabels()[this.timingFocus] || 'Timing calibration';
+        const key = ['inputOffsetMs', 'visualOffsetMs'][this.timingFocus];
+        if (key) { const offset = preferences.values[key]; value = `${offset > 0 ? '+' : ''}${offset} ms`; }
+      } else if (this.view === 'archive') {
+        const catalog = this.archiveCatalog(), count = catalog.length;
+        if (this.archiveFocus < count) {
+          const record = this.archiveState().records[this.archiveFocus];
+          label = record?.title || `Record ${catalog[this.archiveFocus]?.number || this.archiveFocus + 1}`;
+          value = record ? 'RECOVERED' : 'UNRECOVERED';
+        } else if (this.archiveFocus === count) label = this.titleOpen ? 'Back to settings' : 'Back to pause';
+        else if (this.archiveFocus === count + 1) label = this.titleOpen ? 'Back to title' : 'Resume game';
+        else { label = `Level ${this.archiveChapters()[this.archiveFocus - count - 2]}`; value = 'Lore archive'; }
+      } else if (this.view === 'crew') {
+        const line = window.tutorialSystem?.recentDialogue?.at(-1);
+        label = 'Recent crew dialogue';
+        value = line ? `${line.speaker}: ${line.text}` : 'Crew dialogue will appear here as you play.';
+      } else {
+        const [key, selectedLabel] = visibleRows()[this.focus] || [];
+        label = key === 'resume' && this.titleOpen ? 'Back to title' : selectedLabel || 'Settings';
+        if (typeof defaults[key] === 'boolean') value = preferences.values[key] ? 'ON' : 'OFF';
+        else if (typeof defaults[key] === 'number') value = `${Math.round(preferences.values[key] * 100)}%`;
+        else if (key === 'fullscreen') value = window.fullscreenManager?.isActive ? 'ON' : 'OFF';
+      }
+      return `${label}${value ? `\n${value}` : ''}${this.message ? `\n${this.message}` : ''}`;
+    },
     isPaused() { return this.titleOpen || !!(window.isPaused || window.gameState?.paused); },
     canvas() { return this.titleOpen ? this.titleCanvas : document.getElementById('gameCanvas'); },
     openTitle() {
@@ -348,8 +396,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/pause-menu.js', exports: ['BARCODE.P
       text('CONTROLLER SETTINGS', 440, 248, 38, '#a0ffe4');
       text(BARCODE.GamepadUI?.unsupported ? 'Controller not recognized. Try another connection or browser.' : BARCODE.GamepadUI?.connected ? 'Controller connected' : 'Connect a controller and press a button.', 440, 307, 20, '#cfa2ff');
       const combat=this.combatControls(),controls=this.controllerControls(),end=3+controls.length;
-      const labels = ['Stick deadzone', 'Button prompts', 'Vibration', ...controls.map(([,label])=>label),
-        combat?'Reset skill mapping':'Reset controller defaults',this.titleOpen ? 'Back to settings' : 'Back to pause'];
+      const labels = this.controllerLabels();
       const actions = controls.map(([action])=>action);
       labels.forEach((label, i) => {
         const y = 350 + i * this.controllerRowStep();
@@ -381,7 +428,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/pause-menu.js', exports: ['BARCODE.P
       text('TIMING CALIBRATION', 440, 250, 42, '#a0ffe4');
       text('Use small steps, then test on the beat in Rhythm Mode.', 440, 320, 23);
       text('Audio keeps its original timing. Scoring windows stay the same.', 440, 360, 21, '#cfa2ff');
-      ['Input compensation', 'Visual beat delay', 'Reset timing to zero', this.titleOpen ? 'Back to title' : 'Test in play / Resume', this.titleOpen ? 'Back to settings' : 'Back to pause'].forEach((label, index) => {
+      this.timingLabels().forEach((label, index) => {
         const y = 430 + index * 86;
         ctx.fillStyle = index === this.timingFocus ? '#16394b' : '#0d2032'; ctx.fillRect(440, y, 1040, 62);
         if (index === this.timingFocus) { ctx.strokeStyle = '#94ffe3'; ctx.strokeRect(440, y, 1040, 62); }

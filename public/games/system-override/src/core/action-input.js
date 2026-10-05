@@ -66,6 +66,9 @@ window.FILE_MANIFEST.push({
       this.keysHeld = new Set();
       this.previousHeld = {};
       this.pendingPresses = {};
+      // Semantic touch sources never share the physical keyboard's key set.
+      this.virtualOwners = new Map();
+      this.virtualPresses = {};
       this.state = stateTemplate();
       this.listenerCount = 0;
       this.disposed = false;
@@ -78,8 +81,37 @@ window.FILE_MANIFEST.push({
     dispose() { if (this.attached && window.removeEventListener) { window.removeEventListener('keydown', this._keydown); window.removeEventListener('keyup', this._keyup); } this.attached = false; this.listenerCount = 0; this.disposed = true; this.reset(); }
     reset() {
       this.keysHeld.clear(); this.previousHeld = {}; this.pendingPresses = {}; this.state = stateTemplate();
+      this.clearVirtualActions();
       this.blockGamepadUntilRelease();
     }
+    virtualHeld(action) { for (const actions of this.virtualOwners.values()) if (actions.has(action)) return true; return false; }
+    setVirtualAction(action, owner, held, event) {
+      if (!ACTIONS.includes(action) || !owner || this.disposed) return false;
+      let actions = this.virtualOwners.get(owner);
+      if (!held) {
+        actions?.delete(action);
+        if (actions && !actions.size) this.virtualOwners.delete(owner);
+        return true;
+      }
+      if (actions?.has(action)) return true;
+      const alreadyHeld = this.virtualHeld(action) || this.keyboardHeld(action) || this.gamepadHeld(action, this.getPads());
+      if (!actions) this.virtualOwners.set(owner, actions = new Set());
+      actions.add(action);
+      const road = BARCODE.CacheRoadProof;
+      const gear = road?.active && road.status === 'playing' && road.introMs === null && road.handoffMs == null;
+      if (!alreadyHeld && (EDGE_ACTIONS.has(action) || gear && ROAD_EDGE_ACTIONS.has(action))) {
+        const queue = this.virtualPresses[action] ||= [];
+        if (queue.length < 16) queue.push({ ...this.capturePress(event), owner });
+      }
+      return true;
+    }
+    releaseVirtualOwner(owner, { discardPresses = false } = {}) {
+      this.virtualOwners.delete(owner);
+      if (discardPresses) for (const action of Object.keys(this.virtualPresses)) {
+        this.virtualPresses[action] = this.virtualPresses[action].filter(press => press.owner !== owner);
+      }
+    }
+    clearVirtualActions() { this.virtualOwners.clear(); this.virtualPresses = {}; }
     blockGamepadUntilRelease() {
       const pads = this.getPads();
       this.gamepadReleaseRequired = new Set(ACTIONS.filter(action => this.gamepadHeld(action, pads)));
@@ -108,7 +140,7 @@ window.FILE_MANIFEST.push({
       const roadGear=road?.active&&road.status==='playing'&&road.introMs===null&&
         road.handoffMs==null&&!road.exiting&&!(window.isPaused||window.gameState?.paused);
       for (const action of roadGear ? ROAD_EDGE_ACTIONS : EDGE_ACTIONS) {
-        if (!(this.keyboardBindings[action] || []).includes(key) || this.keyboardHeld(action)) continue;
+        if (!(this.keyboardBindings[action] || []).includes(key) || this.keyboardHeld(action) || this.virtualHeld(action)) continue;
         const queue = this.pendingPresses[action] ||= [];
         if (queue.length < 16) queue.push(this.capturePress(event));
       }
@@ -130,14 +162,16 @@ window.FILE_MANIFEST.push({
         const padHeld = this.gamepadHeld(action, pads);
         if (!padHeld) this.gamepadReleaseRequired?.delete(action);
         const contextAllows = !shared || action !== 'jump' && action !== 'primary' || (action === 'primary' ? rhythmMode : !rhythmMode);
-        held[action] = this.keyboardHeld(action) || (contextAllows && padHeld && !this.gamepadReleaseRequired?.has(action));
+        held[action] = this.keyboardHeld(action) || this.virtualHeld(action) || (contextAllows && padHeld && !this.gamepadReleaseRequired?.has(action));
       });
       this.state = stateTemplate();
       ACTIONS.forEach(action => {
         const wasHeld = !!this.previousHeld[action];
         const nowHeld = !!held[action];
         const suppressed = this.isSuppressed(action);
-        const queued = this.pendingPresses[action] || [];
+        const physicalQueue = this.pendingPresses[action] || [];
+        const virtualQueue = this.virtualPresses[action];
+        const queued = virtualQueue?.length ? physicalQueue.concat(virtualQueue) : physicalQueue;
         const events = queued.length ? queued : nowHeld && !wasHeld ? [this.capturePress(null)] : [];
         this.state[action] = { held: suppressed ? false : nowHeld, pressed: !suppressed && events.length > 0,
           released: !suppressed && !nowHeld && (wasHeld || queued.length > 0), suppressed,
@@ -145,6 +179,7 @@ window.FILE_MANIFEST.push({
       });
       this.previousHeld = held;
       this.pendingPresses = {};
+      this.virtualPresses = {};
       return this.state;
     }
     keyboardHeld(action) { return (this.keyboardBindings[action] || []).some(key => this.keysHeld.has(key)); }
@@ -200,7 +235,7 @@ window.FILE_MANIFEST.push({
     pressed(action) { return !!(this.state[action] && this.state[action].pressed); }
     held(action) { return !!(this.state[action] && this.state[action].held); }
     released(action) { return !!(this.state[action] && this.state[action].released); }
-    diagnostics() { return { state: clone(this.state), keysHeld: Array.from(this.keysHeld), keyboardBindings: clone(this.keyboardBindings), gamepadBindings: clone(this.gamepadBindings), suppression: clone(this.suppression), listenerCount: this.listenerCount }; }
+    diagnostics() { return { state: clone(this.state), keysHeld: Array.from(this.keysHeld), virtualOwners: this.virtualOwners.size, keyboardBindings: clone(this.keyboardBindings), gamepadBindings: clone(this.gamepadBindings), suppression: clone(this.suppression), listenerCount: this.listenerCount }; }
   }
   ActionInput.ACTIONS = ACTIONS;
   ActionInput.DEFAULT_KEYBOARD = DEFAULT_KEYBOARD;

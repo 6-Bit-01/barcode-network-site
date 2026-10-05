@@ -117,7 +117,9 @@ window.FILE_MANIFEST.push({ name: 'src/game/pause-menu.js', exports: ['BARCODE.P
             this.snapshotContext = this.snapshot.getContext('2d');
           }
           this.snapshot.width = canvas.width; this.snapshot.height = canvas.height;
-          this.snapshotContext?.drawImage(canvas, 0, 0);
+          if(BARCODE.CacheRoadGPU?.snapshotTo?.(this.snapshotContext,canvas)!==true)
+            this.snapshotContext?.drawImage(canvas, 0, 0);
+          BARCODE.CacheRoadGPU?.hide?.();
         }
       }
     },

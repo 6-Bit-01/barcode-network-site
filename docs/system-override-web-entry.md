@@ -35,6 +35,18 @@ normalizes collected repository paths to forward slashes before comparing them
 with its existing allowlist. This changes only the test's platform handling;
 its expected consumers and assertions remain intact.
 
+## October 4, 2026 — GPU release prepared; publication pending
+
+Prepared source head `4bf54f05bdca74ae3a8633298d69810812b7bf8d`, tree `04af299956ebc54070cbc031618621deb3804596`, changes checkers, export metadata and documentation after the physically tested runtime checkpoint `a7b2ba5ed3115bcd24903a7729b5060efacadd92`; runtime and asset bytes are unchanged. The local website package currently carries the tested checkpoint metadata until the final merged-source build is installed. Source PR183 remains draft and final exact-head CI is running; source merge and site delivery have not completed. Prior-head full regression, syntax and package integrity passed, but software GL stalled before the HUD and downstream browser checks were unexercised. The final checker records that environment as performanceUnexercised with GPU gameplay notExercised, preserving bootstrap/resource assertions and the required separate native checks.
+
+The target standalone package contains 88 launched scripts, 774 canonical asset files and 600,657,192 asset bytes. The additions are 149 full-resolution KTX2 derivatives and their manifest. All 624 original artwork, music, sprite and metadata files retain their byte hashes: the sorted original path/size/SHA-256 inventory digest remains `0b2ac58dc88ddb68b595fb8592d242d8478c426d78309fe4ff45b88c04027f56`. The generated public `.standalone-build.json` remains the package ownership/hash record; private receipts and review harnesses stay outside `public/`.
+
+Pinned local PixiJS 8.22.0 (MIT) and Basis Universal 2.50 (Apache-2.0) render the scenery through retained ordered image and analytic-gradient batches. Both views preserve original projection and source crops. The 149 compressed textures plus 22 exact original SVG sources use 248.328 MiB of mip storage; one owned preparation worker terminates before driving. The original complete 1920-by-1080 frame, native foreground, shared controls/music/save owners, hidden entry route and copyright-symbol footer shortcut remain unchanged. Existing saves remain tied to their browser/site origin.
+
+Local fresh run 23 completed 786 GPU frames with CPU draw median/p95/max 15.5/24.3/42.8 ms; earned-boss run 24 completed 232 at 16.0/23.5/35.4 ms. Both measured driving windows had zero Canvas copies, texture uploads or native fallbacks. Genuine graphics loss, complete native fallback/restoration, keyboard/gear/audio, road P/Escape and ordinary Level 1 return with authored bridge P/P passed. The observed timing tails remain; these finite runs do not certify universal 60 FPS or every race frame.
+
+Exact-head runtime/source CI, final merged-source packaging, site check/build, Windows audio CI and Vercel deployment/hash/runtime verification remain pending. Publication is authorized but this section does not claim a published GPU release. The unchanged page/footer need no routing edits. The following sections retain the earlier package and validation history.
+
 ## Standalone package
 
 The generated game uses source commit

@@ -9,8 +9,75 @@ import vm from "node:vm";
 const bundleRoot = path.resolve(fileURLToPath(new URL("../public/games/system-override/", import.meta.url)));
 const markerName = ".standalone-build.json";
 const adapterName = "src/engine/standalone-sprites.js";
+const vendorRoot = "src/vendor/pixi-8.22.0/";
+const basisRoot = "src/vendor/basis-2.50/";
+const textureRoot = "assets/cache-road/gpu-textures/";
+const textureManifestName = textureRoot + "manifest.json";
+const originalAssetCount = 624;
+// Sorted [path, bytes, SHA-256] rows from the original complete 624-asset package.
+// Compressed derivatives may be added; every original identity and byte hash remains pinned.
+const originalAssetInventorySHA256 = "0b2ac58dc88ddb68b595fb8592d242d8478c426d78309fe4ff45b88c04027f56";
+const encoderCommit = "4d6fc70eaf62ad0558e63e8d97eb9766118327a6";
+const transcoderCommit = "9bebe16726b3a61c8c213eeee3b7cffb462ef34e";
+const vendorHashes = {
+  "pixi.min.js": "06d9ef9823e743518793083c296d801e752db128cb1f519fbabe37e1259567ea",
+  "LICENSE": "5ce7447bc57f7349ffc48338782fbcabe613696e00712b20d66bc58e780f9473",
+  "provenance.json": "a5c6a646c2b1b37cbd65356d0475474d9b307910a8d888f8885918d860032075",
+};
+const vendorReferences = {
+  "pixi.min.js": new Set([
+    "http://www.opensource.org/licenses/mit-license", "http://www.pixijs.com/",
+    ...["basis/basis_transcoder.js", "basis/basis_transcoder.wasm", "ktx/libktx.js", "ktx/libktx.wasm"]
+      .map((name) => "https://cdn.jsdelivr.net/npm/pixi.js/transcoders/" + name),
+  ]),
+  "provenance.json": new Set([
+    "https://github.com/pixijs/pixijs/releases/tag/v8.22.0",
+    "https://registry.npmjs.org/pixi.js/-/pixi.js-8.22.0.tgz",
+  ]),
+};
+const basisHashes = {
+  "basis_transcoder.js": "720dd9bd09c7cada6d87f1b7b70cec713df04da88cd641ac3212559353834dc8",
+  "basis_transcoder.wasm": "a0f65d4a30ecb3269d01ead7d0a3477d2b0208146d083625a90623f473f6c139",
+  "LICENSE": "065fcf48d6af21c0b75e23be5ed5753aee75c892e1c2cf178fa6736305614a5c",
+  "provenance.json": "49c856c675a79368ecc76e356eec90ce7aa87bf2f1da302cf51aa1f647fa03ed",
+};
+const basisReferences = {
+  "LICENSE": new Set(["http://www.apache.org/licenses/", "http://www.apache.org/licenses/LICENSE-2.0"]),
+  "provenance.json": new Set(["https://github.com/BinomialLLC/basis_universal/releases/tag/v2_50"]),
+};
 const read = (name) => fs.readFileSync(path.join(bundleRoot, name), "utf8");
 const marker = () => JSON.parse(read(markerName));
+
+function textureManifest() {
+  const value = JSON.parse(read(textureManifestName));
+  assert.equal(value.version, 1);
+  assert.equal(value.encoderCommit, encoderCommit);
+  assert.equal(value.transcoderCommit, transcoderCommit);
+  assert.equal(value.alphaMode, "premultiplied-alpha");
+  assert.equal(value.colorSpace, "unorm");
+  assert.equal(value.sourceCount, 171);
+  assert.equal(value.compressedCount, 149);
+  assert.equal(value.originalCount, 22);
+  assert(value.entries && typeof value.entries === "object" && !Array.isArray(value.entries));
+  assert.equal(Object.keys(value.entries).length, 171, "The complete road texture bank must contain 171 originals");
+  return value;
+}
+
+function derivativeNames(value = textureManifest()) {
+  const names = [textureManifestName];
+  for (const [key, entry] of Object.entries(value.entries)) {
+    assert.match(key, /^[A-Za-z0-9_.-]+$/);
+    assert(["compressed", "original"].includes(entry.kind), `Invalid texture ownership kind: ${key}`);
+    if (entry.kind === "compressed") {
+      assert.equal(entry.path, textureRoot + key + ".ktx2", "Derivative path must match its original PA key");
+      names.push(entry.path);
+    } else assert.equal(entry.path, entry.originalPath, "Original SVG textures must retain their canonical file");
+  }
+  assert.equal(names.length, 150, "Only 149 KTX2 derivatives and their manifest may be added");
+  assert.equal(Object.values(value.entries).filter((entry) => entry.kind === "original").length, 22);
+  assert.equal(new Set(names).size, names.length, "Texture derivatives must have unique ownership");
+  return new Set(names);
+}
 
 function localFile(name, files = marker().files) {
   assert.equal(typeof name, "string", "Bundle path must be a string");
@@ -46,6 +113,68 @@ async function digest(file) {
   return { sha256: hash.digest("hex"), bytes };
 }
 
+function header(file, size) {
+  const fd = fs.openSync(file, "r");
+  try {
+    const data = Buffer.alloc(Math.min(size, fs.fstatSync(fd).size));
+    assert.equal(fs.readSync(fd, data, 0, data.length, 0), data.length);
+    return data;
+  } finally { fs.closeSync(fd); }
+}
+
+function originalDimensions(file) {
+  const data = header(file, 65536);
+  if (path.extname(file) === ".svg") {
+    const svg = data.toString("utf8").match(/<svg\b([^>]*)>/i);
+    assert(svg, "An original SVG must contain its authored viewport");
+    const width = svg[1].match(/\bwidth=["']([0-9.]+)(?:px)?["']/i);
+    const height = svg[1].match(/\bheight=["']([0-9.]+)(?:px)?["']/i);
+    if (width && height) return [Number(width[1]), Number(height[1])];
+    const box = svg[1].match(/\bviewBox=["']([^"']+)["']/i);
+    assert(box, "An original SVG must declare dimensions or viewBox");
+    const dimensions = box[1].trim().split(/[\s,]+/).map(Number);
+    assert.equal(dimensions.length, 4);
+    assert(dimensions.every(Number.isFinite));
+    return dimensions.slice(2);
+  }
+  if (data.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
+    assert.equal(data.toString("ascii", 12, 16), "IHDR");
+    return [data.readUInt32BE(16), data.readUInt32BE(20)];
+  }
+  if (data.toString("ascii", 0, 4) === "RIFF" && data.toString("ascii", 8, 12) === "WEBP") {
+    for (let offset = 12; offset + 8 <= data.length;) {
+      const kind = data.toString("ascii", offset, offset + 4), size = data.readUInt32LE(offset + 4), start = offset + 8;
+      if (kind === "VP8X") return [1 + data.readUIntLE(start + 4, 3), 1 + data.readUIntLE(start + 7, 3)];
+      if (kind === "VP8L") {
+        assert.equal(data[start], 0x2f);
+        const bits = data.readUInt32LE(start + 1);
+        return [1 + (bits & 0x3fff), 1 + ((bits >>> 14) & 0x3fff)];
+      }
+      if (kind === "VP8 ") {
+        assert(data.subarray(start + 3, start + 6).equals(Buffer.from([0x9d, 0x01, 0x2a])));
+        return [data.readUInt16LE(start + 6) & 0x3fff, data.readUInt16LE(start + 8) & 0x3fff];
+      }
+      offset = start + size + (size & 1);
+    }
+  }
+  assert.fail(`The original texture dimension header is unsupported: ${path.basename(file)}`);
+}
+
+function safeUInt64(data, offset) {
+  const value = data.readBigUInt64LE(offset);
+  assert(value <= BigInt(Number.MAX_SAFE_INTEGER), "KTX2 range exceeds safe integer bounds");
+  return Number(value);
+}
+
+function rgbaMipBytes(width, height) {
+  let bytes = 0;
+  for (;;) {
+    bytes += width * height * 4;
+    if (width === 1 && height === 1) return bytes;
+    width = Math.max(1, width >> 1); height = Math.max(1, height >> 1);
+  }
+}
+
 const quiet = { log() {}, warn() {}, error() {} };
 const context = (extra = {}) => vm.createContext({ window: { BARCODE: {}, ...extra }, console: quiet, ...extra });
 const load = (sandbox, name) => vm.runInContext(read(name), sandbox, { filename: name });
@@ -75,6 +204,8 @@ test("System Override ships a complete, sanitized ownership and SHA-256 manifest
   assert.deepEqual(inventory(), owner.ownedFiles, "Public files must exactly match generated ownership");
   for (const required of ["index.html", "style.css", "sprites-manifest.json", adapterName,
     "src/core/runtime-lifecycle.js", "src/engine/renderer.js", "src/engine/presentation-assets.js",
+    "src/engine/cache-road-texture-bank.js", "src/engine/cache-road-texture-worker.js",
+    "src/engine/level-scene-resources.js", textureManifestName,
     "src/game/game-initializer.js", "src/game/main-new.js", "src/utils/math.js"]) {
     assert(names.includes(required), `Incomplete game package: ${required}`);
   }
@@ -84,6 +215,17 @@ test("System Override ships a complete, sanitized ownership and SHA-256 manifest
   // Preserved originals may also be tracked canonical blobs; ownership is a union.
   assert(assets.length >= owner.canonicalAssetCount &&
     assets.length <= owner.canonicalAssetCount + owner.preservedOriginalCount);
+  const derivatives = derivativeNames();
+  for (const name of derivatives) localFile(name, owner.files);
+  assert.deepEqual(assets.filter((name) => name.startsWith(textureRoot)).sort(), [...derivatives].sort(),
+    "Only the declared manifest and exact KTX2 bank may be added as texture derivatives");
+  const originalNames = assets.filter((name) => !derivatives.has(name)).sort();
+  assert.equal(originalNames.length, originalAssetCount, "All 624 original assets must remain present");
+  assert.equal(owner.canonicalAssetCount - derivatives.size, originalAssetCount,
+    "Canonical ownership must count originals and the declared derivatives separately");
+  const originalRows = originalNames.map((name) => [name, owner.files[name].bytes, owner.files[name].sha256]);
+  assert.equal(createHash("sha256").update(JSON.stringify(originalRows)).digest("hex"), originalAssetInventorySHA256,
+    "Original artwork, music, sprite data or asset metadata changed");
   const originals = JSON.parse(read("assets/standalone/originals.json"));
   assert(Array.isArray(originals));
   assert.equal(originals.length, owner.preservedOriginalCount);
@@ -109,7 +251,87 @@ test("System Override ships a complete, sanitized ownership and SHA-256 manifest
     if (name.startsWith("assets/")) assetBytes += record.bytes;
   }
   assert.equal(owner.assetBytes, assetBytes, "Asset byte total differs from the complete hash manifest");
-  t.diagnostic(`${names.length} payload files verified; ${assets.length} assets, ${assetBytes} asset bytes`);
+  t.diagnostic(`${names.length} payload files verified; ${originalNames.length} unchanged originals plus ${derivatives.size} texture derivatives, ${assetBytes} asset bytes`);
+});
+
+test("System Override's 171 road sources preserve full resolution and original bytes with 149 local compressed derivatives", (t) => {
+  const files = marker().files, bank = textureManifest();
+  const derivatives = derivativeNames(bank);
+  const signature = Buffer.from([0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a]);
+  let compressedBytes = 0, residentMipBytes = 0, svgMipBytes = 0, originalMipBytes = 0;
+  for (const [key, entry] of Object.entries(bank.entries)) {
+    assert.equal(typeof entry.originalPath, "string");
+    assert(entry.originalPath.startsWith("assets/") && !derivatives.has(entry.originalPath));
+    const originalFile = localFile(entry.originalPath, files), file = localFile(entry.path, files);
+    assert.equal(entry.originalSHA256, files[entry.originalPath].sha256, `Original source hash changed: ${key}`);
+    assert.equal(entry.sha256, files[entry.path].sha256, `Compressed source hash changed: ${key}`);
+    assert.equal(entry.bytes, files[entry.path].bytes, `Compressed source byte count changed: ${key}`);
+    for (const name of ["originalWidth", "originalHeight", "width", "height", "levels", "bytes", "rgbaMipBytes"]) {
+      assert(Number.isSafeInteger(entry[name]) && entry[name] > 0, `Invalid ${name}: ${key}`);
+    }
+    assert.deepEqual(originalDimensions(originalFile), [entry.originalWidth, entry.originalHeight],
+      `Compressed bank misstates original image dimensions: ${key}`);
+    assert.equal(entry.rgbaMipBytes, rgbaMipBytes(entry.originalWidth, entry.originalHeight));
+    originalMipBytes += entry.rgbaMipBytes;
+    if (entry.kind === "original") {
+      assert.equal(path.extname(entry.originalPath), ".svg", "Only the 22 exact authored SVG textures retain original GPU storage");
+      assert.equal(entry.sha256, entry.originalSHA256);
+      assert.equal(entry.width, entry.originalWidth);
+      assert.equal(entry.height, entry.originalHeight);
+      assert.equal(entry.levels, Math.floor(Math.log2(Math.max(entry.width, entry.height))) + 1);
+      svgMipBytes += entry.rgbaMipBytes;
+      continue;
+    }
+    assert.equal(path.extname(entry.originalPath), ".webp", "Compressed sources must derive from the original 149 WebP files");
+    assert(Number.isSafeInteger(entry.bc7MipBytes) && entry.bc7MipBytes > 0);
+    assert.equal(entry.width, Math.ceil(entry.originalWidth / 4) * 4, `Original width was resampled: ${key}`);
+    assert.equal(entry.height, Math.ceil(entry.originalHeight / 4) * 4, `Original height was resampled: ${key}`);
+    assert.equal(entry.paddedRgbaMipBytes, rgbaMipBytes(entry.width, entry.height));
+    assert.equal(entry.levels, Math.floor(Math.log2(Math.max(entry.width, entry.height))) + 1,
+      `The original-resolution texture must retain its complete mip chain: ${key}`);
+    const data = header(file, 80 + entry.levels * 24);
+    assert.equal(data.length, 80 + entry.levels * 24);
+    assert(data.subarray(0, 12).equals(signature), `Invalid KTX2 identifier: ${key}`);
+    assert.equal(data.readUInt32LE(12), 0, `KTX2 must use Basis UASTC, not an unrelated Vulkan format: ${key}`);
+    assert.equal(data.readUInt32LE(16), 1);
+    assert.equal(data.readUInt32LE(20), entry.width);
+    assert.equal(data.readUInt32LE(24), entry.height);
+    assert.equal(data.readUInt32LE(28), 0, "Road sources must remain 2D");
+    assert(data.readUInt32LE(32) <= 1, "Road sources must not become texture arrays");
+    assert.equal(data.readUInt32LE(36), 1, "Road sources must not become cubemaps");
+    assert.equal(data.readUInt32LE(40), entry.levels);
+    assert.equal(data.readUInt32LE(44), 2, "The approved KTX2 bank uses lossless Zstandard supercompression");
+    assert.equal(safeUInt64(data, 64), 0);
+    assert.equal(safeUInt64(data, 72), 0);
+    const dfdOffset = data.readUInt32LE(48), dfdLength = data.readUInt32LE(52);
+    assert(dfdOffset >= data.length && dfdLength >= 28 && dfdOffset + dfdLength <= entry.bytes);
+    const fd = fs.openSync(file, "r"), dfd = Buffer.alloc(28);
+    try { assert.equal(fs.readSync(fd, dfd, 0, dfd.length, dfdOffset), dfd.length); }
+    finally { fs.closeSync(fd); }
+    assert.equal(dfd.readUInt32LE(0), dfdLength);
+    assert.equal(dfd[12], 166, "Compressed bank must contain legacy UASTC blocks");
+    assert.equal(dfd[14], 1, "Compressed colors must retain UNORM transfer");
+    assert.equal(dfd[15] & 1, 1, "Compressed alpha must be premultiplied exactly once");
+    let width = entry.width, height = entry.height, mipBytes = 0;
+    const ranges = [];
+    for (let level = 0; level < entry.levels; level++) {
+      const index = 80 + level * 24, offset = safeUInt64(data, index), length = safeUInt64(data, index + 8);
+      const expanded = safeUInt64(data, index + 16), expected = Math.ceil(width / 4) * Math.ceil(height / 4) * 16;
+      assert(offset >= data.length && length > 0 && offset + length <= entry.bytes, `Invalid compressed mip range: ${key}/${level}`);
+      assert.equal(expanded, expected, `Mip dimensions or UASTC block size changed: ${key}/${level}`);
+      ranges.push([offset, offset + length]); mipBytes += expected;
+      width = Math.max(1, width >> 1); height = Math.max(1, height >> 1);
+    }
+    ranges.sort((a, b) => a[0] - b[0]);
+    for (let i = 1; i < ranges.length; i++) assert(ranges[i - 1][1] <= ranges[i][0], "KTX2 mip ranges overlap");
+    assert.equal(entry.bc7MipBytes, mipBytes, `Full-resolution resident mip estimate changed: ${key}`);
+    compressedBytes += entry.bytes; residentMipBytes += mipBytes;
+  }
+  assert.equal(bank.originalRgbaMipBytes, originalMipBytes);
+  assert.equal(bank.compressedGpuMipBytes, residentMipBytes);
+  assert.equal(bank.svgGpuMipBytes, svgMipBytes);
+  assert.equal(bank.allGpuMipBytes, residentMipBytes + svgMipBytes);
+  t.diagnostic(`149 original-resolution KTX2 derivatives plus 22 exact SVG sources; ${compressedBytes} derivative bytes, ${residentMipBytes} BC7 mip bytes; browser presentation and recovery still require actual runtime checks`);
 });
 
 test("System Override launches the standalone adapter first with no host SDK or private review harness", () => {
@@ -124,11 +346,48 @@ test("System Override launches the standalone adapter first with no host SDK or 
     assert(scripts.includes(required), `Required runtime script is not launched: ${required}`);
   }
   for (const name of scripts) localFile(name, files);
+  const gpuScripts = [vendorRoot + "pixi.min.js", "src/engine/cache-road-texture-bank.js", "src/engine/cache-road-gpu-renderer.js",
+    "src/engine/cache-road-gpu-context.js", "src/game/cache-road-proof.js"];
+  for (const name of gpuScripts) assert.equal(scripts.filter((script) => script === name).length, 1, name);
+  for (let i = 1; i < gpuScripts.length; i++) {
+    assert(scripts.indexOf(gpuScripts[i - 1]) < scripts.indexOf(gpuScripts[i]), "GPU renderer load order changed");
+  }
+  for (const [name, sha256] of Object.entries(vendorHashes)) {
+    assert.equal(createHash("sha256").update(fs.readFileSync(localFile(vendorRoot + name, files))).digest("hex"),
+      sha256, "Pinned renderer distribution changed: " + name);
+  }
+  const provenance = JSON.parse(read(vendorRoot + "provenance.json"));
+  assert.equal(provenance.version, "8.22.0");
+  assert.equal(provenance.license, "MIT");
+  for (const [name, sha256] of Object.entries(basisHashes)) {
+    assert.equal(createHash("sha256").update(fs.readFileSync(localFile(basisRoot + name, files))).digest("hex"),
+      sha256, "Pinned texture decoder distribution changed: " + name);
+  }
+  const basisProvenance = JSON.parse(read(basisRoot + "provenance.json"));
+  assert.equal(basisProvenance.name, "basis_universal");
+  assert.equal(basisProvenance.version, "2.50");
+  assert.equal(basisProvenance.releaseTag, "v2_50");
+  assert.equal(basisProvenance.sourceCommit, transcoderCommit);
+  assert.equal(basisProvenance.license, "Apache-2.0");
+  assert.deepEqual(basisProvenance.embeddedExternalUrls, []);
+  for (const name of ["basis_transcoder.js", "basis_transcoder.wasm", "LICENSE"]) {
+    assert.equal(basisProvenance.files[name].sha256, basisHashes[name]);
+    assert.equal(basisProvenance.files[name].bytes, files[basisRoot + name].bytes);
+    assert.match(basisProvenance.files[name].gitBlob, /^[0-9a-f]{40}$/);
+  }
+  assert(!scripts.includes(basisRoot + "basis_transcoder.js"), "The decoder must run only in its owned loading worker");
+  assert(!scripts.includes("src/engine/cache-road-texture-worker.js"), "The worker must not run as a page script");
   const runtimeNames = names.filter((name) => !name.startsWith("assets/"));
   for (const name of runtimeNames) {
-    assert(["index.html", "style.css", "sprites-manifest.json"].includes(name) || /^src\/.+\.js$/.test(name),
+    const pinnedVendorName = name.startsWith(vendorRoot) ? name.slice(vendorRoot.length) : null;
+    const pinnedBasisName = name.startsWith(basisRoot) ? name.slice(basisRoot.length) : null;
+    assert(["index.html", "style.css", "sprites-manifest.json"].includes(name) || /^src\/.+\.js$/.test(name) ||
+      pinnedVendorName && Object.hasOwn(vendorHashes, pinnedVendorName) ||
+      pinnedBasisName && Object.hasOwn(basisHashes, pinnedBasisName),
       `Unexpected public runtime or review file: ${name}`);
     assert.doesNotMatch(name, /(?:^|[\/-])(?:private|local-review|browser-review|standalone-review|review-harness)(?:[.\/-]|$)/i);
+    // Binary WASM bytes are checked against the official pin above; they are not source text.
+    if (pinnedBasisName === "basis_transcoder.wasm") continue;
     const source = read(name);
     assert.doesNotMatch(source, /vendorSDK|\/lib\/MakkoEngine\.min\.js|(?:PRIVATE_LOCAL_REVIEW|PRIVATE_REVIEW_HARNESS|standalone-review\.html|local-review\.html)/i,
       `Host SDK or private harness survived in ${name}`);
@@ -138,7 +397,10 @@ test("System Override launches the standalone adapter first with no host SDK or 
     for (const match of source.matchAll(/https?:\/\/[^\s'"`<>]+/g)) {
       const url = match[0];
       // Traffic sourceUrl is inert original GIF provenance; Google Fonts remains intentional.
-      assert(/^https?:\/\/www\.w3\.org\//.test(url) || /^http:\/\/localhost\//.test(url) ||
+      // Exact pinned Pixi bytes retain unused optional compressed-loader defaults and license/provenance URLs.
+      assert(pinnedVendorName && vendorReferences[pinnedVendorName]?.has(url) ||
+        pinnedBasisName && basisReferences[pinnedBasisName]?.has(url) ||
+        /^https?:\/\/www\.w3\.org\//.test(url) || /^http:\/\/localhost\//.test(url) ||
         name === "index.html" && url.startsWith("https://fonts.googleapis.com/") ||
         name === "src/engine/traffic-sheets.js" && /^https:\/\/i\.postimg\.cc\/(?:xj3VcRP3\/Ship1|T1LNxnfz\/Ship2|1zM9TVmz\/Ship3)\.gif$/.test(url),
       `Unexpected external runtime reference in ${name}: ${url}`);
@@ -153,7 +415,7 @@ test("System Override launches the standalone adapter first with no host SDK or 
   }
 });
 
-test("System Override's actual sprite, presentation, music and ship registries resolve local package files", (t) => {
+test("System Override's actual sprite, presentation, music and ship registries resolve local package files", async (t) => {
   const files = marker().files;
   const manifest = JSON.parse(read("sprites-manifest.json"));
   assert(manifest.characters && Object.keys(manifest.characters).length > 0);
@@ -176,12 +438,27 @@ test("System Override's actual sprite, presentation, music and ship registries r
     "The shipped initializer must accept the shipped local sprite manifest");
 
   const presentationPaths = [];
+  const bank = textureManifest(), bankPaths = new Map(Object.values(bank.entries).map((entry) => [entry.originalPath, entry]));
   class LocalImage {
-    set src(url) { localFile(url, files); presentationPaths.push(url); }
+    set src(url) {
+      localFile(url, files); presentationPaths.push(url);
+      const entry = bankPaths.get(url.replace(/^\.\//, ""));
+      this.naturalWidth = this.width = entry?.originalWidth || 1;
+      this.naturalHeight = this.height = entry?.originalHeight || 1;
+      queueMicrotask(() => this.onload?.());
+    }
   }
   const presentation = context({ Image: LocalImage });
   load(presentation, "src/engine/presentation-assets.js");
   assert(presentationPaths.length > 0, "Production presentation registry did not preload artwork");
+  const descriptors = await presentation.window.BARCODE.PresentationAssets.waitForGpuSources(Object.keys(bank.entries));
+  assert.equal(descriptors.length, 171, "Every texture-bank key must belong to the ready production presentation registry");
+  for (const descriptor of descriptors) {
+    const entry = bank.entries[descriptor.key];
+    assert.equal(descriptor.path, entry.originalPath, `Texture bank targets different production art: ${descriptor.key}`);
+    assert.equal(descriptor.image.naturalWidth, entry.originalWidth);
+    assert.equal(descriptor.image.naturalHeight, entry.originalHeight);
+  }
 
   const music = context();
   load(music, "src/engine/music-profiles.js");
@@ -231,7 +508,12 @@ test("System Override preserves native 1920 by 1080 backing and the complete fit
   assert.match(container, /inset:\s*0/);
   assert.match(container, /display:\s*block/);
   assert.match(container, /flex:\s*none/);
-  const game = css.match(/#gameCanvas\s*\{([^}]+)\}/)[1];
+  const sharedRule=css.match(/#gameCanvas\s*,\s*#cacheRoadGpuCanvas\s*\{([^}]+)\}/);
+  assert(sharedRule,'Native and GPU canvases must share the complete viewport fit');
+  const game=sharedRule[1];
+  assert(/#gameCanvas\s*\{\s*z-index:\s*1;/.test(css)&&
+    /#cacheRoadGpuCanvas\s*\{\s*z-index:\s*0;\s*pointer-events:\s*none;/.test(css));
+  assert(/#gameCanvas\.cache-road-gpu-active\s*\{\s*background:\s*transparent;/.test(css));
   assert.match(game, /position:\s*absolute/);
   assert.match(game, /left:\s*50%/);
   assert.match(game, /top:\s*50%/);

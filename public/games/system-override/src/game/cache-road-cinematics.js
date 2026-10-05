@@ -85,12 +85,14 @@ window.FILE_MANIFEST.push({name:'src/game/cache-road-cinematics.js',
       ctx.font='16px Oxanium, monospace';ctx.fillText(`${button} · SKIP`,1856,1047);
     } finally {ctx.restore();}
   }
+  const hudContexts=new WeakMap();
+  function hudContextInfo(context) {return hudContexts.get(context)||null;}
   function withHUDAlpha(context,alpha) {
     const fade=clamp(alpha,.001,1),methods=new Map();
     // This is the existing frame context. Bound methods retain native Canvas
     // receivers, and logical alpha reads avoid multiplying the fade twice
     // when a painter uses `globalAlpha *= itsOwnAlpha`.
-    return new Proxy(context,{
+    const proxy=new Proxy(context,{
       get(target,key) {
         if(key==='globalAlpha')return target.globalAlpha/fade;
         const value=Reflect.get(target,key,target);
@@ -103,6 +105,10 @@ window.FILE_MANIFEST.push({name:'src/game/cache-road-cinematics.js',
         return Reflect.set(target,key,value,target);
       }
     });
+    // Only proxies authored here may unwrap to the shared frame context.
+    // The scene recorder still reads this proxy's logical, unfaded alpha.
+    hudContexts.set(proxy,Object.freeze({frameContext:context,opacity:fade}));
+    return proxy;
   }
-  B.CacheRoadCinematics=Object.freeze({pose,drawOverlay,withHUDAlpha,durations,openingLines,outroLines});
+  B.CacheRoadCinematics=Object.freeze({pose,drawOverlay,withHUDAlpha,hudContextInfo,durations,openingLines,outroLines});
 })(window.BARCODE=window.BARCODE||{});

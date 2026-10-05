@@ -1,9 +1,9 @@
 {
   "builder": "barcode-system-override-standalone-v1",
   "status": "complete",
-  "sourceCommit": "d41be793d35d1d5603255abca8ff80960b9d2653",
-  "sourceTree": "044f3b30321f2c47a796adefae9280d1eeab7010",
-  "builderSHA256": "caf8d8e5323c0a6246c3b77da4b02d175ea78f8a6eb560f3aaae6c9dc7d316d3",
+  "sourceCommit": "a7b2ba5ed3115bcd24903a7729b5060efacadd92",
+  "sourceTree": "5dbeef35fe2de98fdc5196a509d01493e11a7830",
+  "builderSHA256": "e87247f58f87437e6668b14a10670fde08e3bf0b5e251196a1767b4414cabe0e",
   "files": {
     "assets/audio/broadcast-slum-proof-carrier.wav": {
       "sha256": "7d9eb892d074c17ee1047c33f3a4264eeac3d4f954c856ce35745a2a484a901c",
@@ -440,6 +440,606 @@
     "assets/cache-road/encounters/sources/push-arc.png": {
       "sha256": "c512a4d1732b503ad51f47c4fc6984af7877386bcdc05c75ae1865f8f32e0508",
       "bytes": 791558
+    },
+    "assets/cache-road/gpu-textures/cacheAudit.ktx2": {
+      "sha256": "2f73ff09c11a12063d547bb7510c2284373b37f5ffe5df8e7003f53a4f7534e0",
+      "bytes": 523640
+    },
+    "assets/cache-road/gpu-textures/cacheBarricade.ktx2": {
+      "sha256": "b20681020ff4198833c384ff5fe475f082c64818e18b0e183090d6d86367eae2",
+      "bytes": 438171
+    },
+    "assets/cache-road/gpu-textures/cacheBlacktop.ktx2": {
+      "sha256": "edc43395bdda21bd805ebc13382e71d73f27105b7b815b3e93e4ab92da80782e",
+      "bytes": 1867592
+    },
+    "assets/cache-road/gpu-textures/cacheBloodSplatter.ktx2": {
+      "sha256": "ab6f56ff16fc137ce0b19ec349a100ee69e38dee276e3d3faab9d8a9ea2ad124",
+      "bytes": 686245
+    },
+    "assets/cache-road/gpu-textures/cacheBrakeReflection.ktx2": {
+      "sha256": "8e6b488f2910c87a888bbd5c15bddcc8ba54c5b9660854754362116a0fc5e7fc",
+      "bytes": 55308
+    },
+    "assets/cache-road/gpu-textures/cacheCombatBike.ktx2": {
+      "sha256": "063ee58bfd09fb8d1e40af5a9c8fa1c046feaceb61939a4a6f7c264f6e3b0b4d",
+      "bytes": 802954
+    },
+    "assets/cache-road/gpu-textures/cacheCombatBikeCrash.ktx2": {
+      "sha256": "837b970e30390487896c67e5991ae370accfe5d1f93618136660930ff0c44cd3",
+      "bytes": 729266
+    },
+    "assets/cache-road/gpu-textures/cacheCombatBlast.ktx2": {
+      "sha256": "2064d19170eca663e19cb6247545ae87ab40bef82d7cf1673c7b67cc061e598d",
+      "bytes": 866028
+    },
+    "assets/cache-road/gpu-textures/cacheCombatHostiles.ktx2": {
+      "sha256": "c9dbcba0ebc2cab0909a67f70b04914b9de34703ef0f41d27d6edfc8d9e12a57",
+      "bytes": 988175
+    },
+    "assets/cache-road/gpu-textures/cacheCourier.ktx2": {
+      "sha256": "1f8add6bdf73248c007d4f0954c6d92004c649d4f640b7645e008ba8995f0461",
+      "bytes": 477894
+    },
+    "assets/cache-road/gpu-textures/cacheDamagedExhaust.ktx2": {
+      "sha256": "8bc70e57f559f32fbf70b9861d4e8fc078d871bbde86d61ee8b02d132fd2b156",
+      "bytes": 26842
+    },
+    "assets/cache-road/gpu-textures/cacheDataLFrontFill.ktx2": {
+      "sha256": "b42bb6438d78eed6bff102b7009f4d412394880529b48a828b0989e2978ccc5d",
+      "bytes": 1340223
+    },
+    "assets/cache-road/gpu-textures/cacheDataLFrontGap.ktx2": {
+      "sha256": "fbd47bac7e0fbf27747c5f2769837a811d22f6d2722fd1cc4bdfb7e67510a0a4",
+      "bytes": 989674
+    },
+    "assets/cache-road/gpu-textures/cacheDataLMiddle.ktx2": {
+      "sha256": "819976148086687bfaeb211a6e45118741d6fe8054ecff4247cbadbcf7faa8e8",
+      "bytes": 1074978
+    },
+    "assets/cache-road/gpu-textures/cacheDataLRear.ktx2": {
+      "sha256": "f29a2927cf39772b7f5a55f2993a2bd161f6c7f63fe955a0fee7fb2a81bfac39",
+      "bytes": 1054103
+    },
+    "assets/cache-road/gpu-textures/cacheDataRFrontFill.ktx2": {
+      "sha256": "f63dd81224e620655f894164fe948f7e6ab983ff05f00d3504e12dff8de2b5ea",
+      "bytes": 1144351
+    },
+    "assets/cache-road/gpu-textures/cacheDataRFrontGap.ktx2": {
+      "sha256": "5473dc88ce9563c929773b4738c10ce8677f85749ca0d1147f6e5ca6aa6a85ba",
+      "bytes": 946516
+    },
+    "assets/cache-road/gpu-textures/cacheDataRMiddle.ktx2": {
+      "sha256": "25a4becd4143c5cdb4c1536712134b335810e125ec4e02aa78726549f9a377ce",
+      "bytes": 1205957
+    },
+    "assets/cache-road/gpu-textures/cacheDataRRear.ktx2": {
+      "sha256": "16cd878c55f58ce1e4c98112fb7f1d198d5aa71b415d64f2f2e1a4578b669ffe",
+      "bytes": 1059791
+    },
+    "assets/cache-road/gpu-textures/cacheDistantCity.ktx2": {
+      "sha256": "591b0fb879d8d48462aa2bc814bf01d1c5a74119fe1d7948a903a519bdc56058",
+      "bytes": 627409
+    },
+    "assets/cache-road/gpu-textures/cacheFly1.ktx2": {
+      "sha256": "18d488d4832d2280b58d772dc875e4922c37b45c5cc3b86a4bd10a9dc3fc1432",
+      "bytes": 1480456
+    },
+    "assets/cache-road/gpu-textures/cacheFly3.ktx2": {
+      "sha256": "6e733033871ad0dfd10f127b50a73339df50d3005ec95cbd3d3ca26c12ebb9b5",
+      "bytes": 2626170
+    },
+    "assets/cache-road/gpu-textures/cacheFreight.ktx2": {
+      "sha256": "e41643e81eb450b31458ef946bd9d562eba519a759a1c4d8786d2c125a5a78a6",
+      "bytes": 632527
+    },
+    "assets/cache-road/gpu-textures/cacheGreenhouseLFrontFill.ktx2": {
+      "sha256": "1203fced7a7199635c0894c7f03776165d7750ff3e7ef1682ae88da51f540fdc",
+      "bytes": 1253237
+    },
+    "assets/cache-road/gpu-textures/cacheGreenhouseLFrontGap.ktx2": {
+      "sha256": "d3d856c1e96c8c3aa5ec93d6bfc5ca3355dd7f727df473f1df85e3e076dcf3fb",
+      "bytes": 1052153
+    },
+    "assets/cache-road/gpu-textures/cacheGreenhouseLMiddle.ktx2": {
+      "sha256": "0a1a32432b80a85ad816058d80c30df8bf075c7405e949292325682d4d01c430",
+      "bytes": 1397341
+    },
+    "assets/cache-road/gpu-textures/cacheGreenhouseLRear.ktx2": {
+      "sha256": "d36b7a74b2de1264965d5ef3be3ada51b8b3bc3498a6ee1f0e4e9464085fa85e",
+      "bytes": 1110652
+    },
+    "assets/cache-road/gpu-textures/cacheGreenhouseRFrontFill.ktx2": {
+      "sha256": "c8b74f927bc7e56f5ae11cac8d77144c39c6768f0ed6be4ce0e00bf964c5507e",
+      "bytes": 1235126
+    },
+    "assets/cache-road/gpu-textures/cacheGreenhouseRFrontGap.ktx2": {
+      "sha256": "8fca36bb1d86fbac225edf743be2e1b19157a44069c463f204ff08dc2a2c231a",
+      "bytes": 1187346
+    },
+    "assets/cache-road/gpu-textures/cacheGreenhouseRMiddle.ktx2": {
+      "sha256": "0d05e40756a5b872abf31aeb48af6a2edae0ddc114dbe67ba9591aa76ac89902",
+      "bytes": 1230359
+    },
+    "assets/cache-road/gpu-textures/cacheGreenhouseRRear.ktx2": {
+      "sha256": "70e3625a785a52dd4d5e4a21c04f22f20bec72e28fcfb431d013e376507b04e1",
+      "bytes": 1101160
+    },
+    "assets/cache-road/gpu-textures/cacheGreenhouseWorkshop.ktx2": {
+      "sha256": "aef808e22de4ea7845a7a18573258bb30fbbc8d46815f92f2c0241c23dda3717",
+      "bytes": 1223299
+    },
+    "assets/cache-road/gpu-textures/cacheGroundClusterL1.ktx2": {
+      "sha256": "700a2433233c45fe55f669e8e45cecd3a568b94c99afdea8f3947a85d49a2d92",
+      "bytes": 1179597
+    },
+    "assets/cache-road/gpu-textures/cacheGroundClusterL2.ktx2": {
+      "sha256": "d3f34e8d4667d16ffaed9b03754ef9dcace9d4a2763b7c3a3dc2d5bc71195999",
+      "bytes": 1245100
+    },
+    "assets/cache-road/gpu-textures/cacheGroundClusterL3.ktx2": {
+      "sha256": "68fedde93f94821142dcb810ffc51b279c13e4e87b15854e3580676c7c411f1e",
+      "bytes": 1045732
+    },
+    "assets/cache-road/gpu-textures/cacheGroundClusterR1.ktx2": {
+      "sha256": "dc6d93a59fb48b8cb916f0c492cc4aab7188d906f8c165dacf967a06e445e289",
+      "bytes": 1278045
+    },
+    "assets/cache-road/gpu-textures/cacheGroundClusterR2.ktx2": {
+      "sha256": "6201b96ea522a0ad139890c6ddce397b5211d0cf11c58ffe4ecea5be957ff49b",
+      "bytes": 1166502
+    },
+    "assets/cache-road/gpu-textures/cacheGroundClusterR3.ktx2": {
+      "sha256": "5260e8e7e80bb70091b6ce8cfcef863557a55ec18a9d3f44b92076a964ab0aeb",
+      "bytes": 1142340
+    },
+    "assets/cache-road/gpu-textures/cacheHomesLFrontFill.ktx2": {
+      "sha256": "f7c3d0292b39876a3ac14320d72e18682cb8e0ae18774ea3e9a4a2bdac7b175b",
+      "bytes": 1270561
+    },
+    "assets/cache-road/gpu-textures/cacheHomesLFrontGap.ktx2": {
+      "sha256": "ff74c13d7dc0208b0ffcf8fbba769a49bcfc531732c1d198cc8717c2e048add8",
+      "bytes": 829478
+    },
+    "assets/cache-road/gpu-textures/cacheHomesLMiddle.ktx2": {
+      "sha256": "abd6ed1fe6f65d01f38c35b69368294ee91095a09f3000acee3b0b77e25b9baa",
+      "bytes": 1167312
+    },
+    "assets/cache-road/gpu-textures/cacheHomesLRear.ktx2": {
+      "sha256": "b9e50e443ed357d5e0c7e4fd2454199e7adade4101da46a654bfa4913a2d60e7",
+      "bytes": 1047251
+    },
+    "assets/cache-road/gpu-textures/cacheHomesRFrontFill.ktx2": {
+      "sha256": "5fae4965994446005cc4b3ae0e665dcd51a10add8aef14cfec6b4adb9b55180e",
+      "bytes": 1260625
+    },
+    "assets/cache-road/gpu-textures/cacheHomesRFrontGap.ktx2": {
+      "sha256": "0a2e2eeff5f179dcba2efc041cdf4568234a394d4275f1a7d0d0519bcd733e53",
+      "bytes": 857055
+    },
+    "assets/cache-road/gpu-textures/cacheHomesRMiddle.ktx2": {
+      "sha256": "c08ea8480aa74b22dc2ebcfcb0cb23ccf224c17fd0faae70f5efa4cd4b4649ca",
+      "bytes": 1167599
+    },
+    "assets/cache-road/gpu-textures/cacheHomesRRear.ktx2": {
+      "sha256": "57e3436a9ef1f90ce7425cf32acb35c99cd79b137a21fbc7f69db49e8d9634b1",
+      "bytes": 1088259
+    },
+    "assets/cache-road/gpu-textures/cacheLocalStreet.ktx2": {
+      "sha256": "5955731cf0fd0630fee8c121e52f24797911c35e48fcbcaf0225ab0ba2b4dcb2",
+      "bytes": 2032355
+    },
+    "assets/cache-road/gpu-textures/cacheMarketLFrontFill.ktx2": {
+      "sha256": "4865e88690a84ce32571e89f307602ccc4d280ea819fe219ce23e090afc30240",
+      "bytes": 1375596
+    },
+    "assets/cache-road/gpu-textures/cacheMarketLFrontGap.ktx2": {
+      "sha256": "e234bec1bb77bf97203b22bf53ad73fae1a9ae61641852819f03b8805f8ad4d3",
+      "bytes": 914013
+    },
+    "assets/cache-road/gpu-textures/cacheMarketLMiddle.ktx2": {
+      "sha256": "1416f2879f2a4d96d14ffc7077cfb5c801d1b7360d7167d82c27621d664cf775",
+      "bytes": 1255682
+    },
+    "assets/cache-road/gpu-textures/cacheMarketLRear.ktx2": {
+      "sha256": "e306b116ad2835f3d7f08c7d9c770b3b5c9940e14f7cdecf0b56a916cedc9bad",
+      "bytes": 897338
+    },
+    "assets/cache-road/gpu-textures/cacheMarketRFrontFill.ktx2": {
+      "sha256": "6f4e3ce75103d62afee61756dce77a3b7cd11dfef82da66c03a5b42f6e14b43f",
+      "bytes": 1374067
+    },
+    "assets/cache-road/gpu-textures/cacheMarketRFrontGap.ktx2": {
+      "sha256": "c3c1efb0a0c558f9e20fa46f21280a3a7b4cc477b91d163343c213dc36bfd415",
+      "bytes": 984723
+    },
+    "assets/cache-road/gpu-textures/cacheMarketRMiddle.ktx2": {
+      "sha256": "f273eabe95e03880a7eb931df26aaea768b37b61d5f0a9d87aa43a1fb50b8158",
+      "bytes": 1193018
+    },
+    "assets/cache-road/gpu-textures/cacheMarketRRear.ktx2": {
+      "sha256": "d700d95cdce1d6584252c3b6d5625c43718319e7129c6b1f8d931d387d3a3c1a",
+      "bytes": 1153374
+    },
+    "assets/cache-road/gpu-textures/cacheMidCity.ktx2": {
+      "sha256": "d058217a8892fff6dd496d52f76dd780586b89e25a7d1c2870e9a08f84931929",
+      "bytes": 636667
+    },
+    "assets/cache-road/gpu-textures/cacheNewBinsRecycling.ktx2": {
+      "sha256": "6c007fbd101d268993bbf053ee13db1f3260f66987480c9e7923180d1cd4558d",
+      "bytes": 1394847
+    },
+    "assets/cache-road/gpu-textures/cacheNewCrossingSignalL.ktx2": {
+      "sha256": "ac69771d922e50dde2b0d71e55cbebe9baae67d1bd96a980c860fca49c688abd",
+      "bytes": 304705
+    },
+    "assets/cache-road/gpu-textures/cacheNewCrossingSignalR.ktx2": {
+      "sha256": "fa2d49bd9cd03df8836203f2295e2bba22f79007178e5281f8039965609f8591",
+      "bytes": 248686
+    },
+    "assets/cache-road/gpu-textures/cacheNewFencePlanter.ktx2": {
+      "sha256": "594568152106b6d226ebd9709e44d7ff20dc5d88b297fd2ebec251e3db581234",
+      "bytes": 1240941
+    },
+    "assets/cache-road/gpu-textures/cacheNewLampL.ktx2": {
+      "sha256": "ffae365d792592d99f6d1fefbbe20476b521ec1d1bac5ed429034432e12ad9ef",
+      "bytes": 231344
+    },
+    "assets/cache-road/gpu-textures/cacheNewLampR.ktx2": {
+      "sha256": "27ab932b94f24c913d31142f13d127a2971207bb05fe130aa516948e8c740db5",
+      "bytes": 214703
+    },
+    "assets/cache-road/gpu-textures/cacheNewLoadingCrates.ktx2": {
+      "sha256": "2bd0a301424fa95f2d9c4e91e2d74c29a4643ef539ebae4e15fc7c950be5a4e9",
+      "bytes": 1439802
+    },
+    "assets/cache-road/gpu-textures/cacheNewUtilityCabinet.ktx2": {
+      "sha256": "8fb59fd503367b1601cc809d735c44e9886b0c4fe5089136ccdeeaeb719ea9fa",
+      "bytes": 312271
+    },
+    "assets/cache-road/gpu-textures/cacheNewVendorCart.ktx2": {
+      "sha256": "047bc1db97e2664e21fd34ff665f7f13d525b0828c1b107ed8c44bc69606a103",
+      "bytes": 521148
+    },
+    "assets/cache-road/gpu-textures/cacheNewWayfindingSign.ktx2": {
+      "sha256": "9a11a156073da4e4186ed144a8497bc668d4d9d7cb31a628599f1ad4c74dc074",
+      "bytes": 252210
+    },
+    "assets/cache-road/gpu-textures/cacheOutskirts.ktx2": {
+      "sha256": "db7aacb33a0156487190002181f4c5fd368f3a61e13c25525119f8475f91b244",
+      "bytes": 567680
+    },
+    "assets/cache-road/gpu-textures/cacheOutskirtsHomes.ktx2": {
+      "sha256": "30854748e4b40c1d6cc348dc97fa0d4523853c2decfe59fec1aa794176ae62a1",
+      "bytes": 1130582
+    },
+    "assets/cache-road/gpu-textures/cacheOutskirtsWorkshops.ktx2": {
+      "sha256": "145a261fa4c7edcd5b4a065b89084ffc621609a2e2e99e785ea5efacab3d5d94",
+      "bytes": 1031647
+    },
+    "assets/cache-road/gpu-textures/cacheParapet.ktx2": {
+      "sha256": "5c13b56803edaf2c6a4e01f8b03466a06d842676d36a5cdf8107f1c37b5249ca",
+      "bytes": 760187
+    },
+    "assets/cache-road/gpu-textures/cachePersonBicycleCourierTravel.ktx2": {
+      "sha256": "aaae98f48a26529bc463cb9a8a464961662e738a923c403134ba39afd578b818",
+      "bytes": 498332
+    },
+    "assets/cache-road/gpu-textures/cachePersonBoardPlayerActivity.ktx2": {
+      "sha256": "c4c90920b3adb941be2bcc97b76351a4a531c10c91c6d51a2719aff24ac46172",
+      "bytes": 363018
+    },
+    "assets/cache-road/gpu-textures/cachePersonCrateCarrierTravel.ktx2": {
+      "sha256": "2613d8f3f37ff37dea3316b476b3b16327e25a4bfb5f2e21747a88e1361006ce",
+      "bytes": 486417
+    },
+    "assets/cache-road/gpu-textures/cachePersonElectricianActivity.ktx2": {
+      "sha256": "46714f14a25a411c4b68d3fd8475834026de4676e79c7b63201c68abcc32d973",
+      "bytes": 432563
+    },
+    "assets/cache-road/gpu-textures/cachePersonFoodWorker.ktx2": {
+      "sha256": "39caa59cbe95aaa9884f334006b0f19b07e830b5115826700985cf946335da7a",
+      "bytes": 593765
+    },
+    "assets/cache-road/gpu-textures/cachePersonGardenerActivity.ktx2": {
+      "sha256": "d7ac933605862305ba4f04f3334b6f1ec25bf2e3294631d61b7f8dff2bba5b6a",
+      "bytes": 344178
+    },
+    "assets/cache-road/gpu-textures/cachePersonHandheldPlayerTravel.ktx2": {
+      "sha256": "8cf99a85ba830e7916efcfca508147f07a3611816da22e77bb236f2b4a2d2884",
+      "bytes": 213157
+    },
+    "assets/cache-road/gpu-textures/cachePersonMechanic.ktx2": {
+      "sha256": "f46a5485361e2b4afdcd2bf7e8f7500480cb95e1d3cc37187a2ef5c341fb51fa",
+      "bytes": 687229
+    },
+    "assets/cache-road/gpu-textures/cachePersonSkateboarderTravel.ktx2": {
+      "sha256": "6434b4594832a445e2a64676fb3b18af985f63428183cdfc461017c788387d38",
+      "bytes": 319449
+    },
+    "assets/cache-road/gpu-textures/cachePersonStreetCookActivity.ktx2": {
+      "sha256": "053c950ac911e850f863e486b8bc861599cf145763efc9bfa3852e3be4199510",
+      "bytes": 396326
+    },
+    "assets/cache-road/gpu-textures/cachePersonStudent.ktx2": {
+      "sha256": "6a6b8ed897f6625d6e45aa3c711459b4c7c1ab15f0d0a5209dfb4170f5ac6ada",
+      "bytes": 654294
+    },
+    "assets/cache-road/gpu-textures/cachePersonSweeperActivity.ktx2": {
+      "sha256": "1a188fea38f4847a9af7423afd8ec6c9f7a79b1f8aeadf67605e217821fc1be8",
+      "bytes": 237334
+    },
+    "assets/cache-road/gpu-textures/cachePersonUmbrella.ktx2": {
+      "sha256": "2700fa715f56592015041c178b2f673ced8c47266f497da5d60014ab997e60cf",
+      "bytes": 738776
+    },
+    "assets/cache-road/gpu-textures/cachePersonWavingResidentActivity.ktx2": {
+      "sha256": "a4dbcc48c6203a8d753f803a21bf9a1cdc582ff5392ac0771dee2ae0136e07e3",
+      "bytes": 224153
+    },
+    "assets/cache-road/gpu-textures/cachePlaceApartment.ktx2": {
+      "sha256": "eb7e0f76ba2b482eea67974f2311d1b517985a07c7992c393428d3f9ae3f87e8",
+      "bytes": 452533
+    },
+    "assets/cache-road/gpu-textures/cachePlaceCapacitorExchange.ktx2": {
+      "sha256": "6947a521ebc9defa8a72fcab164aa7f3aada9f04b7c6e57d7260b5a88d4ca9e7",
+      "bytes": 493759
+    },
+    "assets/cache-road/gpu-textures/cachePlaceConstruction.ktx2": {
+      "sha256": "0c84b9eb57967a497ac727d6bcc7870607c0b1d896411ef2581346ec348ab8e9",
+      "bytes": 434016
+    },
+    "assets/cache-road/gpu-textures/cachePlaceConstructionCompact.ktx2": {
+      "sha256": "abb1f66513ce44d7e0623e172b27dfd10d07e08f8b81dc6cc2bdfb372bc34252",
+      "bytes": 523957
+    },
+    "assets/cache-road/gpu-textures/cachePlaceConstructionHorizon.ktx2": {
+      "sha256": "df855a161d7308f65a4449e729d0df12a9494cf86bfa6eff341cf11ab6ea9990",
+      "bytes": 444919
+    },
+    "assets/cache-road/gpu-textures/cachePlaceConstructionRounded.ktx2": {
+      "sha256": "030467878ee42a00fe9e50d5fdcedbdca92bf5b9e2483cc932d2ac2e54f6e334",
+      "bytes": 462958
+    },
+    "assets/cache-road/gpu-textures/cachePlaceDataReclamation.ktx2": {
+      "sha256": "f982fa4e108f044f6af46d12268ff627af63903cc8957aa2244d23b5fed0af4a",
+      "bytes": 381806
+    },
+    "assets/cache-road/gpu-textures/cachePlaceDiner.ktx2": {
+      "sha256": "d32922d281a3e8d7d9733cf735e201c42b681e18d8da4259b0d6bd2fca465c1e",
+      "bytes": 461161
+    },
+    "assets/cache-road/gpu-textures/cachePlaceDroneServiceNode.ktx2": {
+      "sha256": "2c7f7d5baf85551789a2084dbb6fdc09af2e2d677aa29107d850be5f3ff1cd6e",
+      "bytes": 378972
+    },
+    "assets/cache-road/gpu-textures/cachePlaceEncryptedPump.ktx2": {
+      "sha256": "b8087356aa979646389a0e770de0153e1931d5196584964d6579fd02efde7c4b",
+      "bytes": 426462
+    },
+    "assets/cache-road/gpu-textures/cachePlaceGarage.ktx2": {
+      "sha256": "b7192aec7c0f594260edb435f4e99a1af4b920ce4692c2a10cbfc8656d56eebe",
+      "bytes": 486345
+    },
+    "assets/cache-road/gpu-textures/cachePlaceGarden.ktx2": {
+      "sha256": "87a4eb86c7f10102fbfaeaa9e5cef2557c239133ee7679dc9eb6b8120d8d8da0",
+      "bytes": 463254
+    },
+    "assets/cache-road/gpu-textures/cachePlaceGardenCompact.ktx2": {
+      "sha256": "01a0acfd61b260212a1f9d54d7f1f6b5d7110c2654507bdff0771b9f4e44431a",
+      "bytes": 497044
+    },
+    "assets/cache-road/gpu-textures/cachePlaceGardenHorizon.ktx2": {
+      "sha256": "254438e2f1237c6bd38f7a66f8ec545fcf118bbd5d1372152ae52862456b94aa",
+      "bytes": 369988
+    },
+    "assets/cache-road/gpu-textures/cachePlaceGardenRounded.ktx2": {
+      "sha256": "9398728ef908323b9fbed8d8ec846d3261325e30de07c357f83b84485a43e35f",
+      "bytes": 493401
+    },
+    "assets/cache-road/gpu-textures/cachePlaceHouse.ktx2": {
+      "sha256": "3052341241ff86f2e551bfe681a58a10369ca8e9f83f73687d3e3dd6430bd102",
+      "bytes": 566242
+    },
+    "assets/cache-road/gpu-textures/cachePlaceMarket.ktx2": {
+      "sha256": "19f7ce6057c187c88d5dde0ab7d970aeadae1efa0fcedd2ffa9597e9141e717a",
+      "bytes": 720417
+    },
+    "assets/cache-road/gpu-textures/cachePlaceNightDataMarket.ktx2": {
+      "sha256": "b5eaa946839ddd75bb04d0e15411edc59fd0f56dbb2a80297b7bf26d70da1a97",
+      "bytes": 463042
+    },
+    "assets/cache-road/gpu-textures/cachePlacePark.ktx2": {
+      "sha256": "3739ebd7e1b8040bb387df60c6b8794c331a77aae122efbea3fa374f9bf236ec",
+      "bytes": 442843
+    },
+    "assets/cache-road/gpu-textures/cachePlaceRelayExchange.ktx2": {
+      "sha256": "26316a5600f1d7a21d42ac0f793d82d73e367c1bf2f5b1f24ef57c6ed7fef0ac",
+      "bytes": 740951
+    },
+    "assets/cache-road/gpu-textures/cachePlaceSignalOrchard.ktx2": {
+      "sha256": "d5d8a5c0519481fb1716de8d2ecac21f3032d9a34097cbdbf8f5638ec448a3eb",
+      "bytes": 410009
+    },
+    "assets/cache-road/gpu-textures/cachePlaceSubstation.ktx2": {
+      "sha256": "1f2b6078ed7652e7130a25626baa55d79380e2c17888797b59d0f72e4cdab858",
+      "bytes": 402574
+    },
+    "assets/cache-road/gpu-textures/cachePlantedGravelCourt.ktx2": {
+      "sha256": "21796563a05a75a5320d1b560996a491433f3a4f3e3b20509b5c859768f91dda",
+      "bytes": 2012790
+    },
+    "assets/cache-road/gpu-textures/cachePursuitImpact.ktx2": {
+      "sha256": "6fd8f7a66f07858ca617ba0d3fab8176666b147de90200ab87b0c05d1a425499",
+      "bytes": 750543
+    },
+    "assets/cache-road/gpu-textures/cachePursuitRig.ktx2": {
+      "sha256": "25670440e879c9c599fd586f260c5b4936978d179b5c65c4bf12265238321c71",
+      "bytes": 1124763
+    },
+    "assets/cache-road/gpu-textures/cachePylon.ktx2": {
+      "sha256": "bb5ab8af5aaa3d22ef8bb447645a2436b789383908fdade5c76211187009c2aa",
+      "bytes": 573051
+    },
+    "assets/cache-road/gpu-textures/cacheRepairShop.ktx2": {
+      "sha256": "cadc0d2f8d662a3d151d2036040f41701f74f5fffe463102afb247d83a771f2b",
+      "bytes": 1198264
+    },
+    "assets/cache-road/gpu-textures/cacheResidentialPaving.ktx2": {
+      "sha256": "67695acec343a0a3fdb5aa2cdc201fde1256e216c223bbc9e8ad3e944f1c3647",
+      "bytes": 2042293
+    },
+    "assets/cache-road/gpu-textures/cacheRival.ktx2": {
+      "sha256": "b60ccf4358dcf8062d0781a769012abeebc5507396e17a762ee960c15b662eb9",
+      "bytes": 455711
+    },
+    "assets/cache-road/gpu-textures/cacheRollingGrain.ktx2": {
+      "sha256": "adcb02bc83d18c845b410390070747408b9fa8e4603435542407903b3578dcdf",
+      "bytes": 1689883
+    },
+    "assets/cache-road/gpu-textures/cacheServiceCourtPaving.ktx2": {
+      "sha256": "ec54acd530e391ae02b56bb1d026aef4f1d97bf7d9cd8c68eb3a4925a6d629f5",
+      "bytes": 2041697
+    },
+    "assets/cache-road/gpu-textures/cacheShuttle.ktx2": {
+      "sha256": "4689b45bfb96f108a62ae6fc88950c6a86c9ddd26464089d54aa2be03af3c8d2",
+      "bytes": 689869
+    },
+    "assets/cache-road/gpu-textures/cacheSpeedMist.ktx2": {
+      "sha256": "b5d3533b46156eceae0c82dd8282c9256c34fc45144d040c1fedc771560642ec",
+      "bytes": 748852
+    },
+    "assets/cache-road/gpu-textures/cacheStreetBenchPlanters.ktx2": {
+      "sha256": "b1e1a12fa5f1f88f32809ddaa1a1fb3aeab6c841218fa64ee3bfd36fe1c507b8",
+      "bytes": 1158453
+    },
+    "assets/cache-road/gpu-textures/cacheStreetBicycleRack.ktx2": {
+      "sha256": "b2c8a3edd59ebdad04742f5a22a0fa94ad4e234601b6379e537949f8d0ac46cc",
+      "bytes": 1045941
+    },
+    "assets/cache-road/gpu-textures/cacheStreetDataKiosk.ktx2": {
+      "sha256": "f390eae3d7ca6bc4fc51e3bccabdf4c58d10c74f7a52d6b57dec1925d5879b16",
+      "bytes": 235072
+    },
+    "assets/cache-road/gpu-textures/cacheStreetDeliveryVan.ktx2": {
+      "sha256": "5e5206a461656f52b00485bffdb2d2132309abadfd9578c5837fb00146e83a6f",
+      "bytes": 1170894
+    },
+    "assets/cache-road/gpu-textures/cacheStreetWorkSupplies.ktx2": {
+      "sha256": "e2ee41f8485034ee93e309cd8418503f26054928cbbd6565da798f22f72e15ca",
+      "bytes": 1144670
+    },
+    "assets/cache-road/gpu-textures/cacheSweeper.ktx2": {
+      "sha256": "2d5f83dc9b0dc7b5202fb12db6f3dc83f949d843111ee20f1423325ab5813f6c",
+      "bytes": 706488
+    },
+    "assets/cache-road/gpu-textures/cacheTransitLFrontFill.ktx2": {
+      "sha256": "39f13322c028ef3837ad9d8f29098dc4c5bcefa0fa0455ffb6821b9c25bae15d",
+      "bytes": 1240367
+    },
+    "assets/cache-road/gpu-textures/cacheTransitLFrontGap.ktx2": {
+      "sha256": "1fe574ef7924b989872fc2231da4a9613e39cf407a0553b2347859735d900134",
+      "bytes": 1189153
+    },
+    "assets/cache-road/gpu-textures/cacheTransitLMiddle.ktx2": {
+      "sha256": "eb69450db3f21c0165b64257ff8f19ac12b7ead4badd6d0bd6a069035e9e0080",
+      "bytes": 1158257
+    },
+    "assets/cache-road/gpu-textures/cacheTransitLRear.ktx2": {
+      "sha256": "8516a858f4971fc8cca862ed6d14d820aa76d12c92a93fbf1ed0df89d6b57ec8",
+      "bytes": 1292509
+    },
+    "assets/cache-road/gpu-textures/cacheTransitNook.ktx2": {
+      "sha256": "5aeb94674a98afea745aa5e8c484a31c8f39105331a5b93c1dc3aa51c00fcbab",
+      "bytes": 1005918
+    },
+    "assets/cache-road/gpu-textures/cacheTransitRFrontFill.ktx2": {
+      "sha256": "02423dc1e7d9dca6bbfa034be72904e06ec5eb5e51c42272642cccba12e104f3",
+      "bytes": 1166281
+    },
+    "assets/cache-road/gpu-textures/cacheTransitRFrontGap.ktx2": {
+      "sha256": "e470d022d014a1282413d9b4abf2b534dbdf6e6ea937099d2aa5ada5d9226b5b",
+      "bytes": 1000808
+    },
+    "assets/cache-road/gpu-textures/cacheTransitRMiddle.ktx2": {
+      "sha256": "21272190b42f4370bd5b7329e52d502a50b5cb55ed85d390d6858fa884ddfbed",
+      "bytes": 1038130
+    },
+    "assets/cache-road/gpu-textures/cacheTransitRRear.ktx2": {
+      "sha256": "ebef3c342743d7e4bb14b4a5c1faa9cba66f1af1c03273fa048cf262e0591dae",
+      "bytes": 983436
+    },
+    "assets/cache-road/gpu-textures/cacheTrike.ktx2": {
+      "sha256": "e2c7eb3fbeb53301a56b7bc50fd9e228ce33aaee496edff05651795cd2e6fbbb",
+      "bytes": 336951
+    },
+    "assets/cache-road/gpu-textures/cacheUtilityCorner.ktx2": {
+      "sha256": "8ad0b1c38d85555be14c15b545e0574cbccdc6fcf9223cb68c95482d5caeb92b",
+      "bytes": 877270
+    },
+    "assets/cache-road/gpu-textures/cacheVendorStall.ktx2": {
+      "sha256": "5f79433ec044ead72a4973f285b456c142a0fca931b824f89c3c010dbce50084",
+      "bytes": 1134861
+    },
+    "assets/cache-road/gpu-textures/cacheWalkerCourierTravel.ktx2": {
+      "sha256": "5d11f745079d162919ef4b8aa4c403adbe6a600e09194fbdf80127205404979d",
+      "bytes": 385947
+    },
+    "assets/cache-road/gpu-textures/cacheWalkerGardenerTravel.ktx2": {
+      "sha256": "34e8ce400fc3a34278c932ea9b3d22eab5af3fe2acf993642e506cd8ae90e00e",
+      "bytes": 339492
+    },
+    "assets/cache-road/gpu-textures/cacheWalkerMarketWorkerTravel.ktx2": {
+      "sha256": "d8214596eff0ebc06c2fdb32820c77b35c9a2e799325f2c4e21ec3eda422057a",
+      "bytes": 337252
+    },
+    "assets/cache-road/gpu-textures/cacheWalkerMechanicTravel.ktx2": {
+      "sha256": "2b81f76d878e34c3fbc55de0dc3169e5d58d02c624bfeb7b8fda1b237e6909f5",
+      "bytes": 408600
+    },
+    "assets/cache-road/gpu-textures/cacheWalkerResidentTravel.ktx2": {
+      "sha256": "19295bcec937b1e61021113d1f0a2700a753b03523583e1e5ea3290495d5a354",
+      "bytes": 422467
+    },
+    "assets/cache-road/gpu-textures/cacheWalkerStudentTravel.ktx2": {
+      "sha256": "8697a308f45fbca03d871877eaf87b0d7a1751d7d63f69c292cbb34997525382",
+      "bytes": 351299
+    },
+    "assets/cache-road/gpu-textures/cacheWorkshopLFrontFill.ktx2": {
+      "sha256": "f0b1134978b7554e65f3c968668710804ba6204cbf9df2bd5ccc6f25125f16cc",
+      "bytes": 1057740
+    },
+    "assets/cache-road/gpu-textures/cacheWorkshopLFrontGap.ktx2": {
+      "sha256": "a04c4fc736d426dcf83c24c1e41083f3dd51614d043f3773133c62665e431d06",
+      "bytes": 841951
+    },
+    "assets/cache-road/gpu-textures/cacheWorkshopLMiddle.ktx2": {
+      "sha256": "820268bc2b9eefd241c6fc6c2c5382b69062cb2b8e082b5d3788f67bdc919454",
+      "bytes": 1180642
+    },
+    "assets/cache-road/gpu-textures/cacheWorkshopLRear.ktx2": {
+      "sha256": "976440dca96dfc4b5274ea27e7c13211ee34e98542cff540ebe1512ad9232b58",
+      "bytes": 1162468
+    },
+    "assets/cache-road/gpu-textures/cacheWorkshopRFrontFill.ktx2": {
+      "sha256": "d962a085f17c63e48632095b6b7527a142fa79b64d1cfd562f7e190820503602",
+      "bytes": 1076195
+    },
+    "assets/cache-road/gpu-textures/cacheWorkshopRFrontGap.ktx2": {
+      "sha256": "bca8f412a984eb542abea46cc92aa17d47495d7aa3e005b34407e544dfc2f225",
+      "bytes": 787708
+    },
+    "assets/cache-road/gpu-textures/cacheWorkshopRMiddle.ktx2": {
+      "sha256": "486186404b8392a20a08e163dd058cfacd243e7ed45d13a67f9f832bd836f28b",
+      "bytes": 1125948
+    },
+    "assets/cache-road/gpu-textures/cacheWorkshopRRear.ktx2": {
+      "sha256": "02ea474284573aa993342684469db240fdff3c9832f4c2174921e212192b968a",
+      "bytes": 1168625
+    },
+    "assets/cache-road/gpu-textures/manifest.json": {
+      "sha256": "7d39b991eca26eb877a395599b690307f3194b9ab5db0ba1260270d5bd5e0901",
+      "bytes": 121497
     },
     "assets/cache-road/hud/README.md": {
       "sha256": "b256fc88cad66f24c4822d55fad7c961bab67fed8cef697e2a5cf812db5ca9ba",
@@ -2502,8 +3102,8 @@
       "bytes": 515770
     },
     "index.html": {
-      "sha256": "34fad3dd2b154477fc5e00a681929a3063582a59006009abed28bc4fbf8a20fe",
-      "bytes": 37294
+      "sha256": "f963e1fafbf1e7657669a8b4d037322758eface6ed51f8c1b80797735140308e",
+      "bytes": 38012
     },
     "style.css": {
       "sha256": "3fa190cef55008dd8524ee46d6456958576a4f0733f776632a5dfc1936e71698",
@@ -2538,8 +3138,8 @@
       "bytes": 9093
     },
     "src/core/runtime-lifecycle.js": {
-      "sha256": "c4a33ffd16e512bfede0c48381ac83f6c80307cee74ab7875f3ea9934502e59a",
-      "bytes": 23344
+      "sha256": "fd0074acddb182e273f1d3d2fd980a67abcb522ced0ce6fc26343b362a1dc81a",
+      "bytes": 24797
     },
     "src/engine/audio.js": {
       "sha256": "95a91711958d422578870f6672b38fb0a99586bbf7ccc1c1da286935e2689b6e",
@@ -2561,9 +3161,25 @@
       "sha256": "4a87a311270809afb1e4344162a9e5b130222771a56f41fbf2eec548c8ef1624",
       "bytes": 16701
     },
+    "src/engine/cache-road-gpu-context.js": {
+      "sha256": "dbb890999424a10c6b2e4fe1088cfcf00655e96c515f330d5d40a658819c8279",
+      "bytes": 17628
+    },
+    "src/engine/cache-road-gpu-renderer.js": {
+      "sha256": "d5b045bced4266ddbb21be1f31a21406ecd813de69acb7d5dbf2444821070488",
+      "bytes": 83027
+    },
     "src/engine/cache-road-proof-profile.js": {
       "sha256": "a4f5f39dbcff6a0bd1bb693fded027987f40c32821e450fcb576b64b2d528d73",
       "bytes": 2850
+    },
+    "src/engine/cache-road-texture-bank.js": {
+      "sha256": "f623a661b619ced851a0e423fac3ea52f0bd6546aa0cdb878422e238109b936d",
+      "bytes": 8600
+    },
+    "src/engine/cache-road-texture-worker.js": {
+      "sha256": "24f9be3cf05ee76b7091de6b65a9075000d45641765064305fdff46b36784f12",
+      "bytes": 2839
     },
     "src/engine/cache-scene-effects.js": {
       "sha256": "b8a64520815ec647a2421b4fd88e8612c1e6fe33c62ffae4559dd3e21d673738",
@@ -2601,6 +3217,10 @@
       "sha256": "5b7a46f7e224530933b22c67c7c081eb6728cffbef0549b7827edc8099937357",
       "bytes": 5899
     },
+    "src/engine/level-scene-resources.js": {
+      "sha256": "42ffa34f233c02e7e20224e73e8baf39913216669772a2e9f2dbfe70309008ff",
+      "bytes": 5978
+    },
     "src/engine/lore.js": {
       "sha256": "3e5a481b0f454bf405c2aa423c379271b1b666756657336b372b2751ad063bb9",
       "bytes": 5147
@@ -2626,8 +3246,8 @@
       "bytes": 22266
     },
     "src/engine/presentation-assets.js": {
-      "sha256": "cc821a3c3eb9c0115fbcf076691594b5bd5333c3b13dea556016f4052a79987d",
-      "bytes": 62410
+      "sha256": "e2332205174f74f7026844d6b2b6fcf619c6ede8e5dee364405aa30f2cc229d7",
+      "bytes": 77096
     },
     "src/engine/renderer.js": {
       "sha256": "44d7915171bf20b7bdf7d1e0389065fd1ddeaf3238d1645c0a496c408f6ea379",
@@ -2642,8 +3262,8 @@
       "bytes": 1980
     },
     "src/engine/standalone-sprites.js": {
-      "sha256": "5784e13591a6adc43881783592d334922dd749372f09d85c35b1e7d62969d86c",
-      "bytes": 15173
+      "sha256": "cf3c0c148083184802b3622c10ee2d310ce2de7cb9d15578c7f65ed5c83185ac",
+      "bytes": 17501
     },
     "src/engine/title-screen.js": {
       "sha256": "008b951db135f3ca11c3e1e23cdc8f451cd26cc3a28d9216946c9e83bf9d9b35",
@@ -2678,8 +3298,8 @@
       "bytes": 3243
     },
     "src/game/cache-road-cinematics.js": {
-      "sha256": "679dbf25aa7eda45e4129366af1c6753be484120f99afcaa05e221a92e6e494e",
-      "bytes": 5886
+      "sha256": "b3638850a5dbb4ec4e2eefb629deb2e686fa6a0413ccac5001618f7060ae7ddf",
+      "bytes": 6263
     },
     "src/game/cache-road-combat-art.js": {
       "sha256": "9638d7d4510f9d1e2ec578147feebe22a0e427f022b848b83d9e1556800fa1f2",
@@ -2722,8 +3342,8 @@
       "bytes": 5250
     },
     "src/game/cache-road-proof.js": {
-      "sha256": "411db1a70738e5bacde9fd7dfb87b5cf0b5d4416ec548bb9db0c7da95bee5ceb",
-      "bytes": 306082
+      "sha256": "96d341f2c429da2f65d12fcf9c8e2bdce3bba4dcbce0c4057920d9c52b0b9d72",
+      "bytes": 316964
     },
     "src/game/cache-road-puppet-study.js": {
       "sha256": "a1c2795763543cc8ad78d61a39482e372de7e7348316a57de24f66bf7fbd0361",
@@ -2854,8 +3474,8 @@
       "bytes": 7538
     },
     "src/game/pause-menu.js": {
-      "sha256": "79313181050236cc2b481eb7061f339ab325b2aaaba0a18f311bcf6c2e7e00d9",
-      "bytes": 37228
+      "sha256": "a9958ebdeb245d21235ab8ac5273d1ae4829764b23b8b3ce1f8c34897e87d786",
+      "bytes": 37357
     },
     "src/game/player-combat.js": {
       "sha256": "668b662c1399a9a784baf105daf32c9f6b3cb6ffcfff28838dab700eb7accea7",
@@ -2904,12 +3524,40 @@
     "src/utils/math.js": {
       "sha256": "84a5934fd4425e7b40fb4089114cc837959fe0fd29486edae95fecd45fd43b7e",
       "bytes": 2613
+    },
+    "src/vendor/basis-2.50/LICENSE": {
+      "sha256": "065fcf48d6af21c0b75e23be5ed5753aee75c892e1c2cf178fa6736305614a5c",
+      "bytes": 11347
+    },
+    "src/vendor/basis-2.50/basis_transcoder.js": {
+      "sha256": "720dd9bd09c7cada6d87f1b7b70cec713df04da88cd641ac3212559353834dc8",
+      "bytes": 50538
+    },
+    "src/vendor/basis-2.50/basis_transcoder.wasm": {
+      "sha256": "a0f65d4a30ecb3269d01ead7d0a3477d2b0208146d083625a90623f473f6c139",
+      "bytes": 1060846
+    },
+    "src/vendor/basis-2.50/provenance.json": {
+      "sha256": "49c856c675a79368ecc76e356eec90ce7aa87bf2f1da302cf51aa1f647fa03ed",
+      "bytes": 1231
+    },
+    "src/vendor/pixi-8.22.0/LICENSE": {
+      "sha256": "5ce7447bc57f7349ffc48338782fbcabe613696e00712b20d66bc58e780f9473",
+      "bytes": 1092
+    },
+    "src/vendor/pixi-8.22.0/pixi.min.js": {
+      "sha256": "06d9ef9823e743518793083c296d801e752db128cb1f519fbabe37e1259567ea",
+      "bytes": 840663
+    },
+    "src/vendor/pixi-8.22.0/provenance.json": {
+      "sha256": "a5c6a646c2b1b37cbd65356d0475474d9b307910a8d888f8885918d860032075",
+      "bytes": 1129
     }
   },
   "sourceMode": "working-tree runtime scripts; exact HEAD canonical asset blobs",
-  "canonicalAssetCount": 624,
+  "canonicalAssetCount": 774,
   "preservedOriginalCount": 21,
-  "assetBytes": 472322557,
+  "assetBytes": 600657192,
   "ownedFiles": [
     ".standalone-build.json",
     "assets/audio/broadcast-slum-proof-carrier.wav",
@@ -3021,6 +3669,156 @@
     "assets/cache-road/encounters/sources/delivery-beacon.png",
     "assets/cache-road/encounters/sources/echo-ribbons.png",
     "assets/cache-road/encounters/sources/push-arc.png",
+    "assets/cache-road/gpu-textures/cacheAudit.ktx2",
+    "assets/cache-road/gpu-textures/cacheBarricade.ktx2",
+    "assets/cache-road/gpu-textures/cacheBlacktop.ktx2",
+    "assets/cache-road/gpu-textures/cacheBloodSplatter.ktx2",
+    "assets/cache-road/gpu-textures/cacheBrakeReflection.ktx2",
+    "assets/cache-road/gpu-textures/cacheCombatBike.ktx2",
+    "assets/cache-road/gpu-textures/cacheCombatBikeCrash.ktx2",
+    "assets/cache-road/gpu-textures/cacheCombatBlast.ktx2",
+    "assets/cache-road/gpu-textures/cacheCombatHostiles.ktx2",
+    "assets/cache-road/gpu-textures/cacheCourier.ktx2",
+    "assets/cache-road/gpu-textures/cacheDamagedExhaust.ktx2",
+    "assets/cache-road/gpu-textures/cacheDataLFrontFill.ktx2",
+    "assets/cache-road/gpu-textures/cacheDataLFrontGap.ktx2",
+    "assets/cache-road/gpu-textures/cacheDataLMiddle.ktx2",
+    "assets/cache-road/gpu-textures/cacheDataLRear.ktx2",
+    "assets/cache-road/gpu-textures/cacheDataRFrontFill.ktx2",
+    "assets/cache-road/gpu-textures/cacheDataRFrontGap.ktx2",
+    "assets/cache-road/gpu-textures/cacheDataRMiddle.ktx2",
+    "assets/cache-road/gpu-textures/cacheDataRRear.ktx2",
+    "assets/cache-road/gpu-textures/cacheDistantCity.ktx2",
+    "assets/cache-road/gpu-textures/cacheFly1.ktx2",
+    "assets/cache-road/gpu-textures/cacheFly3.ktx2",
+    "assets/cache-road/gpu-textures/cacheFreight.ktx2",
+    "assets/cache-road/gpu-textures/cacheGreenhouseLFrontFill.ktx2",
+    "assets/cache-road/gpu-textures/cacheGreenhouseLFrontGap.ktx2",
+    "assets/cache-road/gpu-textures/cacheGreenhouseLMiddle.ktx2",
+    "assets/cache-road/gpu-textures/cacheGreenhouseLRear.ktx2",
+    "assets/cache-road/gpu-textures/cacheGreenhouseRFrontFill.ktx2",
+    "assets/cache-road/gpu-textures/cacheGreenhouseRFrontGap.ktx2",
+    "assets/cache-road/gpu-textures/cacheGreenhouseRMiddle.ktx2",
+    "assets/cache-road/gpu-textures/cacheGreenhouseRRear.ktx2",
+    "assets/cache-road/gpu-textures/cacheGreenhouseWorkshop.ktx2",
+    "assets/cache-road/gpu-textures/cacheGroundClusterL1.ktx2",
+    "assets/cache-road/gpu-textures/cacheGroundClusterL2.ktx2",
+    "assets/cache-road/gpu-textures/cacheGroundClusterL3.ktx2",
+    "assets/cache-road/gpu-textures/cacheGroundClusterR1.ktx2",
+    "assets/cache-road/gpu-textures/cacheGroundClusterR2.ktx2",
+    "assets/cache-road/gpu-textures/cacheGroundClusterR3.ktx2",
+    "assets/cache-road/gpu-textures/cacheHomesLFrontFill.ktx2",
+    "assets/cache-road/gpu-textures/cacheHomesLFrontGap.ktx2",
+    "assets/cache-road/gpu-textures/cacheHomesLMiddle.ktx2",
+    "assets/cache-road/gpu-textures/cacheHomesLRear.ktx2",
+    "assets/cache-road/gpu-textures/cacheHomesRFrontFill.ktx2",
+    "assets/cache-road/gpu-textures/cacheHomesRFrontGap.ktx2",
+    "assets/cache-road/gpu-textures/cacheHomesRMiddle.ktx2",
+    "assets/cache-road/gpu-textures/cacheHomesRRear.ktx2",
+    "assets/cache-road/gpu-textures/cacheLocalStreet.ktx2",
+    "assets/cache-road/gpu-textures/cacheMarketLFrontFill.ktx2",
+    "assets/cache-road/gpu-textures/cacheMarketLFrontGap.ktx2",
+    "assets/cache-road/gpu-textures/cacheMarketLMiddle.ktx2",
+    "assets/cache-road/gpu-textures/cacheMarketLRear.ktx2",
+    "assets/cache-road/gpu-textures/cacheMarketRFrontFill.ktx2",
+    "assets/cache-road/gpu-textures/cacheMarketRFrontGap.ktx2",
+    "assets/cache-road/gpu-textures/cacheMarketRMiddle.ktx2",
+    "assets/cache-road/gpu-textures/cacheMarketRRear.ktx2",
+    "assets/cache-road/gpu-textures/cacheMidCity.ktx2",
+    "assets/cache-road/gpu-textures/cacheNewBinsRecycling.ktx2",
+    "assets/cache-road/gpu-textures/cacheNewCrossingSignalL.ktx2",
+    "assets/cache-road/gpu-textures/cacheNewCrossingSignalR.ktx2",
+    "assets/cache-road/gpu-textures/cacheNewFencePlanter.ktx2",
+    "assets/cache-road/gpu-textures/cacheNewLampL.ktx2",
+    "assets/cache-road/gpu-textures/cacheNewLampR.ktx2",
+    "assets/cache-road/gpu-textures/cacheNewLoadingCrates.ktx2",
+    "assets/cache-road/gpu-textures/cacheNewUtilityCabinet.ktx2",
+    "assets/cache-road/gpu-textures/cacheNewVendorCart.ktx2",
+    "assets/cache-road/gpu-textures/cacheNewWayfindingSign.ktx2",
+    "assets/cache-road/gpu-textures/cacheOutskirts.ktx2",
+    "assets/cache-road/gpu-textures/cacheOutskirtsHomes.ktx2",
+    "assets/cache-road/gpu-textures/cacheOutskirtsWorkshops.ktx2",
+    "assets/cache-road/gpu-textures/cacheParapet.ktx2",
+    "assets/cache-road/gpu-textures/cachePersonBicycleCourierTravel.ktx2",
+    "assets/cache-road/gpu-textures/cachePersonBoardPlayerActivity.ktx2",
+    "assets/cache-road/gpu-textures/cachePersonCrateCarrierTravel.ktx2",
+    "assets/cache-road/gpu-textures/cachePersonElectricianActivity.ktx2",
+    "assets/cache-road/gpu-textures/cachePersonFoodWorker.ktx2",
+    "assets/cache-road/gpu-textures/cachePersonGardenerActivity.ktx2",
+    "assets/cache-road/gpu-textures/cachePersonHandheldPlayerTravel.ktx2",
+    "assets/cache-road/gpu-textures/cachePersonMechanic.ktx2",
+    "assets/cache-road/gpu-textures/cachePersonSkateboarderTravel.ktx2",
+    "assets/cache-road/gpu-textures/cachePersonStreetCookActivity.ktx2",
+    "assets/cache-road/gpu-textures/cachePersonStudent.ktx2",
+    "assets/cache-road/gpu-textures/cachePersonSweeperActivity.ktx2",
+    "assets/cache-road/gpu-textures/cachePersonUmbrella.ktx2",
+    "assets/cache-road/gpu-textures/cachePersonWavingResidentActivity.ktx2",
+    "assets/cache-road/gpu-textures/cachePlaceApartment.ktx2",
+    "assets/cache-road/gpu-textures/cachePlaceCapacitorExchange.ktx2",
+    "assets/cache-road/gpu-textures/cachePlaceConstruction.ktx2",
+    "assets/cache-road/gpu-textures/cachePlaceConstructionCompact.ktx2",
+    "assets/cache-road/gpu-textures/cachePlaceConstructionHorizon.ktx2",
+    "assets/cache-road/gpu-textures/cachePlaceConstructionRounded.ktx2",
+    "assets/cache-road/gpu-textures/cachePlaceDataReclamation.ktx2",
+    "assets/cache-road/gpu-textures/cachePlaceDiner.ktx2",
+    "assets/cache-road/gpu-textures/cachePlaceDroneServiceNode.ktx2",
+    "assets/cache-road/gpu-textures/cachePlaceEncryptedPump.ktx2",
+    "assets/cache-road/gpu-textures/cachePlaceGarage.ktx2",
+    "assets/cache-road/gpu-textures/cachePlaceGarden.ktx2",
+    "assets/cache-road/gpu-textures/cachePlaceGardenCompact.ktx2",
+    "assets/cache-road/gpu-textures/cachePlaceGardenHorizon.ktx2",
+    "assets/cache-road/gpu-textures/cachePlaceGardenRounded.ktx2",
+    "assets/cache-road/gpu-textures/cachePlaceHouse.ktx2",
+    "assets/cache-road/gpu-textures/cachePlaceMarket.ktx2",
+    "assets/cache-road/gpu-textures/cachePlaceNightDataMarket.ktx2",
+    "assets/cache-road/gpu-textures/cachePlacePark.ktx2",
+    "assets/cache-road/gpu-textures/cachePlaceRelayExchange.ktx2",
+    "assets/cache-road/gpu-textures/cachePlaceSignalOrchard.ktx2",
+    "assets/cache-road/gpu-textures/cachePlaceSubstation.ktx2",
+    "assets/cache-road/gpu-textures/cachePlantedGravelCourt.ktx2",
+    "assets/cache-road/gpu-textures/cachePursuitImpact.ktx2",
+    "assets/cache-road/gpu-textures/cachePursuitRig.ktx2",
+    "assets/cache-road/gpu-textures/cachePylon.ktx2",
+    "assets/cache-road/gpu-textures/cacheRepairShop.ktx2",
+    "assets/cache-road/gpu-textures/cacheResidentialPaving.ktx2",
+    "assets/cache-road/gpu-textures/cacheRival.ktx2",
+    "assets/cache-road/gpu-textures/cacheRollingGrain.ktx2",
+    "assets/cache-road/gpu-textures/cacheServiceCourtPaving.ktx2",
+    "assets/cache-road/gpu-textures/cacheShuttle.ktx2",
+    "assets/cache-road/gpu-textures/cacheSpeedMist.ktx2",
+    "assets/cache-road/gpu-textures/cacheStreetBenchPlanters.ktx2",
+    "assets/cache-road/gpu-textures/cacheStreetBicycleRack.ktx2",
+    "assets/cache-road/gpu-textures/cacheStreetDataKiosk.ktx2",
+    "assets/cache-road/gpu-textures/cacheStreetDeliveryVan.ktx2",
+    "assets/cache-road/gpu-textures/cacheStreetWorkSupplies.ktx2",
+    "assets/cache-road/gpu-textures/cacheSweeper.ktx2",
+    "assets/cache-road/gpu-textures/cacheTransitLFrontFill.ktx2",
+    "assets/cache-road/gpu-textures/cacheTransitLFrontGap.ktx2",
+    "assets/cache-road/gpu-textures/cacheTransitLMiddle.ktx2",
+    "assets/cache-road/gpu-textures/cacheTransitLRear.ktx2",
+    "assets/cache-road/gpu-textures/cacheTransitNook.ktx2",
+    "assets/cache-road/gpu-textures/cacheTransitRFrontFill.ktx2",
+    "assets/cache-road/gpu-textures/cacheTransitRFrontGap.ktx2",
+    "assets/cache-road/gpu-textures/cacheTransitRMiddle.ktx2",
+    "assets/cache-road/gpu-textures/cacheTransitRRear.ktx2",
+    "assets/cache-road/gpu-textures/cacheTrike.ktx2",
+    "assets/cache-road/gpu-textures/cacheUtilityCorner.ktx2",
+    "assets/cache-road/gpu-textures/cacheVendorStall.ktx2",
+    "assets/cache-road/gpu-textures/cacheWalkerCourierTravel.ktx2",
+    "assets/cache-road/gpu-textures/cacheWalkerGardenerTravel.ktx2",
+    "assets/cache-road/gpu-textures/cacheWalkerMarketWorkerTravel.ktx2",
+    "assets/cache-road/gpu-textures/cacheWalkerMechanicTravel.ktx2",
+    "assets/cache-road/gpu-textures/cacheWalkerResidentTravel.ktx2",
+    "assets/cache-road/gpu-textures/cacheWalkerStudentTravel.ktx2",
+    "assets/cache-road/gpu-textures/cacheWorkshopLFrontFill.ktx2",
+    "assets/cache-road/gpu-textures/cacheWorkshopLFrontGap.ktx2",
+    "assets/cache-road/gpu-textures/cacheWorkshopLMiddle.ktx2",
+    "assets/cache-road/gpu-textures/cacheWorkshopLRear.ktx2",
+    "assets/cache-road/gpu-textures/cacheWorkshopRFrontFill.ktx2",
+    "assets/cache-road/gpu-textures/cacheWorkshopRFrontGap.ktx2",
+    "assets/cache-road/gpu-textures/cacheWorkshopRMiddle.ktx2",
+    "assets/cache-road/gpu-textures/cacheWorkshopRRear.ktx2",
+    "assets/cache-road/gpu-textures/manifest.json",
     "assets/cache-road/hud/README.md",
     "assets/cache-road/hud/cache-back-mirror-expressions.webp",
     "assets/cache-road/hud/digital-dashboard/ASSET_PROVENANCE.md",
@@ -3550,7 +4348,11 @@
     "src/engine/broadcast-slum-proof-profile.js",
     "src/engine/cache-bridge.js",
     "src/engine/cache-ending.js",
+    "src/engine/cache-road-gpu-context.js",
+    "src/engine/cache-road-gpu-renderer.js",
     "src/engine/cache-road-proof-profile.js",
+    "src/engine/cache-road-texture-bank.js",
+    "src/engine/cache-road-texture-worker.js",
     "src/engine/cache-scene-effects.js",
     "src/engine/cache-scene-layouts.js",
     "src/engine/comic-dialogue.js",
@@ -3560,6 +4362,7 @@
     "src/engine/jammer-arrow-indicator.js",
     "src/engine/jammer-indicator.js",
     "src/engine/level-01-music-profile.js",
+    "src/engine/level-scene-resources.js",
     "src/engine/lore.js",
     "src/engine/music-director.js",
     "src/engine/music-profiles.js",
@@ -3636,6 +4439,13 @@
     "src/game/ui-manager.js",
     "src/game/update-coordinator.js",
     "src/utils/math.js",
+    "src/vendor/basis-2.50/LICENSE",
+    "src/vendor/basis-2.50/basis_transcoder.js",
+    "src/vendor/basis-2.50/basis_transcoder.wasm",
+    "src/vendor/basis-2.50/provenance.json",
+    "src/vendor/pixi-8.22.0/LICENSE",
+    "src/vendor/pixi-8.22.0/pixi.min.js",
+    "src/vendor/pixi-8.22.0/provenance.json",
     "style.css"
   ],
   "limitations": [

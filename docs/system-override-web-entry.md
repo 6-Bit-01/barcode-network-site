@@ -1,5 +1,13 @@
 # System Override web entry
 
+## Direct mobile actions
+
+The owner rejects the published combat More drawer because it interrupts action. Source PR186 at `9584869c94c7df52a0509795deed6bf60e08b5bb` replaces it with compact fixed thumb slots for proactive Guard/Boost, target-aware Strike/Fire, nearby-enemy/projectile Jam and the manually tapped current Sync cue. Labels stay stable while recharge, active, ammunition/shot and next-beat badges explain readiness. Gameplay has no More/pads menu; cinematic extras keep their non-action drawer. Level 1 exposes available Inspect/Continue/Close directly, with running on the outer joystick gesture.
+
+All 29 focused actual-module contracts and all-file syntax pass. The initial built browser passed actual earned Level 2 direct Boost/Guard/Jam and Sync while steering, gear taps, pause/resume and five portrait/landscape layouts. Its short-landscape visual review identified Pause covering the native HUD; the final CSS moves it above the left-hand gears when the viewport lacks a wide gutter. The exact final built review and source/site checks are in progress at this preparation snapshot. Publication is authorized; final identities and live results belong in the website follow-up pull request and the private delivery receipt.
+
+The original artwork/audio, GPU/native renderer, loading, judgments, saves, hidden footer shortcut and entry route are unchanged. Private harnesses, receipts and source archives stay outside `public/`. Earlier drawer/release notes below are historical for published source PR185 and website PR482.
+
 ## Contextual mobile controls
 
 The owner tested the published joystick release and requested controls that leave Level 2 playable. Source PR185 merged as `9e466634b6b45160eb275ff2f607b653ec2df998` with tested tree `18013a79db37d206c80ff1aa97a641cc16bc5ce0`: subtle circular edge controls, separate gear buttons, one mapped Sync cue in a fixed thumb position, contextual Attack/Guard and a compact tabbed More drawer for skills and manual pads. Level 1 exposes Rhythm/Beat/Hack through their actual availability owners; cinematic extras are on demand. Within a gameplay screen, changing buttons preserve steering, held semantic actions and completed taps. Landscape utility controls occupy the side margin; the default road actions use a single narrow edge strip.

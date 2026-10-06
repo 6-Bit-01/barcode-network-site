@@ -1,8 +1,8 @@
 {
   "builder": "barcode-system-override-standalone-v1",
   "status": "complete",
-  "sourceCommit": "d2e3776d6aebbf911b41b9e86b56b769e970e8d1",
-  "sourceTree": "b3ba8eb2d39824d54caf2db3a62999dd204cf20c",
+  "sourceCommit": "12dc71b943362a24c33c52e90309c2274ca4b7a3",
+  "sourceTree": "c1f76601e6a905a8be224b275eb34f3cd202746c",
   "builderSHA256": "d5e691bf68931baf7002006cab0d5a0a6053fdfa03c68c6bcfc0af75b1325ad6",
   "files": {
     "assets/audio/broadcast-slum-proof-carrier.wav": {
@@ -3398,8 +3398,8 @@
       "bytes": 7005
     },
     "src/game/hacking.js": {
-      "sha256": "a394b2f9b605c144fa8d6a05fe3ba49c3d6de8e7c43c6b338cb5376b58fc2756",
-      "bytes": 36332
+      "sha256": "cb98d4770068c8cadef11d768ec67ce3d5798ef3a71b121e76e9fd97ac4c1f51",
+      "bytes": 36622
     },
     "src/game/jammer-arrow.js": {
       "sha256": "acef66eff7f5302947804700022a33b084d5efa2bac49ecd9123248f7724be28",
@@ -3514,8 +3514,8 @@
       "bytes": 592
     },
     "src/game/tutorial.js": {
-      "sha256": "b3833c289de228d87a57ec95270587e1cfb9282492075332a9ac878b9efa6419",
-      "bytes": 27274
+      "sha256": "d372728922db73faa078df724c2f306a8f43b3c6229e04990494fb227dbf29b9",
+      "bytes": 27983
     },
     "src/game/ui-manager.js": {
       "sha256": "06cf3305b445b1ee44dffd0f73607dbdf86d4809e51b93a6b5d0e8936bdc2019",

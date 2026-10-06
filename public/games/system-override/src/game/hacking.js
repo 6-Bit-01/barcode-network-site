@@ -614,7 +614,7 @@ window.HackingSystem = class HackingSystem {
     ctx.strokeStyle = '#3c827f'; ctx.lineWidth = 2; ctx.strokeRect(1110, 190, 780, 710);
     ctx.fillStyle = '#91ffe0'; ctx.font = 'bold 22px monospace'; ctx.fillText('SIGNAL TERMINAL', 1132, 231);
     ctx.font = '15px monospace'; ctx.fillStyle = '#aebdcc'; ctx.textAlign = 'right';
-    ctx.fillText(window.BARCODE?.GamepadUI?.connected ? `${window.BARCODE.ControllerSettings.button(1)}: Cancel` : 'Esc / Tap: Cancel', 1865, 231); ctx.textAlign = 'left';
+    ctx.fillText(window.BARCODE?.TouchControls?.enabled ? 'Tap Cancel' : window.BARCODE?.GamepadUI?.connected ? `${window.BARCODE.ControllerSettings.button(1)}: Cancel` : 'Esc / Tap: Cancel', 1865, 231); ctx.textAlign = 'left';
     const labels = ['01 CONNECT', '02 READ', '03 INPUT'];
     labels.forEach((label, i) => {
       const selected = ['boot', 'display', 'answer'][i] === this.phase;
@@ -654,7 +654,7 @@ window.HackingSystem = class HackingSystem {
       const width = ctx.measureText('> ' + this.inputText).width; ctx.fillStyle = color; ctx.fillRect(1153 + width, 489, 11, 28);
     }
     ctx.fillStyle = '#aebdcc'; ctx.font = '16px monospace';
-    ctx.fillText(window.BARCODE?.GamepadUI?.connected ? `D-pad / Stick: Move   ${window.BARCODE.ControllerSettings.button(0)}: Select   ${window.BARCODE.ControllerSettings.button(2)}: Erase   ${window.BARCODE.ControllerSettings.button(1)}: Cancel` : 'Type 0–9 or tap the keys. Enter submits.', 1132, 577);
+    ctx.fillText(window.BARCODE?.TouchControls?.enabled ? 'Tap digits • Submit • ⌫ Delete • Cancel' : window.BARCODE?.GamepadUI?.connected ? `D-pad / Stick: Move   ${window.BARCODE.ControllerSettings.button(0)}: Select   ${window.BARCODE.ControllerSettings.button(2)}: Erase   ${window.BARCODE.ControllerSettings.button(1)}: Cancel` : 'Type 0–9 or tap the keys. Enter submits.', 1132, 577);
     this.getKeypad({x:1110,y:190,scale:1}).forEach((key, index) => {
       const focused = this.keypadMode && index === (this.keypadIndex ?? 4);
       ctx.fillStyle = focused ? '#91ffe0' : '#142c38'; ctx.fillRect(key.x, key.y, key.w, key.h);
@@ -670,7 +670,7 @@ window.HackingSystem = class HackingSystem {
     const p=this.getPresentation(),color=this.phase==='answer'&&p.remainingMs<=1500?'#ffb16e':'#91ffe0';
     ctx.fillStyle='rgba(4,13,25,0.94)';ctx.fillRect(0,0,1040,360);ctx.strokeStyle='#3c827f';ctx.lineWidth=2;ctx.strokeRect(0,0,1040,360);
     ctx.fillStyle='#91ffe0';ctx.font='bold 22px monospace';ctx.fillText('SIGNAL TERMINAL',22,32);
-    ctx.textAlign='right';ctx.font='16px monospace';ctx.fillStyle='#aebdcc';ctx.fillText(window.BARCODE?.GamepadUI?.connected?`${window.BARCODE.ControllerSettings.button(1)}: Cancel`:'Esc / Tap: Cancel',1015,32);
+    ctx.textAlign='right';ctx.font='16px monospace';ctx.fillStyle='#aebdcc';ctx.fillText(window.BARCODE?.TouchControls?.enabled?'Tap Cancel':window.BARCODE?.GamepadUI?.connected?`${window.BARCODE.ControllerSettings.button(1)}: Cancel`:'Esc / Tap: Cancel',1015,32);
     ctx.textAlign='left';ctx.font='bold 22px monospace';ctx.fillStyle='#f1f6fb';ctx.fillText(p.heading,22,73);
     ctx.textAlign='right';ctx.fillStyle=color;ctx.fillText(p.untimed?'PRACTICE':`${(p.remainingMs/1000).toFixed(1)}s`,1015,73);ctx.textAlign='left';
     ctx.fillStyle='#19313e';ctx.fillRect(22,88,994,5);ctx.fillStyle=color;ctx.fillRect(22,88,994*(1-p.progress),5);
@@ -683,7 +683,7 @@ window.HackingSystem = class HackingSystem {
       const focused=this.keypadMode&&index===(this.keypadIndex??4);ctx.fillStyle=focused?'#91ffe0':'#142c38';ctx.fillRect(key.x,key.y,key.w,key.h);ctx.strokeStyle=focused?'#f1f6fb':'#628c90';ctx.strokeRect(key.x,key.y,key.w,key.h);
       ctx.font='bold 26px Oxanium, monospace';ctx.fillStyle=focused?'#081921':'#f1f6fb';window.BARCODE.ComicHUD.buttonText(ctx,key.label,key.x,key.y,key.w,key.h,8);
     });
-    ctx.textAlign='left';ctx.font='16px monospace';ctx.fillStyle='#aebdcc';ctx.fillText(window.BARCODE?.GamepadUI?.connected?`D-pad / Stick: Move   ${window.BARCODE.ControllerSettings.button(0)}: Select   ${window.BARCODE.ControllerSettings.button(2)}: Erase`:'Type 0–9 or tap the keys. Enter submits.',22,339);
+    ctx.textAlign='left';ctx.font='16px monospace';ctx.fillStyle='#aebdcc';ctx.fillText(window.BARCODE?.TouchControls?.enabled?'Tap digits • Submit • ⌫ Delete • Cancel':window.BARCODE?.GamepadUI?.connected?`D-pad / Stick: Move   ${window.BARCODE.ControllerSettings.button(0)}: Select   ${window.BARCODE.ControllerSettings.button(2)}: Erase`:'Type 0–9 or tap the keys. Enter submits.',22,339);
   }
 
   drawResultTransfer(ctx) {

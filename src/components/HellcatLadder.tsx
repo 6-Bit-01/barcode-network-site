@@ -8,9 +8,12 @@ import {
   type HellcatLadderResult,
 } from "@/lib/hellcat-ladder";
 import { startSessionBoundPolling } from "@/lib/session-bound-polling";
+import { useHellcatRadio } from "@/components/useHellcatRadio";
+import { hellcatTrackIsLive, type HellcatPlayback, type HellcatRadioResult } from "@/lib/hellcat-now-playing";
 
 export function HellcatLadder() {
   const [result, setResult] = useState<HellcatLadderResult | null>(null);
+  const { audioRef, nowPlaying, playback, toggleListen } = useHellcatRadio(result?.snapshot?.tracks ?? null);
 
   useEffect(() => {
     let active = true;
@@ -65,10 +68,15 @@ export function HellcatLadder() {
     return () => { active = false; stop(); clearAgeTimers(); controller?.abort(); };
   }, []);
 
-  return <HellcatLadderView result={result} />;
+  return <>
+    <audio ref={audioRef} id="hellcat-community-stream" preload="none" />
+    <HellcatLadderView result={result} radio={{ nowPlaying, playback, toggleListen }} />
+  </>;
 }
 
-export function HellcatLadderView({ result }: { result: HellcatLadderResult | null }) {
+type RadioControls = { nowPlaying: HellcatRadioResult | null; playback: HellcatPlayback; toggleListen: () => void };
+
+export function HellcatLadderView({ result, radio }: { result: HellcatLadderResult | null; radio?: RadioControls }) {
   const snapshot = result?.snapshot;
   return (
     <section id="hellcat-ladder" aria-labelledby="hellcat-ladder-title" className="scroll-mt-24 border-b border-border">
@@ -78,6 +86,7 @@ export function HellcatLadderView({ result }: { result: HellcatLadderResult | nu
             <p className="text-xs font-bold uppercase tracking-[0.3em] text-accent">Community spotlight · HellcatNZ</p>
             <h2 id="hellcat-ladder-title" className="mt-3 text-2xl font-bold text-foreground sm:text-3xl">Hellcat&apos;s contest ladder</h2>
             <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">Rankings supplied by HellcatNZ. Scores are his official ratings out of 100.</p>
+            <p className="mt-2 max-w-2xl text-xs leading-relaxed text-muted">The green dot marks the song on HellcatNZ&apos;s community radio. Tap its speaker to listen.</p>
           </div>
           <p className="font-mono text-xs text-muted">KOTH standings</p>
         </div>
@@ -107,18 +116,41 @@ export function HellcatLadderView({ result }: { result: HellcatLadderResult | nu
                       </tr>
                     </thead>
                     <tbody>
-                      {snapshot.tracks.map((track) => (
-                        <tr key={track.rank} className="border-t border-border">
+                      {snapshot.tracks.map((track) => {
+                        const live = hellcatTrackIsLive(track, radio?.nowPlaying ?? null);
+                        const listening = radio?.playback === "playing" || radio?.playback === "connecting";
+                        return (
+                        <tr key={track.rank} data-radio-live={live || undefined} className={`border-t border-border ${live ? "bg-accent/10" : ""}`}>
                           <th scope="row" className={`px-3 py-4 align-top font-mono sm:px-6 ${track.rank === 1 ? "text-accent" : "text-muted"}`}>{track.rank}</th>
                           <td className="break-words px-3 py-4 sm:px-6">
-                            <p className="font-semibold text-foreground">{track.title?.trim() || "Untitled track"}</p>
-                            <p className="mt-1 text-xs leading-relaxed text-muted">{track.artist?.trim() || "Unknown artist"}</p>
+                            <div className="flex items-center justify-between gap-2 sm:gap-4">
+                              <div className="min-w-0">
+                                <p className="font-semibold text-foreground">{track.title?.trim() || "Untitled track"}</p>
+                                <p className="mt-1 text-xs leading-relaxed text-muted">{track.artist?.trim() || "Unknown artist"}</p>
+                              </div>
+                              {live && radio && <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+                                <span role="img" aria-label="On air on HellcatNZ’s community radio" className="h-2.5 w-2.5 rounded-full bg-accent shadow-[0_0_10px_var(--color-accent)]" />
+                                <button type="button" onClick={radio.toggleListen} aria-controls="hellcat-community-stream"
+                                  aria-pressed={listening} aria-label={listening ? "Pause HellcatNZ radio" : "Listen to HellcatNZ radio"}
+                                  className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-2 border border-accent/50 px-2 text-xs font-semibold text-accent transition-colors hover:bg-accent/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:px-3">
+                                  <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M11 5 6 9H3v6h3l5 4V5Z" />
+                                    {listening ? <><path d="M16 9v6M20 9v6" /></> : <><path d="M15 8a6 6 0 0 1 0 8M18 5a10 10 0 0 1 0 14" /></>}
+                                  </svg>
+                                  <span className="sr-only sm:not-sr-only">{listening ? "Pause" : "Listen"}</span>
+                                </button>
+                              </div>}
+                            </div>
+                            {live && radio?.playback === "connecting" && <p role="status" className="mt-2 text-xs text-muted">Connecting to HellcatNZ radio…</p>}
+                            {live && radio?.playback === "blocked" && <p role="status" className="mt-2 text-xs text-muted">Tap Listen to start the radio.</p>}
+                            {live && radio?.playback === "error" && <p role="status" className="mt-2 text-xs text-muted">Stream unavailable. Tap Listen to try again.</p>}
                           </td>
                           <td className="px-3 py-4 text-right align-top font-mono sm:px-6">
                             {track.score === null ? <span className="font-sans text-xs text-muted">Not scored</span> : <><span className="text-foreground">{track.score}</span><span className="sr-only"> out of 100</span></>}
                           </td>
                         </tr>
-                      ))}
+                      );
+                      })}
                     </tbody>
                   </table>
                 </div>

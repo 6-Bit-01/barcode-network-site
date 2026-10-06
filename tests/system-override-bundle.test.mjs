@@ -16,8 +16,8 @@ const textureManifestName = textureRoot + "manifest.json";
 const originalAssetCount = 624;
 const macReviewRoot = "assets/mac-street-review/";
 const macReviewAssets = new Set([
-  "cache-walk-to-car-v4.png", "mac-hero-v2.png", "mac-poses-v3-frames.json", "mac-poses-v3.png",
-  "scene03-kave-dead-air-v1.png", "scene05-margin-note-v1.png",
+  "cache-walk-to-car-v6.png", "mac-hero-v2.png", "mac-poses-v3-frames.json", "mac-poses-v3.png",
+  "scene03-kave-dead-air-v3.png", "scene05-margin-note-v1.png",
   "scene06-record-straight-v1.png", "street-panorama-v1.png",
 ].map((name) => macReviewRoot + name));
 // Sorted [path, bytes, SHA-256] rows from the original complete 624-asset package.
@@ -226,7 +226,7 @@ test("System Override ships a complete, sanitized ownership and SHA-256 manifest
   assert.deepEqual(assets.filter((name) => name.startsWith(textureRoot)).sort(), [...derivatives].sort(),
     "Only the declared manifest and exact KTX2 bank may be added as texture derivatives");
   assert.deepEqual(assets.filter((name) => name.startsWith(macReviewRoot)).sort(), [...macReviewAssets].sort(),
-    "Only the exact eight approved Mac review siblings may extend the sealed originals");
+    "Only the exact eight declared Mac review siblings may extend the sealed originals");
   const originalNames = assets.filter((name) => !derivatives.has(name) && !macReviewAssets.has(name)).sort();
   assert.equal(originalNames.length, originalAssetCount, "All 624 original assets must remain present");
   assert.equal(owner.canonicalAssetCount - derivatives.size - macReviewAssets.size, originalAssetCount,

@@ -22,7 +22,7 @@ window.FILE_MANIFEST.push({name:'src/engine/cache-bridge.js',exports:['BARCODE.C
     ['cache-line','THE CACHE LINE','The rear of the yellow car faces the open road. The crew channel stays connected.',
       ['6 BIT / COMMS',"We're on the line."],['CACHE BACK',"Then let's make some noise."]]
   ].map(([slug,title,visual,...lines],i)=>Object.freeze({title,visual,
-    asset:i===6?'assets/mac-street-review/cache-walk-to-car-v4.png':`assets/cache-bridge/bridge-${String(i+1).padStart(2,'0')}-${slug}.webp`,
+    asset:i===6?'assets/mac-street-review/cache-walk-to-car-v6.png':`assets/cache-bridge/bridge-${String(i+1).padStart(2,'0')}-${slug}.webp`,
     lines:Object.freeze(lines.map(Object.freeze))})));
   const cues=Object.freeze([{kind:'title',holdMs:800},{kind:'dialogue',line:0,holdMs:4000},
     {kind:'dialogue',line:1,holdMs:Infinity}].map(Object.freeze));

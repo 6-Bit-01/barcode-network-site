@@ -6,7 +6,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
   const ROOT = 'assets/mac-street-review/';
   const ART = {
     mac: ROOT + 'mac-poses-v3.png', street: ROOT + 'street-panorama-v1.png',
-    hero: ROOT + 'mac-hero-v2.png', kave: ROOT + 'scene03-kave-dead-air-v1.png',
+    hero: ROOT + 'mac-hero-v2.png', kave: ROOT + 'scene03-kave-dead-air-v3.png',
     margin: ROOT + 'scene05-margin-note-v1.png', record: ROOT + 'scene06-record-straight-v1.png',
     delivered: 'assets/cache-ending/ending-01-delivered.webp',
     unverified: 'assets/cache-ending/ending-02-unverified.webp',

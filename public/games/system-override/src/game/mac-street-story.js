@@ -11,7 +11,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-street-story.js', exports: ['BAR
     { id: 'unverified', title: 'DELIVERED / UNVERIFIED', asset: 'assets/cache-ending/ending-02-unverified.webp',
       visual: 'Transfer is delivered; the separate outbound distribution channel remains unverified.',
       lines: [line('CACHE BACK', "They took the file. Why isn't it going out?"), line('MAC MODEM / COMMS', 'Delivery passed. Distribution says UNVERIFIED.')] },
-    { id: 'kave-dead-air', title: "KAVE'S DEAD AIR", asset: 'assets/mac-street-review/scene03-kave-dead-air-v1.png',
+    { id: 'kave-dead-air', title: "KAVE'S DEAD AIR", asset: 'assets/mac-street-review/scene03-kave-dead-air-v3.png',
       visual: 'Kave tends the Kaveman Radio review desk and its waiting submissions in the venue neighborhood.',
       lines: [line('KAVE', "The review queue's full. Nothing's reaching the listeners."), line('CACHE BACK / COMMS', "It got here whole. Somebody's keeping it here.")],
       choice: { id: 'delivery-question', speaker: 'CACHE BACK / COMMS', prompt: 'What do you ask?',

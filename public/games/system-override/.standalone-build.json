@@ -1,9 +1,9 @@
 {
   "builder": "barcode-system-override-standalone-v1",
   "status": "complete",
-  "sourceCommit": "57f6698d3c9187596b7c443e506111e5e3ad32c7",
-  "sourceTree": "076d300482d6c32df93cedca26efd750887526b6",
-  "builderSHA256": "2f5ec7895cfe44e5079651975082ee4b91e39b0c53216e46bd910b01e7012764",
+  "sourceCommit": "b51e7f7236121c3cf7abb2d2b436a850d4b3ef67",
+  "sourceTree": "df5a0f37e39c3b823c4a065a0523d2f37dff4f9c",
+  "builderSHA256": "9067c6cef24caedbb9050e1434594a032d02200cc7d168e762603df7370db66d",
   "files": {
     "assets/audio/broadcast-slum-proof-carrier.wav": {
       "sha256": "7d9eb892d074c17ee1047c33f3a4264eeac3d4f954c856ce35745a2a484a901c",
@@ -2641,9 +2641,9 @@
       "sha256": "8a1b656d1db8cbfda19d20d9b483c8af56a8daff64d55a0ca9f861fa4918de76",
       "bytes": 2488922
     },
-    "assets/mac-street-review/cache-walk-to-car-v4.png": {
-      "sha256": "41d3a6f804fbcc0ae125267e10dda54ba7051d42674b7d8363d580d61ececefe",
-      "bytes": 2812836
+    "assets/mac-street-review/cache-walk-to-car-v6.png": {
+      "sha256": "dfd8d743acc68ffaf0c410a8a9397c3799ef2351b546a0e109b2a15e2cfaca8b",
+      "bytes": 2781221
     },
     "assets/mac-street-review/mac-hero-v2.png": {
       "sha256": "7a4ea32cc6842408a4a381ade72595fc8cb8cb3d738802c26597443c08609599",
@@ -2657,9 +2657,9 @@
       "sha256": "691a384a9a1a30757a35ab3f81fcc17a5e4aca7e24b65873068660d29ee63b80",
       "bytes": 837375
     },
-    "assets/mac-street-review/scene03-kave-dead-air-v1.png": {
-      "sha256": "f74ac5197495069502f519f5ef46a916246b3f90e9baa7b6b80c415a85b19fb5",
-      "bytes": 2831184
+    "assets/mac-street-review/scene03-kave-dead-air-v3.png": {
+      "sha256": "babff824674c90b76fb08a0bfe3cfb5720bc314d1dd391fbc4e5ba84dea7b738",
+      "bytes": 2516405
     },
     "assets/mac-street-review/scene05-margin-note-v1.png": {
       "sha256": "a7da9e13bbf406915c00928868b0b78b3e9e4127d771bfd4a37f8c72b7f50a16",
@@ -3190,7 +3190,7 @@
       "bytes": 2057
     },
     "src/engine/cache-bridge.js": {
-      "sha256": "7924ad69427e7a35e750b842671906c957dfc6963267936603a2e2aafca6e75f",
+      "sha256": "fb02a73cee1cffdc9ba0a4f72176e1200f62c77d1a839c4d71fae09348383fe7",
       "bytes": 16770
     },
     "src/engine/cache-ending.js": {
@@ -3486,7 +3486,7 @@
       "bytes": 14810
     },
     "src/game/mac-combat-preview.js": {
-      "sha256": "b61012253e49f28de0cd16d98444fa741510c0697dd8abd8540b59093b1b0a30",
+      "sha256": "692c118f4528912218f6ae5811fda0aca1909e395ddcedae09f460141917b341",
       "bytes": 19421
     },
     "src/game/mac-street-combat.js": {
@@ -3494,7 +3494,7 @@
       "bytes": 17735
     },
     "src/game/mac-street-story.js": {
-      "sha256": "5cb5692246e2cd9786a5f2c055488757453180a1a678f349fc2a49015221c216",
+      "sha256": "e29adee354c000e8b58115af2d1aa30a047380ce7c54bbf6cd2a050cd5d5f1bc",
       "bytes": 10724
     },
     "src/game/main-legacy-backup.js": {
@@ -3605,7 +3605,7 @@
   "sourceMode": "working-tree runtime scripts; exact HEAD canonical asset blobs",
   "canonicalAssetCount": 782,
   "preservedOriginalCount": 21,
-  "assetBytes": 619092556,
+  "assetBytes": 618746162,
   "ownedFiles": [
     ".standalone-build.json",
     "assets/audio/broadcast-slum-proof-carrier.wav",
@@ -4267,11 +4267,11 @@
     "assets/level1-signal-art/signal-amp-source.png",
     "assets/level1-signal-art/signal-discharge-atlas.webp",
     "assets/level1-signal-art/signal-discharge-source.png",
-    "assets/mac-street-review/cache-walk-to-car-v4.png",
+    "assets/mac-street-review/cache-walk-to-car-v6.png",
     "assets/mac-street-review/mac-hero-v2.png",
     "assets/mac-street-review/mac-poses-v3-frames.json",
     "assets/mac-street-review/mac-poses-v3.png",
-    "assets/mac-street-review/scene03-kave-dead-air-v1.png",
+    "assets/mac-street-review/scene03-kave-dead-air-v3.png",
     "assets/mac-street-review/scene05-margin-note-v1.png",
     "assets/mac-street-review/scene06-record-straight-v1.png",
     "assets/mac-street-review/street-panorama-v1.png",

@@ -1,5 +1,11 @@
 # System Override web entry
 
+## Mobile tutorial instructions — October 5
+
+Source PR188 (`12dc71b943362a24c33c52e90309c2274ca4b7a3`, tree `c1f76601e6a905a8be224b275eb34f3cd202746c`) corrects mobile tutorial wording: Tap Next, Joystick, Jump, Rhythm/Exit, Beat and Hack/Link. Both terminal layouts name digits, Submit, Delete and Cancel. Only the two wording scripts and standalone ownership metadata change in the hosted payload; all 888 payload hashes are verified and artwork/audio are unchanged.
+
+The exact strict build passed an actual portrait/landscape touch flow: first Next reveals the full line, second advances exactly one line, and neither triggers Jump. All-file syntax, existing tutorial/touch checks and a supplemental production input/terminal integration pass. This is the release preparation snapshot; source/site exact-head checks and guarded publication are recorded in PR188 and the corresponding website PR. Physical-handset FPS is not assessed by this wording correction.
+
 ## Direct mobile actions
 
 The owner rejects the published combat More drawer because it interrupts action. Source PR186 merged as `d2e3776d6aebbf911b41b9e86b56b769e970e8d1` with tested tree `b3ba8eb2d39824d54caf2db3a62999dd204cf20c`. It replaces that drawer with compact fixed thumb slots for proactive Guard/Boost, target-aware Strike/Fire, nearby-enemy/projectile Jam and the manually tapped current Sync cue. Labels stay stable while recharge, active, ammunition/shot and next-beat badges explain readiness. Gameplay has no More/pads menu; cinematic extras keep their non-action drawer. Level 1 exposes available Inspect/Continue/Close directly, with running on the outer joystick gesture.

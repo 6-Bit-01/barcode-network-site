@@ -324,6 +324,11 @@ window.TutorialSystem = class TutorialSystem {
 
   control(action) {
     const keys = { rhythm_mode: 'R', primary: '↓', interact: 'H', jump: '↑ / W' };
+    if (window.BARCODE?.TouchControls?.enabled) {
+      if (action === 'rhythm_mode') return window.rhythmSystem?.isActive?.() ? 'Exit' : 'Rhythm';
+      if (action === 'interact') return window.hackingSystem?.getAvailability?.()?.state === 'linked' ? 'Link' : 'Hack';
+      return { continue: 'Next', move: 'Joystick', jump: 'Jump', primary: 'Beat' }[action] || keys[action];
+    }
     if (action === 'continue') return window.BARCODE?.GamepadUI?.connected ? (window.BARCODE?.ControllerSettings?.button(8) || 'Create / View') : 'Space';
     if (action === 'move') return window.BARCODE?.GamepadUI?.connected ? 'Left stick' : '← / →';
     return window.BARCODE?.ControllerSettings?.prompt(action, keys[action]) || keys[action];
@@ -350,6 +355,8 @@ window.TutorialSystem = class TutorialSystem {
     if (this.storyChapter === 3 && !done('hack_complete')) {
       if (hack?.isActive?.()) {
         if (hack.phase !== 'answer') return cue('Watch the signal', null, 'Input opens after the signal', 'Practice uplink');
+        if (window.BARCODE?.TouchControls?.enabled) return { title: 'Enter the answer', control: 'Number pad', label: 'Tap answer',
+          detail: 'Submit • ⌫ Delete • Cancel', progress: 'Practice • No answer time limit' };
         const pad = window.BARCODE?.GamepadUI?.connected, settings = window.BARCODE?.ControllerSettings;
         return { title: 'Enter the answer', control: pad ? 'D-pad' : '0–9', label: pad ? 'Choose a key' : 'Type answer',
           detail: pad ? `${settings?.button(0) || 'A'} Enter • ${settings?.button(2) || 'X'} Erase • ${settings?.button(1) || 'B'} Cancel` : 'Enter Submit • Backspace Erase', progress: 'Practice • No answer time limit' };
@@ -415,8 +422,9 @@ window.TutorialSystem = class TutorialSystem {
       ctx.fillStyle = '#ffffff'; ctx.font = '32px Oxanium, sans-serif';
       this.wrapText(presentation.text, width - 60, ctx).forEach((text, index) => ctx.fillText(text, x+26, y + 64 + index * 38));
       ctx.font = 'bold 26px Oxanium, sans-serif'; ctx.fillStyle = '#a9ffdb';
-      const button = this.control('continue') + (window.BARCODE?.GamepadUI?.connected ? ' button' : '');
-      const help = `Press ${button} to ${this.readyToAdvance ? 'continue' : 'show the full line'}`;
+      const touch = window.BARCODE?.TouchControls?.enabled;
+      const button = this.control('continue') + (!touch && window.BARCODE?.GamepadUI?.connected ? ' button' : '');
+      const help = `${touch ? 'Tap' : 'Press'} ${button} to ${this.readyToAdvance ? 'continue' : 'show the full line'}`;
       const helpLines=this.wrapText(help,width-52,ctx);
       helpLines.forEach((text,i)=>ctx.fillText(text,x+26,y+height-26-(helpLines.length-1-i)*29));
     } else {

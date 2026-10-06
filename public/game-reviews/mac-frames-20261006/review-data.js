@@ -1,10 +1,27 @@
 window.MAC_FRAME_REVIEW = {
   "imagePaths": {
     "basic": "mac-basic-v2.png",
-    "advanced": "mac-advanced-v1.png"
+    "advanced": "mac-advanced-v1.png",
+    "walk": "mac-walk-v1.png",
+    "contacts": "mac-walk-contacts-v1.png",
+    "jump": "mac-jump-kick-v1.png"
   },
   "backgroundPath": "/games/system-override/assets/mac-city-review/service-alley-v1.png",
   "standingHeight": 321,
+  "standingHeights": {
+    "basic": 321,
+    "advanced": 343,
+    "walk": 430,
+    "contacts": 825,
+    "jump": 458
+  },
+  "sheetLabels": {
+    "basic": "Core attacks (walk uses the corrected drawings below)",
+    "advanced": "Advanced moves and reactions",
+    "walk": "Walk passing drawings",
+    "contacts": "Opposite walk contacts",
+    "jump": "Jump kick: load, chamber, strike, recoil and landing"
+  },
   "frames": {
     "idle_a": {
       "source": {
@@ -317,6 +334,170 @@ window.MAC_FRAME_REVIEW = {
         "y": 347
       },
       "sheet": "advanced"
+    },
+    "walk_3": {
+      "source": {
+        "x": 902,
+        "y": 0,
+        "width": 409,
+        "height": 448
+      },
+      "feetPivot": {
+        "x": 193,
+        "y": 445
+      },
+      "sheet": "walk"
+    },
+    "walk_7": {
+      "source": {
+        "x": 904,
+        "y": 448,
+        "width": 393,
+        "height": 439
+      },
+      "feetPivot": {
+        "x": 188,
+        "y": 427
+      },
+      "sheet": "walk"
+    },
+    "walk_contact_left": {
+      "source": {
+        "x": 0,
+        "y": 0,
+        "width": 897,
+        "height": 887
+      },
+      "feetPivot": {
+        "x": 470.0,
+        "y": 842
+      },
+      "sheet": "contacts"
+    },
+    "walk_contact_right": {
+      "source": {
+        "x": 897,
+        "y": 0,
+        "width": 877,
+        "height": 887
+      },
+      "feetPivot": {
+        "x": 373.0,
+        "y": 851
+      },
+      "sheet": "contacts"
+    },
+    "load": {
+      "source": {
+        "x": 74,
+        "y": 128,
+        "width": 328,
+        "height": 349
+      },
+      "feetPivot": {
+        "x": 165,
+        "y": 339
+      },
+      "sheet": "jump",
+      "baselineLift": 0
+    },
+    "takeoff": {
+      "source": {
+        "x": 485,
+        "y": 0,
+        "width": 326,
+        "height": 472
+      },
+      "feetPivot": {
+        "x": 178,
+        "y": 470
+      },
+      "sheet": "jump",
+      "baselineLift": 0.0
+    },
+    "chamber": {
+      "source": {
+        "x": 927,
+        "y": 0,
+        "width": 290,
+        "height": 443
+      },
+      "feetPivot": {
+        "x": 148,
+        "y": 427
+      },
+      "sheet": "jump",
+      "baselineLift": 13.624454148471616
+    },
+    "kick_extend": {
+      "source": {
+        "x": 1296,
+        "y": 24,
+        "width": 466,
+        "height": 376
+      },
+      "feetPivot": {
+        "x": 119,
+        "y": 360
+      },
+      "sheet": "jump",
+      "baselineLift": 58.47161572052402
+    },
+    "kick_contact": {
+      "source": {
+        "x": 18,
+        "y": 477,
+        "width": 506,
+        "height": 348
+      },
+      "feetPivot": {
+        "x": 151,
+        "y": 334
+      },
+      "sheet": "jump",
+      "baselineLift": 49.956331877729255
+    },
+    "kick_retract": {
+      "source": {
+        "x": 550,
+        "y": 472,
+        "width": 283,
+        "height": 405
+      },
+      "feetPivot": {
+        "x": 124,
+        "y": 391
+      },
+      "sheet": "jump",
+      "baselineLift": 22.139737991266376
+    },
+    "descent": {
+      "source": {
+        "x": 953,
+        "y": 448,
+        "width": 327,
+        "height": 439
+      },
+      "feetPivot": {
+        "x": 157,
+        "y": 430
+      },
+      "sheet": "jump",
+      "baselineLift": 7.9475982532751095
+    },
+    "landing": {
+      "source": {
+        "x": 1407,
+        "y": 518,
+        "width": 304,
+        "height": 369
+      },
+      "feetPivot": {
+        "x": 157,
+        "y": 348
+      },
+      "sheet": "jump",
+      "baselineLift": 0
     }
   },
   "clips": {
@@ -341,20 +522,20 @@ window.MAC_FRAME_REVIEW = {
       "label": "Walk",
       "frames": [
         {
-          "id": "walk_contact_a",
+          "id": "walk_contact_left",
           "ms": 110
         },
         {
-          "id": "walk_pass_a",
-          "ms": 80
+          "id": "walk_3",
+          "ms": 90
         },
         {
-          "id": "walk_contact_b",
+          "id": "walk_contact_right",
           "ms": 110
         },
         {
-          "id": "walk_pass_b",
-          "ms": 80
+          "id": "walk_7",
+          "ms": 90
         }
       ]
     },
@@ -516,27 +697,63 @@ window.MAC_FRAME_REVIEW = {
       "frames": [
         {
           "id": "idle_a",
-          "ms": 350
+          "ms": 350,
+          "lift": 0,
+          "liftEnd": 0
         },
         {
-          "id": "jump_rise",
-          "ms": 100
+          "id": "load",
+          "ms": 85,
+          "lift": 0,
+          "liftEnd": 0
         },
         {
-          "id": "air_kick",
-          "ms": 120
+          "id": "takeoff",
+          "ms": 100,
+          "lift": 0,
+          "liftEnd": 48.5
         },
         {
-          "id": "jump_rise",
-          "ms": 65
+          "id": "chamber",
+          "ms": 120,
+          "lift": 48.5,
+          "liftEnd": 86.9
         },
         {
-          "id": "jump_land",
-          "ms": 100
+          "id": "kick_extend",
+          "ms": 100,
+          "lift": 86.9,
+          "liftEnd": 102.40000000000002
+        },
+        {
+          "id": "kick_contact",
+          "ms": 100,
+          "lift": 102.40000000000002,
+          "liftEnd": 102.9
+        },
+        {
+          "id": "kick_retract",
+          "ms": 100,
+          "lift": 102.9,
+          "liftEnd": 88.39999999999998
+        },
+        {
+          "id": "descent",
+          "ms": 226.66666666666674,
+          "lift": 88.39999999999998,
+          "liftEnd": 0
+        },
+        {
+          "id": "landing",
+          "ms": 120,
+          "lift": 0,
+          "liftEnd": 0
         },
         {
           "id": "idle_a",
-          "ms": 350
+          "ms": 350,
+          "lift": 0,
+          "liftEnd": 0
         }
       ]
     },
@@ -629,8 +846,6 @@ window.MAC_FRAME_REVIEW = {
       ]
     }
   },
-  "standingHeights": {
-    "basic": 321,
-    "advanced": 343
-  }
+  "revision": "Walk + air kick revision 2 \u00b7 October 6",
+  "walkSpeed": 260
 };

@@ -289,6 +289,15 @@ test("only matching live rows expose a dot and accessible listening control, wit
 test("browser polling expires from server age, continues for background listeners and cleans up fully", async () => {
   const refs = [], states = [], effects = [], timers = new Map(), events = new Map(), docEvents = new Map();
   const audio = new Audio(); let id = 0, calls = 0, response = live({ ageMs: 89000 });
+  const settlePoll = async () => {
+    // Native Response.json() may complete on a later event-loop turn (Node 22).
+    // Wait for the observable scheduled next poll, not a fixed microtask count.
+    for (let turn = 0; turn < 100; turn++) {
+      await new Promise((resolve) => setImmediate(resolve));
+      if ([...timers.values()].some((timer) => timer.ms === 10000)) return;
+    }
+    assert.fail("The radio poll did not settle");
+  };
   const document = { visibilityState: "visible", addEventListener: (name, fn) => docEvents.set(name, fn), removeEventListener: (name) => docEvents.delete(name) };
   const window = { setTimeout: (fn, ms) => { timers.set(++id, { fn, ms }); return id; }, clearTimeout: (id) => timers.delete(id),
     addEventListener: (name, fn) => events.set(name, fn), removeEventListener: (name) => events.delete(name) };
@@ -303,16 +312,16 @@ test("browser polling expires from server age, continues for background listener
   } });
   const hook = useHellcatRadio([{ rank: 1, title: track.title, artist: track.artist, score: 80 }]);
   refs[0].current = audio;
-  effects[0](); const cleanup = effects[1](); await flush(); await flush();
+  effects[0](); const cleanup = effects[1](); await settlePoll();
   assert.equal(states[0].live, true);
   const expiry = [...timers.values()].find((timer) => timer.ms === 1000);
   assert.ok(expiry);
-  hook.toggleListen(); await flush(); await flush();
-  document.visibilityState = "hidden"; docEvents.get("visibilitychange")(); await flush(); await flush();
+  hook.toggleListen(); await settlePoll();
+  document.visibilityState = "hidden"; docEvents.get("visibilitychange")(); await settlePoll();
   assert.equal(refs[1].current.isListening(), true);
   assert.ok([...timers.values()].some((timer) => timer.ms === 10000), "a listener continues receiving heartbeats in a hidden tab");
   expiry.fn(); assert.equal(states[0], null); assert.equal(audio.paused, true);
-  response = { live: false }; events.get("online")(); await flush(); await flush();
+  response = { live: false }; events.get("online")(); await settlePoll();
   assert.equal(states[0], null);
   cleanup(); const before = calls;
   assert.equal(timers.size, 0); assert.equal(events.size, 0); assert.equal(docEvents.size, 0);

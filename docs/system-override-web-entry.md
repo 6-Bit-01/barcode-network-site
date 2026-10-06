@@ -1,5 +1,13 @@
 # System Override web entry
 
+## Private Mac street review — October 5
+
+This review branch installs the strict source `57f6698d3c9187596b7c443e506111e5e3ad32c7` build (tree `076d300482d6c32df93cedca26efd750887526b6`). Its private entry is `/games/system-override/index.html?preview=mac-firstslice`. The title Start button opens eight illustrated transition scenes with two reconverging choices, followed by Mac's first two street fights and Kave's local-feed conversation. Existing Continue/save paths remain on the regular campaign.
+
+Mac uses two-axis walking, Jump, Strike, Guard/counter and nearby Throw; Talk appears at the cleared desk. The preview shares the existing input, frame, audio and pause owners, keeps progress temporary and grants neither Drums nor full Level 3 completion. The existing Level 03 proof stems are temporary test audio. New artwork follows the approved Mac model and clearer first-party Kave references. Cache's walking-with-keys candidate replaces the penultimate bridge panel, followed by the unchanged final car shot. These paintings and the new gameplay are for owner review.
+
+The package has 92 scripts and 899 payload files. Installation verifies every old and new hash, permits exactly eight new review assets, and preserves the sealed 624 original artwork/audio identities plus 150 compressed-texture derivatives. Source static/integration and strict-package checks pass; final browser and website checks are recorded with this review's receipts and draft pull requests. Production remains the published PR188/PR484 baseline until this new slice is reviewed. This branch changes only the game payload, its bundle regression and this contract; the hidden footer entry and site routes keep their existing behavior.
+
 ## Mobile tutorial instructions — October 5
 
 Source PR188 (`12dc71b943362a24c33c52e90309c2274ca4b7a3`, tree `c1f76601e6a905a8be224b275eb34f3cd202746c`) corrects mobile tutorial wording: Tap Next, Joystick, Jump, Rhythm/Exit, Beat and Hack/Link. Both terminal layouts name digits, Submit, Delete and Cancel. Only the two wording scripts and standalone ownership metadata change in the hosted payload; all 888 payload hashes are verified and artwork/audio are unchanged.

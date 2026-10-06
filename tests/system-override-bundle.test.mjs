@@ -14,6 +14,12 @@ const basisRoot = "src/vendor/basis-2.50/";
 const textureRoot = "assets/cache-road/gpu-textures/";
 const textureManifestName = textureRoot + "manifest.json";
 const originalAssetCount = 624;
+const macReviewRoot = "assets/mac-street-review/";
+const macReviewAssets = new Set([
+  "cache-walk-to-car-v4.png", "mac-hero-v2.png", "mac-poses-v3-frames.json", "mac-poses-v3.png",
+  "scene03-kave-dead-air-v1.png", "scene05-margin-note-v1.png",
+  "scene06-record-straight-v1.png", "street-panorama-v1.png",
+].map((name) => macReviewRoot + name));
 // Sorted [path, bytes, SHA-256] rows from the original complete 624-asset package.
 // Compressed derivatives may be added; every original identity and byte hash remains pinned.
 const originalAssetInventorySHA256 = "0b2ac58dc88ddb68b595fb8592d242d8478c426d78309fe4ff45b88c04027f56";
@@ -219,10 +225,12 @@ test("System Override ships a complete, sanitized ownership and SHA-256 manifest
   for (const name of derivatives) localFile(name, owner.files);
   assert.deepEqual(assets.filter((name) => name.startsWith(textureRoot)).sort(), [...derivatives].sort(),
     "Only the declared manifest and exact KTX2 bank may be added as texture derivatives");
-  const originalNames = assets.filter((name) => !derivatives.has(name)).sort();
+  assert.deepEqual(assets.filter((name) => name.startsWith(macReviewRoot)).sort(), [...macReviewAssets].sort(),
+    "Only the exact eight approved Mac review siblings may extend the sealed originals");
+  const originalNames = assets.filter((name) => !derivatives.has(name) && !macReviewAssets.has(name)).sort();
   assert.equal(originalNames.length, originalAssetCount, "All 624 original assets must remain present");
-  assert.equal(owner.canonicalAssetCount - derivatives.size, originalAssetCount,
-    "Canonical ownership must count originals and the declared derivatives separately");
+  assert.equal(owner.canonicalAssetCount - derivatives.size - macReviewAssets.size, originalAssetCount,
+    "Canonical ownership must count sealed originals, exact derivatives and eight Mac siblings separately");
   const originalRows = originalNames.map((name) => [name, owner.files[name].bytes, owner.files[name].sha256]);
   assert.equal(createHash("sha256").update(JSON.stringify(originalRows)).digest("hex"), originalAssetInventorySHA256,
     "Original artwork, music, sprite data or asset metadata changed");
@@ -251,7 +259,63 @@ test("System Override ships a complete, sanitized ownership and SHA-256 manifest
     if (name.startsWith("assets/")) assetBytes += record.bytes;
   }
   assert.equal(owner.assetBytes, assetBytes, "Asset byte total differs from the complete hash manifest");
-  t.diagnostic(`${names.length} payload files verified; ${originalNames.length} unchanged originals plus ${derivatives.size} texture derivatives, ${assetBytes} asset bytes`);
+  t.diagnostic(`${names.length} payload files verified; ${originalNames.length} unchanged originals plus ${derivatives.size} texture derivatives and ${macReviewAssets.size} Mac siblings, ${assetBytes} asset bytes`);
+});
+
+test("System Override ships the exact Mac preview art, native pose registration and private query entry", (t) => {
+  const files = marker().files;
+  assert.deepEqual(Object.keys(files).filter((name) => name.startsWith(macReviewRoot)).sort(), [...macReviewAssets].sort(),
+    "Mac review must have every approved sibling and no extra photo or review file");
+  const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  const dimensions = {};
+  for (const name of macReviewAssets) {
+    const file = localFile(name, files);
+    if (!name.endsWith(".png")) continue;
+    assert(header(file, 8).equals(pngSignature), `Mac art must retain native PNG bytes: ${name}`);
+    dimensions[name] = originalDimensions(file);
+    assert(dimensions[name].every((value) => Number.isSafeInteger(value) && value > 0), "Invalid native Mac image dimensions");
+  }
+  const imageName = macReviewRoot + "mac-poses-v3.png", sheet = JSON.parse(read(macReviewRoot + "mac-poses-v3-frames.json"));
+  assert.equal(sheet.schemaVersion, 1); assert.equal(sheet.sourceImage, imageName); assert.equal(sheet.facing, "right");
+  assert.deepEqual([sheet.dimensions.width, sheet.dimensions.height], dimensions[imageName], "Pose metadata must describe the actual unchanged image");
+  const pngHeader = header(localFile(imageName), 26);
+  assert.equal(pngHeader[24], 8); assert.equal(pngHeader[25], 6, "Pose sheet requires original RGBA transparency");
+  assert.deepEqual(sheet.frames.map((frame) => frame.id), ["idle", "walk_left", "walk_right", "punch", "guard", "jump"]);
+  assert.equal(sheet.pixelScale.standingVisibleHeight, sheet.frames[0].visibleBounds.height, "One shared scale derives from standing height");
+  for (const frame of sheet.frames) {
+    const crop = frame.source, visible = frame.visibleBounds, pivot = frame.pivot;
+    for (const rect of [crop, visible]) {
+      assert(Number.isSafeInteger(rect.x) && rect.x >= 0 && Number.isSafeInteger(rect.y) && rect.y >= 0);
+      assert(Number.isSafeInteger(rect.width) && rect.width > 0 && Number.isSafeInteger(rect.height) && rect.height > 0);
+    }
+    assert(crop.x + crop.width <= sheet.dimensions.width && crop.y + crop.height <= sheet.dimensions.height, `Pose crop escapes bitmap: ${frame.id}`);
+    assert(visible.x + visible.width <= crop.width && visible.y + visible.height <= crop.height, `Silhouette escapes crop: ${frame.id}`);
+    assert(Number.isFinite(pivot.x) && Number.isFinite(pivot.y) && pivot.x >= visible.x && pivot.x <= visible.x + visible.width);
+    assert.equal(pivot.y, visible.y + visible.height, `Registered foot must anchor the lowest shoe: ${frame.id}`);
+  }
+  for (let i = 0; i < sheet.frames.length; i++) for (let j = i + 1; j < sheet.frames.length; j++) {
+    const a = sheet.frames[i].source, b = sheet.frames[j].source;
+    assert(Math.min(a.x + a.width, b.x + b.width) <= Math.max(a.x, b.x) ||
+      Math.min(a.y + a.height, b.y + b.height) <= Math.max(a.y, b.y), "Registered pose crops overlap");
+  }
+  assert(new Set(sheet.frames.map((frame) => frame.source.width)).size > 1, "Measured nonuniform crops must not become equal atlas cells");
+  const html = read("index.html"), scripts = [...html.matchAll(/<script\b[^>]*\bsrc=["']([^"']+)/gi)].map((match) => match[1]);
+  const macScripts = ["src/game/mac-street-combat.js", "src/game/mac-street-story.js", "src/game/mac-combat-preview.js"];
+  for (const name of macScripts) { assert.equal(scripts.filter((script) => script === name).length, 1, `One Mac owner: ${name}`); localFile(name, files); }
+  assert(scripts.indexOf(macScripts[0]) < scripts.indexOf(macScripts[2]) && scripts.indexOf(macScripts[1]) < scripts.indexOf(macScripts[2]), "Both factories must precede the preview wrapper");
+  assert(scripts.indexOf("src/core/runtime-lifecycle.js") < scripts.indexOf(macScripts[2]), "Mac keeps the shared lifecycle owner");
+  const sandbox = context({URLSearchParams, location: {search: ""}}); let registrations = 0;
+  sandbox.window.BARCODE.Campaign = {register() { registrations++; }};
+  for (const name of macScripts) load(sandbox, name);
+  const preview = sandbox.window.BARCODE.MacCombatPreview;
+  assert.equal(registrations, 0, "Private Mac modules must not register or replace a campaign chapter");
+  assert.equal(preview.active, false); assert.equal(preview.requested(), false, "Ordinary title remains the normal campaign");
+  for (const [query, expected] of [["?preview=mac-firstslice", true], ["?preview=other", false], ["?mac-firstslice=1", false]]) {
+    sandbox.window.location.search = query; assert.equal(preview.requested(), expected, `Exact private query: ${query}`);
+  }
+  assert.match(html, /MacCombatPreview\?\.requested\?\.\(\)/, "Actual title reads the private query gate");
+  assert.match(html, /privatePreview:\s*["']mac-firstslice["']/, "Private title enters through RuntimeLifecycle");
+  t.diagnostic("8 exact sibling assets, native PNG headers, 6 nonuniform registered poses, 3 ordered owners and an inert private query entry verified");
 });
 
 test("System Override's 171 road sources preserve full resolution and original bytes with 149 local compressed derivatives", (t) => {

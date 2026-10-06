@@ -199,12 +199,12 @@ window.FILE_MANIFEST.push({
         ? [{ button: settings.bindings[action] }] : this.gamepadBindings[action] || [];
       return pads.some(pad => buttons.some(binding => {
         if (binding.button !== undefined) {
-          if (action === 'move_down' && binding.button === 13 && [12, 14, 15].some(index => pad.buttons[index]?.pressed)) return false;
+          if (!BARCODE.MacCombatPreview?.active && action === 'move_down' && binding.button === 13 && [12, 14, 15].some(index => pad.buttons[index]?.pressed)) return false;
           const button = pad.buttons[binding.button];
           return !!button?.pressed || (binding.button === 6 || binding.button === 7) && button?.value >= 0.5;
         }
         if (binding.axis !== undefined) {
-          if (action === 'move_down') {
+          if (action === 'move_down' && !BARCODE.MacCombatPreview?.active) {
             const down = (pad.axes[binding.axis] || 0) * binding.dir;
             return down >= DROP_STICK_MIN && Math.abs(pad.axes[0] || 0) <= down * DROP_STICK_SLOPE && !pad.buttons[12]?.pressed;
           }

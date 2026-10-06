@@ -143,6 +143,22 @@ window.BARCODE = window.BARCODE || {};
     const button = document.getElementById('startButton');
     if (button && !options.restart) { button.disabled = true; button.textContent = 'INITIALIZING...'; }
 
+    // An explicit private Mac entry does not initialize or restore a campaign run.
+    if (options.privatePreview === 'mac-firstslice') {
+      await awaitStartResource(namespace.MacCombatPreview.prepare());
+      if (generation !== initializerGeneration || state !== STATES.STARTING) return;
+      await awaitStartResource(namespace.MacCombatPreview.enter());
+      if (generation !== initializerGeneration || state !== STATES.STARTING) return;
+      window.gameState ||= {};
+      window.gameState.running = true; window.gameState.gameOver = false; window.gameState.victory = false;
+      document.getElementById('startOverlay')?.classList.add('hidden');
+      const previewCanvas = document.getElementById('gameCanvas');
+      if (previewCanvas) previewCanvas.style.display = 'block';
+      if (loading) loading.classList.remove('visible');
+      window.startGameLoop?.();
+      return { ok: true, status: 'started', state, generation };
+    }
+
     if(options.resume?.levelId!=='level-02'&&namespace.PresentationAssets?.selectLevel1Scene) {
       await awaitStartResource(namespace.PresentationAssets.selectLevel1Scene());
       if (generation !== initializerGeneration || state !== STATES.STARTING) return;
@@ -311,7 +327,7 @@ window.BARCODE = window.BARCODE || {};
       }
       // Resuming the audio context must not start a pre-race or completed road clock.
       // Its finite reading cues may be stopped; the next authored cue is fresh.
-      if (namespace.CacheEnding?.active || namespace.CacheRoadProof?.active &&
+      if (namespace.MacCombatPreview?.active && namespace.MacCombatPreview.phase === 'intro' || namespace.CacheEnding?.active || namespace.CacheRoadProof?.active &&
           (namespace.CacheRoadProof.presentationPreparing || namespace.CacheRoadProof.status === 'clear' || namespace.CacheRoadProof.introMs != null)) {
         window.audioSystem?.stopRuntimeAudio?.({ stopMusic: true });
         window.audioSystem?.stopRoadEngine?.();
@@ -328,6 +344,7 @@ window.BARCODE = window.BARCODE || {};
 
   function stopOwnedResources(options) {
     options = options || {};
+    namespace.MacCombatPreview?.dispose?.();
     namespace.CacheEnding?.dispose?.();
     namespace.CacheRoadProof?.dispose?.();
     namespace.PresentationAssets?.releaseScene?.();

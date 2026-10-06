@@ -92,6 +92,14 @@ window.FILE_MANIFEST.push({ name: 'src/core/touch-controls.js', exports: ['BARCO
       if (menu?.titleOpen || paused) return { name: 'menu', key: `menu:${!!menu?.titleOpen}:${menu?.view}:${!!menu?.captureAction}` };
       if (B.LevelDifficulty?.open) return { name: 'difficulty', key: `difficulty:${B.LevelDifficulty.levelId}` };
       if (comic) return { name: 'comic', key: `comic:${comic === B.CacheEnding ? 'ending' : 'bridge'}:${comic.generation}:${comic.page}:${!!comic.pending}:${!!comic.transcriptOpen}`, comic };
+      const mac = B.MacCombatPreview;
+      if (mac?.active) {
+        if (mac.dialogue()) {
+          const story = mac.story.snapshot();
+          return { name: 'mac-dialogue', key: `mac:${mac.phase}:${story.sceneId}:${story.choice?.id || 'line'}`, story };
+        }
+        return { name: mac.status === 'playing' ? 'mac' : 'mac-results', key: `mac:${mac.status}`, joystick: mac.status === 'playing' };
+      }
       if (road?.active) {
         if (road.presentationPreparing || road.exiting) return { name: 'loading', key: 'road-loading' };
         if (road.introMs != null) return { name: 'road-intro', key: 'road-intro' };
@@ -192,6 +200,17 @@ window.FILE_MANIFEST.push({ name: 'src/core/touch-controls.js', exports: ['BARCO
         case 'hack': return [...['1','2','3','4','5','6','7','8','9','Backspace','0','Enter'].map(key => c(`hack:${key}`, key === 'Backspace' ? '⌫' : key === 'Enter' ? 'Submit' : key, { aria: key === 'Backspace' ? 'Delete last digit' : key })), c('hack:Escape', 'Cancel', { group: 'utility' }), pause()];
         case 'road': return this.roadLayout();
         case 'level3': return [a('jump', 'Jump', { icon: '↑', kind: 'primary' }), a('inspect', 'Fire', { icon: '⌖', kind: 'secondary' }), pause()];
+        case 'mac-dialogue': return [...(context.story.choice ? context.story.choice.options.map((option, i) => c(`mac:choice:${i}`, option.label, { kind: 'choice', aria: option.label })) : [c('mac:next', 'Next', { icon: '›', kind: 'primary' })]), context.story.choice?.optional ? c('mac:next', 'Continue', { group: 'utility' }) : c('mac:skip', 'Skip', { group: 'utility' }), pause()];
+        case 'mac-results': return [c('mac:retry', 'Retry'), c('mac:exit', 'Back to title'), pause()];
+        case 'mac': {
+          const mac = B.MacCombatPreview, view = mac.getControlState(), state = mac.combat.getSnapshot();
+          const nearbyDesk = state.desk.unlocked && Math.abs(state.player.x - state.desk.x) < 190;
+          return [a('jump', 'Jump', { icon: '↑', kind: 'primary' }),
+            a('road_attack', view.strike?.label || 'Strike', { icon: '✦', tone: 'b', kind: 'secondary', ready: !!view.strike?.ready }),
+            a('road_defend', 'Guard', { icon: '◇', tone: 'x', kind: 'secondary', active: !!view.guard?.held }),
+            ...(view.throw?.enabled ? [a('road_disrupt', 'Throw', { icon: '↗', tone: 'y', kind: 'secondary', ready: !!view.throw.ready })] : []),
+            ...(nearbyDesk ? [a('inspect', 'Talk', { icon: '◉', kind: 'secondary' })] : []), pause()];
+        }
         case 'level1': {
           const active = !!window.rhythmSystem?.isActive?.(), hack = window.hackingSystem?.getAvailability?.();
           const rhythmAvailable = active || (window.rhythmSystem?.canEnterRhythmMode?.()?.ok ?? (!window.tutorialSystem?.isActive?.() || window.tutorialSystem.storyChapter >= 2));
@@ -353,10 +372,12 @@ window.FILE_MANIFEST.push({ name: 'src/core/touch-controls.js', exports: ['BARCO
       if (distance > RADIUS) { dx *= RADIUS / distance; dy *= RADIUS / distance; }
       const x = dx / RADIUS, y = dy / RADIUS, input = window.inputManager?.actionInput;
       this.thumb.style.transform = `translate(-50%, -50%) translate(${dx}px, ${dy}px)`;
-      const down = this.context.name !== 'road' && y >= .7 && Math.abs(x) <= y * DROP_SLOPE;
+      const mac = this.context.name === 'mac';
+      const down = !mac && this.context.name !== 'road' && y >= .7 && Math.abs(x) <= y * DROP_SLOPE;
       input?.setVirtualAction('move_left', entry.owner, x < -DEADZONE && !down, event);
       input?.setVirtualAction('move_right', entry.owner, x > DEADZONE && !down, event);
-      input?.setVirtualAction('move_down', entry.owner, down, event);
+      input?.setVirtualAction('move_down', entry.owner, mac ? y > DEADZONE : down, event);
+      input?.setVirtualAction('move_up', entry.owner, mac && y < -DEADZONE, event);
       input?.setVirtualAction('run', entry.owner, this.context.name === 'level1' && Math.abs(x) >= .82 && !down, event);
     },
     pointerUp(event, cancelled = false) {

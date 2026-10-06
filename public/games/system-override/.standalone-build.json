@@ -1,9 +1,9 @@
 {
   "builder": "barcode-system-override-standalone-v1",
   "status": "complete",
-  "sourceCommit": "12dc71b943362a24c33c52e90309c2274ca4b7a3",
-  "sourceTree": "c1f76601e6a905a8be224b275eb34f3cd202746c",
-  "builderSHA256": "d5e691bf68931baf7002006cab0d5a0a6053fdfa03c68c6bcfc0af75b1325ad6",
+  "sourceCommit": "57f6698d3c9187596b7c443e506111e5e3ad32c7",
+  "sourceTree": "076d300482d6c32df93cedca26efd750887526b6",
+  "builderSHA256": "2f5ec7895cfe44e5079651975082ee4b91e39b0c53216e46bd910b01e7012764",
   "files": {
     "assets/audio/broadcast-slum-proof-carrier.wav": {
       "sha256": "7d9eb892d074c17ee1047c33f3a4264eeac3d4f954c856ce35745a2a484a901c",
@@ -2641,6 +2641,38 @@
       "sha256": "8a1b656d1db8cbfda19d20d9b483c8af56a8daff64d55a0ca9f861fa4918de76",
       "bytes": 2488922
     },
+    "assets/mac-street-review/cache-walk-to-car-v4.png": {
+      "sha256": "41d3a6f804fbcc0ae125267e10dda54ba7051d42674b7d8363d580d61ececefe",
+      "bytes": 2812836
+    },
+    "assets/mac-street-review/mac-hero-v2.png": {
+      "sha256": "7a4ea32cc6842408a4a381ade72595fc8cb8cb3d738802c26597443c08609599",
+      "bytes": 3111148
+    },
+    "assets/mac-street-review/mac-poses-v3-frames.json": {
+      "sha256": "c0ca5d04f98a7e9de420f65342fea64ac9277a5c020ae76999167e010bcf7841",
+      "bytes": 3407
+    },
+    "assets/mac-street-review/mac-poses-v3.png": {
+      "sha256": "691a384a9a1a30757a35ab3f81fcc17a5e4aca7e24b65873068660d29ee63b80",
+      "bytes": 837375
+    },
+    "assets/mac-street-review/scene03-kave-dead-air-v1.png": {
+      "sha256": "f74ac5197495069502f519f5ef46a916246b3f90e9baa7b6b80c415a85b19fb5",
+      "bytes": 2831184
+    },
+    "assets/mac-street-review/scene05-margin-note-v1.png": {
+      "sha256": "a7da9e13bbf406915c00928868b0b78b3e9e4127d771bfd4a37f8c72b7f50a16",
+      "bytes": 2888147
+    },
+    "assets/mac-street-review/scene06-record-straight-v1.png": {
+      "sha256": "ff127fe0bda0d0a9fdada2863b7f466eeb135e9f18e571cb7838f0ad68016d88",
+      "bytes": 2770208
+    },
+    "assets/mac-street-review/street-panorama-v1.png": {
+      "sha256": "c7766ad68ac4b82db7808370a84d47725d538216523cacb80a27c56193363d69",
+      "bytes": 3181059
+    },
     "assets/music/README.md": {
       "sha256": "50cb4e99d392c2c970921073be93b62d937b9983c2d3b84ad80c1112e9b80da9",
       "bytes": 1173
@@ -3102,20 +3134,20 @@
       "bytes": 515770
     },
     "index.html": {
-      "sha256": "557ff2a87f02aa255dcccd06bab74c688e898f72f0febb444568122d2b75d408",
-      "bytes": 38050
+      "sha256": "5e9dc6cbe0174f2e062c0b6961e27fae81d08adb64df53f6f738d08d27006e6a",
+      "bytes": 38572
     },
     "style.css": {
-      "sha256": "efbd253711a63821c5d4efffc37a99d46af08a8233b7fcb63241f77891576ac9",
-      "bytes": 18916
+      "sha256": "9f80d363e38b774bd600f68e6530de7bdc9fe5ee20ce8b7411da7ea9a3611810",
+      "bytes": 21237
     },
     "sprites-manifest.json": {
       "sha256": "c2666c2bdbf21b4b62c5826ad1740957a357c547a80d0a82cca4fae985fabafb",
       "bytes": 14700
     },
     "src/core/action-input.js": {
-      "sha256": "0a792be4e8cff0a81b7c5393bf6b2a8311ccd8d9c66d1901b171b00eb5193a64",
-      "bytes": 14309
+      "sha256": "0cff645e1bcfad91a1e85638954d9e5bc6c2de636be0063a025f06f621aa02ba",
+      "bytes": 14383
     },
     "src/core/fullscreen.js": {
       "sha256": "f98f7899d615f1f457790c7929745e0ea0b5d95086324f0cc7559d315ed0b964",
@@ -3130,20 +3162,20 @@
       "bytes": 7762
     },
     "src/core/input.js": {
-      "sha256": "24712228dffb13c3c036a521141baf9c3c0f5a2458d933e04fd27cd6b4ca944e",
-      "bytes": 28044
+      "sha256": "d1106a7f9d4ecff1b50b2d7f7b0ebce2e2c466d89703aaff03011a6fbe65dedd",
+      "bytes": 29088
     },
     "src/core/loop.js": {
-      "sha256": "dd0de50a62f06d79feeb227af3d000b4ca2f9796e373eef3be59abbc081ef882",
-      "bytes": 9093
+      "sha256": "8349cb31e15146b4cbf34d48abfdde555d220451a2637f1b9e6f5ef5d94b3623",
+      "bytes": 9524
     },
     "src/core/runtime-lifecycle.js": {
-      "sha256": "fd0074acddb182e273f1d3d2fd980a67abcb522ced0ce6fc26343b362a1dc81a",
-      "bytes": 24797
+      "sha256": "6306586df8e0a46769a969dae6fb64a34a3d61c80b4f78f56401e0748ed7cde3",
+      "bytes": 25877
     },
     "src/core/touch-controls.js": {
-      "sha256": "67aeac2ac89fd607bd1bfe2a882f76d12fda48b376d8f1349b3664268d7c2e1e",
-      "bytes": 30891
+      "sha256": "21fbf192e520e651096bd106bf258926a48a9ed73a04a963656bf93947705442",
+      "bytes": 32771
     },
     "src/engine/audio.js": {
       "sha256": "95a91711958d422578870f6672b38fb0a99586bbf7ccc1c1da286935e2689b6e",
@@ -3158,8 +3190,8 @@
       "bytes": 2057
     },
     "src/engine/cache-bridge.js": {
-      "sha256": "a5b8760d549644516c74b9517f6357a1d371e16aad63e002732be24d0ed38e02",
-      "bytes": 16690
+      "sha256": "7924ad69427e7a35e750b842671906c957dfc6963267936603a2e2aafca6e75f",
+      "bytes": 16770
     },
     "src/engine/cache-ending.js": {
       "sha256": "4a87a311270809afb1e4344162a9e5b130222771a56f41fbf2eec548c8ef1624",
@@ -3230,8 +3262,8 @@
       "bytes": 5147
     },
     "src/engine/music-director.js": {
-      "sha256": "1baeaf1a180e737e0757be809aec8d7f9c65abdde88d94e742cb2a931aa103bb",
-      "bytes": 12519
+      "sha256": "ca69a523c922cf466f8c45dc0981dfac2843d63c4bb720400febc1694df1f222",
+      "bytes": 12679
     },
     "src/engine/music-profiles.js": {
       "sha256": "3260ada02d2c20284303affc5262b1231441361ff6842d7844447bbfad578f2c",
@@ -3453,6 +3485,18 @@
       "sha256": "e45f6d064a858250f7aa57914730a0a13570378cea8cdfda48e5f7aaa0b06ea7",
       "bytes": 14810
     },
+    "src/game/mac-combat-preview.js": {
+      "sha256": "b61012253e49f28de0cd16d98444fa741510c0697dd8abd8540b59093b1b0a30",
+      "bytes": 19421
+    },
+    "src/game/mac-street-combat.js": {
+      "sha256": "0b2ccd99a8ec17ba5353f4c01377449015ffedb6dec11db028089ebae3c72280",
+      "bytes": 17735
+    },
+    "src/game/mac-street-story.js": {
+      "sha256": "5cb5692246e2cd9786a5f2c055488757453180a1a678f349fc2a49015221c216",
+      "bytes": 10724
+    },
     "src/game/main-legacy-backup.js": {
       "sha256": "10f53aa29c246877b5f9b97e38408ca70c74fd682903c74499d61eac76dfb4de",
       "bytes": 477
@@ -3478,8 +3522,8 @@
       "bytes": 7538
     },
     "src/game/pause-menu.js": {
-      "sha256": "e7b5dbbd321b68e4d0eda073bbad6e005587d9f816518aba2d92df27744b76f5",
-      "bytes": 40351
+      "sha256": "878a1f0fd8bc86ae36268ecf494e68cfdc3d749f626998c52f2ac91cb022f469",
+      "bytes": 42019
     },
     "src/game/player-combat.js": {
       "sha256": "668b662c1399a9a784baf105daf32c9f6b3cb6ffcfff28838dab700eb7accea7",
@@ -3559,9 +3603,9 @@
     }
   },
   "sourceMode": "working-tree runtime scripts; exact HEAD canonical asset blobs",
-  "canonicalAssetCount": 774,
+  "canonicalAssetCount": 782,
   "preservedOriginalCount": 21,
-  "assetBytes": 600657192,
+  "assetBytes": 619092556,
   "ownedFiles": [
     ".standalone-build.json",
     "assets/audio/broadcast-slum-proof-carrier.wav",
@@ -4223,6 +4267,14 @@
     "assets/level1-signal-art/signal-amp-source.png",
     "assets/level1-signal-art/signal-discharge-atlas.webp",
     "assets/level1-signal-art/signal-discharge-source.png",
+    "assets/mac-street-review/cache-walk-to-car-v4.png",
+    "assets/mac-street-review/mac-hero-v2.png",
+    "assets/mac-street-review/mac-poses-v3-frames.json",
+    "assets/mac-street-review/mac-poses-v3.png",
+    "assets/mac-street-review/scene03-kave-dead-air-v1.png",
+    "assets/mac-street-review/scene05-margin-note-v1.png",
+    "assets/mac-street-review/scene06-record-straight-v1.png",
+    "assets/mac-street-review/street-panorama-v1.png",
     "assets/music/README.md",
     "assets/presentation/README.md",
     "assets/presentation/boss-pulse.webp",
@@ -4425,6 +4477,9 @@
     "src/game/lore-collection.js",
     "src/game/lore-records.js",
     "src/game/lost-data.js",
+    "src/game/mac-combat-preview.js",
+    "src/game/mac-street-combat.js",
+    "src/game/mac-street-story.js",
     "src/game/main-legacy-backup.js",
     "src/game/main-legacy-removed.js",
     "src/game/main-new.js",

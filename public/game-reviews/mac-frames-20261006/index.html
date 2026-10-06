@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mac animation study</title>
+  <style>
+    :root { color-scheme: dark; --ink:#f6f3ec; --muted:#aaa9b8; --panel:#171923; --line:#333442; --accent:#e9b76a; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:#0d1018; font:15px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    button,select,input { font:inherit; }
+    button,select { color:var(--ink); border:1px solid var(--line); border-radius:10px; background:#242631; min-height:44px; }
+    button { cursor:pointer; padding:9px 16px; transition:background .15s,border-color .15s; }
+    button:hover:not(:disabled) { background:#333542; border-color:#666475; }
+    button:disabled,select:disabled { opacity:.4; cursor:default; }
+    button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible { outline:2px solid var(--accent); outline-offset:4px; }
+    button[aria-pressed="true"],.primary { background:var(--accent); color:#211b14; border-color:var(--accent); font-weight:650; }
+    button[aria-pressed="true"]:hover:not(:disabled),.primary:hover:not(:disabled) { background:#f3cc91; border-color:#f3cc91; }
+    select { padding:8px 32px 8px 12px; }
+    main { width:min(1440px,100%); margin:auto; padding:32px 28px 48px; }
+    header { display:flex; align-items:center; justify-content:space-between; gap:24px; margin-bottom:23px; }
+    .eyebrow { margin:0 0 5px; color:var(--accent); font-size:11px; font-weight:750; letter-spacing:.18em; text-transform:uppercase; }
+    h1 { margin:0; font-size:clamp(26px,3vw,38px); line-height:1.2; font-weight:650; letter-spacing:-.035em; }
+    .subtitle { color:var(--muted); margin:7px 0 0; }
+    .badge { display:flex; align-items:center; gap:8px; flex-shrink:0; border:1px solid var(--line); border-radius:99px; padding:8px 12px; color:var(--muted); font-size:12px; }
+    .badge::before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
+    .badge.ready { color:#9ee4b8; }
+    .badge.error { color:#f0a3a3; }
+    .stage { position:relative; border:1px solid var(--line); overflow:hidden; border-radius:16px; background:#151721; aspect-ratio:16/9; }
+    canvas { display:block; width:100%; height:100%; }
+    [hidden] { display:none !important; }
+    .message { min-height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:28px; text-align:center; }
+    .message h2 { font-size:22px; font-weight:600; margin:0 0 10px; }
+    .message p { max-width:430px; margin:0; color:var(--muted); }
+    .message button { margin-top:22px; }
+    .readout { display:flex; align-items:center; justify-content:space-between; gap:16px; color:var(--muted); font-size:12px; padding:12px 4px 17px; font-variant-numeric:tabular-nums; }
+    #drawingLabel { color:var(--ink); }
+    .controls { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:18px; }
+    .clips { display:flex; flex-wrap:wrap; gap:8px; padding-bottom:17px; border-bottom:1px solid var(--line); }
+    .clips button { min-width:88px; }
+    .transport { display:flex; align-items:end; flex-wrap:wrap; gap:16px 24px; padding-top:17px; }
+    .group { display:flex; align-items:center; gap:7px; }
+    .field { display:flex; flex-direction:column; gap:6px; }
+    .field>span { color:var(--muted); font-size:11px; letter-spacing:.06em; text-transform:uppercase; }
+    #play { min-width:104px; }
+    .step { padding-left:13px; padding-right:13px; }
+    .floor { display:flex; gap:9px; align-items:center; min-height:44px; color:var(--muted); cursor:pointer; }
+    .floor input { accent-color:var(--accent); width:18px; height:18px; }
+    .hint { margin:14px 0 0; color:var(--muted); font-size:12px; }
+    details { margin-top:25px; border:1px solid var(--line); border-radius:14px; background:var(--panel); overflow:hidden; }
+    summary { cursor:pointer; padding:17px 20px; font-weight:550; }
+    .sheet-content { padding:0 20px 20px; }
+    .sheet-content p { color:var(--muted); margin:0 0 15px; font-size:13px; }
+    .sheet-figure { margin:0 0 22px; }
+    .sheet-figure:last-child { margin-bottom:0; }
+    .sheet-figure figcaption { margin:0 0 9px; color:var(--ink); font-size:13px; font-weight:550; }
+    .drawing-sheet { display:block; max-width:100%; height:auto; margin:0 auto; border-radius:8px; background:#11131b; }
+    footer { margin-top:20px; color:var(--muted); font-size:12px; }
+    @media(max-width:650px) {
+      main { padding:20px 14px 30px; }
+      header { align-items:flex-start; flex-direction:column; gap:13px; margin-bottom:18px; }
+      .subtitle { font-size:13px; }
+      .stage { border-radius:10px; }
+      .message h2 { font-size:18px; }
+      .message p { font-size:12px; }
+      .message { padding:16px; }
+      .message button { margin-top:12px; }
+      .controls { padding:13px; }
+      .clips { gap:6px; }
+      .clips button { flex:1 1 28%; min-width:0; padding:9px 8px; }
+      .transport { gap:15px; }
+      .readout { align-items:flex-start; font-size:11px; }
+      .readout>span:last-child { text-align:right; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <p class="eyebrow">System Override · Motion review</p>
+        <h1>Mac animation study</h1>
+        <p class="subtitle">Complete character drawings. See the movement, then inspect the moments.</p>
+      </div>
+      <span class="badge" id="status" role="status">Awaiting drawings</span>
+    </header>
+
+    <div class="stage">
+      <canvas id="stage" width="1920" height="1080" aria-label="Mac animation on the game backdrop" hidden></canvas>
+      <div id="message" class="message" role="status">
+        <h2 id="messageTitle">Preparing the study</h2>
+        <p id="messageText">The character drawings and backdrop must both be ready before playback begins.</p>
+        <button id="reload" hidden>Reload study</button>
+      </div>
+    </div>
+    <div class="readout" aria-live="off">
+      <span id="drawingLabel">No animation loaded</span>
+      <span id="frameLabel">Waiting for artwork</span>
+    </div>
+
+    <section class="controls" aria-label="Animation controls">
+      <div class="clips" id="clips" role="group" aria-label="Choose movement"></div>
+      <div class="transport">
+        <div class="field">
+          <span>Playback</span>
+          <div class="group">
+            <button id="previous" class="step" disabled aria-label="Previous drawing" title="Previous drawing (left arrow)">←</button>
+            <button id="play" class="primary" disabled>Play</button>
+            <button id="next" class="step" disabled aria-label="Next drawing" title="Next drawing (right arrow)">→</button>
+          </div>
+        </div>
+        <label class="field"><span>Speed</span>
+          <select id="speed" disabled><option value="1">Normal</option><option value="0.5">Half speed</option><option value="0.25">Quarter speed</option></select>
+        </label>
+        <div class="field"><span>Size</span><div class="group" role="group" aria-label="Character size">
+          <button id="scale1" disabled aria-pressed="true">Gameplay</button>
+          <button id="scale2" disabled aria-pressed="false">2× detail</button>
+        </div></div>
+        <label class="floor"><input type="checkbox" id="floor" disabled>Show contact floor</label>
+      </div>
+      <p class="hint">Space to pause or play. Arrow keys inspect one drawing at a time.</p>
+    </section>
+
+    <details id="sheetPanel" hidden>
+      <summary>See the complete drawing sheet</summary>
+      <div class="sheet-content">
+        <p>Compare the character’s proportions, silhouette and clothing across every drawing.</p>
+        <div id="sheets"></div>
+      </div>
+    </details>
+    <footer>A local animation study for visual review. These drawings are awaiting review.</footer>
+  </main>
+
+  <script src="review-data.js"></script>
+  <script>
+  (() => {
+    'use strict';
+    const el = id => document.getElementById(id);
+    const canvas = el('stage');
+    const context = canvas.getContext('2d');
+    const state = { ready:false, playing:false, clip:null, index:0, frameMs:0, speed:1, scale:1, walkX:420, wrapPending:false };
+    let data, characters, background, lastTime;
+    const finite = value => typeof value === 'number' && Number.isFinite(value);
+    const isWalk = () => state.clip && state.clip.toLowerCase() === 'walk';
+    const currentClip = () => data.clips[state.clip];
+    const currentEntry = () => currentClip().frames[state.index];
+    const niceName = value => String(value).replace(/[-_]+/g,' ').replace(/\b\w/g,letter => letter.toUpperCase());
+
+    function fail(title, text) {
+      state.ready = false;
+      state.playing = false;
+      canvas.hidden = true;
+      el('message').hidden = false;
+      el('messageTitle').textContent = title;
+      el('messageText').textContent = text;
+      el('status').className = 'badge error';
+      el('status').textContent = 'Study not ready';
+      el('drawingLabel').textContent = 'Playback unavailable';
+      el('frameLabel').textContent = 'Artwork needs attention';
+      el('reload').hidden = false;
+      document.querySelectorAll('.controls button,.controls select,.controls input').forEach(control => { control.disabled = true; });
+    }
+
+    function validateData(value) {
+      if (!value || typeof value.backgroundPath !== 'string' || !value.backgroundPath || !value.frames || !value.clips) throw new Error('data');
+      const imagePaths = { ...value.imagePaths };
+      if (!imagePaths.basic && typeof value.imagePath === 'string' && value.imagePath) imagePaths.basic = value.imagePath;
+      if (!Object.keys(imagePaths).length || Object.entries(imagePaths).some(([id,path]) => !['basic','advanced'].includes(id) || typeof path !== 'string' || !path)) throw new Error('sheets');
+      const standingHeights = {};
+      for (const id of Object.keys(imagePaths)) {
+        const height = value.standingHeights && value.standingHeights[id] !== undefined ? value.standingHeights[id] : value.standingHeight;
+        if (!finite(height) || height <= 0) throw new Error('height');
+        standingHeights[id] = height;
+      }
+      for (const frame of Object.values(value.frames)) {
+        const box = frame && frame.source, pivot = frame && frame.feetPivot;
+        if (!frame || !imagePaths[frame.sheet || 'basic'] || !box || !pivot || ![box.x,box.y,box.width,box.height,pivot.x,pivot.y].every(finite) || box.x < 0 || box.y < 0 || box.width <= 0 || box.height <= 0 || pivot.x < 0 || pivot.x > box.width || pivot.y < 0 || pivot.y > box.height) throw new Error('crop');
+      }
+      const ids = Object.keys(value.clips);
+      if (!ids.length) throw new Error('clips');
+      for (const id of ids) {
+        const clip = value.clips[id];
+        if (!clip || typeof clip.label !== 'string' || !Array.isArray(clip.frames) || !clip.frames.length) throw new Error('clip');
+        for (const entry of clip.frames) {
+          if (!entry || !finite(entry.ms) || entry.ms <= 0 || !value.frames[entry.id]) throw new Error('frame');
+        }
+      }
+      return { ...value, imagePaths, standingHeights };
+    }
+
+    function loadImage(path) {
+      return new Promise((resolve,reject) => {
+        const image = new Image();
+        image.onload = () => image.naturalWidth && image.naturalHeight ? resolve(image) : reject(new Error('empty'));
+        image.onerror = () => reject(new Error('image'));
+        image.src = path;
+      });
+    }
+
+    function selectClip(id) {
+      state.clip = id;
+      state.index = 0;
+      state.frameMs = 0;
+      state.walkX = 420;
+      state.wrapPending = false;
+      el('clips').querySelectorAll('button').forEach(button => button.setAttribute('aria-pressed',String(button.dataset.clip === id)));
+      draw();
+    }
+
+    function setPlaying(playing) {
+      state.playing = playing;
+      el('play').textContent = playing ? 'Pause' : 'Play';
+      el('play').setAttribute('aria-label',playing ? 'Pause animation' : 'Play animation');
+    }
+
+    function step(direction) {
+      if (!state.ready) return;
+      setPlaying(false);
+      state.index = (state.index + direction + currentClip().frames.length) % currentClip().frames.length;
+      state.frameMs = 0;
+      draw();
+    }
+
+    function draw() {
+      if (!state.ready) return;
+      const entry = currentEntry();
+      const frame = data.frames[entry.id], source = frame.source;
+      const scale = 260 / data.standingHeights[frame.sheet || 'basic'] * state.scale;
+      const floor = 760, x = isWalk() ? state.walkX : 960;
+      context.clearRect(0,0,1920,1080);
+      context.drawImage(background,0,0,1920,1080);
+      if (el('floor').checked) {
+        context.save();
+        context.strokeStyle = 'rgba(255,230,174,.7)';
+        context.lineWidth = 2;
+        context.setLineDash([12,12]);
+        context.beginPath(); context.moveTo(160,floor); context.lineTo(1760,floor); context.stroke();
+        context.restore();
+      }
+      context.drawImage(characters[frame.sheet || 'basic'],source.x,source.y,source.width,source.height,x-frame.feetPivot.x*scale,floor-frame.feetPivot.y*scale,source.width*scale,source.height*scale);
+      el('drawingLabel').textContent = currentClip().label + ' · ' + niceName(entry.id);
+      el('frameLabel').textContent = 'Drawing ' + (state.index+1) + ' of ' + currentClip().frames.length + ' · ' + entry.ms + ' ms';
+    }
+
+    function tick(time) {
+      const delta = lastTime === undefined ? 0 : Math.min(100,Math.max(0,time-lastTime));
+      lastTime = time;
+      if (state.ready && state.playing) {
+        const elapsed = delta * state.speed;
+        if (isWalk()) {
+          state.walkX += elapsed * .16;
+          if (state.walkX >= 1450) state.wrapPending = true;
+        }
+        state.frameMs += elapsed;
+        while (state.frameMs >= currentEntry().ms) {
+          state.frameMs -= currentEntry().ms;
+          state.index = (state.index+1) % currentClip().frames.length;
+          if (isWalk() && state.index === 0 && state.wrapPending) {
+            state.walkX = 420;
+            state.wrapPending = false;
+          }
+        }
+        draw();
+      }
+      requestAnimationFrame(tick);
+    }
+
+    el('reload').addEventListener('click',() => location.reload());
+    el('play').addEventListener('click',() => setPlaying(!state.playing));
+    el('previous').addEventListener('click',() => step(-1));
+    el('next').addEventListener('click',() => step(1));
+    el('speed').addEventListener('change',event => { state.speed = Number(event.target.value); });
+    for (const size of [1,2]) el('scale'+size).addEventListener('click',() => {
+      state.scale = size;
+      el('scale1').setAttribute('aria-pressed',String(size === 1));
+      el('scale2').setAttribute('aria-pressed',String(size === 2));
+      draw();
+    });
+    el('floor').addEventListener('change',draw);
+    document.addEventListener('keydown',event => {
+      if (!state.ready || event.ctrlKey || event.altKey || event.metaKey || /^(INPUT|SELECT|TEXTAREA)$/.test(event.target.tagName)) return;
+      if (event.code === 'Space' && !/^(BUTTON|SUMMARY)$/.test(event.target.tagName)) { event.preventDefault(); setPlaying(!state.playing); }
+      if (event.code === 'ArrowLeft') { event.preventDefault(); step(-1); }
+      if (event.code === 'ArrowRight') { event.preventDefault(); step(1); }
+    });
+    document.addEventListener('visibilitychange',() => { lastTime = undefined; });
+
+    async function start() {
+      if (!window.MAC_FRAME_REVIEW) {
+        fail('Awaiting the new drawings','The animation study is ready to receive the character sheet and game backdrop. Reload once they are available.');
+        return;
+      }
+      try { data = validateData(window.MAC_FRAME_REVIEW); }
+      catch { fail('The study needs valid animation data','Playback stays unavailable until every drawing, contact point and duration is ready.'); return; }
+      el('status').textContent = 'Loading artwork';
+      try {
+        const loaded = await Promise.all([
+          Promise.all(Object.entries(data.imagePaths).map(async ([id,path]) => [id,await loadImage(path)])),
+          loadImage(data.backgroundPath)
+        ]);
+        characters = Object.fromEntries(loaded[0]);
+        background = loaded[1];
+      }
+      catch { fail('Artwork could not be opened','Both the character sheet and game backdrop must be available to review this study.'); return; }
+      for (const frame of Object.values(data.frames)) {
+        const box = frame.source;
+        const image = characters[frame.sheet || 'basic'];
+        if (!box || !image || box.x+box.width > image.naturalWidth || box.y+box.height > image.naturalHeight) {
+          fail('A drawing needs attention','One of the animation drawings extends beyond its sheet. Playback is unavailable until it is corrected.'); return;
+        }
+      }
+      const order = ['idle','walk','jab','cross','finisher','airkick','counter','throw','hurt','defeat'];
+      const orderKey = id => id.toLowerCase().replace(/[-_ ]/g,'');
+      const ids = Object.keys(data.clips).sort((a,b) => {
+        const aIndex = order.indexOf(orderKey(a)), bIndex = order.indexOf(orderKey(b));
+        return (aIndex === -1 ? order.length : aIndex) - (bIndex === -1 ? order.length : bIndex);
+      });
+      for (const id of ids) {
+        const button = document.createElement('button');
+        button.textContent = data.clips[id].label;
+        button.dataset.clip = id;
+        button.setAttribute('aria-pressed','false');
+        button.addEventListener('click',() => selectClip(id));
+        el('clips').append(button);
+      }
+      state.ready = true;
+      document.querySelectorAll('.controls button,.controls select,.controls input').forEach(control => { control.disabled = false; });
+      canvas.hidden = false;
+      el('message').hidden = true;
+      el('status').className = 'badge ready';
+      el('status').textContent = 'Artwork loaded · review pending';
+      for (const [id,image] of Object.entries(characters)) {
+        const figure = document.createElement('figure');
+        figure.className = 'sheet-figure';
+        const caption = document.createElement('figcaption');
+        caption.textContent = id === 'advanced' ? 'Advanced moves and reactions' : 'Core movement and attacks';
+        const drawing = document.createElement('img');
+        drawing.className = 'drawing-sheet';
+        drawing.id = id === 'basic' ? 'sheet' : 'sheet-'+id;
+        drawing.src = image.src;
+        drawing.alt = 'The complete Mac ' + id + ' animation drawing sheet';
+        figure.append(caption,drawing);
+        el('sheets').append(figure);
+      }
+      el('sheetPanel').hidden = false;
+      selectClip(ids[0]);
+      setPlaying(true);
+    }
+    requestAnimationFrame(tick);
+    start();
+  })();
+  </script>
+</body>
+</html>

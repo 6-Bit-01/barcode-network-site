@@ -1,12 +1,13 @@
 // Private Mac chapter preview. Simulation, input, audio and pause use existing owners.
 window.FILE_MANIFEST = window.FILE_MANIFEST || [];
-window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['BARCODE.MacCombatPreview'], dependencies: ['BARCODE.MacStreetCombat', 'BARCODE.MacStreetStory', 'BARCODE.RuntimeLifecycle'] });
+window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['BARCODE.MacCombatPreview'], dependencies: ['BARCODE.MacStreetCombat', 'BARCODE.MacStreetStory', 'BARCODE.MacCombatAnimation', 'BARCODE.RuntimeLifecycle'] });
 (function(B) {
   'use strict';
   const ROOT = 'assets/mac-street-review/';
   const CITY_ROOT = 'assets/mac-city-review/';
+  const RIG_ROOT = 'assets/mac-combat-rigs/';
   const ART = {
-    mac: ROOT + 'mac-poses-v3.png', street: ROOT + 'street-panorama-v1.png',
+    street: ROOT + 'street-panorama-v1.png',
     hero: ROOT + 'mac-hero-v2.png', kave: ROOT + 'scene03-kave-dead-air-v5.png',
     margin: ROOT + 'scene05-margin-note-v1.png', record: ROOT + 'scene06-record-straight-v1.png',
     delivered: 'assets/cache-ending/ending-01-delivered.webp',
@@ -30,27 +31,23 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       };
       try {
         const images = await Promise.all(Object.entries(ART).filter(([name]) => name !== 'street').map(async ([, url]) => [url, await load(url)]));
-        const frameResponse = await fetch(ROOT + 'mac-poses-v3-frames.json');
-        if (!frameResponse.ok) throw new Error('mac-pose-registration-unavailable');
-        const poseFrames = await frameResponse.json();
         const manifestResponse = await fetch(CITY_ROOT + 'mac-city-art-v1.json');
         if (!manifestResponse.ok) throw new Error('mac-city-art-unavailable');
         const cityArt = await manifestResponse.json();
         if (cityArt.actors?.length !== 7 || cityArt.zones?.length !== 6) throw new Error('mac-city-art-incomplete');
-        const [attackImage, attackResponse] = await Promise.all([load(CITY_ROOT + 'mac-attacks-v4.png'), fetch(CITY_ROOT + 'mac-attacks-v4-frames.json')]);
-        if (!attackResponse.ok) throw new Error('mac-attack-registration-unavailable');
-        const attackFrames = await attackResponse.json();
-        if (attackFrames.sourceImage !== CITY_ROOT + 'mac-attacks-v4.png' || attackFrames.frames?.length !== 7) throw new Error('mac-attack-registration-incomplete');
-        const enemies = await Promise.all(cityArt.actors.map(async actor => {
-          const [image, response] = await Promise.all([load(actor.image), fetch(actor.frames)]);
-          if (!response.ok) throw new Error('mac-enemy-registration-unavailable');
-          const frames = await response.json();
-          if (frames.sourceImage !== actor.image || frames.frames?.length < 7) throw new Error('mac-enemy-registration-incomplete');
-          return [actor.kind, { image, registration: frames, displayName: actor.displayName, bloodColor: actor.bloodColor }];
+        const rigResponse = await fetch(RIG_ROOT + 'mac-combat-art-v1.json');
+        if (!rigResponse.ok) throw new Error('mac-rig-art-unavailable');
+        const rigManifest = await rigResponse.json();
+        if (rigManifest.actors?.length !== 8 || !rigManifest.actors.some(actor => actor.kind === 'mac')) throw new Error('mac-rig-art-incomplete');
+        const rigs = await Promise.all(rigManifest.actors.map(async actor => {
+          const [image, response] = await Promise.all([load(actor.image), fetch(actor.rig)]);
+          if (!response.ok) throw new Error('mac-rig-registration-unavailable');
+          const registration = await response.json();
+          if (registration.sourceImage !== actor.image || registration.parts?.length !== (actor.kind === 'null_regent' ? 21 : 15)) throw new Error('mac-rig-registration-incomplete');
+          return [actor.kind, { image, registration, geometry: B.MacCombatAnimation.geometry(registration), displayName: actor.displayName, bloodColor: actor.bloodColor }];
         }));
         if (generation !== this.generation) throw new Error('mac-preview-cancelled');
-        this.assets = new Map(images); this.enemyArt = new Map(enemies); this.poseFrames = poseFrames;
-        this.macAttackArt = { image: attackImage, registration: attackFrames };
+        this.assets = new Map(images); this.rigArt = new Map(rigs); this.rigManifest = rigManifest;
         this.cityArt = cityArt; this.zonePromises = new Map(); this.zoneLoadError = null;
         // Decode the opening and next district only. Later scenery enters the
         // same asset owner as it is needed, keeping all six native backdrops
@@ -77,7 +74,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       this.zonePromises.set(index, preparing); return preparing;
     },
     async enter() {
-      if (!B.MacStreetCombat || !B.MacStreetStory || !this.assets.size) throw new Error('mac-preview-not-ready');
+      if (!B.MacStreetCombat || !B.MacStreetStory || !B.MacCombatAnimation || !this.assets.size || this.rigArt?.size !== 8) throw new Error('mac-preview-not-ready');
       const generation = this.generation;
       this.combat = B.MacStreetCombat.create();
       this.story = B.MacStreetStory.createIntro();
@@ -108,7 +105,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       this.generation++; this.active = false; this.pending = false;
       if (this.previousKeyboard && window.inputManager?.actionInput) window.inputManager.actionInput.keyboardBindings = this.previousKeyboard;
       this.previousKeyboard = null; this.combat = null; this.story = null; this.phase = null; this.status = null;
-      this.assets.clear(); this.enemyArt = null; this.poseFrames = null; this.macAttackArt = null; this.cityArt = null; this.zonePromises?.clear(); this.lastEvents = [];
+      this.assets.clear(); this.rigArt?.clear(); this.rigManifest = null; this.cityArt = null; this.zonePromises?.clear(); this.lastEvents = [];
       this.dialogueReadout?.remove(); this.dialogueReadout = null; this.resetInputs();
     },
     exit() { return B.RuntimeLifecycle?.returnToTitle?.({ source: 'mac-preview-title' }); },
@@ -312,12 +309,17 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       const color = enemy.kind === 'null_regent' ? '#f2aa62' : '#f29b72';
       ctx.save(); ctx.strokeStyle = color; ctx.fillStyle = color + '24'; ctx.lineWidth = 3;
       const lane = tell.laneY ?? enemy.laneY, facing = tell.facing || enemy.facing;
-      if (/charge|lunge|lancer|stalker/.test(kind)) {
+      if (tell.lanes?.length > 1) {
+        for (const shotLane of tell.lanes) {
+          ctx.beginPath(); ctx.moveTo(x + facing * 35, shotLane); ctx.lineTo(x + facing * 235, shotLane);
+          ctx.lineTo(x + facing * 217, shotLane - 9); ctx.moveTo(x + facing * 235, shotLane); ctx.lineTo(x + facing * 217, shotLane + 9); ctx.stroke();
+        }
+      } else if (/charge|lunge|thrust|sweep|rush|flank|slash/.test(kind)) {
         const length = Math.max(tell.range || 0, Math.abs((tell.targetX ?? enemy.x) - (tell.originX ?? enemy.x)), 250), left = facing > 0 ? x : x - length;
         ctx.fillRect(left, lane - 23, length, 46); ctx.strokeRect(left, lane - 23, length, 46);
-      } else if (/wave|mantid/.test(kind)) {
+      } else if (/wave|slam/.test(kind)) {
         ctx.beginPath(); ctx.ellipse(x, lane, 220, 34, 0, 0, Math.PI * 2); ctx.stroke();
-        this.text(ctx, 'JUMP', x, lane - 330, 18, color, 'center');
+        if (tell.canJump) this.text(ctx, 'JUMP', x, lane - 330, 18, color, 'center');
       } else {
         ctx.beginPath(); ctx.ellipse(x + facing * 75, lane, /fan|spit/.test(kind) ? 145 : 105, 26, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
       }
@@ -328,13 +330,17 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
     drawCombatFx(ctx, fx, camera) {
       const age = fx.ageMs || 0, life = fx.lifeMs || 300, progress = clamp(age / life, 0, 1);
       const color = /^#[0-9a-f]{6}$/i.test(fx.bloodHex || '') ? fx.bloodHex : null;
-      const x = fx.x - camera, y = (fx.laneY || fx.y) - 130;
+      const x = fx.x - camera, y = (fx.laneY ?? fx.y) - (fx.elevation ?? 130);
       ctx.save(); ctx.globalAlpha = 1 - progress;
-      if (color && !['parry', 'block', 'damage'].includes(fx.kind)) {
+      if (color && fx.particles?.length) {
         ctx.fillStyle = color;
-        for (let index = 0; index < 7; index++) {
-          const angle = ((fx.id || 1) * 1.618 + index * 2.399), spread = 10 + progress * 72;
-          ctx.beginPath(); ctx.ellipse(x + Math.cos(angle) * spread, y + Math.sin(angle) * spread + progress * progress * 62, 3 + (index % 3), 2 + (index % 2), angle, 0, Math.PI * 2); ctx.fill();
+        for (const particle of fx.particles) {
+          const px = particle.x - camera, py = particle.laneY - particle.elevation;
+          const landed = particle.elevation <= 0, radius = particle.radius || 3;
+          // Ballistic positions belong to the simulation. Drawing never adds
+          // randomness, timers or damage, and landed droplets settle on the lane.
+          ctx.beginPath(); ctx.ellipse(px, py, radius * (landed ? 1.55 : 1), radius * (landed ? .45 : .7),
+            landed ? 0 : Math.atan2(-particle.velocityZ, particle.vx), 0, Math.PI * 2); ctx.fill();
         }
       } else {
         ctx.strokeStyle = fx.kind === 'parry' ? '#83ffe0' : fx.kind === 'damage' ? '#ef91a2' : '#fff1ab'; ctx.lineWidth = 3;
@@ -357,27 +363,19 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
         const p = actor.value, x = p.x - camera;
         ctx.fillStyle = '#02091170'; ctx.beginPath(); ctx.ellipse(x, p.laneY + 2, actor.type === 'mac' ? 43 : 51, 12, 0, 0, Math.PI * 2); ctx.fill();
         if (actor.type === 'mac') {
-          const image = this.assets.get(ART.mac); let index = 0;
-          if (!p.grounded) index = 5; else if (p.guarding) index = 4;
-          else if (p.attack) index = 3; else if (p.mode === 'walk' || Math.abs(p.vx || 0) > 1) index = 1 + Math.floor(this.elapsedMs / 130) % 2;
-          if (image && this.poseFrames) {
-            const attack = p.attack, rule = attack && B.MacStreetCombat.strikes[attack.step - 1];
-            const active = attack && attack.elapsedMs >= rule.windupMs && attack.elapsedMs < rule.windupMs + rule.activeMs;
-            const lean = p.hurtMs ? -.025 : active ? .025 : attack ? -.015 : 0;
-            const alpha = p.invulnerableMs > 0 && Math.floor(this.elapsedMs / 65) % 2 ? .62 : 1;
-            const extraFrame = p.hurtMs ? 'hurt' : p.throwMs ? (p.throwMs > 300 ? 'throw_windup' : 'throw_release')
-              : attack ? (attack.phase === 'windup' ? 'windup' : ['jab', 'cross', 'finisher'][attack.step - 1]) : null;
-            const selectedArt = extraFrame ? this.macAttackArt : { image, registration: this.poseFrames };
-            this.drawRegisteredActor(ctx, selectedArt.image, selectedArt.registration, extraFrame || this.poseFrames.frames[index].id, x, p.laneY - p.elevation, 260, p.facing, alpha, lean);
+          const art = this.rigArt?.get('mac');
+          if (art) {
+            const pose = B.MacCombatAnimation.sample(p, {player: true, geometry: art.geometry, reducedMotion: !!B.Preferences?.values?.reducedMotion});
+            B.MacCombatAnimation.draw(ctx, art, pose, x, p.laneY - p.elevation, 260, p.facing, p.invulnerableMs > 0 ? .86 : 1);
           }
         } else {
-          const atlas = this.enemyArt?.get(p.kind), animation = p.animation || {}, action = animation.action || p.phase;
-          const frameId = ['walk', 'chase', 'move'].includes(action) ? (Math.floor((animation.ageMs ?? this.elapsedMs) / 125) % 2 ? 'walk_b' : 'walk_a')
-            : ['windup', 'tell'].includes(action) ? 'tell' : ['active', 'attack', 'strike'].includes(action) ? 'strike'
-              : ['recovery', 'recover'].includes(action) ? 'recover' : ['stunned', 'hit', 'hurt', 'defeat'].includes(action) ? 'hit' : 'idle';
+          const art = this.rigArt?.get(p.kind), animation = p.animation || {};
           const height = p.kind === 'null_regent' ? 335 : 260;
-          const defeated = p.hp <= 0, fade = defeated ? clamp(animation.ageMs / 600, 0, 1) : 0;
-          if (atlas) this.drawRegisteredActor(ctx, atlas.image, atlas.registration, frameId, x, p.laneY, height, p.facing, 1 - fade, defeated ? -.18 * fade : action === 'attack' ? .025 : 0);
+          const defeated = p.hp <= 0;
+          if (art) {
+            const pose = B.MacCombatAnimation.sample(p, {geometry: art.geometry, height, reducedMotion: !!B.Preferences?.values?.reducedMotion});
+            B.MacCombatAnimation.draw(ctx, art, pose, x, p.laneY - (p.elevation || 0), height, p.facing);
+          }
           this.drawTelegraph(ctx, p, x);
           if (p.kind !== 'null_regent' && !defeated) {
             ctx.fillStyle = '#09121c'; ctx.fillRect(x - 37, p.laneY - height - 17, 74, 7); ctx.fillStyle = p.bloodHex || '#b479ff'; ctx.fillRect(x - 37, p.laneY - height - 17, 74 * p.hp / p.maxHp, 7);
@@ -386,7 +384,8 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       }
       for (const projectile of s.projectiles || []) {
         const groundWave = projectile.kind === 'ground-wave';
-        const x = projectile.x - camera, y = projectile.laneY - (groundWave ? 9 : 110);
+        const height = groundWave ? 9 : /^bile/.test(projectile.kind) ? 190 : projectile.kind === 'fan' ? 245 : 110;
+        const x = projectile.x - camera, y = projectile.laneY - height;
         ctx.fillStyle = projectile.color || '#b479ff'; ctx.beginPath(); ctx.ellipse(x, y, groundWave ? 24 : 11, groundWave ? 7 : 8, 0, 0, Math.PI * 2); ctx.fill();
         ctx.strokeStyle = '#f3eed1'; ctx.lineWidth = 2; ctx.stroke();
       }

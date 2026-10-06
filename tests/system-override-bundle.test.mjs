@@ -17,9 +17,18 @@ const originalAssetCount = 624;
 const macReviewRoot = "assets/mac-street-review/";
 const macReviewAssets = new Set([
   "cache-walk-to-car-v6.png", "mac-hero-v2.png", "mac-poses-v3-frames.json", "mac-poses-v3.png",
-  "scene03-kave-dead-air-v3.png", "scene05-margin-note-v1.png",
+  "scene03-kave-dead-air-v5.png", "scene05-margin-note-v1.png",
   "scene06-record-straight-v1.png", "street-panorama-v1.png",
 ].map((name) => macReviewRoot + name));
+const cityRoot = "assets/mac-city-review/";
+const cityKinds = ["chitin_scuttler", "psion_lancer", "bile_spitter", "prism_guard", "rift_stalker", "shock_mantid", "null_regent"];
+const cityVersion = (kind) => ["psion_lancer", "shock_mantid", "null_regent"].includes(kind) ? "v2" : "v1";
+const cityZones = ["service-alley", "night-market", "transit-concourse", "relay-canal", "rooftop-relay", "broadcast-plaza"];
+const cityAssets = new Set([
+  ...cityKinds.flatMap((kind) => [kind + "-" + cityVersion(kind) + ".png", kind + "-" + cityVersion(kind) + "-frames.json"]),
+  ...cityZones.map((zone) => zone + "-v1.png"),
+  "mac-city-art-v1.json", "mac-attacks-v4.png", "mac-attacks-v4-frames.json",
+].map((name) => cityRoot + name));
 // Sorted [path, bytes, SHA-256] rows from the original complete 624-asset package.
 // Compressed derivatives may be added; every original identity and byte hash remains pinned.
 const originalAssetInventorySHA256 = "0b2ac58dc88ddb68b595fb8592d242d8478c426d78309fe4ff45b88c04027f56";
@@ -227,10 +236,12 @@ test("System Override ships a complete, sanitized ownership and SHA-256 manifest
     "Only the declared manifest and exact KTX2 bank may be added as texture derivatives");
   assert.deepEqual(assets.filter((name) => name.startsWith(macReviewRoot)).sort(), [...macReviewAssets].sort(),
     "Only the exact eight declared Mac review siblings may extend the sealed originals");
-  const originalNames = assets.filter((name) => !derivatives.has(name) && !macReviewAssets.has(name)).sort();
+  assert.deepEqual(assets.filter((name) => name.startsWith(cityRoot)).sort(), [...cityAssets].sort(),
+    "Only the explicitly declared city art and registration may extend the sealed originals");
+  const originalNames = assets.filter((name) => !derivatives.has(name) && !macReviewAssets.has(name) && !cityAssets.has(name)).sort();
   assert.equal(originalNames.length, originalAssetCount, "All 624 original assets must remain present");
-  assert.equal(owner.canonicalAssetCount - derivatives.size - macReviewAssets.size, originalAssetCount,
-    "Canonical ownership must count sealed originals, exact derivatives and eight Mac siblings separately");
+  assert.equal(owner.canonicalAssetCount - derivatives.size - macReviewAssets.size - cityAssets.size, originalAssetCount,
+    "Canonical ownership must count sealed originals, exact derivatives, Mac siblings and city art separately");
   const originalRows = originalNames.map((name) => [name, owner.files[name].bytes, owner.files[name].sha256]);
   assert.equal(createHash("sha256").update(JSON.stringify(originalRows)).digest("hex"), originalAssetInventorySHA256,
     "Original artwork, music, sprite data or asset metadata changed");
@@ -259,7 +270,7 @@ test("System Override ships a complete, sanitized ownership and SHA-256 manifest
     if (name.startsWith("assets/")) assetBytes += record.bytes;
   }
   assert.equal(owner.assetBytes, assetBytes, "Asset byte total differs from the complete hash manifest");
-  t.diagnostic(`${names.length} payload files verified; ${originalNames.length} unchanged originals plus ${derivatives.size} texture derivatives and ${macReviewAssets.size} Mac siblings, ${assetBytes} asset bytes`);
+  t.diagnostic(`${names.length} payload files verified; ${originalNames.length} unchanged originals plus ${derivatives.size} texture derivatives, ${macReviewAssets.size} Mac siblings and ${cityAssets.size} city assets, ${assetBytes} asset bytes`);
 });
 
 test("System Override ships the exact Mac preview art, native pose registration and private query entry", (t) => {
@@ -316,6 +327,60 @@ test("System Override ships the exact Mac preview art, native pose registration 
   assert.match(html, /MacCombatPreview\?\.requested\?\.\(\)/, "Actual title reads the private query gate");
   assert.match(html, /privatePreview:\s*["']mac-firstslice["']/, "Private title enters through RuntimeLifecycle");
   t.diagnostic("8 exact sibling assets, native PNG headers, 6 nonuniform registered poses, 3 ordered owners and an inert private query entry verified");
+});
+
+test("Mac city chapter ships six distinct districts and registered animation art for six new aliens and a boss", () => {
+  const files = marker().files, city = JSON.parse(read(cityRoot + "mac-city-art-v1.json"));
+  assert.deepEqual(Object.keys(files).filter((name) => name.startsWith(cityRoot)).sort(), [...cityAssets].sort());
+  assert.deepEqual(city.actors.map((actor) => actor.kind).sort(), [...cityKinds].sort());
+  assert.deepEqual(city.zones.map((zone) => zone.id), cityZones);
+  assert.equal(new Set(city.actors.map((actor) => actor.image)).size, 7);
+  assert.equal(new Set(city.zones.map((zone) => zone.background)).size, 6);
+  assert(city.actors.some((actor) => actor.bloodColor === "green") && city.actors.some((actor) => actor.bloodColor === "purple"));
+  function registration(imageName, framesName, expectedIds) {
+    const file = localFile(imageName, files), png = header(file, 26), sheet = JSON.parse(read(framesName));
+    assert(png.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])));
+    assert.equal(png[24], 8); assert.equal(png[25], 6, "Actors retain native RGBA alpha");
+    assert.equal(sheet.schemaVersion, 1); assert.equal(sheet.sourceImage, imageName); assert.equal(sheet.facing, "right");
+    assert.deepEqual([sheet.dimensions.width, sheet.dimensions.height], originalDimensions(file));
+    assert.deepEqual(sheet.frames.map((frame) => frame.id), expectedIds);
+    assert(Number.isFinite(sheet.pixelScale.standingVisibleHeight) && sheet.pixelScale.standingVisibleHeight > 0);
+    for (const frame of sheet.frames) {
+      const crop = frame.source, visible = frame.visibleBounds, pivot = frame.pivot;
+      assert(Number.isSafeInteger(crop.x) && crop.x >= 0 && Number.isSafeInteger(crop.y) && crop.y >= 0);
+      assert(Number.isSafeInteger(crop.width) && crop.width > 0 && Number.isSafeInteger(crop.height) && crop.height > 0);
+      assert(crop.x + crop.width <= sheet.dimensions.width && crop.y + crop.height <= sheet.dimensions.height);
+      assert(visible.x >= 0 && visible.y >= 0 && visible.width > 0 && visible.height > 0);
+      assert(visible.x + visible.width <= crop.width && visible.y + visible.height <= crop.height);
+      assert(pivot.x >= visible.x && pivot.x <= visible.x + visible.width);
+      assert.equal(pivot.y, visible.y + visible.height, "Every pose anchors its measured planted foot");
+    }
+    for (let i = 0; i < sheet.frames.length; i++) for (let j = i + 1; j < sheet.frames.length; j++) {
+      const a = sheet.frames[i].source, b = sheet.frames[j].source;
+      assert(Math.min(a.x+a.width,b.x+b.width)<=Math.max(a.x,b.x) || Math.min(a.y+a.height,b.y+b.height)<=Math.max(a.y,b.y), "No sprite crop may capture a neighboring pose");
+    }
+  }
+  for (const actor of city.actors) {
+    assert.equal(actor.image, cityRoot + actor.kind + "-" + cityVersion(actor.kind) + ".png");
+    assert.equal(actor.frames, cityRoot + actor.kind + "-" + cityVersion(actor.kind) + "-frames.json");
+    registration(actor.image, actor.frames, ["idle", "walk_a", "walk_b", "tell", "strike", "recover", "hit"]);
+  }
+  registration(cityRoot + "mac-attacks-v4.png", cityRoot + "mac-attacks-v4-frames.json", ["windup", "jab", "cross", "finisher", "throw_windup", "throw_release", "hurt"]);
+  for (const zone of city.zones) {
+    assert.equal(zone.background, cityRoot + zone.id + "-v1.png");
+    const [width, height] = originalDimensions(localFile(zone.background, files));
+    assert(width >= 1800 && height >= 650 && width/height > 2.5 && width/height < 3.5, "District panoramas retain wide native architectural proportions");
+  }
+  const sandbox = context(); load(sandbox, "src/game/mac-street-combat.js");
+  const combat = sandbox.window.BARCODE.MacStreetCombat, snapshot = combat.create().getSnapshot();
+  assert.equal(combat.constants.worldWidth, 20400); assert.equal(snapshot.zones.length, 6);
+  assert.deepEqual(Array.from(snapshot.zones, (zone) => zone.id), cityZones);
+  assert.equal(snapshot.city.totalWaves, 12); assert.equal(snapshot.city.totalEnemies, 30);
+  assert.equal(snapshot.desk.unlocked, false, "Studio cannot open before the city is earned");
+  const combinations = snapshot.zones.map((zone) => JSON.stringify(Array.from(zone.waves, (wave) => Array.from(wave).sort())));
+  assert.equal(new Set(combinations).size, 6, "Each city district has its own combination of enemies");
+  assert.deepEqual(Array.from(snapshot.zones[5].waves[1]), ["null_regent"]);
+  assert.deepEqual(Object.keys(combat.roles).sort(), [...cityKinds].sort(), "Level1 enemies cannot leak into the city roster");
 });
 
 test("System Override's 171 road sources preserve full resolution and original bytes with 149 local compressed derivatives", (t) => {

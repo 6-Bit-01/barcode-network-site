@@ -1,9 +1,9 @@
 {
   "builder": "barcode-system-override-standalone-v1",
   "status": "complete",
-  "sourceCommit": "b51e7f7236121c3cf7abb2d2b436a850d4b3ef67",
-  "sourceTree": "df5a0f37e39c3b823c4a065a0523d2f37dff4f9c",
-  "builderSHA256": "9067c6cef24caedbb9050e1434594a032d02200cc7d168e762603df7370db66d",
+  "sourceCommit": "4cf1e1174905fafc1b6ecf3b606bc62a60abe2fb",
+  "sourceTree": "a26fd356af55ce62cb5e89a493913876b176cb12",
+  "builderSHA256": "04a1042e1c997b0bf08eb0d7961a20393ebc541c71f577f4ab482e3f5a52fc85",
   "files": {
     "assets/audio/broadcast-slum-proof-carrier.wav": {
       "sha256": "7d9eb892d074c17ee1047c33f3a4264eeac3d4f954c856ce35745a2a484a901c",
@@ -2641,6 +2641,98 @@
       "sha256": "8a1b656d1db8cbfda19d20d9b483c8af56a8daff64d55a0ca9f861fa4918de76",
       "bytes": 2488922
     },
+    "assets/mac-city-review/bile_spitter-v1-frames.json": {
+      "sha256": "abbe3258c93abb98299eb3b58eb61a02c3f7477f744b521ce3527d2490bd187e",
+      "bytes": 3812
+    },
+    "assets/mac-city-review/bile_spitter-v1.png": {
+      "sha256": "7f82901872f4593ed2c428d83fbedda9ea919a568c2977bec39f5d6e2c8d3a21",
+      "bytes": 1635688
+    },
+    "assets/mac-city-review/broadcast-plaza-v1.png": {
+      "sha256": "643f5909763bc23cb710335789813d13138610d47520272958205a5b1bc35d15",
+      "bytes": 3031490
+    },
+    "assets/mac-city-review/chitin_scuttler-v1-frames.json": {
+      "sha256": "bb7ed05709a7147592a92eb93075a253e1ecfd6c80006a19417c5302cd502984",
+      "bytes": 3777
+    },
+    "assets/mac-city-review/chitin_scuttler-v1.png": {
+      "sha256": "3659348f202e51fea25127d36c667e2142197653dc37a7d1f75bec65c6c18302",
+      "bytes": 2362365
+    },
+    "assets/mac-city-review/mac-attacks-v4-frames.json": {
+      "sha256": "44b9f07179230bacd31a82ea44866f3436e8843f0208e2d1b56df6877b2dc96c",
+      "bytes": 3838
+    },
+    "assets/mac-city-review/mac-attacks-v4.png": {
+      "sha256": "71ab4cdaf80beaabbf226de624bec2ee62aa5ed8fc3ef0a0aca54a08ba28d07a",
+      "bytes": 534778
+    },
+    "assets/mac-city-review/mac-city-art-v1.json": {
+      "sha256": "9e725b1f6afe04f4437613e752da211e983f1fab98c89bc1c56d09b19bd60b6e",
+      "bytes": 13927
+    },
+    "assets/mac-city-review/night-market-v1.png": {
+      "sha256": "5a68f16010443d966a7e6bbe2defb524c587b9406fcf144d187a71b1fb40b973",
+      "bytes": 3148804
+    },
+    "assets/mac-city-review/null_regent-v2-frames.json": {
+      "sha256": "d0e1f9bc0faeadafd2b55e759a16e29b3e2b32d443712b839923d8b57b1ae693",
+      "bytes": 3813
+    },
+    "assets/mac-city-review/null_regent-v2.png": {
+      "sha256": "c6cbc83c6be0c75669283c237fc5caea23c3064f125e51e044eb297f5cd1c717",
+      "bytes": 1674237
+    },
+    "assets/mac-city-review/prism_guard-v1-frames.json": {
+      "sha256": "69cdb542e2524fcc207b9294345b10db00991aabea2aa926d882687d4494d317",
+      "bytes": 3781
+    },
+    "assets/mac-city-review/prism_guard-v1.png": {
+      "sha256": "db0bfacbd45f5507d6191d4f2b5ce4d15f1e559b83d320b7fa85314b1a951998",
+      "bytes": 1347696
+    },
+    "assets/mac-city-review/psion_lancer-v2-frames.json": {
+      "sha256": "f07eb3205450b71ae634ee7e038020b55cbe4bc1899f442ddbb1277a638124a2",
+      "bytes": 3779
+    },
+    "assets/mac-city-review/psion_lancer-v2.png": {
+      "sha256": "be1939968ea1e6cb5dde4b249d0b5e9ef3ed0b3e2550734fde0cf2827029b4fe",
+      "bytes": 1345389
+    },
+    "assets/mac-city-review/relay-canal-v1.png": {
+      "sha256": "5da159283c776ba382c877d86af4be4af958de34fa1c93376dc0841cf0028e3b",
+      "bytes": 3262648
+    },
+    "assets/mac-city-review/rift_stalker-v1-frames.json": {
+      "sha256": "39c84f85e04841f437df7cd5a6be7d3db3f3ef4b6f60ed04c78079521235191a",
+      "bytes": 3814
+    },
+    "assets/mac-city-review/rift_stalker-v1.png": {
+      "sha256": "8293c3f59c8b271b5b9be3b2b7c0873b7f92fff660e4b70755e0266a06d165d8",
+      "bytes": 1375022
+    },
+    "assets/mac-city-review/rooftop-relay-v1.png": {
+      "sha256": "51a2b1647a66c9fefaee1003a2bbb69b0a9f73f5eddd204b324796f03a0b612d",
+      "bytes": 3011910
+    },
+    "assets/mac-city-review/service-alley-v1.png": {
+      "sha256": "3d63e39ae939edd9e2452a18eec6afe9b9f17a23141d080e2209a2ee811a8ca5",
+      "bytes": 3079343
+    },
+    "assets/mac-city-review/shock_mantid-v2-frames.json": {
+      "sha256": "05ad2633bc6bd50b2c909a169ca3b5c60ca14de51f38f3eca2c5c7f17f24dcfe",
+      "bytes": 3817
+    },
+    "assets/mac-city-review/shock_mantid-v2.png": {
+      "sha256": "5720d575f5f93a7294d81fe290042877f6a6e5855773d715028a50b71a779f0d",
+      "bytes": 1318461
+    },
+    "assets/mac-city-review/transit-concourse-v1.png": {
+      "sha256": "6d80bd690e2c662559133de2c3fdf0ef47dffc63a7a3a194a5380d18f5a8c32a",
+      "bytes": 3023723
+    },
     "assets/mac-street-review/cache-walk-to-car-v6.png": {
       "sha256": "dfd8d743acc68ffaf0c410a8a9397c3799ef2351b546a0e109b2a15e2cfaca8b",
       "bytes": 2781221
@@ -2657,9 +2749,9 @@
       "sha256": "691a384a9a1a30757a35ab3f81fcc17a5e4aca7e24b65873068660d29ee63b80",
       "bytes": 837375
     },
-    "assets/mac-street-review/scene03-kave-dead-air-v3.png": {
-      "sha256": "babff824674c90b76fb08a0bfe3cfb5720bc314d1dd391fbc4e5ba84dea7b738",
-      "bytes": 2516405
+    "assets/mac-street-review/scene03-kave-dead-air-v5.png": {
+      "sha256": "df4423bee517088f6f8f17f9bebf4db812d970aaff99e89c8c1799a97b5633f7",
+      "bytes": 2246609
     },
     "assets/mac-street-review/scene05-margin-note-v1.png": {
       "sha256": "a7da9e13bbf406915c00928868b0b78b3e9e4127d771bfd4a37f8c72b7f50a16",
@@ -3174,8 +3266,8 @@
       "bytes": 25877
     },
     "src/core/touch-controls.js": {
-      "sha256": "21fbf192e520e651096bd106bf258926a48a9ed73a04a963656bf93947705442",
-      "bytes": 32771
+      "sha256": "f46704a93ef6d02461c36e5eacefb33ffbf0d90cd361c60ef471358c0a5fb19e",
+      "bytes": 32834
     },
     "src/engine/audio.js": {
       "sha256": "95a91711958d422578870f6672b38fb0a99586bbf7ccc1c1da286935e2689b6e",
@@ -3486,16 +3578,16 @@
       "bytes": 14810
     },
     "src/game/mac-combat-preview.js": {
-      "sha256": "692c118f4528912218f6ae5811fda0aca1909e395ddcedae09f460141917b341",
-      "bytes": 19421
+      "sha256": "6e6502501591b3f4c41d7c36bd87827364b8b1ec8a7dae3a7b675882d8b20217",
+      "bytes": 30452
     },
     "src/game/mac-street-combat.js": {
-      "sha256": "0b2ccd99a8ec17ba5353f4c01377449015ffedb6dec11db028089ebae3c72280",
-      "bytes": 17735
+      "sha256": "bffc33c5181468b6c230e6876ca1887bd8e31a7ab9ba5c8426501031f4c92d28",
+      "bytes": 31475
     },
     "src/game/mac-street-story.js": {
-      "sha256": "e29adee354c000e8b58115af2d1aa30a047380ce7c54bbf6cd2a050cd5d5f1bc",
-      "bytes": 10724
+      "sha256": "793e600459057ee76ba40df1dda5338c2af43469a5fced31babda8938f937834",
+      "bytes": 11263
     },
     "src/game/main-legacy-backup.js": {
       "sha256": "10f53aa29c246877b5f9b97e38408ca70c74fd682903c74499d61eac76dfb4de",
@@ -3603,9 +3695,9 @@
     }
   },
   "sourceMode": "working-tree runtime scripts; exact HEAD canonical asset blobs",
-  "canonicalAssetCount": 782,
+  "canonicalAssetCount": 805,
   "preservedOriginalCount": 21,
-  "assetBytes": 618746162,
+  "assetBytes": 648672278,
   "ownedFiles": [
     ".standalone-build.json",
     "assets/audio/broadcast-slum-proof-carrier.wav",
@@ -4267,11 +4359,34 @@
     "assets/level1-signal-art/signal-amp-source.png",
     "assets/level1-signal-art/signal-discharge-atlas.webp",
     "assets/level1-signal-art/signal-discharge-source.png",
+    "assets/mac-city-review/bile_spitter-v1-frames.json",
+    "assets/mac-city-review/bile_spitter-v1.png",
+    "assets/mac-city-review/broadcast-plaza-v1.png",
+    "assets/mac-city-review/chitin_scuttler-v1-frames.json",
+    "assets/mac-city-review/chitin_scuttler-v1.png",
+    "assets/mac-city-review/mac-attacks-v4-frames.json",
+    "assets/mac-city-review/mac-attacks-v4.png",
+    "assets/mac-city-review/mac-city-art-v1.json",
+    "assets/mac-city-review/night-market-v1.png",
+    "assets/mac-city-review/null_regent-v2-frames.json",
+    "assets/mac-city-review/null_regent-v2.png",
+    "assets/mac-city-review/prism_guard-v1-frames.json",
+    "assets/mac-city-review/prism_guard-v1.png",
+    "assets/mac-city-review/psion_lancer-v2-frames.json",
+    "assets/mac-city-review/psion_lancer-v2.png",
+    "assets/mac-city-review/relay-canal-v1.png",
+    "assets/mac-city-review/rift_stalker-v1-frames.json",
+    "assets/mac-city-review/rift_stalker-v1.png",
+    "assets/mac-city-review/rooftop-relay-v1.png",
+    "assets/mac-city-review/service-alley-v1.png",
+    "assets/mac-city-review/shock_mantid-v2-frames.json",
+    "assets/mac-city-review/shock_mantid-v2.png",
+    "assets/mac-city-review/transit-concourse-v1.png",
     "assets/mac-street-review/cache-walk-to-car-v6.png",
     "assets/mac-street-review/mac-hero-v2.png",
     "assets/mac-street-review/mac-poses-v3-frames.json",
     "assets/mac-street-review/mac-poses-v3.png",
-    "assets/mac-street-review/scene03-kave-dead-air-v3.png",
+    "assets/mac-street-review/scene03-kave-dead-air-v5.png",
     "assets/mac-street-review/scene05-margin-note-v1.png",
     "assets/mac-street-review/scene06-record-straight-v1.png",
     "assets/mac-street-review/street-panorama-v1.png",

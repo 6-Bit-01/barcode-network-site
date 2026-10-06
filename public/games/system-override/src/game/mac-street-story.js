@@ -11,14 +11,25 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-street-story.js', exports: ['BAR
     { id: 'unverified', title: 'DELIVERED / UNVERIFIED', asset: 'assets/cache-ending/ending-02-unverified.webp',
       visual: 'Transfer is delivered; the separate outbound distribution channel remains unverified.',
       lines: [line('CACHE BACK', "They took the file. Why isn't it going out?"), line('MAC MODEM / COMMS', 'Delivery passed. Distribution says UNVERIFIED.')] },
-    { id: 'kave-dead-air', title: "KAVE'S DEAD AIR", asset: 'assets/mac-street-review/scene03-kave-dead-air-v3.png',
-      visual: 'Kave tends the Kaveman Radio review desk and its waiting submissions in the venue neighborhood.',
+    { id: 'kave-dead-air', title: "KAVE'S DEAD AIR", asset: 'assets/mac-street-review/scene03-kave-dead-air-v5.png',
+      visual: 'Kave tends the Kaveman Radio review desk inside a fully enclosed, ordinary-scale broadcast studio.',
+      artLocation: 'enclosed-broadcast-studio', artTime: 'present', dialogueContext: 'studio-and-live-comms',
       lines: [line('KAVE', "The review queue's full. Nothing's reaching the listeners."), line('CACHE BACK / COMMS', "It got here whole. Somebody's keeping it here.")],
-      choice: { id: 'delivery-question', speaker: 'CACHE BACK / COMMS', prompt: 'What do you ask?',
+      choice: { id: 'delivery-question', optional: true, speaker: 'CACHE BACK / COMMS', prompt: 'Ask Kave, or continue.',
         options: [
-          { id: 'who-is-waiting', label: "Who's waiting?", lines: [line('KAVE', 'Artists waiting for a play. Listeners waiting for a voice.')] },
-          { id: 'what-got-blocked', label: 'What got blocked?', lines: [line('KAVE', "The outbound feed. Local monitoring works; distribution doesn't.")] }
-        ], rejoin: [line('MAC MODEM / COMMS', 'Then we open it back up, piece by piece.')] } },
+          { id: 'who-is-waiting', label: "Who's waiting?", lines: [
+            line('KAVE', 'Artists waiting for a play. Listeners waiting for a voice.'),
+            line('KAVE', "The outbound feed. Local monitoring works; distribution doesn't.")
+          ] },
+          { id: 'what-got-blocked', label: 'What got blocked?', lines: [
+            line('KAVE', "The outbound feed. Local monitoring works; distribution doesn't."),
+            line('KAVE', 'Artists waiting for a play. Listeners waiting for a voice.')
+          ] }
+        ],
+        bypass: [line('KAVE', 'Artists waiting for a play. Listeners waiting for a voice.'),
+          line('KAVE', "The outbound feed. Local monitoring works; distribution doesn't."),
+          line('MAC MODEM / COMMS', 'Then we open it back up, piece by piece.')],
+        rejoin: [line('MAC MODEM / COMMS', 'Then we open it back up, piece by piece.')] } },
     { id: 'held', title: 'THE HOLD IS LOCAL', asset: 'assets/cache-ending/ending-03-held.webp',
       visual: 'An earlier studio comparison shows DJ and Mac together; the present crew dialogue continues over comms.',
       artLabel: 'EARLIER / STUDIO COMPARISON', artLocation: 'studio', artTime: 'earlier-comparison', dialogueContext: 'live-comms',
@@ -26,12 +37,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-street-story.js', exports: ['BAR
     { id: 'margin-note', title: 'A NOTE IN THE MARGIN', asset: 'assets/mac-street-review/scene05-margin-note-v1.png',
       visual: 'A hand pastes a nonessential joke caption across the illustrated border.',
       annotations: [{ kind: 'comic-margin', by: '9 BIT', text: 'AUTHORISED PUNCHING CONSULTANT' }],
-      lines: [line('MAC MODEM', 'Who edited my subtitle?'), line('9 BIT', "You. Outside the panel. Still think 'delivered' means 'heard'?")],
-      choice: { id: 'frame-reply', speaker: 'YOU', prompt: 'What do you say?',
-        options: [
-          { id: 'listening', label: "I'm listening.", lines: [line('9 BIT', "Then listen to what isn't there.")] },
-          { id: 'crew-work', label: 'Let the crew work.', lines: [line('9 BIT', 'Fair. They know the streets. You know the frame.')] }
-        ], rejoin: [] } },
+      lines: [line('MAC MODEM', 'Who edited my subtitle?'), line('9 BIT', "You. Outside the panel. Still think 'delivered' means 'heard'?")] },
     { id: 'record-straight', title: 'KEEP THE RECORD STRAIGHT', asset: 'assets/mac-street-review/scene06-record-straight-v1.png',
       visual: 'The original cassette, cleaned copy and present interruption remain separate.',
       lines: [line('CACHE BACK / COMMS', "That wasn't on the tape."), line('DJ FLOPPYDISC / COMMS', "Then keep it separate. Record the interruption. Don't call it proof.")] },
@@ -43,9 +49,10 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-street-story.js', exports: ['BAR
       lines: [line('6 BIT / COMMS', 'Cache got it here. Mac, get it heard.'), line('MAC MODEM', 'Open the channel.')] }
   ];
   const DESK = [{ id: 'review-desk', title: 'THE FIRST PLAY GETS THROUGH', asset: INTRO[2].asset,
-    visual: 'The review desk receives its first outbound play after Mac reopens the local feed.',
+    visual: 'Inside the enclosed broadcast studio, Kave receives the first outbound play after Mac earns the city-chapter endpoint.',
+    artLocation: 'enclosed-broadcast-studio', artTime: 'after-city-chapter-endpoint', dialogueContext: 'in-person-studio',
     lines: [line('KAVE', "It's reaching them. First play's through."), line('MAC MODEM', 'Keep the line open.')],
-    choice: { id: 'desk-question', optional: true, speaker: 'MAC MODEM', prompt: 'Ask Kave, or continue into the street.',
+    choice: { id: 'desk-question', optional: true, speaker: 'MAC MODEM', prompt: 'Ask Kave, or continue.',
       options: [
         { id: 'ask-people', label: 'Ask about the people', lines: [
           line('KAVE', 'Artists could hear their own work in here. They were waiting for everyone else to hear it.'),
@@ -53,13 +60,13 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-street-story.js', exports: ['BAR
         ] },
         { id: 'ask-order', label: 'Ask about the order', lines: [
           line('KAVE', 'The receiver accepted it. The hold was on the line out. That tells us where it happened, not who ordered it.'),
-          line('MAC MODEM', "Good. Keep the local record. I'll follow the next hold.")
+          line('MAC MODEM', "Good. Keep the local record. We'll compare what survived.")
         ] }
-      ], rejoin: [line('KAVE', "Local monitoring stayed live. Now the outbound feed's open too."), line('MAC MODEM', "One line open. There's more street ahead.")] }
+      ], rejoin: [line('KAVE', "Local monitoring stayed live. Now the outbound feed's open too."), line('MAC MODEM', "The street hold's broken. Keep both records safe.")] }
   }];
   const OBJECTIVES = Object.freeze({
-    intro: 'Open the approach and restore the review desk\'s outbound feed.',
-    desk: 'The review desk\'s outbound feed is reopened. Continue into Broadcast Slum.'
+    intro: 'Break the street hold across Broadcast Slum and reopen the studio\'s outbound feed.',
+    desk: 'The city\'s street hold is broken. The studio\'s outbound feed is open.'
   });
   function create(kind, source, options = {}) {
     const speed = Number.isFinite(options.charsPerSecond) ? Math.max(10, Math.min(160, options.charsPerSecond)) : 44;
@@ -79,7 +86,8 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-street-story.js', exports: ['BAR
       done = true; phase = 'done'; return event('complete', { objective: OBJECTIVES[kind] });
     }
     function rejoin(choice) {
-      if (choice.rejoin.length) { startLines(choice.rejoin, 'response'); return event('rejoin'); }
+      const lines = choice.bypass || choice.rejoin;
+      if (lines.length) { startLines(lines, 'response'); return event('rejoin'); }
       return nextScene();
     }
     function advance() {
@@ -120,7 +128,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-street-story.js', exports: ['BAR
         revealed: revealed(), lineIndex: cursor, lineCount: readingLines.length,
         choice, awaitingChoice: choosing, selectedChoice: s.choice ? selected[s.choice.id] || null : null,
         selections: { ...selected }, annotations: (s.annotations || []).map(annotation => ({ ...annotation })),
-        done, skipped, objective: OBJECTIVES[kind] };
+        done, skipped, objective: OBJECTIVES[kind], entryRequirement: kind === 'desk' ? 'city-chapter-endpoint' : null };
     }
     function skip() {
       // Skip follows the common route without selecting an answer or earning anything.

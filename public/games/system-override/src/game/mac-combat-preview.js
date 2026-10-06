@@ -4,9 +4,10 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
 (function(B) {
   'use strict';
   const ROOT = 'assets/mac-street-review/';
+  const CITY_ROOT = 'assets/mac-city-review/';
   const ART = {
     mac: ROOT + 'mac-poses-v3.png', street: ROOT + 'street-panorama-v1.png',
-    hero: ROOT + 'mac-hero-v2.png', kave: ROOT + 'scene03-kave-dead-air-v3.png',
+    hero: ROOT + 'mac-hero-v2.png', kave: ROOT + 'scene03-kave-dead-air-v5.png',
     margin: ROOT + 'scene05-margin-note-v1.png', record: ROOT + 'scene06-record-straight-v1.png',
     delivered: 'assets/cache-ending/ending-01-delivered.webp',
     unverified: 'assets/cache-ending/ending-02-unverified.webp',
@@ -28,21 +29,52 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
         return image;
       };
       try {
-        const images = await Promise.all(Object.values(ART).map(async url => [url, await load(url)]));
+        const images = await Promise.all(Object.entries(ART).filter(([name]) => name !== 'street').map(async ([, url]) => [url, await load(url)]));
         const frameResponse = await fetch(ROOT + 'mac-poses-v3-frames.json');
         if (!frameResponse.ok) throw new Error('mac-pose-registration-unavailable');
         const poseFrames = await frameResponse.json();
-        const enemies = await Promise.all(['corrupted_walk_walk', 'firewall_walk_walk'].map(async name => {
-          const url = 'assets/sprites-v3/prepared/' + name;
-          const [image, response] = await Promise.all([load(url + '.webp'), fetch(url + '.json')]);
-          if (!response.ok) throw new Error('mac-enemy-art-unavailable');
-          const json = await response.json();
-          return { image, frames: Object.values(json.frames).map(frame => frame.frame) };
+        const manifestResponse = await fetch(CITY_ROOT + 'mac-city-art-v1.json');
+        if (!manifestResponse.ok) throw new Error('mac-city-art-unavailable');
+        const cityArt = await manifestResponse.json();
+        if (cityArt.actors?.length !== 7 || cityArt.zones?.length !== 6) throw new Error('mac-city-art-incomplete');
+        const [attackImage, attackResponse] = await Promise.all([load(CITY_ROOT + 'mac-attacks-v4.png'), fetch(CITY_ROOT + 'mac-attacks-v4-frames.json')]);
+        if (!attackResponse.ok) throw new Error('mac-attack-registration-unavailable');
+        const attackFrames = await attackResponse.json();
+        if (attackFrames.sourceImage !== CITY_ROOT + 'mac-attacks-v4.png' || attackFrames.frames?.length !== 7) throw new Error('mac-attack-registration-incomplete');
+        const enemies = await Promise.all(cityArt.actors.map(async actor => {
+          const [image, response] = await Promise.all([load(actor.image), fetch(actor.frames)]);
+          if (!response.ok) throw new Error('mac-enemy-registration-unavailable');
+          const frames = await response.json();
+          if (frames.sourceImage !== actor.image || frames.frames?.length < 7) throw new Error('mac-enemy-registration-incomplete');
+          return [actor.kind, { image, registration: frames, displayName: actor.displayName, bloodColor: actor.bloodColor }];
         }));
         if (generation !== this.generation) throw new Error('mac-preview-cancelled');
-        this.assets = new Map(images); this.enemyArt = enemies; this.poseFrames = poseFrames;
+        this.assets = new Map(images); this.enemyArt = new Map(enemies); this.poseFrames = poseFrames;
+        this.macAttackArt = { image: attackImage, registration: attackFrames };
+        this.cityArt = cityArt; this.zonePromises = new Map(); this.zoneLoadError = null;
+        // Decode the opening and next district only. Later scenery enters the
+        // same asset owner as it is needed, keeping all six native backdrops
+        // from staying resident throughout the chapter.
+        await Promise.all([this.ensureZoneArt(0), this.ensureZoneArt(1)]);
+        if (generation !== this.generation) throw new Error('mac-preview-cancelled');
         return { ok: true };
       } finally { if (generation === this.generation) this.pending = false; }
+    },
+    ensureZoneArt(index) {
+      const zone = this.cityArt?.zones[index];
+      if (!zone) return Promise.resolve(true);
+      if (this.assets.has(zone.background)) return Promise.resolve(true);
+      if (this.zonePromises.has(index)) return this.zonePromises.get(index);
+      const generation = this.generation;
+      const preparing = (async () => {
+        const image = new Image(); image.src = zone.background; await image.decode();
+        if (generation !== this.generation || this.zonePromises.get(index) !== preparing) return false;
+        this.assets.set(zone.background, image); return true;
+      })().catch(error => {
+        if (generation === this.generation) this.zoneLoadError = { index, message: 'This area could not load. Pause and retry the fight.' };
+        throw error;
+      });
+      this.zonePromises.set(index, preparing); return preparing;
     },
     async enter() {
       if (!B.MacStreetCombat || !B.MacStreetStory || !this.assets.size) throw new Error('mac-preview-not-ready');
@@ -76,14 +108,24 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       this.generation++; this.active = false; this.pending = false;
       if (this.previousKeyboard && window.inputManager?.actionInput) window.inputManager.actionInput.keyboardBindings = this.previousKeyboard;
       this.previousKeyboard = null; this.combat = null; this.story = null; this.phase = null; this.status = null;
-      this.assets.clear(); this.enemyArt = null; this.poseFrames = null; this.lastEvents = [];
+      this.assets.clear(); this.enemyArt = null; this.poseFrames = null; this.macAttackArt = null; this.cityArt = null; this.zonePromises?.clear(); this.lastEvents = [];
       this.dialogueReadout?.remove(); this.dialogueReadout = null; this.resetInputs();
     },
     exit() { return B.RuntimeLifecycle?.returnToTitle?.({ source: 'mac-preview-title' }); },
     retry() {
       if (!this.active) return false;
-      this.combat.retry(); this.phase = 'street'; this.status = 'playing'; this.story = null;
-      this.cameraX = 0; this.resetInputs(); window.audioSystem?.startRuntimeGameplayMusic?.(); return true;
+      if (this.status === 'clear') this.combat = B.MacStreetCombat.create(); else this.combat.retry();
+      this.phase = 'street'; this.status = 'playing'; this.story = null;
+      const state = this.combat.getSnapshot(); this.cameraX = state.zone?.startX || 0;
+      const currentZone = (state.zone?.index || 1) - 1;
+      for (let index = 0; index < this.cityArt.zones.length; index++) {
+        if (index !== currentZone && index !== currentZone + 1) {
+          this.assets.delete(this.cityArt.zones[index].background); this.zonePromises.delete(index);
+        }
+      }
+      if (this.zoneLoadError) { this.zonePromises.delete(this.zoneLoadError.index); this.zoneLoadError = null; }
+      this.ensureZoneArt(currentZone).catch(() => {});
+      this.resetInputs(); window.audioSystem?.startRuntimeGameplayMusic?.(); return true;
     },
     dialogue() { return this.active && (this.phase === 'intro' || this.phase === 'desk'); },
     getControlState() { return this.combat?.getControlState?.() || {}; },
@@ -107,6 +149,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
         const choice = this.story.snapshot().choice;
         if (choice && key === 'arrowleft') this.focus = 0;
         else if (choice && key === 'arrowright') this.focus = 1;
+        else if (choice?.optional && key === ' ') this.advance();
         else if (choice) this.choose(key === '2' ? 1 : key === '1' ? 0 : this.focus);
         else if (key === ' ' || key === 'enter') this.advance();
         return true;
@@ -121,9 +164,10 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
         if (choice) {
           if (actions.move_left?.pressed) this.focus = 0;
           if (actions.move_right?.pressed) this.focus = 1;
-          if (actions.road_a?.pressed) this.choose(0);
+          if (actions.inspect?.pressed) choice.optional ? this.advance() : this.choose(this.focus);
+          else if (actions.jump?.pressed) this.choose(this.focus);
+          else if (actions.road_a?.pressed) this.choose(0);
           else if (actions.road_b?.pressed) this.choose(1);
-          else if (actions.inspect?.pressed) this.choose(this.focus);
         } else if (actions.jump?.pressed || actions.inspect?.pressed) this.advance();
         return;
       }
@@ -141,8 +185,23 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       if (!this.active || window.isPaused || this.status !== 'playing') return;
       this.elapsedMs += delta;
       if (this.dialogue()) { this.story.update(delta); return; }
+      const before = this.combat.getSnapshot(), zoneIndex = (before.zone?.index || 1) - 1;
+      const zoneArt = this.cityArt.zones[zoneIndex];
+      if (!this.assets.has(zoneArt.background)) {
+        if (this.zoneLoadError?.index === zoneIndex) { this.status = 'failed'; this.resetInputs(); }
+        else this.ensureZoneArt(zoneIndex).catch(() => {});
+        return;
+      }
       this.combat.update(delta);
-      const s = this.combat.getSnapshot(); this.cameraX += (clamp(s.player.x - 555, 0, 3400 - 1920 / 1.35) - this.cameraX) * Math.min(1, delta / 120);
+      const s = this.combat.getSnapshot(), zone = s.zone || { startX: 0, endX: B.MacStreetCombat.constants.worldWidth, index: 0 };
+      const left = zone.startX, right = Math.max(left, zone.endX + (zone.cleared ? 220 : 0) - 1920 / 1.35);
+      const targetCamera = clamp(s.player.x - 555, left, right);
+      if (this.cameraX < left || this.cameraX > right) this.cameraX = targetCamera;
+      else this.cameraX += (targetCamera - this.cameraX) * Math.min(1, delta / 120);
+      this.ensureZoneArt(zone.index).catch(() => {});
+      for (let index = 0; index < zone.index - 1; index++) {
+        const retired = this.cityArt.zones[index]; this.assets.delete(retired.background); this.zonePromises.delete(index);
+      }
       this.lastEvents = this.combat.drainEvents();
       for (const event of this.lastEvents) if (COMBAT_CUES[event.type]) window.audioSystem?.playCombatCue?.(COMBAT_CUES[event.type]);
       if (s.status === 'defeated') { this.status = 'failed'; this.resetInputs(); }
@@ -151,6 +210,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
     draw(ctx) {
       if (!ctx || !this.active) return;
       ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.filter = 'none';
+      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
       ctx.clearRect(0, 0, 1920, 1080); ctx.fillStyle = '#08111a'; ctx.fillRect(0, 0, 1920, 1080);
       if (this.dialogue()) this.drawDialogue(ctx); else this.drawStreet(ctx);
       this.syncDialogueReadout();
@@ -211,8 +271,10 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       if (s.choice) {
         s.choice.options.forEach((option, i) => {
           const x = 160 + i * 800; ctx.fillStyle = i === this.focus ? '#543146' : '#243044'; ctx.fillRect(x, 945, 775, 59);
-          this.text(ctx, `${i + 1}. ${typeof option === 'string' ? option : option.label}`, x + 15, 958, 22);
+          const key = B.GamepadUI?.connected ? (i === this.focus ? '›' : ' ') : i + 1;
+          this.text(ctx, `${key}. ${typeof option === 'string' ? option : option.label}`, x + 15, 958, 22);
         });
+        if (s.choice.optional) this.text(ctx, B.GamepadUI?.connected ? `← / →: choose · ${B.ControllerSettings?.prompt?.('jump') || 'A'}: answer · ${B.ControllerSettings?.prompt?.('inspect') || 'RB'}: continue` : 'Space: continue · 1 / 2: answer', 1760, 1010, 18, '#eec871', 'right');
       } else this.text(ctx, B.TouchControls?.enabled ? 'Tap Next' : 'Space / A: next · P: pause', 1760, 984, 20, '#eec871', 'right');
     },
     drawActor(ctx, image, frame, x, feet, height, facing, anchor = .96) {
@@ -220,16 +282,77 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       ctx.save(); ctx.translate(x, feet); ctx.scale(facing, 1);
       ctx.drawImage(image, frame.x, frame.y, frame.w, frame.h, -width / 2, -height * anchor, width, height); ctx.restore();
     },
-    drawStreet(ctx) {
-      const s = this.combat.getSnapshot(), camera = this.cameraX, backdrop = this.assets.get(ART.street);
-      ctx.save(); ctx.translate(0, -350); ctx.scale(1.35, 1.35);
-      if (backdrop) {
-        const height = 3400 * backdrop.height / backdrop.width;
-        ctx.drawImage(backdrop, -camera, 1080 - height, 3400, height);
+    drawRegisteredActor(ctx, image, registration, frameId, x, feet, height, facing, alpha = 1, lean = 0) {
+      const frame = registration.frames.find(item => item.id === frameId) || registration.frames[0];
+      const scale = height / registration.pixelScale.standingVisibleHeight, source = frame.source;
+      ctx.save(); ctx.globalAlpha = alpha; ctx.translate(x, feet); ctx.scale(facing, 1);
+      if (lean) ctx.rotate(lean);
+      ctx.drawImage(image, source.x, source.y, source.width, source.height,
+        -frame.pivot.x * scale, -frame.pivot.y * scale, source.width * scale, source.height * scale);
+      ctx.restore();
+    },
+    drawCityBackdrop(ctx, image, zone, camera) {
+      if (!image) return;
+      // Preserve architectural proportions. Native-size district panoramas
+      // fill the ground plane; shorter panoramas continue as facade sections.
+      const height = 1080, width = image.width * height / image.height, offset = zone.startX - camera;
+      for (let section = 0; section * width < zone.endX - zone.startX + (zone.cleared ? 220 : 0); section++) {
+        const x = offset + section * width;
+        if (x > 1920 || x + width < 0) continue;
+        ctx.drawImage(image, x, 0, width, height);
+        if (section) {
+          ctx.fillStyle = '#09151f'; ctx.fillRect(x - 12, 0, 24, 785);
+          ctx.fillStyle = '#608883'; ctx.fillRect(x - 3, 0, 6, 785);
+        }
       }
+    },
+    drawTelegraph(ctx, enemy, x) {
+      if (enemy.phase !== 'windup' && enemy.animation?.action !== 'tell') return;
+      const tell = enemy.attackTell || {}, kind = tell.type || enemy.attackKind || enemy.kind;
+      const color = enemy.kind === 'null_regent' ? '#f2aa62' : '#f29b72';
+      ctx.save(); ctx.strokeStyle = color; ctx.fillStyle = color + '24'; ctx.lineWidth = 3;
+      const lane = tell.laneY ?? enemy.laneY, facing = tell.facing || enemy.facing;
+      if (/charge|lunge|lancer|stalker/.test(kind)) {
+        const length = Math.max(tell.range || 0, Math.abs((tell.targetX ?? enemy.x) - (tell.originX ?? enemy.x)), 250), left = facing > 0 ? x : x - length;
+        ctx.fillRect(left, lane - 23, length, 46); ctx.strokeRect(left, lane - 23, length, 46);
+      } else if (/wave|mantid/.test(kind)) {
+        ctx.beginPath(); ctx.ellipse(x, lane, 220, 34, 0, 0, Math.PI * 2); ctx.stroke();
+        this.text(ctx, 'JUMP', x, lane - 330, 18, color, 'center');
+      } else {
+        ctx.beginPath(); ctx.ellipse(x + facing * 75, lane, /fan|spit/.test(kind) ? 145 : 105, 26, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      }
+      const aboveHead = enemy.laneY - (enemy.kind === 'null_regent' ? 360 : 285);
+      ctx.beginPath(); ctx.moveTo(x, aboveHead); ctx.lineTo(x - 10, aboveHead - 19); ctx.lineTo(x + 10, aboveHead - 19); ctx.closePath(); ctx.fillStyle = color; ctx.fill();
+      ctx.restore();
+    },
+    drawCombatFx(ctx, fx, camera) {
+      const age = fx.ageMs || 0, life = fx.lifeMs || 300, progress = clamp(age / life, 0, 1);
+      const color = /^#[0-9a-f]{6}$/i.test(fx.bloodHex || '') ? fx.bloodHex : null;
+      const x = fx.x - camera, y = (fx.laneY || fx.y) - 130;
+      ctx.save(); ctx.globalAlpha = 1 - progress;
+      if (color && !['parry', 'block', 'damage'].includes(fx.kind)) {
+        ctx.fillStyle = color;
+        for (let index = 0; index < 7; index++) {
+          const angle = ((fx.id || 1) * 1.618 + index * 2.399), spread = 10 + progress * 72;
+          ctx.beginPath(); ctx.ellipse(x + Math.cos(angle) * spread, y + Math.sin(angle) * spread + progress * progress * 62, 3 + (index % 3), 2 + (index % 2), angle, 0, Math.PI * 2); ctx.fill();
+        }
+      } else {
+        ctx.strokeStyle = fx.kind === 'parry' ? '#83ffe0' : fx.kind === 'damage' ? '#ef91a2' : '#fff1ab'; ctx.lineWidth = 3;
+        for (let index = 0; index < 6; index++) {
+          const angle = index * Math.PI / 3 + .2, inner = 8 + progress * 15, outer = 20 + progress * 30;
+          ctx.beginPath(); ctx.moveTo(x + Math.cos(angle) * inner, y + Math.sin(angle) * inner); ctx.lineTo(x + Math.cos(angle) * outer, y + Math.sin(angle) * outer); ctx.stroke();
+        }
+      }
+      ctx.restore();
+    },
+    drawStreet(ctx) {
+      const s = this.combat.getSnapshot(), camera = this.cameraX, zone = s.zone || {index: 1, startX: 0, endX: 3400, title: 'SERVICE ALLEY'};
+      const background = this.cityArt?.zones[zone.index - 1];
+      ctx.save(); ctx.translate(0, -350); ctx.scale(1.35, 1.35);
+      this.drawCityBackdrop(ctx, this.assets.get(background?.background), zone, camera);
       // Floor marks and telegraphs convey the lane and committed strike, not damage on touch.
       ctx.strokeStyle = '#eec87145'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, 984); ctx.lineTo(1920, 984); ctx.stroke();
-      const actors = [{ type: 'mac', value: s.player }, ...s.enemies.filter(e => e.hp > 0 && e.x - camera > -220 && e.x - camera < 2140).map(value => ({ type: 'enemy', value }))].sort((a, b) => a.value.laneY - b.value.laneY);
+      const actors = [{ type: 'mac', value: s.player }, ...s.enemies.filter(e => (e.hp > 0 || e.phase === 'defeated' && e.animation.ageMs < 600) && e.x - camera > -220 && e.x - camera < 1920 / 1.35 + 220).map(value => ({ type: 'enemy', value }))].sort((a, b) => a.value.laneY - b.value.laneY);
       for (const actor of actors) {
         const p = actor.value, x = p.x - camera;
         ctx.fillStyle = '#02091170'; ctx.beginPath(); ctx.ellipse(x, p.laneY + 2, actor.type === 'mac' ? 43 : 51, 12, 0, 0, Math.PI * 2); ctx.fill();
@@ -237,35 +360,55 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
           const image = this.assets.get(ART.mac); let index = 0;
           if (!p.grounded) index = 5; else if (p.guarding) index = 4;
           else if (p.attack) index = 3; else if (p.mode === 'walk' || Math.abs(p.vx || 0) > 1) index = 1 + Math.floor(this.elapsedMs / 130) % 2;
-          if (image && this.poseFrames) { const frame = this.poseFrames.frames[index], source = frame.source, pivot = frame.pivot;
-            const scale = 260 / this.poseFrames.pixelScale.standingVisibleHeight;
-            ctx.globalAlpha = p.invulnerableMs > 0 && Math.floor(this.elapsedMs / 65) % 2 ? .5 : 1;
-            ctx.save(); ctx.translate(x, p.laneY - p.elevation); ctx.scale(p.facing, 1);
-            ctx.drawImage(image, source.x, source.y, source.width, source.height, -pivot.x * scale, -pivot.y * scale, source.width * scale, source.height * scale);
-            ctx.restore(); ctx.globalAlpha = 1; }
-        } else {
-          const atlas = this.enemyArt[p.kind === 'charger' || p.kind === 'enforcer' ? 1 : 0];
-          if (atlas) this.drawActor(ctx, atlas.image, atlas.frames[Math.floor(this.elapsedMs / 90) % atlas.frames.length], x, p.laneY, 270, p.facing);
-          if (p.phase === 'windup') {
-            ctx.strokeStyle = '#ff9f62'; ctx.lineWidth = 5; ctx.beginPath(); ctx.ellipse(x + p.facing * 65, p.attackLaneY || p.laneY, 95, 26, 0, 0, Math.PI * 2); ctx.stroke();
-            this.text(ctx, '!', x, p.laneY - 285, 40, '#ffba7a', 'center');
+          if (image && this.poseFrames) {
+            const attack = p.attack, rule = attack && B.MacStreetCombat.strikes[attack.step - 1];
+            const active = attack && attack.elapsedMs >= rule.windupMs && attack.elapsedMs < rule.windupMs + rule.activeMs;
+            const lean = p.hurtMs ? -.025 : active ? .025 : attack ? -.015 : 0;
+            const alpha = p.invulnerableMs > 0 && Math.floor(this.elapsedMs / 65) % 2 ? .62 : 1;
+            const extraFrame = p.hurtMs ? 'hurt' : p.throwMs ? (p.throwMs > 300 ? 'throw_windup' : 'throw_release')
+              : attack ? (attack.phase === 'windup' ? 'windup' : ['jab', 'cross', 'finisher'][attack.step - 1]) : null;
+            const selectedArt = extraFrame ? this.macAttackArt : { image, registration: this.poseFrames };
+            this.drawRegisteredActor(ctx, selectedArt.image, selectedArt.registration, extraFrame || this.poseFrames.frames[index].id, x, p.laneY - p.elevation, 260, p.facing, alpha, lean);
           }
-          ctx.fillStyle = '#09121c'; ctx.fillRect(x - 37, p.laneY - 255, 74, 8); ctx.fillStyle = '#de8067'; ctx.fillRect(x - 37, p.laneY - 255, 74 * p.hp / p.maxHp, 8);
+        } else {
+          const atlas = this.enemyArt?.get(p.kind), animation = p.animation || {}, action = animation.action || p.phase;
+          const frameId = ['walk', 'chase', 'move'].includes(action) ? (Math.floor((animation.ageMs ?? this.elapsedMs) / 125) % 2 ? 'walk_b' : 'walk_a')
+            : ['windup', 'tell'].includes(action) ? 'tell' : ['active', 'attack', 'strike'].includes(action) ? 'strike'
+              : ['recovery', 'recover'].includes(action) ? 'recover' : ['stunned', 'hit', 'hurt', 'defeat'].includes(action) ? 'hit' : 'idle';
+          const height = p.kind === 'null_regent' ? 335 : 260;
+          const defeated = p.hp <= 0, fade = defeated ? clamp(animation.ageMs / 600, 0, 1) : 0;
+          if (atlas) this.drawRegisteredActor(ctx, atlas.image, atlas.registration, frameId, x, p.laneY, height, p.facing, 1 - fade, defeated ? -.18 * fade : action === 'attack' ? .025 : 0);
+          this.drawTelegraph(ctx, p, x);
+          if (p.kind !== 'null_regent' && !defeated) {
+            ctx.fillStyle = '#09121c'; ctx.fillRect(x - 37, p.laneY - height - 17, 74, 7); ctx.fillStyle = p.bloodHex || '#b479ff'; ctx.fillRect(x - 37, p.laneY - height - 17, 74 * p.hp / p.maxHp, 7);
+          }
         }
       }
-      for (const fx of s.hitFx) {
-        ctx.strokeStyle = fx.kind === 'parry' ? '#83ffe0' : '#fff1ab'; ctx.lineWidth = 4;
-        ctx.beginPath(); ctx.arc(fx.x - camera, (fx.laneY || fx.y) - 125, 14, 0, Math.PI * 2); ctx.stroke();
+      for (const projectile of s.projectiles || []) {
+        const groundWave = projectile.kind === 'ground-wave';
+        const x = projectile.x - camera, y = projectile.laneY - (groundWave ? 9 : 110);
+        ctx.fillStyle = projectile.color || '#b479ff'; ctx.beginPath(); ctx.ellipse(x, y, groundWave ? 24 : 11, groundWave ? 7 : 8, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#f3eed1'; ctx.lineWidth = 2; ctx.stroke();
       }
+      for (const fx of s.hitFx) this.drawCombatFx(ctx, fx, camera);
       if (s.arena.active) { const x = s.arena.gateX - camera; ctx.strokeStyle = '#eac16b'; ctx.lineWidth = 3;
         ctx.beginPath(); ctx.moveTo(x, 780); ctx.lineTo(x, 984); ctx.stroke(); this.text(ctx, 'CLEAR THE STREET', x - 20, 739, 17, '#eac16b', 'right'); }
       ctx.restore();
       ctx.fillStyle = '#08121eee'; ctx.fillRect(0, 0, 1920, 105);
       this.text(ctx, 'MAC MODEM', 120, 24, 30, '#eec871');
-      this.text(ctx, 'BROADCAST SLUM', 120, 66, 18, '#82cfc2');
+      this.text(ctx, `${zone.index} / 6  ·  ${zone.title.toUpperCase()}`, 120, 66, 18, '#82cfc2');
       const healthPips = Math.ceil(10 * s.player.hp / s.player.maxHp);
       for (let i = 0; i < 10; i++) { ctx.fillStyle = i < healthPips ? '#dc7c86' : '#394350'; ctx.fillRect(440 + i * 26, 34, 19, 15); }
-      this.text(ctx, s.desk.unlocked ? 'Reach Kave’s review desk →' : 'Open a route through the street', 1740, 30, 24, '#eee2c9', 'right');
+      const objective = s.desk.unlocked ? 'Enter Kave’s studio →' : zone.cleared ? `${zone.exitLabel || 'Continue through the city'} →` : `Clear the area · ${s.wave?.number || 1} / 2`;
+      this.text(ctx, objective, 1740, 30, 24, '#eee2c9', 'right');
+      const boss = s.enemies.find(enemy => enemy.kind === 'null_regent' && enemy.hp > 0);
+      if (boss) {
+        ctx.fillStyle = '#101a29'; ctx.fillRect(625, 123, 670, 40); ctx.fillStyle = '#b479ff'; ctx.fillRect(630, 145, 660 * boss.hp / boss.maxHp, 12);
+        this.text(ctx, `NULL REGENT · ${boss.bossPhase || 1} / 3`, 960, 125, 15, '#f5eee3', 'center');
+      }
+      if (!this.assets.has(background?.background) && this.status === 'playing') {
+        ctx.fillStyle = '#101e2df5'; ctx.fillRect(690, 430, 540, 90); this.text(ctx, `Entering ${zone.title}…`, 960, 457, 25, '#eec871', 'center');
+      }
       if (!B.TouchControls?.enabled) this.text(ctx, 'WASD / arrows: move · Space: jump · J: strike · K: guard · L: throw · E: talk · P: pause', 960, 1045, 22, '#eec871', 'center');
       if (s.desk.unlocked && Math.abs(s.player.x - s.desk.x) < 190) {
         const talk = B.GamepadUI?.connected ? B.ControllerSettings?.prompt?.('inspect') || 'RB' : 'E';
@@ -273,10 +416,10 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       }
       if (this.status !== 'playing') {
         ctx.fillStyle = '#08111aee'; ctx.fillRect(440, 310, 1040, 370);
-        this.text(ctx, this.status === 'clear' ? 'THE LOCAL SIGNAL IS BACK' : 'TAKE ANOTHER RUN', 960, 355, 38, '#eec871', 'center');
-        this.text(ctx, this.status === 'clear' ? 'Artists can reach this neighborhood again.' : 'Watch the tell. Step aside, guard, or counter.', 960, 433, 26, '#eee2c9', 'center');
-        this.text(ctx, 'The rest of Broadcast Slum lies ahead.', 960, 480, 24, '#82cfc2', 'center');
-        if (!B.TouchControls?.enabled) this.text(ctx, 'R / A: retry · C / B: back to title', 960, 575, 25, '#eec871', 'center');
+        this.text(ctx, this.status === 'clear' ? 'THE CITY SIGNAL IS BACK' : this.zoneLoadError ? 'AREA UNAVAILABLE' : 'TAKE ANOTHER RUN', 960, 355, 38, '#eec871', 'center');
+        this.text(ctx, this.status === 'clear' ? 'Six districts reopened. Kave can reach the city again.' : this.zoneLoadError?.message || 'Watch the tell. Step aside, guard, or counter.', 960, 433, 26, '#eee2c9', 'center');
+        this.text(ctx, this.status === 'clear' ? 'The original recording is on the air.' : 'Your cleared districts stay open.', 960, 480, 24, '#82cfc2', 'center');
+        if (!B.TouchControls?.enabled) this.text(ctx, this.status === 'clear' ? 'R / A: replay the city · C / B: back to title' : 'R / A: retry this fight · C / B: back to title', 960, 575, 25, '#eec871', 'center');
       }
     }
   };

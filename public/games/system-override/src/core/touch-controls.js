@@ -201,7 +201,7 @@ window.FILE_MANIFEST.push({ name: 'src/core/touch-controls.js', exports: ['BARCO
         case 'road': return this.roadLayout();
         case 'level3': return [a('jump', 'Jump', { icon: '↑', kind: 'primary' }), a('inspect', 'Fire', { icon: '⌖', kind: 'secondary' }), pause()];
         case 'mac-dialogue': return [...(context.story.choice ? context.story.choice.options.map((option, i) => c(`mac:choice:${i}`, option.label, { kind: 'choice', aria: option.label })) : [c('mac:next', 'Next', { icon: '›', kind: 'primary' })]), context.story.choice?.optional ? c('mac:next', 'Continue', { group: 'utility' }) : c('mac:skip', 'Skip', { group: 'utility' }), pause()];
-        case 'mac-results': return [c('mac:retry', 'Retry'), c('mac:exit', 'Back to title'), pause()];
+        case 'mac-results': return [c('mac:retry', B.MacCombatPreview?.status === 'clear' ? 'Replay city' : 'Retry fight'), c('mac:exit', 'Back to title'), pause()];
         case 'mac': {
           const mac = B.MacCombatPreview, view = mac.getControlState(), state = mac.combat.getSnapshot();
           const nearbyDesk = state.desk.unlocked && Math.abs(state.player.x - state.desk.x) < 190;

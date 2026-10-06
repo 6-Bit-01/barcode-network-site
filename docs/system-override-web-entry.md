@@ -1,6 +1,22 @@
 # System Override web entry
 
-## Private Mac street review — October 5
+## Current private Mac city review — October 5
+
+The current review is being prepared from the expanded Mac city source. Its private entry remains `/games/system-override/index.html?preview=mac-firstslice` for route compatibility; the chapter now spans six 3400-pixel districts, 12 waves and 29 new alien foes plus a three-phase final boss. The connected districts are Service Alley, Night Market, Transit Concourse, Relay Canal, Rooftop Relay and Broadcast Plaza. Exact final source, build and installed website identities belong in the release receipts after the assembled package is validated.
+
+The title Start button leads through eight stable illustrated transition scenes. **Two optional dialogue choices remain:** Kave's main opening question about waiting artists/listeners or the blocked feed, then the in-person studio conversation after Mac earns the final city endpoint. The extra 9 Bit reply menu is removed; his fourth-wall scene flows into the crew's evidence response. Either opening answer and direct Continue preserve both core facts and the same Mac handoff. Continue records no invented answer. Kave's studio payoff is earned after the full chapter, not the first two fights.
+
+Mac keeps two-axis walking, Jump, chained Strike, Guard/counter and nearby Throw. Talk appears at the earned studio endpoint. The preview shares the existing input, frame, audio and pause owners, keeps progress temporary and grants neither the canonical Drums reward nor a campaign clear. Regular Continue/save paths, Level 1/2 completion, the hidden footer entry and website routes retain their existing behavior. The Level 03 proof stems remain temporary review audio; no final Mac soundtrack acceptance is claimed.
+
+Mac's supplemental attack artwork is v4, with seven registered measured frames alongside his existing pose sheet. Each of the seven alien types, including Null Regent, has a dedicated seven-pose registration for readable idle, movement, tell, attack, recovery, hurt and defeat states. Green and purple blood follows the enemy kind. The current actor sheets are Chitin Scuttler v1, Psion Lancer v2, Bile Spitter v1, Prism Guard v1, Rift Stalker v1, Shock Mantid v2 and Null Regent v2. Registration uses nonuniform measured crops and a shared per-actor scale; artwork remains subject to owner review.
+
+Kave v5 places the hat-free, cropped-fade, broad-bearded cameo inside an enclosed broadcast studio with solid walls, a visible ceiling, closed full-height door, small glazed window and ordinary person/desk/microphone scale. His face references come from his own verified artist-hub, TikTok and Instagram images; raised hoods, caps and other people in the source photos are excluded from the illustrated costume. Mac's v2 hero remains approved. Cache v6 replaces the penultimate ignition panel with his coherent walk toward the yellow car, keys and protected original visible; the final car shot remains unchanged. Rejected artwork, studio framing passes and original references are preserved in the source review rather than the active runtime directory.
+
+Packaging requires exactly eight Mac review siblings and 23 city artwork/registration files, separately accounted alongside the sealed 624 original artwork/audio identities and 150 compressed-texture derivatives: 805 canonical assets in total. The original sorted path/size/SHA-256 inventory seal remains `0b2ac58dc88ddb68b595fb8592d242d8478c426d78309fe4ff45b88c04027f56`. Private receipts, review harnesses and source archives stay outside `public/`. New exact-head source/site CI, the final strict build, installed payload hashes and hosted/browser checks are release work still in progress; this contract does not claim a new hosted pass, production publication or physical-phone performance acceptance.
+
+The earlier two-fight and artwork package below is a historical checkpoint, superseded by this full-city review scope.
+
+## Historical private Mac street review — October 5
 
 This review branch installs the strict source `b51e7f7236121c3cf7abb2d2b436a850d4b3ef67` build (tree `df5a0f37e39c3b823c4a065a0523d2f37dff4f9c`). Its private entry is `/games/system-override/index.html?preview=mac-firstslice`. The title Start button opens eight illustrated transition scenes with two reconverging choices, followed by Mac's first two street fights and Kave's local-feed conversation. Existing Continue/save paths remain on the regular campaign.
 

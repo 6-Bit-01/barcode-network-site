@@ -22,6 +22,8 @@ function load(file, mocks = {}, globals = {}) {
 }
 
 const contract = load("src/lib/hellcat-ladder.ts");
+const radioContract = load("src/lib/hellcat-now-playing.ts");
+const radioMock = { useHellcatRadio: () => ({ audioRef: null, nowPlaying: null, playback: "paused", toggleListen: () => {} }) };
 const schedule = load("src/lib/hellcat-schedule.ts");
 const at = Date.parse("2026-09-29T12:00:00Z");
 const tracks = [
@@ -255,6 +257,7 @@ test("an expired snapshot or cached outage waits for the existing refresh so the
 test("table renders official order, nulls, zero and escaped text, with distinct loading/empty/error/stale states", () => {
   const { HellcatLadderView } = load("src/components/HellcatLadder.tsx", {
     "@/lib/hellcat-ladder": contract, "@/lib/session-bound-polling": {},
+    "@/lib/hellcat-now-playing": radioContract, "@/components/useHellcatRadio": radioMock,
   });
   const React = require("react");
   const render = (result) => require("react-dom/server").renderToStaticMarkup(React.createElement(HellcatLadderView, { result }));
@@ -283,6 +286,7 @@ test("browser requests only the public route, ages from server time and clears d
   let response = Response.json({ status: "stale", snapshot, ageMs: 599000 });
   const calls = [];
   const { HellcatLadder } = load("src/components/HellcatLadder.tsx", {
+    "@/lib/hellcat-now-playing": radioContract, "@/components/useHellcatRadio": radioMock,
     react: { useState: () => [null, (value) => { state = value; }], useEffect: (effect) => { cleanup = effect(); } },
     "@/lib/hellcat-ladder": contract,
     "@/lib/session-bound-polling": { startSessionBoundPolling: (options) => {

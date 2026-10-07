@@ -30,6 +30,7 @@ const eslintConfig = defineConfig([
     // Generated static game scripts retain their browser-global architecture.
     // Their source repository owns all-file syntax and gameplay checks.
     "public/games/system-override/**",
+    "public/games/system-clash/**",
   ]),
 ]);
 

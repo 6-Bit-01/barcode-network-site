@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#101012">
+  <title>BARCODE: SYSTEM CLASH — Playable prototype</title>
+  <link rel="stylesheet" href="fight.css">
+</head>
+<body>
+  <header class="masthead"><a class="brand" href="/games/system-clash"><span class="eyebrow">BARCODE NETWORK / PLAYABLE PROTOTYPE</span><h1>BARCODE: <span>SYSTEM CLASH</span></h1></a><nav aria-label="BARCODE Network"><a href="/games/system-clash">Game entry</a><a href="/releases">Music</a><a href="/radio">BARCODE Radio</a></nav></header>
+  <main>
+    <section class="arena" aria-labelledby="arena-title">
+      <div class="arena-heading"><div><p class="eyebrow" id="roster-label">MAIN FIGHTERS / ARCADE PROTOTYPE</p><h2 id="arena-title">6 Bit <span>vs.</span> 9 Bit</h2></div><span class="live-tag"><i></i> SYSTEM ONLINE</span></div>
+      <div class="fighter-selectors">
+        <label class="mode-field" for="fighter-one"><span>Player one</span><select id="fighter-one"><option value="6-bit">6 Bit</option><option value="9-bit">9 Bit</option><option value="cache-back">Cache Back</option><option value="mac-modem">Mac Modem</option><option value="dj-floppydisc">DJ Floppydisc</option></select></label>
+        <span class="versus">VS.</span>
+        <label class="mode-field" for="fighter-two"><span>Player two / CPU</span><select id="fighter-two"><option value="6-bit">6 Bit</option><option value="9-bit" selected>9 Bit</option><option value="cache-back">Cache Back</option><option value="mac-modem">Mac Modem</option><option value="dj-floppydisc">DJ Floppydisc</option></select></label>
+        <button id="inspect-deletion" type="button" disabled>Inspect Deletion</button>
+        <button id="inspect-motion" type="button" disabled>Inspect moves</button>
+      </div>
+      <div class="match-controls">
+        <label class="mode-field" for="mode-select"><span>Match</span><select id="mode-select"><option value="cpu">Player vs. CPU</option><option value="local">Two players</option><option value="weapons">Weapon practice</option><option value="practice">Deletion practice</option></select></label>
+        <button id="start-fight" class="primary" type="button" disabled>Start fight</button>
+        <button id="restart-fight" type="button" disabled>Restart</button>
+        <button id="pause-fight" type="button" aria-pressed="false" disabled>Pause</button>
+        <button id="mute-fight" type="button" aria-pressed="false">Sound on</button>
+        <label class="motion-option"><input id="motion-toggle" type="checkbox"> Reduce motion</label>
+        <button id="save-fight-frame" class="quiet" type="button" disabled>Save frame</button>
+        <a id="frame-link" hidden target="_blank" rel="noopener">Open saved PNG ↗</a>
+      </div>
+      <div id="deletion-review" class="deletion-review" hidden>
+        <label class="mode-field" for="pose-preset"><span>Review</span><select id="pose-preset"><option value="broadcast">Broadcast Cut sequence</option><option value="brace">Shove / trap brace</option><option value="suspended">Pull / suspended</option><option value="compressed">Pull / compression</option><option value="crumpled">Stomp / crumpled</option><option value="present">Present the result</option></select></label>
+        <label class="mode-field" for="deletion-facing"><span>Attack direction</span><select id="deletion-facing"><option value="right">Right</option><option value="left">Left</option></select></label>
+        <label class="scrub-field" for="deletion-scrub"><span>Scrub the finish or compare its two pose keys</span><input id="deletion-scrub" type="range" min="0" max="6499" step="10" value="3100"></label>
+        <output id="deletion-time">3.10s</output><button id="return-fight" type="button">Return to fight</button>
+      </div>
+      <div id="motion-review" class="deletion-review motion-review" hidden>
+        <label class="mode-field" for="motion-clip"><span>Player one move</span><select id="motion-clip"><option value="idle">Stance</option><option value="walk">Walk</option><option value="crouch">Duck</option><option value="block">Block</option><option value="punch">High punch</option><option value="kick">High kick</option><option value="low-punch">Low punch</option><option value="low-kick">Low kick</option><option value="jump">Jump</option><option value="crouch-punch">Crouching jab</option><option value="crouch-kick">Low sweep</option><option value="jump-punch">Jumping punch</option><option value="jump-kick">Jumping kick</option><option value="uppercut">Uppercut</option><option value="crouch-high-kick">Rising knee / boot</option><option value="double-punch">Double punch</option><option value="power-kick">Power kick</option><option value="pickup">Weapon pickup</option><option value="high">High hurt</option><option value="low">Body hurt</option><option value="grabbed">Grabbed</option><option value="thrown">Thrown</option><option value="knockdown">Knockdown</option><option value="getup">Get up</option></select></label>
+        <label class="mode-field" for="motion-facing"><span>Facing</span><select id="motion-facing"><option value="right">Right</option><option value="left">Left</option></select></label>
+        <label class="mode-field" for="motion-weapon"><span>In hand</span><select id="motion-weapon"><option value="none">Unarmed</option><option value="neural-spike">Neural Spike</option><option value="pulse-driver">Pulse Driver</option></select></label>
+        <label class="mode-field" for="motion-embedded"><span>In chest</span><select id="motion-embedded"><option value="none">None</option><option value="neural-spike">Neural Spike</option><option value="pulse-driver">Pulse Driver</option></select></label>
+        <label class="mode-field" for="motion-damage"><span>Battle wear</span><select id="motion-damage"><option value="current">Current fight</option><option value="fresh">Fresh</option><option value="bloodied">Bloodied</option><option value="battered">Battered</option><option value="ravaged">Ravaged</option></select></label>
+        <label class="scrub-field" for="motion-scrub"><span>Scrub the complete animation</span><input id="motion-scrub" type="range" min="0" max="1079" step="1" value="0"></label>
+        <output id="motion-time">0.00s</output><button id="return-motion" type="button">Return to fight</button>
+      </div>
+      <div class="touch-controls" aria-label="Player one onscreen controls. Tap arrows to step or hold to move. Tap Duck and Block to hold the stance.">
+        <div class="touch-movement"><button type="button" data-hold="left" aria-label="Move left">←</button><button type="button" data-hold="right" aria-label="Move right">→</button><button type="button" data-hold="crouch">Duck</button><button type="button" data-action="jump">Jump <kbd>W</kbd></button></div>
+        <div class="classic-buttons"><button type="button" class="high-punch" data-action="punch"><span id="use-weapon-label">High punch</span> <kbd>U</kbd></button><button type="button" class="high-kick" data-action="kick"><span id="high-kick-label">High kick</span> <kbd>I</kbd></button><button type="button" class="block-button" data-hold="block">Block <kbd>Space</kbd></button><button type="button" class="low-punch" data-action="low-punch"><span id="low-punch-label">Low punch</span> <kbd>J</kbd></button><button type="button" class="low-kick" data-action="low-kick"><span id="low-kick-label">Low kick</span> <kbd>K</kbd></button><button type="button" class="combo-punch" data-action="double-punch">Double punch <kbd>U + J</kbd></button><button type="button" class="combo-kick" data-action="power-kick">Power kick <kbd>I + K</kbd></button></div>
+        <div class="touch-extras"><button type="button" data-action="grab">Throw / pick up <kbd>L</kbd></button><button id="hurl-weapon" type="button" data-action="weapon-throw" disabled>Hurl weapon <kbd>S + L</kbd></button><button class="deletion-button" type="button" data-action="deletion">Deletion <kbd>F</kbd></button></div>
+      </div>
+      <div class="screen-bezel"><canvas id="fight-stage" width="1280" height="720" tabindex="0" aria-label="Playable fight between 6 Bit and 9 Bit. Use the controls below to move and attack.">This fight requires canvas support.</canvas><div class="bezel-label"><span>BARCODE BROADCAST SYSTEM</span><span>CHANNEL 06 / 09</span></div></div>
+      <div class="gear-strip" aria-label="Equipment and visible damage"><output id="gear-0">Player one · Unarmed · Fresh</output><output id="stage-gear" aria-live="polite">Pickups arrive during the fight</output><output id="gear-1">Player two · Unarmed · Fresh</output></div>
+      <div class="status-row"><output id="fight-status" aria-live="polite">Preparing the first match.</output><output id="load-status" role="status">Loading fighter poses…</output></div>
+    </section>
+    <section class="weapon-guide style-guide"><div><p class="eyebrow">SAME BUTTONS / DIFFERENT FIGHTERS</p><h3 id="styles-title">Different ways to clash.</h3><p>Reach, speed, damage, throws and new attack poses follow each fighter’s style. Learn their strengths and punish their recovery.</p></div><div id="fighter-styles" class="weapon-types"></div></section>
+    <section class="weapon-guide" aria-labelledby="weapons-title"><div><p class="eyebrow">SHARED STAGE PICKUPS / THREE USES</p><h3 id="weapons-title">Claim it. Use it. Hurl it.</h3><p>Pickups arrive on the stage during a round. Move close and press Throw to crouch, reach down, and lift one. The weapon enters your hand at contact; a hit can interrupt the pickup. Standing high punch uses it; your crouching and jumping attacks stay available. A nearby opponent takes priority on Throw. Hold Down + Throw to deliberately hurl your weapon, or press Throw outside grab range.</p><p>Solid thrown weapons lodge in an unguarded opponent and stay through their movement and falls. Face and mask damage, blood-soaked clothes, ragged tears and leg scrapes build with landed hits. Energy shots leave charred burns. Blood collects on the floor and battered falls leave smears. Battle wear lasts until you restart; blocked attacks leave no wounds. In Inspect moves, compare Fresh, Bloodied, Battered and Ravaged on any pose, or inspect damage from your current fight.</p></div><div class="weapon-types"><p><strong>Neural Spike</strong><span>A powered stabbing weapon. Close contact, three charged strikes; throw the spike to lodge it in your opponent.</span></p><p><strong>Pulse Driver</strong><span>A compact energy weapon. Three ranged shots; throw the solid driver when you want to embed it.</span></p><p class="card-note">Choose Weapon practice to try a nearby pickup against a stationary opponent. Player two uses ↓ + 6 to hurl in Two players.</p></div></section>
+    <section class="instructions" aria-labelledby="controls-title">
+      <div class="control-card"><p id="player-one-label" class="eyebrow">PLAYER ONE / 6 BIT</p><h3 id="controls-title">Classic arcade controls.</h3><dl><div><dt>Move / jump / duck</dt><dd><kbd>A</kbd> <kbd>D</kbd> / <kbd>W</kbd> / <kbd>S</kbd></dd></div><div><dt>High punch / high kick</dt><dd><kbd>U</kbd> <kbd>I</kbd></dd></div><div><dt>Low punch / low kick</dt><dd><kbd>J</kbd> <kbd>K</kbd></dd></div><div><dt>Block / throw</dt><dd><kbd>Space</kbd> <kbd>L</kbd></dd></div><div><dt>Deletion</dt><dd><kbd>F</kbd></dd></div></dl><p class="card-note">Hold Down + high punch for an uppercut, low punch for a crouching jab, high kick for a rising knee or boot, and low kick for a sweep. Each is a separate attack. During a jump, either punch throws an air punch and either kick throws an air kick. Land one attack per jump. Sweeps beat standing guard; jumping attacks beat crouching guard. While standing, press both punches together for Double punch, or both kicks together for Power kick. Connect J → U → I for a kick finisher or U → J → U for a double-punch finisher. Keep the sequence short: no more than 0.6s between buttons. The first two hits must land; blocks, misses and interruptions break the sequence. Finishers have recovery, so commit carefully.</p></div>
+      <div class="control-card"><p id="player-two-label" class="eyebrow">PLAYER TWO / 9 BIT</p><h3>Fight back.</h3><dl><div><dt>Move / jump / duck</dt><dd><kbd>←</kbd> <kbd>→</kbd> / <kbd>↑</kbd> / <kbd>↓</kbd></dd></div><div><dt>High punch / high kick</dt><dd><kbd>7</kbd> <kbd>8</kbd></dd></div><div><dt>Low punch / low kick</dt><dd><kbd>4</kbd> <kbd>5</kbd></dd></div><div><dt>Block / throw</dt><dd><kbd>0</kbd> <kbd>6</kbd></dd></div><div><dt>Deletion</dt><dd><kbd>Enter</kbd></dd></div></dl><p class="card-note">Use number keys or the numpad. Down gives each punch and kick its own attack; attack during a jump for air strikes. While standing, press 7 + 4 for Double punch or 8 + 5 for Power kick. Land 4 → 7 → 8 or 7 → 4 → 7 for sequence finishers. Choose Two players for a local match. Restart with R; pause with P.</p></div>
+      <div class="control-card deletion-card"><p class="eyebrow" id="deletion-count">SIGNATURE DELETIONS</p><h3>DELETE HIM!</h3><p id="deletion-summary"><strong>6 Bit · Broadcast Cut:</strong> Front glass, vise crush, dead signal.<br><strong>9 Bit · Ninth Nail:</strong> Eight coffin latches. One final spike.<br><strong>Cache Back · Garbage Collection:</strong> A trash chute, a heavy lid and a bloody stomp.<br><strong>Mac Modem · Hard Disconnect:</strong> Red cable winches pull until the connection snaps.<br><strong>DJ Floppydisc · Bad Sector:</strong> A giant cutting disk, a drive slot and a ruined eject.</p><p class="card-note">Each fighter can finish any opponent. Win, then press Deletion before the signal expires. Deletion practice sets up the selected player-one finish. Inspect Deletion scrubs the full scene without changing your match.</p></div>
+    </section>
+    
+    
+    
+    
+    
+    <footer><span id="roster-footer">PLAYABLE PROTOTYPE · MAIN ROSTER</span><span>Whole fighters. Weapons that stick. Damage that stays.</span></footer>
+  </main>
+  <script type="module" src="fight.js"></script>
+</body>
+</html>

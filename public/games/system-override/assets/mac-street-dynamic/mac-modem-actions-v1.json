@@ -84,6 +84,45 @@
         "standingVisibleHeight": 403,
         "referenceFrame": "pipe_swing_contact"
       }
+    },
+    {
+      "id": "dyn_scatter_blaster",
+      "sourceImage": "assets/mac-street-dynamic/mac-scatter-blaster-grips-v1.png",
+      "sourceSHA256": "36667f70a3e14bfba05baf4bdf86dda013bc83cb826d340bc3216faf97c274e7",
+      "dimensions": {
+        "width": 1254,
+        "height": 1254
+      },
+      "pixelScale": {
+        "standingVisibleHeight": 421,
+        "referenceFrame": "scatter_blaster_ready"
+      }
+    },
+    {
+      "id": "dyn_coil_rifle",
+      "sourceImage": "assets/mac-street-dynamic/mac-coil-rifle-grips-v1.png",
+      "sourceSHA256": "cd1fd6a52cf1df9fd9ff43a1a047768dc8b4285f6b7488685a45f565e1ecb297",
+      "dimensions": {
+        "width": 1254,
+        "height": 1254
+      },
+      "pixelScale": {
+        "standingVisibleHeight": 408,
+        "referenceFrame": "coil_rifle_ready"
+      }
+    },
+    {
+      "id": "dyn_plasma_disc",
+      "sourceImage": "assets/mac-street-dynamic/mac-plasma-disc-grips-v1.png",
+      "sourceSHA256": "ad23988027d373b8ca10af1f8e4b99e3adb1cb441c1040b37b9b533e7a8ef8e8",
+      "dimensions": {
+        "width": 1254,
+        "height": 1254
+      },
+      "pixelScale": {
+        "standingVisibleHeight": 403,
+        "referenceFrame": "plasma_disc_ready"
+      }
     }
   ],
   "frames": [
@@ -10120,6 +10159,450 @@
       },
       "baselineLift": 0,
       "embeddedWeapon": "pipe"
+    },
+    {
+      "id": "scatter_blaster_ready",
+      "sheet": "dyn_scatter_blaster",
+      "source": {
+        "x": 52,
+        "y": 10,
+        "width": 313,
+        "height": 423
+      },
+      "feetPivot": {
+        "x": 150,
+        "y": 421
+      },
+      "baselineLift": 0,
+      "embeddedWeapon": "scatter-blaster"
+    },
+    {
+      "id": "scatter_blaster_aim",
+      "sheet": "dyn_scatter_blaster",
+      "source": {
+        "x": 431,
+        "y": 33,
+        "width": 425,
+        "height": 398
+      },
+      "feetPivot": {
+        "x": 203,
+        "y": 396
+      },
+      "baselineLift": 0,
+      "embeddedWeapon": "scatter-blaster"
+    },
+    {
+      "id": "scatter_blaster_recoil",
+      "sheet": "dyn_scatter_blaster",
+      "source": {
+        "x": 886,
+        "y": 25,
+        "width": 356,
+        "height": 406
+      },
+      "feetPivot": {
+        "x": 210,
+        "y": 404
+      },
+      "baselineLift": 0,
+      "embeddedWeapon": "scatter-blaster",
+      "shotAnchor": {
+        "x": 328,
+        "y": 99
+      }
+    },
+    {
+      "id": "scatter_blaster_walk_a",
+      "sheet": "dyn_scatter_blaster",
+      "source": {
+        "x": 50,
+        "y": 436,
+        "width": 330,
+        "height": 412
+      },
+      "feetPivot": {
+        "x": 164,
+        "y": 410
+      },
+      "baselineLift": 0,
+      "embeddedWeapon": "scatter-blaster"
+    },
+    {
+      "id": "scatter_blaster_walk_b",
+      "sheet": "dyn_scatter_blaster",
+      "source": {
+        "x": 470,
+        "y": 436,
+        "width": 332,
+        "height": 406
+      },
+      "feetPivot": {
+        "x": 162,
+        "y": 404
+      },
+      "baselineLift": 0,
+      "embeddedWeapon": "scatter-blaster"
+    },
+    {
+      "id": "scatter_blaster_run_a",
+      "sheet": "dyn_scatter_blaster",
+      "source": {
+        "x": 856,
+        "y": 459,
+        "width": 389,
+        "height": 373
+      },
+      "feetPivot": {
+        "x": 243,
+        "y": 371
+      },
+      "baselineLift": 0,
+      "embeddedWeapon": "scatter-blaster"
+    },
+    {
+      "id": "scatter_blaster_run_b",
+      "sheet": "dyn_scatter_blaster",
+      "source": {
+        "x": 16,
+        "y": 862,
+        "width": 410,
+        "height": 366
+      },
+      "feetPivot": {
+        "x": 247,
+        "y": 364
+      },
+      "baselineLift": 0,
+      "embeddedWeapon": "scatter-blaster"
+    },
+    {
+      "id": "scatter_blaster_guard",
+      "sheet": "dyn_scatter_blaster",
+      "source": {
+        "x": 505,
+        "y": 898,
+        "width": 318,
+        "height": 340
+      },
+      "feetPivot": {
+        "x": 159,
+        "y": 338
+      },
+      "baselineLift": 0,
+      "embeddedWeapon": "scatter-blaster"
+    },
+    {
+      "id": "scatter_blaster_hurt",
+      "sheet": "dyn_scatter_blaster",
+      "source": {
+        "x": 877,
+        "y": 854,
+        "width": 362,
+        "height": 385
+      },
+      "feetPivot": {
+        "x": 216,
+        "y": 383
+      },
+      "baselineLift": 0,
+      "embeddedWeapon": "scatter-blaster"
+    },
+    {
+      "id": "coil_rifle_ready",
+      "sheet": "dyn_coil_rifle",
+      "source": {
+        "x": 30,
+        "y": 22,
+        "width": 361,
+        "height": 410
+      },
+      "feetPivot": {
+        "x": 166,
+        "y": 408
+      },
+      "baselineLift": 0,
+      "embeddedWeapon": "coil-rifle"
+    },
+    {
+      "id": "coil_rifle_aim",
+      "sheet": "dyn_coil_rifle",
+      "source": {
+        "x": 437,
+        "y": 36,
+        "width": 418,
+        "height": 396
+      },
+      "feetPivot": {
+        "x": 185,
+        "y": 394
+      },
+      "baselineLift": 0,
+      "embeddedWeapon": "coil-rifle"
+    },
+    {
+      "id": "coil_rifle_recoil",
+      "sheet": "dyn_coil_rifle",
+      "source": {
+        "x": 865,
+        "y": 38,
+        "width": 378,
+        "height": 394
+      },
+      "feetPivot": {
+        "x": 225,
+        "y": 392
+      },
+      "baselineLift": 0,
+      "embeddedWeapon": "coil-rifle",
+      "shotAnchor": {
+        "x": 375,
+        "y": 77
+      }
+    },
+    {
+      "id": "coil_rifle_walk_a",
+      "sheet": "dyn_coil_rifle",
+      "source": {
+        "x": 24,
+        "y": 449,
+        "width": 353,
+        "height": 392
+      },
+      "feetPivot": {
+        "x": 181,
+        "y": 390
+      },
+      "baselineLift": 0,
+      "embeddedWeapon": "coil-rifle"
+    },
+    {
+      "id": "coil_rifle_walk_b",
+      "sheet": "dyn_coil_rifle",
+      "source": {
+        "x": 448,
+        "y": 450,
+        "width": 368,
+        "height": 388
+      },
+      "feetPivot": {
+        "x": 182,
+        "y": 386
+      },
+      "baselineLift": 0,
+      "embeddedWeapon": "coil-rifle"
+    },
+    {
+      "id": "coil_rifle_run_a",
+      "sheet": "dyn_coil_rifle",
+      "source": {
+        "x": 854,
+        "y": 451,
+        "width": 391,
+        "height": 388
+      },
+      "feetPivot": {
+        "x": 231,
+        "y": 386
+      },
+      "baselineLift": 0,
+      "embeddedWeapon": "coil-rifle"
+    },
+    {
+      "id": "coil_rifle_run_b",
+      "sheet": "dyn_coil_rifle",
+      "source": {
+        "x": 21,
+        "y": 852,
+        "width": 412,
+        "height": 370
+      },
+      "feetPivot": {
+        "x": 218,
+        "y": 368
+      },
+      "baselineLift": 0,
+      "embeddedWeapon": "coil-rifle"
+    },
+    {
+      "id": "coil_rifle_guard",
+      "sheet": "dyn_coil_rifle",
+      "source": {
+        "x": 465,
+        "y": 887,
+        "width": 374,
+        "height": 335
+      },
+      "feetPivot": {
+        "x": 186,
+        "y": 333
+      },
+      "baselineLift": 0,
+      "embeddedWeapon": "coil-rifle"
+    },
+    {
+      "id": "coil_rifle_hurt",
+      "sheet": "dyn_coil_rifle",
+      "source": {
+        "x": 882,
+        "y": 848,
+        "width": 362,
+        "height": 374
+      },
+      "feetPivot": {
+        "x": 205,
+        "y": 372
+      },
+      "baselineLift": 0,
+      "embeddedWeapon": "coil-rifle"
+    },
+    {
+      "id": "plasma_disc_ready",
+      "sheet": "dyn_plasma_disc",
+      "source": {
+        "x": 43,
+        "y": 10,
+        "width": 316,
+        "height": 405
+      },
+      "feetPivot": {
+        "x": 161,
+        "y": 403
+      },
+      "baselineLift": 0,
+      "embeddedWeapon": "plasma-disc"
+    },
+    {
+      "id": "plasma_disc_windup",
+      "sheet": "dyn_plasma_disc",
+      "source": {
+        "x": 448,
+        "y": 22,
+        "width": 359,
+        "height": 392
+      },
+      "feetPivot": {
+        "x": 187,
+        "y": 390
+      },
+      "baselineLift": 0,
+      "embeddedWeapon": "plasma-disc"
+    },
+    {
+      "id": "plasma_disc_release",
+      "sheet": "dyn_plasma_disc",
+      "source": {
+        "x": 840,
+        "y": 26,
+        "width": 414,
+        "height": 388
+      },
+      "feetPivot": {
+        "x": 247,
+        "y": 386
+      },
+      "baselineLift": 0,
+      "embeddedWeapon": "plasma-disc",
+      "shotAnchor": {
+        "x": 410,
+        "y": 98
+      }
+    },
+    {
+      "id": "plasma_disc_walk_a",
+      "sheet": "dyn_plasma_disc",
+      "source": {
+        "x": 47,
+        "y": 423,
+        "width": 333,
+        "height": 404
+      },
+      "feetPivot": {
+        "x": 173,
+        "y": 402
+      },
+      "baselineLift": 0,
+      "embeddedWeapon": "plasma-disc"
+    },
+    {
+      "id": "plasma_disc_walk_b",
+      "sheet": "dyn_plasma_disc",
+      "source": {
+        "x": 502,
+        "y": 422,
+        "width": 303,
+        "height": 404
+      },
+      "feetPivot": {
+        "x": 143,
+        "y": 402
+      },
+      "baselineLift": 0,
+      "embeddedWeapon": "plasma-disc"
+    },
+    {
+      "id": "plasma_disc_run_a",
+      "sheet": "dyn_plasma_disc",
+      "source": {
+        "x": 861,
+        "y": 438,
+        "width": 391,
+        "height": 381
+      },
+      "feetPivot": {
+        "x": 233,
+        "y": 379
+      },
+      "baselineLift": 0,
+      "embeddedWeapon": "plasma-disc"
+    },
+    {
+      "id": "plasma_disc_run_b",
+      "sheet": "dyn_plasma_disc",
+      "source": {
+        "x": 25,
+        "y": 837,
+        "width": 394,
+        "height": 393
+      },
+      "feetPivot": {
+        "x": 222,
+        "y": 391
+      },
+      "baselineLift": 0,
+      "embeddedWeapon": "plasma-disc"
+    },
+    {
+      "id": "plasma_disc_guard",
+      "sheet": "dyn_plasma_disc",
+      "source": {
+        "x": 475,
+        "y": 857,
+        "width": 330,
+        "height": 365
+      },
+      "feetPivot": {
+        "x": 186,
+        "y": 363
+      },
+      "baselineLift": 0,
+      "embeddedWeapon": "plasma-disc"
+    },
+    {
+      "id": "plasma_disc_followthrough",
+      "sheet": "dyn_plasma_disc",
+      "source": {
+        "x": 868,
+        "y": 832,
+        "width": 353,
+        "height": 390
+      },
+      "feetPivot": {
+        "x": 215,
+        "y": 388
+      },
+      "baselineLift": 0,
+      "embeddedWeapon": "plasma-disc"
     }
   ],
   "clips": {
@@ -10353,6 +10836,246 @@
         {
           "frame": "pipe_swing_recover",
           "holdMs": 50
+        }
+      ]
+    },
+    "weapon_scatter-blaster.idle": {
+      "loop": true,
+      "frames": [
+        {
+          "frame": "scatter_blaster_ready",
+          "holdMs": 160
+        }
+      ]
+    },
+    "weapon_scatter-blaster.walk": {
+      "loop": true,
+      "frames": [
+        {
+          "frame": "scatter_blaster_walk_a",
+          "holdMs": 100
+        },
+        {
+          "frame": "scatter_blaster_walk_b",
+          "holdMs": 100
+        }
+      ]
+    },
+    "weapon_scatter-blaster.run": {
+      "loop": true,
+      "frames": [
+        {
+          "frame": "scatter_blaster_run_a",
+          "holdMs": 90
+        },
+        {
+          "frame": "scatter_blaster_run_b",
+          "holdMs": 90
+        }
+      ]
+    },
+    "weapon_scatter-blaster.guard": {
+      "loop": true,
+      "frames": [
+        {
+          "frame": "scatter_blaster_guard",
+          "holdMs": 160
+        }
+      ]
+    },
+    "weapon_scatter-blaster.hurt": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "scatter_blaster_hurt",
+          "holdMs": 140
+        }
+      ]
+    },
+    "weapon_scatter-blaster.windup": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "scatter_blaster_aim",
+          "holdMs": 100
+        }
+      ]
+    },
+    "weapon_scatter-blaster.active": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "scatter_blaster_recoil",
+          "holdMs": 100
+        }
+      ]
+    },
+    "weapon_scatter-blaster.recovery": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "scatter_blaster_ready",
+          "holdMs": 100
+        }
+      ]
+    },
+    "weapon_coil-rifle.idle": {
+      "loop": true,
+      "frames": [
+        {
+          "frame": "coil_rifle_ready",
+          "holdMs": 160
+        }
+      ]
+    },
+    "weapon_coil-rifle.walk": {
+      "loop": true,
+      "frames": [
+        {
+          "frame": "coil_rifle_walk_a",
+          "holdMs": 100
+        },
+        {
+          "frame": "coil_rifle_walk_b",
+          "holdMs": 100
+        }
+      ]
+    },
+    "weapon_coil-rifle.run": {
+      "loop": true,
+      "frames": [
+        {
+          "frame": "coil_rifle_run_a",
+          "holdMs": 90
+        },
+        {
+          "frame": "coil_rifle_run_b",
+          "holdMs": 90
+        }
+      ]
+    },
+    "weapon_coil-rifle.guard": {
+      "loop": true,
+      "frames": [
+        {
+          "frame": "coil_rifle_guard",
+          "holdMs": 160
+        }
+      ]
+    },
+    "weapon_coil-rifle.hurt": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "coil_rifle_hurt",
+          "holdMs": 140
+        }
+      ]
+    },
+    "weapon_coil-rifle.windup": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "coil_rifle_aim",
+          "holdMs": 100
+        }
+      ]
+    },
+    "weapon_coil-rifle.active": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "coil_rifle_recoil",
+          "holdMs": 100
+        }
+      ]
+    },
+    "weapon_coil-rifle.recovery": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "coil_rifle_ready",
+          "holdMs": 100
+        }
+      ]
+    },
+    "weapon_plasma-disc.idle": {
+      "loop": true,
+      "frames": [
+        {
+          "frame": "plasma_disc_ready",
+          "holdMs": 160
+        }
+      ]
+    },
+    "weapon_plasma-disc.walk": {
+      "loop": true,
+      "frames": [
+        {
+          "frame": "plasma_disc_walk_a",
+          "holdMs": 100
+        },
+        {
+          "frame": "plasma_disc_walk_b",
+          "holdMs": 100
+        }
+      ]
+    },
+    "weapon_plasma-disc.run": {
+      "loop": true,
+      "frames": [
+        {
+          "frame": "plasma_disc_run_a",
+          "holdMs": 90
+        },
+        {
+          "frame": "plasma_disc_run_b",
+          "holdMs": 90
+        }
+      ]
+    },
+    "weapon_plasma-disc.guard": {
+      "loop": true,
+      "frames": [
+        {
+          "frame": "plasma_disc_guard",
+          "holdMs": 160
+        }
+      ]
+    },
+    "weapon_plasma-disc.hurt": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "plasma_disc_ready",
+          "holdMs": 140
+        }
+      ]
+    },
+    "weapon_plasma-disc.windup": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "plasma_disc_windup",
+          "holdMs": 100
+        }
+      ]
+    },
+    "weapon_plasma-disc.active": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "plasma_disc_release",
+          "holdMs": 100
+        }
+      ]
+    },
+    "weapon_plasma-disc.recovery": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "plasma_disc_followthrough",
+          "holdMs": 100
         }
       ]
     }
@@ -27058,5 +27781,13 @@
     },
     "firearms": "Complete fire_aim cel retained through ready and recovery; no support hand at the muzzle",
     "visualAcceptance": "Scoped render and browser review required; registration checks alone are not visual acceptance"
+  },
+  "embeddedWeaponProvenance": {
+    "mode": "Built-in imagegen; selected native PNGs copied unchanged",
+    "wholeCels": 27,
+    "holding": "trigger and support hands authored into guns; dominant rim grip and empty-hand release/followthrough for disc",
+    "scale": "Per-sheet measured ready head-to-floor height; one uniform scale for all nine cels; crop-local ground pivot and shot point",
+    "motion": "Existing simulation stride/phase clocks; accepted kicks and flight temporarily stow guns/disc while retaining inventory",
+    "ownerAppearanceAcceptance": "pending"
   }
 }

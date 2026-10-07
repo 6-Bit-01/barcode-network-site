@@ -25,6 +25,12 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
   const point = value => value && number(value.x) && number(value.y);
   const hash = value => typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value);
   const WEAPONS=Object.freeze(['pipe','crowbar','shock-baton','energy-blade','gravity-hammer','scatter-blaster','coil-rifle','plasma-disc']);
+  const EMBEDDED_WEAPONS=Object.freeze(['scatter-blaster','coil-rifle','plasma-disc']);
+  const EMBEDDED_ACTIONS=Object.freeze(['idle','walk','run','guard','hurt',...PHASES]);
+  const EMBEDDED_LOOPS=Object.freeze(['idle','walk','run','guard']);
+  const embeddedKey=(kind,action)=>'weapon_'+kind+'.'+action;
+  const embeddedKeys=Object.freeze(EMBEDDED_WEAPONS.flatMap(kind=>EMBEDDED_ACTIONS.map(action=>embeddedKey(kind,action))));
+  const embeddedLoops=Object.freeze(EMBEDDED_WEAPONS.flatMap(kind=>EMBEDDED_LOOPS.map(action=>embeddedKey(kind,action))));
 
   function polygons(value,source,label) {
     if(value===undefined)return null;
@@ -103,6 +109,9 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
       const baselineLift=item.baselineLift??0;
       need(number(baselineLift),'invalid authored baseline lift '+item.id);
       if(item.embeddedWeapon!==undefined)need(WEAPONS.includes(item.embeddedWeapon),'unknown embedded weapon '+item.id);
+      if(item.shotAnchor!==undefined)need(item.embeddedWeapon&&point(item.shotAnchor)
+        &&item.shotAnchor.x>=0&&item.shotAnchor.x<=source.width&&item.shotAnchor.y>=0&&item.shotAnchor.y<=source.height,
+        'invalid native embedded shot anchor '+item.id);
       const grip=item.gripAnchor,weaponAngle=item.weaponAngle??0;
       if(grip)need(point(grip)&&grip.x>=0&&grip.x<=source.width&&grip.y>=0&&grip.y<=source.height,
         'invalid held-item grip '+item.id);
@@ -114,6 +123,7 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
       frames[item.id]=Object.freeze({id:item.id,sheet:sheetId,sourceImage:sheet.sourceImage,sheetDimensions:sheet.dimensions,
         standingHeight:sheet.standingHeight,baselineLift,
         ...(item.embeddedWeapon!==undefined?{embeddedWeapon:item.embeddedWeapon}:{}),
+        ...(item.shotAnchor!==undefined?{shotAnchor:Object.freeze({x:item.shotAnchor.x,y:item.shotAnchor.y})}:{}),
         source:Object.freeze({...source}),feetPivot:Object.freeze({x:pivot.x,y:pivot.y}),
         ...(grip?{gripAnchor:Object.freeze({x:grip.x,y:grip.y}),weaponAngle}: {}),
         ...attachmentMetadata(item,source,item.id)});
@@ -157,10 +167,25 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
         'supplemental sheet needs its measured reference cel '+sheet.id);
     }
     for(const key of Object.keys(compiled.clips)) {
-      need(DYNAMIC_CLIPS.includes(key)||['pickup','carry-throw','guard-impact',...PHASES.map(phase=>'pipe-swing.'+phase)].includes(key),'unknown supplemental action '+key);
-      need(compiled.clips[key].loop===DYNAMIC_LOOPS.includes(key),'incorrect supplemental loop '+key);
+      need(DYNAMIC_CLIPS.includes(key)||embeddedKeys.includes(key)||['pickup','carry-throw','guard-impact',...PHASES.map(phase=>'pipe-swing.'+phase)].includes(key),'unknown supplemental action '+key);
+      need(compiled.clips[key].loop===(DYNAMIC_LOOPS.includes(key)||embeddedLoops.includes(key)),'incorrect supplemental loop '+key);
       for(const entry of compiled.clips[key].frames)
         need(compiled.frames[entry.frame].baselineLift===0,'grounded supplemental action changes floor baseline '+key);
+    }
+    if(embeddedKeys.some(key=>compiled.clips[key])) {
+      for(const kind of EMBEDDED_WEAPONS)for(const action of EMBEDDED_ACTIONS) {
+        const key=embeddedKey(kind,action),clip=compiled.clips[key];
+        need(clip,'missing embedded weapon action '+key);
+        for(const entry of clip.frames) {
+          const frame=compiled.frames[entry.frame];
+          need(frame.embeddedWeapon===kind,'embedded weapon identity differs '+key+'/'+frame.id);
+          need(!frame.gripAnchor&&!frame.itemBindings&&!frame.handOcclusion,'embedded weapon has detached attachment '+frame.id);
+          if(action==='active')need(frame.shotAnchor,'missing native embedded shot anchor '+key+'/'+frame.id);
+        }
+        if(['walk','run'].includes(action))need(new Set(clip.frames.map(entry=>entry.frame)).size>=2,
+          'insufficient embedded weapon movement cels '+key);
+        if(action==='active')need(clip.frames.length===1,'embedded weapon origin must use one committed contact cel '+key);
+      }
     }
     if(complete) {
       for(const key of DYNAMIC_CLIPS)need(compiled.clips[key],'missing supplemental action '+key);
@@ -211,6 +236,22 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
     const ageMs=finite(actor.animation?.ageMs,finite(actor.animAgeMs));
     let key,fallback,progress,clipAge=ageMs;
     const moving=finite(motion.speed,Math.hypot(finite(actor.vx),finite(actor.laneVelocity)))>.01;
+    const weaponKind=attack?.weaponKind||actor.animation?.weaponKind||actor.weapon?.kind;
+    const hurt=action==='hurt'||actor.hurtMs>0;
+    if(EMBEDDED_WEAPONS.includes(weaponKind)&&!actor.carry&&!actor.grapple) {
+      let embeddedAction=hurt?'hurt':['idle','walk','run'].includes(action)?action
+        :['guard','guard-creep'].includes(action)?'guard':null;
+      if(!hurt&&['weapon-fire','weapon-disc'].includes(action)) {
+        need(PHASES.includes(phase),'invalid embedded weapon phase '+phase);embeddedAction=phase;
+      }
+      const selectedKey=embeddedAction&&embeddedKey(weaponKind,embeddedAction);
+      if(selectedKey&&supplemental?.clips[selectedKey])return {compiled:supplemental,key:selectedKey,
+        ...(['walk','run'].includes(embeddedAction)?{progress:((finite(motion.stridePhase)%1)+1)%1}
+          :PHASES.includes(embeddedAction)?{progress:finite(attack?.phaseProgress,finite(actor.animation?.phaseProgress))}:{}),
+        ageMs:hurt?finite(actor.hitFeedback?.ageMs,ageMs):ageMs,action:hurt?'hurt':action,
+        phase:hurt?'hurt':phase,attackType:hurt?null:attack?.kind||null};
+    }
+    if(hurt)return null;
     if(action==='idle'&&['scatter-blaster','coil-rifle'].includes(actor.animation?.weaponKind||actor.weapon?.kind)
       &&supplemental?.clips['fire.recovery']) {
       return {compiled:supplemental,key:'fire.recovery',ageMs:0,action:'idle',phase:'idle',attackType:null};
@@ -276,7 +317,10 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
     let key='idle',attackType=null,phase=animation.phase||actor.phase||action;
     let progress,ageMs=finite(animation.ageMs,finite(actor.animAgeMs)),terminal=false;
     let selectedBank=compiled;
-    const dynamic=player&&actor.hp>0&&action!=='hurt'&&!(actor.hurtMs>0)&&!['defeat','defeated'].includes(action)
+    const settling=player&&['idle','walk'].includes(action)&&!actor.attack&&!actor.hurtMs&&!actor.guarding
+      &&!actor.carry&&!actor.grapple&&!(actor.elevation>0)&&number(landingAgeMs)&&landingAgeMs>=0
+      &&landingAgeMs<compiled.clips.landing?.totalMs;
+    const dynamic=player&&actor.hp>0&&!settling&&!['defeat','defeated'].includes(action)
       ?dynamicSelection(actor,action,motion,supplemental,compiled,guardImpactAgeMs):null;
     if(!player&&actor.launched) {
       // The complete authored fall cel travels on the simulation's ballistic
@@ -292,6 +336,7 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
       if(number(stateAgeMs))ageMs=Math.max(0,stateAgeMs);
     } else if(action==='hurt'||player&&actor.hurtMs>0||!player&&['stunned','grappled'].includes(actor.phase)) {
       action='hurt';key='hurt';ageMs=finite(actor.hitFeedback?.ageMs,ageMs);
+      if(player&&dynamic?.action==='hurt') {selectedBank=dynamic.compiled;key=dynamic.key;ageMs=dynamic.ageMs;phase='hurt';}
     } else if(dynamic) {
       selectedBank=dynamic.compiled;key=dynamic.key;progress=dynamic.progress;ageMs=dynamic.ageMs;
       action=dynamic.action;phase=dynamic.phase;attackType=dynamic.attackType;
@@ -331,15 +376,21 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
     }
     const selected=selectFrame(selectedBank,key,{progress,ageMs,terminal});
     const attachment=selected.frame.gripAnchor?selected.frame:supplemental?.baseGripAnchors[selected.frame.id];
-    const weaponKind=animation.weaponKind||actor.attack?.weaponKind||actor.weapon?.kind;
+    const weaponKind=actor.attack?.weaponKind||animation.weaponKind||actor.weapon?.kind;
     const stowed=!!actor.carry||!!actor.grapple;
-    const binding=!stowed&&attachment?.itemBindings?.[weaponKind];
+    const ownsEmbedded=EMBEDDED_WEAPONS.includes(weaponKind)&&supplemental?.clips[embeddedKey(weaponKind,'idle')];
+    const stowException=stowed||['jump-rise','jump-fall','landing','defeat','throw','pickup','carry','carry-walk','carry-throw'].includes(key)
+      ||['counter.','air-kick.'].some(prefix=>key.startsWith(prefix));
+    const weaponStowed=!!(ownsEmbedded&&selected.frame.embeddedWeapon!==weaponKind&&stowException);
+    const binding=!stowed&&!weaponStowed&&attachment?.itemBindings?.[weaponKind];
     return Object.freeze({...selected,frameId:selected.frame.id,action,attackType,phase,
       committedKey:key,clipKey:key,facing:finite(actor.facing,1)<0?-1:1,standingHeight:selected.frame.standingHeight,
       supplemental:selectedBank===supplemental,gripAnchor:binding?.gripAnchor||attachment?.gripAnchor||null,
       weaponAngle:binding?.weaponAngle??attachment?.weaponAngle??0,
       handOcclusion:binding?.handOcclusion||attachment?.handOcclusion||null,itemLayer:binding?.itemLayer||'front',
       weaponKind:weaponKind||null,
+      weaponStowed,
+      shotAnchor:selected.frame.shotAnchor||null,
       phaseProgress:number(progress)?clamp(progress,0,1):null});
   }
 
@@ -366,5 +417,5 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
   }
 
   B.MacCombatFrames=Object.freeze({compile,compileSupplemental,sample,draw,selectFrame,requiredClips,
-    moves:MOVES,styles:STYLES,dynamicClips:DYNAMIC_CLIPS,weapons:WEAPONS});
+    moves:MOVES,styles:STYLES,dynamicClips:DYNAMIC_CLIPS,weapons:WEAPONS,embeddedWeapons:EMBEDDED_WEAPONS});
 })(window.BARCODE=window.BARCODE||{});

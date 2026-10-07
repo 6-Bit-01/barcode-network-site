@@ -1,9 +1,9 @@
 {
   "builder": "barcode-system-override-standalone-v1",
   "status": "complete",
-  "sourceCommit": "0c702e69923da340a689441be7e0f65f12a1eff9",
-  "sourceTree": "379d6beab63f8120865da48f44ea3d8aadc9f563",
-  "builderSHA256": "66319a5729b891dc97c9414ffbb4176cda9c97d743ba02173beed94e7e88c218",
+  "sourceCommit": "8768b3189632eedf5de535db198ffded4d5f611c",
+  "sourceTree": "bd802c4b0e7f0bb63cdaeffbd9379d497298d028",
+  "builderSHA256": "cef2b9cee3ff90af62150b64dc2a5a2254fb03bfc889f85e3fc081f45d158524",
   "files": {
     "assets/audio/broadcast-slum-proof-carrier.wav": {
       "sha256": "7d9eb892d074c17ee1047c33f3a4264eeac3d4f954c856ce35745a2a484a901c",
@@ -2758,8 +2758,8 @@
       "bytes": 1067994
     },
     "assets/mac-combat-frames/mac-combat-frames-v1.json": {
-      "sha256": "3f98becc8ae6cfd6303535a3d4cad745a81fb6c1529c83451a9eb892c774134a",
-      "bytes": 4888
+      "sha256": "4c3d78d9daed03b18caa1730e56313f65a464ee28e082c6af221982614cf453e",
+      "bytes": 5080
     },
     "assets/mac-combat-frames/mac-frames-v1.json": {
       "sha256": "2220efc6400d0159d6b9a8dc805b9f332ae618932e6e8802f9e7d7c5ab64ac13",
@@ -2885,6 +2885,10 @@
       "sha256": "2202cd3149424663881f7f2e691467288637ea27e9f9edf355525c8ae3f1a29e",
       "bytes": 1049198
     },
+    "assets/mac-street-dynamic/mac-coil-rifle-grips-v1.png": {
+      "sha256": "cd1fd6a52cf1df9fd9ff43a1a047768dc8b4285f6b7488685a45f565e1ecb297",
+      "bytes": 1508795
+    },
     "assets/mac-street-dynamic/mac-guard-two-braids-v1.png": {
       "sha256": "2a6ed176b8cefba33793f1d6633671322afc8555c01c725cbe8a9ca306e3ed85",
       "bytes": 857804
@@ -2902,12 +2906,16 @@
       "bytes": 1374095
     },
     "assets/mac-street-dynamic/mac-modem-actions-v1.json": {
-      "sha256": "92cecf061ebacda91d4b76395c36f73c4702c94564247824c100b2e4fcae0294",
-      "bytes": 614239
+      "sha256": "b8e8dae0ae7a1c7cc6f73855dc6393514c3b7f35980a4ba1a0d81f02152659e5",
+      "bytes": 630231
     },
     "assets/mac-street-dynamic/mac-pipe-swing-two-braids-v1.png": {
       "sha256": "a22a5f4787d339614af5c2fc51a548affe55628e057bb54cdeffbdb1e21c83af",
       "bytes": 1883825
+    },
+    "assets/mac-street-dynamic/mac-plasma-disc-grips-v1.png": {
+      "sha256": "ad23988027d373b8ca10af1f8e4b99e3adb1cb441c1040b37b9b533e7a8ef8e8",
+      "bytes": 1561033
     },
     "assets/mac-street-dynamic/mac-run-two-braids-v1.png": {
       "sha256": "b78e958967d49d32eccb85a19594691e244e6023c34371a002099f3ec0cc4a23",
@@ -2916,6 +2924,10 @@
     "assets/mac-street-dynamic/mac-run-v1.png": {
       "sha256": "711c9993b6d39b0ce1fbc49897f154618c9d0baafad796a4bb236b2f6d9d4378",
       "bytes": 959338
+    },
+    "assets/mac-street-dynamic/mac-scatter-blaster-grips-v1.png": {
+      "sha256": "36667f70a3e14bfba05baf4bdf86dda013bc83cb826d340bc3216faf97c274e7",
+      "bytes": 1502467
     },
     "assets/mac-street-dynamic/mac-weapon-poses-two-braids-v1.png": {
       "sha256": "f4d2a4c8d5f602691fa787c08b01680ab1bc19461a035cf0789a336c4969ec93",
@@ -3454,8 +3466,8 @@
       "bytes": 38630
     },
     "mac-equipment-review.html": {
-      "sha256": "633d5b59d49595c39249e7fc42497c9336530e1879134796e8c0d4081f8e29f7",
-      "bytes": 11626
+      "sha256": "991bcbc8954c5018e5f54a0e65b611cd99238e68c90d4de9e454cdd0fbe10329",
+      "bytes": 12174
     },
     "style.css": {
       "sha256": "9f80d363e38b774bd600f68e6530de7bdc9fe5ee20ce8b7411da7ea9a3611810",
@@ -3810,16 +3822,16 @@
       "bytes": 18076
     },
     "src/game/mac-combat-frames.js": {
-      "sha256": "3191637f61ac4c3f9b3bd83d54730e8d297b217c3b3aab6616a683dedcc2b79a",
-      "bytes": 26619
+      "sha256": "2f15bf292e9b422f1f839aaee5d69a34dd7e3ca557bba22ea48e065af4601806",
+      "bytes": 30665
     },
     "src/game/mac-combat-preview.js": {
-      "sha256": "91f5dedb004ae716d8aa81c8f526cb20137901d3bbae64270d8a7a972554c508",
-      "bytes": 60530
+      "sha256": "2dae8b62bd2403791598443f03139f0e34ed8e497d13e5fc25fbf72885ea725a",
+      "bytes": 60552
     },
     "src/game/mac-street-combat.js": {
-      "sha256": "fddf4d2d204ada48dd46261e8ed2cb6e2bfbd7246b5383958d1c12f4529d5cbb",
-      "bytes": 85522
+      "sha256": "19c798599ad982964f7f859dd4f2d1e2701c4d64ee4c561c6b1097a8f0ce1de0",
+      "bytes": 85518
     },
     "src/game/mac-street-story.js": {
       "sha256": "793e600459057ee76ba40df1dda5338c2af43469a5fced31babda8938f937834",
@@ -3931,9 +3943,9 @@
     }
   },
   "sourceMode": "working-tree runtime scripts; exact HEAD canonical asset blobs",
-  "canonicalAssetCount": 861,
+  "canonicalAssetCount": 864,
   "preservedOriginalCount": 21,
-  "assetBytes": 695668313,
+  "assetBytes": 700256792,
   "ownedFiles": [
     ".standalone-build.json",
     "assets/audio/broadcast-slum-proof-carrier.wav",
@@ -4656,14 +4668,17 @@
     "assets/mac-combat-rigs/rift_stalker-v1.png",
     "assets/mac-combat-rigs/shock_mantid-v1-rig.json",
     "assets/mac-combat-rigs/shock_mantid-v1.png",
+    "assets/mac-street-dynamic/mac-coil-rifle-grips-v1.png",
     "assets/mac-street-dynamic/mac-guard-two-braids-v1.png",
     "assets/mac-street-dynamic/mac-guard-v1.png",
     "assets/mac-street-dynamic/mac-hold-carry-two-braids-v1.png",
     "assets/mac-street-dynamic/mac-hold-carry-v1.png",
     "assets/mac-street-dynamic/mac-modem-actions-v1.json",
     "assets/mac-street-dynamic/mac-pipe-swing-two-braids-v1.png",
+    "assets/mac-street-dynamic/mac-plasma-disc-grips-v1.png",
     "assets/mac-street-dynamic/mac-run-two-braids-v1.png",
     "assets/mac-street-dynamic/mac-run-v1.png",
+    "assets/mac-street-dynamic/mac-scatter-blaster-grips-v1.png",
     "assets/mac-street-dynamic/mac-weapon-poses-two-braids-v1.png",
     "assets/mac-street-dynamic/mac-weapon-poses-v1.png",
     "assets/mac-street-power/mac-street-power-v1.json",

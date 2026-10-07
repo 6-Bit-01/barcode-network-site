@@ -1,8 +1,8 @@
 {
   "builder": "barcode-system-override-standalone-v1",
   "status": "complete",
-  "sourceCommit": "8768b3189632eedf5de535db198ffded4d5f611c",
-  "sourceTree": "bd802c4b0e7f0bb63cdaeffbd9379d497298d028",
+  "sourceCommit": "f1467ea37a2710f4b1650d230a93bc0040276918",
+  "sourceTree": "f2b51de64ff5c6c15101d74eaf1da8635e62041b",
   "builderSHA256": "cef2b9cee3ff90af62150b64dc2a5a2254fb03bfc889f85e3fc081f45d158524",
   "files": {
     "assets/audio/broadcast-slum-proof-carrier.wav": {
@@ -2758,7 +2758,7 @@
       "bytes": 1067994
     },
     "assets/mac-combat-frames/mac-combat-frames-v1.json": {
-      "sha256": "4c3d78d9daed03b18caa1730e56313f65a464ee28e082c6af221982614cf453e",
+      "sha256": "0a51ff4947c0112c91564fc13c62889dce6a3c5ad1fee8c7d49937ad4f2a834e",
       "bytes": 5080
     },
     "assets/mac-combat-frames/mac-frames-v1.json": {
@@ -2906,8 +2906,8 @@
       "bytes": 1374095
     },
     "assets/mac-street-dynamic/mac-modem-actions-v1.json": {
-      "sha256": "b8e8dae0ae7a1c7cc6f73855dc6393514c3b7f35980a4ba1a0d81f02152659e5",
-      "bytes": 630231
+      "sha256": "6ed1b14f6c18ce3db7e16905a8767a364b3935e7ebb47a7e246cbd78c5fdad51",
+      "bytes": 643921
     },
     "assets/mac-street-dynamic/mac-pipe-swing-two-braids-v1.png": {
       "sha256": "a22a5f4787d339614af5c2fc51a548affe55628e057bb54cdeffbdb1e21c83af",
@@ -3466,8 +3466,8 @@
       "bytes": 38630
     },
     "mac-equipment-review.html": {
-      "sha256": "991bcbc8954c5018e5f54a0e65b611cd99238e68c90d4de9e454cdd0fbe10329",
-      "bytes": 12174
+      "sha256": "53663e3cb1e41509e47b631c2b6904e8b41edbed6fb18a3e4c136f57582ad196",
+      "bytes": 12302
     },
     "style.css": {
       "sha256": "9f80d363e38b774bd600f68e6530de7bdc9fe5ee20ce8b7411da7ea9a3611810",
@@ -3945,7 +3945,7 @@
   "sourceMode": "working-tree runtime scripts; exact HEAD canonical asset blobs",
   "canonicalAssetCount": 864,
   "preservedOriginalCount": 21,
-  "assetBytes": 700256792,
+  "assetBytes": 700270482,
   "ownedFiles": [
     ".standalone-build.json",
     "assets/audio/broadcast-slum-proof-carrier.wav",

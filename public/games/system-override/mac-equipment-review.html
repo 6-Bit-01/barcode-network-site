@@ -25,8 +25,9 @@
       {id:'idle',title:'Idle',action:'idle'},
       ...[0,.28,.55,.8].map((stride,index)=>({id:'walk-'+index,title:'Walk · '+(index+1),action:'walk',stride})),
       {id:'guard',title:'Guard',action:'guard'},
+      {id:'guard-impact',title:'Guard · impact',action:'guard',guardImpactAgeMs:35},
       {id:'hurt',title:'Hit reaction',action:'hurt'},
-      ...[0,.55].map((stride,index)=>({id:'guard-walk-'+index,title:'Guard step · '+(index+1),action:'guard-creep',stride})),
+      ...[.35,.85].map((stride,index)=>({id:'guard-walk-'+index,title:'Guard step · '+(index+1),action:'guard-creep',stride})),
       ...[0,.28,.55,.8].map((stride,index)=>({id:'run-'+index,title:'Run · '+(index+1),action:'run',stride})),
       ...phases.map(phase=>({id:'weapon-'+phase,title:'Weapon · '+phase,action:'weapon',phase})),
       ...[{phase:'windup',progress:.1,title:'Load'},{phase:'windup',progress:.75,title:'Uncoil'},{phase:'active',progress:.5,title:'Contact'},{phase:'recovery',progress:.1,title:'Through'},{phase:'recovery',progress:.5,title:'Finish'},{phase:'recovery',progress:.9,title:'Recover'}].map((s,index)=>({id:'bat-'+index,title:'Bat · '+s.title,action:'weapon',phase:s.phase,progress:s.progress})),
@@ -51,7 +52,7 @@
     }
     function drawWeapon(ctx,kind,scene,facing,{x=420,feet=390,height=260}={}){
       const P=B.MacCombatPreview,art=P.frameArt.get('mac'),player=playerFor(kind,scene,facing);
-      const pose=B.MacCombatFrames.sample(player,{player:true,compiled:art.compiled,supplemental:art.supplemental,landingAgeMs:scene.landingAgeMs});
+      const pose=B.MacCombatFrames.sample(player,{player:true,compiled:art.compiled,supplemental:art.supplemental,landingAgeMs:scene.landingAgeMs,guardImpactAgeMs:scene.guardImpactAgeMs});
       return P.drawMacPose(ctx,art,pose,{x,feet:feet-player.elevation,height,facing,weapon:player.weapon});
     }
     function drawProp(ctx,name,state='floor',{x=900,macX=220,feet=680,facing=1}={}){

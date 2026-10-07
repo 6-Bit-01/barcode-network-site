@@ -20,6 +20,35 @@
       "pixelScale": {
         "standingVisibleHeight": 509,
         "referenceFrame": "guard_brace"
+      },
+      "bodyCalibration": {
+        "schemaVersion": 1,
+        "feature": "cap-crown-to-beard-tip",
+        "nativeSegment": {
+          "from": {
+            "x": 246,
+            "y": 8
+          },
+          "to": {
+            "x": 264,
+            "y": 133
+          }
+        },
+        "reference": {
+          "frame": "idle_a",
+          "standingVisibleHeight": 321,
+          "segment": {
+            "from": {
+              "x": 215,
+              "y": 44
+            },
+            "to": {
+              "x": 230,
+              "y": 118
+            }
+          }
+        },
+        "uniformScale": 0.9480288229580874
       }
     },
     {
@@ -33,6 +62,35 @@
       "pixelScale": {
         "standingVisibleHeight": 527,
         "referenceFrame": "run_contact_a"
+      },
+      "bodyCalibration": {
+        "schemaVersion": 1,
+        "feature": "cap-crown-to-beard-tip",
+        "nativeSegment": {
+          "from": {
+            "x": 315,
+            "y": 8
+          },
+          "to": {
+            "x": 348,
+            "y": 149
+          }
+        },
+        "reference": {
+          "frame": "idle_a",
+          "standingVisibleHeight": 321,
+          "segment": {
+            "from": {
+              "x": 215,
+              "y": 44
+            },
+            "to": {
+              "x": 230,
+              "y": 118
+            }
+          }
+        },
+        "uniformScale": 0.8560160114752797
       }
     },
     {
@@ -57,7 +115,36 @@
           },
           "reason": "First-row duplicate old guard poses rejected; new guard sheet is the only supplemental guard source."
         }
-      ]
+      ],
+      "bodyCalibration": {
+        "schemaVersion": 1,
+        "feature": "cap-crown-to-beard-tip",
+        "nativeSegment": {
+          "from": {
+            "x": 162,
+            "y": 5
+          },
+          "to": {
+            "x": 174,
+            "y": 96
+          }
+        },
+        "reference": {
+          "frame": "idle_a",
+          "standingVisibleHeight": 321,
+          "segment": {
+            "from": {
+              "x": 215,
+              "y": 44
+            },
+            "to": {
+              "x": 230,
+              "y": 118
+            }
+          }
+        },
+        "uniformScale": 0.8712934523188914
+      }
     },
     {
       "id": "dyn_weapon",
@@ -70,6 +157,35 @@
       "pixelScale": {
         "standingVisibleHeight": 437,
         "referenceFrame": "fire_ready"
+      },
+      "bodyCalibration": {
+        "schemaVersion": 1,
+        "feature": "cap-crown-to-beard-tip",
+        "nativeSegment": {
+          "from": {
+            "x": 213,
+            "y": 5
+          },
+          "to": {
+            "x": 232,
+            "y": 109
+          }
+        },
+        "reference": {
+          "frame": "idle_a",
+          "standingVisibleHeight": 321,
+          "segment": {
+            "from": {
+              "x": 215,
+              "y": 44
+            },
+            "to": {
+              "x": 230,
+              "y": 118
+            }
+          }
+        },
+        "uniformScale": 0.9722754044804715
       }
     },
     {
@@ -83,6 +199,35 @@
       "pixelScale": {
         "standingVisibleHeight": 403,
         "referenceFrame": "pipe_swing_contact"
+      },
+      "bodyCalibration": {
+        "schemaVersion": 1,
+        "feature": "cap-crown-to-beard-tip",
+        "nativeSegment": {
+          "from": {
+            "x": 193,
+            "y": 11
+          },
+          "to": {
+            "x": 214,
+            "y": 111
+          }
+        },
+        "reference": {
+          "frame": "idle_a",
+          "standingVisibleHeight": 321,
+          "segment": {
+            "from": {
+              "x": 215,
+              "y": 44
+            },
+            "to": {
+              "x": 230,
+              "y": 118
+            }
+          }
+        },
+        "uniformScale": 0.9276934416576005
       }
     },
     {
@@ -96,6 +241,35 @@
       "pixelScale": {
         "standingVisibleHeight": 421,
         "referenceFrame": "scatter_blaster_ready"
+      },
+      "bodyCalibration": {
+        "schemaVersion": 1,
+        "feature": "cap-crown-to-beard-tip",
+        "nativeSegment": {
+          "from": {
+            "x": 196,
+            "y": 5
+          },
+          "to": {
+            "x": 218,
+            "y": 110
+          }
+        },
+        "reference": {
+          "frame": "idle_a",
+          "standingVisibleHeight": 321,
+          "segment": {
+            "from": {
+              "x": 215,
+              "y": 44
+            },
+            "to": {
+              "x": 230,
+              "y": 118
+            }
+          }
+        },
+        "uniformScale": 0.9230681984327215
       }
     },
     {
@@ -109,6 +283,35 @@
       "pixelScale": {
         "standingVisibleHeight": 408,
         "referenceFrame": "coil_rifle_ready"
+      },
+      "bodyCalibration": {
+        "schemaVersion": 1,
+        "feature": "cap-crown-to-beard-tip",
+        "nativeSegment": {
+          "from": {
+            "x": 191,
+            "y": 5
+          },
+          "to": {
+            "x": 215,
+            "y": 106
+          }
+        },
+        "reference": {
+          "frame": "idle_a",
+          "standingVisibleHeight": 321,
+          "segment": {
+            "from": {
+              "x": 215,
+              "y": 44
+            },
+            "to": {
+              "x": 230,
+              "y": 118
+            }
+          }
+        },
+        "uniformScale": 0.9244463450992053
       }
     },
     {
@@ -122,6 +325,35 @@
       "pixelScale": {
         "standingVisibleHeight": 403,
         "referenceFrame": "plasma_disc_ready"
+      },
+      "bodyCalibration": {
+        "schemaVersion": 1,
+        "feature": "cap-crown-to-beard-tip",
+        "nativeSegment": {
+          "from": {
+            "x": 196,
+            "y": 5
+          },
+          "to": {
+            "x": 215,
+            "y": 104
+          }
+        },
+        "reference": {
+          "frame": "idle_a",
+          "standingVisibleHeight": 321,
+          "segment": {
+            "from": {
+              "x": 215,
+              "y": 44
+            },
+            "to": {
+              "x": 230,
+              "y": 118
+            }
+          }
+        },
+        "uniformScale": 0.9403422269576631
       }
     }
   ],
@@ -2474,220 +2706,220 @@
       "itemBindings": {
         "pipe": {
           "gripAnchor": {
-            "x": 103.937,
-            "y": 281.063
+            "x": 104,
+            "y": 281
           },
-          "weaponAngle": -0.35,
-          "itemLayer": "front",
+          "weaponAngle": -0.31,
+          "itemLayer": "behind",
           "handOcclusion": [
             [
               {
-                "x": 85.71,
-                "y": 254.653
+                "x": 91,
+                "y": 263
               },
               {
-                "x": 124.84,
-                "y": 254.653
+                "x": 104,
+                "y": 257
               },
               {
-                "x": 134.985,
-                "y": 271.696
+                "x": 117,
+                "y": 264
               },
               {
-                "x": 134.985,
-                "y": 292.392
+                "x": 123,
+                "y": 278
               },
               {
-                "x": 117.594,
-                "y": 303.347
+                "x": 120,
+                "y": 295
               },
               {
-                "x": 85.71,
-                "y": 296.043
+                "x": 107,
+                "y": 302
               },
               {
-                "x": 77.015,
-                "y": 279.0
+                "x": 94,
+                "y": 295
               },
               {
-                "x": 81.363,
-                "y": 264.391
+                "x": 89,
+                "y": 281
               }
             ]
           ]
         },
         "crowbar": {
           "gripAnchor": {
-            "x": 106.0,
-            "y": 280.031
+            "x": 105,
+            "y": 281
           },
-          "weaponAngle": -0.35,
-          "itemLayer": "front",
+          "weaponAngle": -0.3,
+          "itemLayer": "behind",
           "handOcclusion": [
             [
               {
-                "x": 85.71,
-                "y": 254.653
+                "x": 91,
+                "y": 263
               },
               {
-                "x": 124.84,
-                "y": 254.653
+                "x": 104,
+                "y": 257
               },
               {
-                "x": 134.985,
-                "y": 271.696
+                "x": 117,
+                "y": 264
               },
               {
-                "x": 134.985,
-                "y": 292.392
+                "x": 123,
+                "y": 278
               },
               {
-                "x": 117.594,
-                "y": 303.347
+                "x": 120,
+                "y": 295
               },
               {
-                "x": 85.71,
-                "y": 296.043
+                "x": 107,
+                "y": 302
               },
               {
-                "x": 77.015,
-                "y": 279.0
+                "x": 94,
+                "y": 295
               },
               {
-                "x": 81.363,
-                "y": 264.391
+                "x": 89,
+                "y": 281
               }
             ]
           ]
         },
         "shock-baton": {
           "gripAnchor": {
-            "x": 107.031,
-            "y": 279.0
+            "x": 104,
+            "y": 280
           },
-          "weaponAngle": -0.35,
-          "itemLayer": "front",
+          "weaponAngle": -0.28,
+          "itemLayer": "behind",
           "handOcclusion": [
             [
               {
-                "x": 85.71,
-                "y": 254.653
+                "x": 91,
+                "y": 263
               },
               {
-                "x": 124.84,
-                "y": 254.653
+                "x": 104,
+                "y": 257
               },
               {
-                "x": 134.985,
-                "y": 271.696
+                "x": 117,
+                "y": 264
               },
               {
-                "x": 134.985,
-                "y": 292.392
+                "x": 123,
+                "y": 278
               },
               {
-                "x": 117.594,
-                "y": 303.347
+                "x": 120,
+                "y": 295
               },
               {
-                "x": 85.71,
-                "y": 296.043
+                "x": 107,
+                "y": 302
               },
               {
-                "x": 77.015,
-                "y": 279.0
+                "x": 94,
+                "y": 295
               },
               {
-                "x": 81.363,
-                "y": 264.391
+                "x": 89,
+                "y": 281
               }
             ]
           ]
         },
         "energy-blade": {
           "gripAnchor": {
-            "x": 108.063,
-            "y": 280.031
+            "x": 105,
+            "y": 282
           },
-          "weaponAngle": -0.35,
-          "itemLayer": "front",
+          "weaponAngle": -0.3,
+          "itemLayer": "behind",
           "handOcclusion": [
             [
               {
-                "x": 85.71,
-                "y": 254.653
+                "x": 91,
+                "y": 263
               },
               {
-                "x": 124.84,
-                "y": 254.653
+                "x": 104,
+                "y": 257
               },
               {
-                "x": 134.985,
-                "y": 271.696
+                "x": 117,
+                "y": 264
               },
               {
-                "x": 134.985,
-                "y": 292.392
+                "x": 123,
+                "y": 278
               },
               {
-                "x": 117.594,
-                "y": 303.347
+                "x": 120,
+                "y": 295
               },
               {
-                "x": 85.71,
-                "y": 296.043
+                "x": 107,
+                "y": 302
               },
               {
-                "x": 77.015,
-                "y": 279.0
+                "x": 94,
+                "y": 295
               },
               {
-                "x": 81.363,
-                "y": 264.391
+                "x": 89,
+                "y": 281
               }
             ]
           ]
         },
         "gravity-hammer": {
           "gripAnchor": {
-            "x": 104.969,
-            "y": 282.094
+            "x": 103,
+            "y": 282
           },
-          "weaponAngle": -0.35,
-          "itemLayer": "front",
+          "weaponAngle": -0.24,
+          "itemLayer": "behind",
           "handOcclusion": [
             [
               {
-                "x": 85.71,
-                "y": 254.653
+                "x": 91,
+                "y": 263
               },
               {
-                "x": 124.84,
-                "y": 254.653
+                "x": 104,
+                "y": 257
               },
               {
-                "x": 134.985,
-                "y": 271.696
+                "x": 117,
+                "y": 264
               },
               {
-                "x": 134.985,
-                "y": 292.392
+                "x": 123,
+                "y": 278
               },
               {
-                "x": 117.594,
-                "y": 303.347
+                "x": 120,
+                "y": 295
               },
               {
-                "x": 85.71,
-                "y": 296.043
+                "x": 107,
+                "y": 302
               },
               {
-                "x": 77.015,
-                "y": 279.0
+                "x": 94,
+                "y": 295
               },
               {
-                "x": 81.363,
-                "y": 264.391
+                "x": 89,
+                "y": 281
               }
             ]
           ]
@@ -2884,220 +3116,220 @@
       "itemBindings": {
         "pipe": {
           "gripAnchor": {
-            "x": 305.937,
-            "y": 199.063
+            "x": 310,
+            "y": 199
           },
-          "weaponAngle": -0.35,
+          "weaponAngle": 0.2,
           "itemLayer": "front",
           "handOcclusion": [
             [
               {
-                "x": 287.711,
-                "y": 172.653
+                "x": 293,
+                "y": 181
               },
               {
-                "x": 326.84,
-                "y": 172.653
+                "x": 307,
+                "y": 174
               },
               {
-                "x": 336.985,
-                "y": 189.696
+                "x": 322,
+                "y": 178
               },
               {
-                "x": 336.985,
-                "y": 210.392
+                "x": 332,
+                "y": 190
               },
               {
-                "x": 319.594,
-                "y": 221.347
+                "x": 329,
+                "y": 208
               },
               {
-                "x": 287.711,
-                "y": 214.043
+                "x": 316,
+                "y": 220
               },
               {
-                "x": 279.015,
-                "y": 197.0
+                "x": 301,
+                "y": 216
               },
               {
-                "x": 283.363,
-                "y": 182.391
+                "x": 291,
+                "y": 205
               }
             ]
           ]
         },
         "crowbar": {
           "gripAnchor": {
-            "x": 308.0,
-            "y": 198.031
+            "x": 311,
+            "y": 199
           },
-          "weaponAngle": -0.35,
+          "weaponAngle": 0.17,
           "itemLayer": "front",
           "handOcclusion": [
             [
               {
-                "x": 287.711,
-                "y": 172.653
+                "x": 293,
+                "y": 181
               },
               {
-                "x": 326.84,
-                "y": 172.653
+                "x": 307,
+                "y": 174
               },
               {
-                "x": 336.985,
-                "y": 189.696
+                "x": 322,
+                "y": 178
               },
               {
-                "x": 336.985,
-                "y": 210.392
+                "x": 332,
+                "y": 190
               },
               {
-                "x": 319.594,
-                "y": 221.347
+                "x": 329,
+                "y": 208
               },
               {
-                "x": 287.711,
-                "y": 214.043
+                "x": 316,
+                "y": 220
               },
               {
-                "x": 279.015,
-                "y": 197.0
+                "x": 301,
+                "y": 216
               },
               {
-                "x": 283.363,
-                "y": 182.391
+                "x": 291,
+                "y": 205
               }
             ]
           ]
         },
         "shock-baton": {
           "gripAnchor": {
-            "x": 309.031,
-            "y": 197.0
+            "x": 310,
+            "y": 198
           },
-          "weaponAngle": -0.35,
+          "weaponAngle": 0.12,
           "itemLayer": "front",
           "handOcclusion": [
             [
               {
-                "x": 287.711,
-                "y": 172.653
+                "x": 293,
+                "y": 181
               },
               {
-                "x": 326.84,
-                "y": 172.653
+                "x": 307,
+                "y": 174
               },
               {
-                "x": 336.985,
-                "y": 189.696
+                "x": 322,
+                "y": 178
               },
               {
-                "x": 336.985,
-                "y": 210.392
+                "x": 332,
+                "y": 190
               },
               {
-                "x": 319.594,
-                "y": 221.347
+                "x": 329,
+                "y": 208
               },
               {
-                "x": 287.711,
-                "y": 214.043
+                "x": 316,
+                "y": 220
               },
               {
-                "x": 279.015,
-                "y": 197.0
+                "x": 301,
+                "y": 216
               },
               {
-                "x": 283.363,
-                "y": 182.391
+                "x": 291,
+                "y": 205
               }
             ]
           ]
         },
         "energy-blade": {
           "gripAnchor": {
-            "x": 310.063,
-            "y": 198.031
+            "x": 311,
+            "y": 200
           },
-          "weaponAngle": -0.35,
+          "weaponAngle": 0.18,
           "itemLayer": "front",
           "handOcclusion": [
             [
               {
-                "x": 287.711,
-                "y": 172.653
+                "x": 293,
+                "y": 181
               },
               {
-                "x": 326.84,
-                "y": 172.653
+                "x": 307,
+                "y": 174
               },
               {
-                "x": 336.985,
-                "y": 189.696
+                "x": 322,
+                "y": 178
               },
               {
-                "x": 336.985,
-                "y": 210.392
+                "x": 332,
+                "y": 190
               },
               {
-                "x": 319.594,
-                "y": 221.347
+                "x": 329,
+                "y": 208
               },
               {
-                "x": 287.711,
-                "y": 214.043
+                "x": 316,
+                "y": 220
               },
               {
-                "x": 279.015,
-                "y": 197.0
+                "x": 301,
+                "y": 216
               },
               {
-                "x": 283.363,
-                "y": 182.391
+                "x": 291,
+                "y": 205
               }
             ]
           ]
         },
         "gravity-hammer": {
           "gripAnchor": {
-            "x": 306.969,
-            "y": 200.094
+            "x": 309,
+            "y": 200
           },
-          "weaponAngle": -0.35,
+          "weaponAngle": 0.08,
           "itemLayer": "front",
           "handOcclusion": [
             [
               {
-                "x": 287.711,
-                "y": 172.653
+                "x": 293,
+                "y": 181
               },
               {
-                "x": 326.84,
-                "y": 172.653
+                "x": 307,
+                "y": 174
               },
               {
-                "x": 336.985,
-                "y": 189.696
+                "x": 322,
+                "y": 178
               },
               {
-                "x": 336.985,
-                "y": 210.392
+                "x": 332,
+                "y": 190
               },
               {
-                "x": 319.594,
-                "y": 221.347
+                "x": 329,
+                "y": 208
               },
               {
-                "x": 287.711,
-                "y": 214.043
+                "x": 316,
+                "y": 220
               },
               {
-                "x": 279.015,
-                "y": 197.0
+                "x": 301,
+                "y": 216
               },
               {
-                "x": 283.363,
-                "y": 182.391
+                "x": 291,
+                "y": 205
               }
             ]
           ]
@@ -3294,220 +3526,220 @@
       "itemBindings": {
         "pipe": {
           "gripAnchor": {
-            "x": 418.937,
-            "y": 186.063
+            "x": 420,
+            "y": 186
           },
-          "weaponAngle": -0.35,
+          "weaponAngle": 0.13,
           "itemLayer": "front",
           "handOcclusion": [
             [
               {
-                "x": 400.711,
-                "y": 159.653
+                "x": 405,
+                "y": 167
               },
               {
-                "x": 439.84,
-                "y": 159.653
+                "x": 418,
+                "y": 160
               },
               {
-                "x": 449.985,
-                "y": 176.696
+                "x": 432,
+                "y": 165
               },
               {
-                "x": 449.985,
-                "y": 197.392
+                "x": 441,
+                "y": 179
               },
               {
-                "x": 432.594,
-                "y": 208.347
+                "x": 437,
+                "y": 197
               },
               {
-                "x": 400.711,
-                "y": 201.043
+                "x": 424,
+                "y": 209
               },
               {
-                "x": 392.015,
-                "y": 184.0
+                "x": 409,
+                "y": 203
               },
               {
-                "x": 396.363,
-                "y": 169.391
+                "x": 402,
+                "y": 188
               }
             ]
           ]
         },
         "crowbar": {
           "gripAnchor": {
-            "x": 421.0,
-            "y": 185.031
+            "x": 421,
+            "y": 186
           },
-          "weaponAngle": -0.35,
+          "weaponAngle": 0.1,
           "itemLayer": "front",
           "handOcclusion": [
             [
               {
-                "x": 400.711,
-                "y": 159.653
+                "x": 405,
+                "y": 167
               },
               {
-                "x": 439.84,
-                "y": 159.653
+                "x": 418,
+                "y": 160
               },
               {
-                "x": 449.985,
-                "y": 176.696
+                "x": 432,
+                "y": 165
               },
               {
-                "x": 449.985,
-                "y": 197.392
+                "x": 441,
+                "y": 179
               },
               {
-                "x": 432.594,
-                "y": 208.347
+                "x": 437,
+                "y": 197
               },
               {
-                "x": 400.711,
-                "y": 201.043
+                "x": 424,
+                "y": 209
               },
               {
-                "x": 392.015,
-                "y": 184.0
+                "x": 409,
+                "y": 203
               },
               {
-                "x": 396.363,
-                "y": 169.391
+                "x": 402,
+                "y": 188
               }
             ]
           ]
         },
         "shock-baton": {
           "gripAnchor": {
-            "x": 422.031,
-            "y": 184.0
+            "x": 420,
+            "y": 185
           },
-          "weaponAngle": -0.35,
+          "weaponAngle": 0.06,
           "itemLayer": "front",
           "handOcclusion": [
             [
               {
-                "x": 400.711,
-                "y": 159.653
+                "x": 405,
+                "y": 167
               },
               {
-                "x": 439.84,
-                "y": 159.653
+                "x": 418,
+                "y": 160
               },
               {
-                "x": 449.985,
-                "y": 176.696
+                "x": 432,
+                "y": 165
               },
               {
-                "x": 449.985,
-                "y": 197.392
+                "x": 441,
+                "y": 179
               },
               {
-                "x": 432.594,
-                "y": 208.347
+                "x": 437,
+                "y": 197
               },
               {
-                "x": 400.711,
-                "y": 201.043
+                "x": 424,
+                "y": 209
               },
               {
-                "x": 392.015,
-                "y": 184.0
+                "x": 409,
+                "y": 203
               },
               {
-                "x": 396.363,
-                "y": 169.391
+                "x": 402,
+                "y": 188
               }
             ]
           ]
         },
         "energy-blade": {
           "gripAnchor": {
-            "x": 423.063,
-            "y": 185.031
+            "x": 421,
+            "y": 187
           },
-          "weaponAngle": -0.35,
+          "weaponAngle": 0.13,
           "itemLayer": "front",
           "handOcclusion": [
             [
               {
-                "x": 400.711,
-                "y": 159.653
+                "x": 405,
+                "y": 167
               },
               {
-                "x": 439.84,
-                "y": 159.653
+                "x": 418,
+                "y": 160
               },
               {
-                "x": 449.985,
-                "y": 176.696
+                "x": 432,
+                "y": 165
               },
               {
-                "x": 449.985,
-                "y": 197.392
+                "x": 441,
+                "y": 179
               },
               {
-                "x": 432.594,
-                "y": 208.347
+                "x": 437,
+                "y": 197
               },
               {
-                "x": 400.711,
-                "y": 201.043
+                "x": 424,
+                "y": 209
               },
               {
-                "x": 392.015,
-                "y": 184.0
+                "x": 409,
+                "y": 203
               },
               {
-                "x": 396.363,
-                "y": 169.391
+                "x": 402,
+                "y": 188
               }
             ]
           ]
         },
         "gravity-hammer": {
           "gripAnchor": {
-            "x": 419.969,
-            "y": 187.094
+            "x": 419,
+            "y": 187
           },
-          "weaponAngle": -0.35,
+          "weaponAngle": 0.03,
           "itemLayer": "front",
           "handOcclusion": [
             [
               {
-                "x": 400.711,
-                "y": 159.653
+                "x": 405,
+                "y": 167
               },
               {
-                "x": 439.84,
-                "y": 159.653
+                "x": 418,
+                "y": 160
               },
               {
-                "x": 449.985,
-                "y": 176.696
+                "x": 432,
+                "y": 165
               },
               {
-                "x": 449.985,
-                "y": 197.392
+                "x": 441,
+                "y": 179
               },
               {
-                "x": 432.594,
-                "y": 208.347
+                "x": 437,
+                "y": 197
               },
               {
-                "x": 400.711,
-                "y": 201.043
+                "x": 424,
+                "y": 209
               },
               {
-                "x": 392.015,
-                "y": 184.0
+                "x": 409,
+                "y": 203
               },
               {
-                "x": 396.363,
-                "y": 169.391
+                "x": 402,
+                "y": 188
               }
             ]
           ]
@@ -3704,220 +3936,220 @@
       "itemBindings": {
         "pipe": {
           "gripAnchor": {
-            "x": 48.937,
-            "y": 259.063
+            "x": 51,
+            "y": 258
           },
-          "weaponAngle": -0.35,
-          "itemLayer": "front",
+          "weaponAngle": -0.26,
+          "itemLayer": "behind",
           "handOcclusion": [
             [
               {
-                "x": 30.71,
-                "y": 232.653
+                "x": 36,
+                "y": 241
               },
               {
-                "x": 69.84,
-                "y": 232.653
+                "x": 49,
+                "y": 234
               },
               {
-                "x": 79.985,
-                "y": 249.696
+                "x": 63,
+                "y": 239
               },
               {
-                "x": 79.985,
-                "y": 270.392
+                "x": 69,
+                "y": 252
               },
               {
-                "x": 62.594,
-                "y": 281.347
+                "x": 65,
+                "y": 270
               },
               {
-                "x": 30.71,
-                "y": 274.043
+                "x": 52,
+                "y": 279
               },
               {
-                "x": 22.015,
-                "y": 257.0
+                "x": 39,
+                "y": 272
               },
               {
-                "x": 26.363,
-                "y": 242.391
+                "x": 32,
+                "y": 257
               }
             ]
           ]
         },
         "crowbar": {
           "gripAnchor": {
-            "x": 51.0,
-            "y": 258.031
+            "x": 52,
+            "y": 258
           },
-          "weaponAngle": -0.35,
-          "itemLayer": "front",
+          "weaponAngle": -0.25,
+          "itemLayer": "behind",
           "handOcclusion": [
             [
               {
-                "x": 30.71,
-                "y": 232.653
+                "x": 36,
+                "y": 241
               },
               {
-                "x": 69.84,
-                "y": 232.653
+                "x": 49,
+                "y": 234
               },
               {
-                "x": 79.985,
-                "y": 249.696
+                "x": 63,
+                "y": 239
               },
               {
-                "x": 79.985,
-                "y": 270.392
+                "x": 69,
+                "y": 252
               },
               {
-                "x": 62.594,
-                "y": 281.347
+                "x": 65,
+                "y": 270
               },
               {
-                "x": 30.71,
-                "y": 274.043
+                "x": 52,
+                "y": 279
               },
               {
-                "x": 22.015,
-                "y": 257.0
+                "x": 39,
+                "y": 272
               },
               {
-                "x": 26.363,
-                "y": 242.391
+                "x": 32,
+                "y": 257
               }
             ]
           ]
         },
         "shock-baton": {
           "gripAnchor": {
-            "x": 52.031,
-            "y": 257.0
+            "x": 51,
+            "y": 257
           },
-          "weaponAngle": -0.35,
-          "itemLayer": "front",
+          "weaponAngle": -0.22,
+          "itemLayer": "behind",
           "handOcclusion": [
             [
               {
-                "x": 30.71,
-                "y": 232.653
+                "x": 36,
+                "y": 241
               },
               {
-                "x": 69.84,
-                "y": 232.653
+                "x": 49,
+                "y": 234
               },
               {
-                "x": 79.985,
-                "y": 249.696
+                "x": 63,
+                "y": 239
               },
               {
-                "x": 79.985,
-                "y": 270.392
+                "x": 69,
+                "y": 252
               },
               {
-                "x": 62.594,
-                "y": 281.347
+                "x": 65,
+                "y": 270
               },
               {
-                "x": 30.71,
-                "y": 274.043
+                "x": 52,
+                "y": 279
               },
               {
-                "x": 22.015,
-                "y": 257.0
+                "x": 39,
+                "y": 272
               },
               {
-                "x": 26.363,
-                "y": 242.391
+                "x": 32,
+                "y": 257
               }
             ]
           ]
         },
         "energy-blade": {
           "gripAnchor": {
-            "x": 53.063,
-            "y": 258.031
+            "x": 52,
+            "y": 259
           },
-          "weaponAngle": -0.35,
-          "itemLayer": "front",
+          "weaponAngle": -0.25,
+          "itemLayer": "behind",
           "handOcclusion": [
             [
               {
-                "x": 30.71,
-                "y": 232.653
+                "x": 36,
+                "y": 241
               },
               {
-                "x": 69.84,
-                "y": 232.653
+                "x": 49,
+                "y": 234
               },
               {
-                "x": 79.985,
-                "y": 249.696
+                "x": 63,
+                "y": 239
               },
               {
-                "x": 79.985,
-                "y": 270.392
+                "x": 69,
+                "y": 252
               },
               {
-                "x": 62.594,
-                "y": 281.347
+                "x": 65,
+                "y": 270
               },
               {
-                "x": 30.71,
-                "y": 274.043
+                "x": 52,
+                "y": 279
               },
               {
-                "x": 22.015,
-                "y": 257.0
+                "x": 39,
+                "y": 272
               },
               {
-                "x": 26.363,
-                "y": 242.391
+                "x": 32,
+                "y": 257
               }
             ]
           ]
         },
         "gravity-hammer": {
           "gripAnchor": {
-            "x": 49.969,
-            "y": 260.094
+            "x": 50,
+            "y": 259
           },
-          "weaponAngle": -0.35,
-          "itemLayer": "front",
+          "weaponAngle": -0.19,
+          "itemLayer": "behind",
           "handOcclusion": [
             [
               {
-                "x": 30.71,
-                "y": 232.653
+                "x": 36,
+                "y": 241
               },
               {
-                "x": 69.84,
-                "y": 232.653
+                "x": 49,
+                "y": 234
               },
               {
-                "x": 79.985,
-                "y": 249.696
+                "x": 63,
+                "y": 239
               },
               {
-                "x": 79.985,
-                "y": 270.392
+                "x": 69,
+                "y": 252
               },
               {
-                "x": 62.594,
-                "y": 281.347
+                "x": 65,
+                "y": 270
               },
               {
-                "x": 30.71,
-                "y": 274.043
+                "x": 52,
+                "y": 279
               },
               {
-                "x": 22.015,
-                "y": 257.0
+                "x": 39,
+                "y": 272
               },
               {
-                "x": 26.363,
-                "y": 242.391
+                "x": 32,
+                "y": 257
               }
             ]
           ]
@@ -28470,5 +28702,28 @@
       }
     },
     "status": "Measured guard item registration correction; actual native visual review is recorded separately in private verification."
+  },
+  "calibrationReview": {
+    "reference": "Accepted idle_a original pixels; crop-local cap crown and beard tip inspected at native resolution.",
+    "method": "One uniform XY scalar per authored supplemental sheet, anchored at the existing feet pivot; source crops and every raster byte remain unchanged.",
+    "scope": "Anatomical size alignment; pose-dependent reach and limb spread remain authored. Live appearance acceptance remains separate."
+  },
+  "runningGripReview": {
+    "method": "Four actual weighted stride holds; closed tattooed fist traced in original crop coordinates. Rear arm phases draw item behind whole body, then original palm; forward arm phases use native palm coverage.",
+    "frames": [
+      "run_contact_a",
+      "run_pass_a",
+      "run_contact_b",
+      "run_pass_b"
+    ],
+    "weapons": [
+      "pipe",
+      "crowbar",
+      "shock-baton",
+      "energy-blade",
+      "gravity-hammer"
+    ],
+    "embeddedWeapons": "Scatter Blaster, Coil Rifle and Plasma Disc keep their complete authored two-hand/rim-grip run cels; no detached duplicate.",
+    "measurements": "Native crop-local hand masks inspected in native-landmarks/run_*.jpg; hand anchors and palm masks share the calibrated body scale and reflected foot transform. Equipment retains its own authored world size."
   }
 }

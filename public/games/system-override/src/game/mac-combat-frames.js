@@ -31,6 +31,22 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
   const embeddedKey=(kind,action)=>'weapon_'+kind+'.'+action;
   const embeddedKeys=Object.freeze(EMBEDDED_WEAPONS.flatMap(kind=>EMBEDDED_ACTIONS.map(action=>embeddedKey(kind,action))));
   const embeddedLoops=Object.freeze(EMBEDDED_WEAPONS.flatMap(kind=>EMBEDDED_LOOPS.map(action=>embeddedKey(kind,action))));
+  const segmentLength=segment=>Math.hypot(segment.to.x-segment.from.x,segment.to.y-segment.from.y);
+
+  function bodyCalibration(value,label) {
+    if(value===undefined)return null;
+    need(value?.schemaVersion===1&&value.feature==='cap-crown-to-beard-tip','invalid anatomical calibration '+label);
+    const segment=value.nativeSegment,reference=value.reference;
+    need(point(segment?.from)&&point(segment?.to)&&name(reference?.frame)
+      &&point(reference?.segment?.from)&&point(reference?.segment?.to)
+      &&number(reference.standingVisibleHeight)&&reference.standingVisibleHeight>0,'invalid calibration landmarks '+label);
+    need(segmentLength(segment)>1&&segmentLength(reference.segment)>1,'empty anatomical calibration '+label);
+    need(number(value.uniformScale)&&value.uniformScale>=.75&&value.uniformScale<=1.1,'unsafe uniform body scale '+label);
+    return Object.freeze({schemaVersion:1,feature:value.feature,uniformScale:value.uniformScale,
+      nativeSegment:Object.freeze({from:Object.freeze({...segment.from}),to:Object.freeze({...segment.to})}),
+      reference:Object.freeze({frame:reference.frame,standingVisibleHeight:reference.standingVisibleHeight,
+        segment:Object.freeze({from:Object.freeze({...reference.segment.from}),to:Object.freeze({...reference.segment.to})})})});
+  }
 
   function polygons(value,source,label) {
     if(value===undefined)return null;
@@ -90,8 +106,11 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
         'invalid native sheet dimensions '+item.id);
       const sheetStandingHeight=item.pixelScale?.standingVisibleHeight??item.standingVisibleHeight??standingHeight;
       need(number(sheetStandingHeight)&&sheetStandingHeight>0,'invalid uniform sheet reference height '+item.id);
+      const calibration=bodyCalibration(item.bodyCalibration,item.id);
+      if(calibration)need(actor==='mac','only Mac supplemental anatomy is calibrated '+item.id);
       sheets[item.id]=Object.freeze({id:item.id,sourceImage:item.sourceImage,sourceSHA256:item.sourceSHA256.toLowerCase(),
         dimensions:Object.freeze({width:dimensions.width,height:dimensions.height}),standingHeight:sheetStandingHeight,
+        ...(calibration?{bodyCalibration:calibration}:{}),
         referenceFrame:item.pixelScale?.referenceFrame||item.referenceFrame||null});
     }
     const sheetIds=Object.keys(sheets),frames=Object.create(null);
@@ -121,7 +140,7 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
         need(!(a.x<b.x+b.width&&a.x+a.width>b.x&&a.y<b.y+b.height&&a.y+a.height>b.y),'overlapping cel crops '+other.id+'/'+item.id);
       }
       frames[item.id]=Object.freeze({id:item.id,sheet:sheetId,sourceImage:sheet.sourceImage,sheetDimensions:sheet.dimensions,
-        standingHeight:sheet.standingHeight,baselineLift,
+        standingHeight:sheet.standingHeight/(sheet.bodyCalibration?.uniformScale||1),baselineLift,
         ...(item.embeddedWeapon!==undefined?{embeddedWeapon:item.embeddedWeapon}:{}),
         ...(item.shotAnchor!==undefined?{shotAnchor:Object.freeze({x:item.shotAnchor.x,y:item.shotAnchor.y})}:{}),
         source:Object.freeze({...source}),feetPivot:Object.freeze({x:pivot.x,y:pivot.y}),
@@ -165,6 +184,18 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
       need(!baseCompiled?.sheets[sheet.id],'supplemental sheet shadows accepted base '+sheet.id);
       need(sheet.referenceFrame&&compiled.frames[sheet.referenceFrame]?.sheet===sheet.id,
         'supplemental sheet needs its measured reference cel '+sheet.id);
+      if(sheet.bodyCalibration) {
+        const calibration=sheet.bodyCalibration,frame=compiled.frames[sheet.referenceFrame],reference=baseCompiled?.frames[calibration.reference.frame];
+        const inside=(p,source)=>p.x>=0&&p.x<=source.width&&p.y>=0&&p.y<=source.height;
+        need(reference&&reference.standingHeight===calibration.reference.standingVisibleHeight,
+          'anatomical scale needs the actual accepted reference cel '+sheet.id);
+        need([calibration.nativeSegment.from,calibration.nativeSegment.to].every(p=>inside(p,frame.source))
+          &&[calibration.reference.segment.from,calibration.reference.segment.to].every(p=>inside(p,reference.source)),
+          'anatomical landmark outside actual native cel '+sheet.id);
+        const measured=(segmentLength(calibration.reference.segment)/reference.standingHeight)
+          /(segmentLength(calibration.nativeSegment)/sheet.standingHeight);
+        need(Math.abs(measured-calibration.uniformScale)<1e-9,'uniform scale differs from native landmarks '+sheet.id);
+      }
     }
     for(const key of Object.keys(compiled.clips)) {
       need(DYNAMIC_CLIPS.includes(key)||embeddedKeys.includes(key)||['pickup','carry-throw','guard-impact',...PHASES.map(phase=>'pipe-swing.'+phase)].includes(key),'unknown supplemental action '+key);

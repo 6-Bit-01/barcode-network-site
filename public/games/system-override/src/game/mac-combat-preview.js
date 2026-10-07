@@ -179,10 +179,16 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       });
       this.zonePromises.set(index, preparing); return preparing;
     },
+    createCombat() {
+      const seed = new Uint32Array(1);
+      if (window.crypto?.getRandomValues) window.crypto.getRandomValues(seed);
+      else seed[0] = Date.now() >>> 0;
+      return B.MacStreetCombat.create({lootSeed:seed[0]});
+    },
     async enter() {
       if (!B.MacStreetCombat || !B.MacStreetStory || !B.MacCombatFrames || !this.assets.size || this.frameArt.size !== 8) throw new Error('mac-preview-not-ready');
       const generation = this.generation;
-      this.combat = B.MacStreetCombat.create();
+      this.combat = this.createCombat();
       this.presentationState = this.combat.getSnapshot();
       this.story = B.MacStreetStory.createIntro();
       this.phase = 'intro'; this.status = 'playing'; this.active = true; this.cameraX = 0;
@@ -232,7 +238,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
     exit() { return B.RuntimeLifecycle?.returnToTitle?.({ source: 'mac-preview-title' }); },
     retry() {
       if (!this.active) return false;
-      if (this.status === 'clear') { this.combat = B.MacStreetCombat.create(); this.resetTutorial(); this.gameplayCueSeen = []; } else this.combat.retry();
+      if (this.status === 'clear') { this.combat = this.createCombat(); this.resetTutorial(); this.gameplayCueSeen = []; } else this.combat.retry();
       this.phase = 'street'; this.status = 'playing'; this.story = null;
       this.playerDefeatedAtMs = null; this.playerDefeatedHostAtMs = null;
       this.playerLandedAtMs = null;
@@ -424,7 +430,10 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       const equipment = this.equipmentReadout(state?.player), holding = state?.player.grapple || state?.player.carry;
       const radio = B.TouchControls?.enabled && this.radio;
       const status = B.TouchControls?.enabled && equipment && (holding || !teaching);
-      const visible = this.active && this.phase === 'street' && this.status === 'playing' && !window.isPaused && (teaching || radio || status);
+      // Let the live boss warning and recovery clock stay readable. Lesson
+      // progress still uses the same earned receipts; held-object status wins.
+      const bossBeat = state?.boss?.hp > 0 && ['warning','committed','punish'].includes(state.boss.window);
+      const visible = this.active && this.phase === 'street' && this.status === 'playing' && !window.isPaused && (teaching || radio || status) && !(teaching && !holding && bossBeat);
       box.hidden = !visible; box.style.display = visible ? 'flex' : 'none'; if (!visible) return;
       const lesson = teaching ? LESSONS[t.index] : null, heading = status ? equipment.heading : radio ? `${radio.speaker} · LOCAL SIGNAL` : `${t.index + 1} / ${LESSONS.length} · ${lesson.title}`;
       const text = status ? equipment.text + (radio && !holding ? `\n${radio.speaker}: ${radio.text}` : '') : radio ? radio.text : t.advanceAtMs !== null ? 'Got it. Keep moving.' : lesson.text(this.controlPrompts());

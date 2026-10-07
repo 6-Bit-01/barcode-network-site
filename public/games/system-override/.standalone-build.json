@@ -1,8 +1,8 @@
 {
   "builder": "barcode-system-override-standalone-v1",
   "status": "complete",
-  "sourceCommit": "bcd25f494418ba4f634ce1f5abd746467bcdd2cc",
-  "sourceTree": "a8dc1e86c5c212f16e856c42a4b61826749953fe",
+  "sourceCommit": "f902da798c57124bebaea766eab7a3fc7eda1e35",
+  "sourceTree": "a9a5d1e5aea48da2a0e4cbb25a64d21f52d19a4a",
   "builderSHA256": "6adf3be8f4857ab29771f7f8a84e1d77f8465e6ab8404041d4bcc47e889912a1",
   "files": {
     "assets/audio/broadcast-slum-proof-carrier.wav": {
@@ -2758,8 +2758,8 @@
       "bytes": 1067994
     },
     "assets/mac-combat-frames/mac-combat-frames-v1.json": {
-      "sha256": "0a51ff4947c0112c91564fc13c62889dce6a3c5ad1fee8c7d49937ad4f2a834e",
-      "bytes": 5080
+      "sha256": "977ca28cc55dabe64b8ee18fe5b2124b5765063059eabf2971f657adebc5a611",
+      "bytes": 4969
     },
     "assets/mac-combat-frames/mac-frames-v1.json": {
       "sha256": "2220efc6400d0159d6b9a8dc805b9f332ae618932e6e8802f9e7d7c5ab64ac13",
@@ -2906,8 +2906,8 @@
       "bytes": 1374095
     },
     "assets/mac-street-dynamic/mac-modem-actions-v1.json": {
-      "sha256": "6ed1b14f6c18ce3db7e16905a8767a364b3935e7ebb47a7e246cbd78c5fdad51",
-      "bytes": 643921
+      "sha256": "726355025f1f53cebedd3a364f2550c6cefd1bff076f273be4c18f01e4c59f9b",
+      "bytes": 620527
     },
     "assets/mac-street-dynamic/mac-pipe-swing-two-braids-v1.png": {
       "sha256": "a22a5f4787d339614af5c2fc51a548affe55628e057bb54cdeffbdb1e21c83af",
@@ -3466,8 +3466,8 @@
       "bytes": 38630
     },
     "mac-equipment-review.html": {
-      "sha256": "53663e3cb1e41509e47b631c2b6904e8b41edbed6fb18a3e4c136f57582ad196",
-      "bytes": 12302
+      "sha256": "8d9ed8754df8ce9b1fc440466d39d811d0bd468d1eb382bc296843b6393c398e",
+      "bytes": 12329
     },
     "style.css": {
       "sha256": "9f80d363e38b774bd600f68e6530de7bdc9fe5ee20ce8b7411da7ea9a3611810",
@@ -3822,16 +3822,16 @@
       "bytes": 18076
     },
     "src/game/mac-combat-frames.js": {
-      "sha256": "2f15bf292e9b422f1f839aaee5d69a34dd7e3ca557bba22ea48e065af4601806",
-      "bytes": 30665
+      "sha256": "35dbf1333cc8f3b2249638bc44b1bef1b823d3c5edc38e711343fc7d2de51b23",
+      "bytes": 33297
     },
     "src/game/mac-combat-preview.js": {
-      "sha256": "ee23becdcc6482669e7a3160c171ed4a1441b40097cee0c15ade4acd439107c8",
-      "bytes": 64755
+      "sha256": "7cf4da18892248a2e3c5b7776ef2c477f36ab03ee44c55cb4edc46108a58cf79",
+      "bytes": 65288
     },
     "src/game/mac-street-combat.js": {
-      "sha256": "9f503d4f535af467cf2d0fd1d9576b9078f6b8106fe62e955c7f24973ed7ec19",
-      "bytes": 91444
+      "sha256": "ebb43230912d86de9b00d08e17704aa0c8c32044786742dd48b3a79080e08957",
+      "bytes": 99184
     },
     "src/game/mac-street-story.js": {
       "sha256": "e2dcf2129006a1ed54abbc7c485abecc0539698f590eea58caedc2cc843d8862",
@@ -3945,7 +3945,7 @@
   "sourceMode": "working-tree runtime scripts; exact HEAD canonical asset blobs",
   "canonicalAssetCount": 864,
   "preservedOriginalCount": 21,
-  "assetBytes": 700270482,
+  "assetBytes": 700246977,
   "ownedFiles": [
     ".standalone-build.json",
     "assets/audio/broadcast-slum-proof-carrier.wav",

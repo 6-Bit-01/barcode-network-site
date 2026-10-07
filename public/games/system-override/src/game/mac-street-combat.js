@@ -19,12 +19,12 @@ window.FILE_MANIFEST.push({
   // Actual Run+Strike commits one grounded kick before an equipped weapon;
   // Counter and Jump+Strike retain priority over that running commitment.
   const C = Object.freeze({
-    version:6,worldWidth:20400,zoneWidth:3400,laneMin:780,laneMax:970,
+    version:7,worldWidth:20400,zoneWidth:3400,laneMin:780,laneMax:970,
     startX:200,startLaneY:880,deskX:20100,
     stepMs:1000/120,maxDeltaMs:100,maxSubsteps:12,
     maxEnemies:3,totalEnemies:30,totalWaves:12,maxProjectiles:18,
     maxHitFx:24,maxEvents:64,waveBreakMs:1250,
-    playerHp:100,zoneHeal:28,moveSpeed:260,laneSpeed:180,
+    playerHp:100,zoneHeal:22,moveSpeed:260,laneSpeed:180,
     jumpSpeed:560,gravity:1500,hitHeight:62,laneReach:40,parryMs:125,counterMs:800,
     playerInvulnerableMs:720,playerHurtMs:220,comboWindowMs:360,
     throwReach:74,throwDamage:28,throwCommitMs:420,throwReleaseMs:140,throwCooldownMs:700,
@@ -32,9 +32,10 @@ window.FILE_MANIFEST.push({
     knockdownMs:360,pickupHeal:18,pickupReach:58,advanceEntryOffset:1800,
     runTapMs:280,runMultiplier:1.65,grabMaxMs:3000,pummelMaxMs:1000,
     strength:100,propReach:85,maxPickups:48,overdriveMs:10000,barrierMs:12000,impactMs:15000,
-    carryForward:68.665,carryElevation:139.644,propReleaseForward:73.907,propReleaseElevation:155.394,
+    carryForward:59.826903630,carryElevation:121.929830769,propReleaseForward:73.907,propReleaseElevation:155.394,
     carRecoilMs:420,carRecoilX:10,carBounceHeight:20,carRecoilRotation:.025,
-    tellSpacingMs:300,interruptedRearmMs:220,fixtureDischargeRange:235,fixtureDischargeLaneReach:95
+    tellSpacingMs:300,interruptedRearmMs:220,fixtureDischargeRange:235,fixtureDischargeLaneReach:95,
+    bodySpacingPad:18,bodySpacingDepth:54,bodySpacingSpeed:260,laterApproachMultiplier:1.15,laterRecoveryMultiplier:.82
   });
   const STRIKES = Object.freeze([
     Object.freeze({kind:'jab',windupMs:90,activeMs:80,recoveryMs:155,reach:90,damage:12}),
@@ -56,9 +57,9 @@ window.FILE_MANIFEST.push({
     'energy-blade':Object.freeze({kind:'energy-blade',name:'Energy Blade',charges:12,windupMs:75,activeMs:130,recoveryMs:175,reach:152,laneReach:72,damage:18,propDamage:28,shieldBreak:true}),
     'gravity-hammer':Object.freeze({kind:'gravity-hammer',name:'Gravity Hammer',charges:7,windupMs:300,activeMs:140,recoveryMs:390,reach:145,laneReach:82,damage:28,propDamage:64,launch:true,radial:true}),
     // Authored origins use each complete contact cel's crop-local shotAnchor and body scale.
-    'scatter-blaster':Object.freeze({kind:'scatter-blaster',name:'Scatter Blaster',charges:8,windupMs:130,activeMs:90,recoveryMs:300,reach:430,laneReach:32,damage:9,propDamage:10,projectile:'scatter-bolt',muzzleForward:72.874109264,muzzleElevation:188.361045131}),
-    'coil-rifle':Object.freeze({kind:'coil-rifle',name:'Coil Rifle',charges:7,windupMs:240,activeMs:75,recoveryMs:310,reach:780,laneReach:22,damage:25,propDamage:45,projectile:'coil-bolt',muzzleForward:95.588235294,muzzleElevation:200.735294118}),
-    'plasma-disc':Object.freeze({kind:'plasma-disc',name:'Plasma Disc',charges:8,windupMs:140,activeMs:85,recoveryMs:240,reach:380,laneReach:44,damage:19,propDamage:30,projectile:'plasma-disc',muzzleForward:105.161290323,muzzleElevation:185.806451613})
+    'scatter-blaster':Object.freeze({kind:'scatter-blaster',name:'Scatter Blaster',charges:8,windupMs:130,activeMs:90,recoveryMs:300,reach:430,laneReach:32,damage:9,propDamage:10,projectile:'scatter-bolt',muzzleForward:67.267772750,muzzleElevation:173.870090584}),
+    'coil-rifle':Object.freeze({kind:'coil-rifle',name:'Coil Rifle',charges:7,windupMs:240,activeMs:75,recoveryMs:310,reach:780,laneReach:22,damage:25,propDamage:45,projectile:'coil-bolt',muzzleForward:88.366194752,muzzleElevation:185.569008979}),
+    'plasma-disc':Object.freeze({kind:'plasma-disc',name:'Plasma Disc',charges:8,windupMs:140,activeMs:85,recoveryMs:240,reach:380,laneReach:44,damage:19,propDamage:30,projectile:'plasma-disc',muzzleForward:98.887601932,muzzleElevation:174.721652493})
   });
   const GRAB_STRENGTH=Object.freeze({chitin_scuttler:45,psion_lancer:75,bile_spitter:40,prism_guard:120,rift_stalker:65,shock_mantid:110,null_regent:180});
   const ROLES = Object.freeze({
@@ -69,6 +70,15 @@ window.FILE_MANIFEST.push({
     rift_stalker:Object.freeze({name:'Rift Stalker',bloodColor:'purple',hp:48,speed:136,laneSpeed:115,distance:145,tellMs:760,activeMs:360,recoverMs:900,reach:48,damage:12,attackType:'rift-cross',tell:'Flank crossing marked'}),
     shock_mantid:Object.freeze({name:'Shock Mantid',bloodColor:'green',hp:64,speed:88,laneSpeed:60,distance:235,tellMs:1050,activeMs:180,recoverMs:1250,reach:30,damage:14,projectileSpeed:320,attackType:'ground-wave',tell:'Ground pulse charging; jump or change lane'}),
     null_regent:Object.freeze({name:'Null Regent',bloodColor:'purple',hp:300,speed:94,laneSpeed:78,distance:112,tellMs:1000,activeMs:160,recoverMs:1150,reach:158,damage:17,attackType:'cleave',tell:'Four arms drawn wide',boss:true})
+  });
+  // Conservative inner torso spans at the native 260px standing scale (Regent
+  // 335px). Feet locate the ground plane; hair, antennae, splayed shoes, weapon
+  // tips and transparent cel margins are never damageable body radius.
+  const BODIES=Object.freeze({
+    mac:Object.freeze({offsetX:5,radius:34}),chitin_scuttler:Object.freeze({offsetX:-6,radius:42}),
+    psion_lancer:Object.freeze({offsetX:-8,radius:44}),bile_spitter:Object.freeze({offsetX:-4,radius:45}),
+    prism_guard:Object.freeze({offsetX:6,radius:48}),rift_stalker:Object.freeze({offsetX:-12,radius:38}),
+    shock_mantid:Object.freeze({offsetX:-6,radius:46}),null_regent:Object.freeze({offsetX:-2,radius:70})
   });
   const zone=(id,name,index,arrival,exit,waves)=>Object.freeze({
     id,name,index:index+1,startX:index*C.zoneWidth,endX:(index+1)*C.zoneWidth,
@@ -109,7 +119,7 @@ window.FILE_MANIFEST.push({
   const BLOOD=Object.freeze({green:'#78ea68',purple:'#b374ed',red:'#f04455'});
   const streetProp=(id,zoneId,kind,x,laneY,maxHp,drop='health')=>Object.freeze({id,zoneId,kind,x,laneY,maxHp,drop:drop?Object.freeze({kind:drop}):null,
     variant:kind==='car'?(id.includes('canal')?'van':'coupe'):null,
-    bonusWeapon:kind==='car'?(id.includes('alley')?'crowbar':id.includes('market')?'shock-baton':id.includes('canal')?'scatter-blaster':'coil-rifle'):null,
+    bonusWeapon:null,
     width:kind==='car'?(id.includes('canal')?790:680):kind==='stall'?330.940171:kind==='crate'?161.330935:
       kind==='barrel'?117.181529:kind==='terminal'?187.696629:kind==='streetlight'?338.361045:154.716981,
     height:kind==='car'?(id.includes('canal')?284.083095:209.074627):kind==='stall'?320:kind==='crate'?150:kind==='barrel'?165:
@@ -140,11 +150,47 @@ window.FILE_MANIFEST.push({
     streetProp('plaza-crate','broadcast-plaza','crate',18820,820,24,'impact'),
     streetProp('plaza-streetlight','broadcast-plaza','streetlight',19400,795,36,'overdrive')
   ]);
-  const WEAPON_PICKUPS=Object.freeze([
-    ['pipe',0,300,880],['crowbar',0,2210,907],['shock-baton',1,3690,840],['energy-blade',1,5540,900],
-    ['gravity-hammer',2,7130,835],['scatter-blaster',3,10560,850],['coil-rifle',4,13920,835],['plasma-disc',5,17330,850]
-  ].map(([weaponKind,zoneIndex,x,laneY])=>Object.freeze({id:'street-weapon-'+weaponKind,kind:'weapon',weaponKind,
-    charges:WEAPONS[weaponKind].charges,zoneId:ZONES[zoneIndex].id,x,laneY})));
+  // Roll the chapter once, never during physics. Each street has two readable
+  // floor caches in different fight pockets and one hidden carryable reward.
+  // The first Pipe remains fixed so learning L never depends on a lucky roll.
+  const DEFAULT_LOOT_SEED=0x4d4143;
+  const LOOT_DISTRICTS=Object.freeze([
+    {floor:['pipe','crowbar'],spots:[[[300,880]],[[1980,900],[2210,907],[2690,840]]],
+      props:['alley-health-crate','alley-exit-crate'],pool:['pipe','crowbar']},
+    {floor:['shock-baton','energy-blade'],spots:[[[3690,840],[4380,810],[4860,910]],[[5540,900],[5810,940],[6590,835]]],
+      props:['market-stall','market-health-crate','market-barrel'],pool:['crowbar','shock-baton','energy-blade']},
+    {floor:['gravity-hammer',null],spots:[[[7130,835],[7540,920],[8240,900]],[[9030,840],[9700,880],[9930,940]]],
+      props:['transit-crate','transit-cargo'],pool:['crowbar','shock-baton','energy-blade','gravity-hammer']},
+    {floor:['scatter-blaster',null],spots:[[[10560,850],[10890,940],[11580,895]],[[12390,840],[12600,930],[13210,880]]],
+      props:['canal-barrel'],pool:['shock-baton','gravity-hammer','scatter-blaster']},
+    {floor:['coil-rifle',null],spots:[[[13920,835],[14150,945],[15090,900]],[[15780,875],[16520,850],[16850,940]]],
+      props:['rooftop-crate','rooftop-barrel'],pool:['energy-blade','gravity-hammer','scatter-blaster','coil-rifle']},
+    {floor:['plasma-disc',null],spots:[[[17330,850],[17620,935],[18310,875]],[[19250,900],[19580,880],[19860,845]]],
+      props:['plaza-crate'],pool:['gravity-hammer','scatter-blaster','coil-rifle','plasma-disc']}
+  ].map(rule=>Object.freeze({floor:Object.freeze(rule.floor),pool:Object.freeze(rule.pool),props:Object.freeze(rule.props),
+    spots:Object.freeze(rule.spots.map(pocket=>Object.freeze(pocket.map(Object.freeze))))})));
+  function normalizeLootSeed(seed){return Number.isInteger(seed)&&seed>=0&&seed<=0xffffffff?seed>>>0:DEFAULT_LOOT_SEED;}
+  function lootLayout(requestedSeed){
+    const seed=normalizeLootSeed(requestedSeed);let cursor=seed;
+    const roll=length=>{cursor=(cursor+0x6d2b79f5)>>>0;let word=cursor;
+      word=Math.imul(word^(word>>>15),word|1);word^=word+Math.imul(word^(word>>>7),word|61);
+      return Math.floor(((word^(word>>>14))>>>0)/4294967296*length);};
+    const pickups=[],propWeapons=[];
+    for(let index=0;index<ZONES.length;index++){
+      const zone=ZONES[index],rule=LOOT_DISTRICTS[index];
+      for(let pocket=0;pocket<2;pocket++){
+        const weaponKind=rule.floor[pocket]||rule.pool[roll(rule.pool.length)],spot=rule.spots[pocket][roll(rule.spots[pocket].length)];
+        const tutorial=index===0&&pocket===0,x=spot[0]+(tutorial?0:roll(65)-32),laneY=spot[1]+(tutorial?0:roll(21)-10);
+        pickups.push(Object.freeze({id:rule.floor[pocket]?'street-weapon-'+weaponKind:zone.id+'-cache-weapon',kind:'weapon',
+          weaponKind,charges:WEAPONS[weaponKind].charges,zoneId:zone.id,x,laneY,source:'street-cache'}));
+      }
+      const propId=rule.props[roll(rule.props.length)];
+      propWeapons.push(Object.freeze({propId,weaponKind:rule.pool[roll(rule.pool.length)]}));
+      for(const car of STREET_PROPS.filter(prop=>prop.zoneId===zone.id&&prop.kind==='car'))
+        propWeapons.push(Object.freeze({propId:car.id,weaponKind:rule.pool[roll(rule.pool.length)]}));
+    }
+    return Object.freeze({seed,pickups:Object.freeze(pickups),propWeapons:Object.freeze(propWeapons)});
+  }
   const TACTICS=Object.freeze({
     chitin_scuttler:Object.freeze(['jab','rush-jab']),
     psion_lancer:Object.freeze(['lunge','lancer-sweep']),
@@ -211,8 +257,9 @@ window.FILE_MANIFEST.push({
     actor.motionStridePhase=(actor.travelDistance/110)%1;
   }
 
-  function initialState(){
-    return {elapsedMs:0,status:'active',kills:0,zoneIndex:0,waveIndex:0,arenaIndex:0,
+  function initialState(lootSeed){
+    const layout=lootLayout(lootSeed),propWeapons=new Map(layout.propWeapons.map(item=>[item.propId,item.weaponKind]));
+    return {lootSeed:layout.seed,elapsedMs:0,status:'active',kills:0,zoneIndex:0,waveIndex:0,arenaIndex:0,
       completedWaves:0,clearedZones:[],waveState:'entry',waveBreakMs:0,
       player:{x:C.startX,laneY:C.startLaneY,elevation:0,velocityZ:0,facing:1,
         hp:C.playerHp,maxHp:C.playerHp,attack:null,comboNext:1,comboMs:0,queuedStrike:false,
@@ -225,16 +272,16 @@ window.FILE_MANIFEST.push({
         fromStridePhase:0,fromStrideRatio:0,motionStridePhase:0,motionVx:0,motionLaneVelocity:0,
         feet:gaitInitial(),transitionFrom:gaitInitial(),hitFeedback:null},
       enemies:[],projectiles:[],hitFx:[],events:[],nextFxId:1,nextProjectileId:1,
-      props:STREET_PROPS.map(prop=>({...prop,hp:prop.maxHp,broken:false,heldBy:null,
-        launched:false,elevation:0,velocityZ:0,knockbackVx:0,launchAgeMs:0,bodyHitIds:[],recoil:null})),pickups:WEAPON_PICKUPS.map(copy),nextPickupId:1,
+      props:STREET_PROPS.map(prop=>({...prop,bonusWeapon:propWeapons.get(prop.id)||null,hp:prop.maxHp,broken:false,heldBy:null,
+        launched:false,elevation:0,velocityZ:0,knockbackVx:0,launchAgeMs:0,bodyHitIds:[],recoil:null})),pickups:layout.pickups.map(copy),nextPickupId:1,
       relay:{available:false,restored:false,x:6400,laneY:880},
       impact:{remainingMs:0,strength:0,x:0,laneY:880},lastEnemyTellMs:-Infinity,
       checkpoint:{zoneIndex:0,waveIndex:0,kills:0,completedWaves:0,clearedZones:[],
         x:C.startX,laneY:C.startLaneY,started:false}};
   }
 
-  function create() {
-    let state = initialState(), accumulator = 0;
+  function create(options={}) {
+    let state = initialState(options.lootSeed), accumulator = 0;
     let input = {move_x: 0, move_y: 0, jump: {held: false}, strike: {held: false},
       guard: {held: false}, throw: {held: false},run:{held:false}};
     let edges = {jump: false, strike: false, guard: false, throw: false,moveTaps:[]},impactBufferedStrike=false;
@@ -323,6 +370,39 @@ window.FILE_MANIFEST.push({
         :state.status==='desk-ready'?C.worldWidth-40:z.endX-220;
     }
     function live(e){return e.hp>0&&e.phase!=='dormant';}
+    function body(e){return BODIES[e.kind||'mac'];}
+    function bodyCenter(e){return e.x+(e.facing||1)*body(e).offsetX;}
+    function forwardContact(x,beforeX,facing,target,reach,radial=false){
+      const center=bodyCenter(target),radius=body(target).radius;
+      const now=(center-x)*facing,before=(center-beforeX)*facing;
+      // Sweep only the committed front, including the real target torso.
+      // Symmetric ±reach around a charger incorrectly struck people behind it.
+      return Math.max(now,before)+radius>=(radial?-reach:0)&&Math.min(now,before)-radius<=reach;
+    }
+    function spaceBodies(dt){
+      const sec=dt/1000,z=ZONES[state.zoneIndex];
+      const grounded=state.enemies.filter(e=>live(e)&&!e.grappledBy&&!e.launched&&!e.knockdownMs&&!e.elevation);
+      const remaining=new Map(grounded.map(e=>[e.id,C.bodySpacingSpeed*sec]));
+      const movable=e=>['approach','recovery'].includes(e.phase);
+      for(let pass=0;pass<2;pass++)for(let a=0;a<grounded.length;a++)for(let b=a+1;b<grounded.length;b++){
+        const left=grounded[a],right=grounded[b],moveLeft=movable(left),moveRight=movable(right);
+        if(!moveLeft&&!moveRight)continue;
+        const width=body(left).radius+body(right).radius+C.bodySpacingPad,depth=C.bodySpacingDepth;
+        let dx=bodyCenter(right)-bodyCenter(left),dy=right.laneY-left.laneY;
+        const ratio=Math.hypot(dx/width,dy/depth);if(ratio>=1)continue;
+        if(ratio<.001){dx=right.slot>left.slot?1:-1;dy=0;}
+        const stretch=1/Math.max(.001,Math.hypot(dx/width,dy/depth))-1;
+        let shiftX=dx*stretch,shiftY=dy*stretch;
+        const shares=Number(moveLeft)+Number(moveRight);
+        const length=Math.hypot(shiftX,shiftY),cap=Math.min(moveLeft?remaining.get(left.id)*shares:Infinity,moveRight?remaining.get(right.id)*shares:Infinity);
+        if(length>cap){shiftX*=cap/length;shiftY*=cap/length;}
+        const moved=Math.hypot(shiftX,shiftY)/shares;
+        if(moveLeft)remaining.set(left.id,Math.max(0,remaining.get(left.id)-moved));
+        if(moveRight)remaining.set(right.id,Math.max(0,remaining.get(right.id)-moved));
+        if(moveLeft){left.x=clamp(left.x-shiftX/shares,z.startX+60,z.endX-60);left.laneY=clamp(left.laneY-shiftY/shares,C.laneMin,C.laneMax);}
+        if(moveRight){right.x=clamp(right.x+shiftX/shares,z.startX+60,z.endX-60);right.laneY=clamp(right.laneY+shiftY/shares,C.laneMin,C.laneMax);}
+      }
+    }
     function impactPause(duration,strength,x,laneY){
       state.impact={remainingMs:Math.max(state.impact.remainingMs,Math.min(C.maxImpactPauseMs,duration)),
         strength:Math.max(state.impact.strength,strength),x,laneY};
@@ -339,10 +419,11 @@ window.FILE_MANIFEST.push({
       if(!prop.hp){
         prop.broken=true;prop.launched=false;prop.elevation=0;prop.velocityZ=0;prop.recoil=null;
         const pickup=prop.drop?addPickup({...prop.drop,id:prop.id+'-'+prop.drop.kind,zoneId:prop.zoneId,x:prop.x,laneY:prop.laneY}):null;
-        if(prop.bonusWeapon)addPickup({id:prop.id+'-weapon',kind:'weapon',weaponKind:prop.bonusWeapon,
-          charges:WEAPONS[prop.bonusWeapon].charges,zoneId:prop.zoneId,x:prop.x+38,laneY:prop.laneY});
+        const weaponPickup=prop.bonusWeapon?addPickup({id:prop.id+'-weapon',kind:'weapon',weaponKind:prop.bonusWeapon,
+          charges:WEAPONS[prop.bonusWeapon].charges,zoneId:prop.zoneId,x:prop.x+38,laneY:prop.laneY,source:'prop',sourceId:prop.id}):null;
         fx('prop-break',prop.x,prop.laneY);
-        emit('prop-break',{id:prop.id,kind:prop.kind,x:prop.x,laneY:prop.laneY,cause,pickupId:pickup?.id||null});
+        emit('prop-break',{id:prop.id,kind:prop.kind,x:prop.x,laneY:prop.laneY,cause,pickupId:pickup?.id||null,
+          weaponPickupId:weaponPickup?.id||null,weaponKind:weaponPickup?.weaponKind||null});
         if(['terminal','streetlight'].includes(prop.kind))dischargeFixture(prop);
         impactPause(32,.6,prop.x,prop.laneY);
       }
@@ -361,6 +442,10 @@ window.FILE_MANIFEST.push({
         radius:C.fixtureDischargeRange,laneReach:C.fixtureDischargeLaneReach,damage:12,enemyIds:victims.map(e=>e.id)});
     }
     function addPickup(item){
+      // Previous streets cannot be revisited. Retire only their inaccessible
+      // floor loot when the bounded chapter pool needs room for a real drop.
+      if(state.pickups.length>=C.maxPickups){const previous=new Set(ZONES.slice(0,state.zoneIndex).map(zone=>zone.id));
+        state.pickups=state.pickups.filter(pickup=>!previous.has(pickup.zoneId));}
       if(state.pickups.length>=C.maxPickups)return null;
       const pickup={...item,id:item.id||'pickup-'+state.nextPickupId++};state.pickups.push(pickup);return pickup;
     }
@@ -630,8 +715,7 @@ window.FILE_MANIFEST.push({
           if(attack.weaponKind)spendWeapon(attack);
           if(attack.kind==='air-kick')impactPulse(attack);
           for (const e of state.enemies) {
-            const distance = (e.x - p.x) * attack.facing;
-            if (live(e) && !e.grappledBy&&!e.launched&&!e.knockdownMs&&!attack.hitIds.includes(e.id) && distance >= (rule.radial?-rule.reach:-12) && distance <= rule.reach &&
+            if (live(e) && !e.grappledBy&&!e.launched&&!e.knockdownMs&&!attack.hitIds.includes(e.id) && forwardContact(p.x,p.x,attack.facing,e,rule.reach,rule.radial) &&
               Math.abs(e.laneY - p.laneY) <= (rule.laneReach??C.laneReach)) {
               attack.hitIds.push(e.id);
               const cause=attack.weaponKind|| (attack.counter?'counter':['air-kick','running-kick','step-strike'].includes(attack.kind)?attack.kind:'strike');
@@ -745,7 +829,9 @@ window.FILE_MANIFEST.push({
     }
     function canBeginTell(e){return state.elapsedMs>=e.nextTellAtMs&&state.elapsedMs-state.lastEnemyTellMs+1e-7>=C.tellSpacingMs;}
     function beginTell(e,spec){
-      spec={...spec,response:attackResponse(spec)};
+      const later=state.zoneIndex>=2&&!ROLES[e.kind].boss;
+      spec={...spec,recoverMs:Math.round(spec.recoverMs*(later?C.laterRecoveryMultiplier:1)),
+        damage:spec.damage+(later?(state.zoneIndex>=4?2:1):0),response:attackResponse(spec)};
       phase(e,'windup');e.attackDone=false;e.attackSpawned=false;e.attackSpec=spec;state.lastEnemyTellMs=state.elapsedMs;
       e.rangedRetreatMs=0;
       e.tactic=spec.tactic;
@@ -775,25 +861,32 @@ window.FILE_MANIFEST.push({
     function ranged(e){return e.kind==='bile_spitter'||e.kind==='shock_mantid'&&
       (['windup','active'].includes(e.phase)?e.attackSpec:attackSpec(e)).attackType==='ground-wave';}
     function melee(e){return !ROLES[e.kind].boss&&!ranged(e);}
-    function attackLeader(){
+    function attackLeaders(){
       return state.enemies.filter(e=>live(e)&&melee(e)&&e.phase==='approach'&&state.elapsedMs>=e.nextTellAtMs)
-        .sort((a,b)=>a.attackCount-b.attackCount||Math.abs(a.x-state.player.x)-Math.abs(b.x-state.player.x)||a.slot-b.slot)[0];
+        .sort((a,b)=>a.attackCount-b.attackCount||Math.abs(a.x-state.player.x)-Math.abs(b.x-state.player.x)||a.slot-b.slot);
     }
     function streetPosition(e,spec,sec){
       const p=state.player,z=ZONES[state.zoneIndex],gap=Math.abs(p.x-e.x),isRanged=ranged(e);
+      const pace=state.zoneIndex>=2?C.laterApproachMultiplier:1;
       e.facing=Math.sign(p.x-e.x)||e.facing;
       if(state.elapsedMs<e.nextTellAtMs){e.tactic='recover-stance';return false;}
       if(isRanged){
         const atEdge=e.x<=z.startX+62||e.x>=z.endX-62,retreat=e.kind==='bile_spitter'&&gap<250&&e.rangedRetreatMs<650&&!atEdge;
         e.tactic=retreat?'ranged-retreat':e.kind==='shock_mantid'?'pulse-line':'ranged-line';
-        e.laneY=toward(e.laneY,p.laneY,spec.laneSpeed*sec);
-        if(retreat){e.rangedRetreatMs+=sec*1000;e.x=clamp(e.x-e.facing*spec.speed*sec,z.startX+60,z.endX-60);}
-        else if(gap>spec.distance)e.x+=e.facing*Math.min(spec.speed*sec,gap-spec.distance);
-        return !retreat&&gap<=spec.distance+1&&Math.abs(e.laneY-p.laneY)<=24;
+        e.laneY=toward(e.laneY,p.laneY,spec.laneSpeed*pace*sec);
+        if(retreat){e.rangedRetreatMs+=sec*1000;e.x=clamp(e.x-e.facing*spec.speed*pace*sec,z.startX+60,z.endX-60);}
+        else if(gap>spec.distance)e.x+=e.facing*Math.min(spec.speed*pace*sec,gap-spec.distance);
+        // A formation's torso clearance can leave the rear gunner a few pixels
+        // outside its preferred spot. It still fires; spacing never idles it.
+        return !retreat&&gap<=spec.distance+C.bodySpacingPad+1&&Math.abs(e.laneY-p.laneY)<=24;
       }
-      const committed=state.enemies.some(other=>other.id!==e.id&&live(other)&&melee(other)&&['windup','active'].includes(other.phase));
-      const leader=attackLeader(),canCommit=!committed&&leader?.id===e.id;
-      const offset=e.slot%2?62:-62,side=e.kind==='rift_stalker'?-p.facing:e.slot%2?-p.facing:(Math.sign(e.x-p.x)||p.facing);
+      const committed=state.enemies.filter(other=>other.id!==e.id&&live(other)&&melee(other)&&['windup','active'].includes(other.phase));
+      const leaders=attackLeaders(),rank=leaders.findIndex(other=>other.id===e.id),budget=state.zoneIndex<2?1:2;
+      const canCommit=rank>=0&&rank<budget-committed.length;
+      const offset=e.slot%2?62:-62;
+      let side=e.kind==='rift_stalker'?-p.facing:e.slot%2?-p.facing:(Math.sign(e.x-p.x)||p.facing);
+      if(canCommit&&committed.length)side=-(Math.sign(committed[0].attackOriginX-p.x)||side);
+      else if(canCommit&&rank===1){const first=leaders[0];side=first.kind==='rift_stalker'?p.facing:-(Math.sign(first.x-p.x)||p.facing);}
       const reserveDistance=e.kind==='psion_lancer'?190:e.kind==='chitin_scuttler'?130:150;
       let targetX=p.x+side*(canCommit?spec.distance:reserveDistance),targetLane=canCommit?p.laneY:clamp(p.laneY+offset,C.laneMin,C.laneMax);
       e.tactic=canCommit?e.kind==='psion_lancer'?'spear-line':e.kind==='rift_stalker'?'flank-pressure':'pressure'
@@ -802,8 +895,8 @@ window.FILE_MANIFEST.push({
         const spitter=state.enemies.find(other=>live(other)&&ranged(other));
         if(spitter){targetX=p.x+(spitter.x-p.x)*.5;targetLane=spitter.laneY;e.tactic='protect-spitter';}
       }
-      e.x=toward(e.x,clamp(targetX,z.startX+60,z.endX-60),spec.speed*sec);
-      e.laneY=toward(e.laneY,targetLane,spec.laneSpeed*sec);e.facing=Math.sign(p.x-e.x)||e.facing;
+      e.x=toward(e.x,clamp(targetX,z.startX+60,z.endX-60),spec.speed*pace*sec);
+      e.laneY=toward(e.laneY,targetLane,spec.laneSpeed*pace*sec);e.facing=Math.sign(p.x-e.x)||e.facing;
       return canCommit&&Math.abs(e.x-p.x)<=spec.distance+1&&Math.abs(e.laneY-p.laneY)<=24;
     }
     function tickEnemy(e,dt,before){
@@ -876,8 +969,7 @@ window.FILE_MANIFEST.push({
         }else{
           const swept=['lunge','charge','rush-jab','shield-bash','rift-cross','retreat-slash','mantid-leap'].includes(type);
           const inLane=Math.abs(p.laneY-e.attackLaneY)<=(spec.laneReach??C.laneReach);
-          const inReach=swept?p.x>=Math.min(beforeX,e.x)-spec.reach&&p.x<=Math.max(beforeX,e.x)+spec.reach
-            :(p.x-e.x)*e.attackFacing>=-12&&(p.x-e.x)*e.attackFacing<=spec.reach;
+          const inReach=forwardContact(e.x,swept?beforeX:e.x,e.attackFacing,p,spec.reach);
           const contactReady=type==='rift-cross'?e.phaseMs>=spec.activeMs*.5
             :type==='retreat-slash'?e.phaseMs>=spec.activeMs*.55:type==='mantid-leap'?e.phaseMs>=spec.activeMs*.65
               :type==='lancer-sweep'?e.phaseMs>=55:type==='shield-heavy'?e.phaseMs>=100:true;
@@ -903,8 +995,8 @@ window.FILE_MANIFEST.push({
           const direction=Math.sign(item.x-before)||item.facing,contacts=[];
           for(const target of state.enemies){
             if(!live(target)||target.grappledBy||target.launched||item.hitIds.includes(target.id))continue;
-            if(target.x>=Math.min(before,item.x)-item.width&&target.x<=Math.max(before,item.x)+item.width&&Math.abs(target.laneY-item.laneY)<=item.laneReach)
-              contacts.push({target,type:'enemy',distance:Math.max(0,(target.x-before)*direction-item.width)});
+            if(bodyCenter(target)+body(target).radius>=Math.min(before,item.x)-item.width&&bodyCenter(target)-body(target).radius<=Math.max(before,item.x)+item.width&&Math.abs(target.laneY-item.laneY)<=item.laneReach)
+              contacts.push({target,type:'enemy',distance:Math.max(0,(bodyCenter(target)-before)*direction-body(target).radius-item.width)});
           }
           for(const prop of state.props){if(prop.broken||prop.heldBy||!prop.maxHp||prop.zoneId!==z.id||item.propHitIds.includes(prop.id))continue;
             if(prop.x>=Math.min(before,item.x)-prop.width/2&&prop.x<=Math.max(before,item.x)+prop.width/2&&Math.abs(prop.laneY-item.laneY)<=item.laneReach)
@@ -920,7 +1012,7 @@ window.FILE_MANIFEST.push({
         }
         const e=state.enemies.find(foe=>foe.id===item.ownerId);
         if(!e||!e.hp){item.ageMs=item.lifeMs;continue;}
-        const intersects=p.x>=Math.min(before,item.x)-item.width&&p.x<=Math.max(before,item.x)+item.width&&Math.abs(p.laneY-item.laneY)<=item.laneReach;
+        const intersects=bodyCenter(p)+body(p).radius>=Math.min(before,item.x)-item.width&&bodyCenter(p)-body(p).radius<=Math.max(before,item.x)+item.width&&Math.abs(p.laneY-item.laneY)<=item.laneReach;
         if(intersects&&p.elevation>C.hitHeight&&!item.evadedPlayer){
           item.evadedPlayer=true;emit('projectile-evaded',{id:e.id,kind:e.kind,
             attackType:item.kind,elevation:p.elevation});
@@ -1038,8 +1130,9 @@ window.FILE_MANIFEST.push({
       state.hitFx=state.hitFx.filter(item=>item.ageMs<item.lifeMs);
       if(state.status==='defeated')return;
       const beforeEnemies=new Map(state.enemies.map(e=>[e.id,{x:e.x,laneY:e.laneY}]));
-      tickPlayer(dt,pressed);progression(dt);
+      tickPlayer(dt,pressed);progression(dt);spaceBodies(dt/2);
       for(const e of state.enemies)tickEnemy(e,dt,beforeEnemies.get(e.id));
+      spaceBodies(dt/2);
       tickBodies(beforeEnemies);
       tickProps(dt);
       tickProjectiles(dt);
@@ -1109,8 +1202,8 @@ window.FILE_MANIFEST.push({
         phase:!p.carry.released?'hold':p.carry.releaseElapsedMs<280?'release':'recover',
         progress:p.carry.released?clamp(p.carry.releaseElapsedMs/C.throwCommitMs,0,1):0}:null;
       const boss=state.enemies.find(e=>ROLES[e.kind].boss);
-      return copy({version:C.version,elapsedMs:state.elapsedMs,status:state.status,kills:state.kills,
-        player:{...p,y:p.laneY,grounded:p.elevation===0&&p.velocityZ===0,mode:mode(),attack,grapple,carry,
+      return copy({version:C.version,lootSeed:state.lootSeed,elapsedMs:state.elapsedMs,status:state.status,kills:state.kills,
+        player:{...p,body:BODIES.mac,y:p.laneY,grounded:p.elevation===0&&p.velocityZ===0,mode:mode(),attack,grapple,carry,
           bloodColor:'red',bloodHex:BLOOD.red,
           animation:{action:mode(),pose:attack?.weaponKind?mode():attack?.kind||mode(),weaponKind:p.weapon?.kind||attack?.weaponKind||null,
             phase:attackPhase||grapple?.phase||carry?.phase||mode(),
@@ -1123,7 +1216,7 @@ window.FILE_MANIFEST.push({
               attackType:attack?.kind||null,rootShift:attack?.rootShift||0,
               phaseProgress:attack?.phaseProgress??grapple?.progress??0,guarding:p.guarding,
               hurtProgress:p.hitFeedback?clamp(p.hitFeedback.ageMs/p.hitFeedback.lifeMs,0,1):0}}},
-        enemies:state.enemies.map(e=>({...e,y:e.laneY,tellMs:(e.attackSpec||attackSpec(e)).tellMs,
+        enemies:state.enemies.map(e=>({...e,body:BODIES[e.kind],y:e.laneY,tellMs:(e.attackSpec||attackSpec(e)).tellMs,
           attackReach:(e.attackSpec||attackSpec(e)).reach,warning:e.phase==='windup',active:e.phase==='active',
           shielded:e.kind==='prism_guard'&&!e.shieldBrokenMs,animFrame:animation(e).frame,animation:animation(e),
           attackTell:e.phase==='windup'?{type:e.attackSpec.attackType,label:e.attackSpec.tell,
@@ -1177,7 +1270,7 @@ window.FILE_MANIFEST.push({
       };
     }
     function retry(){
-      const cp=copy(state.checkpoint);state=initialState();
+      const cp=copy(state.checkpoint),lootSeed=state.lootSeed;state=initialState(lootSeed);
       state.zoneIndex=cp.zoneIndex;state.waveIndex=cp.waveIndex;state.kills=cp.kills;
       state.completedWaves=cp.completedWaves;state.clearedZones=cp.clearedZones;
       if(cp.props)state.props=copy(cp.props);if(cp.pickups)state.pickups=copy(cp.pickups);if(cp.relay)state.relay=copy(cp.relay);
@@ -1206,5 +1299,5 @@ window.FILE_MANIFEST.push({
     return {handleInput, update, getSnapshot, getControlState, retry, drainEvents,interact,releaseInputs};
   }
   B.MacStreetCombat={create,constants:C,strikes:STRIKES,attacks:ATTACKS,weapons:WEAPONS,roles:ROLES,tactics:TACTICS,zones:ZONES,props:STREET_PROPS,
-    encounters:ENCOUNTERS,bossPhases:BOSS_PHASES};
+    encounters:ENCOUNTERS,bossPhases:BOSS_PHASES,lootLayout,defaultLootSeed:DEFAULT_LOOT_SEED};
 })(window.BARCODE = window.BARCODE || {});

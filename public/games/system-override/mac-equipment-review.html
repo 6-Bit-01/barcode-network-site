@@ -10,7 +10,7 @@
 </head>
 <body>
   <header><h1>Mac’s equipment</h1><p>Watch each weapon in action, inspect its grip in both directions, then compare scenery with Mac at the same scale.</p></header>
-  <div class="controls"><label>Pose <select id="pose"></select></label><label>Scenery <select id="prop"></select></label><label>Placement <select id="placement"><option value="floor">On the floor</option><option value="carry">Lifted crate / barrel</option><option value="release">Throw handoff</option></select></label><a class="play" href="index.html?preview=mac-firstslice&amp;revision=grips4">Play Mac’s chapter</a></div>
+  <div class="controls"><label>Pose <select id="pose"></select></label><label>Scenery <select id="prop"></select></label><label>Placement <select id="placement"><option value="floor">On the floor</option><option value="carry">Lifted crate / barrel</option><option value="release">Throw handoff</option></select></label><a class="play" href="index.html?preview=mac-firstslice&amp;revision=refine1">Play Mac’s chapter</a></div>
   <p id="status" role="status">Loading registered artwork…</p>
   <main><section><h2>Weapon action</h2><label>Weapon <select id="action-weapon"><option value="pipe">Pipe / bat</option><option value="scatter-blaster">Scatter Blaster</option><option value="coil-rifle">Coil Rifle</option><option value="plasma-disc">Plasma Disc</option></select></label><button id="swing-toggle" type="button" aria-pressed="false" disabled>Play action</button><div class="pair"><canvas id="swing-left" width="840" height="480" aria-label="Selected weapon action facing left"></canvas><canvas id="swing-right" width="840" height="480" aria-label="Selected weapon action facing right"></canvas></div><p>Rifle shoulder support, wrapped pistol grip, and a one-handed disc throw. Mac has two braids.</p></section><div id="equipment-grid" class="grid"></div><section class="props"><h2>Street proportions</h2><canvas id="scenery" width="1600" height="780" aria-label="Mac and selected street scenery at the same scale"></canvas></section></main>
   <script src="src/game/mac-street-combat.js"></script>
@@ -28,7 +28,7 @@
       {id:'guard-impact',title:'Guard · impact',action:'guard',guardImpactAgeMs:35},
       {id:'hurt',title:'Hit reaction',action:'hurt'},
       ...[.35,.85].map((stride,index)=>({id:'guard-walk-'+index,title:'Guard step · '+(index+1),action:'guard-creep',stride})),
-      ...[0,.28,.55,.8].map((stride,index)=>({id:'run-'+index,title:'Run · '+(index+1),action:'run',stride})),
+      ...[42.5/300,117.5/300,192.5/300,267.5/300].map((stride,index)=>({id:'run-'+index,title:'Run · '+(index+1),action:'run',stride})),
       ...phases.map(phase=>({id:'weapon-'+phase,title:'Weapon · '+phase,action:'weapon',phase})),
       ...[{phase:'windup',progress:.1,title:'Load'},{phase:'windup',progress:.75,title:'Uncoil'},{phase:'active',progress:.5,title:'Contact'},{phase:'recovery',progress:.1,title:'Through'},{phase:'recovery',progress:.5,title:'Finish'},{phase:'recovery',progress:.9,title:'Recover'}].map((s,index)=>({id:'bat-'+index,title:'Bat · '+s.title,action:'weapon',phase:s.phase,progress:s.progress})),
       ...phases.map(phase=>({id:'running-kick-'+phase,title:'Run Kick · '+phase,action:'running-kick',phase})),

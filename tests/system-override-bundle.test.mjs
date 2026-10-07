@@ -34,6 +34,29 @@ const rigRoot = "assets/mac-combat-rigs/";
 const rigActors = ["mac", ...cityKinds];
 const rigStem = (kind) => kind === "mac" ? "mac-modem-v2" : kind + "-v1";
 const rigAssets = new Set(["mac-combat-art-v1.json", ...rigActors.flatMap((kind) => [rigStem(kind) + ".png", rigStem(kind) + "-rig.json"])].map((name) => rigRoot + name));
+const frameRoot = "assets/mac-combat-frames/";
+function frameAssets() {
+  const bankName = frameRoot + "mac-combat-frames-v1.json", bank = JSON.parse(read(bankName));
+  assert.equal(bank.schemaVersion, 1);
+  assert.deepEqual(bank.actors.map((actor) => actor.kind).sort(), [...rigActors].sort());
+  const files = new Set([bankName]);
+  for (const actor of bank.actors) {
+    const registrationName = frameRoot + actor.kind + "-frames-v1.json";
+    assert.equal(actor.registration, registrationName); files.add(registrationName);
+    const bytes = fs.readFileSync(localFile(registrationName, marker().files));
+    assert.equal(createHash("sha256").update(bytes).digest("hex"), actor.registrationSHA256);
+    const registration = JSON.parse(bytes);
+    assert.equal(registration.actor, actor.kind); assert.equal(registration.schemaVersion, 1);
+    assert.equal(registration.facing, "right");
+    for (const sheet of registration.sheets) {
+      assert.match(sheet.sourceImage, /^assets\/mac-combat-frames\/[a-z0-9_-]+-v[0-9]+\.png$/);
+      assert.equal(marker().files[sheet.sourceImage]?.sha256, sheet.sourceSHA256); files.add(sheet.sourceImage);
+    }
+  }
+  assert.deepEqual([...bank.files].sort(), [...files].sort(), "Only selected whole-character cels and registrations belong to the bank");
+  assert.deepEqual(Object.keys(marker().files).filter((name) => name.startsWith(frameRoot)).sort(), [...files].sort());
+  return files;
+}
 // Sorted [path, bytes, SHA-256] rows from the original complete 624-asset package.
 // Compressed derivatives may be added; every original identity and byte hash remains pinned.
 const originalAssetInventorySHA256 = "0b2ac58dc88ddb68b595fb8592d242d8478c426d78309fe4ff45b88c04027f56";
@@ -401,10 +424,11 @@ test("System Override ships a complete, sanitized ownership and SHA-256 manifest
   assert.equal(rigAssets.size, 17);
   assert.deepEqual(assets.filter((name) => name.startsWith(rigRoot)).sort(), [...rigAssets].sort(),
     "Only the exact 17 selected articulated combat assets may extend the sealed originals");
-  const originalNames = assets.filter((name) => !derivatives.has(name) && !macReviewAssets.has(name) && !cityAssets.has(name) && !rigAssets.has(name)).sort();
+  const frames = frameAssets();
+  const originalNames = assets.filter((name) => !derivatives.has(name) && !macReviewAssets.has(name) && !cityAssets.has(name) && !rigAssets.has(name) && !frames.has(name)).sort();
   assert.equal(originalNames.length, originalAssetCount, "All 624 original assets must remain present");
-  assert.equal(owner.canonicalAssetCount - derivatives.size - macReviewAssets.size - cityAssets.size - rigAssets.size, originalAssetCount,
-    "Canonical ownership must count sealed originals, exact derivatives, Mac siblings, city art and articulated rigs separately");
+  assert.equal(owner.canonicalAssetCount - derivatives.size - macReviewAssets.size - cityAssets.size - rigAssets.size - frames.size, originalAssetCount,
+    "Canonical ownership must count sealed originals, exact derivatives, historical art and selected complete-character cels separately");
   const originalRows = originalNames.map((name) => [name, owner.files[name].bytes, owner.files[name].sha256]);
   assert.equal(createHash("sha256").update(JSON.stringify(originalRows)).digest("hex"), originalAssetInventorySHA256,
     "Original artwork, music, sprite data or asset metadata changed");
@@ -474,7 +498,8 @@ test("System Override ships the exact Mac preview art, native pose registration 
   }
   assert(new Set(sheet.frames.map((frame) => frame.source.width)).size > 1, "Measured nonuniform crops must not become equal atlas cells");
   const html = read("index.html"), scripts = [...html.matchAll(/<script\b[^>]*\bsrc=["']([^"']+)/gi)].map((match) => match[1]);
-  const macScripts = ["src/game/mac-street-combat.js", "src/game/mac-street-story.js", "src/game/mac-combat-animation.js", "src/game/mac-combat-preview.js"];
+  const macScripts = ["src/game/mac-street-combat.js", "src/game/mac-street-story.js", "src/game/mac-combat-frames.js", "src/game/mac-combat-preview.js"];
+  assert(!scripts.includes("src/game/mac-combat-animation.js"), "Rejected articulated renderer must not launch");
   for (const name of macScripts) { assert.equal(scripts.filter((script) => script === name).length, 1, `One Mac owner: ${name}`); localFile(name, files); }
   assert(macScripts.slice(0, 3).every((name) => scripts.indexOf(name) < scripts.indexOf(macScripts[3])), "Both factories and the animation owner must precede the preview wrapper");
   assert(scripts.indexOf("src/core/runtime-lifecycle.js") < scripts.indexOf(macScripts[3]), "Mac keeps the shared lifecycle owner");
@@ -546,7 +571,7 @@ test("Mac city chapter ships six distinct districts and registered animation art
   assert.deepEqual(Object.keys(combat.roles).sort(), [...cityKinds].sort(), "Level1 enemies cannot leak into the city roster");
 });
 
-test("Mac combat ships the exact selected native articulated rigs and measured joint attachments", (t) => {
+test("Historical Mac rig assets retain their exact native bytes and registrations", (t) => {
   const files = marker().files;
   const result = verifyArticulatedBank((name) => fs.readFileSync(localFile(name, files)), files,
     rigRoot, rigActors, rigAssets, (data) => createHash("sha256").update(data).digest("hex"));
@@ -554,6 +579,47 @@ test("Mac combat ships the exact selected native articulated rigs and measured j
   assert.equal(result.registrations.find((actor) => actor.kind === "null_regent").pieces, 21);
   assert(result.registrations.filter((actor) => actor.kind !== "null_regent").every((actor) => actor.pieces === 15));
   t.diagnostic("8 native RGBA actors, 17 exact files, actual alpha bounds/caps, nonoverlapping anatomical crops and connected measured bones verified");
+});
+
+test("Playable Mac combat uses eight exact native whole-character cel banks and complete action clips", (t) => {
+  const files = marker().files, assets = frameAssets(), bank = JSON.parse(read(frameRoot + "mac-combat-frames-v1.json"));
+  const context = {window: {BARCODE: {}}};
+  vm.runInNewContext(read("src/game/mac-combat-frames.js"), context);
+  const frames = context.window.BARCODE.MacCombatFrames;
+  let cels = 0, sheets = 0;
+  for (const actor of bank.actors) {
+    const registration = JSON.parse(read(actor.registration)), compiled = frames.compile(registration, {complete: true});
+    const native = new Map();
+    for (const sheet of Object.values(compiled.sheets)) {
+      const bytes = fs.readFileSync(localFile(sheet.sourceImage, files));
+      assert.equal(createHash("sha256").update(bytes).digest("hex"), sheet.sourceSHA256);
+      const image = nativeRigRGBA(bytes, sheet.sourceImage);
+      assert.deepEqual({width: image.width, height: image.height}, JSON.parse(JSON.stringify(sheet.dimensions)));
+      native.set(sheet.id, image); sheets++;
+    }
+    const measured = new Map();
+    for (const cel of Object.values(compiled.frames)) {
+      const image = native.get(cel.sheet), crop = cel.source;
+      let top = Infinity, bottom = -1, occupied = 0, transparent = 0;
+      for (let y = 0; y < crop.height; y++) for (let x = 0; x < crop.width; x++) {
+        const alpha = image.pixels[((y + crop.y) * image.width + x + crop.x) * 4 + 3];
+        if (alpha > 8) {
+          occupied++; top = Math.min(top, y); bottom = Math.max(bottom, y);
+          assert(x > 0 && y > 0 && x < crop.width - 1 && y < crop.height - 1, "Visible silhouette touches crop edge: " + actor.kind + "/" + cel.id);
+        } else transparent++;
+      }
+      assert(occupied > 0 && transparent > 0, "Whole cel must retain drawn body and native transparency");
+      assert(bottom < cel.feetPivot.y + 2); measured.set(cel.id, bottom - top + 1); cels++;
+    }
+    for (const sheet of Object.values(compiled.sheets)) {
+      assert(Math.abs(measured.get(sheet.referenceFrame) - sheet.standingHeight) <= 1, "Uniform native sheet scale must derive from the actual reference body");
+    }
+    const moves = actor.kind === "mac" ? frames.moves : frames.styles[actor.kind];
+    const sequences = Array.from(moves, (move) => ["windup", "active", "recovery"].map((phase) => compiled.clips[move + "." + phase].frames.map((entry) => entry.frame).join(",")).join("|"));
+    assert.equal(new Set(sequences).size, moves.length, "Fighting styles require distinct authored pose sequences");
+  }
+  assert.equal(bank.actors.length, 8); assert.equal(assets.size, 21); assert.equal(sheets, 12);
+  t.diagnostic(`${cels} complete cels on ${sheets} native PNGs; exact hashes, transparent nonoverlapping crops, measured scale and committed fighting clips verified`);
 });
 
 test("System Override's 171 road sources preserve full resolution and original bytes with 149 local compressed derivatives", (t) => {

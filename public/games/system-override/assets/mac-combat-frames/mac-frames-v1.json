@@ -1,0 +1,1026 @@
+{
+  "schemaVersion": 1,
+  "actor": "mac",
+  "facing": "right",
+  "pixelScale": {
+    "standingVisibleHeight": 321,
+    "referenceFrame": "idle_a"
+  },
+  "sheets": [
+    {
+      "id": "basic",
+      "sourceImage": "assets/mac-combat-frames/mac-basic-v2.png",
+      "sourceSHA256": "3924a5621c417da3328fcd9979acc37be6be0802d8ec0808194fa188aaa47046",
+      "dimensions": {
+        "width": 1448,
+        "height": 1086
+      },
+      "pixelScale": {
+        "standingVisibleHeight": 321,
+        "referenceFrame": "idle_a"
+      }
+    },
+    {
+      "id": "advanced",
+      "sourceImage": "assets/mac-combat-frames/mac-advanced-v1.png",
+      "sourceSHA256": "cc7525692ae6ea5b73b6b5feac312875b0bd55958c9482220133dd8cdff606ab",
+      "dimensions": {
+        "width": 1448,
+        "height": 1086
+      },
+      "pixelScale": {
+        "standingVisibleHeight": 343,
+        "referenceFrame": "hook_contact"
+      }
+    },
+    {
+      "id": "walk",
+      "sourceImage": "assets/mac-combat-frames/mac-walk-v1.png",
+      "sourceSHA256": "ae95eaeed9f8e51112c5fd41f19347c41b5662b1a1e5411e48076d9718d06abd",
+      "dimensions": {
+        "width": 1774,
+        "height": 887
+      },
+      "pixelScale": {
+        "standingVisibleHeight": 430,
+        "referenceFrame": "walk_1"
+      }
+    },
+    {
+      "id": "contacts",
+      "sourceImage": "assets/mac-combat-frames/mac-walk-contacts-v1.png",
+      "sourceSHA256": "046be2474814495be239db517c3cdd82ed3a643c82f441a90b2a37613b86b6f6",
+      "dimensions": {
+        "width": 1774,
+        "height": 887
+      },
+      "pixelScale": {
+        "standingVisibleHeight": 825,
+        "referenceFrame": "walk_contact_left"
+      }
+    },
+    {
+      "id": "jump",
+      "sourceImage": "assets/mac-combat-frames/mac-jump-kick-v1.png",
+      "sourceSHA256": "ffb03183717c172c788848a446f7bfa0b1ee79b1c4ea0fbe47f41e1a7afea9ed",
+      "dimensions": {
+        "width": 1774,
+        "height": 887
+      },
+      "pixelScale": {
+        "standingVisibleHeight": 458,
+        "referenceFrame": "takeoff"
+      }
+    }
+  ],
+  "frames": [
+    {
+      "id": "idle_a",
+      "sheet": "basic",
+      "source": {
+        "x": 0,
+        "y": 0,
+        "width": 372,
+        "height": 379
+      },
+      "feetPivot": {
+        "x": 187.5,
+        "y": 361
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "idle_b",
+      "sheet": "basic",
+      "source": {
+        "x": 372,
+        "y": 0,
+        "width": 358,
+        "height": 379
+      },
+      "feetPivot": {
+        "x": 183.0,
+        "y": 361
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "walk_contact_a",
+      "sheet": "basic",
+      "source": {
+        "x": 730,
+        "y": 0,
+        "width": 357,
+        "height": 379
+      },
+      "feetPivot": {
+        "x": 194.5,
+        "y": 361
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "walk_pass_a",
+      "sheet": "basic",
+      "source": {
+        "x": 1087,
+        "y": 0,
+        "width": 361,
+        "height": 379
+      },
+      "feetPivot": {
+        "x": 176.5,
+        "y": 360
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "walk_contact_b",
+      "sheet": "basic",
+      "source": {
+        "x": 0,
+        "y": 379,
+        "width": 368,
+        "height": 351
+      },
+      "feetPivot": {
+        "x": 183.5,
+        "y": 331
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "walk_pass_b",
+      "sheet": "basic",
+      "source": {
+        "x": 368,
+        "y": 379,
+        "width": 348,
+        "height": 351
+      },
+      "feetPivot": {
+        "x": 247.5,
+        "y": 331
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "jab_windup",
+      "sheet": "basic",
+      "source": {
+        "x": 716,
+        "y": 379,
+        "width": 367,
+        "height": 351
+      },
+      "feetPivot": {
+        "x": 193.0,
+        "y": 331
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "jab_contact",
+      "sheet": "basic",
+      "source": {
+        "x": 1083,
+        "y": 379,
+        "width": 365,
+        "height": 351
+      },
+      "feetPivot": {
+        "x": 177.5,
+        "y": 333
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "jab_recovery",
+      "sheet": "basic",
+      "source": {
+        "x": 0,
+        "y": 730,
+        "width": 363,
+        "height": 356
+      },
+      "feetPivot": {
+        "x": 183.5,
+        "y": 312
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "cross_windup",
+      "sheet": "basic",
+      "source": {
+        "x": 363,
+        "y": 730,
+        "width": 361,
+        "height": 356
+      },
+      "feetPivot": {
+        "x": 186.0,
+        "y": 312
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "cross_contact",
+      "sheet": "basic",
+      "source": {
+        "x": 724,
+        "y": 730,
+        "width": 373,
+        "height": 356
+      },
+      "feetPivot": {
+        "x": 182.5,
+        "y": 312
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "hook_windup",
+      "sheet": "basic",
+      "source": {
+        "x": 1097,
+        "y": 730,
+        "width": 351,
+        "height": 356
+      },
+      "feetPivot": {
+        "x": 171.5,
+        "y": 312
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "hook_contact",
+      "sheet": "advanced",
+      "source": {
+        "x": 0,
+        "y": 0,
+        "width": 363,
+        "height": 360
+      },
+      "feetPivot": {
+        "x": 166.5,
+        "y": 357
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "hook_followthrough",
+      "sheet": "advanced",
+      "source": {
+        "x": 363,
+        "y": 0,
+        "width": 366,
+        "height": 360
+      },
+      "feetPivot": {
+        "x": 188.5,
+        "y": 357
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "hook_recovery",
+      "sheet": "advanced",
+      "source": {
+        "x": 729,
+        "y": 0,
+        "width": 301,
+        "height": 360
+      },
+      "feetPivot": {
+        "x": 150.5,
+        "y": 357
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "step_contact",
+      "sheet": "advanced",
+      "source": {
+        "x": 1030,
+        "y": 0,
+        "width": 418,
+        "height": 360
+      },
+      "feetPivot": {
+        "x": 210.0,
+        "y": 351
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "jump_rise",
+      "sheet": "advanced",
+      "source": {
+        "x": 0,
+        "y": 360,
+        "width": 326,
+        "height": 359
+      },
+      "feetPivot": {
+        "x": 161.0,
+        "y": 325
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "air_kick",
+      "sheet": "advanced",
+      "source": {
+        "x": 326,
+        "y": 360,
+        "width": 428,
+        "height": 359
+      },
+      "feetPivot": {
+        "x": 191.5,
+        "y": 278
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "jump_land",
+      "sheet": "advanced",
+      "source": {
+        "x": 754,
+        "y": 360,
+        "width": 328,
+        "height": 359
+      },
+      "feetPivot": {
+        "x": 150.0,
+        "y": 348
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "counter_contact",
+      "sheet": "advanced",
+      "source": {
+        "x": 1082,
+        "y": 360,
+        "width": 366,
+        "height": 359
+      },
+      "feetPivot": {
+        "x": 176.0,
+        "y": 356
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "throw_grab",
+      "sheet": "advanced",
+      "source": {
+        "x": 0,
+        "y": 719,
+        "width": 355,
+        "height": 367
+      },
+      "feetPivot": {
+        "x": 169.5,
+        "y": 334
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "throw_release",
+      "sheet": "advanced",
+      "source": {
+        "x": 355,
+        "y": 719,
+        "width": 378,
+        "height": 367
+      },
+      "feetPivot": {
+        "x": 200.5,
+        "y": 337
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "hurt_stagger",
+      "sheet": "advanced",
+      "source": {
+        "x": 733,
+        "y": 719,
+        "width": 325,
+        "height": 367
+      },
+      "feetPivot": {
+        "x": 181.5,
+        "y": 336
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "down",
+      "sheet": "advanced",
+      "source": {
+        "x": 1058,
+        "y": 719,
+        "width": 390,
+        "height": 367
+      },
+      "feetPivot": {
+        "x": 175.0,
+        "y": 347
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "walk_1",
+      "sheet": "walk",
+      "source": {
+        "x": 0,
+        "y": 0,
+        "width": 464,
+        "height": 448
+      },
+      "feetPivot": {
+        "x": 229.0,
+        "y": 442
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "walk_2",
+      "sheet": "walk",
+      "source": {
+        "x": 464,
+        "y": 0,
+        "width": 438,
+        "height": 448
+      },
+      "feetPivot": {
+        "x": 214.0,
+        "y": 444
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "walk_3",
+      "sheet": "walk",
+      "source": {
+        "x": 902,
+        "y": 0,
+        "width": 409,
+        "height": 448
+      },
+      "feetPivot": {
+        "x": 193,
+        "y": 445
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "walk_4",
+      "sheet": "walk",
+      "source": {
+        "x": 1311,
+        "y": 0,
+        "width": 463,
+        "height": 448
+      },
+      "feetPivot": {
+        "x": 245.5,
+        "y": 442
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "walk_5",
+      "sheet": "walk",
+      "source": {
+        "x": 0,
+        "y": 448,
+        "width": 472,
+        "height": 439
+      },
+      "feetPivot": {
+        "x": 242.0,
+        "y": 427
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "walk_6",
+      "sheet": "walk",
+      "source": {
+        "x": 472,
+        "y": 448,
+        "width": 432,
+        "height": 439
+      },
+      "feetPivot": {
+        "x": 269.0,
+        "y": 427
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "walk_7",
+      "sheet": "walk",
+      "source": {
+        "x": 904,
+        "y": 448,
+        "width": 393,
+        "height": 439
+      },
+      "feetPivot": {
+        "x": 188,
+        "y": 427
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "walk_8",
+      "sheet": "walk",
+      "source": {
+        "x": 1297,
+        "y": 448,
+        "width": 477,
+        "height": 439
+      },
+      "feetPivot": {
+        "x": 259.5,
+        "y": 424
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "walk_contact_left",
+      "sheet": "contacts",
+      "source": {
+        "x": 0,
+        "y": 0,
+        "width": 897,
+        "height": 887
+      },
+      "feetPivot": {
+        "x": 470.0,
+        "y": 842
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "walk_contact_right",
+      "sheet": "contacts",
+      "source": {
+        "x": 897,
+        "y": 0,
+        "width": 877,
+        "height": 887
+      },
+      "feetPivot": {
+        "x": 373.0,
+        "y": 851
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "load",
+      "sheet": "jump",
+      "source": {
+        "x": 74,
+        "y": 128,
+        "width": 328,
+        "height": 349
+      },
+      "feetPivot": {
+        "x": 165,
+        "y": 339
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "takeoff",
+      "sheet": "jump",
+      "source": {
+        "x": 485,
+        "y": 0,
+        "width": 326,
+        "height": 472
+      },
+      "feetPivot": {
+        "x": 178,
+        "y": 470
+      },
+      "baselineLift": 0.0
+    },
+    {
+      "id": "chamber",
+      "sheet": "jump",
+      "source": {
+        "x": 927,
+        "y": 0,
+        "width": 290,
+        "height": 443
+      },
+      "feetPivot": {
+        "x": 148,
+        "y": 427
+      },
+      "baselineLift": 13.624454148471616
+    },
+    {
+      "id": "kick_extend",
+      "sheet": "jump",
+      "source": {
+        "x": 1296,
+        "y": 24,
+        "width": 466,
+        "height": 376
+      },
+      "feetPivot": {
+        "x": 119,
+        "y": 360
+      },
+      "baselineLift": 58.47161572052402
+    },
+    {
+      "id": "kick_contact",
+      "sheet": "jump",
+      "source": {
+        "x": 18,
+        "y": 477,
+        "width": 506,
+        "height": 348
+      },
+      "feetPivot": {
+        "x": 151,
+        "y": 334
+      },
+      "baselineLift": 49.956331877729255
+    },
+    {
+      "id": "kick_retract",
+      "sheet": "jump",
+      "source": {
+        "x": 550,
+        "y": 472,
+        "width": 283,
+        "height": 405
+      },
+      "feetPivot": {
+        "x": 124,
+        "y": 391
+      },
+      "baselineLift": 22.139737991266376
+    },
+    {
+      "id": "descent",
+      "sheet": "jump",
+      "source": {
+        "x": 953,
+        "y": 448,
+        "width": 327,
+        "height": 439
+      },
+      "feetPivot": {
+        "x": 157,
+        "y": 430
+      },
+      "baselineLift": 7.9475982532751095
+    },
+    {
+      "id": "landing",
+      "sheet": "jump",
+      "source": {
+        "x": 1407,
+        "y": 518,
+        "width": 304,
+        "height": 369
+      },
+      "feetPivot": {
+        "x": 157,
+        "y": 348
+      },
+      "baselineLift": 0
+    }
+  ],
+  "clips": {
+    "idle": {
+      "loop": true,
+      "frames": [
+        {
+          "frame": "idle_a",
+          "holdMs": 280
+        },
+        {
+          "frame": "idle_b",
+          "holdMs": 200
+        },
+        {
+          "frame": "idle_a",
+          "holdMs": 280
+        }
+      ]
+    },
+    "walk": {
+      "loop": true,
+      "frames": [
+        {
+          "frame": "walk_contact_left",
+          "holdMs": 110
+        },
+        {
+          "frame": "walk_3",
+          "holdMs": 90
+        },
+        {
+          "frame": "walk_contact_right",
+          "holdMs": 110
+        },
+        {
+          "frame": "walk_7",
+          "holdMs": 90
+        }
+      ]
+    },
+    "guard": {
+      "loop": true,
+      "frames": [
+        {
+          "frame": "idle_b",
+          "holdMs": 200
+        }
+      ]
+    },
+    "jump-rise": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "load",
+          "holdMs": 30
+        },
+        {
+          "frame": "takeoff",
+          "holdMs": 100
+        },
+        {
+          "frame": "chamber",
+          "holdMs": 243.333333
+        }
+      ]
+    },
+    "jump-fall": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "chamber",
+          "holdMs": 100
+        },
+        {
+          "frame": "descent",
+          "holdMs": 273.333333
+        }
+      ]
+    },
+    "landing": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "landing",
+          "holdMs": 100
+        }
+      ]
+    },
+    "hurt": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "hurt_stagger",
+          "holdMs": 160
+        }
+      ]
+    },
+    "defeat": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "hurt_stagger",
+          "holdMs": 120
+        },
+        {
+          "frame": "down",
+          "holdMs": 680
+        }
+      ]
+    },
+    "throw": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "throw_grab",
+          "holdMs": 140
+        },
+        {
+          "frame": "throw_release",
+          "holdMs": 140
+        },
+        {
+          "frame": "hook_recovery",
+          "holdMs": 140
+        }
+      ]
+    },
+    "jab.windup": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "jab_windup",
+          "holdMs": 90
+        }
+      ]
+    },
+    "jab.active": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "jab_contact",
+          "holdMs": 80
+        }
+      ]
+    },
+    "jab.recovery": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "jab_recovery",
+          "holdMs": 100
+        },
+        {
+          "frame": "idle_b",
+          "holdMs": 55
+        }
+      ]
+    },
+    "cross.windup": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "cross_windup",
+          "holdMs": 100
+        }
+      ]
+    },
+    "cross.active": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "cross_contact",
+          "holdMs": 80
+        }
+      ]
+    },
+    "cross.recovery": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "jab_recovery",
+          "holdMs": 100
+        },
+        {
+          "frame": "idle_b",
+          "holdMs": 75
+        }
+      ]
+    },
+    "finisher.windup": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "hook_windup",
+          "holdMs": 130
+        }
+      ]
+    },
+    "finisher.active": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "hook_contact",
+          "holdMs": 105
+        }
+      ]
+    },
+    "finisher.recovery": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "hook_followthrough",
+          "holdMs": 80
+        },
+        {
+          "frame": "hook_recovery",
+          "holdMs": 160
+        }
+      ]
+    },
+    "step-strike.windup": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "cross_windup",
+          "holdMs": 110
+        }
+      ]
+    },
+    "step-strike.active": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "step_contact",
+          "holdMs": 100
+        }
+      ]
+    },
+    "step-strike.recovery": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "jab_recovery",
+          "holdMs": 130
+        },
+        {
+          "frame": "idle_b",
+          "holdMs": 80
+        }
+      ]
+    },
+    "air-kick.windup": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "chamber",
+          "holdMs": 35
+        },
+        {
+          "frame": "kick_extend",
+          "holdMs": 25
+        }
+      ]
+    },
+    "air-kick.active": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "kick_contact",
+          "holdMs": 190
+        }
+      ]
+    },
+    "air-kick.recovery": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "kick_retract",
+          "holdMs": 100
+        },
+        {
+          "frame": "descent",
+          "holdMs": 80
+        }
+      ]
+    },
+    "counter.windup": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "load",
+          "holdMs": 65
+        }
+      ]
+    },
+    "counter.active": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "counter_contact",
+          "holdMs": 105
+        }
+      ]
+    },
+    "counter.recovery": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "hook_recovery",
+          "holdMs": 120
+        },
+        {
+          "frame": "idle_b",
+          "holdMs": 60
+        }
+      ]
+    }
+  },
+  "registrationNotes": "Uniform scale per native sheet, complete held cels. Accepted opposite-contact walk loop uses waist projection. Airborne cels add a constant per-cel pelvis registration lift to the actual simulation jump arc; no body-part transforms."
+}

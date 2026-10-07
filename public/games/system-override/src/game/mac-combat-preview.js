@@ -1,11 +1,11 @@
 // Private Mac chapter preview. Simulation, input, audio and pause use existing owners.
 window.FILE_MANIFEST = window.FILE_MANIFEST || [];
-window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['BARCODE.MacCombatPreview'], dependencies: ['BARCODE.MacStreetCombat', 'BARCODE.MacStreetStory', 'BARCODE.MacCombatAnimation', 'BARCODE.RuntimeLifecycle'] });
+window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['BARCODE.MacCombatPreview'], dependencies: ['BARCODE.MacStreetCombat', 'BARCODE.MacStreetStory', 'BARCODE.MacCombatFrames', 'BARCODE.RuntimeLifecycle'] });
 (function(B) {
   'use strict';
   const ROOT = 'assets/mac-street-review/';
   const CITY_ROOT = 'assets/mac-city-review/';
-  const RIG_ROOT = 'assets/mac-combat-rigs/';
+  const FRAME_ROOT = 'assets/mac-combat-frames/';
   const ART = {
     street: ROOT + 'street-panorama-v1.png',
     hero: ROOT + 'mac-hero-v2.png', kave: ROOT + 'scene03-kave-dead-air-v5.png',
@@ -18,7 +18,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
   const COMBAT_CUES = { 'enemy-hit': 'hit', 'parry': 'perfect', 'block': 'guard', 'player-hit': 'damage',
     'enemy-defeated': 'defeat', 'enemy-tell': 'warning', 'jump': 'jump', 'land': 'land', 'throw': 'metal' };
   const P = B.MacCombatPreview = {
-    active: false, pending: false, phase: null, status: null, assets: new Map(), generation: 0,
+    active: false, pending: false, phase: null, status: null, assets: new Map(), frameArt: new Map(), generation: 0,
     requested() { try { return new URLSearchParams(window.location.search).get('preview') === 'mac-firstslice'; } catch (_) { return false; } },
     async prepare() {
       const generation = ++this.generation;
@@ -29,25 +29,45 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
         if (generation !== this.generation) throw new Error('mac-preview-cancelled');
         return image;
       };
+      const verifiedBytes = async (url, expectedHash) => {
+        if (typeof url !== 'string' || !url.startsWith(FRAME_ROOT) || url.includes('..') || !/^[a-f0-9]{64}$/i.test(expectedHash || '')) throw new Error('mac-frame-asset-registration-invalid');
+        if (!window.crypto?.subtle) throw new Error('mac-frame-hash-verification-unavailable');
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('mac-frame-asset-unavailable: ' + url);
+        const bytes = await response.arrayBuffer();
+        const digest = await window.crypto.subtle.digest('SHA-256', bytes);
+        const actualHash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+        if (actualHash !== expectedHash.toLowerCase()) throw new Error('mac-frame-asset-hash-mismatch: ' + url);
+        if (generation !== this.generation) throw new Error('mac-preview-cancelled');
+        return bytes;
+      };
       try {
+        if (!B.MacCombatFrames) throw new Error('mac-frame-player-unavailable');
         const images = await Promise.all(Object.entries(ART).filter(([name]) => name !== 'street').map(async ([, url]) => [url, await load(url)]));
         const manifestResponse = await fetch(CITY_ROOT + 'mac-city-art-v1.json');
         if (!manifestResponse.ok) throw new Error('mac-city-art-unavailable');
         const cityArt = await manifestResponse.json();
         if (cityArt.actors?.length !== 7 || cityArt.zones?.length !== 6) throw new Error('mac-city-art-incomplete');
-        const rigResponse = await fetch(RIG_ROOT + 'mac-combat-art-v1.json');
-        if (!rigResponse.ok) throw new Error('mac-rig-art-unavailable');
-        const rigManifest = await rigResponse.json();
-        if (rigManifest.actors?.length !== 8 || !rigManifest.actors.some(actor => actor.kind === 'mac')) throw new Error('mac-rig-art-incomplete');
-        const rigs = await Promise.all(rigManifest.actors.map(async actor => {
-          const [image, response] = await Promise.all([load(actor.image), fetch(actor.rig)]);
-          if (!response.ok) throw new Error('mac-rig-registration-unavailable');
-          const registration = await response.json();
-          if (registration.sourceImage !== actor.image || registration.parts?.length !== (actor.kind === 'null_regent' ? 21 : 15)) throw new Error('mac-rig-registration-incomplete');
-          return [actor.kind, { image, registration, geometry: B.MacCombatAnimation.geometry(registration), displayName: actor.displayName, bloodColor: actor.bloodColor }];
+        const frameResponse = await fetch(FRAME_ROOT + 'mac-combat-frames-v1.json');
+        if (!frameResponse.ok) throw new Error('mac-frame-art-unavailable');
+        const frameManifest = await frameResponse.json();
+        const kinds = ['mac', ...Object.keys(B.MacCombatFrames.styles)];
+        if (frameManifest.schemaVersion !== 1 || !Array.isArray(frameManifest.actors) || frameManifest.actors.length !== 8 || kinds.some(kind => frameManifest.actors.filter(actor => actor.kind === kind).length !== 1)) throw new Error('mac-frame-art-incomplete');
+        const frames = await Promise.all(frameManifest.actors.map(async actor => {
+          const bytes = await verifiedBytes(actor.registration, actor.registrationSHA256);
+          const registration = JSON.parse(new TextDecoder().decode(bytes));
+          const compiled = B.MacCombatFrames.compile(registration, { complete: true });
+          if (compiled.actor !== actor.kind) throw new Error('mac-frame-actor-identity-mismatch');
+          const images = new Map(await Promise.all(Object.values(compiled.sheets).map(async sheet => {
+            await verifiedBytes(sheet.sourceImage, sheet.sourceSHA256);
+            const image = await load(sheet.sourceImage);
+            if ((image.naturalWidth || image.width) !== sheet.dimensions.width || (image.naturalHeight || image.height) !== sheet.dimensions.height) throw new Error('mac-frame-native-dimensions-mismatch');
+            return [sheet.id, image];
+          })));
+          return [actor.kind, { images, registration, compiled, displayName: actor.displayName, bloodColor: actor.bloodColor }];
         }));
         if (generation !== this.generation) throw new Error('mac-preview-cancelled');
-        this.assets = new Map(images); this.rigArt = new Map(rigs); this.rigManifest = rigManifest;
+        this.assets = new Map(images); this.frameArt = new Map(frames); this.frameManifest = frameManifest;
         this.cityArt = cityArt; this.zonePromises = new Map(); this.zoneLoadError = null;
         // Decode the opening and next district only. Later scenery enters the
         // same asset owner as it is needed, keeping all six native backdrops
@@ -74,12 +94,14 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       this.zonePromises.set(index, preparing); return preparing;
     },
     async enter() {
-      if (!B.MacStreetCombat || !B.MacStreetStory || !B.MacCombatAnimation || !this.assets.size || this.rigArt?.size !== 8) throw new Error('mac-preview-not-ready');
+      if (!B.MacStreetCombat || !B.MacStreetStory || !B.MacCombatFrames || !this.assets.size || this.frameArt.size !== 8) throw new Error('mac-preview-not-ready');
       const generation = this.generation;
       this.combat = B.MacStreetCombat.create();
       this.story = B.MacStreetStory.createIntro();
       this.phase = 'intro'; this.status = 'playing'; this.active = true; this.cameraX = 0;
       this.focus = 0; this.elapsedMs = 0; this.lastEvents = []; this.audioNotice = null;
+      this.playerDefeatedAtMs = null; this.playerDefeatedHostAtMs = null;
+      this.playerLandedAtMs = null;
       this.makeDialogueReadout();
       const input = window.inputManager?.actionInput;
       if (input) {
@@ -105,7 +127,9 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       this.generation++; this.active = false; this.pending = false;
       if (this.previousKeyboard && window.inputManager?.actionInput) window.inputManager.actionInput.keyboardBindings = this.previousKeyboard;
       this.previousKeyboard = null; this.combat = null; this.story = null; this.phase = null; this.status = null;
-      this.assets.clear(); this.rigArt?.clear(); this.rigManifest = null; this.cityArt = null; this.zonePromises?.clear(); this.lastEvents = [];
+      this.assets.clear(); this.frameArt.clear(); this.frameManifest = null; this.cityArt = null; this.zonePromises?.clear(); this.lastEvents = [];
+      this.playerDefeatedAtMs = null; this.playerDefeatedHostAtMs = null;
+      this.playerLandedAtMs = null;
       this.dialogueReadout?.remove(); this.dialogueReadout = null; this.resetInputs();
     },
     exit() { return B.RuntimeLifecycle?.returnToTitle?.({ source: 'mac-preview-title' }); },
@@ -113,6 +137,8 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       if (!this.active) return false;
       if (this.status === 'clear') this.combat = B.MacStreetCombat.create(); else this.combat.retry();
       this.phase = 'street'; this.status = 'playing'; this.story = null;
+      this.playerDefeatedAtMs = null; this.playerDefeatedHostAtMs = null;
+      this.playerLandedAtMs = null;
       const state = this.combat.getSnapshot(); this.cameraX = state.zone?.startX || 0;
       const currentZone = (state.zone?.index || 1) - 1;
       for (let index = 0; index < this.cityArt.zones.length; index++) {
@@ -179,7 +205,13 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       });
     },
     update(delta) {
-      if (!this.active || window.isPaused || this.status !== 'playing') return;
+      if (!this.active || window.isPaused) return;
+      if (this.status !== 'playing') {
+        // The result keeps gameplay frozen. Only the existing host frame clock
+        // continues the finite authored fall from the actual defeat receipt.
+        if (this.status === 'failed' && this.playerDefeatedAtMs !== null) this.elapsedMs += delta;
+        return;
+      }
       this.elapsedMs += delta;
       if (this.dialogue()) { this.story.update(delta); return; }
       const before = this.combat.getSnapshot(), zoneIndex = (before.zone?.index || 1) - 1;
@@ -200,6 +232,12 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
         const retired = this.cityArt.zones[index]; this.assets.delete(retired.background); this.zonePromises.delete(index);
       }
       this.lastEvents = this.combat.drainEvents();
+      for (const event of this.lastEvents) {
+        if (event.type === 'player-defeated') {
+          this.playerDefeatedAtMs = event.atMs; this.playerDefeatedHostAtMs = this.elapsedMs;
+        } else if (event.type === 'land') this.playerLandedAtMs = event.atMs;
+        else if (event.type === 'jump') this.playerLandedAtMs = null;
+      }
       for (const event of this.lastEvents) if (COMBAT_CUES[event.type]) window.audioSystem?.playCombatCue?.(COMBAT_CUES[event.type]);
       if (s.status === 'defeated') { this.status = 'failed'; this.resetInputs(); }
     },
@@ -273,20 +311,6 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
         });
         if (s.choice.optional) this.text(ctx, B.GamepadUI?.connected ? `← / →: choose · ${B.ControllerSettings?.prompt?.('jump') || 'A'}: answer · ${B.ControllerSettings?.prompt?.('inspect') || 'RB'}: continue` : 'Space: continue · 1 / 2: answer', 1760, 1010, 18, '#eec871', 'right');
       } else this.text(ctx, B.TouchControls?.enabled ? 'Tap Next' : 'Space / A: next · P: pause', 1760, 984, 20, '#eec871', 'right');
-    },
-    drawActor(ctx, image, frame, x, feet, height, facing, anchor = .96) {
-      const width = frame.w * height / frame.h;
-      ctx.save(); ctx.translate(x, feet); ctx.scale(facing, 1);
-      ctx.drawImage(image, frame.x, frame.y, frame.w, frame.h, -width / 2, -height * anchor, width, height); ctx.restore();
-    },
-    drawRegisteredActor(ctx, image, registration, frameId, x, feet, height, facing, alpha = 1, lean = 0) {
-      const frame = registration.frames.find(item => item.id === frameId) || registration.frames[0];
-      const scale = height / registration.pixelScale.standingVisibleHeight, source = frame.source;
-      ctx.save(); ctx.globalAlpha = alpha; ctx.translate(x, feet); ctx.scale(facing, 1);
-      if (lean) ctx.rotate(lean);
-      ctx.drawImage(image, source.x, source.y, source.width, source.height,
-        -frame.pivot.x * scale, -frame.pivot.y * scale, source.width * scale, source.height * scale);
-      ctx.restore();
     },
     drawCityBackdrop(ctx, image, zone, camera) {
       if (!image) return;
@@ -363,19 +387,23 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
         const p = actor.value, x = p.x - camera;
         ctx.fillStyle = '#02091170'; ctx.beginPath(); ctx.ellipse(x, p.laneY + 2, actor.type === 'mac' ? 43 : 51, 12, 0, 0, Math.PI * 2); ctx.fill();
         if (actor.type === 'mac') {
-          const art = this.rigArt?.get('mac');
-          if (art) {
-            const pose = B.MacCombatAnimation.sample(p, {player: true, geometry: art.geometry, reducedMotion: !!B.Preferences?.values?.reducedMotion});
-            B.MacCombatAnimation.draw(ctx, art, pose, x, p.laneY - p.elevation, 260, p.facing, p.invulnerableMs > 0 ? .86 : 1);
-          }
+          const art = this.frameArt.get('mac');
+          if (!art) throw new Error('mac-frame-actor-unavailable: mac');
+          const stateAgeMs = this.playerDefeatedAtMs === null ? undefined : Math.max(0, s.elapsedMs - this.playerDefeatedAtMs + this.elapsedMs - this.playerDefeatedHostAtMs);
+          const landingAgeMs = this.playerLandedAtMs === null ? undefined : Math.max(0, s.elapsedMs - this.playerLandedAtMs);
+          const pose = B.MacCombatFrames.sample(p, {player: true, compiled: art.compiled, stateAgeMs, landingAgeMs, reducedMotion: !!B.Preferences?.values?.reducedMotion});
+          // Gameplay freezes its jump height at defeat. Lower the complete cel
+          // using the existing result age, reaching the lane before down holds.
+          const downStartsMs = art.compiled.clips.defeat.frames.at(-1).startMs;
+          const elevation = pose.action === 'defeat' ? p.elevation * (1 - clamp(pose.clipTimeMs / Math.max(1, downStartsMs), 0, 1)) : p.elevation;
+          B.MacCombatFrames.draw(ctx, art, pose, x, p.laneY - elevation, 260, p.facing, p.invulnerableMs > 0 ? .86 : 1);
         } else {
-          const art = this.rigArt?.get(p.kind), animation = p.animation || {};
+          const art = this.frameArt.get(p.kind);
           const height = p.kind === 'null_regent' ? 335 : 260;
           const defeated = p.hp <= 0;
-          if (art) {
-            const pose = B.MacCombatAnimation.sample(p, {geometry: art.geometry, height, reducedMotion: !!B.Preferences?.values?.reducedMotion});
-            B.MacCombatAnimation.draw(ctx, art, pose, x, p.laneY - (p.elevation || 0), height, p.facing);
-          }
+          if (!art) throw new Error('mac-frame-actor-unavailable: ' + p.kind);
+          const pose = B.MacCombatFrames.sample(p, {compiled: art.compiled, reducedMotion: !!B.Preferences?.values?.reducedMotion});
+          B.MacCombatFrames.draw(ctx, art, pose, x, p.laneY - (p.elevation || 0), height, p.facing);
           this.drawTelegraph(ctx, p, x);
           if (p.kind !== 'null_regent' && !defeated) {
             ctx.fillStyle = '#09121c'; ctx.fillRect(x - 37, p.laneY - height - 17, 74, 7); ctx.fillStyle = p.bloodHex || '#b479ff'; ctx.fillRect(x - 37, p.laneY - height - 17, 74 * p.hp / p.maxHp, 7);

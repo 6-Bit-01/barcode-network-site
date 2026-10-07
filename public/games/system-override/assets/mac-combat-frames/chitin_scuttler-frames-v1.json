@@ -1,0 +1,323 @@
+{
+  "schemaVersion": 1,
+  "actor": "chitin_scuttler",
+  "facing": "right",
+  "pixelScale": {
+    "standingVisibleHeight": 352,
+    "referenceFrame": "idle"
+  },
+  "sheets": [
+    {
+      "id": "main",
+      "sourceImage": "assets/mac-combat-frames/chitin_scuttler-frames-v1.png",
+      "sourceSHA256": "2116ce354b62aa78799c983ac2ad148b67f99488f5c3c21698493204ab2c18f3",
+      "dimensions": {
+        "width": 1448,
+        "height": 1086
+      },
+      "pixelScale": {
+        "standingVisibleHeight": 352,
+        "referenceFrame": "idle"
+      }
+    }
+  ],
+  "frames": [
+    {
+      "id": "idle",
+      "sheet": "main",
+      "source": {
+        "x": 0,
+        "y": 0,
+        "width": 358,
+        "height": 392
+      },
+      "feetPivot": {
+        "x": 182.0,
+        "y": 381
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "walk_contact_a",
+      "sheet": "main",
+      "source": {
+        "x": 358,
+        "y": 0,
+        "width": 370,
+        "height": 392
+      },
+      "feetPivot": {
+        "x": 187.5,
+        "y": 375
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "walk_pass",
+      "sheet": "main",
+      "source": {
+        "x": 728,
+        "y": 0,
+        "width": 356,
+        "height": 392
+      },
+      "feetPivot": {
+        "x": 180,
+        "y": 373
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "walk_contact_b",
+      "sheet": "main",
+      "source": {
+        "x": 1084,
+        "y": 0,
+        "width": 364,
+        "height": 392
+      },
+      "feetPivot": {
+        "x": 215.5,
+        "y": 378
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "tell_a",
+      "sheet": "main",
+      "source": {
+        "x": 0,
+        "y": 392,
+        "width": 360,
+        "height": 356
+      },
+      "feetPivot": {
+        "x": 178.0,
+        "y": 342
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "impact_a",
+      "sheet": "main",
+      "source": {
+        "x": 360,
+        "y": 392,
+        "width": 402,
+        "height": 356
+      },
+      "feetPivot": {
+        "x": 182.5,
+        "y": 342
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "recover",
+      "sheet": "main",
+      "source": {
+        "x": 762,
+        "y": 392,
+        "width": 325,
+        "height": 356
+      },
+      "feetPivot": {
+        "x": 160.5,
+        "y": 345
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "tell_b",
+      "sheet": "main",
+      "source": {
+        "x": 1087,
+        "y": 392,
+        "width": 361,
+        "height": 356
+      },
+      "feetPivot": {
+        "x": 144.5,
+        "y": 342
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "impact_b",
+      "sheet": "main",
+      "source": {
+        "x": 0,
+        "y": 748,
+        "width": 422,
+        "height": 338
+      },
+      "feetPivot": {
+        "x": 183.5,
+        "y": 316
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "hurt",
+      "sheet": "main",
+      "source": {
+        "x": 422,
+        "y": 748,
+        "width": 313,
+        "height": 338
+      },
+      "feetPivot": {
+        "x": 186.0,
+        "y": 318
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "fall",
+      "sheet": "main",
+      "source": {
+        "x": 735,
+        "y": 748,
+        "width": 351,
+        "height": 338
+      },
+      "feetPivot": {
+        "x": 315.0,
+        "y": 301
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "down",
+      "sheet": "main",
+      "source": {
+        "x": 1086,
+        "y": 748,
+        "width": 362,
+        "height": 338
+      },
+      "feetPivot": {
+        "x": 172.5,
+        "y": 303
+      },
+      "baselineLift": 0
+    }
+  ],
+  "clips": {
+    "idle": {
+      "loop": true,
+      "frames": [
+        {
+          "frame": "idle",
+          "holdMs": 300
+        }
+      ]
+    },
+    "walk": {
+      "loop": true,
+      "frames": [
+        {
+          "frame": "walk_contact_a",
+          "holdMs": 130
+        },
+        {
+          "frame": "walk_pass",
+          "holdMs": 90
+        },
+        {
+          "frame": "walk_contact_b",
+          "holdMs": 130
+        },
+        {
+          "frame": "walk_pass",
+          "holdMs": 90
+        }
+      ]
+    },
+    "hurt": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "hurt",
+          "holdMs": 240
+        }
+      ]
+    },
+    "defeat": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "fall",
+          "holdMs": 160
+        },
+        {
+          "frame": "down",
+          "holdMs": 840
+        }
+      ]
+    },
+    "jab.windup": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "tell_a",
+          "holdMs": 100
+        }
+      ]
+    },
+    "jab.active": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "impact_a",
+          "holdMs": 100
+        }
+      ]
+    },
+    "jab.recovery": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "impact_a",
+          "holdMs": 18
+        },
+        {
+          "frame": "recover",
+          "holdMs": 82
+        }
+      ]
+    },
+    "rush-jab.windup": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "tell_b",
+          "holdMs": 100
+        }
+      ]
+    },
+    "rush-jab.active": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "impact_b",
+          "holdMs": 100
+        }
+      ]
+    },
+    "rush-jab.recovery": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "impact_b",
+          "holdMs": 18
+        },
+        {
+          "frame": "recover",
+          "holdMs": 82
+        }
+      ]
+    }
+  },
+  "registrationNotes": "Complete-character discrete cels sampled from the actual committed simulation attack phase. Contact delays remain aligned to existing hit timing. One native sheet scale; down holds preserve anatomy."
+}

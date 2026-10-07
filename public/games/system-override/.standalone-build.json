@@ -1,9 +1,9 @@
 {
   "builder": "barcode-system-override-standalone-v1",
   "status": "complete",
-  "sourceCommit": "6df3cf81ea80bcd73cc91d83d88c2eae6bb19df7",
-  "sourceTree": "e7a1be9fc9c45d90afa8b31de65781ffd8848093",
-  "builderSHA256": "f5fd227857658b70bf0e1d79ba2d2d536649fbf972f4bbef244a45d3df12e5cc",
+  "sourceCommit": "f09886b8191be6f0b62bb281e509b5785f0be81d",
+  "sourceTree": "8633b66dab559527b1c3f52a8833222852eb7d73",
+  "builderSHA256": "02821e9cf4fcbbe8829ef9455944aceeae31cd0cd4b2cb54011b38f7327daac3",
   "files": {
     "assets/audio/broadcast-slum-proof-carrier.wav": {
       "sha256": "7d9eb892d074c17ee1047c33f3a4264eeac3d4f954c856ce35745a2a484a901c",
@@ -2758,8 +2758,8 @@
       "bytes": 1067994
     },
     "assets/mac-combat-frames/mac-combat-frames-v1.json": {
-      "sha256": "534989c6aa7222afc909b5a812493fc939eec2704d3bfba1a9540a07c0a4a773",
-      "bytes": 4460
+      "sha256": "6d940910c25462c7d50d46f5e0c2f1e7637109df5fbfecc1347ab06aa7b3ed11",
+      "bytes": 4563
     },
     "assets/mac-combat-frames/mac-frames-v1.json": {
       "sha256": "2220efc6400d0159d6b9a8dc805b9f332ae618932e6e8802f9e7d7c5ab64ac13",
@@ -2894,8 +2894,8 @@
       "bytes": 1374095
     },
     "assets/mac-street-dynamic/mac-modem-actions-v1.json": {
-      "sha256": "eb7333094018b32a0dae888ac03ab10de08f32c5ffddc8242c43bf10e9bef2fc",
-      "bytes": 19716
+      "sha256": "311af7684c2fd3d13d9da3c0e34c7b4e4c0a94c89c1a706783397d4fcb4ceb28",
+      "bytes": 608443
     },
     "assets/mac-street-dynamic/mac-run-v1.png": {
       "sha256": "711c9993b6d39b0ce1fbc49897f154618c9d0baafad796a4bb236b2f6d9d4378",
@@ -2906,12 +2906,16 @@
       "bytes": 1873034
     },
     "assets/mac-street-power/mac-street-power-v1.json": {
-      "sha256": "5beeee94efe18ebdd3cced1355fc40f6b72ac79b956a50930a9a752383911c9b",
-      "bytes": 15433
+      "sha256": "b26e58d1df7d02f630ad54d497fd6e059d62b40718caec30f56825ef5fe27e50",
+      "bytes": 19297
     },
     "assets/mac-street-power/street-blood-v1.png": {
       "sha256": "0e33d045cff4c4a8c2669c8993f3da67ed6e78bfe8fd14f36f009c12fda20ee7",
       "bytes": 1322818
+    },
+    "assets/mac-street-power/street-cars-side-v2.png": {
+      "sha256": "e3bfaf13c6d326727648294889b015711f2df2e25396836e5084c8b768fc23f2",
+      "bytes": 1843523
     },
     "assets/mac-street-power/street-cars-v1.png": {
       "sha256": "8a4bb7d98147fdf88b7cafe39ba268af7b557e601abad24015b3922a4b6d7224",
@@ -3429,6 +3433,10 @@
       "sha256": "c2b0a1dd066949d5d59305c3e6639dc1841961a869562e9266b61241ca096da6",
       "bytes": 38630
     },
+    "mac-equipment-review.html": {
+      "sha256": "a505aa511995e9000a29854fe096496187f8ff63d29d8ec41891ff68b21aef92",
+      "bytes": 9673
+    },
     "style.css": {
       "sha256": "9f80d363e38b774bd600f68e6530de7bdc9fe5ee20ce8b7411da7ea9a3611810",
       "bytes": 21237
@@ -3782,16 +3790,16 @@
       "bytes": 18076
     },
     "src/game/mac-combat-frames.js": {
-      "sha256": "55a7ab104da68038d1795c703fb0fa5454d8fc9a32b98748fa6a29c92a0175c7",
-      "bytes": 22803
+      "sha256": "f3170862c9b6813a5acfdd6ab836bd62852291c9c7388f538c9a3cffee07c856",
+      "bytes": 26157
     },
     "src/game/mac-combat-preview.js": {
-      "sha256": "62e8dee3ecbe1392313735f5164bc2afbd71087f8138a84f547b30c9e4547e6d",
-      "bytes": 57967
+      "sha256": "81c23ede29a05a97d17f227e76de9bfac15d2a0ca6bf5db4825f0bb7b7ba3ce0",
+      "bytes": 60492
     },
     "src/game/mac-street-combat.js": {
-      "sha256": "924e4a4dab9c8d8814fc58026da341b156b8993df5cf17cd07dcfae3a4346fd3",
-      "bytes": 82781
+      "sha256": "08235dca0dc552d294068720748a9316cb66df625ae20382d97518930492aa1c",
+      "bytes": 85389
     },
     "src/game/mac-street-story.js": {
       "sha256": "793e600459057ee76ba40df1dda5338c2af43469a5fced31babda8938f937834",
@@ -3903,9 +3911,9 @@
     }
   },
   "sourceMode": "working-tree runtime scripts; exact HEAD canonical asset blobs",
-  "canonicalAssetCount": 855,
+  "canonicalAssetCount": 856,
   "preservedOriginalCount": 21,
-  "assetBytes": 686283239,
+  "assetBytes": 688719456,
   "ownedFiles": [
     ".standalone-build.json",
     "assets/audio/broadcast-slum-proof-carrier.wav",
@@ -4635,6 +4643,7 @@
     "assets/mac-street-dynamic/mac-weapon-poses-v1.png",
     "assets/mac-street-power/mac-street-power-v1.json",
     "assets/mac-street-power/street-blood-v1.png",
+    "assets/mac-street-power/street-cars-side-v2.png",
     "assets/mac-street-power/street-cars-v1.png",
     "assets/mac-street-power/street-fixtures-v1.png",
     "assets/mac-street-power/street-powerups-v1.png",
@@ -4764,6 +4773,7 @@
     "assets/world-v3/buildings.webp",
     "assets/world-v3/far-background.webp",
     "index.html",
+    "mac-equipment-review.html",
     "sprites-manifest.json",
     "src/core/action-input.js",
     "src/core/fullscreen.js",

@@ -10,12 +10,14 @@ window.FILE_MANIFEST.push({
   // A six-zone unsaved city chapter. The host owns input, drawing, sound and
   // its frame loop. Feed elapsed milliseconds; no rhythm judgment gates actions.
   // Input is a complete sample: {move_x, move_y} in [-1,1] and jump/strike/
-  // guard/throw as {pressed, held}. Press edges survive until a simulation step.
+  // guard/throw/run as {pressed, held}. Press edges survive until a simulation step.
   // Ordinary Strike needs a fresh edge; a held Strike only repeats the bounded
   // pummel while an enemy is held. L/Throw holds context and release commits a
   // toss, never regrabbing on one uninterrupted hold. Guard's parry is a fresh edge,
   // not a repeated pressed flag while held. y/laneY is the feet's ground plane;
   // elevation is a separate positive height, so drawing feet uses y-elevation.
+  // Actual Run+Strike commits one grounded kick before an equipped weapon;
+  // Counter and Jump+Strike retain priority over that running commitment.
   const C = Object.freeze({
     version:5,worldWidth:20400,zoneWidth:3400,laneMin:780,laneMax:970,
     startX:200,startLaneY:880,deskX:20100,
@@ -30,7 +32,8 @@ window.FILE_MANIFEST.push({
     knockdownMs:360,pickupHeal:18,pickupReach:58,advanceEntryOffset:1800,
     runTapMs:280,runMultiplier:1.65,grabMaxMs:3000,pummelMaxMs:1000,
     strength:100,propReach:85,maxPickups:48,overdriveMs:10000,barrierMs:12000,impactMs:15000,
-    carryForward:68.665,carryElevation:139.644,propReleaseForward:73.907,propReleaseElevation:155.394
+    carryForward:68.665,carryElevation:139.644,propReleaseForward:73.907,propReleaseElevation:155.394,
+    carRecoilMs:420,carRecoilX:10,carBounceHeight:20,carRecoilRotation:.025
   });
   const STRIKES = Object.freeze([
     Object.freeze({kind:'jab',windupMs:90,activeMs:80,recoveryMs:155,reach:90,damage:12}),
@@ -39,19 +42,21 @@ window.FILE_MANIFEST.push({
   ]);
   const ATTACKS=Object.freeze({
     'step-strike':Object.freeze({kind:'step-strike',windupMs:110,activeMs:100,recoveryMs:210,reach:105,damage:15,rootSpeed:230}),
+    'running-kick':Object.freeze({kind:'running-kick',windupMs:85,activeMs:145,recoveryMs:245,reach:132,laneReach:48,
+      damage:24,rootSpeed:540,maxRootShift:125,launch:true,stunMs:500}),
     'air-kick':Object.freeze({kind:'air-kick',windupMs:60,activeMs:190,recoveryMs:180,reach:120,damage:18,hitHeight:150}),
     counter:Object.freeze({kind:'counter',windupMs:65,activeMs:105,recoveryMs:180,reach:104,damage:22,rootSpeed:100})
   });
   // Every weapon has its own contact rule, rather than eight skins for a jab.
   const WEAPONS=Object.freeze({
-    pipe:Object.freeze({kind:'pipe',name:'Pipe',charges:14,windupMs:100,activeMs:95,recoveryMs:170,reach:135,laneReach:40,damage:17}),
-    crowbar:Object.freeze({kind:'crowbar',name:'Crowbar',charges:12,windupMs:150,activeMs:110,recoveryMs:240,reach:122,laneReach:42,damage:21,shieldBreak:true,pull:45}),
-    'shock-baton':Object.freeze({kind:'shock-baton',name:'Shock Baton',charges:10,windupMs:100,activeMs:100,recoveryMs:240,reach:110,laneReach:40,damage:15,stunMs:900,chain:true}),
-    'energy-blade':Object.freeze({kind:'energy-blade',name:'Energy Blade',charges:12,windupMs:75,activeMs:130,recoveryMs:175,reach:152,laneReach:72,damage:18,shieldBreak:true}),
-    'gravity-hammer':Object.freeze({kind:'gravity-hammer',name:'Gravity Hammer',charges:7,windupMs:300,activeMs:140,recoveryMs:390,reach:145,laneReach:82,damage:28,launch:true,radial:true}),
-    'scatter-blaster':Object.freeze({kind:'scatter-blaster',name:'Scatter Blaster',charges:8,windupMs:130,activeMs:90,recoveryMs:300,reach:430,laneReach:32,damage:9,projectile:'scatter-bolt',muzzleForward:126.627,muzzleElevation:225.875}),
-    'coil-rifle':Object.freeze({kind:'coil-rifle',name:'Coil Rifle',charges:7,windupMs:240,activeMs:75,recoveryMs:310,reach:780,laneReach:22,damage:25,projectile:'coil-bolt',muzzleForward:161.433,muzzleElevation:224.717}),
-    'plasma-disc':Object.freeze({kind:'plasma-disc',name:'Plasma Disc',charges:8,windupMs:140,activeMs:85,recoveryMs:240,reach:380,laneReach:44,damage:19,projectile:'plasma-disc',muzzleForward:33.991,muzzleElevation:190.229})
+    pipe:Object.freeze({kind:'pipe',name:'Pipe',charges:14,windupMs:100,activeMs:95,recoveryMs:170,reach:135,laneReach:40,damage:17,propDamage:24}),
+    crowbar:Object.freeze({kind:'crowbar',name:'Crowbar',charges:12,windupMs:150,activeMs:110,recoveryMs:240,reach:122,laneReach:42,damage:21,propDamage:38,shieldBreak:true,pull:45}),
+    'shock-baton':Object.freeze({kind:'shock-baton',name:'Shock Baton',charges:10,windupMs:100,activeMs:100,recoveryMs:240,reach:110,laneReach:40,damage:15,propDamage:18,stunMs:900,chain:true}),
+    'energy-blade':Object.freeze({kind:'energy-blade',name:'Energy Blade',charges:12,windupMs:75,activeMs:130,recoveryMs:175,reach:152,laneReach:72,damage:18,propDamage:28,shieldBreak:true}),
+    'gravity-hammer':Object.freeze({kind:'gravity-hammer',name:'Gravity Hammer',charges:7,windupMs:300,activeMs:140,recoveryMs:390,reach:145,laneReach:82,damage:28,propDamage:64,launch:true,radial:true}),
+    'scatter-blaster':Object.freeze({kind:'scatter-blaster',name:'Scatter Blaster',charges:8,windupMs:130,activeMs:90,recoveryMs:300,reach:430,laneReach:32,damage:9,propDamage:10,projectile:'scatter-bolt',muzzleForward:131.285,muzzleElevation:221.319}),
+    'coil-rifle':Object.freeze({kind:'coil-rifle',name:'Coil Rifle',charges:7,windupMs:240,activeMs:75,recoveryMs:310,reach:780,laneReach:22,damage:25,propDamage:45,projectile:'coil-bolt',muzzleForward:169.160,muzzleElevation:223.345}),
+    'plasma-disc':Object.freeze({kind:'plasma-disc',name:'Plasma Disc',charges:8,windupMs:140,activeMs:85,recoveryMs:240,reach:380,laneReach:44,damage:19,propDamage:30,projectile:'plasma-disc',muzzleForward:35.780,muzzleElevation:190.229})
   });
   const GRAB_STRENGTH=Object.freeze({chitin_scuttler:45,psion_lancer:75,bile_spitter:40,prism_guard:120,rift_stalker:65,shock_mantid:110,null_regent:180});
   const ROLES = Object.freeze({
@@ -86,32 +91,33 @@ window.FILE_MANIFEST.push({
   const streetProp=(id,zoneId,kind,x,laneY,maxHp,drop='health')=>Object.freeze({id,zoneId,kind,x,laneY,maxHp,drop:drop?Object.freeze({kind:drop}):null,
     variant:kind==='car'?(id.includes('canal')?'van':'coupe'):null,
     bonusWeapon:kind==='car'?(id.includes('alley')?'crowbar':id.includes('market')?'shock-baton':id.includes('canal')?'scatter-blaster':'coil-rifle'):null,
-    width:kind==='car'?390:kind==='stall'?182:kind==='crate'?83.2:kind==='barrel'?72.8:80.6,
-    height:kind==='car'?(id.includes('canal')?227.5:175.5):kind==='stall'?299:kind==='crate'?104:kind==='barrel'?117:
-      kind==='terminal'?240.5:kind==='streetlight'?500:266.5,
+    width:kind==='car'?(id.includes('canal')?790:680):kind==='stall'?330.940171:kind==='crate'?161.330935:
+      kind==='barrel'?117.181529:kind==='terminal'?187.696629:kind==='streetlight'?338.361045:154.716981,
+    height:kind==='car'?(id.includes('canal')?284.083095:209.074627):kind==='stall'?320:kind==='crate'?150:kind==='barrel'?165:
+      kind==='terminal'?260:kind==='streetlight'?550:280,
     depth:kind==='car'?98.8:kind==='stall'?84.5:62.4,
     placement:['streetlight','terminal'].includes(kind)?'street-fixture':'ground',
     carryable:['crate','barrel'].includes(kind),weight:kind==='barrel'?60:kind==='crate'?40:999,targetable:!!maxHp});
   const STREET_PROPS=Object.freeze([
     streetProp('alley-health-crate','service-alley','crate',1140,832,24),
     streetProp('alley-exit-crate','service-alley','crate',2380,907,24),
-    streetProp('alley-car','service-alley','car',1540,945,88,'barrier'),
+    streetProp('alley-car','service-alley','car',1540,945,240,'barrier'),
     streetProp('alley-streetlight','service-alley','streetlight',2740,795,32,'overdrive'),
     streetProp('market-stall','night-market','stall',4580,880,40),
     streetProp('market-health-crate','night-market','crate',5780,815,24),
     streetProp('market-barrel','night-market','barrel',4070,940,28,'overdrive'),
-    streetProp('market-car','night-market','car',6080,940,96,'impact'),
+    streetProp('market-car','night-market','car',6080,940,260,'impact'),
     streetProp('market-relay','night-market','relay',6400,880,0,null),
     streetProp('transit-crate','transit-concourse','crate',7820,835,24),
     streetProp('transit-terminal','transit-concourse','terminal',8500,795,40,'barrier'),
     streetProp('transit-cargo','transit-concourse','crate',9410,940,30,'overdrive'),
     streetProp('canal-barrel','relay-canal','barrel',11020,835,28,'impact'),
-    streetProp('canal-car','relay-canal','car',11920,945,96),
+    streetProp('canal-car','relay-canal','car',11920,945,300),
     streetProp('canal-streetlight','relay-canal','streetlight',12820,795,36,'barrier'),
     streetProp('rooftop-crate','rooftop-relay','crate',14420,835,24,'overdrive'),
     streetProp('rooftop-terminal','rooftop-relay','terminal',15420,795,40,'impact'),
     streetProp('rooftop-barrel','rooftop-relay','barrel',16200,940,28),
-    streetProp('plaza-car','broadcast-plaza','car',17840,940,110,'barrier'),
+    streetProp('plaza-car','broadcast-plaza','car',17840,940,280,'barrier'),
     streetProp('plaza-crate','broadcast-plaza','crate',18820,820,24,'impact'),
     streetProp('plaza-streetlight','broadcast-plaza','streetlight',19400,795,36,'overdrive')
   ]);
@@ -201,7 +207,7 @@ window.FILE_MANIFEST.push({
         feet:gaitInitial(),transitionFrom:gaitInitial(),hitFeedback:null},
       enemies:[],projectiles:[],hitFx:[],events:[],nextFxId:1,nextProjectileId:1,
       props:STREET_PROPS.map(prop=>({...prop,hp:prop.maxHp,broken:false,heldBy:null,
-        launched:false,elevation:0,velocityZ:0,knockbackVx:0,launchAgeMs:0,bodyHitIds:[]})),pickups:WEAPON_PICKUPS.map(copy),nextPickupId:1,
+        launched:false,elevation:0,velocityZ:0,knockbackVx:0,launchAgeMs:0,bodyHitIds:[],recoil:null})),pickups:WEAPON_PICKUPS.map(copy),nextPickupId:1,
       relay:{available:false,restored:false,x:6400,laneY:880},
       impact:{remainingMs:0,strength:0,x:0,laneY:880},
       checkpoint:{zoneIndex:0,waveIndex:0,kills:0,completedWaves:0,clearedZones:[],
@@ -289,12 +295,17 @@ window.FILE_MANIFEST.push({
       state.impact={remainingMs:Math.max(state.impact.remainingMs,Math.min(C.maxImpactPauseMs,duration)),
         strength:Math.max(state.impact.strength,strength),x,laneY};
     }
-    function damageProp(prop,amount,cause){
+    function damageProp(prop,amount,cause,direction=Math.sign(prop.x-state.player.x)||state.player.facing){
       if(prop.broken||!prop.maxHp||prop.heldBy||prop.zoneId!==ZONES[state.zoneIndex].id)return;
+      amount=WEAPONS[cause]?.propDamage??amount;
       prop.hp=Math.max(0,prop.hp-amount);
-      emit('prop-hit',{id:prop.id,kind:prop.kind,x:prop.x,laneY:prop.laneY,damage:amount,hp:prop.hp,cause});
+      const strength=clamp(.3+amount/85,.35,1),heavy=amount>=24;
+      if(prop.kind==='car'&&prop.hp)prop.recoil={ageMs:0,lifeMs:C.carRecoilMs,remainingMs:C.carRecoilMs,
+        strength,direction:Math.sign(direction)||1,x:0,elevation:0,rotation:0};
+      emit('prop-hit',{id:prop.id,kind:prop.kind,x:prop.x,laneY:prop.laneY,damage:amount,hp:prop.hp,cause,
+        direction:Math.sign(direction)||1,heavy,recoilStrength:prop.recoil?.strength||0});
       if(!prop.hp){
-        prop.broken=true;prop.launched=false;prop.elevation=0;prop.velocityZ=0;
+        prop.broken=true;prop.launched=false;prop.elevation=0;prop.velocityZ=0;prop.recoil=null;
         const pickup=prop.drop?addPickup({...prop.drop,id:prop.id+'-'+prop.drop.kind,zoneId:prop.zoneId,x:prop.x,laneY:prop.laneY}):null;
         if(prop.bonusWeapon)addPickup({id:prop.id+'-weapon',kind:'weapon',weaponKind:prop.bonusWeapon,
           charges:WEAPONS[prop.bonusWeapon].charges,zoneId:prop.zoneId,x:prop.x+38,laneY:prop.laneY});
@@ -381,7 +392,7 @@ window.FILE_MANIFEST.push({
     function damageEnemy(e,amount,direction,cause,stunMs,speed,launch=false){
       if(!live(e))return;
       const rule=ROLES[e.kind],shield=rule.shieldReduction&&!e.shieldBrokenMs&&direction===-e.facing&&
-        ['strike','step-strike','air-kick','pipe','gravity-hammer','scatter-blaster','coil-rifle','plasma-disc'].includes(cause);
+        ['strike','step-strike','running-kick','air-kick','pipe','gravity-hammer','scatter-blaster','coil-rifle','plasma-disc'].includes(cause);
       if(shield){amount=Math.max(1,Math.round(amount*(1-rule.shieldReduction)));fx('shield',e.x,e.laneY);}
       if(rule.shieldReduction&&['counter','throw','crowbar','energy-blade','shock-baton'].includes(cause)){
         e.shieldBrokenMs=2600;emit('shield-broken',{id:e.id,durationMs:e.shieldBrokenMs,cause});
@@ -389,7 +400,7 @@ window.FILE_MANIFEST.push({
       e.hp=Math.max(0,e.hp-amount);e.flashMs=150;
       e.hitFeedback={kind:cause,ageMs:0,lifeMs:320,bloodColor:e.bloodColor,bloodHex:e.bloodHex,damage:amount,direction,shielded:!!shield};
       const armoredBoss=rule.boss&&e.hp&&['windup','active'].includes(e.phase)&&
-        (['strike','step-strike','air-kick'].includes(cause)||!!WEAPONS[cause]);
+        (['strike','step-strike','running-kick','air-kick'].includes(cause)||!!WEAPONS[cause]);
       if(!armoredBoss){
         e.knockbackVx=direction*speed;e.attackDone=true;phase(e,e.hp?'stunned':'defeated');
         e.stunMs=rule.boss?Math.min(stunMs,420):stunMs;
@@ -414,16 +425,18 @@ window.FILE_MANIFEST.push({
 
     function startStrike(step) {
       const p=state.player,counter=p.counterMs>0,air=p.elevation>0||p.velocityZ>0;
-      const weapon=!counter&&!air&&p.weapon?WEAPONS[p.weapon.kind]:null;
-      let selected=counter?ATTACKS.counter:air?ATTACKS['air-kick']:weapon||
+      const running=!counter&&!air&&p.running;
+      const weapon=!counter&&!air&&!running&&p.weapon?WEAPONS[p.weapon.kind]:null;
+      let selected=counter?ATTACKS.counter:air?ATTACKS['air-kick']:running?ATTACKS['running-kick']:weapon||
         (step===1&&Math.abs(input.move_x)>.45?ATTACKS['step-strike']:STRIKES[step-1]);
       if(p.powerups.overdriveMs)selected={...selected,windupMs:selected.windupMs*.75,activeMs:selected.activeMs,recoveryMs:selected.recoveryMs*.75};
-      if(counter||air||weapon)step=1;
+      if(counter||air||running||weapon)step=1;
       p.attack={step,kind:selected.kind,rule:selected,elapsedMs:0,facing:p.facing,
-        hitIds:[],propHitIds:[],counter,airborne:air,rootShift:0,weaponKind:weapon?.kind||null,fired:false,spent:false,pulseDone:false};
+        hitIds:[],propHitIds:[],counter,airborne:air,running,rootShift:0,weaponKind:weapon?.kind||null,fired:false,spent:false,pulseDone:false};
       p.counterMs = 0; p.guarding = false; p.parryMs = 0;
       p.queuedStrike = false; p.comboMs = 0;
       stopRun('strike');emit('strike',{step,kind:selected.kind,weaponKind:weapon?.kind||null,counter,airborne:air,facing:p.facing});
+      if(running)emit('running-kick',{x:p.x,laneY:p.laneY,facing:p.facing,damage:selected.damage,maxRootShift:selected.maxRootShift});
     }
     function startPummel(){
       const p=state.player,g=p.grapple,total=245;
@@ -529,7 +542,7 @@ window.FILE_MANIFEST.push({
         if(heldEnemy()){if(!p.attack)startPummel();}
         else if(!p.carry&&!p.attack) startStrike(p.comboMs > 0 ? p.comboNext : 1);
         else if(p.attack&&(strikePhase(p.attack)==='recovery'||impactBufferedStrike&&strikePhase(p.attack)==='active')&&
-          p.attack.step<3&&!p.attack.airborne&&!p.attack.counter&&!p.attack.weaponKind)p.queuedStrike=true;
+          p.attack.step<3&&!p.attack.airborne&&!p.attack.counter&&!p.attack.running&&!p.attack.weaponKind)p.queuedStrike=true;
       }
       if (pressed.throw && !p.attack && !p.throwMs && !holding() && !p.hurtMs && !p.throwCooldownMs && p.elevation === 0)beginGrip();
       if(holding()&&!input.throw.held)beginRelease('release');
@@ -540,7 +553,8 @@ window.FILE_MANIFEST.push({
       if(p.attack?.kind==='pummel')mobility=0;
       const magnitude = Math.max(1, Math.hypot(input.move_x, input.move_y));
       const rootCommit=p.attack?.rule.rootSpeed&&strikePhase(p.attack)!=='recovery';
-      const rootMotion=rootCommit?p.attack.facing*p.attack.rule.rootSpeed*sec:0;
+      const remainingRoot=p.attack?.rule.maxRootShift===undefined?Infinity:Math.max(0,p.attack.rule.maxRootShift-Math.abs(p.attack.rootShift));
+      const rootMotion=rootCommit?p.attack.facing*Math.min(p.attack.rule.rootSpeed*sec,remainingRoot):0;
       p.x+=(rootCommit?0:input.move_x/magnitude*C.moveSpeed*mobility*sec)+rootMotion+p.knockbackVx*sec;
       if(rootCommit)p.attack.rootShift+=rootMotion;
       p.laneY = clamp(p.laneY + input.move_y / magnitude * C.laneSpeed * mobility * sec, C.laneMin, C.laneMax);
@@ -571,7 +585,7 @@ window.FILE_MANIFEST.push({
             if (live(e) && !e.grappledBy&&!e.launched&&!e.knockdownMs&&!attack.hitIds.includes(e.id) && distance >= (rule.radial?-rule.reach:-12) && distance <= rule.reach &&
               Math.abs(e.laneY - p.laneY) <= (rule.laneReach??C.laneReach)) {
               attack.hitIds.push(e.id);
-              const cause=attack.weaponKind|| (attack.counter?'counter':attack.kind==='air-kick'?'air-kick':attack.kind==='step-strike'?'step-strike':'strike');
+              const cause=attack.weaponKind|| (attack.counter?'counter':['air-kick','running-kick','step-strike'].includes(attack.kind)?attack.kind:'strike');
               damageEnemy(e,rule.damage,rule.radial?Math.sign(e.x-p.x)||attack.facing:attack.facing,cause,rule.stunMs|| (attack.step===3||attack.kind==='air-kick'?420:230),
                 rule.launch?460:attack.step===3?240:attack.kind==='air-kick'?210:95,!!rule.launch||attack.step===3);
               if(rule.pull&&e.hp&&!e.launched)e.x=toward(e.x,p.x+attack.facing*65,rule.pull);
@@ -583,13 +597,13 @@ window.FILE_MANIFEST.push({
             const distance=(prop.x-p.x)*attack.facing;
             if(!prop.broken&&!prop.heldBy&&prop.maxHp&&distance>=-12-prop.width/2&&distance<=rule.reach+prop.width/2&&
               Math.abs(prop.laneY-p.laneY)<=(rule.laneReach??C.laneReach)&&!attack.propHitIds.includes(prop.id)){
-              attack.propHitIds.push(prop.id);damageProp(prop,rule.damage,attack.weaponKind||'strike');
+              attack.propHitIds.push(prop.id);damageProp(prop,rule.damage,attack.weaponKind|| (attack.running?'running-kick':'strike'),attack.facing);
             }
           }
           }
         }
         if (readyAt(attack.elapsedMs, rule.windupMs + rule.activeMs + rule.recoveryMs)) {
-          const chainable=attack.step<3&&!attack.airborne&&!attack.counter&&!attack.weaponKind&&attack.kind!=='pummel',queued=p.queuedStrike&&chainable;
+          const chainable=attack.step<3&&!attack.airborne&&!attack.counter&&!attack.running&&!attack.weaponKind&&attack.kind!=='pummel',queued=p.queuedStrike&&chainable;
           p.attack = null; p.queuedStrike = false;
           p.comboNext=chainable?attack.step+1:1;
           p.comboMs=chainable?C.comboWindowMs:0;
@@ -836,7 +850,7 @@ window.FILE_MANIFEST.push({
           for(const contact of contacts){if(item.hitIds.length+item.propHitIds.length>=item.maxHits)break;
             const target=contact.target;
             if(contact.type==='enemy'){item.hitIds.push(target.id);damageEnemy(target,item.damage,direction,item.weaponKind,320,130);}
-            else{item.propHitIds.push(target.id);damageProp(target,item.damage,item.weaponKind);}
+            else{item.propHitIds.push(target.id);damageProp(target,item.damage,item.weaponKind,item.facing);}
             if(item.hitIds.length+item.propHitIds.length>=item.maxHits&&item.kind!=='plasma-disc')item.ageMs=item.lifeMs;}
           if(item.x<z.startX+20||item.x>z.endX-20)item.ageMs=item.lifeMs;
           continue;
@@ -858,6 +872,14 @@ window.FILE_MANIFEST.push({
     }
     function tickProps(dt){
       const sec=dt/1000,z=ZONES[state.zoneIndex];
+      for(const prop of state.props)if(prop.recoil&&prop.zoneId===z.id){
+        const r=prop.recoil;r.ageMs=Math.min(r.lifeMs,r.ageMs+dt);r.remainingMs=Math.max(0,r.lifeMs-r.ageMs);
+        if(!r.remainingMs||prop.broken){prop.recoil=null;continue;}
+        const t=r.ageMs/r.lifeMs,envelope=(1-t)*(1-t),wave=Math.sin(t*Math.PI*3);
+        r.x=r.direction*C.carRecoilX*r.strength*wave*envelope;
+        r.elevation=C.carBounceHeight*r.strength*Math.abs(wave)*envelope;
+        r.rotation=r.direction*C.carRecoilRotation*r.strength*wave*envelope;
+      }
       for(const prop of state.props){if(!prop.launched||prop.broken||prop.zoneId!==z.id)continue;
         const before=prop.x;prop.launchAgeMs+=dt;prop.x=clamp(prop.x+prop.knockbackVx*sec,z.startX+40,z.endX-40);
         prop.elevation=Math.max(0,prop.elevation+prop.velocityZ*sec-.5*C.launchGravity*sec*sec);prop.velocityZ-=C.launchGravity*sec;
@@ -868,7 +890,7 @@ window.FILE_MANIFEST.push({
           emit('body-impact',{id:prop.id,targetId:victim.id,kind:victim.kind,damage,x:victim.x,laneY:victim.laneY,direction,bloodColor:victim.bloodColor,heavy:true});}
         for(const target of state.props){if(target.id===prop.id||target.broken||target.heldBy||!target.maxHp||target.zoneId!==z.id||prop.bodyHitIds.includes(target.id))continue;
           if(target.x<Math.min(before,prop.x)-(target.width+prop.width)/2||target.x>Math.max(before,prop.x)+(target.width+prop.width)/2||Math.abs(target.laneY-prop.laneY)>65)continue;
-          prop.bodyHitIds.push(target.id);damageProp(target,40,'prop-impact');
+          prop.bodyHitIds.push(target.id);damageProp(target,40,'prop-impact',Math.sign(prop.knockbackVx)||1);
           emit('body-impact',{id:prop.id,targetId:target.id,kind:target.kind,damage:40,x:target.x,laneY:target.laneY,heavy:true});}
         if(!prop.elevation&&prop.velocityZ<0){prop.launched=false;prop.velocityZ=0;prop.knockbackVx=0;
           emit('prop-land',{id:prop.id,kind:prop.kind,x:prop.x,laneY:prop.laneY});damageProp(prop,prop.maxHp,'landing');}
@@ -894,7 +916,7 @@ window.FILE_MANIFEST.push({
           if(prop.broken||prop.heldBy||!prop.maxHp||prop.zoneId!==ZONES[state.zoneIndex].id||body.bodyHitIds.includes(prop.id))continue;
           if(prop.x<Math.min(before.x,body.x)-C.bodyRadius-prop.width/2||prop.x>Math.max(before.x,body.x)+C.bodyRadius+prop.width/2||
             Math.abs(prop.laneY-body.laneY)>C.bodyLaneReach)continue;
-          body.bodyHitIds.push(prop.id);damageProp(prop,40,'body-impact');
+          body.bodyHitIds.push(prop.id);damageProp(prop,40,'body-impact',Math.sign(body.x-before.x)||Math.sign(body.knockbackVx)||-body.facing);
           emit('body-impact',{id:body.id,targetId:prop.id,kind:prop.kind,damage:40,x:prop.x,laneY:prop.laneY,heavy:true});
         }
       }
@@ -934,6 +956,7 @@ window.FILE_MANIFEST.push({
         }
       }else if(state.waveState==='zone-clear'&&state.zoneIndex+1<ZONES.length&&p.x>=ZONES[state.zoneIndex+1].entryX){
         releaseInputs('zone-exit');
+        for(const prop of state.props)prop.recoil=null;
         state.zoneIndex++;state.waveIndex=0;spawnWave(true);
         const next=ZONES[state.zoneIndex];emit('zone-enter',{zoneId:next.id,name:next.name,index:next.index,arrival:next.arrival});
       }
@@ -984,7 +1007,7 @@ window.FILE_MANIFEST.push({
       const p = state.player;
       return p.hp <= 0 ? 'defeated' : p.hurtMs ? 'hurt' : p.throwMs ? p.carry?'carry-throw':'throw'
         : heldEnemy()?p.attack?.kind==='pummel'?'grab-pummel':'grab-hold':p.carry?'carry'
-        : p.attack?.weaponKind?p.attack.rule.projectile?p.attack.rule.projectile==='plasma-disc'?'weapon-disc':'weapon-fire':p.attack.rule.launch?'weapon-heavy':'weapon-melee'
+        : p.attack?.running?'running-kick':p.attack?.weaponKind?p.attack.rule.projectile?p.attack.rule.projectile==='plasma-disc'?'weapon-disc':'weapon-fire':p.attack.rule.launch?'weapon-heavy':'weapon-melee'
         : p.attack ? 'strike' : p.guarding ? Math.hypot(p.vx,p.laneVelocity)>.01?'guard-creep':'guard' : p.elevation > 0 ? 'jump'
         :p.running?'run': input.move_x || input.move_y ? 'walk' : 'idle';
     }
@@ -1012,7 +1035,8 @@ window.FILE_MANIFEST.push({
       const attack=p.attack?{step:p.attack.step,kind:p.attack.kind,phase:attackPhase,elapsedMs:p.attack.elapsedMs,
         timing:{windupMs:rule.windupMs,activeMs:rule.activeMs,recoveryMs:rule.recoveryMs},
         reach:rule.reach,damage:rule.damage,hitHeight:rule.hitHeight??C.hitHeight,rootShift:p.attack.rootShift,
-        facing:p.attack.facing,counter:p.attack.counter,airborne:p.attack.airborne,weaponKind:p.attack.weaponKind||null,
+        facing:p.attack.facing,counter:p.attack.counter,airborne:p.attack.airborne,running:!!p.attack.running,
+        maxRootShift:rule.maxRootShift??null,weaponKind:p.attack.weaponKind||null,
         phaseProgress:clamp((p.attack.elapsedMs-phaseStart)/phaseDuration,0,1),
         normalizedProgress:clamp(p.attack.elapsedMs/attackDuration,0,1),remainingMs:Math.max(0,attackDuration-p.attack.elapsedMs)}:null;
       const grapple=p.grapple?{...p.grapple,releaseAgeMs:p.grapple.releaseElapsedMs,
@@ -1072,9 +1096,9 @@ window.FILE_MANIFEST.push({
         interactAvailable:canInteract(),interactLabel:'Restore relay',
         move: {enabled: alive, held: !!(input.move_x || input.move_y),running:p.running},
         jump: {label: 'Jump', enabled: alive, ready: alive && !busy && p.elevation === 0, held: input.jump.held},
-        strike: {label:heldEnemy()?'Pummel':p.counterMs>0?'Counter':p.elevation>0||p.velocityZ>0?'Air Kick':p.weapon?.name|| (nextStep===1&&Math.abs(input.move_x)>.45?'Step Strike':'Strike'),enabled:alive&&!p.carry,
+        strike: {label:heldEnemy()?'Pummel':p.counterMs>0?'Counter':p.elevation>0||p.velocityZ>0?'Air Kick':p.running||p.attack?.running?'Run Kick':p.weapon?.name|| (nextStep===1&&Math.abs(input.move_x)>.45?'Step Strike':'Strike'),enabled:alive&&!p.carry,
           ready: alive && !p.throwMs && !p.carry && !p.hurtMs && (heldEnemy()?p.grapple.pummelRemainingMs>=245&&!p.attack:(!p.attack ||
-            strikePhase(p.attack)==='recovery'&&p.attack.step<3&&!p.attack.airborne&&!p.attack.counter&&!p.attack.weaponKind)),held:input.strike.held},
+            strikePhase(p.attack)==='recovery'&&p.attack.step<3&&!p.attack.airborne&&!p.attack.counter&&!p.attack.running&&!p.attack.weaponKind)),held:input.strike.held},
         guard: {label: 'Guard', enabled: alive, ready: alive && !busy && p.elevation === 0,
           held: input.guard.held, parryMs: p.parryMs, counterMs: p.counterMs},
         throw: {label:holding()?'Throw':target?.type==='enemy'?'Grab':target?.type==='prop'?'Lift':target?.type==='weapon'?'Pick up':'Grab', enabled: alive && (!!target||!!grip),
@@ -1089,6 +1113,7 @@ window.FILE_MANIFEST.push({
       state.zoneIndex=cp.zoneIndex;state.waveIndex=cp.waveIndex;state.kills=cp.kills;
       state.completedWaves=cp.completedWaves;state.clearedZones=cp.clearedZones;
       if(cp.props)state.props=copy(cp.props);if(cp.pickups)state.pickups=copy(cp.pickups);if(cp.relay)state.relay=copy(cp.relay);
+      for(const prop of state.props)prop.recoil=null;
       if(cp.weapon)state.player.weapon=copy(cp.weapon);if(cp.powerups)state.player.powerups=copy(cp.powerups);
       if(cp.nextPickupId)state.nextPickupId=cp.nextPickupId;
       state.player.x=cp.x;state.player.laneY=cp.laneY;accumulator=0;

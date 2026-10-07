@@ -38,6 +38,36 @@ const frameRoot = "assets/mac-combat-frames/";
 const dynamicRoot = "assets/mac-street-dynamic/";
 const dynamicSheets = {dyn_guard:"mac-guard-v1.png",dyn_run:"mac-run-v1.png",
   dyn_hold:"mac-hold-carry-v1.png",dyn_weapon:"mac-weapon-poses-v1.png"};
+const heldWeaponKinds = ['pipe','crowbar','shock-baton','energy-blade','gravity-hammer','scatter-blaster','coil-rifle','plasma-disc'];
+function checkNativePolygons(polygons, rect) {
+  assert(Array.isArray(polygons), 'Native overlap regions must be polygon arrays');
+  for (const polygon of polygons) {
+    assert(Array.isArray(polygon) && polygon.length >= 3, 'Native overlap polygon needs an area');
+    let area = 0;
+    for (let i = 0; i < polygon.length; i++) {
+      const point = polygon[i], next = polygon[(i + 1) % polygon.length];
+      assert(Number.isFinite(point?.x) && Number.isFinite(point?.y) &&
+        point.x >= 0 && point.y >= 0 && point.x <= rect.width && point.y <= rect.height,
+        'Native overlap polygon escapes its source crop');
+      area += point.x * next.y - next.x * point.y;
+    }
+    assert(Math.abs(area) > .01, 'Native overlap polygon has no area');
+  }
+}
+function checkItemBindings(entry, rect) {
+  assert.deepEqual(Object.keys(entry.itemBindings || {}).sort(), [...heldWeaponKinds].sort(),
+    'Each equipped character cel must register all eight weapons');
+  const power = JSON.parse(read('assets/mac-street-power/mac-street-power-v1.json'));
+  for (const [kind, binding] of Object.entries(entry.itemBindings)) {
+    assert(Number.isFinite(binding.gripAnchor?.x) && Number.isFinite(binding.gripAnchor?.y) &&
+      binding.gripAnchor.x >= 0 && binding.gripAnchor.x <= rect.width &&
+      binding.gripAnchor.y >= 0 && binding.gripAnchor.y <= rect.height, 'Invalid native weapon grip');
+    assert(Number.isFinite(binding.weaponAngle) && Math.abs(binding.weaponAngle) <= Math.PI);
+    assert(['front','behind'].includes(binding.itemLayer), 'Invalid held item layer');
+    checkNativePolygons(binding.handOcclusion, rect);
+    if (Object.hasOwn(binding, 'itemFrontRegions')) checkNativePolygons(binding.itemFrontRegions, power.cells['weapon_' + kind].source);
+  }
+}
 function frameAssets() {
   const bankName = frameRoot + "mac-combat-frames-v1.json", bank = JSON.parse(read(bankName));
   assert.equal(bank.schemaVersion, 1);
@@ -68,6 +98,10 @@ function frameAssets() {
       assert.equal(supplemental.sheets.length, 4);
       assert.deepEqual(supplemental.sheets.map(sheet => sheet.id).sort(), Object.keys(dynamicSheets).sort());
       assert.equal(supplemental.frames.length, 22);
+      for (const frame of supplemental.frames) checkItemBindings(frame, frame.source);
+      const baseFrames = new Map(registration.frames.map(frame => [frame.id, frame]));
+      assert.equal(Object.keys(supplemental.baseGripAnchors).length, 42);
+      for (const [frame, entry] of Object.entries(supplemental.baseGripAnchors)) checkItemBindings(entry, baseFrames.get(frame).source);
       files.add(supplementalName);
       for (const sheet of supplemental.sheets) {
         assert.equal(sheet.sourceImage, dynamicRoot + dynamicSheets[sheet.id]);
@@ -88,7 +122,7 @@ function frameAssets() {
 const createPowerHash = data => createHash('sha256').update(data).digest('hex');
 const macPowerRoot = 'assets/mac-street-power/';
 const macPowerSheets = {props:'street-props-v1.png',blood:'street-blood-v1.png',equipment:'street-weapons-v1.png',
-  cars:'street-cars-v1.png',fixtures:'street-fixtures-v1.png',cores:'street-powerups-v1.png'};
+  cars:'street-cars-side-v2.png',fixtures:'street-fixtures-v1.png',cores:'street-powerups-v1.png'};
 const macPowerCells = ['crate_intact','crate_cracked','crate_broken','stall_intact','stall_cracked','stall_broken','relay_off','relay_on','pickup_health',
   ...['red','green','purple'].flatMap(color => ['impact','heavy','floor'].map(kind => 'blood_' + color + '_' + kind)),
   ...['pipe','crowbar','shock-baton','energy-blade','gravity-hammer','scatter-blaster','coil-rifle','plasma-disc'].map(kind=>'weapon_'+kind),
@@ -116,12 +150,13 @@ function powerArtFiles(bytes, files) {
     assert(r.x+r.width<=image.width && r.y+r.height<=image.height, 'Native power crop escapes atlas: '+id);
     assert(Number.isFinite(cell.pivot.x) && cell.pivot.x>=0 && cell.pivot.x<=r.width);
     assert(Number.isFinite(cell.pivot.y) && cell.pivot.y>=0 && cell.pivot.y<=r.height);
-    // The 500-world streetlight includes <=20 world units of native clear crop padding.
-    assert(Number.isFinite(cell.displayHeight) && cell.displayHeight>0 && cell.displayHeight<=(id.startsWith('fixture_streetlight_')?520:500));
+    // The enlarged 550-world streetlight retains its native clear crop padding.
+    assert(Number.isFinite(cell.displayHeight) && cell.displayHeight>0 && cell.displayHeight<=(id.startsWith('fixture_streetlight_')?580:500));
     for(const key of ['grip','muzzle']) if(Object.hasOwn(cell,key)) {
       assert(Number.isFinite(cell[key]?.x)&&cell[key].x>=0&&cell[key].x<=r.width,'Invalid native weapon '+key+': '+id);
       assert(Number.isFinite(cell[key]?.y)&&cell[key].y>=0&&cell[key].y<=r.height,'Invalid native weapon '+key+': '+id);
     }
+    if (Object.hasOwn(cell, 'itemFrontRegions')) checkNativePolygons(cell.itemFrontRegions, r);
     let visible=0, clear=0, clipped=false;
     for(let y=0;y<r.height;y++) for(let x=0;x<r.width;x++) {
       const alpha=image.pixels[((r.y+y)*image.width+r.x+x)*4+3];
@@ -135,6 +170,10 @@ function powerArtFiles(bytes, files) {
       Math.min(r.y+r.height,old.source.y+old.source.height)<=Math.max(r.y,old.source.y),'Power crops overlap: '+id);
     crops.push(cell);
   }
+  const historicalCar = macPowerRoot + 'street-cars-v1.png';
+  assert.equal(createPowerHash(bytes(historicalCar)), '8a4bb7d98147fdf88b7cafe39ba268af7b557e601abad24015b3922a4b6d7224',
+    'Historical car PNG must remain unchanged');
+  selected.add(historicalCar);
   assert.deepEqual(Object.keys(files).filter(name=>name.startsWith(macPowerRoot)).sort(),[...selected].sort());
   return selected;
 }
@@ -847,7 +886,7 @@ test("System Override launches the standalone adapter first with no host SDK or 
   for (const name of runtimeNames) {
     const pinnedVendorName = name.startsWith(vendorRoot) ? name.slice(vendorRoot.length) : null;
     const pinnedBasisName = name.startsWith(basisRoot) ? name.slice(basisRoot.length) : null;
-    assert(["index.html", "style.css", "sprites-manifest.json"].includes(name) || /^src\/.+\.js$/.test(name) ||
+    assert(["index.html", "mac-equipment-review.html", "style.css", "sprites-manifest.json"].includes(name) || /^src\/.+\.js$/.test(name) ||
       pinnedVendorName && Object.hasOwn(vendorHashes, pinnedVendorName) ||
       pinnedBasisName && Object.hasOwn(basisHashes, pinnedBasisName),
       `Unexpected public runtime or review file: ${name}`);
@@ -879,6 +918,21 @@ test("System Override launches the standalone adapter first with no host SDK or 
   for (const match of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
     if (!/\bsrc\s*=/.test(match[1])) new vm.Script(match[2], { filename: "index.html inline script" });
   }
+});
+
+test("Equipment review ships the same production pose renderer with local scripts", () => {
+  const files = marker().files, html = read('mac-equipment-review.html');
+  localFile('mac-equipment-review.html', files);
+  const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)];
+  const sources = [];
+  for (const match of scripts) {
+    const source = match[1].match(/\bsrc=["']([^"']+)["']/i);
+    if (source) { localFile(source[1], files); sources.push(source[1]); }
+    else new vm.Script(match[2], {filename:'mac-equipment-review.html inline script'});
+  }
+  assert(sources.includes('src/game/mac-combat-frames.js'));
+  assert(sources.includes('src/game/mac-combat-preview.js'));
+  assert(html.includes('drawMacPose'), 'Review must use the production pose drawing method');
 });
 
 test("System Override's actual sprite, presentation, music and ship registries resolve local package files", async (t) => {

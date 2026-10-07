@@ -19,10 +19,10 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
   const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, value));
   const COMBAT_CUES = { 'enemy-hit': 'hit', 'parry': 'perfect', 'block': 'guard', 'player-hit': 'damage',
     'enemy-defeated': 'defeat', 'enemy-tell': 'warning', 'jump': 'jump', 'land': 'land', 'throw-release': 'metal',
-    'body-impact': 'stomp', 'body-land': 'land', 'prop-break': 'tear', 'pickup': 'pickup', 'relay-restored': 'restore',
+    'body-impact': 'stomp', 'body-land': 'land', 'prop-hit': 'metal', 'prop-break': 'tear', 'pickup': 'pickup', 'relay-restored': 'restore',
     'grab-start': 'metal', 'pummel': 'hit', 'prop-pickup': 'metal', 'prop-throw': 'metal',
     'weapon-equipped': 'pickup', 'weapon-spent': 'metal', 'weapon-fired': 'discharge',
-    'powerup': 'pickup', 'barrier-block': 'guard', 'impact-pulse': 'stomp' };
+    'powerup': 'pickup', 'barrier-block': 'guard', 'impact-pulse': 'stomp', 'running-kick': 'jump' };
   const WEAPON_KINDS = ['pipe','crowbar','shock-baton','energy-blade','gravity-hammer','scatter-blaster','coil-rifle','plasma-disc'];
   const POWER_CELLS = ['crate_intact','crate_cracked','crate_broken','stall_intact','stall_cracked','stall_broken',
     'relay_off','relay_on','pickup_health',...['red','green','purple'].flatMap(color => ['impact','heavy','floor'].map(kind => `blood_${color}_${kind}`)),
@@ -35,6 +35,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
     { id: 'run', title: 'PICK UP SPEED', text: input => `${input.run}. Let go to stop running; Guard slows you to a careful step.`, target: 1 },
     { id: 'strike', title: 'MAKE IT A COMBO', text: input => `Stop moving. Tap ${input.strike} three times to finish the chain and knock enemies down.`, target: 3 },
     { id: 'air', title: 'TAKE IT UPSTAIRS', text: input => `${input.jump}, then ${input.strike} in the air for an Air Kick.`, target: 1 },
+    { id: 'running-kick', title: 'BRING THE MOMENTUM', text: input => `Run, then tap ${input.strike} for a Run Kick. It launches enemies and saves your weapon's uses.`, target: 1 },
     { id: 'guard', title: 'TURN THEIR HIT AROUND', text: input => `Hold ${input.guard} to block. Tap just before impact, then ${input.strike} to Counter.`, target: 1 },
     { id: 'weapon', title: 'ARM YOURSELF', text: input => `Get close to a weapon and tap ${input.throw}. Use ${input.strike}; every weapon has limited uses.`, target: 1 },
     { id: 'grab', title: 'GET A GRIP', text: input => `Hold ${input.throw} near an enemy or crate. Strong enemies break free sooner. Hits make you drop your hold.`, target: 1 },
@@ -146,10 +147,14 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       if (names.some(name=>name.startsWith('car_van_')) && ['intact','cracked','broken'].some(state=>!manifest.cells['car_van_'+state])) throw new Error('mac-street-power-variant-incomplete');
       for (const name of names) {
         const cell = manifest.cells[name], sheet = sheets.get(cell?.sheet), source = cell?.source, pivot = cell?.pivot;
-        if (!sheet || !source || !['x','y','width','height'].every(key => Number.isInteger(source[key])) || source.x < 0 || source.y < 0 || source.width <= 0 || source.height <= 0 || source.x + source.width > sheet.dimensions.width || source.y + source.height > sheet.dimensions.height || !Number.isFinite(pivot?.x) || !Number.isFinite(pivot?.y) || pivot.x < 0 || pivot.y < 0 || pivot.x > source.width || pivot.y > source.height || !Number.isFinite(cell.displayHeight) || cell.displayHeight <= 0 || cell.displayHeight > 512) throw new Error('mac-street-power-cell-invalid: ' + name);
+        if (!sheet || !source || !['x','y','width','height'].every(key => Number.isInteger(source[key])) || source.x < 0 || source.y < 0 || source.width <= 0 || source.height <= 0 || source.x + source.width > sheet.dimensions.width || source.y + source.height > sheet.dimensions.height || !Number.isFinite(pivot?.x) || !Number.isFinite(pivot?.y) || pivot.x < 0 || pivot.y < 0 || pivot.x > source.width || pivot.y > source.height || !Number.isFinite(cell.displayHeight) || cell.displayHeight <= 0 || cell.displayHeight > (name.startsWith('fixture_streetlight_')?580:500)) throw new Error('mac-street-power-cell-invalid: ' + name);
         if (!/^[a-z0-9_-]+$/i.test(name)) throw new Error('mac-street-power-cell-invalid: ' + name);
         for (const key of ['grip','muzzle']) if (cell[key] && (!Number.isFinite(cell[key].x) || !Number.isFinite(cell[key].y) || cell[key].x < 0 || cell[key].y < 0 || cell[key].x > source.width || cell[key].y > source.height)) throw new Error('mac-street-power-'+key+'-invalid: ' + name);
         if (WEAPON_KINDS.some(kind=>name==='weapon_'+kind) && !cell.grip) throw new Error('mac-street-power-grip-invalid: ' + name);
+        if (cell.itemFrontRegions) {
+          const regions=cell.itemFrontRegions;
+          if (!Array.isArray(regions) || !regions.length || regions.length>16 || regions.some(polygon=>!Array.isArray(polygon) || polygon.length<3 || polygon.length>32 || polygon.some(point=>!Number.isFinite(point?.x) || !Number.isFinite(point?.y) || point.x<0 || point.y<0 || point.x>source.width || point.y>source.height) || Math.abs(polygon.reduce((area,point,index)=>{const next=polygon[(index+1)%polygon.length];return area+point.x*next.y-next.x*point.y;},0))<.001)) throw new Error('mac-street-power-item-region-invalid: ' + name);
+        }
         for (const otherName of names.slice(0, names.indexOf(name))) {
           const other = manifest.cells[otherName]; if (other.sheet !== cell.sheet) continue;
           const a = source, b = other.source;
@@ -377,7 +382,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       const add = (id, count=1) => { t.progress[id] = Math.min(LESSONS.find(lesson => lesson.id === id).target, t.progress[id] + count); };
       if (event.type === 'player-move') add('move');
       if (event.type === 'run-start') add('run');
-      if (event.type === 'strike') { if (!event.weaponKind && event.kind !== 'pummel') t.progress.strike = Math.max(t.progress.strike,event.kind === 'finisher' ? 3 : event.kind === 'cross' ? 2 : 1); if (event.kind === 'air-kick') add('air'); }
+      if (event.type === 'strike') { if (['jab','cross','finisher'].includes(event.kind)) t.progress.strike = Math.max(t.progress.strike,event.kind === 'finisher' ? 3 : event.kind === 'cross' ? 2 : 1); if (event.kind === 'air-kick') add('air'); if (event.kind === 'running-kick') add('running-kick'); }
       if (event.type === 'parry' || event.type === 'block') add('guard');
       if (event.type === 'weapon-equipped') add('weapon');
       if (event.type === 'grab-start' || event.type === 'prop-pickup') add('grab');
@@ -454,7 +459,41 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       const pivot = attachment?.grip && cell.grip ? cell.grip : cell.pivot;
       ctx.save(); ctx.globalAlpha = clamp(alpha,0,1); ctx.translate(x,y); ctx.scale(facing<0?-1:1,1);
       if (attachment?.angle) ctx.rotate(attachment.angle);
+      if (attachment?.regions?.length) {
+        ctx.beginPath();
+        for (const polygon of attachment.regions) {
+          polygon.forEach((point,index)=>(index ? ctx.lineTo : ctx.moveTo).call(ctx,(point.x-pivot.x)*scale,(point.y-pivot.y)*scale));
+          ctx.closePath();
+        }
+        ctx.clip();
+      }
       ctx.drawImage(sheet.image,crop.x,crop.y,crop.width,crop.height,-pivot.x*scale,-pivot.y*scale,crop.width*scale,crop.height*scale); ctx.restore();
+    },
+    drawMacPose(ctx, art, pose, {x,feet,height=260,facing=1,alpha=1,weapon=null,carried=null}) {
+      const frame=pose.frame,bodyScale=height/pose.standingHeight,direction=facing<0?-1:1;
+      const item=carried ? this.propCell(carried) : weapon ? `weapon_${weapon.kind}` : null;
+      const grip=pose.gripAnchor;
+      if (item && !grip) throw new Error('mac-native-held-item-anchor-unavailable: ' + frame.id);
+      const handX=item ? x+direction*(grip.x-frame.feetPivot.x)*bodyScale : x;
+      const handY=item ? feet-frame.baselineLift*height/260+(grip.y-frame.feetPivot.y)*bodyScale : feet;
+      const drawItem=regions=>this.drawPowerCell(ctx,item,handX,handY,1,alpha,direction,{grip:true,angle:pose.weaponAngle,regions});
+      if (item && pose.itemLayer==='behind') drawItem();
+      B.MacCombatFrames.draw(ctx,art,pose,x,feet,height,direction,alpha);
+      if (item) {
+        if (pose.itemLayer!=='behind') drawItem();
+        else if ((pose.itemFrontRegions || this.powerArt.cells[item].itemFrontRegions)?.length) drawItem(pose.itemFrontRegions || this.powerArt.cells[item].itemFrontRegions);
+        if (pose.handOcclusion?.length) {
+          // Redraw the original complete cel through its registered palm mask.
+          // Every crop, pixel scale and actor transform remains identical.
+          ctx.save();ctx.beginPath();
+          for (const polygon of pose.handOcclusion) {
+            polygon.forEach((point,index)=>(index ? ctx.lineTo : ctx.moveTo).call(ctx,x+direction*(point.x-frame.feetPivot.x)*bodyScale,feet-frame.baselineLift*height/260+(point.y-frame.feetPivot.y)*bodyScale));
+            ctx.closePath();
+          }
+          ctx.clip();B.MacCombatFrames.draw(ctx,art,pose,x,feet,height,direction,alpha);ctx.restore();
+        }
+      }
+      return {handX,handY,item,pose};
     },
     propCell(prop) {
       const kind = prop.kind === 'car' && prop.variant === 'van' && this.powerArt.cells.car_van_intact ? 'car_van' : ['streetlight','terminal'].includes(prop.kind) ? `fixture_${prop.kind}` : prop.kind;
@@ -619,7 +658,10 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
         .sort((a,b)=>a.value.laneY-b.value.laneY || Number(!['prop','relay','pickup'].includes(a.type))-Number(!['prop','relay','pickup'].includes(b.type)));
       for (const actor of actors) {
         const p = actor.value, x = p.x - camera;
-        if (actor.type === 'prop') { this.drawPowerCell(ctx,this.propCell(p),x,p.laneY-(p.elevation || 0),1,1,p.facing || Math.sign(p.knockbackVx) || 1); continue; }
+        if (actor.type === 'prop') {
+          const recoil=p.recoil;
+          this.drawPowerCell(ctx,this.propCell(p),x+(recoil?.x || 0),p.laneY-(p.elevation || 0)-(recoil?.elevation || 0),1,1,p.facing || Math.sign(p.knockbackVx) || 1,{angle:recoil?.rotation || 0});continue;
+        }
         if (actor.type === 'relay') { this.drawPowerCell(ctx,p.restored?'relay_on':'relay_off',x,p.laneY); continue; }
         if (actor.type === 'projectile') { this.drawProjectile(ctx,p,camera); continue; }
         if (actor.type === 'pickup') {
@@ -639,18 +681,9 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
           // using the existing result age, reaching the lane before down holds.
           const downStartsMs = art.compiled.clips.defeat.frames.at(-1).startMs;
           const elevation = pose.action === 'defeat' ? p.elevation * (1 - clamp(pose.clipTimeMs / Math.max(1, downStartsMs), 0, 1)) : p.elevation;
-          B.MacCombatFrames.draw(ctx, art, pose, x, p.laneY - elevation, 260, p.facing, p.invulnerableMs > 0 ? .86 : 1);
           const carried = p.carry && (s.props || []).find(prop=>prop.id===p.carry.id && prop.heldBy==='mac');
           const heldWeapon = p.weapon && !p.grapple && !p.carry ? p.weapon : null;
-          if (heldWeapon || carried) {
-            const grip = pose.gripAnchor;
-            if (!grip) throw new Error('mac-native-held-item-anchor-unavailable: ' + pose.frame.id);
-            const bodyScale = 260/pose.standingHeight, facing = p.facing < 0 ? -1 : 1;
-            const handX = x+facing*(grip.x-pose.frame.feetPivot.x)*bodyScale;
-            const handY = p.laneY-elevation-pose.frame.baselineLift+(grip.y-pose.frame.feetPivot.y)*bodyScale;
-            if (carried) this.drawPowerCell(ctx,this.propCell(carried),handX,handY,1,1,facing,{grip:true,angle:pose.weaponAngle});
-            else this.drawPowerCell(ctx,`weapon_${heldWeapon.kind}`,handX,handY,1,1,facing,{grip:true,angle:pose.weaponAngle});
-          }
+          this.drawMacPose(ctx,art,pose,{x,feet:p.laneY-elevation,height:260,facing:p.facing,alpha:p.invulnerableMs>0?.86:1,weapon:heldWeapon,carried});
         } else {
           const art = this.frameArt.get(p.kind);
           const height = p.kind === 'null_regent' ? 335 : 260;
@@ -686,7 +719,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       if (!this.assets.has(background?.background) && this.status === 'playing') {
         ctx.fillStyle = '#101e2df5'; ctx.fillRect(690, 430, 540, 90); this.text(ctx, `Entering ${zone.title}…`, 960, 457, 25, '#eec871', 'center');
       }
-      if (!B.TouchControls?.enabled) { const prompt=this.controlPrompts(); this.text(ctx, `${B.GamepadUI?.connected?'Left stick':'WASD / arrows'}: move · double-tap: run · ${prompt.jump}: jump · ${prompt.strike}: strike · ${prompt.guard}: guard · hold / release ${prompt.throw}: grab / throw · ${prompt.inspect}: link / talk · ${B.GamepadUI?.connected?'Start':'P'}: pause`, 960, 1045, 20, '#eec871', 'center'); }
+      if (!B.TouchControls?.enabled) { const prompt=this.controlPrompts(); this.text(ctx, `${B.GamepadUI?.connected?'Left stick':'WASD / arrows'}: move · double-tap: run · ${prompt.jump}: jump · ${prompt.strike}: strike / Run Kick · ${prompt.guard}: guard · hold / release ${prompt.throw}: grab / throw · ${prompt.inspect}: link · ${B.GamepadUI?.connected?'Start':'P'}: pause`, 960, 1045, 20, '#eec871', 'center'); }
       if (s.relay?.available && !s.relay.restored && this.getControlState().interactAvailable) {
         ctx.fillStyle='#101e2deb';ctx.fillRect(710,245,500,68); this.text(ctx,B.TouchControls?.enabled?'Tap Link to restore the relay':`${this.controlPrompts().inspect}: restore the relay`,960,264,23,'#83dfce','center');
       }

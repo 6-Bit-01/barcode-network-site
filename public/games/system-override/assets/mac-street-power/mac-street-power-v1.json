@@ -30,11 +30,11 @@
     },
     {
       "id": "cars",
-      "sourceImage": "assets/mac-street-power/street-cars-v1.png",
-      "sourceSHA256": "8a4bb7d98147fdf88b7cafe39ba268af7b557e601abad24015b3922a4b6d7224",
+      "sourceImage": "assets/mac-street-power/street-cars-side-v2.png",
+      "sourceSHA256": "e3bfaf13c6d326727648294889b015711f2df2e25396836e5084c8b768fc23f2",
       "dimensions": {
-        "width": 1536,
-        "height": 1024
+        "width": 2172,
+        "height": 724
       }
     },
     {
@@ -69,7 +69,7 @@
         "x": 160.0,
         "y": 290
       },
-      "displayHeight": 109.90071,
+      "displayHeight": 160.791367,
       "grip": {
         "x": 160.0,
         "y": 290
@@ -87,7 +87,7 @@
         "x": 161.5,
         "y": 285
       },
-      "displayHeight": 108.056738
+      "displayHeight": 158.093525
     },
     "crate_broken": {
       "sheet": "props",
@@ -101,7 +101,7 @@
         "x": 182.5,
         "y": 192
       },
-      "displayHeight": 73.758865
+      "displayHeight": 107.913669
     },
     "stall_intact": {
       "sheet": "props",
@@ -115,7 +115,7 @@
         "x": 191.0,
         "y": 364
       },
-      "displayHeight": 312.438202
+      "displayHeight": 339.145299
     },
     "stall_cracked": {
       "sheet": "props",
@@ -129,7 +129,7 @@
         "x": 184.5,
         "y": 371
       },
-      "displayHeight": 318.317416
+      "displayHeight": 345.527066
     },
     "stall_broken": {
       "sheet": "props",
@@ -143,7 +143,7 @@
         "x": 183.0,
         "y": 256
       },
-      "displayHeight": 221.730337
+      "displayHeight": 240.683761
     },
     "relay_off": {
       "sheet": "props",
@@ -157,7 +157,7 @@
         "x": 111.5,
         "y": 382
       },
-      "displayHeight": 277.90107
+      "displayHeight": 294.339623
     },
     "relay_on": {
       "sheet": "props",
@@ -171,7 +171,7 @@
         "x": 112.0,
         "y": 382
       },
-      "displayHeight": 277.90107
+      "displayHeight": 294.339623
     },
     "pickup_health": {
       "sheet": "props",
@@ -329,6 +329,13 @@
       "grip": {
         "x": 106,
         "y": 254
+      },
+      "gripMeasurement": {
+        "nativeSheetPoint": {
+          "x": 129,
+          "y": 323
+        },
+        "contact": "cloth-wrapped shaft"
       }
     },
     "weapon_crowbar": {
@@ -345,8 +352,15 @@
       },
       "displayHeight": 119.342939,
       "grip": {
-        "x": 98,
-        "y": 256
+        "x": 96,
+        "y": 261
+      },
+      "gripMeasurement": {
+        "nativeSheetPoint": {
+          "x": 566,
+          "y": 335
+        },
+        "contact": "wrapped shaft below bend"
       }
     },
     "weapon_shock-baton": {
@@ -363,8 +377,15 @@
       },
       "displayHeight": 103.631285,
       "grip": {
-        "x": 84,
-        "y": 276
+        "x": 85,
+        "y": 275
+      },
+      "gripMeasurement": {
+        "nativeSheetPoint": {
+          "x": 1002,
+          "y": 341
+        },
+        "contact": "insulated handle"
       }
     },
     "weapon_energy-blade": {
@@ -383,6 +404,13 @@
       "grip": {
         "x": 89,
         "y": 295
+      },
+      "gripMeasurement": {
+        "nativeSheetPoint": {
+          "x": 1435,
+          "y": 355
+        },
+        "contact": "hilt below guard"
       }
     },
     "weapon_gravity-hammer": {
@@ -399,8 +427,15 @@
       },
       "displayHeight": 133.575,
       "grip": {
-        "x": 116,
-        "y": 263
+        "x": 132,
+        "y": 276
+      },
+      "gripMeasurement": {
+        "nativeSheetPoint": {
+          "x": 158,
+          "y": 720
+        },
+        "contact": "rubber shaft below heavy head"
       }
     },
     "weapon_scatter-blaster": {
@@ -417,12 +452,39 @@
       },
       "displayHeight": 78.04878,
       "grip": {
-        "x": 65,
-        "y": 182
+        "x": 49,
+        "y": 178
       },
       "muzzle": {
         "x": 379,
         "y": 96
+      },
+      "itemFrontRegions": [
+        [
+          {
+            "x": 108,
+            "y": 0
+          },
+          {
+            "x": 392,
+            "y": 0
+          },
+          {
+            "x": 392,
+            "y": 256
+          },
+          {
+            "x": 108,
+            "y": 256
+          }
+        ]
+      ],
+      "gripMeasurement": {
+        "nativeSheetPoint": {
+          "x": 511,
+          "y": 735
+        },
+        "contact": "pistol trigger handle"
       }
     },
     "weapon_coil-rifle": {
@@ -439,12 +501,39 @@
       },
       "displayHeight": 73.482587,
       "grip": {
-        "x": 122,
-        "y": 157
+        "x": 100,
+        "y": 165
       },
       "muzzle": {
         "x": 496,
         "y": 95
+      },
+      "itemFrontRegions": [
+        [
+          {
+            "x": 175,
+            "y": 0
+          },
+          {
+            "x": 513,
+            "y": 0
+          },
+          {
+            "x": 513,
+            "y": 211
+          },
+          {
+            "x": 175,
+            "y": 211
+          }
+        ]
+      ],
+      "gripMeasurement": {
+        "nativeSheetPoint": {
+          "x": 975,
+          "y": 742
+        },
+        "contact": "pistol trigger handle"
       }
     },
     "weapon_plasma-disc": {
@@ -462,92 +551,99 @@
       "displayHeight": 54.407407,
       "grip": {
         "x": 71,
-        "y": 161
+        "y": 179
+      },
+      "gripMeasurement": {
+        "nativeSheetPoint": {
+          "x": 1460,
+          "y": 748
+        },
+        "contact": "near rim pinch"
       }
     },
     "car_intact": {
       "sheet": "cars",
       "source": {
-        "x": 29,
-        "y": 203,
-        "width": 497,
-        "height": 239
+        "x": 21,
+        "y": 116,
+        "width": 682,
+        "height": 216
       },
       "pivot": {
-        "x": 249.5,
-        "y": 234
+        "x": 341.0,
+        "y": 211
       },
-      "displayHeight": 183.163755
+      "displayHeight": 219.223881
     },
     "car_cracked": {
       "sheet": "cars",
       "source": {
-        "x": 526,
-        "y": 204,
-        "width": 491,
-        "height": 238
+        "x": 727,
+        "y": 115,
+        "width": 687,
+        "height": 217
       },
       "pivot": {
-        "x": 245.5,
-        "y": 233
+        "x": 343.5,
+        "y": 212
       },
-      "displayHeight": 182.39738
+      "displayHeight": 220.238806
     },
     "car_broken": {
       "sheet": "cars",
       "source": {
-        "x": 1028,
-        "y": 220,
-        "width": 497,
-        "height": 244
+        "x": 1439,
+        "y": 112,
+        "width": 713,
+        "height": 233
       },
       "pivot": {
-        "x": 248.5,
-        "y": 239
+        "x": 356.5,
+        "y": 228
       },
-      "displayHeight": 186.995633
+      "displayHeight": 236.477612
     },
     "car_van_intact": {
       "sheet": "cars",
       "source": {
-        "x": 28,
-        "y": 540,
-        "width": 490,
-        "height": 306
+        "x": 20,
+        "y": 391,
+        "width": 708,
+        "height": 261
       },
       "pivot": {
-        "x": 245.5,
-        "y": 300
+        "x": 354.0,
+        "y": 256
       },
-      "displayHeight": 235.983051
+      "displayHeight": 295.401146
     },
     "car_van_cracked": {
       "sheet": "cars",
       "source": {
-        "x": 530,
-        "y": 543,
-        "width": 486,
-        "height": 302
+        "x": 735,
+        "y": 391,
+        "width": 708,
+        "height": 262
       },
       "pivot": {
-        "x": 243.0,
-        "y": 297
+        "x": 354.0,
+        "y": 257
       },
-      "displayHeight": 232.898305
+      "displayHeight": 296.532951
     },
     "car_van_broken": {
       "sheet": "cars",
       "source": {
-        "x": 1024,
-        "y": 548,
-        "width": 501,
-        "height": 313
+        "x": 1456,
+        "y": 391,
+        "width": 697,
+        "height": 265
       },
       "pivot": {
-        "x": 249.5,
-        "y": 308
+        "x": 348.5,
+        "y": 260
       },
-      "displayHeight": 241.381356
+      "displayHeight": 299.928367
     },
     "barrel_intact": {
       "sheet": "fixtures",
@@ -561,7 +657,7 @@
         "x": 118.5,
         "y": 321
       },
-      "displayHeight": 121.471338,
+      "displayHeight": 171.305732,
       "grip": {
         "x": 118.5,
         "y": 321
@@ -579,7 +675,7 @@
         "x": 117.5,
         "y": 311
       },
-      "displayHeight": 117.745223
+      "displayHeight": 166.050955
     },
     "barrel_broken": {
       "sheet": "fixtures",
@@ -593,7 +689,7 @@
         "x": 184.5,
         "y": 206
       },
-      "displayHeight": 78.993631
+      "displayHeight": 111.401274
     },
     "fixture_streetlight_intact": {
       "sheet": "fixtures",
@@ -607,7 +703,7 @@
         "x": 135.5,
         "y": 426
       },
-      "displayHeight": 511.011876
+      "displayHeight": 564.370546
     },
     "fixture_streetlight_cracked": {
       "sheet": "fixtures",
@@ -621,7 +717,7 @@
         "x": 136.0,
         "y": 422
       },
-      "displayHeight": 505.097387
+      "displayHeight": 557.83848
     },
     "fixture_streetlight_broken": {
       "sheet": "fixtures",
@@ -635,7 +731,7 @@
         "x": 191.0,
         "y": 173
       },
-      "displayHeight": 211.738717
+      "displayHeight": 233.847981
     },
     "fixture_terminal_intact": {
       "sheet": "fixtures",
@@ -649,7 +745,7 @@
         "x": 135.5,
         "y": 361
       },
-      "displayHeight": 247.255618
+      "displayHeight": 267.303371
     },
     "fixture_terminal_cracked": {
       "sheet": "fixtures",
@@ -663,7 +759,7 @@
         "x": 134.5,
         "y": 363
       },
-      "displayHeight": 249.282303
+      "displayHeight": 269.494382
     },
     "fixture_terminal_broken": {
       "sheet": "fixtures",
@@ -677,7 +773,7 @@
         "x": 141.5,
         "y": 363
       },
-      "displayHeight": 248.606742
+      "displayHeight": 268.764045
     },
     "pickup_overdrive": {
       "sheet": "cores",
@@ -764,5 +860,75 @@
       "displayHeight": 37.069892
     }
   },
-  "dynamicScaleVersion": 1
+  "dynamicScaleVersion": 2,
+  "attachmentSchema": 1,
+  "scaleMeasurements": {
+    "actorVisibleHeight": 260,
+    "solidAlphaThreshold": 192,
+    "props": [
+      {
+        "kind": "crate",
+        "visibleHeight": 150,
+        "visibleWidth": 161.330935,
+        "uniformNativeDensity": 0.539568345323741
+      },
+      {
+        "kind": "barrel",
+        "visibleHeight": 165,
+        "visibleWidth": 117.181529,
+        "uniformNativeDensity": 0.5254777070063694
+      },
+      {
+        "kind": "fixture_terminal",
+        "visibleHeight": 260,
+        "visibleWidth": 187.696629,
+        "uniformNativeDensity": 0.7303370786516854
+      },
+      {
+        "kind": "fixture_streetlight",
+        "visibleHeight": 550,
+        "visibleWidth": 338.361045,
+        "uniformNativeDensity": 1.3064133016627077
+      },
+      {
+        "kind": "stall",
+        "visibleHeight": 320,
+        "visibleWidth": 330.940171,
+        "uniformNativeDensity": 0.9116809116809117
+      },
+      {
+        "kind": "relay",
+        "visibleHeight": 280,
+        "visibleWidth": 154.716981,
+        "uniformNativeDensity": 0.7547169811320755
+      }
+    ],
+    "cars": [
+      {
+        "kind": "car",
+        "visibleWidth": 680,
+        "visibleHeight": 209.074627,
+        "uniformNativeDensity": 1.0149253731343284,
+        "sourceSolidBounds": [
+          7,
+          5,
+          677,
+          211
+        ]
+      },
+      {
+        "kind": "car_van",
+        "visibleWidth": 790,
+        "visibleHeight": 284.083095,
+        "uniformNativeDensity": 1.1318051575931232,
+        "sourceSolidBounds": [
+          5,
+          5,
+          703,
+          256
+        ]
+      }
+    ],
+    "rule": "Uniform native family density, unchanged aspect, measured solid artwork; crop padding is not physical height."
+  }
 }

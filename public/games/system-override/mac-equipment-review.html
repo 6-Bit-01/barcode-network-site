@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mac · Equipment review</title>
+  <style>
+    :root{color-scheme:dark;font-family:system-ui,sans-serif;background:#09121d;color:#efe6d2}*{box-sizing:border-box}body{margin:0;padding:24px;max-width:1600px;margin-inline:auto}h1{font-size:28px;margin:0 0 8px}p{color:#b9c5d0;line-height:1.5}a{color:#88dbcb}header{margin-bottom:22px}.controls{position:sticky;top:0;z-index:1;padding:14px;background:#101f2ef2;border:1px solid #31495d;border-radius:12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}label{display:flex;gap:8px;align-items:center}select,button,a.play{min-height:44px;padding:9px 14px;border:1px solid #476079;border-radius:8px;background:#1a2d40;color:#f0e8d5;font:inherit}a.play{text-decoration:none;margin-left:auto}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-block:18px}article{border:1px solid #30455a;border-radius:12px;overflow:hidden;background:#122130}h2{margin:0;padding:14px 18px;font-size:18px}.pair{display:grid;grid-template-columns:1fr 1fr}canvas{display:block;width:100%;height:auto;background:#182938}small{display:block;color:#9cb3c6;padding:8px 18px 14px}.props{margin-top:26px}.props canvas{background:#182938;border:1px solid #30455a;border-radius:12px}#status{color:#8eddc8}@media(max-width:900px){body{padding:14px}.grid{grid-template-columns:1fr}}@media(max-width:480px){.pair{grid-template-columns:1fr}a.play{margin-left:0}}
+  </style>
+</head>
+<body>
+  <header><h1>Mac’s equipment</h1><p>Inspect each weapon in both directions, then compare scenery with Mac at the same scale. These still poses use the game’s drawing method and unchanged native artwork.</p></header>
+  <div class="controls"><label>Pose <select id="pose"></select></label><label>Scenery <select id="prop"></select></label><label>Placement <select id="placement"><option value="floor">On the floor</option><option value="carry">Lifted crate / barrel</option><option value="release">Throw handoff</option></select></label><a class="play" href="index.html?preview=mac-firstslice&amp;revision=grip2">Play Mac’s chapter</a></div>
+  <p id="status" role="status">Loading registered artwork…</p>
+  <main><div id="equipment-grid" class="grid"></div><section class="props"><h2>Street proportions</h2><canvas id="scenery" width="1600" height="780" aria-label="Mac and selected street scenery at the same scale"></canvas></section></main>
+  <script src="src/game/mac-street-combat.js"></script>
+  <script src="src/game/mac-combat-frames.js"></script>
+  <script src="src/game/mac-combat-preview.js"></script>
+  <script id="equipment-review">
+  (function(B){
+    'use strict';
+    const weapons=['pipe','crowbar','shock-baton','energy-blade','gravity-hammer','scatter-blaster','coil-rifle','plasma-disc'];
+    const phases=['windup','active','recovery'];
+    const scenes=[
+      {id:'idle',title:'Idle',action:'idle'},
+      ...[0,.28,.55,.8].map((stride,index)=>({id:'walk-'+index,title:'Walk · '+(index+1),action:'walk',stride})),
+      {id:'guard',title:'Guard',action:'guard'},
+      ...[0,.55].map((stride,index)=>({id:'guard-walk-'+index,title:'Guard step · '+(index+1),action:'guard-creep',stride})),
+      ...[0,.28,.55,.8].map((stride,index)=>({id:'run-'+index,title:'Run · '+(index+1),action:'run',stride})),
+      ...phases.map(phase=>({id:'weapon-'+phase,title:'Weapon · '+phase,action:'weapon',phase})),
+      ...phases.map(phase=>({id:'running-kick-'+phase,title:'Run Kick · '+phase,action:'running-kick',phase})),
+      ...phases.map(phase=>({id:'air-kick-'+phase,title:'Air Kick · '+phase,action:'air-kick',phase})),
+      ...phases.map(phase=>({id:'counter-'+phase,title:'Counter · '+phase,action:'counter',phase})),
+      {id:'jump-rise',title:'Jump · rise',action:'jump',velocity:330,elevation:100},
+      {id:'jump-fall',title:'Jump · fall',action:'jump',velocity:-330,elevation:100},
+      {id:'landing',title:'Landing',action:'idle',landingAgeMs:35}
+    ];
+    function playerFor(kind,scene,facing=1){
+      const player=B.MacStreetCombat.create().getSnapshot().player,rule=B.MacStreetCombat.weapons[kind];
+      const moving=['walk','guard-creep','run'].includes(scene.action),speed=scene.action==='run'?429:scene.action==='guard-creep'?57.2:moving?260:0;
+      Object.assign(player,{hp:100,hurtMs:0,invulnerableMs:0,facing,elevation:scene.elevation||0,velocityZ:scene.velocity||0,running:scene.action==='run',guarding:['guard','guard-creep'].includes(scene.action),weapon:{kind,name:rule.name,charges:rule.charges,maxCharges:rule.charges}});
+      let action=scene.action;
+      if(action==='weapon')action=rule.projectile?rule.projectile==='plasma-disc'?'weapon-disc':'weapon-fire':rule.launch?'weapon-heavy':'weapon-melee';
+      const attackKind=scene.action==='weapon'?kind:['running-kick','air-kick','counter'].includes(scene.action)?scene.action:null;
+      player.attack=attackKind?{kind:attackKind,phase:scene.phase,phaseProgress:.5,weaponKind:scene.action==='weapon'?kind:null,running:scene.action==='running-kick'}:null;
+      if(scene.action==='air-kick')player.elevation=100;
+      player.animation={action,phase:scene.phase||action,ageMs:50,motion:{speed,stridePhase:scene.stride||0,velocityZ:player.velocityZ,elevation:player.elevation}};
+      return player;
+    }
+    function drawWeapon(ctx,kind,scene,facing,{x=420,feet=390,height=260}={}){
+      const P=B.MacCombatPreview,art=P.frameArt.get('mac'),player=playerFor(kind,scene,facing);
+      const pose=B.MacCombatFrames.sample(player,{player:true,compiled:art.compiled,supplemental:art.supplemental,landingAgeMs:scene.landingAgeMs});
+      return P.drawMacPose(ctx,art,pose,{x,feet:feet-player.elevation,height,facing,weapon:player.weapon});
+    }
+    function drawProp(ctx,name,state='floor',{x=900,macX=220,feet=680,facing=1}={}){
+      const P=B.MacCombatPreview,art=P.frameArt.get('mac'),player=playerFor('pipe',scenes[0],facing),kind=name.startsWith('crate_')?'crate':name.startsWith('barrel_')?'barrel':null;
+      player.weapon=null;
+      const held=kind&&state!=='floor';
+      if(held){player.carry={id:'review-prop',kind,elapsedMs:5000,phase:state==='release'?'release':'hold',releaseAgeMs:state==='release'?140:0};player.animation.action=state==='release'?'carry-throw':'carry';}
+      const pose=B.MacCombatFrames.sample(player,{player:true,compiled:art.compiled,supplemental:art.supplemental});
+      if(!held)P.drawPowerCell(ctx,name,x,feet);
+      return P.drawMacPose(ctx,art,pose,{x:held?x:macX,feet,height:260,facing,carried:held?{kind,hp:1,maxHp:1,broken:false}:null});
+    }
+    function floor(ctx,width,height,feet){ctx.fillStyle='#182938';ctx.fillRect(0,0,width,height);ctx.strokeStyle='#577083';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(0,feet);ctx.lineTo(width,feet);ctx.stroke();}
+    B.MacEquipmentReview={weapons,scenes,playerFor,drawWeapon,drawProp,floor};
+    if(typeof document==='undefined'||!document.getElementById('equipment-grid'))return;
+    const poseSelect=document.getElementById('pose'),propSelect=document.getElementById('prop'),placementSelect=document.getElementById('placement'),grid=document.getElementById('equipment-grid');
+    for(const scene of scenes){const option=document.createElement('option');option.value=scene.id;option.textContent=scene.title;poseSelect.append(option);}
+    const props=['car_intact','car_cracked','car_broken','car_van_intact','car_van_cracked','car_van_broken','crate_intact','crate_cracked','crate_broken','barrel_intact','barrel_cracked','barrel_broken','stall_intact','relay_off','fixture_terminal_intact','fixture_streetlight_intact'];
+    for(const name of props){const option=document.createElement('option');option.value=name;option.textContent=name.replaceAll('_',' ');propSelect.append(option);}
+    const cards=[];
+    for(const kind of weapons){const card=document.createElement('article'),title=document.createElement('h2'),pair=document.createElement('div'),caption=document.createElement('small');title.textContent=B.MacStreetCombat.weapons[kind].name;pair.className='pair';
+      const canvases=[-1,1].map(facing=>{const canvas=document.createElement('canvas');canvas.width=840;canvas.height=480;canvas.setAttribute('aria-label',title.textContent+(facing<0?' facing left':' facing right'));pair.append(canvas);return{canvas,facing};});
+      card.append(title,pair,caption);grid.append(card);cards.push({kind,canvases,caption});}
+    function redraw(){const scene=scenes.find(item=>item.id===poseSelect.value);
+      for(const card of cards){const ids=[];for(const{canvas,facing}of card.canvases){const ctx=canvas.getContext('2d');floor(ctx,canvas.width,canvas.height,390);const placed=drawWeapon(ctx,card.kind,scene,facing);ids.push(placed.pose.frame.id);}card.caption.textContent=scene.title+' · left / right';}
+      const canvas=document.getElementById('scenery'),ctx=canvas.getContext('2d');floor(ctx,canvas.width,canvas.height,680);drawProp(ctx,propSelect.value,placementSelect.value);}
+    poseSelect.addEventListener('change',redraw);propSelect.addEventListener('change',redraw);placementSelect.addEventListener('change',redraw);
+    B.MacCombatPreview.prepare().then(()=>{for(const option of [...propSelect.options])if(!B.MacCombatPreview.powerArt.cells[option.value])option.remove();redraw();document.getElementById('status').textContent='All eight weapons loaded. Choose a pose to inspect the grip.';}).catch(error=>{document.getElementById('status').textContent='Artwork unavailable: '+error.message;});
+  })(window.BARCODE=window.BARCODE||{});
+  </script>
+</body>
+</html>

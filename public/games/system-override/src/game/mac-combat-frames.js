@@ -24,6 +24,38 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
   const name = value => typeof value === 'string' && /^[a-zA-Z0-9_.-]+$/.test(value);
   const point = value => value && number(value.x) && number(value.y);
   const hash = value => typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value);
+  const WEAPONS=Object.freeze(['pipe','crowbar','shock-baton','energy-blade','gravity-hammer','scatter-blaster','coil-rifle','plasma-disc']);
+
+  function polygons(value,source,label) {
+    if(value===undefined)return null;
+    need(Array.isArray(value)&&value.length<=4,'invalid polygon list '+label);
+    return Object.freeze(value.map(polygon=>{
+      need(Array.isArray(polygon)&&polygon.length>=3&&polygon.length<=16,'invalid native polygon '+label);
+      for(const p of polygon)need(point(p)&&p.x>=0&&p.x<=source.width&&p.y>=0&&p.y<=source.height,
+        'native polygon outside crop '+label);
+      const area=Math.abs(polygon.reduce((sum,p,i)=>{const q=polygon[(i+1)%polygon.length];return sum+p.x*q.y-q.x*p.y;},0))/2;
+      need(area>1,'empty native polygon '+label);
+      return Object.freeze(polygon.map(p=>Object.freeze({x:p.x,y:p.y})));
+    }));
+  }
+
+  function attachmentMetadata(item,source,label) {
+    const masks=polygons(item.handOcclusion,source,label),bindings=Object.create(null);
+    if(item.itemBindings!==undefined) {
+      need(item.itemBindings&&typeof item.itemBindings==='object'&&!Array.isArray(item.itemBindings),'invalid item bindings '+label);
+      for(const [kind,binding] of Object.entries(item.itemBindings)) {
+        need(WEAPONS.includes(kind),'unknown item binding '+label+'/'+kind);
+        const grip=binding?.gripAnchor,angle=binding?.weaponAngle;
+        need(point(grip)&&grip.x>=0&&grip.x<=source.width&&grip.y>=0&&grip.y<=source.height,'invalid individual item grip '+label+'/'+kind);
+        need(number(angle)&&Math.abs(angle)<=Math.PI,'invalid individual item angle '+label+'/'+kind);
+        need(['front','behind'].includes(binding.itemLayer),'invalid item layer '+label+'/'+kind);
+        const handOcclusion=polygons(binding.handOcclusion,source,label+'/'+kind);
+        need(handOcclusion&&handOcclusion.length>0,'missing individual native hand mask '+label+'/'+kind);
+        bindings[kind]=Object.freeze({gripAnchor:Object.freeze({...grip}),weaponAngle:angle,itemLayer:binding.itemLayer,handOcclusion});
+      }
+    }
+    return {...(masks?{handOcclusion:masks}:{}),...(Object.keys(bindings).length?{itemBindings:Object.freeze(bindings)}:{})};
+  }
 
   function requiredClips(kind) {
     need(kind==='mac'||Object.prototype.hasOwnProperty.call(STYLES,kind),'unknown actor '+kind);
@@ -81,7 +113,8 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
       frames[item.id]=Object.freeze({id:item.id,sheet:sheetId,sourceImage:sheet.sourceImage,sheetDimensions:sheet.dimensions,
         standingHeight:sheet.standingHeight,baselineLift,
         source:Object.freeze({...source}),feetPivot:Object.freeze({x:pivot.x,y:pivot.y}),
-        ...(grip?{gripAnchor:Object.freeze({x:grip.x,y:grip.y}),weaponAngle}: {})});
+        ...(grip?{gripAnchor:Object.freeze({x:grip.x,y:grip.y}),weaponAngle}: {}),
+        ...attachmentMetadata(item,source,item.id)});
     }
     const clips=Object.create(null);
     need(registration.clips&&typeof registration.clips==='object','no authored clips');
@@ -147,7 +180,8 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
       need(point(grip)&&grip.x>=0&&grip.x<=frame.source.width&&grip.y>=0&&grip.y<=frame.source.height,
         'invalid accepted-cel item grip '+id);
       need(number(angle)&&Math.abs(angle)<=Math.PI,'invalid accepted-cel item angle '+id);
-      baseGripAnchors[id]=Object.freeze({gripAnchor:Object.freeze({x:grip.x,y:grip.y}),weaponAngle:angle});
+      baseGripAnchors[id]=Object.freeze({gripAnchor:Object.freeze({x:grip.x,y:grip.y}),weaponAngle:angle,
+        ...attachmentMetadata(item,frame.source,id)});
     }
     const sheets=Object.create(null);
     const overlaps=(a,b)=>a.x<b.x+b.width&&a.x+a.width>b.x&&a.y<b.y+b.height&&a.y+a.height>b.y;
@@ -175,6 +209,15 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
     const ageMs=finite(actor.animation?.ageMs,finite(actor.animAgeMs));
     let key,fallback,progress,clipAge=ageMs;
     const moving=finite(motion.speed,Math.hypot(finite(actor.vx),finite(actor.laneVelocity)))>.01;
+    if(action==='idle'&&['scatter-blaster','coil-rifle'].includes(actor.animation?.weaponKind||actor.weapon?.kind)
+      &&supplemental?.clips['fire.recovery']) {
+      return {compiled:supplemental,key:'fire.recovery',ageMs:0,action:'idle',phase:'idle',attackType:null};
+    }
+    if(action==='running-kick'||attack?.kind==='running-kick') {
+      need(PHASES.includes(phase),'invalid running kick phase '+phase);
+      return {compiled:base,key:'air-kick.'+phase,progress:finite(attack?.phaseProgress,finite(actor.animation?.phaseProgress)),
+        ageMs,action:'running-kick',phase,attackType:'running-kick'};
+    }
     if(['guard','guard-creep'].includes(action)&&number(guardImpactAgeMs)&&guardImpactAgeMs>=0
       &&guardImpactAgeMs<(supplemental?.clips['guard-impact']?.totalMs||0)) {
       key='guard-impact';fallback='guard';clipAge=guardImpactAgeMs;
@@ -284,9 +327,15 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
     }
     const selected=selectFrame(selectedBank,key,{progress,ageMs,terminal});
     const attachment=selected.frame.gripAnchor?selected.frame:supplemental?.baseGripAnchors[selected.frame.id];
+    const weaponKind=animation.weaponKind||actor.attack?.weaponKind||actor.weapon?.kind;
+    const stowed=!!actor.carry||!!actor.grapple;
+    const binding=!stowed&&attachment?.itemBindings?.[weaponKind];
     return Object.freeze({...selected,frameId:selected.frame.id,action,attackType,phase,
       committedKey:key,clipKey:key,facing:finite(actor.facing,1)<0?-1:1,standingHeight:selected.frame.standingHeight,
-      supplemental:selectedBank===supplemental,gripAnchor:attachment?.gripAnchor||null,weaponAngle:attachment?.weaponAngle??0,
+      supplemental:selectedBank===supplemental,gripAnchor:binding?.gripAnchor||attachment?.gripAnchor||null,
+      weaponAngle:binding?.weaponAngle??attachment?.weaponAngle??0,
+      handOcclusion:binding?.handOcclusion||attachment?.handOcclusion||null,itemLayer:binding?.itemLayer||'front',
+      weaponKind:weaponKind||null,
       phaseProgress:number(progress)?clamp(progress,0,1):null});
   }
 
@@ -313,5 +362,5 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
   }
 
   B.MacCombatFrames=Object.freeze({compile,compileSupplemental,sample,draw,selectFrame,requiredClips,
-    moves:MOVES,styles:STYLES,dynamicClips:DYNAMIC_CLIPS});
+    moves:MOVES,styles:STYLES,dynamicClips:DYNAMIC_CLIPS,weapons:WEAPONS});
 })(window.BARCODE=window.BARCODE||{});

@@ -206,9 +206,11 @@ window.FILE_MANIFEST.push({ name: 'src/core/touch-controls.js', exports: ['BARCO
           const mac = B.MacCombatPreview, view = mac.getControlState(), state = mac.combat.getSnapshot();
           const nearbyDesk = state.desk.unlocked && Math.abs(state.player.x - state.desk.x) < 190;
           return [a('jump', 'Jump', { icon: '↑', kind: 'primary' }),
-            a('road_attack', view.strike?.label || 'Strike', { icon: '✦', tone: 'b', kind: 'secondary', ready: !!view.strike?.ready }),
+            a('road_attack', view.strike?.label || 'Strike', { icon: '✦', tone: 'b', kind: 'secondary', ready: !!view.strike?.ready, disabled:view.strike?.enabled === false,
+              status:state.player.grapple && !state.player.grapple.released ? `${Math.max(0,state.player.grapple.pummelRemainingMs/1000).toFixed(1)}s` : state.player.weapon ? `${state.player.weapon.charges}/${state.player.weapon.maxCharges}` : '' }),
             a('road_defend', 'Guard', { icon: '◇', tone: 'x', kind: 'secondary', active: !!view.guard?.held }),
-            ...(view.throw?.enabled ? [a('road_disrupt', 'Throw', { icon: '↗', tone: 'y', kind: 'secondary', ready: !!view.throw.ready })] : []),
+            ...(view.throw?.enabled || view.throw?.holding ? [a('road_disrupt', view.throw.label || 'Grab', { icon: '↗', tone: 'y', kind: 'secondary', ready: !!view.throw.ready,
+              active:!!view.throw.holding, status:view.throw.holding ? Number.isFinite(view.throw.holdRemainingMs) ? `${Math.max(0,view.throw.holdRemainingMs/1000).toFixed(1)}s` : 'Release' : view.throw.targetType === 'weapon' ? 'Equip' : 'Hold' })] : []),
             ...(nearbyDesk || view.interactAvailable ? [a('inspect', nearbyDesk ? 'Talk' : 'Link', { icon: '◉', kind: 'secondary', ready: nearbyDesk || !!view.interactAvailable })] : []), pause()];
         }
         case 'level1': {
@@ -243,7 +245,7 @@ window.FILE_MANIFEST.push({ name: 'src/core/touch-controls.js', exports: ['BARCO
       this.root.classList.toggle('touch-tools-open', this.toolsOpen);
       if (this.tools.hidden !== !this.toolsOpen) this.tools.hidden = !this.toolsOpen;
       this.joystick.hidden = !context.joystick;
-      const running = window.player?.isRunActive?.() ?? window.inputManager?.actionInput?.held('run');
+      const running = context.name === 'mac' ? !!B.MacCombatPreview?.getControlState?.().move?.running : window.player?.isRunActive?.() ?? window.inputManager?.actionInput?.held('run');
       const label = context.name === 'road' ? 'STEER' : this.runLatched || this.joystickPointer != null && running ? 'RUN' : 'MOVE';
       if (this.stickLabel.textContent !== label) this.stickLabel.textContent = label;
       if (this.hint.textContent) this.hint.textContent = '';
@@ -253,7 +255,12 @@ window.FILE_MANIFEST.push({ name: 'src/core/touch-controls.js', exports: ['BARCO
       const desired = new Map(specs.map(spec => [spec.id, spec]));
       // A cue may change during a press. Its captured semantic action and node
       // stay fixed until the last finger/key releases; steering is independent.
-      for (const [id, current] of this.buttons) if (this.controlHeld(id)) desired.set(id, current.spec);
+      for (const [id, current] of this.buttons) if (this.controlHeld(id)) {
+        const next = desired.get(id);
+        // Mac's held context action keeps its semantic owner while its label
+        // changes from Grab/Lift to Throw and shows the actual hold deadline.
+        desired.set(id,this.context?.name === 'mac' && next?.action === current.spec.action ? {...next,disabled:false} : current.spec);
+      }
       for (const [id, current] of this.buttons) if (!desired.has(id)) {
         current.node.remove(); this.buttons.delete(id);
       }
@@ -378,7 +385,7 @@ window.FILE_MANIFEST.push({ name: 'src/core/touch-controls.js', exports: ['BARCO
       input?.setVirtualAction('move_right', entry.owner, x > DEADZONE && !down, event);
       input?.setVirtualAction('move_down', entry.owner, mac ? y > DEADZONE : down, event);
       input?.setVirtualAction('move_up', entry.owner, mac && y < -DEADZONE, event);
-      input?.setVirtualAction('run', entry.owner, this.context.name === 'level1' && Math.abs(x) >= .82 && !down, event);
+      input?.setVirtualAction('run', entry.owner, mac ? Math.hypot(x,y) >= .82 : this.context.name === 'level1' && Math.abs(x) >= .82 && !down, event);
     },
     pointerUp(event, cancelled = false) {
       const entry = this.pointers.get(event.pointerId);
@@ -392,12 +399,14 @@ window.FILE_MANIFEST.push({ name: 'src/core/touch-controls.js', exports: ['BARCO
       if (!entry) return;
       this.pointers.delete(id);
       window.inputManager?.actionInput?.releaseVirtualOwner(entry.owner, { discardPresses: cancelled });
+      if (cancelled && this.context?.name === 'mac' && entry.spec?.action === 'road_disrupt') B.MacCombatPreview?.releaseInputs?.('pointer-cancel');
       if (entry.spec?.hold && !this.controlHeld(entry.spec.id)) window.inputManager?.touchCommand?.(entry.spec.command, false);
       if (!Array.from(this.pointers.values()).some(other => other.node === entry.node)) entry.node.classList.remove('is-held');
       if (entry.joystick) { this.joystickPointer = null; this.base.style.left = '50%'; this.base.style.top = '50%'; this.thumb.style.transform = 'translate(-50%, -50%)'; }
       try { if (entry.node.hasPointerCapture?.(id)) entry.node.releasePointerCapture(id); } catch (_) { /* Already lost capture. */ }
     },
     releaseAll(reason = 'release') {
+      B.MacCombatPreview?.releaseInputs?.(reason);
       for (const id of Array.from(this.pointers.keys())) this.releasePointer(id, true);
       // A completed tap may still be queued. Discard it at a handoff, while the
       // independent keyboard queue and held keys stay intact.

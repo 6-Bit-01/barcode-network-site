@@ -12,6 +12,10 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
     null_regent:['cleave','charge','fan','ground-wave']
   }).map(([kind,styles])=>[kind,Object.freeze(styles)])));
   const PHASES = Object.freeze(['windup','active','recovery']);
+  const DYNAMIC_CLIPS = Object.freeze(['guard','guard-walk','run','grab-start','grab-hold',
+    'pummel.windup','pummel.active','pummel.recovery','carry','carry-walk',
+    ...['melee','fire'].flatMap(move=>PHASES.map(phase=>move+'.'+phase))]);
+  const DYNAMIC_LOOPS = Object.freeze(['guard','guard-walk','run','grab-hold','carry','carry-walk']);
   const number = value => typeof value === 'number' && Number.isFinite(value);
   const finite = (value, fallback=0) => number(value) ? value : fallback;
   const clamp = (value, low, high) => Math.max(low,Math.min(high,value));
@@ -66,13 +70,18 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
         'invalid feet pivot '+item.id);
       const baselineLift=item.baselineLift??0;
       need(number(baselineLift),'invalid authored baseline lift '+item.id);
+      const grip=item.gripAnchor,weaponAngle=item.weaponAngle??0;
+      if(grip)need(point(grip)&&grip.x>=0&&grip.x<=source.width&&grip.y>=0&&grip.y<=source.height,
+        'invalid held-item grip '+item.id);
+      need(number(weaponAngle)&&Math.abs(weaponAngle)<=Math.PI,'invalid held-item angle '+item.id);
       for (const other of Object.values(frames)) if (other.sheet===sheetId) {
         const a=other.source,b=source;
         need(!(a.x<b.x+b.width&&a.x+a.width>b.x&&a.y<b.y+b.height&&a.y+a.height>b.y),'overlapping cel crops '+other.id+'/'+item.id);
       }
       frames[item.id]=Object.freeze({id:item.id,sheet:sheetId,sourceImage:sheet.sourceImage,sheetDimensions:sheet.dimensions,
         standingHeight:sheet.standingHeight,baselineLift,
-        source:Object.freeze({...source}),feetPivot:Object.freeze({x:pivot.x,y:pivot.y})});
+        source:Object.freeze({...source}),feetPivot:Object.freeze({x:pivot.x,y:pivot.y}),
+        ...(grip?{gripAnchor:Object.freeze({x:grip.x,y:grip.y}),weaponAngle}: {})});
     }
     const clips=Object.create(null);
     need(registration.clips&&typeof registration.clips==='object','no authored clips');
@@ -103,6 +112,100 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
       frames:Object.freeze(frames),clips:Object.freeze(clips),complete});
   }
 
+  function compileSupplemental(registration,{baseCompiled,complete=true}={}) {
+    const compiled=compile(registration);
+    need(compiled.actor==='mac','supplemental bank must use the accepted Mac identity');
+    if(baseCompiled)need(baseCompiled.actor==='mac'&&baseCompiled.complete,'supplemental bank needs complete accepted base');
+    for(const sheet of Object.values(compiled.sheets)) {
+      need(!baseCompiled?.sheets[sheet.id],'supplemental sheet shadows accepted base '+sheet.id);
+      need(sheet.referenceFrame&&compiled.frames[sheet.referenceFrame]?.sheet===sheet.id,
+        'supplemental sheet needs its measured reference cel '+sheet.id);
+    }
+    for(const key of Object.keys(compiled.clips)) {
+      need(DYNAMIC_CLIPS.includes(key)||['pickup','carry-throw','guard-impact'].includes(key),'unknown supplemental action '+key);
+      need(compiled.clips[key].loop===DYNAMIC_LOOPS.includes(key),'incorrect supplemental loop '+key);
+      for(const entry of compiled.clips[key].frames)
+        need(compiled.frames[entry.frame].baselineLift===0,'grounded supplemental action changes floor baseline '+key);
+    }
+    if(complete) {
+      for(const key of DYNAMIC_CLIPS)need(compiled.clips[key],'missing supplemental action '+key);
+      for(const [key,count] of [['run',4],['guard-walk',2],['grab-start',2],['carry-walk',2]])
+        need(new Set(compiled.clips[key].frames.map(entry=>entry.frame)).size>=count,'insufficient authored cels for '+key);
+      for(const move of ['pummel','melee','fire'])
+        need(new Set(['windup','active'].map(phase=>compiled.clips[move+'.'+phase].frames[0].frame)).size===2,
+          'load and contact must use distinct complete cels '+move);
+      const heldKeys=['guard','guard-walk','run','carry','carry-walk',...['melee','fire'].flatMap(move=>PHASES.map(phase=>move+'.'+phase))];
+      for(const key of heldKeys)for(const entry of compiled.clips[key].frames)
+        need(compiled.frames[entry.frame].gripAnchor,'missing native held-item grip '+key+'/'+entry.frame);
+      for(const key of ['pickup','guard-impact','carry-throw'])if(compiled.clips[key])for(const entry of compiled.clips[key].frames)
+        need(compiled.frames[entry.frame].gripAnchor,'missing optional action item grip '+key+'/'+entry.frame);
+    }
+    const baseGripAnchors=Object.create(null);
+    for(const [id,item] of Object.entries(registration.baseGripAnchors||{})) {
+      const frame=baseCompiled?.frames[id],grip=item?.gripAnchor,angle=item?.weaponAngle??0;
+      need(frame,'unknown accepted cel for item grip '+id);
+      need(point(grip)&&grip.x>=0&&grip.x<=frame.source.width&&grip.y>=0&&grip.y<=frame.source.height,
+        'invalid accepted-cel item grip '+id);
+      need(number(angle)&&Math.abs(angle)<=Math.PI,'invalid accepted-cel item angle '+id);
+      baseGripAnchors[id]=Object.freeze({gripAnchor:Object.freeze({x:grip.x,y:grip.y}),weaponAngle:angle});
+    }
+    const sheets=Object.create(null);
+    const overlaps=(a,b)=>a.x<b.x+b.width&&a.x+a.width>b.x&&a.y<b.y+b.height&&a.y+a.height>b.y;
+    for(const sheet of Object.values(compiled.sheets)) {
+      const raw=(registration.sheets||[]).find(item=>item.id===sheet.id),exclusions=[];
+      need(raw?.excludedRegions===undefined||Array.isArray(raw.excludedRegions),'invalid source exclusions '+sheet.id);
+      for(const item of raw?.excludedRegions||[]) {
+        const box=item?.source;
+        need(box&&['x','y','width','height'].every(key=>Number.isInteger(box[key]))&&box.x>=0&&box.y>=0
+          &&box.width>0&&box.height>0&&box.x+box.width<=sheet.dimensions.width&&box.y+box.height<=sheet.dimensions.height,
+          'invalid excluded native region '+sheet.id);
+        need(typeof item.reason==='string'&&item.reason.trim().length>0,'source exclusion needs review reason '+sheet.id);
+        need(!Object.values(compiled.frames).some(frame=>frame.sheet===sheet.id&&overlaps(box,frame.source)),
+          'source exclusion shadows authored cel '+sheet.id);
+        need(!exclusions.some(other=>overlaps(box,other.source)),'overlapping excluded source regions '+sheet.id);
+        exclusions.push(Object.freeze({source:Object.freeze({...box}),reason:item.reason}));
+      }
+      sheets[sheet.id]=Object.freeze({...sheet,excludedRegions:Object.freeze(exclusions)});
+    }
+    return Object.freeze({...compiled,sheets:Object.freeze(sheets),complete,supplemental:true,baseGripAnchors:Object.freeze(baseGripAnchors)});
+  }
+
+  function dynamicSelection(actor,action,motion,supplemental,base,guardImpactAgeMs) {
+    const attack=actor.attack,phase=attack?.phase||actor.animation?.phase||action;
+    const ageMs=finite(actor.animation?.ageMs,finite(actor.animAgeMs));
+    let key,fallback,progress,clipAge=ageMs;
+    const moving=finite(motion.speed,Math.hypot(finite(actor.vx),finite(actor.laneVelocity)))>.01;
+    if(['guard','guard-creep'].includes(action)&&number(guardImpactAgeMs)&&guardImpactAgeMs>=0
+      &&guardImpactAgeMs<(supplemental?.clips['guard-impact']?.totalMs||0)) {
+      key='guard-impact';fallback='guard';clipAge=guardImpactAgeMs;
+    } else if(action==='run') {key='run';fallback='walk';progress=((finite(motion.stridePhase)%1)+1)%1;}
+    else if(action==='guard-creep') {key='guard-walk';fallback='guard';progress=((finite(motion.stridePhase)%1)+1)%1;}
+    else if(action==='guard') {key='guard';fallback='guard';}
+    else if(action==='grab-hold') {
+      const holdAge=finite(actor.grapple?.elapsedMs,ageMs),start=supplemental?.clips['grab-start'];
+      key=start&&holdAge<start.totalMs?'grab-start':'grab-hold';fallback='throw';clipAge=key==='grab-start'?holdAge:ageMs;
+    } else if(action==='grab-pummel') {key='pummel.'+phase;fallback='cross.'+phase;progress=finite(attack?.phaseProgress);}
+    else if(action==='carry') {
+      const pickup=supplemental?.clips.pickup,carryAge=finite(actor.carry?.elapsedMs,ageMs);
+      key=pickup&&carryAge<pickup.totalMs?'pickup':moving?'carry-walk':'carry';fallback=moving?'walk':'throw';
+      if(key==='pickup')clipAge=carryAge;
+      else if(moving)progress=((finite(motion.stridePhase)%1)+1)%1;
+    } else if(action==='carry-throw') {
+      key='carry-throw';fallback='throw';clipAge=finite(actor.carry?.releaseAgeMs,ageMs);
+    } else if(['weapon-melee','weapon-heavy','weapon-fire','weapon-disc'].includes(action)) {
+      need(PHASES.includes(phase),'invalid supplemental attack phase '+phase);
+      const firearm=action==='weapon-fire'||action==='weapon-disc';
+      key=(firearm?'fire':'melee')+'.'+phase;
+      fallback=(firearm?'jab':action==='weapon-heavy'?'finisher':'step-strike')+'.'+phase;
+      progress=finite(attack?.phaseProgress,finite(actor.animation?.phaseProgress));
+    } else return null;
+    const selected=supplemental?.clips[key]?supplemental:base,committedKey=selected===supplemental?key:fallback;
+    // An absent prototype bank still uses a complete accepted cel. Holding a
+    // victim/item must not accidentally play the old immediate release.
+    if(selected===base&&committedKey==='throw'&&!['carry-throw'].includes(action))clipAge=0;
+    return {compiled:selected,key:committedKey,progress,ageMs:clipAge,action,phase,attackType:attack?.kind||null};
+  }
+
   function selectFrame(compiled,key,{progress,ageMs=0,terminal=false}={}) {
     const clip=compiled.clips[key];
     need(clip,'missing committed clip '+compiled.actor+'/'+key);
@@ -115,15 +218,19 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
     return {frame:compiled.frames[clip.frames[frameIndex].frame],frameIndex,clipTimeMs:time};
   }
 
-  function sample(actor,{player=false,compiled,registration,reducedMotion=false,stateAgeMs,landingAgeMs}={}) {
+  function sample(actor,{player=false,compiled,registration,supplemental,reducedMotion=false,stateAgeMs,landingAgeMs,guardImpactAgeMs}={}) {
     compiled=compiled||(registration&&compile(registration));
     need(compiled?.frames&&compiled.clips,'compile an authored registration before sampling');
     need(actor&&typeof actor==='object','missing simulation actor');
     need(player?compiled.actor==='mac':actor.kind===compiled.actor,'simulation actor and authored identity differ');
+    if(supplemental)need(supplemental.supplemental&&supplemental.actor==='mac','compile a supplemental Mac bank before sampling');
     const animation=actor.animation||{},motion=animation.motion||{};
     let action=animation.action||(player?actor.mode:actor.animAction)||'idle';
     let key='idle',attackType=null,phase=animation.phase||actor.phase||action;
     let progress,ageMs=finite(animation.ageMs,finite(actor.animAgeMs)),terminal=false;
+    let selectedBank=compiled;
+    const dynamic=player&&actor.hp>0&&action!=='hurt'&&!(actor.hurtMs>0)&&!['defeat','defeated'].includes(action)
+      ?dynamicSelection(actor,action,motion,supplemental,compiled,guardImpactAgeMs):null;
     if(!player&&actor.launched) {
       // The complete authored fall cel travels on the simulation's ballistic
       // arc. Never rotate a standing sprite or invent a body-part animation.
@@ -138,13 +245,17 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
       if(number(stateAgeMs))ageMs=Math.max(0,stateAgeMs);
     } else if(action==='hurt'||player&&actor.hurtMs>0||!player&&['stunned','grappled'].includes(actor.phase)) {
       action='hurt';key='hurt';ageMs=finite(actor.hitFeedback?.ageMs,ageMs);
+    } else if(dynamic) {
+      selectedBank=dynamic.compiled;key=dynamic.key;progress=dynamic.progress;ageMs=dynamic.ageMs;
+      action=dynamic.action;phase=dynamic.phase;attackType=dynamic.attackType;
     } else if(player&&actor.attack) {
       attackType=actor.attack.kind;phase=actor.attack.phase;
       need(MOVES.includes(attackType)&&PHASES.includes(phase),'invalid committed Mac move');
       action='strike';key=attackType+'.'+phase;progress=finite(actor.attack.phaseProgress);
     } else if(player&&(actor.grapple||actor.throwMs>0||action==='throw')) {
       action='throw';key='throw';phase=actor.grapple?.phase||phase;
-      ageMs=finite(actor.grapple?.elapsedMs,ageMs);
+      ageMs=['hold','pummel','release','recover'].includes(actor.grapple?.phase)
+        ?finite(actor.grapple?.releaseAgeMs,ageMs):finite(actor.grapple?.elapsedMs,ageMs);
     } else if(!player&&['windup','active','recovery'].includes(actor.phase||phase)) {
       phase=actor.phase||phase;attackType=actor.attackSpec?.attackType||animation.pose;
       need((STYLES[compiled.actor]||[]).includes(attackType),'unknown enemy attack '+attackType);
@@ -171,9 +282,11 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
     } else {
       action='idle';key='idle';if(reducedMotion)ageMs=0;
     }
-    const selected=selectFrame(compiled,key,{progress,ageMs,terminal});
+    const selected=selectFrame(selectedBank,key,{progress,ageMs,terminal});
+    const attachment=selected.frame.gripAnchor?selected.frame:supplemental?.baseGripAnchors[selected.frame.id];
     return Object.freeze({...selected,frameId:selected.frame.id,action,attackType,phase,
       committedKey:key,clipKey:key,facing:finite(actor.facing,1)<0?-1:1,standingHeight:selected.frame.standingHeight,
+      supplemental:selectedBank===supplemental,gripAnchor:attachment?.gripAnchor||null,weaponAngle:attachment?.weaponAngle??0,
       phaseProgress:number(progress)?clamp(progress,0,1):null});
   }
 
@@ -195,8 +308,10 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
         -pivot.x*scale,-pivot.y*scale,source.width*scale,source.height*scale);
     } finally { ctx.restore(); }
     return Object.freeze({frameId:frame.id,sheet:frame.sheet,sourceImage:frame.sourceImage,scale,
-      baselineLift:frame.baselineLift*height/260,committedKey:pose.committedKey});
+      baselineLift:frame.baselineLift*height/260,committedKey:pose.committedKey,
+      pose,gripAnchor:pose.gripAnchor,weaponAngle:pose.weaponAngle});
   }
 
-  B.MacCombatFrames=Object.freeze({compile,sample,draw,selectFrame,requiredClips,moves:MOVES,styles:STYLES});
+  B.MacCombatFrames=Object.freeze({compile,compileSupplemental,sample,draw,selectFrame,requiredClips,
+    moves:MOVES,styles:STYLES,dynamicClips:DYNAMIC_CLIPS});
 })(window.BARCODE=window.BARCODE||{});

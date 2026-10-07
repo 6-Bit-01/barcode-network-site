@@ -1,0 +1,1011 @@
+{
+  "schemaVersion": 1,
+  "actor": "mac",
+  "facing": "right",
+  "pixelScale": {
+    "standingVisibleHeight": 494,
+    "referenceFrame": "guard_brace"
+  },
+  "baseRegistration": "assets/mac-combat-frames/mac-frames-v1.json",
+  "baseRegistrationSHA256": "2220efc6400d0159d6b9a8dc805b9f332ae618932e6e8802f9e7d7c5ab64ac13",
+  "sheets": [
+    {
+      "id": "dyn_guard",
+      "sourceImage": "assets/mac-street-dynamic/mac-guard-v1.png",
+      "sourceSHA256": "f3410efa856aa1ea7fcedf69bd1e37f8c259af8cfb315282fc81f08b235ca0ee",
+      "dimensions": {
+        "width": 1448,
+        "height": 1086
+      },
+      "pixelScale": {
+        "standingVisibleHeight": 494,
+        "referenceFrame": "guard_brace"
+      }
+    },
+    {
+      "id": "dyn_run",
+      "sourceImage": "assets/mac-street-dynamic/mac-run-v1.png",
+      "sourceSHA256": "711c9993b6d39b0ce1fbc49897f154618c9d0baafad796a4bb236b2f6d9d4378",
+      "dimensions": {
+        "width": 1448,
+        "height": 1086
+      },
+      "pixelScale": {
+        "standingVisibleHeight": 511,
+        "referenceFrame": "run_contact_a"
+      }
+    },
+    {
+      "id": "dyn_hold",
+      "sourceImage": "assets/mac-street-dynamic/mac-hold-carry-v1.png",
+      "sourceSHA256": "e40c210ed47efb4453d7add6d42250e766715825ff3943727203667d9939861c",
+      "dimensions": {
+        "width": 1448,
+        "height": 1086
+      },
+      "pixelScale": {
+        "standingVisibleHeight": 337,
+        "referenceFrame": "grab_hold"
+      },
+      "excludedRegions": [
+        {
+          "source": {
+            "x": 0,
+            "y": 0,
+            "width": 1448,
+            "height": 375
+          },
+          "reason": "First-row duplicate old guard poses rejected; new guard sheet is the only supplemental guard source."
+        }
+      ]
+    },
+    {
+      "id": "dyn_weapon",
+      "sourceImage": "assets/mac-street-dynamic/mac-weapon-poses-v1.png",
+      "sourceSHA256": "e59a6f8716d6d5b8fc3f4789dbc96cde64c94f186d99f6b2d8640f8033e4fba3",
+      "dimensions": {
+        "width": 1536,
+        "height": 1024
+      },
+      "pixelScale": {
+        "standingVisibleHeight": 436,
+        "referenceFrame": "fire_ready"
+      }
+    }
+  ],
+  "frames": [
+    {
+      "id": "guard_brace",
+      "sheet": "dyn_guard",
+      "source": {
+        "x": 150,
+        "y": 29,
+        "width": 440,
+        "height": 510
+      },
+      "feetPivot": {
+        "x": 205,
+        "y": 501
+      },
+      "baselineLift": 0,
+      "gripAnchor": {
+        "x": 286,
+        "y": 134
+      },
+      "weaponAngle": 0
+    },
+    {
+      "id": "guard_step_a",
+      "sheet": "dyn_guard",
+      "source": {
+        "x": 824,
+        "y": 26,
+        "width": 439,
+        "height": 511
+      },
+      "feetPivot": {
+        "x": 232,
+        "y": 502
+      },
+      "baselineLift": 0,
+      "gripAnchor": {
+        "x": 286,
+        "y": 137
+      },
+      "weaponAngle": 0
+    },
+    {
+      "id": "guard_step_b",
+      "sheet": "dyn_guard",
+      "source": {
+        "x": 159,
+        "y": 553,
+        "width": 424,
+        "height": 492
+      },
+      "feetPivot": {
+        "x": 201,
+        "y": 483
+      },
+      "baselineLift": 0,
+      "gripAnchor": {
+        "x": 281,
+        "y": 144
+      },
+      "weaponAngle": 0
+    },
+    {
+      "id": "guard_impact",
+      "sheet": "dyn_guard",
+      "source": {
+        "x": 840,
+        "y": 584,
+        "width": 428,
+        "height": 462
+      },
+      "feetPivot": {
+        "x": 210,
+        "y": 453
+      },
+      "baselineLift": 0,
+      "gripAnchor": {
+        "x": 298,
+        "y": 102
+      },
+      "weaponAngle": 0
+    },
+    {
+      "id": "run_contact_a",
+      "sheet": "dyn_run",
+      "source": {
+        "x": 193,
+        "y": 13,
+        "width": 481,
+        "height": 527
+      },
+      "feetPivot": {
+        "x": 237,
+        "y": 518
+      },
+      "baselineLift": 0,
+      "gripAnchor": {
+        "x": 107,
+        "y": 274
+      },
+      "weaponAngle": 0.15
+    },
+    {
+      "id": "run_pass_a",
+      "sheet": "dyn_run",
+      "source": {
+        "x": 881,
+        "y": 19,
+        "width": 356,
+        "height": 526
+      },
+      "feetPivot": {
+        "x": 199,
+        "y": 517
+      },
+      "baselineLift": 0,
+      "gripAnchor": {
+        "x": 303,
+        "y": 196
+      },
+      "weaponAngle": -0.18
+    },
+    {
+      "id": "run_contact_b",
+      "sheet": "dyn_run",
+      "source": {
+        "x": 191,
+        "y": 550,
+        "width": 517,
+        "height": 503
+      },
+      "feetPivot": {
+        "x": 249,
+        "y": 494
+      },
+      "baselineLift": 0,
+      "gripAnchor": {
+        "x": 412,
+        "y": 187
+      },
+      "weaponAngle": -0.18
+    },
+    {
+      "id": "run_pass_b",
+      "sheet": "dyn_run",
+      "source": {
+        "x": 890,
+        "y": 550,
+        "width": 449,
+        "height": 518
+      },
+      "feetPivot": {
+        "x": 210,
+        "y": 509
+      },
+      "baselineLift": 0,
+      "gripAnchor": {
+        "x": 54,
+        "y": 259
+      },
+      "weaponAngle": 0.15
+    },
+    {
+      "id": "grab_reach",
+      "sheet": "dyn_hold",
+      "source": {
+        "x": 30,
+        "y": 375,
+        "width": 366,
+        "height": 350
+      },
+      "feetPivot": {
+        "x": 150,
+        "y": 344
+      },
+      "baselineLift": 0,
+      "gripAnchor": {
+        "x": 336,
+        "y": 94
+      },
+      "weaponAngle": 0
+    },
+    {
+      "id": "grab_hold",
+      "sheet": "dyn_hold",
+      "source": {
+        "x": 399,
+        "y": 375,
+        "width": 326,
+        "height": 350
+      },
+      "feetPivot": {
+        "x": 141,
+        "y": 344
+      },
+      "baselineLift": 0,
+      "gripAnchor": {
+        "x": 298,
+        "y": 105
+      },
+      "weaponAngle": 0
+    },
+    {
+      "id": "pummel_load",
+      "sheet": "dyn_hold",
+      "source": {
+        "x": 747,
+        "y": 384,
+        "width": 339,
+        "height": 341
+      },
+      "feetPivot": {
+        "x": 163,
+        "y": 337
+      },
+      "baselineLift": 0,
+      "gripAnchor": {
+        "x": 309,
+        "y": 91
+      },
+      "weaponAngle": 0
+    },
+    {
+      "id": "pummel_contact",
+      "sheet": "dyn_hold",
+      "source": {
+        "x": 1124,
+        "y": 393,
+        "width": 305,
+        "height": 332
+      },
+      "feetPivot": {
+        "x": 146,
+        "y": 326
+      },
+      "baselineLift": 0,
+      "gripAnchor": {
+        "x": 276,
+        "y": 135
+      },
+      "weaponAngle": 0
+    },
+    {
+      "id": "pickup_load",
+      "sheet": "dyn_hold",
+      "source": {
+        "x": 46,
+        "y": 751,
+        "width": 270,
+        "height": 325
+      },
+      "feetPivot": {
+        "x": 124,
+        "y": 316
+      },
+      "baselineLift": 0,
+      "gripAnchor": {
+        "x": 206,
+        "y": 194
+      },
+      "weaponAngle": 0
+    },
+    {
+      "id": "carry_hold",
+      "sheet": "dyn_hold",
+      "source": {
+        "x": 405,
+        "y": 725,
+        "width": 279,
+        "height": 350
+      },
+      "feetPivot": {
+        "x": 120,
+        "y": 341
+      },
+      "baselineLift": 0,
+      "gripAnchor": {
+        "x": 209,
+        "y": 160
+      },
+      "weaponAngle": 0
+    },
+    {
+      "id": "carry_step_a",
+      "sheet": "dyn_hold",
+      "source": {
+        "x": 749,
+        "y": 729,
+        "width": 295,
+        "height": 346
+      },
+      "feetPivot": {
+        "x": 131,
+        "y": 337
+      },
+      "baselineLift": 0,
+      "gripAnchor": {
+        "x": 210,
+        "y": 173
+      },
+      "weaponAngle": 0
+    },
+    {
+      "id": "carry_step_b",
+      "sheet": "dyn_hold",
+      "source": {
+        "x": 1133,
+        "y": 725,
+        "width": 297,
+        "height": 350
+      },
+      "feetPivot": {
+        "x": 121,
+        "y": 341
+      },
+      "baselineLift": 0,
+      "gripAnchor": {
+        "x": 199,
+        "y": 164
+      },
+      "weaponAngle": 0
+    },
+    {
+      "id": "melee_load",
+      "sheet": "dyn_weapon",
+      "source": {
+        "x": 54,
+        "y": 33,
+        "width": 373,
+        "height": 470
+      },
+      "feetPivot": {
+        "x": 181,
+        "y": 461
+      },
+      "baselineLift": 0,
+      "gripAnchor": {
+        "x": 139,
+        "y": 43
+      },
+      "weaponAngle": -1.15
+    },
+    {
+      "id": "melee_contact",
+      "sheet": "dyn_weapon",
+      "source": {
+        "x": 526,
+        "y": 53,
+        "width": 522,
+        "height": 450
+      },
+      "feetPivot": {
+        "x": 221,
+        "y": 441
+      },
+      "baselineLift": 0,
+      "gripAnchor": {
+        "x": 492,
+        "y": 114
+      },
+      "weaponAngle": 0.04
+    },
+    {
+      "id": "melee_follow",
+      "sheet": "dyn_weapon",
+      "source": {
+        "x": 1098,
+        "y": 57,
+        "width": 398,
+        "height": 446
+      },
+      "feetPivot": {
+        "x": 162,
+        "y": 437
+      },
+      "baselineLift": 0,
+      "gripAnchor": {
+        "x": 309,
+        "y": 259
+      },
+      "weaponAngle": 0.9
+    },
+    {
+      "id": "fire_aim",
+      "sheet": "dyn_weapon",
+      "source": {
+        "x": 48,
+        "y": 533,
+        "width": 412,
+        "height": 452
+      },
+      "feetPivot": {
+        "x": 192,
+        "y": 443
+      },
+      "baselineLift": 0,
+      "gripAnchor": {
+        "x": 331,
+        "y": 106
+      },
+      "weaponAngle": 0
+    },
+    {
+      "id": "fire_recoil",
+      "sheet": "dyn_weapon",
+      "source": {
+        "x": 598,
+        "y": 545,
+        "width": 397,
+        "height": 436
+      },
+      "feetPivot": {
+        "x": 192,
+        "y": 427
+      },
+      "baselineLift": 0,
+      "gripAnchor": {
+        "x": 249,
+        "y": 108
+      },
+      "weaponAngle": -0.1
+    },
+    {
+      "id": "fire_ready",
+      "sheet": "dyn_weapon",
+      "source": {
+        "x": 1128,
+        "y": 533,
+        "width": 366,
+        "height": 452
+      },
+      "feetPivot": {
+        "x": 170,
+        "y": 443
+      },
+      "baselineLift": 0,
+      "gripAnchor": {
+        "x": 182,
+        "y": 201
+      },
+      "weaponAngle": -0.455
+    }
+  ],
+  "clips": {
+    "guard": {
+      "loop": true,
+      "frames": [
+        {
+          "frame": "guard_brace",
+          "holdMs": 260
+        }
+      ]
+    },
+    "guard-walk": {
+      "loop": true,
+      "frames": [
+        {
+          "frame": "guard_brace",
+          "holdMs": 90
+        },
+        {
+          "frame": "guard_step_a",
+          "holdMs": 130
+        },
+        {
+          "frame": "guard_brace",
+          "holdMs": 90
+        },
+        {
+          "frame": "guard_step_b",
+          "holdMs": 130
+        }
+      ]
+    },
+    "guard-impact": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "guard_impact",
+          "holdMs": 120
+        }
+      ]
+    },
+    "run": {
+      "loop": true,
+      "frames": [
+        {
+          "frame": "run_contact_a",
+          "holdMs": 85
+        },
+        {
+          "frame": "run_pass_a",
+          "holdMs": 65
+        },
+        {
+          "frame": "run_contact_b",
+          "holdMs": 85
+        },
+        {
+          "frame": "run_pass_b",
+          "holdMs": 65
+        }
+      ]
+    },
+    "grab-start": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "grab_reach",
+          "holdMs": 90
+        },
+        {
+          "frame": "grab_hold",
+          "holdMs": 90
+        }
+      ]
+    },
+    "grab-hold": {
+      "loop": true,
+      "frames": [
+        {
+          "frame": "grab_hold",
+          "holdMs": 180
+        }
+      ]
+    },
+    "pummel.windup": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "pummel_load",
+          "holdMs": 75
+        }
+      ]
+    },
+    "pummel.active": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "pummel_contact",
+          "holdMs": 65
+        }
+      ]
+    },
+    "pummel.recovery": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "grab_hold",
+          "holdMs": 105
+        }
+      ]
+    },
+    "pickup": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "pickup_load",
+          "holdMs": 110
+        }
+      ]
+    },
+    "carry": {
+      "loop": true,
+      "frames": [
+        {
+          "frame": "carry_hold",
+          "holdMs": 220
+        }
+      ]
+    },
+    "carry-walk": {
+      "loop": true,
+      "frames": [
+        {
+          "frame": "carry_step_a",
+          "holdMs": 150
+        },
+        {
+          "frame": "carry_step_b",
+          "holdMs": 150
+        }
+      ]
+    },
+    "melee.windup": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "melee_load",
+          "holdMs": 140
+        }
+      ]
+    },
+    "melee.active": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "melee_contact",
+          "holdMs": 100
+        }
+      ]
+    },
+    "melee.recovery": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "melee_follow",
+          "holdMs": 220
+        }
+      ]
+    },
+    "fire.windup": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "fire_aim",
+          "holdMs": 80
+        }
+      ]
+    },
+    "fire.active": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "fire_recoil",
+          "holdMs": 60
+        }
+      ]
+    },
+    "fire.recovery": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "fire_ready",
+          "holdMs": 160
+        }
+      ]
+    }
+  },
+  "baseGripAnchors": {
+    "idle_a": {
+      "gripAnchor": {
+        "x": 213,
+        "y": 132
+      },
+      "weaponAngle": 0
+    },
+    "idle_b": {
+      "gripAnchor": {
+        "x": 178,
+        "y": 139
+      },
+      "weaponAngle": 0
+    },
+    "walk_contact_a": {
+      "gripAnchor": {
+        "x": 119,
+        "y": 239
+      },
+      "weaponAngle": 0.1
+    },
+    "walk_pass_a": {
+      "gripAnchor": {
+        "x": 134,
+        "y": 233
+      },
+      "weaponAngle": 0.1
+    },
+    "walk_contact_b": {
+      "gripAnchor": {
+        "x": 157,
+        "y": 205
+      },
+      "weaponAngle": 0.1
+    },
+    "walk_pass_b": {
+      "gripAnchor": {
+        "x": 232,
+        "y": 171
+      },
+      "weaponAngle": -0.15
+    },
+    "jab_windup": {
+      "gripAnchor": {
+        "x": 206,
+        "y": 126
+      },
+      "weaponAngle": 0
+    },
+    "jab_contact": {
+      "gripAnchor": {
+        "x": 307,
+        "y": 98
+      },
+      "weaponAngle": 0
+    },
+    "jab_recovery": {
+      "gripAnchor": {
+        "x": 228,
+        "y": 111
+      },
+      "weaponAngle": 0
+    },
+    "cross_windup": {
+      "gripAnchor": {
+        "x": 137,
+        "y": 115
+      },
+      "weaponAngle": 0
+    },
+    "cross_contact": {
+      "gripAnchor": {
+        "x": 322,
+        "y": 75
+      },
+      "weaponAngle": 0
+    },
+    "hook_windup": {
+      "gripAnchor": {
+        "x": 123,
+        "y": 57
+      },
+      "weaponAngle": -1.1
+    },
+    "hook_contact": {
+      "gripAnchor": {
+        "x": 306,
+        "y": 112
+      },
+      "weaponAngle": 0
+    },
+    "hook_followthrough": {
+      "gripAnchor": {
+        "x": 323,
+        "y": 106
+      },
+      "weaponAngle": 0
+    },
+    "hook_recovery": {
+      "gripAnchor": {
+        "x": 161,
+        "y": 137
+      },
+      "weaponAngle": 0
+    },
+    "step_contact": {
+      "gripAnchor": {
+        "x": 377,
+        "y": 128
+      },
+      "weaponAngle": 0
+    },
+    "jump_rise": {
+      "gripAnchor": {
+        "x": 175,
+        "y": 116
+      },
+      "weaponAngle": 0
+    },
+    "air_kick": {
+      "gripAnchor": {
+        "x": 188,
+        "y": 73
+      },
+      "weaponAngle": 0
+    },
+    "jump_land": {
+      "gripAnchor": {
+        "x": 144,
+        "y": 318
+      },
+      "weaponAngle": 0.2
+    },
+    "counter_contact": {
+      "gripAnchor": {
+        "x": 246,
+        "y": 39
+      },
+      "weaponAngle": -1.15
+    },
+    "throw_grab": {
+      "gripAnchor": {
+        "x": 285,
+        "y": 83
+      },
+      "weaponAngle": 0
+    },
+    "throw_release": {
+      "gripAnchor": {
+        "x": 298,
+        "y": 132
+      },
+      "weaponAngle": 0.15
+    },
+    "hurt_stagger": {
+      "gripAnchor": {
+        "x": 115,
+        "y": 202
+      },
+      "weaponAngle": 0.15
+    },
+    "down": {
+      "gripAnchor": {
+        "x": 226,
+        "y": 329
+      },
+      "weaponAngle": 0
+    },
+    "walk_1": {
+      "gripAnchor": {
+        "x": 119,
+        "y": 270
+      },
+      "weaponAngle": 0.12
+    },
+    "walk_2": {
+      "gripAnchor": {
+        "x": 103,
+        "y": 271
+      },
+      "weaponAngle": 0.12
+    },
+    "walk_3": {
+      "gripAnchor": {
+        "x": 115,
+        "y": 282
+      },
+      "weaponAngle": 0.12
+    },
+    "walk_4": {
+      "gripAnchor": {
+        "x": 165,
+        "y": 273
+      },
+      "weaponAngle": 0.12
+    },
+    "walk_5": {
+      "gripAnchor": {
+        "x": 120,
+        "y": 254
+      },
+      "weaponAngle": 0.12
+    },
+    "walk_6": {
+      "gripAnchor": {
+        "x": 115,
+        "y": 266
+      },
+      "weaponAngle": 0.12
+    },
+    "walk_7": {
+      "gripAnchor": {
+        "x": 272,
+        "y": 202
+      },
+      "weaponAngle": -0.15
+    },
+    "walk_8": {
+      "gripAnchor": {
+        "x": 164,
+        "y": 254
+      },
+      "weaponAngle": 0.12
+    },
+    "walk_contact_left": {
+      "gripAnchor": {
+        "x": 265,
+        "y": 494
+      },
+      "weaponAngle": 0.12
+    },
+    "walk_contact_right": {
+      "gripAnchor": {
+        "x": 555,
+        "y": 413
+      },
+      "weaponAngle": -0.15
+    },
+    "load": {
+      "gripAnchor": {
+        "x": 220,
+        "y": 127
+      },
+      "weaponAngle": 0
+    },
+    "takeoff": {
+      "gripAnchor": {
+        "x": 164,
+        "y": 165
+      },
+      "weaponAngle": 0
+    },
+    "chamber": {
+      "gripAnchor": {
+        "x": 148,
+        "y": 153
+      },
+      "weaponAngle": 0
+    },
+    "kick_extend": {
+      "gripAnchor": {
+        "x": 142,
+        "y": 134
+      },
+      "weaponAngle": 0
+    },
+    "kick_contact": {
+      "gripAnchor": {
+        "x": 150,
+        "y": 116
+      },
+      "weaponAngle": 0
+    },
+    "kick_retract": {
+      "gripAnchor": {
+        "x": 139,
+        "y": 123
+      },
+      "weaponAngle": 0
+    },
+    "descent": {
+      "gripAnchor": {
+        "x": 134,
+        "y": 161
+      },
+      "weaponAngle": 0
+    },
+    "landing": {
+      "gripAnchor": {
+        "x": 191,
+        "y": 132
+      },
+      "weaponAngle": 0
+    }
+  },
+  "registrationNotes": "Unchanged native complete-body cells. Uniform measured scale per sheet, projected pelvis/floor pivot, baselineLift0. Closed dominant hand or supporting-palm grip points manually calibrated against native sheets. Hold-sheet first row is explicitly rejected, never an active clip. Weapons and carried objects remain separate whole native items; no body-part transforms."
+}

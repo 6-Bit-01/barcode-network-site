@@ -11,11 +11,13 @@ window.FILE_MANIFEST.push({
   // its frame loop. Feed elapsed milliseconds; no rhythm judgment gates actions.
   // Input is a complete sample: {move_x, move_y} in [-1,1] and jump/strike/
   // guard/throw as {pressed, held}. Press edges survive until a simulation step.
-  // Holding Strike/Throw never repeats them. Guard's parry is a fresh hold edge,
+  // Ordinary Strike needs a fresh edge; a held Strike only repeats the bounded
+  // pummel while an enemy is held. L/Throw holds context and release commits a
+  // toss, never regrabbing on one uninterrupted hold. Guard's parry is a fresh edge,
   // not a repeated pressed flag while held. y/laneY is the feet's ground plane;
   // elevation is a separate positive height, so drawing feet uses y-elevation.
   const C = Object.freeze({
-    version:4,worldWidth:20400,zoneWidth:3400,laneMin:780,laneMax:970,
+    version:5,worldWidth:20400,zoneWidth:3400,laneMin:780,laneMax:970,
     startX:200,startLaneY:880,deskX:20100,
     stepMs:1000/120,maxDeltaMs:100,maxSubsteps:12,
     maxEnemies:3,totalEnemies:30,totalWaves:12,maxProjectiles:18,
@@ -25,7 +27,10 @@ window.FILE_MANIFEST.push({
     playerInvulnerableMs:720,playerHurtMs:220,comboWindowMs:360,
     throwReach:74,throwDamage:28,throwCommitMs:420,throwReleaseMs:140,throwCooldownMs:700,
     maxImpactPauseMs:60,launchGravity:1200,bodyDamage:14,bodyLaneReach:70,bodyRadius:38,
-    knockdownMs:360,pickupHeal:18,pickupReach:58,advanceEntryOffset:1800
+    knockdownMs:360,pickupHeal:18,pickupReach:58,advanceEntryOffset:1800,
+    runTapMs:280,runMultiplier:1.65,grabMaxMs:3000,pummelMaxMs:1000,
+    strength:100,propReach:85,maxPickups:48,overdriveMs:10000,barrierMs:12000,impactMs:15000,
+    carryForward:68.665,carryElevation:139.644,propReleaseForward:73.907,propReleaseElevation:155.394
   });
   const STRIKES = Object.freeze([
     Object.freeze({kind:'jab',windupMs:90,activeMs:80,recoveryMs:155,reach:90,damage:12}),
@@ -37,6 +42,18 @@ window.FILE_MANIFEST.push({
     'air-kick':Object.freeze({kind:'air-kick',windupMs:60,activeMs:190,recoveryMs:180,reach:120,damage:18,hitHeight:150}),
     counter:Object.freeze({kind:'counter',windupMs:65,activeMs:105,recoveryMs:180,reach:104,damage:22,rootSpeed:100})
   });
+  // Every weapon has its own contact rule, rather than eight skins for a jab.
+  const WEAPONS=Object.freeze({
+    pipe:Object.freeze({kind:'pipe',name:'Pipe',charges:14,windupMs:100,activeMs:95,recoveryMs:170,reach:135,laneReach:40,damage:17}),
+    crowbar:Object.freeze({kind:'crowbar',name:'Crowbar',charges:12,windupMs:150,activeMs:110,recoveryMs:240,reach:122,laneReach:42,damage:21,shieldBreak:true,pull:45}),
+    'shock-baton':Object.freeze({kind:'shock-baton',name:'Shock Baton',charges:10,windupMs:100,activeMs:100,recoveryMs:240,reach:110,laneReach:40,damage:15,stunMs:900,chain:true}),
+    'energy-blade':Object.freeze({kind:'energy-blade',name:'Energy Blade',charges:12,windupMs:75,activeMs:130,recoveryMs:175,reach:152,laneReach:72,damage:18,shieldBreak:true}),
+    'gravity-hammer':Object.freeze({kind:'gravity-hammer',name:'Gravity Hammer',charges:7,windupMs:300,activeMs:140,recoveryMs:390,reach:145,laneReach:82,damage:28,launch:true,radial:true}),
+    'scatter-blaster':Object.freeze({kind:'scatter-blaster',name:'Scatter Blaster',charges:8,windupMs:130,activeMs:90,recoveryMs:300,reach:430,laneReach:32,damage:9,projectile:'scatter-bolt',muzzleForward:126.627,muzzleElevation:225.875}),
+    'coil-rifle':Object.freeze({kind:'coil-rifle',name:'Coil Rifle',charges:7,windupMs:240,activeMs:75,recoveryMs:310,reach:780,laneReach:22,damage:25,projectile:'coil-bolt',muzzleForward:161.433,muzzleElevation:224.717}),
+    'plasma-disc':Object.freeze({kind:'plasma-disc',name:'Plasma Disc',charges:8,windupMs:140,activeMs:85,recoveryMs:240,reach:380,laneReach:44,damage:19,projectile:'plasma-disc',muzzleForward:33.991,muzzleElevation:190.229})
+  });
+  const GRAB_STRENGTH=Object.freeze({chitin_scuttler:45,psion_lancer:75,bile_spitter:40,prism_guard:120,rift_stalker:65,shock_mantid:110,null_regent:180});
   const ROLES = Object.freeze({
     chitin_scuttler:Object.freeze({name:'Chitin Scuttler',bloodColor:'green',hp:42,speed:155,laneSpeed:105,distance:72,tellMs:480,activeMs:110,recoverMs:600,reach:98,damage:9,attackType:'jab',tell:'Claws drawn back'}),
     psion_lancer:Object.freeze({name:'Psion Lancer',bloodColor:'purple',hp:58,speed:106,laneSpeed:70,distance:220,tellMs:900,activeMs:420,recoverMs:920,reach:45,damage:15,chargeSpeed:650,attackType:'lunge',tell:'Spear line locked'}),
@@ -66,13 +83,43 @@ window.FILE_MANIFEST.push({
       [['bile_spitter','prism_guard','shock_mantid'],['null_regent']])
   ]);
   const BLOOD=Object.freeze({green:'#78ea68',purple:'#b374ed',red:'#f04455'});
+  const streetProp=(id,zoneId,kind,x,laneY,maxHp,drop='health')=>Object.freeze({id,zoneId,kind,x,laneY,maxHp,drop:drop?Object.freeze({kind:drop}):null,
+    variant:kind==='car'?(id.includes('canal')?'van':'coupe'):null,
+    bonusWeapon:kind==='car'?(id.includes('alley')?'crowbar':id.includes('market')?'shock-baton':id.includes('canal')?'scatter-blaster':'coil-rifle'):null,
+    width:kind==='car'?390:kind==='stall'?182:kind==='crate'?83.2:kind==='barrel'?72.8:80.6,
+    height:kind==='car'?(id.includes('canal')?227.5:175.5):kind==='stall'?299:kind==='crate'?104:kind==='barrel'?117:
+      kind==='terminal'?240.5:kind==='streetlight'?500:266.5,
+    depth:kind==='car'?98.8:kind==='stall'?84.5:62.4,
+    placement:['streetlight','terminal'].includes(kind)?'street-fixture':'ground',
+    carryable:['crate','barrel'].includes(kind),weight:kind==='barrel'?60:kind==='crate'?40:999,targetable:!!maxHp});
   const STREET_PROPS=Object.freeze([
-    Object.freeze({id:'alley-health-crate',zoneId:'service-alley',kind:'crate',x:1140,laneY:832,maxHp:24}),
-    Object.freeze({id:'alley-exit-crate',zoneId:'service-alley',kind:'crate',x:2380,laneY:907,maxHp:24}),
-    Object.freeze({id:'market-stall',zoneId:'night-market',kind:'stall',x:4580,laneY:880,maxHp:40}),
-    Object.freeze({id:'market-health-crate',zoneId:'night-market',kind:'crate',x:5780,laneY:815,maxHp:24}),
-    Object.freeze({id:'market-relay',zoneId:'night-market',kind:'relay',x:6400,laneY:880,maxHp:0})
+    streetProp('alley-health-crate','service-alley','crate',1140,832,24),
+    streetProp('alley-exit-crate','service-alley','crate',2380,907,24),
+    streetProp('alley-car','service-alley','car',1540,945,88,'barrier'),
+    streetProp('alley-streetlight','service-alley','streetlight',2740,795,32,'overdrive'),
+    streetProp('market-stall','night-market','stall',4580,880,40),
+    streetProp('market-health-crate','night-market','crate',5780,815,24),
+    streetProp('market-barrel','night-market','barrel',4070,940,28,'overdrive'),
+    streetProp('market-car','night-market','car',6080,940,96,'impact'),
+    streetProp('market-relay','night-market','relay',6400,880,0,null),
+    streetProp('transit-crate','transit-concourse','crate',7820,835,24),
+    streetProp('transit-terminal','transit-concourse','terminal',8500,795,40,'barrier'),
+    streetProp('transit-cargo','transit-concourse','crate',9410,940,30,'overdrive'),
+    streetProp('canal-barrel','relay-canal','barrel',11020,835,28,'impact'),
+    streetProp('canal-car','relay-canal','car',11920,945,96),
+    streetProp('canal-streetlight','relay-canal','streetlight',12820,795,36,'barrier'),
+    streetProp('rooftop-crate','rooftop-relay','crate',14420,835,24,'overdrive'),
+    streetProp('rooftop-terminal','rooftop-relay','terminal',15420,795,40,'impact'),
+    streetProp('rooftop-barrel','rooftop-relay','barrel',16200,940,28),
+    streetProp('plaza-car','broadcast-plaza','car',17840,940,110,'barrier'),
+    streetProp('plaza-crate','broadcast-plaza','crate',18820,820,24,'impact'),
+    streetProp('plaza-streetlight','broadcast-plaza','streetlight',19400,795,36,'overdrive')
   ]);
+  const WEAPON_PICKUPS=Object.freeze([
+    ['pipe',0,300,880],['crowbar',0,2210,907],['shock-baton',1,3690,840],['energy-blade',1,5540,900],
+    ['gravity-hammer',2,7130,835],['scatter-blaster',3,10560,850],['coil-rifle',4,13920,835],['plasma-disc',5,17330,850]
+  ].map(([weaponKind,zoneIndex,x,laneY])=>Object.freeze({id:'street-weapon-'+weaponKind,kind:'weapon',weaponKind,
+    charges:WEAPONS[weaponKind].charges,zoneId:ZONES[zoneIndex].id,x,laneY})));
   const TACTICS=Object.freeze({
     chitin_scuttler:Object.freeze(['jab','rush-jab']),
     psion_lancer:Object.freeze(['lunge','lancer-sweep']),
@@ -145,13 +192,16 @@ window.FILE_MANIFEST.push({
       player:{x:C.startX,laneY:C.startLaneY,elevation:0,velocityZ:0,facing:1,
         hp:C.playerHp,maxHp:C.playerHp,attack:null,comboNext:1,comboMs:0,queuedStrike:false,
         guarding:false,parryMs:0,counterMs:0,hurtMs:0,invulnerableMs:0,knockbackVx:0,
-        throwMs:0,throwCooldownMs:0,grapple:null,animAction:'idle',animAgeMs:0,
+        throwMs:0,throwCooldownMs:0,grapple:null,carry:null,strength:C.strength,weapon:null,
+        running:false,runDirection:0,lastTapDirection:0,lastTapMs:-Infinity,
+        powerups:{overdriveMs:0,barrierMs:0,barrierCharges:0,impactMs:0},animAction:'idle',animAgeMs:0,
         vx:0,laneVelocity:0,travelDistance:0,strideRatio:0,settleAgeMs:0,
         wasMoving:false,motionMoving:false,moveAgeMs:0,fromMoving:false,fromStopAgeMs:240,
         fromStridePhase:0,fromStrideRatio:0,motionStridePhase:0,motionVx:0,motionLaneVelocity:0,
         feet:gaitInitial(),transitionFrom:gaitInitial(),hitFeedback:null},
       enemies:[],projectiles:[],hitFx:[],events:[],nextFxId:1,nextProjectileId:1,
-      props:STREET_PROPS.map(prop=>({...prop,hp:prop.maxHp,broken:false})),pickups:[],
+      props:STREET_PROPS.map(prop=>({...prop,hp:prop.maxHp,broken:false,heldBy:null,
+        launched:false,elevation:0,velocityZ:0,knockbackVx:0,launchAgeMs:0,bodyHitIds:[]})),pickups:WEAPON_PICKUPS.map(copy),nextPickupId:1,
       relay:{available:false,restored:false,x:6400,laneY:880},
       impact:{remainingMs:0,strength:0,x:0,laneY:880},
       checkpoint:{zoneIndex:0,waveIndex:0,kills:0,completedWaves:0,clearedZones:[],
@@ -161,8 +211,8 @@ window.FILE_MANIFEST.push({
   function create() {
     let state = initialState(), accumulator = 0;
     let input = {move_x: 0, move_y: 0, jump: {held: false}, strike: {held: false},
-      guard: {held: false}, throw: {held: false}};
-    let edges = {jump: false, strike: false, guard: false, throw: false},impactBufferedStrike=false;
+      guard: {held: false}, throw: {held: false},run:{held:false}};
+    let edges = {jump: false, strike: false, guard: false, throw: false,moveTaps:[]},impactBufferedStrike=false;
 
     function emit(type, data = {}) {
       state.events.push({type, atMs: state.elapsedMs, ...data});
@@ -206,7 +256,7 @@ window.FILE_MANIFEST.push({
       state.checkpoint={zoneIndex:state.zoneIndex,waveIndex:state.waveIndex,kills:state.kills,
         completedWaves:state.completedWaves,clearedZones:state.clearedZones.slice(),
         x:state.player.x,laneY:state.player.laneY,started,
-        props:copy(state.props),pickups:copy(state.pickups),relay:copy(state.relay)};
+        props:copy(state.props),pickups:copy(state.pickups),relay:copy(state.relay),weapon:copy(state.player.weapon),powerups:copy(state.player.powerups),nextPickupId:state.nextPickupId};
       if(started){
         emit('wave-start',{zoneId:z.id,zone:z.index,wave:state.waveIndex+1,kinds:state.enemies.map(e=>e.kind)});
         for(const e of state.enemies)emit('enemy-arrive',{id:e.id,kind:e.kind,arena:e.arena,bloodColor:e.bloodColor});
@@ -220,9 +270,13 @@ window.FILE_MANIFEST.push({
       for (const name of ['jump', 'strike', 'guard', 'throw']) {
         next[name] = action(raw[name]);
         const freshHold = next[name].held && !input[name].held;
-        edges[name] ||= name === 'guard' ? freshHold : next[name].pressed || freshHold;
+        edges[name] ||= name === 'guard' ? freshHold :name==='throw'?freshHold||next[name].pressed&&!input[name].held:next[name].pressed || freshHold;
         if(name==='strike'&&state.impact.remainingMs>0&&(next[name].pressed||freshHold))impactBufferedStrike=true;
       }
+      next.run=action(raw.run);
+      const direction=Math.abs(next.move_x)>.45?Math.sign(next.move_x):0;
+      const oldDirection=Math.abs(input.move_x)>.45?Math.sign(input.move_x):0;
+      if(direction&&direction!==oldDirection){edges.moveTaps.push(direction);if(edges.moveTaps.length>2)edges.moveTaps.shift();}
       input = next;
     }
     function currentGate(){
@@ -236,15 +290,78 @@ window.FILE_MANIFEST.push({
         strength:Math.max(state.impact.strength,strength),x,laneY};
     }
     function damageProp(prop,amount,cause){
-      if(prop.broken||!prop.maxHp||prop.zoneId!==ZONES[state.zoneIndex].id)return;
+      if(prop.broken||!prop.maxHp||prop.heldBy||prop.zoneId!==ZONES[state.zoneIndex].id)return;
       prop.hp=Math.max(0,prop.hp-amount);
+      emit('prop-hit',{id:prop.id,kind:prop.kind,x:prop.x,laneY:prop.laneY,damage:amount,hp:prop.hp,cause});
       if(!prop.hp){
-        prop.broken=true;
-        const pickup={id:prop.id+'-health',kind:'health',zoneId:prop.zoneId,x:prop.x,laneY:prop.laneY};
-        state.pickups.push(pickup);fx('prop-break',prop.x,prop.laneY);
-        emit('prop-break',{id:prop.id,kind:prop.kind,x:prop.x,laneY:prop.laneY,cause,pickupId:pickup.id});
+        prop.broken=true;prop.launched=false;prop.elevation=0;prop.velocityZ=0;
+        const pickup=prop.drop?addPickup({...prop.drop,id:prop.id+'-'+prop.drop.kind,zoneId:prop.zoneId,x:prop.x,laneY:prop.laneY}):null;
+        if(prop.bonusWeapon)addPickup({id:prop.id+'-weapon',kind:'weapon',weaponKind:prop.bonusWeapon,
+          charges:WEAPONS[prop.bonusWeapon].charges,zoneId:prop.zoneId,x:prop.x+38,laneY:prop.laneY});
+        fx('prop-break',prop.x,prop.laneY);
+        emit('prop-break',{id:prop.id,kind:prop.kind,x:prop.x,laneY:prop.laneY,cause,pickupId:pickup?.id||null});
         impactPause(32,.6,prop.x,prop.laneY);
       }
+    }
+    function addPickup(item){
+      if(state.pickups.length>=C.maxPickups)return null;
+      const pickup={...item,id:item.id||'pickup-'+state.nextPickupId++};state.pickups.push(pickup);return pickup;
+    }
+    function stopRun(reason){const p=state.player;if(p.running)emit('run-stop',{reason,x:p.x,laneY:p.laneY});p.running=false;p.runDirection=0;}
+    function heldEnemy(){return state.player.grapple&&!state.player.grapple.released;}
+    function holding(){return heldEnemy()||!!state.player.carry&&!state.player.carry.released;}
+    function propTarget(){const p=state.player;return state.props.filter(prop=>!prop.broken&&prop.carryable&&!prop.heldBy&&!prop.launched&&
+      prop.zoneId===ZONES[state.zoneIndex].id&&Math.abs(prop.laneY-p.laneY)<=55&&Math.abs(prop.x-p.x)<=C.propReach)
+      .sort((a,b)=>Math.abs(a.x-p.x)-Math.abs(b.x-p.x)||a.id.localeCompare(b.id))[0]||null;}
+    function weaponTarget(){const p=state.player;return state.pickups.filter(item=>item.kind==='weapon'&&item.zoneId===ZONES[state.zoneIndex].id&&
+      Math.abs(item.x-p.x)<=C.pickupReach&&Math.abs(item.laneY-p.laneY)<=55)
+      .sort((a,b)=>Math.abs(a.x-p.x)-Math.abs(b.x-p.x)||a.id.localeCompare(b.id))[0]||null;}
+    function gripTarget(){const enemy=throwTarget();if(enemy)return {type:'enemy',item:enemy};const prop=propTarget();if(prop)return {type:'prop',item:prop};
+      const weapon=weaponTarget();return weapon?{type:'weapon',item:weapon}:null;}
+    function dropWeapon(reason='swap'){const p=state.player;if(!p.weapon)return;
+      const item=addPickup({kind:'weapon',weaponKind:p.weapon.kind,charges:p.weapon.charges,zoneId:ZONES[state.zoneIndex].id,
+        x:clamp(p.x-32*p.facing,ZONES[state.zoneIndex].startX+40,currentGate()),laneY:p.laneY});
+      emit('weapon-dropped',{id:item?.id||null,kind:p.weapon.kind,charges:p.weapon.charges,reason,x:item?.x??p.x,laneY:p.laneY});p.weapon=null;}
+    function cancelHolding(reason){
+      const p=state.player;
+      if(p.grapple){const victim=state.enemies.find(e=>e.id===p.grapple.targetId);
+        if(victim?.grappledBy){victim.grappledBy=null;if(victim.hp)phase(victim,'approach');}
+        if(!p.grapple.released)emit('grab-end',{id:p.grapple.targetId,reason,thrown:false,x:p.x,laneY:p.laneY});}
+      if(p.carry){const prop=state.props.find(item=>item.id===p.carry.id);if(prop?.heldBy){prop.heldBy=null;prop.elevation=0;prop.velocityZ=0;
+        prop.x=clamp(p.x+p.facing*60,ZONES[state.zoneIndex].startX+40,currentGate());prop.laneY=p.laneY;}
+        if(!p.carry.thrown)emit('prop-drop',{id:p.carry.id,reason,x:prop?.x||p.x,laneY:p.laneY});}
+      p.grapple=null;p.carry=null;p.throwMs=0;
+    }
+    function beginRelease(reason){const p=state.player,grip=p.grapple||p.carry;if(!grip||grip.released)return;
+      grip.released=true;grip.releaseElapsedMs=0;grip.reason=reason;p.throwMs=C.throwCommitMs;
+      p.attack=null;p.queuedStrike=false;p.throwCooldownMs=C.throwCooldownMs;stopRun('throw');
+      if(p.grapple)emit('grab-end',{id:grip.targetId,reason,thrown:true,x:p.x,laneY:p.laneY});}
+    function beginGrip(){
+      const p=state.player,target=gripTarget();if(!target)return;
+      stopRun('grab');p.guarding=false;p.parryMs=0;p.comboMs=0;p.comboNext=1;
+      if(target.type==='weapon'){
+        dropWeapon();const item=target.item,rule=WEAPONS[item.weaponKind];
+        p.weapon={kind:item.weaponKind,name:rule.name,charges:item.charges,maxCharges:rule.charges};item.collected=true;
+        emit('weapon-equipped',{id:item.id,kind:item.weaponKind,name:rule.name,charges:item.charges,x:p.x,laneY:p.laneY});return;
+      }
+      if(target.type==='prop'){
+        const prop=target.item;p.carry={id:prop.id,kind:prop.kind,weight:prop.weight,elapsedMs:0,maxHoldMs:null,remainingMs:null,
+          facing:p.facing,released:false,releaseElapsedMs:0};prop.heldBy='mac';prop.elevation=C.carryElevation;prop.velocityZ=0;
+        emit('prop-pickup',{id:prop.id,kind:prop.kind,weight:prop.weight,x:prop.x,laneY:prop.laneY});return;
+      }
+      const enemy=target.item,strength=GRAB_STRENGTH[enemy.kind],maxHoldMs=clamp(C.grabMaxMs-(strength-p.strength)*18,1000,C.grabMaxMs);
+      p.grapple={targetId:enemy.id,elapsedMs:0,maxHoldMs,remainingMs:maxHoldMs,strength,facing:p.facing,released:false,
+        releaseElapsedMs:0,pummelUsedMs:0,pummelRemainingMs:C.pummelMaxMs};
+      enemy.grappledBy='mac';enemy.attackDone=true;enemy.knockbackVx=0;phase(enemy,'grappled');
+      emit('grab-start',{id:enemy.id,kind:enemy.kind,strength,maxHoldMs,x:enemy.x,laneY:enemy.laneY});
+      emit('throw',{id:enemy.id,phase:'grab',facing:p.facing,releaseMs:null,maxHoldMs});
+    }
+    function releaseInputs(reason='pause'){
+      cancelHolding(reason);stopRun(reason);const p=state.player;p.attack=null;p.queuedStrike=false;p.guarding=false;p.parryMs=0;
+      p.comboNext=1;p.comboMs=0;p.counterMs=0;
+      p.lastTapDirection=0;p.lastTapMs=-Infinity;
+      input={move_x:0,move_y:0,jump:{held:false},strike:{held:false},guard:{held:false},throw:{held:false},run:{held:false}};
+      edges={jump:false,strike:false,guard:false,throw:false,moveTaps:[]};impactBufferedStrike=false;
     }
     function launchEnemy(e,direction,cause){
       if(ROLES[e.kind].boss)return;
@@ -263,25 +380,28 @@ window.FILE_MANIFEST.push({
     }
     function damageEnemy(e,amount,direction,cause,stunMs,speed,launch=false){
       if(!live(e))return;
-      const rule=ROLES[e.kind],shield=rule.shieldReduction&&!e.shieldBrokenMs&&direction===-e.facing&&['strike','step-strike','air-kick'].includes(cause);
+      const rule=ROLES[e.kind],shield=rule.shieldReduction&&!e.shieldBrokenMs&&direction===-e.facing&&
+        ['strike','step-strike','air-kick','pipe','gravity-hammer','scatter-blaster','coil-rifle','plasma-disc'].includes(cause);
       if(shield){amount=Math.max(1,Math.round(amount*(1-rule.shieldReduction)));fx('shield',e.x,e.laneY);}
-      if(rule.shieldReduction&&(cause==='counter'||cause==='throw')){
-        e.shieldBrokenMs=2600;emit('shield-broken',{id:e.id,durationMs:e.shieldBrokenMs});
+      if(rule.shieldReduction&&['counter','throw','crowbar','energy-blade','shock-baton'].includes(cause)){
+        e.shieldBrokenMs=2600;emit('shield-broken',{id:e.id,durationMs:e.shieldBrokenMs,cause});
       }
       e.hp=Math.max(0,e.hp-amount);e.flashMs=150;
       e.hitFeedback={kind:cause,ageMs:0,lifeMs:320,bloodColor:e.bloodColor,bloodHex:e.bloodHex,damage:amount,direction,shielded:!!shield};
-      const armoredBoss=rule.boss&&e.hp&&['windup','active'].includes(e.phase)&&['strike','step-strike','air-kick'].includes(cause);
+      const armoredBoss=rule.boss&&e.hp&&['windup','active'].includes(e.phase)&&
+        (['strike','step-strike','air-kick'].includes(cause)||!!WEAPONS[cause]);
       if(!armoredBoss){
         e.knockbackVx=direction*speed;e.attackDone=true;phase(e,e.hp?'stunned':'defeated');
         e.stunMs=rule.boss?Math.min(stunMs,420):stunMs;
       }
-      const heavy=launch||['counter','throw','body-impact'].includes(cause);
+      const heavy=launch||['counter','throw','body-impact','prop-impact'].includes(cause);
       if(launch&&!shield&&!armoredBoss)launchEnemy(e,direction,cause);
       fx(e.hp?cause:'defeat',e.x,e.laneY,e.bloodColor,direction);
       state.hitFx.at(-1).heavy=heavy;state.hitFx.at(-1).damage=amount;
       impactPause(shield?10:heavy?48:12,shield ? .2 : heavy ? 1 : .35,e.x,e.laneY);
       emit('enemy-hit',{id:e.id,kind:e.kind,damage:amount,cause,hp:e.hp,bloodColor:e.bloodColor,
-        x:e.x,laneY:e.laneY,direction,heavy,move:launch&&cause==='strike'?'finisher':cause,shielded:!!shield});
+        x:e.x,laneY:e.laneY,direction,heavy,move:launch&&cause==='strike'?'finisher':cause,shielded:!!shield,
+        stunMs:armoredBoss?0:e.stunMs,armored:!!armoredBoss});
       if(rule.boss&&e.hp){
         const nextPhase=e.hp<=e.maxHp/3?3:e.hp<=e.maxHp*2/3?2:1;
         if(nextPhase>e.bossPhase){
@@ -294,14 +414,50 @@ window.FILE_MANIFEST.push({
 
     function startStrike(step) {
       const p=state.player,counter=p.counterMs>0,air=p.elevation>0||p.velocityZ>0;
-      const selected=counter?ATTACKS.counter:air?ATTACKS['air-kick']
-        :step===1&&Math.abs(input.move_x)>.45?ATTACKS['step-strike']:STRIKES[step-1];
-      if(counter||air)step=1;
+      const weapon=!counter&&!air&&p.weapon?WEAPONS[p.weapon.kind]:null;
+      let selected=counter?ATTACKS.counter:air?ATTACKS['air-kick']:weapon||
+        (step===1&&Math.abs(input.move_x)>.45?ATTACKS['step-strike']:STRIKES[step-1]);
+      if(p.powerups.overdriveMs)selected={...selected,windupMs:selected.windupMs*.75,activeMs:selected.activeMs,recoveryMs:selected.recoveryMs*.75};
+      if(counter||air||weapon)step=1;
       p.attack={step,kind:selected.kind,rule:selected,elapsedMs:0,facing:p.facing,
-        hitIds:[],propHitIds:[],counter,airborne:air,rootShift:0};
+        hitIds:[],propHitIds:[],counter,airborne:air,rootShift:0,weaponKind:weapon?.kind||null,fired:false,spent:false,pulseDone:false};
       p.counterMs = 0; p.guarding = false; p.parryMs = 0;
       p.queuedStrike = false; p.comboMs = 0;
-      emit('strike',{step,kind:selected.kind,counter,airborne:air,facing:p.facing});
+      stopRun('strike');emit('strike',{step,kind:selected.kind,weaponKind:weapon?.kind||null,counter,airborne:air,facing:p.facing});
+    }
+    function startPummel(){
+      const p=state.player,g=p.grapple,total=245;
+      if(!g||g.released||g.pummelRemainingMs+1e-7<total)return;
+      p.attack={step:1,kind:'pummel',rule:{kind:'pummel',windupMs:75,activeMs:65,recoveryMs:105,reach:74,damage:6},
+        elapsedMs:0,facing:g.facing,hitIds:[],propHitIds:[],counter:false,airborne:false,rootShift:0};
+      emit('pummel',{id:g.targetId,phase:'start',remainingMs:g.pummelRemainingMs,x:p.x,laneY:p.laneY});
+    }
+    function spendWeapon(attack){
+      const p=state.player;if(!attack.weaponKind||attack.spent)return;attack.spent=true;
+      if(p.weapon?.kind===attack.weaponKind){p.weapon.charges=Math.max(0,p.weapon.charges-1);
+        if(!p.weapon.charges){emit('weapon-spent',{kind:p.weapon.kind,x:p.x,laneY:p.laneY});p.weapon=null;}}
+    }
+    function fireWeapon(attack){
+      const p=state.player,r=attack.rule;if(attack.fired)return;attack.fired=true;spendWeapon(attack);
+      const offsets=r.projectile==='scatter-bolt'?[-26,0,26]:[0];
+      for(const offset of offsets){if(state.projectiles.length>=C.maxProjectiles)break;
+        state.projectiles.push({id:state.nextProjectileId++,owner:'player',ownerId:'mac',kind:r.projectile,weaponKind:attack.weaponKind,
+          x:p.x+attack.facing*r.muzzleForward,laneY:clamp(p.laneY+offset,C.laneMin,C.laneMax),elevation:r.muzzleElevation,facing:attack.facing,
+          sweepStartX:p.x+attack.facing*12,firstSweep:true,
+          vx:attack.facing*(r.projectile==='coil-bolt'?950:r.projectile==='scatter-bolt'?650:520),damage:r.damage,
+          width:r.projectile==='plasma-disc'?24:10,laneReach:r.laneReach,ageMs:0,
+          lifeMs:r.projectile==='plasma-disc'?1400:r.projectile==='coil-bolt'?850:650,
+          hitIds:[],propHitIds:[],returning:false,maxHits:r.projectile==='coil-bolt'?3:r.projectile==='plasma-disc'?3:1});}
+      emit('weapon-fired',{kind:attack.weaponKind,projectile:r.projectile,facing:attack.facing,x:p.x,laneY:p.laneY,
+        muzzleX:p.x+attack.facing*r.muzzleForward,elevation:r.muzzleElevation,sweepStartX:p.x+attack.facing*12});
+    }
+    function impactPulse(attack){
+      const p=state.player;if(attack.pulseDone||!p.powerups.impactMs)return;attack.pulseDone=true;p.powerups.impactMs=0;
+      for(const e of state.enemies)if(live(e)&&!e.grappledBy&&Math.abs(e.x-p.x)<=210&&Math.abs(e.laneY-p.laneY)<=95)
+        damageEnemy(e,18,Math.sign(e.x-p.x)||p.facing,'impact-pulse',500,440,true);
+      for(const prop of state.props)if(!prop.broken&&!prop.heldBy&&prop.zoneId===ZONES[state.zoneIndex].id&&Math.abs(prop.x-p.x)<=210&&Math.abs(prop.laneY-p.laneY)<=95)
+        damageProp(prop,36,'impact-pulse');
+      fx('impact-pulse',p.x,p.laneY);emit('impact-pulse',{id:'mac',radius:210,x:p.x,laneY:p.laneY});
     }
     function strikePhase(attack) {
       const rule=attack.rule;
@@ -312,6 +468,12 @@ window.FILE_MANIFEST.push({
       const p=state.player;
       if((!projectile&&e.attackDone)||p.hp<=0||p.invulnerableMs>0||p.elevation>(spec.hitHeight??C.hitHeight))return;
       if(!projectile)e.attackDone=true;
+      if(p.powerups.barrierMs&&p.powerups.barrierCharges){
+        cancelHolding('barrier-hit');stopRun('hit');
+        p.powerups.barrierCharges--;p.invulnerableMs=240;
+        if(!p.powerups.barrierCharges)p.powerups.barrierMs=0;
+        fx('barrier',p.x,p.laneY);emit('barrier-block',{id:e.id,charges:p.powerups.barrierCharges,x:p.x,laneY:p.laneY});return;
+      }
       const front=(beforeX-p.x)*p.facing>=-12&&e.attackFacing===-p.facing;
       if(p.guarding&&front&&spec.guardable!==false){
         if(p.parryMs>0){
@@ -324,9 +486,9 @@ window.FILE_MANIFEST.push({
       }
       p.hp=Math.max(0,p.hp-spec.damage);p.hurtMs=C.playerHurtMs;p.invulnerableMs=C.playerInvulnerableMs;
       p.knockbackVx=e.attackFacing*240;p.attack=null;p.queuedStrike=false;p.comboNext=1;p.comboMs=0;
-      if(p.grapple){const victim=state.enemies.find(item=>item.id===p.grapple.targetId);
-        if(victim?.phase==='grappled'){victim.grappledBy=null;phase(victim,'approach');}}
-      p.guarding=false;p.parryMs=0;p.throwMs=0;p.grapple=null;
+      dropWeapon('hit');
+      cancelHolding('hit');stopRun('hit');p.lastTapDirection=0;p.lastTapMs=-Infinity;
+      p.guarding=false;p.parryMs=0;p.throwMs=0;
       p.hitFeedback={kind:'damage',ageMs:0,lifeMs:320,bloodColor:'red',bloodHex:BLOOD.red,
         damage:spec.damage,direction:e.attackFacing};
       fx('damage',p.x,p.laneY,'red',e.attackFacing);state.hitFx.at(-1).damage=spec.damage;
@@ -342,31 +504,40 @@ window.FILE_MANIFEST.push({
       if(p.hitFeedback){p.hitFeedback.ageMs+=dt;if(p.hitFeedback.ageMs>=p.hitFeedback.lifeMs)p.hitFeedback=null;}
       for (const timer of ['hurtMs', 'invulnerableMs', 'parryMs', 'counterMs',
         'comboMs', 'throwMs', 'throwCooldownMs']) p[timer] = Math.max(0, p[timer] - dt);
+      for(const kind of ['overdrive','barrier','impact']){const key=kind+'Ms',before=p.powerups[key];
+        p.powerups[key]=Math.max(0,before-dt);if(before&&!p.powerups[key]){if(kind==='barrier')p.powerups.barrierCharges=0;emit('powerup-expired',{kind});}}
       if (!p.comboMs && !p.attack) p.comboNext = 1;
-      p.guarding = input.guard.held && !p.attack && !p.throwMs && !p.hurtMs && p.elevation === 0;
+      p.guarding = input.guard.held && !p.attack && !p.throwMs && !holding() && !p.hurtMs && p.elevation === 0;
       if (pressed.guard && p.guarding) p.parryMs = C.parryMs;
       if (!p.guarding) p.parryMs = 0;
-      if (!p.attack && !p.throwMs && !p.hurtMs && input.move_x) p.facing = Math.sign(input.move_x);
-      if (pressed.jump && !p.attack && !p.throwMs && !p.hurtMs && p.elevation === 0) {
+      for(const tap of pressed.moveTaps){
+        if(p.lastTapDirection===tap&&state.elapsedMs-p.lastTapMs<=C.runTapMs)p.runDirection=tap;
+        else p.runDirection=0;
+        p.lastTapDirection=tap;p.lastTapMs=state.elapsedMs;
+      }
+      const running=!p.guarding&&!holding()&&!p.attack&&!p.throwMs&&!p.hurtMs&&!p.elevation&&
+        (input.run.held&&Math.hypot(input.move_x,input.move_y)>.45||Math.abs(input.move_x)>.45&&p.runDirection===Math.sign(input.move_x));
+      if(running&&!p.running)emit('run-start',{direction:Math.sign(input.move_x),x:p.x,laneY:p.laneY});
+      if(!running&&p.running)stopRun('input');p.running=!!running;
+      if(!input.move_x)p.runDirection=0;
+      if (!p.attack && !p.throwMs && !heldEnemy() && !p.hurtMs && input.move_x) p.facing = Math.sign(input.move_x);
+      if(p.carry&&!p.carry.released)p.carry.facing=p.facing;
+      if (pressed.jump && !p.attack && !p.throwMs && !holding() && !p.hurtMs && p.elevation === 0) {
         p.velocityZ = C.jumpSpeed; p.guarding = false; p.parryMs = 0; emit('jump');
       }
       if (pressed.strike && !p.throwMs && !p.hurtMs) {
-        if (!p.attack) startStrike(p.comboMs > 0 ? p.comboNext : 1);
-        else if((strikePhase(p.attack)==='recovery'||impactBufferedStrike&&strikePhase(p.attack)==='active')&&
-          p.attack.step<3&&!p.attack.airborne&&!p.attack.counter)p.queuedStrike=true;
+        if(heldEnemy()){if(!p.attack)startPummel();}
+        else if(!p.carry&&!p.attack) startStrike(p.comboMs > 0 ? p.comboNext : 1);
+        else if(p.attack&&(strikePhase(p.attack)==='recovery'||impactBufferedStrike&&strikePhase(p.attack)==='active')&&
+          p.attack.step<3&&!p.attack.airborne&&!p.attack.counter&&!p.attack.weaponKind)p.queuedStrike=true;
       }
-      if (pressed.throw && !p.attack && !p.throwMs && !p.hurtMs && !p.throwCooldownMs && p.elevation === 0) {
-        const target = throwTarget();
-        if (target) {
-          p.throwMs=C.throwCommitMs;p.throwCooldownMs=C.throwCooldownMs;
-          p.grapple={targetId:target.id,elapsedMs:0,facing:p.facing,released:false};
-          target.grappledBy='mac';target.attackDone=true;target.knockbackVx=0;phase(target,'grappled');
-          p.guarding = false; p.parryMs = 0; p.comboMs = 0; p.comboNext = 1;
-          emit('throw',{id:target.id,phase:'grab',facing:p.facing,releaseMs:C.throwReleaseMs});
-        }
-      }
-      let mobility = p.hurtMs || p.throwMs ? 0 : p.guarding ? .28 : 1;
-      if (p.attack) mobility = strikePhase(p.attack) === 'recovery' ? .5 : .18;
+      if (pressed.throw && !p.attack && !p.throwMs && !holding() && !p.hurtMs && !p.throwCooldownMs && p.elevation === 0)beginGrip();
+      if(holding()&&!input.throw.held)beginRelease('release');
+      if(heldEnemy()&&input.strike.held&&!p.attack)startPummel();
+      let mobility = p.hurtMs || p.throwMs ? 0 : p.guarding ? .22 : heldEnemy()?clamp(.62-p.grapple.strength*.0025,.22,.55)
+        :p.carry?clamp(.72-p.carry.weight*.003,.38,.6):p.running?C.runMultiplier:1;
+      if (p.attack&&!heldEnemy()) mobility = strikePhase(p.attack) === 'recovery' ? .5 : .18;
+      if(p.attack?.kind==='pummel')mobility=0;
       const magnitude = Math.max(1, Math.hypot(input.move_x, input.move_y));
       const rootCommit=p.attack?.rule.rootSpeed&&strikePhase(p.attack)!=='recovery';
       const rootMotion=rootCommit?p.attack.facing*p.attack.rule.rootSpeed*sec:0;
@@ -383,27 +554,42 @@ window.FILE_MANIFEST.push({
       if (p.attack) {
         const attack=p.attack,rule=attack.rule;
         attack.elapsedMs += dt;
+        if(attack.kind==='pummel'&&p.grapple){p.grapple.pummelUsedMs=Math.min(C.pummelMaxMs,p.grapple.pummelUsedMs+dt);
+          p.grapple.pummelRemainingMs=Math.max(0,C.pummelMaxMs-p.grapple.pummelUsedMs);}
         if(strikePhase(attack)==='active'&&p.elevation<=(rule.hitHeight??C.hitHeight)){
+          if(rule.projectile)fireWeapon(attack);
+          else if(attack.kind==='pummel'){
+            const victim=state.enemies.find(e=>e.id===p.grapple?.targetId);
+            if(victim?.hp&&!attack.hitIds.length){attack.hitIds.push(victim.id);damageEnemy(victim,rule.damage,attack.facing,'pummel',0,0);
+              if(victim.hp){phase(victim,'grappled');victim.knockbackVx=0;}
+              else cancelHolding('defeated');}
+          }else{
+          if(attack.weaponKind)spendWeapon(attack);
+          if(attack.kind==='air-kick')impactPulse(attack);
           for (const e of state.enemies) {
             const distance = (e.x - p.x) * attack.facing;
-            if (live(e) && !e.launched&&!e.knockdownMs&&!attack.hitIds.includes(e.id) && distance >= -12 && distance <= rule.reach &&
-              Math.abs(e.laneY - p.laneY) <= C.laneReach) {
+            if (live(e) && !e.grappledBy&&!e.launched&&!e.knockdownMs&&!attack.hitIds.includes(e.id) && distance >= (rule.radial?-rule.reach:-12) && distance <= rule.reach &&
+              Math.abs(e.laneY - p.laneY) <= (rule.laneReach??C.laneReach)) {
               attack.hitIds.push(e.id);
-              const cause=attack.counter?'counter':attack.kind==='air-kick'?'air-kick':attack.kind==='step-strike'?'step-strike':'strike';
-              damageEnemy(e,rule.damage,attack.facing,cause,attack.step===3||attack.kind==='air-kick'?420:230,
-                attack.step===3?240:attack.kind==='air-kick'?210:95,attack.step===3);
+              const cause=attack.weaponKind|| (attack.counter?'counter':attack.kind==='air-kick'?'air-kick':attack.kind==='step-strike'?'step-strike':'strike');
+              damageEnemy(e,rule.damage,rule.radial?Math.sign(e.x-p.x)||attack.facing:attack.facing,cause,rule.stunMs|| (attack.step===3||attack.kind==='air-kick'?420:230),
+                rule.launch?460:attack.step===3?240:attack.kind==='air-kick'?210:95,!!rule.launch||attack.step===3);
+              if(rule.pull&&e.hp&&!e.launched)e.x=toward(e.x,p.x+attack.facing*65,rule.pull);
+              if(rule.chain){const next=state.enemies.filter(v=>live(v)&&v.id!==e.id&&!v.grappledBy&&!attack.hitIds.includes(v.id)&&Math.abs(v.x-e.x)<155&&Math.abs(v.laneY-e.laneY)<85)
+                .sort((a,b)=>Math.abs(a.x-e.x)-Math.abs(b.x-e.x))[0];if(next){attack.hitIds.push(next.id);damageEnemy(next,7,attack.facing,'shock-baton',650,80);fx('shock-chain',next.x,next.laneY);}}
             }
           }
           for(const prop of state.props){
             const distance=(prop.x-p.x)*attack.facing;
-            if(!prop.broken&&prop.maxHp&&distance>=-12&&distance<=rule.reach&&
-              Math.abs(prop.laneY-p.laneY)<=C.laneReach&&!attack.propHitIds.includes(prop.id)){
-              attack.propHitIds.push(prop.id);damageProp(prop,rule.damage,'strike');
+            if(!prop.broken&&!prop.heldBy&&prop.maxHp&&distance>=-12-prop.width/2&&distance<=rule.reach+prop.width/2&&
+              Math.abs(prop.laneY-p.laneY)<=(rule.laneReach??C.laneReach)&&!attack.propHitIds.includes(prop.id)){
+              attack.propHitIds.push(prop.id);damageProp(prop,rule.damage,attack.weaponKind||'strike');
             }
+          }
           }
         }
         if (readyAt(attack.elapsedMs, rule.windupMs + rule.activeMs + rule.recoveryMs)) {
-          const chainable=attack.step<3&&!attack.airborne&&!attack.counter,queued=p.queuedStrike&&chainable;
+          const chainable=attack.step<3&&!attack.airborne&&!attack.counter&&!attack.weaponKind&&attack.kind!=='pummel',queued=p.queuedStrike&&chainable;
           p.attack = null; p.queuedStrike = false;
           p.comboNext=chainable?attack.step+1:1;
           p.comboMs=chainable?C.comboWindowMs:0;
@@ -412,17 +598,31 @@ window.FILE_MANIFEST.push({
       }
       if(p.grapple){
         const grapple=p.grapple,victim=state.enemies.find(e=>e.id===grapple.targetId);
-        grapple.elapsedMs+=dt;
         if(!grapple.released&&victim?.hp){
+          grapple.elapsedMs=Math.min(grapple.maxHoldMs,grapple.elapsedMs+dt);grapple.remainingMs=Math.max(0,grapple.maxHoldMs-grapple.elapsedMs);
           victim.x=toward(victim.x,p.x+grapple.facing*52,180*sec);
           victim.laneY=toward(victim.laneY,p.laneY,160*sec);
-          if(readyAt(grapple.elapsedMs,C.throwReleaseMs)){
-            grapple.released=true;victim.grappledBy=null;
-            damageEnemy(victim,C.throwDamage,grapple.facing,'throw',720,530,true);
-            emit('throw-release',{id:victim.id,facing:grapple.facing,damage:C.throwDamage});
-          }
+          if(!grapple.remainingMs)beginRelease('strength-limit');
         }
-        if(readyAt(grapple.elapsedMs,C.throwCommitMs)){p.grapple=null;p.throwMs=0;}
+        if(grapple.released){grapple.releaseElapsedMs+=dt;
+          if(!grapple.thrown&&readyAt(grapple.releaseElapsedMs,C.throwReleaseMs)){
+            grapple.thrown=true;if(victim)victim.grappledBy=null;
+            if(victim?.hp){
+            damageEnemy(victim,C.throwDamage,grapple.facing,'throw',720,530,true);
+            emit('throw-release',{id:victim.id,facing:grapple.facing,damage:C.throwDamage});}
+          }
+          if(readyAt(grapple.releaseElapsedMs,C.throwCommitMs)){p.grapple=null;p.throwMs=0;}
+        }
+      }
+      if(p.carry){const carry=p.carry,prop=state.props.find(item=>item.id===carry.id);
+        if(prop&&!carry.released){carry.elapsedMs+=dt;prop.x=p.x+carry.facing*C.carryForward;prop.laneY=p.laneY;prop.elevation=C.carryElevation;}
+        if(carry.released){carry.releaseElapsedMs+=dt;
+          if(prop&&!carry.thrown&&readyAt(carry.releaseElapsedMs,C.throwReleaseMs)){
+            carry.thrown=true;prop.heldBy=null;prop.launched=true;prop.launchAgeMs=0;prop.bodyHitIds=[];
+            prop.x=p.x+carry.facing*C.propReleaseForward;prop.laneY=p.laneY;
+            prop.velocityZ=260;prop.knockbackVx=carry.facing*(580-carry.weight*2);prop.elevation=C.propReleaseElevation;
+            emit('prop-throw',{id:prop.id,kind:prop.kind,weight:prop.weight,x:prop.x,laneY:prop.laneY,direction:carry.facing});}
+          if(readyAt(carry.releaseElapsedMs,C.throwCommitMs)){p.carry=null;p.throwMs=0;}}
       }
       p.vx=(p.x-previousX)/sec;p.laneVelocity=(p.laneY-previousLane)/sec;
       p.travelDistance+=Math.hypot(p.x-previousX,(p.laneY-previousLane)*.75);
@@ -430,9 +630,12 @@ window.FILE_MANIFEST.push({
       if(p.motionMoving&&!state.playerWasMoving)emit('player-move',{id:'mac',x:p.x,laneY:p.laneY});
       state.playerWasMoving=p.motionMoving;
       for(const pickup of state.pickups){
-        if(!pickup.collected&&pickup.zoneId===ZONES[state.zoneIndex].id&&p.hp<p.maxHp&&!p.elevation&&
+        if(pickup.kind!=='weapon'&&!pickup.collected&&pickup.zoneId===ZONES[state.zoneIndex].id&&(pickup.kind!=='health'||p.hp<p.maxHp)&&!p.elevation&&
           Math.abs(pickup.x-p.x)<=C.pickupReach&&Math.abs(pickup.laneY-p.laneY)<=55){
-          const heal=Math.min(C.pickupHeal,p.maxHp-p.hp);p.hp+=heal;pickup.collected=true;
+          let heal=0;if(pickup.kind==='health'){heal=Math.min(C.pickupHeal,p.maxHp-p.hp);p.hp+=heal;}
+          else{const kind=pickup.kind,key=kind+'Ms';p.powerups[key]=C[key];if(kind==='barrier')p.powerups.barrierCharges=3;
+            emit('powerup',{id:pickup.id,kind,durationMs:C[key],charges:kind==='barrier'?3:null,x:pickup.x,laneY:pickup.laneY});}
+          pickup.collected=true;
           emit('pickup',{id:pickup.id,kind:pickup.kind,x:pickup.x,laneY:pickup.laneY,heal,hp:p.hp});
         }
       }
@@ -614,7 +817,30 @@ window.FILE_MANIFEST.push({
     function tickProjectiles(dt){
       const p=state.player,sec=dt/1000,z=ZONES[state.zoneIndex];
       for(const item of state.projectiles){
-        const before=item.x;item.x+=item.vx*sec;item.ageMs+=dt;
+        const before=item.owner==='player'&&item.firstSweep?item.sweepStartX:item.x;
+        item.firstSweep=false;item.x+=item.vx*sec;item.ageMs+=dt;
+        if(item.owner==='player'){
+          if(item.kind==='plasma-disc'&&item.ageMs>=600){item.returning=true;item.vx=(Math.sign(p.x-item.x)||-item.facing)*520;
+            item.laneY=toward(item.laneY,p.laneY,180*sec);
+            if(Math.abs(item.x-p.x)<35&&Math.abs(item.laneY-p.laneY)<40)item.ageMs=item.lifeMs;}
+          const direction=Math.sign(item.x-before)||item.facing,contacts=[];
+          for(const target of state.enemies){
+            if(!live(target)||target.grappledBy||target.launched||item.hitIds.includes(target.id))continue;
+            if(target.x>=Math.min(before,item.x)-item.width&&target.x<=Math.max(before,item.x)+item.width&&Math.abs(target.laneY-item.laneY)<=item.laneReach)
+              contacts.push({target,type:'enemy',distance:Math.max(0,(target.x-before)*direction-item.width)});
+          }
+          for(const prop of state.props){if(prop.broken||prop.heldBy||!prop.maxHp||prop.zoneId!==z.id||item.propHitIds.includes(prop.id))continue;
+            if(prop.x>=Math.min(before,item.x)-prop.width/2&&prop.x<=Math.max(before,item.x)+prop.width/2&&Math.abs(prop.laneY-item.laneY)<=item.laneReach)
+              contacts.push({target:prop,type:'prop',distance:Math.max(0,(prop.x-before)*direction-prop.width/2)});}
+          contacts.sort((a,b)=>a.distance-b.distance||a.target.id.localeCompare(b.target.id));
+          for(const contact of contacts){if(item.hitIds.length+item.propHitIds.length>=item.maxHits)break;
+            const target=contact.target;
+            if(contact.type==='enemy'){item.hitIds.push(target.id);damageEnemy(target,item.damage,direction,item.weaponKind,320,130);}
+            else{item.propHitIds.push(target.id);damageProp(target,item.damage,item.weaponKind);}
+            if(item.hitIds.length+item.propHitIds.length>=item.maxHits&&item.kind!=='plasma-disc')item.ageMs=item.lifeMs;}
+          if(item.x<z.startX+20||item.x>z.endX-20)item.ageMs=item.lifeMs;
+          continue;
+        }
         const e=state.enemies.find(foe=>foe.id===item.ownerId);
         if(!e||!e.hp){item.ageMs=item.lifeMs;continue;}
         const intersects=p.x>=Math.min(before,item.x)-item.width&&p.x<=Math.max(before,item.x)+item.width&&Math.abs(p.laneY-item.laneY)<=item.laneReach;
@@ -629,6 +855,24 @@ window.FILE_MANIFEST.push({
         if(item.x<z.startX+20||item.x>z.endX-20)item.ageMs=item.lifeMs;
       }
       state.projectiles=state.projectiles.filter(item=>item.ageMs<item.lifeMs);
+    }
+    function tickProps(dt){
+      const sec=dt/1000,z=ZONES[state.zoneIndex];
+      for(const prop of state.props){if(!prop.launched||prop.broken||prop.zoneId!==z.id)continue;
+        const before=prop.x;prop.launchAgeMs+=dt;prop.x=clamp(prop.x+prop.knockbackVx*sec,z.startX+40,z.endX-40);
+        prop.elevation=Math.max(0,prop.elevation+prop.velocityZ*sec-.5*C.launchGravity*sec*sec);prop.velocityZ-=C.launchGravity*sec;
+        for(const victim of state.enemies){if(!live(victim)||victim.grappledBy||victim.launched||prop.bodyHitIds.includes(victim.id))continue;
+          if(victim.x<Math.min(before,prop.x)-prop.width/2||victim.x>Math.max(before,prop.x)+prop.width/2||Math.abs(victim.laneY-prop.laneY)>65)continue;
+          prop.bodyHitIds.push(victim.id);const damage=20+Math.round(prop.weight*.15),direction=Math.sign(prop.knockbackVx)||1;
+          damageEnemy(victim,damage,direction,'prop-impact',500,180);
+          emit('body-impact',{id:prop.id,targetId:victim.id,kind:victim.kind,damage,x:victim.x,laneY:victim.laneY,direction,bloodColor:victim.bloodColor,heavy:true});}
+        for(const target of state.props){if(target.id===prop.id||target.broken||target.heldBy||!target.maxHp||target.zoneId!==z.id||prop.bodyHitIds.includes(target.id))continue;
+          if(target.x<Math.min(before,prop.x)-(target.width+prop.width)/2||target.x>Math.max(before,prop.x)+(target.width+prop.width)/2||Math.abs(target.laneY-prop.laneY)>65)continue;
+          prop.bodyHitIds.push(target.id);damageProp(target,40,'prop-impact');
+          emit('body-impact',{id:prop.id,targetId:target.id,kind:target.kind,damage:40,x:target.x,laneY:target.laneY,heavy:true});}
+        if(!prop.elevation&&prop.velocityZ<0){prop.launched=false;prop.velocityZ=0;prop.knockbackVx=0;
+          emit('prop-land',{id:prop.id,kind:prop.kind,x:prop.x,laneY:prop.laneY});damageProp(prop,prop.maxHp,'landing');}
+      }
     }
     function tickBodies(beforeEnemies){
       for(const body of state.enemies){
@@ -647,8 +891,8 @@ window.FILE_MANIFEST.push({
             x:victim.x,laneY:victim.laneY,direction,bloodColor:victim.bloodColor,heavy:true});
         }
         for(const prop of state.props){
-          if(prop.broken||!prop.maxHp||prop.zoneId!==ZONES[state.zoneIndex].id||body.bodyHitIds.includes(prop.id))continue;
-          if(prop.x<Math.min(before.x,body.x)-C.bodyRadius||prop.x>Math.max(before.x,body.x)+C.bodyRadius||
+          if(prop.broken||prop.heldBy||!prop.maxHp||prop.zoneId!==ZONES[state.zoneIndex].id||body.bodyHitIds.includes(prop.id))continue;
+          if(prop.x<Math.min(before.x,body.x)-C.bodyRadius-prop.width/2||prop.x>Math.max(before.x,body.x)+C.bodyRadius+prop.width/2||
             Math.abs(prop.laneY-body.laneY)>C.bodyLaneReach)continue;
           body.bodyHitIds.push(prop.id);damageProp(prop,40,'body-impact');
           emit('body-impact',{id:body.id,targetId:prop.id,kind:prop.kind,damage:40,x:prop.x,laneY:prop.laneY,heavy:true});
@@ -662,6 +906,8 @@ window.FILE_MANIFEST.push({
         state.waveState='combat';state.arenaIndex=state.zoneIndex+1;
         state.checkpoint.started=true;state.checkpoint.x=p.x;state.checkpoint.laneY=p.laneY;
         state.checkpoint.props=copy(state.props);state.checkpoint.pickups=copy(state.pickups);state.checkpoint.relay=copy(state.relay);
+        state.checkpoint.weapon=copy(p.weapon);state.checkpoint.powerups=copy(p.powerups);
+        state.checkpoint.nextPickupId=state.nextPickupId;
         for(const e of state.enemies){phase(e,'approach');emit('enemy-arrive',{id:e.id,kind:e.kind,arena:e.arena,bloodColor:e.bloodColor});}
         if(!state.waveIndex)emit('zone-enter',{zoneId:z.id,name:z.name,index:z.index,arrival:z.arrival});
         emit('wave-start',{zoneId:z.id,zone:z.index,wave:state.waveIndex+1,kinds:state.enemies.map(e=>e.kind)});
@@ -687,6 +933,7 @@ window.FILE_MANIFEST.push({
           if(advancing){state.waveState='advance';emit('street-advance',{zoneId:z.id,x:z.startX+C.advanceEntryOffset,wave:state.waveIndex+1});}
         }
       }else if(state.waveState==='zone-clear'&&state.zoneIndex+1<ZONES.length&&p.x>=ZONES[state.zoneIndex+1].entryX){
+        releaseInputs('zone-exit');
         state.zoneIndex++;state.waveIndex=0;spawnWave(true);
         const next=ZONES[state.zoneIndex];emit('zone-enter',{zoneId:next.id,name:next.name,index:next.index,arrival:next.arrival});
       }
@@ -708,6 +955,7 @@ window.FILE_MANIFEST.push({
       tickPlayer(dt,pressed);progression(dt);
       for(const e of state.enemies)tickEnemy(e,dt,beforeEnemies.get(e.id));
       tickBodies(beforeEnemies);
+      tickProps(dt);
       tickProjectiles(dt);
       const p=state.player,currentMode=mode();
       p.animAgeMs=currentMode===p.animAction?p.animAgeMs+dt:0;p.animAction=currentMode;
@@ -724,7 +972,7 @@ window.FILE_MANIFEST.push({
           if(!state.impact.remainingMs)state.impact.strength=0;
         }else{
           const pressed = edges;
-          edges = {jump: false, strike: false, guard: false, throw: false};
+          edges = {jump: false, strike: false, guard: false, throw: false,moveTaps:[]};
           tick(C.stepMs, pressed);
           impactBufferedStrike=false;
         }
@@ -734,9 +982,11 @@ window.FILE_MANIFEST.push({
     }
     function mode() {
       const p = state.player;
-      return p.hp <= 0 ? 'defeated' : p.hurtMs ? 'hurt' : p.throwMs ? 'throw'
-        : p.attack ? 'strike' : p.guarding ? 'guard' : p.elevation > 0 ? 'jump'
-        : input.move_x || input.move_y ? 'walk' : 'idle';
+      return p.hp <= 0 ? 'defeated' : p.hurtMs ? 'hurt' : p.throwMs ? p.carry?'carry-throw':'throw'
+        : heldEnemy()?p.attack?.kind==='pummel'?'grab-pummel':'grab-hold':p.carry?'carry'
+        : p.attack?.weaponKind?p.attack.rule.projectile?p.attack.rule.projectile==='plasma-disc'?'weapon-disc':'weapon-fire':p.attack.rule.launch?'weapon-heavy':'weapon-melee'
+        : p.attack ? 'strike' : p.guarding ? Math.hypot(p.vx,p.laneVelocity)>.01?'guard-creep':'guard' : p.elevation > 0 ? 'jump'
+        :p.running?'run': input.move_x || input.move_y ? 'walk' : 'idle';
     }
     function animation(e){
       const frames={idle:0,tell:3,attack:4,recover:5,hurt:6,defeat:7};
@@ -762,17 +1012,22 @@ window.FILE_MANIFEST.push({
       const attack=p.attack?{step:p.attack.step,kind:p.attack.kind,phase:attackPhase,elapsedMs:p.attack.elapsedMs,
         timing:{windupMs:rule.windupMs,activeMs:rule.activeMs,recoveryMs:rule.recoveryMs},
         reach:rule.reach,damage:rule.damage,hitHeight:rule.hitHeight??C.hitHeight,rootShift:p.attack.rootShift,
-        facing:p.attack.facing,counter:p.attack.counter,airborne:p.attack.airborne,
+        facing:p.attack.facing,counter:p.attack.counter,airborne:p.attack.airborne,weaponKind:p.attack.weaponKind||null,
         phaseProgress:clamp((p.attack.elapsedMs-phaseStart)/phaseDuration,0,1),
         normalizedProgress:clamp(p.attack.elapsedMs/attackDuration,0,1),remainingMs:Math.max(0,attackDuration-p.attack.elapsedMs)}:null;
-      const grapple=p.grapple?{...p.grapple,phase:!p.grapple.released?'grab':p.grapple.elapsedMs<280?'release':'recover',
-        progress:clamp(p.grapple.elapsedMs/C.throwCommitMs,0,1)}:null;
+      const grapple=p.grapple?{...p.grapple,releaseAgeMs:p.grapple.releaseElapsedMs,
+        phase:!p.grapple.released?p.attack?.kind==='pummel'?'pummel':'hold':p.grapple.releaseElapsedMs<280?'release':'recover',
+        progress:p.grapple.released?clamp(p.grapple.releaseElapsedMs/C.throwCommitMs,0,1):clamp(p.grapple.elapsedMs/p.grapple.maxHoldMs,0,1)}:null;
+      const carry=p.carry?{...p.carry,releaseAgeMs:p.carry.releaseElapsedMs,
+        phase:!p.carry.released?'hold':p.carry.releaseElapsedMs<280?'release':'recover',
+        progress:p.carry.released?clamp(p.carry.releaseElapsedMs/C.throwCommitMs,0,1):0}:null;
       const boss=state.enemies.find(e=>ROLES[e.kind].boss);
       return copy({version:C.version,elapsedMs:state.elapsedMs,status:state.status,kills:state.kills,
-        player:{...p,y:p.laneY,grounded:p.elevation===0&&p.velocityZ===0,mode:mode(),attack,grapple,
+        player:{...p,y:p.laneY,grounded:p.elevation===0&&p.velocityZ===0,mode:mode(),attack,grapple,carry,
           bloodColor:'red',bloodHex:BLOOD.red,
-          animation:{action:mode(),pose:attack?.kind||mode(),phase:attackPhase||grapple?.phase||mode(),
-            phaseProgress:attack?.phaseProgress??grapple?.progress??0,ageMs:p.animAgeMs,facing:p.facing,frame:Math.floor(p.animAgeMs/120)%2,
+          animation:{action:mode(),pose:attack?.weaponKind?mode():attack?.kind||mode(),weaponKind:p.weapon?.kind||attack?.weaponKind||null,
+            phase:attackPhase||grapple?.phase||carry?.phase||mode(),
+            phaseProgress:attack?.phaseProgress??grapple?.progress??carry?.progress??0,ageMs:p.animAgeMs,facing:p.facing,frame:Math.floor(p.animAgeMs/120)%2,
             motion:{vx:p.vx,laneVelocity:p.laneVelocity,speed:Math.hypot(p.vx,p.laneVelocity),
               stridePhase:(p.travelDistance/110)%1,strideRatio:p.strideRatio,
               settleAgeMs:p.settleAgeMs,wasMoving:p.wasMoving,moveAgeMs:p.moveAgeMs,fromMoving:p.fromMoving,
@@ -810,21 +1065,22 @@ window.FILE_MANIFEST.push({
     }
 
     function getControlState() {
-      const p = state.player, alive = p.hp > 0, busy = !!(p.attack || p.throwMs || p.hurtMs);
-      const target = throwTarget();
+      const p = state.player, alive = p.hp > 0, busy = !!(p.attack || p.throwMs || p.hurtMs||holding());
+      const target = gripTarget(),grip=p.grapple||p.carry;
       const nextStep=p.attack?p.attack.step+1:p.comboMs>0?p.comboNext:1;
       return {
         interactAvailable:canInteract(),interactLabel:'Restore relay',
-        move: {enabled: alive, held: !!(input.move_x || input.move_y)},
+        move: {enabled: alive, held: !!(input.move_x || input.move_y),running:p.running},
         jump: {label: 'Jump', enabled: alive, ready: alive && !busy && p.elevation === 0, held: input.jump.held},
-        strike: {label:p.counterMs>0?'Counter':p.elevation>0||p.velocityZ>0?'Air Kick':nextStep===1&&Math.abs(input.move_x)>.45?'Step Strike':'Strike',enabled:alive,
-          ready: alive && !p.throwMs && !p.hurtMs && (!p.attack ||
-            strikePhase(p.attack)==='recovery'&&p.attack.step<3&&!p.attack.airborne&&!p.attack.counter),held:input.strike.held},
+        strike: {label:heldEnemy()?'Pummel':p.counterMs>0?'Counter':p.elevation>0||p.velocityZ>0?'Air Kick':p.weapon?.name|| (nextStep===1&&Math.abs(input.move_x)>.45?'Step Strike':'Strike'),enabled:alive&&!p.carry,
+          ready: alive && !p.throwMs && !p.carry && !p.hurtMs && (heldEnemy()?p.grapple.pummelRemainingMs>=245&&!p.attack:(!p.attack ||
+            strikePhase(p.attack)==='recovery'&&p.attack.step<3&&!p.attack.airborne&&!p.attack.counter&&!p.attack.weaponKind)),held:input.strike.held},
         guard: {label: 'Guard', enabled: alive, ready: alive && !busy && p.elevation === 0,
           held: input.guard.held, parryMs: p.parryMs, counterMs: p.counterMs},
-        throw: {label: 'Throw', enabled: alive && !!target,
+        throw: {label:holding()?'Throw':target?.type==='enemy'?'Grab':target?.type==='prop'?'Lift':target?.type==='weapon'?'Pick up':'Grab', enabled: alive && (!!target||!!grip),
           ready: alive && !!target && !busy && !p.throwCooldownMs && p.elevation === 0,
-          targetId: target?.id || null, held: input.throw.held, cooldownMs: p.throwCooldownMs},
+          targetId: grip?.targetId||grip?.id||target?.item.id||null,targetType:p.grapple?'enemy':p.carry?'prop':target?.type||null,
+          holding:!!holding(),holdRemainingMs:p.grapple?.remainingMs??null,held: input.throw.held, cooldownMs: p.throwCooldownMs},
         retry: {label: 'Retry wave', enabled: !alive, ready: !alive}
       };
     }
@@ -833,9 +1089,11 @@ window.FILE_MANIFEST.push({
       state.zoneIndex=cp.zoneIndex;state.waveIndex=cp.waveIndex;state.kills=cp.kills;
       state.completedWaves=cp.completedWaves;state.clearedZones=cp.clearedZones;
       if(cp.props)state.props=copy(cp.props);if(cp.pickups)state.pickups=copy(cp.pickups);if(cp.relay)state.relay=copy(cp.relay);
+      if(cp.weapon)state.player.weapon=copy(cp.weapon);if(cp.powerups)state.player.powerups=copy(cp.powerups);
+      if(cp.nextPickupId)state.nextPickupId=cp.nextPickupId;
       state.player.x=cp.x;state.player.laneY=cp.laneY;accumulator=0;
-      input={move_x:0,move_y:0,jump:{held:false},strike:{held:false},guard:{held:false},throw:{held:false}};
-      edges={jump:false,strike:false,guard:false,throw:false};impactBufferedStrike=false;spawnWave(cp.started);
+      input={move_x:0,move_y:0,jump:{held:false},strike:{held:false},guard:{held:false},throw:{held:false},run:{held:false}};
+      edges={jump:false,strike:false,guard:false,throw:false,moveTaps:[]};impactBufferedStrike=false;spawnWave(cp.started);
       if(!cp.started&&cp.waveIndex===1&&cp.zoneIndex<2)state.waveState='advance';
       state.events=[];
       return getSnapshot();
@@ -844,7 +1102,7 @@ window.FILE_MANIFEST.push({
     function drainEvents() { const events = copy(state.events); state.events.length = 0; return events; }
     function canInteract(){
       const p=state.player,r=state.relay;
-      return state.zoneIndex===1&&r.available&&!r.restored&&p.hp>0&&!p.attack&&!p.throwMs&&!p.hurtMs&&
+      return state.zoneIndex===1&&r.available&&!r.restored&&p.hp>0&&!p.attack&&!p.throwMs&&!holding()&&!p.hurtMs&&
         !p.elevation&&!state.impact.remainingMs&&Math.abs(p.x-r.x)<=110&&Math.abs(p.laneY-r.laneY)<=65;
     }
     function interact(){
@@ -852,7 +1110,7 @@ window.FILE_MANIFEST.push({
       state.relay.restored=true;state.relay.available=false;
       emit('relay-restored',{id:'market-relay',x:state.relay.x,laneY:state.relay.laneY});return true;
     }
-    return {handleInput, update, getSnapshot, getControlState, retry, drainEvents,interact};
+    return {handleInput, update, getSnapshot, getControlState, retry, drainEvents,interact,releaseInputs};
   }
-  B.MacStreetCombat={create,constants:C,strikes:STRIKES,attacks:ATTACKS,roles:ROLES,tactics:TACTICS,zones:ZONES,props:STREET_PROPS};
+  B.MacStreetCombat={create,constants:C,strikes:STRIKES,attacks:ATTACKS,weapons:WEAPONS,roles:ROLES,tactics:TACTICS,zones:ZONES,props:STREET_PROPS};
 })(window.BARCODE = window.BARCODE || {});

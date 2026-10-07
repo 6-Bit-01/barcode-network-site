@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "rendererPurpose": "One native whole-character cel per actor; authored discrete pose holds, no articulated body rig",
-  "status": "Mac revised walk and air kick accepted for now; complete gameplay and enemy owner testing pending",
+  "status": "Accepted base walk/air-kick retained; new whole guard/run/grab/carry/equipment cels in private owner playtest",
   "files": [
     "assets/mac-combat-frames/bile_spitter-frames-v1.json",
     "assets/mac-combat-frames/bile_spitter-frames-v2.png",
@@ -23,7 +23,12 @@
     "assets/mac-combat-frames/rift_stalker-frames-v1.json",
     "assets/mac-combat-frames/rift_stalker-frames-v1.png",
     "assets/mac-combat-frames/shock_mantid-frames-v1.json",
-    "assets/mac-combat-frames/shock_mantid-frames-v1.png"
+    "assets/mac-combat-frames/shock_mantid-frames-v1.png",
+    "assets/mac-street-dynamic/mac-guard-v1.png",
+    "assets/mac-street-dynamic/mac-hold-carry-v1.png",
+    "assets/mac-street-dynamic/mac-modem-actions-v1.json",
+    "assets/mac-street-dynamic/mac-run-v1.png",
+    "assets/mac-street-dynamic/mac-weapon-poses-v1.png"
   ],
   "actors": [
     {
@@ -32,7 +37,11 @@
       "bloodColor": "red",
       "bloodHex": "#f04455",
       "registration": "assets/mac-combat-frames/mac-frames-v1.json",
-      "registrationSHA256": "2220efc6400d0159d6b9a8dc805b9f332ae618932e6e8802f9e7d7c5ab64ac13"
+      "registrationSHA256": "2220efc6400d0159d6b9a8dc805b9f332ae618932e6e8802f9e7d7c5ab64ac13",
+      "supplemental": {
+        "registration": "assets/mac-street-dynamic/mac-modem-actions-v1.json",
+        "registrationSHA256": "eb7333094018b32a0dae888ac03ab10de08f32c5ffddc8242c43bf10e9bef2fc"
+      }
     },
     {
       "kind": "chitin_scuttler",

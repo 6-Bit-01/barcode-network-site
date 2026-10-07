@@ -1,3 +1,11 @@
+## Mac private street arsenal pass - October 6, 2026
+
+The private Mac preview adds eight finite-use weapons, strength-limited enemy holds and pummelling, throwable boxes/barrels, wreckable futuristic cars and reachable street fixtures. Double-tap movement runs; held guard walks very slowly with complete drawn blocking cels. Overdrive, Barrier and Impact pickups extend the existing attack system. The joystick and contextual actions retain independent holds and safe interruption through the shared input owner.
+
+Four supplemental whole-character atlases and four whole-object atlases retain native generated PNG bytes. Original accepted character sheets, six districts/twelve waves, cameos, both dialogue choices, music ownership, frame ownership and the original 624 asset seal remain. Props use shared native registration against Mac's 260-unit standing height; wrecks retain their intact family's scale.
+
+Exact source/site commits, package identities, validation and hosted observations are recorded with this private build's delivery receipt. Owner playtest acceptance is pending. This pass leaves both PRs draft and does not change production.
+
 # System Override web entry
 
 ## October 6, 2026 — Modem power pass and hands-on tutorial

@@ -35,6 +35,9 @@ const rigActors = ["mac", ...cityKinds];
 const rigStem = (kind) => kind === "mac" ? "mac-modem-v2" : kind + "-v1";
 const rigAssets = new Set(["mac-combat-art-v1.json", ...rigActors.flatMap((kind) => [rigStem(kind) + ".png", rigStem(kind) + "-rig.json"])].map((name) => rigRoot + name));
 const frameRoot = "assets/mac-combat-frames/";
+const dynamicRoot = "assets/mac-street-dynamic/";
+const dynamicSheets = {dyn_guard:"mac-guard-v1.png",dyn_run:"mac-run-v1.png",
+  dyn_hold:"mac-hold-carry-v1.png",dyn_weapon:"mac-weapon-poses-v1.png"};
 function frameAssets() {
   const bankName = frameRoot + "mac-combat-frames-v1.json", bank = JSON.parse(read(bankName));
   assert.equal(bank.schemaVersion, 1);
@@ -52,44 +55,81 @@ function frameAssets() {
       assert.match(sheet.sourceImage, /^assets\/mac-combat-frames\/[a-z0-9_-]+-v[0-9]+\.png$/);
       assert.equal(marker().files[sheet.sourceImage]?.sha256, sheet.sourceSHA256); files.add(sheet.sourceImage);
     }
+    if (actor.kind === "mac") {
+      const supplementalName = dynamicRoot + "mac-modem-actions-v1.json";
+      assert.equal(actor.supplemental?.registration, supplementalName);
+      const supplementalBytes = fs.readFileSync(localFile(supplementalName, marker().files));
+      assert.equal(createHash("sha256").update(supplementalBytes).digest("hex"), actor.supplemental.registrationSHA256);
+      assert.equal(marker().files[supplementalName]?.sha256, actor.supplemental.registrationSHA256);
+      const supplemental = JSON.parse(supplementalBytes);
+      assert.equal(supplemental.schemaVersion, 1); assert.equal(supplemental.actor, "mac"); assert.equal(supplemental.facing, "right");
+      assert.equal(supplemental.baseRegistration, actor.registration);
+      assert.equal(supplemental.baseRegistrationSHA256, actor.registrationSHA256, "Supplemental poses preserve the accepted Mac base");
+      assert.equal(supplemental.sheets.length, 4);
+      assert.deepEqual(supplemental.sheets.map(sheet => sheet.id).sort(), Object.keys(dynamicSheets).sort());
+      assert.equal(supplemental.frames.length, 22);
+      files.add(supplementalName);
+      for (const sheet of supplemental.sheets) {
+        assert.equal(sheet.sourceImage, dynamicRoot + dynamicSheets[sheet.id]);
+        const nativeBytes = fs.readFileSync(localFile(sheet.sourceImage, marker().files));
+        assert.equal(createHash("sha256").update(nativeBytes).digest("hex"), sheet.sourceSHA256);
+        assert.equal(marker().files[sheet.sourceImage]?.sha256, sheet.sourceSHA256);
+        assert(nativeBytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])));
+        assert(nativeBytes.subarray(24, 29).equals(Buffer.from([8,6,0,0,0])), "Supplemental bodies retain native RGBA8");
+        assert.deepEqual(sheet.dimensions, {width:nativeBytes.readUInt32BE(16),height:nativeBytes.readUInt32BE(20)});
+        files.add(sheet.sourceImage);
+      }
+    } else assert(!Object.hasOwn(actor, "supplemental"), "Only Mac has selected supplemental poses");
   }
   assert.deepEqual([...bank.files].sort(), [...files].sort(), "Only selected whole-character cels and registrations belong to the bank");
-  assert.deepEqual(Object.keys(marker().files).filter((name) => name.startsWith(frameRoot)).sort(), [...files].sort());
+  assert.deepEqual(Object.keys(marker().files).filter((name) => name.startsWith(frameRoot) || name.startsWith(dynamicRoot)).sort(), [...files].sort());
   return files;
 }
 const createPowerHash = data => createHash('sha256').update(data).digest('hex');
 const macPowerRoot = 'assets/mac-street-power/';
+const macPowerSheets = {props:'street-props-v1.png',blood:'street-blood-v1.png',equipment:'street-weapons-v1.png',
+  cars:'street-cars-v1.png',fixtures:'street-fixtures-v1.png',cores:'street-powerups-v1.png'};
 const macPowerCells = ['crate_intact','crate_cracked','crate_broken','stall_intact','stall_cracked','stall_broken','relay_off','relay_on','pickup_health',
-  ...['red','green','purple'].flatMap(color => ['impact','heavy','floor'].map(kind => 'blood_' + color + '_' + kind))];
+  ...['red','green','purple'].flatMap(color => ['impact','heavy','floor'].map(kind => 'blood_' + color + '_' + kind)),
+  ...['pipe','crowbar','shock-baton','energy-blade','gravity-hammer','scatter-blaster','coil-rifle','plasma-disc'].map(kind=>'weapon_'+kind),
+  ...['car','car_van','barrel','fixture_streetlight','fixture_terminal'].flatMap(kind=>['intact','cracked','broken'].map(state=>kind+'_'+state)),
+  'pickup_overdrive','pickup_barrier','pickup_impact','projectile_scatter-bolt','projectile_coil-bolt','projectile_plasma-disc'];
 function powerArtFiles(bytes, files) {
   const name = macPowerRoot + 'mac-street-power-v1.json', bank = JSON.parse(bytes(name));
   assert.equal(bank.schema, 1);
   assert.deepEqual(Object.keys(bank.cells).sort(), [...macPowerCells].sort());
-  assert.equal(bank.sheets.length, 2); assert.equal(new Set(bank.sheets.map(sheet => sheet.id)).size, 2);
+  assert.equal(bank.sheets.length, 6);
+  assert.deepEqual(bank.sheets.map(sheet=>sheet.id).sort(),Object.keys(macPowerSheets).sort());
   const selected = new Set([name]), sheets = new Map(), crops = [];
   for (const sheet of bank.sheets) {
-    assert.match(sheet.sourceImage, /^assets\/mac-street-power\/[a-z0-9_-]+-v[0-9]+\.png$/);
+    assert.equal(sheet.sourceImage, macPowerRoot + macPowerSheets[sheet.id]);
     const data = bytes(sheet.sourceImage), hash = createPowerHash(data);
     assert.equal(hash, sheet.sourceSHA256); assert.equal(files[sheet.sourceImage]?.sha256, hash);
     const image = nativeRigRGBA(data, sheet.sourceImage);
     assert.deepEqual(sheet.dimensions, {width: image.width, height: image.height});
     sheets.set(sheet.id, image); selected.add(sheet.sourceImage);
   }
-  assert.equal(selected.size, 3);
+  assert.equal(selected.size, 7);
   for (const [id, cell] of Object.entries(bank.cells)) {
     const image = sheets.get(cell.sheet), r = cell.source; assert(image, 'Unknown power atlas: ' + id);
     for (const key of ['x','y','width','height']) assert(Number.isSafeInteger(r[key]) && r[key] >= (['width','height'].includes(key) ? 1 : 0));
     assert(r.x+r.width<=image.width && r.y+r.height<=image.height, 'Native power crop escapes atlas: '+id);
     assert(Number.isFinite(cell.pivot.x) && cell.pivot.x>=0 && cell.pivot.x<=r.width);
     assert(Number.isFinite(cell.pivot.y) && cell.pivot.y>=0 && cell.pivot.y<=r.height);
-    assert(Number.isFinite(cell.displayHeight) && cell.displayHeight>0 && cell.displayHeight<=500);
-    let visible=0, clear=0;
+    // The 500-world streetlight includes <=20 world units of native clear crop padding.
+    assert(Number.isFinite(cell.displayHeight) && cell.displayHeight>0 && cell.displayHeight<=(id.startsWith('fixture_streetlight_')?520:500));
+    for(const key of ['grip','muzzle']) if(Object.hasOwn(cell,key)) {
+      assert(Number.isFinite(cell[key]?.x)&&cell[key].x>=0&&cell[key].x<=r.width,'Invalid native weapon '+key+': '+id);
+      assert(Number.isFinite(cell[key]?.y)&&cell[key].y>=0&&cell[key].y<=r.height,'Invalid native weapon '+key+': '+id);
+    }
+    let visible=0, clear=0, clipped=false;
     for(let y=0;y<r.height;y++) for(let x=0;x<r.width;x++) {
       const alpha=image.pixels[((r.y+y)*image.width+r.x+x)*4+3];
-      if(alpha>8) { visible++; assert(x>0 && y>0 && x<r.width-1 && y<r.height-1, 'Visible power ink clipped: '+id); }
+      if(alpha>8) { visible++; clipped ||= x===0||y===0||x===r.width-1||y===r.height-1; }
       else clear++;
     }
     assert(visible>0 && clear>0,'Power cell must retain native drawn ink and transparency: '+id);
+    assert(!clipped,'Visible power ink clipped: '+id);
     for(const old of crops) assert(old.sheet!==cell.sheet ||
       Math.min(r.x+r.width,old.source.x+old.source.width)<=Math.max(r.x,old.source.x) ||
       Math.min(r.y+r.height,old.source.y+old.source.height)<=Math.max(r.y,old.source.y),'Power crops overlap: '+id);
@@ -631,36 +671,43 @@ test("Playable Mac combat uses eight exact native whole-character cel banks and 
   let cels = 0, sheets = 0;
   for (const actor of bank.actors) {
     const registration = JSON.parse(read(actor.registration)), compiled = frames.compile(registration, {complete: true});
-    const native = new Map();
-    for (const sheet of Object.values(compiled.sheets)) {
-      const bytes = fs.readFileSync(localFile(sheet.sourceImage, files));
-      assert.equal(createHash("sha256").update(bytes).digest("hex"), sheet.sourceSHA256);
-      const image = nativeRigRGBA(bytes, sheet.sourceImage);
-      assert.deepEqual({width: image.width, height: image.height}, JSON.parse(JSON.stringify(sheet.dimensions)));
-      native.set(sheet.id, image); sheets++;
+    const banks = [compiled];
+    if(actor.kind === "mac") {
+      const supplemental = JSON.parse(read(actor.supplemental.registration));
+      banks.push(frames.compileSupplemental(supplemental, {baseCompiled:compiled,complete:true}));
     }
-    const measured = new Map();
-    for (const cel of Object.values(compiled.frames)) {
-      const image = native.get(cel.sheet), crop = cel.source;
-      let top = Infinity, bottom = -1, occupied = 0, transparent = 0;
-      for (let y = 0; y < crop.height; y++) for (let x = 0; x < crop.width; x++) {
-        const alpha = image.pixels[((y + crop.y) * image.width + x + crop.x) * 4 + 3];
-        if (alpha > 8) {
-          occupied++; top = Math.min(top, y); bottom = Math.max(bottom, y);
-          assert(x > 0 && y > 0 && x < crop.width - 1 && y < crop.height - 1, "Visible silhouette touches crop edge: " + actor.kind + "/" + cel.id);
-        } else transparent++;
+    for (const celBank of banks) {
+      const native = new Map();
+      for (const sheet of Object.values(celBank.sheets)) {
+        const bytes = fs.readFileSync(localFile(sheet.sourceImage, files));
+        assert.equal(createHash("sha256").update(bytes).digest("hex"), sheet.sourceSHA256);
+        const image = nativeRigRGBA(bytes, sheet.sourceImage);
+        assert.deepEqual({width: image.width, height: image.height}, JSON.parse(JSON.stringify(sheet.dimensions)));
+        native.set(sheet.id, image); sheets++;
       }
-      assert(occupied > 0 && transparent > 0, "Whole cel must retain drawn body and native transparency");
-      assert(bottom < cel.feetPivot.y + 2); measured.set(cel.id, bottom - top + 1); cels++;
-    }
-    for (const sheet of Object.values(compiled.sheets)) {
-      assert(Math.abs(measured.get(sheet.referenceFrame) - sheet.standingHeight) <= 1, "Uniform native sheet scale must derive from the actual reference body");
+      const measured = new Map();
+      for (const cel of Object.values(celBank.frames)) {
+        const image = native.get(cel.sheet), crop = cel.source;
+        let top = Infinity, bottom = -1, occupied = 0, transparent = 0;
+        for (let y = 0; y < crop.height; y++) for (let x = 0; x < crop.width; x++) {
+          const alpha = image.pixels[((y + crop.y) * image.width + x + crop.x) * 4 + 3];
+          if (alpha > 8) {
+            occupied++; top = Math.min(top, y); bottom = Math.max(bottom, y);
+            assert(x > 0 && y > 0 && x < crop.width - 1 && y < crop.height - 1, "Visible silhouette touches crop edge: " + actor.kind + "/" + cel.id);
+          } else transparent++;
+        }
+        assert(occupied > 0 && transparent > 0, "Whole cel must retain drawn body and native transparency");
+        assert(bottom < cel.feetPivot.y + 2); measured.set(cel.id, bottom - top + 1); cels++;
+      }
+      for (const sheet of Object.values(celBank.sheets)) {
+        assert(Math.abs(measured.get(sheet.referenceFrame) - sheet.standingHeight) <= 1, "Uniform native sheet scale must derive from the actual reference body");
+      }
     }
     const moves = actor.kind === "mac" ? frames.moves : frames.styles[actor.kind];
     const sequences = Array.from(moves, (move) => ["windup", "active", "recovery"].map((phase) => compiled.clips[move + "." + phase].frames.map((entry) => entry.frame).join(",")).join("|"));
     assert.equal(new Set(sequences).size, moves.length, "Fighting styles require distinct authored pose sequences");
   }
-  assert.equal(bank.actors.length, 8); assert.equal(assets.size, 21); assert.equal(sheets, 12);
+  assert.equal(bank.actors.length, 8); assert.equal(assets.size, 26); assert.equal(sheets, 16);
   t.diagnostic(`${cels} complete cels on ${sheets} native PNGs; exact hashes, transparent nonoverlapping crops, measured scale and committed fighting clips verified`);
 });
 

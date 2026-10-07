@@ -36,8 +36,28 @@ const rigStem = (kind) => kind === "mac" ? "mac-modem-v2" : kind + "-v1";
 const rigAssets = new Set(["mac-combat-art-v1.json", ...rigActors.flatMap((kind) => [rigStem(kind) + ".png", rigStem(kind) + "-rig.json"])].map((name) => rigRoot + name));
 const frameRoot = "assets/mac-combat-frames/";
 const dynamicRoot = "assets/mac-street-dynamic/";
-const dynamicSheets = {dyn_guard:"mac-guard-v1.png",dyn_run:"mac-run-v1.png",
-  dyn_hold:"mac-hold-carry-v1.png",dyn_weapon:"mac-weapon-poses-v1.png"};
+const dynamicSheets = {dyn_guard:"mac-guard-two-braids-v1.png",dyn_run:"mac-run-two-braids-v1.png",
+  dyn_hold:"mac-hold-carry-two-braids-v1.png",dyn_weapon:"mac-weapon-poses-two-braids-v1.png",
+  dyn_pipe_swing:"mac-pipe-swing-two-braids-v1.png"};
+const dynamicImageHashes = {
+  dyn_guard:"2a6ed176b8cefba33793f1d6633671322afc8555c01c725cbe8a9ca306e3ed85",
+  dyn_run:"b78e958967d49d32eccb85a19594691e244e6023c34371a002099f3ec0cc4a23",
+  dyn_hold:"c832b0a3cdfd58ce9c117beb9160c876b3df1d6cd4aa92cdb436e16527c916c9",
+  dyn_weapon:"f4d2a4c8d5f602691fa787c08b01680ab1bc19461a035cf0789a336c4969ec93",
+  dyn_pipe_swing:"a22a5f4787d339614af5c2fc51a548affe55628e057bb54cdeffbdb1e21c83af"};
+const historicalDynamicImages = {
+  "mac-guard-v1.png":"f3410efa856aa1ea7fcedf69bd1e37f8c259af8cfb315282fc81f08b235ca0ee",
+  "mac-run-v1.png":"711c9993b6d39b0ce1fbc49897f154618c9d0baafad796a4bb236b2f6d9d4378",
+  "mac-hold-carry-v1.png":"e40c210ed47efb4453d7add6d42250e766715825ff3943727203667d9939861c",
+  "mac-weapon-poses-v1.png":"e59a6f8716d6d5b8fc3f4789dbc96cde64c94f186d99f6b2d8640f8033e4fba3"};
+const ordinaryDynamicFrames = ["guard_brace","guard_step_a","guard_step_b","guard_impact",
+  "run_contact_a","run_pass_a","run_contact_b","run_pass_b","grab_reach","grab_hold","pummel_load","pummel_contact",
+  "pickup_load","carry_hold","carry_step_a","carry_step_b","melee_load","melee_contact","melee_follow","fire_aim","fire_recoil","fire_ready"];
+const pipeSwingPhases = {
+  windup:[{frame:"pipe_swing_load",holdMs:50},{frame:"pipe_swing_uncoil",holdMs:50}],
+  active:[{frame:"pipe_swing_contact",holdMs:95}],
+  recovery:[{frame:"pipe_swing_through",holdMs:50},{frame:"pipe_swing_finish",holdMs:70},{frame:"pipe_swing_recover",holdMs:50}]};
+const pipeSwingFrames = new Set(Object.values(pipeSwingPhases).flat().map(entry=>entry.frame));
 const heldWeaponKinds = ['pipe','crowbar','shock-baton','energy-blade','gravity-hammer','scatter-blaster','coil-rifle','plasma-disc'];
 function checkNativePolygons(polygons, rect) {
   assert(Array.isArray(polygons), 'Native overlap regions must be polygon arrays');
@@ -95,16 +115,34 @@ function frameAssets() {
       assert.equal(supplemental.schemaVersion, 1); assert.equal(supplemental.actor, "mac"); assert.equal(supplemental.facing, "right");
       assert.equal(supplemental.baseRegistration, actor.registration);
       assert.equal(supplemental.baseRegistrationSHA256, actor.registrationSHA256, "Supplemental poses preserve the accepted Mac base");
-      assert.equal(supplemental.sheets.length, 4);
+      assert.equal(supplemental.sheets.length, 5);
       assert.deepEqual(supplemental.sheets.map(sheet => sheet.id).sort(), Object.keys(dynamicSheets).sort());
-      assert.equal(supplemental.frames.length, 22);
-      for (const frame of supplemental.frames) checkItemBindings(frame, frame.source);
+      assert.equal(supplemental.frames.length, 28);
+      assert.deepEqual(supplemental.frames.map(frame=>frame.id).sort(), [...ordinaryDynamicFrames,...pipeSwingFrames].sort());
+      for (const frame of supplemental.frames) {
+        if (pipeSwingFrames.has(frame.id)) {
+          assert.equal(frame.sheet, "dyn_pipe_swing"); assert.equal(frame.embeddedWeapon, "pipe");
+          for (const key of ["gripAnchor","weaponAngle","itemBindings","handOcclusion"])
+            assert(!Object.hasOwn(frame,key), "Complete embedded pipe cels must not attach a second item");
+        } else {
+          assert.notEqual(frame.sheet,"dyn_pipe_swing"); assert(!Object.hasOwn(frame,"embeddedWeapon"));
+          checkItemBindings(frame, frame.source);
+        }
+      }
+      const pipeClips = new Set(Object.keys(pipeSwingPhases).map(phase=>"pipe-swing."+phase));
+      for (const [key,clip] of Object.entries(supplemental.clips)) for (const entry of clip.frames)
+        assert.equal(pipeSwingFrames.has(entry.frame),pipeClips.has(key),
+          "Embedded pipe cels must belong exclusively to the committed pipe swing");
+      for (const [phase,sequence] of Object.entries(pipeSwingPhases))
+        assert.deepEqual(supplemental.clips["pipe-swing."+phase],{loop:false,frames:sequence},
+          "Pipe swing must preserve its six-cel phase order and bounded holds");
       const baseFrames = new Map(registration.frames.map(frame => [frame.id, frame]));
       assert.equal(Object.keys(supplemental.baseGripAnchors).length, 42);
       for (const [frame, entry] of Object.entries(supplemental.baseGripAnchors)) checkItemBindings(entry, baseFrames.get(frame).source);
       files.add(supplementalName);
       for (const sheet of supplemental.sheets) {
         assert.equal(sheet.sourceImage, dynamicRoot + dynamicSheets[sheet.id]);
+        assert.equal(sheet.sourceSHA256,dynamicImageHashes[sheet.id],"Selected supplemental PNG differs from its pinned native candidate");
         const nativeBytes = fs.readFileSync(localFile(sheet.sourceImage, marker().files));
         assert.equal(createHash("sha256").update(nativeBytes).digest("hex"), sheet.sourceSHA256);
         assert.equal(marker().files[sheet.sourceImage]?.sha256, sheet.sourceSHA256);
@@ -113,9 +151,14 @@ function frameAssets() {
         assert.deepEqual(sheet.dimensions, {width:nativeBytes.readUInt32BE(16),height:nativeBytes.readUInt32BE(20)});
         files.add(sheet.sourceImage);
       }
+      for (const [filename,digest] of Object.entries(historicalDynamicImages)) {
+        const imageName = dynamicRoot + filename, bytes = fs.readFileSync(localFile(imageName,marker().files));
+        assert.equal(createHash("sha256").update(bytes).digest("hex"),digest,"Historical supplemental source PNG changed");
+        assert.equal(marker().files[imageName]?.sha256,digest); files.add(imageName);
+      }
     } else assert(!Object.hasOwn(actor, "supplemental"), "Only Mac has selected supplemental poses");
   }
-  assert.deepEqual([...bank.files].sort(), [...files].sort(), "Only selected whole-character cels and registrations belong to the bank");
+  assert.deepEqual([...bank.files].sort(), [...files].sort(), "Only declared whole-character cels, registrations and preserved source sheets belong to the bank");
   assert.deepEqual(Object.keys(marker().files).filter((name) => name.startsWith(frameRoot) || name.startsWith(dynamicRoot)).sort(), [...files].sort());
   return files;
 }
@@ -746,8 +789,52 @@ test("Playable Mac combat uses eight exact native whole-character cel banks and 
     const sequences = Array.from(moves, (move) => ["windup", "active", "recovery"].map((phase) => compiled.clips[move + "." + phase].frames.map((entry) => entry.frame).join(",")).join("|"));
     assert.equal(new Set(sequences).size, moves.length, "Fighting styles require distinct authored pose sequences");
   }
-  assert.equal(bank.actors.length, 8); assert.equal(assets.size, 26); assert.equal(sheets, 16);
+  assert.equal(bank.actors.length, 8); assert.equal(assets.size, 31); assert.equal(sheets, 17);
   t.diagnostic(`${cels} complete cels on ${sheets} native PNGs; exact hashes, transparent nonoverlapping crops, measured scale and committed fighting clips verified`);
+});
+
+test("Packaged pipe swing follows committed phase cels without drawing a duplicate held item", () => {
+  const sandbox = context();
+  load(sandbox,"src/game/mac-combat-frames.js"); load(sandbox,"src/game/mac-combat-preview.js");
+  const frames = sandbox.window.BARCODE.MacCombatFrames, preview = sandbox.window.BARCODE.MacCombatPreview;
+  const master = JSON.parse(read(frameRoot+"mac-combat-frames-v1.json")), actor = master.actors.find(actor=>actor.kind==="mac");
+  const compiled = frames.compile(JSON.parse(read(actor.registration)),{complete:true});
+  const supplemental = frames.compileSupplemental(JSON.parse(read(actor.supplemental.registration)),{baseCompiled:compiled,complete:true});
+  const images = new Map(Object.values(supplemental.sheets).map(sheet=>[sheet.id,{naturalWidth:sheet.dimensions.width,naturalHeight:sheet.dimensions.height}]));
+  for (const [phase,entries] of Object.entries(pipeSwingPhases)) {
+    let atMs = 0; const totalMs = entries.reduce((total,entry)=>total+entry.holdMs,0);
+    for (const entry of entries) {
+      const phaseProgress = (atMs+entry.holdMs/2)/totalMs; atMs+=entry.holdMs;
+      for (const facing of [-1,1]) {
+        const player = {hp:100,facing,mode:"weapon-melee",weapon:{kind:"pipe"},
+          animation:{action:"weapon-melee",phase,weaponKind:"pipe",phaseProgress},
+          attack:{kind:"weapon-melee",phase,weaponKind:"pipe",phaseProgress}};
+        const pose = frames.sample(player,{player:true,compiled,supplemental});
+        assert.equal(pose.frame.id,entry.frame); assert.equal(pose.frame.embeddedWeapon,"pipe");
+        assert.equal(pose.committedKey,"pipe-swing."+phase); assert.equal(pose.gripAnchor,null);
+        const draws = [], canvas = {save(){},restore(){},translate(){},scale(){},drawImage(...args){draws.push(args);}};
+        const result = preview.drawMacPose.call({drawPowerCell(){assert.fail("Embedded pipe cel attempted a duplicate item overlay");}},
+          canvas,{compiled:supplemental,images},pose,{x:500,feet:850,height:260,facing,weapon:player.weapon});
+        assert.equal(result.item,null); assert.equal(draws.length,1,"The complete embedded character and pipe cel draws once");
+        assert.equal(draws[0][0],images.get("dyn_pipe_swing"));
+        assert.deepEqual(draws[0].slice(1,5),[pose.frame.source.x,pose.frame.source.y,pose.frame.source.width,pose.frame.source.height]);
+      }
+    }
+    for (const kind of heldWeaponKinds.filter(kind=>kind!=="pipe")) {
+      const action = ["scatter-blaster","coil-rifle"].includes(kind)?"weapon-fire":kind==="plasma-disc"?"weapon-disc":kind==="gravity-hammer"?"weapon-heavy":"weapon-melee";
+      const pose = frames.sample({hp:100,weapon:{kind},animation:{action,phase,weaponKind:kind,phaseProgress:.5},
+        attack:{kind:action,phase,weaponKind:kind,phaseProgress:.5}},{player:true,compiled,supplemental});
+      assert(!pose.frame.embeddedWeapon,"Other weapons retain their registered external item poses");
+      assert(!pose.committedKey.startsWith("pipe-swing.")); assert(pose.gripAnchor);
+    }
+    for (const kind of ["running-kick","counter","air-kick"]) {
+      const action = kind==="running-kick"?kind:"strike";
+      const pose = frames.sample({hp:100,weapon:{kind:"pipe"},animation:{action,phase,weaponKind:"pipe",phaseProgress:.5},
+        attack:{kind,phase,weaponKind:"pipe",phaseProgress:.5}},{player:true,compiled,supplemental});
+      assert(!pose.frame.embeddedWeapon,"Non-swing moves retain their accepted whole-character action cels");
+      assert(!pose.committedKey.startsWith("pipe-swing."));
+    }
+  }
 });
 
 test("System Override's 171 road sources preserve full resolution and original bytes with 149 local compressed derivatives", (t) => {

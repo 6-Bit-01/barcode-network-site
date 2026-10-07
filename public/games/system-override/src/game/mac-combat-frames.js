@@ -102,6 +102,7 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
         'invalid feet pivot '+item.id);
       const baselineLift=item.baselineLift??0;
       need(number(baselineLift),'invalid authored baseline lift '+item.id);
+      if(item.embeddedWeapon!==undefined)need(WEAPONS.includes(item.embeddedWeapon),'unknown embedded weapon '+item.id);
       const grip=item.gripAnchor,weaponAngle=item.weaponAngle??0;
       if(grip)need(point(grip)&&grip.x>=0&&grip.x<=source.width&&grip.y>=0&&grip.y<=source.height,
         'invalid held-item grip '+item.id);
@@ -112,6 +113,7 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
       }
       frames[item.id]=Object.freeze({id:item.id,sheet:sheetId,sourceImage:sheet.sourceImage,sheetDimensions:sheet.dimensions,
         standingHeight:sheet.standingHeight,baselineLift,
+        ...(item.embeddedWeapon!==undefined?{embeddedWeapon:item.embeddedWeapon}:{}),
         source:Object.freeze({...source}),feetPivot:Object.freeze({x:pivot.x,y:pivot.y}),
         ...(grip?{gripAnchor:Object.freeze({x:grip.x,y:grip.y}),weaponAngle}: {}),
         ...attachmentMetadata(item,source,item.id)});
@@ -155,7 +157,7 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
         'supplemental sheet needs its measured reference cel '+sheet.id);
     }
     for(const key of Object.keys(compiled.clips)) {
-      need(DYNAMIC_CLIPS.includes(key)||['pickup','carry-throw','guard-impact'].includes(key),'unknown supplemental action '+key);
+      need(DYNAMIC_CLIPS.includes(key)||['pickup','carry-throw','guard-impact',...PHASES.map(phase=>'pipe-swing.'+phase)].includes(key),'unknown supplemental action '+key);
       need(compiled.clips[key].loop===DYNAMIC_LOOPS.includes(key),'incorrect supplemental loop '+key);
       for(const entry of compiled.clips[key].frames)
         need(compiled.frames[entry.frame].baselineLift===0,'grounded supplemental action changes floor baseline '+key);
@@ -239,6 +241,8 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
       need(PHASES.includes(phase),'invalid supplemental attack phase '+phase);
       const firearm=action==='weapon-fire'||action==='weapon-disc';
       key=(firearm?'fire':'melee')+'.'+phase;
+      const weaponKind=attack?.weaponKind||actor.animation?.weaponKind||actor.weapon?.kind;
+      if(action==='weapon-melee'&&weaponKind==='pipe'&&supplemental?.clips['pipe-swing.'+phase])key='pipe-swing.'+phase;
       fallback=(firearm?'jab':action==='weapon-heavy'?'finisher':'step-strike')+'.'+phase;
       progress=finite(attack?.phaseProgress,finite(actor.animation?.phaseProgress));
     } else return null;

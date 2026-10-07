@@ -471,7 +471,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
     },
     drawMacPose(ctx, art, pose, {x,feet,height=260,facing=1,alpha=1,weapon=null,carried=null}) {
       const frame=pose.frame,bodyScale=height/pose.standingHeight,direction=facing<0?-1:1;
-      const item=carried ? this.propCell(carried) : weapon ? `weapon_${weapon.kind}` : null;
+      const item=carried ? this.propCell(carried) : weapon && frame.embeddedWeapon!==weapon.kind ? `weapon_${weapon.kind}` : null;
       const grip=pose.gripAnchor;
       if (item && !grip) throw new Error('mac-native-held-item-anchor-unavailable: ' + frame.id);
       const handX=item ? x+direction*(grip.x-frame.feetPivot.x)*bodyScale : x;

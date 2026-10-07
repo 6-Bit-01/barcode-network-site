@@ -327,15 +327,15 @@
       },
       "displayHeight": 118.56338,
       "grip": {
-        "x": 106,
-        "y": 254
+        "x": 70,
+        "y": 306
       },
       "gripMeasurement": {
         "nativeSheetPoint": {
-          "x": 129,
-          "y": 323
+          "x": 93,
+          "y": 375
         },
-        "contact": "cloth-wrapped shaft"
+        "contact": "lower cloth-wrapped handle immediately above the butt; measured on the unchanged native item"
       }
     },
     "weapon_crowbar": {

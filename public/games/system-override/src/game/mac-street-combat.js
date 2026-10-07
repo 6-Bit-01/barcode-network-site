@@ -54,9 +54,10 @@ window.FILE_MANIFEST.push({
     'shock-baton':Object.freeze({kind:'shock-baton',name:'Shock Baton',charges:10,windupMs:100,activeMs:100,recoveryMs:240,reach:110,laneReach:40,damage:15,propDamage:18,stunMs:900,chain:true}),
     'energy-blade':Object.freeze({kind:'energy-blade',name:'Energy Blade',charges:12,windupMs:75,activeMs:130,recoveryMs:175,reach:152,laneReach:72,damage:18,propDamage:28,shieldBreak:true}),
     'gravity-hammer':Object.freeze({kind:'gravity-hammer',name:'Gravity Hammer',charges:7,windupMs:300,activeMs:140,recoveryMs:390,reach:145,laneReach:82,damage:28,propDamage:64,launch:true,radial:true}),
-    'scatter-blaster':Object.freeze({kind:'scatter-blaster',name:'Scatter Blaster',charges:8,windupMs:130,activeMs:90,recoveryMs:300,reach:430,laneReach:32,damage:9,propDamage:10,projectile:'scatter-bolt',muzzleForward:131.285,muzzleElevation:221.319}),
-    'coil-rifle':Object.freeze({kind:'coil-rifle',name:'Coil Rifle',charges:7,windupMs:240,activeMs:75,recoveryMs:310,reach:780,laneReach:22,damage:25,propDamage:45,projectile:'coil-bolt',muzzleForward:169.160,muzzleElevation:223.345}),
-    'plasma-disc':Object.freeze({kind:'plasma-disc',name:'Plasma Disc',charges:8,windupMs:140,activeMs:85,recoveryMs:240,reach:380,laneReach:44,damage:19,propDamage:30,projectile:'plasma-disc',muzzleForward:35.780,muzzleElevation:190.229})
+    // Authored origins match the selected fire_recoil cel's native grip, scale and item muzzle.
+    'scatter-blaster':Object.freeze({kind:'scatter-blaster',name:'Scatter Blaster',charges:8,windupMs:130,activeMs:90,recoveryMs:300,reach:430,laneReach:32,damage:9,propDamage:10,projectile:'scatter-bolt',muzzleForward:131.285236900,muzzleElevation:220.883149973}),
+    'coil-rifle':Object.freeze({kind:'coil-rifle',name:'Coil Rifle',charges:7,windupMs:240,activeMs:75,recoveryMs:310,reach:780,laneReach:22,damage:25,propDamage:45,projectile:'coil-bolt',muzzleForward:169.159868331,muzzleElevation:222.909454413}),
+    'plasma-disc':Object.freeze({kind:'plasma-disc',name:'Plasma Disc',charges:8,windupMs:140,activeMs:85,recoveryMs:240,reach:380,laneReach:44,damage:19,propDamage:30,projectile:'plasma-disc',muzzleForward:35.780045767,muzzleElevation:189.794050343})
   });
   const GRAB_STRENGTH=Object.freeze({chitin_scuttler:45,psion_lancer:75,bile_spitter:40,prism_guard:120,rift_stalker:65,shock_mantid:110,null_regent:180});
   const ROLES = Object.freeze({

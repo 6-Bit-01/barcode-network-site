@@ -190,7 +190,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       const generation = this.generation;
       this.combat = this.createCombat();
       this.presentationState = this.combat.getSnapshot();
-      this.story = B.MacStreetStory.createIntro();
+      this.story = B.MacStreetStory.createIntro({instantText:true});
       this.phase = 'intro'; this.status = 'playing'; this.active = true; this.cameraX = 0;
       this.focus = 0; this.elapsedMs = 0; this.lastEvents = []; this.audioNotice = null;
       this.playerDefeatedAtMs = null; this.playerDefeatedHostAtMs = null;
@@ -304,7 +304,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       if (B.GamepadUI?.connected && actions.road_b?.pressed) this.skipTutorial();
       if (actions.inspect?.pressed && this.combat.getControlState().interactAvailable) { this.combat.interact(); return; }
       if (state.desk.unlocked && Math.abs(state.player.x - state.desk.x) < 190 && actions.inspect?.pressed) {
-        this.phase = 'desk'; this.story = B.MacStreetStory.createDesk(); this.focus = 0; this.resetInputs(); return;
+        this.phase = 'desk'; this.story = B.MacStreetStory.createDesk({instantText:true}); this.focus = 0; this.resetInputs(); return;
       }
       this.combat.handleInput({
         move_x: Number(!!actions.move_right?.held) - Number(!!actions.move_left?.held),
@@ -516,7 +516,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       if (item && !grip) throw new Error('mac-native-held-item-anchor-unavailable: ' + frame.id);
       const handX=item ? x+direction*(grip.x-frame.feetPivot.x)*bodyScale : x;
       const handY=item ? feet-frame.baselineLift*height/260+(grip.y-frame.feetPivot.y)*bodyScale : feet;
-      const drawItem=regions=>this.drawPowerCell(ctx,item,handX,handY,1,alpha,direction,{grip:true,angle:pose.weaponAngle,regions});
+      const drawItem=regions=>this.drawPowerCell(ctx,item,handX,handY,carried?1:pose.itemScale??1,alpha,direction,{grip:true,angle:pose.weaponAngle,regions});
       if (item && pose.itemLayer==='behind') drawItem();
       B.MacCombatFrames.draw(ctx,art,pose,x,feet,height,direction,alpha);
       if (item) {
@@ -538,6 +538,25 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
     propCell(prop) {
       const kind = prop.kind === 'car' && prop.variant === 'van' && this.powerArt.cells.car_van_intact ? 'car_van' : ['streetlight','terminal'].includes(prop.kind) ? `fixture_${prop.kind}` : prop.kind;
       return `${kind}_${prop.broken ? 'broken' : prop.hp < prop.maxHp*.55 ? 'cracked' : 'intact'}`;
+    },
+    propVisibilityAlpha(prop, player, macDepth) {
+      if (prop.broken || prop.launched || prop.laneY <= macDepth) return 1;
+      const cell = this.powerArt.cells[this.propCell(prop)], scale = cell.displayHeight / cell.source.height;
+      const recoil = prop.recoil, angle = recoil?.rotation || 0, cos = Math.cos(angle), sin = Math.sin(angle);
+      const facing = prop.facing || Math.sign(prop.knockbackVx) || 1;
+      const cx = (cell.source.width * .5 - cell.pivot.x) * scale;
+      const cy = (cell.source.height * .5 - cell.pivot.y) * scale;
+      const centerX = prop.x + (recoil?.x || 0) + (facing < 0 ? -1 : 1) * (cx * cos - cy * sin);
+      const centerY = prop.laneY - (prop.elevation || 0) - (recoil?.elevation || 0) + cx * sin + cy * cos;
+      const halfWidth = (Math.abs(cos) * cell.source.width + Math.abs(sin) * cell.source.height) * scale * .5;
+      const halfHeight = (Math.abs(sin) * cell.source.width + Math.abs(cos) * cell.source.height) * scale * .5;
+      const feet = player.laneY - player.elevation;
+      const overlapX = Math.min(centerX + halfWidth, player.x + 95) - Math.max(centerX - halfWidth, player.x - 95);
+      const overlapY = Math.min(centerY + halfHeight, feet - 35) - Math.max(centerY - halfHeight, feet - 245);
+      // Foreground scenery keeps its depth and collision. Ease its opacity at
+      // the overlap edge so Mac's stance and hands stay readable behind it.
+      const overlap = clamp(Math.min(overlapX / 55, overlapY / 55), 0, 1);
+      return 1 - .72 * overlap * overlap * (3 - 2 * overlap);
     },
     drawProjectile(ctx, projectile, camera) {
       const x = projectile.x - camera;
@@ -618,7 +637,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
           const key = B.GamepadUI?.connected ? (i === this.focus ? '›' : ' ') : i + 1;
           this.text(ctx, `${key}. ${typeof option === 'string' ? option : option.label}`, x + 15, 958, 22);
         });
-        if (s.choice.optional) this.text(ctx, B.GamepadUI?.connected ? `← / →: choose · ${B.ControllerSettings?.prompt?.('jump') || 'A'}: answer · ${B.ControllerSettings?.prompt?.('inspect') || 'RB'}: continue` : 'Space: continue · 1 / 2: answer', 1760, 1010, 18, '#eec871', 'right');
+        if (s.choice.optional) this.text(ctx, B.GamepadUI?.connected ? `Left / Right: choose · ${B.ControllerSettings?.prompt?.('jump') || 'A'}: answer · ${B.ControllerSettings?.prompt?.('inspect') || 'RB'}: continue` : 'Space: continue · 1 / 2: answer', 1760, 1010, 18, '#eec871', 'right');
       } else this.text(ctx, B.TouchControls?.enabled ? 'Tap Next' : 'Space / A: next · P: pause', 1760, 984, 20, '#eec871', 'right');
     },
     drawCityBackdrop(ctx, image, zone, camera) {
@@ -722,7 +741,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
         const p = actor.value, x = p.x - camera;
         if (actor.type === 'prop') {
           const recoil=p.recoil;
-          this.drawPowerCell(ctx,this.propCell(p),x+(recoil?.x || 0),p.laneY-(p.elevation || 0)-(recoil?.elevation || 0),1,1,p.facing || Math.sign(p.knockbackVx) || 1,{angle:recoil?.rotation || 0});continue;
+          this.drawPowerCell(ctx,this.propCell(p),x+(recoil?.x || 0),p.laneY-(p.elevation || 0)-(recoil?.elevation || 0),1,this.propVisibilityAlpha(p,s.player,macDepth),p.facing || Math.sign(p.knockbackVx) || 1,{angle:recoil?.rotation || 0});continue;
         }
         if (actor.type === 'relay') { this.drawPowerCell(ctx,p.restored?'relay_on':'relay_off',x,p.laneY); continue; }
         if (actor.type === 'projectile') { this.drawProjectile(ctx,p,camera); continue; }
@@ -744,7 +763,10 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
           const downStartsMs = art.compiled.clips.defeat.frames.at(-1).startMs;
           const elevation = pose.action === 'defeat' ? p.elevation * (1 - clamp(pose.clipTimeMs / Math.max(1, downStartsMs), 0, 1)) : p.elevation;
           const carried = p.carry && (s.props || []).find(prop=>prop.id===p.carry.id && prop.heldBy==='mac');
-          const heldWeapon = p.weapon && !p.grapple && !p.carry ? p.weapon : null;
+          // The final charge is spent on contact, while the committed native
+          // swing still owns its weapon through recovery. Inventory stays empty.
+          const visibleWeapon = p.weapon || (p.attack?.weaponKind ? {kind:p.attack.weaponKind} : null);
+          const heldWeapon = !p.grapple && !p.carry ? visibleWeapon : null;
           this.drawMacPose(ctx,art,pose,{x,feet:p.laneY-elevation,height:260,facing:p.facing,alpha:p.invulnerableMs>0?.86:1,weapon:heldWeapon,carried});
         } else {
           const art = this.frameArt.get(p.kind);
@@ -771,7 +793,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       if (window.BARCODE_RENDER_QUALITY?.flashes !== false && this.damageAtMs !== null && s.elapsedMs - this.damageAtMs < 180) { ctx.fillStyle='#e8657660'; ctx.fillRect(425,25,285,38); }
       const equipment = this.kitSummary(s.player);
       if (equipment && !B.TouchControls?.enabled) this.fittedText(ctx, equipment, 565, 67, 380, 17, '#82cfc2');
-      const objective = s.relay?.available && !s.relay.restored && zone.index === 2 ? 'Restore the market relay →' : s.desk.unlocked ? 'Enter Kave’s studio →' : zone.cleared ? `${zone.exitLabel || 'Continue through the city'} →` : s.wave?.state === 'advance' ? 'Move deeper into the district →' : `Clear the area · ${s.wave?.number || 1} / 2`;
+      const objective = s.relay?.available && !s.relay.restored && zone.index === 2 ? 'Restore the market relay >' : s.desk.unlocked ? 'Enter Kave’s studio >' : zone.cleared ? `${zone.exitLabel || 'Continue through the city'} >` : s.wave?.state === 'advance' ? 'Move deeper into the district >' : `Clear the area · ${s.wave?.number || 1} / 2`;
       const encounter = zone.encounter;
       const fightTitle = !zone.cleared && s.wave?.state !== 'advance' && !s.desk.unlocked && encounter
         ? `${encounter.name} · ${s.wave?.number || 1} / 2` : objective;

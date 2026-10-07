@@ -32,7 +32,17 @@ window.FILE_MANIFEST.push({
     knockdownMs:360,pickupHeal:18,pickupReach:58,advanceEntryOffset:1800,
     runTapMs:280,runMultiplier:1.65,grabMaxMs:3000,pummelMaxMs:1000,
     strength:100,propReach:85,maxPickups:48,overdriveMs:10000,barrierMs:12000,impactMs:15000,
-    carryForward:59.826903630,carryElevation:121.929830769,propReleaseForward:73.907,propReleaseElevation:155.394,
+    carryForward:73.515304364,carryElevation:121.564522903,propReleaseForward:74.476288735,propReleaseElevation:178.743092964,
+    carryCenterOffsets:Object.freeze({
+      crate:Object.freeze({
+        intact:Object.freeze({forward:56.654676292,elevation:-16.726618715}),
+        cracked:Object.freeze({forward:57.464028712,elevation:-18.345323720})
+      }),
+      barrel:Object.freeze({
+        intact:Object.freeze({forward:25.485668718,elevation:0}),
+        cracked:Object.freeze({forward:24.960191021,elevation:0})
+      })
+    }),
     carRecoilMs:420,carRecoilX:10,carBounceHeight:20,carRecoilRotation:.025,
     tellSpacingMs:300,interruptedRearmMs:220,fixtureDischargeRange:235,fixtureDischargeLaneReach:95,
     bodySpacingPad:18,bodySpacingDepth:54,bodySpacingSpeed:260,laterApproachMultiplier:1.15,laterRecoveryMultiplier:.82
@@ -452,6 +462,9 @@ window.FILE_MANIFEST.push({
     function stopRun(reason){const p=state.player;if(p.running)emit('run-stop',{reason,x:p.x,laneY:p.laneY});p.running=false;p.runDirection=0;}
     function heldEnemy(){return state.player.grapple&&!state.player.grapple.released;}
     function holding(){return heldEnemy()||!!state.player.carry&&!state.player.carry.released;}
+    // Native support grips sit behind the object's floor pivot. Preserve that
+    // measured center offset when its owner changes from the hand to the world.
+    function carryCenterOffset(prop){return C.carryCenterOffsets[prop.kind][prop.hp<prop.maxHp*.55?'cracked':'intact'];}
     function propTarget(){const p=state.player;return state.props.filter(prop=>!prop.broken&&prop.carryable&&!prop.heldBy&&!prop.launched&&
       prop.zoneId===ZONES[state.zoneIndex].id&&Math.abs(prop.laneY-p.laneY)<=55&&Math.abs(prop.x-p.x)<=C.propReach)
       .sort((a,b)=>Math.abs(a.x-p.x)-Math.abs(b.x-p.x)||a.id.localeCompare(b.id))[0]||null;}
@@ -762,12 +775,13 @@ window.FILE_MANIFEST.push({
         }
       }
       if(p.carry){const carry=p.carry,prop=state.props.find(item=>item.id===carry.id);
-        if(prop&&!carry.released){carry.elapsedMs+=dt;prop.x=p.x+carry.facing*C.carryForward;prop.laneY=p.laneY;prop.elevation=C.carryElevation;}
+        if(prop&&!carry.released){const center=carryCenterOffset(prop);carry.elapsedMs+=dt;
+          prop.x=p.x+carry.facing*(C.carryForward+center.forward);prop.laneY=p.laneY;prop.elevation=C.carryElevation+center.elevation;}
         if(carry.released){carry.releaseElapsedMs+=dt;
           if(prop&&!carry.thrown&&readyAt(carry.releaseElapsedMs,C.throwReleaseMs)){
             carry.thrown=true;prop.heldBy=null;prop.launched=true;prop.launchAgeMs=0;prop.bodyHitIds=[];
-            prop.x=p.x+carry.facing*C.propReleaseForward;prop.laneY=p.laneY;
-            prop.velocityZ=260;prop.knockbackVx=carry.facing*(580-carry.weight*2);prop.elevation=C.propReleaseElevation;
+            const center=carryCenterOffset(prop);prop.x=p.x+carry.facing*(C.propReleaseForward+center.forward);prop.laneY=p.laneY;
+            prop.velocityZ=260;prop.knockbackVx=carry.facing*(580-carry.weight*2);prop.elevation=C.propReleaseElevation+center.elevation;
             emit('prop-throw',{id:prop.id,kind:prop.kind,weight:prop.weight,x:prop.x,laneY:prop.laneY,direction:carry.facing});}
           if(readyAt(carry.releaseElapsedMs,C.throwCommitMs)){p.carry=null;p.throwMs=0;}}
       }

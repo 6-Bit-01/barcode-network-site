@@ -71,9 +71,11 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
         need(point(grip)&&grip.x>=0&&grip.x<=source.width&&grip.y>=0&&grip.y<=source.height,'invalid individual item grip '+label+'/'+kind);
         need(number(angle)&&Math.abs(angle)<=Math.PI,'invalid individual item angle '+label+'/'+kind);
         need(['front','behind'].includes(binding.itemLayer),'invalid item layer '+label+'/'+kind);
+        const itemScale=binding.itemScale??1;
+        need(number(itemScale)&&itemScale>=.25&&itemScale<=1,'invalid held-only item scale '+label+'/'+kind);
         const handOcclusion=polygons(binding.handOcclusion,source,label+'/'+kind);
         need(handOcclusion&&handOcclusion.length>0,'missing individual native hand mask '+label+'/'+kind);
-        bindings[kind]=Object.freeze({gripAnchor:Object.freeze({...grip}),weaponAngle:angle,itemLayer:binding.itemLayer,handOcclusion});
+        bindings[kind]=Object.freeze({gripAnchor:Object.freeze({...grip}),weaponAngle:angle,itemLayer:binding.itemLayer,itemScale,handOcclusion});
       }
     }
     return {...(masks?{handOcclusion:masks}:{}),...(Object.keys(bindings).length?{itemBindings:Object.freeze(bindings)}:{})};
@@ -318,7 +320,8 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
       fallback=(firearm?'jab':action==='weapon-heavy'?'finisher':'step-strike')+'.'+phase;
       progress=finite(attack?.phaseProgress,finite(actor.animation?.phaseProgress));
     } else return null;
-    const selected=supplemental?.clips[key]?supplemental:base,committedKey=selected===supplemental?key:fallback;
+    const propReleased=action==='carry-throw'&&clipAge>=(B.MacStreetCombat?.constants?.throwReleaseMs||140);
+    const selected=!propReleased&&supplemental?.clips[key]?supplemental:base,committedKey=selected===supplemental?key:fallback;
     // An absent prototype bank still uses a complete accepted cel. Holding a
     // victim/item must not accidentally play the old immediate release.
     if(selected===base&&committedKey==='throw'&&!['carry-throw'].includes(action))clipAge=0;
@@ -409,16 +412,15 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
     const attachment=selected.frame.gripAnchor?selected.frame:supplemental?.baseGripAnchors[selected.frame.id];
     const weaponKind=actor.attack?.weaponKind||animation.weaponKind||actor.weapon?.kind;
     const stowed=!!actor.carry||!!actor.grapple;
-    const ownsEmbedded=EMBEDDED_WEAPONS.includes(weaponKind)&&supplemental?.clips[embeddedKey(weaponKind,'idle')];
-    const stowException=stowed||['jump-rise','jump-fall','landing','defeat','throw','pickup','carry','carry-walk','carry-throw'].includes(key)
-      ||['counter.','air-kick.'].some(prefix=>key.startsWith(prefix));
-    const weaponStowed=!!(ownsEmbedded&&selected.frame.embeddedWeapon!==weaponKind&&stowException);
+    // Inventory stays equipped through jumps, kicks and counters. Transport the
+    // actual item in each authored fist; only occupied hands suppress it.
+    const weaponStowed=stowed;
     const binding=!stowed&&!weaponStowed&&attachment?.itemBindings?.[weaponKind];
     return Object.freeze({...selected,frameId:selected.frame.id,action,attackType,phase,
       committedKey:key,clipKey:key,facing:finite(actor.facing,1)<0?-1:1,standingHeight:selected.frame.standingHeight,
       supplemental:selectedBank===supplemental,gripAnchor:binding?.gripAnchor||attachment?.gripAnchor||null,
       weaponAngle:binding?.weaponAngle??attachment?.weaponAngle??0,
-      handOcclusion:binding?.handOcclusion||attachment?.handOcclusion||null,itemLayer:binding?.itemLayer||'front',
+      handOcclusion:binding?.handOcclusion||attachment?.handOcclusion||null,itemLayer:binding?.itemLayer||'front',itemScale:binding?.itemScale??1,
       weaponKind:weaponKind||null,
       weaponStowed,
       shotAnchor:selected.frame.shotAnchor||null,

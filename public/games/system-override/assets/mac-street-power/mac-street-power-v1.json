@@ -71,8 +71,15 @@
       },
       "displayHeight": 160.791367,
       "grip": {
-        "x": 160.0,
-        "y": 290
+        "x": 55,
+        "y": 259
+      },
+      "gripMeasurement": {
+        "nativeSheetPoint": {
+          "x": 109,
+          "y": 318
+        },
+        "contact": "rear underside edge supported by both palms"
       }
     },
     "crate_cracked": {
@@ -87,7 +94,18 @@
         "x": 161.5,
         "y": 285
       },
-      "displayHeight": 158.093525
+      "displayHeight": 158.093525,
+      "grip": {
+        "x": 55,
+        "y": 251
+      },
+      "gripMeasurement": {
+        "nativeSheetPoint": {
+          "x": 521,
+          "y": 317
+        },
+        "contact": "rear underside edge supported by both palms"
+      }
     },
     "crate_broken": {
       "sheet": "props",
@@ -659,7 +677,7 @@
       },
       "displayHeight": 171.305732,
       "grip": {
-        "x": 118.5,
+        "x": 70,
         "y": 321
       }
     },
@@ -675,7 +693,11 @@
         "x": 117.5,
         "y": 311
       },
-      "displayHeight": 166.050955
+      "displayHeight": 166.050955,
+      "grip": {
+        "x": 70,
+        "y": 311
+      }
     },
     "barrel_broken": {
       "sheet": "fixtures",

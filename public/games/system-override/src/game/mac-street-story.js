@@ -7,62 +7,46 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-street-story.js', exports: ['BAR
   const INTRO = [
     { id: 'delivered', title: 'ORIGINAL DELIVERED', asset: 'assets/cache-ending/ending-01-delivered.webp',
       visual: 'Cache protects the complete original beside the receiving equipment.',
-      lines: [line('CACHE BACK', 'Original delivered. Names, room noise, all of it.'), line('DJ FLOPPYDISC / COMMS', 'It matches. Nothing missing.')] },
+      lines: [line('CACHE BACK', 'Original delivered. Names, room noise, all of it.')] },
     { id: 'unverified', title: 'DELIVERED / UNVERIFIED', asset: 'assets/cache-ending/ending-02-unverified.webp',
       visual: 'Transfer is delivered; the separate outbound distribution channel remains unverified.',
-      lines: [line('CACHE BACK', "They took the file. Why isn't it going out?"), line('MAC MODEM / COMMS', 'Delivery passed. Distribution says UNVERIFIED.')] },
+      lines: [line('MAC MODEM / COMMS', 'Delivery passed. Distribution is still UNVERIFIED.')] },
     { id: 'kave-dead-air', title: "KAVE'S DEAD AIR", asset: 'assets/mac-street-review/scene03-kave-dead-air-v5.png',
       visual: 'Kave tends the Kaveman Radio review desk inside a fully enclosed, ordinary-scale broadcast studio.',
       artLocation: 'enclosed-broadcast-studio', artTime: 'present', dialogueContext: 'studio-and-live-comms',
-      lines: [line('KAVE', "The review queue's full. Nothing's reaching the listeners."), line('CACHE BACK / COMMS', "It got here whole. Somebody's keeping it here.")],
-      choice: { id: 'delivery-question', optional: true, speaker: 'CACHE BACK / COMMS', prompt: 'Ask Kave, or continue.',
-        options: [
-          { id: 'who-is-waiting', label: "Who's waiting?", lines: [
-            line('KAVE', 'Artists waiting for a play. Listeners waiting for a voice.'),
-            line('KAVE', "The outbound feed. Local monitoring works; distribution doesn't.")
-          ] },
-          { id: 'what-got-blocked', label: 'What got blocked?', lines: [
-            line('KAVE', "The outbound feed. Local monitoring works; distribution doesn't."),
-            line('KAVE', 'Artists waiting for a play. Listeners waiting for a voice.')
-          ] }
-        ],
-        bypass: [line('KAVE', 'Artists waiting for a play. Listeners waiting for a voice.'),
-          line('KAVE', "The outbound feed. Local monitoring works; distribution doesn't."),
-          line('MAC MODEM / COMMS', 'Then we open it back up, piece by piece.')],
-        rejoin: [line('MAC MODEM / COMMS', 'Then we open it back up, piece by piece.')] } },
+      lines: [line('KAVE', "Artists are waiting. Local monitoring works; the outbound feed doesn't.")] },
     { id: 'held', title: 'THE HOLD IS LOCAL', asset: 'assets/cache-ending/ending-03-held.webp',
       visual: 'An earlier studio comparison shows DJ and Mac together; the present crew dialogue continues over comms.',
       artLabel: 'EARLIER / STUDIO COMPARISON', artLocation: 'studio', artTime: 'earlier-comparison', dialogueContext: 'live-comms',
-      lines: [line('DJ FLOPPYDISC / COMMS', 'The original arrived. The distribution hold is still there.'), line('CACHE BACK / COMMS', "Then being delivered isn't enough. They're stopping it here.")] },
+      lines: [line('DJ FLOPPYDISC / COMMS', "The original is whole. The distribution hold is here, on the line out.")] },
     { id: 'margin-note', title: 'A NOTE IN THE MARGIN', asset: 'assets/mac-street-review/scene05-margin-note-v1.png',
       visual: 'A hand pastes a nonessential joke caption across the illustrated border.',
       annotations: [{ kind: 'comic-margin', by: '9 BIT', text: 'AUTHORISED PUNCHING CONSULTANT' }],
-      lines: [line('MAC MODEM', 'Who edited my subtitle?'), line('9 BIT', "You. Outside the panel. Still think 'delivered' means 'heard'?")] },
+      dialogueContext: 'fourth-wall-player-address',
+      lines: [line('9 BIT', "Hey, you outside the panel. 'Delivered' doesn't mean 'heard'.")],
+      choice: { id: 'fourth-wall-question', optional: true, speaker: '9 BIT', prompt: 'Your call, player. Or keep turning the page.',
+        options: [
+          { id: 'get-it-heard', label: 'Get it heard', lines: [
+            line('9 BIT', "That's the job. Finish the panels; then you get the buttons.")
+          ] },
+          { id: 'keep-receipts', label: 'Keep the receipts', lines: [
+            line('9 BIT', "Good call. You're holding a controller, not a verdict.")
+          ] }
+        ], bypass: [], rejoin: [] } },
     { id: 'record-straight', title: 'KEEP THE RECORD STRAIGHT', asset: 'assets/mac-street-review/scene06-record-straight-v1.png',
       visual: 'The original cassette, cleaned copy and present interruption remain separate.',
-      lines: [line('CACHE BACK / COMMS', "That wasn't on the tape."), line('DJ FLOPPYDISC / COMMS', "Then keep it separate. Record the interruption. Don't call it proof.")] },
+      lines: [line('DJ FLOPPYDISC / COMMS', "That margin note isn't on the tape. Keep it separate; it isn't proof.")] },
     { id: 'street-access', title: 'STREET ACCESS', asset: 'assets/cache-ending/ending-04-street-access.webp',
       visual: 'Mac finds his opening at the street gate; Kave remains on comms at the review desk.',
-      lines: [line('MAC MODEM / COMMS', "The hold points to street enforcement. I'll find a way through."), line('KAVE / COMMS', "I'll keep the queue moving and the local line open.")] },
+      lines: [line('MAC MODEM / COMMS', "Street enforcement has the hold. I'll find a way through.")] },
     { id: 'get-it-heard', title: 'GET IT HEARD', asset: 'assets/mac-street-review/mac-hero-v2.png',
       visual: 'Mac strides through the threshold, one open hand driving the barrier aside.',
-      lines: [line('6 BIT / COMMS', 'Cache got it here. Mac, get it heard.'), line('MAC MODEM', 'Open the channel.')] }
+      lines: [line('MAC MODEM', 'Open the channel.')] }
   ];
   const DESK = [{ id: 'review-desk', title: 'THE FIRST PLAY GETS THROUGH', asset: INTRO[2].asset,
     visual: 'Inside the enclosed broadcast studio, Kave receives the first outbound play after Mac earns the city-chapter endpoint.',
     artLocation: 'enclosed-broadcast-studio', artTime: 'after-city-chapter-endpoint', dialogueContext: 'in-person-studio',
-    lines: [line('KAVE', "It's reaching them. First play's through."), line('MAC MODEM', 'Keep the line open.')],
-    choice: { id: 'desk-question', optional: true, speaker: 'MAC MODEM', prompt: 'Ask Kave, or continue.',
-      options: [
-        { id: 'ask-people', label: 'Ask about the people', lines: [
-          line('KAVE', 'Artists could hear their own work in here. They were waiting for everyone else to hear it.'),
-          line('MAC MODEM', 'Then keep them moving. Nobody gets buried in the queue.')
-        ] },
-        { id: 'ask-order', label: 'Ask about the order', lines: [
-          line('KAVE', 'The receiver accepted it. The hold was on the line out. That tells us where it happened, not who ordered it.'),
-          line('MAC MODEM', "Good. Keep the local record. We'll compare what survived.")
-        ] }
-      ], rejoin: [line('KAVE', "Local monitoring stayed live. Now the outbound feed's open too."), line('MAC MODEM', "The street hold's broken. Keep both records safe.")] }
+    lines: [line('KAVE', "First play's through. The outbound feed is open; keep both records safe.")]
   }];
   const OBJECTIVES = Object.freeze({
     intro: 'Break the street hold across Broadcast Slum and reopen the studio\'s outbound feed.',
@@ -82,7 +66,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-street-story.js', exports: ['BAR
     'relay-canal': gameplayCue('city.arrival.relay-canal', 'DJ FLOPPYDISC / COMMS',
       "Take the canal service route. I'll keep our copies separate.", 'relay-canal', 'arrival', 30),
     'rooftop-relay': gameplayCue('city.arrival.rooftop-relay', '9 BIT',
-      'You picked a long way to the desk.', 'rooftop-relay', 'arrival', 30),
+      'Hey, player. No camera cut is skipping these stairs for you.', 'rooftop-relay', 'arrival', 30),
     'broadcast-plaza': gameplayCue('city.arrival.broadcast-plaza', 'MAC MODEM',
       "Last street hold. I'm done asking.", 'broadcast-plaza', 'arrival', 30)
   });
@@ -92,17 +76,17 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-street-story.js', exports: ['BAR
     'rooftop-relay': gameplayCue('city.clear.rooftop-relay', 'KAVE / COMMS',
       "I still have local monitoring. You're almost at the plaza.", 'rooftop-relay', 'district-clear', 35)
   });
-  const RELAY_READY = gameplayCue('city.relay.ready', '9 BIT',
-    'Market relay is clear. Link it and give Kave his signal back.', 'night-market', 'relay-ready', 80);
+  const RELAY_READY = gameplayCue('city.relay.ready', 'KAVE / COMMS',
+    'Market relay is clear. Link it and bring my signal back.', 'night-market', 'relay-ready', 80);
   const RELAY_RESTORED = Object.freeze([
-    gameplayCue('city.relay.restored.9bit', '9 BIT', 'Local signal restored. Your track. Their speakers.',
+    gameplayCue('city.relay.restored.local', 'DJ FLOPPYDISC / COMMS', 'Local signal restored. Your track. Their speakers.',
       'night-market', 'relay-restored', 90),
     gameplayCue('city.relay.restored.kave', 'KAVE', 'There you are, Modem. Keep that signal moving.',
       'night-market', 'relay-restored', 90)
   ]);
   // These two optional reactions have chapter-wide IDs. They do not repeat at
   // every fixture/car, add a collectible, or make a guest a route dependency.
-  const FIXTURE_DISCHARGE = gameplayCue('city.fixture-discharge', '9 BIT',
+  const FIXTURE_DISCHARGE = gameplayCue('city.fixture-discharge', 'DJ FLOPPYDISC / COMMS',
     'Nice patch. You turned their street hardware against them.', null, 'fixture-discharge', 65);
   const CAR_WRECKED = gameplayCue('city.car-wrecked', 'Dr3wBaby / COMMS',
     'Save me the good parts, Modem.', null, 'car-wrecked', 35);
@@ -186,7 +170,8 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-street-story.js', exports: ['BAR
     function rejoin(choice) {
       const lines = choice.bypass || choice.rejoin;
       if (lines.length) { startLines(lines, 'response'); return event('rejoin'); }
-      return nextScene();
+      const next = nextScene();
+      return event('rejoin', { nextAction: next.action, sceneId: scene().id });
     }
     function advance() {
       if (done) return event('blocked', { reason: 'story-complete' });
@@ -231,7 +216,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-street-story.js', exports: ['BAR
     function skip() {
       // Skip follows the common route without selecting an answer or earning anything.
       enterPage(source.length - 1);
-      if (kind === 'desk') startLines(scene().choice.rejoin, 'response');
+      if (scene().choice?.rejoin?.length) startLines(scene().choice.rejoin, 'response');
       cursor = readingLines.length - 1; revealedChars = currentLine().text.length;
       done = true; skipped = true; phase = 'done';
       return event('complete', { skipped: true, objective: OBJECTIVES[kind] });

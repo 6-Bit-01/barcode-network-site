@@ -24,6 +24,7 @@
     "assets/mac-combat-frames/rift_stalker-frames-v1.png",
     "assets/mac-combat-frames/shock_mantid-frames-v1.json",
     "assets/mac-combat-frames/shock_mantid-frames-v1.png",
+    "assets/mac-street-dynamic/mac-carry-low-front-v2.png",
     "assets/mac-street-dynamic/mac-coil-rifle-grips-v1.png",
     "assets/mac-street-dynamic/mac-guard-two-braids-v1.png",
     "assets/mac-street-dynamic/mac-guard-v1.png",
@@ -48,7 +49,7 @@
       "registrationSHA256": "2220efc6400d0159d6b9a8dc805b9f332ae618932e6e8802f9e7d7c5ab64ac13",
       "supplemental": {
         "registration": "assets/mac-street-dynamic/mac-modem-actions-v1.json",
-        "registrationSHA256": "726355025f1f53cebedd3a364f2550c6cefd1bff076f273be4c18f01e4c59f9b"
+        "registrationSHA256": "4a245146191fb24dd44d897de6ce05cec4b73b29efda415b92499ca93f797e0f"
       }
     },
     {

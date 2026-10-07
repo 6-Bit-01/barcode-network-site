@@ -10,7 +10,7 @@
 </head>
 <body>
   <header><h1>Mac’s equipment</h1><p>Watch each weapon in action, inspect its grip in both directions, then compare scenery with Mac at the same scale.</p></header>
-  <div class="controls"><label>Pose <select id="pose"></select></label><label>Scenery <select id="prop"></select></label><label>Placement <select id="placement"><option value="floor">On the floor</option><option value="carry">Lifted crate / barrel</option><option value="release">Throw handoff</option></select></label><a class="play" href="index.html?preview=mac-firstslice&amp;revision=refine1">Play Mac’s chapter</a></div>
+  <div class="controls"><label>Pose <select id="pose"></select></label><label>Scenery <select id="prop"></select></label><label>Placement <select id="placement"><option value="floor">On the floor</option><option value="carry">Lifted crate / barrel</option><option value="release">Throw handoff</option></select></label><a class="play" href="index.html?preview=mac-firstslice&amp;revision=refine2">Play Mac’s chapter</a></div>
   <p id="status" role="status">Loading registered artwork…</p>
   <main><section><h2>Weapon action</h2><label>Weapon <select id="action-weapon"><option value="pipe">Pipe / bat</option><option value="scatter-blaster">Scatter Blaster</option><option value="coil-rifle">Coil Rifle</option><option value="plasma-disc">Plasma Disc</option></select></label><button id="swing-toggle" type="button" aria-pressed="false" disabled>Play action</button><div class="pair"><canvas id="swing-left" width="840" height="480" aria-label="Selected weapon action facing left"></canvas><canvas id="swing-right" width="840" height="480" aria-label="Selected weapon action facing right"></canvas></div><p>Rifle shoulder support, wrapped pistol grip, and a one-handed disc throw. Mac has two braids.</p></section><div id="equipment-grid" class="grid"></div><section class="props"><h2>Street proportions</h2><canvas id="scenery" width="1600" height="780" aria-label="Mac and selected street scenery at the same scale"></canvas></section></main>
   <script src="src/game/mac-street-combat.js"></script>
@@ -34,6 +34,7 @@
       ...phases.map(phase=>({id:'running-kick-'+phase,title:'Run Kick · '+phase,action:'running-kick',phase})),
       ...phases.map(phase=>({id:'air-kick-'+phase,title:'Air Kick · '+phase,action:'air-kick',phase})),
       ...phases.map(phase=>({id:'counter-'+phase,title:'Counter · '+phase,action:'counter',phase})),
+      ...['weapon','running-kick','air-kick','counter'].flatMap(action=>phases.flatMap(phase=>[0,.25,.75,.999].map((progress,index)=>({id:action+'-'+phase+'-cel-'+index,title:action.replaceAll('-',' ')+' · '+phase+' cel '+(index+1),action,phase,progress})))),
       {id:'jump-rise',title:'Jump · rise',action:'jump',velocity:330,elevation:100},
       {id:'jump-fall',title:'Jump · fall',action:'jump',velocity:-330,elevation:100},
       {id:'landing',title:'Landing',action:'idle',landingAgeMs:35}
@@ -41,7 +42,7 @@
     function playerFor(kind,scene,facing=1){
       const player=B.MacStreetCombat.create().getSnapshot().player,rule=B.MacStreetCombat.weapons[kind];
       const moving=['walk','guard-creep','run'].includes(scene.action),speed=scene.action==='run'?429:scene.action==='guard-creep'?57.2:moving?260:0;
-      Object.assign(player,{hp:100,hurtMs:scene.action==='hurt'?100:0,invulnerableMs:0,facing,elevation:scene.elevation||0,velocityZ:scene.velocity||0,running:scene.action==='run',guarding:['guard','guard-creep'].includes(scene.action),weapon:{kind,name:rule.name,charges:rule.charges,maxCharges:rule.charges}});
+      Object.assign(player,{hp:100,hurtMs:scene.action==='hurt'?100:0,invulnerableMs:0,facing,elevation:scene.elevation||0,velocityZ:scene.velocity||0,running:scene.action==='run',guarding:['guard','guard-creep'].includes(scene.action),weapon:scene.action==='hurt'?null:{kind,name:rule.name,charges:rule.charges,maxCharges:rule.charges}});
       let action=scene.action;
       if(action==='weapon')action=rule.projectile?rule.projectile==='plasma-disc'?'weapon-disc':'weapon-fire':rule.launch?'weapon-heavy':'weapon-melee';
       const attackKind=scene.action==='weapon'?kind:['running-kick','air-kick','counter'].includes(scene.action)?scene.action:null;
@@ -53,16 +54,17 @@
     function drawWeapon(ctx,kind,scene,facing,{x=420,feet=390,height=260}={}){
       const P=B.MacCombatPreview,art=P.frameArt.get('mac'),player=playerFor(kind,scene,facing);
       const pose=B.MacCombatFrames.sample(player,{player:true,compiled:art.compiled,supplemental:art.supplemental,landingAgeMs:scene.landingAgeMs,guardImpactAgeMs:scene.guardImpactAgeMs});
-      return P.drawMacPose(ctx,art,pose,{x,feet:feet-player.elevation,height,facing,weapon:player.weapon});
+      return P.drawMacPose(ctx,art,pose,{x,feet:feet-player.elevation,height,facing,weapon:player.weapon||(player.attack?.weaponKind?{kind:player.attack.weaponKind}:null)});
     }
     function drawProp(ctx,name,state='floor',{x=900,macX=220,feet=680,facing=1}={}){
       const P=B.MacCombatPreview,art=P.frameArt.get('mac'),player=playerFor('pipe',scenes[0],facing),kind=name.startsWith('crate_')?'crate':name.startsWith('barrel_')?'barrel':null;
       player.weapon=null;
-      const held=kind&&state!=='floor';
-      if(held){player.carry={id:'review-prop',kind,elapsedMs:5000,phase:state==='release'?'release':'hold',releaseAgeMs:state==='release'?140:0};player.animation.action=state==='release'?'carry-throw':'carry';}
+      const carrying=kind&&state!=='floor',held=carrying&&state!=='release';
+      if(carrying){player.carry={id:'review-prop',kind,elapsedMs:5000,phase:state==='release'?'release':'hold',releaseAgeMs:state==='release'?140:0};player.animation.action=state==='release'?'carry-throw':'carry';}
       const pose=B.MacCombatFrames.sample(player,{player:true,compiled:art.compiled,supplemental:art.supplemental});
-      if(!held)P.drawPowerCell(ctx,name,x,feet);
-      return P.drawMacPose(ctx,art,pose,{x:held?x:macX,feet,height:260,facing,carried:held?{kind,hp:1,maxHp:1,broken:false}:null});
+      if(!carrying)P.drawPowerCell(ctx,name,x,feet);
+      if(carrying&&!held){const C=B.MacStreetCombat.constants,center=C.carryCenterOffsets[kind][name.includes('cracked')?'cracked':'intact'];P.drawPowerCell(ctx,name,x+facing*(C.propReleaseForward+center.forward),feet-C.propReleaseElevation-center.elevation,1,1,facing);}
+      return P.drawMacPose(ctx,art,pose,{x:carrying?x:macX,feet,height:260,facing,carried:held?{kind,hp:name.includes('cracked')?.4:1,maxHp:1,broken:false}:null});
     }
     function floor(ctx,width,height,feet){ctx.fillStyle='#182938';ctx.fillRect(0,0,width,height);ctx.strokeStyle='#577083';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(0,feet);ctx.lineTo(width,feet);ctx.stroke();}
     B.MacEquipmentReview={weapons,scenes,playerFor,drawWeapon,drawProp,floor};

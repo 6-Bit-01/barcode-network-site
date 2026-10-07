@@ -209,7 +209,7 @@ window.FILE_MANIFEST.push({ name: 'src/core/touch-controls.js', exports: ['BARCO
             a('road_attack', view.strike?.label || 'Strike', { icon: '✦', tone: 'b', kind: 'secondary', ready: !!view.strike?.ready }),
             a('road_defend', 'Guard', { icon: '◇', tone: 'x', kind: 'secondary', active: !!view.guard?.held }),
             ...(view.throw?.enabled ? [a('road_disrupt', 'Throw', { icon: '↗', tone: 'y', kind: 'secondary', ready: !!view.throw.ready })] : []),
-            ...(nearbyDesk ? [a('inspect', 'Talk', { icon: '◉', kind: 'secondary' })] : []), pause()];
+            ...(nearbyDesk || view.interactAvailable ? [a('inspect', nearbyDesk ? 'Talk' : 'Link', { icon: '◉', kind: 'secondary', ready: nearbyDesk || !!view.interactAvailable })] : []), pause()];
         }
         case 'level1': {
           const active = !!window.rhythmSystem?.isActive?.(), hack = window.hackingSystem?.getAvailability?.();

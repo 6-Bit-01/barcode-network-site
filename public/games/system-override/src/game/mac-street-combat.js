@@ -15,7 +15,7 @@ window.FILE_MANIFEST.push({
   // not a repeated pressed flag while held. y/laneY is the feet's ground plane;
   // elevation is a separate positive height, so drawing feet uses y-elevation.
   const C = Object.freeze({
-    version:3,worldWidth:20400,zoneWidth:3400,laneMin:780,laneMax:970,
+    version:4,worldWidth:20400,zoneWidth:3400,laneMin:780,laneMax:970,
     startX:200,startLaneY:880,deskX:20100,
     stepMs:1000/120,maxDeltaMs:100,maxSubsteps:12,
     maxEnemies:3,totalEnemies:30,totalWaves:12,maxProjectiles:18,
@@ -23,7 +23,9 @@ window.FILE_MANIFEST.push({
     playerHp:100,zoneHeal:28,moveSpeed:260,laneSpeed:180,
     jumpSpeed:560,gravity:1500,hitHeight:62,laneReach:40,parryMs:125,counterMs:800,
     playerInvulnerableMs:720,playerHurtMs:220,comboWindowMs:360,
-    throwReach:74,throwDamage:28,throwCommitMs:420,throwReleaseMs:140,throwCooldownMs:700
+    throwReach:74,throwDamage:28,throwCommitMs:420,throwReleaseMs:140,throwCooldownMs:700,
+    maxImpactPauseMs:60,launchGravity:1200,bodyDamage:14,bodyLaneReach:70,bodyRadius:38,
+    knockdownMs:360,pickupHeal:18,pickupReach:58,advanceEntryOffset:1800
   });
   const STRIKES = Object.freeze([
     Object.freeze({kind:'jab',windupMs:90,activeMs:80,recoveryMs:155,reach:90,damage:12}),
@@ -64,6 +66,13 @@ window.FILE_MANIFEST.push({
       [['bile_spitter','prism_guard','shock_mantid'],['null_regent']])
   ]);
   const BLOOD=Object.freeze({green:'#78ea68',purple:'#b374ed',red:'#f04455'});
+  const STREET_PROPS=Object.freeze([
+    Object.freeze({id:'alley-health-crate',zoneId:'service-alley',kind:'crate',x:1140,laneY:832,maxHp:24}),
+    Object.freeze({id:'alley-exit-crate',zoneId:'service-alley',kind:'crate',x:2380,laneY:907,maxHp:24}),
+    Object.freeze({id:'market-stall',zoneId:'night-market',kind:'stall',x:4580,laneY:880,maxHp:40}),
+    Object.freeze({id:'market-health-crate',zoneId:'night-market',kind:'crate',x:5780,laneY:815,maxHp:24}),
+    Object.freeze({id:'market-relay',zoneId:'night-market',kind:'relay',x:6400,laneY:880,maxHp:0})
+  ]);
   const TACTICS=Object.freeze({
     chitin_scuttler:Object.freeze(['jab','rush-jab']),
     psion_lancer:Object.freeze(['lunge','lancer-sweep']),
@@ -142,6 +151,9 @@ window.FILE_MANIFEST.push({
         fromStridePhase:0,fromStrideRatio:0,motionStridePhase:0,motionVx:0,motionLaneVelocity:0,
         feet:gaitInitial(),transitionFrom:gaitInitial(),hitFeedback:null},
       enemies:[],projectiles:[],hitFx:[],events:[],nextFxId:1,nextProjectileId:1,
+      props:STREET_PROPS.map(prop=>({...prop,hp:prop.maxHp,broken:false})),pickups:[],
+      relay:{available:false,restored:false,x:6400,laneY:880},
+      impact:{remainingMs:0,strength:0,x:0,laneY:880},
       checkpoint:{zoneIndex:0,waveIndex:0,kills:0,completedWaves:0,clearedZones:[],
         x:C.startX,laneY:C.startLaneY,started:false}};
   }
@@ -150,7 +162,7 @@ window.FILE_MANIFEST.push({
     let state = initialState(), accumulator = 0;
     let input = {move_x: 0, move_y: 0, jump: {held: false}, strike: {held: false},
       guard: {held: false}, throw: {held: false}};
-    let edges = {jump: false, strike: false, guard: false, throw: false};
+    let edges = {jump: false, strike: false, guard: false, throw: false},impactBufferedStrike=false;
 
     function emit(type, data = {}) {
       state.events.push({type, atMs: state.elapsedMs, ...data});
@@ -170,7 +182,8 @@ window.FILE_MANIFEST.push({
     function phase(e,value){e.phase=value;e.phaseMs=0;e.animAgeMs=0;}
     function makeEnemy(kind,slot,started){
       const z=ZONES[state.zoneIndex],rule=ROLES[kind];
-      const baseX=clamp(state.player.x+440,z.startX+820,z.endX-780);
+      const stageFloor=state.zoneIndex<2&&state.waveIndex===1?z.startX+C.advanceEntryOffset+320:z.startX+820;
+      const baseX=clamp(state.player.x+440,stageFloor,z.endX-780);
       const x=clamp(baseX+slot*240,z.startX+120,z.endX-170);
       return {id:z.id+'-w'+(state.waveIndex+1)+'-'+slot+'-'+kind,kind,name:rule.name,
         arena:z.index,zoneId:z.id,wave:state.waveIndex+1,bloodColor:rule.bloodColor,bloodHex:BLOOD[rule.bloodColor],
@@ -179,7 +192,8 @@ window.FILE_MANIFEST.push({
         attackOriginX:x,attackTargetX:x,attackDone:false,attackSpawned:false,attackSpec:null,
         attackCount:0,bossPhase:rule.boss?1:null,shieldBrokenMs:0,stunMs:0,
         knockbackVx:0,flashMs:0,ageMs:0,animAgeMs:0,animAction:started?'walk':'idle',hitFeedback:null,
-        elevation:0,vx:0,laneVelocity:0,travelDistance:0,strideRatio:0,settleAgeMs:0,
+        elevation:0,velocityZ:0,launched:false,launchAgeMs:0,knockdownMs:0,knockdownAgeMs:0,bodyHitIds:[],slot,rangedRetreatMs:0,
+        vx:0,laneVelocity:0,travelDistance:0,strideRatio:0,settleAgeMs:0,
         wasMoving:false,motionMoving:false,moveAgeMs:0,fromMoving:false,fromStopAgeMs:240,
         fromStridePhase:0,fromStrideRatio:0,motionStridePhase:0,motionVx:0,motionLaneVelocity:0,
         feet:gaitInitial(),transitionFrom:gaitInitial(),grappledBy:null,tactic:'approach'};
@@ -191,7 +205,8 @@ window.FILE_MANIFEST.push({
       state.arenaIndex=started?state.zoneIndex+1:0;
       state.checkpoint={zoneIndex:state.zoneIndex,waveIndex:state.waveIndex,kills:state.kills,
         completedWaves:state.completedWaves,clearedZones:state.clearedZones.slice(),
-        x:state.player.x,laneY:state.player.laneY,started};
+        x:state.player.x,laneY:state.player.laneY,started,
+        props:copy(state.props),pickups:copy(state.pickups),relay:copy(state.relay)};
       if(started){
         emit('wave-start',{zoneId:z.id,zone:z.index,wave:state.waveIndex+1,kinds:state.enemies.map(e=>e.kind)});
         for(const e of state.enemies)emit('enemy-arrive',{id:e.id,kind:e.kind,arena:e.arena,bloodColor:e.bloodColor});
@@ -206,6 +221,7 @@ window.FILE_MANIFEST.push({
         next[name] = action(raw[name]);
         const freshHold = next[name].held && !input[name].held;
         edges[name] ||= name === 'guard' ? freshHold : next[name].pressed || freshHold;
+        if(name==='strike'&&state.impact.remainingMs>0&&(next[name].pressed||freshHold))impactBufferedStrike=true;
       }
       input = next;
     }
@@ -215,13 +231,37 @@ window.FILE_MANIFEST.push({
         :state.status==='desk-ready'?C.worldWidth-40:z.endX-220;
     }
     function live(e){return e.hp>0&&e.phase!=='dormant';}
+    function impactPause(duration,strength,x,laneY){
+      state.impact={remainingMs:Math.max(state.impact.remainingMs,Math.min(C.maxImpactPauseMs,duration)),
+        strength:Math.max(state.impact.strength,strength),x,laneY};
+    }
+    function damageProp(prop,amount,cause){
+      if(prop.broken||!prop.maxHp||prop.zoneId!==ZONES[state.zoneIndex].id)return;
+      prop.hp=Math.max(0,prop.hp-amount);
+      if(!prop.hp){
+        prop.broken=true;
+        const pickup={id:prop.id+'-health',kind:'health',zoneId:prop.zoneId,x:prop.x,laneY:prop.laneY};
+        state.pickups.push(pickup);fx('prop-break',prop.x,prop.laneY);
+        emit('prop-break',{id:prop.id,kind:prop.kind,x:prop.x,laneY:prop.laneY,cause,pickupId:pickup.id});
+        impactPause(32,.6,prop.x,prop.laneY);
+      }
+    }
+    function launchEnemy(e,direction,cause){
+      if(ROLES[e.kind].boss)return;
+      e.launched=true;e.launchAgeMs=0;e.knockdownMs=0;e.knockdownAgeMs=0;e.bodyHitIds=[];
+      e.velocityZ=cause==='throw'?360:310;e.elevation=Math.max(1,e.elevation);
+      e.knockbackVx=direction*(cause==='throw'?530:460);e.attackDone=true;
+      phase(e,e.hp?'launched':'defeated');
+      emit('launch',{id:e.id,kind:e.kind,cause,move:cause==='strike'?'finisher':cause,
+        x:e.x,laneY:e.laneY,direction,bloodColor:e.bloodColor});
+    }
     function throwTarget(){
       const p=state.player;
-      return state.enemies.filter(e=>live(e)&&(!ROLES[e.kind].boss||['stunned','recovery'].includes(e.phase))&&
+      return state.enemies.filter(e=>live(e)&&!e.launched&&!e.knockdownMs&&(!ROLES[e.kind].boss||['stunned','recovery'].includes(e.phase))&&
         Math.abs(e.laneY-p.laneY)<=C.laneReach&&(e.x-p.x)*p.facing>=-12&&(e.x-p.x)*p.facing<=C.throwReach)
         .sort((a,b)=>Math.abs(a.x-p.x)-Math.abs(b.x-p.x)||a.id.localeCompare(b.id))[0]||null;
     }
-    function damageEnemy(e,amount,direction,cause,stunMs,speed){
+    function damageEnemy(e,amount,direction,cause,stunMs,speed,launch=false){
       if(!live(e))return;
       const rule=ROLES[e.kind],shield=rule.shieldReduction&&!e.shieldBrokenMs&&direction===-e.facing&&['strike','step-strike','air-kick'].includes(cause);
       if(shield){amount=Math.max(1,Math.round(amount*(1-rule.shieldReduction)));fx('shield',e.x,e.laneY);}
@@ -235,8 +275,13 @@ window.FILE_MANIFEST.push({
         e.knockbackVx=direction*speed;e.attackDone=true;phase(e,e.hp?'stunned':'defeated');
         e.stunMs=rule.boss?Math.min(stunMs,420):stunMs;
       }
+      const heavy=launch||['counter','throw','body-impact'].includes(cause);
+      if(launch&&!shield&&!armoredBoss)launchEnemy(e,direction,cause);
       fx(e.hp?cause:'defeat',e.x,e.laneY,e.bloodColor,direction);
-      emit('enemy-hit',{id:e.id,kind:e.kind,damage:amount,cause,hp:e.hp,bloodColor:e.bloodColor,shielded:!!shield});
+      state.hitFx.at(-1).heavy=heavy;state.hitFx.at(-1).damage=amount;
+      impactPause(shield?10:heavy?48:12,shield ? .2 : heavy ? 1 : .35,e.x,e.laneY);
+      emit('enemy-hit',{id:e.id,kind:e.kind,damage:amount,cause,hp:e.hp,bloodColor:e.bloodColor,
+        x:e.x,laneY:e.laneY,direction,heavy,move:launch&&cause==='strike'?'finisher':cause,shielded:!!shield});
       if(rule.boss&&e.hp){
         const nextPhase=e.hp<=e.maxHp/3?3:e.hp<=e.maxHp*2/3?2:1;
         if(nextPhase>e.bossPhase){
@@ -253,7 +298,7 @@ window.FILE_MANIFEST.push({
         :step===1&&Math.abs(input.move_x)>.45?ATTACKS['step-strike']:STRIKES[step-1];
       if(counter||air)step=1;
       p.attack={step,kind:selected.kind,rule:selected,elapsedMs:0,facing:p.facing,
-        hitIds:[],counter,airborne:air,rootShift:0};
+        hitIds:[],propHitIds:[],counter,airborne:air,rootShift:0};
       p.counterMs = 0; p.guarding = false; p.parryMs = 0;
       p.queuedStrike = false; p.comboMs = 0;
       emit('strike',{step,kind:selected.kind,counter,airborne:air,facing:p.facing});
@@ -272,6 +317,7 @@ window.FILE_MANIFEST.push({
         if(p.parryMs>0){
           phase(e,'stunned');e.stunMs=650;e.knockbackVx=p.facing*100;
           p.parryMs=0;p.counterMs=C.counterMs;fx('parry',p.x+p.facing*42,p.laneY);
+          impactPause(38,.7,p.x,p.laneY);
           emit('parry',{id:e.id,kind:e.kind,counterMs:C.counterMs,projectile});
         }else{fx('block',p.x+p.facing*42,p.laneY);emit('block',{id:e.id,kind:e.kind,projectile});}
         return;
@@ -283,8 +329,10 @@ window.FILE_MANIFEST.push({
       p.guarding=false;p.parryMs=0;p.throwMs=0;p.grapple=null;
       p.hitFeedback={kind:'damage',ageMs:0,lifeMs:320,bloodColor:'red',bloodHex:BLOOD.red,
         damage:spec.damage,direction:e.attackFacing};
-      fx('damage',p.x,p.laneY,'red',e.attackFacing);emit('player-hit',{id:e.id,kind:e.kind,
-        attackType:spec.attackType||spec.kind,damage:spec.damage,hp:p.hp,bloodColor:'red',bloodHex:BLOOD.red});
+      fx('damage',p.x,p.laneY,'red',e.attackFacing);state.hitFx.at(-1).damage=spec.damage;
+      impactPause(24,.55,p.x,p.laneY);emit('player-hit',{id:e.id,kind:e.kind,
+        attackType:spec.attackType||spec.kind,damage:spec.damage,hp:p.hp,bloodColor:'red',bloodHex:BLOOD.red,
+        x:p.x,laneY:p.laneY,direction:e.attackFacing,heavy:false});
       if(!p.hp){state.status='defeated';emit('player-defeated',{zone:state.zoneIndex+1,wave:state.waveIndex+1});}
     }
 
@@ -304,7 +352,8 @@ window.FILE_MANIFEST.push({
       }
       if (pressed.strike && !p.throwMs && !p.hurtMs) {
         if (!p.attack) startStrike(p.comboMs > 0 ? p.comboNext : 1);
-        else if(strikePhase(p.attack)==='recovery'&&p.attack.step<3&&!p.attack.airborne&&!p.attack.counter)p.queuedStrike=true;
+        else if((strikePhase(p.attack)==='recovery'||impactBufferedStrike&&strikePhase(p.attack)==='active')&&
+          p.attack.step<3&&!p.attack.airborne&&!p.attack.counter)p.queuedStrike=true;
       }
       if (pressed.throw && !p.attack && !p.throwMs && !p.hurtMs && !p.throwCooldownMs && p.elevation === 0) {
         const target = throwTarget();
@@ -337,12 +386,19 @@ window.FILE_MANIFEST.push({
         if(strikePhase(attack)==='active'&&p.elevation<=(rule.hitHeight??C.hitHeight)){
           for (const e of state.enemies) {
             const distance = (e.x - p.x) * attack.facing;
-            if (live(e) && !attack.hitIds.includes(e.id) && distance >= -12 && distance <= rule.reach &&
+            if (live(e) && !e.launched&&!e.knockdownMs&&!attack.hitIds.includes(e.id) && distance >= -12 && distance <= rule.reach &&
               Math.abs(e.laneY - p.laneY) <= C.laneReach) {
               attack.hitIds.push(e.id);
               const cause=attack.counter?'counter':attack.kind==='air-kick'?'air-kick':attack.kind==='step-strike'?'step-strike':'strike';
               damageEnemy(e,rule.damage,attack.facing,cause,attack.step===3||attack.kind==='air-kick'?420:230,
-                attack.step===3?240:attack.kind==='air-kick'?210:95);
+                attack.step===3?240:attack.kind==='air-kick'?210:95,attack.step===3);
+            }
+          }
+          for(const prop of state.props){
+            const distance=(prop.x-p.x)*attack.facing;
+            if(!prop.broken&&prop.maxHp&&distance>=-12&&distance<=rule.reach&&
+              Math.abs(prop.laneY-p.laneY)<=C.laneReach&&!attack.propHitIds.includes(prop.id)){
+              attack.propHitIds.push(prop.id);damageProp(prop,rule.damage,'strike');
             }
           }
         }
@@ -362,7 +418,7 @@ window.FILE_MANIFEST.push({
           victim.laneY=toward(victim.laneY,p.laneY,160*sec);
           if(readyAt(grapple.elapsedMs,C.throwReleaseMs)){
             grapple.released=true;victim.grappledBy=null;
-            damageEnemy(victim,C.throwDamage,grapple.facing,'throw',720,530);
+            damageEnemy(victim,C.throwDamage,grapple.facing,'throw',720,530,true);
             emit('throw-release',{id:victim.id,facing:grapple.facing,damage:C.throwDamage});
           }
         }
@@ -371,6 +427,16 @@ window.FILE_MANIFEST.push({
       p.vx=(p.x-previousX)/sec;p.laneVelocity=(p.laneY-previousLane)/sec;
       p.travelDistance+=Math.hypot(p.x-previousX,(p.laneY-previousLane)*.75);
       trackMotion(p,dt);
+      if(p.motionMoving&&!state.playerWasMoving)emit('player-move',{id:'mac',x:p.x,laneY:p.laneY});
+      state.playerWasMoving=p.motionMoving;
+      for(const pickup of state.pickups){
+        if(!pickup.collected&&pickup.zoneId===ZONES[state.zoneIndex].id&&p.hp<p.maxHp&&!p.elevation&&
+          Math.abs(pickup.x-p.x)<=C.pickupReach&&Math.abs(pickup.laneY-p.laneY)<=55){
+          const heal=Math.min(C.pickupHeal,p.maxHp-p.hp);p.hp+=heal;pickup.collected=true;
+          emit('pickup',{id:pickup.id,kind:pickup.kind,x:pickup.x,laneY:pickup.laneY,heal,hp:p.hp});
+        }
+      }
+      state.pickups=state.pickups.filter(pickup=>!pickup.collected);
     }
     function attackSpec(e){
       const rule=ROLES[e.kind],p=state.player,gap=Math.abs(p.x-e.x),alternate=e.attackCount%2===1;
@@ -409,6 +475,7 @@ window.FILE_MANIFEST.push({
     }
     function beginTell(e,spec){
       phase(e,'windup');e.attackDone=false;e.attackSpawned=false;e.attackSpec=spec;
+      e.rangedRetreatMs=0;
       e.tactic=spec.tactic;
       e.attackLaneY=e.laneY;e.attackFacing=e.facing;e.attackOriginX=e.x;
       const z=ZONES[state.zoneIndex],targetOffset=spec.attackType==='mantid-leap'?0:85;
@@ -430,11 +497,57 @@ window.FILE_MANIFEST.push({
       emit('enemy-projectile',{id:e.id,kind:e.kind,attackType:spec.attackType,laneY});
     }
     function enemyAnim(e){
-      return e.hp<=0?'defeat':['stunned','grappled'].includes(e.phase)?'hurt':e.phase==='windup'?'tell'
+      return e.hp<=0?'defeat':['stunned','grappled','launched','knockdown'].includes(e.phase)?'hurt':e.phase==='windup'?'tell'
         :e.phase==='active'?'attack':e.phase==='recovery'?'recover':e.phase==='approach'?'walk':'idle';
+    }
+    function melee(e){return !ROLES[e.kind].boss&&e.kind!=='bile_spitter';}
+    function attackLeader(){
+      return state.enemies.filter(e=>live(e)&&melee(e)&&e.phase==='approach')
+        .sort((a,b)=>a.attackCount-b.attackCount||Math.abs(a.x-state.player.x)-Math.abs(b.x-state.player.x)||a.slot-b.slot)[0];
+    }
+    function streetPosition(e,spec,sec){
+      const p=state.player,z=ZONES[state.zoneIndex],gap=Math.abs(p.x-e.x),ranged=e.kind==='bile_spitter';
+      e.facing=Math.sign(p.x-e.x)||e.facing;
+      if(ranged){
+        const atEdge=e.x<=z.startX+62||e.x>=z.endX-62,retreat=gap<250&&e.rangedRetreatMs<650&&!atEdge;
+        e.tactic=retreat?'ranged-retreat':'ranged-line';
+        e.laneY=toward(e.laneY,p.laneY,spec.laneSpeed*sec);
+        if(retreat){e.rangedRetreatMs+=sec*1000;e.x=clamp(e.x-e.facing*spec.speed*sec,z.startX+60,z.endX-60);}
+        else if(gap>spec.distance)e.x+=e.facing*Math.min(spec.speed*sec,gap-spec.distance);
+        return !retreat&&gap<=spec.distance+1&&Math.abs(e.laneY-p.laneY)<=24;
+      }
+      const committed=state.enemies.some(other=>other.id!==e.id&&live(other)&&melee(other)&&['windup','active'].includes(other.phase));
+      const leader=attackLeader(),canCommit=!committed&&leader?.id===e.id;
+      const offset=e.slot%2?62:-62,side=e.slot%2?-p.facing:(Math.sign(e.x-p.x)||p.facing);
+      let targetX=p.x+side*(canCommit?spec.distance:150),targetLane=canCommit?p.laneY:clamp(p.laneY+offset,C.laneMin,C.laneMax);
+      e.tactic=canCommit?'pressure':e.slot%2?'flank':'circle';
+      if(!canCommit&&e.kind==='prism_guard'){
+        const spitter=state.enemies.find(other=>live(other)&&other.kind==='bile_spitter');
+        if(spitter){targetX=p.x+(spitter.x-p.x)*.5;targetLane=spitter.laneY;e.tactic='protect-spitter';}
+      }
+      e.x=toward(e.x,clamp(targetX,z.startX+60,z.endX-60),spec.speed*sec);
+      e.laneY=toward(e.laneY,targetLane,spec.laneSpeed*sec);e.facing=Math.sign(p.x-e.x)||e.facing;
+      return canCommit&&Math.abs(e.x-p.x)<=spec.distance+1&&Math.abs(e.laneY-p.laneY)<=24;
     }
     function tickEnemy(e,dt,before){
       const sec=dt/1000,previousX=before?.x??e.x,previousLane=before?.laneY??e.laneY;e.ageMs+=dt;e.animAgeMs+=dt;
+      if(e.launched){
+        const z=ZONES[state.zoneIndex];e.launchAgeMs+=dt;
+        e.x=clamp(e.x+e.knockbackVx*sec,z.startX+60,z.endX-60);
+        e.elevation=Math.max(0,e.elevation+e.velocityZ*sec-.5*C.launchGravity*sec*sec);
+        e.velocityZ-=C.launchGravity*sec;e.knockbackVx=toward(e.knockbackVx,0,140*sec);
+        if(!e.elevation&&e.velocityZ<0){
+          e.launched=false;e.velocityZ=0;e.knockdownMs=C.knockdownMs;e.knockdownAgeMs=0;e.knockbackVx=0;
+          phase(e,e.hp?'knockdown':'defeated');
+          emit('body-land',{id:e.id,kind:e.kind,x:e.x,laneY:e.laneY,bloodColor:e.bloodColor});
+        }
+        e.vx=(e.x-previousX)/sec;e.laneVelocity=0;trackMotion(e,dt);e.animAction=enemyAnim(e);return;
+      }
+      if(e.knockdownMs>0){
+        e.knockdownMs=Math.max(0,e.knockdownMs-dt);e.knockdownAgeMs+=dt;e.vx=0;e.laneVelocity=0;
+        if(!e.knockdownMs&&e.hp)phase(e,'approach');
+        trackMotion(e,dt);e.animAction=enemyAnim(e);return;
+      }
       if(!(e.phase==='active'&&e.attackSpec?.attackType==='mantid-leap'))e.elevation=Math.max(0,e.elevation-450*sec);
       e.flashMs=Math.max(0,e.flashMs-dt);e.shieldBrokenMs=Math.max(0,e.shieldBrokenMs-dt);
       if(e.hitFeedback){e.hitFeedback.ageMs+=dt;if(e.hitFeedback.ageMs>=e.hitFeedback.lifeMs)e.hitFeedback=null;}
@@ -449,10 +562,13 @@ window.FILE_MANIFEST.push({
       }
       else if(e.phase==='approach'){
         const spec=attackSpec(e);e.tactic=spec.tactic;e.facing=Math.sign(p.x-e.x)||e.facing;
-        e.laneY=toward(e.laneY,p.laneY,spec.laneSpeed*sec);
-        const gap=Math.abs(p.x-e.x);
-        if(gap>spec.distance)e.x+=e.facing*Math.min(spec.speed*sec,gap-spec.distance);
-        if(gap<=spec.distance+1&&Math.abs(e.laneY-p.laneY)<=24)beginTell(e,spec);
+        if(state.zoneIndex<2){if(streetPosition(e,spec,sec))beginTell(e,spec);}
+        else{
+          e.laneY=toward(e.laneY,p.laneY,spec.laneSpeed*sec);
+          const gap=Math.abs(p.x-e.x);
+          if(gap>spec.distance)e.x+=e.facing*Math.min(spec.speed*sec,gap-spec.distance);
+          if(gap<=spec.distance+1&&Math.abs(e.laneY-p.laneY)<=24)beginTell(e,spec);
+        }
       }else if(e.phase==='windup'){
         // Locked aim, lane and published duration never track Mac during a tell.
         if(e.attackSpec.attackType==='rush-jab')e.x=e.attackOriginX-e.attackFacing*24*Math.sin(Math.PI*Math.min(1,e.phaseMs/280));
@@ -514,14 +630,41 @@ window.FILE_MANIFEST.push({
       }
       state.projectiles=state.projectiles.filter(item=>item.ageMs<item.lifeMs);
     }
+    function tickBodies(beforeEnemies){
+      for(const body of state.enemies){
+        if(!body.launched&&!(body.launchAgeMs>0&&body.knockdownMs===C.knockdownMs))continue;
+        const before=beforeEnemies.get(body.id)||body;
+        for(const victim of state.enemies){
+          if(victim.id===body.id||!live(victim)||victim.launched||victim.phase==='grappled'||body.bodyHitIds.includes(victim.id))continue;
+          const victimBefore=beforeEnemies.get(victim.id)||victim;
+          const start=before.x-victimBefore.x,end=body.x-victim.x;
+          if(Math.min(start,end)>C.bodyRadius||Math.max(start,end)<-C.bodyRadius||
+            Math.abs(body.laneY-victim.laneY)>C.bodyLaneReach)continue;
+          body.bodyHitIds.push(victim.id);
+          const direction=Math.sign(body.x-before.x)||Math.sign(body.knockbackVx)||-body.facing;
+          damageEnemy(victim,C.bodyDamage,direction,'body-impact',320,160);
+          emit('body-impact',{id:body.id,targetId:victim.id,kind:victim.kind,damage:C.bodyDamage,
+            x:victim.x,laneY:victim.laneY,direction,bloodColor:victim.bloodColor,heavy:true});
+        }
+        for(const prop of state.props){
+          if(prop.broken||!prop.maxHp||prop.zoneId!==ZONES[state.zoneIndex].id||body.bodyHitIds.includes(prop.id))continue;
+          if(prop.x<Math.min(before.x,body.x)-C.bodyRadius||prop.x>Math.max(before.x,body.x)+C.bodyRadius||
+            Math.abs(prop.laneY-body.laneY)>C.bodyLaneReach)continue;
+          body.bodyHitIds.push(prop.id);damageProp(prop,40,'body-impact');
+          emit('body-impact',{id:body.id,targetId:prop.id,kind:prop.kind,damage:40,x:prop.x,laneY:prop.laneY,heavy:true});
+        }
+      }
+    }
     function progression(dt){
       const z=ZONES[state.zoneIndex],p=state.player;
-      if(state.waveState==='entry'&&p.x>=z.entryX){
+      const entryX=state.zoneIndex<2&&state.waveIndex===1?z.startX+C.advanceEntryOffset:z.entryX;
+      if(['entry','advance'].includes(state.waveState)&&p.x>=entryX){
         state.waveState='combat';state.arenaIndex=state.zoneIndex+1;
         state.checkpoint.started=true;state.checkpoint.x=p.x;state.checkpoint.laneY=p.laneY;
+        state.checkpoint.props=copy(state.props);state.checkpoint.pickups=copy(state.pickups);state.checkpoint.relay=copy(state.relay);
         for(const e of state.enemies){phase(e,'approach');emit('enemy-arrive',{id:e.id,kind:e.kind,arena:e.arena,bloodColor:e.bloodColor});}
-        emit('zone-enter',{zoneId:z.id,name:z.name,index:z.index,arrival:z.arrival});
-        emit('wave-start',{zoneId:z.id,zone:z.index,wave:1,kinds:state.enemies.map(e=>e.kind)});
+        if(!state.waveIndex)emit('zone-enter',{zoneId:z.id,name:z.name,index:z.index,arrival:z.arrival});
+        emit('wave-start',{zoneId:z.id,zone:z.index,wave:state.waveIndex+1,kinds:state.enemies.map(e=>e.kind)});
       }
       if(state.waveState==='combat'&&state.enemies.every(e=>!e.hp)){
         state.completedWaves++;state.projectiles=[];emit('wave-cleared',{zoneId:z.id,zone:z.index,wave:state.waveIndex+1});
@@ -529,12 +672,20 @@ window.FILE_MANIFEST.push({
         else{
           state.waveState='zone-clear';state.clearedZones.push(z.id);p.hp=Math.min(p.maxHp,p.hp+C.zoneHeal);
           emit('zone-cleared',{zoneId:z.id,name:z.name,index:z.index,exit:z.exit,exitX:z.endX,heal:C.zoneHeal});
+          if(state.zoneIndex===1&&!state.relay.restored){
+            state.relay.available=true;emit('relay-ready',{id:'market-relay',x:state.relay.x,laneY:state.relay.laneY});
+          }
           if(state.zoneIndex===ZONES.length-1){state.status='desk-ready';emit('desk-unlocked',{x:C.deskX,entrance:'review-studio'});}
         }
       }
       if(state.waveState==='intermission'){
         state.waveBreakMs=Math.max(0,state.waveBreakMs-dt);
-        if(!state.waveBreakMs){state.waveIndex++;spawnWave(true);}
+        if(!state.waveBreakMs){
+          state.waveIndex++;
+          const advancing=state.zoneIndex<2&&p.x<z.startX+C.advanceEntryOffset;
+          spawnWave(!advancing);
+          if(advancing){state.waveState='advance';emit('street-advance',{zoneId:z.id,x:z.startX+C.advanceEntryOffset,wave:state.waveIndex+1});}
+        }
       }else if(state.waveState==='zone-clear'&&state.zoneIndex+1<ZONES.length&&p.x>=ZONES[state.zoneIndex+1].entryX){
         state.zoneIndex++;state.waveIndex=0;spawnWave(true);
         const next=ZONES[state.zoneIndex];emit('zone-enter',{zoneId:next.id,name:next.name,index:next.index,arrival:next.arrival});
@@ -556,6 +707,7 @@ window.FILE_MANIFEST.push({
       const beforeEnemies=new Map(state.enemies.map(e=>[e.id,{x:e.x,laneY:e.laneY}]));
       tickPlayer(dt,pressed);progression(dt);
       for(const e of state.enemies)tickEnemy(e,dt,beforeEnemies.get(e.id));
+      tickBodies(beforeEnemies);
       tickProjectiles(dt);
       const p=state.player,currentMode=mode();
       p.animAgeMs=currentMode===p.animAction?p.animAgeMs+dt:0;p.animAction=currentMode;
@@ -567,9 +719,15 @@ window.FILE_MANIFEST.push({
       accumulator += clamp(finite(deltaMs), 0, C.maxDeltaMs);
       let count = 0;
       while (readyAt(accumulator, C.stepMs) && count < C.maxSubsteps) {
-        const pressed = edges;
-        edges = {jump: false, strike: false, guard: false, throw: false};
-        tick(C.stepMs, pressed);
+        if(state.impact.remainingMs>0){
+          state.impact.remainingMs=Math.max(0,state.impact.remainingMs-C.stepMs);
+          if(!state.impact.remainingMs)state.impact.strength=0;
+        }else{
+          const pressed = edges;
+          edges = {jump: false, strike: false, guard: false, throw: false};
+          tick(C.stepMs, pressed);
+          impactBufferedStrike=false;
+        }
         accumulator = Math.max(0, accumulator - C.stepMs); count++;
       }
       return getSnapshot();
@@ -583,7 +741,7 @@ window.FILE_MANIFEST.push({
     function animation(e){
       const frames={idle:0,tell:3,attack:4,recover:5,hurt:6,defeat:7};
       const spec=e.attackSpec,duration=e.phase==='windup'?spec?.tellMs:e.phase==='active'?spec?.activeMs
-        :e.phase==='recovery'?spec?.recoverMs:e.phase==='stunned'?e.stunMs:0;
+        :e.phase==='recovery'?spec?.recoverMs:e.phase==='stunned'?e.stunMs:e.phase==='knockdown'?C.knockdownMs:0;
       const attackPose=['windup','active','recovery'].includes(e.phase)?spec?.attackType:null;
       return {action:e.animAction,facing:e.facing,ageMs:e.animAgeMs,
         frame:e.animAction==='walk'?1+Math.floor(e.animAgeMs/120)%2:frames[e.animAction]||0,hitFeedback:e.hitFeedback,
@@ -632,13 +790,15 @@ window.FILE_MANIFEST.push({
             range:e.attackSpec.reach,laneReach:e.attackSpec.laneReach,guardable:e.attackSpec.guardable,
             lanes:['fan','bile-spread'].includes(e.attackSpec.attackType)?[-64,0,64].map(offset=>clamp(e.attackLaneY,C.laneMin+64,C.laneMax-64)+offset):[e.attackLaneY],
             canJump:e.attackSpec.canJump,tactic:e.attackSpec.tactic}:null})),
-        projectiles:state.projectiles,hitFx:state.hitFx,
+        projectiles:state.projectiles,hitFx:state.hitFx,impact:state.impact,
+        props:state.props.filter(prop=>prop.zoneId===z.id),pickups:state.pickups.filter(pickup=>pickup.zoneId===z.id),relay:state.relay,
         arena:{index:state.arenaIndex,gateX:currentGate(),active:state.enemies.some(e=>live(e)),remaining:state.enemies.filter(e=>e.hp>0).length},
         city:{worldWidth:C.worldWidth,zoneCount:ZONES.length,totalWaves:C.totalWaves,totalEnemies:C.totalEnemies,
           completedWaves:state.completedWaves,clearedZones:state.clearedZones,progress:state.completedWaves/C.totalWaves,complete:state.status==='desk-ready'},
         zones:ZONES.map(item=>({...item,cleared:state.clearedZones.includes(item.id)})),
         zone:{...z,title:z.name,cleared:state.clearedZones.includes(z.id),exitLabel:z.exit,
           wave:state.waveIndex+1,waveCount:z.waves.length,state:state.waveState,waveBreakMs:state.waveBreakMs,
+          advanceX:state.waveState==='advance'?z.startX+C.advanceEntryOffset:null,
           exitX:z.endX,walkToExit:state.waveState==='zone-clear',roomBounds:{minX:z.startX+40,maxX:currentGate(),laneMin:C.laneMin,laneMax:C.laneMax}},
         wave:{index:state.waveIndex+1,number:state.waveIndex+1,total:z.waves.length,
           state:state.waveState,kinds:z.waves[state.waveIndex],remaining:state.enemies.filter(e=>e.hp>0).length},
@@ -654,6 +814,7 @@ window.FILE_MANIFEST.push({
       const target = throwTarget();
       const nextStep=p.attack?p.attack.step+1:p.comboMs>0?p.comboNext:1;
       return {
+        interactAvailable:canInteract(),interactLabel:'Restore relay',
         move: {enabled: alive, held: !!(input.move_x || input.move_y)},
         jump: {label: 'Jump', enabled: alive, ready: alive && !busy && p.elevation === 0, held: input.jump.held},
         strike: {label:p.counterMs>0?'Counter':p.elevation>0||p.velocityZ>0?'Air Kick':nextStep===1&&Math.abs(input.move_x)>.45?'Step Strike':'Strike',enabled:alive,
@@ -671,14 +832,27 @@ window.FILE_MANIFEST.push({
       const cp=copy(state.checkpoint);state=initialState();
       state.zoneIndex=cp.zoneIndex;state.waveIndex=cp.waveIndex;state.kills=cp.kills;
       state.completedWaves=cp.completedWaves;state.clearedZones=cp.clearedZones;
+      if(cp.props)state.props=copy(cp.props);if(cp.pickups)state.pickups=copy(cp.pickups);if(cp.relay)state.relay=copy(cp.relay);
       state.player.x=cp.x;state.player.laneY=cp.laneY;accumulator=0;
       input={move_x:0,move_y:0,jump:{held:false},strike:{held:false},guard:{held:false},throw:{held:false}};
-      edges={jump:false,strike:false,guard:false,throw:false};spawnWave(cp.started);state.events=[];
+      edges={jump:false,strike:false,guard:false,throw:false};impactBufferedStrike=false;spawnWave(cp.started);
+      if(!cp.started&&cp.waveIndex===1&&cp.zoneIndex<2)state.waveState='advance';
+      state.events=[];
       return getSnapshot();
     }
 
     function drainEvents() { const events = copy(state.events); state.events.length = 0; return events; }
-    return {handleInput, update, getSnapshot, getControlState, retry, drainEvents};
+    function canInteract(){
+      const p=state.player,r=state.relay;
+      return state.zoneIndex===1&&r.available&&!r.restored&&p.hp>0&&!p.attack&&!p.throwMs&&!p.hurtMs&&
+        !p.elevation&&!state.impact.remainingMs&&Math.abs(p.x-r.x)<=110&&Math.abs(p.laneY-r.laneY)<=65;
+    }
+    function interact(){
+      if(!canInteract())return false;
+      state.relay.restored=true;state.relay.available=false;
+      emit('relay-restored',{id:'market-relay',x:state.relay.x,laneY:state.relay.laneY});return true;
+    }
+    return {handleInput, update, getSnapshot, getControlState, retry, drainEvents,interact};
   }
-  B.MacStreetCombat={create,constants:C,strikes:STRIKES,attacks:ATTACKS,roles:ROLES,tactics:TACTICS,zones:ZONES};
+  B.MacStreetCombat={create,constants:C,strikes:STRIKES,attacks:ATTACKS,roles:ROLES,tactics:TACTICS,zones:ZONES,props:STREET_PROPS};
 })(window.BARCODE = window.BARCODE || {});

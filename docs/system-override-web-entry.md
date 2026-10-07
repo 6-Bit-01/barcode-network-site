@@ -1,5 +1,14 @@
 # System Override web entry
 
+## October 6, 2026 — Modem power pass and hands-on tutorial
+
+The owner approved the gameplay pass, tutorial and stronger damage presentation. The first two districts now have flying-body crowd contacts, finisher launches, knockdowns, destructible crates/stall, automatic grounded recovery, coordinated melee positioning and ranged retreat. A small skippable coach follows actual moves and uses keyboard, controller or touch prompts. Existing contextual Throw and Inspect/Link remain direct actions.
+
+The two native transparent atlases register eighteen cells for intact/cracked/collapsed props, relay states, recovery and red/green/purple blood bursts/floor marks. Complete drawn actor cels stay in use; no separate-part animation returns. Brief impact pauses retain input, finite shake honors Reduced Motion, and sounds use the existing owner. Restoring the market relay triggers short 9 Bit/Kave reactions without another dialogue choice. All six districts, twelve waves, thirty enemies, boss and both Kave choices remain playable.
+
+Existing twenty-five combat groups and six new actual-core groups pass, including the complete public-input city route, secondary body contact deduplication, ordinary-strike destruction, grounded pickups, finisher launch, buffered impact input and retry. Final wrapper, full-suite, strict-package, exact-head CI, hosted observations and archive results belong to the project-root/verification/mac-street-power-20261006 release receipts. These are technical checks; the owner has not yet accepted this playable power pass or physical-phone performance. This is a private draft review, with temporary Level 03 proof audio and no production publication.
+
+
 ## October 6, 2026 — complete drawn cels integrated into the playable private city
 
 The owner confirmed that work should continue into the game after accepting revised Walk and Air kick study revision 2. The private Mac wrapper now uses complete-character held drawings for Mac, six alien species and the four-armed Null Regent. It loads the exact eight hashed registrations and twelve native transparent PNGs from `assets/mac-combat-frames/mac-combat-frames-v1.json`; the entry launches `MacCombatFrames` instead of the rejected articulated renderer. The registered sibling bank adds exactly 21 assets, preserving the sealed 624 original artwork/audio identities, earlier city art and rejected rig history.

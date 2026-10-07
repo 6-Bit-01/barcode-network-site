@@ -124,7 +124,13 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
     let action=animation.action||(player?actor.mode:actor.animAction)||'idle';
     let key='idle',attackType=null,phase=animation.phase||actor.phase||action;
     let progress,ageMs=finite(animation.ageMs,finite(actor.animAgeMs)),terminal=false;
-    if(actor.hp<=0||['defeat','defeated'].includes(action)) {
+    if(!player&&actor.launched) {
+      // The complete authored fall cel travels on the simulation's ballistic
+      // arc. Never rotate a standing sprite or invent a body-part animation.
+      action='launched'; key='defeat'; ageMs=0;
+    } else if(!player&&actor.knockdownMs>0) {
+      action='knockdown'; key='defeat'; terminal=true;
+    } else if(actor.hp<=0||['defeat','defeated'].includes(action)) {
       action='defeat'; key='defeat';
       // The core freezes the player's action age after death. An existing host
       // clock may supply age since player-defeated.atMs; otherwise show down.

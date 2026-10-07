@@ -6,6 +6,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
   const ROOT = 'assets/mac-street-review/';
   const CITY_ROOT = 'assets/mac-city-review/';
   const FRAME_ROOT = 'assets/mac-combat-frames/';
+  const POWER_ROOT = 'assets/mac-street-power/';
   const ART = {
     street: ROOT + 'street-panorama-v1.png',
     hero: ROOT + 'mac-hero-v2.png', kave: ROOT + 'scene03-kave-dead-air-v5.png',
@@ -16,7 +17,18 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
   };
   const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, value));
   const COMBAT_CUES = { 'enemy-hit': 'hit', 'parry': 'perfect', 'block': 'guard', 'player-hit': 'damage',
-    'enemy-defeated': 'defeat', 'enemy-tell': 'warning', 'jump': 'jump', 'land': 'land', 'throw': 'metal' };
+    'enemy-defeated': 'defeat', 'enemy-tell': 'warning', 'jump': 'jump', 'land': 'land', 'throw': 'metal',
+    'body-impact': 'stomp', 'body-land': 'land', 'prop-break': 'tear', 'pickup': 'pickup', 'relay-restored': 'restore' };
+  const POWER_CELLS = ['crate_intact','crate_cracked','crate_broken','stall_intact','stall_cracked','stall_broken',
+    'relay_off','relay_on','pickup_health',...['red','green','purple'].flatMap(color => ['impact','heavy','floor'].map(kind => `blood_${color}_${kind}`))];
+  const LESSONS = [
+    { id: 'move', title: 'OWN YOUR LANE', text: input => `${input.move}. Move up or down to dodge and line up a hit.`, target: 1 },
+    { id: 'strike', title: 'MAKE IT A COMBO', text: input => `Stop moving. Tap ${input.strike} three times to finish the chain and knock enemies down.`, target: 3 },
+    { id: 'air', title: 'TAKE IT UPSTAIRS', text: input => `${input.jump}, then ${input.strike} in the air for an Air Kick.`, target: 1 },
+    { id: 'guard', title: 'TURN THEIR HIT AROUND', text: input => `Hold ${input.guard} to block. Tap just before impact, then ${input.strike} to Counter.`, target: 1 },
+    { id: 'throw', title: 'USE THE WHOLE STREET', text: input => `Get close. ${input.throw} appears when an enemy is in reach. Throw bodies into enemies and stalls.`, target: 1 },
+    { id: 'relay', title: 'GET IT HEARD', text: input => `Clear the market, then ${input.inspect} at the relay. Broken crates drop recovery: walk over it.`, target: 1 }
+  ];
   const P = B.MacCombatPreview = {
     active: false, pending: false, phase: null, status: null, assets: new Map(), frameArt: new Map(), generation: 0,
     requested() { try { return new URLSearchParams(window.location.search).get('preview') === 'mac-firstslice'; } catch (_) { return false; } },
@@ -30,7 +42,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
         return image;
       };
       const verifiedBytes = async (url, expectedHash) => {
-        if (typeof url !== 'string' || !url.startsWith(FRAME_ROOT) || url.includes('..') || !/^[a-f0-9]{64}$/i.test(expectedHash || '')) throw new Error('mac-frame-asset-registration-invalid');
+        if (typeof url !== 'string' || ![FRAME_ROOT, POWER_ROOT].some(root => url.startsWith(root)) || url.includes('..') || !/^[a-f0-9]{64}$/i.test(expectedHash || '')) throw new Error('mac-frame-asset-registration-invalid');
         if (!window.crypto?.subtle) throw new Error('mac-frame-hash-verification-unavailable');
         const response = await fetch(url);
         if (!response.ok) throw new Error('mac-frame-asset-unavailable: ' + url);
@@ -66,8 +78,13 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
           })));
           return [actor.kind, { images, registration, compiled, displayName: actor.displayName, bloodColor: actor.bloodColor }];
         }));
+        const powerResponse = await fetch(POWER_ROOT + 'mac-street-power-v1.json');
+        if (!powerResponse.ok) throw new Error('mac-street-power-art-unavailable');
+        const powerManifest = await powerResponse.json();
+        const powerArt = await this.preparePowerArt(powerManifest, load, verifiedBytes);
         if (generation !== this.generation) throw new Error('mac-preview-cancelled');
         this.assets = new Map(images); this.frameArt = new Map(frames); this.frameManifest = frameManifest;
+        this.powerArt = powerArt;
         this.cityArt = cityArt; this.zonePromises = new Map(); this.zoneLoadError = null;
         // Decode the opening and next district only. Later scenery enters the
         // same asset owner as it is needed, keeping all six native backdrops
@@ -76,6 +93,27 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
         if (generation !== this.generation) throw new Error('mac-preview-cancelled');
         return { ok: true };
       } finally { if (generation === this.generation) this.pending = false; }
+    },
+    async preparePowerArt(manifest, load, verifiedBytes) {
+      if (manifest?.schema !== 1 || !Array.isArray(manifest.sheets) || manifest.sheets.length !== 2 || !manifest.cells || Object.keys(manifest.cells).length !== POWER_CELLS.length) throw new Error('mac-street-power-registration-invalid');
+      const sheets = new Map();
+      for (const sheet of manifest.sheets) {
+        if (typeof sheet.id !== 'string' || !/^[a-z0-9_-]+$/i.test(sheet.id) || sheets.has(sheet.id) || !sheet.sourceImage?.startsWith(POWER_ROOT) || !Number.isInteger(sheet.dimensions?.width) || !Number.isInteger(sheet.dimensions?.height) || sheet.dimensions.width <= 0 || sheet.dimensions.height <= 0) throw new Error('mac-street-power-sheet-invalid');
+        await verifiedBytes(sheet.sourceImage, sheet.sourceSHA256);
+        const image = await load(sheet.sourceImage);
+        if ((image.naturalWidth || image.width) !== sheet.dimensions.width || (image.naturalHeight || image.height) !== sheet.dimensions.height) throw new Error('mac-street-power-native-dimensions-mismatch');
+        sheets.set(sheet.id, { ...sheet, image });
+      }
+      for (const name of POWER_CELLS) {
+        const cell = manifest.cells[name], sheet = sheets.get(cell?.sheet), source = cell?.source, pivot = cell?.pivot;
+        if (!sheet || !source || !['x','y','width','height'].every(key => Number.isInteger(source[key])) || source.x < 0 || source.y < 0 || source.width <= 0 || source.height <= 0 || source.x + source.width > sheet.dimensions.width || source.y + source.height > sheet.dimensions.height || !Number.isFinite(pivot?.x) || !Number.isFinite(pivot?.y) || pivot.x < 0 || pivot.y < 0 || pivot.x > source.width || pivot.y > source.height || !Number.isFinite(cell.displayHeight) || cell.displayHeight <= 0 || cell.displayHeight > 512) throw new Error('mac-street-power-cell-invalid: ' + name);
+        for (const otherName of POWER_CELLS.slice(0, POWER_CELLS.indexOf(name))) {
+          const other = manifest.cells[otherName]; if (other.sheet !== cell.sheet) continue;
+          const a = source, b = other.source;
+          if (a.x < b.x+b.width && a.x+a.width > b.x && a.y < b.y+b.height && a.y+a.height > b.y) throw new Error('mac-street-power-overlapping-cells');
+        }
+      }
+      return { manifest, sheets, cells: manifest.cells };
     },
     ensureZoneArt(index) {
       const zone = this.cityArt?.zones[index];
@@ -97,11 +135,14 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       if (!B.MacStreetCombat || !B.MacStreetStory || !B.MacCombatFrames || !this.assets.size || this.frameArt.size !== 8) throw new Error('mac-preview-not-ready');
       const generation = this.generation;
       this.combat = B.MacStreetCombat.create();
+      this.presentationState = this.combat.getSnapshot();
       this.story = B.MacStreetStory.createIntro();
       this.phase = 'intro'; this.status = 'playing'; this.active = true; this.cameraX = 0;
       this.focus = 0; this.elapsedMs = 0; this.lastEvents = []; this.audioNotice = null;
       this.playerDefeatedAtMs = null; this.playerDefeatedHostAtMs = null;
       this.playerLandedAtMs = null;
+      this.floorMarks = []; this.radio = null; this.radioQueue = []; this.damageAtMs = null;
+      this.resetTutorial(); this.makeTutorialReadout();
       this.makeDialogueReadout();
       const input = window.inputManager?.actionInput;
       if (input) {
@@ -128,18 +169,22 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       if (this.previousKeyboard && window.inputManager?.actionInput) window.inputManager.actionInput.keyboardBindings = this.previousKeyboard;
       this.previousKeyboard = null; this.combat = null; this.story = null; this.phase = null; this.status = null;
       this.assets.clear(); this.frameArt.clear(); this.frameManifest = null; this.cityArt = null; this.zonePromises?.clear(); this.lastEvents = [];
+      this.powerArt = null; this.floorMarks = []; this.radio = null; this.radioQueue = []; this.tutorial = null; this.damageAtMs = null;
+      this.presentationState = null;
       this.playerDefeatedAtMs = null; this.playerDefeatedHostAtMs = null;
       this.playerLandedAtMs = null;
       this.dialogueReadout?.remove(); this.dialogueReadout = null; this.resetInputs();
+      this.tutorialReadout?.remove(); this.tutorialReadout = null;
     },
     exit() { return B.RuntimeLifecycle?.returnToTitle?.({ source: 'mac-preview-title' }); },
     retry() {
       if (!this.active) return false;
-      if (this.status === 'clear') this.combat = B.MacStreetCombat.create(); else this.combat.retry();
+      if (this.status === 'clear') { this.combat = B.MacStreetCombat.create(); this.resetTutorial(); } else this.combat.retry();
       this.phase = 'street'; this.status = 'playing'; this.story = null;
       this.playerDefeatedAtMs = null; this.playerDefeatedHostAtMs = null;
       this.playerLandedAtMs = null;
-      const state = this.combat.getSnapshot(); this.cameraX = state.zone?.startX || 0;
+      this.floorMarks = []; this.radio = null; this.radioQueue = []; this.damageAtMs = null;
+      const state = this.combat.getSnapshot(); this.presentationState = state; this.cameraX = state.zone?.startX || 0;
       const currentZone = (state.zone?.index || 1) - 1;
       for (let index = 0; index < this.cityArt.zones.length; index++) {
         if (index !== currentZone && index !== currentZone + 1) {
@@ -166,6 +211,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
     keyDown(event) {
       if (!this.active || window.isPaused) return false;
       const key = event.key.toLowerCase();
+      if (this.phase === 'street' && this.status === 'playing' && key === 't') { event.preventDefault(); if (!event.repeat) this.skipTutorial(); return true; }
       if (key === 'escape') { event.preventDefault(); if (!event.repeat) B.RuntimeLifecycle.togglePause(); return true; }
       if (this.dialogue() && [' ', 'enter', '1', '2', 'arrowleft', 'arrowright'].includes(key)) {
         event.preventDefault(); if (event.repeat) return true;
@@ -195,6 +241,8 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
         return;
       }
       const state = this.combat.getSnapshot();
+      if (B.GamepadUI?.connected && actions.road_b?.pressed) this.skipTutorial();
+      if (actions.inspect?.pressed && this.combat.getControlState().interactAvailable) { this.combat.interact(); return; }
       if (state.desk.unlocked && Math.abs(state.player.x - state.desk.x) < 190 && actions.inspect?.pressed) {
         this.phase = 'desk'; this.story = B.MacStreetStory.createDesk(); this.focus = 0; this.resetInputs(); return;
       }
@@ -223,6 +271,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       }
       this.combat.update(delta);
       const s = this.combat.getSnapshot(), zone = s.zone || { startX: 0, endX: B.MacStreetCombat.constants.worldWidth, index: 0 };
+      this.presentationState = s;
       const left = zone.startX, right = Math.max(left, zone.endX + (zone.cleared ? 220 : 0) - 1920 / 1.35);
       const targetCamera = clamp(s.player.x - 555, left, right);
       if (this.cameraX < left || this.cameraX > right) this.cameraX = targetCamera;
@@ -237,11 +286,27 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
           this.playerDefeatedAtMs = event.atMs; this.playerDefeatedHostAtMs = this.elapsedMs;
         } else if (event.type === 'land') this.playerLandedAtMs = event.atMs;
         else if (event.type === 'jump') this.playerLandedAtMs = null;
+        if (event.type === 'player-hit') this.damageAtMs = s.elapsedMs;
+        this.trackTutorial(event);
+        if (['enemy-hit','player-hit','body-land'].includes(event.type)) this.addFloorMark(event, s);
+        if (event.type === 'relay-ready') this.queueRadio('9 BIT', 'Market relay is clear. Link it and give Kave his signal back.');
+        if (event.type === 'relay-restored') {
+          this.queueRadio('9 BIT', 'Local signal restored. Your track. Their speakers.');
+          this.queueRadio('KAVE', 'There you are, Modem. Keep that signal moving.');
+        }
       }
-      for (const event of this.lastEvents) if (COMBAT_CUES[event.type]) window.audioSystem?.playCombatCue?.(COMBAT_CUES[event.type]);
+      for (const event of this.lastEvents) {
+        const heavy = event.heavy || /counter|finisher|throw|body-impact/.test(event.cause || '');
+        const cue = event.type === 'enemy-hit' ? event.shielded ? 'metal' : heavy ? 'stomp' : 'hit' : COMBAT_CUES[event.type];
+        if (cue) window.audioSystem?.playCombatCue?.(cue, { material: event.shielded ? 'firewall' : undefined });
+      }
+      this.floorMarks = (this.floorMarks || []).filter(mark => s.elapsedMs - mark.atMs < 14000 && Math.abs(mark.x - s.player.x) < 2300);
+      this.updateTutorial(s);
+      if (this.radio && s.elapsedMs >= this.radio.untilMs) this.radio = null;
+      if (!this.radio && this.radioQueue?.length) this.radio = { ...this.radioQueue.shift(), untilMs: s.elapsedMs + 3300 };
       if (s.status === 'defeated') { this.status = 'failed'; this.resetInputs(); }
     },
-    getSnapshot() { return { active: this.active, phase: this.phase, status: this.status, cameraX: this.cameraX, combat: this.combat?.getSnapshot?.(), story: this.story?.snapshot?.(), ownsLoop: false, persistentWrites: 0 }; },
+    getSnapshot() { return { active: this.active, phase: this.phase, status: this.status, cameraX: this.cameraX, combat: this.combat?.getSnapshot?.(), story: this.story?.snapshot?.(), tutorial: this.tutorial ? { index: this.tutorial.index, completed: this.tutorial.completed, skipped: this.tutorial.skipped, progress: {...this.tutorial.progress} } : null, floorMarks: this.floorMarks?.length || 0, radio: this.radio?.speaker || null, ownsLoop: false, persistentWrites: 0 }; },
     draw(ctx) {
       if (!ctx || !this.active) return;
       ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.filter = 'none';
@@ -250,6 +315,74 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       if (this.dialogue()) this.drawDialogue(ctx); else this.drawStreet(ctx);
       this.syncDialogueReadout();
       ctx.restore();
+    },
+    resetTutorial() { this.tutorial = { index: 0, progress: Object.fromEntries(LESSONS.map(lesson => [lesson.id, 0])), completed: false, skipped: false, advanceAtMs: null }; },
+    skipTutorial() { if (!this.active || this.phase !== 'street' || window.isPaused || this.status !== 'playing') return false; this.tutorial.skipped = true; this.syncTutorialReadout(); return true; },
+    controlPrompts() {
+      if (B.TouchControls?.enabled) return {move:'Drag the joystick',strike:'Strike',jump:'Jump',guard:'Guard',throw:'Throw',inspect:'Link'};
+      if (B.GamepadUI?.connected) { const prompt = (action, fallback) => B.ControllerSettings?.prompt?.(action) || fallback;
+        return {move:'Move with the left stick',strike:prompt('road_attack','RB'),jump:prompt('jump','A'),guard:prompt('road_defend','RT'),throw:prompt('road_disrupt','LT'),inspect:prompt('inspect','Y')}; }
+      return {move:'Move with WASD or the arrow keys',strike:'J',jump:'Space',guard:'K',throw:'L',inspect:'E'};
+    },
+    trackTutorial(event) {
+      const t = this.tutorial; if (!t || t.skipped || t.completed) return;
+      const add = (id, count=1) => { t.progress[id] = Math.min(LESSONS.find(lesson => lesson.id === id).target, t.progress[id] + count); };
+      if (event.type === 'player-move') add('move');
+      if (event.type === 'strike') { t.progress.strike = Math.max(t.progress.strike,event.kind === 'finisher' ? 3 : event.kind === 'cross' ? 2 : 1); if (event.kind === 'air-kick') add('air'); }
+      if (event.type === 'parry' || event.type === 'block') add('guard');
+      if (event.type === 'throw-release') add('throw');
+      if (event.type === 'relay-restored') add('relay');
+    },
+    updateTutorial(state) {
+      const t = this.tutorial; if (!t || t.skipped || t.completed) return;
+      const lesson = LESSONS[t.index];
+      if (t.progress[lesson.id] >= lesson.target) {
+        if (t.advanceAtMs === null) t.advanceAtMs = state.elapsedMs + 700;
+        if (state.elapsedMs >= t.advanceAtMs) { t.index++; t.advanceAtMs = null; if (t.index === LESSONS.length) t.completed = true; }
+      }
+    },
+    makeTutorialReadout() {
+      if (this.tutorialReadout || !document.body) return;
+      const box = document.createElement('section'); box.className = 'mac-street-coach'; box.setAttribute('aria-label', 'Street tutorial'); box.hidden = true;
+      Object.assign(box.style, {position:'fixed',left:'50%',transform:'translateX(-50%)',width:'min(460px, calc(100vw - 28px))',boxSizing:'border-box',padding:'10px 12px',border:'1px solid #82d7c888',borderLeft:'3px solid #82d7c8',borderRadius:'10px',background:'#0b1725ee',color:'#f5eee3',font:'14px/1.35 system-ui, sans-serif',zIndex:'100008',pointerEvents:'none',gap:'10px',alignItems:'center',display:'none'});
+      const copy = document.createElement('div'); this.tutorialHeading = document.createElement('strong'); this.tutorialText = document.createElement('p');
+      Object.assign(this.tutorialHeading.style,{display:'block',fontSize:'11px',letterSpacing:'.06em',color:'#82d7c8'}); Object.assign(this.tutorialText.style,{margin:'4px 0 0'});
+      copy.append(this.tutorialHeading,this.tutorialText); box.append(copy);
+      const skip = document.createElement('button'); skip.type = 'button'; skip.textContent = 'Skip'; skip.setAttribute('aria-label','Skip street tutorial');
+      Object.assign(skip.style,{minWidth:'48px',minHeight:'44px',padding:'8px',border:'1px solid #82d7c877',borderRadius:'8px',background:'#1b2d40',color:'#f5eee3',font:'bold 12px system-ui, sans-serif',pointerEvents:'auto',flexShrink:'0',touchAction:'manipulation'});
+      skip.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();this.skipTutorial();}); box.append(skip); document.body.append(box); this.tutorialReadout = box; this.tutorialSkip = skip;
+    },
+    syncTutorialReadout() {
+      const box = this.tutorialReadout, t = this.tutorial; if (!box) return;
+      const state = this.presentationState, teaching = t && !t.skipped && !t.completed && state?.zone.index <= 2;
+      const radio = B.TouchControls?.enabled && this.radio;
+      const visible = this.active && this.phase === 'street' && this.status === 'playing' && !window.isPaused && (teaching || radio);
+      box.hidden = !visible; box.style.display = visible ? 'flex' : 'none'; if (!visible) return;
+      const lesson = LESSONS[t.index], heading = radio ? `${radio.speaker} · LOCAL SIGNAL` : `${t.index + 1} / ${LESSONS.length} · ${lesson.title}`;
+      const text = radio ? radio.text : t.advanceAtMs !== null ? 'Got it. Keep moving.' : lesson.text(this.controlPrompts());
+      this.tutorialSkip.hidden = !!radio;
+      const skipLabel = B.GamepadUI?.connected ? `Skip / ${B.ControllerSettings?.prompt?.('road_b') || 'B'}` : 'Skip';
+      if (this.tutorialSkip.textContent !== skipLabel) this.tutorialSkip.textContent = skipLabel;
+      if (this.tutorialHeading.textContent !== heading) this.tutorialHeading.textContent = heading;
+      if (this.tutorialText.textContent !== text) this.tutorialText.textContent = text;
+      box.style.top = B.TouchControls?.enabled ? 'calc(env(safe-area-inset-top, 0px) + 56px)' : 'calc(env(safe-area-inset-top, 0px) + 118px)';
+    },
+    queueRadio(speaker, text) { this.radioQueue ||= []; if (this.radioQueue.length < 3) this.radioQueue.push({speaker,text}); },
+    addFloorMark(event, state) {
+      if (event.shielded) return;
+      const actor = event.type === 'player-hit' ? state.player : state.enemies.find(enemy => enemy.id === event.id);
+      const color = event.type === 'player-hit' ? 'red' : event.bloodColor || actor?.bloodColor;
+      const x = event.x ?? actor?.x, laneY = event.laneY ?? actor?.laneY;
+      if (!['red','green','purple'].includes(color) || !Number.isFinite(x) || !Number.isFinite(laneY)) return;
+      this.floorMarks ||= []; this.floorMarks.push({x,laneY,color,atMs:state.elapsedMs,heavy:!!event.heavy || event.type === 'body-land'});
+      if (this.floorMarks.length > 32) this.floorMarks.shift();
+    },
+    drawPowerCell(ctx, name, x, y, size=1, alpha=1, facing=1) {
+      const cell = this.powerArt?.cells[name], sheet = this.powerArt?.sheets.get(cell?.sheet);
+      if (!cell || !sheet) throw new Error('mac-street-power-cell-unavailable: ' + name);
+      const scale = cell.displayHeight / cell.source.height * size, crop = cell.source;
+      ctx.save(); ctx.globalAlpha = clamp(alpha,0,1); ctx.translate(x,y); ctx.scale(facing<0?-1:1,1);
+      ctx.drawImage(sheet.image,crop.x,crop.y,crop.width,crop.height,-cell.pivot.x*scale,-cell.pivot.y*scale,crop.width*scale,crop.height*scale); ctx.restore();
     },
     makeDialogueReadout() {
       if (this.dialogueReadout || !document.body) return;
@@ -260,6 +393,9 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       box.append(this.dialogueArtLabel, this.dialogueSpeaker, this.dialogueText); document.body.appendChild(box); this.dialogueReadout = box;
     },
     syncDialogueReadout() {
+      // The shared paused frame already synchronizes this readout owner.
+      // Coach/radio DOM follows that same call, so it cannot cover Pause.
+      this.syncTutorialReadout();
       if (!this.dialogueReadout) return;
       const visible = B.TouchControls?.enabled && this.dialogue() && !window.isPaused;
       this.dialogueReadout.hidden = !visible;
@@ -357,6 +493,8 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       const x = fx.x - camera, y = (fx.laneY ?? fx.y) - (fx.elevation ?? 130);
       ctx.save(); ctx.globalAlpha = 1 - progress;
       if (color && fx.particles?.length) {
+        const blood = ['red','green','purple'].includes(fx.bloodColor) ? fx.bloodColor : color === '#e86576' ? 'red' : 'purple';
+        if (age < 230) this.drawPowerCell(ctx, `blood_${blood}_${fx.heavy ? 'heavy' : 'impact'}`, x, y, 1 + Math.min(.15, progress), (1 - age / 230) * .95, fx.direction || 1);
         ctx.fillStyle = color;
         for (const particle of fx.particles) {
           const px = particle.x - camera, py = particle.laneY - particle.elevation;
@@ -378,13 +516,25 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
     drawStreet(ctx) {
       const s = this.combat.getSnapshot(), camera = this.cameraX, zone = s.zone || {index: 1, startX: 0, endX: 3400, title: 'SERVICE ALLEY'};
       const background = this.cityArt?.zones[zone.index - 1];
-      ctx.save(); ctx.translate(0, -350); ctx.scale(1.35, 1.35);
+      const impact = s.impact || {}, shake = !B.Preferences?.values?.reducedMotion && impact.remainingMs > 0 ? Math.min(5,(impact.strength || 0)*5) : 0;
+      ctx.save(); ctx.translate(shake*Math.sin(this.elapsedMs*.13), -350 + shake*Math.cos(this.elapsedMs*.11)); ctx.scale(1.35, 1.35);
       this.drawCityBackdrop(ctx, this.assets.get(background?.background), zone, camera);
+      for (const mark of this.floorMarks || []) {
+        const age = s.elapsedMs - mark.atMs;
+        this.drawPowerCell(ctx, `blood_${mark.color}_floor`, mark.x-camera, mark.laneY+5, mark.heavy ? 1.1 : .75, .78 * Math.min(1,(14000-age)/1800));
+      }
+      for (const prop of (s.props || []).filter(prop=>prop.broken)) this.drawPowerCell(ctx, `${prop.kind}_broken`, prop.x-camera, prop.laneY);
+      for (const pickup of s.pickups || []) {
+        ctx.fillStyle='#82d7c82b'; ctx.beginPath(); ctx.ellipse(pickup.x-camera,pickup.laneY,25,7,0,0,Math.PI*2); ctx.fill();
+        this.drawPowerCell(ctx,'pickup_health',pickup.x-camera,pickup.laneY-7-Math.sin(s.elapsedMs*.004)*3);
+      }
       // Floor marks and telegraphs convey the lane and committed strike, not damage on touch.
       ctx.strokeStyle = '#eec87145'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, 984); ctx.lineTo(1920, 984); ctx.stroke();
-      const actors = [{ type: 'mac', value: s.player }, ...s.enemies.filter(e => (e.hp > 0 || e.phase === 'defeated' && e.animation.ageMs < 600) && e.x - camera > -220 && e.x - camera < 1920 / 1.35 + 220).map(value => ({ type: 'enemy', value }))].sort((a, b) => a.value.laneY - b.value.laneY);
+      const actors = [{ type: 'mac', value: s.player }, ...s.enemies.filter(e => (e.hp > 0 || e.launched || e.knockdownMs > 0 || e.phase === 'defeated' && e.animation.ageMs < 600) && e.x - camera > -220 && e.x - camera < 1920 / 1.35 + 220).map(value => ({ type: 'enemy', value })), ...(s.props || []).filter(prop=>!prop.broken && prop.kind !== 'relay').map(value=>({type:'prop',value})), ...(s.relay?.x && zone.index === 2 ? [{type:'relay',value:s.relay}] : [])].sort((a, b) => a.value.laneY - b.value.laneY || Number(!['prop','relay'].includes(a.type)) - Number(!['prop','relay'].includes(b.type)));
       for (const actor of actors) {
         const p = actor.value, x = p.x - camera;
+        if (actor.type === 'prop') { this.drawPowerCell(ctx,`${p.kind}_${p.hp < p.maxHp*.55 ? 'cracked' : 'intact'}`,x,p.laneY); continue; }
+        if (actor.type === 'relay') { this.drawPowerCell(ctx,p.restored?'relay_on':'relay_off',x,p.laneY); continue; }
         ctx.fillStyle = '#02091170'; ctx.beginPath(); ctx.ellipse(x, p.laneY + 2, actor.type === 'mac' ? 43 : 51, 12, 0, 0, Math.PI * 2); ctx.fill();
         if (actor.type === 'mac') {
           const art = this.frameArt.get('mac');
@@ -426,7 +576,8 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       this.text(ctx, `${zone.index} / 6  ·  ${zone.title.toUpperCase()}`, 120, 66, 18, '#82cfc2');
       const healthPips = Math.ceil(10 * s.player.hp / s.player.maxHp);
       for (let i = 0; i < 10; i++) { ctx.fillStyle = i < healthPips ? '#dc7c86' : '#394350'; ctx.fillRect(440 + i * 26, 34, 19, 15); }
-      const objective = s.desk.unlocked ? 'Enter Kave’s studio →' : zone.cleared ? `${zone.exitLabel || 'Continue through the city'} →` : `Clear the area · ${s.wave?.number || 1} / 2`;
+      if (window.BARCODE_RENDER_QUALITY?.flashes !== false && this.damageAtMs !== null && s.elapsedMs - this.damageAtMs < 180) { ctx.fillStyle='#e8657660'; ctx.fillRect(425,25,285,38); }
+      const objective = s.relay?.available && !s.relay.restored && zone.index === 2 ? 'Restore the market relay →' : s.desk.unlocked ? 'Enter Kave’s studio →' : zone.cleared ? `${zone.exitLabel || 'Continue through the city'} →` : s.wave?.state === 'advance' ? 'Move deeper into the district →' : `Clear the area · ${s.wave?.number || 1} / 2`;
       this.text(ctx, objective, 1740, 30, 24, '#eee2c9', 'right');
       const boss = s.enemies.find(enemy => enemy.kind === 'null_regent' && enemy.hp > 0);
       if (boss) {
@@ -436,7 +587,14 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       if (!this.assets.has(background?.background) && this.status === 'playing') {
         ctx.fillStyle = '#101e2df5'; ctx.fillRect(690, 430, 540, 90); this.text(ctx, `Entering ${zone.title}…`, 960, 457, 25, '#eec871', 'center');
       }
-      if (!B.TouchControls?.enabled) this.text(ctx, 'WASD / arrows: move · Space: jump · J: strike · K: guard · L: throw · E: talk · P: pause', 960, 1045, 22, '#eec871', 'center');
+      if (!B.TouchControls?.enabled) { const prompt=this.controlPrompts(); this.text(ctx, `${B.GamepadUI?.connected?'Left stick':'WASD / arrows'}: move · ${prompt.jump}: jump · ${prompt.strike}: strike · ${prompt.guard}: guard · ${prompt.throw}: throw · ${prompt.inspect}: link / talk · ${B.GamepadUI?.connected?'Start':'P'}: pause`, 960, 1045, 22, '#eec871', 'center'); }
+      if (s.relay?.available && !s.relay.restored && this.getControlState().interactAvailable) {
+        ctx.fillStyle='#101e2deb';ctx.fillRect(710,245,500,68); this.text(ctx,B.TouchControls?.enabled?'Tap Link to restore the relay':`${this.controlPrompts().inspect}: restore the relay`,960,264,23,'#83dfce','center');
+      }
+      if (this.radio && !B.TouchControls?.enabled) {
+        ctx.fillStyle='#101e2dea';ctx.fillRect(1250,150,530,118);this.text(ctx,`${this.radio.speaker} · LOCAL SIGNAL`,1270,165,17,'#82d7c8');
+        ctx.fillStyle='#eee2c9';ctx.font='bold 20px sans-serif';ctx.textAlign='left';ctx.textBaseline='top';this.wrap(ctx,this.radio.text,1270,197,485,27);
+      }
       if (s.desk.unlocked && Math.abs(s.player.x - s.desk.x) < 190) {
         const talk = B.GamepadUI?.connected ? B.ControllerSettings?.prompt?.('inspect') || 'RB' : 'E';
         ctx.fillStyle = '#101e2deb'; ctx.fillRect(660, 155, 600, 88); this.text(ctx, B.TouchControls?.enabled ? 'Tap Talk to hear Kave' : `${talk}: talk to Kave`, 960, 180, 25, '#83dfce', 'center');

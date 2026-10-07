@@ -1,0 +1,277 @@
+{
+  "schema": 1,
+  "sheets": [
+    {
+      "id": "props",
+      "sourceImage": "assets/mac-street-power/street-props-v1.png",
+      "sourceSHA256": "e285f89a865226aaab3659dc1da1b168cf8acf8b48f1deafd20881a3775854b2",
+      "dimensions": {
+        "width": 1254,
+        "height": 1254
+      }
+    },
+    {
+      "id": "blood",
+      "sourceImage": "assets/mac-street-power/street-blood-v1.png",
+      "sourceSHA256": "0e33d045cff4c4a8c2669c8993f3da67ed6e78bfe8fd14f36f009c12fda20ee7",
+      "dimensions": {
+        "width": 1254,
+        "height": 1254
+      }
+    }
+  ],
+  "cells": {
+    "crate_intact": {
+      "sheet": "props",
+      "source": {
+        "x": 54,
+        "y": 59,
+        "width": 320,
+        "height": 298
+      },
+      "pivot": {
+        "x": 160.0,
+        "y": 290
+      },
+      "displayHeight": 126.808511
+    },
+    "crate_cracked": {
+      "sheet": "props",
+      "source": {
+        "x": 466,
+        "y": 66,
+        "width": 323,
+        "height": 293
+      },
+      "pivot": {
+        "x": 161.5,
+        "y": 285
+      },
+      "displayHeight": 124.680851
+    },
+    "crate_broken": {
+      "sheet": "props",
+      "source": {
+        "x": 854,
+        "y": 163,
+        "width": 365,
+        "height": 200
+      },
+      "pivot": {
+        "x": 182.5,
+        "y": 192
+      },
+      "displayHeight": 85.106383
+    },
+    "stall_intact": {
+      "sheet": "props",
+      "source": {
+        "x": 29,
+        "y": 404,
+        "width": 382,
+        "height": 372
+      },
+      "pivot": {
+        "x": 191.0,
+        "y": 364
+      },
+      "displayHeight": 250.786517
+    },
+    "stall_cracked": {
+      "sheet": "props",
+      "source": {
+        "x": 445,
+        "y": 405,
+        "width": 369,
+        "height": 379
+      },
+      "pivot": {
+        "x": 184.5,
+        "y": 371
+      },
+      "displayHeight": 255.505618
+    },
+    "stall_broken": {
+      "sheet": "props",
+      "source": {
+        "x": 854,
+        "y": 518,
+        "width": 366,
+        "height": 264
+      },
+      "pivot": {
+        "x": 183.0,
+        "y": 256
+      },
+      "displayHeight": 177.977528
+    },
+    "relay_off": {
+      "sheet": "props",
+      "source": {
+        "x": 111,
+        "y": 803,
+        "width": 223,
+        "height": 390
+      },
+      "pivot": {
+        "x": 111.5,
+        "y": 382
+      },
+      "displayHeight": 229.411765
+    },
+    "relay_on": {
+      "sheet": "props",
+      "source": {
+        "x": 519,
+        "y": 803,
+        "width": 224,
+        "height": 390
+      },
+      "pivot": {
+        "x": 112.0,
+        "y": 382
+      },
+      "displayHeight": 229.411765
+    },
+    "pickup_health": {
+      "sheet": "props",
+      "source": {
+        "x": 931,
+        "y": 920,
+        "width": 237,
+        "height": 256
+      },
+      "pivot": {
+        "x": 118.5,
+        "y": 248
+      },
+      "displayHeight": 42
+    },
+    "blood_red_impact": {
+      "sheet": "blood",
+      "source": {
+        "x": 42,
+        "y": 125,
+        "width": 338,
+        "height": 235
+      },
+      "pivot": {
+        "x": 78.84,
+        "y": 117.5
+      },
+      "displayHeight": 80
+    },
+    "blood_red_heavy": {
+      "sheet": "blood",
+      "source": {
+        "x": 430,
+        "y": 51,
+        "width": 364,
+        "height": 362
+      },
+      "pivot": {
+        "x": 182.0,
+        "y": 181.0
+      },
+      "displayHeight": 140
+    },
+    "blood_red_floor": {
+      "sheet": "blood",
+      "source": {
+        "x": 834,
+        "y": 202,
+        "width": 397,
+        "height": 200
+      },
+      "pivot": {
+        "x": 198.5,
+        "y": 100.0
+      },
+      "displayHeight": 35
+    },
+    "blood_green_impact": {
+      "sheet": "blood",
+      "source": {
+        "x": 44,
+        "y": 520,
+        "width": 337,
+        "height": 251
+      },
+      "pivot": {
+        "x": 78.62,
+        "y": 125.5
+      },
+      "displayHeight": 80
+    },
+    "blood_green_heavy": {
+      "sheet": "blood",
+      "source": {
+        "x": 438,
+        "y": 439,
+        "width": 362,
+        "height": 391
+      },
+      "pivot": {
+        "x": 181.0,
+        "y": 195.5
+      },
+      "displayHeight": 140
+    },
+    "blood_green_floor": {
+      "sheet": "blood",
+      "source": {
+        "x": 834,
+        "y": 607,
+        "width": 399,
+        "height": 208
+      },
+      "pivot": {
+        "x": 199.5,
+        "y": 104.0
+      },
+      "displayHeight": 35
+    },
+    "blood_purple_impact": {
+      "sheet": "blood",
+      "source": {
+        "x": 43,
+        "y": 920,
+        "width": 350,
+        "height": 244
+      },
+      "pivot": {
+        "x": 81.48,
+        "y": 122.0
+      },
+      "displayHeight": 80
+    },
+    "blood_purple_heavy": {
+      "sheet": "blood",
+      "source": {
+        "x": 439,
+        "y": 840,
+        "width": 359,
+        "height": 385
+      },
+      "pivot": {
+        "x": 179.5,
+        "y": 192.5
+      },
+      "displayHeight": 140
+    },
+    "blood_purple_floor": {
+      "sheet": "blood",
+      "source": {
+        "x": 831,
+        "y": 1002,
+        "width": 395,
+        "height": 208
+      },
+      "pivot": {
+        "x": 197.5,
+        "y": 104.0
+      },
+      "displayHeight": 35
+    }
+  }
+}

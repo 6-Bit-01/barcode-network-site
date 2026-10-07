@@ -19,7 +19,7 @@ window.FILE_MANIFEST.push({
   // Actual Run+Strike commits one grounded kick before an equipped weapon;
   // Counter and Jump+Strike retain priority over that running commitment.
   const C = Object.freeze({
-    version:5,worldWidth:20400,zoneWidth:3400,laneMin:780,laneMax:970,
+    version:6,worldWidth:20400,zoneWidth:3400,laneMin:780,laneMax:970,
     startX:200,startLaneY:880,deskX:20100,
     stepMs:1000/120,maxDeltaMs:100,maxSubsteps:12,
     maxEnemies:3,totalEnemies:30,totalWaves:12,maxProjectiles:18,
@@ -33,7 +33,8 @@ window.FILE_MANIFEST.push({
     runTapMs:280,runMultiplier:1.65,grabMaxMs:3000,pummelMaxMs:1000,
     strength:100,propReach:85,maxPickups:48,overdriveMs:10000,barrierMs:12000,impactMs:15000,
     carryForward:68.665,carryElevation:139.644,propReleaseForward:73.907,propReleaseElevation:155.394,
-    carRecoilMs:420,carRecoilX:10,carBounceHeight:20,carRecoilRotation:.025
+    carRecoilMs:420,carRecoilX:10,carBounceHeight:20,carRecoilRotation:.025,
+    tellSpacingMs:300,interruptedRearmMs:220,fixtureDischargeRange:235,fixtureDischargeLaneReach:95
   });
   const STRIKES = Object.freeze([
     Object.freeze({kind:'jab',windupMs:90,activeMs:80,recoveryMs:155,reach:90,damage:12}),
@@ -88,6 +89,23 @@ window.FILE_MANIFEST.push({
     zone('broadcast-plaza','Broadcast Plaza',5,'Through the broadcast plaza approach','Walk to the review studio entrance',
       [['bile_spitter','prism_guard','shock_mantid'],['null_regent']])
   ]);
+  // Both fights occupy different parts of every street. These describe the
+  // real combination, not a random objective or an extra completion condition.
+  const ENCOUNTERS=Object.freeze([
+    Object.freeze([{name:'First contact',objective:'Dodge the spear line; punish the claw rush.'},
+      {name:'Armored delivery',objective:'Throw a claw fighter through the shield; break it with the crowbar.'}]),
+    Object.freeze([{name:'Market crossfire',objective:'Close on the spitter between globs; use the barrel to clear space.'},
+      {name:'Shielded vendor',objective:'Break the guard protecting the spitter, then finish the spear fighter.'}]),
+    Object.freeze([{name:'Platform crossing',objective:'Let the stalker cross, then punish its landing. Watch the spear line.'},
+      {name:'Cargo ambush',objective:'Throw cargo through the flankers; smash the terminal to interrupt the pack.'}]),
+    Object.freeze([{name:'Canal pulse',objective:'Jump or leave the shock lane; crack the guard during recovery.'},
+      {name:'Maintenance crossfire',objective:'Use the barrel to interrupt crossfire before chasing the stalker.'}]),
+    Object.freeze([{name:'Relay perimeter',objective:'Break the shield formation; punish the stalker and spear in turn.'},
+      {name:'Relay overload',objective:'Smash the terminal near the pack; turn its discharge into a free attack window.'}]),
+    Object.freeze([{name:'Plaza blockade',objective:'Disrupt the shielded firing line; save the car reward for the Regent.'},
+      {name:'Null Regent',objective:'Respect the locked tell. Dodge or parry, then punish the exposed recovery.'}])
+  ].map(pair=>Object.freeze(pair.map(Object.freeze))));
+  const BOSS_PHASES=Object.freeze({1:'Four-arm enforcer',2:'Relay crossfire',3:'Plaza overload'});
   const BLOOD=Object.freeze({green:'#78ea68',purple:'#b374ed',red:'#f04455'});
   const streetProp=(id,zoneId,kind,x,laneY,maxHp,drop='health')=>Object.freeze({id,zoneId,kind,x,laneY,maxHp,drop:drop?Object.freeze({kind:drop}):null,
     variant:kind==='car'?(id.includes('canal')?'van':'coupe'):null,
@@ -210,7 +228,7 @@ window.FILE_MANIFEST.push({
       props:STREET_PROPS.map(prop=>({...prop,hp:prop.maxHp,broken:false,heldBy:null,
         launched:false,elevation:0,velocityZ:0,knockbackVx:0,launchAgeMs:0,bodyHitIds:[],recoil:null})),pickups:WEAPON_PICKUPS.map(copy),nextPickupId:1,
       relay:{available:false,restored:false,x:6400,laneY:880},
-      impact:{remainingMs:0,strength:0,x:0,laneY:880},
+      impact:{remainingMs:0,strength:0,x:0,laneY:880},lastEnemyTellMs:-Infinity,
       checkpoint:{zoneIndex:0,waveIndex:0,kills:0,completedWaves:0,clearedZones:[],
         x:C.startX,laneY:C.startLaneY,started:false}};
   }
@@ -236,10 +254,23 @@ window.FILE_MANIFEST.push({
         lifeMs:bloodColor?700:320,bloodColor,bloodHex:bloodColor?BLOOD[bloodColor]:null,direction,particles});
       if(state.hitFx.length>C.maxHitFx)state.hitFx.shift();
     }
-    function phase(e,value){e.phase=value;e.phaseMs=0;e.animAgeMs=0;}
+    function phase(e,value){
+      const previous=e.phase;
+      if(['windup','active'].includes(previous)&&['stunned','grappled','launched','defeated'].includes(value)){
+        emit('enemy-interrupted',{id:e.id,kind:e.kind,attackType:e.attackSpec?.attackType||null,phase:previous});
+        if(ROLES[e.kind].boss&&e.hp)e.punishUntilMs=Math.max(e.punishUntilMs,state.elapsedMs+1000);
+      }
+      if(value==='approach'&&['stunned','grappled','knockdown','recovery'].includes(previous))
+        e.nextTellAtMs=Math.max(e.nextTellAtMs,state.elapsedMs+C.interruptedRearmMs);
+      if(value==='recovery'&&ROLES[e.kind].boss){
+        e.punishUntilMs=Math.max(e.punishUntilMs,state.elapsedMs+(previous==='active'?e.attackSpec.recoverMs:0));
+        emit('boss-exposed',{id:e.id,phase:e.bossPhase,durationMs:Math.max(0,e.punishUntilMs-state.elapsedMs),attackType:e.attackSpec?.attackType||null});
+      }
+      e.phase=value;e.phaseMs=0;e.animAgeMs=0;
+    }
     function makeEnemy(kind,slot,started){
       const z=ZONES[state.zoneIndex],rule=ROLES[kind];
-      const stageFloor=state.zoneIndex<2&&state.waveIndex===1?z.startX+C.advanceEntryOffset+320:z.startX+820;
+      const stageFloor=state.waveIndex===1?z.startX+C.advanceEntryOffset+320:z.startX+820;
       const baseX=clamp(state.player.x+440,stageFloor,z.endX-780);
       const x=clamp(baseX+slot*240,z.startX+120,z.endX-170);
       return {id:z.id+'-w'+(state.waveIndex+1)+'-'+slot+'-'+kind,kind,name:rule.name,
@@ -247,7 +278,7 @@ window.FILE_MANIFEST.push({
         x,laneY:[880,930,815][slot],hp:rule.hp,maxHp:rule.hp,facing:-1,
         phase:started?'approach':'dormant',phaseMs:0,attackLaneY:880,attackFacing:-1,
         attackOriginX:x,attackTargetX:x,attackDone:false,attackSpawned:false,attackSpec:null,
-        attackCount:0,bossPhase:rule.boss?1:null,shieldBrokenMs:0,stunMs:0,
+        attackCount:0,bossPhase:rule.boss?1:null,shieldBrokenMs:0,stunMs:0,nextTellAtMs:0,punishUntilMs:0,
         knockbackVx:0,flashMs:0,ageMs:0,animAgeMs:0,animAction:started?'walk':'idle',hitFeedback:null,
         elevation:0,velocityZ:0,launched:false,launchAgeMs:0,knockdownMs:0,knockdownAgeMs:0,bodyHitIds:[],slot,rangedRetreatMs:0,
         vx:0,laneVelocity:0,travelDistance:0,strideRatio:0,settleAgeMs:0,
@@ -258,7 +289,7 @@ window.FILE_MANIFEST.push({
     function spawnWave(started){
       const z=ZONES[state.zoneIndex];
       state.enemies=z.waves[state.waveIndex].map((kind,slot)=>makeEnemy(kind,slot,started));
-      state.projectiles=[];state.waveState=started?'combat':'entry';state.waveBreakMs=0;
+      state.projectiles=[];state.waveState=started?'combat':'entry';state.waveBreakMs=0;state.lastEnemyTellMs=-Infinity;
       state.arenaIndex=started?state.zoneIndex+1:0;
       state.checkpoint={zoneIndex:state.zoneIndex,waveIndex:state.waveIndex,kills:state.kills,
         completedWaves:state.completedWaves,clearedZones:state.clearedZones.slice(),
@@ -312,8 +343,22 @@ window.FILE_MANIFEST.push({
           charges:WEAPONS[prop.bonusWeapon].charges,zoneId:prop.zoneId,x:prop.x+38,laneY:prop.laneY});
         fx('prop-break',prop.x,prop.laneY);
         emit('prop-break',{id:prop.id,kind:prop.kind,x:prop.x,laneY:prop.laneY,cause,pickupId:pickup?.id||null});
+        if(['terminal','streetlight'].includes(prop.kind))dischargeFixture(prop);
         impactPause(32,.6,prop.x,prop.laneY);
       }
+    }
+    function dischargeFixture(prop){
+      // One break, one enemy-only interruption. No persistent hazard, damage
+      // timer, invisible player hit or recursive destruction chain is created.
+      const victims=state.enemies.filter(e=>live(e)&&!e.grappledBy&&!e.launched&&
+        Math.abs(e.x-prop.x)<=C.fixtureDischargeRange&&Math.abs(e.laneY-prop.laneY)<=C.fixtureDischargeLaneReach);
+      for(const e of victims){
+        damageEnemy(e,12,Math.sign(e.x-prop.x)||state.player.facing,'fixture-discharge',780,100);
+      }
+      const item=state.hitFx.find(f=>f.kind==='prop-break'&&f.x===prop.x&&f.laneY===prop.laneY);
+      if(item){item.discharge=true;item.radius=C.fixtureDischargeRange;item.laneReach=C.fixtureDischargeLaneReach;}
+      emit('fixture-discharge',{id:prop.id,kind:prop.kind,x:prop.x,laneY:prop.laneY,
+        radius:C.fixtureDischargeRange,laneReach:C.fixtureDischargeLaneReach,damage:12,enemyIds:victims.map(e=>e.id)});
     }
     function addPickup(item){
       if(state.pickups.length>=C.maxPickups)return null;
@@ -395,7 +440,7 @@ window.FILE_MANIFEST.push({
       const rule=ROLES[e.kind],shield=rule.shieldReduction&&!e.shieldBrokenMs&&direction===-e.facing&&
         ['strike','step-strike','running-kick','air-kick','pipe','gravity-hammer','scatter-blaster','coil-rifle','plasma-disc'].includes(cause);
       if(shield){amount=Math.max(1,Math.round(amount*(1-rule.shieldReduction)));fx('shield',e.x,e.laneY);}
-      if(rule.shieldReduction&&['counter','throw','crowbar','energy-blade','shock-baton'].includes(cause)){
+      if(rule.shieldReduction&&['counter','throw','crowbar','energy-blade','shock-baton','fixture-discharge'].includes(cause)){
         e.shieldBrokenMs=2600;emit('shield-broken',{id:e.id,durationMs:e.shieldBrokenMs,cause});
       }
       e.hp=Math.max(0,e.hp-amount);e.flashMs=150;
@@ -403,7 +448,10 @@ window.FILE_MANIFEST.push({
       const armoredBoss=rule.boss&&e.hp&&['windup','active'].includes(e.phase)&&
         (['strike','step-strike','running-kick','air-kick'].includes(cause)||!!WEAPONS[cause]);
       if(!armoredBoss){
-        e.knockbackVx=direction*speed;e.attackDone=true;phase(e,e.hp?'stunned':'defeated');
+        e.knockbackVx=direction*speed;e.attackDone=true;
+        // Hitting an exposed Regent must not replace its long punish window
+        // with a short stun followed by an immediate armored retaliation.
+        if(!(rule.boss&&e.hp&&e.phase==='recovery'))phase(e,e.hp?'stunned':'defeated');
         e.stunMs=rule.boss?Math.min(stunMs,420):stunMs;
       }
       const heavy=launch||['counter','throw','body-impact','prop-impact'].includes(cause);
@@ -418,7 +466,7 @@ window.FILE_MANIFEST.push({
         const nextPhase=e.hp<=e.maxHp/3?3:e.hp<=e.maxHp*2/3?2:1;
         if(nextPhase>e.bossPhase){
           e.bossPhase=nextPhase;emit('boss-phase',{id:e.id,phase:nextPhase,hp:e.hp,
-            description:nextPhase===2?'Charge and relay fan':'Ground waves and four-arm pressure'});
+            name:BOSS_PHASES[nextPhase],description:nextPhase===2?'Charge and relay fan':'Ground waves and four-arm pressure'});
         }
       }
       if(!e.hp){state.kills++;emit('enemy-defeated',{id:e.id,kind:e.kind,bloodColor:e.bloodColor});}
@@ -686,13 +734,19 @@ window.FILE_MANIFEST.push({
       }
       const patterns=e.bossPhase===1?['cleave']:e.bossPhase===2?['charge','fan','cleave']:['ground-wave','fan','charge','cleave'];
       const type=patterns[e.attackCount%patterns.length],shared={...base,attackType:type,tactic:'regent-'+type,guardable:type!=='ground-wave'};
-      if(type==='charge')return {...shared,distance:260,tellMs:1100,activeMs:440,recoverMs:1300,reach:60,chargeSpeed:660,damage:19,tell:'Regent charge line locked'};
-      if(type==='fan')return {...shared,distance:310,tellMs:1200,activeMs:180,recoverMs:1450,projectileSpeed:350,damage:13,tell:'Three relay bolts charging'};
-      if(type==='ground-wave')return {...shared,distance:240,tellMs:1250,activeMs:180,recoverMs:1500,projectileSpeed:340,damage:18,tell:'Plaza shock line; jump or leave the lane'};
-      return {...shared,tellMs:e.bossPhase===3?850:1000,recoverMs:1150,tell:'Four-arm cleave drawn back'};
+      if(type==='charge')return {...shared,distance:260,tellMs:1100,activeMs:440,recoverMs:1500,reach:60,chargeSpeed:660,damage:19,tell:'Regent charge line locked'};
+      if(type==='fan')return {...shared,distance:310,tellMs:1200,activeMs:180,recoverMs:1600,projectileSpeed:350,damage:13,tell:'Three relay bolts charging'};
+      if(type==='ground-wave')return {...shared,distance:240,tellMs:1250,activeMs:180,recoverMs:1700,projectileSpeed:340,damage:18,tell:'Plaza shock line; jump or leave the lane'};
+      return {...shared,tellMs:e.bossPhase===3?950:1000,recoverMs:e.bossPhase===3?1350:1250,tell:'Four-arm cleave drawn back'};
     }
+    function attackResponse(spec){
+      return spec.guardable===false?'Jump or change lane':spec.canJump===false?'Guard or change lane'
+        :['fan','bile-spread'].includes(spec.attackType)?'Guard, jump or find a gap':'Parry, jump or change lane';
+    }
+    function canBeginTell(e){return state.elapsedMs>=e.nextTellAtMs&&state.elapsedMs-state.lastEnemyTellMs+1e-7>=C.tellSpacingMs;}
     function beginTell(e,spec){
-      phase(e,'windup');e.attackDone=false;e.attackSpawned=false;e.attackSpec=spec;
+      spec={...spec,response:attackResponse(spec)};
+      phase(e,'windup');e.attackDone=false;e.attackSpawned=false;e.attackSpec=spec;state.lastEnemyTellMs=state.elapsedMs;
       e.rangedRetreatMs=0;
       e.tactic=spec.tactic;
       e.attackLaneY=e.laneY;e.attackFacing=e.facing;e.attackOriginX=e.x;
@@ -700,7 +754,7 @@ window.FILE_MANIFEST.push({
       e.attackTargetX=clamp(state.player.x+e.facing*targetOffset,z.startX+60,z.endX-60);
       emit('enemy-tell',{id:e.id,kind:e.kind,attackType:spec.attackType,label:spec.tell,tellMs:spec.tellMs,
         laneY:e.attackLaneY,facing:e.attackFacing,originX:e.attackOriginX,targetX:e.attackTargetX,
-        guardable:spec.guardable,canJump:spec.canJump,bossPhase:e.bossPhase,tactic:spec.tactic});
+        guardable:spec.guardable,canJump:spec.canJump,bossPhase:e.bossPhase,tactic:spec.tactic,response:spec.response});
     }
     function addProjectile(e,spec,laneOffset=0,facing=e.attackFacing){
       const spread=['fan','bile-spread'].includes(spec.attackType);
@@ -718,17 +772,20 @@ window.FILE_MANIFEST.push({
       return e.hp<=0?'defeat':['stunned','grappled','launched','knockdown'].includes(e.phase)?'hurt':e.phase==='windup'?'tell'
         :e.phase==='active'?'attack':e.phase==='recovery'?'recover':e.phase==='approach'?'walk':'idle';
     }
-    function melee(e){return !ROLES[e.kind].boss&&e.kind!=='bile_spitter';}
+    function ranged(e){return e.kind==='bile_spitter'||e.kind==='shock_mantid'&&
+      (['windup','active'].includes(e.phase)?e.attackSpec:attackSpec(e)).attackType==='ground-wave';}
+    function melee(e){return !ROLES[e.kind].boss&&!ranged(e);}
     function attackLeader(){
-      return state.enemies.filter(e=>live(e)&&melee(e)&&e.phase==='approach')
+      return state.enemies.filter(e=>live(e)&&melee(e)&&e.phase==='approach'&&state.elapsedMs>=e.nextTellAtMs)
         .sort((a,b)=>a.attackCount-b.attackCount||Math.abs(a.x-state.player.x)-Math.abs(b.x-state.player.x)||a.slot-b.slot)[0];
     }
     function streetPosition(e,spec,sec){
-      const p=state.player,z=ZONES[state.zoneIndex],gap=Math.abs(p.x-e.x),ranged=e.kind==='bile_spitter';
+      const p=state.player,z=ZONES[state.zoneIndex],gap=Math.abs(p.x-e.x),isRanged=ranged(e);
       e.facing=Math.sign(p.x-e.x)||e.facing;
-      if(ranged){
-        const atEdge=e.x<=z.startX+62||e.x>=z.endX-62,retreat=gap<250&&e.rangedRetreatMs<650&&!atEdge;
-        e.tactic=retreat?'ranged-retreat':'ranged-line';
+      if(state.elapsedMs<e.nextTellAtMs){e.tactic='recover-stance';return false;}
+      if(isRanged){
+        const atEdge=e.x<=z.startX+62||e.x>=z.endX-62,retreat=e.kind==='bile_spitter'&&gap<250&&e.rangedRetreatMs<650&&!atEdge;
+        e.tactic=retreat?'ranged-retreat':e.kind==='shock_mantid'?'pulse-line':'ranged-line';
         e.laneY=toward(e.laneY,p.laneY,spec.laneSpeed*sec);
         if(retreat){e.rangedRetreatMs+=sec*1000;e.x=clamp(e.x-e.facing*spec.speed*sec,z.startX+60,z.endX-60);}
         else if(gap>spec.distance)e.x+=e.facing*Math.min(spec.speed*sec,gap-spec.distance);
@@ -736,11 +793,13 @@ window.FILE_MANIFEST.push({
       }
       const committed=state.enemies.some(other=>other.id!==e.id&&live(other)&&melee(other)&&['windup','active'].includes(other.phase));
       const leader=attackLeader(),canCommit=!committed&&leader?.id===e.id;
-      const offset=e.slot%2?62:-62,side=e.slot%2?-p.facing:(Math.sign(e.x-p.x)||p.facing);
-      let targetX=p.x+side*(canCommit?spec.distance:150),targetLane=canCommit?p.laneY:clamp(p.laneY+offset,C.laneMin,C.laneMax);
-      e.tactic=canCommit?'pressure':e.slot%2?'flank':'circle';
+      const offset=e.slot%2?62:-62,side=e.kind==='rift_stalker'?-p.facing:e.slot%2?-p.facing:(Math.sign(e.x-p.x)||p.facing);
+      const reserveDistance=e.kind==='psion_lancer'?190:e.kind==='chitin_scuttler'?130:150;
+      let targetX=p.x+side*(canCommit?spec.distance:reserveDistance),targetLane=canCommit?p.laneY:clamp(p.laneY+offset,C.laneMin,C.laneMax);
+      e.tactic=canCommit?e.kind==='psion_lancer'?'spear-line':e.kind==='rift_stalker'?'flank-pressure':'pressure'
+        :e.kind==='rift_stalker'||e.slot%2?'flank':'circle';
       if(!canCommit&&e.kind==='prism_guard'){
-        const spitter=state.enemies.find(other=>live(other)&&other.kind==='bile_spitter');
+        const spitter=state.enemies.find(other=>live(other)&&ranged(other));
         if(spitter){targetX=p.x+(spitter.x-p.x)*.5;targetLane=spitter.laneY;e.tactic='protect-spitter';}
       }
       e.x=toward(e.x,clamp(targetX,z.startX+60,z.endX-60),spec.speed*sec);
@@ -773,19 +832,22 @@ window.FILE_MANIFEST.push({
       const p=state.player,z=ZONES[state.zoneIndex];
       e.x=clamp(e.x+e.knockbackVx*sec,z.startX+60,z.endX-60);
       e.knockbackVx=toward(e.knockbackVx,0,900*sec);e.phaseMs+=dt;
-      if(e.phase==='stunned'){if(readyAt(e.phaseMs,e.stunMs))phase(e,'approach');}
+      if(e.phase==='stunned'){
+        if(readyAt(e.phaseMs,e.stunMs))phase(e,ROLES[e.kind].boss&&state.elapsedMs<e.punishUntilMs?'recovery':'approach');
+      }
       else if(e.phase==='recovery'){
         if(e.attackSpec?.recoilSpeed&&e.phaseMs<400)e.x=clamp(e.x-e.attackFacing*e.attackSpec.recoilSpeed*sec,z.startX+60,z.endX-60);
-        if(readyAt(e.phaseMs,e.attackSpec?.recoverMs||ROLES[e.kind].recoverMs))phase(e,'approach');
+        if(ROLES[e.kind].boss?state.elapsedMs+1e-7>=e.punishUntilMs
+          :readyAt(e.phaseMs,e.attackSpec?.recoverMs||ROLES[e.kind].recoverMs))phase(e,'approach');
       }
       else if(e.phase==='approach'){
         const spec=attackSpec(e);e.tactic=spec.tactic;e.facing=Math.sign(p.x-e.x)||e.facing;
-        if(state.zoneIndex<2){if(streetPosition(e,spec,sec))beginTell(e,spec);}
+        if(!ROLES[e.kind].boss){if(streetPosition(e,spec,sec)&&canBeginTell(e))beginTell(e,spec);}
         else{
           e.laneY=toward(e.laneY,p.laneY,spec.laneSpeed*sec);
           const gap=Math.abs(p.x-e.x);
           if(gap>spec.distance)e.x+=e.facing*Math.min(spec.speed*sec,gap-spec.distance);
-          if(gap<=spec.distance+1&&Math.abs(e.laneY-p.laneY)<=24)beginTell(e,spec);
+          if(gap<=spec.distance+1&&Math.abs(e.laneY-p.laneY)<=24&&canBeginTell(e))beginTell(e,spec);
         }
       }else if(e.phase==='windup'){
         // Locked aim, lane and published duration never track Mac during a tell.
@@ -924,7 +986,7 @@ window.FILE_MANIFEST.push({
     }
     function progression(dt){
       const z=ZONES[state.zoneIndex],p=state.player;
-      const entryX=state.zoneIndex<2&&state.waveIndex===1?z.startX+C.advanceEntryOffset:z.entryX;
+      const entryX=state.waveIndex===1?z.startX+C.advanceEntryOffset:z.entryX;
       if(['entry','advance'].includes(state.waveState)&&p.x>=entryX){
         state.waveState='combat';state.arenaIndex=state.zoneIndex+1;
         state.checkpoint.started=true;state.checkpoint.x=p.x;state.checkpoint.laneY=p.laneY;
@@ -951,7 +1013,7 @@ window.FILE_MANIFEST.push({
         state.waveBreakMs=Math.max(0,state.waveBreakMs-dt);
         if(!state.waveBreakMs){
           state.waveIndex++;
-          const advancing=state.zoneIndex<2&&p.x<z.startX+C.advanceEntryOffset;
+          const advancing=p.x<z.startX+C.advanceEntryOffset;
           spawnWave(!advancing);
           if(advancing){state.waveState='advance';emit('street-advance',{zoneId:z.id,x:z.startX+C.advanceEntryOffset,wave:state.waveIndex+1});}
         }
@@ -1069,7 +1131,8 @@ window.FILE_MANIFEST.push({
             laneY:e.attackLaneY,facing:e.attackFacing,originX:e.attackOriginX,targetX:e.attackTargetX,
             range:e.attackSpec.reach,laneReach:e.attackSpec.laneReach,guardable:e.attackSpec.guardable,
             lanes:['fan','bile-spread'].includes(e.attackSpec.attackType)?[-64,0,64].map(offset=>clamp(e.attackLaneY,C.laneMin+64,C.laneMax-64)+offset):[e.attackLaneY],
-            canJump:e.attackSpec.canJump,tactic:e.attackSpec.tactic}:null})),
+            canJump:e.attackSpec.canJump,tactic:e.attackSpec.tactic,response:e.attackSpec.response}:null,
+          punishRemainingMs:ROLES[e.kind].boss?Math.max(0,e.punishUntilMs-state.elapsedMs):0})),
         projectiles:state.projectiles,hitFx:state.hitFx,impact:state.impact,
         props:state.props.filter(prop=>prop.zoneId===z.id),pickups:state.pickups.filter(pickup=>pickup.zoneId===z.id),relay:state.relay,
         arena:{index:state.arenaIndex,gateX:currentGate(),active:state.enemies.some(e=>live(e)),remaining:state.enemies.filter(e=>e.hp>0).length},
@@ -1079,12 +1142,16 @@ window.FILE_MANIFEST.push({
         zone:{...z,title:z.name,cleared:state.clearedZones.includes(z.id),exitLabel:z.exit,
           wave:state.waveIndex+1,waveCount:z.waves.length,state:state.waveState,waveBreakMs:state.waveBreakMs,
           advanceX:state.waveState==='advance'?z.startX+C.advanceEntryOffset:null,
+          encounter:{...ENCOUNTERS[state.zoneIndex][state.waveIndex],advanceX:z.startX+C.advanceEntryOffset},
           exitX:z.endX,walkToExit:state.waveState==='zone-clear',roomBounds:{minX:z.startX+40,maxX:currentGate(),laneMin:C.laneMin,laneMax:C.laneMax}},
         wave:{index:state.waveIndex+1,number:state.waveIndex+1,total:z.waves.length,
           state:state.waveState,kinds:z.waves[state.waveIndex],remaining:state.enemies.filter(e=>e.hp>0).length},
         checkpoint:{...state.checkpoint,zoneId:ZONES[state.checkpoint.zoneIndex].id,zone:state.checkpoint.zoneIndex+1,wave:state.checkpoint.waveIndex+1},
         camera:{minX:z.startX,maxX:Math.max(z.startX,currentGate()-1400),targetX:p.x},
         boss:boss?{id:boss.id,kind:boss.kind,hp:boss.hp,maxHp:boss.maxHp,phase:boss.bossPhase,
+          phaseName:BOSS_PHASES[boss.bossPhase],window:boss.hp===0?'defeated':boss.phase==='windup'?'warning'
+            :boss.phase==='active'?'committed':boss.punishUntilMs>state.elapsedMs?'punish':'approach',
+          punishRemainingMs:boss.hp?Math.max(0,boss.punishUntilMs-state.elapsedMs):0,
           attackType:boss.attackSpec?.attackType||null,warning:boss.phase==='windup',defeated:boss.hp===0,bloodColor:boss.bloodColor}:null,
         desk:{x:C.deskX,unlocked:state.status==='desk-ready',entrance:'review-studio'}});
     }
@@ -1120,7 +1187,7 @@ window.FILE_MANIFEST.push({
       state.player.x=cp.x;state.player.laneY=cp.laneY;accumulator=0;
       input={move_x:0,move_y:0,jump:{held:false},strike:{held:false},guard:{held:false},throw:{held:false},run:{held:false}};
       edges={jump:false,strike:false,guard:false,throw:false,moveTaps:[]};impactBufferedStrike=false;spawnWave(cp.started);
-      if(!cp.started&&cp.waveIndex===1&&cp.zoneIndex<2)state.waveState='advance';
+      if(!cp.started&&cp.waveIndex===1)state.waveState='advance';
       state.events=[];
       return getSnapshot();
     }
@@ -1138,5 +1205,6 @@ window.FILE_MANIFEST.push({
     }
     return {handleInput, update, getSnapshot, getControlState, retry, drainEvents,interact,releaseInputs};
   }
-  B.MacStreetCombat={create,constants:C,strikes:STRIKES,attacks:ATTACKS,weapons:WEAPONS,roles:ROLES,tactics:TACTICS,zones:ZONES,props:STREET_PROPS};
+  B.MacStreetCombat={create,constants:C,strikes:STRIKES,attacks:ATTACKS,weapons:WEAPONS,roles:ROLES,tactics:TACTICS,zones:ZONES,props:STREET_PROPS,
+    encounters:ENCOUNTERS,bossPhases:BOSS_PHASES};
 })(window.BARCODE = window.BARCODE || {});

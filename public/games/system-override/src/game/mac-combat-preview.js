@@ -191,6 +191,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       this.playerLandedAtMs = null;
       this.guardBlockedAtMs = null;
       this.floorMarks = []; this.radio = null; this.radioQueue = []; this.damageAtMs = null;
+      this.gameplayCueSeen = [];
       this.resetTutorial(); this.makeTutorialReadout();
       this.makeDialogueReadout();
       const input = window.inputManager?.actionInput;
@@ -220,6 +221,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       this.previousKeyboard = null; this.combat = null; this.story = null; this.phase = null; this.status = null;
       this.assets.clear(); this.frameArt.clear(); this.frameManifest = null; this.cityArt = null; this.zonePromises?.clear(); this.lastEvents = [];
       this.powerArt = null; this.floorMarks = []; this.radio = null; this.radioQueue = []; this.tutorial = null; this.damageAtMs = null;
+      this.gameplayCueSeen = [];
       this.presentationState = null;
       this.playerDefeatedAtMs = null; this.playerDefeatedHostAtMs = null;
       this.playerLandedAtMs = null;
@@ -230,7 +232,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
     exit() { return B.RuntimeLifecycle?.returnToTitle?.({ source: 'mac-preview-title' }); },
     retry() {
       if (!this.active) return false;
-      if (this.status === 'clear') { this.combat = B.MacStreetCombat.create(); this.resetTutorial(); } else this.combat.retry();
+      if (this.status === 'clear') { this.combat = B.MacStreetCombat.create(); this.resetTutorial(); this.gameplayCueSeen = []; } else this.combat.retry();
       this.phase = 'street'; this.status = 'playing'; this.story = null;
       this.playerDefeatedAtMs = null; this.playerDefeatedHostAtMs = null;
       this.playerLandedAtMs = null;
@@ -342,11 +344,16 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
         if (event.type === 'player-hit') this.damageAtMs = s.elapsedMs;
         this.trackTutorial(event);
         if (['enemy-hit','player-hit','body-land'].includes(event.type)) this.addFloorMark(event, s);
-        if (event.type === 'relay-ready') this.queueRadio('9 BIT', 'Market relay is clear. Link it and give Kave his signal back.');
-        if (event.type === 'relay-restored') {
-          this.queueRadio('9 BIT', 'Local signal restored. Your track. Their speakers.');
-          this.queueRadio('KAVE', 'There you are, Modem. Keep that signal moving.');
-        }
+
+      }
+      // Story cues use earned receipts and chapter-local memory. They never
+      // stop a fight or take over an action, clock, save or dialogue choice.
+      const zoneId = s.zone.id;
+      this.radioQueue = (this.radioQueue || []).filter(cue => !cue.zoneId || cue.zoneId === zoneId);
+      if (this.radio?.zoneId && this.radio.zoneId !== zoneId) this.radio = null;
+      const storyCues = B.MacStreetStory.gameplayCues(this.lastEvents, s, this.gameplayCueSeen);
+      for (const cue of storyCues.cues) {
+        if (this.queueRadio(cue.speaker, cue.text, cue) && !this.gameplayCueSeen.includes(cue.id)) this.gameplayCueSeen.push(cue.id);
       }
       for (const event of this.lastEvents) {
         const heavy = event.heavy || /counter|finisher|throw|body-impact/.test(event.cause || '');
@@ -359,7 +366,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       if (!this.radio && this.radioQueue?.length) this.radio = { ...this.radioQueue.shift(), untilMs: s.elapsedMs + 3300 };
       if (s.status === 'defeated') { this.status = 'failed'; this.resetInputs(); }
     },
-    getSnapshot() { return { active: this.active, phase: this.phase, status: this.status, cameraX: this.cameraX, combat: this.combat?.getSnapshot?.(), story: this.story?.snapshot?.(), tutorial: this.tutorial ? { index: this.tutorial.index, completed: this.tutorial.completed, skipped: this.tutorial.skipped, progress: {...this.tutorial.progress} } : null, floorMarks: this.floorMarks?.length || 0, radio: this.radio?.speaker || null, ownsLoop: false, persistentWrites: 0 }; },
+    getSnapshot() { return { active: this.active, phase: this.phase, status: this.status, cameraX: this.cameraX, combat: this.combat?.getSnapshot?.(), story: this.story?.snapshot?.(), tutorial: this.tutorial ? { index: this.tutorial.index, completed: this.tutorial.completed, skipped: this.tutorial.skipped, progress: {...this.tutorial.progress} } : null, floorMarks: this.floorMarks?.length || 0, radio: this.radio?.speaker || null, gameplayCueIds: [...this.gameplayCueSeen || []], ownsLoop: false, persistentWrites: 0 }; },
     draw(ctx) {
       if (!ctx || !this.active) return;
       ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.filter = 'none';
@@ -405,7 +412,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       const box = document.createElement('section'); box.className = 'mac-street-coach'; box.setAttribute('aria-label', 'Street tutorial'); box.hidden = true;
       Object.assign(box.style, {position:'fixed',left:'50%',transform:'translateX(-50%)',width:'min(460px, calc(100vw - 28px))',boxSizing:'border-box',padding:'10px 12px',border:'1px solid #82d7c888',borderLeft:'3px solid #82d7c8',borderRadius:'10px',background:'#0b1725ee',color:'#f5eee3',font:'14px/1.35 system-ui, sans-serif',zIndex:'100008',pointerEvents:'none',gap:'10px',alignItems:'center',display:'none'});
       const copy = document.createElement('div'); this.tutorialHeading = document.createElement('strong'); this.tutorialText = document.createElement('p');
-      Object.assign(this.tutorialHeading.style,{display:'block',fontSize:'11px',letterSpacing:'.06em',color:'#82d7c8'}); Object.assign(this.tutorialText.style,{margin:'4px 0 0'});
+      Object.assign(this.tutorialHeading.style,{display:'block',fontSize:'11px',letterSpacing:'.06em',color:'#82d7c8'}); Object.assign(this.tutorialText.style,{margin:'4px 0 0',whiteSpace:'pre-line'});
       copy.append(this.tutorialHeading,this.tutorialText); box.append(copy);
       const skip = document.createElement('button'); skip.type = 'button'; skip.textContent = 'Skip'; skip.setAttribute('aria-label','Skip street tutorial');
       Object.assign(skip.style,{minWidth:'48px',minHeight:'44px',padding:'8px',border:'1px solid #82d7c877',borderRadius:'8px',background:'#1b2d40',color:'#f5eee3',font:'bold 12px system-ui, sans-serif',pointerEvents:'auto',flexShrink:'0',touchAction:'manipulation'});
@@ -416,11 +423,11 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       const state = this.presentationState, teaching = t && !t.skipped && !t.completed && !!state;
       const equipment = this.equipmentReadout(state?.player), holding = state?.player.grapple || state?.player.carry;
       const radio = B.TouchControls?.enabled && this.radio;
-      const status = B.TouchControls?.enabled && equipment && (holding || !teaching && !radio);
+      const status = B.TouchControls?.enabled && equipment && (holding || !teaching);
       const visible = this.active && this.phase === 'street' && this.status === 'playing' && !window.isPaused && (teaching || radio || status);
       box.hidden = !visible; box.style.display = visible ? 'flex' : 'none'; if (!visible) return;
       const lesson = teaching ? LESSONS[t.index] : null, heading = status ? equipment.heading : radio ? `${radio.speaker} · LOCAL SIGNAL` : `${t.index + 1} / ${LESSONS.length} · ${lesson.title}`;
-      const text = status ? equipment.text : radio ? radio.text : t.advanceAtMs !== null ? 'Got it. Keep moving.' : lesson.text(this.controlPrompts());
+      const text = status ? equipment.text + (radio && !holding ? `\n${radio.speaker}: ${radio.text}` : '') : radio ? radio.text : t.advanceAtMs !== null ? 'Got it. Keep moving.' : lesson.text(this.controlPrompts());
       this.tutorialSkip.hidden = !teaching || !!radio;
       const skipLabel = B.GamepadUI?.connected ? `Skip / ${B.ControllerSettings?.prompt?.('road_b') || 'B'}` : 'Skip';
       if (this.tutorialSkip.textContent !== skipLabel) this.tutorialSkip.textContent = skipLabel;
@@ -442,7 +449,31 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       if (player.weapon) powers.unshift(`${player.weapon.name} ${player.weapon.charges}/${player.weapon.maxCharges}`);
       return powers.length ? {heading:'STREET KIT',text:powers.join(' · ')} : null;
     },
-    queueRadio(speaker, text) { this.radioQueue ||= []; if (this.radioQueue.length < 3) this.radioQueue.push({speaker,text}); },
+    queueRadio(speaker, text, metadata = {}) {
+      this.radioQueue ||= [];
+      if (metadata.id && (this.radio?.id === metadata.id || this.radioQueue.some(cue => cue.id === metadata.id))) return true;
+      const cue = {speaker, text, id: metadata.id, zoneId: metadata.zoneId, priority: metadata.priority || 0};
+      if (this.radioQueue.length >= 3) {
+        const last = this.radioQueue.length - 1;
+        if (this.radioQueue[last].priority >= cue.priority) return false;
+        this.radioQueue.pop();
+      }
+      this.radioQueue.push(cue);
+      this.radioQueue.sort((a, b) => b.priority - a.priority);
+      return true;
+    },
+    kitSummary(player) {
+      const grip = player.grapple || player.carry;
+      if (grip) return grip.released ? 'THROW COMMITTED' : player.grapple
+        ? `HOLD ${(grip.remainingMs / 1000).toFixed(1)}s · PUMMEL ${(grip.pummelRemainingMs / 1000).toFixed(1)}s`
+        : 'PROP HELD · RELEASE TO THROW';
+      const kit = [], buffs = player.powerups || {};
+      if (player.weapon) kit.push(`${player.weapon.name} ${player.weapon.charges}/${player.weapon.maxCharges}`);
+      if (buffs.overdriveMs > 0) kit.push(`OVR ${Math.ceil(buffs.overdriveMs / 1000)}s`);
+      if (buffs.barrierMs > 0) kit.push(`BARRIER ${buffs.barrierCharges}`);
+      if (buffs.impactMs > 0) kit.push('IMPACT');
+      return kit.join(' · ');
+    },
     addFloorMark(event, state) {
       if (event.shielded) return;
       const actor = event.type === 'player-hit' ? state.player : state.enemies.find(enemy => enemy.id === event.id);
@@ -535,6 +566,13 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
     text(ctx, value, x, y, size = 24, color = '#f5eee3', align = 'left') {
       ctx.fillStyle = color; ctx.font = `bold ${size}px sans-serif`; ctx.textAlign = align; ctx.textBaseline = 'top'; ctx.fillText(value, x, y);
     },
+    fittedText(ctx, value, x, y, width, size = 22, color = '#f5eee3', align = 'left') {
+      let label = String(value), fontSize = size;
+      ctx.font = `bold ${fontSize}px sans-serif`;
+      while (fontSize > 15 && ctx.measureText(label).width > width) ctx.font = `bold ${--fontSize}px sans-serif`;
+      while (label.length > 1 && ctx.measureText(label).width > width) label = label.slice(0, -2) + '…';
+      this.text(ctx, label, x, y, fontSize, color, align);
+    },
     wrap(ctx, value, x, y, maxWidth, step = 40) {
       let row = '', line = 0;
       for (const word of value.split(' ')) { const next = row ? row + ' ' + word : word;
@@ -611,6 +649,11 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       }
       const aboveHead = enemy.laneY - (enemy.kind === 'null_regent' ? 360 : 285);
       ctx.beginPath(); ctx.moveTo(x, aboveHead); ctx.lineTo(x - 10, aboveHead - 19); ctx.lineTo(x + 10, aboveHead - 19); ctx.closePath(); ctx.fillStyle = color; ctx.fill();
+      if (tell.response) {
+        const labelX = clamp(x, 135, 1287), labelY = aboveHead - 43;
+        ctx.fillStyle = '#08121ee8'; ctx.fillRect(labelX - 135, labelY - 4, 270, 29);
+        this.fittedText(ctx, tell.response.toUpperCase(), labelX, labelY, 258, 18, '#ffe2b8', 'center');
+      }
       ctx.restore();
     },
     drawCombatFx(ctx, fx, camera) {
@@ -618,6 +661,13 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       const color = /^#[0-9a-f]{6}$/i.test(fx.bloodHex || '') ? fx.bloodHex : null;
       const x = fx.x - camera, y = (fx.laneY ?? fx.y) - (fx.elevation ?? 130);
       ctx.save(); ctx.globalAlpha = 1 - progress;
+      if (fx.discharge) {
+        // A finite receipt marks the one enemy-only interruption, not a new
+        // damage field or continuing particle simulation.
+        ctx.strokeStyle = '#82e9df'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.ellipse(x, fx.laneY, (fx.radius || 235) * (.3 + .7 * progress),
+          (fx.laneReach || 95) * (.3 + .7 * progress), 0, 0, Math.PI * 2); ctx.stroke();
+      }
       if (color && fx.particles?.length) {
         const blood = ['red','green','purple'].includes(fx.bloodColor) ? fx.bloodColor : color === '#e86576' ? 'red' : 'purple';
         if (age < 230) this.drawPowerCell(ctx, `blood_${blood}_${fx.heavy ? 'heavy' : 'impact'}`, x, y, 1 + Math.min(.15, progress), (1 - age / 230) * .95, fx.direction || 1);
@@ -651,11 +701,14 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       }
       // Floor marks and telegraphs convey the lane and committed strike, not damage on touch.
       ctx.strokeStyle = '#eec87145'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, 984); ctx.lineTo(1920, 984); ctx.stroke();
+      // Keep Mac readable when fighting on the same narrow ground plane.
+      // Only painter order changes; sprite feet and collision lanes stay exact.
+      const macDepth = s.enemies.reduce((depth, enemy) => enemy.hp > 0 && Math.abs(enemy.x - s.player.x) < 160 && Math.abs(enemy.laneY - s.player.laneY) <= 32 ? Math.max(depth, enemy.laneY + .1) : depth, s.player.laneY);
       const actors = [{ type: 'mac', value: s.player }, ...s.enemies.filter(e => (e.hp > 0 || e.launched || e.knockdownMs > 0 || e.phase === 'defeated' && e.animation.ageMs < 600) && e.x - camera > -220 && e.x - camera < 1920 / 1.35 + 220).map(value => ({ type: 'enemy', value })),
         ...(s.props || []).filter(prop=>prop.kind !== 'relay' && prop.heldBy !== 'mac').map(value=>({type:'prop',value})),
         ...(s.pickups || []).map(value=>({type:'pickup',value})), ...(s.projectiles || []).map(value=>({type:'projectile',value})),
         ...(s.relay?.x && zone.index === 2 ? [{type:'relay',value:s.relay}] : [])]
-        .sort((a,b)=>a.value.laneY-b.value.laneY || Number(!['prop','relay','pickup'].includes(a.type))-Number(!['prop','relay','pickup'].includes(b.type)));
+        .sort((a,b)=>(a.type === 'mac' ? macDepth : a.value.laneY)-(b.type === 'mac' ? macDepth : b.value.laneY) || Number(!['prop','relay','pickup'].includes(a.type))-Number(!['prop','relay','pickup'].includes(b.type)));
       for (const actor of actors) {
         const p = actor.value, x = p.x - camera;
         if (actor.type === 'prop') {
@@ -707,14 +760,24 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       const healthPips = Math.ceil(10 * s.player.hp / s.player.maxHp);
       for (let i = 0; i < 10; i++) { ctx.fillStyle = i < healthPips ? '#dc7c86' : '#394350'; ctx.fillRect(440 + i * 26, 34, 19, 15); }
       if (window.BARCODE_RENDER_QUALITY?.flashes !== false && this.damageAtMs !== null && s.elapsedMs - this.damageAtMs < 180) { ctx.fillStyle='#e8657660'; ctx.fillRect(425,25,285,38); }
-      const equipment = this.equipmentReadout(s.player);
-      if (equipment && !B.TouchControls?.enabled) this.text(ctx,equipment.text,740,67,17,'#82cfc2');
+      const equipment = this.kitSummary(s.player);
+      if (equipment && !B.TouchControls?.enabled) this.fittedText(ctx, equipment, 565, 67, 380, 17, '#82cfc2');
       const objective = s.relay?.available && !s.relay.restored && zone.index === 2 ? 'Restore the market relay →' : s.desk.unlocked ? 'Enter Kave’s studio →' : zone.cleared ? `${zone.exitLabel || 'Continue through the city'} →` : s.wave?.state === 'advance' ? 'Move deeper into the district →' : `Clear the area · ${s.wave?.number || 1} / 2`;
-      this.text(ctx, objective, 1740, 30, 24, '#eee2c9', 'right');
+      const encounter = zone.encounter;
+      const fightTitle = !zone.cleared && s.wave?.state !== 'advance' && !s.desk.unlocked && encounter
+        ? `${encounter.name} · ${s.wave?.number || 1} / 2` : objective;
+      this.fittedText(ctx, fightTitle, 1740, 30, 900, 24, '#eee2c9', 'right');
+      const fightHint = s.wave?.state === 'advance' ? 'Keep moving: the next fight is farther along this street.'
+        : !zone.cleared && encounter ? encounter.objective : '';
+      if (fightHint) this.fittedText(ctx, fightHint, 1740, 67, 775, 18, '#cbd7d5', 'right');
       const boss = s.enemies.find(enemy => enemy.kind === 'null_regent' && enemy.hp > 0);
       if (boss) {
         ctx.fillStyle = '#101a29'; ctx.fillRect(625, 123, 670, 40); ctx.fillStyle = '#b479ff'; ctx.fillRect(630, 145, 660 * boss.hp / boss.maxHp, 12);
-        this.text(ctx, `NULL REGENT · ${boss.bossPhase || 1} / 3`, 960, 125, 15, '#f5eee3', 'center');
+        this.text(ctx, `NULL REGENT · ${boss.bossPhase || 1} / 3 · ${s.boss?.phaseName || 'PLAZA ENFORCER'}`, 960, 125, 15, '#f5eee3', 'center');
+        if (s.boss?.window === 'punish' && s.boss.punishRemainingMs > 0) {
+          ctx.fillStyle = '#092a27ec'; ctx.fillRect(745, 171, 430, 34);
+          this.text(ctx, `EXPOSED · ${(s.boss.punishRemainingMs / 1000).toFixed(1)}s · HIT HIM`, 960, 177, 18, '#9dffe2', 'center');
+        }
       }
       if (!this.assets.has(background?.background) && this.status === 'playing') {
         ctx.fillStyle = '#101e2df5'; ctx.fillRect(690, 430, 540, 90); this.text(ctx, `Entering ${zone.title}…`, 960, 457, 25, '#eec871', 'center');

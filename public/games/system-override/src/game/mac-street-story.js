@@ -68,6 +68,104 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-street-story.js', exports: ['BAR
     intro: 'Break the street hold across Broadcast Slum and reopen the studio\'s outbound feed.',
     desk: 'The city\'s street hold is broken. The studio\'s outbound feed is open.'
   });
+  // Gameplay owns these events and the chapter-local seen list. A snapshot by
+  // itself never earns a line; this module only describes a verified event.
+  const gameplayCue = (id, speaker, text, zoneId, context, priority) =>
+    Object.freeze({ id, speaker, text, zoneId, context, priority });
+  const ARRIVAL_CUES = Object.freeze({
+    'service-alley': gameplayCue('city.arrival.service-alley', 'MAC MODEM',
+      'No more holding the queue. Move.', 'service-alley', 'arrival', 30),
+    'night-market': gameplayCue('city.arrival.night-market', 'KAVE / COMMS',
+      "The artists are still waiting. I'm keeping their places.", 'night-market', 'arrival', 30),
+    'transit-concourse': gameplayCue('city.arrival.transit-concourse', 'CACHE BACK / COMMS',
+      'Same recording. Get it through the concourse.', 'transit-concourse', 'arrival', 30),
+    'relay-canal': gameplayCue('city.arrival.relay-canal', 'DJ FLOPPYDISC / COMMS',
+      "Take the canal service route. I'll keep our copies separate.", 'relay-canal', 'arrival', 30),
+    'rooftop-relay': gameplayCue('city.arrival.rooftop-relay', '9 BIT',
+      'You picked a long way to the desk.', 'rooftop-relay', 'arrival', 30),
+    'broadcast-plaza': gameplayCue('city.arrival.broadcast-plaza', 'MAC MODEM',
+      "Last street hold. I'm done asking.", 'broadcast-plaza', 'arrival', 30)
+  });
+  const CLEAR_CUES = Object.freeze({
+    'transit-concourse': gameplayCue('city.clear.transit-concourse', 'WittyF0x / COMMS',
+      'Canal service passage is open. Take that way up.', 'transit-concourse', 'district-clear', 35),
+    'rooftop-relay': gameplayCue('city.clear.rooftop-relay', 'KAVE / COMMS',
+      "I still have local monitoring. You're almost at the plaza.", 'rooftop-relay', 'district-clear', 35)
+  });
+  const RELAY_READY = gameplayCue('city.relay.ready', '9 BIT',
+    'Market relay is clear. Link it and give Kave his signal back.', 'night-market', 'relay-ready', 80);
+  const RELAY_RESTORED = Object.freeze([
+    gameplayCue('city.relay.restored.9bit', '9 BIT', 'Local signal restored. Your track. Their speakers.',
+      'night-market', 'relay-restored', 90),
+    gameplayCue('city.relay.restored.kave', 'KAVE', 'There you are, Modem. Keep that signal moving.',
+      'night-market', 'relay-restored', 90)
+  ]);
+  // These two optional reactions have chapter-wide IDs. They do not repeat at
+  // every fixture/car, add a collectible, or make a guest a route dependency.
+  const FIXTURE_DISCHARGE = gameplayCue('city.fixture-discharge', '9 BIT',
+    'Nice patch. You turned their street hardware against them.', null, 'fixture-discharge', 65);
+  const CAR_WRECKED = gameplayCue('city.car-wrecked', 'Dr3wBaby / COMMS',
+    'Save me the good parts, Modem.', null, 'car-wrecked', 35);
+  const BOSS_PHASE_CUES = Object.freeze({
+    2: gameplayCue('city.regent.phase2', 'DJ FLOPPYDISC / COMMS',
+      "Crossfire. Don't let him box you into one lane.", 'broadcast-plaza', 'boss-phase', 95),
+    3: gameplayCue('city.regent.phase3', 'MAC MODEM',
+      "You're running out of street.", 'broadcast-plaza', 'boss-phase', 95)
+  });
+  const BOSS_DEFEATED = gameplayCue('city.regent.defeated', 'KAVE / COMMS',
+    "Street hold's broken. Come inside; let's check the outbound feed.", 'broadcast-plaza', 'city-endpoint', 100);
+  const GAMEPLAY_CUE_IDS = Object.freeze([
+    ...Object.values(ARRIVAL_CUES), ...Object.values(CLEAR_CUES), RELAY_READY,
+    ...RELAY_RESTORED, FIXTURE_DISCHARGE, CAR_WRECKED,
+    ...Object.values(BOSS_PHASE_CUES), BOSS_DEFEATED
+  ].map(cue => cue.id));
+  const GAMEPLAY_CUE_ID_SET = new Set(GAMEPLAY_CUE_IDS);
+  const DISTRICT_IDS = Object.freeze(Object.keys(ARRIVAL_CUES));
+
+  function gameplayCues(events, snapshot, seenIds = []) {
+    const seen = new Set((Array.isArray(seenIds) ? seenIds : [])
+      .filter(id => GAMEPLAY_CUE_ID_SET.has(id)));
+    const candidates = new Map();
+    const result = () => {
+      const cues = [...candidates.values()].sort((a, b) => b.priority - a.priority).slice(0, 2);
+      // Only selected lines are consumed. An omitted low-priority event never
+      // acquires a false seen flag; the presentation owner decides queue life.
+      for (const cue of cues) seen.add(cue.id);
+      return Object.freeze({ cues: Object.freeze(cues), seenIds: Object.freeze([...seen]) });
+    };
+    const zoneId = snapshot?.zone?.id;
+    if (!Array.isArray(events) || !DISTRICT_IDS.includes(zoneId) ||
+      !(snapshot?.player?.hp > 0) || snapshot.status === 'defeated') return result();
+    const add = cue => {
+      if (!cue || seen.has(cue.id) || candidates.has(cue.id)) return;
+      candidates.set(cue.id, cue.zoneId ? cue : Object.freeze({ ...cue, zoneId }));
+    };
+    const cleared = id => snapshot.zone.cleared === true && snapshot.zone.id === id &&
+      Array.isArray(snapshot.city?.clearedZones) && snapshot.city.clearedZones.includes(id);
+    const brokenProp = event => Array.isArray(snapshot.props) && snapshot.props.some(prop =>
+      prop.id === event.id && prop.kind === event.kind && prop.zoneId === zoneId && prop.broken === true);
+    for (const event of events) {
+      if (!event || typeof event !== 'object') continue;
+      if (event.type === 'zone-enter' && event.zoneId === zoneId) add(ARRIVAL_CUES[zoneId]);
+      else if (event.type === 'zone-cleared' && event.zoneId === zoneId && cleared(zoneId)) add(CLEAR_CUES[zoneId]);
+      else if (event.type === 'relay-ready' && zoneId === 'night-market' && event.id === 'market-relay' &&
+        cleared(zoneId) && snapshot.relay?.available === true && snapshot.relay.restored === false) add(RELAY_READY);
+      else if (event.type === 'relay-restored' && zoneId === 'night-market' && event.id === 'market-relay' &&
+        cleared(zoneId) && snapshot.relay?.restored === true) for (const cue of RELAY_RESTORED) add(cue);
+      else if (event.type === 'fixture-discharge' && ['terminal', 'streetlight'].includes(event.kind) &&
+        Array.isArray(event.enemyIds) && event.enemyIds.length > 0 && brokenProp(event)) add(FIXTURE_DISCHARGE);
+      else if (event.type === 'prop-break' && event.kind === 'car' && brokenProp(event)) add(CAR_WRECKED);
+      else if (event.type === 'boss-phase' && zoneId === 'broadcast-plaza' &&
+        event.id === snapshot.boss?.id && snapshot.boss.kind === 'null_regent' && snapshot.boss.hp > 0 &&
+        event.phase === snapshot.boss.phase) add(BOSS_PHASE_CUES[event.phase]);
+      else if (event.type === 'enemy-defeated' && event.kind === 'null_regent' && zoneId === 'broadcast-plaza' &&
+        event.id === snapshot.boss?.id && snapshot.boss.kind === 'null_regent' && snapshot.boss.defeated === true &&
+        snapshot.boss.hp === 0 && snapshot.status === 'desk-ready' && snapshot.desk?.unlocked === true &&
+        snapshot.city?.complete === true && snapshot.city.completedWaves === 12 &&
+        Array.isArray(snapshot.city.clearedZones) && DISTRICT_IDS.every(id => snapshot.city.clearedZones.includes(id))) add(BOSS_DEFEATED);
+    }
+    return result();
+  }
   function create(kind, source, options = {}) {
     const speed = Number.isFinite(options.charsPerSecond) ? Math.max(10, Math.min(160, options.charsPerSecond)) : 44;
     const instantText = options.instantText === true;
@@ -144,6 +242,8 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-street-story.js', exports: ['BAR
   }
   B.MacStreetStory = Object.freeze({
     sceneIds: Object.freeze(INTRO.map(scene => scene.id)),
+    gameplayCueIds: GAMEPLAY_CUE_IDS,
+    gameplayCues,
     createIntro: options => create('intro', INTRO, options),
     createDesk: options => create('desk', DESK, options)
   });

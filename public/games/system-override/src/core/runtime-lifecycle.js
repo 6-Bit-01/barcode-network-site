@@ -291,6 +291,11 @@ window.BARCODE = window.BARCODE || {};
   function pause(reason) {
     if(namespace.CacheRoadProof?.presentationPreparing)
       return Promise.resolve({ok:false,status:'road-preparing',state,generation});
+    if (state === STATES.PAUSED && transitionInFlight?.kind === 'resume') {
+      transitionInFlight.cancelled = true;
+      window.audioSystem?.cancelRuntimeAudioResume?.('resume-cancelled-by-pause');
+      return Promise.resolve({ ok: true, status: 'already-paused', state, generation });
+    }
     const joined = joinOrReject('pause', 'pause');
     if (joined) return joined;
     if (state === STATES.PAUSED) return Promise.resolve({ ok: true, status: 'already-paused', state, generation });
@@ -316,10 +321,20 @@ window.BARCODE = window.BARCODE || {};
     if (joined) return joined;
     if (state === STATES.RUNNING) return Promise.resolve({ ok: true, status: 'already-running', state, generation });
     if (state !== STATES.PAUSED) return Promise.resolve({ ok: false, status: 'invalid-resume-state', state, generation });
+    const resumeGeneration = generation;
+    const resumeOperation = { kind: 'resume', generation, promise: null, cancelled: false };
     const promise = (async function() {
-      const audioResult = window.audioSystem && typeof window.audioSystem.resumeRuntimeAudio === 'function'
-        ? await window.audioSystem.resumeRuntimeAudio()
+      let audioResult = window.audioSystem && typeof window.audioSystem.resumeRuntimeAudio === 'function'
+        // Mac's fixed simulation remains playable without an audio beat. The
+        // road/rhythm genres must retain their paused, retryable beat clock.
+        ? await window.audioSystem.resumeRuntimeAudio({ allowDeferred: !!namespace.MacCombatPreview?.active })
         : { ok: true, reason: 'no-audio-system' };
+      if (generation !== resumeGeneration || state !== STATES.PAUSED || resumeOperation.cancelled)
+        return { ok: false, status: 'resume-cancelled', state, generation };
+      if (audioResult?.degraded && !namespace.MacCombatPreview?.active) {
+        window.audioSystem?.cancelRuntimeAudioResume?.('resume-requires-audio');
+        audioResult = { ...audioResult, ok: false, reason: 'resume-requires-audio' };
+      }
       if (!audioResult || audioResult.ok === false) {
         if (typeof window.pauseGame === 'function') window.pauseGame();
         projectCompatibility();
@@ -332,11 +347,12 @@ window.BARCODE = window.BARCODE || {};
         window.audioSystem?.stopRuntimeAudio?.({ stopMusic: true });
         window.audioSystem?.stopRoadEngine?.();
       }
+      // The loop's resume guard needs the actual paused flags before projection.
+      if (typeof window.resumeGame === 'function') window.resumeGame();
       const result = transition(STATES.RUNNING, reason || 'resume');
-      if (result.ok && typeof window.resumeGame === 'function') window.resumeGame();
-      return result;
-    })().finally(() => { transitionInFlight = null; });
-    transitionInFlight = { kind: 'resume', generation, promise };
+      return audioResult.degraded ? { ...result, audioDegraded: true, diagnostic: audioResult } : result;
+    })().finally(() => { if (transitionInFlight?.promise === promise) transitionInFlight = null; });
+    resumeOperation.promise = promise; transitionInFlight = resumeOperation;
     return promise;
   }
 
@@ -381,7 +397,7 @@ window.BARCODE = window.BARCODE || {};
   }
 
   async function returnToTitle({ source = 'chapter-title' } = {}) {
-    if (transitionInFlight) return { ok: false, status: 'transition-in-flight', state, generation };
+    if (transitionInFlight && transitionInFlight.kind !== 'resume') return { ok: false, status: 'transition-in-flight', state, generation };
     const result = await stop(source, { stopMusic: true, preserveProgress: true });
     if (!result.ok) return result;
     resetRetryUi();

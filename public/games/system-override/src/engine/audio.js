@@ -65,6 +65,8 @@ window.AudioSystem = class AudioSystem {
     this.musicStartState = { ok: false, reason: 'not-started' };
     this.runtimeAudioGeneration = 0;
     this.runtimeTimeouts = new Set();
+    this.runtimeAudioResume = null;
+    this.lastRuntimeAudioResume = null;
     this.activeProfilePreparationInFlight = null;
     this.activeProfilePreparationKey = null;
   }
@@ -80,12 +82,17 @@ window.AudioSystem = class AudioSystem {
   }
 
   clearRuntimeTimeouts() {
+    this.cancelRuntimeAudioResume('resume-cancelled');
     this.runtimeTimeouts.forEach(handle => clearTimeout(handle));
     this.runtimeTimeouts.clear();
     if (this.beatScheduler) {
       clearTimeout(this.beatScheduler);
       this.beatScheduler = null;
     }
+  }
+
+  cancelRuntimeAudioResume(reason = 'resume-cancelled') {
+    this.runtimeAudioResume?.cancel(reason);
   }
 
   // Presentation/input clock only. Sources and AudioParam events must continue
@@ -3658,6 +3665,7 @@ window.AudioSystem = class AudioSystem {
   }
 
   async pauseRuntimeAudio() {
+    this.cancelRuntimeAudioResume('resume-cancelled-by-pause');
     if (!this.context) return { ok: true, reason: 'no-context' };
     const transport = window.BARCODE && window.BARCODE.MusicTransport;
     const audioTime = this.context.currentTime;
@@ -3685,23 +3693,63 @@ window.AudioSystem = class AudioSystem {
     }
   }
 
-  async resumeRuntimeAudio() {
+  async resumeRuntimeAudio(options = {}) {
     if (!this.context) return { ok: true, reason: 'no-context' };
+    if (options.retryDeferred && this.runtimeAudioResume?.deferred) this.cancelRuntimeAudioResume('resume-retrying');
+    if (this.runtimeAudioResume) return this.runtimeAudioResume.promise;
+    const context = this.context, generation = this.runtimeAudioGeneration;
+    let resolve;
+    const request = { promise: new Promise(done => { resolve = done; }), settled: false, deferred: false, timer: null };
+    this.runtimeAudioResume = request;
+    const current = () => this.runtimeAudioResume === request && this.context === context && this.runtimeAudioGeneration === generation;
+    const settle = (result, retain = false) => {
+      if (request.timer !== null) {
+        clearTimeout(request.timer); this.runtimeTimeouts.delete(request.timer); request.timer = null;
+      }
+      if (!retain && this.runtimeAudioResume === request) this.runtimeAudioResume = null;
+      this.lastRuntimeAudioResume = result;
+      if (!request.settled) { request.settled = true; resolve(result); }
+    };
+    request.cancel = reason => settle({ ok: false, reason, contextState: context.state });
+    const failure = (reason, error) => settle({ ok: !!options.allowDeferred, degraded: !!options.allowDeferred,
+      reason, contextState: context.state, ...(error ? { error: error.message || String(error) } : {}) });
+    const silenceLatePausedContext = () => {
+      // A stale browser promise may turn the hardware on after a newer pause.
+      // Keep its transport frozen, and do not suspend a newer resume request.
+      if ((this.runtimeAudioResume && this.runtimeAudioResume !== request) || this.context !== context) return;
+      if ((window.isPaused || window.gameState?.paused) && context.state === 'running' && typeof context.suspend === 'function') {
+        try { Promise.resolve(context.suspend()).catch(() => {}); } catch (_) {}
+      }
+    };
+    const resumed = () => {
+      if (!current()) { silenceLatePausedContext(); return; }
+      // Only the still-running session may recover audio after the deadline.
+      if (request.deferred && window.BARCODE?.RuntimeLifecycle?.getState?.() !== 'running') {
+        request.cancel('resume-cancelled'); silenceLatePausedContext(); return;
+      }
+      if (context.state !== 'running') { failure('context-not-running'); return; }
+      try {
+        const transport = window.BARCODE && window.BARCODE.MusicTransport;
+        if (transport && typeof transport.resume === 'function') transport.resume(context.currentTime);
+        if (this.layersStarted) this.startLayerBeatSync();
+        settle({ ok: true, reason: 'resumed', contextState: context.state });
+      } catch (error) { failure('resume-failed', error); }
+    };
     try {
-      if (this.context.state === 'suspended' && typeof this.context.resume === 'function') {
-        await this.context.resume();
-      }
-      const transport = window.BARCODE && window.BARCODE.MusicTransport;
-      if (transport && typeof transport.resume === 'function') {
-        transport.resume(this.context.currentTime);
-      }
-      if (this.layersStarted) {
-        this.startLayerBeatSync();
-      }
-      return { ok: true, reason: 'resumed', contextState: this.context.state };
-    } catch (error) {
-      return { ok: false, reason: 'resume-failed', contextState: this.context.state, error: error && error.message || String(error) };
-    }
+      // Invoke while the input gesture is current, before yielding to a promise.
+      const pending = context.state === 'suspended' && typeof context.resume === 'function' ? context.resume() : undefined;
+      Promise.resolve(pending).then(resumed, error => { if (current()) failure('resume-failed', error); });
+      // Immediate resumes need no timer; delayed hardware uses the audio owner's
+      // existing bounded, generation-cancelled timeout registry.
+      await Promise.resolve();
+      if (current() && !request.settled) request.timer = this.scheduleRuntimeTimeout(() => {
+        if (options.allowDeferred) {
+          request.deferred = true;
+          settle({ ok: true, degraded: true, reason: 'resume-deferred', contextState: context.state }, true);
+        } else failure('resume-timeout');
+      }, 1000);
+    } catch (error) { if (current()) failure('resume-failed', error); }
+    return request.promise;
   }
 
   async prepareRestartAudio() {
@@ -3805,6 +3853,9 @@ window.AudioSystem = class AudioSystem {
         lastCue: this.lastSFXCue || null
       },
       runtimeAudioGeneration: this.runtimeAudioGeneration,
+      runtimeAudioResumePending: !!this.runtimeAudioResume && !this.runtimeAudioResume.settled,
+      runtimeAudioResumeDeferred: !!this.runtimeAudioResume?.deferred,
+      lastRuntimeAudioResume: this.lastRuntimeAudioResume,
       ownedRuntimeTimeouts: this.runtimeTimeouts.size,
       cutsceneSourceActive: !!this.cutsceneSource,
       titleSourceActive: !!(this.titleScreenMusic && this.titleScreenMusic.source)
@@ -3847,12 +3898,27 @@ function setupAudioContextResume() {
       return;
     }
     
-    const context = window.audioSystem.context;
+    const audio = window.audioSystem, context = audio.context;
+    const generation = audio.runtimeAudioGeneration, ownerRequest = audio.runtimeAudioResume;
     
     // Check if context is suspended and resume it
     if (context.state === 'suspended') {
       try {
-        await context.resume();
+        if (window.BARCODE?.MacCombatPreview?.active && window.BARCODE.RuntimeLifecycle?.getState?.() === 'running') {
+          // Running Mac can retry delayed sound, through the same cancellation
+          // owner, without making its controls wait for the device again.
+          const result = await audio.resumeRuntimeAudio({ allowDeferred: true, retryDeferred: true });
+          if (!result?.ok || result.degraded) return;
+        } else {
+          await context.resume();
+          if (generation !== audio.runtimeAudioGeneration || context !== audio.context) return;
+          if (window.isPaused || window.gameState?.paused) {
+            if ((!audio.runtimeAudioResume || audio.runtimeAudioResume === ownerRequest) && typeof context.suspend === 'function') {
+              try { Promise.resolve(context.suspend()).catch(() => {}); } catch (_) {}
+            }
+            return;
+          }
+        }
         console.log('✓ AudioContext resumed successfully by user interaction');
         
         // CRITICAL: DO NOT start music layers here - wait for cutscene to complete

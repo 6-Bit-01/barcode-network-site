@@ -1,8 +1,8 @@
 {
   "builder": "barcode-system-override-standalone-v1",
   "status": "complete",
-  "sourceCommit": "bb27299c271630722a450376c896f68e669e8080",
-  "sourceTree": "aad9fdfa3290d7249002d4c2cfa8de1d698ea81a",
+  "sourceCommit": "58efb9a64efe7ffce1eac30964ce9ca42d6e3072",
+  "sourceTree": "5f4ffcfef9ae0c2058765900283f579a5aa109b2",
   "builderSHA256": "bc42461dba0c2e68535d066e52c974ef29aed68c76f6bdebdc3a7f3175f7595b",
   "files": {
     "assets/audio/broadcast-slum-proof-carrier.wav": {
@@ -3426,16 +3426,16 @@
       "bytes": 9524
     },
     "src/core/runtime-lifecycle.js": {
-      "sha256": "6306586df8e0a46769a969dae6fb64a34a3d61c80b4f78f56401e0748ed7cde3",
-      "bytes": 25877
+      "sha256": "07fc24a634df8fcef79c4331df9e02ee6c295de5669a11398dcb57ca5de87e5f",
+      "bytes": 27192
     },
     "src/core/touch-controls.js": {
       "sha256": "6fbce7cd7b5862233503049b5e654150d3b48ee3b3a47f85b2aa1f4c3590b178",
       "bytes": 32929
     },
     "src/engine/audio.js": {
-      "sha256": "95a91711958d422578870f6672b38fb0a99586bbf7ccc1c1da286935e2689b6e",
-      "bytes": 159697
+      "sha256": "20d962d6e9bffe1bd1477289318a6bc06a1c1004266a504a10abc03f4c1cb7f0",
+      "bytes": 164172
     },
     "src/engine/boot-loader.js": {
       "sha256": "fbea0151e80b6e43b3a4c849c8578c073ba3421735a781cc70338298a117b203",
@@ -3786,8 +3786,8 @@
       "bytes": 7538
     },
     "src/game/pause-menu.js": {
-      "sha256": "878a1f0fd8bc86ae36268ecf494e68cfdc3d749f626998c52f2ac91cb022f469",
-      "bytes": 42019
+      "sha256": "0025ed024fc55d58c9f107dd19cd2ad8660b21b9f4feaa632a53f41ca1af4e00",
+      "bytes": 41988
     },
     "src/game/player-combat.js": {
       "sha256": "668b662c1399a9a784baf105daf32c9f6b3cb6ffcfff28838dab700eb7accea7",

@@ -547,9 +547,9 @@ window.FILE_MANIFEST.push({ name: 'src/game/pause-menu.js', exports: ['BARCODE.P
       else controls.forEach((line, i) => text(line, 440, 448 + i * 46, 21));
       const mac = BARCODE.MacCombatPreview?.active;
       if (!road) text(mac ? 'MAC’S STREET' : proof ? 'PROTOTYPE CHANNEL 03' : 'RHYTHM MODE HOLDS YOUR STANCE', 440, 772, 20, '#a0ffe4');
-      text(mac ? 'Strike freely. Guard the tell or step out of its lane.' : chapter ? 'Return to bridge keeps your saved road marker.' : road || proof ? 'Choose Exit preview to return to Cache Back.' : BARCODE.GamepadUI?.connected ? `${BARCODE.ControllerSettings.button(1)} exits so you can move.` : 'R or Escape exits so you can move.', 440, road ? 819 : 810, 20);
+      text(mac ? 'Strike. Guard the tell, or dodge its lane.' : chapter ? 'Return to bridge keeps your saved road marker.' : road || proof ? 'Choose Exit preview to return to Cache Back.' : BARCODE.GamepadUI?.connected ? `${BARCODE.ControllerSettings.button(1)} exits so you can move.` : 'R or Escape exits so you can move.', 440, road ? 819 : 810, 20);
       const d=BARCODE.LevelDifficulty;
-      text(mac ? 'Exit preview returns to title. This test does not save progress.' : chapter ? `CHAPTER 02 / ${chapter.difficultyId.toUpperCase()} / CHECKPOINTS` : road ? 'Practice preview: progress saves at road markers.' : proof ? 'Practice preview: progress saves at each relay.' : d?.locked ? `LEVEL RULES: ${d.choice?.label} / ${d.recoveryMode==='full-run'?'FULL RUN':'CHECKPOINTS'}` : 'Difficulty + recovery: choose at level start.',440,855,18,'#cfa2ff');
+      text(mac ? 'Exit returns to title. Progress is not saved.' : chapter ? `CHAPTER 02 / ${chapter.difficultyId.toUpperCase()} / CHECKPOINTS` : road ? 'Practice preview: progress saves at road markers.' : proof ? 'Practice preview: progress saves at each relay.' : d?.locked ? `LEVEL RULES: ${d.choice?.label} / ${d.recoveryMode==='full-run'?'FULL RUN':'CHECKPOINTS'}` : 'Difficulty + recovery: choose at level start.',440,855,18,'#cfa2ff');
       text('Audio, visuals and controls can change anytime.',440,886,18,'#a0ffe4');
       visibleRows().forEach(([key, label], index) => {
         const y = rowTop + index * rowStep, selected = index === this.focus;

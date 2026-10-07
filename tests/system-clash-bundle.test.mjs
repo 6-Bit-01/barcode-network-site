@@ -84,6 +84,8 @@ test("System Clash module imports and standalone document stay complete", () => 
   assert.match(html, /href="fight\.css"/);
   assert.match(html, /href="\/games\/system-clash"/);
   assert.doesNotMatch(html, /artwork-library|Art prompt|Exact prompts|Concept sheets/i);
+  assert(html.indexOf('class="screen-bezel"') < html.indexOf('class="touch-controls"'), "The game stage must appear before its onscreen control pad");
+  assert.doesNotMatch(read("fight.css"), /max-width:calc\(\(100dvh/);
   assert.doesNotMatch(read("fight.js"), /fetch\(['"]\/save-frame['"]/);
   assert.match(read("fight.js"), /link\.download='SYSTEM-CLASH-fight-'/);
 });

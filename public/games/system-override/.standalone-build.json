@@ -1,8 +1,8 @@
 {
   "builder": "barcode-system-override-standalone-v1",
   "status": "complete",
-  "sourceCommit": "2828bc6b53914a81755fa38b4b5c9bd24f8478f0",
-  "sourceTree": "4d25611bd59a4c89d65639a87a33a89fcf30d82d",
+  "sourceCommit": "84fbfbb03ced11620ce7d9f8dc83d4066c338e10",
+  "sourceTree": "f877044041ebfc35871a565a94e2f25ede30d855",
   "builderSHA256": "e53b3b5e714071ed2049399ff8a962f3cd7b27ab9b68a3ff5b3c9d70eac21ac2",
   "files": {
     "assets/audio/broadcast-slum-proof-carrier.wav": {
@@ -2758,7 +2758,7 @@
       "bytes": 1067994
     },
     "assets/mac-combat-frames/mac-combat-frames-v1.json": {
-      "sha256": "d209448a3d099254a0303752fbc021d14428d11332037baef78be5a5cbb7633a",
+      "sha256": "890db17665087d81842e2a3ffc75205d8cffcd83cca5ba20278aa69e30339e8a",
       "bytes": 5351
     },
     "assets/mac-combat-frames/mac-frames-v1.json": {
@@ -2918,8 +2918,8 @@
       "bytes": 1374095
     },
     "assets/mac-street-dynamic/mac-modem-actions-v1.json": {
-      "sha256": "2097a0fe98cd5ab0e15bb23fde975f2847391f3b49f6445ce17a4e4adf99807e",
-      "bytes": 749888
+      "sha256": "202f101672c07379b26ee923a48a0e66c16f035c2d22dd45dc1cc6bebd457bb7",
+      "bytes": 753931
     },
     "assets/mac-street-dynamic/mac-pipe-swing-two-braids-v1.png": {
       "sha256": "a22a5f4787d339614af5c2fc51a548affe55628e057bb54cdeffbdb1e21c83af",
@@ -3961,7 +3961,7 @@
   "sourceMode": "working-tree runtime scripts; exact HEAD canonical asset blobs",
   "canonicalAssetCount": 868,
   "preservedOriginalCount": 21,
-  "assetBytes": 707755632,
+  "assetBytes": 707759675,
   "ownedFiles": [
     ".standalone-build.json",
     "assets/audio/broadcast-slum-proof-carrier.wav",

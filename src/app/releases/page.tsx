@@ -36,7 +36,9 @@ export default function ReleasesPage() {
             {releasesPage.hero.label}
           </p>
           <h1 className="public-title">{releasesPage.hero.heading}</h1>
-          <p className="public-intro">{releasesPage.hero.description}</p>
+          <p className="public-intro">
+            Official releases with available artwork, release notes and verified listening links.
+          </p>
         </div>
       </section>
 
@@ -73,9 +75,7 @@ export default function ReleasesPage() {
           </div>
 
           <p className="mt-8 text-xs uppercase tracking-wider text-muted/50">
-            Showing {releases.length} catalog{" "}
-            {releases.length === 1 ? "entry" : "entries"} from the existing
-            release data.
+            {releases.length} {releases.length === 1 ? "release" : "releases"} in the catalog.
           </p>
         </div>
       </section>

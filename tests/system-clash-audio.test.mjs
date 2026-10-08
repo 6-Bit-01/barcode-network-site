@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {FIGHTER_STYLES} from '../public/games/system-clash/play/fight-engine.mjs';
-import {FIGHT_AUDIO_PROFILES,FIGHT_VOCAL_BANKS,FIGHT_VOCAL_VARIANTS,MAX_VOCAL_CACHE_ENTRIES,MAX_VOCAL_CACHE_BYTES,createFightVariationSelector,ARCADE_ANNOUNCER_PATH,planFightSound,renderFightVocal,createFightAudio} from '../public/games/system-clash/play/fight-audio.mjs';
+import {FIGHT_AUDIO_PROFILES,FIGHT_VOCAL_BANKS,FIGHT_VOCAL_VARIANTS,MAX_VOCAL_CACHE_ENTRIES,MAX_VOCAL_CACHE_BYTES,createFightVariationSelector,CHARACTER_LINE_ASSETS,ARCADE_ANNOUNCER_PATH,planFightSound,renderFightVocal,createFightAudio} from '../public/games/system-clash/play/fight-audio.mjs';
 
 test('every enabled fighter has an original distinct effort/hurt/scream voice profile',()=>{
   assert.deepEqual(Object.keys(FIGHT_AUDIO_PROFILES).sort(),Object.keys(FIGHTER_STYLES).sort());
@@ -18,7 +18,7 @@ test('every enabled fighter has an original distinct effort/hurt/scream voice pr
       assert.ok(a.reduce((sum,value)=>sum+value*value,0)/a.length>.001,'voice is audible');
       hashes.push(createHash('sha256').update(new Uint8Array(a.buffer)).digest('hex'));
     }
-    assert.equal(new Set(hashes).size,13,mode+' differs for every fighter');
+    assert.equal(new Set(hashes).size,16,mode+' differs for every fighter');
   }
 });
 
@@ -158,7 +158,7 @@ function vocalFeatures(data){
   return {energy:energy.map(value=>value/Math.max(.0001,total)),roughness:Math.sqrt(difference/Math.max(.0001,total))};
 }
 
-test('all 208 original utterances change normalized phrasing and spectral texture, with four takes for every reaction',()=>{
+test('all 256 original utterances change normalized phrasing and spectral texture, with four takes for every reaction',()=>{
   const hashes=new Set();let count=0;
   for(const [id,bank]of Object.entries(FIGHT_VOCAL_BANKS))for(const [mode,variants]of Object.entries(bank.variants)){
     assert.equal(variants.length,4);assert.equal(new Set(variants.map(v=>v.phrase)).size,4);
@@ -171,7 +171,7 @@ test('all 208 original utterances change normalized phrasing and spectral textur
     }
     assert.ok(Math.max(...features.map(f=>f.roughness))-Math.min(...features.map(f=>f.roughness))>.008,id+' '+mode+' variants change normalized spectral texture');
   }
-  assert.equal(count,208);assert.equal(hashes.size,208);
+  assert.equal(count,256);assert.equal(hashes.size,256);
   assert.deepEqual(renderFightVocal('6-bit','hurt'),renderFightVocal('6-bit','hurt',22050,0),'legacy call chooses take zero');
   assert.deepEqual(renderFightVocal('6-bit','hurt',22050,4),renderFightVocal('6-bit','hurt',22050,0),'variant indices are bounded deterministically');
 });
@@ -184,7 +184,7 @@ test('independent deterministic shuffle bags play every take once per bank and n
     for(let i=0;i<20;i+=4)assert.equal(new Set(values.slice(i,i+4)).size,4);
     first.push({key,values});
   }
-  assert.equal(a.size,52);a.clear();assert.equal(a.size,0);
+  assert.equal(a.size,64);a.clear();assert.equal(a.size,0);
   for(const {key,values}of first)assert.deepEqual(Array.from({length:20},()=>a.next(key,4)),values,'reset recreates the same bank, independently of other identities');
 });
 
@@ -220,7 +220,7 @@ test('LRU vocal storage stays within both byte and entry bounds at high device s
     context.currentTime+=2.3;audio.emit(voiceEvent(id,mode));finishFakeSources(context);context.sources.length=0;
     const stats=audio.getStats();assert.ok(stats.cachedVoices<=MAX_VOCAL_CACHE_ENTRIES);assert.ok(stats.vocalCacheBytes<=MAX_VOCAL_CACHE_BYTES);rendered++;
   }
-  assert.equal(rendered,208);assert.equal(audio.getStats().playedVoices,208);assert.ok(audio.getStats().cachedVoices<208,'older variants are evicted while active buffers remain source-owned');
+  assert.equal(rendered,256);assert.equal(audio.getStats().playedVoices,256);assert.ok(audio.getStats().cachedVoices<256,'older variants are evicted while active buffers remain source-owned');
 });
 
 test('lesser hurt and effort cannot truncate a stronger active scream or consume its next bank take',async()=>{
@@ -241,4 +241,25 @@ test('Foley rotations belong to the actual landing, blocking and KO fighter rath
     }
     assert.equal(new Set(choices).size,4,'changing the attacker cannot restart the defender bank');
   }
+});
+test('selected Doof spoken line loads once, plays once per match and honors pause and mute',async()=>{
+ const context=new FakeContext(),requests=[];
+ const fetchLine=async url=>{requests.push(String(url));return {ok:true,arrayBuffer:async()=>new ArrayBuffer(String(url).endsWith(CHARACTER_LINE_ASSETS.doofnoobler.path)?CHARACTER_LINE_ASSETS.doofnoobler.bytes:4)};};
+ const audio=createFightAudio({contextFactory:()=>context,fetch:fetchLine});
+ await audio.prepareCharacterLines(['6-bit','doofnoobler']);assert.equal(requests.length,0,'audio context remains user-unlocked');
+ await audio.startAudio();assert.equal(audio.getStats().characterLinesLoaded,1);assert.equal(requests.length,2);
+ await audio.prepareCharacterLines(['doofnoobler']);assert.equal(requests.length,2,'reuse one decoded line');
+ const event={type:'character-line',fighterId:'doofnoobler',cue:'stay-kind',peaceful:true};
+ audio.setPaused(true);assert.equal(audio.emit(event),false);audio.setPaused(false);
+ audio.setMuted(true);assert.equal(audio.emit(event),false);audio.setMuted(false);
+ assert.equal(audio.emit(event),true);assert.equal(audio.emit(event),false);assert.equal(audio.getStats().characterLinesPlayed,1);
+ audio.setPaused(true);assert.equal(audio.getStats().activeVoices,0);audio.setPaused(false);
+ audio.clear();assert.equal(audio.emit(event),true);assert.equal(audio.getStats().characterLinesPlayed,2);
+});
+test('a cold character line never replays a past cue when decoding finishes',async()=>{
+ const context=new FakeContext();let release;
+ const audio=createFightAudio({contextFactory:()=>context,fetch:async url=>String(url).endsWith(CHARACTER_LINE_ASSETS.doofnoobler.path)?new Promise(resolve=>{release=()=>resolve({ok:true,arrayBuffer:async()=>new ArrayBuffer(CHARACTER_LINE_ASSETS.doofnoobler.bytes)});}):okFetch()});
+ await audio.startAudio();const count=context.sources.length;
+ assert.equal(audio.emit({type:'character-line',fighterId:'doofnoobler',cue:'stay-kind'}),false);assert.equal(context.sources.length,count);
+ release();await audio.prepareCharacterLines(['doofnoobler']);assert.equal(audio.getStats().characterLinesLoaded,1);assert.equal(audio.getStats().characterLinesPlayed,0);assert.equal(context.sources.length,count);
 });

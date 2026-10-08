@@ -3,8 +3,8 @@ import {createFightEffects} from './fight-effects.mjs';
 
 // Replay the real events at the live physics cadence. Seeking never mutates the
 // live match or starts audio, and now includes the same blood shown in a fight.
-export function createDeletionReview({time=0,metadata,art,deletionProp,renderer,direction='right',reducedMotion=false}) {
-  const match=createMatch({mode:'practice',clips:metadata,fighters:art.map(f=>({id:f.manifest.id,name:f.manifest.character,height:f.manifest.height})),start:true});
+export function createDeletionReview({time=0,metadata,art,deletionProp,renderer,direction='right',reducedMotion=false,stage='radio-studio'}) {
+  const match=createMatch({mode:'practice',stage,clips:metadata,fighters:art.map(f=>({id:f.manifest.id,name:f.manifest.character,height:f.manifest.height})),start:true});
   const effects=createFightEffects({reducedMotion,muted:true});
   if(direction==='left')[match.fighters[0].x,match.fighters[1].x]=[match.fighters[1].x,match.fighters[0].x];
   performAction(match,0,'deletion');

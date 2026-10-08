@@ -1,5 +1,6 @@
 import {poseScale,compileWeaponOrigins,resolvePoseAttachments,poseFrameIndex,weaponAttachment} from './fight-attachments.mjs';
 import {deletionDefinition} from './deletion-library.mjs';
+import {stageById} from './fight-stages.mjs';
 const ACTIONS = ['idle','walk','crouch','block','punch','kick','high','low','grabbed','thrown','knockdown','getup'];
 
 export function assetPath(manifestPath, file) {
@@ -39,9 +40,48 @@ export function compileFightClip(data, image, manifest, name) {
   return {data, image, scale, timeline:{entries,duration:cursor}};
 }
 
+// Compile once at load: combat uses a few pose-local shapes, never image pixels.
+// Native floor anchors, offsets and independent facings are shared with drawing.
+function compileCombatPoses(asset,name,fighter) {
+  const height=fighter.manifest.height,hand=name.includes('punch')||name==='uppercut';
+  const ratio=Number(asset.data.strikeHeightRatio);
+  const strikeRatio=Number.isFinite(ratio)?ratio:
+    ({kick:.62,'low-kick':.22,'crouch-kick':.15,'crouch-high-kick':.49,'power-kick':.48,'jump-kick':.35}[name]??.55);
+  const frames=Object.fromEntries(['left','right'].map(facing=>[facing,asset.data.frames[facing].map((frame,index)=>{
+    const scale=poseScale(asset,frame),offset=frame.offset??[0,0],bounds=frame.opaqueBounds??[0,0,frame.rect[2],frame.rect[3]];
+    const point=([x,y])=>({x:(x+offset[0]-frame.anchor[0])*scale,y:(y+offset[1]-frame.anchor[1])*scale});
+    const a=point(bounds.slice(0,2)),b=point(bounds.slice(2)),bodyHeight=Math.max(20,b.y-a.y);
+    const sites=resolvePoseAttachments(frame,name,index,facing,fighter.manifest.id);
+    const head=point([sites.head.x,sites.head.y]),torso=point([sites.torso.x,sites.torso.y]),legs=point([sites.legs.x,sites.legs.y]);
+    const box=(site,x1,y1,x2,y2)=>({site,left:Math.max(a.x,x1),top:Math.max(a.y,y1),right:Math.min(b.x,x2),bottom:Math.min(b.y,y2)});
+    const headRadius=Math.min(height*.09,bodyHeight*.11),bodyRadius=Math.min(height*.15,(b.x-a.x)*.30);
+    const hip=legs.y-bodyHeight*.08;
+    const hurt=[box('head',head.x-headRadius,head.y-headRadius,head.x+headRadius,head.y+headRadius),
+      box('torso',Math.min(torso.x,legs.x)-bodyRadius,head.y+headRadius*.7,Math.max(torso.x,legs.x)+bodyRadius,hip),
+      box('legs',legs.x-bodyRadius*.8,hip-bodyHeight*.06,legs.x+bodyRadius*.8,b.y)]
+      .filter(region=>region.right>region.left&&region.bottom>region.top);
+    const authoredStrike=frame.attachments?.strike;
+    const strike=authoredStrike?point(authoredStrike):hand?point([sites.grip.x,sites.grip.y]):
+      {x:facing==='left'?a.x:b.x,y:Math.max(a.y,Math.min(b.y,-height*strikeRatio+offset[1]*scale))};
+    const armStart=name==='uppercut'?.28:.75;
+    const strikeStart=frame.attachments?.strikeStart?point(frame.attachments.strikeStart):
+      hand?{x:torso.x+(strike.x-torso.x)*armStart,y:torso.y+(strike.y-torso.y)*armStart}:
+        {x:torso.x,y:torso.y+(legs.y-torso.y)*.45};
+    return {bounds:{left:a.x,top:a.y,right:b.x,bottom:b.y},hurt,strike,strikeStart,
+      sites:{head,torso,legs,grip:point([sites.grip.x,sites.grip.y])},
+      strikeRadius:Math.max(9,Math.min(hand?16:20,height*(hand?.04:.055))),
+};
+  })]));
+  const contact=asset.data.contactMs;
+  const active=asset.timeline.entries.find(entry=>contact>=entry.start&&contact<entry.end);
+  return {combatPoses:{frames,entries:asset.timeline.entries,duration:asset.timeline.duration,loop:asset.data.loop??['idle','walk'].includes(name)},
+    ...(active?{activeEndMs:Number.isFinite(asset.data.activeEndMs)?Math.max(contact,Math.min(asset.timeline.duration,asset.data.activeEndMs)):active.end}:{})};
+}
+
 export function combatMetadata(art,weaponArt) {
   return art.map(fighter=>Object.fromEntries(Object.entries(fighter.clips).map(([name,asset])=>[name,{
     duration:asset.timeline.duration,
+    ...compileCombatPoses(asset,name,fighter),
     contactMs:asset.data.contactMs,
     reactionStartMs:asset.data.reactionStartMs,
     ...(name==='thrown'?{airborneStartMs:asset.timeline.entries[1]?.start??0,airborneExtendedMs:asset.timeline.entries[2]?.start??0,airborneEndMs:Math.max(0,asset.timeline.entries.at(-1).start-.001)}:{}),
@@ -49,9 +89,9 @@ export function combatMetadata(art,weaponArt) {
     endOffsetX:Object.fromEntries(['left','right'].map(facing=>[facing,(asset.data.frames[facing].at(-1).offset?.[0] ?? 0)*poseScale(asset,asset.data.frames[facing].at(-1))])),
     topOffsets:Object.fromEntries(['left','right'].map(facing=>[facing,Math.min(...asset.data.frames[facing].map(frame=>((frame.opaqueBounds?.[1]??0)+(frame.offset?.[1]??0)-frame.anchor[1])*poseScale(asset,frame)))])),
     ...(Number.isFinite(asset.data.channelMs)?{channelMs:asset.data.channelMs}:{}),
-    ...(name==='delete-nail'?Object.fromEntries(['grip','head','torso'].map(site=>['contact'+site[0].toUpperCase()+site.slice(1)+'Origins',Object.fromEntries(['left','right'].map(facing=>{
+    ...(name.startsWith('delete-')?Object.fromEntries(['grip','head','torso','strike'].map(site=>['contact'+site[0].toUpperCase()+site.slice(1)+'Origins',Object.fromEntries(['left','right'].map(facing=>{
       const index=poseFrameIndex(asset,{clip:name,elapsed:asset.data.contactMs,facing}),frame=asset.data.frames[facing][index],offset=frame.offset??[0,0];
-      const point=resolvePoseAttachments(frame,name,index,facing,fighter.manifest.id)[site];
+      const points=resolvePoseAttachments(frame,name,index,facing,fighter.manifest.id),raw=frame.attachments?.[site],point=raw?{x:raw[0],y:raw[1]}:points[site]??points.grip;
       return [facing,{x:(point.x+offset[0]-frame.anchor[0])*poseScale(asset,frame),y:(point.y+offset[1]-frame.anchor[1])*poseScale(asset,frame)}];
     }))])):{}),
     ...(name==='delete-nail'?{contactNailTipOrigins:Object.fromEntries(['left','right'].map(facing=>{
@@ -149,7 +189,7 @@ export async function loadDeletionArt({bundle,baseURL,art}) {
     if(x<0||y<0||w<=0||h<=0||x+w>frontImage.width||y+h>frontImage.height)throw new Error('Front glass: invalid source crop.');
   }
   const additional={};
-  for(const id of new Set(art.map(fighter=>deletionDefinition(fighter.manifest.id)?.id).filter(id=>id&&id!=='broadcast-cut'))) {
+  for(const id of new Set(art.map(fighter=>{const definition=deletionDefinition(fighter.manifest.id);return definition?.prop===false?null:definition?.id;}).filter(id=>id&&id!=='broadcast-cut'))) {
     const propPath=`assets/deletions/${id}/atlas.json`,propManifest=await readManifest(id,propPath);
     const propImage=await loadImage(assetPath(propPath,propManifest.file));
     const images={};
@@ -221,4 +261,34 @@ export async function loadWeaponArt({bundle,baseURL} = {}) {
     if(!Array.isArray(rect)||rect.length!==4||!rect.every(Number.isFinite)||rect[0]<0||rect[1]<0||rect[2]<=0||rect[3]<=0||rect[0]+rect[2]>damageImage.width||rect[1]+rect[3]>damageImage.height)throw new Error('Damage texture source crop is invalid.');
   }
   return {manifest,image,damage:{manifest:damageManifest,image:damageImage}};
+}
+
+// Keep only the selected room and its immediately preceding neighbour decoded.
+// Failures are returned as warnings; scenery can always use its native fallback.
+const stageArtCache=[];
+export async function loadStageArt({id='radio-studio',bundle,baseURL}={}) {
+  id=stageById(id).id;
+  const source=String(baseURL??globalThis.location?.href??'https://system-clash.invalid/');
+  const existing=stageArtCache.find(entry=>entry.id===id&&entry.bundle===bundle&&entry.source===source);
+  if(existing){stageArtCache.splice(stageArtCache.indexOf(existing),1);stageArtCache.push(existing);return existing.promise;}
+  const entry={id,bundle,source,promise:null};
+  entry.promise=(async()=>{
+    const warnings=[];
+    const imageFor=async key=>{
+      try{return await new Promise((resolve,reject)=>{
+        const image=new Image();image.onload=()=>resolve(image);image.onerror=()=>reject(new Error('Image unavailable'));
+        image.src=bundle?.images?.[key]??new URL(key,source).href;
+      });}catch{warnings.push(`${key}: image unavailable`);return null;}
+    };
+    const layersFor=async()=>{
+      const embedded=bundle?.stages?.[id]??bundle?.stageLayers?.[id];if(embedded)return embedded;
+      const key=`assets/stages/${id}-layers.json`;
+      try{const response=await fetch(new URL(key,source),{cache:'no-store'});if(!response.ok)throw new Error('Metadata unavailable');return await response.json();}
+      catch{warnings.push(`${key}: layers unavailable`);return null;}
+    };
+    const [image,kit,layers]=await Promise.all([imageFor(`assets/stages/${id}.webp`),imageFor(`assets/stages/${id}-kit.webp`),layersFor()]);
+    return {id,image,kit,layers,warnings};
+  })();
+  stageArtCache.push(entry);while(stageArtCache.length>2)stageArtCache.shift();
+  return entry.promise;
 }

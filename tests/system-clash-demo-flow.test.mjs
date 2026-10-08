@@ -4,9 +4,9 @@ import {readFileSync} from 'node:fs';
 import {demoRoster,createDemoSelection,beginDemoSelection,previewDemoFighter,confirmDemoFighter,backDemoSelection,randomDemoFighter,navigateDemoFighter,demoFightURL,parseDemoLaunch} from '../public/games/system-clash/play/demo-flow.mjs';
 const mains=JSON.parse(readFileSync(new URL('../public/games/system-clash/play/assets/menu/roster.json',import.meta.url))).fighters;
 
-test('18 select slots expose13 mains and reserve exactly5 owner-named future fighters without making them playable',()=>{
- const roster=demoRoster(mains);assert.equal(roster.length,18);assert.equal(roster.filter(f=>f.enabled).length,13);
- assert.deepEqual(roster.filter(f=>!f.enabled).map(f=>f.name),['Hellcat','PapaOak','Mutilator','Doofnoobler','Unknown signal']);
+test('18 select slots expose16 mains and reserve exactly2 owner-named future fighters without making them playable',()=>{
+ const roster=demoRoster(mains);assert.equal(roster.length,18);assert.equal(roster.filter(f=>f.enabled).length,16);
+ assert.deepEqual(roster.filter(f=>!f.enabled).map(f=>f.name),['Mutilator','Unknown signal']);
  for(const future of roster.filter(f=>!f.enabled)){
   const state=beginDemoSelection(createDemoSelection(mains),'cpu');assert.equal(previewDemoFighter(state,future.id),state);
  }
@@ -29,21 +29,26 @@ test('Random chooses only playable opponents, covers all other fighters and chan
  for(const fighter of mains){
   let state=beginDemoSelection(createDemoSelection(mains,{p2:fighter.id}),'cpu');state=confirmDemoFighter(state);
   const results=new Set();for(let i=0;i<120;i++){const next=randomDemoFighter(state,()=>i/120);assert.notEqual(next.picks[1],fighter.id);assert.ok(mains.some(f=>f.id===next.picks[1]));assert.equal(next.picks[0],state.picks[0]);results.add(next.picks[1]);}
-  assert.equal(results.size,12);assert.ok(mains.some(f=>f.id===randomDemoFighter(state,()=>NaN).picks[1]));
+  assert.equal(results.size,15);assert.ok(mains.some(f=>f.id===randomDemoFighter(state,()=>NaN).picks[1]));
  }
 });
-test('keyboard navigation reaches every current main and skips the five locked slots in both selection stages',()=>{
+test('keyboard navigation reaches every current main and skips the two locked slots in both selection stages',()=>{
  for(const mode of ['cpu','local'])for(const stage of [0,1]){
   let state=beginDemoSelection(createDemoSelection(mains),mode);if(stage)state=confirmDemoFighter(state);
   const seen=new Set();for(let i=0;i<18;i++){state=navigateDemoFighter(state,'ArrowRight');seen.add(state.picks[stage]);assert.ok(mains.some(f=>f.id===state.picks[stage]));}
-  assert.equal(seen.size,13);
+  assert.equal(seen.size,16);
   for(const key of ['ArrowLeft','ArrowUp','ArrowDown'])for(let i=0;i<18;i++){state=navigateDemoFighter(state,key);assert.ok(mains.some(f=>f.id===state.picks[stage]));}
  }
 });
 test('demo URL launch accepts only playable identities and the two advertised modes',()=>{
  const good=parseDemoLaunch('https://barcode.example/fight.html?demo=1&mode=local&p1=wittyf0x&p2=cliff&sound=0&motion=1',mains);
- assert.deepEqual(good,{enabled:true,mode:'local',p1:'wittyf0x',p2:'cliff',muted:true,reducedMotion:true});
+ assert.deepEqual(good,{stage:'radio-studio',enabled:true,mode:'local',p1:'wittyf0x',p2:'cliff',muted:true,reducedMotion:true});
  const bad=parseDemoLaunch('https://barcode.example/fight.html?demo=1&mode=practice&p1=hellcat&p2=javascript:alert(1)',mains);
  assert.equal(bad.mode,'cpu');assert.equal(bad.p1,mains[0].id);assert.equal(bad.p2,mains[1].id);
  assert.equal(parseDemoLaunch('https://barcode.example/fight.html',mains).enabled,false);
+});
+
+test('Tournament selects only P1 and leaves normal solo and local two-lock flows intact',()=>{
+ let state=beginDemoSelection(createDemoSelection(mains),'tournament');assert.equal(state.mode,'tournament');assert.equal(state.screen,'select');state=previewDemoFighter(state,'wittyf0x');state=confirmDemoFighter(state);assert.equal(state.screen,'ready');assert.equal(state.picks[0],'wittyf0x');assert.deepEqual(state.confirmed,[true,true]);assert.throws(()=>demoFightURL(state,'https://barcode.example/'));
+ state=backDemoSelection(state);assert.equal(state.screen,'select');assert.equal(state.activePlayer,0);assert.deepEqual(state.confirmed,[false,false]);assert.equal(backDemoSelection(state).screen,'title');
 });

@@ -57,7 +57,11 @@
       "name": "Mr Nice Guy",
       "portrait": "assets/menu/mr-nice-guy-portrait.webp",
       "standing": "assets/menu/mr-nice-guy-standing.webp",
-      "heightScale": 1
+      "heightScale": 1,
+      "menuCanvasSize": [
+        400,
+        440
+      ]
     },
     {
       "id": "ms-mayhem",
@@ -99,7 +103,40 @@
       "name": "WittyF0x",
       "portrait": "assets/menu/wittyf0x-portrait.webp",
       "standing": "assets/menu/wittyf0x-standing.webp",
-      "heightScale": 0.875
+      "heightScale": 0.875,
+      "menuCanvasSize": [
+        340,
+        440
+      ]
+    },
+    {
+      "id": "doofnoobler",
+      "name": "Doofnoobler",
+      "portrait": "assets/menu/doofnoobler-portrait.webp",
+      "standing": "assets/menu/doofnoobler-standing.webp",
+      "heightScale": 0.6875
+    },
+    {
+      "id": "lyra",
+      "name": "Lyra, Champion of Hellcat",
+      "portrait": "assets/menu/lyra-portrait.webp",
+      "standing": "assets/menu/lyra-standing.webp",
+      "heightScale": 1
+    },
+    {
+      "id": "papa-oak",
+      "name": "PapaOak",
+      "portrait": "assets/menu/papa-oak-portrait.webp",
+      "standing": "assets/menu/papa-oak-standing.webp",
+      "heightScale": 1.203125,
+      "menuCanvasSize": [
+        420,
+        440
+      ],
+      "standingSize": [
+        420,
+        440
+      ]
     }
   ]
 }

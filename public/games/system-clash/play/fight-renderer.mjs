@@ -1,6 +1,8 @@
 import {BROADCAST_CUT,broadcastCutStage,broadcastCutFrontStage,broadcastCutDepth,deletionDefinition,deletionPropState} from './deletion-library.mjs';
 import {poseScale,poseFrameIndex,resolvePoseAttachments,weaponAttachment,weaponInsertionGeometry,damageOverlayPlans} from './fight-attachments.mjs';
-import {easedProgress,deletionCamera} from './fight-presentation.mjs';
+import {easedProgress,deletionCamera,createFightCamera,advanceFightCamera} from './fight-presentation.mjs';
+import {createStageRenderer} from './fight-stage-renderer.mjs';
+import {registerNewDeletionViews,drawNewDeletionScene,litterBoxGeometry} from './new-deletion-renderer.mjs';
 const WIDTH = 1280;
 const HEIGHT = 720;
 const FLOOR = 620;
@@ -507,6 +509,7 @@ function fighter(ctx, view, art, overlays, weaponArt, hide = false) {
   const scale = poseScale(asset,frame);
   const offset = frame.offset ?? [0, 0];
   const [sx, sy, sw, sh] = frame.rect;
+  if(view.splitBody){if(view.splitPieces?.length===2){for(const piece of view.splitPieces)fighter(ctx,{...view,...piece,splitBody:null,splitPieces:null},art,overlays,weaponArt,hide);}else for(const side of [-1,1]){ctx.save();ctx.translate(side*view.splitBody.gap,0);fighter(ctx,{...view,splitBody:null,halfMask:side},art,overlays,weaponArt,hide);ctx.restore();}return;}
   const feetX = view.x ?? 640;
   const feetY = FLOOR + (view.y ?? 0);
   const dx = feetX + (offset[0] - frame.anchor[0]) * scale;
@@ -515,11 +518,12 @@ function fighter(ctx, view, art, overlays, weaponArt, hide = false) {
   ctx.globalAlpha = clamp(view.opacity ?? 1, 0, 1);
   ctx.fillStyle = '#0009';
   ctx.beginPath();
-  ctx.ellipse(feetX + offset[0] * scale, FLOOR + 5, art.manifest.height > 340 ? 68 : 56, 9, 0, 0, TAU);
+  ctx.ellipse(feetX + offset[0] * scale, FLOOR + 5, view.halfMask?32:art.manifest.height > 340 ? 68 : 56, 9, 0, 0, TAU);
   ctx.fill();
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
   const points=overlays.attachments(asset,frame,view,art.manifest.id),geometry={dx,dy,scale};
+  if(view.halfMask){const cut=dx+points.torso.x*scale;ctx.beginPath();ctx.rect(view.halfMask<0?dx-5:cut,dy-5,view.halfMask<0?cut-dx+5:dx+sw*scale-cut+5,sh*scale+10);ctx.clip();}
   // A wheel turns the entire native fighter around the measured torso.
   // Body, wear and embedded gear share this one rigid transform.
   if(view.rotation) {
@@ -662,6 +666,7 @@ function wandNativeTorsoEnvelope(art,clips,facing) {
 }
 
 function machineViews(match,prop,views,art) {
+  const registered=registerNewDeletionViews(match,views,art,poseWorldPoint);if(registered)return registered;
   const definition=definitionForMatch(match),bank=prop?.additional?.[definition?.id];
   if(definition?.mechanism==='crt'&&views[1-match.winner]?.deletionFlight) {
     const result=views.map(view=>({...view})),index=1-match.winner,victim=result[index],flight=victim.deletionFlight;
@@ -1717,6 +1722,28 @@ function hud(ctx, match, paused, motionReview = false, portraits = {}) {
   }
 }
 
+function screenTexture(ctx) {
+  ctx.fillStyle='#06070916';
+  for(let y=0;y<HEIGHT;y+=4)ctx.fillRect(0,y,WIDTH,1);
+  const vignette=ctx.createRadialGradient(640,370,235,640,370,770);
+  vignette.addColorStop(0,'#03040700');vignette.addColorStop(1,'#0304077a');
+  ctx.fillStyle=vignette;ctx.fillRect(0,0,WIDTH,HEIGHT);
+}
+
+function createStaticLayers(owner) {
+  // Exactly two bounded surfaces. Stage overscan matches its authored extents,
+  // including the wide Deletion camera; live bodies, HUD and effects stay live.
+  let arena=nativeCanvas(owner,WIDTH+800,HEIGHT+600),arenaContext=arena?.getContext('2d');
+  if(arenaContext){arenaContext.translate(400,400);stage(arenaContext);}
+  const texture=nativeCanvas(owner,WIDTH,HEIGHT),textureContext=texture?.getContext('2d');
+  if(textureContext)screenTexture(textureContext);
+  return {
+    releaseArena(){if(arena){arena.width=1;arena.height=1;}arena=null;arenaContext=null;},
+    drawStage(ctx){if(arenaContext)ctx.drawImage(arena,-400,-400);else stage(ctx);},
+    drawTexture(ctx){if(textureContext)ctx.drawImage(texture,0,0);else screenTexture(ctx);},
+  };
+}
+
 /** Draws intact fighter crops and code-native stage effects. No image pixels are edited. */
 export function createFightRenderer(canvas) {
   if (!canvas?.getContext) throw new Error('A fight canvas is required.');
@@ -1724,8 +1751,9 @@ export function createFightRenderer(canvas) {
   canvas.height = HEIGHT;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('This browser could not open the fight screen.');
-  const overlays=createPoseOverlays(canvas);
-  stage(ctx);
+  const overlays=createPoseOverlays(canvas),layers=createStaticLayers(canvas),stageRenderer=createStageRenderer(canvas);
+  let worldCamera=createFightCamera(),lastWorldClock=null,lastStageId=null;
+  layers.drawStage(ctx);
   caption(ctx, 'CONNECTING…', 'LOADING 6 BIT / 9 BIT', '#c0aa93', 48);
   return {
     prepareArt(art) {
@@ -1746,17 +1774,32 @@ export function createFightRenderer(canvas) {
       const camera = effects?.camera ?? { x: 0, y: 0 };
       if(deletionActive(match)){views=deletionAftermathViews(match,views,art);views=machineViews(match,scene.deletionProp,views,art);}
       ctx.clearRect(0, 0, WIDTH, HEIGHT);
+      ctx.fillStyle='#10151d';ctx.fillRect(0,0,WIDTH,HEIGHT);
       ctx.save();
       ctx.translate(camera.x ?? 0, camera.y ?? 0);
       const cinematic=deletionActive(match)&&(!scene.reducedMotion||['wheel','speaker-stack','truss','sign','drive','wand'].includes(definitionForMatch(match)?.mechanism));
+      let framing=null;
       if(cinematic) {
         const phase=match.deletionElapsed,definition=definitionForMatch(match),b=definition.beats;
         const wheel=definition.mechanism==='wheel'?wheelGeometry(match,scene.deletionProp.additional[definition.id],views,art):null;
         const fitted=['speaker-stack','truss','sign','drive','wand'].includes(definition.mechanism)?fittedSignatureCamera(match,scene.deletionProp,views,art):null;
-        const framing=deletionCamera({time:phase,mechanism:definition.mechanism,beats:b,targetX:match.deletionTargetX,direction:match._deletionOrigin.direction,fitted,wheel,reducedMotion:scene.reducedMotion});
+        framing=deletionCamera({time:phase,mechanism:definition.mechanism,beats:b,targetX:match.deletionTargetX,direction:match._deletionOrigin.direction,fitted,wheel,reducedMotion:scene.reducedMotion});
         ctx.translate(640,380);ctx.scale(framing.zoom,framing.zoom);ctx.translate(-framing.x,-framing.y);
       }
-      stage(ctx);
+      const wideWorld=match.stage&&match.stage.cinematicOrigin===null;
+      if(wideWorld) {
+        const dt=lastWorldClock===null?0:Math.max(0,match.stage.clock-lastWorldClock);
+        if(lastStageId!==match.stage.id||(lastWorldClock!==null&&match.stage.clock<lastWorldClock)){worldCamera=createFightCamera({worldWidth:match.stage.width});worldCamera.x=clamp((match.fighters[0]?.x+match.fighters[1]?.x)/2||match.stage.width/2,640,match.stage.width-640);}
+        advanceFightCamera(worldCamera,{fighters:views.length?views:match.fighters,worldWidth:match.stage.width,dtMs:dt,reducedMotion:scene.reducedMotion});
+        ctx.translate(640,FLOOR);ctx.scale(worldCamera.zoom,worldCamera.zoom);ctx.translate(-worldCamera.x,-FLOOR);
+      }
+      if(match.stage) {
+        layers.releaseArena();lastWorldClock=match.stage.clock;lastStageId=match.stage.id;
+        ctx.save();ctx.translate(-(match.stage.cinematicOrigin??0),0);
+        stageRenderer.drawBackground(ctx,match.stage,scene.stageArt,{cameraX:wideWorld?worldCamera.x:(match.stage.cinematicOrigin??0)+(framing?.x??640),shakeX:camera.x??0,shakeY:camera.y??0});
+        stageRenderer.drawBehind(ctx,match.stage,scene.stageArt,{reducedMotion:scene.reducedMotion,cameraX:worldCamera.x,fighting:match.phase==='fight',cinematicElapsed:match.phase==='deletion'||match.phase==='over'&&match.deletionElapsed>0?match.deletionElapsed:null});
+        ctx.restore();
+      } else {layers.drawStage(ctx);lastWorldClock=null;lastStageId=null;}
       effects?.drawBehind?.(ctx, match);
       floorWeapons(ctx,match,scene.weaponArt);
       projectiles(ctx,match,scene.weaponArt,false);
@@ -1766,13 +1809,17 @@ export function createFightRenderer(canvas) {
       if(deletionActive(match)) {
         signatureHardware(ctx,match,scene.deletionProp,views,art,false);
         additionalDeletionScene(ctx,match,scene.deletionProp,views,art,false);
+        drawNewDeletionScene(ctx,match,scene.deletionProp,views,art,false,{reducedMotion:scene.reducedMotion});
         const mouth=machineGeometry(match,scene.deletionProp);
         const foldedInside=mouth?.definition.mechanism==='waste-chute'&&match.deletionElapsed>=mouth.definition.beats.captured&&mouth.frame.aperture;
         if(foldedInside) {
           const [ax,ay,aw,ah]=mouth.frame.aperture;
           ctx.save();ctx.beginPath();ctx.rect(mouth.x+ax*mouth.scale,mouth.y+ay*mouth.scale,aw*mouth.scale,ah*mouth.scale);ctx.clip();
         }
+        const litter=definitionForMatch(match).mechanism==='litter-box'&&views[victim]?.litterCaptured?litterBoxGeometry(match,scene.deletionProp):null;
+        if(litter){ctx.save();ctx.beginPath();ctx.rect(litter.left,0,litter.right-litter.left,FLOOR);ctx.clip();}
         fighter(ctx,views[victim],art[victim],overlays,scene.weaponArt);
+        if(litter)ctx.restore();
         if(foldedInside)ctx.restore();
         if(definitionForMatch(match).mechanism==='crt') {
           if(broadcastCutDepth(match.deletionElapsed)==='inside')crt(ctx,match,scene.deletionProp,true);
@@ -1785,24 +1832,20 @@ export function createFightRenderer(canvas) {
         if(definitionForMatch(match).mechanism==='coffin'&&match.deletionElapsed>=definitionForMatch(match).beats.nailApproach)machine(ctx,match,scene.deletionProp,true);
         signatureHardware(ctx,match,scene.deletionProp,views,art,true);
         additionalDeletionScene(ctx,match,scene.deletionProp,views,art,true);
+        drawNewDeletionScene(ctx,match,scene.deletionProp,views,art,true,{reducedMotion:scene.reducedMotion});
       } else for(let i=0;i<views.length;i++)fighter(ctx,views[i],art[i],overlays,scene.weaponArt);
       projectiles(ctx,match,scene.weaponArt,true);
       effects?.drawFront?.(ctx, match);
+      if(match.stage&&wideWorld)stageRenderer.drawFront(ctx,match,scene.stageArt,{reducedMotion:scene.reducedMotion});
       ctx.restore();
       ctx.setTransform(1,0,0,1,0,0);
       if ((effects?.flash ?? 0) > 0) {
         ctx.fillStyle = `rgba(199,69,46,${clamp(effects.flash, 0, .18)})`;
         ctx.fillRect(0, 0, WIDTH, HEIGHT);
       }
-      // A restrained CRT texture is drawn once per frame over the complete image.
-      ctx.fillStyle = '#06070916';
-      for (let y = 0; y < HEIGHT; y += 4) ctx.fillRect(0, y, WIDTH, 1);
-      const vignette = ctx.createRadialGradient(640, 370, 235, 640, 370, 770);
-      vignette.addColorStop(0, '#03040700');
-      vignette.addColorStop(1, '#0304077a');
-      ctx.fillStyle = vignette;
-      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+      layers.drawTexture(ctx);
       hud(ctx, match, scene.paused ?? match.paused ?? false,scene.motionReview??false,scene.portraits??{});
+      if(deletionActive(match)){const definition=definitionForMatch(match);if(definition.mechanism==='hug'&&match.deletionElapsed>=definition.beats.present){ctx.save();ctx.fillStyle='#080e16d9';ctx.fillRect(365,139,550,38);ctx.font='700 22px Arial, sans-serif';ctx.textAlign='center';ctx.fillStyle='#f0d6b5';ctx.fillText(definition.line,640,166);ctx.restore();}}
     },
     resolveEvent(event,{match,views,art,deletionProp}) {
       event={...event,victimId:match.fighters[event.target]?.id};

@@ -1,6 +1,6 @@
+import {STAGES,stageById} from './fight-stages.mjs';
 export const FUTURE_FIGHTERS=Object.freeze([
- {id:'hellcat',name:'Hellcat',enabled:false},{id:'papaoak',name:'PapaOak',enabled:false},
- {id:'mutilator',name:'Mutilator',enabled:false},{id:'doofnoobler',name:'Doofnoobler',enabled:false},
+ {id:'mutilator',name:'Mutilator',enabled:false},
  {id:'unknown-signal',name:'Unknown signal',enabled:false},
 ].map(Object.freeze));
 export function demoRoster(mains){
@@ -11,10 +11,17 @@ export function demoRoster(mains){
 export function createDemoSelection(mains,options={}){
  const roster=demoRoster(mains),ids=roster.filter(f=>f.enabled).map(f=>f.id);
  const picks=[ids.includes(options.p1)?options.p1:ids[0],ids.includes(options.p2)?options.p2:ids[Math.min(1,ids.length-1)]];
- return {roster,mode:options.mode==='local'?'local':'cpu',screen:options.screen==='select'?'select':'title',activePlayer:0,picks,confirmed:[false,false]};
+ return {roster,stage:stageById(options.stage).id,mode:['local','tournament'].includes(options.mode)?options.mode:'cpu',screen:options.screen==='select'?'select':'title',activePlayer:0,picks,confirmed:[false,false]};
+}
+export function selectDemoStage(state,id){
+ if(!STAGES.some(stage=>stage.id===id))return state;return {...state,stage:id};
+}
+export function cycleDemoStage(state,direction){
+ const index=STAGES.findIndex(stage=>stage.id===state.stage),step=direction<0?-1:1;
+ return selectDemoStage(state,STAGES[(Math.max(0,index)+step+STAGES.length)%STAGES.length].id);
 }
 export function beginDemoSelection(state,mode){
- if(!['cpu','local'].includes(mode))return state;
+ if(!['cpu','local','tournament'].includes(mode))return state;
  return {...state,mode,screen:'select',activePlayer:0,confirmed:[false,false]};
 }
 export function previewDemoFighter(state,id){
@@ -23,11 +30,13 @@ export function previewDemoFighter(state,id){
 }
 export function confirmDemoFighter(state){
  if(state.screen!=='select')return state;
+ if(state.mode==='tournament')return {...state,confirmed:[true,true],activePlayer:0,screen:'ready'};
  const confirmed=[...state.confirmed];confirmed[state.activePlayer]=true;
  return {...state,confirmed,activePlayer:1,screen:confirmed.every(Boolean)?'ready':'select'};
 }
 export function backDemoSelection(state){
  if(state.screen==='title')return state;
+ if(state.mode==='tournament'&&state.screen==='ready')return {...state,screen:'select',activePlayer:0,confirmed:[false,false]};
  if(state.activePlayer===1)return {...state,screen:'select',activePlayer:0,confirmed:[false,false]};
  return {...state,screen:'title',confirmed:[false,false]};
 }
@@ -50,13 +59,14 @@ export function navigateDemoFighter(state,key){
 }
 export function demoFightURL(state,baseURL,settings={}){
  if(state.screen!=='ready'||!state.confirmed.every(Boolean))throw new Error('Choose both fighters before entering the arena.');
+ if(state.mode==='tournament')throw new Error('Tournament launch needs its saved run.');
  const url=new URL('fight.html',baseURL);
- for(const [key,value]of Object.entries({demo:'1',mode:state.mode,p1:state.picks[0],p2:state.picks[1],sound:settings.muted?'0':'1',motion:settings.reducedMotion?'1':'0'}))url.searchParams.set(key,value);
+ for(const [key,value]of Object.entries({demo:'1',stage:stageById(state.stage).id,mode:state.mode,p1:state.picks[0],p2:state.picks[1],sound:settings.muted?'0':'1',motion:settings.reducedMotion?'1':'0'}))url.searchParams.set(key,value);
  return withControllerSeats(url,settings.controllerSeats);
 }
 export function parseDemoLaunch(value,roster){
  const params=new URL(value,'https://system-clash.invalid/').searchParams,ids=roster.map(f=>f.id);
- return {enabled:params.get('demo')==='1',mode:params.get('mode')==='local'?'local':'cpu',
+ return {stage:stageById(params.get('stage')).id,enabled:params.get('demo')==='1',mode:params.get('mode')==='local'?'local':'cpu',
  p1:ids.includes(params.get('p1'))?params.get('p1'):ids[0],p2:ids.includes(params.get('p2'))?params.get('p2'):ids[Math.min(1,ids.length-1)],
  muted:params.get('sound')==='0',reducedMotion:params.get('motion')==='1'};
 }

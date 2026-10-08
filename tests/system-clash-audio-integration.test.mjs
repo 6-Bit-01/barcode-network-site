@@ -13,7 +13,7 @@ function fight(ids=['6-bit','9-bit'],options={}){
   consumeEvents(match);match.fighters[0].x=500;match.fighters[1].x=650;return match;
 }
 
-test('accepted effort events bind all 13 identities and rejected actions create no voice event',()=>{
+test('accepted effort events bind all 16 identities and rejected actions create no voice event',()=>{
   for(const id of Object.keys(FIGHTER_STYLES)){
     const match=fight([id,'6-bit']);
     assert.equal(performAction(match,0,'punch'),true);

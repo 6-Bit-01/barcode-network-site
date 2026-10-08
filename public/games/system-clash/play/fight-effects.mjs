@@ -12,6 +12,7 @@ const CLOTHING = {
   stolz:['#282e2e','#67665f'],'kaveman-brown':['#292a25','#65665f'],
   dr3wbaby:['#4e365c','#3b5163'],'ash-flowers':['#272b29','#977521'],
   wittyf0x:['#293c62','#624d38'],
+  doofnoobler:['#db641c','#2696c9'],lyra:['#202d35','#22a7b9'],'papa-oak':['#485b2b','#785735'],
 };
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -244,6 +245,7 @@ export function createFightEffects(options = {}) {
     const y = finite(event.y, 430);
     const direction = event.direction === -1 ? -1 : 1;
     const strength = clamp(finite(event.strength, 1), 0.25, 2.5);
+    if(event.peaceful){if(['hug-contact','hug-release','stay-kind'].includes(event.cue))burst('spark',x,y,direction,8,.2);audio.emit({...event,strength});return;}
     switch (event.type) {
       case 'hit': {
         const kind=event.damageKind??'bruise';
@@ -594,6 +596,7 @@ export function createFightEffects(options = {}) {
       audio.setMuted(muted);
     },
     startAudio,
+    prepareCharacterAudio(ids){return audio.prepareCharacterLines?.(ids)??false;},
     setPaused(value) { audio.setPaused(value); },
     clear() {
       audio.clear();

@@ -29,6 +29,25 @@ export function interpolateFightViews(previous,current,fraction) {
   return current.map((view,index)=>{
     const before=previous?.[index];
     if(!before||before.clip!==view.clip||before.facing!==view.facing||before.opacity!==view.opacity||before.eraseProgress!==view.eraseProgress)return view;
-    return {...view,x:before.x+(view.x-before.x)*p,y:(before.y??0)+((view.y??0)-(before.y??0))*p};
+    const samePose=Number.isInteger(view.poseIndex)&&before.poseIndex===view.poseIndex;
+    const timing=samePose&&view.elapsed>=before.elapsed?{elapsed:before.elapsed+(view.elapsed-before.elapsed)*p,
+      nativeElapsed:(before.nativeElapsed??before.elapsed)+((view.nativeElapsed??view.elapsed)-(before.nativeElapsed??before.elapsed))*p}:{};
+    return {...view,...timing,x:before.x+(view.x-before.x)*p,y:(before.y??0)+((view.y??0)-(before.y??0))*p};
   });
+}
+
+/** World camera is presentation only: it never supplies combat boundaries. */
+export function createFightCamera({worldWidth=2560}={}) {
+ return {x:worldWidth/2,zoom:1};
+}
+export function advanceFightCamera(camera,{fighters=[],worldWidth=2560,dtMs=0,reducedMotion=false}={}) {
+ if(!Number.isFinite(dtMs)||dtMs<=0||!fighters.length)return camera;
+ const positions=fighters.map(f=>f.x).filter(Number.isFinite);if(!positions.length)return camera;
+ const left=Math.min(...positions),right=Math.max(...positions),span=right-left;
+ const targetZoom=clamp(1080/(span+380),1280/worldWidth,reducedMotion?1:1.04);
+ const factor=1-Math.exp(-Math.min(dtMs,250)/(reducedMotion?300:220));
+ camera.zoom+=(targetZoom-camera.zoom)*factor;
+ const half=640/camera.zoom,centre=clamp((left+right)/2,half,worldWidth-half);
+ if(Math.abs(centre-camera.x)>38)camera.x+=(centre-camera.x)*factor;
+ camera.x=clamp(camera.x,half,worldWidth-half);return camera;
 }

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "System Clash Demo",
-  description: "Play BARCODE: SYSTEM CLASH Demo with 13 fighters in Solo CPU or Local Two Player.",
+  description: "Play BARCODE: SYSTEM CLASH Demo with 16 fighters, six interactive stages, Solo CPU, Local Two Player, Tournament and Online sessions.",
   alternates: { canonical: "/games/system-clash" },
 };
 
@@ -18,8 +18,9 @@ export default function SystemClashPage() {
             System Clash Demo
           </h1>
           <p className="mt-6 max-w-2xl text-base leading-7 text-muted">
-            Choose from 13 BARCODE fighters. Play Solo CPU or Local Two Player
-            on the same device, and learn their moves and signature Deletions.
+            Choose from 16 BARCODE fighters across six interactive stages. Play
+            Solo CPU, Local Two Player, Tournament or an Online session,
+            and learn their moves and signature Deletions.
           </p>
           <a
             href="/games/system-clash/play/index.html"
@@ -31,7 +32,7 @@ export default function SystemClashPage() {
       </section>
       <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-10">
         <p className="max-w-2xl text-sm leading-7 text-muted">
-          Keyboard and onscreen controls are available inside the game. This
+          Keyboard, onscreen and PS5-style controller controls are available inside the game. This
           demo is a place to play, explore the fighters, and try their signature
           finishes as the game develops.
         </p>

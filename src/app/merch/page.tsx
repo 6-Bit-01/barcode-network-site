@@ -1,5 +1,6 @@
+import { PublicIcon } from "@/components/PublicIcon";
 import { merchPage, externalLinks } from "@/content";
-import { PageHero, SectionDot } from "@/components/LiveEffects";
+import { PageHero } from "@/components/LiveEffects";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -16,10 +17,10 @@ export const metadata: Metadata = {
 
 export default function MerchPage() {
   return (
-    <div className="pt-14">
+    <div className="public-page">
       {/* Hero */}
-      <section className="border-b border-border noise-bg">
-        <div className="mx-auto max-w-7xl px-4 pb-14 pt-12 sm:px-6 sm:pb-16 sm:pt-14">
+      <section className="public-section">
+        <div className="public-container">
           <PageHero
             label={merchPage.hero.label}
             heading={merchPage.hero.heading}
@@ -29,12 +30,12 @@ export default function MerchPage() {
       </section>
 
       {/* Products — 1st Wave */}
-      <section className="border-b border-border">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16">
+      <section className="public-section">
+        <div className="public-container">
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-3">
-              <SectionDot />
-              <h2 className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted">
+              <PublicIcon name="merch" className="public-icon" />
+              <h2 className="public-section-heading">
                 1st Wave — Archived Drop
               </h2>
             </div>
@@ -47,7 +48,7 @@ export default function MerchPage() {
             {merchPage.products.map((product) => (
               <article
                 key={product.name}
-                className="border border-border bg-surface p-6"
+                className="public-card"
               >
                 <span className="text-xs text-accent/50 uppercase tracking-[0.3em]">
                   {product.tag}
@@ -65,11 +66,11 @@ export default function MerchPage() {
       </section>
 
       {/* Book — OBSERVER NOT FOUND */}
-      <section className="border-b border-border noise-bg">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16">
+      <section className="public-section">
+        <div className="public-container">
           <div className="flex items-center gap-3 mb-8">
-            <SectionDot />
-            <h2 className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted">
+            <PublicIcon name="merch" className="public-icon" />
+            <h2 className="public-section-heading">
               Publication
             </h2>
           </div>
@@ -78,7 +79,7 @@ export default function MerchPage() {
             href={merchPage.book.href}
             target="_blank"
             rel="noopener noreferrer"
-            className="group block border border-border bg-surface hover:border-accent/40 p-8 transition-all max-w-3xl"
+            className="public-card group block max-w-3xl"
           >
             <span className="text-xs text-accent/50 uppercase tracking-[0.3em]">
               {merchPage.book.tag}
@@ -89,7 +90,7 @@ export default function MerchPage() {
             <p className="text-xs text-muted uppercase tracking-widest mb-4">
               by {merchPage.book.author} — {merchPage.book.format}
             </p>
-            <p className="text-sm text-muted leading-relaxed mb-6 max-w-xl">
+            <p className="public-intro mb-6 max-w-xl">
               {merchPage.book.description}
             </p>
             <div className="flex flex-wrap gap-4 mb-4">
@@ -111,7 +112,7 @@ export default function MerchPage() {
       </section>
 
       {/* Discord CTA */}
-      <section className="border-b border-border">
+      <section className="public-section">
         <div className="mx-auto max-w-3xl px-4 sm:px-6 py-12 text-center">
           <p className="text-sm text-muted mb-4">
             Future drops announced through official channels.
@@ -120,7 +121,7 @@ export default function MerchPage() {
             href={externalLinks.discord}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-block border border-accent text-accent hover:bg-accent hover:text-background px-6 py-3 text-sm uppercase tracking-widest transition-all"
+            className="public-button public-button--primary"
           >
             Join Discord for drop alerts →
           </a>
@@ -128,9 +129,9 @@ export default function MerchPage() {
       </section>
 
       {/* Terminal Output */}
-      <section>
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16">
-          <div className="bg-surface border border-border p-6 font-mono">
+      <section className="public-section">
+        <div className="public-container">
+          <details className="public-disclosure"><summary>Supply system archive</summary><div className="public-disclosure-content font-mono">
             <p className="text-xs text-muted mb-4">
               &gt; BARCODE_NETWORK // SUPPLY_SYSTEM
             </p>
@@ -142,7 +143,7 @@ export default function MerchPage() {
                 &gt; FIRST WAVE ARCHIVED<span className="cursor-blink">_</span>
               </p>
             </div>
-          </div>
+          </div></details>
         </div>
       </section>
     </div>

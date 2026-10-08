@@ -43,24 +43,14 @@ export function PageHero({
 }) {
   return (
     <>
-      <p className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted mb-4">
-        <ScrambleText text={label} speed={25} />
-      </p>
-      <h1 className="text-3xl sm:text-4xl md:text-6xl font-bold tracking-tight text-foreground mb-4">
-        <GlitchText
-          text={heading}
-          className="text-accent text-glow"
-          intensity="medium"
-        />
-      </h1>
-      <p className="text-base text-muted leading-relaxed max-w-xl">
-        {description}
-      </p>
+      <p className="public-kicker">{label}</p>
+      <h1 className="public-title">{heading}</h1>
+      <p className="public-intro">{description}</p>
     </>
   );
 }
 
-/** Radio page hero — two-word heading variant */
+/** The broadcast title stays separate from live status and intake truth. */
 export function RadioHero({
   label,
   heading1,
@@ -74,20 +64,11 @@ export function RadioHero({
 }) {
   return (
     <>
-      <p className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted mb-4">
-        <ScrambleText text={label} speed={25} />
-      </p>
-      <h1 className="text-3xl sm:text-4xl md:text-6xl font-bold tracking-tight text-foreground mb-3">
-        <GlitchText
-          text={heading1}
-          className="text-accent text-glow"
-          intensity="medium"
-        />{" "}
-        <span className="text-foreground/80">{heading2}</span>
+      <p className="public-kicker">{label}</p>
+      <h1 className="public-title">
+        {heading1} <span className="text-accent">{heading2}</span>
       </h1>
-      <p className="text-base text-muted leading-relaxed max-w-xl mb-6">
-        {description}
-      </p>
+      <p className="public-intro mb-6">{description}</p>
     </>
   );
 }

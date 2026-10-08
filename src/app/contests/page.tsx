@@ -1,3 +1,4 @@
+import { PublicIcon } from "@/components/PublicIcon";
 import type { Metadata } from "next";
 import { HellcatLadder } from "@/components/HellcatLadder";
 import { HellcatSchedule } from "@/components/HellcatSchedule";
@@ -37,16 +38,16 @@ const communityActivities = [
 
 export default function ContestsPage() {
   return (
-    <div className="pt-14">
-      <section className="border-b border-border noise-bg">
-        <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-16">
-          <p className="text-xs uppercase tracking-[0.4em] text-accent">BARCODE Network · Community</p>
-          <h1 className="mt-4 text-4xl font-bold tracking-tight text-foreground sm:text-6xl">Contests</h1>
-          <p className="mt-6 max-w-2xl text-base leading-relaxed text-muted">Fresh tracks. Open frequencies. Music and community on the same wavelength. Tune into HellcatNZ&apos;s KOTH contest and follow the artists in the standings.</p>
+    <div className="public-page">
+      <section className="public-section">
+        <div className="public-container">
+          <p className="public-kicker">BARCODE Network · Community</p>
+          <h1 className="public-title">Contests</h1>
+          <p className="public-intro">Fresh tracks. Open frequencies. Music and community on the same wavelength. Tune into HellcatNZ&apos;s KOTH contest and follow the artists in the standings.</p>
         </div>
       </section>
-      <section aria-labelledby="hellcat-community-title" className="border-b border-border bg-surface/30">
-        <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-12">
+      <section aria-labelledby="hellcat-community-title" className="public-section public-section--muted">
+        <div className="public-container">
           <div className="mb-7 flex flex-wrap items-end justify-between gap-5">
             <div>
               <p className="font-mono text-xs uppercase tracking-[0.25em] text-accent">Community signal // HellcatNZ</p>
@@ -56,7 +57,7 @@ export default function ContestsPage() {
               href="https://discord.gg/HellcatNZ"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex min-h-11 w-full items-center justify-center gap-3 border border-accent bg-accent/10 px-5 py-3 text-center font-mono text-xs font-bold uppercase tracking-wider text-accent transition-colors hover:bg-accent hover:text-background focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent sm:w-auto"
+              className="public-button public-button--primary"
             >
               Join HellcatNZ&apos;s Discord <span aria-hidden="true">↗</span>
             </a>
@@ -69,7 +70,7 @@ export default function ContestsPage() {
                 <span>01 // Weekly contest</span>
                 <span aria-hidden="true">[ KOTH ]</span>
               </div>
-              <h3 className="mt-6 text-3xl font-bold uppercase leading-tight text-foreground sm:text-4xl">King of<br />the Hill <span aria-hidden="true" className="text-accent">👑</span></h3>
+              <h3 className="mt-6 text-3xl font-bold uppercase leading-tight text-foreground sm:text-4xl">King of<br />the Hill <PublicIcon name="trophy" className="public-icon inline-block" /></h3>
               <HellcatSchedule />
               <p className="mt-5 max-w-xl text-sm leading-relaxed text-foreground/80">Send your track into the KOTH channel and put your signal to the test. Songs hit community radio live, get reviewed by <span className="font-mono text-accent">@reviewcrew</span> and face the verdict in real time.</p>
               <ul className="mt-6 space-y-3 text-sm text-foreground/90">
@@ -80,10 +81,10 @@ export default function ContestsPage() {
               <p className="mt-7 border-t border-accent/20 pt-4 font-mono text-xs uppercase tracking-wider text-accent">Zero toxicity // All vibes</p>
             </li>
             {communityActivities.map((activity) => (
-              <li key={activity.number} className="border border-border border-l-2 border-l-accent/50 bg-background/70 p-5 sm:p-6">
+              <li key={activity.number} className="public-card">
                 <p className="font-mono text-[11px] uppercase tracking-widest text-accent">{activity.number}{" // "}{activity.label}</p>
                 <h3 className="mt-2 text-lg font-bold text-foreground sm:text-xl">{activity.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-foreground/75">{activity.description}</p>
+                <details className="public-disclosure mt-3"><summary>About {activity.title}</summary><div className="public-disclosure-content"><p>{activity.description}</p></div></details>
               </li>
             ))}
           </ul>

@@ -1,3 +1,4 @@
+import { PublicIcon } from "@/components/PublicIcon";
 import Link from "next/link";
 import { BNLOwnArtGallery } from "@/components/BNLOwnArt";
 import { Suspense } from "react";
@@ -29,27 +30,43 @@ export default async function BNLPage() {
   const [latest, ...recent] = entries;
 
   return (
-    <div className="pt-14">
-      <section className="border-b border-border noise-bg">
-        <div className="mx-auto grid max-w-7xl gap-8 px-4 py-12 sm:px-6 sm:py-16 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] lg:items-start">
+    <div className="public-page">
+      <section className="public-section">
+        <div className="public-container grid gap-8 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] lg:items-start">
           <div className="min-w-0">
-            <p className="text-xs uppercase tracking-[0.45em] text-accent">
+            <p className="public-kicker">
               {"// BNL-01 HUB // PUBLIC SIGNAL"}
             </p>
-            <h1 className="mt-4 text-4xl font-black tracking-tight text-foreground sm:text-6xl">
+            <h1 className="public-title">
               BNL-01 Hub
             </h1>
-            <p className="mt-5 max-w-3xl text-base leading-7 text-foreground/70 sm:text-lg">
-              BNL-01 watches the public movement around BARCODE—what the community is discussing, what keeps returning, and what changes around the show—then turns what matters into relays, Journal entries and original Broadcast Ballads.
-            </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <a href={externalLinks.discord} target="_blank" rel="noreferrer" className="inline-flex items-center border border-accent px-5 py-3 font-mono text-xs uppercase tracking-widest text-accent transition-colors hover:bg-accent hover:text-background">Talk with BNL in Discord →</a>
-              <Link href="/radio" className="inline-flex items-center border border-border-light px-5 py-3 font-mono text-xs uppercase tracking-widest text-foreground/70 transition-colors hover:border-foreground hover:text-foreground">BARCODE Radio →</Link>
-              <Link href="/terminal" className="inline-flex items-center border border-border-light px-5 py-3 font-mono text-xs uppercase tracking-widest text-foreground/70 transition-colors hover:border-foreground hover:text-foreground">Open Terminal →</Link>
-              <Link href="/journal" className="inline-flex items-center border border-border-light px-5 py-3 font-mono text-xs uppercase tracking-widest text-foreground/70 transition-colors hover:border-foreground hover:text-foreground">Full Journal →</Link>
-              <Link href="/bnl/music" className="inline-flex items-center border border-border-light px-5 py-3 font-mono text-xs uppercase tracking-widest text-foreground/70 transition-colors hover:border-foreground hover:text-foreground">Discography →</Link>
-              <Link href="/database/bnl-01" className="inline-flex items-center border border-border-light px-5 py-3 font-mono text-xs uppercase tracking-widest text-foreground/70 transition-colors hover:border-foreground hover:text-foreground">BNL dossier →</Link>
+            <p className="public-intro">Talk, read and listen to BNL-01 across the Network.</p>
+            <div className="grid gap-3 mt-8 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
+              <div className="public-card">
+                <PublicIcon name="community" className="public-icon" />
+                <h2 className="public-section-heading">Talk</h2>
+                <a href={externalLinks.discord} target="_blank" rel="noreferrer" className="public-button public-button--primary">Talk with BNL in Discord →</a>
+              </div>
+              <div className="public-card">
+                <PublicIcon name="journal" className="public-icon" />
+                <h2 className="public-section-heading">Read</h2>
+                <Link href="/journal" className="public-button">Full Journal →</Link>
+                <Link href="/database/bnl-01" className="public-button">BNL dossier →</Link>
+              </div>
+              <div className="public-card">
+                <PublicIcon name="music" className="public-icon" />
+                <h2 className="public-section-heading">Listen</h2>
+                <Link href="/bnl/music" className="public-button">Discography →</Link>
+                <Link href="/radio" className="public-button">BARCODE Radio →</Link>
+              </div>
             </div>
+            <details className="public-disclosure mt-6">
+              <summary>BNL’s role in the Network</summary>
+              <div className="public-disclosure-content">
+                <p>BNL-01 watches the public movement around BARCODE—what the community is discussing, what keeps returning, and what changes around the show—then turns what matters into relays, Journal entries and original Broadcast Ballads.</p>
+                <Link href="/terminal" className="public-button"><PublicIcon name="terminal" />Open Terminal →</Link>
+              </div>
+            </details>
           </div>
           <Suspense fallback={<BNLFeaturedBalladView releases={[]} loading />}>
             <BNLFeaturedBallad />
@@ -58,7 +75,7 @@ export default async function BNLPage() {
       </section>
 
       <Suspense fallback={null}><BNLOwnArtGallery /></Suspense>
-      <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-12" aria-label="Latest from BNL">
+      <section className="public-container public-section" aria-label="Latest from BNL">
         <div className="grid gap-6 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:items-start">
           <div className="min-w-0">
             <p className="mb-4 text-xs font-bold uppercase tracking-[0.3em] text-accent">Latest Journal</p>

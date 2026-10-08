@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { StatusBadge, SectionDot } from "@/components/LiveEffects";
+import { PublicIcon, type PublicIconName } from "@/components/PublicIcon";
 import { homePage, siteConfig, externalLinks } from "@/content";
 import { BNLRelayModule } from "@/components/BNLRelay";
 import { RadioBroadcastFeature } from "@/components/RadioBroadcastFeature";
@@ -11,14 +11,21 @@ export const metadata: Metadata = {
   alternates: { canonical: "/" },
   openGraph: {
     title: "BARCODE Network",
-    description: "BARCODE is a living hip-hop broadcast universe connecting music, BARCODE Radio, community, technology, and interdimensional story.",
+    description:
+      "BARCODE is a living hip-hop broadcast universe connecting music, BARCODE Radio, community, technology, and interdimensional story.",
     siteName: "BARCODE Network",
     url: "/",
-    images: [{ url: "/barcode-radio.png", width: 1200, height: 630, alt: "BARCODE Network signal card" }],
+    images: [
+      {
+        url: "/barcode-radio.png",
+        width: 1200,
+        height: 630,
+        alt: "BARCODE Network signal card",
+      },
+    ],
     type: "website",
   },
 };
-
 
 function resolveHref(href: string): string {
   if (href.startsWith("EXTERNAL:")) {
@@ -57,198 +64,331 @@ function RouteLink({
 }
 
 export default function Home() {
+  const discoveryRoutes: Record<
+    string,
+    { icon: PublicIconName; title: string; action: string }
+  > = {
+    "/releases": {
+      icon: "music",
+      title: "The music",
+      action: "Explore the releases",
+    },
+    "/radio": {
+      icon: "radio",
+      title: "BARCODE Radio",
+      action: "Watch & participate",
+    },
+    "EXTERNAL:discord": {
+      icon: "community",
+      title: "Your people",
+      action: "Join the community",
+    },
+  };
+  const discoveryPrograms = homePage.programs.filter(
+    (program) => program.href in discoveryRoutes,
+  );
+  const deeperPrograms = homePage.programs.filter(
+    (program) => !(program.href in discoveryRoutes),
+  );
   return (
-    <div className="pt-14">
-      {/* Public-access Hero */}
-      <section className="relative noise-bg border-b border-border">
-        <div className="mx-auto grid max-w-7xl gap-10 px-4 py-16 sm:px-6 sm:py-20 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] xl:items-center">
-          <div className="min-w-0 max-w-4xl">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 mb-6">
-              <Image
-                src={siteConfig.logo}
-                alt={siteConfig.name}
-                width={512}
-                height={512}
-                className="rounded-sm flex-shrink-0 w-[60px] sm:w-[80px]"
-                unoptimized
-                priority
-              />
-              <div className="min-w-0">
-                <p className="text-xs uppercase tracking-[0.45em] text-muted mb-3 animate-flicker">
-                  {homePage.hero.label}
-                </p>
-                <h1 className="text-[clamp(1.9rem,9vw,4.5rem)] sm:text-[clamp(2.75rem,6vw,4.75rem)] xl:text-[clamp(2.75rem,4.4vw,4rem)] font-black uppercase leading-[0.9] tracking-[-0.08em] text-foreground">
-                  <span className="block whitespace-nowrap">{homePage.hero.heading1}</span>
-                  <span className="block whitespace-nowrap text-accent">{homePage.hero.heading2}</span>
-                </h1>
-              </div>
-            </div>
-            <p className="text-base sm:text-lg text-muted leading-relaxed max-w-2xl mb-8">
-              {homePage.hero.description}
+    <div className="public-page">
+      <section className="public-hero border-b border-border">
+        <div className="public-container public-hero-grid">
+          <div>
+            <p className="public-kicker">{homePage.hero.label}</p>
+            <h1 className="public-home-title">
+              <span>PRESS PLAY.</span>
+              <span className="text-accent">FIND YOUR</span>
+              <span className="text-accent">PEOPLE.</span>
+            </h1>
+            <p className="public-intro">
+              Hip-hop, original music and a live public square. This is BARCODE.
             </p>
-            <div className="flex flex-wrap gap-3">
+            <div className="public-actions mt-7">
               <Link
                 href={homePage.hero.ctaPrimary.href}
-                className="inline-flex items-center px-6 py-3 text-sm uppercase tracking-widest border border-accent text-accent hover:bg-accent hover:text-background transition-all"
+                className="public-button public-button--primary"
               >
-                {homePage.hero.ctaPrimary.text}
+                <PublicIcon name="play" />
+                Hear the music
               </Link>
               <Link
                 href={homePage.hero.ctaSecondary.href}
-                className="inline-flex items-center px-6 py-3 text-sm uppercase tracking-widest border border-border-light text-muted hover:border-foreground hover:text-foreground transition-all"
+                className="public-button"
               >
-                {homePage.hero.ctaSecondary.text}
+                <PublicIcon name="radio" />
+                Enter BARCODE Radio
               </Link>
             </div>
-          </div>
-          <div className="min-w-0"><RadioBroadcastFeature compact /></div>
-        </div>
-      </section>
-
-      {/* Plain-language orientation */}
-      <section className="border-b border-border">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16">
-          <div className="max-w-3xl">
-            <p className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted mb-4 animate-flicker">
-              {homePage.orientation.label}
-            </p>
-            <h2 className="text-2xl sm:text-4xl font-black tracking-tight text-foreground mb-6">
-              {homePage.orientation.heading}
-            </h2>
-            <div className="space-y-5 text-base sm:text-lg text-muted leading-relaxed">
-              {homePage.orientation.paragraphs.map((paragraph) => (
-                <p key={paragraph}>{paragraph}</p>
-              ))}
+            <div className="public-hero-note">
+              <span>
+                <PublicIcon name="check" />
+                Traditional
+              </span>
+              <span>
+                <PublicIcon name="check" />
+                AI-assisted
+              </span>
+              <span>
+                <PublicIcon name="check" />
+                Hybrid
+              </span>
             </div>
           </div>
+          <SignalArtwork />
         </div>
       </section>
 
-      {/* Listen / Watch / Enter / Investigate routes */}
-      <section className="border-b border-border">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16">
-          <div className="flex items-center gap-3 mb-4">
-            <SectionDot />
-            <p className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted">
-              {homePage.routeSection.label}
-            </p>
+      <section className="public-section">
+        <div className="public-container">
+          <div className="public-section-top">
+            <div>
+              <p className="public-kicker">{homePage.routeSection.label}</p>
+              <h2 className="public-section-heading">
+                Three ways into the signal.
+              </h2>
+            </div>
+            <p className="text-xs text-muted">Listen. Watch. Connect.</p>
           </div>
-          <h2 className="text-2xl sm:text-4xl font-black tracking-tight text-foreground mb-4">
-            {homePage.routeSection.heading}
-          </h2>
-          <p className="text-base text-muted leading-relaxed max-w-2xl mb-10">
-            {homePage.routeSection.introduction}
-          </p>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {homePage.programs.map((program) => (
+          <div className="public-route-grid">
+            {discoveryPrograms.map((program, index) => (
               <RouteLink
                 key={program.href}
                 href={program.href}
-                className="group border border-border hover:border-accent/30 bg-surface p-6 transition-all hover:bg-surface-light"
+                className="public-route-card"
               >
-                <div className="flex items-start justify-between gap-4 mb-3">
-                  <h3 className="text-lg font-bold tracking-wide text-foreground group-hover:text-accent transition-colors">
-                    {program.title}
-                  </h3>
-                  <StatusBadge status={program.status} />
-                </div>
-                <p className="text-sm text-muted leading-relaxed">
-                  {program.description}
-                </p>
-                <div className="mt-4 text-xs text-muted/50 uppercase tracking-wider group-hover:text-accent/50 transition-colors">
-                  {program.status} →
-                </div>
-              </RouteLink>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Why BARCODE exists */}
-      <section className="border-b border-border noise-bg">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16">
-          <div className="max-w-2xl mx-auto text-center">
-            <p className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted mb-6 animate-flicker">
-              {homePage.mission.label}
-            </p>
-            <h2 className="text-2xl sm:text-4xl font-black tracking-tight text-foreground mb-6">
-              {homePage.mission.heading}
-            </h2>
-            <blockquote className="text-xl sm:text-2xl text-foreground/80 leading-relaxed font-light italic">
-              &ldquo;{homePage.mission.statement}&rdquo;
-            </blockquote>
-            <p className="mt-6 text-base text-muted leading-relaxed">
-              {homePage.mission.body}
-            </p>
-            <div className="mt-8 w-12 h-px bg-accent mx-auto" />
-          </div>
-        </div>
-      </section>
-
-      {/* BNL-01 public relay explainer */}
-      <section className="border-b border-border">
-        <div className="mx-auto grid max-w-7xl gap-6 px-4 py-12 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
-          <div>
-            <p className="mb-4 text-xs uppercase tracking-[0.5em] text-muted animate-flicker">
-              {"// BNL-01 RELAY"}
-            </p>
-            <h2 className="mb-4 text-2xl font-black tracking-tight text-foreground sm:text-4xl">
-              BNL-01 turns public movement into paths you can read.
-            </h2>
-            <p className="text-base leading-relaxed text-muted">
-              BNL-01 notices what the BARCODE community is discussing, what keeps returning, and what changes around the show. The Hub gathers approved relays and Journal entries for deeper reading; Discord is where people speak with BNL-01.
-            </p>
-            <div className="mt-5 flex flex-wrap gap-4"><Link href="/bnl" className="inline-flex text-sm font-mono uppercase tracking-widest text-accent hover:text-foreground">Open the BNL-01 Hub →</Link><a href={externalLinks.discord} target="_blank" rel="noreferrer" className="inline-flex text-sm font-mono uppercase tracking-widest text-accent hover:text-foreground">Talk in Discord →</a></div>
-          </div>
-          <BNLRelayModule title="Latest Network Relay" />
-        </div>
-      </section>
-
-      {/* Deeper transmission and return actions */}
-      <section>
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16">
-          <div className="max-w-3xl mb-12">
-            <p className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted mb-4 animate-flicker">
-              {homePage.deeperTransmission.label}
-            </p>
-            <h2 className="text-2xl sm:text-4xl font-black tracking-tight text-foreground mb-6">
-              {homePage.deeperTransmission.heading}
-            </h2>
-            <p className="text-base sm:text-lg text-muted leading-relaxed mb-8">
-              {homePage.deeperTransmission.body}
-            </p>
-            <div className="flex flex-wrap gap-3">
-              <Link
-                href={homePage.deeperTransmission.ctaPrimary.href}
-                className="inline-flex items-center px-6 py-3 text-sm uppercase tracking-widest border border-accent text-accent hover:bg-accent hover:text-background transition-all"
-              >
-                {homePage.deeperTransmission.ctaPrimary.text}
-              </Link>
-              <Link
-                href={homePage.deeperTransmission.ctaSecondary.href}
-                className="inline-flex items-center px-6 py-3 text-sm uppercase tracking-widest border border-border-light text-muted hover:border-foreground hover:text-foreground transition-all"
-              >
-                {homePage.deeperTransmission.ctaSecondary.text}
-              </Link>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {homePage.quickLinks.map((link) => (
-              <RouteLink
-                key={link.label}
-                href={link.href}
-                className="border border-border p-4 text-center hover:border-accent/30 transition-colors group"
-              >
-                <span className="text-sm text-muted group-hover:text-accent transition-colors uppercase tracking-wider">
-                  {link.label}
+                <span className="route-index">0{index + 1}</span>
+                <PublicIcon
+                  name={discoveryRoutes[program.href].icon}
+                  className="public-icon"
+                />
+                <h3>{discoveryRoutes[program.href].title}</h3>
+                <p>{program.description}</p>
+                <span className="route-action">
+                  {discoveryRoutes[program.href].action}
+                  <PublicIcon name="arrow" />
                 </span>
               </RouteLink>
             ))}
           </div>
+          <details className="public-disclosure mt-5">
+            <summary>
+              About BARCODE{" "}
+              <span className="hidden sm:inline text-xs font-normal text-muted">
+                The crew, the craft, the bigger story
+              </span>
+            </summary>
+            <div className="public-disclosure-content grid gap-8 md:grid-cols-2">
+              <div>
+                <p className="public-kicker">
+                  {homePage.hero.heading1} {homePage.hero.heading2}
+                </p>
+                <p>{homePage.hero.description}</p>
+                <h3 className="mt-5 mb-3 text-lg text-foreground">
+                  {homePage.orientation.heading}
+                </h3>
+                {homePage.orientation.paragraphs.map((paragraph) => (
+                  <p key={paragraph}>{paragraph}</p>
+                ))}
+              </div>
+              <div>
+                <h3 className="mb-3 text-lg text-foreground">
+                  {homePage.mission.heading}
+                </h3>
+                <blockquote className="mb-4 border-l-2 border-accent pl-4 text-foreground">
+                  {homePage.mission.statement}
+                </blockquote>
+                <p>{homePage.mission.body}</p>
+                <h3 className="mt-5 mb-3 text-lg text-foreground">
+                  {homePage.routeSection.heading}
+                </h3>
+                <p>{homePage.routeSection.introduction}</p>
+              </div>
+            </div>
+          </details>
         </div>
       </section>
+
+      <section className="public-section public-section--muted">
+        <div className="public-container grid gap-6 lg:grid-cols-[1.1fr_.9fr]">
+          <div className="min-w-0">
+            <RadioBroadcastFeature compact />
+          </div>
+          <div className="min-w-0 flex flex-col justify-center">
+            <p className="public-kicker">
+              Broadcast everywhere. Participate through BARCODE.
+            </p>
+            <h2 className="public-section-heading mb-4">
+              Make something.
+              <br />
+              Bring it here.
+            </h2>
+            <p className="public-intro mb-6">
+              Original music, real reactions, returning faces. Meet the artists
+              and listeners around the show.
+            </p>
+            <div className="public-actions">
+              <a
+                href={externalLinks.discord}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="public-button public-button--primary"
+              >
+                <PublicIcon name="community" />
+                Join Discord
+              </a>
+              <a
+                href={externalLinks.tiktok}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="public-button"
+              >
+                Follow on TikTok <PublicIcon name="arrow" />
+              </a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="public-section">
+        <div className="public-container">
+          <div className="public-section-top">
+            <div>
+              <p className="public-kicker">
+                {homePage.deeperTransmission.label}
+              </p>
+              <h2 className="public-section-heading">
+                There’s more beneath the music.
+              </h2>
+            </div>
+            <PublicIcon name="archive" className="public-icon" />
+          </div>
+          <div className="public-deep-grid">
+            <Link href="/database" className="public-deep-link">
+              <PublicIcon name="archive" />
+              Database
+            </Link>
+            <Link href="/transmissions" className="public-deep-link">
+              <PublicIcon name="send" />
+              Transmissions
+            </Link>
+            <Link href="/bnl" className="public-deep-link">
+              <PublicIcon name="bnl" />
+              BNL-01 Hub
+            </Link>
+            <Link href="/terminal" className="public-deep-link">
+              <PublicIcon name="terminal" />
+              Terminal Archive
+            </Link>
+          </div>
+          <div className="mt-5 grid gap-4 lg:grid-cols-2">
+            <details className="public-disclosure">
+              <summary>The story & the archive</summary>
+              <div className="public-disclosure-content">
+                <h3 className="mb-3 text-lg text-foreground">
+                  {homePage.deeperTransmission.heading}
+                </h3>
+                <p>{homePage.deeperTransmission.body}</p>
+                {deeperPrograms.map((program) => (
+                  <p key={program.href}>{program.description}</p>
+                ))}
+                <div className="public-actions mt-5">
+                  <Link
+                    href={homePage.deeperTransmission.ctaPrimary.href}
+                    className="public-button"
+                  >
+                    {homePage.deeperTransmission.ctaPrimary.text}
+                  </Link>
+                  <Link
+                    href={homePage.deeperTransmission.ctaSecondary.href}
+                    className="public-button"
+                  >
+                    {homePage.deeperTransmission.ctaSecondary.text}
+                  </Link>
+                </div>
+              </div>
+            </details>
+            <details className="public-disclosure">
+              <summary>Latest Network Relay · BNL-01</summary>
+              <div className="public-disclosure-content">
+                <h3 className="mb-3 text-lg text-foreground">
+                  BNL-01 turns public movement into paths you can read.
+                </h3>
+                <p>
+                  BNL-01 notices what the BARCODE community is discussing, what
+                  keeps returning, and what changes around the show. The Hub
+                  gathers approved relays and Journal entries for deeper
+                  reading; Discord is where people speak with BNL-01.
+                </p>
+                <div className="my-5">
+                  <BNLRelayModule title="Latest Network Relay" />
+                </div>
+                <div className="public-actions">
+                  <Link href="/bnl" className="public-button">
+                    Open the BNL-01 Hub
+                  </Link>
+                  <a
+                    href={externalLinks.discord}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="public-button"
+                  >
+                    Talk in Discord
+                  </a>
+                </div>
+              </div>
+            </details>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/** Original lightweight record/circuit artwork. Decorative, with actions in adjacent text. */
+function SignalArtwork() {
+  return (
+    <div className="public-signal-art" aria-hidden="true">
+      <span className="public-signal-label top">BC // 01 — Open frequency</span>
+      <svg viewBox="0 0 500 500" fill="none" stroke="currentColor">
+        <circle cx="250" cy="250" r="190" strokeOpacity=".18" />
+        <circle cx="250" cy="250" r="172" strokeOpacity=".3" />
+        <circle cx="250" cy="250" r="157" strokeOpacity=".15" />
+        <circle cx="250" cy="250" r="135" strokeOpacity=".35" />
+        <circle cx="250" cy="250" r="112" strokeOpacity=".15" />
+        <path
+          d="M250 35v27M250 438v27M35 250h27M438 250h27M98 98l20 20M382 382l20 20M98 402l20-20M382 118l20-20"
+          strokeOpacity=".5"
+        />
+        <path
+          d="M55 345h35l45-45M365 200l45-45h45M180 75v36l35 35M285 354l35 35v36"
+          strokeWidth="2"
+          strokeOpacity=".7"
+        />
+        <circle cx="55" cy="345" r="4" fill="currentColor" />
+        <circle cx="455" cy="155" r="4" fill="currentColor" />
+        <circle cx="180" cy="75" r="4" fill="currentColor" />
+        <circle cx="320" cy="425" r="4" fill="currentColor" />
+        <path
+          d="m48 275 8-26 8 19 8-36 8 56 8-24 8 13M397 332l8-26 8 19 8-36 8 56 8-24 8 13"
+          strokeWidth="2"
+        />
+        <path d="M125 75h35M340 425h35" strokeWidth="8" strokeOpacity=".6" />
+      </svg>
+      <div className="public-signal-center">
+        <Image
+          src={siteConfig.logo}
+          alt=""
+          width={140}
+          height={140}
+          unoptimized
+          priority
+        />
+        <span>MUSIC / PEOPLE / SIGNAL</span>
+      </div>
+      <span className="public-signal-label bottom">
+        Every fragment carries a signal.
+      </span>
     </div>
   );
 }

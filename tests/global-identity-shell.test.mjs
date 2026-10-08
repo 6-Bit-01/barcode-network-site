@@ -17,8 +17,9 @@ const headerMocks = {
   "next/image": ({ unoptimized: _unoptimized, ...props }) => React.createElement("img", props),
   "next/navigation": { usePathname: () => renderedPathname },
   "./LiveStatusProvider": { useLiveStatus: () => ({ siteShowMode: "standby", queueHref: null, streamUrl: null }) },
+  "./PublicIcon": { PublicIcon: () => null },
   "./GlitchText": { GlitchText: ({ text }) => React.createElement("span", null, text) },
-  "@/content": { siteConfig: { logo: "/logo.png", name: "BARCODE Network" } },
+  "@/content": { siteConfig: { logo: "/logo.png", name: "BARCODE Network" }, externalLinks: { discord: "https://discord.gg/4tHazmD528" } },
 };
 vm.runInNewContext(ts.transpileModule(read("src/components/Header.tsx"), {
   fileName: "Header.tsx",
@@ -37,8 +38,10 @@ function assertActiveNavigation(pathname, expectedHref) {
     assert.ok(nav, `${label} renders at ${pathname}`);
     const links = [...nav.matchAll(/<a\b([^>]*)>/g)];
     const destinations = links.map((match) => match[1].match(/href="([^"]+)"/)?.[1]);
-    const bnlIndex = destinations.indexOf("/bnl");
-    assert.deepEqual(destinations.slice(bnlIndex, bnlIndex + 4), ["/bnl", "/contests", "/releases", "/database"], `${label} preserves the requested section order at ${pathname}`);
+    assert.deepEqual(destinations.slice(0, 3), ["/", "/releases", "/radio"], `${label} starts with music and participation at ${pathname}`);
+    for (const href of ["/terminal", "/bnl", "/contests", "/database", "/transmissions", "/merch"]) {
+      assert.equal(destinations.filter((value) => value === href).length, 1, `${label} retains ${href} once`);
+    }
     const active = links
       .filter((match) => match[1].includes('aria-current="page"'))
       .map((match) => match[1].match(/href="([^"]+)"/)?.[1]);
@@ -91,7 +94,6 @@ test("Header navigation remains compact until xl and switches consistently", () 
   assert.doesNotMatch(header, /md:hidden/);
   assert.match(header, /hidden xl:flex/);
   assert.match(header, /xl:hidden/);
-  assert.match(header, /\{ href: "\/terminal", label: "Terminal" \}/);
   assert.match(header, /label: "Terminal Archive"/);
 });
 
@@ -99,7 +101,7 @@ test("BNL-01 Hub replaces Journal in global navigation while Journal routes rema
   const header = read("src/components/Header.tsx");
   const footer = read("src/components/Footer.tsx");
 
-  assert.match(header, /\{ href: "\/bnl", label: "BNL-01 Hub" \}/);
+  assert.match(header, /label: "BNL-01 Hub"/);
   assert.doesNotMatch(header, /\{ href: "\/journal", label: "Journal" \}/);
   assert.match(header, /pathname === "\/journal"/);
   assert.match(header, /pathname\.startsWith\("\/journal\/"\)/);

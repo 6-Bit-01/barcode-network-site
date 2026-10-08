@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { radioPage, externalLinks } from "@/content";
-import { RadioHero, SectionDot } from "@/components/LiveEffects";
+import { PublicIcon } from "@/components/PublicIcon";
 import { LocalSchedule } from "@/components/LocalSchedule";
 import type { Metadata } from "next";
 import { BNLRelayModule } from "@/components/BNLRelay";
@@ -40,18 +40,15 @@ export default function RadioPage() {
   );
 
   return (
-    <div className="pt-14">
+    <div className="public-page">
       {/* Current participation and past shows share the first screen. */}
-      <section className="border-b border-border noise-bg">
-        <div className="mx-auto max-w-7xl px-4 pb-14 pt-12 sm:px-6 sm:pb-16 sm:pt-14">
+      <section className="public-section">
+        <div className="public-container">
           <div className={styles.discovery}>
             <div className={styles.intro}>
-              <RadioHero
-                label={radioPage.hero.label}
-                heading1={radioPage.hero.heading1}
-                heading2={radioPage.hero.heading2}
-                description={submission.heroDescription}
-              />
+              <p className="public-kicker"><PublicIcon name="radio" />{radioPage.hero.label}</p>
+              <h1 className="public-title">{radioPage.hero.heading1} <span className="text-accent">{radioPage.hero.heading2}</span></h1>
+              <p className="public-intro mb-8">{submission.heroDescription}</p>
 
               {submission.mode === "native_queue" && (
                 <RadioQueueEntry>
@@ -69,9 +66,9 @@ export default function RadioPage() {
                 href={submission.href}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex min-h-12 w-full items-center justify-center gap-3 bg-accent px-6 py-4 text-center text-sm font-bold uppercase tracking-widest text-background transition hover:bg-accent-dim sm:w-auto sm:text-base"
+                className="public-button public-button--primary"
               >
-                <span className="text-lg">{radioPage.hero.submitButton.emoji}</span>
+                <PublicIcon name="send" />
                 {submission.heroSubmitLabel}
               </a>}
             </div>
@@ -98,15 +95,15 @@ export default function RadioPage() {
                     href={externalLinks.discord}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex-1 inline-flex items-center justify-center gap-3 px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold border border-border-light text-foreground/80 hover:border-accent hover:text-accent transition-all text-center"
+                    className="public-button w-full"
                   >
-                    <span className="text-lg">{radioPage.hero.discordButton.emoji}</span>
+                    <PublicIcon name="community" />
                     {radioPage.hero.discordButton.text}
                   </a>
                 </div>
                 <div className="mt-4">
                   <RadioTikTokLink
-                    className="w-full px-6 py-4 text-sm sm:text-base uppercase tracking-widest font-bold border hover:border-accent hover:text-accent transition-all text-center"
+                    className="public-button w-full"
                     offlineClassName="border-border-light text-foreground/80"
                     liveClassName="border-accent text-accent"
                   />
@@ -116,16 +113,13 @@ export default function RadioPage() {
           </div>
 
           {submission.mode === "native_queue" && submission.radioPageGuide ? (
-            <section
+            <details
               aria-label="BARCODE Radio queue guide"
-              className="mt-6 border border-accent/35 bg-surface/80 p-5 sm:p-6"
+              className="public-disclosure mt-8"
             >
-              <p className="text-xs font-bold uppercase tracking-[0.35em] text-accent">
-                {submission.radioPageGuide.label}
-              </p>
-              <h2 className="mt-3 text-xl font-bold text-foreground sm:text-2xl">
-                {submission.radioPageGuide.heading}
-              </h2>
+              <summary><PublicIcon name="book" /><span>{submission.radioPageGuide.heading}</span><PublicIcon name="chevron" /></summary>
+              <div className="public-disclosure-content">
+              <p className="public-kicker">{submission.radioPageGuide.label}</p>
               <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">
                 {submission.radioPageGuide.description}
               </p>
@@ -140,18 +134,50 @@ export default function RadioPage() {
                   </li>
                 ))}
               </ul>
-            </section>
+              </div>
+            </details>
           ) : null}
 
         </div>
       </section>
 
+      {/* How It Works — condensed inline */}
+      <section className="public-section">
+        <div className="public-container">
+          <h2 className="public-section-heading mb-6">How it works</h2>
+          <div className="public-grid">
+            {steps.map((step) => (
+              <StepCard key={step.number} number={step.number} title={step.title} description={step.description} />
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Submission Guidelines */}
+      <section className="public-section">
+        <div className="public-container">
+          <details className="public-disclosure">
+            <summary><PublicIcon name="check" /><span>Submission Rules</span><PublicIcon name="chevron" /></summary>
+            <div className="public-disclosure-content">
+            <ul className="space-y-3 text-sm text-muted leading-relaxed">
+              {rules.map((rule, i) => (
+                <li key={i} className="flex items-start gap-2">
+                  <span className="text-accent mt-0.5">▸</span>
+                  {rule}
+                </li>
+              ))}
+            </ul>
+          </div>
+          </details>
+        </div>
+      </section>
+
       {/* BNL-01 Broadcast Monitor */}
-      <section className="border-b border-border">
-        <div className="mx-auto grid max-w-7xl gap-6 px-4 py-12 sm:px-6 lg:grid-cols-[0.9fr_1.1fr]">
+      <section className="public-section">
+        <div className="public-container grid gap-8 lg:grid-cols-[0.9fr_1.1fr]">
           <div>
             <div className="flex items-center gap-3 mb-6">
-              <SectionDot />
+              <PublicIcon name="bnl" />
               <h2 className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted">
                 BNL-01 Relay
               </h2>
@@ -165,43 +191,9 @@ export default function RadioPage() {
         </div>
       </section>
 
-      {/* How It Works — condensed inline */}
-      <section className="border-b border-border">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-12">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-            {steps.map((step) => (
-              <StepCard key={step.number} number={step.number} title={step.title} description={step.description} />
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Submission Guidelines */}
-      <section className="border-b border-border">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-12">
-          <div className="flex items-center gap-3 mb-6">
-            <SectionDot />
-            <h2 className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted">
-              Submission Rules
-            </h2>
-          </div>
-
-          <div className="border border-border bg-surface p-6 max-w-2xl">
-            <ul className="space-y-3 text-sm text-muted leading-relaxed">
-              {rules.map((rule, i) => (
-                <li key={i} className="flex items-start gap-2">
-                  <span className="text-accent mt-0.5">▸</span>
-                  {rule}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      </section>
-
       {/* Go Deeper — lore hooks to pull them into the network */}
-      <section className="noise-bg">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16">
+      <section className="public-section public-section--muted">
+        <div className="public-container">
           <div className="text-center mb-10">
             <p className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted mb-3">
               {radioPage.goDeeper.label}
@@ -216,8 +208,9 @@ export default function RadioPage() {
               <Link
                 key={card.href}
                 href={card.href}
-                className="group border border-border bg-surface hover:border-accent/40 p-6 transition-all"
+                className="public-card group"
               >
+                <PublicIcon name={card.href === "/terminal" ? "terminal" : card.href === "/releases" ? "music" : "archive"} className="public-icon mb-5" />
                 <span className="text-xs uppercase tracking-[0.3em] text-accent/60 group-hover:text-accent transition-colors">
                   {card.tag}
                 </span>
@@ -253,8 +246,8 @@ function StepCard({
   description: string;
 }) {
   return (
-    <div className="border border-border bg-surface p-6">
-      <span className="text-2xl font-bold text-accent/20 mb-2 block">
+    <div className="public-card">
+      <span className="text-sm font-bold text-accent mb-4 block">
         {number}
       </span>
       <h3 className="text-base font-bold text-foreground mb-2">{title}</h3>

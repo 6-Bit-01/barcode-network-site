@@ -8,19 +8,30 @@ import { Footer } from "@/components/Footer";
 import { DataStream } from "@/components/DataStream";
 import { BNLNetworkRelayShell } from "@/components/BNLNetworkRelayShell";
 
-export function SiteChrome({ children, radioSubmission }: { children: ReactNode; radioSubmission: RadioSubmissionRouting }) {
+export function SiteChrome({
+  children,
+  radioSubmission,
+}: {
+  children: ReactNode;
+  radioSubmission: RadioSubmissionRouting;
+}) {
   const pathname = usePathname();
 
   if (pathname === "/world/playtest" || pathname.startsWith("/overlay/")) {
     return children;
   }
 
+  const publicPresentation =
+    !/^\/(admin|queue|obs|secret-menu|connect|world|games)(?:\/|$)/.test(
+      pathname,
+    );
+
   return (
-    <>
+    <div className={publicPresentation ? "public-site" : undefined}>
       <a href="#main-content" className="skip-link">
         Skip to main content
       </a>
-      <DataStream />
+      {!publicPresentation && <DataStream />}
       <Header />
       <BNLNetworkRelayShell />
       <main
@@ -31,6 +42,6 @@ export function SiteChrome({ children, radioSubmission }: { children: ReactNode;
         {children}
       </main>
       <Footer submission={radioSubmission} />
-    </>
+    </div>
   );
 }

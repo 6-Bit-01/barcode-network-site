@@ -1,5 +1,6 @@
+import { PublicIcon } from "@/components/PublicIcon";
 import Link from "next/link";
-import { PageHero, SectionDot } from "@/components/LiveEffects";
+import { PageHero } from "@/components/LiveEffects";
 import {
   getAllTransmissions,
   formatTransmissionDate,
@@ -22,10 +23,10 @@ export default function TransmissionsPage() {
   const posts = getAllTransmissions();
 
   return (
-    <div className="pt-14">
+    <div className="public-page">
       {/* Hero */}
-      <section className="border-b border-border noise-bg">
-        <div className="mx-auto max-w-7xl px-4 pb-14 pt-12 sm:px-6 sm:pb-16 sm:pt-14">
+      <section className="public-section">
+        <div className="public-container">
           <PageHero
             label="// TRANSMISSION LOG"
             heading="Transmissions"
@@ -35,32 +36,33 @@ export default function TransmissionsPage() {
       </section>
 
       {/* Posts List */}
-      <section className="border-b border-border">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16">
+      <section className="public-section">
+        <div className="public-container">
           <div className="flex items-center gap-3 mb-10">
-            <SectionDot />
-            <h2 className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted">
+            <PublicIcon name="send" className="public-icon" />
+            <h2 className="public-section-heading">
               All Transmissions
             </h2>
           </div>
 
-          <div className="space-y-6">
+          <div className="divide-y divide-border">
             {posts.map((post) => (
               <Link
                 key={post.slug}
                 href={`/transmissions/${post.slug}`}
-                className="block border border-border bg-surface hover:border-accent/40 transition-colors group"
+                className="block group py-6 transition-colors hover:bg-surface/40"
               >
-                <div className="p-6 sm:p-8">
+                <div className="grid gap-5 sm:grid-cols-[10rem_1fr]">
                   {/* Date & Author */}
-                  <div className="flex items-center gap-4 mb-3 text-xs uppercase tracking-widest text-muted">
+                  <div className="flex flex-wrap content-start gap-2 text-sm text-muted sm:flex-col">
                     <time dateTime={post.date}>
                       {formatTransmissionDate(post.date)}
                     </time>
-                    <span className="text-border">|</span>
+                    <span className="hidden">|</span>
                     <span>{post.author}</span>
                   </div>
 
+                  <div>
                   {/* Title */}
                   <h3 className="text-lg sm:text-xl font-bold tracking-wide text-foreground group-hover:text-accent transition-colors mb-3">
                     {post.title}
@@ -81,6 +83,8 @@ export default function TransmissionsPage() {
                         {tag}
                       </span>
                     ))}
+                  </div>
+                  <span className="public-button mt-3">Read transmission <PublicIcon name="arrow" /></span>
                   </div>
                 </div>
               </Link>

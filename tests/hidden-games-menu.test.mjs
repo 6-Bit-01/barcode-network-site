@@ -10,6 +10,7 @@ const React = require("react");
 const read = (path) => fs.readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const seenLinks = [];
 const mocks = {
+  "@/components/PublicIcon": { PublicIcon: () => null },
   "next/link": ({ children, prefetch, ...props }) => {
     seenLinks.push({ ...props, prefetch, children });
     return React.createElement("a", props, children);

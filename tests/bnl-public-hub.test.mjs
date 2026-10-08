@@ -28,6 +28,7 @@ function loadHub(
   const cjsModule = { exports: {} };
   const req = (id) => {
     if (id === "@/components/BNLOwnArt") return { BNLOwnArtGallery: () => null };
+    if (id === "@/components/PublicIcon") return { PublicIcon: () => null };
     if (id === "react/jsx-runtime") return require("react/jsx-runtime");
     if (id === "react") return React;
     if (id === "@/components/BNLFeaturedBallad")

@@ -1,4 +1,4 @@
-import { PageHero, SectionDot } from "@/components/LiveEffects";
+import { PublicIcon } from "@/components/PublicIcon";
 import Image from "next/image";
 import Link from "next/link";
 
@@ -80,29 +80,26 @@ export function DossierPageView({ dossier }: { dossier: DossierPageViewModel }) 
   const terminalLead = dossier.terminalLead ?? buildTerminalLead(dossier);
 
   return (
-    <div className={dossier.previewMode ? "" : "pt-14"}>
+    <div className={dossier.previewMode ? "public-site" : "public-page"}>
       {/* Back link (top) */}
       <section>
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 pt-6">
+        <div className="public-container pt-6">
           <Link
             href={backHref}
-            className="inline-flex items-center text-sm uppercase tracking-widest text-muted hover:text-accent transition-colors"
+            className="public-button"
           >
-            ← {backLabel}
+            <PublicIcon name="arrow" className="rotate-180" /> {backLabel}
           </Link>
         </div>
       </section>
 
       {/* Hero — Header then Image below */}
-      <section className="border-b border-border noise-bg">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16 sm:py-24">
+      <section className="public-section">
+        <div className="public-container grid gap-8 md:grid-cols-[1fr_16rem] items-start">
           {/* Header info */}
-          <div className="mb-10">
-            <PageHero
-              label={`// DOSSIER: ${dossier.id}`}
-              heading={dossier.name}
-              description=""
-            />
+          <div className="min-w-0">
+            <p className="public-kicker"><PublicIcon name="archive" /> { `// DOSSIER: ${dossier.id}` }</p>
+            <h1 className="public-title">{dossier.name}</h1>
             {/* Quick meta badges */}
             <div className="flex flex-wrap gap-3 mt-6">
               {dossier.previewMode && (
@@ -124,18 +121,18 @@ export function DossierPageView({ dossier }: { dossier: DossierPageViewModel }) 
                 {dossier.category}
               </span>
             </div>
-            <p className="text-sm text-muted/60 mt-4">{dossier.role}</p>
+            <p className="public-intro mt-4">{dossier.role}</p>
           </div>
 
           {/* Portrait / Placeholder */}
           <div className="w-full max-w-xs">
-            <div className="border border-accent/20 bg-surface p-2 crt-frame">
-              <div className="relative aspect-[4/5] overflow-hidden crt-scanlines crt-vignette crt-flicker">
+            <div className="public-card p-2">
+              <div className="relative aspect-[4/5] overflow-hidden rounded-xl">
                 <Image
                   src={dossier.image}
                   alt={dossier.name}
                   fill
-                  className="object-cover crt-tint"
+                  className="object-cover"
                   unoptimized
                 />
               </div>
@@ -155,14 +152,14 @@ export function DossierPageView({ dossier }: { dossier: DossierPageViewModel }) 
       </section>
 
       {/* Dossier Card */}
-      <section className="border-b border-border">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16">
+      <section className="public-section">
+        <div className="public-container">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
             {/* Left: Info Grid */}
             <div>
               <div className="flex items-center gap-3 mb-6">
-                <SectionDot />
-                <h2 className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted">
+                <PublicIcon name="archive" />
+                <h2 className="public-section-heading">
                   Dossier Record
                 </h2>
               </div>
@@ -187,8 +184,8 @@ export function DossierPageView({ dossier }: { dossier: DossierPageViewModel }) 
                   value={dossier.origin}
                   colorClass={originColors[dossier.origin]}
                 />
-                <div className="flex items-center justify-between border-b border-border/50 pb-2">
-                  <span className="text-xs uppercase tracking-[0.3em] text-muted">
+                <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/50 pb-3">
+                  <span className="text-sm text-muted">
                     Tags
                   </span>
                   <div className="flex flex-wrap gap-1 justify-end">
@@ -203,15 +200,15 @@ export function DossierPageView({ dossier }: { dossier: DossierPageViewModel }) 
                   </div>
                 </div>
                 {dossier.primaryLink && (
-                  <div className="flex items-center justify-between border-b border-border/50 pb-2">
-                    <span className="text-xs uppercase tracking-[0.3em] text-muted">
+                  <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/50 pb-3">
+                    <span className="text-sm text-muted">
                       Link
                     </span>
                     <a
                       href={dossier.primaryLink.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-sm text-accent hover:text-accent-dim transition-colors truncate max-w-[60%] text-right"
+                      className="text-sm text-accent hover:text-accent-dim transition-colors break-words text-right"
                     >
                       {dossier.primaryLink.label}
                       <span className="text-muted/50">
@@ -228,15 +225,15 @@ export function DossierPageView({ dossier }: { dossier: DossierPageViewModel }) 
             {/* Right: Summary + Notes */}
             <div>
               <div className="flex items-center gap-3 mb-6">
-                <SectionDot />
-                <h2 className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted">
+                <PublicIcon name="archive" />
+                <h2 className="public-section-heading">
                   Intelligence Brief
                 </h2>
               </div>
 
               <div className="text-base text-foreground/70 leading-relaxed space-y-6">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-muted mb-2">
+                  <p className="text-sm text-muted mb-2">
                     Summary
                   </p>
                   <p>{dossier.summary}</p>
@@ -244,10 +241,10 @@ export function DossierPageView({ dossier }: { dossier: DossierPageViewModel }) 
 
                 {dossier.notes && (
                   <div>
-                    <p className="text-xs uppercase tracking-[0.3em] text-muted mb-2">
+                    <p className="text-sm text-muted mb-2">
                       Notes
                     </p>
-                    <p className="text-sm text-foreground/50 border-l-2 border-accent/20 pl-4">
+                    <p className="text-base text-foreground/75 leading-relaxed">
                       {dossier.notes}
                     </p>
                   </div>
@@ -260,11 +257,11 @@ export function DossierPageView({ dossier }: { dossier: DossierPageViewModel }) 
 
       {/* Attached Files */}
       {dossier.files.length > 0 && (
-        <section className="border-b border-border">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16">
+        <section className="public-section">
+          <div className="public-container">
             <div className="flex items-center gap-3 mb-8">
-              <SectionDot />
-              <h2 className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted">
+              <PublicIcon name="archive" />
+              <h2 className="public-section-heading">
                 Attached Files
               </h2>
             </div>
@@ -273,9 +270,9 @@ export function DossierPageView({ dossier }: { dossier: DossierPageViewModel }) 
               {dossier.files.map((file, i) => (
                 <div key={i}>
                   {file.type === "audio" ? (
-                    <div className="border border-accent/20 bg-surface p-4">
-                      <p className="text-xs uppercase tracking-[0.3em] text-muted mb-3">
-                        ♫ {file.name}
+                    <div className="public-card">
+                      <p className="flex items-center gap-2 text-sm text-muted mb-3">
+                        <PublicIcon name="music" /> {file.name}
                       </p>
                       <audio
                         controls
@@ -286,9 +283,9 @@ export function DossierPageView({ dossier }: { dossier: DossierPageViewModel }) 
                       </audio>
                     </div>
                   ) : file.type === "video" ? (
-                    <div className="border border-accent/20 bg-surface p-4">
-                      <p className="text-xs uppercase tracking-[0.3em] text-muted mb-3">
-                        ▶ {file.name}
+                    <div className="public-card">
+                      <p className="flex items-center gap-2 text-sm text-muted mb-3">
+                        <PublicIcon name="play" /> {file.name}
                       </p>
                       {file.url.includes("drive.google.com") ||
                       file.url.includes("youtube.com") ||
@@ -297,6 +294,7 @@ export function DossierPageView({ dossier }: { dossier: DossierPageViewModel }) 
                           <iframe
                             src={file.url}
                             className="absolute inset-0 w-full h-full border-0"
+                            title={file.name}
                             allow="autoplay; encrypted-media"
                             allowFullScreen
                           />
@@ -308,9 +306,9 @@ export function DossierPageView({ dossier }: { dossier: DossierPageViewModel }) 
                       )}
                     </div>
                   ) : file.type === "image" ? (
-                    <div className="border border-accent/20 bg-surface p-4">
-                      <p className="text-xs uppercase tracking-[0.3em] text-muted mb-3">
-                        ◻ {file.name}
+                    <div className="public-card">
+                      <p className="flex items-center gap-2 text-sm text-muted mb-3">
+                        <PublicIcon name="archive" /> {file.name}
                       </p>
                       <div className="relative max-w-lg">
                         <Image
@@ -329,7 +327,7 @@ export function DossierPageView({ dossier }: { dossier: DossierPageViewModel }) 
                       target="_blank"
                       rel="noopener noreferrer"
                       download
-                      className="flex items-center justify-between border border-border hover:border-accent/40 bg-surface p-4 transition-colors group"
+                      className="public-card flex items-center justify-between gap-4 hover:border-accent/40 transition-colors group"
                     >
                       <span className="text-sm text-foreground/80 group-hover:text-accent transition-colors">
                         {file.name}
@@ -348,9 +346,11 @@ export function DossierPageView({ dossier }: { dossier: DossierPageViewModel }) 
 
       {/* Terminal Readout */}
       {showTerminalReadout && (
-        <section className="border-b border-border">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16">
-            <div className="bg-surface border border-border p-6 font-mono">
+        <section className="public-section">
+          <div className="public-container">
+            <details className="public-disclosure">
+              <summary><PublicIcon name="terminal" /> Terminal Readout</summary>
+            <div className="public-disclosure-content font-mono">
               <p className="text-xs text-muted mb-4">
                 &gt; BARCODE_NETWORK // DOSSIER QUERY
               </p>
@@ -370,18 +370,19 @@ export function DossierPageView({ dossier }: { dossier: DossierPageViewModel }) 
                 </p>
               </div>
             </div>
+            </details>
           </div>
         </section>
       )}
 
       {/* Back link */}
       <section>
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-12">
+        <div className="public-container pb-10">
           <Link
             href={backHref}
-            className="inline-flex items-center text-sm uppercase tracking-widest text-muted hover:text-accent transition-colors"
+            className="public-button"
           >
-            ← {backLabel}
+            <PublicIcon name="arrow" className="rotate-180" /> {backLabel}
           </Link>
         </div>
       </section>
@@ -401,8 +402,8 @@ function InfoRow({
   colorClass?: string;
 }) {
   return (
-    <div className="flex items-center justify-between border-b border-border/50 pb-2">
-      <span className="text-xs uppercase tracking-[0.3em] text-muted">
+    <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/50 pb-3">
+      <span className="text-sm text-muted">
         {label}
       </span>
       <span

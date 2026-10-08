@@ -1,5 +1,5 @@
 import { databasePage } from "@/content";
-import { PageHero } from "@/components/LiveEffects";
+import { PublicIcon } from "@/components/PublicIcon";
 import { DatabaseTable } from "@/components/DatabaseTable";
 import { getDatabaseAggregateStats } from "@/lib/database-stats";
 import type { Metadata } from "next";
@@ -28,21 +28,19 @@ const databaseTerminalQuery = [
 
 export default function DatabasePage() {
   return (
-    <div className="pt-14">
+    <div className="public-page">
       {/* Header */}
-      <section className="border-b border-border noise-bg">
-        <div className="mx-auto max-w-7xl px-4 pb-14 pt-12 sm:px-6 sm:pb-16 sm:pt-14">
-          <PageHero
-            label={databasePage.hero.label}
-            heading={databasePage.hero.heading}
-            description={databasePage.hero.description}
-          />
+      <section className="public-section">
+        <div className="public-container">
+          <p className="public-kicker"><PublicIcon name="archive" /> {databasePage.hero.label}</p>
+          <h1 className="public-title">{databasePage.hero.heading}</h1>
+          <p className="public-intro">{databasePage.hero.description}</p>
         </div>
       </section>
 
       {/* Stats Bar */}
-      <section className="border-b border-border bg-surface">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-4">
+      <section className="public-section--muted border-y border-border">
+        <div className="public-container py-5">
           <div className="flex flex-wrap gap-6">
             <StatItem label="Total Dossiers" value={databaseStats.totalCount.toString()} />
             <StatItem
@@ -66,16 +64,18 @@ export default function DatabasePage() {
       </section>
 
       {/* Database Table — interactive with search + filters */}
-      <section className="border-b border-border">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16">
+      <section className="public-section">
+        <div className="public-container">
           <DatabaseTable entries={databaseEntries} />
         </div>
       </section>
 
       {/* Terminal Readout */}
-      <section>
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-16">
-          <div className="bg-surface border border-border p-6 font-mono">
+      <section className="public-section">
+        <div className="public-container">
+          <details className="public-disclosure">
+            <summary><PublicIcon name="terminal" /> Database query details</summary>
+          <div className="public-disclosure-content font-mono">
             <p className="text-xs text-muted mb-4">
               &gt; BARCODE_NETWORK // DATABASE QUERY
             </p>
@@ -89,6 +89,7 @@ export default function DatabasePage() {
               </p>
             </div>
           </div>
+          </details>
         </div>
       </section>
     </div>
@@ -99,7 +100,7 @@ function StatItem({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center gap-2">
       <span className="text-sm font-bold text-accent">{value}</span>
-      <span className="text-xs text-muted uppercase tracking-wider">{label}</span>
+      <span className="text-sm text-muted">{label}</span>
     </div>
   );
 }

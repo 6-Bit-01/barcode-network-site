@@ -1,111 +1,152 @@
 "use client";
-
 import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useLiveStatus } from "./LiveStatusProvider";
 import { GlitchText } from "./GlitchText";
-import { siteConfig } from "@/content";
+import { PublicIcon, type PublicIconName } from "./PublicIcon";
+import { siteConfig, externalLinks } from "@/content";
 
 const navItems = [
-  { href: "/", label: "HQ" },
-  { href: "/terminal", label: "Terminal" },
-  { href: "/radio", label: "Radio" },
-  { href: "/bnl", label: "BNL-01 Hub" },
-  { href: "/contests", label: "Contests" },
-  { href: "/releases", label: "Releases" },
-  { href: "/database", label: "Database" },
-  { href: "/transmissions", label: "Transmissions" },
-  { href: "/merch", label: "Merch" },
-];
-
-const mobileNavItems = navItems.map((item) =>
-  item.href === "/terminal" ? { ...item, label: "Terminal Archive" } : item,
-);
+  { href: "/", label: "HQ", icon: "globe" },
+  { href: "/releases", label: "Music", icon: "music" },
+  { href: "/radio", label: "Radio", icon: "radio" },
+] satisfies { href: string; label: string; icon: PublicIconName }[];
+const exploreItems = [
+  { href: "/contests", label: "Contests", icon: "trophy" },
+  { href: "/merch", label: "Merch", icon: "merch" },
+  { href: "/database", label: "Database", icon: "archive" },
+  { href: "/transmissions", label: "Transmissions", icon: "send" },
+  { href: "/bnl", label: "BNL-01 Hub", icon: "bnl" },
+  { href: "/terminal", label: "Terminal Archive", icon: "terminal" },
+] satisfies { href: string; label: string; icon: PublicIconName }[];
 
 function isNavItemActive(pathname: string, href: string) {
-  if (href === "/radio") {
+  if (href === "/radio")
     return pathname === "/radio" || pathname.startsWith("/radio/");
-  }
-  if (href === "/bnl") {
+  if (href === "/bnl")
     return (
       pathname === "/bnl" ||
       pathname.startsWith("/bnl/") ||
       pathname === "/journal" ||
       pathname.startsWith("/journal/")
     );
-  }
+  if (href === "/database" || href === "/transmissions")
+    return pathname === href || pathname.startsWith(`${href}/`);
   return pathname === href;
 }
 
 export function Header() {
   const pathname = usePathname();
   const { siteShowMode, queueHref, streamUrl } = useLiveStatus();
-
-  const liveHref = queueHref ?? (siteShowMode === "broadcast_live" ? streamUrl || "/radio" : null);
-  const liveLabel = siteShowMode === "broadcast_live" ? "BARCODE RADIO LIVE" : siteShowMode === "intake_open" ? "SUBMISSIONS OPEN" : null;
+  const liveHref =
+    queueHref ??
+    (siteShowMode === "broadcast_live" ? streamUrl || "/radio" : null);
+  const liveLabel =
+    siteShowMode === "broadcast_live"
+      ? "BARCODE RADIO LIVE"
+      : siteShowMode === "intake_open"
+        ? "SUBMISSIONS OPEN"
+        : null;
   const isExternalLiveHref = Boolean(liveHref && liveHref.startsWith("http"));
-
+  const renderLink = (
+    item: (typeof exploreItems)[number] | (typeof navItems)[number],
+  ) => {
+    const isActive = isNavItemActive(pathname, item.href);
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        aria-current={isActive ? "page" : undefined}
+        className="public-nav-link"
+        onClick={(event) =>
+          event.currentTarget.closest("details")?.removeAttribute("open")
+        }
+      >
+        <PublicIcon name={item.icon} />
+        {item.label}
+      </Link>
+    );
+  };
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 border-b border-border bg-background/95 backdrop-blur-sm">
+    <header className="public-header fixed top-0 left-0 right-0 z-50 border-b border-border bg-background/95 backdrop-blur-sm">
       <div className="mx-auto max-w-7xl px-4 sm:px-6">
-        <div className="flex h-14 items-center justify-between">
-          <Link href="/" className="flex items-center gap-3 group">
+        <div className="flex h-14 items-center justify-between gap-2">
+          <Link
+            href="/"
+            className="flex shrink-0 items-center gap-2.5 group"
+            aria-label="BARCODE Network home"
+          >
             <Image
               src={siteConfig.logo}
-              alt={siteConfig.name}
-              width={512}
-              height={512}
-              className="rounded-sm glitch-hover w-[32px] sm:w-[36px]"
+              alt=""
+              width={36}
+              height={36}
+              className="w-8 rounded-sm"
               unoptimized
             />
             <div className="flex flex-col">
               <GlitchText
                 text="BARCODE"
-                className="text-base font-bold tracking-[0.3em] text-accent uppercase animate-glow-breathe"
+                className="text-sm font-bold tracking-[0.23em] text-accent uppercase"
                 intensity="low"
               />
-              <span className="text-xs tracking-[0.5em] text-muted uppercase">
+              <span className="text-[9px] tracking-[0.4em] text-muted uppercase">
                 NETWORK
               </span>
             </div>
           </Link>
-
-          <nav className="hidden xl:flex items-center gap-1" aria-label="Primary navigation">
-            {navItems.map((item) => {
-              const isActive = isNavItemActive(pathname, item.href);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  aria-current={isActive ? "page" : undefined}
-                  className={`min-h-11 px-3 py-2 text-sm uppercase tracking-widest transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
-                    isActive
-                      ? "text-accent border-b border-accent"
-                      : "text-muted hover:text-foreground"
-                  }`}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
+          <nav
+            className="hidden xl:flex items-center gap-1"
+            aria-label="Primary navigation"
+          >
+            {navItems.map(renderLink)}
+            <a
+              href={externalLinks.discord}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="public-nav-link"
+            >
+              <PublicIcon name="community" />
+              Community
+            </a>
+            <details
+              className="public-nav-explore"
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.currentTarget.removeAttribute("open");
+                  event.currentTarget.querySelector("summary")?.focus();
+                }
+              }}
+            >
+              <summary
+                className={`public-nav-link ${exploreItems.some((item) => isNavItemActive(pathname, item.href)) ? "text-foreground" : ""}`}
+              >
+                Explore <PublicIcon name="chevron" />
+              </summary>
+              <div className="public-nav-dropdown">
+                <p className="public-kicker px-3 pt-2">More of the Network</p>
+                {exploreItems.map(renderLink)}
+              </div>
+            </details>
           </nav>
-
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1 sm:gap-3">
             {liveHref && liveLabel && (
               <Link
                 href={liveHref}
                 target={isExternalLiveHref ? "_blank" : undefined}
                 rel={isExternalLiveHref ? "noopener noreferrer" : undefined}
-                className="flex items-center gap-2 px-2 py-1 border border-danger rounded text-xs sm:px-3 sm:text-sm uppercase tracking-wider text-danger live-indicator hover:bg-danger/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-danger transition-colors" aria-label={`Primary BARCODE Radio live and submissions status: ${liveLabel}`}
+                className="flex min-h-11 items-center gap-2 px-2 py-1 border border-danger rounded text-xs sm:px-3 sm:text-sm uppercase tracking-wider text-danger live-indicator hover:bg-danger/10 transition-colors"
+                aria-label={`Primary BARCODE Radio live and submissions status: ${liveLabel}`}
               >
                 <span className="w-2 h-2 rounded-full bg-danger" />
-                <span className="sm:hidden">{siteShowMode === "broadcast_live" ? "LIVE" : "SUBMIT"}</span>
+                <span className="sm:hidden">
+                  {siteShowMode === "broadcast_live" ? "LIVE" : "SUBMIT"}
+                </span>
                 <span className="hidden sm:inline">{liveLabel}</span>
               </Link>
             )}
-
             <MobileMenu pathname={pathname} />
           </div>
         </div>
@@ -113,52 +154,100 @@ export function Header() {
     </header>
   );
 }
-
 function MobileMenu({ pathname }: { pathname: string }) {
   const [open, setOpen] = useState(false);
   const menuId = "primary-mobile-navigation";
-
   return (
-    <div className="xl:hidden">
+    <div
+      className="xl:hidden"
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          setOpen(false);
+          event.currentTarget.querySelector("button")?.focus();
+        }
+      }}
+    >
       <button
         onClick={() => setOpen(!open)}
-        className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center p-2 text-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent transition-colors"
-        aria-label={open ? "Close primary navigation" : "Open primary navigation"}
+        className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center p-2 text-muted hover:text-foreground"
+        aria-label={
+          open ? "Close primary navigation" : "Open primary navigation"
+        }
         aria-expanded={open}
         aria-controls={menuId}
       >
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+        <svg
+          width="20"
+          height="20"
+          viewBox="0 0 20 20"
+          fill="none"
+          aria-hidden="true"
+        >
           {open ? (
-            <path d="M4 4L16 16M16 4L4 16" stroke="currentColor" strokeWidth="1.5" />
+            <path
+              d="M4 4L16 16M16 4L4 16"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            />
           ) : (
-            <>
-              <path d="M2 5H18" stroke="currentColor" strokeWidth="1.5" />
-              <path d="M2 10H18" stroke="currentColor" strokeWidth="1.5" />
-              <path d="M2 15H18" stroke="currentColor" strokeWidth="1.5" />
-            </>
+            <path
+              d="M2 5H18M2 10H18M2 15H18"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            />
           )}
         </svg>
       </button>
-
       {open && (
-        <div id={menuId} className="absolute top-14 left-0 right-0 max-h-[calc(100dvh-3.5rem)] overflow-y-auto overscroll-contain bg-background border-b border-border p-4">
-          <nav className="flex flex-col gap-2" aria-label="Mobile primary navigation">
-            {mobileNavItems.map((item) => {
+        <div
+          id={menuId}
+          className="absolute top-14 left-0 right-0 max-h-[calc(100dvh-3.5rem)] overflow-y-auto overscroll-contain bg-background border-b border-border p-4"
+        >
+          <nav
+            className="flex flex-col gap-1"
+            aria-label="Mobile primary navigation"
+          >
+            <p className="public-kicker px-3">Music & participation</p>
+            {[
+              ...navItems,
+              {
+                href: externalLinks.discord,
+                label: "Community",
+                icon: "community" as const,
+              },
+              ...exploreItems,
+            ].map((item, index) => {
               const isActive = isNavItemActive(pathname, item.href);
               return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setOpen(false)}
-                  aria-current={isActive ? "page" : undefined}
-                  className={`min-h-11 px-3 py-3 text-sm uppercase tracking-widest transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
-                    isActive
-                      ? "text-accent border-l-2 border-accent pl-4"
-                      : "text-muted hover:text-foreground"
-                  }`}
-                >
-                  {item.label}
-                </Link>
+                <div key={item.href}>
+                  {index === navItems.length + 1 && (
+                    <p className="public-kicker mt-5 px-3">
+                      Explore the Network
+                    </p>
+                  )}
+                  {item.href.startsWith("https://") ? (
+                    <a
+                      href={item.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="public-nav-link"
+                      onClick={() => setOpen(false)}
+                    >
+                      <PublicIcon name={item.icon} />
+                      {item.label}
+                    </a>
+                  ) : (
+                    <Link
+                      href={item.href}
+                      onClick={() => setOpen(false)}
+                      aria-current={isActive ? "page" : undefined}
+                      className="public-nav-link"
+                    >
+                      <PublicIcon name={item.icon} />
+                      {item.label}
+                    </Link>
+                  )}
+                </div>
               );
             })}
           </nav>

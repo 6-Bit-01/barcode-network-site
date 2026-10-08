@@ -327,6 +327,7 @@ test("Contests has its own canonical page and discovery links, with no ladder on
   const React = require("react");
   const render = require("react-dom/server").renderToStaticMarkup;
   const page = load("src/app/contests/page.tsx", {
+    "@/components/PublicIcon": load("src/components/PublicIcon.tsx"),
     "@/components/HellcatLadder": { HellcatLadder: () => React.createElement("section", { id: "hellcat-fixture" }) },
     "@/components/HellcatSchedule": load("src/components/HellcatSchedule.tsx", { "@/lib/hellcat-schedule": schedule }),
   });
@@ -355,13 +356,15 @@ test("Contests has its own canonical page and discovery links, with no ladder on
   assert.doesNotMatch(read("src/app/radio/page.tsx"), /Hellcat|hellcat|\/contests/);
 
   const { Footer } = load("src/components/Footer.tsx", {
+    "@/components/PublicIcon": load("src/components/PublicIcon.tsx"),
     "next/link": ({ children, ...props }) => React.createElement("a", props, children),
     "next/image": ({ src, alt }) => React.createElement("img", { src, alt }),
     "@/content": { siteConfig: { name: "BARCODE", logo: "/logo.png" }, externalLinks: { discord: "https://discord.example.test", tiktok: "https://tiktok.example.test" } },
   });
   for (const external of [true, false]) {
     const html = render(React.createElement(Footer, { submission: { external, href: external ? "https://auxchord.example.test" : "/queue", resourceLabel: "Submit", footerSummary: "BARCODE" } }));
-    assert.match(html, /href="\/contests"[^>]*>Community Contests<\/a>/);
+    const contestLabel = html.match(/<a[^>]*href="\/contests"[^>]*>([\s\S]*?)<\/a>/)?.[1].replace(/<[^>]+>/g, "");
+    assert.equal(contestLabel, "Community Contests");
     assert.match(html, external ? /href="https:\/\/auxchord\.example\.test"/ : /href="\/queue"/);
   }
   const sitemap = load("src/app/sitemap.ts", {

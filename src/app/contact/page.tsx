@@ -1,3 +1,4 @@
+import { PublicIcon } from "@/components/PublicIcon";
 import Link from "next/link";
 import type { Metadata } from "next";
 
@@ -19,28 +20,29 @@ const contactReasons = [
 
 export default function ContactPage() {
   return (
-    <div className="pt-14">
-      <section className="border-b border-border noise-bg">
-        <div className="mx-auto max-w-7xl px-4 pb-10 pt-12 sm:px-6 sm:pb-12 sm:pt-14">
-          <p className="mb-4 text-xs uppercase tracking-[0.5em] text-muted">
+    <div className="public-page">
+      <section className="public-section">
+        <div className="public-container">
+          <p className="public-kicker">
             BARCODE NETWORK
           </p>
-          <h1 className="max-w-4xl text-3xl font-black uppercase tracking-[0.16em] text-foreground sm:text-5xl">
+          <h1 className="public-title">
             Contact
           </h1>
-          <p className="mt-5 max-w-3xl text-sm leading-7 text-muted sm:text-base">
+          <p className="public-intro">
             Support, legal questions, privacy requests, copyright/takedown notices,
             security reports, and accessibility feedback all route here.
           </p>
         </div>
       </section>
 
-      <section>
-        <div className="mx-auto grid max-w-7xl gap-6 px-4 py-12 sm:px-6 sm:py-16 lg:grid-cols-[1fr_1.2fr]">
-          <div className="border border-border bg-surface p-6 sm:p-8">
+      <section className="public-section">
+        <div className="public-container grid gap-6 lg:grid-cols-[1fr_1.2fr]">
+          <div className="public-card">
             <h2 className="mb-5 text-sm font-bold uppercase tracking-[0.3em] text-accent">
               BARCODE Network
             </h2>
+            <PublicIcon name="mail" className="public-icon mb-5" />
             <address className="not-italic text-sm leading-7 text-muted sm:text-base">
               10650 SE 174th St
               <br />
@@ -55,14 +57,14 @@ export default function ContactPage() {
             </address>
           </div>
 
-          <div className="border border-border bg-background p-6 sm:p-8">
+          <div className="public-card">
             <h2 className="mb-5 text-sm font-bold uppercase tracking-[0.3em] text-foreground">
               Contact Reasons
             </h2>
             <ul className="grid gap-3 text-sm text-muted sm:grid-cols-2 sm:text-base">
               {contactReasons.map((reason) => (
-                <li key={reason} className="border border-border bg-surface/60 p-3">
-                  {reason}
+                <li key={reason} className="flex items-center gap-3 py-2">
+                  <PublicIcon name="check" className="h-4 w-4 shrink-0 text-accent" />{reason}
                 </li>
               ))}
             </ul>
@@ -73,7 +75,7 @@ export default function ContactPage() {
             </p>
             <Link
               href="/legal"
-              className="mt-6 inline-flex border border-accent px-4 py-3 text-xs uppercase tracking-[0.25em] text-accent transition-colors hover:bg-accent hover:text-background"
+              className="public-button mt-6"
             >
               Legal / Privacy
             </Link>

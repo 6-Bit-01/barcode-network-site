@@ -1,18 +1,17 @@
 .discovery {
   display: grid;
-  grid-template-areas: "intro" "feature" "schedule";
-  gap: 1.5rem;
+  grid-template-areas: "intro" "schedule" "feature";
+  gap: 2rem;
   align-items: start;
 }
 .intro { grid-area: intro; min-width: 0; }
 .feature { grid-area: feature; min-width: 0; }
-.schedule { grid-area: schedule; min-width: 0; }
-
+.schedule { grid-area: schedule; min-width: 0; display: grid; gap: 1.5rem; }
 @media (min-width: 1024px) {
   .discovery {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr);
     grid-template-rows: min-content 1fr;
     grid-template-areas: "intro feature" "schedule feature";
-    column-gap: 2rem;
+    column-gap: 4rem;
   }
 }

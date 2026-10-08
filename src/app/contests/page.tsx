@@ -74,9 +74,10 @@ export default function ContestsPage() {
               <HellcatSchedule />
               <p className="mt-5 max-w-xl text-sm leading-relaxed text-foreground/80">Send your track into the KOTH channel and put your signal to the test. Songs hit community radio live, get reviewed by <span className="font-mono text-accent">@reviewcrew</span> and face the verdict in real time.</p>
               <ul className="mt-6 space-y-3 text-sm text-foreground/90">
-                {["Live listening // Real ears on your music", "Honest feedback // No static", "A unique winner shout-out // Your signal amplified"].map((item) => (
+                {["Live listening // Real ears on your music", "Honest feedback // No static", "Top three reach the radio ladder // Featured below", "A unique winner shout-out // Your signal amplified"].map((item) => (
                   <li key={item} className="flex gap-3"><span aria-hidden="true" className="font-mono text-accent">&gt;</span><span>{item}</span></li>
                 ))}
+                <li className="flex gap-3"><span aria-hidden="true" className="font-mono text-accent">&gt;</span><a href="#hellcat-ladder" className="text-accent underline underline-offset-4 transition-colors hover:text-foreground">Featured audio on the website // Listen below <span aria-hidden="true">↓</span></a></li>
               </ul>
               <p className="mt-7 border-t border-accent/20 pt-4 font-mono text-xs uppercase tracking-wider text-accent">Zero toxicity // All vibes</p>
             </li>

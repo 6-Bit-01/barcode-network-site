@@ -1,3 +1,4 @@
+export const poseScale = (asset, frame) => asset.scale * (frame?.bodyCalibration ?? 1);
 import {authoredPoseAnchor} from './fight-pose-anchors.mjs';
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const pose = (head, torso, legs, grip) => ({head, torso, legs, grip});
@@ -199,7 +200,7 @@ export function compileWeaponOrigins(asset, weaponArt) {
   const result = {weaponOrigins:{},weaponThrowOrigins:{}};
   const index = poseFrameIndex(asset,{clip:'punch',elapsed:asset.data.contactMs ?? 170});
   for (const facing of ['right','left']) {
-    const frame = asset.data.frames[facing][index], scale = asset.scale;
+    const frame = asset.data.frames[facing][index], scale = poseScale(asset,frame);
     const attachments = asset.poseAttachments?.[facing]?.[index] ?? resolvePoseAttachments(frame,'punch',index,facing);
     if(!attachments.grip)continue;
     const held = weaponAttachment({facing},attachments);

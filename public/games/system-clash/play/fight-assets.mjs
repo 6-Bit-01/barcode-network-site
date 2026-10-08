@@ -1,4 +1,4 @@
-import {compileWeaponOrigins,resolvePoseAttachments,poseFrameIndex,weaponAttachment} from './fight-attachments.mjs';
+import {poseScale,compileWeaponOrigins,resolvePoseAttachments,poseFrameIndex,weaponAttachment} from './fight-attachments.mjs';
 import {deletionDefinition} from './deletion-library.mjs';
 const ACTIONS = ['idle','walk','crouch','block','punch','kick','high','low','grabbed','thrown','knockdown','getup'];
 
@@ -28,6 +28,7 @@ export function compileFightClip(data, image, manifest, name) {
       const frame = frames[index], rect = frame?.rect, anchor = frame?.anchor;
       if (!Array.isArray(rect) || rect.length !== 4 || !rect.every(Number.isFinite) || rect[0] < 0 || rect[1] < 0 || rect[2] <= 0 || rect[3] <= 0 || rect[0]+rect[2] > image.width+1 || rect[1]+rect[3] > image.height+1) throw new Error(`${name}: source pose is outside its image.`);
       if (!Array.isArray(anchor) || anchor.length !== 2 || !anchor.every(Number.isFinite)) throw new Error(`${name}: missing floor anchor.`);
+      if (frame.bodyCalibration !== undefined && (!Number.isFinite(frame.bodyCalibration) || frame.bodyCalibration < .75 || frame.bodyCalibration > 1.4)) throw new Error(`${name}: invalid native body calibration.`);
       if (frame.offset !== undefined && (!Array.isArray(frame.offset) || frame.offset.length !== 2 || !frame.offset.every(Number.isFinite))) throw new Error(`${name}: invalid whole-pose offset.`);
     }
   }
@@ -45,17 +46,17 @@ export function combatMetadata(art,weaponArt) {
     reactionStartMs:asset.data.reactionStartMs,
     ...(name==='thrown'?{airborneStartMs:asset.timeline.entries[1]?.start??0,airborneExtendedMs:asset.timeline.entries[2]?.start??0,airborneEndMs:Math.max(0,asset.timeline.entries.at(-1).start-.001)}:{}),
     loop:asset.data.loop ?? (name === 'idle' || name === 'walk'),
-    endOffsetX:Object.fromEntries(['left','right'].map(facing=>[facing,(asset.data.frames[facing].at(-1).offset?.[0] ?? 0)*asset.scale])),
-    topOffsets:Object.fromEntries(['left','right'].map(facing=>[facing,Math.min(...asset.data.frames[facing].map(frame=>((frame.opaqueBounds?.[1]??0)+(frame.offset?.[1]??0)-frame.anchor[1])*asset.scale))])),
+    endOffsetX:Object.fromEntries(['left','right'].map(facing=>[facing,(asset.data.frames[facing].at(-1).offset?.[0] ?? 0)*poseScale(asset,asset.data.frames[facing].at(-1))])),
+    topOffsets:Object.fromEntries(['left','right'].map(facing=>[facing,Math.min(...asset.data.frames[facing].map(frame=>((frame.opaqueBounds?.[1]??0)+(frame.offset?.[1]??0)-frame.anchor[1])*poseScale(asset,frame)))])),
     ...(Number.isFinite(asset.data.channelMs)?{channelMs:asset.data.channelMs}:{}),
     ...(name==='delete-nail'?Object.fromEntries(['grip','head','torso'].map(site=>['contact'+site[0].toUpperCase()+site.slice(1)+'Origins',Object.fromEntries(['left','right'].map(facing=>{
       const index=poseFrameIndex(asset,{clip:name,elapsed:asset.data.contactMs,facing}),frame=asset.data.frames[facing][index],offset=frame.offset??[0,0];
       const point=resolvePoseAttachments(frame,name,index,facing,fighter.manifest.id)[site];
-      return [facing,{x:(point.x+offset[0]-frame.anchor[0])*asset.scale,y:(point.y+offset[1]-frame.anchor[1])*asset.scale}];
+      return [facing,{x:(point.x+offset[0]-frame.anchor[0])*poseScale(asset,frame),y:(point.y+offset[1]-frame.anchor[1])*poseScale(asset,frame)}];
     }))])):{}),
     ...(name==='delete-nail'?{contactNailTipOrigins:Object.fromEntries(['left','right'].map(facing=>{
       const index=poseFrameIndex(asset,{clip:name,elapsed:asset.data.contactMs,facing}),frame=asset.data.frames[facing][index],offset=frame.offset??[0,0],point=resolvePoseAttachments(frame,name,index,facing,fighter.manifest.id).grip;
-      return [facing,{x:(point.x+offset[0]-frame.anchor[0])*asset.scale-.3,y:(point.y+offset[1]-frame.anchor[1])*asset.scale+112}];
+      return [facing,{x:(point.x+offset[0]-frame.anchor[0])*poseScale(asset,frame)-.3,y:(point.y+offset[1]-frame.anchor[1])*poseScale(asset,frame)+112}];
     }))}:{}),
     ...(name==='punch'&&weaponArt?compileWeaponOrigins(asset,weaponArt):{}),
     ...(name==='pickup'?{
@@ -64,8 +65,8 @@ export function combatMetadata(art,weaponArt) {
         const index=poseFrameIndex(asset,{clip:name,elapsed:asset.data.contactMs,facing});
         const frame=asset.data.frames[facing][index],offset=frame.offset??[0,0];
         const points=resolvePoseAttachments(frame,name,index,facing,fighter.manifest.id);
-        return [facing,{x:(points.grip.x+offset[0]-frame.anchor[0])*asset.scale,
-          y:(points.grip.y+offset[1]-frame.anchor[1])*asset.scale,angle:weaponAttachment({facing},points).angle}];
+        return [facing,{x:(points.grip.x+offset[0]-frame.anchor[0])*poseScale(asset,frame),
+          y:(points.grip.y+offset[1]-frame.anchor[1])*poseScale(asset,frame),angle:weaponAttachment({facing},points).angle}];
       })),
     }:{}),
   }])));

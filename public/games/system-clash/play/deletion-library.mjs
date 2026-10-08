@@ -202,9 +202,10 @@ export function deletionPose(role,elapsed,fighterId='6-bit',clips=null) {
       if(t<b.grip)return held('walk',t);
       if(t<b.haul)return held('punch',(t-b.grip)*nativeContact(clips,'punch',170)/(b.gripContact-b.grip));
       if(t<b.captured)return held('delete-shove',t-b.haul);
-      if(t<b.close)return held('idle',t-b.captured);
-      if(t<b.present)return held('delete-pull',(t-b.close)*nativeContact(clips,'delete-pull',240)/(b.sealed-b.close));
-      return held('delete-present',t-b.present);
+      const contact=nativeContact(clips,'punch',170),duration=nativeDuration(clips,'punch',400);
+      if(t<b.close)return held('punch',(t-b.captured)*contact/(b.close-b.captured));
+      if(t<b.close+380)return held('punch',contact+(t-b.close)*(duration-contact)/380);
+      return held('idle',t-b.close-380);
     }
     if(t<b.gripContact)return held('high',210);
     if(t<b.captured)return held('grabbed',t-b.gripContact);
@@ -261,7 +262,9 @@ export function deletionPose(role,elapsed,fighterId='6-bit',clips=null) {
       if(t<b.captured)return held('power-kick',(t-b.bootWindup)*nativeContact(clips,'power-kick',240)/(b.bootContact-b.bootWindup));
       if(t<b.nailApproach)return held('delete-pull',t-b.captured);
       if(t<b.nailRaise)return held('walk',t-b.nailApproach);
-      if(t<b.present)return held('delete-nail',(t-b.nailRaise)*nativeContact(clips,'delete-nail',500)/(b.nailStrike-b.nailRaise));
+      if(t<b.nailStrike-180)return held('delete-nail',(t-b.nailRaise)*320/(b.nailStrike-180-b.nailRaise));
+      if(t<b.nailStrike+160)return held('delete-shove',(t-(b.nailStrike-180))*nativeContact(clips,'delete-shove',240)/180);
+      if(t<b.present)return held('delete-nail',nativeDuration(clips,'delete-nail',800)-1);
       return held('delete-present',t-b.present);
     }
     if(t<b.bootContact)return held('high',210);
@@ -300,9 +303,9 @@ export function deletionPose(role,elapsed,fighterId='6-bit',clips=null) {
     }
     if(t<b.upperCut)return held('high',210);
     if(t<b.bodyCut)return held('high',Math.min(280,70+t-b.upperCut));
-    if(t<b.fall)return held('low',Math.min(280,70+t-b.bodyCut));
-    if(t<b.prone)return held('knockdown',(t-b.fall)*nativeDuration(clips,'knockdown',630)/(b.prone-b.fall));
-    return held('knockdown',10000);
+    if(t<b.fall)return held('grabbed',Math.min(340,220+t-b.bodyCut));
+    if(t<b.prone)return held('grabbed',340);
+    return held('delete-suspended',0);
   }
   // Mac's accepted cable scene is deliberately unchanged.
   if(role==='attacker') {

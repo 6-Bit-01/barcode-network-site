@@ -264,7 +264,11 @@ export function createFightAudio(options={}){
     for(let i=0;i<data.length;i++)data[i]=random();
   }
   async function startAudio(){
-    if(pendingStart)return pendingStart;
+    if(pendingStart){
+      // A later trusted click/key can unlock a context first requested by controller polling.
+      if(context?.state==='suspended')try{context.resume()?.catch?.(()=>{});}catch{}
+      return pendingStart;
+    }
     pendingStart=(async()=>{
       try{
         if(!context){context=contextFactory();if(!context)return false;makeGraph();}

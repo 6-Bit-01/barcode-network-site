@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "System Override",
-  description: "Play BARCODE: System Override in your browser.",
+  title: "Hidden Games",
+  description: "Play BARCODE: System Override and System Clash Demo in your browser.",
   alternates: { canonical: "/system-override" },
 };
 
@@ -15,28 +15,60 @@ export default function SystemOverridePage() {
             BARCODE NETWORK
           </p>
           <h1 className="max-w-4xl text-3xl font-black uppercase tracking-[0.16em] text-foreground sm:text-5xl">
-            System Override
+            Hidden Games
           </h1>
           <p className="mt-5 max-w-3xl text-sm leading-7 text-muted sm:text-base">
-            Play BARCODE: System Override in your browser. Launch the game to
-            choose your controls and start playing.
+            Choose your game and step inside the Network.
           </p>
-          <a
-            href="/games/system-override/index.html"
-            className="mt-6 inline-flex border border-accent px-4 py-3 text-xs font-bold uppercase tracking-[0.25em] text-accent transition-colors hover:bg-accent hover:text-background focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent"
-          >
-            Play System Override
-          </a>
         </div>
       </section>
 
-      <section>
-        <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-10">
-          <p className="max-w-3xl text-sm leading-7 text-muted">
+      <section aria-label="Choose a game" className="mx-auto grid max-w-7xl gap-6 px-4 py-8 sm:grid-cols-2 sm:px-6 sm:py-10">
+        <article aria-labelledby="system-override-title" className="flex flex-col border border-accent/40 bg-background p-6 sm:p-8">
+          <p className="text-xs uppercase tracking-[0.3em] text-accent">
+            BARCODE: SYSTEM OVERRIDE
+          </p>
+          <h2 id="system-override-title" className="mt-4 text-2xl font-black uppercase tracking-wide text-foreground sm:text-3xl">
+            System Override
+          </h2>
+          <p className="mt-4 text-sm leading-7 text-muted">
+            Play System Override in your browser. Choose your controls and start
+            playing.
+          </p>
+          <p className="mt-4 text-sm leading-7 text-muted">
             Saved settings and progress belong to this browser on this site.
             Saves from the Makko version do not transfer automatically.
           </p>
-        </div>
+          <div className="mt-auto pt-6">
+            <a
+              href="/games/system-override/index.html"
+              className="inline-flex min-h-12 items-center justify-center border border-accent px-4 py-3 text-xs font-bold uppercase tracking-[0.25em] text-accent transition-colors hover:bg-accent hover:text-background focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent"
+            >
+              Play System Override
+            </a>
+          </div>
+        </article>
+
+        <article aria-labelledby="system-clash-title" className="flex flex-col border border-accent/40 bg-background p-6 sm:p-8">
+          <p className="text-xs uppercase tracking-[0.3em] text-accent">
+            BARCODE: SYSTEM CLASH DEMO
+          </p>
+          <h2 id="system-clash-title" className="mt-4 text-2xl font-black uppercase tracking-wide text-foreground sm:text-3xl">
+            System Clash Demo
+          </h2>
+          <p className="mt-4 text-sm leading-7 text-muted">
+            Choose from 13 BARCODE fighters. Play Solo CPU or Local Two Player
+            on the same device, with each fighter&apos;s own moves and Deletions.
+          </p>
+          <div className="mt-auto pt-6">
+            <a
+              href="/games/system-clash/play/index.html"
+              className="inline-flex min-h-12 items-center justify-center border border-accent px-4 py-3 text-xs font-bold uppercase tracking-[0.25em] text-accent transition-colors hover:bg-accent hover:text-background focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent"
+            >
+              Play System Clash Demo
+            </a>
+          </div>
+        </article>
       </section>
     </div>
   );

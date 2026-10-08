@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "portraitSize": [
+    256,
+    256
+  ],
+  "standingSize": [
+    320,
+    440
+  ],
+  "standingGroundY": 430,
+  "fighters": [
+    {
+      "id": "6-bit",
+      "name": "6 Bit",
+      "portrait": "assets/menu/6-bit-portrait.webp",
+      "standing": "assets/menu/6-bit-standing.webp",
+      "heightScale": 1
+    },
+    {
+      "id": "9-bit",
+      "name": "9 Bit",
+      "portrait": "assets/menu/9-bit-portrait.webp",
+      "standing": "assets/menu/9-bit-standing.webp",
+      "heightScale": 1.15
+    },
+    {
+      "id": "cache-back",
+      "name": "Cache Back",
+      "portrait": "assets/menu/cache-back-portrait.webp",
+      "standing": "assets/menu/cache-back-standing.webp",
+      "heightScale": 1
+    },
+    {
+      "id": "cliff",
+      "name": "Cliff",
+      "portrait": "assets/menu/cliff-portrait.webp",
+      "standing": "assets/menu/cliff-standing.webp",
+      "heightScale": 1
+    },
+    {
+      "id": "dj-floppydisc",
+      "name": "DJ Floppydisc",
+      "portrait": "assets/menu/dj-floppydisc-portrait.webp",
+      "standing": "assets/menu/dj-floppydisc-standing.webp",
+      "heightScale": 1
+    },
+    {
+      "id": "mac-modem",
+      "name": "Mac Modem",
+      "portrait": "assets/menu/mac-modem-portrait.webp",
+      "standing": "assets/menu/mac-modem-standing.webp",
+      "heightScale": 1
+    },
+    {
+      "id": "mr-nice-guy",
+      "name": "Mr Nice Guy",
+      "portrait": "assets/menu/mr-nice-guy-portrait.webp",
+      "standing": "assets/menu/mr-nice-guy-standing.webp",
+      "heightScale": 1
+    },
+    {
+      "id": "ms-mayhem",
+      "name": "Ms Mayhem",
+      "portrait": "assets/menu/ms-mayhem-portrait.webp",
+      "standing": "assets/menu/ms-mayhem-standing.webp",
+      "heightScale": 1
+    },
+    {
+      "id": "stolz",
+      "name": "STOLZ",
+      "portrait": "assets/menu/stolz-portrait.webp",
+      "standing": "assets/menu/stolz-standing.webp",
+      "heightScale": 1
+    },
+    {
+      "id": "kaveman-brown",
+      "name": "Kaveman Brown",
+      "portrait": "assets/menu/kaveman-brown-portrait.webp",
+      "standing": "assets/menu/kaveman-brown-standing.webp",
+      "heightScale": 1
+    },
+    {
+      "id": "dr3wbaby",
+      "name": "Dr3wBaby",
+      "portrait": "assets/menu/dr3wbaby-portrait.webp",
+      "standing": "assets/menu/dr3wbaby-standing.webp",
+      "heightScale": 1
+    },
+    {
+      "id": "ash-flowers",
+      "name": "Ash Flowers",
+      "portrait": "assets/menu/ash-flowers-portrait.webp",
+      "standing": "assets/menu/ash-flowers-standing.webp",
+      "heightScale": 1
+    },
+    {
+      "id": "wittyf0x",
+      "name": "WittyF0x",
+      "portrait": "assets/menu/wittyf0x-portrait.webp",
+      "standing": "assets/menu/wittyf0x-standing.webp",
+      "heightScale": 0.875
+    }
+  ]
+}

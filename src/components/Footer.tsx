@@ -127,7 +127,7 @@ export function Footer({ submission }: { submission: RadioSubmissionRouting }) {
               <Link
                 href="/system-override"
                 prefetch={false}
-                aria-label="Play System Override"
+                aria-label="Open hidden games"
                 className="rounded-sm focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent focus-visible:outline-offset-4"
               >
                 &copy;

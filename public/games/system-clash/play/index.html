@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#080a0e"><meta name="robots" content="noindex,follow"><title>BARCODE: SYSTEM CLASH — Demo</title><link rel="stylesheet" href="demo.css"></head>
+<body><div class="broadcast-grain" aria-hidden="true"></div>
+<header class="demo-header"><a href="/system-override">← Hidden games</a><span>BARCODE BROADCAST SYSTEM <b>DEMO / 01</b></span><button id="controls-open" type="button">Controls</button></header>
+<main id="demo-main">
+ <section id="title-screen" class="title-screen" aria-labelledby="title-heading">
+  <div class="title-fighters" aria-hidden="true"><img class="title-fighter title-fighter-one" src="assets/menu/6-bit-standing.webp" alt=""><img class="title-fighter title-fighter-two" src="assets/menu/9-bit-standing.webp" alt=""></div>
+  <div class="title-content"><p class="signal-label">TRANSMISSION FOUND / CHANNEL 06</p><h1 id="title-heading"><img class="title-logo" src="assets/menu/system-clash-logo.svg" alt="BARCODE: SYSTEM CLASH"></h1><p class="title-tagline">THE SIGNAL IS YOURS. FIGHT FOR IT.</p>
+   <div class="title-modes"><button id="solo-mode" type="button" disabled><span>01</span> SOLO VS CPU <i>→</i></button><button id="local-mode" type="button" disabled><span>02</span> LOCAL TWO-PLAYER <i>→</i></button></div>
+   <p class="demo-scope">13 playable fighters · 18 roster slots · Classic arcade controls</p><p class="demo-load" id="demo-load" role="status">Connecting to the roster…</p><button id="retry-demo" hidden type="button">Retry connection</button>
+  </div>
+ </section>
+ <section id="select-screen" class="select-screen" hidden aria-labelledby="select-heading">
+  <div class="select-heading"><p class="signal-label" id="select-mode">SOLO VS CPU</p><h1 id="select-heading">CHOOSE YOUR FIGHTER</h1><p id="selection-instruction" aria-live="polite">Player one selects.</p></div>
+  <div class="selection-stage">
+   <section class="fighter-panel player-one" aria-label="Player one preview"><img id="face-one" class="ghost-face" alt=""><img id="standing-one" class="standing-fighter" alt=""><div class="fighter-identity"><span class="player-tag">PLAYER ONE</span><h2 id="name-one">6 Bit</h2><p id="style-one"></p><span id="lock-one" class="lock-status">SELECTING</span></div></section>
+   <div class="selection-center"><div id="fighter-grid" class="fighter-grid" role="group" aria-label="18-slot fighter roster"></div><div class="selection-actions"><button id="random-fighter" type="button">↻ RANDOM</button><button id="confirm-fighter" type="button" class="primary">LOCK FIGHTER</button></div><button id="enter-arena" class="enter-arena" hidden type="button">ENTER THE ARENA →</button><p class="selection-hint">Arrow keys to browse · Enter to lock · Esc to go back</p></div>
+   <section class="fighter-panel player-two" aria-label="Opponent preview"><img id="face-two" class="ghost-face" alt=""><img id="standing-two" class="standing-fighter" alt=""><div class="fighter-identity"><span id="opponent-tag" class="player-tag">CPU OPPONENT</span><h2 id="name-two">9 Bit</h2><p id="style-two"></p><span id="lock-two" class="lock-status">WAITING</span></div></section>
+  </div><button id="selection-back" class="back-button" type="button">← BACK</button><p class="future-note">Future roster: Hellcat · PapaOak · Mutilator · Doofnoobler · One unknown signal</p>
+ </section>
+</main>
+<footer class="demo-footer"><span>BARCODE: SYSTEM CLASH / DEMO</span><div><button id="demo-sound" type="button" aria-pressed="false">Sound on</button><label><input id="demo-motion" type="checkbox"> Reduce motion</label></div><a href="/releases">BARCODE music ↗</a></footer>
+<dialog id="controls-dialog" aria-labelledby="controls-heading"><button id="controls-close" class="dialog-close" type="button" aria-label="Close controls">×</button><p class="signal-label">CLASSIC ARCADE / TWO PLAYERS</p><h2 id="controls-heading">CONTROL THE CLASH</h2><p>Solo supports keyboard and onscreen controls. Local two-player shares one keyboard.</p><table><thead><tr><th>Action</th><th>Player one</th><th>Player two</th></tr></thead><tbody><tr><td>Move / crouch</td><td>A / D / S</td><td>← / → / ↓</td></tr><tr><td>Jump</td><td>W</td><td>↑</td></tr><tr><td>High / low punch</td><td>U / J</td><td>7 / 4</td></tr><tr><td>High / low kick</td><td>I / K</td><td>8 / 5</td></tr><tr><td>Block</td><td>Space</td><td>0</td></tr><tr><td>Throw / pick up</td><td>L</td><td>6</td></tr><tr><td>Deletion</td><td>F</td><td>Enter</td></tr></tbody></table><p>Combine high + low punches or kicks for a power attack. Hold crouch for different attacks. Hold down + Throw to hurl an equipped weapon. Press P or Esc to pause.</p></dialog>
+<script type="module" src="demo.mjs"></script></body></html>

@@ -1604,11 +1604,19 @@ function cableWraps(ctx,match,prop,views,art,overlays) {
   ctx.restore();
 }
 
-function healthBar(ctx, fighter, index) {
+function healthBar(ctx, fighter, index, portrait) {
   const right = index === 1;
-  const x = right ? 758 : 58;
+  const x = right ? 758 : portrait ? 122 : 58;
   const y = 46;
-  const width = 464;
+  const width = portrait ? 400 : 464;
+  if(portrait){
+    const px=right?1166:30;
+    ctx.save();ctx.fillStyle='#10151ded';ctx.fillRect(px-3,12,86,86);
+    ctx.strokeStyle=right?'#788bb3':'#ae8263';ctx.lineWidth=2;ctx.strokeRect(px-3,12,86,86);
+    if(right){ctx.translate(px+80,0);ctx.scale(-1,1);ctx.drawImage(portrait,0,15,80,80);}
+    else ctx.drawImage(portrait,px,15,80,80);
+    ctx.restore();
+  }
   const value = clamp((fighter?.hp ?? fighter?.health ?? 100) / (fighter?.maxHp ?? 100), 0, 1);
   const accent = right ? '#a6abd3' : '#e6b879';
   ctx.fillStyle = '#06070acc';
@@ -1657,9 +1665,9 @@ function caption(ctx, title, subline, color = '#f1d2aa', size = 62) {
   if (subline) text(ctx, subline, 640, 220, 13, '#ddd0bd', 'center', '700', 'monospace');
 }
 
-function hud(ctx, match, paused, motionReview = false) {
-  healthBar(ctx, match.fighters?.[0], 0);
-  healthBar(ctx, match.fighters?.[1], 1);
+function hud(ctx, match, paused, motionReview = false, portraits = {}) {
+  healthBar(ctx, match.fighters?.[0], 0, portraits[match.fighters?.[0]?.id]);
+  healthBar(ctx, match.fighters?.[1], 1, portraits[match.fighters?.[1]?.id]);
   ctx.fillStyle = '#100f12ef';
   ctx.beginPath();
   ctx.moveTo(588, 13);
@@ -1794,7 +1802,7 @@ export function createFightRenderer(canvas) {
       vignette.addColorStop(1, '#0304077a');
       ctx.fillStyle = vignette;
       ctx.fillRect(0, 0, WIDTH, HEIGHT);
-      hud(ctx, match, scene.paused ?? match.paused ?? false,scene.motionReview??false);
+      hud(ctx, match, scene.paused ?? match.paused ?? false,scene.motionReview??false,scene.portraits??{});
     },
     resolveEvent(event,{match,views,art,deletionProp}) {
       event={...event,victimId:match.fighters[event.target]?.id};

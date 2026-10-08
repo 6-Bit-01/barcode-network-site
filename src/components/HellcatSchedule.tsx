@@ -19,7 +19,7 @@ export function HellcatSchedule() {
 
   return (
     <div className="mt-5 border-l-2 border-accent/50 pl-3">
-      <p className="font-mono text-sm font-bold text-accent">Saturdays at 2:45 PM NZST <span className="whitespace-nowrap">(UTC+12)</span></p>
+      <p className="font-mono text-sm font-bold text-accent">Sundays at 2:45 PM NZST <span className="whitespace-nowrap">(UTC+12)</span></p>
       {next && <p className="mt-2 text-xs leading-relaxed text-foreground/75">Next in your time: <time dateTime={next.toISOString()}>{localTime}</time></p>}
     </div>
   );

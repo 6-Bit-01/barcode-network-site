@@ -40,7 +40,8 @@ const dynamicSheets = {dyn_guard:"mac-guard-two-braids-v1.png",dyn_run:"mac-run-
   dyn_hold:"mac-hold-carry-two-braids-v1.png",dyn_weapon:"mac-weapon-poses-two-braids-v1.png",
   dyn_pipe_swing:"mac-pipe-swing-two-braids-v1.png",dyn_scatter_blaster:"mac-scatter-blaster-grips-v1.png",
   dyn_coil_rifle:"mac-coil-rifle-grips-v1.png",dyn_plasma_disc:"mac-plasma-disc-grips-v1.png",
-  dyn_carry_low:"mac-carry-low-front-v2.png"};
+  dyn_carry_low:"mac-carry-low-front-v2.png",dyn_armed_walk:"mac-armed-walk-two-braids-v1.png",
+  dyn_armed_run:"mac-armed-run-two-braids-v1.png",dyn_disc_retained:"mac-plasma-disc-retained-two-braids-v1.png"};
 const dynamicImageHashes = {
   dyn_guard:"2a6ed176b8cefba33793f1d6633671322afc8555c01c725cbe8a9ca306e3ed85",
   dyn_run:"b78e958967d49d32eccb85a19594691e244e6023c34371a002099f3ec0cc4a23",
@@ -50,14 +51,30 @@ const dynamicImageHashes = {
   dyn_scatter_blaster:"36667f70a3e14bfba05baf4bdf86dda013bc83cb826d340bc3216faf97c274e7",
   dyn_coil_rifle:"cd1fd6a52cf1df9fd9ff43a1a047768dc8b4285f6b7488685a45f565e1ecb297",
   dyn_plasma_disc:"ad23988027d373b8ca10af1f8e4b99e3adb1cb441c1040b37b9b533e7a8ef8e8",
-  dyn_carry_low:"f60d950343d3198eee51f1147eacc232cf76d740d004c9a74c5c60b881df7a33"};
+  dyn_carry_low:"f60d950343d3198eee51f1147eacc232cf76d740d004c9a74c5c60b881df7a33",
+  dyn_armed_walk:"3b22399652ef4912163eceb1abdcd632e84f6ae3ba959fe8e1ba08cd23b05692",
+  dyn_armed_run:"8e2e20d6054e6d49de9f147609e24989cadd9a0bccd83faba499ff9516e57ecf",
+  dyn_disc_retained:"8c3ad1fd791ba4fa560cdcf1f22e8d7e06de91a8fbbac28ddb61d87ff598caf7"};
 const historicalDynamicImages = {
   "mac-guard-v1.png":"f3410efa856aa1ea7fcedf69bd1e37f8c259af8cfb315282fc81f08b235ca0ee",
   "mac-run-v1.png":"711c9993b6d39b0ce1fbc49897f154618c9d0baafad796a4bb236b2f6d9d4378",
   "mac-hold-carry-v1.png":"e40c210ed47efb4453d7add6d42250e766715825ff3943727203667d9939861c",
   "mac-weapon-poses-v1.png":"e59a6f8716d6d5b8fc3f4789dbc96cde64c94f186d99f6b2d8640f8033e4fba3"};
 const carryLowFrames = new Set(["carry_low_pickup","carry_low_hold","carry_low_stride","carry_low_pass","carry_low_windup","carry_low_release"]);
-const ordinaryDynamicFrames = [...carryLowFrames,"guard_brace","guard_step_a","guard_step_b","guard_impact",
+const armedLocomotionClips = {};
+for (const [action,holdMs] of [["walk",100],["run",75]]) armedLocomotionClips["armed-"+action] = {loop:true,
+  frames:["contact_a","pass_a","contact_b","pass_b"].map(suffix=>({frame:"armed_"+action+"_"+suffix,holdMs}))};
+const armedFrameSheets = new Map(Object.entries(armedLocomotionClips).flatMap(([key,clip])=>
+  clip.frames.map(entry=>[entry.frame,"dyn_armed_"+key.slice("armed-".length)])));
+const discRetainedFrames = new Set(["disc_jump_load","disc_jump_rise","disc_kick_chamber","disc_kick_contact","disc_kick_retract",
+  "disc_jump_descent","disc_landing","disc_counter_contact","disc_guard_brace","disc_guard_step_a","disc_guard_step_b","disc_guard_impact"]);
+const discRetainedAliases = {load:"disc_jump_load",takeoff:"disc_jump_rise",chamber:"disc_kick_chamber",
+  kick_extend:"disc_kick_contact",kick_contact:"disc_kick_contact",kick_retract:"disc_kick_retract",descent:"disc_jump_descent",
+  landing:"disc_landing",counter_contact:"disc_counter_contact",guard_brace:"disc_guard_brace",guard_step_a:"disc_guard_step_a",
+  guard_step_b:"disc_guard_step_b",guard_impact:"disc_guard_impact",hook_recovery:"plasma_disc_ready",idle_b:"plasma_disc_ready"};
+const discRetainedClips = Object.fromEntries(Object.entries(discRetainedAliases).map(([base,frame])=>
+  ["disc-carry."+base,{loop:false,frames:[{frame,holdMs:100}]}]));
+const ordinaryDynamicFrames = [...armedFrameSheets.keys(),...carryLowFrames,"guard_brace","guard_step_a","guard_step_b","guard_impact",
   "run_contact_a","run_pass_a","run_contact_b","run_pass_b","grab_reach","grab_hold","pummel_load","pummel_contact",
   "pickup_load","carry_hold","carry_step_a","carry_step_b","melee_load","melee_contact","melee_follow","fire_aim","fire_recoil","fire_ready"];
 const pipeSwingPhases = {
@@ -72,7 +89,8 @@ const embeddedWeaponSuffixes = {
   "plasma-disc":["ready","windup","release","walk_a","walk_b","run_a","run_b","guard","followthrough"]};
 const embeddedWeaponFrames = new Map(Object.entries(embeddedWeaponSuffixes)
   .flatMap(([kind,suffixes])=>suffixes.map(suffix=>[kind.replaceAll("-","_")+"_"+suffix,kind])));
-const embeddedFrameKinds = new Map([...pipeSwingFrames].map(frame=>[frame,"pipe"]).concat([...embeddedWeaponFrames]));
+const embeddedFrameKinds = new Map([...pipeSwingFrames].map(frame=>[frame,"pipe"]).concat([...embeddedWeaponFrames],
+  [...discRetainedFrames].map(frame=>[frame,"plasma-disc"])));
 const embeddedWeaponClips = {};
 for (const kind of Object.keys(embeddedWeaponSheets)) {
   const prefix = kind.replaceAll("-","_")+"_", disc = kind==="plasma-disc";
@@ -90,6 +108,7 @@ function checkNativeAnchor(anchor,rect) {
 }
 
 const heldWeaponKinds = ['pipe','crowbar','shock-baton','energy-blade','gravity-hammer','scatter-blaster','coil-rifle','plasma-disc'];
+const heldMeleeKinds = heldWeaponKinds.slice(0,5);
 function checkNativePolygons(polygons, rect) {
   assert(Array.isArray(polygons), 'Native overlap regions must be polygon arrays');
   for (const polygon of polygons) {
@@ -105,9 +124,9 @@ function checkNativePolygons(polygons, rect) {
     assert(Math.abs(area) > .01, 'Native overlap polygon has no area');
   }
 }
-function checkItemBindings(entry, rect) {
-  assert.deepEqual(Object.keys(entry.itemBindings || {}).sort(), [...heldWeaponKinds].sort(),
-    'Each equipped character cel must register all eight weapons');
+function checkItemBindings(entry, rect, kinds=heldWeaponKinds) {
+  assert.deepEqual(Object.keys(entry.itemBindings || {}).sort(), [...kinds].sort(),
+    'Each equipped character cel must register exactly its selected weapon family');
   const power = JSON.parse(read('assets/mac-street-power/mac-street-power-v1.json'));
   for (const [kind, binding] of Object.entries(entry.itemBindings)) {
     assert(Number.isFinite(binding.gripAnchor?.x) && Number.isFinite(binding.gripAnchor?.y) &&
@@ -148,23 +167,25 @@ function frameAssets() {
       assert.equal(supplemental.schemaVersion, 1); assert.equal(supplemental.actor, "mac"); assert.equal(supplemental.facing, "right");
       assert.equal(supplemental.baseRegistration, actor.registration);
       assert.equal(supplemental.baseRegistrationSHA256, actor.registrationSHA256, "Supplemental poses preserve the accepted Mac base");
-      assert.equal(supplemental.sheets.length, 9);
+      assert.equal(supplemental.sheets.length, 12);
       assert.deepEqual(supplemental.sheets.map(sheet => sheet.id).sort(), Object.keys(dynamicSheets).sort());
-      assert.equal(supplemental.frames.length, 61);
+      assert.equal(supplemental.frames.length, 81);
       assert.deepEqual(supplemental.frames.map(frame=>frame.id).sort(), [...ordinaryDynamicFrames,...embeddedFrameKinds.keys()].sort());
       for (const frame of supplemental.frames) {
         const embeddedKind = embeddedFrameKinds.get(frame.id);
         if (embeddedKind) {
-          assert.equal(frame.sheet,embeddedKind==="pipe"?"dyn_pipe_swing":embeddedWeaponSheets[embeddedKind]);
+          assert.equal(frame.sheet,discRetainedFrames.has(frame.id)?"dyn_disc_retained":
+            embeddedKind==="pipe"?"dyn_pipe_swing":embeddedWeaponSheets[embeddedKind]);
           assert.equal(frame.embeddedWeapon,embeddedKind,"Embedded cel must match its selected weapon");
           for (const key of ["gripAnchor","weaponAngle","itemBindings","handOcclusion"])
             assert(!Object.hasOwn(frame,key), "Complete embedded weapon cels must not attach a second item");
+          if (discRetainedFrames.has(frame.id)) assert(!Object.hasOwn(frame,"shotAnchor"),"Retained Disc transport cels must not introduce a second shot origin");
           if (embeddedWeaponFrames.has(frame.id)) {
             if (embeddedShotFrames.has(frame.id)) assert(Object.hasOwn(frame,"shotAnchor"),"Embedded gun/disc contact cel needs a native shot origin");
             if (Object.hasOwn(frame,"shotAnchor")) checkNativeAnchor(frame.shotAnchor,frame.source);
           }
         } else {
-          assert(!["dyn_pipe_swing",...Object.values(embeddedWeaponSheets)].includes(frame.sheet));
+          assert(!["dyn_pipe_swing","dyn_disc_retained",...Object.values(embeddedWeaponSheets)].includes(frame.sheet));
           assert(!Object.hasOwn(frame,"embeddedWeapon"));
           if (frame.sheet==="dyn_carry_low") {
             assert(carryLowFrames.has(frame.id),"Only the exact six complete support cels use the selected low-carry sheet");
@@ -172,7 +193,12 @@ function frameAssets() {
             checkNativeAnchor(frame.gripAnchor,frame.source);
             assert.equal(frame.handOcclusion?.length,2,"Both support palms must be registered");
             checkNativePolygons(frame.handOcclusion,frame.source);
+          } else if (armedFrameSheets.has(frame.id)) {
+            assert.equal(frame.sheet,armedFrameSheets.get(frame.id),"Armed movement cels retain the exact whole-body sheet");
+            checkItemBindings(frame,frame.source,heldMeleeKinds);
+            for (const binding of Object.values(frame.itemBindings)) assert(binding.handOcclusion.length>0,"Every armed grip retains a native palm mask");
           } else {
+            assert(!["dyn_armed_walk","dyn_armed_run"].includes(frame.sheet),"Only the exact eight armed movement cels use the armed sheets");
             assert(!carryLowFrames.has(frame.id),"Low support cels must retain their exact native sheet");
             checkItemBindings(frame, frame.source);
           }
@@ -180,7 +206,8 @@ function frameAssets() {
       }
       const pipeClips = new Set(Object.keys(pipeSwingPhases).map(phase=>"pipe-swing."+phase));
       const embeddedClips = new Map([...pipeClips].map(key=>[key,"pipe"])
-        .concat(Object.keys(embeddedWeaponClips).map(key=>[key,key.slice("weapon_".length).split(".")[0]])));
+        .concat(Object.keys(embeddedWeaponClips).map(key=>[key,key.slice("weapon_".length).split(".")[0]]),
+          Object.keys(discRetainedClips).map(key=>[key,"plasma-disc"])));
       for (const [key,clip] of Object.entries(supplemental.clips)) for (const entry of clip.frames)
         assert.equal(embeddedFrameKinds.get(entry.frame),embeddedClips.get(key),
           "Embedded weapon cels must belong exclusively to their own committed weapon clips");
@@ -189,6 +216,12 @@ function frameAssets() {
           "Pipe swing must preserve its six-cel phase order and bounded holds");
       for (const [key,clip] of Object.entries(embeddedWeaponClips)) assert.deepEqual(supplemental.clips[key],clip,
         "Embedded gun/disc clips must preserve their complete cels, order and bounded holds");
+      for (const [key,clip] of Object.entries(armedLocomotionClips)) assert.deepEqual(supplemental.clips[key],clip,
+        "Armed movement preserves exactly four ordered cels and bounded holds");
+      for (const [key,clip] of Object.entries(discRetainedClips)) assert.deepEqual(supplemental.clips[key],clip,
+        "Retained Disc replacement preserves each exact single-cel alias");
+      for (const [key,clip] of Object.entries(supplemental.clips)) for (const entry of clip.frames) if (armedFrameSheets.has(entry.frame))
+        assert(Object.hasOwn(armedLocomotionClips,key),"Armed movement cels are exclusive to their own movement clips");
       const baseFrames = new Map(registration.frames.map(frame => [frame.id, frame]));
       assert.equal(Object.keys(supplemental.baseGripAnchors).length, 42);
       for (const [frame, entry] of Object.entries(supplemental.baseGripAnchors)) checkItemBindings(entry, baseFrames.get(frame).source);
@@ -843,7 +876,7 @@ test("Playable Mac combat uses eight exact native whole-character cel banks and 
     const sequences = Array.from(moves, (move) => ["windup", "active", "recovery"].map((phase) => compiled.clips[move + "." + phase].frames.map((entry) => entry.frame).join(",")).join("|"));
     assert.equal(new Set(sequences).size, moves.length, "Fighting styles require distinct authored pose sequences");
   }
-  assert.equal(bank.actors.length, 8); assert.equal(assets.size, 35); assert.equal(sheets, 21);
+  assert.equal(bank.actors.length, 8); assert.equal(assets.size, 38); assert.equal(sheets, 24); assert.equal(cels,207);
   t.diagnostic(`${cels} complete cels on ${sheets} native PNGs; exact hashes, transparent nonoverlapping crops, measured scale and committed fighting clips verified`);
 });
 
@@ -909,7 +942,7 @@ test("Packaged gun and disc cels retain registered grips through acrobatics and 
       canvas,{compiled,images},pose,{x:500,feet:850,height:260,facing,weapon:player.weapon});
     if (attached) {
       assert.equal(result.item,"weapon_"+player.weapon.kind); assert(items.length>0,"Retained equipment must actually reach the production item painter");
-      const expectedScale=player.weapon.kind==="plasma-disc"?.7:.5;
+      const expectedScale=heldMeleeKinds.includes(player.weapon.kind)?1:player.weapon.kind==="plasma-disc"?.7:.5;
       assert.equal(pose.itemScale,expectedScale);
       for (const args of items) {
         assert.equal(args[1],result.item); assert.equal(args[2],result.handX); assert.equal(args[3],result.handY);
@@ -926,12 +959,26 @@ test("Packaged gun and disc cels retain registered grips through acrobatics and 
       assert.deepEqual(args.slice(1,5),[pose.frame.source.x,pose.frame.source.y,pose.frame.source.width,pose.frame.source.height]);
     }
   }
+  for (const kind of heldMeleeKinds) for (const action of ["walk","run"]) for (const facing of [-1,1]) {
+    const clip=supplemental.clips["armed-"+action];
+    assert.equal(clip.frames.length,4);
+    for (const entry of clip.frames) {
+      const stridePhase=(entry.startMs+entry.endMs)/2/clip.totalMs;
+      const player={hp:100,facing,mode:action,weapon:{kind,remaining:9},animation:{action,phase:action,ageMs:25,
+        weaponKind:kind,motion:{stridePhase,speed:action==="run"?429:260}}};
+      const before=JSON.parse(JSON.stringify(player)),pose=frames.sample(player,{player:true,compiled,supplemental});
+      assert.equal(pose.committedKey,"armed-"+action); assert.equal(pose.frame.id,entry.frame);
+      assert.equal(pose.frame.sheet,"dyn_armed_"+action); assert.equal(pose.supplemental,true);
+      assert.equal(pose.weaponStowed,false); assert(!pose.frame.embeddedWeapon);
+      assert.deepEqual(JSON.parse(JSON.stringify(pose.gripAnchor)),JSON.parse(JSON.stringify(supplemental.frames[entry.frame].itemBindings[kind].gripAnchor)));
+      assert(pose.handOcclusion?.length); drawWhole(pose,player,facing,true); assert.deepEqual(player,before);
+    }
+  }
   for (const kind of Object.keys(embeddedWeaponSheets)) {
     const prefix = kind.replaceAll("-","_")+"_", disc = kind==="plasma-disc";
     const cases = [{action:"idle",suffix:"ready"},{action:"walk",stride:.25,suffix:"walk_a"},
       {action:"walk",stride:.75,suffix:"walk_b"},{action:"run",stride:.25,suffix:"run_a"},
       {action:"run",stride:.75,suffix:"run_b"},{action:"guard",suffix:"guard"},
-      {action:"guard-creep",suffix:"guard"},
       ...["windup","active","recovery"].map(phase=>({action:disc?"weapon-disc":"weapon-fire",phase,
         suffix:disc?({windup:"windup",active:"release",recovery:"followthrough"}[phase]):({windup:"aim",active:"recoil",recovery:"ready"}[phase])}))];
     for (const value of cases) for (const facing of [-1,1]) {
@@ -948,7 +995,31 @@ test("Packaged gun and disc cels retain registered grips through acrobatics and 
       if (value.phase==="active") { assert(pose.shotAnchor); checkNativeAnchor(pose.shotAnchor,pose.frame.source); }
       drawWhole(pose,player,facing); assert.deepEqual(player,before,"Animation selection and drawing preserve carried weapon inventory");
     }
-    const retained = [{action:"jump",elevation:30,velocityZ:560},{action:"landing",landingAgeMs:30},
+    for (const facing of [-1,1]) {
+      const guard=supplemental.clips["guard-walk"];
+      for (const entry of guard.frames) {
+        const stridePhase=(entry.startMs+entry.endMs)/2/guard.totalMs;
+        const player={hp:100,facing,mode:"guard-creep",guarding:true,weapon:{kind,remaining:9},
+          animation:{action:"guard-creep",phase:"guard-creep",ageMs:25,weaponKind:kind,motion:{stridePhase,speed:57.2}}};
+        const before=JSON.parse(JSON.stringify(player)),pose=frames.sample(player,{player:true,compiled,supplemental});
+        assert.equal(pose.committedKey,"guard-walk"); assert.equal(pose.frame.id,disc?discRetainedAliases[entry.frame]:entry.frame);
+        assert.equal(pose.weaponStowed,false);
+        if (disc) { assert.equal(pose.frame.embeddedWeapon,kind); assert.equal(pose.gripAnchor,null); usedCels.add(pose.frame.id); }
+        else { assert(!pose.frame.embeddedWeapon); assert(pose.gripAnchor&&pose.handOcclusion?.length); }
+        drawWhole(pose,player,facing,!disc); assert.deepEqual(player,before);
+      }
+      const player={hp:100,facing,mode:"guard",guarding:true,weapon:{kind,remaining:9},animation:{action:"guard",phase:"guard",ageMs:25,weaponKind:kind}};
+      const before=JSON.parse(JSON.stringify(player)),impact=frames.sample(player,{player:true,compiled,supplemental,guardImpactAgeMs:40});
+      assert.equal(impact.committedKey,"guard-impact"); assert.equal(impact.frame.id,disc?"disc_guard_impact":"guard_impact");
+      assert.equal(impact.clipTimeMs,40); assert.equal(impact.weaponStowed,false);
+      if (disc) { assert.equal(impact.frame.embeddedWeapon,kind); assert.equal(impact.gripAnchor,null); usedCels.add(impact.frame.id); }
+      else assert(impact.gripAnchor&&impact.handOcclusion?.length);
+      drawWhole(impact,player,facing,!disc); assert.deepEqual(player,before);
+      const ended=frames.sample(player,{player:true,compiled,supplemental,guardImpactAgeMs:supplemental.clips["guard-impact"].totalMs});
+      assert.equal(ended.committedKey,"weapon_"+kind+".guard"); assert.equal(ended.frame.embeddedWeapon,kind);
+    }
+    const retained = [{action:"jump",elevation:30,velocityZ:560},{action:"jump",elevation:30,velocityZ:400},
+      {action:"jump",elevation:30,velocityZ:-350},{action:"landing",landingAgeMs:30},
       ...["running-kick","air-kick","counter"].flatMap(move=>["windup","active","recovery"].map(phase=>({
         action:move==="running-kick"?move:"strike",move,phase})))];
     for (const value of retained) for (const facing of [-1,1]) {
@@ -959,9 +1030,23 @@ test("Packaged gun and disc cels retain registered grips through acrobatics and 
       const before = JSON.parse(JSON.stringify(player));
       const pose = frames.sample(player,{player:true,compiled,supplemental,landingAgeMs:value.landingAgeMs});
       assert.equal(pose.weaponStowed,false,"Legal retained jump, landing, running kick, air kick and counter keep the weapon attached");
-      assert(!pose.frame.embeddedWeapon); assert.equal(pose.supplemental,false);
-      assert(pose.gripAnchor&&pose.handOcclusion?.length,"Each retained action needs native grip and finger overlap metadata");
-      drawWhole(pose,player,facing,true); assert.deepEqual(player,before,"Attachment selection preserves retained inventory");
+      if (disc) {
+        const unarmed=JSON.parse(JSON.stringify(player)); unarmed.weapon=null; unarmed.animation.weaponKind=null;
+        if (unarmed.attack) unarmed.attack.weaponKind=null;
+        const reference=frames.sample(unarmed,{player:true,compiled,supplemental,landingAgeMs:value.landingAgeMs});
+        assert(Object.hasOwn(discRetainedAliases,reference.frame.id),"Each legal Disc transition has an authored rim-holding alias");
+        assert.equal(pose.frame.id,discRetainedAliases[reference.frame.id]); assert.equal(pose.frame.embeddedWeapon,kind);
+        assert.equal(pose.supplemental,true); assert.equal(pose.gripAnchor,null); assert.equal(pose.handOcclusion,null);
+        assert.equal(pose.shotAnchor,null,"Retained native Disc body has no second shot origin");
+        assert.equal(pose.committedKey,reference.committedKey); assert.equal(pose.clipTimeMs,reference.clipTimeMs);
+        assert.equal(pose.phase,reference.phase,"Replacement preserves the actual committed action clock");
+        usedCels.add(pose.frame.id); drawWhole(pose,player,facing);
+      } else {
+        assert(!pose.frame.embeddedWeapon); assert.equal(pose.supplemental,false);
+        assert(pose.gripAnchor&&pose.handOcclusion?.length,"Each retained firearm action needs native grip and finger overlap metadata");
+        drawWhole(pose,player,facing,true);
+      }
+      assert.deepEqual(player,before,"Native selection preserves retained inventory");
     }
     // Real damage clears inventory before hurt/defeat selection; the preserved
     // embedded hurt source cels remain hash/crop-checked above, not forced here.
@@ -981,8 +1066,8 @@ test("Packaged gun and disc cels retain registered grips through acrobatics and 
       assert(!pose.frame.embeddedWeapon);drawWhole(pose,player,facing);assert.deepEqual(player,before);
     }
   }
-  assert.deepEqual([...usedCels].sort(),[...embeddedWeaponFrames.keys()].filter(id=>!id.endsWith("_hurt")).sort(),
-    "All25 legally selected native gun/disc cels are exercised; both preserved hurt sources remain in the exact native bank");
+  assert.deepEqual([...usedCels].sort(),[...[...embeddedWeaponFrames.keys()].filter(id=>!id.endsWith("_hurt")),...discRetainedFrames].sort(),
+    "All37 legally selected native gun/disc cels are exercised; both preserved hurt sources remain in the exact native bank");
 });
 
 test("System Override's 171 road sources preserve full resolution and original bytes with 149 local compressed derivatives", (t) => {

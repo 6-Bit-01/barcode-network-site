@@ -24,6 +24,8 @@
     "assets/mac-combat-frames/rift_stalker-frames-v1.png",
     "assets/mac-combat-frames/shock_mantid-frames-v1.json",
     "assets/mac-combat-frames/shock_mantid-frames-v1.png",
+    "assets/mac-street-dynamic/mac-armed-run-two-braids-v1.png",
+    "assets/mac-street-dynamic/mac-armed-walk-two-braids-v1.png",
     "assets/mac-street-dynamic/mac-carry-low-front-v2.png",
     "assets/mac-street-dynamic/mac-coil-rifle-grips-v1.png",
     "assets/mac-street-dynamic/mac-guard-two-braids-v1.png",
@@ -33,6 +35,7 @@
     "assets/mac-street-dynamic/mac-modem-actions-v1.json",
     "assets/mac-street-dynamic/mac-pipe-swing-two-braids-v1.png",
     "assets/mac-street-dynamic/mac-plasma-disc-grips-v1.png",
+    "assets/mac-street-dynamic/mac-plasma-disc-retained-two-braids-v1.png",
     "assets/mac-street-dynamic/mac-run-two-braids-v1.png",
     "assets/mac-street-dynamic/mac-run-v1.png",
     "assets/mac-street-dynamic/mac-scatter-blaster-grips-v1.png",
@@ -49,7 +52,7 @@
       "registrationSHA256": "2220efc6400d0159d6b9a8dc805b9f332ae618932e6e8802f9e7d7c5ab64ac13",
       "supplemental": {
         "registration": "assets/mac-street-dynamic/mac-modem-actions-v1.json",
-        "registrationSHA256": "4a245146191fb24dd44d897de6ce05cec4b73b29efda415b92499ca93f797e0f"
+        "registrationSHA256": "2097a0fe98cd5ab0e15bb23fde975f2847391f3b49f6445ce17a4e4adf99807e"
       }
     },
     {

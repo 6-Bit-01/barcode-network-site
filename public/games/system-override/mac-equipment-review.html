@@ -10,9 +10,9 @@
 </head>
 <body>
   <header><h1>Mac’s equipment</h1><p>Watch each weapon in action, inspect its grip in both directions, then compare scenery with Mac at the same scale.</p></header>
-  <div class="controls"><label>Pose <select id="pose"></select></label><label>Scenery <select id="prop"></select></label><label>Placement <select id="placement"><option value="floor">On the floor</option><option value="carry">Lifted crate / barrel</option><option value="release">Throw handoff</option></select></label><a class="play" href="index.html?preview=mac-firstslice&amp;revision=refine2">Play Mac’s chapter</a></div>
+  <div class="controls"><label>Pose <select id="pose"></select></label><label>Scenery <select id="prop"></select></label><label>Placement <select id="placement"><option value="floor">On the floor</option><option value="carry">Lifted crate / barrel</option><option value="release">Throw handoff</option></select></label><a class="play" href="index.html?preview=mac-firstslice&amp;revision=anatomy1">Play Mac’s chapter</a></div>
   <p id="status" role="status">Loading registered artwork…</p>
-  <main><section><h2>Weapon action</h2><label>Weapon <select id="action-weapon"><option value="pipe">Pipe / bat</option><option value="scatter-blaster">Scatter Blaster</option><option value="coil-rifle">Coil Rifle</option><option value="plasma-disc">Plasma Disc</option></select></label><button id="swing-toggle" type="button" aria-pressed="false" disabled>Play action</button><div class="pair"><canvas id="swing-left" width="840" height="480" aria-label="Selected weapon action facing left"></canvas><canvas id="swing-right" width="840" height="480" aria-label="Selected weapon action facing right"></canvas></div><p>Rifle shoulder support, wrapped pistol grip, and a one-handed disc throw. Mac has two braids.</p></section><div id="equipment-grid" class="grid"></div><section class="props"><h2>Street proportions</h2><canvas id="scenery" width="1600" height="780" aria-label="Mac and selected street scenery at the same scale"></canvas></section></main>
+  <main><section><h2>Weapon action</h2><label>Weapon <select id="action-weapon"><option value="pipe">Pipe / bat</option><option value="crowbar">Crowbar</option><option value="shock-baton">Shock Baton</option><option value="energy-blade">Energy Blade</option><option value="gravity-hammer">Gravity Hammer</option><option value="scatter-blaster">Scatter Blaster</option><option value="coil-rifle">Coil Rifle</option><option value="plasma-disc">Plasma Disc</option></select></label><label>Action <select id="action-type"><option value="weapon">Weapon attack</option><option value="walk">Walk</option><option value="run">Run</option><option value="guard-step">Guard-step</option></select></label><button id="swing-toggle" type="button" aria-pressed="false" disabled>Play action</button><div class="pair"><canvas id="swing-left" width="840" height="480" aria-label="Selected weapon action facing left"></canvas><canvas id="swing-right" width="840" height="480" aria-label="Selected weapon action facing right"></canvas></div><p>Watch each weapon while walking, running, guarding or attacking. Both directions play together.</p></section><div id="equipment-grid" class="grid"></div><section class="props"><h2>Street proportions</h2><canvas id="scenery" width="1600" height="780" aria-label="Mac and selected street scenery at the same scale"></canvas></section></main>
   <script src="src/game/mac-street-combat.js"></script>
   <script src="src/game/mac-combat-frames.js"></script>
   <script src="src/game/mac-combat-preview.js"></script>
@@ -21,6 +21,18 @@
     'use strict';
     const weapons=['pipe','crowbar','shock-baton','energy-blade','gravity-hammer','scatter-blaster','coil-rifle','plasma-disc'];
     const phases=['windup','active','recovery'];
+    const actionTypes=['weapon','walk','run','guard-step'];
+    function actionScene(kind,type,age=0){
+      if(!weapons.includes(kind)||!actionTypes.includes(type)||!Number.isFinite(age)||age<0)throw new Error('equipment-review-action-invalid');
+      if(type!=='weapon'){
+        const action=type==='guard-step'?'guard-creep':type,speed=action==='run'?429:action==='guard-creep'?57.2:260;
+        return{action,stride:(age*speed/110000)%1};
+      }
+      const rule=B.MacStreetCombat.weapons[kind],durations=[rule.windupMs,rule.activeMs,rule.recoveryMs];
+      let t=age%(durations.reduce((a,b)=>a+b,0)+650);
+      for(let i=0;i<durations.length;i++){if(t<durations[i])return{action:'weapon',phase:phases[i],progress:t/durations[i]};t-=durations[i];}
+      return{action:'idle'};
+    }
     const scenes=[
       {id:'idle',title:'Idle',action:'idle'},
       ...[0,.28,.55,.8].map((stride,index)=>({id:'walk-'+index,title:'Walk · '+(index+1),action:'walk',stride})),
@@ -48,7 +60,10 @@
       const attackKind=scene.action==='weapon'?kind:['running-kick','air-kick','counter'].includes(scene.action)?scene.action:null;
       player.attack=attackKind?{kind:attackKind,phase:scene.phase,phaseProgress:scene.progress??.5,weaponKind:scene.action==='weapon'?kind:null,running:scene.action==='running-kick'}:null;
       if(scene.action==='air-kick')player.elevation=100;
-      player.animation={action,phase:scene.phase||action,ageMs:50,motion:{speed,stridePhase:scene.stride||0,velocityZ:player.velocityZ,elevation:player.elevation}};
+      const runCheckpoint=/^run-([0-3])$/.exec(scene.id||'');
+      const armedRun=runCheckpoint&&weapons.slice(0,5).includes(kind)&&B.MacCombatPreview.frameArt?.get('mac')?.supplemental?.clips['armed-run'];
+      const stride=armedRun?[.125,.375,.625,.875][Number(runCheckpoint[1])]:scene.stride||0;
+      player.animation={action,phase:scene.phase||action,ageMs:50,motion:{speed,stridePhase:stride,velocityZ:player.velocityZ,elevation:player.elevation}};
       return player;
     }
     function drawWeapon(ctx,kind,scene,facing,{x=420,feet=390,height=260}={}){
@@ -67,7 +82,7 @@
       return P.drawMacPose(ctx,art,pose,{x:carrying?x:macX,feet,height:260,facing,carried:held?{kind,hp:name.includes('cracked')?.4:1,maxHp:1,broken:false}:null});
     }
     function floor(ctx,width,height,feet){ctx.fillStyle='#182938';ctx.fillRect(0,0,width,height);ctx.strokeStyle='#577083';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(0,feet);ctx.lineTo(width,feet);ctx.stroke();}
-    B.MacEquipmentReview={weapons,scenes,playerFor,drawWeapon,drawProp,floor};
+    B.MacEquipmentReview={weapons,scenes,playerFor,drawWeapon,drawProp,floor,actionTypes,actionScene};
     if(typeof document==='undefined'||!document.getElementById('equipment-grid'))return;
     const poseSelect=document.getElementById('pose'),propSelect=document.getElementById('prop'),placementSelect=document.getElementById('placement'),grid=document.getElementById('equipment-grid');
     for(const scene of scenes){const option=document.createElement('option');option.value=scene.id;option.textContent=scene.title;poseSelect.append(option);}
@@ -81,15 +96,15 @@
       for(const card of cards){const ids=[];for(const{canvas,facing}of card.canvases){const ctx=canvas.getContext('2d');floor(ctx,canvas.width,canvas.height,390);const placed=drawWeapon(ctx,card.kind,scene,facing);ids.push(placed.pose.frame.id);}card.caption.textContent=scene.title+' · left / right';}
       const canvas=document.getElementById('scenery'),ctx=canvas.getContext('2d');floor(ctx,canvas.width,canvas.height,680);drawProp(ctx,propSelect.value,placementSelect.value);}
     poseSelect.addEventListener('change',redraw);propSelect.addEventListener('change',redraw);placementSelect.addEventListener('change',redraw);
-    const swingButton=document.getElementById('swing-toggle'),actionWeapon=document.getElementById('action-weapon');let swinging=false,swingStart=0,swingRequest=0;
-    function drawSwing(age){const kind=actionWeapon.value,rule=B.MacStreetCombat.weapons[kind],durations=[rule.windupMs,rule.activeMs,rule.recoveryMs];
-      let t=age%(durations.reduce((a,b)=>a+b,0)+650),scene={action:'idle'};
-      for(let i=0;i<durations.length;i++){if(t<durations[i]){scene={action:'weapon',phase:phases[i],progress:t/durations[i]};break;}t-=durations[i];}
+    const swingButton=document.getElementById('swing-toggle'),actionWeapon=document.getElementById('action-weapon'),actionType=document.getElementById('action-type');let swinging=false,swingStart=0,swingRequest=0,swingAge=0;
+    actionWeapon.disabled=true;actionType.disabled=true;
+    function drawSwing(age){const kind=actionWeapon.value,scene=actionScene(kind,actionType.value,age);
       for(const[facing,id]of[[-1,'swing-left'],[1,'swing-right']]){const canvas=document.getElementById(id),ctx=canvas.getContext('2d');floor(ctx,840,480,390);drawWeapon(ctx,kind,scene,facing);}}
-    function swingTick(now){if(!swinging)return;drawSwing(now-swingStart);swingRequest=requestAnimationFrame(swingTick);}
-    actionWeapon.addEventListener('change',()=>{swingStart=performance.now();drawSwing(0);});
-    swingButton.addEventListener('click',()=>{swinging=!swinging;swingButton.textContent=swinging?'Pause action':'Play action';swingButton.setAttribute('aria-pressed',String(swinging));if(swinging){swingStart=performance.now();swingRequest=requestAnimationFrame(swingTick);}else cancelAnimationFrame(swingRequest);});
-    B.MacCombatPreview.prepare().then(()=>{for(const option of [...propSelect.options])if(!B.MacCombatPreview.powerArt.cells[option.value])option.remove();redraw();drawSwing(0);swingButton.disabled=false;document.getElementById('status').textContent='All eight weapons loaded. Play an action or choose a pose to inspect.';}).catch(error=>{swingButton.disabled=true;document.getElementById('status').textContent='Artwork unavailable: '+error.message;});
+    function swingTick(now){if(!swinging)return;swingAge=Math.max(0,now-swingStart);drawSwing(swingAge);swingRequest=requestAnimationFrame(swingTick);}
+    function resetAction(){if(swingButton.disabled)return;swingAge=0;swingStart=performance.now();drawSwing(0);}
+    actionWeapon.addEventListener('change',resetAction);actionType.addEventListener('change',resetAction);
+    swingButton.addEventListener('click',()=>{swinging=!swinging;swingButton.textContent=swinging?'Pause action':'Play action';swingButton.setAttribute('aria-pressed',String(swinging));if(swinging){swingStart=performance.now()-swingAge;swingRequest=requestAnimationFrame(swingTick);}else{swingAge=performance.now()-swingStart;cancelAnimationFrame(swingRequest);swingRequest=0;drawSwing(swingAge);}});
+    B.MacCombatPreview.prepare().then(()=>{for(const option of [...propSelect.options])if(!B.MacCombatPreview.powerArt.cells[option.value])option.remove();redraw();drawSwing(0);swingButton.disabled=false;actionWeapon.disabled=false;actionType.disabled=false;document.getElementById('status').textContent='All eight weapons loaded. Choose an action to play, or a pose to inspect.';}).catch(error=>{swingButton.disabled=true;document.getElementById('status').textContent='Artwork unavailable: '+error.message;});
   })(window.BARCODE=window.BARCODE||{});
   </script>
 </body>

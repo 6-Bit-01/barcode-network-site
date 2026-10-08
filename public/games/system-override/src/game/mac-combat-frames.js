@@ -12,10 +12,10 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
     null_regent:['cleave','charge','fan','ground-wave']
   }).map(([kind,styles])=>[kind,Object.freeze(styles)])));
   const PHASES = Object.freeze(['windup','active','recovery']);
-  const DYNAMIC_CLIPS = Object.freeze(['guard','guard-walk','run','grab-start','grab-hold',
+  const DYNAMIC_CLIPS = Object.freeze(['guard','guard-walk','run','armed-walk','armed-run','grab-start','grab-hold',
     'pummel.windup','pummel.active','pummel.recovery','carry','carry-walk',
     ...['melee','fire'].flatMap(move=>PHASES.map(phase=>move+'.'+phase))]);
-  const DYNAMIC_LOOPS = Object.freeze(['guard','guard-walk','run','grab-hold','carry','carry-walk']);
+  const DYNAMIC_LOOPS = Object.freeze(['guard','guard-walk','run','armed-walk','armed-run','grab-hold','carry','carry-walk']);
   const number = value => typeof value === 'number' && Number.isFinite(value);
   const finite = (value, fallback=0) => number(value) ? value : fallback;
   const clamp = (value, low, high) => Math.max(low,Math.min(high,value));
@@ -26,11 +26,20 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
   const hash = value => typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value);
   const WEAPONS=Object.freeze(['pipe','crowbar','shock-baton','energy-blade','gravity-hammer','scatter-blaster','coil-rifle','plasma-disc']);
   const EMBEDDED_WEAPONS=Object.freeze(['scatter-blaster','coil-rifle','plasma-disc']);
+  const MELEE_WEAPONS=Object.freeze(WEAPONS.filter(kind=>!EMBEDDED_WEAPONS.includes(kind)));
   const EMBEDDED_ACTIONS=Object.freeze(['idle','walk','run','guard','hurt',...PHASES]);
   const EMBEDDED_LOOPS=Object.freeze(['idle','walk','run','guard']);
   const embeddedKey=(kind,action)=>'weapon_'+kind+'.'+action;
   const embeddedKeys=Object.freeze(EMBEDDED_WEAPONS.flatMap(kind=>EMBEDDED_ACTIONS.map(action=>embeddedKey(kind,action))));
   const embeddedLoops=Object.freeze(EMBEDDED_WEAPONS.flatMap(kind=>EMBEDDED_LOOPS.map(action=>embeddedKey(kind,action))));
+  const DISC_RETAINED=Object.freeze({
+    load:'disc_jump_load',takeoff:'disc_jump_rise',chamber:'disc_kick_chamber',
+    kick_extend:'disc_kick_contact',kick_contact:'disc_kick_contact',kick_retract:'disc_kick_retract',
+    descent:'disc_jump_descent',landing:'disc_landing',counter_contact:'disc_counter_contact',
+    guard_brace:'disc_guard_brace',guard_step_a:'disc_guard_step_a',guard_step_b:'disc_guard_step_b',guard_impact:'disc_guard_impact',
+    hook_recovery:'plasma_disc_ready',idle_b:'plasma_disc_ready'
+  });
+  const discRetainedKeys=Object.freeze(Object.keys(DISC_RETAINED).map(id=>'disc-carry.'+id));
   const segmentLength=segment=>Math.hypot(segment.to.x-segment.from.x,segment.to.y-segment.from.y);
 
   function bodyCalibration(value,label) {
@@ -200,7 +209,7 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
       }
     }
     for(const key of Object.keys(compiled.clips)) {
-      need(DYNAMIC_CLIPS.includes(key)||embeddedKeys.includes(key)||['pickup','carry-throw','guard-impact',...PHASES.map(phase=>'pipe-swing.'+phase)].includes(key),'unknown supplemental action '+key);
+      need(DYNAMIC_CLIPS.includes(key)||embeddedKeys.includes(key)||discRetainedKeys.includes(key)||['pickup','carry-throw','guard-impact',...PHASES.map(phase=>'pipe-swing.'+phase)].includes(key),'unknown supplemental action '+key);
       need(compiled.clips[key].loop===(DYNAMIC_LOOPS.includes(key)||embeddedLoops.includes(key)),'incorrect supplemental loop '+key);
       for(const entry of compiled.clips[key].frames)
         need(compiled.frames[entry.frame].baselineLift===0,'grounded supplemental action changes floor baseline '+key);
@@ -220,14 +229,37 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
         if(action==='active')need(clip.frames.length===1,'embedded weapon origin must use one committed contact cel '+key);
       }
     }
+    if(compiled.sheets.dyn_disc_retained||discRetainedKeys.some(key=>compiled.clips[key])) {
+      const ownFrames=Object.values(compiled.frames).filter(frame=>frame.sheet==='dyn_disc_retained');
+      const ids=[...new Set(Object.values(DISC_RETAINED))].filter(id=>id!=='plasma_disc_ready');
+      need(ownFrames.length===ids.length&&ownFrames.every(frame=>ids.includes(frame.id)),'retained disc sheet needs exactly twelve complete cels');
+      for(const [baseId,id]of Object.entries(DISC_RETAINED)) {
+        const key='disc-carry.'+baseId,clip=compiled.clips[key],frame=compiled.frames[id];
+        need(clip&&!clip.loop&&clip.frames.length===1&&clip.frames[0].frame===id&&clip.totalMs===100,'invalid retained disc alias '+key);
+        need(frame?.sheet===(id==='plasma_disc_ready'?'dyn_plasma_disc':'dyn_disc_retained')&&frame.embeddedWeapon==='plasma-disc',
+          'retained disc must be a complete embedded-item cel '+id);
+        need(!frame.gripAnchor&&!frame.itemBindings&&!frame.handOcclusion&&!frame.shotAnchor,'retained disc has detached item or shot fields '+id);
+      }
+    }
     if(complete) {
       for(const key of DYNAMIC_CLIPS)need(compiled.clips[key],'missing supplemental action '+key);
       for(const [key,count] of [['run',4],['guard-walk',2],['grab-start',2],['carry-walk',2]])
         need(new Set(compiled.clips[key].frames.map(entry=>entry.frame)).size>=count,'insufficient authored cels for '+key);
+      for(const action of ['walk','run']) {
+        const key='armed-'+action,clip=compiled.clips[key],ids=['contact_a','pass_a','contact_b','pass_b'].map(id=>'armed_'+action+'_'+id);
+        need(clip.frames.length===ids.length&&clip.frames.every((entry,i)=>entry.frame===ids[i]&&entry.holdMs===(action==='walk'?100:75)),
+          'armed gait needs four ordered complete cels and explicit holds '+key);
+        for(const id of ids) {
+          const frame=compiled.frames[id];
+          need(frame.sheet==='dyn_armed_'+action&&!frame.embeddedWeapon,'armed gait must use its own detached-item sheet '+id);
+          need(frame.gripAnchor,'missing armed gait support grip '+id);
+          for(const kind of MELEE_WEAPONS)need(frame.itemBindings?.[kind]?.handOcclusion?.length,'missing armed gait native item palm '+id+'/'+kind);
+        }
+      }
       for(const move of ['pummel','melee','fire'])
         need(new Set(['windup','active'].map(phase=>compiled.clips[move+'.'+phase].frames[0].frame)).size===2,
           'load and contact must use distinct complete cels '+move);
-      const heldKeys=['guard','guard-walk','run','carry','carry-walk',...['melee','fire'].flatMap(move=>PHASES.map(phase=>move+'.'+phase))];
+      const heldKeys=['guard','guard-walk','run','armed-walk','armed-run','carry','carry-walk',...['melee','fire'].flatMap(move=>PHASES.map(phase=>move+'.'+phase))];
       for(const key of heldKeys)for(const entry of compiled.clips[key].frames)
         need(compiled.frames[entry.frame].gripAnchor,'missing native held-item grip '+key+'/'+entry.frame);
       for(const key of ['pickup','guard-impact','carry-throw'])if(compiled.clips[key])for(const entry of compiled.clips[key].frames)
@@ -271,9 +303,13 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
     const moving=finite(motion.speed,Math.hypot(finite(actor.vx),finite(actor.laneVelocity)))>.01;
     const weaponKind=attack?.weaponKind||actor.animation?.weaponKind||actor.weapon?.kind;
     const hurt=action==='hurt'||actor.hurtMs>0;
+    const guardImpact=['guard','guard-creep'].includes(action)&&number(guardImpactAgeMs)&&guardImpactAgeMs>=0
+      &&guardImpactAgeMs<(supplemental?.clips['guard-impact']?.totalMs||0);
     if(EMBEDDED_WEAPONS.includes(weaponKind)&&!actor.carry&&!actor.grapple) {
+      // The embedded guard is a still cel. Authored step/impact cels retain the
+      // actual weapon through its native binding while the feet/body respond.
       let embeddedAction=hurt?'hurt':['idle','walk','run'].includes(action)?action
-        :['guard','guard-creep'].includes(action)?'guard':null;
+        :action==='guard'&&!guardImpact?'guard':null;
       if(!hurt&&['weapon-fire','weapon-disc'].includes(action)) {
         need(PHASES.includes(phase),'invalid embedded weapon phase '+phase);embeddedAction=phase;
       }
@@ -294,9 +330,12 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
       return {compiled:base,key:'air-kick.'+phase,progress:finite(attack?.phaseProgress,finite(actor.animation?.phaseProgress)),
         ageMs,action:'running-kick',phase,attackType:'running-kick'};
     }
-    if(['guard','guard-creep'].includes(action)&&number(guardImpactAgeMs)&&guardImpactAgeMs>=0
-      &&guardImpactAgeMs<(supplemental?.clips['guard-impact']?.totalMs||0)) {
+    if(guardImpact) {
       key='guard-impact';fallback='guard';clipAge=guardImpactAgeMs;
+    } else if(['walk','run'].includes(action)&&MELEE_WEAPONS.includes(weaponKind)&&!actor.carry&&!actor.grapple) {
+      // Armed legs retain the simulation stride; the authored near hand stays
+      // ready instead of pumping an attached weapon with the unarmed arm swing.
+      key='armed-'+action;fallback='walk';progress=((finite(motion.stridePhase)%1)+1)%1;
     } else if(action==='run') {key='run';fallback='walk';progress=((finite(motion.stridePhase)%1)+1)%1;}
     else if(action==='guard-creep') {key='guard-walk';fallback='guard';progress=((finite(motion.stridePhase)%1)+1)%1;}
     else if(action==='guard') {key='guard';fallback='guard';}
@@ -408,10 +447,17 @@ window.FILE_MANIFEST.push({name:'src/game/mac-combat-frames.js',exports:['BARCOD
     } else {
       action='idle';key='idle';if(reducedMotion)ageMs=0;
     }
-    const selected=selectFrame(selectedBank,key,{progress,ageMs,terminal});
-    const attachment=selected.frame.gripAnchor?selected.frame:supplemental?.baseGripAnchors[selected.frame.id];
+    let selected=selectFrame(selectedBank,key,{progress,ageMs,terminal});
     const weaponKind=actor.attack?.weaponKind||animation.weaponKind||actor.weapon?.kind;
     const stowed=!!actor.carry||!!actor.grapple;
+    const retained=weaponKind==='plasma-disc'&&actor.weapon?.kind==='plasma-disc'&&!stowed&&actor.hp>0&&action!=='hurt'
+      &&supplemental?.clips['disc-carry.'+selected.frame.id];
+    if(retained) {
+      // Preserve the actual action/phase clock and replace only the complete
+      // selected body cel. Its embedded rim grip needs no detached item owner.
+      selected={...selected,frame:supplemental.frames[retained.frames[0].frame]};selectedBank=supplemental;
+    }
+    const attachment=selected.frame.gripAnchor?selected.frame:supplemental?.baseGripAnchors[selected.frame.id];
     // Inventory stays equipped through jumps, kicks and counters. Transport the
     // actual item in each authored fist; only occupied hands suppress it.
     const weaponStowed=stowed;

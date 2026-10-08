@@ -1,8 +1,11 @@
 import {FIGHTER_STYLES} from './fight-engine.mjs';
 import {createFightAudio} from './fight-audio.mjs';
-import {createDemoSelection,beginDemoSelection,previewDemoFighter,confirmDemoFighter,backDemoSelection,randomDemoFighter,navigateDemoFighter,demoFightURL} from './demo-flow.mjs';
+import {createDemoSelection,beginDemoSelection,previewDemoFighter,confirmDemoFighter,backDemoSelection,randomDemoFighter,navigateDemoFighter,demoFightURL,controllerSeatsFromURL} from './demo-flow.mjs';
+import {createGamepadInput} from './fight-gamepad.mjs';
 const $=id=>document.getElementById(id),params=new URL(location.href).searchParams;
 let state=null,catalog=null;
+const gamepads=createGamepadInput({seats:controllerSeatsFromURL(location.href)});
+let windowActive=document.hasFocus(),controllerLabel='';
 let muted=params.get('sound')==='0',reducedMotion=params.has('motion')?params.get('motion')==='1':matchMedia('(prefers-reduced-motion: reduce)').matches;
 const audio=createFightAudio({muted,reducedMotion,baseUrl:location.href});
 function sound(id){void audio.startAudio().then(()=>audio.emit({type:'attack',action:'punch',attackerId:id}));}
@@ -36,9 +39,9 @@ function render(){
 }
 function focusSelection(){const active=$('fighter-grid').querySelector('[data-fighter="'+state.picks[state.activePlayer]+'"]');active?.focus({preventScroll:true});}
 function choose(id){const next=previewDemoFighter(state,id);if(next===state)return;state=next;render();sound(id);}
-function confirm(){if(state.screen!=='select')return;sound(state.picks[state.activePlayer]);state=confirmDemoFighter(state);render();if(state.screen==='ready')$('enter-arena').focus({preventScroll:true});else focusSelection();}
-function begin(mode){state=beginDemoSelection(state,mode);render();void audio.startAudio();focusSelection();}
-function back(){if(!state)return;state=backDemoSelection(state);audio.clear();render();if(state.screen==='title')$('solo-mode').focus();else focusSelection();}
+function confirm(){if(state.screen!=='select')return;gamepads.reset();sound(state.picks[state.activePlayer]);state=confirmDemoFighter(state);render();if(state.screen==='ready')$('enter-arena').focus({preventScroll:true});else focusSelection();}
+function begin(mode){gamepads.reset();state=beginDemoSelection(state,mode);render();void audio.startAudio();focusSelection();}
+function back(){if(!state)return;gamepads.reset();state=backDemoSelection(state);audio.clear();render();if(state.screen==='title')$('solo-mode').focus();else focusSelection();}
 function buildGrid(){
  const grid=$('fighter-grid');grid.replaceChildren();
  for(const fighter of state.roster){
@@ -63,11 +66,13 @@ async function load(){
 $('solo-mode').addEventListener('click',()=>begin('cpu'));$('local-mode').addEventListener('click',()=>begin('local'));
 $('confirm-fighter').addEventListener('click',confirm);$('selection-back').addEventListener('click',back);
 $('random-fighter').addEventListener('click',()=>{state=randomDemoFighter(state);render();sound(state.picks[state.activePlayer]);focusSelection();});
-$('enter-arena').addEventListener('click',()=>{audio.clear();location.href=demoFightURL(state,location.href,{muted,reducedMotion}).href;});
+$('enter-arena').addEventListener('click',()=>{audio.clear();location.href=demoFightURL(state,location.href,{muted,reducedMotion,controllerSeats:gamepads.seatIndices()}).href;});
 $('retry-demo').addEventListener('click',load);
 $('demo-sound').addEventListener('click',()=>{muted=!muted;settings();if(!muted)void audio.startAudio();});
 $('demo-motion').addEventListener('change',()=>{reducedMotion=$('demo-motion').checked;settings();});
-$('controls-open').addEventListener('click',()=>$('controls-dialog').showModal());$('controls-close').addEventListener('click',()=>$('controls-dialog').close());
+function closeControls(){gamepads.reset();$('controls-dialog').close();}
+$('controls-open').addEventListener('click',()=>{gamepads.reset();$('controls-dialog').showModal();});$('controls-close').addEventListener('click',closeControls);
+$('controls-dialog').addEventListener('close',()=>gamepads.reset());
 window.addEventListener('keydown',event=>{
  if(!state||$('controls-dialog').open||event.target.closest?.('input'))return;
  if(event.key==='Escape'){event.preventDefault();back();return;}
@@ -76,5 +81,39 @@ window.addEventListener('keydown',event=>{
  else if(event.key==='Enter'&&!event.target.closest?.('button,a')){event.preventDefault();confirm();}
 });
 $('fighter-grid').addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.repeat){event.preventDefault();event.stopPropagation();confirm();}});
-document.addEventListener('visibilitychange',()=>audio.setPaused(document.hidden));window.addEventListener('pagehide',()=>audio.clear());
-settings();void load();
+function pollMenuGamepads(now){
+ let pads=[];try{pads=navigator.getGamepads?.()??[];}catch{}
+ const sample=gamepads.sample(pads,now,{context:'menu',active:!!state&&windowActive&&!document.hidden});
+ const connected=sample.players.filter(player=>player.connected);
+ const label=connected.length?sample.players.map((player,index)=>'P'+(index+1)+': '+(player.connected?'controller '+(player.index+1):'keyboard')).join(' · ')+' · × confirm · ○ back · △ Random':'Press a controller button to connect · Keyboard / touch available';
+ const status=label+(sample.unsupported?' · Unsupported controller mapping; keyboard available':'');
+ if(status!==controllerLabel){controllerLabel=status;$('controller-status').textContent=status;}
+ if(sample.events.some(event=>event.type==='disconnect')){gamepads.reset();return;}
+ for(const event of sample.events){
+  if(!['press','navigate'].includes(event.type))continue;
+  if($('controls-dialog').open){if(event.type==='press'&&['back','pause','confirm'].includes(event.action))closeControls();return;}
+  if(state.screen==='title'){
+   if(event.player!==0)continue;
+   const items=['solo-mode','local-mode','controls-open','demo-sound','demo-motion'].map($).filter(item=>!item.disabled);
+   if(event.type==='navigate'){
+    const index=items.indexOf(document.activeElement),step=['ArrowUp','ArrowLeft'].includes(event.action)?-1:1;
+    items[index<0?0:(index+step+items.length)%items.length]?.focus({preventScroll:true});
+   }else if(event.action==='confirm'){(items.includes(document.activeElement)?document.activeElement:$('solo-mode')).click();gamepads.reset();return;}
+   else if(event.action==='pause'){$('controls-open').click();return;}
+   continue;
+  }
+  if(state.mode==='local'&&connected.length===2&&state.screen==='select'&&event.player!==state.activePlayer)continue;
+  if(state.mode==='cpu'&&event.player!==0)continue;
+  if(event.type==='navigate'&&state.screen==='select'){state=navigateDemoFighter(state,event.action);render();focusSelection();}
+  else if(event.action==='back'){back();return;}
+  else if(event.action==='random'&&state.screen==='select'){$('random-fighter').click();}
+  else if(event.action==='confirm'){if(state.screen==='ready'){$('enter-arena').click();gamepads.reset();}else confirm();return;}
+  else if(event.action==='pause'){$('controls-open').click();return;}
+ }
+}
+function menuTick(now){pollMenuGamepads(now);requestAnimationFrame(menuTick);}
+window.addEventListener('blur',()=>{windowActive=false;gamepads.reset();audio.setPaused(true);});
+window.addEventListener('focus',()=>{windowActive=true;gamepads.reset();audio.setPaused(document.hidden);});
+document.addEventListener('visibilitychange',()=>{gamepads.reset();audio.setPaused(document.hidden||!windowActive);});
+window.addEventListener('pagehide',()=>{gamepads.reset();audio.clear();});
+settings();void load();requestAnimationFrame(menuTick);

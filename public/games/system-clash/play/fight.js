@@ -7,7 +7,8 @@ import {previewBattleWear} from './fight-damage-preview.mjs';
 import {createAttackInputBuffer,pressAttackInput,flushAttackInputs,releaseAttackInput,clearAttackInputs} from './fight-input.mjs';
 import {createDeletionReview} from './fight-review.mjs';
 import {interpolateFightViews} from './fight-presentation.mjs';
-import {parseDemoLaunch} from './demo-flow.mjs';
+import {parseDemoLaunch,controllerSeatsFromURL,withControllerSeats} from './demo-flow.mjs';
+import {createGamepadInput} from './fight-gamepad.mjs';
 
 const $ = id=>document.getElementById(id);
 const canvas = $('fight-stage');
@@ -17,6 +18,9 @@ $('motion-toggle').checked = motionPreference.matches;
 const effects = createFightEffects({reducedMotion:motionPreference.matches});
 const held = new Set(), virtual = new Set(), latched = new Set();
 const attackInputs=createAttackInputBuffer();
+const gamepads=createGamepadInput({seats:controllerSeatsFromURL(location.href)});
+let gamepadPlayers=[],windowActive=document.hasFocus();
+let controllerLabel='';
 const attackButtons=new Set(['punch','low-punch','kick','low-kick']);
 const watchedKeys = new Set(['KeyA','KeyD','KeyS','KeyW','KeyU','KeyI','KeyJ','KeyK','Space','KeyL','KeyF','ArrowLeft','ArrowRight','ArrowDown','ArrowUp','Digit0','Digit1','Digit2','Digit3','Digit4','Digit5','Digit6','Digit7','Digit8','Numpad0','Numpad1','Numpad2','Numpad3','Numpad4','Numpad5','Numpad6','Numpad7','Numpad8','Enter','KeyP','Escape','KeyR']);
 let art,metadata,match,deletionProp,weaponArt,ready=false,paused=false,last=performance.now(),accumulator=0,muted=false,statusText='',arenaLabel='',loadRevision=0,inspectTime=null,motionTime=null;
@@ -49,6 +53,7 @@ function dispatchEvents() {
 
 function clearInput() {
   held.clear();virtual.clear();latched.clear();clearAttackInputs(attackInputs);tapMove=0;tapUntil=0;
+  gamepads.reset();gamepadPlayers=[];
   document.querySelectorAll('[data-hold]').forEach(button=>{button.classList.remove('is-held');if(['crouch','block'].includes(button.dataset.hold))button.setAttribute('aria-pressed','false');});
 }
 
@@ -170,7 +175,7 @@ function draw() {
   const motionLabel=motionTime!==null?'Move review: '+scene.poseLabel+' at '+(motionTime/1000).toFixed(2)+' seconds, hand: '+$('motion-weapon').selectedOptions[0].textContent+', chest: '+$('motion-embedded').selectedOptions[0].textContent+', wear: '+$('motion-damage').selectedOptions[0].textContent:null;
   const label=`${scene.fighters[0].name}: ${scene.fighters[0].hp} health, ${moveLabel(views[0])}, ${$('gear-0').textContent}. ${scene.fighters[1].name}: ${scene.fighters[1].hp} health, ${moveLabel(views[1])}, ${$('gear-1').textContent}. ${motionLabel??stageLabel}. ${inspectTime!==null?reviewLabel:paused?'Paused':match.status || match.phase}.`;
   if (label !== arenaLabel) {canvas.setAttribute('aria-label',label);arenaLabel=label;}
-  const state = motionLabel??(inspectTime!==null?reviewLabel:paused ? 'Paused — press P to resume.' : match.phase==='fight'&&performance.now()<weaponFeedbackUntil?weaponFeedback:match.status || 'Fight');
+  const state = motionLabel??(inspectTime!==null?reviewLabel:paused ? 'Paused — Options / × or P to resume; ○ returns to character select.' : match.phase==='fight'&&performance.now()<weaponFeedbackUntil?weaponFeedback:match.status || 'Fight');
   if (state !== statusText) {$('fight-status').textContent=state;statusText=state;}
 }
 
@@ -189,9 +194,9 @@ function reset(start=true) {
   draw();
 }
 
-async function start() {
+function start() {
   if (!ready) return;
-  await effects.startAudio();
+  void effects.startAudio();
   reset(true);
   canvas.focus({preventScroll:true});
 }
@@ -204,9 +209,9 @@ function togglePause() {
   draw();
 }
 
-function action(index,name) {
+function action(index,name,inputSnapshot=controls()[index]) {
   if (!ready || paused || inspectTime!==null || motionTime!==null || (index === 1 && match.mode !== 'local')) return;
-  performAction(match,index,name,controls()[index]);
+  performAction(match,index,name,inputSnapshot);
   dispatchEvents();
   draw();
 }
@@ -231,7 +236,7 @@ function controls() {
   return [
     {move:Number(down('KeyD')||virtual.has('right')||(tapMove===1&&performance.now()<tapUntil))-Number(down('KeyA')||virtual.has('left')||(tapMove===-1&&performance.now()<tapUntil)),crouch:down('KeyS')||virtual.has('crouch')||latched.has('crouch'),block:down('Space')||virtual.has('block')||latched.has('block')},
     {move:Number(down('ArrowRight'))-Number(down('ArrowLeft')),crouch:down('ArrowDown'),block:down('Digit0')||down('Numpad0')},
-  ];
+  ].map((input,index)=>index===1&&match?.mode!=='local'?{move:0,crouch:false,block:false}:{move:Math.sign(input.move+(gamepadPlayers[index]?.move??0)),crouch:input.crouch||!!gamepadPlayers[index]?.crouch,block:input.block||!!gamepadPlayers[index]?.block});
 }
 
 const keyActions = {KeyU:[0,'punch'],KeyI:[0,'kick'],KeyJ:[0,'low-punch'],KeyK:[0,'low-kick'],KeyW:[0,'jump'],KeyL:[0,'grab'],KeyF:[0,'deletion'],ArrowUp:[1,'jump'],Digit7:[1,'punch'],Numpad7:[1,'punch'],Digit8:[1,'kick'],Numpad8:[1,'kick'],Digit4:[1,'low-punch'],Numpad4:[1,'low-punch'],Digit5:[1,'low-kick'],Numpad5:[1,'low-kick'],Digit6:[1,'grab'],Numpad6:[1,'grab'],Digit1:[1,'punch'],Numpad1:[1,'punch'],Digit2:[1,'kick'],Numpad2:[1,'kick'],Digit3:[1,'grab'],Numpad3:[1,'grab'],Enter:[1,'deletion']};
@@ -251,7 +256,8 @@ window.addEventListener('keydown',event=>{
   }
 });
 window.addEventListener('keyup',event=>{held.delete(event.code);releaseAttackInput(attackInputs,event.code);});
-window.addEventListener('blur',clearInput);
+window.addEventListener('blur',()=>{windowActive=false;clearInput();if(ready&&!paused&&!['ready','over'].includes(match.phase))togglePause();});
+window.addEventListener('focus',()=>{windowActive=true;clearInput();});
 document.addEventListener('visibilitychange',()=>{
   clearInput();last=performance.now();accumulator=0;
   if (document.hidden && ready && !paused && !['ready','over'].includes(match.phase)) togglePause();
@@ -294,7 +300,7 @@ $('restart-fight').addEventListener('click',start);
 $('pause-fight').addEventListener('click',togglePause);
 $('mode-select').addEventListener('change',()=>reset(false));
 $('mute-fight').addEventListener('click',()=>{
-  muted=!muted;effects.setMuted(muted);
+  muted=!muted;effects.setMuted(muted);if(!muted)void effects.startAudio();
   $('mute-fight').textContent=muted?'Sound off':'Sound on';$('mute-fight').setAttribute('aria-pressed',String(muted));
 });
 $('motion-toggle').addEventListener('change',()=>effects.setReducedMotion($('motion-toggle').checked));
@@ -312,7 +318,38 @@ $('save-fight-frame').addEventListener('click',async()=>{
   } finally {button.disabled=false;}
 });
 
+function pollGamepads(now) {
+  let pads=[];try{pads=navigator.getGamepads?.()??[];}catch{}
+  const menu=paused||!ready||['ready','over'].includes(match?.phase);
+  const sample=gamepads.sample(pads,now,{context:menu?'menu':'fight',active:windowActive&&!document.hidden&&ready&&inspectTime===null&&motionTime===null});
+  gamepadPlayers=sample.players;
+  const connected=sample.players.filter(player=>player.connected);
+  const label=sample.unsupported?'Controller mapping unavailable — use keyboard or a standard-mapped controller.':connected.length?sample.players.map((player,index)=>index===1&&match?.mode!=='local'?'P2: CPU':'P'+(index+1)+': '+(player.connected?'controller '+(player.index+1):'keyboard')).join(' · ')+(menu?' · × '+(paused?'resume':'start / rematch')+' · ○ select':' · Options pause'):'Press a controller button to connect · Keyboard / touch available';
+  if(label!==controllerLabel){controllerLabel=label;if($('controller-status'))$('controller-status').textContent=label;}
+  // Disconnect wins over every queued press in this snapshot.
+  if(sample.events.some(event=>event.type==='disconnect'&&(event.player===0||match?.mode==='local'))){
+    clearInput();if(ready&&!paused&&!['ready','over'].includes(match.phase))togglePause();return;
+  }
+  for(const event of sample.events){
+    if(event.type==='release'){releaseAttackInput(attackInputs,event.key);continue;}
+    if(event.type!=='press'||(event.player===1&&match?.mode!=='local'))continue;
+    if(event.action==='pause'){togglePause();return;}
+    if(menu){
+      if(event.action==='back'){
+        if(document.body.classList.contains('show-controls')){$('demo-controls')?.click();return;}
+        clearInput();$('demo-select')?.click();return;
+      }
+      if(event.action==='confirm'){if(paused)togglePause();else start();return;}
+      continue;
+    }
+    if(event.action==='deletion')attackInputs.pending.delete(event.player);
+    if(attackButtons.has(event.action))queueAttack(event.player,event.action,event.key);
+    else action(event.player,event.action,event.inputSnapshot?{...controls()[event.player],...event.inputSnapshot}:controls()[event.player]);
+  }
+}
+
 function tick(now) {
+  pollGamepads(now);
   const delta=Math.min(100,Math.max(0,now-last));last=now;
   if (ready && !paused && inspectTime===null && motionTime===null) {
     attackCommands(flushAttackInputs(attackInputs,now));
@@ -402,7 +439,7 @@ async function initializeRoster() {
       $('mode-select').value=demoLaunch.mode;muted=demoLaunch.muted;effects.setMuted(muted);
       $('mute-fight').textContent=muted?'Sound off':'Sound on';$('mute-fight').setAttribute('aria-pressed',String(muted));
       $('motion-toggle').checked=demoLaunch.reducedMotion;effects.setReducedMotion(demoLaunch.reducedMotion);
-      const back=new URL('index.html',location.href);for(const [key,value]of Object.entries({screen:'select',mode:demoLaunch.mode,p1:demoLaunch.p1,p2:demoLaunch.p2,sound:muted?'0':'1',motion:$('motion-toggle').checked?'1':'0'}))back.searchParams.set(key,value);$('demo-select').href=back.href;
+      const back=new URL('index.html',location.href);for(const [key,value]of Object.entries({screen:'select',mode:demoLaunch.mode,p1:demoLaunch.p1,p2:demoLaunch.p2,sound:muted?'0':'1',motion:$('motion-toggle').checked?'1':'0'}))back.searchParams.set(key,value);$('demo-select').href=withControllerSeats(back,gamepads.seatIndices()).href;
     }
     for(const id of ['fighter-one','fighter-two']) {
       const select=$(id),previous=select.value;select.replaceChildren();
@@ -419,7 +456,7 @@ async function initializeRoster() {
     await boot();
   } catch(error){$('load-status').textContent=error.message;$('load-status').classList.add('error');}
 }
-$('demo-select')?.addEventListener('click',()=>{const back=new URL($('demo-select').href);back.searchParams.set('sound',muted?'0':'1');back.searchParams.set('motion',$('motion-toggle').checked?'1':'0');$('demo-select').href=back.href;});
+$('demo-select')?.addEventListener('click',()=>{const back=new URL($('demo-select').href);back.searchParams.set('sound',muted?'0':'1');back.searchParams.set('motion',$('motion-toggle').checked?'1':'0');$('demo-select').href=withControllerSeats(back,gamepads.seatIndices()).href;});
 $('demo-start')?.addEventListener('click',start);
-$('demo-controls')?.addEventListener('click',()=>{const shown=document.body.classList.toggle('show-controls');$('demo-controls').setAttribute('aria-expanded',String(shown));});
+$('demo-controls')?.addEventListener('click',()=>{const shown=document.body.classList.toggle('show-controls');$('demo-controls').setAttribute('aria-expanded',String(shown));clearInput();if(shown&&ready&&!paused&&!['ready','over'].includes(match.phase))togglePause();});
 initializeRoster();requestAnimationFrame(tick);

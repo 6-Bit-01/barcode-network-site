@@ -52,11 +52,25 @@ export function demoFightURL(state,baseURL,settings={}){
  if(state.screen!=='ready'||!state.confirmed.every(Boolean))throw new Error('Choose both fighters before entering the arena.');
  const url=new URL('fight.html',baseURL);
  for(const [key,value]of Object.entries({demo:'1',mode:state.mode,p1:state.picks[0],p2:state.picks[1],sound:settings.muted?'0':'1',motion:settings.reducedMotion?'1':'0'}))url.searchParams.set(key,value);
- return url;
+ return withControllerSeats(url,settings.controllerSeats);
 }
 export function parseDemoLaunch(value,roster){
  const params=new URL(value,'https://system-clash.invalid/').searchParams,ids=roster.map(f=>f.id);
  return {enabled:params.get('demo')==='1',mode:params.get('mode')==='local'?'local':'cpu',
  p1:ids.includes(params.get('p1'))?params.get('p1'):ids[0],p2:ids.includes(params.get('p2'))?params.get('p2'):ids[Math.min(1,ids.length-1)],
  muted:params.get('sound')==='0',reducedMotion:params.get('motion')==='1'};
+}
+
+export function controllerSeatsFromURL(value){
+ const params=new URL(value,'https://system-clash.invalid/').searchParams;
+ const seats=['pad1','pad2'].map(key=>{const raw=params.get(key);const index=raw!==null&&/^\d+$/.test(raw)?Number(raw):NaN;return Number.isSafeInteger(index)&&index>=0?index:null;});
+ if(seats[0]!==null&&seats[0]===seats[1])seats[1]=null;
+ return seats;
+}
+export function withControllerSeats(value,indices=[]){
+ const url=new URL(value,'https://system-clash.invalid/');
+ const seats=[0,1].map(i=>Number.isSafeInteger(indices?.[i])&&indices[i]>=0?indices[i]:null);
+ if(seats[0]!==null&&seats[0]===seats[1])seats[1]=null;
+ ['pad1','pad2'].forEach((key,i)=>{if(seats[i]===null)url.searchParams.delete(key);else url.searchParams.set(key,String(seats[i]));});
+ return url;
 }

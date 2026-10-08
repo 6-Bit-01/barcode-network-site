@@ -70,7 +70,7 @@ test("browser and Makko save copy remains specifically with System Override", ()
   assert.match(cards[0][1], /Saved settings and progress belong to this browser on this site\./);
   assert.match(cards[0][1], /Saves from the Makko version do not transfer automatically\./);
   assert.doesNotMatch(cards[1][1], /Makko|transfer automatically/);
-  assert.match(cards[1][1], /13 BARCODE fighters/);
-  assert.match(cards[1][1], /Solo CPU or Local Two Player/);
-  assert.doesNotMatch(cards[1][1], /Practice|Weapons|Tournament|18 playable/i);
+  assert.match(cards[1][1], /16 BARCODE fighters/);
+  assert.match(cards[1][1], /Solo CPU, Local Two Player, Tournament or Online Sessions across six interactive arenas/);
+  assert.doesNotMatch(cards[1][1], /Practice|Weapons|18 playable/i);
 });

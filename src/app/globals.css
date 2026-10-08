@@ -1098,3 +1098,202 @@ body {
 
 .public-site :is(a, button)[class*="hover:text-"]:is(:hover, :focus-visible) { color: var(--color-accent); }
 .public-site .group:hover [class*="group-hover:text-accent"] { color: var(--color-accent); }
+
+/* HQ artwork motion stays decorative, slow, and optional. */
+.public-signal-display {
+  min-width: 0;
+}
+.public-signal-art {
+  isolation: isolate;
+  pointer-events: none;
+}
+.public-signal-art::before {
+  content: "";
+  position: absolute;
+  inset: 7%;
+  z-index: -1;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgb(168 245 189 / 14%) 0%,
+    rgb(168 245 189 / 6%) 38%,
+    transparent 70%
+  );
+  opacity: 0.6;
+}
+.signal-orbit {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  stroke-linecap: round;
+}
+.signal-orbit--outer {
+  opacity: 0.65;
+}
+.signal-orbit--inner {
+  opacity: 0.45;
+}
+.signal-packet {
+  stroke-dasharray: 5 95;
+  stroke-dashoffset: 100;
+  stroke-linecap: round;
+  opacity: 0;
+}
+.signal-wave {
+  opacity: 0.75;
+}
+.public-signal-control {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  width: fit-content;
+  min-height: 44px;
+  margin: 0.25rem auto 0;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid transparent;
+  border-radius: 0.4rem;
+  color: var(--color-muted);
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+.public-signal-toggle {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+.public-signal-control:focus-within {
+  color: var(--color-foreground);
+  border-color: var(--color-accent);
+}
+.public-signal-toggle:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .public-signal-control {
+    display: flex;
+  }
+  .public-signal-art::before {
+    animation: public-signal-glow 14s ease-in-out infinite;
+  }
+  .signal-orbit--outer {
+    animation: public-signal-orbit 80s linear infinite;
+  }
+  .signal-orbit--inner {
+    animation: public-signal-orbit 110s linear infinite reverse;
+  }
+  .signal-packet {
+    animation: public-signal-packet 12s linear infinite;
+  }
+  .signal-packet--2 {
+    animation-delay: -3s;
+  }
+  .signal-packet--3 {
+    animation-delay: -6s;
+  }
+  .signal-packet--4 {
+    animation-delay: -9s;
+  }
+  .signal-wave {
+    animation: public-signal-wave 14s ease-in-out infinite;
+  }
+  .signal-wave--2 {
+    animation-delay: -7s;
+  }
+}
+
+@keyframes public-signal-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes public-signal-glow {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+@keyframes public-signal-packet {
+  0%,
+  8% {
+    stroke-dashoffset: 100;
+    opacity: 0;
+  }
+  14%,
+  42% {
+    opacity: 0.7;
+  }
+  48%,
+  100% {
+    stroke-dashoffset: -5;
+    opacity: 0;
+  }
+}
+@keyframes public-signal-wave {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+.public-signal-display:has(.public-signal-toggle:checked) .public-signal-art *,
+.public-signal-display:has(.public-signal-toggle:checked) .public-signal-art::before,
+.public-signal-display:has(.public-signal-toggle:checked) .public-signal-art::after {
+  animation-play-state: paused;
+}
+
+/* The three HQ entry cards share gentle hover and keyboard-focus feedback. */
+.public-route-grid > .public-route-card {
+  transition:
+    border-color 0.18s,
+    background 0.18s,
+    box-shadow 0.24s,
+    transform 0.24s ease;
+}
+.public-route-grid > .public-route-card:focus-visible {
+  border-color: var(--color-accent);
+  background: var(--color-surface-light);
+  box-shadow: 0 0 0 1px rgb(168 245 189 / 12%), 0 0.5rem 1.5rem rgb(0 0 0 / 14%);
+}
+.public-route-grid .route-action > svg {
+  transition: transform 0.24s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .public-route-grid > .public-route-card:hover {
+    box-shadow: 0 0 0 1px rgb(168 245 189 / 12%), 0 0.5rem 1.5rem rgb(0 0 0 / 14%);
+  }
+}
+@media (prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine) {
+  .public-route-grid > .public-route-card:hover {
+    transform: translateY(-2px);
+  }
+  .public-route-grid > .public-route-card:hover .route-action > svg {
+    transform: translateX(3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .public-signal-control {
+    display: none;
+  }
+  .public-signal-art *,
+  .public-signal-art::before,
+  .public-signal-art::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  .signal-orbit,
+  .public-route-grid > .public-route-card,
+  .public-route-grid .route-action > svg {
+    transform: none !important;
+  }
+}

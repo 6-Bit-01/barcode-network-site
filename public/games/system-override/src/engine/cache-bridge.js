@@ -17,16 +17,16 @@ window.FILE_MANIFEST.push({name:'src/engine/cache-bridge.js',exports:['BARCODE.C
       ['CACHE BACK','Keep both traces. This one leaves with me.'],['DJ FLOPPYDISC','Both saved. Crew channel stays open.']],
     ['departure','ONE PIECE','Seen from behind, Cache approaches the yellow car. 6 Bit is on the radio.',
       ['6 BIT / COMMS','Get it there in one piece.'],['CACHE BACK','The recording or the car?']],
-    ['ignition','ORIGINAL LOADED','Inside the yellow car, Cache loads the cassette and turns the ignition.',
-      ['MAC MODEM / COMMS','Route is yours. Keep the original moving.'],['CACHE BACK','Original loaded.']],
+    ['ignition','KEYS TO THE LINE','Cache walks toward the yellow car with his keys and protected original recording.',
+      ['MAC MODEM / COMMS','Route is yours. Keep the original moving.'],['CACHE BACK','Keys. Original. Let’s go.']],
     ['cache-line','THE CACHE LINE','The rear of the yellow car faces the open road. The crew channel stays connected.',
       ['6 BIT / COMMS',"We're on the line."],['CACHE BACK',"Then let's make some noise."]]
   ].map(([slug,title,visual,...lines],i)=>Object.freeze({title,visual,
-    asset:`assets/cache-bridge/bridge-${String(i+1).padStart(2,'0')}-${slug}.webp`,
+    asset:i===6?'assets/mac-street-review/cache-walk-to-car-v6.png':`assets/cache-bridge/bridge-${String(i+1).padStart(2,'0')}-${slug}.webp`,
     lines:Object.freeze(lines.map(Object.freeze))})));
   const cues=Object.freeze([{kind:'title',holdMs:800},{kind:'dialogue',line:0,holdMs:4000},
     {kind:'dialogue',line:1,holdMs:Infinity}].map(Object.freeze));
-  const sounds={'0:0':'relay','2:1':'original','3:1':'clean','4:1':'tape','6:1':'ignition'};
+  const sounds={'0:0':'relay','2:1':'original','3:1':'clean','4:1':'tape','7:0':'ignition'};
   const {ink,paper,mint,pink}=B.IntroSequence.format.palette,gold=pink;
   const frame=B.IntroSequence.format.frame;
   const bounds=B.IntroSequence.controls;

@@ -1,0 +1,956 @@
+{
+  "schema": 1,
+  "sheets": [
+    {
+      "id": "props",
+      "sourceImage": "assets/mac-street-power/street-props-v1.png",
+      "sourceSHA256": "e285f89a865226aaab3659dc1da1b168cf8acf8b48f1deafd20881a3775854b2",
+      "dimensions": {
+        "width": 1254,
+        "height": 1254
+      }
+    },
+    {
+      "id": "blood",
+      "sourceImage": "assets/mac-street-power/street-blood-v1.png",
+      "sourceSHA256": "0e33d045cff4c4a8c2669c8993f3da67ed6e78bfe8fd14f36f009c12fda20ee7",
+      "dimensions": {
+        "width": 1254,
+        "height": 1254
+      }
+    },
+    {
+      "id": "equipment",
+      "sourceImage": "assets/mac-street-power/street-weapons-v1.png",
+      "sourceSHA256": "c2c8ca402c23b98c2cc90f76b11c213f0cb123306b99f733cc6ce8d328ce0816",
+      "dimensions": {
+        "width": 1774,
+        "height": 887
+      }
+    },
+    {
+      "id": "cars",
+      "sourceImage": "assets/mac-street-power/street-cars-side-v2.png",
+      "sourceSHA256": "e3bfaf13c6d326727648294889b015711f2df2e25396836e5084c8b768fc23f2",
+      "dimensions": {
+        "width": 2172,
+        "height": 724
+      }
+    },
+    {
+      "id": "fixtures",
+      "sourceImage": "assets/mac-street-power/street-fixtures-v1.png",
+      "sourceSHA256": "ba3d768c11cd79ad347863ab19e3ff0ba886230909efd54d55d62f275ac3df30",
+      "dimensions": {
+        "width": 1254,
+        "height": 1254
+      }
+    },
+    {
+      "id": "cores",
+      "sourceImage": "assets/mac-street-power/street-powerups-v1.png",
+      "sourceSHA256": "09937e39896abb3104c6a464a34f86925ae224190f539ec0e77d7de09f8585f3",
+      "dimensions": {
+        "width": 1536,
+        "height": 1024
+      }
+    }
+  ],
+  "cells": {
+    "crate_intact": {
+      "sheet": "props",
+      "source": {
+        "x": 54,
+        "y": 59,
+        "width": 320,
+        "height": 298
+      },
+      "pivot": {
+        "x": 160.0,
+        "y": 290
+      },
+      "displayHeight": 160.791367,
+      "grip": {
+        "x": 55,
+        "y": 259
+      },
+      "gripMeasurement": {
+        "nativeSheetPoint": {
+          "x": 109,
+          "y": 318
+        },
+        "contact": "rear underside edge supported by both palms"
+      }
+    },
+    "crate_cracked": {
+      "sheet": "props",
+      "source": {
+        "x": 466,
+        "y": 66,
+        "width": 323,
+        "height": 293
+      },
+      "pivot": {
+        "x": 161.5,
+        "y": 285
+      },
+      "displayHeight": 158.093525,
+      "grip": {
+        "x": 55,
+        "y": 251
+      },
+      "gripMeasurement": {
+        "nativeSheetPoint": {
+          "x": 521,
+          "y": 317
+        },
+        "contact": "rear underside edge supported by both palms"
+      }
+    },
+    "crate_broken": {
+      "sheet": "props",
+      "source": {
+        "x": 854,
+        "y": 163,
+        "width": 365,
+        "height": 200
+      },
+      "pivot": {
+        "x": 182.5,
+        "y": 192
+      },
+      "displayHeight": 107.913669
+    },
+    "stall_intact": {
+      "sheet": "props",
+      "source": {
+        "x": 29,
+        "y": 404,
+        "width": 382,
+        "height": 372
+      },
+      "pivot": {
+        "x": 191.0,
+        "y": 364
+      },
+      "displayHeight": 339.145299
+    },
+    "stall_cracked": {
+      "sheet": "props",
+      "source": {
+        "x": 445,
+        "y": 405,
+        "width": 369,
+        "height": 379
+      },
+      "pivot": {
+        "x": 184.5,
+        "y": 371
+      },
+      "displayHeight": 345.527066
+    },
+    "stall_broken": {
+      "sheet": "props",
+      "source": {
+        "x": 854,
+        "y": 518,
+        "width": 366,
+        "height": 264
+      },
+      "pivot": {
+        "x": 183.0,
+        "y": 256
+      },
+      "displayHeight": 240.683761
+    },
+    "relay_off": {
+      "sheet": "props",
+      "source": {
+        "x": 111,
+        "y": 803,
+        "width": 223,
+        "height": 390
+      },
+      "pivot": {
+        "x": 111.5,
+        "y": 382
+      },
+      "displayHeight": 294.339623
+    },
+    "relay_on": {
+      "sheet": "props",
+      "source": {
+        "x": 519,
+        "y": 803,
+        "width": 224,
+        "height": 390
+      },
+      "pivot": {
+        "x": 112.0,
+        "y": 382
+      },
+      "displayHeight": 294.339623
+    },
+    "pickup_health": {
+      "sheet": "props",
+      "source": {
+        "x": 931,
+        "y": 920,
+        "width": 237,
+        "height": 256
+      },
+      "pivot": {
+        "x": 118.5,
+        "y": 248
+      },
+      "displayHeight": 42
+    },
+    "blood_red_impact": {
+      "sheet": "blood",
+      "source": {
+        "x": 42,
+        "y": 125,
+        "width": 338,
+        "height": 235
+      },
+      "pivot": {
+        "x": 78.84,
+        "y": 117.5
+      },
+      "displayHeight": 80
+    },
+    "blood_red_heavy": {
+      "sheet": "blood",
+      "source": {
+        "x": 430,
+        "y": 51,
+        "width": 364,
+        "height": 362
+      },
+      "pivot": {
+        "x": 182.0,
+        "y": 181.0
+      },
+      "displayHeight": 140
+    },
+    "blood_red_floor": {
+      "sheet": "blood",
+      "source": {
+        "x": 834,
+        "y": 202,
+        "width": 397,
+        "height": 200
+      },
+      "pivot": {
+        "x": 198.5,
+        "y": 100.0
+      },
+      "displayHeight": 35
+    },
+    "blood_green_impact": {
+      "sheet": "blood",
+      "source": {
+        "x": 44,
+        "y": 520,
+        "width": 337,
+        "height": 251
+      },
+      "pivot": {
+        "x": 78.62,
+        "y": 125.5
+      },
+      "displayHeight": 80
+    },
+    "blood_green_heavy": {
+      "sheet": "blood",
+      "source": {
+        "x": 438,
+        "y": 439,
+        "width": 362,
+        "height": 391
+      },
+      "pivot": {
+        "x": 181.0,
+        "y": 195.5
+      },
+      "displayHeight": 140
+    },
+    "blood_green_floor": {
+      "sheet": "blood",
+      "source": {
+        "x": 834,
+        "y": 607,
+        "width": 399,
+        "height": 208
+      },
+      "pivot": {
+        "x": 199.5,
+        "y": 104.0
+      },
+      "displayHeight": 35
+    },
+    "blood_purple_impact": {
+      "sheet": "blood",
+      "source": {
+        "x": 43,
+        "y": 920,
+        "width": 350,
+        "height": 244
+      },
+      "pivot": {
+        "x": 81.48,
+        "y": 122.0
+      },
+      "displayHeight": 80
+    },
+    "blood_purple_heavy": {
+      "sheet": "blood",
+      "source": {
+        "x": 439,
+        "y": 840,
+        "width": 359,
+        "height": 385
+      },
+      "pivot": {
+        "x": 179.5,
+        "y": 192.5
+      },
+      "displayHeight": 140
+    },
+    "blood_purple_floor": {
+      "sheet": "blood",
+      "source": {
+        "x": 831,
+        "y": 1002,
+        "width": 395,
+        "height": 208
+      },
+      "pivot": {
+        "x": 197.5,
+        "y": 104.0
+      },
+      "displayHeight": 35
+    },
+    "weapon_pipe": {
+      "sheet": "equipment",
+      "source": {
+        "x": 23,
+        "y": 69,
+        "width": 417,
+        "height": 366
+      },
+      "pivot": {
+        "x": 209.0,
+        "y": 361
+      },
+      "displayHeight": 118.56338,
+      "grip": {
+        "x": 70,
+        "y": 306
+      },
+      "gripMeasurement": {
+        "nativeSheetPoint": {
+          "x": 93,
+          "y": 375
+        },
+        "contact": "lower cloth-wrapped handle immediately above the butt; measured on the unchanged native item"
+      }
+    },
+    "weapon_crowbar": {
+      "sheet": "equipment",
+      "source": {
+        "x": 470,
+        "y": 74,
+        "width": 417,
+        "height": 357
+      },
+      "pivot": {
+        "x": 209.0,
+        "y": 352
+      },
+      "displayHeight": 119.342939,
+      "grip": {
+        "x": 96,
+        "y": 261
+      },
+      "gripMeasurement": {
+        "nativeSheetPoint": {
+          "x": 566,
+          "y": 335
+        },
+        "contact": "wrapped shaft below bend"
+      }
+    },
+    "weapon_shock-baton": {
+      "sheet": "equipment",
+      "source": {
+        "x": 917,
+        "y": 66,
+        "width": 406,
+        "height": 371
+      },
+      "pivot": {
+        "x": 200.0,
+        "y": 368
+      },
+      "displayHeight": 103.631285,
+      "grip": {
+        "x": 85,
+        "y": 275
+      },
+      "gripMeasurement": {
+        "nativeSheetPoint": {
+          "x": 1002,
+          "y": 341
+        },
+        "contact": "insulated handle"
+      }
+    },
+    "weapon_energy-blade": {
+      "sheet": "equipment",
+      "source": {
+        "x": 1346,
+        "y": 60,
+        "width": 419,
+        "height": 377
+      },
+      "pivot": {
+        "x": 206.5,
+        "y": 372
+      },
+      "displayHeight": 135.38674,
+      "grip": {
+        "x": 89,
+        "y": 295
+      },
+      "gripMeasurement": {
+        "nativeSheetPoint": {
+          "x": 1435,
+          "y": 355
+        },
+        "contact": "hilt below guard"
+      }
+    },
+    "weapon_gravity-hammer": {
+      "sheet": "equipment",
+      "source": {
+        "x": 26,
+        "y": 444,
+        "width": 429,
+        "height": 411
+      },
+      "pivot": {
+        "x": 215.0,
+        "y": 406
+      },
+      "displayHeight": 133.575,
+      "grip": {
+        "x": 132,
+        "y": 276
+      },
+      "gripMeasurement": {
+        "nativeSheetPoint": {
+          "x": 158,
+          "y": 720
+        },
+        "contact": "rubber shaft below heavy head"
+      }
+    },
+    "weapon_scatter-blaster": {
+      "sheet": "equipment",
+      "source": {
+        "x": 462,
+        "y": 557,
+        "width": 392,
+        "height": 256
+      },
+      "pivot": {
+        "x": 195.0,
+        "y": 251
+      },
+      "displayHeight": 78.04878,
+      "grip": {
+        "x": 49,
+        "y": 178
+      },
+      "muzzle": {
+        "x": 379,
+        "y": 96
+      },
+      "itemFrontRegions": [
+        [
+          {
+            "x": 108,
+            "y": 0
+          },
+          {
+            "x": 392,
+            "y": 0
+          },
+          {
+            "x": 392,
+            "y": 256
+          },
+          {
+            "x": 108,
+            "y": 256
+          }
+        ]
+      ],
+      "gripMeasurement": {
+        "nativeSheetPoint": {
+          "x": 511,
+          "y": 735
+        },
+        "contact": "pistol trigger handle"
+      }
+    },
+    "weapon_coil-rifle": {
+      "sheet": "equipment",
+      "source": {
+        "x": 875,
+        "y": 577,
+        "width": 513,
+        "height": 211
+      },
+      "pivot": {
+        "x": 256.0,
+        "y": 206
+      },
+      "displayHeight": 73.482587,
+      "grip": {
+        "x": 100,
+        "y": 165
+      },
+      "muzzle": {
+        "x": 496,
+        "y": 95
+      },
+      "itemFrontRegions": [
+        [
+          {
+            "x": 175,
+            "y": 0
+          },
+          {
+            "x": 513,
+            "y": 0
+          },
+          {
+            "x": 513,
+            "y": 211
+          },
+          {
+            "x": 175,
+            "y": 211
+          }
+        ]
+      ],
+      "gripMeasurement": {
+        "nativeSheetPoint": {
+          "x": 975,
+          "y": 742
+        },
+        "contact": "pistol trigger handle"
+      }
+    },
+    "weapon_plasma-disc": {
+      "sheet": "equipment",
+      "source": {
+        "x": 1389,
+        "y": 569,
+        "width": 372,
+        "height": 226
+      },
+      "pivot": {
+        "x": 186.0,
+        "y": 221
+      },
+      "displayHeight": 54.407407,
+      "grip": {
+        "x": 71,
+        "y": 179
+      },
+      "gripMeasurement": {
+        "nativeSheetPoint": {
+          "x": 1460,
+          "y": 748
+        },
+        "contact": "near rim pinch"
+      }
+    },
+    "car_intact": {
+      "sheet": "cars",
+      "source": {
+        "x": 21,
+        "y": 116,
+        "width": 682,
+        "height": 216
+      },
+      "pivot": {
+        "x": 341.0,
+        "y": 211
+      },
+      "displayHeight": 219.223881
+    },
+    "car_cracked": {
+      "sheet": "cars",
+      "source": {
+        "x": 727,
+        "y": 115,
+        "width": 687,
+        "height": 217
+      },
+      "pivot": {
+        "x": 343.5,
+        "y": 212
+      },
+      "displayHeight": 220.238806
+    },
+    "car_broken": {
+      "sheet": "cars",
+      "source": {
+        "x": 1439,
+        "y": 112,
+        "width": 713,
+        "height": 233
+      },
+      "pivot": {
+        "x": 356.5,
+        "y": 228
+      },
+      "displayHeight": 236.477612
+    },
+    "car_van_intact": {
+      "sheet": "cars",
+      "source": {
+        "x": 20,
+        "y": 391,
+        "width": 708,
+        "height": 261
+      },
+      "pivot": {
+        "x": 354.0,
+        "y": 256
+      },
+      "displayHeight": 295.401146
+    },
+    "car_van_cracked": {
+      "sheet": "cars",
+      "source": {
+        "x": 735,
+        "y": 391,
+        "width": 708,
+        "height": 262
+      },
+      "pivot": {
+        "x": 354.0,
+        "y": 257
+      },
+      "displayHeight": 296.532951
+    },
+    "car_van_broken": {
+      "sheet": "cars",
+      "source": {
+        "x": 1456,
+        "y": 391,
+        "width": 697,
+        "height": 265
+      },
+      "pivot": {
+        "x": 348.5,
+        "y": 260
+      },
+      "displayHeight": 299.928367
+    },
+    "barrel_intact": {
+      "sheet": "fixtures",
+      "source": {
+        "x": 96,
+        "y": 47,
+        "width": 235,
+        "height": 326
+      },
+      "pivot": {
+        "x": 118.5,
+        "y": 321
+      },
+      "displayHeight": 171.305732,
+      "grip": {
+        "x": 70,
+        "y": 321
+      }
+    },
+    "barrel_cracked": {
+      "sheet": "fixtures",
+      "source": {
+        "x": 511,
+        "y": 58,
+        "width": 235,
+        "height": 316
+      },
+      "pivot": {
+        "x": 117.5,
+        "y": 311
+      },
+      "displayHeight": 166.050955,
+      "grip": {
+        "x": 70,
+        "y": 311
+      }
+    },
+    "barrel_broken": {
+      "sheet": "fixtures",
+      "source": {
+        "x": 863,
+        "y": 172,
+        "width": 369,
+        "height": 212
+      },
+      "pivot": {
+        "x": 184.5,
+        "y": 206
+      },
+      "displayHeight": 111.401274
+    },
+    "fixture_streetlight_intact": {
+      "sheet": "fixtures",
+      "source": {
+        "x": 76,
+        "y": 389,
+        "width": 270,
+        "height": 432
+      },
+      "pivot": {
+        "x": 135.5,
+        "y": 426
+      },
+      "displayHeight": 564.370546
+    },
+    "fixture_streetlight_cracked": {
+      "sheet": "fixtures",
+      "source": {
+        "x": 491,
+        "y": 394,
+        "width": 273,
+        "height": 427
+      },
+      "pivot": {
+        "x": 136.0,
+        "y": 422
+      },
+      "displayHeight": 557.83848
+    },
+    "fixture_streetlight_broken": {
+      "sheet": "fixtures",
+      "source": {
+        "x": 848,
+        "y": 656,
+        "width": 382,
+        "height": 179
+      },
+      "pivot": {
+        "x": 191.0,
+        "y": 173
+      },
+      "displayHeight": 233.847981
+    },
+    "fixture_terminal_intact": {
+      "sheet": "fixtures",
+      "source": {
+        "x": 77,
+        "y": 841,
+        "width": 269,
+        "height": 366
+      },
+      "pivot": {
+        "x": 135.5,
+        "y": 361
+      },
+      "displayHeight": 267.303371
+    },
+    "fixture_terminal_cracked": {
+      "sheet": "fixtures",
+      "source": {
+        "x": 487,
+        "y": 838,
+        "width": 270,
+        "height": 369
+      },
+      "pivot": {
+        "x": 134.5,
+        "y": 363
+      },
+      "displayHeight": 269.494382
+    },
+    "fixture_terminal_broken": {
+      "sheet": "fixtures",
+      "source": {
+        "x": 897,
+        "y": 848,
+        "width": 283,
+        "height": 368
+      },
+      "pivot": {
+        "x": 141.5,
+        "y": 363
+      },
+      "displayHeight": 268.764045
+    },
+    "pickup_overdrive": {
+      "sheet": "cores",
+      "source": {
+        "x": 141,
+        "y": 104,
+        "width": 284,
+        "height": 473
+      },
+      "pivot": {
+        "x": 142.0,
+        "y": 468
+      },
+      "displayHeight": 47.095238
+    },
+    "pickup_barrier": {
+      "sheet": "cores",
+      "source": {
+        "x": 618,
+        "y": 105,
+        "width": 284,
+        "height": 473
+      },
+      "pivot": {
+        "x": 142.0,
+        "y": 467
+      },
+      "displayHeight": 47.095238
+    },
+    "pickup_impact": {
+      "sheet": "cores",
+      "source": {
+        "x": 1054,
+        "y": 117,
+        "width": 408,
+        "height": 466
+      },
+      "pivot": {
+        "x": 204.5,
+        "y": 461
+      },
+      "displayHeight": 47.008772
+    },
+    "projectile_scatter-bolt": {
+      "sheet": "cores",
+      "source": {
+        "x": 28,
+        "y": 724,
+        "width": 453,
+        "height": 157
+      },
+      "pivot": {
+        "x": 226.0,
+        "y": 79.0
+      },
+      "displayHeight": 23.657534
+    },
+    "projectile_coil-bolt": {
+      "sheet": "cores",
+      "source": {
+        "x": 540,
+        "y": 761,
+        "width": 461,
+        "height": 95
+      },
+      "pivot": {
+        "x": 230.5,
+        "y": 47.5
+      },
+      "displayHeight": 15.647059
+    },
+    "projectile_plasma-disc": {
+      "sheet": "cores",
+      "source": {
+        "x": 1047,
+        "y": 707,
+        "width": 462,
+        "height": 197
+      },
+      "pivot": {
+        "x": 231.5,
+        "y": 99.0
+      },
+      "displayHeight": 37.069892
+    }
+  },
+  "dynamicScaleVersion": 2,
+  "attachmentSchema": 1,
+  "scaleMeasurements": {
+    "actorVisibleHeight": 260,
+    "solidAlphaThreshold": 192,
+    "props": [
+      {
+        "kind": "crate",
+        "visibleHeight": 150,
+        "visibleWidth": 161.330935,
+        "uniformNativeDensity": 0.539568345323741
+      },
+      {
+        "kind": "barrel",
+        "visibleHeight": 165,
+        "visibleWidth": 117.181529,
+        "uniformNativeDensity": 0.5254777070063694
+      },
+      {
+        "kind": "fixture_terminal",
+        "visibleHeight": 260,
+        "visibleWidth": 187.696629,
+        "uniformNativeDensity": 0.7303370786516854
+      },
+      {
+        "kind": "fixture_streetlight",
+        "visibleHeight": 550,
+        "visibleWidth": 338.361045,
+        "uniformNativeDensity": 1.3064133016627077
+      },
+      {
+        "kind": "stall",
+        "visibleHeight": 320,
+        "visibleWidth": 330.940171,
+        "uniformNativeDensity": 0.9116809116809117
+      },
+      {
+        "kind": "relay",
+        "visibleHeight": 280,
+        "visibleWidth": 154.716981,
+        "uniformNativeDensity": 0.7547169811320755
+      }
+    ],
+    "cars": [
+      {
+        "kind": "car",
+        "visibleWidth": 680,
+        "visibleHeight": 209.074627,
+        "uniformNativeDensity": 1.0149253731343284,
+        "sourceSolidBounds": [
+          7,
+          5,
+          677,
+          211
+        ]
+      },
+      {
+        "kind": "car_van",
+        "visibleWidth": 790,
+        "visibleHeight": 284.083095,
+        "uniformNativeDensity": 1.1318051575931232,
+        "sourceSolidBounds": [
+          5,
+          5,
+          703,
+          256
+        ]
+      }
+    ],
+    "rule": "Uniform native family density, unchanged aspect, measured solid artwork; crop padding is not physical height."
+  }
+}

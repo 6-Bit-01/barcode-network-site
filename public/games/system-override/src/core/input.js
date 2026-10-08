@@ -46,6 +46,7 @@ window.InputManager = class InputManager {
       if (window.BARCODE?.RunAndGunProof?.active) {
         if (window.BARCODE.RunAndGunProof.keyDown(e)) return;
       }
+      if (window.BARCODE?.MacCombatPreview?.active && window.BARCODE.MacCombatPreview.keyDown(e)) return;
       if (key === 'c' && window.gameState?.victory) {
         e.preventDefault();
         if (!e.repeat) window.BARCODE?.Campaign?.openIntermission();
@@ -263,6 +264,12 @@ window.InputManager = class InputManager {
       return true;
     }
     if (input.changed) this.actionInput?.blockGamepadUntilRelease();
+    const mac = BARCODE?.MacCombatPreview;
+    if (mac?.active && owner === 'gameplay' && mac.status !== 'playing') {
+      if (p.b9) BARCODE.RuntimeLifecycle?.togglePause?.();
+      else if (p.b0) mac.retry(); else if (p.b1 || p.b2) mac.exit();
+      return true;
+    }
     if (owner === 'ending') { BARCODE.CacheEnding.gamepad(input); return true; }
     if (owner === 'bridge') { BARCODE.CacheBridge.gamepad(input); return true; }
     if (owner === 'pause') {
@@ -337,6 +344,16 @@ window.InputManager = class InputManager {
     }
     if (command === 'comic:skip') { comic?.holdSkip?.('touch', held); return !!comic; }
     if (!held) return false;
+    if (command.startsWith('mac:') && B.MacCombatPreview?.active && !window.isPaused) {
+      const mac = B.MacCombatPreview;
+      if (command === 'mac:next') return mac.advance();
+      if (command === 'mac:skip') return mac.skip();
+      if (command === 'mac:choice:0') return mac.choose(0);
+      if (command === 'mac:choice:1') return mac.choose(1);
+      if (command === 'mac:retry') return mac.retry();
+      if (command === 'mac:exit') return mac.exit();
+      return false;
+    }
     if (command === 'pause') {
       B.TouchControls?.releaseAll('pause-request');
       if (intro?.isActive) return intro.togglePresentationPause?.();
@@ -404,6 +421,10 @@ window.InputManager = class InputManager {
 
   routeActions(actions, options = {}) {
     if (actions.pause.pressed && window.BARCODE && window.BARCODE.RuntimeLifecycle) window.BARCODE.RuntimeLifecycle.togglePause();
+    if (window.BARCODE?.MacCombatPreview?.active) {
+      if (!options.inputOnly && !window.isPaused) window.BARCODE.MacCombatPreview.handleActions(actions);
+      return;
+    }
     if (window.BARCODE?.CacheRoadProof?.active) {
       if (!options.inputOnly && !window.isPaused) window.BARCODE.CacheRoadProof.handleActions(actions);
       return;

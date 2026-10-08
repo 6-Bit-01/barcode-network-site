@@ -1,5 +1,23 @@
 /* Enhanced VHS-Era Dystopian Styling for BARCODE: System Override */
 
+/* Mac keeps fixed thumb destinations while contextual Throw/Talk come and go. */
+.touch-controls[data-context="mac"] .touch-actions { width: 164px; grid-template-columns: 70px 80px; grid-template-rows: 48px 48px 68px; gap: 6px; }
+.touch-controls[data-context="mac"] .touch-actions > .touch-button { width: 64px; height: 48px; min-height: 44px; }
+.touch-controls[data-context="mac"] .touch-actions > [data-touch-action="jump"] { grid-row: 3; grid-column: 2; width: 68px; height: 68px; }
+.touch-controls[data-context="mac"] .touch-actions > [data-touch-action="road_attack"] { grid-row: 2; grid-column: 2; }
+.touch-controls[data-context="mac"] .touch-actions > [data-touch-action="road_defend"] { grid-row: 2; grid-column: 1; }
+.touch-controls[data-context="mac"] .touch-actions > [data-touch-action="road_disrupt"] { grid-row: 1; grid-column: 1; }
+.touch-controls[data-context="mac"] .touch-actions > [data-touch-action="inspect"] { grid-row: 1; grid-column: 2; }
+.touch-controls[data-context="mac-dialogue"] .touch-actions { left: max(12px, env(safe-area-inset-left)); right: max(12px, env(safe-area-inset-right)); width: auto; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.touch-controls[data-context="mac-dialogue"] .touch-actions > [data-kind="choice"] { min-height: 52px; padding: 12px; }
+.touch-controls[data-context="mac-dialogue"] .touch-actions > [data-kind="choice"] .touch-label { font-size: 15px; }
+.mac-dialogue-readout { position: fixed; left: max(16px, env(safe-area-inset-left)); right: max(16px, env(safe-area-inset-right)); bottom: calc(max(14px, env(safe-area-inset-bottom)) + 82px); padding: 16px 18px; border: 1px solid #eec87188; border-left: 4px solid #eec871; border-radius: 14px; background: #101e2dfa; color: #f5eee3; font: 18px/1.45 system-ui, sans-serif; z-index: 100009; pointer-events: none; }
+.mac-dialogue-readout strong { display: block; color: #82d7c8; font-size: 13px; letter-spacing: .06em; }
+.mac-dialogue-readout small { display: block; color: #eec871; font-size: 12px; margin-bottom: 8px; }
+.mac-dialogue-readout p { margin: 8px 0 0; }
+.mac-dialogue-readout[hidden] { display: none !important; }
+@media (orientation: landscape) and (max-height: 500px) { .mac-dialogue-readout { left: 16%; right: 16%; bottom: 78px; padding: 9px 14px; font-size: 16px; line-height: 1.25; } }
+
 /* Touch controls are DOM overlays. Native canvas fitting and game drawing stay
    with their existing owners; no filters, animation, or full-screen panels. */
 .touch-controls {

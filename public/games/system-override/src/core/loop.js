@@ -91,6 +91,7 @@ window.gameLoop = function(timestamp) {
   if (!window.isRunning) return;
 
   if (window.isPaused) {
+    window.BARCODE?.MacCombatPreview?.syncDialogueReadout?.();
     window.parallaxBackground?.syncSkyPlayback?.();
     if (window.inputManager && typeof window.inputManager.updatePausedInput === 'function') {
       window.inputManager.updatePausedInput();
@@ -115,6 +116,16 @@ window.gameLoop = function(timestamp) {
 
   // Cap delta time to prevent spiral of death (if tab was inactive)
   const cappedDelta = Math.min(deltaTime, 100); // Max 100ms (10fps minimum)
+  if (window.BARCODE?.MacCombatPreview?.active) {
+    window.BARCODE?.PauseMenu?.sync();
+    window.inputManager?.update?.();
+    window.BARCODE.MacCombatPreview.update(cappedDelta);
+    window.BARCODE.MacCombatPreview.draw(getFrameContext());
+    window.audioSystem?.updateLayers?.();
+    window.lastTime = timestamp;
+    scheduleNextGameplayFrame();
+    return;
+  }
   if (window.BARCODE?.LevelDifficulty?.open) {
     window.inputManager?.update?.();
     window.renderGame?.();

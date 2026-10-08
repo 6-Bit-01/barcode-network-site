@@ -16,6 +16,8 @@ window.FILE_MANIFEST.push({ name: 'src/engine/music-director.js', exports: ['BAR
       if (['hack', 'boss', 'clear', 'combo'].includes(kind)) this.pendingAccent = kind;
     }
     desiredState() {
+      const mac = B.MacCombatPreview;
+      if (mac?.active) return mac.phase === 'street' && mac.combat?.getSnapshot?.().arena?.active ? 'combat' : 'explore';
       const proof = B.RunAndGunProof;
       if (proof?.active) return proof.status === 'playing' ? (proof.threatActive() ? 'combat' : 'explore') : 'victory';
       const owner = window.sector1Progression;

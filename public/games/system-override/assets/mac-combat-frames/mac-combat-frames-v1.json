@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "rendererPurpose": "One native whole-character cel per actor; authored discrete pose holds, no articulated body rig",
+  "status": "Accepted base walk/air-kick retained; new whole guard/run/grab/carry/equipment cels in private owner playtest",
+  "files": [
+    "assets/mac-combat-frames/bile_spitter-frames-v1.json",
+    "assets/mac-combat-frames/bile_spitter-frames-v2.png",
+    "assets/mac-combat-frames/chitin_scuttler-frames-v1.json",
+    "assets/mac-combat-frames/chitin_scuttler-frames-v1.png",
+    "assets/mac-combat-frames/mac-advanced-v1.png",
+    "assets/mac-combat-frames/mac-basic-v2.png",
+    "assets/mac-combat-frames/mac-combat-frames-v1.json",
+    "assets/mac-combat-frames/mac-frames-v1.json",
+    "assets/mac-combat-frames/mac-jump-kick-v1.png",
+    "assets/mac-combat-frames/mac-walk-contacts-v1.png",
+    "assets/mac-combat-frames/mac-walk-v1.png",
+    "assets/mac-combat-frames/null_regent-frames-v1.json",
+    "assets/mac-combat-frames/null_regent-frames-v2.png",
+    "assets/mac-combat-frames/prism_guard-frames-v1.json",
+    "assets/mac-combat-frames/prism_guard-frames-v1.png",
+    "assets/mac-combat-frames/psion_lancer-frames-v1.json",
+    "assets/mac-combat-frames/psion_lancer-frames-v1.png",
+    "assets/mac-combat-frames/rift_stalker-frames-v1.json",
+    "assets/mac-combat-frames/rift_stalker-frames-v1.png",
+    "assets/mac-combat-frames/shock_mantid-frames-v1.json",
+    "assets/mac-combat-frames/shock_mantid-frames-v1.png",
+    "assets/mac-street-dynamic/mac-armed-run-two-braids-v1.png",
+    "assets/mac-street-dynamic/mac-armed-walk-two-braids-v1.png",
+    "assets/mac-street-dynamic/mac-carry-low-front-v2.png",
+    "assets/mac-street-dynamic/mac-coil-rifle-grips-v1.png",
+    "assets/mac-street-dynamic/mac-guard-two-braids-v1.png",
+    "assets/mac-street-dynamic/mac-guard-v1.png",
+    "assets/mac-street-dynamic/mac-hold-carry-two-braids-v1.png",
+    "assets/mac-street-dynamic/mac-hold-carry-v1.png",
+    "assets/mac-street-dynamic/mac-modem-actions-v1.json",
+    "assets/mac-street-dynamic/mac-pipe-swing-two-braids-v1.png",
+    "assets/mac-street-dynamic/mac-plasma-disc-grips-v1.png",
+    "assets/mac-street-dynamic/mac-plasma-disc-retained-two-braids-v1.png",
+    "assets/mac-street-dynamic/mac-run-two-braids-v1.png",
+    "assets/mac-street-dynamic/mac-run-v1.png",
+    "assets/mac-street-dynamic/mac-scatter-blaster-grips-v1.png",
+    "assets/mac-street-dynamic/mac-weapon-poses-two-braids-v1.png",
+    "assets/mac-street-dynamic/mac-weapon-poses-v1.png"
+  ],
+  "actors": [
+    {
+      "kind": "mac",
+      "displayName": "Mac / Modem",
+      "bloodColor": "red",
+      "bloodHex": "#f04455",
+      "registration": "assets/mac-combat-frames/mac-frames-v1.json",
+      "registrationSHA256": "2220efc6400d0159d6b9a8dc805b9f332ae618932e6e8802f9e7d7c5ab64ac13",
+      "supplemental": {
+        "registration": "assets/mac-street-dynamic/mac-modem-actions-v1.json",
+        "registrationSHA256": "202f101672c07379b26ee923a48a0e66c16f035c2d22dd45dc1cc6bebd457bb7"
+      }
+    },
+    {
+      "kind": "chitin_scuttler",
+      "displayName": "Chitin Scuttler",
+      "bloodColor": "green",
+      "bloodHex": "#78ea68",
+      "registration": "assets/mac-combat-frames/chitin_scuttler-frames-v1.json",
+      "registrationSHA256": "8b3c2e1cdac72c527388d30d66d7ad72701e6b900b3435ab62b8ee0c3b7da4dd"
+    },
+    {
+      "kind": "psion_lancer",
+      "displayName": "Psion Lancer",
+      "bloodColor": "purple",
+      "bloodHex": "#b374ed",
+      "registration": "assets/mac-combat-frames/psion_lancer-frames-v1.json",
+      "registrationSHA256": "2976fed8aac4ef663101a5c67052f60881aeb7326cefd5fad58bc71b0aa6bc7f"
+    },
+    {
+      "kind": "bile_spitter",
+      "displayName": "Bile Spitter",
+      "bloodColor": "green",
+      "bloodHex": "#78ea68",
+      "registration": "assets/mac-combat-frames/bile_spitter-frames-v1.json",
+      "registrationSHA256": "28df3f4fc840d970ee6d7a130c60c7ad21b8c3661354fa8276b5b8d9ceb6b190"
+    },
+    {
+      "kind": "prism_guard",
+      "displayName": "Prism Guard",
+      "bloodColor": "purple",
+      "bloodHex": "#b374ed",
+      "registration": "assets/mac-combat-frames/prism_guard-frames-v1.json",
+      "registrationSHA256": "3662363430001175100863cc6f29d93a7287c0b2f50b1fe3c2b1bc6ad8564b14"
+    },
+    {
+      "kind": "rift_stalker",
+      "displayName": "Rift Stalker",
+      "bloodColor": "purple",
+      "bloodHex": "#b374ed",
+      "registration": "assets/mac-combat-frames/rift_stalker-frames-v1.json",
+      "registrationSHA256": "58ab78fe5e365cb6935f3deb78468c7a8b172ef91d20f679f8821f5008264901"
+    },
+    {
+      "kind": "shock_mantid",
+      "displayName": "Shock Mantid",
+      "bloodColor": "green",
+      "bloodHex": "#78ea68",
+      "registration": "assets/mac-combat-frames/shock_mantid-frames-v1.json",
+      "registrationSHA256": "39734156f7e647228bdeafe4f120fbf48714dc558a5fc2899ddbc0695652bde5"
+    },
+    {
+      "kind": "null_regent",
+      "displayName": "Null Regent",
+      "bloodColor": "purple",
+      "bloodHex": "#b374ed",
+      "registration": "assets/mac-combat-frames/null_regent-frames-v1.json",
+      "registrationSHA256": "169f2b4ccd881711a8a3ac96eab531cbe4b1f22370a9dad8474729f8ec9158bb"
+    }
+  ]
+}

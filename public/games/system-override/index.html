@@ -682,6 +682,10 @@
     <script src="src/engine/cache-road-gpu-context.js"></script>
     <script src="src/game/cache-road-proof.js"></script>
     <script src="src/game/broadcast-slum-proof.js"></script>
+    <script src="src/game/mac-street-combat.js"></script>
+    <script src="src/game/mac-street-story.js"></script>
+    <script src="src/game/mac-combat-frames.js"></script>
+    <script src="src/game/mac-combat-preview.js"></script>
     <script src="src/game/lost-data.js"></script>
     <script src="src/game/sector1-progression.js"></script>
     <script src="src/game/level-01-stage-fx.js"></script>
@@ -754,6 +758,9 @@
             // The standalone host preloads through the existing deduplicated initializer.
             Promise.resolve(window.initSprites?.()).catch(error => console.error('Sprite preload failed:', error));
             console.log('🚀 Starting boot sequence...');
+            if (window.BARCODE?.MacCombatPreview?.requested?.()) {
+                document.getElementById('startButton').textContent = 'PLAY MAC’S STREET';
+            }
             
             // Start the terminal boot loader
             if (window.bootLoader) {
@@ -865,7 +872,8 @@
 
             const lifecycle = window.BARCODE.RuntimeLifecycle;
             const state = lifecycle.getState();
-            const result = state === 'failed' ? await lifecycle.retry() : await lifecycle.start({ initialStart: true });
+            const macPreview = window.BARCODE?.MacCombatPreview?.requested?.();
+            const result = macPreview ? await lifecycle.start({ initialStart: true, privatePreview: 'mac-firstslice' }) : state === 'failed' ? await lifecycle.retry() : await lifecycle.start({ initialStart: true });
             if (!result || result.ok === false) {
                 console.warn('Runtime lifecycle start request did not complete:', result);
             }

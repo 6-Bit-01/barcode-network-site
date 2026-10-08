@@ -1,6 +1,67 @@
+## October 6, 2026 — individual weapon grips, street scale and running kick
+
+The owner rejected the arsenal1 weapon holds and small cars/props, and explicitly requires each weapon to be positioned and checked individually. This correction adds per-weapon, per-cel grip, angle and front/behind layering, with native palm/forearm overlap drawn from the same complete character cel. The accepted character drawings remain complete; no articulated body animation returns. Both facing directions and equipped idle, guard, movement and attack states belong to the review.
+
+Cars use new longer side-view native drawings, with one uniform scale for each intact/cracked/wrecked family. Street objects are calibrated against the unchanged 260-unit Mac. Stronger cars absorb several attacks and use a finite hit bounce driven by the existing combat clock, while collision/floor anchors, one-time wrecking and loot remain authoritative. Run plus Strike commits a grounded running kick with forward momentum and launch; ordinary strikes, airborne kicks and counters retain their own behavior. Equipped gear remains in inventory and is not spent by the running kick.
+
+Source PR189 and website PR485 remain private drafts. The arsenal1 source6df3cf81/site3dfb10cf checkpoint and verified archive are preserved. The production equipment review page, native review images, final source/site identities, fresh focused/full checks, hosted observations and exact source ZIP are recorded in project-root/verification/mac-street-grip-20261006 and its delivery receipts. The website playtest revision is grip2. Technical validation does not establish owner visual/playtest acceptance, physical-phone performance or final Mac music acceptance. Six districts, twelve waves, thirty enemies, boss, cameos, both Kave choices and the original 624 artwork/audio identities remain.
+
+## Mac private street arsenal pass - October 6, 2026
+
+The private Mac preview adds eight finite-use weapons, strength-limited enemy holds and pummelling, throwable boxes/barrels, wreckable futuristic cars and reachable street fixtures. Double-tap movement runs; held guard walks very slowly with complete drawn blocking cels. Overdrive, Barrier and Impact pickups extend the existing attack system. The joystick and contextual actions retain independent holds and safe interruption through the shared input owner.
+
+Four supplemental whole-character atlases and four whole-object atlases retain native generated PNG bytes. Original accepted character sheets, six districts/twelve waves, cameos, both dialogue choices, music ownership, frame ownership and the original 624 asset seal remain. Props use shared native registration against Mac's 260-unit standing height; wrecks retain their intact family's scale.
+
+Exact source/site commits, package identities, validation and hosted observations are recorded with this private build's delivery receipt. Owner playtest acceptance is pending. This pass leaves both PRs draft and does not change production.
+
 # System Override web entry
 
-## Mobile tutorial instructions — October 5
+## October 6, 2026 — Modem power pass and hands-on tutorial
+
+The owner approved the gameplay pass, tutorial and stronger damage presentation. The first two districts now have flying-body crowd contacts, finisher launches, knockdowns, destructible crates/stall, automatic grounded recovery, coordinated melee positioning and ranged retreat. A small skippable coach follows actual moves and uses keyboard, controller or touch prompts. Existing contextual Throw and Inspect/Link remain direct actions.
+
+Native browser review exposed an unbounded browser audio-resume wait that could leave Pause pending. Resume now has a finite deadline in the existing audio owner. Mac can resume its fixed combat simulation with delayed audio; beat-dependent chapters remain safely paused with a retryable menu until their clock is available. Late audio completion is cancelled by pause, stop or title return, and the original loop owner resumes before compatibility flags are projected. Exact regression and final deployment results are retained with the release receipts.
+
+The two native transparent atlases register eighteen cells for intact/cracked/collapsed props, relay states, recovery and red/green/purple blood bursts/floor marks. Complete drawn actor cels stay in use; no separate-part animation returns. Brief impact pauses retain input, finite shake honors Reduced Motion, and sounds use the existing owner. Restoring the market relay triggers short 9 Bit/Kave reactions without another dialogue choice. All six districts, twelve waves, thirty enemies, boss and both Kave choices remain playable.
+
+Existing twenty-five combat groups and six new actual-core groups pass, including the complete public-input city route, secondary body contact deduplication, ordinary-strike destruction, grounded pickups, finisher launch, buffered impact input and retry. Final wrapper, full-suite, strict-package, exact-head CI, hosted observations and archive results belong to the project-root/verification/mac-street-power-20261006 release receipts. These are technical checks; the owner has not yet accepted this playable power pass or physical-phone performance. This is a private draft review, with temporary Level 03 proof audio and no production publication.
+
+
+## October 6, 2026 — complete drawn cels integrated into the playable private city
+
+The owner confirmed that work should continue into the game after accepting revised Walk and Air kick study revision 2. The private Mac wrapper now uses complete-character held drawings for Mac, six alien species and the four-armed Null Regent. It loads the exact eight hashed registrations and twelve native transparent PNGs from `assets/mac-combat-frames/mac-combat-frames-v1.json`; the entry launches `MacCombatFrames` instead of the rejected articulated renderer. The registered sibling bank adds exactly 21 assets, preserving the sealed 624 original artwork/audio identities, earlier city art and rejected rig history.
+
+Mac's accepted walk alternates the two opposite contact keys with passing cels at the existing movement speed. Jump pose progression follows real launch velocity/gravity, with constant pelvis registration applied to each complete airborne cel. The landing key follows the real land event. Kick contact starts with the actual active damage window. Enemy preparations and contacts follow their existing distinct attack types and delayed hit timing. Passing poses use visually registered waist projections; the mantid's aerial contact uses its hip rather than its low scythe tips. A defeated airborne Mac settles onto the lane using the existing presentation clock; pause still freezes presentation.
+
+Six districts, twelve waves, enemy combinations, six Mac attacks, throws, green/purple alien blood, red damage blood, both Kave choices, music, saves, mobile controls and the shared lifecycle/input/frame owners remain intact. There is one complete cel draw per fighter and no extra frame loop or old-rig fallback. Selected native bytes, prompts, analyses and focused receipts are retained with this review.
+
+The owner has accepted the study walk and air kick for now. Acceptance of the integrated chapter, new enemy motion and physical-device performance remains owner playtesting. This is a private draft branch; production publication is not implied. Exact build, installed payload, CI, hosted observation and archive identities are recorded in the final release receipts.
+
+## Current private Mac city review â€” October 5
+
+The current review is being prepared from the expanded Mac city source. Its private entry remains `/games/system-override/index.html?preview=mac-firstslice` for route compatibility; the chapter now spans six 3400-pixel districts, 12 waves and 29 new alien foes plus a three-phase final boss. The connected districts are Service Alley, Night Market, Transit Concourse, Relay Canal, Rooftop Relay and Broadcast Plaza. Exact final source, build and installed website identities belong in the release receipts after the assembled package is validated.
+
+The title Start button leads through eight stable illustrated transition scenes. **Two optional dialogue choices remain:** Kave's main opening question about waiting artists/listeners or the blocked feed, then the in-person studio conversation after Mac earns the final city endpoint. The extra 9 Bit reply menu is removed; his fourth-wall scene flows into the crew's evidence response. Either opening answer and direct Continue preserve both core facts and the same Mac handoff. Continue records no invented answer. Kave's studio payoff is earned after the full chapter, not the first two fights.
+
+Mac keeps two-axis walking, Jump, chained Strike, Guard/counter and nearby Throw. Talk appears at the earned studio endpoint. The preview shares the existing input, frame, audio and pause owners, keeps progress temporary and grants neither the canonical Drums reward nor a campaign clear. Regular Continue/save paths, Level 1/2 completion, the hidden footer entry and website routes retain their existing behavior. The Level 03 proof stems remain temporary review audio; no final Mac soundtrack acceptance is claimed.
+
+Mac's supplemental attack artwork is v4, with seven registered measured frames alongside his existing pose sheet. Each of the seven alien types, including Null Regent, has a dedicated seven-pose registration for readable idle, movement, tell, attack, recovery, hurt and defeat states. Green and purple blood follows the enemy kind. The current actor sheets are Chitin Scuttler v1, Psion Lancer v2, Bile Spitter v1, Prism Guard v1, Rift Stalker v1, Shock Mantid v2 and Null Regent v2. Registration uses nonuniform measured crops and a shared per-actor scale; artwork remains subject to owner review.
+
+Kave v5 places the hat-free, cropped-fade, broad-bearded cameo inside an enclosed broadcast studio with solid walls, a visible ceiling, closed full-height door, small glazed window and ordinary person/desk/microphone scale. His face references come from his own verified artist-hub, TikTok and Instagram images; raised hoods, caps and other people in the source photos are excluded from the illustrated costume. Mac's v2 hero remains approved. Cache v6 replaces the penultimate ignition panel with his coherent walk toward the yellow car, keys and protected original visible; the final car shot remains unchanged. Rejected artwork, studio framing passes and original references are preserved in the source review rather than the active runtime directory.
+
+Packaging requires exactly eight Mac review siblings and 23 city artwork/registration files, separately accounted alongside the sealed 624 original artwork/audio identities and 150 compressed-texture derivatives: 805 canonical assets in total. The original sorted path/size/SHA-256 inventory seal remains `0b2ac58dc88ddb68b595fb8592d242d8478c426d78309fe4ff45b88c04027f56`. Private receipts, review harnesses and source archives stay outside `public/`. New exact-head source/site CI, the final strict build, installed payload hashes and hosted/browser checks are release work still in progress; this contract does not claim a new hosted pass, production publication or physical-phone performance acceptance.
+
+The earlier two-fight and artwork package below is a historical checkpoint, superseded by this full-city review scope.
+
+## Historical private Mac street review â€” October 5
+
+This review branch installs the strict source `b51e7f7236121c3cf7abb2d2b436a850d4b3ef67` build (tree `df5a0f37e39c3b823c4a065a0523d2f37dff4f9c`). Its private entry is `/games/system-override/index.html?preview=mac-firstslice`. The title Start button opens eight illustrated transition scenes with two reconverging choices, followed by Mac's first two street fights and Kave's local-feed conversation. Existing Continue/save paths remain on the regular campaign.
+
+Mac uses two-axis walking, Jump, Strike, Guard/counter and nearby Throw; Talk appears at the cleared desk. The preview shares the existing input, frame, audio and pause owners, keeps progress temporary and grants neither Drums nor full Level 3 completion. The existing Level 03 proof stems are temporary test audio. Mac retains his approved model. Kave v3 uses the newly inspected first-party TikTok/Instagram photos and artist-hub selfie for a hat-free casual likeness. Cache v6 replaces the penultimate bridge panel with a complete right-facing walk: shoulders, hips, knees and both shoe toes head toward the driver's door; both hands and the keys are visible. The final car shot is unchanged. Rejected versions and exact generation references are preserved in the source review. These paintings and the new gameplay remain for owner review.
+
+The package has 92 scripts and 899 payload files. The correction replaces exactly two review PNGs, updates three runtime artwork-path strings and refreshes the ownership manifest; every installed old and new hash is checked. Exactly eight review siblings remain, alongside the unchanged sealed 624 original artwork/audio identities and 150 compressed-texture derivatives. Source static/integration, strict-package and all eight CPU-rendered bridge checks pass. A Windows GPU diagnostic retains two changing speech-pointer edge pixels on an original panel; no equality tolerance or runtime renderer change was introduced. Exact final browser/website/CI results are recorded with this review's receipts and draft pull requests. Production remains the published PR188/PR484 baseline until this new slice is reviewed. This branch changes only the game payload, its bundle regression and this contract; the hidden footer entry and site routes keep their existing behavior.
+
+## Mobile tutorial instructions â€” October 5
 
 Source PR188 (`12dc71b943362a24c33c52e90309c2274ca4b7a3`, tree `c1f76601e6a905a8be224b275eb34f3cd202746c`) corrects mobile tutorial wording: Tap Next, Joystick, Jump, Rhythm/Exit, Beat and Hack/Link. Both terminal layouts name digits, Submit, Delete and Cancel. Only the two wording scripts and standalone ownership metadata change in the hosted payload; all 888 payload hashes are verified and artwork/audio are unchanged.
 
@@ -10,7 +71,7 @@ The exact strict build passed an actual portrait/landscape touch flow: first Nex
 
 The owner rejects the published combat More drawer because it interrupts action. Source PR186 merged as `d2e3776d6aebbf911b41b9e86b56b769e970e8d1` with tested tree `b3ba8eb2d39824d54caf2db3a62999dd204cf20c`. It replaces that drawer with compact fixed thumb slots for proactive Guard/Boost, target-aware Strike/Fire, nearby-enemy/projectile Jam and the manually tapped current Sync cue. Labels stay stable while recharge, active, ammunition/shot and next-beat badges explain readiness. Gameplay has no More/pads menu; cinematic extras keep their non-action drawer. Level 1 exposes available Inspect/Continue/Close directly, with running on the outer joystick gesture.
 
-All 29 focused actual-module contracts, all-file syntax and full regression in CI pass at final tested source `9584869c94c7df52a0509795deed6bf60e08b5bb`; all six exact-head static/frame-cost jobs passed. The final strict built browser passed actual earned Level 2 direct Boost/Guard/Jam and Sync while steering, gear taps and pause/resume at 390×844, 844×390, 375×667, 320×568 and 568×320. Targets remain at least 44 pixels, fixed action slots preserve held inputs, and the central road stays clear. Narrow-landscape Pause sits above the left gears, clear of the native HUD. These finite desktop phone checks do not establish physical-handset FPS. The merged tree and all 888 generated payload hashes match the tested build.
+All 29 focused actual-module contracts, all-file syntax and full regression in CI pass at final tested source `9584869c94c7df52a0509795deed6bf60e08b5bb`; all six exact-head static/frame-cost jobs passed. The final strict built browser passed actual earned Level 2 direct Boost/Guard/Jam and Sync while steering, gear taps and pause/resume at 390Ã—844, 844Ã—390, 375Ã—667, 320Ã—568 and 568Ã—320. Targets remain at least 44 pixels, fixed action slots preserve held inputs, and the central road stays clear. Narrow-landscape Pause sits above the left gears, clear of the native HUD. These finite desktop phone checks do not establish physical-handset FPS. The merged tree and all 888 generated payload hashes match the tested build.
 
 The initial website candidate passed verify, Windows audio and Vercel. Its hosted preview passed normal hidden-footer/native entry, real sound, readable settings, touch movement/jump and pause/resume; all 24 critical HTTPS hashes matched. Final website CI, guarded merge and production verification remain pending at this preparation snapshot. Publication is authorized; final identities and live results belong in PR483 and the private delivery receipt.
 
@@ -20,7 +81,7 @@ The original artwork/audio, GPU/native renderer, loading, judgments, saves, hidd
 
 The owner tested the published joystick release and requested controls that leave Level 2 playable. Source PR185 merged as `9e466634b6b45160eb275ff2f607b653ec2df998` with tested tree `18013a79db37d206c80ff1aa97a641cc16bc5ce0`: subtle circular edge controls, separate gear buttons, one mapped Sync cue in a fixed thumb position, contextual Attack/Guard and a compact tabbed More drawer for skills and manual pads. Level 1 exposes Rhythm/Beat/Hack through their actual availability owners; cinematic extras are on demand. Within a gameplay screen, changing buttons preserve steering, held semantic actions and completed taps. Landscape utility controls occupy the side margin; the default road actions use a single narrow edge strip.
 
-All 28 input contracts and actual strict-built Chromium mobile checks pass at tested head `71b867b94be3501294b6a8cdc6ac1d3dd1134878`, including portrait 390×844/375×667/320×568 and landscape 844×390, normal title/audio/opening/difficulty, simultaneous movement/jump, independent physical keys, rotation, earned Level 2 Continue, skills/manual pads/gears and pause/resume. The default road panel leaves the central road/car area clear. These are browser emulation checks, not physical-phone FPS evidence. All four exact-head source static/frame-cost jobs passed. The merged tree and all 888 generated payload hashes match the tested package. The initial website candidate passed verification, Windows audio and its hosted preview's normal entry/audio/settings/touch/pause flow plus 24 critical live hashes. The original artwork/audio, accepted GPU/loading pipeline, judgments, saves, native frame, entry route and quiet footer shortcut are unchanged. Private test evidence remains outside `public/`. Final website CI, guarded merge and production verification remain pending at this preparation snapshot; final results are recorded in PR482 and the delivery receipt. Earlier release notes below are historical.
+All 28 input contracts and actual strict-built Chromium mobile checks pass at tested head `71b867b94be3501294b6a8cdc6ac1d3dd1134878`, including portrait 390Ã—844/375Ã—667/320Ã—568 and landscape 844Ã—390, normal title/audio/opening/difficulty, simultaneous movement/jump, independent physical keys, rotation, earned Level 2 Continue, skills/manual pads/gears and pause/resume. The default road panel leaves the central road/car area clear. These are browser emulation checks, not physical-phone FPS evidence. All four exact-head source static/frame-cost jobs passed. The merged tree and all 888 generated payload hashes match the tested package. The initial website candidate passed verification, Windows audio and its hosted preview's normal entry/audio/settings/touch/pause flow plus 24 critical live hashes. The original artwork/audio, accepted GPU/loading pipeline, judgments, saves, native frame, entry route and quiet footer shortcut are unchanged. Private test evidence remains outside `public/`. Final website CI, guarded merge and production verification remain pending at this preparation snapshot; final results are recorded in PR482 and the delivery receipt. Earlier release notes below are historical.
 
 `/system-override` uses the existing BARCODE website layout and links directly to
 `/games/system-override/index.html`. The normal same-tab anchor opens the standalone
@@ -57,7 +118,7 @@ normalizes collected repository paths to forward slashes before comparing them
 with its existing allowlist. This changes only the test's platform handling;
 its expected consumers and assertions remain intact.
 
-## October 5, 2026 — GPU and whole-game mobile release prepared
+## October 5, 2026 â€” GPU and whole-game mobile release prepared
 
 The GPU source release merged in PR183 as `42b2a3157638a8742717095fbdea7055b6efeb71` after exact-head CI passed. The whole-game mobile controls then merged in PR184 as `3daea2cccd1ad21fe096750dc0fd1a270cc448dd`, with the identical tested tree `f3ece39747de504720fa4d99d047eca6b2ebdab3`. All four static/frame-cost CI jobs passed at tested head `856c2c740e803ba9f58354a9aa2dc20b8d62b812`. This website package is generated from merged main; all 888 payload hashes match the accepted strict mobile build. The GPU renderer/context/bank/worker, native renderer, lifecycle, game loop, Cache Road and assets retain the performance-release bytes. The final source checker records software GL as performanceUnexercised with GPU gameplay notExercised when it cannot reach the HUD, preserving bootstrap/resource assertions and the required separate native checks.
 
@@ -67,7 +128,7 @@ Pinned local PixiJS 8.22.0 (MIT) and Basis Universal 2.50 (Apache-2.0) render th
 
 Local fresh run 23 completed 786 GPU frames with CPU draw median/p95/max 15.5/24.3/42.8 ms; earned-boss run 24 completed 232 at 16.0/23.5/35.4 ms. Both measured driving windows had zero Canvas copies, texture uploads or native fallbacks. Genuine graphics loss, complete native fallback/restoration, keyboard/gear/audio, road P/Escape and ordinary Level 1 return with authored bridge P/P passed. The observed timing tails remain; these finite runs do not certify universal 60 FPS or every race frame.
 
-Twenty focused actual-module touch contracts passed. Full initial-mobile source regression and all-file syntax passed; the final menu/layout correction passed control-polish, baseline and focused contracts. A bounded actual Chromium mobile flow passed normal title/settings/opening/difficulty, Level 1 multitouch, physical-key coexistence, cancellation/rotation/run release, earned Level 2 steering/face/skill/gear taps and pause/resume. The strict final build passed selected-menu/value updates and layout checks at 390×844, 844×390, 375×667 and 320×568 with no exceptions, missing game resources or crash. Smallest-screen road overlap falls from 102 pixels to a 6-pixel bottom strip; the centre and car remain clear. This is desktop phone emulation, with physical-phone FPS unexercised.
+Twenty focused actual-module touch contracts passed. Full initial-mobile source regression and all-file syntax passed; the final menu/layout correction passed control-polish, baseline and focused contracts. A bounded actual Chromium mobile flow passed normal title/settings/opening/difficulty, Level 1 multitouch, physical-key coexistence, cancellation/rotation/run release, earned Level 2 steering/face/skill/gear taps and pause/resume. The strict final build passed selected-menu/value updates and layout checks at 390Ã—844, 844Ã—390, 375Ã—667 and 320Ã—568 with no exceptions, missing game resources or crash. Smallest-screen road overlap falls from 102 pixels to a 6-pixel bottom strip; the centre and car remain clear. This is desktop phone emulation, with physical-phone FPS unexercised.
 
 Mobile source CI and merge are complete. The installed merged package passed all owned-file hashes and the eight page/bundle tests. Final website CI, hosted preview and deployment remain pending at this snapshot. The earlier GPU-only website candidate passed both CI jobs and preview entry/payload checks. Publication is authorized; final website/deployment results belong in PR481 and the delivery receipt. The page/footer route is unchanged. The following sections retain earlier package and validation history.
 
@@ -102,7 +163,7 @@ the generated bundle. The complete build receipt and local review harnesses stay
 outside `public/`; they are not deployed. Canonical source artwork with historical
 review filenames is included among the preserved asset files.
 
-## Recorded local validation — October 3, 2026
+## Recorded local validation â€” October 3, 2026
 
 - Website `npm run build` passed.
 - Website typecheck, lint and complete Node test suite passed. Lint reported
@@ -147,7 +208,7 @@ standalone document still needs played validation of gameplay, audio,
 controller input, saves and native frame pacing. Hosting and static file
 integrity do not establish a performance improvement.
 
-## Published minimal-cue and mirror baseline — October 4, 2026
+## Published minimal-cue and mirror baseline â€” October 4, 2026
 
 The owner reported immediate improvement when road beat and phrase overlays
 were omitted, and selected minimal road cues for this follow-up. The package
@@ -217,7 +278,7 @@ delivery verification and CI results must be recorded against the final
 source commit before publication. The accepted follow-up is tracked in
 [source PR183](https://github.com/6-Bit-01/BARCODE-SYSTEM-OVERRIDE/pull/183).
 
-## Scenery preparation follow-up — October 4, 2026
+## Scenery preparation follow-up â€” October 4, 2026
 
 This package prepares original-size bitmaps for three scenery sources tied to
 recurring costly decodes: RepairShop, MarketRFrontGap and StreetBicycleRack.
@@ -255,7 +316,7 @@ unchanged software timing gate fails.
 
 The aligned source browser check also retains a failed historical representation
 comparison: adaptive native painting versus bitmap-only painting has mean RGB
-1.2105–1.5021 on the published source9cd and 1.2106–1.5020 on this candidate,
+1.2105â€“1.5021 on the published source9cd and 1.2106â€“1.5020 on this candidate,
 above its unchanged bound of 1. No new row crosses the bound; differences between
 the old and new results are below 0.0001. The paired fixture deliberately uses
 different sampling quality for those representations. This attribution does not

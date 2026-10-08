@@ -1,0 +1,492 @@
+{
+  "schemaVersion": 1,
+  "actor": "bile_spitter",
+  "sourceImage": "assets/mac-combat-rigs/bile_spitter-v1.png",
+  "sourceSHA256": "4628448b84d1a14c16c1dd3649992fd96bfe44eec0140a78921b8f0c186b67ef",
+  "sourceDimensions": {
+    "width": 1254,
+    "height": 1254
+  },
+  "facing": "right",
+  "commonScale": 1,
+  "pixelScale": {
+    "standingVisibleHeight": 1046.8789,
+    "measuredBy": "native alpha>8 transformed through restSkeleton at commonScale 1"
+  },
+  "groundOrigin": {
+    "x": 0.0,
+    "y": 0.0
+  },
+  "parts": [
+    {
+      "id": "head",
+      "source": {
+        "x": 58,
+        "y": 102,
+        "width": 254,
+        "height": 224
+      },
+      "visibleBounds": {
+        "x": 4,
+        "y": 4,
+        "width": 246,
+        "height": 216
+      },
+      "pivot": {
+        "x": 116.0,
+        "y": 181.0
+      }
+    },
+    {
+      "id": "torso",
+      "source": {
+        "x": 371,
+        "y": 38,
+        "width": 239,
+        "height": 330
+      },
+      "visibleBounds": {
+        "x": 4,
+        "y": 4,
+        "width": 231,
+        "height": 322
+      },
+      "pivot": {
+        "x": 130.0,
+        "y": 231.0
+      },
+      "anchors": {
+        "neck": {
+          "x": 137.0,
+          "y": 28.0
+        },
+        "rear_shoulder": {
+          "x": 36.0,
+          "y": 65.0
+        },
+        "front_shoulder": {
+          "x": 217.0,
+          "y": 74.0
+        },
+        "waist": {
+          "x": 130.0,
+          "y": 231.0
+        }
+      }
+    },
+    {
+      "id": "pelvis",
+      "source": {
+        "x": 681,
+        "y": 134,
+        "width": 251,
+        "height": 224
+      },
+      "visibleBounds": {
+        "x": 4,
+        "y": 4,
+        "width": 243,
+        "height": 216
+      },
+      "pivot": {
+        "x": 124.0,
+        "y": 17.0
+      },
+      "anchors": {
+        "rear_hip": {
+          "x": 46.0,
+          "y": 145.0
+        },
+        "front_hip": {
+          "x": 229.0,
+          "y": 139.0
+        },
+        "waist": {
+          "x": 124.0,
+          "y": 17.0
+        }
+      }
+    },
+    {
+      "id": "rear_upper_arm",
+      "source": {
+        "x": 1042,
+        "y": 54,
+        "width": 146,
+        "height": 292
+      },
+      "visibleBounds": {
+        "x": 4,
+        "y": 4,
+        "width": 138,
+        "height": 284
+      },
+      "pivot": {
+        "x": 34.0,
+        "y": 35.0
+      },
+      "distal": {
+        "x": 107.0,
+        "y": 265.0
+      },
+      "boneLength": 241.3069
+    },
+    {
+      "id": "rear_forearm",
+      "source": {
+        "x": 117,
+        "y": 392,
+        "width": 124,
+        "height": 263
+      },
+      "visibleBounds": {
+        "x": 4,
+        "y": 4,
+        "width": 116,
+        "height": 255
+      },
+      "pivot": {
+        "x": 47.0,
+        "y": 22.0
+      },
+      "distal": {
+        "x": 84.0,
+        "y": 234.0
+      },
+      "boneLength": 215.2046
+    },
+    {
+      "id": "rear_fist",
+      "source": {
+        "x": 408,
+        "y": 443,
+        "width": 140,
+        "height": 190
+      },
+      "visibleBounds": {
+        "x": 4,
+        "y": 4,
+        "width": 132,
+        "height": 182
+      },
+      "pivot": {
+        "x": 48.0,
+        "y": 22.0
+      }
+    },
+    {
+      "id": "front_upper_arm",
+      "source": {
+        "x": 716,
+        "y": 389,
+        "width": 143,
+        "height": 277
+      },
+      "visibleBounds": {
+        "x": 4,
+        "y": 4,
+        "width": 135,
+        "height": 269
+      },
+      "pivot": {
+        "x": 101.0,
+        "y": 24.0
+      },
+      "distal": {
+        "x": 64.0,
+        "y": 254.0
+      },
+      "boneLength": 232.9571
+    },
+    {
+      "id": "front_forearm",
+      "source": {
+        "x": 1058,
+        "y": 397,
+        "width": 106,
+        "height": 262
+      },
+      "visibleBounds": {
+        "x": 4,
+        "y": 4,
+        "width": 98,
+        "height": 254
+      },
+      "pivot": {
+        "x": 63.0,
+        "y": 22.0
+      },
+      "distal": {
+        "x": 45.0,
+        "y": 236.0
+      },
+      "boneLength": 214.7557
+    },
+    {
+      "id": "front_fist",
+      "source": {
+        "x": 100,
+        "y": 742,
+        "width": 144,
+        "height": 179
+      },
+      "visibleBounds": {
+        "x": 4,
+        "y": 4,
+        "width": 136,
+        "height": 171
+      },
+      "pivot": {
+        "x": 72.0,
+        "y": 18.0
+      }
+    },
+    {
+      "id": "rear_thigh",
+      "source": {
+        "x": 412,
+        "y": 682,
+        "width": 157,
+        "height": 266
+      },
+      "visibleBounds": {
+        "x": 4,
+        "y": 4,
+        "width": 149,
+        "height": 258
+      },
+      "pivot": {
+        "x": 34.0,
+        "y": 28.0
+      },
+      "distal": {
+        "x": 102.0,
+        "y": 239.0
+      },
+      "boneLength": 221.6867
+    },
+    {
+      "id": "rear_shin",
+      "source": {
+        "x": 732,
+        "y": 683,
+        "width": 115,
+        "height": 260
+      },
+      "visibleBounds": {
+        "x": 4,
+        "y": 4,
+        "width": 107,
+        "height": 252
+      },
+      "pivot": {
+        "x": 59.0,
+        "y": 27.0
+      },
+      "distal": {
+        "x": 53.0,
+        "y": 235.0
+      },
+      "boneLength": 208.0865
+    },
+    {
+      "id": "rear_shoe",
+      "source": {
+        "x": 1009,
+        "y": 792,
+        "width": 204,
+        "height": 146
+      },
+      "visibleBounds": {
+        "x": 4,
+        "y": 4,
+        "width": 196,
+        "height": 138
+      },
+      "pivot": {
+        "x": 46.0,
+        "y": 19.0
+      },
+      "anchors": {
+        "ground_contact": {
+          "x": 141.0,
+          "y": 141.0
+        }
+      }
+    },
+    {
+      "id": "front_thigh",
+      "source": {
+        "x": 87,
+        "y": 949,
+        "width": 141,
+        "height": 272
+      },
+      "visibleBounds": {
+        "x": 4,
+        "y": 4,
+        "width": 133,
+        "height": 264
+      },
+      "pivot": {
+        "x": 93.0,
+        "y": 26.0
+      },
+      "distal": {
+        "x": 44.0,
+        "y": 249.0
+      },
+      "boneLength": 228.32
+    },
+    {
+      "id": "front_shin",
+      "source": {
+        "x": 414,
+        "y": 961,
+        "width": 115,
+        "height": 255
+      },
+      "visibleBounds": {
+        "x": 4,
+        "y": 4,
+        "width": 107,
+        "height": 247
+      },
+      "pivot": {
+        "x": 51.0,
+        "y": 23.0
+      },
+      "distal": {
+        "x": 66.0,
+        "y": 224.0
+      },
+      "boneLength": 201.5589
+    },
+    {
+      "id": "front_shoe",
+      "source": {
+        "x": 700,
+        "y": 1064,
+        "width": 214,
+        "height": 147
+      },
+      "visibleBounds": {
+        "x": 4,
+        "y": 4,
+        "width": 206,
+        "height": 139
+      },
+      "pivot": {
+        "x": 60.0,
+        "y": 20.0
+      },
+      "anchors": {
+        "ground_contact": {
+          "x": 142.0,
+          "y": 142.0
+        }
+      }
+    }
+  ],
+  "restSkeleton": {
+    "hip": {
+      "x": 0.0,
+      "y": -665.8789
+    },
+    "waist": {
+      "x": 0.0,
+      "y": -665.8789
+    },
+    "neck": {
+      "x": 7.0,
+      "y": -868.8789
+    },
+    "rear_shoulder": {
+      "x": -94.0,
+      "y": -831.8789
+    },
+    "front_shoulder": {
+      "x": 87.0,
+      "y": -822.8789
+    },
+    "head": {
+      "x": 7.0,
+      "y": -868.8789
+    },
+    "rear_hip": {
+      "x": -78.0,
+      "y": -537.8789
+    },
+    "rear_ankle": {
+      "x": -66.0,
+      "y": -122.0
+    },
+    "rear_knee": {
+      "x": -17.9836,
+      "y": -324.4708
+    },
+    "rear_wrist": {
+      "x": -74.0,
+      "y": -402.7581
+    },
+    "rear_elbow": {
+      "x": -160.3583,
+      "y": -599.8755
+    },
+    "rear_fist": {
+      "x": -74.0,
+      "y": -402.7581
+    },
+    "rear_foot_contact": {
+      "x": 29.0,
+      "y": 0.0
+    },
+    "front_hip": {
+      "x": 105.0,
+      "y": -543.8789
+    },
+    "front_ankle": {
+      "x": 117.0,
+      "y": -122.0
+    },
+    "front_knee": {
+      "x": 152.1241,
+      "y": -320.4749
+    },
+    "front_wrist": {
+      "x": 107.0,
+      "y": -402.0289
+    },
+    "front_elbow": {
+      "x": 21.8984,
+      "y": -599.2033
+    },
+    "front_fist": {
+      "x": 107.0,
+      "y": -402.0289
+    },
+    "front_foot_contact": {
+      "x": 199.0,
+      "y": 0.0
+    }
+  },
+  "restVisibleBounds": {
+    "left": -197.89,
+    "top": -1045.8789,
+    "right": 267.0,
+    "bottom": 1.0
+  },
+  "registrationNotes": [
+    "Independent native alpha>8 crops with 4px transparent padding; no equal-cell source crops.",
+    "Visually selected native covered joint cap centers, then alpha checked.",
+    "All parts use commonScale 1; no per-part cell normalization.",
+    "Technical registration ready; parent assembled continuous-motion seams and foot contacts reviewed; owner acceptance pending."
+  ],
+  "validationStatus": "registered; parent-native-assembly-reviewed; owner-acceptance-pending",
+  "technicalReview": {
+    "reviewer": "parent-agent",
+    "scope": "Native game-renderer assembled continuous-motion contact sheets: covered seams, species identity and foot contacts",
+    "result": "passed",
+    "ownerAcceptance": "pending"
+  }
+}

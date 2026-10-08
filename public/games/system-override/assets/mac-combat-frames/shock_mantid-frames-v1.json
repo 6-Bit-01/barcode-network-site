@@ -1,0 +1,327 @@
+{
+  "schemaVersion": 1,
+  "actor": "shock_mantid",
+  "facing": "right",
+  "pixelScale": {
+    "standingVisibleHeight": 285,
+    "referenceFrame": "idle"
+  },
+  "sheets": [
+    {
+      "id": "main",
+      "sourceImage": "assets/mac-combat-frames/shock_mantid-frames-v1.png",
+      "sourceSHA256": "65b76d1fb2b2a72ed5a171396a16b26e732b32337a363e5d4af4f38d14dcada5",
+      "dimensions": {
+        "width": 1448,
+        "height": 1086
+      },
+      "pixelScale": {
+        "standingVisibleHeight": 285,
+        "referenceFrame": "idle"
+      }
+    }
+  ],
+  "frames": [
+    {
+      "id": "idle",
+      "sheet": "main",
+      "source": {
+        "x": 0,
+        "y": 0,
+        "width": 350,
+        "height": 384
+      },
+      "feetPivot": {
+        "x": 176.0,
+        "y": 360
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "walk_contact_a",
+      "sheet": "main",
+      "source": {
+        "x": 350,
+        "y": 0,
+        "width": 388,
+        "height": 384
+      },
+      "feetPivot": {
+        "x": 195.0,
+        "y": 360
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "walk_pass",
+      "sheet": "main",
+      "source": {
+        "x": 738,
+        "y": 0,
+        "width": 335,
+        "height": 384
+      },
+      "feetPivot": {
+        "x": 185,
+        "y": 360
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "walk_contact_b",
+      "sheet": "main",
+      "source": {
+        "x": 1073,
+        "y": 0,
+        "width": 375,
+        "height": 384
+      },
+      "feetPivot": {
+        "x": 197.5,
+        "y": 361
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "tell_a",
+      "sheet": "main",
+      "source": {
+        "x": 0,
+        "y": 384,
+        "width": 365,
+        "height": 364
+      },
+      "feetPivot": {
+        "x": 195.0,
+        "y": 332
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "impact_a",
+      "sheet": "main",
+      "source": {
+        "x": 365,
+        "y": 384,
+        "width": 381,
+        "height": 364
+      },
+      "feetPivot": {
+        "x": 191.0,
+        "y": 336
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "recover",
+      "sheet": "main",
+      "source": {
+        "x": 746,
+        "y": 384,
+        "width": 336,
+        "height": 364
+      },
+      "feetPivot": {
+        "x": 159.0,
+        "y": 331
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "tell_b",
+      "sheet": "main",
+      "source": {
+        "x": 1082,
+        "y": 384,
+        "width": 366,
+        "height": 364
+      },
+      "feetPivot": {
+        "x": 187.0,
+        "y": 332
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "impact_b",
+      "sheet": "main",
+      "source": {
+        "x": 0,
+        "y": 748,
+        "width": 388,
+        "height": 338
+      },
+      "feetPivot": {
+        "x": 145,
+        "y": 212
+      },
+      "baselineLift": 15.508771929824562
+    },
+    {
+      "id": "hurt",
+      "sheet": "main",
+      "source": {
+        "x": 388,
+        "y": 748,
+        "width": 338,
+        "height": 338
+      },
+      "feetPivot": {
+        "x": 193.0,
+        "y": 270
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "fall",
+      "sheet": "main",
+      "source": {
+        "x": 726,
+        "y": 748,
+        "width": 333,
+        "height": 338
+      },
+      "feetPivot": {
+        "x": 141.0,
+        "y": 253
+      },
+      "baselineLift": 0
+    },
+    {
+      "id": "down",
+      "sheet": "main",
+      "source": {
+        "x": 1059,
+        "y": 748,
+        "width": 389,
+        "height": 338
+      },
+      "feetPivot": {
+        "x": 186.0,
+        "y": 267
+      },
+      "baselineLift": 0
+    }
+  ],
+  "clips": {
+    "idle": {
+      "loop": true,
+      "frames": [
+        {
+          "frame": "idle",
+          "holdMs": 300
+        }
+      ]
+    },
+    "walk": {
+      "loop": true,
+      "frames": [
+        {
+          "frame": "walk_contact_a",
+          "holdMs": 130
+        },
+        {
+          "frame": "walk_pass",
+          "holdMs": 90
+        },
+        {
+          "frame": "walk_contact_b",
+          "holdMs": 130
+        },
+        {
+          "frame": "walk_pass",
+          "holdMs": 90
+        }
+      ]
+    },
+    "hurt": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "hurt",
+          "holdMs": 240
+        }
+      ]
+    },
+    "defeat": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "fall",
+          "holdMs": 160
+        },
+        {
+          "frame": "down",
+          "holdMs": 840
+        }
+      ]
+    },
+    "ground-wave.windup": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "tell_a",
+          "holdMs": 100
+        }
+      ]
+    },
+    "ground-wave.active": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "impact_a",
+          "holdMs": 100
+        }
+      ]
+    },
+    "ground-wave.recovery": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "impact_a",
+          "holdMs": 18
+        },
+        {
+          "frame": "recover",
+          "holdMs": 82
+        }
+      ]
+    },
+    "mantid-leap.windup": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "tell_b",
+          "holdMs": 100
+        }
+      ]
+    },
+    "mantid-leap.active": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "tell_b",
+          "holdMs": 65.0
+        },
+        {
+          "frame": "impact_b",
+          "holdMs": 35.0
+        }
+      ]
+    },
+    "mantid-leap.recovery": {
+      "loop": false,
+      "frames": [
+        {
+          "frame": "impact_b",
+          "holdMs": 18
+        },
+        {
+          "frame": "recover",
+          "holdMs": 82
+        }
+      ]
+    }
+  },
+  "registrationNotes": "Complete-character discrete cels sampled from the actual committed simulation attack phase. Contact delays remain aligned to existing hit timing. One native sheet scale; down holds preserve anatomy."
+}

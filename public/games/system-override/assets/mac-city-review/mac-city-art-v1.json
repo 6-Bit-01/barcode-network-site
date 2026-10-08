@@ -1,0 +1,356 @@
+{
+  "schemaVersion": 1,
+  "status": "generated-and-measured-private-review",
+  "ownerAccepted": false,
+  "tool": "built-in image_gen",
+  "actors": [
+    {
+      "kind": "chitin_scuttler",
+      "displayName": "Chitin Scuttler",
+      "image": "assets/mac-city-review/chitin_scuttler-v1.png",
+      "frames": "assets/mac-city-review/chitin_scuttler-v1-frames.json",
+      "bloodColor": "green",
+      "artBrief": "Compact jade insect jabber with ivory mandibles and ochre street vest.",
+      "nativeFrameInfo": {
+        "width": 1536,
+        "height": 1024,
+        "mode": "RGBA",
+        "sha256": "3659348f202e51fea25127d36c667e2142197653dc37a7d1f75bec65c6c18302",
+        "bytes": 2362365
+      },
+      "framesSHA256": "bb7ed05709a7147592a92eb93075a253e1ecfd6c80006a19417c5302cd502984",
+      "standingVisibleHeight": 484,
+      "newFictionalHumanoidAlien": true,
+      "level1ModelReuse": false
+    },
+    {
+      "kind": "psion_lancer",
+      "displayName": "Psion Lancer",
+      "image": "assets/mac-city-review/psion_lancer-v2.png",
+      "frames": "assets/mac-city-review/psion_lancer-v2-frames.json",
+      "bloodColor": "purple",
+      "artBrief": "Tall teal spear runner with swept indigo fin, ivory forearm blade and plum sash.",
+      "nativeFrameInfo": {
+        "width": 1774,
+        "height": 887,
+        "mode": "RGBA",
+        "sha256": "be1939968ea1e6cb5dde4b249d0b5e9ef3ed0b3e2550734fde0cf2827029b4fe",
+        "bytes": 1345389
+      },
+      "framesSHA256": "f07eb3205450b71ae634ee7e038020b55cbe4bc1899f442ddbb1277a638124a2",
+      "standingVisibleHeight": 457,
+      "newFictionalHumanoidAlien": true,
+      "level1ModelReuse": false
+    },
+    {
+      "kind": "bile_spitter",
+      "displayName": "Bile Spitter",
+      "image": "assets/mac-city-review/bile_spitter-v1.png",
+      "frames": "assets/mac-city-review/bile_spitter-v1-frames.json",
+      "bloodColor": "green",
+      "artBrief": "Broad blue amphibian with lime throat sac and webbed extremities.",
+      "nativeFrameInfo": {
+        "width": 1774,
+        "height": 887,
+        "mode": "RGBA",
+        "sha256": "7f82901872f4593ed2c428d83fbedda9ea919a568c2977bec39f5d6e2c8d3a21",
+        "bytes": 1635688
+      },
+      "framesSHA256": "abbe3258c93abb98299eb3b58eb61a02c3f7477f744b521ce3527d2490bd187e",
+      "standingVisibleHeight": 453,
+      "newFictionalHumanoidAlien": true,
+      "level1ModelReuse": false
+    },
+    {
+      "kind": "prism_guard",
+      "displayName": "Prism Guard",
+      "image": "assets/mac-city-review/prism_guard-v1.png",
+      "frames": "assets/mac-city-review/prism_guard-v1-frames.json",
+      "bloodColor": "purple",
+      "artBrief": "Violet plated humanoid with attached faceted organic forearm shield.",
+      "nativeFrameInfo": {
+        "width": 1774,
+        "height": 887,
+        "mode": "RGBA",
+        "sha256": "db0bfacbd45f5507d6191d4f2b5ce4d15f1e559b83d320b7fa85314b1a951998",
+        "bytes": 1347696
+      },
+      "framesSHA256": "69cdb542e2524fcc207b9294345b10db00991aabea2aa926d882687d4494d317",
+      "standingVisibleHeight": 437,
+      "newFictionalHumanoidAlien": true,
+      "level1ModelReuse": false
+    },
+    {
+      "kind": "rift_stalker",
+      "displayName": "Rift Stalker",
+      "image": "assets/mac-city-review/rift_stalker-v1.png",
+      "frames": "assets/mac-city-review/rift_stalker-v1-frames.json",
+      "bloodColor": "purple",
+      "artBrief": "Cream moth face over charcoal body and mantle, long attached claws.",
+      "nativeFrameInfo": {
+        "width": 1774,
+        "height": 887,
+        "mode": "RGBA",
+        "sha256": "8293c3f59c8b271b5b9be3b2b7c0873b7f92fff660e4b70755e0266a06d165d8",
+        "bytes": 1375022
+      },
+      "framesSHA256": "39c84f85e04841f437df7cd5a6be7d3db3f3ef4b6f60ed04c78079521235191a",
+      "standingVisibleHeight": 430,
+      "newFictionalHumanoidAlien": true,
+      "level1ModelReuse": false
+    },
+    {
+      "kind": "shock_mantid",
+      "displayName": "Shock Mantid",
+      "image": "assets/mac-city-review/shock_mantid-v2.png",
+      "frames": "assets/mac-city-review/shock_mantid-v2-frames.json",
+      "bloodColor": "green",
+      "artBrief": "Orange mantis warrior with pale bone plates and serrated forearms.",
+      "nativeFrameInfo": {
+        "width": 1672,
+        "height": 941,
+        "mode": "RGBA",
+        "sha256": "5720d575f5f93a7294d81fe290042877f6a6e5855773d715028a50b71a779f0d",
+        "bytes": 1318461
+      },
+      "framesSHA256": "05ad2633bc6bd50b2c909a169ca3b5c60ca14de51f38f3eca2c5c7f17f24dcfe",
+      "standingVisibleHeight": 437,
+      "newFictionalHumanoidAlien": true,
+      "level1ModelReuse": false
+    },
+    {
+      "kind": "null_regent",
+      "displayName": "Null Regent",
+      "image": "assets/mac-city-review/null_regent-v2.png",
+      "frames": "assets/mac-city-review/null_regent-v2-frames.json",
+      "bloodColor": "purple",
+      "artBrief": "Large four-armed violet registry boss with pale crown and bronze waist ornaments.",
+      "nativeFrameInfo": {
+        "width": 1672,
+        "height": 941,
+        "mode": "RGBA",
+        "sha256": "c6cbc83c6be0c75669283c237fc5caea23c3064f125e51e044eb297f5cd1c717",
+        "bytes": 1674237
+      },
+      "framesSHA256": "d0e1f9bc0faeadafd2b55e759a16e29b3e2b32d443712b839923d8b57b1ae693",
+      "standingVisibleHeight": 414,
+      "newFictionalHumanoidAlien": true,
+      "level1ModelReuse": false
+    }
+  ],
+  "zones": [
+    {
+      "id": "service-alley",
+      "title": "Service Alley",
+      "background": "assets/mac-city-review/service-alley-v1.png",
+      "artBrief": "Brick service entrances, amber lamps, pipes and shutters.",
+      "nativeFrameInfo": {
+        "width": 2167,
+        "height": 725,
+        "mode": "RGB",
+        "sha256": "3d63e39ae939edd9e2452a18eec6afe9b9f17a23141d080e2209a2ee811a8ca5",
+        "bytes": 3079343
+      },
+      "ground": {
+        "worldSpan": 3400,
+        "worldHeight": 1080,
+        "laneYMin": 780,
+        "laneYMax": 970,
+        "groundBaselineRelative": 0.8981481481481481,
+        "drawRule": "Preserve native aspect and ground-register; never horizontally stretch the painting. Extend facade edges if needed for the full 3400-world-pixel zone."
+      },
+      "architecturalScale": {
+        "playerStandingHeightWorld": 260,
+        "normalDoorHeightWorld": 325,
+        "railHeightWorld": 110
+      },
+      "paintedActors": false,
+      "order": 1
+    },
+    {
+      "id": "night-market",
+      "title": "Night Market",
+      "background": "assets/mac-city-review/night-market-v1.png",
+      "artBrief": "Closed stalls, lanterns and market displays behind the clear pavement.",
+      "nativeFrameInfo": {
+        "width": 2161,
+        "height": 728,
+        "mode": "RGB",
+        "sha256": "5a68f16010443d966a7e6bbe2defb524c587b9406fcf144d187a71b1fb40b973",
+        "bytes": 3148804
+      },
+      "ground": {
+        "worldSpan": 3400,
+        "worldHeight": 1080,
+        "laneYMin": 780,
+        "laneYMax": 970,
+        "groundBaselineRelative": 0.8981481481481481,
+        "drawRule": "Preserve native aspect and ground-register; never horizontally stretch the painting. Extend facade edges if needed for the full 3400-world-pixel zone."
+      },
+      "architecturalScale": {
+        "playerStandingHeightWorld": 260,
+        "normalDoorHeightWorld": 325,
+        "railHeightWorld": 110
+      },
+      "paintedActors": false,
+      "order": 2
+    },
+    {
+      "id": "transit-concourse",
+      "title": "Transit Concourse",
+      "background": "assets/mac-city-review/transit-concourse-v1.png",
+      "artBrief": "Ribbed transit roof, ticket windows and rear train architecture.",
+      "nativeFrameInfo": {
+        "width": 2172,
+        "height": 724,
+        "mode": "RGB",
+        "sha256": "6d80bd690e2c662559133de2c3fdf0ef47dffc63a7a3a194a5380d18f5a8c32a",
+        "bytes": 3023723
+      },
+      "ground": {
+        "worldSpan": 3400,
+        "worldHeight": 1080,
+        "laneYMin": 780,
+        "laneYMax": 970,
+        "groundBaselineRelative": 0.8981481481481481,
+        "drawRule": "Preserve native aspect and ground-register; never horizontally stretch the painting. Extend facade edges if needed for the full 3400-world-pixel zone."
+      },
+      "architecturalScale": {
+        "playerStandingHeightWorld": 260,
+        "normalDoorHeightWorld": 325,
+        "railHeightWorld": 110
+      },
+      "paintedActors": false,
+      "order": 3
+    },
+    {
+      "id": "relay-canal",
+      "title": "Relay Canal",
+      "background": "assets/mac-city-review/relay-canal-v1.png",
+      "artBrief": "Rear canal and bridge, pump station and a clear promenade.",
+      "nativeFrameInfo": {
+        "width": 2160,
+        "height": 728,
+        "mode": "RGB",
+        "sha256": "5da159283c776ba382c877d86af4be4af958de34fa1c93376dc0841cf0028e3b",
+        "bytes": 3262648
+      },
+      "ground": {
+        "worldSpan": 3400,
+        "worldHeight": 1080,
+        "laneYMin": 780,
+        "laneYMax": 970,
+        "groundBaselineRelative": 0.8981481481481481,
+        "drawRule": "Preserve native aspect and ground-register; never horizontally stretch the painting. Extend facade edges if needed for the full 3400-world-pixel zone."
+      },
+      "architecturalScale": {
+        "playerStandingHeightWorld": 260,
+        "normalDoorHeightWorld": 325,
+        "railHeightWorld": 110
+      },
+      "paintedActors": false,
+      "order": 4
+    },
+    {
+      "id": "rooftop-relay",
+      "title": "Rooftop Relay",
+      "background": "assets/mac-city-review/rooftop-relay-v1.png",
+      "artBrief": "Rooftop access room, rear antennas, compact relay fixtures and skyline.",
+      "nativeFrameInfo": {
+        "width": 2162,
+        "height": 727,
+        "mode": "RGB",
+        "sha256": "51a2b1647a66c9fefaee1003a2bbb69b0a9f73f5eddd204b324796f03a0b612d",
+        "bytes": 3011910
+      },
+      "ground": {
+        "worldSpan": 3400,
+        "worldHeight": 1080,
+        "laneYMin": 780,
+        "laneYMax": 970,
+        "groundBaselineRelative": 0.8981481481481481,
+        "drawRule": "Preserve native aspect and ground-register; never horizontally stretch the painting. Extend facade edges if needed for the full 3400-world-pixel zone."
+      },
+      "architecturalScale": {
+        "playerStandingHeightWorld": 260,
+        "normalDoorHeightWorld": 325,
+        "railHeightWorld": 110
+      },
+      "paintedActors": false,
+      "order": 5
+    },
+    {
+      "id": "broadcast-plaza",
+      "title": "Broadcast Plaza",
+      "background": "assets/mac-city-review/broadcast-plaza-v1.png",
+      "artBrief": "Broadcast headquarters facade, normal entry doors and broad stone plaza.",
+      "nativeFrameInfo": {
+        "width": 2167,
+        "height": 726,
+        "mode": "RGB",
+        "sha256": "643f5909763bc23cb710335789813d13138610d47520272958205a5b1bc35d15",
+        "bytes": 3031490
+      },
+      "ground": {
+        "worldSpan": 3400,
+        "worldHeight": 1080,
+        "laneYMin": 780,
+        "laneYMax": 970,
+        "groundBaselineRelative": 0.8981481481481481,
+        "drawRule": "Preserve native aspect and ground-register; never horizontally stretch the painting. Extend facade edges if needed for the full 3400-world-pixel zone."
+      },
+      "architecturalScale": {
+        "playerStandingHeightWorld": 260,
+        "normalDoorHeightWorld": 325,
+        "railHeightWorld": 110
+      },
+      "paintedActors": false,
+      "order": 6
+    }
+  ],
+  "macSupplemental": {
+    "image": "assets/mac-city-review/mac-attacks-v4.png",
+    "frames": "assets/mac-city-review/mac-attacks-v4-frames.json",
+    "nativeFrameInfo": {
+      "width": 2172,
+      "height": 724,
+      "mode": "RGBA",
+      "sha256": "71ab4cdaf80beaabbf226de624bec2ee62aa5ed8fc3ef0a0aca54a08ba28d07a",
+      "bytes": 534778
+    },
+    "framesSHA256": "44b9f07179230bacd31a82ea44866f3436e8843f0208e2d1b56df6877b2dc96c",
+    "standingVisibleHeight": 281,
+    "modelReference": "assets/mac-street-review/mac-poses-v3.png",
+    "modelReferenceSHA256": "691a384a9a1a30757a35ab3f81fcc17a5e4aca7e24b65873068660d29ee63b80",
+    "ownerAccepted": false
+  },
+  "exactRuntimeAssets": [
+    "assets/mac-city-review/chitin_scuttler-v1.png",
+    "assets/mac-city-review/chitin_scuttler-v1-frames.json",
+    "assets/mac-city-review/psion_lancer-v2.png",
+    "assets/mac-city-review/psion_lancer-v2-frames.json",
+    "assets/mac-city-review/bile_spitter-v1.png",
+    "assets/mac-city-review/bile_spitter-v1-frames.json",
+    "assets/mac-city-review/prism_guard-v1.png",
+    "assets/mac-city-review/prism_guard-v1-frames.json",
+    "assets/mac-city-review/rift_stalker-v1.png",
+    "assets/mac-city-review/rift_stalker-v1-frames.json",
+    "assets/mac-city-review/shock_mantid-v2.png",
+    "assets/mac-city-review/shock_mantid-v2-frames.json",
+    "assets/mac-city-review/null_regent-v2.png",
+    "assets/mac-city-review/null_regent-v2-frames.json",
+    "assets/mac-city-review/service-alley-v1.png",
+    "assets/mac-city-review/night-market-v1.png",
+    "assets/mac-city-review/transit-concourse-v1.png",
+    "assets/mac-city-review/relay-canal-v1.png",
+    "assets/mac-city-review/rooftop-relay-v1.png",
+    "assets/mac-city-review/broadcast-plaza-v1.png",
+    "assets/mac-city-review/mac-city-art-v1.json",
+    "assets/mac-city-review/mac-attacks-v4.png",
+    "assets/mac-city-review/mac-attacks-v4-frames.json"
+  ],
+  "registrationRule": "Measured alpha-derived nonuniform source rectangles with planted-foot pivots; uniform per-actor standing scale for all actions. Original generated PNG bytes preserved.",
+  "bloodRule": "Green/purple blood is drawn by gameplay particles. No painted pools in atlases.",
+  "provenance": "docs/source-pack/review-mac-city-art/generation-provenance.json",
+  "visualReview": "Full native outputs viewed; clipped/overlapping/opaque-face-artifact candidates archived separately. Technical selection does not claim owner acceptance or gameplay feel."
+}

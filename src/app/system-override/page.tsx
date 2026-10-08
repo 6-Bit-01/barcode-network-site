@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Hidden Games",
-  description: "Play BARCODE: System Override and System Clash Demo in your browser.",
+  description: "Play BARCODE: System Override, System Clash Demo and Dead Air in your browser.",
   alternates: { canonical: "/system-override" },
 };
 
@@ -23,7 +23,7 @@ export default function SystemOverridePage() {
         </div>
       </section>
 
-      <section aria-label="Choose a game" className="mx-auto grid max-w-7xl gap-6 px-4 py-8 sm:grid-cols-2 sm:px-6 sm:py-10">
+      <section aria-label="Choose a game" className="mx-auto grid max-w-7xl gap-6 px-4 py-8 sm:grid-cols-2 sm:px-6 sm:py-10 lg:grid-cols-3">
         <article aria-labelledby="system-override-title" className="flex flex-col border border-accent/40 bg-background p-6 sm:p-8">
           <p className="text-xs uppercase tracking-[0.3em] text-accent">
             BARCODE: SYSTEM OVERRIDE
@@ -66,6 +66,30 @@ export default function SystemOverridePage() {
               className="inline-flex min-h-12 items-center justify-center border border-accent px-4 py-3 text-xs font-bold uppercase tracking-[0.25em] text-accent transition-colors hover:bg-accent hover:text-background focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent"
             >
               Play System Clash Demo
+            </a>
+          </div>
+        </article>
+        <article aria-labelledby="dead-air-title" className="flex flex-col border border-accent/40 bg-background p-6 sm:p-8">
+          <p className="text-xs uppercase tracking-[0.3em] text-accent">
+            BARCODE: DEAD AIR
+          </p>
+          <h2 id="dead-air-title" className="mt-4 text-2xl font-black uppercase tracking-wide text-foreground sm:text-3xl">
+            Dead Air
+          </h2>
+          <p className="mt-4 text-sm leading-7 text-muted">
+            Rescue the BARCODE crew, build your camp and bring the broadcast back.
+            Story-led tutorials teach each mechanic as you play.
+          </p>
+          <p className="mt-4 text-sm leading-7 text-muted">
+            Play with keyboard, controller or touch. Progress saves in this
+            browser on this site.
+          </p>
+          <div className="mt-auto pt-6">
+            <a
+              href="/games/dead-air/index.html"
+              className="inline-flex min-h-12 items-center justify-center border border-accent px-4 py-3 text-xs font-bold uppercase tracking-[0.25em] text-accent transition-colors hover:bg-accent hover:text-background focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent"
+            >
+              Play Dead Air
             </a>
           </div>
         </article>

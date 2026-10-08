@@ -55,7 +55,7 @@ test("copyright remains the single hidden-games entry with prefetch disabled and
 test("hidden launch destinations remain local and distinct from music participation links", () => {
   const menu = read("src/app/system-override/page.tsx");
   const destinations = [...menu.matchAll(/href="([^"]+)"/g)].map((match) => match[1]);
-  assert.deepEqual(destinations, ["/games/system-override/index.html", "/games/system-clash/play/index.html"]);
+  assert.deepEqual(destinations, ["/games/system-override/index.html", "/games/system-clash/play/index.html", "/games/dead-air/index.html"]);
   assert.doesNotMatch(menu, /target=|download=|https?:|<iframe|<canvas/);
   assert.match(markup, /href="\/releases"/);
   assert.match(markup, /href="\/radio"/);
@@ -63,7 +63,7 @@ test("hidden launch destinations remain local and distinct from music participat
 
 test("hidden games are absent from the public header and sitemap", () => {
   for (const path of ["src/components/Header.tsx", "src/app/sitemap.ts"]) {
-    assert.doesNotMatch(read(path), /(?:["'`])\/(?:system-override|games\/system-clash)(?:["'`/])/);
+    assert.doesNotMatch(read(path), /(?:["'`])\/(?:system-override|games\/(?:system-clash|dead-air))(?:["'`/])/);
   }
   assert.doesNotMatch(read("src/app/system-override/page.tsx"), /password|signIn|authGate|middleware/i);
 });

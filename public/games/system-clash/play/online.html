@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#080a0e"><meta name="robots" content="noindex,follow"><title>Online Sessions · BARCODE: SYSTEM CLASH</title><link rel="stylesheet" href="online.css"></head>
+<body>
+<header><a href="index.html">← Game menu</a><span>BARCODE / SYSTEM CLASH</span><span class="live-label">ONLINE SESSIONS</span></header>
+<main id="online-lobby">
+ <div class="intro"><p class="eyebrow">TWO PLAYERS / ONE SIGNAL</p><h1>Find a rival.<br><em>Clash online.</em></h1><p>Choose a screen name. Create a session or join someone who’s waiting. No account needed.</p></div>
+ <p id="online-status" class="status" role="status" aria-live="polite">Choose a screen name, then create or join a session.</p>
+ <section id="entry-panel" class="entry-layout" aria-label="Find an online session">
+  <div class="panel"><h2>Your signal</h2><form id="entry-form"><label for="screen-name">Screen name</label><input id="screen-name" name="name" maxlength="24" required autocomplete="nickname" placeholder="Your name in this session"><button id="create-room" class="primary" type="submit">Create a session →</button></form><div class="divider">OR JOIN WITH A CODE</div><form id="join-form" class="join-form"><label class="sr-only" for="join-code">Six-character session code</label><input id="join-code" name="code" maxlength="6" minlength="6" pattern="[A-Za-z0-9]{6}" autocomplete="off" placeholder="ABC123" aria-label="Six-character session code"><button id="join-room" type="submit">Join</button></form></div>
+  <div class="panel"><div class="panel-heading"><h2>Open sessions</h2><button id="refresh-rooms" type="button" class="small">Refresh</button></div><div id="room-list" aria-label="Sessions accepting another player"><p class="empty-rooms">Checking for open sessions…</p></div></div>
+ </section>
+ <section id="room-panel" class="panel room-panel" hidden aria-label="Your session">
+  <div class="room-heading"><div><p id="seat-label" class="eyebrow">Your session</p><h2>ROOM <span id="room-code"></span></h2><p id="players" aria-live="polite"></p></div><button id="leave-room" type="button">Leave session</button></div>
+  <div class="selection-heading"><div><p class="eyebrow">CHOOSE YOUR FIGHTER</p><h3 id="selected-fighter">6 Bit</h3></div><button id="ready-button" type="button" class="primary" aria-pressed="false">Ready to clash</button></div>
+  <div id="fighter-grid" class="fighter-grid" role="group" aria-label="Your fighter"></div>
+  <div class="settings"><label for="stage-choice">Host’s arena <select id="stage-choice"><option value="radio-studio">BARCODE Radio Studio</option><option value="sheila-office">Sheila&#39;s Office</option><option value="studio-rat-lair">Studio Rat Lair (CATS)</option><option value="containment">6 Bit Containment Chamber</option><option value="nature-simulation">Mr Nice Guy&#39;s Nature Simulation</option><option value="witty-wasteland">WittyF0x&#39;s Wasteland</option></select></label><label><input id="sound-setting" type="checkbox" checked> Sound</label><label><input id="motion-setting" type="checkbox"> Reduce motion</label></div>
+  <p class="hint">Keyboard / touch work as usual. Controller: D-pad or stick to browse · × confirm · ○ leave · △ random. Each player uses their own first controller.</p>
+ </section>
+ <div id="match-actions" class="match-actions" hidden><span>Host runs the match · Either player can pause</span><button id="rematch-button" type="button">Rematch</button></div>
+ <iframe id="fight-frame" title="SYSTEM CLASH online match" allow="autoplay; fullscreen; gamepad" hidden></iframe>
+ <p class="connection-note">Casual online play. Sessions last 20 minutes; the match ends if a player leaves. Some networks cannot connect directly. If connection fails, try a different network or return to Solo / Two players.</p>
+</main>
+<footer><span>REAL PLAYERS. TEMPORARY SESSIONS.</span><a href="index.html">Solo / Two players →</a></footer>
+<script type="module" src="online.mjs"></script>
+</body></html>

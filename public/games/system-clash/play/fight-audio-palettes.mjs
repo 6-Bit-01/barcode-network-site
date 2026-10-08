@@ -12,6 +12,24 @@ const T=tone,N=noise;
 const freeze=value=>{if(value&&typeof value==='object'){for(const child of Object.values(value))freeze(child);Object.freeze(value);}return value;};
 
 export const CHARACTER_FOLEY_PALETTES=freeze({
+  'doofnoobler':{texture:'plush sleeve swishes, felt thumps and friendly rubber squeaks',air:2200,body:420,material:'organic',gestures:[
+    [N(1900,.12,.1,0,'bandpass',.5),T(590,430,.06,.07,.024,'sine')],
+    [T(430,730,.035,.07,0,'triangle'),N(1400,.045,.09,.039,'bandpass',.8),N(2500,.05,.07,.095,'highpass')],
+    [N(3100,.03,.075,0,'highpass'),N(1150,.14,.105,.02,'bandpass',.5),T(780,390,.07,.06,.089,'sine')],
+    [T(350,650,.024,.055,0,'triangle'),N(2100,.055,.11,.041,'bandpass',1.1),T(670,420,.04,.07,.116,'sine'),N(1700,.042,.05,.152,'highpass')]
+  ]},
+  'lyra':{texture:'servo purrs, claw clicks and a clean cyan discharge',air:7200,body:630,material:'metal',gestures:[
+    [T(2530,1460,.035,.09,0,'square'),N(7400,.025,.11,.014,'highpass'),T(1870,1740,.11,.08,.041,'sine')],
+    [N(5800,.018,.1,0,'highpass'),T(1430,2990,.024,.09,.032,'square'),N(6700,.036,.08,.074,'bandpass',5),T(2110,1530,.056,.06,.125,'triangle')],
+    [T(850,3450,.105,.09,0,'sawtooth'),N(7100,.069,.11,.018,'highpass'),T(2760,790,.082,.08,.066,'sine')],
+    [N(6500,.018,.08,0,'highpass'),T(3310,1920,.023,.09,.037,'square'),T(1740,2190,.032,.075,.077,'triangle'),N(4700,.047,.09,.128,'bandpass',3)]
+  ]},
+  'papa-oak':{texture:'root creaks, hollow trunk knocks and staggered bark fractures',air:960,body:59,material:'organic',gestures:[
+    [N(390,.14,.13,0,'lowpass'),T(61,27,.18,.11,.028,'triangle'),N(1900,.034,.08,.074,'bandpass',3)],
+    [N(730,.03,.1,0,'bandpass',4),N(230,.1,.11,.052,'lowpass'),T(78,30,.13,.105,.099,'square'),N(1310,.044,.06,.166,'bandpass',2)],
+    [T(96,24,.22,.12,0,'sawtooth'),N(580,.17,.12,.021,'lowpass'),N(2490,.038,.08,.093,'bandpass',4)],
+    [N(450,.025,.08,0,'bandpass',4),T(53,28,.11,.09,.039,'triangle'),N(1070,.055,.115,.092,'bandpass',3),N(240,.12,.1,.154,'lowpass')]
+  ]},
   '6-bit':{texture:'pixel crunch and clipped square ticks',air:3100,body:185,material:'organic',gestures:[
     [T(880,220,.026,.1,0,'square'),N(3900,.036,.13,.009,'highpass'),T(170,55,.073,.08,.02,'triangle')],
     [T(1120,700,.028,.09,0,'square'),T(660,165,.038,.12,.052,'square'),N(2400,.063,.08,.024,'bandpass',2)],

@@ -35,8 +35,8 @@ const bounded=(plan,label)=>{
 
 test('all thirteen enabled mains have separate immutable sound identities and four authored gestures',()=>{
   assert.deepEqual(ids.sort(),Object.keys(FIGHTER_STYLES).sort());
-  assert.equal(ids.length,13);assert.equal(CHARACTER_FOLEY_VARIANTS,4);
-  assert.equal(new Set(ids.map(id=>CHARACTER_FOLEY_PALETTES[id].texture)).size,13);
+  assert.equal(ids.length,16);assert.equal(CHARACTER_FOLEY_VARIANTS,4);
+  assert.equal(new Set(ids.map(id=>CHARACTER_FOLEY_PALETTES[id].texture)).size,16);
   const structures=[];
   for(const id of ids){
     const palette=CHARACTER_FOLEY_PALETTES[id];
@@ -46,7 +46,7 @@ test('all thirteen enabled mains have separate immutable sound identities and fo
     assert.equal(new Set(palette.gestures.map(signature)).size,4,id+' gestures change rhythm and sources, not only pitch/gain');
     structures.push(palette.gestures.map(signature).join('|'));
   }
-  assert.equal(new Set(structures).size,13,'each fighter has its own source/rhythm language independent of frequency/gain');
+  assert.equal(new Set(structures).size,16,'each fighter has its own source/rhythm language independent of frequency/gain');
 });
 
 test('every fighter action family has four structurally different deterministic variants within bounds',()=>{
@@ -63,7 +63,7 @@ test('every fighter action family has four structurally different deterministic 
     }
     assert.equal(new Set(structures).size,4,id+':'+event.type+' retains four different sequences even without frequency/gain');
   }
-  assert.equal(reviewed,13*events.length*4);
+  assert.equal(reviewed,16*events.length*4);
 });
 
 test('attacker signature remains independent of victim material; Cache contacts retain metal',()=>{

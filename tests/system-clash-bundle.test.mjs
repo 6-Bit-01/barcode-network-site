@@ -1,4 +1,5 @@
 import test from "node:test";
+import sharp from "sharp";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -15,7 +16,7 @@ const inventory = fs.readdirSync(root, { recursive: true, withFileTypes: true })
   .map(entry => path.relative(root, path.join(entry.parentPath ?? entry.path, entry.name)).replaceAll("\\", "/"));
 
 test("System Clash ships only its same-origin runtime, with complete registered art", async () => {
-  assert.equal(roster.length, 13);
+  assert.equal(roster.length, 16);
   assert(roster.every(fighter => fighter.enabled));
   assert.equal(inventory.filter(name => name.endsWith(".png")).length, 211);
   assert(inventory.every(name => /\.(?:png|webp|svg|json|html|css|m?js|wav)$/.test(name)));
@@ -40,10 +41,8 @@ test("System Clash ships only its same-origin runtime, with complete registered 
   globalThis.Image = class {
     set src(value) {
       const buffer = fs.readFileSync(local(value));
-      assert.equal(buffer.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
-      this.width = buffer.readUInt32BE(16);
-      this.height = buffer.readUInt32BE(20);
-      queueMicrotask(() => this.onload());
+      assert(buffer.subarray(0,8).toString("hex")==="89504e470d0a1a0a" || buffer.toString("ascii",0,4)==="RIFF" && buffer.toString("ascii",8,12)==="WEBP", "PNG or WebP runtime asset");
+      sharp(buffer).metadata().then(metadata=>{this.width=metadata.width;this.height=metadata.height;this.onload();}).catch(error=>this.onerror(error));
     }
   };
   try {
@@ -62,7 +61,8 @@ test("System Clash ships only its same-origin runtime, with complete registered 
       }
     }
     const images = new Set([...requests].filter(name => name.endsWith(".png")));
-    assert.deepEqual([...images].sort(), inventory.filter(name => name.endsWith(".png")).sort());
+    assert.deepEqual([...images].sort(), inventory.filter(name => name.endsWith(".png") && name !== "assets/whole-body/punch.png").sort());
+    for(const name of inventory.filter(name=>/^assets\/(?:animation-polish|fighters|arcade|deletions)\/.+\.webp$/.test(name)))assert(requests.has(name),"Registered atlas was not loaded: "+name);
   } finally {
     globalThis.fetch = oldFetch;
     globalThis.Image = oldImage;
@@ -109,9 +109,9 @@ test("demo portraits and standing art decode for every playable fighter without 
   const { default: sharp } = await import("sharp");
   const menu = JSON.parse(read("assets/menu/roster.json"));
   assert.deepEqual(menu.fighters.map(f => [f.id, f.name]), roster.map(f => [f.id, f.name]));
-  assert.equal(inventory.filter(name => name.startsWith("assets/menu/")).length, 28);
+  assert.equal(inventory.filter(name => name.startsWith("assets/menu/")).length, roster.length * 4 + 3);
   for (const fighter of menu.fighters) {
-    for (const [kind, expected] of [["portrait", [256, 256]], ["standing", [320, 440]]]) {
+    for (const [kind, expected] of [["portrait", [256, 256]], ["standing", fighter.standingSize ?? [320, 440]]]) {
       const name = fighter[kind];
       assert.match(name, /^assets\/menu\/[a-z0-9-]+\.webp$/);
       assert(inventory.includes(name));

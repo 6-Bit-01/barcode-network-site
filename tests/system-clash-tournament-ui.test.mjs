@@ -1,0 +1,26 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {createTournamentRun,launchTournamentMatch,saveTournamentRun,loadTournamentRun} from '../public/games/system-clash/play/tournament.mjs';
+import {createTournamentFightOverlay} from '../public/games/system-clash/play/tournament-ui.mjs';
+const roster=JSON.parse(readFileSync(new URL('../public/games/system-clash/play/assets/menu/roster.json',import.meta.url))).fighters;
+class Element{
+ constructor(tag,doc){this.tagName=tag;this.doc=doc;this.children=[];this.dataset={};this.attributes={};this.className='';this.hidden=false;this.style={setProperty(){}};this.handlers={};this.classList={add:name=>{this.className+=' '+name;}};}
+ append(...children){this.children.push(...children);}appendChild(child){this.append(child);return child;}replaceChildren(...children){this.children=children;}setAttribute(key,value){this.attributes[key]=value;}addEventListener(type,handler){this.handlers[type]=handler;}focus(){this.doc.activeElement=this;}click(){this.handlers.click?.();}
+ querySelectorAll(query){const result=[],visit=element=>{for(const child of element.children){if(query==='.tournament-actions button'&&child.tagName==='button'&&element.className==='tournament-actions')result.push(child);if(query==='button'&&child.tagName==='button')result.push(child);if(query==='.tournament-message'&&child.className==='tournament-message')result.push(child);visit(child);}};visit(this);return result;}querySelector(query){return this.querySelectorAll(query)[0]??null;}
+}
+function fixture(){const doc={activeElement:null,querySelector:()=>null,createElement(tag){return new Element(tag,this);},createElementNS(_,tag){return new Element(tag,this);}};doc.body=new Element('body',doc);doc.head=new Element('head',doc);const values=new Map(),storage={writes:0,fail:false,getItem:key=>values.get(key)??null,setItem(key,value){if(this.fail)throw new Error('quota');this.writes++;values.set(key,value);},removeItem:key=>values.delete(key)};const launch=launchTournamentMatch(createTournamentRun(roster,{fighterId:'6-bit',seed:91,runId:'overlay-test'}),'https://barcode.example/games/system-clash/play/index.html');saveTournamentRun(storage,launch.run,roster);const host=doc.body.appendChild(new Element('section',doc)),navigations=[];let left=0;globalThis.document=doc;const overlay=createTournamentFightOverlay({url:launch.url,roster,storage,host,getSettings:()=>({muted:true,reducedMotion:true,controllerSeats:[2,5]}),onNavigate:url=>navigations.push(url),onLeave:()=>{left++;}});return {doc,storage,launch,host,navigations,overlay,get left(){return left;}};}
+test('fight overlay waits through Deletion, opens once after over, and Continue preserves runtime settings',()=>{
+ const f=fixture();assert.equal(f.overlay.active,true);for(const phase of ['fight','finish','deletion'])assert.equal(f.overlay.update({phase,winner:0}),false);assert.equal(f.host.hidden,true);assert.equal(f.overlay.update({phase:'over',winner:0}),true);assert.equal(f.overlay.blocking,true);assert.equal(f.storage.writes,2);f.overlay.update({phase:'over',winner:0});assert.equal(f.storage.writes,2);f.overlay.handleAction('confirm');assert.equal(f.navigations.length,1);const url=f.navigations[0];assert.equal(url.searchParams.get('sound'),'0');assert.equal(url.searchParams.get('motion'),'1');assert.equal(url.searchParams.get('pad1'),'2');assert.equal(url.searchParams.get('pad2'),'5');assert.equal(loadTournamentRun(f.storage,roster).node,1);
+});
+test('saved result write failure still blocks normal rematch and explains the save issue',()=>{
+ const f=fixture();f.storage.fail=true;assert.equal(f.overlay.update({phase:'over',winner:0}),true);assert.equal(f.overlay.blocking,true);assert.match(f.host.querySelector('.tournament-message').textContent,/save/i);f.overlay.handleAction('confirm');assert.equal(f.navigations.length,0);f.overlay.handleAction('back');assert.equal(f.left,1);
+});
+test('draw Replay keeps the current node with a fresh token; loss Leave clears the saved climb',()=>{
+ const draw=fixture();draw.overlay.update({phase:'over',winner:null});assert.match(draw.host.querySelectorAll('.tournament-actions button')[0].textContent,/REPLAY/);draw.overlay.handleAction('confirm');const next=loadTournamentRun(draw.storage,roster);assert.equal(next.node,0);assert.notEqual(next.resultId,draw.launch.run.resultId);
+ const loss=fixture();loss.overlay.update({phase:'over',winner:1});loss.overlay.handleAction('ArrowRight');assert.equal(loss.doc.activeElement.textContent,'LEAVE TOURNAMENT');loss.overlay.handleAction('confirm');assert.equal(loss.left,1);assert.equal(loadTournamentRun(loss.storage,roster),null);
+});
+
+test('combat roster without artwork fields uses existing menu portraits in the climb',()=>{
+ const f=fixture();const combatRoster=roster.map(({id,name})=>({id,name,enabled:true}));const host=f.doc.body.appendChild(new Element('section',f.doc));const overlay=createTournamentFightOverlay({url:f.launch.url,roster:combatRoster,storage:f.storage,host});overlay.update({phase:'over',winner:0});const nodes=host.children.find(child=>child.className==='tournament-map').children.find(child=>child.className==='tournament-nodes');assert.ok(nodes.children.every(node=>node.children[0].src.endsWith('-portrait.webp')));
+});

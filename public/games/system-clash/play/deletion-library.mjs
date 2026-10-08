@@ -1,3 +1,4 @@
+import {NEW_DELETIONS,newDeletionPose} from './new-deletion-library.mjs';
 export const DELETION_POSES = {
   attacker:[
     {id:'shove',name:'Shove',uses:'Feed a trap, topple a speaker stack, drive a target into a cabinet.'},
@@ -98,6 +99,7 @@ export const BLUE_SHIFT = {
 };
 
 export const DELETIONS = {
+  ...NEW_DELETIONS,
   '6-bit':{id:'broadcast-cut',name:'Broadcast Cut',duration:BROADCAST_CUT.duration,beats:BROADCAST_CUT.beats,mechanism:'crt'},
   '9-bit':{id:'ninth-nail',name:'Ninth Nail',...NINTH_NAIL,mechanism:'coffin'},
   'cache-back':{id:'garbage-collection',name:'Garbage Collection',...GARBAGE_COLLECTION,mechanism:'waste-chute'},
@@ -131,10 +133,11 @@ const flying=(elapsed,from,to,clips,mechanism='crt')=>{
   return held('thrown',Math.min(end,start+(end-start)*(p-.18)/.82));
 };
 
-export function deletionPose(role,elapsed,fighterId='6-bit',clips=null) {
+export function deletionPose(role,elapsed,fighterId='6-bit',clips=null,fighterHeight=Infinity) {
   const definition=deletionDefinition(fighterId);if(!definition)return {clip:'idle',elapsed:0};
   if(fighterId==='6-bit')return broadcastCutPose(role,elapsed,clips);
   const t=Math.max(0,elapsed),b=definition.beats;
+  const newPose=newDeletionPose(role,t,definition,clips,fighterHeight);if(newPose)return newPose;
   if(definition.mechanism==='positivity') {
     if(role==='attacker') {
       if(t<b.castWindup)return held('walk',t);
@@ -333,6 +336,7 @@ export function deletionPropState(elapsed,fighterId='6-bit') {
   if(definition.mechanism==='wand')return t<b.bind?'open':t<b.dissolve?'captured':t<b.erased?'impact':'dead';
   if(definition.mechanism==='wheel')return t<b.captured?'open':t<b.arrowHit?'captured':t<b.signalCut?'impact':'dead';
   if(definition.mechanism==='stamp')return t<b.stampRaise?'open':t<b.stampStrike?'captured':t<b.reveal?'impact':'dead';
+  if(definition.mechanism==='litter-box')return t<definition.beats.kick?'open':t<definition.beats.litterImpact?'captured':t<definition.beats.buried?'impact':'dead';
   if(definition.mechanism==='jaws')return t<b.close?'open':t<b.sealed?'captured':t<b.cube?'impact':'dead';
   if(definition.mechanism==='speaker-stack')return t<b.stackReach?'open':t<b.burial?'captured':t<b.signalCut?'impact':'dead';
   if(definition.mechanism==='truss')return t<b.bind?'open':t<b.trussHit?'captured':t<b.micDrop?'impact':'dead';

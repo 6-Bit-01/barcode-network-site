@@ -1,0 +1,446 @@
+{
+  "version": 1,
+  "id": "doofnoobler",
+  "file": "doofnoobler-idle.webp",
+  "encoding": "webp-quality-94-alpha-preserved",
+  "atlasSize": [
+    636,
+    452
+  ],
+  "canvasSize": [
+    320,
+    440
+  ],
+  "groundY": 430,
+  "sourceScale": 1,
+  "scale": 1,
+  "heightScale": 0.6875,
+  "order": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "frameMs": [
+    180,
+    160,
+    180,
+    160
+  ],
+  "frames": {
+    "right": [
+      {
+        "anchor": [
+          65.369,
+          221.775
+        ],
+        "opaqueBounds": [
+          2,
+          2,
+          134,
+          222
+        ],
+        "attachments": {
+          "head": [
+            77.208,
+            60.962
+          ],
+          "torso": [
+            68.0,
+            131.455
+          ],
+          "legs": [
+            65.369,
+            173.311
+          ],
+          "grip": [
+            106.147,
+            127.05
+          ]
+        },
+        "canonicalPixelSha256": "b40ae32b0630897e5eae397c30905eb3d136897cb8824e1296e6f19f8323a358",
+        "poseSource": {
+          "kind": "generated",
+          "sourceFile": "base-idle-walk-v1.png",
+          "cell": 0,
+          "sourceRect": [
+            88,
+            0,
+            183,
+            302
+          ],
+          "sourceSha256": "789c51780b8f089c00a5fa5ff205f1e61acb75b4e9396e542aefabafb1178dd3",
+          "uniformResample": 0.7407407407407407
+        },
+        "rect": [
+          0,
+          0,
+          136,
+          224
+        ],
+        "pixelSha256": "f868f306f5cb08830f98969d3bea792cb9b48c8a9b9c7b5a025343793c96e549"
+      },
+      {
+        "anchor": [
+          61.049,
+          219.78
+        ],
+        "opaqueBounds": [
+          2,
+          2,
+          125,
+          220
+        ],
+        "attachments": {
+          "head": [
+            73.306,
+            63.137
+          ],
+          "torso": [
+            63.5,
+            132.756
+          ],
+          "legs": [
+            61.049,
+            174.092
+          ],
+          "grip": [
+            99.045,
+            128.405
+          ]
+        },
+        "canonicalPixelSha256": "df1ffb4eeda77d9cebcd8db755f11c55850d65ad984320a1d41f654c4bdef0f3",
+        "poseSource": {
+          "kind": "generated",
+          "sourceFile": "base-idle-walk-v1.png",
+          "cell": 1,
+          "sourceRect": [
+            388,
+            2,
+            172,
+            300
+          ],
+          "sourceSha256": "789c51780b8f089c00a5fa5ff205f1e61acb75b4e9396e542aefabafb1178dd3",
+          "uniformResample": 0.7407407407407407
+        },
+        "rect": [
+          159,
+          0,
+          127,
+          222
+        ],
+        "pixelSha256": "8fc9a0dda0865e4847d6d87f53d2e259a397ef65a0a08cdaaf31c30392f96de6"
+      },
+      {
+        "anchor": [
+          65.369,
+          219.78
+        ],
+        "opaqueBounds": [
+          2,
+          2,
+          134,
+          220
+        ],
+        "attachments": {
+          "head": [
+            78.525,
+            60.961
+          ],
+          "torso": [
+            68.0,
+            132.756
+          ],
+          "legs": [
+            65.369,
+            174.092
+          ],
+          "grip": [
+            106.154,
+            126.229
+          ]
+        },
+        "canonicalPixelSha256": "3c3bd8300da8685c90f60112c0c1550d7f530b8764a9e322be315fd99d88bbb0",
+        "poseSource": {
+          "kind": "generated",
+          "sourceFile": "base-idle-walk-v1.png",
+          "cell": 2,
+          "sourceRect": [
+            684,
+            1,
+            184,
+            300
+          ],
+          "sourceSha256": "789c51780b8f089c00a5fa5ff205f1e61acb75b4e9396e542aefabafb1178dd3",
+          "uniformResample": 0.7407407407407407
+        },
+        "rect": [
+          318,
+          0,
+          136,
+          222
+        ],
+        "pixelSha256": "3d432799e159342f5e24974c8344cb4b74ab1a39545dbeeef56850c933f469da"
+      },
+      {
+        "anchor": [
+          74.394,
+          220.777
+        ],
+        "opaqueBounds": [
+          3,
+          2,
+          156,
+          221
+        ],
+        "attachments": {
+          "head": [
+            75.929,
+            63.418
+          ],
+          "torso": [
+            71.323,
+            135.541
+          ],
+          "legs": [
+            74.394,
+            179.252
+          ],
+          "grip": [
+            138.884,
+            118.057
+          ]
+        },
+        "canonicalPixelSha256": "b5d673579b4a82fd1ae256145cd8663e7e160b69e8e769e15493a2aee0d70a1a",
+        "poseSource": {
+          "kind": "generated",
+          "sourceFile": "base-idle-walk-v1.png",
+          "cell": 3,
+          "sourceRect": [
+            992,
+            0,
+            213,
+            301
+          ],
+          "sourceSha256": "789c51780b8f089c00a5fa5ff205f1e61acb75b4e9396e542aefabafb1178dd3",
+          "uniformResample": 0.7407407407407407
+        },
+        "rect": [
+          477,
+          0,
+          158,
+          223
+        ],
+        "pixelSha256": "fa56f3e066409c2bb4a27ce5222266f341866a4f376e36d35fb64a324164fad1"
+      }
+    ],
+    "left": [
+      {
+        "anchor": [
+          73.751,
+          220.777
+        ],
+        "opaqueBounds": [
+          2,
+          2,
+          140,
+          221
+        ],
+        "attachments": {
+          "head": [
+            54.493,
+            63.418
+          ],
+          "torso": [
+            69.624,
+            131.17
+          ],
+          "legs": [
+            73.751,
+            172.695
+          ],
+          "grip": [
+            26.98,
+            126.799
+          ]
+        },
+        "canonicalPixelSha256": "263cba7bb216b74226df989df64fa4a29576b74466cabaf5df9370167c38665b",
+        "poseSource": {
+          "kind": "generated",
+          "sourceFile": "base-idle-walk-v1.png",
+          "cell": 4,
+          "sourceRect": [
+            72,
+            313,
+            192,
+            301
+          ],
+          "sourceSha256": "789c51780b8f089c00a5fa5ff205f1e61acb75b4e9396e542aefabafb1178dd3",
+          "uniformResample": 0.7407407407407407
+        },
+        "rect": [
+          0,
+          226,
+          142,
+          223
+        ],
+        "pixelSha256": "a8d4fd606b8816acf63de5611e9725660447da5769fbc3df4365b3e8772c52b8"
+      },
+      {
+        "anchor": [
+          69.591,
+          218.775
+        ],
+        "opaqueBounds": [
+          2,
+          2,
+          132,
+          219
+        ],
+        "attachments": {
+          "head": [
+            50.157,
+            62.859
+          ],
+          "torso": [
+            65.704,
+            129.99
+          ],
+          "legs": [
+            69.591,
+            173.3
+          ],
+          "grip": [
+            25.541,
+            127.824
+          ]
+        },
+        "canonicalPixelSha256": "4437d5f0b4a4d9e72f2b729576a39d3d9c1e3ec04d063cd16cebf99189fad945",
+        "poseSource": {
+          "kind": "generated",
+          "sourceFile": "base-idle-walk-v1.png",
+          "cell": 5,
+          "sourceRect": [
+            391,
+            313,
+            181,
+            298
+          ],
+          "sourceSha256": "789c51780b8f089c00a5fa5ff205f1e61acb75b4e9396e542aefabafb1178dd3",
+          "uniformResample": 0.7407407407407407
+        },
+        "rect": [
+          159,
+          226,
+          134,
+          221
+        ],
+        "pixelSha256": "d6000a0340f1d8ebd1ce3eab30f576cf4721f2dd83ed4fce971a4fa257e9c196"
+      },
+      {
+        "anchor": [
+          74.271,
+          219.78
+        ],
+        "opaqueBounds": [
+          2,
+          2,
+          141,
+          220
+        ],
+        "attachments": {
+          "head": [
+            54.873,
+            60.961
+          ],
+          "torso": [
+            70.114,
+            132.756
+          ],
+          "legs": [
+            74.271,
+            174.092
+          ],
+          "grip": [
+            27.163,
+            126.229
+          ]
+        },
+        "canonicalPixelSha256": "9b4ec487dcbacfaf39291fa4cbf746664498e3b10632c1df252faf57ea41b7f7",
+        "poseSource": {
+          "kind": "generated",
+          "sourceFile": "base-idle-walk-v1.png",
+          "cell": 6,
+          "sourceRect": [
+            689,
+            313,
+            193,
+            300
+          ],
+          "sourceSha256": "789c51780b8f089c00a5fa5ff205f1e61acb75b4e9396e542aefabafb1178dd3",
+          "uniformResample": 0.7407407407407407
+        },
+        "rect": [
+          318,
+          226,
+          143,
+          222
+        ],
+        "pixelSha256": "4320d6ad69757dee16830b1a8686d33b8f0c80c3feafe3e71345783f1c91dcd3"
+      },
+      {
+        "anchor": [
+          82.591,
+          223.777
+        ],
+        "opaqueBounds": [
+          2,
+          2,
+          157,
+          224
+        ],
+        "attachments": {
+          "head": [
+            82.591,
+            64.258
+          ],
+          "torso": [
+            85.682,
+            137.371
+          ],
+          "legs": [
+            82.591,
+            181.682
+          ],
+          "grip": [
+            17.683,
+            119.647
+          ]
+        },
+        "canonicalPixelSha256": "eb86f8f203df1d87772eaba8cbb30257fb7f1514b4b204c4bef9c3aa91072733",
+        "poseSource": {
+          "kind": "generated",
+          "sourceFile": "base-idle-walk-v1.png",
+          "cell": 7,
+          "sourceRect": [
+            984,
+            310,
+            214,
+            305
+          ],
+          "sourceSha256": "789c51780b8f089c00a5fa5ff205f1e61acb75b4e9396e542aefabafb1178dd3",
+          "uniformResample": 0.7407407407407407
+        },
+        "rect": [
+          477,
+          226,
+          159,
+          226
+        ],
+        "pixelSha256": "6870e3dc2a4cd14ce38901b0d699f6e47e94362b3d7f7a442b90163115e28eaa"
+      }
+    ]
+  },
+  "source": "assets/fighters/doofnoobler/idle.webp",
+  "sourceSha256": "a76449bb70322a8dacb7c73df0c449709daf1b19a1903eb9fdc7c079f2f0d47f"
+}

@@ -1,12 +1,19 @@
+import {planRecordedFoley,createFoleyBufferBank} from './fight-foley.mjs';
 import {CHARACTER_FOLEY_VARIANTS,planCharacterFoley} from './fight-audio-palettes.mjs';
-/** Layered arcade contact Foley and original synthetic effort voices.
+/** Recorded and procedural arcade contact Foley and original synthetic effort voices.
  * Character voices are procedural phonation, not recordings or cloned identities.
- * Only the generic "DELETE HIM" announcer is an offline SAPI-generated PCM sample.
+ * The announcer and approved Doofnoobler quote are offline synthetic SAPI PCM samples.
  */
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const finite=(v,f)=>Number.isFinite(v)?v:f;
 export const ARCADE_ANNOUNCER_PATH='assets/audio/delete-him-arcade.wav';
+export const CHARACTER_LINE_ASSETS=Object.freeze({
+ doofnoobler:Object.freeze({path:'assets/audio/doofnoobler-stay-kind.wav',cue:'stay-kind',text:'Stay soft, stay fuzzy, and stay kind.',bytes:125126})
+});
 export const FIGHT_AUDIO_PROFILES=Object.freeze(Object.fromEntries(Object.entries({
+  'doofnoobler':{pitch:246,formants:[980,1780,3190],rasp:.04,breath:.23,weight:.64,accent:790,voice:'soft felt puppet murmur'},
+  'lyra':{pitch:282,formants:[1050,2130,3550],rasp:.09,breath:.05,weight:.88,accent:1670,robot:true,voice:'feline cyborg chirp'},
+  'papa-oak':{pitch:62,formants:[430,870,1850],rasp:.36,breath:.11,weight:1.55,accent:53,voice:'resonant wooden elder rumble'},
   '6-bit':{pitch:119,formants:[760,1280,2540],rasp:.22,breath:.14,weight:1,accent:165,voice:'scrappy gravel'},
   '9-bit':{pitch: 72,formants:[570,980,2220],rasp:.44,breath:.08,weight:1.42,accent: 84,voice:'deep dark growl'},
   'cache-back':{pitch:188,formants:[640,1720,3100],rasp:.05,breath:.03,weight:.85,accent:780,robot:true,voice:'gated synthetic servo'},
@@ -28,6 +35,9 @@ export const MAX_VOCAL_CACHE_BYTES=6*1024*1024;
 // Independent articulation families: syllables, stop/breath onsets, closure,
 // subharmonics, vocal fry and modulation differ in addition to pitch/formants.
 const vocalFamilies={
+ 'doofnoobler':{kind:'felt-murmur',duration:.9,open:.71,sub:.01,nasal:.39,grit:.04,flutter:3,phrases:[['hu','hmm-hup','ho-eh','mmm'],['oh','oof','eh-oh','uh-hm'],['oh-hmm','hu-oof','ah-ohh','hmm-eh'],['oo-ah','oh-ehh','hu-ah-oh','mm-aa']]},
+ 'lyra':{kind:'cat-servo',duration:.82,open:.27,sub:.02,nasal:.32,grit:.13,flutter:31,phrases:[['ki','tss-ya','mr-ki','ya-tk'],['ih','mrr-eh','ki-ih','tss-ah'],['mrr-yah','ih-aa','tk-kee','yah-mrr'],['ee-yaa','mrr-ee-ah','ki-aa-yee','yah-ee-mrr']]},
+ 'papa-oak':{kind:'wood-throat',duration:1.21,open:.73,sub:.63,nasal:.06,grit:.49,flutter:2,phrases:[['hrum','hoom','gh-ho','hrr'],['uum','ohm','hr-ugh','ogh'],['hoom-aah','hr-augh','ogh-um','rr-ho'],['hooo-aa','aum-rr-ah','gh-oh-aa','hrum-aaa']]},
  '6-bit':{kind:'gravel',duration:.97,open:.48,sub:.18,nasal:.04,grit:.3,flutter:11,phrases:[['ha','hup','kya-ha','hu'],['uh','ah','oh-kh','ha-uh'],['rr-ah','uh-agh','ah-kha','oh-ah'],['aa-rr','uh-aah','ha-aa-rr','rr-aa']]},
  '9-bit':{kind:'dark-roar',duration:1.14,open:.64,sub:.62,nasal:0,grit:.66,flutter:7,phrases:[['grh','rah','hru-rr','kh-rr'],['rr-uh','gh-ah','oh-rr','hr-uh'],['gh-raa','uh-rr-ah','rr-oh','raa-gh'],['rr-aa','gh-aaa-rr','oh-rr-aa','raa-rr-oh']]},
  'cache-back':{kind:'servo',duration:.86,open:.31,sub:0,nasal:0,grit:.03,flutter:27,phrases:[['zzip','kt-bzz','zi-kt','brr-zzi'],['kt-zi','bzz-ah','zi-brr','kt-bzz-kt'],['brr-zzi','kt-aa-bzz','zi-kt-zi','bzz-brr'],['zzi-brr-aa','kt-zi-brr','aa-zzi-kt','brr-aa-bzz']]},
@@ -87,8 +97,24 @@ export function planFightSound(event={},variation=0){
   const heavy=type==='deletion-impact'||strength>=1.65||finite(event.damage,0)>=18;
   const material=event.victimMaterial==='metal'||victim.robot||victim.steel?'metal':'organic';
   const contact=mechanism(event);
-  let priority=1,announcer=false;
-  if(type==='finish-prompt'){announcer=true;priority=4;}
+  let priority=1,announcer=false,characterLine=null;
+  if(event.peaceful&&['deletion','deletion-cue','deletion-impact'].includes(type)){
+    return {type,attackerId,victimId,material:'organic',contact:'cloth',heavy:false,priority:1,announcer:false,characterLine:null,layers:[noise(1750,.13,.07,0,'bandpass',.7),tone(390,520,.2,.055,.025,'triangle')],voices:[],variation,foleyFamily:'soft-hug',foleyFighterId:attackerId};
+  }
+  if(type==='character-line'){
+    const id=event.fighterId??attackerId,spec=CHARACTER_LINE_ASSETS[id];
+    characterLine=spec&&event.cue===spec.cue?id:null;
+  }else if(type==='stage-warning'||type==='stage-activate'){
+    const i=Math.max(0,['radio-studio','sheila-office','studio-rat-lair','containment','nature-simulation','witty-wasteland'].indexOf(event.stageId));
+    priority=2;const freq=[690,240,180,1120,850,95][i];
+    if(type==='stage-warning'){add(tone(freq,freq*.72,.11,.14,0,'square'),tone(freq*1.4,freq,.12,.11,.24,'triangle'));}
+    else {add(noise([2300,710,460,4500,2900,850][i],.22+i*.025,.2,0,i===3?'highpass':'bandpass',.8+i*.25),tone(freq*.7,Math.max(32,freq*.15),.22+i*.02,.13,.012,i===4?'sine':'sawtooth'));}
+  }else if(type==='stage-interact'){add(tone(540,920,.07,.1,0,'square'),noise(3200,.025,.08,.008,'highpass'));}
+  else if(type==='wall-break'){
+    const glass=event.stageId==='containment'||event.stageId==='nature-simulation';priority=3;
+    add(noise(glass?6100:1600,.4,.25,0,glass?'highpass':'lowpass'),tone(glass?1280:105,glass?530:38,.28,.16,.016,'triangle'),noise(2800,.19,.13,.065,'bandpass',1.3));
+  }else if(type==='stage-transition'){add(noise(1600,.2,.14,0,'highpass'),tone(120,360,.2,.08,.018,'sine'));}
+  else if(type==='finish-prompt'){announcer=true;priority=4;}
   else if(type==='attack'||type==='special'){
     voice(attackerId,'attack');priority=1;
     add(noise(attacker.fox?3400:2200,.085,.12,0,'highpass'),tone(attacker.accent*1.2,attacker.accent*.55,.09,.08,0,'triangle'));
@@ -162,7 +188,7 @@ export function planFightSound(event={},variation=0){
   const sum=layers.reduce((v,item)=>v+item.gain,0);
   const scale=Math.min(1,.95/Math.max(.01,sum));
   for(const item of layers)item.gain*=scale;
-  return {type,attackerId,victimId,material,contact,heavy,priority,announcer,layers,voices,variation,foleyFamily:foley.family,foleyFighterId:foley.fighterId};
+  return {type,attackerId,victimId,material,contact,heavy,priority,announcer,characterLine,layers,voices,variation,foleyFamily:foley.family,foleyFighterId:foley.fighterId};
 }
 
 
@@ -230,7 +256,9 @@ export function renderFightVocal(id,mode='hurt',sampleRate=22050,variant=0){
 export function createFightAudio(options={}){
   let context=null,master=null,fxBus=null,voiceBus=null,announcerBus=null,noiseBuffer=null,announcerBuffer=null;
   let muted=!!options.muted,paused=!!options.paused,reducedMotion=!!options.reducedMotion,announcerPlayed=false;
-  let pendingStart=null,assetError='',playedEvents=0,droppedEvents=0,playedVoices=0,vocalCacheBytes=0,lastFoleyVariation=null;
+  let pendingStart=null,assetError='',playedEvents=0,droppedEvents=0,playedVoices=0,vocalCacheBytes=0,lastFoleyVariation=null,recordedFoleyPlayed=0,recordedFoleyFallbacks=0,lastRecordedFoley=null;
+  const selectedCharacterLines=new Set(),lineBuffers=new Map(),linePromises=new Map();
+  let characterLineError='',characterLinesPlayed=0;
   const active=new Set(),voiceGroups=new Map(),cooldowns=new Map(),vocalBuffers=new Map(),lastVocalVariants=new Map();
   const variations=createFightVariationSelector(finite(options.seed,94712));
   const contextFactory=options.contextFactory??(()=>{
@@ -238,6 +266,7 @@ export function createFightAudio(options={}){
     return Context?new Context({latencyHint:'interactive'}):null;
   });
   const fetchImpl=options.fetch??globalThis.fetch?.bind(globalThis);
+  const foleyBank=createFoleyBufferBank({getContext:()=>context,fetch:fetchImpl,urlForAsset:asset=>globalThis.SYSTEM_CLASH_FIGHT_BUNDLE?.audio?.[asset.path]??new URL(asset.path,options.baseUrl??globalThis.document?.baseURI??globalThis.location?.href??'http://localhost/').href});
   function disconnect(node){try{node.disconnect();}catch{}}
   function stopGroup(group){
     if(!group||group.stopped)return;group.stopped=true;
@@ -283,10 +312,28 @@ export function createFightAudio(options={}){
             assetError='';
           }catch(error){assetError=String(error?.message??'announcer unavailable');}
         }
+        await prepareCharacterLines([...selectedCharacterLines]);
         return context.state==='running';
       }catch(error){assetError=String(error?.message??'audio unavailable');return false;}
     })().finally(()=>{pendingStart=null;});
     return pendingStart;
+  }
+  async function prepareCharacterLines(ids=[]){
+    selectedCharacterLines.clear();for(const id of ids)if(CHARACTER_LINE_ASSETS[id])selectedCharacterLines.add(id);
+    if(!context||!fetchImpl)return false;
+    const jobs=[...selectedCharacterLines].map(id=>{
+      if(lineBuffers.has(id))return true;if(linePromises.has(id))return linePromises.get(id);
+      const job=(async()=>{try{
+        const spec=CHARACTER_LINE_ASSETS[id],bundle=globalThis.SYSTEM_CLASH_FIGHT_BUNDLE?.audio??{};
+        const controller=typeof AbortController==='function'?new AbortController():null;
+        const timer=controller?setTimeout(()=>controller.abort(),8000):null;
+        let bytes;try{const response=await fetchImpl(bundle[spec.path]??new URL(spec.path,options.baseUrl??globalThis.document?.baseURI??globalThis.location?.href??'http://localhost/').href,controller?{signal:controller.signal}:undefined);if(!response.ok)throw new Error('character line HTTP '+response.status);bytes=await response.arrayBuffer();}finally{if(timer)clearTimeout(timer);}
+        if(bytes.byteLength!==spec.bytes||bytes.byteLength>250000)throw new Error('character line byte budget');
+        const buffer=await context.decodeAudioData(bytes);if(buffer.duration<=0||buffer.duration>8||(buffer.numberOfChannels??1)!==1)throw new Error('character line format');
+        lineBuffers.set(id,buffer);characterLineError='';return true;
+      }catch(error){characterLineError=String(error?.message??'character line unavailable');return false;}
+      finally{linePromises.delete(id);}})();linePromises.set(id,job);return job;
+    });return (await Promise.all(jobs)).every(Boolean);
   }
   function group(bus,priority,voiceId=null){
     const sfx=[...active].filter(g=>!g.voiceId);
@@ -329,6 +376,15 @@ export function createFightAudio(options={}){
       source.connect(filter);filter.connect(gain);source.start(at,Math.min(.8,item.delay*1.7));own(entry,source,[gain,filter],at+item.duration);
     }
   }
+  function playRecorded(item,buffer,entry,at){
+    const source=context.createBufferSource(),gain=context.createGain(),duration=buffer.duration/item.rate;
+    source.buffer=buffer;if(source.playbackRate)source.playbackRate.value=item.rate;
+    gain.gain.setValueAtTime(item.gain,at);
+    gain.gain.setValueAtTime(item.gain,at+Math.max(.002,duration-.012));
+    gain.gain.exponentialRampToValueAtTime(.0001,at+duration);
+    source.connect(gain);gain.connect(entry.gain);source.start(at);
+    own(entry,source,[gain],at+duration);recordedFoleyPlayed++;
+  }
   function vocalBuffer(cue,variant){
     const key=cue.id+':'+cue.mode+':'+variant+':'+context.sampleRate;
     const cached=vocalBuffers.get(key);
@@ -360,6 +416,13 @@ export function createFightAudio(options={}){
   function emit(event={}){
     if(!context||context.state!=='running'||muted||paused){droppedEvents++;return false;}
     let plan=planFightSound(event);const at=context.currentTime+.004;
+    if(plan.characterLine){
+      const buffer=lineBuffers.get(plan.characterLine);if(!buffer){void prepareCharacterLines([plan.characterLine]);return false;}
+      const key='line:'+plan.characterLine;if(cooldowns.has(key))return false;
+      const entry=group(voiceBus,4,plan.characterLine);if(!entry)return false;
+      const source=context.createBufferSource();source.buffer=buffer;source.connect(entry.gain);source.start(at);own(entry,source,[],at+buffer.duration);
+      cooldowns.set(key,at);characterLinesPlayed++;playedEvents++;return true;
+    }
     if(plan.announcer){
       if(announcerPlayed)return false;announcerPlayed=true;
       if(!announcerBuffer){assetError=assetError||'announcer not loaded';return false;}
@@ -382,18 +445,29 @@ export function createFightAudio(options={}){
         const key='foley:'+(actorId??'stage')+':'+plan.type+':'+plan.contact;
         const variant=variations.next(key,CHARACTER_FOLEY_VARIANTS);plan=planFightSound(event,variant);
         lastFoleyVariation={key,variant,family:plan.foleyFamily};
-        for(const item of plan.layers)playLayer(item,entry,at+item.delay);
+        const recorded=planRecordedFoley(event,plan,(family,count)=>variations.next('recorded:'+family,count));
+        // A cold/missing bank plays the established contact immediately. Loads
+        // fill storage for a future event; no hit callback is retained or replayed.
+        const buffers=recorded.layers.map(item=>foleyBank.peek(item.id));
+        for(const item of recorded.layers)if(!foleyBank.peek(item.id))void foleyBank.request(item.id);
+        const ready=recorded.layers.length>0&&buffers.every(Boolean);
+        for(const item of plan.layers)playLayer(ready?{...item,gain:item.gain*.24}:item,entry,at+item.delay);
+        if(ready){
+          lastRecordedFoley={actor:recorded.actor,material:recorded.material,heavy:recorded.heavy,ids:recorded.layers.map(item=>item.id)};
+          for(let i=0;i<recorded.layers.length;i++)playRecorded(recorded.layers[i],buffers[i],entry,at+recorded.layers[i].delay);
+        }else if(recorded.layers.length)recordedFoleyFallbacks++;
+
       }
     }
     for(const cue of plan.voices)playVocal(cue,plan.priority,at+cue.delay);
     playedEvents++;return true;
   }
-  return {emit,startAudio,
-    setMuted(value){muted=!!value;if(muted)stopAll();busVolume();},
-    setPaused(value){const next=!!value;if(next===paused)return;paused=next;if(paused)stopAll();busVolume();},
+  return {emit,startAudio,prepareCharacterLines,
+    setMuted(value){muted=!!value;if(muted){foleyBank.invalidate();stopAll();}busVolume();},
+    setPaused(value){const next=!!value;if(next===paused)return;paused=next;if(paused){foleyBank.invalidate();stopAll();}busVolume();},
     setReducedMotion(value){reducedMotion=!!value;},
-    clear(){stopAll();cooldowns.clear();variations.clear();lastVocalVariants.clear();lastFoleyVariation=null;announcerPlayed=false;},
-    getStats(){return {muted,paused,reducedMotion,audioStarted:!!context,audioRunning:context?.state==='running',announcerLoaded:!!announcerBuffer,announcerPlayed,assetError,activeGroups:active.size,activeVoices:voiceGroups.size,cachedVoices:vocalBuffers.size,vocalCacheBytes,vocalVariantCount:Object.keys(FIGHT_VOCAL_BANKS).length*Object.values(FIGHT_VOCAL_VARIANTS).reduce((a,b)=>a+b,0),variationFamilies:variations.size,lastVocalVariants:Object.fromEntries(lastVocalVariants),lastFoleyVariation:lastFoleyVariation?{...lastFoleyVariation}:null,playedEvents,playedVoices,droppedEvents};},
+    clear(){foleyBank.invalidate();stopAll();cooldowns.clear();variations.clear();lastVocalVariants.clear();lastFoleyVariation=null;lastRecordedFoley=null;announcerPlayed=false;},
+    getStats(){const foley=foleyBank.getStats();return {characterLinesLoaded:lineBuffers.size,characterLinesPlayed,characterLineError,recordedFoleyPlayed,recordedFoleyFallbacks,cachedFoley:foley.cached,foleyCacheBytes:foley.cacheBytes,foleyPending:foley.pending,foleyLoading:foley.loading,foleyQueued:foley.queued,foleyAssetFailures:foley.failed,foleyError:foley.lastError,lastRecordedFoley:lastRecordedFoley?{...lastRecordedFoley,ids:[...lastRecordedFoley.ids]}:null,muted,paused,reducedMotion,audioStarted:!!context,audioRunning:context?.state==='running',announcerLoaded:!!announcerBuffer,announcerPlayed,assetError,activeGroups:active.size,activeVoices:voiceGroups.size,cachedVoices:vocalBuffers.size,vocalCacheBytes,vocalVariantCount:Object.keys(FIGHT_VOCAL_BANKS).length*Object.values(FIGHT_VOCAL_VARIANTS).reduce((a,b)=>a+b,0),variationFamilies:variations.size,lastVocalVariants:Object.fromEntries(lastVocalVariants),lastFoleyVariation:lastFoleyVariation?{...lastFoleyVariation}:null,playedEvents,playedVoices,droppedEvents};},
   };
 }
 

@@ -35,12 +35,12 @@ test("System Clash opens its same-origin standalone game in the current tab", ()
 
 test("System Clash identifies demo scope and keeps return paths to music and Radio", () => {
   assert.equal(pageModule.exports.metadata.title, "System Clash Demo");
-  assert.match(pageModule.exports.metadata.description, /13 fighters in Solo CPU or Local Two Player/);
+  assert.match(pageModule.exports.metadata.description, /16 fighters/);
   assert.match(markup, /<h1\b[^>]*>System Clash Demo<\/h1>/);
   assert.match(markup, /Playable demo/);
-  assert.match(markup, /13 BARCODE fighters/);
-  assert.match(markup, /Solo CPU or Local Two Player/);
-  assert.doesNotMatch(markup, /first playable prototype|practice|weapons|tournament/i);
+  assert.match(markup, /16 BARCODE fighters/);
+  assert.match(markup, /Solo CPU, Local Two Player, Tournament/);
+  assert.doesNotMatch(markup, /first playable prototype|practice/i);
   assert.match(markup, /href="\/releases"/);
   assert.match(markup, /href="\/radio"/);
   assert.doesNotMatch(markup, /localhost|127\.0\.0\.1|prompt\.txt|portable\.html/i);

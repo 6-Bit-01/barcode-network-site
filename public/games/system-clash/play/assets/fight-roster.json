@@ -1,1 +1,101 @@
-{"version":1,"fighters":[{"id":"6-bit","name":"6 Bit","enabled":true,"deletion":"broadcast-cut"},{"id":"9-bit","name":"9 Bit","enabled":true,"deletion":"ninth-nail"},{"id":"cache-back","name":"Cache Back","enabled":true,"deletion":"garbage-collection"},{"id":"cliff","name":"Cliff","enabled":true,"deletion":"exit-interview"},{"id":"dj-floppydisc","name":"DJ Floppydisc","enabled":true,"deletion":"bad-sector"},{"id":"mac-modem","name":"Mac Modem","enabled":true,"deletion":"hard-disconnect"},{"id":"mr-nice-guy","name":"Mr Nice Guy","enabled":true,"deletion":"friendly-fire"},{"id":"ms-mayhem","name":"Ms Mayhem","enabled":true,"deletion":"appeal-denied"},{"id":"stolz","name":"STOLZ","enabled":true,"deletion":"chrome-coffin"},{"id":"kaveman-brown","name":"Kaveman Brown","enabled":true,"deletion":"speaker-burial"},{"id":"dr3wbaby","name":"Dr3wBaby","enabled":true,"deletion":"encore-nobody-asked-for"},{"id":"ash-flowers","name":"Ash Flowers","enabled":true,"deletion":"good-vibes-only"},{"id":"wittyf0x","name":"WittyF0x","enabled":true,"deletion":"blue-shift"}]}
+{
+  "version": 1,
+  "fighters": [
+    {
+      "id": "6-bit",
+      "name": "6 Bit",
+      "enabled": true,
+      "deletion": "broadcast-cut"
+    },
+    {
+      "id": "9-bit",
+      "name": "9 Bit",
+      "enabled": true,
+      "deletion": "ninth-nail"
+    },
+    {
+      "id": "cache-back",
+      "name": "Cache Back",
+      "enabled": true,
+      "deletion": "garbage-collection"
+    },
+    {
+      "id": "cliff",
+      "name": "Cliff",
+      "enabled": true,
+      "deletion": "exit-interview"
+    },
+    {
+      "id": "dj-floppydisc",
+      "name": "DJ Floppydisc",
+      "enabled": true,
+      "deletion": "bad-sector"
+    },
+    {
+      "id": "mac-modem",
+      "name": "Mac Modem",
+      "enabled": true,
+      "deletion": "hard-disconnect"
+    },
+    {
+      "id": "mr-nice-guy",
+      "name": "Mr Nice Guy",
+      "enabled": true,
+      "deletion": "friendly-fire"
+    },
+    {
+      "id": "ms-mayhem",
+      "name": "Ms Mayhem",
+      "enabled": true,
+      "deletion": "appeal-denied"
+    },
+    {
+      "id": "stolz",
+      "name": "STOLZ",
+      "enabled": true,
+      "deletion": "chrome-coffin"
+    },
+    {
+      "id": "kaveman-brown",
+      "name": "Kaveman Brown",
+      "enabled": true,
+      "deletion": "speaker-burial"
+    },
+    {
+      "id": "dr3wbaby",
+      "name": "Dr3wBaby",
+      "enabled": true,
+      "deletion": "encore-nobody-asked-for"
+    },
+    {
+      "id": "ash-flowers",
+      "name": "Ash Flowers",
+      "enabled": true,
+      "deletion": "good-vibes-only"
+    },
+    {
+      "id": "wittyf0x",
+      "name": "WittyF0x",
+      "enabled": true,
+      "deletion": "blue-shift"
+    },
+    {
+      "id": "doofnoobler",
+      "name": "Doofnoobler",
+      "enabled": true,
+      "deletion": "soft-power"
+    },
+    {
+      "id": "lyra",
+      "name": "Lyra, Champion of Hellcat",
+      "enabled": true,
+      "deletion": "litter-protocol"
+    },
+    {
+      "id": "papa-oak",
+      "name": "PapaOak",
+      "enabled": true,
+      "deletion": "rooted-verdict"
+    }
+  ]
+}

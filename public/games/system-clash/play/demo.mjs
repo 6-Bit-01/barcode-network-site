@@ -1,3 +1,4 @@
+import {nextMenuIndex,toggleDisplayMode} from './fight-ui.mjs';
 import {STAGES,stageById} from './fight-stages.mjs';
 import {FIGHTER_STYLES} from './fight-engine.mjs';
 import {createFightAudio} from './fight-audio.mjs';
@@ -5,14 +6,14 @@ import {selectDemoStage,cycleDemoStage,createDemoSelection,beginDemoSelection,pr
 import {createGamepadInput} from './fight-gamepad.mjs';
 import {createMenuPreviews} from './menu-preview.mjs';
 import {createTournamentRun,launchTournamentMatch,saveTournamentRun} from './tournament.mjs';
-import {withControllerSeats} from './demo-flow.mjs';
+import {withControllerSeats,resolveInterfaceSettings} from './demo-flow.mjs';
 const $=id=>document.getElementById(id),params=new URL(location.href).searchParams;
 let state=null,catalog=null,tournamentRun=null;
 const tournamentStorage={getItem:key=>sessionStorage.getItem(key),setItem:(key,value)=>sessionStorage.setItem(key,value)};
 const gamepads=createGamepadInput({seats:controllerSeatsFromURL(location.href)});
 let windowActive=document.hasFocus(),controllerLabel='';
 let menuRAF=null,menuSuspended=false;
-let muted=params.get('sound')==='0',reducedMotion=params.has('motion')?params.get('motion')==='1':matchMedia('(prefers-reduced-motion: reduce)').matches;
+let {muted,reducedMotion}=resolveInterfaceSettings(params,{prefersReducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches});
 const audio=createFightAudio({muted,reducedMotion,baseUrl:location.href});
 const previews=createMenuPreviews({baseURL:location.href,canvases:[$('idle-one'),$('idle-two')],fallbacks:[$('standing-one'),$('standing-two')],isActive:()=>!!state&&state.screen!=='title'&&windowActive&&!document.hidden});
 function sound(id){void audio.startAudio().then(()=>audio.emit({type:'attack',action:'punch',attackerId:id}));}
@@ -89,6 +90,8 @@ function closeControls(){gamepads.reset();$('controls-dialog').close();}
 $('controls-open').addEventListener('click',()=>{gamepads.reset();$('controls-dialog').showModal();});$('controls-close').addEventListener('click',closeControls);
 $('controls-dialog').addEventListener('close',()=>gamepads.reset());
 window.addEventListener('keydown',event=>{
+ if(state?.screen==='title'&&!$('controls-dialog').open&&['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Enter'].includes(event.code)){const items=['solo-mode','local-mode','tournament-mode','online-mode','controls-open','demo-sound','demo-fullscreen','demo-motion'].map($).filter(x=>!x.disabled);event.preventDefault();if(event.code==='Enter'){if(!event.repeat)(items.includes(document.activeElement)?document.activeElement:items[0])?.click();}else items[nextMenuIndex(items.length,items.indexOf(document.activeElement),event.code)]?.focus({preventScroll:true});return;}
+
  if(!state||$('controls-dialog').open||event.target.closest?.('input,select'))return;
  if(event.key==='Escape'){event.preventDefault();back();return;}
  if(state.screen==='ready'&&state.mode!=='tournament'&&['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();state=cycleDemoStage(state,event.key==='ArrowLeft'?-1:1);render();$('enter-arena').focus({preventScroll:true});return;}
@@ -110,7 +113,7 @@ function pollMenuGamepads(now){
   if($('controls-dialog').open){if(event.type==='press'&&['back','pause','confirm'].includes(event.action))closeControls();return;}
   if(state.screen==='title'){
    if(event.player!==0)continue;
-   const items=['solo-mode','local-mode','tournament-mode','online-mode','controls-open','demo-sound','demo-motion'].map($).filter(item=>!item.disabled);
+   const items=['solo-mode','local-mode','tournament-mode','online-mode','controls-open','demo-sound','demo-fullscreen','demo-motion'].map($).filter(item=>!item.disabled);
    if(event.type==='navigate'){
     const index=items.indexOf(document.activeElement),step=['ArrowUp','ArrowLeft'].includes(event.action)?-1:1;
     items[index<0?0:(index+step+items.length)%items.length]?.focus({preventScroll:true});
@@ -128,6 +131,8 @@ function pollMenuGamepads(now){
   else if(event.action==='pause'){$('controls-open').click();return;}
  }
 }
+$('demo-fullscreen').addEventListener('click',async()=>{await toggleDisplayMode(document,document.documentElement);$('demo-fullscreen').textContent=document.fullscreenElement||document.documentElement.classList.contains('is-expanded')?'Exit fullscreen':'Fullscreen';});document.addEventListener('fullscreenchange',()=>{$('demo-fullscreen').textContent=document.fullscreenElement?'Exit fullscreen':'Fullscreen';});
+
 function menuTick(now){if(menuSuspended)return;pollMenuGamepads(now);previews.tick(now);menuRAF=requestAnimationFrame(menuTick);}
 window.addEventListener('blur',()=>{windowActive=false;gamepads.reset();audio.setPaused(true);});
 window.addEventListener('focus',()=>{windowActive=true;gamepads.reset();audio.setPaused(document.hidden);});

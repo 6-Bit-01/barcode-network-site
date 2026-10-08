@@ -1,6 +1,9 @@
+import {nextMenuIndex,pauseMenuPolicy,bindTouchControls,toggleDisplayMode} from './fight-ui.mjs';
+import {leaveTournamentRun} from './tournament.mjs';
 import {createMatch,advanceMatch,performAction,getFighterView,consumeEvents,FIGHTER_STYLES} from './fight-engine.mjs';
 import {createFightRenderer} from './fight-renderer.mjs';
 import {createFightEffects} from './fight-effects.mjs';
+import {loadInterfaceArt} from './interface-art.mjs';
 import {loadFightArt,loadDeletionArt,loadArcadeArt,loadWeaponArt,loadStageArt,combatMetadata} from './fight-assets.mjs';
 import {DELETION_POSES,BROADCAST_CUT,deletionDefinition} from './deletion-library.mjs';
 import {previewBattleWear} from './fight-damage-preview.mjs';
@@ -15,6 +18,7 @@ import {createTournamentFightOverlay} from './tournament-ui.mjs';
 
 const $ = id=>document.getElementById(id);
 const canvas = $('fight-stage');
+const pauseDialog=$('pause-menu');let touchBinding=null;
 const renderer = createFightRenderer(canvas);
 const motionPreference = matchMedia('(prefers-reduced-motion: reduce)');
 $('motion-toggle').checked = motionPreference.matches;
@@ -46,6 +50,7 @@ let onlineCombat=null,tournamentOverlay=null,onlineLoaded=false;
 const launchParams=new URL(location.href).searchParams;
 const keyReleaseGate=new Set();
 let stageArt=null,stageArtPending=null,stageArtRevision=0;
+let interfaceArtPending=null,motionPresentationEpoch=0;
 async function ensureStageArt(id){
  if(!id||stageArt?.id===id||stageArtPending===id)return;
  const revision=++stageArtRevision;stageArtPending=id;
@@ -79,6 +84,7 @@ function dispatchEvents() {
 }
 
 function clearInput() {
+  touchBinding?.clear();
   if(onlineBridge.enabled)for(const key of held)keyReleaseGate.add(key);
   held.clear();virtual.clear();latched.clear();clearAttackInputs(attackInputs);tapMove=0;tapUntil=0;
   gamepads.reset();gamepadPlayers=[];
@@ -141,6 +147,7 @@ function syncAudioPause() {
 }
 
 function draw() {
+  syncPauseMenu();
   if (!art || !match) return;
   syncAudioPause();
   const definition=deletionDefinition(art[0].manifest.id);
@@ -182,7 +189,7 @@ function draw() {
   const scene=motionTime===null?display:{...match,phase:'poses',motionReview:true,poseKey:(reviewEntry?.index??0)+1,poseLabel:$('motion-clip').selectedOptions[0].textContent.toUpperCase()+' / '+$('motion-facing').value.toUpperCase(),fighters:match.fighters.map((f,index)=>({...f,...previewBattleWear(f,index===0?$('motion-damage').value:'fresh'),weapon:views[index].weapon,embeddedWeapons:views[index].embeddedWeapons})),stagePickups:reviewPickups,projectiles:[]};
   const sceneEffects=motionTime!==null?null:inspectTime===null?effects:preset==='broadcast'?deletionReviewCache.effects:null;
   void ensureStageArt(scene.stage?.id);
-  renderer.draw({match:scene,stageArt,motionReview:motionTime!==null,views,art,effects:sceneEffects,deletionProp,weaponArt,portraits:fighterPortraits,paused:paused&&inspectTime===null&&motionTime===null,reducedMotion:$('motion-toggle').checked});
+  renderer.draw({match:scene,stageArt,motionReview:motionTime!==null,deletionReview:inspectTime!==null,presentationTimeMs:performance.now(),motionResetKey:motionPresentationEpoch,views,art,effects:sceneEffects,deletionProp,weaponArt,portraits:fighterPortraits,paused:paused&&inspectTime===null&&motionTime===null,reducedMotion:$('motion-toggle').checked});
   for(let index=0;index<2;index++) {
     const f=scene.fighters[index],weapon=f.weapon;
     const condition=['Fresh','Bloodied','Battered','Ravaged'][f.damageTier ?? 0];
@@ -200,6 +207,7 @@ function draw() {
   $('high-kick-label').textContent=air?'Jump kick':duck?'Rising knee / boot':'High kick';
   $('low-punch-label').textContent=air?'Jump punch':duck?'Crouch jab':'Low punch';
   $('low-kick-label').textContent=air?'Jump kick':duck?'Low sweep':'Low kick';
+  for(const id of ['use-weapon-label','high-kick-label','low-punch-label','low-kick-label'])$(id).parentElement.setAttribute('aria-label',$(id).textContent);
   const reviewLabel=preset==='broadcast'?'Inspecting '+definition.name+' at '+(inspectTime/1000).toFixed(2)+' seconds':'Shared pose review: '+display.poseLabel+', key '+poseKey;
   const moveLabel=view=>view.clip.startsWith('delete-')?'Deletion pose':view.clip.replaceAll('-',' ');
   const motionLabel=motionTime!==null?'Move review: '+scene.poseLabel+' at '+(motionTime/1000).toFixed(2)+' seconds, hand: '+$('motion-weapon').selectedOptions[0].textContent+', chest: '+$('motion-embedded').selectedOptions[0].textContent+', wear: '+$('motion-damage').selectedOptions[0].textContent:null;
@@ -213,6 +221,7 @@ function draw() {
 
 function reset(start=true,seed) {
   if (!ready||(onlineBridge.enabled&&onlineCombat?.started&&seed===undefined)) return;
+  motionPresentationEpoch++;
   clearInput();effects.clear();paused=false;accumulator=0;inspectTime=null;motionTime=null;weaponFeedback='';weaponFeedbackUntil=0;
   previousTravelViews=null;previousTravelPhase=null;
   syncAudioPause();
@@ -270,6 +279,7 @@ function controls() {
 
 const keyActions = {KeyU:[0,'punch'],KeyI:[0,'kick'],KeyJ:[0,'low-punch'],KeyK:[0,'low-kick'],KeyW:[0,'jump'],KeyL:[0,'grab'],KeyF:[0,'deletion'],ArrowUp:[1,'jump'],Digit7:[1,'punch'],Numpad7:[1,'punch'],Digit8:[1,'kick'],Numpad8:[1,'kick'],Digit4:[1,'low-punch'],Numpad4:[1,'low-punch'],Digit5:[1,'low-kick'],Numpad5:[1,'low-kick'],Digit6:[1,'grab'],Numpad6:[1,'grab'],Digit1:[1,'punch'],Numpad1:[1,'punch'],Digit2:[1,'kick'],Numpad2:[1,'kick'],Digit3:[1,'grab'],Numpad3:[1,'grab'],Enter:[1,'deletion']};
 window.addEventListener('keydown',event=>{
+  if(pauseDialog.open){if(handlePauseKey(event))return;}
   if (event.target.closest?.('input,select,textarea') || !watchedKeys.has(event.code)) return;
   // Space and Enter keep their normal behavior on buttons; the arena owns fighting keys.
   if (['Enter','Space'].includes(event.code) && event.target.closest?.('button,a')) return;
@@ -295,37 +305,7 @@ document.addEventListener('visibilitychange',()=>{
   syncAudioPause();
 });
 
-document.querySelectorAll('[data-action]').forEach(button=>{
-  const name=button.dataset.action,key='screen-'+name;
-  if(attackButtons.has(name)) {
-    let pointerHandled=false;
-    button.addEventListener('pointerdown',event=>{pointerHandled=true;queueAttack(0,name,key);button.setPointerCapture(event.pointerId);});
-    for(const event of ['pointerup','pointercancel','lostpointercapture'])button.addEventListener(event,()=>releaseAttackInput(attackInputs,key));
-    button.addEventListener('click',event=>{if(!pointerHandled||event.detail===0)queueAttack(0,name,key);pointerHandled=false;releaseAttackInput(attackInputs,key);canvas.focus({preventScroll:true});});
-  } else button.addEventListener('click',()=>{action(0,name);canvas.focus({preventScroll:true});});
-});
-document.querySelectorAll('[data-hold]').forEach(button=>{
-  let pressedAt=0,heldFor=0;
-  const kind=button.dataset.hold,toggle=['crouch','block'].includes(kind);
-  if(toggle)button.setAttribute('aria-pressed','false');
-  const release=()=>{heldFor=performance.now()-pressedAt;virtual.delete(kind);button.classList.toggle('is-held',latched.has(kind));};
-  button.addEventListener('pointerdown',event=>{
-    if (!ready || paused) return;
-    event.preventDefault();pressedAt=performance.now();button.setPointerCapture(event.pointerId);virtual.add(kind);button.classList.add('is-held');
-  });
-  button.addEventListener('pointerup',release);button.addEventListener('pointercancel',release);button.addEventListener('lostpointercapture',release);
-  button.addEventListener('click',event=>{
-    if(!ready || paused || (event.detail!==0&&heldFor>=200))return;
-    if(toggle) {
-      if(latched.has(kind))latched.delete(kind);else latched.add(kind);
-      button.setAttribute('aria-pressed',String(latched.has(kind)));button.classList.toggle('is-held',latched.has(kind));
-    } else {
-      const direction=kind==='right'?1:-1,now=performance.now();
-      tapUntil=Math.min((tapMove===direction?Math.max(now,tapUntil):now)+180,now+1200);tapMove=direction;
-    }
-    canvas.focus({preventScroll:true});
-  });
-});
+touchBinding=bindTouchControls(document.querySelector('.touch-controls'),{active:()=>ready&&!paused&&inspectTime===null&&motionTime===null,onHold:(kind,down)=>down?virtual.add(kind):virtual.delete(kind),onAction:(name,key,down)=>{if(attackButtons.has(name)){if(down)queueAttack(0,name,key);else releaseAttackInput(attackInputs,key);}else if(down)action(0,name);},onTap:(kind,button)=>{if(['crouch','block'].includes(kind)){if(latched.has(kind))latched.delete(kind);else latched.add(kind);button.setAttribute('aria-pressed',String(latched.has(kind)));}else {tapMove=kind==='right'?1:-1;tapUntil=performance.now()+180;}}});
 $('start-fight').addEventListener('click',start);
 $('restart-fight').addEventListener('click',start);
 $('pause-fight').addEventListener('click',togglePause);
@@ -365,6 +345,7 @@ function pollGamepads(now) {
   for(const event of sample.events){
     if(event.type==='release'){releaseAttackInput(attackInputs,event.key);continue;}
     if(tournament?.blocking&&event.player===0&&(event.type==='navigate'||event.type==='press')){tournament.handleAction(event.action);return;}
+    if(paused&&(event.type==='navigate'||event.type==='press')&&(event.player===0||(!network&&match?.mode==='local'))){handlePauseAction(event.action);continue;}
     if(event.type!=='press'||(event.player===1&&(network||match?.mode!=='local')))continue;
     if(event.action==='pause'){togglePause();return;}
     if(menu){
@@ -397,17 +378,29 @@ function tick(now) {
 }
 
 async function boot() {
-  const revision=++loadRevision;
+  const revision=++loadRevision;motionPresentationEpoch++;
   ready=false;clearInput();effects.clear();inspectTime=null;motionTime=null;$('deletion-review').hidden=true;$('motion-review').hidden=true;$('load-status').classList.remove('error');
   for(const id of ['start-fight','restart-fight','pause-fight','inspect-deletion','inspect-motion','save-fight-frame'])$(id).disabled=true;
   try {
     const options={bundle:window.SYSTEM_CLASH_FIGHT_BUNDLE,baseURL:new URL('.',location.href)};
+    interfaceArtPending??=loadInterfaceArt(options).catch(()=>({manifest:null,images:{},failures:['manifest']}));
     const nextArt=await loadFightArt({...options,ids:[$('fighter-one').value,$('fighter-two').value],onProgress:(count,total)=>{if(revision===loadRevision)$('load-status').textContent=`Loading fighters · ${count} / ${total} actions`;}});
+    if(revision!==loadRevision)return;
+    $('load-status').textContent='Loading attack poses…';
     await loadArcadeArt({...options,art:nextArt});
+    if(revision!==loadRevision)return;
+    $('load-status').textContent='Loading Deletions…';
     const nextProp=await loadDeletionArt({...options,art:nextArt});
+    if(revision!==loadRevision)return;
+    $('load-status').textContent='Loading stage weapons…';
     const nextWeaponArt=await loadWeaponArt(options);
+    if(revision!==loadRevision)return;
+    $('load-status').textContent='Loading fighter portraits…';
     const nextPortraits=await loadFighterPortraits(nextArt);
     if(revision!==loadRevision)return;
+    const nextInterfaceArt=await interfaceArtPending;
+    if(revision!==loadRevision)return;
+    renderer.prepareInterface(nextInterfaceArt);
     art=nextArt;deletionProp=nextProp;weaponArt=nextWeaponArt;fighterPortraits=nextPortraits;
     void effects.prepareCharacterAudio?.(art.map(fighter=>fighter.manifest.id));
     renderer.prepareArt(art);metadata=combatMetadata(art,weaponArt);ready=true;
@@ -491,8 +484,31 @@ async function initializeRoster() {
     await boot();
   } catch(error){$('load-status').textContent=error.message;$('load-status').classList.add('error');}
 }
-$('demo-select')?.addEventListener('click',event=>{if(onlineBridge.enabled){event.preventDefault();clearInput();onlineBridge.send({type:'leave'});return;}const back=new URL($('demo-select').href);back.searchParams.set('stage',match?.stage?.id??demoLaunch.stage);back.searchParams.set('sound',muted?'0':'1');back.searchParams.set('motion',$('motion-toggle').checked?'1':'0');$('demo-select').href=withControllerSeats(back,gamepads.seatIndices()).href;});
+$('demo-select')?.addEventListener('click',event=>{if(onlineBridge.enabled){event.preventDefault();clearInput();onlineBridge.send({type:'leave'});return;}if(tournamentOverlay?.active)leaveTournamentRun(sessionStorage);const back=new URL($('demo-select').href);back.searchParams.set('stage',match?.stage?.id??demoLaunch.stage);back.searchParams.set('sound',muted?'0':'1');back.searchParams.set('motion',$('motion-toggle').checked?'1':'0');$('demo-select').href=withControllerSeats(back,gamepads.seatIndices()).href;});
 $('demo-start')?.addEventListener('click',start);
-$('demo-controls')?.addEventListener('click',()=>{const shown=document.body.classList.toggle('show-controls');$('demo-controls').setAttribute('aria-expanded',String(shown));clearInput();if(shown&&ready&&!paused&&!['ready','over'].includes(match.phase))togglePause();});
+$('demo-controls')?.addEventListener('click',()=>{if(!ready)return;$('pause-guide').hidden=false;$('pause-controls').setAttribute('aria-expanded','true');clearInput();if(!paused){if(match.phase==='ready')paused=true;else togglePause();}syncPauseMenu();$('pause-controls').focus({preventScroll:true});});
 window.addEventListener('pagehide',()=>{clearInput();onlineCombat?.destroy();onlineBridge.destroy();tournamentOverlay?.destroy();effects.setPaused(true);});
 initializeRoster();requestAnimationFrame(tick);
+
+function pauseChoices(){return [...pauseDialog.querySelectorAll('.pause-options button')].filter(button=>!button.disabled);}
+function syncPauseMenu(){
+ if(!pauseDialog)return;
+ const full=!!document.fullscreenElement||document.documentElement.classList.contains('is-expanded');$('pause-fullscreen').textContent=full?'Exit fullscreen':'Fullscreen';$('fullscreen-fight').textContent=full?'Exit fullscreen':'Fullscreen';
+ $('demo-controls')?.setAttribute('aria-expanded',String(paused&&!$('pause-guide').hidden));
+ if(!paused){if(pauseDialog.open){pauseDialog.close();$('pause-guide').hidden=true;$('pause-controls').setAttribute('aria-expanded','false');canvas.focus({preventScroll:true});}return;}
+ const policy=pauseMenuPolicy({online:onlineBridge.enabled,seat:onlineBridge.seat,tournament:tournamentOverlay?.active,phase:match?.phase});
+ $('pause-resume').disabled=!policy.resume;$('pause-resume').textContent=policy.resume?'Resume':'Waiting for host';$('pause-restart').disabled=!policy.restart;
+ $('pause-sound').textContent=muted?'Sound off':'Sound on';$('pause-motion').textContent='Reduce motion: '+($('motion-toggle').checked?'on':'off');
+ $('pause-note').textContent=onlineBridge.enabled?(policy.resume?'Release controls before resuming.':'The host resumes this match. You can review controls or leave.'):'Take a breath. The signal can wait.';
+ if(!pauseDialog.open){pauseDialog.showModal();pauseChoices()[0]?.focus({preventScroll:true});}
+}
+function handlePauseAction(name){const choices=pauseChoices();if(name.startsWith?.('Arrow')){choices[nextMenuIndex(choices.length,choices.indexOf(document.activeElement),name)]?.focus({preventScroll:true});}else if(name==='confirm'){(choices.includes(document.activeElement)?document.activeElement:choices[0])?.click();}else if(['back','pause'].includes(name)){if(!$('pause-guide').hidden){$('pause-guide').hidden=true;$('pause-controls').setAttribute('aria-expanded','false');$('pause-controls').focus();}else if(match?.phase==='ready'){paused=false;syncPauseMenu();}else togglePause();}}
+function handlePauseKey(event){if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.code)){event.preventDefault();handlePauseAction(event.code);return true;}if(['Escape','KeyP'].includes(event.code)){event.preventDefault();if(!event.repeat)handlePauseAction('back');return true;}if(event.code==='Tab'){const items=[...pauseDialog.querySelectorAll('button,a,input')].filter(x=>!x.disabled&&!x.hidden),index=items.indexOf(document.activeElement);if(event.shiftKey&&index<=0){event.preventDefault();items.at(-1)?.focus();}else if(!event.shiftKey&&index===items.length-1){event.preventDefault();items[0]?.focus();}return true;}return true;}
+async function displayMode(){await toggleDisplayMode(document,document.documentElement);syncPauseMenu();}
+$('fullscreen-fight').addEventListener('click',displayMode);$('pause-fullscreen').addEventListener('click',displayMode);document.addEventListener('fullscreenchange',syncPauseMenu);
+$('demo-menu').addEventListener('click',()=>{if(match?.phase==='ready'){paused=true;clearInput();syncPauseMenu();}else togglePause();});
+pauseDialog.addEventListener('cancel',event=>{event.preventDefault();handlePauseAction('back');});
+$('pause-resume').addEventListener('click',()=>{if(match?.phase==='ready'){paused=false;syncPauseMenu();}else togglePause();});$('pause-restart').addEventListener('click',start);
+$('pause-controls').addEventListener('click',()=>{const guide=$('pause-guide');guide.hidden=!guide.hidden;$('pause-controls').setAttribute('aria-expanded',String(!guide.hidden));});
+$('pause-sound').addEventListener('click',()=>{$('mute-fight').click();syncPauseMenu();});$('pause-motion').addEventListener('click',()=>{$('motion-toggle').checked=!$('motion-toggle').checked;$('motion-toggle').dispatchEvent(new Event('change'));syncPauseMenu();});
+$('pause-select').addEventListener('click',()=>{$('demo-select').click();});$('pause-title').addEventListener('click',()=>{clearInput();if(onlineBridge.enabled){onlineBridge.send({type:'leave'});return;}if(tournamentOverlay?.active)leaveTournamentRun(sessionStorage);const url=new URL('index.html',location.href);url.searchParams.set('sound',muted?'0':'1');url.searchParams.set('motion',$('motion-toggle').checked?'1':'0');location.href=withControllerSeats(url,gamepads.seatIndices()).href;});

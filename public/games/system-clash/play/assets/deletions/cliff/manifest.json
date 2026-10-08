@@ -1,1 +1,1687 @@
-{"id":"cliff-deletion-utilities","character":"Cliff","fighterId":"cliff","height":320,"status":"complete attacker and victim utility bank","description":"Complete intact native whole-body keys, independently authored right and left. Source PNG bytes preserved, anatomy anchors measured from each native body.","clips":{"shove":{"file":"attacker-poses-v2.png","label":"Shove","order":[0,1],"frameMs":[240,460],"loop":false,"frames":{"right":[{"rect":[69,40,189,284],"anchor":[87,281],"opaqueBounds":[3,3,186,281],"attachments":{"grip":[170,71],"head":[112,44],"torso":[101,114],"legs":[75,199]},"handRadius":9,"gripAngle":-0.25},{"rect":[375,43,223,281],"anchor":[88,278],"opaqueBounds":[3,3,220,278],"attachments":{"grip":[204,67],"head":[114,41],"torso":[88,121],"legs":[73,200]},"handRadius":9,"gripAngle":-0.25}],"left":[{"rect":[71,360,194,278],"anchor":[102.75,275],"opaqueBounds":[3,3,191,275],"attachments":{"grip":[19,65],"head":[70,46],"torso":[90,117],"legs":[148,197]},"handRadius":9,"gripAngle":0.25},{"rect":[349,365,237,274],"anchor":[140.25,271],"opaqueBounds":[3,3,234,271],"attachments":{"grip":[15,51],"head":[111,48],"torso":[132,110],"legs":[183,188]},"handRadius":9,"gripAngle":0.25}]},"scale":1.20075,"sourceSize":[1254,1254],"sourceRevision":"a55c1bc9ff996222","sourceSha256":"a55c1bc9ff996222c771f889a25e7e322cf90045dc0709441e7109a194e87987","fightingStyle":"Compact practical staffer movement with grounded work-shoe kicks, restrained rising knee and upright sequential jab/cross.","role":"attacker"},"pull":{"file":"attacker-poses-v2.png","label":"Pull","order":[0,1],"frameMs":[450,250],"loop":false,"frames":{"right":[{"rect":[692,52,215,273],"anchor":[87.25,270],"opaqueBounds":[3,3,212,270],"attachments":{"grip":[200,130],"head":[115,41],"torso":[88,103],"legs":[56,188]},"handRadius":9,"gripAngle":-0.25},{"rect":[1010,55,191,270],"anchor":[88.5,267],"opaqueBounds":[3,3,188,267],"attachments":{"grip":[158,154],"head":[107,43],"torso":[102,107],"legs":[60,177]},"handRadius":9,"gripAngle":-0.25}],"left":[{"rect":[677,376,227,263],"anchor":[135.75,260],"opaqueBounds":[3,3,224,260],"attachments":{"grip":[17,136],"head":[95,44],"torso":[116,115],"legs":[173,186]},"handRadius":9,"gripAngle":0.25},{"rect":[1014,376,194,263],"anchor":[103.25,260],"opaqueBounds":[3,3,191,260],"attachments":{"grip":[18,150],"head":[92,46],"torso":[110,114],"legs":[153,187]},"handRadius":9,"gripAngle":0.25}]},"scale":1.20075,"sourceSize":[1254,1254],"sourceRevision":"a55c1bc9ff996222","sourceSha256":"a55c1bc9ff996222c771f889a25e7e322cf90045dc0709441e7109a194e87987","fightingStyle":"Compact practical staffer movement with grounded work-shoe kicks, restrained rising knee and upright sequential jab/cross.","contactMs":450,"role":"attacker"},"stomp":{"file":"attacker-poses-v2.png","label":"Stomp","order":[0,1],"frameMs":[240,460],"loop":false,"frames":{"right":[{"rect":[77,659,184,278],"anchor":[51.5,275],"opaqueBounds":[3,3,181,275],"attachments":{"grip":[142,90],"head":[103,43],"torso":[87,124],"legs":[71,202]},"handRadius":9,"gripAngle":-0.25},{"rect":[405,663,214,274],"anchor":[29,271],"opaqueBounds":[3,3,211,271],"attachments":{"grip":[25,145],"head":[91,44],"torso":[76,124],"legs":[48,206]},"handRadius":9,"gripAngle":-0.25}],"left":[{"rect":[76,956,168,270],"anchor":[132.5,267],"opaqueBounds":[3,3,165,267],"attachments":{"grip":[25,88],"head":[67,47],"torso":[87,127],"legs":[129,204]},"handRadius":9,"gripAngle":0.25},{"rect":[343,954,220,270],"anchor":[200,267],"opaqueBounds":[3,3,217,267],"attachments":{"grip":[73,141],"head":[128,48],"torso":[137,127],"legs":[173,195]},"handRadius":9,"gripAngle":0.25}]},"scale":1.20075,"sourceSize":[1254,1254],"sourceRevision":"a55c1bc9ff996222","sourceSha256":"a55c1bc9ff996222c771f889a25e7e322cf90045dc0709441e7109a194e87987","fightingStyle":"Compact practical staffer movement with grounded work-shoe kicks, restrained rising knee and upright sequential jab/cross.","role":"attacker"},"present":{"file":"attacker-poses-v2.png","label":"Present","order":[0,1],"frameMs":[240,460],"loop":false,"frames":{"right":[{"rect":[726,664,151,274],"anchor":[67.25,271],"opaqueBounds":[3,3,148,271],"attachments":{"grip":[94,82],"head":[77,44],"torso":[64,128],"legs":[39,207],"supportGrip":[124,109]},"handRadius":9,"gripAngle":-0.25},{"rect":[1036,665,154,274],"anchor":[70,271],"opaqueBounds":[3,3,151,271],"attachments":{"grip":[102,103],"head":[73,45],"torso":[69,135],"legs":[39,206],"supportGrip":[117,118]},"handRadius":9,"gripAngle":-0.25}],"left":[{"rect":[709,955,169,271],"anchor":[90.75,268],"opaqueBounds":[3,3,166,268],"attachments":{"grip":[65,93],"head":[79,46],"torso":[105,123],"legs":[138,201],"supportGrip":[29,114]},"handRadius":9,"gripAngle":0.25},{"rect":[1011,962,177,266],"anchor":[94,263],"opaqueBounds":[3,3,174,263],"attachments":{"grip":[54,104],"head":[79,45],"torso":[111,126],"legs":[146,203],"supportGrip":[33,119]},"handRadius":9,"gripAngle":0.25}]},"scale":1.20075,"sourceSize":[1254,1254],"sourceRevision":"a55c1bc9ff996222","sourceSha256":"a55c1bc9ff996222c771f889a25e7e322cf90045dc0709441e7109a194e87987","fightingStyle":"Compact practical staffer movement with grounded work-shoe kicks, restrained rising knee and upright sequential jab/cross.","contactMs":240,"role":"attacker"},"brace":{"file":"victim-poses-v1.png","label":"Brace","order":[0,1],"frameMs":[240,460],"loop":false,"frames":{"right":[{"rect":[72,51,209,320],"anchor":[101,317],"opaqueBounds":[3,3,206,317],"attachments":{"grip":[110,45],"head":[41,54],"torso":[73,128],"legs":[78,207]},"handRadius":9,"gripAngle":-0.25},{"rect":[395,125,159,249],"anchor":[44,246],"opaqueBounds":[3,3,156,246],"attachments":{"grip":[123,19],"head":[95,59],"torso":[60,96],"legs":[70,171]},"handRadius":9,"gripAngle":-0.25}],"left":[{"rect":[41,409,203,323],"anchor":[107.5,320],"opaqueBounds":[3,3,200,320],"attachments":{"grip":[79,32],"head":[138,48],"torso":[125,123],"legs":[113,215]},"handRadius":9,"gripAngle":0.25},{"rect":[394,491,154,246],"anchor":[109,243],"opaqueBounds":[3,3,151,243],"attachments":{"grip":[20,24],"head":[48,57],"torso":[85,89],"legs":[87,176]},"handRadius":9,"gripAngle":0.25}]},"scale":0.941176,"sourceSize":[1254,1254],"sourceRevision":"d90312a33a6d1870","sourceSha256":"d90312a33a6d18702e7133d142f98969cd82b2c78ce986754d9daf945e90c437","fightingStyle":"Compact practical staffer movement with grounded work-shoe kicks, restrained rising knee and upright sequential jab/cross.","role":"victim"},"suspended":{"file":"victim-poses-v1.png","label":"Suspended","order":[0,1],"frameMs":[240,460],"loop":false,"frames":{"right":[{"rect":[725,19,150,355],"anchor":[57.75,352],"opaqueBounds":[3,3,147,352],"attachments":{"grip":[124,77],"head":[82,47],"torso":[73,137],"legs":[66,235]},"handRadius":9,"gripAngle":-0.25},{"rect":[1045,45,127,338],"anchor":[62,335],"opaqueBounds":[3,3,124,335],"attachments":{"grip":[23,189],"head":[82,58],"torso":[73,132],"legs":[72,235]},"handRadius":9,"gripAngle":-0.25}],"left":[{"rect":[703,383,155,352],"anchor":[92.25,349],"opaqueBounds":[3,3,152,349],"attachments":{"grip":[36,73],"head":[84,46],"torso":[99,136],"legs":[104,237]},"handRadius":9,"gripAngle":0.25},{"rect":[1046,409,127,340],"anchor":[60.25,337],"opaqueBounds":[3,3,124,337],"attachments":{"grip":[106,185],"head":[51,53],"torso":[58,143],"legs":[54,244]},"handRadius":9,"gripAngle":0.25}]},"scale":0.941176,"sourceSize":[1254,1254],"sourceRevision":"d90312a33a6d1870","sourceSha256":"d90312a33a6d18702e7133d142f98969cd82b2c78ce986754d9daf945e90c437","fightingStyle":"Compact practical staffer movement with grounded work-shoe kicks, restrained rising knee and upright sequential jab/cross.","role":"victim"},"compressed":{"file":"victim-poses-v1.png","label":"Compressed","order":[0,1],"frameMs":[240,460],"loop":false,"frames":{"right":[{"rect":[56,762,164,216],"anchor":[65.5,213],"opaqueBounds":[3,3,161,213],"attachments":{"grip":[80,72],"head":[84,57],"torso":[83,116],"legs":[105,174]},"handRadius":9,"gripAngle":-0.25},{"rect":[371,815,147,164],"anchor":[65,161],"opaqueBounds":[3,3,144,161],"attachments":{"grip":[79,30],"head":[88,53],"torso":[63,94],"legs":[71,136]},"handRadius":9,"gripAngle":-0.25}],"left":[{"rect":[79,1006,160,212],"anchor":[85.5,209],"opaqueBounds":[3,3,157,209],"attachments":{"grip":[35,52],"head":[40,48],"torso":[55,98],"legs":[78,172]},"handRadius":9,"gripAngle":0.25},{"rect":[383,1049,153,171],"anchor":[81,168],"opaqueBounds":[3,3,150,168],"attachments":{"grip":[26,35],"head":[39,56],"torso":[78,90],"legs":[90,140]},"handRadius":9,"gripAngle":0.25}]},"scale":0.941176,"sourceSize":[1254,1254],"sourceRevision":"d90312a33a6d1870","sourceSha256":"d90312a33a6d18702e7133d142f98969cd82b2c78ce986754d9daf945e90c437","fightingStyle":"Compact practical staffer movement with grounded work-shoe kicks, restrained rising knee and upright sequential jab/cross.","role":"victim"},"crumpled":{"file":"victim-poses-v1.png","label":"Crumpled","order":[0,1],"frameMs":[240,460],"loop":false,"frames":{"right":[{"rect":[630,848,280,114],"anchor":[168.333,111],"opaqueBounds":[3,3,277,111],"attachments":{"grip":[41,84],"head":[38,49],"torso":[95,45],"legs":[193,71]},"handRadius":9,"gripAngle":-0.25},{"rect":[941,868,288,90],"anchor":[116,87],"opaqueBounds":[3,3,285,87],"attachments":{"grip":[42,74],"head":[31,50],"torso":[99,41],"legs":[191,51]},"handRadius":9,"gripAngle":-0.25,"bodyCalibration":1.198139}],"left":[{"rect":[632,1091,283,113],"anchor":[163.25,110],"opaqueBounds":[3,3,280,110],"attachments":{"grip":[236,91],"head":[240,52],"torso":[174,47],"legs":[77,69]},"handRadius":9,"gripAngle":0.25},{"rect":[931,1114,291,83],"anchor":[171.5,80],"opaqueBounds":[3,3,288,80],"attachments":{"grip":[230,66],"head":[242,43],"torso":[181,33],"legs":[86,47]},"handRadius":9,"gripAngle":0.25,"bodyCalibration":1.185527}]},"scale":0.941176,"sourceSize":[1254,1254],"sourceRevision":"d90312a33a6d1870","sourceSha256":"d90312a33a6d18702e7133d142f98969cd82b2c78ce986754d9daf945e90c437","fightingStyle":"Compact practical staffer movement with grounded work-shoe kicks, restrained rising knee and upright sequential jab/cross.","role":"victim"}},"baseId":"cliff"}
+{
+  "id": "cliff-deletion-utilities",
+  "character": "Cliff",
+  "fighterId": "cliff",
+  "height": 320,
+  "status": "complete attacker and victim utility bank",
+  "description": "Complete intact native whole-body keys, independently authored right and left. Source PNG bytes preserved, anatomy anchors measured from each native body.",
+  "clips": {
+    "shove": {
+      "file": "attacker-poses-v2.png",
+      "label": "Shove",
+      "order": [
+        0,
+        1
+      ],
+      "frameMs": [
+        240,
+        460
+      ],
+      "loop": false,
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              69,
+              40,
+              189,
+              284
+            ],
+            "anchor": [
+              87,
+              281
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              186,
+              281
+            ],
+            "attachments": {
+              "grip": [
+                170,
+                71
+              ],
+              "head": [
+                112,
+                44
+              ],
+              "torso": [
+                101,
+                114
+              ],
+              "legs": [
+                75,
+                199
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              375,
+              43,
+              223,
+              281
+            ],
+            "anchor": [
+              88,
+              278
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              220,
+              278
+            ],
+            "attachments": {
+              "grip": [
+                204,
+                67
+              ],
+              "head": [
+                114,
+                41
+              ],
+              "torso": [
+                88,
+                121
+              ],
+              "legs": [
+                73,
+                200
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              71,
+              360,
+              194,
+              278
+            ],
+            "anchor": [
+              102.75,
+              275
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              191,
+              275
+            ],
+            "attachments": {
+              "grip": [
+                19,
+                65
+              ],
+              "head": [
+                70,
+                46
+              ],
+              "torso": [
+                90,
+                117
+              ],
+              "legs": [
+                148,
+                197
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              349,
+              365,
+              237,
+              274
+            ],
+            "anchor": [
+              140.25,
+              271
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              234,
+              271
+            ],
+            "attachments": {
+              "grip": [
+                15,
+                51
+              ],
+              "head": [
+                111,
+                48
+              ],
+              "torso": [
+                132,
+                110
+              ],
+              "legs": [
+                183,
+                188
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          }
+        ]
+      },
+      "scale": 1.20075,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "a55c1bc9ff996222",
+      "sourceSha256": "a55c1bc9ff996222c771f889a25e7e322cf90045dc0709441e7109a194e87987",
+      "fightingStyle": "Compact practical staffer movement with grounded work-shoe kicks, restrained rising knee and upright sequential jab/cross.",
+      "role": "attacker"
+    },
+    "pull": {
+      "file": "attacker-poses-v2.png",
+      "label": "Pull",
+      "order": [
+        0,
+        1
+      ],
+      "frameMs": [
+        450,
+        250
+      ],
+      "loop": false,
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              692,
+              52,
+              215,
+              273
+            ],
+            "anchor": [
+              87.25,
+              270
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              212,
+              270
+            ],
+            "attachments": {
+              "grip": [
+                200,
+                130
+              ],
+              "head": [
+                115,
+                41
+              ],
+              "torso": [
+                88,
+                103
+              ],
+              "legs": [
+                56,
+                188
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              1010,
+              55,
+              191,
+              270
+            ],
+            "anchor": [
+              88.5,
+              267
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              188,
+              267
+            ],
+            "attachments": {
+              "grip": [
+                158,
+                154
+              ],
+              "head": [
+                107,
+                43
+              ],
+              "torso": [
+                102,
+                107
+              ],
+              "legs": [
+                60,
+                177
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              677,
+              376,
+              227,
+              263
+            ],
+            "anchor": [
+              135.75,
+              260
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              224,
+              260
+            ],
+            "attachments": {
+              "grip": [
+                17,
+                136
+              ],
+              "head": [
+                95,
+                44
+              ],
+              "torso": [
+                116,
+                115
+              ],
+              "legs": [
+                173,
+                186
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              1014,
+              376,
+              194,
+              263
+            ],
+            "anchor": [
+              103.25,
+              260
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              191,
+              260
+            ],
+            "attachments": {
+              "grip": [
+                18,
+                150
+              ],
+              "head": [
+                92,
+                46
+              ],
+              "torso": [
+                110,
+                114
+              ],
+              "legs": [
+                153,
+                187
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          }
+        ]
+      },
+      "scale": 1.20075,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "a55c1bc9ff996222",
+      "sourceSha256": "a55c1bc9ff996222c771f889a25e7e322cf90045dc0709441e7109a194e87987",
+      "fightingStyle": "Compact practical staffer movement with grounded work-shoe kicks, restrained rising knee and upright sequential jab/cross.",
+      "contactMs": 450,
+      "role": "attacker"
+    },
+    "stomp": {
+      "file": "attacker-poses-v2.png",
+      "label": "Stomp",
+      "order": [
+        0,
+        1
+      ],
+      "frameMs": [
+        240,
+        460
+      ],
+      "loop": false,
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              77,
+              659,
+              184,
+              278
+            ],
+            "anchor": [
+              51.5,
+              275
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              181,
+              275
+            ],
+            "attachments": {
+              "grip": [
+                142,
+                90
+              ],
+              "head": [
+                103,
+                43
+              ],
+              "torso": [
+                87,
+                124
+              ],
+              "legs": [
+                71,
+                202
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              405,
+              663,
+              214,
+              274
+            ],
+            "anchor": [
+              29,
+              271
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              211,
+              271
+            ],
+            "attachments": {
+              "grip": [
+                25,
+                145
+              ],
+              "head": [
+                91,
+                44
+              ],
+              "torso": [
+                76,
+                124
+              ],
+              "legs": [
+                48,
+                206
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              76,
+              956,
+              168,
+              270
+            ],
+            "anchor": [
+              132.5,
+              267
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              165,
+              267
+            ],
+            "attachments": {
+              "grip": [
+                25,
+                88
+              ],
+              "head": [
+                67,
+                47
+              ],
+              "torso": [
+                87,
+                127
+              ],
+              "legs": [
+                129,
+                204
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              343,
+              954,
+              220,
+              270
+            ],
+            "anchor": [
+              200,
+              267
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              217,
+              267
+            ],
+            "attachments": {
+              "grip": [
+                73,
+                141
+              ],
+              "head": [
+                128,
+                48
+              ],
+              "torso": [
+                137,
+                127
+              ],
+              "legs": [
+                173,
+                195
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          }
+        ]
+      },
+      "scale": 1.20075,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "a55c1bc9ff996222",
+      "sourceSha256": "a55c1bc9ff996222c771f889a25e7e322cf90045dc0709441e7109a194e87987",
+      "fightingStyle": "Compact practical staffer movement with grounded work-shoe kicks, restrained rising knee and upright sequential jab/cross.",
+      "role": "attacker"
+    },
+    "present": {
+      "file": "attacker-poses-v2.png",
+      "label": "Present",
+      "order": [
+        0,
+        1
+      ],
+      "frameMs": [
+        240,
+        460
+      ],
+      "loop": false,
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              726,
+              664,
+              151,
+              274
+            ],
+            "anchor": [
+              67.25,
+              271
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              148,
+              271
+            ],
+            "attachments": {
+              "grip": [
+                94,
+                82
+              ],
+              "head": [
+                77,
+                44
+              ],
+              "torso": [
+                64,
+                128
+              ],
+              "legs": [
+                39,
+                207
+              ],
+              "supportGrip": [
+                124,
+                109
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              1036,
+              665,
+              154,
+              274
+            ],
+            "anchor": [
+              70,
+              271
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              151,
+              271
+            ],
+            "attachments": {
+              "grip": [
+                102,
+                103
+              ],
+              "head": [
+                73,
+                45
+              ],
+              "torso": [
+                69,
+                135
+              ],
+              "legs": [
+                39,
+                206
+              ],
+              "supportGrip": [
+                117,
+                118
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              709,
+              955,
+              169,
+              271
+            ],
+            "anchor": [
+              90.75,
+              268
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              166,
+              268
+            ],
+            "attachments": {
+              "grip": [
+                65,
+                93
+              ],
+              "head": [
+                79,
+                46
+              ],
+              "torso": [
+                105,
+                123
+              ],
+              "legs": [
+                138,
+                201
+              ],
+              "supportGrip": [
+                29,
+                114
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              1011,
+              962,
+              177,
+              266
+            ],
+            "anchor": [
+              94,
+              263
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              174,
+              263
+            ],
+            "attachments": {
+              "grip": [
+                54,
+                104
+              ],
+              "head": [
+                79,
+                45
+              ],
+              "torso": [
+                111,
+                126
+              ],
+              "legs": [
+                146,
+                203
+              ],
+              "supportGrip": [
+                33,
+                119
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          }
+        ]
+      },
+      "scale": 1.20075,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "a55c1bc9ff996222",
+      "sourceSha256": "a55c1bc9ff996222c771f889a25e7e322cf90045dc0709441e7109a194e87987",
+      "fightingStyle": "Compact practical staffer movement with grounded work-shoe kicks, restrained rising knee and upright sequential jab/cross.",
+      "contactMs": 240,
+      "role": "attacker"
+    },
+    "brace": {
+      "file": "victim-poses-v1.png",
+      "label": "Brace",
+      "order": [
+        0,
+        1
+      ],
+      "frameMs": [
+        240,
+        460
+      ],
+      "loop": false,
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              72,
+              51,
+              209,
+              320
+            ],
+            "anchor": [
+              101,
+              317
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              206,
+              317
+            ],
+            "attachments": {
+              "grip": [
+                110,
+                45
+              ],
+              "head": [
+                41,
+                54
+              ],
+              "torso": [
+                73,
+                128
+              ],
+              "legs": [
+                78,
+                207
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              395,
+              125,
+              159,
+              249
+            ],
+            "anchor": [
+              44,
+              246
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              156,
+              246
+            ],
+            "attachments": {
+              "grip": [
+                123,
+                19
+              ],
+              "head": [
+                95,
+                59
+              ],
+              "torso": [
+                60,
+                96
+              ],
+              "legs": [
+                70,
+                171
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              41,
+              409,
+              203,
+              323
+            ],
+            "anchor": [
+              107.5,
+              320
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              200,
+              320
+            ],
+            "attachments": {
+              "grip": [
+                79,
+                32
+              ],
+              "head": [
+                138,
+                48
+              ],
+              "torso": [
+                125,
+                123
+              ],
+              "legs": [
+                113,
+                215
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              394,
+              491,
+              154,
+              246
+            ],
+            "anchor": [
+              109,
+              243
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              151,
+              243
+            ],
+            "attachments": {
+              "grip": [
+                20,
+                24
+              ],
+              "head": [
+                48,
+                57
+              ],
+              "torso": [
+                85,
+                89
+              ],
+              "legs": [
+                87,
+                176
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          }
+        ]
+      },
+      "scale": 0.941176,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "d90312a33a6d1870",
+      "sourceSha256": "d90312a33a6d18702e7133d142f98969cd82b2c78ce986754d9daf945e90c437",
+      "fightingStyle": "Compact practical staffer movement with grounded work-shoe kicks, restrained rising knee and upright sequential jab/cross.",
+      "role": "victim"
+    },
+    "suspended": {
+      "file": "victim-poses-v1.png",
+      "label": "Suspended",
+      "order": [
+        0,
+        1
+      ],
+      "frameMs": [
+        240,
+        460
+      ],
+      "loop": false,
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              725,
+              19,
+              150,
+              355
+            ],
+            "anchor": [
+              57.75,
+              352
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              147,
+              352
+            ],
+            "attachments": {
+              "grip": [
+                124,
+                77
+              ],
+              "head": [
+                82,
+                47
+              ],
+              "torso": [
+                73,
+                137
+              ],
+              "legs": [
+                66,
+                235
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              1045,
+              45,
+              127,
+              338
+            ],
+            "anchor": [
+              62,
+              335
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              124,
+              335
+            ],
+            "attachments": {
+              "grip": [
+                23,
+                189
+              ],
+              "head": [
+                82,
+                58
+              ],
+              "torso": [
+                73,
+                132
+              ],
+              "legs": [
+                72,
+                235
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              703,
+              383,
+              155,
+              352
+            ],
+            "anchor": [
+              92.25,
+              349
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              152,
+              349
+            ],
+            "attachments": {
+              "grip": [
+                36,
+                73
+              ],
+              "head": [
+                84,
+                46
+              ],
+              "torso": [
+                99,
+                136
+              ],
+              "legs": [
+                104,
+                237
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              1046,
+              409,
+              127,
+              340
+            ],
+            "anchor": [
+              60.25,
+              337
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              124,
+              337
+            ],
+            "attachments": {
+              "grip": [
+                106,
+                185
+              ],
+              "head": [
+                51,
+                53
+              ],
+              "torso": [
+                58,
+                143
+              ],
+              "legs": [
+                54,
+                244
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          }
+        ]
+      },
+      "scale": 0.941176,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "d90312a33a6d1870",
+      "sourceSha256": "d90312a33a6d18702e7133d142f98969cd82b2c78ce986754d9daf945e90c437",
+      "fightingStyle": "Compact practical staffer movement with grounded work-shoe kicks, restrained rising knee and upright sequential jab/cross.",
+      "role": "victim"
+    },
+    "compressed": {
+      "file": "victim-poses-v1.png",
+      "label": "Compressed",
+      "order": [
+        0,
+        1
+      ],
+      "frameMs": [
+        240,
+        460
+      ],
+      "loop": false,
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              56,
+              762,
+              164,
+              216
+            ],
+            "anchor": [
+              65.5,
+              213
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              161,
+              213
+            ],
+            "attachments": {
+              "grip": [
+                80,
+                72
+              ],
+              "head": [
+                84,
+                57
+              ],
+              "torso": [
+                83,
+                116
+              ],
+              "legs": [
+                105,
+                174
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              371,
+              815,
+              147,
+              164
+            ],
+            "anchor": [
+              65,
+              161
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              144,
+              161
+            ],
+            "attachments": {
+              "grip": [
+                79,
+                30
+              ],
+              "head": [
+                88,
+                53
+              ],
+              "torso": [
+                63,
+                94
+              ],
+              "legs": [
+                71,
+                136
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              79,
+              1006,
+              160,
+              212
+            ],
+            "anchor": [
+              85.5,
+              209
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              157,
+              209
+            ],
+            "attachments": {
+              "grip": [
+                35,
+                52
+              ],
+              "head": [
+                40,
+                48
+              ],
+              "torso": [
+                55,
+                98
+              ],
+              "legs": [
+                78,
+                172
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              383,
+              1049,
+              153,
+              171
+            ],
+            "anchor": [
+              81,
+              168
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              150,
+              168
+            ],
+            "attachments": {
+              "grip": [
+                26,
+                35
+              ],
+              "head": [
+                39,
+                56
+              ],
+              "torso": [
+                78,
+                90
+              ],
+              "legs": [
+                90,
+                140
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          }
+        ]
+      },
+      "scale": 0.941176,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "d90312a33a6d1870",
+      "sourceSha256": "d90312a33a6d18702e7133d142f98969cd82b2c78ce986754d9daf945e90c437",
+      "fightingStyle": "Compact practical staffer movement with grounded work-shoe kicks, restrained rising knee and upright sequential jab/cross.",
+      "role": "victim"
+    },
+    "crumpled": {
+      "file": "victim-poses-v1.png",
+      "label": "Crumpled",
+      "order": [
+        0,
+        1
+      ],
+      "frameMs": [
+        240,
+        460
+      ],
+      "loop": false,
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              630,
+              848,
+              280,
+              114
+            ],
+            "anchor": [
+              168.333,
+              111
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              277,
+              111
+            ],
+            "attachments": {
+              "grip": [
+                41,
+                84
+              ],
+              "head": [
+                38,
+                49
+              ],
+              "torso": [
+                95,
+                45
+              ],
+              "legs": [
+                193,
+                71
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              941,
+              868,
+              288,
+              90
+            ],
+            "anchor": [
+              116,
+              87
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              285,
+              87
+            ],
+            "attachments": {
+              "grip": [
+                42,
+                74
+              ],
+              "head": [
+                31,
+                50
+              ],
+              "torso": [
+                99,
+                41
+              ],
+              "legs": [
+                191,
+                51
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25,
+            "bodyCalibration": 1.198139
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              632,
+              1091,
+              283,
+              113
+            ],
+            "anchor": [
+              163.25,
+              110
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              280,
+              110
+            ],
+            "attachments": {
+              "grip": [
+                236,
+                91
+              ],
+              "head": [
+                240,
+                52
+              ],
+              "torso": [
+                174,
+                47
+              ],
+              "legs": [
+                77,
+                69
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              931,
+              1114,
+              291,
+              83
+            ],
+            "anchor": [
+              171.5,
+              80
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              288,
+              80
+            ],
+            "attachments": {
+              "grip": [
+                230,
+                66
+              ],
+              "head": [
+                242,
+                43
+              ],
+              "torso": [
+                181,
+                33
+              ],
+              "legs": [
+                86,
+                47
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25,
+            "bodyCalibration": 1.185527
+          }
+        ]
+      },
+      "scale": 0.941176,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "d90312a33a6d1870",
+      "sourceSha256": "d90312a33a6d18702e7133d142f98969cd82b2c78ce986754d9daf945e90c437",
+      "fightingStyle": "Compact practical staffer movement with grounded work-shoe kicks, restrained rising knee and upright sequential jab/cross.",
+      "role": "victim"
+    },
+    "rip-front": {
+      "file": "victim-front-lift-airborne-sheet-v1.webp",
+      "label": "Approved airborne / slack arms and bent knees",
+      "role": "victim",
+      "poseRole": "airborne",
+      "order": [
+        0
+      ],
+      "frameMs": 1100,
+      "contactMs": 300,
+      "loop": false,
+      "scale": 0.47,
+      "sourceSize": [
+        682,
+        635
+      ],
+      "sourceRevision": "f4aba4db3f4be5f7",
+      "sourceSha256": "f4aba4db3f4be5f7912030cec45779b2a5f07d8b1a9fe1fc5fa9bd98a8645648",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              0,
+              0,
+              682,
+              635
+            ],
+            "anchor": [
+              341.0,
+              615
+            ],
+            "opaqueBounds": [
+              210,
+              16,
+              460,
+              615
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "bodyCalibration": 1,
+            "nativeFacing": "front",
+            "attachments": {
+              "head": [
+                382,
+                106
+              ],
+              "torso": [
+                341,
+                229
+              ],
+              "legs": [
+                331,
+                352
+              ],
+              "armLeft": [
+                269,
+                307
+              ],
+              "armRight": [
+                434,
+                333
+              ],
+              "ripCut": [
+                341,
+                229
+              ],
+              "grip": [
+                341,
+                229
+              ]
+            }
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              0,
+              0,
+              682,
+              635
+            ],
+            "anchor": [
+              341.0,
+              615
+            ],
+            "opaqueBounds": [
+              210,
+              16,
+              460,
+              615
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "bodyCalibration": 1,
+            "nativeFacing": "front",
+            "attachments": {
+              "head": [
+                382,
+                106
+              ],
+              "torso": [
+                341,
+                229
+              ],
+              "legs": [
+                331,
+                352
+              ],
+              "armLeft": [
+                269,
+                307
+              ],
+              "armRight": [
+                434,
+                333
+              ],
+              "ripCut": [
+                341,
+                229
+              ],
+              "grip": [
+                341,
+                229
+              ]
+            }
+          }
+        ]
+      },
+      "frontPoseSource": {
+        "identityReferences": [
+          {
+            "path": "D:\\My Stuff\\BARCODE Non Show Components\\Character Ref + Art\\Cliff\\openart-image_1774325782002_5beb7f48_1774325782064_ae919329.png",
+            "bytes": 1469527,
+            "size": [
+              928,
+              1152
+            ],
+            "sha256": "415ab575db4be3b0830173a68d711892a9e9375ea81de6afca260d17d6b3d8f1",
+            "purpose": "Original full-size identity reference, read-only; no gallery thumbnail"
+          },
+          {
+            "path": "D:\\My Stuff\\BARCODE Non Show Components\\Character Ref + Art\\Cliff\\openart-image_1774326321138_f8e15a4f_1774326321204_495d4447.png",
+            "bytes": 2142841,
+            "size": [
+              928,
+              1152
+            ],
+            "sha256": "6baf04bd75f9c9b67382470e7ef5ddde40d4ac1e8dd88ab37e430b95c682922e",
+            "purpose": "Original full-size identity reference, read-only; no gallery thumbnail"
+          }
+        ],
+        "originalFile": "lift-four-airborne-approved-v1.png",
+        "originalBytes": 1022936,
+        "originalSize": [
+          1254,
+          1254
+        ],
+        "originalSha256": "a8995f0dd42e5812d14852b0c839054439f30bc8d184c347e2d1b8ba881f5c73",
+        "sourceKind": "approved-four-character-airborne-sheet",
+        "sourceRegion": [
+          627,
+          627,
+          1254,
+          1254
+        ],
+        "regionRgbaSha256": "543a73cfc1f20fdfe09f4b9e9f67f78b5ca7178348c1a3a0a1a3cfa7c6e282ac",
+        "crop": [
+          -51,
+          -4,
+          631,
+          631
+        ],
+        "alphaThreshold": 16,
+        "originalOpaqueBounds": [
+          159,
+          12,
+          409,
+          611
+        ],
+        "originalAlphaBounds": [
+          1,
+          0,
+          549,
+          627
+        ],
+        "originalBodyAxisX": 290,
+        "bodyAxisSelection": "Measured torso center; bowed head and bent legs retain their separate actual source coordinates",
+        "nativeRgbaSha256": "d80cfd8d74d01bdfa1e36a953f5852f62a840059752427c9f1bbc6046bbb5262",
+        "nativeAlphaSha256": "4ec6c148060c906d7d190c425a6751d741523c17b1f91fd39edc611d98f35d5a",
+        "nativeAnatomy": {
+          "nativeFile": "D:\\CodexScratch\\system-clash-polish-20261007\\working-copy\\website\\public\\games\\system-clash\\play\\assets\\fighters\\cliff\\combat.png",
+          "nativeFileSha256": "02e75a74b1d8149b7c74c7877fae161375662d5e631e813021c9d4e850b4304e",
+          "nativeClip": "idle",
+          "nativeFacing": "right",
+          "nativeFrameIndex": 0,
+          "nativeFrameRect": [
+            81,
+            15,
+            191,
+            303
+          ],
+          "nativeScale": 1.070234,
+          "method": "Uniform scale visually matched to native skull, chest and limb widths at actual game-world pixels; reviewed by root against native idle",
+          "reviewFile": "D:\\CodexScratch\\system-clash-polish-20261007\\scratch\\visual-sound-20261008\\airborne-four-width-proposal-v2.png",
+          "reviewSha256": "024b97782acf36c1faa619e4a426401c9e6887d5b3e813f110e820038627a93c",
+          "resultScale": 0.47,
+          "displayedOpaqueHeight": 281.53,
+          "supersedes": "Rejected vertical head-to-torso-span scale; bowing changes vertical relationship"
+        },
+        "operation": "Exact627x627 source region plus symmetric transparent padding; losslessRGBA; no resizing/mirroring/retouch"
+      }
+    }
+  },
+  "baseId": "cliff"
+}

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="86" height="86" viewBox="0 0 86 86" role="presentation">
+<path d="M11 1H75L85 11V75L75 85H11L1 75V11Z" fill="none" stroke="#ba71ee" stroke-width="2"/>
+<path d="M12 4H74L82 12V74L74 82H12L4 74V12Z" fill="none" stroke="#f6f0fc" stroke-opacity=".4"/>
+<path d="M1 18V39M85 47V68M18 85H39M47 1H68" stroke="#ba71ee" stroke-width="3"/>
+<path d="M9 10H18M10 9V18M68 76H77M76 68V77" stroke="#f6f0fc" stroke-width="2"/>
+</svg>

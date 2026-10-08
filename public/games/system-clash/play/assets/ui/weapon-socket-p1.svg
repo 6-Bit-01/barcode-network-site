@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="260" height="31" viewBox="0 0 260 31" role="presentation">
+<path d="M8 1H248L259 12V23L252 30H1V8Z" fill="#08090c" fill-opacity=".94" stroke="#453355"/>
+<path d="M1 8L8 1H68M191 30H252L259 23" fill="none" stroke="#ba71ee" stroke-width="2"/>
+<path d="M6 5H31M227 26H251" stroke="#f6f0fc" stroke-opacity=".5"/>
+<path d="M180 7V23" stroke="#c9a3e8" stroke-opacity=".35"/>
+</svg>

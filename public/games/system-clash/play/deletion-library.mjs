@@ -1,4 +1,4 @@
-import {NEW_DELETIONS,newDeletionPose} from './new-deletion-library.mjs';
+import {NEW_DELETIONS,newDeletionPose,hangingVictimPose} from './new-deletion-library.mjs';
 export const DELETION_POSES = {
   attacker:[
     {id:'shove',name:'Shove',uses:'Feed a trap, topple a speaker stack, drive a target into a cabinet.'},
@@ -121,6 +121,7 @@ const nativeDuration=(clips,id,fallback)=>clips?.[id]?.nativeDuration??clips?.[i
 const nativeContact=(clips,id,fallback)=>clips?.[id]?.nativeContactMs??clips?.[id]?.contactMs??fallback;
 const held=(clip,elapsed)=>({clip,elapsed:Math.max(0,elapsed)});
 const flying=(elapsed,from,to,clips,mechanism='crt')=>{
+  if(clips?.['delete-rip-front'])return hangingVictimPose(clips,null);
   const duration=nativeDuration(clips,'thrown',640),measured=Number(clips?.thrown?.airborneEndMs);
   // The last native thrown key is already on the floor. Air travel may reach
   // the previous key and hold it, but cannot display that floor key early.
@@ -162,7 +163,7 @@ export function deletionPose(role,elapsed,fighterId='6-bit',clips=null,fighterHe
     }
     if(t<b.bind)return held('high',210);
     if(t<b.lift)return held('delete-brace',t-b.bind);
-    return held('delete-suspended',t-b.lift);
+    return hangingVictimPose(clips,held('delete-suspended',t-b.lift));
   }
   if(definition.mechanism==='wheel') {
     if(role==='attacker') {
@@ -178,8 +179,8 @@ export function deletionPose(role,elapsed,fighterId='6-bit',clips=null,fighterHe
     }
     if(t<b.bindContact)return held('high',210);
     if(t<b.captured)return held('grabbed',t-b.bindContact);
-    if(t<b.launch)return held('delete-brace',0);
-    if(t<b.landed)return held('thrown',(t-b.launch)*nativeDuration(clips,'thrown',640)/(b.landed-b.launch));
+    if(t<b.launch)return hangingVictimPose(clips,held('delete-brace',0));
+    if(t<b.landed)return hangingVictimPose(clips,held('thrown',(t-b.launch)*nativeDuration(clips,'thrown',640)/(b.landed-b.launch)));
     return held('knockdown',10000);
   }
   if(definition.mechanism==='stamp') {
@@ -211,7 +212,7 @@ export function deletionPose(role,elapsed,fighterId='6-bit',clips=null,fighterHe
       return held('idle',t-b.close-380);
     }
     if(t<b.gripContact)return held('high',210);
-    if(t<b.captured)return held('grabbed',t-b.gripContact);
+    if(t<b.captured)return hangingVictimPose(clips,held('grabbed',t-b.gripContact));
     if(t<b.close)return held('delete-brace',t-b.captured);
     return held('delete-compressed',(t-b.close)*nativeDuration(clips,'delete-compressed',700)/(b.sealed-b.close));
   }
@@ -225,7 +226,7 @@ export function deletionPose(role,elapsed,fighterId='6-bit',clips=null,fighterHe
       return held('delete-present',t-b.present);
     }
     if(t<b.kickContact)return held('high',210);
-    if(t<b.landed)return held('thrown',(t-b.fall)*nativeDuration(clips,'thrown',640)/(b.landed-b.fall));
+    if(t<b.landed)return hangingVictimPose(clips,held('thrown',(t-b.fall)*nativeDuration(clips,'thrown',640)/(b.landed-b.fall)));
     return held('knockdown',10000);
   }
   if(definition.mechanism==='truss') {
@@ -238,9 +239,9 @@ export function deletionPose(role,elapsed,fighterId='6-bit',clips=null,fighterHe
     }
     if(t<b.bind)return held('high',210);
     if(t<b.hoist)return held('grabbed',t-b.bind);
-    if(t<b.trussHit)return held('delete-suspended',t-b.hoist);
-    if(t<b.slamPull)return held('high',280);
-    if(t<b.floorSlam)return held('knockdown',(t-b.slamPull)*nativeDuration(clips,'knockdown',630)/(b.floorSlam-b.slamPull));
+    if(t<b.trussHit)return hangingVictimPose(clips,held('delete-suspended',t-b.hoist));
+    if(t<b.slamPull)return hangingVictimPose(clips,held('high',280));
+    if(t<b.floorSlam)return hangingVictimPose(clips,held('knockdown',(t-b.slamPull)*nativeDuration(clips,'knockdown',630)/(b.floorSlam-b.slamPull)));
     return held('knockdown',10000);
   }
   if(definition.mechanism==='sign') {
@@ -271,7 +272,7 @@ export function deletionPose(role,elapsed,fighterId='6-bit',clips=null,fighterHe
       return held('delete-present',t-b.present);
     }
     if(t<b.bootContact)return held('high',210);
-    if(t<b.landed)return held('thrown',(t-b.entry)*nativeDuration(clips,'thrown',640)/(b.landed-b.entry));
+    if(t<b.landed)return hangingVictimPose(clips,held('thrown',(t-b.entry)*nativeDuration(clips,'thrown',640)/(b.landed-b.entry)));
     return held('knockdown',10000);
   }
   if(fighterId==='cache-back') {
@@ -307,7 +308,8 @@ export function deletionPose(role,elapsed,fighterId='6-bit',clips=null,fighterHe
     if(t<b.upperCut)return held('high',210);
     if(t<b.bodyCut)return held('high',Math.min(280,70+t-b.upperCut));
     if(t<b.fall)return held('grabbed',Math.min(340,220+t-b.bodyCut));
-    if(t<b.prone)return held('grabbed',340);
+    if(t<b.prone)return hangingVictimPose(clips,held('grabbed',340));
+    if(t<b.captured)return hangingVictimPose(clips,held('delete-suspended',0));
     return held('delete-suspended',0);
   }
   // Mac's accepted cable scene is deliberately unchanged.
@@ -323,7 +325,7 @@ export function deletionPose(role,elapsed,fighterId='6-bit',clips=null,fighterHe
   }
   if(t<b.shove)return {clip:'high',elapsed:210};
   if(t<b.captured)return {clip:'delete-brace',elapsed:t-b.shove};
-  if(definition.mechanism==='winch'&&t<b.impact)return {clip:'delete-suspended',elapsed:t-b.captured};
+  if(definition.mechanism==='winch'&&t<b.impact)return hangingVictimPose(clips,{clip:'delete-suspended',elapsed:t-b.captured});
   if(t<b.pressure)return {clip:'delete-brace',elapsed:10000};
   if(t<b.impact)return {clip:'delete-compressed',elapsed:t-b.pressure};
   return {clip:'delete-crumpled',elapsed:10000};

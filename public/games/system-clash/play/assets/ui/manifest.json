@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "brand": "BARCODE: SYSTEM CLASH",
+  "format": "original-native-svg",
+  "palette": {
+    "black": "#08090c",
+    "white": "#f6f0fc",
+    "p1": "#ba71ee",
+    "p2": "#b7f668",
+    "utility": "#c9a3e8"
+  },
+  "assets": {
+    "railP1": {
+      "file": "hud-rail-p1.svg",
+      "width": 412,
+      "height": 42
+    },
+    "portraitP1": {
+      "file": "portrait-frame-p1.svg",
+      "width": 86,
+      "height": 86
+    },
+    "weaponP1": {
+      "file": "weapon-socket-p1.svg",
+      "width": 260,
+      "height": 31
+    },
+    "railP2": {
+      "file": "hud-rail-p2.svg",
+      "width": 412,
+      "height": 42
+    },
+    "portraitP2": {
+      "file": "portrait-frame-p2.svg",
+      "width": 86,
+      "height": 86
+    },
+    "weaponP2": {
+      "file": "weapon-socket-p2.svg",
+      "width": 260,
+      "height": 31
+    },
+    "timer": {
+      "file": "timer-plate.svg",
+      "width": 130,
+      "height": 90
+    },
+    "announcement": {
+      "file": "announcement-backplate.svg",
+      "width": 820,
+      "height": 154
+    },
+    "barcodeMark": {
+      "file": "barcode-mark.svg",
+      "width": 44,
+      "height": 18
+    }
+  }
+}

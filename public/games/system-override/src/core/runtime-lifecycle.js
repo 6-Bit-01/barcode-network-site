@@ -144,11 +144,13 @@ window.BARCODE = window.BARCODE || {};
     if (button && !options.restart) { button.disabled = true; button.textContent = 'INITIALIZING...'; }
 
     // An explicit private Mac entry does not initialize or restore a campaign run.
-    if (options.privatePreview === 'mac-firstslice') {
+    const macResume = options.resume?.levelId === 'level-03' && namespace.MacCombatPreview?.validateCampaign?.(options.resume);
+    if (options.privatePreview === 'mac-firstslice' || macResume) {
       await awaitStartResource(namespace.MacCombatPreview.prepare());
       if (generation !== initializerGeneration || state !== STATES.STARTING) return;
-      await awaitStartResource(namespace.MacCombatPreview.enter());
+      await awaitStartResource(namespace.MacCombatPreview.enter({campaign:!!macResume}));
       if (generation !== initializerGeneration || state !== STATES.STARTING) return;
+      if (macResume && !namespace.Campaign?.restore(options.resume)) throw new Error('Saved Mac entry could not be restored.');
       window.gameState ||= {};
       window.gameState.running = true; window.gameState.gameOver = false; window.gameState.victory = false;
       document.getElementById('startOverlay')?.classList.add('hidden');

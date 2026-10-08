@@ -2694,19 +2694,22 @@ window.FILE_MANIFEST.push({ name: 'src/game/cache-road-proof.js', exports: ['BAR
       const authored = !!this.chapter?.delivery;
       const prompt = (key,index) => B.GamepadUI?.connected ? B.ControllerSettings?.button(index) || key : key;
       const buttons = authored ? [
-        { id: 'ending', label: this.chapter.delivery.ending.done ? 'REPLAY ENDING' : 'RESUME ENDING', key: prompt('ENTER',0) },
+        ...(this.chapter.delivery.ending.done ? [{ id: 'continue', label: this.macHandoffPending ? 'LOADING LEVEL 3...' : 'CONTINUE TO LEVEL 3', key: prompt('ENTER',0) }] : []),
+        { id: 'ending', label: this.chapter.delivery.ending.done ? 'REPLAY ENDING' : 'RESUME ENDING', key: this.chapter.delivery.ending.done ? prompt('E',1) : prompt('ENTER',0) },
         { id: 'race', label: 'REPLAY RACE', key: prompt('R',2) },
         { id: 'title', label: 'TITLE', key: prompt('C',3) }
       ] : [
         { id: 'race', label: this.status === 'clear' ? 'REPLAY RACE' : 'RETRY FROM MARKER', key: prompt('ENTER',0) },
         { id: 'back', label: 'LEVEL 1 RESULTS', key: prompt('C',3) }
       ];
-      return buttons.map((button,index)=>({ ...button, x: authored ? 435 + index * 355 : 565 + index * 430,
-        y: 572, w: authored ? 340 : 360, h: 72 }));
+      return buttons.map((button,index)=>({ ...button, x: authored ? 400 + index * (buttons.length === 4 ? 285 : 375) : 565 + index * 430,
+        y: 572, w: authored ? (buttons.length === 4 ? 270 : 350) : 360, h: 72 }));
     },
     resultAction(action) {
       if (!this.active || this.status === 'playing' || this.resultControlsReady === false ||
           window.isPaused || window.gameState?.paused || B.CacheEnding?.active) return false;
+      if (this.macHandoffPending) return false;
+      if (action === 'continue') return B.MacCombatPreview?.enterCampaign?.(this) || false;
       if (action === 'race') return this.retry();
       if (action === 'back') return this.exit();
       if (!this.chapter?.delivery) return false;
@@ -2737,10 +2740,10 @@ window.FILE_MANIFEST.push({ name: 'src/game/cache-road-proof.js', exports: ['BAR
         if(p.b0)this.finishOutro();
         return true;
       }
-      if (p.b0) this.resultAction(this.chapter?.delivery ? 'ending' : 'race');
+      if (p.b0) this.resultAction(this.chapter?.delivery ? this.chapter.delivery.ending.done ? 'continue' : 'ending' : 'race');
       else if (p.b2 && this.chapter?.delivery) this.resultAction('race');
       else if (p.b3) this.resultAction(this.chapter?.delivery ? 'title' : 'back');
-      else if (p.b1 && this.chapter?.delivery) this.resultAction('save');
+      else if (p.b1 && this.chapter?.delivery) this.resultAction(this.chapter.delivery.ending.done ? 'ending' : 'save');
       return true;
     },
     pointerClick(x,y) {
@@ -2783,10 +2786,10 @@ window.FILE_MANIFEST.push({ name: 'src/game/cache-road-proof.js', exports: ['BAR
         return true;
       }
       const authored = !!this.chapter?.delivery;
-      if (!(authored ? ['enter', ' ', 'r', 'c', 's'] : ['enter', ' ', 'c']).includes(key)) return false;
+      if (!(authored ? ['enter', ' ', 'r', 'c', 's', 'e'] : ['enter', ' ', 'c']).includes(key)) return false;
       e.preventDefault?.();
       if (!e.repeat) this.resultAction(key === 'c' ? authored ? 'title' : 'back' :
-        key === 's' ? 'save' : key === 'r' ? 'race' : authored ? 'ending' : 'race');
+        key === 's' ? 'save' : key === 'e' ? 'ending' : key === 'r' ? 'race' : authored ? this.chapter.delivery.ending.done ? 'continue' : 'ending' : 'race');
       return true;
     },
     mixSnapshot() {
@@ -5621,7 +5624,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/cache-road-proof.js', exports: ['BAR
           'Your last road marker remains. Draft, brake and use an Echo to split the audit.', 960, 458);
         ctx.fillStyle = '#e6c8b5'; ctx.font = '22px Oxanium, monospace';
         ctx.fillText(this.status === 'clear' ? this.chapter?.delivery ?
-          'Cache kept the original. Mac takes the route from here.' :
+          (this.macHandoffError || 'Cache kept the original. Continue to Level 3 as Mac.') :
           'Legacy delivery. Replay the full run to recover Bass.' :
           s.combat ? 'Your last road marker remains. Keep data in sync for power and earned points.' :
           s.gateFailure ? 'Retry starts at the Mirror Viaduct marker with a full Echo.' :

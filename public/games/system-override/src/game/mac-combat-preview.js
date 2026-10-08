@@ -185,13 +185,13 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       else seed[0] = Date.now() >>> 0;
       return B.MacStreetCombat.create({lootSeed:seed[0]});
     },
-    async enter() {
+    async enter({campaign = false} = {}) {
       if (!B.MacStreetCombat || !B.MacStreetStory || !B.MacCombatFrames || !this.assets.size || this.frameArt.size !== 8) throw new Error('mac-preview-not-ready');
       const generation = this.generation;
       this.combat = this.createCombat();
       this.presentationState = this.combat.getSnapshot();
       this.story = B.MacStreetStory.createIntro({instantText:true});
-      this.phase = 'intro'; this.status = 'playing'; this.active = true; this.cameraX = 0;
+      this.phase = 'intro'; this.status = 'playing'; this.active = !campaign; this.cameraX = 0;
       this.focus = 0; this.elapsedMs = 0; this.lastEvents = []; this.audioNotice = null;
       this.playerDefeatedAtMs = null; this.playerDefeatedHostAtMs = null;
       this.playerLandedAtMs = null;
@@ -216,14 +216,70 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       const ready = await window.audioSystem?.prepareActiveMusicProfile?.();
       if (generation !== this.generation) return { ok: false, reason: 'mac-preview-cancelled' };
       if (!ready?.ok) throw new Error('mac-preview-audio-unavailable');
-      this.resetInputs();
+      this.campaignEntry = campaign; this.campaignInputReady = !campaign;
+      this.active = !campaign; this.resetInputs();
       return { ok: true };
+    },
+    validateCampaign(saved) {
+      const progress = B.Campaign?.archive?.()?.record?.progress;
+      return progress?.completedLevels?.includes('level-02') && progress.items?.includes('stem.bass') &&
+        progress.unlockedLevels?.includes('level-03') && saved?.levelId === 'level-03' && saved.checkpointId === 'mac-city-entry' &&
+        saved.levelState?.macVersion === 1 &&
+        ['relaxed','standard','overclocked'].includes(saved.levelState.difficultyId);
+    },
+    async enterCampaign(road) {
+      const store = B.Campaign?.archive?.(), previous = B.Campaign?.readResume?.();
+      if (!road?.active || road.status !== 'clear' || !road.chapter?.delivery?.ending?.done ||
+          road.resultControlsReady === false || road.macHandoffPending || this.active || this.pending ||
+          window.isPaused || window.gameState?.paused ||
+          previous?.levelId !== 'level-02' || previous.checkpointId !== 'road-clear' ||
+          !store.record.progress.items.includes('stem.bass') ||
+          !store.record.progress.completedLevels.includes('level-02') ||
+          !store.record.progress.unlockedLevels.includes('level-03')) return {ok:false,reason:'earned-cache-clear-required'};
+      const saved = {levelId:'level-03',checkpointId:'mac-city-entry',
+        levelState:{macVersion:1,difficultyId:road.chapter.difficultyId}};
+      if (!this.validateCampaign(saved)) return {ok:false,reason:'invalid-mac-entry'};
+      road.macHandoffPending = true; road.macHandoffError = null;
+      const roadGeneration = road.entryGeneration, macGeneration = this.generation + 1;
+      const previousProfile = B.MusicProfiles?.getActive?.()?.profileId || 'level-02.proof';
+      try {
+        await this.prepare();
+        if (!road.active || road.entryGeneration !== roadGeneration || window.isPaused || window.gameState?.paused) throw Error('mac-handoff-cancelled');
+        const entered = await this.enter({campaign:true});
+        if (!entered?.ok || !road.active || road.entryGeneration !== roadGeneration || window.isPaused || window.gameState?.paused) throw Error('mac-handoff-cancelled');
+        if (!store.checkpoint(saved)) {
+          store.record.current = previous; store.currentDirty = false;
+          throw Error('mac-entry-save-unavailable');
+        }
+        this.active = true; road.dispose(); this.resetInputs(); B.Campaign.run = null; B.Campaign.intermission = false;
+        B.Campaign.syncTitleButton(); window.gameState.running = true;
+        window.gameState.victory = false; window.gameState.gameOver = false;
+        return {ok:true};
+      } catch (error) {
+        // A cancelled old handoff must not dispose or retune a newer Mac owner.
+        if (this.generation === macGeneration) {
+          this.dispose();
+          if (road.active && road.entryGeneration === roadGeneration) {
+            window.audioSystem?.stopRuntimeAudio?.({stopMusic:true});
+            B.MusicProfiles?.select(previousProfile); B.MusicTransport?.load(previousProfile);
+            try { await window.audioSystem?.prepareActiveMusicProfile?.(); } catch (_) {}
+            road.macHandoffError = 'Level 3 could not start. Your delivery is saved. Select Continue to retry.';
+          }
+        }
+        return {ok:false,reason:error.message};
+      } finally { road.macHandoffPending = false; }
+    },
+    restoreCampaign(saved) {
+      if (!this.combat || !this.validateCampaign(saved)) return false;
+      this.active = true; this.campaignEntry = true; this.campaignInputReady = false;
+      return true;
     },
     releaseInputs(reason = 'input-reset') { if (this.active) this.combat?.releaseInputs?.(reason); },
     resetInputs() { this.releaseInputs(); window.inputManager?.resetActionEdges?.(); B.TouchControls?.sync?.(); },
     dispose() {
       this.generation++; this.active = false; this.pending = false;
       if (this.previousKeyboard && window.inputManager?.actionInput) window.inputManager.actionInput.keyboardBindings = this.previousKeyboard;
+      this.campaignEntry = false; this.campaignInputReady = true;
       this.previousKeyboard = null; this.combat = null; this.story = null; this.phase = null; this.status = null;
       this.assets.clear(); this.frameArt.clear(); this.frameManifest = null; this.cityArt = null; this.zonePromises?.clear(); this.lastEvents = [];
       this.powerArt = null; this.floorMarks = []; this.radio = null; this.radioQueue = []; this.tutorial = null; this.damageAtMs = null;
@@ -265,14 +321,15 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
         if (!started?.ok) { this.audioNotice = 'Music paused. Open Pause and resume to retry.'; }
       } else { this.phase = 'complete'; this.status = 'clear'; this.resetInputs(); }
     },
-    advance() { if (!this.dialogue() || window.isPaused) return false; const r = this.story.advance(); this.finishReading(); return r; },
-    choose(index) { if (!this.dialogue() || window.isPaused) return false; const r = this.story.choose(index); if (r.accepted) this.resetInputs(); return r; },
-    skip() { if (!this.dialogue() || window.isPaused) return false; this.story.skip(); this.finishReading(); return true; },
+    advance() { if (!this.dialogue() || window.isPaused || this.campaignEntry && !this.campaignInputReady) return false; const r = this.story.advance(); this.finishReading(); return r; },
+    choose(index) { if (!this.dialogue() || window.isPaused || this.campaignEntry && !this.campaignInputReady) return false; const r = this.story.choose(index); if (r.accepted) this.resetInputs(); return r; },
+    skip() { if (!this.dialogue() || window.isPaused || this.campaignEntry && !this.campaignInputReady) return false; this.story.skip(); this.finishReading(); return true; },
     keyDown(event) {
       if (!this.active || window.isPaused) return false;
       const key = event.key.toLowerCase();
       if (this.phase === 'street' && this.status === 'playing' && key === 't') { event.preventDefault(); if (!event.repeat) this.skipTutorial(); return true; }
       if (key === 'escape') { event.preventDefault(); if (!event.repeat) B.RuntimeLifecycle.togglePause(); return true; }
+      if (this.dialogue() && this.campaignEntry && !this.campaignInputReady) { event.preventDefault(); return true; }
       if (this.dialogue() && [' ', 'enter', '1', '2', 'arrowleft', 'arrowright'].includes(key)) {
         event.preventDefault(); if (event.repeat) return true;
         const choice = this.story.snapshot().choice;
@@ -313,6 +370,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       });
     },
     update(delta) {
+      if (this.campaignEntry && !this.campaignInputReady && !window.inputManager?.isResultControlHeld?.()) this.campaignInputReady = true;
       if (!this.active || window.isPaused) return;
       if (this.status !== 'playing') {
         // The result keeps gameplay frozen. Only the existing host frame clock
@@ -834,4 +892,13 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       }
     }
   };
+  // Keep old prototype checkpoints readable; only the new city-entry shape belongs to Mac.
+  if (B.Campaign?.register) {
+    const legacy = B.Campaign.adapters.get('level-03');
+    B.Campaign.adapters.delete('level-03');
+    B.Campaign.register('level-03', {
+      validate: saved => P.validateCampaign(saved) || !!legacy?.validate?.(saved),
+      restore: saved => P.validateCampaign(saved) ? P.restoreCampaign(saved) : legacy?.restore?.(saved) || false
+    });
+  }
 })(window.BARCODE = window.BARCODE || {});

@@ -9,7 +9,7 @@ const ts = require("typescript");
 const React = require("react");
 const pageModule = { exports: {} };
 const source = fs.readFileSync(
-  new URL("../src/app/system-override/page.tsx", import.meta.url),
+  new URL("../src/app/secret-menu/page.tsx", import.meta.url),
   "utf8",
 );
 
@@ -46,9 +46,9 @@ test("hidden games launches all three standalone games with normal same-tab link
   assert.doesNotMatch(markup, /<iframe\b|<canvas\b/);
 });
 
-test("hidden games identifies all three games while retaining its existing route", () => {
+test("hidden games identifies all three games at its renamed secret-menu route", () => {
   assert.equal(pageModule.exports.metadata.title, "Hidden Games");
-  assert.equal(pageModule.exports.metadata.alternates.canonical, "/system-override");
+  assert.equal(pageModule.exports.metadata.alternates.canonical, "/secret-menu");
   assert.equal(pageModule.exports.metadata.description, "Play BARCODE: System Override, System Clash Demo and Dead Air in your browser.");
   assert.match(markup, /<h1\b[^>]*>Hidden Games<\/h1>/);
   const cards = [...markup.matchAll(/<article\b([^>]*)>([\s\S]*?)<\/article>/g)];

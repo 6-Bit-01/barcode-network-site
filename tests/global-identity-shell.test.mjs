@@ -38,7 +38,18 @@ function assertActiveNavigation(pathname, expectedHref) {
     assert.ok(nav, `${label} renders at ${pathname}`);
     const links = [...nav.matchAll(/<a\b([^>]*)>/g)];
     const destinations = links.map((match) => match[1].match(/href="([^"]+)"/)?.[1]);
-    assert.deepEqual(destinations.slice(0, 3), ["/", "/releases", "/radio"], `${label} starts with music and participation at ${pathname}`);
+    assert.deepEqual(destinations, [
+      "/", "/radio", "https://discord.gg/4tHazmD528", "/bnl", "/contests",
+      "/releases", "/database", "/transmissions", "/merch", "/terminal",
+    ], `${label} follows the chosen discovery order at ${pathname}`);
+    if (label === "Primary navigation") {
+      const mainRow = nav.split("<details")[0];
+      assert.deepEqual([...mainRow.matchAll(/<a\b[^>]*href="([^"]+)"/g)].map((match) => match[1]),
+        destinations.slice(0, 5), "desktop shows the first five destinations before Explore");
+    }
+    const community = links.find((match) => match[1].includes('href="https://discord.gg/4tHazmD528"'));
+    assert.match(community[1], /target="_blank"/);
+    assert.match(community[1], /rel="noopener noreferrer"/);
     for (const href of ["/terminal", "/bnl", "/contests", "/database", "/transmissions", "/merch"]) {
       assert.equal(destinations.filter((value) => value === href).length, 1, `${label} retains ${href} once`);
     }

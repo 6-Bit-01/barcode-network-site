@@ -10,15 +10,16 @@ import { siteConfig, externalLinks } from "@/content";
 
 const navItems = [
   { href: "/", label: "HQ", icon: "globe" },
-  { href: "/releases", label: "Music", icon: "music" },
   { href: "/radio", label: "Radio", icon: "radio" },
+  { href: externalLinks.discord, label: "Community", icon: "community" },
+  { href: "/bnl", label: "BNL-01 Hub", icon: "bnl" },
+  { href: "/contests", label: "Contests", icon: "trophy" },
 ] satisfies { href: string; label: string; icon: PublicIconName }[];
 const exploreItems = [
-  { href: "/contests", label: "Contests", icon: "trophy" },
-  { href: "/merch", label: "Merch", icon: "merch" },
+  { href: "/releases", label: "Music", icon: "music" },
   { href: "/database", label: "Database", icon: "archive" },
   { href: "/transmissions", label: "Transmissions", icon: "send" },
-  { href: "/bnl", label: "BNL-01 Hub", icon: "bnl" },
+  { href: "/merch", label: "Merch", icon: "merch" },
   { href: "/terminal", label: "Terminal Archive", icon: "terminal" },
 ] satisfies { href: string; label: string; icon: PublicIconName }[];
 
@@ -54,6 +55,20 @@ export function Header() {
     item: (typeof exploreItems)[number] | (typeof navItems)[number],
   ) => {
     const isActive = isNavItemActive(pathname, item.href);
+    if (item.href.startsWith("https://")) {
+      return (
+        <a
+          key={item.href}
+          href={item.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="public-nav-link"
+        >
+          <PublicIcon name={item.icon} />
+          {item.label}
+        </a>
+      );
+    }
     return (
       <Link
         key={item.href}
@@ -102,15 +117,6 @@ export function Header() {
             aria-label="Primary navigation"
           >
             {navItems.map(renderLink)}
-            <a
-              href={externalLinks.discord}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="public-nav-link"
-            >
-              <PublicIcon name="community" />
-              Community
-            </a>
             <details
               className="public-nav-explore"
               onKeyDown={(event) => {
@@ -207,20 +213,12 @@ function MobileMenu({ pathname }: { pathname: string }) {
             className="flex flex-col gap-1"
             aria-label="Mobile primary navigation"
           >
-            <p className="public-kicker px-3">Music & participation</p>
-            {[
-              ...navItems,
-              {
-                href: externalLinks.discord,
-                label: "Community",
-                icon: "community" as const,
-              },
-              ...exploreItems,
-            ].map((item, index) => {
+            <p className="public-kicker px-3">Start here</p>
+            {[...navItems, ...exploreItems].map((item, index) => {
               const isActive = isNavItemActive(pathname, item.href);
               return (
                 <div key={item.href}>
-                  {index === navItems.length + 1 && (
+                  {index === navItems.length && (
                     <p className="public-kicker mt-5 px-3">
                       Explore the Network
                     </p>

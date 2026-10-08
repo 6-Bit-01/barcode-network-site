@@ -345,7 +345,7 @@ test("Contests has its own canonical page and discovery links, with no ladder on
   const communityText = community.replace(/<[^>]*>/g, " ").replaceAll("&#x27;", "'").replace(/\s+/g, " ");
   assert.match(communityText, /Tune into HellcatNZ's frequency/);
   assert.match(communityText, /King of the Hill/);
-  assert.match(communityText, /Weekly contest.*Saturdays at 2:45 PM NZST.*UTC\+12/);
+  assert.match(communityText, /Weekly contest.*Sundays at 2:45 PM NZST.*UTC\+12/);
   assert.match(communityText, /KOTH channel.*community radio live.*reviewed by @reviewcrew.*verdict in real time/);
   assert.doesNotMatch(communityText, /Every day|Daily contest/);
   assert.match(communityText, /Live listening.*Honest feedback.*A unique winner shout-out/);
@@ -376,14 +376,14 @@ test("Contests has its own canonical page and discovery links, with no ladder on
   assert.equal(urls.filter((url) => url === "https://www.barcode-network.com/contests").length, 1);
 });
 
-test("the next KOTH start remains Saturday 14:45 NZST through week and year boundaries", () => {
+test("the next KOTH start remains Sunday 14:45 NZST through week and year boundaries", () => {
   for (const [now, expected] of [
-    ["2026-09-29T07:21:00Z", "2026-10-03T02:45:00.000Z"],
-    ["2026-10-03T02:44:59Z", "2026-10-03T02:45:00.000Z"],
-    ["2026-10-03T02:45:00Z", "2026-10-03T02:45:00.000Z"],
-    ["2026-10-03T02:45:00.001Z", "2026-10-10T02:45:00.000Z"],
-    ["2026-12-31T23:59:00Z", "2027-01-02T02:45:00.000Z"],
-    ["2027-06-01T12:00:00Z", "2027-06-05T02:45:00.000Z"],
+    ["2026-09-29T07:21:00Z", "2026-10-04T02:45:00.000Z"],
+    ["2026-10-04T02:44:59Z", "2026-10-04T02:45:00.000Z"],
+    ["2026-10-04T02:45:00Z", "2026-10-04T02:45:00.000Z"],
+    ["2026-10-04T02:45:00.001Z", "2026-10-11T02:45:00.000Z"],
+    ["2026-12-31T23:59:00Z", "2027-01-03T02:45:00.000Z"],
+    ["2027-06-01T12:00:00Z", "2027-06-06T02:45:00.000Z"],
   ]) {
     const instant = new Date(now);
     assert.equal(schedule.nextHellcatContest(instant).toISOString(), expected);
@@ -396,15 +396,15 @@ test("KOTH server HTML keeps NZST while browsers use their own zone and the even
   const render = require("react-dom/server").renderToStaticMarkup;
   const serverView = load("src/components/HellcatSchedule.tsx", { "@/lib/hellcat-schedule": schedule });
   const serverHtml = render(React.createElement(serverView.HellcatSchedule));
-  assert.match(serverHtml, /Saturdays at 2:45 PM NZST/);
+  assert.match(serverHtml, /Sundays at 2:45 PM NZST/);
   assert.doesNotMatch(serverHtml, /Next in your time|<time\b/);
 
   for (const [now, zone, expected] of [
-    ["2026-09-29T07:21:00Z", "America/Los_Angeles", /Friday.*Oct 2.*7:45.*PM PDT/],
-    ["2026-10-31T02:46:00Z", "America/Los_Angeles", /Friday.*Nov 6.*6:45.*PM PST/],
-    ["2027-03-13T02:46:00Z", "America/Los_Angeles", /Friday.*Mar 19.*7:45.*PM PDT/],
-    ["2026-09-29T07:21:00Z", "Asia/Kolkata", /Saturday.*Oct 3.*8:15.*AM GMT\+5:30/],
-    ["2026-09-29T07:21:00Z", "Pacific/Auckland", /Saturday.*Oct 3.*3:45.*PM GMT\+13/],
+    ["2026-09-29T07:21:00Z", "America/Los_Angeles", /Saturday.*Oct 3.*7:45.*PM PDT/],
+    ["2026-11-01T02:46:00Z", "America/Los_Angeles", /Saturday.*Nov 7.*6:45.*PM PST/],
+    ["2027-03-14T02:46:00Z", "America/Los_Angeles", /Saturday.*Mar 20.*7:45.*PM PDT/],
+    ["2026-09-29T07:21:00Z", "Asia/Kolkata", /Sunday.*Oct 4.*8:15.*AM GMT\+5:30/],
+    ["2026-09-29T07:21:00Z", "Pacific/Auckland", /Sunday.*Oct 4.*3:45.*PM GMT\+13/],
   ]) {
     const view = load("src/components/HellcatSchedule.tsx", {
       "@/lib/hellcat-schedule": schedule,
@@ -427,7 +427,7 @@ test("KOTH server HTML keeps NZST while browsers use their own zone and the even
 test("an open KOTH page advances to the next week locally and clears its minute timer on unmount", () => {
   const React = require("react");
   const render = require("react-dom/server").renderToStaticMarkup;
-  let clock = Date.parse("2026-10-03T02:44:30Z"), state = clock, effect, tick, cleared;
+  let clock = Date.parse("2026-10-04T02:44:30Z"), state = clock, effect, tick, cleared;
   const view = load("src/components/HellcatSchedule.tsx", {
     "@/lib/hellcat-schedule": schedule,
     react: {
@@ -442,11 +442,11 @@ test("an open KOTH page advances to the next week locally and clears its minute 
       clearInterval: (id) => { cleared = id; },
     },
   });
-  assert.match(render(React.createElement(view.HellcatSchedule)), /dateTime="2026-10-03T02:45:00\.000Z"/);
+  assert.match(render(React.createElement(view.HellcatSchedule)), /dateTime="2026-10-04T02:45:00\.000Z"/);
   const cleanup = effect();
   clock += 60_000;
   tick();
-  assert.match(render(React.createElement(view.HellcatSchedule)), /dateTime="2026-10-10T02:45:00\.000Z"/);
+  assert.match(render(React.createElement(view.HellcatSchedule)), /dateTime="2026-10-11T02:45:00\.000Z"/);
   cleanup();
   assert.equal(cleared, 17);
 });

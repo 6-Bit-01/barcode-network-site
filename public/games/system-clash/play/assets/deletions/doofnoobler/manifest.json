@@ -4467,6 +4467,729 @@
         "stylePostureSourceSha256": "a8995f0dd42e5812d14852b0c839054439f30bc8d184c347e2d1b8ba881f5c73",
         "operation": "Exact source rectangle divided at measured transparent panel gaps; symmetric transparent padding; no resizing, mirroring, redraw, retouch or anatomy warp"
       }
+    },
+    "hug-happy": {
+      "file": "hug-happy-v1.webp",
+      "frames": {
+        "right": [
+          {
+            "anchor": [
+              109.841,
+              221.76
+            ],
+            "opaqueBounds": [
+              2,
+              3,
+              188,
+              222
+            ],
+            "attachments": {
+              "head": [
+                80.159,
+                63.706
+              ],
+              "torso": [
+                85.724,
+                136.147
+              ],
+              "legs": [
+                109.841,
+                177.856
+              ],
+              "grip": [
+                152.509,
+                92.243
+              ]
+            },
+            "canonicalPixelSha256": "386fa5912bc7dec8fc2477f1a4f4d1d0b2da0109c1b30ea5e3e462af06cb6e06",
+            "poseSource": {
+              "kind": "reused-native",
+              "sourceFile": "base-grabbed-thrown-v1.png",
+              "cell": 0,
+              "sourceRect": [
+                54,
+                14,
+                254,
+                300
+              ],
+              "sourceSha256": "a0fdfd7e5350d4940bcfe124676a754c38d15f35b56295ebb6c74f33fee5c851",
+              "uniformResample": 0.7482993197278912
+            },
+            "rect": [
+              0,
+              0,
+              190,
+              224
+            ],
+            "pixelSha256": "82158269e9da8d5c96d3feda6d8c1bb9d64499695104eed2a798aea923791e58"
+          },
+          {
+            "anchor": [
+              90.008,
+              211.846
+            ],
+            "opaqueBounds": [
+              2,
+              3,
+              165,
+              212
+            ],
+            "attachments": {
+              "head": [
+                83.5,
+                62.965
+              ],
+              "torso": [
+                86.754,
+                127.969
+              ],
+              "legs": [
+                90.008,
+                172.004
+              ],
+              "grip": [
+                145.326,
+                58.771
+              ]
+            },
+            "canonicalPixelSha256": "18b798a5f4bc69c1fd441e636758199bd271c7c5c2184e4133b08cb2857bbee9",
+            "poseSource": {
+              "kind": "reused-native",
+              "sourceFile": "base-crouch-block-v1.png",
+              "cell": 9,
+              "sourceRect": [
+                361,
+                629,
+                233,
+                298
+              ],
+              "sourceSha256": "b9190f40190a37323d88bfdb1e759a97f29a4fc24f10a5632f8675d4c96cb360",
+              "uniformResample": 0.7166123778501629
+            },
+            "rect": [
+              195,
+              0,
+              167,
+              214
+            ],
+            "pixelSha256": "fd43ba5037ba00b6649cd757feb1794b15f4239b5d297ea55fdb14e0509a5b45"
+          },
+          {
+            "anchor": [
+              40.0,
+              222
+            ],
+            "opaqueBounds": [
+              2,
+              3,
+              190,
+              222
+            ],
+            "attachments": {
+              "head": [
+                105.095541,
+                62.590234
+              ],
+              "torso": [
+                96.220807,
+                136.857749
+              ],
+              "legs": [
+                93.88535,
+                181.698514
+              ],
+              "grip": [
+                166.751592,
+                90.615711
+              ]
+            },
+            "canonicalPixelSha256": "70563a6a37116e1185512f76a07d7b656c81eea3216959834564cfb0411e5ec8",
+            "poseSource": {
+              "kind": "generated",
+              "sourceFile": "attacker-four-happy-opposed-source.png",
+              "cell": 0,
+              "sourceRect": [
+                142,
+                57,
+                410,
+                479
+              ],
+              "sourceSha256": "5dd7b983728dde18fcfa74069321b909c64bb9d3641f192caf6093771d74178b",
+              "uniformResample": 0.46709129511677283,
+              "anatomyCalibration": {
+                "reference": "same-facing idle0 and existing contact2 native skull/chest width",
+                "review": "attacker-four-native-width-proposal-v1.jpg",
+                "reviewSha256": "ad12d5c84068c2b64cb86934e043603859549a9fa1810214dcac1009b52c7aab",
+                "visibleBlueSkullWidths": {
+                  "right": [
+                    109,
+                    106.497
+                  ],
+                  "left": [
+                    110,
+                    106.03
+                  ]
+                }
+              }
+            },
+            "bodyCalibration": 1,
+            "rect": [
+              390,
+              0,
+              192,
+              224
+            ],
+            "pixelSha256": "70563a6a37116e1185512f76a07d7b656c81eea3216959834564cfb0411e5ec8"
+          },
+          {
+            "anchor": [
+              40.0,
+              222
+            ],
+            "opaqueBounds": [
+              2,
+              3,
+              190,
+              222
+            ],
+            "attachments": {
+              "head": [
+                105.095541,
+                62.590234
+              ],
+              "torso": [
+                96.220807,
+                136.857749
+              ],
+              "legs": [
+                93.88535,
+                181.698514
+              ],
+              "grip": [
+                166.751592,
+                90.615711
+              ]
+            },
+            "canonicalPixelSha256": "70563a6a37116e1185512f76a07d7b656c81eea3216959834564cfb0411e5ec8",
+            "poseSource": {
+              "kind": "generated",
+              "sourceFile": "attacker-four-happy-opposed-source.png",
+              "cell": 0,
+              "sourceRect": [
+                142,
+                57,
+                410,
+                479
+              ],
+              "sourceSha256": "5dd7b983728dde18fcfa74069321b909c64bb9d3641f192caf6093771d74178b",
+              "uniformResample": 0.46709129511677283,
+              "anatomyCalibration": {
+                "reference": "same-facing idle0 and existing contact2 native skull/chest width",
+                "review": "attacker-four-native-width-proposal-v1.jpg",
+                "reviewSha256": "ad12d5c84068c2b64cb86934e043603859549a9fa1810214dcac1009b52c7aab",
+                "visibleBlueSkullWidths": {
+                  "right": [
+                    109,
+                    106.497
+                  ],
+                  "left": [
+                    110,
+                    106.03
+                  ]
+                }
+              }
+            },
+            "bodyCalibration": 1,
+            "rect": [
+              585,
+              0,
+              192,
+              224
+            ],
+            "pixelSha256": "70563a6a37116e1185512f76a07d7b656c81eea3216959834564cfb0411e5ec8"
+          },
+          {
+            "anchor": [
+              78.5,
+              223.755
+            ],
+            "opaqueBounds": [
+              2,
+              2,
+              155,
+              224
+            ],
+            "attachments": {
+              "head": [
+                86.126,
+                64.268
+              ],
+              "torso": [
+                78.5,
+                135.151
+              ],
+              "legs": [
+                78.5,
+                181.668
+              ],
+              "grip": [
+                134.93,
+                155.087
+              ]
+            },
+            "canonicalPixelSha256": "a439a17f246257ef2af3b604c1b4996c3e9b2869c573bb5b6257eb9c27d9df43",
+            "poseSource": {
+              "kind": "reused-native",
+              "sourceFile": "base-grabbed-thrown-v1.png",
+              "cell": 3,
+              "sourceRect": [
+                1011,
+                12,
+                210,
+                302
+              ],
+              "sourceSha256": "a0fdfd7e5350d4940bcfe124676a754c38d15f35b56295ebb6c74f33fee5c851",
+              "uniformResample": 0.7482993197278912
+            },
+            "rect": [
+              780,
+              0,
+              157,
+              226
+            ],
+            "pixelSha256": "91a186f24e6245258a848589c73ef55f55c00d86ba69d2d2bea2d650fc6ebf9e"
+          },
+          {
+            "anchor": [
+              74.394,
+              220.777
+            ],
+            "opaqueBounds": [
+              3,
+              2,
+              156,
+              221
+            ],
+            "attachments": {
+              "head": [
+                75.929,
+                63.418
+              ],
+              "torso": [
+                71.323,
+                135.541
+              ],
+              "legs": [
+                74.394,
+                179.252
+              ],
+              "grip": [
+                138.884,
+                118.057
+              ]
+            },
+            "canonicalPixelSha256": "b5d673579b4a82fd1ae256145cd8663e7e160b69e8e769e15493a2aee0d70a1a",
+            "poseSource": {
+              "kind": "reused-native",
+              "sourceFile": "base-idle-walk-v1.png",
+              "cell": 3,
+              "sourceRect": [
+                992,
+                0,
+                213,
+                301
+              ],
+              "sourceSha256": "789c51780b8f089c00a5fa5ff205f1e61acb75b4e9396e542aefabafb1178dd3",
+              "uniformResample": 0.7407407407407407
+            },
+            "rect": [
+              975,
+              0,
+              158,
+              223
+            ],
+            "pixelSha256": "41d331e0cbcfce17a90951809216da3350bef4c9ca7446dc29daae7e45443451"
+          }
+        ],
+        "left": [
+          {
+            "anchor": [
+              80.724,
+              224.752
+            ],
+            "opaqueBounds": [
+              2,
+              2,
+              185,
+              225
+            ],
+            "attachments": {
+              "head": [
+                106.276,
+                64.549
+              ],
+              "torso": [
+                102.626,
+                137.976
+              ],
+              "legs": [
+                80.724,
+                182.477
+              ],
+              "grip": [
+                42.397,
+                100.15
+              ]
+            },
+            "canonicalPixelSha256": "a2439c0f81288ff963c88f1d840a90040d7bb36228618050d0e2dc68e36fbbf5",
+            "poseSource": {
+              "kind": "reused-native",
+              "sourceFile": "base-grabbed-thrown-v1.png",
+              "cell": 4,
+              "sourceRect": [
+                35,
+                319,
+                250,
+                303
+              ],
+              "sourceSha256": "a0fdfd7e5350d4940bcfe124676a754c38d15f35b56295ebb6c74f33fee5c851",
+              "uniformResample": 0.7482993197278912
+            },
+            "rect": [
+              0,
+              227,
+              187,
+              227
+            ],
+            "pixelSha256": "9ede3ecde206a6edbbad780eda227d80fababe337a495c4cfa0b118172042ae3"
+          },
+          {
+            "anchor": [
+              78.326,
+              213.854
+            ],
+            "opaqueBounds": [
+              2,
+              3,
+              161,
+              214
+            ],
+            "attachments": {
+              "head": [
+                81.5,
+                63.541
+              ],
+              "torso": [
+                83.087,
+                129.171
+              ],
+              "legs": [
+                78.326,
+                173.63
+              ],
+              "grip": [
+                27.545,
+                50.839
+              ]
+            },
+            "canonicalPixelSha256": "1319b4e738e7743631fcea1a89b77d958690e4ee1658e1f619d5cc0d714ba568",
+            "poseSource": {
+              "kind": "reused-native",
+              "sourceFile": "base-crouch-block-v1.png",
+              "cell": 13,
+              "sourceRect": [
+                368,
+                930,
+                227,
+                302
+              ],
+              "sourceSha256": "b9190f40190a37323d88bfdb1e759a97f29a4fc24f10a5632f8675d4c96cb360",
+              "uniformResample": 0.7166123778501629
+            },
+            "rect": [
+              195,
+              227,
+              163,
+              216
+            ],
+            "pixelSha256": "638f2eb1ae2f1c73a5201660b762e063fb41eb63bf4122ad61d0417f0f8e1a2f"
+          },
+          {
+            "anchor": [
+              150.5,
+              222
+            ],
+            "opaqueBounds": [
+              2,
+              3,
+              189,
+              222
+            ],
+            "attachments": {
+              "head": [
+                85.477707,
+                62.590234
+              ],
+              "torso": [
+                94.352442,
+                136.857749
+              ],
+              "legs": [
+                96.687898,
+                181.698514
+              ],
+              "grip": [
+                23.821656,
+                90.615711
+              ]
+            },
+            "canonicalPixelSha256": "8959890127e76c50060b904c31e20bf1d8639ede93405c0f6c0d4b3faa4d0b48",
+            "poseSource": {
+              "kind": "generated",
+              "sourceFile": "attacker-four-happy-opposed-source.png",
+              "cell": 1,
+              "sourceRect": [
+                687,
+                57,
+                408,
+                479
+              ],
+              "sourceSha256": "5dd7b983728dde18fcfa74069321b909c64bb9d3641f192caf6093771d74178b",
+              "uniformResample": 0.46709129511677283,
+              "anatomyCalibration": {
+                "reference": "same-facing idle0 and existing contact2 native skull/chest width",
+                "review": "attacker-four-native-width-proposal-v1.jpg",
+                "reviewSha256": "ad12d5c84068c2b64cb86934e043603859549a9fa1810214dcac1009b52c7aab",
+                "visibleBlueSkullWidths": {
+                  "right": [
+                    109,
+                    106.497
+                  ],
+                  "left": [
+                    110,
+                    106.03
+                  ]
+                }
+              }
+            },
+            "bodyCalibration": 1,
+            "rect": [
+              390,
+              227,
+              191,
+              224
+            ],
+            "pixelSha256": "8959890127e76c50060b904c31e20bf1d8639ede93405c0f6c0d4b3faa4d0b48"
+          },
+          {
+            "anchor": [
+              150.5,
+              222
+            ],
+            "opaqueBounds": [
+              2,
+              3,
+              189,
+              222
+            ],
+            "attachments": {
+              "head": [
+                85.477707,
+                62.590234
+              ],
+              "torso": [
+                94.352442,
+                136.857749
+              ],
+              "legs": [
+                96.687898,
+                181.698514
+              ],
+              "grip": [
+                23.821656,
+                90.615711
+              ]
+            },
+            "canonicalPixelSha256": "8959890127e76c50060b904c31e20bf1d8639ede93405c0f6c0d4b3faa4d0b48",
+            "poseSource": {
+              "kind": "generated",
+              "sourceFile": "attacker-four-happy-opposed-source.png",
+              "cell": 1,
+              "sourceRect": [
+                687,
+                57,
+                408,
+                479
+              ],
+              "sourceSha256": "5dd7b983728dde18fcfa74069321b909c64bb9d3641f192caf6093771d74178b",
+              "uniformResample": 0.46709129511677283,
+              "anatomyCalibration": {
+                "reference": "same-facing idle0 and existing contact2 native skull/chest width",
+                "review": "attacker-four-native-width-proposal-v1.jpg",
+                "reviewSha256": "ad12d5c84068c2b64cb86934e043603859549a9fa1810214dcac1009b52c7aab",
+                "visibleBlueSkullWidths": {
+                  "right": [
+                    109,
+                    106.497
+                  ],
+                  "left": [
+                    110,
+                    106.03
+                  ]
+                }
+              }
+            },
+            "bodyCalibration": 1,
+            "rect": [
+              585,
+              227,
+              191,
+              224
+            ],
+            "pixelSha256": "8959890127e76c50060b904c31e20bf1d8639ede93405c0f6c0d4b3faa4d0b48"
+          },
+          {
+            "anchor": [
+              84.5,
+              224.752
+            ],
+            "opaqueBounds": [
+              2,
+              3,
+              166,
+              225
+            ],
+            "attachments": {
+              "head": [
+                74.629,
+                64.549
+              ],
+              "torso": [
+                82.855,
+                135.75
+              ],
+              "legs": [
+                84.5,
+                182.477
+              ],
+              "grip": [
+                21.985,
+                155.776
+              ]
+            },
+            "canonicalPixelSha256": "69491b42a5c9cb45326051f883846c2da92c9f6586724f2edbe4e171d2084b96",
+            "poseSource": {
+              "kind": "reused-native",
+              "sourceFile": "base-grabbed-thrown-v1.png",
+              "cell": 7,
+              "sourceRect": [
+                994,
+                320,
+                226,
+                303
+              ],
+              "sourceSha256": "a0fdfd7e5350d4940bcfe124676a754c38d15f35b56295ebb6c74f33fee5c851",
+              "uniformResample": 0.7482993197278912
+            },
+            "rect": [
+              780,
+              227,
+              169,
+              227
+            ],
+            "pixelSha256": "1616587bfda4f37a6a31fdfe5766f2b8ca12f9cb0064cbc4477117805b8077ce"
+          },
+          {
+            "anchor": [
+              82.591,
+              223.777
+            ],
+            "opaqueBounds": [
+              2,
+              2,
+              157,
+              224
+            ],
+            "attachments": {
+              "head": [
+                82.591,
+                64.258
+              ],
+              "torso": [
+                85.682,
+                137.371
+              ],
+              "legs": [
+                82.591,
+                181.682
+              ],
+              "grip": [
+                17.683,
+                119.647
+              ]
+            },
+            "canonicalPixelSha256": "eb86f8f203df1d87772eaba8cbb30257fb7f1514b4b204c4bef9c3aa91072733",
+            "poseSource": {
+              "kind": "reused-native",
+              "sourceFile": "base-idle-walk-v1.png",
+              "cell": 7,
+              "sourceRect": [
+                984,
+                310,
+                214,
+                305
+              ],
+              "sourceSha256": "789c51780b8f089c00a5fa5ff205f1e61acb75b4e9396e542aefabafb1178dd3",
+              "uniformResample": 0.7407407407407407
+            },
+            "rect": [
+              975,
+              227,
+              159,
+              226
+            ],
+            "pixelSha256": "799b9bb76b9dbf6fc10ae7079929e46cede5ae0cec323b7dfc247c1dc03d24cf"
+          }
+        ]
+      },
+      "order": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "frameMs": [
+        160,
+        140,
+        220,
+        220,
+        180,
+        180
+      ],
+      "label": "Happy closed-eye hug",
+      "loop": false,
+      "sourceSize": [
+        1170,
+        454
+      ],
+      "sourceSha256": "d0cbd960378e4d90a766c27877cc576b2a47c3afe3f1f86926f1b93e3c64cf75",
+      "sourceRevision": "d0cbd960378e4d90",
+      "generatedSourceSha256": "789c51780b8f089c00a5fa5ff205f1e61acb75b4e9396e542aefabafb1178dd3",
+      "canonicalSourceSha256": "8d77ed9ccdd7856b45021758afa039a22e21442d498cf5750bdf4d0e8966f9fa",
+      "contactMs": 300,
+      "description": "Whole approved contact key(s) replace only contact slots; existing preparation/pull-apart/release sources unchanged.",
+      "activeEndMs": 520,
+      "attackerContactSource": {
+        "originalFile": "attacker-four-happy-opposed-approved-v1.png",
+        "originalSha256": "5dd7b983728dde18fcfa74069321b909c64bb9d3641f192caf6093771d74178b",
+        "originalSize": [
+          1237,
+          1271
+        ],
+        "operation": "Uneven measured whole-pose regions; one uniform resample per body; lossless exactRGBA encoding; old entire key pixels and local anchors retained; no articulation/mirroring/retouch"
+      }
     }
   }
 }

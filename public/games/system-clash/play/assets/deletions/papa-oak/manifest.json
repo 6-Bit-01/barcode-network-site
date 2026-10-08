@@ -2186,7 +2186,7 @@
       "activeEndMs": 800
     },
     "rip": {
-      "file": "rip.webp",
+      "file": "rip-opposed-v1.webp",
       "frames": {
         "right": [
           {
@@ -2293,54 +2293,161 @@
           },
           {
             "anchor": [
-              85.81,
-              387.488
+              43.5,
+              388
             ],
             "opaqueBounds": [
+              2,
               3,
-              3,
-              374,
-              387
+              333,
+              388
             ],
             "attachments": {
               "head": [
-                232.897,
-                76.467
+                182.398801,
+                51.949025
               ],
               "torso": [
-                192.2,
-                203.18
+                157.578711,
+                170.854573
               ],
               "legs": [
-                188.5,
-                333.731
+                217.608696,
+                244.16042
               ],
               "grip": [
-                340.19,
-                130.224
+                302.458771,
+                128.718141
+              ],
+              "gripSecondary": [
+                278.215892,
+                148.92054
               ]
             },
-            "canonicalPixelSha256": "031340c509564fc31be38fb80b46c053b645997be8692453330fed17def33eaf",
+            "canonicalPixelSha256": "e2e8ef301c9ca642ccce431e4f1c2a142fc36723fd1d286f4cc39f7bcf7cecf5",
             "poseSource": {
               "kind": "generated",
-              "sourceFile": "rip-source.png",
+              "sourceFile": "attacker-four-happy-opposed-source.png",
               "cell": 2,
               "sourceRect": [
-                769,
-                4,
-                322,
-                334
+                21,
+                555,
+                580,
+                675
               ],
-              "sourceSha256": "4693f38362472630c06167e7ab338f2c08089ceba96a044f0df25234837ec6a2",
-              "uniformResample": 1.1702127659574468
+              "sourceSha256": "5dd7b983728dde18fcfa74069321b909c64bb9d3641f192caf6093771d74178b",
+              "uniformResample": 0.5772113943028486,
+              "anatomyCalibration": {
+                "reference": "same-facing idle0 and existing contact2 native skull/chest width",
+                "review": "attacker-four-native-width-proposal-v1.jpg",
+                "reviewSha256": "ad12d5c84068c2b64cb86934e043603859549a9fa1810214dcac1009b52c7aab",
+                "visibleBlueSkullWidths": null
+              }
             },
+            "bodyCalibration": 1,
+            "frontOcclusion": [
+              [
+                127.563718,
+                128.718141
+              ],
+              [
+                147.766117,
+                122.368816
+              ],
+              [
+                173.74063,
+                126.986507
+              ],
+              [
+                196.251874,
+                136.7991
+              ],
+              [
+                229.152924,
+                144.302849
+              ],
+              [
+                245.892054,
+                106.784108
+              ],
+              [
+                260.322339,
+                103.32084
+              ],
+              [
+                274.752624,
+                109.670165
+              ],
+              [
+                270.712144,
+                125.832084
+              ],
+              [
+                279.947526,
+                132.181409
+              ],
+              [
+                299.572714,
+                137.953523
+              ],
+              [
+                308.808096,
+                147.766117
+              ],
+              [
+                308.808096,
+                169.122939
+              ],
+              [
+                297.263868,
+                178.935532
+              ],
+              [
+                275.329835,
+                186.43928
+              ],
+              [
+                253.395802,
+                184.130435
+              ],
+              [
+                229.730135,
+                173.74063
+              ],
+              [
+                193.365817,
+                179.512744
+              ],
+              [
+                168.545727,
+                175.472264
+              ],
+              [
+                145.457271,
+                162.773613
+              ],
+              [
+                132.181409,
+                149.497751
+              ]
+            ],
             "rect": [
               862,
               0,
-              377,
-              391
+              335,
+              390
             ],
-            "pixelSha256": "0e2b74acad8904a8645fb5e0c221ecd03517f98c19b70616ea579b0425d68486"
+            "pixelSha256": "e2e8ef301c9ca642ccce431e4f1c2a142fc36723fd1d286f4cc39f7bcf7cecf5",
+            "ripGripContacts": [
+              [
+                302.458771,
+                128.718141
+              ],
+              [
+                278.215892,
+                148.92054
+              ]
+            ]
           },
           {
             "anchor": [
@@ -2601,54 +2708,161 @@
           },
           {
             "anchor": [
-              229.028,
-              369.492
+              284.65,
+              386
             ],
             "opaqueBounds": [
-              4,
-              3,
-              380,
-              370
+              2,
+              2,
+              331,
+              386
             ],
             "attachments": {
               "head": [
-                146.763,
-                73.045
+                151.229385,
+                51.371814
               ],
               "torso": [
-                188.23,
-                193.82
+                176.049475,
+                170.277361
               ],
               "legs": [
-                192.0,
-                318.254
+                116.01949,
+                243.583208
               ],
               "grip": [
-                37.44,
-                124.283
+                31.169415,
+                128.14093
+              ],
+              "gripSecondary": [
+                55.412294,
+                148.343328
               ]
             },
-            "canonicalPixelSha256": "1f5a2638ee71ebb0c163980556f4c13e0f513b70ddbeaee538205b12bff6d705",
+            "canonicalPixelSha256": "cac0819ed43d9b18076cfef41e5acc450c863ab51772eceab83da52028fe2f85",
             "poseSource": {
               "kind": "generated",
-              "sourceFile": "rip-source.png",
-              "cell": 8,
+              "sourceFile": "attacker-four-happy-opposed-source.png",
+              "cell": 3,
               "sourceRect": [
-                753,
-                673,
-                328,
-                319
+                638,
+                556,
+                579,
+                674
               ],
-              "sourceSha256": "4693f38362472630c06167e7ab338f2c08089ceba96a044f0df25234837ec6a2",
-              "uniformResample": 1.1702127659574468
+              "sourceSha256": "5dd7b983728dde18fcfa74069321b909c64bb9d3641f192caf6093771d74178b",
+              "uniformResample": 0.5772113943028486,
+              "anatomyCalibration": {
+                "reference": "same-facing idle0 and existing contact2 native skull/chest width",
+                "review": "attacker-four-native-width-proposal-v1.jpg",
+                "reviewSha256": "ad12d5c84068c2b64cb86934e043603859549a9fa1810214dcac1009b52c7aab",
+                "visibleBlueSkullWidths": null
+              }
             },
+            "bodyCalibration": 1,
+            "frontOcclusion": [
+              [
+                206.064468,
+                128.718141
+              ],
+              [
+                185.862069,
+                122.368816
+              ],
+              [
+                159.887556,
+                126.986507
+              ],
+              [
+                137.953523,
+                136.7991
+              ],
+              [
+                104.475262,
+                143.725637
+              ],
+              [
+                87.736132,
+                106.784108
+              ],
+              [
+                73.305847,
+                103.32084
+              ],
+              [
+                58.875562,
+                109.670165
+              ],
+              [
+                62.916042,
+                125.832084
+              ],
+              [
+                53.68066,
+                132.181409
+              ],
+              [
+                34.055472,
+                137.953523
+              ],
+              [
+                24.82009,
+                147.766117
+              ],
+              [
+                24.82009,
+                169.122939
+              ],
+              [
+                36.364318,
+                178.935532
+              ],
+              [
+                58.298351,
+                186.43928
+              ],
+              [
+                80.232384,
+                184.130435
+              ],
+              [
+                103.898051,
+                173.74063
+              ],
+              [
+                140.262369,
+                179.512744
+              ],
+              [
+                165.082459,
+                175.472264
+              ],
+              [
+                188.170915,
+                162.773613
+              ],
+              [
+                201.446777,
+                149.497751
+              ]
+            ],
             "rect": [
               862,
               392,
-              384,
-              373
+              334,
+              389
             ],
-            "pixelSha256": "444d89c755ceed175f91cb9ae0fd905323394c4379bd7b19d874a214502bbf2d"
+            "pixelSha256": "cac0819ed43d9b18076cfef41e5acc450c863ab51772eceab83da52028fe2f85",
+            "ripGripContacts": [
+              [
+                31.169415,
+                128.14093
+              ],
+              [
+                55.412294,
+                148.343328
+              ]
+            ]
           },
           {
             "anchor": [
@@ -2821,18 +3035,28 @@
         220,
         200
       ],
-      "label": "rip",
+      "label": "Opposed native bark grip then existing tear",
       "loop": false,
       "sourceSize": [
         2586,
         784
       ],
-      "sourceSha256": "cb907934f502329fba35602a8c8230cd916e7404434159dbda63aad72c3e3053",
-      "sourceRevision": "cb907934f502329f",
+      "sourceSha256": "bec828586f0d47226ef937689e51ee29fe449ac200d97eef9e5c846d5752500b",
+      "sourceRevision": "bec828586f0d4722",
       "generatedSourceSha256": "4693f38362472630c06167e7ab338f2c08089ceba96a044f0df25234837ec6a2",
       "canonicalSourceSha256": "8257f04c4be16f0568e6c059f511fd6a1ad0ad35d193ca89a660fd25f7facd93",
       "contactMs": 300,
-      "activeEndMs": 640
+      "activeEndMs": 640,
+      "description": "Whole approved contact key(s) replace only contact slots; existing preparation/pull-apart/release sources unchanged.",
+      "attackerContactSource": {
+        "originalFile": "attacker-four-happy-opposed-approved-v1.png",
+        "originalSha256": "5dd7b983728dde18fcfa74069321b909c64bb9d3641f192caf6093771d74178b",
+        "originalSize": [
+          1237,
+          1271
+        ],
+        "operation": "Uneven measured whole-pose regions; one uniform resample per body; lossless exactRGBA encoding; old entire key pixels and local anchors retained; no articulation/mirroring/retouch"
+      }
     },
     "rip-front": {
       "file": "victim-front-lift-airborne-sheet-v1.webp",

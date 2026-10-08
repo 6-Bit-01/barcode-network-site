@@ -680,8 +680,8 @@ function wandNativeTorsoEnvelope(art,clips,facing) {
   return {min,max,footDrop};
 }
 
-function machineViews(match,prop,views,art) {
-  const registered=registerNewDeletionViews(match,views,art,poseWorldPoint,prop);if(registered)return registered;
+function machineViews(match,prop,views,art,nativeMask) {
+  const registered=registerNewDeletionViews(match,views,art,poseWorldPoint,prop,nativeMask);if(registered)return registered;
   const definition=definitionForMatch(match),bank=prop?.additional?.[definition?.id];
   if(definition?.mechanism==='crt'&&views[1-match.winner]?.deletionFlight) {
     const result=views.map(view=>({...view})),index=1-match.winner,victim=result[index],flight=victim.deletionFlight;
@@ -1835,7 +1835,7 @@ export function createFightRenderer(canvas) {
           native:f?._clips?.[view?.clip]?.combatPoses,attackKey,
           airborne:Boolean(view?.airborne||(action==='thrown'&&f?._launched&&(view?.y??0)<0))});
       };
-      if(deletionActive(match)){views=deletionAftermathViews(match,views,art);views=machineViews(match,scene.deletionProp,views,art);}
+      if(deletionActive(match)){views=deletionAftermathViews(match,views,art);views=machineViews(match,scene.deletionProp,views,art,overlays.alphaMask);}
       ctx.clearRect(0, 0, WIDTH, HEIGHT);
       ctx.fillStyle='#10151d';ctx.fillRect(0,0,WIDTH,HEIGHT);
       ctx.save();
@@ -1919,7 +1919,7 @@ export function createFightRenderer(canvas) {
       if(!event.contact||!deletionActive(match))return event;
       const snapshot={...match,deletionElapsed:event.at??match.deletionElapsed,phase:'deletion'};
       const native=views.map((view,index)=>({...view,...(index===event.target?event.contactView:index===event.attacker?event.sourceView:null)}));
-      const aligned=machineViews(snapshot,deletionProp,native,art),g=machineGeometry(snapshot,deletionProp);
+      const aligned=machineViews(snapshot,deletionProp,native,art,overlays.alphaMask),g=machineGeometry(snapshot,deletionProp);
       let point=poseWorldPoint(aligned[event.contact.fighterIndex],art[event.contact.fighterIndex],event.contact.site);
       const location=event.cue==='nail-strike'?g?.frame.spikeHole:event.cue==='chute-stamp'?g?.frame.lidPoint:event.cue==='drive-blade-cut'?g?.frame.slotPoint:null;
       if(location)point={x:g.x+location[0]*g.scale,y:g.y+location[1]*g.scale};

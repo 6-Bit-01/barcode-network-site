@@ -23,7 +23,15 @@ function splitPieces(match,hero,victim,art,point,definition){
   return {clip:view.clip,elapsed:view.elapsed,facing:view.facing,halfMask,cutX,rotation,rotationPivotPoint:{x:cutX,y:cutY},fleshCut:{x:cutX,y:cutY,top:Math.max(bounds[1],cutY-(bounds[3]-bounds[1])*.40),bottom:Math.min(bounds[3],cutY+(bounds[3]-bounds[1])*.40)},x:view.x+cutWorldX-cut.x,y:cutWorldY-cut.y};
  });
 }
-export function registerNewDeletionViews(match,views,art,point,prop){
+// The procedural combat torso can extend beyond a bowed native silhouette.
+// At the frozen torso height, measure the real opaque side from the shared mask.
+export function nativeTorsoContactEdge(frame,pose,mask,direction,scale){
+ const torso=frame.attachments?.torso,region=pose?.hurt?.find(r=>r.site==='torso');if(!torso||!region||!mask?.alpha)return null;
+ const offset=frame.offset??[0,0],left=Math.max(0,Math.ceil(region.left/scale-offset[0]+frame.anchor[0])),right=Math.min(mask.width-1,Math.floor(region.right/scale-offset[0]+frame.anchor[0])),row=Math.round(torso[1]);let edge=null;
+ for(let y=Math.max(0,row-2);y<=Math.min(mask.height-1,row+2);y++)for(let x=left;x<=right;x++)if(mask.alpha[y*mask.width+x]>=128)edge=edge===null?x:direction>0?Math.max(edge,x):Math.min(edge,x);
+ return edge===null?null:(edge-torso[0])*scale;
+}
+export function registerNewDeletionViews(match,views,art,point,prop,nativeMask){
  const definition=deletionDefinition(match.fighters[match.winner].id);if(!['hug','litter-box','rip'].includes(definition?.mechanism))return null;
  const result=views.map(view=>({...view})),hero=result[match.winner],victim=result[1-match.winner],b=definition.beats,t=match.deletionElapsed,o=match._deletionOrigin;
  if(definition.mechanism==='litter-box'){
@@ -43,11 +51,11 @@ export function registerNewDeletionViews(match,views,art,point,prop){
  }
  if(definition.mechanism==='hug'){
   const clip=art[match.winner]?.clips?.['delete-hug-happy']?'delete-hug-happy':'delete-hug',c=match.fighters[match.winner]._clips[clip]?.nativeContactMs??300,reference={...hero,x:o.near,clip,elapsed:c,facing:o.direction>0?'right':'left',y:0},grip=point(reference,art[match.winner],'grip'),standing={...victim,x:o.target,y:0,clip:'high',elapsed:210,facing:o.victimFacing},torso=point(standing,art[1-match.winner],'torso'),head=point(standing,art[1-match.winner],'head'),jump=easedProgress(t,b.hugWindup,b.hugContact),returning=1-easedProgress(t,b.release,b.landed);
-  hero.x+=(torso.x-grip.x)*jump;hero.y=returning===0?0:(torso.y+(head.y-torso.y)*.65-grip.y)*jump*returning;
+  hero.x+=(torso.x-grip.x)*jump;hero.y=returning===0?0:Math.min(0,torso.y+(head.y-torso.y)*.65-grip.y)*jump*returning;
   return result;
  }
  const c=match.fighters[match.winner]._clips['delete-rip']?.nativeContactMs??300,reference={...hero,clip:'delete-rip',elapsed:c,facing:o.direction>0?'right':'left',y:0},grip=point(reference,art[match.winner],'grip'),source=frozenRipSource(victim,art[1-match.winner],o);
- if(source){const torso=point({...source.view,x:o.target},art[1-match.winner],'torso'),pose=match.fighters[1-match.winner]._clips[source.view.clip]?.combatPoses?.frames?.[source.view.facing]?.[poseFrameIndex(source.asset,source.view)],region=pose?.hurt?.find(r=>r.site==='torso'),edge=region&&pose.sites?.torso?(o.direction>0?region.right:region.left)-pose.sites.torso.x:0;hero.x+=(torso.x+edge-grip.x)*easedProgress(t,b.gripWindup,b.gripContact);}
+ if(source){const torso=point({...source.view,x:o.target},art[1-match.winner],'torso'),pose=match.fighters[1-match.winner]._clips[source.view.clip]?.combatPoses?.frames?.[source.view.facing]?.[poseFrameIndex(source.asset,source.view)],region=pose?.hurt?.find(r=>r.site==='torso'),edge=nativeTorsoContactEdge(source.frame,pose,nativeMask?.(source.asset,source.frame),o.direction,poseScale(source.asset,source.frame))??(region&&pose.sites?.torso?(o.direction>0?region.right:region.left)-pose.sites.torso.x:0);hero.x+=(torso.x+edge-grip.x)*easedProgress(t,b.gripWindup,b.gripContact);}
  if(victim.splitBody){const pieces=splitPieces(match,hero,victim,art,point,definition);if(pieces)victim.splitPieces=pieces;}
  return result;
 }
@@ -61,7 +69,15 @@ export function litterBoxGeometry(match,prop,art){const definition=deletionDefin
  return {bank,frame,key,scale,x:centre-frame.anchor[0]*scale,y:FLOOR-frame.anchor[1]*scale,centre,rimY:FLOOR-(frame.anchor[1]-(frame.rimY??frame.rect[3]*.65))*scale,left:centre+(opening[0]-reference.anchor[0])*scale,right:centre+(opening[0]+opening[2]-reference.anchor[0])*scale,bottom:FLOOR+(opening[1]+opening[3]-reference.anchor[1])*scale,basinFloor:FLOOR+(plane-reference.anchor[1])*scale,outerLeft,outerRight,basin};
 }
 function nativeBox(ctx,g,front){const [sx,sy,w,h]=g.frame.rect;ctx.save();if(front){ctx.beginPath();ctx.rect(g.x-10,g.rimY,w*g.scale+20,FLOOR-g.rimY+12);ctx.clip();}ctx.drawImage(g.bank.images?.[g.frame.file]??g.bank.image,sx,sy,w,h,g.x,g.y,w*g.scale,h*g.scale);ctx.restore();}
+// Replay the same intact native key through its static near-forearm mask.
+// The full attacker remains behind the victim; no limb is moved or rescaled.
+export function drawNativeRipForearm(ctx,view,art){
+ const asset=art?.clips?.[view.clip],frame=asset?.data.frames?.[view.facing]?.[poseFrameIndex(asset,view)],mask=frame?.frontOcclusion;if(!mask?.length)return false;
+ const scale=poseScale(asset,frame),offset=frame.offset??[0,0],[sx,sy,w,h]=frame.rect;
+ ctx.save();ctx.translate(view.x,FLOOR+(view.y??0));ctx.scale(scale,scale);ctx.beginPath();for(const [i,[x,y]]of mask.entries())ctx[i?'lineTo':'moveTo'](x+offset[0]-frame.anchor[0],y+offset[1]-frame.anchor[1]);ctx.closePath();ctx.clip();ctx.drawImage(asset.image,sx,sy,w,h,offset[0]-frame.anchor[0],offset[1]-frame.anchor[1],w,h);ctx.restore();return true;
+}
 export function drawNewDeletionScene(ctx,match,prop,views,art,front,{reducedMotion=false}={}){const definition=deletionDefinition(match.fighters[match.winner].id);if(!definition)return;const t=match.deletionElapsed,b=definition.beats,o=match._deletionOrigin;
+ if(definition.mechanism==='rip'){if(front&&t>=b.gripContact&&t<b.rip)drawNativeRipForearm(ctx,views[match.winner],art[match.winner]);return;}
  if(definition.mechanism==='hug'){if(!front&&t>=b.hugContact&&t<b.release){ctx.save();ctx.strokeStyle='#e2bb7760';ctx.lineWidth=3;ctx.beginPath();ctx.ellipse(views[match.winner].x,FLOOR+(views[match.winner].y??0)-100,65,85,0,0,TAU);ctx.stroke();ctx.restore();}return;}
  if(definition.mechanism!=='litter-box'||t<b.boxReach)return;const g=litterBoxGeometry(match,prop,art);if(g)nativeBox(ctx,g,front);else {ctx.save();ctx.fillStyle=front?'#435d69':'#293c49';ctx.strokeStyle='#81a9b3';ctx.lineWidth=5;ctx.beginPath();ctx.ellipse(o.target,FLOOR-75,215,55,0,front?0:Math.PI,front?Math.PI:TAU);ctx.fill();ctx.stroke();ctx.restore();}
  if(front&&t>=b.kick&&t<b.buried){const p=clamp((t-b.kick)/(b.buried-b.kick),0,1),direction=o.direction,hero=views[match.winner],paw=match.fighters[match.winner]._clips['delete-litter-kick']?.contactStrikeOrigins?.[hero.facing],startX=hero.x+(paw?.x??direction*80),startY=FLOOR+(paw?.y??-40);ctx.save();ctx.fillStyle='#c4b18b';ctx.globalAlpha=.78;for(let i=0;i<22;i++){const travel=clamp((p-i*.012)*1.4,0,1),x=startX+(o.target-startX)*travel,y=startY+(FLOOR-70-startY)*travel-(reducedMotion?35:150)*Math.sin(Math.PI*travel)+(i%4)*6;ctx.fillRect(x,y,4+i%3,3+i%2);}ctx.restore();}

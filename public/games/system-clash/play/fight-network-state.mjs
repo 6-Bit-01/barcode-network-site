@@ -1,7 +1,8 @@
+import {fightStatScalars} from './fight-stats.mjs';
 import {ONLINE_STAGES,MAX_PACKET_BYTES,packetBytes,validInput,validPayload} from './online-protocol.mjs';
 const MATCH_KEYS=['mode','phase','phaseTime','roundRemaining','finishRemaining','winner','deletionElapsed','deletionName','deletionId','deletionTargetX','status','hitstop','combatTime','paused','finisherAvailable','stagePickups','projectiles','nextPickupAt','stage','_deletionOrigin'];
 const FIGHTER_KEYS=['id','name','x','facing','hp','maxHp','height','action','actionTime','weapon','damageTaken','damageTier','damageSites','damageMarks','embeddedWeapons','_deleted'];
-const FORBIDDEN=new Set(['__proto__','constructor','prototype','token','credentials','sdp','image','_clips','_style','metadata']);
+const FORBIDDEN=new Set(['__proto__','constructor','prototype','token','credentials','sdp','image','_clips','_style','_statProfile','_statScalars','metadata']);
 const PHASES=new Set(['ready','countdown','fight','finish','deletion','over']);
 const neutral=()=>({move:0,crouch:false,block:false});
 const finite=(value,min=0,max=10000000)=>Number.isFinite(value)&&value>=min&&value<=max;
@@ -41,7 +42,7 @@ export function readFightSnapshot(value,{roster=[],fighterIds,clipIds=[],matchId
   if(!Array.isArray(state.projectiles)||state.projectiles.length>8||!state.projectiles.every(validProjectile)||!Array.isArray(state.stagePickups)||state.stagePickups.length>4||!state.stagePickups.every(validFloorItem))return null;
   for(let index=0;index<2;index++){
    const f=state.fighters[index],view=views[index];
-   if(!object(f)||!ids.includes(f.id)||(fighterIds&&f.id!==fighterIds[index])||!['left','right'].includes(f.facing)||!finite(f.hp,0,100)||f.maxHp!==100||!finite(f.x,-2048,10240)||!finite(f.height,20,800)||!finite(f.actionTime)||typeof f.action!=='string'||!/^[a-z-]{1,50}$/.test(f.action))return null;
+   if(!object(f)||!ids.includes(f.id)||(fighterIds&&f.id!==fighterIds[index])||!['left','right'].includes(f.facing)||!finite(f.hp,0,f.maxHp)||f.maxHp!==fightStatScalars(f.id).maxHealth||!finite(f.x,-2048,10240)||!finite(f.height,20,800)||!finite(f.actionTime)||typeof f.action!=='string'||!/^[a-z-]{1,50}$/.test(f.action))return null;
    if(!object(view)||view.id!==f.id||!['left','right'].includes(view.facing)||!clipIds[index]?.includes(view.clip)||!finite(view.x,-2048,10240)||!finite(view.y,-4096,4096)||!finite(view.elapsed)||!finite(view.opacity,0,1))return null;
    if(view.poseIndex!==undefined&&(!Number.isInteger(view.poseIndex)||view.poseIndex<0||view.poseIndex>256))return null;
    if(!validWear(f)||!validWear(view))return null;
@@ -55,7 +56,7 @@ export function readFightSnapshot(value,{roster=[],fighterIds,clipIds=[],matchId
 export function makeFightSnapshot(match,views,options={}){
  try{const state=project(match,MATCH_KEYS);state.mode='local';state.fighters=match.fighters.map(f=>project(f,FIGHTER_KEYS));const snapshot={seq:options.seq,matchId:options.matchId,at:options.at,state,views};return readFightSnapshot(snapshot,options);}catch{return null;}
 }
-export function applyFightSnapshot(local,snapshot){return {...snapshot.state,fighters:snapshot.state.fighters.map((f,index)=>({...f,_clips:local?.fighters[index]?._clips,_style:local?.fighters[index]?._style})),events:[]};}
+export function applyFightSnapshot(local,snapshot){return {...snapshot.state,fighters:snapshot.state.fighters.map((f,index)=>({...f,_clips:local?.fighters[index]?._clips,_style:local?.fighters[index]?._style,_statProfile:local?.fighters[index]?._statProfile,_statScalars:local?.fighters[index]?._statScalars})),events:[]};}
 /** Pure seat ownership, cadence and freshness; the browser owns engine/render calls. */
 export function createOnlineCombatController({seat,matchId,roster,fighterIds,clipIds,send=()=>false,now=()=>performance.now(),onStart=()=>{},onPause=()=>{},onState=()=>{},onEvents=()=>{},onAction=()=>{},onDisconnect=()=>{}}){
  if(![0,1].includes(seat)||!Number.isSafeInteger(matchId)||matchId<1)throw new Error('Invalid combat seat.');

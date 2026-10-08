@@ -49,10 +49,10 @@ for(const facing of ['right','left'])test(`a moving opponent can enter the visib
   const match=matchFor(['6-bit','9-bit'],facing),dir=facing==='right'?1:-1;
   match.fighters[1].x=match.fighters[0].x+dir*240;
   performAction(match,0,'punch');consumeEvents(match);advance(match,180);
-  assert.equal(match.fighters[1].hp,100);
+  assert.equal(match.fighters[1].hp,match.fighters[1].maxHp);
   match.fighters[1].x=match.fighters[0].x+dir*150;
   advance(match,30);
-  assert(match.fighters[1].hp<100,'Contact pose is still extended and must catch an entering torso');
+  assert(match.fighters[1].hp<match.fighters[1].maxHp,'Contact pose is still extended and must catch an entering torso');
   const hp=match.fighters[1].hp;advance(match,200);
   assert.equal(match.fighters[1].hp,hp,'A single strike cannot deal damage repeatedly during its active pose');
   const events=consumeEvents(match);assert.equal(events.filter(event=>event.type==='hit').length,1);
@@ -64,7 +64,7 @@ test('a grounded kick cannot move its contact height to an airborne victim',()=>
   match.fighters[0].height=180;
   Object.assign(match.fighters[1],{action:'jump',actionTime:0,_jump:{elapsed:50000,duration:100000,move:0,attackUsed:false}});
   performAction(match,0,'kick');advance(match,340);
-  assert.equal(match.fighters[1].hp,100,'The entire jumping body is above the short attacker’s kick');
+  assert.equal(match.fighters[1].hp,match.fighters[1].maxHp,'The entire jumping body is above the short attacker’s kick');
   assert.equal(consumeEvents(match).filter(event=>event.type==='hit').length,0);
 });
 
@@ -99,9 +99,11 @@ test('combat metadata carries the actual native contact window and per-facing po
 
 for(const facing of ['right','left'])for(const action of ['kick','uppercut'])test(`9 Bit's extended ${action} connects through its limb at close range (${facing})`,()=>{
   const match=matchFor(['9-bit','9-bit'],facing),dir=facing==='right'?1:-1;
-  match.fighters[1].x=match.fighters[0].x+dir*106;
+  // Native charging uppercut trunks require about 204/207px of separation.
+  // Start outside both cores rather than letting the old 106px fixture overlap.
+  match.fighters[1].x=match.fighters[0].x+dir*210;
   performAction(match,0,action);advance(match,650);
-  assert(match.fighters[1].hp<100,'The opponent crosses the extended shin/forearm before the tip');
+  assert(match.fighters[1].hp<match.fighters[1].maxHp,'The opponent crosses the extended shin/forearm before the tip');
   assert.equal(consumeEvents(match).filter(event=>event.type==='hit').length,1);
 });
 
@@ -110,7 +112,7 @@ for(const facing of ['right','left'])test(`native crouch posture ducks a high ha
     const match=matchFor(['9-bit','6-bit'],facing);
     advance(match,550,[{},{crouch:true}]);consumeEvents(match);
     performAction(match,0,action);advance(match,420,[{},{crouch:true}]);
-    assert.equal(match.fighters[1].hp<100,wantHit,action+' uses the crouched native head/body bounds');
+    assert.equal(match.fighters[1].hp<match.fighters[1].maxHp,wantHit,action+' uses the crouched native head/body bounds');
   }
 });
 
@@ -137,7 +139,7 @@ for(const id of roster.map(fighter=>fighter.id))test(`fallback combat preserves 
     const match=matchFor([id,id],facing,false),dir=facing==='right'?1:-1;
     match.fighters[1].x=match.fighters[0].x+dir*106;
     performAction(match,0,action);advance(match,700);
-    assert(match.fighters[1].hp<100,action+': '+facing+' must keep its established close-range behavior');
+    assert(match.fighters[1].hp<match.fighters[1].maxHp,action+': '+facing+' must keep its established close-range behavior');
     assert.equal(consumeEvents(match).filter(event=>event.type==='hit').length,1);
   }
 });

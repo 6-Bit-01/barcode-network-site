@@ -74,7 +74,14 @@ test("System Clash ships only its same-origin runtime, with complete registered 
     }
     const images = new Set([...requests].filter(name => name.endsWith(".png")));
     assert.deepEqual([...images].sort(), inventory.filter(name => name.endsWith(".png") && name !== "assets/whole-body/punch.png" && !replacedOriginals.has(name)).sort());
-    for(const name of inventory.filter(name=>/^assets\/(?:animation-polish|fighters|arcade|deletions)\/.+\.webp$/.test(name)))assert(requests.has(name),"Registered atlas was not loaded: "+name);
+    // Preserve the approved original Oak tear source; only its reviewed replacement loads.
+    const retainedOakSource="assets/deletions/papa-oak/rip.webp";
+    assert.equal(createHash("sha256").update(fs.readFileSync(path.join(root,retainedOakSource))).digest("hex"),"cb907934f502329fba35602a8c8230cd916e7404434159dbda63aad72c3e3053");
+    const oakRip=JSON.parse(read("assets/deletions/papa-oak/manifest.json")).clips.rip;
+    assert.equal(oakRip.file,"rip-opposed-v1.webp");
+    assert(requests.has("assets/deletions/papa-oak/"+oakRip.file),"The reviewed opposed-palm atlas must load");
+    assert(!requests.has(retainedOakSource),"Retained original tear pixels do not add a second runtime download");
+    for(const name of inventory.filter(name=>/^assets\/(?:animation-polish|fighters|arcade|deletions)\/.+\.webp$/.test(name)&&name!==retainedOakSource))assert(requests.has(name),"Registered atlas was not loaded: "+name);
   } finally {
     globalThis.fetch = oldFetch;
     globalThis.Image = oldImage;

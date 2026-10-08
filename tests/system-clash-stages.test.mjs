@@ -40,9 +40,9 @@ for(const stage of ['radio-studio','sheila-office','studio-rat-lair','containmen
  const match=ready(stage);assert(match.stage,'Stage state is present');const spec=stages.stageById(stage),zone=spec.hazard.zone;
  match.fighters[0].x=spec.interaction.x+30;match.fighters[1].x=(zone.left+zone.right)/2;
  assert.equal(performAction(match,0,'grab'),true);assert.equal(match.fighters[0].action,'pickup');advance(match,350);
- assert(match.stage.activation,'Native contact commits a hazard warning');assert.equal(match.fighters[1].hp,100);
- advance(match,950);assert.equal(match.fighters[1].hp,100,'The full warning remains harmless');
- advance(match,1000);assert(match.fighters[1].hp<100);assert(match.fighters[1].damageTaken>0);assert(match.fighters[1].damageMarks.length>0);
+ assert(match.stage.activation,'Native contact commits a hazard warning');assert.equal(match.fighters[1].hp,match.fighters[1].maxHp);
+ advance(match,950);assert.equal(match.fighters[1].hp,match.fighters[1].maxHp,'The full warning remains harmless');
+ advance(match,1000);assert(match.fighters[1].hp<match.fighters[1].maxHp);assert.equal(match.fighters[1].damageTaken,spec.hazard.damage);assert(match.fighters[1].damageMarks.length>0);
  const hp=match.fighters[1].hp;advance(match,1000);assert.equal(match.fighters[1].hp,hp);
  const hits=consumeEvents(match).filter(e=>e.type==='stage-hit');assert.equal(hits.filter(e=>e.target===1).length,1);
  assert.equal(performAction(match,0,'grab'),true);assert.equal(match.stage.activation,null,'Cooldown cannot retrigger the object');
@@ -52,14 +52,14 @@ test('hazard damages its operator too, while a jump clears a warned floor trap',
  const match=ready('nature-simulation');assert(match.stage);const spec=stages.stageById(match.stage.id),zone=spec.hazard.zone;
  match.fighters[0].x=spec.interaction.x+30;match.fighters[1].x=1450;performAction(match,0,'grab');advance(match,900);
  match.fighters[0].x=1200;Object.assign(match.fighters[1],{x:1450,action:'jump',actionTime:0,_jump:{elapsed:50000,duration:100000,move:0,attackUsed:false}});match.fighters[1]._clips.jump.duration=100000;
- advance(match,1000);assert(match.fighters[0].hp<100,'The operator is not immune');assert.equal(match.fighters[1].hp,100,'Body entirely above thorns is safe');
+ advance(match,1000);assert(match.fighters[0].hp<match.fighters[0].maxHp,'The operator is not immune');assert.equal(match.fighters[1].hp,match.fighters[1].maxHp,'Body entirely above thorns is safe');
 });
 
 test('hazard and cooldown stop outside active fight and pause, while ambient time remains separate',()=>{
  const match=ready();assert(match.stage);const spec=stages.stageById(match.stage.id);match.fighters[0].x=spec.interaction.x+30;match.fighters[1].x=1300;
  performAction(match,0,'grab');advance(match,350);const fightClock=match.stage.fightClock,ambient=match.stage.clock;
  match.paused=true;advance(match,2000);assert.equal(match.stage.clock,ambient);assert.equal(match.stage.fightClock,fightClock);
- match.paused=false;match.phase='ready';advance(match,500);assert(match.stage.clock>ambient);assert.equal(match.stage.fightClock,fightClock);assert.equal(match.fighters[1].hp,100);
+ match.paused=false;match.phase='ready';advance(match,500);assert(match.stage.clock>ambient);assert.equal(match.stage.fightClock,fightClock);assert.equal(match.fighters[1].hp,match.fighters[1].maxHp);
 });
 
 test('strong wall knockback cracks then transitions once, preserving both fighters and fixed edges',()=>{
@@ -87,14 +87,14 @@ test('camera fits both bodies at opposite fixed world walls after settling',()=>
 
 for(const facing of ['left','right'])test(`beam geometry lets a crouched fighter duck its marked strip (${facing})`,()=>{
  const match=ready('containment'),spec=stages.stageById('containment');match.fighters[0].x=spec.interaction.x+30;match.fighters[1].x=1200;match.fighters[1].facing=facing;
- performAction(match,0,'grab');advance(match,900,[{},{crouch:true}]);match.fighters[0].x=facing==='left'?700:1900;advance(match,1400,[{},{crouch:true}]);assert.equal(match.fighters[1].facing,facing);assert.equal(match.fighters[1].hp,100,'Crouched body is below the overhead beam');
+ performAction(match,0,'grab');advance(match,900,[{},{crouch:true}]);match.fighters[0].x=facing==='left'?700:1900;advance(match,1400,[{},{crouch:true}]);assert.equal(match.fighters[1].facing,facing);assert.equal(match.fighters[1].hp,match.fighters[1].maxHp,'Crouched body is below the overhead beam');
  assert.equal(consumeEvents(match).filter(event=>event.type==='stage-hit'&&event.target===1).length,0);
 });
 
 test('warned stage damage can catch a living fighter recovering from knockdown',()=>{
  const match=ready('nature-simulation'),spec=stages.stageById(match.stage.id);match.fighters[0].x=spec.interaction.x+30;match.fighters[1].x=1300;
  performAction(match,0,'grab');advance(match,400);Object.assign(match.fighters[1],{action:'getup',actionTime:0});match.fighters[1]._clips.getup.duration=100000;
- advance(match,2000);assert.equal(match.fighters[1].hp,83,'A recovery animation grants no immunity to a warned floor trap');assert.equal(consumeEvents(match).filter(event=>event.type==='stage-hit'&&event.target===1).length,1);
+ advance(match,2000);assert.equal(match.fighters[1].hp,match.fighters[1].maxHp-spec.hazard.damage,'A recovery animation grants no immunity to a warned floor trap');assert.equal(consumeEvents(match).filter(event=>event.type==='stage-hit'&&event.target===1).length,1);
 });
 
 test('a stage KO and simultaneous stage draw use the ordinary round ending once',()=>{

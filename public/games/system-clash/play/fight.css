@@ -44,3 +44,14 @@ main{max-width:1280px;padding:20px 24px;margin-inline:auto}
 @media(max-width:900px) and (orientation:landscape),(pointer:coarse) and (orientation:landscape){.demo{overflow:hidden}.demo .screen-bezel{width:min(100%,calc((100svh - 44px)*16/9))}.demo .touch-controls{position:fixed;bottom:max(3px,env(safe-area-inset-bottom));left:max(4px,env(safe-area-inset-left));right:max(4px,env(safe-area-inset-right));height:122px;max-width:none;background:#0d071326;border:0;box-shadow:none;pointer-events:none;margin:0;padding:0 4px;grid-template-columns:140px 1fr 194px}.demo .touch-controls>div{pointer-events:auto}.demo .touch-controls>.touch-extras{grid-area:1/2;align-self:end;margin-bottom:3px}.demo .touch-controls>.touch-extras .pad-brand{width:100%}.demo .touch-controls>.classic-buttons{grid-column:3;justify-self:end}.demo .touch-movement{opacity:.88}.demo .classic-buttons{opacity:.9}.demo-toolbar{min-height:36px;padding:2px 6px}.demo-toolbar a{font-size:9px}.demo-toolbar button{min-height:30px;padding:5px 8px}}
 
 @media(max-width:390px) and (orientation:portrait){.demo .touch-controls{grid-template-columns:minmax(125px,1fr) 0 minmax(150px,1fr);gap:0;padding:4px}.demo .touch-controls>.classic-buttons{grid-template-columns:repeat(3,46px);grid-template-rows:repeat(2,49px);gap:4px;justify-self:end}.demo .classic-buttons button{width:46px;height:46px}.demo .touch-controls>.touch-extras{grid-column:1/-1;grid-row:2;gap:5px}}
+
+/* Shared BARCODE system furniture; native arcade controls keep their own button treatment. */
+:root{--system-violet:#ad66e2;--system-green:#9bc46a;--system-panel:#15101d;--system-line:#665374}
+.demo-toolbar,#pause-menu,.match-controls{border-color:var(--system-line)}
+.demo-toolbar button,#pause-menu button,.match-controls button,.match-controls select{background:var(--system-panel);border-color:var(--system-line);color:#f4eef9}
+.demo-toolbar button:hover:not(:disabled),#pause-menu button:hover:not(:disabled),.match-controls button:hover:not(:disabled){background:#30203e;border-color:var(--system-green)}
+.match-controls .primary,#pause-menu .primary{background:#62317e;border-color:var(--system-violet);color:#fff}
+.match-controls .primary:hover:not(:disabled),#pause-menu .primary:hover:not(:disabled){background:#784098;border-color:var(--system-green)}
+.motion-option input,#pause-menu input{accent-color:var(--system-green)}
+#pause-menu{background:linear-gradient(145deg,#1e1429f7,#0c1013fa);border-color:var(--system-violet)}
+.demo-toolbar button:focus-visible,#pause-menu button:focus-visible,.match-controls button:focus-visible,.match-controls select:focus-visible{outline-color:var(--system-green)}

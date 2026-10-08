@@ -133,7 +133,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/campaign-services.js', exports: ['BA
     syncTitleButton() {
       const button = document.getElementById('continueButton');
       if (button) { const saved = this.readResume(); button.hidden = !saved; button.disabled = false;
-        button.textContent = saved?.levelId === 'level-02' ? 'CONTINUE CACHE LINE — C / Y' : saved?.levelId === 'level-03' ? 'CONTINUE PROTOTYPE — C / Y' : 'CONTINUE SAVED — C / Y'; }
+        button.textContent = saved?.levelId === 'level-02' ? 'CONTINUE CACHE LINE — C / Y' : saved?.levelId === 'level-03' ? saved.checkpointId === 'mac-city-entry' ? 'CONTINUE LEVEL 3 — C / Y' : 'CONTINUE PROTOTYPE — C / Y' : 'CONTINUE SAVED — C / Y'; }
     },
     async continueSaved() {
       const saved = this.readResume(); if (!saved) return { ok: false, reason: 'no-checkpoint' };

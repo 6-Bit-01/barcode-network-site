@@ -1,8 +1,8 @@
 {
   "builder": "barcode-system-override-standalone-v1",
   "status": "complete",
-  "sourceCommit": "84fbfbb03ced11620ce7d9f8dc83d4066c338e10",
-  "sourceTree": "f877044041ebfc35871a565a94e2f25ede30d855",
+  "sourceCommit": "11cdbef9b653f51187d4de2ed87b194ee8496c63",
+  "sourceTree": "de562ffb99ab041465bba9f4f0bb20dbd30f0834",
   "builderSHA256": "e53b3b5e714071ed2049399ff8a962f3cd7b27ab9b68a3ff5b3c9d70eac21ac2",
   "files": {
     "assets/audio/broadcast-slum-proof-carrier.wav": {
@@ -3518,8 +3518,8 @@
       "bytes": 9524
     },
     "src/core/runtime-lifecycle.js": {
-      "sha256": "07fc24a634df8fcef79c4331df9e02ee6c295de5669a11398dcb57ca5de87e5f",
-      "bytes": 27192
+      "sha256": "0510ed7be07e6f8cc412d0a9540f6f14b0115e0205ef5e6d72ccfddeed8e2a87",
+      "bytes": 27483
     },
     "src/core/touch-controls.js": {
       "sha256": "a5d731b5a137a4069950c6e23584e5dce6ebffa6d0783e5f130baf56384f9f91",
@@ -3726,8 +3726,8 @@
       "bytes": 5250
     },
     "src/game/cache-road-proof.js": {
-      "sha256": "96d341f2c429da2f65d12fcf9c8e2bdce3bba4dcbce0c4057920d9c52b0b9d72",
-      "bytes": 316964
+      "sha256": "e61063ea67f51be7da8f2cceb190c245401a1b7c28a432bb0800c979ab5562c7",
+      "bytes": 317594
     },
     "src/game/cache-road-puppet-study.js": {
       "sha256": "a1c2795763543cc8ad78d61a39482e372de7e7348316a57de24f66bf7fbd0361",
@@ -3746,8 +3746,8 @@
       "bytes": 1193
     },
     "src/game/campaign-services.js": {
-      "sha256": "7465a098b6a208168c88f4d2d2b01d7df39839e7e8468fd49dabfe477ed0afc5",
-      "bytes": 11785
+      "sha256": "af3fc01fb0e277fa804ca7ca622c22124ab04ff6fdf9715d9b726454b1535091",
+      "bytes": 11858
     },
     "src/game/combat-fx.js": {
       "sha256": "034e1b5c44f8c2cf9e3235889c6e9cf067dbcc928eb7318faadbfe3560eaf49e",
@@ -3842,8 +3842,8 @@
       "bytes": 37156
     },
     "src/game/mac-combat-preview.js": {
-      "sha256": "535e98a03b5bd041cfb7f3a8e625369e5bc1967133eb19488d565adca3824a65",
-      "bytes": 67202
+      "sha256": "239c3159ce1d29e377ec1a4a4e18e3a33de854fccfb88ad7f960f9a5bebeff73",
+      "bytes": 71801
     },
     "src/game/mac-street-combat.js": {
       "sha256": "8108944b9fd9160ca0ba3d58428d4a73d365d69b834db8310f4b9791e7d36a47",

@@ -1,3 +1,9 @@
+## October 8, 2026 — Level 2 continuation into Modem
+
+Completed authored Level 2 saves and results now offer Continue to Level 3 after the ending. Keyboard, controller and the direct touch button share the same guarded transition. Title Continue resumes the saved Modem chapter at its introduction. Failed or paused loading retains completed Level 2 results for retry; older prototype saves stay compatible.
+
+This release delivers source `11cdbef9b653f51187d4de2ed87b194ee8496c63` / tree `de562ffb99ab041465bba9f4f0bb20dbd30f0834`. Four progression runtime files and the owned package record change; all artwork/audio remains identical to the prior public game. The paired package fixture now verifies the campaign dispatcher and legacy checkpoints. Full source tests, strict export/validator, focused site package tests and independent review pass; exact-head cloud checks and publication receipts remain the final gates. Current hidden entry is `/secret-menu`; `/system-override` redirects there. Historical private-only notes below are retained as history.
+
 ## October 6, 2026 — individual weapon grips, street scale and running kick
 
 The owner rejected the arsenal1 weapon holds and small cars/props, and explicitly requires each weapon to be positioned and checked individually. This correction adds per-weapon, per-cel grip, angle and front/behind layering, with native palm/forearm overlap drawn from the same complete character cel. The accepted character drawings remain complete; no articulated body animation returns. Both facing directions and equipped idle, guard, movement and attack states belong to the review.

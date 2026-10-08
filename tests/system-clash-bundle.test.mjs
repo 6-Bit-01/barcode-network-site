@@ -18,7 +18,7 @@ test("System Clash ships only its same-origin runtime, with complete registered 
   assert.equal(roster.length, 13);
   assert(roster.every(fighter => fighter.enabled));
   assert.equal(inventory.filter(name => name.endsWith(".png")).length, 211);
-  assert(inventory.every(name => /\.(?:png|json|html|css|m?js)$/.test(name)));
+  assert(inventory.every(name => /\.(?:png|json|html|css|m?js|wav)$/.test(name)));
   assert(inventory.every(name => !/qa\.json|measured|native-bounds|prompt|rejected|portable|history/i.test(name)));
   for (const name of inventory.filter(name => /\.(?:json|html)$/.test(name))) {
     assert.doesNotMatch(read(name), /generated_images|originalPath|\.prompt\.txt|127\.0\.0\.1|localhost|SYSTEM-CLASH-Portable|SYSTEM-CLASH-Fight-Portable/i, name);
@@ -90,3 +90,16 @@ test("System Clash module imports and standalone document stay complete", () => 
   assert.match(read("fight.js"), /link\.download='SYSTEM-CLASH-fight-'/);
 });
 
+
+test('hosted startup tolerates the deliberately omitted private pose-library lists', () => {
+  const source = read('fight.js');
+  const start = source.indexOf('for(const [role,poses] of Object.entries(DELETION_POSES))');
+  const end = source.indexOf('async function initializeRoster()', start);
+  assert(start >= 0 && end > start, 'Production pose-list initialization exists');
+  const initialize = new Function('DELETION_POSES', '$', 'document', source.slice(start, end));
+  assert.doesNotThrow(() => initialize(
+    { attacker: [{ name: 'native action', uses: 'action' }], victim: [{ name: 'native reaction', uses: 'reaction' }] },
+    () => null,
+    { createElement: () => ({ innerHTML: '' }) },
+  ));
+});

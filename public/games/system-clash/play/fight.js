@@ -92,8 +92,13 @@ function inspectDeletionScene(time) {
   return deletionReviewCache.match;
 }
 
+function syncAudioPause() {
+  effects.setPaused(paused||inspectTime!==null||motionTime!==null||document.hidden);
+}
+
 function draw() {
   if (!art || !match) return;
+  syncAudioPause();
   const definition=deletionDefinition(art[0].manifest.id);
   const preset=$('pose-preset').value,poseKey=inspectTime<(definition?.duration??6500)/2?1:2;
   const posePairs={brace:['shove','brace'],suspended:['pull','suspended'],compressed:['pull','compressed'],crumpled:['stomp','crumpled'],present:['present','crumpled']};
@@ -162,6 +167,7 @@ function reset(start=true) {
   if (!ready) return;
   clearInput();effects.clear();paused=false;accumulator=0;inspectTime=null;motionTime=null;weaponFeedback='';weaponFeedbackUntil=0;
   previousTravelViews=null;previousTravelPhase=null;
+  syncAudioPause();
   $('deletion-review').hidden=true;$('motion-review').hidden=true;
   match=createMatch({mode:$('mode-select').value,clips:metadata,fighters:art.map(f=>({id:f.manifest.id,name:f.manifest.character,height:f.manifest.height})),start});
   $('pause-fight').textContent='Pause';$('pause-fight').setAttribute('aria-pressed','false');
@@ -180,7 +186,7 @@ async function start() {
 
 function togglePause() {
   if (!ready || inspectTime!==null || motionTime!==null || match.phase === 'ready') return;
-  paused=!paused;clearInput();accumulator=0;
+  paused=!paused;clearInput();accumulator=0;syncAudioPause();
   $('pause-fight').textContent=paused?'Resume':'Pause';
   $('pause-fight').setAttribute('aria-pressed',String(paused));
   draw();
@@ -237,6 +243,7 @@ window.addEventListener('blur',clearInput);
 document.addEventListener('visibilitychange',()=>{
   clearInput();last=performance.now();accumulator=0;
   if (document.hidden && ready && !paused && !['ready','over'].includes(match.phase)) togglePause();
+  syncAudioPause();
 });
 
 document.querySelectorAll('[data-action]').forEach(button=>{

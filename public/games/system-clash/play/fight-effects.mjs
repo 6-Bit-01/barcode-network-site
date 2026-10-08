@@ -1,8 +1,18 @@
+import {createFightAudio} from './fight-audio.mjs';
 const FLOOR = 620;
 const PARTICLE_LIMIT = 420;
 const DECAL_LIMIT = 64;
 const SMEAR_LIMIT = 14;
 const CHUNK_LIMIT = 96;
+const CLOTHING = {
+  '6-bit':['#242726','#494843'], '9-bit':['#161b1b','#353933'],
+  'cache-back':['#806115','#292d26'], cliff:['#807461','#344555'],
+  'dj-floppydisc':['#938e80','#26292b'],'mac-modem':['#621c18','#292321'],
+  'mr-nice-guy':['#67513c','#455045'],'ms-mayhem':['#64211c','#292121'],
+  stolz:['#282e2e','#67665f'],'kaveman-brown':['#292a25','#65665f'],
+  dr3wbaby:['#4e365c','#3b5163'],'ash-flowers':['#272b29','#977521'],
+  wittyf0x:['#293c62','#624d38'],
+};
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const finite = (value, fallback) => Number.isFinite(value) ? value : fallback;
@@ -39,10 +49,7 @@ export function createFightEffects(options = {}) {
   let muted = Boolean(options.muted);
   let shake = 0;
   let flash = 0;
-  let audioContext = null;
-  let master = null;
-  let noiseBuffer = null;
-  let lastSoundAt = -Infinity;
+  const audio = options.audio ?? createFightAudio({...options.audioOptions,muted,reducedMotion});
 
   function appendBounded(array, item, limit) {
     array.push(item);
@@ -144,39 +151,83 @@ export function createFightEffects(options = {}) {
 
   function addChunks(event,x,y,direction,strength,profile) {
     if(profile==='puncture'||/pressure/.test(event.cue??''))return;
-    const material=event.victimMaterial==='metal'||event.victimMaterial!=='organic'&&event.victimId==='cache-back'?'metal':'organic';
+    const robot=event.victimMaterial==='metal'||event.victimMaterial!=='organic'&&event.victimId==='cache-back';
+    const headOnly=event.injuryRegion==='head'||event.cue==='ban-stamp';
     const heavy=profile==='compression'||profile==='slam';
-    const smallContact=['truss-hit','chrome-squeeze'].includes(event.cue);
-    const count=Math.round((smallContact?3:profile==='cut'?6:heavy?10:7)*Math.min(strength,2));
+    const magic=event.cue==='blue-dissolve'||event.cue==='blue-erased';
+    const smallContact=magic||['truss-hit','chrome-squeeze','disc-upper-cut','disc-body-cut'].includes(event.cue);
+    const cloth=CLOTHING[event.victimId]??['#3e3630','#272b29'];
+    const tissueCount=magic?(event.cue==='blue-erased'?6:4):Math.round((headOnly?5:smallContact?3:profile==='cut'?6:heavy?10:7)*Math.min(strength,2));
+    const clothCount=magic?(event.cue==='blue-erased'?3:2):headOnly?2:smallContact?1:Math.round((heavy?5:3)*Math.min(strength,1.5));
+    const boneCount=robot?0:headOnly?3:!smallContact&&heavy?2:0;
+    const count=tissueCount+clothCount+boneCount;
     for(let index=0;index<count;index++) {
-      const large=!smallContact&&index<Math.max(2,Math.floor(count*.2));
-      const width=material==='metal'?(large?range(12,23):range(5,12)):
-        large?range(24,39):range(7,16);
-      const height=width*range(material==='metal'?.25:profile==='cut'?.27:.42,material==='metal'?.55:.8);
-      const vertexCount=Math.floor(material==='metal'?range(4,6):range(6,9));
+      const material=index>=tissueCount+clothCount?'bone':index>=tissueCount?'cloth':robot?'metal':'organic';
+      const large=!headOnly&&!smallContact&&index<Math.max(2,Math.floor(tissueCount*.2));
+      const width=material==='cloth'?range(headOnly?6:12,headOnly?14:31):material==='bone'?range(5,headOnly?13:19):
+        material==='metal'?(large?range(12,23):range(5,12)):large?range(24,39):range(headOnly?5:7,headOnly?13:16);
+      const height=width*range(material==='bone'?.2:material==='metal'?.25:material==='cloth'?.25:profile==='cut'?.27:.42,
+        material==='metal'?.55:material==='bone'?.4:material==='cloth'?.57:.8);
+      const vertexCount=Math.floor(material==='metal'||material==='bone'?range(4,6):range(6,9));
       const points=Array.from({length:vertexCount},(_,i)=>{
-        const angle=i*Math.PI*2/vertexCount,radius=range(.7,1.08);
+        const angle=i*Math.PI*2/vertexCount,radius=range(material==='cloth'?.48:.7,1.08);
         return {x:Math.cos(angle)*width*.5*radius,y:Math.sin(angle)*height*.5*radius};
       });
       const restingAngle=range(-.5,.5),c=Math.cos(restingAngle),s=Math.sin(restingAngle);
       const bottom=Math.max(...points.map(p=>p.x*s+p.y*c));
       const floorY=FLOOR+range(0,7),landingY=floorY-bottom;
       const spread=heavy?(random()<.48?-direction:direction):direction;
-      const vx=range(65,large?170:240)*spread*Math.min(strength,1.5);
-      const vy=-range(smallContact?45:80,large?160:255);
-      const originX=clamp(x+range(-9,9),12,1268),originY=Math.min(landingY,y+range(-7,7));
-      const gravity=760,flightMs=1000*(-vy+Math.sqrt(vy*vy+2*gravity*(landingY-originY)))/gravity;
-      const drag=1.45,flightSeconds=flightMs/1000;
+      const vx=range(headOnly?35:65,headOnly?135:large?170:240)*spread*Math.min(strength,1.5);
+      const vy=-range(smallContact?45:headOnly?45:80,headOnly?145:large?160:255);
+      const originX=clamp(x+range(headOnly?-4:-9,headOnly?4:9),12,1268),originY=Math.min(landingY,y+range(-7,7));
+      const gravity=material==='cloth'?540:760,flightMs=1000*(-vy+Math.sqrt(vy*vy+2*gravity*(landingY-originY)))/gravity;
+      const drag=material==='cloth'?2.6:1.45,flightSeconds=flightMs/1000;
       const landX=clamp(originX+vx*(1-Math.exp(-drag*flightSeconds))/drag,12,1268);
       const angle=range(-Math.PI,Math.PI);
       appendBounded(chunks,{
-        material,profile,x:originX,y:originY,originX,originY,vx,vy,gravity,drag,
+        material,profile,region:headOnly?'head':'body',x:originX,y:originY,originX,originY,vx,vy,gravity,drag,
         landingY,floorY,landX,flightMs,age:0,settled:false,
         angle,rotation:angle,tumble:range(-8,8),restingAngle,
-        width,height,points,large,bounce:material==='metal'?range(3,7):range(1,3),bounceMs:material==='metal'?220:140,
-        behind:heavy,body:material==='metal'?(random()>.5?'#454a49':'#2d3636'):(random()>.5?'#5b1710':'#38100b'),
-        cutFace:material==='metal'?'#89877b':random()>.5?'#7d3826':'#672318',
-        fibers:Array.from({length:large?3:1},()=>({x:range(-.32,.28),y:range(-.22,.22),length:range(.15,.4),angle:range(-.8,.8)})),
+        width,height,points,large,bounce:material==='metal'?range(3,7):material==='cloth'?0:range(1,3),bounceMs:material==='metal'?220:140,
+        behind:heavy&&!headOnly,body:material==='cloth'?cloth[index%cloth.length]:material==='bone'?'#82715b':
+          material==='metal'?(random()>.5?'#454a49':'#2d3636'):(random()>.5?'#5b1710':'#38100b'),
+        cutFace:material==='cloth'?'#4b1710':material==='bone'?'#b39e7c':material==='metal'?'#89877b':random()>.5?'#7d3826':'#672318',
+        fibers:Array.from({length:material==='cloth'?4:large?3:1},()=>({x:range(-.32,.28),y:range(-.22,.22),length:range(.15,.4),angle:range(-.8,.8)})),
+      },CHUNK_LIMIT);
+    }
+  }
+
+  function addRupturePile(event,x,y,direction) {
+    if(event.aftermath!=='body-rupture'||event.injuryRegion==='head'||event.cue==='ban-stamp')return;
+    const width=clamp(finite(event.aftermathWidth,320),160,450),center=clamp(finite(event.aftermathCenterX,x),45,1235);
+    const robot=event.victimMaterial==='metal'||event.victimMaterial!=='organic'&&event.victimId==='cache-back';
+    const cloth=CLOTHING[event.victimId]??['#3e3630','#272b29'];
+    // A crushed body leaves substance at the machine's floor. Central pieces
+    // stay under its real foreground; unequal side rags extend just outside.
+    // All sizes and positions below are stage pixels, not screen-size decals.
+    for(let index=0;index<12;index++) {
+      const side=index<6?0:index<9?-1:1,material=index%3===0?'cloth':robot?'metal':index===5?'bone':'organic';
+      const large=side!==0&&index%3===0;
+      const size=material==='cloth'?range(large?47:34,large?68:53):material==='bone'?range(13,19):range(side?25:31,side?43:50);
+      const height=size*range(material==='cloth'?.30:material==='bone'?.26:.49,material==='cloth'?.52:material==='bone'?.42:.74);
+      const points=Array.from({length:material==='metal'||material==='bone'?5:8},(_,i)=>{
+        const angle=i*Math.PI*2/(material==='metal'||material==='bone'?5:8),radius=range(material==='cloth'?.50:.72,1.08);
+        return{x:Math.cos(angle)*size*.5*radius,y:Math.sin(angle)*height*.5*radius};
+      });
+      const restingAngle=range(-.33,.33),c=Math.cos(restingAngle),s=Math.sin(restingAngle),floorY=FLOOR+range(1,8);
+      const bottom=Math.max(...points.map(p=>p.x*s+p.y*c)),landingY=floorY-bottom;
+      const offset=side?side*width*range(index<9?.49:.53,index<9?.62:.67):range(-.25,.25)*width;
+      const px=clamp(center+offset+direction*range(-6,9),size*.5+2,1278-size*.5);
+      const originX=clamp(center+range(-9,9),12,1268),originY=Math.min(landingY,y+range(-3,8)),vy=-range(25,75),gravity=760,drag=1.45;
+      const flightMs=1000*(-vy+Math.sqrt(vy*vy+2*gravity*(landingY-originY)))/gravity;
+      const vx=(px-originX)*drag/(1-Math.exp(-drag*flightMs/1000));
+      appendBounded(chunks,{
+        material,profile:'rupture',region:'body',pile:true,x:originX,y:originY,originX,originY,
+        vx,vy,gravity,drag,landingY,floorY,landX:px,flightMs,age:0,settled:false,
+        angle:restingAngle,rotation:restingAngle,tumble:0,restingAngle,width:size,height,points,large,bounce:0,bounceMs:140,behind:true,
+        body:material==='cloth'?cloth[index%cloth.length]:material==='metal'?'#3b4440':material==='bone'?'#857159':index%2?'#47150d':'#611d11',
+        cutFace:material==='cloth'?'#4b1710':material==='metal'?'#8f8a75':material==='bone'?'#b09a73':'#86442b',
+        fibers:Array.from({length:material==='cloth'?5:3},()=>({x:range(-.3,.3),y:range(-.23,.22),length:range(.17,.38),angle:range(-.75,.75)})),
       },CHUNK_LIMIT);
     }
   }
@@ -186,97 +237,6 @@ export function createFightEffects(options = {}) {
     shake = Math.max(shake, amplitude);
     // A low-opacity red wash decays slowly instead of flickering between white frames.
     flash = Math.max(flash, Math.min(intensity, 0.12));
-  }
-
-  function envelope(node, at, duration, volume) {
-    node.gain.setValueAtTime(0.0001, at);
-    node.gain.exponentialRampToValueAtTime(Math.max(volume, 0.0001), at + 0.006);
-    node.gain.exponentialRampToValueAtTime(0.0001, at + duration);
-  }
-
-  function tone(at, frequency, endFrequency, duration, volume, waveform = 'sine') {
-    const oscillator = audioContext.createOscillator();
-    const gain = audioContext.createGain();
-    oscillator.type = waveform;
-    oscillator.frequency.setValueAtTime(frequency, at);
-    oscillator.frequency.exponentialRampToValueAtTime(Math.max(10, endFrequency), at + duration);
-    envelope(gain, at, duration, volume);
-    oscillator.connect(gain);
-    gain.connect(master);
-    oscillator.start(at);
-    oscillator.stop(at + duration + 0.02);
-    oscillator.onended = () => { oscillator.disconnect(); gain.disconnect(); };
-  }
-
-  function noise(at, duration, volume, frequency = 1200) {
-    const source = audioContext.createBufferSource();
-    const filter = audioContext.createBiquadFilter();
-    const gain = audioContext.createGain();
-    source.buffer = noiseBuffer;
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(frequency, at);
-    envelope(gain, at, duration, volume);
-    source.connect(filter);
-    filter.connect(gain);
-    gain.connect(master);
-    source.start(at);
-    source.stop(at + duration + 0.02);
-    source.onended = () => { source.disconnect(); filter.disconnect(); gain.disconnect(); };
-  }
-
-  function playSound(type, strength, event={}) {
-    if (!audioContext || !master || muted || audioContext.state !== 'running') return;
-    const at = audioContext.currentTime;
-    if (at - lastSoundAt < 0.045 && !['deletion-impact','hit','weapon-embed'].includes(type)) return;
-    lastSoundAt = at;
-    const weight = clamp(strength, 0.4, 2);
-    if (type === 'hit' || type === 'deletion-impact') {
-      tone(at, type === 'hit' ? 110 : 75, 24, 0.2, 0.8 * weight);
-      noise(at, type === 'hit' ? 0.13 : 0.35, 0.75 * weight, type === 'hit' ? 1900 : 850);
-      if (type === 'deletion-impact') tone(at + 0.06, 180, 35, 0.32, 0.35, 'sawtooth');
-      if(event.cue==='nail-strike'){tone(at,1300,210,.18,.5,'triangle');noise(at,.15,.45,4700);}
-      if(event.cue==='compactor-crush'||event.cue==='chute-stamp'){noise(at,.48,.6,440);tone(at,70,18,.42,.4,'square');}
-      if(event.cue==='cable-snap'){tone(at,980,80,.12,.48,'triangle');noise(at,.12,.55,6100);}
-      if(event.cue==='disc-cut'||event.cue?.startsWith('disc-')||event.cue==='drive-blade-cut'){tone(at,860,130,.48,.32,'sawtooth');noise(at,.4,.45,3300);}
-    } else if(type==='deletion-cue') {
-      if(event.cue==='coffin-latch'){tone(at,440,180,.07,.15,'triangle');noise(at,.06,.15,2600);}
-      else if(event.cue?.includes('lid-close')){noise(at,.15,.26,1100);tone(at,140,70,.10,.16,'square');}
-      else if(event.cue?.startsWith('tape-'))noise(at,.16,.13,1900);
-      else if(event.cue==='disc-release')noise(at,.25,.18,4100);
-      else if(event.cue==='drive-eject'){tone(at,430,580,.12,.12,'square');noise(at,.18,.16,1400);}
-    } else if(type==='weapon-pickup') {
-      tone(at,360,720,.12,.24,'triangle');tone(at+.08,540,900,.16,.18,'triangle');
-    } else if(type==='weapon-use') {
-      if(event.weaponType==='pulse-driver') {
-        tone(at,980,105,.19,.42,'sawtooth');noise(at,.12,.22,4200);
-      } else {noise(at,.10,.26,2000);tone(at,210,90,.10,.25,'triangle');}
-    } else if(type==='weapon-throw') {
-      noise(at,.20,.28,2600);
-    } else if(type==='weapon-embed') {
-      tone(at,480,160,.14,.32,'triangle');noise(at,.09,.27,1250);
-    } else if(type==='weapon-empty') {
-      tone(at,185,110,.06,.16,'square');
-    } else if(type==='glass-break'||type==='glass-impact') {
-      noise(at,type==='glass-break'?0.38:0.12,0.65,6500);
-      tone(at,1250,180,0.15,0.25,'triangle');
-    } else if (type === 'eye-pop') {
-      tone(at, 620, 90, 0.12, 0.45, 'triangle');
-      noise(at, 0.08, 0.3, 1600);
-    } else if (type === 'block') {
-      tone(at, 390, 190, 0.1, 0.3, 'triangle');
-      noise(at, 0.065, 0.4, 3600);
-    } else if (type === 'miss') {
-      noise(at, 0.12, 0.18, 2700);
-    } else if (type === 'throw' || type === 'land' || type === 'ko') {
-      tone(at, type === 'throw' ? 135 : 70, 22, 0.25, 0.65 * weight);
-      noise(at, 0.16, 0.42 * weight, 600);
-    } else if (type === 'deletion') {
-      tone(at, 130, 30, 0.7, 0.35, 'sawtooth');
-      noise(at + 0.04, 0.45, 0.2, 550);
-    } else if (type === 'round-start') {
-      tone(at, 180, 180, 0.1, 0.2, 'square');
-      tone(at + 0.14, 270, 270, 0.15, 0.2, 'square');
-    }
   }
 
   function emit(event = {}) {
@@ -344,6 +304,13 @@ export function createFightEffects(options = {}) {
       case 'deletion':
         burst('spark', x, y, direction, 20, 0.5);
         break;
+      case 'deletion-cue':
+        if(event.cue==='blue-dissolve'||event.cue==='blue-erased') {
+          // Blue magic sheds a handful of the actual victim's clothing and
+          // material from its airborne contact, without a machinery pile.
+          addChunks(event,x,y,direction,event.cue==='blue-erased'?.9:.6,'dissolve');
+        }
+        break;
       case 'deletion-impact': {
         const profile=bloodProfile(event);
         if(event.cue==='cable-snap') {
@@ -358,11 +325,12 @@ export function createFightEffects(options = {}) {
         if(y>=FLOOR-65)addDecal(x,70*strength,{kind:profile==='slam'?'smear':'pool',direction});
         addSmear(x,y,direction,strength,profile);
         addChunks(event,x,y,direction,strength,profile);
+        addRupturePile(event,x,y,direction);
         impact(14, 0.11);
         break;
       }
     }
-    playSound(event.type, strength,event);
+    audio.emit({...event,strength});
   }
 
   function update(dtMs) {
@@ -483,10 +451,10 @@ export function createFightEffects(options = {}) {
         ctx.lineTo(chunk.x-chunk.width*.3,chunk.floorY+2.5);ctx.closePath();ctx.fill();
       }
       ctx.translate(chunk.x,chunk.y);ctx.rotate(chunk.rotation);
-      ctx.globalAlpha=.96;ctx.fillStyle=chunk.body;ctx.strokeStyle=chunk.material==='metal'?'#161d1b':'#200805';ctx.lineWidth=.75;
+      ctx.globalAlpha=.96;ctx.fillStyle=chunk.body;ctx.strokeStyle=chunk.material==='metal'?'#161d1b':chunk.material==='cloth'?'#161a19':'#200805';ctx.lineWidth=.75;
       const points=chunk.points;
       ctx.beginPath();
-      if(chunk.material==='metal') {
+      if(['metal','cloth','bone'].includes(chunk.material)) {
         ctx.moveTo(points[0].x,points[0].y);for(const p of points.slice(1))ctx.lineTo(p.x,p.y);
       } else {
         const last=points.at(-1);ctx.moveTo((last.x+points[0].x)/2,(last.y+points[0].y)/2);
@@ -503,10 +471,20 @@ export function createFightEffects(options = {}) {
       ctx.lineTo(-chunk.width*.3,chunk.height*.07);ctx.closePath();ctx.fill();
       // Small pale fibers and torn surface facets add readable substance at
       // sprite size; these are not detached character limbs or round decals.
-      ctx.globalAlpha=chunk.material==='metal'?.65:.27;ctx.strokeStyle=chunk.material==='metal'?'#b5ad92':'#b98c65';ctx.lineWidth=chunk.material==='metal'?.8:.65;
+      ctx.globalAlpha=chunk.material==='metal'?.65:chunk.material==='cloth'?.45:.27;ctx.strokeStyle=chunk.material==='metal'?'#b5ad92':chunk.material==='cloth'?'#9d9480':'#b98c65';ctx.lineWidth=chunk.material==='metal'?.8:.65;
       for(const fiber of chunk.fibers) {
         const x=fiber.x*chunk.width,y=fiber.y*chunk.height,length=fiber.length*chunk.width;
         ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+Math.cos(fiber.angle)*length,y+Math.sin(fiber.angle)*length);ctx.stroke();
+      }
+      if(chunk.material==='cloth') {
+        // Torn fabric has directional creases and a few hanging warp threads.
+        ctx.globalAlpha=.3;ctx.strokeStyle='#130d0a';ctx.lineWidth=.65;
+        for(const fiber of chunk.fibers) {
+          const x=fiber.x*chunk.width,y=fiber.y*chunk.height;
+          ctx.beginPath();ctx.moveTo(x-chunk.width*.15,y);ctx.lineTo(x+chunk.width*.18,y+chunk.height*.13);ctx.stroke();
+        }
+        ctx.globalAlpha=.44;ctx.strokeStyle='#afa287';ctx.lineWidth=.5;
+        for(const p of points.slice(0,3)) {ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(p.x+chunk.width*.07,p.y+chunk.height*.16);ctx.stroke();}
       }
       if(chunk.material==='metal') {
         ctx.globalAlpha=.7;ctx.strokeStyle='#681d11';ctx.lineWidth=1.4;
@@ -601,44 +579,24 @@ export function createFightEffects(options = {}) {
     ctx.restore();
   }
 
-  async function startAudio() {
-    const Context = globalThis.AudioContext || globalThis.webkitAudioContext;
-    if (!Context) return false;
-    try {
-      if (!audioContext) {
-        audioContext = new Context();
-        master = audioContext.createGain();
-        master.gain.value = muted ? 0 : 0.09;
-        master.connect(audioContext.destination);
-        noiseBuffer = audioContext.createBuffer(1, audioContext.sampleRate, audioContext.sampleRate);
-        const data = noiseBuffer.getChannelData(0);
-        // Audio noise has its own deterministic generator; it does not disturb visual sequences.
-        let audioSeed = 948712;
-        for (let index = 0; index < data.length; index++) {
-          audioSeed = (Math.imul(audioSeed, 1664525) + 1013904223) >>> 0;
-          data[index] = audioSeed / 2147483648 - 1;
-        }
-      }
-      if (audioContext.state === 'suspended') await audioContext.resume();
-      return audioContext.state === 'running';
-    } catch {
-      return false;
-    }
-  }
+  function startAudio() { return audio.startAudio(); }
 
   return {
     emit, update, drawBehind, drawFront, camera,
     get flash() { return flash; },
     setReducedMotion(value) {
       reducedMotion = Boolean(value);
+      audio.setReducedMotion(reducedMotion);
       if (reducedMotion) { shake = 0; flash = 0; camera.x = 0; camera.y = 0; }
     },
     setMuted(value) {
       muted = Boolean(value);
-      if (master && audioContext) master.gain.setTargetAtTime(muted ? 0 : 0.09, audioContext.currentTime, 0.02);
+      audio.setMuted(muted);
     },
     startAudio,
+    setPaused(value) { audio.setPaused(value); },
     clear() {
+      audio.clear();
       particles.length = 0; decals.length = 0; smears.length = 0;chunks.length=0;
       shake = 0; flash = 0; camera.x = 0; camera.y = 0;
     },
@@ -650,12 +608,17 @@ export function createFightEffects(options = {}) {
         energyParticles:particles.filter(particle=>particle.kind==='pulse-spark'||particle.kind==='char'||particle.kind==='smoke').length,
         smokeParticles:particles.filter(particle=>particle.kind==='smoke').length,
         floorSmears:decals.filter(decal=>decal.kind==='smear').length,
+        rupturePileChunks:chunks.filter(chunk=>chunk.pile).length,
+        dissolvedChunks:chunks.filter(chunk=>chunk.profile==='dissolve').length,
         chunks:chunks.length,airborneChunks:chunks.filter(chunk=>!chunk.settled).length,
         settledChunks:chunks.filter(chunk=>chunk.settled).length,
-        organicChunks:chunks.filter(chunk=>chunk.material==='organic').length,
+        organicChunks:chunks.filter(chunk=>chunk.material==='organic'||chunk.material==='bone').length,
+        clothChunks:chunks.filter(chunk=>chunk.material==='cloth').length,boneChunks:chunks.filter(chunk=>chunk.material==='bone').length,
+        headChunks:chunks.filter(chunk=>chunk.region==='head').length,
         metalChunks:chunks.filter(chunk=>chunk.material==='metal').length,
         decals: decals.length, smears: smears.length, reducedMotion, muted,
-        audioStarted: Boolean(audioContext),
+        audioStarted: audio.getStats().audioStarted,
+        audio: audio.getStats(),
       };
     },
   };

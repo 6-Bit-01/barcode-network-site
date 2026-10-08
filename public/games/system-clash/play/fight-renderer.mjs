@@ -1,5 +1,5 @@
 import {BROADCAST_CUT,broadcastCutStage,broadcastCutFrontStage,broadcastCutDepth,deletionDefinition,deletionPropState} from './deletion-library.mjs';
-import {poseFrameIndex,resolvePoseAttachments,weaponAttachment,weaponInsertionGeometry,damageOverlayPlans} from './fight-attachments.mjs';
+import {poseScale,poseFrameIndex,resolvePoseAttachments,weaponAttachment,weaponInsertionGeometry,damageOverlayPlans} from './fight-attachments.mjs';
 import {easedProgress,deletionCamera} from './fight-presentation.mjs';
 const WIDTH = 1280;
 const HEIGHT = 720;
@@ -398,13 +398,113 @@ function projectiles(ctx,match,weaponArt,front) {
   }
 }
 
+// Measured contours of the final intact floor poses. They identify the head
+// without treating a fighter as an independently animated collection of parts.
+const FALLEN_HEAD_REGIONS = {
+  '6-bit':{right:[29,31,37,35],left:[215,32,37,35]},
+  '9-bit':{right:[43,41,45,42],left:[267,42,44,43]},
+  'cache-back':{right:[28,37,33,39],left:[260,38,31,41]},
+  cliff:{right:[38,24,38,26],left:[240,25,36,28]},
+  'dj-floppydisc':{right:[33,45,33,31],left:[262,43,33,32]},
+  'mac-modem':{right:[34,27,34,30],left:[291,28,33,31]},
+  'mr-nice-guy':{right:[48,40,44,44],left:[254,39,42,45]},
+  'ms-mayhem':{right:[60,26,42,30],left:[247,26,41,30]},
+  stolz:{right:[33,34,31,37],left:[271,39,31,39]},
+  'kaveman-brown':{right:[32,36,34,41],left:[267,34,35,42]},
+  dr3wbaby:{right:[37,32,37,33],left:[270,29,39,31]},
+  'ash-flowers':{right:[35,32,36,35],left:[288,30,34,35]},
+  wittyf0x:{right:[64,35,40,34],left:[280,35,39,34]},
+};
+
+function fallenHeadRegion(view,art) {
+  const asset=art.clips.knockdown,fallen={...view,clip:'knockdown',elapsed:10000};
+  const frame=sourceFrame(asset,fallen),index=poseFrameIndex(asset,fallen),offset=frame.offset??[0,0];
+  const measured=FALLEN_HEAD_REGIONS[art.manifest.id]?.[view.facing];
+  const points=resolvePoseAttachments(frame,'knockdown',index,view.facing,art.manifest.id);
+  const [x,y,rx,ry]=measured??[points.head.x,points.head.y,points.bodyLength*.12,points.bodyLength*.11];
+  return {x,y,rx,ry,side:points.torso.x>x?1:-1,
+    world:{x:view.x+(x+offset[0]-frame.anchor[0])*poseScale(asset,frame),
+      y:FLOOR+(view.y??0)+(y+offset[1]-frame.anchor[1])*poseScale(asset,frame)}};
+}
+
+// Rear boot centroids measured from the opaque native hammer keys. The entire
+// baked fighter, grip and weapon tilt together around one supported foot.
+const HAMMER_SUPPORT_FEET={
+  right:[[25.804,482],[21.596,492],[26.020,335],[25.444,423]],
+  left:[[279,471],[303.291,489],[436.898,354],[333.188,417]],
+};
+function hammerHeadContact(contact,art,target) {
+  const asset=art.clips['delete-hammer'],frame=sourceFrame(asset,contact),index=poseFrameIndex(asset,contact);
+  const support=HAMMER_SUPPORT_FEET[contact.facing]?.[index];if(!support)return null;
+  const scale=poseScale(asset,frame),offset=frame.offset??[0,0],face=frame.attachments.hammerFace;
+  const dx=(face[0]-support[0])*scale,dy=(face[1]-support[1])*scale;
+  const radius=Math.hypot(dx,dy),phase=Math.atan2(dy,dx),sine=Math.asin(clamp((target.y-FLOOR)/radius,-1,1));
+  const normalize=a=>Math.atan2(Math.sin(a),Math.cos(a));
+  const candidates=[normalize(sine-phase),normalize(Math.PI-sine-phase)];
+  const angle=candidates.reduce((a,b)=>Math.abs(a)<Math.abs(b)?a:b);
+  return {angle:clamp(angle,-.24,.24),support,frame,scale,offset,dx,dy};
+}
+
+function deletionAftermathViews(match,views,art) {
+  if(!deletionActive(match)||definitionForMatch(match)?.mechanism!=='stamp')return views;
+  const definition=definitionForMatch(match),t=match.deletionElapsed;
+  if(t<definition.beats.stampStrike)return views;
+  const index=1-match.winner,result=views.map(view=>({...view})),victim=result[index];
+  // A head strike leaves the rest of the original body where it fell, including
+  // after the engine marks the loser deleted at the end of the cinematic.
+  Object.assign(victim,{clip:'knockdown',elapsed:10000,y:0,opacity:1,rotation:0,
+    weapon:null,aftermath:{kind:'head-crush',region:fallenHeadRegion(victim,art[index])}});
+  return result;
+}
+
+function drawHeadAftermath(ctx,view,art,geometry) {
+  const region=view.aftermath?.region;if(!region)return;
+  const {dx,dy,scale}=geometry,x=dx+(region.x+region.side*region.rx*.90)*scale,y=dy+region.y*scale;
+  ctx.save();ctx.translate(x,y);ctx.rotate(region.side<0?Math.PI:0);
+  const metal=art.manifest.id==='cache-back';
+  ctx.fillStyle=metal?'#202c29':'#280804';ctx.strokeStyle=metal?'#92907a':'#5f281a';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(-5,-9);ctx.lineTo(3,-7);ctx.lineTo(6,-3);ctx.lineTo(4,7);ctx.lineTo(-4,9);ctx.lineTo(-7,3);ctx.closePath();ctx.fill();ctx.stroke();
+  ctx.fillStyle=metal?'#797768':'#77311d';ctx.beginPath();ctx.moveTo(-4,-6);ctx.lineTo(1,-4);ctx.lineTo(3,3);ctx.lineTo(-3,5);ctx.closePath();ctx.fill();
+  ctx.strokeStyle=metal?'#89341d':'#b27449';ctx.lineWidth=.8;ctx.beginPath();ctx.moveTo(-3,-4);ctx.lineTo(1,0);ctx.moveTo(-4,3);ctx.lineTo(-1,5);ctx.stroke();ctx.restore();
+}
+
+// Hair cleanup is a bounded alpha/color clip on the intact native source.
+const FLOPPY_HAIR_CACHE=new WeakMap();
+function floppyHairExclusions(owner,asset,frame,view,id) {
+  if(id!=='dj-floppydisc'||view.clip.startsWith('delete-')||['pickup','crouch-punch','crouch-kick','jump-punch','jump-kick','crouch-high-kick','double-punch','power-kick'].includes(view.clip))return [];
+  if(FLOPPY_HAIR_CACHE.has(frame))return FLOPPY_HAIR_CACHE.get(frame);
+  const [sx,sy,w,h]=frame.rect,canvas=nativeCanvas(owner,w,h),rects=[];if(!canvas)return rects;
+  try {
+    const layer=canvas.getContext('2d',{willReadFrequently:true});layer.drawImage(asset.image,sx,sy,w,h,0,0,w,h);
+    const data=layer.getImageData(0,0,w,h).data,blue=new Uint8Array(w*h),visited=new Uint8Array(w*h);
+    for(let i=0;i<blue.length;i++){const k=i*4,r=data[k],g=data[k+1],b=data[k+2];blue[i]=data[k+3]>100&&b>70&&g>35&&b>r*1.35&&b>g*.95?1:0;}
+    const neighbors=i=>[i-1,i+1,i-w,i+w].filter(n=>n>=0&&n<w*h&&Math.abs(n%w-i%w)<=1);
+    let glasses=[];
+    for(let i=0;i<blue.length;i++)if(blue[i]&&!visited[i]){const component=[],queue=[i];visited[i]=1;for(let q=0;q<queue.length;q++){const j=queue[q];component.push(j);for(const n of neighbors(j))if(!visited[n]&&blue[n]){visited[n]=1;queue.push(n);}}if(component.length>glasses.length)glasses=component;}
+    if(glasses.length<8)return rects;
+    const cx=glasses.reduce((n,i)=>n+i%w,0)/glasses.length,cy=glasses.reduce((n,i)=>n+Math.floor(i/w),0)/glasses.length;
+    const points=resolvePoseAttachments(frame,view.clip,poseFrameIndex(asset,view),view.facing,id),tx=points.torso.x-cx,ty=points.torso.y-cy,length=Math.hypot(tx,ty);if(length<15)return rects;
+    const down={x:tx/length,y:ty/length},face=view.facing==='left'?-1:1,back={x:-down.y*face,y:down.x*face};
+    const projected=glasses.map(i=>(i%w-cx)*back.x+(Math.floor(i/w)-cy)*back.y),glassSpan=Math.max(10,Math.max(...projected)-Math.min(...projected));
+    const candidate=new Uint8Array(w*h),removed=new Uint8Array(w*h),queue=[];
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=y*w+x,k=i*4,r=data[k],g=data[k+1],b=data[k+2],a=data[k+3],posterior=(x-cx)*back.x+(y-cy)*back.y,along=(x-cx)*down.x+(y-cy)*down.y;
+      // Restrict to warm brown exterior nape, behind/below the actual blue lenses.
+      // Skin, white collars, glasses and cool black waistcoats remain original.
+      if(a>20&&r<118&&g<101&&b<88&&r>g+3&&g>b+1&&r<g*2.15&&posterior>glassSpan*.93&&posterior<glassSpan*2.35&&along>glassSpan*.18&&along<glassSpan*2.1)candidate[i]=1;}
+    for(let i=0;i<candidate.length;i++)if(candidate[i]&&neighbors(i).some(n=>data[n*4+3]<30)){removed[i]=1;queue.push(i);}
+    for(let q=0;q<queue.length;q++)for(const n of neighbors(queue[q]))if(candidate[n]&&!removed[n]){removed[n]=1;queue.push(n);}
+    for(let y=0;y<h;y++){let start=-1;for(let x=0;x<=w;x++){if(x<w&&removed[y*w+x]&&start<0)start=x;if((x===w||!removed[y*w+x])&&start>=0){rects.push([start,y,x-start,1]);start=-1;}}}
+    FLOPPY_HAIR_CACHE.set(frame,rects);return rects;
+  } catch {return rects;}
+}
+
 function fighter(ctx, view, art, overlays, weaponArt, hide = false) {
   if (!view || !art || hide) return;
   const asset = art.clips?.[view.clip];
   if (!asset?.image || !asset.data?.frames) throw new Error(`${art.manifest.character??art.manifest.id}: ${view.clip} animation is unavailable.`);
   const frame = sourceFrame(asset, view);
   if (!frame) return;
-  const scale = asset.scale ?? asset.data.scale ?? art.manifest.scale ?? 1;
+  const scale = poseScale(asset,frame);
   const offset = frame.offset ?? [0, 0];
   const [sx, sy, sw, sh] = frame.rect;
   const feetX = view.x ?? 640;
@@ -423,7 +523,7 @@ function fighter(ctx, view, art, overlays, weaponArt, hide = false) {
   // A wheel turns the entire native fighter around the measured torso.
   // Body, wear and embedded gear share this one rigid transform.
   if(view.rotation) {
-    const pivot=points.torso;
+    const pivot=view.rotationPivotPoint??points.torso;
     ctx.translate(dx+pivot.x*scale,dy+pivot.y*scale);ctx.rotate(view.rotation);
     ctx.translate(-dx-pivot.x*scale,-dy-pivot.y*scale);
   }
@@ -433,12 +533,17 @@ function fighter(ctx, view, art, overlays, weaponArt, hide = false) {
     ctx.beginPath();ctx.rect(dx-20,dy-20,sw*scale+40,Math.max(0,boundary-dy+20));ctx.clip();
   }
   // One complete source rectangle, one uniform scale, and its own drawn facing.
-  if(frame.sourceExclusions?.length) {
+  const sourceExclusions=[...(frame.sourceExclusions??[]),...floppyHairExclusions(ctx.canvas,asset,frame,view,art.manifest.id)];
+  if(sourceExclusions.length) {
     ctx.beginPath();ctx.rect(dx,dy,sw*scale,sh*scale);
-    for(const [x,y,w,h]of frame.sourceExclusions)ctx.rect(dx+x*scale,dy+y*scale,w*scale,h*scale);
+    for(const [x,y,w,h]of sourceExclusions)ctx.rect(dx+x*scale,dy+y*scale,w*scale,h*scale);
     ctx.clip('evenodd');
   }
-  if(view.clip==='delete-hammer') {ctx.beginPath();ctx.rect(-10000,-10000,20000,FLOOR+10001);ctx.clip();}
+  if(view.aftermath?.region) {
+    const r=view.aftermath.region;ctx.beginPath();ctx.rect(dx-5,dy-5,sw*scale+10,sh*scale+10);
+    ctx.ellipse(dx+r.x*scale,dy+r.y*scale,r.rx*scale,r.ry*scale,0,0,TAU);ctx.clip('evenodd');
+  }
+  if(view.clip==='delete-hammer'&&!view.rotationPivotPoint) {ctx.beginPath();ctx.rect(-10000,-10000,20000,FLOOR+10001);ctx.clip();}
   ctx.drawImage(asset.image, sx, sy, sw, sh, dx, dy, sw * scale, sh * scale);
   overlays.drawDamage(ctx,asset,frame,view,art,geometry,points,weaponArt);
   for(const embedded of (view.embeddedWeapons??[]).slice(-4)) {
@@ -458,6 +563,7 @@ function fighter(ctx, view, art, overlays, weaponArt, hide = false) {
     nativeOcclusion(ctx,asset,frame,geometry,placement.point,radius,radius*.85,placement.angle);
   }
   ctx.restore();
+  if(view.aftermath)drawHeadAftermath(ctx,view,art,geometry);
 }
 
 function deletionActive(match) {
@@ -534,11 +640,25 @@ function nativePoseHorizontalEnvelope(art,clips,facing) {
     const asset=art.clips[name];if(!asset)continue;
     for(const frame of asset.data.frames[facing]??[]) {
       const bounds=frame.opaqueBounds??[0,0,frame.rect[2],frame.rect[3]],offset=frame.offset??[0,0];
-      min=Math.min(min,(bounds[0]+offset[0]-frame.anchor[0])*asset.scale);
-      max=Math.max(max,(bounds[2]+offset[0]-frame.anchor[0])*asset.scale);
+      min=Math.min(min,(bounds[0]+offset[0]-frame.anchor[0])*poseScale(asset,frame));
+      max=Math.max(max,(bounds[2]+offset[0]-frame.anchor[0])*poseScale(asset,frame));
     }
   }
   return {min,max};
+}
+
+function wandNativeTorsoEnvelope(art,clips,facing) {
+  let min=Infinity,max=-Infinity,footDrop=0;
+  for(const clip of clips) {
+    const asset=art.clips[clip];if(!asset)continue;
+    for(let key=0;key<asset.data.frames[facing].length;key++) {
+      const frame=asset.data.frames[facing][key],bounds=frame.opaqueBounds;
+      const torso=resolvePoseAttachments(frame,clip,key,facing,art.manifest.id).torso,scale=poseScale(asset,frame);
+      min=Math.min(min,(bounds[0]-torso.x)*scale);max=Math.max(max,(bounds[2]-torso.x)*scale);
+      footDrop=Math.max(footDrop,(bounds[3]-torso.y)*scale);
+    }
+  }
+  return {min,max,footDrop};
 }
 
 function machineViews(match,prop,views,art) {
@@ -615,14 +735,29 @@ function machineViews(match,prop,views,art) {
     if(t>=b.stampRaise) {
       if(art[match.winner].clips['delete-hammer']) {
         const contact={...hero,x:match._deletionOrigin.near,clip:'delete-hammer',elapsed:art[match.winner].clips['delete-hammer'].data.contactMs};
-        const face=poseWorldPoint(contact,art[match.winner],'hammerFace');
-        const body=poseWorldPoint({...result[1-match.winner],clip:'knockdown',elapsed:10000},art[1-match.winner],'torso');
-        hero.x+=(body.x-face.x)*easedProgress(t,b.stampRaise,b.stampStrike);
+        const body=fallenHeadRegion({...result[1-match.winner],clip:'knockdown',elapsed:10000},art[1-match.winner]).world;
+        const fitted=hammerHeadContact(contact,art[match.winner],body);
+        if(fitted) {
+          const progress=easedProgress(t,b.stampStrike-260,b.stampStrike)*(1-easedProgress(t,b.lift,b.reveal));
+          const angle=fitted.angle*progress,c=Math.cos(angle),s=Math.sin(angle);
+          const pivotX=contact.x+(fitted.support[0]+fitted.offset[0]-fitted.frame.anchor[0])*fitted.scale;
+          const faceX=pivotX+fitted.dx*c-fitted.dy*s;
+          hero.x+=(body.x-faceX)*easedProgress(t,b.stampRaise,b.stampStrike);
+          if(hero.clip==='delete-hammer') {
+            const asset=art[match.winner].clips['delete-hammer'],frame=sourceFrame(asset,hero),index=poseFrameIndex(asset,hero);
+            const support=HAMMER_SUPPORT_FEET[hero.facing][index],offset=frame.offset??[0,0];
+            hero.rotation=angle;hero.rotationPivotPoint={x:support[0],y:support[1]};
+            hero.y+=(frame.anchor[1]-offset[1]-support[1])*poseScale(asset,frame)*progress;
+          }
+        } else {
+          const face=poseWorldPoint(contact,art[match.winner],'hammerFace');
+          hero.x+=(body.x-face.x)*easedProgress(t,b.stampRaise,b.stampStrike);
+        }
         return result;
       }
       const contact={...hero,x:match._deletionOrigin.near,clip:'delete-stamp',elapsed:art[match.winner].clips['delete-stamp'].data.contactMs};
       const geometry=stampGeometry(match,bank,[...result.slice(0,match.winner),contact,...result.slice(match.winner+1)],art);
-      const victim=result[1-match.winner],body=poseWorldPoint({...victim,clip:'knockdown',elapsed:10000},art[1-match.winner],'torso');
+      const victim=result[1-match.winner],body=fallenHeadRegion({...victim,clip:'knockdown',elapsed:10000},art[1-match.winner]).world;
       hero.x+=(body.x-geometry.face.x)*easedProgress(t,b.stampRaise,b.stampStrike);
     }
     return result;
@@ -651,6 +786,32 @@ function machineViews(match,prop,views,art) {
     }
     return result;
   }
+  if(bank&&definition.mechanism==='wand') {
+    const result=views.map(view=>({...view})),t=match.deletionElapsed,b=definition.beats,o=match._deletionOrigin,index=1-match.winner,victim=result[index],victimArt=art[index],hero=result[match.winner],heroArt=art[match.winner],dir=o.direction;
+    const start=poseWorldPoint({...victim,x:o.target,y:0,clip:'delete-brace',elapsed:10000},victimArt,'torso');
+    const incoming=poseWorldPoint({...victim,x:o.target,y:0,clip:'high',elapsed:210},victimArt,'torso');
+    const caster=wandNativeTorsoEnvelope(heroArt,['delete-cast','delete-present'],hero.facing),target=wandNativeTorsoEnvelope(victimArt,['high','delete-brace','delete-suspended'],victim.facing);
+    const ready=poseWorldPoint({...hero,x:o.near,y:0,clip:'delete-cast',elapsed:heroArt.clips['delete-cast'].data.contactMs},heroArt,'torso');
+    const gap=dir>0?Math.min(start.x,incoming.x)+target.min-ready.x-caster.max:ready.x+caster.min-Math.max(start.x,incoming.x)-target.max;
+    const station=ready.x-dir*Math.max(0,45-gap),near=poseWorldPoint({...hero,x:o.near,y:0},heroArt,'torso');
+    // Select one station from all complete cast/presentation and victim keys.
+    // Actual torso registration keeps the native foot-anchor changes from
+    // crowding the lane or moving the caster after the spell finishes.
+    hero.x+=(station-near.x)*easedProgress(t,0,b.castWindup);
+    if(t>=b.bind&&t<b.erased) {
+      const ceiling=FLOOR-wandNativeTorsoEnvelope(victimArt,['delete-suspended'],victim.facing).footDrop;
+      const takeoff=Math.min(start.y,ceiling);
+      const end=poseWorldPoint({...victim,x:o.target,y:-o.liftDistance,clip:'delete-suspended',elapsed:10000},victimArt,'torso');
+      const point=poseWorldPoint(victim,victimArt,'torso'),gather=easedProgress(t,b.bind,b.bind+220),lift=easedProgress(t,b.lift,b.lifted);
+      victim.x+=incoming.x+(start.x-incoming.x)*gather-point.x;
+      // The crouched reaction begins floating before the upright key. Its
+      // chest reaches the safe takeoff height while the complete silhouette
+      // stays above the floor; no native boot is clipped or deformed.
+      if(t>=b.lift-280&&t<b.lift)victim.y+=start.y+(takeoff-start.y)*easedProgress(t,b.lift-280,b.lift)-point.y;
+      else if(t>=b.lift)victim.y+=takeoff+(Math.min(end.y,ceiling-o.liftDistance)-takeoff)*lift-point.y;
+    }
+    return result;
+  }
   if(bank&&definition.mechanism==='jaws') {
     const result=views.map(view=>({...view})),t=match.deletionElapsed,b=definition.beats,o=match._deletionOrigin;
     const g=jawsGeometry(match,bank,result,art),hero=result[match.winner],victim=result[1-match.winner];
@@ -676,8 +837,8 @@ function machineViews(match,prop,views,art) {
   }
   const alignBody=(index,centerX,bottomY)=>{
     const view=result[index],asset=art[index].clips[view.clip],frame=sourceFrame(asset,view),offset=frame.offset??[0,0],bounds=frame.opaqueBounds??[0,0,frame.rect[2],frame.rect[3]];
-    view.x=centerX-((bounds[0]+bounds[2])/2+offset[0]-frame.anchor[0])*asset.scale;
-    view.y=bottomY-FLOOR-(bounds[3]+offset[1]-frame.anchor[1])*asset.scale;
+    view.x=centerX-((bounds[0]+bounds[2])/2+offset[0]-frame.anchor[0])*poseScale(asset,frame);
+    view.y=bottomY-FLOOR-(bounds[3]+offset[1]-frame.anchor[1])*poseScale(asset,frame);
   };
   if(g.definition.mechanism==='coffin'&&t>=b.entry&&t<b.lidClose&&g.frame.aperture) {
     const [ax,ay,aw,ah]=g.frame.aperture,p=clamp((t-b.entry)/(b.landed-b.entry),0,1),before={...result[victim]};
@@ -700,18 +861,13 @@ function machineViews(match,prop,views,art) {
       before.y+=start.y+(end.y-start.y)*p-flight.height*Math.sin(p*Math.PI)-point.y;
     } else if(t>=b.captured)alignBody(victim,centerX,bottomY);
   }
-  if(g.definition.mechanism==='coffin'&&!Number.isFinite(match._deletionOrigin?.nailRootX)&&t>=b.latchTimes.at(-1)+40&&g.frame.spikeHole) {
-    const hero=result[match.winner],contactView={...hero,clip:'delete-nail',elapsed:art[match.winner].clips['delete-nail'].data.contactMs};
-    const point=poseWorldPoint(contactView,art[match.winner],'grip'),start=b.latchTimes.at(-1)+40,p=clamp((t-start)/(b.nailRaise-start),0,1);
-    hero.x+=(g.x+g.frame.spikeHole[0]*g.scale-point.x)*p;
-    if(t<b.nailRaise){hero.clip='walk';hero.elapsed=t-start;}
-  }
-  if(g.definition.mechanism==='coffin'&&g.frame.spikeHole&&result[match.winner].clip==='delete-nail') {
-    const hero=result[match.winner],hand=poseWorldPoint(hero,art[match.winner],'grip');
-    // Foot anchors differ between the native windup, bent drive and recovery.
-    // Register the entire body by the held nail so its hand stays over the lid
-    // center, and its torso stays on the left instead of hopping to the right.
-    hero.x+=g.x+g.frame.spikeHole[0]*g.scale-hand.x+.3;
+  if(g.definition.mechanism==='coffin'&&t>=b.nailApproach&&g.frame.spikeHole) {
+    const hero=result[match.winner],holeX=g.x+g.frame.spikeHole[0]*g.scale;
+    const body=poseWorldPoint(hero,art[match.winner],'torso');
+    const progress=easedProgress(t,b.nailApproach,b.nailRaise);
+    // A fixed torso station keeps both boots beside the chest. Individual
+    // hands retain their authored motion; they never drag the operator sideways.
+    hero.x+=(holeX-193-body.x)*progress;
   }
   if(g.definition.mechanism==='waste-chute'&&t>=b.hopOn&&t<b.present) {
     const hero=result[match.winner],lidY=g.y+(g.frame.lidPoint?.[1]??g.frame.opaqueBounds[1]+12)*g.scale-FLOOR;
@@ -722,11 +878,19 @@ function machineViews(match,prop,views,art) {
       hero.clip='jump';hero.elapsed=p*(art[match.winner].clips.jump.timeline.duration-.001);
     } else {hero.x=match.deletionTargetX;hero.y=lidY;}
   }
-  if(g.definition.mechanism==='drive'&&t>=b.dragStart) {
-    const view=result[victim],asset=art[victim].clips[view.clip],frame=sourceFrame(asset,view),bounds=frame.opaqueBounds,offset=frame.offset??[0,0];
-    // The intact dragged pose stays on the stage; an ankle tether cannot lower
-    // its native opaque silhouette beneath the floor.
-    if(bounds)view.y=Math.min(view.y??0,-(bounds[3]+offset[1]-frame.anchor[1])*asset.scale);
+  if(g.definition.mechanism==='drive'&&t>=b.ankleSnare&&t<b.captured) {
+    const view=result[victim],bank=art[victim],slot=g.frame.slotPoint??[g.frame.anchor[0],g.frame.opaqueBounds[1]+25];
+    const start=poseWorldPoint({...view,clip:'grabbed',elapsed:340,x:match._deletionOrigin.victim,y:0,rotation:0},bank,'torso');
+    const end={x:g.x+slot[0]*g.scale,y:g.y+slot[1]*g.scale-28};
+    const p=easedProgress(t,b.ankleSnare,b.captured),tilt=easedProgress(t,b.ankleSnare,b.prone);
+    view.rotation=match._deletionOrigin.direction*1.18*tilt;
+    const point=poseWorldPoint(view,bank,'torso');
+    view.x+=start.x+(end.x-start.x)*p-point.x;
+    view.y+=start.y+(end.y-start.y)*p-125*Math.sin(Math.PI*p)-point.y;
+    const asset=bank.clips[view.clip],frame=sourceFrame(asset,view),bounds=frame.opaqueBounds,offset=frame.offset??[0,0],scale=poseScale(asset,frame);
+    const torso=poseWorldPoint({...view,rotation:0},bank,'torso'),c=Math.cos(view.rotation),sn=Math.sin(view.rotation);
+    const bottom=Math.max(...[bounds[0],bounds[2]].flatMap(x=>[bounds[1],bounds[3]].map(y=>{const wx=view.x+(x+offset[0]-frame.anchor[0])*scale,wy=FLOOR+view.y+(y+offset[1]-frame.anchor[1])*scale;return torso.y+(wx-torso.x)*sn+(wy-torso.y)*c;})));
+    view.y-=Math.max(0,bottom-(FLOOR-7*Math.sin(Math.PI*p))); 
   }
   return result;
 }
@@ -735,9 +899,9 @@ function poseWorldPoint(view,art,site='torso') {
   const asset=art.clips[view.clip],frame=sourceFrame(asset,view),offset=frame.offset??[0,0];
   const secondary=frame.attachments?.gripSecondary??frame.attachments?.secondaryGrip??frame.attachments?.supportGrip;
   const points=resolvePoseAttachments(frame,view.clip,poseFrameIndex(asset,view),view.facing,art.manifest.id),raw=site==='gripSecondary'?secondary:frame.attachments?.[site],point=raw?{x:raw[0],y:raw[1]}:points[site]??points.torso;
-  const p={x:view.x+(point.x+offset[0]-frame.anchor[0])*asset.scale,y:FLOOR+(view.y??0)+(point.y+offset[1]-frame.anchor[1])*asset.scale};
+  const p={x:view.x+(point.x+offset[0]-frame.anchor[0])*poseScale(asset,frame),y:FLOOR+(view.y??0)+(point.y+offset[1]-frame.anchor[1])*poseScale(asset,frame)};
   if(view.rotation) {
-    const torso=points.torso,px=view.x+(torso.x+offset[0]-frame.anchor[0])*asset.scale,py=FLOOR+(view.y??0)+(torso.y+offset[1]-frame.anchor[1])*asset.scale;
+    const torso=points.torso,px=view.x+(torso.x+offset[0]-frame.anchor[0])*poseScale(asset,frame),py=FLOOR+(view.y??0)+(torso.y+offset[1]-frame.anchor[1])*poseScale(asset,frame);
     const x=p.x-px,y=p.y-py,c=Math.cos(view.rotation),s=Math.sin(view.rotation);
     return {x:px+x*c-y*s,y:py+x*s+y*c};
   }
@@ -751,7 +915,7 @@ function utilitySprite(ctx,bank,frame,x,y,drawHeight,angle=0,pivot=frame.pivot) 
 }
 
 function coverNativeHand(ctx,view,art,site='grip') {
-  const asset=art.clips[view.clip],frame=sourceFrame(asset,view),offset=frame.offset??[0,0],scale=asset.scale;
+  const asset=art.clips[view.clip],frame=sourceFrame(asset,view),offset=frame.offset??[0,0],scale=poseScale(asset,frame);
   const points=resolvePoseAttachments(frame,view.clip,poseFrameIndex(asset,view),view.facing,art.manifest.id);
   const value=site==='gripSecondary'?(frame.attachments?.gripSecondary??frame.attachments?.secondaryGrip??frame.attachments?.supportGrip):null,point=value?{x:value[0],y:value[1]}:points[site];
   if(!point)return;
@@ -760,12 +924,12 @@ function coverNativeHand(ctx,view,art,site='grip') {
 
 function speakerGeometry(match,bank,views,art) {
   const hero=views[match.winner],victim=views[1-match.winner],o=match._deletionOrigin,dir=o.direction;
-  const contact={...hero,x:0,y:0,facing:dir>0?'right':'left',clip:'delete-shove',elapsed:art[match.winner].clips['delete-shove'].data.contactMs};
+  const contact={...hero,x:0,y:0,facing:dir>0?'right':'left',clip:'delete-shove',elapsed:art[match.winner].clips['delete-shove'].data.contactMs??240};
   const hand=poseWorldPoint(contact,art[match.winner],'grip'),f=bank.manifest.frames.open;
   const scale=(FLOOR-hand.y)/(f.opaqueBounds[3]-f.attachments.pushGrip[1]);
   const floorView={...victim,x:o.target-(match.fighters[1-match.winner]._clips.knockdown?.endOffsetX?.[victim.facing]??0),y:0,clip:'knockdown',elapsed:10000};
   const asset=art[1-match.winner].clips.knockdown,native=sourceFrame(asset,floorView),offset=native.offset??[0,0],bounds=native.opaqueBounds;
-  const edge=floorView.x+((dir>0?bounds[0]:bounds[2])+offset[0]-native.anchor[0])*asset.scale;
+  const edge=floorView.x+((dir>0?bounds[0]:bounds[2])+offset[0]-native.anchor[0])*poseScale(asset,native);
   const x=edge-dir*14,pivot=f.stagePivot??f.anchor;
   const pushX=x+dir*(f.attachments.pushGrip[0]-pivot[0])*scale;
   const grab=poseWorldPoint({...contact,clip:'delete-pull',elapsed:0},art[match.winner],'grip');
@@ -789,28 +953,50 @@ function jawsGeometry(match,bank,views,art) {
   const o=match._deletionOrigin,t=match.deletionElapsed,b=definitionForMatch(match).beats,index=1-match.winner;
   const victim=views[index],victimArt=art[index],brace=victimArt.clips['delete-brace'];
   const reference=sourceFrame(brace,{...victim,clip:'delete-brace',elapsed:0}),bounds=reference.opaqueBounds;
-  const gap=(bounds[2]-bounds[0])*brace.scale+40;
+  const gap=(bounds[2]-bounds[0])*poseScale(brace,reference)+40;
   const scale=240/(bank.manifest.utilityFrames.jawLeft.opaqueBounds[3]-bank.manifest.utilityFrames.jawLeft.opaqueBounds[1]);
-  const small=Math.max(92,gap*.30);
-  let opening=gap;
+  const small=Math.max(92,gap*.30);let opening=gap;
   if(t>=b.close&&t<b.squeeze)opening=gap+(small-gap)*propBeatProgress(t,b.close,b.squeeze-b.close);
   else if(t>=b.squeeze&&t<b.sealed)opening=small+(18-small)*propBeatProgress(t,b.squeeze,b.sealed-b.squeeze);
   else if(t>=b.sealed&&t<b.reopen)opening=18;
   else if(t>=b.reopen)opening=18+(gap*.8-18)*propBeatProgress(t,b.reopen,b.cube-b.reopen);
   const left=bank.manifest.utilityFrames.jawLeft,right=bank.manifest.utilityFrames.jawRight;
-  const half=gap/2+(left.innerFace[0]-left.opaqueBounds[0])*scale;
+  const half=gap/2+(left.innerFace[0]-left.opaqueBounds[0])*scale,heroArt=art[match.winner],dir=o.direction;
+  const contact={...views[match.winner],x:0,y:0,facing:dir>0?'right':'left',clip:'punch',elapsed:heroArt.clips.punch.data.contactMs};
+  const hand=poseWorldPoint(contact,heroArt,'grip'),torso=poseWorldPoint(contact,heroArt,'torso'),reach=dir*(hand.x-torso.x);
   let operatorRadius=70;
-  for(const id of ['delete-pull','delete-present']) {
-    const asset=art[match.winner].clips[id];
+  for(const id of ['punch','idle']) {
+    const asset=heroArt.clips[id];
     for(const facing of ['left','right'])for(let key=0;key<asset.data.frames[facing].length;key++) {
-      const f=asset.data.frames[facing][key],points=resolvePoseAttachments(f,id,key,facing,art[match.winner].manifest.id);
-      operatorRadius=Math.max(operatorRadius,Math.abs(f.opaqueBounds[0]-points.torso.x)*asset.scale,Math.abs(f.opaqueBounds[2]-points.torso.x)*asset.scale);
+      const f=asset.data.frames[facing][key],points=resolvePoseAttachments(f,id,key,facing,heroArt.manifest.id);
+      operatorRadius=Math.max(operatorRadius,Math.abs(f.opaqueBounds[0]-points.torso.x)*poseScale(asset,f),Math.abs(f.opaqueBounds[2]-points.torso.x)*poseScale(asset,f));
     }
   }
-  const center=o.target;
-  return {center,scale,opening,fullWidth:half*2,operatorX:center-o.direction*(half+operatorRadius+24),
+  const center=o.target,clearance=Math.max(62,operatorRadius+24-reach),buttonX=center-dir*(half+clearance);
+  return {center,scale,opening,fullWidth:half*2,operatorX:buttonX-dir*reach,
+    control:{x:buttonX,y:hand.y,pressed:t>=b.close,active:t>=b.close&&t<b.sealed},
     left:{frame:left,x:center-opening/2-(left.innerFace[0]-left.anchor[0])*scale},
     right:{frame:right,x:center+opening/2-(right.innerFace[0]-right.anchor[0])*scale}};
+}
+
+function jawsControlPedestal(ctx,match,g) {
+  const t=match.deletionElapsed,b=definitionForMatch(match).beats;if(t<b.captured)return;
+  const {x,y,pressed,active}=g.control;
+  withStagePropLift(ctx,t-b.captured,y-36,()=>{
+    ctx.save();
+    ctx.fillStyle='#0b1016';ctx.fillRect(x-38,FLOOR-12,76,12);
+    const steel=ctx.createLinearGradient(x-25,0,x+25,0);steel.addColorStop(0,'#171c24');steel.addColorStop(.45,'#485460');steel.addColorStop(1,'#111922');
+    ctx.fillStyle=steel;ctx.fillRect(x-23,y+20,46,FLOOR-y-30);
+    ctx.strokeStyle='#62747d';ctx.lineWidth=2;ctx.strokeRect(x-23,y+20,46,FLOOR-y-30);
+    ctx.fillStyle='#141b23';ctx.fillRect(x-37,y-35,74,62);ctx.strokeStyle='#526d79';ctx.strokeRect(x-37,y-35,74,62);
+    ctx.fillStyle='#091117';ctx.fillRect(x-30,y-28,60,12);
+    text(ctx,active?'RUNNING':pressed?'COMPLETE':'DELETE',x,y-18,9,active?'#6ce6f1':'#a5cbd1','center','900','monospace');
+    ctx.fillStyle='#0a0b0e';ctx.beginPath();ctx.ellipse(x,y,23,19,0,0,TAU);ctx.fill();
+    ctx.fillStyle=pressed?'#891b24':'#df2d3d';ctx.beginPath();ctx.ellipse(x,y+(pressed?2:0),18,pressed?13:16,0,0,TAU);ctx.fill();
+    ctx.strokeStyle=pressed?'#f04449':'#ff8185';ctx.lineWidth=2;ctx.stroke();
+    ctx.fillStyle=active?'#3de6cf':'#a32938';ctx.fillRect(x-22,y+19,44,3);
+    ctx.restore();
+  },b.close-b.captured);
 }
 
 function nativeHardware(ctx,bank,frame,x,y,scale,dir=1,angle=0,pivot=frame.anchor) {
@@ -874,7 +1060,7 @@ function trussGeometry(match,bank,views,art) {
 function wheelGeometry(match,bank,views,art) {
   const index=1-match.winner,victim=views[index],asset=art[index].clips['delete-brace'];
   const view={...victim,clip:'delete-brace',elapsed:0},native=sourceFrame(asset,view),points=resolvePoseAttachments(native,view.clip,poseFrameIndex(asset,view),view.facing,art[index].manifest.id),torso=points.torso,bounds=native.opaqueBounds;
-  const radius=Math.max(...[bounds[0],bounds[2]].flatMap(x=>[bounds[1],bounds[3]].map(y=>Math.hypot(x-torso.x,y-torso.y)*asset.scale)))+14;
+  const radius=Math.max(...[bounds[0],bounds[2]].flatMap(x=>[bounds[1],bounds[3]].map(y=>Math.hypot(x-torso.x,y-torso.y)*poseScale(asset,native))))+14;
   return {x:match._deletionOrigin.wheelX,y:FLOOR-radius-12,radius,scale:radius*2/bank.manifest.referenceWidth};
 }
 
@@ -884,10 +1070,10 @@ function nativeExtent(art) {
   const extent={left:0,right:0,top:0,bottom:0};
   for(const asset of Object.values(art.clips))for(const frames of Object.values(asset.data.frames))for(const f of frames) {
     const [l,t,r,b]=f.opaqueBounds??[0,0,f.rect[2],f.rect[3]],offset=f.offset??[0,0];
-    extent.left=Math.min(extent.left,(l+offset[0]-f.anchor[0])*asset.scale);
-    extent.right=Math.max(extent.right,(r+offset[0]-f.anchor[0])*asset.scale);
-    extent.top=Math.min(extent.top,(t+offset[1]-f.anchor[1])*asset.scale);
-    extent.bottom=Math.max(extent.bottom,(b+offset[1]-f.anchor[1])*asset.scale);
+    extent.left=Math.min(extent.left,(l+offset[0]-f.anchor[0])*poseScale(asset,f));
+    extent.right=Math.max(extent.right,(r+offset[0]-f.anchor[0])*poseScale(asset,f));
+    extent.top=Math.min(extent.top,(t+offset[1]-f.anchor[1])*poseScale(asset,f));
+    extent.bottom=Math.max(extent.bottom,(b+offset[1]-f.anchor[1])*poseScale(asset,f));
   }
   extentCache.set(art,extent);return extent;
 }
@@ -911,7 +1097,18 @@ function fittedSignatureCamera(match,prop,views,art) {
     left=o.target+(f.opaqueBounds[0]-f.anchor[0])*s;right=o.target+(f.opaqueBounds[2]-f.anchor[0])*s;
     // Fit the raised sign as well as the landing. A current-pose fit used to
     // zoom toward the falling sign, then abruptly reframe the ending.
-    top=Math.min(top,180+(f.opaqueBounds[1]-f.anchor[1])*s);
+    const raised=180+(f.opaqueBounds[1]-f.anchor[1])*s;
+    const settled=poseWorldPoint(views[match.winner],art[match.winner],'head').y-45;
+    // After the sign has landed, ease toward the surviving operator and debris;
+    // the former overhead sign no longer needs to make the ending miniature.
+    top=Math.min(top,raised+(settled-raised)*easedProgress(match.deletionElapsed,definition.beats.landed,definition.beats.present));
+  } else if(definition.mechanism==='drive') {
+    const g=machineGeometry(match,prop),f=g.frame;
+    left=g.x+f.opaqueBounds[0]*g.scale;right=g.x+f.opaqueBounds[2]*g.scale;
+    top=Math.min(top,180);
+  } else if(definition.mechanism==='wand') {
+    heroRoots.push(views[match.winner].x);
+    top=Math.min(top,FLOOR+victim.top-o.liftDistance-55);
   } else {
     const g=trussGeometry(match,bank,views,art),f=g.frame;
     left=g.x+f.opaqueBounds[0]*g.scale;right=g.x+f.opaqueBounds[2]*g.scale;
@@ -1086,18 +1283,7 @@ function additionalDeletionScene(ctx,match,prop,views,art,front) {
         nativeHardware(ctx,bank,rail,g.center,FLOOR,g.fullWidth/bank.manifest.referenceWidth);ctx.restore();
         for(const side of [g.left,g.right])nativeHardware(ctx,bank,side.frame,side.x,FLOOR,g.scale);
       });
-      if(t>=b.captured&&t<b.present) {
-        const support=poseWorldPoint(hero,heroArt,'gripSecondary'),side=dir>0?g.left:g.right,f=side.frame;
-        const control={x:side.x+(f.grip[0]-f.anchor[0])*g.scale,y:FLOOR+(f.grip[1]-f.anchor[1])*g.scale};
-        // A manual spindle extends to the separate operator station. Both
-        // native hands grasp its rod instead of carrying a giant angled jaw.
-        ctx.save();ctx.lineCap='round';
-        for(const [color,width] of [['#14191d',9],['#76808b',5],['#c7c7c5',1]]) {
-          ctx.strokeStyle=color;ctx.lineWidth=width;ctx.beginPath();ctx.moveTo(support.x-dir*14,support.y);
-          ctx.lineTo(grip.x,grip.y);ctx.lineTo(control.x,control.y);ctx.stroke();
-        }
-        ctx.restore();
-      }
+      jawsControlPedestal(ctx,match,g);
     } else {
       // Only the inner plate surfaces sit in front of the victim. Housing and
       // screw units stay behind; the center remains readable during eye bulge.
@@ -1215,7 +1401,7 @@ function additionalDeletionScene(ctx,match,prop,views,art,front) {
       }
       if(t>=b.bind&&t<b.erased) {
         const p=propBeatProgress(t,b.bind,220)*(1-propBeatProgress(t,b.erased-180,180));
-        energyReveal(ctx,p,()=>draw('rune',chest.x,FLOOR+(victim.y??0)+8,35+40*p,t*.003));
+        energyReveal(ctx,p,()=>draw('rune',chest.x,FLOOR+5,35+40*p,t*.003));
       }
       return;
     }
@@ -1244,26 +1430,25 @@ function signatureHardware(ctx,match,prop,views,art,front) {
   if(!deletionActive(match))return;const g=machineGeometry(match,prop);if(!g)return;
   const t=match.deletionElapsed,b=g.definition.beats,hero=views[match.winner],victim=views[1-match.winner],dir=match._deletionOrigin.direction;
   const coverGrip=()=>{
-    const bank=art[match.winner],asset=bank.clips[hero.clip],frame=sourceFrame(asset,hero),offset=frame.offset??[0,0],scale=asset.scale;
+    const bank=art[match.winner],asset=bank.clips[hero.clip],frame=sourceFrame(asset,hero),offset=frame.offset??[0,0],scale=poseScale(asset,frame);
     const points=resolvePoseAttachments(frame,hero.clip,poseFrameIndex(asset,hero),hero.facing,bank.manifest.id);
     const geometry={dx:hero.x+(offset[0]-frame.anchor[0])*scale,dy:FLOOR+(hero.y??0)+(offset[1]-frame.anchor[1])*scale,scale};
     const secondary=frame.attachments?.gripSecondary;
     for(const point of [points.grip,secondary?{x:secondary[0],y:secondary[1]}:null].filter(Boolean))nativeOcclusion(ctx,asset,frame,geometry,point,10,8);
   };
-  if(g.definition.mechanism==='coffin'&&front&&t>=b.nailRaise-200) {
+  if(g.definition.mechanism==='coffin'&&front&&t>=b.nailRaise) {
     const frame=g.bank.manifest.utilityFrames?.[t>=b.nailStrike?'nail-bloody':'nail'];if(!frame)return;
-    const held=t<b.nailStrike+160,grip=poseWorldPoint(hero,art[match.winner],'grip');
-    const contact=poseWorldPoint({...hero,clip:'delete-nail',elapsed:art[match.winner].clips['delete-nail'].data.contactMs},art[match.winner],'grip');
-    const hole=g.frame.spikeHole??[g.frame.anchor[0],g.frame.opaqueBounds[1]+25];
-    const holeX=g.x+hole[0]*g.scale,holeY=g.y+hole[1]*g.scale;
-    const preparing=t<b.nailRaise,ready=poseWorldPoint({...hero,clip:'delete-nail',elapsed:0},art[match.winner],'grip');
-    const scale=145/(frame.opaqueBounds[3]-frame.opaqueBounds[1]),storedY=holeY+(frame.grip[1]-frame.opaqueBounds[1])*scale+8;
-    const point=preparing?propPointBetween({x:holeX,y:storedY},ready,propBeatProgress(t,b.nailRaise-200,200)):{x:held?grip.x:holeX,y:held?grip.y:contact.y};
-    ctx.save();
-    if(preparing){ctx.beginPath();ctx.rect(-2000,-1000,5000,holeY+1000);ctx.clip();}
-    else if(t>=b.nailStrike){ctx.beginPath();ctx.rect(holeX-80,-1000,160,holeY+1000);ctx.clip();}
-    utilitySprite(ctx,g.bank,frame,point.x,point.y,145,0,frame.grip);ctx.restore();
-    if(held&&!preparing)coverGrip();
+    const hole=g.frame.spikeHole??[g.frame.anchor[0],g.frame.opaqueBounds[1]+25],holeX=g.x+hole[0]*g.scale,holeY=g.y+hole[1]*g.scale;
+    const held=t<b.nailStrike+160,contactView={...hero,clip:'delete-shove',elapsed:art[match.winner].clips['delete-shove'].data.contactMs??240};
+    const torso=poseWorldPoint(contactView,art[match.winner],'torso');contactView.x+=holeX-193-torso.x;
+    const contact=poseWorldPoint(contactView,art[match.winner],'grip'),grip=held?poseWorldPoint(hero,art[match.winner],'grip'):contact;
+    const driveAngle=-Math.atan2(holeX-contact.x,holeY-contact.y);
+    const angle=driveAngle*easedProgress(t,b.nailRaise,b.nailStrike);
+    const drawHeight=Math.hypot(holeX-contact.x,holeY-contact.y)*(frame.opaqueBounds[3]-frame.opaqueBounds[1])/Math.hypot(frame.tip[0]-frame.grip[0],frame.tip[1]-frame.grip[1]);
+    ctx.save();ctx.globalAlpha*=easedProgress(t,b.nailRaise,b.nailRaise+100);
+    if(t>=b.nailStrike){ctx.beginPath();ctx.rect(-2000,-1000,5000,holeY+1000);ctx.clip();}
+    utilitySprite(ctx,g.bank,frame,grip.x,grip.y,drawHeight,angle,frame.grip);ctx.restore();
+    if(held)coverGrip();
   }
   if(g.definition.mechanism!=='drive')return;
   if(!front&&t>=b.dragStart) {
@@ -1286,23 +1471,23 @@ function signatureHardware(ctx,match,prop,views,art,front) {
     utilitySprite(ctx,g.bank,frame,x,y,155,angle,t<b.release?(dir>0?frame.gripRight:frame.gripLeft):frame.pivot);
     if(t<b.release)coverGrip();
   }
-  if(front&&t>=b.tapeCast&&t<b.captured) {
-    const grip=poseWorldPoint(hero,art[match.winner],'grip'),ankle=poseWorldPoint(victim,art[1-match.winner],'legs');
+  if(front&&t>=b.tapeCast&&t<b.ankleSnare) {
+    const grip=poseWorldPoint(hero,art[match.winner],'grip'),ankle=poseWorldPoint(victim,art[1-match.winner],'torso');
     const cast=clamp((t-b.tapeCast)/(b.ankleSnare-b.tapeCast),0,1),end={x:grip.x+(ankle.x-grip.x)*cast,y:grip.y+(ankle.y-grip.y)*cast};
     ctx.save();ctx.lineCap='butt';
     for(let strand=0;strand<3;strand++){ctx.strokeStyle=strand===1?'#acb4bd':'#414b59';ctx.lineWidth=strand===1?2:5;ctx.beginPath();ctx.moveTo(grip.x,grip.y+strand*4);ctx.quadraticCurveTo((grip.x+end.x)/2,(grip.y+end.y)/2+(t<b.dragStart?22:4),end.x,end.y+strand*3);ctx.stroke();}
-    if(t>=b.ankleSnare){ctx.strokeStyle='#657182';ctx.lineWidth=5;ctx.beginPath();ctx.ellipse(ankle.x,ankle.y,15,9,0,0,TAU);ctx.stroke();}ctx.restore();coverGrip();
+    ctx.restore();coverGrip();
   }
 }
 
 function cableWraps(ctx,match,prop,views,art,overlays) {
-  const definition=definitionForMatch(match),isTruss=definition?.mechanism==='truss',bank=prop?.additional?.[definition?.id];
+  const definition=definitionForMatch(match),isTruss=definition?.mechanism==='truss',isDrive=definition?.mechanism==='drive',bank=prop?.additional?.[definition?.id];
   const g=isTruss&&bank?{...trussGeometry(match,bank,views,art),definition}:machineGeometry(match,prop);
-  if(!g||!['winch','truss'].includes(g.definition.mechanism))return;
-  const b=isTruss?{...definition.beats,captured:definition.beats.bind,pressure:definition.beats.hoist,impact:definition.beats.floorSlam}:g.definition.beats;
+  if(!g||!['winch','truss','drive'].includes(g.definition.mechanism))return;
+  const b=isTruss?{...definition.beats,captured:definition.beats.bind,pressure:definition.beats.hoist,impact:definition.beats.floorSlam}:isDrive?{...definition.beats,captured:definition.beats.ankleSnare,pressure:definition.beats.prone,impact:definition.beats.captured}:g.definition.beats;
   const t=match.deletionElapsed;if(t<b.captured||t>=b.impact)return;
   const index=1-match.winner,view=views[index],asset=art[index].clips[view.clip],frame=sourceFrame(asset,view);
-  const points=overlays.attachments(asset,frame,view,art[index].manifest.id),scale=asset.scale,offset=frame.offset??[0,0];
+  const points=overlays.attachments(asset,frame,view,art[index].manifest.id),scale=poseScale(asset,frame),offset=frame.offset??[0,0];
   const anatomy=(art[index].manifest.height??points.bodyLength*scale)/scale,angle=points.bodyAngle??0;
   const cos=Math.cos(angle),sin=Math.sin(angle),mask=overlays.alphaMask(asset,frame);
   const caches=cableWraps.cache??={fits:new WeakMap(),layers:new WeakMap()};
@@ -1352,22 +1537,24 @@ function cableWraps(ctx,match,prop,views,art,overlays) {
   if(!bands.length)return;
   const dx=view.x+(offset[0]-frame.anchor[0])*scale,dy=FLOOR+(view.y??0)+(offset[1]-frame.anchor[1])*scale;
   const tension=clamp((t-b.captured)/(b.pressure-b.captured),0,1);
-  const loops=bands.map(band=>({x:dx+band.x*scale,y:dy+band.y*scale,
+  const pivot=poseWorldPoint({...view,rotation:0},art[index],'torso'),rotation=view.rotation??0,rotatePoint=p=>({x:pivot.x+(p.x-pivot.x)*Math.cos(rotation)-(p.y-pivot.y)*Math.sin(rotation),y:pivot.y+(p.x-pivot.x)*Math.sin(rotation)+(p.y-pivot.y)*Math.cos(rotation)});
+  const loops=bands.map(band=>({...rotatePoint({x:dx+band.x*scale,y:dy+band.y*scale}),
     rx:band.radius*scale+2*(1-tension),ry:clamp(art[index].manifest.height*.023,5,10)*(1-.25*tension)}));
   const thickness=clamp((art[index].manifest.height??320)*.012,3.5,5);
   const wire=(target,path)=>{
     target.beginPath();path(target);target.strokeStyle='#15181e';target.lineWidth=thickness+2;target.stroke();
-    target.strokeStyle=isTruss?'#25212d':'#9d2038';target.lineWidth=thickness;target.stroke();
-    target.strokeStyle=isTruss?'#9d84b7':'#e87e86';target.lineWidth=1;target.stroke();
+    target.strokeStyle=isDrive?'#586271':isTruss?'#25212d':'#9d2038';target.lineWidth=thickness;target.stroke();
+    target.strokeStyle=isDrive?'#adb8c6':isTruss?'#9d84b7':'#e87e86';target.lineWidth=1;target.stroke();
   };
   const drawTethers=target=>{
     for(let band=0;band<loops.length;band++)for(const side of [-1,1]) {
-      const loop=loops[band],bodyX=loop.x+cos*loop.rx*side,bodyY=loop.y+sin*loop.rx*side;
+      const loop=loops[band],bodyX=loop.x+Math.cos(angle+rotation)*loop.rx*side,bodyY=loop.y+Math.sin(angle+rotation)*loop.rx*side;
       const bounds=g.frame.opaqueBounds,width=bounds[2]-bounds[0];
       const outlet=side<0?bounds[0]+width*.33:bounds[2]-width*.33;
       const endX=g.x+outlet*g.scale;
       let endY=g.y+(bounds[1]+(bounds[3]-bounds[1])*(.35+band*.115))*g.scale;
       let cableX=endX;
+      if(isDrive){const point=poseWorldPoint(views[match.winner],art[match.winner],band?'gripSecondary':'grip');cableX=point.x;endY=point.y;}
       if(isTruss) {
         const point=side<0?poseWorldPoint(views[match.winner],art[match.winner],band?'gripSecondary':'grip'):g.hook;
         cableX=point.x;endY=point.y;
@@ -1377,8 +1564,9 @@ function cableWraps(ctx,match,prop,views,art,overlays) {
     }
   };
   const drawArcs=(target,front)=>{
-    for(const loop of loops)wire(target,path=>path.ellipse(loop.x,loop.y,loop.rx,loop.ry,angle,front?0:Math.PI,front?Math.PI:TAU));
+    for(const loop of loops)wire(target,path=>path.ellipse(loop.x,loop.y,loop.rx,loop.ry,angle+rotation,front?0:Math.PI,front?Math.PI:TAU));
   };
+  const drawBodyMask=target=>{const [sx,sy,w,h]=frame.rect;target.save();target.translate(pivot.x,pivot.y);target.rotate(rotation);target.translate(-pivot.x,-pivot.y);target.drawImage(asset.image,sx,sy,w,h,dx,dy,w*scale,h*scale);target.restore();};
   const owner=ctx.canvas??ctx;
   let layers=caches.layers.get(owner);
   if(layers===undefined) {
@@ -1396,7 +1584,7 @@ function cableWraps(ctx,match,prop,views,art,overlays) {
     drawTethers(rear);drawArcs(rear,false);
     // Only cable pixels are composited. The one intact native body erases the
     // rear runs and masks the front runs; no limb or garment is redrawn here.
-    rear.globalCompositeOperation='destination-out';rear.drawImage(asset.image,sx,sy,w,h,dx,dy,w*scale,h*scale);
+    rear.globalCompositeOperation='destination-out';drawBodyMask(rear);
     if(!isTruss&&g.bank.image) {
       // Spool housings are in front of outgoing cable runs. Remove the native
       // hardware silhouette from this cable-only layer so its visible reels
@@ -1406,7 +1594,7 @@ function cableWraps(ctx,match,prop,views,art,overlays) {
     }
     rear.globalCompositeOperation='source-over';ctx.drawImage(layers.rear,0,0);
     drawArcs(front,true);
-    front.globalCompositeOperation='destination-in';front.drawImage(asset.image,sx,sy,w,h,dx,dy,w*scale,h*scale);
+    front.globalCompositeOperation='destination-in';drawBodyMask(front);
     front.globalCompositeOperation='source-over';ctx.drawImage(layers.front,0,0);
   } else {
     // Environments without a scratch surface keep the same fitted front arcs
@@ -1548,15 +1736,15 @@ export function createFightRenderer(canvas) {
       let views = scene.views ?? [];
       const art = scene.art ?? [];
       const camera = effects?.camera ?? { x: 0, y: 0 };
-      if(deletionActive(match))views=machineViews(match,scene.deletionProp,views,art);
+      if(deletionActive(match)){views=deletionAftermathViews(match,views,art);views=machineViews(match,scene.deletionProp,views,art);}
       ctx.clearRect(0, 0, WIDTH, HEIGHT);
       ctx.save();
       ctx.translate(camera.x ?? 0, camera.y ?? 0);
-      const cinematic=deletionActive(match)&&(!scene.reducedMotion||['wheel','speaker-stack','truss','sign'].includes(definitionForMatch(match)?.mechanism));
+      const cinematic=deletionActive(match)&&(!scene.reducedMotion||['wheel','speaker-stack','truss','sign','drive','wand'].includes(definitionForMatch(match)?.mechanism));
       if(cinematic) {
         const phase=match.deletionElapsed,definition=definitionForMatch(match),b=definition.beats;
         const wheel=definition.mechanism==='wheel'?wheelGeometry(match,scene.deletionProp.additional[definition.id],views,art):null;
-        const fitted=['speaker-stack','truss','sign'].includes(definition.mechanism)?fittedSignatureCamera(match,scene.deletionProp,views,art):null;
+        const fitted=['speaker-stack','truss','sign','drive','wand'].includes(definition.mechanism)?fittedSignatureCamera(match,scene.deletionProp,views,art):null;
         const framing=deletionCamera({time:phase,mechanism:definition.mechanism,beats:b,targetX:match.deletionTargetX,direction:match._deletionOrigin.direction,fitted,wheel,reducedMotion:scene.reducedMotion});
         ctx.translate(640,380);ctx.scale(framing.zoom,framing.zoom);ctx.translate(-framing.x,-framing.y);
       }
@@ -1586,6 +1774,7 @@ export function createFightRenderer(canvas) {
         }
         cableWraps(ctx,match,scene.deletionProp,views,art,overlays);
         fighter(ctx,views[match.winner],art[match.winner],overlays,scene.weaponArt);
+        if(definitionForMatch(match).mechanism==='coffin'&&match.deletionElapsed>=definitionForMatch(match).beats.nailApproach)machine(ctx,match,scene.deletionProp,true);
         signatureHardware(ctx,match,scene.deletionProp,views,art,true);
         additionalDeletionScene(ctx,match,scene.deletionProp,views,art,true);
       } else for(let i=0;i<views.length;i++)fighter(ctx,views[i],art[i],overlays,scene.weaponArt);
@@ -1616,6 +1805,11 @@ export function createFightRenderer(canvas) {
       let point=poseWorldPoint(aligned[event.contact.fighterIndex],art[event.contact.fighterIndex],event.contact.site);
       const location=event.cue==='nail-strike'?g?.frame.spikeHole:event.cue==='chute-stamp'?g?.frame.lidPoint:event.cue==='drive-blade-cut'?g?.frame.slotPoint:null;
       if(location)point={x:g.x+location[0]*g.scale,y:g.y+location[1]*g.scale};
+      if(event.cue==='ban-stamp') {
+        point=fallenHeadRegion(aligned[event.target],art[event.target]).world;
+        event={...event,site:'head',injuryRegion:'head',aftermath:'head-crush'};
+      }
+      if(['sign-strike','speaker-burial','crt-crush','chrome-seal','cable-snap','chute-stamp','drive-blade-cut'].includes(event.cue))event={...event,aftermath:'body-rupture',aftermathWidth:({ 'sign-strike':360,'chrome-seal':290,'speaker-burial':390,'crt-crush':430,'cable-snap':300,'chute-stamp':260,'drive-blade-cut':300 })[event.cue]};
       return {...event,x:point.x+(event.contact.offset?.[0]??0),y:point.y+(event.contact.offset?.[1]??0)};
     },
     resize() {

@@ -195,7 +195,17 @@ function random(match) {
 }
 
 function emit(match, type, extra = {}) {
-  match.events.push({ ...extra, type });
+  // Identities follow the current match and actual event participants. Deletion
+  // machinery and KO cues retain the same winner/victim pair through every beat.
+  const attacker=Number.isInteger(extra.attacker)?extra.attacker:
+    Number.isInteger(extra.winner)?extra.winner:
+    match.phase==='deletion'||type==='deletion'?match.winner:null;
+  const target=Number.isInteger(extra.target)?extra.target:
+    Number.isInteger(attacker)&&(match.phase==='deletion'||['ko','finish-prompt','deletion'].includes(type))?1-attacker:null;
+  const identity={};
+  if(match.fighters[attacker])Object.assign(identity,{attacker,attackerId:match.fighters[attacker].id});
+  if(match.fighters[target])Object.assign(identity,{target,victimId:match.fighters[target].id});
+  match.events.push({ ...extra, ...identity, type });
 }
 
 function spawnWeapon(match,position) {
@@ -273,6 +283,7 @@ function startWeaponAction(match,index,kind) {
   f._sequence=[];
   f._weaponAction={kind,type:equipment.type,name:equipment.name,weaponId:equipment.id,released:false};
   f._attackLevel='mid';
+  emit(match,'attack',{attacker:index,target:1-index,action:'weapon-'+kind,x:f.x,y:WORLD.floor-f.height*.6,direction:f.facing==='right'?1:-1});
   return true;
 }
 
@@ -536,6 +547,7 @@ export function performAction(match, index, action, inputSnapshot, acceptedAt = 
     if(f._jump.duration-f._jump.elapsed<=contact)return false;
     f._jump.attackUsed=true;
     setAction(f,aerial,null,0,true);f._attackLevel='overhead';
+    emit(match,'attack',{attacker:index,target:1-index,action:aerial,x:f.x,y:WORLD.floor-f.height*.6,direction:f.facing==='right'?1:-1});
     return true;
   }
   if(action==='weapon-throw')return startWeaponAction(match,index,'throw');
@@ -588,6 +600,7 @@ export function performAction(match, index, action, inputSnapshot, acceptedAt = 
     const room=Math.max(0,(match.fighters[1-index].x-f.x)*dir-WORLD.separation);
     f._travel={start:f.x,end:clamp(f.x+dir*Math.min(65,room),WORLD.margin,WORLD.width-WORLD.margin)};
   }
+  if(!CHORD_ATTACKS.has(action))emit(match,'attack',{attacker:index,target:1-index,action,x:f.x,y:WORLD.floor-f.height*.6,direction:f.facing==='right'?1:-1});
   if(CHORD_ATTACKS.has(action))emit(match,'special',{attacker:index,target:1-index,
     action,sequence:!!sequence,x:f.x,y:WORLD.floor-f.height*.5,direction:f.facing==='right'?1:-1});
   return true;
@@ -712,6 +725,7 @@ function openFinish(match, winner) {
   setAction(attacker, 'idle');
   faceOpponent(match, winner);
   emit(match, 'ko', { x: victim.x, y: WORLD.floor - victim.height * 0.55, direction: sign(victim.x - attacker.x), winner, finishing: canDelete(match,winner) });
+  if(match.finisherAvailable)emit(match,'finish-prompt',{winner,name:match.deletionName,x:640,y:270});
 }
 
 function collapse(match) {
@@ -744,9 +758,9 @@ function startDeletion(match) {
   let throwStart = dir > 0 ? Math.min(victim.x, target - 180) : Math.max(victim.x, target + 180);
   let near=throwStart-dir*130;
   if(definition.mechanism==='drive') {
-    // The approved tape finish drags the fallen victim ankle-first back toward
-    // a low drive behind the DJ. Disc flight keeps its original attack facing.
-    target=dir>0?400:880;near=dir>0?650:630;throwStart=dir>0?850:430;
+    // The drive sits between DJ and target, leaving a clear pull lane.
+    // The waist-bound airborne victim never travels through the operator.
+    target=dir>0?680:600;near=dir>0?180:1100;throwStart=dir>0?980:300;
   }
   if(definition.mechanism==='sign') {
     // Keep the opponent under the hanging sign. Cliff delivers the notice
@@ -794,7 +808,7 @@ function startDeletion(match) {
     // Raised hands on taller native poses need less lift to clear the HUD.
     // Only the complete body's travel changes; its native scale stays fixed.
     match._deletionOrigin.liftDistance=definition.mechanism==='truss'?nominal:
-      Number.isFinite(top)?clamp(WORLD.floor+top-130,0,nominal):nominal;
+      Number.isFinite(top)?clamp(WORLD.floor+top-130,definition.mechanism==='wand'?90:0,nominal):nominal;
   }
   if(definition.mechanism==='coffin') {
     const nail=winner._clips['delete-nail'],tips=nail?.contactNailTipOrigins??nail?.nailTipOrigins;
@@ -1032,9 +1046,9 @@ function updateApprovedDeletion(match,previous,time) {
     cue(b.release,'disc-release');
     cue(b.upperCut,'disc-upper-cut','head','deletion-impact',{strength:1.8});
     cue(b.bodyCut,'disc-body-cut','torso','deletion-impact',{strength:1.8});
-    cue(b.tapeCast,'tape-cast','legs');cue(b.ankleSnare,'tape-snare','legs');
-    cue(b.prone,'tape-fall','legs','land',{direction:o.dragDirection});
-    cue(b.dragStart,'drag-start','legs','deletion-cue',{direction:o.dragDirection});
+    cue(b.tapeCast,'tape-cast','torso');cue(b.ankleSnare,'tape-snare','torso');
+    cue(b.prone,'tape-tension','torso','deletion-cue',{direction:o.dragDirection});
+    cue(b.dragStart,'drag-start','torso','deletion-cue',{direction:o.dragDirection});
     cue(b.captured,'drive-entry','legs','deletion-cue',{direction:o.dragDirection});
     cue(b.bladeCut,'drive-blade-cut','torso','deletion-impact',{strength:3.2});
     cue(b.eject,'drive-eject','legs');
@@ -1384,7 +1398,7 @@ export function getFighterView(match, index) {
   const definition=match.winner==null?null:deletionDefinition(match.fighters[match.winner].id);
   if(match.phase==='over'&&definition?.retainFloorBody&&match.deletionElapsed>=definition.duration&&index!==match.winner)Object.assign(view,approvedDeletionView(match,index,match.deletionElapsed));
   if(match.phase==='over'&&definition&&match.deletionElapsed>=definition.duration&&index===match.winner){
-    if(definition.mechanism==='positivity')Object.assign(view,deletionPose('attacker',match.deletionElapsed,f.id,f._clips));
+    if(['positivity','jaws'].includes(definition.mechanism))Object.assign(view,deletionPose('attacker',match.deletionElapsed,f.id,f._clips));
     else {view.clip='delete-present';view.elapsed=10000;}
   }
   view.nativeElapsed=view.elapsed;

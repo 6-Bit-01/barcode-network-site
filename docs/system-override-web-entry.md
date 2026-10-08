@@ -83,16 +83,19 @@ The owner tested the published joystick release and requested controls that leav
 
 All 28 input contracts and actual strict-built Chromium mobile checks pass at tested head `71b867b94be3501294b6a8cdc6ac1d3dd1134878`, including portrait 390Ã—844/375Ã—667/320Ã—568 and landscape 844Ã—390, normal title/audio/opening/difficulty, simultaneous movement/jump, independent physical keys, rotation, earned Level 2 Continue, skills/manual pads/gears and pause/resume. The default road panel leaves the central road/car area clear. These are browser emulation checks, not physical-phone FPS evidence. All four exact-head source static/frame-cost jobs passed. The merged tree and all 888 generated payload hashes match the tested package. The initial website candidate passed verification, Windows audio and its hosted preview's normal entry/audio/settings/touch/pause flow plus 24 critical live hashes. The original artwork/audio, accepted GPU/loading pipeline, judgments, saves, native frame, entry route and quiet footer shortcut are unchanged. Private test evidence remains outside `public/`. Final website CI, guarded merge and production verification remain pending at this preparation snapshot; final results are recorded in PR482 and the delivery receipt. Earlier release notes below are historical.
 
-`/system-override` uses the existing BARCODE website layout and links directly to
+`/secret-menu` uses the existing BARCODE website layout and links directly to
 `/games/system-override/index.html`. The normal same-tab anchor opens the standalone
 game document. The game bundle belongs in `public/games/system-override/` and must
 be generated alongside this entry page before release.
+
+The former `/system-override` menu address permanently redirects to `/secret-menu`.
+The standalone game URLs are unchanged.
 
 Browser saves are specific to the website origin and browser profile. The entry
 page explains that existing Makko saves do not transfer automatically.
 
 The game entry remains outside the primary navigation. The footer's copyright
-symbol is a quiet link to `/system-override`, with an accessible game label and
+symbol is a quiet link to `/secret-menu`, with an accessible game label and
 a visible keyboard-focus outline. The initial game release was approved and
 merged in PR478. Minimal road cues, reliable short gear taps and the mirror
 readback repair were published in PR479, merged as

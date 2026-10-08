@@ -125,7 +125,7 @@ export function Footer({ submission }: { submission: RadioSubmissionRouting }) {
           <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-4">
             <p className="text-xs text-muted tracking-widest uppercase">
               <Link
-                href="/system-override"
+                href="/secret-menu"
                 prefetch={false}
                 aria-label="Open hidden games"
                 className="rounded-sm focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent focus-visible:outline-offset-4"

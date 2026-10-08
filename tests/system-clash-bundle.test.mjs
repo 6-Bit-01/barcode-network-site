@@ -18,7 +18,7 @@ test("System Clash ships only its same-origin runtime, with complete registered 
   assert.equal(roster.length, 13);
   assert(roster.every(fighter => fighter.enabled));
   assert.equal(inventory.filter(name => name.endsWith(".png")).length, 211);
-  assert(inventory.every(name => /\.(?:png|json|html|css|m?js|wav)$/.test(name)));
+  assert(inventory.every(name => /\.(?:png|webp|svg|json|html|css|m?js|wav)$/.test(name)));
   assert(inventory.every(name => !/qa\.json|measured|native-bounds|prompt|rejected|portable|history/i.test(name)));
   for (const name of inventory.filter(name => /\.(?:json|html)$/.test(name))) {
     assert.doesNotMatch(read(name), /generated_images|originalPath|\.prompt\.txt|127\.0\.0\.1|localhost|SYSTEM-CLASH-Portable|SYSTEM-CLASH-Fight-Portable/i, name);
@@ -102,4 +102,28 @@ test('hosted startup tolerates the deliberately omitted private pose-library lis
     () => null,
     { createElement: () => ({ innerHTML: '' }) },
   ));
+});
+
+
+test("demo portraits and standing art decode for every playable fighter without future placeholders", async () => {
+  const { default: sharp } = await import("sharp");
+  const menu = JSON.parse(read("assets/menu/roster.json"));
+  assert.deepEqual(menu.fighters.map(f => [f.id, f.name]), roster.map(f => [f.id, f.name]));
+  assert.equal(inventory.filter(name => name.startsWith("assets/menu/")).length, 28);
+  for (const fighter of menu.fighters) {
+    for (const [kind, expected] of [["portrait", [256, 256]], ["standing", [320, 440]]]) {
+      const name = fighter[kind];
+      assert.match(name, /^assets\/menu\/[a-z0-9-]+\.webp$/);
+      assert(inventory.includes(name));
+      const { data, info } = await sharp(path.join(root, name)).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+      assert.deepEqual([info.width, info.height], expected, name);
+      assert.equal(info.channels, 4);
+      let visible = 0, transparent = 0;
+      for (let i = 3; i < data.length; i += 4) { if (data[i] > 0) visible++; else transparent++; }
+      assert(visible > 1000 && transparent > 1000, name + " retains an actual transparent fighter image");
+    }
+  }
+  const logo = read("assets/menu/system-clash-logo.svg");
+  assert.doesNotMatch(logo, /<text(?:\s|>)/);
+  assert.doesNotMatch(logo, /(?:href|src)=["']https?:/);
 });

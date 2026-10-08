@@ -7,6 +7,7 @@ import {previewBattleWear} from './fight-damage-preview.mjs';
 import {createAttackInputBuffer,pressAttackInput,flushAttackInputs,releaseAttackInput,clearAttackInputs} from './fight-input.mjs';
 import {createDeletionReview} from './fight-review.mjs';
 import {interpolateFightViews} from './fight-presentation.mjs';
+import {parseDemoLaunch} from './demo-flow.mjs';
 
 const $ = id=>document.getElementById(id);
 const canvas = $('fight-stage');
@@ -23,6 +24,16 @@ let tapMove=0,tapUntil=0;
 let weaponFeedback='',weaponFeedbackUntil=0;
 let deletionReviewCache=null;
 let activeRoster=[];
+let demoLaunch={enabled:false};
+let fighterPortraits={};
+const portraitCache=new Map();
+async function loadFighterPortraits(fighters){
+  return Object.fromEntries(await Promise.all(fighters.map(async fighter=>{
+    const id=fighter.manifest.id;
+    if(!portraitCache.has(id))portraitCache.set(id,new Promise(resolve=>{const image=new Image();image.onload=()=>resolve(image);image.onerror=()=>resolve(null);image.src=new URL('assets/menu/'+id+'-portrait.webp',location.href).href;}));
+    return [id,await portraitCache.get(id)];
+  })));
+}
 let previousTravelViews=null,previousTravelPhase=null;
 
 function dispatchEvents() {
@@ -137,7 +148,7 @@ function draw() {
   const reviewEntry=motionTime===null?null:art[0].clips[$('motion-clip').value].timeline.entries.find(entry=>motionTime>=entry.start&&motionTime<entry.end);
   const scene=motionTime===null?display:{...match,phase:'poses',motionReview:true,poseKey:(reviewEntry?.index??0)+1,poseLabel:$('motion-clip').selectedOptions[0].textContent.toUpperCase()+' / '+$('motion-facing').value.toUpperCase(),fighters:match.fighters.map((f,index)=>({...f,...previewBattleWear(f,index===0?$('motion-damage').value:'fresh'),weapon:views[index].weapon,embeddedWeapons:views[index].embeddedWeapons})),stagePickups:reviewPickups,projectiles:[]};
   const sceneEffects=motionTime!==null?null:inspectTime===null?effects:preset==='broadcast'?deletionReviewCache.effects:null;
-  renderer.draw({match:scene,motionReview:motionTime!==null,views,art,effects:sceneEffects,deletionProp,weaponArt,paused:paused&&inspectTime===null&&motionTime===null,reducedMotion:$('motion-toggle').checked});
+  renderer.draw({match:scene,motionReview:motionTime!==null,views,art,effects:sceneEffects,deletionProp,weaponArt,portraits:fighterPortraits,paused:paused&&inspectTime===null&&motionTime===null,reducedMotion:$('motion-toggle').checked});
   for(let index=0;index<2;index++) {
     const f=scene.fighters[index],weapon=f.weapon;
     const condition=['Fresh','Bloodied','Battered','Ravaged'][f.damageTier ?? 0];
@@ -173,6 +184,7 @@ function reset(start=true) {
   $('pause-fight').textContent='Pause';$('pause-fight').setAttribute('aria-pressed','false');
   $('start-fight').textContent=match.phase === 'ready' ? 'Start fight' : 'Fight again';
   $('frame-link').hidden=true;
+  if($('demo-start'))$('demo-start').hidden=!demoLaunch.enabled||start;
   dispatchEvents();
   draw();
 }
@@ -325,8 +337,9 @@ async function boot() {
     await loadArcadeArt({...options,art:nextArt});
     const nextProp=await loadDeletionArt({...options,art:nextArt});
     const nextWeaponArt=await loadWeaponArt(options);
+    const nextPortraits=await loadFighterPortraits(nextArt);
     if(revision!==loadRevision)return;
-    art=nextArt;deletionProp=nextProp;weaponArt=nextWeaponArt;
+    art=nextArt;deletionProp=nextProp;weaponArt=nextWeaponArt;fighterPortraits=nextPortraits;
     renderer.prepareArt(art);metadata=combatMetadata(art,weaponArt);ready=true;
     showContextArtLinks();
     showFighterStyles();
@@ -383,18 +396,30 @@ async function initializeRoster() {
     if(!roster){const response=await fetch(new URL('assets/fight-roster.json',location.href),{cache:'no-store'});if(!response.ok)throw new Error('The main roster is unavailable.');roster=(await response.json()).fighters.filter(fighter=>fighter.enabled);}
     if(!roster.length||new Set(roster.map(f=>f.id)).size!==roster.length||roster.some(f=>!FIGHTER_STYLES[f.id]))throw new Error('The main roster needs its verified fighting styles.');
     activeRoster=roster;
+    demoLaunch=parseDemoLaunch(location.href,roster);
+    if(demoLaunch.enabled){
+      document.body.classList.add('demo');document.title='BARCODE: SYSTEM CLASH — Demo';$('demo-toolbar').hidden=false;
+      $('mode-select').value=demoLaunch.mode;muted=demoLaunch.muted;effects.setMuted(muted);
+      $('mute-fight').textContent=muted?'Sound off':'Sound on';$('mute-fight').setAttribute('aria-pressed',String(muted));
+      $('motion-toggle').checked=demoLaunch.reducedMotion;effects.setReducedMotion(demoLaunch.reducedMotion);
+      const back=new URL('index.html',location.href);for(const [key,value]of Object.entries({screen:'select',mode:demoLaunch.mode,p1:demoLaunch.p1,p2:demoLaunch.p2,sound:muted?'0':'1',motion:$('motion-toggle').checked?'1':'0'}))back.searchParams.set(key,value);$('demo-select').href=back.href;
+    }
     for(const id of ['fighter-one','fighter-two']) {
       const select=$(id),previous=select.value;select.replaceChildren();
       for(const fighter of roster){const option=document.createElement('option');option.value=fighter.id;option.textContent=fighter.name;select.append(option);}
-      select.value=roster.some(f=>f.id===previous)?previous:roster[id==='fighter-two'?Math.min(1,roster.length-1):0].id;
+      const requested=demoLaunch.enabled?(id==='fighter-one'?demoLaunch.p1:demoLaunch.p2):previous;
+      select.value=roster.some(f=>f.id===requested)?requested:roster[id==='fighter-two'?Math.min(1,roster.length-1):0].id;
     }
     $('roster-label').textContent=roster.length+' PLAYABLE MAIN FIGHTERS / ARCADE PROTOTYPE';
     $('styles-title').textContent=roster.length+' ways to clash.';
-    $('roster-footer').textContent='PLAYABLE PROTOTYPE · '+roster.length+' MAIN FIGHTERS';
+    $('roster-footer').textContent=(demoLaunch.enabled?'DEMO':'PLAYABLE PROTOTYPE')+' · '+roster.length+' MAIN FIGHTERS';
     $('deletion-count').textContent=roster.filter(f=>deletionDefinition(f.id)).length+' SIGNATURE DELETIONS';
     const finishes=$('deletion-summary');finishes.replaceChildren();
     for(const fighter of roster){const definition=deletionDefinition(fighter.id),line=document.createElement('span');line.textContent=fighter.name+' · '+(definition?.name??'Signature Deletion pending');finishes.append(line,document.createElement('br'));}
     await boot();
   } catch(error){$('load-status').textContent=error.message;$('load-status').classList.add('error');}
 }
+$('demo-select')?.addEventListener('click',()=>{const back=new URL($('demo-select').href);back.searchParams.set('sound',muted?'0':'1');back.searchParams.set('motion',$('motion-toggle').checked?'1':'0');$('demo-select').href=back.href;});
+$('demo-start')?.addEventListener('click',start);
+$('demo-controls')?.addEventListener('click',()=>{const shown=document.body.classList.toggle('show-controls');$('demo-controls').setAttribute('aria-expanded',String(shown));});
 initializeRoster();requestAnimationFrame(tick);

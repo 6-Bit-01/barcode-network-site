@@ -1,3 +1,4 @@
+import {CHARACTER_FOLEY_VARIANTS,planCharacterFoley} from './fight-audio-palettes.mjs';
 /** Layered arcade contact Foley and original synthetic effort voices.
  * Character voices are procedural phonation, not recordings or cloned identities.
  * Only the generic "DELETE HIM" announcer is an offline SAPI-generated PCM sample.
@@ -21,6 +22,44 @@ export const FIGHT_AUDIO_PROFILES=Object.freeze(Object.fromEntries(Object.entrie
   'wittyf0x':{pitch:318,formants:[1180,2380,3740],rasp:.25,breath:.1,weight:.7,accent:1280,fox:true,voice:'fox bark yip and howl'},
 }).map(([id,profile])=>[id,Object.freeze({...profile,formants:Object.freeze(profile.formants)})])));
 
+export const FIGHT_VOCAL_VARIANTS=Object.freeze({attack:4,hurt:4,'big-hurt':4,scream:4});
+export const MAX_VOCAL_CACHE_ENTRIES=48;
+export const MAX_VOCAL_CACHE_BYTES=6*1024*1024;
+// Independent articulation families: syllables, stop/breath onsets, closure,
+// subharmonics, vocal fry and modulation differ in addition to pitch/formants.
+const vocalFamilies={
+ '6-bit':{kind:'gravel',duration:.97,open:.48,sub:.18,nasal:.04,grit:.3,flutter:11,phrases:[['ha','hup','kya-ha','hu'],['uh','ah','oh-kh','ha-uh'],['rr-ah','uh-agh','ah-kha','oh-ah'],['aa-rr','uh-aah','ha-aa-rr','rr-aa']]},
+ '9-bit':{kind:'dark-roar',duration:1.14,open:.64,sub:.62,nasal:0,grit:.66,flutter:7,phrases:[['grh','rah','hru-rr','kh-rr'],['rr-uh','gh-ah','oh-rr','hr-uh'],['gh-raa','uh-rr-ah','rr-oh','raa-gh'],['rr-aa','gh-aaa-rr','oh-rr-aa','raa-rr-oh']]},
+ 'cache-back':{kind:'servo',duration:.86,open:.31,sub:0,nasal:0,grit:.03,flutter:27,phrases:[['zzip','kt-bzz','zi-kt','brr-zzi'],['kt-zi','bzz-ah','zi-brr','kt-bzz-kt'],['brr-zzi','kt-aa-bzz','zi-kt-zi','bzz-brr'],['zzi-brr-aa','kt-zi-brr','aa-zzi-kt','brr-aa-bzz']]},
+ 'mac-modem':{kind:'chest-bellow',duration:1.07,open:.67,sub:.38,nasal:.08,grit:.44,flutter:8,phrases:[['haugh','huh','kh-hah','ho'],['ugh','ohh','ah-kh','huh-oh'],['gh-augh','oh-agh','kh-aa','uh-ohh'],['augh-aa','oh-ah-ugh','kh-aaa','aa-oh-rr']]},
+ 'dj-floppydisc':{kind:'clipped-syllables',duration:.87,open:.4,sub:.04,nasal:.23,grit:.1,flutter:19,phrases:[['tsah','hup','eh-ha','ki'],['ih','ah','eh-kh','uh-eh'],['eh-ah','kh-uh-ah','ih-eh','ah-kah'],['ee-aa','eh-ah-ee','aa-eh','ki-aa-ah']]},
+ 'cliff':{kind:'dry-nasal',duration:.93,open:.44,sub:.11,nasal:.51,grit:.2,flutter:13,phrases:[['keh','nah','kh-eh','ha-nah'],['eh','unh','ah-eh','kh-unh'],['neh-aa','uh-eh-ah','kh-ehh','ah-unh'],['eh-aa','nah-eh-aa','unh-aah','kh-aa-eh']]},
+ 'mr-nice-guy':{kind:'clean-air',duration:.98,open:.58,sub:.02,nasal:.06,grit:.02,flutter:5,phrases:[['hah','hey','hu-ah','ya'],['ah','oh','uh-ah','ehh'],['oh-aah','uh-oh','ha-ahh','eh-aa'],['ah-aaa','oh-ah-aa','eh-aah','ha-aa-oh']]},
+ 'ms-mayhem':{kind:'rasp-belt',duration:1.02,open:.36,sub:.2,nasal:.09,grit:.73,flutter:17,phrases:[['krah','hah','rr-kah','ya-ha'],['akh','gah','eh-rr','uh-kah'],['rr-aah','ka-aa','gh-ah-rr','yah-agh'],['kraa-aa','rr-ah-aaa','yaa-rr-ah','gh-aa-rr']]},
+ 'stolz':{kind:'steel-throat',duration:1.09,open:.55,sub:.44,nasal:0,grit:.28,flutter:9,phrases:[['hrum','kh-roh','grh','ruh-kh'],['gh-uh','hr-oh','rr-ah','kh-uh'],['grh-aah','rr-ohh','uh-hr-aa','kh-raa'],['hr-aa-rr','grh-oh-aa','rr-aaa','kh-aa-hr']]},
+ 'kaveman-brown':{kind:'bass-throat',duration:1.11,open:.7,sub:.48,nasal:.03,grit:.39,flutter:6,phrases:[['huh','roh','gh-hah','hoo'],['uhh','ogh','ah-uh','rr-oh'],['hrr-ah','oh-uhh','uh-gh-aa','rr-agh'],['hoo-aa','gh-aa-uh','rr-oh-aa','uh-aaa-gh']]},
+ 'dr3wbaby':{kind:'rhythmic-growl',duration:.95,open:.46,sub:.19,nasal:.17,grit:.42,flutter:21,phrases:[['yah','ha-huh','keh','rr-yah'],['akh','uh-ah','eh','kh-ah'],['yah-agh','uh-kah-aa','rr-eh','ah-ha'],['ya-aa','rr-ah-eh','ha-ah-aa','ee-ah-rr']]},
+ 'ash-flowers':{kind:'warm-breath',duration:1.03,open:.62,sub:.03,nasal:.04,grit:.04,flutter:4,phrases:[['ha','hu','eh-ha','ya'],['oh','ahh','uh-eh','ha-oh'],['oh-ah','uh-aah','eh-ohh','ha-aa'],['aa-oh','eh-ah-aa','oh-aaa','ha-aa-eh']]},
+ 'wittyf0x':{kind:'fox',duration:.81,open:.29,sub:.14,nasal:.28,grit:.41,flutter:25,phrases:[['yip','yak','ki-yip','rr-yak'],['ki','yelp','rr-i','iak'],['kee-yah','rr-kee','yak-aa','i-yak'],['yow-aa','rr-yee-aa','yip-aa-yow','hee-rr-aa']]},
+};
+const vowelForms={a:[1.19,1,1.01],u:[.6,.67,.88],o:[.75,.75,.92],e:[.91,1.3,1.04],i:[.52,1.55,1.17]};
+const modeDuration={attack:.24,hurt:.31,'big-hurt':.55,scream:1.09};
+function vocalVariant(mode,variant){const count=FIGHT_VOCAL_VARIANTS[mode]??4;return ((Math.floor(finite(variant,0))%count)+count)%count;}
+export const FIGHT_VOCAL_BANKS=Object.freeze(Object.fromEntries(Object.entries(vocalFamilies).map(([id,family])=>[id,Object.freeze({family:family.kind,variants:Object.freeze(Object.fromEntries(Object.keys(FIGHT_VOCAL_VARIANTS).map((mode,index)=>[mode,Object.freeze(family.phrases[index].map((phrase,variant)=>Object.freeze({variant,phrase,duration:Number((modeDuration[mode]*family.duration*[.86,1.02,1.18,.96][variant]*(1+(phrase.split('-').length-1)*.075)).toFixed(4))}))) ])))})])));
+
+/** Deterministic shuffle bags are independent for each fighter/action family.
+ * A new bag never opens with the last sound played from the preceding bag.
+ */
+export function createFightVariationSelector(seed=94712){
+ const states=new Map();
+ return {next(key,count=4){
+   count=Math.max(1,Math.floor(count));let state=states.get(key);
+   if(!state){state={seed:hash(String(seed)+'|'+key),bag:[],last:-1};states.set(key,state);}
+   const random=()=>{state.seed=(Math.imul(state.seed,1664525)+1013904223)>>>0;return state.seed/4294967296;};
+   if(!state.bag.length){state.bag=Array.from({length:count},(_,i)=>i);for(let i=count-1;i>0;i--){const j=Math.floor(random()*(i+1));[state.bag[i],state.bag[j]]=[state.bag[j],state.bag[i]];}if(count>1&&state.bag[0]===state.last)[state.bag[0],state.bag[1]]=[state.bag[1],state.bag[0]];}
+   const variant=state.bag.shift();state.last=variant;return variant;
+ },clear(){states.clear();},get size(){return states.size;}};
+}
 const fallback=FIGHT_AUDIO_PROFILES['6-bit'];
 const profile=id=>FIGHT_AUDIO_PROFILES[id]??fallback;
 const layer=(kind,frequency,end,duration,gain,delay=0,extra={})=>({kind,frequency,end,duration,gain,delay,...extra});
@@ -38,7 +77,8 @@ function mechanism(event){
 }
 
 /** Pure deterministic routing; useful to review without a browser audio device. */
-export function planFightSound(event={}){
+export function planFightSound(event={},variation=0){
+  variation=((Math.floor(finite(variation,0))%CHARACTER_FOLEY_VARIANTS)+CHARACTER_FOLEY_VARIANTS)%CHARACTER_FOLEY_VARIANTS;
   const type=event.type??'',strength=clamp(finite(event.strength,1),.25,3.4);
   const attackerId=event.attackerId??event.fighterId,victimId=event.victimId??event.targetId;
   const attacker=profile(attackerId),victim=profile(victimId),layers=[],voices=[];
@@ -114,12 +154,15 @@ export function planFightSound(event={}){
     for(let i=0;i<4;i++)add(tone(1700+i*511,470+i*113,.17+i*.035,.13/(i+1),i*.024,'triangle'));
   } else if(type==='eye-pop')add(noise(920,.07,.25,0,'lowpass'),tone(620, 72,.14,.2,0,'triangle'));
   else if(type==='round-start')add(tone(180,180,.1,.17,0,'square'),tone(270,270,.14,.17,.14,'square'));
+  const foley=planCharacterFoley(event,{variant:variation,attackerId,victimId,strength,heavy,material,contact});
+  if(foley.replace&&foley.layers.length)layers.length=0;
+  layers.push(...foley.layers);
   // Bound the complete layer sum. A compressor and final soft limiter also
   // protect combined events, but no individual impact relies on hard clipping.
   const sum=layers.reduce((v,item)=>v+item.gain,0);
   const scale=Math.min(1,.95/Math.max(.01,sum));
   for(const item of layers)item.gain*=scale;
-  return {type,attackerId,victimId,material,contact,heavy,priority,announcer,layers,voices};
+  return {type,attackerId,victimId,material,contact,heavy,priority,announcer,layers,voices,variation,foleyFamily:foley.family,foleyFighterId:foley.fighterId};
 }
 
 
@@ -131,47 +174,65 @@ function bandpass(frequency,q,rate){
   let x1=0,x2=0,y1=0,y2=0;
   return x=>{const y=b0*x+b2*x2-a1*y1-a2*y2;x2=x1;x1=x;y2=y1;y1=y;return y;};
 }
-/** Deterministic vowel-like grunts: breath onset, voiced throat/formants, release.
- * Robot/steel resonances and fox barks are deliberately different source shapes.
+/** Original synthetic utterances with consonant/breath onsets and independently
+ * voiced syllables. Variants change phrasing, contour, glottal closure, fry,
+ * breath and vowel movement, rather than replaying one normalized waveform.
+ * Existing (id,mode,sampleRate) callers retain variant zero by default.
  */
-export function renderFightVocal(id,mode='hurt',sampleRate=22050){
-  const p=profile(id),duration=mode==='attack'?.23:mode==='hurt'?.3:mode==='big-hurt'?.54:1.16;
-  const count=Math.ceil(duration*sampleRate),data=new Float32Array(count);
-  const random=seededRandom(hash(id+':'+mode)),offset=mode==='hurt'?.82:mode==='big-hurt'?.88:mode==='scream'?1.2:1;
-  const vowel=mode==='attack'?[1.14,1,1]:mode==='hurt'?[.66,.77,.93]:mode==='big-hurt'?[.91,.85,.95]:[1.24,1.12,1.04];
-  const filters=p.formants.map((f,i)=>bandpass(f*vowel[i],i===0?3.1:4.6,sampleRate));
-  const weights=[1,.52,.23];
-  let phase=0,peak=.01;
-  for(let i=0;i<count;i++){
-    const t=i/sampleRate,u=t/duration;
-    const gliss=mode==='scream'?1.07-.31*u:mode==='big-hurt'?1.14-.33*u:mode==='attack'?1.1-.24*u:1.15-.27*u;
-    const pitch=p.pitch*offset*gliss*(1+.009*Math.sin(t*83)+.018*Math.sin(t*31));
-    phase+=2*Math.PI*pitch/sampleRate;
-    const breath=random();
-    const cycle=(phase/(2*Math.PI))%1;
-    // An open glottal pulse with a fast closure excites upper speech formants.
-    const pulse=cycle<.58?Math.sin(Math.PI*cycle/.58):-.46*Math.exp(-(cycle-.58)*23);
-    const throat=pulse*.8+(Math.sin(phase)+.42*Math.sin(phase*2)+.21*Math.sin(phase*3))*.2;
-    const rough=Math.sin(phase*.49)*p.rasp*.65+breath*p.rasp*.23;
-    let value=filters.reduce((sum,filter,j)=>sum+filter(throat+rough+breath*p.breath)*weights[j],0);
-    value+=breath*(u<.12?p.breath*.18:p.breath*.045);
-    const onset=clamp(u/(mode==='scream'?.075:.045),0,1),release=clamp((1-u)/.16,0,1);
-    let shape=Math.pow(Math.sin(Math.PI*clamp(u,0,1)),mode==='attack'?.56:.3)*onset*release;
-    if(p.fox)shape*=mode==='scream'?.6+.4*Math.pow(Math.sin(t*15),2):.44+.56*Math.pow(Math.sin(t*22+1),2);
-    if(p.robot)value=Math.round(value*(.68+.32*Math.sin(t*2*Math.PI*91))*19)/19*(Math.sin(t*2*Math.PI*27)>-.55?1:.18);
-    if(p.steel)value=value*.8+value*Math.sin(t*2*Math.PI*113)*.27;
-    value=Math.tanh(value*(1+p.rasp*2))*shape;
-    data[i]=value;peak=Math.max(peak,Math.abs(value));
-  }
-  for(let i=0;i<count;i++)data[i]*=.78/peak;
-  return data;
+export function renderFightVocal(id,mode='hurt',sampleRate=22050,variant=0){
+ const p=profile(id),family=vocalFamilies[id]??vocalFamilies['6-bit'];
+ mode=FIGHT_VOCAL_VARIANTS[mode]?mode:'hurt';variant=vocalVariant(mode,variant);
+ sampleRate=clamp(Math.floor(finite(sampleRate,22050)),8000,96000);
+ const spec=FIGHT_VOCAL_BANKS[id]?.variants[mode]?.[variant]??FIGHT_VOCAL_BANKS['6-bit'].variants[mode][variant];
+ const tokens=spec.phrase.split('-'),duration=spec.duration,count=Math.ceil(duration*sampleRate),data=new Float32Array(count);
+ const random=seededRandom(hash(id+':'+mode+':'+variant)),weights=tokens.map(token=>Math.max(1,Math.min(2.1,token.length*.34))),total=weights.reduce((a,b)=>a+b,0);
+ const pitchMode=mode==='hurt'?.85:mode==='big-hurt'?.93:mode==='scream'?1.14:1;
+ const pitchVariant=[.92,1.12,1.02,.81][variant],gap=[.012,.031,.019,.042][variant];
+ let phase=0,start=0,peak=.01;
+ for(let syllable=0;syllable<tokens.length;syllable++){
+   const token=tokens[syllable],length=duration*weights[syllable]/total,end=start+length;
+   const vowel=token.includes('i')||token.includes('yip')?'i':token.includes('e')?'e':token.includes('o')?'o':token.includes('u')?'u':'a';
+   const formants=vowelForms[vowel],filters=p.formants.map((f,index)=>bandpass(f*formants[index]*(1+[.025,-.035,.06,-.065][variant]),index===0?2.8:4.3,sampleRate));
+   const from=Math.round(start*sampleRate),to=Math.min(count,Math.round(end*sampleRate));
+   const hard=/^[kgkt]/.test(token),breathy=/^[huw]/.test(token),growl=/r|gh/.test(token);
+   for(let i=from;i<to;i++){
+     const t=i/sampleRate,local=t-start,u=clamp(local/length,0,1),whole=t/duration;
+     const curve=variant===0?1.16-.35*u:variant===1?.91+.25*Math.sin(Math.PI*u):variant===2?1.19-.18*u+.11*Math.sin(u*2*Math.PI):1.04-.4*u;
+     const cry=mode==='scream'?1+.1*Math.sin(whole*7*Math.PI+variant):1;
+     const chirp=family.kind==='fox'?1+.29*Math.exp(-u*7)-.14*u:family.kind==='servo'?1+.2*Math.sin(u*Math.PI*(2+variant)):1;
+     const pitch=p.pitch*pitchMode*pitchVariant*curve*cry*chirp*(1+.012*Math.sin(t*(47+variant*11))+family.grit*.025*Math.sin(t*133));
+     phase+=2*Math.PI*pitch/sampleRate;
+     const air=random(),cycle=(phase/(2*Math.PI))%1,open=clamp(family.open+[.015,-.06,.04,-.025][variant],.2,.75);
+     const pulse=cycle<open?Math.sin(Math.PI*cycle/open):-.44*Math.exp(-(cycle-open)*(18+variant*5));
+     const sub=Math.sin(phase*.5)*family.sub*(growl?1.4:1),nasal=Math.sin(phase*3.06)*family.nasal;
+     const rasp=family.grit*(Math.sin(phase*.473)*.48+air*.25)*(1+[.15,-.2,.35,-.08][variant]);
+     let throat=pulse*.72+Math.sin(phase)*.18+sub+nasal+rasp;
+     if(family.kind==='servo')throat=(cycle*2-1)*.6+Math.sin(phase*2.01)*Math.sin(t*2*Math.PI*(67+variant*19))*.65;
+     if(family.kind==='fox')throat=pulse*.6+Math.sin(phase*2)*.34+Math.sin(phase*4)*.23+rasp;
+     let value=filters.reduce((sum,filter,j)=>sum+filter(throat+air*p.breath*(breathy?1.7:1))*[1,.54,.25][j],0);
+     const consonant=hard?air*Math.exp(-local*(variant===2?73:125))*.24:breathy?air*Math.exp(-local*48)*(.1+p.breath*.38):0;
+     value+=consonant+air*p.breath*.045;
+     const onset=clamp(local/(hard?.003:breathy?.018:.007),0,1),release=clamp((length-local-gap)/(mode==='attack'?.035:.075),0,1);
+     let envelope=Math.pow(Math.sin(Math.PI*u),mode==='attack'?.45:.25)*onset*release;
+     if(family.kind==='servo'){value=Math.round(value*([15,9,23,12][variant]))/[15,9,23,12][variant];envelope*=Math.sin(t*2*Math.PI*(23+variant*9))>-.35?1:.12;}
+     else if(family.kind==='steel-throat')value=value*.8+Math.sin(t*2*Math.PI*(173+variant*37))*value*.32+sub*.22;
+     else if(family.kind==='fox')envelope*=mode==='scream'?.68+.32*Math.sin(t*(17+variant*3))**2:.32+.68*Math.sin(t*(23+variant*7)+.7)**2;
+     else if(family.kind==='rhythmic-growl'||family.kind==='clipped-syllables')envelope*=.68+.32*Math.sin(t*(family.flutter+variant*7))**2;
+     else if(family.kind==='dark-roar'||family.kind==='bass-throat')envelope*=.78+.22*Math.sin(t*(family.flutter+variant))**2;
+     value=Math.tanh(value*(1+p.rasp*2+family.grit*.6))*envelope;
+     data[i]=value;peak=Math.max(peak,Math.abs(value));
+   }
+   start=end;
+ }
+ for(let i=0;i<count;i++)data[i]*=.78/peak;
+ return data;
 }
-
 export function createFightAudio(options={}){
   let context=null,master=null,fxBus=null,voiceBus=null,announcerBus=null,noiseBuffer=null,announcerBuffer=null;
   let muted=!!options.muted,paused=!!options.paused,reducedMotion=!!options.reducedMotion,announcerPlayed=false;
-  let pendingStart=null,assetError='',playedEvents=0,droppedEvents=0,playedVoices=0;
-  const active=new Set(),voiceGroups=new Map(),cooldowns=new Map(),vocalBuffers=new Map();
+  let pendingStart=null,assetError='',playedEvents=0,droppedEvents=0,playedVoices=0,vocalCacheBytes=0,lastFoleyVariation=null;
+  const active=new Set(),voiceGroups=new Map(),cooldowns=new Map(),vocalBuffers=new Map(),lastVocalVariants=new Map();
+  const variations=createFightVariationSelector(finite(options.seed,94712));
   const contextFactory=options.contextFactory??(()=>{
     const Context=globalThis.AudioContext||globalThis.webkitAudioContext;
     return Context?new Context({latencyHint:'interactive'}):null;
@@ -264,21 +325,29 @@ export function createFightAudio(options={}){
       source.connect(filter);filter.connect(gain);source.start(at,Math.min(.8,item.delay*1.7));own(entry,source,[gain,filter],at+item.duration);
     }
   }
+  function vocalBuffer(cue,variant){
+    const key=cue.id+':'+cue.mode+':'+variant+':'+context.sampleRate;
+    const cached=vocalBuffers.get(key);
+    if(cached){vocalBuffers.delete(key);vocalBuffers.set(key,cached);return cached.buffer;}
+    const data=renderFightVocal(cue.id,cue.mode,context.sampleRate,variant),bytes=data.byteLength;
+    const buffer=context.createBuffer(1,data.length,context.sampleRate);buffer.getChannelData(0).set(data);
+    while(vocalBuffers.size&&(vocalBuffers.size>=MAX_VOCAL_CACHE_ENTRIES||vocalCacheBytes+bytes>MAX_VOCAL_CACHE_BYTES)){
+      const oldest=vocalBuffers.keys().next().value;vocalCacheBytes-=vocalBuffers.get(oldest).bytes;vocalBuffers.delete(oldest);
+    }
+    if(bytes<=MAX_VOCAL_CACHE_BYTES){vocalBuffers.set(key,{buffer,bytes});vocalCacheBytes+=bytes;}
+    return buffer;
+  }
   function playVocal(cue,priority,at){
-    const key=cue.id+':'+cue.mode,last=cooldowns.get('voice:'+cue.id)??-Infinity;
+    const last=cooldowns.get('voice:'+cue.id)??-Infinity;
     const wait=cue.mode==='scream'?.7:cue.mode==='big-hurt'?.27:cue.mode==='attack'?.2:.15;
     const vocalPriority=cue.mode==='scream'?4:cue.mode==='big-hurt'?3:cue.mode==='hurt'?2:1;
     const previous=voiceGroups.get(cue.id);
     if(at-last<wait&&(!previous||previous.priority>=vocalPriority))return;
     // New pain wins over an effort grunt; attack never masks an active scream.
-    if(previous&&previous.priority>vocalPriority&&cue.mode==='attack')return;
-    cooldowns.set('voice:'+cue.id,at);
-    let buffer=vocalBuffers.get(key);
-    if(!buffer){
-      const data=renderFightVocal(cue.id,cue.mode,context.sampleRate);
-      buffer=context.createBuffer(1,data.length,context.sampleRate);buffer.getChannelData(0).set(data);vocalBuffers.set(key,buffer);
-    }
+    if(previous&&previous.priority>vocalPriority)return;
     const entry=group(voiceBus,vocalPriority,cue.id);if(!entry)return;
+    const key=cue.id+':'+cue.mode,variant=variations.next('voice:'+key,FIGHT_VOCAL_VARIANTS[cue.mode]);
+    const buffer=vocalBuffer(cue,variant);cooldowns.set('voice:'+cue.id,at);lastVocalVariants.set(key,variant);
     const source=context.createBufferSource(),gain=context.createGain();
     source.buffer=buffer;gain.gain.value=cue.mode==='attack'?.31:cue.mode==='hurt'?.43:cue.mode==='big-hurt'?.5:.57;
     source.connect(gain);gain.connect(entry.gain);source.start(at);
@@ -286,7 +355,7 @@ export function createFightAudio(options={}){
   }
   function emit(event={}){
     if(!context||context.state!=='running'||muted||paused){droppedEvents++;return false;}
-    const plan=planFightSound(event),at=context.currentTime+.004;
+    let plan=planFightSound(event);const at=context.currentTime+.004;
     if(plan.announcer){
       if(announcerPlayed)return false;announcerPlayed=true;
       if(!announcerBuffer){assetError=assetError||'announcer not loaded';return false;}
@@ -298,13 +367,19 @@ export function createFightAudio(options={}){
       playedEvents++;return true;
     }
     if(!plan.layers.length&&!plan.voices.length)return false;
-    const throttleKey=plan.type+':'+(plan.attackerId??'')+':'+(event.cue??'');
+    const throttleKey=plan.type+':'+(plan.attackerId??'')+':'+(plan.victimId??'')+':'+(event.cue??'');
     const last=cooldowns.get(throttleKey)??-Infinity;
     const spacing=['hit','deletion-impact','weapon-embed','ko'].includes(plan.type)?.032:.075;
     if(at-last<spacing){droppedEvents++;return false;}cooldowns.set(throttleKey,at);
     if(plan.layers.length){
       const entry=group(fxBus,plan.priority);
-      if(entry)for(const item of plan.layers)playLayer(item,entry,at+item.delay);
+      if(entry){
+        const actorId=plan.foleyFighterId??(['land','ko','block'].includes(plan.type)?plan.victimId??plan.attackerId:plan.attackerId??plan.victimId);
+        const key='foley:'+(actorId??'stage')+':'+plan.type+':'+plan.contact;
+        const variant=variations.next(key,CHARACTER_FOLEY_VARIANTS);plan=planFightSound(event,variant);
+        lastFoleyVariation={key,variant,family:plan.foleyFamily};
+        for(const item of plan.layers)playLayer(item,entry,at+item.delay);
+      }
     }
     for(const cue of plan.voices)playVocal(cue,plan.priority,at+cue.delay);
     playedEvents++;return true;
@@ -313,8 +388,8 @@ export function createFightAudio(options={}){
     setMuted(value){muted=!!value;if(muted)stopAll();busVolume();},
     setPaused(value){const next=!!value;if(next===paused)return;paused=next;if(paused)stopAll();busVolume();},
     setReducedMotion(value){reducedMotion=!!value;},
-    clear(){stopAll();cooldowns.clear();announcerPlayed=false;},
-    getStats(){return {muted,paused,reducedMotion,audioStarted:!!context,audioRunning:context?.state==='running',announcerLoaded:!!announcerBuffer,announcerPlayed,assetError,activeGroups:active.size,activeVoices:voiceGroups.size,cachedVoices:vocalBuffers.size,playedEvents,playedVoices,droppedEvents};},
+    clear(){stopAll();cooldowns.clear();variations.clear();lastVocalVariants.clear();lastFoleyVariation=null;announcerPlayed=false;},
+    getStats(){return {muted,paused,reducedMotion,audioStarted:!!context,audioRunning:context?.state==='running',announcerLoaded:!!announcerBuffer,announcerPlayed,assetError,activeGroups:active.size,activeVoices:voiceGroups.size,cachedVoices:vocalBuffers.size,vocalCacheBytes,vocalVariantCount:Object.keys(FIGHT_VOCAL_BANKS).length*Object.values(FIGHT_VOCAL_VARIANTS).reduce((a,b)=>a+b,0),variationFamilies:variations.size,lastVocalVariants:Object.fromEntries(lastVocalVariants),lastFoleyVariation:lastFoleyVariation?{...lastFoleyVariation}:null,playedEvents,playedVoices,droppedEvents};},
   };
 }
 

@@ -25,16 +25,22 @@ const markup = require("react-dom/server").renderToStaticMarkup(
 );
 
 test("System Clash opens its same-origin standalone game in the current tab", () => {
-  const launch = markup.match(/<a\b([^>]*)>Play System Clash<\/a>/);
+  const launch = markup.match(/<a\b([^>]*)>Play System Clash Demo<\/a>/);
   assert(launch, "The launch action must be accessible text");
-  assert.match(launch[1], /href="\/games\/system-clash\/play\/fight\.html"/);
+  assert.match(launch[1], /href="\/games\/system-clash\/play\/index\.html"/);
   assert.doesNotMatch(launch[1], /target=|download=/);
   assert.doesNotMatch(markup, /<iframe\b|<canvas\b/);
   assert.equal(pageModule.exports.metadata.alternates.canonical, "/games/system-clash");
 });
 
-test("System Clash identifies prototype scope and keeps return paths to music and Radio", () => {
-  assert.match(markup, /First playable prototype/);
+test("System Clash identifies demo scope and keeps return paths to music and Radio", () => {
+  assert.equal(pageModule.exports.metadata.title, "System Clash Demo");
+  assert.match(pageModule.exports.metadata.description, /13 fighters in Solo CPU or Local Two Player/);
+  assert.match(markup, /<h1\b[^>]*>System Clash Demo<\/h1>/);
+  assert.match(markup, /Playable demo/);
+  assert.match(markup, /13 BARCODE fighters/);
+  assert.match(markup, /Solo CPU or Local Two Player/);
+  assert.doesNotMatch(markup, /first playable prototype|practice|weapons|tournament/i);
   assert.match(markup, /href="\/releases"/);
   assert.match(markup, /href="\/radio"/);
   assert.doesNotMatch(markup, /localhost|127\.0\.0\.1|prompt\.txt|portable\.html/i);

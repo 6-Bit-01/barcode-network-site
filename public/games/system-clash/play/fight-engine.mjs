@@ -565,7 +565,7 @@ export function performAction(match, index, action, inputSnapshot, acceptedAt = 
     faceOpponent(match,index);
     setAction(f,'jump');f._jumpMove=move;f._chainCount=0;
     f._jump={elapsed:0,duration:f._clips.jump.duration,move,attackUsed:false};
-    emit(match,'jump',{x:f.x,y:WORLD.floor,direction:move<0?-1:1});
+    emit(match,'jump',{attacker:index,x:f.x,y:WORLD.floor,direction:move<0?-1:1});
     return true;
   }
   if(!ATTACKS.has(action))return false;
@@ -1129,7 +1129,7 @@ function updateAction(match, index, dt) {
     // phantom contact after the fighter has returned to the ground.
     if(f._jump.elapsed>=f._jump.duration) {
       setAction(f,'idle');faceOpponent(match,index);
-      emit(match,'land',{x:f.x,y:WORLD.floor,direction:f.facing==='right'?1:-1,strength:.35,jump:true});
+      emit(match,'land',{target:index,x:f.x,y:WORLD.floor,direction:f.facing==='right'?1:-1,strength:.35,jump:true});
       return;
     }
   }

@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="fight.css">
 </head>
 <body>
+  <div id="demo-toolbar" class="demo-toolbar" hidden><a id="demo-select" href="index.html?screen=select">← Character select</a><span>BARCODE: SYSTEM CLASH <b>DEMO</b></span><button id="demo-controls" type="button" aria-expanded="false">Controls</button><a href="/system-override">Hidden games</a></div>
   <header class="masthead"><a class="brand" href="/games/system-clash"><span class="eyebrow">BARCODE NETWORK / PLAYABLE PROTOTYPE</span><h1>BARCODE: <span>SYSTEM CLASH</span></h1></a><nav aria-label="BARCODE Network"><a href="/games/system-clash">Game entry</a><a href="/releases">Music</a><a href="/radio">BARCODE Radio</a></nav></header>
   <main>
     <section class="arena" aria-labelledby="arena-title">
@@ -44,7 +45,7 @@
         <label class="scrub-field" for="motion-scrub"><span>Scrub the complete animation</span><input id="motion-scrub" type="range" min="0" max="1079" step="1" value="0"></label>
         <output id="motion-time">0.00s</output><button id="return-motion" type="button">Return to fight</button>
       </div>
-      <div class="screen-bezel"><canvas id="fight-stage" width="1280" height="720" tabindex="0" aria-label="Playable fight between 6 Bit and 9 Bit. Use the controls below to move and attack.">This fight requires canvas support.</canvas><div class="bezel-label"><span>BARCODE BROADCAST SYSTEM</span><span>CHANNEL 06 / 09</span></div></div>
+      <div class="screen-bezel"><button id="demo-start" class="demo-start" type="button" hidden>START FIGHT →</button><canvas id="fight-stage" width="1280" height="720" tabindex="0" aria-label="Playable fight between 6 Bit and 9 Bit. Use the controls below to move and attack.">This fight requires canvas support.</canvas><div class="bezel-label"><span>BARCODE BROADCAST SYSTEM</span><span>CHANNEL 06 / 09</span></div></div>
 
       <div class="touch-controls" aria-label="Player one onscreen controls. Tap arrows to step or hold to move. Tap Duck and Block to hold the stance.">
         <div class="touch-movement"><button type="button" data-hold="left" aria-label="Move left">←</button><button type="button" data-hold="right" aria-label="Move right">→</button><button type="button" data-hold="crouch">Duck</button><button type="button" data-action="jump">Jump <kbd>W</kbd></button></div>

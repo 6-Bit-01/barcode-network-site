@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {FIGHTER_STYLES} from '../public/games/system-clash/play/fight-engine.mjs';
-import {FIGHT_AUDIO_PROFILES,ARCADE_ANNOUNCER_PATH,planFightSound,renderFightVocal,createFightAudio} from '../public/games/system-clash/play/fight-audio.mjs';
+import {FIGHT_AUDIO_PROFILES,FIGHT_VOCAL_BANKS,FIGHT_VOCAL_VARIANTS,MAX_VOCAL_CACHE_ENTRIES,MAX_VOCAL_CACHE_BYTES,createFightVariationSelector,ARCADE_ANNOUNCER_PATH,planFightSound,renderFightVocal,createFightAudio} from '../public/games/system-clash/play/fight-audio.mjs';
 
 test('every enabled fighter has an original distinct effort/hurt/scream voice profile',()=>{
   assert.deepEqual(Object.keys(FIGHT_AUDIO_PROFILES).sort(),Object.keys(FIGHTER_STYLES).sort());
@@ -151,3 +151,94 @@ test('bundled offline announcer is actual speech PCM with headroom and retained-
   assert.equal(wav.length,40102);
 });
 
+
+function vocalFeatures(data){
+  const energy=Array(12).fill(0);let total=0,difference=0;
+  for(let i=0;i<data.length;i++){const value=data[i];energy[Math.min(11,Math.floor(i/data.length*12))]+=value*value;total+=value*value;if(i)difference+=(value-data[i-1])**2;}
+  return {energy:energy.map(value=>value/Math.max(.0001,total)),roughness:Math.sqrt(difference/Math.max(.0001,total))};
+}
+
+test('all 208 original utterances change normalized phrasing and spectral texture, with four takes for every reaction',()=>{
+  const hashes=new Set();let count=0;
+  for(const [id,bank]of Object.entries(FIGHT_VOCAL_BANKS))for(const [mode,variants]of Object.entries(bank.variants)){
+    assert.equal(variants.length,4);assert.equal(new Set(variants.map(v=>v.phrase)).size,4);
+    const waves=variants.map(({variant})=>renderFightVocal(id,mode,22050,variant)),features=waves.map(vocalFeatures);
+    assert.equal(new Set(waves.map(w=>w.length)).size,4,'takes have independently authored durations');
+    for(const wave of waves){hashes.add(createHash('sha256').update(new Uint8Array(wave.buffer)).digest('hex'));assert.ok(wave.every(Number.isFinite));count++;}
+    for(let a=0;a<4;a++)for(let b=a+1;b<4;b++){
+      const distance=Math.sqrt(features[a].energy.reduce((sum,value,i)=>sum+(value-features[b].energy[i])**2,0));
+      assert.ok(distance>.025,id+' '+mode+' variants change the gain-independent temporal envelope');
+    }
+    assert.ok(Math.max(...features.map(f=>f.roughness))-Math.min(...features.map(f=>f.roughness))>.008,id+' '+mode+' variants change normalized spectral texture');
+  }
+  assert.equal(count,208);assert.equal(hashes.size,208);
+  assert.deepEqual(renderFightVocal('6-bit','hurt'),renderFightVocal('6-bit','hurt',22050,0),'legacy call chooses take zero');
+  assert.deepEqual(renderFightVocal('6-bit','hurt',22050,4),renderFightVocal('6-bit','hurt',22050,0),'variant indices are bounded deterministically');
+});
+
+test('independent deterministic shuffle bags play every take once per bank and never repeat across bag boundaries',()=>{
+  const a=createFightVariationSelector(713),b=createFightVariationSelector(713),first=[];
+  for(const id of Object.keys(FIGHT_VOCAL_BANKS))for(const mode of Object.keys(FIGHT_VOCAL_VARIANTS)){
+    const key=id+':'+mode,values=[];
+    for(let i=0;i<20;i++){const value=a.next(key,4);assert.equal(value,b.next(key,4));if(i)assert.notEqual(value,values.at(-1));values.push(value);}
+    for(let i=0;i<20;i+=4)assert.equal(new Set(values.slice(i,i+4)).size,4);
+    first.push({key,values});
+  }
+  assert.equal(a.size,52);a.clear();assert.equal(a.size,0);
+  for(const {key,values}of first)assert.deepEqual(Array.from({length:20},()=>a.next(key,4)),values,'reset recreates the same bank, independently of other identities');
+});
+
+const voiceEvent=(id,mode)=>mode==='attack'?{type:'attack',attackerId:id,victimId:'6-bit'}:
+  {type:mode==='scream'?'deletion-impact':'hit',attackerId:'6-bit',victimId:id,strength:mode==='hurt'?1:mode==='big-hurt'?2.1:3.2,cue:mode==='scream'?'nail-strike':undefined};
+function finishFakeSources(context,from=0){for(const source of context.sources.slice(from))source.end();}
+
+test('event playback rotates actual PCM takes for all fighters and pauses/mute do not consume a voice choice',async()=>{
+  const context=new FakeContext(),audio=createFightAudio({contextFactory:()=>context,fetch:okFetch,seed:713});await audio.startAudio();
+  assert.equal(audio.getStats().cachedVoices,0,'no bank is eagerly synthesized during unlock');
+  for(const id of Object.keys(FIGHT_VOCAL_BANKS))for(const mode of Object.keys(FIGHT_VOCAL_VARIANTS)){
+    const key=id+':'+mode,choices=[];
+    for(let i=0;i<8;i++){
+      context.currentTime+=2.3;const from=context.sources.length;
+      assert.equal(audio.emit(voiceEvent(id,mode)),true);const stats=audio.getStats();choices.push(stats.lastVocalVariants[key]);
+      if(i)assert.notEqual(choices[i],choices[i-1],key+' rotates actual scheduled takes');
+      finishFakeSources(context,from);
+    }
+    assert.equal(new Set(choices.slice(0,4)).size,4);assert.equal(new Set(choices.slice(4)).size,4);
+  }
+  const previous=audio.getStats(),sources=context.sources.length;
+  audio.setPaused(true);assert.equal(audio.emit(voiceEvent('6-bit','attack')),false);audio.setPaused(false);
+  audio.setMuted(true);assert.equal(audio.emit(voiceEvent('6-bit','attack')),false);audio.setMuted(false);
+  assert.deepEqual(audio.getStats().lastVocalVariants,previous.lastVocalVariants);assert.equal(context.sources.length,sources);
+  audio.clear();assert.equal(audio.getStats().variationFamilies,0);assert.deepEqual(audio.getStats().lastVocalVariants,{});
+});
+
+test('LRU vocal storage stays within both byte and entry bounds at high device sample rates',async()=>{
+  const context=new FakeContext();context.sampleRate=96000;
+  const audio=createFightAudio({contextFactory:()=>context,fetch:okFetch,seed:713});await audio.startAudio();
+  let rendered=0;
+  for(const id of Object.keys(FIGHT_VOCAL_BANKS))for(const mode of Object.keys(FIGHT_VOCAL_VARIANTS))for(let i=0;i<4;i++){
+    context.currentTime+=2.3;audio.emit(voiceEvent(id,mode));finishFakeSources(context);context.sources.length=0;
+    const stats=audio.getStats();assert.ok(stats.cachedVoices<=MAX_VOCAL_CACHE_ENTRIES);assert.ok(stats.vocalCacheBytes<=MAX_VOCAL_CACHE_BYTES);rendered++;
+  }
+  assert.equal(rendered,208);assert.equal(audio.getStats().playedVoices,208);assert.ok(audio.getStats().cachedVoices<208,'older variants are evicted while active buffers remain source-owned');
+});
+
+test('lesser hurt and effort cannot truncate a stronger active scream or consume its next bank take',async()=>{
+  const context=new FakeContext(),audio=createFightAudio({contextFactory:()=>context,fetch:okFetch});await audio.startAudio();
+  audio.emit(voiceEvent('9-bit','scream'));const voiceCount=audio.getStats().playedVoices,previous=audio.getStats().lastVocalVariants;
+  for(const [delay,mode]of [[.3,'hurt'],[.4,'big-hurt'],[.4,'attack']]){context.currentTime+=delay;audio.emit(voiceEvent('9-bit',mode));assert.equal(audio.getStats().playedVoices,voiceCount);}
+  assert.deepEqual(audio.getStats().lastVocalVariants,previous);assert.equal(audio.getStats().activeVoices,1);
+});
+
+test('Foley rotations belong to the actual landing, blocking and KO fighter rather than their opponent',async()=>{
+  const context=new FakeContext(),audio=createFightAudio({contextFactory:()=>context,fetch:okFetch});await audio.startAudio();
+  for(const type of ['land','block','ko']){
+    const choices=[];
+    for(let i=0;i<4;i++){
+      context.currentTime+=2.3;const from=context.sources.length;
+      audio.emit({type,attackerId:i%2?'9-bit':'6-bit',victimId:'cache-back',strength:1});const selection=audio.getStats().lastFoleyVariation;
+      assert.ok(selection.key.startsWith('foley:cache-back:'),type+' uses the sound owner identity');choices.push(selection.variant);finishFakeSources(context,from);
+    }
+    assert.equal(new Set(choices).size,4,'changing the attacker cannot restart the defender bank');
+  }
+});

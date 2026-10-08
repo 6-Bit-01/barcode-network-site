@@ -61,11 +61,10 @@ test('stage interaction fixtures clear the Deletion set without changing the roo
 test('wide cinematic backdrop keeps native aspect and floor pixels without stretched bands',()=>{
  const {screen,surfaces}=owner(),renderer=createStageRenderer(screen),state=createStageState('containment');
  renderer.drawBackground(screen.getContext(),state,{id:state.id,image:plate,kit,layers},{cameraX:1420,shakeX:2,shakeY:-1});
- assert(screen.calls.some(([key,...args])=>key==='setTransform'&&args.join(',')==='1,0,0,1,2,-1'),'Photographic background uses viewport pixels and retains the impact shake');
+ assert(!screen.calls.some(([key])=>key==='setTransform'),'World backdrop cannot discard the foreground camera transform');
  const images=screen.calls.filter(([key,image])=>key==='drawImage'&&image===surfaces[0]);
  assert.equal(images.length,1,'No stretched top or bottom copies');
- assert.deepEqual(images[0].slice(2),[780,0,1280,720,0,0,1280,720],'A native landscape crop follows the actual world camera center');
- assert.equal(screen.calls.at(-1)[0],'restore','Foreground camera transform is preserved');
+ assert.deepEqual(images[0].slice(2),[0,0],'The cached native landscape remains at its world origin');
 });
 
 

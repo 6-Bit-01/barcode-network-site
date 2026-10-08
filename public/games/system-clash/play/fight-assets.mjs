@@ -297,6 +297,7 @@ export async function loadStageArt({id='radio-studio',bundle,baseURL}={}) {
       catch{warnings.push(`${key}: layers unavailable`);return null;}
     };
     const [image,kit,layers]=await Promise.all([imageFor(`assets/stages/${id}.webp`),imageFor(`assets/stages/${id}-kit.webp`),layersFor()]);
+    if(warnings.length){const index=stageArtCache.indexOf(entry);if(index>=0)stageArtCache.splice(index,1);}
     return {id,image,kit,layers,warnings};
   })();
   stageArtCache.push(entry);while(stageArtCache.length>2)stageArtCache.shift();

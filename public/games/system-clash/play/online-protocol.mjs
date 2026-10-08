@@ -1,6 +1,6 @@
 /** One bounded wire contract shared by the lobby, peers and game frame. */
 export const ONLINE_SCOPE='system-clash-online-v1';
-export const ONLINE_VERSION='system-clash-20261008-2';
+export const ONLINE_VERSION='system-clash-20261008-3';
 export const MAX_PACKET_BYTES=65536;
 export const ONLINE_STAGES=Object.freeze(['radio-studio','sheila-office','studio-rat-lair','containment','nature-simulation','witty-wasteland']);
 const actions=new Set(['punch','kick','low-punch','low-kick','uppercut','grab','jump','double-punch','power-kick','crouch-punch','crouch-kick','crouch-high-kick','jump-punch','jump-kick','weapon-throw','weapon-use','deletion']);

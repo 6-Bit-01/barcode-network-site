@@ -52,7 +52,7 @@ test('a superseded fighter load stops before fetching and decoding the next art 
  const boot=source.slice(source.indexOf('async function boot()'),source.indexOf("$('fighter-one').addEventListener('change'"));
  const phases=['loadFightArt','loadArcadeArt','loadDeletionArt','loadWeaponArt','loadFighterPortraits'];
  for(let supersededAt=0;supersededAt<4;supersededAt++){
-  const calls=[],elements=new Map(),env={loadRevision:0,motionPresentationEpoch:0,interfaceArtPending:null,loadInterfaceArt:async()=>({images:{}}),clearInput(){},effects:{clear(){}},URL,location:{href:'https://example.com/fight.html'},window:{},$:(id)=>elements.get(id)??(elements.set(id,{value:'6-bit',classList:{remove(){},add(){}}}),elements.get(id))};
+  const calls=[],elements=new Map(),env={loadRevision:0,motionPresentationEpoch:0,interfaceArtPending:null,pauseDialog:{open:false},roundMenu:{reset(){}},loading(){},loadInterfaceArt:async()=>({images:{}}),clearInput(){},effects:{clear(){}},URL,location:{href:'https://example.com/fight.html'},window:{},$:(id)=>elements.get(id)??(elements.set(id,{value:'6-bit',classList:{remove(){},add(){}}}),elements.get(id))};
   for(const [index,phase] of phases.entries())env[phase]=async()=>{calls.push(phase);if(index===supersededAt)env.loadRevision=2;return phase==='loadFightArt'?[{}]:{};};
   runInNewContext(boot,env);await env.boot();assert.deepEqual(calls,phases.slice(0,supersededAt+1),'cancel after '+phases[supersededAt]);
  }

@@ -1,3 +1,4 @@
+import {createRoundSet} from '../public/games/system-clash/play/fight-rules.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -34,16 +35,17 @@ function canvas(){
 }
 function harness(){
  const source=[art('6-bit'),art('9-bit')],screen=canvas(),elements=new Map(),env={
+  pauseDialog:{open:false,close(){}},roundMenu:{reset(){},close(){}},matchRules:{rounds:1,time:99,difficulty:'normal'},roundSet:createRoundSet(),roundNumber:1,createRoundSet,loading(){},updateRoundOutcome(){},screenSuspended:false,
   art:source,metadata:combatMetadata(source),canvas:screen,renderer:createFightRenderer(screen),ready:true,paused:false,loadRevision:0,motionPresentationEpoch:0,
   inspectTime:null,motionTime:null,accumulator:0,previousTravelViews:null,previousTravelPhase:null,deletionReviewCache:null,
-  deletionProp:null,weaponArt:null,fighterPortraits:{},stageArt:null,tournamentOverlay:null,onlineCombat:null,onlineLoaded:false,
+  deletionProp:null,weaponArt:null,fighterPortraits:{},stageArt:{id:"radio-studio"},tournamentOverlay:null,onlineCombat:null,onlineLoaded:false,
   weaponFeedback:'',weaponFeedbackUntil:0,arenaLabel:'',statusText:'',interfaceArtPending:null,time:0,
   launchParams:new URLSearchParams('matchId=1'),activeRoster:source.map(a=>({id:a.manifest.id,name:a.manifest.character})),demoLaunch:{enabled:false},
   performance:{now:()=>env.time},onlineBridge:{enabled:true,seat:1,send:()=>true},document:{hidden:false,querySelectorAll:()=>[]},
   effects:{camera:{x:0,y:0},clear(){},setPaused(){},startAudio:async()=>true,prepareCharacterAudio(){}},
   clearInput(){},syncPauseMenu(){},syncAudioPause(){},ensureStageArt:async()=>{},controls:()=>[{},{}],dispatchEvents(){},emitFightEvent(){},
   getFighterView,createMatch,combatMetadata,createOnlineCombatController,applyFightSnapshot,deletionDefinition,previewBattleWear,
-  loadInterfaceArt:async()=>({images:{}}),loadFightArt:async()=>source,loadArcadeArt:async()=>{},loadDeletionArt:async()=>null,loadWeaponArt:async()=>null,loadFighterPortraits:async()=>({}),
+  loadStageArt:async()=>({id:"radio-studio",image:{},kit:{},layers:{}}),loadInterfaceArt:async()=>({images:{}}),loadFightArt:async()=>source,loadArcadeArt:async()=>{},loadDeletionArt:async()=>null,loadWeaponArt:async()=>null,loadFighterPortraits:async()=>({}),
   showContextArtLinks(){},showFighterStyles(){},window:{},location:{href:'https://barcode.example/fight.html'},
  };
  env.$=id=>{if(!elements.has(id))elements.set(id,{value:id==='pose-preset'?'broadcast':id==='mode-select'?'local':id==='deletion-facing'?'right':'none',checked:false,hidden:true,selectedOptions:[{textContent:'Broadcast'}],options:[{textContent:''}],classList:{remove(){},add(){}},setAttribute(){},parentElement:{setAttribute(){}}});return elements.get(id);};

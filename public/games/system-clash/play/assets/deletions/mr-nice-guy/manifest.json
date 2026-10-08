@@ -1,1 +1,2086 @@
-{"id":"mr-nice-guy-deletion-utilities","fighterId":"mr-nice-guy","baseId":"mr-nice-guy","character":"Mr Nice Guy","height":320,"clips":{"brace":{"file":"victim-poses-v2.png","label":"Brace","frames":{"right":[{"rect":[84,84,198,255],"anchor":[151.0,252],"opaqueBounds":[3,3,195,252],"attachments":{"head":[124,52],"grip":[181,76],"torso":[94,101],"legs":[50,206]},"handRadius":8,"gripAngle":-0.15},{"rect":[399,89,201,252],"anchor":[47.0,249],"opaqueBounds":[3,3,198,249],"attachments":{"head":[61,42],"grip":[127,42],"torso":[70,96],"legs":[68,203]},"handRadius":8,"gripAngle":-0.15}],"left":[{"rect":[75,403,207,249],"anchor":[48.0,246],"opaqueBounds":[3,3,204,246],"attachments":{"head":[77,55],"grip":[20,68],"torso":[98,100],"legs":[58,187]},"handRadius":8,"gripAngle":0.15},{"rect":[365,400,192,252],"anchor":[43.0,249],"opaqueBounds":[3,3,189,249],"attachments":{"head":[130,51],"grip":[61,66],"torso":[118,105],"legs":[85,188]},"handRadius":8,"gripAngle":0.15}]},"scale":1.300813,"order":[0,1],"frameMs":[240,460],"loop":false,"sourceSize":[1254,1254],"sourceRevision":"0d59426c1504fbda","sourceSha256":"0d59426c1504fbda413705d38433f6d208c678132e6a212ed4a2be6acd409cca","fightingStyle":"Grounded archer counterfighter: compact braced guard, short driving body jabs, deliberate low snaps, controlled uppercut and heavy front push kicks."},"suspended":{"file":"victim-poses-v2.png","label":"Suspended","frames":{"right":[{"rect":[726,33,111,320],"anchor":[54.0,319],"opaqueBounds":[1,1,110,319],"attachments":{"head":[67,86],"grip":[94,13],"torso":[64,147],"legs":[46,247]},"handRadius":8,"gripAngle":-0.15},{"rect":[1019,31,125,280],"anchor":[83.0,277],"opaqueBounds":[3,3,122,277],"attachments":{"head":[75,87],"grip":[91,15],"torso":[71,149],"legs":[55,192]},"handRadius":8,"gripAngle":-0.15}],"left":[{"rect":[735,352,115,323],"anchor":[56.0,322],"opaqueBounds":[1,1,114,322],"attachments":{"head":[42,90],"grip":[18,13],"torso":[54,155],"legs":[46,252]},"handRadius":8,"gripAngle":0.15},{"rect":[1031,350,127,279],"anchor":[41.5,276],"opaqueBounds":[3,3,124,276],"attachments":{"head":[52,91],"grip":[34,15],"torso":[50,157],"legs":[46,200]},"handRadius":8,"gripAngle":0.15}]},"scale":1.300813,"order":[0,1],"frameMs":[240,460],"loop":false,"sourceSize":[1254,1254],"sourceRevision":"0d59426c1504fbda","sourceSha256":"0d59426c1504fbda413705d38433f6d208c678132e6a212ed4a2be6acd409cca","fightingStyle":"Grounded archer counterfighter: compact braced guard, short driving body jabs, deliberate low snaps, controlled uppercut and heavy front push kicks."},"compressed":{"file":"victim-poses-v2.png","label":"Compressed","frames":{"right":[{"rect":[73,691,190,240],"anchor":[31.0,237],"opaqueBounds":[3,3,187,237],"attachments":{"head":[132,56],"grip":[94,114],"torso":[88,97],"legs":[57,167]},"handRadius":8,"gripAngle":-0.15},{"rect":[382,741,168,190],"anchor":[32.0,187],"opaqueBounds":[3,3,165,187],"attachments":{"head":[128,55],"grip":[97,100],"torso":[88,85],"legs":[38,126]},"handRadius":8,"gripAngle":-0.15}],"left":[{"rect":[66,951,195,241],"anchor":[171.0,238],"opaqueBounds":[3,3,192,238],"attachments":{"head":[59,56],"grip":[88,112],"torso":[90,103],"legs":[60,183]},"handRadius":8,"gripAngle":0.15},{"rect":[383,1007,171,186],"anchor":[139.0,183],"opaqueBounds":[3,3,168,183],"attachments":{"head":[43,57],"grip":[89,103],"torso":[67,94],"legs":[68,133]},"handRadius":8,"gripAngle":0.15}]},"scale":1.300813,"order":[0,1],"frameMs":[240,460],"loop":false,"sourceSize":[1254,1254],"sourceRevision":"0d59426c1504fbda","sourceSha256":"0d59426c1504fbda413705d38433f6d208c678132e6a212ed4a2be6acd409cca","fightingStyle":"Grounded archer counterfighter: compact braced guard, short driving body jabs, deliberate low snaps, controlled uppercut and heavy front push kicks."},"crumpled":{"file":"victim-poses-v2.png","label":"Crumpled","frames":{"right":[{"rect":[625,740,290,185],"anchor":[265.0,182],"opaqueBounds":[3,3,287,182],"attachments":{"head":[106,65],"grip":[27,163],"torso":[122,107],"legs":[165,136]},"handRadius":8,"gripAngle":-0.15},{"rect":[943,790,299,126],"anchor":[116.0,123],"opaqueBounds":[3,3,296,123],"attachments":{"head":[83,48],"grip":[54,106],"torso":[127,75],"legs":[197,93]},"handRadius":8,"gripAngle":-0.15}],"left":[{"rect":[629,1008,289,184],"anchor":[57.0,181],"opaqueBounds":[3,3,286,181],"attachments":{"head":[185,61],"grip":[260,172],"torso":[164,110],"legs":[81,136]},"handRadius":8,"gripAngle":0.15},{"rect":[927,1051,279,122],"anchor":[185.0,119],"opaqueBounds":[3,3,276,119],"attachments":{"head":[199,53],"grip":[165,107],"torso":[197,88],"legs":[96,88]},"handRadius":8,"gripAngle":0.15}]},"scale":1.300813,"order":[0,1],"frameMs":[240,460],"loop":false,"sourceSize":[1254,1254],"sourceRevision":"0d59426c1504fbda","sourceSha256":"0d59426c1504fbda413705d38433f6d208c678132e6a212ed4a2be6acd409cca","fightingStyle":"Grounded archer counterfighter: compact braced guard, short driving body jabs, deliberate low snaps, controlled uppercut and heavy front push kicks."},"shove":{"file":"attacker-poses-v1.png","label":"Shove","frames":{"right":[{"rect":[67,12,206,285],"anchor":[156.0,282],"opaqueBounds":[3,3,203,282],"attachments":{"head":[129,57],"grip":[191,84],"torso":[107,109],"legs":[57,231]},"handRadius":8,"gripAngle":-0.15},{"rect":[379,19,233,278],"anchor":[152.0,275],"opaqueBounds":[3,3,230,275],"attachments":{"head":[127,56],"grip":[220,71],"torso":[107,103],"legs":[60,223]},"handRadius":8,"gripAngle":-0.15}],"left":[{"rect":[64,316,213,290],"anchor":[41.0,287],"opaqueBounds":[3,3,210,287],"attachments":{"head":[81,56],"grip":[16,95],"torso":[95,111],"legs":[59,236]},"handRadius":8,"gripAngle":0.15},{"rect":[356,324,242,282],"anchor":[78.0,279],"opaqueBounds":[3,3,239,279],"attachments":{"head":[105,60],"grip":[14,76],"torso":[127,111],"legs":[85,225]},"handRadius":8,"gripAngle":0.15}]},"scale":1.122807,"order":[0,1],"frameMs":[240,460],"loop":false,"sourceSize":[1254,1254],"sourceRevision":"2371f880606082db","sourceSha256":"2371f880606082dba2af3ec8e1bef04fcad15beff242be0fef1d405c8b31cbd5","fightingStyle":"Grounded archer counterfighter: compact braced guard, short driving body jabs, deliberate low snaps, controlled uppercut and heavy front push kicks."},"pull":{"file":"attacker-poses-v1.png","label":"Pull","frames":{"right":[{"rect":[682,16,219,281],"anchor":[163.0,278],"opaqueBounds":[3,3,216,278],"attachments":{"head":[131,57],"grip":[202,90],"torso":[109,111],"legs":[63,226]},"handRadius":8,"gripAngle":-0.15},{"rect":[1029,7,188,292],"anchor":[140.0,289],"opaqueBounds":[3,3,185,289],"attachments":{"head":[105,59],"grip":[85,146],"torso":[88,113],"legs":[58,242]},"handRadius":8,"gripAngle":-0.15}],"left":[{"rect":[688,321,214,285],"anchor":[50.0,282],"opaqueBounds":[3,3,211,282],"attachments":{"head":[91,56],"grip":[18,90],"torso":[105,112],"legs":[68,228]},"handRadius":8,"gripAngle":0.15},{"rect":[993,316,206,292],"anchor":[112.5,289],"opaqueBounds":[3,3,203,289],"attachments":{"head":[88,56],"grip":[111,133],"torso":[91,112],"legs":[57,235]},"handRadius":8,"gripAngle":0.15}]},"scale":1.122807,"order":[0,1],"frameMs":[240,460],"loop":false,"sourceSize":[1254,1254],"sourceRevision":"2371f880606082db","sourceSha256":"2371f880606082dba2af3ec8e1bef04fcad15beff242be0fef1d405c8b31cbd5","fightingStyle":"Grounded archer counterfighter: compact braced guard, short driving body jabs, deliberate low snaps, controlled uppercut and heavy front push kicks."},"stomp":{"file":"attacker-poses-v1.png","label":"Stomp","frames":{"right":[{"rect":[76,625,186,302],"anchor":[52.0,299],"opaqueBounds":[3,3,183,299],"attachments":{"head":[99,58],"grip":[135,86],"torso":[85,116],"legs":[52,225]},"handRadius":8,"gripAngle":-0.15},{"rect":[358,656,244,270],"anchor":[198.0,267],"opaqueBounds":[3,3,241,267],"attachments":{"head":[160,55],"grip":[188,98],"torso":[142,119],"legs":[62,201]},"handRadius":8,"gripAngle":-0.15}],"left":[{"rect":[72,945,192,291],"anchor":[127.0,288],"opaqueBounds":[3,3,189,288],"attachments":{"head":[79,57],"grip":[50,82],"torso":[95,113],"legs":[109,225]},"handRadius":8,"gripAngle":0.15},{"rect":[351,972,258,261],"anchor":[47.0,258],"opaqueBounds":[3,3,255,258],"attachments":{"head":[80,62],"grip":[58,92],"torso":[104,120],"legs":[73,204]},"handRadius":8,"gripAngle":0.15}]},"scale":1.122807,"order":[0,1],"frameMs":[240,460],"loop":false,"sourceSize":[1254,1254],"sourceRevision":"2371f880606082db","sourceSha256":"2371f880606082dba2af3ec8e1bef04fcad15beff242be0fef1d405c8b31cbd5","fightingStyle":"Grounded archer counterfighter: compact braced guard, short driving body jabs, deliberate low snaps, controlled uppercut and heavy front push kicks."},"present":{"file":"attacker-poses-v1.png","label":"Present","frames":{"right":[{"rect":[703,631,213,296],"anchor":[33.5,293],"opaqueBounds":[3,3,210,293],"attachments":{"head":[100,58],"grip":[186,123],"torso":[92,114],"legs":[41,226]},"handRadius":8,"gripAngle":-0.15},{"rect":[1003,628,218,299],"anchor":[35.0,296],"opaqueBounds":[3,3,215,296],"attachments":{"head":[97,57],"grip":[200,64],"torso":[88,116],"legs":[45,229]},"handRadius":8,"gripAngle":-0.15}],"left":[{"rect":[672,946,222,287],"anchor":[75.0,284],"opaqueBounds":[3,3,219,284],"attachments":{"head":[116,56],"grip":[26,118],"torso":[119,114],"legs":[69,224]},"handRadius":8,"gripAngle":0.15},{"rect":[990,940,215,293],"anchor":[72.5,290],"opaqueBounds":[3,3,212,290],"attachments":{"head":[115,57],"grip":[28,64],"torso":[119,112],"legs":[70,230]},"handRadius":8,"gripAngle":0.15}]},"scale":1.122807,"order":[0,1],"frameMs":[240,460],"loop":false,"sourceSize":[1254,1254],"sourceRevision":"2371f880606082db","sourceSha256":"2371f880606082dba2af3ec8e1bef04fcad15beff242be0fef1d405c8b31cbd5","fightingStyle":"Grounded archer counterfighter: compact braced guard, short driving body jabs, deliberate low snaps, controlled uppercut and heavy front push kicks."},"bow":{"file":"bow-draw-v1.png","label":"Friendly Fire bow draw","frames":{"right":[{"rect":[38,77,320,385],"anchor":[37.0,382],"opaqueBounds":[3,3,317,382],"attachments":{"head":[165,72],"grip":[301,118],"torso":[148,137],"legs":[91,291],"stringHand":[145,128],"secondaryGrip":[145,128],"cheek":[166,73]},"handRadius":8,"gripAngle":0},{"rect":[419,77,334,385],"anchor":[42.0,382],"opaqueBounds":[3,3,331,382],"attachments":{"head":[168,68],"grip":[316,95],"torso":[156,137],"legs":[96,291],"stringHand":[138,88],"secondaryGrip":[138,88],"cheek":[168,73]},"handRadius":8,"gripAngle":0},{"rect":[809,78,327,384],"anchor":[42.0,381],"opaqueBounds":[3,3,324,381],"attachments":{"head":[165,67],"grip":[307,108],"torso":[151,136],"legs":[96,290],"stringHand":[92,82],"secondaryGrip":[92,82],"cheek":[165,72]},"handRadius":8,"gripAngle":0},{"rect":[1213,77,295,385],"anchor":[38.0,382],"opaqueBounds":[3,3,292,382],"attachments":{"head":[165,72],"grip":[170,157],"torso":[150,137],"legs":[87,291],"stringHand":[145,126],"secondaryGrip":[145,126],"cheek":[165,73]},"handRadius":8,"gripAngle":0}],"left":[{"rect":[25,562,326,384],"anchor":[288.0,381],"opaqueBounds":[3,3,323,381],"attachments":{"head":[149,75],"grip":[17,119],"torso":[163,151],"legs":[106,290],"stringHand":[155,126],"secondaryGrip":[155,126],"cheek":[148,78]},"handRadius":8,"gripAngle":0},{"rect":[405,564,336,382],"anchor":[298.0,379],"opaqueBounds":[3,3,333,379],"attachments":{"head":[145,74],"grip":[18,100],"torso":[178,149],"legs":[122,288],"stringHand":[194,84],"secondaryGrip":[194,84],"cheek":[145,76]},"handRadius":8,"gripAngle":0},{"rect":[795,563,338,383],"anchor":[298.0,380],"opaqueBounds":[3,3,335,380],"attachments":{"head":[148,75],"grip":[18,106],"torso":[183,150],"legs":[123,289],"stringHand":[228,80],"secondaryGrip":[228,80],"cheek":[148,77]},"handRadius":8,"gripAngle":0},{"rect":[1206,561,298,385],"anchor":[261.0,382],"opaqueBounds":[3,3,295,382],"attachments":{"head":[117,76],"grip":[116,152],"torso":[145,152],"legs":[93,291],"stringHand":[136,127],"secondaryGrip":[136,127],"cheek":[117,79]},"handRadius":8,"gripAngle":0}]},"scale":0.844327,"order":[0,1,2,3],"frameMs":[180,300,260,200],"loop":false,"sourceSize":[1536,1024],"sourceRevision":"8b8ec7867e2b5fd2","sourceSha256":"8b8ec7867e2b5fd202a702317e43277f7c9a21a3a8566e5899273c6ac285bb9c","fightingStyle":"Grounded archer counterfighter: compact braced guard, short driving body jabs, deliberate low snaps, controlled uppercut and heavy front push kicks.","contactMs":480,"releaseMs":480,"channelMs":180}},"artFightingStyle":"Grounded archer counterfighter: compact braced guard, short driving body jabs, deliberate low snaps, controlled uppercut and heavy front push kicks.","status":"native main fighter banks","description":"Complete native bodies and independently drawn facings. Original generated PNG bytes retained; hands, heads, chest and legs measured on opaque pixels."}
+{
+  "id": "mr-nice-guy-deletion-utilities",
+  "fighterId": "mr-nice-guy",
+  "baseId": "mr-nice-guy",
+  "character": "Mr Nice Guy",
+  "height": 320,
+  "clips": {
+    "brace": {
+      "file": "victim-poses-v2.png",
+      "label": "Brace",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              84,
+              84,
+              198,
+              255
+            ],
+            "anchor": [
+              151.0,
+              252
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              195,
+              252
+            ],
+            "attachments": {
+              "head": [
+                124,
+                52
+              ],
+              "grip": [
+                181,
+                76
+              ],
+              "torso": [
+                94,
+                101
+              ],
+              "legs": [
+                50,
+                206
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": -0.15
+          },
+          {
+            "rect": [
+              399,
+              89,
+              201,
+              252
+            ],
+            "anchor": [
+              47.0,
+              249
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              198,
+              249
+            ],
+            "attachments": {
+              "head": [
+                61,
+                42
+              ],
+              "grip": [
+                127,
+                42
+              ],
+              "torso": [
+                70,
+                96
+              ],
+              "legs": [
+                68,
+                203
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": -0.15
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              75,
+              403,
+              207,
+              249
+            ],
+            "anchor": [
+              48.0,
+              246
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              204,
+              246
+            ],
+            "attachments": {
+              "head": [
+                77,
+                55
+              ],
+              "grip": [
+                20,
+                68
+              ],
+              "torso": [
+                98,
+                100
+              ],
+              "legs": [
+                58,
+                187
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": 0.15
+          },
+          {
+            "rect": [
+              365,
+              400,
+              192,
+              252
+            ],
+            "anchor": [
+              43.0,
+              249
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              189,
+              249
+            ],
+            "attachments": {
+              "head": [
+                130,
+                51
+              ],
+              "grip": [
+                61,
+                66
+              ],
+              "torso": [
+                118,
+                105
+              ],
+              "legs": [
+                85,
+                188
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": 0.15
+          }
+        ]
+      },
+      "scale": 1.300813,
+      "order": [
+        0,
+        1
+      ],
+      "frameMs": [
+        240,
+        460
+      ],
+      "loop": false,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "0d59426c1504fbda",
+      "sourceSha256": "0d59426c1504fbda413705d38433f6d208c678132e6a212ed4a2be6acd409cca",
+      "fightingStyle": "Grounded archer counterfighter: compact braced guard, short driving body jabs, deliberate low snaps, controlled uppercut and heavy front push kicks."
+    },
+    "suspended": {
+      "file": "victim-poses-v2.png",
+      "label": "Suspended",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              726,
+              33,
+              111,
+              320
+            ],
+            "anchor": [
+              54.0,
+              319
+            ],
+            "opaqueBounds": [
+              1,
+              1,
+              110,
+              319
+            ],
+            "attachments": {
+              "head": [
+                67,
+                86
+              ],
+              "grip": [
+                94,
+                13
+              ],
+              "torso": [
+                64,
+                147
+              ],
+              "legs": [
+                46,
+                247
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": -0.15
+          },
+          {
+            "rect": [
+              1019,
+              31,
+              125,
+              280
+            ],
+            "anchor": [
+              83.0,
+              277
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              122,
+              277
+            ],
+            "attachments": {
+              "head": [
+                75,
+                87
+              ],
+              "grip": [
+                91,
+                15
+              ],
+              "torso": [
+                71,
+                149
+              ],
+              "legs": [
+                55,
+                192
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": -0.15
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              735,
+              352,
+              115,
+              323
+            ],
+            "anchor": [
+              56.0,
+              322
+            ],
+            "opaqueBounds": [
+              1,
+              1,
+              114,
+              322
+            ],
+            "attachments": {
+              "head": [
+                42,
+                90
+              ],
+              "grip": [
+                18,
+                13
+              ],
+              "torso": [
+                54,
+                155
+              ],
+              "legs": [
+                46,
+                252
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": 0.15
+          },
+          {
+            "rect": [
+              1031,
+              350,
+              127,
+              279
+            ],
+            "anchor": [
+              41.5,
+              276
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              124,
+              276
+            ],
+            "attachments": {
+              "head": [
+                52,
+                91
+              ],
+              "grip": [
+                34,
+                15
+              ],
+              "torso": [
+                50,
+                157
+              ],
+              "legs": [
+                46,
+                200
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": 0.15
+          }
+        ]
+      },
+      "scale": 1.300813,
+      "order": [
+        0,
+        1
+      ],
+      "frameMs": [
+        240,
+        460
+      ],
+      "loop": false,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "0d59426c1504fbda",
+      "sourceSha256": "0d59426c1504fbda413705d38433f6d208c678132e6a212ed4a2be6acd409cca",
+      "fightingStyle": "Grounded archer counterfighter: compact braced guard, short driving body jabs, deliberate low snaps, controlled uppercut and heavy front push kicks."
+    },
+    "compressed": {
+      "file": "victim-poses-v2.png",
+      "label": "Compressed",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              73,
+              691,
+              190,
+              240
+            ],
+            "anchor": [
+              31.0,
+              237
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              187,
+              237
+            ],
+            "attachments": {
+              "head": [
+                132,
+                56
+              ],
+              "grip": [
+                94,
+                114
+              ],
+              "torso": [
+                88,
+                97
+              ],
+              "legs": [
+                57,
+                167
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": -0.15
+          },
+          {
+            "rect": [
+              382,
+              741,
+              168,
+              190
+            ],
+            "anchor": [
+              32.0,
+              187
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              165,
+              187
+            ],
+            "attachments": {
+              "head": [
+                128,
+                55
+              ],
+              "grip": [
+                97,
+                100
+              ],
+              "torso": [
+                88,
+                85
+              ],
+              "legs": [
+                38,
+                126
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": -0.15
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              66,
+              951,
+              195,
+              241
+            ],
+            "anchor": [
+              171.0,
+              238
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              192,
+              238
+            ],
+            "attachments": {
+              "head": [
+                59,
+                56
+              ],
+              "grip": [
+                88,
+                112
+              ],
+              "torso": [
+                90,
+                103
+              ],
+              "legs": [
+                60,
+                183
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": 0.15
+          },
+          {
+            "rect": [
+              383,
+              1007,
+              171,
+              186
+            ],
+            "anchor": [
+              139.0,
+              183
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              168,
+              183
+            ],
+            "attachments": {
+              "head": [
+                43,
+                57
+              ],
+              "grip": [
+                89,
+                103
+              ],
+              "torso": [
+                67,
+                94
+              ],
+              "legs": [
+                68,
+                133
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": 0.15
+          }
+        ]
+      },
+      "scale": 1.300813,
+      "order": [
+        0,
+        1
+      ],
+      "frameMs": [
+        240,
+        460
+      ],
+      "loop": false,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "0d59426c1504fbda",
+      "sourceSha256": "0d59426c1504fbda413705d38433f6d208c678132e6a212ed4a2be6acd409cca",
+      "fightingStyle": "Grounded archer counterfighter: compact braced guard, short driving body jabs, deliberate low snaps, controlled uppercut and heavy front push kicks."
+    },
+    "crumpled": {
+      "file": "victim-poses-v2.png",
+      "label": "Crumpled",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              625,
+              740,
+              290,
+              185
+            ],
+            "anchor": [
+              265.0,
+              182
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              287,
+              182
+            ],
+            "attachments": {
+              "head": [
+                106,
+                65
+              ],
+              "grip": [
+                27,
+                163
+              ],
+              "torso": [
+                122,
+                107
+              ],
+              "legs": [
+                165,
+                136
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": -0.15
+          },
+          {
+            "rect": [
+              943,
+              790,
+              299,
+              126
+            ],
+            "anchor": [
+              116.0,
+              123
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              296,
+              123
+            ],
+            "attachments": {
+              "head": [
+                83,
+                48
+              ],
+              "grip": [
+                54,
+                106
+              ],
+              "torso": [
+                127,
+                75
+              ],
+              "legs": [
+                197,
+                93
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": -0.15
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              629,
+              1008,
+              289,
+              184
+            ],
+            "anchor": [
+              57.0,
+              181
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              286,
+              181
+            ],
+            "attachments": {
+              "head": [
+                185,
+                61
+              ],
+              "grip": [
+                260,
+                172
+              ],
+              "torso": [
+                164,
+                110
+              ],
+              "legs": [
+                81,
+                136
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": 0.15
+          },
+          {
+            "rect": [
+              927,
+              1051,
+              279,
+              122
+            ],
+            "anchor": [
+              185.0,
+              119
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              276,
+              119
+            ],
+            "attachments": {
+              "head": [
+                199,
+                53
+              ],
+              "grip": [
+                165,
+                107
+              ],
+              "torso": [
+                197,
+                88
+              ],
+              "legs": [
+                96,
+                88
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": 0.15
+          }
+        ]
+      },
+      "scale": 1.300813,
+      "order": [
+        0,
+        1
+      ],
+      "frameMs": [
+        240,
+        460
+      ],
+      "loop": false,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "0d59426c1504fbda",
+      "sourceSha256": "0d59426c1504fbda413705d38433f6d208c678132e6a212ed4a2be6acd409cca",
+      "fightingStyle": "Grounded archer counterfighter: compact braced guard, short driving body jabs, deliberate low snaps, controlled uppercut and heavy front push kicks."
+    },
+    "shove": {
+      "file": "attacker-poses-v1.png",
+      "label": "Shove",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              67,
+              12,
+              206,
+              285
+            ],
+            "anchor": [
+              156.0,
+              282
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              203,
+              282
+            ],
+            "attachments": {
+              "head": [
+                129,
+                57
+              ],
+              "grip": [
+                191,
+                84
+              ],
+              "torso": [
+                107,
+                109
+              ],
+              "legs": [
+                57,
+                231
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": -0.15
+          },
+          {
+            "rect": [
+              379,
+              19,
+              233,
+              278
+            ],
+            "anchor": [
+              152.0,
+              275
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              230,
+              275
+            ],
+            "attachments": {
+              "head": [
+                127,
+                56
+              ],
+              "grip": [
+                220,
+                71
+              ],
+              "torso": [
+                107,
+                103
+              ],
+              "legs": [
+                60,
+                223
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": -0.15
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              64,
+              316,
+              213,
+              290
+            ],
+            "anchor": [
+              41.0,
+              287
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              210,
+              287
+            ],
+            "attachments": {
+              "head": [
+                81,
+                56
+              ],
+              "grip": [
+                16,
+                95
+              ],
+              "torso": [
+                95,
+                111
+              ],
+              "legs": [
+                59,
+                236
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": 0.15
+          },
+          {
+            "rect": [
+              356,
+              324,
+              242,
+              282
+            ],
+            "anchor": [
+              78.0,
+              279
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              239,
+              279
+            ],
+            "attachments": {
+              "head": [
+                105,
+                60
+              ],
+              "grip": [
+                14,
+                76
+              ],
+              "torso": [
+                127,
+                111
+              ],
+              "legs": [
+                85,
+                225
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": 0.15
+          }
+        ]
+      },
+      "scale": 1.122807,
+      "order": [
+        0,
+        1
+      ],
+      "frameMs": [
+        240,
+        460
+      ],
+      "loop": false,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "2371f880606082db",
+      "sourceSha256": "2371f880606082dba2af3ec8e1bef04fcad15beff242be0fef1d405c8b31cbd5",
+      "fightingStyle": "Grounded archer counterfighter: compact braced guard, short driving body jabs, deliberate low snaps, controlled uppercut and heavy front push kicks."
+    },
+    "pull": {
+      "file": "attacker-poses-v1.png",
+      "label": "Pull",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              682,
+              16,
+              219,
+              281
+            ],
+            "anchor": [
+              163.0,
+              278
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              216,
+              278
+            ],
+            "attachments": {
+              "head": [
+                131,
+                57
+              ],
+              "grip": [
+                202,
+                90
+              ],
+              "torso": [
+                109,
+                111
+              ],
+              "legs": [
+                63,
+                226
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": -0.15
+          },
+          {
+            "rect": [
+              1029,
+              7,
+              188,
+              292
+            ],
+            "anchor": [
+              140.0,
+              289
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              185,
+              289
+            ],
+            "attachments": {
+              "head": [
+                105,
+                59
+              ],
+              "grip": [
+                85,
+                146
+              ],
+              "torso": [
+                88,
+                113
+              ],
+              "legs": [
+                58,
+                242
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": -0.15
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              688,
+              321,
+              214,
+              285
+            ],
+            "anchor": [
+              50.0,
+              282
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              211,
+              282
+            ],
+            "attachments": {
+              "head": [
+                91,
+                56
+              ],
+              "grip": [
+                18,
+                90
+              ],
+              "torso": [
+                105,
+                112
+              ],
+              "legs": [
+                68,
+                228
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": 0.15
+          },
+          {
+            "rect": [
+              993,
+              316,
+              206,
+              292
+            ],
+            "anchor": [
+              112.5,
+              289
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              203,
+              289
+            ],
+            "attachments": {
+              "head": [
+                88,
+                56
+              ],
+              "grip": [
+                111,
+                133
+              ],
+              "torso": [
+                91,
+                112
+              ],
+              "legs": [
+                57,
+                235
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": 0.15
+          }
+        ]
+      },
+      "scale": 1.122807,
+      "order": [
+        0,
+        1
+      ],
+      "frameMs": [
+        240,
+        460
+      ],
+      "loop": false,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "2371f880606082db",
+      "sourceSha256": "2371f880606082dba2af3ec8e1bef04fcad15beff242be0fef1d405c8b31cbd5",
+      "fightingStyle": "Grounded archer counterfighter: compact braced guard, short driving body jabs, deliberate low snaps, controlled uppercut and heavy front push kicks."
+    },
+    "stomp": {
+      "file": "attacker-poses-v1.png",
+      "label": "Stomp",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              76,
+              625,
+              186,
+              302
+            ],
+            "anchor": [
+              52.0,
+              299
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              183,
+              299
+            ],
+            "attachments": {
+              "head": [
+                99,
+                58
+              ],
+              "grip": [
+                135,
+                86
+              ],
+              "torso": [
+                85,
+                116
+              ],
+              "legs": [
+                52,
+                225
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": -0.15
+          },
+          {
+            "rect": [
+              358,
+              656,
+              244,
+              270
+            ],
+            "anchor": [
+              198.0,
+              267
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              241,
+              267
+            ],
+            "attachments": {
+              "head": [
+                160,
+                55
+              ],
+              "grip": [
+                188,
+                98
+              ],
+              "torso": [
+                142,
+                119
+              ],
+              "legs": [
+                62,
+                201
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": -0.15
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              72,
+              945,
+              192,
+              291
+            ],
+            "anchor": [
+              127.0,
+              288
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              189,
+              288
+            ],
+            "attachments": {
+              "head": [
+                79,
+                57
+              ],
+              "grip": [
+                50,
+                82
+              ],
+              "torso": [
+                95,
+                113
+              ],
+              "legs": [
+                109,
+                225
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": 0.15
+          },
+          {
+            "rect": [
+              351,
+              972,
+              258,
+              261
+            ],
+            "anchor": [
+              47.0,
+              258
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              255,
+              258
+            ],
+            "attachments": {
+              "head": [
+                80,
+                62
+              ],
+              "grip": [
+                58,
+                92
+              ],
+              "torso": [
+                104,
+                120
+              ],
+              "legs": [
+                73,
+                204
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": 0.15
+          }
+        ]
+      },
+      "scale": 1.122807,
+      "order": [
+        0,
+        1
+      ],
+      "frameMs": [
+        240,
+        460
+      ],
+      "loop": false,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "2371f880606082db",
+      "sourceSha256": "2371f880606082dba2af3ec8e1bef04fcad15beff242be0fef1d405c8b31cbd5",
+      "fightingStyle": "Grounded archer counterfighter: compact braced guard, short driving body jabs, deliberate low snaps, controlled uppercut and heavy front push kicks."
+    },
+    "present": {
+      "file": "attacker-poses-v1.png",
+      "label": "Present",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              703,
+              631,
+              213,
+              296
+            ],
+            "anchor": [
+              33.5,
+              293
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              210,
+              293
+            ],
+            "attachments": {
+              "head": [
+                100,
+                58
+              ],
+              "grip": [
+                186,
+                123
+              ],
+              "torso": [
+                92,
+                114
+              ],
+              "legs": [
+                41,
+                226
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": -0.15
+          },
+          {
+            "rect": [
+              1003,
+              628,
+              218,
+              299
+            ],
+            "anchor": [
+              35.0,
+              296
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              215,
+              296
+            ],
+            "attachments": {
+              "head": [
+                97,
+                57
+              ],
+              "grip": [
+                200,
+                64
+              ],
+              "torso": [
+                88,
+                116
+              ],
+              "legs": [
+                45,
+                229
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": -0.15
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              672,
+              946,
+              222,
+              287
+            ],
+            "anchor": [
+              75.0,
+              284
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              219,
+              284
+            ],
+            "attachments": {
+              "head": [
+                116,
+                56
+              ],
+              "grip": [
+                26,
+                118
+              ],
+              "torso": [
+                119,
+                114
+              ],
+              "legs": [
+                69,
+                224
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": 0.15
+          },
+          {
+            "rect": [
+              990,
+              940,
+              215,
+              293
+            ],
+            "anchor": [
+              72.5,
+              290
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              212,
+              290
+            ],
+            "attachments": {
+              "head": [
+                115,
+                57
+              ],
+              "grip": [
+                28,
+                64
+              ],
+              "torso": [
+                119,
+                112
+              ],
+              "legs": [
+                70,
+                230
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": 0.15
+          }
+        ]
+      },
+      "scale": 1.122807,
+      "order": [
+        0,
+        1
+      ],
+      "frameMs": [
+        240,
+        460
+      ],
+      "loop": false,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "2371f880606082db",
+      "sourceSha256": "2371f880606082dba2af3ec8e1bef04fcad15beff242be0fef1d405c8b31cbd5",
+      "fightingStyle": "Grounded archer counterfighter: compact braced guard, short driving body jabs, deliberate low snaps, controlled uppercut and heavy front push kicks."
+    },
+    "bow": {
+      "file": "bow-draw-v1.png",
+      "label": "Friendly Fire bow draw",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              38,
+              77,
+              320,
+              385
+            ],
+            "anchor": [
+              37.0,
+              382
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              317,
+              382
+            ],
+            "attachments": {
+              "head": [
+                165,
+                72
+              ],
+              "grip": [
+                301,
+                118
+              ],
+              "torso": [
+                148,
+                137
+              ],
+              "legs": [
+                91,
+                291
+              ],
+              "stringHand": [
+                145,
+                128
+              ],
+              "secondaryGrip": [
+                145,
+                128
+              ],
+              "cheek": [
+                166,
+                73
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": 0
+          },
+          {
+            "rect": [
+              419,
+              77,
+              334,
+              385
+            ],
+            "anchor": [
+              42.0,
+              382
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              331,
+              382
+            ],
+            "attachments": {
+              "head": [
+                168,
+                68
+              ],
+              "grip": [
+                316,
+                95
+              ],
+              "torso": [
+                156,
+                137
+              ],
+              "legs": [
+                96,
+                291
+              ],
+              "stringHand": [
+                138,
+                88
+              ],
+              "secondaryGrip": [
+                138,
+                88
+              ],
+              "cheek": [
+                168,
+                73
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": 0
+          },
+          {
+            "rect": [
+              809,
+              78,
+              327,
+              384
+            ],
+            "anchor": [
+              42.0,
+              381
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              324,
+              381
+            ],
+            "attachments": {
+              "head": [
+                165,
+                67
+              ],
+              "grip": [
+                307,
+                108
+              ],
+              "torso": [
+                151,
+                136
+              ],
+              "legs": [
+                96,
+                290
+              ],
+              "stringHand": [
+                92,
+                82
+              ],
+              "secondaryGrip": [
+                92,
+                82
+              ],
+              "cheek": [
+                165,
+                72
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": 0
+          },
+          {
+            "rect": [
+              1213,
+              77,
+              295,
+              385
+            ],
+            "anchor": [
+              38.0,
+              382
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              292,
+              382
+            ],
+            "attachments": {
+              "head": [
+                165,
+                72
+              ],
+              "grip": [
+                170,
+                157
+              ],
+              "torso": [
+                150,
+                137
+              ],
+              "legs": [
+                87,
+                291
+              ],
+              "stringHand": [
+                145,
+                126
+              ],
+              "secondaryGrip": [
+                145,
+                126
+              ],
+              "cheek": [
+                165,
+                73
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": 0
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              25,
+              562,
+              326,
+              384
+            ],
+            "anchor": [
+              288.0,
+              381
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              323,
+              381
+            ],
+            "attachments": {
+              "head": [
+                149,
+                75
+              ],
+              "grip": [
+                17,
+                119
+              ],
+              "torso": [
+                163,
+                151
+              ],
+              "legs": [
+                106,
+                290
+              ],
+              "stringHand": [
+                155,
+                126
+              ],
+              "secondaryGrip": [
+                155,
+                126
+              ],
+              "cheek": [
+                148,
+                78
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": 0
+          },
+          {
+            "rect": [
+              405,
+              564,
+              336,
+              382
+            ],
+            "anchor": [
+              298.0,
+              379
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              333,
+              379
+            ],
+            "attachments": {
+              "head": [
+                145,
+                74
+              ],
+              "grip": [
+                18,
+                100
+              ],
+              "torso": [
+                178,
+                149
+              ],
+              "legs": [
+                122,
+                288
+              ],
+              "stringHand": [
+                194,
+                84
+              ],
+              "secondaryGrip": [
+                194,
+                84
+              ],
+              "cheek": [
+                145,
+                76
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": 0
+          },
+          {
+            "rect": [
+              795,
+              563,
+              338,
+              383
+            ],
+            "anchor": [
+              298.0,
+              380
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              335,
+              380
+            ],
+            "attachments": {
+              "head": [
+                148,
+                75
+              ],
+              "grip": [
+                18,
+                106
+              ],
+              "torso": [
+                183,
+                150
+              ],
+              "legs": [
+                123,
+                289
+              ],
+              "stringHand": [
+                228,
+                80
+              ],
+              "secondaryGrip": [
+                228,
+                80
+              ],
+              "cheek": [
+                148,
+                77
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": 0
+          },
+          {
+            "rect": [
+              1206,
+              561,
+              298,
+              385
+            ],
+            "anchor": [
+              261.0,
+              382
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              295,
+              382
+            ],
+            "attachments": {
+              "head": [
+                117,
+                76
+              ],
+              "grip": [
+                116,
+                152
+              ],
+              "torso": [
+                145,
+                152
+              ],
+              "legs": [
+                93,
+                291
+              ],
+              "stringHand": [
+                136,
+                127
+              ],
+              "secondaryGrip": [
+                136,
+                127
+              ],
+              "cheek": [
+                117,
+                79
+              ]
+            },
+            "handRadius": 8,
+            "gripAngle": 0
+          }
+        ]
+      },
+      "scale": 0.844327,
+      "order": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "frameMs": [
+        180,
+        300,
+        260,
+        200
+      ],
+      "loop": false,
+      "sourceSize": [
+        1536,
+        1024
+      ],
+      "sourceRevision": "8b8ec7867e2b5fd2",
+      "sourceSha256": "8b8ec7867e2b5fd202a702317e43277f7c9a21a3a8566e5899273c6ac285bb9c",
+      "fightingStyle": "Grounded archer counterfighter: compact braced guard, short driving body jabs, deliberate low snaps, controlled uppercut and heavy front push kicks.",
+      "contactMs": 480,
+      "releaseMs": 480,
+      "channelMs": 180
+    },
+    "rip-front": {
+      "file": "victim-front-lift-airborne-sheet-v1.webp",
+      "label": "Approved airborne / slack arms and bent knees",
+      "role": "victim",
+      "poseRole": "airborne",
+      "order": [
+        0
+      ],
+      "frameMs": 1100,
+      "contactMs": 300,
+      "loop": false,
+      "scale": 0.5,
+      "sourceSize": [
+        704,
+        695
+      ],
+      "sourceRevision": "f03ce84afec4ab1f",
+      "sourceSha256": "f03ce84afec4ab1f4c024e57b94c74aaf6c9d6267b55325571bdc6ab8514e360",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              0,
+              0,
+              704,
+              695
+            ],
+            "anchor": [
+              352.0,
+              651
+            ],
+            "opaqueBounds": [
+              203,
+              14,
+              505,
+              651
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "bodyCalibration": 1,
+            "nativeFacing": "front",
+            "attachments": {
+              "head": [
+                374,
+                170
+              ],
+              "torso": [
+                352,
+                250
+              ],
+              "legs": [
+                354,
+                417
+              ],
+              "armLeft": [
+                238,
+                370
+              ],
+              "armRight": [
+                469,
+                395
+              ],
+              "ripCut": [
+                352,
+                250
+              ],
+              "grip": [
+                352,
+                250
+              ]
+            }
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              0,
+              0,
+              704,
+              695
+            ],
+            "anchor": [
+              352.0,
+              651
+            ],
+            "opaqueBounds": [
+              203,
+              14,
+              505,
+              651
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "bodyCalibration": 1,
+            "nativeFacing": "front",
+            "attachments": {
+              "head": [
+                374,
+                170
+              ],
+              "torso": [
+                352,
+                250
+              ],
+              "legs": [
+                354,
+                417
+              ],
+              "armLeft": [
+                238,
+                370
+              ],
+              "armRight": [
+                469,
+                395
+              ],
+              "ripCut": [
+                352,
+                250
+              ],
+              "grip": [
+                352,
+                250
+              ]
+            }
+          }
+        ]
+      },
+      "frontPoseSource": {
+        "identityReferences": [
+          {
+            "path": "D:\\My Stuff\\BARCODE Non Show Components\\Character Ref + Art\\Mr Nice Guy\\ChatGPT Image Jun 11, 2026, 08_00_02 AM (2).png",
+            "bytes": 1787493,
+            "size": [
+              1254,
+              1254
+            ],
+            "sha256": "f093c2a27c51c800ff236cf416f7641f8fbb9fd42e96ab1bb58cfc04722a6db7",
+            "role": "Actual original identity reference used for this selected four-character sheet"
+          }
+        ],
+        "originalFile": "lift-four-airborne-approved-sheet-2-v1.png",
+        "originalBytes": 1175836,
+        "originalSize": [
+          1247,
+          1261
+        ],
+        "originalSha256": "433088b698f8fc3b7771f47c8dce3d7e3928a85a5b8e8ab920c389fa29867748",
+        "sourceKind": "approved-four-character-airborne-sheet",
+        "sourceSheet": 2,
+        "sourceRegion": [
+          0,
+          574,
+          623,
+          1261
+        ],
+        "regionRgbaSha256": "4e230337e7da8ff81a8f2e0c87c9700f151b10eec688c9b5c7989db4d9800e29",
+        "crop": [
+          -4,
+          -4,
+          700,
+          691
+        ],
+        "alphaThreshold": 16,
+        "originalOpaqueBounds": [
+          199,
+          10,
+          501,
+          647
+        ],
+        "originalAlphaBounds": [
+          0,
+          0,
+          620,
+          687
+        ],
+        "originalBodyAxisX": 348,
+        "bodyAxisSelection": "Measured actual torso center; skull, limbs, bent legs and costume preserve separate source coordinates",
+        "nativeRgbaSha256": "a9a5148c6400538abfeda182b71fe81ddc5815babfc112278e2128893a1261a9",
+        "nativeAlphaSha256": "ad52a019a3a73c4cfdd4e8e22532e110ccd90c0490c5bd0f191dd464fba0c346",
+        "nativeAnatomy": {
+          "method": "Uniform scale visually matched to native skull, chest and limb widths at actual game-world pixels; root delegated bounded review",
+          "nativeFile": "D:\\CodexScratch\\system-clash-polish-20261007\\working-copy\\website\\public\\games\\system-clash\\play\\assets\\fighters\\mr-nice-guy\\combat.png",
+          "nativeFileSha256": "490727f920ea25b1d9d93e23f0129b922b5372c03c168546586e2502ca180664",
+          "nativeClip": "idle",
+          "nativeFacing": "right",
+          "nativeFrameIndex": 0,
+          "nativeFrameRect": [
+            37,
+            133,
+            175,
+            264
+          ],
+          "nativeScale": 1.233141,
+          "reviewFile": "D:\\CodexScratch\\system-clash-polish-20261007\\scratch\\visual-sound-20261008\\airborne-twelve-width-proposal-v1.png",
+          "reviewSha256": "33fd4109a448877caed17776e71ed4a760b0b6e158a34b2fdbbcf2d507946931",
+          "reviewDecision": "Combat reviewer retained 10 proposed scales, corrected Doof to .42 and Lyra to .43; no bent-height normalization",
+          "resultScale": 0.5,
+          "displayedOpaqueHeight": 318.5
+        },
+        "stylePostureSourceSha256": "a8995f0dd42e5812d14852b0c839054439f30bc8d184c347e2d1b8ba881f5c73",
+        "operation": "Exact source rectangle divided at measured transparent panel gaps; symmetric transparent padding; no resizing, mirroring, redraw, retouch or anatomy warp"
+      }
+    }
+  },
+  "artFightingStyle": "Grounded archer counterfighter: compact braced guard, short driving body jabs, deliberate low snaps, controlled uppercut and heavy front push kicks.",
+  "status": "native main fighter banks",
+  "description": "Complete native bodies and independently drawn facings. Original generated PNG bytes retained; hands, heads, chest and legs measured on opaque pixels."
+}

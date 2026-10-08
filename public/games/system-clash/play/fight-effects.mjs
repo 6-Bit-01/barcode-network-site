@@ -4,6 +4,7 @@ const PARTICLE_LIMIT = 420;
 const DECAL_LIMIT = 64;
 const SMEAR_LIMIT = 14;
 const CHUNK_LIMIT = 96;
+const SHAKE_LIMIT = 24;
 const CLOTHING = {
   '6-bit':['#242726','#494843'], '9-bit':['#161b1b','#353933'],
   'cache-back':['#806115','#292d26'], cliff:['#807461','#344555'],
@@ -48,6 +49,7 @@ export function createFightEffects(options = {}) {
   const camera = { x: 0, y: 0 };
   let reducedMotion = Boolean(options.reducedMotion);
   let muted = Boolean(options.muted);
+  let paused = Boolean(options.paused);
   let shake = 0;
   let flash = 0;
   const audio = options.audio ?? createFightAudio({...options.audioOptions,muted,reducedMotion});
@@ -234,8 +236,8 @@ export function createFightEffects(options = {}) {
   }
 
   function impact(amplitude, intensity = 0) {
-    if (reducedMotion) return;
-    shake = Math.max(shake, amplitude);
+    if (reducedMotion || paused) return;
+    shake = Math.max(shake, clamp(amplitude, 0, SHAKE_LIMIT));
     // A low-opacity red wash decays slowly instead of flickering between white frames.
     flash = Math.max(flash, Math.min(intensity, 0.12));
   }
@@ -258,7 +260,7 @@ export function createFightEffects(options = {}) {
           const count=Math.round((kind==='cut'?29:18)*strength*bloodWeight);
           burst('blood',x,y,direction,count,Math.min(2.4,strength*(kind==='cut'?1.08:.9)),bloodProfile(event));
         }
-        impact(5.5 * strength, 0.055);
+        impact(8.5 * strength, 0.055);
         break;
       }
       case 'weapon-pickup':
@@ -315,7 +317,7 @@ export function createFightEffects(options = {}) {
         break;
       case 'deletion-impact': {
         const profile=bloodProfile(event);
-        if(event.cue==='cable-snap') {
+        if(event.cue==='cable-snap'||event.cue==='oak-rip') {
           burst('blood',x,y,-1,Math.round(46*strength),strength,profile);
           burst('blood',x,y,1,Math.round(46*strength),strength,profile);
         } else burst('blood', x, y, direction, Math.round(92 * strength), strength,profile);
@@ -328,7 +330,7 @@ export function createFightEffects(options = {}) {
         addSmear(x,y,direction,strength,profile);
         addChunks(event,x,y,direction,strength,profile);
         addRupturePile(event,x,y,direction);
-        impact(14, 0.11);
+        impact(16 + 4 * strength, 0.11);
         break;
       }
     }
@@ -377,12 +379,12 @@ export function createFightEffects(options = {}) {
         if(bounce===1)chunk.settled=true;
       }
     }
-    shake *= Math.exp(-milliseconds / 95);
+    shake *= Math.exp(-milliseconds / 115);
     flash *= Math.exp(-milliseconds / 170);
     if (shake < 0.05) shake = 0;
     if (flash < 0.001) flash = 0;
-    camera.x = reducedMotion ? 0 : range(-shake, shake);
-    camera.y = reducedMotion ? 0 : range(-shake * 0.45, shake * 0.45);
+    camera.x = reducedMotion || paused ? 0 : range(-shake, shake);
+    camera.y = reducedMotion || paused ? 0 : range(-shake * 0.45, shake * 0.45);
   }
 
   function drawBehind(ctx) {
@@ -597,7 +599,10 @@ export function createFightEffects(options = {}) {
     },
     startAudio,
     prepareCharacterAudio(ids){return audio.prepareCharacterLines?.(ids)??false;},
-    setPaused(value) { audio.setPaused(value); },
+    setPaused(value) {
+      paused = Boolean(value); audio.setPaused(paused);
+      if (paused) { shake = 0; flash = 0; camera.x = 0; camera.y = 0; }
+    },
     clear() {
       audio.clear();
       particles.length = 0; decals.length = 0; smears.length = 0;chunks.length=0;
@@ -619,7 +624,7 @@ export function createFightEffects(options = {}) {
         clothChunks:chunks.filter(chunk=>chunk.material==='cloth').length,boneChunks:chunks.filter(chunk=>chunk.material==='bone').length,
         headChunks:chunks.filter(chunk=>chunk.region==='head').length,
         metalChunks:chunks.filter(chunk=>chunk.material==='metal').length,
-        decals: decals.length, smears: smears.length, reducedMotion, muted,
+        decals: decals.length, smears: smears.length, reducedMotion, muted, paused, shake,
         audioStarted: audio.getStats().audioStarted,
         audio: audio.getStats(),
       };

@@ -1,1 +1,162 @@
-{"id":"litter-protocol","file":"litter-box.webp","drawWidth":460,"referenceWidth":728,"frames":{"open":{"rect":[0,0,728,281],"anchor":[364.0,276],"opaqueBounds":[3,3,725,278],"rimY":174,"aperture":[94,40,520,210],"poseSource":{"sourceFile":"source.png","sourceRect":[32,175,728,281],"sourceSha256":"c4fc3a4be6b144c2442c61b9763c9ec45d2959fc186bd0c2ad95c13d421fb6c0"},"canonicalPixelSha256":"bf1dfe24f78963819effb850ac412fa22f94cc8620c7f52a07d304a40f5f70e9","pixelSha256":"6ef9a629490ed3c2ece3bd05c36d3c661ab39e114fb36b9584d7cb414b3a6bc1"},"captured":{"rect":[730,0,730,281],"anchor":[365.0,276],"opaqueBounds":[3,3,727,278],"rimY":174,"aperture":[94,40,520,210],"poseSource":{"sourceFile":"source.png","sourceRect":[772,175,730,281],"sourceSha256":"c4fc3a4be6b144c2442c61b9763c9ec45d2959fc186bd0c2ad95c13d421fb6c0"},"canonicalPixelSha256":"cc6e305800255f1d4d4639e324a656123d9d39087ae4240913bc622723380cd1","pixelSha256":"89e4946bc0874b42bc351faebde2e7d9ee7dd782dfa4ad567928f0924da80956"},"impact":{"rect":[0,425,728,425],"anchor":[364.0,420],"opaqueBounds":[3,3,725,422],"rimY":113,"aperture":[94,40,520,210],"poseSource":{"sourceFile":"source.png","sourceRect":[32,479,728,425],"sourceSha256":"c4fc3a4be6b144c2442c61b9763c9ec45d2959fc186bd0c2ad95c13d421fb6c0"},"canonicalPixelSha256":"f399863d1d12dd8a019774281fa13cac11ed3979f807b697926c3bf62932a254","pixelSha256":"b8cb4e39ba20c3d173666cfd7c9ce038c35481776ef1d41046af4cbb1969f4d6"},"dead":{"rect":[730,425,729,356],"anchor":[364.5,351],"opaqueBounds":[3,3,726,353],"rimY":9,"aperture":[94,40,520,210],"poseSource":{"sourceFile":"source.png","sourceRect":[773,548,729,356],"sourceSha256":"c4fc3a4be6b144c2442c61b9763c9ec45d2959fc186bd0c2ad95c13d421fb6c0"},"canonicalPixelSha256":"4a93107eb67fee4919fe7a8f5853148a9bc73a8510711328556d3c5f358e2a11","pixelSha256":"5aa76bb7390447891b88e05dd0d669f97836362e6249f6c0b2250dcc0e40c607"}},"status":"four genuine native illustrated litter tray states"}
+{
+  "id": "litter-protocol",
+  "file": "litter-box.webp",
+  "drawWidth": 460,
+  "referenceWidth": 728,
+  "frames": {
+    "open": {
+      "rect": [
+        0,
+        0,
+        728,
+        281
+      ],
+      "anchor": [
+        364,
+        276
+      ],
+      "opaqueBounds": [
+        3,
+        3,
+        725,
+        278
+      ],
+      "rimY": 174,
+      "aperture": [
+        94,
+        40,
+        520,
+        134
+      ],
+      "poseSource": {
+        "sourceFile": "source.png",
+        "sourceRect": [
+          32,
+          175,
+          728,
+          281
+        ],
+        "sourceSha256": "c4fc3a4be6b144c2442c61b9763c9ec45d2959fc186bd0c2ad95c13d421fb6c0"
+      },
+      "canonicalPixelSha256": "bf1dfe24f78963819effb850ac412fa22f94cc8620c7f52a07d304a40f5f70e9",
+      "pixelSha256": "6ef9a629490ed3c2ece3bd05c36d3c661ab39e114fb36b9584d7cb414b3a6bc1"
+    },
+    "captured": {
+      "rect": [
+        730,
+        0,
+        730,
+        281
+      ],
+      "anchor": [
+        365,
+        276
+      ],
+      "opaqueBounds": [
+        3,
+        3,
+        727,
+        278
+      ],
+      "rimY": 174,
+      "aperture": [
+        94,
+        40,
+        520,
+        134
+      ],
+      "poseSource": {
+        "sourceFile": "source.png",
+        "sourceRect": [
+          772,
+          175,
+          730,
+          281
+        ],
+        "sourceSha256": "c4fc3a4be6b144c2442c61b9763c9ec45d2959fc186bd0c2ad95c13d421fb6c0"
+      },
+      "canonicalPixelSha256": "cc6e305800255f1d4d4639e324a656123d9d39087ae4240913bc622723380cd1",
+      "pixelSha256": "89e4946bc0874b42bc351faebde2e7d9ee7dd782dfa4ad567928f0924da80956"
+    },
+    "impact": {
+      "rect": [
+        0,
+        425,
+        728,
+        425
+      ],
+      "anchor": [
+        364,
+        420
+      ],
+      "opaqueBounds": [
+        3,
+        3,
+        725,
+        422
+      ],
+      "rimY": 113,
+      "aperture": [
+        94,
+        40,
+        520,
+        134
+      ],
+      "poseSource": {
+        "sourceFile": "source.png",
+        "sourceRect": [
+          32,
+          479,
+          728,
+          425
+        ],
+        "sourceSha256": "c4fc3a4be6b144c2442c61b9763c9ec45d2959fc186bd0c2ad95c13d421fb6c0"
+      },
+      "canonicalPixelSha256": "f399863d1d12dd8a019774281fa13cac11ed3979f807b697926c3bf62932a254",
+      "pixelSha256": "b8cb4e39ba20c3d173666cfd7c9ce038c35481776ef1d41046af4cbb1969f4d6"
+    },
+    "dead": {
+      "rect": [
+        730,
+        425,
+        729,
+        356
+      ],
+      "anchor": [
+        364.5,
+        351
+      ],
+      "opaqueBounds": [
+        3,
+        3,
+        726,
+        353
+      ],
+      "rimY": 9,
+      "aperture": [
+        94,
+        40,
+        520,
+        134
+      ],
+      "poseSource": {
+        "sourceFile": "source.png",
+        "sourceRect": [
+          773,
+          548,
+          729,
+          356
+        ],
+        "sourceSha256": "c4fc3a4be6b144c2442c61b9763c9ec45d2959fc186bd0c2ad95c13d421fb6c0"
+      },
+      "canonicalPixelSha256": "4a93107eb67fee4919fe7a8f5853148a9bc73a8510711328556d3c5f358e2a11",
+      "pixelSha256": "5aa76bb7390447891b88e05dd0d669f97836362e6249f6c0b2250dcc0e40c607"
+    }
+  },
+  "status": "four genuine native illustrated litter tray states",
+  "basinPoint": [
+    354,
+    174
+  ],
+  "logicalGeometryFrame": "open"
+}

@@ -1,7 +1,7 @@
 import {ONLINE_SCOPE,ONLINE_STAGES,createFrameCoordinator,createFrameRouter,validPayload} from './online-protocol.mjs';
 import {createOnlinePeer} from './online-transport.mjs';
 import {createGamepadInput} from './fight-gamepad.mjs';
-import {controllerSeatsFromURL,withControllerSeats} from './demo-flow.mjs';
+import {controllerSeatsFromURL,withControllerSeats,resolveInterfaceSettings} from './demo-flow.mjs';
 const ENDPOINT='/api/games/system-clash/rooms';
 export function createRoomClient({fetch=globalThis.fetch,endpoint=ENDPOINT}={}){
  let seat=null;
@@ -52,7 +52,7 @@ export function nextLobbyFocus(items,current,key,columns=1){
 }
 export async function mountOnlineLobby({document=globalThis.document,window=globalThis.window,fetch=globalThis.fetch}={}){
  const $=id=>document.getElementById(id),client=createRoomClient({fetch}),launch=new URL(window.location.href);
- const settings={muted:launch.searchParams.get('sound')==='0',reducedMotion:launch.searchParams.get('motion')==='1'||window.matchMedia('(prefers-reduced-motion: reduce)').matches,controllerSeats:controllerSeatsFromURL(launch.href),stage:ONLINE_STAGES.includes(launch.searchParams.get('stage'))?launch.searchParams.get('stage'):'radio-studio'};
+ const settings={...resolveInterfaceSettings(launch,{prefersReducedMotion:window.matchMedia('(prefers-reduced-motion: reduce)').matches}),controllerSeats:controllerSeatsFromURL(launch.href),stage:ONLINE_STAGES.includes(launch.searchParams.get('stage'))?launch.searchParams.get('stage'):'radio-studio'};
  const pads=createGamepadInput({seats:settings.controllerSeats});
  let seat=null,state=null,peer=null,session=null,roster=[],busy=false,pollTimer=null,listTimer=null,expiryTimer=null,epoch=0,pollErrors=0,destroyed=false,connected=false,stopped=false,listing=false,suspended=false,raf=null;
  const status=text=>{$('online-status').textContent=text;};

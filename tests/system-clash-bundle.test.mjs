@@ -60,8 +60,20 @@ test("System Clash ships only its same-origin runtime, with complete registered 
         assert.equal(createHash("sha256").update(fs.readFileSync(file)).digest("hex"), asset.data.sourceSha256);
       }
     }
+    const replacedOriginals = new Set();
+    for (const name of inventory.filter(name => /^assets\/(?:fighters|arcade)\/[^/]+\/manifest\.json$/.test(name))) {
+      for (const clip of Object.values(JSON.parse(read(name)).clips)) {
+        if (!clip.runtimeFile) continue;
+        const original = path.posix.normalize(path.posix.join(path.posix.dirname(name), clip.file));
+        const served = path.posix.normalize(path.posix.join(path.posix.dirname(name), clip.runtimeFile));
+        assert(inventory.includes(original), "Approved source remains present: " + original);
+        assert(requests.has(served), "Replacement atlas was not loaded: " + served);
+        assert(!requests.has(original), "Hosted loading should prefer the optimized atlas: " + original);
+        replacedOriginals.add(original);
+      }
+    }
     const images = new Set([...requests].filter(name => name.endsWith(".png")));
-    assert.deepEqual([...images].sort(), inventory.filter(name => name.endsWith(".png") && name !== "assets/whole-body/punch.png").sort());
+    assert.deepEqual([...images].sort(), inventory.filter(name => name.endsWith(".png") && name !== "assets/whole-body/punch.png" && !replacedOriginals.has(name)).sort());
     for(const name of inventory.filter(name=>/^assets\/(?:animation-polish|fighters|arcade|deletions)\/.+\.webp$/.test(name)))assert(requests.has(name),"Registered atlas was not loaded: "+name);
   } finally {
     globalThis.fetch = oldFetch;

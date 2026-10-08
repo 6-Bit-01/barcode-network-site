@@ -62,6 +62,7 @@ function arenaHarness(mode='local',phase='fight'){
  env.clearInput=()=>{clearAttackInputs(env.attackInputs);env.gamepads.reset();env.gamepadPlayers=[];};
  env.togglePause=()=>{env.paused=!env.paused;env.clearInput();calls.push({action:'pause'});};
  env.start=()=>{env.match.phase='fight';env.clearInput();calls.push({action:'start'});};
+ env.handlePauseAction=name=>{if(['confirm','back','pause'].includes(name))env.togglePause();};
  const poll=sourceFunction(fightSource,'pollGamepads',env);
  return {env,calls,tick(now,pads){env.now=now;env.pads=pads;poll(now);},flush(now){calls.push(...flushAttackInputs(env.attackInputs,now));}};
 }

@@ -9,6 +9,15 @@ export function assetPath(manifestPath, file) {
   return decodeURIComponent(url.pathname.slice(1));
 }
 
+// Hosted matches prefer verified lossless copies. Portable bundles keep their
+// existing original-image keys unless they explicitly include the served copy.
+function fightImagePath(manifestPath,data,bundle) {
+  const original=assetPath(manifestPath,data.file);
+  if(!data.runtimeFile)return original;
+  const runtime=assetPath(manifestPath,data.runtimeFile);
+  return !bundle||bundle.images?.[runtime]?runtime:original;
+}
+
 export function compileFightClip(data, image, manifest, name) {
   if (!data?.file) throw new Error(`${manifest.character}: ${name} is missing.`);
   const order = data.order ?? [0,1,2,3];
@@ -135,7 +144,7 @@ export async function loadFightArt({bundle,baseURL,ids=['6-bit','9-bit'],onProgr
     const clips = Object.fromEntries(await Promise.all(ACTIONS.map(async name=>{
       const data = manifest.clips?.[name];
       if (!data) throw new Error(`${manifest.character} needs its ${name} poses.`);
-      const image = await imageFor(assetPath(path,data.file));
+      const image = await imageFor(fightImagePath(path,data,bundle));
       const asset = compileFightClip(data,image,manifest,name);
       onProgress(++completed,ids.length*12);
       return [name,asset];
@@ -207,19 +216,20 @@ export async function loadDeletionArt({bundle,baseURL,art}) {
 
 export async function loadArcadeArt({bundle,baseURL,art}) {
   const imageCache=new Map();
-  for(const fighter of art) {
+  await Promise.all(art.map(async fighter=>{
     const id=fighter.manifest.id,path=`assets/arcade/${id}/manifest.json`;
     let manifest=bundle?.arcade?.[id];
     if(!manifest){const response=await fetch(new URL(path,baseURL),{cache:'no-store'});if(!response.ok)throw new Error(`${fighter.manifest.character}: arcade poses unavailable.`);manifest=await response.json();}
-    for(const name of ['low-punch','low-kick','jump','uppercut','crouch-punch','crouch-kick','jump-punch','jump-kick','pickup','crouch-high-kick','double-punch','power-kick']) {
+    const clips=await Promise.all(['low-punch','low-kick','jump','uppercut','crouch-punch','crouch-kick','jump-punch','jump-kick','pickup','crouch-high-kick','double-punch','power-kick'].map(async name=>{
       const data=manifest.clips[name];
       if(!data)throw new Error(`${fighter.manifest.character}: ${name} poses unavailable.`);
-      const key=assetPath(path,data.file);
+      const key=fightImagePath(path,data,bundle);
       if(!imageCache.has(key))imageCache.set(key,new Promise((resolve,reject)=>{const image=new Image();image.onload=()=>resolve(image);image.onerror=()=>reject(new Error('An arcade pose sheet did not load.'));image.src=bundle?.images[key] ?? new URL(key,baseURL).href;}));
-      fighter.clips[name]=compileFightClip(data,await imageCache.get(key),manifest,name);
-    }
+      return [name,compileFightClip(data,await imageCache.get(key),manifest,name)];
+    }));
+    Object.assign(fighter.clips,Object.fromEntries(clips));
     fighter.arcadeManifest=manifest;
-  }
+  }));
 }
 
 export async function loadWeaponArt({bundle,baseURL} = {}) {

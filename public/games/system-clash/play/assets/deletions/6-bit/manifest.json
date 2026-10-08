@@ -1,1 +1,1234 @@
-{"id":"6-bit-deletion-utilities","character":"6 Bit","baseId":"6-bit","height":320,"status":"complete attacker and victim utility bank","description":"Eight reusable whole-body actions with two independent keys in each facing. Original generated PNGs remain unchanged.","clips":{"shove":{"file":"attacker-poses-v1.png","label":"Shove","frames":{"right":[{"rect":[35,13,245,306],"anchor":[111.5,303],"opaqueBounds":[3,3,242,303]},{"rect":[327,24,299,295],"anchor":[129.0,292],"opaqueBounds":[3,3,296,292]}],"left":[{"rect":[707,15,219,304],"anchor":[109.0,301],"opaqueBounds":[3,3,216,301]},{"rect":[982,20,263,299],"anchor":[147.0,296],"opaqueBounds":[3,3,260,296]}]},"scale":1.033926,"order":[0,1],"frameMs":[200,300],"loop":false,"sourceSize":[1254,1254],"sourceRevision":"d378908ec4ff4053","contactMs":200},"pull":{"file":"attacker-poses-v1.png","label":"Pull","frames":{"right":[{"rect":[31,328,246,295],"anchor":[117.5,292],"opaqueBounds":[3,3,243,292]},{"rect":[368,336,229,288],"anchor":[119.5,285],"opaqueBounds":[3,3,226,285]}],"left":[{"rect":[660,335,272,287],"anchor":[157.5,284],"opaqueBounds":[3,3,269,284]},{"rect":[994,336,218,288],"anchor":[109.0,285],"opaqueBounds":[3,3,215,285]}]},"scale":1.033926,"order":[0,1],"frameMs":[220,340],"loop":false,"sourceSize":[1254,1254],"sourceRevision":"d378908ec4ff4053","contactMs":220},"stomp":{"file":"attacker-poses-v1.png","label":"Stomp","frames":{"right":[{"rect":[68,622,234,304],"anchor":[74.0,301],"opaqueBounds":[3,3,231,301]},{"rect":[359,641,238,285],"anchor":[118.5,282],"opaqueBounds":[3,3,235,282]}],"left":[{"rect":[680,622,230,302],"anchor":[151.0,299],"opaqueBounds":[3,3,227,299]},{"rect":[988,650,223,276],"anchor":[111.0,273],"opaqueBounds":[3,3,220,273]}]},"scale":1.033926,"order":[0,1],"frameMs":[250,300],"loop":false,"sourceSize":[1254,1254],"sourceRevision":"d378908ec4ff4053","contactMs":250},"present":{"file":"attacker-poses-v1.png","label":"Present","frames":{"right":[{"rect":[61,925,243,316],"anchor":[102.0,313],"opaqueBounds":[3,3,240,313]},{"rect":[378,925,204,316],"anchor":[98.5,313],"opaqueBounds":[3,3,201,313]}],"left":[{"rect":[648,926,241,315],"anchor":[141.5,312],"opaqueBounds":[3,3,238,312]},{"rect":[984,925,240,316],"anchor":[118.5,313],"opaqueBounds":[3,3,237,313]}]},"scale":1.033926,"order":[0,1],"frameMs":[300,500],"loop":false,"sourceSize":[1254,1254],"sourceRevision":"d378908ec4ff4053","contactMs":300},"brace":{"file":"victim-poses-v1.png","label":"Brace","frames":{"right":[{"rect":[24,82,282,296],"anchor":[188.0,294],"opaqueBounds":[2,2,280,294],"attachments":{"head":[122,43],"torso":[135,128],"legs":[173,236]}},{"rect":[322,137,362,244],"anchor":[246.0,242],"opaqueBounds":[2,2,360,242],"attachments":{"head":[199,36],"torso":[174,105],"legs":[221,191]}}],"left":[{"rect":[29,470,277,281],"anchor":[94.0,279],"opaqueBounds":[2,2,275,279],"attachments":{"head":[158,41],"torso":[144,121],"legs":[106,224]}},{"rect":[345,520,335,234],"anchor":[127.0,232],"opaqueBounds":[2,2,333,232],"attachments":{"head":[151,34],"torso":[174,101],"legs":[136,186]}}]},"scale":0.88033,"order":[0,1],"frameMs":[240,460],"loop":false,"sourceSize":[1254,1254],"sourceRevision":"4daf26a0fdbbd65b","sourceSha256":"4daf26a0fdbbd65b03bdc8201f2c5fa02d4fb073b2bb78190f825fb0996f71c6"},"suspended":{"file":"victim-poses-v1.png","label":"Suspended","frames":{"right":[{"rect":[734,10,151,374],"anchor":[73.0,372],"opaqueBounds":[2,2,149,372],"attachments":{"head":[78,39],"torso":[77,180],"legs":[77,298]}},{"rect":[1013,0,206,387],"anchor":[28.0,385],"opaqueBounds":[2,1,204,385],"attachments":{"head":[123,113],"torso":[105,186],"legs":[105,308]}}],"left":[{"rect":[744,394,150,361],"anchor":[88.0,359],"opaqueBounds":[2,2,148,359],"attachments":{"head":[72,38],"torso":[74,173],"legs":[74,288]}},{"rect":[994,392,228,374],"anchor":[204.0,372],"opaqueBounds":[2,2,226,372],"attachments":{"head":[92,109],"torso":[112,180],"legs":[116,290]}}]},"scale":0.88033,"order":[0,1],"frameMs":[240,460],"loop":false,"sourceSize":[1254,1254],"sourceRevision":"4daf26a0fdbbd65b","sourceSha256":"4daf26a0fdbbd65b03bdc8201f2c5fa02d4fb073b2bb78190f825fb0996f71c6"},"compressed":{"file":"victim-poses-v1.png","label":"Compressed","frames":{"right":[{"rect":[50,788,201,208],"anchor":[85.5,206],"opaqueBounds":[2,2,199,206],"attachments":{"head":[132,43],"torso":[102,100],"legs":[100,169]}},{"rect":[367,817,215,177],"anchor":[81.0,175],"opaqueBounds":[2,2,213,175],"attachments":{"head":[150,50],"torso":[110,85],"legs":[107,144]}}],"left":[{"rect":[72,1019,202,200],"anchor":[63.0,198],"opaqueBounds":[2,2,200,198],"attachments":{"head":[69,41],"torso":[99,96],"legs":[101,163]}},{"rect":[345,1062,230,155],"anchor":[86.5,153],"opaqueBounds":[2,2,228,153],"attachments":{"head":[70,44],"torso":[113,74],"legs":[115,126]}}]},"scale":0.88033,"order":[0,1],"frameMs":[240,460],"loop":false,"sourceSize":[1254,1254],"sourceRevision":"4daf26a0fdbbd65b","sourceSha256":"4daf26a0fdbbd65b03bdc8201f2c5fa02d4fb073b2bb78190f825fb0996f71c6"},"crumpled":{"file":"victim-poses-v1.png","label":"Crumpled","frames":{"right":[{"rect":[623,791,284,206],"anchor":[209.0,204],"opaqueBounds":[2,2,282,204],"attachments":{"head":[94,38],"torso":[134,103],"legs":[213,140]}},{"rect":[932,870,305,116],"anchor":[166.0,114],"opaqueBounds":[2,2,303,114],"attachments":{"head":[47,78],"torso":[134,64],"legs":[243,64]}}],"left":[{"rect":[620,1011,282,213],"anchor":[84.0,211],"opaqueBounds":[2,2,280,211],"attachments":{"head":[188,40],"torso":[149,106],"legs":[66,147]}},{"rect":[916,1101,309,114],"anchor":[183.5,112],"opaqueBounds":[2,2,307,112],"attachments":{"head":[261,77],"torso":[173,63],"legs":[63,63]}}]},"scale":0.88033,"order":[0,1],"frameMs":[240,460],"loop":false,"sourceSize":[1254,1254],"sourceRevision":"4daf26a0fdbbd65b","sourceSha256":"4daf26a0fdbbd65b03bdc8201f2c5fa02d4fb073b2bb78190f825fb0996f71c6"}}}
+{
+  "id": "6-bit-deletion-utilities",
+  "character": "6 Bit",
+  "baseId": "6-bit",
+  "height": 320,
+  "status": "complete attacker and victim utility bank",
+  "description": "Eight reusable whole-body actions with two independent keys in each facing. Original generated PNGs remain unchanged.",
+  "clips": {
+    "shove": {
+      "file": "attacker-poses-v1.png",
+      "label": "Shove",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              35,
+              13,
+              245,
+              306
+            ],
+            "anchor": [
+              111.5,
+              303
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              242,
+              303
+            ]
+          },
+          {
+            "rect": [
+              327,
+              24,
+              299,
+              295
+            ],
+            "anchor": [
+              129.0,
+              292
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              296,
+              292
+            ]
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              707,
+              15,
+              219,
+              304
+            ],
+            "anchor": [
+              109.0,
+              301
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              216,
+              301
+            ]
+          },
+          {
+            "rect": [
+              982,
+              20,
+              263,
+              299
+            ],
+            "anchor": [
+              147.0,
+              296
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              260,
+              296
+            ]
+          }
+        ]
+      },
+      "scale": 1.033926,
+      "order": [
+        0,
+        1
+      ],
+      "frameMs": [
+        200,
+        300
+      ],
+      "loop": false,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "d378908ec4ff4053",
+      "contactMs": 200
+    },
+    "pull": {
+      "file": "attacker-poses-v1.png",
+      "label": "Pull",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              31,
+              328,
+              246,
+              295
+            ],
+            "anchor": [
+              117.5,
+              292
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              243,
+              292
+            ]
+          },
+          {
+            "rect": [
+              368,
+              336,
+              229,
+              288
+            ],
+            "anchor": [
+              119.5,
+              285
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              226,
+              285
+            ]
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              660,
+              335,
+              272,
+              287
+            ],
+            "anchor": [
+              157.5,
+              284
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              269,
+              284
+            ]
+          },
+          {
+            "rect": [
+              994,
+              336,
+              218,
+              288
+            ],
+            "anchor": [
+              109.0,
+              285
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              215,
+              285
+            ]
+          }
+        ]
+      },
+      "scale": 1.033926,
+      "order": [
+        0,
+        1
+      ],
+      "frameMs": [
+        220,
+        340
+      ],
+      "loop": false,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "d378908ec4ff4053",
+      "contactMs": 220
+    },
+    "stomp": {
+      "file": "attacker-poses-v1.png",
+      "label": "Stomp",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              68,
+              622,
+              234,
+              304
+            ],
+            "anchor": [
+              74.0,
+              301
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              231,
+              301
+            ]
+          },
+          {
+            "rect": [
+              359,
+              641,
+              238,
+              285
+            ],
+            "anchor": [
+              118.5,
+              282
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              235,
+              282
+            ]
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              680,
+              622,
+              230,
+              302
+            ],
+            "anchor": [
+              151.0,
+              299
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              227,
+              299
+            ]
+          },
+          {
+            "rect": [
+              988,
+              650,
+              223,
+              276
+            ],
+            "anchor": [
+              111.0,
+              273
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              220,
+              273
+            ]
+          }
+        ]
+      },
+      "scale": 1.033926,
+      "order": [
+        0,
+        1
+      ],
+      "frameMs": [
+        250,
+        300
+      ],
+      "loop": false,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "d378908ec4ff4053",
+      "contactMs": 250
+    },
+    "present": {
+      "file": "attacker-poses-v1.png",
+      "label": "Present",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              61,
+              925,
+              243,
+              316
+            ],
+            "anchor": [
+              102.0,
+              313
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              240,
+              313
+            ]
+          },
+          {
+            "rect": [
+              378,
+              925,
+              204,
+              316
+            ],
+            "anchor": [
+              98.5,
+              313
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              201,
+              313
+            ]
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              648,
+              926,
+              241,
+              315
+            ],
+            "anchor": [
+              141.5,
+              312
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              238,
+              312
+            ]
+          },
+          {
+            "rect": [
+              984,
+              925,
+              240,
+              316
+            ],
+            "anchor": [
+              118.5,
+              313
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              237,
+              313
+            ]
+          }
+        ]
+      },
+      "scale": 1.033926,
+      "order": [
+        0,
+        1
+      ],
+      "frameMs": [
+        300,
+        500
+      ],
+      "loop": false,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "d378908ec4ff4053",
+      "contactMs": 300
+    },
+    "brace": {
+      "file": "victim-poses-v1.png",
+      "label": "Brace",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              24,
+              82,
+              282,
+              296
+            ],
+            "anchor": [
+              188.0,
+              294
+            ],
+            "opaqueBounds": [
+              2,
+              2,
+              280,
+              294
+            ],
+            "attachments": {
+              "head": [
+                122,
+                43
+              ],
+              "torso": [
+                135,
+                128
+              ],
+              "legs": [
+                173,
+                236
+              ]
+            }
+          },
+          {
+            "rect": [
+              322,
+              137,
+              362,
+              244
+            ],
+            "anchor": [
+              246.0,
+              242
+            ],
+            "opaqueBounds": [
+              2,
+              2,
+              360,
+              242
+            ],
+            "attachments": {
+              "head": [
+                199,
+                36
+              ],
+              "torso": [
+                174,
+                105
+              ],
+              "legs": [
+                221,
+                191
+              ]
+            }
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              29,
+              470,
+              277,
+              281
+            ],
+            "anchor": [
+              94.0,
+              279
+            ],
+            "opaqueBounds": [
+              2,
+              2,
+              275,
+              279
+            ],
+            "attachments": {
+              "head": [
+                158,
+                41
+              ],
+              "torso": [
+                144,
+                121
+              ],
+              "legs": [
+                106,
+                224
+              ]
+            }
+          },
+          {
+            "rect": [
+              345,
+              520,
+              335,
+              234
+            ],
+            "anchor": [
+              127.0,
+              232
+            ],
+            "opaqueBounds": [
+              2,
+              2,
+              333,
+              232
+            ],
+            "attachments": {
+              "head": [
+                151,
+                34
+              ],
+              "torso": [
+                174,
+                101
+              ],
+              "legs": [
+                136,
+                186
+              ]
+            }
+          }
+        ]
+      },
+      "scale": 0.88033,
+      "order": [
+        0,
+        1
+      ],
+      "frameMs": [
+        240,
+        460
+      ],
+      "loop": false,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "4daf26a0fdbbd65b",
+      "sourceSha256": "4daf26a0fdbbd65b03bdc8201f2c5fa02d4fb073b2bb78190f825fb0996f71c6"
+    },
+    "suspended": {
+      "file": "victim-poses-v1.png",
+      "label": "Suspended",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              734,
+              10,
+              151,
+              374
+            ],
+            "anchor": [
+              73.0,
+              372
+            ],
+            "opaqueBounds": [
+              2,
+              2,
+              149,
+              372
+            ],
+            "attachments": {
+              "head": [
+                78,
+                39
+              ],
+              "torso": [
+                77,
+                180
+              ],
+              "legs": [
+                77,
+                298
+              ]
+            }
+          },
+          {
+            "rect": [
+              1013,
+              0,
+              206,
+              387
+            ],
+            "anchor": [
+              28.0,
+              385
+            ],
+            "opaqueBounds": [
+              2,
+              1,
+              204,
+              385
+            ],
+            "attachments": {
+              "head": [
+                123,
+                113
+              ],
+              "torso": [
+                105,
+                186
+              ],
+              "legs": [
+                105,
+                308
+              ]
+            }
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              744,
+              394,
+              150,
+              361
+            ],
+            "anchor": [
+              88.0,
+              359
+            ],
+            "opaqueBounds": [
+              2,
+              2,
+              148,
+              359
+            ],
+            "attachments": {
+              "head": [
+                72,
+                38
+              ],
+              "torso": [
+                74,
+                173
+              ],
+              "legs": [
+                74,
+                288
+              ]
+            }
+          },
+          {
+            "rect": [
+              994,
+              392,
+              228,
+              374
+            ],
+            "anchor": [
+              204.0,
+              372
+            ],
+            "opaqueBounds": [
+              2,
+              2,
+              226,
+              372
+            ],
+            "attachments": {
+              "head": [
+                92,
+                109
+              ],
+              "torso": [
+                112,
+                180
+              ],
+              "legs": [
+                116,
+                290
+              ]
+            }
+          }
+        ]
+      },
+      "scale": 0.88033,
+      "order": [
+        0,
+        1
+      ],
+      "frameMs": [
+        240,
+        460
+      ],
+      "loop": false,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "4daf26a0fdbbd65b",
+      "sourceSha256": "4daf26a0fdbbd65b03bdc8201f2c5fa02d4fb073b2bb78190f825fb0996f71c6"
+    },
+    "compressed": {
+      "file": "victim-poses-v1.png",
+      "label": "Compressed",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              50,
+              788,
+              201,
+              208
+            ],
+            "anchor": [
+              85.5,
+              206
+            ],
+            "opaqueBounds": [
+              2,
+              2,
+              199,
+              206
+            ],
+            "attachments": {
+              "head": [
+                132,
+                43
+              ],
+              "torso": [
+                102,
+                100
+              ],
+              "legs": [
+                100,
+                169
+              ]
+            }
+          },
+          {
+            "rect": [
+              367,
+              817,
+              215,
+              177
+            ],
+            "anchor": [
+              81.0,
+              175
+            ],
+            "opaqueBounds": [
+              2,
+              2,
+              213,
+              175
+            ],
+            "attachments": {
+              "head": [
+                150,
+                50
+              ],
+              "torso": [
+                110,
+                85
+              ],
+              "legs": [
+                107,
+                144
+              ]
+            }
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              72,
+              1019,
+              202,
+              200
+            ],
+            "anchor": [
+              63.0,
+              198
+            ],
+            "opaqueBounds": [
+              2,
+              2,
+              200,
+              198
+            ],
+            "attachments": {
+              "head": [
+                69,
+                41
+              ],
+              "torso": [
+                99,
+                96
+              ],
+              "legs": [
+                101,
+                163
+              ]
+            }
+          },
+          {
+            "rect": [
+              345,
+              1062,
+              230,
+              155
+            ],
+            "anchor": [
+              86.5,
+              153
+            ],
+            "opaqueBounds": [
+              2,
+              2,
+              228,
+              153
+            ],
+            "attachments": {
+              "head": [
+                70,
+                44
+              ],
+              "torso": [
+                113,
+                74
+              ],
+              "legs": [
+                115,
+                126
+              ]
+            }
+          }
+        ]
+      },
+      "scale": 0.88033,
+      "order": [
+        0,
+        1
+      ],
+      "frameMs": [
+        240,
+        460
+      ],
+      "loop": false,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "4daf26a0fdbbd65b",
+      "sourceSha256": "4daf26a0fdbbd65b03bdc8201f2c5fa02d4fb073b2bb78190f825fb0996f71c6"
+    },
+    "crumpled": {
+      "file": "victim-poses-v1.png",
+      "label": "Crumpled",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              623,
+              791,
+              284,
+              206
+            ],
+            "anchor": [
+              209.0,
+              204
+            ],
+            "opaqueBounds": [
+              2,
+              2,
+              282,
+              204
+            ],
+            "attachments": {
+              "head": [
+                94,
+                38
+              ],
+              "torso": [
+                134,
+                103
+              ],
+              "legs": [
+                213,
+                140
+              ]
+            }
+          },
+          {
+            "rect": [
+              932,
+              870,
+              305,
+              116
+            ],
+            "anchor": [
+              166.0,
+              114
+            ],
+            "opaqueBounds": [
+              2,
+              2,
+              303,
+              114
+            ],
+            "attachments": {
+              "head": [
+                47,
+                78
+              ],
+              "torso": [
+                134,
+                64
+              ],
+              "legs": [
+                243,
+                64
+              ]
+            }
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              620,
+              1011,
+              282,
+              213
+            ],
+            "anchor": [
+              84.0,
+              211
+            ],
+            "opaqueBounds": [
+              2,
+              2,
+              280,
+              211
+            ],
+            "attachments": {
+              "head": [
+                188,
+                40
+              ],
+              "torso": [
+                149,
+                106
+              ],
+              "legs": [
+                66,
+                147
+              ]
+            }
+          },
+          {
+            "rect": [
+              916,
+              1101,
+              309,
+              114
+            ],
+            "anchor": [
+              183.5,
+              112
+            ],
+            "opaqueBounds": [
+              2,
+              2,
+              307,
+              112
+            ],
+            "attachments": {
+              "head": [
+                261,
+                77
+              ],
+              "torso": [
+                173,
+                63
+              ],
+              "legs": [
+                63,
+                63
+              ]
+            }
+          }
+        ]
+      },
+      "scale": 0.88033,
+      "order": [
+        0,
+        1
+      ],
+      "frameMs": [
+        240,
+        460
+      ],
+      "loop": false,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "4daf26a0fdbbd65b",
+      "sourceSha256": "4daf26a0fdbbd65b03bdc8201f2c5fa02d4fb073b2bb78190f825fb0996f71c6"
+    },
+    "rip-front": {
+      "file": "victim-front-lift-airborne-sheet-v1.webp",
+      "label": "Approved airborne / slack arms and bent knees",
+      "role": "victim",
+      "poseRole": "airborne",
+      "order": [
+        0
+      ],
+      "frameMs": 1100,
+      "contactMs": 300,
+      "loop": false,
+      "scale": 0.51,
+      "sourceSize": [
+        756,
+        635
+      ],
+      "sourceRevision": "b655cfcc16444b46",
+      "sourceSha256": "b655cfcc16444b4615dad0d23878d85c75d434cadf29f8cd6c8d9267b4651648",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              0,
+              0,
+              756,
+              635
+            ],
+            "anchor": [
+              378.0,
+              626
+            ],
+            "opaqueBounds": [
+              239,
+              21,
+              507,
+              626
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "bodyCalibration": 1,
+            "nativeFacing": "front",
+            "attachments": {
+              "head": [
+                421,
+                107
+              ],
+              "torso": [
+                378,
+                229
+              ],
+              "legs": [
+                355,
+                376
+              ],
+              "armLeft": [
+                292,
+                281
+              ],
+              "armRight": [
+                478,
+                305
+              ],
+              "ripCut": [
+                378,
+                229
+              ],
+              "grip": [
+                378,
+                229
+              ]
+            }
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              0,
+              0,
+              756,
+              635
+            ],
+            "anchor": [
+              378.0,
+              626
+            ],
+            "opaqueBounds": [
+              239,
+              21,
+              507,
+              626
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "bodyCalibration": 1,
+            "nativeFacing": "front",
+            "attachments": {
+              "head": [
+                421,
+                107
+              ],
+              "torso": [
+                378,
+                229
+              ],
+              "legs": [
+                355,
+                376
+              ],
+              "armLeft": [
+                292,
+                281
+              ],
+              "armRight": [
+                478,
+                305
+              ],
+              "ripCut": [
+                378,
+                229
+              ],
+              "grip": [
+                378,
+                229
+              ]
+            }
+          }
+        ]
+      },
+      "frontPoseSource": {
+        "identityReferences": [
+          {
+            "path": "D:\\My Stuff\\BARCODE Non Show Components\\Character Ref + Art\\6 Bit\\6BitFullBodyFront.png",
+            "bytes": 2447168,
+            "size": [
+              1536,
+              2720
+            ],
+            "sha256": "59eef8632368efd51ed9453caee9dcadd6ce5e790f674877b056ed61b1947c62",
+            "purpose": "Original full-size identity reference, read-only; no gallery thumbnail"
+          },
+          {
+            "path": "D:\\My Stuff\\BARCODE Non Show Components\\Character Ref + Art\\6 Bit\\6BitFace.png",
+            "bytes": 6159522,
+            "size": [
+              1536,
+              2720
+            ],
+            "sha256": "d5266b5494d8e8df25d04c80182b5ae34cdd66d58e147cbf9b0286ff07f50e72",
+            "purpose": "Original full-size identity reference, read-only; no gallery thumbnail"
+          }
+        ],
+        "originalFile": "lift-four-airborne-approved-v1.png",
+        "originalBytes": 1022936,
+        "originalSize": [
+          1254,
+          1254
+        ],
+        "originalSha256": "a8995f0dd42e5812d14852b0c839054439f30bc8d184c347e2d1b8ba881f5c73",
+        "sourceKind": "approved-four-character-airborne-sheet",
+        "sourceRegion": [
+          0,
+          0,
+          627,
+          627
+        ],
+        "regionRgbaSha256": "465ec0972241a8d1b74bddb7cc0302fe0d62ad53cac562db8feb2ff1dec3891c",
+        "crop": [
+          -4,
+          -4,
+          752,
+          631
+        ],
+        "alphaThreshold": 16,
+        "originalOpaqueBounds": [
+          235,
+          17,
+          503,
+          622
+        ],
+        "originalAlphaBounds": [
+          59,
+          15,
+          627,
+          627
+        ],
+        "originalBodyAxisX": 374,
+        "bodyAxisSelection": "Measured torso center; bowed head and bent legs retain their separate actual source coordinates",
+        "nativeRgbaSha256": "74d65651c974ba0b75140bb261b26fa1d1524c65ba550eb13abc486432eca16c",
+        "nativeAlphaSha256": "ccef9eae9b705fed8c8b6d79e8b99788f520702f283cf64672180fff73cc0d6e",
+        "nativeAnatomy": {
+          "nativeFile": "D:\\CodexScratch\\system-clash-polish-20261007\\working-copy\\website\\public\\games\\system-clash\\play\\assets\\whole-body\\idle.png",
+          "nativeFileSha256": "a226018801a2b9e2c539d7f8a679449f9ebc0251da1ca8d2cad0317ba3f31a96",
+          "nativeClip": "idle",
+          "nativeFacing": "right",
+          "nativeFrameIndex": 0,
+          "nativeFrameRect": [
+            0,
+            0,
+            384,
+            512
+          ],
+          "nativeScale": 0.659114,
+          "method": "Uniform scale visually matched to native skull, chest and limb widths at actual game-world pixels; reviewed by root against native idle",
+          "reviewFile": "D:\\CodexScratch\\system-clash-polish-20261007\\scratch\\visual-sound-20261008\\airborne-four-width-proposal-v2.png",
+          "reviewSha256": "024b97782acf36c1faa619e4a426401c9e6887d5b3e813f110e820038627a93c",
+          "resultScale": 0.51,
+          "displayedOpaqueHeight": 308.55,
+          "supersedes": "Rejected vertical head-to-torso-span scale; bowing changes vertical relationship"
+        },
+        "operation": "Exact627x627 source region plus symmetric transparent padding; losslessRGBA; no resizing/mirroring/retouch"
+      }
+    }
+  }
+}

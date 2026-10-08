@@ -115,5 +115,7 @@ for(const id of Object.keys(FIGHTER_STYLES))for(const direction of [-1,1])test(`
  Object.assign(match,{phase:'finish',winner:0,finisherAvailable:true,finishRemaining:5000});const equipment={type:'neural-spike',charges:2};match.fighters[0].weapon=equipment;
  assert.equal(performAction(match,0,'deletion'),true);assert.equal(match.phase,'deletion');assert(Number.isFinite(match.stage.cinematicOrigin));assert(match.stage.cinematicOrigin>=0&&match.stage.cinematicOrigin<=1280);
  assert.equal(match._deletionOrigin.direction,direction);assert(match.fighters.every(f=>f._worldWidth===1280));assert.equal(match.fighters[0].weapon,null);
- advance(match,12000);assert.equal(match.phase,'over');assert.equal(match.winner,0);assert(match.fighters.every(f=>Number.isFinite(f.x)&&f.x>=0&&f.x<=1280));
+ advance(match,12000);assert.equal(match.phase,'over');assert.equal(match.winner,0);assert(Number.isFinite(match.fighters[0].x)&&match.fighters[0].x>=0&&match.fighters[0].x<=1280);
+ if(id==='doofnoobler'){assert(direction>0?match.fighters[1].x>1280:match.fighters[1].x<0,'The peaceful victim intentionally runs offscreen');assert.equal(match.fighters[1]._deleted,false);assert.equal(match.fighters[1]._ko,false);}
+ else assert(Number.isFinite(match.fighters[1].x)&&match.fighters[1].x>=0&&match.fighters[1].x<=1280);
 });

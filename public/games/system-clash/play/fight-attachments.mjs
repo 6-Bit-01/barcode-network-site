@@ -53,6 +53,7 @@ function poseList(clip, facing) {
 }
 
 export function poseFrameIndex(asset, view) {
+  if(Number.isInteger(view.frameIndex)&&view.frameIndex>=0&&asset.data.frames?.[view.facing]?.[view.frameIndex])return view.frameIndex;
   const entries = asset.timeline?.entries ?? [];
   const duration = Math.max(1, asset.timeline?.duration ?? 1);
   const elapsed = Math.max(0, view.elapsed ?? 0);

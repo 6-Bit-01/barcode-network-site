@@ -1,4 +1,10 @@
 import {STAGES,stageById} from './fight-stages.mjs';
+// An explicit user choice survives every title/lobby/fight URL handoff.
+export function resolveInterfaceSettings(value, {prefersReducedMotion=false}={}){
+ const params=value instanceof URLSearchParams?value:new URL(value,'https://system-clash.invalid/').searchParams;
+ const motion=params.get('motion');
+ return {muted:params.get('sound')==='0',reducedMotion:motion==='1'?true:motion==='0'?false:Boolean(prefersReducedMotion)};
+}
 export const FUTURE_FIGHTERS=Object.freeze([
  {id:'mutilator',name:'Mutilator',enabled:false},
  {id:'unknown-signal',name:'Unknown signal',enabled:false},
@@ -68,7 +74,7 @@ export function parseDemoLaunch(value,roster){
  const params=new URL(value,'https://system-clash.invalid/').searchParams,ids=roster.map(f=>f.id);
  return {stage:stageById(params.get('stage')).id,enabled:params.get('demo')==='1',mode:params.get('mode')==='local'?'local':'cpu',
  p1:ids.includes(params.get('p1'))?params.get('p1'):ids[0],p2:ids.includes(params.get('p2'))?params.get('p2'):ids[Math.min(1,ids.length-1)],
- muted:params.get('sound')==='0',reducedMotion:params.get('motion')==='1'};
+ ...resolveInterfaceSettings(params)};
 }
 
 export function controllerSeatsFromURL(value){

@@ -5,18 +5,22 @@ export const NEW_FIGHTER_STYLES={
  'papa-oak':{displayName:'PapaOak',height:385,name:'Rooted Architect Grappler',description:'Heavy rooted pressure, broad bark hands and powerful deliberate grabs.',signature:'HP → LP → HP',moveSpeed:185,jumpSpeed:155,punchDamage:1.45,kickDamage:1.12,throwDamage:1.9,reach:{punch:1.08,kick:.94,throw:1.12},tempo:{punch:1.17,kick:1.16,throw:1.08},knockback:{punch:1.42,kick:1.3,throw:1.5},throwDistance:220,preferredSequence:['punch','low-punch','punch'],preferredMoves:['grab','low-punch','grab','punch','double-punch','low-kick','power-kick']},
 };
 export const NEW_DELETIONS={
- doofnoobler:{id:'soft-power',name:'Soft Power',mechanism:'hug',peaceful:true,prop:false,retainFloorBody:true,duration:5200,line:'Stay soft, stay fuzzy, and stay kind.',beats:{approach:0,hugWindup:550,hugContact:1000,release:2100,slump:2750,landed:3350,present:3500,complete:5200,shove:550,contact:1000,drive:1000,captured:1000,pressure:2100,impact:2750,final:3350}},
- lyra:{id:'litter-protocol',name:'Litter Protocol',mechanism:'litter-box',duration:5900,beats:{approach:0,boxReach:550,boxSet:850,scratchWindup:850,scratch1:1200,scratch2:1500,scratch3:1800,retreat:1850,turn:2250,kick:2600,litterImpact:3000,buried:3750,present:4300,complete:5900,shove:550,contact:1200,drive:2250,captured:850,pressure:2600,impact:3000,final:3750}},
+ doofnoobler:{id:'soft-power',name:'Soft Power',mechanism:'hug',peaceful:true,prop:false,retainFloorBody:false,duration:5200,line:'Stay soft, stay fuzzy, and stay kind.',beats:{approach:0,hugWindup:550,hugContact:1000,release:2100,shoveOff:2100,landed:2600,runStart:2600,escaped:3350,present:3500,complete:5200,shove:550,contact:1000,drive:1000,captured:1000,pressure:2100,impact:2100,final:3350}},
+ lyra:{id:'litter-protocol',name:'Litter Protocol',mechanism:'litter-box',duration:5900,beats:{approach:0,boxReach:550,boxSet:850,scratchWindup:850,scratch1:1200,scratch2:1500,scratch3:1800,retreat:1850,fallStart:1850,basinContact:2350,basinSettled:2500,turn:2250,kick:2600,litterImpact:3000,buried:3750,present:4300,complete:5900,shove:550,contact:1200,drive:2250,captured:850,pressure:2600,impact:3000,final:3750}},
  'papa-oak':{id:'rooted-verdict',name:'Rooted Verdict',mechanism:'rip',prop:false,retainFloorBody:true,duration:5900,beats:{approach:0,gripWindup:600,gripContact:1000,strain:1750,rip:2400,separated:2850,settled:3500,present:4100,complete:5900,shove:600,contact:1000,drive:1000,captured:1000,pressure:1750,impact:2400,final:3500}},
 };
 const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
 const duration=(clips,name,fallback)=>clips?.[name]?.nativeDuration??clips?.[name]?.duration??fallback;
 const contact=(clips,name,fallback)=>clips?.[name]?.nativeContactMs??clips?.[name]?.contactMs??fallback;
 const held=(clip,elapsed)=>({clip,elapsed:Math.max(0,elapsed)});
+// Reuse one intact native hanging key for every lifted/carry/flying victim.
+// IDs not yet packed retain their existing complete source pose.
+export function hangingVictimPose(clips,fallback){return clips?.['delete-rip-front']?held('delete-rip-front',0):fallback;}
 const eased=(t,start,end)=>{const p=clamp((t-start)/(end-start),0,1);return p*p*(3-2*p);};
 const keyTime=(clips,name,index,fallback)=>clips?.[name]?.combatPoses?.entries?.find(e=>e.index===index)?.start??fallback;
-function compiledPose(clips,name,facing,elapsed=0){const poses=clips?.[name]?.combatPoses;if(!poses)return null;const t=clamp(elapsed,0,Math.max(0,(poses.duration??1)-.001)),index=poses.entries?.find(e=>t>=e.start&&t<e.end)?.index??0;return poses.frames?.[facing]?.[index]??null;}
-function captureLift(pose,site,contactPoint,maximum){const body=pose?.sites?.[site];if(!Number.isFinite(body?.y)||!Number.isFinite(contactPoint?.y))return 0;
+export function litterBasinPose(clips){const asset=clips?.['delete-crumpled'],poses=asset?.combatPoses,frames=poses?.frames??asset?.data?.frames,entries=poses?.entries??asset?.timeline?.entries??[],count=frames?.right?.length??frames?.left?.length??0,index=count>2?count-2:(entries.at(-1)?.index??Math.max(0,count-1));return {clip:'delete-crumpled',elapsed:entries.find(e=>e.index===index)?.start??0,frameIndex:index};}
+function compiledPose(clips,name,facing,elapsed=0,frameIndex){const poses=clips?.[name]?.combatPoses;if(!poses)return null;const t=clamp(elapsed,0,Math.max(0,(poses.duration??1)-.001)),index=Number.isInteger(frameIndex)&&poses.frames?.[facing]?.[frameIndex]?frameIndex:poses.entries?.find(e=>t>=e.start&&t<e.end)?.index??0;return poses.frames?.[facing]?.[index]??null;}
+function captureLift(pose,site,contactPoint,maximum){const body=typeof site==='string'?pose?.sites?.[site]:site;if(!Number.isFinite(body?.y)||!Number.isFinite(contactPoint?.y))return 0;
  // The complete native capture pose supplies the height. Its top also limits
  // travel so a broad or raised body stays below the HUD at its unchanged scale.
  const clearance=Number.isFinite(pose?.bounds?.top)?Math.max(0,620+pose.bounds.top-140):maximum;
@@ -24,23 +28,56 @@ function captureLift(pose,site,contactPoint,maximum){const body=pose?.sites?.[si
 
 export function newDeletionPose(role,t,definition,clips,fighterHeight=Infinity){const b=definition.beats;
  if(definition.mechanism==='hug'){
-  if(role==='attacker'){if(t<b.hugWindup)return held('walk',t);const c=contact(clips,'delete-hug',300),d=duration(clips,'delete-hug',1100);if(t<b.hugContact)return held('delete-hug',(t-b.hugWindup)*c/(b.hugContact-b.hugWindup));if(t<b.release)return held('delete-hug',c);if(t<b.present)return held('delete-hug',c+(t-b.release)*(d-c)/(b.present-b.release));return held('delete-present',t-b.present);}
-  if(t<b.hugWindup||fighterHeight<=260&&t<b.hugContact)return held('high',210);if(t<b.slump)return fighterHeight<=260?held('delete-brace',0):held('crouch',clamp((t-b.hugWindup)/(b.hugContact-b.hugWindup),0,1)*duration(clips,'crouch',510));if(t<b.landed)return held('knockdown',(t-b.slump)*duration(clips,'knockdown',630)/(b.landed-b.slump));return held('knockdown',10000);
+  if(role==='attacker'){if(t<b.hugWindup)return held('walk',t);const clip=clips?.['delete-hug-happy']?'delete-hug-happy':'delete-hug',c=contact(clips,clip,300),d=duration(clips,clip,1100);if(t<b.hugContact)return held(clip,(t-b.hugWindup)*c/(b.hugContact-b.hugWindup));if(t<b.release)return held(clip,c);if(t<b.present)return held(clip,c+(t-b.release)*(d-c)/(b.present-b.release));return held('delete-present',t-b.present);}
+  if(t<b.release)return held('high',210);if(t<b.runStart)return held('delete-shove',(t-b.release)*duration(clips,'delete-shove',500)/(b.runStart-b.release));return held('walk',t-b.runStart);
  }
  if(definition.mechanism==='litter-box'){
   if(role==='attacker'){if(t<b.boxReach)return held('walk',t);if(t<b.scratchWindup)return held('delete-litter-kick',(t-b.boxReach)*140/(b.boxSet-b.boxReach));if(t<b.scratch1)return held('delete-claw',(t-b.scratchWindup)*contact(clips,'delete-claw',280)/(b.scratch1-b.scratchWindup));if(t<b.retreat){const c=contact(clips,'delete-claw',280),k3=keyTime(clips,'delete-claw',3,430),k4=keyTime(clips,'delete-claw',4,590),d=duration(clips,'delete-claw',880);return held('delete-claw',t<b.scratch2?c+(t-b.scratch1)*(k3-c)/(b.scratch2-b.scratch1):t<b.scratch3?k3+(t-b.scratch2)*(k4-k3)/(b.scratch3-b.scratch2):k4+(t-b.scratch3)*(d-k4)/(b.retreat-b.scratch3));}if(t<b.turn)return held('walk',t-b.retreat);if(t<b.kick)return held('delete-litter-kick',230+(t-b.turn)*(contact(clips,'delete-litter-kick',320)-230)/(b.kick-b.turn));if(t<b.litterImpact)return held('delete-litter-kick',contact(clips,'delete-litter-kick',320));if(t<b.present)return held('delete-litter-kick',320+(t-b.litterImpact)*(duration(clips,'delete-litter-kick',820)-320)/(b.present-b.litterImpact));return held('delete-present',t-b.present);}
-  if(t<b.boxSet)return held('high',210);if(fighterHeight<=260&&t<b.turn)return held('delete-suspended',0);return held('delete-brace',Math.min(300,t-b.boxSet));
+  if(t<b.boxSet)return held('high',210);if(t>=b.basinContact)return litterBasinPose(clips);if(t>=b.fallStart){const firstAir=keyTime(clips,'thrown',1,100),floorKey=keyTime(clips,'thrown',3,420);return hangingVictimPose(clips,held('thrown',firstAir+(floorKey-firstAir-.001)*clamp((t-b.fallStart)/(b.basinContact-b.fallStart),0,1)));}return hangingVictimPose(clips,fighterHeight<=260?held('delete-suspended',0):held('delete-brace',Math.min(300,t-b.boxSet)));
  }
  if(definition.mechanism==='rip'){
   if(role==='attacker'){if(t<b.gripWindup)return held('walk',t);const c=contact(clips,'delete-rip',300);if(t<b.gripContact)return held('delete-rip',(t-b.gripWindup)*c/(b.gripContact-b.gripWindup));if(t<b.rip)return held('delete-rip',c);const spread=keyTime(clips,'delete-rip',3,460);if(t<b.present)return held('delete-rip',spread+(t-b.rip)*(duration(clips,'delete-rip',1060)-spread)/(b.present-b.rip));return held('delete-present',t-b.present);}
-  if(t>=b.separated)return held('knockdown',10000);return t<b.gripWindup?held('high',210):held('delete-brace',0);
+  return t<b.gripWindup?held('high',210):hangingVictimPose(clips,held('delete-suspended',0));
  }
  return null;
 }
-export function newDeletionPositions(match,time,definition){const o=match._deletionOrigin,b=definition.beats,p=clamp(time/(definition.mechanism==='hug'?b.hugWindup:b.shove),0,1),ease=p*p*(3-2*p);let winnerX=o.winner+(o.near-o.winner)*ease,victimX=o.originalVictim+(o.target-o.originalVictim)*ease,victimY=0;
- if(definition.mechanism==='hug'){if(time>=b.slump){const f=match.fighters[1-match.winner],offset=f._clips.knockdown?.endOffsetX?.[o.victimFacing]??0;victimX=o.target-offset*clamp((time-b.slump)/(b.landed-b.slump),0,1);}}
- if(definition.mechanism==='litter-box'){const scratchNear=o.scratchNear??o.near;victimX=o.originalVictim;winnerX=o.winner+(scratchNear-o.winner)*ease;if(time>=b.retreat)winnerX=scratchNear+(o.near-scratchNear)*eased(time,b.retreat,b.turn);victimY=190*clamp((time-b.litterImpact)/(b.buried-b.litterImpact),0,1);const victim=match.fighters[1-match.winner],hero=match.fighters[match.winner],paw=hero._clips['delete-claw']?.contactStrikeOrigins?.[o.direction>0?'right':'left'],short=victim.height<=260,body=compiledPose(victim._clips,short?'delete-suspended':'delete-brace',o.victimFacing,short?0:300);if(time<b.turn){const lift=captureLift(body,short?'torso':'head',paw,230);victimY=-lift*eased(time,b.boxSet,b.scratch1)*(1-eased(time,b.retreat,b.turn));}}
- if(definition.mechanism==='rip'){const victim=match.fighters[1-match.winner],hero=match.fighters[match.winner],hand=hero._clips['delete-rip']?.contactGripOrigins?.[o.direction>0?'right':'left'],body=compiledPose(victim._clips,'delete-brace',o.victimFacing),lift=captureLift(body,'torso',hand,220);victimY=time>=b.settled?0:-lift*eased(time,b.gripWindup,b.gripContact)*(1-eased(time,b.rip,b.settled));}
- return {winnerX,victimX,victimY:victimY===0?0:victimY};
+export function newDeletionPositions(match,time,definition){
+ const o=match._deletionOrigin,b=definition.beats,p=clamp(time/(definition.mechanism==='hug'?b.hugWindup:b.shove),0,1),ease=p*p*(3-2*p);
+ let winnerX=o.winner+(o.near-o.winner)*ease,victimX=o.originalVictim+(o.target-o.originalVictim)*ease,victimY=0,winnerY=0;
+ if(definition.mechanism==='hug'){
+  const victim=match.fighters[1-match.winner],hero=match.fighters[match.winner],clip=hero._clips['delete-hug-happy']?'delete-hug-happy':'delete-hug',hand=hero._clips[clip]?.contactGripOrigins?.[o.direction>0?'right':'left'],body=compiledPose(victim._clips,'high',o.victimFacing,210),torso=body?.sites?.torso,head=body?.sites?.head;
+  if(torso&&head&&hand){const upper=torso.y+(head.y-torso.y)*.65,lift=Math.min(0,upper-hand.y);winnerY=lift*eased(time,b.hugWindup,b.hugContact)*(1-eased(time,b.release,b.landed));}
+  if(time>=b.release)winnerX-=o.direction*95*eased(time,b.release,b.landed);
+  if(time>=b.runStart)victimX=o.target+o.direction*1120*eased(time,b.runStart,b.escaped);
+ }
+ if(definition.mechanism==='litter-box'){
+  const scratchNear=o.scratchNear??o.near,kickX=o.kickX??o.near;victimX=o.originalVictim;winnerX=o.winner+(scratchNear-o.winner)*ease;
+  if(time>=b.retreat)winnerX=scratchNear+(kickX-scratchNear)*eased(time,b.retreat,b.turn);
+  if(time>=b.present){winnerX=kickX+(o.target-o.direction*235-kickX)*eased(time,b.present,b.present+450);winnerY=36*eased(time,b.present,b.present+450);}
+  const victim=match.fighters[1-match.winner],hero=match.fighters[match.winner],paw=hero._clips['delete-claw']?.contactStrikeOrigins?.[o.direction>0?'right':'left'],short=victim.height<=260,capture=hangingVictimPose(victim._clips,held(short?'delete-suspended':'delete-brace',short?0:300)),body=compiledPose(victim._clips,capture.clip,o.victimFacing,capture.elapsed);
+  const lift=captureLift(body,short?'torso':'head',paw,230);
+  if(time<b.fallStart)victimY=-lift*eased(time,b.boxSet,b.scratch1);
+  else {
+   const basinPose=litterBasinPose(victim._clips),floorBody=compiledPose(victim._clips,basinPose.clip,o.victimFacing,basinPose.elapsed,basinPose.frameIndex),basinRoot=-35-(floorBody?.bounds.bottom??0);
+   if(time>=b.basinSettled)victimY=basinRoot+(190-basinRoot)*eased(time,b.litterImpact,b.buried);
+   else {
+    const startTorso=620+(body?.sites?.torso?.y??0)-lift,endTorso=620+basinRoot+(floorBody?.sites?.torso?.y??0),p=clamp((time-b.fallStart)/(b.basinContact-b.fallStart),0,1),settle=clamp((time-b.basinContact)/(b.basinSettled-b.basinContact),0,1),torso=time<b.basinContact?startTorso+(endTorso-startTorso)*p*p-22*4*p*(1-p):endTorso-8*Math.sin(Math.PI*settle),pose=newDeletionPose('victim',time,definition,victim._clips,victim.height),active=compiledPose(victim._clips,pose.clip,o.victimFacing,pose.elapsed,pose.frameIndex);
+    // Native airborne and curled keys keep their own anchors. Register the
+    // complete torso to one continuous ballistic path, then the basin floor.
+    victimY=torso-620-(active?.sites?.torso?.y??0);
+   }
+  }
+ }
+ if(definition.mechanism==='rip'){
+  const victim=match.fighters[1-match.winner],hero=match.fighters[match.winner],hand=hero._clips['delete-rip']?.contactGripOrigins?.[o.direction>0?'right':'left'],source=o.ripPose??{clip:victim._clips['delete-rip-front']?'delete-rip-front':'delete-suspended',elapsed:0},body=compiledPose(victim._clips,source.clip,o.victimFacing,source.elapsed),torso=body?.sites?.torso,region=body?.hurt?.find(r=>r.site==='torso');
+  // A long intact body can put its torso centre above the grounded palm.
+  // Grip the existing lower torso in that case; keep the native body and cut
+  // seam unchanged rather than imposing a lift past the real contact.
+  const contactSite=torso&&hand&&torso.y<=hand.y&&Number.isFinite(region?.bottom)?{...torso,y:(torso.y+region.bottom)/2}:torso,lift=captureLift(body,contactSite,hand,220);
+  // The measured torso-to-palm distance controls the intact body's lift.
+  // A minimum lift would carry short captures past the real closed hand.
+  victimY=time>=b.settled?0:-lift*eased(time,b.gripContact,b.strain)*(1-eased(time,b.rip,b.settled));
+ }
+ return {winnerX,winnerY:winnerY===0?0:winnerY,victimX,victimY:victimY===0?0:victimY};
 }
 export function splitBodyState(time,definition){if(definition.mechanism!=='rip'||time<definition.beats.rip)return null;const p=clamp((time-definition.beats.rip)/(definition.beats.separated-definition.beats.rip),0,1);return {gap:85+25*p,progress:p,settled:time>=definition.beats.settled};}

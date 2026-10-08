@@ -1,4 +1,4 @@
-import {NEW_FIGHTER_STYLES,newDeletionPositions,splitBodyState} from './new-deletion-library.mjs';
+import {NEW_FIGHTER_STYLES,newDeletionPositions,splitBodyState,hangingVictimPose} from './new-deletion-library.mjs';
 import {deletionDefinition,deletionPose} from './deletion-library.mjs';
 import {easedProgress} from './fight-presentation.mjs';
 import {createStageState,stageById,stageInteractionReady,startStageWarning,advanceStageState,damageStageWall,enterStage} from './fight-stages.mjs';
@@ -879,16 +879,25 @@ function startDeletion(match) {
     ...(definition.mechanism==='truss'?{trussX:target+dir*80,slamX:target-dir*80}:{}),
   };
   if(definition.mechanism==='litter-box'){
-    const strike=winner._clips['delete-claw']?.contactStrikeOrigins?.[face(dir)],bodyClip=victim._clips['delete-brace'],bodyTime=Math.min(300,(bodyClip?.nativeDuration??301)-.001);
-    const bodyIndex=bodyClip?.combatPoses?.entries?.find(entry=>bodyTime>=entry.start&&bodyTime<entry.end)?.index??0,sites=bodyClip?.combatPoses?.frames?.[face(-dir)]?.[bodyIndex]?.sites;
+    const strike=winner._clips['delete-claw']?.contactStrikeOrigins?.[face(dir)],bodyPose=hangingVictimPose(victim._clips,{clip:'delete-brace',elapsed:300});
+    const sites=combatPose(victim,{...bodyPose,facing:face(-dir)})?.frame?.sites;
     const headOffset=victim.height>260&&sites?sites.head.x-sites.torso.x:0;
     if(Number.isFinite(strike?.x))match._deletionOrigin.scratchNear=target+headOffset-strike.x;
+    match._deletionOrigin.kickX=(match._deletionOrigin.scratchNear??near)-dir*205;
+  }
+  if(definition.mechanism==='rip'){
+    const facing=face(-dir),hand=winner._clips['delete-rip']?.contactGripOrigins?.[face(dir)];
+    let source={clip:victim._clips['delete-rip-front']?'delete-rip-front':'delete-suspended',elapsed:0};
+    const torso=combatPose(victim,{...source,facing})?.frame?.sites?.torso;
+    if(source.clip!=='delete-rip-front'&&torso&&hand&&torso.y<hand.y+8){const upright={clip:'high',elapsed:210},alternative=combatPose(victim,{...upright,facing})?.frame?.sites?.torso;if(alternative?.y>hand.y+8)source=upright;}
+    match._deletionOrigin.ripPose=source;
   }
   if(['wand','truss'].includes(definition.mechanism)) {
-    const top=Number(victim._clips['delete-suspended']?.topOffsets?.[face(-dir)]);
+    const liftedPose=hangingVictimPose(victim._clips,{clip:'delete-suspended',elapsed:0});
+    const top=Number(victim._clips[liftedPose.clip]?.topOffsets?.[face(-dir)]);
     const nominal=definition.mechanism==='wand'?150:190;
-    // Raised hands on taller native poses need less lift to clear the HUD.
-    // Only the complete body's travel changes; its native scale stays fixed.
+    // The selected complete body's top controls its clearance below the HUD.
+    // Only whole-body travel changes; the native source scale stays fixed.
     match._deletionOrigin.liftDistance=definition.mechanism==='truss'?nominal:
       Number.isFinite(top)?clamp(WORLD.floor+top-130,definition.mechanism==='wand'?90:0,nominal):nominal;
   }
@@ -926,6 +935,11 @@ const easedTravel=(start,end,time,from,to)=>start+(end-start)*easedProgress(time
 
 function deletionFlight(match,time) {
   const o=match._deletionOrigin,definition=deletionDefinition(match.fighters[match.winner].id),b=definition.beats;
+  if(definition.mechanism==='coffin') {
+    if(time<b.entry||time>=b.landed)return null;
+    return {mechanism:'coffin',progress:clamp((time-b.entry)/(b.landed-b.entry),0,1),direction:o.direction,
+      startX:o.victim,endX:o.target-endOffset(match.fighters[1-match.winner],'thrown'),startY:0,endY:0,height:45};
+  }
   const from=definition.mechanism==='crt'?b.drive:definition.mechanism==='waste-chute'?b.load:null;
   if(from===null||time<from||time>=b.captured)return null;
   const endY=definition.mechanism==='crt'?-80:-75,height=definition.mechanism==='crt'?105:110;
@@ -959,7 +973,8 @@ function approvedDeletionPositions(match,time) {
       rotation=Math.PI*(1-Math.cos(Math.PI*spin));
     } else if(time<b.landed) {
       victimX=interpolate(o.target,o.landX-endOffset(victim,'thrown'),time,b.launch,b.landed);
-      victimY=interpolate(-25,0,time,b.launch,b.landed);
+      const flight=clamp((time-b.launch)/(b.landed-b.launch),0,1);
+      victimY=-25*(1-flight)-80*Math.sin(Math.PI*flight);
     } else victimX=o.landX-endOffset(victim,'knockdown');
   } else if(definition.mechanism==='stamp') {
     if(time<b.fall)victimX=interpolate(o.originalVictim,o.target,time,0,b.gut);
@@ -968,10 +983,15 @@ function approvedDeletionPositions(match,time) {
     if(time>=b.haul)winnerX=easedTravel(o.near,o.operatorX,time,b.haul,b.captured);
     if(time<b.haul)victimX=interpolate(o.originalVictim,o.victim,time,0,b.grip);
     else victimX=interpolate(o.victim,o.target,time,b.haul,b.captured);
+    if(time>=b.gripContact&&time<b.captured)victimY=time<b.haul?
+      -35*easedProgress(time,b.gripContact,b.haul):-35*(1-easedProgress(time,b.haul,b.captured));
   } else if(definition.mechanism==='speaker-stack') {
     if(time>=b.landed)winnerX=easedTravel(o.near,o.operatorX,time,b.landed,b.stackReach);
     if(time<b.fall)victimX=interpolate(o.originalVictim,o.victim,time,0,b.kickWindup);
-    else if(time<b.landed)victimX=interpolate(o.victim,o.target-endOffset(victim,'thrown'),time,b.fall,b.landed);
+    else if(time<b.landed) {
+      victimX=interpolate(o.victim,o.target-endOffset(victim,'thrown'),time,b.fall,b.landed);
+      victimY=-80*Math.sin(Math.PI*clamp((time-b.fall)/(b.landed-b.fall),0,1));
+    }
     else victimX=o.target-endOffset(victim,'knockdown');
   } else if(definition.mechanism==='truss') {
     if(time<b.hoist)victimX=interpolate(o.originalVictim,o.victim,time,0,b.cableCast);
@@ -998,7 +1018,11 @@ function approvedDeletionPositions(match,time) {
   } else if(definition.mechanism==='coffin') {
     if(Number.isFinite(o.nailRootX)&&time>=b.nailApproach)winnerX=interpolate(o.near,o.nailRootX,time,b.nailApproach,b.nailRaise);
     if(time<b.entry)victimX=interpolate(o.originalVictim,o.victim,time,0,b.bootWindup);
-    else if(time<b.landed)victimX=interpolate(o.victim,o.target-endOffset(victim,'thrown'),time,b.entry,b.landed);
+    else if(time<b.landed) {
+      victimX=interpolate(o.victim,o.target-endOffset(victim,'thrown'),time,b.entry,b.landed);
+      const flight=deletionFlight(match,time);
+      victimY=-flight.height*Math.sin(Math.PI*flight.progress);
+    }
     else victimX=o.target-endOffset(victim,'knockdown');
   } else if(definition.mechanism==='waste-chute') {
     if(time<b.load)victimX=interpolate(o.originalVictim,o.victim,time,0,b.fold);
@@ -1018,10 +1042,11 @@ function approvedDeletionPositions(match,time) {
 function approvedDeletionView(match,index,time) {
   const f=match.fighters[index],winner=match.fighters[match.winner],definition=deletionDefinition(winner.id);
   const pose=deletionPose(index===match.winner?'attacker':'victim',time,winner.id,f._clips,f.height);
+  if(definition.mechanism==='rip'&&index!==match.winner&&time>=definition.beats.gripWindup&&match._deletionOrigin.ripPose)Object.assign(pose,match._deletionOrigin.ripPose);
   const position=approvedDeletionPositions(match,time),b=definition.beats;
-  const hiddenAt={hug:Infinity,rip:Infinity,'litter-box':b.buried,drive:b.captured,sign:b.landed,wheel:Infinity,stamp:b.stampStrike,jaws:b.sealed,
+  const hiddenAt={hug:b.escaped,rip:Infinity,'litter-box':b.buried,drive:b.captured,sign:b.landed,wheel:Infinity,stamp:b.stampStrike,jaws:b.sealed,
     'speaker-stack':b.burial,truss:Infinity,positivity:Infinity,wand:b.erased}[definition.mechanism]??b.lidClose;
-  return {...pose,x:index===match.winner?position.winnerX:position.victimX,y:index===match.winner?0:position.victimY,
+  return {...pose,x:index===match.winner?position.winnerX:position.victimX,y:index===match.winner?(position.winnerY??0):position.victimY,
     facing:approvedDeletionFacing(match,index,time),opacity:index===match.winner||time<hiddenAt?1:0,
     ...(definition.mechanism==='rip'&&index!==match.winner&&splitBodyState(time,definition)?{splitBody:splitBodyState(time,definition)}:{}),
     ...(definition.mechanism==='litter-box'&&index!==match.winner?{litterCaptured:time>=b.boxSet}:{}),
@@ -1035,7 +1060,7 @@ function approvedDeletionView(match,index,time) {
 
 function approvedDeletionFacing(match,index,time) {
   const o=match._deletionOrigin,definition=deletionDefinition(match.fighters[match.winner].id);
-  if(index!==match.winner)return o.victimFacing??face(-o.direction);
+  if(index!==match.winner){if(definition.mechanism==='hug'&&time>=definition.beats.runStart)return face(o.direction);return o.victimFacing??face(-o.direction);}
   if(definition.mechanism==='litter-box'&&time>=definition.beats.retreat&&time<definition.beats.present)return face(-o.direction);
   if(definition.mechanism==='coffin'&&Number.isFinite(o.nailRootX)&&time>=definition.beats.nailApproach) {
     if(time<definition.beats.nailRaise)return face(sign(o.nailRootX-o.near));
@@ -1078,7 +1103,7 @@ function updateApprovedDeletion(match,previous,time) {
       sourceContact:{fighterIndex:match.winner,site:'grip',offset:[0,0],space:'pose'},sourceView,...extra});
   };
   if(definition.mechanism==='hug') {
-    cue(b.hugContact,'hug-contact','torso','deletion-cue',{peaceful:true});cue(b.release,'hug-release','torso','deletion-cue',{peaceful:true});cue(b.slump,'peaceful-slump','legs','deletion-cue',{peaceful:true});
+    cue(b.hugContact,'hug-contact','torso','deletion-cue',{peaceful:true});cue(b.release,'hug-release','torso','deletion-cue',{peaceful:true});cue(b.runStart,'peaceful-escape','legs','deletion-cue',{peaceful:true});
     cue(b.present,'stay-kind','torso','character-line',{fighterId:'doofnoobler',line:definition.line,peaceful:true});
   } else if(definition.mechanism==='litter-box') {
     cue(b.boxSet,'litter-box-set','legs');[b.scratch1,b.scratch2].forEach((at,index)=>cue(at,'claw-cut',match.fighters[target].height<=260?'torso':'head','deletion-impact',{strength:1.05,damageKind:'cut',scratch:index+1}));
@@ -1192,10 +1217,10 @@ function updateDeletion(match, dt) {
   }
   if(t>=definition.duration) {
     match.phase='over';match.phaseTime=0;
-    match.status=(definition.peaceful?'PEACEFUL KO — ':'DELETION — ')+winner.name.toUpperCase()+' WINS';
+    match.status=(definition.peaceful?'SOFT POWER — ':'DELETION — ')+winner.name.toUpperCase()+' WINS';
     if(!isDistinctDeletion(definition))winner.x=o.near;
     setAction(winner,'idle');
-    victim._deleted=true;victim._ko=true;setAction(victim,'knockdown');victim.actionTime=duration(victim);
+    victim._deleted=!definition.peaceful;victim._ko=!definition.peaceful;setAction(victim,definition.peaceful?'walk':'knockdown');victim.actionTime=definition.peaceful?0:duration(victim);
     if(isDistinctDeletion(definition)) {winner._jump=null;victim._jump=null;}
     emit(match,'deletion',{cue:'complete',name:match.deletionName,x:o.target,y:400,direction:o.direction,strength:0});
   }
@@ -1269,6 +1294,7 @@ function updateAction(match, index, dt) {
     setAction(f,'jump',null,0,true);f.actionTime=elapsed;
   } else if (f.action === 'grabbed') {
     setAction(f, 'thrown', 'knockdown');
+    f._launched=true;
     startTravel(f, f._throwDistance??145);
     emit(match, 'throw', { x: f.x, y: WORLD.floor - f.height * 0.5, direction: f._throwDirection, strength: 1.8, attacker: f._throwAttacker, target: index });
   } else if (f.action === 'thrown') {
@@ -1529,6 +1555,10 @@ export function getFighterView(match, index) {
     pickupAction:f._pickup?{...f._pickup,elapsed:f.actionTime,contactMs:contactTime(f)}:null,
     weaponAction:f._weaponAction?{...f._weaponAction,elapsed:f.actionTime,contactMs:contactTime(f)}:null,
     airborne:!!f._jump,jumpElapsed:f._jump?.elapsed??null,jumpDuration:f._jump?.duration??null});
+  if(f.action==='thrown'&&f._launched&&!f._jump&&view.y<0) {
+    Object.assign(view,hangingVictimPose(f._clips,{clip:view.clip,elapsed:view.elapsed}));
+    view.airborne=true;
+  }
   if (match.phase === 'finish' && index !== match.winner) {
     view.clip = 'high'; view.elapsed = 210;
   }
@@ -1551,13 +1581,14 @@ export function getFighterView(match, index) {
         view.opacity=match.deletionElapsed>=b.impact?0:1;
       }
     }
+    if(index!==match.winner&&view.y<0)view.airborne=true;
   }
 
   const definition=match.winner==null?null:deletionDefinition(match.fighters[match.winner].id);
-  if(match.phase==='over'&&definition?.retainFloorBody&&match.deletionElapsed>=definition.duration&&index!==match.winner)Object.assign(view,approvedDeletionView(match,index,match.deletionElapsed));
+  if(match.phase==='over'&&(definition?.retainFloorBody||definition?.peaceful)&&match.deletionElapsed>=definition.duration&&index!==match.winner)Object.assign(view,approvedDeletionView(match,index,match.deletionElapsed));
   if(match.phase==='over'&&definition&&match.deletionElapsed>=definition.duration&&index===match.winner){
     if(['positivity','jaws'].includes(definition.mechanism))Object.assign(view,deletionPose('attacker',match.deletionElapsed,f.id,f._clips));
-    else {view.clip='delete-present';view.elapsed=10000;}
+    else {if(['hug','litter-box','rip'].includes(definition.mechanism))Object.assign(view,approvedDeletionView(match,index,match.deletionElapsed));view.clip='delete-present';view.elapsed=10000;}
   }
   view.nativeElapsed=view.elapsed;
   view.poseIndex=combatPose(f,view)?.index;

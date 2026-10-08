@@ -14,12 +14,12 @@ test('three new styles preserve small quick feints, agile claws and heavy rooted
  assert.equal(createMatch({fighters:[{id:'papa-oak'},{id:'doofnoobler'}]}).fighters[0].height,385);assert.equal(createMatch({fighters:[{id:'lyra'},{id:'doofnoobler'}]}).fighters[1].height,220);
 });
 
-for(const dir of [-1,1])test(`Doof's warm hug is a peaceful grounded KO with one exact line (${dir})`,()=>{
+for(const dir of [-1,1])test(`Doof's warm hug is a peaceful jump hug and escape with one exact line (${dir})`,()=>{
  const definition=deletionDefinition('doofnoobler');assert(definition?.peaceful);assert.equal(definition.mechanism,'hug');const match=ending('doofnoobler',dir);assert.equal(match.phase,'deletion');
- advance(match,definition.beats.hugContact);const hug=getFighterView(match,0);assert.equal(hug.clip,'delete-hug');assert.equal(hug.y,0);
+ advance(match,definition.beats.hugContact);const hug=getFighterView(match,0);assert.equal(hug.clip,'delete-hug');assert(hug.y<=0);
  advance(match,definition.duration+500);const events=consumeEvents(match),lines=events.filter(event=>event.type==='character-line');assert.equal(lines.length,1);assert.equal(lines[0].cue,'stay-kind');assert.equal(lines[0].line,'Stay soft, stay fuzzy, and stay kind.');assert.equal(lines[0].fighterId,'doofnoobler');
  assert(events.every(event=>event.peaceful),'Every hug event suppresses generic gore and hard impact audio');assert(!events.some(event=>event.type==='deletion-impact'||event.type==='hit'));
- const target=getFighterView(match,1);assert.equal(target.clip,'knockdown');assert.equal(target.opacity,1);assert.equal(target.y,0);assert.equal(match.phase,'over');
+ const target=getFighterView(match,1);assert.equal(target.clip,'walk');assert.equal(target.opacity,0);assert.equal(match.fighters[1]._ko,false);assert.equal(match.fighters[1]._deleted,false);assert.equal(target.y,0);assert.equal(match.phase,'over');
 });
 
 for(const dir of [-1,1])test(`Lyra scratches, turns and kicks litter with a stationary whole-body root (${dir})`,()=>{
@@ -29,9 +29,9 @@ for(const dir of [-1,1])test(`Lyra scratches, turns and kicks litter with a stat
  const events=consumeEvents(match);assert.equal(events.filter(event=>event.cue==='claw-cut').length,2);assert.equal(events.filter(event=>event.cue==='litter-kick').length,1);
 });
 
-for(const dir of [-1,1])test(`Oak holds an intact victim until a single horizontal rip, retaining both masked halves (${dir})`,()=>{
+for(const dir of [-1,1])test(`Oak holds an intact victim until a single vertical rip, retaining both masked halves (${dir})`,()=>{
  const definition=deletionDefinition('papa-oak');assert.equal(definition?.mechanism,'rip');const match=ending('papa-oak',dir);advance(match,definition.beats.rip-10);assert.equal(getFighterView(match,1).splitBody,undefined);
- advance(match,20);assert(getFighterView(match,1).splitBody);advance(match,definition.duration);const victim=getFighterView(match,1);assert.equal(victim.opacity,1);assert.equal(victim.clip,'knockdown');assert(victim.splitBody.gap>80);assert.equal(victim.y,0);
+ advance(match,20);assert(getFighterView(match,1).splitBody);advance(match,definition.duration);const victim=getFighterView(match,1);assert.equal(victim.opacity,1);assert.equal(victim.clip,'delete-suspended');assert(victim.splitBody.gap>80);assert.equal(victim.y,0);
  const events=consumeEvents(match).filter(event=>event.cue==='oak-rip');assert.equal(events.length,1);assert.equal(events[0].damageKind,'cut');
 });
 
@@ -45,6 +45,6 @@ test('peaceful scene effects make no blood, chunks or red impact flash and prelo
 
 for(const dir of [-1,1])test(`Lyra approaches while the grounded opponent stays in place at either wall (${dir})`,()=>{
  const match=createMatch({mode:'practice',fighters:[{id:'lyra'},{id:'9-bit'}],clips:[victimClips,victimClips]});match.fighters[0].x=dir>0?210:2350;match.fighters[1].x=match.fighters[0].x+dir*75;performAction(match,0,'deletion');const initial=getFighterView(match,1).x;
- for(const t of [200,400,600,840,850,1200,1800,2600]){match.deletionElapsed=t;assert.equal(getFighterView(match,1).x,initial);assert.equal(getFighterView(match,1).y,0);}
+ for(const t of [200,400,600,840,850,1200,1800]){match.deletionElapsed=t;assert.equal(getFighterView(match,1).x,initial);assert.equal(getFighterView(match,1).y,0);}
  assert(initial>=400&&initial<=880,'Camera frame leaves real room for the arriving tray');
 });

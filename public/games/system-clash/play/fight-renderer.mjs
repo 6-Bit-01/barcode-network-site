@@ -522,11 +522,16 @@ function fighter(ctx, view, art, overlays, weaponArt, hide = false, motion) {
     const native=motion.native?.frames?.[view.facing]?.[poseFrameIndex(asset,view)];
     const world=point=>point?{x:feetX+point.x,y:feetY+point.y}:null;
     const authored=point=>Array.isArray(point)?{x:dx+point[0]*scale,y:dy+point[1]*scale}:null;
+    // Lyra's noncontact kick keys mark the guard hand; only the extension
+    // marks the paw. Those different body parts cannot share a wind trail.
+    const strike=frame.attachments?.strike,grip=frame.attachments?.grip;
+    const guardStrike=art.manifest.id==='lyra'&&view.clip.includes('kick')&&strike&&grip
+      &&Math.hypot(strike[0]-grip[0],strike[1]-grip[1])*scale<=art.manifest.height*.12;
     motion.fx.drawBody(ctx,{key:motion.key,fighterId:art.manifest.id,image:asset.image,
       source:frame.rect,destination:[dx,dy,sw*scale,sh*scale],position:{x:feetX,y:feetY},facing:view.facing,
       airborne:motion.airborne,attackKey:motion.attackKey,opacity:view.opacity??1,
-      strikeStart:world(native?.strikeStart)??authored(frame.attachments?.strikeStart),
-      strike:world(native?.strike)??authored(frame.attachments?.strike),
+      strikeStart:guardStrike?null:world(native?.strikeStart)??authored(frame.attachments?.strikeStart),
+      strike:guardStrike?null:world(native?.strike)??authored(frame.attachments?.strike),
       eligible:motion.eligible&&!view.halfMask&&!(view.eraseProgress>0)&&!view.rotation&&!view.aftermath&&!sourceExclusions.length&&view.clip!=='delete-hammer'});
   }
   ctx.save();
@@ -1732,7 +1737,7 @@ function hud(ctx, match, paused, motionReview = false, portraits = {}, interface
   ctx.lineWidth = 2;
   ctx.stroke();
   }
-  text(ctx, match.mode==='weapons'?'∞':Math.max(0, Math.ceil((match.roundRemaining ?? 99000) / 1000)).toString().padStart(2, '0'), 640, 65, 42, '#f6f0fc', 'center', '900', 'Impact, Arial Black, Arial, sans-serif');
+  text(ctx, match.mode==='weapons'||match._roundTimeLimit===0?'∞':Math.max(0, Math.ceil((match.roundRemaining ?? 99000) / 1000)).toString().padStart(2, '0'), 640, 65, 42, '#f6f0fc', 'center', '900', 'Impact, Arial Black, Arial, sans-serif');
   text(ctx, 'SYSTEM CLASH', 640, 113, 9, '#c9a3e8', 'center', '700', 'monospace');
 
   if (paused) announce( 'PAUSED', 'PRESS P TO RETURN TO THE FIGHT', '#f6f0fc', 55);
@@ -1853,13 +1858,13 @@ export function createFightRenderer(canvas) {
       if(wideWorld) {
         const dt=lastWorldClock===null?0:Math.max(0,match.stage.clock-lastWorldClock);
         if(lastStageId!==match.stage.id||(lastWorldClock!==null&&match.stage.clock<lastWorldClock)){worldCamera=createFightCamera({worldWidth:match.stage.width});worldCamera.x=clamp((match.fighters[0]?.x+match.fighters[1]?.x)/2||match.stage.width/2,640,match.stage.width-640);}
-        advanceFightCamera(worldCamera,{fighters:views.length?views:match.fighters,worldWidth:match.stage.width,dtMs:dt,reducedMotion:scene.reducedMotion});
+        advanceFightCamera(worldCamera,{fighters:views.length?views:match.fighters,worldWidth:match.stage.width,dtMs:dt,reducedMotion:scene.reducedMotion,focusIndex:scene.cameraFocusIndex??0});
         ctx.translate(640,FLOOR);ctx.scale(worldCamera.zoom,worldCamera.zoom);ctx.translate(-worldCamera.x,-FLOOR);
       }
       if(match.stage) {
         layers.releaseArena();lastWorldClock=match.stage.clock;lastStageId=match.stage.id;
         ctx.save();ctx.translate(-(match.stage.cinematicOrigin??0),0);
-        stageRenderer.drawBackground(ctx,match.stage,scene.stageArt,{cameraX:wideWorld?worldCamera.x:(match.stage.cinematicOrigin??0)+(framing?.x??640),shakeX:camera.x??0,shakeY:camera.y??0});
+        stageRenderer.drawBackground(ctx,match.stage,scene.stageArt);
         stageRenderer.drawBehind(ctx,match.stage,scene.stageArt,{reducedMotion:scene.reducedMotion,cameraX:worldCamera.x,fighting:match.phase==='fight',cinematicElapsed:match.phase==='deletion'||match.phase==='over'&&match.deletionElapsed>0?match.deletionElapsed:null});
         ctx.restore();
       } else {layers.drawStage(ctx);lastWorldClock=null;lastStageId=null;}
@@ -1912,6 +1917,15 @@ export function createFightRenderer(canvas) {
       }
       layers.drawTexture(ctx);
       hud(ctx, match, scene.paused ?? match.paused ?? false,scene.motionReview??false,scene.portraits??{},interfaceArt);
+      if(wideWorld&&match.phase==='fight')for(const [index,f]of (match.fighters??[]).entries()) {
+        const x=640+(views[index]?.x??f.x)-worldCamera.x;if(!(f.hp>0)||!Number.isFinite(x)||x>=0&&x<=WIDTH)continue;
+        const right=x>WIDTH,name=String(f.name??f.id??'FIGHTER').toUpperCase().slice(0,16);
+        const width=Math.max(110,name.length*9+44),left=right?WIDTH-width-12:12;
+        ctx.save();ctx.fillStyle='#0a131be8';ctx.fillRect(left,FLOOR-176,width,32);
+        text(ctx,name,right?WIDTH-42:42,FLOOR-153,16,'#f0d6b5',right?'right':'left', '700','monospace');
+        const tip=right?WIDTH-20:20,base=right?WIDTH-30:30,y=FLOOR-161;
+        ctx.fillStyle='#f0d6b5';ctx.beginPath();ctx.moveTo(tip,y);ctx.lineTo(base,y-7);ctx.lineTo(base,y+7);ctx.closePath();ctx.fill();ctx.restore();
+      }
       if(deletionActive(match)){const definition=definitionForMatch(match);if(definition.mechanism==='hug'&&match.deletionElapsed>=definition.beats.present){ctx.save();ctx.fillStyle='#080e16d9';ctx.fillRect(365,139,550,38);ctx.font='700 22px Arial, sans-serif';ctx.textAlign='center';ctx.fillStyle='#f0d6b5';ctx.fillText(definition.line,640,166);ctx.restore();}}
     },
     resolveEvent(event,{match,views,art,deletionProp}) {

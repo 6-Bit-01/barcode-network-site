@@ -132,3 +132,15 @@ test('guest snapshots preserve one presentation epoch, while a real reset discar
  f.match={...f.match};canvas.calls.length=0;render(renderer,f,elapsed+32,-128,32,{motionResetKey:2});
  assert.equal(images(canvas,f.asset.image).filter(c=>c.alpha<1).length,0,'A new presentation epoch erases the previous run');
 });
+
+for(const clip of ['kick','low-kick','crouch-kick','jump-kick','crouch-high-kick','power-kick'])for(const facing of ['left','right'])test('Lyra '+clip+' never joins guard-hand placeholders to the kicking paw: '+facing,()=>{
+ const f=native('lyra',clip),canvas=screen(),renderer=createFightRenderer(canvas),before=JSON.stringify(f.metadata);
+ // Production merges the arcade clip bank under its fighter identity.
+ f.art.manifest.id='lyra';
+ for(let elapsed=0;elapsed<f.asset.timeline.duration;elapsed+=16){
+  canvas.calls.length=0;render(renderer,f,elapsed,0,elapsed,{}, {facing,airborne:false});
+  assert.equal(wind(canvas).length,0,'Four authored keys contain one measured paw extension and no continuous paw trajectory at '+elapsed);
+  assert(images(canvas,f.asset.image).some(call=>call.alpha===1),'The intact approved native pose still draws');
+ }
+ assert.equal(JSON.stringify(f.metadata),before,'Trail repair cannot rewrite physical contact points');
+});

@@ -18,7 +18,7 @@ test('saved result write failure still blocks normal rematch and explains the sa
 });
 test('draw Replay keeps the current node with a fresh token; loss Leave clears the saved climb',()=>{
  const draw=fixture();draw.overlay.update({phase:'over',winner:null});assert.match(draw.host.querySelectorAll('.tournament-actions button')[0].textContent,/REPLAY/);draw.overlay.handleAction('confirm');const next=loadTournamentRun(draw.storage,roster);assert.equal(next.node,0);assert.notEqual(next.resultId,draw.launch.run.resultId);
- const loss=fixture();loss.overlay.update({phase:'over',winner:1});loss.overlay.handleAction('ArrowRight');assert.equal(loss.doc.activeElement.textContent,'LEAVE TOURNAMENT');loss.overlay.handleAction('confirm');assert.equal(loss.left,1);assert.equal(loadTournamentRun(loss.storage,roster),null);
+ const loss=fixture();loss.overlay.update({phase:'over',winner:1});loss.overlay.handleAction('ArrowRight');assert.equal(loss.doc.activeElement.textContent,'CHOOSE ANOTHER CHARACTER');loss.overlay.handleAction('ArrowRight');assert.equal(loss.doc.activeElement.textContent,'LEAVE TOURNAMENT');loss.overlay.handleAction('confirm');assert.equal(loss.left,1);assert.equal(loadTournamentRun(loss.storage,roster),null);
 });
 
 test('combat roster without artwork fields uses existing menu portraits in the climb',()=>{

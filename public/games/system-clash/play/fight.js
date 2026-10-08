@@ -1,3 +1,7 @@
+import {availableControllerItems,canControlMenu} from './fight-menu-controller.mjs';
+import {createGameScreenHost} from './game-screen-host.mjs';
+import {createMatchOptions,createRoundMenu} from './fight-menus.mjs';
+import {createRoundSet,recordRoundResult,loadMatchRules,saveMatchRules,matchRulesFromURL,withMatchRules} from './fight-rules.mjs';
 import {nextMenuIndex,pauseMenuPolicy,bindTouchControls,toggleDisplayMode} from './fight-ui.mjs';
 import {leaveTournamentRun} from './tournament.mjs';
 import {createMatch,advanceMatch,performAction,getFighterView,consumeEvents,FIGHTER_STYLES} from './fight-engine.mjs';
@@ -28,6 +32,13 @@ const attackInputs=createAttackInputBuffer();
 const gamepads=createGamepadInput({seats:controllerSeatsFromURL(location.href)});
 let gamepadPlayers=[],windowActive=document.hasFocus();
 let controllerLabel='';
+let screenSuspended=false,roundNumber=1;
+let matchRules=matchRulesFromURL(location.href,loadMatchRules(localStorage)),roundSet=createRoundSet(matchRules);
+const screenHost=createGameScreenHost({onDisplayChange:()=>syncPauseMenu(),onSuspend:()=>{screenSuspended=true;clearInput();effects.setPaused(true);}});
+const matchOptions=createMatchOptions({rules:matchRules,locked:new URL(location.href).searchParams.has('online')||new URL(location.href).searchParams.has('tournament'),onApply:rules=>{matchRules=rules;saveMatchRules(localStorage,rules);},onClose:()=>{clearInput();syncPauseMenu();}});
+const roundMenu=createRoundMenu({onNext:()=>{roundNumber++;reset(true,undefined,{newSet:false});canvas.focus({preventScroll:true});},onReplay:()=>{reset(true);canvas.focus({preventScroll:true});},onSelect:()=>$('demo-select').click(),onTitle:()=>goTitle()});
+function loading(text,progress=0,failed=false){for(const node of document.querySelectorAll?.('header,main,footer')??[])node.inert=true;$('asset-loading').hidden=false;$('asset-loading-text').textContent=text;$('asset-loading-progress').value=progress;$('asset-loading-retry').hidden=!failed;}
+function updateRoundOutcome(){if(!demoLaunch.enabled||onlineBridge.enabled||inspectTime!==null||motionTime!==null||match?.phase!=='over')return;const next=recordRoundResult(roundSet,{round:roundNumber,winner:match.winner});roundSet=next;if(tournamentOverlay?.active&&roundSet.complete)tournamentOverlay.update({...match,winner:roundSet.winner});else if(!tournamentOverlay?.blocking)roundMenu.show({set:roundSet,round:roundNumber,winner:match.winner,names:match.fighters.map(f=>f.name)});}
 const attackButtons=new Set(['punch','low-punch','kick','low-kick']);
 const watchedKeys = new Set(['KeyA','KeyD','KeyS','KeyW','KeyU','KeyI','KeyJ','KeyK','Space','KeyL','KeyF','ArrowLeft','ArrowRight','ArrowDown','ArrowUp','Digit0','Digit1','Digit2','Digit3','Digit4','Digit5','Digit6','Digit7','Digit8','Numpad0','Numpad1','Numpad2','Numpad3','Numpad4','Numpad5','Numpad6','Numpad7','Numpad8','Enter','KeyP','Escape','KeyR']);
 let art,metadata,match,deletionProp,weaponArt,ready=false,paused=false,last=performance.now(),accumulator=0,muted=false,statusText='',arenaLabel='',loadRevision=0,inspectTime=null,motionTime=null;
@@ -53,12 +64,8 @@ let stageArt=null,stageArtPending=null,stageArtRevision=0;
 let interfaceArtPending=null,motionPresentationEpoch=0;
 async function ensureStageArt(id){
  if(!id||stageArt?.id===id||stageArtPending===id)return;
- const revision=++stageArtRevision;stageArtPending=id;
- const selected=await loadStageArt({id,bundle:window.SYSTEM_CLASH_FIGHT_BUNDLE,baseURL:location.href});
- if(revision!==stageArtRevision)return;
- stageArtPending=null;
- if(match?.stage?.id!==id)return;
- stageArt=selected;draw();
+ const revision=++stageArtRevision;stageArtPending=id;ready=false;clearInput();loading('Loading the next stage…',85);
+ try{const selected=await loadStageArt({id,bundle:window.SYSTEM_CLASH_FIGHT_BUNDLE,baseURL:new URL('.',location.href)});if(revision!==stageArtRevision)return;stageArtPending=null;if(match?.stage?.id!==id)return;if(!window.SYSTEM_CLASH_FIGHT_BUNDLE&&(!selected.image||!selected.kit||!selected.layers))throw Error('Stage assets could not load. Retry loading.');stageArt=selected;ready=true;last=performance.now();accumulator=0;for(const node of document.querySelectorAll?.('header,main,footer')??[])node.inert=false;$('asset-loading').hidden=true;draw();}catch(error){if(revision===stageArtRevision){stageArtPending=null;loading(error.message,0,true);}}
 }
 const onlineBridge=createOnlineFightBridge({url:location.href,window,onPacket:packet=>onlineCombat?.receive(packet),onDisconnect:reason=>onlineCombat?.disconnect(reason)});
 function applyOnlinePause(value){paused=value;if(match)match.paused=value;clearInput();accumulator=0;syncAudioPause();$('pause-fight').textContent=value?(onlineBridge.seat===1?'Waiting for host':'Resume'):'Pause';$('pause-fight').setAttribute('aria-pressed',String(value));draw();}
@@ -143,12 +150,12 @@ function inspectDeletionScene(time) {
 }
 
 function syncAudioPause() {
-  effects.setPaused(paused||inspectTime!==null||motionTime!==null||document.hidden);
+  effects.setPaused(!ready||screenSuspended||paused||inspectTime!==null||motionTime!==null||document.hidden);
 }
 
 function draw() {
   syncPauseMenu();
-  if (!art || !match) return;
+  if (!ready || !art || !match) return;
   syncAudioPause();
   const definition=deletionDefinition(art[0].manifest.id);
   const preset=$('pose-preset').value,poseKey=inspectTime<(definition?.duration??6500)/2?1:2;
@@ -188,7 +195,8 @@ function draw() {
   const reviewEntry=motionTime===null?null:art[0].clips[$('motion-clip').value].timeline.entries.find(entry=>motionTime>=entry.start&&motionTime<entry.end);
   const scene=motionTime===null?display:{...match,phase:'poses',motionReview:true,poseKey:(reviewEntry?.index??0)+1,poseLabel:$('motion-clip').selectedOptions[0].textContent.toUpperCase()+' / '+$('motion-facing').value.toUpperCase(),fighters:match.fighters.map((f,index)=>({...f,...previewBattleWear(f,index===0?$('motion-damage').value:'fresh'),weapon:views[index].weapon,embeddedWeapons:views[index].embeddedWeapons})),stagePickups:reviewPickups,projectiles:[]};
   const sceneEffects=motionTime!==null?null:inspectTime===null?effects:preset==='broadcast'?deletionReviewCache.effects:null;
-  void ensureStageArt(scene.stage?.id);
+  scene.cameraFocusIndex=onlineBridge.enabled?onlineBridge.seat:0;
+  if(stageArt?.id!==scene.stage?.id){void ensureStageArt(scene.stage?.id);return;}
   renderer.draw({match:scene,stageArt,motionReview:motionTime!==null,deletionReview:inspectTime!==null,presentationTimeMs:performance.now(),motionResetKey:motionPresentationEpoch,views,art,effects:sceneEffects,deletionProp,weaponArt,portraits:fighterPortraits,paused:paused&&inspectTime===null&&motionTime===null,reducedMotion:$('motion-toggle').checked});
   for(let index=0;index<2;index++) {
     const f=scene.fighters[index],weapon=f.weapon;
@@ -216,17 +224,19 @@ function draw() {
   const state = motionLabel??(inspectTime!==null?reviewLabel:paused ? onlineBridge.enabled?(onlineBridge.seat===0?'Paused — release controls; host Options / P resumes.':'Paused — the host can resume after controls are released.'):'Paused — Options / × or P to resume; ○ returns to character select.' : match.phase==='fight'&&performance.now()<weaponFeedbackUntil?weaponFeedback:match.status || 'Fight');
   if (state !== statusText) {$('fight-status').textContent=state;statusText=state;}
   if(onlineBridge.enabled){$('start-fight').disabled=match.phase!=='over'||!onlineCombat?.started;$('restart-fight').disabled=$('start-fight').disabled;$('pause-fight').disabled=!onlineCombat?.started||match.phase==='ready'||(paused&&onlineBridge.seat===1);}
-  if(tournamentOverlay?.active){tournamentOverlay.update(match);$('restart-fight').disabled=match.phase!=='ready';$('start-fight').disabled=tournamentOverlay.blocking;}
+  updateRoundOutcome();if(tournamentOverlay?.active){$('restart-fight').disabled=match.phase!=='ready';$('start-fight').disabled=tournamentOverlay.blocking;}
 }
 
-function reset(start=true,seed) {
+function reset(start=true,seed,{newSet=true}={}) {
   if (!ready||(onlineBridge.enabled&&onlineCombat?.started&&seed===undefined)) return;
   motionPresentationEpoch++;
+  if(newSet){roundSet=createRoundSet(onlineBridge.enabled?{}:matchRules);roundNumber=1;roundMenu.reset();}else roundMenu.close();
+  if(pauseDialog.open)pauseDialog.close();
   clearInput();effects.clear();paused=false;accumulator=0;inspectTime=null;motionTime=null;weaponFeedback='';weaponFeedbackUntil=0;
   previousTravelViews=null;previousTravelPhase=null;
   syncAudioPause();
   $('deletion-review').hidden=true;$('motion-review').hidden=true;
-  match=createMatch({mode:onlineBridge.enabled?'local':$('mode-select').value,stage:match?.stage?.id??launchParams.get('stage')??'radio-studio',seed,clips:metadata,fighters:art.map(f=>({id:f.manifest.id,name:f.manifest.character,height:f.manifest.height})),start});
+  match=createMatch({roundNumber,roundTimeMs:onlineBridge.enabled?99000:roundSet.rules.time*1000,difficulty:roundSet.rules.difficulty,mode:onlineBridge.enabled?'local':$('mode-select').value,stage:match?.stage?.id??launchParams.get('stage')??'radio-studio',seed,clips:metadata,fighters:art.map(f=>({id:f.manifest.id,name:f.manifest.character,height:f.manifest.height})),start});
   $('pause-fight').textContent='Pause';$('pause-fight').setAttribute('aria-pressed','false');
   $('start-fight').textContent=match.phase === 'ready' ? 'Start fight' : 'Fight again';
   $('frame-link').hidden=true;
@@ -244,7 +254,7 @@ function start() {
 }
 
 function togglePause() {
-  if (!ready || inspectTime!==null || motionTime!==null || match.phase === 'ready'||tournamentOverlay?.blocking) return;
+  if (!ready || roundMenu.open || matchOptions.open || inspectTime!==null || motionTime!==null || match.phase === 'ready'||tournamentOverlay?.blocking) return;
   if(onlineCombat){if(!onlineCombat.requestPause(!paused))$('load-status').textContent=onlineCombat.seat===1?'The host resumes this match.':'Release controls and wait for the other player before resuming.';return;}
   paused=!paused;clearInput();accumulator=0;syncAudioPause();$('pause-fight').textContent=paused?'Resume':'Pause';$('pause-fight').setAttribute('aria-pressed',String(paused));draw();
 }
@@ -279,6 +289,7 @@ function controls() {
 
 const keyActions = {KeyU:[0,'punch'],KeyI:[0,'kick'],KeyJ:[0,'low-punch'],KeyK:[0,'low-kick'],KeyW:[0,'jump'],KeyL:[0,'grab'],KeyF:[0,'deletion'],ArrowUp:[1,'jump'],Digit7:[1,'punch'],Numpad7:[1,'punch'],Digit8:[1,'kick'],Numpad8:[1,'kick'],Digit4:[1,'low-punch'],Numpad4:[1,'low-punch'],Digit5:[1,'low-kick'],Numpad5:[1,'low-kick'],Digit6:[1,'grab'],Numpad6:[1,'grab'],Digit1:[1,'punch'],Numpad1:[1,'punch'],Digit2:[1,'kick'],Numpad2:[1,'kick'],Digit3:[1,'grab'],Numpad3:[1,'grab'],Enter:[1,'deletion']};
 window.addEventListener('keydown',event=>{
+  if(matchOptions.open||roundMenu.open){if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Enter','Escape','KeyP'].includes(event.code)){event.preventDefault();if(!event.repeat)(matchOptions.open?matchOptions:roundMenu).handleAction(event.code==='Enter'?'confirm':['Escape','KeyP'].includes(event.code)?'back':event.code);}return;}
   if(pauseDialog.open){if(handlePauseKey(event))return;}
   if (event.target.closest?.('input,select,textarea') || !watchedKeys.has(event.code)) return;
   // Space and Enter keep their normal behavior on buttons; the arena owns fighting keys.
@@ -332,8 +343,8 @@ $('save-fight-frame').addEventListener('click',async()=>{
 function pollGamepads(now) {
   let pads=[];try{pads=navigator.getGamepads?.()??[];}catch{}
   const network=typeof onlineBridge==='object'&&onlineBridge.enabled,tournament=typeof tournamentOverlay==='object'?tournamentOverlay:null;
-  const menu=paused||!ready||tournament?.blocking||['ready','over'].includes(match?.phase);
-  const sample=gamepads.sample(pads,now,{context:menu?'menu':'fight',active:windowActive&&!document.hidden&&ready&&inspectTime===null&&motionTime===null});
+  const menu=matchOptions.open||roundMenu.open||paused||!ready||tournament?.blocking||['ready','over'].includes(match?.phase);
+  const sample=gamepads.sample(pads,now,{context:menu?'menu':'fight',active:windowActive&&!screenSuspended&&!document.hidden&&ready&&inspectTime===null&&motionTime===null});
   gamepadPlayers=sample.players;
   const connected=sample.players.filter(player=>player.connected);
   const label=sample.unsupported?'Controller mapping unavailable — use keyboard or a standard-mapped controller.':connected.length?sample.players.map((player,index)=>index===1&&match?.mode!=='local'?'P2: CPU':'P'+(index+1)+': '+(player.connected?'controller '+(player.index+1):'keyboard')).join(' · ')+(menu?' · × '+(paused?'resume':'start / rematch')+' · ○ select':' · Options pause'):'Press a controller button to connect · Keyboard / touch available';
@@ -343,6 +354,7 @@ function pollGamepads(now) {
     clearInput();if(ready&&!paused&&!['ready','over'].includes(match.phase))togglePause();return;
   }
   for(const event of sample.events){
+    if((matchOptions.open||roundMenu.open)&&canControlMenu(event.player,sample.players,{screen:'title',mode:'cpu'})&&['navigate','press'].includes(event.type)){(matchOptions.open?matchOptions:roundMenu).handleAction(event.action);return;}
     if(event.type==='release'){releaseAttackInput(attackInputs,event.key);continue;}
     if(tournament?.blocking&&event.player===0&&(event.type==='navigate'||event.type==='press')){tournament.handleAction(event.action);return;}
     if(paused&&(event.type==='navigate'||event.type==='press')&&(event.player===0||(!network&&match?.mode==='local'))){handlePauseAction(event.action);continue;}
@@ -363,6 +375,7 @@ function pollGamepads(now) {
 }
 
 function tick(now) {
+  if(screenSuspended){requestAnimationFrame(tick);return;}
   pollGamepads(now);
   const delta=Math.min(100,Math.max(0,now-last));last=now;
   const net=typeof onlineCombat==='object'?onlineCombat:null,network=typeof onlineBridge==='object'&&onlineBridge.enabled;
@@ -378,26 +391,32 @@ function tick(now) {
 }
 
 async function boot() {
-  const revision=++loadRevision;motionPresentationEpoch++;
-  ready=false;clearInput();effects.clear();inspectTime=null;motionTime=null;$('deletion-review').hidden=true;$('motion-review').hidden=true;$('load-status').classList.remove('error');
+  const revision=++loadRevision;let failed=false;motionPresentationEpoch++;
+  ready=false;paused=false;if(pauseDialog.open)pauseDialog.close();loading('Loading fighter animations…',5);clearInput();effects.clear();inspectTime=null;motionTime=null;roundMenu.reset();$('deletion-review').hidden=true;$('motion-review').hidden=true;$('load-status').classList.remove('error');
   for(const id of ['start-fight','restart-fight','pause-fight','inspect-deletion','inspect-motion','save-fight-frame'])$(id).disabled=true;
   try {
     const options={bundle:window.SYSTEM_CLASH_FIGHT_BUNDLE,baseURL:new URL('.',location.href)};
     interfaceArtPending??=loadInterfaceArt(options).catch(()=>({manifest:null,images:{},failures:['manifest']}));
-    const nextArt=await loadFightArt({...options,ids:[$('fighter-one').value,$('fighter-two').value],onProgress:(count,total)=>{if(revision===loadRevision)$('load-status').textContent=`Loading fighters · ${count} / ${total} actions`;}});
+    const nextArt=await loadFightArt({...options,ids:[$('fighter-one').value,$('fighter-two').value],onProgress:(count,total)=>{if(!failed&&revision===loadRevision){$('load-status').textContent=`Loading fighters · ${count} / ${total} actions`;loading($('load-status').textContent,5+count/total*35);}}});
     if(revision!==loadRevision)return;
-    $('load-status').textContent='Loading attack poses…';
+    $('load-status').textContent='Loading attack poses…';loading('Loading attack poses…',45);
     await loadArcadeArt({...options,art:nextArt});
     if(revision!==loadRevision)return;
-    $('load-status').textContent='Loading Deletions…';
+    $('load-status').textContent='Loading Deletions…';loading('Loading Deletions…',60);
     const nextProp=await loadDeletionArt({...options,art:nextArt});
     if(revision!==loadRevision)return;
-    $('load-status').textContent='Loading stage weapons…';
+    $('load-status').textContent='Loading stage weapons…';loading('Loading stage weapons…',75);
     const nextWeaponArt=await loadWeaponArt(options);
     if(revision!==loadRevision)return;
-    $('load-status').textContent='Loading fighter portraits…';
+    $('load-status').textContent='Loading fighter portraits…';loading('Loading fighter portraits…',80);
     const nextPortraits=await loadFighterPortraits(nextArt);
     if(revision!==loadRevision)return;
+    loading('Loading the stage and interface…',90);
+    const selectedStage=match?.stage?.id??launchParams.get('stage')??'radio-studio';
+    const nextStageArt=await loadStageArt({...options,id:selectedStage});
+    if(revision!==loadRevision)return;
+    if(!options.bundle&&(!nextStageArt.image||!nextStageArt.kit||!nextStageArt.layers))throw Error('Stage assets could not load. Retry loading.');
+    stageArt=nextStageArt;stageArtPending=null;
     const nextInterfaceArt=await interfaceArtPending;
     if(revision!==loadRevision)return;
     renderer.prepareInterface(nextInterfaceArt);
@@ -416,9 +435,9 @@ async function boot() {
     document.querySelectorAll('[data-action="deletion"]').forEach(button=>button.disabled=!definition);
     $('pose-preset').options[0].textContent=definition?definition.name+' sequence':'Signature Deletion pending';
     $('deletion-scrub').max=String((definition?.duration??6500)-1);
-    reset(false);initializeOnlineCombat();
+    reset(false);initializeOnlineCombat();$('asset-loading-progress').value=100;for(const node of document.querySelectorAll?.('header,main,footer')??[])node.inert=false;$('asset-loading').hidden=true;
   } catch (error) {
-    if(revision===loadRevision){$('load-status').textContent=error.message;$('load-status').classList.add('error');}
+    failed=true;if(revision===loadRevision){ready=false;loading(error.message,0,true);$('load-status').textContent=error.message;$('load-status').classList.add('error');}
   }
 }
 
@@ -460,14 +479,14 @@ async function initializeRoster() {
     if(!roster.length||new Set(roster.map(f=>f.id)).size!==roster.length||roster.some(f=>!FIGHTER_STYLES[f.id]))throw new Error('The main roster needs its verified fighting styles.');
     activeRoster=roster;
     demoLaunch=parseDemoLaunch(location.href,roster);
-    if(launchParams.get('tournament')==='1'&&!onlineBridge.enabled){tournamentOverlay=createTournamentFightOverlay({url:location.href,roster:activeRoster,storage:sessionStorage,getSettings:()=>({muted,reducedMotion:$('motion-toggle').checked,controllerSeats:gamepads.seatIndices(),stage:match?.stage?.id??launchParams.get('stage')}),onNavigate:url=>{location.href=url.href;},onLeave:()=>{const back=new URL('index.html',location.href);back.searchParams.set('stage',match?.stage?.id??demoLaunch.stage);back.searchParams.set('sound',muted?'0':'1');back.searchParams.set('motion',$('motion-toggle').checked?'1':'0');location.href=withControllerSeats(back,gamepads.seatIndices()).href;}});if(!tournamentOverlay.active)throw new Error('This Tournament run is unavailable. Return to the game menu.');}
+    if(launchParams.get('tournament')==='1'&&!onlineBridge.enabled){tournamentOverlay=createTournamentFightOverlay({url:location.href,roster:activeRoster,storage:sessionStorage,getSettings:()=>({muted,reducedMotion:$('motion-toggle').checked,controllerSeats:gamepads.seatIndices(),stage:match?.stage?.id??launchParams.get('stage'),matchRules:roundSet.rules}),onNavigate:url=>screenHost.navigate(url),onLeave:run=>{const back=new URL('index.html',location.href);if(run.returnScreen==='select'){back.searchParams.set('screen','select');back.searchParams.set('mode','tournament');}back.searchParams.set('stage',match?.stage?.id??demoLaunch.stage);back.searchParams.set('sound',muted?'0':'1');back.searchParams.set('motion',$('motion-toggle').checked?'1':'0');screenHost.navigate(withMatchRules(withControllerSeats(back,gamepads.seatIndices()),roundSet.rules));}});if(!tournamentOverlay.active)throw new Error('This Tournament run is unavailable. Return to the game menu.');}
 
     if(demoLaunch.enabled){
       document.body.classList.add('demo');document.title='BARCODE: SYSTEM CLASH — Demo';$('demo-toolbar').hidden=false;
       $('mode-select').value=demoLaunch.mode;muted=demoLaunch.muted;effects.setMuted(muted);
       $('mute-fight').textContent=muted?'Sound off':'Sound on';$('mute-fight').setAttribute('aria-pressed',String(muted));
       $('motion-toggle').checked=demoLaunch.reducedMotion;effects.setReducedMotion(demoLaunch.reducedMotion);
-      const back=new URL('index.html',location.href);for(const [key,value]of Object.entries({screen:'select',mode:demoLaunch.mode,p1:demoLaunch.p1,p2:demoLaunch.p2,stage:demoLaunch.stage,sound:muted?'0':'1',motion:$('motion-toggle').checked?'1':'0'}))back.searchParams.set(key,value);$('demo-select').href=withControllerSeats(back,gamepads.seatIndices()).href;
+      const back=new URL('index.html',location.href);for(const [key,value]of Object.entries({screen:'select',mode:demoLaunch.mode,p1:demoLaunch.p1,p2:demoLaunch.p2,stage:demoLaunch.stage,sound:muted?'0':'1',motion:$('motion-toggle').checked?'1':'0'}))back.searchParams.set(key,value);$('demo-select').href=withMatchRules(withControllerSeats(back,gamepads.seatIndices()),roundSet.rules).href;
     }
     for(const id of ['fighter-one','fighter-two']) {
       const select=$(id),previous=select.value;select.replaceChildren();
@@ -482,18 +501,19 @@ async function initializeRoster() {
     const finishes=$('deletion-summary');finishes.replaceChildren();
     for(const fighter of roster){const definition=deletionDefinition(fighter.id),line=document.createElement('span');line.textContent=fighter.name+' · '+(definition?.name??'Signature Deletion pending');finishes.append(line,document.createElement('br'));}
     await boot();
-  } catch(error){$('load-status').textContent=error.message;$('load-status').classList.add('error');}
+  } catch(error){loading(error.message,0,true);$('load-status').textContent=error.message;$('load-status').classList.add('error');}
 }
-$('demo-select')?.addEventListener('click',event=>{if(onlineBridge.enabled){event.preventDefault();clearInput();onlineBridge.send({type:'leave'});return;}if(tournamentOverlay?.active)leaveTournamentRun(sessionStorage);const back=new URL($('demo-select').href);back.searchParams.set('stage',match?.stage?.id??demoLaunch.stage);back.searchParams.set('sound',muted?'0':'1');back.searchParams.set('motion',$('motion-toggle').checked?'1':'0');$('demo-select').href=withControllerSeats(back,gamepads.seatIndices()).href;});
+$('asset-loading-retry').addEventListener('click',()=>activeRoster.length?boot():initializeRoster());
+$('demo-select')?.addEventListener('click',event=>{event.preventDefault();if(onlineBridge.enabled){event.preventDefault();clearInput();onlineBridge.send({type:'leave'});return;}if(tournamentOverlay?.active)leaveTournamentRun(sessionStorage);const back=new URL($('demo-select').href);back.searchParams.set('stage',match?.stage?.id??demoLaunch.stage);back.searchParams.set('sound',muted?'0':'1');back.searchParams.set('motion',$('motion-toggle').checked?'1':'0');$('demo-select').href=withControllerSeats(back,gamepads.seatIndices()).href;screenHost.navigate(withMatchRules(withControllerSeats(back,gamepads.seatIndices()),matchRules));});
 $('demo-start')?.addEventListener('click',start);
 $('demo-controls')?.addEventListener('click',()=>{if(!ready)return;$('pause-guide').hidden=false;$('pause-controls').setAttribute('aria-expanded','true');clearInput();if(!paused){if(match.phase==='ready')paused=true;else togglePause();}syncPauseMenu();$('pause-controls').focus({preventScroll:true});});
 window.addEventListener('pagehide',()=>{clearInput();onlineCombat?.destroy();onlineBridge.destroy();tournamentOverlay?.destroy();effects.setPaused(true);});
 initializeRoster();requestAnimationFrame(tick);
 
-function pauseChoices(){return [...pauseDialog.querySelectorAll('.pause-options button')].filter(button=>!button.disabled);}
+function pauseChoices(){return availableControllerItems([...pauseDialog.querySelectorAll('.pause-options button')],{scope:pauseDialog});}
 function syncPauseMenu(){
- if(!pauseDialog)return;
- const full=!!document.fullscreenElement||document.documentElement.classList.contains('is-expanded');$('pause-fullscreen').textContent=full?'Exit fullscreen':'Fullscreen';$('fullscreen-fight').textContent=full?'Exit fullscreen':'Fullscreen';
+ if(!pauseDialog||matchOptions.open)return;
+ const full=screenHost.isFullscreen;$('pause-fullscreen').textContent=full?'Exit fullscreen':'Fullscreen';$('fullscreen-fight').textContent=full?'Exit fullscreen':'Fullscreen';
  $('demo-controls')?.setAttribute('aria-expanded',String(paused&&!$('pause-guide').hidden));
  if(!paused){if(pauseDialog.open){pauseDialog.close();$('pause-guide').hidden=true;$('pause-controls').setAttribute('aria-expanded','false');canvas.focus({preventScroll:true});}return;}
  const policy=pauseMenuPolicy({online:onlineBridge.enabled,seat:onlineBridge.seat,tournament:tournamentOverlay?.active,phase:match?.phase});
@@ -504,11 +524,12 @@ function syncPauseMenu(){
 }
 function handlePauseAction(name){const choices=pauseChoices();if(name.startsWith?.('Arrow')){choices[nextMenuIndex(choices.length,choices.indexOf(document.activeElement),name)]?.focus({preventScroll:true});}else if(name==='confirm'){(choices.includes(document.activeElement)?document.activeElement:choices[0])?.click();}else if(['back','pause'].includes(name)){if(!$('pause-guide').hidden){$('pause-guide').hidden=true;$('pause-controls').setAttribute('aria-expanded','false');$('pause-controls').focus();}else if(match?.phase==='ready'){paused=false;syncPauseMenu();}else togglePause();}}
 function handlePauseKey(event){if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.code)){event.preventDefault();handlePauseAction(event.code);return true;}if(['Escape','KeyP'].includes(event.code)){event.preventDefault();if(!event.repeat)handlePauseAction('back');return true;}if(event.code==='Tab'){const items=[...pauseDialog.querySelectorAll('button,a,input')].filter(x=>!x.disabled&&!x.hidden),index=items.indexOf(document.activeElement);if(event.shiftKey&&index<=0){event.preventDefault();items.at(-1)?.focus();}else if(!event.shiftKey&&index===items.length-1){event.preventDefault();items[0]?.focus();}return true;}return true;}
-async function displayMode(){await toggleDisplayMode(document,document.documentElement);syncPauseMenu();}
+async function displayMode(){await screenHost.displayMode();syncPauseMenu();}
 $('fullscreen-fight').addEventListener('click',displayMode);$('pause-fullscreen').addEventListener('click',displayMode);document.addEventListener('fullscreenchange',syncPauseMenu);
 $('demo-menu').addEventListener('click',()=>{if(match?.phase==='ready'){paused=true;clearInput();syncPauseMenu();}else togglePause();});
 pauseDialog.addEventListener('cancel',event=>{event.preventDefault();handlePauseAction('back');});
 $('pause-resume').addEventListener('click',()=>{if(match?.phase==='ready'){paused=false;syncPauseMenu();}else togglePause();});$('pause-restart').addEventListener('click',start);
 $('pause-controls').addEventListener('click',()=>{const guide=$('pause-guide');guide.hidden=!guide.hidden;$('pause-controls').setAttribute('aria-expanded',String(!guide.hidden));});
 $('pause-sound').addEventListener('click',()=>{$('mute-fight').click();syncPauseMenu();});$('pause-motion').addEventListener('click',()=>{$('motion-toggle').checked=!$('motion-toggle').checked;$('motion-toggle').dispatchEvent(new Event('change'));syncPauseMenu();});
-$('pause-select').addEventListener('click',()=>{$('demo-select').click();});$('pause-title').addEventListener('click',()=>{clearInput();if(onlineBridge.enabled){onlineBridge.send({type:'leave'});return;}if(tournamentOverlay?.active)leaveTournamentRun(sessionStorage);const url=new URL('index.html',location.href);url.searchParams.set('sound',muted?'0':'1');url.searchParams.set('motion',$('motion-toggle').checked?'1':'0');location.href=withControllerSeats(url,gamepads.seatIndices()).href;});
+$('pause-settings').addEventListener('click',()=>{pauseDialog.close();clearInput();matchOptions.show(matchRules);});
+$('pause-select').addEventListener('click',()=>{$('demo-select').click();});$('pause-title').addEventListener('click',goTitle);function goTitle(){clearInput();if(onlineBridge.enabled){onlineBridge.send({type:'leave'});return;}if(tournamentOverlay?.active)leaveTournamentRun(sessionStorage);const url=new URL('index.html',location.href);url.searchParams.set('sound',muted?'0':'1');url.searchParams.set('motion',$('motion-toggle').checked?'1':'0');screenHost.navigate(withMatchRules(withControllerSeats(url,gamepads.seatIndices()),matchRules));}

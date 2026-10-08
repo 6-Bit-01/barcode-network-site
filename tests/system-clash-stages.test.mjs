@@ -22,7 +22,7 @@ test('world camera follows both bodies with easing and never changes physical st
  assert.equal(typeof presentation.createFightCamera,'function');assert.equal(typeof presentation.advanceFightCamera,'function');
  const camera=presentation.createFightCamera({worldWidth:2560}),fighters=[{x:800,height:320},{x:1400,height:368}];
  const copy=structuredClone(fighters);presentation.advanceFightCamera(camera,{fighters,worldWidth:2560,dtMs:100});
- assert(camera.x<1280&&camera.x>1100,'Pan eases toward the pair');assert(camera.zoom>0.75&&camera.zoom<=1.04);
+ assert(camera.x<1280&&camera.x>1100,'Pan eases toward the pair');assert.equal(camera.zoom,1,'Following the pair cannot change world scale');
  for(let n=0;n<30;n++)presentation.advanceFightCamera(camera,{fighters:[{x:210},{x:340}],worldWidth:2560,dtMs:100});
  assert(camera.x>=640/camera.zoom,'The left viewport never shows outside the world');assert.deepEqual(fighters,copy);
 });
@@ -78,11 +78,11 @@ test('wall impact respects a body cooldown and a wall KO never transitions rooms
  advance(match,1000);assert.equal(consumeEvents(match).filter(e=>e.type==='wall-impact').length,0);
 });
 
-test('camera fits both bodies at opposite fixed world walls after settling',()=>{
+test('camera follows the local body at opposite fixed world walls without resizing the world',()=>{
  const camera=presentation.createFightCamera({worldWidth:2560}),fighters=[{x:210},{x:2350}];
  for(let n=0;n<40;n++)presentation.advanceFightCamera(camera,{fighters,worldWidth:2560,dtMs:100});
- const left=camera.x-640/camera.zoom,right=camera.x+640/camera.zoom;
- assert(left<=fighters[0].x-80&&right>=fighters[1].x+80,'Both intact fighters fit without turning viewport edges into walls');
+ assert.equal(camera.zoom,1);assert(camera.x>=640&&camera.x<=650,'The local body remains at least 200 pixels inside the left edge');
+ assert.deepEqual(fighters,[{x:210},{x:2350}],'Offscreen space stays traversable combat space');
 });
 
 for(const facing of ['left','right'])test(`beam geometry lets a crouched fighter duck its marked strip (${facing})`,()=>{

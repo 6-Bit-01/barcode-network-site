@@ -1,3 +1,7 @@
+import {availableControllerItems,canControlMenu} from './fight-menu-controller.mjs';
+import {createGameScreenHost} from './game-screen-host.mjs';
+import {createMatchOptions} from './fight-menus.mjs';
+import {loadMatchRules,saveMatchRules,matchRulesFromURL,withMatchRules} from './fight-rules.mjs';
 import {nextMenuIndex,toggleDisplayMode} from './fight-ui.mjs';
 import {STAGES,stageById} from './fight-stages.mjs';
 import {FIGHTER_STYLES} from './fight-engine.mjs';
@@ -8,9 +12,16 @@ import {createMenuPreviews} from './menu-preview.mjs';
 import {createTournamentRun,launchTournamentMatch,saveTournamentRun} from './tournament.mjs';
 import {withControllerSeats,resolveInterfaceSettings} from './demo-flow.mjs';
 const $=id=>document.getElementById(id),params=new URL(location.href).searchParams;
-let state=null,catalog=null,tournamentRun=null;
+let state=null,catalog=null,tournamentRun=null,menuReady=false;
+let matchRules=matchRulesFromURL(location.href,loadMatchRules(localStorage));
+const screenHost=createGameScreenHost({onDisplayChange:full=>{$('demo-fullscreen').textContent=full?'Exit fullscreen':'Fullscreen';},onSuspend:()=>{menuSuspended=true;gamepads.reset();audio.clear();previews.destroy();}});
+const matchOptions=createMatchOptions({rules:matchRules,onApply:rules=>{matchRules=rules;saveMatchRules(localStorage,rules);gamepads.reset();},onClose:()=>gamepads.reset()});
+$('options-open').addEventListener('click',()=>{if(!menuReady)return;gamepads.reset();matchOptions.show(matchRules);});
+function titleChoices(){return availableControllerItems(['solo-mode','local-mode','tournament-mode','online-mode','options-open','controls-open','demo-sound','demo-fullscreen','demo-motion'].map($));}
+function loading(text,progress=0,failed=false){for(const node of document.querySelectorAll?.('header,main,footer')??[])node.inert=true;$('asset-loading').hidden=false;$('asset-loading-text').textContent=text;$('asset-loading-progress').value=progress;$('asset-loading-retry').hidden=!failed;}
+function menuImage(path){return new Promise((resolve,reject)=>{const image=new Image();image.onload=resolve;image.onerror=()=>reject(Error('A menu image could not load. Retry loading.'));image.src=new URL(path,location.href).href;});}
 const tournamentStorage={getItem:key=>sessionStorage.getItem(key),setItem:(key,value)=>sessionStorage.setItem(key,value)};
-const gamepads=createGamepadInput({seats:controllerSeatsFromURL(location.href)});
+const gamepads=createGamepadInput({menuSeatRecovery:true,seats:controllerSeatsFromURL(location.href)});
 let windowActive=document.hasFocus(),controllerLabel='';
 let menuRAF=null,menuSuspended=false;
 let {muted,reducedMotion}=resolveInterfaceSettings(params,{prefersReducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches});
@@ -51,7 +62,7 @@ function render(){
 }
 function focusSelection(){const active=$('fighter-grid').querySelector('[data-fighter="'+state.picks[state.activePlayer]+'"]');active?.focus({preventScroll:true});}
 function choose(id){const next=previewDemoFighter(state,id);if(next===state)return;state=next;render();sound(id);}
-function confirm(){if(state.screen!=='select')return;gamepads.reset();sound(state.picks[state.activePlayer]);state=confirmDemoFighter(state);if(state.mode==='tournament')tournamentRun=createTournamentRun(catalog.fighters,{fighterId:state.picks[0],settings:{muted,reducedMotion,controllerSeats:gamepads.seatIndices()}});render();if(state.screen==='ready')$('enter-arena').focus({preventScroll:true});else focusSelection();}
+function confirm(){if(state.screen!=='select')return;gamepads.reset();sound(state.picks[state.activePlayer]);state=confirmDemoFighter(state);if(state.mode==='tournament')tournamentRun=createTournamentRun(catalog.fighters,{fighterId:state.picks[0],settings:{muted,reducedMotion,controllerSeats:gamepads.seatIndices(),matchRules}});render();if(state.screen==='ready')$('enter-arena').focus({preventScroll:true});else focusSelection();}
 function begin(mode){gamepads.reset();tournamentRun=null;state=beginDemoSelection(state,mode);render();void audio.startAudio();focusSelection();}
 function back(){if(!state)return;gamepads.reset();state=backDemoSelection(state);tournamentRun=null;audio.clear();render();if(state.screen==='title')$('solo-mode').focus();else focusSelection();}
 function buildGrid(){
@@ -67,30 +78,34 @@ function buildGrid(){
  }
 }
 async function load(){
- $('retry-demo').hidden=true;$('demo-load').classList.remove('error');
+ let failed=false;
+ $('retry-demo').hidden=true;$('demo-load').classList.remove('error');menuReady=false;loading('Loading the fighter roster…',5);
  try{
   const response=await fetch(new URL('assets/menu/roster.json',location.href));if(!response.ok)throw new Error('The fighter roster could not connect.');
   catalog=await response.json();if((catalog.fighters.length<1||catalog.fighters.length>18||new Set(catalog.fighters.map(f=>f.id)).size!==catalog.fighters.length)||catalog.fighters.some(f=>!FIGHTER_STYLES[f.id]||![f.portrait,f.standing].every(path=>/^assets\/menu\/[a-z0-9-]+\.webp$/.test(path))))throw new Error('The fighter roster needs its registered artwork.');
   state=createDemoSelection(catalog.fighters,{p1:params.get('p1'),p2:params.get('p2'),stage:params.get('stage'),mode:params.get('mode'),screen:params.get('screen')});
-  buildGrid();render();$('solo-mode').disabled=false;$('local-mode').disabled=false;$('tournament-mode').disabled=false;$('online-mode').disabled=false;$('demo-load').textContent='SIGNAL READY / '+catalog.fighters.length+' FIGHTERS ONLINE';
- }catch(error){$('demo-load').textContent=error.message;$('demo-load').classList.add('error');$('retry-demo').hidden=false;}
+  const paths=[...new Set(['assets/menu/title-arena.webp','assets/menu/system-clash-logo.svg','assets/menu/6-bit-standing.webp','assets/menu/9-bit-standing.webp',...catalog.fighters.flatMap(f=>[f.portrait,f.standing])])];let done=0;await Promise.all(paths.map(async path=>{await menuImage(path);if(failed)return;loading('Loading menu artwork · '+(++done)+' / '+paths.length,10+done/paths.length*90);}));
+  menuReady=true;for(const node of document.querySelectorAll?.('header,main,footer')??[])node.inert=false;$('asset-loading').hidden=true;buildGrid();render();$('solo-mode').disabled=false;$('local-mode').disabled=false;$('tournament-mode').disabled=false;$('online-mode').disabled=false;$('demo-load').textContent='SIGNAL READY / '+catalog.fighters.length+' FIGHTERS ONLINE';
+ }catch(error){failed=true;loading(error.message,0,true);$('demo-load').textContent=error.message;$('demo-load').classList.add('error');$('retry-demo').hidden=false;}
 }
 for(const stage of STAGES){const option=document.createElement('option');option.value=stage.id;option.textContent=stage.name;$('demo-stage').append(option);}
 $('demo-stage').addEventListener('change',()=>{state=selectDemoStage(state,$('demo-stage').value);render();});
 $('tournament-mode').addEventListener('click',()=>begin('tournament'));
-$('online-mode').addEventListener('click',()=>{audio.clear();const url=new URL('online.html',location.href);url.searchParams.set('sound',muted?'0':'1');url.searchParams.set('motion',reducedMotion?'1':'0');location.href=withControllerSeats(url,gamepads.seatIndices()).href;});
+$('online-mode').addEventListener('click',()=>{audio.clear();const url=new URL('online.html',location.href);url.searchParams.set('sound',muted?'0':'1');url.searchParams.set('motion',reducedMotion?'1':'0');screenHost.navigate(withControllerSeats(url,gamepads.seatIndices()));});
 $('solo-mode').addEventListener('click',()=>begin('cpu'));$('local-mode').addEventListener('click',()=>begin('local'));
 $('confirm-fighter').addEventListener('click',confirm);$('selection-back').addEventListener('click',back);
 $('random-fighter').addEventListener('click',()=>{state=randomDemoFighter(state);render();sound(state.picks[state.activePlayer]);focusSelection();});
-$('enter-arena').addEventListener('click',()=>{const settings={muted,reducedMotion,controllerSeats:gamepads.seatIndices()};if(state.mode==='tournament'){if(!tournamentRun)return;const launch=launchTournamentMatch(tournamentRun,location.href,settings);if(!saveTournamentRun(tournamentStorage,launch.run,catalog.fighters)){$('selection-instruction').textContent='This browser could not save the Tournament. Enable session storage to start the climb.';return;}audio.clear();location.href=launch.url.href;return;}audio.clear();location.href=demoFightURL(state,location.href,settings).href;});
-$('retry-demo').addEventListener('click',load);
+$('enter-arena').addEventListener('click',()=>{const settings={muted,reducedMotion,controllerSeats:gamepads.seatIndices(),matchRules};if(state.mode==='tournament'){if(!tournamentRun)return;const launch=launchTournamentMatch(tournamentRun,location.href,settings);if(!saveTournamentRun(tournamentStorage,launch.run,catalog.fighters)){$('selection-instruction').textContent='This browser could not save the Tournament. Enable session storage to start the climb.';return;}audio.clear();screenHost.navigate(launch.url);return;}audio.clear();screenHost.navigate(withMatchRules(demoFightURL(state,location.href,settings),matchRules));});
+$('retry-demo').addEventListener('click',load);$('asset-loading-retry').addEventListener('click',load);
 $('demo-sound').addEventListener('click',()=>{muted=!muted;settings();if(!muted)void audio.startAudio();});
 $('demo-motion').addEventListener('change',()=>{reducedMotion=$('demo-motion').checked;settings();});
 function closeControls(){gamepads.reset();$('controls-dialog').close();}
-$('controls-open').addEventListener('click',()=>{gamepads.reset();$('controls-dialog').showModal();});$('controls-close').addEventListener('click',closeControls);
+$('controls-open').addEventListener('click',()=>{if(!menuReady)return;gamepads.reset();$('controls-dialog').showModal();});$('controls-close').addEventListener('click',closeControls);
 $('controls-dialog').addEventListener('close',()=>gamepads.reset());
 window.addEventListener('keydown',event=>{
- if(state?.screen==='title'&&!$('controls-dialog').open&&['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Enter'].includes(event.code)){const items=['solo-mode','local-mode','tournament-mode','online-mode','controls-open','demo-sound','demo-fullscreen','demo-motion'].map($).filter(x=>!x.disabled);event.preventDefault();if(event.code==='Enter'){if(!event.repeat)(items.includes(document.activeElement)?document.activeElement:items[0])?.click();}else items[nextMenuIndex(items.length,items.indexOf(document.activeElement),event.code)]?.focus({preventScroll:true});return;}
+ if(!menuReady)return;
+ if(matchOptions.open){if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Enter','Escape'].includes(event.code)){event.preventDefault();if(!event.repeat)matchOptions.handleAction(event.code==='Enter'?'confirm':event.code==='Escape'?'back':event.code);}return;}
+ if(state?.screen==='title'&&!$('controls-dialog').open&&['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Enter'].includes(event.code)){const items=titleChoices();event.preventDefault();if(event.code==='Enter'){if(!event.repeat)(items.includes(document.activeElement)?document.activeElement:items[0])?.click();}else items[nextMenuIndex(items.length,items.indexOf(document.activeElement),event.code)]?.focus({preventScroll:true});return;}
 
  if(!state||$('controls-dialog').open||event.target.closest?.('input,select'))return;
  if(event.key==='Escape'){event.preventDefault();back();return;}
@@ -102,7 +117,7 @@ window.addEventListener('keydown',event=>{
 $('fighter-grid').addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.repeat){event.preventDefault();event.stopPropagation();confirm();}});
 function pollMenuGamepads(now){
  let pads=[];try{pads=navigator.getGamepads?.()??[];}catch{}
- const sample=gamepads.sample(pads,now,{context:'menu',active:!!state&&windowActive&&!document.hidden});
+ const sample=gamepads.sample(pads,now,{context:'menu',active:menuReady&&!!state&&windowActive&&!document.hidden});
  const connected=sample.players.filter(player=>player.connected);
  const label=connected.length?sample.players.map((player,index)=>'P'+(index+1)+': '+(player.connected?'controller '+(player.index+1):'keyboard')).join(' · ')+' · × confirm · ○ back · △ Random':'Press a controller button to connect · Keyboard / touch available';
  const status=label+(sample.unsupported?' · Unsupported controller mapping; keyboard available':'');
@@ -110,28 +125,27 @@ function pollMenuGamepads(now){
  if(sample.events.some(event=>event.type==='disconnect')){gamepads.reset();return;}
  for(const event of sample.events){
   if(!['press','navigate'].includes(event.type))continue;
+  if(matchOptions.open){matchOptions.handleAction(event.action);return;}
   if($('controls-dialog').open){if(event.type==='press'&&['back','pause','confirm'].includes(event.action))closeControls();return;}
+  if(!canControlMenu(event.player,sample.players,{screen:state.screen,mode:state.mode,activePlayer:state.activePlayer}))continue;
   if(state.screen==='title'){
-   if(event.player!==0)continue;
-   const items=['solo-mode','local-mode','tournament-mode','online-mode','controls-open','demo-sound','demo-fullscreen','demo-motion'].map($).filter(item=>!item.disabled);
+   const items=titleChoices();
    if(event.type==='navigate'){
     const index=items.indexOf(document.activeElement),step=['ArrowUp','ArrowLeft'].includes(event.action)?-1:1;
     items[index<0?0:(index+step+items.length)%items.length]?.focus({preventScroll:true});
-   }else if(event.action==='confirm'){(items.includes(document.activeElement)?document.activeElement:$('solo-mode')).click();gamepads.reset();return;}
+   }else if(event.action==='confirm'){(items.includes(document.activeElement)?document.activeElement:items[0])?.click();gamepads.reset();return;}
    else if(event.action==='pause'){$('controls-open').click();return;}
    continue;
   }
-  if(state.mode==='local'&&connected.length===2&&state.screen==='select'&&event.player!==state.activePlayer)continue;
-  if(state.mode!=='local'&&event.player!==0)continue;
   if(event.type==='navigate'&&state.screen==='ready'&&state.mode!=='tournament'){state=cycleDemoStage(state,['ArrowLeft','ArrowUp'].includes(event.action)?-1:1);render();$('enter-arena').focus({preventScroll:true});}
   else if(event.type==='navigate'&&state.screen==='select'){state=navigateDemoFighter(state,event.action);render();focusSelection();}
   else if(event.action==='back'){back();return;}
-  else if(event.action==='random'&&state.screen==='select'){$('random-fighter').click();}
-  else if(event.action==='confirm'){if(state.screen==='ready'){$('enter-arena').click();gamepads.reset();}else confirm();return;}
+  else if(event.action==='random'&&state.screen==='select'){availableControllerItems([$('random-fighter')])[0]?.click();}
+  else if(event.action==='confirm'){if(state.screen==='ready'){availableControllerItems([$('enter-arena')])[0]?.click();gamepads.reset();}else confirm();return;}
   else if(event.action==='pause'){$('controls-open').click();return;}
  }
 }
-$('demo-fullscreen').addEventListener('click',async()=>{await toggleDisplayMode(document,document.documentElement);$('demo-fullscreen').textContent=document.fullscreenElement||document.documentElement.classList.contains('is-expanded')?'Exit fullscreen':'Fullscreen';});document.addEventListener('fullscreenchange',()=>{$('demo-fullscreen').textContent=document.fullscreenElement?'Exit fullscreen':'Fullscreen';});
+$('demo-fullscreen').addEventListener('click',async()=>{await screenHost.displayMode();$('demo-fullscreen').textContent=screenHost.isFullscreen?'Exit fullscreen':'Fullscreen';});document.addEventListener('fullscreenchange',()=>{$('demo-fullscreen').textContent=screenHost.isFullscreen?'Exit fullscreen':'Fullscreen';});
 
 function menuTick(now){if(menuSuspended)return;pollMenuGamepads(now);previews.tick(now);menuRAF=requestAnimationFrame(menuTick);}
 window.addEventListener('blur',()=>{windowActive=false;gamepads.reset();audio.setPaused(true);});

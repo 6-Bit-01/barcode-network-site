@@ -1,14 +1,14 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#080a0e"><meta name="robots" content="noindex,follow"><title>BARCODE: SYSTEM CLASH — Demo</title><link rel="stylesheet" href="demo.css"></head>
-<body><div class="broadcast-grain" aria-hidden="true"></div>
-<header class="demo-header"><a href="/secret-menu">← Hidden games</a><span>BARCODE BROADCAST SYSTEM <b>DEMO / 01</b></span><button id="controls-open" type="button">Controls</button></header>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#080a0e"><meta name="robots" content="noindex,follow"><title>BARCODE: SYSTEM CLASH — Demo</title><link rel="stylesheet" href="demo.css"><link rel="stylesheet" href="fight-menus.css"></head>
+<body><section id="asset-loading" class="asset-loading" role="status" aria-live="polite"><div class="loading-card"><p class="signal-label">BARCODE / SYSTEM CLASH</p><h2>LOADING THE CLASH</h2><p id="asset-loading-text">Loading game assets…</p><progress id="asset-loading-progress" max="100" value="0" aria-label="Asset loading progress"></progress><button id="asset-loading-retry" type="button" hidden>RETRY LOADING</button></div></section><div class="broadcast-grain" aria-hidden="true"></div>
+<header class="demo-header"><a href="/secret-menu">← Hidden games</a><span>BARCODE BROADCAST SYSTEM <b>DEMO / 01</b></span><button id="options-open" type="button">Options</button><button id="controls-open" type="button">Controls</button></header>
 <main id="demo-main">
  <section id="title-screen" class="title-screen" aria-labelledby="title-heading">
   <div class="title-arena" aria-hidden="true"></div>
   <div class="title-fighters" aria-hidden="true"><img class="title-fighter title-fighter-one" src="assets/menu/6-bit-standing.webp" alt=""><img class="title-fighter title-fighter-two" src="assets/menu/9-bit-standing.webp" alt=""></div>
   <div class="title-content"><p class="signal-label">TRANSMISSION FOUND / CHANNEL 06</p><h1 id="title-heading"><img class="title-logo" src="assets/menu/system-clash-logo.svg" alt="BARCODE: SYSTEM CLASH"></h1><p class="title-tagline">THE SIGNAL IS YOURS. FIGHT FOR IT.</p>
    <div class="title-modes"><button id="solo-mode" type="button" disabled><span>01</span> SOLO VS CPU <i>→</i></button><button id="local-mode" type="button" disabled><span>02</span> LOCAL TWO-PLAYER <i>→</i></button><button id="tournament-mode" type="button" disabled><span>03</span> TOURNAMENT <i>→</i></button><button id="online-mode" type="button" disabled><span>04</span> ONLINE SESSION <i>→</i></button></div>
-   <p class="demo-scope">16 playable fighters · 18 roster slots · Classic arcade controls</p><p class="demo-load" id="demo-load" role="status">Connecting to the roster…</p><button id="retry-demo" hidden type="button">Retry connection</button>
+   <p class="demo-scope">16 playable fighters · 18 roster slots · Classic arcade controls</p><p class="demo-load" id="demo-load" role="status">Loading the roster…</p><button id="retry-demo" hidden type="button">Retry loading</button>
   </div>
  </section>
  <section id="select-screen" class="select-screen" hidden aria-labelledby="select-heading">

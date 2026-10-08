@@ -1,9 +1,10 @@
+import {normalizeMatchRules,withMatchRules,matchRulesFromURL} from './fight-rules.mjs';
 import {STAGES,stageById} from './fight-stages.mjs';
 import {withControllerSeats} from './demo-flow.mjs';
 export const TOURNAMENT_STORAGE_KEY='system-clash-tournament-v1';
 const STATUSES=['ready','fighting','won','lost','draw','complete'];
 function rosterIds(roster){return roster.filter(f=>f.enabled!==false).map(f=>f.id);}
-function normalizedSettings(value={}){const controllerSeats=[0,1].map(i=>Number.isSafeInteger(value.controllerSeats?.[i])&&value.controllerSeats[i]>=0?value.controllerSeats[i]:null);if(controllerSeats[0]!==null&&controllerSeats[0]===controllerSeats[1])controllerSeats[1]=null;return {muted:!!value.muted,reducedMotion:!!value.reducedMotion,controllerSeats};}
+function normalizedSettings(value={}){const controllerSeats=[0,1].map(i=>Number.isSafeInteger(value.controllerSeats?.[i])&&value.controllerSeats[i]>=0?value.controllerSeats[i]:null);if(controllerSeats[0]!==null&&controllerSeats[0]===controllerSeats[1])controllerSeats[1]=null;return {muted:!!value.muted,reducedMotion:!!value.reducedMotion,controllerSeats,matchRules:normalizeMatchRules(value.matchRules)};}
 function opponentsFor(ids,fighterId,seed){let value=seed>>>0;const random=()=>{value=(value+0x6D2B79F5)>>>0;let n=value;n=Math.imul(n^(n>>>15),n|1);n^=n+Math.imul(n^(n>>>7),n|61);return ((n^(n>>>14))>>>0)/4294967296;};const pool=ids.filter(id=>id!==fighterId);for(let i=pool.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}return pool.slice(0,8);}
 export function createTournamentRun(roster,{fighterId,seed=Math.floor(Math.random()*4294967296),runId=globalThis.crypto?.randomUUID?.()??'run-'+Date.now().toString(36),settings={}}={}){
  const ids=rosterIds(roster);if(!ids.includes(fighterId)||new Set(ids).size!==ids.length||ids.length<9||!Number.isInteger(seed)||seed<0||seed>4294967295||!validRunId(runId))throw new Error('Tournament needs a playable fighter and eight distinct opponents.');
@@ -28,11 +29,11 @@ export function launchTournamentMatch(run,baseURL,settings=run.settings){
  if(run.status!=='ready'||run.attempt>=100000)throw new Error('This tournament node is not ready.');
  const next={...run,attempt:run.attempt+1,status:'fighting',settings:normalizedSettings(settings)};next.resultId=token(next);
  const url=new URL('fight.html',baseURL);for(const [key,value]of Object.entries({demo:'1',stage:tournamentStage(next),mode:'cpu',tournament:'1',run:next.runId,match:next.resultId,p1:next.fighterId,p2:next.opponents[next.node],sound:next.settings.muted?'0':'1',motion:next.settings.reducedMotion?'1':'0'}))url.searchParams.set(key,value);
- return {run:next,url:withControllerSeats(url,next.settings.controllerSeats)};
+ return {run:next,url:withMatchRules(withControllerSeats(url,next.settings.controllerSeats),next.settings.matchRules)};
 }
 export function readTournamentContext(value,roster,storage){
  const params=new URL(value,'https://system-clash.invalid/').searchParams,run=loadTournamentRun(storage,roster);
- if(params.get('tournament')!=='1'||params.get('demo')!=='1'||params.get('mode')!=='cpu'||!run||run.status==='ready'||params.get('run')!==run.runId||params.get('match')!==run.resultId||params.get('p1')!==run.fighterId||params.get('p2')!==run.opponents[run.node]||stageById(params.get('stage')).id!==tournamentStage(run))return null;return run;
+ if(params.get('tournament')!=='1'||params.get('demo')!=='1'||params.get('mode')!=='cpu'||!run||run.status==='ready'||params.get('run')!==run.runId||params.get('match')!==run.resultId||params.get('p1')!==run.fighterId||params.get('p2')!==run.opponents[run.node]||stageById(params.get('stage')).id!==tournamentStage(run))return null;if(JSON.stringify(matchRulesFromURL(value))!==JSON.stringify(run.settings.matchRules))return null;return run;
 }
 export function consumeTournamentResult(run,{resultId,phase,winner}={}){
  if(run.status!=='fighting'||phase!=='over'||resultId!==run.resultId||![0,1,null].includes(winner))return run;

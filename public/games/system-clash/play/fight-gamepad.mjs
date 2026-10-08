@@ -2,32 +2,53 @@
 const FACE=[[2,'punch'],[3,'low-punch'],[0,'kick'],[1,'low-kick']];
 const MENU=[[0,'confirm'],[1,'back'],[3,'random']];
 const ARROWS=['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'];
-const fresh=()=>({id:null,connected:false,gated:true,held:new Set(),emitted:new Map(),grab:null,deletion:false,nav:new Map()});
+const fresh=()=>({id:null,index:null,connected:false,gated:true,held:new Set(),emitted:new Map(),grab:null,deletion:false,nav:new Map()});
 const finite=value=>Number.isFinite(value)?value:0;
-function read(pad){
+// Menus use one direction at a time. A held stick stays on its chosen axis
+// until it returns to centre; small drift cannot repeatedly restart focus.
+function menuDirection(held,x,y,nav){
+ const previous=nav.keys().next().value;
+ const dpad=[12,13,14,15].some(button=>held.has(button));
+ const axis=(value,negative,positive)=>previous===positive&&value>.25?1:previous===negative&&value<-.25?-1:value>.35?1:value<-.35?-1:0;
+ let horizontal=dpad?Number(held.has(15))-Number(held.has(14)):axis(x,'ArrowLeft','ArrowRight');
+ let vertical=dpad?Number(held.has(13))-Number(held.has(12)):axis(y,'ArrowUp','ArrowDown');
+ if(horizontal&&vertical){
+  if(previous==='ArrowLeft'&&horizontal<0||previous==='ArrowRight'&&horizontal>0)vertical=0;
+  else if(previous==='ArrowUp'&&vertical<0||previous==='ArrowDown'&&vertical>0)horizontal=0;
+  else if(!dpad&&Math.abs(x)>Math.abs(y))vertical=0;
+  else horizontal=0;
+ }
+ return {horizontal,vertical};
+}
+function read(pad,menu,nav){
  const buttons=Array.isArray(pad.buttons)?pad.buttons:[];
  const held=new Set();for(let i=0;i<17;i++){const b=buttons[i];if(b&&typeof b==='object'&&(b.pressed===true||(Number.isFinite(b.value)&&b.value>.5)))held.add(i);}
- const axes=Array.isArray(pad.axes)?pad.axes:[];
+ const axes=Array.isArray(pad.axes)||ArrayBuffer.isView(pad.axes)?pad.axes:[];
  const x=finite(axes[0]),y=finite(axes[1]);
- const horizontal=held.has(14)||held.has(15)?Number(held.has(15))-Number(held.has(14)):x>.25?1:x<-.25?-1:0;
- const vertical=held.has(12)||held.has(13)?Number(held.has(13))-Number(held.has(12)):y>.25?1:y<-.25?-1:0;
+ let horizontal=held.has(14)||held.has(15)?Number(held.has(15))-Number(held.has(14)):x>.25?1:x<-.25?-1:0;
+ let vertical=held.has(12)||held.has(13)?Number(held.has(13))-Number(held.has(12)):y>.25?1:y<-.25?-1:0;
+ if(menu)({horizontal,vertical}=menuDirection(held,x,y,nav));
  return {held,horizontal,vertical,neutral:held.size===0&&horizontal===0&&vertical===0};
 }
-export function createGamepadInput({seats=[]}={}){
+export function createGamepadInput({seats=[],menuSeatRecovery=false}={}){
  const indices=[0,1].map(i=>Number.isInteger(seats?.[i])&&seats[i]>=0?seats[i]:null);
  if(indices[0]!==null&&indices[0]===indices[1])indices[1]=null;
  let states=[fresh(),fresh()],context=null;
  const key=(seat,button)=>'pad-'+seat+'-'+button;
- function reset(){states=states.map(s=>({...fresh(),id:s.id,connected:s.connected}));}
+ function reset(){states=states.map(s=>({...fresh(),id:s.id,index:s.index,connected:s.connected}));}
  function sample(pads,now,{context:nextContext='fight',active=true}={}){
-  const events=[],valid=new Map();let unsupported=0;
+  const events=[],valid=new Map(),recoverSeats=menuSeatRecovery===true&&nextContext==='menu';let unsupported=0;
   for(const pad of Array.from(pads??[])){
    if(!pad||pad.connected===false||!Number.isInteger(pad.index)||pad.index<0)continue;
    if(pad.mapping!=='standard'){unsupported++;continue;}
    if(!valid.has(pad.index))valid.set(pad.index,pad);
   }
+  // A sole menu controller must also become P1 for the next solo match.
+  // Opt in only from the standalone menu; arena pause/ready menus keep match seats.
+  if(recoverSeats&&valid.size===1&&!valid.has(indices[0])&&valid.has(indices[1]))[indices[0],indices[1]]=[indices[1],indices[0]];
   for(const index of [...valid.keys()].sort((a,b)=>a-b))if(!indices.includes(index)){
-   const empty=indices.indexOf(null);if(empty<0)break;indices[empty]=index;
+   let empty=recoverSeats?indices.findIndex(seat=>!valid.has(seat)):indices.indexOf(null);
+   if(empty<0)break;indices[empty]=index;
   }
   if(context!==null&&nextContext!==context)reset();context=nextContext;
   if(!active||!Number.isFinite(now))reset();
@@ -35,12 +56,12 @@ export function createGamepadInput({seats=[]}={}){
   const emit=(player,type,action,button)=>events.push({player,type,action,key:key(player,button)});
   const players=indices.map((index,player)=>{
    let s=states[player];const pad=valid.get(index),id=pad?String(pad.id??''):null;
-   if(s.connected&&(!pad||s.id!==id)){
+   if(s.connected&&(!pad||s.id!==id||s.index!==index)){
     if(active&&Number.isFinite(now)){for(const [button,action]of s.emitted)emit(player,'release',action,button);emit(player,'disconnect','disconnect','disconnect');}
     s=states[player]=fresh();
    }
-   if(pad&&!s.connected){s.connected=true;s.id=id;s.gated=true;}
-   const input=pad?read(pad):{held:new Set(),horizontal:0,vertical:0,neutral:true};inputs.push(input);
+   if(pad&&!s.connected){s.connected=true;s.id=id;s.index=index;s.gated=true;}
+   const input=pad?read(pad,nextContext==='menu',s.nav):{held:new Set(),horizontal:0,vertical:0,neutral:true};inputs.push(input);
    const allowed=active&&Number.isFinite(now)&&!s.gated;
    const snapshot={connected:!!pad,index,id,move:allowed?input.horizontal:0,crouch:allowed&&input.vertical>0,block:allowed&&input.held.has(7)};
    if(s.gated&&input.neutral&&active&&Number.isFinite(now))s.gated=false;

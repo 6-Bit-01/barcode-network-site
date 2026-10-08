@@ -7,7 +7,7 @@ const boot=source.slice(source.indexOf('async function boot()'),source.indexOf("
 function harness(loader){
  const prepared=[],errors=[],elements=new Map(),art=[{manifest:{id:'6-bit',character:'Six'}},{manifest:{id:'9-bit',character:'Nine'}}];
  const node=id=>elements.get(id)??(elements.set(id,{value:'6-bit',options:[{}],classList:{remove(){},add(value){errors.push(value);}}}),elements.get(id));
- const env={loadRevision:0,motionPresentationEpoch:0,interfaceArtPending:null,clearInput(){},effects:{clear(){}},URL,location:{href:'https://example.com/fight.html'},window:{SYSTEM_CLASH_FIGHT_BUNDLE:{images:{}}},$:node,
+ const env={loadRevision:0,motionPresentationEpoch:0,interfaceArtPending:null,pauseDialog:{open:false},roundMenu:{reset(){}},loading(){},loading(){},roundMenu:{reset(){}},stageArt:null,stageArtPending:null,match:null,loadStageArt:async()=>({id:"radio-studio",image:{},kit:{},layers:{}}),clearInput(){},effects:{clear(){}},URL,location:{href:'https://example.com/fight.html'},window:{SYSTEM_CLASH_FIGHT_BUNDLE:{images:{}}},$:node,
   loadInterfaceArt:loader,loadFightArt:async()=>art,loadArcadeArt:async()=>{},loadDeletionArt:async()=>({}),loadWeaponArt:async()=>({}),loadFighterPortraits:async()=>({}),
   renderer:{prepareArt(){},prepareInterface(value){prepared.push(value);}},combatMetadata:()=>[],showContextArtLinks(){},showFighterStyles(){},document:{querySelectorAll:()=>[]},onlineBridge:{enabled:false},launchParams:new URLSearchParams(),deletionDefinition:()=>null,reset(){},initializeOnlineCombat(){}};
  runInNewContext(boot,env);return {env,prepared,errors,node};
@@ -41,3 +41,6 @@ test('boot and match reset advance a stable presentation epoch used by every ren
  assert.ok(/motionPresentationEpoch\+\+/.test(reset),'Actual match reset discards old motion');
  assert.ok(!/motionPresentationEpoch/.test(source.match(/onState:snapshot=>\{([^}]*)\}/)?.[1]??''),'A guest snapshot keeps the run identity');
 });
+
+test('boot stays blocked behind the static loading screen until selected stage art settles',async()=>{const h=harness(async()=>({manifest:null,images:{},failures:[]}));let finish;h.env.loadStageArt=()=>new Promise(resolve=>finish=resolve);const pending=h.env.boot();for(let i=0;i<12&&!finish;i++)await new Promise(resolve=>setImmediate(resolve));assert.equal(h.env.ready,false);assert.notEqual(h.node('asset-loading').hidden,true);assert.equal(h.prepared.length,0);finish({id:'radio-studio',image:{},kit:{},layers:{}});await pending;assert.equal(h.env.ready,true);assert.equal(h.node('asset-loading').hidden,true);});
+test('required stage failure leaves input blocked and retryable rather than a half-drawn arena',async()=>{const h=harness(async()=>({images:{}}));h.env.window.SYSTEM_CLASH_FIGHT_BUNDLE=undefined;let failure;h.env.loading=(text,_progress,failed)=>{if(failed)failure=text;};h.env.loadStageArt=async()=>({id:'radio-studio',image:null,kit:null,layers:null});await h.env.boot();assert.equal(h.env.ready,false);assert.match(failure,/Retry loading/);h.env.loadStageArt=async()=>({id:'radio-studio',image:{},kit:{},layers:{}});await h.env.boot();assert.equal(h.env.ready,true);});

@@ -2,7 +2,7 @@ import {NEW_FIGHTER_STYLES,newDeletionPositions,splitBodyState,hangingVictimPose
 import {fightStatProfile,fightStatScalars} from './fight-stats.mjs';
 import {deletionDefinition,deletionPose} from './deletion-library.mjs';
 import {easedProgress} from './fight-presentation.mjs';
-import {nativeBodyCore,gripContact,limbContact} from './fight-combat-geometry.mjs';
+import {nativeBodyCore,nativeBodyLegs,gripContact,limbContact} from './fight-combat-geometry.mjs';
 import {createStageState,stageById,stageInteractionReady,startStageWarning,advanceStageState,damageStageWall,enterStage} from './fight-stages.mjs';
 /** Complete-body animation combat. Art, camera and audio stay outside this module. */
 // Reserve the horizontal width of the complete floor poses at either wall.
@@ -185,12 +185,15 @@ function fighter(index, clips, identity = {}) {
 export function createMatch(options = {}) {
   const mode = ['cpu', 'local', 'practice','weapons'].includes(options.mode) ? options.mode : 'cpu';
   const stage=createStageState(options.stage);
+  const roundTimeMs=[0,60000,99000].includes(options.roundTimeMs)?options.roundTimeMs:99000;
+  const difficulty=['easy','normal','hard'].includes(options.difficulty)?options.difficulty:'normal';
+  const roundNumber=Number.isInteger(options.roundNumber)&&options.roundNumber>0?options.roundNumber:1;
   const match = {
     stage,mode, phase: options.start === false ? 'ready' : 'countdown', phaseTime: 0,
     fighters: [fighter(0, options.clips?.[0],options.fighters?.[0]), fighter(1, options.clips?.[1],options.fighters?.[1])],
-    roundRemaining: 99000, finishRemaining: 0, winner: null,
+    roundRemaining: roundTimeMs, _roundTimeLimit:roundTimeMs, _difficulty:difficulty, _roundNumber:roundNumber, finishRemaining: 0, winner: null,
     deletionElapsed: 0, deletionName: null, deletionId:null, deletionTargetX: 0,
-    status: options.start === false ? 'READY TO CLASH' : 'ROUND 1',
+    status: options.start === false ? 'READY TO CLASH' : 'ROUND '+roundNumber,
     hitstop: 0, events: [], combatTime:0,
     _seed: (Number(options.seed) || 0x6b19) >>> 0,
     _cpuDecision: 0, _cpuControl: control(), _deletionOrigin: null,
@@ -525,11 +528,15 @@ function contactTime(f) {
 
 function contactWindowStart(f) {
   if(f.action!=='uppercut'||f._weaponAction)return contactTime(f);
-  // These native banks put the grounded rising fist before their high-pose
-  // contact marker. Use that authored frame; playback/cancel/recovery clocks
-  // keep their existing marker and active end. Never invent extra limb reach.
-  const frame={'6-bit':0,'9-bit':0,'mr-nice-guy':1,'papa-oak':1}[f.id];
-  const clip=f._clips.uppercut,entry=clip?.combatPoses?.entries?.find(entry=>entry.index===frame);
+  // The forward grounded rise precedes the high-fist marker in native banks.
+  // Select its actual authored frame for every fighter/facing; the contact
+  // marker, active end, playback, cancellation and recovery clocks stay intact.
+  const clip=f._clips.uppercut,poses=clip?.combatPoses,dir=f.facing==='right'?1:-1;
+  const entry=poses?.entries?.find(entry=>{
+    const pose=poses.frames?.[f.facing]?.[entry.index],strike=pose?.strike,torso=pose?.sites?.torso;
+    return [strike?.x,strike?.y,torso?.x,torso?.y].every(Number.isFinite)
+      &&(strike.x-torso.x)*dir>0&&strike.y<torso.y-1;
+  });
   return entry?Math.min(contactTime(f),entry.start/(clip.playbackRate??1)):contactTime(f);
 }
 
@@ -552,9 +559,9 @@ function hurtRegions(f) {
   const regions=[...(pose?.hurt??[{site:'torso',left:-45,right:45,top:-f.height*(isCrouched(f)?.54:1),bottom:-10}])];
   const reference=f._clips.idle?.combatPoses?.frames?.[f.facing]?.[0];
   const core=nativeBodyCore(pose,reference,{id:f.id,facing:f.facing,height:f.height});
-  // The measured trunk that physically blocks a fighter must also be hittable.
-  // Keep head/leg sites and narrow torso detail; add only the native core itself.
+  // Every measured physical body region also accepts actual limb contact.
   if(core)regions.push({...core,site:'torso'});
+  regions.push(...nativeBodyLegs(pose,reference,{id:f.id,facing:f.facing,height:f.height}));
   return regions.map(region=>({...region,left:f.x+region.left,right:f.x+region.right,top:feet+region.top,bottom:feet+region.bottom}));
 }
 
@@ -570,12 +577,18 @@ function nativeGrabContact(attacker,victim,prospective=false) {
   return hurtRegions(victim).map(body=>gripContact(grip,body,pose.strikeRadius??14)).find(Boolean)??null;
 }
 
-function bodyCore(f) {
-  const pose=combatPose(f)?.frame,reference=f._clips.idle?.combatPoses?.frames?.[f.facing]?.[0];
+function bodyRegions(f) {
+  const current=combatPose(f)?.frame,reference=f._clips.idle?.combatPoses?.frames?.[f.facing]?.[0];
+  // Walking/striking silhouettes lean and sway. Keep their native stance
+  // blocker stable so a frame change cannot pop the other fighter away.
+  // Crouching changes real body height; all hurt/strike silhouettes still
+  // animate independently and remain attached to the exact native limb.
+  const pose=f.action==='crouch'?current:reference??current;
   const core=nativeBodyCore(pose,reference,{id:f.id,facing:f.facing,height:f.height})??
     {left:-WORLD.separation/2,right:WORLD.separation/2,top:-f.height*.75,bottom:-f.height*.22};
+  const regions=[{...core,site:'torso'},...nativeBodyLegs(pose,reference,{id:f.id,facing:f.facing,height:f.height})];
   const feet=WORLD.floor+airOffset(f);
-  return {...core,left:f.x+core.left,right:f.x+core.right,top:feet+core.top,bottom:feet+core.bottom};
+  return regions.map(region=>({...region,left:f.x+region.left,right:f.x+region.right,top:feet+region.top,bottom:feet+region.bottom}));
 }
 
 function airOffset(f) {
@@ -1369,7 +1382,8 @@ function cpuInput(match, dt) {
   const cpu = match.fighters[1], player = match.fighters[0];
   match._cpuDecision -= dt;
   if (match._cpuDecision > 0) return match._cpuControl;
-  match._cpuDecision = 230 + random(match) * 170;
+  const level={easy:{delay:480,jitter:200,guard:.22,attack:.42},normal:{delay:230,jitter:170,guard:.4,attack:.22},hard:{delay:135,jitter:90,guard:.57,attack:.12}}[match._difficulty??'normal'];
+  match._cpuDecision = level.delay + random(match) * level.jitter;
   const gap = distance(cpu, player), toPlayer = sign(player.x - cpu.x);
   const roll = random(match);
   match._cpuControl = control();
@@ -1407,11 +1421,11 @@ function cpuInput(match, dt) {
     }
   }
   else if (gap < 120 && roll < 0.14) match._cpuControl.move = -toPlayer;
-  else if (ATTACKS.has(player.action) && roll < 0.4) {
+  else if (ATTACKS.has(player.action) && roll < level.guard) {
     match._cpuControl.block = true;
     // React to visible attacks with an imperfect guard, never to held inputs.
     match._cpuControl.crouch = random(match) < .5;
-  } else if (NEUTRAL.has(cpu.action) && roll > 0.22) {
+  } else if (NEUTRAL.has(cpu.action) && roll > level.attack) {
     const attackRoll=random(match);
     let action=gap<135&&attackRoll>.97?'grab':cpu._style.preferredMoves[
       Math.min(cpu._style.preferredMoves.length-1,Math.floor(attackRoll*cpu._style.preferredMoves.length))];
@@ -1439,11 +1453,18 @@ function separate(match) {
   const [a,b]=match.fighters;
   // The held grapple/throw pair has its own source registration and travel.
   if([a,b].some(f=>f.action==='grabbed'||(f.action==='thrown'&&!f._launched)))return;
-  const ca=bodyCore(a),cb=bodyCore(b);
-  if(Math.min(ca.bottom,cb.bottom)<=Math.max(ca.top,cb.top)||
-    Math.min(ca.right,cb.right)<=Math.max(ca.left,cb.left))return;
   const order=b.x>=a.x?1:-1;
-  const overlap=order>0?ca.right-cb.left:cb.right-ca.left;
+  let overlap=0;
+  const aRegions=bodyRegions(a),bRegions=bodyRegions(b);
+  for(const ca of aRegions)for(const cb of bRegions) {
+    // Perspective stance feet can interleave; a chest cannot enter a shin.
+    // Trunk/trunk contact retains the established equal-size fighting space.
+    if(ca.site==='legs'&&cb.site==='legs')continue;
+    if(Math.min(ca.bottom,cb.bottom)<=Math.max(ca.top,cb.top)||
+      Math.min(ca.right,cb.right)<=Math.max(ca.left,cb.left))continue;
+    overlap=Math.max(overlap,order>0?ca.right-cb.left:cb.right-ca.left);
+  }
+  if(overlap<=0)return;
   const aNeutral=NEUTRAL.has(a.action),bNeutral=NEUTRAL.has(b.action);
   const aShare=aNeutral!==bNeutral?(aNeutral?1:0):.5;
   const move=(fighter,delta)=>{const before=fighter.x;fighter.x=limitX(fighter,before+delta);return Math.abs(fighter.x-before);};
@@ -1540,7 +1561,7 @@ function step(match, dt, inputs) {
     return;
   }
   if (match.phase === 'countdown') {
-    match.status = match.phaseTime > 950 ? 'FIGHT!' : 'ROUND 1';
+    match.status = match.phaseTime > 950 ? 'FIGHT!' : 'ROUND '+match._roundNumber;
     match.fighters.forEach(f => { f.actionTime += dt; });
     if (match.phaseTime >= 1500) {
       match.phase = 'fight'; match.phaseTime = 0; match.status = 'SYSTEM CLASH';
@@ -1567,9 +1588,9 @@ function step(match, dt, inputs) {
     }
     return;
   }
-  if(match.mode!=='weapons')match.roundRemaining = Math.max(0, match.roundRemaining - dt);
+  if(match.mode!=='weapons'&&match._roundTimeLimit!==0)match.roundRemaining = Math.max(0, match.roundRemaining - dt);
   match.combatTime += dt;
-  if (match.mode!=='weapons'&&match.roundRemaining <= 0) { timeout(match); return; }
+  if (match.mode!=='weapons'&&match._roundTimeLimit!==0&&match.roundRemaining <= 0) { timeout(match); return; }
   updateWeaponSpawn(match);
   const controls = [inputs[0], match.mode === 'cpu' ? cpuInput(match, dt) : match.mode==='weapons'?control():inputs[1]];
   for (let i = 0; i < 2; i++) applyNeutral(match, i, controls[i], dt);

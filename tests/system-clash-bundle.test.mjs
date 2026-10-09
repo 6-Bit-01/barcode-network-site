@@ -104,6 +104,42 @@ test("System Clash ships only its same-origin runtime, with complete registered 
       "assets/fighters/ash-flowers/walk-smooth-v3.webp": "14846b13be4600c5df1de3f161feec5cf02db38fabe7bb357edb8daba14b4e75"
     };
     for(const [name,sha256] of Object.entries(retainedAshLeather)){assert(inventory.includes(name),"Retained approved Ash source: "+name);assert.equal(createHash("sha256").update(fs.readFileSync(path.join(root,name))).digest("hex"),sha256,"Retained Ash pixels remain unchanged");assert(!requests.has(name),"Old leather art must not add a runtime download: "+name);retainedSources.add(name);}
+    // Identity transfers replace the selected Mac bodies; every prior whole source stays recoverable and byte-exact.
+    const retainedMacNativeSources = {
+      "assets/fighters/mac-modem/combat.png": "eb0967344607b8c3ba627bfdd4c9ab29d3d99beba3070ef9566a144933ec106c",
+      "assets/fighters/mac-modem/combat.runtime.webp": "86c99faf2c2bd8be16894ba13f708afe2b540bc88a94609b3c1c726d930e86d7",
+      "assets/animation-polish/mac-modem/punch.webp": "37e21ba7fa60bc749527f5e779fc931f370b754ca8b9aaa64ece79399d88d71c",
+      "assets/fighters/mac-modem/hurt.runtime.webp": "a9c781525608c3adbe02ef6d1b65640d546570193a0d87aed714e9f60fef32eb",
+      "assets/fighters/mac-modem/hurt.png": "0b6d62cc232304e794eedb3ce621b8c4b6c2fb54aa62e9d54ad12fe318b39987",
+      "assets/fighters/mac-modem/walk-smooth-v3.webp": "764eec256f093a74450695b39141b07393c093e26601414399720e2ee507411a",
+      "assets/fighters/mac-modem/movement-v1.runtime.webp": "cbb5c50d9e999d0753f9d87d72ef846a69d1bb9353cf07d71361e306e8260687",
+      "assets/fighters/mac-modem/movement-v1.png": "5cfd603a2816a1b9432e1588a0b4c20c83bb4ee12c069df84320f7401c23251e",
+      "assets/fighters/mac-modem/defense-kick-v1.png": "dc2825dd6afb7a98f75f887a459e3ce6c1bf64f0fcbc83656219feaf81e9652f",
+      "assets/fighters/mac-modem/defense-kick-v1.runtime.webp": "401aba32e915a13ca2426275be87dc47fa67e81e06ec420cd5a7fb94193f892a",
+      "assets/fighters/mac-modem/restraints-v1.png": "6c8db2e2d7a7b04c2c28e9c3b0c41e5ffde1529f3643106a1213bebda55cda7d",
+      "assets/fighters/mac-modem/restraints-v1.runtime.webp": "44b3dd3a7a75d193984634efdbdf28dd0558385925ff5bb57b8aade0ec37cddd",
+      "assets/fighters/mac-modem/floor-v1.png": "67ee8e2a03626bf3d7ade846dfd93bd50b7a5e8f350891bd8b5eef33c1e3f0ce",
+      "assets/fighters/mac-modem/floor-v1.runtime.webp": "fc1164bd0a8f867b378e946b276972bc8cfe0ba101282954127fe8a30d388caa",
+      "assets/fighters/mac-modem/grab-native-v2.webp": "6e9cd273736a7ea68aed51ac7201945513752da93d75a7ba806661bb5f7e16dd",
+      "assets/fighters/mac-modem/grab-low-native-v2.webp": "78e1085c3b096cf0e132431362f0ee91e0792a66a2cb50ad2f352b047ef09912",
+      "assets/arcade/mac-modem/low-attacks-v1.runtime.webp": "969b09dabcd73c250c2772ffa2ae09ef54811c0bc771f1fdb7b21eaa881b5ba0",
+      "assets/arcade/mac-modem/low-attacks-v1.png": "4d2dd1dbadd067d3948a97320d16ff1626f4fd9b65334c5e53bca54dc39b1bdc",
+      "assets/arcade/mac-modem/air-uppercut-v1.runtime.webp": "fcc3064fca2440f4ba7fa8ec7fd5f2da30fe14f2abe0b6f63472ea2d74cad66c",
+      "assets/arcade/mac-modem/air-uppercut-v1.png": "99a4709b533f4013710d6ce53225b4eaf72e1403c932eef75598f8b35801a582",
+      "assets/arcade/mac-modem/contextual-attacks-v1.png": "75385049ffbdf7ea79114d24ef1f87b47fe9e3b3d6fe38de0ee79a16878f40b4",
+      "assets/arcade/mac-modem/contextual-attacks-v1.runtime.webp": "5239936f3069b8f450b2e118af43f63eeabce4fc31aa39d89942952c0710d762",
+      "assets/arcade/mac-modem/crouch-kick-smooth-v2.webp": "b0c59f1883d18b8064c72421d1fe15c3ab5e8727c8274ab93990398e7e567656",
+      "assets/arcade/mac-modem/weapon-pickup-v1.png": "0bf86c208e1937677c9cdd4b31c2e7acc1ed2a283af7080c3af0931fb5b9f0be",
+      "assets/arcade/mac-modem/weapon-pickup-v1.runtime.webp": "7d6da91e41bdacc4a92be1f4d0c5a6e98e94175ae3eeea13d2e5f0c7433f4233",
+      "assets/arcade/mac-modem/crouch-combos-v3.runtime.webp": "b1788dc31035aaf5a9d9140600f87ce66fcb176831a4f61b56d2c63f51fad2d8",
+      "assets/arcade/mac-modem/crouch-combos-v3.png": "8fc3309958f8c4a8ff44b1c3b5099753edd3f6d53b8a49b971f4b33562ceb8dc",
+      "assets/arcade/mac-modem/power-kick-v6.runtime.webp": "2cfb8af903b534ad294cb03d310ec87cc058deafe681132c9984a8b0e27fb7af",
+      "assets/arcade/mac-modem/power-kick-v6.png": "05737a17931a0f74e8985bf004bc62874ea9b55723276dd6ec330acd4e7fbec9",
+      "assets/deletions/mac-modem/victim-poses-v2.png": "09718c5e9f022c785472a6045ada55579285c1c3dc2ae0bbf635f9593df6b109",
+      "assets/deletions/mac-modem/attacker-poses-v3.png": "980d5b5a4d7f2592ecc219fb8d01232537dbbe4429fe8ab14bc9fa0e733d4643",
+      "assets/deletions/mac-modem/victim-front-lift-airborne-sheet-v1.webp": "96f6b87f966c3102f43696f48b2f56e05d3beb0a5541287cf2326296bec9076a"
+    };
+    for(const [name,sha256] of Object.entries(retainedMacNativeSources)){assert(inventory.includes(name),"Retained complete Mac source: "+name);assert.equal(createHash("sha256").update(fs.readFileSync(path.join(root,name))).digest("hex"),sha256,"Retained Mac source pixels remain unchanged");if(!requests.has(name))retainedSources.add(name);}
     for(const id of ["ms-mayhem","papa-oak"]){const walk=JSON.parse(read("assets/fighters/"+id+"/manifest.json")).clips.walk;assert.equal(walk.registrationRepair?.kind,"restore-approved-native-walk-chronology");const retained=walk.registrationRepair.retainedPolishClip;assert.equal(retained.file,"walk-smooth-v3.webp");const name="assets/fighters/"+id+"/"+retained.file;assert.equal(createHash("sha256").update(fs.readFileSync(path.join(root,name))).digest("hex"),retained.sourceSha256,"Retained transition source stays unchanged");assert(!requests.has(name),"Restored approved walk does not load the rejected transition: "+name);retainedSources.add(name);}
     for(const name of inventory.filter(name=>/^assets\/(?:fighters|arcade|deletions)\/[^/]+\/manifest\.json$/.test(name))){for(const clip of Object.values(JSON.parse(read(name)).clips)){const file=clip.animationPolish?.approvedFile;if(!file||!file.endsWith(".webp")||file===clip.file)continue;const original=path.posix.join(path.posix.dirname(name),file);assert(inventory.includes(original),"Approved native source remains present: "+original);assert.equal(createHash("sha256").update(fs.readFileSync(path.join(root,original))).digest("hex").slice(0,16),clip.sourceRevision,"Original native source bytes stay unchanged");approvedNativeSources.add(original);}}
     for (const name of inventory.filter(name => /^assets\/(?:fighters|arcade)\/[^/]+\/manifest\.json$/.test(name))) {

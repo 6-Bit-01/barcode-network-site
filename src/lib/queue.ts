@@ -108,6 +108,13 @@ import type {
   QueueTier,
 } from "./queue-types";
 import { estimateSponsorBreakPlacement } from "./queue-timing";
+import { auditQueueHistoricalEvidenceChain } from "./queue-historical-evidence-repository";
+import {
+  buildMemberQueueHistory, isMemberArtistReference, memberArtistReferenceKey, memberNativeReferenceFingerprint,
+  type MemberArtistReference, type MemberQueueHistory, type MemberQueueHistoryContext,
+  type MemberQueueHistorySourceRow, type OwnerQueueAssociationCandidateResult,
+  type OwnerQueueArtistCatalogResult, type OwnerQueueHistoryQuery,
+} from "./member-radio-history";
 
 const STATE_KEY = "radioQueue:v2:sessions";
 const LIVE_STATE_KEY = "radioQueue:v2:live-session";
@@ -1296,8 +1303,14 @@ function normalizeEntry(entry: QueueEntry): QueueEntry {
   const priorityUpgradeStatus = normalizePriorityUpgradeStatus(entry.priorityUpgradeStatus);
   const paidPriorityStatus = priorityUpgradeStatus === "paid" || priorityUpgradeStatus === "manual";
   const lane = entry.lane === "priority" && !paidPriorityStatus ? "regular" : entry.lane;
+  const submissionMemberId = normalizePrivateMemberIdentifier(entry.submissionMemberId);
+  const validArtistApproval = Boolean(submissionMemberId && normalizePrivateMemberIdentifier(entry.approvedArtistId)
+    && Number.isSafeInteger(entry.approvedArtistLinkRevision) && (entry.approvedArtistLinkRevision ?? -1) >= 0);
   return {
     ...entryWithoutLegacyMarker,
+    submissionMemberId,
+    approvedArtistId: validArtistApproval ? normalizePrivateMemberIdentifier(entry.approvedArtistId) : null,
+    approvedArtistLinkRevision: validArtistApproval ? entry.approvedArtistLinkRevision! : null,
     lane,
     tier: lane === "regular" && entry.lane === "priority" && !paidPriorityStatus ? "free" : entry.tier,
     artist: entry.artist ?? submittedArtistName,
@@ -1380,6 +1393,10 @@ function normalizeEntry(entry: QueueEntry): QueueEntry {
     signalHoldExpiredAt: entry.signalHoldExpiredAt ?? null,
     isTestTrack: entry.isTestTrack === true,
   };
+}
+
+function normalizePrivateMemberIdentifier(value: unknown): string | null {
+  return typeof value === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(value) ? value : null;
 }
 
 function normalizeDurationSource(source: QueueDurationSource | string | undefined, detected: number | null, sourceType: QueueSourceType): QueueDurationSource {
@@ -1956,7 +1973,10 @@ function projectionEntry(value: unknown, label: string): QueueEntry {
   requiredNonEmptyString(value.title, `${label}.title`);
   if (typeof value.link !== "string") throw new Error(`${label}.link must be a string.`);
   requireIsoTimestamp(value.createdAt, `${label}.createdAt`);
-  return value as unknown as QueueEntry;
+  // Historical operator captures predate server-resolved Member admission.
+  // An imported field is not evidence of account or Artist authority; older
+  // ownership is established only by separately reviewed exact references.
+  return { ...value, submissionMemberId: null, approvedArtistId: null, approvedArtistLinkRevision: null } as unknown as QueueEntry;
 }
 
 function projectionEntries(value: unknown, label: string): QueueEntry[] {
@@ -3280,6 +3300,9 @@ export async function createQueueTrack(input: {
   contactEmail?: string | null;
   submitterToken?: string | null;
   submissionOwnerHash?: string | null;
+  submissionMemberId?: string | null;
+  approvedArtistId?: string | null;
+  approvedArtistLinkRevision?: number | null;
   discordConnectionId?: string | null;
   link?: string;
   note?: string | null;
@@ -3344,6 +3367,9 @@ export async function createQueueTrack(input: {
     contactEmail: input.contactEmail?.trim() || null,
     submitterToken: input.submitterToken?.trim() || null,
     submissionOwnerHash: /^[a-f0-9]{64}$/.test(input.submissionOwnerHash ?? "") ? input.submissionOwnerHash : null,
+    submissionMemberId: input.submissionMemberId ?? null,
+    approvedArtistId: input.approvedArtistId ?? null,
+    approvedArtistLinkRevision: input.approvedArtistLinkRevision ?? null,
     discordConnectionId: /^[a-f0-9]{64}\.[a-f0-9]{64}$/.test(input.discordConnectionId ?? "") ? input.discordConnectionId : null,
     normalizedSourceKey,
     providerId,
@@ -3394,11 +3420,25 @@ export async function createQueueTrack(input: {
   });
 }
 
+export interface MemberQueueSubmissionIdentity {
+  submissionMemberId: string;
+  approvedArtistId: string | null;
+  approvedArtistLinkRevision: number | null;
+}
+
 export async function submitRadioTrack(
   input: Parameters<typeof createQueueTrack>[0] & { sessionId?: string },
+  options: { resolveMemberIdentity?: () => Promise<MemberQueueSubmissionIdentity | null> } = {},
 ): Promise<QueueEntry> {
   // Provider resolution can be slow and must never hold the queue mutation lock.
-  const track = await createQueueTrack(input);
+  let track = await createQueueTrack(input);
+  // Resolve revocable account/Artist authority after slow media lookup, outside
+  // the shared queue fence. Routed submissions overwrite any earlier identity.
+  if (options.resolveMemberIdentity) {
+    const identity = await options.resolveMemberIdentity();
+    track = normalizeEntry({ ...track, submissionMemberId: identity?.submissionMemberId ?? null,
+      approvedArtistId: identity?.approvedArtistId ?? null, approvedArtistLinkRevision: identity?.approvedArtistLinkRevision ?? null });
+  }
   return withQueueMutation(async () => {
     const store = await readStore();
     if (input.sessionId && store.activeSessionId !== input.sessionId) {
@@ -3407,6 +3447,8 @@ export async function submitRadioTrack(
       throw error;
     }
     const session = getSession(store);
+    if (session.purpose !== "live_broadcast") track = normalizeEntry({ ...track,
+      submissionMemberId: null, approvedArtistId: null, approvedArtistLinkRevision: null });
     applyPreShowTimer(session);
     const status = publicStatusForSession(session);
     if (status.isFull) throw new Error("Queue is full for new transmissions.");
@@ -3559,6 +3601,9 @@ export async function replaceOwnRadioTrack(input: Parameters<typeof createQueueT
     contactEmail: before.contactEmail,
     submitterToken: before.submitterToken,
     submissionOwnerHash: before.submissionOwnerHash,
+    submissionMemberId: before.submissionMemberId,
+    approvedArtistId: before.approvedArtistId,
+    approvedArtistLinkRevision: before.approvedArtistLinkRevision,
   }) : null;
   return withQueueMutation(async () => {
     const store = await readStore();
@@ -7314,6 +7359,158 @@ export async function getQueueArtistCreditReview() {
   const rows = sessions.flatMap(session => publicStatsRecordsForSession(session, false).map(record => ({ session, entry: record.entry })));
   const resolve = artistCreditResolver(rows.map(row => row.entry));
   return { revision: store.revision, records: rows.map(({ session, entry }) => ({ sessionId: session.sessionId, showTitle: session.title, trackId: entry.id, title: entry.submittedSongTitle ?? entry.title, original: entry.artistCredit?.original ?? entry.submittedArtistName ?? entry.artist, credit: resolve(entry), history: entry.artistCreditHistory ?? [] })) };
+}
+
+function memberHistoryNativeRows(store: QueueStore): MemberQueueHistorySourceRow[] {
+  const sessions = store.sessions.map(normalizeSession).filter(session => session.purpose === "live_broadcast"
+    && (!session.historicalRecoveryProvenance || session.historicalRecoveryProvenance.canonicalShowDate === session.showDate));
+  const resolveCredit = artistCreditResolver(sessions.flatMap(session => publicStatsRecordsForSession(session, false).map(record => record.entry)));
+  return sessions.flatMap(session => publicStatsRecordsForSession(session, false).map(record => {
+    const entry = { ...record.entry, artistCredit: resolveCredit(record.entry) };
+    const airplay = hasBroadcastPlaybackEvidence(session, record) ? "played_confirmed" as const : "unknown" as const;
+    return {
+      reference: { kind: "native" as const, sessionId: session.sessionId, trackId: entry.id, fingerprint: memberNativeReferenceFingerprint(session, entry) },
+      key: `native:${session.sessionId}:${entry.id}`, source: "native" as const,
+      sessionId: session.sessionId, showLabel: session.title, showDate: session.showDate,
+      title: entry.submittedSongTitle ?? entry.title, artist: publicHistoryProjectLabel(entry),
+      status: record.outcome, airplay,
+      completion: entry.playbackEndedNaturally === true && record.outcome === "finished" ? "full_confirmed" as const
+        : airplay === "played_confirmed" && entry.playbackEarlyCutoff === true ? "partial_confirmed" as const : "unknown" as const,
+      coverage: "native_show_record" as const,
+      currentShow: session.sessionId === store.activeSessionId && session.status !== "archived",
+      submissionMemberId: entry.submissionMemberId ?? null, approvedArtistId: entry.approvedArtistId ?? null,
+      submittedAt: entry.createdAt,
+    };
+  }));
+}
+
+async function memberHistoryHistoricalRows(nativeRows: readonly MemberQueueHistorySourceRow[]): Promise<MemberQueueHistorySourceRow[]> {
+  const audit = await auditQueueHistoricalEvidenceChain();
+  // An append can refine/correct the same canonical broadcast. Earlier evidence
+  // stays retained, but a stale approved reference cannot bypass its correction.
+  const currentLedgers = new Map<string, (typeof audit.entries)[number]["ledger"]>();
+  for (const { ledger } of audit.entries) currentLedgers.set(ledger.canonicalShowDate, ledger);
+  return [...currentLedgers.values()].flatMap(ledger => ledger.tracks.filter(track => track.acceptanceState === "accepted_confirmed"
+    && track.identityState === "verified" && Boolean(track.publicArtistCredit?.trim() || track.submittedArtistName?.trim()) && Boolean(track.title?.trim()))
+    .map(track => {
+      const reference: MemberArtistReference = { kind: "historical", bundleDigest: ledger.bundleDigest, recoveryTrackId: track.recoveryTrackId };
+      const matchedNative = ledger.sourceSessionId && track.originalTrackId ? nativeRows.find(row => row.sessionId === ledger.sourceSessionId
+        && row.reference.kind === "native" && row.reference.trackId === track.originalTrackId && row.showDate === ledger.canonicalShowDate) : null;
+      return {
+        reference, key: memberArtistReferenceKey(reference), source: "historical" as const,
+        sessionId: ledger.sourceSessionId, showLabel: defaultBroadcastShowTitle(ledger.canonicalShowDate), showDate: ledger.canonicalShowDate,
+        title: track.title!.trim(), artist: (track.publicArtistCredit || track.submittedArtistName)!.trim(),
+        // An administrative Mark Played is not proof of airplay or full completion.
+        status: track.administrativeOutcome === "removed" ? "removed" as const
+          : track.administrativeOutcome === "still_active" ? "active" as const
+            : track.airplayState === "played_confirmed" && track.completionExtent === "full_confirmed" ? "finished" as const : "unknown" as const,
+        airplay: track.airplayState, completion: track.completionExtent, coverage: ledger.completeness,
+        currentShow: false, submissionMemberId: null, approvedArtistId: null, submittedAt: track.submittedAt,
+        ...(matchedNative ? { dedupKey: matchedNative.key } : {}),
+      };
+    }));
+}
+
+export async function getMemberQueueHistory(input: MemberQueueHistoryContext): Promise<MemberQueueHistory> {
+  const store = await readStore();
+  const native = memberHistoryNativeRows(store);
+  // No history-repository dependency for normal signed-in or guest-native submissions.
+  const historical = input.approvedLegacyReferences.some(item => input.activeArtistIds.includes(item.artistId) && isMemberArtistReference(item.reference) && item.reference.kind === "historical")
+    ? await memberHistoryHistoricalRows(native) : [];
+  const active = store.sessions.find(session => session.sessionId === store.activeSessionId && session.status !== "archived" && session.purpose === "live_broadcast"
+    && (!session.historicalRecoveryProvenance || session.historicalRecoveryProvenance.canonicalShowDate === session.showDate));
+  return buildMemberQueueHistory(input, [...native, ...historical], active ? { sessionId: active.sessionId, label: active.title, date: active.showDate } : null);
+}
+
+function ownerHistoryPage<T>(items: T[], input: OwnerQueueHistoryQuery, fingerprint: string): { items: T[]; nextCursor: string | null } {
+  const limit = input.limit === undefined ? 25 : input.limit;
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50 || (input.query?.length ?? 0) > 200) throw new Error("Invalid history review query.");
+  let offset = 0;
+  if (input.cursor) {
+    if (!/^[A-Za-z0-9_-]{1,512}$/.test(input.cursor)) throw new Error("Invalid history review cursor.");
+    try {
+      const parsed = JSON.parse(Buffer.from(input.cursor, "base64url").toString("utf8"));
+      if (Object.keys(parsed).sort().join(",") !== "fingerprint,offset" || parsed.fingerprint !== fingerprint || !Number.isSafeInteger(parsed.offset) || parsed.offset < 0 || parsed.offset > items.length) throw new Error();
+      offset = parsed.offset;
+    } catch { throw new Error("History review changed. Reload before continuing."); }
+  }
+  const end = offset + limit;
+  return { items: items.slice(offset, end), nextCursor: end < items.length ? Buffer.from(JSON.stringify({ fingerprint, offset: end })).toString("base64url") : null };
+}
+
+export async function getOwnerQueueAssociationCandidates(input: OwnerQueueHistoryQuery = {}): Promise<OwnerQueueAssociationCandidateResult> {
+  if (input.source !== undefined && input.source !== "all" && input.source !== "native" && input.source !== "historical") throw new Error("Invalid history source.");
+  const native = memberHistoryNativeRows(await readStore());
+  const historical = input.source === "historical" || ((input.source === undefined || input.source === "all") && process.env.QUEUE_HISTORICAL_EVIDENCE_BLOB_READ_WRITE_TOKEN?.trim()) ? await memberHistoryHistoricalRows(native) : [];
+  const query = input.query?.normalize("NFKC").trim().toLocaleLowerCase("en-US") ?? "";
+  const rows = [...(input.source === "historical" ? [] : native), ...historical]
+    .filter(row => !query || `${row.artist}\n${row.title}\n${row.showLabel}\n${row.showDate}`.normalize("NFKC").toLocaleLowerCase("en-US").includes(query))
+    .sort((a, b) => b.showDate.localeCompare(a.showDate) || a.key.localeCompare(b.key));
+  const fingerprint = createHash("sha256").update(JSON.stringify({ query, source: input.source ?? "all", references: rows.map(row => row.reference) })).digest("hex");
+  const page = ownerHistoryPage(rows, input, fingerprint);
+  return { candidates: page.items.map(({ reference, showLabel, showDate, title, artist, status, airplay, completion, coverage }) => ({ reference, showLabel, showDate, title, artist, status, airplay, completion, coverage })), nextCursor: page.nextCursor };
+}
+
+export async function validateMemberQueueHistoryReference(reference: MemberArtistReference): Promise<boolean> {
+  if (!isMemberArtistReference(reference)) return false;
+  const native = memberHistoryNativeRows(await readStore());
+  const rows = reference.kind === "historical" ? await memberHistoryHistoricalRows(native) : native;
+  const target = memberArtistReferenceKey(reference);
+  return rows.some(row => memberArtistReferenceKey(row.reference) === target);
+}
+
+async function memberQueueArtistCatalogFromStore(store: QueueStore): Promise<OwnerQueueArtistCatalogResult["artists"]> {
+  const projects = new Map<string, string>();
+  const native = memberHistoryNativeRows(store);
+  for (const row of native) {
+    const key = normalizeQueueProjectKey(row.artist);
+    if (key) projects.set(key, row.artist);
+  }
+  // Older verified sources are selectable only on the authenticated Owner
+  // surface. They never create a public archive profile or teach alias splits.
+  if (process.env.QUEUE_HISTORICAL_EVIDENCE_BLOB_READ_WRITE_TOKEN?.trim()) {
+    for (const row of await memberHistoryHistoricalRows(native)) {
+      const key = normalizeQueueProjectKey(row.artist);
+      if (key && !projects.has(key)) projects.set(key, row.artist);
+    }
+  }
+  return [...projects].map(([projectKey, projectLabel]) => ({ projectKey, projectLabel })).sort((a, b) => a.projectKey.localeCompare(b.projectKey));
+}
+
+export async function getOwnerQueueArtistCatalog(input: Omit<OwnerQueueHistoryQuery, "source"> = {}): Promise<OwnerQueueArtistCatalogResult> {
+  const query = input.query?.normalize("NFKC").trim().toLocaleLowerCase("en-US") ?? "";
+  const artists = (await memberQueueArtistCatalogFromStore(await readStore())).filter(artist => !query || artist.projectKey.includes(query));
+  const fingerprint = createHash("sha256").update(JSON.stringify({ query, artists })).digest("hex");
+  const page = ownerHistoryPage(artists, input, fingerprint);
+  return { artists: page.items, nextCursor: page.nextCursor };
+}
+
+export async function validateMemberQueueArtistProjectKey(projectKey: string): Promise<boolean> {
+  if (!projectKey || projectKey !== normalizeQueueProjectKey(projectKey) || projectKey.length > 512) return false;
+  return (await memberQueueArtistCatalogFromStore(await readStore())).some(artist => artist.projectKey === projectKey);
+}
+
+export async function getMemberQueueArtistLabels(projectKeys: readonly string[]): Promise<{ projectKey: string; projectLabel: string | null; archiveAvailable: boolean }[]> {
+  if (projectKeys.length > 100 || projectKeys.some(key => typeof key !== "string" || key.length > 512)) throw new Error("Invalid Artist label request.");
+  if (projectKeys.length === 0) return [];
+  const store = await readStore();
+  const native = memberHistoryNativeRows(store);
+  const catalog = new Map(native.map(row => [normalizeQueueProjectKey(row.artist), row.artist]));
+  const unresolved = new Set(projectKeys.filter(projectKey => !catalog.has(projectKey)));
+  if (unresolved.size && process.env.QUEUE_HISTORICAL_EVIDENCE_BLOB_READ_WRITE_TOKEN?.trim()) {
+    try {
+      for (const row of await memberHistoryHistoricalRows(native)) {
+        const projectKey = normalizeQueueProjectKey(row.artist);
+        if (unresolved.has(projectKey) && !catalog.has(projectKey)) catalog.set(projectKey, row.artist);
+      }
+    } catch {
+      // Optional presentation cannot deny native Member provenance/history.
+      // Exact historical record authorization and Owner approval still fail
+      // closed in their separate readers when this repository is unavailable.
+    }
+  }
+  const publicProjects = new Set(buildQueuePublicStats({ revision: store.revision, activeSessionId: store.activeSessionId, sessions: store.sessions }).artists.map(artist => artist.projectKey));
+  return projectKeys.map(projectKey => ({ projectKey, projectLabel: catalog.get(projectKey) ?? null, archiveAvailable: catalog.has(projectKey) && publicProjects.has(projectKey) }));
 }
 
 export async function correctQueueArtistCredit(input: { revision: number; sessionId: string; trackId: string; primary?: string; collaborators?: string; decision?: "whole" | "split" | "alias"; applyToMatching?: boolean; undo?: boolean }) {

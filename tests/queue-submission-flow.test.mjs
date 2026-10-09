@@ -183,7 +183,7 @@ test("intake renders source input before artist details and leaves the providers
   assert.match(disclosure, /Bandcamp/);
 });
 
-function submissionForm({ postOk = true, confirmationMissing = false, choice = "free", purpose = "live_broadcast", remaining = 0, reducedMotion = false, confirmedTrack = snapshot().queue[0], confirmedLocation = "queue", waitImplementation, completeClosesIntake = false } = {}) {
+function submissionForm({ postOk = true, confirmationMissing = false, choice = "free", purpose = "live_broadcast", remaining = 0, reducedMotion = false, confirmedTrack = snapshot().queue[0], confirmedLocation = "queue", waitImplementation, completeClosesIntake = false, selectedArtistId } = {}) {
   const events = [], receipts = [], requests = [], phases = [], storage = new Map(), state = { publicQueue: [], fileInputKey: 0 };
   const session = { ...snapshot().session, purpose };
   const intakeMountedRef = { current: true };
@@ -226,7 +226,7 @@ function submissionForm({ postOk = true, confirmationMissing = false, choice = "
     session, sessionId: session.sessionId, snapshotEndpoint: "/api/queue", status: snapshot().status,
     step: "routing", routingLockRemaining: 0, finalSubmitIntent: { current: true }, submissionInFlight: { current: false }, acceptedLegal: true,
     mode: "link", link: "https://soundcloud.com/artist/song", artist: "Draft Artist", title: "Draft Song", collaboratorNames: "Draft Guest", creditDecision: "split", originalArtist: "Draft Artist feat. Draft Guest", tiktokHandle: "@saved", contactEmail: "private@example.test", submitterToken: "submitter", note: "private note", detectedDuration: null,
-    selectedRoute: choice, publicQueue: [], nowPlaying: null, upNext: null, intakeMountedRef,
+    selectedArtistId, selectedRoute: choice, publicQueue: [], nowPlaying: null, upNext: null, intakeMountedRef,
     SESSION_SYNC_REQUIRED_MESSAGE: "Session sync required", SESSION_CHANGED_MESSAGE: "Session changed", QUEUE_CONFIRMATION_FAILED_MESSAGE: "Submission could not be confirmed in the queue.",
     setAuthoritativeCooldown: value => { state.cooldown = value; },
     wait: async ms => { events.push(["wait", ms]); await waitImplementation?.(ms); },
@@ -253,6 +253,16 @@ test("a successful POST without persisted confirmation keeps the draft and canno
   assert.equal(form.events.some(event => event[0] === "navigate"), false);
   assert.match(form.state.error, /could not be confirmed/);
   assert.equal(form.state.title, undefined);
+});
+
+test("intake sends only the optional approved Artist choice while preserving the guest body", async () => {
+  for (const selectedArtistId of [undefined, "", "11111111-1111-4111-8111-111111111111"]) {
+    const form = submissionForm({ selectedArtistId }); await form.submit();
+    const body = JSON.parse(form.requests.find(request => request.options.method === "POST").options.body);
+    assert.equal(body.artistId, selectedArtistId);
+    for (const key of ["memberId", "submissionMemberId", "approvedArtistId", "approvedArtistLinkRevision"]) assert.equal(key in body, false);
+    assert.equal(form.receipts.length, 1);
+  }
 });
 
 test("the form confirms full credits then completes the final free song before same-tab Deck navigation", async () => {

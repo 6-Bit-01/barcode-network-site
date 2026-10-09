@@ -422,7 +422,7 @@ test("the Radio feature joins the active queue as a Deck entry while archive pag
   assert.match(deck, /BROADCAST ARCHIVE|Broadcast Archive/);
   assert.match(deck, /startSessionBoundPolling/);
   assert.match(deck, /PUBLIC_QUEUE_POLL_INTERVAL_MS/);
-  assert.match(deck, /From this browser/);
+  assert.match(deck, /Artist &amp; show participation/);
   assert.match(deck, /multiple artists|multiple artists|multiple/i);
   assert.match(deck, /BroadcastActivityLog/);
   assert.doesNotMatch(deck, /slice\(0,\s*14\)/);

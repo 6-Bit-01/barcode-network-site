@@ -2,6 +2,7 @@
 "use client";
 
 import { ArtistCreditFields } from "@/components/ArtistCreditFields";
+import { ApprovedArtistSelector } from "@/components/ApprovedArtistSelector";
 import { upload } from "@vercel/blob/client";
 import { safeFileName, audioMimeTypeForFile, readAudioDuration } from "@/lib/queue-upload-client";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -91,6 +92,7 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
   const submissionInFlight = useRef(false);
   const intakeMountedRef = useRef(true);
   const [artist, setArtist] = useState("");
+  const [selectedArtistId, setSelectedArtistId] = useState<string | undefined>(undefined);
   const [creditDecision, setCreditDecision] = useState<"whole" | "split" | "">("");
   const [originalArtist, setOriginalArtist] = useState("");
   const [title, setTitle] = useState("");
@@ -409,6 +411,7 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
         acceptedCheckboxText: PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT,
       };
       body.sessionId = latestSessionId;
+      if (selectedArtistId !== undefined) body.artistId = selectedArtistId;
       if (note.trim()) body.note = note.trim();
       if (detectedDuration) body.detectedDurationSeconds = detectedDuration;
       if (mode === "upload") {
@@ -655,6 +658,7 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
               <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Song title</span><input value={title} onChange={(e) => setTitle(e.target.value)} className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
               <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">TikTok handle</span><input value={tiktokHandle} onChange={(e) => setTikTokHandle(e.target.value)} placeholder="@six.bit" className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
             </div>
+            <ApprovedArtistSelector onChange={setSelectedArtistId} disabled={submitting} />
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
               <button type="button" onClick={onCancel} className="cursor-pointer border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted transition-colors hover:border-foreground/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-muted/50">Collapse Intake</button>
               <button type="button" onClick={continueToRouting} className="cursor-pointer border border-accent bg-accent px-5 py-2 text-xs uppercase tracking-widest text-white transition-colors hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">Continue</button>

@@ -441,6 +441,11 @@ export interface QueueEntry {
   submitterToken?: string | null;
   /** Private browser capability hash; never accepted from a request body. */
   submissionOwnerHash?: string | null;
+  /** Private server-resolved account provenance; never an editing capability. */
+  submissionMemberId?: string | null;
+  /** Independent approved Artist identity; never inferred from display credit. */
+  approvedArtistId?: string | null;
+  approvedArtistLinkRevision?: number | null;
   replacementRevision?: number;
   /** Private allowance consumed only by a committed submitter change. */
   submitterEditUsed?: boolean;

@@ -75,6 +75,7 @@ export function createMemberAccess({auth,database:db,outbox,baseURL,serial}){
   });
  }
  return{
+  authority:{resolve,authorize,transaction},
   async handle(request){return serial(async()=>{try{
    const url=new URL(request.url),s=await resolve(request);
    let payload;

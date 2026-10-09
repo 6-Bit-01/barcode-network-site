@@ -8,6 +8,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { buildQueueTimingDisplay, priorityDisplayFromImpact, queueTimingInputFromPublicSnapshot } from "@/lib/queue-timing-display";
 import { startQueueSubmissionCheckout } from "@/lib/queue-submission-checkout";
+import { completeFreeQueueSubmission, confirmQueueSubmission, publicQueueDeckHref } from "@/lib/queue-submission-flow";
+import type { QueueSubmissionReceipt } from "@/lib/queue-submission-flow";
 import { cooldownDeadlineFromRemaining, cooldownRemainingFromDeadline } from "@/lib/queue-cooldown";
 import { assertQueueTrackDuration, QUEUE_TRACK_DURATION_LIMIT_MESSAGE, QUEUE_TRACK_DURATION_UNVERIFIED_MESSAGE, MAX_QUEUE_TRACK_DURATION_SECONDS, APPLE_MUSIC_QUEUE_UNSUPPORTED_MESSAGE, PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT, PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION, PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION, PUBLIC_QUEUE_LEGAL_TERMS_VERSION, formatRuntime, isAppleMusicUrl, PRIORITY_DISCLOSURE_TEXT, SIGNAL_HOLD_DISCLOSURE_TEXT, SIGNAL_HOLD_CHECKOUT_POSITION_CUTOFF } from "@/lib/queue-types";
 import type { QueuePublicSnapshot, QueuePublicStatus, QueuePublicTrack } from "@/lib/queue-types";
@@ -18,7 +20,6 @@ type Mode = "link" | "upload";
 type ReadState = "idle" | "checking" | "reading" | "detected" | "pending" | "uploading";
 type TransmissionState = "idle" | "priority_requested" | "signal_hold_requested" | "signal" | "received" | "encoded" | "converting" | "temporal" | "aligning" | "confirmed";
 type SubmitPhase = "resolved" | "complete";
-type AcceptedReceipt = { artist: string; title: string; sessionTitle: string; sessionDate: string; trackCode: string };
 type IntakeStep = "track" | "routing";
 type RouteChoice = "free" | "priority" | "signal_hold";
 
@@ -51,12 +52,13 @@ function pressureLabel(status: QueuePublicStatus | null, timingSummary: ReturnTy
   return `${label} / ${status.activeCount} ACTIVE`;
 }
 
-function publicTrackFromApi(track: { id: string; submittedArtistName?: string; submittedSongTitle?: string; submittedAlbumName?: string | null; artist?: string; title?: string; sourceType?: QueuePublicTrack["sourceType"]; lane?: QueuePublicTrack["lane"]; detectedArtistName?: string | null; detectedSongTitle?: string | null; detectedAlbumName?: string | null; detectedDurationSeconds?: number | null; estimatedDurationSeconds?: number; durationLabel?: string; durationIsEstimate?: boolean; durationSource?: QueuePublicTrack["durationSource"]; sourceArtworkUrl?: string | null; publicSourceUrl?: string | null; tiktokHandle?: string | null; priorityUpgradeRequested?: boolean; priorityUpgradeStatus?: QueuePublicTrack["priorityUpgradeStatus"] }): QueuePublicTrack {
+function publicTrackFromApi(track: { id: string; submittedArtistName?: string; submittedSongTitle?: string; submittedAlbumName?: string | null; collaboratorNames?: string | null; artist?: string; title?: string; sourceType?: QueuePublicTrack["sourceType"]; lane?: QueuePublicTrack["lane"]; detectedArtistName?: string | null; detectedSongTitle?: string | null; detectedAlbumName?: string | null; detectedDurationSeconds?: number | null; estimatedDurationSeconds?: number; durationLabel?: string; durationIsEstimate?: boolean; durationSource?: QueuePublicTrack["durationSource"]; sourceArtworkUrl?: string | null; publicSourceUrl?: string | null; tiktokHandle?: string | null; priorityUpgradeRequested?: boolean; priorityUpgradeStatus?: QueuePublicTrack["priorityUpgradeStatus"] }): QueuePublicTrack {
   return {
     id: track.id,
     submittedArtistName: track.submittedArtistName ?? track.artist ?? "Submitted artist",
     submittedSongTitle: track.submittedSongTitle ?? track.title ?? "Submitted track",
     submittedAlbumName: track.submittedAlbumName ?? null,
+    collaboratorNames: track.collaboratorNames ?? null,
     detectedArtistName: track.detectedArtistName ?? null,
     detectedSongTitle: track.detectedSongTitle ?? null,
     detectedAlbumName: track.detectedAlbumName ?? null,
@@ -75,7 +77,7 @@ function publicTrackFromApi(track: { id: string; submittedArtistName?: string; s
   };
 }
 
-export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onSubmitted, onCancel, onAcceptedReceipt }: { sessionId?: string; snapshotEndpoint?: string; onSubmitted?: (trackId?: string, phase?: SubmitPhase, targetId?: string) => void; onCancel?: () => void; onAcceptedReceipt?: (receipt: AcceptedReceipt) => void } = {}) {
+export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onSubmitted, onCancel, onAcceptedReceipt }: { sessionId?: string; snapshotEndpoint?: string; onSubmitted?: (trackId?: string, phase?: SubmitPhase, targetId?: string) => void; onCancel?: () => void; onAcceptedReceipt?: (receipt: QueueSubmissionReceipt) => void } = {}) {
   const [status, setStatus] = useState<QueuePublicStatus | null>(null);
   const [publicQueue, setPublicQueue] = useState<QueuePublicTrack[]>([]);
   const [nowPlaying, setNowPlaying] = useState<QueuePublicTrack | null>(null);
@@ -358,19 +360,6 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
     setRouteChoice("free");
   }
 
-  async function waitForTrackConfirmation(trackId: string): Promise<QueuePublicSnapshot | null> {
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const snapshot = await loadStatus();
-      const foundInQueue = snapshot?.queue.some((entry) => entry.id === trackId);
-      const foundInNowPlaying = snapshot?.nowPlaying?.id === trackId;
-      const foundInUpNext = snapshot?.upNext?.id === trackId;
-      const foundInCompleted = snapshot?.completed.some((entry) => entry.id === trackId);
-      if (foundInQueue || foundInNowPlaying || foundInUpNext || foundInCompleted) return snapshot;
-      if (attempt < 4) await wait(500);
-    }
-    return null;
-  }
-
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (step !== "routing") {
@@ -444,18 +433,12 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
       }
       if (payload.track?.id) {
         const submitted = publicTrackFromApi(payload.track);
-        const confirmedSnapshot = await waitForTrackConfirmation(submitted.id);
-        if (!confirmedSnapshot) {
+        const confirmation = await confirmQueueSubmission({ trackId: submitted.id, sessionId: latestSessionId, checkoutPending: selectedRoute !== "free", readSnapshot: loadStatus, wait });
+        if (!confirmation) {
           await loadStatus();
           throw new Error(`${QUEUE_CONFIRMATION_FAILED_MESSAGE} Reference: ${submitted.id.slice(0, 8).toUpperCase()}`);
         }
-        const receipt = {
-          artist: artist.trim(),
-          title: title.trim(),
-          sessionTitle: refreshedBeforeSubmit?.session?.title ?? session?.title ?? "BARCODE Radio",
-          sessionDate: refreshedBeforeSubmit?.session?.showDate ?? session?.showDate ?? "ACTIVE SESSION",
-          trackCode: submitted.id.slice(0, 8).toUpperCase(),
-        };
+        const { snapshot: confirmedSnapshot, receipt } = confirmation;
         onAcceptedReceipt?.(receipt);
         window.localStorage.setItem("barcode-radio-submit-artist", artist.trim());
         window.localStorage.setItem("barcode-radio-submit-tiktok", tiktokHandle.trim());
@@ -464,8 +447,8 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
         setAuthoritativeCooldown(nextCooldown);
         if (selectedRoute !== "free") {
           setWarpData({
-            artist: artist.trim(),
-            title: title.trim(),
+            artist: receipt.artist,
+            title: receipt.title,
             tiktokHandle: tiktokHandle.trim(),
             sourceType: mode === "upload" ? "UPLOAD" : (submitted.sourceType ?? "other").toUpperCase(),
             durationLabel: detectedDuration ? formatRuntime(detectedDuration) : submitted.durationLabel,
@@ -493,8 +476,8 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
         }
         const preSubmit = { nowPlayingWasEmpty: !nowPlaying, upNextWasEmpty: !upNext, activeCount: status?.activeCount ?? publicQueue.length };
         const baseWarpData: WarpData = {
-          artist: artist.trim(),
-          title: title.trim(),
+          artist: receipt.artist,
+          title: receipt.title,
           tiktokHandle: tiktokHandle.trim(),
           sourceType: mode === "upload" ? "UPLOAD" : (submitted.sourceType ?? "other").toUpperCase(),
           durationLabel: detectedDuration ? formatRuntime(detectedDuration) : submitted.durationLabel,
@@ -506,9 +489,7 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
           artworkUrl: submitted.sourceArtworkUrl ?? null,
         };
         setWarpData(baseWarpData);
-        setTransmissionState("signal");
         setPublicQueue((current) => [submitted, ...current.filter((entry) => entry.id !== submitted.id)]);
-        await wait(1000);
         let resolved = findSubmittedTrack(confirmedSnapshot, submitted.id);
         if (resolved.targetId === "up-next-slot" && preSubmit.upNextWasEmpty) {
           resolved = { ...resolved, targetId: preSubmit.nowPlayingWasEmpty && preSubmit.activeCount === 0 ? "broadcast-queue-top" : "up-next-slot", laneLabel: "UP_NEXT" };
@@ -523,19 +504,14 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
           submissionSlot: resolvedTrack.id === confirmedSnapshot?.upNext?.id ? "UP_NEXT" : baseWarpData.submissionSlot,
         });
         onSubmitted?.(submitted.id, "resolved", resolved.targetId);
-        setTransmissionState("received");
-        await wait(900);
-        setTransmissionState("encoded");
-        await wait(1100);
-        setTransmissionState("converting");
-        await wait(1300);
-        setTransmissionState("temporal");
-        await wait(1400);
-        setTransmissionState("aligning");
-        await wait(1400);
         setTransmissionState("confirmed");
-        await wait(900);
-        onSubmitted?.(submitted.id, "complete", resolved.targetId);
+        await completeFreeQueueSubmission(receipt, {
+          reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+          wait,
+          onComplete: () => onSubmitted?.(submitted.id, "complete", resolved.targetId),
+          navigate: (href) => window.location.assign(href),
+        });
+        setTransmissionState("idle");
       }
       setArtist(window.localStorage.getItem("barcode-radio-submit-artist") ?? artist.trim());
       setTikTokHandle(window.localStorage.getItem("barcode-radio-submit-tiktok") ?? tiktokHandle.trim());
@@ -587,10 +563,15 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
 
   const effectiveCooldown = session?.submissionCooldownSeconds === 0 ? 0 : cooldownRemaining;
   const submissionLimitReached = (submitterStatus?.remaining ?? 1) <= 0;
+  const finalFreeSlot = selectedRoute === "free" && submitterStatus?.remaining === 1 && publicQueueDeckHref(session) !== null;
   const estimatedPosition = Math.min((status?.activeCount ?? publicQueue.length) + 1, status?.capacity ?? ((status?.activeCount ?? publicQueue.length) + 1));
 
   return (
     <form onSubmit={submit} className="min-w-0 space-y-3 [overflow-wrap:anywhere] max-sm:[&_button]:min-h-[44px] max-sm:[&_input:not([type=checkbox])]:min-h-[44px] max-sm:[&_input:not([type=checkbox])]:text-[16px] max-sm:[&_select]:min-h-[44px] max-sm:[&_select]:text-[16px] max-sm:[&_textarea]:text-[16px]">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-l-2 border-accent bg-accent/5 px-3 py-2.5" aria-live="polite">
+        <div><p className="text-xs uppercase text-muted">Your submissions</p><p className="text-lg font-bold text-foreground">{submitterStatus ? `${submitterStatus.used} of ${submitterStatus.limit}` : "Checking allowance"}{submitterStatus && <span className="ml-3 text-sm font-normal text-muted">{submitterStatus.remaining} remaining</span>}</p></div>
+        <p className={effectiveCooldown > 0 ? "text-sm font-bold text-accent" : "text-xs text-muted"}>{effectiveCooldown > 0 ? `Next submission in ${formatCooldown(effectiveCooldown)}` : submissionLimitReached ? "Session allowance used" : submitterStatus ? "Ready for your next song" : "Checking session"}</p>
+      </div>
       <div className="grid gap-2 border border-border bg-surface p-3 text-xs sm:grid-cols-4">
         <div><p className="text-[10px] uppercase tracking-widest text-muted">Session</p><p className="truncate text-foreground">{session?.title ?? "BARCODE Radio"}</p></div>
         <div><p className="text-[10px] uppercase tracking-widest text-muted">Queue</p><p className={status?.isOpen ? "text-accent" : "text-danger"}>{status?.isOpen ? "Open" : "Closed"}</p></div>
@@ -612,16 +593,21 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
 
         {step === "track" ? (
           <div className="space-y-3">
-            <div className="grid gap-2.5 sm:grid-cols-2">
-              <ArtistCreditFields artist={artist} collaborators={collaboratorNames} decision={creditDecision} onChange={(name, features, decision, original) => { setArtist(name); setCollaboratorNames(features); setCreditDecision(decision); if (original) setOriginalArtist(original); }} />
-              <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Song title</span><input value={title} onChange={(e) => setTitle(e.target.value)} className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
-              <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">TikTok handle</span><input value={tiktokHandle} onChange={(e) => setTikTokHandle(e.target.value)} placeholder="@six.bit" className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
-            </div>
             <div className="grid gap-2 sm:grid-cols-2">
               <button type="button" onClick={() => setMode("link")} aria-pressed={mode === "link"} className={`flex min-h-[44px] items-center cursor-pointer border p-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${mode === "link" ? "border-accent bg-accent text-background" : "border-border hover:border-accent/50 hover:bg-accent/10"}`}><span className={`text-xs uppercase tracking-widest ${mode === "link" ? "text-background" : "text-muted"}`}>Use Track Link</span></button>
               <button type="button" onClick={() => setMode("upload")} aria-pressed={mode === "upload"} className={`flex min-h-[44px] items-center cursor-pointer border p-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${mode === "upload" ? "border-accent bg-accent text-background" : "border-border hover:border-accent/50 hover:bg-accent/10"}`}><span className={`text-xs uppercase tracking-widest ${mode === "upload" ? "text-background" : "text-muted"}`}>Upload MP3/WAV</span></button>
             </div>
-            <div className="grid gap-3 border border-border/70 bg-background/40 p-3 text-xs text-muted lg:grid-cols-[1.45fr_1fr]">
+            {mode === "link" ? (
+              <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">Track Link</span><input type="url" value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://soundcloud.com/..." className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
+            ) : (
+              <>
+                <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">Upload MP3/WAV</span><input key={fileInputKey} type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/wave,.mp3,.wav" onChange={(e) => onFileSelected(e.target.files?.[0] ?? null)} className="w-full bg-background border border-border px-3 py-2 text-sm" required={!file} /></label>
+                {file && <div className="border border-border bg-background/40 p-2 text-xs text-muted"><p>Selected file: {file.name}</p><p>Size: {(file.size / (1024 * 1024)).toFixed(2)} MB</p><p>Duration: {detectedDuration ? formatRuntime(detectedDuration) : "pending"}</p><button type="button" onClick={() => { setFile(null); setDetectedDuration(null); setUploadProgress(null); setReadState("idle"); setFileInputKey((value) => value + 1); }} className="mt-2 cursor-pointer border border-danger/50 px-3 py-1 text-[11px] uppercase tracking-widest text-danger transition-colors hover:bg-danger/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/50">Remove File</button></div>}
+              </>
+            )}
+            <details className="border-b border-border/70 pb-3 text-xs text-muted">
+              <summary className="cursor-pointer py-1 text-foreground">Supported links &amp; upload details</summary>
+              <div className="mt-2 grid gap-3 lg:grid-cols-[1.45fr_1fr]">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-foreground">Accepted track sources</p>
                 <div className="mt-2 grid gap-2 md:grid-cols-[0.65fr_1.2fr_1.35fr]">
@@ -656,15 +642,13 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
                 <p>Some accepted services currently open externally and may not provide automatic artwork, duration, or embedded playback. Expanded player and metadata support is planned.</p>
                 <p className="text-foreground">Send a direct song, track, or video link—not an artist profile, playlist, channel, general homepage, or album page that does not identify a specific track.</p>
               </div>
+              </div>
+            </details>
+            <div className="grid gap-2.5 sm:grid-cols-2">
+              <ArtistCreditFields artist={artist} collaborators={collaboratorNames} decision={creditDecision} onChange={(name, features, decision, original) => { setArtist(name); setCollaboratorNames(features); setCreditDecision(decision); if (original) setOriginalArtist(original); }} />
+              <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">Song title</span><input value={title} onChange={(e) => setTitle(e.target.value)} className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
+              <label className="space-y-1"><span className="text-xs uppercase tracking-widest text-muted">TikTok handle</span><input value={tiktokHandle} onChange={(e) => setTikTokHandle(e.target.value)} placeholder="@six.bit" className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
             </div>
-            {mode === "link" ? (
-              <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">Track Link</span><input type="url" value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://soundcloud.com/..." className="w-full bg-background border border-border px-3 py-2 text-sm" required /></label>
-            ) : (
-              <>
-                <label className="space-y-1 block"><span className="text-xs uppercase tracking-widest text-muted">Upload MP3/WAV</span><input key={fileInputKey} type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/wave,.mp3,.wav" onChange={(e) => onFileSelected(e.target.files?.[0] ?? null)} className="w-full bg-background border border-border px-3 py-2 text-sm" required={!file} /></label>
-                {file && <div className="border border-border bg-background/40 p-2 text-xs text-muted"><p>Selected file: {file.name}</p><p>Size: {(file.size / (1024 * 1024)).toFixed(2)} MB</p><p>Duration: {detectedDuration ? formatRuntime(detectedDuration) : "pending"}</p><button type="button" onClick={() => { setFile(null); setDetectedDuration(null); setUploadProgress(null); setReadState("idle"); setFileInputKey((value) => value + 1); }} className="mt-2 cursor-pointer border border-danger/50 px-3 py-1 text-[11px] uppercase tracking-widest text-danger transition-colors hover:bg-danger/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/50">Remove File</button></div>}
-              </>
-            )}
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
               <button type="button" onClick={onCancel} className="cursor-pointer border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted transition-colors hover:border-foreground/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-muted/50">Collapse Intake</button>
               <button type="button" onClick={continueToRouting} className="cursor-pointer border border-accent bg-accent px-5 py-2 text-xs uppercase tracking-widest text-white transition-colors hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">Continue</button>
@@ -705,15 +689,14 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
               {legalError && <p id="queue-legal-error" className="mt-2 text-[11px] font-bold text-accent" role="alert">{legalError}</p>}
             </div>
             <div className="grid gap-2 text-xs sm:grid-cols-2">
-              {submitterStatus && <div className="border border-accent/40 bg-accent/5 p-2 text-muted"><p className="font-bold text-accent">Your submissions: {submitterStatus.used} / {submitterStatus.limit}</p><p>Remaining: {submitterStatus.remaining}</p>{effectiveCooldown > 0 && <p className="text-accent">Cooldown: {formatCooldown(effectiveCooldown)}</p>}</div>}
-              {effectiveCooldown > 0 && <div className="border border-accent/40 bg-accent/5 p-2 text-accent">Next submission available in {formatCooldown(effectiveCooldown)}</div>}
               <div className="border border-border bg-background/40 p-2 text-muted">{checkCopy}</div>
               {!priorityPaymentsAvailable && <div className="border border-border bg-background/40 p-2 text-muted">Priority Signal is unavailable for this session. Free queue submission remains active.</div>}
             </div>
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
               <button type="button" onClick={() => setStep("track")} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted">Back</button>
-              <button type="submit" onClick={() => { finalSubmitIntent.current = true; }} disabled={submitting || readState === "uploading" || routingLockRemaining > 0 || effectiveCooldown > 0 || submissionLimitReached || status?.isOpen === false || status?.isFull === true} className="border border-accent px-5 py-2.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{readState === "uploading" ? "Uploading audio…" : submitting ? "Submitting…" : routingLockRemaining > 0 ? `Submit lock: ${routingLockRemaining}` : effectiveCooldown > 0 ? `Next submission available in ${formatCooldown(effectiveCooldown)}` : submissionLimitReached ? "Submission Limit Reached" : status?.isFull ? "Queue Full" : selectedRoute === "signal_hold" ? "Submit & Continue to Signal Hold Payment" : selectedRoute === "priority" ? "Submit & Continue to Payment" : "Submit Free"}</button>
+              <button type="submit" onClick={() => { finalSubmitIntent.current = true; }} disabled={submitting || readState === "uploading" || routingLockRemaining > 0 || effectiveCooldown > 0 || submissionLimitReached || status?.isOpen === false || status?.isFull === true} className="border border-accent px-5 py-2.5 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background disabled:opacity-50">{readState === "uploading" ? "Uploading audio…" : submitting ? "Submitting…" : routingLockRemaining > 0 ? `Submit lock: ${routingLockRemaining}` : effectiveCooldown > 0 ? `Next submission available in ${formatCooldown(effectiveCooldown)}` : submissionLimitReached ? "Submission Limit Reached" : status?.isFull ? "Queue Full" : selectedRoute === "signal_hold" ? "Submit & Continue to Signal Hold Payment" : selectedRoute === "priority" ? "Submit & Continue to Payment" : finalFreeSlot ? "Submit final song & open Broadcast Deck" : "Submit Free"}</button>
             </div>
+            {selectedRoute === "free" && publicQueueDeckHref(session) && <p className="text-xs text-muted">Your final free song opens the Broadcast Deck once confirmed.</p>}
           </div>
         )}
       </div>

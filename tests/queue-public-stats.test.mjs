@@ -446,16 +446,12 @@ test("the Radio feature joins the active queue as a Deck entry while archive pag
   assert.match(archive, /Finish outcomes; full playback is not implied/);
   assert.match(archive, /deckHref &&/);
 
-  assert.match(publicQueue, /\/radio\/deck/);
-  assert.match(publicQueue, /Done submitting—or just watching\?/);
-  assert.match(publicQueue, /Song submissions stay here in the queue/);
-  assert.doesNotMatch(publicQueue.slice(publicQueue.indexOf("{acceptedReceipt &&"), publicQueue.indexOf("<SessionPhasePanel")), /\/radio\/deck/);
-  assert.match(publicQueue, /\/radio\/archive/);
+  // Queue handoff destinations, receipt actions and private separation are
+  // exercised by queue-participation-actions and queue-submission-flow tests.
   assert.match(radio, /<RadioBroadcastFeature archiveOnly \/>/);
   assert.doesNotMatch(archivePage, /deckHref|\/radio\/deck/);
   assert.doesNotMatch(sitemap, /\/radio\/deck/);
   assert.match(sitemap, /\/radio\/archive/);
-  assert.match(deck, /Song submissions stay in the queue/);
   assert.match(deck, /Submissions happen in the queue/);
   assert.match(publicQueue, /broadcastArchiveArtistHref/);
   assert.match(publicQueue, /Artist Archive/);

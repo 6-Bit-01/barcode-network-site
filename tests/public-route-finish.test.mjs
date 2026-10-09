@@ -66,7 +66,7 @@ test("accessibility and reduced-motion finish remains explicit while protected m
 
   assert.match(siteChrome, /href="#main-content"/);
   assert.ok(siteChrome.indexOf('className="skip-link"') < siteChrome.indexOf('<DataStream />'));
-  assert.ok(siteChrome.indexOf('className="skip-link"') < siteChrome.indexOf('<Header />'));
+  assert.ok(siteChrome.indexOf('className="skip-link"') < siteChrome.indexOf('<Header '));
   assert.ok(siteChrome.indexOf('className="skip-link"') < siteChrome.indexOf('<BNLNetworkRelayShell />'));
   assert.match(header, /aria-current=\{isActive \? "page" : undefined\}/);
   assert.match(header, /aria-expanded=\{open\}/);

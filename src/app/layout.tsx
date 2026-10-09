@@ -8,6 +8,8 @@ import { SiteChrome } from "@/components/SiteChrome";
 import { SiteAudioProvider } from "@/components/SiteAudioProvider";
 import { getRadioSubmissionRouting } from "@/lib/radio-submission-routing";
 
+import { getMemberServiceConfiguration } from "@/lib/member-service";
+
 const fontVariables = {
   "--font-geist-mono": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace",
 } as CSSProperties;
@@ -67,7 +69,7 @@ export default function RootLayout({
         <LiveStatusProvider>
           <BNLStatusProvider>
             <SiteAudioProvider>
-              <SiteChrome radioSubmission={radioSubmission}>{children}</SiteChrome>
+              <SiteChrome radioSubmission={radioSubmission} accountEnabled={Boolean(getMemberServiceConfiguration())}>{children}</SiteChrome>
             </SiteAudioProvider>
           </BNLStatusProvider>
         </LiveStatusProvider>

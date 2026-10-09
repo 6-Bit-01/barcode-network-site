@@ -38,7 +38,7 @@ function isNavItemActive(pathname: string, href: string) {
   return pathname === href;
 }
 
-export function Header() {
+export function Header({ accountEnabled = false }: { accountEnabled?: boolean }) {
   const pathname = usePathname();
   const { siteShowMode, queueHref, streamUrl } = useLiveStatus();
   const liveHref =
@@ -153,6 +153,7 @@ export function Header() {
                 <span className="hidden sm:inline">{liveLabel}</span>
               </Link>
             )}
+            {accountEnabled && <Link href="/account" className="public-nav-link text-xs" aria-current={pathname.startsWith("/account") ? "page" : undefined}>Account</Link>}
             <MobileMenu pathname={pathname} />
           </div>
         </div>

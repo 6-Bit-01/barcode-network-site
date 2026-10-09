@@ -11,9 +11,11 @@ import { BNLNetworkRelayShell } from "@/components/BNLNetworkRelayShell";
 export function SiteChrome({
   children,
   radioSubmission,
+  accountEnabled = false,
 }: {
   children: ReactNode;
   radioSubmission: RadioSubmissionRouting;
+  accountEnabled?: boolean;
 }) {
   const pathname = usePathname();
 
@@ -32,7 +34,7 @@ export function SiteChrome({
         Skip to main content
       </a>
       {!publicPresentation && <DataStream />}
-      <Header />
+      <Header accountEnabled={accountEnabled} />
       <BNLNetworkRelayShell />
       <main
         id="main-content"

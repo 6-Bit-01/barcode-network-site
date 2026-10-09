@@ -1,0 +1,18 @@
+{
+    log default {
+        format filter {
+            wrap json
+            fields {
+                request delete
+            }
+        }
+    }
+}
+member-auth.barcode-network.com {
+    # Access logging stays off; runtime errors discard the entire request object.
+    reverse_proxy 127.0.0.1:8788 {
+        transport http {
+            read_timeout 20s
+        }
+    }
+}

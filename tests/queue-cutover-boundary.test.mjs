@@ -144,7 +144,7 @@ test("Footer receives server-resolved routing and public dossiers no longer clai
   const content = read("src/content.ts");
 
   assert.match(layout, /const radioSubmission = getRadioSubmissionRouting\(\)/);
-  assert.match(layout, /<SiteChrome radioSubmission=\{radioSubmission\}>/);
+  assert.match(layout, /<SiteChrome radioSubmission=\{radioSubmission\} accountEnabled=\{Boolean\(getMemberServiceConfiguration\(\)\)\}>/);
   assert.match(siteChrome, /<Footer submission=\{radioSubmission\}/);
   assert.doesNotMatch(footer, /getRadioSubmissionRouting\(\)/);
   assert.doesNotMatch(content, /Accepts submissions via Auxchord/);

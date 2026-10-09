@@ -19,3 +19,8 @@
 
 /* Browsers without native fullscreen still offer more room, with an accessible exit. */
 html.is-expanded .demo-header{padding:4px 12px;min-height:30px}html.is-expanded .title-screen{min-height:calc(100svh - 92px);padding-block:12px}html.is-expanded .select-screen{max-width:none;padding:8px 12px}html.is-expanded .selection-stage{max-width:1480px;margin:auto}
+
+/* The same authored control plate across match, pause and title surfaces. */
+.title-modes button,.selection-actions button,.enter-arena,.tournament-actions button,.pause-options button,.match-menu-actions button,.menu-actions button,dialog button{background-image:url('assets/ui/menu-plate.webp');background-size:100% 100%;background-repeat:no-repeat}
+
+.fighter-card{border:7px solid transparent;border-image:url('assets/ui/portrait-art.webp') 16 stretch;border-radius:0}.fighter-card:focus-visible{outline:2px solid #f6f0fc;outline-offset:2px}

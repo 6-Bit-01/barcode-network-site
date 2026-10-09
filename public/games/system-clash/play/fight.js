@@ -419,6 +419,7 @@ async function boot() {
     stageArt=nextStageArt;stageArtPending=null;
     const nextInterfaceArt=await interfaceArtPending;
     if(revision!==loadRevision)return;
+    if(!options.bundle&&nextInterfaceArt.failures?.length){interfaceArtPending=null;throw Error('Interface artwork could not load. Retry loading.');}
     renderer.prepareInterface(nextInterfaceArt);
     art=nextArt;deletionProp=nextProp;weaponArt=nextWeaponArt;fighterPortraits=nextPortraits;
     void effects.prepareCharacterAudio?.(art.map(fighter=>fighter.manifest.id));

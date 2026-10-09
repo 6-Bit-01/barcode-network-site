@@ -76,3 +76,32 @@ test('current native uppercut atlases produce bounded measured windlines without
   assert.equal(JSON.stringify(metadata),before);
  }
 });
+
+test('strike samples outside their native body crop cannot create remote windlines',()=>{
+ const fx=createFightMotionFX(),ctx=context();
+ sample(fx,ctx,0,body({airborne:false,attackKey:'kick-1',strikeStart:{x:1100,y:350},strike:{x:1130,y:330}}));
+ sample(fx,ctx,16,body({airborne:false,attackKey:'kick-1',strikeStart:{x:1100,y:350},strike:{x:1190,y:320}}));
+ assert.equal(ctx.lines.length,0,'A stale attachment in another actor or prop cannot create FX outside this unchanged native crop');
+ assert.equal(fx.getStats().windlines,0);
+});
+
+test('large changes in limb length do not join guard markers to a different body part',()=>{
+ for(const facing of ['left','right']){
+  const direction=facing==='left'?-1:1,fx=createFightMotionFX(),ctx=context();
+  sample(fx,ctx,0,body({facing,airborne:false,attackKey:'kick-1',strikeStart:{x:400,y:350},strike:{x:400+direction*12,y:340}}));
+  sample(fx,ctx,16,body({facing,airborne:false,attackKey:'kick-1',strikeStart:{x:400,y:350},strike:{x:400+direction*90,y:450}}));
+  assert.equal(ctx.lines.length,0,'A short guard marker and a long foot extension are separate anatomical samples');
+  assert.equal(fx.getStats().windlines,0);
+ }
+});
+
+test('a discontinuous limb sample discards existing wind rather than painting it beside a new marker',()=>{
+ const fx=createFightMotionFX(),ctx=context();
+ sample(fx,ctx,0,body({airborne:false,attackKey:'punch-1',strikeStart:{x:400,y:370},strike:{x:450,y:350}}));
+ sample(fx,ctx,16,body({airborne:false,attackKey:'punch-1',strikeStart:{x:400,y:340},strike:{x:460,y:320}}));
+ assert(ctx.lines.length>0,'A continuous native limb has a real motion trail');
+ ctx.lines.length=0;
+ sample(fx,ctx,32,body({airborne:false,attackKey:'punch-1',strikeStart:{x:400,y:350},strike:{x:403,y:347}}));
+ assert.equal(ctx.lines.length,0,'The existing hand trail disappears when the attachment becomes a collapsed placeholder');
+ assert.equal(fx.getStats().windlines,0);
+});

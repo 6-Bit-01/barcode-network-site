@@ -81,7 +81,14 @@ test("System Clash ships only its same-origin runtime, with complete registered 
     assert.equal(oakRip.file,"rip-opposed-v1.webp");
     assert(requests.has("assets/deletions/papa-oak/"+oakRip.file),"The reviewed opposed-palm atlas must load");
     assert(!requests.has(retainedOakSource),"Retained original tear pixels do not add a second runtime download");
-    for(const name of inventory.filter(name=>/^assets\/(?:animation-polish|fighters|arcade|deletions)\/.+\.webp$/.test(name)&&name!==retainedOakSource))assert(requests.has(name),"Registered atlas was not loaded: "+name);
+    // Retain the approved original Doof walk while loading its reviewed four-phase replacement.
+    const retainedDoofWalk='assets/fighters/doofnoobler/walk.webp';
+    assert.equal(createHash('sha256').update(fs.readFileSync(path.join(root,retainedDoofWalk))).digest('hex'),'95f004aa0fd89074e9d528ba9bd4a049f4babcd3ec36ee4fe3043df5188de6b8');
+    const doofWalk=JSON.parse(read('assets/fighters/doofnoobler/manifest.json')).clips.walk;
+    assert.equal(doofWalk.file,'walk-native-v2.webp');
+    assert(requests.has('assets/fighters/doofnoobler/'+doofWalk.file),'Reviewed four-phase walk must load');
+    assert(!requests.has(retainedDoofWalk),'Retained original walk does not add a runtime download');
+    for(const name of inventory.filter(name=>/^assets\/(?:animation-polish|fighters|arcade|deletions)\/.+\.webp$/.test(name)&&name!==retainedOakSource&&name!==retainedDoofWalk))assert(requests.has(name),"Registered atlas was not loaded: "+name);
   } finally {
     globalThis.fetch = oldFetch;
     globalThis.Image = oldImage;

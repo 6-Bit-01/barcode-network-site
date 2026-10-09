@@ -93,6 +93,7 @@ export function combatMetadata(art,weaponArt) {
     ...compileCombatPoses(asset,name,fighter),
     contactMs:asset.data.contactMs,
     reactionStartMs:asset.data.reactionStartMs,
+    ...(['grab','grab-low','grab-high'].includes(name)?{liftMs:asset.data.liftMs,releaseMs:asset.data.releaseMs}:{}),
     ...(name==='thrown'?{airborneStartMs:asset.timeline.entries[1]?.start??0,airborneExtendedMs:asset.timeline.entries[2]?.start??0,airborneEndMs:Math.max(0,asset.timeline.entries.at(-1).start-.001)}:{}),
     loop:asset.data.loop ?? (name === 'idle' || name === 'walk'),
     endOffsetX:Object.fromEntries(['left','right'].map(facing=>[facing,(asset.data.frames[facing].at(-1).offset?.[0] ?? 0)*poseScale(asset,asset.data.frames[facing].at(-1))])),
@@ -141,12 +142,13 @@ export async function loadFightArt({bundle,baseURL,ids=['6-bit','9-bit'],onProgr
       if (!response.ok) throw new Error('The fighter files are unavailable. Reload the game and try again.');
       manifest = await response.json();
     }
-    const clips = Object.fromEntries(await Promise.all(ACTIONS.map(async name=>{
+    const names = [...ACTIONS,...['grab','grab-low','grab-high'].filter(name=>manifest.clips?.[name])];
+    const clips = Object.fromEntries(await Promise.all(names.map(async name=>{
       const data = manifest.clips?.[name];
       if (!data) throw new Error(`${manifest.character} needs its ${name} poses.`);
       const image = await imageFor(fightImagePath(path,data,bundle));
       const asset = compileFightClip(data,image,manifest,name);
-      onProgress(++completed,ids.length*12);
+      if(ACTIONS.includes(name))onProgress(++completed,ids.length*ACTIONS.length);
       return [name,asset];
     })));
     for (const facing of ['left','right']) {

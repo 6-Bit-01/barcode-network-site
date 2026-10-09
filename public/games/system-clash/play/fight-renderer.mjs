@@ -525,7 +525,7 @@ function fighter(ctx, view, art, overlays, weaponArt, hide = false, motion) {
     // Lyra's noncontact kick keys mark the guard hand; only the extension
     // marks the paw. Those different body parts cannot share a wind trail.
     const strike=frame.attachments?.strike,grip=frame.attachments?.grip;
-    const guardStrike=art.manifest.id==='lyra'&&view.clip.includes('kick')&&strike&&grip
+    const guardStrike=view.clip.includes('kick')&&strike&&grip
       &&Math.hypot(strike[0]-grip[0],strike[1]-grip[1])*scale<=art.manifest.height*.12;
     motion.fx.drawBody(ctx,{key:motion.key,fighterId:art.manifest.id,image:asset.image,
       source:frame.rect,destination:[dx,dy,sw*scale,sh*scale],position:{x:feetX,y:feetY},facing:view.facing,
@@ -846,12 +846,18 @@ function machineViews(match,prop,views,art,nativeMask) {
       const p=easedProgress(t,b.haul,b.captured),operator=poseWorldPoint(hero,art[match.winner],'torso');
       hero.x+=(g.operatorX-operator.x)*p;
       if(t>=b.close&&t<b.sealed) {
-        victim.clip='delete-compressed';
-        const clip=art[1-match.winner].clips[victim.clip],change=clip.timeline.entries.find(entry=>entry.index===1)?.start??240;
-        victim.elapsed=t<b.squeeze?propBeatProgress(t,b.close,b.squeeze-b.close)*(change-1):change+(clip.timeline.duration-change-1)*propBeatProgress(t,b.squeeze,b.sealed-b.squeeze);
+        if(art[1-match.winner].clips['delete-rip-front'])Object.assign(victim,hangingVictimPose(art[1-match.winner].clips,{clip:'delete-compressed',elapsed:0}));
+        else {
+          victim.clip='delete-compressed';
+          const clip=art[1-match.winner].clips[victim.clip],change=clip.timeline.entries.find(entry=>entry.index===1)?.start??240;
+          victim.elapsed=t<b.squeeze?propBeatProgress(t,b.close,b.squeeze-b.close)*(change-1):change+(clip.timeline.duration-change-1)*propBeatProgress(t,b.squeeze,b.sealed-b.squeeze);
+        }
       }
       const head=poseWorldPoint(victim,art[1-match.winner],'head');
       victim.x+=(g.center-head.x)*p;
+      // Short victims are hoisted into the rigid jaw faces; the native body and apparatus keep their own scale.
+      const faceY=FLOOR+(g.left.frame.innerFace[1]-g.left.frame.anchor[1])*g.scale;
+      victim.y-=Math.max(0,head.y-faceY)*p;
     }
     return result;
   }
@@ -997,7 +1003,7 @@ function jawsGeometry(match,bank,views,art) {
   const victim=views[index],victimArt=art[index],capture=hangingVictimPose(victimArt.clips,{clip:'delete-brace',elapsed:0});
   const widths=[capture,{clip:'delete-brace',elapsed:0}].map(pose=>{const asset=victimArt.clips[pose.clip],reference=sourceFrame(asset,{...victim,...pose}),bounds=reference.opaqueBounds;return (bounds[2]-bounds[0])*poseScale(asset,reference);});
   const gap=Math.max(...widths)+40;
-  const scale=240/(bank.manifest.utilityFrames.jawLeft.opaqueBounds[3]-bank.manifest.utilityFrames.jawLeft.opaqueBounds[1]);
+  const scale=430/(bank.manifest.utilityFrames.jawLeft.opaqueBounds[3]-bank.manifest.utilityFrames.jawLeft.opaqueBounds[1]);
   const small=Math.max(92,gap*.30);let opening=gap;
   if(t>=b.close&&t<b.squeeze)opening=gap+(small-gap)*propBeatProgress(t,b.close,b.squeeze-b.close);
   else if(t>=b.squeeze&&t<b.sealed)opening=small+(18-small)*propBeatProgress(t,b.squeeze,b.sealed-b.squeeze);
@@ -1511,7 +1517,6 @@ function signatureHardware(ctx,match,prop,views,art,front) {
       else if(t<b.bodyCut){const p=clamp((t-b.upperCut)/(b.bodyCut-b.upperCut),0,1);x=head.x+(chest.x-head.x)*p;y=head.y+(chest.y-head.y)*p;}
       else {const p=clamp((t-b.bodyCut)/(b.tapeCast-b.bodyCut),0,1);x=chest.x+dir*320*p;y=chest.y-90*p;}
       angle=(t-b.release)*.022*dir;
-      ctx.save();ctx.strokeStyle='#bbc5d266';ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(x,y,83,26,angle,0,TAU);ctx.stroke();ctx.restore();
     }
     utilitySprite(ctx,g.bank,frame,x,y,155,angle,t<b.release?(dir>0?frame.gripRight:frame.gripLeft):frame.pivot);
     if(t<b.release)coverGrip();
@@ -1661,8 +1666,7 @@ function healthBar(ctx, fighter, index, portrait, interfaceArt) {
   const width = portrait ? 400 : 464;
   if(portrait){
     const px=right?1166:30;
-    ctx.save();ctx.fillStyle='#08090ced';ctx.fillRect(px-3,12,86,86);
-    ctx.strokeStyle=right?'#b7f668':'#ba71ee';ctx.lineWidth=2;ctx.strokeRect(px-3,12,86,86);
+    ctx.save();
     if(right){ctx.translate(px+80,0);ctx.scale(-1,1);ctx.drawImage(portrait,0,15,80,80);}
     else ctx.drawImage(portrait,px,15,80,80);
     ctx.restore();
@@ -1670,30 +1674,27 @@ function healthBar(ctx, fighter, index, portrait, interfaceArt) {
   }
   const value = clamp((fighter?.hp ?? fighter?.health ?? 100) / (fighter?.maxHp ?? 100), 0, 1);
   const accent = right ? '#b7f668' : '#ba71ee';
-  ctx.fillStyle = '#06070acc';
-  ctx.fillRect(x - 6, y - 5, width + 12, 42);
-  ctx.strokeStyle = right ? '#438414' : '#602195';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(x - 6, y - 5, width + 12, 42);
+  if(!interfaceArt?.images?.[right?'railP2':'railP1']){ctx.fillStyle='#06070acc';ctx.fillRect(x-6,y-5,width+12,42);}
   interfaceAsset(ctx,interfaceArt,right?'railP2':'railP1',x-6,y-5,width+12,42);
+  const raster=Boolean(interfaceArt?.manifest?.assets?.[right?'railP2':'railP1']?.runtimeFile),meterX=raster?x+21:x,meterY=raster?y+9:y,meterWidth=raster?width-42:width,meterHeight=raster?13:31;
   ctx.fillStyle = '#651d29';
-  ctx.fillRect(x, y, width, 31);
+  ctx.fillRect(meterX, meterY, meterWidth, meterHeight);
   if (value > 0) {
     const fill = ctx.createLinearGradient(0, y, 0, y + 31);
     fill.addColorStop(0, value < .25 ? '#fa6750' : right ? '#b7f668' : '#ba71ee');
     fill.addColorStop(.5, value < .25 ? '#b42a36' : right ? '#80b43d' : '#8a42bd');
     fill.addColorStop(1, value < .25 ? '#7d2131' : right ? '#438414' : '#602195');
     ctx.fillStyle = fill;
-    ctx.fillRect(right ? x + width * (1 - value) : x, y, width * value, 31);
+    ctx.fillRect(right ? meterX + meterWidth * (1 - value) : meterX, meterY, meterWidth * value, meterHeight);
     ctx.fillStyle = '#f6f0fc30';
-    ctx.fillRect(right ? x + width * (1 - value) : x, y + 2, width * value, 2);
+    ctx.fillRect(right ? meterX + meterWidth * (1 - value) : meterX, meterY+1, meterWidth * value, 1);
   }
   ctx.strokeStyle = '#090b1155';
   ctx.lineWidth = 1;
   for (let i = 1; i < 10; i++) {
     ctx.beginPath();
-    ctx.moveTo(x + width * i / 10, y + 2);
-    ctx.lineTo(x + width * i / 10, y + 29);
+    ctx.moveTo(meterX + meterWidth * i / 10, meterY+1);
+    ctx.lineTo(meterX + meterWidth * i / 10, meterY+meterHeight-1);
     ctx.stroke();
   }
   text(ctx, fighter?.name ?? (right ? '9 Bit' : '6 Bit'), right ? x + width : x, 32, 25, '#f6f0fc', right ? 'right' : 'left', '900');
@@ -1770,7 +1771,7 @@ function hud(ctx, match, paused, motionReview = false, portraits = {}, interface
     const x=i?966:60,color=i?'#b7f668':'#ba71ee';
     if(!interfaceAsset(ctx,interfaceArt,i===1?'weaponP2':'weaponP1',x-10,650,260,31)){ctx.fillStyle='#08090ccf';ctx.fillRect(x-10,650,260,31);}
     text(ctx,weapon.name??(weapon.type==='pulse-driver'?'PULSE DRIVER':'NEURAL SPIKE'),x,667,11,color,'left','700','monospace');
-    for(let charge=0;charge<3;charge++){ctx.fillStyle=charge<weapon.charges?color:'#41424a';ctx.fillRect(x+183+charge*15,658,10,10);}
+    for(let charge=0;charge<3;charge++){ctx.fillStyle=charge<weapon.charges?color:'#41424a';ctx.beginPath();ctx.arc(x+185+charge*29,665,4,0,Math.PI*2);ctx.fill();}
     if(!weapon.charges)text(ctx,'EMPTY Â· DOWN + THROW',x,678,8,'#b2a1a3','left','700','monospace');
   }
 }
@@ -1865,7 +1866,7 @@ export function createFightRenderer(canvas) {
         layers.releaseArena();lastWorldClock=match.stage.clock;lastStageId=match.stage.id;
         ctx.save();ctx.translate(-(match.stage.cinematicOrigin??0),0);
         stageRenderer.drawBackground(ctx,match.stage,scene.stageArt);
-        stageRenderer.drawBehind(ctx,match.stage,scene.stageArt,{reducedMotion:scene.reducedMotion,cameraX:worldCamera.x,fighting:match.phase==='fight',cinematicElapsed:match.phase==='deletion'||match.phase==='over'&&match.deletionElapsed>0?match.deletionElapsed:null});
+        stageRenderer.drawBehind(ctx,match.stage,scene.stageArt,{interfaceArt,reducedMotion:scene.reducedMotion,cameraX:worldCamera.x,fighting:match.phase==='fight',cinematicElapsed:match.phase==='deletion'||match.phase==='over'&&match.deletionElapsed>0?match.deletionElapsed:null});
         ctx.restore();
       } else {layers.drawStage(ctx);lastWorldClock=null;lastStageId=null;}
       effects?.drawBehind?.(ctx, match);
@@ -1908,7 +1909,7 @@ export function createFightRenderer(canvas) {
       } else for(let i=0;i<views.length;i++)drawActor(i);
       projectiles(ctx,match,scene.weaponArt,true);
       effects?.drawFront?.(ctx, match);
-      if(match.stage&&wideWorld)stageRenderer.drawFront(ctx,match,scene.stageArt,{reducedMotion:scene.reducedMotion});
+      if(match.stage&&wideWorld)stageRenderer.drawFront(ctx,match,scene.stageArt,{interfaceArt,reducedMotion:scene.reducedMotion});
       ctx.restore();
       ctx.setTransform(1,0,0,1,0,0);
       if ((effects?.flash ?? 0) > 0) {

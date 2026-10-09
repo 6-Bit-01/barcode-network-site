@@ -247,7 +247,8 @@ export function createFightEffects(options = {}) {
     const y = finite(event.y, 430);
     const direction = event.direction === -1 ? -1 : 1;
     const strength = clamp(finite(event.strength, 1), 0.25, 2.5);
-    if(event.peaceful){if(['hug-contact','hug-release','stay-kind'].includes(event.cue))burst('spark',x,y,direction,8,.2);audio.emit({...event,strength});return;}
+    // Peaceful contact and dialogue retain their audio cues, with native body art only.
+    if(event.peaceful){audio.emit({...event,strength});return;}
     switch (event.type) {
       case 'hit': {
         const kind=event.damageKind??'bruise';

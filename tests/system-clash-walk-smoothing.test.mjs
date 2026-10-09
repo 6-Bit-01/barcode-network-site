@@ -57,7 +57,9 @@ for(const id of ids)test(id+': approved native walk chronology preserves complet
   // Authored torso markers describe source calibration; reviewed whole-crop registration is checked below against pixels.
   const torsos=metadata.combatPoses.frames[facing].map((p,index)=>p.sites.torso.x-poseTransform(asset,frames[index]).registration.x);
   assert(Math.max(...torsos)-Math.min(...torsos)<manifest.height*.025,'Changing the support foot must not teleport the calibrated source body root sideways');
-  for(const r of reviewedWalkOffsets.filter(r=>r.id===id&&r.facing===facing)){
+  const walkOffsets=reviewedWalkOffsets.filter(r=>r.id===id&&r.facing===facing);
+  if(facing==='left'&&walkCapRows[id])assert.deepEqual(walkOffsets.map(r=>r.index).sort((a,b)=>a-b),id==='cache-back'?[3,5]:[1,3,5,7],'Every reviewed walk correction needs its independent decoded station check');
+  for(const r of walkOffsets){
    const frame=frames[r.index],t=poseTransform(asset,frame),hash=frame.nativeSource?.pixelSha256??frame.combatProfile?.sourceRgbaSha256??frame.pixelSha256;
    assert.equal(hash,r.hash,'The walk station uses its independently reviewed native crop');
    const target=(caps[r.index-1]+caps[(r.index+1)%frames.length])/2;

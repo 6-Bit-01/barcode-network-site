@@ -9,7 +9,7 @@ import { createPortal } from "react-dom";
 import { buildQueueTimingDisplay, priorityDisplayFromImpact, queueTimingInputFromPublicSnapshot } from "@/lib/queue-timing-display";
 import { startQueueSubmissionCheckout } from "@/lib/queue-submission-checkout";
 import { completeFreeQueueSubmission, confirmQueueSubmission, publicQueueDeckHref } from "@/lib/queue-submission-flow";
-import type { QueueSubmissionReceipt } from "@/lib/queue-submission-flow";
+import type { QueueIntakePhase, QueueSubmissionReceipt } from "@/lib/queue-submission-flow";
 import { cooldownDeadlineFromRemaining, cooldownRemainingFromDeadline } from "@/lib/queue-cooldown";
 import { assertQueueTrackDuration, QUEUE_TRACK_DURATION_LIMIT_MESSAGE, QUEUE_TRACK_DURATION_UNVERIFIED_MESSAGE, MAX_QUEUE_TRACK_DURATION_SECONDS, APPLE_MUSIC_QUEUE_UNSUPPORTED_MESSAGE, PUBLIC_QUEUE_LEGAL_CHECKBOX_TEXT, PUBLIC_QUEUE_LEGAL_PRIVACY_VERSION, PUBLIC_QUEUE_LEGAL_QUEUE_TERMS_VERSION, PUBLIC_QUEUE_LEGAL_TERMS_VERSION, formatRuntime, isAppleMusicUrl, PRIORITY_DISCLOSURE_TEXT, SIGNAL_HOLD_DISCLOSURE_TEXT, SIGNAL_HOLD_CHECKOUT_POSITION_CUTOFF } from "@/lib/queue-types";
 import type { QueuePublicSnapshot, QueuePublicStatus, QueuePublicTrack } from "@/lib/queue-types";
@@ -18,7 +18,7 @@ import { hasActiveQueueSession, startSessionBoundPolling } from "@/lib/session-b
 
 type Mode = "link" | "upload";
 type ReadState = "idle" | "checking" | "reading" | "detected" | "pending" | "uploading";
-type TransmissionState = "idle" | "priority_requested" | "signal_hold_requested" | "signal" | "received" | "encoded" | "converting" | "temporal" | "aligning" | "confirmed";
+type TransmissionState = "idle" | "priority_requested" | "signal_hold_requested" | QueueIntakePhase;
 type SubmitPhase = "resolved" | "complete";
 type IntakeStep = "track" | "routing";
 type RouteChoice = "free" | "priority" | "signal_hold";
@@ -40,8 +40,6 @@ interface WarpData {
   durationLabel: string;
   sessionTitle: string;
   sessionDate: string;
-  queueStatus: string;
-  submissionSlot: string;
   lane: string;
   artworkUrl?: string | null;
 }
@@ -91,6 +89,7 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
   const [routingLockRemaining, setRoutingLockRemaining] = useState(0);
   const finalSubmitIntent = useRef(false);
   const submissionInFlight = useRef(false);
+  const intakeMountedRef = useRef(true);
   const [artist, setArtist] = useState("");
   const [creditDecision, setCreditDecision] = useState<"whole" | "split" | "">("");
   const [originalArtist, setOriginalArtist] = useState("");
@@ -116,6 +115,11 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
   const [clockNow, setClockNow] = useState(() => Date.now());
   const cooldownDeadlineRef = useRef(0);
+
+  useEffect(() => {
+    intakeMountedRef.current = true;
+    return () => { intakeMountedRef.current = false; };
+  }, []);
 
   function cooldownStorageKey(): string | null {
     return submitterToken ? `barcode-radio-cooldown:${sessionId ?? "active"}:${submitterToken}` : null;
@@ -265,6 +269,8 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
     if (!snapshot) return { track: null, targetId: "active-queue-panel", laneLabel: "ACTIVE_QUEUE" };
     if (snapshot.nowPlaying?.id === trackId) return { track: snapshot.nowPlaying, targetId: "now-playing-slot", laneLabel: "NOW_PLAYING" };
     if (snapshot.upNext?.id === trackId) return { track: snapshot.upNext, targetId: "up-next-slot", laneLabel: "UP_NEXT" };
+    const completed = snapshot.completed.find((entry) => entry.id === trackId);
+    if (completed) return { track: completed, targetId: "active-queue-panel", laneLabel: "RECORDED" };
     const queued = snapshot.queue.find((entry) => entry.id === trackId) ?? null;
     if (queued?.lane === "priority") return { track: queued, targetId: "priority-lane", laneLabel: "PRIORITY_SIGNAL" };
     if (queued?.lane === "wheel") return { track: queued, targetId: "wheel-lane", laneLabel: "WHEEL_CHOSEN" };
@@ -439,6 +445,7 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
           throw new Error(`${QUEUE_CONFIRMATION_FAILED_MESSAGE} Reference: ${submitted.id.slice(0, 8).toUpperCase()}`);
         }
         const { snapshot: confirmedSnapshot, receipt } = confirmation;
+        const savedTrack = [confirmedSnapshot.nowPlaying, confirmedSnapshot.upNext, ...confirmedSnapshot.queue, ...confirmedSnapshot.completed].find((entry) => entry?.id === submitted.id) ?? submitted;
         onAcceptedReceipt?.(receipt);
         window.localStorage.setItem("barcode-radio-submit-artist", artist.trim());
         window.localStorage.setItem("barcode-radio-submit-tiktok", tiktokHandle.trim());
@@ -449,15 +456,13 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
           setWarpData({
             artist: receipt.artist,
             title: receipt.title,
-            tiktokHandle: tiktokHandle.trim(),
-            sourceType: mode === "upload" ? "UPLOAD" : (submitted.sourceType ?? "other").toUpperCase(),
-            durationLabel: detectedDuration ? formatRuntime(detectedDuration) : submitted.durationLabel,
-            sessionTitle: session?.title ?? "BARCODE Radio",
-            sessionDate: session?.showDate ?? "ACTIVE SESSION",
-            queueStatus: status ? `${(status.acceptedCount ?? status.activeCount) + 1}/${status.capacity}` : "SYNCING",
-            submissionSlot: "CHECKOUT_PENDING",
+            tiktokHandle: savedTrack.tiktokHandle ?? "",
+            sourceType: savedTrack.sourceType.toUpperCase(),
+            durationLabel: savedTrack.durationLabel,
+            sessionTitle: receipt.sessionTitle,
+            sessionDate: receipt.sessionDate,
             lane: selectedRoute === "signal_hold" ? "FREE QUEUE / SIGNAL HOLD NOT ACTIVE" : "FREE QUEUE / PAYMENT REQUIRED",
-            artworkUrl: submitted.sourceArtworkUrl ?? null,
+            artworkUrl: savedTrack.sourceArtworkUrl ?? null,
           });
           setTransmissionState(selectedRoute === "signal_hold" ? "signal_hold_requested" : "priority_requested");
           const checkout = await startQueueSubmissionCheckout({ choice: selectedRoute, trackId: submitted.id, sessionId: latestSessionId, submitterToken });
@@ -474,19 +479,18 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
           setStep("track");
           return;
         }
+        if (!intakeMountedRef.current) return;
         const preSubmit = { nowPlayingWasEmpty: !nowPlaying, upNextWasEmpty: !upNext, activeCount: status?.activeCount ?? publicQueue.length };
         const baseWarpData: WarpData = {
           artist: receipt.artist,
           title: receipt.title,
-          tiktokHandle: tiktokHandle.trim(),
-          sourceType: mode === "upload" ? "UPLOAD" : (submitted.sourceType ?? "other").toUpperCase(),
-          durationLabel: detectedDuration ? formatRuntime(detectedDuration) : submitted.durationLabel,
-          sessionTitle: session?.title ?? "BARCODE Radio",
-          sessionDate: session?.showDate ?? "ACTIVE SESSION",
-          queueStatus: status ? `${(status.acceptedCount ?? status.activeCount) + 1}/${status.capacity}` : "SYNCING",
-          submissionSlot: status ? `#${Math.min((status.acceptedCount ?? status.activeCount) + 1, status.capacity)}` : "FREE_QUEUE",
-          lane: submitted.lane === "priority" ? "PRIORITY_SIGNAL" : submitted.lane === "wheel" ? "WHEEL_CHOSEN" : "FREE_QUEUE",
-          artworkUrl: submitted.sourceArtworkUrl ?? null,
+          tiktokHandle: savedTrack.tiktokHandle ?? "",
+          sourceType: savedTrack.sourceType.toUpperCase(),
+          durationLabel: savedTrack.durationLabel,
+          sessionTitle: receipt.sessionTitle,
+          sessionDate: receipt.sessionDate,
+          lane: savedTrack.lane === "priority" ? "PRIORITY_SIGNAL" : savedTrack.lane === "wheel" ? "WHEEL_CHOSEN" : "FREE_QUEUE",
+          artworkUrl: savedTrack.sourceArtworkUrl ?? null,
         };
         setWarpData(baseWarpData);
         setPublicQueue((current) => [submitted, ...current.filter((entry) => entry.id !== submitted.id)]);
@@ -500,17 +504,17 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
           durationLabel: resolvedTrack.durationLabel,
           lane: resolved.laneLabel,
           artworkUrl: resolvedTrack.sourceArtworkUrl ?? baseWarpData.artworkUrl,
-          queueStatus: confirmedSnapshot ? `${confirmedSnapshot.status.acceptedCount ?? confirmedSnapshot.status.activeCount}/${confirmedSnapshot.status.capacity}` : baseWarpData.queueStatus,
-          submissionSlot: resolvedTrack.id === confirmedSnapshot?.upNext?.id ? "UP_NEXT" : baseWarpData.submissionSlot,
         });
         onSubmitted?.(submitted.id, "resolved", resolved.targetId);
-        setTransmissionState("confirmed");
-        await completeFreeQueueSubmission(receipt, {
+        const completed = await completeFreeQueueSubmission(receipt, {
           reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
           wait,
+          onPhase: setTransmissionState,
+          isActive: () => intakeMountedRef.current,
           onComplete: () => onSubmitted?.(submitted.id, "complete", resolved.targetId),
           navigate: (href) => window.location.assign(href),
         });
+        if (!completed || !intakeMountedRef.current) return;
         setTransmissionState("idle");
       }
       setArtist(window.localStorage.getItem("barcode-radio-submit-artist") ?? artist.trim());
@@ -519,13 +523,15 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
       clearTrackDraftFields();
       setStep("track");
     } catch (err) {
-      setTransmissionState("idle");
-      setStep("track");
-      setError(err instanceof Error ? err.message : "Submission failed");
+      if (intakeMountedRef.current) {
+        setTransmissionState("idle");
+        setStep("track");
+        setError(err instanceof Error ? err.message : "Submission failed");
+      }
     } finally {
       finalSubmitIntent.current = false;
       submissionInFlight.current = false;
-      setSubmitting(false);
+      if (intakeMountedRef.current) setSubmitting(false);
     }
   }
 
@@ -559,7 +565,7 @@ export function RadioQueueForm({ sessionId, snapshotEndpoint = "/api/queue", onS
     setStep("routing");
   }
 
-  if (transmissionState !== "idle") return createPortal(<WarpSequence state={transmissionState} data={warpData} />, document.body);
+  if (transmissionState !== "idle") return createPortal(<QueueIntakeSequence state={transmissionState} data={warpData} />, document.body);
 
   const effectiveCooldown = session?.submissionCooldownSeconds === 0 ? 0 : cooldownRemaining;
   const submissionLimitReached = (submitterStatus?.remaining ?? 1) <= 0;
@@ -710,119 +716,135 @@ function formatCooldown(seconds: number): string {
   return `${minutes}:${rest}`;
 }
 
-function warpLabel(state: TransmissionState): string {
-  if (state === "priority_requested") return "PRIORITY SIGNAL REQUESTED";
-  if (state === "signal_hold_requested") return "OPENING SIGNAL HOLD CHECKOUT";
-  if (state === "signal") return "SIGNAL LOCKED";
-  if (state === "received") return "SOURCE ARTIFACT CAPTURED";
-  if (state === "encoded") return "AUDIO BODY DISASSEMBLED";
-  if (state === "converting") return "DATA PACKET FORMED";
-  if (state === "temporal") return "TEMPORAL ROUTE OPENED";
-  if (state === "aligning") return "PACKET TRANSFER IN PROGRESS";
-  if (state === "confirmed") return "SUBMISSION ACCEPTED";
-  return "SIGNAL LOCKED";
+function intakePhaseLabel(state: TransmissionState): string {
+  if (state === "priority_requested") return "Opening Priority checkout";
+  if (state === "signal_hold_requested") return "Opening Signal Hold checkout";
+  if (state === "artwork") return "Song received";
+  if (state === "metadata") return "Track details received";
+  if (state === "routing") return "Broadcast route confirmed";
+  return "Submission accepted";
 }
 
-function warpDescription(state: TransmissionState, data: WarpData | null): string {
-  if (state === "priority_requested") return "Opening checkout. Skip is not active yet.";
-  if (state === "signal_hold_requested") return "Your song is accepted. Opening payment; Signal Hold is not active yet.";
-  if (state === "signal") return "Song details received. Preparing your submission.";
-  if (state === "received") return "Source artwork is ready.";
-  if (state === "encoded") return "Audio details are being prepared.";
-  if (state === "converting") return "Artwork, title, and artist are loading into your queue card.";
-  if (state === "temporal") return "Queue card is opening.";
-  if (state === "aligning") return "Moving your song into the queue.";
-  if (state === "confirmed") return `ROUTED TO ${data?.lane ?? "FREE_QUEUE"}. Your song is in the queue.`;
-  return "BARCODE submission in progress.";
+function intakeLaneLabel(lane?: string): string {
+  const labels: Record<string, string> = { FREE_QUEUE: "Free queue", PRIORITY_SIGNAL: "Priority Signal", WHEEL_CHOSEN: "Wheel Chosen", UP_NEXT: "Up next", NOW_PLAYING: "Now playing", RECORDED: "Broadcast record", ACTIVE_QUEUE: "Broadcast queue" };
+  return lane ? labels[lane] ?? lane : "Broadcast queue";
 }
 
-function PacketArtwork({ data }: { data: WarpData | null }) {
-  if (data?.artworkUrl) return <img src={data.artworkUrl} alt="" className="absolute inset-0 h-full w-full object-cover opacity-90 mix-blend-screen" />;
-  return <div className="absolute inset-0 flex items-center justify-center bg-[radial-gradient(circle,rgba(255,0,0,0.32),transparent_60%)] text-5xl text-accent">▦</div>;
+export function QueueIntakeArtwork({ data }: { data: WarpData | null }) {
+  const [failedArtworkUrl, setFailedArtworkUrl] = useState<string | null>(null);
+  if (data?.artworkUrl && failedArtworkUrl !== data.artworkUrl) {
+    return <img src={data.artworkUrl} alt={"Cover art for " + data.title} className="intake-cover" onError={() => setFailedArtworkUrl(data.artworkUrl ?? null)} />;
+  }
+  return <div className="intake-artwork-fallback">
+    <span className="intake-fallback-brand">BARCODE / RADIO</span>
+    <div><p className="intake-fallback-title">AUDIO</p><p className="intake-fallback-caption">Artwork unavailable</p></div>
+    <p className="intake-fallback-artist">{data?.artist ?? "Submitted artist"}</p>
+  </div>;
 }
 
-function WaveformSweep({ offset = 0 }: { offset?: number }) {
-  const heights = [18, 44, 28, 70, 34, 82, 30, 62, 46, 76, 32, 56, 40, 68, 24, 50];
-  return <div className="wave-sweep absolute left-[-15%] right-[-15%] flex items-end gap-1 opacity-70" style={{ top: `${offset}%` }}>{heights.map((height, index) => <span key={`${offset}-${index}`} className="w-full bg-accent/55 shadow-[0_0_10px_rgba(255,0,0,0.45)]" style={{ height: `${height / 2}px` }} />)}</div>;
-}
-
-function WarpSequence({ state, data }: { state: TransmissionState; data: WarpData | null }) {
-  const steps: TransmissionState[] = ["priority_requested", "signal", "received", "encoded", "converting", "temporal", "aligning", "confirmed"];
-  const submissionProgressSteps: TransmissionState[] = steps.filter((step) => step !== "priority_requested");
-  const activeProgressIndex = Math.max(0, submissionProgressSteps.indexOf(state));
+export function QueueIntakeSequence({ state, data }: { state: TransmissionState; data: WarpData | null }) {
+  const phases: Array<{ state: QueueIntakePhase; label: string }> = [{ state: "artwork", label: "Cover" }, { state: "metadata", label: "Details" }, { state: "routing", label: "Route" }, { state: "confirmed", label: "Accepted" }];
+  const activeIndex = phases.findIndex((phase) => phase.state === state);
+  const isCheckout = state === "priority_requested" || state === "signal_hold_requested";
   const isConfirmed = state === "confirmed";
-  const isCheckoutRequested = state === "priority_requested" || state === "signal_hold_requested";
-  const isSignal = state === "signal";
-  const isArtifact = state === "received";
-  const isDisassembling = state === "encoded";
-  const isPacket = state === "converting";
-  const isRoute = state === "temporal";
-  const isTransfer = state === "aligning";
-  const motionClass = isCheckoutRequested || isSignal ? "signal-lock" : isRoute || isTransfer ? "barcode-warp power-instability" : "barcode-warp";
-  const packetClass = isCheckoutRequested || isSignal || isArtifact || isDisassembling ? "packet-forming" : isPacket || isRoute ? "packet-charging" : isTransfer ? "packet-transfer" : "packet-landed";
-  const artClass = isCheckoutRequested || isSignal ? "art-source" : isArtifact ? "art-captured" : isDisassembling || isPacket ? "art-disassemble" : "art-compressed";
-  const landingClass = isConfirmed ? "landing-card landing-impact" : isTransfer ? "landing-card landing-armed" : "landing-card";
-  const priorityTone = isCheckoutRequested ? "border-[#ffaa00]/75 shadow-[0_0_120px_rgba(255,170,0,0.26)]" : "border-accent/70 shadow-[0_0_120px_rgba(255,0,0,0.34)]";
-  const fragments = [
-    ["ARTIST", data?.artist ?? "SIGNAL SOURCE"],
-    ["TITLE", data?.title ?? "UNKNOWN TRACK"],
-    ["TIKTOK", data?.tiktokHandle || "@pending"],
-    ["SESSION", data?.sessionTitle ?? "BARCODE Radio"],
-    ["LANE", data?.lane ?? "FREE_QUEUE"],
-    ["SLOT", data?.submissionSlot ?? "FREE_QUEUE"],
-    ["PRESSURE", data?.queueStatus ?? "SYNCING"],
-    ["SOURCE", data?.sourceType ?? "SOURCE"],
-  ];
-  const codeFragments = ["101101", "ROUTE//FREE", "0xBRC", "ARTIFACT", "WAVEFORM", "0110", "LANE_SYNC", "QUEUE_GATE", "PACKET", "RED_SIG"];
-  return (
-    <div className={`warp-viewport fixed inset-0 z-[110000] overflow-x-hidden overflow-y-auto overscroll-contain bg-black/92 text-foreground ${motionClass}`} role="status" aria-live="polite">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_42%,rgba(255,0,0,0.28),transparent_28%),radial-gradient(circle_at_15%_20%,rgba(255,0,0,0.16),transparent_26%),radial-gradient(circle_at_85%_74%,rgba(255,255,255,0.08),transparent_22%)]" />
-      <div className="destabilize absolute inset-[-4%] bg-[linear-gradient(115deg,transparent_0%,rgba(255,0,0,0.08)_42%,transparent_55%),linear-gradient(90deg,rgba(255,0,0,0.08),transparent_30%,rgba(255,0,0,0.06))] opacity-80" />
-      <div className="overlay-scanlines absolute inset-0 opacity-35" />
-      <div className="routing-lines absolute inset-0 opacity-80">
-        <span className="route route-east" />
-        <span className="route route-north" />
-        <span className="route route-south" />
-        <span className="route route-west" />
-      </div>
-      <div className="absolute inset-0 overflow-hidden">
-        {codeFragments.map((fragment, index) => <span key={fragment} className="code-fragment font-mono text-[10px] uppercase tracking-[0.25em] text-accent/60" style={{ left: `${8 + (index * 9) % 82}%`, top: `${14 + (index * 13) % 68}%`, animationDelay: `${index * 130}ms` }}>{fragment}</span>)}
-        <WaveformSweep offset={20} />
-        <WaveformSweep offset={68} />
-      </div>
-      <div className="relative z-10 grid min-h-dvh place-items-center p-3 sm:p-6">
-        <div className={`warp-panel relative w-full max-w-6xl overflow-hidden [overflow-wrap:anywhere] border bg-background/88 p-4 ${priorityTone} backdrop-blur-md sm:p-5`}>
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(255,0,0,0.14),transparent_34%)]" />
-          <div className="relative z-10 space-y-4">
-            <div className="warp-status-cluster">
-              <div className="flex items-start justify-between gap-4">
-                <div><p className="text-xs uppercase tracking-[0.4em] text-accent">BARCODE Network Submission</p><h2 className="mt-2 text-2xl font-bold text-foreground sm:text-3xl">{warpLabel(state)}</h2><p className="mt-1 text-xs text-muted">{warpDescription(state, data)}</p></div>
-                <div className={`hidden border px-3 py-2 text-xs uppercase tracking-widest sm:block ${isCheckoutRequested ? "border-[#ffaa00]/50 bg-[#ffaa00]/5 text-[#ffaa00]" : "border-accent/40 bg-accent/5 text-accent"}`}>{isCheckoutRequested ? "OPENING CHECKOUT" : isConfirmed ? "TRANSMISSION RECEIVED" : "SUBMISSION READY"}</div>
-              </div>
-              <div className="mt-4 grid gap-1" style={{ gridTemplateColumns: `repeat(${submissionProgressSteps.length}, minmax(0, 1fr))` }}>
-                {submissionProgressSteps.map((step, index) => <span key={step} className={`h-1.5 ${index <= activeProgressIndex ? isCheckoutRequested ? "bg-[#ffaa00] shadow-[0_0_14px_rgba(255,170,0,0.75)]" : "bg-accent shadow-[0_0_14px_rgba(255,0,0,0.75)]" : "bg-border"}`} />)}
-              </div>
-              {isConfirmed && <div className="mt-1 h-1.5 w-full bg-accent shadow-[0_0_18px_rgba(255,0,0,0.72)]" aria-label="Transmission received" />}
-            </div>
-            <div className="warp-layout grid min-w-0 gap-4 lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1.46fr)_minmax(0,0.82fr)]">
-              <div className="hidden min-w-0 space-y-1 font-mono text-[10px] uppercase leading-relaxed text-accent/80 lg:block">{fragments.slice(0, 4).map(([key, value]) => <p key={key} className={isDisassembling ? "fragment-pulse" : ""}><span className="text-muted">{key}:</span> {value}</p>)}<div className="mt-4 grid grid-cols-10 gap-1">{"10110011100101101100".split("").map((bit, index) => <span key={`${bit}-${index}`} className="binary-bit text-[9px] text-accent/70" style={{ animationDelay: `${index * 70}ms` }}>{bit}</span>)}</div></div>
-              <div className="warp-stage relative min-w-0 min-h-[22rem] overflow-hidden border border-accent/50 bg-black/45 p-4">
-                <div className="absolute inset-x-4 top-1/2 h-px bg-gradient-to-r from-transparent via-accent to-transparent" />
-                <div className="absolute inset-y-8 left-1/2 w-px bg-accent/20" />
-                <div className="packet-trail absolute left-[24%] top-1/2 z-10 h-1 w-3/5 -translate-y-1/2 bg-gradient-to-r from-accent/80 via-accent/30 to-transparent opacity-75" />
-                <div className={`${artClass} warp-artwork relative z-20 mx-auto w-52 overflow-hidden border border-accent/60 bg-background shadow-[0_0_42px_rgba(255,0,0,0.45)]`}>
-                  <div className="relative aspect-square overflow-hidden"><PacketArtwork data={data} /><div className="glitch-slice slice-one" /><div className="glitch-slice slice-two" /><div className="pixel-grid" /><div className="absolute inset-0 bg-[linear-gradient(transparent_50%,rgba(255,0,0,0.18)_50%)] bg-[length:100%_6px]" /></div>
-                  <div className="p-3"><p className="truncate text-sm font-bold text-foreground">{data?.artist ?? "Submitted artist"}</p><p className="truncate text-xs text-muted">{data?.title ?? "Submitted track"}</p></div>
-                </div>
-                <div className={`${packetClass} absolute left-[12%] top-1/2 z-30 w-28 -translate-y-1/2 border border-accent bg-background/92 p-2 shadow-[0_0_34px_rgba(255,0,0,0.62)]`}><div className="relative h-12 overflow-hidden border border-accent/30"><PacketArtwork data={data} /><div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(255,0,0,0.18),transparent)]" /></div><p className="mt-1 font-mono text-[9px] uppercase tracking-widest text-accent">song packet</p></div>
-                <div className="absolute bottom-4 left-4 right-4 grid grid-cols-16 items-end gap-1">{[18, 44, 28, 70, 34, 82, 30, 62, 46, 76, 32, 56, 40, 68, 24, 50].map((height, index) => <span key={index} className="wave-fragment bg-accent/70 shadow-[0_0_10px_rgba(255,0,0,0.45)]" style={{ height: `${height / 2}px`, animationDelay: `${index * 45}ms` }} />)}</div>
-              </div>
-              <div className="space-y-1 font-mono text-[10px] uppercase leading-relaxed text-accent/80"><div className="hidden lg:block">{fragments.slice(4).map(([key, value]) => <p key={key}><span className="text-muted">{key}:</span> {value}</p>)}</div><div className={`${landingClass} mt-4 border border-accent/50 bg-background/80 p-3`}><p className="text-xs uppercase tracking-widest text-accent">Destination card</p><div className="mt-2 grid grid-cols-[3rem_minmax(0,1fr)] gap-2"><div className="relative h-12 overflow-hidden border border-accent/30"><PacketArtwork data={data} /></div><div><p className="truncate text-sm font-bold text-foreground">{data?.artist ?? "Submitted artist"}</p><p className="truncate text-xs text-muted">{data?.title ?? "Submitted track"}</p></div></div><p className="mt-2 text-[10px] text-accent">{isConfirmed ? `ROUTED TO ${data?.lane ?? "FREE_QUEUE"}` : isCheckoutRequested ? "PAYMENT REQUIRED" : "AWAITING LOCK"}</p></div></div>
-            </div>
+  const lane = intakeLaneLabel(data?.lane);
+  return <div className="queue-intake-viewport fixed inset-0 z-[110000] overflow-x-hidden overflow-y-auto overscroll-contain text-foreground" data-intake-phase={state} role="status" aria-live="polite">
+    <div className="intake-shell">
+      <header className="intake-header">
+        <div><p className="intake-network-label">BARCODE Radio</p><p className="intake-session-label">{data?.sessionTitle ?? "BARCODE Radio"}{data?.sessionDate && " / " + data.sessionDate}</p></div>
+        <span className={"intake-saved-label" + (isCheckout ? " intake-payment-label" : "")}>{isCheckout ? "Payment not confirmed" : isConfirmed ? "Accepted" : "Song saved"}</span>
+      </header>
+      <div className="intake-grid">
+        <div className="intake-artwork-column">
+          <div className="intake-cover-shell"><QueueIntakeArtwork data={data} /><span className="intake-cover-capture" aria-hidden="true" /><span className="intake-cover-corner intake-cover-corner-top" aria-hidden="true" /><span className="intake-cover-corner intake-cover-corner-bottom" aria-hidden="true" /></div>
+        </div>
+        <div className="intake-song-column">
+          <p className="intake-phase-label">{intakePhaseLabel(state)}</p>
+          <h2 className="intake-track-title">{data?.title ?? "Submitted track"}</h2>
+          <p className="intake-artist-credit">{data?.artist ?? "Submitted artist"}</p>
+          <dl className="intake-metadata">
+            {data?.sourceType && <div className="intake-meta-field"><dt>Source</dt><dd>{data.sourceType}</dd></div>}
+            {data?.durationLabel && <div className="intake-meta-field"><dt>Runtime</dt><dd>{data.durationLabel}</dd></div>}
+            {data?.tiktokHandle && <div className="intake-meta-field"><dt>Submitted by</dt><dd>{data.tiktokHandle}</dd></div>}
+          </dl>
+          <div className="intake-route">
+            <div className="intake-route-heading"><span>Broadcast route</span><strong>{lane}</strong></div>
+            <div className="intake-route-rail" aria-hidden="true"><span className="intake-route-line" /><span className="intake-route-marker" /></div>
+            <p className="intake-route-status">{isCheckout ? "Your song is saved. Opening payment; the upgrade is not active." : data?.lane === "RECORDED" ? "Your song is saved in the broadcast record." : isConfirmed ? "Your song is in the queue." : "Your saved song is linked to this broadcast."}</p>
           </div>
         </div>
       </div>
-      <style jsx>{`@keyframes barcode-warp-shake{0%,100%{transform:translate3d(0,0,0)}18%{transform:translate3d(-2px,1px,0)}34%{transform:translate3d(2px,-1px,0)}56%{transform:translate3d(-1px,-2px,0)}72%{transform:translate3d(1px,2px,0)}}@keyframes background-instability{0%,100%{transform:translate3d(0,0,0) scale(1);filter:contrast(1)}35%{transform:translate3d(-1.5%,.8%,0) scale(1.025);filter:contrast(1.35)}65%{transform:translate3d(1%,-1%,0) scale(1.015);filter:contrast(1.15)}}@keyframes scanline-drift{from{background-position:0 0}to{background-position:0 48px}}@keyframes route-pulse{0%{transform:rotate(var(--route-rotation)) scaleX(.12);opacity:.1}40%{opacity:.85}100%{transform:rotate(var(--route-rotation)) scaleX(1);opacity:.2}}@keyframes code-float{0%{transform:translate3d(0,10px,0);opacity:0}25%,70%{opacity:.75}100%{transform:translate3d(16px,-24px,0);opacity:0}}@keyframes waveform-sweep{0%{transform:translate3d(-18%,0,0);opacity:0}30%{opacity:.75}100%{transform:translate3d(18%,0,0);opacity:0}}@keyframes packet-form{0%,100%{transform:translate3d(0,-50%,0) scale(.72);opacity:.45}50%{transform:translate3d(10vw,-50%,0) scale(.9);opacity:1}}@keyframes barcode-packet-route{0%{transform:translate3d(8vw,-50%,0) scale(.9);opacity:1}100%{transform:translate3d(58vw,-50%,0) scale(.48);opacity:.92}}@keyframes packet-land{0%{transform:translate3d(56vw,-50%,0) scale(.5);opacity:.9}100%{transform:translate3d(62vw,-50%,0) scale(.42);opacity:.18}}@keyframes art-prominent{0%,100%{transform:scale(1);filter:contrast(1.05)}50%{transform:scale(1.04);filter:contrast(1.25) saturate(1.12)}}@keyframes art-tear{0%,100%{clip-path:inset(0 0 0 0);filter:contrast(1.1);transform:translateZ(0)}28%{clip-path:polygon(0 0,100% 0,100% 17%,0 22%,0 37%,100% 31%,100% 100%,0 100%);filter:contrast(1.45) saturate(1.35) drop-shadow(8px 0 rgba(255,0,0,.55));transform:translate3d(-2px,0,0) skewX(-1.4deg)}62%{clip-path:polygon(0 0,100% 0,100% 34%,0 29%,0 66%,100% 58%,100% 100%,0 100%);filter:contrast(1.7) saturate(1.2) drop-shadow(-7px 0 rgba(255,0,0,.42));transform:translate3d(3px,-1px,0) scale(.96)}}@keyframes art-compress{0%{transform:scale(1);opacity:1}100%{transform:scale(.42) translate3d(46vw,-4vw,0);opacity:.28}}@keyframes landing-pulse{0%,55%{box-shadow:0 0 0 rgba(255,0,0,0);transform:scale(1)}72%{box-shadow:0 0 0 10px rgba(255,0,0,.13),0 0 46px rgba(255,0,0,.62);transform:scale(1.03)}100%{box-shadow:0 0 18px rgba(255,0,0,.28);transform:scale(1)}}@keyframes bit-pulse{0%,100%{opacity:.35}50%{opacity:1}}.overlay-scanlines{background:linear-gradient(transparent 50%,rgba(255,255,255,.085) 50%);background-size:100% 6px;animation:scanline-drift 2.6s linear infinite}.barcode-warp{animation:barcode-warp-shake 760ms steps(2,end) 5}.power-instability .destabilize{animation:background-instability 1.2s ease-in-out 4}.route{--route-rotation:0deg;position:absolute;left:50%;top:50%;height:1px;width:46vw;transform-origin:left center;background:linear-gradient(90deg,rgba(255,0,0,.9),rgba(255,0,0,.18),transparent);box-shadow:0 0 20px rgba(255,0,0,.42);animation:route-pulse 1.45s ease-out infinite}.route-north{--route-rotation:-26deg}.route-south{--route-rotation:22deg;animation-delay:120ms}.route-west{--route-rotation:180deg;animation-delay:260ms}.route-east{--route-rotation:0deg;animation-delay:60ms}.code-fragment{position:absolute;animation:code-float 2.4s ease-in-out infinite}.wave-sweep{animation:waveform-sweep 2.2s ease-in-out infinite}.wave-sweep:nth-of-type(2){animation-delay:.7s}.packet-trail{filter:blur(.4px);box-shadow:0 0 22px rgba(255,0,0,.5)}.packet-forming{animation:packet-form 1.15s ease-in-out infinite}.packet-charging{animation:packet-form 900ms ease-in-out infinite}.packet-transfer{animation:barcode-packet-route 1.4s cubic-bezier(.2,.72,.2,1) infinite alternate}.packet-landed{animation:packet-land 900ms ease-out forwards}.art-source{animation:art-prominent 1s ease-in-out infinite}.art-captured{animation:art-prominent 700ms ease-in-out infinite}.art-disassemble{animation:art-tear 620ms steps(2,end) infinite}.art-compressed{animation:art-compress 1.2s ease-in forwards}.glitch-slice{position:absolute;left:0;right:0;height:14%;border-top:1px solid rgba(255,0,0,.45);border-bottom:1px solid rgba(255,0,0,.22);background:rgba(255,0,0,.12);mix-blend-mode:screen}.slice-one{top:23%;transform:translateX(8px)}.slice-two{top:58%;transform:translateX(-10px)}.pixel-grid{position:absolute;inset:0;background:linear-gradient(90deg,rgba(255,0,0,.12) 1px,transparent 1px),linear-gradient(rgba(255,255,255,.08) 1px,transparent 1px);background-size:18px 18px;opacity:.45}.binary-bit,.fragment-pulse{animation:bit-pulse 850ms ease-in-out infinite}.wave-fragment{animation:art-tear 1.2s steps(2,end) infinite}.landing-armed{box-shadow:0 0 20px rgba(255,0,0,.28)}.landing-impact{animation:landing-pulse 1.1s ease-out forwards}@media (max-width:1023px){.warp-panel{padding:.8rem}.warp-layout{gap:.65rem}.warp-stage{height:clamp(11rem,35dvh,18rem);min-height:0;padding:.6rem}.warp-artwork{width:min(36vw,20dvh,10rem)}.warp-status-cluster h2{font-size:clamp(1.1rem,4.5vw,1.6rem)}.warp-status-cluster p{overflow-wrap:anywhere}.packet-transfer{animation-name:mobile-packet-route}.packet-landed{animation-name:mobile-packet-land}@keyframes mobile-packet-route{from{transform:translate3d(8vw,-50%,0) scale(.9)}to{transform:translate3d(40vw,-50%,0) scale(.48)}}@keyframes mobile-packet-land{from{transform:translate3d(40vw,-50%,0) scale(.5);opacity:.9}to{transform:translate3d(46vw,-50%,0) scale(.42);opacity:.18}}}@media (prefers-reduced-motion: reduce){.overlay-scanlines,.barcode-warp,.power-instability .destabilize,.route,.code-fragment,.wave-sweep,.packet-forming,.packet-charging,.packet-transfer,.packet-landed,.art-source,.art-captured,.art-disassemble,.art-compressed,.binary-bit,.fragment-pulse,.wave-fragment,.landing-impact{animation:none}.art-compressed{transform:scale(.65);opacity:.5}.packet-transfer{transform:translate3d(42vw,-50%,0) scale(.58)}}`}</style>
+      {!isCheckout && <ol className="intake-phase-rail" aria-label="Submission confirmation">
+        {phases.map((phase, index) => <li key={phase.state} className={index <= activeIndex ? "intake-phase-step intake-phase-active" : "intake-phase-step"} aria-current={phase.state === state ? "step" : undefined}><span className="intake-phase-number">{"0" + (index + 1)}</span><span>{phase.label}</span><span className="intake-phase-stroke" aria-hidden="true" /></li>)}
+      </ol>}
     </div>
-  );
+    <style jsx>{`
+      .queue-intake-viewport{display:grid;min-height:100dvh;place-items:center;background:rgba(5,7,8,.97);padding:1.25rem;letter-spacing:0}
+      .intake-shell{position:relative;width:100%;max-width:58rem;min-width:0;padding:1.5rem;border-top:2px solid #ef3333;border-bottom:1px solid #363b3e;background:#101315;letter-spacing:0}
+      .intake-shell *{letter-spacing:0}
+      .intake-header{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1.5rem}
+      .intake-network-label{font-size:.8rem;font-weight:800;text-transform:uppercase;color:#fafafa}
+      .intake-session-label{margin-top:.3rem;font-size:.75rem;line-height:1.4;color:#b8c0c4;overflow-wrap:anywhere}
+      .intake-saved-label{flex-shrink:0;min-width:7.2rem;text-align:center;padding:.45rem .65rem;border:1px solid #70d3b1;background:#112820;color:#a9efda;font-size:.7rem;font-weight:700;text-transform:uppercase}
+      .intake-payment-label{border-color:#e8b95a;background:#282113;color:#f2cd82}
+      .intake-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);align-items:center;gap:2rem}
+      .intake-artwork-column{display:grid;place-items:center;min-width:0}
+      .intake-cover-shell{position:relative;isolation:isolate;width:100%;max-width:25rem;aspect-ratio:1;border:1px solid #5b646b;background:#090b0c}
+      .intake-cover-capture{position:absolute;z-index:1;inset:0;opacity:0;pointer-events:none;background:linear-gradient(165deg,transparent 37%,rgba(220,250,255,.05) 45%,rgba(220,250,255,.18) 49%,rgba(220,250,255,.05) 53%,transparent 61%)}
+      .intake-cover-corner{position:absolute;z-index:2;width:1.15rem;height:1.15rem;pointer-events:none}
+      .intake-cover-corner-top{left:-5px;top:-5px;border-left:2px solid #ef3333;border-top:2px solid #ef3333}
+      .intake-cover-corner-bottom{right:-5px;bottom:-5px;border-right:2px solid #ef3333;border-bottom:2px solid #ef3333}
+      .intake-cover-shell :global(.intake-cover){display:block;width:100%;height:100%;object-fit:contain;object-position:center}
+      .intake-cover-shell :global(.intake-artwork-fallback){display:flex;flex-direction:column;justify-content:space-between;width:100%;height:100%;padding:1.25rem;background:#171d20;color:#e3ecef;overflow-wrap:anywhere}
+      .intake-cover-shell :global(.intake-fallback-brand){font-size:.65rem;font-weight:700;color:#9fb0b9}
+      .intake-cover-shell :global(.intake-fallback-title){font-size:2.5rem;font-weight:900;line-height:1.1}
+      .intake-cover-shell :global(.intake-fallback-caption){margin-top:.5rem;font-size:.75rem;color:#b6c3c9}
+      .intake-cover-shell :global(.intake-fallback-artist){font-size:.8rem;line-height:1.3;max-height:3.9em;overflow:hidden}
+      .intake-song-column{min-width:0}
+      .intake-phase-label{min-height:1.25rem;margin-bottom:.7rem;color:#ff6868;font-size:.8rem;font-weight:700;text-transform:uppercase}
+      .intake-track-title{font-size:2rem;line-height:1.12;font-weight:800;color:#fff;overflow-wrap:anywhere}
+      .intake-artist-credit{margin-top:.65rem;font-size:1rem;line-height:1.45;font-weight:600;color:#e1e7e9;overflow-wrap:anywhere}
+      .intake-metadata{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.65rem;margin-top:1.2rem;min-height:3.2rem}
+      .intake-meta-field{min-width:0;border-top:1px solid #424a4f;padding-top:.5rem}
+      .intake-meta-field dt{color:#aab5bc;font-size:.65rem;text-transform:uppercase}
+      .intake-meta-field dd{margin-top:.25rem;color:#eaf0f2;font-size:.8rem;font-weight:600;overflow-wrap:anywhere}
+      .intake-route{margin-top:1.4rem;border-top:1px solid #394247;padding-top:.85rem}
+      .intake-route-heading{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem;font-size:.7rem;color:#aab5bc}
+      .intake-route-heading strong{font-size:.8rem;color:#e8eef0}
+      .intake-route-rail{position:relative;height:1.6rem;margin-top:.6rem;overflow:hidden}
+      .intake-route-line{position:absolute;left:0;right:0;top:50%;height:2px;background:#3c464d}
+      .intake-route-marker{position:absolute;left:0;top:calc(50% - .25rem);width:.5rem;height:.5rem;background:#ef3333}
+      .intake-route-status{min-height:2.6em;font-size:.75rem;line-height:1.4;color:#b8c4ca}
+      .intake-phase-rail{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.75rem;margin-top:1.5rem;padding-top:1rem;border-top:1px solid #343d42;list-style:none}
+      .intake-phase-step{position:relative;display:flex;align-items:center;gap:.45rem;min-width:0;padding-bottom:.6rem;color:#9aa7af;font-size:.7rem;line-height:1.3}
+      .intake-phase-number{font-size:.65rem;font-weight:700;color:#74838d}
+      .intake-phase-stroke{position:absolute;bottom:0;left:0;width:100%;height:2px;background:#374148}
+      .intake-phase-active{color:#f3f6f7}
+      .intake-phase-active .intake-phase-number{color:#ff7474}
+      .intake-phase-active .intake-phase-stroke{background:#ef3333}
+      [data-intake-phase="artwork"] .intake-cover-shell{animation:intake-cover-reveal 1.05s cubic-bezier(.18,.7,.24,1) both}
+      [data-intake-phase="artwork"] .intake-cover-capture{animation:intake-cover-capture 1.1s ease-out .1s both}
+      [data-intake-phase="metadata"] .intake-meta-field{animation:intake-metadata-lock .7s ease-out both}
+      [data-intake-phase="metadata"] .intake-meta-field:nth-child(2){animation-delay:.12s}
+      [data-intake-phase="metadata"] .intake-meta-field:nth-child(3){animation-delay:.24s}
+      [data-intake-phase="routing"] .intake-route-marker{animation:intake-route-travel 1.35s cubic-bezier(.2,.65,.3,1) forwards}
+      [data-intake-phase="confirmed"] .intake-route-marker{left:calc(100% - .5rem);background:#85dfbd}
+      [data-intake-phase="confirmed"] .intake-route-line{background:#477e6b}
+      [data-intake-phase="confirmed"] .intake-phase-label{color:#a9efda}
+      [data-intake-phase="confirmed"] .intake-shell{border-top-color:#85dfbd;transition:border-color .5s ease}
+      [data-intake-phase="confirmed"] .intake-saved-label{animation:intake-accepted-land .65s ease-out both}
+      [data-intake-phase="confirmed"] .intake-cover-shell{border-color:#85dfbd;transition:border-color .4s ease}
+      [data-intake-phase="confirmed"] .intake-cover-corner{width:1.65rem;height:1.65rem;border-color:#85dfbd;transition:border-color .4s ease,width .45s ease,height .45s ease}
+      [data-intake-phase="confirmed"] .intake-phase-active .intake-phase-stroke{background:#85dfbd}
+      [data-intake-phase="confirmed"] .intake-phase-active .intake-phase-number{color:#a9efda}
+      @keyframes intake-cover-reveal{from{transform:translateY(12px) scale(.97);border-color:#ef3333}to{transform:translateY(0) scale(1);border-color:#5b646b}}
+      @keyframes intake-cover-capture{0%{transform:translateY(-25%);opacity:0}25%{opacity:.65}80%{opacity:.5}100%{transform:translateY(25%);opacity:0}}
+      @keyframes intake-accepted-land{from{transform:translateY(5px);border-color:#d2ffef;background:#183c2e}to{transform:translateY(0);border-color:#70d3b1;background:#112820}}
+      @keyframes intake-metadata-lock{from{transform:translateY(6px);border-color:#ef3333}to{transform:translateY(0);border-color:#424a4f}}
+      @keyframes intake-route-travel{from{left:0;width:.8rem}to{left:calc(100% - .5rem);width:.5rem}}
+      @media(max-width:700px){.queue-intake-viewport{padding:.75rem}.intake-shell{padding:1rem}.intake-header{gap:.6rem;margin-bottom:1rem}.intake-saved-label{font-size:.6rem;padding:.4rem}.intake-grid{grid-template-columns:minmax(0,1fr);gap:1.15rem}.intake-cover-shell{max-width:15rem}.intake-track-title{font-size:1.5rem}.intake-artist-credit{font-size:.9rem;margin-top:.5rem}.intake-metadata{margin-top:.9rem}.intake-route{margin-top:1rem}.intake-phase-rail{gap:.5rem;margin-top:1rem}.intake-phase-step{gap:.25rem;font-size:.6rem}.intake-phase-number{font-size:.55rem}}
+      @media(max-height:500px) and (min-width:560px){.queue-intake-viewport{padding:.75rem}.intake-shell{padding:1rem}.intake-header{margin-bottom:.75rem}.intake-grid{grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:1.25rem}.intake-cover-shell{max-width:13rem}.intake-track-title{font-size:1.35rem}.intake-artist-credit{font-size:.85rem;margin-top:.4rem}.intake-metadata{margin-top:.65rem;min-height:0}.intake-route{margin-top:.7rem;padding-top:.6rem}.intake-route-rail{height:1rem;margin-top:.4rem}.intake-phase-rail{margin-top:.75rem;padding-top:.7rem}}
+      @media(prefers-reduced-motion:reduce){.intake-cover-shell,.intake-cover-capture,.intake-meta-field,.intake-route-marker,.intake-saved-label,.intake-cover-corner,.intake-shell{animation:none!important;transition:none!important;transform:none!important}.intake-cover-capture{display:none}}
+    `}</style>
+  </div>;
 }

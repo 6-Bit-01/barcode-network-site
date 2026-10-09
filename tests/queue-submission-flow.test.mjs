@@ -22,7 +22,17 @@ function loadTypeScript(entry, globals = {}, overrides = {}) {
     const mod = { exports: {} };
     loaded.set(file.href, mod.exports);
     const source = fs.readFileSync(file, "utf8");
-    const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
+    const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX }, transformers: { before: [context => {
+      // Next removes this compiler marker before a plain React render.
+      const visit = node => {
+        if (ts.isJsxOpeningElement(node) && node.tagName.getText() === "style") {
+          const attributes = node.attributes.properties.filter(attribute => !(ts.isJsxAttribute(attribute) && attribute.name.getText() === "jsx"));
+          return ts.factory.updateJsxOpeningElement(node, node.tagName, node.typeArguments, ts.factory.createJsxAttributes(attributes));
+        }
+        return ts.visitEachChild(node, visit, context);
+      };
+      return node => ts.visitNode(node, visit);
+    }] } }).outputText;
     vm.runInNewContext(code, { module: mod, exports: mod.exports, URLSearchParams, ...globals, require: id => {
       if (Object.hasOwn(overrides, id)) return overrides[id];
       if (id.startsWith("@/")) return load(new URL(`../src/${id.slice(2)}.${id.startsWith("@/components/") ? "tsx" : "ts"}`, import.meta.url));
@@ -90,12 +100,59 @@ test("owned saved credits can confirm a completed song without copying private f
   assert.equal("note" in result.receipt, false);
 });
 
-test("the confirmed final free song opens Deck only after its brief completion callback", async () => {
+test("the confirmed final free song opens Deck only after the five-second completion callback", async () => {
   assert.equal(typeof flow.completeFreeQueueSubmission, "function");
   const accepted = await flow.confirmQueueSubmission({ trackId: "confirmed&song", sessionId: "show / 1", checkoutPending: false, readSnapshot: async () => snapshot({ submitterStatus: { used: 7, limit: 7, remaining: 0, cooldownRemainingSeconds: 15, submitted: [] } }), wait: async () => {} });
   const events = [];
   await flow.completeFreeQueueSubmission(accepted.receipt, { reducedMotion: false, wait: async ms => events.push(["wait", ms]), onComplete: () => events.push(["complete"]), navigate: href => events.push(["navigate", href]) });
-  assert.deepEqual(events, [["wait", 1000], ["complete"], ["navigate", "/radio/deck?sessionId=show+%2F+1&submitted=confirmed%26song"]]);
+  assert.deepEqual(events, [["wait", 1200], ["wait", 1400], ["wait", 1500], ["wait", 900], ["complete"], ["navigate", "/radio/deck?sessionId=show+%2F+1&submitted=confirmed%26song"]]);
+});
+
+test("accepted-free choreography reveals artwork, assembles metadata, routes, and lands over five seconds", async () => {
+  const accepted = await flow.confirmQueueSubmission({ trackId: "confirmed&song", sessionId: "show / 1", checkoutPending: false, readSnapshot: async () => snapshot(), wait: async () => {} });
+  const events = [];
+  await flow.completeFreeQueueSubmission(accepted.receipt, { reducedMotion: false, onPhase: phase => events.push(["phase", phase]), wait: async ms => events.push(["wait", ms]), onComplete: () => events.push(["complete"]), navigate: () => events.push(["navigate"]) });
+  assert.deepEqual(events, [["phase", "artwork"], ["wait", 1200], ["phase", "metadata"], ["wait", 1400], ["phase", "routing"], ["wait", 1500], ["phase", "confirmed"], ["wait", 900], ["complete"]]);
+});
+
+test("reduced motion skips the five-second choreography and completes the saved receipt immediately", async () => {
+  const accepted = await flow.confirmQueueSubmission({ trackId: "confirmed&song", sessionId: "show / 1", checkoutPending: false, readSnapshot: async () => snapshot(), wait: async () => {} });
+  const events = [];
+  await flow.completeFreeQueueSubmission(accepted.receipt, { reducedMotion: true, onPhase: phase => events.push(["phase", phase]), wait: async ms => events.push(["wait", ms]), onComplete: () => events.push(["complete"]), navigate: () => events.push(["navigate"]) });
+  assert.deepEqual(events, [["phase", "confirmed"], ["complete"]]);
+});
+
+test("cancelling during an artwork wait stops later phases, completion, and navigation", async () => {
+  const accepted = await flow.confirmQueueSubmission({ trackId: "confirmed&song", sessionId: "show / 1", checkoutPending: false, readSnapshot: async () => snapshot({ submitterStatus: { used: 7, limit: 7, remaining: 0, cooldownRemainingSeconds: 15, submitted: [] } }), wait: async () => {} });
+  const events = [];
+  let active = true, resume;
+  const completion = flow.completeFreeQueueSubmission(accepted.receipt, { reducedMotion: false, isActive: () => active, onPhase: phase => events.push(["phase", phase]), wait: async ms => { events.push(["wait", ms]); if (active) await new Promise(resolve => { resume = resolve; }); }, onComplete: () => events.push(["complete"]), navigate: () => events.push(["navigate"]) });
+  active = false;
+  resume();
+  const completed = await completion;
+  assert.equal(completed, false);
+  assert.deepEqual(events, [["phase", "artwork"], ["wait", 1200]]);
+});
+
+test("a normal completion may close intake and still perform its immediate confirmed Deck handoff", async () => {
+  const accepted = await flow.confirmQueueSubmission({ trackId: "confirmed&song", sessionId: "show / 1", checkoutPending: false, readSnapshot: async () => snapshot({ submitterStatus: { used: 7, limit: 7, remaining: 0, cooldownRemainingSeconds: 15, submitted: [] } }), wait: async () => {} });
+  let active = true;
+  const events = [];
+  await flow.completeFreeQueueSubmission(accepted.receipt, { reducedMotion: true, isActive: () => active, wait: async () => {}, onComplete: () => { active = false; events.push(["complete"]); }, navigate: href => events.push(["navigate", href]) });
+  assert.deepEqual(events, [["complete"], ["navigate", "/radio/deck?sessionId=show+%2F+1&submitted=confirmed%26song"]]);
+});
+
+test("cancellation during the accepted landing is checked before completion and navigation", async () => {
+  const accepted = await flow.confirmQueueSubmission({ trackId: "confirmed&song", sessionId: "show / 1", checkoutPending: false, readSnapshot: async () => snapshot({ submitterStatus: { used: 7, limit: 7, remaining: 0, cooldownRemainingSeconds: 15, submitted: [] } }), wait: async () => {} });
+  const events = [];
+  let active = true, resume, entered;
+  const landing = new Promise(resolve => { entered = resolve; });
+  const completion = flow.completeFreeQueueSubmission(accepted.receipt, { reducedMotion: false, isActive: () => active, onPhase: phase => events.push(["phase", phase]), wait: async ms => { if (ms === 900) { entered(); await new Promise(resolve => { resume = resolve; }); } }, onComplete: () => events.push(["complete"]), navigate: () => events.push(["navigate"]) });
+  await landing;
+  active = false;
+  resume();
+  await completion;
+  assert.deepEqual(events, [["phase", "artwork"], ["phase", "metadata"], ["phase", "routing"], ["phase", "confirmed"]]);
 });
 
 for (const scenario of [
@@ -126,9 +183,10 @@ test("intake renders source input before artist details and leaves the providers
   assert.match(disclosure, /Bandcamp/);
 });
 
-function submissionForm({ postOk = true, confirmationMissing = false, choice = "free", purpose = "live_broadcast", remaining = 0 } = {}) {
-  const events = [], receipts = [], requests = [], storage = new Map(), state = { publicQueue: [], fileInputKey: 0 };
+function submissionForm({ postOk = true, confirmationMissing = false, choice = "free", purpose = "live_broadcast", remaining = 0, reducedMotion = false, confirmedTrack = snapshot().queue[0], confirmedLocation = "queue", waitImplementation, completeClosesIntake = false } = {}) {
+  const events = [], receipts = [], requests = [], phases = [], storage = new Map(), state = { publicQueue: [], fileInputKey: 0 };
   const session = { ...snapshot().session, purpose };
+  const intakeMountedRef = { current: true };
   let posted = false;
   const fetch = async (url, options = {}) => {
     requests.push({ url, options });
@@ -137,12 +195,12 @@ function submissionForm({ postOk = true, confirmationMissing = false, choice = "
       return { ok: postOk, json: async () => postOk ? { track: snapshot().queue[0], cooldownRemainingSeconds: 15 } : { error: "Submission rejected" } };
     }
     if (options.method === "POST") return { ok: false, json: async () => ({ error: "Checkout unavailable" }) };
-    return { ok: true, json: async () => snapshot({ session, queue: posted && !confirmationMissing ? snapshot().queue : [], submitterStatus: { used: posted ? 7 : 6, limit: 7, remaining: posted ? remaining : 1, cooldownRemainingSeconds: 15, submitted: [] } }) };
+    return { ok: true, json: async () => snapshot({ session, queue: posted && !confirmationMissing && confirmedLocation === "queue" ? [confirmedTrack] : [], completed: posted && !confirmationMissing && confirmedLocation === "completed" ? [confirmedTrack] : [], submitterStatus: { used: posted ? 7 : 6, limit: 7, remaining: posted ? remaining : 1, cooldownRemainingSeconds: 15, submitted: [] } }) };
   };
   const window = {
     location: { origin: "https://queue.example", assign: href => events.push(["navigate", href]) },
     localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) },
-    matchMedia: () => ({ matches: false }),
+    matchMedia: () => ({ matches: reducedMotion }),
     crypto: require("node:crypto").webcrypto,
   };
   const globals = { window, URL, URLSearchParams, AbortSignal, fetch };
@@ -151,7 +209,7 @@ function submissionForm({ postOk = true, confirmationMissing = false, choice = "
   const realCheckout = loadTypeScript(new URL("../src/lib/queue-submission-checkout.ts", import.meta.url), globals);
   const setters = Object.fromEntries(["Status", "Session", "SubmitterStatus", "PublicQueue", "NowPlaying", "UpNext", "PlaybackTiming", "WheelTiming", "Error", "LegalError", "Submitting", "WarpData", "TransmissionState", "Artist", "TikTokHandle", "ContactEmail", "Title", "Link", "CollaboratorNames", "CreditDecision", "OriginalArtist", "Note", "File", "FileInputKey", "DetectedDuration", "ReadState", "UploadProgress", "RouteChoice", "Step"].map(name => {
     const field = `${name[0].toLowerCase()}${name.slice(1)}`;
-    return [`set${name}`, value => { state[field] = typeof value === "function" ? value(state[field]) : value; }];
+    return [`set${name}`, value => { state[field] = typeof value === "function" ? value(state[field]) : value; if (name === "TransmissionState") phases.push(state[field]); }];
   }));
   const source = fs.readFileSync(new URL("../src/components/RadioQueueForm.tsx", import.meta.url), "utf8");
   const ast = ts.createSourceFile("RadioQueueForm.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -168,14 +226,14 @@ function submissionForm({ postOk = true, confirmationMissing = false, choice = "
     session, sessionId: session.sessionId, snapshotEndpoint: "/api/queue", status: snapshot().status,
     step: "routing", routingLockRemaining: 0, finalSubmitIntent: { current: true }, submissionInFlight: { current: false }, acceptedLegal: true,
     mode: "link", link: "https://soundcloud.com/artist/song", artist: "Draft Artist", title: "Draft Song", collaboratorNames: "Draft Guest", creditDecision: "split", originalArtist: "Draft Artist feat. Draft Guest", tiktokHandle: "@saved", contactEmail: "private@example.test", submitterToken: "submitter", note: "private note", detectedDuration: null,
-    selectedRoute: choice, publicQueue: [], nowPlaying: null, upNext: null,
+    selectedRoute: choice, publicQueue: [], nowPlaying: null, upNext: null, intakeMountedRef,
     SESSION_SYNC_REQUIRED_MESSAGE: "Session sync required", SESSION_CHANGED_MESSAGE: "Session changed", QUEUE_CONFIRMATION_FAILED_MESSAGE: "Submission could not be confirmed in the queue.",
     setAuthoritativeCooldown: value => { state.cooldown = value; },
-    wait: async ms => events.push(["wait", ms]),
+    wait: async ms => { events.push(["wait", ms]); await waitImplementation?.(ms); },
     onAcceptedReceipt: receipt => { receipts.push(receipt); events.push(["accepted"]); },
-    onSubmitted: (trackId, phase) => events.push(["submitted", trackId, phase]),
+    onSubmitted: (trackId, phase) => { events.push(["submitted", trackId, phase]); if (phase === "complete" && completeClosesIntake) intakeMountedRef.current = false; },
   });
-  return { events, receipts, requests, storage, state, submit: () => cjsModule.exports.submit({ preventDefault() {} }) };
+  return { events, receipts, requests, phases, storage, state, abandon: () => { intakeMountedRef.current = false; }, submit: () => cjsModule.exports.submit({ preventDefault() {} }) };
 }
 
 test("a rejected final POST keeps the draft and emits no acceptance or Deck navigation", async () => {
@@ -203,10 +261,84 @@ test("the form confirms full credits then completes the final free song before s
   assert.equal(form.receipts[0].artist, "The Whole Project feat. Guest One, Guest Two");
   assert.equal(form.receipts[0].title, "Saved Song");
   assert.equal(form.receipts[0].remaining, 0);
-  assert.deepEqual(form.events, [["accepted"], ["submitted", "confirmed&song", "resolved"], ["wait", 1000], ["submitted", "confirmed&song", "complete"], ["navigate", "/radio/deck?sessionId=show+%2F+1&submitted=confirmed%26song"]]);
+  assert.deepEqual(form.phases, ["artwork", "metadata", "routing", "confirmed", "idle"]);
+  assert.deepEqual(form.events, [["accepted"], ["submitted", "confirmed&song", "resolved"], ["wait", 1200], ["wait", 1400], ["wait", 1500], ["wait", 900], ["submitted", "confirmed&song", "complete"], ["navigate", "/radio/deck?sessionId=show+%2F+1&submitted=confirmed%26song"]]);
   assert.equal(form.storage.get("barcode-radio-submit-artist"), "Draft Artist");
   assert.equal(form.storage.get("barcode-radio-submit-tiktok"), "@saved");
   assert.equal(form.state.title, "");
+});
+
+test("the form builds its five-second artwork and metadata view from the persisted song", async () => {
+  const form = submissionForm({ confirmedTrack: { ...snapshot().queue[0], sourceArtworkUrl: "https://images.example/saved-cover.jpg", sourceType: "spotify", durationLabel: "4:02", tiktokHandle: "@confirmed" } });
+  await form.submit();
+  assert.equal(form.state.warpData.artworkUrl, "https://images.example/saved-cover.jpg");
+  assert.equal(form.state.warpData.artist, "The Whole Project feat. Guest One, Guest Two");
+  assert.equal(form.state.warpData.title, "Saved Song");
+  assert.equal(form.state.warpData.sourceType, "SPOTIFY");
+  assert.equal(form.state.warpData.durationLabel, "4:02");
+  assert.equal(form.state.warpData.tiktokHandle, "@confirmed");
+});
+
+test("the actual reduced-motion form completes acceptance without a timed artwork sequence", async () => {
+  const form = submissionForm({ reducedMotion: true, remaining: 1 });
+  await form.submit();
+  assert.deepEqual(form.phases, ["confirmed", "idle"]);
+  assert.deepEqual(form.events, [["accepted"], ["submitted", "confirmed&song", "resolved"], ["submitted", "confirmed&song", "complete"]]);
+});
+
+test("abandoning the actual form during a deferred phase keeps acceptance but stops late completion and navigation", async () => {
+  let resume, entered;
+  const enteredWait = new Promise(resolve => { entered = resolve; });
+  const form = submissionForm({ waitImplementation: async () => { entered(); if (resume === undefined) await new Promise(resolve => { resume = resolve; }); } });
+  const submission = form.submit();
+  await enteredWait;
+  form.abandon();
+  resume();
+  await submission;
+  assert.equal(form.receipts.length, 1);
+  assert.deepEqual(form.phases, ["artwork"]);
+  assert.deepEqual(form.events, [["accepted"], ["submitted", "confirmed&song", "resolved"], ["wait", 1200]]);
+  assert.equal(form.requests.filter(request => request.url === "/api/queue" && request.options.method === "POST").length, 1);
+});
+
+test("the actual final free form can close normally before its immediate Deck navigation", async () => {
+  const form = submissionForm({ completeClosesIntake: true });
+  await form.submit();
+  assert.deepEqual(form.events.slice(-2), [["submitted", "confirmed&song", "complete"], ["navigate", "/radio/deck?sessionId=show+%2F+1&submitted=confirmed%26song"]]);
+});
+
+test("the form mount effect reactivates after StrictMode cleanup and cancels on real unmount", () => {
+  const source = fs.readFileSync(new URL("../src/components/RadioQueueForm.tsx", import.meta.url), "utf8");
+  const ast = ts.createSourceFile("RadioQueueForm.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let lifecycle;
+  const referencesMountedRef = node => {
+    if (ts.isIdentifier(node) && node.text === "intakeMountedRef") return true;
+    return ts.forEachChild(node, referencesMountedRef) === true;
+  };
+  const visit = node => {
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "useEffect" && node.arguments[0] && referencesMountedRef(node.arguments[0])) lifecycle = node.arguments[0];
+    ts.forEachChild(node, visit);
+  };
+  visit(ast);
+  assert.ok(lifecycle, "form lifecycle must cancel its deferred completion");
+  const mod = { exports: {} }, intakeMountedRef = { current: false };
+  const code = ts.transpileModule(`module.exports = (${lifecycle.getText(ast)});`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  vm.runInNewContext(code, { module: mod, intakeMountedRef });
+  let cleanup = mod.exports();
+  assert.equal(intakeMountedRef.current, true);
+  cleanup();
+  assert.equal(intakeMountedRef.current, false);
+  cleanup = mod.exports();
+  assert.equal(intakeMountedRef.current, true);
+  cleanup();
+  assert.equal(intakeMountedRef.current, false);
+});
+
+test("metadata confirmed only in the broadcast record does not invent a played outcome", async () => {
+  const form = submissionForm({ confirmedLocation: "completed", confirmedTrack: { ...snapshot().queue[0], sourceArtworkUrl: "https://images.example/record-cover.jpg" } });
+  await form.submit();
+  assert.equal(form.state.warpData.lane, "RECORDED");
+  assert.equal(form.state.warpData.artworkUrl, "https://images.example/record-cover.jpg");
 });
 
 for (const choice of ["priority", "signal_hold"]) {
@@ -216,12 +348,53 @@ for (const choice of ["priority", "signal_hold"]) {
     assert.equal(form.receipts[0].checkoutPending, true);
     assert.equal(form.receipts[0].deckHref, null);
     assert.equal(form.events.some(event => event[0] === "navigate"), false);
+    assert.equal(form.events.some(event => event[0] === "wait"), false);
+    assert.deepEqual(form.phases, [choice === "priority" ? "priority_requested" : "signal_hold_requested", "idle"]);
     assert.match(form.state.error, /song was accepted/);
     assert.match(form.state.error, /do not resubmit/);
     assert.equal(form.requests.filter(request => request.url === "/api/queue" && request.options.method === "POST").length, 1);
     assert.equal(form.requests.filter(request => request.url.endsWith("checkout")).length, 1);
   });
 }
+
+test("the artwork sequence keeps the complete saved song credits and one intact cover in every phase", () => {
+  const form = loadTypeScript(new URL("../src/components/RadioQueueForm.tsx", import.meta.url), {}, { "@vercel/blob/client": { upload: async () => { throw new Error("unexpected upload"); } } });
+  assert.equal(typeof form.QueueIntakeSequence, "function");
+  const data = { artist: "The Whole Project feat. Guest One, Guest Two", title: "Saved Song", sessionTitle: "Friday Radio", sessionDate: "2026-10-09", sourceType: "SPOTIFY", durationLabel: "4:02", lane: "FREE_QUEUE", tiktokHandle: "@confirmed", artworkUrl: "https://images.example/saved-cover.jpg" };
+  for (const phase of ["artwork", "metadata", "routing", "confirmed"]) {
+    const html = require("react-dom/server").renderToStaticMarkup(require("react").createElement(form.QueueIntakeSequence, { state: phase, data }));
+    assert.match(html, new RegExp(`data-intake-phase="${phase}"`));
+    assert.ok(html.includes(data.artist));
+    assert.ok(html.includes(data.title));
+    assert.equal((html.match(/<img /g) ?? []).length, 1);
+    assert.match(html, /src="https:\/\/images.example\/saved-cover.jpg"/);
+    assert.match(html, /SPOTIFY/);
+    assert.match(html, /4:02/);
+    assert.ok(html.includes('class="intake-cover-capture"'), "the intact artwork should carry its capture pass");
+    const receiptStatus = html.match(/<span class="intake-saved-label">([^<]+)<\/span>/)?.[1];
+    assert.equal(receiptStatus, phase === "confirmed" ? "Accepted" : "Song saved");
+  }
+  const absent = require("react-dom/server").renderToStaticMarkup(require("react").createElement(form.QueueIntakeSequence, { state: "artwork", data: { ...data, artworkUrl: null } }));
+  assert.ok(absent.includes("Song received"));
+  assert.equal(absent.includes("Artwork received"), false);
+});
+
+test("missing and failed artwork use a clean fallback while keeping saved credits readable", () => {
+  let failedArtwork = null;
+  const react = { ...require("react"), useState: () => [failedArtwork, value => { failedArtwork = value; }] };
+  const form = loadTypeScript(new URL("../src/components/RadioQueueForm.tsx", import.meta.url), {}, { react, "@vercel/blob/client": { upload: async () => { throw new Error("unexpected upload"); } } });
+  assert.equal(typeof form.QueueIntakeArtwork, "function");
+  const render = data => form.QueueIntakeArtwork({ data });
+  const absent = require("react-dom/server").renderToStaticMarkup(render({ artist: "Saved Artist", title: "Saved Song", artworkUrl: null }));
+  assert.doesNotMatch(absent, /<img /);
+  assert.match(absent, /Artwork unavailable/);
+  const image = render({ artist: "Saved Artist", title: "Saved Song", artworkUrl: "https://images.example/broken.jpg" });
+  image.props.onError();
+  const failed = require("react-dom/server").renderToStaticMarkup(render({ artist: "Saved Artist", title: "Saved Song", artworkUrl: "https://images.example/broken.jpg" }));
+  assert.doesNotMatch(failed, /<img /);
+  assert.match(failed, /Artwork unavailable/);
+  assert.match(failed, /Saved Artist/);
+});
 
 test("the submit button announces the final free slot from current allowance and preserves paid/private routing", () => {
   const source = fs.readFileSync(new URL("../src/components/RadioQueueForm.tsx", import.meta.url), "utf8");

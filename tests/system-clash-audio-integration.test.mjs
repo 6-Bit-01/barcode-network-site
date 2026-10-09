@@ -102,11 +102,11 @@ test('hosted review and visibility states silence production sound while normal 
   const source=readFileSync(new URL('../public/games/system-clash/play/fight.js',import.meta.url),'utf8');
   const sync=source.match(/function syncAudioPause\(\) \{([\s\S]*?)\n\}/);
   assert.ok(sync,'Production audio pause hook exists');
-  const run=new Function('effects','paused','inspectTime','motionTime','document','ready','screenSuspended',sync[1]);
+  const run=new Function('effects','paused','inspectTime','motionTime','document','ready','screenSuspended','windowActive',sync[1]);
   for(const [paused,inspectTime,motionTime,hidden,expected] of [[false,null,null,false,false],[true,null,null,false,true],[false,0,null,false,true],[false,null,0,false,true],[false,null,null,true,true]]){
-    let actual;run({setPaused:value=>{actual=value;}},paused,inspectTime,motionTime,{hidden},true,false);assert.equal(actual,expected);
+    let actual;run({setPaused:value=>{actual=value;}},paused,inspectTime,motionTime,{hidden},true,false,true);assert.equal(actual,expected);
   }
   for(const [ready,screenSuspended] of [[false,false],[true,true]]){
-    let actual;run({setPaused:value=>{actual=value;}},false,null,null,{hidden:false},ready,screenSuspended);assert.equal(actual,true);
+    let actual;run({setPaused:value=>{actual=value;}},false,null,null,{hidden:false},ready,screenSuspended,true);assert.equal(actual,true);
   }
 });

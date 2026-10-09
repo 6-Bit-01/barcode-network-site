@@ -156,7 +156,7 @@ function inspectDeletionScene(time) {
 }
 
 function syncAudioPause() {
-  const quiet=!ready||screenSuspended||paused||inspectTime!==null||motionTime!==null||document.hidden;effects.setPaused(quiet);
+  const quiet=!ready||!windowActive||screenSuspended||paused||inspectTime!==null||motionTime!==null||document.hidden;effects.setPaused(quiet);
   if(typeof music==='object'){music.setPaused(quiet);if(ready&&typeof match==='object'&&match)music.setScene({screen:typeof tournamentOverlay==='object'&&tournamentOverlay?.blocking?'tournament':match.phase==='ready'?'arena':'fight',fighter:typeof art==='object'?art?.[0]?.manifest?.id:match.fighters?.[0]?.id,stage:match.stage?.id??'radio-studio',variant:typeof tournamentOverlay==='object'&&tournamentOverlay?.active?tournamentOverlay.node:typeof musicMatchNumber==='number'?musicMatchNumber:0});}
 }
 
@@ -316,8 +316,8 @@ window.addEventListener('keydown',event=>{
   }
 });
 window.addEventListener('keyup',event=>{keyReleaseGate.delete(event.code);held.delete(event.code);releaseAttackInput(attackInputs,event.code);});
-window.addEventListener('blur',()=>{windowActive=false;clearInput();if(ready&&!paused&&!['ready','over'].includes(match.phase))togglePause();});
-window.addEventListener('focus',()=>{windowActive=true;clearInput();});
+window.addEventListener('blur',()=>{windowActive=false;clearInput();if(ready&&!paused&&!['ready','over'].includes(match.phase))togglePause();syncAudioPause();});
+window.addEventListener('focus',()=>{windowActive=true;clearInput();syncAudioPause();});
 document.addEventListener('visibilitychange',()=>{
   clearInput();last=performance.now();accumulator=0;
   if (document.hidden && ready && !paused && !['ready','over'].includes(match.phase)) togglePause();

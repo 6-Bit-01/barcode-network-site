@@ -23,8 +23,8 @@ function documentSection(markdown, startHeading, endHeading) {
 }
 
 test("Legal Center publishes standalone Signal Hold Terms without changing Priority Terms 1.1", () => {
-  assert.match(legal, /^\*\*Last Updated:\*\* August 23, 2026\s*$/m);
-  assert.match(legal, /^\*\*Legal Center Version:\*\* 1\.2\s*$/m);
+  assert.match(legal, /^\*\*Last Updated:\*\* October 9, 2026\s*$/m);
+  assert.match(legal, /^\*\*Legal Center Version:\*\* 1\.3\s*$/m);
 
   const priorityTerms = documentSection(legal, "# Priority Signal Terms", "# Signal Hold Terms");
   assert.match(priorityTerms, /^\*\*Version:\*\* 1\.1\s*$/m);

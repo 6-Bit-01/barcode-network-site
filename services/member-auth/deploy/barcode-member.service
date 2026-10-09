@@ -1,0 +1,30 @@
+[Unit]
+Description=BARCODE private member account service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=barcode-member
+Group=barcode-member
+WorkingDirectory=/opt/barcode-member/current
+Environment=NODE_ENV=production
+Environment=TMPDIR=/var/lib/barcode-member/tmp
+EnvironmentFile=/etc/barcode-member/member.env
+ExecStart=/usr/bin/node server.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+UMask=0077
+StateDirectory=barcode-member
+RuntimeDirectory=barcode-member
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/barcode-member
+MemoryMax=384M
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target

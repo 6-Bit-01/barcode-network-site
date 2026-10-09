@@ -1,8 +1,8 @@
 # BARCODE Network Legal Center
 
 **Effective Date:** June 13, 2026  
-**Last Updated:** August 23, 2026
-**Legal Center Version:** 1.2
+**Last Updated:** October 9, 2026
+**Legal Center Version:** 1.3
 
 This Legal Center applies to BARCODE Network, including barcode-network.com, BARCODE Radio, the BARCODE Radio queue, music submission tools, Priority Signal, Signal Hold, stream tools, relay features, BNL-related systems, public database/dossier features, community features, payment features, uploads, and related services.
 
@@ -717,6 +717,16 @@ Some BARCODE Network features are public.
 If your submission appears in the queue, stream, clip, archive, social post, Discord-related feature, public database feature, or website display, other people may see, save, copy, quote, screenshot, or share it.
 
 Do not submit information you want to keep private.
+
+## BARCODE Accounts and Service Emails
+
+When you create a BARCODE account, we store your email address, editable display name, immutable account identifier, email verification state, securely hashed password, and session/security records. Verification is required before account access. Display names are not unique and do not establish ownership of an artist, submission, or another account. Guest music participation remains available; membership does not increase queue allowances or priority.
+
+We use account information to authenticate you, manage your sessions, deliver verification/password recovery emails, and respond to account or privacy requests. Necessary account service emails are separate from marketing. Resend processes the recipient address and email content to deliver these messages. We do not enable open/click tracking for account emails. Passwords are never sent in emails. Recovery resets revoke earlier sessions.
+
+Account data is stored separately from BNL's conversation database and the public queue. Private account information and security emails are excluded from BNL public memory, Journals, Relays, artist profiles and other publications. Account information remains private unless a later feature clearly requests a separate public association. Contact the address above for account access, correction, removal, or privacy requests; retention needed for security, legal obligations and recovery may apply.
+
+Necessary secure account cookies maintain signed-in sessions. Signing out ends the current session; the account page also allows signing out all devices. Account pages and security links are excluded from search indexing. Keep verification/recovery links private.
 
 ## 10. Cookies, Analytics, and Local Storage
 

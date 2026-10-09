@@ -6,7 +6,7 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: "*",
         allow: "/",
-        disallow: ["/admin", "/obs", "/api/"],
+        disallow: ["/admin", "/obs", "/api/", "/account"],
       },
     ],
     sitemap: "https://www.barcode-network.com/sitemap.xml",

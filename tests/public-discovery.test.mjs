@@ -166,6 +166,7 @@ test("HQ native pause and reduced-motion rules cover every rendered animated lay
   const targets = nodes.filter((node) => within(node, art)).flatMap((node) => ["", "before", "after"].map((pseudo) => ({ node, pseudo })));
   const declares = (rule, property, value) => rule.nodes.some((entry) => entry.type === "decl" && entry.prop === property && value.test(entry.value));
   const selected = (rule, target, checked = false) => rule.selectors.some((selector) => motionSelectorMatches(target.node, selector, target.pseudo, checked, checkbox));
+  assert.ok(rules.some((rule) => !motionMedia(rule, "reduce") && declares(rule, "display", /^(?:inline-)?(?:flex|block|grid)$/) && selected(rule, { node: label, pseudo: "" })), "Pause is visible in the same no-preference context as the motion");
   const motion = [];
   for (const rule of rules.filter((rule) => declares(rule, "animation", /^(?!none\b).+/))) {
     const layers = targets.filter((target) => selected(rule, target));
@@ -178,7 +179,7 @@ test("HQ native pause and reduced-motion rules cover every rendered animated lay
   }
   assert.ok(motion.length, "The artwork has animated layers");
   for (const target of motion) {
-    const pause = rules.filter((rule) => declares(rule, "animation-play-state", /^paused$/));
+    const pause = rules.filter((rule) => !motionMedia(rule, "reduce") && declares(rule, "animation-play-state", /^paused$/));
     assert.ok(pause.some((rule) => selected(rule, target, true)), "Checking pause freezes every animated layer, including pseudo-elements");
     assert.ok(!pause.some((rule) => selected(rule, target, false)), "Unchecking pause allows every layer to resume");
     assert.ok(rules.some((rule) => motionMedia(rule, "reduce") && declares(rule, "animation", /^none$/) && selected(rule, target)), "Reduced motion disables every animated layer");

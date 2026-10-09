@@ -134,7 +134,7 @@ export function OwnerAccountWorkspace({ access }: { access: MemberAccess }) {
     {error && <p role="alert" className="mt-3 rounded border border-danger p-3 text-sm text-danger">{error}</p>}
     {!authorized ? <p className="mt-4" role="status">Checking your access. Return to your account if it is unavailable.</p> : <>
       <p className="public-kicker mt-5">BARCODE Network</p><h1 className="mt-2 text-3xl font-bold">Owner workspace</h1>
-      <nav className="mt-5 flex flex-wrap gap-4 text-sm" aria-label="Owner workspace"><a href="#accounts" className="text-accent underline">Accounts &amp; access</a><Link href="/admin" className="text-accent underline">Existing admin workspace — separate access during transition</Link></nav>
+      <nav className="mt-5 flex flex-wrap gap-4 text-sm" aria-label="Owner workspace"><a href="#accounts" className="text-accent underline">Accounts &amp; access</a><Link href="/account/owner/artists" className="text-accent underline">Artists &amp; show history</Link><Link href="/admin" className="text-accent underline">Existing admin workspace — separate access during transition</Link></nav>
       {unconfirmedForOwner && <div className="mt-5 rounded border border-border p-4"><p className="text-sm">An account action is unconfirmed. Other account changes are paused until it is resolved.</p><button className="btn-secondary mt-3" disabled={busy || loading} onClick={() => executeOperation(unconfirmedForOwner)}>Retry unconfirmed action</button></div>}
       <section id="accounts" className="mt-8" aria-labelledby="account-directory-heading">
         <h2 id="account-directory-heading" className="text-xl font-bold">Accounts &amp; access</h2>

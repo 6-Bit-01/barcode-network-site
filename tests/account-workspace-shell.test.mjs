@@ -23,7 +23,7 @@ function chrome(path) {
  return server.renderToStaticMarkup(React.createElement(SiteChrome,{radioSubmission:{},accountEnabled:true},React.createElement("p",null,"Workspace content")));
 }
 test("Owner and Crew workspace chrome removes public navigation, relay and animation while retaining account return",()=>{
- for(const path of ["/account/owner","/account/owner/accounts","/account/crew"]){
+ for(const path of ["/account/owner","/account/owner/accounts","/account/owner/artists","/account/crew"]){
   const html=chrome(path);
   assert.match(html,/href="\/account"/);assert.match(html,/id="main-content"/);assert.match(html,/Workspace content/);
   assert.doesNotMatch(html,/Public header|Public footer|Public relay|Animated stream|animate-interference/);
@@ -55,7 +55,7 @@ function providerEffects(path) {
  return calls;
 }
 test("account workspaces start no BNL/live polling or legacy-admin verification; public routes keep polling",()=>{
- for(const path of ["/account/owner","/account/crew","/account/owner/accounts"]) assert.deepEqual(providerEffects(path),[]);
+ for(const path of ["/account/owner","/account/crew","/account/owner/accounts","/account/owner/artists"]) assert.deepEqual(providerEffects(path),[]);
  const publicCalls=providerEffects("/account");
  assert.ok(publicCalls.includes("bnl-poll-start"));assert.ok(publicCalls.includes("live-poll-start"));assert.ok(publicCalls.includes("fetch:/api/admin/verify"));
 });

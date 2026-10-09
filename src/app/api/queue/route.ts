@@ -7,6 +7,7 @@ import { verifyAdminRequest, verifyRehearsalQueueToken } from "@/lib/auth";
 import { isActiveRehearsalSession, requestHasRehearsalQueueAccess, requestRehearsalQueueToken } from "@/lib/queue-rehearsal-access";
 import { QUEUE_OPERATIONAL_UNAVAILABLE_CODE, QUEUE_OPERATIONAL_UNAVAILABLE_MESSAGE, resolveQueueOperationalAccess } from "@/lib/queue-production";
 import type { QueueEntry } from "@/lib/queue-types";
+import type { MemberSubmissionIdentity } from "@/lib/member-artists";
 import { requestDiscordConnectionId } from "@/lib/discord-connection";
 import { queueOwnerHash, queueSubmissionOwner } from "@/lib/queue-submitter-auth";
 import { collaboratorList } from "@/lib/artist-credits";
@@ -22,6 +23,23 @@ const BLOB_HOST_SUFFIX = ".private.blob.vercel-storage.com";
 const UPLOAD_PREFIX = "/barcode-radio-queue/";
 const SESSION_SYNC_MESSAGE = "This session has changed. Re-enter the current BARCODE Radio queue and submit again.";
 const QUEUE_ACCEPTANCE_UNCONFIRMED_MESSAGE = "Submission could not be confirmed in the queue. Please try again.";
+
+class MemberQueueSubmissionError extends Error {
+  constructor(public status: number, public code: string) {
+    super(status === 401 ? "Sign in again to save this song to your account, or sign out to submit as a guest." : status === 403 ? "Your account or Artist access changed. Review your account before submitting." : status === 400 ? "Choose one of your approved Artists, or submit without an Artist selection." : "Account access is temporarily unavailable. Please try again shortly.");
+  }
+}
+
+async function memberSubmissionIdentity(request: Request | undefined, selectedArtistId: unknown): Promise<MemberSubmissionIdentity | null> {
+  if (!request) return null;
+  // Ordinary guests do not depend on account-service availability.
+  const sessionCookie = /(?:^|;\s*)(?:__Secure-)?barcode_id\.session_token=/.test(request.headers.get("cookie") ?? "");
+  if (!sessionCookie && (selectedArtistId === undefined || selectedArtistId === null || selectedArtistId === "")) return null;
+  const { resolveMemberSubmissionIdentity } = await import("@/lib/member-artists");
+  const result = await resolveMemberSubmissionIdentity(request, selectedArtistId);
+  if (!result.ok) throw new MemberQueueSubmissionError(result.status, result.code);
+  return result.identity;
+}
 
 function queueUnavailableResponse(): NextResponse {
   return NextResponse.json(
@@ -196,6 +214,7 @@ export async function POST(req: Request) {
     const response = await submitTrackFromBody(body, { allowAdminPrivateSession, rehearsalAccessToken, connectionRequest: req, ownerHash: owner.hash });
     return response.status === 201 ? owner.attach(response) : response;
   } catch (error) {
+    if (error instanceof MemberQueueSubmissionError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status, headers: { "Cache-Control": "private, no-store", Vary: "Cookie" } });
     if (error instanceof QueueReplacementError) return NextResponse.json({ error: error.message, code: error.code }, { status: 409, headers: { "Cache-Control": "private, no-store" } });
     if (error instanceof QueueTrackDurationError) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: 400 });
@@ -300,7 +319,7 @@ export async function submitTrackFromBody(
 
   const saveTrack = (input: Parameters<typeof submitRadioTrack>[0]) => replacement
     ? replaceOwnRadioTrack({ ...input, ...replacement, detailsOnly, sessionId, purpose: active.session!.purpose })
-    : submitRadioTrack({ ...input, submissionOwnerHash: options.ownerHash });
+    : submitRadioTrack({ ...input, submissionOwnerHash: options.ownerHash }, { resolveMemberIdentity: () => active.session!.purpose === "live_broadcast" ? memberSubmissionIdentity(options.connectionRequest, body.artistId) : Promise.resolve(null) });
   const accepted = (track: QueueEntry) => replacement
     ? NextResponse.json({ track: toPublicQueueTrack(track), replacementRevision: track.replacementRevision ?? 0, editUsed: track.submitterEditUsed === true, message: track.submitterEditUsed === true ? "Song updated. Your one edit has been used. Your queue slot and purchases are unchanged." : "No changes to save. Your one edit is still available." }, { headers: { "Cache-Control": "private, no-store" } })
     : acceptedResponse(toPublicQueueTrack(track), active.session!.submissionCooldownSeconds);

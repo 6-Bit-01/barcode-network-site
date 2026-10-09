@@ -43,9 +43,10 @@ test("historical evidence foundation has no live QueueStore, Redis, fetch, or up
   assert.doesNotMatch(combined, /barcode-radio-queue\/(?!historical-evidence)/);
 });
 
-test("only the isolated writer and admin historical routes consume the repository", () => {
+test("only the isolated writer, admin routes and private queue history reader consume the repository", () => {
   const allowed = new Set([
     importPath,
+    "src/lib/queue.ts", // Exact Owner-approved Member history; public projections remain native-only.
     "src/app/api/admin/queue/historical-evidence/_shared.ts",
     "src/app/api/admin/queue/historical-evidence/route.ts",
     "src/app/api/admin/queue/historical-evidence/dry-run/route.ts",

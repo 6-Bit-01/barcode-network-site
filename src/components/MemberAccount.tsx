@@ -2,6 +2,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { MemberAccessNavigation } from "@/components/MemberAccessNavigation";
+import { MemberRadioHistory } from "@/components/MemberRadioHistory";
 
 type Member = { id: string; name: string; email: string; emailVerified: boolean };
 type Mode = "signin" | "signup" | "recovery" | "reset";
@@ -65,6 +66,7 @@ export function MemberAccount({ initialMode="signin", resetToken }: { initialMod
           <p><span className="text-accent">Member · Active</span><br />{member.email}</p>
           <p className="break-all text-xs text-muted">BARCODE ID: {member.id}</p>
           <MemberAccessNavigation key={member.id} memberId={member.id} />
+          <MemberRadioHistory key={member.id} memberId={member.id} />
           <form onSubmit={event => {event.preventDefault();void perform(async () => {await accountRequest("update-user",{name});await refresh();setMessage("Display name saved.");});}} className="space-y-3">
             <label className="block text-sm">Display name<input className={`${fieldClass} mt-2`} value={name} onChange={event => setName(event.target.value)} maxLength={80} required autoComplete="nickname" /></label>
             <p className="text-xs text-muted">Display names are unique. You can change yours while keeping the same BARCODE ID.</p>

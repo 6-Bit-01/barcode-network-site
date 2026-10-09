@@ -57,7 +57,7 @@ export default function SecretMenuPage() {
           </h2>
           <p className="mt-4 text-sm leading-7 text-muted">
             Choose from 19 BARCODE fighters. Play Solo CPU, Local Two Player,
-            Tournament or Online Sessions across six interactive arenas, with
+            Tournament or Online Sessions across seven interactive arenas, with
             each fighter&apos;s own moves and Deletions.
           </p>
           <div className="mt-auto pt-6">

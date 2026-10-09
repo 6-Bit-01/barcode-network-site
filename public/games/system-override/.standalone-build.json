@@ -1,8 +1,8 @@
 {
   "builder": "barcode-system-override-standalone-v1",
   "status": "complete",
-  "sourceCommit": "ce4346f4ca474f33c39a19a844a95c6f3397ecbf",
-  "sourceTree": "5a4ebf2b17612b6964d0a06524f47cee5fd450fe",
+  "sourceCommit": "d49adf41f6b37b7d5f84256f59c084e8827a54a9",
+  "sourceTree": "72495fa4dc83ac1b197a1c956ec6250a10ef48d8",
   "builderSHA256": "e53b3b5e714071ed2049399ff8a962f3cd7b27ab9b68a3ff5b3c9d70eac21ac2",
   "files": {
     "assets/audio/broadcast-slum-proof-carrier.wav": {
@@ -3886,8 +3886,8 @@
       "bytes": 17244
     },
     "src/game/player.js": {
-      "sha256": "f1f43aaeb2769a1ff763f4595854b171ef9a3de0adfaad7ac901bda978a031c7",
-      "bytes": 82087
+      "sha256": "a40e1ed292684123aa8f0716437306304d80816d5b356428fdf6c5d7c7c6c14e",
+      "bytes": 82082
     },
     "src/game/post-tutorial-objectives.js": {
       "sha256": "87be5a8a0a4fd6cfbce458af5bb52b1c60887fe5b4fea794e740655efc4048ab",

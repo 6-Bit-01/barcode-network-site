@@ -345,50 +345,81 @@ export default function Home() {
   );
 }
 
-/** Original lightweight record/circuit artwork. Decorative, with actions in adjacent text. */
+/** Decorative record/circuit artwork; motion stays CSS-only with a native pause control. */
 function SignalArtwork() {
   return (
-    <div className="public-signal-art" aria-hidden="true">
-      <span className="public-signal-label top">BC // 01 — Open frequency</span>
-      <svg viewBox="0 0 500 500" fill="none" stroke="currentColor">
-        <circle cx="250" cy="250" r="190" strokeOpacity=".18" />
-        <circle cx="250" cy="250" r="172" strokeOpacity=".3" />
-        <circle cx="250" cy="250" r="157" strokeOpacity=".15" />
-        <circle cx="250" cy="250" r="135" strokeOpacity=".35" />
-        <circle cx="250" cy="250" r="112" strokeOpacity=".15" />
-        <path
-          d="M250 35v27M250 438v27M35 250h27M438 250h27M98 98l20 20M382 382l20 20M98 402l20-20M382 118l20-20"
-          strokeOpacity=".5"
-        />
-        <path
-          d="M55 345h35l45-45M365 200l45-45h45M180 75v36l35 35M285 354l35 35v36"
-          strokeWidth="2"
-          strokeOpacity=".7"
-        />
-        <circle cx="55" cy="345" r="4" fill="currentColor" />
-        <circle cx="455" cy="155" r="4" fill="currentColor" />
-        <circle cx="180" cy="75" r="4" fill="currentColor" />
-        <circle cx="320" cy="425" r="4" fill="currentColor" />
-        <path
-          d="m48 275 8-26 8 19 8-36 8 56 8-24 8 13M397 332l8-26 8 19 8-36 8 56 8-24 8 13"
-          strokeWidth="2"
-        />
-        <path d="M125 75h35M340 425h35" strokeWidth="8" strokeOpacity=".6" />
-      </svg>
-      <div className="public-signal-center">
-        <Image
-          src={siteConfig.logo}
-          alt=""
-          width={140}
-          height={140}
-          unoptimized
-          priority
-        />
-        <span>MUSIC / PEOPLE / SIGNAL</span>
+    <div className="public-signal-display">
+      <div className="public-signal-art" aria-hidden="true">
+        <span className="public-signal-label top">BC // 01 — Open frequency</span>
+        <svg viewBox="0 0 500 500" fill="none" stroke="currentColor" focusable="false">
+          <circle cx="250" cy="250" r="190" strokeOpacity=".18" />
+          <circle cx="250" cy="250" r="172" strokeOpacity=".3" />
+          <circle cx="250" cy="250" r="157" strokeOpacity=".15" />
+          <circle cx="250" cy="250" r="135" strokeOpacity=".35" />
+          <circle cx="250" cy="250" r="112" strokeOpacity=".15" />
+          <g className="signal-orbit signal-orbit--outer">
+            <circle
+              cx="250" cy="250" r="172" pathLength="100"
+              strokeDasharray="11 39" strokeWidth="2" strokeOpacity=".65"
+            />
+            <circle cx="250" cy="78" r="3" fill="currentColor" stroke="none" />
+          </g>
+          <g className="signal-orbit signal-orbit--inner">
+            <circle
+              cx="250" cy="250" r="135" pathLength="100"
+              strokeDasharray="7 43" strokeWidth="1.5" strokeOpacity=".5"
+            />
+          </g>
+          <path
+            d="M250 35v27M250 438v27M35 250h27M438 250h27M98 98l20 20M382 382l20 20M98 402l20-20M382 118l20-20"
+            strokeOpacity=".5"
+          />
+          <path
+            d="M55 345h35l45-45M365 200l45-45h45M180 75v36l35 35M285 354l35 35v36"
+            strokeWidth="2"
+            strokeOpacity=".7"
+          />
+          <g className="signal-packets" strokeWidth="3" strokeLinecap="round">
+            <path className="signal-packet signal-packet--1" pathLength="100" d="M55 345h35l45-45" />
+            <path className="signal-packet signal-packet--2" pathLength="100" d="M365 200l45-45h45" />
+            <path className="signal-packet signal-packet--3" pathLength="100" d="M180 75v36l35 35" />
+            <path className="signal-packet signal-packet--4" pathLength="100" d="M285 354l35 35v36" />
+          </g>
+          <circle cx="55" cy="345" r="4" fill="currentColor" />
+          <circle cx="455" cy="155" r="4" fill="currentColor" />
+          <circle cx="180" cy="75" r="4" fill="currentColor" />
+          <circle cx="320" cy="425" r="4" fill="currentColor" />
+          <path
+            className="signal-wave signal-wave--1"
+            d="m48 275 8-26 8 19 8-36 8 56 8-24 8 13"
+            strokeWidth="2"
+          />
+          <path
+            className="signal-wave signal-wave--2"
+            d="M397 332l8-26 8 19 8-36 8 56 8-24 8 13"
+            strokeWidth="2"
+          />
+          <path d="M125 75h35M340 425h35" strokeWidth="8" strokeOpacity=".6" />
+        </svg>
+        <div className="public-signal-center">
+          <Image
+            src={siteConfig.logo}
+            alt=""
+            width={140}
+            height={140}
+            unoptimized
+            priority
+          />
+          <span>MUSIC / PEOPLE / SIGNAL</span>
+        </div>
+        <span className="public-signal-label bottom">
+          Every fragment carries a signal.
+        </span>
       </div>
-      <span className="public-signal-label bottom">
-        Every fragment carries a signal.
-      </span>
+      <label className="public-signal-control">
+        <input type="checkbox" className="public-signal-toggle" />
+        <span>Pause animation</span>
+      </label>
     </div>
   );
 }

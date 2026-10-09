@@ -26,6 +26,7 @@ export const FIGHTER_STAT_PROFILES=Object.freeze({
  'doofnoobler':profile(4,9,3,8),
  'lyra':profile(5,7,5,7),
  'papa-oak':profile(10,2,8,4),
+ 'lost-marbles':profile(5,8,5,6),
 });
 
 /** Return a shared immutable four-stat profile; missing IDs stay neutral. */

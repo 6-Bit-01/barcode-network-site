@@ -4,9 +4,9 @@ import {readFileSync} from 'node:fs';
 import {demoRoster,createDemoSelection,beginDemoSelection,previewDemoFighter,confirmDemoFighter,backDemoSelection,randomDemoFighter,navigateDemoFighter,demoFightURL,parseDemoLaunch} from '../public/games/system-clash/play/demo-flow.mjs';
 const mains=JSON.parse(readFileSync(new URL('../public/games/system-clash/play/assets/menu/roster.json',import.meta.url))).fighters;
 
-test('18 select slots expose16 mains and reserve exactly2 owner-named future fighters without making them playable',()=>{
- const roster=demoRoster(mains);assert.equal(roster.length,18);assert.equal(roster.filter(f=>f.enabled).length,16);
- assert.deepEqual(roster.filter(f=>!f.enabled).map(f=>f.name),['Mutilator','Unknown signal']);
+test('18 select slots expose17 mains and reserve Mutilator without making him playable',()=>{
+ const roster=demoRoster(mains);assert.equal(roster.length,18);assert.equal(roster.filter(f=>f.enabled).length,17);
+ assert.deepEqual(roster.filter(f=>!f.enabled).map(f=>f.name),['Mutilator']);
  for(const future of roster.filter(f=>!f.enabled)){
   const state=beginDemoSelection(createDemoSelection(mains),'cpu');assert.equal(previewDemoFighter(state,future.id),state);
  }
@@ -29,14 +29,14 @@ test('Random chooses only playable opponents, covers all other fighters and chan
  for(const fighter of mains){
   let state=beginDemoSelection(createDemoSelection(mains,{p2:fighter.id}),'cpu');state=confirmDemoFighter(state);
   const results=new Set();for(let i=0;i<120;i++){const next=randomDemoFighter(state,()=>i/120);assert.notEqual(next.picks[1],fighter.id);assert.ok(mains.some(f=>f.id===next.picks[1]));assert.equal(next.picks[0],state.picks[0]);results.add(next.picks[1]);}
-  assert.equal(results.size,15);assert.ok(mains.some(f=>f.id===randomDemoFighter(state,()=>NaN).picks[1]));
+  assert.equal(results.size,mains.length-1);assert.ok(mains.some(f=>f.id===randomDemoFighter(state,()=>NaN).picks[1]));
  }
 });
-test('keyboard navigation reaches every current main and skips the two locked slots in both selection stages',()=>{
+test('keyboard navigation reaches every current main and skips the reserved slot in both selection stages',()=>{
  for(const mode of ['cpu','local'])for(const stage of [0,1]){
   let state=beginDemoSelection(createDemoSelection(mains),mode);if(stage)state=confirmDemoFighter(state);
   const seen=new Set();for(let i=0;i<18;i++){state=navigateDemoFighter(state,'ArrowRight');seen.add(state.picks[stage]);assert.ok(mains.some(f=>f.id===state.picks[stage]));}
-  assert.equal(seen.size,16);
+  assert.equal(seen.size,mains.length);
   for(const key of ['ArrowLeft','ArrowUp','ArrowDown'])for(let i=0;i<18;i++){state=navigateDemoFighter(state,key);assert.ok(mains.some(f=>f.id===state.picks[stage]));}
  }
 });

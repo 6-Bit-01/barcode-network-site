@@ -44,3 +44,13 @@ test('chunked oversized body is cancelled at the byte limit before rate or stora
  const req=new Request(url,{method:'POST',headers:{'Content-Type':'application/json','Origin':'https://barcode.example'},body,duplex:'half'});const response=await POST(req);
  assert.equal(response.status,413);assert.equal(cancelled,true);assert.equal(pulled,2);assert.equal(operations,before);
 });
+
+test('Lost Marbles can be selected through the authenticated room endpoint',async()=>{
+ rows.clear();const host=await (await POST(request({action:'create',name:'Host'}))).json();
+ const selected=await POST(request({action:'select',code:host.code,fighter:'lost-marbles',ready:true},{Authorization:'Bearer '+host.token}));
+ assert.equal(selected.status,200);
+ const state=await (await POST(request({action:'poll',code:host.code},{Authorization:'Bearer '+host.token}))).json();
+ assert.equal(state.host.fighter,'lost-marbles');assert.equal(state.host.ready,true);
+ assert.equal((await POST(request({action:'select',code:host.code,fighter:'lost-marbles',ready:true},{Authorization:'Bearer forged'}))).status,401);
+ await POST(request({action:'leave',code:host.code},{Authorization:'Bearer '+host.token}));
+});

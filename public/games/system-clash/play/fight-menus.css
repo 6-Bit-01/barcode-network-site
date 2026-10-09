@@ -12,3 +12,10 @@
 .loading-card progress::-webkit-progress-value{background:linear-gradient(90deg,#ba71ee,#b7f668)}
 
 #demo-start,#start-fight,.ready-play-control,.demo-start{border:0;background:transparent url('assets/ui/menu-plate.webp') center/100% 100% no-repeat;box-shadow:none}
+
+/* Slow signal drift only while a settings panel is open; no extra render loop. */
+.clash-dialog[open],#pause-menu[open],#controls-dialog[open]{background-image:radial-gradient(ellipse at 15% 15%,#7c429a18,transparent 58%),radial-gradient(ellipse at 85% 85%,#719a4314,transparent 55%),linear-gradient(120deg,#100c17f7,#080b0ff7);background-size:130% 130%,130% 130%,100% 100%;animation:settings-signal-drift 14s ease-in-out infinite alternate}
+@keyframes settings-signal-drift{from{background-position:0% 0%,100% 100%,0 0}to{background-position:100% 50%,0% 50%,0 0}}
+body.motion-reduced .clash-dialog,body.motion-reduced #pause-menu,body.motion-reduced #controls-dialog{animation:none}
+@media(prefers-reduced-motion:reduce){.clash-dialog,#pause-menu,#controls-dialog{animation:none!important}}
+@media(pointer:coarse){.clash-dialog[open],#pause-menu[open],#controls-dialog[open]{animation-duration:20s}}

@@ -8,6 +8,8 @@ import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { loadFightArt, loadArcadeArt, loadDeletionArt, loadWeaponArt, combatMetadata } from "../public/games/system-clash/play/fight-assets.mjs";
 
+import {loadRemainsArt} from "../public/games/system-clash/play/fight-remains.mjs";
+
 const root = fileURLToPath(new URL("../public/games/system-clash/play/", import.meta.url));
 const read = name => fs.readFileSync(path.join(root, name), "utf8");
 const roster = JSON.parse(read("assets/fight-roster.json")).fighters;
@@ -16,10 +18,10 @@ const inventory = fs.readdirSync(root, { recursive: true, withFileTypes: true })
   .map(entry => path.relative(root, path.join(entry.parentPath ?? entry.path, entry.name)).replaceAll("\\", "/"));
 
 test("System Clash ships only its same-origin runtime, with complete registered art", async () => {
-  assert.equal(roster.length, 16);
+  assert.equal(roster.length, 17);
   assert(roster.every(fighter => fighter.enabled));
   assert.equal(inventory.filter(name => name.endsWith(".png")).length, 211);
-  assert(inventory.every(name => /\.(?:png|webp|svg|json|html|css|m?js|wav)$/.test(name)));
+  assert(inventory.every(name => /\.(?:png|webp|svg|json|html|css|m?js|wav|mp3)$/.test(name)));
   assert(inventory.every(name => !/qa\.json|measured|native-bounds|prompt|rejected|portable|history/i.test(name)));
   for (const name of inventory.filter(name => /\.(?:json|html)$/.test(name))) {
     assert.doesNotMatch(read(name), /generated_images|originalPath|\.prompt\.txt|127\.0\.0\.1|localhost|SYSTEM-CLASH-Portable|SYSTEM-CLASH-Fight-Portable/i, name);
@@ -50,6 +52,9 @@ test("System Clash ships only its same-origin runtime, with complete registered 
     await loadArcadeArt({ baseURL, art });
     await loadDeletionArt({ baseURL, art });
     const weapons = await loadWeaponArt({ baseURL });
+    const remains = await loadRemainsArt({baseURL});
+    assert.equal(remains.manifest.anonymous,true);
+    assert.equal(remains.manifest.standingStages.length,4);
     assert.equal(combatMetadata(art, weapons).length, roster.length);
     for (const fighter of art) {
       for (const asset of Object.values(fighter.clips)) {
@@ -60,7 +65,8 @@ test("System Clash ships only its same-origin runtime, with complete registered 
         assert.equal(createHash("sha256").update(fs.readFileSync(file)).digest("hex"), asset.data.sourceSha256);
       }
     }
-    const replacedOriginals = new Set();
+    const replacedOriginals = new Set(),approvedNativeSources=new Set();
+    for(const name of inventory.filter(name=>/^assets\/(?:fighters|arcade|deletions)\/[^/]+\/manifest\.json$/.test(name))){for(const clip of Object.values(JSON.parse(read(name)).clips)){const file=clip.animationPolish?.approvedFile;if(!file||!file.endsWith(".webp")||file===clip.file)continue;const original=path.posix.join(path.posix.dirname(name),file);assert(inventory.includes(original),"Approved native source remains present: "+original);assert.equal(createHash("sha256").update(fs.readFileSync(path.join(root,original))).digest("hex").slice(0,16),clip.sourceRevision,"Original native source bytes stay unchanged");approvedNativeSources.add(original);}}
     for (const name of inventory.filter(name => /^assets\/(?:fighters|arcade)\/[^/]+\/manifest\.json$/.test(name))) {
       for (const clip of Object.values(JSON.parse(read(name)).clips)) {
         if (!clip.runtimeFile) continue;
@@ -88,7 +94,7 @@ test("System Clash ships only its same-origin runtime, with complete registered 
     assert.equal(doofWalk.file,'walk-native-v2.webp');
     assert(requests.has('assets/fighters/doofnoobler/'+doofWalk.file),'Reviewed four-phase walk must load');
     assert(!requests.has(retainedDoofWalk),'Retained original walk does not add a runtime download');
-    for(const name of inventory.filter(name=>/^assets\/(?:animation-polish|fighters|arcade|deletions)\/.+\.webp$/.test(name)&&name!==retainedOakSource&&name!==retainedDoofWalk))assert(requests.has(name),"Registered atlas was not loaded: "+name);
+    for(const name of inventory.filter(name=>/^assets\/(?:animation-polish|fighters|arcade|deletions)\/.+\.webp$/.test(name)&&name!==retainedOakSource&&name!==retainedDoofWalk&&!approvedNativeSources.has(name)))assert(requests.has(name),"Registered atlas was not loaded: "+name);
   } finally {
     globalThis.fetch = oldFetch;
     globalThis.Image = oldImage;

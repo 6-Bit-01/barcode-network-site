@@ -1,0 +1,515 @@
+{
+  "version": 1,
+  "anonymous": true,
+  "normalHeight": 665,
+  "frames": {
+    "standing": {
+      "file": "standing.webp",
+      "size": [
+        271,
+        681
+      ],
+      "anchor": [
+        135.5,
+        673
+      ],
+      "sourceRegion": [
+        0,
+        0,
+        520,
+        719
+      ],
+      "crop": [
+        140,
+        17,
+        411,
+        698
+      ],
+      "opaqueBounds": [
+        8,
+        8,
+        263,
+        673
+      ]
+    },
+    "hanging": {
+      "file": "hanging.webp",
+      "size": [
+        225,
+        580
+      ],
+      "anchor": [
+        112.5,
+        572
+      ],
+      "sourceRegion": [
+        613,
+        0,
+        1227,
+        750
+      ],
+      "crop": [
+        165,
+        64,
+        390,
+        644
+      ],
+      "opaqueBounds": [
+        8,
+        8,
+        217,
+        572
+      ]
+    },
+    "slumped": {
+      "file": "slumped.webp",
+      "size": [
+        233,
+        502
+      ],
+      "anchor": [
+        116.5,
+        494
+      ],
+      "sourceRegion": [
+        0,
+        720,
+        500,
+        1282
+      ],
+      "crop": [
+        140,
+        25,
+        373,
+        527
+      ],
+      "opaqueBounds": [
+        8,
+        8,
+        225,
+        494
+      ]
+    },
+    "lying": {
+      "file": "lying.webp",
+      "size": [
+        682,
+        213
+      ],
+      "anchor": [
+        341.0,
+        205
+      ],
+      "sourceRegion": [
+        500,
+        850,
+        1227,
+        1282
+      ],
+      "crop": [
+        36,
+        148,
+        718,
+        361
+      ],
+      "opaqueBounds": [
+        8,
+        8,
+        674,
+        205
+      ]
+    },
+    "ragged-fiber": {
+      "file": "ragged-fiber.webp",
+      "size": [
+        624,
+        486
+      ],
+      "anchor": [
+        312.0,
+        478
+      ],
+      "sourceRegion": [
+        0,
+        0,
+        768,
+        512
+      ],
+      "crop": [
+        75,
+        16,
+        699,
+        502
+      ],
+      "opaqueBounds": [
+        8,
+        8,
+        616,
+        478
+      ]
+    },
+    "ragged-chunks": {
+      "file": "ragged-chunks.webp",
+      "size": [
+        671,
+        465
+      ],
+      "anchor": [
+        335.5,
+        457
+      ],
+      "sourceRegion": [
+        768,
+        0,
+        1536,
+        512
+      ],
+      "crop": [
+        45,
+        25,
+        716,
+        490
+      ],
+      "opaqueBounds": [
+        8,
+        8,
+        663,
+        457
+      ]
+    },
+    "skull-bones": {
+      "file": "skull-bones.webp",
+      "size": [
+        627,
+        461
+      ],
+      "anchor": [
+        313.5,
+        453
+      ],
+      "sourceRegion": [
+        0,
+        512,
+        768,
+        1024
+      ],
+      "crop": [
+        75,
+        27,
+        702,
+        488
+      ],
+      "opaqueBounds": [
+        8,
+        8,
+        619,
+        453
+      ]
+    },
+    "marbles": {
+      "file": "marbles.webp",
+      "size": [
+        606,
+        386
+      ],
+      "anchor": [
+        303.0,
+        378
+      ],
+      "sourceRegion": [
+        768,
+        512,
+        1536,
+        1024
+      ],
+      "crop": [
+        82,
+        61,
+        688,
+        447
+      ],
+      "opaqueBounds": [
+        8,
+        8,
+        598,
+        378
+      ]
+    },
+    "skull": {
+      "file": "skull.webp",
+      "size": [
+        299,
+        281
+      ],
+      "anchor": [
+        149.5,
+        140.5
+      ],
+      "sourceRegion": [
+        84,
+        543,
+        386,
+        827
+      ],
+      "crop": [
+        3,
+        3,
+        302,
+        284
+      ],
+      "opaqueBounds": [
+        0,
+        1,
+        299,
+        281
+      ]
+    },
+    "splinter": {
+      "file": "splinter.webp",
+      "size": [
+        164,
+        200
+      ],
+      "anchor": [
+        82.0,
+        100.0
+      ],
+      "sourceRegion": [
+        524,
+        556,
+        694,
+        803
+      ],
+      "crop": [
+        0,
+        47,
+        164,
+        247
+      ],
+      "opaqueBounds": [
+        0,
+        0,
+        164,
+        200
+      ]
+    },
+    "marble": {
+      "file": "marble.webp",
+      "size": [
+        171,
+        173
+      ],
+      "anchor": [
+        85.5,
+        86.5
+      ],
+      "sourceRegion": [
+        943,
+        570,
+        1134,
+        755
+      ],
+      "crop": [
+        12,
+        11,
+        183,
+        184
+      ],
+      "opaqueBounds": [
+        0,
+        0,
+        170,
+        173
+      ]
+    },
+    "meat-shred": {
+      "file": "meat-shred.webp",
+      "size": [
+        63,
+        57
+      ],
+      "anchor": [
+        31.5,
+        28.5
+      ],
+      "sourceRegion": [
+        1166,
+        98,
+        1245,
+        169
+      ],
+      "crop": [
+        16,
+        9,
+        79,
+        66
+      ],
+      "opaqueBounds": [
+        1,
+        0,
+        63,
+        57
+      ]
+    },
+    "meat-gristle": {
+      "file": "meat-gristle.webp",
+      "size": [
+        122,
+        116
+      ],
+      "anchor": [
+        61.0,
+        58.0
+      ],
+      "sourceRegion": [
+        1290,
+        50,
+        1412,
+        166
+      ],
+      "crop": [
+        0,
+        0,
+        122,
+        116
+      ],
+      "opaqueBounds": [
+        0,
+        0,
+        122,
+        116
+      ]
+    },
+    "standing-heavy": {
+      "file": "standing-heavy.webp",
+      "size": [
+        307,
+        653
+      ],
+      "anchor": [
+        153.5,
+        645
+      ],
+      "standingHeight": 637,
+      "sourceRegion": [
+        0,
+        0,
+        613,
+        670
+      ],
+      "crop": [
+        176,
+        13,
+        483,
+        666
+      ],
+      "sourceSHA256": "3ac115341e6b2a2b325ce371a808ec7ae171d4334da00d9ef0d10846c83a6091",
+      "opaqueBounds": [
+        8,
+        8,
+        299,
+        645
+      ]
+    },
+    "standing-torn": {
+      "file": "standing-torn.webp",
+      "size": [
+        289,
+        653
+      ],
+      "anchor": [
+        144.5,
+        645
+      ],
+      "standingHeight": 637,
+      "sourceRegion": [
+        613,
+        0,
+        1227,
+        670
+      ],
+      "crop": [
+        147,
+        13,
+        436,
+        666
+      ],
+      "sourceSHA256": "3ac115341e6b2a2b325ce371a808ec7ae171d4334da00d9ef0d10846c83a6091",
+      "opaqueBounds": [
+        8,
+        8,
+        281,
+        645
+      ]
+    },
+    "standing-shreds": {
+      "file": "standing-shreds.webp",
+      "size": [
+        275,
+        597
+      ],
+      "anchor": [
+        137.5,
+        589
+      ],
+      "standingHeight": 581,
+      "sourceRegion": [
+        0,
+        670,
+        613,
+        1282
+      ],
+      "crop": [
+        185,
+        2,
+        460,
+        599
+      ],
+      "sourceSHA256": "3ac115341e6b2a2b325ce371a808ec7ae171d4334da00d9ef0d10846c83a6091",
+      "opaqueBounds": [
+        8,
+        8,
+        267,
+        589
+      ]
+    },
+    "standing-bare": {
+      "file": "standing-bare.webp",
+      "size": [
+        272,
+        597
+      ],
+      "anchor": [
+        136.0,
+        589
+      ],
+      "standingHeight": 581,
+      "sourceRegion": [
+        613,
+        670,
+        1227,
+        1282
+      ],
+      "crop": [
+        158,
+        2,
+        430,
+        599
+      ],
+      "sourceSHA256": "3ac115341e6b2a2b325ce371a808ec7ae171d4334da00d9ef0d10846c83a6091",
+      "opaqueBounds": [
+        8,
+        8,
+        264,
+        589
+      ]
+    }
+  },
+  "description": "Anonymous bare skeleton poses and ragged generic tissue/bone particles. No identity, clothing, hair or footwear. Same source pixel density; never pose-normalize individual heights.",
+  "standingStages": [
+    "standing-heavy",
+    "standing-torn",
+    "standing-shreds",
+    "standing-bare"
+  ]
+}

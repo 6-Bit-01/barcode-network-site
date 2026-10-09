@@ -7,8 +7,25 @@ export function compileMenuIdle(data,image){
 export function menuIdleFrame(asset,elapsed,facing='right',reducedMotion=false){const time=reducedMotion?0:Math.max(0,Number.isFinite(elapsed)?elapsed:0)%asset.duration,entry=asset.entries.find(frame=>time<frame.end)??asset.entries[0];return {index:entry.index,facing,frame:asset.data.frames[facing][entry.index]};}
 export function createMenuPreviewLoader({load}){const cache=new Map(),revisions=[0,0];return {async select(slot,id,apply){const revision=++revisions[slot];if(!cache.has(id))cache.set(id,Promise.resolve().then(()=>load(id)).catch(()=>null));const asset=await cache.get(id);if(revision===revisions[slot])apply(asset);return asset;},invalidate(){for(let i=0;i<revisions.length;i++)revisions[i]++;}};}
 export function createMenuPreviews({baseURL,canvases,fallbacks,isActive=()=>true}){
- const selected=[null,null],assets=[null,null],contexts=canvases.map(canvas=>canvas.getContext('2d'));let reducedMotion=false,last=-1;
+ const selected=[null,null],assets=[null,null],contexts=canvases.map(canvas=>canvas.getContext('2d'));
+ const elapsed=[0,0],last=[null,null],drawn=[-1,-1];let reducedMotion=false;
  const loader=createMenuPreviewLoader({load:async id=>{const response=await fetch(new URL(`assets/menu/${id}-idle.json`,baseURL));if(!response.ok)throw new Error('Idle metadata unavailable.');const data=await response.json();if(data.id!==id||data.file!==id+'-idle.webp')throw new Error('Idle identity is unavailable.');const image=new Image();await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=reject;image.src=new URL('assets/menu/'+data.file,baseURL).href;});return compileMenuIdle(data,image);}});
- function draw(slot,elapsed){const asset=assets[slot],canvas=canvases[slot],ctx=contexts[slot];if(!asset||!ctx)return;const {frame}=menuIdleFrame(asset,elapsed,slot?'left':'right',reducedMotion),[sx,sy,w,h]=frame.rect,scale=asset.data.scale*(frame.bodyCalibration??1),offset=frame.offset??[0,0];ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(asset.image,sx,sy,w,h,canvas.width/2+(offset[0]-frame.anchor[0])*scale,asset.data.groundY+(offset[1]-frame.anchor[1])*scale,w*scale,h*scale);}
- return {select(slot,id){if(selected[slot]===id)return;selected[slot]=id;assets[slot]=null;canvases[slot].hidden=true;fallbacks[slot].hidden=false;void loader.select(slot,id,asset=>{assets[slot]=asset;if(asset&&contexts[slot]){const [width,height]=asset.data.canvasSize;canvases[slot].width=width;canvases[slot].height=height;canvases[slot].style.setProperty('--menu-canvas-width',width+'px');canvases[slot].style.setProperty('--menu-canvas-height',height+'px');canvases[slot].hidden=false;fallbacks[slot].hidden=true;draw(slot,0);}});},setReducedMotion(value){reducedMotion=value;last=-1;for(let slot=0;slot<2;slot++)draw(slot,0);},tick(now){if(!isActive()||reducedMotion||now-last<75)return;last=now;for(let slot=0;slot<2;slot++)draw(slot,now);},destroy(){loader.invalidate();selected.fill(null);assets.fill(null);last=-1;}};
+ function draw(slot,force=false){
+  const asset=assets[slot],canvas=canvases[slot],ctx=contexts[slot];if(!asset||!ctx)return;
+  const {frame,index}=menuIdleFrame(asset,elapsed[slot],slot?'left':'right',reducedMotion);if(!force&&drawn[slot]===index)return;
+  const [sx,sy,w,h]=frame.rect,scale=asset.data.scale*(frame.bodyCalibration??1),offset=frame.offset??[0,0];
+  ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(asset.image,sx,sy,w,h,canvas.width/2+(offset[0]-frame.anchor[0])*scale,asset.data.groundY+(offset[1]-frame.anchor[1])*scale,w*scale,h*scale);drawn[slot]=index;
+ }
+ return {
+  select(slot,id){
+   if(selected[slot]===id)return;selected[slot]=id;assets[slot]=null;elapsed[slot]=0;last[slot]=null;drawn[slot]=-1;canvases[slot].hidden=true;fallbacks[slot].hidden=false;
+   void loader.select(slot,id,asset=>{assets[slot]=asset;if(asset&&contexts[slot]){const [width,height]=asset.data.canvasSize;canvases[slot].width=width;canvases[slot].height=height;canvases[slot].style.setProperty('--menu-canvas-width',width+'px');canvases[slot].style.setProperty('--menu-canvas-height',height+'px');canvases[slot].hidden=false;fallbacks[slot].hidden=true;draw(slot);}});
+  },
+  setReducedMotion(value){reducedMotion=value;last.fill(null);elapsed.fill(0);for(let slot=0;slot<2;slot++)draw(slot,true);},
+  tick(now){
+   if(!isActive()||reducedMotion){last.fill(null);return;}if(!Number.isFinite(now))return;
+   for(let slot=0;slot<2;slot++){if(!assets[slot])continue;if(last[slot]!==null)elapsed[slot]=(elapsed[slot]+Math.max(0,now-last[slot]))%assets[slot].duration;last[slot]=now;draw(slot);}
+  },
+  destroy(){loader.invalidate();selected.fill(null);assets.fill(null);elapsed.fill(0);last.fill(null);drawn.fill(-1);}
+ };
 }

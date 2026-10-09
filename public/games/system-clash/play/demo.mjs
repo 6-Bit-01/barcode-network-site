@@ -1,3 +1,5 @@
+import {createConsoleBoot} from './console-boot.mjs';
+import {createGameMusic} from './game-music.mjs';
 import {availableControllerItems,canControlMenu} from './fight-menu-controller.mjs';
 import {createGameScreenHost} from './game-screen-host.mjs';
 import {createMatchOptions} from './fight-menus.mjs';
@@ -14,7 +16,7 @@ import {withControllerSeats,resolveInterfaceSettings} from './demo-flow.mjs';
 const $=id=>document.getElementById(id),params=new URL(location.href).searchParams;
 let state=null,catalog=null,tournamentRun=null,menuReady=false;
 let matchRules=matchRulesFromURL(location.href,loadMatchRules(localStorage));
-const screenHost=createGameScreenHost({onDisplayChange:full=>{$('demo-fullscreen').textContent=full?'Exit fullscreen':'Fullscreen';},onSuspend:()=>{menuSuspended=true;gamepads.reset();audio.clear();previews.destroy();}});
+const screenHost=createGameScreenHost({onDisplayChange:full=>{$('demo-fullscreen').textContent=full?'Exit fullscreen':'Fullscreen';},onSuspend:()=>{menuSuspended=true;gamepads.reset();audio.clear();music.suspend();bootAudio.pause();bootAudio.currentTime=0;boot.pause();previews.destroy();}});
 const matchOptions=createMatchOptions({rules:matchRules,onApply:rules=>{matchRules=rules;saveMatchRules(localStorage,rules);gamepads.reset();},onClose:()=>gamepads.reset()});
 $('options-open').addEventListener('click',()=>{if(!menuReady)return;gamepads.reset();matchOptions.show(matchRules);});
 function titleChoices(){return availableControllerItems(['solo-mode','local-mode','tournament-mode','online-mode','options-open','controls-open','demo-sound','demo-fullscreen','demo-motion'].map($));}
@@ -26,11 +28,16 @@ let windowActive=document.hasFocus(),controllerLabel='';
 let menuRAF=null,menuSuspended=false;
 let {muted,reducedMotion}=resolveInterfaceSettings(params,{prefersReducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches});
 const audio=createFightAudio({muted,reducedMotion,baseUrl:location.href});
+const music=createGameMusic({muted});
+const bootAudio=new Audio(new URL('assets/audio/barcode-console-start.wav',location.href));bootAudio.preload='none';bootAudio.volume=.32;
+const boot=createConsoleBoot({element:$('console-boot'),image:$('console-mark'),caption:$('console-caption'),reducedMotion:()=>reducedMotion,onFinish:()=>{for(const node of document.querySelectorAll('header,main,footer'))node.inert=false;try{sessionStorage.setItem('system-clash-console-seen','1');}catch{}$('solo-mode').focus({preventScroll:true});music.setPaused(document.hidden||!windowActive||menuSuspended);void music.unlock();}});
+$('console-skip').addEventListener('click',()=>{if(!muted)void bootAudio.play().catch(()=>{});boot.skip();});
 const previews=createMenuPreviews({baseURL:location.href,canvases:[$('idle-one'),$('idle-two')],fallbacks:[$('standing-one'),$('standing-two')],isActive:()=>!!state&&state.screen!=='title'&&windowActive&&!document.hidden});
 function sound(id){void audio.startAudio().then(()=>audio.emit({type:'attack',action:'punch',attackerId:id}));}
-function settings(){document.body.classList.toggle('motion-reduced',reducedMotion);$('demo-sound').textContent=muted?'Sound off':'Sound on';$('demo-sound').setAttribute('aria-pressed',String(muted));$('demo-motion').checked=reducedMotion;audio.setMuted(muted);audio.setReducedMotion(reducedMotion);previews.setReducedMotion(reducedMotion);}
+function settings(){document.body.classList.toggle('motion-reduced',reducedMotion);$('demo-sound').textContent=muted?'Sound off':'Sound on';$('demo-sound').setAttribute('aria-pressed',String(muted));$('demo-motion').checked=reducedMotion;audio.setMuted(muted);music.setMuted(muted);bootAudio.muted=muted;audio.setReducedMotion(reducedMotion);previews.setReducedMotion(reducedMotion);}
 function render(){
  if(!state)return;
+ if(typeof music==='object')music.setScene({screen:state.screen==='title'?'title':state.mode==='tournament'&&state.screen==='ready'?'tournament':'select',fighter:state.picks[0],stage:state.stage});
  const stage=stageById(state.stage);$('stage-choice').hidden=state.mode==='tournament';$('demo-stage').value=stage.id;$('stage-preview').src='assets/stages/'+stage.id+'.webp';$('stage-description').textContent=stage.description;
  const selecting=state.screen!=='title',tournament=state.mode==='tournament';$('title-screen').hidden=selecting;$('select-screen').hidden=!selecting;
  $('select-mode').textContent=tournament?'TOURNAMENT / EIGHT-NODE CLIMB':state.mode==='local'?'LOCAL TWO-PLAYER':'SOLO VS CPU';
@@ -81,11 +88,12 @@ async function load(){
  let failed=false;
  $('retry-demo').hidden=true;$('demo-load').classList.remove('error');menuReady=false;loading('Loading the fighter roster…',5);
  try{
-  const response=await fetch(new URL('assets/menu/roster.json',location.href));if(!response.ok)throw new Error('The fighter roster could not connect.');
+  const response=await fetch(new URL('assets/menu/roster.json',location.href),{cache:'no-store'});if(!response.ok)throw new Error('The fighter roster could not connect.');
   catalog=await response.json();if((catalog.fighters.length<1||catalog.fighters.length>18||new Set(catalog.fighters.map(f=>f.id)).size!==catalog.fighters.length)||catalog.fighters.some(f=>!FIGHTER_STYLES[f.id]||![f.portrait,f.standing].every(path=>/^assets\/menu\/[a-z0-9-]+\.webp$/.test(path))))throw new Error('The fighter roster needs its registered artwork.');
   state=createDemoSelection(catalog.fighters,{p1:params.get('p1'),p2:params.get('p2'),stage:params.get('stage'),mode:params.get('mode'),screen:params.get('screen')});
-  const paths=[...new Set(['assets/menu/title-arena.webp','assets/menu/system-clash-logo.svg','assets/menu/6-bit-standing.webp','assets/menu/9-bit-standing.webp',...catalog.fighters.flatMap(f=>[f.portrait,f.standing])])];let done=0;await Promise.all(paths.map(async path=>{await menuImage(path);if(failed)return;loading('Loading menu artwork · '+(++done)+' / '+paths.length,10+done/paths.length*90);}));
+  const paths=[...new Set(['assets/menu/title-arena.webp','assets/console/system-clash-title.webp','assets/console/barcode-circuit-works.webp','assets/console/soft-signal-systems.webp','assets/console/channel-06-entertainment.webp','assets/menu/6-bit-standing.webp','assets/menu/9-bit-standing.webp',...catalog.fighters.flatMap(f=>[f.portrait,f.standing])])];let done=0;await Promise.all(paths.map(async path=>{await menuImage(path);if(failed)return;loading('Loading menu artwork · '+(++done)+' / '+paths.length,10+done/paths.length*90);}));
   menuReady=true;for(const node of document.querySelectorAll?.('header,main,footer')??[])node.inert=false;$('asset-loading').hidden=true;buildGrid();render();$('solo-mode').disabled=false;$('local-mode').disabled=false;$('tournament-mode').disabled=false;$('online-mode').disabled=false;$('demo-load').textContent='SIGNAL READY / '+catalog.fighters.length+' FIGHTERS ONLINE';
+  let seen=false;try{seen=sessionStorage.getItem('system-clash-console-seen')==='1';}catch{}if(!seen&&state.screen==='title'){for(const node of document.querySelectorAll('header,main,footer'))node.inert=true;boot.start();if(!muted)void bootAudio.play().catch(()=>{});$('console-skip').focus({preventScroll:true});}
  }catch(error){failed=true;loading(error.message,0,true);$('demo-load').textContent=error.message;$('demo-load').classList.add('error');$('retry-demo').hidden=false;}
 }
 for(const stage of STAGES){const option=document.createElement('option');option.value=stage.id;option.textContent=stage.name;$('demo-stage').append(option);}
@@ -104,6 +112,7 @@ $('controls-open').addEventListener('click',()=>{if(!menuReady)return;gamepads.r
 $('controls-dialog').addEventListener('close',()=>gamepads.reset());
 window.addEventListener('keydown',event=>{
  if(!menuReady)return;
+ if(typeof boot==='object'&&boot.active){if(['Enter','Space','Escape'].includes(event.code)){event.preventDefault();if(!event.repeat)$('console-skip').click();}return;}
  if(matchOptions.open){if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Enter','Escape'].includes(event.code)){event.preventDefault();if(!event.repeat)matchOptions.handleAction(event.code==='Enter'?'confirm':event.code==='Escape'?'back':event.code);}return;}
  if(state?.screen==='title'&&!$('controls-dialog').open&&['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Enter'].includes(event.code)){const items=titleChoices();event.preventDefault();if(event.code==='Enter'){if(!event.repeat)(items.includes(document.activeElement)?document.activeElement:items[0])?.click();}else items[nextMenuIndex(items.length,items.indexOf(document.activeElement),event.code)]?.focus({preventScroll:true});return;}
 
@@ -125,6 +134,8 @@ function pollMenuGamepads(now){
  if(sample.events.some(event=>event.type==='disconnect')){gamepads.reset();return;}
  for(const event of sample.events){
   if(!['press','navigate'].includes(event.type))continue;
+  if(typeof music==='object'&&event.type==='press')void music.unlock();
+  if(typeof boot==='object'&&boot.active){if(event.type==='press'&&['confirm','back','pause'].includes(event.action))$('console-skip').click();gamepads.reset();return;}
   if(matchOptions.open){matchOptions.handleAction(event.action);return;}
   if($('controls-dialog').open){if(event.type==='press'&&['back','pause','confirm'].includes(event.action))closeControls();return;}
   if(!canControlMenu(event.player,sample.players,{screen:state.screen,mode:state.mode,activePlayer:state.activePlayer}))continue;
@@ -147,10 +158,10 @@ function pollMenuGamepads(now){
 }
 $('demo-fullscreen').addEventListener('click',async()=>{await screenHost.displayMode();$('demo-fullscreen').textContent=screenHost.isFullscreen?'Exit fullscreen':'Fullscreen';});document.addEventListener('fullscreenchange',()=>{$('demo-fullscreen').textContent=screenHost.isFullscreen?'Exit fullscreen':'Fullscreen';});
 
-function menuTick(now){if(menuSuspended)return;pollMenuGamepads(now);previews.tick(now);menuRAF=requestAnimationFrame(menuTick);}
-window.addEventListener('blur',()=>{windowActive=false;gamepads.reset();audio.setPaused(true);});
-window.addEventListener('focus',()=>{windowActive=true;gamepads.reset();audio.setPaused(document.hidden);});
-document.addEventListener('visibilitychange',()=>{gamepads.reset();audio.setPaused(document.hidden||!windowActive);});
-window.addEventListener('pagehide',()=>{menuSuspended=true;cancelAnimationFrame(menuRAF);menuRAF=null;gamepads.reset();audio.clear();previews.destroy();});
-window.addEventListener('pageshow',()=>{if(!menuSuspended)return;menuSuspended=false;windowActive=document.hasFocus();gamepads.reset();audio.setPaused(document.hidden||!windowActive);render();if(menuRAF===null)menuRAF=requestAnimationFrame(menuTick);});
+function menuTick(now){if(menuSuspended)return;pollMenuGamepads(now);if(windowActive&&!document.hidden)boot.tick(now);previews.tick(now);menuRAF=requestAnimationFrame(menuTick);}
+window.addEventListener('blur',()=>{windowActive=false;gamepads.reset();audio.setPaused(true);music.setPaused(true);bootAudio.pause();bootAudio.currentTime=0;boot.pause();});
+window.addEventListener('focus',()=>{windowActive=true;gamepads.reset();audio.setPaused(document.hidden);music.setPaused(document.hidden||boot.active);boot.pause();});
+document.addEventListener('visibilitychange',()=>{gamepads.reset();audio.setPaused(document.hidden||!windowActive);music.setPaused(document.hidden||!windowActive||boot.active);if(document.hidden||!windowActive){bootAudio.pause();bootAudio.currentTime=0;}boot.pause();});
+window.addEventListener('pagehide',()=>{menuSuspended=true;cancelAnimationFrame(menuRAF);menuRAF=null;gamepads.reset();audio.clear();music.suspend();bootAudio.pause();bootAudio.currentTime=0;boot.pause();previews.destroy();});
+window.addEventListener('pageshow',()=>{if(!menuSuspended)return;menuSuspended=false;music.resume();windowActive=document.hasFocus();gamepads.reset();audio.setPaused(document.hidden||!windowActive);music.setPaused(document.hidden||!windowActive||boot.active);if(document.hidden||!windowActive){bootAudio.pause();bootAudio.currentTime=0;}boot.pause();render();if(menuRAF===null)menuRAF=requestAnimationFrame(menuTick);});
 settings();void load();menuRAF=requestAnimationFrame(menuTick);

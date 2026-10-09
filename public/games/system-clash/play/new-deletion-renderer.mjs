@@ -1,3 +1,4 @@
+import {drawRemainsVictim,marbleVictimState} from './fight-remains.mjs';
 import {litterBasinPose,newDeletionPositions,newDeletionPose,hangingVictimPose} from './new-deletion-library.mjs';
 import {deletionDefinition,deletionPropState,deletionPose} from './deletion-library.mjs';
 import {poseFrameIndex,poseScale} from './fight-attachments.mjs';
@@ -32,8 +33,13 @@ export function nativeTorsoContactEdge(frame,pose,mask,direction,scale){
  return edge===null?null:(edge-torso[0])*scale;
 }
 export function registerNewDeletionViews(match,views,art,point,prop,nativeMask){
- const definition=deletionDefinition(match.fighters[match.winner].id);if(!['hug','litter-box','rip'].includes(definition?.mechanism))return null;
+ const definition=deletionDefinition(match.fighters[match.winner].id);if(!['hug','litter-box','rip','marbles'].includes(definition?.mechanism))return null;
  const result=views.map(view=>({...view})),hero=result[match.winner],victim=result[1-match.winner],b=definition.beats,t=match.deletionElapsed,o=match._deletionOrigin;
+ if(definition.mechanism==='marbles'){
+  const source=art[1-match.winner],asset=source.clips[victim.clip],frame=asset?.data.frames?.[victim.facing]?.[poseFrameIndex(asset,victim)];
+  if(frame){const body=point(victim,source,'torso'),bounds=frame.opaqueBounds,scale=poseScale(asset,frame);victim.remainsOrigin={x:body.x,height:(bounds[3]-bounds[1])*scale};}
+  victim.remainsState=marbleVictimState(t);if(t>=b.lastImpact)victim.opacity=0;return result;
+ }
  if(definition.mechanism==='litter-box'){
   const source=art[1-match.winner],g=litterBoxGeometry(match,prop,art),selected=litterBasinPose(source.clips);
   let takeoff;
@@ -56,6 +62,7 @@ export function registerNewDeletionViews(match,views,art,point,prop,nativeMask){
  }
  const c=match.fighters[match.winner]._clips['delete-rip']?.nativeContactMs??300,reference={...hero,clip:'delete-rip',elapsed:c,facing:o.direction>0?'right':'left',y:0},grip=point(reference,art[match.winner],'grip'),source=frozenRipSource(victim,art[1-match.winner],o);
  if(source){const torso=point({...source.view,x:o.target},art[1-match.winner],'torso'),pose=match.fighters[1-match.winner]._clips[source.view.clip]?.combatPoses?.frames?.[source.view.facing]?.[poseFrameIndex(source.asset,source.view)],region=pose?.hurt?.find(r=>r.site==='torso'),edge=nativeTorsoContactEdge(source.frame,pose,nativeMask?.(source.asset,source.frame),o.direction,poseScale(source.asset,source.frame))??(region&&pose.sites?.torso?(o.direction>0?region.right:region.left)-pose.sites.torso.x:0);hero.x+=(torso.x+edge-grip.x)*easedProgress(t,b.gripWindup,b.gripContact);}
+ victim.remainsArt=prop?.remains;
  if(victim.splitBody){const pieces=splitPieces(match,hero,victim,art,point,definition);if(pieces)victim.splitPieces=pieces;}
  return result;
 }
@@ -77,6 +84,17 @@ export function drawNativeRipForearm(ctx,view,art){
  ctx.save();ctx.translate(view.x,FLOOR+(view.y??0));ctx.scale(scale,scale);ctx.beginPath();for(const [i,[x,y]]of mask.entries())ctx[i?'lineTo':'moveTo'](x+offset[0]-frame.anchor[0],y+offset[1]-frame.anchor[1]);ctx.closePath();ctx.clip();ctx.drawImage(asset.image,sx,sy,w,h,offset[0]-frame.anchor[0],offset[1]-frame.anchor[1],w,h);ctx.restore();return true;
 }
 export function drawNewDeletionScene(ctx,match,prop,views,art,front,{reducedMotion=false}={}){const definition=deletionDefinition(match.fighters[match.winner].id);if(!definition)return;const t=match.deletionElapsed,b=definition.beats,o=match._deletionOrigin;
+ if(definition.mechanism==='marbles'){
+  const victim=views[1-match.winner],bank=prop?.remains,state=marbleVictimState(t),origin=victim.remainsOrigin??{x:victim.x,height:match.fighters[1-match.winner].height};
+  if(!front&&t>=b.firstImpact){const source=art[1-match.winner],asset=source.clips[victim.clip],frame=asset?.data.frames?.[victim.facing]?.[poseFrameIndex(asset,victim)],bodyMask=frame?{image:asset.image,frame,scale:poseScale(asset,frame),view:victim}:null;drawRemainsVictim(ctx,bank,{...origin,pose:state.pose,progress:state.exposure,fall:state.fall,direction:o.direction,bodyMask});}
+  if(front&&bank){const marble=bank.images.marble,hero=views[match.winner],native=art[match.winner],contact=match.fighters[match.winner]._clips['delete-marble']?.nativeContactMs??300;
+   if(marble){for(let volley=0;volley<7;volley++){const launch=b.firstLaunch+volley*450,flight=clamp((t-launch)/200,0,1),reference={...hero,clip:'delete-marble',elapsed:contact},asset=native.clips['delete-marble'],frame=asset?.data.frames?.[hero.facing]?.[poseFrameIndex(asset,reference)],offset=frame?.offset??[0,0],grip=frame?.attachments?.grip,scale=frame&&poseScale(asset,frame),hand=grip?{x:hero.x+(grip[0]+offset[0]-frame.anchor[0])*scale,y:FLOOR+(grip[1]+offset[1]-frame.anchor[1])*scale}:{x:hero.x+o.direction*65,y:FLOOR-190};
+    if(t>=launch&&t<launch+200){for(let ball=0;ball<3;ball++){const endY=FLOOR-origin.height*(volley%3===0?.88:.57)+(ball-1)*18,x=hand.x+(origin.x-hand.x)*flight,y=hand.y+(endY-hand.y)*flight-(reducedMotion?0:20)*Math.sin(Math.PI*flight);ctx.drawImage(marble,x-6,y-6,12,12);}}
+    else if(t>=launch+200){const seconds=(t-launch-200)/1000;for(let ball=0;ball<2;ball++){const spread=o.direction*(36+ball*31),x=origin.x+spread*(1-Math.exp(-seconds*3)),bounce=Math.max(0,1-seconds/1.3)*Math.abs(Math.sin(seconds*10))*24,y=FLOOR-6-bounce;ctx.drawImage(marble,x-5,y-5,10,10);}}
+   }}
+  }
+  return;
+ }
  if(definition.mechanism==='rip'){if(front&&t>=b.gripContact&&t<b.rip)drawNativeRipForearm(ctx,views[match.winner],art[match.winner]);return;}
  // Soft Power is the authored whole-body hug; it has no external hardware or halo.
  if(definition.mechanism==='hug')return;

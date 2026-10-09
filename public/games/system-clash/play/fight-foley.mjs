@@ -13,6 +13,7 @@ const palettes=freeze({
  'doofnoobler':{accent:'cloth',rate:1.18,body:.27,secondary:.16,crack:.10,offset:.017},
  'lyra':{accent:'metal',rate:1.27,body:.34,secondary:.20,crack:.12,offset:.004},
  'papa-oak':{accent:'wood',rate:.77,body:.46,secondary:.22,crack:.19,offset:.042},
+ 'lost-marbles':{accent:'glass',rate:1.21,body:.32,secondary:.15,crack:.125,offset:.019},
  '6-bit':{accent:'wet',rate:1.06,body:.40,secondary:.17,crack:.14,offset:.009},
  '9-bit':{accent:'slime',rate:.84,body:.45,secondary:.18,crack:.17,offset:.025},
  'cache-back':{accent:'metal',rate:1.12,body:.34,secondary:.19,crack:.13,offset:.006},

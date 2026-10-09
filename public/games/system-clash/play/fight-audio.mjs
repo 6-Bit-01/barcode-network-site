@@ -11,6 +11,7 @@ export const CHARACTER_LINE_ASSETS=Object.freeze({
  doofnoobler:Object.freeze({path:'assets/audio/doofnoobler-stay-kind.wav',cue:'stay-kind',text:'Stay soft, stay fuzzy, and stay kind.',bytes:125126})
 });
 export const FIGHT_AUDIO_PROFILES=Object.freeze(Object.fromEntries(Object.entries({
+  'lost-marbles':{pitch:138,formants:[820,1480,2880],rasp:.29,breath:.23,weight:.95,accent:460,voice:'masked breathy rasp and clipped chaotic effort'},
   'doofnoobler':{pitch:246,formants:[980,1780,3190],rasp:.04,breath:.23,weight:.64,accent:790,voice:'soft felt puppet murmur'},
   'lyra':{pitch:282,formants:[1050,2130,3550],rasp:.09,breath:.05,weight:.88,accent:1670,robot:true,voice:'feline cyborg chirp'},
   'papa-oak':{pitch:62,formants:[430,870,1850],rasp:.36,breath:.11,weight:1.55,accent:53,voice:'resonant wooden elder rumble'},
@@ -35,6 +36,7 @@ export const MAX_VOCAL_CACHE_BYTES=6*1024*1024;
 // Independent articulation families: syllables, stop/breath onsets, closure,
 // subharmonics, vocal fry and modulation differ in addition to pitch/formants.
 const vocalFamilies={
+ 'lost-marbles':{kind:'masked-staccato',duration:.92,open:.38,sub:.14,nasal:.19,grit:.47,flutter:23,phrases:[['kh-ha','heh','ts-hup','rr-kih'],['akh-eh','uh-kh','hff','kh-oh'],['ha-rr-agh','kh-aa-huh','eh-rr-ah','hff-aah'],['kh-ah-rr','heh-aa-kh','rr-aa-hff','hff-aa-eh']]},
  'doofnoobler':{kind:'felt-murmur',duration:.9,open:.71,sub:.01,nasal:.39,grit:.04,flutter:3,phrases:[['hu','hmm-hup','ho-eh','mmm'],['oh','oof','eh-oh','uh-hm'],['oh-hmm','hu-oof','ah-ohh','hmm-eh'],['oo-ah','oh-ehh','hu-ah-oh','mm-aa']]},
  'lyra':{kind:'cat-servo',duration:.82,open:.27,sub:.02,nasal:.32,grit:.13,flutter:31,phrases:[['ki','tss-ya','mr-ki','ya-tk'],['ih','mrr-eh','ki-ih','tss-ah'],['mrr-yah','ih-aa','tk-kee','yah-mrr'],['ee-yaa','mrr-ee-ah','ki-aa-yee','yah-ee-mrr']]},
  'papa-oak':{kind:'wood-throat',duration:1.21,open:.73,sub:.63,nasal:.06,grit:.49,flutter:2,phrases:[['hrum','hoom','gh-ho','hrr'],['uum','ohm','hr-ugh','ogh'],['hoom-aah','hr-augh','ogh-um','rr-ho'],['hooo-aa','aum-rr-ah','gh-oh-aa','hrum-aaa']]},

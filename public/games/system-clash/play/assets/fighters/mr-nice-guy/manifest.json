@@ -2003,340 +2003,39 @@
       "runtimeFile": "hurt.runtime.webp"
     },
     "walk": {
-      "file": "movement-v1.png",
+      "file": "walk-smooth-v3.webp",
       "label": "Advance",
       "frames": {
         "right": [
-          {
-            "rect": [
-              57,
-              8,
-              205,
-              305
-            ],
-            "anchor": [
-              25,
-              302
-            ],
-            "opaqueBounds": [
-              3,
-              3,
-              202,
-              302
-            ],
-            "attachments": {
-              "head": [
-                127,
-                55
-              ],
-              "grip": [
-                162,
-                82
-              ],
-              "torso": [
-                116,
-                122
-              ],
-              "legs": [
-                75,
-                241
-              ]
-            },
-            "handRadius": 8,
-            "gripAngle": -0.15
-          },
-          {
-            "rect": [
-              386,
-              8,
-              192,
-              305
-            ],
-            "anchor": [
-              153,
-              302
-            ],
-            "opaqueBounds": [
-              3,
-              3,
-              189,
-              302
-            ],
-            "attachments": {
-              "head": [
-                134,
-                54
-              ],
-              "grip": [
-                168,
-                83
-              ],
-              "torso": [
-                122,
-                122
-              ],
-              "legs": [
-                59,
-                241
-              ]
-            },
-            "handRadius": 8,
-            "gripAngle": -0.15
-          },
-          {
-            "rect": [
-              691,
-              6,
-              214,
-              307
-            ],
-            "anchor": [
-              156,
-              304
-            ],
-            "opaqueBounds": [
-              3,
-              3,
-              211,
-              304
-            ],
-            "attachments": {
-              "head": [
-                144,
-                56
-              ],
-              "grip": [
-                178,
-                85
-              ],
-              "torso": [
-                127,
-                124
-              ],
-              "legs": [
-                77,
-                243
-              ]
-            },
-            "handRadius": 8,
-            "gripAngle": -0.15
-          },
-          {
-            "rect": [
-              1011,
-              7,
-              209,
-              306
-            ],
-            "anchor": [
-              156,
-              303
-            ],
-            "opaqueBounds": [
-              3,
-              3,
-              206,
-              303
-            ],
-            "attachments": {
-              "head": [
-                137,
-                55
-              ],
-              "grip": [
-                164,
-                84
-              ],
-              "torso": [
-                118,
-                123
-              ],
-              "legs": [
-                69,
-                242
-              ]
-            },
-            "handRadius": 8,
-            "gripAngle": -0.15
-          }
+          {"rect":[4,4,205,305],"anchor":[106.17341072705915,302],"opaqueBounds":[3,3,202,302],"attachments":{"head":[127,55],"grip":[162,82],"torso":[116,122],"legs":[75,241]},"handRadius":8,"gripAngle":-0.15,"walkKeyOrigin":"approved","poseSource":{"originalFile":"movement-v1.png","originalRect":[57,8,205,305],"originalIndex":0,"originalAnchor":[25,302],"pixelSha256":"afd201274febfe67b05d44aba371b4071b182b3caa2f696cf58ba0671f59ea05"},"pixelSha256":"4feec555b7efed2bc170ca9bc13f8005a56e6b366600d6a0cd72fb0ff1142d46","canonicalPixelSha256":"4feec555b7efed2bc170ca9bc13f8005a56e6b366600d6a0cd72fb0ff1142d46"},
+          {"rect":[213,4,219,304],"anchor":[121.99300601532846,302],"opaqueBounds":[2,2,217,302],"attachments":{"head":[144.69729021451343,53.67224080267558],"torso":[131.8195952882693,121.3979933110368],"legs":[73.26006375965851,240.7959866220736],"grip":[183.25486302480144,81.76588628762542]},"walkKeyOrigin":"generated","poseSource":{"kind":"generated","sourceFile":"walk-between-right.png","cell":0,"sourceSheet":"walk-between-right.png","sourceRect":[278,8,362,503],"uniformResample":0.6048387096774194,"sourceSha256":"6af6c792d6149db0b6f391a2276b832c38da4b224842fb5bac768ca6d9ff9bbf","between":[0,1]},"pixelSha256":"ac38336012e8ca2c9664d24699581b0c38b6f27e846501b6f20350f6f02bc955","canonicalPixelSha256":"ac38336012e8ca2c9664d24699581b0c38b6f27e846501b6f20350f6f02bc955"},
+          {"rect":[436,4,192,305],"anchor":[112.17341072705915,302],"opaqueBounds":[3,3,189,302],"attachments":{"head":[134,54],"grip":[168,83],"torso":[122,122],"legs":[59,241]},"handRadius":8,"gripAngle":-0.15,"walkKeyOrigin":"approved","poseSource":{"originalFile":"movement-v1.png","originalRect":[386,8,192,305],"originalIndex":1,"originalAnchor":[153,302],"pixelSha256":"eaee73ff79487ae241a2732b6f4fc3b06efc80948bd490a0acefe43bdd2aaa23"},"pixelSha256":"f312289eda0747d6bf713e9847201117c9561d70e042c09b562f455fa535c75c","canonicalPixelSha256":"f312289eda0747d6bf713e9847201117c9561d70e042c09b562f455fa535c75c"},
+          {"rect":[632,4,211,304],"anchor":[120.09307573946609,302],"opaqueBounds":[2,2,209,302],"attachments":{"head":[145.05621898263027,53.99724441382682],"torso":[129.91966501240694,121.99799997777754],"legs":[69.98340570719603,240.9993222146913],"grip":[180.8938430521092,82.99756663962934]},"walkKeyOrigin":"generated","poseSource":{"kind":"generated","sourceFile":"walk-between-right.png","cell":1,"sourceSheet":"walk-between-right.png","sourceRect":[884,9,349,502],"uniformResample":0.6048387096774194,"sourceSha256":"6af6c792d6149db0b6f391a2276b832c38da4b224842fb5bac768ca6d9ff9bbf","between":[1,2]},"pixelSha256":"8a534e1ed22a95efcd821409f303245c1d564c37c824bfc789d2b0f12007b657","canonicalPixelSha256":"8a534e1ed22a95efcd821409f303245c1d564c37c824bfc789d2b0f12007b657"},
+          {"rect":[847,4,214,307],"anchor":[117.17341072705915,304],"opaqueBounds":[3,3,211,304],"attachments":{"head":[144,56],"grip":[178,85],"torso":[127,124],"legs":[77,243]},"handRadius":8,"gripAngle":-0.15,"walkKeyOrigin":"approved","poseSource":{"originalFile":"movement-v1.png","originalRect":[691,6,214,307],"originalIndex":2,"originalAnchor":[156,304],"pixelSha256":"d75c613793744329df352aaab850ae6183029b5db9c197b2eb25220dbcd26248"},"pixelSha256":"8197725cefb7ca02d4d9ba020deb459977159259b8dd2ec1295c39b6144bd13f","canonicalPixelSha256":"8197725cefb7ca02d4d9ba020deb459977159259b8dd2ec1295c39b6144bd13f"},
+          {"rect":[1065,4,232,297],"anchor":[124.71622997677494,295],"opaqueBounds":[2,2,230,295],"attachments":{"head":[154.53007768093974,53.18901439645626],"torso":[134.5428192497158,119.4920265780731],"legs":[79.62173171655931,235.52229789590257],"grip":[188.3272546419098,81.46529900332226]},"walkKeyOrigin":"generated","poseSource":{"kind":"generated","sourceFile":"walk-between-right.png","cell":2,"sourceSheet":"walk-between-right.png","sourceRect":[285,522,384,491],"uniformResample":0.6048387096774194,"sourceSha256":"6af6c792d6149db0b6f391a2276b832c38da4b224842fb5bac768ca6d9ff9bbf","between":[2,3]},"pixelSha256":"72b2981c8da7d2195ed2abdf5c7a111a514e6a28dc4e267262a32302b44b66b6","canonicalPixelSha256":"72b2981c8da7d2195ed2abdf5c7a111a514e6a28dc4e267262a32302b44b66b6"},
+          {"rect":[1301,4,209,306],"anchor":[108.17341072705915,303],"opaqueBounds":[3,3,206,303],"attachments":{"head":[137,55],"grip":[164,84],"torso":[118,123],"legs":[69,242]},"handRadius":8,"gripAngle":-0.15,"walkKeyOrigin":"approved","poseSource":{"originalFile":"movement-v1.png","originalRect":[1011,7,209,306],"originalIndex":3,"originalAnchor":[156,303],"pixelSha256":"51dcf187254ba9280438da772a2ef19fc8da21a372d1ccea748d2565c560db97"},"pixelSha256":"62d13b1cb6fc671a5e6afbf3ead32a49be6aacfc7594d8d775a474ce2ac27cf9","canonicalPixelSha256":"62d13b1cb6fc671a5e6afbf3ead32a49be6aacfc7594d8d775a474ce2ac27cf9"},
+          {"rect":[1514,4,212,295],"anchor":[109.71211409612121,293],"opaqueBounds":[1,2,210,293],"attachments":{"head":[135.0958734559497,52.52434782608696],"torso":[119.53870336906206,118.10802675585286],"legs":[72.78441468425873,233.7310535117057],"grip":[167.37428521919946,79.72814381270904]},"walkKeyOrigin":"generated","poseSource":{"kind":"generated","sourceFile":"walk-between-right.png","cell":3,"sourceSheet":"walk-between-right.png","sourceRect":[911,523,351,487],"uniformResample":0.6048387096774194,"sourceSha256":"6af6c792d6149db0b6f391a2276b832c38da4b224842fb5bac768ca6d9ff9bbf","between":[3,0]},"pixelSha256":"9d37d1f3c4ee55cfb01e363ce967376b88dd4128b74b4bd4fef655013801ca03","canonicalPixelSha256":"9d37d1f3c4ee55cfb01e363ce967376b88dd4128b74b4bd4fef655013801ca03"}
         ],
         "left": [
-          {
-            "rect": [
-              43,
-              319,
-              219,
-              306
-            ],
-            "anchor": [
-              47,
-              303
-            ],
-            "opaqueBounds": [
-              3,
-              3,
-              216,
-              303
-            ],
-            "attachments": {
-              "head": [
-                80,
-                55
-              ],
-              "grip": [
-                49,
-                88
-              ],
-              "torso": [
-                96,
-                125
-              ],
-              "legs": [
-                66,
-                231
-              ]
-            },
-            "handRadius": 8,
-            "gripAngle": 0.15
-          },
-          {
-            "rect": [
-              379,
-              319,
-              207,
-              306
-            ],
-            "anchor": [
-              43,
-              303
-            ],
-            "opaqueBounds": [
-              3,
-              3,
-              204,
-              303
-            ],
-            "attachments": {
-              "head": [
-                77,
-                56
-              ],
-              "grip": [
-                47,
-                87
-              ],
-              "torso": [
-                95,
-                124
-              ],
-              "legs": [
-                52,
-                231
-              ]
-            },
-            "handRadius": 8,
-            "gripAngle": 0.15
-          },
-          {
-            "rect": [
-              693,
-              319,
-              222,
-              307
-            ],
-            "anchor": [
-              58,
-              304
-            ],
-            "opaqueBounds": [
-              3,
-              3,
-              219,
-              304
-            ],
-            "attachments": {
-              "head": [
-                88,
-                55
-              ],
-              "grip": [
-                56,
-                85
-              ],
-              "torso": [
-                109,
-                124
-              ],
-              "legs": [
-                61,
-                231
-              ]
-            },
-            "handRadius": 8,
-            "gripAngle": 0.15
-          },
-          {
-            "rect": [
-              1010,
-              319,
-              209,
-              305
-            ],
-            "anchor": [
-              49,
-              302
-            ],
-            "opaqueBounds": [
-              3,
-              3,
-              206,
-              302
-            ],
-            "attachments": {
-              "head": [
-                90,
-                55
-              ],
-              "grip": [
-                62,
-                86
-              ],
-              "torso": [
-                109,
-                124
-              ],
-              "legs": [
-                59,
-                231
-              ]
-            },
-            "handRadius": 8,
-            "gripAngle": 0.15
-          }
+          {"rect":[4,319,219,306],"anchor":[109.29479725162585,303],"opaqueBounds":[3,3,216,303],"attachments":{"head":[80,55],"grip":[49,88],"torso":[96,125],"legs":[66,231]},"handRadius":8,"gripAngle":0.15,"walkKeyOrigin":"approved","poseSource":{"originalFile":"movement-v1.png","originalRect":[43,319,219,306],"originalIndex":0,"originalAnchor":[47,303],"pixelSha256":"1111cdda97490e775f8eae78ae58d0642eb3d123fc414676971563ae4cdb7b6e"},"pixelSha256":"efc5eae4aa15118c021c9e51d1ab1667cf686b05e3c96f21cbe920d674afea50","canonicalPixelSha256":"efc5eae4aa15118c021c9e51d1ab1667cf686b05e3c96f21cbe920d674afea50"},
+          {"rect":[227,319,206,304],"anchor":[105.62224452231467,302],"opaqueBounds":[2,1,204,302],"attachments":{"head":[75.69581669119192,53.675],"torso":[92.32744727068881,122.905],"legs":[56.495129983883395,229.76],"grip":[45.92165930908836,85.78166666666667]},"walkKeyOrigin":"generated","poseSource":{"kind":"generated","sourceFile":"walk-between-left.png","cell":0,"sourceSheet":"walk-between-left.png","sourceRect":[313,7,342,504],"uniformResample":0.6024096385542169,"sourceSha256":"d1fac542f06533b14863e77ea584f4066a1904bcfeebacec2d3a59a42718bcb7","between":[0,1]},"pixelSha256":"aed46f98b3766732b4206e632a4a690ba84c1ae6c06d62e15641724f2f288d77","canonicalPixelSha256":"aed46f98b3766732b4206e632a4a690ba84c1ae6c06d62e15641724f2f288d77"},
+          {"rect":[437,319,207,306],"anchor":[108.29479725162585,303],"opaqueBounds":[3,3,204,303],"attachments":{"head":[77,56],"grip":[47,87],"torso":[95,124],"legs":[52,231]},"handRadius":8,"gripAngle":0.15,"walkKeyOrigin":"approved","poseSource":{"originalFile":"movement-v1.png","originalRect":[379,319,207,306],"originalIndex":1,"originalAnchor":[43,303],"pixelSha256":"789dc42d9a862eb2887d08035f20d0d51169c76a1619899e743bae6521718a58"},"pixelSha256":"1c9a06cda1f2c647aa1256d2d362e81bc12bdf5cad2d614742bfa2f21ba0e25c","canonicalPixelSha256":"1c9a06cda1f2c647aa1256d2d362e81bc12bdf5cad2d614742bfa2f21ba0e25c"},
+          {"rect":[648,319,202,305],"anchor":[109.19156342078008,304],"opaqueBounds":[2,2,200,304],"attachments":{"head":[77.40609452736318,54.76304540420819],"torso":[95.89676616915423,123.60433001107421],"legs":[52.71766169154228,231.13873754152823],"grip":[47.96330845771144,85.41621262458472]},"walkKeyOrigin":"generated","poseSource":{"kind":"generated","sourceFile":"walk-between-left.png","cell":1,"sourceSheet":"walk-between-left.png","sourceRect":[931,6,335,506],"uniformResample":0.6024096385542169,"sourceSha256":"d1fac542f06533b14863e77ea584f4066a1904bcfeebacec2d3a59a42718bcb7","between":[1,2]},"pixelSha256":"945a64a47e81bdb2f52cc84910185b2a95963380a06f060820f411ec647b8543","canonicalPixelSha256":"945a64a47e81bdb2f52cc84910185b2a95963380a06f060820f411ec647b8543"},
+          {"rect":[854,319,222,307],"anchor":[122.29479725162585,304],"opaqueBounds":[3,3,219,304],"attachments":{"head":[88,55],"grip":[56,85],"torso":[109,124],"legs":[61,231]},"handRadius":8,"gripAngle":0.15,"walkKeyOrigin":"approved","poseSource":{"originalFile":"movement-v1.png","originalRect":[693,319,222,307],"originalIndex":2,"originalAnchor":[58,304],"pixelSha256":"f9efc094a88b175a37e30c4d6ccb37307615ccc31b816be181fc68215d0ef1c4"},"pixelSha256":"96b6595c76fe90db353931e5820b565f4d284c55342c6b713c9c59cbcf615297","canonicalPixelSha256":"96b6595c76fe90db353931e5820b565f4d284c55342c6b713c9c59cbcf615297"},
+          {"rect":[1080,319,245,299],"anchor":[137.8566928911077,297],"opaqueBounds":[2,2,244,297],"attachments":{"head":[101.4728835978836,53.13390148779431],"torso":[124.56189563948185,120.98465538505984],"legs":[67.87005108556832,226.20249113879044],"grip":[66.85730249954388,83.12754030600341]},"walkKeyOrigin":"generated","poseSource":{"kind":"generated","sourceFile":"walk-between-left.png","cell":2,"sourceSheet":"walk-between-left.png","sourceRect":[265,513,406,496],"uniformResample":0.6024096385542169,"sourceSha256":"d1fac542f06533b14863e77ea584f4066a1904bcfeebacec2d3a59a42718bcb7","between":[2,3]},"pixelSha256":"5d4531d737e22c3fb0f14f94d2326c64f675d366d9a13037c757f62d96680214","canonicalPixelSha256":"5d4531d737e22c3fb0f14f94d2326c64f675d366d9a13037c757f62d96680214"},
+          {"rect":[1329,319,209,305],"anchor":[122.29479725162585,302],"opaqueBounds":[3,3,206,302],"attachments":{"head":[90,55],"grip":[62,86],"torso":[109,124],"legs":[59,231]},"handRadius":8,"gripAngle":0.15,"walkKeyOrigin":"approved","poseSource":{"originalFile":"movement-v1.png","originalRect":[1010,319,209,305],"originalIndex":3,"originalAnchor":[49,302],"pixelSha256":"380b8a8af578bf7035bb5c67e6c6e78164173d6a52792110b43d5dd64690a3e0"},"pixelSha256":"1e16d20f167ddb43fa9a56b6c979c49c52a1694c0623f34ee737c7dd6d9441c7","canonicalPixelSha256":"1e16d20f167ddb43fa9a56b6c979c49c52a1694c0623f34ee737c7dd6d9441c7"},
+          {"rect":[1542,319,218,296],"anchor":[117.36442189604409,294],"opaqueBounds":[1,2,216,294],"attachments":{"head":[85.93293091884641,52.69797101449275],"torso":[104.06962464441824,120.45694537346712],"legs":[62.450947061680424,224.2911036789298],"grip":[55.459804805846574,83.89509476031213]},"walkKeyOrigin":"generated","poseSource":{"kind":"generated","sourceFile":"walk-between-left.png","cell":3,"sourceSheet":"walk-between-left.png","sourceRect":[915,518,362,492],"uniformResample":0.6024096385542169,"sourceSha256":"d1fac542f06533b14863e77ea584f4066a1904bcfeebacec2d3a59a42718bcb7","between":[3,0]},"pixelSha256":"d502c6b807f760828b5d9e59dc25a74469346cda3c624a958f53d0a9787da0ac","canonicalPixelSha256":"d502c6b807f760828b5d9e59dc25a74469346cda3c624a958f53d0a9787da0ac"}
         ]
       },
       "scale": 1.066667,
-      "order": [
-        0,
-        1,
-        2,
-        3
-      ],
-      "frameMs": [
-        150,
-        150,
-        150,
-        150
-      ],
+      "order": [0,1,2,3,4,5,6,7],
+      "frameMs": [75,75,75,75,75,75,75,75],
       "loop": true,
-      "sourceSize": [
-        1254,
-        1254
-      ],
+      "sourceSize": [1764,630],
       "sourceRevision": "24cb8187f25cbb83",
-      "sourceSha256": "24cb8187f25cbb8308e45c83715938dd4cdc93d0e26666aaea405fec1d46ffe8",
+      "sourceSha256": "78d003db9228a420ba9b380d2380baf1618367e08cd02d6f9de914d83afe0617",
       "fightingStyle": "Grounded archer counterfighter: compact braced guard, short driving body jabs, deliberate low snaps, controlled uppercut and heavy front push kicks.",
-      "runtimeFile": "movement-v1.runtime.webp"
+      "animationPolish": {"version":2,"kind":"native-full-body-walk-inbetweens","encoding":"lossless-webp","approvedFile":"movement-v1.png","approvedTiming":{"duration":600,"order":[0,1,2,3],"frameMs":[150,150,150,150]},"sourceSheets":["walk-between-right.png","walk-between-left.png"]}
     },
     "crouch": {
       "file": "movement-v1.png",

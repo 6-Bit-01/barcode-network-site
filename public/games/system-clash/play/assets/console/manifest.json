@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "logos": {
+    "barcode-circuit-works": {
+      "file": "barcode-circuit-works.webp",
+      "size": [
+        651,
+        384
+      ],
+      "anchor": [
+        325.5,
+        376
+      ],
+      "sourceRegion": [
+        0,
+        0,
+        768,
+        450
+      ],
+      "crop": [
+        51,
+        60,
+        702,
+        444
+      ]
+    },
+    "soft-signal-systems": {
+      "file": "soft-signal-systems.webp",
+      "size": [
+        696,
+        363
+      ],
+      "anchor": [
+        348.0,
+        355
+      ],
+      "sourceRegion": [
+        768,
+        0,
+        1536,
+        480
+      ],
+      "crop": [
+        30,
+        73,
+        726,
+        436
+      ]
+    },
+    "channel-06-entertainment": {
+      "file": "channel-06-entertainment.webp",
+      "size": [
+        620,
+        464
+      ],
+      "anchor": [
+        310.0,
+        456
+      ],
+      "sourceRegion": [
+        0,
+        480,
+        768,
+        1024
+      ],
+      "crop": [
+        73,
+        0,
+        693,
+        464
+      ]
+    },
+    "system-clash-title": {
+      "file": "system-clash-title.webp",
+      "size": [
+        745,
+        408
+      ],
+      "anchor": [
+        372.5,
+        400
+      ],
+      "sourceRegion": [
+        768,
+        480,
+        1536,
+        1024
+      ],
+      "crop": [
+        3,
+        60,
+        748,
+        468
+      ]
+    }
+  }
+}

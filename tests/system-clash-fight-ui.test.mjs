@@ -6,7 +6,7 @@ class Button{
  addEventListener(type,fn){(this.handlers[type]??=[]).push(fn)} setPointerCapture(){} setAttribute(key,value){this[key]=value}
  emit(type,values={}){const event={pointerId:1,detail:1,preventDefault(){},...values};for(const fn of this.handlers[type]??[])fn(event)}
 }
-const pad=(buttons)=>({querySelectorAll:selector=>buttons.filter(b=>selector==='[data-action]'?b.dataset.action:b.dataset.hold)});
+const pad=(buttons)=>({querySelectorAll:selector=>buttons.filter(b=>selector==='[data-action]'?b.dataset.action:selector==='[data-hold]'?b.dataset.hold:false)});
 test('pause navigation wraps available choices and keeps guest authority',()=>{
  assert.equal(typeof ui.nextMenuIndex,'function');assert.equal(ui.nextMenuIndex(3,2,'ArrowDown'),0);assert.equal(ui.nextMenuIndex(3,0,'ArrowUp'),2);
  assert.deepEqual(ui.pauseMenuPolicy({online:true,seat:1,phase:'fight'}),{resume:false,restart:false});assert.deepEqual(ui.pauseMenuPolicy({online:false,tournament:true,phase:'fight'}),{resume:true,restart:false});
@@ -50,9 +50,9 @@ test('a superseded fighter load stops before fetching and decoding the next art 
  const {readFileSync}=await import('node:fs'),{runInNewContext}=await import('node:vm');
  const source=readFileSync(new URL('../public/games/system-clash/play/fight.js',import.meta.url),'utf8');
  const boot=source.slice(source.indexOf('async function boot()'),source.indexOf("$('fighter-one').addEventListener('change'"));
- const phases=['loadFightArt','loadArcadeArt','loadDeletionArt','loadWeaponArt','loadFighterPortraits'];
- for(let supersededAt=0;supersededAt<4;supersededAt++){
-  const calls=[],elements=new Map(),env={loadRevision:0,motionPresentationEpoch:0,interfaceArtPending:null,pauseDialog:{open:false},roundMenu:{reset(){}},loading(){},loadInterfaceArt:async()=>({images:{}}),clearInput(){},effects:{clear(){}},URL,location:{href:'https://example.com/fight.html'},window:{},$:(id)=>elements.get(id)??(elements.set(id,{value:'6-bit',classList:{remove(){},add(){}}}),elements.get(id))};
+ const phases=['loadFightArt','loadArcadeArt','loadDeletionArt','loadRemainsArt','loadWeaponArt','loadFighterPortraits'];
+ for(let supersededAt=0;supersededAt<5;supersededAt++){
+  const calls=[],elements=new Map(),env={loadRevision:0,motionPresentationEpoch:0,interfaceArtPending:null,remainsArtPending:null,remainsArt:null,pauseDialog:{open:false},roundMenu:{reset(){}},loading(){},loadInterfaceArt:async()=>({images:{}}),clearInput(){},effects:{clear(){}},URL,location:{href:'https://example.com/fight.html'},window:{},$:(id)=>elements.get(id)??(elements.set(id,{value:'6-bit',classList:{remove(){},add(){}}}),elements.get(id))};
   for(const [index,phase] of phases.entries())env[phase]=async()=>{calls.push(phase);if(index===supersededAt)env.loadRevision=2;return phase==='loadFightArt'?[{}]:{};};
   runInNewContext(boot,env);await env.boot();assert.deepEqual(calls,phases.slice(0,supersededAt+1),'cancel after '+phases[supersededAt]);
  }

@@ -137,6 +137,13 @@
         420,
         440
       ]
+    },
+    {
+      "id": "lost-marbles",
+      "name": "Lost Marbles",
+      "portrait": "assets/menu/lost-marbles-portrait.webp",
+      "standing": "assets/menu/lost-marbles-standing.webp",
+      "heightScale": 1
     }
   ]
 }

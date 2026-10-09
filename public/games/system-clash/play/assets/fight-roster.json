@@ -96,6 +96,12 @@
       "name": "PapaOak",
       "enabled": true,
       "deletion": "rooted-verdict"
+    },
+    {
+      "id": "lost-marbles",
+      "name": "Lost Marbles",
+      "enabled": true,
+      "deletion": "marble-theory"
     }
   ]
 }

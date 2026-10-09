@@ -61,8 +61,8 @@ def feet_anchor(image):
  # Measured lowest silhouette pixels identify the planted paw/boot without the extended fist shifting root.
  y=box[3]-1;xs=[x for x in range(image.width) if a.getpixel((x,y))>32]
  return [sum(xs)/len(xs),box[3]],list(box)
-def build(play,sources,private=None,review=None):
- plan=read(sources/'build-plan.json');identity=plan['id'];height=plan['height'];cache={};prepared={};reference=plan.get('referenceHeight')
+def build(play,sources,private=None,review=None,plan_override=None):
+ plan=copy.deepcopy(plan_override) if plan_override is not None else read(sources/'build-plan.json');identity=plan['id'];height=plan['height'];cache={};prepared={};reference=plan.get('referenceHeight')
  def source(spec):
   path=(sources/spec['source']).resolve()
   if not path.is_relative_to(sources.resolve()) or 'rejected' in path.name:raise ValueError('Invalid source path')
@@ -119,17 +119,18 @@ def build(play,sources,private=None,review=None):
     for col,(frame,image) in enumerate(zip(atlas_frames[facing],atlas_images[facing])):
      atlas.paste(image,(col*cw,row*ch));frame['rect']=[col*cw,row*ch,image.width,image.height]
    canonical=sources/(bank+'-'+name+'-canonical.webp');atlas.save(canonical,'WEBP',lossless=True,quality=100,method=6,exact=True)
-   target=directory/((seam['clip'] if seam else name)+'.webp');atlas.save(target,'WEBP',quality=94,method=6,exact=True);encoded=Image.open(target).convert('RGBA')
+   target=directory/((seam['clip'] if seam else name)+'.webp');atlas.save(target,'WEBP',lossless=spec.get('lossless',False),quality=100 if spec.get('lossless') else 94,method=2 if spec.get('lossless') else 6,exact=True);encoded=Image.open(target).convert('RGBA')
    for facing in ['right','left']:
     for frame in atlas_frames[facing]:
      x,y,w,h=frame['rect'];frame['pixelSha256']=pixels(encoded.crop((x,y,x+w,y+h)))
+     if spec.get('nativeGrip'):frame['nativeSource']={'kind':'canonical-native-atlas','file':'assets/'+bank+'/'+identity+'/'+target.name,'rect':frame['rect'],'pixelSha256':frame['pixelSha256']}
    if seam:
     for facing in ['right','left']:frames[facing][seam.get('toIndex',0)]=copy.deepcopy(old_frames[facing][seam['index']])
     clips[seam['clip']].update({'file':target.name,'frames':old_frames,'sourceSize':list(atlas.size),'sourceSha256':sha(target.read_bytes()),'sourceRevision':sha(target.read_bytes())[:16],'canonicalSourceSha256':sha(canonical.read_bytes())})
    order=spec.get('order',list(range(n)));ms=spec['frameMs']
    if len(order)!=len(ms) or any(i<0 or i>=n for i in order) or any(v<=0 for v in ms):raise ValueError('Invalid chronology/timing')
    clip={'file':target.name,'frames':frames,'order':order,'frameMs':ms,'label':spec.get('label',name),'loop':spec.get('loop',False),'sourceSize':list(atlas.size),'sourceSha256':sha(target.read_bytes()),'sourceRevision':sha(target.read_bytes())[:16],'generatedSourceSha256':source_hash,'canonicalSourceSha256':sha(canonical.read_bytes())}
-   for key in ['contactMs','activeEndMs','offsets','reactionStartMs','description']:
+   for key in ['contactMs','activeEndMs','liftMs','releaseMs','offsets','reactionStartMs','description']:
     if key in spec:clip[key]=spec[key]
    if 'contactMs' in clip and 'activeEndMs' not in clip:
     cumulative=0

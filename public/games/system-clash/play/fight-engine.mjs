@@ -1,3 +1,4 @@
+import {marbleVictimState} from './fight-remains.mjs';
 import {NEW_FIGHTER_STYLES,newDeletionPositions,splitBodyState,hangingVictimPose} from './new-deletion-library.mjs';
 import {fightStatProfile,fightStatScalars} from './fight-stats.mjs';
 import {deletionDefinition,deletionPose} from './deletion-library.mjs';
@@ -975,7 +976,7 @@ function startDeletion(match) {
   const winner = match.fighters[match.winner], victim = match.fighters[1-match.winner];
   const definition=deletionDefinition(winner.id);
   if(match.stage){
-    if(['hug','litter-box','rip'].includes(definition.mechanism)){
+    if(['hug','litter-box','rip','marbles'].includes(definition.mechanism)){
       // The ending uses an authored local pair cut. Its scenery camera remains
       // within the world even when the victim was standing at the outer wall.
       const shift=victim.x-640;match.stage.cinematicOrigin=clamp((match.stage.cinematicOrigin??0)+shift,0,match.stage.width-WORLD.width);
@@ -996,6 +997,7 @@ function startDeletion(match) {
   let target = clamp(victim.x + dir * 205, 430, WORLD.width - 430);
   let throwStart = dir > 0 ? Math.min(victim.x, target - 180) : Math.max(victim.x, target + 180);
   let near=throwStart-dir*130;
+  if(definition.mechanism==='marbles'){target=dir>0?810:470;throwStart=target;near=target-dir*380;}
   if(definition.mechanism==='drive') {
     // The drive sits between DJ and target, leaving a clear pull lane.
     // The waist-bound airborne victim never travels through the operator.
@@ -1093,7 +1095,7 @@ function startDeletion(match) {
   emit(match, 'deletion', { name: match.deletionName, x: target, y: WORLD.floor - 150, direction: dir, strength: 2 });
 }
 
-const isDistinctDeletion=definition=>['coffin','waste-chute','drive','sign','wheel','stamp','jaws','speaker-stack','truss','positivity','wand','hug','litter-box','rip'].includes(definition.mechanism);
+const isDistinctDeletion=definition=>['coffin','waste-chute','drive','sign','wheel','stamp','jaws','speaker-stack','truss','positivity','wand','hug','litter-box','rip','marbles'].includes(definition.mechanism);
 const interpolate=(start,end,time,from,to)=>start+(end-start)*clamp((time-from)/(to-from),0,1);
 const easedTravel=(start,end,time,from,to)=>start+(end-start)*easedProgress(time,from,to);
 
@@ -1124,7 +1126,7 @@ function broadcastCutPositions(match,time) {
 function approvedDeletionPositions(match,time) {
   const o=match._deletionOrigin,winner=match.fighters[match.winner],victim=match.fighters[1-match.winner];
   const definition=deletionDefinition(winner.id),b=definition.beats;
-  if(['hug','litter-box','rip'].includes(definition.mechanism))return newDeletionPositions(match,time,definition);
+  if(['hug','litter-box','rip','marbles'].includes(definition.mechanism))return newDeletionPositions(match,time,definition);
   const approachEnd=definition.mechanism==='waste-chute'?b.fold:b.shove;
   let winnerX=easedTravel(o.winner,o.near,time,0,approachEnd);
   let victimX,victimY=0,rotation=0,eraseProgress=0;
@@ -1208,10 +1210,11 @@ function approvedDeletionView(match,index,time) {
   const pose=deletionPose(index===match.winner?'attacker':'victim',time,winner.id,f._clips,f.height);
   if(definition.mechanism==='rip'&&index!==match.winner&&time>=definition.beats.gripWindup&&match._deletionOrigin.ripPose)Object.assign(pose,match._deletionOrigin.ripPose);
   const position=approvedDeletionPositions(match,time),b=definition.beats;
-  const hiddenAt={hug:b.escaped,rip:Infinity,'litter-box':b.buried,drive:b.captured,sign:b.landed,wheel:Infinity,stamp:b.stampStrike,jaws:b.sealed,
+  const hiddenAt={marbles:Infinity,hug:b.escaped,rip:Infinity,'litter-box':b.buried,drive:b.captured,sign:b.landed,wheel:Infinity,stamp:b.stampStrike,jaws:b.sealed,
     'speaker-stack':b.burial,truss:Infinity,positivity:Infinity,wand:b.erased}[definition.mechanism]??b.lidClose;
   return {...pose,x:index===match.winner?position.winnerX:position.victimX,y:index===match.winner?(position.winnerY??0):position.victimY,
     facing:approvedDeletionFacing(match,index,time),opacity:index===match.winner||time<hiddenAt?1:0,
+    ...(definition.mechanism==='marbles'&&index!==match.winner?{remainsState:marbleVictimState(time),opacity:time>=definition.beats.lastImpact?0:1}:{}),
     ...(definition.mechanism==='rip'&&index!==match.winner&&splitBodyState(time,definition)?{splitBody:splitBodyState(time,definition)}:{}),
     ...(definition.mechanism==='litter-box'&&index!==match.winner?{litterCaptured:time>=b.boxSet}:{}),
     ...(definition.mechanism==='wheel'&&index!==match.winner?{rotation:position.rotation,rotationPivot:'torso'}:{}),
@@ -1266,7 +1269,8 @@ function updateApprovedDeletion(match,previous,time) {
       contact:{fighterIndex:target,site,offset:[0,0],space:'pose'},contactView,
       sourceContact:{fighterIndex:match.winner,site:'grip',offset:[0,0],space:'pose'},sourceView,...extra});
   };
-  if(definition.mechanism==='hug') {
+  if(definition.mechanism==='marbles'){for(let i=0;i<7;i++){cue(b.firstLaunch+i*450,'marble-throw','torso','deletion-cue',{volley:i});cue(b.firstImpact+i*450,'marble-strip',i%3===0?'head':'torso','deletion-impact',{volley:i,strength:1.6+i*.16,damageKind:'cut'});}cue(b.landed,'skeletal-fall','legs','land');}
+  else if(definition.mechanism==='hug') {
     cue(b.hugContact,'hug-contact','torso','deletion-cue',{peaceful:true});cue(b.release,'hug-release','torso','deletion-cue',{peaceful:true});cue(b.runStart,'peaceful-escape','legs','deletion-cue',{peaceful:true});
     cue(b.present,'stay-kind','torso','character-line',{fighterId:'doofnoobler',line:definition.line,peaceful:true});
   } else if(definition.mechanism==='litter-box') {
@@ -1800,7 +1804,7 @@ export function getFighterView(match, index) {
   if(match.phase==='over'&&(definition?.retainFloorBody||definition?.peaceful)&&match.deletionElapsed>=definition.duration&&index!==match.winner)Object.assign(view,approvedDeletionView(match,index,match.deletionElapsed));
   if(match.phase==='over'&&definition&&match.deletionElapsed>=definition.duration&&index===match.winner){
     if(['positivity','jaws'].includes(definition.mechanism))Object.assign(view,deletionPose('attacker',match.deletionElapsed,f.id,f._clips));
-    else {if(['hug','litter-box','rip'].includes(definition.mechanism))Object.assign(view,approvedDeletionView(match,index,match.deletionElapsed));view.clip='delete-present';view.elapsed=10000;}
+    else {if(['hug','litter-box','rip','marbles'].includes(definition.mechanism))Object.assign(view,approvedDeletionView(match,index,match.deletionElapsed));view.clip='delete-present';view.elapsed=10000;}
   }
   view.nativeElapsed=view.elapsed;
   view.poseIndex=combatPose(f,view)?.index;

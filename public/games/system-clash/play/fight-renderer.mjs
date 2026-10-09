@@ -1,3 +1,4 @@
+import {drawRemainsReveal,raggedSeam} from './fight-remains.mjs';
 import {BROADCAST_CUT,broadcastCutStage,broadcastCutFrontStage,broadcastCutDepth,deletionDefinition,deletionPropState,deletionPose} from './deletion-library.mjs';
 import {poseScale,poseFrameIndex,resolvePoseAttachments,weaponAttachment,weaponInsertionGeometry,damageOverlayPlans} from './fight-attachments.mjs';
 import {easedProgress,deletionCamera,createFightCamera,advanceFightCamera} from './fight-presentation.mjs';
@@ -550,7 +551,7 @@ function fighter(ctx, view, art, overlays, weaponArt, hide = false, motion) {
     ctx.translate(dx+pivot.x*scale,dy+pivot.y*scale);ctx.rotate(view.rotation);
     ctx.translate(-dx-pivot.x*scale,-dy-pivot.y*scale);
   }
-  if(view.halfMask){ctx.beginPath();ctx.rect(view.halfMask<0?dx-5:halfCut,dy-5,view.halfMask<0?halfCut-dx+5:dx+sw*scale-halfCut+5,sh*scale+10);ctx.clip();}
+  if(view.halfMask){const edge=raggedSeam({x:halfCut,top:dy-5,bottom:dy+sh*scale+5,scale}),outer=view.halfMask<0?dx-5:dx+sw*scale+5;ctx.beginPath();ctx.moveTo(outer,dy-5);for(const p of edge)ctx.lineTo(p.x,p.y);ctx.lineTo(outer,dy+sh*scale+5);ctx.closePath();ctx.clip();}
   if((view.eraseProgress??0)>0) {
     const bounds=frame.opaqueBounds??[0,0,sw,sh];
     const boundary=dy+(bounds[3]-(bounds[3]-bounds[1])*clamp(view.eraseProgress,0,1))*scale;
@@ -567,9 +568,12 @@ function fighter(ctx, view, art, overlays, weaponArt, hide = false, motion) {
     ctx.ellipse(dx+r.x*scale,dy+r.y*scale,r.rx*scale,r.ry*scale,0,0,TAU);ctx.clip('evenodd');
   }
   if(view.clip==='delete-hammer'&&!view.rotationPivotPoint) {ctx.beginPath();ctx.rect(-10000,-10000,20000,FLOOR+10001);ctx.clip();}
-  ctx.drawImage(asset.image, sx, sy, sw, sh, dx, dy, sw * scale, sh * scale);
+  if(!drawRemainsReveal(ctx,asset.image,view,{sx,sy,sw,sh,dx,dy,scale,frame}))ctx.drawImage(asset.image, sx, sy, sw, sh, dx, dy, sw * scale, sh * scale);
   overlays.drawDamage(ctx,asset,frame,view,art,geometry,points,weaponArt);
-  if(view.fleshCut){const seam=view.fleshCut,x=dx+seam.x*scale,top=dy+seam.top*scale,bottom=dy+seam.bottom*scale,side=view.halfMask;ctx.fillStyle='#711b1b';ctx.beginPath();ctx.moveTo(x,top);for(let i=0;i<=20;i++){const y=top+(bottom-top)*i/20;ctx.lineTo(x+side*(4+(i%3)*3)*scale,y);}ctx.lineTo(x,bottom);ctx.closePath();ctx.fill();ctx.strokeStyle='#e3a5a0';ctx.lineWidth=Math.max(2,3*scale);ctx.beginPath();ctx.moveTo(x+side*3*scale,top);for(let i=1;i<=20;i++)ctx.lineTo(x+side*(3+(i%4)*2)*scale,top+(bottom-top)*i/20);ctx.stroke();for(let i=0;i<10;i++){ctx.fillStyle=i%2?'#a83632':'#efb0a3';ctx.beginPath();ctx.ellipse(x+side*(5+(i%3)*3)*scale,top+(bottom-top)*(i+.5)/10,(4+i%3)*scale,(6+i%4)*scale,(i%3-.8)*.35,0,TAU);ctx.fill();}}
+  if(view.fleshCut){const seam=view.fleshCut,x=dx+seam.x*scale,top=dy+seam.top*scale,bottom=dy+seam.bottom*scale,side=view.halfMask,edge=raggedSeam({x,top,bottom,scale}),bank=view.remainsArt;
+   ctx.strokeStyle='#5b1313';ctx.lineWidth=Math.max(3,12*scale);ctx.beginPath();edge.forEach((p,i)=>ctx[i?'lineTo':'moveTo'](p.x+side*4*scale,p.y));ctx.stroke();
+   if(bank)for(let i=1;i<edge.length-1;i+=2){const image=bank.images[i%3?'meat-shred':'meat-gristle'],p=edge[i],w=(14+i%4*4)*scale;if(image)ctx.drawImage(image,p.x-w/2+side*3*scale,p.y-w/2,w,w*image.height/image.width);}
+  }
   for(const embedded of (view.embeddedWeapons??[]).slice(-4)) {
     const placement=weaponAttachment(view,points,embedded),mask=overlays.alphaMask(asset,frame);
     const point=overlays.opaquePoint(mask,placement.point,3)??overlays.opaquePoint(mask,points.chest,0);if(!point)continue;
@@ -1930,7 +1934,7 @@ export function createFightRenderer(canvas) {
       if(deletionActive(match)){const definition=definitionForMatch(match);if(definition.mechanism==='hug'&&match.deletionElapsed>=definition.beats.present){ctx.save();ctx.fillStyle='#080e16d9';ctx.fillRect(365,139,550,38);ctx.font='700 22px Arial, sans-serif';ctx.textAlign='center';ctx.fillStyle='#f0d6b5';ctx.fillText(definition.line,640,166);ctx.restore();}}
     },
     resolveEvent(event,{match,views,art,deletionProp}) {
-      event={...event,victimId:match.fighters[event.target]?.id};
+      event={...event,victimId:match.fighters[event.target]?.id,victimHeight:match.fighters[event.target]?.height};
       if(!event.contact||!deletionActive(match))return event;
       const snapshot={...match,deletionElapsed:event.at??match.deletionElapsed,phase:'deletion'};
       const native=views.map((view,index)=>({...view,...(index===event.target?event.contactView:index===event.attacker?event.sourceView:null)}));

@@ -57,3 +57,17 @@ export function releaseAttackInput(buffer,key) {
 export function clearAttackInputs(buffer) {
   buffer.pending.clear();buffer.held.clear();
 }
+
+/** Resolve a circular analog throw into eight arcade directions without inventing extra movement. */
+export function resolveJoystickInput(x,y,{deadzone=.22}={}) {
+  const empty={x:0,y:0,left:false,right:false,crouch:false,jump:false,direction:'center'};
+  if(!Number.isFinite(x)||!Number.isFinite(y))return empty;
+  const distance=Math.hypot(x,y),threshold=Number.isFinite(deadzone)?Math.max(0,Math.min(.9,deadzone)):.22;
+  if(distance<=threshold)return empty;
+  const scale=Math.max(1,distance);x/=scale;y/=scale;
+  // A 45-degree diagonal gets a full horizontal and vertical signal together.
+  const sector=Math.tan(Math.PI/8),horizontal=Math.abs(x)>=Math.abs(y)*sector,vertical=Math.abs(y)>=Math.abs(x)*sector;
+  const left=horizontal&&x<0,right=horizontal&&x>0,crouch=vertical&&y>0,jump=vertical&&y<0;
+  const direction=[jump?'up':crouch?'down':'',left?'left':right?'right':''].filter(Boolean).join('-')||'center';
+  return {x,y,left,right,crouch,jump,direction};
+}

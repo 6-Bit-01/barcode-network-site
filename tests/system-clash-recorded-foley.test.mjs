@@ -34,7 +34,7 @@ test('all fighter textures preserve distinct recorded timing/composition while u
   assert.ok(plan.layers.length>0&&plan.layers.length<=3);
   signatures.push(JSON.stringify(plan.layers.map(({group,gain,rate,delay})=>({group,gain,rate,delay}))));
  }
- assert.equal(new Set(signatures).size,16);
+ assert.equal(new Set(signatures).size,Object.keys(FIGHT_AUDIO_PROFILES).length);
  for(const type of ['unknown','finish-prompt','round-start'])assert.equal(planRecordedFoley({type},planFightSound({type})).layers.length,0);
  const glass={type:'glass-break'};assert.ok(planRecordedFoley(glass,planFightSound(glass)).layers.some(x=>x.group==='glass'));
  const swish={type:'miss',attackerId:'wittyf0x'};assert.ok(planRecordedFoley(swish,planFightSound(swish)).layers.some(x=>x.group==='whoosh'));
@@ -110,7 +110,7 @@ test('the existing emit owner plays immediate fallback then recorded contact; ne
 test('network/decode failures preserve procedural impact and all original fighter voice families',async()=>{
  await owner();const context=new Context(),audio=createFightAudio({contextFactory:()=>context,fetch:async()=>({ok:false,status:404})});
  assert.equal(await audio.startAudio(),true);context.currentTime+=1;assert.equal(audio.emit({type:'hit',attackerId:'9-bit',victimId:'6-bit',strength:2}),true);await tick();
- assert.ok(audio.getStats().playedVoices>0);assert.equal(audio.getStats().recordedFoleyPlayed,0);assert.equal(Object.keys(FIGHT_AUDIO_PROFILES).length,16);
+ assert.ok(audio.getStats().playedVoices>0);assert.equal(audio.getStats().recordedFoleyPlayed,0);assert.equal(Object.keys(FIGHT_AUDIO_PROFILES).length,17);
 });
 
 test('runtime clip bytes, WAV headroom, short duration and source credits exclude every held asset',async()=>{

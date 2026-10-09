@@ -70,13 +70,29 @@ export async function confirmQueueSubmission({ trackId, sessionId, checkoutPendi
   return null;
 }
 
-export async function completeFreeQueueSubmission(receipt: QueueSubmissionReceipt, { reducedMotion, wait, onComplete, navigate }: {
+export type QueueIntakePhase = "artwork" | "metadata" | "routing" | "confirmed";
+
+export async function completeFreeQueueSubmission(receipt: QueueSubmissionReceipt, { reducedMotion, wait, onPhase, onComplete, navigate, isActive = () => true }: {
   reducedMotion: boolean;
   wait: (milliseconds: number) => Promise<unknown>;
+  onPhase?: (phase: QueueIntakePhase) => void;
   onComplete: () => void;
   navigate: (href: string) => void;
-}): Promise<void> {
-  if (!reducedMotion) await wait(1000);
+  isActive?: () => boolean;
+}): Promise<boolean> {
+  if (!isActive()) return false;
+  if (reducedMotion) {
+    onPhase?.("confirmed");
+  } else {
+    const phases: Array<[QueueIntakePhase, number]> = [["artwork", 1200], ["metadata", 1400], ["routing", 1500], ["confirmed", 900]];
+    for (const [phase, milliseconds] of phases) {
+      if (!isActive()) return false;
+      onPhase?.(phase);
+      await wait(milliseconds);
+    }
+  }
+  if (!isActive()) return false;
   onComplete();
   if (!receipt.checkoutPending && receipt.remaining !== null && receipt.remaining <= 0 && receipt.deckHref) navigate(receipt.deckHref);
+  return true;
 }

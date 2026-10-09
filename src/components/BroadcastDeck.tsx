@@ -68,7 +68,7 @@ function LiveTrackCard({ label, track, tone, archiveHref, credit }: { credit?: i
   const primary = credit?.projectLabel ?? track?.submittedArtistName ?? "";
   const collaborators = credit?.collaboratorNames ?? track?.collaboratorNames;
   return (
-    <article className={`border bg-background/60 p-5 ${toneClass}`}>
+    <article aria-label={label} className={`border bg-background/60 p-5 ${toneClass}`}>
       <p className="text-[10px] font-black uppercase tracking-[0.3em]">{label}</p>
       {track ? <>
         <Link href={projectLink(primary, archiveHref)} className="mt-4 block text-xl font-black text-foreground hover:text-accent">{primary}</Link>
@@ -146,10 +146,7 @@ export function BroadcastDeck({
     }
   }, [previewMode, queueEndpoint, statsEndpoint]);
 
-  useEffect(() => {
-    if (!previewMode && new URLSearchParams(window.location.search).has("submitted")) setView("mine");
-    return startSessionBoundPolling({ intervalMs: PUBLIC_QUEUE_POLL_INTERVAL_MS, poll: load });
-  }, [load, previewMode]);
+  useEffect(() => startSessionBoundPolling({ intervalMs: PUBLIC_QUEUE_POLL_INTERVAL_MS, poll: load }), [load]);
 
   const liveTracks = uniqueLiveTracks(snapshot);
   const currentShow = stats?.currentShow && stats.currentShow.sessionId === snapshot?.session?.sessionId ? stats.currentShow : null;
@@ -157,6 +154,9 @@ export function BroadcastDeck({
   const queueHref = queueHrefOverride ?? (snapshot?.session && snapshot.session.status !== "archived" ? `/queue/${encodeURIComponent(snapshot.session.sessionId)}` : "/queue");
   const manageSongsHref = queueHrefOverride ? `${queueHrefOverride}#your-songs` : snapshot?.session ? `/queue/${encodeURIComponent(snapshot.session.sessionId)}#your-songs` : "/queue";
   const ownedTracks = snapshot?.ownedTracks ?? [];
+  const personalHandles = stats?.personalHistory?.handles ?? [];
+  const hasPersonalView = ownedTracks.length > 0 || personalHandles.length > 0;
+  const activeView = view === "mine" && !hasPersonalView ? "feed" : view;
   const acceptedTrack = !previewMode && arrival.sessionId && arrival.sessionId === snapshot?.session?.sessionId ? ownedTracks.find(track => track.id === arrival.trackId) : undefined;
   const acceptedCredit = currentShow?.trackRoster.find(track => track.trackId === acceptedTrack?.id);
   const isLive = Boolean(snapshot?.session && snapshot.session.status !== "archived" && snapshot.session.broadcastPhase !== "ended");
@@ -165,7 +165,6 @@ export function BroadcastDeck({
   const finishedCount = currentShow?.finishedTrackCount ?? null;
   const submittedCount = currentShow?.submittedTrackCount ?? null;
   const progress = submittedCount === null || finishedCount === null ? null : submittedCount > 0 ? Math.min(100, Math.round((finishedCount / submittedCount) * 100)) : 0;
-  const personalHandles = stats?.personalHistory?.handles ?? [];
 
   function dismissOrientation() {
     setOrientationOpen(false);
@@ -183,40 +182,18 @@ export function BroadcastDeck({
               <p className="mt-3 text-xs font-bold uppercase tracking-[0.38em] text-[#ffaa00]">{previewMode ? "Private test show companion" : "Live show companion"}</p>
               <h1 className="mt-2 text-2xl font-black text-foreground sm:text-3xl">The Broadcast Deck</h1>
               {snapshot?.session && <p className="mt-3 text-sm text-muted">{snapshot.session.title} · {snapshot.session.showDate}</p>}
-              {acceptedTrack && <div role="status" className="mt-4 border-l-2 border-cyan-200 pl-3"><p className="text-xs font-black uppercase text-cyan-200">Song accepted</p><p className="mt-2 font-bold text-foreground">{acceptedCredit?.projectLabel ?? acceptedTrack.artist} · {acceptedTrack.title}</p>{(acceptedCredit?.collaboratorNames ?? acceptedTrack.collaboratorNames) && <p className="mt-1 text-xs text-muted">Featuring {acceptedCredit?.collaboratorNames ?? acceptedTrack.collaboratorNames}</p>}</div>}
             </div>
-            <div className="grid gap-2 sm:grid-cols-2 lg:w-[22rem] lg:grid-cols-1">
-              <Link href={ownedTracks.length ? manageSongsHref : queueHref} className="border border-accent bg-accent px-4 py-3 text-center text-xs font-black uppercase tracking-widest text-white hover:bg-red-700">{ownedTracks.length ? "Manage My Songs" : "Open current queue"}</Link>
-              <Link href={archiveHref} className="border border-cyan-200/55 px-4 py-3 text-center text-xs font-black uppercase tracking-widest text-cyan-200 hover:bg-cyan-200 hover:text-background">{previewMode ? "Preview Archive" : "Broadcast Archive"}</Link>
-              <button type="button" onClick={() => setOrientationOpen(true)} className="border border-border px-4 py-3 text-xs font-black uppercase tracking-widest text-muted hover:border-[#ffaa00] hover:text-[#ffaa00]">How to use the Deck</button>
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs">
+              <Link href={archiveHref} className="inline-flex min-h-11 items-center text-cyan-200 underline underline-offset-4 hover:text-foreground">{previewMode ? "Preview Archive" : "Broadcast Archive"}</Link>
+              <Link href={queueHref} className="inline-flex min-h-11 items-center text-muted underline underline-offset-4 hover:text-accent">Open current queue</Link>
+              <button type="button" onClick={() => setOrientationOpen(true)} className="min-h-11 text-muted underline underline-offset-4 hover:text-[#ffaa00]">How to use the Deck</button>
             </div>
           </div>
-        </div>
-        <div className="grid grid-cols-2 gap-px bg-border lg:grid-cols-4">
-          <DeckMetric label="Received" value={submittedCount ?? "—"} note={currentShow ? `${currentShow.removedTrackCount} removed · cumulative submissions, including removals.` : "Show totals unavailable; retrying."} />
-          <DeckMetric label="Played" value={finishedCount ?? "—"} note={currentShow ? "Completed-play outcomes only." : "Show totals unavailable; retrying."} />
-          <DeckMetric label="Still active" value={liveTracks.length} note="Now Playing, Next In Line, and waiting." />
-          <DeckMetric label="Projected runtime" value={timing ? formatRuntime(timing.timeBankSummary.remainingProjectionSeconds) : "—"} note="Estimate for the active line." />
         </div>
       </section>
 
       {loadError && <section role="alert" className="border border-danger/45 bg-danger/5 p-4 text-sm text-danger">The live signal did not refresh. The last confirmed Deck state remains visible. <button type="button" onClick={() => void load()} className="ml-2 underline underline-offset-4">Try again</button></section>}
       {!loaded && <section className="border border-border bg-surface p-8 text-center text-sm uppercase tracking-widest text-muted">Locking onto the BARCODE Radio signal…</section>}
-
-      {snapshot?.session && ownedTracks.length > 0 && <section aria-labelledby="deck-owned-songs-title">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-cyan-200/40 pb-3"><h2 id="deck-owned-songs-title" className="text-sm font-black uppercase text-cyan-200">Your songs this show</h2><Link href={manageSongsHref} className="text-xs font-bold text-cyan-200 underline underline-offset-4">Manage My Songs</Link></div>
-        <div className="mt-3 space-y-2">{ownedTracks.map(track => {
-          const credit = currentShow?.trackRoster.find(item => item.trackId === track.id);
-          const primary = credit?.projectLabel ?? track.artist;
-          const collaborators = credit?.collaboratorNames ?? track.collaboratorNames;
-          const publicTrack = liveTracks.find(item => item.id === track.id) ?? snapshot.completed.find(item => item.id === track.id);
-          const externalHref = deckExternalTrackHref(publicTrack ?? credit);
-          return <article key={track.id} data-owned-track-id={track.id} className="grid gap-3 border border-border bg-surface p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-            <div className="min-w-0"><Link href={projectLink(primary, archiveHref)} className="font-bold text-foreground hover:text-accent">{primary}</Link><p className="mt-1 text-sm text-muted">{track.title}</p>{collaborators && <p className="mt-2 text-xs text-muted">Featuring {collaborators.split(/[,;]+/).map((name, index) => <span key={index}>{index > 0 && ", "}<Link href={projectLink(`featured:${name.trim()}`, archiveHref)} className="underline underline-offset-4 hover:text-accent">{name.trim()}</Link></span>)}</p>}</div>
-            <div className="flex flex-wrap items-center gap-3 sm:justify-end"><span className="text-xs font-bold text-cyan-200">{ownedTrackStatus(snapshot, track.id, currentShow)}</span>{externalHref && <a href={externalHref} target="_blank" rel="noopener noreferrer" className="text-xs text-muted underline underline-offset-4 hover:text-accent">Open music</a>}</div>
-          </article>;
-        })}</div>
-      </section>}
 
       {loaded && !isLive ? (
         <section className="border border-border bg-surface p-6 sm:p-8">
@@ -233,23 +210,48 @@ export function BroadcastDeck({
           <LiveTrackCard label="Next In Line" track={snapshot?.upNext} tone="red" archiveHref={archiveHref} credit={currentShow?.trackRoster.find(track => track.trackId === snapshot?.upNext?.id)} />
         </section>
 
+        <section className="grid grid-cols-2 gap-px border border-border bg-border lg:grid-cols-4">
+          <DeckMetric label="Received" value={submittedCount ?? "—"} note={currentShow ? `${currentShow.removedTrackCount} removed · cumulative submissions, including removals.` : "Show totals unavailable; retrying."} />
+          <DeckMetric label="Played" value={finishedCount ?? "—"} note={currentShow ? "Completed-play outcomes only." : "Show totals unavailable; retrying."} />
+          <DeckMetric label="Still active" value={liveTracks.length} note="Now Playing, Next In Line, and waiting." />
+          <DeckMetric label="Projected runtime" value={timing ? formatRuntime(timing.timeBankSummary.remainingProjectionSeconds) : "—"} note="Estimate for the active line." />
+        </section>
+
+        {acceptedTrack && <div role="status" aria-live="polite" className="flex flex-wrap items-center gap-x-4 gap-y-2 border-l-2 border-cyan-200/50 pl-3 text-xs text-muted"><p><strong className="text-cyan-200">Song accepted:</strong> {acceptedCredit?.projectLabel ?? acceptedTrack.artist}{(acceptedCredit?.collaboratorNames ?? acceptedTrack.collaboratorNames) && <> feat. {acceptedCredit?.collaboratorNames ?? acceptedTrack.collaboratorNames}</>} · {acceptedTrack.title}</p><button type="button" onClick={() => setView("mine")} className="min-h-11 text-cyan-200 underline underline-offset-4 hover:text-foreground">View your songs</button></div>}
+
+        <section className="border border-border bg-surface">
+          <div className={`grid ${hasPersonalView ? "grid-cols-3" : "grid-cols-2"} gap-px border-b border-border bg-border`}>
+            <DeckTab active={activeView === "feed"} onClick={() => setView("feed")} label="Show feed" />
+            <DeckTab active={activeView === "line"} onClick={() => setView("line")} label="Queue map" />
+            {hasPersonalView && <DeckTab active={activeView === "mine"} onClick={() => setView("mine")} label="Your songs" />}
+          </div>
+          <div className="p-5 sm:p-6">
+            {activeView === "feed" && <BroadcastActivityLog events={currentShow?.milestones ?? []} archiveHref={archiveHref} live={isLive} />}
+            {activeView === "line" && <div><div className="border-b-2 border-accent/45 pb-3"><p className="text-xs font-bold uppercase tracking-[0.3em] text-accent">Queue map</p><p className="mt-1 text-xs text-muted">{previewMode ? "Private test order from the selected persisted session." : "Public order only. Priority and Wheel positions can change as the host routes the show."}</p></div><div className="mt-4 space-y-2">{liveTracks.map((track, index) => <div key={track.id} className="grid gap-2 border border-border bg-background/55 p-3 sm:grid-cols-[4rem_minmax(0,1fr)_auto] sm:items-center"><span className="font-mono text-xs text-muted">{track.id === snapshot?.nowPlaying?.id ? "LIVE" : track.id === snapshot?.upNext?.id ? "NEXT" : `#${Math.max(1, index - 1)}`}</span><div><Link href={projectLink(track.submittedArtistName, archiveHref)} className="font-bold text-foreground hover:text-accent">{track.submittedArtistName}</Link><p className="text-xs text-muted">{track.submittedSongTitle}</p></div><span className="text-[10px] uppercase tracking-widest text-muted">{track.lane}</span></div>)}</div></div>}
+            {activeView === "mine" && snapshot?.session && hasPersonalView && <div className="space-y-6">
+              {ownedTracks.length > 0 && <section aria-labelledby="deck-owned-songs-title">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-cyan-200/40 pb-3"><h2 id="deck-owned-songs-title" className="text-sm font-black uppercase text-cyan-200">Your songs this show</h2><Link href={manageSongsHref} className="text-xs font-bold text-cyan-200 underline underline-offset-4">Manage My Songs</Link></div>
+                <div className="mt-3 space-y-2">{ownedTracks.map(track => {
+                  const credit = currentShow?.trackRoster.find(item => item.trackId === track.id);
+                  const primary = credit?.projectLabel ?? track.artist;
+                  const collaborators = credit?.collaboratorNames ?? track.collaboratorNames;
+                  const publicTrack = liveTracks.find(item => item.id === track.id) ?? snapshot.completed.find(item => item.id === track.id);
+                  const externalHref = deckExternalTrackHref(publicTrack ?? credit);
+                  return <article key={track.id} data-owned-track-id={track.id} className="grid gap-3 border border-border bg-background/55 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                    <div className="min-w-0"><Link href={projectLink(primary, archiveHref)} className="font-bold text-foreground hover:text-accent">{primary}</Link><p className="mt-1 text-sm text-muted">{track.title}</p>{collaborators && <p className="mt-2 text-xs text-muted">Featuring {collaborators.split(/[,;]+/).map((name, index) => <span key={index}>{index > 0 && ", "}<Link href={projectLink(`featured:${name.trim()}`, archiveHref)} className="underline underline-offset-4 hover:text-accent">{name.trim()}</Link></span>)}</p>}</div>
+                    <div className="flex flex-wrap items-center gap-3 sm:justify-end"><span className="text-xs font-bold text-cyan-200">{ownedTrackStatus(snapshot, track.id, currentShow)}</span>{externalHref && <a href={externalHref} target="_blank" rel="noopener noreferrer" className="text-xs text-muted underline underline-offset-4 hover:text-accent">Open music</a>}</div>
+                  </article>;
+                })}</div>
+              </section>}
+              <div><div className="border-b-2 border-cyan-200/40 pb-3"><p className="text-xs font-bold uppercase tracking-[0.3em] text-cyan-200">From this browser</p><p className="mt-1 text-xs text-muted">Useful when one device submits for multiple artists. This confirms a browser submission, not identity or account ownership.</p></div><div className="mt-4 space-y-3">{personalHandles.map((handle) => <section key={handle.tiktokHandle} className="border border-border bg-background/55 p-4"><div className="flex flex-wrap items-center justify-between gap-2"><p className="font-mono text-sm font-bold text-cyan-200">{handle.tiktokHandle}</p><span className="text-[10px] uppercase tracking-widest text-muted">{handle.currentShow ? `${handle.currentShow.activeTrackCount} active · ${handle.currentShow.finishedTrackCount} finished · ${handle.currentShow.skippedTrackCount} skipped · ${handle.currentShow.removedTrackCount} removed this show` : "No tracks this show"} · {handle.submittedTrackCount} submitted across shows</span></div><div className="mt-3 flex flex-wrap gap-2">{handle.projects.map((project) => <Link key={project.projectKey} href={previewMode ? projectLink(project.projectKey, archiveHref) : broadcastArchiveArtistHref(project.projectKey)} className="border border-cyan-200/30 px-2 py-1 text-xs text-foreground hover:border-cyan-200 hover:text-cyan-200">{project.projectLabel} · {project.submittedTrackCount} submitted</Link>)}</div></section>)}</div></div>
+            </div>}
+          </div>
+        </section>
+
         <section className="border border-border bg-surface p-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs uppercase tracking-[0.3em] text-muted">Show progress</p><p className="mt-2 text-sm text-muted">{currentShow ? `${finishedCount} of ${submittedCount} retained tracks have a completed-play outcome.` : "Show totals unavailable; retrying."}</p></div><span className="font-mono text-xl font-black text-[#ffaa00]">{progress === null ? "—" : `${progress}%`}</span></div>
           <div className="mt-4 h-2 overflow-hidden border border-border bg-background"><div className="h-full bg-[linear-gradient(90deg,#ff2a2a,#ffaa00)] transition-[width] duration-500" style={{ width: `${progress ?? 0}%` }} /></div>
           <div className="mt-4 grid gap-3 text-xs sm:grid-cols-3"><div className="border border-border bg-background/55 p-3"><p className="uppercase tracking-widest text-muted">Wheel</p><p className="mt-2 font-bold text-foreground">{snapshot?.wheelTiming?.status ?? "idle"} · {snapshot?.session?.wheelSpinsOwed ?? 0} owed</p></div><div className="border border-border bg-background/55 p-3"><p className="uppercase tracking-widest text-muted">Sponsor break</p><p className="mt-2 font-bold text-foreground">{snapshot?.session?.sponsorBreakStatus?.replaceAll("_", " ") ?? "not due"}</p></div><div className="border border-border bg-background/55 p-3"><p className="uppercase tracking-widest text-muted">Last refresh</p><p className="mt-2 font-bold text-foreground">{clockNow ? displayTime(new Date(clockNow).toISOString()) : "—"}</p></div></div>
-        </section>
-
-        <section className="border border-border bg-surface">
-          <div className="grid grid-cols-3 gap-px border-b border-border bg-border">
-            <DeckTab active={view === "feed"} onClick={() => setView("feed")} label="Show feed" />
-            <DeckTab active={view === "line"} onClick={() => setView("line")} label="Queue map" />
-            <DeckTab active={view === "mine"} onClick={() => setView("mine")} label="This browser" />
-          </div>
-          <div className="p-5 sm:p-6">
-            {view === "feed" && <BroadcastActivityLog events={currentShow?.milestones ?? []} archiveHref={archiveHref} live={isLive} />}
-            {view === "line" && <div><div className="border-b-2 border-accent/45 pb-3"><p className="text-xs font-bold uppercase tracking-[0.3em] text-accent">Queue map</p><p className="mt-1 text-xs text-muted">{previewMode ? "Private test order from the selected persisted session." : "Public order only. Priority and Wheel positions can change as the host routes the show."}</p></div><div className="mt-4 space-y-2">{liveTracks.map((track, index) => <div key={track.id} className="grid gap-2 border border-border bg-background/55 p-3 sm:grid-cols-[4rem_minmax(0,1fr)_auto] sm:items-center"><span className="font-mono text-xs text-muted">{track.id === snapshot?.nowPlaying?.id ? "LIVE" : track.id === snapshot?.upNext?.id ? "NEXT" : `#${Math.max(1, index - 1)}`}</span><div><Link href={projectLink(track.submittedArtistName, archiveHref)} className="font-bold text-foreground hover:text-accent">{track.submittedArtistName}</Link><p className="text-xs text-muted">{track.submittedSongTitle}</p></div><span className="text-[10px] uppercase tracking-widest text-muted">{track.lane}</span></div>)}</div></div>}
-            {view === "mine" && <div><div className="border-b-2 border-cyan-200/40 pb-3"><p className="text-xs font-bold uppercase tracking-[0.3em] text-cyan-200">From this browser</p><p className="mt-1 text-xs text-muted">Useful when one device submits for multiple artists. This confirms a browser submission, not identity or account ownership.</p></div><div className="mt-4 space-y-3">{personalHandles.length > 0 ? personalHandles.map((handle) => <section key={handle.tiktokHandle} className="border border-border bg-background/55 p-4"><div className="flex flex-wrap items-center justify-between gap-2"><p className="font-mono text-sm font-bold text-cyan-200">{handle.tiktokHandle}</p><span className="text-[10px] uppercase tracking-widest text-muted">{handle.currentShow ? `${handle.currentShow.activeTrackCount} active · ${handle.currentShow.finishedTrackCount} finished · ${handle.currentShow.skippedTrackCount} skipped · ${handle.currentShow.removedTrackCount} removed this show` : "No tracks this show"} · {handle.submittedTrackCount} submitted across shows</span></div><div className="mt-3 flex flex-wrap gap-2">{handle.projects.map((project) => <Link key={project.projectKey} href={previewMode ? projectLink(project.projectKey, archiveHref) : broadcastArchiveArtistHref(project.projectKey)} className="border border-cyan-200/30 px-2 py-1 text-xs text-foreground hover:border-cyan-200 hover:text-cyan-200">{project.projectLabel} · {project.submittedTrackCount} submitted</Link>)}</div></section>) : <p className="text-sm text-muted">Submit from this browser to see its {previewMode ? "test" : "public"} handles and project records grouped here.</p>}</div></div>}
-          </div>
         </section>
       </>}
 

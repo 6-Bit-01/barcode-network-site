@@ -5,10 +5,10 @@ const stages=await import('../public/games/system-clash/play/fight-stages.mjs').
 function advance(match,ms,controls=[{},{}]){while(ms>0){const dt=Math.min(ms,100);advanceMatch(match,dt,controls);ms-=dt;}}
 function ready(stage='radio-studio'){const m=createMatch({mode:'local',start:false,stage});m.phase='fight';return m;}
 
-test('the six wide stages have reciprocal weak-wall connections and solid outer edges',()=>{
- assert(stages,'Stage catalog is shipped');assert.equal(stages.STAGES.length,6);
- const order=['studio-rat-lair','radio-studio','sheila-office','containment','nature-simulation','witty-wasteland'];
- for(let i=0;i<order.length;i++){const s=stages.stageById(order[i]);assert.equal(s.width,2560);assert.equal(s.walls.left.target,order[i-1]??null);assert.equal(s.walls.right.target,order[i+1]??null);assert(s.ambientCycleMs>=30000);assert.equal(s.hazard.warningMs,1000);}
+test('the seven wide stages have reciprocal weak-wall connections and solid outer edges',()=>{
+ assert(stages,'Stage catalog is shipped');assert.equal(stages.STAGES.length,7);
+ const order=['studio-rat-lair','radio-studio','sheila-office','containment','nature-simulation','witty-wasteland','interdimensional-station'];
+ for(let i=0;i<order.length;i++){const s=stages.stageById(order[i]);assert.equal(s.width,2560);assert.equal(s.walls.left.target,order[i-1]??null);assert.equal(s.walls.right.target,order[i+1]??null);assert(s.ambientCycleMs>=30000);assert.equal(s.hazard.warningMs,s.id==='interdimensional-station'?1100:1000);}
  assert.match(stages.stageById('studio-rat-lair').description,/cats/i);
 });
 

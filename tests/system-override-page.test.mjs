@@ -65,12 +65,12 @@ test("hidden games identifies all three games at its renamed secret-menu route",
   assert.match(cards[2][2], /keyboard, controller or touch/);
 });
 
-test("browser and Makko save copy remains specifically with System Override", () => {
+test("browser save guidance stays with System Override while hidden games omit old Makko copy", () => {
   const cards = [...markup.matchAll(/<article\b[^>]*>([\s\S]*?)<\/article>/g)];
   assert.match(cards[0][1], /Saved settings and progress belong to this browser on this site\./);
-  assert.match(cards[0][1], /Saves from the Makko version do not transfer automatically\./);
+  assert.doesNotMatch(markup, /Makko|transfer automatically/i);
   assert.doesNotMatch(cards[1][1], /Makko|transfer automatically/);
-  assert.match(cards[1][1], /18 BARCODE fighters/);
+  assert.match(cards[1][1], /19 BARCODE fighters/);
   assert.match(cards[1][1], /Solo CPU, Local Two Player, Tournament or Online Sessions across six interactive arenas/);
-  assert.doesNotMatch(cards[1][1], /Practice|Weapons|18 playable/i);
+  assert.doesNotMatch(cards[1][1], /Practice|Weapons|19 playable/i);
 });

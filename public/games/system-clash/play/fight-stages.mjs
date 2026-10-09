@@ -7,8 +7,9 @@ const specs=[
  {id:'containment',name:'Containment',description:'Observation glass, moving machinery and a marked purge beam.',ambientCycleMs:60000,color:'#83d9e6',interaction:{x:1900,y:600,reach:125,cooldownMs:14000,label:'PURGE CONTROL'},hazard:{type:'beam',name:'PURGE BEAM',warningMs:1000,impactDelayMs:260,activeMs:900,damage:16,kind:'scorch',zone:{left:600,right:1840,top:325,bottom:400}}},
  {id:'nature-simulation',name:'Nature Simulation',description:'Layered simulated foliage and a rising holographic thorn trap.',ambientCycleMs:54000,color:'#9dd9a6',interaction:{x:650,y:600,reach:125,cooldownMs:13000,label:'THORN PROGRAM'},hazard:{type:'thorns',name:'HOLOGRAPHIC THORNS',warningMs:1000,impactDelayMs:300,activeMs:1000,damage:17,kind:'cut',zone:{left:1000,right:1660,top:505,bottom:620}}},
  {id:'witty-wasteland',name:'Witty Wasteland',description:'Ruined exterior, salvage machinery and an explosive rolling barrel.',ambientCycleMs:46000,color:'#deb16f',interaction:{x:1880,y:600,reach:125,cooldownMs:15000,label:'SALVAGE RELEASE'},hazard:{type:'barrel',name:'EXPLOSIVE SALVAGE',warningMs:1000,impactDelayMs:550,activeMs:1200,damage:18,kind:'cut',zone:{left:900,right:1710,top:455,bottom:620}}},
+ {id:'interdimensional-station',name:'Interdimensional Station',description:'Transit portals, watching commuters and a warned signal arc.',ambientCycleMs:58000,color:'#be8deb',interaction:{x:1880,y:600,reach:125,cooldownMs:14500,label:'TRANSIT RESET'},hazard:{type:'beam',name:'SIGNAL ARC',warningMs:1100,impactDelayMs:280,activeMs:1050,damage:16,kind:'scorch',zone:{left:720,right:1800,top:340,bottom:430}}},
 ];
-const chain=['studio-rat-lair','radio-studio','sheila-office','containment','nature-simulation','witty-wasteland'];
+const chain=['studio-rat-lair','radio-studio','sheila-office','containment','nature-simulation','witty-wasteland','interdimensional-station'];
 export const STAGES=Object.freeze(specs.map(spec=>{
  const index=chain.indexOf(spec.id);
  return Object.freeze({...spec,width:STAGE_WIDTH,walls:{left:{target:chain[index-1]??null},right:{target:chain[index+1]??null}}});

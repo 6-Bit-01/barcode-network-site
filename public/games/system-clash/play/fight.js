@@ -1,9 +1,10 @@
+import {fightLaunchRoster} from './fight-launch.mjs';
 import {loadRemainsArt} from './fight-remains.mjs';
 import {createGameMusic} from './game-music.mjs';
 import {availableControllerItems,canControlMenu} from './fight-menu-controller.mjs';
 import {createGameScreenHost} from './game-screen-host.mjs';
 import {createMatchOptions,createRoundMenu} from './fight-menus.mjs';
-import {createRoundSet,recordRoundResult,loadMatchRules,saveMatchRules,matchRulesFromURL,withMatchRules} from './fight-rules.mjs';
+import {createRoundSet,recordRoundResult,loadClashPreferences,loadMatchRules,saveMatchRules,matchRulesFromURL,withMatchRules} from './fight-rules.mjs';
 import {nextMenuIndex,pauseMenuPolicy,bindTouchControls,toggleDisplayMode} from './fight-ui.mjs';
 import {leaveTournamentRun} from './tournament.mjs';
 import {createMatch,advanceMatch,performAction,getFighterView,consumeEvents,FIGHTER_STYLES} from './fight-engine.mjs';
@@ -491,7 +492,8 @@ async function initializeRoster() {
     if(!roster){const response=await fetch(new URL('assets/fight-roster.json',location.href),{cache:'no-store'});if(!response.ok)throw new Error('The main roster is unavailable.');roster=(await response.json()).fighters.filter(fighter=>fighter.enabled);}
     if(!roster.length||new Set(roster.map(f=>f.id)).size!==roster.length||roster.some(f=>!FIGHTER_STYLES[f.id]))throw new Error('The main roster needs its verified fighting styles.');
     activeRoster=roster;
-    demoLaunch=parseDemoLaunch(location.href,roster);
+    const launchRoster=fightLaunchRoster(location.href,roster,{corporateUnlocked:loadClashPreferences(localStorage).corporateUnlocked,online:onlineBridge.enabled,storage:sessionStorage});
+    demoLaunch=parseDemoLaunch(location.href,launchRoster);
     if(launchParams.get('tournament')==='1'&&!onlineBridge.enabled){tournamentOverlay=createTournamentFightOverlay({url:location.href,roster:activeRoster,storage:sessionStorage,onShow:scene=>music.setScene(scene),getSettings:()=>({muted,reducedMotion:$('motion-toggle').checked,controllerSeats:gamepads.seatIndices(),stage:match?.stage?.id??launchParams.get('stage'),matchRules:{...roundSet.rules,musicStyle:matchRules.musicStyle}}),onNavigate:url=>screenHost.navigate(url),onLeave:run=>{const back=new URL('index.html',location.href);if(run.returnScreen==='select'){back.searchParams.set('screen','select');back.searchParams.set('mode','tournament');}back.searchParams.set('stage',match?.stage?.id??demoLaunch.stage);back.searchParams.set('sound',muted?'0':'1');back.searchParams.set('motion',$('motion-toggle').checked?'1':'0');screenHost.navigate(withMatchRules(withControllerSeats(back,gamepads.seatIndices()),{...roundSet.rules,musicStyle:matchRules.musicStyle}));}});if(!tournamentOverlay.active)throw new Error('This Tournament run is unavailable. Return to the game menu.');}
 
     if(demoLaunch.enabled){
@@ -503,9 +505,9 @@ async function initializeRoster() {
     }
     for(const id of ['fighter-one','fighter-two']) {
       const select=$(id),previous=select.value;select.replaceChildren();
-      for(const fighter of roster){const option=document.createElement('option');option.value=fighter.id;option.textContent=fighter.name;select.append(option);}
+      for(const fighter of launchRoster){const option=document.createElement('option');option.value=fighter.id;option.textContent=fighter.name;option.disabled=fighter.enabled===false;select.append(option);}
       const requested=demoLaunch.enabled?(id==='fighter-one'?demoLaunch.p1:demoLaunch.p2):previous;
-      select.value=roster.some(f=>f.id===requested)?requested:roster[id==='fighter-two'?Math.min(1,roster.length-1):0].id;
+      const available=launchRoster.filter(f=>f.enabled!==false);select.value=available.some(f=>f.id===requested)?requested:available[id==='fighter-two'?Math.min(1,available.length-1):0].id;
     }
     $('roster-label').textContent=roster.length+' PLAYABLE MAIN FIGHTERS / ARCADE PROTOTYPE';
     $('styles-title').textContent=roster.length+' ways to clash.';

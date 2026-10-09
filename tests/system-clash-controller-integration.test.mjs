@@ -95,19 +95,19 @@ function menuGamepadsFromSource(url='https://barcode.example/index.html'){
  return new Function('createGamepadInput','controllerSeatsFromURL','location','return '+expression)(createGamepadInput,flow.controllerSeatsFromURL,{href:url});
 }
 function selectionHarness(mode='local',{screen='select',url}={}){
- const initial=createDemoSelection([{id:'6-bit'},{id:'9-bit'},{id:'cache-back'}]),calls=[],elements=new Map();
+ const initial=createDemoSelection([{id:'6-bit'},{id:'9-bit'},{id:'cache-back'}],{corporateUnlocked:true}),calls=[],elements=new Map();
  const env={state:screen==='title'?initial:beginDemoSelection(initial,mode),gamepads:menuGamepadsFromSource(url),menuReady:true,windowActive:true,controllerLabel:'',document:{hidden:false,activeElement:null},navigator:{getGamepads:()=>env.pads},pads:[],navigateDemoFighter,cycleDemoStage:flow.cycleDemoStage,matchOptions:{open:false},availableControllerItems,canControlMenu};
  env.document.defaultView={getComputedStyle:item=>({display:item.cssDisplay??'block',visibility:item.cssVisibility??'visible'})};
  env.$=id=>{if(!elements.has(id))elements.set(id,{id,isConnected:true,disabled:false,hidden:false,open:false,textContent:'',ownerDocument:env.document,
   matches(selector){return selector===':disabled'&&this.disabled;},closest(){return this.hiddenAncestor||this.inert||this.ariaHidden?{}:null;},getClientRects(){return this.hidden||this.noRect?[]:[{}];},
-  focus(){env.document.activeElement=this;},click(){if(this.disabled)return;calls.push(id);if(['solo-mode','local-mode','tournament-mode'].includes(id))env.state=beginDemoSelection(env.state,id==='solo-mode'?'cpu':id==='local-mode'?'local':'tournament');if(id==='options-open')env.matchOptions.open=true;}});return elements.get(id);};
+  focus(){env.document.activeElement=this;},click(){if(this.disabled)return;calls.push(id);if(['solo-mode','local-mode','tournament-mode'].includes(id))env.state=beginDemoSelection(env.state,id==='solo-mode'?'cpu':id==='local-mode'?'local':'tournament');if(['options-open','title-options-open'].includes(id))env.matchOptions.open=true;}});return elements.get(id);};
  // Execute the actual title candidate function, so this test cannot substitute
  // an unfiltered list for the consumer's current visible-control contract.
  const titleBody=menuSource.match(/function titleChoices\(\)\s*\{([^}]+)\}/)?.[1];assert(titleBody);
  env.titleChoices=new Function('env','with(env){return function(){'+titleBody+'}}')(env);
  env.$('asset-loading').hidden=true;
  env.matchOptions.handleAction=action=>calls.push('options:'+action);
- env.render=()=>{};env.focusSelection=()=>{};
+ env.render=()=>{};env.focusSelection=()=>{};env.uiSound=()=>{};
  env.confirm=()=>{env.gamepads.reset();env.state=confirmDemoFighter(env.state);calls.push('confirm');};
  env.back=()=>{env.gamepads.reset();env.state=backDemoSelection(env.state);calls.push('back');};
  env.closeControls=()=>{env.gamepads.reset();env.$('controls-dialog').open=false;calls.push('close');};
@@ -144,11 +144,11 @@ test('actual title polling recovers a sole controller from stale URL seats witho
 test('actual title focus and confirm skip disabled/hidden targets even when focus becomes stale',()=>{
  const h=selectionHarness('cpu',{screen:'title'});h.tick(0,[controller()]);
  h.env.$('solo-mode').hidden=true;h.env.$('local-mode').disabled=true;h.env.$('tournament-mode').hiddenAncestor=true;h.env.$('online-mode').cssVisibility='hidden';h.env.document.activeElement=h.env.$('solo-mode');
- h.tick(10,[controller(0,[15])]);assert.equal(h.env.document.activeElement,h.env.$('options-open'));
- h.tick(20,[controller()]);h.env.document.activeElement=h.env.$('solo-mode');h.tick(30,[controller(0,[0])]);assert.deepEqual(h.calls,['options-open']);assert.equal(h.env.state.screen,'title');
+ h.tick(10,[controller(0,[15])]);assert.equal(h.env.document.activeElement,h.env.$('title-options-open'));
+ h.tick(20,[controller()]);h.env.document.activeElement=h.env.$('solo-mode');h.tick(30,[controller(0,[0])]);assert.deepEqual(h.calls,['title-options-open']);assert.equal(h.env.state.screen,'title');
 });
 test('actual title confirm does nothing when no visible enabled menu choices remain',()=>{
- const h=selectionHarness('cpu',{screen:'title'});h.tick(0,[controller()]);for(const id of ['solo-mode','local-mode','tournament-mode','online-mode','options-open','controls-open','demo-sound','demo-fullscreen','demo-motion'])h.env.$(id).hidden=true;
+ const h=selectionHarness('cpu',{screen:'title'});h.tick(0,[controller()]);for(const id of ['solo-mode','local-mode','tournament-mode','online-mode','title-options-open','controls-open','demo-sound','demo-fullscreen','demo-motion'])h.env.$(id).hidden=true;
  h.tick(10,[controller(0,[0])]);assert.deepEqual(h.calls,[]);assert.equal(h.env.state.screen,'title');
 });
 test('actual options menu consumes controller events without activating underlying title choices',()=>{

@@ -41,9 +41,9 @@ test('Lost Marbles utilities remain his intact native identity and release marbl
   if(['rip-front','suspended'].includes(name))for(const facing of ['right','left']){assert.equal(data.frames[facing].length,4);assert(data.frames[facing].every(frame=>frame.poseSource.sourceFile==='front-'+facing+'.png'),'Front dangling victim keeps intact Lost clothing, hair and boots');}
  }
 });
-test('Lost Marbles occupies the requested enabled 18-fighter roster and previews his authored idle bank',()=>{
- const base=new URL('../public/games/system-clash/play/assets/',import.meta.url),roster=JSON.parse(readFileSync(new URL('menu/roster.json',base))),selection=demoRoster(roster.fighters??roster.mains);
- assert.deepEqual(selection.map(fighter=>fighter.id),['6-bit','cache-back','dj-floppydisc','mac-modem','cliff','mr-nice-guy','lost-marbles','ash-flowers','wittyf0x','lyra','papa-oak','ms-mayhem','stolz','kaveman-brown','dr3wbaby','doofnoobler','mutilator','9-bit']);assert(selection.every(fighter=>fighter.enabled),'Every registered fighter is playable');
+test('Lost Marbles occupies the requested unlocked 19-fighter roster and previews his authored idle bank',()=>{
+ const base=new URL('../public/games/system-clash/play/assets/',import.meta.url),roster=JSON.parse(readFileSync(new URL('menu/roster.json',base))),selection=demoRoster(roster.fighters??roster.mains,{corporateUnlocked:true});
+ assert.deepEqual(selection.map(fighter=>fighter.id),['6-bit','cache-back','dj-floppydisc','mac-modem','cliff','mr-nice-guy','lost-marbles','ash-flowers','wittyf0x','lyra','papa-oak','ms-mayhem','stolz','kaveman-brown','dr3wbaby','doofnoobler','mutilator','bnl-01','9-bit']);assert(selection.every(fighter=>fighter.enabled),'Every registered fighter is playable');
  const manifest=JSON.parse(readFileSync(new URL('fighters/lost-marbles/manifest.json',base))),idle=manifest.clips.idle,menu=JSON.parse(readFileSync(new URL('menu/lost-marbles-idle.json',base)));
  // Collision bands belong to gameplay; every source, crop, root and attachment still matches the menu.
  const menuFrames=frames=>Object.fromEntries(Object.entries(frames).map(([facing,keys])=>[facing,keys.map(({combatHurt,combatProfile,combatPush,...frame})=>frame)]));

@@ -1,3 +1,5 @@
+import {planUISound,createUIBufferBank} from './fight-ui-audio.mjs';
+export {UI_SOUND_ASSETS} from './fight-ui-audio.mjs';
 import {planRecordedFoley,createFoleyBufferBank} from './fight-foley.mjs';
 import {CHARACTER_FOLEY_VARIANTS,planCharacterFoley} from './fight-audio-palettes.mjs';
 /** Recorded and procedural arcade contact Foley and original synthetic effort voices.
@@ -11,6 +13,7 @@ export const CHARACTER_LINE_ASSETS=Object.freeze({
  doofnoobler:Object.freeze({path:'assets/audio/doofnoobler-stay-kind.wav',cue:'stay-kind',text:'Stay soft, stay fuzzy, and stay kind.',bytes:125126})
 });
 export const FIGHT_AUDIO_PROFILES=Object.freeze(Object.fromEntries(Object.entries({
+  'bnl-01':{pitch:208,formants:[710,1690,3290],rasp:.025,breath:.025,weight:.98,accent:1024,robot:true,digital:true,voice:'gentle computational syllables with clean resonant carrier intervals'},
   'mutilator':{pitch:96,formants:[650,1190,2380],rasp:.39,breath:.12,weight:1.28,accent:188,voice:'clipped gravel butcher bark and forceful chest effort'},
   'lost-marbles':{pitch:138,formants:[820,1480,2880],rasp:.29,breath:.23,weight:.95,accent:460,voice:'masked breathy rasp and clipped chaotic effort'},
   'doofnoobler':{pitch:246,formants:[980,1780,3190],rasp:.04,breath:.23,weight:.64,accent:790,voice:'soft felt puppet murmur'},
@@ -37,6 +40,7 @@ export const MAX_VOCAL_CACHE_BYTES=6*1024*1024;
 // Independent articulation families: syllables, stop/breath onsets, closure,
 // subharmonics, vocal fry and modulation differ in addition to pitch/formants.
 const vocalFamilies={
+ 'bnl-01':{kind:'computational-resonance',duration:.91,open:.58,sub:0,nasal:.16,grit:.018,flutter:8,phrases:[['mi-uo','nu-ee','di-oh','li-eh'],['eh-u','mi-oh','nu-ih','ee-no'],['uo-ee-ah','di-eh-uo','mi-oo-eh','nu-ah-ee'],['ee-uo-aa','mi-ah-oo-ee','nu-ee-oh-aa','di-oo-aa-eh']]},
  mutilator:{kind:'butcher-bark',duration:1.04,open:.41,sub:.31,nasal:.05,grit:.58,flutter:14,phrases:[['kh-hah','ruh','gah-hup','hrr-yah'],['agh','kh-uh','oh-rr-kh','huh-agh'],['gh-ah-rr','akh-rah','uh-agh-hah','rr-khah'],['rr-aa-kh','gh-aaa-hah','akh-oh-rr','hrah-aa-ugh']]},
  'lost-marbles':{kind:'masked-staccato',duration:.92,open:.38,sub:.14,nasal:.19,grit:.47,flutter:23,phrases:[['kh-ha','heh','ts-hup','rr-kih'],['akh-eh','uh-kh','hff','kh-oh'],['ha-rr-agh','kh-aa-huh','eh-rr-ah','hff-aah'],['kh-ah-rr','heh-aa-kh','rr-aa-hff','hff-aa-eh']]},
  'doofnoobler':{kind:'felt-murmur',duration:.9,open:.71,sub:.01,nasal:.39,grit:.04,flutter:3,phrases:[['hu','hmm-hup','ho-eh','mmm'],['oh','oof','eh-oh','uh-hm'],['oh-hmm','hu-oof','ah-ohh','hmm-eh'],['oo-ah','oh-ehh','hu-ah-oh','mm-aa']]},
@@ -92,6 +96,7 @@ function mechanism(event){
 
 /** Pure deterministic routing; useful to review without a browser audio device. */
 export function planFightSound(event={},variation=0){
+  const ui=planUISound(event.type);if(ui)return ui;
   variation=((Math.floor(finite(variation,0))%CHARACTER_FOLEY_VARIANTS)+CHARACTER_FOLEY_VARIANTS)%CHARACTER_FOLEY_VARIANTS;
   const type=event.type??'',strength=clamp(finite(event.strength,1),.25,3.4);
   const attackerId=event.attackerId??event.fighterId,victimId=event.victimId??event.targetId;
@@ -237,6 +242,7 @@ export function renderFightVocal(id,mode='hurt',sampleRate=22050,variant=0){
      const sub=Math.sin(phase*.5)*family.sub*(growl?1.4:1),nasal=Math.sin(phase*3.06)*family.nasal;
      const rasp=family.grit*(Math.sin(phase*.473)*.48+air*.25)*(1+[.15,-.2,.35,-.08][variant]);
      let throat=pulse*.72+Math.sin(phase)*.18+sub+nasal+rasp;
+     if(family.kind==='computational-resonance')throat=Math.sin(phase)*.56+Math.sin(phase*1.5)*.17+Math.sin(phase*2)*.1;
      if(family.kind==='servo')throat=(cycle*2-1)*.6+Math.sin(phase*2.01)*Math.sin(t*2*Math.PI*(67+variant*19))*.65;
      if(family.kind==='fox')throat=pulse*.6+Math.sin(phase*2)*.34+Math.sin(phase*4)*.23+rasp;
      let value=filters.reduce((sum,filter,j)=>sum+filter(throat+air*p.breath*(breathy?1.7:1))*[1,.54,.25][j],0);
@@ -245,6 +251,7 @@ export function renderFightVocal(id,mode='hurt',sampleRate=22050,variant=0){
      const onset=clamp(local/(hard?.003:breathy?.018:.007),0,1),release=clamp((length-local-gap)/(mode==='attack'?.035:.075),0,1);
      let envelope=Math.pow(Math.sin(Math.PI*u),mode==='attack'?.45:.25)*onset*release;
      if(family.kind==='servo'){value=Math.round(value*([15,9,23,12][variant]))/[15,9,23,12][variant];envelope*=Math.sin(t*2*Math.PI*(23+variant*9))>-.35?1:.12;}
+     else if(family.kind==='computational-resonance'){value=value*.9+Math.sin(phase*1.25)*.045;envelope*=.82+.18*Math.sin(local*Math.PI*(8+variant*3))**2;}
      else if(family.kind==='steel-throat')value=value*.8+Math.sin(t*2*Math.PI*(173+variant*37))*value*.32+sub*.22;
      else if(family.kind==='fox')envelope*=mode==='scream'?.68+.32*Math.sin(t*(17+variant*3))**2:.32+.68*Math.sin(t*(23+variant*7)+.7)**2;
      else if(family.kind==='rhythmic-growl'||family.kind==='clipped-syllables')envelope*=.68+.32*Math.sin(t*(family.flutter+variant*7))**2;
@@ -258,11 +265,12 @@ export function renderFightVocal(id,mode='hurt',sampleRate=22050,variant=0){
  return data;
 }
 export function createFightAudio(options={}){
-  let context=null,master=null,fxBus=null,voiceBus=null,announcerBus=null,noiseBuffer=null,announcerBuffer=null;
+  let context=null,master=null,fxBus=null,uiBus=null,voiceBus=null,announcerBus=null,noiseBuffer=null,announcerBuffer=null;
   let muted=!!options.muted,paused=!!options.paused,reducedMotion=!!options.reducedMotion,announcerPlayed=false;
   let pendingStart=null,assetError='',playedEvents=0,droppedEvents=0,playedVoices=0,vocalCacheBytes=0,lastFoleyVariation=null,recordedFoleyPlayed=0,recordedFoleyFallbacks=0,lastRecordedFoley=null;
   const selectedCharacterLines=new Set(),lineBuffers=new Map(),linePromises=new Map();
-  let characterLineError='',characterLinesPlayed=0;
+  let characterLineError='',characterLinesPlayed=0,uiRecordedPlayed=0,uiFallbackPlayed=0,uiGestureRevision=0,pendingUIResume=null;
+  const uiNow=options.uiNow??(()=>globalThis.performance?.now?.()??Date.now());
   const active=new Set(),voiceGroups=new Map(),cooldowns=new Map(),vocalBuffers=new Map(),lastVocalVariants=new Map();
   const variations=createFightVariationSelector(finite(options.seed,94712));
   const contextFactory=options.contextFactory??(()=>{
@@ -271,6 +279,7 @@ export function createFightAudio(options={}){
   });
   const fetchImpl=options.fetch??globalThis.fetch?.bind(globalThis);
   const foleyBank=createFoleyBufferBank({getContext:()=>context,fetch:fetchImpl,urlForAsset:asset=>globalThis.SYSTEM_CLASH_FIGHT_BUNDLE?.audio?.[asset.path]??new URL(asset.path,options.baseUrl??globalThis.document?.baseURI??globalThis.location?.href??'http://localhost/').href});
+  const uiBank=createUIBufferBank({getContext:()=>context,fetch:fetchImpl,urlForAsset:asset=>globalThis.SYSTEM_CLASH_FIGHT_BUNDLE?.audio?.[asset.path]??new URL(asset.path,options.baseUrl??globalThis.document?.baseURI??globalThis.location?.href??'http://localhost/').href});
   function disconnect(node){try{node.disconnect();}catch{}}
   function stopGroup(group){
     if(!group||group.stopped)return;group.stopped=true;
@@ -283,6 +292,7 @@ export function createFightAudio(options={}){
   function busVolume(){if(!context)return;master.gain.setTargetAtTime(muted||paused?0:.72,context.currentTime,.02);}
   function makeGraph(){
     master=context.createGain();master.gain.value=muted||paused?0:.72;
+    uiBus=context.createGain();uiBus.gain.value=.66;uiBus.connect(master);
     fxBus=context.createGain();fxBus.gain.value=.84;fxBus.connect(master);
     voiceBus=context.createGain();voiceBus.gain.value=.64;voiceBus.connect(master);
     announcerBus=context.createGain();announcerBus.gain.value=.8;announcerBus.connect(master);
@@ -306,6 +316,7 @@ export function createFightAudio(options={}){
       try{
         if(!context){context=contextFactory();if(!context)return false;makeGraph();}
         if(context.state==='suspended')await context.resume();
+        if(options.uiSounds===true)void uiBank.prepare();
         if(!announcerBuffer&&fetchImpl){
           try{
             const bundle=globalThis.SYSTEM_CLASH_FIGHT_BUNDLE?.audio??{};
@@ -417,9 +428,32 @@ export function createFightAudio(options={}){
     source.connect(gain);gain.connect(entry.gain);source.start(at);
     own(entry,source,[gain],at+buffer.duration);playedVoices++;
   }
+  async function emitUISound(type){
+    if(!planFightSound({type}).uiSound||muted||paused)return false;
+    const revision=++uiGestureRevision,requestedAt=uiNow();
+    try{
+      if(!context){context=contextFactory();if(!context)return false;makeGraph();}
+      if(context.state==='suspended'){
+        if(!pendingUIResume)pendingUIResume=Promise.resolve(context.resume()).finally(()=>{pendingUIResume=null;});
+        await pendingUIResume;
+      }
+      // Resume belongs to the current gesture; downloads only cache future cues.
+      if(revision!==uiGestureRevision||uiNow()-requestedAt>250||context.state!=='running'||muted||paused)return false;
+      void startAudio();
+      return emit({type});
+    }catch{return false;}
+  }
   function emit(event={}){
     if(!context||context.state!=='running'||muted||paused){droppedEvents++;return false;}
     let plan=planFightSound(event);const at=context.currentTime+.004;
+    if(plan.uiSound){
+      const last=cooldowns.get(plan.type)??-Infinity;if(at-last<(plan.type==='ui-move'?.028:.065)){droppedEvents++;return false;}cooldowns.set(plan.type,at);
+      const entry=group(uiBus,1);if(!entry)return false;
+      const buffer=uiBank.peek(plan.uiAsset);
+      if(buffer){const source=context.createBufferSource(),gain=context.createGain();source.buffer=buffer;gain.gain.value=.62;source.connect(gain);gain.connect(entry.gain);source.start(at);own(entry,source,[gain],at+buffer.duration);uiRecordedPlayed++;}
+      else{void uiBank.request(plan.uiAsset);for(const item of plan.layers)playLayer(item,entry,at+item.delay);uiFallbackPlayed++;}
+      playedEvents++;return true;
+    }
     if(plan.characterLine){
       const buffer=lineBuffers.get(plan.characterLine);if(!buffer){void prepareCharacterLines([plan.characterLine]);return false;}
       const key='line:'+plan.characterLine;if(cooldowns.has(key))return false;
@@ -466,13 +500,11 @@ export function createFightAudio(options={}){
     for(const cue of plan.voices)playVocal(cue,plan.priority,at+cue.delay);
     playedEvents++;return true;
   }
-  return {emit,startAudio,prepareCharacterLines,
-    setMuted(value){muted=!!value;if(muted){foleyBank.invalidate();stopAll();}busVolume();},
-    setPaused(value){const next=!!value;if(next===paused)return;paused=next;if(paused){foleyBank.invalidate();stopAll();}busVolume();},
+  return {emit,emitUISound,startAudio,prepareCharacterLines,
+    setMuted(value){muted=!!value;if(muted){uiGestureRevision++;foleyBank.invalidate();stopAll();}busVolume();},
+    setPaused(value){const next=!!value;if(next===paused)return;paused=next;if(paused){uiGestureRevision++;foleyBank.invalidate();stopAll();}busVolume();},
     setReducedMotion(value){reducedMotion=!!value;},
-    clear(){foleyBank.invalidate();stopAll();cooldowns.clear();variations.clear();lastVocalVariants.clear();lastFoleyVariation=null;lastRecordedFoley=null;announcerPlayed=false;},
-    getStats(){const foley=foleyBank.getStats();return {characterLinesLoaded:lineBuffers.size,characterLinesPlayed,characterLineError,recordedFoleyPlayed,recordedFoleyFallbacks,cachedFoley:foley.cached,foleyCacheBytes:foley.cacheBytes,foleyPending:foley.pending,foleyLoading:foley.loading,foleyQueued:foley.queued,foleyAssetFailures:foley.failed,foleyError:foley.lastError,lastRecordedFoley:lastRecordedFoley?{...lastRecordedFoley,ids:[...lastRecordedFoley.ids]}:null,muted,paused,reducedMotion,audioStarted:!!context,audioRunning:context?.state==='running',announcerLoaded:!!announcerBuffer,announcerPlayed,assetError,activeGroups:active.size,activeVoices:voiceGroups.size,cachedVoices:vocalBuffers.size,vocalCacheBytes,vocalVariantCount:Object.keys(FIGHT_VOCAL_BANKS).length*Object.values(FIGHT_VOCAL_VARIANTS).reduce((a,b)=>a+b,0),variationFamilies:variations.size,lastVocalVariants:Object.fromEntries(lastVocalVariants),lastFoleyVariation:lastFoleyVariation?{...lastFoleyVariation}:null,playedEvents,playedVoices,droppedEvents};},
+    clear(){uiGestureRevision++;foleyBank.invalidate();stopAll();cooldowns.clear();variations.clear();lastVocalVariants.clear();lastFoleyVariation=null;lastRecordedFoley=null;announcerPlayed=false;},
+    getStats(){const foley=foleyBank.getStats(),ui=uiBank.getStats();return {uiCached:ui.cached,uiCacheBytes:ui.cacheBytes,uiPending:ui.pending,uiLoading:ui.loading,uiAssetFailures:ui.failed,uiRecordedPlayed,uiFallbackPlayed,characterLinesLoaded:lineBuffers.size,characterLinesPlayed,characterLineError,recordedFoleyPlayed,recordedFoleyFallbacks,cachedFoley:foley.cached,foleyCacheBytes:foley.cacheBytes,foleyPending:foley.pending,foleyLoading:foley.loading,foleyQueued:foley.queued,foleyAssetFailures:foley.failed,foleyError:foley.lastError,lastRecordedFoley:lastRecordedFoley?{...lastRecordedFoley,ids:[...lastRecordedFoley.ids]}:null,muted,paused,reducedMotion,audioStarted:!!context,audioRunning:context?.state==='running',announcerLoaded:!!announcerBuffer,announcerPlayed,assetError,activeGroups:active.size,activeVoices:voiceGroups.size,cachedVoices:vocalBuffers.size,vocalCacheBytes,vocalVariantCount:Object.keys(FIGHT_VOCAL_BANKS).length*Object.values(FIGHT_VOCAL_VARIANTS).reduce((a,b)=>a+b,0),variationFamilies:variations.size,lastVocalVariants:Object.fromEntries(lastVocalVariants),lastFoleyVariation:lastFoleyVariation?{...lastFoleyVariation}:null,playedEvents,playedVoices,droppedEvents};},
   };
 }
-
-

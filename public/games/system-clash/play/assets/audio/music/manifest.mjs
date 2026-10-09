@@ -1,6 +1,6 @@
 /** Supplied BARCODE soundtrack; only a selected MP3 is loaded by the player. */
 export const MUSIC_MANIFEST = {
-  "version": 1,
+  "version": 2,
   "credit": "BARCODE soundtrack",
   "processing": {
     "description": "Subtle retro console texture; original arrangements retained.",
@@ -235,14 +235,23 @@ export const MUSIC_MANIFEST = {
       "truePeak": -6.92
     },
     "title": {
-      "title": "Title_ Take The Signal",
+      "title": "TITLE SCREEN 2 — MENU THEME",
       "file": "assets/audio/music/title.mp3",
-      "source": "https://drive.google.com/file/d/1quTIsgmX8sR3hrZRI73FZQNUC5zj3UB5/view",
-      "bytes": 1511560,
-      "sha256": "734d55756ae0ca3de2cdf03cc7ea88f3b24f1dcc31e30792d74ae4819efe5c71",
-      "duration": 69.198,
-      "loudness": -17.44,
-      "truePeak": -5.36
+      "source": "https://drive.google.com/file/d/1sJ8O5EYEseCWNbVMTdveLKPndZeUG16G/view",
+      "bytes": 1945644,
+      "sha256": "e1b7ef1d421215c1195b7fec6927b4c34b7968c31cd568cc6dc48d0f6dc02989",
+      "duration": 97.254,
+      "loudness": -17.47,
+      "truePeak": -5.15,
+      "processing": {
+        "description": "Supplied title texture preserved; volume normalized once without added bitcrush.",
+        "bitcrushPasses": 0,
+        "targetLUFS": -17,
+        "truePeakDb": -1.8,
+        "codec": "MP3",
+        "bitrateKbps": 160,
+        "sampleRate": 44100
+      }
     },
     "select": {
       "title": "CHARACTER SELECT — SIGNAL OPERATORS",
@@ -309,6 +318,7 @@ export const MUSIC_MANIFEST = {
     "containment": "containment",
     "studio-rat-lair": "studio-rat-lair",
     "sheila-office": "sheila-office",
-    "radio-studio": "radio-studio"
+    "radio-studio": "radio-studio",
+    "interdimensional-station": "containment"
   }
 };

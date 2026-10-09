@@ -5,20 +5,19 @@ export function resolveInterfaceSettings(value, {prefersReducedMotion=false}={})
  const motion=params.get('motion');
  return {muted:params.get('sound')==='0',reducedMotion:motion==='1'?true:motion==='0'?false:Boolean(prefersReducedMotion)};
 }
-export const FUTURE_FIGHTERS=Object.freeze([
- {id:'mutilator',name:'Mutilator',enabled:false},
- {id:'unknown-signal',name:'Unknown signal',enabled:false},
-].map(Object.freeze));
-export function demoRoster(mains){
- const active=mains.map(f=>({...f,enabled:true}));
- if(!active.length||active.length>18||new Set(active.map(f=>f.id)).size!==active.length)throw new Error('The demo roster is unavailable.');
- const roster=[...active,...FUTURE_FIGHTERS.filter(f=>!active.some(a=>a.id===f.id))].slice(0,18);
+export const DEMO_ROSTER_CAPACITY=19;
+export const CORPORATE_FIGHTERS=Object.freeze(['bnl-01','9-bit']);
+export const FUTURE_FIGHTERS=Object.freeze([{id:'mutilator',name:'Mutilator',enabled:false}].map(Object.freeze));
+export function demoRoster(mains,{corporateUnlocked=false}={}){
+ if(!mains.length||mains.length>DEMO_ROSTER_CAPACITY||new Set(mains.map(f=>f.id)).size!==mains.length)throw new Error('The demo roster is unavailable.');
+ const active=mains.map(f=>({...f,enabled:CORPORATE_FIGHTERS.includes(f.id)?corporateUnlocked===true:f.enabled!==false}));
+ const roster=[...active,...FUTURE_FIGHTERS.filter(f=>!active.some(a=>a.id===f.id))].slice(0,DEMO_ROSTER_CAPACITY);
  const opening=['6-bit','cache-back','dj-floppydisc','mac-modem','cliff','mr-nice-guy','lost-marbles','ash-flowers','wittyf0x','lyra','papa-oak','ms-mayhem'];
- const position=id=>opening.includes(id)?opening.indexOf(id):id==='mutilator'?opening.length+1:id==='9-bit'?opening.length+2:opening.length;
+ const position=id=>opening.includes(id)?opening.indexOf(id):id==='mutilator'?opening.length+1:id==='bnl-01'?opening.length+2:id==='9-bit'?opening.length+3:opening.length;
  return roster.sort((a,b)=>position(a.id)-position(b.id));
 }
 export function createDemoSelection(mains,options={}){
- const roster=demoRoster(mains),ids=roster.filter(f=>f.enabled).map(f=>f.id);
+ const roster=demoRoster(mains,options),ids=roster.filter(f=>f.enabled).map(f=>f.id);
  const picks=[ids.includes(options.p1)?options.p1:ids[0],ids.includes(options.p2)?options.p2:ids[Math.min(1,ids.length-1)]];
  return {roster,stage:stageById(options.stage).id,mode:['local','tournament'].includes(options.mode)?options.mode:'cpu',screen:options.screen==='select'?'select':'title',activePlayer:0,picks,confirmed:[false,false]};
 }
@@ -67,14 +66,14 @@ export function navigateDemoFighter(state,key){
  return state;
 }
 export function demoFightURL(state,baseURL,settings={}){
- if(state.screen!=='ready'||!state.confirmed.every(Boolean))throw new Error('Choose both fighters before entering the arena.');
+ if(state.screen!=='ready'||!state.confirmed.every(Boolean)||state.picks.some(id=>!state.roster.some(f=>f.id===id&&f.enabled)))throw new Error('Choose both fighters before entering the arena.');
  if(state.mode==='tournament')throw new Error('Tournament launch needs its saved run.');
  const url=new URL('fight.html',baseURL);
  for(const [key,value]of Object.entries({demo:'1',stage:stageById(state.stage).id,mode:state.mode,p1:state.picks[0],p2:state.picks[1],sound:settings.muted?'0':'1',motion:settings.reducedMotion?'1':'0'}))url.searchParams.set(key,value);
  return withControllerSeats(url,settings.controllerSeats);
 }
 export function parseDemoLaunch(value,roster){
- const params=new URL(value,'https://system-clash.invalid/').searchParams,ids=roster.map(f=>f.id);
+ const params=new URL(value,'https://system-clash.invalid/').searchParams,ids=roster.filter(f=>f.enabled!==false).map(f=>f.id);
  return {stage:stageById(params.get('stage')).id,enabled:params.get('demo')==='1',mode:params.get('mode')==='local'?'local':'cpu',
  p1:ids.includes(params.get('p1'))?params.get('p1'):ids[0],p2:ids.includes(params.get('p2'))?params.get('p2'):ids[Math.min(1,ids.length-1)],
  ...resolveInterfaceSettings(params)};

@@ -33,9 +33,9 @@ const bounded=(plan,label)=>{
   }
 };
 
-test('all eighteen enabled mains have separate immutable sound identities and four authored gestures',()=>{
+test('all nineteen enabled mains have separate immutable sound identities and four authored gestures',()=>{
   assert.deepEqual(ids.sort(),Object.keys(FIGHTER_STYLES).sort());
-  assert.equal(ids.length,18);assert.equal(CHARACTER_FOLEY_VARIANTS,4);
+  assert.equal(ids.length,19);assert.equal(CHARACTER_FOLEY_VARIANTS,4);
   assert.equal(new Set(ids.map(id=>CHARACTER_FOLEY_PALETTES[id].texture)).size,ids.length);
   const structures=[];
   for(const id of ids){
@@ -128,4 +128,3 @@ test('unsupported events and IDs keep generic handling; selector and intensity i
   bounded(planCharacterFoley(event,{strength:999999}),'large strength');
   bounded(planCharacterFoley(event,{strength:-999999}),'negative strength');
 });
-

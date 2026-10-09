@@ -147,6 +147,18 @@
       "heightScale": 1
     },
     {
+      "id": "bnl-01",
+      "name": "BNL-01",
+      "portrait": "assets/menu/bnl-01-portrait.webp",
+      "standing": "assets/menu/bnl-01-standing.webp",
+      "heightScale": 1,
+      "locked": true,
+      "menuCanvasSize": [
+        426,
+        455
+      ]
+    },
+    {
       "id": "9-bit",
       "name": "9 Bit",
       "portrait": "assets/menu/9-bit-portrait.webp",

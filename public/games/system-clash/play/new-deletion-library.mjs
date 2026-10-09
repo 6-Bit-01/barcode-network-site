@@ -1,5 +1,7 @@
+import {BNL_STYLE,BNL_DELETION,bnlDeletionPose,bnlDeletionPositions} from './bnl-fighter.mjs';
 // New characters extend the same combat and Deletion owners as the original cast.
 export const NEW_FIGHTER_STYLES={
+ 'bnl-01':BNL_STYLE,
  mutilator:{displayName:'Mutilator',height:320,name:'Brew City Butcher',description:'Deliberate steel-toe pressure, heavy close punches and punishing clinch throws.',signature:'HP → LP → HP',moveSpeed:220,jumpSpeed:175,punchDamage:1.23,kickDamage:1.09,throwDamage:1.22,reach:{punch:.98,kick:.97,throw:1.02},tempo:{punch:1.07,kick:1.1,throw:1.06},knockback:{punch:1.17,kick:1.1,throw:1.18},throwDistance:168,preferredSequence:['punch','low-punch','punch'],preferredMoves:['punch','low-punch','grab','double-punch','low-kick','power-kick']},
  doofnoobler:{displayName:'Doofnoobler',height:220,name:'Soft-Spoken Schemer',description:'Small warm puppet, quick clever feints and short close pressure.',signature:'LP → HP → HK',moveSpeed:285,jumpSpeed:225,punchDamage:.8,kickDamage:.85,throwDamage:.8,reach:{punch:.83,kick:.88,throw:.9},tempo:{punch:.76,kick:.84,throw:.88},knockback:{punch:.6,kick:.7,throw:.75},throwDistance:110,preferredSequence:['low-punch','punch','kick'],preferredMoves:['low-punch','punch','low-punch','double-punch','low-kick','grab','kick']},
  lyra:{displayName:'Lyra',height:320,name:'Cyborg Claw Precision',description:'Agile cat cyborg with sharp claws, precise tech and quick footwork.',signature:'HP → LP → HP',moveSpeed:310,jumpSpeed:245,punchDamage:1.03,kickDamage:1.05,throwDamage:.9,reach:{punch:.96,kick:1.02,throw:.94},tempo:{punch:.78,kick:.87,throw:.91},knockback:{punch:.84,kick:.94,throw:.86},throwDistance:134,preferredSequence:['punch','low-punch','punch'],preferredMoves:['punch','low-punch','double-punch','kick','low-kick','power-kick','grab']},
@@ -7,6 +9,7 @@ export const NEW_FIGHTER_STYLES={
  'lost-marbles':{displayName:'LostMarbles',height:320,name:'Chaotic Marble Pressure',description:'Agile masked brawler with irregular punch pressure and sharp footwork.',signature:'LP → HP → HK',moveSpeed:290,jumpSpeed:235,punchDamage:1,kickDamage:.94,throwDamage:.92,reach:{punch:1,kick:1,throw:1},tempo:{punch:.9,kick:.96,throw:1},knockback:{punch:.9,kick:.92,throw:.95},throwDistance:140,preferredSequence:['low-punch','punch','kick'],preferredMoves:['low-punch','punch','double-punch','low-kick','grab','kick']},
 };
 export const NEW_DELETIONS={
+ 'bnl-01':BNL_DELETION,
  mutilator:{id:'brew-city-massacre',name:'Brew City Massacre',mechanism:'cleaver',prop:false,retainFloorBody:true,duration:6000,beats:{approach:0,brandish:600,highCut:1150,torsoCut:1750,lowCut:2350,heavyWindup:2850,finalCut:3300,settled:4050,present:4250,complete:6000,shove:600,contact:1150,drive:1750,captured:600,pressure:2350,impact:3300,final:4050}},
  'lost-marbles':{id:'marble-theory',name:'The Marble Theory',mechanism:'marbles',prop:false,retainFloorBody:true,duration:5600,beats:{approach:0,shove:600,windup:750,firstLaunch:1000,firstImpact:1200,lastImpact:3900,fall:4400,landed:5050,present:5150,complete:5600,contact:1200,drive:1200,captured:1200,pressure:2550,impact:3900,final:5050}},
  doofnoobler:{id:'soft-power',name:'Soft Power',mechanism:'hug',peaceful:true,prop:false,retainFloorBody:false,duration:5200,line:'Stay soft, stay fuzzy, and stay kind.',beats:{approach:0,hugWindup:550,hugContact:1000,release:2100,shoveOff:2100,landed:2600,runStart:2600,escaped:3350,present:3500,complete:5200,shove:550,contact:1000,drive:1000,captured:1000,pressure:2100,impact:2100,final:3350}},
@@ -44,13 +47,16 @@ export function nativeCleaverContacts(match,definition=NEW_DELETIONS.mutilator){
   for(const [priority,index]of indices.entries()){
    const pose=clip.combatPoses.frames?.[facing]?.[index],a=pose?.strikeStart,z=pose?.strike;
    if(!a||!z)continue;
-   for(const region of body.hurt??[]){
+   const targets=body.cutTargets?.length?body.cutTargets.map(p=>({site:p.site,target:p})):body.hurt??[];
+   for(const region of targets){
     if(region.site!==desired&&!(['head','legs'].includes(desired)&&region.site==='torso'))continue;
-    const top=Math.max(Math.min(a.y,z.y),region.top),bottom=Math.min(Math.max(a.y,z.y),region.bottom);
-    if(bottom-top<=.001)continue;
-    const site=body.sites?.[region.site],y=clamp(site?.y??(top+bottom)/2,top+.0001,bottom-.0001),u=Math.abs(z.y-a.y)<1e-9?.5:(y-a.y)/(z.y-a.y),bladeX=a.x+(z.x-a.x)*u,edge=clamp(site?.x??(region.left+region.right)/2,region.left+.25,region.right-.25);
+    const top=Math.min(a.y,z.y),bottom=Math.max(a.y,z.y),site=body.sites?.[region.site];
+    if(region.target&&(region.target.y<top||region.target.y>bottom))continue;
+    const lo=region.target?region.target.y:Math.max(top,region.top),hi=region.target?region.target.y:Math.min(bottom,region.bottom);
+    if(!region.target&&hi-lo<=.001)continue;
+    const y=region.target?.y??clamp(site?.y??(lo+hi)/2,lo+.0001,hi-.0001),u=Math.abs(z.y-a.y)<1e-9?.5:(y-a.y)/(z.y-a.y),bladeX=a.x+(z.x-a.x)*u,edge=region.target?.x??clamp(site?.x??(region.left+region.right)/2,region.left+.25,region.right-.25);
     const winnerX=o.originalVictim+edge-bladeX,contactX=o.originalVictim+edge;
-    options.push({at,frameIndex:index,elapsed:keyTime(hero._clips,'delete-cleaver',index,index*600),site:region.site,winnerX,contact:{x:contactX,y},victimOffset:{x:contactX-o.originalVictim-(site?.x??0),y:y-(site?.y??0)},sourceOffset:{x:contactX-winnerX-z.x,y:y-z.y},score:(region.site===desired?0:10000)+priority*1000+Math.abs(y-(site?.y??y))+Math.max(region.left-(site?.x??0),0,(site?.x??0)-region.right)*4});
+    options.push({at,frameIndex:index,elapsed:keyTime(hero._clips,'delete-cleaver',index,index*600),site:region.site,winnerX,contact:{x:contactX,y},victimOffset:{x:contactX-o.originalVictim-(site?.x??0),y:y-(site?.y??0)},sourceOffset:{x:contactX-winnerX-z.x,y:y-z.y},bladeSegment:{start:{x:winnerX+a.x,y:a.y},end:{x:winnerX+z.x,y:z.y}},score:(region.site===desired?0:10000)+priority*1000+Math.abs(y-(site?.y??y))+Math.abs(edge-(site?.x??edge))*4});
    }
   }
   options.sort((a,b)=>a.score-b.score);const selected=options[0];if(!selected)return null;
@@ -62,14 +68,17 @@ export function nativeCleaverContacts(match,definition=NEW_DELETIONS.mutilator){
 }
 export function nativeCleaverPose(match,time,definition=NEW_DELETIONS.mutilator){
  const contacts=match._deletionOrigin.cleaverContacts??[],b=definition.beats;
- if(time<b.highCut||time>=b.present)return null;
- if(time>=b.heavyWindup&&time<b.finalCut&&match.fighters[match.winner]._clips['delete-cleaver-windup'])return {clip:'delete-cleaver-windup',elapsed:0,frameIndex:0};
+ if(time>=b.present)return null;
+ const next=contacts.find(c=>time<c.at),windupStart=next?.at===b.finalCut?b.heavyWindup:(next?.at??Infinity)-250;
+ if(next&&time>=windupStart&&match.fighters[match.winner]._clips['delete-cleaver-windup'])return {clip:'delete-cleaver-windup',elapsed:0,frameIndex:0};
+ if(time<b.highCut)return null;
  const contact=contacts.filter(c=>time>=c.at).at(-1);
  return contact?{clip:'delete-cleaver',elapsed:contact.elapsed,frameIndex:contact.frameIndex}:null;
 }
 
 export function butcherVictimState(t,definition=NEW_DELETIONS.mutilator,measuredContacts){const b=definition.beats,wounds=Array.isArray(measuredContacts)?[...new Set(measuredContacts.filter(c=>t>=c.at).map(c=>c.site))]:null;return {exposure:t>=b.finalCut?1:t>=b.lowCut?.85:t>=b.torsoCut?.5:t>=b.highCut?.25:0,tissue:t>=b.finalCut?0:1,pose:t>=b.finalCut?'heap':'standing',woundSites:wounds??(t>=b.lowCut?['head','torso','legs']:t>=b.torsoCut?['head','torso']:t>=b.highCut?['head']:[]),fall:0,rotation:0};}
 export function newDeletionPose(role,t,definition,clips,fighterHeight=Infinity){const b=definition.beats;
+ if(definition.mechanism==='signal-overload')return bnlDeletionPose(role,t,clips);
  if(definition.mechanism==='cleaver'){
   if(role==='victim')return t<b.brandish?held('high',210):hangingVictimPose(clips,held('high',210));
   if(t<b.brandish)return held('walk',t);if(t<b.highCut)return held('delete-present',0);if(t>=b.present)return held('delete-present',t-b.present);
@@ -94,6 +103,7 @@ export function newDeletionPose(role,t,definition,clips,fighterHeight=Infinity){
  return null;
 }
 export function newDeletionPositions(match,time,definition){
+ if(definition.mechanism==='signal-overload')return bnlDeletionPositions(match,time);
  const o=match._deletionOrigin,b=definition.beats;
  if(definition.mechanism==='cleaver'){const contacts=o.cleaverContacts??[],stations=[{at:0,winnerX:o.winner},...contacts];let winnerX=o.near;for(let i=1;i<stations.length;i++){const a=stations[i-1],z=stations[i];if(time<=z.at){winnerX=a.winnerX+(z.winnerX-a.winnerX)*eased(time,a.at,z.at);break;}winnerX=z.winnerX;}return {winnerX,winnerY:0,victimX:o.originalVictim,victimY:0};}
  if(definition.mechanism==='marbles'){const p=eased(time,0,b.shove);return {winnerX:o.winner+(o.target-o.direction*380-o.winner)*p,winnerY:0,victimX:o.originalVictim+(o.target-o.originalVictim)*p,victimY:0};}

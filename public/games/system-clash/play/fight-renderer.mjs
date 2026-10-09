@@ -177,6 +177,12 @@ function raggedStain(ctx,plan) {
 
 function drawProceduralInjury(ctx,plan) {
   const {width:w,height:h,seed,effect}=plan;
+  if(effect==='signal'){
+    // Stable missing signal pixels and displaced chroma are clipped to native alpha.
+    const cell=Math.max(2,w/8);
+    for(let i=0;i<11;i++){const x=(injuryNoise(seed,i*59+37)-.5)*w,y=(injuryNoise(seed,i*71+11)-.5)*h;ctx.fillStyle=i%3===0?'#090b15':i%2?'#b7f668':'#bd7aff';ctx.fillRect(x,y,cell*(i%3+1),cell);}
+    return;
+  }
   if(effect==='stain') {raggedStain(ctx,plan);return;}
   if(effect==='wash'||effect==='scorch') {
     const gradient=ctx.createRadialGradient(0,0,0,0,0,Math.max(w,h)*.6);
@@ -1878,7 +1884,7 @@ export function createFightRenderer(canvas) {
         layers.releaseArena();lastWorldClock=match.stage.clock;lastStageId=match.stage.id;
         ctx.save();ctx.translate(-(match.stage.cinematicOrigin??0),0);
         stageRenderer.drawBackground(ctx,match.stage,scene.stageArt);
-        stageRenderer.drawBehind(ctx,match.stage,scene.stageArt,{interfaceArt,reducedMotion:scene.reducedMotion,cameraX:worldCamera.x,fighting:match.phase==='fight',cinematicElapsed:match.phase==='deletion'||match.phase==='over'&&match.deletionElapsed>0?match.deletionElapsed:null});
+        stageRenderer.drawBehind(ctx,match.stage,scene.stageArt,{interfaceArt,reducedMotion:scene.reducedMotion,fighterPositions:match.fighters.map(f=>f.x+(match.phase==='fight'?0:(match.stage.cinematicOrigin??0))),cameraX:worldCamera.x,fighting:match.phase==='fight',cinematicElapsed:match.phase==='deletion'||match.phase==='over'&&match.deletionElapsed>0?match.deletionElapsed:null});
         ctx.restore();
       } else {layers.drawStage(ctx);lastWorldClock=null;lastStageId=null;}
       effects?.drawBehind?.(ctx, match);

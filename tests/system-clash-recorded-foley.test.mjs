@@ -24,6 +24,7 @@ test('ordinary organic hits use recorded body and wet layers; heavy contacts add
  const metal=planRecordedFoley(metalEvent,planFightSound(metalEvent));
  assert.ok(metal.layers.some(x=>x.group==='metal'));
  assert.ok(metal.layers.every(x=>!['wet','bone','slime','splash'].includes(x.group)));
+ const signalEvent={...heavyEvent,victimId:'bnl-01'},signal=planRecordedFoley(signalEvent,planFightSound(signalEvent));assert.equal(signal.material,'metal');assert.ok(signal.layers.every(x=>!['wet','bone','slime','splash'].includes(x.group)),'BNL signal housing uses dry native contact layers');
 });
 
 test('all fighter textures preserve distinct recorded timing/composition while unknown and spoken cue events have no recording',async()=>{
@@ -110,7 +111,7 @@ test('the existing emit owner plays immediate fallback then recorded contact; ne
 test('network/decode failures preserve procedural impact and all original fighter voice families',async()=>{
  await owner();const context=new Context(),audio=createFightAudio({contextFactory:()=>context,fetch:async()=>({ok:false,status:404})});
  assert.equal(await audio.startAudio(),true);context.currentTime+=1;assert.equal(audio.emit({type:'hit',attackerId:'9-bit',victimId:'6-bit',strength:2}),true);await tick();
- assert.ok(audio.getStats().playedVoices>0);assert.equal(audio.getStats().recordedFoleyPlayed,0);assert.equal(Object.keys(FIGHT_AUDIO_PROFILES).length,18);
+ assert.ok(audio.getStats().playedVoices>0);assert.equal(audio.getStats().recordedFoleyPlayed,0);assert.equal(Object.keys(FIGHT_AUDIO_PROFILES).length,19);
 });
 
 test('runtime clip bytes, WAV headroom, short duration and source credits exclude every held asset',async()=>{

@@ -14,6 +14,7 @@ export function assetPath(manifestPath, file) {
 // existing original-image keys unless they explicitly include the served copy.
 function fightImagePath(manifestPath,data,bundle) {
   const original=assetPath(manifestPath,data.file);
+  if(data.clarityFile){const clarity=assetPath(manifestPath,data.clarityFile);if(!bundle||bundle.images?.[clarity])return clarity;}
   if(!data.runtimeFile)return original;
   const runtime=assetPath(manifestPath,data.runtimeFile);
   return !bundle||bundle.images?.[runtime]?runtime:original;
@@ -79,6 +80,7 @@ function compileCombatPoses(asset,name,fighter) {
         {x:torso.x,y:torso.y+(legs.y-torso.y)*.45};
     return {bounds:{left:a.x,top:a.y,right:b.x,bottom:b.y},hurt,measuredHurt:!!frame.combatHurt,...nativePushRegions(frame,point),strike,strikeStart,
       sites:{head,torso,legs,grip:point([sites.grip.x,sites.grip.y])},
+      cutTargets:(frame.combatProfile?.cleaverTargets??[]).map(([site,x,y])=>({site:['head','torso','legs'][site],...point([x,y])})),
       strikeRadius:Math.max(9,Math.min(hand?16:20,height*(hand?.04:.055))),
 };
   })]));
@@ -182,7 +184,7 @@ export async function loadDeletionArt({bundle,baseURL,art}) {
     const path=`assets/deletions/${id}/manifest.json`,manifest=await readManifest(id,path);
     fighter.deletionManifest=manifest;
     for(const [name,data] of Object.entries(manifest.clips)) {
-      const image=await loadImage(assetPath(path,data.file));
+      const image=await loadImage(fightImagePath(path,data,bundle));
       fighter.clips['delete-'+name]=compileFightClip(data,image,manifest,'delete-'+name);
     }
   }
@@ -300,8 +302,10 @@ export async function loadStageArt({id='radio-studio',bundle,baseURL}={}) {
       catch{warnings.push(`${key}: layers unavailable`);return null;}
     };
     const [image,kit,layers]=await Promise.all([imageFor(`assets/stages/${id}.webp`),imageFor(`assets/stages/${id}-kit.webp`),layersFor()]);
+    const extraImages={};
+    await Promise.all(Object.entries(layers?.additionalAssets??{}).map(async([name,file])=>{if(!/^[a-z0-9-]+\.webp$/.test(file)){warnings.push(name+': invalid stage asset');return;}extraImages[name]=await imageFor(`assets/stages/${file}`);}));
     if(warnings.length){const index=stageArtCache.indexOf(entry);if(index>=0)stageArtCache.splice(index,1);}
-    return {id,image,kit,layers,warnings};
+    return {id,image,kit,layers,extraImages,warnings};
   })();
   stageArtCache.push(entry);while(stageArtCache.length>2)stageArtCache.shift();
   return entry.promise;

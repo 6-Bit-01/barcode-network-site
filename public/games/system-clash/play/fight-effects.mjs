@@ -268,6 +268,13 @@ export function createFightEffects(options = {}) {
     const strength = clamp(finite(event.strength, 1), 0.25, 2.5);
     // Peaceful contact and dialogue retain their audio cues, with native body art only.
     if(event.peaceful){audio.emit({...event,strength});return;}
+    // BNL is a projected signal: damage releases energy, without invented anatomy.
+    const signalDamage=event.victimId==='bnl-01'&&(['hit','weapon-embed','eye-pop','land','ko','deletion-impact'].includes(event.type)||(event.type==='deletion-cue'&&['blue-dissolve','blue-erased'].includes(event.cue)));
+    if(signalDamage){
+      burst('pulse-spark',x,y,direction,Math.round(22*strength),strength);
+      impact((event.type==='deletion-impact'?16:5)*strength,0);
+      audio.emit({...event,strength,damageKind:'scorch'});return;
+    }
     switch (event.type) {
       case 'hit': {
         const kind=event.damageKind??'bruise';

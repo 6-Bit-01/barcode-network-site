@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import {createGameScreenHost} from '../public/games/system-clash/play/game-screen-host.mjs';
-import {withMatchRules,matchRulesFromURL} from '../public/games/system-clash/play/fight-rules.mjs';
-import {parseDemoLaunch,withControllerSeats} from '../public/games/system-clash/play/demo-flow.mjs';
+import {withMatchRules,matchRulesFromURL,loadClashPreferences} from '../public/games/system-clash/play/fight-rules.mjs';
+import {parseDemoLaunch,withControllerSeats,DEMO_ROSTER_CAPACITY} from '../public/games/system-clash/play/demo-flow.mjs';
+import {fightLaunchRoster} from '../public/games/system-clash/play/fight-launch.mjs';
 import {FIGHTER_STYLES} from '../public/games/system-clash/play/fight-engine.mjs';
 const fightSource=readFileSync(new URL('../public/games/system-clash/play/fight.js',import.meta.url),'utf8');
 const demoSource=readFileSync(new URL('../public/games/system-clash/play/demo.mjs',import.meta.url),'utf8');
@@ -44,7 +45,7 @@ function nestedHost(){
 test('initializing a selected demo fight prepares the selected fighters without navigating back to selection',async()=>{
  const {context,items,navigations}=navigationContext();context.location.href=base+'fight.html?demo=1&mode=cpu&p1=lyra&p2=9-bit';
  let boots=0;const errors=[];Object.assign(context,{window:{SYSTEM_CLASH_FIGHT_BUNDLE:{roster:[{id:'lyra',name:'Lyra'},{id:'9-bit',name:'Nine'}]}},
-  document:{body:element('body'),createElement:element},FIGHTER_STYLES,parseDemoLaunch,launchParams:new URL(context.location.href).searchParams,
+  document:{body:element('body'),createElement:element},FIGHTER_STYLES,parseDemoLaunch,fightLaunchRoster,loadClashPreferences,localStorage:{getItem:()=>JSON.stringify({...priorRules,corporateUnlocked:true})},sessionStorage:{getItem:()=>null},launchParams:new URL(context.location.href).searchParams,
   effects:{setMuted(){},setReducedMotion(){}},deletionDefinition:()=>null,boot:async()=>boots++,loading:error=>errors.push(error)});
  const start=fightSource.indexOf('async function initializeRoster()'),end=fightSource.indexOf('\n}',start)+2;
  await vm.runInNewContext('('+fightSource.slice(start,end)+')()',context);
@@ -105,17 +106,17 @@ test('the title keyboard cannot activate underlying menus while static assets ar
  context.menuReady=true;listener({code:'Enter',key:'Enter',repeat:false,preventDefault(){},target:{closest:()=>false}});assert.equal(activated,1,'The same action works once assets are ready');
 });
 
-for(const button of ['options-open','controls-open'])test(`the static loader blocks native ${button} button activation until assets are ready`,()=>{
- const items=new Map();let opened=0;const context={menuReady:false,matchRules:priorRules,gamepads:{reset(){}},matchOptions:{show:()=>opened++},closeControls(){},
+for(const button of ['options-open','title-options-open','controls-open'])test(`the static loader blocks native ${button} button activation until assets are ready`,()=>{
+ const items=new Map();let opened=0;const context={menuReady:false,matchRules:priorRules,uiSound(){},gamepads:{reset(){}},matchOptions:{show:()=>opened++},closeControls(){},
   $(id){if(!items.has(id))items.set(id,{...element(),showModal:()=>opened++});return items.get(id);}};
- const source=demoSource.split('\n').find(value=>value.startsWith(`$('${button}').addEventListener('click'`));
+ const source=demoSource.split('\n').find(value=>button.includes('options-open')?value.startsWith("for(const id of ['options-open','title-options-open'])"):value.startsWith(`$('${button}').addEventListener('click'`));
  vm.runInNewContext(source,context);const activate=items.get(button).events.click;
  activate();assert.equal(opened,0,'Native keyboard activation cannot put a dialog above the loader');
  context.menuReady=true;activate();assert.equal(opened,1,'The same button is usable once loading succeeds');
 });
 
 test('a failed menu asset retains the reachable Retry button when other image requests finish later',async()=>{
- const pending=[],items=new Map(),context={URL,URLSearchParams,location:{href:base+'index.html'},menuReady:false,params:new URLSearchParams(),FIGHTER_STYLES,catalog:null,state:null,
+ const pending=[],items=new Map(),context={URL,URLSearchParams,location:{href:base+'index.html'},menuReady:false,params:new URLSearchParams(),FIGHTER_STYLES,DEMO_ROSTER_CAPACITY,corporateUnlocked:false,catalog:null,state:null,
   document:{querySelectorAll:()=>[]},createDemoSelection:()=>({}),
   $(id){if(!items.has(id))items.set(id,element());return items.get(id);},
   fetch:async()=>({ok:true,json:async()=>({fighters:[{id:'lyra',portrait:'assets/menu/lyra-portrait.webp',standing:'assets/menu/lyra-standing.webp'}]})}),

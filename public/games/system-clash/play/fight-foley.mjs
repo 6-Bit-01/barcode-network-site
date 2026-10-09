@@ -10,6 +10,7 @@ const freeze=value=>{if(value&&typeof value==='object'){for(const child of Objec
 // These are contact textures, not new voices. Existing vocal banks keep identity.
 // Source composition, onset spacing and weight vary as well as small rate shifts.
 const palettes=freeze({
+ 'bnl-01':{accent:'metal',rate:1.17,body:.31,secondary:.115,crack:.095,offset:.011},
  'doofnoobler':{accent:'cloth',rate:1.18,body:.27,secondary:.16,crack:.10,offset:.017},
  'lyra':{accent:'metal',rate:1.27,body:.34,secondary:.20,crack:.12,offset:.004},
  'papa-oak':{accent:'wood',rate:.77,body:.46,secondary:.22,crack:.19,offset:.042},

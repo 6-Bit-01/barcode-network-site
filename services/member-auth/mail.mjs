@@ -1,5 +1,23 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
 
+
+let transactionSequence=0;
+function sqliteTransaction(database,operation) {
+  return (...args)=>{
+    const savepoint='member_mail_'+(++transactionSequence);
+    database.exec('SAVEPOINT '+savepoint);
+    try {
+      const result=operation(...args);
+      database.exec('RELEASE SAVEPOINT '+savepoint);
+      return result;
+    } catch(error) {
+      database.exec('ROLLBACK TO SAVEPOINT '+savepoint);
+      database.exec('RELEASE SAVEPOINT '+savepoint);
+      throw error;
+    }
+  };
+}
+
 export function createResendTransport(apiKey, fetcher=fetch) {
   if (!apiKey) throw new Error('RESEND_API_KEY is required');
   return async (mail) => {
@@ -34,7 +52,7 @@ export function createMailOutbox(database,{secret,sender,replyTo,baseURL,transpo
     const cipher=createDecipheriv('aes-256-gcm',key,iv);cipher.setAuthTag(tag);
     return JSON.parse(Buffer.concat([cipher.update(data),cipher.final()]).toString('utf8'));
   }
-  const enqueueTransaction=database.transaction((notice)=>{
+  const enqueueTransaction=sqliteTransaction(database,(notice)=>{
     const time=now();
     const hash=createHmac('sha256',key).update(notice.email.toLowerCase()).digest('hex');
     const count=database.prepare('SELECT count(*) AS total FROM member_mail_outbox WHERE recipient_hash=? AND created_at>?').get(hash,time-3600_000).total;
@@ -62,7 +80,7 @@ export function createMailOutbox(database,{secret,sender,replyTo,baseURL,transpo
         const row=database.prepare("SELECT * FROM member_mail_outbox WHERE status='pending' AND next_attempt<=? ORDER BY created_at,id LIMIT 1").get(time);
         if(!row)return false;
         const day=new Date(time).toISOString().slice(0,10);
-        const reserved=database.transaction(()=>{
+        const reserved=sqliteTransaction(database,()=>{
           database.prepare('INSERT OR IGNORE INTO member_mail_budget(day,attempts) VALUES (?,0)').run(day);
           if(database.prepare('SELECT attempts FROM member_mail_budget WHERE day=?').get(day).attempts>=100)return false;
           database.prepare('UPDATE member_mail_budget SET attempts=attempts+1 WHERE day=?').run(day);return true;

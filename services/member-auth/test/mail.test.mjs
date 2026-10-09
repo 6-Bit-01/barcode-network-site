@@ -33,8 +33,8 @@ test('unsafe mail destinations and link origins are rejected before queueing',as
 
 
 test('shutdown waits for in-flight delivery; permanent provider failure discards token payload',async(t)=>{
- const db=new Database(':memory:');t.after(()=>db.close());let release;const transport=()=>new Promise(resolve=>{release=()=>resolve({id:'accepted'});});
- const outbox=createMailOutbox(db,{...configuration,transport});await outbox.enqueue(notice);const send=outbox.flushOne();let idle=false;const shutdown=outbox.waitForIdle().then(()=>{idle=true;});assert.equal(idle,false);release();await send;await shutdown;assert.equal(idle,true);
+ const db=new Database(':memory:');t.after(()=>db.close());let release,entered;const started=new Promise(resolve=>{entered=resolve;});const transport=()=>new Promise(resolve=>{release=()=>resolve({id:'accepted'});entered();});
+ const outbox=createMailOutbox(db,{...configuration,transport});await outbox.enqueue(notice);const send=outbox.flushOne();await started;let idle=false;const shutdown=outbox.waitForIdle().then(()=>{idle=true;});assert.equal(idle,false);release();await send;await shutdown;assert.equal(idle,true);
  const failed=createMailOutbox(db,{...configuration,transport:async()=>{throw Object.assign(new Error('bad request'),{status:422,retryable:false});}});await failed.enqueue({...notice,email:'failed@example.com'});await failed.flushOne();
  const row=db.prepare("SELECT status,payload FROM member_mail_outbox WHERE status='failed'").get();assert.deepEqual({...row},{status:'failed',payload:''});
 });

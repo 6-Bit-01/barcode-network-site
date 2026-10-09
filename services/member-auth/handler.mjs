@@ -1,12 +1,18 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { allowedEndpoint, normalizeBody, memberCookies, safeRedirect, AUTH_PATH } from './contract.mjs';
 const privateHeaders={'cache-control':'private, no-store','referrer-policy':'no-referrer'};
-export function createMemberHandler(auth,{baseURL,serviceToken}) {
+export function createMemberHandler(auth,{baseURL,serviceToken,access}) {
   if(!serviceToken||serviceToken.length<32)throw new Error('Private service credential required');
   const expected=createHash('sha256').update(serviceToken).digest(), origin=new URL(baseURL).origin;
   return async function handle(request) {
     const supplied=request.headers.get('x-barcode-service-token')||'';
     if(supplied.length>512||!timingSafeEqual(expected,createHash('sha256').update(supplied).digest()))return Response.json({code:'FORBIDDEN'},{status:403,headers:privateHeaders});
+    const accessPath=new URL(request.url).pathname;
+    if(access && ['/api/member/access','/api/member/owner/accounts','/api/member/owner/accounts/action'].includes(accessPath)){
+      if(request.method!==(accessPath.endsWith('/action')?'POST':'GET'))return Response.json({code:'NOT_FOUND'},{status:404,headers:privateHeaders});
+      if(request.method==='POST'&&request.headers.get('origin')!==origin)return Response.json({code:'ORIGIN_DENIED'},{status:403,headers:privateHeaders});
+      return access.handle(request);
+    }
     const url=new URL(request.url),path=url.pathname.slice(AUTH_PATH.length+1);
     if(!url.pathname.startsWith(`${AUTH_PATH}/`)||!allowedEndpoint(path,request.method))return Response.json({code:'NOT_FOUND'},{status:404,headers:privateHeaders});
     if(request.method==='POST'&&request.headers.get('origin')!==origin)return Response.json({code:'ORIGIN_DENIED'},{status:403,headers:privateHeaders});

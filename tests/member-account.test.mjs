@@ -9,7 +9,7 @@ function render(mode='signin',token){
  const testModule={exports:{}};
  const source=fs.readFileSync(new URL('../src/components/MemberAccount.tsx',import.meta.url),'utf8');
  const mock={...React,useEffect:()=>{},useState:(initial)=>[initial,()=>{}]};
- vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText,{module:testModule,exports:testModule.exports,AbortController,require:(id)=>id==='react'?mock:id==='next/link'?({children,...props})=>React.createElement('a',props,children):require(id)});
+ vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText,{module:testModule,exports:testModule.exports,AbortController,require:(id)=>id==='react'?mock:id==='@/components/MemberAccessNavigation'?()=>null:id==='next/link'?({children,...props})=>React.createElement('a',props,children):require(id)});
  return require('react-dom/server').renderToStaticMarkup(React.createElement(testModule.exports.MemberAccount,{initialMode:mode,resetToken:token}));
 }
 test('account/reset pages are private and isolated from BNL and hidden games',()=>{

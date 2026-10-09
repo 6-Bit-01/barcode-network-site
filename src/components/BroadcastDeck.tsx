@@ -7,12 +7,11 @@ import { BroadcastActivityLog } from "@/components/BroadcastActivityLog";
 import { broadcastArchiveArtistHref, normalizeBroadcastArchiveProjectKey } from "@/lib/broadcast-archive";
 import { deckExternalTrackHref } from "@/lib/broadcast-deck";
 import { buildQueueTimingDisplay, queueTimingInputFromPublicSnapshot } from "@/lib/queue-timing-display";
-import { formatRuntime, type QueuePublicSnapshot, type QueuePublicStats, type QueuePublicTrack } from "@/lib/queue-types";
+import { formatRuntime, type QueuePublicSnapshot, type QueuePublicStats, type QueuePublicTrack, type QueuePublicShowStats } from "@/lib/queue-types";
 import { PUBLIC_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 import { hasActiveQueueSession, startSessionBoundPolling } from "@/lib/session-bound-polling";
 
 type DeckView = "feed" | "line" | "mine";
-const ORIENTATION_STORAGE_KEY = "barcode-broadcast-deck-oriented-v1";
 
 function displayTime(value: string): string {
   const parsed = new Date(value);
@@ -36,6 +35,17 @@ function uniqueLiveTracks(snapshot: QueuePublicSnapshot | null): QueuePublicTrac
     ids.add(track.id);
     return true;
   });
+}
+
+function ownedTrackStatus(snapshot: QueuePublicSnapshot, trackId: string, currentShow: QueuePublicShowStats | null): string {
+  if (snapshot.nowPlaying?.id === trackId) return "Now Playing";
+  if (snapshot.upNext?.id === trackId) return "Next In Line";
+  if (snapshot.queue.some(track => track.id === trackId)) return "Waiting";
+  const outcome = currentShow?.trackRoster.find(track => track.trackId === trackId)?.outcome;
+  if (outcome === "finished") return "Completed";
+  if (outcome === "skipped") return "Skipped";
+  if (outcome === "removed") return "Removed";
+  return "Status unavailable";
 }
 
 function endpointWithParam(endpoint: string, key: string, value: string): string {
@@ -95,39 +105,49 @@ export function BroadcastDeck({
   const [snapshot, setSnapshot] = useState<QueuePublicSnapshot | null>(null);
   const [stats, setStats] = useState<QueuePublicStats | null>(null);
   const [view, setView] = useState<DeckView>("feed");
+  const [arrival, setArrival] = useState({ sessionId: "", trackId: "" });
   const [orientationOpen, setOrientationOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [clockNow, setClockNow] = useState(0);
 
   const load = useCallback(async () => {
-    const submitterToken = window.localStorage.getItem("barcode-radio-submitter-token")?.trim() ?? "";
-    const queueUrl = submitterToken ? endpointWithParam(queueEndpoint, "submitterToken", submitterToken) : queueEndpoint;
     try {
+      const params = new URLSearchParams(window.location.search);
+      const requestedSessionId = previewMode ? "" : params.get("sessionId")?.trim() ?? "";
+      let submitterToken = "";
+      try { submitterToken = window.localStorage.getItem("barcode-radio-submitter-token")?.trim() ?? ""; } catch { /* The verified ownership cookie remains usable without storage. */ }
+      const sessionQueueUrl = requestedSessionId ? endpointWithParam(queueEndpoint, "sessionId", requestedSessionId) : queueEndpoint;
+      const queueUrl = submitterToken ? endpointWithParam(sessionQueueUrl, "submitterToken", submitterToken) : sessionQueueUrl;
+      const statsUrl = requestedSessionId ? endpointWithParam(statsEndpoint, "sessionId", requestedSessionId) : statsEndpoint;
       const [queueResponse, statsResponse] = await Promise.all([
         fetch(queueUrl, { cache: "no-store" }),
-        fetch(statsEndpoint, {
+        fetch(statsUrl, {
           cache: "no-store",
           headers: submitterToken ? { "x-barcode-submitter-token": submitterToken } : undefined,
         }).catch(() => null),
       ]);
       if (!queueResponse.ok) throw new Error("Queue unavailable");
       const nextSnapshot = await queueResponse.json() as QueuePublicSnapshot;
-      setSnapshot(nextSnapshot);
-      setStats(statsResponse?.ok ? await statsResponse.json().catch(() => null) as QueuePublicStats | null : null);
+      // A signed rehearsal cookie may reach the shared queue API, but never the public Deck.
+      const visibleSnapshot = !previewMode && (nextSnapshot.session?.purpose !== "live_broadcast" || (requestedSessionId && nextSnapshot.session.sessionId !== requestedSessionId)) ? null : nextSnapshot;
+      setSnapshot(visibleSnapshot);
+      const nextStats = statsResponse?.ok ? await statsResponse.json().catch(() => null) as QueuePublicStats | null : null;
+      setStats(visibleSnapshot ? nextStats : null);
+      setArrival({ sessionId: requestedSessionId, trackId: previewMode ? "" : params.get("submitted")?.trim() ?? "" });
       setLoadError(false);
       setLoaded(true);
       setClockNow(Date.now());
-      return hasActiveQueueSession(nextSnapshot);
+      return visibleSnapshot ? hasActiveQueueSession(visibleSnapshot) : false;
     } catch {
       setLoadError(true);
       setLoaded(true);
       return null;
     }
-  }, [queueEndpoint, statsEndpoint]);
+  }, [previewMode, queueEndpoint, statsEndpoint]);
 
   useEffect(() => {
-    setOrientationOpen(!previewMode && window.localStorage.getItem(ORIENTATION_STORAGE_KEY) !== "1");
+    if (!previewMode && new URLSearchParams(window.location.search).has("submitted")) setView("mine");
     return startSessionBoundPolling({ intervalMs: PUBLIC_QUEUE_POLL_INTERVAL_MS, poll: load });
   }, [load, previewMode]);
 
@@ -135,6 +155,10 @@ export function BroadcastDeck({
   const currentShow = stats?.currentShow && stats.currentShow.sessionId === snapshot?.session?.sessionId ? stats.currentShow : null;
   const timing = useMemo(() => snapshot ? buildQueueTimingDisplay(queueTimingInputFromPublicSnapshot(snapshot), clockNow ? { now: new Date(clockNow) } : {}) : null, [clockNow, snapshot]);
   const queueHref = queueHrefOverride ?? (snapshot?.session && snapshot.session.status !== "archived" ? `/queue/${encodeURIComponent(snapshot.session.sessionId)}` : "/queue");
+  const manageSongsHref = queueHrefOverride ? `${queueHrefOverride}#your-songs` : snapshot?.session ? `/queue/${encodeURIComponent(snapshot.session.sessionId)}#your-songs` : "/queue";
+  const ownedTracks = snapshot?.ownedTracks ?? [];
+  const acceptedTrack = !previewMode && arrival.sessionId && arrival.sessionId === snapshot?.session?.sessionId ? ownedTracks.find(track => track.id === arrival.trackId) : undefined;
+  const acceptedCredit = currentShow?.trackRoster.find(track => track.trackId === acceptedTrack?.id);
   const isLive = Boolean(snapshot?.session && snapshot.session.status !== "archived" && snapshot.session.broadcastPhase !== "ended");
   // Queue capacity excludes removals, and terminal queue entries include skips.
   // Neither is a substitute for the full show's explicit lifecycle totals.
@@ -144,7 +168,6 @@ export function BroadcastDeck({
   const personalHandles = stats?.personalHistory?.handles ?? [];
 
   function dismissOrientation() {
-    window.localStorage.setItem(ORIENTATION_STORAGE_KEY, "1");
     setOrientationOpen(false);
   }
 
@@ -157,12 +180,13 @@ export function BroadcastDeck({
           <div className="relative flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
             <div className="max-w-3xl">
               <div className="flex flex-wrap items-center gap-2"><span className={`${isLive ? "border-[#ffaa00]/60 bg-[#ffaa00]/10 text-[#ffaa00]" : "border-border text-muted"} border px-2 py-1 text-[10px] font-black uppercase tracking-[0.24em]`}>{broadcastPhaseLabel(snapshot)}</span>{snapshot?.status.isOpen && <span className="border border-accent/55 bg-accent/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.24em] text-accent">Submissions open</span>}</div>
-              <p className="mt-5 text-xs font-bold uppercase tracking-[0.38em] text-[#ffaa00]">{previewMode ? "Private test show companion" : "Live show companion"}</p>
-              <h1 className="mt-3 text-4xl font-black tracking-tight text-foreground sm:text-6xl">The Broadcast Deck</h1>
-              <p className="mt-4 max-w-2xl text-sm leading-relaxed text-muted sm:text-base">Song submissions stay in the queue. Once you are done submitting—or if you are just watching—keep the Deck open to follow Now Playing, what is coming up, Wheel movement, show progress, and your submissions from this browser.</p>
+              <p className="mt-3 text-xs font-bold uppercase tracking-[0.38em] text-[#ffaa00]">{previewMode ? "Private test show companion" : "Live show companion"}</p>
+              <h1 className="mt-2 text-2xl font-black text-foreground sm:text-3xl">The Broadcast Deck</h1>
+              {snapshot?.session && <p className="mt-3 text-sm text-muted">{snapshot.session.title} · {snapshot.session.showDate}</p>}
+              {acceptedTrack && <div role="status" className="mt-4 border-l-2 border-cyan-200 pl-3"><p className="text-xs font-black uppercase text-cyan-200">Song accepted</p><p className="mt-2 font-bold text-foreground">{acceptedCredit?.projectLabel ?? acceptedTrack.artist} · {acceptedTrack.title}</p>{(acceptedCredit?.collaboratorNames ?? acceptedTrack.collaboratorNames) && <p className="mt-1 text-xs text-muted">Featuring {acceptedCredit?.collaboratorNames ?? acceptedTrack.collaboratorNames}</p>}</div>}
             </div>
             <div className="grid gap-2 sm:grid-cols-2 lg:w-[22rem] lg:grid-cols-1">
-              <Link href={queueHref} className="border border-accent bg-accent px-4 py-3 text-center text-xs font-black uppercase tracking-widest text-white hover:bg-red-700">Open current queue</Link>
+              <Link href={ownedTracks.length ? manageSongsHref : queueHref} className="border border-accent bg-accent px-4 py-3 text-center text-xs font-black uppercase tracking-widest text-white hover:bg-red-700">{ownedTracks.length ? "Manage My Songs" : "Open current queue"}</Link>
               <Link href={archiveHref} className="border border-cyan-200/55 px-4 py-3 text-center text-xs font-black uppercase tracking-widest text-cyan-200 hover:bg-cyan-200 hover:text-background">{previewMode ? "Preview Archive" : "Broadcast Archive"}</Link>
               <button type="button" onClick={() => setOrientationOpen(true)} className="border border-border px-4 py-3 text-xs font-black uppercase tracking-widest text-muted hover:border-[#ffaa00] hover:text-[#ffaa00]">How to use the Deck</button>
             </div>
@@ -178,6 +202,21 @@ export function BroadcastDeck({
 
       {loadError && <section role="alert" className="border border-danger/45 bg-danger/5 p-4 text-sm text-danger">The live signal did not refresh. The last confirmed Deck state remains visible. <button type="button" onClick={() => void load()} className="ml-2 underline underline-offset-4">Try again</button></section>}
       {!loaded && <section className="border border-border bg-surface p-8 text-center text-sm uppercase tracking-widest text-muted">Locking onto the BARCODE Radio signal…</section>}
+
+      {snapshot?.session && ownedTracks.length > 0 && <section aria-labelledby="deck-owned-songs-title">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-cyan-200/40 pb-3"><h2 id="deck-owned-songs-title" className="text-sm font-black uppercase text-cyan-200">Your songs this show</h2><Link href={manageSongsHref} className="text-xs font-bold text-cyan-200 underline underline-offset-4">Manage My Songs</Link></div>
+        <div className="mt-3 space-y-2">{ownedTracks.map(track => {
+          const credit = currentShow?.trackRoster.find(item => item.trackId === track.id);
+          const primary = credit?.projectLabel ?? track.artist;
+          const collaborators = credit?.collaboratorNames ?? track.collaboratorNames;
+          const publicTrack = liveTracks.find(item => item.id === track.id) ?? snapshot.completed.find(item => item.id === track.id);
+          const externalHref = deckExternalTrackHref(publicTrack ?? credit);
+          return <article key={track.id} data-owned-track-id={track.id} className="grid gap-3 border border-border bg-surface p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+            <div className="min-w-0"><Link href={projectLink(primary, archiveHref)} className="font-bold text-foreground hover:text-accent">{primary}</Link><p className="mt-1 text-sm text-muted">{track.title}</p>{collaborators && <p className="mt-2 text-xs text-muted">Featuring {collaborators.split(/[,;]+/).map((name, index) => <span key={index}>{index > 0 && ", "}<Link href={projectLink(`featured:${name.trim()}`, archiveHref)} className="underline underline-offset-4 hover:text-accent">{name.trim()}</Link></span>)}</p>}</div>
+            <div className="flex flex-wrap items-center gap-3 sm:justify-end"><span className="text-xs font-bold text-cyan-200">{ownedTrackStatus(snapshot, track.id, currentShow)}</span>{externalHref && <a href={externalHref} target="_blank" rel="noopener noreferrer" className="text-xs text-muted underline underline-offset-4 hover:text-accent">Open music</a>}</div>
+          </article>;
+        })}</div>
+      </section>}
 
       {loaded && !isLive ? (
         <section className="border border-border bg-surface p-6 sm:p-8">

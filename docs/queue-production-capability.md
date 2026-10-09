@@ -77,6 +77,12 @@ Every persisted queue change—submission, admin action, session/settings update
 
 Public and admin snapshot reads are non-persistent: polling may derive the current display state, but it does not write the queue or advance its revision. Apple Music host rejection, including terminal-dot host variants such as `music.apple.com.`, occurs before any queue snapshot read.
 
+## Submission-to-Deck handoff
+
+The queue displays the authoritative personal allowance and cooldown on both intake steps. Accepted receipts use persisted credits, including collaborators, rather than the draft. Free acceptance uses a brief confirmation flourish (skipped for reduced motion), then returns to the receipt or, on the final available slot, opens the exact show in the Broadcast Deck. The final-free submit button announces this destination before submission. The handoff requires a confirmed saved track in the same session and a finite server `remaining <= 0`; it never uses local click counts or assumes the configured limit is three. Failed POSTs or readback, unknown allowance, paid checkout and checkout recovery do not redirect to the Deck. The original entry portal, legal acceptance, payment activation and all mutation owners remain unchanged.
+
+The public Deck shows an arrival receipt only for a track present in the requesting browser's verified `ownedTracks`, without exposing private notes or edit capabilities. Its personal song list derives live positions from the queue and terminal outcomes from matching public show statistics; missing outcome evidence stays unavailable. Received/Played totals still require that matching statistics owner. Orientation is optional. Rehearsal, simulation and unknown-purpose sessions do not gain public Deck links or appear on its shared-API read. Their authorized queue and existing admin-only private Deck preview remain intact; this does not enable either production capability or create a participant companion route.
+
 ## Rolling show timing contract
 
 The submission window is outside the show clock. `Start Broadcast` records `broadcastStartedAt`; from that moment the shared timing owner combines elapsed show time with the actual remaining queue workload. The target is five hours and the six-hour boundary is an operational redline only: it raises pressure but never stops playback or ends the session.

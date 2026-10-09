@@ -20,12 +20,12 @@ import { displayEstimate, buildQueueTimingDisplay, priorityDisplayFromImpact, pu
 import type { QueuePublicSnapshot, QueuePublicTrack } from "@/lib/queue-types";
 import { PUBLIC_QUEUE_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
 import { hasActiveQueueSession, startSessionBoundPolling } from "@/lib/session-bound-polling";
+import { publicQueueDeckHref, type QueueSubmissionReceipt } from "@/lib/queue-submission-flow";
 
 type QueueView = "active" | "recent";
 type ActivityTone = "red" | "amber" | "gold" | "cyan" | "archive" | "danger";
 type QueueActivity = { id: string; text: string; detail: string; tone: ActivityTone; createdAt: number };
 type ResidueMap = Record<string, { tone: ActivityTone; nonce: number }>;
-type PublicSubmissionReceipt = { artist: string; title: string; sessionTitle: string; sessionDate: string; trackCode: string };
 
 const PRIORITY_SIGNAL_LABEL = "Priority Signal";
 const MIN_PRIORITY_ACTIVE_DEPTH = 2;
@@ -231,7 +231,7 @@ export function PublicQueueSession({ sessionId, snapshotEndpoint = "/api/queue" 
   const [routingGhosts, setRoutingGhosts] = useState<RoutingGhost[]>([]);
   const [publicHudMinimized, setPublicHudMinimized] = useState(false);
   const [publicHudHeight, setPublicHudHeight] = useState(0);
-  const [acceptedReceipt, setAcceptedReceipt] = useState<PublicSubmissionReceipt | null>(null);
+  const [acceptedReceipt, setAcceptedReceipt] = useState<QueueSubmissionReceipt | null>(null);
   const previousSnapshotRef = useRef<QueuePublicSnapshot | null>(null);
   const snapshotMovementKey = useMemo(() => publicSnapshotMovementKey(snapshot), [snapshot]);
   function emitRoutingGhost(ghost: Omit<RoutingGhost, "id">) {
@@ -239,12 +239,6 @@ export function PublicQueueSession({ sessionId, snapshotEndpoint = "/api/queue" 
     setRoutingGhosts((current) => [...current, { ...ghost, id }].slice(-5));
     window.setTimeout(() => setRoutingGhosts((current) => current.filter((item) => item.id !== id)), ghost.duration + 180);
   }
-  useEffect(() => {
-    if (!acceptedReceipt) return;
-    const timer = window.setTimeout(() => setAcceptedReceipt(null), 18000);
-    return () => window.clearTimeout(timer);
-  }, [acceptedReceipt]);
-
   const captureTrackRects = useFlipTrackMovement(snapshotMovementKey, emitRoutingGhost);
 
   function triggerResidue(trackId: string | null | undefined, tone: ActivityTone) {
@@ -605,18 +599,13 @@ export function PublicQueueSession({ sessionId, snapshotEndpoint = "/api/queue" 
     <div className={`min-w-0 space-y-6 [overflow-wrap:anywhere] max-sm:[&_button]:min-h-[44px] ${sponsorBreakRunning ? "sponsor-mode" : ""}`} style={{ "--queue-content-top": `calc(${publicHudHeight}px + 6.375rem + env(safe-area-inset-top))` } as CSSProperties}>
       <MeasuredQueueHud mounted={mounted} onHeightChange={setPublicHudHeight}>
         <PersonalSignalStatusBar snapshot={snapshot} timingSummary={timingSummary} minimized={publicHudMinimized} onToggleMinimized={() => setPublicHudMinimized((current) => !current)} canSubmit={canSubmitFromHud} submitLabel={hudSubmitLabel} onSubmit={openIntakeCorridor} />
-        <ReceiverStatusPanel snapshot={snapshot} submissionsOpen={isOpen} isBroadcastActive={isBroadcastActive} pulse={broadcastStartPulse} minimized={publicHudMinimized} />
       </MeasuredQueueHud>
       <div className="space-y-6" style={contentOffsetStyle}>
         <section className="border-b border-border/70 pb-4">
           <p className="text-xs uppercase tracking-[0.35em] text-muted">{"//"} BARCODE RADIO</p>
           <h1 className="mt-3 text-3xl font-bold tracking-tight text-foreground sm:text-4xl"><span className="text-accent text-glow">Broadcast</span> Queue</h1>
-          <p className="mt-2 text-sm text-muted">Current BARCODE Radio session monitor.</p>
-          <div className="mt-4 border border-[#ffaa00]/40 bg-[#ffaa00]/5 p-3">
-            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#ffaa00]">Done submitting—or just watching?</p>
-            <p className="mt-1 text-xs leading-relaxed text-muted">Open the Broadcast Deck to follow Now Playing, the queue route, Wheel movement, and show activity. Song submissions stay here in the queue.</p>
-            <div className="mt-3 flex flex-wrap gap-2"><Link href="/radio/deck" className="border border-[#ffaa00]/55 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[#ffaa00] hover:bg-[#ffaa00] hover:text-background">Open Broadcast Deck</Link><Link href="/radio/archive" className="border border-cyan-200/45 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-cyan-200 hover:bg-cyan-200 hover:text-background">Broadcast Archive</Link></div>
-          </div>
+          <p className="mt-2 text-sm text-muted">{snapshot?.session?.title ?? "BARCODE Radio"} {snapshot?.session?.showDate && ` / ${snapshot.session.showDate}`}</p>
+          {publicQueueDeckHref(snapshot?.session) && <Link href={publicQueueDeckHref(snapshot?.session)!} className="mt-3 inline-flex min-h-11 items-center text-sm font-bold text-[#ffaa00] underline underline-offset-4">Open Broadcast Deck</Link>}
         </section>
         {sponsorBreakRunning && <section className="sponsor-mode-banner border border-[#ffaa00]/45 bg-[#ffaa00]/8 p-3" role="status" aria-live="polite"><p className="text-xs font-bold uppercase tracking-[0.34em] text-[#ffaa00]">A WORD FROM OUR SPONSOR</p><p className="mt-1 text-sm text-muted">The 11:00 sponsor break is in progress. The queue, submissions, status, and navigation stay live.</p></section>}
         <div className="-mt-2 mb-1 flex justify-start">
@@ -627,13 +616,11 @@ export function PublicQueueSession({ sessionId, snapshotEndpoint = "/api/queue" 
           />
         </div>
         {checkoutNotice && <div className="border border-[#ffaa00]/40 bg-[#ffaa00]/5 p-3 text-sm text-[#ffaa00]">{checkoutNotice}</div>}
-        {acceptedReceipt && <div className="relative z-20 border border-accent/80 bg-accent/15 p-3 text-sm text-foreground shadow-[0_0_30px_rgba(255,0,0,0.18)]"><div className="flex items-start justify-between gap-3"><div><p className="font-bold uppercase tracking-[0.18em] text-accent">Submission accepted</p><p className="mt-1">{acceptedReceipt.artist} — {acceptedReceipt.title}</p><p className="text-xs text-muted">{acceptedReceipt.sessionTitle} · {acceptedReceipt.sessionDate}</p><p className="text-xs">Confirmation: {acceptedReceipt.trackCode}</p></div><button type="button" onClick={() => setAcceptedReceipt(null)} className="border border-border px-2 py-1 text-[10px] uppercase tracking-widest text-muted">Close</button></div></div>}
-
-        <SessionPhasePanel snapshot={snapshot} timingSummary={timingSummary} submissionsOpen={isOpen} canSubmit={canSubmitFromHud} isBroadcastActive={isBroadcastActive} />
-
-        <QueueSongManager sessionId={sessionId} tracks={snapshot?.ownedTracks ?? []} editingEnabled={snapshot?.submitterEditingEnabled === true} canAdd={canSubmitFromHud} onAdd={openIntakeCorridor} onRefresh={load} />
-
-        <SubmissionActivity items={activity} />
+        {acceptedReceipt && <QueueSubmissionReceiptPanel receipt={acceptedReceipt} canSubmit={canSubmitFromHud} onSubmit={openIntakeCorridor} onReviewPayment={() => setView("active")} onClose={() => setAcceptedReceipt(null)} />}
+        <div id="your-songs" className="scroll-mt-[var(--queue-content-top)]">
+          <QueueSongManager sessionId={sessionId} tracks={snapshot?.ownedTracks ?? []} editingEnabled={snapshot?.submitterEditingEnabled === true} canAdd={canSubmitFromHud} onAdd={openIntakeCorridor} onRefresh={load} />
+        </div>
+        <SubmitterOutlookPanel snapshot={snapshot} canSubmit={canSubmitFromHud} isFull={isFull} submitLimitReached={isSubmitLimitReached} timingSummary={timingSummary} onSubmit={openIntakeCorridor} />
 
         <div data-live={isBroadcastActive ? "true" : "false"} data-pulse={broadcastStartPulse ? "true" : undefined} className="queue-live-system relative space-y-6 overflow-hidden">
         {broadcastStartPulse && <div className="broadcast-start-banner border border-[#ffaa00]/55 bg-[#ffaa00]/10 p-3 text-center shadow-[0_0_46px_rgba(255,170,0,0.18)]" role="status" aria-live="polite"><p className="text-xs uppercase tracking-[0.38em] text-[#ffaa00]">HOST BAND LOCKED</p><p className="mt-1 text-sm font-bold uppercase tracking-[0.24em] text-foreground">BROADCAST PROTOCOL ONLINE</p></div>}
@@ -644,14 +631,24 @@ export function PublicQueueSession({ sessionId, snapshotEndpoint = "/api/queue" 
           <NowPlaying title="Up Next" track={snapshot?.upNext ?? null} compact domId="up-next-slot" viewerSubmittedTrackIds={viewerSubmittedTrackIds} residue={snapshot?.upNext?.id ? residueMap[snapshot.upNext.id] : undefined} />
           <WheelSpinsWaitingPanel snapshot={snapshot} pulse={wheelUnlockPulse} />
         </div>
-        <SubmitterOutlookPanel snapshot={snapshot} canSubmit={canSubmitFromHud} isFull={isFull} submitLimitReached={isSubmitLimitReached} timingSummary={timingSummary} onSubmit={openIntakeCorridor} />
       </section>
+
+      <details className="border-y border-border py-3">
+        <summary className="cursor-pointer text-xs font-bold uppercase text-muted">Session details &amp; routing activity</summary>
+        <div className="mt-4 space-y-4">
+          <SessionPhasePanel snapshot={snapshot} timingSummary={timingSummary} submissionsOpen={isOpen} canSubmit={canSubmitFromHud} isBroadcastActive={isBroadcastActive} />
+          <ReceiverStatusPanel snapshot={snapshot} submissionsOpen={isOpen} isBroadcastActive={isBroadcastActive} pulse={broadcastStartPulse} minimized={false} />
+          <SubmissionActivity items={activity} />
+        </div>
+      </details>
 
       {isFull && <p className="border border-danger/40 bg-danger/5 p-3 text-sm text-danger">This broadcast queue is full for new songs.</p>}
 
       <QueueMechanicsInfo />
 
-      <SignalHoldOwnerPanel snapshot={snapshot} paymentsAvailable={signalHoldPaymentsAvailable} priceCents={signalHoldPriceCents} currency={signalHoldCurrency} isCheckoutBlocked={isSignalHoldCheckoutBlocked} canPurchase={canPurchaseSignalHold} canResume={canResumeSignalHoldPayment} onPurchase={requestSignalHold} onResume={resumeSignalHoldPayment} />
+      <div id="queue-payment-controls" className="scroll-mt-[var(--queue-content-top)]">
+        <SignalHoldOwnerPanel snapshot={snapshot} paymentsAvailable={signalHoldPaymentsAvailable} priceCents={signalHoldPriceCents} currency={signalHoldCurrency} isCheckoutBlocked={isSignalHoldCheckoutBlocked} canPurchase={canPurchaseSignalHold} canResume={canResumeSignalHoldPayment} onPurchase={requestSignalHold} onResume={resumeSignalHoldPayment} />
+      </div>
 
       <div className="flex gap-2 border-b border-border">
         <button type="button" onClick={() => setView("active")} className={`cursor-pointer px-4 py-3 text-xs uppercase tracking-widest transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${view === "active" ? "border-b border-accent text-accent" : "text-muted hover:text-foreground"}`}>Active Queue</button>
@@ -1098,6 +1095,37 @@ function WheelSpinsWaitingPanel({ snapshot, pulse }: { snapshot: QueuePublicSnap
   return <section data-active={active ? "true" : undefined} data-pulse={active && pulse ? "true" : undefined} className={`wheel-spins-waiting-panel relative overflow-hidden border p-4 ${active ? "border-cyan-200/55 bg-cyan-200/5 shadow-[0_0_34px_rgba(103,232,249,0.16)]" : "border-border bg-surface"}`} aria-label="Wheel Spins Unlocked" role="status" aria-live="polite"><div className="relative z-10 grid gap-3 sm:grid-cols-[auto_1fr]"><div><p className={`text-[10px] uppercase tracking-[0.34em] ${active ? "text-cyan-200" : "text-muted"}`}>Wheel Spins Unlocked</p><p className={`mt-2 text-5xl font-black leading-none ${active ? "text-cyan-200" : "text-foreground"}`}>{wheelSpinsWaiting}</p></div><div className="self-end"><p className="text-sm font-bold text-foreground">Wheel Spins Unlocked: {wheelSpinsWaiting}</p><p className="mt-1 text-xs leading-relaxed text-muted">This is the number of unlocked wheel spins.</p><p className="mt-2 text-[10px] uppercase tracking-[0.24em] text-muted">Wheel Chosen means the host selected a specific track.</p></div></div><span className="wheel-orbit wheel-orbit-outer" aria-hidden="true" /><span className="wheel-orbit wheel-orbit-inner" aria-hidden="true" /><span className="wheel-sweep" aria-hidden="true" /><style jsx>{`.wheel-spins-waiting-panel{min-height:8.5rem}.wheel-orbit{position:absolute;right:1rem;top:50%;border:1px solid rgba(103,232,249,.26);border-radius:999px;transform:translateY(-50%);pointer-events:none}.wheel-orbit-outer{width:6.4rem;height:6.4rem;opacity:.28}.wheel-orbit-inner{right:2.1rem;width:4.2rem;height:4.2rem;opacity:.22}.wheel-sweep{position:absolute;right:1.7rem;top:50%;width:5rem;height:1px;background:linear-gradient(90deg,transparent,rgba(103,232,249,.82),transparent);transform-origin:center;opacity:0;pointer-events:none}.wheel-spins-waiting-panel[data-active="true"] .wheel-orbit{border-color:rgba(103,232,249,.58);box-shadow:0 0 26px rgba(103,232,249,.16),inset 0 0 14px rgba(103,232,249,.08);opacity:.58}.wheel-spins-waiting-panel[data-active="true"] .wheel-sweep{opacity:.72;animation:wheel-panel-sweep 1.45s ease-out}.wheel-spins-waiting-panel[data-pulse="true"]{animation:wheel-panel-pulse 1.45s ease-out}@keyframes wheel-panel-pulse{0%{border-color:rgba(103,232,249,.24);box-shadow:0 0 0 rgba(103,232,249,0)}36%{border-color:rgba(103,232,249,.95);box-shadow:0 0 44px rgba(103,232,249,.30)}100%{border-color:rgba(103,232,249,.55);box-shadow:0 0 34px rgba(103,232,249,.16)}}@keyframes wheel-panel-sweep{0%{opacity:0;transform:rotate(-55deg)}35%{opacity:.8}100%{opacity:0;transform:rotate(145deg)}}@media (max-width:640px){.wheel-spins-waiting-panel{min-height:0}.wheel-orbit,.wheel-sweep{opacity:.12;right:.5rem}}@media (prefers-reduced-motion: reduce){.wheel-spins-waiting-panel,.wheel-spins-waiting-panel[data-active="true"] .wheel-sweep{animation:none}.wheel-sweep{display:none}}`}</style></section>;
 }
 
+function QueueParticipationAction({ canSubmit, submitLabel, limitReached, deckHref, onSubmit }: { canSubmit: boolean; submitLabel: string; limitReached: boolean; deckHref: string | null; onSubmit: () => void }) {
+  const className = "inline-flex min-h-11 items-center justify-center border border-accent/60 bg-accent/10 px-3 py-2 text-center text-xs font-bold uppercase text-accent hover:bg-accent hover:text-background";
+  if (canSubmit) return <button type="button" onClick={onSubmit} className={className}>Submit Track</button>;
+  if (limitReached && deckHref) return <Link href={deckHref} className={className}>Open Broadcast Deck</Link>;
+  if (limitReached) return <a href="#your-songs" className={className}>Manage My Songs</a>;
+  return <span className="inline-flex min-h-11 items-center px-3 py-2 text-xs uppercase text-muted">{submitLabel}</span>;
+}
+
+function QueueSubmissionReceiptPanel({ receipt, canSubmit, onSubmit, onReviewPayment, onClose }: { receipt: QueueSubmissionReceipt; canSubmit: boolean; onSubmit: () => void; onReviewPayment?: () => void; onClose: () => void }) {
+  return <section role="status" aria-live="polite" className="relative z-20 border-l-2 border-accent bg-accent/10 p-4 text-sm text-foreground">
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <p className="font-bold uppercase text-accent">Submission accepted</p>
+        <p className="mt-1 break-words font-bold">{receipt.artist} / {receipt.title}</p>
+        <p className="mt-1 text-xs text-muted">{receipt.sessionTitle} / {receipt.sessionDate}</p>
+        <p className="mt-1 text-xs">Confirmation: {receipt.trackCode}</p>
+        {receipt.remaining !== null && <p className="mt-2 text-xs text-muted">{receipt.remaining} {receipt.remaining === 1 ? "submission" : "submissions"} remaining{receipt.limit !== null && ` / ${receipt.limit} allowed`}</p>}
+        {receipt.checkoutPending && <p className="mt-2 text-xs text-[#ffaa00]">Your song is saved. Payment has not been confirmed.</p>}
+      </div>
+      <button type="button" onClick={onClose} aria-label="Dismiss submission receipt" title="Dismiss submission receipt" className="min-h-11 min-w-11 border border-border text-lg text-muted hover:text-foreground">&times;</button>
+    </div>
+    <div className="mt-3 flex flex-wrap gap-3">
+      {receipt.checkoutPending ? <a href="#queue-payment-controls" onClick={onReviewPayment} className="inline-flex min-h-11 items-center font-bold text-[#ffaa00] underline underline-offset-4">Review Payment</a> : <>
+        {canSubmit && receipt.remaining !== null && receipt.remaining > 0 && <button type="button" onClick={onSubmit} className="min-h-11 border border-accent px-4 py-2 font-bold text-accent">Submit Another</button>}
+        {receipt.deckHref && <Link href={receipt.deckHref} className="inline-flex min-h-11 items-center font-bold text-[#ffaa00] underline underline-offset-4">Open Broadcast Deck</Link>}
+      </>}
+      <a href="#your-songs" className="inline-flex min-h-11 items-center text-muted underline underline-offset-4">Manage My Songs</a>
+    </div>
+  </section>;
+}
+
 function SubmitterOutlookPanel({ snapshot, canSubmit, isFull, submitLimitReached, timingSummary, onSubmit }: { snapshot: QueuePublicSnapshot | null; canSubmit: boolean; isFull: boolean; submitLimitReached: boolean; timingSummary: QueueTimingDisplaySummary | null; onSubmit: () => void }) {
   const counts = publicQueueCounts(snapshot);
   const songsAhead = timingSummary?.submitNowFreeEstimate?.songsAhead ?? counts.remaining;
@@ -1112,10 +1140,10 @@ function SubmitterOutlookPanel({ snapshot, canSubmit, isFull, submitLimitReached
   const activeSession = Boolean(snapshot?.session && snapshot.session.status !== "archived" && snapshot.session.broadcastPhase !== "ended");
   const projectedShowTime = activeSession ? timingSummary?.showRuntimeSummary.publicProjectedLabel ?? null : null;
   const projectedShowTimeHelper = `${timingSummary?.showRuntimeSummary.publicTargetLabel ? `Target: ${timingSummary.showRuntimeSummary.publicTargetLabel}. ` : ""}Uses detected song lengths where available.`;
-  const submissionLimit = snapshot?.submitterStatus?.limit ?? 3;
+  const submissionLimit = snapshot?.submitterStatus?.limit;
 
-  const headline = canSubmit ? "Submit Your Track Now" : isFull ? "This broadcast queue is full for new songs." : submitLimitReached ? `You’ve used all ${submissionLimit} submission slots.` : "Public intake is sealed.";
-  return <section className={`submitter-outlook border bg-surface p-5 ${canSubmit ? "border-accent/55 shadow-[0_0_34px_rgba(255,0,0,0.18)]" : "border-border"}`} aria-label="Submitter Outlook"><div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto]"><div><p className={`text-xs uppercase tracking-[0.34em] ${statusTone}`}>{statusLabel}</p><h2 className="mt-2 text-2xl font-black uppercase tracking-[0.12em] text-foreground">{headline}</h2>{canSubmit ? <p className="mt-2 text-sm text-muted">Join the free queue. The line updates live as Priority, wheel pulls, removals, and host decisions happen.</p> : submitLimitReached ? <p className="mt-2 text-sm text-muted">You’ve reached the {submissionLimit}-track limit for this session.</p> : <p className="mt-2 text-sm text-muted">Current line: {songsAhead} {songsAhead === 1 ? "song" : "songs"} still waiting or coming up.</p>}<p className="mt-3 border border-border/70 bg-background/45 p-3 text-sm font-bold text-foreground">{canSubmit && estimate ? `If you submit now: ${songsAhead} ${songsAhead === 1 ? "song" : "songs"} ahead · estimated wait ${estimate.label.toLowerCase()}.` : canSubmit ? `If you submit now: ${songsAhead} ${songsAhead === 1 ? "song" : "songs"} ahead.` : `Current line: ${songsAhead} ${songsAhead === 1 ? "song" : "songs"} still waiting or coming up.`}</p>{canSubmit && timingSummary?.publicNotes.length ? <div className="mt-2 space-y-1 text-xs text-muted">{timingSummary.publicNotes.map((note) => <p key={note}>{note}</p>)}</div> : null}</div>{canSubmit && <div className="flex items-end lg:min-w-[16rem]"><button type="button" onClick={onSubmit} className="intake-cta w-full border border-accent bg-accent/10 px-5 py-4 text-sm font-black uppercase tracking-[0.22em] text-accent shadow-[0_0_28px_rgba(255,0,0,0.22)] hover:bg-accent hover:text-background">Submit Track</button></div>}</div><div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><QueueStat label="Songs Ahead" value={songsAhead} helper="Songs currently ahead of a new submission." />{estimate && <QueueStat label="Estimated Wait" value={estimate.label} helper="A rough range, not an exact play time." accent="text-accent" />}{projectedShowTime && <QueueStat label="Projected Show Time" value={projectedShowTime} helper={projectedShowTimeHelper} accent="text-accent" />}<QueueStat label={timingSummary?.lineFitStatus && timingSummary.lineFitStatus !== "unknown" ? "Line Fit" : "Live Line"} value={lineFit} helper={liveCopy} accent="text-accent" />{queueSpace !== null && <QueueStat label="Queue Space" value={`${queueSpace} ${queueSpace === 1 ? "spot" : "spots"}`} helper="Room left in tonight’s submission line." accent={queueSpace > 0 ? "text-foreground" : "text-danger"} />}</div><style jsx>{`.intake-cta{animation:intake-cta-pulse 2.1s ease-in-out infinite}@keyframes intake-cta-pulse{0%,100%{box-shadow:0 0 16px rgba(255,0,0,.12)}50%{box-shadow:0 0 38px rgba(255,0,0,.34)}}@media (prefers-reduced-motion: reduce){.intake-cta{animation:none}}`}</style></section>;
+  const headline = canSubmit ? "Submit Your Track Now" : submitLimitReached ? `You've used all ${submissionLimit ?? "your"} submission slots.` : isFull ? "This broadcast queue is full for new songs." : "Submissions are closed.";
+  return <section className={`submitter-outlook border bg-surface p-5 ${canSubmit ? "border-accent/55 shadow-[0_0_34px_rgba(255,0,0,0.18)]" : "border-border"}`} aria-label="Submitter Outlook"><div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto]"><div><p className={`text-xs uppercase tracking-[0.34em] ${statusTone}`}>{statusLabel}</p>{snapshot?.submitterStatus && <p className="mt-2 text-sm font-bold text-cyan-200">{snapshot.submitterStatus.used} of {snapshot.submitterStatus.limit} submitted / {snapshot.submitterStatus.remaining} remaining</p>}<h2 className="mt-2 text-xl font-bold text-foreground">{headline}</h2>{canSubmit ? <p className="mt-2 text-sm text-muted">Join the free queue. The line updates live as Priority, wheel pulls, removals, and host decisions happen.</p> : submitLimitReached ? <p className="mt-2 text-sm text-muted">Your submission allowance is used. Your songs remain available below.</p> : <p className="mt-2 text-sm text-muted">Current line: {songsAhead} {songsAhead === 1 ? "song" : "songs"} still waiting or coming up.</p>}<p className="mt-3 border border-border/70 bg-background/45 p-3 text-sm font-bold text-foreground">{canSubmit && estimate ? `If you submit now: ${songsAhead} ${songsAhead === 1 ? "song" : "songs"} ahead · estimated wait ${estimate.label.toLowerCase()}.` : canSubmit ? `If you submit now: ${songsAhead} ${songsAhead === 1 ? "song" : "songs"} ahead.` : `Current line: ${songsAhead} ${songsAhead === 1 ? "song" : "songs"} still waiting or coming up.`}</p>{canSubmit && timingSummary?.publicNotes.length ? <div className="mt-2 space-y-1 text-xs text-muted">{timingSummary.publicNotes.map((note) => <p key={note}>{note}</p>)}</div> : null}</div><div className="flex flex-wrap items-end gap-3"><QueueParticipationAction canSubmit={canSubmit} submitLabel={statusLabel} limitReached={submitLimitReached} deckHref={publicQueueDeckHref(snapshot?.session)} onSubmit={onSubmit} />{submitLimitReached && <a href="#your-songs" className="inline-flex min-h-11 items-center text-sm text-muted underline underline-offset-4">Manage My Songs</a>}</div></div><details className="mt-4 border-t border-border pt-3"><summary className="cursor-pointer text-xs font-bold text-muted">Timing &amp; queue capacity</summary><div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><QueueStat label="Songs Ahead" value={songsAhead} helper="Songs currently ahead of a new submission." />{estimate && <QueueStat label="Estimated Wait" value={estimate.label} helper="A rough range, not an exact play time." accent="text-accent" />}{projectedShowTime && <QueueStat label="Projected Show Time" value={projectedShowTime} helper={projectedShowTimeHelper} accent="text-accent" />}<QueueStat label={timingSummary?.lineFitStatus && timingSummary.lineFitStatus !== "unknown" ? "Line Fit" : "Live Line"} value={lineFit} helper={liveCopy} accent="text-accent" />{queueSpace !== null && <QueueStat label="Queue Space" value={`${queueSpace} ${queueSpace === 1 ? "spot" : "spots"}`} helper="Room left in tonight’s submission line." accent={queueSpace > 0 ? "text-foreground" : "text-danger"} />}</div></details><style jsx>{`.intake-cta{animation:intake-cta-pulse 2.1s ease-in-out infinite}@keyframes intake-cta-pulse{0%,100%{box-shadow:0 0 16px rgba(255,0,0,.12)}50%{box-shadow:0 0 38px rgba(255,0,0,.34)}}@media (prefers-reduced-motion: reduce){.intake-cta{animation:none}}`}</style></section>;
 }
 
 function QueueStat({ label, value, helper, accent = "text-foreground" }: { label: string; value: number | string; helper: string; accent?: string }) {
@@ -1212,7 +1240,7 @@ function PersonalSignalStatusBar({ snapshot, timingSummary, minimized, onToggleM
     else if (closestEstimate) detail = `Closest track: ${closestEstimate.songsAhead} ${closestEstimate.songsAhead === 1 ? "song" : "songs"} away · ${closestEstimate.label.toLowerCase()}.`;
     detail = `${countDetail} ${detail}`;
   }
-  return <section data-minimized={minimized ? "true" : undefined} className="personal-signal-bar relative w-full overflow-hidden border-b border-accent/35 border-t border-border/70 bg-black/95 font-mono text-white backdrop-blur-md" aria-label="Your Signal Status" role="status" aria-live="polite"><div className="personal-signal-scan pointer-events-none absolute inset-0" aria-hidden="true" /><div className="personal-signal-line pointer-events-none absolute inset-x-0 bottom-0 h-px bg-accent/55" aria-hidden="true" /><div className="relative mx-auto flex min-h-[5rem] max-w-7xl flex-col justify-center gap-2 px-3 py-3 sm:min-h-[6rem] sm:px-4"><div className="flex flex-wrap items-center justify-between gap-2"><div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.34em] text-accent sm:text-xs">Your Signal Status</p>{!minimized && <p className="mt-1 truncate text-sm font-bold text-foreground sm:text-lg">{main}</p>}</div><div className="flex flex-wrap items-center gap-2">{!minimized && canSubmit && <button type="button" onClick={onSubmit} className="min-h-[44px] border border-accent/60 bg-accent/10 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-accent hover:bg-accent hover:text-background">Submit Track</button>}{!minimized && !canSubmit && <span className="min-h-[44px] border border-border px-2.5 py-1.5 text-[10px] uppercase tracking-[0.2em] text-muted">{submitLabel}</span>}<button type="button" onClick={onToggleMinimized} className="min-h-[44px] border border-border px-2.5 py-1.5 text-[10px] uppercase tracking-[0.2em] text-muted hover:text-foreground">{minimized ? "Expand" : "Minimize"}</button></div></div>{!minimized && <p className="line-clamp-2 text-[11px] leading-snug text-muted sm:text-sm">{detail}</p>}</div><style jsx>{`.personal-signal-bar{transition:min-height .2s ease,padding .2s ease}.personal-signal-bar[data-minimized="true"] :global(.relative.mx-auto){min-height:2.5rem;padding-top:.35rem;padding-bottom:.35rem;gap:.25rem}.personal-signal-scan{background:linear-gradient(transparent 50%,rgba(255,255,255,.06) 50%);background-size:100% 6px;opacity:.14}@media (max-width:640px){.personal-signal-bar p{max-width:100%}}`}</style></section>;
+  return <section data-minimized={minimized ? "true" : undefined} className="personal-signal-bar relative w-full overflow-hidden border-b border-accent/35 border-t border-border/70 bg-black/95 font-mono text-white backdrop-blur-md" aria-label="Your Signal Status" role="status" aria-live="polite"><div className="personal-signal-scan pointer-events-none absolute inset-0" aria-hidden="true" /><div className="personal-signal-line pointer-events-none absolute inset-x-0 bottom-0 h-px bg-accent/55" aria-hidden="true" /><div className="relative mx-auto flex min-h-[5rem] max-w-7xl flex-col justify-center gap-2 px-3 py-3 sm:min-h-[6rem] sm:px-4"><div className="flex flex-wrap items-center justify-between gap-2"><div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.34em] text-accent sm:text-xs">Your Signal Status</p>{!minimized && <p className="mt-1 break-words text-sm font-bold text-foreground sm:text-lg">{main}</p>}</div><div className="flex flex-wrap items-center gap-2">{!minimized && <QueueParticipationAction canSubmit={canSubmit} submitLabel={submitLabel} limitReached={(snapshot?.submitterStatus?.remaining ?? 1) <= 0} deckHref={publicQueueDeckHref(snapshot?.session)} onSubmit={onSubmit} />}<button type="button" onClick={onToggleMinimized} className="min-h-[44px] border border-border px-2.5 py-1.5 text-[10px] uppercase tracking-[0.2em] text-muted hover:text-foreground">{minimized ? "Expand" : "Minimize"}</button></div></div>{!minimized && <p className="text-[11px] leading-snug text-muted sm:text-sm">{detail}</p>}</div><style jsx>{`.personal-signal-bar{transition:min-height .2s ease,padding .2s ease}.personal-signal-bar[data-minimized="true"] :global(.relative.mx-auto){min-height:2.5rem;padding-top:.35rem;padding-bottom:.35rem;gap:.25rem}.personal-signal-scan{background:linear-gradient(transparent 50%,rgba(255,255,255,.06) 50%);background-size:100% 6px;opacity:.14}@media (max-width:640px){.personal-signal-bar p{max-width:100%}}`}</style></section>;
 }
 
 function estimateExistingTrackForDisplay(timingSummary: QueueTimingDisplaySummary | null, trackId: string) {

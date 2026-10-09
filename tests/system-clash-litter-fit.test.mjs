@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {fileURLToPath} from 'node:url';
 import {compileFightClip,combatMetadata} from '../public/games/system-clash/play/fight-assets.mjs';
-import {poseFrameIndex,poseScale,resolvePoseAttachments} from '../public/games/system-clash/play/fight-attachments.mjs';
+import {poseFrameIndex,poseTransform,resolvePoseAttachments} from '../public/games/system-clash/play/fight-attachments.mjs';
 import {createMatch,performAction,getFighterView} from '../public/games/system-clash/play/fight-engine.mjs';
 import {registerNewDeletionViews,litterBoxGeometry} from '../public/games/system-clash/play/new-deletion-renderer.mjs';
 import {deletionDefinition} from '../public/games/system-clash/play/deletion-library.mjs';
@@ -20,14 +20,14 @@ function size(file){
 function native(id){const clips={};let manifest;for(const bank of ['fighters','arcade','deletions']){const folder=path.join(root,bank,id),data=JSON.parse(fs.readFileSync(path.join(folder,'manifest.json'),'utf8'));if(bank==='fighters')manifest=data;for(const [name,clip] of Object.entries(data.clips)){const key=bank==='deletions'?'delete-'+name:name;clips[key]=compileFightClip(clip,size(path.join(folder,clip.file)),data,key);}}return {manifest,clips};}
 const nativeIds=['6-bit','9-bit','ash-flowers','cache-back','cliff','dj-floppydisc','doofnoobler','dr3wbaby','kaveman-brown','lyra','mac-modem','mr-nice-guy','ms-mayhem','papa-oak','stolz','wittyf0x'];
 const art=Object.fromEntries(nativeIds.map(id=>[id,native(id)]));
-function point(v,a,site){const c=a.clips[v.clip],i=poseFrameIndex(c,v),f=c.data.frames[v.facing][i],o=f.offset??[0,0],raw=f.attachments?.[site],p=raw?{x:raw[0],y:raw[1]}:resolvePoseAttachments(f,v.clip,i,v.facing,a.manifest.id)[site],s=poseScale(c,f);return {x:v.x+(p.x+o[0]-f.anchor[0])*s,y:620+(v.y??0)+(p.y+o[1]-f.anchor[1])*s};}
+function point(v,a,site){const c=a.clips[v.clip],i=poseFrameIndex(c,v),f=c.data.frames[v.facing][i],raw=f.attachments?.[site],p=raw?{x:raw[0],y:raw[1]}:resolvePoseAttachments(f,v.clip,i,v.facing,a.manifest.id)[site],local=poseTransform(c,f).point(p);return {x:v.x+local.x,y:620+(v.y??0)+local.y};}
 function scene(hero,victim,facing='right'){const source=[art[hero],art[victim]],match=createMatch({mode:'practice',fighters:source.map(a=>({id:a.manifest.id,height:a.manifest.height})),clips:combatMetadata(source)});match.fighters[0].x=facing==='right'?210:2350;match.fighters[1].x=match.fighters[0].x+(facing==='right'?1:-1)*75;assert(performAction(match,0,'deletion'));return {match,source};}
 function views(match,source,t){match.deletionElapsed=t;return registerNewDeletionViews(match,match.fighters.map((_,i)=>getFighterView(match,i)),source,point);}
 
 
 const trayManifest=JSON.parse(fs.readFileSync(path.join(root,'deletions/litter-protocol/atlas.json'),'utf8')),tray={additional:{'litter-protocol':{manifest:trayManifest}}};
 function fitted(match,source,t){match.deletionElapsed=t;return registerNewDeletionViews(match,match.fighters.map((_,i)=>getFighterView(match,i)),source,point,tray);}
-function wholeBounds(v,a){const c=a.clips[v.clip],f=c.data.frames[v.facing][poseFrameIndex(c,v)],o=f.offset??[0,0],s=poseScale(c,f),b=f.opaqueBounds;return {left:v.x+(b[0]+o[0]-f.anchor[0])*s,right:v.x+(b[2]+o[0]-f.anchor[0])*s,bottom:620+v.y+(b[3]+o[1]-f.anchor[1])*s};}
+function wholeBounds(v,a){const c=a.clips[v.clip],f=c.data.frames[v.facing][poseFrameIndex(c,v)],b=f.opaqueBounds,t=poseTransform(c,f),first=t.point(b.slice(0,2)),last=t.point(b.slice(2));return {left:v.x+first.x,right:v.x+last.x,bottom:620+v.y+last.y};}
 for(const facing of ['right','left'])for(const id of nativeIds)test('Native basin fit, constant compact pose and clear hero spacing: '+id+' '+facing,()=>{
  const {match,source}=scene('lyra',id,facing),b=deletionDefinition('lyra').beats,settled=fitted(match,source,b.basinSettled),g=litterBoxGeometry(match,tray,source),body=wholeBounds(settled[1],source[1]),reference=trayManifest.frames.open;
  assert(Math.abs(g.left-(g.centre+(reference.aperture[0]-reference.anchor[0])*g.scale))<.001,'Mask follows the actual authored opening');assert(Math.abs(g.right-g.left-reference.aperture[2]*g.scale)<.001,'No separate wider mask');assert(body.left>=g.left+7.5&&body.right<=g.right-7.5,'Complete asymmetric native pose fits with clearance');assert(Math.abs(body.bottom-g.basinFloor)<.001,'Native bottom rests on the actual litter plane');

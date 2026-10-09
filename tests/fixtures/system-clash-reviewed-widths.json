@@ -1,0 +1,2181 @@
+{
+  "coverage": {
+    "fighters": 19,
+    "clips": 683,
+    "frameReferences": 4982,
+    "uniqueNativePoses": 4276
+  },
+  "contours": [
+    {
+      "id": "6-bit",
+      "clip": "idle",
+      "facing": "right",
+      "index": 0,
+      "roiX": [
+        170,
+        260
+      ],
+      "seedX": 220,
+      "nativeMedianWidth": 61,
+      "worldScale": 0.659114,
+      "canonicalSourceFile": "assets/whole-body/idle.runtime.webp",
+      "rect": [
+        0,
+        0,
+        384,
+        512
+      ],
+      "rgbaSha256": "fc32edede2c19dea078ce1246a6771a3b8eca5494583eac786365416a3ed73e0",
+      "fixedRows": [
+        25,
+        28,
+        30
+      ],
+      "bank": "fighters",
+      "site": "skull-crown"
+    },
+    {
+      "id": "6-bit",
+      "clip": "idle",
+      "facing": "right",
+      "index": 0,
+      "roiX": [
+        120,
+        280
+      ],
+      "seedX": 200,
+      "nativeMedianWidth": 124,
+      "worldScale": 0.659114,
+      "canonicalSourceFile": "assets/whole-body/idle.runtime.webp",
+      "rect": [
+        0,
+        0,
+        384,
+        512
+      ],
+      "rgbaSha256": "fc32edede2c19dea078ce1246a6771a3b8eca5494583eac786365416a3ed73e0",
+      "fixedRows": [
+        205,
+        210,
+        215
+      ],
+      "bank": "fighters",
+      "site": "trunk-below-arms"
+    },
+    {
+      "id": "6-bit",
+      "clip": "low-punch",
+      "facing": "right",
+      "index": 0,
+      "roiX": [
+        70,
+        140
+      ],
+      "seedX": 105,
+      "nativeMedianWidth": 50,
+      "worldScale": 1.303462,
+      "canonicalSourceFile": "assets/arcade/6-bit/low-attacks-v3.runtime.webp",
+      "rect": [
+        68,
+        59,
+        186,
+        251
+      ],
+      "rgbaSha256": "5cfdbfcab57bfcde93944b6d0c7ee989f1fd9224fb296e07ec98711b2542d43d",
+      "fixedRows": [
+        15,
+        18,
+        20
+      ],
+      "bank": "arcade",
+      "site": "skull-crown"
+    },
+    {
+      "id": "6-bit",
+      "clip": "low-punch",
+      "facing": "right",
+      "index": 0,
+      "roiX": [
+        40,
+        155
+      ],
+      "seedX": 100,
+      "nativeMedianWidth": 81,
+      "worldScale": 1.303462,
+      "canonicalSourceFile": "assets/arcade/6-bit/low-attacks-v3.runtime.webp",
+      "rect": [
+        68,
+        59,
+        186,
+        251
+      ],
+      "rgbaSha256": "5cfdbfcab57bfcde93944b6d0c7ee989f1fd9224fb296e07ec98711b2542d43d",
+      "fixedRows": [
+        110,
+        115,
+        120
+      ],
+      "bank": "arcade",
+      "site": "trunk-below-arms"
+    },
+    {
+      "id": "6-bit",
+      "clip": "uppercut",
+      "facing": "right",
+      "index": 0,
+      "roiX": [
+        120,
+        195
+      ],
+      "seedX": 160,
+      "nativeMedianWidth": 54,
+      "worldScale": 1.073826,
+      "canonicalSourceFile": "assets/arcade/6-bit/air-uppercut-v1.runtime.webp",
+      "rect": [
+        46,
+        406,
+        209,
+        236
+      ],
+      "rgbaSha256": "416bd341d876a0f60e05e3a6403a833350e659a5d2f2852248c48f42179529f8",
+      "fixedRows": [
+        18,
+        21,
+        24
+      ],
+      "bank": "arcade",
+      "site": "skull-crown"
+    },
+    {
+      "id": "6-bit",
+      "clip": "crouch-punch",
+      "facing": "right",
+      "index": 0,
+      "roiX": [
+        90,
+        155
+      ],
+      "seedX": 125,
+      "nativeMedianWidth": 58,
+      "worldScale": 1.167883,
+      "canonicalSourceFile": "assets/arcade/6-bit/contextual-attacks-v1.runtime.webp",
+      "rect": [
+        63,
+        86,
+        205,
+        226
+      ],
+      "rgbaSha256": "81f603ba3f952a08113ccbf6b6ca71d5bbe554f7713c2184baa1bc7a07d048cc",
+      "fixedRows": [
+        15,
+        18,
+        20
+      ],
+      "bank": "arcade",
+      "site": "skull-crown"
+    },
+    {
+      "id": "cache-back",
+      "clip": "idle",
+      "facing": "right",
+      "index": 0,
+      "roiX": [
+        90,
+        165
+      ],
+      "seedX": 130,
+      "nativeMedianWidth": 50,
+      "worldScale": 1.066667,
+      "canonicalSourceFile": "assets/fighters/cache-back/combat.runtime.webp",
+      "rect": [
+        50,
+        6,
+        224,
+        307
+      ],
+      "rgbaSha256": "30d93074d8e0a5dc8eeef1a421fb0f6d0046791ed4a078037daa64b9aedc42aa",
+      "fixedRows": [
+        10,
+        15,
+        20
+      ],
+      "bank": "fighters",
+      "site": "skull-crown"
+    },
+    {
+      "id": "cache-back",
+      "clip": "idle",
+      "facing": "right",
+      "index": 0,
+      "roiX": [
+        60,
+        195
+      ],
+      "seedX": 130,
+      "nativeMedianWidth": 67,
+      "worldScale": 1.066667,
+      "canonicalSourceFile": "assets/fighters/cache-back/combat.runtime.webp",
+      "rect": [
+        50,
+        6,
+        224,
+        307
+      ],
+      "rgbaSha256": "30d93074d8e0a5dc8eeef1a421fb0f6d0046791ed4a078037daa64b9aedc42aa",
+      "fixedRows": [
+        124,
+        127,
+        130
+      ],
+      "bank": "fighters",
+      "site": "trunk-below-arms"
+    },
+    {
+      "id": "cache-back",
+      "clip": "uppercut",
+      "facing": "right",
+      "index": 0,
+      "roiX": [
+        80,
+        150
+      ],
+      "seedX": 120,
+      "nativeMedianWidth": 47.5,
+      "worldScale": 1.588089,
+      "canonicalSourceFile": "assets/arcade/cache-back/air-uppercut-v2.runtime.webp",
+      "rect": [
+        74,
+        444,
+        178,
+        156
+      ],
+      "rgbaSha256": "f8fdd28189d07a35cd00453ac2e88bd72fe93579eee642dff7d371df4e45b791",
+      "fixedRows": [
+        8,
+        12
+      ],
+      "bank": "arcade",
+      "site": "skull-crown"
+    },
+    {
+      "id": "cache-back",
+      "clip": "crouch-punch",
+      "facing": "right",
+      "index": 0,
+      "roiX": [
+        100,
+        175
+      ],
+      "seedX": 140,
+      "nativeMedianWidth": 68,
+      "worldScale": 0.990712,
+      "canonicalSourceFile": "assets/arcade/cache-back/contextual-attacks-v1.runtime.webp",
+      "rect": [
+        44,
+        85,
+        243,
+        233
+      ],
+      "rgbaSha256": "f5bd4e050dd1213bf4e64d8e8d409479d5bb0c271452f40d9a19a02a304e1e47",
+      "fixedRows": [
+        15,
+        20,
+        25
+      ],
+      "bank": "arcade",
+      "site": "skull-crown"
+    },
+    {
+      "id": "dj-floppydisc",
+      "clip": "idle",
+      "facing": "right",
+      "index": 0,
+      "roiX": [
+        65,
+        165
+      ],
+      "seedX": 115,
+      "nativeMedianWidth": 46,
+      "worldScale": 1.073826,
+      "canonicalSourceFile": "assets/fighters/dj-floppydisc/combat.runtime.webp",
+      "rect": [
+        60,
+        12,
+        205,
+        304
+      ],
+      "rgbaSha256": "86dff37152d58a275f53c6b9416812eaa056a72d40eb88c3228c4bb710066460",
+      "fixedRows": [
+        15,
+        20,
+        25
+      ],
+      "bank": "fighters",
+      "site": "skull-crown"
+    },
+    {
+      "id": "dj-floppydisc",
+      "clip": "idle",
+      "facing": "right",
+      "index": 0,
+      "roiX": [
+        50,
+        180
+      ],
+      "seedX": 105,
+      "nativeMedianWidth": 66,
+      "worldScale": 1.073826,
+      "canonicalSourceFile": "assets/fighters/dj-floppydisc/combat.runtime.webp",
+      "rect": [
+        60,
+        12,
+        205,
+        304
+      ],
+      "rgbaSha256": "86dff37152d58a275f53c6b9416812eaa056a72d40eb88c3228c4bb710066460",
+      "fixedRows": [
+        125,
+        130,
+        135
+      ],
+      "bank": "fighters",
+      "site": "trunk-below-arms"
+    },
+    {
+      "id": "dj-floppydisc",
+      "clip": "low-punch",
+      "facing": "right",
+      "index": 0,
+      "roiX": [
+        65,
+        140
+      ],
+      "seedX": 110,
+      "nativeMedianWidth": 51,
+      "worldScale": 1.191806,
+      "canonicalSourceFile": "assets/arcade/dj-floppydisc/low-attacks-v1.runtime.webp",
+      "rect": [
+        63,
+        57,
+        198,
+        272
+      ],
+      "rgbaSha256": "360e9d0d7f1ed0ea8581494082bb4c5ab043326f474d092c060821d0d5417a2f",
+      "fixedRows": [
+        10,
+        15,
+        20
+      ],
+      "bank": "arcade",
+      "site": "skull-crown"
+    },
+    {
+      "id": "dj-floppydisc",
+      "clip": "low-punch",
+      "facing": "right",
+      "index": 0,
+      "roiX": [
+        45,
+        165
+      ],
+      "seedX": 110,
+      "nativeMedianWidth": 74,
+      "worldScale": 1.191806,
+      "canonicalSourceFile": "assets/arcade/dj-floppydisc/low-attacks-v1.runtime.webp",
+      "rect": [
+        63,
+        57,
+        198,
+        272
+      ],
+      "rgbaSha256": "360e9d0d7f1ed0ea8581494082bb4c5ab043326f474d092c060821d0d5417a2f",
+      "fixedRows": [
+        125,
+        130,
+        135
+      ],
+      "bank": "arcade",
+      "site": "trunk-below-arms"
+    },
+    {
+      "id": "dj-floppydisc",
+      "clip": "uppercut",
+      "facing": "right",
+      "index": 0,
+      "roiX": [
+        110,
+        180
+      ],
+      "seedX": 145,
+      "nativeMedianWidth": 53.5,
+      "worldScale": 1.28,
+      "canonicalSourceFile": "assets/arcade/dj-floppydisc/air-uppercut-v1.runtime.webp",
+      "rect": [
+        53,
+        446,
+        199,
+        197
+      ],
+      "rgbaSha256": "4333f88584f9b0304165871a549477a902579e6518472f40753f36f386b0de0e",
+      "fixedRows": [
+        10,
+        15
+      ],
+      "bank": "arcade",
+      "site": "skull-crown"
+    },
+    {
+      "id": "dj-floppydisc",
+      "clip": "crouch-punch",
+      "facing": "right",
+      "index": 0,
+      "roiX": [
+        55,
+        170
+      ],
+      "seedX": 110,
+      "nativeMedianWidth": 69,
+      "worldScale": 1.07,
+      "canonicalSourceFile": "assets/arcade/dj-floppydisc/contextual-attacks-v1.runtime.webp",
+      "rect": [
+        62,
+        68,
+        184,
+        234
+      ],
+      "rgbaSha256": "96e93e2efb27822f76536a2a906039fac52ced6b483b4f6756b6b79cf08aa725",
+      "fixedRows": [
+        20,
+        25,
+        30
+      ],
+      "bank": "arcade",
+      "site": "skull-crown"
+    },
+    {
+      "id": "6-bit",
+      "clip": "walk",
+      "facing": "right",
+      "index": 0,
+      "roiX": [
+        75,
+        200
+      ],
+      "seedX": 145,
+      "nativeMedianWidth": 47,
+      "worldScale": 1.030596,
+      "canonicalSourceFile": "assets/fighters/6-bit/walk-smooth-v3.webp",
+      "rect": [
+        4,
+        4,
+        243,
+        319
+      ],
+      "rgbaSha256": "a17ad81cdc4a044163834353aa0b7f92281a36040ce8c9f0a4fac068beb3c2c0",
+      "fixedRows": [
+        12,
+        15,
+        18
+      ],
+      "bank": "fighters",
+      "site": "skull-crown"
+    },
+    {
+      "id": "6-bit",
+      "clip": "walk",
+      "facing": "right",
+      "index": 0,
+      "roiX": [
+        55,
+        185
+      ],
+      "seedX": 130,
+      "nativeMedianWidth": 100,
+      "worldScale": 1.030596,
+      "canonicalSourceFile": "assets/fighters/6-bit/walk-smooth-v3.webp",
+      "rect": [
+        4,
+        4,
+        243,
+        319
+      ],
+      "rgbaSha256": "a17ad81cdc4a044163834353aa0b7f92281a36040ce8c9f0a4fac068beb3c2c0",
+      "fixedRows": [
+        150,
+        155,
+        160
+      ],
+      "bank": "fighters",
+      "site": "trunk-below-arms"
+    },
+    {
+      "id": "6-bit",
+      "clip": "crouch",
+      "facing": "right",
+      "index": 0,
+      "roiX": [
+        60,
+        145
+      ],
+      "seedX": 105,
+      "nativeMedianWidth": 49,
+      "worldScale": 1.167883,
+      "canonicalSourceFile": "assets/fighters/6-bit/movement.runtime.webp",
+      "rect": [
+        84,
+        692,
+        188,
+        278
+      ],
+      "rgbaSha256": "72921f2b4ae32711ff5d1a5eaf443204758e970c5c66b1d3a19dcffc69735435",
+      "fixedRows": [
+        10,
+        15,
+        20
+      ],
+      "bank": "fighters",
+      "site": "skull-crown"
+    },
+    {
+      "id": "dj-floppydisc",
+      "clip": "walk",
+      "facing": "right",
+      "index": 0,
+      "roiX": [
+        70,
+        170
+      ],
+      "seedX": 115,
+      "nativeMedianWidth": 47,
+      "worldScale": 1.245136,
+      "canonicalSourceFile": "assets/fighters/dj-floppydisc/walk-smooth-v3.webp",
+      "rect": [
+        4,
+        4,
+        193,
+        276
+      ],
+      "rgbaSha256": "dda4e6ae127e78089d23dfd1fbe60ce8731fa20b1a7a586ca9f00e32154a5a91",
+      "fixedRows": [
+        12,
+        15,
+        20
+      ],
+      "bank": "fighters",
+      "site": "skull-crown"
+    },
+    {
+      "id": "dj-floppydisc",
+      "clip": "walk",
+      "facing": "right",
+      "index": 0,
+      "roiX": [
+        60,
+        180
+      ],
+      "seedX": 115,
+      "nativeMedianWidth": 71,
+      "worldScale": 1.245136,
+      "canonicalSourceFile": "assets/fighters/dj-floppydisc/walk-smooth-v3.webp",
+      "rect": [
+        4,
+        4,
+        193,
+        276
+      ],
+      "rgbaSha256": "dda4e6ae127e78089d23dfd1fbe60ce8731fa20b1a7a586ca9f00e32154a5a91",
+      "fixedRows": [
+        140,
+        145,
+        150
+      ],
+      "bank": "fighters",
+      "site": "trunk-below-arms"
+    },
+    {
+      "id": "dj-floppydisc",
+      "clip": "crouch",
+      "facing": "right",
+      "index": 0,
+      "roiX": [
+        60,
+        155
+      ],
+      "seedX": 105,
+      "nativeMedianWidth": 48,
+      "worldScale": 1.245136,
+      "canonicalSourceFile": "assets/fighters/dj-floppydisc/movement-v1.runtime.webp",
+      "rect": [
+        73,
+        434,
+        188,
+        246
+      ],
+      "rgbaSha256": "453b7f27c729696f008cc6f8515f8937f59c5652daa0042dddece7058626e728",
+      "fixedRows": [
+        10,
+        15,
+        20
+      ],
+      "bank": "fighters",
+      "site": "skull-crown"
+    }
+  ],
+  "manifestSha256": {
+    "assets/arcade/6-bit/manifest.json": "91ebb0ceb89ce95d865c96f96911ba5af35671b76805171095773ab438b9fdc2",
+    "assets/arcade/9-bit/manifest.json": "c6c759e8bc661e83d2ce4401cf5d0ad2a67827716c3a19692e09f10dc2820c4e",
+    "assets/arcade/ash-flowers/manifest.json": "1462773d9d22ff5f4c6e66af094acf965182422a0806a309900ac1a583e822dd",
+    "assets/arcade/bnl-01/manifest.json": "916337533d6af4dbe791671e6070714d20aa31a32169979178c76e79abff6c68",
+    "assets/arcade/cache-back/manifest.json": "9b80c14a261a61f08c7bca12ab2b17ecbda471732b13abc8a913454faca82f82",
+    "assets/arcade/cliff/manifest.json": "9fd28912e413816c120f97e39f183e61902a29b9f9ea0bca9f1e2361cc51894d",
+    "assets/arcade/dj-floppydisc/manifest.json": "d5bf64c3197e4eee7eb717e3fe02c97a299eb35d395a75aef095143305bfaeb0",
+    "assets/arcade/doofnoobler/manifest.json": "48e446efa32340e82adc71f9b0c08210deb224f3d4ba80978593e956c5d8b6f5",
+    "assets/arcade/dr3wbaby/manifest.json": "3c1bdc0ea34f6467a4d3dc2b4fcefb84a577dcf1365987fc9be1d8197bdd3326",
+    "assets/arcade/kaveman-brown/manifest.json": "d4535c0c2f9cf1bea695e674f345f3abaa7de4ea73b189afbb9578f13526c6e5",
+    "assets/arcade/lost-marbles/manifest.json": "56bc31f7ed775ef2ea428640d2e047dd600a43e1b9604d2ff883ff8b90a1450b",
+    "assets/arcade/lyra/manifest.json": "de750e59597f9884e19a9f0dc40aa80954cd704b0d8e13e424ea4b5358913832",
+    "assets/arcade/mac-modem/manifest.json": "e32e0f847a321d468c17158169abe1d43c52a56481ebf73b40286ac80d2d1be0",
+    "assets/arcade/mr-nice-guy/manifest.json": "477b00f9985b9960d918a189093afbb944127aed8efde45c53db5cb35e549884",
+    "assets/arcade/ms-mayhem/manifest.json": "648f94f1a701ea136fd01caed2bb16dd9c7041d5667b6bcb964cfcfb2274976c",
+    "assets/arcade/mutilator/manifest.json": "650ef7aeee3b2eabe39ff7c8508291a283b86fe255d6bbc91da2c0c0a79a7f68",
+    "assets/arcade/papa-oak/manifest.json": "61d742a6139b14b006cc69dccee5cde4c44ebd804f708e0545bb5b2fd55d943e",
+    "assets/arcade/stolz/manifest.json": "47ff2a8c233b6b9a630a30f08b15e5b19cd95f8df42934a5f31407f01199ed76",
+    "assets/arcade/wittyf0x/manifest.json": "8d9ad1b489c8db992d0e5e35050b9d5f5385f2a0754cf55d6a55260e3dcf1c2d",
+    "assets/deletions/6-bit/manifest.json": "196c514f18802a11e8300d0c63b9c9b1a39db343a3d6b20ac07f37fe47e395fa",
+    "assets/deletions/9-bit/manifest.json": "ebf39a28d044575c181c0555935ed9b9c0e07dd59a8b2ce9d2a25ab0eca8a884",
+    "assets/deletions/ash-flowers/manifest.json": "287d228c2bcfe93cb4ce2fd6709e909098804e5e21b9895104d0734133631726",
+    "assets/deletions/bnl-01/manifest.json": "3eb4264629af6d27205db7555f0db3758d6e38d56e6ce6fec4480a1d970e6a98",
+    "assets/deletions/cache-back/manifest.json": "1d5f3b68e270f908c9f4236916bdfac955ac53a5ab6faa061a8f5cdd7ee74a1e",
+    "assets/deletions/cliff/manifest.json": "5dbc5248783dc6971f42f46d70ffd53c159070a6bda7c342e6c290be9ca989ee",
+    "assets/deletions/dj-floppydisc/manifest.json": "ce9c8eca64d995030cc1e3ef9e5758e8f932dbd21c43e25c8990cb83bd56f5e1",
+    "assets/deletions/doofnoobler/manifest.json": "b75eb021f6c7ae6e92c3445aca1ccfe606d56e771d5c70123ccc7c0b0d33fd60",
+    "assets/deletions/dr3wbaby/manifest.json": "224d1700bc87d4dfba8e09633cae88993a8617ae8fa50ee2dc2ff8459d478b0a",
+    "assets/deletions/kaveman-brown/manifest.json": "1bb7ef319a5ac75af6de76e6af51050539d6856209d2c251127bace5cdf47a27",
+    "assets/deletions/lost-marbles/manifest.json": "67843d2cb3b254b9c244803d84c11fd8c1afb838b111cc1d83c6b99749a39e80",
+    "assets/deletions/lyra/manifest.json": "23717483a7aa60be1284b842ad4a9e3e3fb3e72c6b87f082a5b97c8baede32f2",
+    "assets/deletions/mac-modem/manifest.json": "1288d45423fe8399df6150599f19ecff142a5e71799370f87cfce79f3ad49920",
+    "assets/deletions/mr-nice-guy/manifest.json": "72f2a030ac7b85c738dfebf7fc79bfa6746a1bb55ecd3d836666c92f6398bfee",
+    "assets/deletions/ms-mayhem/manifest.json": "418ea8b979995cf9b074c8fe7f36d8fe69effb86997546c64d2dd475ca30c9d1",
+    "assets/deletions/mutilator/manifest.json": "21981d865b96974fe150cd9c7833c2d8f1350bc20cdd052964dac16afb140936",
+    "assets/deletions/papa-oak/manifest.json": "f80d47604594e6be16ab888684eb4df641cda4addb0fba2b7cf96a743b0d2f80",
+    "assets/deletions/stolz/manifest.json": "496873795e10e6aa28131d5a26fd4af24c099f4adb305243f6b0d56d13845f17",
+    "assets/deletions/wittyf0x/manifest.json": "c6af0a82e729ae9543769131680a7c23e0fc3be289a1db2d595b98e90fd9ee0e",
+    "assets/fighters/6-bit/manifest.json": "83d27ea6e5be24210fd6581ca98128b95482619fa0177bdd42d1a4472e0c25fd",
+    "assets/fighters/9-bit/manifest.json": "7ee9655d41d7fdf1414e200ea404688b736a4695617cf88e41ccaa82bf1b5f9e",
+    "assets/fighters/ash-flowers/manifest.json": "f2b9255a8eedf106f579433823d1852260d5ea8ca494b0470c2a93b5b445f7c3",
+    "assets/fighters/bnl-01/manifest.json": "a3a5007faf3e35ad64cdf62122df66eff289b574b854f135e388abec79f38dcc",
+    "assets/fighters/cache-back/manifest.json": "6a003d53874f88f4c89ee8bedc78db528eef3a30d592b6a2a9ed30b606907ca1",
+    "assets/fighters/cliff/manifest.json": "9a1feee5fe3f41bda75deb8a31f774fe8fe2f522ed3e4f7c4721cac1cd7af096",
+    "assets/fighters/dj-floppydisc/manifest.json": "71722012a54dcfcebe7a3e1100028f5064df48e96551ce7d6a43a2213a860214",
+    "assets/fighters/doofnoobler/manifest.json": "88e6993845df1c1a687a07eff709e86152c568c57a6d05c262ad032f48982a77",
+    "assets/fighters/dr3wbaby/manifest.json": "237a90bfdb0fb85487bb91c3b1bbcdbd6d06afcae255abb9cbdaa702c13561b5",
+    "assets/fighters/kaveman-brown/manifest.json": "de3461e233bb0b752e282693afbcd5fbe3a499674bcf56e656aff45fe626982a",
+    "assets/fighters/lost-marbles/manifest.json": "938c03ff7a9d4da447c4c38225d585a02ae589ae4d5313cd3c9eb2829b242112",
+    "assets/fighters/lyra/manifest.json": "49e30c2edebed6e33bb0410bbaeff664faeb0b4895b6fa81e374e09f225d235b",
+    "assets/fighters/mac-modem/manifest.json": "b9626fc4391ec09127b5d6b4f99052bc9b36635cc355c9c7e053f55dd38eabba",
+    "assets/fighters/mr-nice-guy/manifest.json": "6ba5b372eadbea9511c7bc70d990dbae11c2332b63cb3bcec6c1497b1451ea99",
+    "assets/fighters/ms-mayhem/manifest.json": "e32dd628fca28afcd93505fac4c576310e6548ff21b2b35ac451b7da614a4088",
+    "assets/fighters/mutilator/manifest.json": "30d4dc87f0cfe73bfef89e19227c351f66ccfa375c83428987f5841e9922afdb",
+    "assets/fighters/papa-oak/manifest.json": "12789203ecb25aa556e03f96d461ef548a0ff83872587132474de346cb7216ac",
+    "assets/fighters/stolz/manifest.json": "09b70fab02e5e23705c0af6c34b3db51dd28b5ef613d3805fe712a507de6df19",
+    "assets/fighters/wittyf0x/manifest.json": "3bd34afdfa73f2c371939628416000121bc79782b7e23f61079f06df911524a8"
+  },
+  "sourceGroups": [
+    {
+      "source": "assets/fighters/6-bit/defense-kick",
+      "factor": 0.74
+    },
+    {
+      "source": "assets/arcade/6-bit/low-attacks-v3",
+      "factor": 0.76
+    },
+    {
+      "source": "assets/arcade/6-bit/air-uppercut-v1",
+      "factor": 0.74
+    },
+    {
+      "source": "assets/arcade/6-bit/contextual-attacks-v1",
+      "factor": 0.74
+    },
+    {
+      "source": "assets/arcade/6-bit/crouch-combos-v3",
+      "factor": 0.78
+    },
+    {
+      "source": "assets/arcade/6-bit/power-kick-v5",
+      "factor": 0.76
+    },
+    {
+      "source": "assets/deletions/6-bit/attacker-poses-v1",
+      "factor": 0.86
+    },
+    {
+      "source": "assets/fighters/6-bit/walk-smooth-v3",
+      "factor": 0.8
+    },
+    {
+      "source": "assets/fighters/6-bit/movement",
+      "factor": 0.82
+    },
+    {
+      "source": "assets/arcade/cache-back/air-uppercut-v2",
+      "factor": 0.76
+    },
+    {
+      "source": "assets/arcade/cache-back/contextual-attacks-v1",
+      "factor": 0.8
+    },
+    {
+      "source": "assets/arcade/cache-back/crouch-combos-v4",
+      "factor": 0.88
+    },
+    {
+      "source": "assets/deletions/cache-back/shove-smooth-v2",
+      "factor": 0.84
+    },
+    {
+      "source": "assets/deletions/cache-back/attacker-poses-v2",
+      "factor": 0.84
+    },
+    {
+      "source": "assets/arcade/cache-back/low-attacks-v1",
+      "factor": 0.94
+    },
+    {
+      "source": "assets/arcade/dj-floppydisc/low-attacks-v1",
+      "factor": 0.84
+    },
+    {
+      "source": "assets/arcade/dj-floppydisc/air-uppercut-v1",
+      "factor": 0.8
+    },
+    {
+      "source": "assets/arcade/dj-floppydisc/contextual-attacks-v1",
+      "factor": 0.82
+    },
+    {
+      "source": "assets/fighters/dj-floppydisc/walk-smooth-v3",
+      "factor": 0.9
+    },
+    {
+      "source": "assets/fighters/dj-floppydisc/movement-v1",
+      "factor": 0.9
+    },
+    {
+      "source": "assets/arcade/cliff/air-uppercut-v1",
+      "factor": 0.84
+    },
+    {
+      "source": "assets/arcade/cliff/contextual-attacks-v1",
+      "factor": 0.86
+    },
+    {
+      "source": "assets/arcade/mr-nice-guy/low-attacks-v3",
+      "factor": 0.86
+    },
+    {
+      "source": "assets/arcade/mr-nice-guy/air-uppercut-v1",
+      "factor": 0.84
+    },
+    {
+      "source": "assets/arcade/mr-nice-guy/contextual-attacks-v1",
+      "factor": 0.86
+    },
+    {
+      "source": "assets/arcade/wittyf0x/low-attacks-v2",
+      "factor": 0.88
+    },
+    {
+      "source": "assets/arcade/wittyf0x/air-uppercut-v1",
+      "factor": 0.86
+    },
+    {
+      "source": "assets/arcade/wittyf0x/contextual-attacks-v2",
+      "factor": 0.86
+    },
+    {
+      "source": "assets/arcade/wittyf0x/crouch-combos-v1",
+      "factor": 0.88
+    },
+    {
+      "source": "assets/deletions/wittyf0x/attacker-poses-v1",
+      "factor": 0.9
+    },
+    {
+      "source": "assets/arcade/ms-mayhem/air-uppercut-v3",
+      "factor": 0.67
+    },
+    {
+      "source": "assets/arcade/ms-mayhem/contextual-attacks-v1",
+      "factor": 0.85
+    },
+    {
+      "source": "assets/arcade/9-bit/air-uppercut-v2",
+      "factor": 0.8
+    },
+    {
+      "source": "assets/arcade/papa-oak/jump",
+      "factor": 0.82
+    },
+    {
+      "source": "assets/arcade/papa-oak/uppercut",
+      "factor": 0.82
+    },
+    {
+      "source": "assets/arcade/papa-oak/crouch-high-kick",
+      "factor": 0.82
+    },
+    {
+      "source": "assets/arcade/papa-oak/double-punch",
+      "factor": 0.82
+    },
+    {
+      "source": "assets/deletions/papa-oak/compressed",
+      "factor": 0.82
+    },
+    {
+      "source": "assets/deletions/papa-oak/crumpled",
+      "factor": 0.82
+    },
+    {
+      "source": "assets/fighters/stolz/hurt",
+      "factor": 0.9
+    },
+    {
+      "source": "assets/arcade/dr3wbaby/contextual-attacks-v1",
+      "factor": 0.9
+    }
+  ],
+  "selectedCells": {
+    "597ed4d33eb452052ce38df9387428ce5a674656d1aae89ebc111bd901efa64a": 0.88,
+    "60fe3f4fdb31f70764a789f53527ac2b7d9ba00afebead92ad16e3bcdaaf241b": 0.88,
+    "8e538ac3676985635bae8ed0241b7fda48b262ef6770604b344c6aed8886b0a9": 0.88,
+    "93fdd9b751569e267ce6f52b8859a50028b62fc0c29d152b29a83ba070b607f8": 0.88,
+    "9e62b561aa79fec1b486638c75292fbb2df678b7b8c64529d5e91160b947f931": 0.88,
+    "c5785a7537ea829a7aff3f263b441c644d56316f362e129390cddecbefd5c2cd": 0.88,
+    "d8d65bd74034de5b1e83fd4134707757e71adc0dd73e79dddcbdd50b4763a74b": 0.88,
+    "ef32eecbd0018eed2addd81a132ebbdf14b3605c07d528530b07d9a14a16f1d6": 0.88
+  },
+  "nativeEnvelopes": [
+    {
+      "id": "ms-mayhem",
+      "bank": "fighters",
+      "clip": "idle",
+      "index": 0,
+      "facing": "right",
+      "rect": [
+        76,
+        13,
+        181,
+        296
+      ],
+      "worldScale": 1.103448,
+      "canonicalSourceFile": "assets/fighters/ms-mayhem/combat.runtime.webp",
+      "sourceFileSha256": "855cf42b1f85342010298607ef0301a90c2a26e3dbf55df523590bb676fbebcf",
+      "nativeRgbaSha256": "1ca5ed370f219001004566d89181f3c901d25406eb2ff34f7751b49560347cb7",
+      "rois": {
+        "skullEnvelope": {
+          "nativeRectXYXY": [
+            80,
+            6,
+            126,
+            57
+          ],
+          "nativeAlphaBoundsXYXY": [
+            80,
+            6,
+            120,
+            57
+          ],
+          "nativeWidthPixels": 40,
+          "worldWidthPixels": 44.13792,
+          "rgbaSha256": "a0a746a4ebc80c813e0725544bd78bfe11748005f176b78356823df2127facaa",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        },
+        "trunkWindow": {
+          "nativeRectXYXY": [
+            57,
+            97,
+            123,
+            125
+          ],
+          "nativeAlphaBoundsXYXY": [
+            57,
+            97,
+            123,
+            125
+          ],
+          "nativeWidthPixels": 66,
+          "worldWidthPixels": 72.827568,
+          "rgbaSha256": "64f21562fb768efcfb8e9d593552c7b4e72985a76854f9106bdccca07b180740",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        }
+      }
+    },
+    {
+      "id": "ms-mayhem",
+      "bank": "fighters",
+      "clip": "idle",
+      "index": 0,
+      "facing": "left",
+      "rect": [
+        61,
+        322,
+        188,
+        298
+      ],
+      "worldScale": 1.103448,
+      "canonicalSourceFile": "assets/fighters/ms-mayhem/combat.runtime.webp",
+      "sourceFileSha256": "855cf42b1f85342010298607ef0301a90c2a26e3dbf55df523590bb676fbebcf",
+      "nativeRgbaSha256": "143ed7b56e22b523af97b509d9bb45f1ed48b5df0606691e782b73ee4ac2e2e9",
+      "rois": {
+        "skullEnvelope": {
+          "nativeRectXYXY": [
+            66,
+            5,
+            111,
+            55
+          ],
+          "nativeAlphaBoundsXYXY": [
+            66,
+            5,
+            111,
+            55
+          ],
+          "nativeWidthPixels": 45,
+          "worldWidthPixels": 49.65516,
+          "rgbaSha256": "a5b70371c745577b51418ba3b02009e6845300f8121762fec2269e1d5ec9a2ce",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        },
+        "trunkWindow": {
+          "nativeRectXYXY": [
+            60,
+            107,
+            130,
+            133
+          ],
+          "nativeAlphaBoundsXYXY": [
+            60,
+            107,
+            130,
+            133
+          ],
+          "nativeWidthPixels": 70,
+          "worldWidthPixels": 77.24136,
+          "rgbaSha256": "d8f2fcc2fa32f97cf8a4f2b5e4e2b8952dcace9cf16cc90ef90dc80582bcfdc6",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        }
+      }
+    },
+    {
+      "id": "ms-mayhem",
+      "bank": "arcade",
+      "clip": "uppercut",
+      "index": 0,
+      "facing": "right",
+      "rect": [
+        142,
+        592,
+        143,
+        191
+      ],
+      "worldScale": 1.73913,
+      "canonicalSourceFile": "assets/arcade/ms-mayhem/air-uppercut-v3.runtime.webp",
+      "sourceFileSha256": "025ff9ad305199afd69ac83bff7bff2d0d08f53b6b58a2e887dd912de52fab27",
+      "nativeRgbaSha256": "76ae2c93c1a9164fd94859ad6252b734724fa63afb2267abd34a9a6ab23f3dd0",
+      "rois": {
+        "skullEnvelope": {
+          "nativeRectXYXY": [
+            64,
+            3,
+            104,
+            51
+          ],
+          "nativeAlphaBoundsXYXY": [
+            64,
+            3,
+            104,
+            51
+          ],
+          "nativeWidthPixels": 40,
+          "worldWidthPixels": 69.5652,
+          "rgbaSha256": "944d7b291253762c51768391c58d9aca97d11360c4830282bac587ae7cdb5324",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        },
+        "trunkWindow": {
+          "nativeRectXYXY": [
+            54,
+            73,
+            102,
+            99
+          ],
+          "nativeAlphaBoundsXYXY": [
+            54,
+            73,
+            102,
+            99
+          ],
+          "nativeWidthPixels": 48,
+          "worldWidthPixels": 83.47824,
+          "rgbaSha256": "60760ef23301cb22262058570d198af6923f290649c56926c3acf6a5881f6703",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        }
+      }
+    },
+    {
+      "id": "ms-mayhem",
+      "bank": "arcade",
+      "clip": "uppercut",
+      "index": 0,
+      "facing": "left",
+      "rect": [
+        148,
+        837,
+        144,
+        187
+      ],
+      "worldScale": 1.73913,
+      "canonicalSourceFile": "assets/arcade/ms-mayhem/air-uppercut-v3.runtime.webp",
+      "sourceFileSha256": "025ff9ad305199afd69ac83bff7bff2d0d08f53b6b58a2e887dd912de52fab27",
+      "nativeRgbaSha256": "08b12747194eecc2f64e3fcd0401a59aab77faa0cae8572fb6fbe19c936b8c6e",
+      "rois": {
+        "skullEnvelope": {
+          "nativeRectXYXY": [
+            33,
+            3,
+            79,
+            51
+          ],
+          "nativeAlphaBoundsXYXY": [
+            34,
+            3,
+            79,
+            51
+          ],
+          "nativeWidthPixels": 45,
+          "worldWidthPixels": 78.26085,
+          "rgbaSha256": "191fa53dbaedada95aeb27862f64a071d3d8fb56690cb6124a09e9fea5f3493a",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        },
+        "trunkWindow": {
+          "nativeRectXYXY": [
+            41,
+            75,
+            96,
+            102
+          ],
+          "nativeAlphaBoundsXYXY": [
+            41,
+            75,
+            96,
+            102
+          ],
+          "nativeWidthPixels": 55,
+          "worldWidthPixels": 95.65215,
+          "rgbaSha256": "ae1278f91be187e0f1b2d73cd70282b6fefc472d65ff5995e3b5b7f6c3380e1e",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        }
+      }
+    },
+    {
+      "id": "ms-mayhem",
+      "bank": "arcade",
+      "clip": "crouch-punch",
+      "index": 0,
+      "facing": "right",
+      "rect": [
+        69,
+        78,
+        193,
+        235
+      ],
+      "worldScale": 1.066667,
+      "canonicalSourceFile": "assets/arcade/ms-mayhem/contextual-attacks-v1.runtime.webp",
+      "sourceFileSha256": "13ad28ccfdecdf6f4a663d1b8e50bc5cc3fd0987abcdc8f24778a8d6f905a935",
+      "nativeRgbaSha256": "8d313cb22a89e75a663642b11a6399bbb0d8aadd1ca5135fb809a5bc956fa7a4",
+      "rois": {
+        "skullEnvelope": {
+          "nativeRectXYXY": [
+            94,
+            3,
+            153,
+            67
+          ],
+          "nativeAlphaBoundsXYXY": [
+            94,
+            3,
+            153,
+            67
+          ],
+          "nativeWidthPixels": 59,
+          "worldWidthPixels": 62.933353000000004,
+          "rgbaSha256": "23dc387f13093c4fabcdadd9617c9bce3543844fc23b9c20977c6c146c20bd87",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        },
+        "trunkWindow": {
+          "nativeRectXYXY": [
+            68,
+            118,
+            123,
+            146
+          ],
+          "nativeAlphaBoundsXYXY": [
+            68,
+            118,
+            123,
+            146
+          ],
+          "nativeWidthPixels": 55,
+          "worldWidthPixels": 58.666685,
+          "rgbaSha256": "2cad36417cfdc71244a00745eda0c7f3eb3a8c17b9ec78a29b91fb7849a9ec7d",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        }
+      }
+    },
+    {
+      "id": "ms-mayhem",
+      "bank": "arcade",
+      "clip": "crouch-punch",
+      "index": 0,
+      "facing": "left",
+      "rect": [
+        83,
+        367,
+        180,
+        237
+      ],
+      "worldScale": 1.066667,
+      "canonicalSourceFile": "assets/arcade/ms-mayhem/contextual-attacks-v1.runtime.webp",
+      "sourceFileSha256": "13ad28ccfdecdf6f4a663d1b8e50bc5cc3fd0987abcdc8f24778a8d6f905a935",
+      "nativeRgbaSha256": "d2f77c4ba0e2bea5ee1643b4746615d913d84cfd6d6b4e25aefbc2bbc27cf44f",
+      "rois": {
+        "skullEnvelope": {
+          "nativeRectXYXY": [
+            45,
+            3,
+            108,
+            70
+          ],
+          "nativeAlphaBoundsXYXY": [
+            45,
+            4,
+            108,
+            70
+          ],
+          "nativeWidthPixels": 63,
+          "worldWidthPixels": 67.200021,
+          "rgbaSha256": "bafb79c22b7a49ad3abde6c641704f5ef474fd7fecb318d886bcdf5b3d805210",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        },
+        "trunkWindow": {
+          "nativeRectXYXY": [
+            66,
+            124,
+            121,
+            151
+          ],
+          "nativeAlphaBoundsXYXY": [
+            66,
+            124,
+            121,
+            151
+          ],
+          "nativeWidthPixels": 55,
+          "worldWidthPixels": 58.666685,
+          "rgbaSha256": "9d6a5b9474fcb3588a00ef43305bfe0fe94823a96c76e1edcc922ef333bf638d",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        }
+      }
+    },
+    {
+      "id": "9-bit",
+      "bank": "fighters",
+      "clip": "idle",
+      "index": 0,
+      "facing": "right",
+      "rect": [
+        64,
+        64,
+        209,
+        269
+      ],
+      "worldScale": 1.418112,
+      "canonicalSourceFile": "assets/fighters/9-bit/combat-dark-identity-v3.runtime.webp",
+      "sourceFileSha256": "7eda92042559d6ec699b31ac517e8754ff2dea83c564886eda5359ef8f870bb1",
+      "nativeRgbaSha256": "9f87231639fefd70a96780db14d2d396d6bbbe5904162f8b18f0afffe11030a4",
+      "rois": {
+        "skullEnvelope": {
+          "nativeRectXYXY": [
+            85,
+            4,
+            146,
+            76
+          ],
+          "nativeAlphaBoundsXYXY": [
+            85,
+            4,
+            146,
+            76
+          ],
+          "nativeWidthPixels": 61,
+          "worldWidthPixels": 86.50483200000001,
+          "rgbaSha256": "e04329edb9b2e69ac50aea8e1ec7b0a93397cbffb46688fd989e3e9c755f41ea",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        },
+        "trunkWindow": {
+          "nativeRectXYXY": [
+            77,
+            108,
+            145,
+            150
+          ],
+          "nativeAlphaBoundsXYXY": [
+            77,
+            108,
+            145,
+            150
+          ],
+          "nativeWidthPixels": 68,
+          "worldWidthPixels": 96.431616,
+          "rgbaSha256": "4ed88005e33adf5374b06ed85bbb5b07d1a021438cf0110888513faae921fb8d",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        }
+      }
+    },
+    {
+      "id": "9-bit",
+      "bank": "fighters",
+      "clip": "idle",
+      "index": 0,
+      "facing": "left",
+      "rect": [
+        65,
+        366,
+        215,
+        269
+      ],
+      "worldScale": 1.418112,
+      "canonicalSourceFile": "assets/fighters/9-bit/combat-dark-identity-v3.runtime.webp",
+      "sourceFileSha256": "7eda92042559d6ec699b31ac517e8754ff2dea83c564886eda5359ef8f870bb1",
+      "nativeRgbaSha256": "00cf0d8c4ed1840ecf76f4af5f9865e865881aa60a304a8b65ed6ba4c18e7b14",
+      "rois": {
+        "skullEnvelope": {
+          "nativeRectXYXY": [
+            54,
+            4,
+            110,
+            78
+          ],
+          "nativeAlphaBoundsXYXY": [
+            54,
+            4,
+            110,
+            78
+          ],
+          "nativeWidthPixels": 56,
+          "worldWidthPixels": 79.414272,
+          "rgbaSha256": "12f435871f79c6eabe0ca19654435e76d154af02fd6718cccc0b8d9f5da690e0",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        },
+        "trunkWindow": {
+          "nativeRectXYXY": [
+            60,
+            116,
+            137,
+            152
+          ],
+          "nativeAlphaBoundsXYXY": [
+            60,
+            116,
+            137,
+            152
+          ],
+          "nativeWidthPixels": 77,
+          "worldWidthPixels": 109.194624,
+          "rgbaSha256": "8ed298590ff1c9ed8445f10c0aaecefff8a637466548cfd43005ae4cfbbb9ed1",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        }
+      }
+    },
+    {
+      "id": "9-bit",
+      "bank": "arcade",
+      "clip": "uppercut",
+      "index": 3,
+      "facing": "right",
+      "rect": [
+        1003,
+        408,
+        198,
+        221
+      ],
+      "worldScale": 1.719626,
+      "canonicalSourceFile": "assets/arcade/9-bit/air-uppercut-v2.runtime.webp",
+      "sourceFileSha256": "7808ef835e938397d1a0f910f3794b0053dabc45ef6f46e037d213e2b2827ec9",
+      "nativeRgbaSha256": "79e96d0ece776c62b12bb2e096444b0d44c1c0ad2de9a6afdcfb9e6335592693",
+      "rois": {
+        "skullEnvelope": {
+          "nativeRectXYXY": [
+            77,
+            3,
+            136,
+            68
+          ],
+          "nativeAlphaBoundsXYXY": [
+            77,
+            3,
+            136,
+            68
+          ],
+          "nativeWidthPixels": 59,
+          "worldWidthPixels": 101.45793400000001,
+          "rgbaSha256": "a3ba139c094374ae905d19125312d111bdb54e0479924e227c652ba0ac032b48",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        },
+        "trunkWindow": {
+          "nativeRectXYXY": [
+            76,
+            95,
+            143,
+            128
+          ],
+          "nativeAlphaBoundsXYXY": [
+            76,
+            95,
+            143,
+            128
+          ],
+          "nativeWidthPixels": 67,
+          "worldWidthPixels": 115.21494200000001,
+          "rgbaSha256": "2e60ad3d88a96eafa16330641db9e5f85fda57c60426a77467488322990e7ec5",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        }
+      }
+    },
+    {
+      "id": "9-bit",
+      "bank": "arcade",
+      "clip": "uppercut",
+      "index": 3,
+      "facing": "left",
+      "rect": [
+        999,
+        986,
+        198,
+        219
+      ],
+      "worldScale": 1.719626,
+      "canonicalSourceFile": "assets/arcade/9-bit/air-uppercut-v2.runtime.webp",
+      "sourceFileSha256": "7808ef835e938397d1a0f910f3794b0053dabc45ef6f46e037d213e2b2827ec9",
+      "nativeRgbaSha256": "92ef796a3cb387d585cb97484fce5da3d8cd600bdccff9efd383ee4b50b2c18d",
+      "rois": {
+        "skullEnvelope": {
+          "nativeRectXYXY": [
+            48,
+            3,
+            110,
+            67
+          ],
+          "nativeAlphaBoundsXYXY": [
+            48,
+            3,
+            110,
+            67
+          ],
+          "nativeWidthPixels": 62,
+          "worldWidthPixels": 106.61681200000001,
+          "rgbaSha256": "85763b22a9c5f50c3d343b37ff32d2a28bd196a418a4efe00091952b7d1210c0",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        },
+        "trunkWindow": {
+          "nativeRectXYXY": [
+            59,
+            101,
+            133,
+            137
+          ],
+          "nativeAlphaBoundsXYXY": [
+            59,
+            101,
+            133,
+            137
+          ],
+          "nativeWidthPixels": 74,
+          "worldWidthPixels": 127.252324,
+          "rgbaSha256": "19be635a3a7d27473d3f9fd9518143b4ff47330e695e7babcef90804314d9b95",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        }
+      }
+    },
+    {
+      "id": "papa-oak",
+      "bank": "fighters",
+      "clip": "idle",
+      "index": 0,
+      "facing": "right",
+      "rect": [
+        0,
+        0,
+        357,
+        393
+      ],
+      "worldScale": 1,
+      "canonicalSourceFile": "assets/fighters/papa-oak/idle.webp",
+      "sourceFileSha256": "f3a91a750d6cd2c42ad6c3ce3bd337b743651ab21b9a84e5b82117bec6268562",
+      "nativeRgbaSha256": "da2b2bdd630cf1e2fce9c1a972dc810e338befdf1305ae141b2856960c445a03",
+      "rois": {
+        "skullEnvelope": {
+          "nativeRectXYXY": [
+            165,
+            4,
+            274,
+            124
+          ],
+          "nativeAlphaBoundsXYXY": [
+            165,
+            4,
+            274,
+            124
+          ],
+          "nativeWidthPixels": 109,
+          "worldWidthPixels": 109,
+          "rgbaSha256": "0cbb76e6c50871c50e14957314c2b5196a015cef038a8f19518fc4052f127d85",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        },
+        "trunkWindow": {
+          "nativeRectXYXY": [
+            130,
+            174,
+            259,
+            225
+          ],
+          "nativeAlphaBoundsXYXY": [
+            130,
+            174,
+            259,
+            225
+          ],
+          "nativeWidthPixels": 129,
+          "worldWidthPixels": 129,
+          "rgbaSha256": "2e4d7a55f4ebe2f557d606e3f115699549830eef36aa65b6601e0368812fb0b5",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        }
+      }
+    },
+    {
+      "id": "papa-oak",
+      "bank": "fighters",
+      "clip": "idle",
+      "index": 0,
+      "facing": "left",
+      "rect": [
+        0,
+        394,
+        356,
+        393
+      ],
+      "worldScale": 1,
+      "canonicalSourceFile": "assets/fighters/papa-oak/idle.webp",
+      "sourceFileSha256": "f3a91a750d6cd2c42ad6c3ce3bd337b743651ab21b9a84e5b82117bec6268562",
+      "nativeRgbaSha256": "3e4a41a18ad6a481471c5e73d3463c29b8d62f2a85346c2f9e3d7c616ee78c69",
+      "rois": {
+        "skullEnvelope": {
+          "nativeRectXYXY": [
+            91,
+            4,
+            198,
+            121
+          ],
+          "nativeAlphaBoundsXYXY": [
+            91,
+            4,
+            198,
+            121
+          ],
+          "nativeWidthPixels": 107,
+          "worldWidthPixels": 107,
+          "rgbaSha256": "5dd1c36e8b104f2ba67cc66c9537752b572d040064db74b6195c18e2e89a67a7",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        },
+        "trunkWindow": {
+          "nativeRectXYXY": [
+            115,
+            177,
+            244,
+            230
+          ],
+          "nativeAlphaBoundsXYXY": [
+            115,
+            177,
+            244,
+            230
+          ],
+          "nativeWidthPixels": 129,
+          "worldWidthPixels": 129,
+          "rgbaSha256": "fcefb1ef2aa3f01be285fe2f1f07a92e74ab6fdceb24173163ac289381fd666e",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        }
+      }
+    },
+    {
+      "id": "papa-oak",
+      "bank": "arcade",
+      "clip": "double-punch",
+      "index": 0,
+      "facing": "right",
+      "rect": [
+        0,
+        0,
+        474,
+        421
+      ],
+      "worldScale": 1,
+      "canonicalSourceFile": "assets/arcade/papa-oak/double-punch.webp",
+      "sourceFileSha256": "a5cf40574f9f992683d9e0191b2b8ace52650e2b6ad5e4af93a34757ed2e1341",
+      "nativeRgbaSha256": "7694caf02e3c7f1e13b886c54b620f66eecf62d1e0f7e70ff0118d3634994f85",
+      "rois": {
+        "skullEnvelope": {
+          "nativeRectXYXY": [
+            196,
+            4,
+            336,
+            146
+          ],
+          "nativeAlphaBoundsXYXY": [
+            196,
+            4,
+            336,
+            146
+          ],
+          "nativeWidthPixels": 140,
+          "worldWidthPixels": 140,
+          "rgbaSha256": "6c9fa984dd04520bec24f58646fb14a48cad60b2cadd775f1d4afcef07da89ea",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        },
+        "trunkWindow": {
+          "nativeRectXYXY": [
+            173,
+            186,
+            334,
+            237
+          ],
+          "nativeAlphaBoundsXYXY": [
+            173,
+            186,
+            334,
+            237
+          ],
+          "nativeWidthPixels": 161,
+          "worldWidthPixels": 161,
+          "rgbaSha256": "4b623f26c4401636b7429bb86215d6e957fc4215f3557037a416b795b3180d88",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        }
+      }
+    },
+    {
+      "id": "papa-oak",
+      "bank": "arcade",
+      "clip": "double-punch",
+      "index": 0,
+      "facing": "left",
+      "rect": [
+        0,
+        436,
+        497,
+        431
+      ],
+      "worldScale": 1,
+      "canonicalSourceFile": "assets/arcade/papa-oak/double-punch.webp",
+      "sourceFileSha256": "a5cf40574f9f992683d9e0191b2b8ace52650e2b6ad5e4af93a34757ed2e1341",
+      "nativeRgbaSha256": "cf642828c5746306232a99e7f079b5b7d727f3515b761c7e7920dcb2e071a666",
+      "rois": {
+        "skullEnvelope": {
+          "nativeRectXYXY": [
+            142,
+            4,
+            282,
+            153
+          ],
+          "nativeAlphaBoundsXYXY": [
+            142,
+            4,
+            282,
+            153
+          ],
+          "nativeWidthPixels": 140,
+          "worldWidthPixels": 140,
+          "rgbaSha256": "5ae2a22ab689d7081515254b0394fa431943d371fffba1c9b541410914afa148",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        },
+        "trunkWindow": {
+          "nativeRectXYXY": [
+            170,
+            193,
+            347,
+            252
+          ],
+          "nativeAlphaBoundsXYXY": [
+            170,
+            193,
+            347,
+            252
+          ],
+          "nativeWidthPixels": 177,
+          "worldWidthPixels": 177,
+          "rgbaSha256": "8f504e630a9dc2df46e6ce02297f60c82e143893f81fee86e95b683dfe304f8c",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        }
+      }
+    },
+    {
+      "id": "stolz",
+      "bank": "fighters",
+      "clip": "idle",
+      "index": 0,
+      "facing": "right",
+      "rect": [
+        69,
+        16,
+        181,
+        303
+      ],
+      "worldScale": 1.084746,
+      "canonicalSourceFile": "assets/fighters/stolz/combat.runtime.webp",
+      "sourceFileSha256": "327d704489d236ca251971fbaaf1caff0780bcf15da37eaa72995d8c07c5096d",
+      "nativeRgbaSha256": "21ad430bf9a518c664e4c2ff25851f75ad9b88706dd412196b86593e167f0d6c",
+      "rois": {
+        "skullEnvelope": {
+          "nativeRectXYXY": [
+            75,
+            3,
+            141,
+            68
+          ],
+          "nativeAlphaBoundsXYXY": [
+            75,
+            3,
+            141,
+            68
+          ],
+          "nativeWidthPixels": 66,
+          "worldWidthPixels": 71.593236,
+          "rgbaSha256": "44fa45bffff5f6a3d1015f64e3c09ec9004ac8734cdef7bc15759bdd25f0308d",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        },
+        "trunkWindow": {
+          "nativeRectXYXY": [
+            45,
+            111,
+            133,
+            148
+          ],
+          "nativeAlphaBoundsXYXY": [
+            45,
+            111,
+            133,
+            148
+          ],
+          "nativeWidthPixels": 88,
+          "worldWidthPixels": 95.457648,
+          "rgbaSha256": "020e098c7a37aedc8a392c8f486113fee2f857b1a1a8bfaeae41c8bdbe8246ed",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        }
+      }
+    },
+    {
+      "id": "stolz",
+      "bank": "fighters",
+      "clip": "idle",
+      "index": 0,
+      "facing": "left",
+      "rect": [
+        64,
+        331,
+        188,
+        301
+      ],
+      "worldScale": 1.084746,
+      "canonicalSourceFile": "assets/fighters/stolz/combat.runtime.webp",
+      "sourceFileSha256": "327d704489d236ca251971fbaaf1caff0780bcf15da37eaa72995d8c07c5096d",
+      "nativeRgbaSha256": "dba7f87b6a847d8006d154e57e045a1b28bd8061660a9afdcd29746ff5c05980",
+      "rois": {
+        "skullEnvelope": {
+          "nativeRectXYXY": [
+            48,
+            3,
+            105,
+            67
+          ],
+          "nativeAlphaBoundsXYXY": [
+            48,
+            3,
+            105,
+            67
+          ],
+          "nativeWidthPixels": 57,
+          "worldWidthPixels": 61.830522,
+          "rgbaSha256": "67d4964900f670023fff9186c25e2a948149b57c4924df51b403eaaa3c7c6604",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        },
+        "trunkWindow": {
+          "nativeRectXYXY": [
+            65,
+            118,
+            132,
+            153
+          ],
+          "nativeAlphaBoundsXYXY": [
+            65,
+            118,
+            132,
+            153
+          ],
+          "nativeWidthPixels": 67,
+          "worldWidthPixels": 72.677982,
+          "rgbaSha256": "148da7b75b44647549ffd2a01b0c1679bdfffe731cc526cf1211fba609c27906",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        }
+      }
+    },
+    {
+      "id": "stolz",
+      "bank": "fighters",
+      "clip": "high",
+      "index": 0,
+      "facing": "right",
+      "rect": [
+        80,
+        53,
+        178,
+        266
+      ],
+      "worldScale": 1.24031,
+      "canonicalSourceFile": "assets/fighters/stolz/hurt.runtime.webp",
+      "sourceFileSha256": "b3ca5ab499c54ac09e536295de003c50f8c57dcfcad5fbcc9f47da676cb2d716",
+      "nativeRgbaSha256": "59cd993082be9aa57b07e580397080c08667c95cb92fda2eaf2cc0bfe252c17d",
+      "rois": {
+        "skullEnvelope": {
+          "nativeRectXYXY": [
+            81,
+            3,
+            141,
+            61
+          ],
+          "nativeAlphaBoundsXYXY": [
+            81,
+            3,
+            141,
+            61
+          ],
+          "nativeWidthPixels": 60,
+          "worldWidthPixels": 74.4186,
+          "rgbaSha256": "6b8922c1d885187117826cde0e71226d215bb205ff3c341318f0bf0ff5480c27",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        },
+        "trunkWindow": {
+          "nativeRectXYXY": [
+            52,
+            103,
+            129,
+            137
+          ],
+          "nativeAlphaBoundsXYXY": [
+            52,
+            103,
+            129,
+            137
+          ],
+          "nativeWidthPixels": 77,
+          "worldWidthPixels": 95.50387,
+          "rgbaSha256": "aab86721c0531d80f2204767bc1036fb4a6b2fa922af5ac80765c941a9949fb9",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        }
+      }
+    },
+    {
+      "id": "stolz",
+      "bank": "fighters",
+      "clip": "high",
+      "index": 0,
+      "facing": "left",
+      "rect": [
+        78,
+        363,
+        193,
+        269
+      ],
+      "worldScale": 1.24031,
+      "canonicalSourceFile": "assets/fighters/stolz/hurt.runtime.webp",
+      "sourceFileSha256": "b3ca5ab499c54ac09e536295de003c50f8c57dcfcad5fbcc9f47da676cb2d716",
+      "nativeRgbaSha256": "a020a273ce7a1143961348c9d9b40297050c68439c355032f67ce3521217cc11",
+      "rois": {
+        "skullEnvelope": {
+          "nativeRectXYXY": [
+            48,
+            3,
+            109,
+            65
+          ],
+          "nativeAlphaBoundsXYXY": [
+            48,
+            3,
+            109,
+            65
+          ],
+          "nativeWidthPixels": 61,
+          "worldWidthPixels": 75.65891,
+          "rgbaSha256": "95f7b461a452453dc9c114caae5ecf1511ce9dc5194008b933c975b707eef104",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        },
+        "trunkWindow": {
+          "nativeRectXYXY": [
+            56,
+            121,
+            132,
+            150
+          ],
+          "nativeAlphaBoundsXYXY": [
+            56,
+            121,
+            132,
+            150
+          ],
+          "nativeWidthPixels": 76,
+          "worldWidthPixels": 94.26356,
+          "rgbaSha256": "5003a73b36c7133504a8aeb1e2e8438317e412a33f6ffe2ccf17c9e3c11e9abd",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        }
+      }
+    },
+    {
+      "id": "stolz",
+      "bank": "deletions",
+      "clip": "brace",
+      "index": 0,
+      "facing": "right",
+      "rect": [
+        69,
+        152,
+        191,
+        203
+      ],
+      "worldScale": 1.252446,
+      "canonicalSourceFile": "assets/deletions/stolz/victim-poses-v2.png",
+      "sourceFileSha256": "c18b8be4c1ad8dc38adb80f7593bd375c19bd971bac66ccbe28a24b4c65b2800",
+      "nativeRgbaSha256": "2167eabe5f02e0949e6aec0367786a45f0c24804cd3eed8d02e53d385df648b2",
+      "rois": {
+        "skullEnvelope": {
+          "nativeRectXYXY": [
+            99,
+            3,
+            152,
+            55
+          ],
+          "nativeAlphaBoundsXYXY": [
+            99,
+            3,
+            152,
+            55
+          ],
+          "nativeWidthPixels": 53,
+          "worldWidthPixels": 66.379638,
+          "rgbaSha256": "515d3c28b66c10c554c50b5cc0666f7f3b7a6817cd1d29b371188c11f46bfa91",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        },
+        "trunkWindow": {
+          "nativeRectXYXY": [
+            44,
+            72,
+            104,
+            108
+          ],
+          "nativeAlphaBoundsXYXY": [
+            44,
+            72,
+            104,
+            108
+          ],
+          "nativeWidthPixels": 60,
+          "worldWidthPixels": 75.14676,
+          "rgbaSha256": "1156de0834330e2b1a372a45f7a32b7be8b0b35712295a755a8f5c4f0e6cffb5",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        }
+      }
+    },
+    {
+      "id": "stolz",
+      "bank": "deletions",
+      "clip": "brace",
+      "index": 0,
+      "facing": "left",
+      "rect": [
+        64,
+        491,
+        197,
+        194
+      ],
+      "worldScale": 1.252446,
+      "canonicalSourceFile": "assets/deletions/stolz/victim-poses-v2.png",
+      "sourceFileSha256": "c18b8be4c1ad8dc38adb80f7593bd375c19bd971bac66ccbe28a24b4c65b2800",
+      "nativeRgbaSha256": "d35d3513ad5bad88e07d685cd4bdad2b9de1a6c3e5409bb79a2b89953c759c64",
+      "rois": {
+        "skullEnvelope": {
+          "nativeRectXYXY": [
+            38,
+            3,
+            84,
+            51
+          ],
+          "nativeAlphaBoundsXYXY": [
+            38,
+            3,
+            84,
+            51
+          ],
+          "nativeWidthPixels": 46,
+          "worldWidthPixels": 57.612516,
+          "rgbaSha256": "8a210e224e3de7f30f19e2deaab85565763769f494873ead5466d2b4d6f5cee7",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        },
+        "trunkWindow": {
+          "nativeRectXYXY": [
+            92,
+            75,
+            149,
+            111
+          ],
+          "nativeAlphaBoundsXYXY": [
+            92,
+            75,
+            149,
+            111
+          ],
+          "nativeWidthPixels": 57,
+          "worldWidthPixels": 71.389422,
+          "rgbaSha256": "35ba95ee5d71954c22fc82f1383ac1023f616c234f34bd935c77738325214251",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        }
+      }
+    },
+    {
+      "id": "dr3wbaby",
+      "bank": "fighters",
+      "clip": "idle",
+      "index": 0,
+      "facing": "right",
+      "rect": [
+        55,
+        37,
+        190,
+        326
+      ],
+      "worldScale": 1.027287,
+      "canonicalSourceFile": "assets/fighters/dr3wbaby/combat.runtime.webp",
+      "sourceFileSha256": "1cdc4a396d82f12d8ae0fe0d488241efad6d1e9f672978eb4b11baea74295147",
+      "nativeRgbaSha256": "4cdd122f83b934fd451714c4f8cca24c7e99b6b6c8e65337d07b68a38160b17b",
+      "rois": {
+        "skullEnvelope": {
+          "nativeRectXYXY": [
+            72,
+            3,
+            134,
+            89
+          ],
+          "nativeAlphaBoundsXYXY": [
+            72,
+            3,
+            134,
+            89
+          ],
+          "nativeWidthPixels": 62,
+          "worldWidthPixels": 63.691794,
+          "rgbaSha256": "0e32277530868f450d6fee04e2388e099f9491d650c2af95898f5bf51e3bf4a9",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        },
+        "trunkWindow": {
+          "nativeRectXYXY": [
+            65,
+            129,
+            142,
+            174
+          ],
+          "nativeAlphaBoundsXYXY": [
+            65,
+            129,
+            142,
+            174
+          ],
+          "nativeWidthPixels": 77,
+          "worldWidthPixels": 79.101099,
+          "rgbaSha256": "f51f36ca4e87615db954b4aa19ddf1be2a38aede20b54c95287c87c10d9ecd12",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        }
+      }
+    },
+    {
+      "id": "dr3wbaby",
+      "bank": "fighters",
+      "clip": "idle",
+      "index": 0,
+      "facing": "left",
+      "rect": [
+        48,
+        395,
+        212,
+        315
+      ],
+      "worldScale": 1.027287,
+      "canonicalSourceFile": "assets/fighters/dr3wbaby/combat.runtime.webp",
+      "sourceFileSha256": "1cdc4a396d82f12d8ae0fe0d488241efad6d1e9f672978eb4b11baea74295147",
+      "nativeRgbaSha256": "23c17068caa6eb9162840913181ed41872e88e4768cdade6c640bbad27cd7469",
+      "rois": {
+        "skullEnvelope": {
+          "nativeRectXYXY": [
+            66,
+            3,
+            132,
+            85
+          ],
+          "nativeAlphaBoundsXYXY": [
+            66,
+            3,
+            132,
+            85
+          ],
+          "nativeWidthPixels": 66,
+          "worldWidthPixels": 67.800942,
+          "rgbaSha256": "51839accd18a87b66bd9971d17714f0487867108aa11b679b4c3a1cf0111f926",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        },
+        "trunkWindow": {
+          "nativeRectXYXY": [
+            79,
+            137,
+            151,
+            176
+          ],
+          "nativeAlphaBoundsXYXY": [
+            79,
+            137,
+            151,
+            176
+          ],
+          "nativeWidthPixels": 72,
+          "worldWidthPixels": 73.964664,
+          "rgbaSha256": "98d0f8283f71663e417912439c4e9fbeb9b76b8010212d7617f0e316ecfc7b54",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        }
+      }
+    },
+    {
+      "id": "dr3wbaby",
+      "bank": "arcade",
+      "clip": "jump-punch",
+      "index": 0,
+      "facing": "right",
+      "rect": [
+        73,
+        648,
+        190,
+        277
+      ],
+      "worldScale": 1.066667,
+      "canonicalSourceFile": "assets/arcade/dr3wbaby/contextual-attacks-v1.runtime.webp",
+      "sourceFileSha256": "f41e29f3aed5025e564a1f4ec8c2a4e0e3b5c0eb644cb2dae905481553dce9b7",
+      "nativeRgbaSha256": "eef7cbd5b9c63116237580c95bc2a06039f9a98b8432ba521986c4464dd21f20",
+      "rois": {
+        "skullEnvelope": {
+          "nativeRectXYXY": [
+            70,
+            3,
+            145,
+            92
+          ],
+          "nativeAlphaBoundsXYXY": [
+            70,
+            3,
+            145,
+            92
+          ],
+          "nativeWidthPixels": 75,
+          "worldWidthPixels": 80.00002500000001,
+          "rgbaSha256": "b91b42a5c85785a7fb2d23a10d02d6a9cd053b8b9abad51b2357ca0764956e78",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        },
+        "trunkWindow": {
+          "nativeRectXYXY": [
+            64,
+            132,
+            139,
+            163
+          ],
+          "nativeAlphaBoundsXYXY": [
+            64,
+            132,
+            139,
+            163
+          ],
+          "nativeWidthPixels": 75,
+          "worldWidthPixels": 80.00002500000001,
+          "rgbaSha256": "6353474b521868045668c55206221eea3ac58c6a4e1d1e6f4b18db7752bb1a97",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        }
+      }
+    },
+    {
+      "id": "dr3wbaby",
+      "bank": "arcade",
+      "clip": "jump-punch",
+      "index": 0,
+      "facing": "left",
+      "rect": [
+        70,
+        965,
+        182,
+        270
+      ],
+      "worldScale": 1.066667,
+      "canonicalSourceFile": "assets/arcade/dr3wbaby/contextual-attacks-v1.runtime.webp",
+      "sourceFileSha256": "f41e29f3aed5025e564a1f4ec8c2a4e0e3b5c0eb644cb2dae905481553dce9b7",
+      "nativeRgbaSha256": "b78abb6372972dc3e5e58ecd18ec1c8062c2e1c078a87da4eebaa5dafe23e98e",
+      "rois": {
+        "skullEnvelope": {
+          "nativeRectXYXY": [
+            40,
+            3,
+            108,
+            87
+          ],
+          "nativeAlphaBoundsXYXY": [
+            40,
+            3,
+            108,
+            87
+          ],
+          "nativeWidthPixels": 68,
+          "worldWidthPixels": 72.533356,
+          "rgbaSha256": "d6cc96c306dcab3eac2df6712a4538ac7fd859720843bbf60aad9191a6142d49",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        },
+        "trunkWindow": {
+          "nativeRectXYXY": [
+            66,
+            118,
+            132,
+            155
+          ],
+          "nativeAlphaBoundsXYXY": [
+            66,
+            118,
+            132,
+            155
+          ],
+          "nativeWidthPixels": 66,
+          "worldWidthPixels": 70.400022,
+          "rgbaSha256": "4a561ef118e25c8eb539479fa1710544b744dd91bfcea3a9c97dc82111058987",
+          "method": "Reviewed fixed audit window alpha envelope; cap/hair and intrinsic facing differences remain. These widths are bounded ROI evidence, not automatic anatomical segmentation or factor derivation."
+        }
+      }
+    }
+  ]
+}

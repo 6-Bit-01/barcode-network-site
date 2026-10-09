@@ -1,6 +1,6 @@
 import {drawRemainsReveal,raggedSeam} from './fight-remains.mjs';
 import {BROADCAST_CUT,broadcastCutStage,broadcastCutFrontStage,broadcastCutDepth,deletionDefinition,deletionPropState,deletionPose} from './deletion-library.mjs';
-import {poseScale,poseFrameIndex,resolvePoseAttachments,weaponAttachment,weaponInsertionGeometry,damageOverlayPlans} from './fight-attachments.mjs';
+import {poseScale,poseTransform,poseFrameIndex,resolvePoseAttachments,weaponAttachment,weaponInsertionGeometry,damageOverlayPlans} from './fight-attachments.mjs';
 import {easedProgress,deletionCamera,createFightCamera,advanceFightCamera} from './fight-presentation.mjs';
 import {createStageRenderer} from './fight-stage-renderer.mjs';
 import {createFightMotionFX} from './fight-motion-fx.mjs';
@@ -317,7 +317,7 @@ function createPoseOverlays(owner) {
     const key=[imageIds.get(asset.image),frame.rect.join(','),art.manifest.id,view.clip,view.facing,points.index,anatomy,fingerprint].join(':');
     if(damageLayers.has(key)) {
       const cached=damageLayers.get(key);damageLayers.delete(key);damageLayers.set(key,cached);
-      ctx.drawImage(cached,geometry.dx,geometry.dy,w*geometry.scale,h*geometry.scale);return;
+      ctx.drawImage(cached,geometry.dx,geometry.dy,w*(geometry.scaleX??geometry.scale),h*(geometry.scaleY??geometry.scale));return;
     }
     const plans=damageOverlayPlans(view,points,art.manifest.id,anatomy);if(!plans.length)return;
     const scratch=nativeCanvas(owner,w,h);if(!scratch)return;
@@ -348,7 +348,7 @@ function createPoseOverlays(owner) {
     layer.globalCompositeOperation='destination-in';layer.globalAlpha=1;
     layer.drawImage(asset.image,sx,sy,w,h,0,0,w,h);layer.globalCompositeOperation='source-over';
     damageLayers.set(key,scratch);if(damageLayers.size>32)damageLayers.delete(damageLayers.keys().next().value);
-    ctx.drawImage(scratch,geometry.dx,geometry.dy,w*geometry.scale,h*geometry.scale);
+    ctx.drawImage(scratch,geometry.dx,geometry.dy,w*(geometry.scaleX??geometry.scale),h*(geometry.scaleY??geometry.scale));
   }
   return {attachments,drawDamage,alphaMask,opaquePoint};
 }
@@ -371,11 +371,11 @@ function weaponProp(ctx,weaponArt,type,x,y,facing='right',angle=0,pivot='grip',o
 }
 
 function nativeOcclusion(ctx,asset,frame,geometry,point,rx,ry,angle=0,tipSide=0) {
-  const [sx,sy,sw,sh]=frame.rect,x=geometry.dx+point.x*geometry.scale,y=geometry.dy+point.y*geometry.scale;
+  const [sx,sy,sw,sh]=frame.rect,scaleX=geometry.scaleX??geometry.scale,scaleY=geometry.scaleY??geometry.scale,x=geometry.dx+point.x*scaleX,y=geometry.dy+point.y*scaleY;
   ctx.save();ctx.translate(x,y);ctx.rotate(angle);ctx.beginPath();ctx.ellipse(0,0,rx,ry,0,0,TAU);ctx.clip();
   if(tipSide){ctx.beginPath();ctx.rect(tipSide<0?-rx*2:0,-ry*2,rx*2,ry*4);ctx.clip();}
   ctx.rotate(-angle);ctx.translate(-x,-y);
-  ctx.drawImage(asset.image,sx,sy,sw,sh,geometry.dx,geometry.dy,sw*geometry.scale,sh*geometry.scale);ctx.restore();
+  ctx.drawImage(asset.image,sx,sy,sw,sh,geometry.dx,geometry.dy,sw*scaleX,sh*scaleY);ctx.restore();
 }
 
 function chestEntry(ctx,x,y,angle,facing,size) {
@@ -433,9 +433,9 @@ function fallenHeadRegion(view,art) {
   const measured=FALLEN_HEAD_REGIONS[art.manifest.id]?.[view.facing];
   const points=resolvePoseAttachments(frame,'knockdown',index,view.facing,art.manifest.id);
   const [x,y,rx,ry]=measured??[points.head.x,points.head.y,points.bodyLength*.12,points.bodyLength*.11];
+  const local=poseTransform(asset,frame).point([x,y]);
   return {x,y,rx,ry,side:points.torso.x>x?1:-1,
-    world:{x:view.x+(x+offset[0]-frame.anchor[0])*poseScale(asset,frame),
-      y:FLOOR+(view.y??0)+(y+offset[1]-frame.anchor[1])*poseScale(asset,frame)}};
+    world:{x:view.x+local.x,y:FLOOR+(view.y??0)+local.y}};
 }
 
 // Rear boot centroids measured from the opaque native hammer keys. The entire
@@ -447,13 +447,13 @@ const HAMMER_SUPPORT_FEET={
 function hammerHeadContact(contact,art,target) {
   const asset=art.clips['delete-hammer'],frame=sourceFrame(asset,contact),index=poseFrameIndex(asset,contact);
   const support=HAMMER_SUPPORT_FEET[contact.facing]?.[index];if(!support)return null;
-  const scale=poseScale(asset,frame),offset=frame.offset??[0,0],face=frame.attachments.hammerFace;
-  const dx=(face[0]-support[0])*scale,dy=(face[1]-support[1])*scale;
+  const transform=poseTransform(asset,frame),scale=transform.sy,offset=frame.offset??[0,0],face=frame.attachments.hammerFace;
+  const dx=(face[0]-support[0])*transform.sx,dy=(face[1]-support[1])*transform.sy;
   const radius=Math.hypot(dx,dy),phase=Math.atan2(dy,dx),sine=Math.asin(clamp((target.y-FLOOR)/radius,-1,1));
   const normalize=a=>Math.atan2(Math.sin(a),Math.cos(a));
   const candidates=[normalize(sine-phase),normalize(Math.PI-sine-phase)];
   const angle=candidates.reduce((a,b)=>Math.abs(a)<Math.abs(b)?a:b);
-  return {angle:clamp(angle,-.24,.24),support,frame,scale,offset,dx,dy};
+  return {angle:clamp(angle,-.24,.24),support,frame,scale,offset,transform,dx,dy};
 }
 
 function deletionAftermathViews(match,views,art) {
@@ -470,7 +470,7 @@ function deletionAftermathViews(match,views,art) {
 
 function drawHeadAftermath(ctx,view,art,geometry) {
   const region=view.aftermath?.region;if(!region)return;
-  const {dx,dy,scale}=geometry,x=dx+(region.x+region.side*region.rx*.90)*scale,y=dy+region.y*scale;
+  const {dx,dy,scale}=geometry,scaleX=geometry.scaleX??scale,x=dx+(region.x+region.side*region.rx*.90)*scaleX,y=dy+region.y*scale;
   ctx.save();ctx.translate(x,y);ctx.rotate(region.side<0?Math.PI:0);
   const metal=art.manifest.id==='cache-back';
   ctx.fillStyle=metal?'#202c29':'#280804';ctx.strokeStyle=metal?'#92907a':'#5f281a';ctx.lineWidth=1;
@@ -515,27 +515,27 @@ function fighter(ctx, view, art, overlays, weaponArt, hide = false, motion) {
   if (!asset?.image || !asset.data?.frames) throw new Error(`${art.manifest.character??art.manifest.id}: ${view.clip} animation is unavailable.`);
   const frame = sourceFrame(asset, view);
   if (!frame) return;
-  const scale = poseScale(asset,frame);
+  const transform=poseTransform(asset,frame),scale=transform.sy,scaleX=transform.sx,scaleY=transform.sy;
   const offset = frame.offset ?? [0, 0];
   const [sx, sy, sw, sh] = frame.rect;
   if(view.splitBody){motion?.fx.drawBody(ctx,{key:motion.key,eligible:false});if(view.splitPieces?.length===2){for(const piece of view.splitPieces)fighter(ctx,{...view,...piece,splitBody:null,splitPieces:null},art,overlays,weaponArt,hide);}else for(const side of [-1,1]){ctx.save();ctx.translate(side*view.splitBody.gap,0);fighter(ctx,{...view,splitBody:null,halfMask:side},art,overlays,weaponArt,hide);ctx.restore();}return;}
   const feetX = view.x ?? 640;
   const feetY = FLOOR + (view.y ?? 0);
-  const dx = feetX + (offset[0] - frame.anchor[0]) * scale;
-  const dy = feetY + (offset[1] - frame.anchor[1]) * scale;
-  const points=overlays.attachments(asset,frame,view,art.manifest.id),geometry={dx,dy,scale};
+  const dx = feetX + transform.tx;
+  const dy = feetY + transform.ty;
+  const points=overlays.attachments(asset,frame,view,art.manifest.id),geometry={dx,dy,scale,scaleX,scaleY};
   const sourceExclusions=[...(frame.sourceExclusions??[]),...floppyHairExclusions(ctx.canvas,asset,frame,view,art.manifest.id)];
   if(motion) {
     const native=motion.native?.frames?.[view.facing]?.[poseFrameIndex(asset,view)];
     const world=point=>point?{x:feetX+point.x,y:feetY+point.y}:null;
-    const authored=point=>Array.isArray(point)?{x:dx+point[0]*scale,y:dy+point[1]*scale}:null;
+    const authored=point=>Array.isArray(point)?{x:dx+point[0]*scaleX,y:dy+point[1]*scaleY}:null;
     // Lyra's noncontact kick keys mark the guard hand; only the extension
     // marks the paw. Those different body parts cannot share a wind trail.
     const strike=frame.attachments?.strike,grip=frame.attachments?.grip;
     const guardStrike=view.clip.includes('kick')&&strike&&grip
-      &&Math.hypot(strike[0]-grip[0],strike[1]-grip[1])*scale<=art.manifest.height*.12;
+      &&Math.hypot((strike[0]-grip[0])*scaleX,(strike[1]-grip[1])*scaleY)<=art.manifest.height*.12;
     motion.fx.drawBody(ctx,{key:motion.key,fighterId:art.manifest.id,image:asset.image,
-      source:frame.rect,destination:[dx,dy,sw*scale,sh*scale],position:{x:feetX,y:feetY},facing:view.facing,
+      source:frame.rect,destination:[dx,dy,sw*scaleX,sh*scaleY],scaleX,scaleY,position:{x:feetX,y:feetY},facing:view.facing,
       airborne:motion.airborne,attackKey:motion.attackKey,opacity:view.opacity??1,
       strikeStart:guardStrike?null:world(native?.strikeStart)??authored(frame.attachments?.strikeStart),
       strike:guardStrike?null:world(native?.strike)??authored(frame.attachments?.strike),
@@ -549,48 +549,48 @@ function fighter(ctx, view, art, overlays, weaponArt, hide = false, motion) {
   ctx.fill();
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  const halfCut=dx+(view.cutX??points.torso.x)*scale;
+  const halfCut=dx+(view.cutX??points.torso.x)*scaleX;
   // A wheel turns the entire native fighter around the measured torso.
   // Body, wear and embedded gear share this one rigid transform.
   if(view.rotation) {
     const pivot=view.rotationPivotPoint??points.torso;
-    ctx.translate(dx+pivot.x*scale,dy+pivot.y*scale);ctx.rotate(view.rotation);
-    ctx.translate(-dx-pivot.x*scale,-dy-pivot.y*scale);
+    ctx.translate(dx+pivot.x*scaleX,dy+pivot.y*scaleY);ctx.rotate(view.rotation);
+    ctx.translate(-dx-pivot.x*scaleX,-dy-pivot.y*scaleY);
   }
-  if(view.halfMask){const edge=raggedSeam({x:halfCut,top:dy-5,bottom:dy+sh*scale+5,scale}),outer=view.halfMask<0?dx-5:dx+sw*scale+5;ctx.beginPath();ctx.moveTo(outer,dy-5);for(const p of edge)ctx.lineTo(p.x,p.y);ctx.lineTo(outer,dy+sh*scale+5);ctx.closePath();ctx.clip();}
+  if(view.halfMask){const edge=raggedSeam({x:halfCut,top:dy-5,bottom:dy+sh*scaleY+5,scale:scaleX}),outer=view.halfMask<0?dx-5:dx+sw*scaleX+5;ctx.beginPath();ctx.moveTo(outer,dy-5);for(const p of edge)ctx.lineTo(p.x,p.y);ctx.lineTo(outer,dy+sh*scaleY+5);ctx.closePath();ctx.clip();}
   if((view.eraseProgress??0)>0) {
     const bounds=frame.opaqueBounds??[0,0,sw,sh];
     const boundary=dy+(bounds[3]-(bounds[3]-bounds[1])*clamp(view.eraseProgress,0,1))*scale;
-    ctx.beginPath();ctx.rect(dx-20,dy-20,sw*scale+40,Math.max(0,boundary-dy+20));ctx.clip();
+    ctx.beginPath();ctx.rect(dx-20,dy-20,sw*scaleX+40,Math.max(0,boundary-dy+20));ctx.clip();
   }
-  // One complete source rectangle, one uniform scale, and its own drawn facing.
+  // One complete source rectangle, shared calibrated geometry, and its own drawn facing.
   if(sourceExclusions.length) {
-    ctx.beginPath();ctx.rect(dx,dy,sw*scale,sh*scale);
-    for(const [x,y,w,h]of sourceExclusions)ctx.rect(dx+x*scale,dy+y*scale,w*scale,h*scale);
+    ctx.beginPath();ctx.rect(dx,dy,sw*scaleX,sh*scaleY);
+    for(const [x,y,w,h]of sourceExclusions)ctx.rect(dx+x*scaleX,dy+y*scaleY,w*scaleX,h*scaleY);
     ctx.clip('evenodd');
   }
   if(view.aftermath?.region) {
-    const r=view.aftermath.region;ctx.beginPath();ctx.rect(dx-5,dy-5,sw*scale+10,sh*scale+10);
-    ctx.ellipse(dx+r.x*scale,dy+r.y*scale,r.rx*scale,r.ry*scale,0,0,TAU);ctx.clip('evenodd');
+    const r=view.aftermath.region;ctx.beginPath();ctx.rect(dx-5,dy-5,sw*scaleX+10,sh*scaleY+10);
+    ctx.ellipse(dx+r.x*scaleX,dy+r.y*scaleY,r.rx*scaleX,r.ry*scaleY,0,0,TAU);ctx.clip('evenodd');
   }
   if(view.clip==='delete-hammer'&&!view.rotationPivotPoint) {ctx.beginPath();ctx.rect(-10000,-10000,20000,FLOOR+10001);ctx.clip();}
-  if(!drawRemainsReveal(ctx,asset.image,view,{sx,sy,sw,sh,dx,dy,scale,frame}))ctx.drawImage(asset.image, sx, sy, sw, sh, dx, dy, sw * scale, sh * scale);
+  if(!drawRemainsReveal(ctx,asset.image,view,{sx,sy,sw,sh,dx,dy,scale,scaleX,scaleY,frame}))ctx.drawImage(asset.image, sx, sy, sw, sh, dx, dy, sw * scaleX, sh * scaleY);
   overlays.drawDamage(ctx,asset,frame,view,art,geometry,points,weaponArt);
-  if(view.fleshCut){const seam=view.fleshCut,x=dx+seam.x*scale,top=dy+seam.top*scale,bottom=dy+seam.bottom*scale,side=view.halfMask,edge=raggedSeam({x,top,bottom,scale}),bank=view.remainsArt;
+  if(view.fleshCut){const seam=view.fleshCut,x=dx+seam.x*scaleX,top=dy+seam.top*scaleY,bottom=dy+seam.bottom*scaleY,side=view.halfMask,edge=raggedSeam({x,top,bottom,scale:scaleX}),bank=view.remainsArt;
    ctx.strokeStyle='#5b1313';ctx.lineWidth=Math.max(3,12*scale);ctx.beginPath();edge.forEach((p,i)=>ctx[i?'lineTo':'moveTo'](p.x+side*4*scale,p.y));ctx.stroke();
    if(bank)for(let i=1;i<edge.length-1;i+=2){const image=bank.images[i%3?'meat-shred':'meat-gristle'],p=edge[i],w=(14+i%4*4)*scale;if(image)ctx.drawImage(image,p.x-w/2+side*3*scale,p.y-w/2,w,w*image.height/image.width);}
   }
   for(const embedded of (view.embeddedWeapons??[]).slice(-4)) {
-    const placement=weaponAttachment(view,points,embedded),mask=overlays.alphaMask(asset,frame);
+    const sourcePlacement=weaponAttachment(view,points,embedded),placement={...sourcePlacement,angle:transform.angle(sourcePlacement.angle)},mask=overlays.alphaMask(asset,frame);
     const point=overlays.opaquePoint(mask,placement.point,3)??overlays.opaquePoint(mask,points.chest,0);if(!point)continue;
     const entrySize=clamp(points.bodyLength*scale*.014,3.5,7);
-    weaponProp(ctx,weaponArt,embedded.type,dx+point.x*scale,dy+point.y*scale,placement.facing,placement.angle,'insertion');
+    weaponProp(ctx,weaponArt,embedded.type,dx+point.x*scaleX,dy+point.y*scaleY,placement.facing,placement.angle,'insertion');
     nativeOcclusion(ctx,asset,frame,geometry,point,entrySize*.55,entrySize*.72,placement.angle,placement.facing==='left'?-1:1);
-    chestEntry(ctx,dx+point.x*scale,dy+point.y*scale,placement.angle,placement.facing,entrySize);
+    chestEntry(ctx,dx+point.x*scaleX,dy+point.y*scaleY,placement.angle,placement.facing,entrySize);
   }
   if(view.weapon&&points.grip&&!(view.weaponAction?.kind==='throw'&&view.weaponAction.released)) {
-    const placement=weaponAttachment(view,points);
-    weaponProp(ctx,weaponArt,view.weapon.type,dx+placement.point.x*scale,dy+placement.point.y*scale,placement.facing,placement.angle,'grip');
+    const sourcePlacement=weaponAttachment(view,points),placement={...sourcePlacement,angle:transform.angle(sourcePlacement.angle)};
+    weaponProp(ctx,weaponArt,view.weapon.type,dx+placement.point.x*scaleX,dy+placement.point.y*scaleY,placement.facing,placement.angle,'grip');
     const radius=clamp((points.gripRadius??points.bodyLength*.024)*scale,4.5,10);
     // Re-draw only the small native palm/finger region over the grip. This is an
     // occlusion of the existing complete frame, never a separate animated limb.
@@ -673,9 +673,9 @@ function nativePoseHorizontalEnvelope(art,clips,facing) {
   for(const name of clips) {
     const asset=art.clips[name];if(!asset)continue;
     for(const frame of asset.data.frames[facing]??[]) {
-      const bounds=frame.opaqueBounds??[0,0,frame.rect[2],frame.rect[3]],offset=frame.offset??[0,0];
-      min=Math.min(min,(bounds[0]+offset[0]-frame.anchor[0])*poseScale(asset,frame));
-      max=Math.max(max,(bounds[2]+offset[0]-frame.anchor[0])*poseScale(asset,frame));
+      const bounds=frame.opaqueBounds??[0,0,frame.rect[2],frame.rect[3]],transform=poseTransform(asset,frame);
+      min=Math.min(min,transform.point([bounds[0],bounds[1]]).x);
+      max=Math.max(max,transform.point([bounds[2],bounds[3]]).x);
     }
   }
   return {min,max};
@@ -687,9 +687,9 @@ function wandNativeTorsoEnvelope(art,clips,facing) {
     const asset=art.clips[clip];if(!asset)continue;
     for(let key=0;key<asset.data.frames[facing].length;key++) {
       const frame=asset.data.frames[facing][key],bounds=frame.opaqueBounds;
-      const torso=resolvePoseAttachments(frame,clip,key,facing,art.manifest.id).torso,scale=poseScale(asset,frame);
-      min=Math.min(min,(bounds[0]-torso.x)*scale);max=Math.max(max,(bounds[2]-torso.x)*scale);
-      footDrop=Math.max(footDrop,(bounds[3]-torso.y)*scale);
+      const torso=resolvePoseAttachments(frame,clip,key,facing,art.manifest.id).torso,transform=poseTransform(asset,frame);
+      min=Math.min(min,(bounds[0]-torso.x)*transform.sx);max=Math.max(max,(bounds[2]-torso.x)*transform.sx);
+      footDrop=Math.max(footDrop,(bounds[3]-torso.y)*transform.sy);
     }
   }
   return {min,max,footDrop};
@@ -785,7 +785,7 @@ function machineViews(match,prop,views,art,nativeMask) {
         if(fitted) {
           const progress=easedProgress(t,b.stampStrike-260,b.stampStrike)*(1-easedProgress(t,b.lift,b.reveal));
           const angle=fitted.angle*progress,c=Math.cos(angle),s=Math.sin(angle);
-          const pivotX=contact.x+(fitted.support[0]+fitted.offset[0]-fitted.frame.anchor[0])*fitted.scale;
+          const pivotX=contact.x+fitted.transform.point(fitted.support).x;
           const faceX=pivotX+fitted.dx*c-fitted.dy*s;
           hero.x+=(body.x-faceX)*easedProgress(t,b.stampRaise,b.stampStrike);
           if(hero.clip==='delete-hammer') {
@@ -888,8 +888,9 @@ function machineViews(match,prop,views,art,nativeMask) {
   }
   const alignBody=(index,centerX,bottomY)=>{
     const view=result[index],asset=art[index].clips[view.clip],frame=sourceFrame(asset,view),offset=frame.offset??[0,0],bounds=frame.opaqueBounds??[0,0,frame.rect[2],frame.rect[3]];
-    view.x=centerX-((bounds[0]+bounds[2])/2+offset[0]-frame.anchor[0])*poseScale(asset,frame);
-    view.y=bottomY-FLOOR-(bounds[3]+offset[1]-frame.anchor[1])*poseScale(asset,frame);
+    const bottom=poseTransform(asset,frame).point([(bounds[0]+bounds[2])/2,bounds[3]]);
+    view.x=centerX-bottom.x;
+    view.y=bottomY-FLOOR-bottom.y;
   };
   if(g.definition.mechanism==='coffin'&&t>=b.entry&&t<b.lidClose&&g.frame.aperture) {
     const [ax,ay,aw,ah]=g.frame.aperture,p=clamp((t-b.entry)/(b.landed-b.entry),0,1),before={...result[victim]};
@@ -938,21 +939,21 @@ function machineViews(match,prop,views,art,nativeMask) {
     const point=poseWorldPoint(view,bank,'torso');
     view.x+=start.x+(end.x-start.x)*p-point.x;
     view.y+=start.y+(end.y-start.y)*p-125*Math.sin(Math.PI*p)-point.y;
-    const asset=bank.clips[view.clip],frame=sourceFrame(asset,view),bounds=frame.opaqueBounds,offset=frame.offset??[0,0],scale=poseScale(asset,frame);
+    const asset=bank.clips[view.clip],frame=sourceFrame(asset,view),bounds=frame.opaqueBounds,transform=poseTransform(asset,frame);
     const torso=poseWorldPoint({...view,rotation:0},bank,'torso'),c=Math.cos(view.rotation),sn=Math.sin(view.rotation);
-    const bottom=Math.max(...[bounds[0],bounds[2]].flatMap(x=>[bounds[1],bounds[3]].map(y=>{const wx=view.x+(x+offset[0]-frame.anchor[0])*scale,wy=FLOOR+view.y+(y+offset[1]-frame.anchor[1])*scale;return torso.y+(wx-torso.x)*sn+(wy-torso.y)*c;})));
+    const bottom=Math.max(...[bounds[0],bounds[2]].flatMap(x=>[bounds[1],bounds[3]].map(y=>{const local=transform.point([x,y]),wx=view.x+local.x,wy=FLOOR+view.y+local.y;return torso.y+(wx-torso.x)*sn+(wy-torso.y)*c;})));
     view.y-=Math.max(0,bottom-(FLOOR-7*Math.sin(Math.PI*p)));
   }
   return result;
 }
 
-function poseWorldPoint(view,art,site='torso') {
+export function poseWorldPoint(view,art,site='torso') {
   const asset=art.clips[view.clip],frame=sourceFrame(asset,view),offset=frame.offset??[0,0];
   const secondary=frame.attachments?.gripSecondary??frame.attachments?.secondaryGrip??frame.attachments?.supportGrip;
   const points=resolvePoseAttachments(frame,view.clip,poseFrameIndex(asset,view),view.facing,art.manifest.id),raw=site==='gripSecondary'?secondary:frame.attachments?.[site],point=raw?{x:raw[0],y:raw[1]}:points[site]??points.torso;
-  const p={x:view.x+(point.x+offset[0]-frame.anchor[0])*poseScale(asset,frame),y:FLOOR+(view.y??0)+(point.y+offset[1]-frame.anchor[1])*poseScale(asset,frame)};
+  const transform=poseTransform(asset,frame),local=transform.point(point),p={x:view.x+local.x,y:FLOOR+(view.y??0)+local.y};
   if(view.rotation) {
-    const torso=points.torso,px=view.x+(torso.x+offset[0]-frame.anchor[0])*poseScale(asset,frame),py=FLOOR+(view.y??0)+(torso.y+offset[1]-frame.anchor[1])*poseScale(asset,frame);
+    const pivot=transform.point(view.rotationPivotPoint??points.torso),px=view.x+pivot.x,py=FLOOR+(view.y??0)+pivot.y;
     const x=p.x-px,y=p.y-py,c=Math.cos(view.rotation),s=Math.sin(view.rotation);
     return {x:px+x*c-y*s,y:py+x*s+y*c};
   }
@@ -966,11 +967,11 @@ function utilitySprite(ctx,bank,frame,x,y,drawHeight,angle=0,pivot=frame.pivot) 
 }
 
 function coverNativeHand(ctx,view,art,site='grip') {
-  const asset=art.clips[view.clip],frame=sourceFrame(asset,view),offset=frame.offset??[0,0],scale=poseScale(asset,frame);
+  const asset=art.clips[view.clip],frame=sourceFrame(asset,view),transform=poseTransform(asset,frame),scale=transform.sy;
   const points=resolvePoseAttachments(frame,view.clip,poseFrameIndex(asset,view),view.facing,art.manifest.id);
   const value=site==='gripSecondary'?(frame.attachments?.gripSecondary??frame.attachments?.secondaryGrip??frame.attachments?.supportGrip):null,point=value?{x:value[0],y:value[1]}:points[site];
   if(!point)return;
-  nativeOcclusion(ctx,asset,frame,{dx:view.x+(offset[0]-frame.anchor[0])*scale,dy:FLOOR+(view.y??0)+(offset[1]-frame.anchor[1])*scale,scale},point,9,7);
+  nativeOcclusion(ctx,asset,frame,{dx:view.x+transform.tx,dy:FLOOR+(view.y??0)+transform.ty,scale,scaleX:transform.sx,scaleY:transform.sy},point,9,7);
 }
 
 const speakerFitCache=new WeakMap();
@@ -982,9 +983,9 @@ function speakerGeometry(match,bank,views,art) {
   const contact={...hero,x:0,y:0,facing:dir>0?'right':'left',clip:'delete-shove',elapsed:heroArt.clips['delete-shove'].data.contactMs??240};
   const hand=poseWorldPoint(contact,heroArt,'grip'),f=bank.manifest.frames.open,dead=bank.manifest.frames.dead;
   const floorView={...victim,x:o.target-(match.fighters[1-match.winner]._clips.knockdown?.endOffsetX?.[facing]??0),y:0,facing,clip:'knockdown',elapsed:10000};
-  const asset=victimArt.clips.knockdown,native=sourceFrame(asset,floorView),offset=native.offset??[0,0],bounds=native.opaqueBounds,nativeScale=poseScale(asset,native);
-  const bodyLeft=floorView.x+(bounds[0]+offset[0]-native.anchor[0])*nativeScale,bodyRight=floorView.x+(bounds[2]+offset[0]-native.anchor[0])*nativeScale;
-  const bodyTop=FLOOR+(bounds[1]+offset[1]-native.anchor[1])*nativeScale;
+  const asset=victimArt.clips.knockdown,native=sourceFrame(asset,floorView),bounds=native.opaqueBounds,transform=poseTransform(asset,native),a=transform.point(bounds.slice(0,2)),z=transform.point(bounds.slice(2));
+  const bodyLeft=floorView.x+a.x,bodyRight=floorView.x+z.x;
+  const bodyTop=FLOOR+a.y;
   // One physical size covers the complete fallen source, with 8px clearance.
   // A small curled victim may require a taller pile than a long, flat one.
   const scale=Math.max(heroArt.manifest.height/(f.opaqueBounds[3]-f.opaqueBounds[1]),
@@ -1019,7 +1020,7 @@ function speakerRockGeometry(match,bank,views,art,g) {
 function jawsGeometry(match,bank,views,art) {
   const o=match._deletionOrigin,t=match.deletionElapsed,b=definitionForMatch(match).beats,index=1-match.winner;
   const victim=views[index],victimArt=art[index],capture=hangingVictimPose(victimArt.clips,{clip:'delete-brace',elapsed:0});
-  const widths=[capture,{clip:'delete-brace',elapsed:0}].map(pose=>{const asset=victimArt.clips[pose.clip],reference=sourceFrame(asset,{...victim,...pose}),bounds=reference.opaqueBounds;return (bounds[2]-bounds[0])*poseScale(asset,reference);});
+  const widths=[capture,{clip:'delete-brace',elapsed:0}].map(pose=>{const asset=victimArt.clips[pose.clip],reference=sourceFrame(asset,{...victim,...pose}),bounds=reference.opaqueBounds;return (bounds[2]-bounds[0])*poseTransform(asset,reference).sx;});
   const gap=Math.max(...widths)+40;
   const scale=430/(bank.manifest.utilityFrames.jawLeft.opaqueBounds[3]-bank.manifest.utilityFrames.jawLeft.opaqueBounds[1]);
   const small=Math.max(92,gap*.30);let opening=gap;
@@ -1036,7 +1037,7 @@ function jawsGeometry(match,bank,views,art) {
     const asset=heroArt.clips[id];
     for(const facing of ['left','right'])for(let key=0;key<asset.data.frames[facing].length;key++) {
       const f=asset.data.frames[facing][key],points=resolvePoseAttachments(f,id,key,facing,heroArt.manifest.id);
-      operatorRadius=Math.max(operatorRadius,Math.abs(f.opaqueBounds[0]-points.torso.x)*poseScale(asset,f),Math.abs(f.opaqueBounds[2]-points.torso.x)*poseScale(asset,f));
+      operatorRadius=Math.max(operatorRadius,Math.abs(f.opaqueBounds[0]-points.torso.x)*poseTransform(asset,f).sx,Math.abs(f.opaqueBounds[2]-points.torso.x)*poseTransform(asset,f).sx);
     }
   }
   const center=o.target,clearance=Math.max(62,operatorRadius+24-reach),buttonX=center-dir*(half+clearance);
@@ -1127,7 +1128,7 @@ function trussGeometry(match,bank,views,art) {
 function wheelGeometry(match,bank,views,art) {
   const index=1-match.winner,victim=views[index],capture=hangingVictimPose(art[index].clips,{clip:'delete-brace',elapsed:0}),asset=art[index].clips[capture.clip];
   const view={...victim,...capture},native=sourceFrame(asset,view),points=resolvePoseAttachments(native,view.clip,poseFrameIndex(asset,view),view.facing,art[index].manifest.id),torso=points.torso,bounds=native.opaqueBounds;
-  const radius=Math.max(...[bounds[0],bounds[2]].flatMap(x=>[bounds[1],bounds[3]].map(y=>Math.hypot(x-torso.x,y-torso.y)*poseScale(asset,native))))+14;
+  const transform=poseTransform(asset,native),radius=Math.max(...[bounds[0],bounds[2]].flatMap(x=>[bounds[1],bounds[3]].map(y=>Math.hypot((x-torso.x)*transform.sx,(y-torso.y)*transform.sy))))+14;
   return {x:match._deletionOrigin.wheelX,y:FLOOR-radius-12,radius,scale:radius*2/bank.manifest.referenceWidth};
 }
 
@@ -1136,11 +1137,11 @@ function nativeExtent(art) {
   if(extentCache.has(art))return extentCache.get(art);
   const extent={left:0,right:0,top:0,bottom:0};
   for(const asset of Object.values(art.clips))for(const frames of Object.values(asset.data.frames))for(const f of frames) {
-    const [l,t,r,b]=f.opaqueBounds??[0,0,f.rect[2],f.rect[3]],offset=f.offset??[0,0];
-    extent.left=Math.min(extent.left,(l+offset[0]-f.anchor[0])*poseScale(asset,f));
-    extent.right=Math.max(extent.right,(r+offset[0]-f.anchor[0])*poseScale(asset,f));
-    extent.top=Math.min(extent.top,(t+offset[1]-f.anchor[1])*poseScale(asset,f));
-    extent.bottom=Math.max(extent.bottom,(b+offset[1]-f.anchor[1])*poseScale(asset,f));
+    const [l,t,r,b]=f.opaqueBounds??[0,0,f.rect[2],f.rect[3]],transform=poseTransform(asset,f),a=transform.point([l,t]),z=transform.point([r,b]);
+    extent.left=Math.min(extent.left,a.x);
+    extent.right=Math.max(extent.right,z.x);
+    extent.top=Math.min(extent.top,a.y);
+    extent.bottom=Math.max(extent.bottom,z.y);
   }
   extentCache.set(art,extent);return extent;
 }
@@ -1285,7 +1286,7 @@ function additionalDeletionScene(ctx,match,prop,views,art,front) {
     }
     if(t>=pickup&&t<b.aim)drawBow(propPointBetween(rack,readyHand,propBeatProgress(t,pickup,b.aim-pickup)));
     if(t>=b.captured&&t<b.launch) {
-      const a=victimArt.clips[victim.clip],f=sourceFrame(a,victim),width=(f.opaqueBounds[2]-f.opaqueBounds[0])*a.scale;
+      const a=victimArt.clips[victim.clip],f=sourceFrame(a,victim),width=(f.opaqueBounds[2]-f.opaqueBounds[0])*poseTransform(a,f).sx;
       ctx.save();ctx.translate(chest.x,chest.y);ctx.rotate(victim.rotation??0);ctx.strokeStyle='#765235';ctx.lineWidth=7;
       for(const y of [-16,58]){ctx.beginPath();ctx.ellipse(0,y,width*.29,8,0,0,Math.PI);ctx.stroke();}ctx.restore();
     }
@@ -1486,9 +1487,9 @@ function additionalDeletionScene(ctx,match,prop,views,art,front) {
       }
     }
     if(t>=b.dissolve&&t<b.erased) {
-      const a=victimArt.clips[victim.clip],f=sourceFrame(a,victim),offset=f.offset??[0,0],bounds=f.opaqueBounds,scale=a.scale;
-      const x=victim.x+(offset[0]-f.anchor[0]+(bounds[0]+bounds[2])/2)*scale;
-      const y=FLOOR+(victim.y??0)+(offset[1]-f.anchor[1]+bounds[3]-(bounds[3]-bounds[1])*victim.eraseProgress)*scale;
+      const a=victimArt.clips[victim.clip],f=sourceFrame(a,victim),bounds=f.opaqueBounds,point=poseTransform(a,f).point([(bounds[0]+bounds[2])/2,bounds[3]-(bounds[3]-bounds[1])*victim.eraseProgress]);
+      const x=victim.x+point.x;
+      const y=FLOOR+(victim.y??0)+point.y;
       draw('pulse',x,y,67,t*.006);for(let i=0;i<9;i++){const p=((t-b.dissolve+i*91)%650)/650;draw('essence',x+Math.sin(i*2.31+p*4)*44,y-70*p,17+10*(1-p),i+p*3);}
     }
     if(t>=b.erased&&t<b.present)draw('essence',tip.x,tip.y,60,Math.sin(t*.005)*.2);
@@ -1499,9 +1500,9 @@ function signatureHardware(ctx,match,prop,views,art,front) {
   if(!deletionActive(match))return;const g=machineGeometry(match,prop);if(!g)return;
   const t=match.deletionElapsed,b=g.definition.beats,hero=views[match.winner],victim=views[1-match.winner],dir=match._deletionOrigin.direction;
   const coverGrip=()=>{
-    const bank=art[match.winner],asset=bank.clips[hero.clip],frame=sourceFrame(asset,hero),offset=frame.offset??[0,0],scale=poseScale(asset,frame);
+    const bank=art[match.winner],asset=bank.clips[hero.clip],frame=sourceFrame(asset,hero),transform=poseTransform(asset,frame),scale=transform.sy;
     const points=resolvePoseAttachments(frame,hero.clip,poseFrameIndex(asset,hero),hero.facing,bank.manifest.id);
-    const geometry={dx:hero.x+(offset[0]-frame.anchor[0])*scale,dy:FLOOR+(hero.y??0)+(offset[1]-frame.anchor[1])*scale,scale};
+    const geometry={dx:hero.x+transform.tx,dy:FLOOR+(hero.y??0)+transform.ty,scale,scaleX:transform.sx,scaleY:transform.sy};
     const secondary=frame.attachments?.gripSecondary;
     for(const point of [points.grip,secondary?{x:secondary[0],y:secondary[1]}:null].filter(Boolean))nativeOcclusion(ctx,asset,frame,geometry,point,10,8);
   };
@@ -1555,7 +1556,7 @@ function cableWraps(ctx,match,prop,views,art,overlays) {
   const b=isTruss?{...definition.beats,captured:definition.beats.bind,pressure:definition.beats.hoist,impact:definition.beats.floorSlam}:isDrive?{...definition.beats,captured:definition.beats.ankleSnare,pressure:definition.beats.prone,impact:definition.beats.captured}:g.definition.beats;
   const t=match.deletionElapsed;if(t<b.captured||t>=b.impact)return;
   const index=1-match.winner,view=views[index],asset=art[index].clips[view.clip],frame=sourceFrame(asset,view);
-  const points=overlays.attachments(asset,frame,view,art[index].manifest.id),scale=poseScale(asset,frame),offset=frame.offset??[0,0];
+  const points=overlays.attachments(asset,frame,view,art[index].manifest.id),transform=poseTransform(asset,frame),scale=transform.sy,scaleX=transform.sx,offset=frame.offset??[0,0];
   const anatomy=(art[index].manifest.height??points.bodyLength*scale)/scale,angle=points.bodyAngle??0;
   const cos=Math.cos(angle),sin=Math.sin(angle),mask=overlays.alphaMask(asset,frame);
   const caches=cableWraps.cache??={fits:new WeakMap(),layers:new WeakMap()};
@@ -1603,11 +1604,11 @@ function cableWraps(ctx,match,prop,views,art,overlays) {
     fits.set(fitKey,bands);if(fits.size>24)fits.delete(fits.keys().next().value);
   }
   if(!bands.length)return;
-  const dx=view.x+(offset[0]-frame.anchor[0])*scale,dy=FLOOR+(view.y??0)+(offset[1]-frame.anchor[1])*scale;
+  const dx=view.x+transform.tx,dy=FLOOR+(view.y??0)+transform.ty;
   const tension=clamp((t-b.captured)/(b.pressure-b.captured),0,1);
   const pivot=poseWorldPoint({...view,rotation:0},art[index],'torso'),rotation=view.rotation??0,rotatePoint=p=>({x:pivot.x+(p.x-pivot.x)*Math.cos(rotation)-(p.y-pivot.y)*Math.sin(rotation),y:pivot.y+(p.x-pivot.x)*Math.sin(rotation)+(p.y-pivot.y)*Math.cos(rotation)});
-  const loops=bands.map(band=>({...rotatePoint({x:dx+band.x*scale,y:dy+band.y*scale}),
-    rx:band.radius*scale+2*(1-tension),ry:clamp(art[index].manifest.height*.023,5,10)*(1-.25*tension)}));
+  const loops=bands.map(band=>({...rotatePoint({x:dx+band.x*scaleX,y:dy+band.y*scale}),
+    rx:band.radius*scaleX+2*(1-tension),nativeRx:band.radius*scale+2*(1-tension)*scale/scaleX,ry:clamp(art[index].manifest.height*.023,5,10)*(1-.25*tension)}));
   const thickness=clamp((art[index].manifest.height??320)*.012,3.5,5);
   const wire=(target,path)=>{
     target.beginPath();path(target);target.strokeStyle='#15181e';target.lineWidth=thickness+2;target.stroke();
@@ -1616,7 +1617,9 @@ function cableWraps(ctx,match,prop,views,art,overlays) {
   };
   const drawTethers=target=>{
     for(let band=0;band<loops.length;band++)for(const side of [-1,1]) {
-      const loop=loops[band],bodyX=loop.x+Math.cos(angle+rotation)*loop.rx*side,bodyY=loop.y+Math.sin(angle+rotation)*loop.rx*side;
+      const loop=loops[band],axis=transform.vector({x:Math.cos(angle)*loop.nativeRx/scale,y:Math.sin(angle)*loop.nativeRx/scale}),c=Math.cos(rotation),s=Math.sin(rotation),
+        bodyX=loop.x+(scaleX===scale?Math.cos(angle+rotation)*loop.rx:axis.x*c-axis.y*s)*side,
+        bodyY=loop.y+(scaleX===scale?Math.sin(angle+rotation)*loop.rx:axis.x*s+axis.y*c)*side;
       const bounds=g.frame.opaqueBounds,width=bounds[2]-bounds[0];
       const outlet=side<0?bounds[0]+width*.33:bounds[2]-width*.33;
       const endX=g.x+outlet*g.scale;
@@ -1632,9 +1635,13 @@ function cableWraps(ctx,match,prop,views,art,overlays) {
     }
   };
   const drawArcs=(target,front)=>{
-    for(const loop of loops)wire(target,path=>path.ellipse(loop.x,loop.y,loop.rx,loop.ry,angle+rotation,front?0:Math.PI,front?Math.PI:TAU));
+    for(const loop of loops)wire(target,path=>{
+      if(scaleX===scale){path.ellipse(loop.x,loop.y,loop.rx,loop.ry,angle+rotation,front?0:Math.PI,front?Math.PI:TAU);return;}
+      path.save();path.translate(loop.x,loop.y);path.rotate(rotation);path.scale(scaleX/scale,1);
+      path.ellipse(0,0,loop.nativeRx,loop.ry,angle,front?0:Math.PI,front?Math.PI:TAU);path.restore();
+    });
   };
-  const drawBodyMask=target=>{const [sx,sy,w,h]=frame.rect;target.save();target.translate(pivot.x,pivot.y);target.rotate(rotation);target.translate(-pivot.x,-pivot.y);target.drawImage(asset.image,sx,sy,w,h,dx,dy,w*scale,h*scale);target.restore();};
+  const drawBodyMask=target=>{const [sx,sy,w,h]=frame.rect;target.save();target.translate(pivot.x,pivot.y);target.rotate(rotation);target.translate(-pivot.x,-pivot.y);target.drawImage(asset.image,sx,sy,w,h,dx,dy,w*scaleX,h*scale);target.restore();};
   const owner=ctx.canvas??ctx;
   let layers=caches.layers.get(owner);
   if(layers===undefined) {

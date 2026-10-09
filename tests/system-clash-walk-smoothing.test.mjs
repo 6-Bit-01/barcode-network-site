@@ -6,9 +6,23 @@ import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import sharp from 'sharp';
 import {compileFightClip,combatMetadata} from '../public/games/system-clash/play/fight-assets.mjs';
+import {poseTransform} from '../public/games/system-clash/play/fight-attachments.mjs';
 const play=fileURLToPath(new URL('../public/games/system-clash/play/',import.meta.url));
 const ids=['6-bit','9-bit','cache-back','cliff','dj-floppydisc','mac-modem','mr-nice-guy','ms-mayhem','stolz','kaveman-brown','dr3wbaby','wittyf0x','lyra','papa-oak'].filter(id=>!process.env.SYSTEM_CLASH_WALK_IDS||process.env.SYSTEM_CLASH_WALK_IDS.split(',').includes(id));
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
+const reviewedWalkOffsets=JSON.parse(await readFile(new URL('fixtures/system-clash-jitter-alignment.json',import.meta.url),'utf8')).reviewedOffsets.filter(r=>r.clip==='walk');
+// Fixed native skull rows from the visual audit; feet, arms and cape pixels cannot move this station.
+const walkCapRows={
+ 'cache-back':[[3,30],[2,30],[3,30],[2,29],[3,30],[2,29],[3,30],[2,28]],
+ wittyf0x:[[3,28],[2,27],[3,28],[2,27],[3,28],[2,27],[3,28],[2,27]],
+};
+function nativeCapCenter(raw,width,[top,bottom]){
+ const xs=[];
+ for(let y=top;y<bottom;y++)for(let x=0;x<width;x++)if(raw[(y*width+x)*4+3]>48)xs.push(x);
+ assert(xs.length>0,'The reviewed skull ROI must contain native opaque pixels');xs.sort((a,b)=>a-b);
+ const quantile=p=>{const i=(xs.length-1)*p,lo=Math.floor(i),hi=Math.ceil(i);return xs[lo]+(xs[hi]-xs[lo])*(i-lo);};
+ return (quantile(.025)+quantile(.975))/2;
+}
 for(const id of ids)test(id+': approved native walk chronology preserves complete source poses and original pixels',async()=>{
  const directory=path.join(play,'assets/fighters',id),manifest=JSON.parse(await readFile(path.join(directory,'manifest.json'),'utf8')),clip=manifest.clips.walk;
  if(clip.registrationRepair?.kind==='restore-approved-native-walk-chronology') {
@@ -30,16 +44,28 @@ for(const id of ids)test(id+': approved native walk chronology preserves complet
  assert.equal(clip.sourceSha256,sha(await readFile(file)));assert.deepEqual(clip.sourceSize,[image.width,image.height],'Native source geometry must describe the new encoded atlas');
  const metadata=combatMetadata([{manifest,clips:{walk:asset}}])[0].walk;
  for(const facing of ['right','left']){
-  const frames=clip.frames[facing],hashes=[];assert.equal(frames.length,8);
+  const frames=clip.frames[facing],hashes=[],caps=[];assert.equal(frames.length,8);
   assert.deepEqual(frames.map((f,index)=>id==='mac-modem'?clip.nativeIdentityTransfer.phaseLineage[`${facing}/${index}`].originalPhaseOrigin:f.walkKeyOrigin),['approved','generated','approved','generated','approved','generated','approved','generated']);
   for(const [index,frame]of frames.entries()){
    if(id!=='mac-modem'&&frame.walkKeyOrigin==='generated'){assert.equal(frame.poseSource.sourceFile,'walk-between-'+facing+'.png');assert.equal(frame.poseSource.cell,(index-1)/2);}else if(id!=='mac-modem')assert.equal(typeof frame.poseSource.originalFile,'string');assert.equal(frame.canonicalPixelSha256,frame.pixelSha256);const [left,top,width,height]=frame.rect;assert(left>=0&&top>=0&&left+width<=image.width&&top+height<=image.height);
    const raw=await sharp(file).extract({left,top,width,height}).ensureAlpha().raw().toBuffer();hashes.push(sha(raw));assert.equal(sha(raw),frame.pixelSha256);if(id==='mac-modem')verifyMacTransfer(frame,raw,clip,index,facing,sha);
+   if(facing==='left'&&walkCapRows[id]){const nativeX=nativeCapCenter(raw,width,walkCapRows[id][index]);caps.push(poseTransform(asset,frame).point([nativeX,0]).x);}
    assert(Math.abs(frame.anchor[1]-frame.opaqueBounds[3])<=1,'Every whole body is registered at its actual floor pixels');
    if(id!=='mac-modem'&&index%2===0){const source=frame.poseSource,original=await sharp(path.join(directory,source.originalFile)).extract({left:source.originalRect[0],top:source.originalRect[1],width,height}).ensureAlpha().raw().toBuffer();assert.equal(sha(original),source.pixelSha256);assert.equal(raw.length,original.length);for(let i=0;i<raw.length;i+=4){assert.equal(raw[i+3],original[i+3],'Approved alpha stays exact');if(original[i+3]>0)for(let c=0;c<3;c++)assert.equal(raw[i+c],original[i+c],'Approved native color stays exact');}}
   }
   assert.equal(new Set(hashes).size,8,'Every inserted key is a genuinely distinct whole-body image');
-  const torsos=metadata.combatPoses.frames[facing].map(p=>p.sites.torso.x);assert(Math.max(...torsos)-Math.min(...torsos)<manifest.height*.025,'Changing the support foot must not teleport the body root sideways');
+  // Authored torso markers describe source calibration; reviewed whole-crop registration is checked below against pixels.
+  const torsos=metadata.combatPoses.frames[facing].map((p,index)=>p.sites.torso.x-poseTransform(asset,frames[index]).registration.x);
+  assert(Math.max(...torsos)-Math.min(...torsos)<manifest.height*.025,'Changing the support foot must not teleport the calibrated source body root sideways');
+  const walkOffsets=reviewedWalkOffsets.filter(r=>r.id===id&&r.facing===facing);
+  if(facing==='left'&&walkCapRows[id])assert.deepEqual(walkOffsets.map(r=>r.index).sort((a,b)=>a-b),id==='cache-back'?[3,5]:[1,3,5,7],'Every reviewed walk correction needs its independent decoded station check');
+  for(const r of walkOffsets){
+   const frame=frames[r.index],t=poseTransform(asset,frame),hash=frame.nativeSource?.pixelSha256??frame.combatProfile?.sourceRgbaSha256??frame.pixelSha256;
+   assert.equal(hash,r.hash,'The walk station uses its independently reviewed native crop');
+   const target=(caps[r.index-1]+caps[(r.index+1)%frames.length])/2;
+   assert(Math.abs(caps[r.index]-target)<.8,`${id} ${facing}/${r.index}: decoded skull pixels must follow the adjacent original key stations`);
+   assert(Math.abs(caps[r.index]-t.registration.x-target)>10,'The decoded station check must detect the original unregistered whole-body drift');
+  }
   const heights=frames.map(f=>(f.opaqueBounds[3]-f.opaqueBounds[1])*asset.scale);assert(Math.max(...heights)/Math.min(...heights)<1.08,'Native walk poses cannot pulse the character size');
  }
 });

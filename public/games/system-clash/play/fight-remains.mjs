@@ -34,7 +34,7 @@ function standingStage(ctx,bank,progress){
 }
 export function drawRemainsVictim(ctx,bank,{x,y=0,height=320,pose='standing',progress=1,fall=0,direction=1,bodyMask=null}={}){
  if(!bank)return;
- if(bodyMask&&progress<1){let canvas=boneLayers.get(bank);if(!canvas){canvas=newLayer(ctx,1280,720);if(canvas)boneLayers.set(bank,canvas);}if(canvas){const layer=canvas.getContext('2d');layer.globalCompositeOperation='source-over';layer.clearRect(0,0,1280,720);drawRemainsVictim(layer,bank,{x,y,height,pose,progress,fall,direction});layer.globalCompositeOperation='destination-in';const {image,frame,scale,view}=bodyMask,[sx,sy,w,h]=frame.rect,offset=frame.offset??[0,0];layer.drawImage(image,sx,sy,w,h,view.x+(offset[0]-frame.anchor[0])*scale,620+(view.y??0)+(offset[1]-frame.anchor[1])*scale,w*scale,h*scale);layer.globalCompositeOperation='source-over';ctx.drawImage(canvas,0,0);return;}}
+ if(bodyMask&&progress<1){let canvas=boneLayers.get(bank);if(!canvas){canvas=newLayer(ctx,1280,720);if(canvas)boneLayers.set(bank,canvas);}if(canvas){const layer=canvas.getContext('2d');layer.globalCompositeOperation='source-over';layer.clearRect(0,0,1280,720);drawRemainsVictim(layer,bank,{x,y,height,pose,progress,fall,direction});layer.globalCompositeOperation='destination-in';const {image,frame,scale,transform,view}=bodyMask,[sx,sy,w,h]=frame.rect,offset=frame.offset??[0,0];layer.drawImage(image,sx,sy,w,h,view.x+(transform?.tx??(offset[0]-frame.anchor[0])*scale),620+(view.y??0)+(transform?.ty??(offset[1]-frame.anchor[1])*scale),w*(transform?.sx??scale),h*(transform?.sy??scale));layer.globalCompositeOperation='source-over';ctx.drawImage(canvas,0,0);return;}}
  // The fully exposed source survives the fall and floor; an unrelated lying key cannot replace its anatomy.
  const retained=pose==='lying'&&bank.manifest.standingStages?.length?standingStage(ctx,bank,1):null;
  const staged=retained??(pose==='standing'?standingStage(ctx,bank,progress):null),frame=staged?.frame??bank.manifest.frames[pose],image=staged?.image??bank.images[pose];if(!frame||!image)return;
@@ -68,7 +68,7 @@ const revealLayers=new WeakMap();
 function newLayer(ctx,w,h){const canvas=typeof OffscreenCanvas==='function'?new OffscreenCanvas(w,h):ctx.canvas?.ownerDocument?.createElement('canvas')??globalThis.document?.createElement?.('canvas');if(!canvas)return null;canvas.width=w;canvas.height=h;return canvas;}
 // Erase the union of ragged impact wounds. Overlapping wounds never toggle
 // flesh back on, and one scratch layer is reused for each source image.
-export function drawRemainsReveal(ctx,image,view,{sx,sy,sw,sh,dx,dy,scale,frame}){
+export function drawRemainsReveal(ctx,image,view,{sx,sy,sw,sh,dx,dy,scale,scaleX=scale,scaleY=scale,frame}){
  const p=view.remainsState?.exposure;if(!(p>0))return false;
  let cached=revealLayers.get(image);if(!cached||cached.canvas.width!==sw||cached.canvas.height!==sh){const canvas=newLayer(ctx,sw,sh);if(!canvas)return false;cached={canvas,key:null};revealLayers.set(image,cached);}
  const wounds=view.remainsState.woundSites?.filter(site=>['head','torso','legs'].includes(site))??[];
@@ -76,7 +76,7 @@ export function drawRemainsReveal(ctx,image,view,{sx,sy,sw,sh,dx,dy,scale,frame}
  const bounds=frame.opaqueBounds??[0,0,sw,sh],w=bounds[2]-bounds[0],h=bounds[3]-bounds[1];
  for(let i=0;i<34;i++){const site=wounds[i%wounds.length],point=frame.attachments?.[site],band=site?point?.[1]??bounds[1]+h*({head:.12,torso:.45,legs:.8}[site]):null,cx=bounds[0]+w*(.08+((i*19%37)/37)*.84),cy=site?band+h*((i*13%41)/41-.5)*.025:bounds[1]+h*(.03+((i*13%41)/41)*.94),r=h*(site?.012+.023*p:.008+.10*p)*( .62+(i*7%11)/11);layer.beginPath();for(let j=0;j<13;j++){const angle=j*Math.PI*2/13,ragged=.74+((i*11+j*7)%17)/30,x=cx+Math.cos(angle)*r*ragged,y=cy+Math.sin(angle)*r*ragged;layer[j?'lineTo':'moveTo'](x,y);}layer.closePath();layer.fill();}
  layer.globalCompositeOperation='source-over';cached.key=key;}
- ctx.drawImage(cached.canvas,0,0,sw,sh,dx,dy,sw*scale,sh*scale);return true;
+ ctx.drawImage(cached.canvas,0,0,sw,sh,dx,dy,sw*scaleX,sh*scaleY);return true;
 }
 // Both separated halves use this identical ragged boundary, so their wounds
 // join before release and keep their shape throughout the frozen-key fall.

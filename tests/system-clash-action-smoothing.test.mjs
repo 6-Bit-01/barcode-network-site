@@ -1,15 +1,16 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {readFile} from 'node:fs/promises';import {createHash} from 'node:crypto';import {fileURLToPath} from 'node:url';import path from 'node:path';import sharp from 'sharp';
 import {compileFightClip,combatMetadata} from '../public/games/system-clash/play/fight-assets.mjs';
-import {poseFrameIndex,poseScale} from '../public/games/system-clash/play/fight-attachments.mjs';
+import {poseFrameIndex,poseScale,poseTransform} from '../public/games/system-clash/play/fight-attachments.mjs';
 const root=fileURLToPath(new URL('../public/games/system-clash/play/',import.meta.url)),sha=b=>createHash('sha256').update(b).digest('hex');
 
 function unchangedNativeGeometry(actual,old,currentFrame,oldFrame,currentAsset,oldAsset){
- const cs=poseScale(currentAsset,currentFrame),os=poseScale(oldAsset,oldFrame);assert.equal(cs,os,'The complete original native source retains one uniform scale');
- const co=currentFrame.offset??[0,0],oo=oldFrame.offset??[0,0],dx=(co[0]-currentFrame.anchor[0]-oo[0]+oldFrame.anchor[0])*cs,dy=(co[1]-currentFrame.anchor[1]-oo[1]+oldFrame.anchor[1])*cs;
- const point=p=>({x:p.x+dx,y:p.y+dy}),close=(a,b)=>assert(Math.abs(a-b)<.0001,'Original source landmarks and actual strike reach change only by whole-pose root registration');
+ const cs=poseScale(currentAsset,currentFrame),os=poseScale(oldAsset,oldFrame);assert.equal(cs,os,'The original native source retains its existing vertical scale');
+ const current=poseTransform(currentAsset,currentFrame),previous=poseTransform(oldAsset,oldFrame);
+ // Compare the retained native landmark through both crop transforms: current source width calibration and root registration apply once.
+ const point=p=>current.point(previous.inverse(p)),close=(a,b)=>assert(Math.abs(a-b)<.0001,'Original source landmarks and strike reach use the shared calibrated crop transform');
  for(const site of ['head','torso','legs','grip']){const want=point(old.sites[site]);close(actual.sites[site].x,want.x);close(actual.sites[site].y,want.y);}
- for(const site of ['strike','strikeStart']){if(!oldFrame.attachments?.[site]&&currentFrame.attachments?.[site]){assert.equal(currentFrame.strikeProfile?.kind,'native-active-leading-foot-alpha','A newly measured foot replaces the old generic crop-edge approximation');const p=currentFrame.attachments[site];close(actual[site].x,(p[0]+co[0]-currentFrame.anchor[0])*cs);close(actual[site].y,(p[1]+co[1]-currentFrame.anchor[1])*cs);}else{const want=point(old[site]);close(actual[site].x,want.x);close(actual[site].y,want.y);}}
- for(const edge of ['left','right','top','bottom'])close(actual.bounds[edge],old.bounds[edge]+(['left','right'].includes(edge)?dx:dy));assert.equal(actual.strikeRadius,old.strikeRadius);
+ for(const site of ['strike','strikeStart']){if(!oldFrame.attachments?.[site]&&currentFrame.attachments?.[site]){assert.equal(currentFrame.strikeProfile?.kind,'native-active-leading-foot-alpha','A newly measured foot replaces the old generic crop-edge approximation');const p=currentFrame.attachments[site];const want=current.point(p);close(actual[site].x,want.x);close(actual[site].y,want.y);}else{const want=point(old[site]);close(actual[site].x,want.x);close(actual[site].y,want.y);}}
+ const topLeft=point({x:old.bounds.left,y:old.bounds.top}),bottomRight=point({x:old.bounds.right,y:old.bounds.bottom});for(const [edge,want]of Object.entries({left:topLeft.x,top:topLeft.y,right:bottomRight.x,bottom:bottomRight.y}))close(actual.bounds[edge],want);assert.equal(actual.strikeRadius,old.strikeRadius);
  if(currentFrame.combatHurt){assert.equal(actual.measuredHurt,true);assert.equal(actual.hurt.length,currentFrame.combatHurt.length);for(const r of actual.hurt)assert(r.left>=actual.bounds.left-.001&&r.right<=actual.bounds.right+.001&&r.top>=actual.bounds.top-.001&&r.bottom<=actual.bounds.bottom+.001,'Fine native alpha bands remain inside the original intact body');}else assert.deepEqual(actual.hurt,old.hurt);
 }
 const targets=[['mr-nice-guy','arcade','crouch-kick'],['mac-modem','arcade','crouch-kick'],['stolz','arcade','crouch-kick'],['dj-floppydisc','deletions','brace'],['dj-floppydisc','deletions','pull'],['cache-back','deletions','brace'],['cache-back','deletions','shove']];

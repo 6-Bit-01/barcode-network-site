@@ -5,7 +5,7 @@ import {compileFightClip,combatMetadata} from '../public/games/system-clash/play
 import {createMatch,performAction,getFighterView} from '../public/games/system-clash/play/fight-engine.mjs';
 import {deletionDefinition} from '../public/games/system-clash/play/deletion-library.mjs';
 const rendererURL=new URL('../public/games/system-clash/play/fight-renderer.mjs',import.meta.url),text=fs.readFileSync(rendererURL,'utf8').replace(/from '([.]\/[^']+)'/g,(_,relative)=>"from '"+new URL(relative,rendererURL).href+"'");
-const {machineViews,jawsGeometry,poseWorldPoint}=await import('data:text/javascript;base64,'+Buffer.from(text+'\nexport {machineViews,jawsGeometry,poseWorldPoint};').toString('base64'));
+const {machineViews,jawsGeometry,poseWorldPoint}=await import('data:text/javascript;base64,'+Buffer.from(text+'\nexport {machineViews,jawsGeometry};').toString('base64'));
 const root=new URL('../public/games/system-clash/play/assets/',import.meta.url),json=file=>JSON.parse(fs.readFileSync(new URL(file,root),'utf8'));
 function size(file){const b=fs.readFileSync(new URL(file,root));return b[0]===137?{width:b.readUInt32BE(16),height:b.readUInt32BE(20)}:{width:1+b.readUIntLE(24,3),height:1+b.readUIntLE(27,3)};}
 function native(id){const clips={};let manifest;for(const bank of ['fighters','arcade','deletions']){const data=json(`${bank}/${id}/manifest.json`);if(bank==='fighters')manifest=data;for(const [name,c]of Object.entries(data.clips)){if(name.startsWith('grab'))continue;const key=bank==='deletions'?'delete-'+name:name;clips[key]=compileFightClip(c,size(`${bank}/${id}/${c.file}`),data,key);}}return {manifest,clips};}

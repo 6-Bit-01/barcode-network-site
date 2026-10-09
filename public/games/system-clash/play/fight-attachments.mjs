@@ -1,5 +1,23 @@
 export const poseScale = (asset, frame) => asset.scale * (frame?.bodyCalibration ?? 1);
 import {authoredPoseAnchor} from './fight-pose-anchors.mjs';
+import {poseWidthFactor} from './fight-pose-widths.mjs';
+import {poseRegistration} from './fight-pose-registration.mjs';
+
+/** One crop-to-world transform, with horizontal calibration around the existing torso station. */
+export function poseTransform(asset,frame) {
+  const scale=poseScale(asset,frame),sx=scale*poseWidthFactor(asset,frame),sy=scale,offset=frame.offset??[0,0],registration=poseRegistration(asset,frame);
+  let torso=null;
+  if(sx!==scale){let facing='right',index=asset.data.frames?.right?.indexOf(frame)??-1;
+    if(index<0){facing='left';index=asset.data.frames?.left?.indexOf(frame)??0;}
+    torso=resolvePoseAttachments(frame,asset.name??'idle',index,facing,asset.fighterId).torso;
+  }
+  const tx=(offset[0]-frame.anchor[0])*scale+(scale-sx)*(torso?.x??0)+registration.x,ty=(offset[1]-frame.anchor[1])*scale+registration.y;
+  const point=value=>{const x=Array.isArray(value)?value[0]:value.x,y=Array.isArray(value)?value[1]:value.y,px=sx===scale?(x+offset[0]-frame.anchor[0])*scale:(torso.x+offset[0]-frame.anchor[0])*scale+(x-torso.x)*sx,py=(y+offset[1]-frame.anchor[1])*scale;return {x:registration.x?px+registration.x:px,y:registration.y?py+registration.y:py};};
+  const inverse=value=>({x:(value.x-tx)/sx,y:(value.y-ty)/sy});
+  const vector=value=>({x:value.x*sx,y:value.y*sy});
+  const angle=value=>sx===sy?value:Math.atan2(Math.sin(value)*sy,Math.cos(value)*sx);
+  return {scale,sx,sy,tx,ty,registration,point,inverse,vector,angle};
+}
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const pose = (head, torso, legs, grip) => ({head, torso, legs, grip});
 
@@ -62,7 +80,7 @@ export function poseFrameIndex(asset, view) {
   return (entries.find(entry => time >= entry.start && time < entry.end) ?? entries.at(-1))?.index ?? 0;
 }
 
-/** Returns native crop coordinates; uniform draw scale and frame offsets apply later. */
+/** Returns native crop coordinates; the shared crop transform applies later. */
 export function resolvePoseAttachments(frame, clip, index, facing = 'right', fighterId = null) {
   const bounds = frame.opaqueBounds ?? [0,0,frame.rect[2],frame.rect[3]];
   const [left,top,right,bottom] = bounds;
@@ -209,12 +227,11 @@ export function compileWeaponOrigins(asset, weaponArt) {
   const result = {weaponOrigins:{},weaponThrowOrigins:{}};
   const index = poseFrameIndex(asset,{clip:'punch',elapsed:asset.data.contactMs ?? 170});
   for (const facing of ['right','left']) {
-    const frame = asset.data.frames[facing][index], scale = poseScale(asset,frame);
+    const frame = asset.data.frames[facing][index], transform = poseTransform(asset,frame);
     const attachments = asset.poseAttachments?.[facing]?.[index] ?? resolvePoseAttachments(frame,'punch',index,facing);
     if(!attachments.grip)continue;
     const held = weaponAttachment({facing},attachments);
-    const offset = frame.offset ?? [0,0];
-    const grip = {x:(held.point.x+offset[0]-frame.anchor[0])*scale,y:(held.point.y+offset[1]-frame.anchor[1])*scale};
+    const grip = transform.point(held.point);
     result.weaponThrowOrigins[facing] = grip;
     for (const type of ['neural-spike','pulse-driver']) {
       const spec = weaponArt?.manifest?.weapons?.[type];
@@ -223,7 +240,7 @@ export function compileWeaponOrigins(asset, weaponArt) {
       const propScale = spec.drawWidth/prop.rect[2];
       const x = (prop.tip[0]-prop.grip[0])*propScale;
       const y = (prop.tip[1]-prop.grip[1])*propScale;
-      const cos = Math.cos(held.angle),sin = Math.sin(held.angle);
+      const angle=transform.angle(held.angle),cos = Math.cos(angle),sin = Math.sin(angle);
       (result.weaponOrigins[type] ??= {})[facing] = {x:grip.x+x*cos-y*sin,y:grip.y+x*sin+y*cos};
     }
   }

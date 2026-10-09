@@ -36,9 +36,13 @@ export function createFightMotionFX(options={}) {
     if(!image||!position||!Array.isArray(source)||source.length!==4||!source.every(Number.isFinite)
       ||!Array.isArray(destination)||destination.length!==4||!destination.every(Number.isFinite))return null;
     const [sx,sy,sw,sh]=source,[dx,dy,dw,dh]=destination;
-    const scale=dw/sw;
-    if(sx<0||sy<0||sw<=0||sh<=0||dw<=0||dh<=0||scale>8
-      ||Math.abs(scale-dh/sh)>1e-6||!Number.isFinite(image.width)||!Number.isFinite(image.height)
+    const scale=dw/sw,calibrated=body.scaleX!==undefined||body.scaleY!==undefined;
+    const scaleX=calibrated?body.scaleX:scale,scaleY=calibrated?body.scaleY:scale;
+    // Only the shared native transform may supply independent dimensions. An
+    // arbitrary stretched destination still fails the default uniform contract.
+    if(sx<0||sy<0||sw<=0||sh<=0||dw<=0||dh<=0
+      ||!Number.isFinite(scaleX)||!Number.isFinite(scaleY)||scaleX<=0||scaleY<=0||scaleX>8||scaleY>8
+      ||Math.abs(dw/sw-scaleX)>1e-6||Math.abs(dh/sh-scaleY)>1e-6||!Number.isFinite(image.width)||!Number.isFinite(image.height)
       ||sx+sw>image.width||sy+sh>image.height||sw>4096||sh>4096)return null;
     // Attachments must belong to this resolved native crop. Stale world-space
     // points on another actor or a prop cannot leave a line beside this body.

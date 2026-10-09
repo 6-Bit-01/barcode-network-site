@@ -1,4 +1,5 @@
-import {poseScale,compileWeaponOrigins,resolvePoseAttachments,poseFrameIndex,weaponAttachment} from './fight-attachments.mjs';
+import {poseScale,poseTransform,compileWeaponOrigins,resolvePoseAttachments,poseFrameIndex,weaponAttachment} from './fight-attachments.mjs';
+import {clipPlayback} from './fight-pose-registration.mjs';
 import {nativeHurtRegions,nativePushRegions} from './fight-combat-geometry.mjs';
 import {deletionDefinition} from './deletion-library.mjs';
 import {stageById} from './fight-stages.mjs';
@@ -22,10 +23,10 @@ function fightImagePath(manifestPath,data,bundle) {
 
 export function compileFightClip(data, image, manifest, name) {
   if (!data?.file) throw new Error(`${manifest.character}: ${name} is missing.`);
-  const order = data.order ?? [0,1,2,3];
+  const playback=clipPlayback(data,manifest,name),order = playback?.order ?? data.order ?? [0,1,2,3],frameMs=playback?.frameMs??data.frameMs;
   let cursor = 0;
   const entries = order.map((index, position) => {
-    const timing = Array.isArray(data.frameMs) ? data.frameMs[data.frameMs.length === order.length ? position : index] : data.frameMs;
+    const timing = Array.isArray(frameMs) ? frameMs[frameMs.length === order.length ? position : index] : frameMs;
     const duration = timing ?? 120;
     if (!Number.isInteger(index) || !Number.isFinite(duration) || duration <= 0) throw new Error(`${name}: invalid animation timing.`);
     const start = cursor;
@@ -48,7 +49,9 @@ export function compileFightClip(data, image, manifest, name) {
   if (frameScales.some(scale=>scale !== frameScales[0])) throw new Error(`${name}: poses cannot change scale.`);
   const scale = data.scale ?? manifest.scale ?? frameScales[0] ?? manifest.height/data.frames.right[0].rect[3];
   if (!Number.isFinite(scale) || scale <= 0) throw new Error(`${name}: invalid sheet scale.`);
-  return {data, image, scale, timeline:{entries,duration:cursor}};
+  const identity=manifest.fighterId??manifest.baseId??manifest.id;
+  const fighterId=typeof identity==='string'?identity.replace(/-(?:arcade(?:-actions)?|deletions?|deletion-utilities)$/,''):identity;
+  return {data, image, scale,character:manifest.character,name,fighterId,timeline:{entries,duration:cursor}};
 }
 
 // Compile once at load: combat uses a few pose-local shapes, never image pixels.
@@ -59,15 +62,15 @@ function compileCombatPoses(asset,name,fighter) {
   const strikeRatio=Number.isFinite(ratio)?ratio:
     ({kick:.62,'low-kick':.22,'crouch-kick':.15,'crouch-high-kick':.49,'power-kick':.48,'jump-kick':.35}[name]??.55);
   const frames=Object.fromEntries(['left','right'].map(facing=>[facing,asset.data.frames[facing].map((frame,index)=>{
-    const scale=poseScale(asset,frame),offset=frame.offset??[0,0],bounds=frame.opaqueBounds??[0,0,frame.rect[2],frame.rect[3]];
-    const point=([x,y])=>({x:(x+offset[0]-frame.anchor[0])*scale,y:(y+offset[1]-frame.anchor[1])*scale});
+    const transform=poseTransform(asset,frame),scale=transform.sy,offset=frame.offset??[0,0],bounds=frame.opaqueBounds??[0,0,frame.rect[2],frame.rect[3]];
+    const point=transform.point;
     const a=point(bounds.slice(0,2)),b=point(bounds.slice(2)),bodyHeight=Math.max(20,b.y-a.y);
     const sites=resolvePoseAttachments(frame,name,index,facing,fighter.manifest.id);
     const head=point([sites.head.x,sites.head.y]),torso=point([sites.torso.x,sites.torso.y]),legs=point([sites.legs.x,sites.legs.y]);
     const box=(site,x1,y1,x2,y2)=>({site,left:Math.max(a.x,x1),top:Math.max(a.y,y1),right:Math.min(b.x,x2),bottom:Math.min(b.y,y2)});
-    const headRadius=Math.min(height*.09,bodyHeight*.11),bodyRadius=Math.min(height*.15,(b.x-a.x)*.30);
+    const widthFactor=transform.sx/transform.sy,headRadius=Math.min(height*.09,bodyHeight*.11),headRadiusX=headRadius*widthFactor,bodyRadius=Math.min(height*.15*widthFactor,(b.x-a.x)*.30);
     const hip=legs.y-bodyHeight*.08;
-    const hurt=nativeHurtRegions(frame,point)??[box('head',head.x-headRadius,head.y-headRadius,head.x+headRadius,head.y+headRadius),
+    const hurt=nativeHurtRegions(frame,point)??[box('head',head.x-headRadiusX,head.y-headRadius,head.x+headRadiusX,head.y+headRadius),
       box('torso',Math.min(torso.x,legs.x)-bodyRadius,head.y+headRadius*.7,Math.max(torso.x,legs.x)+bodyRadius,hip),
       box('legs',legs.x-bodyRadius*.8,hip-bodyHeight*.06,legs.x+bodyRadius*.8,b.y)]
       .filter(region=>region.right>region.left&&region.bottom>region.top);
@@ -100,16 +103,16 @@ export function combatMetadata(art,weaponArt) {
     ...(name==='thrown'?{airborneStartMs:asset.timeline.entries[1]?.start??0,airborneExtendedMs:asset.timeline.entries[2]?.start??0,airborneEndMs:Math.max(0,asset.timeline.entries.at(-1).start-.001)}:{}),
     loop:asset.data.loop ?? (name === 'idle' || name === 'walk'),
     endOffsetX:Object.fromEntries(['left','right'].map(facing=>[facing,(asset.data.frames[facing].at(-1).offset?.[0] ?? 0)*poseScale(asset,asset.data.frames[facing].at(-1))])),
-    topOffsets:Object.fromEntries(['left','right'].map(facing=>[facing,Math.min(...asset.data.frames[facing].map(frame=>((frame.opaqueBounds?.[1]??0)+(frame.offset?.[1]??0)-frame.anchor[1])*poseScale(asset,frame)))])),
+    topOffsets:Object.fromEntries(['left','right'].map(facing=>[facing,Math.min(...asset.data.frames[facing].map(frame=>poseTransform(asset,frame).point([0,frame.opaqueBounds?.[1]??0]).y))])),
     ...(Number.isFinite(asset.data.channelMs)?{channelMs:asset.data.channelMs}:{}),
     ...(name.startsWith('delete-')?Object.fromEntries(['grip','head','torso','strike'].map(site=>['contact'+site[0].toUpperCase()+site.slice(1)+'Origins',Object.fromEntries(['left','right'].map(facing=>{
       const index=poseFrameIndex(asset,{clip:name,elapsed:asset.data.contactMs,facing}),frame=asset.data.frames[facing][index],offset=frame.offset??[0,0];
       const points=resolvePoseAttachments(frame,name,index,facing,fighter.manifest.id),raw=frame.attachments?.[site],point=raw?{x:raw[0],y:raw[1]}:points[site]??points.grip;
-      return [facing,{x:(point.x+offset[0]-frame.anchor[0])*poseScale(asset,frame),y:(point.y+offset[1]-frame.anchor[1])*poseScale(asset,frame)}];
+      return [facing,poseTransform(asset,frame).point(point)];
     }))])):{}),
     ...(name==='delete-nail'?{contactNailTipOrigins:Object.fromEntries(['left','right'].map(facing=>{
       const index=poseFrameIndex(asset,{clip:name,elapsed:asset.data.contactMs,facing}),frame=asset.data.frames[facing][index],offset=frame.offset??[0,0],point=resolvePoseAttachments(frame,name,index,facing,fighter.manifest.id).grip;
-      return [facing,{x:(point.x+offset[0]-frame.anchor[0])*poseScale(asset,frame)-.3,y:(point.y+offset[1]-frame.anchor[1])*poseScale(asset,frame)+112}];
+      const origin=poseTransform(asset,frame).point(point);return [facing,{x:origin.x-.3,y:origin.y+112}];
     }))}:{}),
     ...(name==='punch'&&weaponArt?compileWeaponOrigins(asset,weaponArt):{}),
     ...(name==='pickup'?{
@@ -118,8 +121,7 @@ export function combatMetadata(art,weaponArt) {
         const index=poseFrameIndex(asset,{clip:name,elapsed:asset.data.contactMs,facing});
         const frame=asset.data.frames[facing][index],offset=frame.offset??[0,0];
         const points=resolvePoseAttachments(frame,name,index,facing,fighter.manifest.id);
-        return [facing,{x:(points.grip.x+offset[0]-frame.anchor[0])*poseScale(asset,frame),
-          y:(points.grip.y+offset[1]-frame.anchor[1])*poseScale(asset,frame),angle:weaponAttachment({facing},points).angle}];
+        const transform=poseTransform(asset,frame);return [facing,{...transform.point(points.grip),angle:transform.angle(weaponAttachment({facing},points).angle)}];
       })),
     }:{}),
   }])));

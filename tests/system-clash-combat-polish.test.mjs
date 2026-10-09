@@ -107,7 +107,12 @@ for(const facing of ['right','left'])for(const action of ['kick','uppercut'])tes
   match.fighters[1].x=match.fighters[0].x+dir*gap;
   performAction(match,0,action);advance(match,650);
   assert(match.fighters[1].hp<match.fighters[1].maxHp,'The opponent crosses the extended shin/forearm before the tip');
-  assert.equal(consumeEvents(match).filter(event=>event.type==='hit').length,1);
+  const events=consumeEvents(match),hits=events.filter(event=>event.type==='hit'),walls=events.filter(event=>event.type==='wall-impact');
+  assert.equal(hits.filter(event=>event.action===action&&!event.secondary).length,1,'The native attack registers exactly once');
+  assert(walls.length<=1,'A released body cannot repeatedly damage the same wall');
+  assert.equal(hits.filter(event=>event.action==='wall-slam'&&event.secondary).length,walls.length,'Each wall impact has exactly one secondary damage hit');
+  assert.equal(hits.length,1+walls.length,'Only the primary strike and its physical wall impact may deal damage');
+  for(const wall of walls)assert(hits.some(hit=>hit.secondary&&hit.action==='wall-slam'&&hit.attacker===wall.attacker&&hit.target===wall.target&&hit.x===wall.x&&hit.damage===wall.damage),'Secondary damage matches the actual wall impact');
 });
 
 for(const facing of ['right','left'])test(`9 Bit uppercut cannot borrow extra reach beyond its real native limb (${facing})`,()=>{const match=matchFor(['9-bit','9-bit'],facing),dir=facing==='right'?1:-1;match.fighters[1].x=match.fighters[0].x+dir*210;performAction(match,0,'uppercut');advance(match,650);assert.equal(match.fighters[1].hp,match.fighters[1].maxHp);assert.equal(consumeEvents(match).filter(e=>e.type==='hit').length,0);});

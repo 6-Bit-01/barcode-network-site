@@ -7,7 +7,7 @@ const specs=[
  {id:'containment',name:'Containment',description:'Observation glass, moving machinery and a marked purge beam.',ambientCycleMs:60000,color:'#83d9e6',interaction:{x:1900,y:600,reach:125,cooldownMs:14000,label:'PURGE CONTROL'},hazard:{type:'beam',name:'PURGE BEAM',warningMs:1000,impactDelayMs:260,activeMs:900,damage:16,kind:'scorch',zone:{left:600,right:1840,top:325,bottom:400}}},
  {id:'nature-simulation',name:'Nature Simulation',description:'Layered simulated foliage and a rising holographic thorn trap.',ambientCycleMs:54000,color:'#9dd9a6',interaction:{x:650,y:600,reach:125,cooldownMs:13000,label:'THORN PROGRAM'},hazard:{type:'thorns',name:'HOLOGRAPHIC THORNS',warningMs:1000,impactDelayMs:300,activeMs:1000,damage:17,kind:'cut',zone:{left:1000,right:1660,top:505,bottom:620}}},
  {id:'witty-wasteland',name:'Witty Wasteland',description:'Ruined exterior, salvage machinery and an explosive rolling barrel.',ambientCycleMs:46000,color:'#deb16f',interaction:{x:1880,y:600,reach:125,cooldownMs:15000,label:'SALVAGE RELEASE'},hazard:{type:'barrel',name:'EXPLOSIVE SALVAGE',warningMs:1000,impactDelayMs:550,activeMs:1200,damage:18,kind:'cut',zone:{left:900,right:1710,top:455,bottom:620}}},
- {id:'interdimensional-station',name:'Interdimensional Station',description:'Transit portals, watching commuters and a warned signal arc.',ambientCycleMs:58000,color:'#be8deb',interaction:{x:1880,y:600,reach:125,cooldownMs:14500,label:'TRANSIT RESET'},hazard:{type:'beam',name:'SIGNAL ARC',warningMs:1100,impactDelayMs:280,activeMs:1050,damage:16,kind:'scorch',zone:{left:720,right:1800,top:340,bottom:430}}},
+ {id:'interdimensional-station',name:'Interdimensional Station',description:'Transit portals, watching commuters and a warned signal arc.',ambientCycleMs:58000,color:'#be8deb',portals:{left:{x:210,exitX:430,height:620,color:'#bd73ff'},right:{x:2350,exitX:2130,height:620,color:'#80e1b1'},cooldownMs:800},interaction:{x:1880,y:600,reach:125,cooldownMs:14500,label:'TRANSIT RESET'},hazard:{type:'beam',name:'SIGNAL ARC',warningMs:1100,impactDelayMs:280,activeMs:1050,damage:16,kind:'scorch',zone:{left:720,right:1800,top:340,bottom:430}}},
 ];
 const chain=['studio-rat-lair','radio-studio','sheila-office','containment','nature-simulation','witty-wasteland','interdimensional-station'];
 export const STAGES=Object.freeze(specs.map(spec=>{
@@ -16,7 +16,7 @@ export const STAGES=Object.freeze(specs.map(spec=>{
 }));
 export function stageById(id){return STAGES.find(stage=>stage.id===(typeof id==='object'?id?.id:id))??STAGES[0];}
 const freshWalls=()=>({left:{damage:0,broken:false},right:{damage:0,broken:false}});
-export function createStageState(id){const spec=stageById(id);const walls=freshWalls();return {id:spec.id,width:spec.width,clock:0,fightClock:0,cooldownUntil:0,interaction:null,activation:null,activationSerial:0,transitionSerial:0,cinematicOrigin:null,walls,wallRooms:{[spec.id]:walls},lastWallImpact:null};}
+export function createStageState(id){const spec=stageById(id);const walls=freshWalls();return {id:spec.id,width:spec.width,clock:0,fightClock:0,cooldownUntil:0,interaction:null,activation:null,activationSerial:0,transitionSerial:0,cinematicOrigin:null,portalSerial:0,lastPortalTransit:null,walls,wallRooms:{[spec.id]:walls},lastWallImpact:null};}
 export function stageInteractionReady(state,x){const spec=stageById(state.id);return !state.interaction&&!state.activation&&state.fightClock>=state.cooldownUntil&&Math.abs(x-spec.interaction.x)<=spec.interaction.reach;}
 export function startStageWarning(state,actor){
  const spec=stageById(state.id);if(state.activation||state.fightClock<state.cooldownUntil)return null;
@@ -48,6 +48,6 @@ export function enterStage(state,id,exitSide){
  const previous=state.id,spec=stageById(id);state.wallRooms[previous]=state.walls;
  state.id=spec.id;state.width=spec.width;state.walls=state.wallRooms[spec.id]??freshWalls();state.wallRooms[spec.id]=state.walls;
  const entrySide=exitSide==='left'?'right':'left';if(spec.walls[entrySide].target===previous)state.walls[entrySide].broken=true;
- state.activation=null;state.interaction=null;state.cooldownUntil=state.fightClock;state.lastWallImpact=null;state.cinematicOrigin=null;state.transitionSerial++;
+ state.activation=null;state.interaction=null;state.cooldownUntil=state.fightClock;state.lastWallImpact=null;state.lastPortalTransit=null;state.cinematicOrigin=null;state.transitionSerial++;
  return {fromStage:previous,toStage:spec.id,side:exitSide,entrySide,serial:state.transitionSerial};
 }

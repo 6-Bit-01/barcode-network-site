@@ -32,8 +32,8 @@ function prepareAmbient(owner,state,art){if(!art?.image)return [];const image=ar
  });}
 function stationPerson(ctx,art,kind,person,frame,opacity=1){
  const image=art?.extraImages?.[kind],bank=art?.layers?.people?.[kind],pose=bank?.frames?.[frame];if(!image||!pose)return;
- const [sx,sy,w,h]=pose.rect,anchor=pose.anchor,scale=person.height/bank.referenceHeight;
- ctx.save();ctx.globalAlpha=opacity;ctx.translate(person.x,person.y);ctx.scale(person.facing==='left'?-scale:scale,scale);ctx.drawImage(image,sx,sy,w,h,-anchor[0],-anchor[1],w,h);ctx.restore();
+ const [sx,sy,w,h]=pose.rect,anchor=pose.bodyAnchor??pose.anchor,scale=person.height/bank.referenceHeight;
+ ctx.save();ctx.globalAlpha=opacity*.32;ctx.fillStyle='#080b13';ctx.beginPath();ctx.ellipse(person.x,person.y+2,person.height*.19,person.height*.022,0,0,TAU);ctx.fill();ctx.globalAlpha=opacity;ctx.translate(person.x,person.y);ctx.scale(person.facing==='left'?-scale:scale,scale);ctx.drawImage(image,sx,sy,w,h,-anchor[0],-anchor[1],w,h);ctx.restore();
 }
 function ambient(ctx,state,art,options,patches){const v=stageVisualState(state,options),plan=stageAmbientPlan(state,options);
  for(const [index,patch]of (patches??[]).entries()){if(!patch)continue;const light=plan.lights[index];ctx.save();ctx.globalAlpha=light.opacity;ctx.drawImage(patch.canvas,patch.x+light.dx,patch.y,patch.width,patch.height);ctx.restore();}
@@ -71,7 +71,24 @@ function hazard(ctx,state,spec,phase,options){if(phase.phase!=='active')return;c
  }
  ctx.restore();
 }
-function walls(ctx,state,art,options){const spec=stageById(state.id);for(const side of ['left','right']){const x=side==='left'?210:state.width-210,wall=state.walls?.[side]??{damage:0},target=spec.walls[side].target;
+function stationPortals(ctx,state,art,options){
+ const portals=stageById(state.id).portals,transit=state.lastPortalTransit,age=state.clock-(transit?.at??-10000),active=age>=0&&age<650;
+ for(const side of ['left','right']){
+  const portal=portals[side],name=side==='left'?'leftWall':'rightWall',frame=kitFrame(art,name);if(!frame)continue;
+  // Edge triggers and the authored aperture share the same horizontal center.
+  const [, ,sw,sh]=frame.rect,scale=portal.height/sh,anchor=frame.anchor??[sw/2,sh],x=portal.x+(anchor[0]-sw/2)*scale;
+  prop(ctx,art,name,x,FLOOR,{height:portal.height});
+  const travel=active&&transit.transits?.some(value=>value.from===side||value.to===side),strength=travel?(1-age/650):0,pulse=options.reducedMotion?.12:.09+.025*Math.sin(state.clock/650+(side==='right'?2:0));
+  ctx.save();ctx.globalCompositeOperation='screen';prop(ctx,art,name,x,FLOOR,{height:portal.height,opacity:pulse+strength*(options.reducedMotion?.22:.48)});
+  if(travel){
+   const y=FLOOR-portal.height*.48,rx=portal.height*.145,ry=portal.height*.36;
+   ctx.globalAlpha=strength*(options.reducedMotion?.25:.65);ctx.strokeStyle=portal.color;ctx.lineWidth=3+strength*5;ctx.beginPath();ctx.ellipse(portal.x,y,rx,ry,0,0,TAU);ctx.stroke();
+   if(!options.reducedMotion)for(let i=0;i<12;i++){const phase=i/12*TAU+age*.012;ctx.globalAlpha=strength*.75;ctx.fillStyle=portal.color;ctx.beginPath();ctx.ellipse(portal.x+Math.cos(phase)*rx,y+Math.sin(phase)*ry,2+i%3,3+i%3,phase,0,TAU);ctx.fill();}
+  }
+  ctx.restore();
+ }
+}
+function walls(ctx,state,art,options){const spec=stageById(state.id);if(spec.portals){stationPortals(ctx,state,art,options);return;}for(const side of ['left','right']){const x=side==='left'?210:state.width-210,wall=state.walls?.[side]??{damage:0},target=spec.walls[side].target;
  if(!wall.broken){prop(ctx,art,side==='left'?'leftWall':'rightWall',x,FLOOR,{height:500});
   // Damage belongs to the wall surface, rather than a floating outlined instruction panel.
   if(target)nativeVisual(ctx,options,'wallCracks',x-42,360,84,.23+clamp(wall.damage/80,0,1)*.72);

@@ -29,12 +29,14 @@ export async function POST(req:Request){
   let body;try{body=JSON.parse(text);}catch{throw new OnlineRoomError("Invalid session request.");}
   if(!body||typeof body!=="object"||Array.isArray(body))throw new OnlineRoomError("Invalid session request.");
   const store=onlineRoomStore(),rooms=createOnlineRooms({store}),action=body.action;
-  if(!await store.allow(ip(req),["create","join"].includes(action)?"enter":"seat",["create","join"].includes(action)?12:240))return reply({error:"Too many requests. Please wait a moment."},429);
+  if(!await store.allow(ip(req),action==="relay"?"relay":["create","join"].includes(action)?"enter":"seat",action==="relay"?600:["create","join"].includes(action)?12:240))return reply({error:"Too many requests. Please wait a moment."},429);
   const key=req.headers.get("authorization")?.replace(/^Bearer /,"")??"";
   if(action==="create")return reply(await rooms.create(body.name));
   if(action==="join")return reply(await rooms.join(body.code,body.name));
   if(action==="poll")return reply(await rooms.poll(body.code,key));
   if(action==="select")return reply(await rooms.select(body.code,key,{fighter:body.fighter,ready:body.ready}));
+  if(action==="candidates")return reply(await rooms.candidates(body.code,key,body));
+  if(action==="relay")return reply(await rooms.relay(body.code,key,body));
   if(action==="signal")return reply(await rooms.signal(body.code,key,body.description));
   if(action==="leave")return reply(await rooms.leave(body.code,key));
   throw new OnlineRoomError("Unknown session action.");

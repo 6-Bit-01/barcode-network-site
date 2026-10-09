@@ -1,5 +1,5 @@
 const KEYS=Object.freeze(['railP1','railP2','portraitP1','portraitP2','timer','announcement','weaponP1','weaponP2','barcodeMark']);
-const EXTRA_KEYS=Object.freeze(['tournamentNode','menuPlate','hazardShutter','hazardBeam','hazardThorns','hazardFeedback','hazardBlast','hazardBarrel','hazardWarning','wallCracks']);
+const EXTRA_KEYS=Object.freeze(['tournamentNode','menuPlate','hazardShutter','hazardBeam','hazardThorns','hazardFeedback','hazardBlast','hazardBarrel','hazardWarning','wallCracks','endTransmission','transmissionEnded']);
 const MANIFEST_PATH='assets/ui/manifest.json';
 function validManifest(value){
  if(value?.version!==1||!value.assets||!KEYS.every(key=>value.assets[key])||Object.keys(value.assets).some(key=>![...KEYS,...EXTRA_KEYS].includes(key)))return false;

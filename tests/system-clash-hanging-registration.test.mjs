@@ -75,16 +75,16 @@ for(const id of ids)for(const facing of ['right','left'])test(id+' '+facing+': h
  }
  {
   const {match,source,b}=scene('6-bit',id,facing),t=(b.drive+b.captured)/2,v=fitted(match,source,t),flight=raw(match,t)[1].deletionFlight;
-  const start=point({...v[1],x:flight.startX,y:flight.startY,clip:'delete-rip-front',elapsed:0},body),end=point({...v[1],x:flight.endX,y:flight.endY,clip:'delete-brace',elapsed:650},body),p=flight.progress;
-  assert.equal(v[1].clip,'delete-rip-front');close(point(v[1],body),{x:start.x+(end.x-start.x)*p,y:start.y+(end.y-start.y)*p-flight.height*Math.sin(p*Math.PI)},'TV incoming path measures actual hanging start and retained captured brace endpoint');
+  const start=point({...v[1],facing:match._deletionOrigin.victimFacing,x:flight.startX,y:flight.startY,clip:'delete-rip-front',elapsed:0},body),end=point({...v[1],facing:match._deletionOrigin.victimFacing,x:flight.endX,y:flight.endY,clip:'delete-brace',elapsed:650},body),p=flight.progress;
+  assert.equal(v[1].clip,'thrown');close(point(v[1],body),{x:start.x+(end.x-start.x)*p,y:start.y+(end.y-start.y)*p-flight.height*Math.sin(p*Math.PI)},'TV free flight retains the actual held start and captured brace endpoint');
   assert.equal(fitted(match,source,b.captured)[1].clip,'delete-brace','TV front compression remains intact');
  }
  {
   const {match,source,b}=scene('cache-back',id,facing),t=(b.load+b.captured)/2,v=fitted(match,source,t),flight=raw(match,t)[1].deletionFlight,g=machineGeometry({...match,deletionElapsed:b.captured},prop),ap=g.frame.aperture;
-  const centre=g.x+(ap[0]+ap[2]/2)*g.scale,bottom=g.y+(ap[1]+ap[3])*g.scale-5,captured={...v[1],clip:'delete-crumpled',elapsed:10000},f=frame(captured,body),bounds=f.native.opaqueBounds,offset=f.native.offset??[0,0],scale=poseScale(f.asset,f.native);
+  const centre=g.x+(ap[0]+ap[2]/2)*g.scale,bottom=g.y+(ap[1]+ap[3])*g.scale-5,captured={...v[1],facing:match._deletionOrigin.victimFacing,clip:'delete-crumpled',elapsed:10000},f=frame(captured,body),bounds=f.native.opaqueBounds,offset=f.native.offset??[0,0],scale=poseScale(f.asset,f.native);
   const mapped=poseTransform(f.asset,f.native).point([(bounds[0]+bounds[2])/2,bounds[3]]);captured.x=centre-mapped.x;captured.y=bottom-620-mapped.y;
-  const start=point({...v[1],x:flight.startX,y:flight.startY,clip:'delete-rip-front',elapsed:0},body),end=point(captured,body),p=flight.progress;
-  assert.equal(v[1].clip,'delete-rip-front');close(point(v[1],body),{x:start.x+(end.x-start.x)*p,y:start.y+(end.y-start.y)*p-flight.height*Math.sin(p*Math.PI)},'Chute flight measures selected hanging source and original compact aperture endpoint');
+  const start=point({...v[1],facing:match._deletionOrigin.victimFacing,x:flight.startX,y:flight.startY,clip:'delete-rip-front',elapsed:0},body),end=point(captured,body),p=flight.progress;
+  assert.equal(v[1].clip,'thrown');close(point(v[1],body),{x:start.x+(end.x-start.x)*p,y:start.y+(end.y-start.y)*p-flight.height*Math.sin(p*Math.PI)},'Chute free flight retains the held start and original compact aperture endpoint');
   assert.equal(fitted(match,source,b.captured)[1].clip,'delete-crumpled');
  }
  {

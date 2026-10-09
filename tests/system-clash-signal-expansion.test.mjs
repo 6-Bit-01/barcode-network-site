@@ -19,7 +19,7 @@ test('all rooms have long changing ambient plans with fixed-sized authored fixtu
 });
 test('station observers look toward the current fighters and remain outside gameplay collision',()=>{
  const state=createStageState('interdimensional-station');const plan=stageAmbientPlan(state,{fighterPositions:[1600,1800]});
- assert(plan.observers.length>=2);assert(plan.observers.every(n=>n.facing==='right'&&n.y<500&&n.height<160));
+ assert(plan.observers.length>=2);assert(plan.observers.every(n=>n.facing==='right'&&n.y>=420&&n.y<500&&n.height>=175&&n.height<240));
  const other=stageAmbientPlan(state,{fighterPositions:[300,400]});assert(other.observers.every(n=>n.facing==='left'));
  assert.equal(state.fighters,undefined);assert.equal(state.activation,null);
 });

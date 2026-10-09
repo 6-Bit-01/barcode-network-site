@@ -112,6 +112,16 @@
       "file": "wall-cracks.webp",
       "width": 440,
       "height": 360
+    },
+    "endTransmission": {
+      "file": "end-transmission.svg",
+      "width": 820,
+      "height": 154
+    },
+    "transmissionEnded": {
+      "file": "transmission-ended.svg",
+      "width": 820,
+      "height": 154
     }
   }
 }

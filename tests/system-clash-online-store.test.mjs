@@ -54,3 +54,51 @@ test('Mutilator selection survives both seats and changing fighter resets readin
 });
 
 test('all19 online fighter IDs include BNL in either legitimate seat without local unlock authority',async()=>{assert.equal(ONLINE_FIGHTERS.length,19);assert.equal(new Set(ONLINE_FIGHTERS).size,19);const {rooms}=fixture(),host=await rooms.create('Host'),guest=await rooms.join(host.code,'Guest');await rooms.select(host.code,host.token,{fighter:'bnl-01',ready:true});await rooms.select(guest.code,guest.token,{fighter:'bnl-01',ready:true});const state=await rooms.poll(host.code,guest.token);assert.equal(state.host.fighter,'bnl-01');assert.equal(state.guest.fighter,'bnl-01');await fails(()=>rooms.select(host.code,host.token,{fighter:'bnl-01-unreleased',ready:true}),400);});
+const relayPacket=(seq,payload,lane='control')=>({lane,data:JSON.stringify({scope:'system-clash-online-v1',version:'system-clash-20261009-8',seq,matchId:1,payload})});
+async function readyRelayFixture(){const f=fixture(),host=await f.rooms.create('Host'),guest=await f.rooms.join(host.code,'Guest');await f.rooms.select(host.code,host.token,{fighter:'6-bit',ready:true});await f.rooms.select(host.code,guest.token,{fighter:'9-bit',ready:true});return {...f,host,guest};}
+test('cloud relay converges two authenticated ready seats and acknowledges reliable controls exactly once',async()=>{
+ const {rooms,host,guest}=await readyRelayFixture(),request={version:'system-clash-20261009-8',ack:0,packets:[relayPacket(1,{type:'hello',version:'system-clash-20261009-8',room:host.code,role:'host'})]};
+ const first=await rooms.relay(host.code,host.token,request);assert.equal(first.accepted.control,1);assert.deepEqual(first.packets,[]);
+ assert.equal((await rooms.poll(host.code,guest.token)).relay,true);
+ const received=await rooms.relay(host.code,guest.token,{version:request.version,ack:0,packets:[]});assert.deepEqual(received.packets,request.packets);
+ await rooms.relay(host.code,host.token,request);
+ const acked=await rooms.relay(host.code,guest.token,{version:request.version,ack:1,packets:[]});assert.deepEqual(acked.packets,[]);
+});
+test('cloud relay replaces disposable snapshots but never drops reliable release and attack controls',async()=>{
+ const {rooms,host,guest}=await readyRelayFixture(),version='system-clash-20261009-8';
+ const controls=[relayPacket(1,{type:'input',input:{move:1,crouch:false,block:false}}),relayPacket(2,{type:'action',action:'punch',input:{move:1,crouch:false,block:false}}),relayPacket(3,{type:'input',input:{move:0,crouch:false,block:false}})];
+ await rooms.relay(host.code,guest.token,{version,ack:0,packets:controls});
+ assert.deepEqual((await rooms.relay(host.code,host.token,{version,ack:0,packets:[relayPacket(1,{type:'snapshot',snapshot:{seq:1}},'state')]})).packets,controls);
+ await rooms.relay(host.code,host.token,{version,ack:3,packets:[relayPacket(2,{type:'snapshot',snapshot:{seq:2}},'state')]});
+ const latest=await rooms.relay(host.code,guest.token,{version,ack:0,packets:[]});assert.equal(latest.packets.length,1);assert.equal(JSON.parse(latest.packets[0].data).payload.snapshot.seq,2);
+});
+test('cloud relay rejects unready, forged, cross-room, incompatible and guest authority packets',async()=>{
+ const f=fixture(),host=await f.rooms.create('Host');await fails(()=>f.rooms.relay(host.code,host.token,{version:'system-clash-20261009-8',ack:0,packets:[]}),409);
+ const {rooms,host:h,guest:g}=await readyRelayFixture(),version='system-clash-20261009-8',request={version,ack:0,packets:[]};
+ await fails(()=>rooms.relay(h.code,'forged',request),401);
+ await fails(()=>rooms.relay(h.code,g.token,{...request,packets:[relayPacket(1,{type:'snapshot',snapshot:{}},'state')]}),400);
+ await fails(()=>rooms.relay(h.code,g.token,{...request,packets:[relayPacket(1,{type:'hello',version,room:'OTHER1',role:'guest'})]}),400);
+ await rooms.relay(h.code,h.token,request);
+ await fails(()=>rooms.relay(h.code,g.token,{...request,version:'older-game'}),409);
+ await fails(()=>rooms.relay(h.code,g.token,{...request,ack:100}),400);
+});
+test('cloud relay bounds pending controls, request bytes and session lifetime without touching other data',async()=>{
+ const {rooms,rows,host,guest,setTime}=await readyRelayFixture(),version='system-clash-20261009-8';rows.set('protected:BNL','retained');
+ const batch=Array.from({length:16},(_,index)=>relayPacket(index+1,{type:'ping'}));await rooms.relay(host.code,guest.token,{version,ack:0,packets:batch});
+ await rooms.relay(host.code,guest.token,{version,ack:0,packets:batch.map((p,index)=>relayPacket(index+17,{type:'ping'}))});
+ await fails(()=>rooms.relay(host.code,guest.token,{version,ack:0,packets:[relayPacket(33,{type:'ping'})]}),409);
+ await fails(()=>rooms.relay(host.code,host.token,{version,ack:0,packets:[relayPacket(1,{type:'snapshot',snapshot:{large:'x'.repeat(70000)}},'state')]}),400);
+ assert.equal(rows.get('protected:BNL'),'retained');setTime(host.expiresAt+1);await fails(()=>rooms.relay(host.code,host.token,{version,ack:0,packets:[]}),410);
+});
+test('trickle candidates remain private, deduplicated and bound to the current host negotiation',async()=>{
+ const {rooms,host,guest}=await readyRelayFixture(),candidate={candidate:'candidate:1 1 UDP 2122260223 192.0.2.1 5000 typ host',sdpMid:'0',sdpMLineIndex:0,usernameFragment:'first'};
+ await rooms.candidates(host.code,host.token,{generation:1,candidates:[candidate,candidate]});
+ assert.equal((await rooms.poll(host.code,guest.token)).candidates.length,1);assert.ok(!JSON.stringify(await rooms.list()).includes(candidate.candidate));
+ await rooms.signal(host.code,host.token,{type:'offer',sdp:'v=0 first',generation:1});
+ await rooms.signal(host.code,host.token,{type:'offer',sdp:'v=0 restart',generation:2});
+ const restarted=await rooms.poll(host.code,guest.token);assert.equal(restarted.description.generation,2);assert.deepEqual(restarted.candidates,[]);
+ await fails(()=>rooms.candidates(host.code,guest.token,{generation:1,candidates:[candidate]}),409);
+ await fails(()=>rooms.signal(host.code,guest.token,{type:'answer',sdp:'v=0 stale',generation:1}),409);
+ await fails(()=>rooms.candidates(host.code,'forged',{generation:2,candidates:[candidate]}),401);
+ await fails(()=>rooms.candidates(host.code,guest.token,{generation:2,candidates:Array(17).fill(candidate)}),400);
+});

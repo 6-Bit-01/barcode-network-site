@@ -1,0 +1,2323 @@
+{
+  "review": "All19 served native airborne, landed-thrown and post-throw knockdown crops visually inspected in both facings. Hashes and rectangles pin actual reviewed pictures independently from runtime landmarks.6Bit thrown bank polarity differs from knockdown/getup bank polarity; its missing head/legs sites were measured directly. No original art changed.",
+  "fighters": {
+    "6-bit": {
+      "air": {
+        "right": {
+          "index": 2,
+          "rect": [
+            655,
+            747,
+            247,
+            144
+          ],
+          "file": "fighters/6-bit/restraints.runtime.clarity-v1.webp",
+          "imageSha256": "b23222e7b41e1e86adbe0037263bac0885cedd457330a40dd583773beb173433",
+          "head": [
+            210,
+            55
+          ],
+          "legs": [
+            55,
+            80
+          ]
+        },
+        "left": {
+          "index": 2,
+          "rect": [
+            657,
+            1028,
+            232,
+            146
+          ],
+          "file": "fighters/6-bit/restraints.runtime.clarity-v1.webp",
+          "imageSha256": "b23222e7b41e1e86adbe0037263bac0885cedd457330a40dd583773beb173433",
+          "head": [
+            35,
+            55
+          ],
+          "legs": [
+            176,
+            80
+          ]
+        }
+      },
+      "landed": {
+        "right": {
+          "index": 3,
+          "rect": [
+            975,
+            829,
+            245,
+            74
+          ],
+          "file": "fighters/6-bit/restraints.runtime.clarity-v1.webp",
+          "imageSha256": "b23222e7b41e1e86adbe0037263bac0885cedd457330a40dd583773beb173433",
+          "head": [
+            220,
+            28
+          ],
+          "legs": [
+            45,
+            28
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            972,
+            1119,
+            255,
+            73
+          ],
+          "file": "fighters/6-bit/restraints.runtime.clarity-v1.webp",
+          "imageSha256": "b23222e7b41e1e86adbe0037263bac0885cedd457330a40dd583773beb173433",
+          "head": [
+            35,
+            28
+          ],
+          "legs": [
+            215,
+            28
+          ]
+        }
+      },
+      "ground": {
+        "right": {
+          "index": 3,
+          "rect": [
+            950,
+            287,
+            246,
+            69
+          ],
+          "file": "fighters/6-bit/floor-v2.runtime.clarity-v1.webp",
+          "imageSha256": "231b25f421322333a992026ee9ab8bee780398355e03fc88393f533a7c101252",
+          "head": [
+            27.0,
+            35.13
+          ],
+          "legs": [
+            197.4,
+            42.06
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            958,
+            594,
+            247,
+            69
+          ],
+          "file": "fighters/6-bit/floor-v2.runtime.clarity-v1.webp",
+          "imageSha256": "231b25f421322333a992026ee9ab8bee780398355e03fc88393f533a7c101252",
+          "head": [
+            217.49,
+            35.76
+          ],
+          "legs": [
+            51.2,
+            42.69
+          ]
+        }
+      }
+    },
+    "cache-back": {
+      "air": {
+        "right": {
+          "index": 2,
+          "rect": [
+            527,
+            892,
+            279,
+            127
+          ],
+          "file": "fighters/cache-back/restraints.runtime.clarity-v1.webp",
+          "imageSha256": "eb59f24704a105bbab0a122d285102f46b07bd8dbf226dbcf97dffa34f3482bf",
+          "head": [
+            43.95,
+            51.4
+          ],
+          "legs": [
+            207.75,
+            96.17
+          ]
+        },
+        "left": {
+          "index": 2,
+          "rect": [
+            539,
+            1239,
+            271,
+            113
+          ],
+          "file": "fighters/cache-back/restraints.runtime.clarity-v1.webp",
+          "imageSha256": "eb59f24704a105bbab0a122d285102f46b07bd8dbf226dbcf97dffa34f3482bf",
+          "head": [
+            230.9,
+            46.87
+          ],
+          "legs": [
+            71.9,
+            85.39
+          ]
+        }
+      },
+      "landed": {
+        "right": {
+          "index": 3,
+          "rect": [
+            806,
+            968,
+            267,
+            77
+          ],
+          "file": "fighters/cache-back/restraints.runtime.clarity-v1.webp",
+          "imageSha256": "eb59f24704a105bbab0a122d285102f46b07bd8dbf226dbcf97dffa34f3482bf",
+          "head": [
+            29.1,
+            39.92
+          ],
+          "legs": [
+            214.41,
+            47.02
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            815,
+            1294,
+            259,
+            77
+          ],
+          "file": "fighters/cache-back/restraints.runtime.clarity-v1.webp",
+          "imageSha256": "eb59f24704a105bbab0a122d285102f46b07bd8dbf226dbcf97dffa34f3482bf",
+          "head": [
+            228.17,
+            40.63
+          ],
+          "legs": [
+            53.6,
+            47.02
+          ]
+        }
+      },
+      "ground": {
+        "right": {
+          "index": 3,
+          "rect": [
+            788,
+            318,
+            287,
+            78
+          ],
+          "file": "fighters/cache-back/floor.runtime.clarity-v1.webp",
+          "imageSha256": "65060a2273e8bfe5a35b9f209d094a99eb2f15a9ad0765c25c9f300ca8a5d7fb",
+          "head": [
+            31.1,
+            39.72
+          ],
+          "legs": [
+            230.61,
+            47.64
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            781,
+            669,
+            289,
+            80
+          ],
+          "file": "fighters/cache-back/floor.runtime.clarity-v1.webp",
+          "imageSha256": "65060a2273e8bfe5a35b9f209d094a99eb2f15a9ad0765c25c9f300ca8a5d7fb",
+          "head": [
+            254.87,
+            41.48
+          ],
+          "legs": [
+            59.6,
+            49.62
+          ]
+        }
+      }
+    },
+    "cliff": {
+      "air": {
+        "right": {
+          "index": 2,
+          "rect": [
+            571,
+            867,
+            243,
+            133
+          ],
+          "file": "fighters/cliff/restraints.runtime.clarity-v1.webp",
+          "imageSha256": "c47f93ed333e2c827e2293ae9a6a575dfc1f46e340c08b096de9eaae9fb47da9",
+          "head": [
+            52.0,
+            56.0
+          ],
+          "legs": [
+            175.0,
+            78.0
+          ]
+        },
+        "left": {
+          "index": 2,
+          "rect": [
+            534,
+            1234,
+            249,
+            128
+          ],
+          "file": "fighters/cliff/restraints.runtime.clarity-v1.webp",
+          "imageSha256": "c47f93ed333e2c827e2293ae9a6a575dfc1f46e340c08b096de9eaae9fb47da9",
+          "head": [
+            214.0,
+            40.0
+          ],
+          "legs": [
+            72.0,
+            78.0
+          ]
+        }
+      },
+      "landed": {
+        "right": {
+          "index": 3,
+          "rect": [
+            820,
+            947,
+            240,
+            90
+          ],
+          "file": "fighters/cliff/restraints.runtime.clarity-v1.webp",
+          "imageSha256": "c47f93ed333e2c827e2293ae9a6a575dfc1f46e340c08b096de9eaae9fb47da9",
+          "head": [
+            39.0,
+            42.0
+          ],
+          "legs": [
+            181.0,
+            60.0
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            823,
+            1300,
+            243,
+            83
+          ],
+          "file": "fighters/cliff/restraints.runtime.clarity-v1.webp",
+          "imageSha256": "c47f93ed333e2c827e2293ae9a6a575dfc1f46e340c08b096de9eaae9fb47da9",
+          "head": [
+            217.0,
+            28.0
+          ],
+          "legs": [
+            64.0,
+            53.0
+          ]
+        }
+      },
+      "ground": {
+        "right": {
+          "index": 3,
+          "rect": [
+            802,
+            328,
+            274,
+            74
+          ],
+          "file": "fighters/cliff/floor.runtime.clarity-v1.webp",
+          "imageSha256": "a4fcfa98c59b3ccbd89b08ac3c4be0bca5a630d32c858ba208fe2ce5ba93086f",
+          "head": [
+            39.0,
+            24.0
+          ],
+          "legs": [
+            206.0,
+            42.0
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            804,
+            684,
+            273,
+            79
+          ],
+          "file": "fighters/cliff/floor.runtime.clarity-v1.webp",
+          "imageSha256": "a4fcfa98c59b3ccbd89b08ac3c4be0bca5a630d32c858ba208fe2ce5ba93086f",
+          "head": [
+            237.0,
+            27.0
+          ],
+          "legs": [
+            65.0,
+            47.0
+          ]
+        }
+      }
+    },
+    "dj-floppydisc": {
+      "air": {
+        "right": {
+          "index": 2,
+          "rect": [
+            644,
+            452,
+            302,
+            125
+          ],
+          "file": "fighters/dj-floppydisc/restraints-v1.runtime.clarity-v1.webp",
+          "imageSha256": "65757452f04fe34a6c6d00166f7ee26ae958a777e7cbe8b7257c8b1e55c7d5f2",
+          "head": [
+            47.4,
+            50.6
+          ],
+          "legs": [
+            225.0,
+            94.63
+          ]
+        },
+        "left": {
+          "index": 2,
+          "rect": [
+            629,
+            1049,
+            300,
+            123
+          ],
+          "file": "fighters/dj-floppydisc/restraints-v1.runtime.clarity-v1.webp",
+          "imageSha256": "65757452f04fe34a6c6d00166f7ee26ae958a777e7cbe8b7257c8b1e55c7d5f2",
+          "head": [
+            255.84,
+            50.97
+          ],
+          "legs": [
+            79.44,
+            93.09
+          ]
+        }
+      },
+      "landed": {
+        "right": {
+          "index": 3,
+          "rect": [
+            962,
+            503,
+            276,
+            109
+          ],
+          "file": "fighters/dj-floppydisc/restraints-v1.runtime.clarity-v1.webp",
+          "imageSha256": "65757452f04fe34a6c6d00166f7ee26ae958a777e7cbe8b7257c8b1e55c7d5f2",
+          "head": [
+            30.0,
+            56.56
+          ],
+          "legs": [
+            221.7,
+            66.86
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            948,
+            1100,
+            276,
+            102
+          ],
+          "file": "fighters/dj-floppydisc/restraints-v1.runtime.clarity-v1.webp",
+          "imageSha256": "65757452f04fe34a6c6d00166f7ee26ae958a777e7cbe8b7257c8b1e55c7d5f2",
+          "head": [
+            243.3,
+            53.88
+          ],
+          "legs": [
+            57.0,
+            62.52
+          ]
+        }
+      },
+      "ground": {
+        "right": {
+          "index": 3,
+          "rect": [
+            945,
+            244,
+            284,
+            100
+          ],
+          "file": "fighters/dj-floppydisc/floor-v1.runtime.clarity-v1.webp",
+          "imageSha256": "466c97b44179c22b0ec0abed7a3127112b1c77c8cbb89a7b95a2303667456309",
+          "head": [
+            30.8,
+            50.94
+          ],
+          "legs": [
+            228.18,
+            61.28
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            930,
+            852,
+            295,
+            97
+          ],
+          "file": "fighters/dj-floppydisc/floor-v1.runtime.clarity-v1.webp",
+          "imageSha256": "466c97b44179c22b0ec0abed7a3127112b1c77c8cbb89a7b95a2303667456309",
+          "head": [
+            260.21,
+            50.32
+          ],
+          "legs": [
+            60.8,
+            60.33
+          ]
+        }
+      }
+    },
+    "mac-modem": {
+      "air": {
+        "right": {
+          "index": 2,
+          "rect": [
+            620,
+            1545,
+            271,
+            120
+          ],
+          "file": "fighters/mac-modem/restraints-v1-identity-native-v4.webp",
+          "imageSha256": "d0f82307c1f0311881d72be9eea225132b5b40036cd5906cbbdad333b1142a69",
+          "head": [
+            33.612,
+            28.378
+          ],
+          "legs": [
+            202.532,
+            67.027
+          ]
+        },
+        "left": {
+          "index": 2,
+          "rect": [
+            1860,
+            1545,
+            266,
+            104
+          ],
+          "file": "fighters/mac-modem/restraints-v1-identity-native-v4.webp",
+          "imageSha256": "d0f82307c1f0311881d72be9eea225132b5b40036cd5906cbbdad333b1142a69",
+          "head": [
+            227.7,
+            24.715
+          ],
+          "legs": [
+            64.606,
+            58.063
+          ]
+        }
+      },
+      "landed": {
+        "right": {
+          "index": 3,
+          "rect": [
+            930,
+            1545,
+            310,
+            73
+          ],
+          "file": "fighters/mac-modem/restraints-v1-identity-native-v4.webp",
+          "imageSha256": "d0f82307c1f0311881d72be9eea225132b5b40036cd5906cbbdad333b1142a69",
+          "head": [
+            44.565,
+            21.154
+          ],
+          "legs": [
+            243.962,
+            42.08
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            2170,
+            1545,
+            282,
+            85
+          ],
+          "file": "fighters/mac-modem/restraints-v1-identity-native-v4.webp",
+          "imageSha256": "d0f82307c1f0311881d72be9eea225132b5b40036cd5906cbbdad333b1142a69",
+          "head": [
+            241.459,
+            26.09
+          ],
+          "legs": [
+            65.656,
+            48.244
+          ]
+        }
+      },
+      "ground": {
+        "right": {
+          "index": 3,
+          "rect": [
+            999,
+            1254,
+            310,
+            73
+          ],
+          "file": "fighters/mac-modem/floor-v1-identity-native-v4.webp",
+          "imageSha256": "b534452af854b8f7c2fd54d863075ea11ea5807b00af1ee624b66b16d7be6291",
+          "head": [
+            44.565,
+            21.154
+          ],
+          "legs": [
+            243.962,
+            42.08
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            2331,
+            1254,
+            333,
+            79
+          ],
+          "file": "fighters/mac-modem/floor-v1-identity-native-v4.webp",
+          "imageSha256": "b534452af854b8f7c2fd54d863075ea11ea5807b00af1ee624b66b16d7be6291",
+          "head": [
+            285.159,
+            22.865
+          ],
+          "legs": [
+            74.21,
+            45.549
+          ]
+        }
+      }
+    },
+    "mr-nice-guy": {
+      "air": {
+        "right": {
+          "index": 2,
+          "rect": [
+            736,
+            293,
+            404,
+            192
+          ],
+          "file": "fighters/mr-nice-guy/thrown-v2.runtime.clarity-v1.webp",
+          "imageSha256": "fc94ab575654d0b2ef3532e77e747013354661a38fc9918e60a38e7b89b09e86",
+          "head": [
+            78.0,
+            62.0
+          ],
+          "legs": [
+            242.0,
+            135.0
+          ]
+        },
+        "left": {
+          "index": 2,
+          "rect": [
+            712,
+            751,
+            406,
+            185
+          ],
+          "file": "fighters/mr-nice-guy/thrown-v2.runtime.clarity-v1.webp",
+          "imageSha256": "fc94ab575654d0b2ef3532e77e747013354661a38fc9918e60a38e7b89b09e86",
+          "head": [
+            327.0,
+            67.0
+          ],
+          "legs": [
+            152.0,
+            98.0
+          ]
+        }
+      },
+      "landed": {
+        "right": {
+          "index": 3,
+          "rect": [
+            1158,
+            363,
+            362,
+            138
+          ],
+          "file": "fighters/mr-nice-guy/thrown-v2.runtime.clarity-v1.webp",
+          "imageSha256": "fc94ab575654d0b2ef3532e77e747013354661a38fc9918e60a38e7b89b09e86",
+          "head": [
+            81.0,
+            55.0
+          ],
+          "legs": [
+            242.0,
+            67.0
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            1139,
+            789,
+            383,
+            154
+          ],
+          "file": "fighters/mr-nice-guy/thrown-v2.runtime.clarity-v1.webp",
+          "imageSha256": "fc94ab575654d0b2ef3532e77e747013354661a38fc9918e60a38e7b89b09e86",
+          "head": [
+            302.0,
+            61.0
+          ],
+          "legs": [
+            121.0,
+            72.0
+          ]
+        }
+      },
+      "ground": {
+        "right": {
+          "index": 3,
+          "rect": [
+            945,
+            207,
+            297,
+            112
+          ],
+          "file": "fighters/mr-nice-guy/floor-v3.runtime.clarity-v1.webp",
+          "imageSha256": "ae60fedc3ee90971f2f8690bec9d30a45389b23e3d05fbba65818d72dd23a586",
+          "head": [
+            61.0,
+            42.0
+          ],
+          "legs": [
+            207.0,
+            61.0
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            945,
+            499,
+            300,
+            118
+          ],
+          "file": "fighters/mr-nice-guy/floor-v3.runtime.clarity-v1.webp",
+          "imageSha256": "ae60fedc3ee90971f2f8690bec9d30a45389b23e3d05fbba65818d72dd23a586",
+          "head": [
+            239.0,
+            44.0
+          ],
+          "legs": [
+            93.0,
+            71.0
+          ]
+        }
+      }
+    },
+    "ms-mayhem": {
+      "air": {
+        "right": {
+          "index": 2,
+          "rect": [
+            618,
+            790,
+            298,
+            150
+          ],
+          "file": "fighters/ms-mayhem/restraints-v1.runtime.clarity-v1.webp",
+          "imageSha256": "34cde3a600145613b2b499cb3c2c24eb6f47c30c1b7ce2f342b804716cb74497",
+          "head": [
+            100.0,
+            37.0
+          ],
+          "legs": [
+            217.0,
+            95.0
+          ]
+        },
+        "left": {
+          "index": 2,
+          "rect": [
+            655,
+            1039,
+            282,
+            147
+          ],
+          "file": "fighters/ms-mayhem/restraints-v1.runtime.clarity-v1.webp",
+          "imageSha256": "34cde3a600145613b2b499cb3c2c24eb6f47c30c1b7ce2f342b804716cb74497",
+          "head": [
+            192.0,
+            45.0
+          ],
+          "legs": [
+            82.0,
+            75.0
+          ]
+        }
+      },
+      "landed": {
+        "right": {
+          "index": 3,
+          "rect": [
+            926,
+            843,
+            299,
+            107
+          ],
+          "file": "fighters/ms-mayhem/restraints-v1.runtime.clarity-v1.webp",
+          "imageSha256": "34cde3a600145613b2b499cb3c2c24eb6f47c30c1b7ce2f342b804716cb74497",
+          "head": [
+            80.0,
+            48.0
+          ],
+          "legs": [
+            203.0,
+            63.0
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            953,
+            1090,
+            287,
+            111
+          ],
+          "file": "fighters/ms-mayhem/restraints-v1.runtime.clarity-v1.webp",
+          "imageSha256": "34cde3a600145613b2b499cb3c2c24eb6f47c30c1b7ce2f342b804716cb74497",
+          "head": [
+            220.0,
+            61.0
+          ],
+          "legs": [
+            83.0,
+            71.0
+          ]
+        }
+      },
+      "ground": {
+        "right": {
+          "index": 3,
+          "rect": [
+            925,
+            269,
+            306,
+            73
+          ],
+          "file": "fighters/ms-mayhem/floor-v1.runtime.clarity-v1.webp",
+          "imageSha256": "2b6e0c99b3039ee5eea2a6d5559dcc4c81090b3e654c6fbc322d36af8558ce64",
+          "head": [
+            69.0,
+            23.0
+          ],
+          "legs": [
+            230.0,
+            36.0
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            942,
+            580,
+            305,
+            75
+          ],
+          "file": "fighters/ms-mayhem/floor-v1.runtime.clarity-v1.webp",
+          "imageSha256": "2b6e0c99b3039ee5eea2a6d5559dcc4c81090b3e654c6fbc322d36af8558ce64",
+          "head": [
+            243.0,
+            26.0
+          ],
+          "legs": [
+            65.0,
+            39.0
+          ]
+        }
+      }
+    },
+    "stolz": {
+      "air": {
+        "right": {
+          "index": 2,
+          "rect": [
+            657,
+            779,
+            260,
+            163
+          ],
+          "file": "fighters/stolz/grab-throw-v1.runtime.clarity-v1.webp",
+          "imageSha256": "0cc4cfe46fbd45a8afa8ae28e156576b139bad633cb04d5e7abb8318b3aa98dc",
+          "head": [
+            44.0,
+            83.0
+          ],
+          "legs": [
+            164.0,
+            84.0
+          ]
+        },
+        "left": {
+          "index": 2,
+          "rect": [
+            653,
+            1060,
+            262,
+            149
+          ],
+          "file": "fighters/stolz/grab-throw-v1.runtime.clarity-v1.webp",
+          "imageSha256": "0cc4cfe46fbd45a8afa8ae28e156576b139bad633cb04d5e7abb8318b3aa98dc",
+          "head": [
+            229.0,
+            74.0
+          ],
+          "legs": [
+            95.0,
+            90.0
+          ]
+        }
+      },
+      "landed": {
+        "right": {
+          "index": 3,
+          "rect": [
+            938,
+            859,
+            298,
+            91
+          ],
+          "file": "fighters/stolz/grab-throw-v1.runtime.clarity-v1.webp",
+          "imageSha256": "0cc4cfe46fbd45a8afa8ae28e156576b139bad633cb04d5e7abb8318b3aa98dc",
+          "head": [
+            33.0,
+            42.0
+          ],
+          "legs": [
+            212.0,
+            48.0
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            958,
+            1105,
+            279,
+            106
+          ],
+          "file": "fighters/stolz/grab-throw-v1.runtime.clarity-v1.webp",
+          "imageSha256": "0cc4cfe46fbd45a8afa8ae28e156576b139bad633cb04d5e7abb8318b3aa98dc",
+          "head": [
+            248.0,
+            59.0
+          ],
+          "legs": [
+            77.0,
+            61.0
+          ]
+        }
+      },
+      "ground": {
+        "right": {
+          "index": 3,
+          "rect": [
+            929,
+            268,
+            312,
+            83
+          ],
+          "file": "fighters/stolz/fall-getup-v1.runtime.clarity-v1.webp",
+          "imageSha256": "e675d6b59fe0cf6c8ba366bd35d9fccd3f8c1677e86c63db18815464c12e8aef",
+          "head": [
+            38.0,
+            34.0
+          ],
+          "legs": [
+            234.0,
+            50.0
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            927,
+            590,
+            300,
+            85
+          ],
+          "file": "fighters/stolz/fall-getup-v1.runtime.clarity-v1.webp",
+          "imageSha256": "e675d6b59fe0cf6c8ba366bd35d9fccd3f8c1677e86c63db18815464c12e8aef",
+          "head": [
+            268.0,
+            40.0
+          ],
+          "legs": [
+            79.0,
+            52.0
+          ]
+        }
+      }
+    },
+    "kaveman-brown": {
+      "air": {
+        "right": {
+          "index": 2,
+          "rect": [
+            660,
+            743,
+            257,
+            159
+          ],
+          "file": "fighters/kaveman-brown/restraints-v2.runtime.clarity-v1.webp",
+          "imageSha256": "418ec5e067b4d81c5be3b8add4139c7ed877fd214649d19bd2715efd040ccf1e",
+          "head": [
+            42.0,
+            49.0
+          ],
+          "legs": [
+            166.0,
+            67.0
+          ]
+        },
+        "left": {
+          "index": 2,
+          "rect": [
+            650,
+            1005,
+            261,
+            174
+          ],
+          "file": "fighters/kaveman-brown/restraints-v2.runtime.clarity-v1.webp",
+          "imageSha256": "418ec5e067b4d81c5be3b8add4139c7ed877fd214649d19bd2715efd040ccf1e",
+          "head": [
+            211.0,
+            47.0
+          ],
+          "legs": [
+            112.0,
+            92.0
+          ]
+        }
+      },
+      "landed": {
+        "right": {
+          "index": 3,
+          "rect": [
+            951,
+            808,
+            277,
+            120
+          ],
+          "file": "fighters/kaveman-brown/restraints-v2.runtime.clarity-v1.webp",
+          "imageSha256": "418ec5e067b4d81c5be3b8add4139c7ed877fd214649d19bd2715efd040ccf1e",
+          "head": [
+            30.0,
+            60.0
+          ],
+          "legs": [
+            190.0,
+            69.0
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            942,
+            1080,
+            283,
+            128
+          ],
+          "file": "fighters/kaveman-brown/restraints-v2.runtime.clarity-v1.webp",
+          "imageSha256": "418ec5e067b4d81c5be3b8add4139c7ed877fd214649d19bd2715efd040ccf1e",
+          "head": [
+            249.0,
+            64.0
+          ],
+          "legs": [
+            94.0,
+            81.0
+          ]
+        }
+      },
+      "ground": {
+        "right": {
+          "index": 3,
+          "rect": [
+            937,
+            236,
+            305,
+            84
+          ],
+          "file": "fighters/kaveman-brown/floor-v1.runtime.clarity-v1.webp",
+          "imageSha256": "002f6d1947b98d2214783027c244a0b628ef3c2c383d737eab7ce913cf020730",
+          "head": [
+            37.0,
+            38.0
+          ],
+          "legs": [
+            234.0,
+            46.0
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            942,
+            528,
+            298,
+            87
+          ],
+          "file": "fighters/kaveman-brown/floor-v1.runtime.clarity-v1.webp",
+          "imageSha256": "002f6d1947b98d2214783027c244a0b628ef3c2c383d737eab7ce913cf020730",
+          "head": [
+            268.0,
+            35.0
+          ],
+          "legs": [
+            68.0,
+            44.0
+          ]
+        }
+      }
+    },
+    "dr3wbaby": {
+      "air": {
+        "right": {
+          "index": 2,
+          "rect": [
+            621,
+            755,
+            304,
+            129
+          ],
+          "file": "fighters/dr3wbaby/restraints-v1.runtime.clarity-v1.webp",
+          "imageSha256": "480f0113f90d8220ce68c5a6563c17418d53392cf8c716b1c4745d7aceacb63e",
+          "head": [
+            36.0,
+            50.0
+          ],
+          "legs": [
+            184.0,
+            87.0
+          ]
+        },
+        "left": {
+          "index": 2,
+          "rect": [
+            605,
+            1004,
+            297,
+            134
+          ],
+          "file": "fighters/dr3wbaby/restraints-v1.runtime.clarity-v1.webp",
+          "imageSha256": "480f0113f90d8220ce68c5a6563c17418d53392cf8c716b1c4745d7aceacb63e",
+          "head": [
+            264.0,
+            63.0
+          ],
+          "legs": [
+            116.0,
+            77.0
+          ]
+        }
+      },
+      "landed": {
+        "right": {
+          "index": 3,
+          "rect": [
+            927,
+            833,
+            303,
+            95
+          ],
+          "file": "fighters/dr3wbaby/restraints-v1.runtime.clarity-v1.webp",
+          "imageSha256": "480f0113f90d8220ce68c5a6563c17418d53392cf8c716b1c4745d7aceacb63e",
+          "head": [
+            31.0,
+            52.0
+          ],
+          "legs": [
+            213.0,
+            52.0
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            915,
+            1086,
+            313,
+            100
+          ],
+          "file": "fighters/dr3wbaby/restraints-v1.runtime.clarity-v1.webp",
+          "imageSha256": "480f0113f90d8220ce68c5a6563c17418d53392cf8c716b1c4745d7aceacb63e",
+          "head": [
+            278.0,
+            47.0
+          ],
+          "legs": [
+            92.0,
+            59.0
+          ]
+        }
+      },
+      "ground": {
+        "right": {
+          "index": 3,
+          "rect": [
+            1070,
+            248,
+            299,
+            71
+          ],
+          "file": "fighters/dr3wbaby/floor-v2.runtime.clarity-v1.webp",
+          "imageSha256": "22f990940778c2cfc9c37f12d3ae27a4d311dff728607ad0a9916f8c3edaf082",
+          "head": [
+            40.0,
+            34.0
+          ],
+          "legs": [
+            220.0,
+            34.0
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            1065,
+            517,
+            306,
+            73
+          ],
+          "file": "fighters/dr3wbaby/floor-v2.runtime.clarity-v1.webp",
+          "imageSha256": "22f990940778c2cfc9c37f12d3ae27a4d311dff728607ad0a9916f8c3edaf082",
+          "head": [
+            267.0,
+            32.0
+          ],
+          "legs": [
+            68.0,
+            36.0
+          ]
+        }
+      }
+    },
+    "ash-flowers": {
+      "air": {
+        "right": {
+          "index": 2,
+          "rect": [
+            676,
+            0,
+            321,
+            124
+          ],
+          "file": "fighters/ash-flowers/thrown.webp",
+          "imageSha256": "faae3498126fd959021dd907208e228955fdc15e54973d891779f7d37f42fe2b",
+          "head": [
+            44.074,
+            39.648
+          ],
+          "legs": [
+            232.873,
+            70.235
+          ]
+        },
+        "left": {
+          "index": 2,
+          "rect": [
+            676,
+            310,
+            325,
+            123
+          ],
+          "file": "fighters/ash-flowers/thrown.webp",
+          "imageSha256": "faae3498126fd959021dd907208e228955fdc15e54973d891779f7d37f42fe2b",
+          "head": [
+            280.407,
+            39.339
+          ],
+          "legs": [
+            89.206,
+            69.665
+          ]
+        }
+      },
+      "landed": {
+        "right": {
+          "index": 3,
+          "rect": [
+            1014,
+            0,
+            320,
+            91
+          ],
+          "file": "fighters/ash-flowers/thrown.webp",
+          "imageSha256": "faae3498126fd959021dd907208e228955fdc15e54973d891779f7d37f42fe2b",
+          "head": [
+            29.83,
+            39.574
+          ],
+          "legs": [
+            229.006,
+            54.812
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            1014,
+            310,
+            323,
+            92
+          ],
+          "file": "fighters/ash-flowers/thrown.webp",
+          "imageSha256": "faae3498126fd959021dd907208e228955fdc15e54973d891779f7d37f42fe2b",
+          "head": [
+            292.917,
+            40.004
+          ],
+          "legs": [
+            91.833,
+            55.422
+          ]
+        }
+      },
+      "ground": {
+        "right": {
+          "index": 3,
+          "rect": [
+            1041,
+            0,
+            347,
+            87
+          ],
+          "file": "fighters/ash-flowers/knockdown.webp",
+          "imageSha256": "8a4ebb9a418fbcfcb88c2b99775e828f89d14dabc33c651989e5c7a178dab674",
+          "head": [
+            32.09,
+            37.85
+          ],
+          "legs": [
+            248.465,
+            52.378
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            1041,
+            329,
+            340,
+            89
+          ],
+          "file": "fighters/ash-flowers/knockdown.webp",
+          "imageSha256": "8a4ebb9a418fbcfcb88c2b99775e828f89d14dabc33c651989e5c7a178dab674",
+          "head": [
+            308.503,
+            38.71
+          ],
+          "legs": [
+            96.577,
+            53.599
+          ]
+        }
+      }
+    },
+    "wittyf0x": {
+      "air": {
+        "right": {
+          "index": 2,
+          "rect": [
+            625,
+            716,
+            312,
+            187
+          ],
+          "file": "fighters/wittyf0x/restraints.runtime.clarity-v1.webp",
+          "imageSha256": "a5e0ff4803f8092e68a379bb0d83c6641e1ee167da0a1c2ad3c132ac6ea4e182",
+          "head": [
+            72.0,
+            55.0
+          ],
+          "legs": [
+            221.0,
+            125.0
+          ]
+        },
+        "left": {
+          "index": 2,
+          "rect": [
+            625,
+            1012,
+            317,
+            201
+          ],
+          "file": "fighters/wittyf0x/restraints.runtime.clarity-v1.webp",
+          "imageSha256": "a5e0ff4803f8092e68a379bb0d83c6641e1ee167da0a1c2ad3c132ac6ea4e182",
+          "head": [
+            244.0,
+            52.0
+          ],
+          "legs": [
+            74.0,
+            145.0
+          ]
+        }
+      },
+      "landed": {
+        "right": {
+          "index": 3,
+          "rect": [
+            941,
+            778,
+            305,
+            126
+          ],
+          "file": "fighters/wittyf0x/restraints.runtime.clarity-v1.webp",
+          "imageSha256": "a5e0ff4803f8092e68a379bb0d83c6641e1ee167da0a1c2ad3c132ac6ea4e182",
+          "head": [
+            48.0,
+            58.0
+          ],
+          "legs": [
+            256.0,
+            74.0
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            945,
+            1099,
+            304,
+            116
+          ],
+          "file": "fighters/wittyf0x/restraints.runtime.clarity-v1.webp",
+          "imageSha256": "a5e0ff4803f8092e68a379bb0d83c6641e1ee167da0a1c2ad3c132ac6ea4e182",
+          "head": [
+            256.0,
+            50.0
+          ],
+          "legs": [
+            63.0,
+            61.0
+          ]
+        }
+      },
+      "ground": {
+        "right": {
+          "index": 3,
+          "rect": [
+            928,
+            191,
+            319,
+            127
+          ],
+          "file": "fighters/wittyf0x/floor-v2.runtime.clarity-v1.webp",
+          "imageSha256": "f44406d0e63cfcd6bf41be4f9dc3cc7724670f658392cf94cfe667cb8e27a4db",
+          "head": [
+            67.0,
+            39.0
+          ],
+          "legs": [
+            259.0,
+            82.0
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            920,
+            486,
+            322,
+            129
+          ],
+          "file": "fighters/wittyf0x/floor-v2.runtime.clarity-v1.webp",
+          "imageSha256": "f44406d0e63cfcd6bf41be4f9dc3cc7724670f658392cf94cfe667cb8e27a4db",
+          "head": [
+            279.0,
+            43.0
+          ],
+          "legs": [
+            85.0,
+            89.0
+          ]
+        }
+      }
+    },
+    "doofnoobler": {
+      "air": {
+        "right": {
+          "index": 2,
+          "rect": [
+            468,
+            0,
+            234,
+            162
+          ],
+          "file": "fighters/doofnoobler/thrown.webp",
+          "imageSha256": "7761c53315f43e2f97c8ee40e23d9fc2ed241c99e46bfef544ccecf103539470",
+          "head": [
+            77.983,
+            57.375
+          ],
+          "legs": [
+            174.379,
+            120.375
+          ]
+        },
+        "left": {
+          "index": 2,
+          "rect": [
+            468,
+            213,
+            227,
+            175
+          ],
+          "file": "fighters/doofnoobler/thrown.webp",
+          "imageSha256": "7761c53315f43e2f97c8ee40e23d9fc2ed241c99e46bfef544ccecf103539470",
+          "head": [
+            151.328,
+            61.923
+          ],
+          "legs": [
+            55.645,
+            128.423
+          ]
+        }
+      },
+      "landed": {
+        "right": {
+          "index": 3,
+          "rect": [
+            702,
+            0,
+            192,
+            181
+          ],
+          "file": "fighters/doofnoobler/thrown.webp",
+          "imageSha256": "7761c53315f43e2f97c8ee40e23d9fc2ed241c99e46bfef544ccecf103539470",
+          "head": [
+            86.624,
+            56.963
+          ],
+          "legs": [
+            129.753,
+            141.689
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            702,
+            213,
+            193,
+            184
+          ],
+          "file": "fighters/doofnoobler/thrown.webp",
+          "imageSha256": "7761c53315f43e2f97c8ee40e23d9fc2ed241c99e46bfef544ccecf103539470",
+          "head": [
+            105.926,
+            57.893
+          ],
+          "legs": [
+            64.453,
+            145.854
+          ]
+        }
+      },
+      "ground": {
+        "right": {
+          "index": 3,
+          "rect": [
+            702,
+            0,
+            192,
+            181
+          ],
+          "file": "fighters/doofnoobler/knockdown.webp",
+          "imageSha256": "81ec4e1f2b12b4fd0b3f41ba971f6fbb75fdcc0c21ef16d7b17a97f351fc00ca",
+          "head": [
+            86.624,
+            56.963
+          ],
+          "legs": [
+            129.753,
+            141.689
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            702,
+            224,
+            193,
+            184
+          ],
+          "file": "fighters/doofnoobler/knockdown.webp",
+          "imageSha256": "81ec4e1f2b12b4fd0b3f41ba971f6fbb75fdcc0c21ef16d7b17a97f351fc00ca",
+          "head": [
+            105.926,
+            57.893
+          ],
+          "legs": [
+            64.453,
+            145.854
+          ]
+        }
+      }
+    },
+    "lyra": {
+      "air": {
+        "right": {
+          "index": 2,
+          "rect": [
+            646,
+            0,
+            300,
+            156
+          ],
+          "file": "fighters/lyra/thrown.clarity-v1.webp",
+          "imageSha256": "510dce28098b43515883f04295a0fbf6a897fbf1445353e55f8f5402e9d50c41",
+          "head": [
+            70.509,
+            44.913
+          ],
+          "legs": [
+            226.547,
+            90.032
+          ]
+        },
+        "left": {
+          "index": 2,
+          "rect": [
+            646,
+            271,
+            283,
+            148
+          ],
+          "file": "fighters/lyra/thrown.clarity-v1.webp",
+          "imageSha256": "510dce28098b43515883f04295a0fbf6a897fbf1445353e55f8f5402e9d50c41",
+          "head": [
+            216.397,
+            42.669
+          ],
+          "legs": [
+            69.377,
+            85.393
+          ]
+        }
+      },
+      "landed": {
+        "right": {
+          "index": 3,
+          "rect": [
+            969,
+            0,
+            323,
+            107
+          ],
+          "file": "fighters/lyra/thrown.clarity-v1.webp",
+          "imageSha256": "510dce28098b43515883f04295a0fbf6a897fbf1445353e55f8f5402e9d50c41",
+          "head": [
+            47.585,
+            56.513
+          ],
+          "legs": [
+            259.593,
+            67.563
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            969,
+            271,
+            311,
+            111
+          ],
+          "file": "fighters/lyra/thrown.clarity-v1.webp",
+          "imageSha256": "510dce28098b43515883f04295a0fbf6a897fbf1445353e55f8f5402e9d50c41",
+          "head": [
+            265.095,
+            58.632
+          ],
+          "legs": [
+            61.127,
+            70.117
+          ]
+        }
+      },
+      "ground": {
+        "right": {
+          "index": 3,
+          "rect": [
+            1035,
+            0,
+            323,
+            107
+          ],
+          "file": "fighters/lyra/knockdown.clarity-v1.webp",
+          "imageSha256": "c1445f82c4711579ce2bce03aededdd4dbb0c243e3a56d955a94a0275e0f066a",
+          "head": [
+            47.585,
+            56.513
+          ],
+          "legs": [
+            259.593,
+            67.563
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            1035,
+            328,
+            311,
+            111
+          ],
+          "file": "fighters/lyra/knockdown.clarity-v1.webp",
+          "imageSha256": "c1445f82c4711579ce2bce03aededdd4dbb0c243e3a56d955a94a0275e0f066a",
+          "head": [
+            265.095,
+            58.632
+          ],
+          "legs": [
+            61.127,
+            70.117
+          ]
+        }
+      }
+    },
+    "papa-oak": {
+      "air": {
+        "right": {
+          "index": 2,
+          "rect": [
+            798,
+            0,
+            392,
+            270
+          ],
+          "file": "fighters/papa-oak/thrown.clarity-v1.webp",
+          "imageSha256": "49bb7ec9301610ffc92ecf80d7b0d1842037f9b80c2c8631774d66abda70f645",
+          "head": [
+            126.731,
+            50.894
+          ],
+          "legs": [
+            319.145,
+            163.912
+          ]
+        },
+        "left": {
+          "index": 2,
+          "rect": [
+            798,
+            392,
+            397,
+            301
+          ],
+          "file": "fighters/papa-oak/thrown.clarity-v1.webp",
+          "imageSha256": "49bb7ec9301610ffc92ecf80d7b0d1842037f9b80c2c8631774d66abda70f645",
+          "head": [
+            268.669,
+            56.473
+          ],
+          "legs": [
+            73.756,
+            182.822
+          ]
+        }
+      },
+      "landed": {
+        "right": {
+          "index": 3,
+          "rect": [
+            1197,
+            0,
+            399,
+            135
+          ],
+          "file": "fighters/papa-oak/thrown.clarity-v1.webp",
+          "imageSha256": "49bb7ec9301610ffc92ecf80d7b0d1842037f9b80c2c8631774d66abda70f645",
+          "head": [
+            42.767,
+            63.665
+          ],
+          "legs": [
+            336.641,
+            80.283
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            1197,
+            392,
+            395,
+            128
+          ],
+          "file": "fighters/papa-oak/thrown.clarity-v1.webp",
+          "imageSha256": "49bb7ec9301610ffc92ecf80d7b0d1842037f9b80c2c8631774d66abda70f645",
+          "head": [
+            352.627,
+            60.375
+          ],
+          "legs": [
+            61.764,
+            76.082
+          ]
+        }
+      },
+      "ground": {
+        "right": {
+          "index": 3,
+          "rect": [
+            1197,
+            0,
+            399,
+            135
+          ],
+          "file": "fighters/papa-oak/knockdown.clarity-v1.webp",
+          "imageSha256": "d6fa3374f03ce36e6c5585e59eeb33038798d345c038f94e8bf6a1264fd04052",
+          "head": [
+            42.767,
+            63.665
+          ],
+          "legs": [
+            336.641,
+            80.283
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            1197,
+            393,
+            395,
+            128
+          ],
+          "file": "fighters/papa-oak/knockdown.clarity-v1.webp",
+          "imageSha256": "d6fa3374f03ce36e6c5585e59eeb33038798d345c038f94e8bf6a1264fd04052",
+          "head": [
+            352.627,
+            60.375
+          ],
+          "legs": [
+            61.764,
+            76.082
+          ]
+        }
+      }
+    },
+    "lost-marbles": {
+      "air": {
+        "left": {
+          "index": 2,
+          "rect": [
+            722,
+            323,
+            268,
+            293
+          ],
+          "file": "fighters/lost-marbles/thrown.clarity-v1.webp",
+          "imageSha256": "3629a338277a1e3b66b597eba48c32cd244796cb79de2bb27df14fe94b21200b",
+          "head": [
+            33.44,
+            207.581
+          ],
+          "legs": [
+            197.776,
+            140.774
+          ]
+        },
+        "right": {
+          "index": 2,
+          "rect": [
+            722,
+            0,
+            213,
+            249
+          ],
+          "file": "fighters/lost-marbles/thrown.clarity-v1.webp",
+          "imageSha256": "3629a338277a1e3b66b597eba48c32cd244796cb79de2bb27df14fe94b21200b",
+          "head": [
+            186.595,
+            176.283
+          ],
+          "legs": [
+            55.89,
+            119.432
+          ]
+        }
+      },
+      "landed": {
+        "left": {
+          "index": 3,
+          "rect": [
+            1083,
+            323,
+            316,
+            147
+          ],
+          "file": "fighters/lost-marbles/thrown.clarity-v1.webp",
+          "imageSha256": "3629a338277a1e3b66b597eba48c32cd244796cb79de2bb27df14fe94b21200b",
+          "head": [
+            29.55,
+            53.455
+          ],
+          "legs": [
+            215.433,
+            89.727
+          ]
+        },
+        "right": {
+          "index": 3,
+          "rect": [
+            1083,
+            0,
+            253,
+            106
+          ],
+          "file": "fighters/lost-marbles/thrown.clarity-v1.webp",
+          "imageSha256": "3629a338277a1e3b66b597eba48c32cd244796cb79de2bb27df14fe94b21200b",
+          "head": [
+            229.639,
+            38.705
+          ],
+          "legs": [
+            80.22,
+            68.614
+          ]
+        }
+      },
+      "ground": {
+        "left": {
+          "index": 3,
+          "rect": [
+            1005,
+            323,
+            247,
+            99
+          ],
+          "file": "fighters/lost-marbles/knockdown.clarity-v1.webp",
+          "imageSha256": "bbc7960cb075b32dec30af4fa00d263212ed6d0a7bf2f15a0c0ee048ef4ff6a1",
+          "head": [
+            30.717,
+            43.627
+          ],
+          "legs": [
+            177.15,
+            59.987
+          ]
+        },
+        "right": {
+          "index": 3,
+          "rect": [
+            1005,
+            0,
+            335,
+            138
+          ],
+          "file": "fighters/lost-marbles/knockdown.clarity-v1.webp",
+          "imageSha256": "bbc7960cb075b32dec30af4fa00d263212ed6d0a7bf2f15a0c0ee048ef4ff6a1",
+          "head": [
+            293.572,
+            60.822
+          ],
+          "legs": [
+            94.618,
+            83.822
+          ]
+        }
+      }
+    },
+    "mutilator": {
+      "air": {
+        "left": {
+          "index": 2,
+          "rect": [
+            666,
+            318,
+            310,
+            117
+          ],
+          "file": "fighters/mutilator/thrown.webp",
+          "imageSha256": "2eb96e04d290e986099430cd68493a1e01dd96d7b95636b850f7ff57e608cd55",
+          "head": [
+            21.565,
+            87.885
+          ],
+          "legs": [
+            164.435,
+            72.249
+          ]
+        },
+        "right": {
+          "index": 2,
+          "rect": [
+            666,
+            0,
+            333,
+            120
+          ],
+          "file": "fighters/mutilator/thrown.webp",
+          "imageSha256": "2eb96e04d290e986099430cd68493a1e01dd96d7b95636b850f7ff57e608cd55",
+          "head": [
+            304.935,
+            54.35
+          ],
+          "legs": [
+            173.246,
+            81.256
+          ]
+        }
+      },
+      "landed": {
+        "left": {
+          "index": 3,
+          "rect": [
+            999,
+            318,
+            309,
+            101
+          ],
+          "file": "fighters/mutilator/thrown.webp",
+          "imageSha256": "2eb96e04d290e986099430cd68493a1e01dd96d7b95636b850f7ff57e608cd55",
+          "head": [
+            21.608,
+            73.455
+          ],
+          "legs": [
+            163.684,
+            62.112
+          ]
+        },
+        "right": {
+          "index": 3,
+          "rect": [
+            999,
+            0,
+            328,
+            88
+          ],
+          "file": "fighters/mutilator/thrown.webp",
+          "imageSha256": "2eb96e04d290e986099430cd68493a1e01dd96d7b95636b850f7ff57e608cd55",
+          "head": [
+            303.684,
+            41.317
+          ],
+          "legs": [
+            154.003,
+            56.878
+          ]
+        }
+      },
+      "ground": {
+        "left": {
+          "index": 3,
+          "rect": [
+            999,
+            335,
+            309,
+            101
+          ],
+          "file": "fighters/mutilator/knockdown.webp",
+          "imageSha256": "6bd87988f7a170c5663f15f5018b436a6fbd8329b1a1eefe7f033b0d6ca460d1",
+          "head": [
+            21.608,
+            73.455
+          ],
+          "legs": [
+            163.684,
+            62.112
+          ]
+        },
+        "right": {
+          "index": 3,
+          "rect": [
+            999,
+            0,
+            328,
+            88
+          ],
+          "file": "fighters/mutilator/knockdown.webp",
+          "imageSha256": "6bd87988f7a170c5663f15f5018b436a6fbd8329b1a1eefe7f033b0d6ca460d1",
+          "head": [
+            303.684,
+            41.317
+          ],
+          "legs": [
+            154.003,
+            56.878
+          ]
+        }
+      }
+    },
+    "bnl-01": {
+      "air": {
+        "left": {
+          "index": 1,
+          "rect": [
+            993,
+            5044,
+            393,
+            287
+          ],
+          "file": "fighters/bnl-01/native.webp",
+          "imageSha256": "4108fdcac5b522dc8ead7463c36bcbb5207a2f6b0af5b3a3f10a6f0dd56e9a50",
+          "head": [
+            150.986,
+            114.702
+          ],
+          "legs": [
+            305.924,
+            159.991
+          ]
+        },
+        "right": {
+          "index": 1,
+          "rect": [
+            596,
+            5044,
+            393,
+            287
+          ],
+          "file": "fighters/bnl-01/native.webp",
+          "imageSha256": "4108fdcac5b522dc8ead7463c36bcbb5207a2f6b0af5b3a3f10a6f0dd56e9a50",
+          "head": [
+            241.014,
+            114.702
+          ],
+          "legs": [
+            86.076,
+            159.991
+          ]
+        }
+      },
+      "landed": {
+        "left": {
+          "index": 2,
+          "rect": [
+            0,
+            5443,
+            349,
+            259
+          ],
+          "file": "fighters/bnl-01/native.webp",
+          "imageSha256": "4108fdcac5b522dc8ead7463c36bcbb5207a2f6b0af5b3a3f10a6f0dd56e9a50",
+          "head": [
+            69.883,
+            143.998
+          ],
+          "legs": [
+            221.986,
+            166.605
+          ]
+        },
+        "right": {
+          "index": 2,
+          "rect": [
+            1390,
+            5044,
+            349,
+            259
+          ],
+          "file": "fighters/bnl-01/native.webp",
+          "imageSha256": "4108fdcac5b522dc8ead7463c36bcbb5207a2f6b0af5b3a3f10a6f0dd56e9a50",
+          "head": [
+            278.117,
+            143.998
+          ],
+          "legs": [
+            126.014,
+            166.605
+          ]
+        }
+      },
+      "ground": {
+        "left": {
+          "index": 2,
+          "rect": [
+            0,
+            5443,
+            349,
+            259
+          ],
+          "file": "fighters/bnl-01/native.webp",
+          "imageSha256": "4108fdcac5b522dc8ead7463c36bcbb5207a2f6b0af5b3a3f10a6f0dd56e9a50",
+          "head": [
+            69.883,
+            143.998
+          ],
+          "legs": [
+            221.986,
+            166.605
+          ]
+        },
+        "right": {
+          "index": 2,
+          "rect": [
+            1390,
+            5044,
+            349,
+            259
+          ],
+          "file": "fighters/bnl-01/native.webp",
+          "imageSha256": "4108fdcac5b522dc8ead7463c36bcbb5207a2f6b0af5b3a3f10a6f0dd56e9a50",
+          "head": [
+            278.117,
+            143.998
+          ],
+          "legs": [
+            126.014,
+            166.605
+          ]
+        }
+      }
+    },
+    "9-bit": {
+      "air": {
+        "right": {
+          "index": 2,
+          "rect": [
+            610,
+            756,
+            307,
+            168
+          ],
+          "file": "fighters/9-bit/restraints-dark-identity-v2.runtime.clarity-v1.webp",
+          "imageSha256": "f493be897e0f68ce8f3b7b92a2856603b55fddcda33554c850053f4c5056590e",
+          "head": [
+            44.0,
+            80.0
+          ],
+          "legs": [
+            208.0,
+            79.0
+          ]
+        },
+        "left": {
+          "index": 2,
+          "rect": [
+            595,
+            1056,
+            308,
+            167
+          ],
+          "file": "fighters/9-bit/restraints-dark-identity-v2.runtime.clarity-v1.webp",
+          "imageSha256": "f493be897e0f68ce8f3b7b92a2856603b55fddcda33554c850053f4c5056590e",
+          "head": [
+            258.0,
+            79.0
+          ],
+          "legs": [
+            96.0,
+            82.0
+          ]
+        }
+      },
+      "landed": {
+        "right": {
+          "index": 3,
+          "rect": [
+            927,
+            825,
+            311,
+            98
+          ],
+          "file": "fighters/9-bit/restraints-dark-identity-v2.runtime.clarity-v1.webp",
+          "imageSha256": "f493be897e0f68ce8f3b7b92a2856603b55fddcda33554c850053f4c5056590e",
+          "head": [
+            48.0,
+            45.0
+          ],
+          "legs": [
+            235.0,
+            53.0
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            920,
+            1123,
+            315,
+            92
+          ],
+          "file": "fighters/9-bit/restraints-dark-identity-v2.runtime.clarity-v1.webp",
+          "imageSha256": "f493be897e0f68ce8f3b7b92a2856603b55fddcda33554c850053f4c5056590e",
+          "head": [
+            272.0,
+            44.0
+          ],
+          "legs": [
+            88.0,
+            39.0
+          ]
+        }
+      },
+      "ground": {
+        "right": {
+          "index": 3,
+          "rect": [
+            928,
+            286,
+            294,
+            86
+          ],
+          "file": "fighters/9-bit/floor-dark-identity-v2.runtime.clarity-v1.webp",
+          "imageSha256": "a0ca14ec7ef9751a9f8663163e035ccc4506dace943a0f85a31c4806cfc52bd4",
+          "head": [
+            46.0,
+            45.0
+          ],
+          "legs": [
+            211.0,
+            42.0
+          ]
+        },
+        "left": {
+          "index": 3,
+          "rect": [
+            917,
+            610,
+            306,
+            89
+          ],
+          "file": "fighters/9-bit/floor-dark-identity-v2.runtime.clarity-v1.webp",
+          "imageSha256": "a0ca14ec7ef9751a9f8663163e035ccc4506dace943a0f85a31c4806cfc52bd4",
+          "head": [
+            267.0,
+            45.0
+          ],
+          "legs": [
+            99.0,
+            44.0
+          ]
+        }
+      }
+    }
+  }
+}

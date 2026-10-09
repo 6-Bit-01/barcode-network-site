@@ -128,7 +128,18 @@ const HEAD = {
   'dj-floppydisc': {high:{right:[[170,107],[393,112],[660,103],[965,106]],left:[[133,472],[460,479],[730,466],[924,471]]}},
 };
 
+// Six Bit's retained restraints sheet reverses the air/floor bank convention
+// used by its knockdown sheet. The generic fallen-body sites marked its boots
+// as its head; these points were inspected on the unchanged native crops.
+const SIX_BIT_THROWN={
+  right:{2:{rect:[655,747,247,144],head:[210,55],legs:[55,80]},3:{rect:[975,829,245,74],head:[220,28],legs:[45,28]}},
+  left:{2:{rect:[657,1028,232,146],head:[35,55],legs:[176,80]},3:{rect:[972,1119,255,73],head:[35,28],legs:[215,28]}},
+};
+
 export function authoredPoseAnchor(frame, clip, index, facing, fighterId) {
+  const thrown=fighterId==='6-bit'&&clip==='thrown'?SIX_BIT_THROWN[facing]?.[index]:null;
+  if(thrown&&frame.rect.every((value,i)=>value===thrown.rect[i]))return {head:{x:thrown.head[0],y:thrown.head[1]},legs:{x:thrown.legs[0],y:thrown.legs[1]},authored:true};
+
   // Newly produced action sheets carry the same native crop-coordinate contract.
   if (frame.attachments?.torso && (frame.attachments?.grip || frame.attachments?.head)) {
     const result = Object.fromEntries(Object.entries(frame.attachments).filter(([,value])=>Array.isArray(value)&&value.length===2).map(([site,[x,y]])=>[site,{x,y}]));

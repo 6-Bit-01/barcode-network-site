@@ -8,12 +8,6 @@
       "deletion": "broadcast-cut"
     },
     {
-      "id": "9-bit",
-      "name": "9 Bit",
-      "enabled": true,
-      "deletion": "ninth-nail"
-    },
-    {
       "id": "cache-back",
       "name": "Cache Back",
       "enabled": true,
@@ -71,7 +65,8 @@
       "id": "ash-flowers",
       "name": "Ash Flowers",
       "enabled": true,
-      "deletion": "good-vibes-only"
+      "deletion": "good-vibes-only",
+      "skin": "Ash Rogers"
     },
     {
       "id": "wittyf0x",
@@ -102,6 +97,18 @@
       "name": "Lost Marbles",
       "enabled": true,
       "deletion": "marble-theory"
+    },
+    {
+      "id": "mutilator",
+      "name": "Mutilator",
+      "enabled": true,
+      "deletion": "brew-city-massacre"
+    },
+    {
+      "id": "9-bit",
+      "name": "9 Bit",
+      "enabled": true,
+      "deletion": "ninth-nail"
     }
   ]
 }

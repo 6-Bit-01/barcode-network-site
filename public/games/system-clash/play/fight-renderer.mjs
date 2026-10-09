@@ -689,6 +689,14 @@ function wandNativeTorsoEnvelope(art,clips,facing) {
   return {min,max,footDrop};
 }
 
+// A hanging source stays on one selected whole pose, even when its native
+// bank retains other keys. Clearance must measure that visible pose's feet.
+function wandCaptureFootDrop(art,view) {
+  const asset=art.clips[view.clip],frame=sourceFrame(asset,view);
+  const torso=resolvePoseAttachments(frame,view.clip,poseFrameIndex(asset,view),view.facing,art.manifest.id).torso;
+  return (frame.opaqueBounds[3]-torso.y)*poseScale(asset,frame);
+}
+
 function machineViews(match,prop,views,art,nativeMask) {
   const registered=registerNewDeletionViews(match,views,art,poseWorldPoint,prop,nativeMask);if(registered)return registered;
   const definition=definitionForMatch(match),bank=prop?.additional?.[definition?.id];
@@ -830,7 +838,7 @@ function machineViews(match,prop,views,art,nativeMask) {
     // crowding the lane or moving the caster after the spell finishes.
     hero.x+=(station-near.x)*easedProgress(t,0,b.castWindup);
     if(t>=b.bind&&t<b.erased) {
-      const ceiling=FLOOR-wandNativeTorsoEnvelope(victimArt,[capture.clip],victim.facing).footDrop;
+      const ceiling=FLOOR-wandCaptureFootDrop(victimArt,{...victim,...capture});
       const takeoff=Math.min(start.y,ceiling);
       const end=poseWorldPoint({...victim,...capture,x:o.target,y:-o.liftDistance},victimArt,'torso');
       const point=poseWorldPoint(victim,victimArt,'torso'),gather=easedProgress(t,b.bind,b.bind+220),lift=easedProgress(t,b.lift,b.lifted);

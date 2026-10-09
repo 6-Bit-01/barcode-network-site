@@ -54,27 +54,31 @@ const openingFrames={'6-bit':0,'9-bit':0,'mr-nice-guy':1,'papa-oak':1};
 function samples(f,action){
  const clip=f._clips[action==='grab'&&f._clips.grab?'grab':action==='grab'?'punch':action],rate=action==='grab'?1/f._style.tempo.throw:clip.playbackRate;
  const marker=action==='grab'?180*f._style.tempo.throw:clip.contactMs;
- const early=action==='uppercut'?clip.combatPoses.entries.find(entry=>entry.index===openingFrames[f.id]):null;
+ const dir=f.facing==='right'?1:-1;
+ const early=action==='uppercut'?clip.combatPoses.entries.find(entry=>{const p=clip.combatPoses.frames[f.facing][entry.index];return (p.strike.x-p.sites.torso.x)*dir>0&&p.strike.y<p.sites.torso.y-1;}):null;
  const start=early?Math.min(marker,early.start/rate):marker,end=action==='grab'?marker:clip.activeEndMs;
  if(action==='grab')return [{time:marker,pose:poseAt(clip,f.facing,marker*rate)}];
  return clip.combatPoses.entries.filter(entry=>entry.end/rate>start&&entry.start/rate<end).map(entry=>{
   const time=(Math.max(start,entry.start/rate)+Math.min(end,entry.end/rate))/2;
-  return {time,pose:clip.combatPoses.frames[f.facing][entry.index]};
+  return {time,index:entry.index,pose:clip.combatPoses.frames[f.facing][entry.index]};
  });
 }
 function bodyRegions(f,pose){
  const reference=f._clips.idle.combatPoses.frames[f.facing][0],core=nativeBodyCore(pose,reference,{id:f.id,facing:f.facing,height:f.height});
- return {core,regions:[...pose.hurt,...(core?[{...core,site:'torso'}]:[]),...nativeBodyLegs(pose,reference,{id:f.id,facing:f.facing,height:f.height})]};
+ return {core,regions:pose.measuredHurt?[...pose.hurt]:[...pose.hurt,...(core?[{...core,site:'torso'}]:[]),...nativeBodyLegs(pose,reference,{id:f.id,facing:f.facing,height:f.height})]};
 }
 function candidate(id,action,facing,guard={},warmup=0){
  const match=scene(id,facing,guard,warmup),[f,v]=match.fighters,dir=facing==='right'?1:-1;
  const victimPose=poseAt(v._clips[v.action],v.facing,warmup+1),victim=bodyRegions(v,victimPose);
  const initial=bodyRegions(f,poseAt(f._clips.idle,f.facing,0)).core;
+ const attackerIdle=poseAt(f._clips.idle,f.facing,0),victimIdle=poseAt(v._clips.idle,v.facing,0);
+ const physical=(fighter,pose,core)=>[{...core,site:'torso'},...nativeBodyLegs(pose,pose,{id:fighter.id,facing:fighter.facing,height:fighter.height})];
+ const attackerBodies=physical(f,attackerIdle,initial),victimBodies=physical(v,victimIdle,bodyRegions(v,victimIdle).core);
+ const legal=Math.max(...attackerBodies.flatMap(a=>victimBodies.filter(b=>!(a.site==='legs'&&b.site==='legs')&&Math.min(a.bottom,b.bottom)>Math.max(a.top,b.top)).map(b=>dir>0?a.right-b.left:b.right-a.left)))+1;
  let first;
  for(const sample of samples(f,action)){
-  const core=bodyRegions(f,sample.pose).core;
-  const legal=Math.max(dir>0?initial.right-victim.core.left:victim.core.right-initial.left,
-    dir>0?core.right-victim.core.left:victim.core.right-core.left)+1;
+  // Physical stance stays at its native idle body; changing strike keys cannot
+  // enlarge its blocker. Perspective feet may interleave, as in real play.
   const start=action==='grab'?sample.pose.sites.grip:sample.pose.strikeStart,end=action==='grab'?start:sample.pose.strike;
   const radius=sample.pose.strikeRadius;
   for(let gap=Math.ceil(legal);gap<=450;gap++){
@@ -124,13 +128,15 @@ for(const {id}of roster)test(`${id} native attacks have one true distant miss in
   assert.equal(events.filter(event=>event.type==='miss').length,1);
  }
 });
-for(const id of Object.keys(openingFrames))for(const facing of ['right','left'])test(`${id} uppercut contacts its authored grounded frame before the old high-fist marker (${facing})`,()=>{
- const choice=candidate(id,'uppercut',facing);
- assert(choice.touching,'A legally separated native grounded contact must actually exist');
- const {match,events}=snapshot(id,'uppercut',facing,choice);
- assert.equal(events.filter(event=>event.type==='hit').length,1);
- assert(choice.time<match.fighters[0]._clips.uppercut.contactMs,'Native body crossing precedes the old high-fist marker');
- assert.equal(getFighterView(match,0).poseIndex,openingFrames[id],'Collision uses the unchanged native playback frame');
+for(const id of Object.keys(openingFrames))for(const facing of ['right','left'])test(`${id} uppercut contacts its actual reachable native frame without broad body padding (${facing})`,()=>{
+ const choice=candidate(id,'uppercut',facing),match=scene(id,facing),[f,v]=match.fighters,dir=facing==='right'?1:-1;
+ v.x=f.x+dir*choice.legal;assert(performAction(match,0,'uppercut'));consumeEvents(match);
+ const clips=f._clips.uppercut,events=[];let contactView;
+ for(let elapsed=0;elapsed<clips.duration+50;elapsed+=10){advanceMatch(match,10);const batch=consumeEvents(match);if(batch.some(e=>e.type==='hit'&&e.attacker===0))contactView=getFighterView(match,0);events.push(...batch);}
+ const hits=events.filter(event=>event.type==='hit'&&event.attacker===0&&event.action==='uppercut');
+ assert.equal(hits.length,1,'The whole active native rise, including its tip sweep, reaches at physical body spacing');
+ assert(contactView.elapsed<=clips.activeEndMs*(clips.playbackRate??1),'Contact belongs to the actual native active rise');
+ assert.equal(contactView.poseIndex,clips.combatPoses.entries.find(e=>contactView.elapsed>=e.start&&contactView.elapsed<e.end)?.index,'The striking pose stays at its unchanged native playback frame');
 });
 for(const facing of ['right','left'])test(`native high hand ducks while an intersecting body punch checks crouch (${facing})`,()=>{
  const high=candidate('mr-nice-guy','punch',facing,{crouch:true}),highResult=snapshot('mr-nice-guy','punch',facing,high,{crouch:true});

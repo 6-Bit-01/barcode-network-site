@@ -33,9 +33,9 @@ const bounded=(plan,label)=>{
   }
 };
 
-test('all seventeen enabled mains have separate immutable sound identities and four authored gestures',()=>{
+test('all eighteen enabled mains have separate immutable sound identities and four authored gestures',()=>{
   assert.deepEqual(ids.sort(),Object.keys(FIGHTER_STYLES).sort());
-  assert.equal(ids.length,17);assert.equal(CHARACTER_FOLEY_VARIANTS,4);
+  assert.equal(ids.length,18);assert.equal(CHARACTER_FOLEY_VARIANTS,4);
   assert.equal(new Set(ids.map(id=>CHARACTER_FOLEY_PALETTES[id].texture)).size,ids.length);
   const structures=[];
   for(const id of ids){

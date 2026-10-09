@@ -1,4 +1,4 @@
-import {drawRemainsParticle} from './fight-remains.mjs';
+import {drawRemainsParticle,remainsParticleGeometry} from './fight-remains.mjs';
 import {createFightAudio} from './fight-audio.mjs';
 const FLOOR = 620;
 const PARTICLE_LIMIT = 420;
@@ -14,6 +14,7 @@ const CLOTHING = {
   stolz:['#282e2e','#67665f'],'kaveman-brown':['#292a25','#65665f'],
   dr3wbaby:['#4e365c','#3b5163'],'ash-flowers':['#272b29','#977521'],
   wittyf0x:['#293c62','#624d38'],'lost-marbles':['#28352a','#2f6b30'],
+  mutilator:['#ded9cb','#3b0909'],
   doofnoobler:['#db641c','#2696c9'],lyra:['#202d35','#22a7b9'],'papa-oak':['#485b2b','#785735'],
 };
 
@@ -43,6 +44,14 @@ export function createFightEffects(options = {}) {
     return ((value ^ value >>> 14) >>> 0) / 4294967296;
   };
   const range = (min, max) => min + random() * (max - min);
+  // Network cues choose debris independently of render cadence, camera shake and falling droplets.
+  function debrisRandom(event,salt){
+    let state=(options.seed??123)>>>0;
+    const key=JSON.stringify([salt,event.type,event.cue,event.at,event.volley,event.site,event.attackerId,event.victimId,event.target]);
+    for(let i=0;i<key.length;i++)state=Math.imul(state^key.charCodeAt(i),16777619)>>>0;
+    return ()=>{state+=0x6d2b79f5;let value=state;value=Math.imul(value^value>>>15,value|1);value^=value+Math.imul(value^value>>>7,value|61);return ((value^value>>>14)>>>0)/4294967296;};
+  }
+
   const particles = [];
   const decals = [];
   const smears = [];
@@ -154,26 +163,30 @@ export function createFightEffects(options = {}) {
   }
 
   function addChunks(event,x,y,direction,strength,profile) {
-    if(profile==='puncture'||/pressure/.test(event.cue??''))return;
+    if(/pressure/.test(event.cue??''))return;
+    const random=debrisRandom(event,'flight'),range=(min,max)=>min+random()*(max-min);
+    const victimScale=clamp(finite(event.victimHeight,320)/320,.45,1.4),puncture=profile==='puncture';
     const robot=event.victimMaterial==='metal'||event.victimMaterial!=='organic'&&event.victimId==='cache-back';
-    const headOnly=event.injuryRegion==='head'||event.cue==='ban-stamp';
+    const headOnly=event.injuryRegion==='head'||event.site==='head'||event.cue==='ban-stamp';
     const heavy=profile==='compression'||profile==='slam';
     const magic=event.cue==='blue-dissolve'||event.cue==='blue-erased';
-    const smallContact=magic||['truss-hit','chrome-squeeze','disc-upper-cut','disc-body-cut'].includes(event.cue);
+    const smallContact=puncture||magic||['truss-hit','chrome-squeeze','disc-upper-cut','disc-body-cut'].includes(event.cue);
     const cloth=CLOTHING[event.victimId]??['#3e3630','#272b29'];
-    const tissueCount=magic?(event.cue==='blue-erased'?6:4):Math.round((headOnly?5:smallContact?3:profile==='cut'?6:heavy?10:7)*Math.min(strength,2));
-    const clothCount=magic?(event.cue==='blue-erased'?3:2):headOnly?2:smallContact?1:Math.round((heavy?5:3)*Math.min(strength,1.5));
-    const boneCount=robot?0:headOnly?3:!smallContact&&heavy?6:0;
+    const tissueCount=puncture?Math.max(1,Math.min(3,Math.round(strength))):magic?(event.cue==='blue-erased'?6:4):Math.round((headOnly?5:smallContact?3:profile==='cut'?6:heavy?10:7)*Math.min(strength,2));
+    const clothCount=puncture?0:magic?(event.cue==='blue-erased'?3:2):headOnly?2:smallContact?1:Math.round((heavy?5:3)*Math.min(strength,1.5));
+    const boneCount=robot||puncture||magic?0:headOnly?3:!smallContact&&heavy?6:!smallContact&&profile==='cut'&&strength>=1.8?2:0;
     const count=tissueCount+clothCount+boneCount;
     for(let index=0;index<count;index++) {
       const material=index>=tissueCount+clothCount?'bone':index>=tissueCount?'cloth':robot?'metal':'organic';
       const large=!headOnly&&!smallContact&&index<Math.max(2,Math.floor(tissueCount*.2));
-      const width=material==='cloth'?range(headOnly?6:12,headOnly?14:31):material==='bone'?range(5,headOnly?13:19):
-        material==='metal'?(large?range(12,23):range(5,12)):large?range(24,39):range(headOnly?5:7,headOnly?13:16);
-      const height=width*range(material==='bone'?.2:material==='metal'?.25:material==='cloth'?.25:profile==='cut'?.27:.42,
+      const width=(material==='cloth'?range(headOnly?6:12,headOnly?14:31):material==='bone'?range(5,headOnly?13:19):
+        material==='metal'?(large?range(12,23):range(5,12)):large?range(24,39):range(puncture?4:headOnly?5:7,puncture?8:headOnly?13:16))*victimScale;
+      const nativeSprite=material==='organic'?(random()<.5?'meat-shred':'meat-gristle'):material==='bone'?(headOnly&&event.cue!=='marble-strip'&&index===tissueCount+clothCount?'skull':'splinter'):null;
+      const native=remainsParticleGeometry(options.getRemainsArt?.(),{material,nativeSprite,width,region:headOnly?'head':'body'});
+      const height=native?.height??width*range(material==='bone'?.2:material==='metal'?.25:material==='cloth'?.25:profile==='cut'?.27:.42,
         material==='metal'?.55:material==='bone'?.4:material==='cloth'?.57:.8);
       const vertexCount=Math.floor(material==='metal'||material==='bone'?range(4,6):range(6,9));
-      const points=Array.from({length:vertexCount},(_,i)=>{
+      const points=native?.points??Array.from({length:vertexCount},(_,i)=>{
         const angle=i*Math.PI*2/vertexCount,radius=range(material==='cloth'?.48:.7,1.08);
         return {x:Math.cos(angle)*width*.5*radius,y:Math.sin(angle)*height*.5*radius};
       });
@@ -189,7 +202,7 @@ export function createFightEffects(options = {}) {
       const landX=clamp(originX+vx*(1-Math.exp(-drag*flightSeconds))/drag,12,1268);
       const angle=range(-Math.PI,Math.PI);
       appendBounded(chunks,{
-        material,profile,region:headOnly?'head':'body',x:originX,y:originY,originX,originY,vx,vy,gravity,drag,
+        material,nativeSprite,profile,region:headOnly?'head':'body',x:originX,y:originY,originX,originY,vx,vy,gravity,drag,
         landingY,floorY,landX,flightMs,age:0,settled:false,
         angle,rotation:angle,tumble:range(-8,8),restingAngle,
         width,height,points,large,bounce:material==='metal'?range(3,7):material==='cloth'?0:range(1,3),bounceMs:material==='metal'?220:140,
@@ -202,7 +215,10 @@ export function createFightEffects(options = {}) {
   }
 
   function addRupturePile(event,x,y,direction) {
-    if(event.aftermath!=='body-rupture'||event.injuryRegion==='head'||event.cue==='ban-stamp')return;
+    const butcher=event.aftermath==='butcher-heap';
+    if(!butcher&&(event.aftermath!=='body-rupture'||event.injuryRegion==='head'||event.cue==='ban-stamp'))return;
+    const random=debrisRandom(event,'pile'),range=(min,max)=>min+random()*(max-min);
+    const victimScale=clamp(finite(event.victimHeight,320)/320,.45,1.4);
     const width=clamp(finite(event.aftermathWidth,320),160,450),center=clamp(finite(event.aftermathCenterX,x),45,1235);
     const robot=event.victimMaterial==='metal'||event.victimMaterial!=='organic'&&event.victimId==='cache-back';
     const cloth=CLOTHING[event.victimId]??['#3e3630','#272b29'];
@@ -210,11 +226,13 @@ export function createFightEffects(options = {}) {
     // stay under its real foreground; unequal side rags extend just outside.
     // All sizes and positions below are stage pixels, not screen-size decals.
     for(let index=0;index<12;index++) {
-      const side=index<6?0:index<9?-1:1,material=index%3===0?'cloth':robot?'metal':index===5?'bone':'organic';
+      const side=index<6?0:index<9?-1:1,material=butcher&&index===1?'bone':index%3===0?'cloth':robot?'metal':index===5?'bone':'organic';
       const large=side!==0&&index%3===0;
-      const size=material==='cloth'?range(large?47:34,large?68:53):material==='bone'?range(13,19):range(side?25:31,side?43:50);
-      const height=size*range(material==='cloth'?.30:material==='bone'?.26:.49,material==='cloth'?.52:material==='bone'?.42:.74);
-      const points=Array.from({length:material==='metal'||material==='bone'?5:8},(_,i)=>{
+      const size=(material==='cloth'?range(large?47:34,large?68:53):material==='bone'?butcher&&index===1?range(29,39):range(13,19):range(side?25:31,side?43:50))*victimScale;
+      const nativeSprite=material==='organic'?(random()<.5?'meat-shred':'meat-gristle'):material==='bone'?(butcher&&index===1?'skull':'splinter'):null;
+      const native=remainsParticleGeometry(options.getRemainsArt?.(),{material,nativeSprite,width:size,region:butcher&&index===1?'head':'body'});
+      const height=native?.height??size*range(material==='cloth'?.30:material==='bone'?.26:.49,material==='cloth'?.52:material==='bone'?.42:.74);
+      const points=native?.points??Array.from({length:material==='metal'||material==='bone'?5:8},(_,i)=>{
         const angle=i*Math.PI*2/(material==='metal'||material==='bone'?5:8),radius=range(material==='cloth'?.50:.72,1.08);
         return{x:Math.cos(angle)*size*.5*radius,y:Math.sin(angle)*height*.5*radius};
       });
@@ -226,7 +244,7 @@ export function createFightEffects(options = {}) {
       const flightMs=1000*(-vy+Math.sqrt(vy*vy+2*gravity*(landingY-originY)))/gravity;
       const vx=(px-originX)*drag/(1-Math.exp(-drag*flightMs/1000));
       appendBounded(chunks,{
-        material,profile:'rupture',region:'body',pile:true,x:originX,y:originY,originX,originY,
+        material,nativeSprite,profile:'rupture',region:butcher&&index===1?'head':'body',pile:true,x:originX,y:originY,originX,originY,
         vx,vy,gravity,drag,landingY,floorY,landX:px,flightMs,age:0,settled:false,
         angle:restingAngle,rotation:restingAngle,tumble:0,restingAngle,width:size,height,points,large,bounce:0,bounceMs:140,behind:true,
         body:material==='cloth'?cloth[index%cloth.length]:material==='metal'?'#3b4440':material==='bone'?'#857159':index%2?'#47150d':'#611d11',
@@ -318,6 +336,11 @@ export function createFightEffects(options = {}) {
         }
         break;
       case 'deletion-impact': {
+        if(event.damageKind==='scorch'||event.cue==='heart-burst'){
+          burst('pulse-spark',x,y,direction,Math.round(28*strength),strength);
+          burst('char',x,y,direction,Math.round(10*strength),.65);
+          burst('smoke',x,y,direction,10,.5);impact(16+4*strength,0);break;
+        }
         const profile=bloodProfile(event),visualStrength=event.cue==='marble-strip'?strength*clamp(finite(event.victimHeight,320)/320,.45,1)**2:strength;
         if(event.cue==='cable-snap'||event.cue==='oak-rip') {
           burst('blood',x,y,-1,Math.round(46*visualStrength),visualStrength,profile);

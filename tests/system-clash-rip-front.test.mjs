@@ -371,7 +371,7 @@ async function imageFor(url){if(!cache.has(url.href))cache.set(url.href,sharp(re
 async function source(id){const manifest=json(new URL(`assets/fighters/${id}/manifest.json`,ROOT)),clips={};for(const bank of ['fighters','arcade','deletions']){const path=new URL(`assets/${bank}/${id}/manifest.json`,ROOT),data=json(path);for(const [name,value]of Object.entries(data.clips)){const key=bank==='deletions'?'delete-'+name:name;clips[key]=compileFightClip(value,await imageFor(new URL(value.file,path)),data,key);}}return {manifest,clips};}
 function screen(){const calls=[],ctx=new Proxy({}, {get(target,key){if(key in target)return target[key];if(String(key).startsWith('create')&&String(key).endsWith('Gradient'))return ()=>({addColorStop(){}});return (...args)=>calls.push([key,...args]);}});return {calls,getContext(){return ctx;}};}
 
-for(const expected of APPROVED){
+for(const expected of APPROVED.filter(f=>f.id!=='ash-flowers')){
 const deletionURL=new URL(`assets/deletions/${expected.id}/manifest.json`,ROOT),deletion=json(deletionURL);
 const front=()=>{assert.ok(deletion.clips['rip-front'],`Approved original-reference ${expected.id} front pose is required`);return deletion.clips['rip-front'];};
 test(`${expected.id}: original-reference front body is one frozen native pose shared exactly by both facings`,async()=>{
@@ -425,3 +425,5 @@ for(const direction of [1,-1])test(`${expected.id}: real Oak lift/tear rendering
 test('All approved hanging banks replace release hooks and locally retained rejected art remains usable',async()=>{
  for(const id of ['6-bit','9-bit','cache-back','cliff','dj-floppydisc','mac-modem','mr-nice-guy']){const url=new URL(`assets/deletions/${id}/manifest.json`,ROOT),manifest=json(url);assert.equal(manifest.clips['rip-front'].file,'victim-front-lift-airborne-sheet-v1.webp');assert.ok(manifest.clips.suspended);const image=await imageFor(new URL(manifest.clips.suspended.file,url));assert.ok(image.width>0&&image.height>0);const retained=new URL('victim-front-lift-original-v1.webp',url);if(existsSync(retained))assert.ok(readFileSync(retained).length>0,'Locally retained rejected art remains usable for recovery without release hookup');}
 });
+
+test('Ash earlier approved leather front source remains byte-for-byte usable after Rogers main replacement',async()=>{const expected=APPROVED.find(f=>f.id==='ash-flowers'),url=new URL('assets/deletions/ash-flowers/victim-front-lift-airborne-sheet-v1.webp',ROOT),raw=await sharp(readFileSync(url)).ensureAlpha().raw().toBuffer();assert.equal(hash(raw),expected.rgbaSha256);});

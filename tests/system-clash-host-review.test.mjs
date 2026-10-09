@@ -9,7 +9,7 @@ import {FIGHTER_STYLES} from '../public/games/system-clash/play/fight-engine.mjs
 const fightSource=readFileSync(new URL('../public/games/system-clash/play/fight.js',import.meta.url),'utf8');
 const demoSource=readFileSync(new URL('../public/games/system-clash/play/demo.mjs',import.meta.url),'utf8');
 const base='https://game.test/games/system-clash/play/';
-const priorRules={rounds:1,time:99,difficulty:'normal'},nextRules={rounds:5,time:60,difficulty:'hard'};
+const priorRules={rounds:1,time:99,difficulty:'normal',musicStyle:'stage'},nextRules={rounds:5,time:60,difficulty:'hard',musicStyle:'fighter'};
 
 function element(tag='div'){
  const classes=new Set(),events={};return {tagName:tag.toUpperCase(),dataset:{},style:{},children:[],events,

@@ -31,7 +31,6 @@ const audio=createFightAudio({muted,reducedMotion,baseUrl:location.href});
 const music=createGameMusic({muted});
 const bootAudio=new Audio(new URL('assets/audio/barcode-console-start.wav',location.href));bootAudio.preload='none';bootAudio.volume=.32;
 const boot=createConsoleBoot({element:$('console-boot'),image:$('console-mark'),caption:$('console-caption'),reducedMotion:()=>reducedMotion,onFinish:()=>{for(const node of document.querySelectorAll('header,main,footer'))node.inert=false;try{sessionStorage.setItem('system-clash-console-seen','1');}catch{}$('solo-mode').focus({preventScroll:true});music.setPaused(document.hidden||!windowActive||menuSuspended);void music.unlock();}});
-$('console-skip').addEventListener('click',()=>{if(!muted)void bootAudio.play().catch(()=>{});boot.skip();});
 const previews=createMenuPreviews({baseURL:location.href,canvases:[$('idle-one'),$('idle-two')],fallbacks:[$('standing-one'),$('standing-two')],isActive:()=>!!state&&state.screen!=='title'&&windowActive&&!document.hidden});
 function sound(id){void audio.startAudio().then(()=>audio.emit({type:'attack',action:'punch',attackerId:id}));}
 function settings(){document.body.classList.toggle('motion-reduced',reducedMotion);$('demo-sound').textContent=muted?'Sound off':'Sound on';$('demo-sound').setAttribute('aria-pressed',String(muted));$('demo-motion').checked=reducedMotion;audio.setMuted(muted);music.setMuted(muted);bootAudio.muted=muted;audio.setReducedMotion(reducedMotion);previews.setReducedMotion(reducedMotion);}
@@ -93,13 +92,13 @@ async function load(){
   state=createDemoSelection(catalog.fighters,{p1:params.get('p1'),p2:params.get('p2'),stage:params.get('stage'),mode:params.get('mode'),screen:params.get('screen')});
   const paths=[...new Set(['assets/menu/title-arena.webp','assets/console/system-clash-title.webp','assets/console/barcode-circuit-works.webp','assets/console/soft-signal-systems.webp','assets/console/channel-06-entertainment.webp','assets/menu/6-bit-standing.webp','assets/menu/9-bit-standing.webp',...catalog.fighters.flatMap(f=>[f.portrait,f.standing])])];let done=0;await Promise.all(paths.map(async path=>{await menuImage(path);if(failed)return;loading('Loading menu artwork · '+(++done)+' / '+paths.length,10+done/paths.length*90);}));
   menuReady=true;for(const node of document.querySelectorAll?.('header,main,footer')??[])node.inert=false;$('asset-loading').hidden=true;buildGrid();render();$('solo-mode').disabled=false;$('local-mode').disabled=false;$('tournament-mode').disabled=false;$('online-mode').disabled=false;$('demo-load').textContent='SIGNAL READY / '+catalog.fighters.length+' FIGHTERS ONLINE';
-  let seen=false;try{seen=sessionStorage.getItem('system-clash-console-seen')==='1';}catch{}if(!seen&&state.screen==='title'){for(const node of document.querySelectorAll('header,main,footer'))node.inert=true;boot.start();if(!muted)void bootAudio.play().catch(()=>{});$('console-skip').focus({preventScroll:true});}
+  let seen=false;try{seen=sessionStorage.getItem('system-clash-console-seen')==='1';}catch{}if(!seen&&state.screen==='title'){for(const node of document.querySelectorAll('header,main,footer'))node.inert=true;music.setPaused(true);boot.start();if(!muted)void bootAudio.play().catch(()=>{});}
  }catch(error){failed=true;loading(error.message,0,true);$('demo-load').textContent=error.message;$('demo-load').classList.add('error');$('retry-demo').hidden=false;}
 }
 for(const stage of STAGES){const option=document.createElement('option');option.value=stage.id;option.textContent=stage.name;$('demo-stage').append(option);}
 $('demo-stage').addEventListener('change',()=>{state=selectDemoStage(state,$('demo-stage').value);render();});
 $('tournament-mode').addEventListener('click',()=>begin('tournament'));
-$('online-mode').addEventListener('click',()=>{audio.clear();const url=new URL('online.html',location.href);url.searchParams.set('sound',muted?'0':'1');url.searchParams.set('motion',reducedMotion?'1':'0');screenHost.navigate(withControllerSeats(url,gamepads.seatIndices()));});
+$('online-mode').addEventListener('click',()=>{audio.clear();const url=new URL('online.html',location.href);url.searchParams.set('sound',muted?'0':'1');url.searchParams.set('motion',reducedMotion?'1':'0');screenHost.navigate(withMatchRules(withControllerSeats(url,gamepads.seatIndices()),matchRules));});
 $('solo-mode').addEventListener('click',()=>begin('cpu'));$('local-mode').addEventListener('click',()=>begin('local'));
 $('confirm-fighter').addEventListener('click',confirm);$('selection-back').addEventListener('click',back);
 $('random-fighter').addEventListener('click',()=>{state=randomDemoFighter(state);render();sound(state.picks[state.activePlayer]);focusSelection();});
@@ -112,7 +111,7 @@ $('controls-open').addEventListener('click',()=>{if(!menuReady)return;gamepads.r
 $('controls-dialog').addEventListener('close',()=>gamepads.reset());
 window.addEventListener('keydown',event=>{
  if(!menuReady)return;
- if(typeof boot==='object'&&boot.active){if(['Enter','Space','Escape'].includes(event.code)){event.preventDefault();if(!event.repeat)$('console-skip').click();}return;}
+ if(typeof boot==='object'&&boot.active){if(['Enter','Space','Escape'].includes(event.code))event.preventDefault();return;}
  if(matchOptions.open){if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Enter','Escape'].includes(event.code)){event.preventDefault();if(!event.repeat)matchOptions.handleAction(event.code==='Enter'?'confirm':event.code==='Escape'?'back':event.code);}return;}
  if(state?.screen==='title'&&!$('controls-dialog').open&&['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Enter'].includes(event.code)){const items=titleChoices();event.preventDefault();if(event.code==='Enter'){if(!event.repeat)(items.includes(document.activeElement)?document.activeElement:items[0])?.click();}else items[nextMenuIndex(items.length,items.indexOf(document.activeElement),event.code)]?.focus({preventScroll:true});return;}
 
@@ -135,7 +134,7 @@ function pollMenuGamepads(now){
  for(const event of sample.events){
   if(!['press','navigate'].includes(event.type))continue;
   if(typeof music==='object'&&event.type==='press')void music.unlock();
-  if(typeof boot==='object'&&boot.active){if(event.type==='press'&&['confirm','back','pause'].includes(event.action))$('console-skip').click();gamepads.reset();return;}
+  if(typeof boot==='object'&&boot.active){gamepads.reset();return;}
   if(matchOptions.open){matchOptions.handleAction(event.action);return;}
   if($('controls-dialog').open){if(event.type==='press'&&['back','pause','confirm'].includes(event.action))closeControls();return;}
   if(!canControlMenu(event.player,sample.players,{screen:state.screen,mode:state.mode,activePlayer:state.activePlayer}))continue;

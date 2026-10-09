@@ -7,10 +7,22 @@ import path from 'node:path';
 import sharp from 'sharp';
 import {compileFightClip,combatMetadata} from '../public/games/system-clash/play/fight-assets.mjs';
 const play=fileURLToPath(new URL('../public/games/system-clash/play/',import.meta.url));
-const ids=['6-bit','9-bit','cache-back','cliff','dj-floppydisc','mac-modem','mr-nice-guy','ms-mayhem','stolz','kaveman-brown','dr3wbaby','ash-flowers','wittyf0x','lyra','papa-oak'].filter(id=>!process.env.SYSTEM_CLASH_WALK_IDS||process.env.SYSTEM_CLASH_WALK_IDS.split(',').includes(id));
+const ids=['6-bit','9-bit','cache-back','cliff','dj-floppydisc','mac-modem','mr-nice-guy','ms-mayhem','stolz','kaveman-brown','dr3wbaby','wittyf0x','lyra','papa-oak'].filter(id=>!process.env.SYSTEM_CLASH_WALK_IDS||process.env.SYSTEM_CLASH_WALK_IDS.split(',').includes(id));
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
-for(const id of ids)test(id+': eight real registered walk phases preserve the native cycle and original pixels',async()=>{
+for(const id of ids)test(id+': approved native walk chronology preserves complete source poses and original pixels',async()=>{
  const directory=path.join(play,'assets/fighters',id),manifest=JSON.parse(await readFile(path.join(directory,'manifest.json'),'utf8')),clip=manifest.clips.walk;
+ if(clip.registrationRepair?.kind==='restore-approved-native-walk-chronology') {
+  const file=path.join(directory,clip.file),image=await sharp(file).metadata(),asset=compileFightClip(clip,image,manifest,'walk');
+  assert.equal(asset.timeline.duration,600);assert.deepEqual(clip.order,[0,1,2,3]);assert.deepEqual(clip.frameMs,[150,150,150,150]);
+  assert.equal(clip.sourceSha256,sha(await readFile(file)));assert.equal(clip.registrationRepair.retainedPolishClip.frames.right.length,8);
+  for(const facing of ['right','left'])for(const frame of clip.frames[facing]) {
+   assert.equal(frame.walkKeyOrigin,'approved');assert.deepEqual(frame.rect,frame.poseSource.originalRect);
+   const[left,top,width,height]=frame.rect,raw=await sharp(file).extract({left,top,width,height}).ensureAlpha().raw().toBuffer();
+   assert.equal(sha(raw),frame.poseSource.pixelSha256,'The full original native walk crop is restored exactly');
+   assert.equal(frame.pixelSha256,sha(raw));assert(Math.abs(frame.anchor[1]-frame.opaqueBounds[3])<=1);
+  }
+  return;
+ }
  assert.equal(clip.animationPolish?.version,2,'An explicit native in-between bank must replace the four-key walk');
  assert.deepEqual(clip.order,[0,1,2,3,4,5,6,7]);assert.deepEqual(clip.frameMs,[75,75,75,75,75,75,75,75]);
  const file=path.join(directory,clip.file),image=await sharp(file).metadata(),asset=compileFightClip(clip,image,manifest,'walk');

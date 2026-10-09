@@ -18,13 +18,6 @@
       "heightScale": 1
     },
     {
-      "id": "9-bit",
-      "name": "9 Bit",
-      "portrait": "assets/menu/9-bit-portrait.webp",
-      "standing": "assets/menu/9-bit-standing.webp",
-      "heightScale": 1.15
-    },
-    {
       "id": "cache-back",
       "name": "Cache Back",
       "portrait": "assets/menu/cache-back-portrait.webp",
@@ -96,7 +89,8 @@
       "name": "Ash Flowers",
       "portrait": "assets/menu/ash-flowers-portrait.webp",
       "standing": "assets/menu/ash-flowers-standing.webp",
-      "heightScale": 1
+      "heightScale": 1,
+      "skin": "Ash Rogers"
     },
     {
       "id": "wittyf0x",
@@ -144,6 +138,20 @@
       "portrait": "assets/menu/lost-marbles-portrait.webp",
       "standing": "assets/menu/lost-marbles-standing.webp",
       "heightScale": 1
+    },
+    {
+      "id": "mutilator",
+      "name": "Mutilator",
+      "portrait": "assets/menu/mutilator-portrait.webp",
+      "standing": "assets/menu/mutilator-standing.webp",
+      "heightScale": 1
+    },
+    {
+      "id": "9-bit",
+      "name": "9 Bit",
+      "portrait": "assets/menu/9-bit-portrait.webp",
+      "standing": "assets/menu/9-bit-standing.webp",
+      "heightScale": 1.15
     }
   ]
 }

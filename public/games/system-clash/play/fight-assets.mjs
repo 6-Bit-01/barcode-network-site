@@ -1,4 +1,5 @@
 import {poseScale,compileWeaponOrigins,resolvePoseAttachments,poseFrameIndex,weaponAttachment} from './fight-attachments.mjs';
+import {nativeHurtRegions,nativePushRegions} from './fight-combat-geometry.mjs';
 import {deletionDefinition} from './deletion-library.mjs';
 import {stageById} from './fight-stages.mjs';
 const ACTIONS = ['idle','walk','crouch','block','punch','kick','high','low','grabbed','thrown','knockdown','getup'];
@@ -65,7 +66,7 @@ function compileCombatPoses(asset,name,fighter) {
     const box=(site,x1,y1,x2,y2)=>({site,left:Math.max(a.x,x1),top:Math.max(a.y,y1),right:Math.min(b.x,x2),bottom:Math.min(b.y,y2)});
     const headRadius=Math.min(height*.09,bodyHeight*.11),bodyRadius=Math.min(height*.15,(b.x-a.x)*.30);
     const hip=legs.y-bodyHeight*.08;
-    const hurt=[box('head',head.x-headRadius,head.y-headRadius,head.x+headRadius,head.y+headRadius),
+    const hurt=nativeHurtRegions(frame,point)??[box('head',head.x-headRadius,head.y-headRadius,head.x+headRadius,head.y+headRadius),
       box('torso',Math.min(torso.x,legs.x)-bodyRadius,head.y+headRadius*.7,Math.max(torso.x,legs.x)+bodyRadius,hip),
       box('legs',legs.x-bodyRadius*.8,hip-bodyHeight*.06,legs.x+bodyRadius*.8,b.y)]
       .filter(region=>region.right>region.left&&region.bottom>region.top);
@@ -76,7 +77,7 @@ function compileCombatPoses(asset,name,fighter) {
     const strikeStart=frame.attachments?.strikeStart?point(frame.attachments.strikeStart):
       hand?{x:torso.x+(strike.x-torso.x)*armStart,y:torso.y+(strike.y-torso.y)*armStart}:
         {x:torso.x,y:torso.y+(legs.y-torso.y)*.45};
-    return {bounds:{left:a.x,top:a.y,right:b.x,bottom:b.y},hurt,strike,strikeStart,
+    return {bounds:{left:a.x,top:a.y,right:b.x,bottom:b.y},hurt,measuredHurt:!!frame.combatHurt,...nativePushRegions(frame,point),strike,strikeStart,
       sites:{head,torso,legs,grip:point([sites.grip.x,sites.grip.y])},
       strikeRadius:Math.max(9,Math.min(hand?16:20,height*(hand?.04:.055))),
 };

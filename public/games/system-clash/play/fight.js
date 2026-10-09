@@ -157,7 +157,7 @@ function inspectDeletionScene(time) {
 
 function syncAudioPause() {
   const quiet=!ready||!windowActive||screenSuspended||paused||inspectTime!==null||motionTime!==null||document.hidden;effects.setPaused(quiet);
-  if(typeof music==='object'){music.setPaused(quiet);if(ready&&typeof match==='object'&&match)music.setScene({screen:typeof tournamentOverlay==='object'&&tournamentOverlay?.blocking?'tournament':match.phase==='ready'?'arena':'fight',fighter:typeof art==='object'?art?.[0]?.manifest?.id:match.fighters?.[0]?.id,stage:match.stage?.id??'radio-studio',variant:typeof tournamentOverlay==='object'&&tournamentOverlay?.active?tournamentOverlay.node:typeof musicMatchNumber==='number'?musicMatchNumber:0});}
+  if(typeof music==='object'){music.setPaused(quiet);if(ready&&typeof match==='object'&&match)music.setScene({screen:typeof tournamentOverlay==='object'&&tournamentOverlay?.blocking?'tournament':match.phase==='ready'?'arena':'fight',fighter:typeof art==='object'?art?.[0]?.manifest?.id:match.fighters?.[0]?.id,stage:match.stage?.id??'radio-studio',musicStyle:matchRules.musicStyle,variant:typeof tournamentOverlay==='object'&&tournamentOverlay?.active?tournamentOverlay.node:typeof musicMatchNumber==='number'?musicMatchNumber:0});}
 }
 
 function draw() {
@@ -492,14 +492,14 @@ async function initializeRoster() {
     if(!roster.length||new Set(roster.map(f=>f.id)).size!==roster.length||roster.some(f=>!FIGHTER_STYLES[f.id]))throw new Error('The main roster needs its verified fighting styles.');
     activeRoster=roster;
     demoLaunch=parseDemoLaunch(location.href,roster);
-    if(launchParams.get('tournament')==='1'&&!onlineBridge.enabled){tournamentOverlay=createTournamentFightOverlay({url:location.href,roster:activeRoster,storage:sessionStorage,onShow:scene=>music.setScene(scene),getSettings:()=>({muted,reducedMotion:$('motion-toggle').checked,controllerSeats:gamepads.seatIndices(),stage:match?.stage?.id??launchParams.get('stage'),matchRules:roundSet.rules}),onNavigate:url=>screenHost.navigate(url),onLeave:run=>{const back=new URL('index.html',location.href);if(run.returnScreen==='select'){back.searchParams.set('screen','select');back.searchParams.set('mode','tournament');}back.searchParams.set('stage',match?.stage?.id??demoLaunch.stage);back.searchParams.set('sound',muted?'0':'1');back.searchParams.set('motion',$('motion-toggle').checked?'1':'0');screenHost.navigate(withMatchRules(withControllerSeats(back,gamepads.seatIndices()),roundSet.rules));}});if(!tournamentOverlay.active)throw new Error('This Tournament run is unavailable. Return to the game menu.');}
+    if(launchParams.get('tournament')==='1'&&!onlineBridge.enabled){tournamentOverlay=createTournamentFightOverlay({url:location.href,roster:activeRoster,storage:sessionStorage,onShow:scene=>music.setScene(scene),getSettings:()=>({muted,reducedMotion:$('motion-toggle').checked,controllerSeats:gamepads.seatIndices(),stage:match?.stage?.id??launchParams.get('stage'),matchRules:{...roundSet.rules,musicStyle:matchRules.musicStyle}}),onNavigate:url=>screenHost.navigate(url),onLeave:run=>{const back=new URL('index.html',location.href);if(run.returnScreen==='select'){back.searchParams.set('screen','select');back.searchParams.set('mode','tournament');}back.searchParams.set('stage',match?.stage?.id??demoLaunch.stage);back.searchParams.set('sound',muted?'0':'1');back.searchParams.set('motion',$('motion-toggle').checked?'1':'0');screenHost.navigate(withMatchRules(withControllerSeats(back,gamepads.seatIndices()),{...roundSet.rules,musicStyle:matchRules.musicStyle}));}});if(!tournamentOverlay.active)throw new Error('This Tournament run is unavailable. Return to the game menu.');}
 
     if(demoLaunch.enabled){
       document.body.classList.add('demo');document.title='BARCODE: SYSTEM CLASH — Demo';$('demo-toolbar').hidden=false;
       $('mode-select').value=demoLaunch.mode;muted=demoLaunch.muted;effects.setMuted(muted);if(typeof music==='object')music.setMuted(muted);
       $('mute-fight').textContent=muted?'Sound off':'Sound on';$('mute-fight').setAttribute('aria-pressed',String(muted));
       $('motion-toggle').checked=demoLaunch.reducedMotion;effects.setReducedMotion(demoLaunch.reducedMotion);
-      const back=new URL('index.html',location.href);for(const [key,value]of Object.entries({screen:'select',mode:demoLaunch.mode,p1:demoLaunch.p1,p2:demoLaunch.p2,stage:demoLaunch.stage,sound:muted?'0':'1',motion:$('motion-toggle').checked?'1':'0'}))back.searchParams.set(key,value);$('demo-select').href=withMatchRules(withControllerSeats(back,gamepads.seatIndices()),roundSet.rules).href;
+      const back=new URL('index.html',location.href);for(const [key,value]of Object.entries({screen:'select',mode:demoLaunch.mode,p1:demoLaunch.p1,p2:demoLaunch.p2,stage:demoLaunch.stage,sound:muted?'0':'1',motion:$('motion-toggle').checked?'1':'0'}))back.searchParams.set(key,value);$('demo-select').href=withMatchRules(withControllerSeats(back,gamepads.seatIndices()),{...roundSet.rules,musicStyle:matchRules.musicStyle}).href;
     }
     for(const id of ['fighter-one','fighter-two']) {
       const select=$(id),previous=select.value;select.replaceChildren();

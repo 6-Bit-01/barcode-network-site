@@ -5,6 +5,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createMatch,advanceMatch,performAction,consumeEvents,getFighterView} from '../public/games/system-clash/play/fight-engine.mjs';
 import {compileFightClip,combatMetadata} from '../public/games/system-clash/play/fight-assets.mjs';
+import {nativeBodyCore,nativeBodyLegs} from '../public/games/system-clash/play/fight-combat-geometry.mjs';
 const root=fileURLToPath(new URL('../public/games/system-clash/play/assets/',import.meta.url));
 function size(file){const bytes=fs.readFileSync(file);if(bytes[0]===137)return {width:bytes.readUInt32BE(16),height:bytes.readUInt32BE(20)};for(let at=12;at+8<=bytes.length;){const kind=bytes.toString('ascii',at,at+4),n=bytes.readUInt32LE(at+4),p=at+8;if(kind==='VP8X')return {width:1+bytes.readUIntLE(p+4,3),height:1+bytes.readUIntLE(p+7,3)};if(kind==='VP8L'){const v=bytes.readUInt32LE(p+1);return {width:1+(v&0x3fff),height:1+((v>>>14)&0x3fff)};}if(kind==='VP8 ')return {width:bytes.readUInt16LE(p+6)&0x3fff,height:bytes.readUInt16LE(p+8)&0x3fff};at=p+n+(n&1);}throw new Error('Unknown sprite');}
 const roster=JSON.parse(fs.readFileSync(path.join(root,'fight-roster.json'))).fighters.filter(f=>f.enabled);
@@ -20,9 +21,10 @@ for(const facing of ['right','left'])test(`a short native fighter pushes a tall 
  for(let elapsed=0;elapsed<1400;elapsed+=10){const before=match.fighters[1].x;advanceMatch(match,10,[{move:dir},{}]);maxPush=Math.max(maxPush,Math.abs(match.fighters[1].x-before));assert((match.fighters[1].x-match.fighters[0].x)*dir>=145,'The small chest cannot enter either native upper shin');}
  assert((match.fighters[1].x-startTall)*dir>20,'Walking body pressure moves the other fighter');assert(maxPush<5,'Normal pressure is shared in small simulation steps');
 });
-for(const facing of ['right','left'])test(`Drew's uppercut lands during its native rise against Mayhem (${facing})`,()=>{
- const match=scene(['dr3wbaby','ms-mayhem'],facing,140);assert(performAction(match,0,'uppercut'));consumeEvents(match);run(match,900);
- const hits=consumeEvents(match).filter(e=>e.type==='hit'&&e.action==='uppercut');assert.equal(hits.length,1,'The grounded forward fist reaches the body before the authored high-fist marker');assert(match.fighters[1].hp<match.fighters[1].maxHp);
+function nativePushGap(match){const [a,b]=match.fighters,dir=a.facing==='right'?1:-1,regions=f=>{const p=f._clips.idle.combatPoses.frames[f.facing][0];return [{...nativeBodyCore(p,p,{id:f.id,facing:f.facing,height:f.height}),site:'torso'},...nativeBodyLegs(p,p,{id:f.id,facing:f.facing,height:f.height})];};return Math.max(...regions(a).flatMap(ca=>regions(b).filter(cb=>!(ca.site==='legs'&&cb.site==='legs')&&Math.min(ca.bottom,cb.bottom)>Math.max(ca.top,cb.top)).map(cb=>dir>0?ca.right-cb.left:cb.right-ca.left)))+.01;}
+for(const facing of ['right','left'])test(`Drew's uppercut lands at native body push distance against Mayhem (${facing})`,()=>{
+ const match=scene(['dr3wbaby','ms-mayhem'],facing,600),dir=facing==='right'?1:-1;match.fighters[1].x=match.fighters[0].x+dir*nativePushGap(match);assert(performAction(match,0,'uppercut'));consumeEvents(match);run(match,900);
+ const hits=consumeEvents(match).filter(e=>e.type==='hit'&&e.action==='uppercut');assert.equal(hits.length,1,'The actual rising fist reaches at the measured physical body spacing');assert(match.fighters[1].hp<match.fighters[1].maxHp);
 });
 for(const {id}of roster)for(const facing of ['right','left'])test(`${id}'s full native uppercut can contact an unequal-height opponent (${facing})`,()=>{
  const target=id==='9-bit'?'papa-oak':id==='papa-oak'?'6-bit':'9-bit';let landed;

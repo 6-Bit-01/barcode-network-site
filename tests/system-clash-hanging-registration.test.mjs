@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import sharp from 'sharp';
 import {compileFightClip,combatMetadata} from '../public/games/system-clash/play/fight-assets.mjs';
 import {poseFrameIndex,poseScale} from '../public/games/system-clash/play/fight-attachments.mjs';
 import {createMatch,performAction,getFighterView} from '../public/games/system-clash/play/fight-engine.mjs';
@@ -22,8 +23,9 @@ function size(file){
   at=data+length+(length&1);
  }throw new Error('Unknown native sprite dimensions');
 }
-function native(id){const clips={};let manifest;for(const bank of ['fighters','arcade','deletions']){const folder=path.join(root,bank,id),data=JSON.parse(fs.readFileSync(path.join(folder,'manifest.json'),'utf8'));if(bank==='fighters')manifest=data;for(const [name,clip]of Object.entries(data.clips)){const key=bank==='deletions'?'delete-'+name:name;clips[key]=compileFightClip(clip,size(path.join(folder,clip.file)),data,key);}}return {manifest,clips};}
-const ids=['6-bit','9-bit','ash-flowers','cache-back','cliff','dj-floppydisc','doofnoobler','dr3wbaby','kaveman-brown','lyra','mac-modem','mr-nice-guy','ms-mayhem','papa-oak','stolz','wittyf0x'];
+function native(id){const clips={};let manifest;for(const bank of ['fighters','arcade','deletions']){const folder=path.join(root,bank,id),data=JSON.parse(fs.readFileSync(path.join(folder,'manifest.json'),'utf8'));if(bank==='fighters')manifest=data;for(const [name,clip]of Object.entries(data.clips)){const key=bank==='deletions'?'delete-'+name:name;clips[key]=compileFightClip(clip,size(path.join(folder,clip.runtimeFile??clip.file)),data,key);clips[key].file=path.join(folder,clip.runtimeFile??clip.file);}}return {manifest,clips};}
+const ids=JSON.parse(fs.readFileSync(path.join(root,'menu/roster.json'),'utf8')).fighters.map(f=>f.id);
+assert.equal(ids.length,18,'Every current playable fighter is covered');
 const arts=Object.fromEntries(ids.map(id=>[id,native(id)]));
 const additional={};for(const id of ['9-bit','cache-back','dr3wbaby','mr-nice-guy','wittyf0x','dj-floppydisc']){const key=deletionDefinition(id).id;additional[key]={manifest:JSON.parse(fs.readFileSync(path.join(root,'deletions',key,'atlas.json'),'utf8'))};}
 const prop={additional};
@@ -34,7 +36,17 @@ function point(view,art,site='torso'){return poseWorldPoint(view,art,site);}
 function frame(view,art){const asset=art.clips[view.clip];return {asset,native:asset.data.frames[view.facing][poseFrameIndex(asset,view)]};}
 function floorBottom(view,art){const {asset,native}=frame(view,art),offset=native.offset??[0,0];return 620+view.y+(native.opaqueBounds[3]+offset[1]-native.anchor[1])*poseScale(asset,native);}
 function close(a,b,message){assert(Math.hypot(a.x-b.x,a.y-b.y)<.01,message+' '+JSON.stringify({a,b}));}
-for(const id of ids)for(const facing of ['right','left'])test(id+' '+facing+': hanging body and measured prop references share the same native frame',()=>{
+const nativePixels=new Map();
+async function sourceAlphaAt(view,art,point){
+ const {asset,native:f}=frame(view,art),key=asset.file+':'+f.rect.join(',');
+ if(!nativePixels.has(key)){const[left,top,width,height]=f.rect;nativePixels.set(key,sharp(asset.file).extract({left,top,width,height}).ensureAlpha().raw().toBuffer());}
+ const pixels=await nativePixels.get(key),scale=poseScale(asset,f),offset=f.offset??[0,0];
+ assert.equal(view.rotation??0,0,'Impact uses one unchanged upright source');
+ const x=Math.round((point.x-view.x)/scale-offset[0]+f.anchor[0]),y=Math.round((point.y-620-view.y)/scale-offset[1]+f.anchor[1]);
+ return x>=0&&y>=0&&x<f.rect[2]&&y<f.rect[3]?pixels[(y*f.rect[2]+x)*4+3]:0;
+}
+
+for(const id of ids)for(const facing of ['right','left'])test(id+' '+facing+': hanging body and measured prop references share the same native frame',async()=>{
  const body=arts[id];assert(body.clips['delete-rip-front'],'Every accepted victim has a whole native hanging source');
  {
   const {match,source,b}=scene('dr3wbaby',id,facing),v=fitted(match,source,b.trussHit),o=match._deletionOrigin;
@@ -43,8 +55,9 @@ for(const id of ids)for(const facing of ['right','left'])test(id+' '+facing+': h
   close(point(v[1],body,'head'),target,'Hoisted source reaches its own measured hanging head');
   const bank=additional[deletionDefinition('dr3wbaby').id],g=trussGeometry(match,bank,v,source),reference=bank.manifest.frames.open,contact=reference.attachments.hitContact;
   close({x:g.stageX+(contact[0]-reference.anchor[0])*g.scale,y:g.stageY+(contact[1]-reference.anchor[1])*g.scale},target,'Stable truss reference meets that same hanging head');
-  const moving=g.frame.attachments.hitContact,impact={x:g.x+moving[0]*g.scale,y:g.y+moving[1]*g.scale},head=match.fighters[1]._clips[v[1].clip].combatPoses.frames[v[1].facing][0].hurt.find(r=>r.site==='head');
-  assert(impact.x>=v[1].x+head.left&&impact.x<=v[1].x+head.right&&impact.y>=620+v[1].y+head.top&&impact.y<=620+v[1].y+head.bottom,'Animated truss beam still intersects the actual native head region');
+  const moving=g.frame.attachments.hitContact,impact={x:g.x+moving[0]*g.scale,y:g.y+moving[1]*g.scale},selected=frame(v[1],body),nativeHead=match.fighters[1]._clips[v[1].clip].combatPoses.frames[v[1].facing][poseFrameIndex(selected.asset,v[1])].hurt.filter(r=>r.site==='head');
+  assert(nativeHead.some(head=>impact.x>=v[1].x+head.left&&impact.x<=v[1].x+head.right&&impact.y>=620+v[1].y+head.top&&impact.y<=620+v[1].y+head.bottom),'Animated truss beam intersects one exact native head band of the selected impact frame');
+  assert(await sourceAlphaAt(v[1],body,impact)>=128,'Animated truss contact lands on independently decoded opaque native head pixels');
   close(point(fitted(match,source,b.slamPull)[1],body,'head'),target,'Slam starts from the unchanged captured native head');
  }
  {

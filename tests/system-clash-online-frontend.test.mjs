@@ -110,3 +110,12 @@ test('Lost Marbles keeps its selected identity in either online frame seat',()=>
 
 test('visible lobby blur pauses the current theme and focus resumes its position once',async()=>{const f=await mountedLobby({withMusic:true});try{f.document.emit('pointerdown',{isTrusted:true});await flushTasks();const audio=f.audioNodes[0];audio.currentTime=12;assert.equal(audio.paused,false);f.w.emit('blur');assert.equal(audio.paused,true);f.w.emit('focus');await flushTasks();assert.equal(audio.paused,false);assert.equal(audio.currentTime,12);assert.equal(f.audioNodes.length,1);}finally{f.mounted.destroy();}assert.equal(f.w.listeners.get('blur')?.size??0,0);assert.equal(f.w.listeners.get('focus')?.size??0,0);});
 test('lobby focus cannot restart its dormant music after a fight frame takes ownership',async()=>{const f=await mountedLobby({withMusic:true});try{f.document.emit('pointerdown',{isTrusted:true});await flushTasks();f.elements.get('create-room').click();await flushTasks();const pc=f.peers[0],control=pc.channels.find(c=>c.label==='clash-control');for(const c of pc.channels)c.open();control.emit('message',{data:JSON.stringify({scope:'system-clash-online-v1',version:protocol.ONLINE_VERSION,seq:1,matchId:1,payload:{type:'hello',version:protocol.ONLINE_VERSION,room:'ABC123',role:'guest'}})});assert.equal(f.audioNodes[0].paused,true);f.w.emit('blur');f.w.emit('focus');await flushTasks();assert.equal(f.audioNodes[0].paused,true);f.elements.get('leave-room').click();await flushTasks();assert.equal(f.audioNodes[0].paused,false);}finally{f.mounted.destroy();}});
+
+test('Mutilator keeps its selected identity in either online frame seat',()=>{
+ for(const role of ['host','guest'])for(const side of ['host','guest']){
+  const state={host:{fighter:'6-bit',name:'A'},guest:{fighter:'9-bit',name:'B'}};state[side].fighter='mutilator';
+  const url=lobby.onlineFightURL('https://game.test/online.html',{role},state,{stage:'radio-studio'});
+  assert.equal(url.searchParams.get(side==='host'?'p1':'p2'),'mutilator');assert.equal(url.searchParams.get('seat'),role==='guest'?'1':'0');
+ }
+});
+test('the previous seventeen-fighter build is rejected before gameplay',()=>{const p=peerPair({guestVersion:'system-clash-20261008-5'});p.open();assert.ok(p.disconnected.flat().some(r=>/version|refresh/i.test(r)));assert.equal(p.guest.send({type:'input',input}),false);p.host.close();p.guest.close();});

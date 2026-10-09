@@ -117,7 +117,7 @@ function selectionHarness(mode='local',{screen='select',url}={}){
 
 test('selection requires independent player confirmation and ignores the other controller',()=>{
  const h=selectionHarness();h.tick(0,[controller(),controller(1)]);h.tick(10,[controller(0,[0]),controller(1,[0])]);assert.deepEqual(h.calls,['confirm']);assert.equal(h.env.state.activePlayer,1);
- h.tick(20,[controller(),controller(1,[0])]);h.tick(30,[controller(),controller(1)]);h.tick(40,[controller(0,[0]),controller(1,[15])]);assert.equal(h.calls.length,1);assert.equal(h.env.state.picks[1],'cache-back');
+ h.tick(20,[controller(),controller(1,[0])]);h.tick(30,[controller(),controller(1)]);h.tick(40,[controller(0,[0]),controller(1,[15])]);assert.equal(h.calls.length,1);assert.equal(h.env.state.picks[1],'9-bit');
  h.tick(50,[controller(),controller(1)]);h.tick(60,[controller(),controller(1,[0])]);assert.equal(h.env.state.screen,'ready');assert.deepEqual(h.calls,['confirm','confirm']);
 });
 test('one-controller local selection chooses both fighters but held confirm cannot skip a screen',()=>{

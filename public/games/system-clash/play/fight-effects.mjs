@@ -1,3 +1,4 @@
+import {drawRemainsParticle} from './fight-remains.mjs';
 import {createFightAudio} from './fight-audio.mjs';
 const FLOOR = 620;
 const PARTICLE_LIMIT = 420;
@@ -12,7 +13,7 @@ const CLOTHING = {
   'mr-nice-guy':['#67513c','#455045'],'ms-mayhem':['#64211c','#292121'],
   stolz:['#282e2e','#67665f'],'kaveman-brown':['#292a25','#65665f'],
   dr3wbaby:['#4e365c','#3b5163'],'ash-flowers':['#272b29','#977521'],
-  wittyf0x:['#293c62','#624d38'],
+  wittyf0x:['#293c62','#624d38'],'lost-marbles':['#28352a','#2f6b30'],
   doofnoobler:['#db641c','#2696c9'],lyra:['#202d35','#22a7b9'],'papa-oak':['#485b2b','#785735'],
 };
 
@@ -162,7 +163,7 @@ export function createFightEffects(options = {}) {
     const cloth=CLOTHING[event.victimId]??['#3e3630','#272b29'];
     const tissueCount=magic?(event.cue==='blue-erased'?6:4):Math.round((headOnly?5:smallContact?3:profile==='cut'?6:heavy?10:7)*Math.min(strength,2));
     const clothCount=magic?(event.cue==='blue-erased'?3:2):headOnly?2:smallContact?1:Math.round((heavy?5:3)*Math.min(strength,1.5));
-    const boneCount=robot?0:headOnly?3:!smallContact&&heavy?2:0;
+    const boneCount=robot?0:headOnly?3:!smallContact&&heavy?6:0;
     const count=tissueCount+clothCount+boneCount;
     for(let index=0;index<count;index++) {
       const material=index>=tissueCount+clothCount?'bone':index>=tissueCount?'cloth':robot?'metal':'organic';
@@ -317,19 +318,19 @@ export function createFightEffects(options = {}) {
         }
         break;
       case 'deletion-impact': {
-        const profile=bloodProfile(event);
+        const profile=bloodProfile(event),visualStrength=event.cue==='marble-strip'?strength*clamp(finite(event.victimHeight,320)/320,.45,1)**2:strength;
         if(event.cue==='cable-snap'||event.cue==='oak-rip') {
-          burst('blood',x,y,-1,Math.round(46*strength),strength,profile);
-          burst('blood',x,y,1,Math.round(46*strength),strength,profile);
-        } else burst('blood', x, y, direction, Math.round(92 * strength), strength,profile);
+          burst('blood',x,y,-1,Math.round(46*visualStrength),visualStrength,profile);
+          burst('blood',x,y,1,Math.round(46*visualStrength),visualStrength,profile);
+        } else burst('blood', x, y, direction, Math.round(92 * visualStrength), visualStrength,profile);
         if(event.cue==='nail-strike')burst('spark',x,y,direction,24,1.2);
         if(event.cue==='disc-cut'||event.cue==='drive-blade-cut')burst('spark',x,y,-direction,36,1.1);
         if(event.cue==='compactor-crush'||event.cue==='chute-stamp')burst('dust',x,FLOOR-3,direction,22,1.6);
         // Airborne wounds build their floor puddle from falling droplets. A
         // floor impact can wet the ground at once because the contact is there.
-        if(y>=FLOOR-65)addDecal(x,70*strength,{kind:profile==='slam'?'smear':'pool',direction});
-        addSmear(x,y,direction,strength,profile);
-        addChunks(event,x,y,direction,strength,profile);
+        if(y>=FLOOR-65)addDecal(x,70*visualStrength,{kind:profile==='slam'?'smear':'pool',direction});
+        addSmear(x,y,direction,visualStrength,profile);
+        addChunks(event,x,y,direction,visualStrength,profile);
         addRupturePile(event,x,y,direction);
         impact(16 + 4 * strength, 0.11);
         break;
@@ -456,7 +457,7 @@ export function createFightEffects(options = {}) {
         ctx.lineTo(chunk.x-chunk.width*.3,chunk.floorY+2.5);ctx.closePath();ctx.fill();
       }
       ctx.translate(chunk.x,chunk.y);ctx.rotate(chunk.rotation);
-      ctx.globalAlpha=.96;ctx.fillStyle=chunk.body;ctx.strokeStyle=chunk.material==='metal'?'#161d1b':chunk.material==='cloth'?'#161a19':'#200805';ctx.lineWidth=.75;
+      ctx.globalAlpha=.96;if(drawRemainsParticle(ctx,options.getRemainsArt?.(),chunk)){ctx.restore();continue;}ctx.fillStyle=chunk.body;ctx.strokeStyle=chunk.material==='metal'?'#161d1b':chunk.material==='cloth'?'#161a19':'#200805';ctx.lineWidth=.75;
       const points=chunk.points;
       ctx.beginPath();
       if(['metal','cloth','bone'].includes(chunk.material)) {

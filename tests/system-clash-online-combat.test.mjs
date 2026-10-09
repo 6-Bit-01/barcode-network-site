@@ -42,3 +42,23 @@ test('connected-room wall damage and cinematic origin survive public snapshots',
 function pad(index=0,buttons=[]){return {index,id:'DualSense-'+index,connected:true,mapping:'standard',axes:[0,0],buttons:Array.from({length:17},(_,i)=>({pressed:buttons.includes(i),value:buttons.includes(i)?1:0}))};}
 test('online gamepad routes only the own controller and ignores the remote hardware disconnect',async()=>{const {createGamepadInput}=await import('../public/games/system-clash/play/fight-gamepad.mjs');const calls=[],env={ready:true,paused:false,inspectTime:null,motionTime:null,windowActive:true,screenSuspended:false,matchOptions:{open:false},roundMenu:{open:false},onlineBridge:{enabled:true},tournamentOverlay:null,match:{mode:'local',phase:'fight'},gamepads:createGamepadInput(),gamepadPlayers:[],controllerLabel:'',attackInputs:{pending:new Map()},attackButtons:new Set(),document:{hidden:false,body:{classList:{contains:()=>false}}},navigator:{getGamepads:()=>env.pads},$:()=>({textContent:''}),controls:()=>[{move:0,crouch:false,block:false},{move:0,crouch:false,block:false}],action:(index,name)=>calls.push({index,name}),releaseAttackInput(){},clearInput:()=>calls.push({name:'clear'}),togglePause:()=>calls.push({name:'pause'}),pads:[]};const poll=sourceFunction('pollGamepads','now')(env);env.pads=[pad(),pad(1)];poll(0);env.pads=[pad(),pad(1,[5])];poll(10);env.pads=[pad(),null];poll(20);assert.deepEqual(calls,[]);env.pads=[pad(0,[5]),null];poll(30);poll(90);assert.deepEqual(calls,[{index:0,name:'grab'}]);});
 test('blocking Tournament gamepad uses overlay navigation and confirm without underlying combat',async()=>{const {createGamepadInput}=await import('../public/games/system-clash/play/fight-gamepad.mjs');const handled=[],env={ready:true,paused:false,inspectTime:null,motionTime:null,windowActive:true,screenSuspended:false,matchOptions:{open:false},roundMenu:{open:false},onlineBridge:{enabled:false},tournamentOverlay:{blocking:true,handleAction:a=>handled.push(a)},match:{mode:'cpu',phase:'over'},gamepads:createGamepadInput(),gamepadPlayers:[],controllerLabel:'',attackInputs:{pending:new Map()},document:{hidden:false,body:{classList:{contains:()=>false}}},navigator:{getGamepads:()=>env.pads},$:()=>({textContent:''}),releaseAttackInput(){},pads:[]};const poll=sourceFunction('pollGamepads','now')(env);env.pads=[pad()];poll(0);env.pads=[pad(0,[15])];poll(10);env.pads=[pad()];poll(20);env.pads=[pad(0,[0])];poll(30);assert.deepEqual(handled,['ArrowRight','confirm']);});
+
+test('Lost Marbles snapshots preserve selected seats, hidden local data and eight-key walk timing',()=>{
+ for(const seat of [0,1]){
+  const fighters=[{id:'6-bit'},{id:'6-bit'}];fighters[seat]={id:'lost-marbles'};
+  const authoritative=createMatch({mode:'local',stage:'radio-studio',start:false,fighters});
+  const schema={roster:['6-bit','lost-marbles'],fighterIds:fighters.map(f=>f.id),clipIds,matchId:1};
+  const views=authoritative.fighters.map((_,index)=>getFighterView(authoritative,index));
+  views[seat]={...views[seat],clip:'walk',elapsed:550,poseIndex:7};
+  const wire=net.makeFightSnapshot(authoritative,views,{...schema,seq:1,at:100});assert.ok(wire);
+  const received=[],guest=net.createOnlineCombatController({...schema,seat:1,onState:value=>received.push(value)});
+  guest.receive(start);assert.equal(guest.receive({type:'snapshot',snapshot:wire}),true);
+  assert.equal(guest.views()[seat].elapsed,550);assert.equal(guest.views()[seat].poseIndex,7);
+  const local=createMatch({mode:'local',start:false,fighters});
+  const rendered=net.applyFightSnapshot(local,received[0]);
+  assert.equal(rendered.fighters[seat].id,'lost-marbles');assert.equal(rendered.fighters[seat].maxHp,authoritative.fighters[seat].maxHp);
+  for(const key of ['_clips','_style','_statProfile','_statScalars'])assert.equal(rendered.fighters[seat][key],local.fighters[seat][key]);
+  const swapped=structuredClone(wire);swapped.state.fighters[seat].id='6-bit';swapped.views[seat].id='6-bit';assert.equal(net.readFightSnapshot(swapped,schema),null);
+  guest.destroy();
+ }
+});

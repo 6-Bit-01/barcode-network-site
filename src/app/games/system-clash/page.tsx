@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "System Clash Demo",
-  description: "Play BARCODE: SYSTEM CLASH Demo with 16 fighters, six interactive stages, Solo CPU, Local Two Player, Tournament and Online sessions.",
+  description: "Play BARCODE: SYSTEM CLASH Demo with 17 fighters, six interactive stages, Solo CPU, Local Two Player, Tournament and Online sessions.",
   alternates: { canonical: "/games/system-clash" },
 };
 

@@ -28,3 +28,15 @@ test('a departing guest cannot refresh the heartbeat of an absent host',async()=
  const f=fixture(),host=await f.rooms.create('Host'),guest=await f.rooms.join(host.code,'Guest');f.setTime(63001);await f.rooms.leave(host.code,guest.token);
  assert.equal(JSON.parse(f.rows.get(host.code)).host.lastSeen,1000);assert.deepEqual(await f.rooms.list(),[]);await fails(()=>f.rooms.join(host.code,'Replacement'),410);
 });
+
+test('Lost Marbles selection survives both seats and changing fighter resets readiness',async()=>{
+ const {rooms}=fixture(),host=await rooms.create('Host'),guest=await rooms.join(host.code,'Guest');
+ await rooms.select(host.code,host.token,{fighter:'lost-marbles',ready:true});
+ await rooms.select(guest.code,guest.token,{fighter:'lost-marbles',ready:true});
+ const state=await rooms.poll(host.code,guest.token);
+ assert.equal(state.host.fighter,'lost-marbles');assert.equal(state.host.ready,true);
+ assert.equal(state.guest.fighter,'lost-marbles');assert.equal(state.guest.ready,true);
+ await rooms.select(host.code,host.token,{fighter:'6-bit',ready:true});
+ assert.equal((await rooms.poll(host.code,guest.token)).host.ready,false);
+ await fails(()=>rooms.select(host.code,host.token,{fighter:'lost-marbles-unreleased',ready:true}),400);
+});

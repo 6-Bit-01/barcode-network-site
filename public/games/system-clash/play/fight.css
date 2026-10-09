@@ -59,3 +59,15 @@ main{max-width:1280px;padding:20px 24px;margin-inline:auto}
 .classic-buttons button{background:transparent url('assets/ui/arcade-button-purple.svg') center/contain no-repeat!important;border:0;box-shadow:none}.classic-buttons .high-kick,.classic-buttons .low-kick{background-image:url('assets/ui/arcade-button-green.svg')!important}
 
 .classic-buttons .block-button,.classic-buttons .throw-button{background-image:url('assets/ui/arcade-button-black.svg')!important}
+
+/* Sega-era arcade hardware: circular throw, eight sectors, six original button faces. */
+.touch-controls>.touch-movement{display:grid;place-items:center;grid-template-columns:1fr;grid-template-rows:1fr;justify-self:center;width:140px;height:126px;gap:0}
+.arcade-joystick{--joystick-x:0px;--joystick-y:0px;position:relative;width:120px;height:120px;border-radius:50%;touch-action:none;user-select:none;-webkit-user-select:none;cursor:grab;outline:none;background:radial-gradient(circle at 42% 35%,#48444e 0 11%,#25232b 45%,#111016 66%,#08080b 68%);border:2px solid #93879e;box-shadow:0 4px 0 #050407,inset 0 2px 3px #fff2,0 5px 12px #0008}
+.arcade-joystick:focus-visible{outline:3px solid #b7f668;outline-offset:4px}.arcade-joystick.is-held{cursor:grabbing;border-color:#c9a3e8}
+.joystick-gate{position:absolute;inset:14px;border:1px solid #61526e;border-radius:50%;background:repeating-conic-gradient(from 22.5deg,#ba71ee20 0deg 1deg,transparent 1deg 45deg),radial-gradient(circle,#030305 0 25%,#100e16 54%,#29222f 62%,#0b0910 66%);box-shadow:inset 0 4px 8px #000a}
+.joystick-knob{position:absolute;left:50%;top:50%;width:54px;height:54px;margin:-27px;border-radius:50%;display:grid;place-items:center;transform:translate(var(--joystick-x),var(--joystick-y));background:radial-gradient(circle at 35% 25%,#665a71 0,#28212f 35%,#0a080e 68%,#000 72%);border:2px solid #ddd4e7;box-shadow:0 5px 0 #030205,0 7px 12px #000b,inset 0 2px 3px #fff4;transition:transform 100ms ease-out;pointer-events:none;font-style:normal}
+.arcade-joystick.is-held .joystick-knob{transition:none}.joystick-knob b{color:#b7f668;font:900 17px monospace;text-shadow:0 1px 3px #000}.joystick-mark{position:absolute;color:#ded4e8;font:10px Arial;pointer-events:none}.joystick-up{top:3px;left:50%;transform:translateX(-50%)}.joystick-down{bottom:3px;left:50%;transform:translateX(-50%)}.joystick-left{left:4px;top:50%;transform:translateY(-50%)}.joystick-right{right:4px;top:50%;transform:translateY(-50%)}
+@media(max-width:390px){.touch-controls>.touch-movement{width:120px;height:120px}.arcade-joystick{width:112px;height:112px}}
+@media(max-width:900px) and (orientation:landscape),(pointer:coarse) and (orientation:landscape){.demo .touch-controls>.touch-movement{width:132px;height:122px}.demo .arcade-joystick{width:116px;height:116px}}
+@media(prefers-reduced-motion:reduce){.joystick-knob{transition:none}}
+body.motion-reduced .joystick-knob{transition:none}

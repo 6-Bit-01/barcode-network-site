@@ -24,3 +24,9 @@ html.is-expanded .demo-header{padding:4px 12px;min-height:30px}html.is-expanded 
 .title-modes button,.selection-actions button,.enter-arena,.tournament-actions button,.pause-options button,.match-menu-actions button,.menu-actions button,dialog button{background-image:url('assets/ui/menu-plate.webp');background-size:100% 100%;background-repeat:no-repeat}
 
 .fighter-card{border:7px solid transparent;border-image:url('assets/ui/portrait-art.webp') 16 stretch;border-radius:0}.fighter-card:focus-visible{outline:2px solid #f6f0fc;outline-offset:2px}
+
+/* The native idle keys provide fighter motion; the set moves gently behind them. */
+.selection-stage:after{animation:selection-grid-breathe 12s ease-in-out infinite alternate;will-change:transform}
+@keyframes selection-grid-breathe{from{transform:perspective(220px) rotateX(42deg) translateY(0)}to{transform:perspective(220px) rotateX(42deg) translateY(7px)}}
+body.motion-reduced .selection-stage:after{animation:none;will-change:auto}
+@media(prefers-reduced-motion:reduce){.selection-stage:after{animation:none;will-change:auto}}

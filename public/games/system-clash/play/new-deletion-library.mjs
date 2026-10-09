@@ -3,8 +3,10 @@ export const NEW_FIGHTER_STYLES={
  doofnoobler:{displayName:'Doofnoobler',height:220,name:'Soft-Spoken Schemer',description:'Small warm puppet, quick clever feints and short close pressure.',signature:'LP → HP → HK',moveSpeed:285,jumpSpeed:225,punchDamage:.8,kickDamage:.85,throwDamage:.8,reach:{punch:.83,kick:.88,throw:.9},tempo:{punch:.76,kick:.84,throw:.88},knockback:{punch:.6,kick:.7,throw:.75},throwDistance:110,preferredSequence:['low-punch','punch','kick'],preferredMoves:['low-punch','punch','low-punch','double-punch','low-kick','grab','kick']},
  lyra:{displayName:'Lyra',height:320,name:'Cyborg Claw Precision',description:'Agile cat cyborg with sharp claws, precise tech and quick footwork.',signature:'HP → LP → HP',moveSpeed:310,jumpSpeed:245,punchDamage:1.03,kickDamage:1.05,throwDamage:.9,reach:{punch:.96,kick:1.02,throw:.94},tempo:{punch:.78,kick:.87,throw:.91},knockback:{punch:.84,kick:.94,throw:.86},throwDistance:134,preferredSequence:['punch','low-punch','punch'],preferredMoves:['punch','low-punch','double-punch','kick','low-kick','power-kick','grab']},
  'papa-oak':{displayName:'PapaOak',height:385,name:'Rooted Architect Grappler',description:'Heavy rooted pressure, broad bark hands and powerful deliberate grabs.',signature:'HP → LP → HP',moveSpeed:185,jumpSpeed:155,punchDamage:1.45,kickDamage:1.12,throwDamage:1.9,reach:{punch:1.08,kick:.94,throw:1.12},tempo:{punch:1.17,kick:1.16,throw:1.08},knockback:{punch:1.42,kick:1.3,throw:1.5},throwDistance:220,preferredSequence:['punch','low-punch','punch'],preferredMoves:['grab','low-punch','grab','punch','double-punch','low-kick','power-kick']},
+ 'lost-marbles':{displayName:'LostMarbles',height:320,name:'Chaotic Marble Pressure',description:'Agile masked brawler with irregular punch pressure and sharp footwork.',signature:'LP → HP → HK',moveSpeed:290,jumpSpeed:235,punchDamage:1,kickDamage:.94,throwDamage:.92,reach:{punch:1,kick:1,throw:1},tempo:{punch:.9,kick:.96,throw:1},knockback:{punch:.9,kick:.92,throw:.95},throwDistance:140,preferredSequence:['low-punch','punch','kick'],preferredMoves:['low-punch','punch','double-punch','low-kick','grab','kick']},
 };
 export const NEW_DELETIONS={
+ 'lost-marbles':{id:'marble-theory',name:'The Marble Theory',mechanism:'marbles',prop:false,retainFloorBody:true,duration:5600,beats:{approach:0,shove:600,windup:750,firstLaunch:1000,firstImpact:1200,lastImpact:3900,fall:4400,landed:5050,present:5150,complete:5600,contact:1200,drive:1200,captured:1200,pressure:2550,impact:3900,final:5050}},
  doofnoobler:{id:'soft-power',name:'Soft Power',mechanism:'hug',peaceful:true,prop:false,retainFloorBody:false,duration:5200,line:'Stay soft, stay fuzzy, and stay kind.',beats:{approach:0,hugWindup:550,hugContact:1000,release:2100,shoveOff:2100,landed:2600,runStart:2600,escaped:3350,present:3500,complete:5200,shove:550,contact:1000,drive:1000,captured:1000,pressure:2100,impact:2100,final:3350}},
  lyra:{id:'litter-protocol',name:'Litter Protocol',mechanism:'litter-box',duration:5900,beats:{approach:0,boxReach:550,boxSet:850,scratchWindup:850,scratch1:1200,scratch2:1500,scratch3:1800,retreat:1850,fallStart:1850,basinContact:2350,basinSettled:2500,turn:2250,kick:2600,litterImpact:3000,buried:3750,present:4300,complete:5900,shove:550,contact:1200,drive:2250,captured:850,pressure:2600,impact:3000,final:3750}},
  'papa-oak':{id:'rooted-verdict',name:'Rooted Verdict',mechanism:'rip',prop:false,retainFloorBody:true,duration:5900,beats:{approach:0,gripWindup:600,gripContact:1000,strain:1750,rip:2400,separated:2850,settled:3500,present:4100,complete:5900,shove:600,contact:1000,drive:1000,captured:1000,pressure:1750,impact:2400,final:3500}},
@@ -27,6 +29,10 @@ function captureLift(pose,site,contactPoint,maximum){const body=typeof site==='s
  return clamp(body.y-contactPoint.y,0,Math.min(maximum,clearance));}
 
 export function newDeletionPose(role,t,definition,clips,fighterHeight=Infinity){const b=definition.beats;
+ if(definition.mechanism==='marbles'){
+  if(role==='attacker'){if(t<b.windup)return held('walk',t);if(t>=b.present)return held('delete-present',t-b.present);const name='delete-marble',c=contact(clips,name,300),d=duration(clips,name,620);if(t<b.firstLaunch)return held(name,c*clamp((t-b.windup)/(b.firstLaunch-b.windup),0,1));if(t>=b.lastImpact)return held(name,d-1);const phase=(t-b.firstLaunch)%450;return held(name,phase<200?c+(d-c)*phase/200:c*(phase-200)/250);}
+  return t<b.firstImpact?held('high',210):held(clips?.['delete-rip-front']?'delete-rip-front':'high',0);
+ }
  if(definition.mechanism==='hug'){
   if(role==='attacker'){if(t<b.hugWindup)return held('walk',t);const clip=clips?.['delete-hug-happy']?'delete-hug-happy':'delete-hug',c=contact(clips,clip,300),d=duration(clips,clip,1100);if(t<b.hugContact)return held(clip,(t-b.hugWindup)*c/(b.hugContact-b.hugWindup));if(t<b.release)return held(clip,c);if(t<b.present)return held(clip,c+(t-b.release)*(d-c)/(b.present-b.release));return held('delete-present',t-b.present);}
   if(t<b.release)return held('high',210);if(t<b.runStart)return held('delete-shove',(t-b.release)*duration(clips,'delete-shove',500)/(b.runStart-b.release));return held('walk',t-b.runStart);
@@ -42,7 +48,9 @@ export function newDeletionPose(role,t,definition,clips,fighterHeight=Infinity){
  return null;
 }
 export function newDeletionPositions(match,time,definition){
- const o=match._deletionOrigin,b=definition.beats,p=clamp(time/(definition.mechanism==='hug'?b.hugWindup:b.shove),0,1),ease=p*p*(3-2*p);
+ const o=match._deletionOrigin,b=definition.beats;
+ if(definition.mechanism==='marbles'){const p=eased(time,0,b.shove);return {winnerX:o.winner+(o.target-o.direction*380-o.winner)*p,winnerY:0,victimX:o.originalVictim+(o.target-o.originalVictim)*p,victimY:0};}
+ const p=clamp(time/(definition.mechanism==='hug'?b.hugWindup:b.shove),0,1),ease=p*p*(3-2*p);
  let winnerX=o.winner+(o.near-o.winner)*ease,victimX=o.originalVictim+(o.target-o.originalVictim)*ease,victimY=0,winnerY=0;
  if(definition.mechanism==='hug'){
   const victim=match.fighters[1-match.winner],hero=match.fighters[match.winner],clip=hero._clips['delete-hug-happy']?'delete-hug-happy':'delete-hug',hand=hero._clips[clip]?.contactGripOrigins?.[o.direction>0?'right':'left'],body=compiledPose(victim._clips,'high',o.victimFacing,210),torso=body?.sites?.torso,head=body?.sites?.head;

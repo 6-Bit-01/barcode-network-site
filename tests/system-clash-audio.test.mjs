@@ -18,7 +18,7 @@ test('every enabled fighter has an original distinct effort/hurt/scream voice pr
       assert.ok(a.reduce((sum,value)=>sum+value*value,0)/a.length>.001,'voice is audible');
       hashes.push(createHash('sha256').update(new Uint8Array(a.buffer)).digest('hex'));
     }
-    assert.equal(new Set(hashes).size,16,mode+' differs for every fighter');
+    assert.equal(new Set(hashes).size,Object.keys(FIGHT_AUDIO_PROFILES).length,mode+' differs for every fighter');
   }
 });
 
@@ -158,7 +158,9 @@ function vocalFeatures(data){
   return {energy:energy.map(value=>value/Math.max(.0001,total)),roughness:Math.sqrt(difference/Math.max(.0001,total))};
 }
 
-test('all 256 original utterances change normalized phrasing and spectral texture, with four takes for every reaction',()=>{
+const utteranceCount=Object.values(FIGHT_VOCAL_BANKS).reduce((sum,bank)=>sum+Object.values(bank.variants).reduce((n,takes)=>n+takes.length,0),0);
+
+test('all original utterances change normalized phrasing and spectral texture, with four takes for every reaction',()=>{
   const hashes=new Set();let count=0;
   for(const [id,bank]of Object.entries(FIGHT_VOCAL_BANKS))for(const [mode,variants]of Object.entries(bank.variants)){
     assert.equal(variants.length,4);assert.equal(new Set(variants.map(v=>v.phrase)).size,4);
@@ -171,7 +173,7 @@ test('all 256 original utterances change normalized phrasing and spectral textur
     }
     assert.ok(Math.max(...features.map(f=>f.roughness))-Math.min(...features.map(f=>f.roughness))>.008,id+' '+mode+' variants change normalized spectral texture');
   }
-  assert.equal(count,256);assert.equal(hashes.size,256);
+  assert.equal(count,utteranceCount);assert.equal(hashes.size,utteranceCount);
   assert.deepEqual(renderFightVocal('6-bit','hurt'),renderFightVocal('6-bit','hurt',22050,0),'legacy call chooses take zero');
   assert.deepEqual(renderFightVocal('6-bit','hurt',22050,4),renderFightVocal('6-bit','hurt',22050,0),'variant indices are bounded deterministically');
 });
@@ -184,7 +186,7 @@ test('independent deterministic shuffle bags play every take once per bank and n
     for(let i=0;i<20;i+=4)assert.equal(new Set(values.slice(i,i+4)).size,4);
     first.push({key,values});
   }
-  assert.equal(a.size,64);a.clear();assert.equal(a.size,0);
+  assert.equal(a.size,Object.keys(FIGHT_VOCAL_BANKS).length*Object.keys(FIGHT_VOCAL_VARIANTS).length);a.clear();assert.equal(a.size,0);
   for(const {key,values}of first)assert.deepEqual(Array.from({length:20},()=>a.next(key,4)),values,'reset recreates the same bank, independently of other identities');
 });
 
@@ -220,7 +222,7 @@ test('LRU vocal storage stays within both byte and entry bounds at high device s
     context.currentTime+=2.3;audio.emit(voiceEvent(id,mode));finishFakeSources(context);context.sources.length=0;
     const stats=audio.getStats();assert.ok(stats.cachedVoices<=MAX_VOCAL_CACHE_ENTRIES);assert.ok(stats.vocalCacheBytes<=MAX_VOCAL_CACHE_BYTES);rendered++;
   }
-  assert.equal(rendered,256);assert.equal(audio.getStats().playedVoices,256);assert.ok(audio.getStats().cachedVoices<256,'older variants are evicted while active buffers remain source-owned');
+  assert.equal(rendered,utteranceCount);assert.equal(audio.getStats().playedVoices,utteranceCount);assert.ok(audio.getStats().cachedVoices<utteranceCount,'older variants are evicted while active buffers remain source-owned');
 });
 
 test('lesser hurt and effort cannot truncate a stronger active scream or consume its next bank take',async()=>{

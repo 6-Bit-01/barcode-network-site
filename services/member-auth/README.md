@@ -1,6 +1,6 @@
 # BARCODE account foundation
 
-The website owns Member identity in this separate service. Better Auth 1.7.7 supplies password hashing, verification, recovery and database-backed sessions. SQLite and the encrypted transactional-mail outbox share one dedicated website database. BNL, native queue state, payments, guest browser ownership and existing admin authentication retain their current owners.
+The website owns Member identity in this separate service. Better Auth 1.7.7 supplies password hashing, verification, recovery and database-backed sessions. Node 24.15 or newer supplies built-in SQLite; no external native database binary or compiler is required. SQLite and the encrypted transactional-mail outbox share one dedicated website database. BNL, native queue state, payments, guest browser ownership and existing admin authentication retain their current owners.
 
 This release provides email/password registration, verification before Member activation, sign-in/out, editable nonunique display names, recovery revoking earlier sessions and sign-out across devices. It does not yet provide Owner/Crew consoles, Artist/guest claims, account-linked queue history, support threads, Insights or game synchronization. It does not disclose hidden games. Member cookies do not authorize any existing admin API.
 

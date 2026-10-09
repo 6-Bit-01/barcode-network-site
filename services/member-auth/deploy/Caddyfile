@@ -1,4 +1,7 @@
 {
+    servers {
+        protocols h1 h2
+    }
     log default {
         format filter {
             wrap json

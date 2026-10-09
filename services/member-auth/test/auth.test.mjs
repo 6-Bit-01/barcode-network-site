@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { backup as backupDatabase } from 'node:sqlite';
 import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
@@ -117,7 +118,7 @@ test('an online backup is usable and pending mail survives service restart',asyn
  const directory=mkdtempSync(join(tmpdir(),'barcode-member-restore-test-')),databasePath=join(directory,'member.sqlite'),delivered=[];
  const configuration={databasePath,baseURL,secret:'test-only-restart-secret-12345678901234567890123',sender:'BARCODE Network <accounts@mail.barcode-network.com>',replyTo:'thebarcodenetwork@gmail.com',transport:async(mail)=>{delivered.push(mail);return {id:'accepted'};}};
  const first=createMemberAuth(configuration);await first.migrate();await first.auth.handler(new Request(`${baseURL}/sign-up/email`,{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify({email:'restart@example.com',name:'Member',password:'Private-password-43!',callbackURL:`${origin}/account`})}));
- const backupPath=join(directory,'backup.sqlite');await first.database.backup(backupPath);await first.close();
- const backup=createMemberAuth({...configuration,databasePath:backupPath});await backup.assertReady();assert.equal(backup.database.pragma('integrity_check',{simple:true}),'ok');await backup.close();
+ const backupPath=join(directory,'backup.sqlite');await backupDatabase(first.database,backupPath);await first.close();
+ const backup=createMemberAuth({...configuration,databasePath:backupPath});await backup.assertReady();assert.equal(backup.database.prepare('PRAGMA integrity_check').get().integrity_check,'ok');await backup.close();
  const second=createMemberAuth(configuration);t.after(()=>second.close());await second.assertReady();await second.outbox.flushOne();assert.equal(delivered.length,1);assert.equal(second.database.prepare('SELECT status FROM member_mail_outbox').get().status,'sent');
 });

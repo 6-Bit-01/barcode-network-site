@@ -5,12 +5,12 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import sharp from 'sharp';
 import {compileFightClip,combatMetadata} from '../public/games/system-clash/play/fight-assets.mjs';
-import {poseFrameIndex,poseScale} from '../public/games/system-clash/play/fight-attachments.mjs';
+import {poseFrameIndex,poseScale,poseTransform} from '../public/games/system-clash/play/fight-attachments.mjs';
 import {createMatch,performAction,getFighterView} from '../public/games/system-clash/play/fight-engine.mjs';
 import {deletionDefinition} from '../public/games/system-clash/play/deletion-library.mjs';
 const rendererURL=new URL('../public/games/system-clash/play/fight-renderer.mjs',import.meta.url);
 const rendererSource=fs.readFileSync(rendererURL,'utf8').replace(/from '([.]\/[^']+)'/g,(_,relative)=>"from '"+new URL(relative,rendererURL).href+"'");
-const {machineViews,poseWorldPoint,trussGeometry,wheelGeometry,machineGeometry}=await import('data:text/javascript;base64,'+Buffer.from(rendererSource+'\nexport {machineViews,poseWorldPoint,trussGeometry,wheelGeometry,machineGeometry};').toString('base64'));
+const {machineViews,poseWorldPoint,trussGeometry,wheelGeometry,machineGeometry}=await import('data:text/javascript;base64,'+Buffer.from(rendererSource+'\nexport {machineViews,trussGeometry,wheelGeometry,machineGeometry};').toString('base64'));
 const root=fileURLToPath(new URL('../public/games/system-clash/play/assets/',import.meta.url));
 function size(file){
  const bytes=fs.readFileSync(file);
@@ -82,7 +82,7 @@ for(const id of ids)for(const facing of ['right','left'])test(id+' '+facing+': h
  {
   const {match,source,b}=scene('cache-back',id,facing),t=(b.load+b.captured)/2,v=fitted(match,source,t),flight=raw(match,t)[1].deletionFlight,g=machineGeometry({...match,deletionElapsed:b.captured},prop),ap=g.frame.aperture;
   const centre=g.x+(ap[0]+ap[2]/2)*g.scale,bottom=g.y+(ap[1]+ap[3])*g.scale-5,captured={...v[1],clip:'delete-crumpled',elapsed:10000},f=frame(captured,body),bounds=f.native.opaqueBounds,offset=f.native.offset??[0,0],scale=poseScale(f.asset,f.native);
-  captured.x=centre-((bounds[0]+bounds[2])/2+offset[0]-f.native.anchor[0])*scale;captured.y=bottom-620-(bounds[3]+offset[1]-f.native.anchor[1])*scale;
+  const mapped=poseTransform(f.asset,f.native).point([(bounds[0]+bounds[2])/2,bounds[3]]);captured.x=centre-mapped.x;captured.y=bottom-620-mapped.y;
   const start=point({...v[1],x:flight.startX,y:flight.startY,clip:'delete-rip-front',elapsed:0},body),end=point(captured,body),p=flight.progress;
   assert.equal(v[1].clip,'delete-rip-front');close(point(v[1],body),{x:start.x+(end.x-start.x)*p,y:start.y+(end.y-start.y)*p-flight.height*Math.sin(p*Math.PI)},'Chute flight measures selected hanging source and original compact aperture endpoint');
   assert.equal(fitted(match,source,b.captured)[1].clip,'delete-crumpled');

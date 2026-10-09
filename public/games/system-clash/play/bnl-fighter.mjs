@@ -1,4 +1,4 @@
-import {poseFrameIndex,poseScale} from './fight-attachments.mjs';
+import {poseFrameIndex,poseScale,poseTransform} from './fight-attachments.mjs';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const ease=(t,a,b)=>{const p=clamp((t-a)/(b-a),0,1);return p*p*(3-2*p);};
 export const BNL_STYLE=Object.freeze({displayName:'BNL-01',height:320,nativeHoverBody:true,name:'Signal Construct',description:'A hooded AI construct with a digital wisp, precise signal strikes and agile projections.',signature:'LP → HP → HK',moveSpeed:275,jumpSpeed:225,punchDamage:.95,kickDamage:.93,throwDamage:.9,reach:{punch:1,kick:1,throw:1},tempo:{punch:.9,kick:.94,throw:1},knockback:{punch:.9,kick:.95,throw:.9},throwDistance:140,preferredSequence:['low-punch','punch','kick'],preferredMoves:['punch','low-punch','uppercut','low-kick','grab','kick']});
@@ -9,15 +9,15 @@ export function bnlDeletionPose(role,t,clips={}){const b=BNL_DELETION.beats;
 }
 export function bnlDeletionPositions(match,t){const o=match._deletionOrigin,b=BNL_DELETION.beats;return {winnerX:o.winner+(o.near-o.winner)*ease(t,0,b.focus),winnerY:0,victimX:o.originalVictim,victimY:-80*ease(t,b.lock,b.float)};}
 /** A rigid native-pixel partition. Source cells and their sizes remain constant in flight. */
-export function signalFragmentPlan(frame,{progress=0,x=0,y=620,scale=1,direction=1}={}){
+export function signalFragmentPlan(frame,{progress=0,x=0,y=620,scale=1,transform,direction=1}={}){
  const p=clamp(progress,0,1);if(p>=1)return [];const [sx,sy,w,h]=frame.rect,anchor=frame.anchor,offset=frame.offset??[0,0],cell=Math.max(18,Math.ceil(Math.sqrt(w*h/144))),out=[];
  for(let row=0;row<h;row+=cell)for(let col=0;col<w;col+=cell){const width=Math.min(cell,w-col),height=Math.min(cell,h-row),cx=col+width/2,cy=row+height/2,seed=((col/cell+1)*17+(row/cell+1)*29)%37;
-  const dx=(cx-w/2)/Math.max(1,w/2),dy=(cy-h/2)/Math.max(1,h/2);out.push({source:[sx+col,sy+row,width,height],width:width*scale,height:height*scale,x:x+(cx+offset[0]-anchor[0])*scale+direction*p*(80+seed*4)+dx*p*100,y:y+(cy+offset[1]-anchor[1])*scale+dy*p*120-170*p+150*p*p,rotation:(seed%7-3)*p*.17,opacity:Math.pow(1-p,1.4)});
+  const dx=(cx-w/2)/Math.max(1,w/2),dy=(cy-h/2)/Math.max(1,h/2),local=transform?.point([cx,cy]);out.push({source:[sx+col,sy+row,width,height],width:width*(transform?.sx??scale),height:height*(transform?.sy??scale),x:x+(local?.x??(cx+offset[0]-anchor[0])*scale)+direction*p*(80+seed*4)+dx*p*100,y:y+(local?.y??(cy+offset[1]-anchor[1])*scale)+dy*p*120-170*p+150*p*p,rotation:(seed%7-3)*p*.17,opacity:Math.pow(1-p,1.4)});
  }
  return out;
 }
 export function drawNativeSignalFragments(ctx,asset,frame,view,{progress=0,direction=1,reducedMotion=false}={}){
- const pieces=signalFragmentPlan(frame,{progress,x:view.x,y:620+(view.y??0),scale:poseScale(asset,frame),direction});
+ const pieces=signalFragmentPlan(frame,{progress,x:view.x,y:620+(view.y??0),scale:poseScale(asset,frame),transform:poseTransform(asset,frame),direction});
  for(const piece of pieces){ctx.save();ctx.globalAlpha=piece.opacity;ctx.translate(piece.x,piece.y);if(!reducedMotion)ctx.rotate(piece.rotation);ctx.drawImage(asset.image,...piece.source,-piece.width/2,-piece.height/2,piece.width,piece.height);ctx.restore();}
 }
 export function drawSignalDeletion(ctx,match,views,art,front,{reducedMotion=false}={}){

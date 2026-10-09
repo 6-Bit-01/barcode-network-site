@@ -12,6 +12,21 @@ test('fast fall draws the previous intact source crop with the same uniform size
  const before=JSON.stringify([first,next]);sample(fx,ctx,0,first);assert.equal(ctx.images.length,0);sample(fx,ctx,16,next);
  assert.equal(ctx.images.length,1);assert.deepEqual(ctx.images[0].args,[image,10,20,100,150,300,200,200,300]);assert(ctx.images[0].alpha>0&&ctx.images[0].alpha<=.12);assert.equal(ctx.globalAlpha,1);assert.equal(JSON.stringify([first,next]),before);
 });
+
+test('explicit calibrated native dimensions retain fall echoes and measured wind without stretching source pixels',()=>{
+ const fx=createFightMotionFX(),ctx=context(),first=freeze(body({destination:[330,200,130,300],scaleX:1.3,scaleY:2,attackKey:'uppercut-100',strikeStart:{x:400,y:370},strike:{x:420,y:350}}));
+ const next=freeze(body({source:[120,20,100,150],destination:[334,216,130,300],scaleX:1.3,scaleY:2,position:{x:404,y:516},attackKey:'uppercut-100',strikeStart:{x:404,y:356},strike:{x:440,y:330}}));
+ sample(fx,ctx,0,first);sample(fx,ctx,16,next);
+ assert.equal(ctx.images.length,1);assert.deepEqual(ctx.images[0].args,[image,...first.source,...first.destination],'Echo replays the exact calibrated full source crop');
+ assert.equal(ctx.lines.length,1);assert.deepEqual(ctx.lines[0].points.at(-1),[440,330],'Native strike retains its measured endpoint');
+ assert.equal(ctx.globalAlpha,1);
+});
+
+test('wrong or incomplete calibrated dimensions still discard arbitrarily stretched observations',()=>{
+ const invalid=[{scaleX:2,scaleY:2},{scaleX:2.5},{scaleX:NaN,scaleY:2},{scaleX:2.5,scaleY:0},{scaleX:9,scaleY:2}];
+ for(const calibration of invalid){const fx=createFightMotionFX(),ctx=context();fastFall(fx,ctx);ctx.images.length=0;sample(fx,ctx,32,body({destination:[300,200,250,300],...calibration}));assert.equal(ctx.images.length,0);assert.equal(ctx.lines.length,0);assert.equal(fx.getStats().actors,0,'Only a complete matching positive calibration may describe a narrowed native source');}
+});
+
 test('slow descent, rise, grounded poses and landing do not leave fall blur',()=>{
  const fx=createFightMotionFX(),ctx=context();sample(fx,ctx,0,body());sample(fx,ctx,16,body({position:{x:400,y:502}}));sample(fx,ctx,32,body({position:{x:400,y:480}}));assert.equal(ctx.images.length,0);
  sample(fx,ctx,48,body({position:{x:400,y:496}}));assert(fx.getStats().echoes>0);ctx.images.length=0;sample(fx,ctx,64,body({airborne:false,position:{x:400,y:512}}));assert.equal(ctx.images.length,0);assert.equal(fx.getStats().echoes,0);
@@ -60,7 +75,7 @@ test('resuming from pause starts a fresh fall trajectory',()=>{
 });
 
 test('current native uppercut atlases produce bounded measured windlines without altering their metadata',async()=>{
- const {readFileSync}=await import('node:fs'),{compileFightClip,combatMetadata}=await import('../public/games/system-clash/play/fight-assets.mjs'),{poseScale,poseFrameIndex}=await import('../public/games/system-clash/play/fight-attachments.mjs');
+ const {readFileSync}=await import('node:fs'),{compileFightClip,combatMetadata}=await import('../public/games/system-clash/play/fight-assets.mjs'),{poseTransform,poseFrameIndex}=await import('../public/games/system-clash/play/fight-attachments.mjs');
  for(const id of ['6-bit','9-bit','lyra','papa-oak']) {
   const folder=new URL(`../public/games/system-clash/play/assets/arcade/${id}/`,import.meta.url),manifest=JSON.parse(readFileSync(new URL('manifest.json',folder),'utf8')),data=manifest.clips.uppercut;
   const size=data.sourceSize??[Math.max(...Object.values(data.frames).flat().map(frame=>frame.rect[0]+frame.rect[2])),Math.max(...Object.values(data.frames).flat().map(frame=>frame.rect[1]+frame.rect[3]))];
@@ -68,8 +83,8 @@ test('current native uppercut atlases produce bounded measured windlines without
   for(const facing of ['left','right']) {
    const fx=createFightMotionFX(),ctx=context();
    for(let elapsed=0;elapsed<asset.timeline.duration;elapsed+=16) {
-    const index=poseFrameIndex(asset,{clip:'uppercut',elapsed,facing}),frame=data.frames[facing][index],scale=poseScale(asset,frame),offset=frame.offset??[0,0],pose=metadata.combatPoses.frames[facing][index];
-    sample(fx,ctx,elapsed,{key:0,fighterId:id,image:atlas,source:frame.rect,destination:[480+(offset[0]-frame.anchor[0])*scale,620+(offset[1]-frame.anchor[1])*scale,frame.rect[2]*scale,frame.rect[3]*scale],position:{x:480,y:620},facing,airborne:false,attackKey:'uppercut-0',strikeStart:{x:480+pose.strikeStart.x,y:620+pose.strikeStart.y},strike:{x:480+pose.strike.x,y:620+pose.strike.y}});
+    const index=poseFrameIndex(asset,{clip:'uppercut',elapsed,facing}),frame=data.frames[facing][index],transform=poseTransform(asset,frame),pose=metadata.combatPoses.frames[facing][index];
+    sample(fx,ctx,elapsed,{key:0,fighterId:id,image:atlas,source:frame.rect,destination:[480+transform.tx,620+transform.ty,frame.rect[2]*transform.sx,frame.rect[3]*transform.sy],scaleX:transform.sx,scaleY:transform.sy,position:{x:480,y:620},facing,airborne:false,attackKey:'uppercut-0',strikeStart:{x:480+pose.strikeStart.x,y:620+pose.strikeStart.y},strike:{x:480+pose.strike.x,y:620+pose.strike.y}});
    }
    assert(ctx.lines.length>0,`${id} ${facing}: actual uppercut tip travels between native poses`);assert(ctx.lines.every(line=>Math.hypot(line.points[1][0]-line.points[0][0],line.points[1][1]-line.points[0][1])<=130.00001));assert.equal(ctx.images.length,0);
   }

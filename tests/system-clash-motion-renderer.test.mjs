@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createFightRenderer} from '../public/games/system-clash/play/fight-renderer.mjs';
 import {compileFightClip,combatMetadata} from '../public/games/system-clash/play/fight-assets.mjs';
-import {poseFrameIndex,poseScale} from '../public/games/system-clash/play/fight-attachments.mjs';
+import {poseFrameIndex,poseTransform} from '../public/games/system-clash/play/fight-attachments.mjs';
 
 function screen(){
  const calls=[],stack=[],state={globalAlpha:1,strokeStyle:'',transform:[1,0,0,1,0,0]};
@@ -49,8 +49,8 @@ for(const id of ['6-bit','9-bit','lyra','papa-oak'])for(const facing of ['left',
  const body=images(canvas,f.asset.image),echo=body.filter(c=>c.alpha>0&&c.alpha<=.12);
  assert.equal(echo.length,1);assert.deepEqual(echo[0].args,original.args,'Previous full crop and destination are unchanged');
  assert.equal(body.at(-1).alpha,1);assert(canvas.calls.indexOf(echo[0])<canvas.calls.indexOf(body.at(-1)));
- const frame=f.asset.data.frames[facing][poseFrameIndex(f.asset,first)],scale=poseScale(f.asset,frame);
- assert.equal(echo[0].args[7]/frame.rect[2],echo[0].args[8]/frame.rect[3]);assert.equal(echo[0].args[7],frame.rect[2]*scale);
+ const frame=f.asset.data.frames[facing][poseFrameIndex(f.asset,first)],transform=poseTransform(f.asset,frame);
+ assert.equal(echo[0].args[7],frame.rect[2]*transform.sx);assert.equal(echo[0].args[8],frame.rect[3]*transform.sy,'The retained crop keeps its original vertical scale');
 });
 test('native crop offsets alone and grounded movement never masquerade as falling feet',()=>{
  const f=native('9-bit','thrown'),canvas=screen(),renderer=createFightRenderer(canvas);
@@ -62,16 +62,17 @@ test('native crop offsets alone and grounded movement never masquerade as fallin
  assert.equal(images(canvas,f.asset.image).filter(c=>c.alpha<1).length,0);
 });
 for(const id of ['6-bit','9-bit','lyra','papa-oak'])for(const facing of ['left','right'])test('renderer wind follows compiled native uppercut without style reach: '+id+' '+facing,()=>{
- const f=native(id,'uppercut'),canvas=screen(),renderer=createFightRenderer(canvas);f.match.fighters[0]._style={reach:999};
+ const f=native(id,'uppercut'),canvas=screen(),renderer=createFightRenderer(canvas),before=JSON.stringify(f.asset.data);f.match.fighters[0]._style={reach:999};
  let previous=null,seen=0;
  for(let elapsed=0;elapsed<f.asset.timeline.duration;elapsed+=16){
   canvas.calls.length=0;const view=render(renderer,f,elapsed,0,elapsed,{}, {facing,airborne:false});
-  const index=poseFrameIndex(f.asset,view),pose=f.metadata.uppercut.combatPoses.frames[facing][index],to=[480+pose.strike.x,620+pose.strike.y];
+  const index=poseFrameIndex(f.asset,view),frame=f.asset.data.frames[facing][index],transform=poseTransform(f.asset,frame),pose=f.metadata.uppercut.combatPoses.frames[facing][index],to=[480+pose.strike.x,620+pose.strike.y],draw=images(canvas,f.asset.image).at(-1);
+  assert.deepEqual(draw.args.slice(1),[...frame.rect,480+transform.tx,620+transform.ty,frame.rect[2]*transform.sx,frame.rect[3]*transform.sy],'The unchanged full native crop uses the same calibrated width as its strike');
   const lines=wind(canvas);
   if(lines.length){seen++;assert.deepEqual(lines.at(-1).path.at(-1),to,'Native strike ends the line');assert(Math.hypot(...lines.at(-1).path[1].map((v,i)=>v-lines.at(-1).path[0][i]))<=130.00001);}
   previous=to;
  }
- assert(seen>0,'Real native arm motion produces wind');assert(previous);
+ assert(seen>0,'Real native arm motion produces wind at its corrected width');assert(previous);assert.equal(JSON.stringify(f.asset.data),before,'Motion cannot mutate source pixels or pose metadata');
 });
 test('pause, both review modes, reduced motion and new match identity clear motion before resuming',()=>{
  for(const flags of [{paused:true},{reducedMotion:true},{motionReview:true},{deletionReview:true},{matchReset:true}]){

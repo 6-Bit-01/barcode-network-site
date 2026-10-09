@@ -12,6 +12,12 @@ const T=tone,N=noise;
 const freeze=value=>{if(value&&typeof value==='object'){for(const child of Object.values(value))freeze(child);Object.freeze(value);}return value;};
 
 export const CHARACTER_FOLEY_PALETTES=freeze({
+ mutilator:{texture:'steel-toe heel knocks, coarse coat flaps and serrated cleaver scrapes',air:1850,body:118,material:'organic',gestures:[
+  [N(790,.043,.12,0,'bandpass',3),T(121,35,.092,.11,.015,'triangle'),N(3400,.064,.075,.072,'highpass')],
+  [N(4600,.025,.08,0,'highpass'),T(219,79,.041,.09,.037,'square'),N(610,.087,.12,.099,'lowpass')],
+  [T(171,41,.141,.12,0,'sawtooth'),N(1380,.124,.11,.021,'bandpass',1.1),T(647,510,.107,.07,.107,'triangle')],
+  [N(2300,.027,.095,0,'bandpass',4),T(91,30,.064,.115,.051,'triangle'),N(5100,.036,.07,.103,'highpass'),N(730,.082,.105,.156,'lowpass')]
+ ]},
   'lost-marbles':{texture:'dry waist-chain rattles, glass marble ticks and clipped leather swishes',air:4800,body:235,material:'organic',gestures:[
     [N(4400,.034,.09,0,'highpass'),T(2310,1770,.019,.075,.013,'triangle'),N(2700,.042,.105,.057,'bandpass',3.1)],
     [T(1670,1420,.022,.075,0,'sine'),N(6100,.022,.085,.031,'highpass'),T(2830,2190,.017,.08,.072,'triangle'),N(1800,.054,.08,.097,'bandpass',2.4)],

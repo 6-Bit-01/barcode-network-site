@@ -12,7 +12,10 @@ export const FUTURE_FIGHTERS=Object.freeze([
 export function demoRoster(mains){
  const active=mains.map(f=>({...f,enabled:true}));
  if(!active.length||active.length>18||new Set(active.map(f=>f.id)).size!==active.length)throw new Error('The demo roster is unavailable.');
- return [...active,...FUTURE_FIGHTERS.filter(f=>!active.some(a=>a.id===f.id))].slice(0,18);
+ const roster=[...active,...FUTURE_FIGHTERS.filter(f=>!active.some(a=>a.id===f.id))].slice(0,18);
+ const opening=['6-bit','cache-back','dj-floppydisc','mac-modem','cliff','mr-nice-guy','lost-marbles','ash-flowers','wittyf0x','lyra','papa-oak','ms-mayhem'];
+ const position=id=>opening.includes(id)?opening.indexOf(id):id==='mutilator'?opening.length+1:id==='9-bit'?opening.length+2:opening.length;
+ return roster.sort((a,b)=>position(a.id)-position(b.id));
 }
 export function createDemoSelection(mains,options={}){
  const roster=demoRoster(mains),ids=roster.filter(f=>f.enabled).map(f=>f.id);

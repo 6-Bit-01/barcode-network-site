@@ -6,7 +6,7 @@ async function stats(){assert.ok(existsSync(moduleURL),'The approved hidden stat
 const roster=JSON.parse(readFileSync(new URL('../public/games/system-clash/play/assets/fight-roster.json',import.meta.url),'utf8')).fighters.filter(f=>f.enabled).map(f=>f.id);
 
 test('Every current main fighter receives exactly the same 24-point four-stat budget',async()=>{
- const {FIGHT_STAT_KEYS,FIGHT_STAT_BUDGET,FIGHTER_STAT_PROFILES}=await stats();assert.deepEqual(FIGHT_STAT_KEYS,['health','speed','power','technique']);assert.equal(FIGHT_STAT_BUDGET,24);assert.equal(roster.length,17);assert.deepEqual(Object.keys(FIGHTER_STAT_PROFILES).sort(),roster.slice().sort());
+ const {FIGHT_STAT_KEYS,FIGHT_STAT_BUDGET,FIGHTER_STAT_PROFILES}=await stats();assert.deepEqual(FIGHT_STAT_KEYS,['health','speed','power','technique']);assert.equal(FIGHT_STAT_BUDGET,24);assert.equal(roster.length,18);assert.deepEqual(Object.keys(FIGHTER_STAT_PROFILES).sort(),roster.slice().sort());
  for(const profile of Object.values(FIGHTER_STAT_PROFILES)){assert.deepEqual(Object.keys(profile).sort(),['health','power','speed','technique']);assert.equal(Object.values(profile).reduce((sum,value)=>sum+value,0),24);assert.ok(Object.values(profile).every(value=>Number.isInteger(value)&&value>=1&&value<=10));assert.equal('defense'in profile,false);assert.equal('reach'in profile,false);}
 });
 

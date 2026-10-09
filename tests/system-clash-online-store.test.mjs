@@ -40,3 +40,15 @@ test('Lost Marbles selection survives both seats and changing fighter resets rea
  assert.equal((await rooms.poll(host.code,guest.token)).host.ready,false);
  await fails(()=>rooms.select(host.code,host.token,{fighter:'lost-marbles-unreleased',ready:true}),400);
 });
+
+test('Mutilator selection survives both seats and changing fighter resets readiness',async()=>{
+ const {rooms}=fixture(),host=await rooms.create('Host'),guest=await rooms.join(host.code,'Guest');
+ await rooms.select(host.code,host.token,{fighter:'mutilator',ready:true});
+ await rooms.select(guest.code,guest.token,{fighter:'mutilator',ready:true});
+ const state=await rooms.poll(host.code,guest.token);
+ assert.equal(state.host.fighter,'mutilator');assert.equal(state.host.ready,true);
+ assert.equal(state.guest.fighter,'mutilator');assert.equal(state.guest.ready,true);
+ await rooms.select(host.code,host.token,{fighter:'6-bit',ready:true});
+ assert.equal((await rooms.poll(host.code,guest.token)).host.ready,false);
+ await fails(()=>rooms.select(host.code,host.token,{fighter:'mutilator-unreleased',ready:true}),400);
+});

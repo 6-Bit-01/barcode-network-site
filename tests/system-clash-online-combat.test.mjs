@@ -62,3 +62,22 @@ test('Lost Marbles snapshots preserve selected seats, hidden local data and eigh
   guest.destroy();
  }
 });
+test('Mutilator snapshots preserve selected seats, hidden local data and native walk timing',()=>{
+ for(const seat of [0,1]){
+  const fighters=[{id:'6-bit'},{id:'6-bit'}];fighters[seat]={id:'mutilator'};
+  const authoritative=createMatch({mode:'local',stage:'radio-studio',start:false,fighters});
+  const schema={roster:['6-bit','mutilator'],fighterIds:fighters.map(f=>f.id),clipIds,matchId:1};
+  const views=authoritative.fighters.map((_,index)=>getFighterView(authoritative,index));
+  views[seat]={...views[seat],clip:'walk',elapsed:450,poseIndex:3};
+  const wire=net.makeFightSnapshot(authoritative,views,{...schema,seq:1,at:100});assert.ok(wire);
+  const received=[],guest=net.createOnlineCombatController({...schema,seat:1,onState:value=>received.push(value)});
+  guest.receive(start);assert.equal(guest.receive({type:'snapshot',snapshot:wire}),true);
+  assert.equal(guest.views()[seat].elapsed,450);assert.equal(guest.views()[seat].poseIndex,3);
+  const local=createMatch({mode:'local',start:false,fighters});
+  const rendered=net.applyFightSnapshot(local,received[0]);
+  assert.equal(rendered.fighters[seat].id,'mutilator');assert.equal(rendered.fighters[seat].maxHp,authoritative.fighters[seat].maxHp);
+  for(const key of ['_clips','_style','_statProfile','_statScalars'])assert.equal(rendered.fighters[seat][key],local.fighters[seat][key]);
+  const swapped=structuredClone(wire);swapped.state.fighters[seat].id='6-bit';swapped.views[seat].id='6-bit';assert.equal(net.readFightSnapshot(swapped,schema),null);
+  guest.destroy();
+ }
+});

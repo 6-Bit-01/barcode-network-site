@@ -6,6 +6,7 @@ import {fileURLToPath} from 'node:url';
 import {createMatch,advanceMatch,performAction,getFighterView,consumeEvents,FIGHTER_STYLES} from '../public/games/system-clash/play/fight-engine.mjs';
 import {compileFightClip,combatMetadata} from '../public/games/system-clash/play/fight-assets.mjs';
 import {interpolateFightViews} from '../public/games/system-clash/play/fight-presentation.mjs';
+import {nativeBodyCore,nativeBodyLegs} from '../public/games/system-clash/play/fight-combat-geometry.mjs';
 
 const root=fileURLToPath(new URL('../public/games/system-clash/play/assets/',import.meta.url));
 const roster=JSON.parse(fs.readFileSync(path.join(root,'fight-roster.json'),'utf8')).fighters;
@@ -99,13 +100,17 @@ test('combat metadata carries the actual native contact window and per-facing po
 
 for(const facing of ['right','left'])for(const action of ['kick','uppercut'])test(`9 Bit's extended ${action} connects through its limb at close range (${facing})`,()=>{
   const match=matchFor(['9-bit','9-bit'],facing),dir=facing==='right'?1:-1;
-  // Native charging uppercut trunks require about 204/207px of separation.
-  // Start outside both cores rather than letting the old 106px fixture overlap.
-  match.fighters[1].x=match.fighters[0].x+dir*210;
+  // Derive close range from the actual stable native stance, including each
+  // separate leg. The old210px fixture used the moving attack torso blocker.
+  const bodies=match.fighters.map(f=>{const pose=f._clips.idle.combatPoses.frames[f.facing][0],options={id:f.id,facing:f.facing,height:f.height};return [{...nativeBodyCore(pose,pose,options),site:'torso'},...nativeBodyLegs(pose,pose,options)];});
+  const gap=Math.max(...bodies[0].flatMap(a=>bodies[1].filter(b=>!(a.site==='legs'&&b.site==='legs')&&Math.min(a.bottom,b.bottom)>Math.max(a.top,b.top)).map(b=>dir>0?a.right-b.left:b.right-a.left)))+1;
+  match.fighters[1].x=match.fighters[0].x+dir*gap;
   performAction(match,0,action);advance(match,650);
   assert(match.fighters[1].hp<match.fighters[1].maxHp,'The opponent crosses the extended shin/forearm before the tip');
   assert.equal(consumeEvents(match).filter(event=>event.type==='hit').length,1);
 });
+
+for(const facing of ['right','left'])test(`9 Bit uppercut cannot borrow extra reach beyond its real native limb (${facing})`,()=>{const match=matchFor(['9-bit','9-bit'],facing),dir=facing==='right'?1:-1;match.fighters[1].x=match.fighters[0].x+dir*210;performAction(match,0,'uppercut');advance(match,650);assert.equal(match.fighters[1].hp,match.fighters[1].maxHp);assert.equal(consumeEvents(match).filter(e=>e.type==='hit').length,0);});
 
 for(const facing of ['right','left'])test(`native crouch posture ducks a high hand but can be checked by a body punch (${facing})`,()=>{
   for(const [action,wantHit]of [['punch',false],['low-punch',true]]) {
@@ -122,7 +127,8 @@ for(const facing of ['right','left'])test(`native height-edge hand contacts stay
   const hit=consumeEvents(match).find(event=>event.type==='hit');
   assert(hit,'The forearm edge crosses the upright fox’s head');
   assert.equal(hit.site,'head');
-  assert(hit.y>=350&&hit.y<=390,'The hit follows the forearm/head contact instead of moving down to the victim’s torso');
+  const victim=match.fighters[1],head=victim._clips.idle.combatPoses.frames[victim.facing][0].hurt.filter(region=>region.site==='head');
+  assert(head.some(region=>hit.y>=620+region.top&&hit.y<=620+region.bottom),'The contact remains on an actual native head band, including its visible ears/outline, rather than a stale generic height interval');
 });
 
 test('recovery buffering never queues a grab, weapon action or Deletion',()=>{

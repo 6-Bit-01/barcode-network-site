@@ -1,5 +1,5 @@
 import {marbleVictimState} from './fight-remains.mjs';
-import {NEW_FIGHTER_STYLES,newDeletionPositions,splitBodyState,hangingVictimPose} from './new-deletion-library.mjs';
+import {NEW_FIGHTER_STYLES,newDeletionPositions,splitBodyState,hangingVictimPose,nativeCleaverContacts,nativeCleaverPose} from './new-deletion-library.mjs';
 import {fightStatProfile,fightStatScalars} from './fight-stats.mjs';
 import {deletionDefinition,deletionPose} from './deletion-library.mjs';
 import {easedProgress} from './fight-presentation.mjs';
@@ -37,6 +37,7 @@ const COMBO_ATTACKS = new Set(['punch', 'kick', 'low-punch', 'low-kick']);
 const RECOVERY_INPUT_MS=100;
 // Measure both native bodies at the same fixed-step time before applying reactions.
 const CONTACT_RESOLUTIONS=new WeakMap();
+const ACTION_MOTION_BEFORE=new WeakMap();
 const INITIAL_JUMP_DIRECTION_MS=90;
 function resolveContact(match,apply,identity={}){const pending=CONTACT_RESOLUTIONS.get(match);if(pending)pending.push({apply,...identity});else apply();}
 function hitPushback(match,attackerIndex,victim,distancePixels,event){
@@ -161,6 +162,8 @@ function metadata(input = {},style=FIGHTER_STYLES['6-bit']) {
     const tempo=category?style.tempo[category]:1;
     return [name, {
       ...fallback, ...entry,
+      // Optional compiled fields must not erase the established reaction clock.
+      reactionStartMs:entry.reactionStartMs??fallback.reactionStartMs,
       duration:nativeDuration*tempo,nativeDuration,playbackRate:1/tempo,
       ...(Number.isFinite(nativeContactMs)?{contactMs:nativeContactMs*tempo,nativeContactMs}:{}),
       ...(Number.isFinite(nativeActiveEndMs)?{activeEndMs:Math.min(nativeDuration,nativeActiveEndMs)*tempo}:{}),
@@ -627,8 +630,10 @@ function hurtRegions(f) {
   const reference=f._clips.idle?.combatPoses?.frames?.[f.facing]?.[0];
   const core=nativeBodyCore(pose,reference,{id:f.id,facing:f.facing,height:f.height});
   // Every measured physical body region also accepts actual limb contact.
-  if(core)regions.push({...core,site:'torso'});
-  regions.push(...nativeBodyLegs(pose,reference,{id:f.id,facing:f.facing,height:f.height}));
+  if(!pose?.measuredHurt) {
+    if(core)regions.push({...core,site:'torso'});
+    regions.push(...nativeBodyLegs(pose,reference,{id:f.id,facing:f.facing,height:f.height}));
+  }
   return regions.map(region=>({...region,left:f.x+region.left,right:f.x+region.right,top:feet+region.top,bottom:feet+region.bottom}));
 }
 
@@ -673,7 +678,9 @@ function updateGrabHold(match,f){
   if(attacker.action!=='grab'){hold.duration=Math.min(hold.duration,f.actionTime);return;}
   const targetX=attacker.x+(grip?.x??f._throwDirection*100)-(contact?.x??0);
   const targetY=airOffset(attacker)+(grip?.y??-attacker.height*.75)-(contact?.y??-f.height*.55);
-  const clearance=Math.max(0,WORLD.floor+(body?.bounds?.top??-f.height)-140);
+  // The actual whole pose may approach the stage top. A HUD inset must not
+  // pull its torso away from the opaque native palm while its head is visible.
+  const clearance=Math.max(0,WORLD.floor+(body?.bounds?.top??-f.height));
   const progress=easedProgress(f.actionTime,0,Math.min(90,hold.duration*.3));
   f.x=hold.startX+(limitX(f,targetX)-hold.startX)*progress;
   hold.y=hold.startY+(clamp(targetY,-clearance,0)-hold.startY)*progress;
@@ -818,7 +825,7 @@ export function performAction(match, index, action, inputSnapshot, acceptedAt = 
   return true;
 }
 
-function attackContact(match, index) {
+function attackContact(match, index, sample = null) {
   const attacker = match.fighters[index], victim = match.fighters[1 - index];
   if(attacker._weaponAction){attacker._contactDone=true;weaponContact(match,index);return;}
   const dir = attacker.facing === 'right' ? 1 : -1;
@@ -829,22 +836,24 @@ function attackContact(match, index) {
   const reach = ({punch:180,kick:220,'low-punch':165,'low-kick':195,uppercut:165,grab:130,
     'crouch-punch':160,'crouch-kick':225,'crouch-high-kick':200,
     'double-punch':220,'power-kick':275,'jump-punch':175,'jump-kick':225}[action])*style.reach[category];
-  const pose=combatPose(attacker)?.frame;
+  const pose=sample?.pose??combatPose(attacker)?.frame;
+  const attackX=sample?.x??attacker.x,attackAir=sample?.air??airOffset(attacker);
   const nativeStrike=[pose?.strike,pose?.strikeStart].every(point=>Number.isFinite(point?.x)&&Number.isFinite(point?.y));
   const authoredRatio=Number(attacker._clips[action]?.strikeHeightRatio);
   const strikeRatio=Number.isFinite(authoredRatio)?authoredRatio:
     ({punch:.78,kick:.62,'low-punch':.40,'low-kick':.22,uppercut:.88,grab:.55,
       'crouch-punch':.36,'crouch-kick':.15,'crouch-high-kick':.49,'double-punch':.55,'power-kick':.48,'jump-punch':.53,'jump-kick':.35}[action]);
   // A contact belongs to the attacking limb, never to the victim's altitude.
-  const contactY=WORLD.floor+airOffset(attacker)+(nativeStrike?pose.strike.y:-attacker.height*strikeRatio);
-  const contactX=attacker.x+(nativeStrike?pose.strike.x:dir*reach);
+  const contactY=WORLD.floor+attackAir+(nativeStrike?pose.strike.y:-attacker.height*strikeRatio);
+  const contactX=attackX+(nativeStrike?pose.strike.x:dir*reach);
   const radius=pose?.strikeRadius??(action==='crouch-high-kick'?12:14);
   const limbEnd={x:contactX,y:contactY};
-  const limbStart=nativeStrike?{x:attacker.x+pose.strikeStart.x,y:WORLD.floor+airOffset(attacker)+pose.strikeStart.y}:
-    {x:attacker.x+dir*Math.min(50,reach*.25),y:contactY};
+  const limbStart=nativeStrike?{x:attackX+pose.strikeStart.x,y:WORLD.floor+attackAir+pose.strikeStart.y}:
+    {x:attackX+dir*Math.min(50,reach*.25),y:contactY};
   const nativeGeometry=action==='grab'?Number.isFinite(pose?.sites?.grip?.x)&&Number.isFinite(pose?.sites?.grip?.y):nativeStrike;
   const contact=action==='grab'?nativeGrabContact(attacker,victim):
-    hurtRegions(victim).map(body=>limbContact(limbStart,limbEnd,body,radius)).find(Boolean);
+    hurtRegions(victim).map(body=>limbContact(limbStart,limbEnd,body,radius)
+      ??(nativeStrike&&sample?.previousTip?limbContact(sample.previousTip,limbEnd,body,radius):null)).find(Boolean);
   const heightRatio=clamp((WORLD.floor+air-(contact?.y??contactY))/victim.height,.12,.93);
   const event = {
     attacker:index,target:1-index,x:contact?.x??contactX,
@@ -903,8 +912,11 @@ function attackContact(match, index) {
     victim._throwAttacker = index;
     victim._throwDistance=style.throwDistance;
     const release=grabMetadata(attacker)?.releaseMs??480*style.tempo.throw;
-    victim._grabHold={attacker:index,site:event.site,duration:Math.max(1,release-attacker.actionTime),startX:victim.x,startY:air,y:air};
-    prepareCapturedLift(attacker,victim,event.site);
+    // The complete hanging source is carried at its actual torso. The initial
+    // standing contact may have met head or legs; retain that contact separately.
+    const heldSite='torso';
+    victim._grabHold={attacker:index,site:heldSite,captureSite:event.site,duration:Math.max(1,release-attacker.actionTime),startX:victim.x,startY:air,y:air};
+    prepareCapturedLift(attacker,victim,heldSite);
     attacker._contactDone = true;
     return;
   }
@@ -976,7 +988,7 @@ function startDeletion(match) {
   const winner = match.fighters[match.winner], victim = match.fighters[1-match.winner];
   const definition=deletionDefinition(winner.id);
   if(match.stage){
-    if(['hug','litter-box','rip','marbles'].includes(definition.mechanism)){
+    if(['hug','litter-box','rip','marbles','cleaver'].includes(definition.mechanism)){
       // The ending uses an authored local pair cut. Its scenery camera remains
       // within the world even when the victim was standing at the outer wall.
       const shift=victim.x-640;match.stage.cinematicOrigin=clamp((match.stage.cinematicOrigin??0)+shift,0,match.stage.width-WORLD.width);
@@ -997,6 +1009,7 @@ function startDeletion(match) {
   let target = clamp(victim.x + dir * 205, 430, WORLD.width - 430);
   let throwStart = dir > 0 ? Math.min(victim.x, target - 180) : Math.max(victim.x, target + 180);
   let near=throwStart-dir*130;
+  if(definition.mechanism==='cleaver'){target=victim.x;throwStart=target;near=winner.x;}
   if(definition.mechanism==='marbles'){target=dir>0?810:470;throwStart=target;near=target-dir*380;}
   if(definition.mechanism==='drive') {
     // The drive sits between DJ and target, leaving a clear pull lane.
@@ -1044,6 +1057,7 @@ function startDeletion(match) {
     ...(definition.mechanism==='speaker-stack'?{operatorX:target-dir*200,stackX:target-dir*70}:{}),
     ...(definition.mechanism==='truss'?{trussX:target+dir*80,slamX:target-dir*80}:{}),
   };
+  if(definition.mechanism==='cleaver'){match._deletionOrigin.cleaverContacts=nativeCleaverContacts(match,definition);match._deletionOrigin.near=match._deletionOrigin.cleaverContacts[0]?.winnerX??near;}
   if(definition.mechanism==='litter-box'){
     const strike=winner._clips['delete-claw']?.contactStrikeOrigins?.[face(dir)],bodyPose=hangingVictimPose(victim._clips,{clip:'delete-brace',elapsed:300});
     const sites=combatPose(victim,{...bodyPose,facing:face(-dir)})?.frame?.sites;
@@ -1095,7 +1109,7 @@ function startDeletion(match) {
   emit(match, 'deletion', { name: match.deletionName, x: target, y: WORLD.floor - 150, direction: dir, strength: 2 });
 }
 
-const isDistinctDeletion=definition=>['coffin','waste-chute','drive','sign','wheel','stamp','jaws','speaker-stack','truss','positivity','wand','hug','litter-box','rip','marbles'].includes(definition.mechanism);
+const isDistinctDeletion=definition=>['coffin','waste-chute','drive','sign','wheel','stamp','jaws','speaker-stack','truss','positivity','wand','hug','litter-box','rip','marbles','cleaver'].includes(definition.mechanism);
 const interpolate=(start,end,time,from,to)=>start+(end-start)*clamp((time-from)/(to-from),0,1);
 const easedTravel=(start,end,time,from,to)=>start+(end-start)*easedProgress(time,from,to);
 
@@ -1126,7 +1140,7 @@ function broadcastCutPositions(match,time) {
 function approvedDeletionPositions(match,time) {
   const o=match._deletionOrigin,winner=match.fighters[match.winner],victim=match.fighters[1-match.winner];
   const definition=deletionDefinition(winner.id),b=definition.beats;
-  if(['hug','litter-box','rip','marbles'].includes(definition.mechanism))return newDeletionPositions(match,time,definition);
+  if(['hug','litter-box','rip','marbles','cleaver'].includes(definition.mechanism))return newDeletionPositions(match,time,definition);
   const approachEnd=definition.mechanism==='waste-chute'?b.fold:b.shove;
   let winnerX=easedTravel(o.winner,o.near,time,0,approachEnd);
   let victimX,victimY=0,rotation=0,eraseProgress=0;
@@ -1208,9 +1222,10 @@ function approvedDeletionPositions(match,time) {
 function approvedDeletionView(match,index,time) {
   const f=match.fighters[index],winner=match.fighters[match.winner],definition=deletionDefinition(winner.id);
   const pose=deletionPose(index===match.winner?'attacker':'victim',time,winner.id,f._clips,f.height);
+  if(definition.mechanism==='cleaver'){if(index===match.winner){const measured=nativeCleaverPose(match,time,definition);if(measured)Object.assign(pose,measured);}else if(time>=definition.beats.brandish){const measured=match._deletionOrigin.cleaverContacts?.[0]?.victimPose;if(measured)Object.assign(pose,measured);}}
   if(definition.mechanism==='rip'&&index!==match.winner&&time>=definition.beats.gripWindup&&match._deletionOrigin.ripPose)Object.assign(pose,match._deletionOrigin.ripPose);
   const position=approvedDeletionPositions(match,time),b=definition.beats;
-  const hiddenAt={marbles:Infinity,hug:b.escaped,rip:Infinity,'litter-box':b.buried,drive:b.captured,sign:b.landed,wheel:Infinity,stamp:b.stampStrike,jaws:b.sealed,
+  const hiddenAt={cleaver:b.finalCut,marbles:Infinity,hug:b.escaped,rip:Infinity,'litter-box':b.buried,drive:b.captured,sign:b.landed,wheel:Infinity,stamp:b.stampStrike,jaws:b.sealed,
     'speaker-stack':b.burial,truss:Infinity,positivity:Infinity,wand:b.erased}[definition.mechanism]??b.lidClose;
   return {...pose,x:index===match.winner?position.winnerX:position.victimX,y:index===match.winner?(position.winnerY??0):position.victimY,
     facing:approvedDeletionFacing(match,index,time),opacity:index===match.winner||time<hiddenAt?1:0,
@@ -1269,7 +1284,8 @@ function updateApprovedDeletion(match,previous,time) {
       contact:{fighterIndex:target,site,offset:[0,0],space:'pose'},contactView,
       sourceContact:{fighterIndex:match.winner,site:'grip',offset:[0,0],space:'pose'},sourceView,...extra});
   };
-  if(definition.mechanism==='marbles'){for(let i=0;i<7;i++){cue(b.firstLaunch+i*450,'marble-throw','torso','deletion-cue',{volley:i});cue(b.firstImpact+i*450,'marble-strip',i%3===0?'head':'torso','deletion-impact',{volley:i,strength:1.6+i*.16,damageKind:'cut'});}cue(b.landed,'skeletal-fall','legs','land');}
+  if(definition.mechanism==='cleaver'){cue(b.brandish,'cleaver-brandish');const names=['cleaver-high-cut','cleaver-torso-cut','cleaver-low-cut','cleaver-final'];for(const [index,c]of (o.cleaverContacts??[]).entries())cue(c.at,names[index],c.site,'deletion-impact',{strength:[1.9,2.1,2.3,3.4][index],damageKind:'cut',x:c.contact.x,y:WORLD.floor+c.contact.y,contact:{fighterIndex:target,site:c.site,offset:[c.victimOffset.x,c.victimOffset.y],space:'pose'},sourceContact:{fighterIndex:match.winner,site:'strike',offset:[c.sourceOffset.x,c.sourceOffset.y],space:'pose'},...(index===3?{aftermath:'butcher-heap'}:{})});cue(b.settled,'butcher-heap-land','legs','deletion-cue');}
+  else if(definition.mechanism==='marbles'){for(let i=0;i<7;i++){cue(b.firstLaunch+i*450,'marble-throw','torso','deletion-cue',{volley:i});cue(b.firstImpact+i*450,'marble-strip',i%3===0?'head':'torso','deletion-impact',{volley:i,strength:1.6+i*.16,damageKind:'cut'});}cue(b.landed,'skeletal-fall','legs','land');}
   else if(definition.mechanism==='hug') {
     cue(b.hugContact,'hug-contact','torso','deletion-cue',{peaceful:true});cue(b.release,'hug-release','torso','deletion-cue',{peaceful:true});cue(b.runStart,'peaceful-escape','legs','deletion-cue',{peaceful:true});
     cue(b.present,'stay-kind','torso','character-line',{fighterId:'doofnoobler',line:definition.line,peaceful:true});
@@ -1405,6 +1421,7 @@ function startTravel(f, distancePixels) {
 
 function advanceActionMotion(match, index, dt) {
   const f = match.fighters[index];
+  ACTION_MOTION_BEFORE.set(f,{action:f.action,facing:f.facing,time:f.actionTime,x:f.x,air:airOffset(f)});
   f.actionTime += dt;
   if(f.action==='grab'&&f._grabMotion){const motion=f._grabMotion;f.x=motion.startX+(motion.endX-motion.startX)*easedProgress(f.actionTime,motion.startMs,motion.contactMs);}
   if(f._jump) {
@@ -1451,7 +1468,26 @@ function measureActionContact(match,index){
   const f=match.fighters[index];
   if (ATTACKS.has(f.action) && !f._contactDone) {
     const contactAt = contactWindowStart(f);
-    if(f.actionTime>=contactAt&&(f.action==='grab'||f._weaponAction||f.actionTime<=activeEndTime(f)))attackContact(match,index);
+    if(f.action==='grab'||f._weaponAction) {
+      if(f.actionTime>=contactAt)attackContact(match,index);
+    } else {
+      const before=ACTION_MOTION_BEFORE.get(f),continuous=before?.action===f.action&&before.facing===f.facing&&before.time<=f.actionTime;
+      const end=activeEndTime(f),start=Math.max(contactAt,continuous?before.time:f.actionTime),stop=Math.min(end,f.actionTime);
+      if(stop>=contactAt&&start<=stop) {
+        const sampleAt=time=>{
+          const p=continuous&&f.actionTime>before.time?clamp((time-before.time)/(f.actionTime-before.time),0,1):1;
+          const rate=f._clips[f.action]?.playbackRate??1;
+          return {x:continuous?before.x+(f.x-before.x)*p:f.x,air:continuous?before.air+(airOffset(f)-before.air)*p:airOffset(f),
+            pose:combatPose(f,{clip:f.action,facing:f.facing,elapsed:(time+f._offset)*rate})?.frame};
+        };
+        // Clip the swept tip path to the actual active occurrence. A short
+        // window cannot disappear between ticks or borrow anticipation/recovery.
+        const current=sampleAt(Math.max(start,stop===end?stop-1e-6:stop)),prior=sampleAt(start);
+        const tip=prior.pose?.strike;
+        const previousTip=continuous&&[tip?.x,tip?.y].every(Number.isFinite)?{x:prior.x+tip.x,y:WORLD.floor+prior.air+tip.y}:null;
+        attackContact(match,index,{...current,previousTip});
+      }
+    }
     if(!f._contactDone&&f.actionTime>=activeEndTime(f))finishMiss(match,index);
     if (match.phase !== 'fight') return;
   }
@@ -1804,7 +1840,7 @@ export function getFighterView(match, index) {
   if(match.phase==='over'&&(definition?.retainFloorBody||definition?.peaceful)&&match.deletionElapsed>=definition.duration&&index!==match.winner)Object.assign(view,approvedDeletionView(match,index,match.deletionElapsed));
   if(match.phase==='over'&&definition&&match.deletionElapsed>=definition.duration&&index===match.winner){
     if(['positivity','jaws'].includes(definition.mechanism))Object.assign(view,deletionPose('attacker',match.deletionElapsed,f.id,f._clips));
-    else {if(['hug','litter-box','rip','marbles'].includes(definition.mechanism))Object.assign(view,approvedDeletionView(match,index,match.deletionElapsed));view.clip='delete-present';view.elapsed=10000;}
+    else {if(['hug','litter-box','rip','marbles','cleaver'].includes(definition.mechanism))Object.assign(view,approvedDeletionView(match,index,match.deletionElapsed));view.clip='delete-present';view.elapsed=10000;}
   }
   view.nativeElapsed=view.elapsed;
   view.poseIndex=combatPose(f,view)?.index;

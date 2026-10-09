@@ -12,6 +12,8 @@ const id='doofnoobler';
 const read=p=>JSON.parse(readFileSync(p,'utf8').replace(/^\uFEFF/,''));
 const digest=p=>createHash('sha256').update(readFileSync(p)).digest('hex');
 const manifest=bank=>read(join(play,'assets',bank,id,'manifest.json'));
+// Menu rendering retains every native frame field except gameplay-only collision profiles.
+const menuFrames=frames=>Object.fromEntries(Object.entries(frames).map(([facing,keys])=>[facing,keys.map(({combatHurt,combatProfile,combatPush,...frame})=>frame)]));
 const expected={fighters:['idle','punch','high','low','walk','crouch','block','kick','grabbed','thrown','knockdown','getup','grab','grab-high'],arcade:['low-punch','low-kick','jump','uppercut','crouch-punch','crouch-kick','jump-punch','jump-kick','pickup','crouch-high-kick','double-punch','power-kick'],deletions:['shove','pull','stomp','present','brace','suspended','compressed','crumpled','hug','hug-happy','rip-front']};
 const hangingExpected={"scale":0.42,"region":[512,0,1024,672],"sourceSha256":"0d294672aeba9df840ebb6f04375c22268e9f8085cfd03078c252c1c2ba79978","originalBytes":2599121,"rgbaSha256":"8516220b884b953617a1d7307a2fd197e7363e73f23e046c8b71c8d8b7065c30","regionRgbaSha256":"d176c5072744b624d1d80bc7f8fdae0789d0857c18a118eadd3d9d9236e036ba"};
 const hangingHash=bytes=>createHash('sha256').update(bytes).digest('hex');
@@ -62,7 +64,7 @@ test('pickup and rising low kick contacts stay on the actual authored hand and f
 });
 test('menu derivatives exist and preserve native idle metadata',()=>{
  for(const suffix of ['idle.webp','idle.json','portrait.webp','standing.webp']){const p=join(play,'assets','menu',`${id}-${suffix}`);assert.ok(existsSync(p));}
- const m=read(join(play,'assets','menu',`${id}-idle.json`));assert.equal(m.groundY,430);assert.deepEqual(m.canvasSize,[320,440]);assert.deepEqual(m.frames,manifest('fighters').clips.idle.frames);assert.equal(m.sourceSha256,digest(join(play,'assets','fighters',id,manifest('fighters').clips.idle.file)));
+ const m=read(join(play,'assets','menu',`${id}-idle.json`));assert.equal(m.groundY,430);assert.deepEqual(m.canvasSize,[320,440]);assert.deepEqual(menuFrames(m.frames),menuFrames(manifest('fighters').clips.idle.frames));assert.equal(m.sourceSha256,digest(join(play,'assets','fighters',id,manifest('fighters').clips.idle.file)));
 });
 
 test('airborne kick weapon grip stays in the raised native mitten rather than its cuff or toe',()=>{

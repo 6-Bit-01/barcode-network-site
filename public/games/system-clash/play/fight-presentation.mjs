@@ -27,8 +27,8 @@ export function interpolateFightViews(previous,current,fraction) {
   const p=clamp(fraction,0,1);
   return current.map((view,index)=>{
     const before=previous?.[index];
-    if(!before||before.clip!==view.clip||before.facing!==view.facing||before.opacity!==view.opacity||before.eraseProgress!==view.eraseProgress)return view;
-    const samePose=Number.isInteger(view.poseIndex)&&before.poseIndex===view.poseIndex;
+    if(!before||before.opacity!==view.opacity||before.eraseProgress!==view.eraseProgress)return view;
+    const samePose=before.clip===view.clip&&before.facing===view.facing&&Number.isInteger(view.poseIndex)&&before.poseIndex===view.poseIndex;
     const timing=samePose&&view.elapsed>=before.elapsed?{elapsed:before.elapsed+(view.elapsed-before.elapsed)*p,
       nativeElapsed:(before.nativeElapsed??before.elapsed)+((view.nativeElapsed??view.elapsed)-(before.nativeElapsed??before.elapsed))*p}:{};
     return {...view,...timing,x:before.x+(view.x-before.x)*p,y:(before.y??0)+((view.y??0)-(before.y??0))*p};

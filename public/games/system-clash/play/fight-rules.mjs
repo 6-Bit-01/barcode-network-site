@@ -1,6 +1,6 @@
-export const DEFAULT_MATCH_RULES=Object.freeze({rounds:1,time:99,difficulty:'normal'});
-export function normalizeMatchRules(value={}){return {rounds:[1,3,5].includes(Number(value.rounds))?Number(value.rounds):1,time:[0,60,99].includes(Number(value.time))?Number(value.time):99,difficulty:['easy','normal','hard'].includes(value.difficulty)?value.difficulty:'normal'};}
-export function matchRulesFromURL(value,fallback={}){const params=new URL(value,'https://system-clash.invalid/').searchParams;return normalizeMatchRules(Object.fromEntries(['rounds','time','difficulty'].map(key=>[key,params.has(key)?params.get(key):fallback[key]])));}
+export const DEFAULT_MATCH_RULES=Object.freeze({rounds:1,time:99,difficulty:'normal',musicStyle:'stage'});
+export function normalizeMatchRules(value={}){return {rounds:[1,3,5].includes(Number(value.rounds))?Number(value.rounds):1,time:[0,60,99].includes(Number(value.time))?Number(value.time):99,difficulty:['easy','normal','hard'].includes(value.difficulty)?value.difficulty:'normal',musicStyle:value.musicStyle==='fighter'?'fighter':'stage'};}
+export function matchRulesFromURL(value,fallback={}){const params=new URL(value,'https://system-clash.invalid/').searchParams;return normalizeMatchRules(Object.fromEntries(['rounds','time','difficulty','musicStyle'].map(key=>[key,params.has(key)?params.get(key):fallback[key]])));}
 export function withMatchRules(value,rules){const url=new URL(value,'https://system-clash.invalid/');for(const [key,item]of Object.entries(normalizeMatchRules(rules)))url.searchParams.set(key,String(item));return url;}
 export function loadMatchRules(storage){try{return normalizeMatchRules(JSON.parse(storage.getItem('system-clash-match-rules-v1'))??{});}catch{return normalizeMatchRules();}}
 export function saveMatchRules(storage,rules){try{storage.setItem('system-clash-match-rules-v1',JSON.stringify(normalizeMatchRules(rules)));return true;}catch{return false;}}

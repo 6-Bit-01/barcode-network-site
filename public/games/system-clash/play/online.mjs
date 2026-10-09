@@ -1,4 +1,5 @@
 import {createGameMusic} from './game-music.mjs';
+import {normalizeMatchRules,loadMatchRules,matchRulesFromURL} from './fight-rules.mjs';
 import {createGameScreenHost} from './game-screen-host.mjs';
 import {ONLINE_SCOPE,ONLINE_STAGES,createFrameCoordinator,createFrameRouter,validPayload} from './online-protocol.mjs';
 import {createOnlinePeer} from './online-transport.mjs';
@@ -11,9 +12,13 @@ export function createRoomClient({fetch=globalThis.fetch,endpoint=ENDPOINT}={}){
  return {setSeat(value){seat=value;},releaseSeat(value){return call({method:'POST',keepalive:true,headers:{'Content-Type':'application/json',Authorization:'Bearer '+value.token},body:JSON.stringify({action:'leave',code:value.code})});},list(){return call({method:'GET'});},request(action,fields={}){const authenticated=!!seat&&!['create','join'].includes(action);return call({method:'POST',headers:{'Content-Type':'application/json',...(authenticated?{Authorization:'Bearer '+seat.token}:{})},body:JSON.stringify({action,...(authenticated?{code:seat.code}:{}),...fields})});},leaveOnUnload(){if(!seat)return;try{fetch(endpoint,{method:'POST',keepalive:true,headers:{'Content-Type':'application/json',Authorization:'Bearer '+seat.token},body:JSON.stringify({action:'leave',code:seat.code})}).catch(()=>{});}catch{}}};
 }
 export function onlineFightURL(base,seat,state,settings={}){
- const url=new URL('fight.html',base),params={demo:'1',mode:'local',online:'1',seat:seat.role==='guest'?'1':'0',p1:state.host.fighter,p2:state.guest.fighter,name1:state.host.name??'Host',name2:state.guest.name??'Guest',sound:settings.muted?'0':'1',motion:settings.reducedMotion?'1':'0'};
+ const url=new URL('fight.html',base),params={demo:'1',mode:'local',online:'1',seat:seat.role==='guest'?'1':'0',p1:state.host.fighter,p2:state.guest.fighter,name1:state.host.name??'Host',name2:state.guest.name??'Guest',sound:settings.muted?'0':'1',motion:settings.reducedMotion?'1':'0',musicStyle:normalizeMatchRules({musicStyle:settings.musicStyle}).musicStyle};
  for(const [key,value]of Object.entries(params))url.searchParams.set(key,value);
  url.searchParams.set('stage',ONLINE_STAGES.includes(settings.stage)?settings.stage:'radio-studio');
+ return withControllerSeats(url,settings.controllerSeats);
+}
+export function onlineMenuURL(base,settings={}){
+ const url=new URL('index.html',base);for(const [key,value] of Object.entries({musicStyle:normalizeMatchRules({musicStyle:settings.musicStyle}).musicStyle,sound:settings.muted?'0':'1',motion:settings.reducedMotion?'1':'0'}))url.searchParams.set(key,value);
  return withControllerSeats(url,settings.controllerSeats);
 }
 /** Lobby authority is explicit; this class never advances the fight engine. */
@@ -55,7 +60,8 @@ export function nextLobbyFocus(items,current,key,columns=1){
 export async function mountOnlineLobby({document=globalThis.document,window=globalThis.window,fetch=globalThis.fetch}={}){
  const screenHost=createGameScreenHost({window,document,onSuspend:()=>unload()});
  const $=id=>document.getElementById(id),client=createRoomClient({fetch}),launch=new URL(window.location.href);
- const settings={...resolveInterfaceSettings(launch,{prefersReducedMotion:window.matchMedia('(prefers-reduced-motion: reduce)').matches}),controllerSeats:controllerSeatsFromURL(launch.href),stage:ONLINE_STAGES.includes(launch.searchParams.get('stage'))?launch.searchParams.get('stage'):'radio-studio'};
+ const settings={musicStyle:matchRulesFromURL(launch.href,loadMatchRules(window.localStorage)).musicStyle,...resolveInterfaceSettings(launch,{prefersReducedMotion:window.matchMedia('(prefers-reduced-motion: reduce)').matches}),controllerSeats:controllerSeatsFromURL(launch.href),stage:ONLINE_STAGES.includes(launch.searchParams.get('stage'))?launch.searchParams.get('stage'):'radio-studio'};
+ const menuLinks=[...document.querySelectorAll('a[href="index.html"]')].filter(link=>link.tagName==='A');for(const link of menuLinks){link.href=onlineMenuURL(launch,settings).href;link.addEventListener('click',event=>{event.preventDefault();screenHost.navigate(onlineMenuURL(launch,settings));});}
  const music=createGameMusic({window,document,muted:settings.muted});music.setScene({screen:'online'});music.setPaused(!document.hasFocus());
  const blur=()=>music.setPaused(true),focus=()=>music.setPaused(false);window.addEventListener('blur',blur);window.addEventListener('focus',focus);
  const pads=createGamepadInput({seats:settings.controllerSeats});

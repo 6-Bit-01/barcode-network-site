@@ -7,11 +7,11 @@ const root=new URL('../public/games/system-clash/play/',import.meta.url);
 const manifest={tracks:{title:{file:'assets/audio/music/title.mp3'},select:{file:'assets/audio/music/select.mp3'},online:{file:'assets/audio/music/online.mp3'},tournament:{file:'assets/audio/music/tournament.mp3'},six:{file:'assets/audio/music/6-bit.mp3'},lyraA:{file:'assets/audio/music/lyra-a.mp3'},lyraB:{file:'assets/audio/music/lyra-b.mp3'},radio:{file:'assets/audio/music/radio.mp3'}},menus:{title:'title',select:'select',online:'online',tournament:'tournament'},fighters:{'6-bit':['six'],lyra:['lyraA','lyraB']},stages:{'radio-studio':'radio'}};
 class Events{listeners=new Map();addEventListener(type,fn){if(!this.listeners.has(type))this.listeners.set(type,new Set());this.listeners.get(type).add(fn);}removeEventListener(type,fn){this.listeners.get(type)?.delete(fn);}emit(type,event={}){for(const fn of this.listeners.get(type)??[])fn(event);}}
 class Timers{now=0;id=0;jobs=new Map();setTimeout=(fn,ms)=>{const id=++this.id;this.jobs.set(id,{fn,at:this.now+ms});return id;};clearTimeout=id=>this.jobs.delete(id);advance(ms){const target=this.now+ms;while(true){const next=[...this.jobs].sort((a,b)=>a[1].at-b[1].at)[0];if(!next||next[1].at>target)break;this.now=next[1].at;this.jobs.delete(next[0]);next[1].fn();}this.now=target;}}
-function fixture({parent,blocked=false,fadeMs=0,catalog=manifest}={}){const doc=new Events();doc.hidden=false;doc.documentElement={dataset:parent?{}:{systemClashHost:'1'}};const win=new Events(),timers=new Timers(),audios=[];class Media extends Events{volume=0;currentTime=0;paused=true;muted=false;assignments=[];plays=0;set src(value){this.assignments.push(value);this.source=value;}get src(){return this.source;}play(){this.plays++;if(blocked)return Promise.reject(Error('gesture required'));this.paused=false;return Promise.resolve();}pause(){this.paused=true;}removeAttribute(name){if(name==='src')this.source='';}load(){}}
+function fixture({parent,blocked=false,deferred=false,fadeMs=0,catalog=manifest}={}){const doc=new Events();doc.hidden=false;doc.documentElement={dataset:parent?{}:{systemClashHost:'1'}};const win=new Events(),timers=new Timers(),audios=[],playRequests=[];class Media extends Events{volume=0;currentTime=0;paused=true;muted=false;assignments=[];plays=0;set src(value){this.assignments.push(value);this.source=value;}get src(){return this.source;}play(){this.plays++;if(blocked)return Promise.reject(Error('gesture required'));this.paused=false;if(deferred)return new Promise((resolve,reject)=>playRequests.push({resolve,reject,source:this.src}));return Promise.resolve();}pause(){this.paused=true;}removeAttribute(name){if(name==='src')this.source='';}load(){}}
  Object.assign(win,{location:{href:'https://game.test/online.html'},document:doc,Audio:class extends Media{constructor(){super();audios.push(this);}},setTimeout:timers.setTimeout,clearTimeout:timers.clearTimeout,performance:{now:()=>timers.now}});win.parent=parent??win;
- assert.equal(typeof music.createGameMusic,'function','Music lifecycle is implemented');const player=music.createGameMusic({window:win,document:doc,manifest:catalog,fadeMs});return {player,win,doc,timers,audios};}
+ assert.equal(typeof music.createGameMusic,'function','Music lifecycle is implemented');const player=music.createGameMusic({window:win,document:doc,manifest:catalog,fadeMs});return {player,win,doc,timers,audios,playRequests};}
 const flush=async()=>{for(let i=0;i<10;i++)await Promise.resolve();};
-test('screen routing uses supplied menu, arena and own fighter themes with stage fallback',()=>{assert.equal(typeof music.resolveMusicTrack,'function');for(const [scene,want]of [[{screen:'title'},'title'],[{screen:'select'},'select'],[{screen:'online'},'online'],[{screen:'tournament'},'tournament'],[{screen:'arena',stage:'radio-studio'},'radio'],[{screen:'fight',fighter:'6-bit',stage:'radio-studio'},'six'],[{screen:'fight',fighter:'9-bit',stage:'radio-studio'},'radio'],[{screen:'fight',fighter:'lost-marbles',stage:'radio-studio'},'radio']])assert.equal(music.resolveMusicTrack(manifest,scene)?.id,want);});
+test('screen routing uses supplied menu, arena and own fighter themes with stage fallback',()=>{assert.equal(typeof music.resolveMusicTrack,'function');for(const [scene,want]of [[{screen:'title'},'title'],[{screen:'select'},'select'],[{screen:'online'},'online'],[{screen:'tournament'},'tournament'],[{screen:'arena',stage:'radio-studio'},'radio'],[{screen:'fight',fighter:'6-bit',stage:'radio-studio'},'radio'],[{screen:'fight',fighter:'6-bit',stage:'radio-studio',musicStyle:'fighter'},'six'],[{screen:'fight',fighter:'9-bit',stage:'radio-studio'},'radio'],[{screen:'fight',fighter:'lost-marbles',stage:'radio-studio'},'radio']])assert.equal(music.resolveMusicTrack(manifest,scene)?.id,want);});
 test('Lyra variants are stable within one match and cycle between matches',()=>{assert.equal(typeof music.resolveMusicTrack,'function');assert.equal(music.resolveMusicTrack(manifest,{screen:'fight',fighter:'lyra',variant:0}).id,'lyraA');assert.equal(music.resolveMusicTrack(manifest,{screen:'fight',fighter:'lyra',variant:1}).id,'lyraB');assert.equal(music.resolveMusicTrack(manifest,{screen:'fight',fighter:'lyra',variant:2}).id,'lyraA');});
 test('only the selected track loads and render repeats do not restart playback',async()=>{const f=fixture();f.player.setScene({screen:'title'});await flush();assert.equal(f.audios.length,1);assert.deepEqual(f.audios[0].assignments,['https://game.test/assets/audio/music/title.mp3']);assert.equal(f.audios[0].plays,0);await f.player.unlock();f.audios[0].currentTime=17;for(let i=0;i<50;i++)f.player.setScene({screen:'title'});await flush();assert.equal(f.audios[0].plays,1);assert.equal(f.audios[0].currentTime,17);assert.equal(f.audios[0].loop,true);f.player.destroy();});
 test('mute and pause resume the selected music without rewinding it',async()=>{const f=fixture();f.player.setScene({screen:'fight',fighter:'6-bit'});await f.player.unlock();const audio=f.audios[0];audio.currentTime=23;f.player.setMuted(true);assert.equal(audio.paused,true);f.player.setMuted(false);await flush();assert.equal(audio.paused,false);f.player.setPaused(true);assert.equal(audio.paused,true);f.player.setPaused(false);await flush();assert.equal(audio.paused,false);assert.equal(audio.currentTime,23);assert.equal(audio.assignments.length,1);assert(audio.volume>0&&audio.volume<.5);f.player.destroy();});
@@ -29,11 +29,51 @@ test('the actual match audio pause hook pauses music alongside combat effects',a
 
 test('visible focus loss pauses match audio at ready and over without resuming an explicitly paused fight',async()=>{
  const source=readFileSync(new URL('fight.js',root),'utf8'),body=source.match(/function syncAudioPause\(\) \{([\s\S]*?)\n\}/)?.[1];assert(body);
- const run=new Function('ready','screenSuspended','paused','inspectTime','motionTime','windowActive','document','effects','music','match',body);
+ const run=new Function('ready','screenSuspended','paused','inspectTime','motionTime','windowActive','document','effects','music','match','matchRules',body);
  for(const phase of ['ready','over']){const f=fixture();f.player.setScene({screen:'fight',fighter:'6-bit'});await f.player.unlock();const calls=[],effects={setPaused:value=>calls.push(value)},match={phase,stage:{id:'radio-studio'},fighters:[{id:'6-bit'}]};
-  run(true,false,false,null,null,false,{hidden:false},effects,f.player,match);assert.equal(f.audios[0].paused,true,phase);assert.equal(calls.at(-1),true);
-  run(true,false,false,null,null,true,{hidden:false},effects,f.player,match);await flush();assert.equal(f.audios[0].paused,false,phase);
-  run(true,false,true,null,null,true,{hidden:false},effects,f.player,match);assert.equal(f.audios[0].paused,true);f.player.destroy();
+  run(true,false,false,null,null,false,{hidden:false},effects,f.player,match,{musicStyle:'stage'});assert.equal(f.audios[0].paused,true,phase);assert.equal(calls.at(-1),true);
+  run(true,false,false,null,null,true,{hidden:false},effects,f.player,match,{musicStyle:'stage'});await flush();assert.equal(f.audios[0].paused,false,phase);
+  run(true,false,true,null,null,true,{hidden:false},effects,f.player,match,{musicStyle:'stage'});assert.equal(f.audios[0].paused,true);f.player.destroy();
  }
  for(const type of ['blur','focus']){const eventBody=source.match(new RegExp("window.addEventListener\\('"+type+"',\\(\\)=>\\{([^\\n]*?)\\}\\);"))?.[1];assert(eventBody,type);let syncs=0;new Function('clearInput','syncAudioPause','ready','paused','match','togglePause',eventBody)(()=>{},()=>syncs++,true,false,{phase:'ready'},()=>{});assert.equal(syncs,1,type);}
+});
+
+
+test('a pending previous-source AbortError cannot pause the newly selected track',async()=>{
+ const f=fixture({deferred:true});f.player.setScene({screen:'title'});const old=f.player.unlock();
+ f.player.setScene({screen:'select'});assert.equal(f.playRequests.length,2);
+ f.playRequests[0].reject(Object.assign(Error('A new source interrupted the old request'),{name:'AbortError'}));assert.equal(await old,false);
+ f.playRequests[1].resolve();await flush();assert.equal(f.player.currentTrack,'select');assert.equal(f.audios[0].paused,false);assert(f.audios[0].volume>0);f.player.destroy();
+});
+
+test('an old play request stays stale even when rapid source changes return to its URL',async()=>{
+ const f=fixture({deferred:true});f.player.setScene({screen:'title'});const old=f.player.unlock();
+ f.player.setScene({screen:'select'});f.player.setScene({screen:'title'});assert.equal(f.playRequests.length,3);
+ f.playRequests[1].reject(Object.assign(Error('Interrupted selection source'),{name:'AbortError'}));await flush();
+ f.playRequests[0].reject(Object.assign(Error('Interrupted original title source'),{name:'AbortError'}));assert.equal(await old,false);
+ f.playRequests[2].resolve();await flush();assert.equal(f.player.currentTrack,'title');assert.equal(f.audios[0].paused,false);assert(f.audios[0].volume>0);f.player.destroy();
+});
+
+test('rapid pause or mute resume protects the new same-source request from an older abort',async()=>{
+ for(const state of ['setPaused','setMuted']){
+  const f=fixture({deferred:true});f.player.setScene({screen:'title'});const old=f.player.unlock();
+  f.player[state](true);assert.equal(f.audios[0].paused,true);f.player[state](false);assert.equal(f.playRequests.length,2);
+  f.playRequests[0].reject(Object.assign(Error('Interrupted before resume'),{name:'AbortError'}));assert.equal(await old,false);
+  f.playRequests[1].resolve();await flush();assert.equal(f.audios[0].paused,false,state);assert.equal(f.audios[0].assignments.length,1);f.player.destroy();
+ }
+});
+
+test('a current rejected play still requires a genuine retry gesture',async()=>{
+ const f=fixture({deferred:true});f.player.setScene({screen:'title'});const first=f.player.unlock();
+ f.audios[0].paused=true;f.playRequests[0].reject(Object.assign(Error('Gesture required'),{name:'NotAllowedError'}));assert.equal(await first,false);
+ f.player.setPaused(true);f.player.setPaused(false);await flush();assert.equal(f.playRequests.length,1);
+ f.doc.emit('pointerdown',{isTrusted:false});await flush();assert.equal(f.playRequests.length,1);
+ f.doc.emit('pointerdown',{isTrusted:true});assert.equal(f.playRequests.length,2);f.playRequests[1].resolve();await flush();assert.equal(f.audios[0].paused,false);f.player.destroy();
+});
+
+
+test('a stale play fulfillment cannot start the new source fade before its own play succeeds',async()=>{
+ const f=fixture({deferred:true});f.player.setScene({screen:'title'});const old=f.player.unlock();f.player.setScene({screen:'select'});
+ f.playRequests[0].resolve();assert.equal(await old,false);assert.equal(f.audios[0].volume,0);
+ f.playRequests[1].resolve();await flush();assert(f.audios[0].volume>0);assert.equal(f.audios[0].paused,false);f.player.destroy();
 });

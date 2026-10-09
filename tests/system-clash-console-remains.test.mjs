@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 const base='../public/games/system-clash/play/';
-test('console intro progresses across original company marks and always permits skip',async()=>{
+test('console intro progresses across original company marks before completing',async()=>{
  const {consoleBootFrame,CONSOLE_BOOT_DURATION}=await import(base+'console-boot.mjs');
  assert.equal(consoleBootFrame(0).asset,'barcode-circuit-works');
  assert.equal(consoleBootFrame(1300).asset,'soft-signal-systems');

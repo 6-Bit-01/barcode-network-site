@@ -11,7 +11,7 @@ import {resolvePoseAttachments} from '../public/games/system-clash/play/fight-at
 const play=fileURLToPath(new URL('../public/games/system-clash/play/',import.meta.url));
 const roster=JSON.parse(fs.readFileSync(path.join(play,'assets/menu/roster.json'),'utf8')).fighters;
 const only=process.env.SYSTEM_CLASH_FRAME_IDS?.split(',');
-const approvedMainIds=new Set(["6-bit","9-bit","cache-back","cliff","dj-floppydisc","mac-modem","mr-nice-guy","ms-mayhem","stolz","kaveman-brown","dr3wbaby","ash-flowers","wittyf0x"]);
+const approvedMainIds=new Set(["6-bit","9-bit","cache-back","cliff","dj-floppydisc","mac-modem","mr-nice-guy","ms-mayhem","stolz","kaveman-brown","dr3wbaby","wittyf0x"]);
 const selected=roster.filter(f=>approvedMainIds.has(f.id)&&(!only||only.includes(f.id)));
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
 for(const fighter of selected) {

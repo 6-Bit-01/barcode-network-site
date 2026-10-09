@@ -14,11 +14,23 @@ const CORE_RATIOS={
  'lost-marbles':{right:0.277,left:0.307},
 };
 const validPoint=p=>p&&Number.isFinite(p.x)&&Number.isFinite(p.y);
+const validRegion=r=>r&&['left','top','right','bottom'].every(k=>Number.isFinite(r[k]))&&r.right>r.left&&r.bottom>r.top;
 
 /** Physical chest/pelvis blocker in the same floor-relative space as native poses. */
 export function nativeBodyCore(pose,reference,{id,facing,height}={}) {
+ if(validRegion(pose?.pushCore))return {...pose.pushCore};
  const torso=pose?.sites?.torso,legs=pose?.sites?.legs;
  if(!validPoint(torso)||!validPoint(legs))return null;
+ // New native skins supply their own measured standing trunk. Keep its
+ // physical width/height while its station follows the current native torso;
+ // an extended arm or the first thin silhouette row never becomes the blocker.
+ if(validRegion(reference?.pushCore)&&validPoint(reference?.sites?.torso)) {
+  const r=reference.pushCore,dx=torso.x-reference.sites.torso.x,dy=torso.y-reference.sites.torso.y;
+  const bounds=pose.bounds??{left:-Infinity,right:Infinity,top:-Infinity,bottom:Infinity};
+  const core={left:Math.max(bounds.left,r.left+dx),right:Math.min(bounds.right,r.right+dx),
+    top:Math.max(bounds.top,r.top+dy),bottom:Math.min(bounds.bottom,r.bottom+dy)};
+  return validRegion(core)?core:null;
+ }
  const ratio=CORE_RATIOS[id]?.[facing];
  if(!ratio) {
   const region=pose.hurt?.find(r=>r.site==='torso');
@@ -60,12 +72,22 @@ const LEG_BANDS={
 
 /** Defensive stance legs follow the native pelvis/floor without adding attack reach. */
 export function nativeBodyLegs(pose,reference,{id,facing,height}={}) {
+ if(Array.isArray(pose?.pushLegs))return pose.pushLegs.filter(validRegion).map(r=>({...r,site:'legs'}));
  const torso=pose?.sites?.torso,legs=pose?.sites?.legs,bounds=pose?.bounds;
- const bands=LEG_BANDS[id]?.[facing];
- if(!bands||!validPoint(torso)||!validPoint(legs)||!bounds||!Number.isFinite(height)||height<=0)return [];
+ if(!validPoint(torso)||!validPoint(legs)||!bounds||!Number.isFinite(height)||height<=0)return [];
  const top=legs.y-(legs.y-torso.y)*.25,bottom=bounds.bottom;
  if(!Number.isFinite(top)||!Number.isFinite(bottom)||bottom<=top)return [];
  const drift=torso.x-(reference?.sites?.torso?.x??torso.x);
+ const refTorso=reference?.sites?.torso,refLegs=reference?.sites?.legs,refBounds=reference?.bounds;
+ if(Array.isArray(reference?.pushLegs)&&validPoint(refTorso)&&validPoint(refLegs)&&refBounds) {
+  const refTop=refLegs.y-(refLegs.y-refTorso.y)*.25,span=refBounds.bottom-refTop;
+  if(span>0)return reference.pushLegs.filter(validRegion).map(r=>{
+   const t0=clamp((r.top-refTop)/span,0,1),t1=clamp((r.bottom-refTop)/span,0,1),shift=drift*(1-(t0+t1)/2);
+   return {site:'legs',left:Math.max(bounds.left,r.left+shift),right:Math.min(bounds.right,r.right+shift),
+    top:Math.max(bounds.top,top+(bottom-top)*t0),bottom:top+(bottom-top)*t1};
+  }).filter(validRegion);
+ }
+ const bands=LEG_BANDS[id]?.[facing];if(!bands)return [];
  return bands.flatMap((spans,index)=>{
   const shift=drift*(1-(index+.5)/3),bandTop=Math.max(bounds.top,top+(bottom-top)*index/3),bandBottom=top+(bottom-top)*(index+1)/3;
   return spans.map(([left,right])=>({site:'legs',left:Math.max(bounds.left,left*height+shift),right:Math.min(bounds.right,right*height+shift),top:bandTop,bottom:bandBottom}));
@@ -108,4 +130,21 @@ export function limbContact(start,end,body,radius) {
  }
  return Number.isFinite(first)?{x:clamp(start.x+dx*first,body.left,body.right),
   y:clamp(start.y+dy*first,body.top,body.bottom),site:body.site}:null;
+}
+
+/** Decoded native alpha bands authored in crop coordinates, sharing the draw transform. */
+export function nativeHurtRegions(frame,point) {
+ if(!Array.isArray(frame?.combatHurt))return null;
+ return frame.combatHurt.flatMap(region=>{
+  if(!Array.isArray(region)||region.length!==5||!['head','torso','legs'].includes(region[0])||!region.slice(1).every(Number.isFinite))return [];
+  const a=point(region.slice(1,3)),b=point(region.slice(3,5));
+  return b.x>a.x&&b.y>a.y?[{site:region[0],left:a.x,top:a.y,right:b.x,bottom:b.y}]:[];
+ });
+}
+
+/** Native physical blockers are independent from fine silhouette hurt contacts. */
+export function nativePushRegions(frame,point) {
+ const rect=r=>{if(!Array.isArray(r)||r.length!==4||!r.every(Number.isFinite))return null;const a=point(r.slice(0,2)),b=point(r.slice(2));const v={left:a.x,top:a.y,right:b.x,bottom:b.y};return validRegion(v)?v:null;};
+ const core=rect(frame?.combatPush?.core),legs=frame?.combatPush?.legs;
+ return { ...(core?{pushCore:core}:{}),...(Array.isArray(legs)?{pushLegs:legs.map(rect).filter(Boolean).map(r=>({...r,site:"legs"}))}:{}) };
 }

@@ -11,6 +11,7 @@ export const CHARACTER_LINE_ASSETS=Object.freeze({
  doofnoobler:Object.freeze({path:'assets/audio/doofnoobler-stay-kind.wav',cue:'stay-kind',text:'Stay soft, stay fuzzy, and stay kind.',bytes:125126})
 });
 export const FIGHT_AUDIO_PROFILES=Object.freeze(Object.fromEntries(Object.entries({
+  'mutilator':{pitch:96,formants:[650,1190,2380],rasp:.39,breath:.12,weight:1.28,accent:188,voice:'clipped gravel butcher bark and forceful chest effort'},
   'lost-marbles':{pitch:138,formants:[820,1480,2880],rasp:.29,breath:.23,weight:.95,accent:460,voice:'masked breathy rasp and clipped chaotic effort'},
   'doofnoobler':{pitch:246,formants:[980,1780,3190],rasp:.04,breath:.23,weight:.64,accent:790,voice:'soft felt puppet murmur'},
   'lyra':{pitch:282,formants:[1050,2130,3550],rasp:.09,breath:.05,weight:.88,accent:1670,robot:true,voice:'feline cyborg chirp'},
@@ -36,6 +37,7 @@ export const MAX_VOCAL_CACHE_BYTES=6*1024*1024;
 // Independent articulation families: syllables, stop/breath onsets, closure,
 // subharmonics, vocal fry and modulation differ in addition to pitch/formants.
 const vocalFamilies={
+ mutilator:{kind:'butcher-bark',duration:1.04,open:.41,sub:.31,nasal:.05,grit:.58,flutter:14,phrases:[['kh-hah','ruh','gah-hup','hrr-yah'],['agh','kh-uh','oh-rr-kh','huh-agh'],['gh-ah-rr','akh-rah','uh-agh-hah','rr-khah'],['rr-aa-kh','gh-aaa-hah','akh-oh-rr','hrah-aa-ugh']]},
  'lost-marbles':{kind:'masked-staccato',duration:.92,open:.38,sub:.14,nasal:.19,grit:.47,flutter:23,phrases:[['kh-ha','heh','ts-hup','rr-kih'],['akh-eh','uh-kh','hff','kh-oh'],['ha-rr-agh','kh-aa-huh','eh-rr-ah','hff-aah'],['kh-ah-rr','heh-aa-kh','rr-aa-hff','hff-aa-eh']]},
  'doofnoobler':{kind:'felt-murmur',duration:.9,open:.71,sub:.01,nasal:.39,grit:.04,flutter:3,phrases:[['hu','hmm-hup','ho-eh','mmm'],['oh','oof','eh-oh','uh-hm'],['oh-hmm','hu-oof','ah-ohh','hmm-eh'],['oo-ah','oh-ehh','hu-ah-oh','mm-aa']]},
  'lyra':{kind:'cat-servo',duration:.82,open:.27,sub:.02,nasal:.32,grit:.13,flutter:31,phrases:[['ki','tss-ya','mr-ki','ya-tk'],['ih','mrr-eh','ki-ih','tss-ah'],['mrr-yah','ih-aa','tk-kee','yah-mrr'],['ee-yaa','mrr-ee-ah','ki-aa-yee','yah-ee-mrr']]},

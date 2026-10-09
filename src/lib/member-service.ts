@@ -5,10 +5,13 @@ import { AUTH_PATH, allowedEndpoint, memberCookies, normalizeBody, safeRedirect 
 export type MemberServiceConfiguration = { serviceUrl: string; serviceToken: string; canonicalOrigin: string };
 const canonicalOrigin = "https://www.barcode-network.com";
 const privateHeaders = { "cache-control": "private, no-store", "referrer-policy": "no-referrer" };
+function validServiceToken(value: unknown): value is string {
+  return typeof value === "string" && value.length >= 32 && value.length <= 128 && !/[^A-Za-z0-9_-]/.test(value);
+}
 export function getMemberServiceConfiguration(): MemberServiceConfiguration | null {
   const serviceUrl = process.env.BARCODE_MEMBER_SERVICE_URL;
   const serviceToken = process.env.BARCODE_MEMBER_SERVICE_TOKEN;
-  if (!serviceUrl || !serviceToken || serviceToken.length < 32) return null;
+  if (!serviceUrl || !validServiceToken(serviceToken)) return null;
   try {
     const url = new URL(serviceUrl);
     if (url.protocol !== "https:" || url.username || url.password || url.pathname !== "/" || url.search || url.hash) return null;
@@ -34,7 +37,7 @@ async function boundedText(request: Request | Response, maximum: number) {
 }
 export async function proxyMemberRequest(request: Request, path: string, configuration = getMemberServiceConfiguration(), fetcher: typeof fetch = fetch): Promise<Response> {
   if (!allowedEndpoint(path, request.method)) return problem(404, "NOT_FOUND");
-  if (!configuration) return problem(503, "ACCOUNT_UNAVAILABLE");
+  if (!configuration || !validServiceToken(configuration.serviceToken)) return problem(503, "ACCOUNT_UNAVAILABLE");
   const { serviceUrl, serviceToken, canonicalOrigin: origin } = configuration;
   const requestURL = new URL(request.url);
   if (requestURL.origin !== origin) return problem(403, "ORIGIN_DENIED");

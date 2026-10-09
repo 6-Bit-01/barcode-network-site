@@ -1,8 +1,8 @@
 {
   "builder": "barcode-system-override-standalone-v1",
   "status": "complete",
-  "sourceCommit": "11cdbef9b653f51187d4de2ed87b194ee8496c63",
-  "sourceTree": "de562ffb99ab041465bba9f4f0bb20dbd30f0834",
+  "sourceCommit": "921dc3e73f0aea36baf46551a215f08c2291b251",
+  "sourceTree": "eb760465d51f0b337354862f982c69514ab29c84",
   "builderSHA256": "e53b3b5e714071ed2049399ff8a962f3cd7b27ab9b68a3ff5b3c9d70eac21ac2",
   "files": {
     "assets/audio/broadcast-slum-proof-carrier.wav": {
@@ -3842,12 +3842,12 @@
       "bytes": 37156
     },
     "src/game/mac-combat-preview.js": {
-      "sha256": "239c3159ce1d29e377ec1a4a4e18e3a33de854fccfb88ad7f960f9a5bebeff73",
-      "bytes": 71801
+      "sha256": "2f6acc6f1529f5493735eed7d73e3356afdb0cbd9d2518c5e75a5ce625165afc",
+      "bytes": 71926
     },
     "src/game/mac-street-combat.js": {
-      "sha256": "8108944b9fd9160ca0ba3d58428d4a73d365d69b834db8310f4b9791e7d36a47",
-      "bytes": 100041
+      "sha256": "4bafedfe7cc23f679a48dd7698ed945dc9b5e0a427318deb420e76089094fb94",
+      "bytes": 100114
     },
     "src/game/mac-street-story.js": {
       "sha256": "636ffa1e3dc5d3d7c68b1a82cbd1b577454849e0729b450f75978bc5c916c317",
@@ -3886,8 +3886,8 @@
       "bytes": 17244
     },
     "src/game/player.js": {
-      "sha256": "1efafc2ef17fb3fee3c15be3b8a4a81e50e8e3778f40c4dddcdd1f9bcca5ccab",
-      "bytes": 82004
+      "sha256": "f1f43aaeb2769a1ff763f4595854b171ef9a3de0adfaad7ac901bda978a031c7",
+      "bytes": 82087
     },
     "src/game/post-tutorial-objectives.js": {
       "sha256": "87be5a8a0a4fd6cfbce458af5bb52b1c60887fe5b4fea794e740655efc4048ab",

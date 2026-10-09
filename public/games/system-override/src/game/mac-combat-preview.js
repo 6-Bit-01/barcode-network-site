@@ -454,7 +454,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
       if (event.type === 'player-move') add('move');
       if (event.type === 'run-start') add('run');
       if (event.type === 'strike') { if (['jab','cross','finisher'].includes(event.kind)) t.progress.strike = Math.max(t.progress.strike,event.kind === 'finisher' ? 3 : event.kind === 'cross' ? 2 : 1); if (event.kind === 'air-kick') add('air'); if (event.kind === 'running-kick') add('running-kick'); }
-      if (event.type === 'parry' || event.type === 'block') add('guard');
+      if (event.type === 'enemy-hit' && event.cause === 'counter') add('guard');
       if (event.type === 'weapon-equipped') add('weapon');
       if (event.type === 'grab-start' || event.type === 'prop-pickup') add('grab');
       if (event.type === 'pummel') add('pummel');
@@ -778,7 +778,7 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
     drawStreet(ctx) {
       const s = this.combat.getSnapshot(), camera = this.cameraX, zone = s.zone || {index: 1, startX: 0, endX: 3400, title: 'SERVICE ALLEY'};
       const background = this.cityArt?.zones[zone.index - 1];
-      const impact = s.impact || {}, shake = !B.Preferences?.values?.reducedMotion && impact.remainingMs > 0 ? Math.min(5,(impact.strength || 0)*5) : 0;
+      const impact = s.impact || {}, shake = B.Preferences?.values?.screenShake !== false && !B.Preferences?.values?.reducedMotion && impact.remainingMs > 0 ? Math.min(5,(impact.strength || 0)*5) : 0;
       ctx.save(); ctx.translate(shake*Math.sin(this.elapsedMs*.13), -350 + shake*Math.cos(this.elapsedMs*.11)); ctx.scale(1.35, 1.35);
       this.drawCityBackdrop(ctx, this.assets.get(background?.background), zone, camera);
       for (const mark of this.floorMarks || []) {
@@ -806,7 +806,8 @@ window.FILE_MANIFEST.push({ name: 'src/game/mac-combat-preview.js', exports: ['B
         if (actor.type === 'pickup') {
           const name = p.kind === 'weapon' ? `weapon_${p.weaponKind}` : `pickup_${p.kind}`;
           ctx.fillStyle='#82d7c82b';ctx.beginPath();ctx.ellipse(x,p.laneY,25,7,0,0,Math.PI*2);ctx.fill();
-          this.drawPowerCell(ctx,name,x,p.laneY-7-Math.sin(s.elapsedMs*.004)*3);continue;
+          const bob = B.Preferences?.values?.reducedMotion ? 0 : Math.sin(s.elapsedMs*.004)*3;
+          this.drawPowerCell(ctx,name,x,p.laneY-7-bob);continue;
         }
         ctx.fillStyle = '#02091170'; ctx.beginPath(); ctx.ellipse(x, p.laneY + 2, actor.type === 'mac' ? 43 : 51, 12, 0, 0, Math.PI * 2); ctx.fill();
         if (actor.type === 'mac') {

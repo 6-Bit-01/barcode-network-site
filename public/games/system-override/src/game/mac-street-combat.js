@@ -479,6 +479,7 @@ window.FILE_MANIFEST.push({
       emit('weapon-dropped',{id:item?.id||null,kind:p.weapon.kind,charges:p.weapon.charges,reason,x:item?.x??p.x,laneY:p.laneY});p.weapon=null;}
     function cancelHolding(reason){
       const p=state.player;
+      if(p.attack?.kind==='pummel'){p.attack=null;p.queuedStrike=false;}
       if(p.grapple){const victim=state.enemies.find(e=>e.id===p.grapple.targetId);
         if(victim?.grappledBy){victim.grappledBy=null;if(victim.hp)phase(victim,'approach');}
         if(!p.grapple.released)emit('grab-end',{id:p.grapple.targetId,reason,thrown:false,x:p.x,laneY:p.laneY});}

@@ -1249,6 +1249,7 @@ window.Player = class Player {
     
     // Check for damage invulnerability (fast flashing)
     if (this.invulnerableUntil && currentTime < this.invulnerableUntil) {
+      if (window.BARCODE?.Preferences?.values?.flashAccents === false) return 1.0;
       return 0.5 + Math.sin(Date.now() * 0.02) * 0.4; // Fast flash
     }
     

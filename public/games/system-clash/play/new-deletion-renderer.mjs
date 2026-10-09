@@ -78,7 +78,8 @@ export function drawNativeRipForearm(ctx,view,art){
 }
 export function drawNewDeletionScene(ctx,match,prop,views,art,front,{reducedMotion=false}={}){const definition=deletionDefinition(match.fighters[match.winner].id);if(!definition)return;const t=match.deletionElapsed,b=definition.beats,o=match._deletionOrigin;
  if(definition.mechanism==='rip'){if(front&&t>=b.gripContact&&t<b.rip)drawNativeRipForearm(ctx,views[match.winner],art[match.winner]);return;}
- if(definition.mechanism==='hug'){if(!front&&t>=b.hugContact&&t<b.release){ctx.save();ctx.strokeStyle='#e2bb7760';ctx.lineWidth=3;ctx.beginPath();ctx.ellipse(views[match.winner].x,FLOOR+(views[match.winner].y??0)-100,65,85,0,0,TAU);ctx.stroke();ctx.restore();}return;}
+ // Soft Power is the authored whole-body hug; it has no external hardware or halo.
+ if(definition.mechanism==='hug')return;
  if(definition.mechanism!=='litter-box'||t<b.boxReach)return;const g=litterBoxGeometry(match,prop,art);if(g)nativeBox(ctx,g,front);else {ctx.save();ctx.fillStyle=front?'#435d69':'#293c49';ctx.strokeStyle='#81a9b3';ctx.lineWidth=5;ctx.beginPath();ctx.ellipse(o.target,FLOOR-75,215,55,0,front?0:Math.PI,front?Math.PI:TAU);ctx.fill();ctx.stroke();ctx.restore();}
  if(front&&t>=b.kick&&t<b.buried){const p=clamp((t-b.kick)/(b.buried-b.kick),0,1),direction=o.direction,hero=views[match.winner],paw=match.fighters[match.winner]._clips['delete-litter-kick']?.contactStrikeOrigins?.[hero.facing],startX=hero.x+(paw?.x??direction*80),startY=FLOOR+(paw?.y??-40);ctx.save();ctx.fillStyle='#c4b18b';ctx.globalAlpha=.78;for(let i=0;i<22;i++){const travel=clamp((p-i*.012)*1.4,0,1),x=startX+(o.target-startX)*travel,y=startY+(FLOOR-70-startY)*travel-(reducedMotion?35:150)*Math.sin(Math.PI*travel)+(i%4)*6;ctx.fillRect(x,y,4+i%3,3+i%2);}ctx.restore();}
 }

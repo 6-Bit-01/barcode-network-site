@@ -20,15 +20,22 @@ test('shared settings preserve explicit off against OS preference and use OS onl
  assert.equal(flow.parseDemoLaunch(BASE+'?demo=1&motion=0',roster).reducedMotion,false);
 });
 
-test('every declared interface asset is a standalone vector with exact browser intrinsic dimensions and no remote/script/font dependencies',async()=>{
- const spec=manifest();assert.equal(spec.version,1);assert.equal(Object.keys(spec.assets).length,9);
+test('every interface source and served artwork decodes at its declared dimensions with no external dependency',async()=>{
+ const spec=manifest();assert.equal(spec.version,1);assert.equal(Object.keys(spec.assets).length,19);
  const sharp=(await import('sharp')).default;
  for(const [key,asset]of Object.entries(spec.assets)){
-  const svg=readFileSync(new URL(asset.file,uiURL));const source=svg.toString();
-  assert.match(source,/xmlns="http:\/\/www.w3.org\/2000\/svg"/);
-  assert.match(source,new RegExp(`width="${asset.width}" height="${asset.height}" viewBox="0 0 ${asset.width} ${asset.height}"`),key);
-  assert.doesNotMatch(source,/<(?:script|text|foreignObject|image)\b|(?:href|src)=|@import|url\(https?:/i,key);
-  const actual=await sharp(svg).metadata();assert.equal(actual.width,asset.width,key);assert.equal(actual.height,asset.height,key);
+  const source=readFileSync(new URL(asset.file,uiURL));
+  if(asset.file.endsWith('.svg')){
+   const text=source.toString();
+   assert.match(text,/xmlns="http:\/\/www.w3.org\/2000\/svg"/);
+   assert.doesNotMatch(text,/<(?:script|text|foreignObject|image)\b|(?:href|src)=|@import|url\(https?:/i,key);
+  }
+  for(const file of [asset.file,...(asset.runtimeFile?[asset.runtimeFile]:[])]){
+   const actual=await sharp(readFileSync(new URL(file,uiURL))).metadata();
+   assert.equal(actual.width,asset.width,key);assert.equal(actual.height,asset.height,key);
+   if(file.endsWith('.webp'))assert.equal(actual.hasAlpha,true,key+' has native transparency');
+  }
+
  }
 });
 
@@ -36,8 +43,8 @@ test('hosted interface loads once from the current origin and verifies each deco
  const {loadInterfaceArt}=await import(loaderURL),spec=manifest(),requests=[];
  const art=await loadInterfaceArt({baseURL:BASE,fetch:async value=>{requests.push(String(value));return {ok:true,json:async()=>spec};},imageFactory:imagesFor(spec)});
  assert.deepEqual(requests,['https://barcode.example/games/system-clash/play/assets/ui/manifest.json']);
- assert.equal(Object.keys(art.images).length,9);assert.deepEqual(art.failures,[]);
- for(const [key,image]of Object.entries(art.images))assert.equal(image.source,new URL('assets/ui/'+spec.assets[key].file,BASE).href);
+ assert.equal(Object.keys(art.images).length,19);assert.deepEqual(art.failures,[]);
+ for(const [key,image]of Object.entries(art.images))assert.equal(image.source,new URL('assets/ui/'+(spec.assets[key].runtimeFile??spec.assets[key].file),BASE).href);
 });
 
 test('portable bundles use embedded interface art and an older bundle falls back without network work',async()=>{
@@ -45,7 +52,7 @@ test('portable bundles use embedded interface art and an older bundle falls back
  const fetch=async()=>{requests++;throw Error('Portable interface must not fetch');};
  const bundle={interface:spec,images:Object.fromEntries(Object.values(spec.assets).map(a=>['assets/ui/'+a.file,'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg"/>')]))};
  const ready=await loadInterfaceArt({baseURL:'file:///D:/portable/fight.html',bundle,fetch,imageFactory:imagesFor(spec)});
- assert.equal(Object.keys(ready.images).length,9);assert.equal(requests,0);
+ assert.equal(Object.keys(ready.images).length,19);assert.equal(requests,0);
  const old=await loadInterfaceArt({baseURL:'file:///D:/portable/fight.html',bundle:{images:{}},fetch,imageFactory:()=>{throw Error('No available images');}});
  assert.deepEqual(old.images,{});assert.equal(requests,0);
  const escaped={interface:spec,images:Object.fromEntries(Object.values(spec.assets).map(a=>['assets/ui/'+a.file,'file:///C:/outside.svg']))};
@@ -62,7 +69,7 @@ test('invalid remote/traversal SVG references fail closed, while a failed option
  }
  for(const option of [{fail:'timer'},{mismatch:'timer'}]){
   const partial=await loadInterfaceArt({baseURL:BASE,fetch:async()=>({ok:true,json:async()=>spec}),imageFactory:imagesFor(spec,option)});
-  assert.equal(Object.keys(partial.images).length,8);assert.ok(partial.failures.includes('timer'));assert.equal(partial.images.timer,undefined);
+  assert.equal(Object.keys(partial.images).length,18);assert.ok(partial.failures.includes('timer'));assert.equal(partial.images.timer,undefined);
  }
  const missing=await loadInterfaceArt({baseURL:BASE,fetch:async()=>{throw Error('offline');}});assert.deepEqual(missing.images,{});
 });
@@ -78,8 +85,8 @@ test('actual HUD uses vector furniture after the world transform while health, c
  const furniture=screen.calls.map((call,index)=>({call,index})).filter(({call})=>call[0]==='drawImage'&&call[1]?.key);
  assert.deepEqual(new Set(furniture.map(({call})=>call[1].key)),new Set(['railP1','railP2','portraitP1','portraitP2','timer','weaponP1','weaponP2','barcodeMark']));
  assert.ok(furniture.every(({index})=>index>reset),'Furniture stays fixed to viewport');
- assert.ok(screen.calls.some(([key,x,y,w,h])=>key==='fillRect'&&x===122&&y===46&&w===200&&h===31),'P1 health remains its exact native value');
- assert.ok(screen.calls.some(([key,x,y,w,h])=>key==='fillRect'&&x===1058&&y===46&&w===100&&h===31),'P2 meter drains inward');
+ assert.ok(screen.calls.some(([key,x,y,w,h])=>key==='fillRect'&&x===143&&y===55&&w===179&&h===13),'P1 health remains its exact native value');
+ assert.ok(screen.calls.some(([key,x,y,w,h])=>key==='fillRect'&&x===1047.5&&y===55&&w===89.5&&h===13),'P2 meter drains inward');
  for(const value of ['Six','Nine','50 / 100','25 / 100','90','PULSE DRIVER'])assert.ok(screen.calls.some(([key,text])=>key==='fillText'&&text===value),value);
  screen.calls.length=0;renderer.draw({match:{...match,phase:'ready'},views:[],art:[],portraits});
  assert.ok(screen.calls.some(([key,image])=>key==='drawImage'&&image===images.announcement));
@@ -100,4 +107,12 @@ test('actual online lobby bootstrap honors motion off even when the OS prefers r
   assert.equal(node('sound-setting').checked,!query.includes('sound=0'));
   lobby.destroy();
  }
+});
+
+test('hosted interface requires every current hazard asset while legacy portable nine-key art remains valid',async()=>{
+ const {loadInterfaceArt}=await import(loaderURL),spec=manifest();
+ for(const key of Object.keys(spec.assets).slice(9)){const partial=structuredClone(spec);delete partial.assets[key];const loaded=await loadInterfaceArt({baseURL:BASE,fetch:async()=>({ok:true,json:async()=>partial}),imageFactory:imagesFor(partial)});assert(loaded.failures.includes('manifest'),key+' missing hosted art rejects');}
+ const old=structuredClone(spec);for(const key of Object.keys(old.assets).slice(9))delete old.assets[key];
+ const bundle={interface:old,images:Object.fromEntries(Object.values(old.assets).map(a=>['assets/ui/'+a.file,'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg"/>')]))};
+ const legacy=await loadInterfaceArt({baseURL:'file:///D:/portable/fight.html',bundle,imageFactory:imagesFor(old)});assert.deepEqual(legacy.failures,[]);assert.equal(Object.keys(legacy.images).length,9);
 });

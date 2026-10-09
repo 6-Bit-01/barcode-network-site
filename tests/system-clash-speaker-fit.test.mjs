@@ -11,7 +11,17 @@ const rendererURL=new URL('../public/games/system-clash/play/fight-renderer.mjs'
 const rendererSource=fs.readFileSync(rendererURL,'utf8').replace(new RegExp("from '([.]/[^']+)'","g"),(_,relative)=>"from '"+new URL(relative,rendererURL).href+"'");
 const {speakerGeometry,speakerRockGeometry,machineViews,fittedSignatureCamera,additionalDeletionScene}=await import('data:text/javascript;base64,'+Buffer.from(rendererSource+'\nexport {speakerGeometry,speakerRockGeometry,machineViews,fittedSignatureCamera,additionalDeletionScene};').toString('base64'));
 const root=fileURLToPath(new URL('../public/games/system-clash/play/assets/',import.meta.url));
-function size(file){const bytes=Buffer.alloc(64),fd=fs.openSync(file,'r');try{fs.readSync(fd,bytes,0,64,0);}finally{fs.closeSync(fd);}if(bytes[0]===137)return {width:bytes.readUInt32BE(16),height:bytes.readUInt32BE(20)};assert.equal(bytes.toString('ascii',12,16),'VP8X');return {width:1+bytes.readUIntLE(24,3),height:1+bytes.readUIntLE(27,3)};}
+function size(file){
+ const bytes=fs.readFileSync(file);
+ if(bytes.length>=24&&bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])))return {width:bytes.readUInt32BE(16),height:bytes.readUInt32BE(20)};
+ assert(bytes.length>=12&&bytes.toString('ascii',0,4)==='RIFF'&&bytes.toString('ascii',8,12)==='WEBP','Native PNG or WebP image');
+ for(let at=12;at+8<=bytes.length;){const kind=bytes.toString('ascii',at,at+4),length=bytes.readUInt32LE(at+4),data=at+8;assert(data+length<=bytes.length,'Complete WebP chunk');
+  if(kind==='VP8X'){assert(length>=10);return {width:1+bytes.readUIntLE(data+4,3),height:1+bytes.readUIntLE(data+7,3)};}
+  if(kind==='VP8L'){assert(length>=5&&bytes[data]===0x2f);const value=bytes.readUInt32LE(data+1);return {width:1+(value&0x3fff),height:1+((value>>>14)&0x3fff)};}
+  if(kind==='VP8 '){assert(length>=10&&bytes.subarray(data+3,data+6).equals(Buffer.from([0x9d,0x01,0x2a])));return {width:bytes.readUInt16LE(data+6)&0x3fff,height:bytes.readUInt16LE(data+8)&0x3fff};}
+  at=data+length+(length&1);
+ }throw new Error('Unknown native sprite dimensions');
+}
 function native(id){const clips={};let manifest;for(const bank of ['fighters','arcade','deletions']){const folder=path.join(root,bank,id),data=JSON.parse(fs.readFileSync(path.join(folder,'manifest.json'),'utf8'));if(bank==='fighters')manifest=data;for(const [name,clip]of Object.entries(data.clips)){const key=bank==='deletions'?'delete-'+name:name;clips[key]=compileFightClip(clip,size(path.join(folder,clip.file)),data,key);}}return {manifest,clips};}
 const ids=['6-bit','9-bit','ash-flowers','cache-back','cliff','dj-floppydisc','doofnoobler','dr3wbaby','kaveman-brown','lyra','mac-modem','mr-nice-guy','ms-mayhem','papa-oak','stolz','wittyf0x'];
 const arts=Object.fromEntries(ids.map(id=>[id,native(id)]));

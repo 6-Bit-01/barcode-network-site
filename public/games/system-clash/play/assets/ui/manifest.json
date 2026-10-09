@@ -1,7 +1,7 @@
 {
   "version": 1,
   "brand": "BARCODE: SYSTEM CLASH",
-  "format": "original-native-svg",
+  "format": "original-native-svg-with-raster-art",
   "palette": {
     "black": "#08090c",
     "white": "#f6f0fc",
@@ -13,47 +13,105 @@
     "railP1": {
       "file": "hud-rail-p1.svg",
       "width": 412,
-      "height": 42
+      "height": 42,
+      "runtimeFile": "hud-rail-p1-art.webp"
     },
     "portraitP1": {
       "file": "portrait-frame-p1.svg",
       "width": 86,
-      "height": 86
+      "height": 86,
+      "runtimeFile": "portrait-art.webp"
     },
     "weaponP1": {
       "file": "weapon-socket-p1.svg",
       "width": 260,
-      "height": 31
+      "height": 31,
+      "runtimeFile": "weapon-art.webp"
     },
     "railP2": {
       "file": "hud-rail-p2.svg",
       "width": 412,
-      "height": 42
+      "height": 42,
+      "runtimeFile": "hud-rail-p2-art.webp"
     },
     "portraitP2": {
       "file": "portrait-frame-p2.svg",
       "width": 86,
-      "height": 86
+      "height": 86,
+      "runtimeFile": "portrait-art.webp"
     },
     "weaponP2": {
       "file": "weapon-socket-p2.svg",
       "width": 260,
-      "height": 31
+      "height": 31,
+      "runtimeFile": "weapon-art.webp"
     },
     "timer": {
       "file": "timer-plate.svg",
       "width": 130,
-      "height": 90
+      "height": 90,
+      "runtimeFile": "timer-art.webp"
     },
     "announcement": {
       "file": "announcement-backplate.svg",
       "width": 820,
-      "height": 154
+      "height": 154,
+      "runtimeFile": "announcement-art.webp"
     },
     "barcodeMark": {
       "file": "barcode-mark.svg",
       "width": 44,
       "height": 18
+    },
+    "tournamentNode": {
+      "file": "tournament-node.webp",
+      "width": 96,
+      "height": 96
+    },
+    "menuPlate": {
+      "file": "menu-plate.webp",
+      "width": 360,
+      "height": 90
+    },
+    "hazardShutter": {
+      "file": "hazard-shutter.webp",
+      "width": 480,
+      "height": 324
+    },
+    "hazardBeam": {
+      "file": "hazard-beam.webp",
+      "width": 820,
+      "height": 347
+    },
+    "hazardThorns": {
+      "file": "hazard-thorns.webp",
+      "width": 660,
+      "height": 492
+    },
+    "hazardFeedback": {
+      "file": "hazard-feedback.webp",
+      "width": 720,
+      "height": 500
+    },
+    "hazardBlast": {
+      "file": "hazard-blast.webp",
+      "width": 720,
+      "height": 502
+    },
+    "hazardBarrel": {
+      "file": "hazard-barrel.webp",
+      "width": 350,
+      "height": 200
+    },
+    "hazardWarning": {
+      "file": "hazard-warning.webp",
+      "width": 840,
+      "height": 136
+    },
+    "wallCracks": {
+      "file": "wall-cracks.webp",
+      "width": 440,
+      "height": 360
     }
   }
 }

@@ -1,1 +1,4119 @@
-{"id":"mac-modem","character":"Mac Modem","baseId":"mac-modem","variantOf":null,"height":320,"status":"pose and timing pilot","description":"Four whole-body key poses per action and facing. Smoother frames remain to be produced.","clips":{"idle":{"file":"combat.png","label":"Idle","frames":{"right":[{"rect":[76,18,194,288],"anchor":[96.0,285],"opaqueBounds":[3,3,191,285]},{"rect":[390,13,190,294],"anchor":[94.0,291],"opaqueBounds":[3,3,187,291]},{"rect":[684,14,195,293],"anchor":[97.5,290],"opaqueBounds":[3,3,192,290]},{"rect":[996,17,196,289],"anchor":[97.0,286],"opaqueBounds":[3,3,193,286]}],"left":[{"rect":[75,319,198,289],"anchor":[98.5,286],"opaqueBounds":[3,3,195,286]},{"rect":[376,318,197,292],"anchor":[98.0,289],"opaqueBounds":[3,3,194,289]},{"rect":[680,321,207,286],"anchor":[103.0,283],"opaqueBounds":[3,3,204,283]},{"rect":[1001,322,200,287],"anchor":[99.5,284],"opaqueBounds":[3,3,197,284]}]},"scale":1.130742,"order":[0,1,2,3,2,1],"frameMs":[180,180,180,180,180,180],"loop":true,"sourceSize":[1254,1254],"sourceRevision":"eb0967344607b8c3","runtimeFile":"combat.runtime.webp"},"punch":{"file":"../../animation-polish/mac-modem/punch.webp","label":"Punch","frames":{"right":[{"rect":[0,0,202,281],"anchor":[100.5,278],"opaqueBounds":[3,3,199,278],"attachments":{"head":[112.76,36],"torso":[108,101],"legs":[99.03999999999999,220.25],"grip":[137,61],"strike":[137,61],"strikeStart":[129.75,71]},"poseSource":{"kind":"approved","index":0,"pixelSha256":"a0683c4d89994396fb1a5c7ede5d84d9be1656a02497dfa6683375587d993933","originalRect":[75,636,202,281]},"pixelSha256":"ee51fbeb69ffc244376228919673dc5bdb289ca72617d3ca6d904e305e96fe35"},{"anchor":[102.0,283],"opaqueBounds":[2,2,202,283],"attachments":{"head":[123.009,45.673],"torso":[99.26,110.833],"legs":[102.913,208.269],"grip":[116.31,73.686],"strike":[121.182,73.686],"strikeStart":[112.048,82.973]},"poseSource":{"kind":"generated","index":0,"sourceRect":[20,23,335,468],"uniformResample":0.608889},"pixelSha256":"d5506b78722955f11fb2c53642ac9a7eb327682e45219385e8827935998d36a6","rect":[272,0,204,285]},{"rect":[544,0,209,280],"anchor":[104,277],"opaqueBounds":[3,3,206,277],"attachments":{"head":[128.86,35.879999999999995],"torso":[116,102],"legs":[102.47,222.20000000000002],"grip":[74,51],"strike":[74,51],"strikeStart":[84.5,63.75]},"poseSource":{"kind":"approved","index":1,"pixelSha256":"191c76ce13de08211c5626de197fd78b2ecd266799cdcf63547f1367ecbbde3e","originalRect":[385,636,209,280]},"pixelSha256":"0fbd36581820c7c863d66b98b421a9a9e5af2ff2187d2786a853fcc5c92bad50"},{"anchor":[105.5,282],"opaqueBounds":[2,2,209,282],"attachments":{"head":[122.83,45.744],"torso":[103.372,109.784],"legs":[103.372,207.371],"grip":[199.447,68.31],"strike":[204.311,68.31],"strikeStart":[175.428,78.679]},"poseSource":{"kind":"generated","index":1,"sourceRect":[406,25,347,464],"uniformResample":0.608889},"pixelSha256":"e261b63db3732275503c15b8c1a6d47f28d8d5892235f454548a66265d780c61","rect":[816,0,211,283]},{"rect":[1088,0,246,280],"anchor":[103.5,277],"opaqueBounds":[3,3,243,277],"attachments":{"head":[115.8,35.879999999999995],"torso":[118,98],"legs":[91.8,219.46],"grip":[231,55],"strike":[231,55],"strikeStart":[202.75,65.75]},"poseSource":{"kind":"approved","index":2,"pixelSha256":"3ca5dc7e642bba908c55784fb6a9cf9795bdd2736bcda6cefa09bca3250b3bcf","originalRect":[678,639,246,280]},"pixelSha256":"36592823bc5a6b67ed6c00787881f61f25b955a2e099ebff2b11189e46cd5056"},{"anchor":[109.0,281],"opaqueBounds":[1,2,217,281],"attachments":{"head":[120.786,45.744],"torso":[105.535,109.784],"legs":[105.535,207.371],"grip":[203.749,68.92],"strike":[208.63,68.92],"strikeStart":[179.196,79.136]},"poseSource":{"kind":"generated","index":2,"sourceRect":[792,25,359,464],"uniformResample":0.608889},"pixelSha256":"14c974eb795fd17cd4a6258ca070d45b6e85363e669d60d558964525ff347c93","rect":[1360,0,219,283]},{"rect":[1632,0,202,278],"anchor":[101,275],"opaqueBounds":[3,3,199,275],"attachments":{"head":[112.76,35.64],"torso":[104,100],"legs":[99.03999999999999,217.88],"grip":[135,58],"strike":[135,58],"strikeStart":[127.25,68.5]},"poseSource":{"kind":"approved","index":3,"pixelSha256":"bff0b6f3038905c5af4ce00ccffe265ecc6e20be6aa255cf3e498bb0b70dce20","originalRect":[1004,639,202,278]},"pixelSha256":"7f3fa670893ddaad9e3f9ff82f3872ff1d86874df97068da08d4d687f2f9937e"},{"anchor":[98.5,281],"opaqueBounds":[1,2,196,281],"attachments":{"head":[110.052,45.744],"torso":[86.34,109.784],"legs":[86.34,207.371],"grip":[144.71,66.481],"strike":[149.574,66.481],"strikeStart":[130.117,77.307]},"poseSource":{"kind":"generated","index":3,"sourceRect":[1205,25,324,464],"uniformResample":0.608889},"pixelSha256":"a69e0e64d06035fcf5bb794d02b8755478bcbeec11eedafc6f9dd5e47c584ac3","rect":[1904,0,197,283]}],"left":[{"rect":[0,285,199,282],"anchor":[99,279],"opaqueBounds":[3,3,196,279],"attachments":{"head":[87.92,36.12],"torso":[82,98],"legs":[101.43,221.04000000000002],"grip":[53,59],"strike":[53,59],"strikeStart":[60.25,68.75]},"poseSource":{"kind":"approved","index":0,"pixelSha256":"53a9b9f25592647007aa3f4ad4f5792ca79e3ba05bfe833b56a91578bbae4f7e","originalRect":[73,943,199,282]},"pixelSha256":"e68a7ff9abec70a77d4a6b7546f4bbc90340b9372b63eccb6968875d4f1ecde8"},{"anchor":[102.5,270],"opaqueBounds":[2,2,203,270],"attachments":{"head":[84.807,43.812],"torso":[100.67,118.658],"legs":[101.28,213.584],"grip":[87.247,73.02],"strike":[82.366,73.02],"strikeStart":[90.603,84.43]},"poseSource":{"kind":"generated","index":0,"sourceRect":[32,539,336,447],"uniformResample":0.608889},"pixelSha256":"d02f16310c2fb380b08813d2ba59c0c0d36c5d1c0e6bc71abaa2aca5c02eef13","rect":[272,285,205,272]},{"rect":[544,285,204,280],"anchor":[101,277],"opaqueBounds":[3,3,201,277],"attachments":{"head":[80.22,38.620000000000005],"torso":[94,100],"legs":[105.96000000000001,224.94000000000003],"grip":[153,71],"strike":[153,71],"strikeStart":[138.25,78.25]},"poseSource":{"kind":"approved","index":1,"pixelSha256":"3fc22acf487c90b46d838c0faf16f95a3df1a51471d7c9a063094eca62bb5327","originalRect":[384,945,204,280]},"pixelSha256":"0919047a57d859514b4c61216109dd27fbb44e56d4d3d0be0937a0780e541727"},{"anchor":[103.0,270],"opaqueBounds":[1,1,205,270],"attachments":{"head":[75.574,43.238],"torso":[92.03,117.535],"legs":[92.03,212.537],"grip":[14.018,59.681],"strike":[9.142,59.681],"strikeStart":[33.521,74.144]},"poseSource":{"kind":"generated","index":1,"sourceRect":[433,541,338,445],"uniformResample":0.608889},"pixelSha256":"fb709c7c0ba847f99b0be54f7cbb74b4845c1a814a8c8cd67e8114e5eeca6437","rect":[816,285,206,271]},{"rect":[1088,285,272,275],"anchor":[155,272],"opaqueBounds":[3,3,269,272],"attachments":{"head":[143.98000000000002,37.97],"torso":[110,102],"legs":[170.58,215.51000000000002],"grip":[14,54],"strike":[14,54],"strikeStart":[38,66]},"poseSource":{"kind":"approved","index":2,"pixelSha256":"9b897e6dba3b1db3436ef4b29732cf41f339e87d9857993bef94f411afd560a5","originalRect":[654,947,272,275]},"pixelSha256":"7fc48c1faaae6a8191bf6109108eccbd496387c78c2fb33861155eda392fc369"},{"anchor":[115.0,270],"opaqueBounds":[2,1,228,270],"attachments":{"head":[81.534,45.13],"torso":[97.354,119.534],"legs":[97.354,214.673],"grip":[13.995,59.157],"strike":[9.127,59.157],"strikeStart":[34.835,74.251]},"poseSource":{"kind":"generated","index":2,"sourceRect":[807,538,378,446],"uniformResample":0.608889},"pixelSha256":"007326c6b1bf4b85192c18e25b15d35c22295fc75bff0d17e942c253677b5bc2","rect":[1360,285,230,272]},{"rect":[1632,285,195,277],"anchor":[97,274],"opaqueBounds":[3,3,192,274],"attachments":{"head":[86.16,35.519999999999996],"torso":[82,98],"legs":[99.39,217.09],"grip":[48,62],"strike":[48,62],"strikeStart":[56.5,71]},"poseSource":{"kind":"approved","index":3,"pixelSha256":"22f0c8abea4c2d6a3c5e3bc231710fa9ca1edd524958022d7cac568490d983f3","originalRect":[1007,945,195,277]},"pixelSha256":"b1bfae4828e21fc1ced0fc801230981c46d5bf1a20718b3758275574eef05fbe"},{"anchor":[93.0,271],"opaqueBounds":[2,2,184,271],"attachments":{"head":[61.392,46.312],"torso":[77.804,121.266],"legs":[77.804,216.328],"grip":[43.765,63.375],"strike":[38.902,63.375],"strikeStart":[52.275,77.848]},"poseSource":{"kind":"generated","index":3,"sourceRect":[1223,535,306,448],"uniformResample":0.608889},"pixelSha256":"22160d674003301821f42e0e57f770b7eafa4fe70a20852aad49ef43446bbc0e","rect":[1904,285,186,273]}]},"scale":1.170018,"order":[0,1,2,3,4,5,6,7,0],"frameMs":[45,45,40,40,110,50,50,45,45],"loop":false,"sourceSize":[2176,570],"contactMs":170,"sourceRevision":"37e21ba7fa60bc74","activeEndMs":280,"sourceSha256":"37e21ba7fa60bc749527f5e779fc931f370b754ca8b9aaa64ece79399d88d71c","animationPolish":{"version":1,"encoding":"webp-quality-94-alpha-preserved","approvedFile":"combat.png","approvedSha256":"eb0967344607b8c3ba627bfdd4c9ab29d3d99beba3070ef9566a144933ec106c","generatedSha256":"c83e17541eba1b6fece15126980228baaebbb76e893f871fc6c5bf4e20a29f15","privateLosslessSha256":"d0c53c8f81e1f621be3d59bb77ab8c51104ad813bbe4fd1d59fa0810f126a4a2","approvedTiming":{"order":[0,1,2,3,0],"frameMs":[90,80,110,100,90],"contactMs":170,"activeEndMs":280,"duration":470},"fullBodyPosesPerFacing":8}},"high":{"file":"hurt.png","label":"High hurt","frames":{"right":[{"rect":[24,62,222,337],"anchor":[110.0,334],"opaqueBounds":[3,3,219,334]},{"rect":[289,62,227,335],"anchor":[118.0,332],"opaqueBounds":[3,3,224,332]},{"rect":[539,69,231,327],"anchor":[120.5,324],"opaqueBounds":[3,3,228,324]},{"rect":[792,62,221,337],"anchor":[109.5,334],"opaqueBounds":[3,3,218,334]}],"left":[{"rect":[21,423,222,341],"anchor":[110.5,338],"opaqueBounds":[3,3,219,338]},{"rect":[280,429,218,335],"anchor":[107.0,332],"opaqueBounds":[3,3,215,332]},{"rect":[541,432,222,332],"anchor":[103.5,329],"opaqueBounds":[3,3,219,329]},{"rect":[789,423,221,341],"anchor":[110.5,338],"opaqueBounds":[3,3,218,338]}]},"scale":0.960961,"order":[0,1,2,3],"frameMs":[70,110,140,130],"loop":false,"sourceSize":[1024,1536],"reactionStartMs":70,"sourceRevision":"0b6d62cc232304e7","runtimeFile":"hurt.runtime.webp"},"low":{"file":"hurt.png","label":"Low hurt","frames":{"right":[{"rect":[22,789,219,337],"anchor":[109.5,334],"opaqueBounds":[3,3,216,334]},{"rect":[287,815,224,310],"anchor":[111.5,307],"opaqueBounds":[3,3,221,307]},{"rect":[548,882,192,244],"anchor":[95.5,241],"opaqueBounds":[3,3,189,241]},{"rect":[790,789,219,336],"anchor":[109.5,333],"opaqueBounds":[3,3,216,333]}],"left":[{"rect":[21,1146,225,333],"anchor":[112.0,330],"opaqueBounds":[3,3,222,330]},{"rect":[289,1156,221,323],"anchor":[109.5,320],"opaqueBounds":[3,3,218,320]},{"rect":[548,1205,200,274],"anchor":[99.0,271],"opaqueBounds":[3,3,197,271]},{"rect":[791,1146,221,332],"anchor":[110.0,329],"opaqueBounds":[3,3,218,329]}]},"scale":0.974125,"order":[0,1,2,3],"frameMs":[70,130,150,140],"loop":false,"sourceSize":[1024,1536],"reactionStartMs":70,"sourceRevision":"0b6d62cc232304e7","runtimeFile":"hurt.runtime.webp"},"walk":{"file":"movement-v1.png","label":"Advance","frames":{"right":[{"rect":[67,17,215,313],"anchor":[107.0,310],"opaqueBounds":[3,3,212,310]},{"rect":[402,11,211,315],"anchor":[101.0,312],"opaqueBounds":[3,3,208,312]},{"rect":[687,17,225,311],"anchor":[115.0,308],"opaqueBounds":[3,3,222,308]},{"rect":[1001,15,217,315],"anchor":[108.5,312],"opaqueBounds":[3,3,214,312]}],"left":[{"rect":[46,638,229,306],"anchor":[114.0,303],"opaqueBounds":[3,3,226,303]},{"rect":[361,639,225,304],"anchor":[112.0,301],"opaqueBounds":[3,3,222,301]},{"rect":[683,640,216,301],"anchor":[104.0,298],"opaqueBounds":[3,3,213,298]},{"rect":[995,642,218,304],"anchor":[108.0,301],"opaqueBounds":[3,3,215,301]}]},"scale":1.057851,"order":[0,1,2,3],"frameMs":[150,150,150,150],"loop":true,"sourceSize":[1254,1254],"sourceRevision":"5cfd603a2816a1b9","runtimeFile":"movement-v1.runtime.webp"},"crouch":{"file":"movement-v1.png","label":"Crouch","frames":{"right":[{"rect":[55,337,219,296],"anchor":[109.0,293],"opaqueBounds":[3,3,216,293]},{"rect":[402,359,185,276],"anchor":[92.0,273],"opaqueBounds":[3,3,182,273]},{"rect":[720,395,168,239],"anchor":[80.5,236],"opaqueBounds":[3,3,165,236]},{"rect":[1055,417,160,215],"anchor":[71.5,212],"opaqueBounds":[3,3,157,212]}],"left":[{"rect":[51,942,220,294],"anchor":[109.5,291],"opaqueBounds":[3,3,217,291]},{"rect":[392,961,199,272],"anchor":[99.5,269],"opaqueBounds":[3,3,196,269]},{"rect":[703,999,177,232],"anchor":[91.5,229],"opaqueBounds":[3,3,174,229]},{"rect":[1025,1020,159,213],"anchor":[80.5,210],"opaqueBounds":[3,3,156,210]}]},"scale":1.057851,"order":[0,1,2,3],"frameMs":[90,100,120,200],"loop":false,"sourceSize":[1254,1254],"sourceRevision":"5cfd603a2816a1b9","runtimeFile":"movement-v1.runtime.webp"},"block":{"file":"defense-kick-v1.png","label":"Block","frames":{"right":[{"rect":[74,12,214,299],"anchor":[106.5,296],"opaqueBounds":[3,3,211,296]},{"rect":[376,14,211,298],"anchor":[105.5,295],"opaqueBounds":[3,3,208,295]},{"rect":[680,26,224,285],"anchor":[102.0,282],"opaqueBounds":[3,3,221,282]},{"rect":[988,11,215,300],"anchor":[107.0,297],"opaqueBounds":[3,3,212,297]}],"left":[{"rect":[65,633,227,290],"anchor":[113.0,287],"opaqueBounds":[3,3,224,287]},{"rect":[379,632,215,291],"anchor":[107.0,288],"opaqueBounds":[3,3,212,288]},{"rect":[671,649,227,274],"anchor":[121.0,271],"opaqueBounds":[3,3,224,271]},{"rect":[1003,633,215,290],"anchor":[106.5,287],"opaqueBounds":[3,3,212,287]}]},"scale":1.109185,"order":[0,1,2,3],"frameMs":[80,90,160,110],"loop":false,"sourceSize":[1254,1254],"sourceRevision":"dc2825dd6afb7a98","runtimeFile":"defense-kick-v1.runtime.webp"},"kick":{"file":"defense-kick-v1.png","label":"Kick","frames":{"right":[{"rect":[73,316,215,303],"anchor":[106.5,300],"opaqueBounds":[3,3,212,300]},{"rect":[414,316,159,304],"anchor":[41.5,301],"opaqueBounds":[3,3,156,301]},{"rect":[656,338,323,279],"anchor":[91.0,276],"opaqueBounds":[3,3,320,276]},{"rect":[1034,316,140,301],"anchor":[62.0,298],"opaqueBounds":[3,3,137,298]}],"left":[{"rect":[67,927,228,301],"anchor":[113.5,298],"opaqueBounds":[3,3,225,298]},{"rect":[397,931,155,299],"anchor":[112.5,296],"opaqueBounds":[3,3,152,296]},{"rect":[592,947,353,282],"anchor":[252.5,279],"opaqueBounds":[3,3,350,279]},{"rect":[1031,929,141,298],"anchor":[81.5,295],"opaqueBounds":[3,3,138,295]}]},"scale":1.109185,"order":[0,1,2,3,0],"frameMs":[90,110,130,110,90],"loop":false,"sourceSize":[1254,1254],"contactMs":200,"sourceRevision":"dc2825dd6afb7a98","runtimeFile":"defense-kick-v1.runtime.webp"},"grabbed":{"file":"restraints-v1.png","label":"Grabbed","frames":{"right":[{"rect":[70,15,205,299],"anchor":[101.5,296],"opaqueBounds":[3,3,202,296]},{"rect":[392,9,182,306],"anchor":[90.5,303],"opaqueBounds":[3,3,179,303]},{"rect":[718,17,160,296],"anchor":[80.0,293],"opaqueBounds":[3,3,157,293]},{"rect":[1002,25,192,290],"anchor":[95.5,287],"opaqueBounds":[3,3,189,287]}],"left":[{"rect":[61,629,206,290],"anchor":[103.0,287],"opaqueBounds":[3,3,203,287]},{"rect":[387,623,189,298],"anchor":[93.5,295],"opaqueBounds":[3,3,186,295]},{"rect":[691,633,164,288],"anchor":[81.5,285],"opaqueBounds":[3,3,161,285]},{"rect":[1024,632,197,291],"anchor":[98.0,288],"opaqueBounds":[3,3,194,288]}]},"scale":1.12478,"order":[0,1,2,3],"frameMs":[90,130,230,150],"loop":false,"sourceSize":[1254,1254],"sourceRevision":"6c8db2e2d7a7b04c","runtimeFile":"restraints-v1.runtime.webp"},"thrown":{"file":"restraints-v1.png","label":"Thrown","frames":{"right":[{"rect":[55,319,208,293],"anchor":[103.5,290],"opaqueBounds":[3,3,205,290],"offset":[0,0]},{"rect":[364,337,253,257],"anchor":[187.5,272],"opaqueBounds":[3,3,250,254],"offset":[-20,0]},{"rect":[632,402,297,132],"anchor":[141.0,207],"opaqueBounds":[3,3,294,129],"offset":[-45,0]},{"rect":[949,514,296,92],"anchor":[144.0,89],"opaqueBounds":[3,3,293,89],"offset":[-65,0]}],"left":[{"rect":[60,931,213,291],"anchor":[106.5,288],"opaqueBounds":[3,3,210,288],"offset":[0,0]},{"rect":[329,940,250,256],"anchor":[79.5,279],"opaqueBounds":[3,3,247,253],"offset":[20,0]},{"rect":[643,1023,294,122],"anchor":[153.5,196],"opaqueBounds":[3,3,291,119],"offset":[45,0]},{"rect":[953,1122,288,94],"anchor":[148.5,91],"opaqueBounds":[3,3,285,91],"offset":[65,0]}]},"scale":1.12478,"order":[0,1,2,3],"frameMs":[100,160,160,220],"loop":false,"sourceSize":[1254,1254],"sourceRevision":"6c8db2e2d7a7b04c","runtimeFile":"restraints-v1.runtime.webp"},"knockdown":{"file":"floor-v1.png","label":"Knockdown","frames":{"right":[{"rect":[71,17,207,292],"anchor":[103.0,289],"opaqueBounds":[3,3,204,289]},{"rect":[346,74,272,235],"anchor":[182.0,232],"opaqueBounds":[3,3,269,232]},{"rect":[616,138,299,168],"anchor":[256.0,165],"opaqueBounds":[3,3,296,165]},{"rect":[934,240,307,71],"anchor":[151.0,68],"opaqueBounds":[3,3,304,68]}],"left":[{"rect":[68,634,206,289],"anchor":[102.5,286],"opaqueBounds":[3,3,203,286]},{"rect":[348,659,244,264],"anchor":[80.0,261],"opaqueBounds":[3,3,241,261]},{"rect":[598,740,312,182],"anchor":[46.0,179],"opaqueBounds":[3,3,309,179]},{"rect":[910,847,324,76],"anchor":[163.0,73],"opaqueBounds":[3,3,321,73]}]},"scale":1.12478,"order":[0,1,2,3],"frameMs":[90,130,160,250],"loop":false,"sourceSize":[1254,1254],"sourceRevision":"67ee8e2a03626bf3","runtimeFile":"floor-v1.runtime.webp"},"getup":{"file":"floor-v1.png","label":"Get up","frames":{"right":[{"rect":[934,240,307,71],"anchor":[151.0,68],"opaqueBounds":[3,3,304,68]},{"rect":[361,438,272,181],"anchor":[131.5,178],"opaqueBounds":[3,3,269,178]},{"rect":[695,402,207,214],"anchor":[103.5,211],"opaqueBounds":[3,3,204,211]},{"rect":[991,323,209,291],"anchor":[103.5,288],"opaqueBounds":[3,3,206,288]}],"left":[{"rect":[910,847,324,76],"anchor":[163.0,73],"opaqueBounds":[3,3,321,73]},{"rect":[352,1032,276,182],"anchor":[141.5,179],"opaqueBounds":[3,3,273,179]},{"rect":[678,977,196,238],"anchor":[97.0,235],"opaqueBounds":[3,3,193,235]},{"rect":[995,931,211,287],"anchor":[105.0,284],"opaqueBounds":[3,3,208,284]}]},"scale":1.12478,"order":[0,1,2,3],"frameMs":[180,180,180,150],"loop":false,"sourceSize":[1254,1254],"startFrom":"knockdown","sourceRevision":"67ee8e2a03626bf3","runtimeFile":"floor-v1.runtime.webp"}}}
+{
+  "id": "mac-modem",
+  "character": "Mac Modem",
+  "baseId": "mac-modem",
+  "variantOf": null,
+  "height": 320,
+  "status": "pose and timing pilot",
+  "description": "Four whole-body key poses per action and facing. Smoother frames remain to be produced.",
+  "clips": {
+    "idle": {
+      "file": "combat.png",
+      "label": "Idle",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              76,
+              18,
+              194,
+              288
+            ],
+            "anchor": [
+              96,
+              285
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              191,
+              285
+            ]
+          },
+          {
+            "rect": [
+              390,
+              13,
+              190,
+              294
+            ],
+            "anchor": [
+              94,
+              291
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              187,
+              291
+            ]
+          },
+          {
+            "rect": [
+              684,
+              14,
+              195,
+              293
+            ],
+            "anchor": [
+              97.5,
+              290
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              192,
+              290
+            ]
+          },
+          {
+            "rect": [
+              996,
+              17,
+              196,
+              289
+            ],
+            "anchor": [
+              97,
+              286
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              193,
+              286
+            ]
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              75,
+              319,
+              198,
+              289
+            ],
+            "anchor": [
+              98.5,
+              286
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              195,
+              286
+            ]
+          },
+          {
+            "rect": [
+              376,
+              318,
+              197,
+              292
+            ],
+            "anchor": [
+              98,
+              289
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              194,
+              289
+            ]
+          },
+          {
+            "rect": [
+              680,
+              321,
+              207,
+              286
+            ],
+            "anchor": [
+              103,
+              283
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              204,
+              283
+            ]
+          },
+          {
+            "rect": [
+              1001,
+              322,
+              200,
+              287
+            ],
+            "anchor": [
+              99.5,
+              284
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              197,
+              284
+            ]
+          }
+        ]
+      },
+      "scale": 1.130742,
+      "order": [
+        0,
+        1,
+        2,
+        3,
+        2,
+        1
+      ],
+      "frameMs": [
+        180,
+        180,
+        180,
+        180,
+        180,
+        180
+      ],
+      "loop": true,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "eb0967344607b8c3",
+      "runtimeFile": "combat.runtime.webp"
+    },
+    "punch": {
+      "file": "../../animation-polish/mac-modem/punch.webp",
+      "label": "Punch",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              0,
+              0,
+              202,
+              281
+            ],
+            "anchor": [
+              100.5,
+              278
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              199,
+              278
+            ],
+            "attachments": {
+              "head": [
+                112.76,
+                36
+              ],
+              "torso": [
+                108,
+                101
+              ],
+              "legs": [
+                99.03999999999999,
+                220.25
+              ],
+              "grip": [
+                137,
+                61
+              ],
+              "strike": [
+                137,
+                61
+              ],
+              "strikeStart": [
+                129.75,
+                71
+              ]
+            },
+            "poseSource": {
+              "kind": "approved",
+              "index": 0,
+              "pixelSha256": "a0683c4d89994396fb1a5c7ede5d84d9be1656a02497dfa6683375587d993933",
+              "originalRect": [
+                75,
+                636,
+                202,
+                281
+              ]
+            },
+            "pixelSha256": "ee51fbeb69ffc244376228919673dc5bdb289ca72617d3ca6d904e305e96fe35"
+          },
+          {
+            "anchor": [
+              102,
+              283
+            ],
+            "opaqueBounds": [
+              2,
+              2,
+              202,
+              283
+            ],
+            "attachments": {
+              "head": [
+                123.009,
+                45.673
+              ],
+              "torso": [
+                99.26,
+                110.833
+              ],
+              "legs": [
+                102.913,
+                208.269
+              ],
+              "grip": [
+                116.31,
+                73.686
+              ],
+              "strike": [
+                121.182,
+                73.686
+              ],
+              "strikeStart": [
+                112.048,
+                82.973
+              ]
+            },
+            "poseSource": {
+              "kind": "generated",
+              "index": 0,
+              "sourceRect": [
+                20,
+                23,
+                335,
+                468
+              ],
+              "uniformResample": 0.608889
+            },
+            "pixelSha256": "d5506b78722955f11fb2c53642ac9a7eb327682e45219385e8827935998d36a6",
+            "rect": [
+              272,
+              0,
+              204,
+              285
+            ]
+          },
+          {
+            "rect": [
+              544,
+              0,
+              209,
+              280
+            ],
+            "anchor": [
+              104,
+              277
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              206,
+              277
+            ],
+            "attachments": {
+              "head": [
+                128.86,
+                35.879999999999995
+              ],
+              "torso": [
+                116,
+                102
+              ],
+              "legs": [
+                102.47,
+                222.20000000000002
+              ],
+              "grip": [
+                74,
+                51
+              ],
+              "strike": [
+                74,
+                51
+              ],
+              "strikeStart": [
+                84.5,
+                63.75
+              ]
+            },
+            "poseSource": {
+              "kind": "approved",
+              "index": 1,
+              "pixelSha256": "191c76ce13de08211c5626de197fd78b2ecd266799cdcf63547f1367ecbbde3e",
+              "originalRect": [
+                385,
+                636,
+                209,
+                280
+              ]
+            },
+            "pixelSha256": "0fbd36581820c7c863d66b98b421a9a9e5af2ff2187d2786a853fcc5c92bad50"
+          },
+          {
+            "anchor": [
+              105.5,
+              282
+            ],
+            "opaqueBounds": [
+              2,
+              2,
+              209,
+              282
+            ],
+            "attachments": {
+              "head": [
+                122.83,
+                45.744
+              ],
+              "torso": [
+                103.372,
+                109.784
+              ],
+              "legs": [
+                103.372,
+                207.371
+              ],
+              "grip": [
+                199.447,
+                68.31
+              ],
+              "strike": [
+                204.311,
+                68.31
+              ],
+              "strikeStart": [
+                175.428,
+                78.679
+              ]
+            },
+            "poseSource": {
+              "kind": "generated",
+              "index": 1,
+              "sourceRect": [
+                406,
+                25,
+                347,
+                464
+              ],
+              "uniformResample": 0.608889
+            },
+            "pixelSha256": "e261b63db3732275503c15b8c1a6d47f28d8d5892235f454548a66265d780c61",
+            "rect": [
+              816,
+              0,
+              211,
+              283
+            ]
+          },
+          {
+            "rect": [
+              1088,
+              0,
+              246,
+              280
+            ],
+            "anchor": [
+              103.5,
+              277
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              243,
+              277
+            ],
+            "attachments": {
+              "head": [
+                115.8,
+                35.879999999999995
+              ],
+              "torso": [
+                118,
+                98
+              ],
+              "legs": [
+                91.8,
+                219.46
+              ],
+              "grip": [
+                231,
+                55
+              ],
+              "strike": [
+                231,
+                55
+              ],
+              "strikeStart": [
+                202.75,
+                65.75
+              ]
+            },
+            "poseSource": {
+              "kind": "approved",
+              "index": 2,
+              "pixelSha256": "3ca5dc7e642bba908c55784fb6a9cf9795bdd2736bcda6cefa09bca3250b3bcf",
+              "originalRect": [
+                678,
+                639,
+                246,
+                280
+              ]
+            },
+            "pixelSha256": "36592823bc5a6b67ed6c00787881f61f25b955a2e099ebff2b11189e46cd5056"
+          },
+          {
+            "anchor": [
+              109,
+              281
+            ],
+            "opaqueBounds": [
+              1,
+              2,
+              217,
+              281
+            ],
+            "attachments": {
+              "head": [
+                120.786,
+                45.744
+              ],
+              "torso": [
+                105.535,
+                109.784
+              ],
+              "legs": [
+                105.535,
+                207.371
+              ],
+              "grip": [
+                203.749,
+                68.92
+              ],
+              "strike": [
+                208.63,
+                68.92
+              ],
+              "strikeStart": [
+                179.196,
+                79.136
+              ]
+            },
+            "poseSource": {
+              "kind": "generated",
+              "index": 2,
+              "sourceRect": [
+                792,
+                25,
+                359,
+                464
+              ],
+              "uniformResample": 0.608889
+            },
+            "pixelSha256": "14c974eb795fd17cd4a6258ca070d45b6e85363e669d60d558964525ff347c93",
+            "rect": [
+              1360,
+              0,
+              219,
+              283
+            ]
+          },
+          {
+            "rect": [
+              1632,
+              0,
+              202,
+              278
+            ],
+            "anchor": [
+              101,
+              275
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              199,
+              275
+            ],
+            "attachments": {
+              "head": [
+                112.76,
+                35.64
+              ],
+              "torso": [
+                104,
+                100
+              ],
+              "legs": [
+                99.03999999999999,
+                217.88
+              ],
+              "grip": [
+                135,
+                58
+              ],
+              "strike": [
+                135,
+                58
+              ],
+              "strikeStart": [
+                127.25,
+                68.5
+              ]
+            },
+            "poseSource": {
+              "kind": "approved",
+              "index": 3,
+              "pixelSha256": "bff0b6f3038905c5af4ce00ccffe265ecc6e20be6aa255cf3e498bb0b70dce20",
+              "originalRect": [
+                1004,
+                639,
+                202,
+                278
+              ]
+            },
+            "pixelSha256": "7f3fa670893ddaad9e3f9ff82f3872ff1d86874df97068da08d4d687f2f9937e"
+          },
+          {
+            "anchor": [
+              98.5,
+              281
+            ],
+            "opaqueBounds": [
+              1,
+              2,
+              196,
+              281
+            ],
+            "attachments": {
+              "head": [
+                110.052,
+                45.744
+              ],
+              "torso": [
+                86.34,
+                109.784
+              ],
+              "legs": [
+                86.34,
+                207.371
+              ],
+              "grip": [
+                144.71,
+                66.481
+              ],
+              "strike": [
+                149.574,
+                66.481
+              ],
+              "strikeStart": [
+                130.117,
+                77.307
+              ]
+            },
+            "poseSource": {
+              "kind": "generated",
+              "index": 3,
+              "sourceRect": [
+                1205,
+                25,
+                324,
+                464
+              ],
+              "uniformResample": 0.608889
+            },
+            "pixelSha256": "a69e0e64d06035fcf5bb794d02b8755478bcbeec11eedafc6f9dd5e47c584ac3",
+            "rect": [
+              1904,
+              0,
+              197,
+              283
+            ]
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              0,
+              285,
+              199,
+              282
+            ],
+            "anchor": [
+              99,
+              279
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              196,
+              279
+            ],
+            "attachments": {
+              "head": [
+                87.92,
+                36.12
+              ],
+              "torso": [
+                82,
+                98
+              ],
+              "legs": [
+                101.43,
+                221.04000000000002
+              ],
+              "grip": [
+                53,
+                59
+              ],
+              "strike": [
+                53,
+                59
+              ],
+              "strikeStart": [
+                60.25,
+                68.75
+              ]
+            },
+            "poseSource": {
+              "kind": "approved",
+              "index": 0,
+              "pixelSha256": "53a9b9f25592647007aa3f4ad4f5792ca79e3ba05bfe833b56a91578bbae4f7e",
+              "originalRect": [
+                73,
+                943,
+                199,
+                282
+              ]
+            },
+            "pixelSha256": "e68a7ff9abec70a77d4a6b7546f4bbc90340b9372b63eccb6968875d4f1ecde8"
+          },
+          {
+            "anchor": [
+              102.5,
+              270
+            ],
+            "opaqueBounds": [
+              2,
+              2,
+              203,
+              270
+            ],
+            "attachments": {
+              "head": [
+                84.807,
+                43.812
+              ],
+              "torso": [
+                100.67,
+                118.658
+              ],
+              "legs": [
+                101.28,
+                213.584
+              ],
+              "grip": [
+                87.247,
+                73.02
+              ],
+              "strike": [
+                82.366,
+                73.02
+              ],
+              "strikeStart": [
+                90.603,
+                84.43
+              ]
+            },
+            "poseSource": {
+              "kind": "generated",
+              "index": 0,
+              "sourceRect": [
+                32,
+                539,
+                336,
+                447
+              ],
+              "uniformResample": 0.608889
+            },
+            "pixelSha256": "d02f16310c2fb380b08813d2ba59c0c0d36c5d1c0e6bc71abaa2aca5c02eef13",
+            "rect": [
+              272,
+              285,
+              205,
+              272
+            ]
+          },
+          {
+            "rect": [
+              544,
+              285,
+              204,
+              280
+            ],
+            "anchor": [
+              101,
+              277
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              201,
+              277
+            ],
+            "attachments": {
+              "head": [
+                80.22,
+                38.620000000000005
+              ],
+              "torso": [
+                94,
+                100
+              ],
+              "legs": [
+                105.96000000000001,
+                224.94000000000003
+              ],
+              "grip": [
+                153,
+                71
+              ],
+              "strike": [
+                153,
+                71
+              ],
+              "strikeStart": [
+                138.25,
+                78.25
+              ]
+            },
+            "poseSource": {
+              "kind": "approved",
+              "index": 1,
+              "pixelSha256": "3fc22acf487c90b46d838c0faf16f95a3df1a51471d7c9a063094eca62bb5327",
+              "originalRect": [
+                384,
+                945,
+                204,
+                280
+              ]
+            },
+            "pixelSha256": "0919047a57d859514b4c61216109dd27fbb44e56d4d3d0be0937a0780e541727"
+          },
+          {
+            "anchor": [
+              103,
+              270
+            ],
+            "opaqueBounds": [
+              1,
+              1,
+              205,
+              270
+            ],
+            "attachments": {
+              "head": [
+                75.574,
+                43.238
+              ],
+              "torso": [
+                92.03,
+                117.535
+              ],
+              "legs": [
+                92.03,
+                212.537
+              ],
+              "grip": [
+                14.018,
+                59.681
+              ],
+              "strike": [
+                9.142,
+                59.681
+              ],
+              "strikeStart": [
+                33.521,
+                74.144
+              ]
+            },
+            "poseSource": {
+              "kind": "generated",
+              "index": 1,
+              "sourceRect": [
+                433,
+                541,
+                338,
+                445
+              ],
+              "uniformResample": 0.608889
+            },
+            "pixelSha256": "fb709c7c0ba847f99b0be54f7cbb74b4845c1a814a8c8cd67e8114e5eeca6437",
+            "rect": [
+              816,
+              285,
+              206,
+              271
+            ]
+          },
+          {
+            "rect": [
+              1088,
+              285,
+              272,
+              275
+            ],
+            "anchor": [
+              155,
+              272
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              269,
+              272
+            ],
+            "attachments": {
+              "head": [
+                143.98000000000002,
+                37.97
+              ],
+              "torso": [
+                110,
+                102
+              ],
+              "legs": [
+                170.58,
+                215.51000000000002
+              ],
+              "grip": [
+                14,
+                54
+              ],
+              "strike": [
+                14,
+                54
+              ],
+              "strikeStart": [
+                38,
+                66
+              ]
+            },
+            "poseSource": {
+              "kind": "approved",
+              "index": 2,
+              "pixelSha256": "9b897e6dba3b1db3436ef4b29732cf41f339e87d9857993bef94f411afd560a5",
+              "originalRect": [
+                654,
+                947,
+                272,
+                275
+              ]
+            },
+            "pixelSha256": "7fc48c1faaae6a8191bf6109108eccbd496387c78c2fb33861155eda392fc369"
+          },
+          {
+            "anchor": [
+              115,
+              270
+            ],
+            "opaqueBounds": [
+              2,
+              1,
+              228,
+              270
+            ],
+            "attachments": {
+              "head": [
+                81.534,
+                45.13
+              ],
+              "torso": [
+                97.354,
+                119.534
+              ],
+              "legs": [
+                97.354,
+                214.673
+              ],
+              "grip": [
+                13.995,
+                59.157
+              ],
+              "strike": [
+                9.127,
+                59.157
+              ],
+              "strikeStart": [
+                34.835,
+                74.251
+              ]
+            },
+            "poseSource": {
+              "kind": "generated",
+              "index": 2,
+              "sourceRect": [
+                807,
+                538,
+                378,
+                446
+              ],
+              "uniformResample": 0.608889
+            },
+            "pixelSha256": "007326c6b1bf4b85192c18e25b15d35c22295fc75bff0d17e942c253677b5bc2",
+            "rect": [
+              1360,
+              285,
+              230,
+              272
+            ]
+          },
+          {
+            "rect": [
+              1632,
+              285,
+              195,
+              277
+            ],
+            "anchor": [
+              97,
+              274
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              192,
+              274
+            ],
+            "attachments": {
+              "head": [
+                86.16,
+                35.519999999999996
+              ],
+              "torso": [
+                82,
+                98
+              ],
+              "legs": [
+                99.39,
+                217.09
+              ],
+              "grip": [
+                48,
+                62
+              ],
+              "strike": [
+                48,
+                62
+              ],
+              "strikeStart": [
+                56.5,
+                71
+              ]
+            },
+            "poseSource": {
+              "kind": "approved",
+              "index": 3,
+              "pixelSha256": "22f0c8abea4c2d6a3c5e3bc231710fa9ca1edd524958022d7cac568490d983f3",
+              "originalRect": [
+                1007,
+                945,
+                195,
+                277
+              ]
+            },
+            "pixelSha256": "b1bfae4828e21fc1ced0fc801230981c46d5bf1a20718b3758275574eef05fbe"
+          },
+          {
+            "anchor": [
+              93,
+              271
+            ],
+            "opaqueBounds": [
+              2,
+              2,
+              184,
+              271
+            ],
+            "attachments": {
+              "head": [
+                61.392,
+                46.312
+              ],
+              "torso": [
+                77.804,
+                121.266
+              ],
+              "legs": [
+                77.804,
+                216.328
+              ],
+              "grip": [
+                43.765,
+                63.375
+              ],
+              "strike": [
+                38.902,
+                63.375
+              ],
+              "strikeStart": [
+                52.275,
+                77.848
+              ]
+            },
+            "poseSource": {
+              "kind": "generated",
+              "index": 3,
+              "sourceRect": [
+                1223,
+                535,
+                306,
+                448
+              ],
+              "uniformResample": 0.608889
+            },
+            "pixelSha256": "22160d674003301821f42e0e57f770b7eafa4fe70a20852aad49ef43446bbc0e",
+            "rect": [
+              1904,
+              285,
+              186,
+              273
+            ]
+          }
+        ]
+      },
+      "scale": 1.170018,
+      "order": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        0
+      ],
+      "frameMs": [
+        45,
+        45,
+        40,
+        40,
+        110,
+        50,
+        50,
+        45,
+        45
+      ],
+      "loop": false,
+      "sourceSize": [
+        2176,
+        570
+      ],
+      "contactMs": 170,
+      "sourceRevision": "37e21ba7fa60bc74",
+      "activeEndMs": 280,
+      "sourceSha256": "37e21ba7fa60bc749527f5e779fc931f370b754ca8b9aaa64ece79399d88d71c",
+      "animationPolish": {
+        "version": 1,
+        "encoding": "webp-quality-94-alpha-preserved",
+        "approvedFile": "combat.png",
+        "approvedSha256": "eb0967344607b8c3ba627bfdd4c9ab29d3d99beba3070ef9566a144933ec106c",
+        "generatedSha256": "c83e17541eba1b6fece15126980228baaebbb76e893f871fc6c5bf4e20a29f15",
+        "privateLosslessSha256": "d0c53c8f81e1f621be3d59bb77ab8c51104ad813bbe4fd1d59fa0810f126a4a2",
+        "approvedTiming": {
+          "order": [
+            0,
+            1,
+            2,
+            3,
+            0
+          ],
+          "frameMs": [
+            90,
+            80,
+            110,
+            100,
+            90
+          ],
+          "contactMs": 170,
+          "activeEndMs": 280,
+          "duration": 470
+        },
+        "fullBodyPosesPerFacing": 8
+      }
+    },
+    "high": {
+      "file": "hurt.png",
+      "label": "High hurt",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              24,
+              62,
+              222,
+              337
+            ],
+            "anchor": [
+              110,
+              334
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              219,
+              334
+            ]
+          },
+          {
+            "rect": [
+              289,
+              62,
+              227,
+              335
+            ],
+            "anchor": [
+              118,
+              332
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              224,
+              332
+            ]
+          },
+          {
+            "rect": [
+              539,
+              69,
+              231,
+              327
+            ],
+            "anchor": [
+              120.5,
+              324
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              228,
+              324
+            ]
+          },
+          {
+            "rect": [
+              792,
+              62,
+              221,
+              337
+            ],
+            "anchor": [
+              109.5,
+              334
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              218,
+              334
+            ]
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              21,
+              423,
+              222,
+              341
+            ],
+            "anchor": [
+              110.5,
+              338
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              219,
+              338
+            ]
+          },
+          {
+            "rect": [
+              280,
+              429,
+              218,
+              335
+            ],
+            "anchor": [
+              107,
+              332
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              215,
+              332
+            ]
+          },
+          {
+            "rect": [
+              541,
+              432,
+              222,
+              332
+            ],
+            "anchor": [
+              103.5,
+              329
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              219,
+              329
+            ]
+          },
+          {
+            "rect": [
+              789,
+              423,
+              221,
+              341
+            ],
+            "anchor": [
+              110.5,
+              338
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              218,
+              338
+            ]
+          }
+        ]
+      },
+      "scale": 0.960961,
+      "order": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "frameMs": [
+        70,
+        110,
+        140,
+        130
+      ],
+      "loop": false,
+      "sourceSize": [
+        1024,
+        1536
+      ],
+      "reactionStartMs": 70,
+      "sourceRevision": "0b6d62cc232304e7",
+      "runtimeFile": "hurt.runtime.webp"
+    },
+    "low": {
+      "file": "hurt.png",
+      "label": "Low hurt",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              22,
+              789,
+              219,
+              337
+            ],
+            "anchor": [
+              109.5,
+              334
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              216,
+              334
+            ]
+          },
+          {
+            "rect": [
+              287,
+              815,
+              224,
+              310
+            ],
+            "anchor": [
+              111.5,
+              307
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              221,
+              307
+            ]
+          },
+          {
+            "rect": [
+              548,
+              882,
+              192,
+              244
+            ],
+            "anchor": [
+              95.5,
+              241
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              189,
+              241
+            ]
+          },
+          {
+            "rect": [
+              790,
+              789,
+              219,
+              336
+            ],
+            "anchor": [
+              109.5,
+              333
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              216,
+              333
+            ]
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              21,
+              1146,
+              225,
+              333
+            ],
+            "anchor": [
+              112,
+              330
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              222,
+              330
+            ]
+          },
+          {
+            "rect": [
+              289,
+              1156,
+              221,
+              323
+            ],
+            "anchor": [
+              109.5,
+              320
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              218,
+              320
+            ]
+          },
+          {
+            "rect": [
+              548,
+              1205,
+              200,
+              274
+            ],
+            "anchor": [
+              99,
+              271
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              197,
+              271
+            ]
+          },
+          {
+            "rect": [
+              791,
+              1146,
+              221,
+              332
+            ],
+            "anchor": [
+              110,
+              329
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              218,
+              329
+            ]
+          }
+        ]
+      },
+      "scale": 0.974125,
+      "order": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "frameMs": [
+        70,
+        130,
+        150,
+        140
+      ],
+      "loop": false,
+      "sourceSize": [
+        1024,
+        1536
+      ],
+      "reactionStartMs": 70,
+      "sourceRevision": "0b6d62cc232304e7",
+      "runtimeFile": "hurt.runtime.webp"
+    },
+    "walk": {
+      "file": "movement-v1.png",
+      "label": "Advance",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              67,
+              17,
+              215,
+              313
+            ],
+            "anchor": [
+              107,
+              310
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              212,
+              310
+            ]
+          },
+          {
+            "rect": [
+              402,
+              11,
+              211,
+              315
+            ],
+            "anchor": [
+              101,
+              312
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              208,
+              312
+            ]
+          },
+          {
+            "rect": [
+              687,
+              17,
+              225,
+              311
+            ],
+            "anchor": [
+              115,
+              308
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              222,
+              308
+            ]
+          },
+          {
+            "rect": [
+              1001,
+              15,
+              217,
+              315
+            ],
+            "anchor": [
+              108.5,
+              312
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              214,
+              312
+            ]
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              46,
+              638,
+              229,
+              306
+            ],
+            "anchor": [
+              114,
+              303
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              226,
+              303
+            ]
+          },
+          {
+            "rect": [
+              361,
+              639,
+              225,
+              304
+            ],
+            "anchor": [
+              112,
+              301
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              222,
+              301
+            ]
+          },
+          {
+            "rect": [
+              683,
+              640,
+              216,
+              301
+            ],
+            "anchor": [
+              104,
+              298
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              213,
+              298
+            ]
+          },
+          {
+            "rect": [
+              995,
+              642,
+              218,
+              304
+            ],
+            "anchor": [
+              108,
+              301
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              215,
+              301
+            ]
+          }
+        ]
+      },
+      "scale": 1.057851,
+      "order": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "frameMs": [
+        150,
+        150,
+        150,
+        150
+      ],
+      "loop": true,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "5cfd603a2816a1b9",
+      "runtimeFile": "movement-v1.runtime.webp"
+    },
+    "crouch": {
+      "file": "movement-v1.png",
+      "label": "Crouch",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              55,
+              337,
+              219,
+              296
+            ],
+            "anchor": [
+              109,
+              293
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              216,
+              293
+            ]
+          },
+          {
+            "rect": [
+              402,
+              359,
+              185,
+              276
+            ],
+            "anchor": [
+              92,
+              273
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              182,
+              273
+            ]
+          },
+          {
+            "rect": [
+              720,
+              395,
+              168,
+              239
+            ],
+            "anchor": [
+              80.5,
+              236
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              165,
+              236
+            ]
+          },
+          {
+            "rect": [
+              1055,
+              417,
+              160,
+              215
+            ],
+            "anchor": [
+              71.5,
+              212
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              157,
+              212
+            ]
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              51,
+              942,
+              220,
+              294
+            ],
+            "anchor": [
+              109.5,
+              291
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              217,
+              291
+            ]
+          },
+          {
+            "rect": [
+              392,
+              961,
+              199,
+              272
+            ],
+            "anchor": [
+              99.5,
+              269
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              196,
+              269
+            ]
+          },
+          {
+            "rect": [
+              703,
+              999,
+              177,
+              232
+            ],
+            "anchor": [
+              91.5,
+              229
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              174,
+              229
+            ]
+          },
+          {
+            "rect": [
+              1025,
+              1020,
+              159,
+              213
+            ],
+            "anchor": [
+              80.5,
+              210
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              156,
+              210
+            ]
+          }
+        ]
+      },
+      "scale": 1.057851,
+      "order": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "frameMs": [
+        90,
+        100,
+        120,
+        200
+      ],
+      "loop": false,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "5cfd603a2816a1b9",
+      "runtimeFile": "movement-v1.runtime.webp"
+    },
+    "block": {
+      "file": "defense-kick-v1.png",
+      "label": "Block",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              74,
+              12,
+              214,
+              299
+            ],
+            "anchor": [
+              106.5,
+              296
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              211,
+              296
+            ]
+          },
+          {
+            "rect": [
+              376,
+              14,
+              211,
+              298
+            ],
+            "anchor": [
+              105.5,
+              295
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              208,
+              295
+            ]
+          },
+          {
+            "rect": [
+              680,
+              26,
+              224,
+              285
+            ],
+            "anchor": [
+              102,
+              282
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              221,
+              282
+            ]
+          },
+          {
+            "rect": [
+              988,
+              11,
+              215,
+              300
+            ],
+            "anchor": [
+              107,
+              297
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              212,
+              297
+            ]
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              65,
+              633,
+              227,
+              290
+            ],
+            "anchor": [
+              113,
+              287
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              224,
+              287
+            ]
+          },
+          {
+            "rect": [
+              379,
+              632,
+              215,
+              291
+            ],
+            "anchor": [
+              107,
+              288
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              212,
+              288
+            ]
+          },
+          {
+            "rect": [
+              671,
+              649,
+              227,
+              274
+            ],
+            "anchor": [
+              121,
+              271
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              224,
+              271
+            ]
+          },
+          {
+            "rect": [
+              1003,
+              633,
+              215,
+              290
+            ],
+            "anchor": [
+              106.5,
+              287
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              212,
+              287
+            ]
+          }
+        ]
+      },
+      "scale": 1.109185,
+      "order": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "frameMs": [
+        80,
+        90,
+        160,
+        110
+      ],
+      "loop": false,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "dc2825dd6afb7a98",
+      "runtimeFile": "defense-kick-v1.runtime.webp"
+    },
+    "kick": {
+      "file": "defense-kick-v1.png",
+      "label": "Kick",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              73,
+              316,
+              215,
+              303
+            ],
+            "anchor": [
+              106.5,
+              300
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              212,
+              300
+            ]
+          },
+          {
+            "rect": [
+              414,
+              316,
+              159,
+              304
+            ],
+            "anchor": [
+              41.5,
+              301
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              156,
+              301
+            ]
+          },
+          {
+            "rect": [
+              656,
+              338,
+              323,
+              279
+            ],
+            "anchor": [
+              91,
+              276
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              320,
+              276
+            ]
+          },
+          {
+            "rect": [
+              1034,
+              316,
+              140,
+              301
+            ],
+            "anchor": [
+              62,
+              298
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              137,
+              298
+            ]
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              67,
+              927,
+              228,
+              301
+            ],
+            "anchor": [
+              113.5,
+              298
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              225,
+              298
+            ]
+          },
+          {
+            "rect": [
+              397,
+              931,
+              155,
+              299
+            ],
+            "anchor": [
+              112.5,
+              296
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              152,
+              296
+            ]
+          },
+          {
+            "rect": [
+              592,
+              947,
+              353,
+              282
+            ],
+            "anchor": [
+              252.5,
+              279
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              350,
+              279
+            ]
+          },
+          {
+            "rect": [
+              1031,
+              929,
+              141,
+              298
+            ],
+            "anchor": [
+              81.5,
+              295
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              138,
+              295
+            ]
+          }
+        ]
+      },
+      "scale": 1.109185,
+      "order": [
+        0,
+        1,
+        2,
+        3,
+        0
+      ],
+      "frameMs": [
+        90,
+        110,
+        130,
+        110,
+        90
+      ],
+      "loop": false,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "contactMs": 200,
+      "sourceRevision": "dc2825dd6afb7a98",
+      "runtimeFile": "defense-kick-v1.runtime.webp"
+    },
+    "grabbed": {
+      "file": "restraints-v1.png",
+      "label": "Grabbed",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              70,
+              15,
+              205,
+              299
+            ],
+            "anchor": [
+              101.5,
+              296
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              202,
+              296
+            ]
+          },
+          {
+            "rect": [
+              392,
+              9,
+              182,
+              306
+            ],
+            "anchor": [
+              90.5,
+              303
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              179,
+              303
+            ]
+          },
+          {
+            "rect": [
+              718,
+              17,
+              160,
+              296
+            ],
+            "anchor": [
+              80,
+              293
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              157,
+              293
+            ]
+          },
+          {
+            "rect": [
+              1002,
+              25,
+              192,
+              290
+            ],
+            "anchor": [
+              95.5,
+              287
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              189,
+              287
+            ]
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              61,
+              629,
+              206,
+              290
+            ],
+            "anchor": [
+              103,
+              287
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              203,
+              287
+            ]
+          },
+          {
+            "rect": [
+              387,
+              623,
+              189,
+              298
+            ],
+            "anchor": [
+              93.5,
+              295
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              186,
+              295
+            ]
+          },
+          {
+            "rect": [
+              691,
+              633,
+              164,
+              288
+            ],
+            "anchor": [
+              81.5,
+              285
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              161,
+              285
+            ]
+          },
+          {
+            "rect": [
+              1024,
+              632,
+              197,
+              291
+            ],
+            "anchor": [
+              98,
+              288
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              194,
+              288
+            ]
+          }
+        ]
+      },
+      "scale": 1.12478,
+      "order": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "frameMs": [
+        90,
+        130,
+        230,
+        150
+      ],
+      "loop": false,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "6c8db2e2d7a7b04c",
+      "runtimeFile": "restraints-v1.runtime.webp"
+    },
+    "thrown": {
+      "file": "restraints-v1.png",
+      "label": "Thrown",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              55,
+              319,
+              208,
+              293
+            ],
+            "anchor": [
+              103.5,
+              290
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              205,
+              290
+            ],
+            "offset": [
+              0,
+              0
+            ]
+          },
+          {
+            "rect": [
+              364,
+              337,
+              253,
+              257
+            ],
+            "anchor": [
+              187.5,
+              272
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              250,
+              254
+            ],
+            "offset": [
+              -20,
+              0
+            ]
+          },
+          {
+            "rect": [
+              632,
+              402,
+              297,
+              132
+            ],
+            "anchor": [
+              141,
+              207
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              294,
+              129
+            ],
+            "offset": [
+              -45,
+              0
+            ]
+          },
+          {
+            "rect": [
+              949,
+              514,
+              296,
+              92
+            ],
+            "anchor": [
+              144,
+              89
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              293,
+              89
+            ],
+            "offset": [
+              -65,
+              0
+            ]
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              60,
+              931,
+              213,
+              291
+            ],
+            "anchor": [
+              106.5,
+              288
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              210,
+              288
+            ],
+            "offset": [
+              0,
+              0
+            ]
+          },
+          {
+            "rect": [
+              329,
+              940,
+              250,
+              256
+            ],
+            "anchor": [
+              79.5,
+              279
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              247,
+              253
+            ],
+            "offset": [
+              20,
+              0
+            ]
+          },
+          {
+            "rect": [
+              643,
+              1023,
+              294,
+              122
+            ],
+            "anchor": [
+              153.5,
+              196
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              291,
+              119
+            ],
+            "offset": [
+              45,
+              0
+            ]
+          },
+          {
+            "rect": [
+              953,
+              1122,
+              288,
+              94
+            ],
+            "anchor": [
+              148.5,
+              91
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              285,
+              91
+            ],
+            "offset": [
+              65,
+              0
+            ]
+          }
+        ]
+      },
+      "scale": 1.12478,
+      "order": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "frameMs": [
+        100,
+        160,
+        160,
+        220
+      ],
+      "loop": false,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "6c8db2e2d7a7b04c",
+      "runtimeFile": "restraints-v1.runtime.webp"
+    },
+    "knockdown": {
+      "file": "floor-v1.png",
+      "label": "Knockdown",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              71,
+              17,
+              207,
+              292
+            ],
+            "anchor": [
+              103,
+              289
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              204,
+              289
+            ]
+          },
+          {
+            "rect": [
+              346,
+              74,
+              272,
+              235
+            ],
+            "anchor": [
+              182,
+              232
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              269,
+              232
+            ]
+          },
+          {
+            "rect": [
+              616,
+              138,
+              299,
+              168
+            ],
+            "anchor": [
+              256,
+              165
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              296,
+              165
+            ]
+          },
+          {
+            "rect": [
+              934,
+              240,
+              307,
+              71
+            ],
+            "anchor": [
+              151,
+              68
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              304,
+              68
+            ]
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              68,
+              634,
+              206,
+              289
+            ],
+            "anchor": [
+              102.5,
+              286
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              203,
+              286
+            ]
+          },
+          {
+            "rect": [
+              348,
+              659,
+              244,
+              264
+            ],
+            "anchor": [
+              80,
+              261
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              241,
+              261
+            ]
+          },
+          {
+            "rect": [
+              598,
+              740,
+              312,
+              182
+            ],
+            "anchor": [
+              46,
+              179
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              309,
+              179
+            ]
+          },
+          {
+            "rect": [
+              910,
+              847,
+              324,
+              76
+            ],
+            "anchor": [
+              163,
+              73
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              321,
+              73
+            ]
+          }
+        ]
+      },
+      "scale": 1.12478,
+      "order": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "frameMs": [
+        90,
+        130,
+        160,
+        250
+      ],
+      "loop": false,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "67ee8e2a03626bf3",
+      "runtimeFile": "floor-v1.runtime.webp"
+    },
+    "getup": {
+      "file": "floor-v1.png",
+      "label": "Get up",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              934,
+              240,
+              307,
+              71
+            ],
+            "anchor": [
+              151,
+              68
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              304,
+              68
+            ]
+          },
+          {
+            "rect": [
+              361,
+              438,
+              272,
+              181
+            ],
+            "anchor": [
+              131.5,
+              178
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              269,
+              178
+            ]
+          },
+          {
+            "rect": [
+              695,
+              402,
+              207,
+              214
+            ],
+            "anchor": [
+              103.5,
+              211
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              204,
+              211
+            ]
+          },
+          {
+            "rect": [
+              991,
+              323,
+              209,
+              291
+            ],
+            "anchor": [
+              103.5,
+              288
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              206,
+              288
+            ]
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              910,
+              847,
+              324,
+              76
+            ],
+            "anchor": [
+              163,
+              73
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              321,
+              73
+            ]
+          },
+          {
+            "rect": [
+              352,
+              1032,
+              276,
+              182
+            ],
+            "anchor": [
+              141.5,
+              179
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              273,
+              179
+            ]
+          },
+          {
+            "rect": [
+              678,
+              977,
+              196,
+              238
+            ],
+            "anchor": [
+              97,
+              235
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              193,
+              235
+            ]
+          },
+          {
+            "rect": [
+              995,
+              931,
+              211,
+              287
+            ],
+            "anchor": [
+              105,
+              284
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              208,
+              284
+            ]
+          }
+        ]
+      },
+      "scale": 1.12478,
+      "order": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "frameMs": [
+        180,
+        180,
+        180,
+        150
+      ],
+      "loop": false,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "startFrom": "knockdown",
+      "sourceRevision": "67ee8e2a03626bf3",
+      "runtimeFile": "floor-v1.runtime.webp"
+    },
+    "grab": {
+      "label": "Native grip, lift and throw",
+      "file": "grab-native-v2.webp",
+      "sourceSize": [
+        1303,
+        666
+      ],
+      "sourceSha256": "6e9cd273736a7ea68aed51ac7201945513752da93d75a7ba806661bb5f7e16dd",
+      "scale": 0.826628057553957,
+      "loop": false,
+      "order": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "frameMs": [
+        90,
+        90,
+        130,
+        170,
+        110,
+        80
+      ],
+      "contactMs": 180,
+      "liftMs": 310,
+      "releaseMs": 480,
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              0,
+              0,
+              194,
+              288
+            ],
+            "anchor": [
+              96,
+              285
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              191,
+              285
+            ],
+            "pixelSha256": "580727f4112ce709fb2143d9ce01617901e1514f46bd90733c76dd77fedf7a67",
+            "bodyCalibration": 1.3678969515575539,
+            "nativeSource": {
+              "bank": "base",
+              "clip": "idle",
+              "index": 0,
+              "file": "assets/fighters/mac-modem/combat.runtime.webp",
+              "rect": [
+                76,
+                18,
+                194,
+                288
+              ],
+              "pixelSha256": "580727f4112ce709fb2143d9ce01617901e1514f46bd90733c76dd77fedf7a67"
+            },
+            "attachments": {
+              "head": [
+                108.28000000000002,
+                36.839999999999996
+              ],
+              "torso": [
+                105,
+                106
+              ],
+              "legs": [
+                95.12,
+                225.78
+              ],
+              "grip": [
+                136,
+                66
+              ],
+              "chest": [
+                105,
+                106
+              ]
+            }
+          },
+          {
+            "rect": [
+              198,
+              0,
+              208,
+              304
+            ],
+            "anchor": [
+              158,
+              301
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              205,
+              301
+            ],
+            "attachments": {
+              "grip": [
+                189,
+                77
+              ],
+              "head": [
+                132,
+                45
+              ],
+              "torso": [
+                115,
+                120
+              ],
+              "legs": [
+                79,
+                216
+              ],
+              "chest": [
+                115,
+                120
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.1,
+            "pixelSha256": "1ef68e480ffe95dcdf095484698cc17637d7c8cd798aaeb21ef9aaec657dc4cd",
+            "bodyCalibration": 1.290383250668182,
+            "nativeSource": {
+              "bank": "delete",
+              "clip": "shove",
+              "index": 0,
+              "file": "assets/deletions/mac-modem/attacker-poses-v3.png",
+              "rect": [
+                63,
+                7,
+                208,
+                304
+              ],
+              "pixelSha256": "1ef68e480ffe95dcdf095484698cc17637d7c8cd798aaeb21ef9aaec657dc4cd"
+            }
+          },
+          {
+            "rect": [
+              410,
+              0,
+              208,
+              243
+            ],
+            "anchor": [
+              150,
+              240
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              205,
+              240
+            ],
+            "attachments": {
+              "grip": [
+                193,
+                168
+              ],
+              "head": [
+                160,
+                48
+              ],
+              "torso": [
+                143,
+                123
+              ],
+              "legs": [
+                141,
+                197
+              ],
+              "chest": [
+                143,
+                123
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.1,
+            "pixelSha256": "6c6d58881668d308968e54770d6a6aedd01cdd07ce146f284f1c86dc85886c6b",
+            "bodyCalibration": 1.290383250668182,
+            "nativeSource": {
+              "bank": "delete",
+              "clip": "pull",
+              "index": 0,
+              "file": "assets/deletions/mac-modem/attacker-poses-v3.png",
+              "rect": [
+                689,
+                69,
+                208,
+                243
+              ],
+              "pixelSha256": "6c6d58881668d308968e54770d6a6aedd01cdd07ce146f284f1c86dc85886c6b"
+            }
+          },
+          {
+            "rect": [
+              622,
+              0,
+              174,
+              329
+            ],
+            "anchor": [
+              72,
+              326
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              171,
+              326
+            ],
+            "pixelSha256": "c0f3a8095fb7f23017a7d6b546c89634ce81bbebd2d8a60c6ad02b8ba5b5be82",
+            "bodyCalibration": 1.39,
+            "nativeSource": {
+              "bank": "arcade",
+              "clip": "uppercut",
+              "index": 2,
+              "file": "assets/arcade/mac-modem/air-uppercut-v1.runtime.webp",
+              "rect": [
+                696,
+                315,
+                174,
+                329
+              ],
+              "pixelSha256": "c0f3a8095fb7f23017a7d6b546c89634ce81bbebd2d8a60c6ad02b8ba5b5be82"
+            },
+            "attachments": {
+              "head": [
+                81.96,
+                93.44000000000001
+              ],
+              "torso": [
+                96,
+                145
+              ],
+              "legs": [
+                80.28,
+                277.55
+              ],
+              "grip": [
+                157,
+                17
+              ],
+              "chest": [
+                96,
+                145
+              ]
+            }
+          },
+          {
+            "rect": [
+              800,
+              0,
+              251,
+              302
+            ],
+            "anchor": [
+              181,
+              299
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              248,
+              299
+            ],
+            "attachments": {
+              "grip": [
+                236,
+                79
+              ],
+              "head": [
+                141,
+                46
+              ],
+              "torso": [
+                124,
+                121
+              ],
+              "legs": [
+                162,
+                237
+              ],
+              "chest": [
+                124,
+                121
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.1,
+            "pixelSha256": "c7ae133da4ba2b88caea3825e3332dfb86b4baddc4879a58195fb3d66b20f86e",
+            "bodyCalibration": 1.290383250668182,
+            "nativeSource": {
+              "bank": "delete",
+              "clip": "shove",
+              "index": 1,
+              "file": "assets/deletions/mac-modem/attacker-poses-v3.png",
+              "rect": [
+                356,
+                9,
+                251,
+                302
+              ],
+              "pixelSha256": "c7ae133da4ba2b88caea3825e3332dfb86b4baddc4879a58195fb3d66b20f86e"
+            }
+          },
+          {
+            "rect": [
+              1055,
+              0,
+              198,
+              314
+            ],
+            "anchor": [
+              147,
+              311
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              195,
+              311
+            ],
+            "attachments": {
+              "grip": [
+                142,
+                74
+              ],
+              "head": [
+                102,
+                47
+              ],
+              "torso": [
+                85,
+                122
+              ],
+              "legs": [
+                130,
+                246
+              ],
+              "chest": [
+                85,
+                122
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.1,
+            "pixelSha256": "c5e65f0d72d438b817949c943b5cbc6ad68153bd2c1da61a085052acb9004e8d",
+            "bodyCalibration": 1.290383250668182,
+            "nativeSource": {
+              "bank": "delete",
+              "clip": "present",
+              "index": 0,
+              "file": "assets/deletions/mac-modem/attacker-poses-v3.png",
+              "rect": [
+                681,
+                627,
+                198,
+                314
+              ],
+              "pixelSha256": "c5e65f0d72d438b817949c943b5cbc6ad68153bd2c1da61a085052acb9004e8d"
+            }
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              0,
+              333,
+              198,
+              289
+            ],
+            "anchor": [
+              98.5,
+              286
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              195,
+              286
+            ],
+            "pixelSha256": "4880e1e4ebf7b977af999051f46cfba3adfe105912465fe17b6c5428fc7778d0",
+            "bodyCalibration": 1.3678969515575539,
+            "nativeSource": {
+              "bank": "base",
+              "clip": "idle",
+              "index": 0,
+              "file": "assets/fighters/mac-modem/combat.runtime.webp",
+              "rect": [
+                75,
+                319,
+                198,
+                289
+              ],
+              "pixelSha256": "4880e1e4ebf7b977af999051f46cfba3adfe105912465fe17b6c5428fc7778d0"
+            },
+            "attachments": {
+              "head": [
+                87.48,
+                36.96
+              ],
+              "torso": [
+                93,
+                96
+              ],
+              "legs": [
+                100.92,
+                226.57000000000002
+              ],
+              "grip": [
+                62,
+                62
+              ],
+              "chest": [
+                93,
+                96
+              ]
+            }
+          },
+          {
+            "rect": [
+              202,
+              333,
+              214,
+              303
+            ],
+            "anchor": [
+              48,
+              300
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              211,
+              300
+            ],
+            "attachments": {
+              "grip": [
+                23,
+                87
+              ],
+              "head": [
+                81,
+                45
+              ],
+              "torso": [
+                98,
+                120
+              ],
+              "legs": [
+                137,
+                214
+              ],
+              "chest": [
+                98,
+                120
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.1,
+            "pixelSha256": "6229b95ab15b41deacc1ce8507df928e0159b53b29fbb5f4725b3f5fae6871c8",
+            "bodyCalibration": 1.290383250668182,
+            "nativeSource": {
+              "bank": "delete",
+              "clip": "shove",
+              "index": 0,
+              "file": "assets/deletions/mac-modem/attacker-poses-v3.png",
+              "rect": [
+                61,
+                321,
+                214,
+                303
+              ],
+              "pixelSha256": "6229b95ab15b41deacc1ce8507df928e0159b53b29fbb5f4725b3f5fae6871c8"
+            }
+          },
+          {
+            "rect": [
+              420,
+              333,
+              218,
+              237
+            ],
+            "anchor": [
+              71,
+              234
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              215,
+              234
+            ],
+            "attachments": {
+              "grip": [
+                14,
+                164
+              ],
+              "head": [
+                51,
+                45
+              ],
+              "torso": [
+                68,
+                120
+              ],
+              "legs": [
+                77,
+                193
+              ],
+              "chest": [
+                68,
+                120
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.1,
+            "pixelSha256": "4abf0c575ba3d689690fb00d4738c6058e6b45ac4885fe231d2cc9e0cb2976ae",
+            "bodyCalibration": 1.290383250668182,
+            "nativeSource": {
+              "bank": "delete",
+              "clip": "pull",
+              "index": 0,
+              "file": "assets/deletions/mac-modem/attacker-poses-v3.png",
+              "rect": [
+                685,
+                389,
+                218,
+                237
+              ],
+              "pixelSha256": "4abf0c575ba3d689690fb00d4738c6058e6b45ac4885fe231d2cc9e0cb2976ae"
+            }
+          },
+          {
+            "rect": [
+              642,
+              333,
+              194,
+              298
+            ],
+            "anchor": [
+              116,
+              295
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              191,
+              295
+            ],
+            "pixelSha256": "49f5c91716bcf0b9c438712f602724949a793848bffd03491003cae3505cc13a",
+            "bodyCalibration": 1.39,
+            "nativeSource": {
+              "bank": "arcade",
+              "clip": "uppercut",
+              "index": 2,
+              "file": "assets/arcade/mac-modem/air-uppercut-v1.runtime.webp",
+              "rect": [
+                686,
+                937,
+                194,
+                298
+              ],
+              "pixelSha256": "49f5c91716bcf0b9c438712f602724949a793848bffd03491003cae3505cc13a"
+            },
+            "attachments": {
+              "head": [
+                102.64,
+                87.67999999999999
+              ],
+              "torso": [
+                87,
+                130
+              ],
+              "legs": [
+                106.4,
+                251.2
+              ],
+              "grip": [
+                16,
+                18
+              ],
+              "chest": [
+                87,
+                130
+              ]
+            }
+          },
+          {
+            "rect": [
+              840,
+              333,
+              252,
+              305
+            ],
+            "anchor": [
+              87,
+              302
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              249,
+              302
+            ],
+            "attachments": {
+              "grip": [
+                14,
+                80
+              ],
+              "head": [
+                112,
+                45
+              ],
+              "torso": [
+                129,
+                120
+              ],
+              "legs": [
+                96,
+                237
+              ],
+              "chest": [
+                129,
+                120
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.1,
+            "pixelSha256": "4ae350fae1e633a354953d5e6ab31c755709f2a273e60d96e9774794ba93ae0d",
+            "bodyCalibration": 1.290383250668182,
+            "nativeSource": {
+              "bank": "delete",
+              "clip": "shove",
+              "index": 1,
+              "file": "assets/deletions/mac-modem/attacker-poses-v3.png",
+              "rect": [
+                347,
+                322,
+                252,
+                305
+              ],
+              "pixelSha256": "4ae350fae1e633a354953d5e6ab31c755709f2a273e60d96e9774794ba93ae0d"
+            }
+          },
+          {
+            "rect": [
+              1096,
+              333,
+              203,
+              298
+            ],
+            "anchor": [
+              54,
+              295
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              200,
+              295
+            ],
+            "attachments": {
+              "grip": [
+                62,
+                77
+              ],
+              "head": [
+                102,
+                50
+              ],
+              "torso": [
+                119,
+                125
+              ],
+              "legs": [
+                129,
+                214
+              ],
+              "chest": [
+                119,
+                125
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.1,
+            "pixelSha256": "04cfbd30ae2c176aa3e46eeee0c11463880cc0612f8f1512b4c27695244ebf26",
+            "bodyCalibration": 1.290383250668182,
+            "nativeSource": {
+              "bank": "delete",
+              "clip": "present",
+              "index": 0,
+              "file": "assets/deletions/mac-modem/attacker-poses-v3.png",
+              "rect": [
+                684,
+                947,
+                203,
+                298
+              ],
+              "pixelSha256": "04cfbd30ae2c176aa3e46eeee0c11463880cc0612f8f1512b4c27695244ebf26"
+            }
+          }
+        ]
+      },
+      "description": "Six intact approved whole-body poses: ready, reach, grip, lift, release, recover. Original source pixels and effective draw sizes remain unchanged."
+    },
+    "grab-low": {
+      "label": "Native crouched grip, lift and throw",
+      "file": "grab-low-native-v2.webp",
+      "sourceSize": [
+        919,
+        666
+      ],
+      "sourceSha256": "78e1085c3b096cf0e132431362f0ee91e0792a66a2cb50ad2f352b047ef09912",
+      "scale": 0.826628057553957,
+      "loop": false,
+      "order": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "frameMs": [
+        180,
+        130,
+        170,
+        190
+      ],
+      "contactMs": 180,
+      "liftMs": 310,
+      "releaseMs": 480,
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              0,
+              0,
+              219,
+              258
+            ],
+            "anchor": [
+              127,
+              254
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              216,
+              255
+            ],
+            "attachments": {
+              "grip": [
+                182,
+                75
+              ],
+              "torso": [
+                127,
+                129
+              ],
+              "head": [
+                140,
+                52
+              ],
+              "legs": [
+                139,
+                209
+              ],
+              "chest": [
+                127,
+                129
+              ]
+            },
+            "pixelSha256": "8544e8ff10c1af666ab3c37a8fb0b3fe843258ade428eff3c6c68fe486df07e0",
+            "bodyCalibration": 1.1734419018757836,
+            "nativeSource": {
+              "bank": "arcade",
+              "clip": "crouch-punch",
+              "index": 0,
+              "file": "assets/arcade/mac-modem/contextual-attacks-v1.runtime.webp",
+              "rect": [
+                44,
+                42,
+                219,
+                258
+              ],
+              "pixelSha256": "8544e8ff10c1af666ab3c37a8fb0b3fe843258ade428eff3c6c68fe486df07e0"
+            }
+          },
+          {
+            "rect": [
+              223,
+              0,
+              284,
+              233
+            ],
+            "anchor": [
+              125,
+              229
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              281,
+              230
+            ],
+            "attachments": {
+              "grip": [
+                264,
+                90
+              ],
+              "torso": [
+                80,
+                132
+              ],
+              "head": [
+                116,
+                51
+              ],
+              "legs": [
+                43,
+                189
+              ],
+              "chest": [
+                80,
+                132
+              ]
+            },
+            "pixelSha256": "5ec4706cae6b3bf5c26e4ecbd2b07fca71b7690d28f8d74c87dccbc004fc3e3f",
+            "bodyCalibration": 1.1734419018757836,
+            "nativeSource": {
+              "bank": "arcade",
+              "clip": "crouch-punch",
+              "index": 1,
+              "file": "assets/arcade/mac-modem/contextual-attacks-v1.runtime.webp",
+              "rect": [
+                351,
+                66,
+                284,
+                233
+              ],
+              "pixelSha256": "5ec4706cae6b3bf5c26e4ecbd2b07fca71b7690d28f8d74c87dccbc004fc3e3f"
+            }
+          },
+          {
+            "rect": [
+              511,
+              0,
+              174,
+              329
+            ],
+            "anchor": [
+              72,
+              326
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              171,
+              326
+            ],
+            "pixelSha256": "c0f3a8095fb7f23017a7d6b546c89634ce81bbebd2d8a60c6ad02b8ba5b5be82",
+            "bodyCalibration": 1.39,
+            "nativeSource": {
+              "bank": "arcade",
+              "clip": "uppercut",
+              "index": 2,
+              "file": "assets/arcade/mac-modem/air-uppercut-v1.runtime.webp",
+              "rect": [
+                696,
+                315,
+                174,
+                329
+              ],
+              "pixelSha256": "c0f3a8095fb7f23017a7d6b546c89634ce81bbebd2d8a60c6ad02b8ba5b5be82"
+            },
+            "attachments": {
+              "head": [
+                81.96,
+                93.44000000000001
+              ],
+              "torso": [
+                96,
+                145
+              ],
+              "legs": [
+                80.28,
+                277.55
+              ],
+              "grip": [
+                157,
+                17
+              ],
+              "chest": [
+                96,
+                145
+              ]
+            }
+          },
+          {
+            "rect": [
+              689,
+              0,
+              206,
+              290
+            ],
+            "anchor": [
+              102.5,
+              287
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              203,
+              287
+            ],
+            "pixelSha256": "e7fa58320b90173d0a8c1054a3835d33f8d501be8b3c1c4c2ef00ee829316485",
+            "bodyCalibration": 1.39,
+            "nativeSource": {
+              "bank": "arcade",
+              "clip": "uppercut",
+              "index": 3,
+              "file": "assets/arcade/mac-modem/air-uppercut-v1.runtime.webp",
+              "rect": [
+                1001,
+                355,
+                206,
+                290
+              ],
+              "pixelSha256": "e7fa58320b90173d0a8c1054a3835d33f8d501be8b3c1c4c2ef00ee829316485"
+            },
+            "attachments": {
+              "head": [
+                115.00000000000001,
+                37.08
+              ],
+              "torso": [
+                119,
+                104
+              ],
+              "legs": [
+                101,
+                227.36
+              ],
+              "grip": [
+                154,
+                62
+              ],
+              "chest": [
+                119,
+                104
+              ]
+            }
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              0,
+              333,
+              205,
+              232
+            ],
+            "anchor": [
+              103,
+              228
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              202,
+              229
+            ],
+            "attachments": {
+              "grip": [
+                29,
+                68
+              ],
+              "torso": [
+                103,
+                114
+              ],
+              "head": [
+                71,
+                51
+              ],
+              "legs": [
+                55,
+                186
+              ],
+              "chest": [
+                103,
+                114
+              ]
+            },
+            "pixelSha256": "3805d7a10e3d789a9bb63065e8c0635797565873567b132f901266655387bbed",
+            "bodyCalibration": 1.1734419018757836,
+            "nativeSource": {
+              "bank": "arcade",
+              "clip": "crouch-punch",
+              "index": 0,
+              "file": "assets/arcade/mac-modem/contextual-attacks-v1.runtime.webp",
+              "rect": [
+                697,
+                67,
+                205,
+                232
+              ],
+              "pixelSha256": "3805d7a10e3d789a9bb63065e8c0635797565873567b132f901266655387bbed"
+            }
+          },
+          {
+            "rect": [
+              209,
+              333,
+              298,
+              229
+            ],
+            "anchor": [
+              185,
+              225
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              295,
+              226
+            ],
+            "attachments": {
+              "grip": [
+                20,
+                84
+              ],
+              "torso": [
+                198,
+                120
+              ],
+              "head": [
+                160,
+                47
+              ],
+              "legs": [
+                131,
+                187
+              ],
+              "chest": [
+                198,
+                120
+              ]
+            },
+            "pixelSha256": "67a411a731d228f53c2010a69d13be33720f788e37a94feec3ea2d37232bf055",
+            "bodyCalibration": 1.1734419018757836,
+            "nativeSource": {
+              "bank": "arcade",
+              "clip": "crouch-punch",
+              "index": 1,
+              "file": "assets/arcade/mac-modem/contextual-attacks-v1.runtime.webp",
+              "rect": [
+                935,
+                70,
+                298,
+                229
+              ],
+              "pixelSha256": "67a411a731d228f53c2010a69d13be33720f788e37a94feec3ea2d37232bf055"
+            }
+          },
+          {
+            "rect": [
+              511,
+              333,
+              194,
+              298
+            ],
+            "anchor": [
+              116,
+              295
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              191,
+              295
+            ],
+            "pixelSha256": "49f5c91716bcf0b9c438712f602724949a793848bffd03491003cae3505cc13a",
+            "bodyCalibration": 1.39,
+            "nativeSource": {
+              "bank": "arcade",
+              "clip": "uppercut",
+              "index": 2,
+              "file": "assets/arcade/mac-modem/air-uppercut-v1.runtime.webp",
+              "rect": [
+                686,
+                937,
+                194,
+                298
+              ],
+              "pixelSha256": "49f5c91716bcf0b9c438712f602724949a793848bffd03491003cae3505cc13a"
+            },
+            "attachments": {
+              "head": [
+                102.64,
+                87.67999999999999
+              ],
+              "torso": [
+                87,
+                130
+              ],
+              "legs": [
+                106.4,
+                251.2
+              ],
+              "grip": [
+                16,
+                18
+              ],
+              "chest": [
+                87,
+                130
+              ]
+            }
+          },
+          {
+            "rect": [
+              709,
+              333,
+              206,
+              279
+            ],
+            "anchor": [
+              103,
+              276
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              203,
+              276
+            ],
+            "pixelSha256": "7d8e0cc954ab418282ce501bf1eef6a76db61933f415fedbafa5f310102bda55",
+            "bodyCalibration": 1.39,
+            "nativeSource": {
+              "bank": "arcade",
+              "clip": "uppercut",
+              "index": 3,
+              "file": "assets/arcade/mac-modem/air-uppercut-v1.runtime.webp",
+              "rect": [
+                994,
+                957,
+                206,
+                279
+              ],
+              "pixelSha256": "7d8e0cc954ab418282ce501bf1eef6a76db61933f415fedbafa5f310102bda55"
+            },
+            "attachments": {
+              "head": [
+                91,
+                35.76
+              ],
+              "torso": [
+                84,
+                114
+              ],
+              "legs": [
+                105,
+                218.67000000000002
+              ],
+              "grip": [
+                46,
+                71
+              ],
+              "chest": [
+                84,
+                114
+              ]
+            }
+          }
+        ]
+      },
+      "description": "Four intact native body poses selected from physically verified forward-reaching contact artwork; original effective draw size and pixels retained."
+    }
+  }
+}

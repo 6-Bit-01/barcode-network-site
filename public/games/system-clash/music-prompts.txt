@@ -1,0 +1,122 @@
+BARCODE: SYSTEM CLASH — MUSIC PROMPTS
+
+Use Custom mode. For INSTRUMENTAL entries, enable Instrumental and paste Style. For SPARSE WORDS, disable Instrumental; paste Style and put only the supplied words in Lyrics. Sparse vocals and exact BPM are requests, not guarantees: choose a clean take and check the loop seam in an audio editor. One prompt per fighter, four menu-screen prompts and one per stage. Pause/loading/options can reuse a quiet section of a menu track.
+
+1. TITLE — TAKE THE SIGNAL
+Mode: SPARSE WORDS
+Style: 104 BPM industrial electro-funk for an underground broadcast fighting game. Rubber bass guitar, punchy swung breakbeats, detuned analog synth stabs, tactile metal percussion and musical radio hiss. Strong original four-note identity. Menacing, confident and a little mischievous. Mostly instrumental, with a dry low vocoder saying the supplied phrase once every several long musical sections. No verses or sung chorus. A stable groove that returns to the opening motif.
+Lyrics: Take the signal
+
+2. CHARACTER SELECT — SIGNAL OPERATORS
+Mode: INSTRUMENTAL
+Style: 114 BPM stylish dark electro-funk. Crisp shuffled drums, springy sub bass, glassy FM arpeggios, purple-neon analog chords and little answering synth gestures. Choosing a fighter should feel cool and deliberate. Steady energy, subtle rhythmic variations and a spacious midrange for selection sounds. Immediate hook, long groove, restrained dynamics, no dramatic drop or countdown, no vocals.
+
+3. TOURNAMENT — EIGHT NODES
+Mode: SPARSE WORDS
+Style: 126 BPM ascending digital tournament breakbeat. Tight electronic toms, deep sequenced bass, metallic tuned percussion and a determined rising four-note motif. Each long phrase climbs, then settles into the groove. Focused competitive momentum without overpowering the screen. Mostly instrumental; one clipped robotic word only between long instrumental sections. No chorus or full lyrics.
+Lyrics: Climb
+
+4. BARCODE RADIO STUDIO — BROADCAST FLOOR
+Mode: SPARSE WORDS
+Style: 130 BPM gritty broadcast-studio industrial funk. Tough live bass guitar, punchy shuffled breaks, muted guitar chops, clipped organ and rhythmic console-feedback textures. Music-first energy, old radio warmth and modern heavy drums. Continuous driving groove with room for punches and announcer. Mostly instrumental with one rare two-word bitcrushed broadcast whisper. No verse or sung chorus.
+Lyrics: On air
+
+5. SHEILA'S OFFICE — ADMINISTRATIVE PRESSURE
+Mode: INSTRUMENTAL
+Style: 118 BPM cold precision electro. Staccato electric piano, dry clicking percussion, controlled low synth bass and tense muted synthetic strings. Keyboard taps and locking machinery become part of the rhythm. Bureaucratic authority, quiet menace and dark humor. Measured competitive groove, spacious midrange, no horror jumpscare, no vocals and no big cinematic pause.
+
+6. STUDIO RAT LAIR — NINE LIVES
+Mode: INSTRUMENTAL
+Style: 140 BPM dirty basement breakbeat. Crunchy bass guitar, garage drum ambience, valve amplifier hum, playful chromatic synth gestures and scraped-string rhythms. Cats rule this underground studio: sly, nocturnal and mischievous, not a novelty cat song. Energetic musical low end with a clear midrange for combat. Steady raw groove, no meowing samples, no vocals.
+
+7. 6 BIT CONTAINMENT — OVERRIDE
+Mode: SPARSE WORDS
+Style: 136 BPM dark mechanized industrial breakbeat. Deep pressure drones, hydraulic percussion, huge compact distorted bass stabs, cyan FM arpeggios and electrical crackle woven into the rhythm. Powerful imprisoned energy and mounting pressure, but keep a stable clear rhythmic engine. Mostly instrumental with one isolated distorted robotic word infrequently between long grooves. No verses, no constant drops.
+Lyrics: Override
+
+8. MR NICE GUY'S NATURE SIMULATION — BEAUTIFUL LIE
+Mode: INSTRUMENTAL
+Style: 124 BPM synthetic forest electro. Wooden percussion over firm electronic breaks, warm round bass, glistening digital bells, artificial bird-like synth textures and uneasy suspended chords. A graceful hologram hides danger: peaceful surface, purposeful rhythmic tension underneath. Lush but sparse, clean attack-friendly mix, long flowing instrumental sections. No folk singing or sentimental ballad.
+
+9. WITTY'S WASTELAND — BLUE FALLOUT
+Mode: INSTRUMENTAL
+Style: 144 BPM post-apocalyptic industrial drum and bass with a heavy half-time feel. Rugged sub bass, broken concrete percussion, blue crystalline magical notes, dusty salvage-metal rattles and lonely wind-like synth pads. Ruined world, stubborn survivor energy and understated wand magic. Relentless clear groove, controlled dynamics, no cinematic silence, no vocals.
+
+10. ONLINE LOBBY — FIND A FREQUENCY
+Mode: INSTRUMENTAL
+Style: 106 BPM low-pressure dub electro. Warm bass pulses, gentle syncopated rimshots, smoky analog chords, radio tuning textures and tiny answering FM signals. A welcoming underground broadcast room while players join. Curious social atmosphere, long steady sections and minimal melody, no ticking countdown or triumphant fanfare, no vocals.
+
+
+11. 6 BIT — FIGHTER THEME
+Mode: SPARSE WORDS
+Style: 132 BPM. Mechanized industrial funk. Hydraulic percussion, heavy syncopated electric bass, restless transmission stabs and a sharp four-note FM hook. Black-clad broadcast rebel energy: unstable, clever and forceful. Tight modern drums, no giant cinematic pauses. Original compact recurring motif. Mostly steady instrumental sections, controlled dynamics and space for the game's attack/hurt voices. Only the supplied phrase appears occasionally after long instrumental passages, as a brief processed spoken tag. No verses, sung chorus or additional lyrics.
+Lyrics: Six bit
+
+12. 9 BIT — FIGHTER THEME
+Mode: INSTRUMENTAL
+Style: 138 BPM. Looming industrial half-time. Monstrous slow bass pressure, distorted low FM brass, pounding metal drums and ominous dark-energy drones. Bigger, meaner and more imposing than Six Bit. A deliberate crushing groove, not an orchestral villain song. Original compact recurring motif. Mostly steady instrumental sections, controlled dynamics and space for the game's attack/hurt voices. No vocals.
+
+13. CACHE BACK — FIGHTER THEME
+Mode: SPARSE WORDS
+Style: 130 BPM. Scrappy percussive breakbeat. Rattling recycled metal, nimble funk bass, hard clipped synthetic handclaps and cunning stop-start accents. Agile yellow-and-black recycler energy, playful menace and quick precise rhythm. Original compact recurring motif. Mostly steady instrumental sections, controlled dynamics and space for the game's attack/hurt voices. Only the supplied phrase appears occasionally after long instrumental passages, as a brief processed spoken tag. No verses, sung chorus or additional lyrics.
+Lyrics: Empty the cache
+
+14. CLIFF — FIGHTER THEME
+Mode: INSTRUMENTAL
+Style: 126 BPM. Dry broadcast-rock breakbeat. Understated gritty guitar, steady live bass, tactile console percussion and little sly melodic responses. Human radio personality and dark comedy. Brief rhythmic fake-outs resolve immediately so combat never loses momentum. Original compact recurring motif. Mostly steady instrumental sections, controlled dynamics and space for the game's attack/hurt voices. No vocals.
+
+15. DJ FLOPPYDISC — FIGHTER THEME
+Mode: SPARSE WORDS
+Style: 140 BPM. Turntable electro-funk. Crisp fast shuffled breaks, clean slap bass, disk-spin synth textures, stylish digital scratches and a confident recurring hook. Fashionable, controlled and dangerous. Tight dancefloor groove with room for combat impacts. Original compact recurring motif. Mostly steady instrumental sections, controlled dynamics and space for the game's attack/hurt voices. Only the supplied phrase appears occasionally after long instrumental passages, as a brief processed spoken tag. No verses, sung chorus or additional lyrics.
+Lyrics: Bad sector
+
+16. MAC MODEM — FIGHTER THEME
+Mode: INSTRUMENTAL
+Style: 134 BPM. Cable-snarling industrial electro. Red-hot distorted bass, crackling relay percussion, buzzing network pulses and elastic rising sequences. Raw tattooed bruiser swagger and physical metal tension. Dark dense rhythm with clean midrange separation. Original compact recurring motif. Mostly steady instrumental sections, controlled dynamics and space for the game's attack/hurt voices. No vocals.
+
+17. MR NICE GUY — FIGHTER THEME
+Mode: SPARSE WORDS
+Style: 124 BPM. Deceptively elegant organic electro. Smooth bass, pristine keys, artificial birdsong-shaped synths and quietly sinister suspended chords. Beautiful synthetic nature with politely menacing precision. Graceful continuous groove hiding sharp danger. Original compact recurring motif. Mostly steady instrumental sections, controlled dynamics and space for the game's attack/hurt voices. Only the supplied phrase appears occasionally after long instrumental passages, as a brief processed spoken tag. No verses, sung chorus or additional lyrics.
+Lyrics: Play nice
+
+18. MS MAYHEM — FIGHTER THEME
+Mode: SPARSE WORDS
+Style: 146 BPM. Fearless industrial dance-rock. Hammer-heavy gated drums, jagged synth bass, terse distorted guitar stabs and aggressive syncopated accents. Black-and-red authority, chaos and confidence. Hard fast groove, no overlong buildup. Original compact recurring motif. Mostly steady instrumental sections, controlled dynamics and space for the game's attack/hurt voices. Only the supplied phrase appears occasionally after long instrumental passages, as a brief processed spoken tag. No verses, sung chorus or additional lyrics.
+Lyrics: Banned
+
+19. STOLZ — FIGHTER THEME
+Mode: INSTRUMENTAL
+Style: 132 BPM. Machined chrome electro. Controlled pneumatic percussion, compact steel-dark bass, cold metallic arpeggios and rhythmic switch clicks. Strong planted precision, merciless machinery and mechanical confidence. Restrained shiny highs, heavy clean low end. Original compact recurring motif. Mostly steady instrumental sections, controlled dynamics and space for the game's attack/hurt voices. No vocals.
+
+20. KAVEMAN BROWN — FIGHTER THEME
+Mode: SPARSE WORDS
+Style: 128 BPM. Amplifier-heavy earthy bass groove. Muscular live drums, overdriven electric bass, dense speaker-cone synth textures and wide resonant dub accents. Rugged physical power, rough warmth and a huge grounded rhythm. Original compact recurring motif. Mostly steady instrumental sections, controlled dynamics and space for the game's attack/hurt voices. Only the supplied phrase appears occasionally after long instrumental passages, as a brief processed spoken tag. No verses, sung chorus or additional lyrics.
+Lyrics: Turn it up
+
+21. DR3WBABY — FIGHTER THEME
+Mode: INSTRUMENTAL
+Style: 148 BPM. Quick-footed industrial breaks. Spring-loaded drum accents, ascending sequenced bass, agile syncopation and sharp resonant rack-metal impacts. Energetic performer swagger, feints and climbing momentum. Fast playful flow with clean attack-friendly spacing. Original compact recurring motif. Mostly steady instrumental sections, controlled dynamics and space for the game's attack/hurt voices. No vocals.
+
+22. ASH FLOWERS — FIGHTER THEME
+Mode: SPARSE WORDS
+Style: 122 BPM. Warm psychedelic electro-funk. Uplifting electric piano, glowing golden chord changes, sturdy funky drums and unexpectedly overwhelming bass. Peace, love and positivity radiate with unstoppable strength. Bright joyful groove with a tiny strange edge; never sentimental soft-pop. Original compact recurring motif. Mostly steady instrumental sections, controlled dynamics and space for the game's attack/hurt voices. Only the supplied phrase appears occasionally after long instrumental passages, as a brief processed spoken tag. No verses, sung chorus or additional lyrics.
+Lyrics: Peace love positivity
+
+23. WITTYF0X — FIGHTER THEME
+Mode: INSTRUMENTAL
+Style: 142 BPM. Blue magical wasteland breakbeat. Agile broken drums, crystalline wand-like synth gestures, dusty survivor bass and a resilient dark melodic hook. Clever, resourceful and dangerous. Post-apocalyptic texture with a clear musical groove. Original compact recurring motif. Mostly steady instrumental sections, controlled dynamics and space for the game's attack/hurt voices. No vocals.
+
+24. DOOFNOOBLER — FIGHTER THEME
+Mode: SPARSE WORDS
+Style: 116 BPM. Warm clever puppet electro-funk. Soft felt-like muted percussion, bouncy woodblock rhythm, bright blue analog melody and a friendly walking bass. Small fuzzy political mastermind: kind, playful and quietly strategic. Cozy musical warmth with sharp rhythmic intelligence, not a children's novelty song. Original compact recurring motif. Mostly steady instrumental sections, controlled dynamics and space for the game's attack/hurt voices. Only the supplied phrase appears occasionally after long instrumental passages, as a brief processed spoken tag. No verses, sung chorus or additional lyrics.
+Lyrics: Stay kind
+
+25. CHAMPION OF HELLCAT, LYRA — FIGHTER THEME
+Mode: INSTRUMENTAL
+Style: 144 BPM. Sleek cyber-feline electro. Agile precise breaks, cyan crystalline arpeggios, subtly purring synth bass and confident futuristic chord stabs. Cat-cyborg community leader: elegant, decisive and playful. Clean modern rhythm, no meowing sample gimmick. Original compact recurring motif. Mostly steady instrumental sections, controlled dynamics and space for the game's attack/hurt voices. No vocals.
+
+26. PAPAOAK — FIGHTER THEME
+Mode: INSTRUMENTAL
+Style: 114 BPM. Massive rooted organic industrial groove. Deep wooden resonant drums, creaking harmonic textures, slow architectural bass and wise warm suspended chords. Towering ent in a worn cowboy hat, calm ancient strength and deliberate crushing power. Broad earthy rhythm, no cinematic pauses. Original compact recurring motif. Mostly steady instrumental sections, controlled dynamics and space for the game's attack/hurt voices. No vocals.
+
+Official Custom-mode / Instrumental guidance: https://help.suno.com/en/articles/2415873 ; https://help.suno.com/en/articles/3726721 . Prompts are original creative briefs. Sparse vocal frequency, BPM and seamless loops are requests, not guaranteed controls.

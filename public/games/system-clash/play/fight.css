@@ -55,3 +55,7 @@ main{max-width:1280px;padding:20px 24px;margin-inline:auto}
 .motion-option input,#pause-menu input{accent-color:var(--system-green)}
 #pause-menu{background:linear-gradient(145deg,#1e1429f7,#0c1013fa);border-color:var(--system-violet)}
 .demo-toolbar button:focus-visible,#pause-menu button:focus-visible,.match-controls button:focus-visible,.match-controls select:focus-visible{outline-color:var(--system-green)}
+
+.classic-buttons button{background:transparent url('assets/ui/arcade-button-purple.svg') center/contain no-repeat!important;border:0;box-shadow:none}.classic-buttons .high-kick,.classic-buttons .low-kick{background-image:url('assets/ui/arcade-button-green.svg')!important}
+
+.classic-buttons .block-button,.classic-buttons .throw-button{background-image:url('assets/ui/arcade-button-black.svg')!important}

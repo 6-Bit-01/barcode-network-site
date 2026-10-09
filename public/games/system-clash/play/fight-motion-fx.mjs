@@ -40,10 +40,13 @@ export function createFightMotionFX(options={}) {
     if(sx<0||sy<0||sw<=0||sh<=0||dw<=0||dh<=0||scale>8
       ||Math.abs(scale-dh/sh)>1e-6||!Number.isFinite(image.width)||!Number.isFinite(image.height)
       ||sx+sw>image.width||sy+sh>image.height||sw>4096||sh>4096)return null;
+    // Attachments must belong to this resolved native crop. Stale world-space
+    // points on another actor or a prop cannot leave a line beside this body.
+    const cropPoint=value=>{const p=point(value);return p&&p.x>=dx&&p.x<=dx+dw&&p.y>=dy&&p.y<=dy+dh?p:null;};
     return {image,source:source.slice(),destination:destination.slice(),position,
       fighterId:body.fighterId,facing:body.facing,time,airborne:Boolean(body.airborne),
       opacity:clamp(finite(body.opacity,1),0,1),attackKey:body.attackKey??null,
-      strike:point(body.strike),strikeStart:point(body.strikeStart)};
+      strike:cropPoint(body.strike),strikeStart:cropPoint(body.strikeStart)};
   }
 
   function drawBody(ctx,body={}) {
@@ -76,11 +79,15 @@ export function createFightMotionFX(options={}) {
         const from={x:previous.strike.x+travel.x,y:previous.strike.y+travel.y},to=current.strike;
         const vx=to.x-from.x,vy=to.y-from.y,length=Math.hypot(vx,vy);
         const limbLength=Math.hypot(to.x-current.strikeStart.x,to.y-current.strikeStart.y);
-        if(length>=4&&length*1000/dt>=180&&limbLength>=4&&limbLength<=400) {
+        const previousLimbLength=Math.hypot(previous.strike.x-previous.strikeStart.x,previous.strike.y-previous.strikeStart.y);
+        // A guard hand placeholder and a newly extended foot are independent
+        // contacts. A trail requires a bounded segment of the same limb.
+        const sameLimb=previousLimbLength>=4&&Math.max(limbLength,previousLimbLength)<=Math.min(limbLength,previousLimbLength)*2;
+        if(length>=4&&length*1000/dt>=180&&limbLength>=4&&limbLength<=400&&sameLimb) {
           const limited=Math.min(length,130)/length;
           actor.lines.push({from:{x:to.x-vx*limited,y:to.y-vy*limited},to:{...to},at:time});
           if(actor.lines.length>LINE_LIMIT)actor.lines.shift();
-        }
+        } else if(!sameLimb)actor.lines.length=0;
       }
     }
     actor.previous=current;

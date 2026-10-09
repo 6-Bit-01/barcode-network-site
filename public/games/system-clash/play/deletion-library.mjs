@@ -214,7 +214,7 @@ export function deletionPose(role,elapsed,fighterId='6-bit',clips=null,fighterHe
     if(t<b.gripContact)return held('high',210);
     if(t<b.captured)return hangingVictimPose(clips,held('grabbed',t-b.gripContact));
     if(t<b.close)return held('delete-brace',t-b.captured);
-    return held('delete-compressed',(t-b.close)*nativeDuration(clips,'delete-compressed',700)/(b.sealed-b.close));
+    return hangingVictimPose(clips,held('delete-compressed',(t-b.close)*nativeDuration(clips,'delete-compressed',700)/(b.sealed-b.close)));
   }
   if(definition.mechanism==='speaker-stack') {
     if(role==='attacker') {

@@ -44,3 +44,12 @@ test('boot and match reset advance a stable presentation epoch used by every ren
 
 test('boot stays blocked behind the static loading screen until selected stage art settles',async()=>{const h=harness(async()=>({manifest:null,images:{},failures:[]}));let finish;h.env.loadStageArt=()=>new Promise(resolve=>finish=resolve);const pending=h.env.boot();for(let i=0;i<12&&!finish;i++)await new Promise(resolve=>setImmediate(resolve));assert.equal(h.env.ready,false);assert.notEqual(h.node('asset-loading').hidden,true);assert.equal(h.prepared.length,0);finish({id:'radio-studio',image:{},kit:{},layers:{}});await pending;assert.equal(h.env.ready,true);assert.equal(h.node('asset-loading').hidden,true);});
 test('required stage failure leaves input blocked and retryable rather than a half-drawn arena',async()=>{const h=harness(async()=>({images:{}}));h.env.window.SYSTEM_CLASH_FIGHT_BUNDLE=undefined;let failure;h.env.loading=(text,_progress,failed)=>{if(failed)failure=text;};h.env.loadStageArt=async()=>({id:'radio-studio',image:null,kit:null,layers:null});await h.env.boot();assert.equal(h.env.ready,false);assert.match(failure,/Retry loading/);h.env.loadStageArt=async()=>({id:'radio-studio',image:{},kit:{},layers:{}});await h.env.boot();assert.equal(h.env.ready,true);});
+
+test('hosted visual-art failure stays on the real loader and retry fetches fresh art',async()=>{
+ let calls=0;const h=harness(async()=>{calls++;if(calls===1)throw Error('missing artwork');return {manifest:{version:1},images:{timer:{}},failures:[]};});
+ h.env.window.SYSTEM_CLASH_FIGHT_BUNDLE=undefined;let failure;
+ h.env.loading=(message,_progress,failed)=>{if(failed)failure=message;};
+ await h.env.boot();assert.equal(h.env.ready,false);assert.match(failure,/Interface artwork.*Retry loading/);
+ assert.equal(h.env.interfaceArtPending,null,'Failed art must not be reused on Retry');
+ await h.env.boot();assert.equal(h.env.ready,true);assert.equal(calls,2);
+});

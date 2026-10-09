@@ -28,6 +28,7 @@ export const FIGHTER_STAT_PROFILES=Object.freeze({
  'papa-oak':profile(10,2,8,4),
  'lost-marbles':profile(5,8,5,6),
  'mutilator':profile(8,4,8,4),
+ 'bnl-01':profile(4,7,5,8),
 });
 
 /** Return a shared immutable four-stat profile; missing IDs stay neutral. */

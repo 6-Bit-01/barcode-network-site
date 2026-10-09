@@ -148,6 +148,14 @@ function injuryPoint(attachments,site,across,along,anatomy) {
 export function damageOverlayPlans(view, attachments, fighterId, anatomicalSize = attachments.bodyLength) {
   const condition=damageCondition(view);if(!condition.tier)return [];
   const plans=[],anatomy=Math.max(20,Number(anatomicalSize)||attachments.bodyLength);
+  if(fighterId==='bnl-01'){
+    for(const [index,site]of DAMAGE_SITES.entries()){
+      const own=condition.sites[site];if(!own.hits&&condition.tier<2)continue;
+      const seed=(9137+index*104729)>>>0,severity=clamp(Math.max(own.amount,condition.total*.25)/55,0,1);
+      plans.push({site,effect:'signal',kind:'signal',point:injuryPoint(attachments,site,0,0,anatomy),angle:attachments.bodyAngle,width:anatomy*(site==='head'?.065:.18),height:anatomy*(site==='head'?.065:.14),opacity:.3+severity*.4,seed,source:'condition'});
+    }
+    return plans;
+  }
   const fighterSeed=stableSeed({id:fighterId??'fighter'},0);
   const materials=Object.values(condition.sites).reduce((totals,site)=>({blood:totals.blood+site.bruise+site.cut,scorch:totals.scorch+site.scorch}),{blood:0,scorch:0});
   const dryEnergyOnly=materials.scorch>0&&materials.blood===0;

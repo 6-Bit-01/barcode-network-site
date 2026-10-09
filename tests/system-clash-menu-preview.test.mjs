@@ -9,6 +9,15 @@ test('compact atlases retain both approved idle banks, source hashes, timing, co
   for(const facing of ['left','right']){assert.equal(data.frames[facing].length,idle.frames[facing].length);data.frames[facing].forEach((frame,i)=>{assert.deepEqual(frame.sourceRect??frame.rect,idle.frames[facing][i].rect);assert.deepEqual(frame.anchor,idle.frames[facing][i].anchor);assert.ok(frame.rect[0]+frame.rect[2]<=data.atlasSize[0]&&frame.rect[1]+frame.rect[3]<=data.atlasSize[1]);});}
   const height=Math.max(...Object.entries(data.frames).flatMap(([facing,bank])=>bank.map((frame,i)=>(frame.anchor[1]-idle.frames[facing][i].opaqueBounds[1]-(frame.offset?.[1]??0))*data.scale*(frame.bodyCalibration??1))));const identityNative=Object.values(idle.frames).flat().every(frame=>frame.poseSource?.kind==='native-identity-transfer');
   if(identityNative){assert.equal(data.scale,idle.scale);for(const frame of Object.values(data.frames).flat()){assert.equal(frame.bodyCalibration,1);assert.ok(Number.isFinite(frame.poseSource.standingReferenceHeight)&&frame.poseSource.standingReferenceHeight>0);assert.ok(Math.abs(frame.poseSource.uniformResample*data.scale*frame.poseSource.standingReferenceHeight-320*fighter.heightScale)<.001,'One whole-sheet anatomical source scale');const bounds=frame.opaqueBounds,left=data.canvasSize[0]/2+(bounds[0]-frame.anchor[0])*data.scale,right=data.canvasSize[0]/2+(bounds[2]-frame.anchor[0])*data.scale,top=data.groundY+(bounds[1]-frame.anchor[1])*data.scale,bottom=data.groundY+(bounds[3]-frame.anchor[1])*data.scale;assert.ok(left>=0&&right<=data.canvasSize[0]&&top>=0&&bottom<=data.canvasSize[1]);assert.equal(bottom,data.groundY,'Actual native boots remain on430px floor');}assert.ok(Math.abs(height-320*fighter.heightScale)<=2*data.scale+.001,'Native idle breathing and alpha resampling differ by at most two destination pixels');}
+  else if(fighter.id==='bnl-01'){
+   assert.equal(data.sourceScale,1);assert.equal(data.scale,1);assert.deepEqual(data.canvasSize,[426,455]);
+   assert.deepEqual(data.frames.right.map(frame=>frame.anchor[1]-frame.opaqueBounds[1]),[321,320,305,301],'Actual native wisps change length; complete hood anatomy stays at one source scale');
+   for(const frame of Object.values(data.frames).flat()){
+    assert.equal(frame.poseSource.kind,'generated-native-whole-pose');assert.equal(frame.poseSource.sourceFile,'bnl-idle-v2.png');
+    assert.equal(frame.poseSource.sourceSha256,'72d8210889670c3dc0bfe4cd17f30e9738166c69906742da7ab61d89403206b1');
+    assert.equal(frame.poseSource.uniformResample,320/587);assert.equal(frame.poseSource.calibration.hoodWidth,128);assert.equal(frame.poseSource.calibration.hoodDepth,158);
+   }
+  }
   else assert.ok(Math.abs(height-320*fighter.heightScale)<(source.status==='genuine whole-body native keys'?320*fighter.heightScale*.12:.01));
   const compiled=compileMenuIdle(data,{width:data.atlasSize[0],height:data.atlasSize[1]});assert.equal(menuIdleFrame(compiled,0,'right').index,data.order[0]);assert.equal(menuIdleFrame(compiled,181,'left').facing,'left');assert.equal(menuIdleFrame(compiled,999,'left',true).index,data.order[0]);
  }
@@ -42,4 +51,14 @@ test('selected native idle starts at its first key, keeps authored pacing and pa
   previews.tick(12880);assert.deepEqual(draws[0].at(-1),[0,0,384,512],'full authored order loops to first source key');
   previews.setReducedMotion(true);assert.deepEqual(draws[0].at(-1),[0,0,384,512]);const staticCount=draws[0].length;previews.tick(16000);assert.equal(draws[0].length,staticCount);previews.destroy();
  }finally{if(oldImage===undefined)delete globalThis.Image;else globalThis.Image=oldImage;}
+});
+test('BNL compact menu retains all eight exact approved native idle RGBA keys and every luminous source pixel',async()=>{
+ const {default:sharp}=await import('sharp'),data=JSON.parse(readFileSync(new URL('assets/menu/bnl-01-idle.json',root))),native=JSON.parse(readFileSync(new URL('assets/fighters/bnl-01/manifest.json',root))),expected={"right":["1973d8a23c7fbc821145329a4c12c28c928397c6cd0aa781737f2d4d3348e687","90bf791a80d8eb723f07fa035d57950b26bd3d166989dfe7a4e026c9f9021e92","d41fa78c602328842c1b1599d6713cc5bcee65236f291564757b52ef12c7fd3c","999498ab52b923c4361ff41eb926b0a5dcd6ef2328bf674479d6dd41f566417e"],"left":["b0974161b619941a3d2b3f5e35e8d934589dcd4a3842db5aa796f1e4af84c473","69fb041e2cd221bbf105e9c2a2269166c2e03cac034b8f9820576bd8fb1e94b7","78eeef8e897b8e8187adac9ac25f540013d844dc9e0d2766c5f7c685e63ed116","93a232cc15bbc08d4e8d53bc69ba1124bea19aafe5b0cc9b0e17f6501b939592"]};
+ const canonical=await sharp(readFileSync(new URL('assets/fighters/bnl-01/native.webp',root))).ensureAlpha().raw().toBuffer({resolveWithObject:true}),compact=await sharp(readFileSync(new URL('assets/menu/'+data.file,root))).ensureAlpha().raw().toBuffer({resolveWithObject:true});
+ function crop(decoded,rect){const[x,y,w,h]=rect,rows=[];for(let yy=0;yy<h;yy++)rows.push(decoded.data.subarray(((y+yy)*decoded.info.width+x)*4,((y+yy)*decoded.info.width+x+w)*4));return Buffer.concat(rows);}
+ for(const facing of ['right','left'])for(const[index,frame]of data.frames[facing].entries()){
+  const original=native.clips.idle.frames[facing][index],pixels=crop(compact,frame.rect);assert.deepEqual(frame.sourceRect,original.rect);
+  assert.deepEqual(pixels,crop(canonical,original.rect),'Complete own native image including faint wisp glow');
+  assert.equal(createHash('sha256').update(pixels).digest('hex'),expected[facing][index]);
+ }
 });

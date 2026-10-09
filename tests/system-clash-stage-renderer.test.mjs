@@ -11,13 +11,13 @@ const layers={frames:{control:{rect:[0,0,160,200],anchor:[80,200]},leftWall:{rec
 
 test('wide stage art keeps uniform proportions and caches only its selected composition',()=>{
  const {screen,surfaces}=owner(),renderer=createStageRenderer(screen),state=createStageState('radio-studio'),art={id:state.id,image:plate,kit,layers};
- renderer.drawBackground(screen.getContext(),state,art);assert.equal(surfaces.length,2);assert.equal(surfaces[0].width,2560);
+ renderer.drawBackground(screen.getContext(),state,art);assert.equal(surfaces.filter(v=>v.width===2560&&v.height===720).length,1);assert.equal(surfaces[0].width,2560);const nativeCacheCount=surfaces.length;
  const plateCalls=surfaces[0].calls.filter(([key,image])=>key==='drawImage'&&image===plate);assert(plateCalls.length>=3,'Central plate has matching side sections');
  for(const [,image,sx,sy,sw,sh,dx,dy,dw,dh]of plateCalls)assert(Math.abs(dw/sw-dh/sh)<1e-9,'Landscape source pixels scale uniformly');
  assert(surfaces[0].calls.some(([key,image])=>key==='drawImage'&&image===surfaces[1]),'The feathered kit floor is composed into the cached room');
- const calls=surfaces[0].calls.length;for(let i=0;i<30;i++)renderer.drawBackground(screen.getContext(),state,art);assert.equal(surfaces[0].calls.length,calls);
+ const calls=surfaces[0].calls.length;for(let i=0;i<30;i++)renderer.drawBackground(screen.getContext(),state,art);assert.equal(surfaces[0].calls.length,calls);assert.equal(surfaces.length,nativeCacheCount,'Native ambient masks are cached rather than recreated each frame');
  const next=createStageState('containment');renderer.drawBackground(screen.getContext(),next,art);
- assert.equal(surfaces.length,3);assert(!surfaces[2].calls.some(([key,image])=>key==='drawImage'&&image===plate),'An old asynchronously loaded room cannot appear in a new room');
+ assert.equal(surfaces.length,nativeCacheCount+1);assert(!surfaces.at(-1).calls.some(([key,image])=>key==='drawImage'&&image===plate),'An old asynchronously loaded room cannot appear in a new room');
  assert.equal(renderer.cacheInfo().count,1,'Only one composed room is retained');
 });
 
@@ -48,14 +48,14 @@ test('fight renderer applies one uniform world camera before fighters and restor
 test('stage interaction fixtures clear the Deletion set without changing the room cache',()=>{
  const {screen,surfaces}=owner(),renderer=createStageRenderer(screen),state=createStageState('containment'),art={id:state.id,image:plate,kit,layers};
  const control=call=>call[0]==='drawImage'&&call[1]===kit&&call[2]===0&&call[3]===0&&call[4]===160&&call[5]===200;
- renderer.drawBackground(screen.getContext(),state,art);
+ renderer.drawBackground(screen.getContext(),state,art);const nativeCacheCount=surfaces.length;
  assert(!surfaces[0].calls.some(control),'A cached room must not bake a console underneath Deletion actors');
  renderer.drawBehind(screen.getContext(),state,art,{});
  assert(screen.calls.some(control),'The console remains visible during ordinary play');
  const start=screen.calls.length;
  renderer.drawBehind(screen.getContext(),state,art,{fighting:false,cinematicElapsed:350});
  assert(!screen.calls.slice(start).some(control),'The settled cinematic leaves its mechanism and actor silhouettes clear');
- assert.equal(surfaces.length,2,'Cinematic presentation does not rebuild room pixels');
+ assert.equal(surfaces.length,nativeCacheCount,'Cinematic presentation does not rebuild room pixels');
 });
 
 test('wide cinematic backdrop keeps native aspect and floor pixels without stretched bands',()=>{

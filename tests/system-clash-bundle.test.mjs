@@ -18,7 +18,7 @@ const inventory = fs.readdirSync(root, { recursive: true, withFileTypes: true })
   .map(entry => path.relative(root, path.join(entry.parentPath ?? entry.path, entry.name)).replaceAll("\\", "/"));
 
 test("System Clash ships only its same-origin runtime, with complete registered art", async () => {
-  assert.equal(roster.length, 18);
+  assert.equal(roster.length, 19);
   assert(roster.every(fighter => fighter.enabled));
   assert.equal(inventory.filter(name => name.endsWith(".png")).length, 211);
   assert(inventory.every(name => /\.(?:png|webp|svg|json|html|css|m?js|wav|mp3)$/.test(name)));
@@ -66,6 +66,23 @@ test("System Clash ships only its same-origin runtime, with complete registered 
       }
     }
     const replacedOriginals = new Set(),approvedNativeSources=new Set(),retainedSources=new Set();
+    // Clarity chooses a derivative of the exact approved active atlas, while retaining that source.
+    for(const name of inventory.filter(name=>/^assets\/(?:fighters|arcade|deletions)\/[^/]+\/manifest\.json$/.test(name))){
+      for(const clip of Object.values(JSON.parse(read(name)).clips)){
+        if(!clip.clarityFile)continue;
+        const proof=clip.nativeClarity;assert.ok(proof,'Selected clarity atlas requires source provenance: '+name);
+        const original=path.posix.normalize(path.posix.join(path.posix.dirname(name),proof.originalFile));
+        const served=path.posix.normalize(path.posix.join(path.posix.dirname(name),clip.clarityFile));
+        assert(inventory.includes(original),'Approved clarity source remains present: '+original);
+        assert(inventory.includes(served),'Selected clarity derivative remains present: '+served);
+        assert.equal(createHash('sha256').update(fs.readFileSync(path.join(root,original))).digest('hex'),proof.sourceSha256,'Approved active source bytes remain exact');
+        assert.equal(createHash('sha256').update(fs.readFileSync(path.join(root,served))).digest('hex'),proof.derivativeSha256,'Only the verified derivative is selected');
+        assert(requests.has(served),'Selected clarity atlas was not loaded: '+served);
+        assert(!requests.has(original),'Retained clarity source must not add a duplicate runtime download: '+original);
+        retainedSources.add(original);
+      }
+    }
+
     // Approved leather atlases stay byte-exact as retained sources; Rogers is the selected main skin.
     const retainedAshLeather = {
       "assets/animation-polish/ash-flowers/punch.webp": "52e02b8bb3fd4aad354c74ae183eb73907f2b39a6ddb1d6898b531fe9057199b",
@@ -146,7 +163,7 @@ test("System Clash ships only its same-origin runtime, with complete registered 
       for (const clip of Object.values(JSON.parse(read(name)).clips)) {
         if (!clip.runtimeFile) continue;
         const original = path.posix.normalize(path.posix.join(path.posix.dirname(name), clip.file));
-        const served = path.posix.normalize(path.posix.join(path.posix.dirname(name), clip.runtimeFile));
+        const served = path.posix.normalize(path.posix.join(path.posix.dirname(name), clip.clarityFile??clip.runtimeFile));
         assert(inventory.includes(original), "Approved source remains present: " + original);
         assert(requests.has(served), "Replacement atlas was not loaded: " + served);
         assert(!requests.has(original), "Hosted loading should prefer the optimized atlas: " + original);
@@ -160,7 +177,7 @@ test("System Clash ships only its same-origin runtime, with complete registered 
     assert.equal(createHash("sha256").update(fs.readFileSync(path.join(root,retainedOakSource))).digest("hex"),"cb907934f502329fba35602a8c8230cd916e7404434159dbda63aad72c3e3053");
     const oakRip=JSON.parse(read("assets/deletions/papa-oak/manifest.json")).clips.rip;
     assert.equal(oakRip.file,"rip-opposed-v1.webp");
-    assert(requests.has("assets/deletions/papa-oak/"+oakRip.file),"The reviewed opposed-palm atlas must load");
+    assert(requests.has("assets/deletions/papa-oak/"+(oakRip.clarityFile??oakRip.file)),"The reviewed opposed-palm atlas must load");
     assert(!requests.has(retainedOakSource),"Retained original tear pixels do not add a second runtime download");
     // Retain the approved original Doof walk while loading its reviewed four-phase replacement.
     const retainedDoofWalk='assets/fighters/doofnoobler/walk.webp';
@@ -218,7 +235,7 @@ test("demo portraits and standing art decode for every playable fighter without 
   assert.deepEqual(menu.fighters.map(f => [f.id, f.name]), roster.map(f => [f.id, f.name]));
   assert.equal(inventory.filter(name => name.startsWith("assets/menu/")).length, roster.length * 4 + 3);
   for (const fighter of menu.fighters) {
-    for (const [kind, expected] of [["portrait", [256, 256]], ["standing", fighter.standingSize ?? [320, 440]]]) {
+    for (const [kind, expected] of [["portrait", [256, 256]], ["standing", fighter.standingSize ?? (fighter.id === 'bnl-01' ? fighter.menuCanvasSize : [320, 440])]]) {
       const name = fighter[kind];
       assert.match(name, /^assets\/menu\/[a-z0-9-]+\.webp$/);
       assert(inventory.includes(name));

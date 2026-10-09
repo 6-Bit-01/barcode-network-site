@@ -52,3 +52,5 @@ test('Mutilator selection survives both seats and changing fighter resets readin
  assert.equal((await rooms.poll(host.code,guest.token)).host.ready,false);
  await fails(()=>rooms.select(host.code,host.token,{fighter:'mutilator-unreleased',ready:true}),400);
 });
+
+test('all19 online fighter IDs include BNL in either legitimate seat without local unlock authority',async()=>{assert.equal(ONLINE_FIGHTERS.length,19);assert.equal(new Set(ONLINE_FIGHTERS).size,19);const {rooms}=fixture(),host=await rooms.create('Host'),guest=await rooms.join(host.code,'Guest');await rooms.select(host.code,host.token,{fighter:'bnl-01',ready:true});await rooms.select(guest.code,guest.token,{fighter:'bnl-01',ready:true});const state=await rooms.poll(host.code,guest.token);assert.equal(state.host.fighter,'bnl-01');assert.equal(state.guest.fighter,'bnl-01');await fails(()=>rooms.select(host.code,host.token,{fighter:'bnl-01-unreleased',ready:true}),400);});

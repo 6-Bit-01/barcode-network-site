@@ -105,6 +105,13 @@
       "deletion": "brew-city-massacre"
     },
     {
+      "id": "bnl-01",
+      "name": "BNL-01",
+      "enabled": true,
+      "deletion": "Signal Overload",
+      "locked": true
+    },
+    {
       "id": "9-bit",
       "name": "9 Bit",
       "enabled": true,

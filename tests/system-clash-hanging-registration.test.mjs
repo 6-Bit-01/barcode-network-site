@@ -25,7 +25,7 @@ function size(file){
 }
 function native(id){const clips={};let manifest;for(const bank of ['fighters','arcade','deletions']){const folder=path.join(root,bank,id),data=JSON.parse(fs.readFileSync(path.join(folder,'manifest.json'),'utf8'));if(bank==='fighters')manifest=data;for(const [name,clip]of Object.entries(data.clips)){const key=bank==='deletions'?'delete-'+name:name;clips[key]=compileFightClip(clip,size(path.join(folder,clip.runtimeFile??clip.file)),data,key);clips[key].file=path.join(folder,clip.runtimeFile??clip.file);}}return {manifest,clips};}
 const ids=JSON.parse(fs.readFileSync(path.join(root,'menu/roster.json'),'utf8')).fighters.map(f=>f.id);
-assert.equal(ids.length,18,'Every current playable fighter is covered');
+assert.equal(ids.length,19,'Every current playable fighter is covered');
 const arts=Object.fromEntries(ids.map(id=>[id,native(id)]));
 const additional={};for(const id of ['9-bit','cache-back','dr3wbaby','mr-nice-guy','wittyf0x','dj-floppydisc']){const key=deletionDefinition(id).id;additional[key]={manifest:JSON.parse(fs.readFileSync(path.join(root,'deletions',key,'atlas.json'),'utf8'))};}
 const prop={additional};

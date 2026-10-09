@@ -1,3 +1,4 @@
+import {stageAmbientPlan} from './stage-ambient.mjs';
 import {stageById,stagePhase,stageInteractionReady} from './fight-stages.mjs';
 const FLOOR=620,HEIGHT=720,TAU=Math.PI*2;
 const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
@@ -17,14 +18,28 @@ function composition(ctx,spec,art,owner){fallback(ctx,spec);if(art?.image){const
 }
 function visual(ctx,options,key,x,y,width,height,opacity=1){const image=options?.interfaceArt?.images?.[key];if(!image)return false;ctx.save();ctx.globalAlpha*=clamp(opacity,0,1);ctx.drawImage(image,x,y,width,height);ctx.restore();return true;}
 function nativeVisual(ctx,options,key,x,y,width,opacity=1){const image=options?.interfaceArt?.images?.[key];if(!image)return false;return visual(ctx,options,key,x,y,width,width*image.height/image.width,opacity);}
-function fixtures(ctx,spec,art,elapsed){const progress=elapsed==null?0:clamp(elapsed/350,0,1),opacity=1-progress*progress*(3-2*progress);if(opacity<=0)return;
- prop(ctx,art,'control',spec.interaction.x,FLOOR,{height:150,opacity});
- prop(ctx,art,'emitter',(spec.hazard.zone.left+spec.hazard.zone.right)/2,FLOOR,{height:190,opacity});
+function fixtures(ctx,spec,art,elapsed){const sizes=stageAmbientPlan({id:spec.id,clock:0}).fixtures;const progress=elapsed==null?0:clamp(elapsed/350,0,1),opacity=1-progress*progress*(3-2*progress);if(opacity<=0)return;
+ prop(ctx,art,'control',spec.interaction.x,FLOOR,{height:sizes.controlHeight,opacity});
+ prop(ctx,art,'emitter',(spec.hazard.zone.left+spec.hazard.zone.right)/2,FLOOR,{height:sizes.emitterHeight,opacity});
 }
-function ambient(ctx,state,art,options){const v=stageVisualState(state,options),spec=stageById(state.id);
- // Lamps flicker in their authored fixtures; scenery never acquires debug meters or floating circles.
+function prepareAmbient(owner,state,art){if(!art?.image)return [];const image=art.image,plan=stageAmbientPlan(state);return plan.lights.map(light=>{
+ const [x,y,w,h]=light.rect,sx=Math.round(x*image.width),sy=Math.round(y*image.height),sw=Math.max(1,Math.round(w*image.width)),sh=Math.max(1,Math.round(h*image.height));
+ const canvas=canvasFor(owner,sw,sh),ctx=canvas?.getContext('2d');if(!ctx)return null;
+ ctx.filter='brightness(1.7)';ctx.drawImage(image,sx,sy,sw,sh,0,0,sw,sh);ctx.filter='none';ctx.globalCompositeOperation='destination-in';
+ const horizontal=ctx.createLinearGradient(0,0,sw,0);horizontal.addColorStop(0,'#0000');horizontal.addColorStop(.22,'#000');horizontal.addColorStop(.78,'#000');horizontal.addColorStop(1,'#0000');ctx.fillStyle=horizontal;ctx.fillRect(0,0,sw,sh);
+ const vertical=ctx.createLinearGradient(0,0,0,sh);vertical.addColorStop(0,'#0000');vertical.addColorStop(.22,'#000');vertical.addColorStop(.78,'#000');vertical.addColorStop(1,'#0000');ctx.fillStyle=vertical;ctx.fillRect(0,0,sw,sh);
+ return {canvas,x:640+x*1280,y:y*image.height*1280/image.width,width:w*1280,height:h*image.height*1280/image.width};
+ });}
+function stationPerson(ctx,art,kind,person,frame,opacity=1){
+ const image=art?.extraImages?.[kind],bank=art?.layers?.people?.[kind],pose=bank?.frames?.[frame];if(!image||!pose)return;
+ const [sx,sy,w,h]=pose.rect,anchor=pose.anchor,scale=person.height/bank.referenceHeight;
+ ctx.save();ctx.globalAlpha=opacity;ctx.translate(person.x,person.y);ctx.scale(person.facing==='left'?-scale:scale,scale);ctx.drawImage(image,sx,sy,w,h,-anchor[0],-anchor[1],w,h);ctx.restore();
+}
+function ambient(ctx,state,art,options,patches){const v=stageVisualState(state,options),plan=stageAmbientPlan(state,options);
+ for(const [index,patch]of (patches??[]).entries()){if(!patch)continue;const light=plan.lights[index];ctx.save();ctx.globalAlpha=light.opacity;ctx.drawImage(patch.canvas,patch.x+light.dx,patch.y,patch.width,patch.height);ctx.restore();}
  for(const x of [430,1260,2120])prop(ctx,art,'lightFixture',x,130,{width:135,opacity:.32+v.pulse});
- if(spec.id==='studio-rat-lair')prop(ctx,art,'backProp',1280,FLOOR,{height:270,opacity:.1+v.pulse*.2});
+ for(const observer of plan.observers){stationPerson(ctx,art,'observers',observer,observer.frame,.85*(1-observer.gesture));stationPerson(ctx,art,'observers',observer,observer.frame+1,.85*observer.gesture);}
+ if(plan.pedestrian)stationPerson(ctx,art,'pedestrian',plan.pedestrian,plan.pedestrian.frame,plan.pedestrian.opacity);
 }
 function warnRegion(ctx,spec,phase,options){const z=spec.hazard.zone,age=phase.progress,pulse=options.reducedMotion?.65:.65+.2*Math.sin(age*TAU*3);
  visual(ctx,options,'hazardWarning',z.left,FLOOR-19,z.right-z.left,24,pulse);
@@ -70,7 +85,7 @@ function walls(ctx,state,art,options){const spec=stageById(state.id);for(const s
 
 export function createStageRenderer(owner){let cache=null;return {
  cacheInfo(){return {count:cache?1:0,id:cache?.id,bytes:cache?cache.width*HEIGHT*4:0};},
- drawBackground(ctx,state,source){const spec=stageById(state.id),art=source?.id===state.id?source:null;if(!cache||cache.id!==state.id||cache.image!==art?.image||cache.kit!==art?.kit||cache.layers!==art?.layers){const canvas=canvasFor(owner,state.width,HEIGHT),context=canvas?.getContext('2d');if(context)composition(context,spec,art,owner);cache={id:state.id,image:art?.image,kit:art?.kit,layers:art?.layers,canvas,context,width:state.width};}if(cache.context)ctx.drawImage(cache.canvas,0,0);else composition(ctx,spec,art,owner);},
- drawBehind(ctx,state,source,options={}){const spec=stageById(state.id),art=source?.id===state.id?source:null;ambient(ctx,state,art,options);fixtures(ctx,spec,art,options.cinematicElapsed);walls(ctx,state,art,options);if(options.fighting===false)return;const phase=stagePhase(state);if(phase.phase==='warning'||phase.phase==='active'){warnRegion(ctx,spec,phase,options);hazard(ctx,state,spec,phase,options);}},
+ drawBackground(ctx,state,source){const spec=stageById(state.id),art=source?.id===state.id?source:null;if(!cache||cache.id!==state.id||cache.image!==art?.image||cache.kit!==art?.kit||cache.layers!==art?.layers){const canvas=canvasFor(owner,state.width,HEIGHT),context=canvas?.getContext('2d');if(context)composition(context,spec,art,owner);cache={id:state.id,image:art?.image,kit:art?.kit,layers:art?.layers,canvas,context,width:state.width,ambient:prepareAmbient(owner,state,art)};}if(cache.context)ctx.drawImage(cache.canvas,0,0);else composition(ctx,spec,art,owner);},
+ drawBehind(ctx,state,source,options={}){const spec=stageById(state.id),art=source?.id===state.id?source:null;ambient(ctx,state,art,options,cache?.id===state.id?cache.ambient:[]);fixtures(ctx,spec,art,options.cinematicElapsed);walls(ctx,state,art,options);if(options.fighting===false)return;const phase=stagePhase(state);if(phase.phase==='warning'||phase.phase==='active'){warnRegion(ctx,spec,phase,options);hazard(ctx,state,spec,phase,options);}},
  drawFront(ctx,match,source,options={}){const state=match.stage,spec=stageById(state.id),art=source?.id===state.id?source:null;if(match.phase!=='fight')return;const phase=stagePhase(state),near=match.fighters?.some(f=>f.hp>0&&Math.abs(f.x-spec.interaction.x)<=spec.interaction.reach),prompt=near&&stageInteractionReady(state,spec.interaction.x)?'R1 · '+spec.interaction.label:phase.phase==='cooldown'?`RECHARGE ${Math.ceil(phase.remaining/1000)}s`:phase.phase==='interacting'?'ARMING…':phase.phase==='ready'?'READY':'WARNING';ctx.save();const width=Math.max(180,prompt.length*8+30);visual(ctx,options,'menuPlate',spec.interaction.x-width/2,FLOOR+5,width,34,.9);label(ctx,prompt,spec.interaction.x,FLOOR+28,13,spec.color);ctx.restore();}
 };}

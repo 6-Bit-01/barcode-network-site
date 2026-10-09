@@ -1,3 +1,5 @@
+import {drawSignalDeletion,drawNativeSignalFragments} from './bnl-fighter.mjs';
+import {cleaverPiecePlan,drawNativeCleaverPieces} from './cleaver-native-pieces.mjs';
 import {drawRemainsVictim,marbleVictimState} from './fight-remains.mjs';
 import {litterBasinPose,newDeletionPositions,newDeletionPose,hangingVictimPose,butcherVictimState} from './new-deletion-library.mjs';
 import {deletionDefinition,deletionPropState,deletionPose} from './deletion-library.mjs';
@@ -21,7 +23,7 @@ function splitPieces(match,hero,victim,art,point,definition){
  return [-1,1].map((halfMask,i)=>{
   const rotation=halfMask*Math.PI/2*drop,finalRotation=halfMask*Math.PI/2,left=halfMask<0?bounds[0]:cutX,right=halfMask<0?cutX:bounds[2],corners=[[left,bounds[1]],[right,bounds[1]],[left,bounds[3]],[right,bounds[3]]],maxY=Math.max(...corners.map(([x,y])=>((x-cutX)*Math.sin(finalRotation)+(y-cutY)*Math.cos(finalRotation))*scale)),floorCutY=FLOOR-maxY;
   const cutWorldX=hands[i].x+(match._deletionOrigin.target+halfMask*180-hands[i].x)*drop,cutWorldY=hands[i].y+(floorCutY-hands[i].y)*drop*drop-Math.max(90,(bounds[3]-bounds[1])*scale*.55)*drop*(1-drop);
-  return {clip:view.clip,elapsed:view.elapsed,facing:view.facing,halfMask,cutX,rotation,rotationPivotPoint:{x:cutX,y:cutY},fleshCut:{x:cutX,y:cutY,top:Math.max(bounds[1],cutY-(bounds[3]-bounds[1])*.40),bottom:Math.min(bounds[3],cutY+(bounds[3]-bounds[1])*.40)},x:view.x+cutWorldX-cut.x,y:cutWorldY-cut.y};
+  return {clip:view.clip,elapsed:view.elapsed,facing:view.facing,halfMask,cutX,rotation,rotationPivotPoint:{x:cutX,y:cutY},fleshCut:match.fighters[1-match.winner].id==='bnl-01'?null:{x:cutX,y:cutY,top:Math.max(bounds[1],cutY-(bounds[3]-bounds[1])*.40),bottom:Math.min(bounds[3],cutY+(bounds[3]-bounds[1])*.40)},x:view.x+cutWorldX-cut.x,y:cutWorldY-cut.y};
  });
 }
 // The procedural combat torso can extend beyond a bowed native silhouette.
@@ -56,17 +58,19 @@ export function nativeTorsoBandEdge(frame,pose,direction,scale){
  return region?(direction>0?region.right:region.left)-x:null;
 }
 export function registerNewDeletionViews(match,views,art,point,prop,nativeMask){
- const definition=deletionDefinition(match.fighters[match.winner].id);if(!['hug','litter-box','rip','marbles','cleaver'].includes(definition?.mechanism))return null;
+ const definition=deletionDefinition(match.fighters[match.winner].id);if(!['hug','litter-box','rip','marbles','cleaver','signal-overload'].includes(definition?.mechanism))return null;
  const result=views.map(view=>({...view})),hero=result[match.winner],victim=result[1-match.winner],b=definition.beats,t=match.deletionElapsed,o=match._deletionOrigin;
+ if(definition.mechanism==='signal-overload'){if(t>=b.fragment)victim.opacity=0;return result;}
  if(definition.mechanism==='cleaver'){
   const source=art[1-match.winner],asset=source.clips[victim.clip],frame=asset?.data.frames?.[victim.facing]?.[poseFrameIndex(asset,victim)];
   if(frame){const body=point(victim,source,'torso'),bounds=frame.opaqueBounds,scale=poseScale(asset,frame);victim.remainsOrigin={x:body.x,height:(bounds[3]-bounds[1])*scale};}
-  victim.remainsArt=prop?.remains;victim.remainsState=butcherVictimState(t,definition,o?.cleaverContacts);if(t>=b.finalCut)victim.opacity=0;return result;
+  victim.remainsState=butcherVictimState(t,definition,o?.cleaverContacts);
+  if(frame&&t>=b.highCut){victim.cleaverPieces=cleaverPiecePlan(frame,{contacts:o.cleaverContacts,scale:poseScale(asset,frame),originX:victim.x,originY:FLOOR+(victim.y??0),direction:o.direction,mask:nativeMask?.(asset,frame)});if(victim.cleaverPieces.length)victim.opacity=0;}return result;
  }
  if(definition.mechanism==='marbles'){
   const source=art[1-match.winner],asset=source.clips[victim.clip],frame=asset?.data.frames?.[victim.facing]?.[poseFrameIndex(asset,victim)];
   if(frame){const body=point(victim,source,'torso'),bounds=frame.opaqueBounds,scale=poseScale(asset,frame);victim.remainsOrigin={x:body.x,height:(bounds[3]-bounds[1])*scale};}
-  victim.remainsState=marbleVictimState(t);if(t>=b.lastImpact)victim.opacity=0;return result;
+  victim.remainsState=marbleVictimState(t);if(t>=b.lastImpact||(match.fighters[1-match.winner].id==='bnl-01'&&t>=b.firstImpact))victim.opacity=0;return result;
  }
  if(definition.mechanism==='litter-box'){
   const source=art[1-match.winner],g=litterBoxGeometry(match,prop,art),selected=litterBasinPose(source.clips);
@@ -112,13 +116,14 @@ export function drawNativeRipForearm(ctx,view,art){
  ctx.save();ctx.translate(view.x,FLOOR+(view.y??0));ctx.scale(scale,scale);ctx.beginPath();for(const [i,[x,y]]of mask.entries())ctx[i?'lineTo':'moveTo'](x+offset[0]-frame.anchor[0],y+offset[1]-frame.anchor[1]);ctx.closePath();ctx.clip();ctx.drawImage(asset.image,sx,sy,w,h,offset[0]-frame.anchor[0],offset[1]-frame.anchor[1],w,h);ctx.restore();return true;
 }
 export function drawNewDeletionScene(ctx,match,prop,views,art,front,{reducedMotion=false}={}){const definition=deletionDefinition(match.fighters[match.winner].id);if(!definition)return;const t=match.deletionElapsed,b=definition.beats,o=match._deletionOrigin;
+ if(definition.mechanism==='signal-overload'){drawSignalDeletion(ctx,match,views,art,front,{reducedMotion});return;}
  if(definition.mechanism==='cleaver'){
-  if(!front&&t>=b.highCut&&t<b.finalCut){const victim=views[1-match.winner],origin=victim.remainsOrigin??{x:victim.x,height:match.fighters[1-match.winner].height},source=art[1-match.winner],asset=source.clips[victim.clip],frame=asset?.data.frames?.[victim.facing]?.[poseFrameIndex(asset,victim)],bodyMask=frame?{image:asset.image,frame,scale:poseScale(asset,frame),view:victim}:null;drawRemainsVictim(ctx,prop?.remains,{...origin,pose:'standing',progress:butcherVictimState(t,definition,o?.cleaverContacts).exposure,direction:o.direction,bodyMask});}
+  if(!front&&t>=b.highCut){const victim=views[1-match.winner],source=art[1-match.winner],asset=source.clips[victim.clip],frame=asset?.data.frames?.[victim.facing]?.[poseFrameIndex(asset,victim)];if(frame&&victim.cleaverPieces?.length)drawNativeCleaverPieces(ctx,asset.image,frame,victim.cleaverPieces,t,{reducedMotion});}
   return;
  }
  if(definition.mechanism==='marbles'){
   const victim=views[1-match.winner],bank=prop?.remains,state=marbleVictimState(t),origin=victim.remainsOrigin??{x:victim.x,height:match.fighters[1-match.winner].height};
-  if(!front&&t>=b.firstImpact){const source=art[1-match.winner],asset=source.clips[victim.clip],frame=asset?.data.frames?.[victim.facing]?.[poseFrameIndex(asset,victim)],bodyMask=frame?{image:asset.image,frame,scale:poseScale(asset,frame),view:victim}:null;drawRemainsVictim(ctx,bank,{...origin,pose:state.pose,progress:state.exposure,fall:state.fall,direction:o.direction,bodyMask});}
+  if(!front&&t>=b.firstImpact){const source=art[1-match.winner],asset=source.clips[victim.clip],frame=asset?.data.frames?.[victim.facing]?.[poseFrameIndex(asset,victim)],bodyMask=frame?{image:asset.image,frame,scale:poseScale(asset,frame),view:victim}:null;if(match.fighters[1-match.winner].id==='bnl-01'){if(frame)drawNativeSignalFragments(ctx,asset,frame,victim,{progress:state.exposure,direction:o.direction,reducedMotion});}else drawRemainsVictim(ctx,bank,{...origin,pose:state.pose,progress:state.exposure,fall:state.fall,direction:o.direction,bodyMask});}
   if(front&&bank){const marble=bank.images.marble,hero=views[match.winner],native=art[match.winner],contact=match.fighters[match.winner]._clips['delete-marble']?.nativeContactMs??300;
    if(marble){for(let volley=0;volley<7;volley++){const launch=b.firstLaunch+volley*450,flight=clamp((t-launch)/200,0,1),reference={...hero,clip:'delete-marble',elapsed:contact},asset=native.clips['delete-marble'],frame=asset?.data.frames?.[hero.facing]?.[poseFrameIndex(asset,reference)],offset=frame?.offset??[0,0],grip=frame?.attachments?.grip,scale=frame&&poseScale(asset,frame),hand=grip?{x:hero.x+(grip[0]+offset[0]-frame.anchor[0])*scale,y:FLOOR+(grip[1]+offset[1]-frame.anchor[1])*scale}:{x:hero.x+o.direction*65,y:FLOOR-190};
     if(t>=launch&&t<launch+200){for(let ball=0;ball<3;ball++){const endY=FLOOR-origin.height*(volley%3===0?.88:.57)+(ball-1)*18,x=hand.x+(origin.x-hand.x)*flight,y=hand.y+(endY-hand.y)*flight-(reducedMotion?0:20)*Math.sin(Math.PI*flight);ctx.drawImage(marble,x-6,y-6,12,12);}}

@@ -8,7 +8,7 @@ import {assetPath,loadArcadeArt} from '../public/games/system-clash/play/fight-a
 const root=fileURLToPath(new URL('../public/games/system-clash/play/',import.meta.url));
 const actions=['low-punch','low-kick','jump','uppercut','crouch-punch','crouch-kick','jump-punch','jump-kick','pickup','crouch-high-kick','double-punch','power-kick'];
 const manifests=Object.fromEntries(['6-bit','9-bit'].map(id=>[id,JSON.parse(fs.readFileSync(path.join(root,'assets/arcade',id,'manifest.json'),'utf8'))]));
-const urlFor=(id,data)=>new URL(assetPath(`assets/arcade/${id}/manifest.json`,data.runtimeFile??data.file),'https://game.example/').href;
+const urlFor=(id,data)=>new URL(assetPath(`assets/arcade/${id}/manifest.json`,data.clarityFile??data.runtimeFile??data.file),'https://game.example/').href;
 function size(bytes){
  if(bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])))return {width:bytes.readUInt32BE(16),height:bytes.readUInt32BE(20)};
  for(let at=12;at+8<=bytes.length;){const kind=bytes.toString('ascii',at,at+4),n=bytes.readUInt32LE(at+4),p=at+8;

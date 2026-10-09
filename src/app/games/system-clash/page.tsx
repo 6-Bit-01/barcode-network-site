@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "System Clash Demo",
-  description: "Play BARCODE: SYSTEM CLASH Demo with 18 fighters, six interactive stages, Solo CPU, Local Two Player, Tournament and Online sessions.",
+  description: "Play BARCODE: SYSTEM CLASH Demo with 19 fighters, seven interactive stages, Solo CPU, Local Two Player, Tournament and Online sessions.",
   alternates: { canonical: "/games/system-clash" },
 };
 
@@ -18,7 +18,7 @@ export default function SystemClashPage() {
             System Clash Demo
           </h1>
           <p className="mt-6 max-w-2xl text-base leading-7 text-muted">
-            Choose from 18 BARCODE fighters across six interactive stages. Play
+            Choose from 19 BARCODE fighters across seven interactive stages. Play
             Solo CPU, Local Two Player, Tournament or an Online session,
             and learn their moves and signature Deletions.
           </p>

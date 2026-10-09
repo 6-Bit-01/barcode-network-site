@@ -1,0 +1,91 @@
+{
+  "creator": "Kenney",
+  "pack": "Interface Sounds 1.0",
+  "source": "https://kenney.nl/assets/interface-sounds",
+  "download": "https://kenney.nl/media/pages/assets/interface-sounds/fa43c1dd4d-1677589452/kenney_interface-sounds.zip",
+  "license": "CC0-1.0",
+  "licenseURL": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "processing": "Trimmed silence, gentle9kHz lowpass and peak limiter, mono22.05kHz PCM16. Distinct original clip for each action.",
+  "assets": [
+    {
+      "id": "select",
+      "path": "assets/audio/ui/ui-select.wav",
+      "bytes": 1860,
+      "sha256": "f30f745aaa7bb05825100a4ae2045feeb2028667e88c3274006193caa5c81c46",
+      "duration": 0.040408,
+      "sampleRate": 22050,
+      "channels": 1,
+      "sourceFile": "Audio/select_002.ogg"
+    },
+    {
+      "id": "move",
+      "path": "assets/audio/ui/ui-move.wav",
+      "bytes": 436,
+      "sha256": "dbfef49f99f520a039aceb6b85d265c0584f69c0f8001d808bdd309100888711",
+      "duration": 0.008118,
+      "sampleRate": 22050,
+      "channels": 1,
+      "sourceFile": "Audio/tick_001.ogg"
+    },
+    {
+      "id": "confirm",
+      "path": "assets/audio/ui/ui-confirm.wav",
+      "bytes": 12704,
+      "sha256": "03cdd0f8d6731379ca48db9734ed39096f49ab0df229e5a25f375f179c73a126",
+      "duration": 0.286304,
+      "sampleRate": 22050,
+      "channels": 1,
+      "sourceFile": "Audio/confirmation_001.ogg"
+    },
+    {
+      "id": "back",
+      "path": "assets/audio/ui/ui-back.wav",
+      "bytes": 4046,
+      "sha256": "a099a674629de4cf059b5c59b9c73bff76934249bda515a4b3c03a8ed691f22a",
+      "duration": 0.089977,
+      "sampleRate": 22050,
+      "channels": 1,
+      "sourceFile": "Audio/back_003.ogg"
+    },
+    {
+      "id": "options",
+      "path": "assets/audio/ui/ui-options.wav",
+      "bytes": 5858,
+      "sha256": "111c9f9c52324cf6652bf0778448053a71119a01f6788bdd4f9701c4618f963b",
+      "duration": 0.131066,
+      "sampleRate": 22050,
+      "channels": 1,
+      "sourceFile": "Audio/switch_006.ogg"
+    },
+    {
+      "id": "invalid-code",
+      "path": "assets/audio/ui/ui-invalid-code.wav",
+      "bytes": 4680,
+      "sha256": "cf94b685daa68be6869994e5d9f54131008cde51f575c6800b38129e73e21b6d",
+      "duration": 0.104354,
+      "sampleRate": 22050,
+      "channels": 1,
+      "sourceFile": "Audio/error_004.ogg"
+    },
+    {
+      "id": "unlock",
+      "path": "assets/audio/ui/ui-unlock.wav",
+      "bytes": 9094,
+      "sha256": "436b4096ce633551b426781fbd7aa6ecd123facd57d5210c566ad18f5e3909e3",
+      "duration": 0.204444,
+      "sampleRate": 22050,
+      "channels": 1,
+      "sourceFile": "Audio/maximize_003.ogg"
+    },
+    {
+      "id": "start",
+      "path": "assets/audio/ui/ui-start.wav",
+      "bytes": 21298,
+      "sha256": "4df1fbf10ff932d590d9c82633f4d3c89c8280e8b363f2af123f795bbef4a7ba",
+      "duration": 0.481179,
+      "sampleRate": 22050,
+      "channels": 1,
+      "sourceFile": "Audio/confirmation_004.ogg"
+    }
+  ]
+}

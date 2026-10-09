@@ -37,7 +37,6 @@ export default function SecretMenuPage() {
           </p>
           <p className="mt-4 text-sm leading-7 text-muted">
             Saved settings and progress belong to this browser on this site.
-            Saves from the Makko version do not transfer automatically.
           </p>
           <div className="mt-auto pt-6">
             <a
@@ -57,7 +56,7 @@ export default function SecretMenuPage() {
             System Clash Demo
           </h2>
           <p className="mt-4 text-sm leading-7 text-muted">
-            Choose from 18 BARCODE fighters. Play Solo CPU, Local Two Player,
+            Choose from 19 BARCODE fighters. Play Solo CPU, Local Two Player,
             Tournament or Online Sessions across six interactive arenas, with
             each fighter&apos;s own moves and Deletions.
           </p>

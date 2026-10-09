@@ -1,7 +1,7 @@
 import {createHash,randomBytes,timingSafeEqual} from "node:crypto";
 export const ONLINE_ROOM_TTL=20*60*1000;
 export const ONLINE_HOST_TIMEOUT=60000;
-export const ONLINE_FIGHTERS=["6-bit","cache-back","cliff","dj-floppydisc","mac-modem","mr-nice-guy","ms-mayhem","stolz","kaveman-brown","dr3wbaby","ash-flowers","wittyf0x","doofnoobler","lyra","papa-oak","lost-marbles","mutilator","9-bit"] as const;
+export const ONLINE_FIGHTERS=["6-bit","cache-back","cliff","dj-floppydisc","mac-modem","mr-nice-guy","ms-mayhem","stolz","kaveman-brown","dr3wbaby","ash-flowers","wittyf0x","doofnoobler","lyra","papa-oak","lost-marbles","mutilator","bnl-01","9-bit"] as const;
 export class OnlineRoomError extends Error { constructor(message:string,public status=400){super(message);} }
 type Seat={name:string;fighter:string;ready:boolean;lastSeen:number;tokenHash:string};
 type Description={type:"offer"|"answer";sdp:string};

@@ -24,7 +24,7 @@ for(const id of ids)test(id+': approved native walk chronology preserves complet
   return;
  }
  assert.equal(clip.animationPolish?.version,2,'An explicit native in-between bank must replace the four-key walk');
- assert.deepEqual(clip.order,[0,1,2,3,4,5,6,7]);assert.deepEqual(clip.frameMs,[75,75,75,75,75,75,75,75]);
+ if(id==='mac-modem'){assert.equal(clip.motionRepair?.kind,'source-native-phase-selection');assert.deepEqual(clip.order,[0,1,2,6]);assert.deepEqual(clip.frameMs,[150,150,150,150]);assert.deepEqual(clip.motionRepair.originalTiming,{order:[0,1,2,3,4,5,6,7],frameMs:[75,75,75,75,75,75,75,75]});}else{assert.deepEqual(clip.order,[0,1,2,3,4,5,6,7]);assert.deepEqual(clip.frameMs,[75,75,75,75,75,75,75,75]);}
  const file=path.join(directory,clip.file),image=await sharp(file).metadata(),asset=compileFightClip(clip,image,manifest,'walk');
  assert.equal(asset.timeline.duration,clip.animationPolish.approvedTiming.duration);assert.equal(asset.timeline.duration,600);assert.equal(clip.loop,true);
  assert.equal(clip.sourceSha256,sha(await readFile(file)));assert.deepEqual(clip.sourceSize,[image.width,image.height],'Native source geometry must describe the new encoded atlas');

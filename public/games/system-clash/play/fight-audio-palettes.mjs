@@ -12,6 +12,12 @@ const T=tone,N=noise;
 const freeze=value=>{if(value&&typeof value==='object'){for(const child of Object.values(value))freeze(child);Object.freeze(value);}return value;};
 
 export const CHARACTER_FOLEY_PALETTES=freeze({
+ 'bnl-01':{texture:'buffer pings, harmonic carrier swells and crisp packet ticks',air:3400,body:196,material:'metal',gestures:[
+  [T(512,768,.047,.09,0,'sine'),T(1024,1024,.08,.075,.028,'triangle'),N(2800,.018,.035,.09,'bandpass',2)],
+  [T(896,896,.03,.08,0,'triangle'),T(448,672,.042,.085,.052,'sine'),T(1792,1344,.08,.065,.11,'sine')],
+  [T(384,1152,.13,.105,0,'sine'),N(1800,.044,.04,.035,'lowpass'),T(1536,768,.07,.06,.12,'triangle')],
+  [T(640,640,.025,.075,0,'sine'),N(3400,.015,.045,.033,'bandpass',3),T(1280,960,.047,.08,.075,'triangle'),T(768,576,.06,.09,.14,'sine')]
+ ]},
  mutilator:{texture:'steel-toe heel knocks, coarse coat flaps and serrated cleaver scrapes',air:1850,body:118,material:'organic',gestures:[
   [N(790,.043,.12,0,'bandpass',3),T(121,35,.092,.11,.015,'triangle'),N(3400,.064,.075,.072,'highpass')],
   [N(4600,.025,.08,0,'highpass'),T(219,79,.041,.09,.037,'square'),N(610,.087,.12,.099,'lowpass')],
@@ -186,4 +192,3 @@ export function planCharacterFoley(event={},options={}){
   }
   return {layers,family,replace:!appendFamilies.has(family),variant,fighterId,material};
 }
-

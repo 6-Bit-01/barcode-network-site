@@ -37,3 +37,5 @@ body.motion-reduced .selection-stage:after{animation:none;will-change:auto}
 .demo-header{flex-wrap:wrap}.demo-header>span{margin-right:auto}.demo-header #demo-fullscreen{order:4}
 #title-fx{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 @media(max-width:420px){.fighter-card .card-portrait{height:calc(100% - 34px)}.demo-header{gap:5px}.demo-header button{padding:.65rem 1rem}.future .locked-mark{inset:0 0 34px}}
+
+.title-logo-wrap{position:relative;display:block;width:100%;filter:drop-shadow(0 6px 15px #000)}.title-logo-wrap .title-logo{filter:none}.title-logo-animated{visibility:hidden}#title-logo-fx{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {createMatch,advanceMatch,getFighterView,performAction,consumeEvents} from '../public/games/system-clash/play/fight-engine.mjs';
+import {createMatch,advanceMatch,getFighterView,performAction} from '../public/games/system-clash/play/fight-engine.mjs';
 import * as net from '../public/games/system-clash/play/fight-network-state.mjs';
 const roster=['6-bit','9-bit'];
 const clipIds=[['idle','walk','crouch','block','punch','kick','high','low','knockdown','jump','delete-present'],['idle','walk','crouch','block','punch','kick','high','low','knockdown','jump','delete-present']];
@@ -20,7 +20,7 @@ test('host maps remote actions to fighter one and neutralizes stale remote contr
 test('pause application never echoes; only host may request resume with fresh neutral peer',()=>{const host=controller(),guest=controller(1);host.control.receive(start);guest.control.receive(start);host.control.receive({type:'pause',paused:true});assert.equal(host.sent.length,0);assert.equal(host.control.requestPause(false),false);host.control.receive({type:'input',input:{move:0,crouch:false,block:false}});assert.equal(host.control.requestPause(false),true);guest.control.receive({type:'pause',paused:true});assert.equal(guest.control.requestPause(false),false);assert.equal(guest.sent.length,0);});
 test('host FX batches are replayed once and old rematch events are discarded',()=>{const guest=controller(1);guest.control.receive(start);const packet={type:'events',matchId:1,seq:1,events:[{type:'hit',x:100,y:200,attacker:0,target:1}]};guest.control.receive(packet);guest.control.receive(packet);guest.control.receive({...packet,seq:2,matchId:2});assert.equal(guest.events.length,1);});
 test('travel interpolation leaves contact poses, phases and Deletions discrete',()=>{const h=controller(1);h.control.receive(start);const first=snapshot(match(),1);first.state.phase='fight';first.views[0].poseIndex=0;first.views[0].x=500;h.control.receive({type:'snapshot',snapshot:first});h.setTime(40);const second=structuredClone(first);second.seq=2;second.views[0].x=600;h.control.receive({type:'snapshot',snapshot:second});h.setTime(60);assert.equal(h.control.views()[0].x,550);const contact=structuredClone(second);contact.seq=3;contact.views[0].poseIndex=2;contact.views[0].x=700;h.control.receive({type:'snapshot',snapshot:contact});assert.equal(h.control.views()[0].x,700);const deletion=structuredClone(contact);deletion.seq=4;deletion.state.phase='deletion';deletion.state.winner=0;deletion.state._deletionOrigin={direction:1,target:700,victimFacing:'left',near:500,winner:500,victim:700};deletion.views[0].x=800;h.control.receive({type:'snapshot',snapshot:deletion});assert.equal(h.control.views()[0].x,800);});
-test('a guest with stale snapshots pauses and cannot reset or rematch before result',()=>{const h=controller(1);h.control.receive(start);assert.equal(h.control.requestRematch('fight'),false);h.setTime(1200);h.control.tick();assert.equal(h.control.paused,true);assert.equal(h.control.requestRematch('over'),true);assert.equal(h.sent.at(-1).type,'rematch');assert.equal(h.starts.length,1);});
+test('a guest with stale snapshots pauses and cannot reset or rematch before result',()=>{const h=controller(1);h.control.receive(start);h.control.receive({type:'snapshot',snapshot:snapshot()});assert.equal(h.control.requestRematch('fight'),false);h.setTime(1200);h.control.tick();assert.equal(h.control.paused,true);assert.equal(h.control.requestRematch('over'),true);assert.equal(h.sent.at(-1).type,'rematch');assert.equal(h.starts.length,1);});
 test('disconnect neutralizes controls and stops every subsequent authority action',()=>{const h=controller();h.control.receive(start);h.control.receive({type:'input',input});h.control.disconnect('Gone');h.control.disconnect('Again');assert.equal(h.disconnected.length,1);assert.deepEqual(h.control.remoteInput,{move:0,crouch:false,block:false});assert.equal(h.control.action('punch',input),false);assert.equal(h.control.publish(match(),[]),false);});
 function sourceFunction(name,args){const source=readFileSync(new URL('../public/games/system-clash/play/fight.js',import.meta.url),'utf8');const body=source.match(new RegExp('function '+name+'\\([^)]*\\) \\{([\\s\\S]*?)\\n\\}'))?.[1];assert.ok(body);return new Function('env','with(env){return function('+args+'){'+body+'}}');}
 test('guest tick renders but never advances combat, including after browser focus',()=>{let advances=0,draws=0;const env={pollGamepads(){},last:0,ready:true,screenSuspended:false,paused:false,inspectTime:null,motionTime:null,accumulator:0,attackInputs:{},attackCommands(){},flushAttackInputs:()=>[],performance:{now:()=>100},windowActive:true,document:{hidden:false},onlineCombat:{seat:1,started:true,input(){},tick(){},views:()=>[],publish(){}},controls:()=>[input,{move:0,crouch:false,block:false}],match:{phase:'fight',fighters:[{},{}]},getFighterView:()=>({}),advanceMatch:()=>advances++,dispatchEvents(){},effects:{update(){}},draw:()=>draws++,requestAnimationFrame(){},tick(){},previousTravelViews:null,previousTravelPhase:null};sourceFunction('tick','now')(env)(100);assert.equal(advances,0);assert.equal(draws,1);});
@@ -80,4 +80,29 @@ test('Mutilator snapshots preserve selected seats, hidden local data and native 
   const swapped=structuredClone(wire);swapped.state.fighters[seat].id='6-bit';swapped.views[seat].id='6-bit';assert.equal(net.readFightSnapshot(swapped,schema),null);
   guest.destroy();
  }
+});test('station portal snapshots snap at the exit instead of interpolating across the arena',()=>{
+ const h=controller(1);h.control.receive(start);const first=snapshot(match(),1);first.state.phase='fight';first.state.stage.id='interdimensional-station';first.state.stage.portalSerial=0;first.views[0].poseIndex=0;first.views[0].x=150;
+ h.control.receive({type:'snapshot',snapshot:first});h.setTime(40);
+ const second=structuredClone(first);second.seq=2;second.state.stage.portalSerial=1;second.state.stage.lastPortalTransit={serial:1,at:40,transits:[{target:0,from:'left',to:'right',fromX:150,toX:1650,exitX:1650,y:620}]};second.views[0].x=1650;
+ h.control.receive({type:'snapshot',snapshot:second});h.setTime(60);assert.equal(h.control.views()[0].x,1650);
+ const third=structuredClone(second);third.seq=3;third.views[0].x=1610;h.setTime(80);h.control.receive({type:'snapshot',snapshot:third});h.setTime(100);assert.equal(h.control.views()[0].x,1630);
+});
+test('guest waits for its first authoritative snapshot then enforces the ordinary stale-state limit',()=>{
+ const h=controller(1);h.control.receive(start);h.setTime(1200);h.control.tick();assert.equal(h.control.paused,false);
+ h.control.receive({type:'snapshot',snapshot:snapshot()});h.setTime(2199);h.control.tick();assert.equal(h.control.paused,false);h.setTime(2200);h.control.tick();assert.equal(h.control.paused,true);
+ const missing=controller(1);missing.control.receive(start);missing.setTime(5000);missing.control.tick();assert.equal(missing.control.paused,true);
+});
+
+test('freshness starts after slow synchronous frame initialization and keeps the exact one-second rule',()=>{
+ for(const seat of [0,1]){
+  let time=0;const pauses=[];const control=net.createOnlineCombatController({...options,seat,now:()=>time,send:()=>true,onStart:()=>{time=1200;},onPause:value=>pauses.push(value)});
+  control.receive(start);control.tick();assert.equal(control.paused,false);
+  if(seat===1)control.receive({type:'snapshot',snapshot:snapshot()});
+  time=2199;control.tick();assert.equal(control.paused,false);time=2200;control.tick();assert.equal(control.paused,true);assert.deepEqual(pauses,[true]);
+ }
+});
+test('guest frame acknowledges and releases controls only after reset and focus finish',()=>{
+ const order=[];let time=0;const env={reset:(active,seed)=>{assert.equal(active,true);assert.equal(seed,77);time=1200;order.push('reset');},effects:{startAudio:()=>order.push('audio')},canvas:{focus:()=>order.push('focus')},onlineBridge:{seat:1,send:packet=>{assert.equal(time,1200);assert.deepEqual(packet,{type:'started',matchId:1});order.push('started');}},onlineCombat:{input:value=>{assert.deepEqual(value,{move:0,crouch:false,block:false});order.push('neutral');}}};
+ sourceFunction('startOnlineFight','packet')(env)(start);assert.deepEqual(order,['reset','audio','focus','started','neutral']);
+ order.length=0;env.onlineBridge.seat=0;sourceFunction('startOnlineFight','packet')(env)(start);assert.deepEqual(order,['reset','audio','focus']);
 });

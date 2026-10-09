@@ -21,7 +21,7 @@ test('shared settings preserve explicit off against OS preference and use OS onl
 });
 
 test('every interface source and served artwork decodes at its declared dimensions with no external dependency',async()=>{
- const spec=manifest();assert.equal(spec.version,1);assert.equal(Object.keys(spec.assets).length,19);
+ const spec=manifest();assert.equal(spec.version,1);assert.equal(Object.keys(spec.assets).length,21);
  const sharp=(await import('sharp')).default;
  for(const [key,asset]of Object.entries(spec.assets)){
   const source=readFileSync(new URL(asset.file,uiURL));
@@ -43,7 +43,7 @@ test('hosted interface loads once from the current origin and verifies each deco
  const {loadInterfaceArt}=await import(loaderURL),spec=manifest(),requests=[];
  const art=await loadInterfaceArt({baseURL:BASE,fetch:async value=>{requests.push(String(value));return {ok:true,json:async()=>spec};},imageFactory:imagesFor(spec)});
  assert.deepEqual(requests,['https://barcode.example/games/system-clash/play/assets/ui/manifest.json']);
- assert.equal(Object.keys(art.images).length,19);assert.deepEqual(art.failures,[]);
+ assert.equal(Object.keys(art.images).length,21);assert.deepEqual(art.failures,[]);
  for(const [key,image]of Object.entries(art.images))assert.equal(image.source,new URL('assets/ui/'+(spec.assets[key].runtimeFile??spec.assets[key].file),BASE).href);
 });
 
@@ -52,7 +52,7 @@ test('portable bundles use embedded interface art and an older bundle falls back
  const fetch=async()=>{requests++;throw Error('Portable interface must not fetch');};
  const bundle={interface:spec,images:Object.fromEntries(Object.values(spec.assets).map(a=>['assets/ui/'+a.file,'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg"/>')]))};
  const ready=await loadInterfaceArt({baseURL:'file:///D:/portable/fight.html',bundle,fetch,imageFactory:imagesFor(spec)});
- assert.equal(Object.keys(ready.images).length,19);assert.equal(requests,0);
+ assert.equal(Object.keys(ready.images).length,21);assert.equal(requests,0);
  const old=await loadInterfaceArt({baseURL:'file:///D:/portable/fight.html',bundle:{images:{}},fetch,imageFactory:()=>{throw Error('No available images');}});
  assert.deepEqual(old.images,{});assert.equal(requests,0);
  const escaped={interface:spec,images:Object.fromEntries(Object.values(spec.assets).map(a=>['assets/ui/'+a.file,'file:///C:/outside.svg']))};
@@ -69,7 +69,7 @@ test('invalid remote/traversal SVG references fail closed, while a failed option
  }
  for(const option of [{fail:'timer'},{mismatch:'timer'}]){
   const partial=await loadInterfaceArt({baseURL:BASE,fetch:async()=>({ok:true,json:async()=>spec}),imageFactory:imagesFor(spec,option)});
-  assert.equal(Object.keys(partial.images).length,18);assert.ok(partial.failures.includes('timer'));assert.equal(partial.images.timer,undefined);
+  assert.equal(Object.keys(partial.images).length,20);assert.ok(partial.failures.includes('timer'));assert.equal(partial.images.timer,undefined);
  }
  const missing=await loadInterfaceArt({baseURL:BASE,fetch:async()=>{throw Error('offline');}});assert.deepEqual(missing.images,{});
 });

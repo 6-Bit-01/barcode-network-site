@@ -1,7 +1,8 @@
+import {drawTransmissionBanner} from './transmission-art.mjs';
 import {drawRemainsReveal,raggedSeam} from './fight-remains.mjs';
 import {BROADCAST_CUT,broadcastCutStage,broadcastCutFrontStage,broadcastCutDepth,deletionDefinition,deletionPropState,deletionPose} from './deletion-library.mjs';
 import {poseScale,poseTransform,poseFrameIndex,resolvePoseAttachments,weaponAttachment,weaponInsertionGeometry,damageOverlayPlans} from './fight-attachments.mjs';
-import {easedProgress,deletionCamera,createFightCamera,advanceFightCamera} from './fight-presentation.mjs';
+import {easedProgress,deletionCamera,createFightCamera,advanceFightCamera,releasedDeletionView} from './fight-presentation.mjs';
 import {createStageRenderer} from './fight-stage-renderer.mjs';
 import {createFightMotionFX} from './fight-motion-fx.mjs';
 import {registerNewDeletionViews,drawNewDeletionScene,litterBoxGeometry} from './new-deletion-renderer.mjs';
@@ -704,14 +705,15 @@ function wandCaptureFootDrop(art,view) {
 }
 
 function machineViews(match,prop,views,art,nativeMask) {
-  const registered=registerNewDeletionViews(match,views,art,poseWorldPoint,prop,nativeMask);if(registered)return registered;
   const definition=definitionForMatch(match),bank=prop?.additional?.[definition?.id];
+  views=views.map((view,index)=>index===match.winner?view:releasedDeletionView(view,match.fighters[index]._clips,definition,match._deletionOrigin,match.deletionElapsed));
+  const registered=registerNewDeletionViews(match,views,art,poseWorldPoint,prop,nativeMask);if(registered)return registered;
   if(definition?.mechanism==='crt'&&views[1-match.winner]?.deletionFlight) {
     const result=views.map(view=>({...view})),index=1-match.winner,victim=result[index],flight=victim.deletionFlight;
     const capture=hangingVictimPose(art[index].clips,{clip:'delete-brace',elapsed:Math.min(650,definition.beats.drive-definition.beats.shove)});
-    const start=poseWorldPoint({...victim,...capture,x:flight.startX,y:flight.startY},art[index],'torso');
+    const start=poseWorldPoint({...victim,...capture,facing:match._deletionOrigin.victimFacing,x:flight.startX,y:flight.startY},art[index],'torso');
     const captured=deletionPose('victim',definition.beats.captured,match.fighters[match.winner].id,match.fighters[index]._clips,match.fighters[index].height);
-    const end=poseWorldPoint({...victim,...captured,x:flight.endX,y:flight.endY},art[index],'torso');
+    const end=poseWorldPoint({...victim,...captured,facing:match._deletionOrigin.victimFacing,x:flight.endX,y:flight.endY},art[index],'torso');
     const point=poseWorldPoint(victim,art[index],'torso'),p=flight.progress;
     victim.x+=start.x+(end.x-start.x)*p-point.x;
     victim.y+=start.y+(end.y-start.y)*p-flight.height*Math.sin(p*Math.PI)-point.y;
@@ -901,13 +903,13 @@ function machineViews(match,prop,views,art,nativeMask) {
     const destination=machineGeometry({...match,deletionElapsed:b.captured},prop);
     const [ax,ay,aw,ah]=destination.frame.aperture;
     const centerX=destination.x+(ax+aw/2)*destination.scale,bottomY=destination.y+(ay+ah)*destination.scale-5;
-    const captured={...result[victim],clip:'delete-crumpled',elapsed:10000};
+    const captured={...result[victim],clip:'delete-crumpled',elapsed:10000,facing:match._deletionOrigin.victimFacing};
     const before={...result[victim]};result[victim]=captured;alignBody(victim,centerX,bottomY);
     const end=poseWorldPoint(result[victim],art[victim],'torso');
     result[victim]=before;
     const flight=before.deletionFlight;
     if(t<b.captured&&flight) {
-      const first={...before,...hangingVictimPose(art[victim].clips,{clip:'delete-crumpled',elapsed:b.load-b.folded}),x:flight.startX,y:flight.startY};
+      const first={...before,...hangingVictimPose(art[victim].clips,{clip:'delete-crumpled',elapsed:b.load-b.folded}),facing:match._deletionOrigin.victimFacing,x:flight.startX,y:flight.startY};
       const start=poseWorldPoint(first,art[victim],'torso'),point=poseWorldPoint(before,art[victim],'torso'),p=flight.progress;
       before.x+=start.x+(end.x-start.x)*p-point.x;
       before.y+=start.y+(end.y-start.y)*p-flight.height*Math.sin(p*Math.PI)-point.y;
@@ -1127,7 +1129,7 @@ function trussGeometry(match,bank,views,art) {
 
 function wheelGeometry(match,bank,views,art) {
   const index=1-match.winner,victim=views[index],capture=hangingVictimPose(art[index].clips,{clip:'delete-brace',elapsed:0}),asset=art[index].clips[capture.clip];
-  const view={...victim,...capture},native=sourceFrame(asset,view),points=resolvePoseAttachments(native,view.clip,poseFrameIndex(asset,view),view.facing,art[index].manifest.id),torso=points.torso,bounds=native.opaqueBounds;
+  const view={...victim,...capture,facing:match._deletionOrigin.victimFacing??victim.facing},native=sourceFrame(asset,view),points=resolvePoseAttachments(native,view.clip,poseFrameIndex(asset,view),view.facing,art[index].manifest.id),torso=points.torso,bounds=native.opaqueBounds;
   const transform=poseTransform(asset,native),radius=Math.max(...[bounds[0],bounds[2]].flatMap(x=>[bounds[1],bounds[3]].map(y=>Math.hypot((x-torso.x)*transform.sx,(y-torso.y)*transform.sy))))+14;
   return {x:match._deletionOrigin.wheelX,y:FLOOR-radius-12,radius,scale:radius*2/bank.manifest.referenceWidth};
 }
@@ -1745,7 +1747,7 @@ function caption(ctx, title, subline, color = '#f6f0fc', size = 62, interfaceArt
   if (subline) text(ctx, subline, 640, 220, 13, '#d6c5e2', 'center', '700', 'monospace');
 }
 
-function hud(ctx, match, paused, motionReview = false, portraits = {}, interfaceArt) {
+function hud(ctx, match, paused, motionReview = false, portraits = {}, interfaceArt,reducedMotion=false) {
   const announce=(title,subline,color,size)=>caption(ctx,title,subline,color,size,interfaceArt);
   healthBar(ctx, match.fighters?.[0], 0, portraits[match.fighters?.[0]?.id],interfaceArt);
   healthBar(ctx, match.fighters?.[1], 1, portraits[match.fighters?.[1]?.id],interfaceArt);
@@ -1773,7 +1775,9 @@ function hud(ctx, match, paused, motionReview = false, portraits = {}, interface
     const winner = match.fighters?.[match.winner ?? 0];
     const finish=definitionForMatch(match)?.name.toUpperCase()??'DELETION';
     const hint = match.finisherAvailable ? (match.winner===1&&match.mode==='cpu'?'CPU / '+finish:winner.name.toUpperCase()+' / PRESS '+(match.winner===1?'ENTER':'F')+' FOR '+finish) : `${winner?.name?.toUpperCase()} WINS / SIGNAL EXPIRING`;
-    announce( match.finisherAvailable ? 'DELETE HIM!' : 'K.O.', `${hint} Â· ${Math.ceil((match.finishRemaining ?? 6000) / 1000)}s`, '#ef5750', 70);
+    const subline=`${hint} · ${Math.ceil((match.finishRemaining ?? 6000) / 1000)}s`;
+    if(match.finisherAvailable&&drawTransmissionBanner(ctx,interfaceArt,'endTransmission',match.phaseTime??0,{reducedMotion})){text(ctx,subline,640,250,13,'#d6e8f1','center','700','monospace');}
+    else announce(match.finisherAvailable?'END TRANSMISSION':'K.O.',subline,'#bceaff',52);
   } else if (match.phase === 'deletion') {
     text(ctx, match.deletionName?.toUpperCase() ?? 'BROADCAST CUT', 640, 679, 32, '#c9a3e8', 'center', '900', 'Impact, Arial Black, Arial, sans-serif');
     text(ctx, 'FINAL TRANSMISSION', 640, 702, 10, '#d6c5e2', 'center', '700', 'monospace');
@@ -1782,11 +1786,10 @@ function hud(ctx, match, paused, motionReview = false, portraits = {}, interface
     text(ctx, motionReview?'WHOLE-BODY MOVE / NATIVE FRAME '+(match.poseKey??1):'WHOLE-BODY KEY '+(match.poseKey ?? 1)+' / REUSABLE FINISHER MOTION', 640, 209, 11, '#d6c5e2', 'center', '700', 'monospace');
   } else if (match.phase === 'over') {
     const winner = match.winner == null ? 'DRAW' : `${match.fighters?.[match.winner]?.name?.toUpperCase() ?? 'FIGHTER'} WINS`;
-    const title = deletionActive(match) ? 'DELETION' : String(match.status ?? '').startsWith('TIME UP') ? 'TIME UP' : 'K.O.';
-    if(deletionActive(match)) {
-      text(ctx,title,640,679,36,'#ee5d4c','center','900','Impact, Arial Black, Arial, sans-serif');
-      text(ctx,`${winner} / PRESS R TO RESTART`,640,702,10,'#d6c5e2','center','700','monospace');
-    } else announce( title, `${winner} / PRESS R TO RESTART`, '#f6f0fc', 66);
+    const reason=String(match.status??'').startsWith('TIME UP')?'TIME UP / ':'';
+    const subline=`${reason}${winner} / PRESS R TO RESTART`;
+    if(drawTransmissionBanner(ctx,interfaceArt,'transmissionEnded',match.phaseTime??0,{reducedMotion})){text(ctx,subline,640,250,13,'#d6e8f1','center','700','monospace');}
+    else announce('TRANSMISSION ENDED',subline,'#bceaff',48);
   }
   const marked=interfaceAsset(ctx,interfaceArt,'barcodeMark',28,683,44,18);
   text(ctx, 'BARCODE / TRANSMISSION FLOOR', marked?82:28, 697, 10, '#c9a3e8', 'left', '700', 'monospace');
@@ -1797,7 +1800,7 @@ function hud(ctx, match, paused, motionReview = false, portraits = {}, interface
     if(!interfaceAsset(ctx,interfaceArt,i===1?'weaponP2':'weaponP1',x-10,650,260,31)){ctx.fillStyle='#08090ccf';ctx.fillRect(x-10,650,260,31);}
     text(ctx,weapon.name??(weapon.type==='pulse-driver'?'PULSE DRIVER':'NEURAL SPIKE'),x,667,11,color,'left','700','monospace');
     for(let charge=0;charge<3;charge++){ctx.fillStyle=charge<weapon.charges?color:'#41424a';ctx.beginPath();ctx.arc(x+185+charge*29,665,4,0,Math.PI*2);ctx.fill();}
-    if(!weapon.charges)text(ctx,'EMPTY Â· DOWN + THROW',x,678,8,'#b2a1a3','left','700','monospace');
+    if(!weapon.charges)text(ctx,'EMPTY · DOWN + THROW',x,678,8,'#b2a1a3','left','700','monospace');
   }
 }
 
@@ -1834,7 +1837,7 @@ export function createFightRenderer(canvas) {
   let worldCamera=createFightCamera(),lastWorldClock=null,lastStageId=null;
   let interfaceArt=null;
   layers.drawStage(ctx);
-  caption(ctx, 'CONNECTINGâ€¦', 'LOADING 6 BIT / 9 BIT', '#c0aa93', 48);
+  caption(ctx, 'CONNECTING…', 'LOADING 6 BIT / 9 BIT', '#c0aa93', 48);
   return {
     prepareInterface(art) { interfaceArt=art?.images?art:null; },
     prepareArt(art) {
@@ -1942,7 +1945,7 @@ export function createFightRenderer(canvas) {
         ctx.fillRect(0, 0, WIDTH, HEIGHT);
       }
       layers.drawTexture(ctx);
-      hud(ctx, match, scene.paused ?? match.paused ?? false,scene.motionReview??false,scene.portraits??{},interfaceArt);
+      hud(ctx, match, scene.paused ?? match.paused ?? false,scene.motionReview??false,scene.portraits??{},interfaceArt,scene.reducedMotion??false);
       if(wideWorld&&match.phase==='fight')for(const [index,f]of (match.fighters??[]).entries()) {
         const x=640+(views[index]?.x??f.x)-worldCamera.x;if(!(f.hp>0)||!Number.isFinite(x)||x>=0&&x<=WIDTH)continue;
         const right=x>WIDTH,name=String(f.name??f.id??'FIGHTER').toUpperCase().slice(0,16);

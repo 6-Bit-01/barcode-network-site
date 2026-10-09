@@ -16,7 +16,7 @@ class FakeRedis {
   calls.push({command:'eval',script,keys,args});
   if(keys.length===1){const n=Number(rows.get(keys[0])??0)+1;rows.set(keys[0],String(n));return n;}
   const [roomKey,indexKey]=keys,[old,next,,code,now]=args;
-  if((rows.get(roomKey)??'')!==old)return 0;
+  if((rows.get(roomKey)??'')!==old)return 0;if(old!==''&&next!==''&&script.includes('if prior.guest')){const prior=JSON.parse(old),room=JSON.parse(next);if(prior.guest&&room.guest){rows.set(roomKey,next);expires.set(roomKey,time+Number(args[2])*1000);return 1;}}
   const decoded=JSON.parse(rows.get(indexKey)??'[]');const entries=Array.isArray(decoded)?decoded:[];
   const heartbeatAware=/hostLastSeen/.test(script);const active=entries.filter(entry=>{const roomRaw=rows.get(PREFIX+'room:'+entry.code);const lastSeen=entry.hostLastSeen??(roomRaw?JSON.parse(roomRaw).host.lastSeen:0);return entry.code!==code&&entry.expiresAt>now&&(!heartbeatAware||now-lastSeen<60000);});
   if(next!==''){
@@ -81,4 +81,13 @@ test('live lobby capacity still permits seat departure without deleting another 
  const raw=JSON.parse(rows.get(PREFIX+'room:'+host.code));assert.equal(raw.guest,null);assert.equal(JSON.parse(rows.get(PREFIX+'index')).length,30);
  for(const item of index)assert.ok(rows.has(PREFIX+'room:'+item.code));
  await assert.rejects(()=>rooms.poll(host.code,guest.token),e=>e.status===401);assert.equal((await rooms.poll(host.code,host.token)).role,'host');
+});
+test('occupied-room updates bypass lobby index work while retaining fixed expiry',async()=>{
+ const {rooms}=fixture(),host=await rooms.create('Host'),guest=await rooms.join(host.code,'Guest');
+ const marker='sealed-index-marker';rows.set(PREFIX+'index',marker);
+ await rooms.select(host.code,host.token,{fighter:'6-bit',ready:true});
+ await rooms.select(host.code,guest.token,{fighter:'9-bit',ready:true});
+ await rooms.relay(host.code,host.token,{version:'system-clash-20261009-8',ack:0,packets:[]});
+ assert.equal(rows.get(PREFIX+'index'),marker);
+ assert.ok(GAME_ROOM_CAS.indexOf("if prior.guest")<GAME_ROOM_CAS.indexOf('local entries='));assert.equal(expires.get(PREFIX+'room:'+host.code),host.expiresAt);
 });

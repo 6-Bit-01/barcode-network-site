@@ -28,7 +28,7 @@ function menuImage(path){return new Promise((resolve,reject)=>{const image=new I
 const tournamentStorage={getItem:key=>sessionStorage.getItem(key),setItem:(key,value)=>sessionStorage.setItem(key,value)};
 const gamepads=createGamepadInput({menuSeatRecovery:true,seats:controllerSeatsFromURL(location.href)});
 let windowActive=document.hasFocus(),controllerLabel='';
-const titleFX=createTitleFX($('title-fx'));
+const titleFX=createTitleFX($('title-fx'),{logoCanvas:$('title-logo-fx'),logoImage:$('title-logo-image')});
 let menuRAF=null,menuSuspended=false;
 let {muted,reducedMotion}=resolveInterfaceSettings(params,{prefersReducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches});
 const audio=createFightAudio({muted,reducedMotion,baseUrl:location.href,uiSounds:true});

@@ -50,7 +50,7 @@ function harness(){
  };
  env.$=id=>{if(!elements.has(id))elements.set(id,{value:id==='pose-preset'?'broadcast':id==='mode-select'?'local':id==='deletion-facing'?'right':'none',checked:false,hidden:true,selectedOptions:[{textContent:'Broadcast'}],options:[{textContent:''}],classList:{remove(){},add(){}},setAttribute(){},parentElement:{setAttribute(){}}});return elements.get(id);};
  env.match=createMatch({mode:'local',start:false,clips:env.metadata,fighters:source.map(a=>({id:a.manifest.id,height:a.manifest.height,name:a.manifest.character}))});
- for(const name of ['draw','reset','boot','applyOnlinePause','initializeOnlineCombat'])env[name]=bindFunction(name,env);
+ for(const name of ['draw','reset','boot','applyOnlinePause','startOnlineFight','initializeOnlineCombat'])env[name]=bindFunction(name,env);
  env.initializeOnlineCombat();assert(env.onlineCombat.receive({type:'start',matchId:1,seed:42}));
  const hostMatch=env.match;
  const schema={roster:env.activeRoster,fighterIds:source.map(a=>a.manifest.id),clipIds:source.map(a=>Object.keys(a.clips)),matchId:1};let sequence=0;

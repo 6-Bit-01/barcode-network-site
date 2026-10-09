@@ -6,6 +6,14 @@ const PREFIX="barcode:system-clash:online:v1:";
 export const GAME_ROOM_CAS=`
 local old=redis.call('GET',KEYS[1]) or ''
 if old~=ARGV[1] then return 0 end
+if ARGV[1]~='' and ARGV[2]~='' then
+ local prior=cjson.decode(ARGV[1])
+ local room=cjson.decode(ARGV[2])
+ if prior.guest and prior.guest~=cjson.null and room.guest and room.guest~=cjson.null then
+  redis.call('SET',KEYS[1],ARGV[2],'EX',tonumber(ARGV[3]))
+  return 1
+ end
+end
 local entries=cjson.decode(redis.call('GET',KEYS[2]) or '[]')
 local next={}
 local now=tonumber(ARGV[5])

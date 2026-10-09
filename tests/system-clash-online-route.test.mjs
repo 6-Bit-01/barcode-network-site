@@ -54,3 +54,17 @@ test('Lost Marbles can be selected through the authenticated room endpoint',asyn
  assert.equal((await POST(request({action:'select',code:host.code,fighter:'lost-marbles',ready:true},{Authorization:'Bearer forged'}))).status,401);
  await POST(request({action:'leave',code:host.code},{Authorization:'Bearer '+host.token}));
 });
+test('authenticated endpoint carries private candidates and bounded cloud controls only to the other seat',async()=>{
+ rows.clear();const host=await (await POST(request({action:'create',name:'Host'}))).json(),guest=await (await POST(request({action:'join',code:host.code,name:'Guest'}))).json();
+ const post=(seat,fields)=>POST(request({code:host.code,...fields},{Authorization:'Bearer '+seat.token}));
+ for(const seat of [host,guest])assert.equal((await post(seat,{action:'select',fighter:seat.role==='host'?'6-bit':'9-bit',ready:true})).status,200);
+ const candidate={candidate:'candidate:1 1 UDP 2122260223 192.0.2.1 5000 typ host',sdpMid:'0',sdpMLineIndex:0,usernameFragment:null};
+ assert.equal((await post(host,{action:'candidates',generation:1,candidates:[candidate]})).status,200);
+ const state=await (await post(guest,{action:'poll'})).json();assert.deepEqual(state.candidates,[candidate]);
+ const publicList=await (await GET(new Request(url))).text();assert.ok(!publicList.includes('192.0.2.1'));
+ const wire={scope:'system-clash-online-v1',version:'system-clash-20261009-8',seq:1,matchId:1,payload:{type:'hello',version:'system-clash-20261009-8',room:host.code,role:'host'}};
+ assert.equal((await post(host,{action:'relay',version:wire.version,ack:0,packets:[{lane:'control',data:JSON.stringify(wire)}]})).status,200);
+ const relayed=await (await post(guest,{action:'relay',version:wire.version,ack:0,packets:[]})).json();assert.equal(relayed.packets.length,1);assert.equal(JSON.parse(relayed.packets[0].data).payload.role,'host');
+ assert.equal((await POST(request({action:'relay',code:host.code,version:wire.version,ack:0,packets:[],token:guest.token}))).status,401);
+ await post(host,{action:'leave'});
+});

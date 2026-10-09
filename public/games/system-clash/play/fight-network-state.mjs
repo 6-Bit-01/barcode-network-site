@@ -60,11 +60,11 @@ export function applyFightSnapshot(local,snapshot){return {...snapshot.state,fig
 /** Pure seat ownership, cadence and freshness; the browser owns engine/render calls. */
 export function createOnlineCombatController({seat,matchId,roster,fighterIds,clipIds,send=()=>false,now=()=>performance.now(),onStart=()=>{},onPause=()=>{},onState=()=>{},onEvents=()=>{},onAction=()=>{},onDisconnect=()=>{}}){
  if(![0,1].includes(seat)||!Number.isSafeInteger(matchId)||matchId<1)throw new Error('Invalid combat seat.');
- const schema={roster,fighterIds,clipIds,matchId};let started=false,paused=false,closed=false,remote=neutral(),lastRemote=-Infinity,remoteReleased=false,lastInput=-Infinity,lastPublish=-Infinity,lastSnapshot=-Infinity,snapshotSeq=0,receivedSeq=0,eventSeq=0,receivedEvents=0,current=null,previous=null,arrivedAt=0;
+ const schema={roster,fighterIds,clipIds,matchId};let started=false,paused=false,closed=false,remote=neutral(),lastRemote=-Infinity,remoteReleased=false,lastInput=-Infinity,lastPublish=-Infinity,lastSnapshot=-Infinity,snapshotSeq=0,receivedSeq=0,eventSeq=0,receivedEvents=0,current=null,previous=null,arrivedAt=0,awaitingSnapshot=seat===1,firstSnapshotAt=Infinity;
  function applyPause(value){paused=value;remote=neutral();if(value)remoteReleased=false;onPause(value);}
  const api={seat,get started(){return started;},get paused(){return paused;},get remoteInput(){return {...remote};},receive(packet){
   if(closed||!validPayload(packet))return false;
-  if(packet.type==='start'){if(started||packet.matchId!==matchId)return false;started=true;paused=false;lastRemote=lastSnapshot=now();onStart(packet);return true;}
+  if(packet.type==='start'){if(started||packet.matchId!==matchId)return false;started=true;paused=false;onStart(packet);lastRemote=lastSnapshot=now();firstSnapshotAt=now()+5000;return true;}
   if(!started)return false;
   if(packet.type==='pause'){if(seat===0&&!packet.paused)return false;if(seat===1&&!packet.paused&&Number.isSafeInteger(packet.snapshotSeq)&&packet.snapshotSeq>=0)receivedSeq=Math.max(receivedSeq,packet.snapshotSeq);applyPause(packet.paused);return true;}
   if(packet.type==='leave'){api.disconnect('The session ended.');return true;}
@@ -73,7 +73,7 @@ export function createOnlineCombatController({seat,matchId,roster,fighterIds,cli
    if(packet.type==='action'&&!paused)onAction({index:1,action:packet.action,input:stripFightInput(packet.input)});return true;
   }
   if(packet.type==='snapshot'){
-   if(seat!==1)return false;const next=readFightSnapshot(packet.snapshot,schema);if(!next||next.seq<=receivedSeq)return false;receivedSeq=next.seq;previous=current;current=next;arrivedAt=lastSnapshot=now();if(next.state.paused&&!paused)applyPause(true);next.state.paused=paused;onState(next);return true;
+   if(seat!==1)return false;const next=readFightSnapshot(packet.snapshot,schema);if(!next||next.seq<=receivedSeq)return false;receivedSeq=next.seq;previous=current;current=next;arrivedAt=lastSnapshot=now();awaitingSnapshot=false;if(next.state.paused&&!paused)applyPause(true);next.state.paused=paused;onState(next);return true;
   }
   if(packet.type==='events'){
    if(seat!==1||packet.matchId!==matchId||!Number.isSafeInteger(packet.seq)||packet.seq<=receivedEvents)return false;
@@ -88,7 +88,7 @@ export function createOnlineCombatController({seat,matchId,roster,fighterIds,cli
   if(closed||!started||seat!==0||now()-lastPublish<40)return false;
   const snapshot=makeFightSnapshot({...match,paused},views,{...schema,seq:snapshotSeq+1,at:now()});if(!snapshot)return false;lastPublish=now();snapshotSeq++;return send({type:'snapshot',snapshot});
  },publishEvents(events){if(closed||!started||seat!==0||!events.length)return false;try{const packet={type:'events',matchId,seq:eventSeq+1,events:clone(events)};if(!validPayload(packet)||packetBytes(packet)>61440)return false;eventSeq++;return send(packet);}catch{return false;}},views(time=now()){
-  if(!current)return null;const fraction=Math.max(0,Math.min(1,(time-arrivedAt)/40));return current.views.map((view,index)=>{const before=previous?.views[index];if(current.state.phase!=='fight'||previous?.state.phase!=='fight'||current.state.stage.id!==previous.state.stage.id||!before||before.clip!==view.clip||before.facing!==view.facing||before.poseIndex!==view.poseIndex||before.opacity!==view.opacity)return view;return {...view,x:before.x+(view.x-before.x)*fraction,y:before.y+(view.y-before.y)*fraction};});
- },tick(){if(closed||!started||paused)return;if((seat===0&&now()-lastRemote>=1000)||(seat===1&&now()-lastSnapshot>=1000))api.requestPause(true);},disconnect(reason){if(closed)return;closed=true;started=false;paused=true;remote=neutral();onPause(true);onDisconnect(reason);},destroy(){closed=true;started=false;remote=neutral();}};
+  if(!current)return null;const fraction=Math.max(0,Math.min(1,(time-arrivedAt)/Math.max(40,Math.min(250,current.at-(previous?.at??current.at)))));return current.views.map((view,index)=>{const before=previous?.views[index];if(current.state.phase!=='fight'||previous?.state.phase!=='fight'||current.state.stage.id!==previous.state.stage.id||current.state.stage.portalSerial!==previous.state.stage.portalSerial||!before||before.clip!==view.clip||before.facing!==view.facing||before.poseIndex!==view.poseIndex||before.opacity!==view.opacity)return view;return {...view,x:before.x+(view.x-before.x)*fraction,y:before.y+(view.y-before.y)*fraction};});
+ },tick(){if(closed||!started||paused)return;if((seat===0&&now()-lastRemote>=1000)||(seat===1&&(awaitingSnapshot?now()>=firstSnapshotAt:now()-lastSnapshot>=1000)))api.requestPause(true);},disconnect(reason){if(closed)return;closed=true;started=false;paused=true;remote=neutral();onPause(true);onDisconnect(reason);},destroy(){closed=true;started=false;remote=neutral();}};
  return api;
 }

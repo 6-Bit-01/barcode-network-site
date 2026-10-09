@@ -76,10 +76,14 @@ async function ensureStageArt(id){
 }
 const onlineBridge=createOnlineFightBridge({url:location.href,window,onPacket:packet=>onlineCombat?.receive(packet),onDisconnect:reason=>onlineCombat?.disconnect(reason)});
 function applyOnlinePause(value){paused=value;if(match)match.paused=value;clearInput();accumulator=0;syncAudioPause();$('pause-fight').textContent=value?(onlineBridge.seat===1?'Waiting for host':'Resume'):'Pause';$('pause-fight').setAttribute('aria-pressed',String(value));draw();}
+function startOnlineFight(packet) {
+  reset(true,packet.seed);void effects.startAudio();canvas.focus({preventScroll:true});
+  if(onlineBridge.seat===1){onlineBridge.send({type:'started',matchId:packet.matchId});onlineCombat.input({move:0,crouch:false,block:false});}
+}
 function initializeOnlineCombat(){
  if(!onlineBridge.enabled||onlineCombat)return;
  onlineCombat=createOnlineCombatController({seat:onlineBridge.seat,matchId:Number(launchParams.get('matchId'))||1,roster:activeRoster,fighterIds:art.map(f=>f.manifest.id),clipIds:art.map(f=>Object.keys(f.clips)),send:packet=>onlineBridge.send(packet),now:()=>performance.now(),
-  onStart:packet=>{reset(true,packet.seed);void effects.startAudio();canvas.focus({preventScroll:true});},onPause:applyOnlinePause,
+  onStart:startOnlineFight,onPause:applyOnlinePause,
   onAction:command=>{if(!ready||paused)return;performAction(match,command.index,command.action,command.input);dispatchEvents();draw();},
   onState:snapshot=>{match=applyFightSnapshot(match,snapshot);paused=snapshot.state.paused;draw();},onEvents:events=>{for(const event of events)emitFightEvent(event);},
   onDisconnect:reason=>{clearInput();paused=true;if(match)match.paused=true;effects.setPaused(true);$('load-status').textContent=reason;$('start-fight').disabled=true;$('restart-fight').disabled=true;}

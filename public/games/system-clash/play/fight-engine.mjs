@@ -2,7 +2,7 @@ import {marbleVictimState} from './fight-remains.mjs';
 import {NEW_FIGHTER_STYLES,newDeletionPositions,splitBodyState,hangingVictimPose,nativeCleaverContacts,nativeCleaverPose} from './new-deletion-library.mjs';
 import {fightStatProfile,fightStatScalars} from './fight-stats.mjs';
 import {deletionDefinition,deletionPose} from './deletion-library.mjs';
-import {easedProgress} from './fight-presentation.mjs';
+import {easedProgress,headFirstThrownFacing,headFirstThrownPose} from './fight-presentation.mjs';
 import {nativeBodyCore,nativeBodyLegs,gripContact,limbContact} from './fight-combat-geometry.mjs';
 import {createStageState,stageById,stageInteractionReady,startStageWarning,advanceStageState,damageStageWall,enterStage} from './fight-stages.mjs';
 /** Complete-body animation combat. Art, camera and audio stay outside this module. */
@@ -195,7 +195,7 @@ function fighter(index, clips, identity = {}) {
     _launchStartY:0,
     _jump:null,_pickup:null,_grabHold:null,_grabClip:null,_grabMotion:null,_launchHeight:80,
     weapon:null,damageTaken:0,damageTier:0,damageSites:emptyDamageSites(),damageMarks:[],embeddedWeapons:[],_weaponAction:null,
-    _floorImpactDone:false,_worldWidth:WORLD.width,_stageAction:null,_wallIntent:null,_wallImpactUntil:0,_lastDamageId:0,_lastWallDamageId:null,
+    _floorImpactDone:false,_worldWidth:WORLD.width,_stageAction:null,_wallIntent:null,_wallImpactUntil:0,_portalCooldownUntil:0,_lastDamageId:0,_lastWallDamageId:null,
   };
 }
 
@@ -615,6 +615,11 @@ function activeEndTime(f) {
 }
 
 function combatPose(f,view) {
+  if(!view&&f.action==='thrown'&&f._launched&&!f._jump){
+    const rate=f._clips.thrown?.playbackRate??1;
+    view=headFirstThrownPose(f._clips,{direction:f._throwDirection,facing:f.facing,elapsed:(nativeActionTime(f)+f._offset)*rate,airborne:airOffset(f)<0});
+  }
+
   const clip=view?.clip??(f.action==='grab'?grabClip(f):f.action),metadata=f._clips[clip],poses=metadata?.combatPoses;
   if(!poses)return null;
   const playbackRate=f.action==='grab'?1/f._style.tempo.throw:metadata.playbackRate??1;
@@ -733,7 +738,8 @@ function rememberButton(f,action,at) {
 }
 
 function endOffset(f, clip) {
-  const offset = Number(f._clips[clip]?.endOffsetX?.[f.facing]);
+  const facing=clip==='thrown'?headFirstThrownPose(f._clips,{direction:f._throwDirection,facing:f.facing,airborne:false}).facing:f.facing;
+  const offset = Number(f._clips[clip]?.endOffsetX?.[facing]);
   return Number.isFinite(offset) ? offset : 0;
 }
 
@@ -1413,11 +1419,17 @@ function updateDeletion(match, dt) {
 }
 
 function startTravel(f, distancePixels) {
+  if(f.action==='thrown'&&f._launched)f.facing=headFirstThrownFacing(f._clips,f._throwDirection,f.facing);
   const authoredOffset = f.action === 'thrown' ? endOffset(f, 'thrown') : 0;
   const direction = (f.action==='thrown' ? f._throwDirection : f._fallDirection)
     || (f.facing === 'left' ? 1 : -1);
   const desiredEnd=f.x+direction*distancePixels,bodyEnd=desiredEnd+authoredOffset;
-  const side=bodyEnd<WORLD.margin?'left':bodyEnd>rightEdge(f)?'right':null;
+  // The floor offset registers the source's centre; it is not its leading edge.
+  // Use the same native landed bank as the view when measuring wall contact.
+  const landed=f.action==='thrown'&&f._launched?combatPose(f,headFirstThrownPose(f._clips,{direction,facing:f.facing,elapsed:f._clips.thrown?.combatPoses?.duration??0,airborne:false}))?.frame:null;
+  const leading=direction<0?landed?.bounds?.left:landed?.bounds?.right;
+  const contactEnd=desiredEnd+(Number.isFinite(leading)?leading:authoredOffset);
+  const side=contactEnd<WORLD.margin?'left':contactEnd>rightEdge(f)?'right':null;
   f._travel={start:f.x,end:limitX(f,bodyEnd)-authoredOffset,wallIntent:side?{side,attacker:f._lastAttacker,strength:f._lastHitStrength??1.5,damageId:f._lastDamageId}:null};
 }
 
@@ -1675,6 +1687,38 @@ function processStageEvents(match,events) {
     if(dead.length===2){match.phase='over';match.phaseTime=0;match.winner=null;match.status='STAGE CLASH — DRAW';match.projectiles=[];for(const f of match.fighters){setAction(f,'knockdown');f._ko=true;}emit(match,'ko',{winner:null,stageId:spec.id,x:(zone.left+zone.right)/2,y:zone.top,direction:1});return;}
   }
 }
+function processStagePortals(match,before,controls) {
+  const state=match.stage,portals=stageById(state.id).portals;if(!portals)return;
+  // Only deliberate locomotion crosses a transit edge. Knockback, held throws,
+  // push separation and standing near an aperture cannot take another body.
+  const travelers=[];
+  for(let index=0;index<2;index++){
+    const f=match.fighters[index];if(f.hp<=0||(f._portalCooldownUntil??0)>state.fightClock||(f.action!=='walk'&&f.action!=='jump'&&!AIR_ATTACKS.has(f.action)))continue;
+    const move=f._jump?.move??controls[index].move;
+    const from=move<0&&before[index]>portals.left.x&&f.x<=portals.left.x?'left':move>0&&before[index]<portals.right.x&&f.x>=portals.right.x?'right':null;
+    if(from)travelers.push({index,from,to:from==='left'?'right':'left'});
+  }
+  if(!travelers.length)return;
+  const transits=[];
+  for(const traveler of travelers){
+    const {index,from,to}=traveler,f=match.fighters[index],other=match.fighters[1-index],exit=portals[to],inward=to==='left'?1:-1;
+    let x=exit.exitX;
+    // An occupied lip moves only the arriving body inward, using actual torso
+    // extents. The existing opponent and their action retain their position.
+    if(!travelers.some(item=>item.index===1-index)){
+      const own=bodyRegions(f).find(region=>region.site==='torso'),peer=bodyRegions(other).find(region=>region.site==='torso');
+      const half=own?Math.max(Math.abs(own.left-f.x),Math.abs(own.right-f.x)):f.height*.25;
+      const otherHalf=peer?Math.max(Math.abs(peer.left-other.x),Math.abs(peer.right-other.x)):other.height*.25;
+      const clearance=Math.max(180,half+otherHalf+28);
+      if(Math.abs(x-other.x)<clearance)x=other.x+inward*clearance;
+    }
+    f.x=limitX(f,x);f._portalCooldownUntil=state.fightClock+portals.cooldownMs;
+    const transit={target:index,from,to,fromX:portals[from].x,toX:exit.x,exitX:f.x,y:WORLD.floor+airOffset(f)};transits.push(transit);
+  }
+  const serial=++state.portalSerial;state.lastPortalTransit={serial,at:state.clock,transits};
+  for(const transit of transits)emit(match,'stage-portal',{...transit,stageId:state.id,serial,x:transit.exitX,direction:transit.to==='left'?1:-1});
+}
+
 function processStageWalls(match) {
   for(let index=0;index<2;index++){
     const f=match.fighters[index],intent=f._wallIntent;f._wallIntent=null;
@@ -1759,6 +1803,7 @@ function step(match, dt, inputs) {
   if (match.mode!=='weapons'&&match._roundTimeLimit!==0&&match.roundRemaining <= 0) { timeout(match); return; }
   updateWeaponSpawn(match);
   const controls = [inputs[0], match.mode === 'cpu' ? cpuInput(match, dt) : match.mode==='weapons'?control():inputs[1]];
+  const portalOrigins=match.fighters.map(f=>f.x);
   for (let i = 0; i < 2; i++) applyNeutral(match, i, controls[i], dt);
   CONTACT_RESOLUTIONS.set(match,[]);
   const ended=[0,1].map(i=>advanceActionMotion(match,i,dt));
@@ -1779,7 +1824,7 @@ function step(match, dt, inputs) {
     else if(dead.length===1)openFinish(match,1-dead[0]);
   }
   if(match.phase==='fight')separate(match);
-  if(match.phase==='fight'){processStageEvents(match,stageEvents);if(match.phase==='fight')processStageWalls(match);}
+  if(match.phase==='fight'){processStageEvents(match,stageEvents);if(match.phase==='fight'){processStageWalls(match);if(match.phase==='fight')processStagePortals(match,portalOrigins,controls);}}
 }
 
 export function advanceMatch(match, dtMs, controls = []) {
@@ -1803,15 +1848,15 @@ export function getFighterView(match, index) {
   const view = { clip: f.action === 'grab' ? grabClip(f) : f.action, elapsed:nativeElapsed,
     nativeElapsed,combatElapsed:f.actionTime+f._offset,playbackRate,
     x: f.x, y: airOffset(f), facing: f.facing, opacity: f._deleted ? 0 : 1 };
-  Object.assign(view,{id:f.id,height:f.height,combatTime:match.combatTime,weapon:f.weapon,damageTaken:f.damageTaken,damageTier:f.damageTier,
+  Object.assign(view,{id:f.id,height:f.height,combatTime:match.combatTime,stagePortalSerial:match.stage?.portalSerial??0,weapon:f.weapon,damageTaken:f.damageTaken,damageTier:f.damageTier,
     damageSites:f.damageSites,damageMarks:f.damageMarks,embeddedWeapons:f.embeddedWeapons,
     pickupAction:f._pickup?{...f._pickup,elapsed:f.actionTime,contactMs:contactTime(f)}:null,
     weaponAction:f._weaponAction?{...f._weaponAction,elapsed:f.actionTime,contactMs:contactTime(f)}:null,
     airborne:!!f._jump||(f.action==='grab'&&view.y<0),jumpElapsed:f._jump?.elapsed??null,jumpDuration:f._jump?.duration??null});
   if(f.action==='grabbed'&&f._grabHold&&view.y<0){Object.assign(view,hangingVictimPose(f._clips,{clip:view.clip,elapsed:view.elapsed}));view.airborne=true;}
-  if(f.action==='thrown'&&f._launched&&!f._jump&&view.y<0) {
-    Object.assign(view,hangingVictimPose(f._clips,{clip:view.clip,elapsed:view.elapsed}));
-    view.airborne=true;
+  if(f.action==='thrown'&&f._launched&&!f._jump) {
+    Object.assign(view,headFirstThrownPose(f._clips,{direction:f._throwDirection,facing:view.facing,elapsed:view.elapsed,airborne:view.y<0}));
+    view.airborne=view.y<0;
   }
   if (match.phase === 'finish' && index !== match.winner) {
     view.clip = 'high'; view.elapsed = 210;

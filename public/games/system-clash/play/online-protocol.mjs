@@ -1,6 +1,6 @@
 /** One bounded wire contract shared by the lobby, peers and game frame. */
 export const ONLINE_SCOPE='system-clash-online-v1';
-export const ONLINE_VERSION='system-clash-20261009-7';
+export const ONLINE_VERSION='system-clash-20261009-8';
 export const MAX_PACKET_BYTES=65536;
 export const ONLINE_STAGES=Object.freeze(['radio-studio','sheila-office','studio-rat-lair','containment','nature-simulation','witty-wasteland','interdimensional-station']);
 const actions=new Set(['punch','kick','low-punch','low-kick','uppercut','grab','jump','double-punch','power-kick','crouch-punch','crouch-kick','crouch-high-kick','jump-punch','jump-kick','weapon-throw','weapon-use','deletion']);
@@ -14,6 +14,7 @@ export function validPayload(payload){
   case 'rematch':return payload.matchId===undefined||(Number.isSafeInteger(payload.matchId)&&payload.matchId>0);
   case 'hello':return typeof payload.version==='string'&&payload.version.length<100&&/^[A-Z0-9]{6}$/.test(payload.room)&&['host','guest'].includes(payload.role);
   case 'setup':return payload.stage===undefined||ONLINE_STAGES.includes(payload.stage);
+  case 'started':return Number.isSafeInteger(payload.matchId)&&payload.matchId>0;
   case 'start':return Number.isInteger(payload.seed)&&payload.seed>=0&&payload.seed<=0xffffffff&&Number.isSafeInteger(payload.matchId)&&payload.matchId>0;
   case 'action':return actions.has(payload.action)&&validInput(payload.input);
   case 'input':return validInput(payload.input);

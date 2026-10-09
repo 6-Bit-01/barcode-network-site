@@ -1,0 +1,17 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {compileFightClip,combatMetadata} from '../public/games/system-clash/play/fight-assets.mjs';
+import {createMatch,performAction,getFighterView} from '../public/games/system-clash/play/fight-engine.mjs';
+import {deletionDefinition} from '../public/games/system-clash/play/deletion-library.mjs';
+const rendererURL=new URL('../public/games/system-clash/play/fight-renderer.mjs',import.meta.url),text=fs.readFileSync(rendererURL,'utf8').replace(/from '([.]\/[^']+)'/g,(_,relative)=>"from '"+new URL(relative,rendererURL).href+"'");
+const {machineViews,jawsGeometry,poseWorldPoint}=await import('data:text/javascript;base64,'+Buffer.from(text+'\nexport {machineViews,jawsGeometry,poseWorldPoint};').toString('base64'));
+const root=new URL('../public/games/system-clash/play/assets/',import.meta.url),json=file=>JSON.parse(fs.readFileSync(new URL(file,root),'utf8'));
+function size(file){const b=fs.readFileSync(new URL(file,root));return b[0]===137?{width:b.readUInt32BE(16),height:b.readUInt32BE(20)}:{width:1+b.readUIntLE(24,3),height:1+b.readUIntLE(27,3)};}
+function native(id){const clips={};let manifest;for(const bank of ['fighters','arcade','deletions']){const data=json(`${bank}/${id}/manifest.json`);if(bank==='fighters')manifest=data;for(const [name,c]of Object.entries(data.clips)){if(name.startsWith('grab'))continue;const key=bank==='deletions'?'delete-'+name:name;clips[key]=compileFightClip(c,size(`${bank}/${id}/${c.file}`),data,key);}}return {manifest,clips};}
+const ids=['6-bit','9-bit','ash-flowers','cache-back','cliff','dj-floppydisc','doofnoobler','dr3wbaby','kaveman-brown','lyra','mac-modem','mr-nice-guy','ms-mayhem','papa-oak','stolz','wittyf0x'];
+const arts=Object.fromEntries(ids.map(id=>[id,native(id)])),bank={manifest:json('deletions/chrome-coffin/atlas.json')},props={additional:{'chrome-coffin':bank}};
+for(const id of ids)for(const facing of ['right','left'])test(`STOLZ keeps ${id} upright and at one native scale inside the actual vise (${facing})`,()=>{
+ const art=[arts.stolz,arts[id]],match=createMatch({mode:'practice',fighters:art.map(a=>({id:a.manifest.id,height:a.manifest.height})),clips:combatMetadata(art)});match.fighters[0].x=facing==='right'?300:900;match.fighters[1].x=match.fighters[0].x+(facing==='right'?75:-75);assert(performAction(match,0,'deletion'));const b=deletionDefinition('stolz').beats;
+ for(const time of [b.close,b.squeeze-1,b.squeeze+60,b.sealed-1]){match.deletionElapsed=time;const raw=match.fighters.map((_,i)=>getFighterView(match,i)),v=machineViews(match,props,raw,art);assert.equal(raw[1].clip,'delete-rip-front');assert.equal(v[1].clip,'delete-rip-front');assert.equal(v[1].elapsed,0);assert(v[1].y<=0,'Body can only lift into the fixed jaws');assert.equal(v[1].facing,match._deletionOrigin.victimFacing);const g=jawsGeometry(match,bank,v,art),head=poseWorldPoint(v[1],art[1],'head');assert(Math.abs(head.x-g.center)<.01);const plateTop=620+(55-g.left.frame.anchor[1])*g.scale,plateBottom=plateTop+225*g.scale;assert(head.y>=plateTop&&head.y<=plateBottom,'The upright head is between the physical jaw faces');assert(head.y<=620+(g.left.frame.innerFace[1]-g.left.frame.anchor[1])*g.scale+.01,'Short victims are lifted to the actual inner-face centre');assert.equal(g.scale,430/(g.left.frame.opaqueBounds[3]-g.left.frame.opaqueBounds[1]),'The complete vise retains one fixed physical scale');}
+});

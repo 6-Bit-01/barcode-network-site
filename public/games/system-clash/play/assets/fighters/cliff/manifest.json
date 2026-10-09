@@ -1,1 +1,5957 @@
-{"id":"cliff","character":"Cliff","baseId":"cliff","variantOf":null,"height":320,"status":"pose and timing pilot","description":"Four whole-body key poses per action and facing. Smoother frames remain to be produced.","clips":{"idle":{"file":"combat.png","label":"Idle","frames":{"right":[{"rect":[81,15,191,303],"anchor":[95.5,300],"opaqueBounds":[3,3,188,300],"attachments":{"grip":[146,81],"head":[106,49],"torso":[97,141],"legs":[70,217]},"handRadius":9,"gripAngle":-0.25},{"rect":[402,10,167,308],"anchor":[83.5,305],"opaqueBounds":[3,3,164,305],"attachments":{"grip":[139,86],"head":[103,50],"torso":[85,144],"legs":[55,216]},"handRadius":9,"gripAngle":-0.25},{"rect":[703,21,182,297],"anchor":[91,294],"opaqueBounds":[3,3,179,294],"attachments":{"grip":[147,85],"head":[108,48],"torso":[93,144],"legs":[66,211]},"handRadius":9,"gripAngle":-0.25},{"rect":[1020,16,182,302],"anchor":[91,299],"opaqueBounds":[3,3,179,299],"attachments":{"grip":[138,82],"head":[107,48],"torso":[87,143],"legs":[67,215]},"handRadius":9,"gripAngle":-0.25}],"left":[{"rect":[58,324,208,306],"anchor":[103.5,303],"opaqueBounds":[3,3,205,303],"attachments":{"grip":[47,73],"head":[81,46],"torso":[110,137],"legs":[157,217]},"handRadius":9,"gripAngle":0.25},{"rect":[390,324,177,306],"anchor":[88.5,303],"opaqueBounds":[3,3,174,303],"attachments":{"grip":[55,69],"head":[82,43],"torso":[103,134],"legs":[141,214]},"handRadius":9,"gripAngle":0.25},{"rect":[693,325,202,304],"anchor":[100.5,301],"opaqueBounds":[3,3,199,301],"attachments":{"grip":[58,74],"head":[88,46],"torso":[114,139],"legs":[159,218]},"handRadius":9,"gripAngle":0.25},{"rect":[1002,324,199,306],"anchor":[98.5,303],"opaqueBounds":[3,3,196,303],"attachments":{"grip":[56,70],"head":[88,45],"torso":[116,139],"legs":[157,217]},"handRadius":9,"gripAngle":0.25}]},"scale":1.070234,"order":[0,1,2,3,2,1],"frameMs":[180,180,180,180,180,180],"loop":true,"sourceSize":[1254,1254],"sourceRevision":"02e75a74b1d8149b","sourceSha256":"02e75a74b1d8149b7c74c7877fae161375662d5e631e813021c9d4e850b4304e","runtimeFile":"combat.runtime.webp"},"punch":{"file":"../../animation-polish/cliff/punch.webp","label":"Punch","frames":{"right":[{"rect":[0,0,190,305],"anchor":[94,302],"opaqueBounds":[3,3,187,302],"attachments":{"grip":[149,82],"head":[110,49],"torso":[99,145],"legs":[67,219],"strike":[149,82],"strikeStart":[136.5,97.75]},"handRadius":9,"gripAngle":-0.25,"poseSource":{"kind":"approved","index":0,"pixelSha256":"1e8c5d273dbe866018a9d4639993ded0595bb530492d0da1b2c88bbbeaf5e8cd","originalRect":[78,634,190,305]},"pixelSha256":"04cb851521ef839c2dd053b52b964b85848b61daec3fc2470d7913187ccd2126"},{"anchor":[98.5,303],"opaqueBounds":[2,2,195,303],"attachments":{"head":[131.773,44.795],"torso":[102.124,119.233],"legs":[102.124,223.974],"grip":[110.689,83.002],"strike":[115.96,83.002],"strikeStart":[108.548,92.06]},"poseSource":{"kind":"generated","index":0,"sourceRect":[45,15,299,463],"uniformResample":0.65881},"pixelSha256":"a51b684e045635ef2ab8c3558d9a6e6e97e8e9e4c469a20bcf8aefec936302be","rect":[269,0,197,305]},{"rect":[538,0,200,304],"anchor":[99,301],"opaqueBounds":[3,3,197,301],"attachments":{"grip":[51,77],"head":[119,44],"torso":[88,136],"legs":[57,217],"strike":[51,77],"strikeStart":[60.25,91.75]},"handRadius":9,"gripAngle":-0.25,"poseSource":{"kind":"approved","index":1,"pixelSha256":"ecfc54458538e31bce9ed89faad6ffd6fe8f67498670942512e2933967186917","originalRect":[382,637,200,304]},"pixelSha256":"0be840e40ffec0b45020fea792fa97baf1b1315a5574a1debdb3b7a409d82f93"},{"anchor":[111.5,300],"opaqueBounds":[2,2,221,300],"attachments":{"head":[128.274,48.031],"torso":[108.54,117.773],"legs":[108.54,219.756],"grip":[209.844,73.691],"strike":[215.106,73.691],"strikeStart":[184.518,84.711]},"poseSource":{"kind":"generated","index":1,"sourceRect":[414,21,339,459],"uniformResample":0.65881},"pixelSha256":"4545b0254b67cda710e699bd60892cadb639a65e1d0922ff7d02836e8448c350","rect":[807,0,223,302]},{"rect":[1076,0,253,302],"anchor":[102,299],"opaqueBounds":[3,3,250,299],"attachments":{"grip":[240,57],"head":[134,45],"torso":[109,143],"legs":[83,211],"strike":[240,57],"strikeStart":[207.25,78.5]},"handRadius":9,"gripAngle":-0.25,"poseSource":{"kind":"approved","index":2,"pixelSha256":"9efc3275b1f8a0578102db6caeef1e8cc00ac2129aa56aca93fde7291919255f","originalRect":[683,640,253,302]},"pixelSha256":"89d9d93f8717d4d2ca7fd87edddf2ab0ea73c2625a3719d2da69946ea9eadf08"},{"anchor":[118.5,298],"opaqueBounds":[2,2,235,298],"attachments":{"head":[138.635,49.342],"torso":[120.15,115.789],"legs":[120.15,217.105],"grip":[221.156,78.947],"strike":[226.437,78.947],"strikeStart":[195.905,88.158]},"poseSource":{"kind":"generated","index":2,"sourceRect":[788,25,359,456],"uniformResample":0.65881},"pixelSha256":"0a626ab55e3b12640f976cc3f57bbe5fb8f4ed361c6be37bb59826472ce05487","rect":[1345,0,237,300]},{"rect":[1614,0,196,303],"anchor":[98,300],"opaqueBounds":[3,3,193,300],"attachments":{"grip":[149,81],"head":[116,47],"torso":[98,143],"legs":[69,215],"strike":[149,81],"strikeStart":[136.25,96.5]},"handRadius":9,"gripAngle":-0.25,"poseSource":{"kind":"approved","index":3,"pixelSha256":"1a7a3119289af80b549745c2f69d92582630df5f2d5f0b85b88122052698a021","originalRect":[1012,636,196,303]},"pixelSha256":"6ed75ce9846163a6887691b1fbd317e88590c947e79c7b112aaa3d785cdda747"},{"anchor":[95.5,296],"opaqueBounds":[2,2,189,296],"attachments":{"head":[109.331,48.68],"torso":[87.597,114.464],"legs":[87.597,217.744],"grip":[160.703,74.336],"strike":[165.972,74.336],"strikeStart":[142.427,84.368]},"poseSource":{"kind":"generated","index":3,"sourceRect":[1222,24,290,453],"uniformResample":0.65881},"pixelSha256":"87c655342cfcc41b6d9facec473ae2a5afa1effef7cf0b98ed8e9458ccefd075","rect":[1883,0,191,298]}],"left":[{"rect":[0,305,210,296],"anchor":[104.5,293],"opaqueBounds":[3,3,207,293],"attachments":{"grip":[48,84],"head":[81,47],"torso":[109,136],"legs":[159,209],"strike":[48,84],"strikeStart":[63.25,97]},"handRadius":9,"gripAngle":0.25,"poseSource":{"kind":"approved","index":0,"pixelSha256":"0c7fb06e1e68d29ebcc98f2b7370da2a98a230e3c989005a17a22ef5bbdb9881","originalRect":[57,945,210,296]},"pixelSha256":"b553f87e57bf2b3d5075f1deaa6cc4be64562c55318ca18ad395cc706417393a"},{"anchor":[110.5,294],"opaqueBounds":[2,2,219,294],"attachments":{"head":[90.768,40.782],"torso":[101.949,111.822],"legs":[101.949,219.698],"grip":[94.057,84.853],"strike":[88.795,84.853],"strikeStart":[96.03,91.596]},"poseSource":{"kind":"generated","index":0,"sourceRect":[34,521,336,450],"uniformResample":0.65881},"pixelSha256":"c2fdfad40483ca41de8d986af8e56b103f3d8b3fcc6e6abc55b79232f60d81ef","rect":[269,305,221,296]},{"rect":[538,305,212,295],"anchor":[105.5,292],"opaqueBounds":[3,3,209,292],"attachments":{"grip":[132,75],"head":[83,45],"torso":[102,135],"legs":[145,203],"strike":[132,75],"strikeStart":[124.5,90]},"handRadius":9,"gripAngle":0.25,"poseSource":{"kind":"approved","index":1,"pixelSha256":"7faeecdafe3808c106cc054fa0264e57c2b8a1cf5137ec1c181a477b47b48fee","originalRect":[384,946,212,295]},"pixelSha256":"9871cd3b3a8aa42ef02e41b41641384aafb51e0f1dc26373ce6b3c0e2fce13dc"},{"anchor":[117.5,293],"opaqueBounds":[2,2,233,293],"attachments":{"head":[88.455,38.85],"torso":[107.598,119.185],"legs":[107.598,217.299],"grip":[14.522,69.799],"strike":[9.242,69.799],"strikeStart":[37.791,82.146]},"poseSource":{"kind":"generated","index":1,"sourceRect":[410,525,356,448],"uniformResample":0.65881},"pixelSha256":"498eea4d1cd6dca4385a6afe86442c81bd87e8016326dd893a6d678932fcba9f","rect":[807,305,235,295]},{"rect":[1076,305,269,293],"anchor":[157.5,290],"opaqueBounds":[3,3,266,290],"attachments":{"grip":[13,66],"head":[135,48],"torso":[167,134],"legs":[208,205],"strike":[13,66],"strikeStart":[51.5,83]},"handRadius":9,"gripAngle":0.25,"poseSource":{"kind":"approved","index":2,"pixelSha256":"d4fea67e6a21829c2c7a88315ecf8b51c52b5d2aab40874f08835eb3fe8838f3","originalRect":[654,947,269,293]},"pixelSha256":"fe57ecc88e22daf68970b3a1d42884b6c3399c71d9fc8699020a3ff5082f48a0"},{"anchor":[130.0,294],"opaqueBounds":[2,2,258,294],"attachments":{"head":[105.975,45.488],"torso":[106.633,129.871],"legs":[107.291,220.187],"grip":[16.456,71.198],"strike":[11.19,71.198],"strikeStart":[39.0,85.866]},"poseSource":{"kind":"generated","index":2,"sourceRect":[784,521,395,449],"uniformResample":0.65881},"pixelSha256":"5fe8f3ee9e11ad41cc1e74466374bece70823b80a598e026b2fe813081e4854b","rect":[1345,305,260,296]},{"rect":[1614,305,206,297],"anchor":[102.5,294],"opaqueBounds":[3,3,203,294],"attachments":{"grip":[56,81],"head":[88,45],"torso":[116,139],"legs":[158,211],"strike":[56,81],"strikeStart":[71,95.5]},"handRadius":9,"gripAngle":0.25,"poseSource":{"kind":"approved","index":3,"pixelSha256":"cbca4383b344a921ec0c8bec3736a61e0ba954ab6074403c34ada5991a7b8880","originalRect":[1002,944,206,297]},"pixelSha256":"131f2bf87f5570c9fbcb7ba7bdb8908018e8b331aca0b1c6888f8d085ce73b01"},{"anchor":[100.5,292],"opaqueBounds":[2,2,199,292],"attachments":{"head":[83.695,43.507],"torso":[89.626,120.632],"legs":[89.626,219.511],"grip":[51.403,64.601],"strike":[46.131,64.601],"strikeStart":[60.959,78.609]},"poseSource":{"kind":"generated","index":3,"sourceRect":[1217,522,305,446],"uniformResample":0.65881},"pixelSha256":"b58f9a4c8150cb978b93e865a18c7b1a80005491421ffbf588f4047c07666cdc","rect":[1883,305,201,294]}]},"scale":1.088435,"order":[0,1,2,3,4,5,6,7,0],"frameMs":[45,45,40,40,110,50,50,45,45],"loop":false,"sourceSize":[2152,610],"contactMs":170,"sourceRevision":"e151f731702dd522","sourceSha256":"e151f731702dd522937952172b507f3f29e05115d49e3a9fcd0631fbfbb1418f","activeEndMs":280,"animationPolish":{"version":1,"encoding":"webp-quality-94-alpha-preserved","approvedFile":"combat.png","approvedSha256":"02e75a74b1d8149b7c74c7877fae161375662d5e631e813021c9d4e850b4304e","generatedSha256":"7d79e0483e657d3003676d2746fdd448240ac7a113522cf712646eb78983aef5","privateLosslessSha256":"ac3b32770abc0c3aeccd41323e136d7cf259ea7c01ba09fb0786fa816655a487","approvedTiming":{"order":[0,1,2,3,0],"frameMs":[90,80,110,100,90],"contactMs":170,"activeEndMs":280,"duration":470},"fullBodyPosesPerFacing":8}},"high":{"file":"hurt.png","label":"High hurt","frames":{"right":[{"rect":[23,57,212,368],"anchor":[105.5,365],"opaqueBounds":[3,3,209,365],"attachments":{"grip":[164,83],"head":[123,49],"torso":[110,146],"legs":[69,252]},"handRadius":9,"gripAngle":-0.25},{"rect":[297,59,212,366],"anchor":[105.5,363],"opaqueBounds":[3,3,209,363],"attachments":{"grip":[137,67],"head":[61,41],"torso":[100,149],"legs":[76,255]},"handRadius":9,"gripAngle":-0.25},{"rect":[564,70,211,354],"anchor":[104.5,351],"opaqueBounds":[3,3,208,351],"attachments":{"grip":[102,43],"head":[72,45],"torso":[118,149],"legs":[101,256]},"handRadius":9,"gripAngle":-0.25},{"rect":[798,60,207,366],"anchor":[103.5,363],"opaqueBounds":[3,3,204,363],"attachments":{"grip":[168,78],"head":[125,47],"torso":[109,140],"legs":[75,252]},"handRadius":9,"gripAngle":-0.25}],"left":[{"rect":[25,449,226,377],"anchor":[112.5,374],"opaqueBounds":[3,3,223,374],"attachments":{"grip":[46,79],"head":[81,38],"torso":[104,153],"legs":[63,262]},"handRadius":9,"gripAngle":0.25},{"rect":[287,443,216,381],"anchor":[107.5,378],"opaqueBounds":[3,3,213,378],"attachments":{"grip":[64,77],"head":[140,41],"torso":[123,140],"legs":[77,254]},"handRadius":9,"gripAngle":0.25},{"rect":[538,449,224,374],"anchor":[111.5,371],"opaqueBounds":[3,3,221,371],"attachments":{"grip":[113,48],"head":[166,43],"torso":[124,140],"legs":[78,250]},"handRadius":9,"gripAngle":0.25},{"rect":[798,447,216,377],"anchor":[107,374],"opaqueBounds":[3,3,213,374],"attachments":{"grip":[47,79],"head":[82,39],"torso":[107,148],"legs":[68,260]},"handRadius":9,"gripAngle":0.25}]},"scale":0.873124,"order":[0,1,2,3],"frameMs":[70,110,140,130],"loop":false,"sourceSize":[1024,1536],"reactionStartMs":70,"sourceRevision":"55397693db606936","sourceSha256":"55397693db6069367405aa3d2b36ccbef2e05e15e6964263bc8de45008eff54f","runtimeFile":"hurt.runtime.webp"},"low":{"file":"hurt.png","label":"Low hurt","frames":{"right":[{"rect":[19,832,216,357],"anchor":[107,354],"opaqueBounds":[3,3,213,354],"attachments":{"grip":[174,84],"head":[134,48],"torso":[116,147],"legs":[73,254]},"handRadius":9,"gripAngle":-0.25},{"rect":[309,857,195,331],"anchor":[97,328],"opaqueBounds":[3,3,192,328],"attachments":{"grip":[112,132],"head":[144,54],"torso":[97,132],"legs":[64,241]},"handRadius":9,"gripAngle":-0.25},{"rect":[566,901,183,286],"anchor":[87,283],"opaqueBounds":[3,3,180,283],"attachments":{"grip":[105,105],"head":[150,53],"torso":[89,116],"legs":[76,208]},"handRadius":9,"gripAngle":-0.25},{"rect":[797,830,204,359],"anchor":[101.5,356],"opaqueBounds":[3,3,201,356],"attachments":{"grip":[164,83],"head":[126,47],"torso":[108,148],"legs":[73,251]},"handRadius":9,"gripAngle":-0.25}],"left":[{"rect":[29,1195,218,333],"anchor":[109,330],"opaqueBounds":[3,3,215,330],"attachments":{"grip":[44,83],"head":[78,45],"torso":[105,143],"legs":[60,243]},"handRadius":9,"gripAngle":0.25},{"rect":[303,1205,201,322],"anchor":[100.5,319],"opaqueBounds":[3,3,198,319],"attachments":{"grip":[66,133],"head":[34,45],"torso":[95,117],"legs":[104,221]},"handRadius":9,"gripAngle":0.25},{"rect":[570,1243,186,285],"anchor":[92.5,282],"opaqueBounds":[3,3,183,282],"attachments":{"grip":[81,111],"head":[55,50],"torso":[124,110],"legs":[96,194]},"handRadius":9,"gripAngle":0.25},{"rect":[799,1196,213,333],"anchor":[106.5,330],"opaqueBounds":[3,3,210,330],"attachments":{"grip":[48,82],"head":[82,46],"torso":[108,140],"legs":[67,241]},"handRadius":9,"gripAngle":0.25}]},"scale":0.943953,"order":[0,1,2,3],"frameMs":[70,130,150,140],"loop":false,"sourceSize":[1024,1536],"reactionStartMs":70,"sourceRevision":"55397693db606936","sourceSha256":"55397693db6069367405aa3d2b36ccbef2e05e15e6964263bc8de45008eff54f","runtimeFile":"hurt.runtime.webp"},"walk":{"file":"movement.png","label":"Advance","frames":{"right":[{"rect":[47,23,205,349],"anchor":[102,346],"opaqueBounds":[3,3,202,346],"attachments":{"grip":[170,82],"head":[131,45],"torso":[111,152],"legs":[73,247]},"handRadius":9,"gripAngle":-0.25},{"rect":[324,23,197,349],"anchor":[98.5,346],"opaqueBounds":[3,3,194,346],"attachments":{"grip":[153,79],"head":[118,45],"torso":[95,153],"legs":[70,247]},"handRadius":9,"gripAngle":-0.25},{"rect":[598,24,190,348],"anchor":[94,345],"opaqueBounds":[3,3,187,345],"attachments":{"grip":[150,81],"head":[112,41],"torso":[94,152],"legs":[67,245]},"handRadius":9,"gripAngle":-0.25},{"rect":[861,23,208,349],"anchor":[103,346],"opaqueBounds":[3,3,205,346],"attachments":{"grip":[163,83],"head":[124,45],"torso":[102,153],"legs":[79,246]},"handRadius":9,"gripAngle":-0.25}],"left":[{"rect":[31,393,228,364],"anchor":[110.5,361],"opaqueBounds":[3,3,225,361],"attachments":{"grip":[47,85],"head":[77,46],"torso":[100,157],"legs":[61,263]},"handRadius":9,"gripAngle":0.25},{"rect":[305,388,218,369],"anchor":[107,366],"opaqueBounds":[3,3,215,366],"attachments":{"grip":[49,85],"head":[79,50],"torso":[101,160],"legs":[65,264]},"handRadius":9,"gripAngle":0.25},{"rect":[581,393,217,364],"anchor":[108,361],"opaqueBounds":[3,3,214,361],"attachments":{"grip":[49,85],"head":[73,50],"torso":[95,156],"legs":[73,263]},"handRadius":9,"gripAngle":0.25},{"rect":[854,393,213,363],"anchor":[106,360],"opaqueBounds":[3,3,210,360],"attachments":{"grip":[50,82],"head":[80,49],"torso":[103,155],"legs":[92,259]},"handRadius":9,"gripAngle":0.25}]},"scale":0.914286,"order":[0,1,2,3],"frameMs":[150,150,150,150],"loop":true,"sourceSize":[1086,1448],"sourceRevision":"57be579e9c2ca605","sourceSha256":"57be579e9c2ca605bd796bc3adb52fab5555d24dbf9547ea2f7b0b7915671e50","runtimeFile":"movement.runtime.webp"},"crouch":{"file":"movement.png","label":"Crouch","frames":{"right":[{"rect":[48,797,190,309],"anchor":[94.5,306],"opaqueBounds":[3,3,187,306],"attachments":{"grip":[165,80],"head":[132,45],"torso":[110,157],"legs":[55,230]},"handRadius":9,"gripAngle":-0.25},{"rect":[318,818,193,287],"anchor":[96.5,284],"opaqueBounds":[3,3,190,284],"attachments":{"grip":[168,87],"head":[125,53],"torso":[101,160],"legs":[55,232]},"handRadius":9,"gripAngle":-0.25},{"rect":[597,841,182,264],"anchor":[91,261],"opaqueBounds":[3,3,179,261],"attachments":{"grip":[168,85],"head":[128,51],"torso":[97,154],"legs":[57,214]},"handRadius":9,"gripAngle":-0.25},{"rect":[867,850,182,255],"anchor":[93.5,252],"opaqueBounds":[3,3,179,252],"attachments":{"grip":[156,83],"head":[121,49],"torso":[88,153],"legs":[51,211]},"handRadius":9,"gripAngle":-0.25}],"left":[{"rect":[51,1125,194,294],"anchor":[96.5,291],"opaqueBounds":[3,3,191,291],"attachments":{"grip":[29,82],"head":[58,45],"torso":[74,157],"legs":[59,226]},"handRadius":9,"gripAngle":0.25},{"rect":[328,1133,183,286],"anchor":[91,283],"opaqueBounds":[3,3,180,283],"attachments":{"grip":[20,77],"head":[54,43],"torso":[78,157],"legs":[46,224]},"handRadius":9,"gripAngle":0.25},{"rect":[592,1144,189,275],"anchor":[97,272],"opaqueBounds":[3,3,186,272],"attachments":{"grip":[26,83],"head":[60,48],"torso":[82,157],"legs":[53,220]},"handRadius":9,"gripAngle":0.25},{"rect":[864,1133,190,286],"anchor":[95,283],"opaqueBounds":[3,3,187,283],"attachments":{"grip":[33,84],"head":[65,46],"torso":[87,158],"legs":[54,226]},"handRadius":9,"gripAngle":0.25}]},"scale":0.914286,"order":[0,1,2,3],"frameMs":[90,100,120,200],"loop":false,"sourceSize":[1086,1448],"sourceRevision":"57be579e9c2ca605","sourceSha256":"57be579e9c2ca605bd796bc3adb52fab5555d24dbf9547ea2f7b0b7915671e50","runtimeFile":"movement.runtime.webp"},"block":{"file":"defense-kick.png","label":"Block","frames":{"right":[{"rect":[46,28,223,340],"anchor":[111,337],"opaqueBounds":[3,3,220,337],"attachments":{"grip":[186,79],"head":[144,48],"torso":[127,147],"legs":[73,239]},"handRadius":9,"gripAngle":-0.25},{"rect":[340,35,202,334],"anchor":[102,331],"opaqueBounds":[3,3,199,331],"attachments":{"grip":[105,30],"head":[65,48],"torso":[88,122],"legs":[83,228]},"handRadius":9,"gripAngle":-0.25},{"rect":[600,35,197,335],"anchor":[98,332],"opaqueBounds":[3,3,194,332],"attachments":{"grip":[79,29],"head":[108,50],"torso":[90,131],"legs":[69,233]},"handRadius":9,"gripAngle":-0.25},{"rect":[841,31,206,340],"anchor":[102.5,337],"opaqueBounds":[3,3,203,337],"attachments":{"grip":[169,78],"head":[129,45],"torso":[109,148],"legs":[83,239]},"handRadius":9,"gripAngle":-0.25}],"left":[{"rect":[37,392,234,336],"anchor":[116.5,333],"opaqueBounds":[3,3,231,333],"attachments":{"grip":[50,75],"head":[76,41],"torso":[98,147],"legs":[64,249]},"handRadius":9,"gripAngle":0.25},{"rect":[319,388,197,340],"anchor":[98.5,337],"opaqueBounds":[3,3,194,337],"attachments":{"grip":[79,18],"head":[117,49],"torso":[101,137],"legs":[52,245]},"handRadius":9,"gripAngle":0.25},{"rect":[580,394,213,335],"anchor":[105.5,332],"opaqueBounds":[3,3,210,332],"attachments":{"grip":[135,27],"head":[111,44],"torso":[124,138],"legs":[68,243]},"handRadius":9,"gripAngle":0.25},{"rect":[858,390,208,336],"anchor":[103,333],"opaqueBounds":[3,3,205,333],"attachments":{"grip":[45,78],"head":[78,44],"torso":[104,151],"legs":[69,245]},"handRadius":9,"gripAngle":0.25}]},"scale":0.963855,"order":[0,1,2,3],"frameMs":[80,90,160,110],"loop":false,"sourceSize":[1086,1448],"sourceRevision":"bfaa1b72fa954b7b","sourceSha256":"bfaa1b72fa954b7ba695469ea9f210f4d658daea2cd49f0e51fb64530b18a13e","runtimeFile":"defense-kick.runtime.webp"},"kick":{"file":"defense-kick.png","label":"Kick","frames":{"right":[{"rect":[36,752,210,324],"anchor":[105,321],"opaqueBounds":[3,3,207,321],"attachments":{"grip":[165,75],"head":[128,46],"torso":[105,143],"legs":[71,242]},"handRadius":9,"gripAngle":-0.25},{"rect":[317,743,188,335],"anchor":[57,332],"opaqueBounds":[3,3,185,332],"attachments":{"grip":[114,67],"head":[76,49],"torso":[58,144],"legs":[62,260]},"handRadius":9,"gripAngle":-0.25},{"rect":[552,746,284,332],"anchor":[83,329],"opaqueBounds":[3,3,281,329],"attachments":{"grip":[115,69],"head":[76,45],"torso":[62,146],"legs":[94,258]},"handRadius":9,"gripAngle":-0.25},{"rect":[854,751,201,327],"anchor":[100,324],"opaqueBounds":[3,3,198,324],"attachments":{"grip":[159,82],"head":[118,46],"torso":[96,146],"legs":[65,248]},"handRadius":9,"gripAngle":-0.25}],"left":[{"rect":[36,1097,228,323],"anchor":[114,320],"opaqueBounds":[3,3,225,320],"attachments":{"grip":[51,72],"head":[78,40],"torso":[99,133],"legs":[64,248]},"handRadius":9,"gripAngle":0.25},{"rect":[303,1090,179,330],"anchor":[123,327],"opaqueBounds":[3,3,176,327],"attachments":{"grip":[69,67],"head":[106,45],"torso":[108,132],"legs":[98,252]},"handRadius":9,"gripAngle":0.25},{"rect":[527,1095,295,325],"anchor":[204.5,322],"opaqueBounds":[3,3,292,322],"attachments":{"grip":[178,64],"head":[223,44],"torso":[230,133],"legs":[198,247]},"handRadius":9,"gripAngle":0.25},{"rect":[857,1096,212,324],"anchor":[105.5,321],"opaqueBounds":[3,3,209,321],"attachments":{"grip":[51,82],"head":[81,45],"torso":[106,139],"legs":[65,243]},"handRadius":9,"gripAngle":0.25}]},"scale":0.963855,"order":[0,1,2,3,0],"frameMs":[90,110,130,110,90],"loop":false,"sourceSize":[1086,1448],"contactMs":200,"sourceRevision":"bfaa1b72fa954b7b","sourceSha256":"bfaa1b72fa954b7ba695469ea9f210f4d658daea2cd49f0e51fb64530b18a13e","runtimeFile":"defense-kick.runtime.webp"},"grabbed":{"file":"restraints.png","label":"Grabbed","frames":{"right":[{"rect":[40,87,184,277],"anchor":[92,274],"opaqueBounds":[3,3,181,274],"attachments":{"grip":[144,67],"head":[106,32],"torso":[88,108],"legs":[62,194]},"handRadius":9,"gripAngle":-0.25},{"rect":[338,75,177,288],"anchor":[88,285],"opaqueBounds":[3,3,174,285],"attachments":{"grip":[93,60],"head":[66,26],"torso":[92,117],"legs":[81,200]},"handRadius":9,"gripAngle":-0.25},{"rect":[619,96,166,268],"anchor":[81.5,265],"opaqueBounds":[3,3,163,265],"attachments":{"grip":[75,54],"head":[55,31],"torso":[80,101],"legs":[101,188]},"handRadius":9,"gripAngle":-0.25},{"rect":[863,87,179,276],"anchor":[89,273],"opaqueBounds":[3,3,176,273],"attachments":{"grip":[144,68],"head":[109,34],"torso":[90,111],"legs":[68,194]},"handRadius":9,"gripAngle":-0.25}],"left":[{"rect":[53,440,188,279],"anchor":[94,276],"opaqueBounds":[3,3,185,276],"attachments":{"grip":[35,64],"head":[62,42],"torso":[79,139],"legs":[54,207]},"handRadius":9,"gripAngle":0.25},{"rect":[333,430,183,288],"anchor":[91,285],"opaqueBounds":[3,3,180,285],"attachments":{"grip":[83,61],"head":[105,31],"torso":[88,135],"legs":[43,201]},"handRadius":9,"gripAngle":0.25},{"rect":[603,440,181,280],"anchor":[93,277],"opaqueBounds":[3,3,178,277],"attachments":{"grip":[95,60],"head":[126,40],"torso":[101,134],"legs":[84,203]},"handRadius":9,"gripAngle":0.25},{"rect":[872,439,187,281],"anchor":[93,278],"opaqueBounds":[3,3,184,278],"attachments":{"grip":[34,65],"head":[64,42],"torso":[86,137],"legs":[56,203]},"handRadius":9,"gripAngle":0.25}]},"scale":1.176471,"order":[0,1,2,3],"frameMs":[90,130,230,150],"loop":false,"sourceSize":[1086,1448],"sourceRevision":"4d9ec9074058b52d","sourceSha256":"4d9ec9074058b52df7f40e64ff90f12047eca049bef50041aeff93895c204268","runtimeFile":"restraints.runtime.webp"},"thrown":{"file":"restraints.png","label":"Thrown","frames":{"right":[{"rect":[55,804,207,226],"anchor":[121.5,223],"opaqueBounds":[3,3,204,223],"offset":[0,0],"attachments":{"grip":[101,18],"head":[44,32],"torso":[74,103],"legs":[141,167]},"handRadius":9,"gripAngle":-0.25},{"rect":[305,809,203,173],"anchor":[120,218],"opaqueBounds":[3,3,200,170],"offset":[-20,0],"attachments":{"grip":[109,14],"head":[45,51],"torso":[76,110],"legs":[145,119]},"handRadius":9,"gripAngle":-0.25},{"rect":[571,867,243,133],"anchor":[90,160],"opaqueBounds":[3,3,240,130],"offset":[-45,0],"attachments":{"grip":[119,14],"head":[52,56],"torso":[108,95],"legs":[175,78]},"handRadius":9,"gripAngle":-0.25},{"rect":[820,947,240,90],"anchor":[118.5,87],"opaqueBounds":[3,3,237,87],"offset":[-65,0],"attachments":{"grip":[101,13],"head":[39,42],"torso":[103,61],"legs":[181,60]},"handRadius":9,"gripAngle":-0.25,"bodyCalibration":1.155128}],"left":[{"rect":[27,1121,186,263],"anchor":[93,260],"opaqueBounds":[3,3,183,260],"offset":[0,0],"attachments":{"grip":[64,28],"head":[120,34],"torso":[101,107],"legs":[51,200]},"handRadius":9,"gripAngle":0.25},{"rect":[292,1169,208,157],"anchor":[95,212],"opaqueBounds":[3,3,205,154],"offset":[20,0],"attachments":{"grip":[89,17],"head":[167,36],"torso":[126,109],"legs":[53,106]},"handRadius":9,"gripAngle":0.25},{"rect":[534,1234,249,128],"anchor":[155.5,147],"opaqueBounds":[3,3,246,125],"offset":[45,0],"attachments":{"grip":[137,16],"head":[214,40],"torso":[163,83],"legs":[72,78]},"handRadius":9,"gripAngle":0.25},{"rect":[823,1300,243,83],"anchor":[119.5,80],"opaqueBounds":[3,3,240,80],"offset":[65,0],"attachments":{"grip":[157,9],"head":[217,28],"torso":[149,51],"legs":[64,53]},"handRadius":9,"gripAngle":0.25,"bodyCalibration":1.140506}]},"scale":1.176471,"order":[0,1,2,3],"frameMs":[100,160,160,220],"loop":false,"sourceSize":[1086,1448],"sourceRevision":"4d9ec9074058b52d","sourceSha256":"4d9ec9074058b52df7f40e64ff90f12047eca049bef50041aeff93895c204268","runtimeFile":"restraints.runtime.webp"},"knockdown":{"file":"floor.png","label":"Knockdown","frames":{"right":[{"rect":[22,75,196,324],"anchor":[97,321],"opaqueBounds":[3,3,193,321],"attachments":{"grip":[155,71],"head":[117,40],"torso":[98,134],"legs":[63,227]},"handRadius":9,"gripAngle":-0.25,"bodyCalibration":1},{"rect":[291,120,226,284],"anchor":[142,281],"opaqueBounds":[3,3,223,281],"attachments":{"grip":[108,37],"head":[54,44],"torso":[94,115],"legs":[165,205]},"handRadius":9,"gripAngle":-0.25,"bodyCalibration":1},{"rect":[540,229,256,172],"anchor":[131.5,169],"opaqueBounds":[3,3,253,169],"attachments":{"grip":[122,52],"head":[83,47],"torso":[98,101],"legs":[171,122]},"handRadius":9,"gripAngle":-0.25,"bodyCalibration":1},{"rect":[802,328,274,74],"anchor":[136,71],"opaqueBounds":[3,3,271,71],"attachments":{"grip":[147,49],"head":[39,24],"torso":[113,36],"legs":[206,42]},"handRadius":9,"gripAngle":-0.25,"bodyCalibration":1.186567}],"left":[{"rect":[31,438,216,328],"anchor":[107,325],"opaqueBounds":[3,3,213,325],"attachments":{"grip":[55,62],"head":[82,39],"torso":[103,144],"legs":[73,225]},"handRadius":9,"gripAngle":0.25,"bodyCalibration":1},{"rect":[288,471,214,294],"anchor":[85.5,291],"opaqueBounds":[3,3,211,291],"attachments":{"grip":[103,48],"head":[171,50],"torso":[128,120],"legs":[57,209]},"handRadius":9,"gripAngle":0.25,"bodyCalibration":1},{"rect":[535,585,261,178],"anchor":[126.5,175],"opaqueBounds":[3,3,258,175],"attachments":{"grip":[134,45],"head":[213,38],"torso":[173,108],"legs":[71,118]},"handRadius":9,"gripAngle":0.25,"bodyCalibration":1},{"rect":[804,684,273,79],"anchor":[134.5,76],"opaqueBounds":[3,3,270,76],"attachments":{"grip":[132,57],"head":[237,27],"torso":[163,43],"legs":[65,47]},"handRadius":9,"gripAngle":0.25,"bodyCalibration":1.191011}]},"scale":1,"order":[0,1,2,3],"frameMs":[90,130,160,250],"loop":false,"sourceSize":[1086,1448],"sourceRevision":"0cf69c82028e875b","sourceSha256":"0cf69c82028e875bf1aaee13398d9aa9f29670d4ce2b2ed8c968a360d6076eae","runtimeFile":"floor.runtime.webp"},"getup":{"file":"floor.png","label":"Get up","frames":{"right":[{"rect":[802,328,274,74],"anchor":[136,71],"opaqueBounds":[3,3,271,71],"attachments":{"grip":[147,49],"head":[39,24],"torso":[113,36],"legs":[206,42]},"handRadius":9,"gripAngle":-0.25,"bodyCalibration":1.186567},{"rect":[299,932,256,161],"anchor":[127.5,158],"opaqueBounds":[3,3,253,158],"attachments":{"grip":[172,64],"head":[87,45],"torso":[124,99],"legs":[189,124]},"handRadius":9,"gripAngle":-0.25,"bodyCalibration":1},{"rect":[605,865,188,226],"anchor":[93,223],"opaqueBounds":[3,3,185,223],"attachments":{"grip":[68,155],"head":[147,38],"torso":[103,112],"legs":[100,184]},"handRadius":9,"gripAngle":-0.25,"bodyCalibration":1},{"rect":[859,787,197,303],"anchor":[98,300],"opaqueBounds":[3,3,194,300],"attachments":{"grip":[150,79],"head":[112,45],"torso":[91,139],"legs":[64,226]},"handRadius":9,"gripAngle":-0.25,"bodyCalibration":1.070707}],"left":[{"rect":[804,684,273,79],"anchor":[134.5,76],"opaqueBounds":[3,3,270,76],"attachments":{"grip":[132,57],"head":[237,27],"torso":[163,43],"legs":[65,47]},"handRadius":9,"gripAngle":0.25,"bodyCalibration":1.191011},{"rect":[286,1251,245,160],"anchor":[122,157],"opaqueBounds":[3,3,242,157],"attachments":{"grip":[91,70],"head":[182,39],"torso":[125,101],"legs":[49,120]},"handRadius":9,"gripAngle":0.25,"bodyCalibration":1},{"rect":[593,1182,176,230],"anchor":[87.5,227],"opaqueBounds":[3,3,173,227],"attachments":{"grip":[63,152],"head":[76,38],"torso":[88,116],"legs":[72,186]},"handRadius":9,"gripAngle":0.25,"bodyCalibration":1},{"rect":[860,1106,204,304],"anchor":[101.5,301],"opaqueBounds":[3,3,201,301],"attachments":{"grip":[44,78],"head":[75,43],"torso":[98,133],"legs":[62,231]},"handRadius":9,"gripAngle":0.25,"bodyCalibration":1.067114}]},"scale":1,"order":[0,1,2,3],"frameMs":[180,180,180,150],"loop":false,"sourceSize":[1086,1448],"startFrom":"knockdown","sourceRevision":"0cf69c82028e875b","sourceSha256":"0cf69c82028e875bf1aaee13398d9aa9f29670d4ce2b2ed8c968a360d6076eae","runtimeFile":"floor.runtime.webp"}},"nativeAttachmentTargets":"native-attachment-targets-v1.json"}
+{
+  "id": "cliff",
+  "character": "Cliff",
+  "baseId": "cliff",
+  "variantOf": null,
+  "height": 320,
+  "status": "pose and timing pilot",
+  "description": "Four whole-body key poses per action and facing. Smoother frames remain to be produced.",
+  "clips": {
+    "idle": {
+      "file": "combat.png",
+      "label": "Idle",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              81,
+              15,
+              191,
+              303
+            ],
+            "anchor": [
+              95.5,
+              300
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              188,
+              300
+            ],
+            "attachments": {
+              "grip": [
+                146,
+                81
+              ],
+              "head": [
+                106,
+                49
+              ],
+              "torso": [
+                97,
+                141
+              ],
+              "legs": [
+                70,
+                217
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              402,
+              10,
+              167,
+              308
+            ],
+            "anchor": [
+              83.5,
+              305
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              164,
+              305
+            ],
+            "attachments": {
+              "grip": [
+                139,
+                86
+              ],
+              "head": [
+                103,
+                50
+              ],
+              "torso": [
+                85,
+                144
+              ],
+              "legs": [
+                55,
+                216
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              703,
+              21,
+              182,
+              297
+            ],
+            "anchor": [
+              91,
+              294
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              179,
+              294
+            ],
+            "attachments": {
+              "grip": [
+                147,
+                85
+              ],
+              "head": [
+                108,
+                48
+              ],
+              "torso": [
+                93,
+                144
+              ],
+              "legs": [
+                66,
+                211
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              1020,
+              16,
+              182,
+              302
+            ],
+            "anchor": [
+              91,
+              299
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              179,
+              299
+            ],
+            "attachments": {
+              "grip": [
+                138,
+                82
+              ],
+              "head": [
+                107,
+                48
+              ],
+              "torso": [
+                87,
+                143
+              ],
+              "legs": [
+                67,
+                215
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              58,
+              324,
+              208,
+              306
+            ],
+            "anchor": [
+              103.5,
+              303
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              205,
+              303
+            ],
+            "attachments": {
+              "grip": [
+                47,
+                73
+              ],
+              "head": [
+                81,
+                46
+              ],
+              "torso": [
+                110,
+                137
+              ],
+              "legs": [
+                157,
+                217
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              390,
+              324,
+              177,
+              306
+            ],
+            "anchor": [
+              88.5,
+              303
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              174,
+              303
+            ],
+            "attachments": {
+              "grip": [
+                55,
+                69
+              ],
+              "head": [
+                82,
+                43
+              ],
+              "torso": [
+                103,
+                134
+              ],
+              "legs": [
+                141,
+                214
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              693,
+              325,
+              202,
+              304
+            ],
+            "anchor": [
+              100.5,
+              301
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              199,
+              301
+            ],
+            "attachments": {
+              "grip": [
+                58,
+                74
+              ],
+              "head": [
+                88,
+                46
+              ],
+              "torso": [
+                114,
+                139
+              ],
+              "legs": [
+                159,
+                218
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              1002,
+              324,
+              199,
+              306
+            ],
+            "anchor": [
+              98.5,
+              303
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              196,
+              303
+            ],
+            "attachments": {
+              "grip": [
+                56,
+                70
+              ],
+              "head": [
+                88,
+                45
+              ],
+              "torso": [
+                116,
+                139
+              ],
+              "legs": [
+                157,
+                217
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          }
+        ]
+      },
+      "scale": 1.070234,
+      "order": [
+        0,
+        1,
+        2,
+        3,
+        2,
+        1
+      ],
+      "frameMs": [
+        180,
+        180,
+        180,
+        180,
+        180,
+        180
+      ],
+      "loop": true,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceRevision": "02e75a74b1d8149b",
+      "sourceSha256": "02e75a74b1d8149b7c74c7877fae161375662d5e631e813021c9d4e850b4304e",
+      "runtimeFile": "combat.runtime.webp"
+    },
+    "punch": {
+      "file": "../../animation-polish/cliff/punch.webp",
+      "label": "Punch",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              0,
+              0,
+              190,
+              305
+            ],
+            "anchor": [
+              94,
+              302
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              187,
+              302
+            ],
+            "attachments": {
+              "grip": [
+                149,
+                82
+              ],
+              "head": [
+                110,
+                49
+              ],
+              "torso": [
+                99,
+                145
+              ],
+              "legs": [
+                67,
+                219
+              ],
+              "strike": [
+                149,
+                82
+              ],
+              "strikeStart": [
+                136.5,
+                97.75
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25,
+            "poseSource": {
+              "kind": "approved",
+              "index": 0,
+              "pixelSha256": "1e8c5d273dbe866018a9d4639993ded0595bb530492d0da1b2c88bbbeaf5e8cd",
+              "originalRect": [
+                78,
+                634,
+                190,
+                305
+              ]
+            },
+            "pixelSha256": "04cb851521ef839c2dd053b52b964b85848b61daec3fc2470d7913187ccd2126"
+          },
+          {
+            "anchor": [
+              98.5,
+              303
+            ],
+            "opaqueBounds": [
+              2,
+              2,
+              195,
+              303
+            ],
+            "attachments": {
+              "head": [
+                131.773,
+                44.795
+              ],
+              "torso": [
+                102.124,
+                119.233
+              ],
+              "legs": [
+                102.124,
+                223.974
+              ],
+              "grip": [
+                110.689,
+                83.002
+              ],
+              "strike": [
+                115.96,
+                83.002
+              ],
+              "strikeStart": [
+                108.548,
+                92.06
+              ]
+            },
+            "poseSource": {
+              "kind": "generated",
+              "index": 0,
+              "sourceRect": [
+                45,
+                15,
+                299,
+                463
+              ],
+              "uniformResample": 0.65881
+            },
+            "pixelSha256": "a51b684e045635ef2ab8c3558d9a6e6e97e8e9e4c469a20bcf8aefec936302be",
+            "rect": [
+              269,
+              0,
+              197,
+              305
+            ]
+          },
+          {
+            "rect": [
+              538,
+              0,
+              200,
+              304
+            ],
+            "anchor": [
+              99,
+              301
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              197,
+              301
+            ],
+            "attachments": {
+              "grip": [
+                51,
+                77
+              ],
+              "head": [
+                119,
+                44
+              ],
+              "torso": [
+                88,
+                136
+              ],
+              "legs": [
+                57,
+                217
+              ],
+              "strike": [
+                51,
+                77
+              ],
+              "strikeStart": [
+                60.25,
+                91.75
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25,
+            "poseSource": {
+              "kind": "approved",
+              "index": 1,
+              "pixelSha256": "ecfc54458538e31bce9ed89faad6ffd6fe8f67498670942512e2933967186917",
+              "originalRect": [
+                382,
+                637,
+                200,
+                304
+              ]
+            },
+            "pixelSha256": "0be840e40ffec0b45020fea792fa97baf1b1315a5574a1debdb3b7a409d82f93"
+          },
+          {
+            "anchor": [
+              111.5,
+              300
+            ],
+            "opaqueBounds": [
+              2,
+              2,
+              221,
+              300
+            ],
+            "attachments": {
+              "head": [
+                128.274,
+                48.031
+              ],
+              "torso": [
+                108.54,
+                117.773
+              ],
+              "legs": [
+                108.54,
+                219.756
+              ],
+              "grip": [
+                209.844,
+                73.691
+              ],
+              "strike": [
+                215.106,
+                73.691
+              ],
+              "strikeStart": [
+                184.518,
+                84.711
+              ]
+            },
+            "poseSource": {
+              "kind": "generated",
+              "index": 1,
+              "sourceRect": [
+                414,
+                21,
+                339,
+                459
+              ],
+              "uniformResample": 0.65881
+            },
+            "pixelSha256": "4545b0254b67cda710e699bd60892cadb639a65e1d0922ff7d02836e8448c350",
+            "rect": [
+              807,
+              0,
+              223,
+              302
+            ]
+          },
+          {
+            "rect": [
+              1076,
+              0,
+              253,
+              302
+            ],
+            "anchor": [
+              102,
+              299
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              250,
+              299
+            ],
+            "attachments": {
+              "grip": [
+                240,
+                57
+              ],
+              "head": [
+                134,
+                45
+              ],
+              "torso": [
+                109,
+                143
+              ],
+              "legs": [
+                83,
+                211
+              ],
+              "strike": [
+                240,
+                57
+              ],
+              "strikeStart": [
+                207.25,
+                78.5
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25,
+            "poseSource": {
+              "kind": "approved",
+              "index": 2,
+              "pixelSha256": "9efc3275b1f8a0578102db6caeef1e8cc00ac2129aa56aca93fde7291919255f",
+              "originalRect": [
+                683,
+                640,
+                253,
+                302
+              ]
+            },
+            "pixelSha256": "89d9d93f8717d4d2ca7fd87edddf2ab0ea73c2625a3719d2da69946ea9eadf08"
+          },
+          {
+            "anchor": [
+              118.5,
+              298
+            ],
+            "opaqueBounds": [
+              2,
+              2,
+              235,
+              298
+            ],
+            "attachments": {
+              "head": [
+                138.635,
+                49.342
+              ],
+              "torso": [
+                120.15,
+                115.789
+              ],
+              "legs": [
+                120.15,
+                217.105
+              ],
+              "grip": [
+                221.156,
+                78.947
+              ],
+              "strike": [
+                226.437,
+                78.947
+              ],
+              "strikeStart": [
+                195.905,
+                88.158
+              ]
+            },
+            "poseSource": {
+              "kind": "generated",
+              "index": 2,
+              "sourceRect": [
+                788,
+                25,
+                359,
+                456
+              ],
+              "uniformResample": 0.65881
+            },
+            "pixelSha256": "0a626ab55e3b12640f976cc3f57bbe5fb8f4ed361c6be37bb59826472ce05487",
+            "rect": [
+              1345,
+              0,
+              237,
+              300
+            ]
+          },
+          {
+            "rect": [
+              1614,
+              0,
+              196,
+              303
+            ],
+            "anchor": [
+              98,
+              300
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              193,
+              300
+            ],
+            "attachments": {
+              "grip": [
+                149,
+                81
+              ],
+              "head": [
+                116,
+                47
+              ],
+              "torso": [
+                98,
+                143
+              ],
+              "legs": [
+                69,
+                215
+              ],
+              "strike": [
+                149,
+                81
+              ],
+              "strikeStart": [
+                136.25,
+                96.5
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25,
+            "poseSource": {
+              "kind": "approved",
+              "index": 3,
+              "pixelSha256": "1a7a3119289af80b549745c2f69d92582630df5f2d5f0b85b88122052698a021",
+              "originalRect": [
+                1012,
+                636,
+                196,
+                303
+              ]
+            },
+            "pixelSha256": "6ed75ce9846163a6887691b1fbd317e88590c947e79c7b112aaa3d785cdda747"
+          },
+          {
+            "anchor": [
+              95.5,
+              296
+            ],
+            "opaqueBounds": [
+              2,
+              2,
+              189,
+              296
+            ],
+            "attachments": {
+              "head": [
+                109.331,
+                48.68
+              ],
+              "torso": [
+                87.597,
+                114.464
+              ],
+              "legs": [
+                87.597,
+                217.744
+              ],
+              "grip": [
+                160.703,
+                74.336
+              ],
+              "strike": [
+                165.972,
+                74.336
+              ],
+              "strikeStart": [
+                142.427,
+                84.368
+              ]
+            },
+            "poseSource": {
+              "kind": "generated",
+              "index": 3,
+              "sourceRect": [
+                1222,
+                24,
+                290,
+                453
+              ],
+              "uniformResample": 0.65881
+            },
+            "pixelSha256": "87c655342cfcc41b6d9facec473ae2a5afa1effef7cf0b98ed8e9458ccefd075",
+            "rect": [
+              1883,
+              0,
+              191,
+              298
+            ]
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              0,
+              305,
+              210,
+              296
+            ],
+            "anchor": [
+              104.5,
+              293
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              207,
+              293
+            ],
+            "attachments": {
+              "grip": [
+                48,
+                84
+              ],
+              "head": [
+                81,
+                47
+              ],
+              "torso": [
+                109,
+                136
+              ],
+              "legs": [
+                159,
+                209
+              ],
+              "strike": [
+                48,
+                84
+              ],
+              "strikeStart": [
+                63.25,
+                97
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25,
+            "poseSource": {
+              "kind": "approved",
+              "index": 0,
+              "pixelSha256": "0c7fb06e1e68d29ebcc98f2b7370da2a98a230e3c989005a17a22ef5bbdb9881",
+              "originalRect": [
+                57,
+                945,
+                210,
+                296
+              ]
+            },
+            "pixelSha256": "b553f87e57bf2b3d5075f1deaa6cc4be64562c55318ca18ad395cc706417393a"
+          },
+          {
+            "anchor": [
+              110.5,
+              294
+            ],
+            "opaqueBounds": [
+              2,
+              2,
+              219,
+              294
+            ],
+            "attachments": {
+              "head": [
+                90.768,
+                40.782
+              ],
+              "torso": [
+                101.949,
+                111.822
+              ],
+              "legs": [
+                101.949,
+                219.698
+              ],
+              "grip": [
+                94.057,
+                84.853
+              ],
+              "strike": [
+                88.795,
+                84.853
+              ],
+              "strikeStart": [
+                96.03,
+                91.596
+              ]
+            },
+            "poseSource": {
+              "kind": "generated",
+              "index": 0,
+              "sourceRect": [
+                34,
+                521,
+                336,
+                450
+              ],
+              "uniformResample": 0.65881
+            },
+            "pixelSha256": "c2fdfad40483ca41de8d986af8e56b103f3d8b3fcc6e6abc55b79232f60d81ef",
+            "rect": [
+              269,
+              305,
+              221,
+              296
+            ]
+          },
+          {
+            "rect": [
+              538,
+              305,
+              212,
+              295
+            ],
+            "anchor": [
+              105.5,
+              292
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              209,
+              292
+            ],
+            "attachments": {
+              "grip": [
+                132,
+                75
+              ],
+              "head": [
+                83,
+                45
+              ],
+              "torso": [
+                102,
+                135
+              ],
+              "legs": [
+                145,
+                203
+              ],
+              "strike": [
+                132,
+                75
+              ],
+              "strikeStart": [
+                124.5,
+                90
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25,
+            "poseSource": {
+              "kind": "approved",
+              "index": 1,
+              "pixelSha256": "7faeecdafe3808c106cc054fa0264e57c2b8a1cf5137ec1c181a477b47b48fee",
+              "originalRect": [
+                384,
+                946,
+                212,
+                295
+              ]
+            },
+            "pixelSha256": "9871cd3b3a8aa42ef02e41b41641384aafb51e0f1dc26373ce6b3c0e2fce13dc"
+          },
+          {
+            "anchor": [
+              117.5,
+              293
+            ],
+            "opaqueBounds": [
+              2,
+              2,
+              233,
+              293
+            ],
+            "attachments": {
+              "head": [
+                88.455,
+                38.85
+              ],
+              "torso": [
+                107.598,
+                119.185
+              ],
+              "legs": [
+                107.598,
+                217.299
+              ],
+              "grip": [
+                14.522,
+                69.799
+              ],
+              "strike": [
+                9.242,
+                69.799
+              ],
+              "strikeStart": [
+                37.791,
+                82.146
+              ]
+            },
+            "poseSource": {
+              "kind": "generated",
+              "index": 1,
+              "sourceRect": [
+                410,
+                525,
+                356,
+                448
+              ],
+              "uniformResample": 0.65881
+            },
+            "pixelSha256": "498eea4d1cd6dca4385a6afe86442c81bd87e8016326dd893a6d678932fcba9f",
+            "rect": [
+              807,
+              305,
+              235,
+              295
+            ]
+          },
+          {
+            "rect": [
+              1076,
+              305,
+              269,
+              293
+            ],
+            "anchor": [
+              157.5,
+              290
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              266,
+              290
+            ],
+            "attachments": {
+              "grip": [
+                13,
+                66
+              ],
+              "head": [
+                135,
+                48
+              ],
+              "torso": [
+                167,
+                134
+              ],
+              "legs": [
+                208,
+                205
+              ],
+              "strike": [
+                13,
+                66
+              ],
+              "strikeStart": [
+                51.5,
+                83
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25,
+            "poseSource": {
+              "kind": "approved",
+              "index": 2,
+              "pixelSha256": "d4fea67e6a21829c2c7a88315ecf8b51c52b5d2aab40874f08835eb3fe8838f3",
+              "originalRect": [
+                654,
+                947,
+                269,
+                293
+              ]
+            },
+            "pixelSha256": "fe57ecc88e22daf68970b3a1d42884b6c3399c71d9fc8699020a3ff5082f48a0"
+          },
+          {
+            "anchor": [
+              130,
+              294
+            ],
+            "opaqueBounds": [
+              2,
+              2,
+              258,
+              294
+            ],
+            "attachments": {
+              "head": [
+                105.975,
+                45.488
+              ],
+              "torso": [
+                106.633,
+                129.871
+              ],
+              "legs": [
+                107.291,
+                220.187
+              ],
+              "grip": [
+                16.456,
+                71.198
+              ],
+              "strike": [
+                11.19,
+                71.198
+              ],
+              "strikeStart": [
+                39,
+                85.866
+              ]
+            },
+            "poseSource": {
+              "kind": "generated",
+              "index": 2,
+              "sourceRect": [
+                784,
+                521,
+                395,
+                449
+              ],
+              "uniformResample": 0.65881
+            },
+            "pixelSha256": "5fe8f3ee9e11ad41cc1e74466374bece70823b80a598e026b2fe813081e4854b",
+            "rect": [
+              1345,
+              305,
+              260,
+              296
+            ]
+          },
+          {
+            "rect": [
+              1614,
+              305,
+              206,
+              297
+            ],
+            "anchor": [
+              102.5,
+              294
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              203,
+              294
+            ],
+            "attachments": {
+              "grip": [
+                56,
+                81
+              ],
+              "head": [
+                88,
+                45
+              ],
+              "torso": [
+                116,
+                139
+              ],
+              "legs": [
+                158,
+                211
+              ],
+              "strike": [
+                56,
+                81
+              ],
+              "strikeStart": [
+                71,
+                95.5
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25,
+            "poseSource": {
+              "kind": "approved",
+              "index": 3,
+              "pixelSha256": "cbca4383b344a921ec0c8bec3736a61e0ba954ab6074403c34ada5991a7b8880",
+              "originalRect": [
+                1002,
+                944,
+                206,
+                297
+              ]
+            },
+            "pixelSha256": "131f2bf87f5570c9fbcb7ba7bdb8908018e8b331aca0b1c6888f8d085ce73b01"
+          },
+          {
+            "anchor": [
+              100.5,
+              292
+            ],
+            "opaqueBounds": [
+              2,
+              2,
+              199,
+              292
+            ],
+            "attachments": {
+              "head": [
+                83.695,
+                43.507
+              ],
+              "torso": [
+                89.626,
+                120.632
+              ],
+              "legs": [
+                89.626,
+                219.511
+              ],
+              "grip": [
+                51.403,
+                64.601
+              ],
+              "strike": [
+                46.131,
+                64.601
+              ],
+              "strikeStart": [
+                60.959,
+                78.609
+              ]
+            },
+            "poseSource": {
+              "kind": "generated",
+              "index": 3,
+              "sourceRect": [
+                1217,
+                522,
+                305,
+                446
+              ],
+              "uniformResample": 0.65881
+            },
+            "pixelSha256": "b58f9a4c8150cb978b93e865a18c7b1a80005491421ffbf588f4047c07666cdc",
+            "rect": [
+              1883,
+              305,
+              201,
+              294
+            ]
+          }
+        ]
+      },
+      "scale": 1.088435,
+      "order": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        0
+      ],
+      "frameMs": [
+        45,
+        45,
+        40,
+        40,
+        110,
+        50,
+        50,
+        45,
+        45
+      ],
+      "loop": false,
+      "sourceSize": [
+        2152,
+        610
+      ],
+      "contactMs": 170,
+      "sourceRevision": "e151f731702dd522",
+      "sourceSha256": "e151f731702dd522937952172b507f3f29e05115d49e3a9fcd0631fbfbb1418f",
+      "activeEndMs": 280,
+      "animationPolish": {
+        "version": 1,
+        "encoding": "webp-quality-94-alpha-preserved",
+        "approvedFile": "combat.png",
+        "approvedSha256": "02e75a74b1d8149b7c74c7877fae161375662d5e631e813021c9d4e850b4304e",
+        "generatedSha256": "7d79e0483e657d3003676d2746fdd448240ac7a113522cf712646eb78983aef5",
+        "privateLosslessSha256": "ac3b32770abc0c3aeccd41323e136d7cf259ea7c01ba09fb0786fa816655a487",
+        "approvedTiming": {
+          "order": [
+            0,
+            1,
+            2,
+            3,
+            0
+          ],
+          "frameMs": [
+            90,
+            80,
+            110,
+            100,
+            90
+          ],
+          "contactMs": 170,
+          "activeEndMs": 280,
+          "duration": 470
+        },
+        "fullBodyPosesPerFacing": 8
+      }
+    },
+    "high": {
+      "file": "hurt.png",
+      "label": "High hurt",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              23,
+              57,
+              212,
+              368
+            ],
+            "anchor": [
+              105.5,
+              365
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              209,
+              365
+            ],
+            "attachments": {
+              "grip": [
+                164,
+                83
+              ],
+              "head": [
+                123,
+                49
+              ],
+              "torso": [
+                110,
+                146
+              ],
+              "legs": [
+                69,
+                252
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              297,
+              59,
+              212,
+              366
+            ],
+            "anchor": [
+              105.5,
+              363
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              209,
+              363
+            ],
+            "attachments": {
+              "grip": [
+                137,
+                67
+              ],
+              "head": [
+                61,
+                41
+              ],
+              "torso": [
+                100,
+                149
+              ],
+              "legs": [
+                76,
+                255
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              564,
+              70,
+              211,
+              354
+            ],
+            "anchor": [
+              104.5,
+              351
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              208,
+              351
+            ],
+            "attachments": {
+              "grip": [
+                102,
+                43
+              ],
+              "head": [
+                72,
+                45
+              ],
+              "torso": [
+                118,
+                149
+              ],
+              "legs": [
+                101,
+                256
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              798,
+              60,
+              207,
+              366
+            ],
+            "anchor": [
+              103.5,
+              363
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              204,
+              363
+            ],
+            "attachments": {
+              "grip": [
+                168,
+                78
+              ],
+              "head": [
+                125,
+                47
+              ],
+              "torso": [
+                109,
+                140
+              ],
+              "legs": [
+                75,
+                252
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              25,
+              449,
+              226,
+              377
+            ],
+            "anchor": [
+              112.5,
+              374
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              223,
+              374
+            ],
+            "attachments": {
+              "grip": [
+                46,
+                79
+              ],
+              "head": [
+                81,
+                38
+              ],
+              "torso": [
+                104,
+                153
+              ],
+              "legs": [
+                63,
+                262
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              287,
+              443,
+              216,
+              381
+            ],
+            "anchor": [
+              107.5,
+              378
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              213,
+              378
+            ],
+            "attachments": {
+              "grip": [
+                64,
+                77
+              ],
+              "head": [
+                140,
+                41
+              ],
+              "torso": [
+                123,
+                140
+              ],
+              "legs": [
+                77,
+                254
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              538,
+              449,
+              224,
+              374
+            ],
+            "anchor": [
+              111.5,
+              371
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              221,
+              371
+            ],
+            "attachments": {
+              "grip": [
+                113,
+                48
+              ],
+              "head": [
+                166,
+                43
+              ],
+              "torso": [
+                124,
+                140
+              ],
+              "legs": [
+                78,
+                250
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              798,
+              447,
+              216,
+              377
+            ],
+            "anchor": [
+              107,
+              374
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              213,
+              374
+            ],
+            "attachments": {
+              "grip": [
+                47,
+                79
+              ],
+              "head": [
+                82,
+                39
+              ],
+              "torso": [
+                107,
+                148
+              ],
+              "legs": [
+                68,
+                260
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          }
+        ]
+      },
+      "scale": 0.873124,
+      "order": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "frameMs": [
+        70,
+        110,
+        140,
+        130
+      ],
+      "loop": false,
+      "sourceSize": [
+        1024,
+        1536
+      ],
+      "reactionStartMs": 70,
+      "sourceRevision": "55397693db606936",
+      "sourceSha256": "55397693db6069367405aa3d2b36ccbef2e05e15e6964263bc8de45008eff54f",
+      "runtimeFile": "hurt.runtime.webp"
+    },
+    "low": {
+      "file": "hurt.png",
+      "label": "Low hurt",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              19,
+              832,
+              216,
+              357
+            ],
+            "anchor": [
+              107,
+              354
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              213,
+              354
+            ],
+            "attachments": {
+              "grip": [
+                174,
+                84
+              ],
+              "head": [
+                134,
+                48
+              ],
+              "torso": [
+                116,
+                147
+              ],
+              "legs": [
+                73,
+                254
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              309,
+              857,
+              195,
+              331
+            ],
+            "anchor": [
+              97,
+              328
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              192,
+              328
+            ],
+            "attachments": {
+              "grip": [
+                112,
+                132
+              ],
+              "head": [
+                144,
+                54
+              ],
+              "torso": [
+                97,
+                132
+              ],
+              "legs": [
+                64,
+                241
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              566,
+              901,
+              183,
+              286
+            ],
+            "anchor": [
+              87,
+              283
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              180,
+              283
+            ],
+            "attachments": {
+              "grip": [
+                105,
+                105
+              ],
+              "head": [
+                150,
+                53
+              ],
+              "torso": [
+                89,
+                116
+              ],
+              "legs": [
+                76,
+                208
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              797,
+              830,
+              204,
+              359
+            ],
+            "anchor": [
+              101.5,
+              356
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              201,
+              356
+            ],
+            "attachments": {
+              "grip": [
+                164,
+                83
+              ],
+              "head": [
+                126,
+                47
+              ],
+              "torso": [
+                108,
+                148
+              ],
+              "legs": [
+                73,
+                251
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              29,
+              1195,
+              218,
+              333
+            ],
+            "anchor": [
+              109,
+              330
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              215,
+              330
+            ],
+            "attachments": {
+              "grip": [
+                44,
+                83
+              ],
+              "head": [
+                78,
+                45
+              ],
+              "torso": [
+                105,
+                143
+              ],
+              "legs": [
+                60,
+                243
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              303,
+              1205,
+              201,
+              322
+            ],
+            "anchor": [
+              100.5,
+              319
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              198,
+              319
+            ],
+            "attachments": {
+              "grip": [
+                66,
+                133
+              ],
+              "head": [
+                34,
+                45
+              ],
+              "torso": [
+                95,
+                117
+              ],
+              "legs": [
+                104,
+                221
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              570,
+              1243,
+              186,
+              285
+            ],
+            "anchor": [
+              92.5,
+              282
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              183,
+              282
+            ],
+            "attachments": {
+              "grip": [
+                81,
+                111
+              ],
+              "head": [
+                55,
+                50
+              ],
+              "torso": [
+                124,
+                110
+              ],
+              "legs": [
+                96,
+                194
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              799,
+              1196,
+              213,
+              333
+            ],
+            "anchor": [
+              106.5,
+              330
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              210,
+              330
+            ],
+            "attachments": {
+              "grip": [
+                48,
+                82
+              ],
+              "head": [
+                82,
+                46
+              ],
+              "torso": [
+                108,
+                140
+              ],
+              "legs": [
+                67,
+                241
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          }
+        ]
+      },
+      "scale": 0.943953,
+      "order": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "frameMs": [
+        70,
+        130,
+        150,
+        140
+      ],
+      "loop": false,
+      "sourceSize": [
+        1024,
+        1536
+      ],
+      "reactionStartMs": 70,
+      "sourceRevision": "55397693db606936",
+      "sourceSha256": "55397693db6069367405aa3d2b36ccbef2e05e15e6964263bc8de45008eff54f",
+      "runtimeFile": "hurt.runtime.webp"
+    },
+    "walk": {
+      "file": "movement.png",
+      "label": "Advance",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              47,
+              23,
+              205,
+              349
+            ],
+            "anchor": [
+              102,
+              346
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              202,
+              346
+            ],
+            "attachments": {
+              "grip": [
+                170,
+                82
+              ],
+              "head": [
+                131,
+                45
+              ],
+              "torso": [
+                111,
+                152
+              ],
+              "legs": [
+                73,
+                247
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              324,
+              23,
+              197,
+              349
+            ],
+            "anchor": [
+              98.5,
+              346
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              194,
+              346
+            ],
+            "attachments": {
+              "grip": [
+                153,
+                79
+              ],
+              "head": [
+                118,
+                45
+              ],
+              "torso": [
+                95,
+                153
+              ],
+              "legs": [
+                70,
+                247
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              598,
+              24,
+              190,
+              348
+            ],
+            "anchor": [
+              94,
+              345
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              187,
+              345
+            ],
+            "attachments": {
+              "grip": [
+                150,
+                81
+              ],
+              "head": [
+                112,
+                41
+              ],
+              "torso": [
+                94,
+                152
+              ],
+              "legs": [
+                67,
+                245
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              861,
+              23,
+              208,
+              349
+            ],
+            "anchor": [
+              103,
+              346
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              205,
+              346
+            ],
+            "attachments": {
+              "grip": [
+                163,
+                83
+              ],
+              "head": [
+                124,
+                45
+              ],
+              "torso": [
+                102,
+                153
+              ],
+              "legs": [
+                79,
+                246
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              31,
+              393,
+              228,
+              364
+            ],
+            "anchor": [
+              110.5,
+              361
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              225,
+              361
+            ],
+            "attachments": {
+              "grip": [
+                47,
+                85
+              ],
+              "head": [
+                77,
+                46
+              ],
+              "torso": [
+                100,
+                157
+              ],
+              "legs": [
+                61,
+                263
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              305,
+              388,
+              218,
+              369
+            ],
+            "anchor": [
+              107,
+              366
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              215,
+              366
+            ],
+            "attachments": {
+              "grip": [
+                49,
+                85
+              ],
+              "head": [
+                79,
+                50
+              ],
+              "torso": [
+                101,
+                160
+              ],
+              "legs": [
+                65,
+                264
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              581,
+              393,
+              217,
+              364
+            ],
+            "anchor": [
+              108,
+              361
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              214,
+              361
+            ],
+            "attachments": {
+              "grip": [
+                49,
+                85
+              ],
+              "head": [
+                73,
+                50
+              ],
+              "torso": [
+                95,
+                156
+              ],
+              "legs": [
+                73,
+                263
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              854,
+              393,
+              213,
+              363
+            ],
+            "anchor": [
+              106,
+              360
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              210,
+              360
+            ],
+            "attachments": {
+              "grip": [
+                50,
+                82
+              ],
+              "head": [
+                80,
+                49
+              ],
+              "torso": [
+                103,
+                155
+              ],
+              "legs": [
+                92,
+                259
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          }
+        ]
+      },
+      "scale": 0.914286,
+      "order": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "frameMs": [
+        150,
+        150,
+        150,
+        150
+      ],
+      "loop": true,
+      "sourceSize": [
+        1086,
+        1448
+      ],
+      "sourceRevision": "57be579e9c2ca605",
+      "sourceSha256": "57be579e9c2ca605bd796bc3adb52fab5555d24dbf9547ea2f7b0b7915671e50",
+      "runtimeFile": "movement.runtime.webp"
+    },
+    "crouch": {
+      "file": "movement.png",
+      "label": "Crouch",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              48,
+              797,
+              190,
+              309
+            ],
+            "anchor": [
+              94.5,
+              306
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              187,
+              306
+            ],
+            "attachments": {
+              "grip": [
+                165,
+                80
+              ],
+              "head": [
+                132,
+                45
+              ],
+              "torso": [
+                110,
+                157
+              ],
+              "legs": [
+                55,
+                230
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              318,
+              818,
+              193,
+              287
+            ],
+            "anchor": [
+              96.5,
+              284
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              190,
+              284
+            ],
+            "attachments": {
+              "grip": [
+                168,
+                87
+              ],
+              "head": [
+                125,
+                53
+              ],
+              "torso": [
+                101,
+                160
+              ],
+              "legs": [
+                55,
+                232
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              597,
+              841,
+              182,
+              264
+            ],
+            "anchor": [
+              91,
+              261
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              179,
+              261
+            ],
+            "attachments": {
+              "grip": [
+                168,
+                85
+              ],
+              "head": [
+                128,
+                51
+              ],
+              "torso": [
+                97,
+                154
+              ],
+              "legs": [
+                57,
+                214
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              867,
+              850,
+              182,
+              255
+            ],
+            "anchor": [
+              93.5,
+              252
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              179,
+              252
+            ],
+            "attachments": {
+              "grip": [
+                156,
+                83
+              ],
+              "head": [
+                121,
+                49
+              ],
+              "torso": [
+                88,
+                153
+              ],
+              "legs": [
+                51,
+                211
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              51,
+              1125,
+              194,
+              294
+            ],
+            "anchor": [
+              96.5,
+              291
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              191,
+              291
+            ],
+            "attachments": {
+              "grip": [
+                29,
+                82
+              ],
+              "head": [
+                58,
+                45
+              ],
+              "torso": [
+                74,
+                157
+              ],
+              "legs": [
+                59,
+                226
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              328,
+              1133,
+              183,
+              286
+            ],
+            "anchor": [
+              91,
+              283
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              180,
+              283
+            ],
+            "attachments": {
+              "grip": [
+                20,
+                77
+              ],
+              "head": [
+                54,
+                43
+              ],
+              "torso": [
+                78,
+                157
+              ],
+              "legs": [
+                46,
+                224
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              592,
+              1144,
+              189,
+              275
+            ],
+            "anchor": [
+              97,
+              272
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              186,
+              272
+            ],
+            "attachments": {
+              "grip": [
+                26,
+                83
+              ],
+              "head": [
+                60,
+                48
+              ],
+              "torso": [
+                82,
+                157
+              ],
+              "legs": [
+                53,
+                220
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              864,
+              1133,
+              190,
+              286
+            ],
+            "anchor": [
+              95,
+              283
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              187,
+              283
+            ],
+            "attachments": {
+              "grip": [
+                33,
+                84
+              ],
+              "head": [
+                65,
+                46
+              ],
+              "torso": [
+                87,
+                158
+              ],
+              "legs": [
+                54,
+                226
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          }
+        ]
+      },
+      "scale": 0.914286,
+      "order": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "frameMs": [
+        90,
+        100,
+        120,
+        200
+      ],
+      "loop": false,
+      "sourceSize": [
+        1086,
+        1448
+      ],
+      "sourceRevision": "57be579e9c2ca605",
+      "sourceSha256": "57be579e9c2ca605bd796bc3adb52fab5555d24dbf9547ea2f7b0b7915671e50",
+      "runtimeFile": "movement.runtime.webp"
+    },
+    "block": {
+      "file": "defense-kick.png",
+      "label": "Block",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              46,
+              28,
+              223,
+              340
+            ],
+            "anchor": [
+              111,
+              337
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              220,
+              337
+            ],
+            "attachments": {
+              "grip": [
+                186,
+                79
+              ],
+              "head": [
+                144,
+                48
+              ],
+              "torso": [
+                127,
+                147
+              ],
+              "legs": [
+                73,
+                239
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              340,
+              35,
+              202,
+              334
+            ],
+            "anchor": [
+              102,
+              331
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              199,
+              331
+            ],
+            "attachments": {
+              "grip": [
+                105,
+                30
+              ],
+              "head": [
+                65,
+                48
+              ],
+              "torso": [
+                88,
+                122
+              ],
+              "legs": [
+                83,
+                228
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              600,
+              35,
+              197,
+              335
+            ],
+            "anchor": [
+              98,
+              332
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              194,
+              332
+            ],
+            "attachments": {
+              "grip": [
+                79,
+                29
+              ],
+              "head": [
+                108,
+                50
+              ],
+              "torso": [
+                90,
+                131
+              ],
+              "legs": [
+                69,
+                233
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              841,
+              31,
+              206,
+              340
+            ],
+            "anchor": [
+              102.5,
+              337
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              203,
+              337
+            ],
+            "attachments": {
+              "grip": [
+                169,
+                78
+              ],
+              "head": [
+                129,
+                45
+              ],
+              "torso": [
+                109,
+                148
+              ],
+              "legs": [
+                83,
+                239
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              37,
+              392,
+              234,
+              336
+            ],
+            "anchor": [
+              116.5,
+              333
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              231,
+              333
+            ],
+            "attachments": {
+              "grip": [
+                50,
+                75
+              ],
+              "head": [
+                76,
+                41
+              ],
+              "torso": [
+                98,
+                147
+              ],
+              "legs": [
+                64,
+                249
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              319,
+              388,
+              197,
+              340
+            ],
+            "anchor": [
+              98.5,
+              337
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              194,
+              337
+            ],
+            "attachments": {
+              "grip": [
+                79,
+                18
+              ],
+              "head": [
+                117,
+                49
+              ],
+              "torso": [
+                101,
+                137
+              ],
+              "legs": [
+                52,
+                245
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              580,
+              394,
+              213,
+              335
+            ],
+            "anchor": [
+              105.5,
+              332
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              210,
+              332
+            ],
+            "attachments": {
+              "grip": [
+                135,
+                27
+              ],
+              "head": [
+                111,
+                44
+              ],
+              "torso": [
+                124,
+                138
+              ],
+              "legs": [
+                68,
+                243
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              858,
+              390,
+              208,
+              336
+            ],
+            "anchor": [
+              103,
+              333
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              205,
+              333
+            ],
+            "attachments": {
+              "grip": [
+                45,
+                78
+              ],
+              "head": [
+                78,
+                44
+              ],
+              "torso": [
+                104,
+                151
+              ],
+              "legs": [
+                69,
+                245
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          }
+        ]
+      },
+      "scale": 0.963855,
+      "order": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "frameMs": [
+        80,
+        90,
+        160,
+        110
+      ],
+      "loop": false,
+      "sourceSize": [
+        1086,
+        1448
+      ],
+      "sourceRevision": "bfaa1b72fa954b7b",
+      "sourceSha256": "bfaa1b72fa954b7ba695469ea9f210f4d658daea2cd49f0e51fb64530b18a13e",
+      "runtimeFile": "defense-kick.runtime.webp"
+    },
+    "kick": {
+      "file": "defense-kick.png",
+      "label": "Kick",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              36,
+              752,
+              210,
+              324
+            ],
+            "anchor": [
+              105,
+              321
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              207,
+              321
+            ],
+            "attachments": {
+              "grip": [
+                165,
+                75
+              ],
+              "head": [
+                128,
+                46
+              ],
+              "torso": [
+                105,
+                143
+              ],
+              "legs": [
+                71,
+                242
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              317,
+              743,
+              188,
+              335
+            ],
+            "anchor": [
+              57,
+              332
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              185,
+              332
+            ],
+            "attachments": {
+              "grip": [
+                114,
+                67
+              ],
+              "head": [
+                76,
+                49
+              ],
+              "torso": [
+                58,
+                144
+              ],
+              "legs": [
+                62,
+                260
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              552,
+              746,
+              284,
+              332
+            ],
+            "anchor": [
+              83,
+              329
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              281,
+              329
+            ],
+            "attachments": {
+              "grip": [
+                115,
+                69
+              ],
+              "head": [
+                76,
+                45
+              ],
+              "torso": [
+                62,
+                146
+              ],
+              "legs": [
+                94,
+                258
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              854,
+              751,
+              201,
+              327
+            ],
+            "anchor": [
+              100,
+              324
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              198,
+              324
+            ],
+            "attachments": {
+              "grip": [
+                159,
+                82
+              ],
+              "head": [
+                118,
+                46
+              ],
+              "torso": [
+                96,
+                146
+              ],
+              "legs": [
+                65,
+                248
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              36,
+              1097,
+              228,
+              323
+            ],
+            "anchor": [
+              114,
+              320
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              225,
+              320
+            ],
+            "attachments": {
+              "grip": [
+                51,
+                72
+              ],
+              "head": [
+                78,
+                40
+              ],
+              "torso": [
+                99,
+                133
+              ],
+              "legs": [
+                64,
+                248
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              303,
+              1090,
+              179,
+              330
+            ],
+            "anchor": [
+              123,
+              327
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              176,
+              327
+            ],
+            "attachments": {
+              "grip": [
+                69,
+                67
+              ],
+              "head": [
+                106,
+                45
+              ],
+              "torso": [
+                108,
+                132
+              ],
+              "legs": [
+                98,
+                252
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              527,
+              1095,
+              295,
+              325
+            ],
+            "anchor": [
+              204.5,
+              322
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              292,
+              322
+            ],
+            "attachments": {
+              "grip": [
+                178,
+                64
+              ],
+              "head": [
+                223,
+                44
+              ],
+              "torso": [
+                230,
+                133
+              ],
+              "legs": [
+                198,
+                247
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              857,
+              1096,
+              212,
+              324
+            ],
+            "anchor": [
+              105.5,
+              321
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              209,
+              321
+            ],
+            "attachments": {
+              "grip": [
+                51,
+                82
+              ],
+              "head": [
+                81,
+                45
+              ],
+              "torso": [
+                106,
+                139
+              ],
+              "legs": [
+                65,
+                243
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          }
+        ]
+      },
+      "scale": 0.963855,
+      "order": [
+        0,
+        1,
+        2,
+        3,
+        0
+      ],
+      "frameMs": [
+        90,
+        110,
+        130,
+        110,
+        90
+      ],
+      "loop": false,
+      "sourceSize": [
+        1086,
+        1448
+      ],
+      "contactMs": 200,
+      "sourceRevision": "bfaa1b72fa954b7b",
+      "sourceSha256": "bfaa1b72fa954b7ba695469ea9f210f4d658daea2cd49f0e51fb64530b18a13e",
+      "runtimeFile": "defense-kick.runtime.webp"
+    },
+    "grabbed": {
+      "file": "restraints.png",
+      "label": "Grabbed",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              40,
+              87,
+              184,
+              277
+            ],
+            "anchor": [
+              92,
+              274
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              181,
+              274
+            ],
+            "attachments": {
+              "grip": [
+                144,
+                67
+              ],
+              "head": [
+                106,
+                32
+              ],
+              "torso": [
+                88,
+                108
+              ],
+              "legs": [
+                62,
+                194
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              338,
+              75,
+              177,
+              288
+            ],
+            "anchor": [
+              88,
+              285
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              174,
+              285
+            ],
+            "attachments": {
+              "grip": [
+                93,
+                60
+              ],
+              "head": [
+                66,
+                26
+              ],
+              "torso": [
+                92,
+                117
+              ],
+              "legs": [
+                81,
+                200
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              619,
+              96,
+              166,
+              268
+            ],
+            "anchor": [
+              81.5,
+              265
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              163,
+              265
+            ],
+            "attachments": {
+              "grip": [
+                75,
+                54
+              ],
+              "head": [
+                55,
+                31
+              ],
+              "torso": [
+                80,
+                101
+              ],
+              "legs": [
+                101,
+                188
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              863,
+              87,
+              179,
+              276
+            ],
+            "anchor": [
+              89,
+              273
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              176,
+              273
+            ],
+            "attachments": {
+              "grip": [
+                144,
+                68
+              ],
+              "head": [
+                109,
+                34
+              ],
+              "torso": [
+                90,
+                111
+              ],
+              "legs": [
+                68,
+                194
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              53,
+              440,
+              188,
+              279
+            ],
+            "anchor": [
+              94,
+              276
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              185,
+              276
+            ],
+            "attachments": {
+              "grip": [
+                35,
+                64
+              ],
+              "head": [
+                62,
+                42
+              ],
+              "torso": [
+                79,
+                139
+              ],
+              "legs": [
+                54,
+                207
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              333,
+              430,
+              183,
+              288
+            ],
+            "anchor": [
+              91,
+              285
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              180,
+              285
+            ],
+            "attachments": {
+              "grip": [
+                83,
+                61
+              ],
+              "head": [
+                105,
+                31
+              ],
+              "torso": [
+                88,
+                135
+              ],
+              "legs": [
+                43,
+                201
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              603,
+              440,
+              181,
+              280
+            ],
+            "anchor": [
+              93,
+              277
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              178,
+              277
+            ],
+            "attachments": {
+              "grip": [
+                95,
+                60
+              ],
+              "head": [
+                126,
+                40
+              ],
+              "torso": [
+                101,
+                134
+              ],
+              "legs": [
+                84,
+                203
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              872,
+              439,
+              187,
+              281
+            ],
+            "anchor": [
+              93,
+              278
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              184,
+              278
+            ],
+            "attachments": {
+              "grip": [
+                34,
+                65
+              ],
+              "head": [
+                64,
+                42
+              ],
+              "torso": [
+                86,
+                137
+              ],
+              "legs": [
+                56,
+                203
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          }
+        ]
+      },
+      "scale": 1.176471,
+      "order": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "frameMs": [
+        90,
+        130,
+        230,
+        150
+      ],
+      "loop": false,
+      "sourceSize": [
+        1086,
+        1448
+      ],
+      "sourceRevision": "4d9ec9074058b52d",
+      "sourceSha256": "4d9ec9074058b52df7f40e64ff90f12047eca049bef50041aeff93895c204268",
+      "runtimeFile": "restraints.runtime.webp"
+    },
+    "thrown": {
+      "file": "restraints.png",
+      "label": "Thrown",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              55,
+              804,
+              207,
+              226
+            ],
+            "anchor": [
+              121.5,
+              223
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              204,
+              223
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "attachments": {
+              "grip": [
+                101,
+                18
+              ],
+              "head": [
+                44,
+                32
+              ],
+              "torso": [
+                74,
+                103
+              ],
+              "legs": [
+                141,
+                167
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              305,
+              809,
+              203,
+              173
+            ],
+            "anchor": [
+              120,
+              218
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              200,
+              170
+            ],
+            "offset": [
+              -20,
+              0
+            ],
+            "attachments": {
+              "grip": [
+                109,
+                14
+              ],
+              "head": [
+                45,
+                51
+              ],
+              "torso": [
+                76,
+                110
+              ],
+              "legs": [
+                145,
+                119
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              571,
+              867,
+              243,
+              133
+            ],
+            "anchor": [
+              90,
+              160
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              240,
+              130
+            ],
+            "offset": [
+              -45,
+              0
+            ],
+            "attachments": {
+              "grip": [
+                119,
+                14
+              ],
+              "head": [
+                52,
+                56
+              ],
+              "torso": [
+                108,
+                95
+              ],
+              "legs": [
+                175,
+                78
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25
+          },
+          {
+            "rect": [
+              820,
+              947,
+              240,
+              90
+            ],
+            "anchor": [
+              118.5,
+              87
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              237,
+              87
+            ],
+            "offset": [
+              -65,
+              0
+            ],
+            "attachments": {
+              "grip": [
+                101,
+                13
+              ],
+              "head": [
+                39,
+                42
+              ],
+              "torso": [
+                103,
+                61
+              ],
+              "legs": [
+                181,
+                60
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25,
+            "bodyCalibration": 1.155128
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              27,
+              1121,
+              186,
+              263
+            ],
+            "anchor": [
+              93,
+              260
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              183,
+              260
+            ],
+            "offset": [
+              0,
+              0
+            ],
+            "attachments": {
+              "grip": [
+                64,
+                28
+              ],
+              "head": [
+                120,
+                34
+              ],
+              "torso": [
+                101,
+                107
+              ],
+              "legs": [
+                51,
+                200
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              292,
+              1169,
+              208,
+              157
+            ],
+            "anchor": [
+              95,
+              212
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              205,
+              154
+            ],
+            "offset": [
+              20,
+              0
+            ],
+            "attachments": {
+              "grip": [
+                89,
+                17
+              ],
+              "head": [
+                167,
+                36
+              ],
+              "torso": [
+                126,
+                109
+              ],
+              "legs": [
+                53,
+                106
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              534,
+              1234,
+              249,
+              128
+            ],
+            "anchor": [
+              155.5,
+              147
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              246,
+              125
+            ],
+            "offset": [
+              45,
+              0
+            ],
+            "attachments": {
+              "grip": [
+                137,
+                16
+              ],
+              "head": [
+                214,
+                40
+              ],
+              "torso": [
+                163,
+                83
+              ],
+              "legs": [
+                72,
+                78
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25
+          },
+          {
+            "rect": [
+              823,
+              1300,
+              243,
+              83
+            ],
+            "anchor": [
+              119.5,
+              80
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              240,
+              80
+            ],
+            "offset": [
+              65,
+              0
+            ],
+            "attachments": {
+              "grip": [
+                157,
+                9
+              ],
+              "head": [
+                217,
+                28
+              ],
+              "torso": [
+                149,
+                51
+              ],
+              "legs": [
+                64,
+                53
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25,
+            "bodyCalibration": 1.140506
+          }
+        ]
+      },
+      "scale": 1.176471,
+      "order": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "frameMs": [
+        100,
+        160,
+        160,
+        220
+      ],
+      "loop": false,
+      "sourceSize": [
+        1086,
+        1448
+      ],
+      "sourceRevision": "4d9ec9074058b52d",
+      "sourceSha256": "4d9ec9074058b52df7f40e64ff90f12047eca049bef50041aeff93895c204268",
+      "runtimeFile": "restraints.runtime.webp"
+    },
+    "knockdown": {
+      "file": "floor.png",
+      "label": "Knockdown",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              22,
+              75,
+              196,
+              324
+            ],
+            "anchor": [
+              97,
+              321
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              193,
+              321
+            ],
+            "attachments": {
+              "grip": [
+                155,
+                71
+              ],
+              "head": [
+                117,
+                40
+              ],
+              "torso": [
+                98,
+                134
+              ],
+              "legs": [
+                63,
+                227
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25,
+            "bodyCalibration": 1
+          },
+          {
+            "rect": [
+              291,
+              120,
+              226,
+              284
+            ],
+            "anchor": [
+              142,
+              281
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              223,
+              281
+            ],
+            "attachments": {
+              "grip": [
+                108,
+                37
+              ],
+              "head": [
+                54,
+                44
+              ],
+              "torso": [
+                94,
+                115
+              ],
+              "legs": [
+                165,
+                205
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25,
+            "bodyCalibration": 1
+          },
+          {
+            "rect": [
+              540,
+              229,
+              256,
+              172
+            ],
+            "anchor": [
+              131.5,
+              169
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              253,
+              169
+            ],
+            "attachments": {
+              "grip": [
+                122,
+                52
+              ],
+              "head": [
+                83,
+                47
+              ],
+              "torso": [
+                98,
+                101
+              ],
+              "legs": [
+                171,
+                122
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25,
+            "bodyCalibration": 1
+          },
+          {
+            "rect": [
+              802,
+              328,
+              274,
+              74
+            ],
+            "anchor": [
+              136,
+              71
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              271,
+              71
+            ],
+            "attachments": {
+              "grip": [
+                147,
+                49
+              ],
+              "head": [
+                39,
+                24
+              ],
+              "torso": [
+                113,
+                36
+              ],
+              "legs": [
+                206,
+                42
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25,
+            "bodyCalibration": 1.186567
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              31,
+              438,
+              216,
+              328
+            ],
+            "anchor": [
+              107,
+              325
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              213,
+              325
+            ],
+            "attachments": {
+              "grip": [
+                55,
+                62
+              ],
+              "head": [
+                82,
+                39
+              ],
+              "torso": [
+                103,
+                144
+              ],
+              "legs": [
+                73,
+                225
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25,
+            "bodyCalibration": 1
+          },
+          {
+            "rect": [
+              288,
+              471,
+              214,
+              294
+            ],
+            "anchor": [
+              85.5,
+              291
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              211,
+              291
+            ],
+            "attachments": {
+              "grip": [
+                103,
+                48
+              ],
+              "head": [
+                171,
+                50
+              ],
+              "torso": [
+                128,
+                120
+              ],
+              "legs": [
+                57,
+                209
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25,
+            "bodyCalibration": 1
+          },
+          {
+            "rect": [
+              535,
+              585,
+              261,
+              178
+            ],
+            "anchor": [
+              126.5,
+              175
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              258,
+              175
+            ],
+            "attachments": {
+              "grip": [
+                134,
+                45
+              ],
+              "head": [
+                213,
+                38
+              ],
+              "torso": [
+                173,
+                108
+              ],
+              "legs": [
+                71,
+                118
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25,
+            "bodyCalibration": 1
+          },
+          {
+            "rect": [
+              804,
+              684,
+              273,
+              79
+            ],
+            "anchor": [
+              134.5,
+              76
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              270,
+              76
+            ],
+            "attachments": {
+              "grip": [
+                132,
+                57
+              ],
+              "head": [
+                237,
+                27
+              ],
+              "torso": [
+                163,
+                43
+              ],
+              "legs": [
+                65,
+                47
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25,
+            "bodyCalibration": 1.191011
+          }
+        ]
+      },
+      "scale": 1,
+      "order": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "frameMs": [
+        90,
+        130,
+        160,
+        250
+      ],
+      "loop": false,
+      "sourceSize": [
+        1086,
+        1448
+      ],
+      "sourceRevision": "0cf69c82028e875b",
+      "sourceSha256": "0cf69c82028e875bf1aaee13398d9aa9f29670d4ce2b2ed8c968a360d6076eae",
+      "runtimeFile": "floor.runtime.webp"
+    },
+    "getup": {
+      "file": "floor.png",
+      "label": "Get up",
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              802,
+              328,
+              274,
+              74
+            ],
+            "anchor": [
+              136,
+              71
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              271,
+              71
+            ],
+            "attachments": {
+              "grip": [
+                147,
+                49
+              ],
+              "head": [
+                39,
+                24
+              ],
+              "torso": [
+                113,
+                36
+              ],
+              "legs": [
+                206,
+                42
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25,
+            "bodyCalibration": 1.186567
+          },
+          {
+            "rect": [
+              299,
+              932,
+              256,
+              161
+            ],
+            "anchor": [
+              127.5,
+              158
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              253,
+              158
+            ],
+            "attachments": {
+              "grip": [
+                172,
+                64
+              ],
+              "head": [
+                87,
+                45
+              ],
+              "torso": [
+                124,
+                99
+              ],
+              "legs": [
+                189,
+                124
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25,
+            "bodyCalibration": 1
+          },
+          {
+            "rect": [
+              605,
+              865,
+              188,
+              226
+            ],
+            "anchor": [
+              93,
+              223
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              185,
+              223
+            ],
+            "attachments": {
+              "grip": [
+                68,
+                155
+              ],
+              "head": [
+                147,
+                38
+              ],
+              "torso": [
+                103,
+                112
+              ],
+              "legs": [
+                100,
+                184
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25,
+            "bodyCalibration": 1
+          },
+          {
+            "rect": [
+              859,
+              787,
+              197,
+              303
+            ],
+            "anchor": [
+              98,
+              300
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              194,
+              300
+            ],
+            "attachments": {
+              "grip": [
+                150,
+                79
+              ],
+              "head": [
+                112,
+                45
+              ],
+              "torso": [
+                91,
+                139
+              ],
+              "legs": [
+                64,
+                226
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25,
+            "bodyCalibration": 1.070707
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              804,
+              684,
+              273,
+              79
+            ],
+            "anchor": [
+              134.5,
+              76
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              270,
+              76
+            ],
+            "attachments": {
+              "grip": [
+                132,
+                57
+              ],
+              "head": [
+                237,
+                27
+              ],
+              "torso": [
+                163,
+                43
+              ],
+              "legs": [
+                65,
+                47
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25,
+            "bodyCalibration": 1.191011
+          },
+          {
+            "rect": [
+              286,
+              1251,
+              245,
+              160
+            ],
+            "anchor": [
+              122,
+              157
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              242,
+              157
+            ],
+            "attachments": {
+              "grip": [
+                91,
+                70
+              ],
+              "head": [
+                182,
+                39
+              ],
+              "torso": [
+                125,
+                101
+              ],
+              "legs": [
+                49,
+                120
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25,
+            "bodyCalibration": 1
+          },
+          {
+            "rect": [
+              593,
+              1182,
+              176,
+              230
+            ],
+            "anchor": [
+              87.5,
+              227
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              173,
+              227
+            ],
+            "attachments": {
+              "grip": [
+                63,
+                152
+              ],
+              "head": [
+                76,
+                38
+              ],
+              "torso": [
+                88,
+                116
+              ],
+              "legs": [
+                72,
+                186
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25,
+            "bodyCalibration": 1
+          },
+          {
+            "rect": [
+              860,
+              1106,
+              204,
+              304
+            ],
+            "anchor": [
+              101.5,
+              301
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              201,
+              301
+            ],
+            "attachments": {
+              "grip": [
+                44,
+                78
+              ],
+              "head": [
+                75,
+                43
+              ],
+              "torso": [
+                98,
+                133
+              ],
+              "legs": [
+                62,
+                231
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25,
+            "bodyCalibration": 1.067114
+          }
+        ]
+      },
+      "scale": 1,
+      "order": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "frameMs": [
+        180,
+        180,
+        180,
+        150
+      ],
+      "loop": false,
+      "sourceSize": [
+        1086,
+        1448
+      ],
+      "startFrom": "knockdown",
+      "sourceRevision": "0cf69c82028e875b",
+      "sourceSha256": "0cf69c82028e875bf1aaee13398d9aa9f29670d4ce2b2ed8c968a360d6076eae",
+      "runtimeFile": "floor.runtime.webp"
+    },
+    "grab": {
+      "label": "Native grip, lift and throw",
+      "file": "grab-native-v2.webp",
+      "sourceSize": [
+        1256,
+        620
+      ],
+      "sourceSha256": "27d6ef971ff87971f9217fb9ab8a5cb503def07fb395ed1a4baf886e5879c996",
+      "scale": 0.8638489208633094,
+      "loop": false,
+      "order": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "frameMs": [
+        90,
+        90,
+        130,
+        170,
+        110,
+        80
+      ],
+      "contactMs": 180,
+      "liftMs": 310,
+      "releaseMs": 480,
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              0,
+              0,
+              191,
+              303
+            ],
+            "anchor": [
+              95.5,
+              300
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              188,
+              300
+            ],
+            "attachments": {
+              "grip": [
+                146,
+                81
+              ],
+              "head": [
+                106,
+                49
+              ],
+              "torso": [
+                97,
+                141
+              ],
+              "legs": [
+                70,
+                217
+              ],
+              "chest": [
+                97,
+                141
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25,
+            "pixelSha256": "adeadbf3600ee52673d67ddfa0593d54d1f59efdf3acc20d2b4908a7d1196216",
+            "bodyCalibration": 1.238913395794295,
+            "nativeSource": {
+              "bank": "base",
+              "clip": "idle",
+              "index": 0,
+              "file": "assets/fighters/cliff/combat.runtime.webp",
+              "rect": [
+                81,
+                15,
+                191,
+                303
+              ],
+              "pixelSha256": "adeadbf3600ee52673d67ddfa0593d54d1f59efdf3acc20d2b4908a7d1196216"
+            }
+          },
+          {
+            "rect": [
+              195,
+              0,
+              189,
+              284
+            ],
+            "anchor": [
+              87,
+              281
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              186,
+              281
+            ],
+            "attachments": {
+              "grip": [
+                170,
+                71
+              ],
+              "head": [
+                112,
+                44
+              ],
+              "torso": [
+                101,
+                114
+              ],
+              "legs": [
+                75,
+                199
+              ],
+              "chest": [
+                101,
+                114
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25,
+            "pixelSha256": "1adeb23ae2ffd9fb1dbda67dd679b544dd57d14f878169912eeeda7d4c7f80b1",
+            "bodyCalibration": 1.39,
+            "nativeSource": {
+              "bank": "delete",
+              "clip": "shove",
+              "index": 0,
+              "file": "assets/deletions/cliff/attacker-poses-v2.png",
+              "rect": [
+                69,
+                40,
+                189,
+                284
+              ],
+              "pixelSha256": "1adeb23ae2ffd9fb1dbda67dd679b544dd57d14f878169912eeeda7d4c7f80b1"
+            }
+          },
+          {
+            "rect": [
+              388,
+              0,
+              215,
+              273
+            ],
+            "anchor": [
+              87.25,
+              270
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              212,
+              270
+            ],
+            "attachments": {
+              "grip": [
+                200,
+                130
+              ],
+              "head": [
+                115,
+                41
+              ],
+              "torso": [
+                88,
+                103
+              ],
+              "legs": [
+                56,
+                188
+              ],
+              "chest": [
+                88,
+                103
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25,
+            "pixelSha256": "8cb932145c14be50fa24a276b738be022ec708c80e3465ca4d217fbc7737c294",
+            "bodyCalibration": 1.39,
+            "nativeSource": {
+              "bank": "delete",
+              "clip": "pull",
+              "index": 0,
+              "file": "assets/deletions/cliff/attacker-poses-v2.png",
+              "rect": [
+                692,
+                52,
+                215,
+                273
+              ],
+              "pixelSha256": "8cb932145c14be50fa24a276b738be022ec708c80e3465ca4d217fbc7737c294"
+            }
+          },
+          {
+            "rect": [
+              607,
+              0,
+              189,
+              300
+            ],
+            "anchor": [
+              88.25,
+              297
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              186,
+              297
+            ],
+            "attachments": {
+              "grip": [
+                161,
+                19
+              ],
+              "head": [
+                108,
+                65
+              ],
+              "torso": [
+                98,
+                131
+              ],
+              "legs": [
+                62,
+                232
+              ],
+              "chest": [
+                98,
+                131
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25,
+            "pixelSha256": "252bf0ffd32d3e2371815d7beeaf20185d4dc2fbb7a6e6faf877ce372b0792d9",
+            "bodyCalibration": 1.349490601707266,
+            "nativeSource": {
+              "bank": "arcade",
+              "clip": "uppercut",
+              "index": 2,
+              "file": "assets/arcade/cliff/air-uppercut-v1.runtime.webp",
+              "rect": [
+                688,
+                634,
+                189,
+                300
+              ],
+              "pixelSha256": "252bf0ffd32d3e2371815d7beeaf20185d4dc2fbb7a6e6faf877ce372b0792d9"
+            }
+          },
+          {
+            "rect": [
+              800,
+              0,
+              223,
+              281
+            ],
+            "anchor": [
+              88,
+              278
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              220,
+              278
+            ],
+            "attachments": {
+              "grip": [
+                204,
+                67
+              ],
+              "head": [
+                114,
+                41
+              ],
+              "torso": [
+                88,
+                121
+              ],
+              "legs": [
+                73,
+                200
+              ],
+              "chest": [
+                88,
+                121
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25,
+            "pixelSha256": "d78beac5ed2b828d0b64f2a724d5d5fef7cde0bad0c5be75b128c1daa61fedaf",
+            "bodyCalibration": 1.39,
+            "nativeSource": {
+              "bank": "delete",
+              "clip": "shove",
+              "index": 1,
+              "file": "assets/deletions/cliff/attacker-poses-v2.png",
+              "rect": [
+                375,
+                43,
+                223,
+                281
+              ],
+              "pixelSha256": "d78beac5ed2b828d0b64f2a724d5d5fef7cde0bad0c5be75b128c1daa61fedaf"
+            }
+          },
+          {
+            "rect": [
+              1027,
+              0,
+              151,
+              274
+            ],
+            "anchor": [
+              67.25,
+              271
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              148,
+              271
+            ],
+            "attachments": {
+              "grip": [
+                94,
+                82
+              ],
+              "head": [
+                77,
+                44
+              ],
+              "torso": [
+                64,
+                128
+              ],
+              "legs": [
+                39,
+                207
+              ],
+              "supportGrip": [
+                124,
+                109
+              ],
+              "chest": [
+                64,
+                128
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25,
+            "pixelSha256": "4d0a103ebc2c5071ca2d81090be8198421cbbf1c5b16cb89fd4280b4dc0e69d6",
+            "bodyCalibration": 1.39,
+            "nativeSource": {
+              "bank": "delete",
+              "clip": "present",
+              "index": 0,
+              "file": "assets/deletions/cliff/attacker-poses-v2.png",
+              "rect": [
+                726,
+                664,
+                151,
+                274
+              ],
+              "pixelSha256": "4d0a103ebc2c5071ca2d81090be8198421cbbf1c5b16cb89fd4280b4dc0e69d6"
+            }
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              0,
+              310,
+              208,
+              306
+            ],
+            "anchor": [
+              103.5,
+              303
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              205,
+              303
+            ],
+            "attachments": {
+              "grip": [
+                47,
+                73
+              ],
+              "head": [
+                81,
+                46
+              ],
+              "torso": [
+                110,
+                137
+              ],
+              "legs": [
+                157,
+                217
+              ],
+              "chest": [
+                110,
+                137
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25,
+            "pixelSha256": "8d7a4ad9306d16e3b21607751f3aaba605c66f80f9479ed8e300dd90ee22b57d",
+            "bodyCalibration": 1.238913395794295,
+            "nativeSource": {
+              "bank": "base",
+              "clip": "idle",
+              "index": 0,
+              "file": "assets/fighters/cliff/combat.runtime.webp",
+              "rect": [
+                58,
+                324,
+                208,
+                306
+              ],
+              "pixelSha256": "8d7a4ad9306d16e3b21607751f3aaba605c66f80f9479ed8e300dd90ee22b57d"
+            }
+          },
+          {
+            "rect": [
+              212,
+              310,
+              194,
+              278
+            ],
+            "anchor": [
+              102.75,
+              275
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              191,
+              275
+            ],
+            "attachments": {
+              "grip": [
+                19,
+                65
+              ],
+              "head": [
+                70,
+                46
+              ],
+              "torso": [
+                90,
+                117
+              ],
+              "legs": [
+                148,
+                197
+              ],
+              "chest": [
+                90,
+                117
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25,
+            "pixelSha256": "75d15e706a6f6713a916bc90fb69ab70a868874c10312128279ee0c807d2750f",
+            "bodyCalibration": 1.39,
+            "nativeSource": {
+              "bank": "delete",
+              "clip": "shove",
+              "index": 0,
+              "file": "assets/deletions/cliff/attacker-poses-v2.png",
+              "rect": [
+                71,
+                360,
+                194,
+                278
+              ],
+              "pixelSha256": "75d15e706a6f6713a916bc90fb69ab70a868874c10312128279ee0c807d2750f"
+            }
+          },
+          {
+            "rect": [
+              410,
+              310,
+              227,
+              263
+            ],
+            "anchor": [
+              135.75,
+              260
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              224,
+              260
+            ],
+            "attachments": {
+              "grip": [
+                17,
+                136
+              ],
+              "head": [
+                95,
+                44
+              ],
+              "torso": [
+                116,
+                115
+              ],
+              "legs": [
+                173,
+                186
+              ],
+              "chest": [
+                116,
+                115
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25,
+            "pixelSha256": "1135c0d8ee52d47650dc46cdec61e2c864ee91deb1cb403abf868cb4210a7fe5",
+            "bodyCalibration": 1.39,
+            "nativeSource": {
+              "bank": "delete",
+              "clip": "pull",
+              "index": 0,
+              "file": "assets/deletions/cliff/attacker-poses-v2.png",
+              "rect": [
+                677,
+                376,
+                227,
+                263
+              ],
+              "pixelSha256": "1135c0d8ee52d47650dc46cdec61e2c864ee91deb1cb403abf868cb4210a7fe5"
+            }
+          },
+          {
+            "rect": [
+              641,
+              310,
+              197,
+              292
+            ],
+            "anchor": [
+              102,
+              289
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              194,
+              289
+            ],
+            "attachments": {
+              "grip": [
+                34,
+                24
+              ],
+              "head": [
+                117,
+                66
+              ],
+              "torso": [
+                116,
+                132
+              ],
+              "legs": [
+                150,
+                237
+              ],
+              "chest": [
+                116,
+                132
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25,
+            "pixelSha256": "b9cd13a93d111792e7d1488cd88f066628cfcc5ebee57c33cb7e29c6f0202395",
+            "bodyCalibration": 1.349490601707266,
+            "nativeSource": {
+              "bank": "arcade",
+              "clip": "uppercut",
+              "index": 2,
+              "file": "assets/arcade/cliff/air-uppercut-v1.runtime.webp",
+              "rect": [
+                700,
+                936,
+                197,
+                292
+              ],
+              "pixelSha256": "b9cd13a93d111792e7d1488cd88f066628cfcc5ebee57c33cb7e29c6f0202395"
+            }
+          },
+          {
+            "rect": [
+              842,
+              310,
+              237,
+              274
+            ],
+            "anchor": [
+              140.25,
+              271
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              234,
+              271
+            ],
+            "attachments": {
+              "grip": [
+                15,
+                51
+              ],
+              "head": [
+                111,
+                48
+              ],
+              "torso": [
+                132,
+                110
+              ],
+              "legs": [
+                183,
+                188
+              ],
+              "chest": [
+                132,
+                110
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25,
+            "pixelSha256": "205cd3a9df730672e74a1eae5eea1d6a2649a22c9f3a30794c8a584e1b69ed65",
+            "bodyCalibration": 1.39,
+            "nativeSource": {
+              "bank": "delete",
+              "clip": "shove",
+              "index": 1,
+              "file": "assets/deletions/cliff/attacker-poses-v2.png",
+              "rect": [
+                349,
+                365,
+                237,
+                274
+              ],
+              "pixelSha256": "205cd3a9df730672e74a1eae5eea1d6a2649a22c9f3a30794c8a584e1b69ed65"
+            }
+          },
+          {
+            "rect": [
+              1083,
+              310,
+              169,
+              271
+            ],
+            "anchor": [
+              90.75,
+              268
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              166,
+              268
+            ],
+            "attachments": {
+              "grip": [
+                65,
+                93
+              ],
+              "head": [
+                79,
+                46
+              ],
+              "torso": [
+                105,
+                123
+              ],
+              "legs": [
+                138,
+                201
+              ],
+              "supportGrip": [
+                29,
+                114
+              ],
+              "chest": [
+                105,
+                123
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25,
+            "pixelSha256": "292c531a3b4e9d2cb855349cb1eb85525a042eb454e5362c8b811a036713a9b5",
+            "bodyCalibration": 1.39,
+            "nativeSource": {
+              "bank": "delete",
+              "clip": "present",
+              "index": 0,
+              "file": "assets/deletions/cliff/attacker-poses-v2.png",
+              "rect": [
+                709,
+                955,
+                169,
+                271
+              ],
+              "pixelSha256": "292c531a3b4e9d2cb855349cb1eb85525a042eb454e5362c8b811a036713a9b5"
+            }
+          }
+        ]
+      },
+      "description": "Six intact approved whole-body poses: ready, reach, grip, lift, release, recover. Original source pixels and effective draw sizes remain unchanged."
+    },
+    "grab-low": {
+      "label": "Native crouched grip, lift and throw",
+      "file": "grab-low-native-v2.webp",
+      "sourceSize": [
+        830,
+        608
+      ],
+      "sourceSha256": "cdee89580899ab516c545fdd4a9d101ea1147d7d71c26d33972326dc241633c0",
+      "scale": 0.838673381294964,
+      "loop": false,
+      "order": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "frameMs": [
+        180,
+        130,
+        170,
+        190
+      ],
+      "contactMs": 180,
+      "liftMs": 310,
+      "releaseMs": 480,
+      "frames": {
+        "right": [
+          {
+            "rect": [
+              0,
+              0,
+              172,
+              241
+            ],
+            "anchor": [
+              74.25,
+              238
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              169,
+              238
+            ],
+            "attachments": {
+              "grip": [
+                147,
+                85
+              ],
+              "head": [
+                115,
+                46
+              ],
+              "torso": [
+                101,
+                126
+              ],
+              "legs": [
+                58,
+                171
+              ],
+              "chest": [
+                101,
+                126
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25,
+            "pixelSha256": "cf98036097827c29b018231b67c076eff1bab7e7b1ef0fc60a5284a99a215106",
+            "bodyCalibration": 1.3116357625437913,
+            "nativeSource": {
+              "bank": "arcade",
+              "clip": "crouch-punch",
+              "index": 0,
+              "file": "assets/arcade/cliff/contextual-attacks-v1.runtime.webp",
+              "rect": [
+                60,
+                54,
+                172,
+                241
+              ],
+              "pixelSha256": "cf98036097827c29b018231b67c076eff1bab7e7b1ef0fc60a5284a99a215106"
+            }
+          },
+          {
+            "rect": [
+              176,
+              0,
+              255,
+              218
+            ],
+            "anchor": [
+              77.25,
+              215
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              252,
+              215
+            ],
+            "attachments": {
+              "grip": [
+                235,
+                76
+              ],
+              "head": [
+                104,
+                42
+              ],
+              "torso": [
+                87,
+                104
+              ],
+              "legs": [
+                77,
+                155
+              ],
+              "chest": [
+                87,
+                104
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25,
+            "pixelSha256": "34884433ffb6879c9b6fd6a0552d76589fb6589465fdb4a8d07b367c902b528e",
+            "bodyCalibration": 1.3116357625437913,
+            "nativeSource": {
+              "bank": "arcade",
+              "clip": "crouch-punch",
+              "index": 1,
+              "file": "assets/arcade/cliff/contextual-attacks-v1.runtime.webp",
+              "rect": [
+                367,
+                76,
+                255,
+                218
+              ],
+              "pixelSha256": "34884433ffb6879c9b6fd6a0552d76589fb6589465fdb4a8d07b367c902b528e"
+            }
+          },
+          {
+            "rect": [
+              435,
+              0,
+              189,
+              300
+            ],
+            "anchor": [
+              88.25,
+              297
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              186,
+              297
+            ],
+            "attachments": {
+              "grip": [
+                161,
+                19
+              ],
+              "head": [
+                108,
+                65
+              ],
+              "torso": [
+                98,
+                131
+              ],
+              "legs": [
+                62,
+                232
+              ],
+              "chest": [
+                98,
+                131
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25,
+            "pixelSha256": "252bf0ffd32d3e2371815d7beeaf20185d4dc2fbb7a6e6faf877ce372b0792d9",
+            "bodyCalibration": 1.39,
+            "nativeSource": {
+              "bank": "arcade",
+              "clip": "uppercut",
+              "index": 2,
+              "file": "assets/arcade/cliff/air-uppercut-v1.runtime.webp",
+              "rect": [
+                688,
+                634,
+                189,
+                300
+              ],
+              "pixelSha256": "252bf0ffd32d3e2371815d7beeaf20185d4dc2fbb7a6e6faf877ce372b0792d9"
+            }
+          },
+          {
+            "rect": [
+              628,
+              0,
+              170,
+              259
+            ],
+            "anchor": [
+              77,
+              256
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              167,
+              256
+            ],
+            "attachments": {
+              "grip": [
+                136,
+                81
+              ],
+              "head": [
+                109,
+                45
+              ],
+              "torso": [
+                80,
+                121
+              ],
+              "legs": [
+                54,
+                201
+              ],
+              "chest": [
+                80,
+                121
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": -0.25,
+            "pixelSha256": "150fcd2517b34f76d399ca6b5abc2eb3400f6138d18939f9425734b84aaac98c",
+            "bodyCalibration": 1.39,
+            "nativeSource": {
+              "bank": "arcade",
+              "clip": "uppercut",
+              "index": 3,
+              "file": "assets/arcade/cliff/air-uppercut-v1.runtime.webp",
+              "rect": [
+                1012,
+                676,
+                170,
+                259
+              ],
+              "pixelSha256": "150fcd2517b34f76d399ca6b5abc2eb3400f6138d18939f9425734b84aaac98c"
+            }
+          }
+        ],
+        "left": [
+          {
+            "rect": [
+              0,
+              304,
+              176,
+              239
+            ],
+            "anchor": [
+              100.75,
+              236
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              173,
+              236
+            ],
+            "attachments": {
+              "grip": [
+                28,
+                85
+              ],
+              "head": [
+                65,
+                46
+              ],
+              "torso": [
+                87,
+                122
+              ],
+              "legs": [
+                133,
+                177
+              ],
+              "chest": [
+                87,
+                122
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25,
+            "pixelSha256": "6b22e35927139b40c37ac7ceee802ecd485e6ecaa3a6c12225a4e1d24f9f6a9e",
+            "bodyCalibration": 1.3116357625437913,
+            "nativeSource": {
+              "bank": "arcade",
+              "clip": "crouch-punch",
+              "index": 0,
+              "file": "assets/arcade/cliff/contextual-attacks-v1.runtime.webp",
+              "rect": [
+                72,
+                352,
+                176,
+                239
+              ],
+              "pixelSha256": "6b22e35927139b40c37ac7ceee802ecd485e6ecaa3a6c12225a4e1d24f9f6a9e"
+            }
+          },
+          {
+            "rect": [
+              180,
+              304,
+              265,
+              226
+            ],
+            "anchor": [
+              187.75,
+              223
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              262,
+              223
+            ],
+            "attachments": {
+              "grip": [
+                16,
+                73
+              ],
+              "head": [
+                162,
+                47
+              ],
+              "torso": [
+                165,
+                106
+              ],
+              "legs": [
+                210,
+                164
+              ],
+              "chest": [
+                165,
+                106
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25,
+            "pixelSha256": "188ab049f200cddd9000020daf4c20bc4870f20ff5d67e26cdb539436593d7ec",
+            "bodyCalibration": 1.3116357625437913,
+            "nativeSource": {
+              "bank": "arcade",
+              "clip": "crouch-punch",
+              "index": 1,
+              "file": "assets/arcade/cliff/contextual-attacks-v1.runtime.webp",
+              "rect": [
+                317,
+                366,
+                265,
+                226
+              ],
+              "pixelSha256": "188ab049f200cddd9000020daf4c20bc4870f20ff5d67e26cdb539436593d7ec"
+            }
+          },
+          {
+            "rect": [
+              449,
+              304,
+              197,
+              292
+            ],
+            "anchor": [
+              102,
+              289
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              194,
+              289
+            ],
+            "attachments": {
+              "grip": [
+                34,
+                24
+              ],
+              "head": [
+                117,
+                66
+              ],
+              "torso": [
+                116,
+                132
+              ],
+              "legs": [
+                150,
+                237
+              ],
+              "chest": [
+                116,
+                132
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25,
+            "pixelSha256": "b9cd13a93d111792e7d1488cd88f066628cfcc5ebee57c33cb7e29c6f0202395",
+            "bodyCalibration": 1.39,
+            "nativeSource": {
+              "bank": "arcade",
+              "clip": "uppercut",
+              "index": 2,
+              "file": "assets/arcade/cliff/air-uppercut-v1.runtime.webp",
+              "rect": [
+                700,
+                936,
+                197,
+                292
+              ],
+              "pixelSha256": "b9cd13a93d111792e7d1488cd88f066628cfcc5ebee57c33cb7e29c6f0202395"
+            }
+          },
+          {
+            "rect": [
+              650,
+              304,
+              176,
+              247
+            ],
+            "anchor": [
+              93.75,
+              244
+            ],
+            "opaqueBounds": [
+              3,
+              3,
+              173,
+              244
+            ],
+            "attachments": {
+              "grip": [
+                31,
+                84
+              ],
+              "head": [
+                71,
+                43
+              ],
+              "torso": [
+                97,
+                111
+              ],
+              "legs": [
+                133,
+                187
+              ],
+              "chest": [
+                97,
+                111
+              ]
+            },
+            "handRadius": 9,
+            "gripAngle": 0.25,
+            "pixelSha256": "44fe465eeca1e33548e42b0498cae613c2ff2c950ac64d9b81fa91f1382fe2a6",
+            "bodyCalibration": 1.39,
+            "nativeSource": {
+              "bank": "arcade",
+              "clip": "uppercut",
+              "index": 3,
+              "file": "assets/arcade/cliff/air-uppercut-v1.runtime.webp",
+              "rect": [
+                1024,
+                981,
+                176,
+                247
+              ],
+              "pixelSha256": "44fe465eeca1e33548e42b0498cae613c2ff2c950ac64d9b81fa91f1382fe2a6"
+            }
+          }
+        ]
+      },
+      "description": "Four intact native body poses selected from physically verified forward-reaching contact artwork; original effective draw size and pixels retained."
+    }
+  },
+  "nativeAttachmentTargets": "native-attachment-targets-v1.json"
+}

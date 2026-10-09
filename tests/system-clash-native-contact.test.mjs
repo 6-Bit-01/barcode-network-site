@@ -5,7 +5,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createMatch,advanceMatch,performAction,consumeEvents,getFighterView} from '../public/games/system-clash/play/fight-engine.mjs';
 import {compileFightClip,combatMetadata} from '../public/games/system-clash/play/fight-assets.mjs';
-import {nativeBodyCore} from '../public/games/system-clash/play/fight-combat-geometry.mjs';
+import {nativeBodyCore,nativeBodyLegs} from '../public/games/system-clash/play/fight-combat-geometry.mjs';
 const root=fileURLToPath(new URL('../public/games/system-clash/play/assets/',import.meta.url));
 function imageSize(bytes){
  if(bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])))return {width:bytes.readUInt32BE(16),height:bytes.readUInt32BE(20)};
@@ -52,7 +52,7 @@ function scene(id,facing,guard={},warmup=0){
 }
 const openingFrames={'6-bit':0,'9-bit':0,'mr-nice-guy':1,'papa-oak':1};
 function samples(f,action){
- const clip=f._clips[action==='grab'?'punch':action],rate=action==='grab'?1/f._style.tempo.throw:clip.playbackRate;
+ const clip=f._clips[action==='grab'&&f._clips.grab?'grab':action==='grab'?'punch':action],rate=action==='grab'?1/f._style.tempo.throw:clip.playbackRate;
  const marker=action==='grab'?180*f._style.tempo.throw:clip.contactMs;
  const early=action==='uppercut'?clip.combatPoses.entries.find(entry=>entry.index===openingFrames[f.id]):null;
  const start=early?Math.min(marker,early.start/rate):marker,end=action==='grab'?marker:clip.activeEndMs;
@@ -64,7 +64,7 @@ function samples(f,action){
 }
 function bodyRegions(f,pose){
  const reference=f._clips.idle.combatPoses.frames[f.facing][0],core=nativeBodyCore(pose,reference,{id:f.id,facing:f.facing,height:f.height});
- return {core,regions:[...pose.hurt,...(core?[{...core,site:'torso'}]:[])]};
+ return {core,regions:[...pose.hurt,...(core?[{...core,site:'torso'}]:[]),...nativeBodyLegs(pose,reference,{id:f.id,facing:f.facing,height:f.height})]};
 }
 function candidate(id,action,facing,guard={},warmup=0){
  const match=scene(id,facing,guard,warmup),[f,v]=match.fighters,dir=facing==='right'?1:-1;

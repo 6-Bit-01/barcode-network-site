@@ -12,7 +12,7 @@ const id='doofnoobler';
 const read=p=>JSON.parse(readFileSync(p,'utf8').replace(/^\uFEFF/,''));
 const digest=p=>createHash('sha256').update(readFileSync(p)).digest('hex');
 const manifest=bank=>read(join(play,'assets',bank,id,'manifest.json'));
-const expected={fighters:['idle','punch','high','low','walk','crouch','block','kick','grabbed','thrown','knockdown','getup'],arcade:['low-punch','low-kick','jump','uppercut','crouch-punch','crouch-kick','jump-punch','jump-kick','pickup','crouch-high-kick','double-punch','power-kick'],deletions:['shove','pull','stomp','present','brace','suspended','compressed','crumpled','hug','hug-happy','rip-front']};
+const expected={fighters:['idle','punch','high','low','walk','crouch','block','kick','grabbed','thrown','knockdown','getup','grab','grab-high'],arcade:['low-punch','low-kick','jump','uppercut','crouch-punch','crouch-kick','jump-punch','jump-kick','pickup','crouch-high-kick','double-punch','power-kick'],deletions:['shove','pull','stomp','present','brace','suspended','compressed','crumpled','hug','hug-happy','rip-front']};
 const hangingExpected={"scale":0.42,"region":[512,0,1024,672],"sourceSha256":"0d294672aeba9df840ebb6f04375c22268e9f8085cfd03078c252c1c2ba79978","originalBytes":2599121,"rgbaSha256":"8516220b884b953617a1d7307a2fd197e7363e73f23e046c8b71c8d8b7065c30","regionRgbaSha256":"d176c5072744b624d1d80bc7f8fdae0789d0857c18a118eadd3d9d9236e036ba"};
 const hangingHash=bytes=>createHash('sha256').update(bytes).digest('hex');
 async function assertHangingSource(clip,dir){

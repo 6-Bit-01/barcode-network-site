@@ -21,12 +21,12 @@ test('wide stage art keeps uniform proportions and caches only its selected comp
  assert.equal(renderer.cacheInfo().count,1,'Only one composed room is retained');
 });
 
-test('all stage controls show R1, a clear warning zone and their own active machinery',()=>{
+test('all stage controls identify their own warned hazard without debug collision panels',()=>{
  for(const spec of STAGES){const {screen}=owner(),renderer=createStageRenderer(screen),state=createStageState(spec.id),match={stage:state,fighters:[{x:spec.interaction.x,hp:100}],phase:'fight'};
  renderer.drawFront(screen.getContext(),match,null,{});assert(screen.calls.some(([key,value])=>key==='fillText'&&String(value).includes('R1')));
  startStageWarning(state,0);renderer.drawBehind(screen.getContext(),state,null,{});assert(screen.calls.some(([key,value])=>key==='fillText'&&value===spec.hazard.name));
  const warning=screen.calls.length;state.fightClock=1100;renderer.drawBehind(screen.getContext(),state,null,{});assert(screen.calls.length>warning);
- const active=screen.calls.slice(warning);assert(active.some(([key])=>['arc','lineTo','fillRect','ellipse'].includes(key)),'Active hazard has real geometry');
+ const active=screen.calls.slice(warning);assert(!active.some(([key])=>key==='strokeRect'),'No placeholder hazard or wall rectangles');
  assert(active.some(([key,value])=>key==='fillText'&&value===spec.hazard.name),'The same warned zone remains identified during the strike');}
 });
 

@@ -299,3 +299,8 @@ test('AirPlay availability/connection events use the existing audio and open onl
   audio.webkitCurrentPlaybackTargetIsWireless=true;audio.emit('webkitcurrentplaybacktargetiswirelesschanged');assert.equal(controller.getSnapshot().airPlayActive,true);
   controller.close();assert.equal(audio.src,'');assert.equal(audio.paused,true);assert.equal(controller.getSnapshot().airPlayAvailable,true);
 });
+
+test("account Owner and Crew routes silence public playback without hiding ordinary account audio", () => {
+  for (const path of ["/account/owner","/account/owner/accounts","/account/crew","/account/crew/song"]) assert.equal(publicAudioAllowed(path),false);
+  for (const path of ["/account","/account/reset-password","/account/ownership","/account/crewnecks"]) assert.equal(publicAudioAllowed(path),true);
+});

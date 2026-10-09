@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
 import { usePathname } from "next/navigation";
+import { isAccountWorkspace } from "@/lib/account-workspace";
 import type { QueueBroadcastPhase, QueuePublicSnapshot } from "@/lib/queue-types";
 import { derivePublicShowState, deriveRadioQueueEntryState, isPublicTikTokBroadcastLive, type QueueReadState, type RadioQueueEntryState } from "@/lib/live-status-public";
 import { SITE_LIVE_STATUS_POLL_INTERVAL_MS } from "@/lib/redis-polling-budget";
@@ -57,7 +58,7 @@ export function useLiveStatus() {
 
 export function LiveStatusProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const isolatedPrototype = pathname === "/world/playtest" || pathname.startsWith("/overlay/");
+  const isolatedPrototype = isAccountWorkspace(pathname) || pathname === "/world/playtest" || pathname.startsWith("/overlay/");
   const [isLive, setIsLive] = useState(false);
   const [isScheduled, setIsScheduled] = useState(false);
   const [streamUrl, setStreamUrlState] = useState("https://www.tiktok.com/@six.bit/live");

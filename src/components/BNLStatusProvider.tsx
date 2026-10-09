@@ -2,6 +2,7 @@
 
 import { createContext, ReactNode, useContext, useEffect, useMemo, useSyncExternalStore } from "react";
 import { usePathname } from "next/navigation";
+import { isAccountWorkspace } from "@/lib/account-workspace";
 import { BNLStatusController, BNLStatusSnapshot } from "@/components/bnl-status-controller";
 import { FALLBACK_STATUS } from "@/components/bnl-status";
 
@@ -11,7 +12,7 @@ const Context = createContext<BNLStatusController | null>(null);
 export function BNLStatusProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const isolatedPrototype = pathname === "/world/playtest" || pathname.startsWith("/overlay/");
-  const disabled = isolatedPrototype || pathname === "/admin" || pathname.startsWith("/admin/");
+  const disabled = isolatedPrototype || isAccountWorkspace(pathname) || pathname === "/admin" || pathname.startsWith("/admin/");
   const controller = useMemo(() => new BNLStatusController((input, init) => globalThis.fetch(input, init)), []);
   useEffect(() => {
     if (disabled) return;

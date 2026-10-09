@@ -2,7 +2,7 @@
 
 The website owns Member identity in this separate service. Better Auth 1.7.7 supplies password hashing, verification, recovery and database-backed sessions. Node 24.15 or newer supplies built-in SQLite; no external native database binary or compiler is required. SQLite and the encrypted transactional-mail outbox share one dedicated website database. BNL, native queue state, payments, guest browser ownership and existing admin authentication retain their current owners.
 
-This release provides email/password registration, verification before Member activation, sign-in/out, editable nonunique display names, recovery revoking earlier sessions and sign-out across devices. It does not yet provide Owner/Crew consoles, Artist/guest claims, account-linked queue history, support threads, Insights or game synchronization. It does not disclose hidden games. Member cookies do not authorize any existing admin API.
+This release provides email/password registration, verification before Member activation, sign-in/out, editable unique account names, recovery revoking earlier sessions and sign-out across devices. It provides explicit Owner/Crew account consoles and audited account-management controls. It does not yet provide Crew tools, Artist/guest claims, account-linked queue history, support threads, Insights or game synchronization. It does not disclose hidden games. Member cookies do not authorize any existing admin API.
 
 ## Configuration
 
@@ -26,4 +26,37 @@ Install the service package from the exact merged tree into a versioned `/opt/ba
 
 Before every schema/deployment change, run `node backup.mjs /absolute/private/backup/member-<timestamp>.sqlite` with the database environment. It uses SQLite online backup and validates integrity, refuses overwriting a backup and does not read the bot DB. Store the matching private secret separately and retain an encrypted off-host copy before public account use. No unencrypted account database belongs in public Blob, queue snapshots or BNL source packs. Prove restore to a separate private directory, then verify session revocation and pending-mail state before trusting recovery. Never restore an older member DB as a routine code rollback: it can revive revoked credentials or sessions.
 
-Code rollback: remove the two Vercel member-service variables and redeploy to hide account access; stop only `barcode-member`; restore the prior service code with the current database. Retain the database/private backups. Account rollback cannot change queue limits or payments. DNS/firewall/credential removal requires exact reviewed targets and does not occur automatically.
+Code rollback: remove the two Vercel member-service variables and redeploy to hide account access; stop only `barcode-member`; retain a compatible service release with the current database and account access/name constraints. Retain the database/private backups. Account rollback cannot change queue limits or payments. DNS/firewall/credential removal requires exact reviewed targets and does not occur automatically.
+
+## Owner and Crew account authority
+
+Member activation still follows email verification. The same SQLite database now stores explicit, revocable Owner/Crew assignments, currently empty implemented-tool permissions, suspension, account revisions and important-action audits. A matching name/email, first registration, Artist association or legacy admin cookie grants no authority. The access projection and Owner directory/action endpoints require the private bridge credential and a genuine current verified, active Member session. Every mutation rechecks current session and Owner assignment within the same adapter transaction that commits its audit and retry result.
+
+Account names are unique under Unicode NFKC, whitespace collapse/trim and locale-independent lowercase; display capitalization is retained. Invisible/control characters and protected staff names are rejected. SQLite constraints protect registrations and renames, including concurrent claims. The reviewed existing reserved-name ID can retain its reserved identity; this exception does not grant access. A rename retains the permanent Better Auth user.id, and a rejected rename leaves the old name unchanged.
+
+The first slice assigns Crew independently from tool permissions. availablePermissions is initially empty. No unfinished tool permission can be assigned. The account controls support a bounded, filtered directory, name correction, Crew assignment, suspension/reactivation, session revocation and verified-address recovery. They cannot set Owner, change verified email/passwords directly, delete accounts or change Artist credit/history.
+
+Suspension revokes sessions and blocks both password and verification-auto-login session creation. Recovery uses the existing encrypted, throttled outbox and hashed, one-use Better Auth reset records; it does not reactivate an account. A retry must retain the same requestId, expectedRevision and complete action body. Replays return the saved result with no second mutation/mail only while the actor still has current authority. A revoked grant/session denies replay. Name changes, grants, suspension, revocation, recovery and operator Owner changes record actor/target IDs and prior/resulting state without secrets or reset URLs.
+
+## Explicit access upgrade and controlled Owner bootstrap
+
+Use the exact merged service tree and the existing private environment. Stop only the Member service before upgrading, retain the current private online backup and secret, and run the explicit migration. Name conflicts or unreviewed reserved names stop before schema writes; normal startup only checks readiness. The access column, backfill, uniqueness, tables and triggers upgrade transactionally and are idempotent.
+
+For an existing reviewed founder named BARCODE Network:
+
+```sh
+node migrate.mjs --preserve-reserved-user-id EXACT_REVIEWED_EXISTING_BARCODE_ID
+node bootstrap-owner.mjs --user-id EXACT_VERIFIED_FOUNDER_BARCODE_ID
+```
+
+For databases with no unresolved reserved names:
+
+```sh
+node migrate.mjs
+```
+
+The preserve argument is an explicit reviewed name exception only. Bootstrap requires the exact already-existing, verified, nonsuspended user.id; it performs no name/email discovery and creates no new account. Run it only after private confirmation of that permanent ID. Repeating the same grant is harmless. Controlled revocation uses node bootstrap-owner.mjs --user-id EXACT_BARCODE_ID --revoke and refuses removing the last active Owner. Browser operations cannot set/remove Owner and cannot suspend the current Owner or last active Owner.
+
+After these commands, service startup must pass assertReady; retain the new encrypted recovery checkpoint and independently verify the real private account/menu. Do not create public test accounts. Local service tests use only task-owned, isolated D: scratch databases and synthetic mail transports.
+
+Rollback the website UI against the upgraded service and current database. Keep the upgraded service name hooks, SQL functions, constraints, suspension checks and grants authoritative. Pre-access backend code cannot safely honor the upgraded normalized-name constraints and must not be used for registration/rename or authority fallback. If a service-code rollback becomes necessary, prepare a compatible service release retaining those controls. Never restore the old database, remove access constraints, revive revoked sessions or reinterpret legacy cookies to roll back code. Legacy /admin remains separate until its separately reviewed final cutover.

@@ -21,7 +21,7 @@ const cookies = (response) => response.headers.getSetCookie().map(value=>value.s
 const emailLink = (mail) => mail.text.match(/https:\/\/[^\s]+/)[0];
 const register = (app,email='member@example.com',name='Same Name') => app.request('/sign-up/email',{email,password:'Private-password-43!',name,callbackURL:`${origin}/account`});
 async function activate(app,email) {
-  await register(app,email);
+  await register(app,email,email.split('@')[0]);
   await app.outbox.flushOne();
   const response = await app.auth.handler(new Request(emailLink(app.delivered.at(-1))));
   assert.equal(response.status,302);
@@ -50,14 +50,14 @@ test('verification activates Member; raw password and mail tokens stay out of du
   assert.ok(!JSON.stringify(app.database.prepare('SELECT * FROM account').all()).includes('Private-password-43!'));
 });
 
-test('display names can match and change without changing identity or acquiring staff authority',async(t)=>{
+test('unique display names change without changing identity or acquiring staff authority',async(t)=>{
   const app=await fixture(t);
   const first=await activate(app,'first@example.com');
   const second=await activate(app,'second@example.com');
   const before=await (await app.request('/get-session',undefined,first)).json();
   const other=await (await app.request('/get-session',undefined,second)).json();
   assert.notEqual(before.user.id,other.user.id);
-  assert.equal(before.user.name,other.user.name);
+  assert.notEqual(before.user.name,other.user.name);
   await app.request('/update-user',{name:'New Name',role:'owner',id:other.user.id},first);
   const after=await (await app.request('/get-session',undefined,first)).json();
   assert.equal(after.user.id,before.user.id);

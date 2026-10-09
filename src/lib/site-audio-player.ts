@@ -1,3 +1,4 @@
+import { isAccountWorkspace } from "@/lib/account-workspace";
 import type { PublicBallad } from "@/lib/bnl-ballads";
 import { broadcastArchiveShowHref } from "@/lib/broadcast-archive";
 import { balladGenres } from "@/lib/ballad-catalog";
@@ -32,7 +33,7 @@ export const audioTime = (seconds: number) => {
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
 };
 export function publicAudioAllowed(pathname: string) {
-  return !["/admin", "/overlay", "/obs", "/world/playtest"].some(path => pathname === path || pathname.startsWith(`${path}/`));
+  return !isAccountWorkspace(pathname) && !["/admin", "/overlay", "/obs", "/world/playtest"].some(path => pathname === path || pathname.startsWith(`${path}/`));
 }
 export function balladAudioTrack(ballad: PublicBallad): SiteAudioTrack {
   return {

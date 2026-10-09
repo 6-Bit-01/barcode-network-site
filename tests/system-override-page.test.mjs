@@ -71,6 +71,6 @@ test("browser save guidance stays with System Override while hidden games omit o
   assert.doesNotMatch(markup, /Makko|transfer automatically/i);
   assert.doesNotMatch(cards[1][1], /Makko|transfer automatically/);
   assert.match(cards[1][1], /19 BARCODE fighters/);
-  assert.match(cards[1][1], /Solo CPU, Local Two Player, Tournament or Online Sessions across six interactive arenas/);
+  assert.match(cards[1][1], /Solo CPU, Local Two Player, Tournament or Online Sessions across seven interactive arenas/);
   assert.doesNotMatch(cards[1][1], /Practice|Weapons|19 playable/i);
 });

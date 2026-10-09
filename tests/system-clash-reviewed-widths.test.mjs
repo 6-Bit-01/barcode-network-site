@@ -53,7 +53,7 @@ test('Reviewed attack anatomy uses the native pixels at idle-matched width, not 
 test('Every roster frame preserves source metadata, vertical scale and torso station; aliases share one fixed width',()=>{
  let count=0,clips=0;const fighters=new Set(),aliases=new Map();
  for(const [path,hash]of Object.entries(evidence.manifestSha256)){
-  const bytes=readFileSync(new URL(path,ROOT));assert.equal(sha(bytes),hash,'Source crops, timings and registrations untouched');
+  const bytes=readFileSync(new URL(path,ROOT));assert.equal(sha(bytes.toString('utf8').replace(/\r\n/g,'\n')),hash,'Source crops, timings and registrations untouched apart from checkout line endings');
   const m=JSON.parse(bytes),before=JSON.stringify(m);fighters.add(path.split("/")[2]);clips+=Object.keys(m.clips).length;
   for(const [name,data]of Object.entries(m.clips)){
    const asset=compileFightClip(data,{width:10000,height:10000},m,name);

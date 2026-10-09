@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import { DatabaseSync as Database } from 'node:sqlite';
 import { betterAuth } from 'better-auth';
 import { getMigrations } from 'better-auth/db/migration';
 import { isAbsolute } from 'node:path';
@@ -11,7 +11,7 @@ export function createMemberAuth(configuration) {
   if(url.protocol!=='https:'||url.pathname!==AUTH_PATH||url.search||url.hash)throw new Error('Invalid canonical auth URL');
   if(!isAbsolute(databasePath)||!secret||secret.length<32)throw new Error('Absolute database path and private auth secret required');
   const database=new Database(databasePath);
-  database.pragma('journal_mode = WAL');database.pragma('busy_timeout = 5000');database.pragma('foreign_keys = ON');
+  database.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON');
   const outbox=createMailOutbox(database,configuration);
   const background=new Set();
   const auth=betterAuth({

@@ -13,7 +13,7 @@ export type OwnerAccount = {
 };
 type Lookup = { ok: true; data: MemberAccess } | { ok: false; status: number; code: string };
 const privateHeaders = { "cache-control": "private, no-store", "referrer-policy": "no-referrer" };
-const permissionIds = ["support.conversations", "song.generate", "quality.reports", "insights.read"];
+const permissionIds = ["support.conversations", "show.overview", "song.generate", "quality.reports", "insights.read"];
 const canonicalOrigin = "https://www.barcode-network.com";
 const identifier = (value: unknown): value is string => typeof value === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(value);
 const name = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0 && value.length <= 80 && !/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/.test(value);

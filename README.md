@@ -145,3 +145,42 @@ Rollback by removing the variable or setting it to anything other than exact `tr
 - Keep payments, queue state, public truth, BNL memory, and admin-only data separated by their existing authority boundaries.
 - Do not treat historical prototypes as deployable code.
 - Keep feature work separate from broad cosmetic redesigns unless the PR explicitly coordinates both.
+
+## Owner and Crew account tools
+
+The account workspaces offer a read-only live show overview with artist introduction
+cards, show/community insights, and a private BARCODE song generator. Owners can
+use every available tool; Crew receive only the tools explicitly assigned in
+Accounts & Crew. Revenue is omitted from Crew API responses and its underlying
+payment records are never read for Crew requests.
+
+Song drafts belong to their exact creator, including when that creator is an
+Owner. Directions may all be empty. BNL returns an editable title, lyrics and
+Suno prompt, with independent lyric/style regeneration and Undo. Lyrics are
+limited to 2,000 whitespace-separated words and 40,000 characters; the musical
+structure targets five minutes or less. Final recording duration is determined
+by the recording tool. There is no sharing, audio generation or publication.
+
+The existing member-auth SQLite service owns drafts, pending requests, authority,
+leases and audits. The bot processes only authorized commands through the existing
+website credential, creative budget, public context selector and heartbeat.
+It stores generation receipts in its existing database, outside factual memory.
+Broadcast Ballads retain their existing episode and publication rules.
+
+Release requires the website changes, an explicit member-auth migration using its
+existing private environment after a verified backup, and the companion bot
+changes. The service refuses startup until the new additive schema is present;
+it never migrates implicitly. Unupgraded services return an unavailable account
+tool state. Do not grant real Crew access as part of a test. See
+[member-auth operations](services/member-auth/README.md) for the migration command.
+After the Owner merges, verify service health, bot commit/service status, and a
+private Owner generation before assigning Crew tools. Roll back code to the prior
+commits if needed; retain the additive tables and receipt history rather than
+restoring or deleting private account data.
+
+Insights state their source coverage and unavailable measurements. Artist rows
+describe public credit groups, not verified individual identity. Pacing compares
+the latest two retained archived public shows. Owner financials report recorded,
+confirmed gross by currency for at most 20 recent eligible shows; refunds and net
+revenue remain unavailable. Website/referral tracking and captured TikTok/BNL
+engagement are not introduced by this change.

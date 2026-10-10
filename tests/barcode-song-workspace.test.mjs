@@ -380,3 +380,23 @@ test("Song navigation follows Owner to Crew role changes and hides Owner links d
  blocked=false;fail=true;await ui.listeners.get("focus")();await ui.settle();
  assert.doesNotMatch(markup(),/aria-label="(?:Owner|Crew) workspace"|href="\/account\/(?:owner|crew)/);
 });
+
+test("song refusal receipts explain billing and each allowance without losing saved content", async () => {
+ const cases = [
+  ["BUDGET_DAILY_TOKENS", /daily token allowance/i],
+  ["BUDGET_DAILY_COST", /daily creative spending limit/i],
+  ["BUDGET_MONTHLY_COST", /monthly creative spending limit/i],
+  ["BUDGET_PRICING_UNAVAILABLE", /cost checks are temporarily unavailable/i],
+  ["PROVIDER_BILLING_REQUIRED", /provider billing needs attention/i],
+  ["PROVIDER_UNAVAILABLE", /songwriting service is temporarily unavailable/i],
+  ["BUDGET_UNAVAILABLE", /creative budget is unavailable/i],
+ ];
+ for (const [errorCode, expected] of cases) {
+  const ui=harness("BarcodeSongWorkspace", {access:owner}, async()=>response({draft:song({errorCode,resetAt:"2026-10-11T00:00:00Z"})}));
+  await ui.settle();assert.match(ui.text(),expected);assert.match(ui.text(),/saved song is safe/i);
+  assert.equal(ui.nodes().find(n=>n.type==="textarea"&&n.props.rows===18).props.value,"Original lyrics");
+  assert.equal(ui.nodes().find(n=>n.type==="textarea"&&n.props.rows===5).props.value,"Original style");
+  if (errorCode.startsWith("BUDGET_DAILY") || errorCode==="BUDGET_MONTHLY_COST") assert.match(ui.text(),/allowance resets/i);
+  else assert.doesNotMatch(ui.text(),/allowance resets/i);
+ }
+});

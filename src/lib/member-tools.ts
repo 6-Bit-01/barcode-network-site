@@ -2,7 +2,7 @@ import "server-only";
 import { lookupMemberAccess, type MemberAccess } from "./member-access";
 import { getMemberServiceConfiguration, type MemberServiceConfiguration } from "./member-service";
 import { memberCookies } from "../../services/member-auth/contract.mjs";
-import { parseSongDraft, parseSongOptions, parseSongRequest, parseSongText, SONG_ERROR_CODES } from "./barcode-song-contract";
+import { parseSongDraft, parseSongResetAt, parseSongOptions, parseSongRequest, parseSongText, SONG_ERROR_CODES } from "./barcode-song-contract";
 export type MemberToolPermission = "show.overview" | "song.generate" | "insights.read";
 export type MemberToolInsights = { accounts: { total:number; verified:number; active:number; suspended:number; signupsByMonth:{month:string;count:number}[] } };
 const canonicalOrigin="https://www.barcode-network.com";
@@ -62,9 +62,9 @@ export async function proxyMemberSongWorkerRequest(request:Request,configuration
  let body='{"limit":1}';
  if(request.method==="POST"){
  if(request.headers.get("content-type")?.split(";")[0].trim().toLowerCase()!=="application/json")return problem(415,"JSON_REQUIRED");
- try {const input=JSON.parse(await boundedText(request));if(!input||typeof input!=="object"||Object.keys(input).some(key=>!["commandId","leaseId","outcome","result","errorCode"].includes(key))||!["commandId","leaseId"].every(key=>typeof input[key]==="string"&&/^[A-Za-z0-9_-]{1,128}$/.test(input[key]))||!["applied","failed"].includes(input.outcome))throw Error();
- if(input.outcome==="applied"){if(input.errorCode!==undefined)throw Error();body=JSON.stringify({commandId:input.commandId,leaseId:input.leaseId,outcome:input.outcome,result:parseSongText(input.result)});}
- else{if(input.result!==undefined||!SONG_ERROR_CODES.includes(input.errorCode))throw Error();body=JSON.stringify({commandId:input.commandId,leaseId:input.leaseId,outcome:input.outcome,errorCode:input.errorCode});}
+ try {const input=JSON.parse(await boundedText(request));if(!input||typeof input!=="object"||Object.keys(input).some(key=>!["commandId","leaseId","outcome","result","errorCode","resetAt"].includes(key))||!["commandId","leaseId"].every(key=>typeof input[key]==="string"&&/^[A-Za-z0-9_-]{1,128}$/.test(input[key]))||!["applied","failed"].includes(input.outcome))throw Error();
+ if(input.outcome==="applied"){if(input.errorCode!==undefined||input.resetAt!==undefined)throw Error();body=JSON.stringify({commandId:input.commandId,leaseId:input.leaseId,outcome:input.outcome,result:parseSongText(input.result)});}
+ else{if(input.result!==undefined||!SONG_ERROR_CODES.includes(input.errorCode))throw Error();body=JSON.stringify({commandId:input.commandId,leaseId:input.leaseId,outcome:input.outcome,errorCode:input.errorCode,...(input.resetAt===undefined?{}:{resetAt:parseSongResetAt(input.resetAt)})});}
  }catch(error){return problem(error instanceof Error&&error.message==="BODY_TOO_LARGE"?413:400,"INVALID_COMMAND");}}
  const response=await transport("worker/songs/"+(request.method==="GET"?"claim":"receipt"),"POST",body,undefined,configuration,fetcher);if(!response.ok)return response;
  try {const data=await response.json();if(request.method==="POST"){if(data.ok!==true)throw Error();return Response.json({ok:true},{headers:privateHeaders});}

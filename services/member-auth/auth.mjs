@@ -11,6 +11,8 @@ import { migrateAccessSchema, accessSchemaReady, registerNameConstraints, prefli
 import { createMemberAccess } from './access.mjs';
 import { createMemberArtists } from './artists.mjs';
 import { migrateArtistSchema,artistSchemaReady } from './artist-schema.mjs';
+import { createMemberTools } from './tools.mjs';
+import { migrateToolSchema,toolSchemaReady } from './tool-schema.mjs';
 
 export function createMemberAuth(configuration) {
   const {databasePath,baseURL,secret}=configuration;
@@ -67,5 +69,6 @@ export function createMemberAuth(configuration) {
   });
   const access=createMemberAccess({auth,database,outbox,baseURL,serial});
   const artists=createMemberArtists({database,authority:access.authority,serial,baseURL});
-  return {auth,database,outbox,access,artists,async migrate(options){preflightAccessMigration(database,options);const migration=await getMigrations({...auth.options,user:{...auth.options.user,additionalFields:{}}});await migration.runMigrations();migrateAccessSchema(database,options);migrateArtistSchema(database);invalidateSchemaChecks(database);},async assertReady(){const plan=await getMigrations(auth.options);if(plan.toBeCreated.length||plan.toBeAdded.length||plan.toBeAddedIndexes.length||plan.unsafeChanges.length||plan.schemaProblems.length)throw new Error('Explicit account schema migration required');accessSchemaReady(database);artistSchemaReady(database);},async close(){await Promise.allSettled([...background]);await outbox.waitForIdle();await tail;database.close();}};
+  const tools=createMemberTools({database,authority:access.authority,serial,baseURL});
+  return {auth,database,outbox,access,artists,tools,async migrate(options){preflightAccessMigration(database,options);const migration=await getMigrations({...auth.options,user:{...auth.options.user,additionalFields:{}}});await migration.runMigrations();migrateAccessSchema(database,options);migrateArtistSchema(database);migrateToolSchema(database);invalidateSchemaChecks(database);},async assertReady(){const plan=await getMigrations(auth.options);if(plan.toBeCreated.length||plan.toBeAdded.length||plan.toBeAddedIndexes.length||plan.unsafeChanges.length||plan.schemaProblems.length)throw new Error('Explicit account schema migration required');accessSchemaReady(database);artistSchemaReady(database);toolSchemaReady(database);},async close(){await Promise.allSettled([...background]);await outbox.waitForIdle();await tail;database.close();}};
 }

@@ -1,3 +1,4 @@
+import {createOnlineRoundProgression} from '../public/games/system-clash/play/fight-online-rounds.mjs';
 import {createRoundSet} from '../public/games/system-clash/play/fight-rules.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -35,7 +36,7 @@ function canvas(){
 }
 function harness(){
  const source=[art('6-bit'),art('9-bit')],screen=canvas(),elements=new Map(),env={
-  pauseDialog:{open:false,close(){}},roundMenu:{reset(){},close(){}},matchRules:{rounds:1,time:99,difficulty:'normal'},roundSet:createRoundSet(),roundNumber:1,createRoundSet,loading(){},updateRoundOutcome(){},screenSuspended:false,
+  pauseDialog:{open:false,close(){}},roundMenu:{reset(){},close(){}},matchRules:{rounds:1,time:99,difficulty:'normal'},roundSet:createRoundSet(),roundNumber:1,createRoundSet,onlineRounds:null,createOnlineRoundProgression,loading(){},updateRoundOutcome(){},screenSuspended:false,
   art:source,metadata:combatMetadata(source),canvas:screen,renderer:createFightRenderer(screen),ready:true,paused:false,loadRevision:0,motionPresentationEpoch:0,
   inspectTime:null,motionTime:null,accumulator:0,previousTravelViews:null,previousTravelPhase:null,deletionReviewCache:null,
   deletionProp:null,weaponArt:null,fighterPortraits:{},stageArt:{id:"radio-studio"},tournamentOverlay:null,onlineCombat:null,onlineLoaded:false,

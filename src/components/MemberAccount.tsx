@@ -27,7 +27,7 @@ async function accountRequest(path: string, body?: object, signal?: AbortSignal)
   }
   return data;
 }
-export function MemberAccount({ initialMode="signin", resetToken }: { initialMode?:Mode; resetToken?:string }) {
+export function MemberAccount({ initialMode="signin", resetToken, returnTo }: { initialMode?:Mode; resetToken?:string; returnTo?:string }) {
   const router = useRouter();
   const [mode,setMode] = useState<Mode>(initialMode);
   const [signupStep,setSignupStep] = useState<SignupStep>("details");
@@ -76,7 +76,7 @@ export function MemberAccount({ initialMode="signin", resetToken }: { initialMod
     const currentMember=data?.user ?? null;setMember(currentMember);setName(currentMember?.name ?? "");return currentMember;
   }
   function changeMode(next:Mode) {if (actionPending.current || mode === next) return;setMode(next);setSignupStep("details");setTermsAccepted(false);setPassword("");setMessage("");setError("");}
-  function resendVerification() {void perform("Requesting verification link…",async signal => {await accountRequest("send-verification-email",{email},signal);setMessage("Verification link requested. If verification is needed, check your inbox and spam folder.");});}
+  function resendVerification() {void perform("Requesting verification link…",async signal => {await accountRequest("send-verification-email",{email,...(returnTo?{callbackURL:"/account?returnTo="+encodeURIComponent(returnTo)}:{})},signal);setMessage("Verification link requested. If verification is needed, check your inbox and spam folder.");});}
   async function submit(event:FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (actionPending.current || awaitingVerification) return;
@@ -90,13 +90,14 @@ export function MemberAccount({ initialMode="signin", resetToken }: { initialMod
     }
     await perform(pendingLabels[mode],async signal => {
       if (mode === "signup") {
-        await accountRequest("sign-up/email",{email,password,name,termsAccepted:true,termsVersion:MEMBER_TERMS_VERSION},signal);
+        await accountRequest("sign-up/email",{email,password,name,termsAccepted:true,termsVersion:MEMBER_TERMS_VERSION,...(returnTo?{callbackURL:"/account?returnTo="+encodeURIComponent(returnTo)}:{})},signal);
         setPassword("");setTermsAccepted(false);setSignupStep("verification");setMessage("Signup request complete. Check your email for the next step.");
       } else if (mode === "signin") {
         await accountRequest("sign-in/email",{email,password},signal);setPassword("");
         const currentMember=await refresh(signal);
         if (!isCurrentAction(signal)) return;
         if (!currentMember) throw new Error("Your session could not be confirmed. Please sign in again.");
+        if(returnTo){setMessage("Signed in. Returning to System Clash online...");router.replace(returnTo);return;}
         setPending("Checking dashboard access…");
         const access=await fetchCurrentMemberAccess(currentMember.id,signal);
         if (!isCurrentAction(signal)) return;
@@ -134,7 +135,8 @@ export function MemberAccount({ initialMode="signin", resetToken }: { initialMod
         <div className="mt-5 space-y-5">
           <p><span className="text-accent">Member · Active</span><br />{member.email}</p>
           <p className="break-all text-xs text-muted">BARCODE ID: {member.id}</p>
-          <MemberRadioHistory key={member.id} memberId={member.id} />
+          {returnTo && <Link href={returnTo} className={primaryButtonClass}>Return to System Clash online</Link>}
+           <MemberRadioHistory key={member.id} memberId={member.id} />
           <form onSubmit={event => {event.preventDefault();void perform("Saving display name…",async signal => {await accountRequest("update-user",{name},signal);await refresh(signal);if (!isCurrentAction(signal)) return;setMessage("Display name saved.");});}} className="space-y-3">
             <label className="block text-sm">Display name<input className={`${fieldClass} mt-2`} value={name} onChange={event => setName(event.target.value)} maxLength={80} required autoComplete="nickname" disabled={busy} /></label>
             <p className="text-xs text-muted">Display names are unique. You can change yours while keeping the same BARCODE ID.</p>

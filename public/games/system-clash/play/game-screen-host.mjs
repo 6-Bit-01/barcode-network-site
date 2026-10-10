@@ -1,5 +1,5 @@
 import {toggleDisplayMode} from './fight-ui.mjs';
-const ROUTES=new Set(['index.html','fight.html','online.html']);
+const ROUTES=new Set(['index.html','fight.html','online.html','tournament-online.html','tournament-watch.html']);
 export function safeGameScreenURL(value,base){try{const root=new URL('.',base),url=new URL(value,base);return url.origin===root.origin&&url.pathname.startsWith(root.pathname)&&ROUTES.has(url.pathname.slice(root.pathname.length))?url:null;}catch{return null;}}
 export function createGameScreenHost({window:win=globalThis.window,document:doc=globalThis.document,onSuspend=()=>{},onDisplayChange=()=>{}}={}){
  let frame=null;
@@ -17,3 +17,4 @@ export function createGameScreenHost({window:win=globalThis.window,document:doc=
  doc.addEventListener?.('fullscreenchange',forwardState);
  return {navigate,displayMode,get active(){return !!frame;},get isFullscreen(){return isFullscreen();}};
 }
+

@@ -1,6 +1,6 @@
 import {fightStatScalars} from './fight-stats.mjs';
 import {ONLINE_STAGES,MAX_PACKET_BYTES,packetBytes,validInput,validPayload} from './online-protocol.mjs';
-const MATCH_KEYS=['mode','phase','phaseTime','roundRemaining','finishRemaining','winner','deletionElapsed','deletionName','deletionId','deletionTargetX','status','hitstop','combatTime','paused','pauseReason','finisherAvailable','stagePickups','projectiles','nextPickupAt','stage','_deletionOrigin'];
+const MATCH_KEYS=['mode','phase','phaseTime','roundRemaining','finishRemaining','winner','deletionElapsed','deletionName','deletionId','deletionTargetX','status','hitstop','combatTime','paused','pauseReason','finisherAvailable','stagePickups','projectiles','nextPickupAt','stage','_deletionOrigin','roundNumber','roundWins','setComplete','roundIntermission'];
 const FIGHTER_KEYS=['id','name','x','facing','hp','maxHp','height','action','actionTime','weapon','damageTaken','damageTier','damageSites','damageMarks','embeddedWeapons','_deleted'];
 const FORBIDDEN=new Set(['__proto__','constructor','prototype','token','credentials','sdp','image','_clips','_style','_statProfile','_statScalars','metadata']);
 const PHASES=new Set(['ready','countdown','fight','finish','deletion','over']);
@@ -37,6 +37,7 @@ export function readFightSnapshot(value,{roster=[],fighterIds,clipIds=[],matchId
   if(!object(value)||packetBytes(value)>Math.min(MAX_PACKET_BYTES-1024,61440)||!Number.isSafeInteger(value.seq)||value.seq<1||!Number.isSafeInteger(value.matchId)||value.matchId<1||(matchId!==undefined&&value.matchId!==matchId)||!finite(value.at))return null;
   const result=clone(value),state=result.state,views=result.views,ids=roster.map(f=>typeof f==='string'?f:f.id);
   if(!object(state)||!PHASES.has(state.phase)||state.mode!=='local'||!Array.isArray(state.fighters)||state.fighters.length!==2||!Array.isArray(views)||views.length!==2||![null,0,1].includes(state.winner)||typeof state.paused!=='boolean')return null;
+  if(state.roundNumber!==undefined&&(!Number.isSafeInteger(state.roundNumber)||state.roundNumber<1||state.roundNumber>10000)||state.setComplete!==undefined&&typeof state.setComplete!=='boolean'||state.roundWins!==undefined&&(!Array.isArray(state.roundWins)||state.roundWins.length!==2||state.roundWins.some(win=>!Number.isInteger(win)||win<0||win>5))||state.roundIntermission!==undefined&&state.roundIntermission!==null&&!finite(state.roundIntermission,0,10000))return null;
   if(state.pauseReason!==undefined&&![null,'manual','network'].includes(state.pauseReason))return null;
   for(const key of ['phaseTime','roundRemaining','finishRemaining','deletionElapsed','combatTime'])if(!finite(state[key]))return null;
   if(!object(state.stage)||!ONLINE_STAGES.includes(state.stage.id)||!finite(state.stage.width,1280,4096)||!finite(state.stage.clock)||!finite(state.stage.fightClock))return null;
@@ -61,7 +62,7 @@ export function applyFightSnapshot(local,snapshot){return {...snapshot.state,fig
 /** Pure seat ownership, cadence and freshness; the browser owns engine/render calls. */
 export function createOnlineCombatController({seat,matchId,roster,fighterIds,clipIds,clipTimings=[],send=()=>false,now=()=>performance.now(),onStart=()=>{},onPause=()=>{},onState=()=>{},onEvents=()=>{},onAction=()=>{},onDisconnect=()=>{}}){
  if(![0,1].includes(seat)||!Number.isSafeInteger(matchId)||matchId<1)throw new Error('Invalid combat seat.');
- const schema={roster,fighterIds,clipIds,matchId};let started=false,paused=false,pauseReason=null,pausedAt=0,closed=false,remote=neutral(),lastRemote=-Infinity,remoteReleased=false,lastInput=-Infinity,lastSentInput=null,inputSeq=0,receivedInputSeq=0,receivedActionSeq=0,lastPublish=-Infinity,lastSnapshot=-Infinity,snapshotSeq=0,receivedSeq=0,eventSeq=0,receivedEvents=0,current=null,previous=null,arrivedAt=0,arrivalInterval=40,awaitingSnapshot=seat===1,firstSnapshotAt=Infinity;
+ const schema={roster,fighterIds,clipIds,matchId};let round=1;const roundField=()=>round>1?{round}:{};let started=false,paused=false,pauseReason=null,pausedAt=0,closed=false,remote=neutral(),lastRemote=-Infinity,remoteReleased=false,lastInput=-Infinity,lastSentInput=null,inputSeq=0,receivedInputSeq=0,receivedActionSeq=0,lastPublish=-Infinity,lastSnapshot=-Infinity,snapshotSeq=0,receivedSeq=0,eventSeq=0,receivedEvents=0,current=null,previous=null,arrivedAt=0,arrivalInterval=40,awaitingSnapshot=seat===1,firstSnapshotAt=Infinity;
  function applyPause(value,reason='manual'){
   if(value&&paused&&pauseReason==='manual')reason='manual';
   if(paused===value&&(!value||pauseReason===reason))return;
@@ -84,7 +85,7 @@ export function createOnlineCombatController({seat,matchId,roster,fighterIds,cli
   if(packet.type==='pause'){if(!packet.paused&&(seat===0||paused&&pauseReason==='manual'&&packet.reason==='network'))return false;if(seat===1&&!packet.paused&&Number.isSafeInteger(packet.snapshotSeq)&&packet.snapshotSeq>=0)receivedSeq=Math.max(receivedSeq,packet.snapshotSeq);applyPause(packet.paused,packet.reason??'manual');return true;}
   if(packet.type==='leave'){api.disconnect('The session ended.');return true;}
   if(packet.type==='input'||packet.type==='action'){
-   if(seat!==0||!validInput(packet.input))return false;
+   if(seat!==0||!validInput(packet.input)||(round>1?packet.round!==round:packet.round!==undefined&&packet.round!==round))return false;
    const sequenced=packet.inputSeq!==undefined;if(sequenced&&(!uint(packet.inputSeq)||packet.inputSeq===0))return false;if(!sequenced&&receivedInputSeq)return false;
    if(packet.type==='action'&&sequenced){if(packet.inputSeq<=receivedActionSeq)return false;receivedActionSeq=packet.inputSeq;}
    const fresh=!sequenced||packet.inputSeq>receivedInputSeq,wasPaused=paused;if(!fresh&&packet.type==='input')return false;
@@ -93,22 +94,23 @@ export function createOnlineCombatController({seat,matchId,roster,fighterIds,cli
    if(packet.type==='input'&&fresh&&paused&&pauseReason==='network'&&remoteReleased)api.requestPause(false,'network');return true;
   }
   if(packet.type==='snapshot'){
-   if(seat!==1)return false;const next=readFightSnapshot(packet.snapshot,schema);if(!next||next.seq<=receivedSeq)return false;receivedSeq=next.seq;previous=current;if(current&&!awaitingSnapshot)arrivalInterval=Math.max(40,Math.min(1000,now()-arrivedAt));current=next;arrivedAt=lastSnapshot=now();awaitingSnapshot=false;if(next.state.paused)applyPause(true,next.state.pauseReason??'manual');next.state.paused=paused;next.state.pauseReason=pauseReason;onState(next);return true;
+   if(seat!==1)return false;const next=readFightSnapshot(packet.snapshot,schema);if(!next||next.seq<=receivedSeq||(next.state.roundNumber??1)<round)return false;const newRound=(next.state.roundNumber??1)>round;if(newRound){round=next.state.roundNumber;lastSentInput=null;lastInput=-Infinity;previous=null;send({type:'input',input:neutral(),inputSeq:++inputSeq,...roundField()});}receivedSeq=next.seq;previous=newRound?null:current;if(current&&!awaitingSnapshot)arrivalInterval=Math.max(40,Math.min(1000,now()-arrivedAt));current=next;arrivedAt=lastSnapshot=now();awaitingSnapshot=false;if(next.state.paused)applyPause(true,next.state.pauseReason??'manual');next.state.paused=paused;next.state.pauseReason=pauseReason;onState(next);return true;
   }
   if(packet.type==='events'){
-   if(seat!==1||packet.matchId!==matchId||!Number.isSafeInteger(packet.seq)||packet.seq<=receivedEvents)return false;
+   if(seat!==1||packet.matchId!==matchId||(round>1?packet.round!==round:packet.round!==undefined&&packet.round!==round)||!Number.isSafeInteger(packet.seq)||packet.seq<=receivedEvents)return false;
    let events;try{events=clone(packet.events);}catch{return false;}receivedEvents=packet.seq;onEvents(events);return true;
   }
   return false;
- },input(value){if(closed||!started)return false;const input=stripFightInput(paused?neutral():value);if(seat!==1)return true;if(sameInput(input,lastSentInput)&&now()-lastInput<100)return false;if(inputSeq>=4294967295)return false;lastInput=now();lastSentInput=input;return send({type:'input',input,inputSeq:++inputSeq});},action(action,value){if(closed||!started||paused)return false;const input=stripFightInput(value),packet={type:'action',action,input};if(!validPayload(packet))return false;if(seat===1){if(inputSeq>=4294967295)return false;lastSentInput=input;return send({...packet,inputSeq:++inputSeq});}onAction({index:0,action,input});return true;},requestPause(value,reason='manual'){
+ },input(value){if(closed||!started)return false;const input=stripFightInput(paused?neutral():value);if(seat!==1)return true;if(sameInput(input,lastSentInput)&&now()-lastInput<100)return false;if(inputSeq>=4294967295)return false;lastInput=now();lastSentInput=input;return send({type:'input',input,inputSeq:++inputSeq,...roundField()});},action(action,value){if(closed||!started||paused)return false;const input=stripFightInput(value),packet={type:'action',action,input};if(!validPayload(packet))return false;if(seat===1){if(inputSeq>=4294967295)return false;lastSentInput=input;return send({...packet,inputSeq:++inputSeq,...roundField()});}onAction({index:0,action,input});return true;},requestPause(value,reason='manual'){
   if(closed||!started||typeof value!=='boolean'||!['manual','network'].includes(reason))return false;
   if(!value&&(seat!==0||now()-lastRemote>=1000||!remoteReleased||paused&&pauseReason==='manual'&&reason==='network'))return false;
   const appliedReason=value?reason:pauseReason??reason;applyPause(value,appliedReason);return send({type:'pause',paused:value,reason:value?pauseReason:appliedReason,...(seat===0?{snapshotSeq}:{})});
  },requestRematch(phase){return !closed&&started&&phase==='over'?send({type:'rematch'}):false;},publish(match,views){
   if(closed||!started||seat!==0||now()-lastPublish<40)return false;
   const snapshot=makeFightSnapshot({...match,paused,pauseReason},views,{...schema,seq:snapshotSeq+1,at:now()});if(!snapshot)return false;lastPublish=now();snapshotSeq++;return send({type:'snapshot',snapshot});
- },publishEvents(events){if(closed||!started||seat!==0||!events.length)return false;try{const packet={type:'events',matchId,seq:eventSeq+1,events:clone(events)};if(!validPayload(packet)||packetBytes(packet)>61440)return false;eventSeq++;return send(packet);}catch{return false;}},views(time=now()){
+ },publishEvents(events){if(closed||!started||seat!==0||!events.length)return false;try{const packet={type:'events',matchId,seq:eventSeq+1,events:clone(events),...roundField()};if(!validPayload(packet)||packetBytes(packet)>61440)return false;eventSeq++;return send(packet);}catch{return false;}},views(time=now()){
   if(!current)return null;const fraction=Math.max(0,Math.min(1,((paused?pausedAt:time)-arrivedAt)/arrivalInterval));return current.views.map((view,index)=>{const rendered=visualView(view,index,time),before=previous?.views[index];if(current.state.phase!=='fight'||previous?.state.phase!=='fight'||current.state.stage.id!==previous.state.stage.id||current.state.stage.portalSerial!==previous.state.stage.portalSerial||!before||before.clip!==view.clip||before.facing!==view.facing||before.opacity!==view.opacity)return rendered;return {...rendered,x:before.x+(view.x-before.x)*fraction,y:before.y+(view.y-before.y)*fraction};});
- },tick(){if(closed||!started||paused)return;if((seat===0&&now()-lastRemote>=1000)||(seat===1&&(awaitingSnapshot?now()>=firstSnapshotAt:now()-lastSnapshot>=1000)))api.requestPause(true,'network');},disconnect(reason){if(closed)return;closed=true;started=false;applyPause(true,'manual');onDisconnect(reason);},destroy(){closed=true;started=false;remote=neutral();}};
+ },startRound(value){if(closed||!started||paused||seat!==0||!Number.isSafeInteger(value)||value!==round+1||value>10000)return false;round=value;remote=neutral();remoteReleased=false;lastRemote=now();return true;},tick(){if(closed||!started||paused)return;if((seat===0&&now()-lastRemote>=1000)||(seat===1&&(awaitingSnapshot?now()>=firstSnapshotAt:now()-lastSnapshot>=1000)))api.requestPause(true,'network');},disconnect(reason){if(closed)return;closed=true;started=false;applyPause(true,'manual');onDisconnect(reason);},destroy(){closed=true;started=false;remote=neutral();}};
  return api;
 }
+

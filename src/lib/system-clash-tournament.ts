@@ -10,8 +10,9 @@ type Entrant={id:string;memberId:string;name:string;fighter:string;status:"pendi
 type Binding={roomCode:string;createdAt:number;matchId:number;boutId:string};
 type Bout={id:string;round:number;p1:string;p2:string;status:"queued"|"ready"|"live"|"decision"|"complete"|"void";winner:string|null;source:null|"room"|"referee"|"withdrawal";reason?:string;roomCode:string|null;roomMatchId:number|null;roomCreatedAt:number|null;replays:number;usedRooms:string[]};
 type Receipt={actor:string;requestId:string;fingerprint:string};
-type Event={version:1;code:string;title:string;revision:number;status:"lobby"|"running"|"paused"|"complete"|"cancelled";settings:Settings;hostMemberId:string;hostLastSeen:number;createdAt:number;expiresAt:number;seed:number;entrants:Entrant[];round:number;bouts:Bout[];currentBoutId:string|null;championId:string|null;receipts:Receipt[]};
-export interface TournamentStore {read(code:string):Promise<string|null>;cas(code:string,old:string|null,next:string,now:number,binding?:Binding):Promise<boolean>;list():Promise<string[]>;}
+type Event={version:1;code:string;title:string;revision:number;status:"lobby"|"running"|"paused"|"complete"|"cancelled";settings:Settings;hostMemberId:string;hostLastSeen:number;createdAt:number;expiresAt:number;seed:number;entrants:Entrant[];round:number;bouts:Bout[];currentBoutId:string|null;championId:string|null;receipts:Receipt[];parentTournamentCode?:string|null;nextTournamentCode?:string|null};
+export type TournamentWrite={code:string;old:string|null;next:string};
+export interface TournamentStore {casEvents?(writes:TournamentWrite[],now:number):Promise<boolean>;read(code:string):Promise<string|null>;cas(code:string,old:string|null,next:string,now:number,binding?:Binding):Promise<boolean>;list():Promise<string[]>;}
 export type TournamentMatchEvidence={code:string;createdAt:number;matchId:number;matchPhase:string;hostMemberId:string;guestMemberId:string;hostFighter:string;guestFighter:string;tournament?:{code:string;boutId:string;rules:{rounds:number;time:number}}|null;result:{matchId:number;winner:0|1|null}|null};
 export type TournamentRoomEvidence=Omit<TournamentMatchEvidence,"guestMemberId"|"guestFighter"|"result">&{guestMemberId:string|null;guestFighter:string|null};
 export type TournamentRoomReservation={code:string;eventCode:string;boutId:string;hostMemberId:string;guestMemberId:string;hostFighter:string;guestFighter:string;rules:{rounds:number;time:number}};
@@ -34,7 +35,7 @@ export function normalizeTournamentSettings(value:unknown={}):Settings{
  return settings as Settings;
 }
 const allowed:Record<string,string[]>={
- create:["title","settings"],join:["fighter"],choose:["fighter"],approve:["entrantId"],reject:["entrantId"],ready:["ready"],settings:["settings"],start:[],next:[],offer:["boutId","roomCode"],bind:["boutId","roomCode","roomMatchId"],advance:["boutId"],adjudicate:["boutId","winnerEntrantId","reason"],replay:["boutId"],withdraw:[],pause:[],resume:[],cancel:[],ping:[],
+ create:["title","settings"],"open-next":["title","settings"],join:["fighter"],choose:["fighter"],approve:["entrantId"],reject:["entrantId"],ready:["ready"],settings:["settings"],start:[],next:[],offer:["boutId","roomCode"],bind:["boutId","roomCode","roomMatchId"],advance:["boutId"],adjudicate:["boutId","winnerEntrantId","reason"],replay:["boutId"],withdraw:[],pause:[],resume:[],cancel:[],ping:[],
 };
 function command(value:unknown):Command{
  if(!object(value)||typeof value.action!=="string"||!Object.hasOwn(allowed,value.action)||!uuid(value.requestId)||Object.keys(value).some(key=>!["action","code","requestId","expectedRevision",...allowed[value.action as string]].includes(key)))throw new TournamentError("The tournament request is invalid.");
@@ -45,7 +46,7 @@ function command(value:unknown):Command{
 function publicEvent(event:Event,member:TournamentMember,time:number){
  const own=event.entrants.find(p=>p.memberId===member.id&&holding(p)),role=event.hostMemberId===member.id?"host":own?"entrant":"spectator";
  const current=event.bouts.find(b=>b.id===event.currentBoutId);
- return {code:event.code,title:event.title,revision:event.revision,status:event.status,settings:{...event.settings},role,selfEntrantId:own?.id??null,createdAt:event.createdAt,expiresAt:event.expiresAt,round:event.round,currentBoutId:event.currentBoutId,nextBoutId:event.bouts.find(b=>b.status==="queued")?.id??null,championId:event.championId,hostConnected:time-event.hostLastSeen<90000,
+ return {code:event.code,parentTournamentCode:event.parentTournamentCode??null,title:event.title,revision:event.revision,status:event.status,settings:{...event.settings},role,selfEntrantId:own?.id??null,createdAt:event.createdAt,expiresAt:event.expiresAt,round:event.round,currentBoutId:event.currentBoutId,nextBoutId:event.bouts.find(b=>b.status==="queued")?.id??null,championId:event.championId,hostConnected:time-event.hostLastSeen<90000,
   entrants:event.entrants.map(p=>({id:p.id,name:p.name,fighter:p.fighter,status:p.status,ready:p.ready,losses:p.losses,byeCount:p.byeCount,connected:time-p.lastSeen<90000})),
   bouts:event.bouts.map(b=>({id:b.id,round:b.round,p1:b.p1,p2:b.p2,status:b.status,winner:b.winner,source:b.source,reason:b.reason??null,roomCode:b.roomCode,roomMatchId:b.roomMatchId,replays:b.replays})),
   currentBout:current?{id:current.id,p1:current.p1,p2:current.p2,status:current.status,roomCode:current.roomCode,roomMatchId:current.roomMatchId}:null,
@@ -84,38 +85,95 @@ function current(event:Event,boutId:unknown){const bout=event.bouts.find(b=>b.id
 const roomIdentity=(evidence:TournamentMatchEvidence)=>evidence.code+":"+evidence.createdAt+":"+evidence.matchId;
 export function createSystemClashTournaments({store,readMatch,readRoom,reserveMatch,bindMatch,now=Date.now,id=randomUUID,code}:{store:TournamentStore;readMatch:(value:{code:string;matchId:number;requireResult:boolean})=>Promise<TournamentMatchEvidence>;readRoom?:(value:{code:string})=>Promise<TournamentRoomEvidence>;reserveMatch?:(value:TournamentRoomReservation)=>Promise<unknown>;bindMatch?:(value:TournamentRoomReservation&{matchId:number})=>Promise<unknown>;now?:()=>number;id?:()=>string;code?:()=>string}){
  function member(value:TournamentMember){if(!value||typeof value.id!=="string"||!value.id||typeof value.name!=="string"||!Number.isFinite(value.sessionExpiresAt)||value.sessionExpiresAt<=now())throw new TournamentError("Sign in to your website account to play online.",401);}
- async function read(value:unknown){if(!validCode(value))throw new TournamentError("Use the six-character tournament code.");const raw=await store.read(value);if(!raw)throw new TournamentError("This tournament is no longer available.",404);let event:Event;try{event=JSON.parse(raw);}catch{throw new TournamentError("Tournament storage is unavailable.",503);}if(event.version!==1)throw new TournamentError("Refresh to use this tournament version.",409);if(event.expiresAt<=now())throw new TournamentError("This tournament expired.",410);return {raw,event};}
- async function mutate(actor:TournamentMember,body:Command,change:(event:Event)=>Promise<boolean|void>|boolean|void){
+ async function read(value:unknown){
+  if(!validCode(value))throw new TournamentError("Use the six-character tournament code.");
+  const raw=await store.read(value);if(!raw)throw new TournamentError("This tournament is no longer available.",404);
+  let event:Event;try{event=JSON.parse(raw);}catch{throw new TournamentError("Tournament storage is unavailable.",503);}
+  if(!object(event))throw new TournamentError("Tournament storage is unavailable.",503);
+  if(event.version!==1)throw new TournamentError("Refresh to use this tournament version.",409);
+  if(event.code!==value||!Array.isArray(event.entrants)||!Array.isArray(event.bouts)||!Array.isArray(event.receipts)||!Number.isFinite(event.expiresAt)||!["lobby","running","paused","complete","cancelled"].includes(event.status)||typeof event.hostMemberId!=="string"||[event.parentTournamentCode,event.nextTournamentCode].some(link=>link!==undefined&&link!==null&&(!validCode(link)||link===value)))throw new TournamentError("Tournament storage is unavailable.",503);
+  if(event.expiresAt<=now())throw new TournamentError("This tournament expired.",410);return {raw,event};
+ }
+ async function linked(event:Event){
+  if(!event.nextTournamentCode)return null;
+  const child=await read(event.nextTournamentCode);
+  if(child.event.parentTournamentCode!==event.code||child.event.hostMemberId!==event.hostMemberId)throw new TournamentError("Tournament registration link is unavailable.",503);
+  return child;
+ }
+ async function snapshot(event:Event,actor:TournamentMember,time=now()){
+  const child=(await linked(event))?.event,own=child?.entrants.find(p=>p.memberId===actor.id&&holding(p));
+  return {...publicEvent(event,actor,time),nextTournament:child?{code:child.code,title:child.title,status:child.status,settings:{...child.settings},approvedCount:child.entrants.filter(p=>["approved","active"].includes(p.status)).length,selfEntrantId:own?.id??null}:null};
+ }
+ async function closeNext(event:Event,writes:TournamentWrite[]){
+  const seen=new Set([event.code]);let parent=event;
+  while(parent.nextTournamentCode){
+   if(seen.has(parent.nextTournamentCode)||seen.size>=64)throw new TournamentError("Tournament registration link is unavailable.",503);
+   const child=await linked(parent);if(!child)break;seen.add(child.event.code);
+   child.event.status="cancelled";child.event.currentBoutId=null;child.event.revision++;
+   for(const entrant of child.event.entrants)entrant.ready=false;
+   for(const bout of child.event.bouts)if(["queued","ready","live","decision"].includes(bout.status))bout.status="void";
+   writes.push({code:child.event.code,old:child.raw,next:JSON.stringify(child.event)});parent=child.event;
+  }
+ }
+ async function mutate(actor:TournamentMember,body:Command,change:(event:Event,writes:TournamentWrite[])=>Promise<boolean|void>|boolean|void){
   const digest=fingerprint(body);for(let attempt=0;attempt<8;attempt++){
    const {raw,event}=await read(body.code),receipt=event.receipts.find(r=>r.actor===actor.id&&r.requestId===body.requestId);
-   if(receipt){if(receipt.fingerprint!==digest)throw new TournamentError("This request already has different details.",409);return publicEvent(event,actor,now());}
+   if(receipt){if(receipt.fingerprint!==digest)throw new TournamentError("This request already has different details.",409);return snapshot(event,actor);}
    if(body.expectedRevision!==undefined&&body.expectedRevision!==event.revision)throw new TournamentError("The tournament changed. Refresh and retry.",409);
+   const writes:TournamentWrite[]=[];
+   // A lobby mutation must race atomically with the parent host ending this session.
+   if(event.parentTournamentCode&&event.status==="lobby"&&body.action!=="cancel"){
+    const parent=await read(event.parentTournamentCode);
+    if(parent.event.nextTournamentCode!==event.code||parent.event.hostMemberId!==event.hostMemberId)throw new TournamentError("Tournament registration link is unavailable.",503);
+    if(parent.event.status==="cancelled")throw new TournamentError("The host ended this tournament session.",409);
+    if(["start","open-next"].includes(String(body.action))&&parent.event.status!=="complete")throw new TournamentError("Wait for the current tournament to finish.",409);
+    writes.push({code:parent.event.code,old:parent.raw,next:parent.raw});
+   }
    const previousBindings=new Set(event.bouts.filter(b=>b.roomCode&&b.roomMatchId).map(b=>b.roomCode+":"+b.roomCreatedAt+":"+b.roomMatchId));
-   if(await change(event)===false)return publicEvent(event,actor,now());
+   if(await change(event,writes)===false)return snapshot(event,actor);
+   if(event.status==="cancelled"&&event.nextTournamentCode)await closeNext(event,writes);
    if(event.receipts.length>=2048)throw new TournamentError("This tournament reached its command limit. Finish with a new event.",409);event.revision++;const own=event.entrants.find(p=>p.memberId===actor.id);if(own)own.lastSeen=now();if(event.hostMemberId===actor.id)event.hostLastSeen=now();
    event.receipts.push({actor:actor.id,requestId:String(body.requestId),fingerprint:digest});
    const bound=event.bouts.find(b=>b.roomCode&&b.roomMatchId&&!previousBindings.has(b.roomCode+":"+b.roomCreatedAt+":"+b.roomMatchId));
    const binding=bound?{roomCode:bound.roomCode!,createdAt:bound.roomCreatedAt!,matchId:bound.roomMatchId!,boutId:bound.id}:undefined;
-   if(await store.cas(event.code,raw,JSON.stringify(event),now(),binding))return publicEvent(event,actor,now());
+   const next=JSON.stringify(event);
+   if(writes.length&&!store.casEvents)throw new TournamentError("Atomic tournament registration is unavailable.",503);
+   const saved=writes.length?await store.casEvents!([{code:event.code,old:raw,next},...writes],now()):await store.cas(event.code,raw,next,now(),binding);
+   if(saved)return snapshot(event,actor);
   }throw new TournamentError("The tournament changed. Refresh and retry.",409);
  }
  return {
+ async readVoiceContext(value:string,actor:TournamentMember){member(actor);const {event}=await read(value),bout=event.bouts.find(b=>b.id===event.currentBoutId);return {code:event.code,status:event.status,currentBoutId:event.currentBoutId,hostMemberId:event.hostMemberId,settings:{rounds:event.settings.rounds,time:event.settings.time},entrants:event.entrants.map(p=>({id:p.id,memberId:p.memberId,fighter:p.fighter})),bout:bout?{id:bout.id,status:bout.status,roomCode:bout.roomCode,roomMatchId:bout.roomMatchId,roomCreatedAt:bout.roomCreatedAt,p1:bout.p1,p2:bout.p2}:null};},
  async list(actor:TournamentMember){member(actor);const time=now();return {tournaments:(await store.list()).map(raw=>{try{return JSON.parse(raw) as Event;}catch{return null;}}).filter((event):event is Event=>!!event&&event.version===1&&event.expiresAt>time&&!["complete","cancelled"].includes(event.status)).sort((a,b)=>b.createdAt-a.createdAt).slice(0,30).map(event=>({code:event.code,title:event.title,status:event.status,approvedCount:event.entrants.filter(p=>["approved","active"].includes(p.status)).length,maxPlayers:event.settings.maxPlayers,strikes:event.settings.strikes,preset:event.settings.preset,createdAt:event.createdAt}))};},
- async view(value:string,actor:TournamentMember){member(actor);for(let attempt=0;attempt<3;attempt++){const {event,raw}=await read(value),own=event.entrants.find(p=>p.memberId===actor.id&&holding(p));if(!own&&event.hostMemberId!==actor.id||(!own||now()-own.lastSeen<30000)&&(event.hostMemberId!==actor.id||now()-event.hostLastSeen<30000))return publicEvent(event,actor,now());if(own)own.lastSeen=now();if(event.hostMemberId===actor.id)event.hostLastSeen=now();if(await store.cas(event.code,raw,JSON.stringify(event),now()))return publicEvent(event,actor,now());}throw new TournamentError("The tournament changed. Refresh and retry.",409);},
+ async view(value:string,actor:TournamentMember){member(actor);for(let attempt=0;attempt<3;attempt++){const {event,raw}=await read(value),own=event.entrants.find(p=>p.memberId===actor.id&&holding(p));if(!own&&event.hostMemberId!==actor.id||(!own||now()-own.lastSeen<30000)&&(event.hostMemberId!==actor.id||now()-event.hostLastSeen<30000))return snapshot(event,actor);if(own)own.lastSeen=now();if(event.hostMemberId===actor.id)event.hostLastSeen=now();if(await store.cas(event.code,raw,JSON.stringify(event),now()))return snapshot(event,actor);}throw new TournamentError("The tournament changed. Refresh and retry.",409);},
  async command(actor:TournamentMember,value:unknown){member(actor);const body=command(value),action=String(body.action);
   if(action==="ping")return this.view(String(body.code),actor);
   if(action==="create"){
    const title=typeof body.title==="string"?body.title.replace(/[^\p{L}\p{N} _.,!?'-]/gu,"").trim():"Live Tournament";
    if(!title||Array.from(title).length>60)throw new TournamentError("Use a tournament title of 1–60 characters.");
    const settings=normalizeTournamentSettings(body.settings),time=now(),bytes=createHash("sha256").update(actor.id+":"+body.requestId).digest(),alphabet="ABCDEFGHJKLMNPQRSTUVWXYZ23456789",eventCode=code?.()??Array.from(bytes.subarray(0,6),byte=>alphabet[byte%alphabet.length]).join("");
-   const digest=fingerprint(body),existing=await store.read(eventCode);if(existing){const prior=JSON.parse(existing) as Event,receipt=prior.receipts.find(r=>r.actor===actor.id&&r.requestId===body.requestId);if(receipt&&receipt.fingerprint===digest&&prior.expiresAt>time)return publicEvent(prior,actor,time);throw new TournamentError("This request already has different details. Start a fresh request.",409);}
+   const digest=fingerprint(body),existing=await store.read(eventCode);if(existing){const prior=JSON.parse(existing) as Event,receipt=prior.receipts.find(r=>r.actor===actor.id&&r.requestId===body.requestId);if(receipt&&receipt.fingerprint===digest&&prior.expiresAt>time)return snapshot(prior,actor,time);throw new TournamentError("This request already has different details. Start a fresh request.",409);}
    const event:Event={version:1,code:eventCode,title,revision:1,status:"lobby",settings,hostMemberId:actor.id,hostLastSeen:time,createdAt:time,expiresAt:time+TOURNAMENT_TTL,seed:bytes.readUInt32BE(0),entrants:[],round:0,bouts:[],currentBoutId:null,championId:null,receipts:[{actor:actor.id,requestId:String(body.requestId),fingerprint:digest}]};
-   if(await store.cas(eventCode,null,JSON.stringify(event),time))return publicEvent(event,actor,time);
-   const saved=await read(eventCode),receipt=saved.event.receipts.find(r=>r.actor===actor.id&&r.requestId===body.requestId);if(receipt?.fingerprint===digest)return publicEvent(saved.event,actor,time);throw new TournamentError("Tournament changed. Retry with a fresh request.",409);
+   if(await store.cas(eventCode,null,JSON.stringify(event),time))return snapshot(event,actor,time);
+   const saved=await read(eventCode),receipt=saved.event.receipts.find(r=>r.actor===actor.id&&r.requestId===body.requestId);if(receipt?.fingerprint===digest)return snapshot(saved.event,actor,time);throw new TournamentError("Tournament changed. Retry with a fresh request.",409);
   }
-  return mutate(actor,body,async event=>{
-   if(["complete","cancelled"].includes(event.status)){if(action==="advance"&&current(event,body.boutId).status==="complete")return false;throw new TournamentError("This tournament has ended.",409);}
-   if(["approve","reject","settings","start","next","adjudicate","replay","pause","resume","cancel"].includes(action))host(event,actor);
+  return mutate(actor,body,async (event,writes)=>{
+   if(["complete","cancelled"].includes(event.status)&&!(event.status==="complete"&&["open-next","cancel"].includes(action))){if(action==="advance"&&current(event,body.boutId).status==="complete")return false;throw new TournamentError("This tournament has ended.",409);}
+   if(["open-next","approve","reject","settings","start","next","adjudicate","replay","pause","resume","cancel"].includes(action))host(event,actor);
+   if(action==="open-next"){
+    const title=body.title===undefined?event.title:typeof body.title==="string"?body.title.replace(/[^\p{L}\p{N} _.,!?'-]/gu,"").trim():"";
+    if(!title||Array.from(title).length>60)throw new TournamentError("Use a tournament title of 1–60 characters.");
+    const settings=body.settings===undefined?{...event.settings}:normalizeTournamentSettings(body.settings),prior=await linked(event);
+    if(prior){
+     if(prior.event.status!=="lobby")throw new TournamentError("The next tournament is no longer accepting registration.",409);
+     if(body.title!==undefined&&title!==prior.event.title||body.settings!==undefined&&canonical(settings)!==canonical(prior.event.settings))throw new TournamentError("The next tournament is already open with different settings.",409);
+     return;
+    }
+    const bytes=createHash("sha256").update(actor.id+":"+event.code+":next:"+body.requestId).digest(),alphabet="ABCDEFGHJKLMNPQRSTUVWXYZ23456789",childCode=Array.from(bytes.subarray(0,6),byte=>alphabet[byte%alphabet.length]).join("");
+    if(childCode===event.code)throw new TournamentError("Start a fresh registration request.",409);
+    const time=now(),child:Event={version:1,code:childCode,title,revision:1,status:"lobby",settings,hostMemberId:event.hostMemberId,hostLastSeen:time,createdAt:time,expiresAt:event.expiresAt,seed:bytes.readUInt32BE(0),entrants:[],round:0,bouts:[],currentBoutId:null,championId:null,receipts:[],parentTournamentCode:event.code,nextTournamentCode:null};
+    event.nextTournamentCode=childCode;writes.push({code:childCode,old:null,next:JSON.stringify(child)});return;
+   }
    if(action==="join"){
     lobby(event);const own=event.entrants.find(p=>p.memberId===actor.id&&holding(p));if(own)return false;
     if(event.entrants.filter(holding).length>=event.settings.maxPlayers)throw new TournamentError("This tournament is full.",409);
@@ -189,7 +247,7 @@ export function createSystemClashTournaments({store,readMatch,readRoom,reserveMa
    }
    if(action==="pause"){if(event.status!=="running")throw new TournamentError("Only a running tournament can be paused.",409);event.status="paused";return;}
    if(action==="resume"){if(event.status!=="paused")throw new TournamentError("This tournament is not paused.",409);event.status="running";return;}
-   if(action==="cancel"){event.status="cancelled";event.currentBoutId=null;for(const bout of event.bouts)if(["queued","ready","live","decision"].includes(bout.status))bout.status="void";return;}
+   if(action==="cancel"){event.status="cancelled";event.currentBoutId=null;for(const entrant of event.entrants)entrant.ready=false;for(const bout of event.bouts)if(["queued","ready","live","decision"].includes(bout.status))bout.status="void";return;}
    if(action==="ping"){player(event,actor);return;}
   });
  },

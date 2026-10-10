@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 
-const admin = readFileSync('src/app/admin/page.tsx', 'utf8');
+const admin = readFileSync('src/components/AdminControls.tsx', 'utf8');
 
 test('manual refresh is strict and does not report success after failed required fetches', () => {
   assert.match(admin, /loadBnl = async \(strict = false\)/);

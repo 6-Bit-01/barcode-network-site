@@ -358,7 +358,7 @@ test("admin and bot Journal routes enforce auth and Redis-required control write
     "src/app/api/bnl/journal/control/route.ts",
     "utf8",
   );
-  const adminPage = readFileSync("src/app/admin/page.tsx", "utf8");
+  const adminPage = readFileSync("src/components/AdminControls.tsx", "utf8");
   const journalAdminPage = readFileSync(
     "src/app/admin/journal/page.tsx",
     "utf8",

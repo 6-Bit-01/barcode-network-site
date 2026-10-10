@@ -15,7 +15,7 @@ export const OWNER_TOOL_SECTIONS = {
       { title: "Show management", description: "Set up a show, manage session options, and open submissions.", href: "/admin/show-management" },
       { title: "Queue control", description: "Run playback, manage the lanes, and use the existing broadcast controls.", href: "/admin/queue" },
       { title: "Archived shows", description: "Review completed broadcasts and their retained show records.", href: "/admin/show-management/archive" },
-      { title: "Live status & stream", description: "Update the live indicator, schedule override, and stream address.", href: "/admin#radio-controls" },
+      { title: "Live status & stream", description: "Update the live indicator, schedule override, and stream address.", href: "/admin/broadcast-settings" },
     ],
   },
   bnl: {
@@ -23,7 +23,7 @@ export const OWNER_TOOL_SECTIONS = {
     tools: [
       { title: "Broadcast Ballads", description: "Write with BNL, prepare Suno prompts, and manage recordings and releases.", href: "/admin/ballads" },
       { title: "Journals", description: "Review Journal publishing, saved runs, and automation status.", href: "/admin/journal" },
-      { title: "Relay controls", description: "Review and manage BNL's current Relay and operator controls.", href: "/admin#bnl-controls" },
+      { title: "Relay controls", description: "Review and manage BNL's current Relay and operator controls.", href: "/admin/relay" },
     ],
   },
   maintenance: {

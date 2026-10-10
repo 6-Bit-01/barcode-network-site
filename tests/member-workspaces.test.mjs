@@ -26,7 +26,7 @@ test('account access navigation follows genuine assigned roles and clears on rev
  access=null;await ui.listeners.get('focus')();await ui.settle();assert.equal(ui.find('a','Crew dashboard'),undefined);
 });
 test('Crew assignment has an honest empty state and no future tool links',()=>{
- const ui=harness('CrewWorkspace',{access:{...owner,access:{...owner.access,owner:false,crew:true,permissions:['song.generate']}}});assert.match(ui.text(),/Your Crew access is assigned\. Tools will become available here as they are ready\./);assert.deepEqual(ui.nodes().filter(n=>n.type==='a').map(n=>n.props.href),['/account']);
+ const ui=harness('CrewWorkspace',{access:{...owner,access:{...owner.access,owner:false,crew:true,permissions:['song.generate']}}});assert.match(ui.text(),/Your Crew access is assigned\. Tools will become available here as they are ready\./);const html=require('react-dom/server').renderToStaticMarkup(ui.render());assert.deepEqual([...html.matchAll(/href=\"([^\" ]+)\"/g)].map(match=>match[1]),['/account']);
 });
 test('protected page wrappers deny before creating private workspace HTML and pass the guarded access',async()=>{
  for(const role of ['owner','crew']) {
@@ -53,7 +53,7 @@ test('ordinary account explains unique renameable names and keeps prior name on 
  }
 });
 test('account auth denial clears the signed-in account and its access navigation',async()=>{
- const ui=harness('MemberAccount',{},async(path)=>path.endsWith('update-user')?response({code:'UNAUTHORIZED'},401):response({user:{id:'member-id',name:'Original',email:'member@example.test',emailVerified:true}}));await ui.settle();assert.match(ui.text(),/BARCODE ID: member-id/);ui.nodes().find(n=>n.type==='form').props.onSubmit({preventDefault(){}});await ui.settle();assert.doesNotMatch(ui.text(),/BARCODE ID: member-id|member@example.test/);assert.equal(ui.nodes().some(n=>n.props?.memberId==='member-id'),false);
+ const ui=harness('MemberAccount',{},async(path)=>path.endsWith('update-user')?response({code:'UNAUTHORIZED'},401):response({user:{id:'member-id',name:'Original',email:'member@example.test',emailVerified:true}}));await ui.settle();assert.match(ui.text(),/Original/);assert.match(ui.text(),/member@example\.test/);assert.ok(ui.nodes().some(n=>n.props?.memberId==='member-id'));ui.nodes().find(n=>n.type==='form').props.onSubmit({preventDefault(){}});await ui.settle();assert.doesNotMatch(ui.text(),/BARCODE ID: member-id|member@example\.test|Original/);assert.equal(ui.nodes().some(n=>n.props?.memberId==='member-id'),false);
 });
 test('Owner auth denial clears private directory data and returns to the account',async()=>{
  let denied=false,redirect;const ui=harness('OwnerAccountWorkspace',{access:owner},async()=>denied?response({code:'FORBIDDEN'},403):response({accounts:[account],nextCursor:null}),{redirect:path=>{redirect=path;}});await ui.settle();assert.match(ui.text(),/member@example.test/);denied=true;await ui.find('button','Refresh directory').props.onClick();await ui.settle();assert.equal(redirect,'/account');assert.doesNotMatch(ui.text(),/member@example.test|Owner workspace/);

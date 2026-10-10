@@ -11,7 +11,7 @@ type Mode = "signin" | "signup" | "recovery" | "reset";
 type SignupStep = "details" | "terms" | "verification";
 const labels: Record<Mode,string> = { signin:"Sign in", signup:"Create account", recovery:"Recover your account", reset:"Choose a new password" };
 const pendingLabels: Record<Mode,string> = { signin:"Signing in…", signup:"Creating account…", recovery:"Requesting reset link…", reset:"Saving new password…" };
-const buttonClass = "inline-flex min-h-12 cursor-pointer items-center justify-center rounded-lg border px-4 py-3 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50";
+const buttonClass = "inline-flex min-h-12 cursor-pointer items-center justify-center rounded-lg border px-4 py-3 text-sm font-semibold transition-colors active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50";
 const primaryButtonClass = `${buttonClass} border-accent bg-accent text-background hover:bg-accent-dim disabled:hover:bg-accent`;
 const selectedChoiceClass = `${buttonClass} border-accent bg-accent/10 text-accent hover:bg-accent/15`;
 const secondaryButtonClass = `${buttonClass} border-border-light bg-background text-foreground hover:border-accent hover:bg-surface-light disabled:hover:border-border-light disabled:hover:bg-background`;
@@ -116,11 +116,10 @@ export function MemberAccount({ initialMode="signin", resetToken, returnTo }: { 
     });
   }
   return (
-    <section className="mx-auto max-w-xl rounded-xl border border-border bg-surface p-5 sm:p-8" aria-label="BARCODE account" aria-busy={busy || checking}>
+    <section className={`mx-auto ${member ? "max-w-6xl" : "max-w-xl"} rounded-xl border border-border bg-surface p-5 sm:p-8`} aria-label="BARCODE account" aria-busy={busy || checking}>
       <p className="public-kicker">BARCODE Network</p>
       <h1 ref={heading} tabIndex={-1} className="mt-2 text-3xl font-bold focus:outline-none">{member ? "Your account" : awaitingVerification ? "Check your email" : mode === "signup" && signupStep === "terms" ? "Before you join the Network" : labels[mode]}</h1>
-      <p id="account-help" className="mt-3 text-sm text-foreground/80">A private account, activated by email verification. Music submissions remain open to guests.</p>
-      {!checking && member && <MemberAccessNavigation key={member.id} memberId={member.id} />}
+      <p id="account-help" className="mt-3 text-sm text-foreground/80">{member ? "Your music, show history, and assigned tools in one place." : "Activate your account by verifying your email. Music submissions remain open to guests."}</p>
       {!checking && !member && mode !== "reset" && !awaitingVerification && <div aria-label="Account access" className="mt-5 grid grid-cols-2 gap-3">
         <p className="col-span-2 text-xs font-semibold text-foreground/80">Choose how to continue</p>
         <button type="button" className={mode === "signin" ? selectedChoiceClass : secondaryButtonClass} aria-pressed={mode === "signin"} disabled={busy} onClick={() => changeMode("signin")}>Sign in</button>
@@ -132,22 +131,49 @@ export function MemberAccount({ initialMode="signin", resetToken, returnTo }: { 
       <div role="status" aria-live="polite" aria-atomic="true" className={`mt-4 text-sm ${(checking || pending || message) ? "rounded-lg border border-accent/40 bg-accent/5 p-3 text-foreground" : ""}`}>{checking ? "Checking your session…" : pending || message}</div>
       {error && <p role="alert" className="mt-3 rounded-lg border border-danger p-3 text-sm text-danger">{error}</p>}
       {!checking && member ? (
-        <div className="mt-5 space-y-5">
-          <p><span className="text-accent">Member · Active</span><br />{member.email}</p>
-          <p className="break-all text-xs text-muted">BARCODE ID: {member.id}</p>
-          {returnTo && <Link href={returnTo} className={primaryButtonClass}>Return to System Clash online</Link>}
-           <MemberRadioHistory key={member.id} memberId={member.id} />
-          <form onSubmit={event => {event.preventDefault();void perform("Saving display name…",async signal => {await accountRequest("update-user",{name},signal);await refresh(signal);if (!isCurrentAction(signal)) return;setMessage("Display name saved.");});}} className="space-y-3">
-            <label className="block text-sm">Display name<input className={`${fieldClass} mt-2`} value={name} onChange={event => setName(event.target.value)} maxLength={80} required autoComplete="nickname" disabled={busy} /></label>
-            <p className="text-xs text-muted">Display names are unique. You can change yours while keeping the same BARCODE ID.</p>
-            <button type="submit" className={primaryButtonClass} disabled={busy}>{pending === "Saving display name…" ? pending : "Save display name"}</button>
-          </form>
-          <div className="flex flex-wrap gap-3 border-t border-border pt-5">
-            <button type="button" className={secondaryButtonClass} disabled={busy} onClick={() => void perform("Signing out…",async signal => {await accountRequest("sign-out",{},signal);setMember(null);setMessage("Signed out.");})}>{pending === "Signing out…" ? pending : "Sign out"}</button>
-            <button type="button" className={secondaryButtonClass} disabled={busy} onClick={() => void perform("Signing out all devices…",async signal => {await accountRequest("revoke-sessions",{},signal);await accountRequest("sign-out",{},signal);setMember(null);setMessage("All sessions have been signed out.");})}>{pending === "Signing out all devices…" ? pending : "Sign out all devices"}</button>
-            <button type="button" className={secondaryButtonClass} disabled={busy} onClick={() => void perform("Requesting reset link…",async signal => {await accountRequest("request-password-reset",{email:member.email},signal);setMessage("Reset link requested. If this email has an account, check your inbox and spam folder.");})}>{pending === "Requesting reset link…" ? pending : "Reset password"}</button>
+        <div className="mt-6 space-y-6">
+          <div className="flex flex-wrap items-center gap-4 rounded-xl border border-border-light bg-background p-4 sm:p-5">
+            <span aria-hidden="true" className="flex size-14 shrink-0 items-center justify-center rounded-xl border border-accent/40 bg-accent/10 text-xl font-bold text-accent">{Array.from(member.name.trim()).slice(0,2).join("").toUpperCase()}</span>
+            <div className="min-w-0 flex-1">
+              <h2 className="break-words text-2xl font-bold">{member.name}</h2>
+              <p className="mt-1 text-sm font-semibold text-accent">Member · Active</p>
+            </div>
+            <a href="#account-settings" className={secondaryButtonClass}>Account settings</a>
           </div>
-          <p className="text-sm text-muted">For account help or a privacy request, <a href="mailto:thebarcodenetwork@gmail.com" className="text-accent underline">contact BARCODE Network</a>.</p>
+          <MemberAccessNavigation key={member.id} memberId={member.id} />
+          {returnTo && <Link href={returnTo} className={primaryButtonClass}>Return to System Clash online</Link>}
+          <nav aria-label="Music and participation" className="grid gap-4 sm:grid-cols-2">
+            <Link href="/queue" className="account-action-card group rounded-xl border border-accent/50 bg-accent/5 p-5">
+              <span className="block text-lg font-bold text-accent">Submit music <span aria-hidden="true">→</span></span>
+              <span className="mt-2 block text-sm text-foreground/80">Bring a song to BARCODE Radio. Sign in when submitting to keep it connected to your account.</span>
+            </Link>
+            <Link href="/radio/deck" className="account-action-card rounded-xl border border-border-light bg-background p-5">
+              <span className="block text-lg font-bold">Broadcast Deck <span aria-hidden="true">→</span></span>
+              <span className="mt-2 block text-sm text-foreground/80">See the show, follow the queue, and find your participation stats.</span>
+            </Link>
+          </nav>
+          <MemberRadioHistory key={member.id} memberId={member.id} />
+          <section id="account-settings" aria-labelledby="account-settings-heading" className="scroll-mt-28 rounded-xl border border-border-light bg-background p-4 sm:p-5">
+            <h2 id="account-settings-heading" className="text-xl font-bold">Account settings</h2>
+            <p className="mt-2 text-sm text-foreground/80">Manage your display name, password and signed-in devices.</p>
+            <div className="mt-5 grid gap-6 lg:grid-cols-2">
+              <form onSubmit={event => {event.preventDefault();void perform("Saving display name…",async signal => {await accountRequest("update-user",{name},signal);await refresh(signal);if (!isCurrentAction(signal)) return;setMessage("Display name saved.");});}} className="space-y-3">
+                <label className="block text-sm">Display name<input className={`${fieldClass} mt-2`} value={name} onChange={event => setName(event.target.value)} maxLength={80} required autoComplete="nickname" disabled={busy} /></label>
+                <p className="text-xs text-foreground/70">Display names are unique. You can change yours while keeping the same BARCODE ID.</p>
+                <button type="submit" className={primaryButtonClass} disabled={busy}>{pending === "Saving display name…" ? pending : "Save display name"}</button>
+              </form>
+              <div className="space-y-4">
+                <div className="text-sm"><p className="font-semibold">Verified email</p><p className="break-all text-foreground/80">{member.email}</p></div>
+                <details className="rounded-lg border border-border-light p-3"><summary className="cursor-pointer text-sm font-semibold focus-visible:outline-2 focus-visible:outline-accent">BARCODE ID</summary><p className="mt-2 break-all text-xs text-foreground/70">{member.id}</p></details>
+                <button type="button" className={secondaryButtonClass} disabled={busy} onClick={() => void perform("Requesting reset link…",async signal => {await accountRequest("request-password-reset",{email:member.email},signal);setMessage("Reset link requested. If this email has an account, check your inbox and spam folder.");})}>{pending === "Requesting reset link…" ? pending : "Reset password"}</button>
+              </div>
+            </div>
+            <div className="mt-6 flex flex-wrap gap-3 border-t border-border pt-5">
+              <button type="button" className={secondaryButtonClass} disabled={busy} onClick={() => void perform("Signing out…",async signal => {await accountRequest("sign-out",{},signal);setMember(null);setMessage("Signed out.");})}>{pending === "Signing out…" ? pending : "Sign out"}</button>
+              <button type="button" className={secondaryButtonClass} disabled={busy} onClick={() => void perform("Signing out all devices…",async signal => {await accountRequest("revoke-sessions",{},signal);await accountRequest("sign-out",{},signal);setMember(null);setMessage("All sessions have been signed out.");})}>{pending === "Signing out all devices…" ? pending : "Sign out all devices"}</button>
+            </div>
+            <p className="mt-5 text-sm text-foreground/70">For account help or a privacy request, <a href="mailto:thebarcodenetwork@gmail.com" className="text-accent underline">contact BARCODE Network</a>.</p>
+          </section>
         </div>
       ) : !checking && (
         <>

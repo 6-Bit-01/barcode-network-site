@@ -10,6 +10,7 @@ const response=(body,status=200)=>({ok:status<400,status,json:async()=>body});
 function harness(file,props={},fetcher=async()=>response(owner),injections={}) {
  const slots=[],dependencies=[],effects=[],cleanups=[],listeners=new Map();let cursor=0,tree;
  const hooks={...React,useState(initial){const i=cursor++;if(!(i in slots)) slots[i]=typeof initial==='function'?initial():initial;return [slots[i],v=>{slots[i]=typeof v==='function'?v(slots[i]):v;}];},useRef(initial){const i=cursor++;if(!(i in slots)) slots[i]={current:initial};return slots[i];},useEffect(fn,deps){const i=cursor++;if(!dependencies[i]||deps?.some((v,j)=>v!==dependencies[i][j])) {dependencies[i]=deps;effects.push({index:i,fn});}},useCallback(fn,deps){const i=cursor++;if(!slots[i]||deps.some((v,j)=>v!==slots[i].deps[j]))slots[i]={fn,deps};return slots[i].fn;}};
+ hooks.useLayoutEffect=hooks.useEffect;
  const modules=new Map();
  function load(relative){if(modules.has(relative))return modules.get(relative);const path=new URL('../src/'+relative+(relative.startsWith('lib/')?'.ts':'.tsx'),import.meta.url);assert.ok(fs.existsSync(path),`Missing required UI module: ${relative}`);const source=fs.readFileSync(path,'utf8'),m={exports:{}};modules.set(relative,m.exports);vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText,{module:m,exports:m.exports,AbortController,URLSearchParams,crypto:{randomUUID:injections.randomUUID??(()=> 'fresh-request-id')},fetch:fetcher,navigator:injections.navigator??{clipboard:{writeText:async value=>{injections.copied?.(value);}}},document:injections.document,window:{setTimeout:fn=>{injections.timer?.(fn);return 1;},clearTimeout:()=>{},addEventListener:(name,fn)=>listeners.set(name,fn),removeEventListener:(name)=>listeners.delete(name),location:{assign:injections.redirect??(()=>{})}},require:id=>id==='react'?hooks:id==='next/link'?'a':injections[id]??(id.startsWith('@/')?load(id.replace('@/','')):require(id))});return m.exports;}
  const component=load(`components/${file}`)[file];
@@ -311,4 +312,50 @@ test('year guidance uses the existing musical-direction field and submits a requ
  input.props.onChange({target:{value:direction}});await ui.settle();
  await ui.find('button','Generate song').props.onClick();await ui.settle();
  assert.equal(requests[0].options.musicalDirection,direction);
+});
+
+
+test("Song Crew navigation uses fresh sibling grants and hides while authority is checked or unavailable", async()=>{
+ const crew={...owner,user:{id:"crew-nav",name:"Crew"},access:{owner:false,crew:true,permissions:["song.generate","show.overview","insights.read"],availablePermissions:["song.generate","show.overview","insights.read"]}};
+ let current=crew,release,blocked=false,fail=false;
+ const ui=harness("BarcodeSongWorkspace",{access:crew},async path=>{
+  if(path!=="/api/member/access")return response({draft:song()});
+  if(fail)throw Error("offline authority");
+  if(blocked)return new Promise(resolve=>{release=()=>resolve(response(current));});
+  return response(current);
+ });
+ const markup=()=>require("react-dom/server").renderToStaticMarkup(ui.render());
+ await ui.settle();assert.match(markup(),/href="\/account\/crew\/show"/);
+ blocked=true;const checking=ui.listeners.get("focus")();
+ assert.doesNotMatch(markup(),/aria-label="Crew workspace"/);
+ current={...crew,access:{...crew.access,permissions:["song.generate"]}};
+ release();await checking;await ui.settle();
+ assert.match(markup(),/aria-label="Crew workspace"/);
+ assert.doesNotMatch(markup(),/href="\/account\/crew\/(?:show|insights)"/);
+ assert.match(markup(),/<span[^>]*aria-current="page"[^>]*>Songs<\/span>/);
+ blocked=false;fail=true;await ui.listeners.get("focus")();await ui.settle();
+ assert.doesNotMatch(markup(),/aria-label="Crew workspace"|href="\/account\/crew\/(?:show|insights)"/);
+});
+
+
+test("Song Crew navigation immediately uses replacement server grants before focus",async()=>{
+ const crew={...owner,user:{id:"crew-nav",name:"Crew"},access:{owner:false,crew:true,permissions:["song.generate","show.overview"],availablePermissions:["song.generate","show.overview"]}};
+ const props={access:crew};const ui=harness("BarcodeSongWorkspace",props,async()=>response({draft:song()}));await ui.settle();
+ const markup=()=>require("react-dom/server").renderToStaticMarkup(ui.render());
+ assert.match(markup(),/href="\/account\/crew\/show"/);
+ props.access={...crew,access:{...crew.access,permissions:["song.generate"]}};
+ assert.doesNotMatch(markup(),/href="\/account\/crew\/show"/);
+ assert.match(markup(),/<span[^>]*aria-current="page"[^>]*>Songs<\/span>/);
+});
+
+
+test("Song Crew navigation keeps accepting focus authority after server props are replaced",async()=>{
+ const crew={...owner,user:{id:"crew-nav",name:"Crew"},access:{owner:false,crew:true,permissions:["song.generate","show.overview","insights.read"],availablePermissions:["song.generate","show.overview","insights.read"]}};
+ let current=crew;const props={access:crew};const ui=harness("BarcodeSongWorkspace",props,async path=>path==="/api/member/access"?response(current):response({draft:song()}));await ui.settle();
+ props.access={...crew,user:{...crew.user,name:"New Crew name"},access:{...crew.access,permissions:["song.generate","show.overview"]}};await ui.settle();
+ current={...props.access,access:{...props.access.access,permissions:["song.generate"]}};
+ await ui.listeners.get("focus")();await ui.settle();
+ const html=require("react-dom/server").renderToStaticMarkup(ui.render());
+ assert.doesNotMatch(html,/href="\/account\/crew\/(?:show|insights)"/);
+ assert.match(html,/<span[^>]*aria-current="page"[^>]*>Songs<\/span>/);
 });

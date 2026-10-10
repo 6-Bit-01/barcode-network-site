@@ -11,3 +11,8 @@ body.game-screen-page{padding-top:var(--game-bar-height)}
 .game-screen-page dialog{max-height:calc(var(--game-screen-height) - var(--game-bar-height) - env(safe-area-inset-bottom,0px) - 16px);overflow:auto}
 @media(max-width:900px){.game-screen-page .game-screen-bar .game-screen-brand,.game-screen-page .game-screen-bar .game-screen-secondary{display:none}.game-screen-bar .game-screen-navigation{gap:4px}.game-screen-page .game-screen-bar button,.game-screen-page .game-screen-bar a{padding-inline:5px}}
 @media(max-width:360px){.game-screen-page .game-screen-bar button,.game-screen-page .game-screen-bar a{font-size:10px}}
+
+/* The lounge retains the one visible fullscreen/menu bar around featured screens. */
+:root[data-system-clash-lounge-child="1"]{--game-bar-size:0px;--game-bar-height:0px}
+[data-system-clash-lounge-child="1"] .game-screen-bar{display:none}
+[data-system-clash-lounge-child="1"] #fight-frame{height:var(--game-screen-height)}

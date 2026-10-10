@@ -101,7 +101,7 @@ const track=(id,title,createdAt)=>({id,title,createdAt,updatedAt:createdAt});
 const archivedA="123e4567-e89b-42d3-a456-426614174001",archivedB="123e4567-e89b-42d3-a456-426614174002",archivedC="123e4567-e89b-42d3-a456-426614174003";
 const archiveRows=ui=>ui.nodes().filter(n=>n.type==="li").map(n=>ui.textOf(n));
 const openTrack=(ui,title)=>ui.nodes().find(n=>n.type==="button"&&n.props["aria-label"]==="Open track: "+title);
-test("private archive displays its count and sorts by newest, oldest, and title",async()=>{
+test("song archive displays its count and sorts by newest, oldest, and title",async()=>{
  const tracks=[track(archivedA,"Zulu",1000),track(archivedB,"Alpha",3000),track(archivedC,"Middle",2000)];
  const ui=harness("BarcodeSongWorkspace",{access:owner},async()=>response({draft:song({tracks})}));await ui.settle();
  assert.ok(ui.text().includes("3 / 40"));assert.match(ui.text(),/newest 40/i);assert.match(ui.text(),/oldest/i);

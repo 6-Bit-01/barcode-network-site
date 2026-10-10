@@ -27,7 +27,7 @@ test("song output is read-only, optional directions reach BNL, and copy keeps sa
  await ui.settle();const directionFields=ui.nodes().filter(n=>n.type==="textarea"&&n.props.placeholder);assert.equal(directionFields.length,5);assert.ok(directionFields.every(n=>n.props.value===""));
  const output=ui.nodes().filter(n=>n.type==="input"||(n.type==="textarea"&&!n.props.placeholder));assert.equal(output.length,3);assert.ok(output.every(n=>n.props.readOnly===true&&n.props.onChange===undefined));
  directionFields.at(-1).props.onChange({target:{value:"Keep the original style, shorten the chorus."}});await ui.settle();
- await ui.find("button","Copy style prompt").props.onClick();assert.deepEqual(copies,["Original style"]);
+ await ui.find("button","Copy style").props.onClick();assert.deepEqual(copies,["Original style"]);
  await ui.find("button","Regenerate lyrics").props.onClick();await ui.settle();
  assert.equal(requests.length,1);assert.equal(requests[0].kind,"lyrics");assert.equal(requests[0].options.revisionInstructions,"Keep the original style, shorten the chorus.");assert.equal(requests[0].base.style,"Original style");assert.equal(requests[0].base.lyrics,"Original lyrics");assert.equal(requests[0].base.title,"A title");assert.equal(ui.find("button","Generate song").props.disabled,true);
 });
@@ -156,7 +156,7 @@ test("Owner and Crew can open Suno beside the copy controls before or after gene
  for(const access of [owner,crew])for(const empty of [true,false]){
   const ui=harness("BarcodeSongWorkspace",{access},async()=>response({draft:song(empty?{title:"",lyrics:"",style:""}:{})}));await ui.settle();
   const link=ui.find("a","Open Suno");assert.ok(link,"Open Suno should be available without requiring generated text");assert.equal(link.props.href,"https://suno.com/create");assert.equal(link.props.target,"_blank");assert.equal(link.props.rel,"noopener noreferrer");
-  const controls=ui.nodes().find(n=>n.type==="div"&&Array.isArray(n.props.children)&&n.props.children.includes(link));assert.ok(controls);assert.match(ui.textOf(controls),/Copy style prompt/);assert.match(ui.textOf(controls),/Copy whole song/);
+  const controls=ui.nodes().find(n=>n.type==="div"&&Array.isArray(n.props.children)&&n.props.children.includes(link));assert.ok(controls);assert.match(ui.textOf(controls),/Copy style/);assert.match(ui.textOf(controls),/Copy all/);
  }
 });
 
@@ -177,7 +177,7 @@ test('copy acknowledges the pressed control immediately and keeps nearby success
  let finishCopy,timer;const ui=harness('BarcodeSongWorkspace',{access:owner},async()=>response({draft:song({pending:{id:'copy-job',status:'running'}})}),{navigator:{clipboard:{writeText:()=>new Promise(resolve=>{finishCopy=resolve;})}},timer:fn=>{timer=fn;}});await ui.settle();
  copyButton(ui,'Copy lyrics').props.onClick();await ui.settle();assert.equal(copyButton(ui,'Copy lyrics').props['aria-busy'],true);assert.match(ui.textOf(copyButton(ui,'Copy lyrics')),/Copying/);assert.equal(copyButton(ui,'Copy lyrics').props.disabled,true);
  finishCopy();await ui.settle();assert.match(ui.textOf(copyButton(ui,'Copy lyrics')),/Copied/);assert.match(ui.textOf(copyStatus(ui,'Copy lyrics')),/Lyrics copied/);assert.equal(copyStatus(ui,'Copy lyrics').props.role,'status');
- await timer();await ui.settle();assert.match(ui.textOf(copyStatus(ui,'Copy lyrics')),/Lyrics copied/);assert.doesNotMatch(ui.textOf(copyStatus(ui,'Copy style prompt')),/copied/i);
+ await timer();await ui.settle();assert.match(ui.textOf(copyStatus(ui,'Copy lyrics')),/Lyrics copied/);assert.doesNotMatch(ui.textOf(copyStatus(ui,'Copy style')),/copied/i);
 });
 
 test('unavailable modern clipboard uses exact text legacy copy and restores focus',async()=>{
@@ -187,7 +187,7 @@ test('unavailable modern clipboard uses exact text legacy copy and restores focu
 
 test('modern clipboard rejection tries legacy copy without falsely reporting failure',async()=>{
  const {document,state}=clipboardDocument();const ui=harness('BarcodeSongWorkspace',{access:owner},async()=>response({draft:song()}),{navigator:{clipboard:{writeText:async()=>{throw Error('NotAllowedError');}}},document});await ui.settle();
- copyButton(ui,'Copy style prompt').props.onClick();await ui.settle();assert.equal(state.copied,'Original style');assert.match(ui.textOf(copyStatus(ui,'Copy style prompt')),/Style prompt copied/);
+ copyButton(ui,'Copy style').props.onClick();await ui.settle();assert.equal(state.copied,'Original style');assert.match(ui.textOf(copyStatus(ui,'Copy style')),/Style copied/);
 });
 
 test('both clipboard methods denied show nearby failure and an explicit read-only manual selection',async()=>{
@@ -198,11 +198,11 @@ test('both clipboard methods denied show nearby failure and an explicit read-onl
 
 test('whole-song manual copying retains the exact complete text when clipboard throws',async()=>{
  const {document}=clipboardDocument({throws:true});const ui=harness('BarcodeSongWorkspace',{access:owner},async()=>response({draft:song()}),{navigator:{},document});await ui.settle();
- copyButton(ui,'Copy whole song').props.onClick();await ui.settle();const output=ui.nodes().find(n=>n.type==='textarea'&&n.props['aria-label']==='Whole song for manual copying');assert.ok(output);assert.equal(output.props.value,'A title\n\nOriginal lyrics\n\nSuno style prompt\nOriginal style');assert.equal(output.props.readOnly,true);assert.equal(output.props.onChange,undefined);assert.ok(ui.find('button','Select whole song'));
+ copyButton(ui,'Copy all').props.onClick();await ui.settle();const output=ui.nodes().find(n=>n.type==='textarea'&&n.props['aria-label']==='Whole song for manual copying');assert.ok(output);assert.equal(output.props.value,'A title\n\nOriginal lyrics\n\nSuno style prompt\nOriginal style');assert.equal(output.props.readOnly,true);assert.equal(output.props.onChange,undefined);assert.ok(ui.find('button','Select whole song'));
 });
 
 test('empty copy controls are disabled while existing text remains copyable during generation',async()=>{
- const ui=harness('BarcodeSongWorkspace',{access:owner},async()=>response({draft:song({title:'',lyrics:'',style:''})}));await ui.settle();for(const label of ['Copy lyrics','Copy style prompt','Copy whole song'])assert.equal(copyButton(ui,label).props.disabled,true);
+ const ui=harness('BarcodeSongWorkspace',{access:owner},async()=>response({draft:song({title:'',lyrics:'',style:''})}));await ui.settle();for(const label of ['Copy lyrics','Copy style','Copy all'])assert.equal(copyButton(ui,label).props.disabled,true);
 });
 
 test('clipboard completion after access revocation or unmount neither copies fallback nor restores private feedback',async()=>{
@@ -262,5 +262,36 @@ function busyAncestor(root,target,busy=false) {
 }
 test('previous-result copy announcements have no busy ancestor during a queued generation',async()=>{
  const ui=harness('BarcodeSongWorkspace',{access:owner},async()=>response({draft:song({pending:{id:'copy-announcement-job',status:'queued'}})}));await ui.settle();assert.ok(progress(ui));
- for(const label of ['Copy lyrics','Copy style prompt','Copy whole song']){copyButton(ui,label).props.onClick();await ui.settle();const status=copyStatus(ui,label);assert.match(ui.textOf(status),/copied/);assert.equal(busyAncestor(ui.nodes()[0],status),false);}
+ for(const label of ['Copy lyrics','Copy style','Copy all']){copyButton(ui,label).props.onClick();await ui.settle();const status=copyStatus(ui,label);assert.match(ui.textOf(status),/copied/);assert.equal(busyAncestor(ui.nodes()[0],status),false);}
+});
+
+test('exactly three plainly labeled copy controls copy only their matching current fields', async () => {
+ for (const legacy of [false, true]) {
+  const copies = [], fixture = clipboardDocument();
+  let current = song({title:'First title 🛰️',lyrics:'[Verse 1]\nFirst lyric — only lyrics.\n[Chorus]\nKeep the spacing.',style:'Warm brass; a quiet piano.\nNo lyrics here.',tracks:[track(archivedA,'Archived title',1000)]});
+  const ui = harness('BarcodeSongWorkspace',{access:owner},async (path,options) => {
+   if(options?.method==='POST') {
+    const request = JSON.parse(options.body);
+    if(request.kind==='select') current=song({revision:current.revision+1,selectedTrackId:archivedA,title:'Archived title',lyrics:'Archived lyrics\nWith two lines.',style:'Archived style ✨',tracks:current.tracks});
+    if(request.kind==='lyrics') current=song({...current,revision:current.revision+1,lyrics:'New lyrics\nExact after regeneration.'});
+    if(request.kind==='style') current=song({...current,revision:current.revision+1,style:'New style; no lyric text.'});
+   }
+   return response({draft:current});
+  },legacy?{navigator:{},document:fixture.document}:{copied:value=>copies.push(value)});
+  await ui.settle();
+  async function checkCopies() {
+   const controls=ui.nodes().filter(n=>n.type==='button'&&n.props['aria-label']?.startsWith('Copy '));
+   assert.deepEqual(controls.map(n=>n.props['aria-label']),['Copy lyrics','Copy style','Copy all']);
+   const expected=[current.lyrics,current.style,current.title+'\n\n'+current.lyrics+'\n\nSuno style prompt\n'+current.style];
+   for(const [index,label] of ['Copy lyrics','Copy style','Copy all'].entries()) {
+    const control=copyButton(ui,label);assert.ok(ui.textOf(control).startsWith(label));
+    await control.props.onClick();await ui.settle();
+    assert.equal(legacy?fixture.state.copied:copies.at(-1),expected[index],label+' must copy the exact current field');
+   }
+  }
+  await checkCopies();
+  await openTrack(ui,'Archived title').props.onClick();await ui.settle();await checkCopies();
+  await ui.find('button','Regenerate lyrics').props.onClick();await ui.settle();await checkCopies();
+  await ui.find('button','Regenerate style prompt').props.onClick();await ui.settle();await checkCopies();
+ }
 });

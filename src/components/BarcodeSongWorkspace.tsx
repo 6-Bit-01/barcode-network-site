@@ -267,9 +267,8 @@ export function BarcodeSongWorkspace({ access }: { access: MemberAccess }) {
     <label className="block font-semibold">Title<input value={text.title} aria-busy={waiting} readOnly className="mt-2 block w-full rounded border border-border bg-background p-3" /></label>
     <label className="block font-semibold">Lyrics<textarea ref={lyricsField} value={text.lyrics} aria-busy={waiting} readOnly rows={18} className="mt-2 block w-full rounded border border-border bg-background p-3 font-mono text-sm" /></label>
     <p role={overLimit ? "alert" : undefined} className={overLimit ? "text-red-400" : "text-sm text-muted"}>{words.toLocaleString()} / 2,000 lyric words{overLimit ? ". Ask BNL to shorten the lyrics." : ""}</p>
-    {copyControl("lyrics", "Copy lyrics", "Lyrics")}
     <label className="block font-semibold">Suno style prompt<textarea ref={styleField} value={text.style} aria-busy={waiting} readOnly rows={5} className="mt-2 block w-full rounded border border-border bg-background p-3" /></label>
-    <div className="flex flex-wrap items-center gap-4"><a href="https://suno.com/create" target="_blank" rel="noopener noreferrer" className="rounded-lg bg-accent px-4 py-2 font-bold text-background">Open Suno ↗</a>{copyControl("style", "Copy style prompt", "Style prompt")}{copyControl("song", "Copy whole song", "Song")}</div>
+    <div className="flex flex-wrap items-center gap-4"><a href="https://suno.com/create" target="_blank" rel="noopener noreferrer" className="rounded-lg bg-accent px-4 py-2 font-bold text-background">Open Suno ↗</a>{copyControl("lyrics", "Copy lyrics", "Lyrics")}{copyControl("style", "Copy style", "Style")}{copyControl("song", "Copy all", "Title, lyrics and style")}</div>
    </fieldset>}
    {draft && <section aria-labelledby="song-archive-heading" className="mt-8 rounded-xl border border-border bg-surface p-5">
     <div className="flex flex-wrap items-center justify-between gap-3"><h2 id="song-archive-heading" className="text-lg font-bold">Your song archive</h2><p className="text-sm text-muted">{tracks.length} / 40 tracks</p></div>

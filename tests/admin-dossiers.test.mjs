@@ -2810,7 +2810,7 @@ test("taxonomy source types, entry annotations, and tag aliases are present", ()
 });
 
 test("shelved dossier tools stay out of the everyday Owner menu", () => {
-  const adminPage = source("src/app/admin/page.tsx");
+  const adminPage = source("src/components/AdminControls.tsx");
   assert.doesNotMatch(adminPage, /href="\/admin\/dossiers"|Dossier Control Center/);
   assert.match(source("src/app/admin/dossiers/page.tsx"), /Dossier Control Center/);
 });

@@ -76,7 +76,7 @@ export default async function PrivateBroadcastTestPage({
 
   return (
     <main className="min-h-screen pt-14">
-      <div className="mx-auto max-w-7xl px-4 pt-6 sm:px-6"><OwnerWorkspaceNavigation section="radio" /></div>
+      <div className="mx-auto max-w-7xl px-4 pt-6 sm:px-6"><OwnerWorkspaceNavigation section="radio" tool="Private broadcast test" /></div>
       <section className="border-b-2 border-cyan-200 bg-cyan-200/10">
         <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
           <p className="text-xs font-black uppercase tracking-[0.4em] text-cyan-200">PRIVATE BROADCAST TEST</p>

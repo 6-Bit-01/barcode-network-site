@@ -93,7 +93,7 @@ export function AdminFinishedSessionReview({ sessionId }: { sessionId: string })
             <p className="mt-1 text-sm text-muted">{session.showDate} · {session.status === "archived" ? "finished / archived" : session.status} · automatic show telemetry</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <a href="/admin/queue" className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Return to Queue Dashboard</a>
+            <a href="/admin/show-management/archive" className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Back to Archived shows</a><a href={`/admin/queue?sessionId=${encodeURIComponent(session.sessionId)}`} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">Review queue for this session</a>
             <a href={showLogHref(session.sessionId, "json")} className="border border-accent px-4 py-2 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background">Report + Log JSON</a>
             <a href={showLogHref(session.sessionId, "csv")} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">Event Log CSV</a>
             <a href={exportHref(session.sessionId)} className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">Submitter CSV</a>

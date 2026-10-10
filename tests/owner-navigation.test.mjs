@@ -12,8 +12,8 @@ test('all Owner sections have a stable destination and exactly one current page'
  for(const section of ['home','radio','artists','accounts','bnl','maintenance']){
   const html=renderToStaticMarkup(React.createElement(OwnerWorkspaceNavigation,{section}));
   assert.equal((html.match(/aria-current="page"/g)||[]).length,1);
-  const nav=html.match(/<nav[\s\S]*?<\/nav>/)[0];
-  assert.deepEqual([...nav.matchAll(/href="([^"]+)"/g)].map(m=>m[1]),destinations);
+  const nav=html.match(/<nav[^>]*aria-label="Owner workspace"[\s\S]*?<\/nav>/)[0];
+  assert.deepEqual([...nav.matchAll(/href="([^"]+)"/g)].map(m=>m[1]),destinations.filter((_,index)=>index!==['home','radio','artists','accounts','bnl','maintenance'].indexOf(section)));
   assert.doesNotMatch(html,/dossier|Suno|system-clash/i);
   assert.match(html,/Back to Owner Home|Owner Home/);
  }
@@ -32,7 +32,7 @@ test('Owner Home offers existing tasks without fetching account data or starting
  const {OWNER_TOOL_SECTIONS}=load('lib/owner-workspace.ts');
  const paths=Object.values(OWNER_TOOL_SECTIONS).flatMap(section=>section.tools.map(tool=>tool.href));
  for(const href of paths){const route=href.split('#')[0];assert.ok(fs.existsSync(new URL('../src/app'+route+'/page.tsx',import.meta.url)),href);}
- assert.ok(paths.includes('/admin#radio-controls'));assert.ok(paths.includes('/admin#bnl-controls'));assert.ok(paths.includes('/admin/storage-recovery'));
+ assert.ok(paths.includes('/admin/broadcast-settings'));assert.ok(paths.includes('/admin/relay'));assert.ok(paths.includes('/admin/storage-recovery'));
 });
 
 test('account shell remains the only main landmark on every Owner workspace',()=>{
@@ -45,4 +45,32 @@ test('account shell remains the only main landmark on every Owner workspace',()=
   assert.equal((html.match(/<main(?: |>)/g)||[]).length,1,file);
   assert.match(html,/id="main-content"/);
  }
+});
+
+
+test('named Home shortcuts enter their actual tools rather than another menu',()=>{
+ const {OwnerHome}=load('components/OwnerHome.tsx');const html=renderToStaticMarkup(React.createElement(OwnerHome));
+ const links=[...html.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)].map(m=>({href:m[1],text:m[2].replace(/<[^>]+>/g,'').trim()}));
+ for(const [action,href] of [['Run a show','/admin/show-management'],['Write with BNL','/admin/ballads']]){
+  assert.equal(links.find(link=>link.text.startsWith(action))?.href,href,action);
+ }
+});
+
+test('Relay and live settings enter focused tools without returning to the mixed dashboard',()=>{
+ const {OwnerToolWorkspace}=load('components/OwnerToolWorkspace.tsx');
+ for(const [section,label,href] of [['bnl','Relay controls','/admin/relay'],['radio','Live status &amp; stream','/admin/broadcast-settings']]){
+  const html=renderToStaticMarkup(React.createElement(OwnerToolWorkspace,{section}));
+  const match=[...html.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)].find(m=>m[2].includes(label));
+  assert.equal(match?.[1],href,label);assert.doesNotMatch(html,/href="\/admin#/);
+ }
+});
+
+test('tool navigation distinguishes its parent section and does not link its active tab back to a menu',()=>{
+ const {OwnerWorkspaceNavigation}=load('components/OwnerWorkspaceNavigation.tsx');
+ const html=renderToStaticMarkup(React.createElement(OwnerWorkspaceNavigation,{section:'artists',tool:'Artist credit corrections'}));
+ const nav=html.match(/<nav[^>]*aria-label="Owner workspace"[\s\S]*?<\/nav>/)[0];
+ assert.doesNotMatch(nav,/<a[^>]*href="\/account\/owner\/artists"/);
+ assert.match(html,/<nav[^>]*aria-label="Breadcrumb"/);
+ assert.match(html,/<a[^>]*href="\/account\/owner\/artists"[^>]*>Artists &amp; history<\/a>/);
+ assert.match(html,/<span[^>]*aria-current="page"[^>]*>Artist credit corrections<\/span>/);
 });

@@ -112,7 +112,7 @@ export default function QueueRecoveryUploadsPage() {
 
   return (
     <main className="min-h-screen pt-14">
-      {inventory && <div className="mx-auto max-w-6xl px-4 pt-6 sm:px-6"><OwnerWorkspaceNavigation section="maintenance" /></div>}
+      <div className="mx-auto max-w-6xl px-4 pt-6 sm:px-6"><OwnerWorkspaceNavigation section="maintenance" tool="Upload recovery" /></div>
       <section className="border-b border-border noise-bg">
         <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
           <p className="text-xs uppercase tracking-[0.45em] text-accent">

@@ -10,7 +10,7 @@ export const metadata = {
 export default function AdminQueuePage() {
   return (
     <main className="pt-14 min-h-screen">
-      <div className="mx-auto max-w-7xl px-4 pt-6 sm:px-6"><OwnerWorkspaceNavigation section="radio" /></div>
+      <div className="mx-auto max-w-7xl px-4 pt-6 sm:px-6"><OwnerWorkspaceNavigation section="radio" tool="Queue control" /></div>
       <section className="border-b border-border noise-bg">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 py-4">
           <p className="text-xs uppercase tracking-[0.4em] text-muted mb-2">// ADMIN: BARCODE RADIO</p>

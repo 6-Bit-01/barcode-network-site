@@ -7,7 +7,7 @@ export type MemberToolPermission = "show.overview" | "song.generate" | "insights
 export type MemberToolInsights = { accounts: { total:number; verified:number; active:number; suspended:number; signupsByMonth:{month:string;count:number}[] } };
 const canonicalOrigin="https://www.barcode-network.com";
 const privateHeaders={"cache-control":"private, no-store","referrer-policy":"no-referrer",vary:"Cookie"};
-const serviceErrors=new Set([...SONG_ERROR_CODES,"UNAUTHENTICATED","FORBIDDEN","ORIGIN_DENIED","JSON_REQUIRED","INVALID_SONG_REQUEST","REQUEST_CONFLICT","REVISION_CONFLICT","SONG_PENDING","NOTHING_TO_UNDO","SONG_UNAVAILABLE","LEASE_CONFLICT","NOT_FOUND","AUTH_REQUIRED","ACCESS_DENIED"]);
+const serviceErrors=new Set([...SONG_ERROR_CODES,"UNAUTHENTICATED","FORBIDDEN","ORIGIN_DENIED","JSON_REQUIRED","INVALID_SONG_REQUEST","REQUEST_CONFLICT","REVISION_CONFLICT","SONG_PENDING","TRACK_NOT_FOUND","SONG_BASE_CONFLICT","NOTHING_TO_UNDO","SONG_UNAVAILABLE","LEASE_CONFLICT","NOT_FOUND","AUTH_REQUIRED","ACCESS_DENIED"]);
 function problem(status:number,code:string) { return Response.json({code},{status,headers:privateHeaders}); }
 export function hasMemberToolAccess(access:MemberAccess, permission:MemberToolPermission) { return access.access.availablePermissions.includes(permission) && (access.access.owner || (access.access.crew && access.access.permissions.includes(permission))); }
 export async function lookupMemberToolAccess(request:Request,permission:MemberToolPermission):Promise<{ok:true;access:MemberAccess}|{ok:false;response:Response}> {
@@ -37,7 +37,7 @@ async function transport(path:string,method:string,body:string|undefined,cookie:
  if(cookie!==undefined){const filtered=memberCookies(cookie);if(filtered.length>8192)return problem(400,"INVALID_COOKIE");if(filtered)headers.set("cookie",filtered);}
  let response:Response;try{response=await fetcher(config.serviceUrl+"/api/member/"+path,{method,headers,body,cache:"no-store",redirect:"manual",signal:AbortSignal.timeout(15000)});}catch{return problem(503,"ACCOUNT_UNAVAILABLE");}
  if(response.headers.has("location") || (response.status>=300 && response.status<400))return problem(502,"INVALID_SERVICE_RESPONSE");
- try {const data=JSON.parse(await boundedText(response));if(!response.ok)return problem(response.status,typeof data?.code==="string"&&serviceErrors.has(data.code)?data.code:"ACCOUNT_REQUEST_FAILED");return Response.json(data,{headers:privateHeaders});}catch{return problem(502,"INVALID_SERVICE_RESPONSE");}
+ try {const data=JSON.parse(await boundedText(response,path==="tools/songs"?524288:262144));if(!response.ok)return problem(response.status,typeof data?.code==="string"&&serviceErrors.has(data.code)?data.code:"ACCOUNT_REQUEST_FAILED");return Response.json(data,{headers:privateHeaders});}catch{return problem(502,"INVALID_SERVICE_RESPONSE");}
 }
 function validOrigin(request:Request,post:boolean) {const url=new URL(request.url),origin=request.headers.get("origin");return url.origin===canonicalOrigin&&!url.search&&(origin===null? !post:origin===canonicalOrigin);}
 export async function proxyMemberSongRequest(request:Request,configuration=getMemberServiceConfiguration(),fetcher:typeof fetch=fetch):Promise<Response> {

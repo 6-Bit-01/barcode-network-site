@@ -15,7 +15,7 @@ function load(relative,overrides={}) {
 }
 const request=(method="GET",body,extras={})=>new Request(config.canonicalOrigin+"/api/member/tools/songs",{method,headers:{origin:config.canonicalOrigin,cookie:"barcode_admin=old; __Secure-barcode_id.session_token=one",...(body?{"content-type":"application/json"}:{}),...extras},...(body?{body:JSON.stringify(body)}:{})});
 const operation={requestId:"123e4567-e89b-42d3-a456-426614174000",expectedRevision:0,kind:"generate",options:{}};
-const draft={revision:0,title:"",lyrics:"",style:"",previous:null,pending:null,errorCode:null};
+const draft={revision:0,title:"",lyrics:"",style:"",previous:null,pending:null,errorCode:null,selectedTrackId:null,options:{},tracks:[]};
 test("empty direction works and lyric cap is distinct from style",()=>{
  const {parseSongRequest,parseSongText}=load("barcode-song-contract");
  assert.equal(parseSongRequest(operation).kind,"generate");
@@ -62,4 +62,22 @@ test("service error bodies cannot leak even a plausible uppercase private value"
  const {proxyMemberSongRequest}=load("member-tools");
  const response=await proxyMemberSongRequest(request(),config,async()=>Response.json({code:"PRIVATE_ACCOUNT_VALUE",secret:"PRIVATE"},{status:503}));
  assert.equal(response.status,503);assert.deepEqual(await response.json(),{code:"ACCOUNT_REQUEST_FAILED"});
+});
+
+
+test('personal proxy preserves known archive conflicts and strips arbitrary private codes',async()=>{
+ const {proxyMemberSongRequest}=load('member-tools');for(const code of ['TRACK_NOT_FOUND','SONG_BASE_CONFLICT']){const response=await proxyMemberSongRequest(request(),config,async()=>Response.json({code,secret:'PRIVATE'},{status:409}));assert.equal(response.status,409);assert.deepEqual(await response.json(),{code});}
+ const response=await proxyMemberSongRequest(request(),config,async()=>Response.json({code:'PRIVATE_ARCHIVE_CONTENT',secret:'PRIVATE'},{status:409}));assert.deepEqual(await response.json(),{code:'ACCOUNT_REQUEST_FAILED'});
+});
+test('personal archive safely projects40 metadata entries and accepts bounded complete Unicode workspace responses',async()=>{
+ const {proxyMemberSongRequest}=load('member-tools'),song={title:'字'.repeat(160),lyrics:'字'.repeat(40000),style:'字'.repeat(6000)},options=Object.fromEntries(['idea','musicalDirection','mood','lengthStructure','revisionInstructions'].map(key=>[key,'字'.repeat(6000)])),tracks=Array.from({length:40},(_,i)=>({id:'123e4567-e89b-42d3-a456-'+String(i).padStart(12,'0'),title:song.title,createdAt:i,updatedAt:i,lyrics:'PRIVATE',userId:'PRIVATE'}));
+ const data={draft:{...draft,...song,previous:song,options,tracks,selectedTrackId:tracks[0].id}};assert.ok(Buffer.byteLength(JSON.stringify(data))>262144);assert.ok(Buffer.byteLength(JSON.stringify(data))<524288);
+ const response=await proxyMemberSongRequest(request(),config,async()=>Response.json(data));assert.equal(response.status,200);const result=await response.json();assert.equal(result.draft.tracks.length,40);assert.equal(result.draft.lyrics,song.lyrics);assert.equal(JSON.stringify(result).includes('PRIVATE'),false);
+ assert.equal((await proxyMemberSongRequest(request(),config,async()=>Response.json({...data,padding:'x'.repeat(524288)}))).status,502);
+});
+test('archive contract accepts only revisioned private selection and valid bounded metadata',()=>{
+ const {parseSongRequest,parseSongDraft}=load('barcode-song-contract');const track={id:operation.requestId,title:'Song',createdAt:1,updatedAt:2};assert.equal(parseSongRequest({...operation,kind:'select',options:undefined,trackId:track.id}).trackId,track.id);
+ for(const value of [{...operation,kind:'select'},{...operation,kind:'select',trackId:track.id},{...operation,trackId:track.id}])assert.throws(()=>parseSongRequest(value));
+ assert.equal(parseSongDraft({...draft,selectedTrackId:track.id,tracks:[track]}).selectedTrackId,track.id);
+ for(const value of [{...draft,selectedTrackId:track.id},{...draft,tracks:[track,track]},{...draft,tracks:Array(41).fill(track)},{...draft,tracks:[{...track,createdAt:-1}]}])assert.throws(()=>parseSongDraft(value));
 });

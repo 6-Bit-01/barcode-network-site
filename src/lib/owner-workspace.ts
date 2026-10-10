@@ -4,6 +4,7 @@ export const OWNER_WORKSPACE_SECTIONS = [
   { id: "artists", label: "Artists & history", href: "/account/owner/artists" },
   { id: "accounts", label: "Accounts & Crew", href: "/account/owner/accounts" },
   { id: "bnl", label: "BNL & music", href: "/account/owner/bnl" },
+  { id: "songs", label: "BNL song generator", href: "/account/owner/songs" },
   { id: "maintenance", label: "Maintenance", href: "/account/owner/maintenance" },
 ] as const;
 export type OwnerWorkspaceSection = typeof OWNER_WORKSPACE_SECTIONS[number]["id"];
@@ -23,8 +24,8 @@ export const OWNER_TOOL_SECTIONS = {
   bnl: {
     title: "BNL & music", description: "Work on BNL's songs and review his published output and current Relay.",
     tools: [
-      { title: "BARCODE song generator", description: "Create your private lyrics and Suno style prompt with BNL.", href: "/account/owner/songs" },
-      { title: "Broadcast Ballads", description: "Write with BNL, prepare Suno prompts, and manage recordings and releases.", href: "/admin/ballads" },
+      { title: "BNL song generator", description: "Create private lyrics and a Suno style prompt for any BARCODE song with BNL.", href: "/account/owner/songs" },
+      { title: "Broadcast Ballads", description: "Prepare episode-based Broadcast Ballads, Suno prompts, recordings, and releases.", href: "/admin/ballads" },
       { title: "Journals", description: "Review Journal publishing, saved runs, and automation status.", href: "/admin/journal" },
       { title: "Relay controls", description: "Review and manage BNL's current Relay and operator controls.", href: "/admin/relay" },
     ],

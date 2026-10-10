@@ -58,7 +58,8 @@ export async function fetchMemberToolInsights(request:Request,configuration=getM
 }
 export async function proxyMemberSongWorkerRequest(request:Request,configuration=getMemberServiceConfiguration(),fetcher:typeof fetch=fetch):Promise<Response> {
  if(!["GET","POST"].includes(request.method) || new URL(request.url).search)return problem(400,"INVALID_COMMAND");
- let body='{"limit":2}';
+ // Claim one song so its full writing/review process fits the existing ten-minute lease.
+ let body='{"limit":1}';
  if(request.method==="POST"){
  if(request.headers.get("content-type")?.split(";")[0].trim().toLowerCase()!=="application/json")return problem(415,"JSON_REQUIRED");
  try {const input=JSON.parse(await boundedText(request));if(!input||typeof input!=="object"||Object.keys(input).some(key=>!["commandId","leaseId","outcome","result","errorCode"].includes(key))||!["commandId","leaseId"].every(key=>typeof input[key]==="string"&&/^[A-Za-z0-9_-]{1,128}$/.test(input[key]))||!["applied","failed"].includes(input.outcome))throw Error();

@@ -63,6 +63,16 @@ test('nested online fights delegate fullscreen to the established title host',as
  assert.equal(n.fight.document.documentElement.dataset.systemClashHost,undefined,'A nested fight cannot create a competing fullscreen owner');
 });
 
+test('a bookmarked online lobby accepts display requests from its marked fight frame',async()=>{
+ const lobby=hostWindow('online'),fight=hostWindow('fight',lobby),fightFrame=iframe(fight);fightFrame.dataset.systemClashScreen='';lobby.document.body.appendChild(fightFrame);
+ lobby.document.querySelectorAll=selector=>selector==='iframe[data-system-clash-screen]'?[fightFrame]:[fightFrame];
+ lobby.document.fullscreenElement=lobby.document.documentElement;lobby.document.exitFullscreen=async()=>{lobby.document.fullscreenElement=null;};
+ createGameScreenHost({window:lobby,document:lobby.document});const child=createGameScreenHost({window:fight,document:fight.document});
+ await child.displayMode();const packet=lobby.messages.at(-1);lobby.listeners.message({source:fight,origin:'https://game.test',data:packet.data});await Promise.resolve();await Promise.resolve();
+ assert.equal(lobby.document.fullscreenElement,null,'The existing lobby owns and exits fullscreen even without a title navigation iframe');
+ lobby.document.fullscreenElement=lobby.document.documentElement;lobby.listeners.message({source:hostWindow('unrelated'),origin:'https://game.test',data:{type:'system-clash:display'}});assert.equal(lobby.document.fullscreenElement,lobby.document.documentElement);
+});
+
 test('the persistent host accepts active nested fight navigation and ignores unrelated windows',()=>{
  const n=nestedHost(),initial=n.topFrame.src;
  const route={type:'system-clash:navigate',url:base+'index.html?screen=select'};

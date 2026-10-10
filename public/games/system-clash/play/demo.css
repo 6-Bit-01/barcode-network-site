@@ -39,3 +39,41 @@ body.motion-reduced .selection-stage:after{animation:none;will-change:auto}
 @media(max-width:420px){.fighter-card .card-portrait{height:calc(100% - 34px)}.demo-header{gap:5px}.demo-header button{padding:.65rem 1rem}.future .locked-mark{inset:0 0 34px}}
 
 .title-logo-wrap{position:relative;display:block;width:100%;filter:drop-shadow(0 6px 15px #000)}.title-logo-wrap .title-logo{filter:none}.title-logo-animated{visibility:hidden}#title-logo-fx{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+
+/* The document stays in the viewport; only a roster that cannot fit may scroll. */
+body.game-screen-page{height:var(--game-screen-height);min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.game-screen-page #demo-main{flex:1;min-height:0;overflow:hidden}
+.game-screen-page .title-screen{height:100%;min-height:0;padding:12px}
+.game-screen-page .title-content{padding:0}
+.game-screen-page .title-logo{max-height:18svh}
+.game-screen-page .title-tagline{margin:8px 0 14px}
+.game-screen-page .title-modes{gap:6px}
+.game-screen-page .title-modes button{min-height:44px}
+.game-screen-page .demo-scope{margin:12px 0 4px}
+.game-screen-page .demo-load{margin:4px 0}
+.game-screen-page>.controller-status{flex:0 0 auto;margin:3px 8px;font-size:10px;min-height:16px;line-height:1.3}
+.game-screen-page .demo-footer{flex:0 0 auto;min-height:44px;padding:4px max(8px,env(safe-area-inset-right)) max(4px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));gap:8px;flex-wrap:nowrap;letter-spacing:0}
+.game-screen-page .demo-footer>div{gap:8px}
+.game-screen-page .demo-footer button,.game-screen-page .demo-footer label,.game-screen-page .demo-footer>a{min-height:44px;display:flex;align-items:center;font-size:10px}
+.game-screen-page .select-screen{height:100%;min-height:0;padding:8px max(8px,env(safe-area-inset-right)) 2px max(8px,env(safe-area-inset-left));display:flex;flex-direction:column}
+.game-screen-page .select-heading{flex:0 0 auto}
+.game-screen-page .select-heading h1{font-size:clamp(20px,3vw,30px);margin:3px 0}
+.game-screen-page .select-heading p:last-child{margin:4px 0;font-size:10px}
+.game-screen-page .selection-stage{flex:1;min-height:0;padding:0}
+.game-screen-page .fighter-panel{min-height:0}
+.game-screen-page .selection-center{height:100%;min-height:0;display:flex;flex-direction:column}
+.game-screen-page .fighter-grid{min-height:0;overflow:auto;flex:1;align-content:start;grid-auto-rows:100px;scroll-padding:4px}
+.game-screen-page .fighter-card{height:100%;min-height:70px}
+.game-screen-page .selection-actions{flex:0 0 auto;margin:6px 0 0}
+.game-screen-page .selection-actions button{min-height:44px}
+.game-screen-page .selection-hint{margin:5px 0;flex:0 0 auto}
+.game-screen-page .stage-choice{flex:0 0 auto;margin:6px 0;padding:8px}
+.game-screen-page .back-button{flex:0 0 auto;align-self:start;min-height:44px;margin-top:3px}
+.game-screen-page[data-demo-screen=select] .stage-choice{display:none}
+.game-screen-page[data-demo-screen=ready] .fighter-grid,.game-screen-page[data-demo-screen=ready] .selection-actions{display:none}
+.game-screen-page[data-demo-screen=ready] .selection-center{justify-content:center}
+@media(max-width:760px){.game-screen-page .selection-stage{grid-template-rows:100px minmax(0,1fr);gap:4px}.game-screen-page .fighter-panel{--menu-preview-scale:.18}.game-screen-page .ghost-face{width:100px;height:100px}.game-screen-page .standing-fighter,.game-screen-page .idle-fighter{bottom:24px}.game-screen-page .fighter-identity h2{font-size:14px;margin:2px 0}.game-screen-page .fighter-identity p,.game-screen-page .player-tag{display:none}.game-screen-page .lock-status{font-size:7px;padding:1px 4px}.game-screen-page .fighter-grid{grid-template-columns:repeat(5,minmax(0,1fr));grid-auto-rows:72px}.game-screen-page .fighter-card{min-height:44px}.game-screen-page .fighter-card .fighter-name{font-size:8px;min-height:24px}.game-screen-page .demo-footer>span{display:none}.game-screen-page .stage-choice img{width:84px;height:48px}.game-screen-page .stage-choice p{display:none}}
+@media(max-height:650px){.game-screen-page .title-logo{max-height:12svh}.game-screen-page .demo-scope{display:none}.game-screen-page .title-screen{padding:4px}.game-screen-page .title-content h1{margin:4px 0}.game-screen-page .title-tagline{font-size:9px;margin:4px 0 8px}.game-screen-page .select-heading .signal-label,.game-screen-page .selection-hint{display:none}.game-screen-page .demo-footer{padding-block:0}.game-screen-page .selection-stage{grid-template-rows:76px minmax(0,1fr)}.game-screen-page .fighter-grid{grid-auto-rows:62px}}
+@media(orientation:landscape) and (max-height:600px){.game-screen-page .title-modes{width:min(620px,100%);grid-template-columns:1fr 1fr;gap:4px}.game-screen-page .title-content>.signal-label,.game-screen-page .title-tagline,.game-screen-page .demo-load{display:none}.game-screen-page .title-logo{max-height:16svh}.game-screen-page .title-modes button{min-height:44px;font-size:12px;padding:6px 12px}.game-screen-page .select-screen{padding-top:3px}.game-screen-page .selection-stage{grid-template-columns:minmax(80px,1fr) minmax(300px,660px) minmax(80px,1fr);grid-template-rows:minmax(0,1fr)}.game-screen-page .fighter-panel{grid-row:1;--menu-preview-scale:.3}.game-screen-page .selection-center{grid-row:1;grid-column:2}.game-screen-page .player-two{grid-column:3}.game-screen-page .fighter-grid{grid-template-columns:repeat(6,minmax(0,1fr));grid-auto-rows:64px}.game-screen-page .fighter-identity h2{font-size:13px}.game-screen-page .fighter-identity p{display:none}}
+@media(min-width:761px) and (min-height:601px){.game-screen-page .selection-stage{grid-template-rows:minmax(0,1fr)}}
+@media(orientation:landscape) and (max-height:420px){.game-screen-page[data-demo-screen=select]>.controller-status,.game-screen-page[data-demo-screen=ready]>.controller-status,.game-screen-page[data-demo-screen=select]>.demo-footer,.game-screen-page[data-demo-screen=ready]>.demo-footer{display:none}}

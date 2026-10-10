@@ -7,3 +7,69 @@ body:has(#fight-frame:not([hidden])) main{max-width:none;padding:4px}body:has(#f
 
 /* Joining and hosting retain separate intent while the room request is pending. */
 .entry-help{color:var(--muted);font-size:12px;line-height:1.6;margin:-4px 0 18px}.room-row[aria-pressed=true]{border-color:var(--cyan);background:#26391b}.status[data-kind=error]{border-color:var(--red);color:#ffbac7}.status[data-kind=pending]{border-color:var(--blue)}.room-list-error{color:#ffbac7}.entry-layout .panel-heading{align-items:flex-start}.entry-layout .panel-heading h2{font-size:19px;line-height:1.3}.join-form #join-room{white-space:nowrap}
+
+/* Session screens fill the available viewport; room lists own their overflow. */
+body.game-screen-page{height:var(--game-screen-height);min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.game-screen-page #online-lobby{flex:1;min-height:0;width:100%;max-width:1180px;padding:10px max(10px,env(safe-area-inset-right)) 6px max(10px,env(safe-area-inset-left));display:flex;flex-direction:column;gap:8px;overflow:hidden}
+.game-screen-page .status{flex:0 0 auto;min-height:0;max-height:64px;overflow:auto;margin:0;padding:8px 12px;font-size:12px;line-height:1.4}
+.game-screen-page .online-screen{flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;overflow:hidden}
+.game-screen-page .intro{flex:0 0 auto;padding:0;max-width:none}
+.game-screen-page .intro h1{font-size:clamp(22px,3vw,34px);margin:0 0 4px;line-height:1.1}
+.game-screen-page .intro h1 br{display:none}
+.game-screen-page .intro h1 em{margin-left:8px}
+.game-screen-page .intro .eyebrow{display:none}
+.game-screen-page .intro>p:last-child{font-size:12px;line-height:1.4;margin:4px 0}
+.game-screen-page .entry-layout{flex:1;min-height:0;gap:10px;grid-template-columns:.85fr 1.15fr}
+.game-screen-page .entry-layout>.panel{min-height:0;overflow:auto;padding:14px}
+.game-screen-page .entry-layout>.panel:last-child{display:flex;flex-direction:column;overflow:hidden}
+.game-screen-page .entry-layout h2{font-size:17px;margin:0 0 10px}
+.game-screen-page .panel-heading{flex:0 0 auto;margin-bottom:8px;gap:8px}
+.game-screen-page .panel-heading h2{margin:0;font-size:16px}
+.game-screen-page .entry-help{flex:0 0 auto;font-size:11px;margin:0 0 8px;line-height:1.4}
+.game-screen-page #room-list{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain}
+.game-screen-page .room-row{margin-top:6px;padding:9px;min-height:44px;gap:8px}
+.game-screen-page .divider{margin:10px 0 5px}
+.game-screen-page #create-room{margin-top:8px;min-height:44px}
+.game-screen-page .join-form{gap:6px}
+.game-screen-page input[name]{min-height:44px;padding:9px}
+.game-screen-page .session-score{flex:0 0 auto;display:flex;align-items:center;justify-content:center;gap:10px;min-height:30px;padding:5px 10px;background:#15101de8;border:1px solid #665374;font-size:12px;overflow:hidden}
+.game-screen-page .session-score b,.game-screen-page .session-score strong{color:#b7f668}
+.game-screen-page .room-panel{height:100%;min-height:0;padding:18px;display:flex;flex-direction:column;gap:12px;overflow:auto}
+.game-screen-page .room-heading{flex:0 0 auto;margin:0;padding-bottom:12px;gap:10px}
+.game-screen-page .room-heading h2{font-size:20px}
+.game-screen-page .settings{margin:0;gap:12px}
+.game-screen-page .settings select{min-height:44px;max-width:100%}
+.game-screen-page .settings>label{min-height:44px}
+.game-screen-page .room-panel .hint{margin:0;font-size:11px}
+.game-screen-page .selection-heading{flex:0 0 auto;margin:0;gap:8px}
+.game-screen-page .selection-heading h3{font-size:21px}
+.game-screen-page .fighter-grid{flex:1;min-height:0;grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr));gap:8px;max-width:760px;width:100%;margin:auto}
+.game-screen-page .fighter-card{min-height:44px;overflow:hidden;padding:4px;justify-content:center;gap:3px}
+.game-screen-page .fighter-card img{height:calc(100% - 28px);max-height:140px;max-width:100%;width:auto;min-height:0;aspect-ratio:1;object-fit:contain;flex:0 1 auto}
+.game-screen-page .fighter-card span{flex:0 0 auto;min-height:22px;font-size:10px}
+.game-screen-page .fighter-pagination{flex:0 0 auto;display:flex;align-items:center;justify-content:center;gap:12px;font-size:11px}
+.game-screen-page .fighter-pagination button{min-height:44px;padding:8px 14px}
+.game-screen-page .online-screen>.menu-actions,.game-screen-page .screen-actions{flex:0 0 auto;display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.game-screen-page #results-screen{justify-content:center;align-items:center;text-align:center}
+.game-screen-page #result-heading{font-size:clamp(24px,5vw,42px);margin:0}
+.game-screen-page #result-note{font-size:13px;line-height:1.5;margin:4px 0}
+.game-screen-page #fight-screen{position:fixed;inset:0;z-index:100;gap:0;background:#08090c}
+.game-screen-page #fight-frame{height:100%;width:100%;min-height:0;border:0;flex:1}
+.game-screen-page #fight-screen .match-actions{display:none}
+.game-screen-page:has(#fight-screen:not([hidden]))>.game-screen-bar,.game-screen-page:has(#fight-screen:not([hidden]))>.game-screen-bar~footer,.game-screen-page:has(#fight-screen:not([hidden])) #online-status,.game-screen-page:has(#fight-screen:not([hidden])) #session-score{display:none}
+.game-screen-page>footer{flex:0 0 auto;min-height:44px;padding:4px max(10px,env(safe-area-inset-right)) max(4px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left));gap:8px;font-size:10px}
+.game-screen-page>footer a{display:flex;align-items:center;min-height:44px}
+@media(max-width:600px) and (orientation:portrait){.game-screen-page #online-lobby{padding:6px 8px;gap:6px}.game-screen-page .entry-layout{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr);gap:6px}.game-screen-page .entry-layout>.panel{padding:10px}.game-screen-page .entry-layout>.panel:first-child h2,.game-screen-page .divider,.game-screen-page .entry-help{display:none}.game-screen-page .join-form{margin-top:6px}.game-screen-page .intro h1{font-size:20px}.game-screen-page .intro>p:last-child{font-size:11px}.game-screen-page .status{font-size:11px;padding:6px 9px}.game-screen-page .room-panel{padding:12px;gap:8px}.game-screen-page .fighter-grid{gap:5px}.game-screen-page .fighter-card span{font-size:9px}.game-screen-page .selection-heading{flex-wrap:wrap}.game-screen-page .selection-heading .primary{margin-left:auto}.game-screen-page .session-score{font-size:11px;gap:6px}.game-screen-page>footer>span{display:none}.game-screen-page>footer{justify-content:center}.game-screen-page .settings>label:first-child{width:100%;flex-wrap:wrap}}
+@media(orientation:landscape) and (max-height:600px){.game-screen-page #online-lobby{padding:5px 8px;gap:4px}.game-screen-page .intro,.game-screen-page .entry-help,.game-screen-page .divider,.game-screen-page .room-panel .hint{display:none}.game-screen-page .status{padding:4px 8px;font-size:11px;max-height:38px}.game-screen-page>footer{display:none}.game-screen-page .entry-layout>.panel{padding:8px}.game-screen-page .entry-layout>.panel:first-child h2{display:none}.game-screen-page .panel-heading{margin-bottom:3px}.game-screen-page .panel-heading h2{font-size:14px}.game-screen-page .room-heading{padding-bottom:5px}.game-screen-page .room-panel{padding:10px;gap:6px}.game-screen-page .session-score{min-height:24px;padding:3px;font-size:11px}.game-screen-page .selection-heading h3{font-size:16px}.game-screen-page .selection-heading .eyebrow{display:none}.game-screen-page .fighter-grid{gap:4px;max-width:620px}.game-screen-page .fighter-card img{max-height:60px}.game-screen-page .fighter-card span{font-size:9px;min-height:16px}.game-screen-page .fighter-pagination{gap:8px}.game-screen-page .online-screen>.menu-actions,.game-screen-page .screen-actions{gap:5px}.game-screen-page .online-screen>p.hint{display:none}}
+.game-screen-page .connection-note{flex:0 0 auto;margin:0;font-size:10px;line-height:1.4}
+.game-screen-page .room-panel>h1{flex:0 0 auto;font-size:clamp(23px,4vw,34px);margin:0;line-height:1.1}
+.game-screen-page .room-panel>p{flex:0 0 auto;margin:0;font-size:12px;line-height:1.5}
+.game-screen-page .room-panel>.eyebrow{margin:0;font-size:10px}
+.game-screen-page .room-panel>.screen-actions{margin-top:auto}
+.game-screen-page .results-panel{width:min(600px,100%);max-height:100%;overflow:auto;overflow-wrap:anywhere}
+.game-screen-page .session-score>span:first-child,.game-screen-page .session-score>span:last-child{display:flex;align-items:center;gap:4px;min-width:0}
+.game-screen-page .session-score strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px}
+.game-screen-page .session-score output,.game-screen-page .session-score>.score-label{flex:0 0 auto}
+.game-screen-page .session-score>.score-label{font-size:9px}
+@media(orientation:landscape) and (max-height:420px){.game-screen-page .connection-note,.game-screen-page .room-panel>.session-note{display:none}.game-screen-page .selection-heading>div>.eyebrow{display:none}.game-screen-page .selection-heading h2{font-size:16px;margin:0}.game-screen-page .room-panel>h1{font-size:22px}.game-screen-page .online-screen>.hint{display:none}}
+@media(orientation:landscape) and (max-height:420px){.game-screen-page .status{padding:2px 8px;font-size:10px;line-height:1.3}.game-screen-page #selection-screen{position:relative;padding-bottom:48px;gap:4px}.game-screen-page #selection-screen .fighter-grid{min-height:92px;grid-template-rows:repeat(2,minmax(44px,1fr))}.game-screen-page #selection-screen .fighter-pagination{position:absolute;bottom:0;left:0;width:240px;height:44px;gap:8px}.game-screen-page #selection-screen>.screen-actions{position:absolute;bottom:0;right:0;height:44px;gap:5px}.game-screen-page #selection-screen>.screen-actions button{padding:6px 8px;font-size:11px}.game-screen-page #selection-screen .fighter-pagination button{padding:6px 10px;font-size:11px}}

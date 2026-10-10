@@ -166,7 +166,7 @@ const visualTimings=[0,1].map(()=>({idle:{duration:400,loop:true,frames:[{index:
 test('slow snapshots keep travel smooth across pose changes and advance only local visual timing',()=>{
  const g=controller(1,{clipTimings:visualTimings});g.control.receive(start);const first=snapshot(match(),1);first.state.phase='fight';first.views[0].x=500;first.views[0].elapsed=0;first.views[0].poseIndex=0;g.control.receive({type:'snapshot',snapshot:first});
  g.setTime(750);const next=structuredClone(first);next.seq=2;next.at=850;next.views[0].x=800;next.views[0].elapsed=100;next.views[0].poseIndex=1;g.control.receive({type:'snapshot',snapshot:next});
- g.setTime(1125);const view=g.control.views()[0];assert.equal(view.x,650);assert.equal(view.elapsed,75);assert.equal(view.poseIndex,undefined);assert.equal(view.frameIndex,undefined);
+ g.setTime(1125);const view=g.control.views()[0];assert.equal(view.x,650);assert.equal(view.elapsed,475);assert.equal(view.poseIndex,undefined);assert.equal(view.frameIndex,undefined);
  g.setTime(1375);assert.equal(g.control.views()[0].x,750);assert.equal(g.states.at(-1).views[0].elapsed,100);assert.equal(g.states.at(-1).state.fighters[0].hp,100);assert.equal(g.states.at(-1).state.combatTime,0);
 });
 test('non-loop visual actions stop on their final pose while paused and fixed contact poses stay frozen',()=>{

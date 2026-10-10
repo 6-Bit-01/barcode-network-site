@@ -12,7 +12,7 @@ export function createGameScreenHost({window:win=globalThis.window,document:doc=
   frame.src=url.href;return true;
  }
  async function displayMode(){const parent=owner();if(parent){parent.postMessage({type:'system-clash:display'},new URL(win.location.href).origin);return 'host';}const value=await toggleDisplayMode(doc,doc.documentElement);forwardState();return value;}
- function activeSender(source){if(!frame)return false;let current=source;try{for(let depth=0;depth<10&&current;depth++){if(current===frame.contentWindow)return true;if(current.parent===current)break;current=current.parent;}}catch{}return false;}
+ function activeSender(source){const roots=[...(frame?[frame]:[]),...doc.querySelectorAll?.('iframe[data-system-clash-screen]')??[]];let current=source;try{for(let depth=0;depth<10&&current;depth++){if(roots.some(root=>current===root.contentWindow))return true;if(current.parent===current)break;current=current.parent;}}catch{}return false;}
  win.addEventListener('message',event=>{if(event.origin!==new URL(win.location.href).origin)return;if(event.data?.type==='system-clash:display-state'){if(owner()&&event.source===win.parent)forwardState();return;}if(!activeSender(event.source))return;if(event.data?.type==='system-clash:navigate')navigate(event.data.url);else if(event.data?.type==='system-clash:display')void displayMode();});
  doc.addEventListener?.('fullscreenchange',forwardState);
  return {navigate,displayMode,get active(){return !!frame;},get isFullscreen(){return isFullscreen();}};

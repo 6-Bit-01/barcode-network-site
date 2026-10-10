@@ -98,8 +98,8 @@ test('actual HUD uses vector furniture after the world transform while health, c
 test('actual online lobby bootstrap honors motion off even when the OS prefers reduced motion',async()=>{
  const {mountOnlineLobby}=await import('../public/games/system-clash/play/online.mjs');
  for(const [query,os,expected]of [['?motion=0&sound=0',true,false],['?motion=1',false,true],['',true,true],['',false,false]]){
-  const nodes=new Map(),node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',checked:false,addEventListener(){},setAttribute(){},removeAttribute(){},querySelectorAll(){return [];}});return nodes.get(id);};
-  const document={getElementById:node,querySelectorAll:()=>[],hasFocus:()=>true};
+  const nodes=new Map(),node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',checked:false,dataset:{},addEventListener(){},setAttribute(){},removeAttribute(){},querySelectorAll(){return [];}});return nodes.get(id);};
+  const document=Object.assign(new EventTarget(),{documentElement:node('document-element'),getElementById:node,querySelectorAll:()=>[],hasFocus:()=>true});
   const window={location:{href:'https://barcode.example/online.html'+query},matchMedia:()=>({matches:os}),addEventListener(){},removeEventListener(){},clearTimeout(){},cancelAnimationFrame(){},sessionStorage:{removeItem(){}}};
   // Stop at the roster boundary after the real lobby has resolved/applied settings.
   const lobby=await mountOnlineLobby({document,window,fetch:async()=>({ok:false})});

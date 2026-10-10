@@ -81,7 +81,7 @@ export function createOnlineCombatController({seat,matchId,roster,fighterIds,cli
   if(closed||!validPayload(packet))return false;
   if(packet.type==='start'){if(started||packet.matchId!==matchId)return false;started=true;paused=false;onStart(packet);lastRemote=lastSnapshot=now();firstSnapshotAt=now()+5000;return true;}
   if(!started)return false;
-  if(packet.type==='pause'){if(seat===0&&!packet.paused)return false;if(seat===1&&!packet.paused&&Number.isSafeInteger(packet.snapshotSeq)&&packet.snapshotSeq>=0)receivedSeq=Math.max(receivedSeq,packet.snapshotSeq);applyPause(packet.paused,packet.reason??'manual');return true;}
+  if(packet.type==='pause'){if(!packet.paused&&(seat===0||paused&&pauseReason==='manual'&&packet.reason==='network'))return false;if(seat===1&&!packet.paused&&Number.isSafeInteger(packet.snapshotSeq)&&packet.snapshotSeq>=0)receivedSeq=Math.max(receivedSeq,packet.snapshotSeq);applyPause(packet.paused,packet.reason??'manual');return true;}
   if(packet.type==='leave'){api.disconnect('The session ended.');return true;}
   if(packet.type==='input'||packet.type==='action'){
    if(seat!==0||!validInput(packet.input))return false;
@@ -102,7 +102,7 @@ export function createOnlineCombatController({seat,matchId,roster,fighterIds,cli
   return false;
  },input(value){if(closed||!started)return false;const input=stripFightInput(paused?neutral():value);if(seat!==1)return true;if(sameInput(input,lastSentInput)&&now()-lastInput<100)return false;if(inputSeq>=4294967295)return false;lastInput=now();lastSentInput=input;return send({type:'input',input,inputSeq:++inputSeq});},action(action,value){if(closed||!started||paused)return false;const input=stripFightInput(value),packet={type:'action',action,input};if(!validPayload(packet))return false;if(seat===1){if(inputSeq>=4294967295)return false;lastSentInput=input;return send({...packet,inputSeq:++inputSeq});}onAction({index:0,action,input});return true;},requestPause(value,reason='manual'){
   if(closed||!started||typeof value!=='boolean'||!['manual','network'].includes(reason))return false;
-  if(!value&&(seat!==0||now()-lastRemote>=1000||!remoteReleased))return false;
+  if(!value&&(seat!==0||now()-lastRemote>=1000||!remoteReleased||paused&&pauseReason==='manual'&&reason==='network'))return false;
   const appliedReason=value?reason:pauseReason??reason;applyPause(value,appliedReason);return send({type:'pause',paused:value,reason:value?pauseReason:appliedReason,...(seat===0?{snapshotSeq}:{})});
  },requestRematch(phase){return !closed&&started&&phase==='over'?send({type:'rematch'}):false;},publish(match,views){
   if(closed||!started||seat!==0||now()-lastPublish<40)return false;

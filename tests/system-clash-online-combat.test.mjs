@@ -127,6 +127,18 @@ test('manual pause takes precedence over a network stall and never automatically
  assert.equal(h.control.paused,true);assert.equal(h.control.pauseReason,'manual');assert.equal(h.sent.filter(p=>p.type==='pause'&&!p.paused).length,0);
  assert.equal(h.control.requestPause(false),true);assert.equal(h.control.paused,false);
 });
+test('a newer guest manual pause rejects an in-flight automatic resume without advancing the state barrier',()=>{
+ const g=controller(1);g.control.receive(start);g.control.receive({type:'pause',paused:true,reason:'network'});g.setTime(100);g.control.requestPause(true,'manual');
+ assert.equal(g.control.receive({type:'pause',paused:false,reason:'network',snapshotSeq:10}),false);assert.equal(g.control.paused,true);assert.equal(g.control.pauseReason,'manual');
+ const state=snapshot(match(),1);assert.equal(g.control.receive({type:'snapshot',snapshot:state}),true);assert.equal(g.states.at(-1).state.paused,true);assert.equal(g.states.at(-1).state.pauseReason,'manual');
+ assert.equal(g.control.receive({type:'pause',paused:false,reason:'manual',snapshotSeq:1}),true);assert.equal(g.control.paused,false);
+ g.control.requestPause(true,'network');assert.equal(g.control.receive({type:'pause',paused:false,reason:'network',snapshotSeq:1}),true);assert.equal(g.control.paused,false);
+});
+test('automatic host resume requests cannot clear a manual pause with fresh neutral controls',()=>{
+ const h=controller();h.control.receive(start);h.control.requestPause(true,'manual');h.control.receive({type:'input',input:{move:0,crouch:false,block:false},inputSeq:1});
+ const sent=h.sent.length;assert.equal(h.control.requestPause(false,'network'),false);assert.equal(h.control.paused,true);assert.equal(h.control.pauseReason,'manual');assert.equal(h.sent.length,sent);
+ assert.equal(h.control.requestPause(false,'manual'),true);assert.equal(h.control.paused,false);
+});
 test('authoritative resume waits for its next state without replaying an old pause or immediately stalling',()=>{
  const g=controller(1);g.control.receive(start);g.control.receive({type:'snapshot',snapshot:snapshot(match(),1)});g.setTime(1000);g.control.tick();assert.equal(g.control.paused,true);
  g.setTime(2000);g.control.receive({type:'pause',paused:false,reason:'network',snapshotSeq:2});g.control.tick();assert.equal(g.control.paused,false);

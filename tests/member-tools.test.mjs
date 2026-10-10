@@ -49,7 +49,7 @@ test("worker uses existing service credential but never personal cookies; projec
  const {proxyMemberSongWorkerRequest}=load("member-tools");let sent;
  const command={id:"command-one",leaseId:"lease-one",kind:"generate",options:{},base:{title:"",lyrics:"",style:""},limits:{maxLyricsWords:2000,targetSeconds:300},creatorId:"PRIVATE"};
  const response=await proxyMemberSongWorkerRequest(request(),config,async(url,options)=>{sent={url,options};return Response.json({contractVersion:1,commands:[command],secret:"PRIVATE"});});
- assert.equal(response.status,200);assert.equal(sent.options.headers.get("cookie"),null);assert.ok(sent.url.endsWith("/api/member/worker/songs/claim"));assert.equal(sent.options.method,"POST");assert.equal(JSON.stringify(await response.json()).includes("PRIVATE"),false);
+ assert.equal(response.status,200);assert.equal(sent.options.headers.get("cookie"),null);assert.ok(sent.url.endsWith("/api/member/worker/songs/claim"));assert.equal(sent.options.method,"POST");assert.deepEqual(JSON.parse(sent.options.body),{limit:1});assert.equal(JSON.stringify(await response.json()).includes("PRIVATE"),false);
 });
 test("aggregated account insights strip all individual identities",async()=>{
  const {fetchMemberToolInsights}=load("member-tools");

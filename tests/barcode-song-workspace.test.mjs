@@ -359,3 +359,24 @@ test("Song Crew navigation keeps accepting focus authority after server props ar
  assert.doesNotMatch(html,/href="\/account\/crew\/(?:show|insights)"/);
  assert.match(html,/<span[^>]*aria-current="page"[^>]*>Songs<\/span>/);
 });
+
+
+test("Song navigation follows Owner to Crew role changes and hides Owner links during checks or failures",async()=>{
+ let current=owner,release,blocked=false,fail=false;
+ const ui=harness("BarcodeSongWorkspace",{access:owner},async path=>{
+  if(path!=="/api/member/access")return response({draft:song()});
+  if(fail)throw Error("offline authority");
+  if(blocked)return new Promise(resolve=>{release=()=>resolve(response(current));});
+  return response(current);
+ });await ui.settle();
+ const markup=()=>require("react-dom/server").renderToStaticMarkup(ui.render());
+ assert.match(markup(),/aria-label="Owner workspace"/);
+ blocked=true;const checking=ui.listeners.get("focus")();
+ assert.doesNotMatch(markup(),/aria-label="Owner workspace"|href="\/account\/owner/);
+ current={...owner,access:{...owner.access,owner:false,crew:true,permissions:["song.generate"]}};
+ release();await checking;await ui.settle();
+ assert.match(markup(),/aria-label="Crew workspace"/);
+ assert.doesNotMatch(markup(),/aria-label="Owner workspace"|href="\/account\/owner/);
+ blocked=false;fail=true;await ui.listeners.get("focus")();await ui.settle();
+ assert.doesNotMatch(markup(),/aria-label="(?:Owner|Crew) workspace"|href="\/account\/(?:owner|crew)/);
+});

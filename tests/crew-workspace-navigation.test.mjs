@@ -129,7 +129,7 @@ test("insights navigation chooses the existing Owner parent or the Crew tool sur
  for (const owner of [true, false]) {
   const access = { ...crew, access: { ...crew.access, owner, crew: !owner, permissions: owner ? [] : crew.access.permissions } };
   const ui = harness("OwnerCrewAnalytics", { access }, async path => Response.json(path === "/api/member/access" ? access : unavailableInsights));
-  const html = markup(owner ? ui.render() : await ui.settle());
+  const html = markup(await ui.settle());
   assert.doesNotMatch(html, /<main/);
   if (owner) {
    assert.ok(workspaceNav(html, "Owner workspace"));
@@ -150,6 +150,7 @@ const crewTools = [
  { component: "OwnerCrewAnalytics", permission: "insights.read", siblingPermission: "show.overview", siblingHref: "/account/crew/show", path: "/api/member/tools/analytics", snapshot: unavailableInsights }
 ];
 function accountOnly(html) {
+ assert.equal(Boolean(workspaceNav(html, "Owner workspace")), false);
  assert.equal(workspaceNav(html), undefined);
  assert.deepEqual(links(html).map(link => link.href), ["/account"]);
 }
@@ -237,4 +238,100 @@ test("Crew Home immediately adopts replaced server access props without retainin
   assert.doesNotMatch(html, /Rechecked original member|Crew name|href="\/account\/crew\/(?:songs|show)"/);
   assert.deepEqual(links(workspaceNav(html)).map(link => link.href), ["/account/crew/insights"]);
  }
+});
+
+const ownerAccess = { ...crew, user: { ...crew.user, name: "Original Owner" }, access: { ...crew.access, owner: true, crew: false, permissions: [] } };
+const ownerFinancialInsights = { ...unavailableInsights, available: true, financials: { available: true, basis: "recorded_confirmed_gross", scannedShows: 1, availableShows: 1, currencies: [{ currency: "USD", amountCents: 700, paymentCount: 1 }], refunds: null, net: null } };
+const ownerSnapshot = tool => tool.component === "OwnerCrewAnalytics" ? ownerFinancialInsights : tool.snapshot;
+for (const tool of crewTools) {
+ test(`${tool.component} initially hides Owner navigation until current Owner authority resolves`, async () => {
+  let release;
+  const ui = harness(tool.component, { access: ownerAccess }, async path => {
+   if (path === "/api/member/access") return new Promise(resolve => { release = () => resolve(Response.json(ownerAccess)); });
+   assert.equal(path, tool.path); return Response.json(ownerSnapshot(tool));
+  });
+  accountOnly(markup(ui.render()));
+  accountOnly(markup(await ui.settle()));
+  assert.equal(typeof release, "function");
+  release();
+  assert.ok(workspaceNav(markup(await ui.settle()), "Owner workspace"));
+ });
+
+ test(`${tool.component} shows its existing Owner parent after current Owner authority succeeds`, async () => {
+  const ui = harness(tool.component, { access: ownerAccess }, async path => {
+   if (path === "/api/member/access") return Response.json(ownerAccess);
+   assert.equal(path, tool.path); return Response.json(ownerSnapshot(tool));
+  });
+  const html = markup(await ui.settle());
+  assert.ok(workspaceNav(html, "Owner workspace"));
+  assert.equal(workspaceNav(html), undefined);
+  const crumbs = html.match(/<nav[^>]*aria-label="Breadcrumb"[\s\S]*?<\/nav>/)?.[0];
+  assert.ok(links(crumbs).some(link => link.href === "/account/owner/radio"));
+  if (tool.component === "OwnerCrewAnalytics") {
+   assert.equal(html.includes("Recorded confirmed gross"), true);
+   assert.equal(html.includes("USD"), true);
+  }
+ });
+
+ test(`${tool.component} hides Owner destinations immediately while current authority is being rechecked`, async () => {
+  let hold = false, release;
+  const ui = harness(tool.component, { access: ownerAccess }, async path => {
+   if (path === "/api/member/access") return hold ? new Promise(resolve => { release = () => resolve(Response.json(ownerAccess)); }) : Response.json(ownerAccess);
+   assert.equal(path, tool.path); return Response.json(ownerSnapshot(tool));
+  });
+  assert.ok(workspaceNav(markup(await ui.settle()), "Owner workspace"));
+  hold = true;
+  const checking = ui.event("focus");
+  const pending = markup(ui.render());
+  accountOnly(pending);
+  assert.equal(pending.includes("Recorded confirmed gross"), false);
+  assert.equal(typeof release, "function");
+  release(); await checking;
+  assert.ok(workspaceNav(markup(await ui.settle()), "Owner workspace"));
+ });
+
+ test(`${tool.component} switches an open Owner tool to only Crew navigation after fresh demotion`, async () => {
+  let current = ownerAccess, toolReads = 0;
+  const ui = harness(tool.component, { access: ownerAccess }, async path => {
+   if (path === "/api/member/access") return Response.json(current);
+   assert.equal(path, tool.path); toolReads++; return Response.json(ownerSnapshot(tool));
+  });
+  assert.ok(workspaceNav(markup(await ui.settle()), "Owner workspace"));
+  current = { ...crew, access: { ...crew.access, permissions: [tool.permission], availablePermissions: [tool.permission] } };
+  await ui.event("focus");
+  const html = markup(await ui.settle());
+  assert.equal(Boolean(workspaceNav(html, "Owner workspace")), false);
+  assert.equal(/href="\/(?:account\/owner|admin)(?:\/|"|#)/.test(html), false);
+  assert.deepEqual(links(workspaceNav(html)).map(link => link.href), ["/account/crew"]);
+  assert.equal(toolReads, 2);
+  assert.deepEqual(ui.redirects, []);
+ });
+
+ test(`${tool.component} keeps Owner navigation cleared when its current authority fails`, async () => {
+  let fail = false, toolReads = 0;
+  const ui = harness(tool.component, { access: ownerAccess }, async path => {
+   if (path === "/api/member/access") { if (fail) throw new Error("authority unavailable"); return Response.json(ownerAccess); }
+   assert.equal(path, tool.path); toolReads++; return Response.json(ownerSnapshot(tool));
+  });
+  assert.ok(workspaceNav(markup(await ui.settle()), "Owner workspace"));
+  fail = true; await ui.event("focus");
+  const html = markup(await ui.settle());
+  accountOnly(html);
+  assert.equal(html.includes("Recorded confirmed gross"), false);
+  assert.equal(toolReads, 1);
+ });
+}
+
+test("insights hides malformed financial rows after the open Owner account is freshly demoted to Crew", async () => {
+ let current = ownerAccess;
+ const ui = harness("OwnerCrewAnalytics", { access: ownerAccess }, async path => {
+  if (path === "/api/member/access") return Response.json(current);
+  assert.equal(path, "/api/member/tools/analytics"); return Response.json(ownerFinancialInsights);
+ });
+ assert.equal(markup(await ui.settle()).includes("Recorded confirmed gross"), true);
+ current = { ...crew, access: { ...crew.access, permissions: ["insights.read"], availablePermissions: ["insights.read"] } };
+ await ui.event("focus");
+ const html = markup(await ui.settle());
+ assert.equal(html.includes("Recorded confirmed gross"), false);
+ assert.equal(html.includes("USD"), false);
 });

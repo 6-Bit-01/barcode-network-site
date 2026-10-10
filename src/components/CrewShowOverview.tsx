@@ -80,7 +80,7 @@ export function CrewShowOverview({ access }: { access: MemberAccess }) {
  }
  function refreshShow() { clearCopyFeedback(); void refresh(); }
  return <section style={{ overflowWrap: "anywhere", minWidth: 0 }} className="mx-auto max-w-6xl rounded-xl border border-border bg-surface p-5 sm:p-8">
-  {access.access.owner ? <OwnerWorkspaceNavigation section="radio" tool="Live show overview" /> : currentAccess && !loading && !error ? <CrewWorkspaceNavigation access={currentAccess} section="show" /> : <Link href="/account" className="text-accent underline">Your account</Link>}
+  {currentAccess && !loading && !error ? currentAccess.access.owner ? <OwnerWorkspaceNavigation section="radio" tool="Live show overview" /> : <CrewWorkspaceNavigation access={currentAccess} section="show" /> : <Link href="/account" className="text-accent underline">Your account</Link>}
   <div className="flex flex-wrap items-start justify-between gap-4">
    <div><p className="public-kicker">BARCODE Radio</p><h1 className="mt-2 text-3xl font-bold">Live show overview</h1><p className="mt-3 text-muted">Current show information and credited artist introductions.</p></div>
    <div className="flex flex-wrap items-center gap-3">

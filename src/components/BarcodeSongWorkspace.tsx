@@ -247,7 +247,7 @@ export function BarcodeSongWorkspace({ access }: { access: MemberAccess }) {
  const tracks = [...(draft?.tracks ?? [])].sort((a, b) => sort === "title" ? a.title.localeCompare(b.title) || b.createdAt - a.createdAt || a.id.localeCompare(b.id) : (sort === "oldest" ? a.createdAt - b.createdAt : b.createdAt - a.createdAt) || a.id.localeCompare(b.id));
 
  return <section className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
-  {access.access.owner ? <OwnerWorkspaceNavigation section="songs" /> : authorized && navigationAccess ? <CrewWorkspaceNavigation access={navigationAccess} section="songs" /> : <Link href="/account" className="text-accent underline">Your account</Link>}
+  {authorized && navigationAccess?.access.owner ? <OwnerWorkspaceNavigation section="songs" /> : authorized && navigationAccess ? <CrewWorkspaceNavigation access={navigationAccess} section="songs" /> : <Link href="/account" className="text-accent underline">Your account</Link>}
   <p className="public-kicker mt-6">BARCODE Network</p><h1 className="mt-2 text-3xl font-bold">BNL song generator</h1>
   <p className="mt-3 text-muted">Give BNL a direction, or leave everything blank and let him make a song from his public BARCODE knowledge. Create and refine lyrics and a Suno style prompt, then copy them to make your recording.</p>
   <p className="mt-2 text-sm text-muted">Saved to your account. Lyrics: up to 2,000 words. Written toward five minutes or less; your recording tool determines the final duration.</p>

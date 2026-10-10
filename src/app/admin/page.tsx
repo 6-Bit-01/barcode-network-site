@@ -2,6 +2,7 @@
 "use client";
 
 import { useLiveStatus } from "@/components/LiveStatusProvider";
+import { OwnerWorkspaceNavigation } from "@/components/OwnerWorkspaceNavigation";
 import Link from "next/link";
 import { useState, useEffect } from "react";
 
@@ -92,12 +93,26 @@ export default function AdminPage() {
   const { isLive, toggleLive, streamUrl, setStreamUrl, isScheduled, manualOverride, lastError, persisted } = useLiveStatus();
   const [urlInput, setUrlInput] = useState(streamUrl);
   const [authenticated, setAuthenticated] = useState(false);
+  const [ownerSection, setOwnerSection] = useState<"radio" | "artists" | "bnl" | "maintenance">("radio");
   const [authLoading, setAuthLoading] = useState(true);
   const [passInput, setPassInput] = useState("");
   const [authError, setAuthError] = useState("");
 
   useEffect(() => { (async () => { try { const res = await fetch("/api/admin/verify"); setAuthenticated(res.ok);} catch {setAuthenticated(false);} setAuthLoading(false); })(); }, []);
   useEffect(() => { setUrlInput(streamUrl); }, [streamUrl]);
+  useEffect(() => {
+    const syncOwnerSection = () => {
+      switch (window.location.hash) {
+        case "#bnl-controls": setOwnerSection("bnl"); break;
+        case "#artist-controls": setOwnerSection("artists"); break;
+        case "#maintenance-controls": setOwnerSection("maintenance"); break;
+        default: setOwnerSection("radio");
+      }
+    };
+    syncOwnerSection();
+    window.addEventListener("hashchange", syncOwnerSection);
+    return () => window.removeEventListener("hashchange", syncOwnerSection);
+  }, []);
 
   async function handleLogin() { setAuthError(""); try { const res = await fetch("/api/admin/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: passInput }) }); if (res.ok) { setAuthenticated(true); setPassInput(""); } else setAuthError("ACCESS DENIED"); } catch { setAuthError("CONNECTION FAILED"); } }
   async function handleLogout() { await fetch("/api/admin/auth", { method: "DELETE" }); setAuthenticated(false); }
@@ -105,7 +120,24 @@ export default function AdminPage() {
   if (authLoading) return <div className="pt-14 min-h-screen flex items-center justify-center"><p className="text-xs uppercase tracking-[0.5em] text-muted animate-pulse">// AUTHENTICATING...</p></div>;
   if (!authenticated) return <div className="pt-14 min-h-screen flex items-center justify-center"><div className="border border-border bg-surface p-8 max-w-sm w-full"><p className="text-xs uppercase tracking-[0.5em] text-muted mb-6">// ADMIN ACCESS REQUIRED</p><div className="space-y-4"><input type="password" value={passInput} onChange={(e) => setPassInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") handleLogin(); }} placeholder="Enter access code" className="w-full bg-background border border-border px-3 py-2.5 text-sm text-foreground placeholder:text-muted/50 focus:border-accent focus:outline-none" /><button onClick={handleLogin} className="w-full px-4 py-2.5 text-sm uppercase tracking-widest border border-accent text-accent hover:bg-accent hover:text-background transition-all">Authenticate</button>{authError && <p className="text-xs text-danger">{authError}</p>}</div></div></div>;
 
-  return <div className="pt-14"><section className="border-b border-border noise-bg"><div className="mx-auto max-w-7xl px-4 sm:px-6 py-16"><div className="flex items-center justify-between"><div><p className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted mb-4">// SYSTEM: ADMIN PANEL</p><h1 className="text-4xl font-bold tracking-tight text-foreground mb-2"><span className="text-accent text-glow">Admin</span> Panel</h1><p className="text-sm text-muted">Network control interface. Live status persisted via Redis.</p></div><button onClick={handleLogout} className="px-4 py-2 text-xs uppercase tracking-widest border border-danger/40 text-danger hover:bg-danger hover:text-background transition-all">Logout</button></div></div></section><AdminContent isLive={isLive} toggleLive={toggleLive} streamUrl={streamUrl} setStreamUrl={setStreamUrl} isScheduled={isScheduled} manualOverride={manualOverride} urlInput={urlInput} setUrlInput={setUrlInput} lastError={lastError} persisted={persisted} /></div>;
+  return (
+    <div className="pt-14">
+      <div className="mx-auto max-w-7xl px-4 pt-6 sm:px-6"><OwnerWorkspaceNavigation section={ownerSection} /></div>
+      <section className="border-b border-border noise-bg">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-12">
+          <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.4em] text-muted mb-3">// OWNER: SHOW &amp; BNL CONTROLS</p>
+              <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">Show &amp; <span className="text-accent text-glow">BNL</span> controls</h1>
+              <p className="mt-3 text-sm text-muted">Manage the live show, BNL&apos;s music, and everyday operator controls.</p>
+            </div>
+            <button onClick={handleLogout} className="w-fit px-4 py-2 text-xs uppercase tracking-widest border border-danger/40 text-danger hover:bg-danger hover:text-background transition-all">Logout</button>
+          </div>
+        </div>
+      </section>
+      <AdminContent isLive={isLive} toggleLive={toggleLive} streamUrl={streamUrl} setStreamUrl={setStreamUrl} isScheduled={isScheduled} manualOverride={manualOverride} urlInput={urlInput} setUrlInput={setUrlInput} lastError={lastError} persisted={persisted} />
+    </div>
+  );
 }
 
 function AdminContent({ isLive, toggleLive, setStreamUrl, isScheduled, manualOverride, urlInput, setUrlInput, lastError, persisted }: any) {
@@ -259,23 +291,38 @@ function AdminContent({ isLive, toggleLive, setStreamUrl, isScheduled, manualOve
   const lastSeenSentence = formatLastSeenSentence(bnl.lastSeen);
   const modSignalBriefing = bnl.adminNote?.trim();
 
-  return <section><div className="mx-auto max-w-7xl px-4 sm:px-6 py-16 space-y-8">{/* existing cards omitted for brevity in source */}
-  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-    <div className="border border-accent/40 bg-surface p-6 space-y-4"><div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between"><div><p className="text-xs uppercase tracking-[0.5em] text-accent mb-3">Show Management</p><h2 className="text-2xl font-bold text-foreground">Show Management</h2><p className="text-sm text-muted mt-2">Start sessions, open submissions, run the queue, and review archived shows.</p></div><a href="/admin/show-management" className="inline-flex items-center justify-center border border-accent px-5 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background transition-all">Open Show Management</a></div></div>
-    <div className="border border-accent/40 bg-surface p-6 space-y-4">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div><p className="text-xs uppercase tracking-[0.5em] text-accent mb-3">BNL-01 / Recording desk</p><h2 className="text-2xl font-bold text-foreground">Broadcast Ballads</h2><p className="text-sm text-muted mt-2">Write with BNL, copy prompts for Suno, and choose each show’s song.</p></div>
-        <div className="flex flex-wrap gap-3"><Link href="/admin/ballads" className="inline-flex items-center justify-center border border-accent px-5 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background transition-all">Open Ballad workspace</Link><Link href="/admin/artist-credits" className="inline-flex items-center justify-center border border-border px-5 py-3 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">Correct artist credits</Link></div>
-      </div>
-    </div>
-    <div className="border border-accent/40 bg-surface p-6 space-y-4"><div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between"><div><p className="text-xs uppercase tracking-[0.5em] text-accent mb-3">Dossier Workflow</p><h2 className="text-2xl font-bold text-foreground">Dossier Control Center</h2><p className="text-sm text-muted mt-2">Review dossier candidates, manage drafts, and prepare approved website dossier entries.</p></div><Link href="/admin/dossiers" className="inline-flex items-center justify-center border border-accent px-5 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background transition-all">Open Dossier Control Center</Link></div></div>
-    <div className="border border-accent/40 bg-surface p-6 space-y-4"><div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between"><div><p className="text-xs uppercase tracking-[0.5em] text-accent mb-3">BNL Observation Center</p><h2 className="text-2xl font-bold text-foreground">Journal Automation</h2><p className="text-sm text-muted mt-2">Control daily and weekly Journal publishing, queue a run, and inspect BNL automation telemetry.</p></div><Link href="/admin/journal" className="inline-flex items-center justify-center border border-accent px-5 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background transition-all">Open Observation Center</Link></div></div>
-  </div><div className="grid grid-cols-1"><div className="border border-danger/40 bg-surface p-6 space-y-4"><div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between"><div><p className="text-xs uppercase tracking-[0.5em] text-danger mb-3">Storage Recovery</p><h2 className="text-2xl font-bold text-foreground">Redis Capacity Recovery</h2><p className="text-sm text-muted mt-2">Analyze Redis storage and explicitly clean only superseded dossier Source File archive keys.</p></div><Link href="/admin/storage-recovery" className="inline-flex items-center justify-center border border-danger px-5 py-3 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background transition-all">Open Storage Recovery</Link></div></div>
-  </div>
+  return (
+    <section className="mx-auto max-w-7xl px-4 sm:px-6 py-10 space-y-10">
+      <nav aria-label="Show and BNL controls" className="flex flex-wrap gap-3 text-xs uppercase tracking-widest">
+        <a href="#radio-controls" className="border border-border px-3 py-2 text-muted hover:border-accent hover:text-accent">Radio &amp; shows</a>
+        <a href="#bnl-controls" className="border border-border px-3 py-2 text-muted hover:border-accent hover:text-accent">BNL &amp; music</a>
+        <a href="#artist-controls" className="border border-border px-3 py-2 text-muted hover:border-accent hover:text-accent">Artists</a>
+        <a href="#maintenance-controls" className="border border-border px-3 py-2 text-muted hover:border-accent hover:text-accent">Maintenance</a>
+      </nav>
 
-
+      <section id="radio-controls" className="scroll-mt-24 space-y-5" aria-labelledby="radio-controls-heading">
+        <h2 id="radio-controls-heading" className="text-xl font-bold text-foreground">Radio &amp; shows</h2>
+        <div className="border border-accent/40 bg-surface p-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div><h3 className="text-lg font-bold text-foreground">Show Management</h3><p className="text-sm text-muted mt-2">Start sessions, open submissions, run the queue, and review archived shows.</p></div>
+            <Link href="/admin/show-management" className="inline-flex items-center justify-center border border-accent px-5 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background transition-all">Open Show Management</Link>
+          </div>
+        </div>
   <div className="grid grid-cols-1 md:grid-cols-2 gap-8"><div className="border border-border bg-surface p-6"><h2 className="text-[10px] uppercase tracking-[0.5em] text-muted mb-6">BARCODE Radio — Live Status</h2><button onClick={toggleLive} className="w-full px-4 py-3 text-sm uppercase tracking-widest border border-accent text-accent hover:bg-accent hover:text-background transition-all font-bold">{isLive ? 'GO OFFLINE':'GO LIVE'}</button><div className="text-xs text-muted/50 mt-3"><p>// Scheduled: {isScheduled ? 'YES' : 'NO'}</p><p>// Override: {manualOverride ? 'ACTIVE' : 'NONE'}</p><p>// Persistence: {persisted === null ? 'UNKNOWN' : persisted ? 'REDIS' : 'IN-MEMORY'}</p>{lastError && <p className='text-danger'>{lastError}</p>}</div></div><div className="border border-border bg-surface p-6"><h2 className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted mb-6">Stream URL</h2><input type="url" value={urlInput} onChange={(e) => setUrlInput(e.target.value)} className="w-full bg-background border border-border px-3 py-2.5 text-sm" /><button onClick={() => setStreamUrl(urlInput)} className="mt-4 w-full px-4 py-2.5 text-sm uppercase tracking-widest border border-border text-muted hover:border-accent hover:text-accent transition-all">Update Stream URL</button></div></div>
+      </section>
 
+      <section id="bnl-controls" className="scroll-mt-24 space-y-5" aria-labelledby="bnl-controls-heading">
+        <h2 id="bnl-controls-heading" className="text-xl font-bold text-foreground">BNL &amp; music</h2>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="border border-accent/40 bg-surface p-6 space-y-4">
+            <div><h3 className="text-lg font-bold text-foreground">Broadcast Ballads</h3><p className="text-sm text-muted mt-2">Write with BNL, copy prompts for Suno, and choose each show&apos;s song.</p></div>
+            <Link href="/admin/ballads" className="inline-flex items-center justify-center border border-accent px-5 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background transition-all">Open Ballad workspace</Link>
+          </div>
+          <div className="border border-accent/40 bg-surface p-6 space-y-4">
+            <div><h3 className="text-lg font-bold text-foreground">Journals</h3><p className="text-sm text-muted mt-2">Manage daily and weekly publishing, queue a run, and review BNL&apos;s automation status.</p></div>
+            <Link href="/admin/journal" className="inline-flex items-center justify-center border border-accent px-5 py-3 text-xs uppercase tracking-widest text-accent hover:bg-accent hover:text-background transition-all">Open Journals</Link>
+          </div>
+        </div>
   <div className="border border-border bg-surface p-6 space-y-5"><div><h2 className="text-xs sm:text-sm uppercase tracking-[0.5em] text-muted">BNL-01 Relay Control</h2><p className="text-xs text-muted/70 mt-2">Admin controls for relay state, safety flags, and operator history. State refreshes automatically every 15 seconds.</p></div>
   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-muted"><p>BNL status API reachable: <span className="text-foreground">{bnlApiReachable ? 'yes':'no'}</span></p><p>Last seen age: <span className="text-foreground">{lastSeenAge}</span></p><p>Redis persistence: <span className="text-foreground">{bnl.persisted ? 'enabled':'in-memory fallback'}</span></p><p>Current mode: <span className="text-foreground">{bnl.mode}</span></p></div>
   <div className="space-y-3">
@@ -288,8 +335,9 @@ function AdminContent({ isLive, toggleLive, setStreamUrl, isScheduled, manualOve
       <p>{lastSeenSentence} (your local time)</p>
       <p>Last Seen Age: {lastSeenAge}</p>
     </div>
-    <div className="text-sm border border-border p-4 bg-background/30">
-      <p className="text-xs text-muted uppercase tracking-widest mb-2">Admin Relay Metadata (admin only)</p>
+    <details className="text-sm border border-border p-4 bg-background/30">
+      <summary className="cursor-pointer text-xs text-muted uppercase tracking-widest">Admin Relay Metadata (admin only)</summary>
+      <div className="mt-3 space-y-1">
       <p>Source Label: {SOURCE_LABELS[bnl.source || "unknown"]}</p>
       <p>Raw Source Code: {bnl.source || "unknown"}</p>
       <p>Resolved Presence: {bnl.presence ? `${bnl.presence.status} / ${bnl.presence.mode}` : "v1 fallback"}</p>
@@ -300,7 +348,8 @@ function AdminContent({ isLive, toggleLive, setStreamUrl, isScheduled, manualOve
       <p>Trigger: {bnl.relay?.trigger || "v1 fallback"}</p>
       <p>Persistence Layer: {bnl.persisted ? "Redis" : "In-memory fallback"}</p>
       <p className="text-xs text-muted mt-2">This metadata is for admin visibility and is not part of the public ticker display.</p>
-    </div>
+      </div>
+    </details>
     <div className="text-sm border border-border p-4 bg-background/20">
       <p className="text-xs text-accent uppercase tracking-widest mb-2">Mod Signal Briefing</p>
       <p className="text-foreground break-words whitespace-pre-wrap">{modSignalBriefing || "No fresh mod-facing signal. BNL has not produced a briefing from eligible public activity yet."}</p>
@@ -326,8 +375,27 @@ function AdminContent({ isLive, toggleLive, setStreamUrl, isScheduled, manualOve
     <label className="flex items-center justify-between text-sm border border-border px-3 py-2 mb-2"><span><strong>Show-Day Discord Posts Enabled:</strong> Allows BNL to post scheduled Friday show updates in Discord.</span><input disabled={Boolean(pendingAction)} type="checkbox" checked={flags.showdayDiscordPostsEnabled} onChange={(e)=>updateFlags({...flags,showdayDiscordPostsEnabled:e.target.checked})} /></label>
     <label className="flex items-center justify-between text-sm border border-border px-3 py-2 mb-2"><span><strong>Heartbeat Enabled:</strong> Allows BNL to refresh presence/heartbeat state only; heartbeat never replaces accepted relay speech.</span><input disabled={Boolean(pendingAction)} type="checkbox" checked={flags.heartbeatEnabled} onChange={(e)=>updateFlags({...flags,heartbeatEnabled:e.target.checked})} /></label>
   </div>
-  <div><div className="flex items-center justify-between"><p className="text-xs text-muted mb-2">Accepted v2 Relay History (admin only) — most recent 25 accepted relay publications. Legacy v1 history is retained server-side for compatibility/migration inspection.</p><button disabled={Boolean(pendingAction)} onClick={clearLegacyHistory} className="px-3 py-1.5 text-xs uppercase tracking-widest border border-danger/40 text-danger hover:bg-danger hover:text-background transition-all">Clear Legacy v1 History</button></div><div className="space-y-2 text-xs">{history.map((entry, idx)=><div key={entry.relayId || idx} className="border border-border p-2"><p>{formatLocalTimestamp(entry.publishedAt || entry.timestamp || null)} — {entry.relayId || 'legacy entry'} {entry.sourceClass ? `(${entry.sourceClass} / ${entry.trigger || 'unknown trigger'})` : `(${SOURCE_LABELS[entry.source || 'unknown']})`}</p>{entry.currentDirective && <p className="break-words whitespace-pre-wrap">Directive: {entry.currentDirective}</p>}<p>{entry.message}</p>{entry.adminNote && <p>Legacy Operator Note: {entry.adminNote}</p>}<p className="text-muted">Persistence: {entry.persisted === undefined ? "canonical v2 / unknown layer" : entry.persisted ? "Stored in Redis (persistent shared storage)" : "In-memory fallback (temporary local storage)"}</p></div>)}</div></div>
+  <details className="border-t border-border pt-4"><summary className="cursor-pointer text-xs uppercase tracking-widest text-muted">Relay history</summary><div className="mt-4"><div className="flex items-center justify-between"><p className="text-xs text-muted mb-2">Accepted v2 Relay History (admin only) — most recent 25 accepted relay publications. Legacy v1 history is retained server-side for compatibility/migration inspection.</p><button disabled={Boolean(pendingAction)} onClick={clearLegacyHistory} className="px-3 py-1.5 text-xs uppercase tracking-widest border border-danger/40 text-danger hover:bg-danger hover:text-background transition-all">Clear Legacy v1 History</button></div><div className="space-y-2 text-xs">{history.map((entry, idx)=><div key={entry.relayId || idx} className="border border-border p-2"><p>{formatLocalTimestamp(entry.publishedAt || entry.timestamp || null)} — {entry.relayId || 'legacy entry'} {entry.sourceClass ? `(${entry.sourceClass} / ${entry.trigger || 'unknown trigger'})` : `(${SOURCE_LABELS[entry.source || 'unknown']})`}</p>{entry.currentDirective && <p className="break-words whitespace-pre-wrap">Directive: {entry.currentDirective}</p>}<p>{entry.message}</p>{entry.adminNote && <p>Legacy Operator Note: {entry.adminNote}</p>}<p className="text-muted">Persistence: {entry.persisted === undefined ? "canonical v2 / unknown layer" : entry.persisted ? "Stored in Redis (persistent shared storage)" : "In-memory fallback (temporary local storage)"}</p></div>)}</div></div></details>
   </div>
+      </section>
 
-  </div></section>;
+      <section id="artist-controls" className="scroll-mt-24 space-y-4" aria-labelledby="artist-controls-heading">
+        <h2 id="artist-controls-heading" className="text-xl font-bold text-foreground">Artists</h2>
+        <div className="border border-border bg-surface p-6">
+          <p className="text-sm text-muted mb-4">Review and correct saved artist credits.</p>
+          <Link href="/admin/artist-credits" className="inline-flex items-center justify-center border border-border px-5 py-3 text-xs uppercase tracking-widest text-muted hover:border-accent hover:text-accent">Correct artist credits</Link>
+        </div>
+      </section>
+
+      <section id="maintenance-controls" className="scroll-mt-24 space-y-4" aria-labelledby="maintenance-controls-heading">
+        <h2 id="maintenance-controls-heading" className="text-xl font-bold text-foreground">Maintenance</h2>
+        <div className="border border-danger/40 bg-surface p-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div><h3 className="text-lg font-bold text-foreground">Storage recovery</h3><p className="text-sm text-muted mt-2">Analyze storage and review the existing restricted recovery tools.</p></div>
+            <Link href="/admin/storage-recovery" className="inline-flex items-center justify-center border border-danger px-5 py-3 text-xs uppercase tracking-widest text-danger hover:bg-danger hover:text-background transition-all">Open Storage Recovery</Link>
+          </div>
+        </div>
+      </section>
+    </section>
+  );
 }

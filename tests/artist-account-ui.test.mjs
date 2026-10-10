@@ -12,7 +12,12 @@ function mount(name, props, fetcher) {
  const react = { ...React, useState(initial) { const i = cursor++; if (!(i in state)) state[i] = typeof initial === "function" ? initial() : initial; return [state[i], value => { state[i] = typeof value === "function" ? value(state[i]) : value; }]; }, useRef(initial) { const i = refCursor++; return refs[i] ??= { current: initial }; }, useEffect(fn, deps) { const i = effectCursor++, previous = effects.get(i); if (!previous || deps.some((value, j) => value !== previous.deps[j])) { previous?.cleanup?.(); effects.set(i, { deps, fn }); pending.push(i); } } };
  const target = { exports: {} }, redirects = [];
  const window = { addEventListener: (event, fn) => listeners.set(event, fn), removeEventListener: (event, fn) => { if (listeners.get(event) === fn) listeners.delete(event); }, location: { assign: url => redirects.push(url) } };
- vm.runInNewContext(ts.transpileModule(read(`src/components/${name}.tsx`), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } }).outputText, { module: target, exports: target.exports, fetch: fetcher, window, AbortController, Date, URLSearchParams, crypto: { randomUUID: () => "11111111-1111-4111-8111-111111111111" }, require: id => id === "react" ? react : id === "next/link" ? { __esModule: true, default: ({ children, ...rest }) => React.createElement("a", rest, children) } : require(id) });
+ function load(relative) {
+  const loaded = { exports: {} };
+  vm.runInNewContext(ts.transpileModule(read("src/" + relative + (relative.startsWith("lib/") ? ".ts" : ".tsx")), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } }).outputText, { module: loaded, exports: loaded.exports, fetch: fetcher, window, AbortController, Date, URLSearchParams, crypto: { randomUUID: () => "11111111-1111-4111-8111-111111111111" }, require: id => id === "react" ? react : id === "next/link" ? { __esModule: true, default: ({ children, ...rest }) => React.createElement("a", rest, children) } : id.startsWith("@/") ? load(id.slice(2)) : require(id) });
+  return loaded.exports;
+ }
+ Object.assign(target.exports, load("components/" + name));
  function render() { cursor = refCursor = effectCursor = 0; return target.exports[name](props); }
  async function settle() { render(); const queued = pending; pending = []; for (const i of queued) { const effect = effects.get(i); effect.cleanup = effect.fn(); } for (let i = 0; i < 12; i++) await new Promise(resolve => setImmediate(resolve)); return render(); }
  return { render, settle, redirects, event: async event => { listeners.get(event)?.(); return settle(); } };

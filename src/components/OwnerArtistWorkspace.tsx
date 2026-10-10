@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import type { MemberAccess } from "@/lib/member-access";
+import { OwnerWorkspaceNavigation } from "@/components/OwnerWorkspaceNavigation";
 import type { MemberHistoryReference, OwnerArtistState } from "@/lib/member-artists";
 
 type Account = { id: string; name: string; email: string; emailVerified: boolean; suspended: boolean };
@@ -155,13 +156,13 @@ export function OwnerArtistWorkspace({ access }: { access: MemberAccess }) {
   }
   const canApprove = !paused && state !== null && target?.emailVerified === true && !target.suspended;
   const activeArtists = state?.artists.filter(artist => artist.approved) ?? [];
-  return <section className="mx-auto max-w-6xl rounded-xl border border-border bg-surface p-5 sm:p-8">
-    <Link href="/account/owner" className="text-accent underline">Back to Owner workspace</Link>
-    <h1 className="mt-5 text-3xl font-bold">Artists &amp; show history</h1>
-    <p className="mt-3 text-sm text-muted">Approve an exact account for an Artist project. Review older songs individually before associating them. Public song credits stay unchanged.</p>
+  return <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><section className="rounded-xl border border-border bg-surface p-5 sm:p-8">
     <p className="mt-4 text-sm" role="status" aria-live="polite">{message}</p>
     {error && <p role="alert" className="mt-3 text-sm text-danger">{error}</p>}
-    {!authorized ? <p role="status" className="mt-4">Checking current Owner access…</p> : <>
+    {!authorized ? <div><p role="status" className="mt-4">Checking current Owner access…</p><Link href="/account" className="mt-4 inline-block text-accent underline">Back to your account</Link></div> : <>
+      <OwnerWorkspaceNavigation section="artists" />
+      <h1 className="text-3xl font-bold">Artists &amp; history</h1>
+      <p className="mt-3 text-sm text-muted">Approve an exact account for an Artist project. Review older songs individually before associating them. Public song credits stay unchanged.</p>
       {pendingForOwner && <div className="mt-4 rounded border border-border p-4"><p className="text-sm">An Artist action for BARCODE ID {pendingForOwner.targetId} is unconfirmed. Other approvals and revocations are paused.</p><button className="btn-secondary mt-3" disabled={busy} onClick={() => executeOperation(pendingForOwner)}>Retry unconfirmed Artist action</button></div>}
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <section aria-label="Find an account"><h2 className="text-xl font-bold">Choose the exact account</h2>
@@ -170,16 +171,20 @@ export function OwnerArtistWorkspace({ access }: { access: MemberAccess }) {
           {!loadingPages && !accounts.items.length && <p className="mt-3 text-sm text-muted">No accounts match this search.</p>}{pages("accounts", accounts)}
         </section>
         <section aria-label="Account Artist access">{target ? <>
-          <h2 className="text-xl font-bold">{target.name}</h2><p className="mt-2 break-all text-sm">{target.email}</p><p className="mt-2 break-all text-xs text-muted">BARCODE ID: {target.id}</p>
+          <h2 className="text-xl font-bold">{target.name}</h2><p className="mt-2 break-all text-sm">{target.email}</p>
+          <details className="mt-3 rounded border border-border p-3"><summary className="cursor-pointer text-sm font-semibold">Account details</summary><p className="mt-3 break-all text-xs text-muted">BARCODE ID: {target.id}</p></details>
           {loadingTarget && <p role="status" className="mt-3">Checking current Artist access…</p>}
           {state && <>
             {(!target.emailVerified || target.suspended) && <p className="mt-3 text-sm text-muted">Approvals require an active, verified account. Existing grants can be revoked.</p>}
-            <h3 className="mt-5 font-semibold">Artist project approvals</h3>
+            <section className="mt-5 rounded border border-border p-4" aria-labelledby="artist-approval-heading">
+              <h3 id="artist-approval-heading" className="text-lg font-semibold">Artist approval</h3>
             <form className="mt-3 flex items-end gap-3" onSubmit={event => search(event, "catalog", catalogSearch)}><label className="min-w-0 flex-1 text-sm">Search Artist catalog<input type="search" className={inputClass} value={catalogSearch} maxLength={100} onChange={event => setCatalogSearch(event.target.value)} /></label><button className="btn-secondary" disabled={busy}>Search projects</button></form>
             <label className="mt-3 block text-sm">Artist project<select aria-label="Artist project" className={inputClass} value={projectKey} onChange={event => setProjectKey(event.target.value)} disabled={paused}><option value="">Choose a reviewed catalog project</option>{catalog.items.map(artist => <option key={artist.projectKey} value={artist.projectKey}>{artist.projectLabel}</option>)}</select></label>
             {pages("catalog", catalog)}<button className="btn-primary mt-3" disabled={!canApprove || !catalog.items.some(artist => artist.projectKey === projectKey)} onClick={() => mutate("approve-project", { projectKey })}>Approve Artist project</button>
             <ul className="mt-4 space-y-3">{state.artists.map(artist => <li key={artist.id} className="rounded border border-border p-3"><p className="break-words text-sm">{catalog.items.find(item => item.projectKey === artist.projectKey)?.projectLabel ?? artist.projectKey} · {artist.approved ? "Approved" : "Revoked"}</p>{artist.approved && <button className="mt-2 text-sm text-accent underline" disabled={paused} onClick={() => mutate("revoke-project", { artistId: artist.id })}>Revoke Artist access</button>}</li>)}</ul>
-            <h3 className="mt-6 font-semibold">Individually approved older songs</h3>
+            </section>
+            <section className="mt-6 rounded border border-border p-4" aria-labelledby="older-song-review-heading">
+              <h3 id="older-song-review-heading" className="text-lg font-semibold">Older-song review</h3>
             <p className="mt-2 text-xs text-muted">Only current approved Artist projects can receive an association. Removing Artist access removes its derived history; factual signed-in submissions remain.</p>
             <label className="mt-3 block text-sm">Associate with approved Artist<select className={inputClass} value={historyArtistId} disabled={paused} onChange={event => { setHistoryArtistId(event.target.value); setReviewed(null); }}><option value="">Choose an approved Artist</option>{activeArtists.map(artist => <option key={artist.id} value={artist.id}>{catalog.items.find(item => item.projectKey === artist.projectKey)?.projectLabel ?? artist.projectKey}</option>)}</select></label>
             <form className="mt-3 flex items-end gap-3" onSubmit={event => search(event, "candidates", candidateSearch)}><label className="min-w-0 flex-1 text-sm">Search songs or shows<input type="search" className={inputClass} value={candidateSearch} maxLength={100} onChange={event => setCandidateSearch(event.target.value)} /></label><button className="btn-secondary" disabled={busy}>Search songs</button></form>
@@ -187,9 +192,15 @@ export function OwnerArtistWorkspace({ access }: { access: MemberAccess }) {
             <ul className="mt-4 space-y-3">{candidates.items.map((candidate, index) => <li key={index} className="rounded border border-border p-3"><p className="font-semibold">{candidate.title}</p><p className="mt-1 text-sm">{candidate.artist} · {candidate.showLabel} · {candidate.showDate}</p><p className="mt-2 text-xs text-muted">Outcome: {candidate.status} · Airplay: {candidate.airplay} · Completion: {candidate.completion} · Coverage: {candidate.coverage}</p><button className="mt-3 text-sm text-accent underline" disabled={!canApprove || !historyArtistId} onClick={() => setReviewed(candidate)}>Review this exact song</button></li>)}</ul>{pages("candidates", candidates)}
             {reviewed && <div className="mt-4 rounded border border-accent p-4"><h4 className="font-semibold">Confirm this song association</h4><p className="mt-2 text-sm">{reviewed.title} · {reviewed.artist}</p><p className="mt-2 text-xs text-muted">{reviewed.showLabel} · {reviewed.showDate} · {reviewed.reference.kind} source</p><p className="mt-2 break-all text-xs text-muted">Exact song: {reviewed.reference.kind === "native" ? `${reviewed.reference.sessionId} / ${reviewed.reference.trackId}` : reviewed.reference.recoveryTrackId}</p><p className="mt-2 text-xs text-muted">Outcome: {reviewed.status} · Airplay: {reviewed.airplay} · Completion: {reviewed.completion} · Coverage: {reviewed.coverage}</p><button className="btn-primary mt-3" disabled={!canApprove || !activeArtists.some(artist => artist.id === historyArtistId)} onClick={() => mutate("approve-history", { artistId: historyArtistId, reference: reviewed.reference })}>Approve this exact song</button></div>}
             <ul className="mt-5 space-y-3">{state.legacyReferences.map(reference => <li key={reference.id} className="rounded border border-border p-3"><p className="text-sm">{state.artists.find(artist => artist.id === reference.artistId)?.projectKey ?? "Historical Artist"} · {reference.reference.kind} source · {reference.approved ? "Approved" : "Revoked"}</p><p className="mt-2 break-all text-xs text-muted">Exact song: {reference.reference.kind === "native" ? `${reference.reference.sessionId} / ${reference.reference.trackId}` : reference.reference.recoveryTrackId}</p>{reference.approved && <button className="mt-3 text-sm text-accent underline" disabled={paused} onClick={() => mutate("revoke-history", { referenceId: reference.id })}>Revoke this song association</button>}</li>)}</ul>
+            </section>
           </>}
         </> : <p className="rounded border border-border p-4 text-sm text-muted">Choose an account and verify its exact BARCODE ID before approving Artist access.</p>}</section>
       </div>
+      <section className="mt-6 rounded border border-border p-4" aria-labelledby="public-credit-corrections-heading">
+        <h2 id="public-credit-corrections-heading" className="text-lg font-semibold">Public credit corrections</h2>
+        <p className="mt-2 text-sm text-muted">Correct song credits, artist labels and aliases through the existing admin workspace. These corrections are separate from account approval and older-song associations.</p>
+        <Link href="/admin/artist-credits" className="mt-3 inline-block text-sm text-accent underline">Correct public artist credits — separate admin access</Link>
+      </section>
     </>}
-  </section>;
+  </section></div>;
 }

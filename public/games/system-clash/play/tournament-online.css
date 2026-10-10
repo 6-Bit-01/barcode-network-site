@@ -30,3 +30,26 @@
 .entrant-row>img{width:26px;height:26px}.entrant-row{padding-block:3px;padding-left:23px}
 
 @media(max-width:760px){.event-entrants{display:none}.event-entrants.is-open{display:flex}}
+
+/* Tournament entry owns its layout; shared casual-online rules must not stretch its artwork. */
+.tournament-online-page .tournament-browser{flex:0 1 auto;align-self:center;width:min(1080px,100%);max-height:100%;margin:auto;overflow:auto;padding:clamp(14px,2vw,26px);border:16px solid transparent;border-image:url('assets/ui/lounge-console.webp') 75 / 16px / 0 stretch;background:#080c13f2;box-shadow:0 20px 70px #000b}
+.tournament-online-page .tournament-browser .intro{display:block;margin:0;padding:0;text-align:left}
+.tournament-online-page .tournament-browser .intro h1{font-size:clamp(24px,3vw,36px);line-height:1.15;margin:5px 0 8px}
+.tournament-online-page .tournament-browser .intro>p:last-child{font-size:13px;color:#bfc0ce}
+.browser-entry-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin:22px 0}
+.browser-host,.browser-join{min-width:0;padding:18px;border:1px solid #62546e;border-radius:4px;background:linear-gradient(135deg,#121020,#090f16)}
+.tournament-online-page .browser-entry-grid h2{font:700 15px/1.25 system-ui;letter-spacing:0;color:#fff}
+.tournament-online-page .browser-entry-grid p{font-size:12px;color:#bfc0ce;margin:8px 0 15px}
+.browser-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap}.browser-actions>a{color:#d4c2eb;font:12px/1.4 system-ui;text-decoration:none}.browser-actions>a:hover{color:#c2ff7c}
+.browser-join form{display:flex;align-items:end;gap:10px;margin:0}.browser-join label{flex:1;min-width:0}.tournament-online-page .browser-join input{max-width:none;letter-spacing:.14em;text-transform:uppercase;font:16px/1.25 monospace;min-height:44px}
+.tournament-online-page .tournament-browser :is(button,a.primary){border:10px solid transparent;border-left-width:16px;border-right-width:16px;border-image:url('assets/ui/menu-plate.webp') 35 55 fill stretch;background:#090b11;padding:2px 9px;min-height:44px;white-space:normal;line-height:1.25}
+.tournament-online-page :is(button,a).primary:is(:hover,:focus-visible,:active):not(:disabled){color:#c2ff7c;background-color:transparent}
+.tournament-online-page .settings-grid :is(select,input){max-width:none;width:100%}
+.tournament-online-page .tournament-browser .panel-heading{background:none;border:0;border-bottom:1px solid #62546e;padding:0 0 9px;min-height:44px;margin:0}
+.tournament-online-page .tournament-browser .panel-heading h2{font:700 14px/1.3 system-ui;letter-spacing:0}
+.tournament-online-page .tournament-browser .tournament-list{grid-template-columns:repeat(auto-fill,minmax(min(260px,100%),1fr));gap:12px;margin:14px 0 0}
+.tournament-online-page .tournament-browser .event-list-card{min-height:106px;padding:9px 14px!important;gap:7px;justify-content:center;background:#090d14;border-image:url('assets/ui/lounge-brick.webp') 55 90 fill stretch;text-align:left}
+.tournament-online-page .tournament-browser .event-list-card strong{font-size:13px;overflow-wrap:anywhere}.tournament-online-page .tournament-browser .event-list-card span{font-size:11px;line-height:1.4}
+.tournament-online-page .tournament-browser .tournament-list>p{grid-column:1/-1;text-align:center;padding:18px;color:#bfc0ce;background:#0b1019;border:1px dashed #4e465d;border-radius:3px;margin:0}
+@media(max-width:600px){.tournament-online-page .tournament-browser{border-width:12px;padding:13px;border-image-width:12px}.browser-entry-grid{grid-template-columns:1fr;gap:12px;margin:16px 0}.browser-host,.browser-join{padding:14px}.browser-actions{gap:11px}.tournament-online-page .tournament-browser .intro>p:last-child{font-size:12px}.browser-join form{gap:7px}}
+@media(orientation:landscape) and (max-height:600px){.tournament-online-page .tournament-browser{padding:12px 18px;border-width:12px;border-image-width:12px}.tournament-online-page .tournament-browser .intro h1{font-size:25px;margin:0 0 5px}.tournament-online-page .tournament-browser .intro .eyebrow{display:none}.tournament-online-page .tournament-browser .intro>p:last-child{font-size:11px}.browser-entry-grid{gap:12px;margin:12px 0}.browser-host,.browser-join{padding:12px}.tournament-online-page .browser-entry-grid p{display:none}.browser-entry-grid h2{margin-bottom:10px!important}.tournament-online-page .tournament-browser .tournament-list>p{padding:12px}.tournament-online-page .tournament-browser .panel-heading{padding-bottom:5px}.browser-actions{gap:8px}}

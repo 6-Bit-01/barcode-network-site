@@ -6,6 +6,7 @@ import {createGameScreenHost} from '../public/games/system-clash/play/game-scree
 import {withMatchRules,matchRulesFromURL,loadClashPreferences} from '../public/games/system-clash/play/fight-rules.mjs';
 import {parseDemoLaunch,withControllerSeats,DEMO_ROSTER_CAPACITY} from '../public/games/system-clash/play/demo-flow.mjs';
 import {fightLaunchRoster} from '../public/games/system-clash/play/fight-launch.mjs';
+import {SEALED_FIGHTER_ART} from '../public/games/system-clash/play/sealed-fighter-card.mjs';
 import {FIGHTER_STYLES} from '../public/games/system-clash/play/fight-engine.mjs';
 const fightSource=readFileSync(new URL('../public/games/system-clash/play/fight.js',import.meta.url),'utf8');
 const demoSource=readFileSync(new URL('../public/games/system-clash/play/demo.mjs',import.meta.url),'utf8');
@@ -126,7 +127,7 @@ for(const button of ['options-open','title-options-open','controls-open'])test(`
 });
 
 test('a failed menu asset retains the reachable Retry button when other image requests finish later',async()=>{
- const pending=[],items=new Map(),context={URL,URLSearchParams,location:{href:base+'index.html'},menuReady:false,params:new URLSearchParams(),FIGHTER_STYLES,DEMO_ROSTER_CAPACITY,corporateUnlocked:false,catalog:null,state:null,
+ const pending=[],items=new Map(),context={URL,URLSearchParams,location:{href:base+'index.html'},menuReady:false,params:new URLSearchParams(),SEALED_FIGHTER_ART,FIGHTER_STYLES,DEMO_ROSTER_CAPACITY,corporateUnlocked:false,catalog:null,state:null,
   document:{querySelectorAll:()=>[]},createDemoSelection:()=>({}),
   $(id){if(!items.has(id))items.set(id,element());return items.get(id);},
   fetch:async()=>({ok:true,json:async()=>({fighters:[{id:'lyra',portrait:'assets/menu/lyra-portrait.webp',standing:'assets/menu/lyra-standing.webp'}]})}),

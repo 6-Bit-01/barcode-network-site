@@ -1,5 +1,8 @@
 /** Reviewed horizontal registration; source pixels, height and floor anchors stay intact. */
 const NATIVE_X=Object.freeze({
+  // Nice LEFT captured key0 selected the rear boot; register the intact pose
+  // to the front boot station (native anchor195 to46), matching its bookend.
+  "98148beaaf6e24146c9bea1e95d66052409382f2677968a3318b7ca1cbf85392":149,
   "a8de907fd40ed86bfbff4bd5913d16ddb7acfa1003e5a78efbf4a8c2e364e88b":-32,
   "ae2ecea0bc65501273ef63c32bc39012f44d044e3befffdb9481c0bb7f3456a6":-16,
   "e479ebca0eb530c658e7bb8d7a1da3f3c53e3503e8834db64fabbf4376fb5063":-34,
@@ -8,7 +11,6 @@ const NATIVE_X=Object.freeze({
   "b80d58112e6b3cf240bacff5c788478feb3152f76b7fbfd4edf6c9d9e1a263ac":-36,
   "b6d8b01f345b97dc5f5461dd8cfa4d2ea356007881d68b4d821ab83bf3f4e01e":-44,
   "a5f95406de5dd27d8d9ae29859fd190924e68bf5b3705bc955a5581b9ee4be40":-19,
-  "5fe8f3ee9e11ad41cc1e74466374bece70823b80a598e026b2fe813081e4854b":-46,
   "526aac1c30265ea33ad9eec9d5983231394735758a333989d0702afa587f1e3e":-23,
   "cc908be07763d4f26d14ae9a44706a9ab292300b41ba8e4f706400d014d82061":28,
   "5adee002fd56f1e211cdb40762e96e8b1571ce03a38d753ec997766cb2576e72":54,

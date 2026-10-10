@@ -41,7 +41,7 @@ test('account shell remains the only main landmark on every Owner workspace',()=
  const access={user:{id:'owner',name:'Owner'},session:{expiresAt:'2099-01-01T00:00:00Z'},access:{owner:true,crew:false,permissions:[],availablePermissions:[]}};
  for(const [file,props]of [['OwnerHome',{}],['OwnerToolWorkspace',{section:'radio'}],['OwnerAccountWorkspace',{access}],['OwnerArtistWorkspace',{access}]]){
   const workspace=load('components/'+file+'.tsx')[file];
-  const html=renderToStaticMarkup(React.createElement(SiteChrome,{radioSubmission:{},children:React.createElement(workspace,props)}));
+  const html=renderToStaticMarkup(React.createElement(SiteChrome,{radioSubmission:{}},React.createElement(workspace,props)));
   assert.equal((html.match(/<main(?: |>)/g)||[]).length,1,file);
   assert.match(html,/id="main-content"/);
  }

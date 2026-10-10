@@ -163,8 +163,8 @@ export function BarcodeSongWorkspace({ access }: { access: MemberAccess }) {
  return <section className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
   {access.access.owner ? <OwnerWorkspaceNavigation section="songs" /> : <Link href="/account/crew" className="text-accent underline">Back to Crew workspace</Link>}
   <p className="public-kicker mt-6">BARCODE Network</p><h1 className="mt-2 text-3xl font-bold">BNL song generator</h1>
-  <p className="mt-3 text-muted">Give BNL a direction, or leave everything blank and let him make a BARCODE song. Create and refine lyrics and a Suno style prompt, then copy them to make your recording.</p>
-  <p className="mt-2 text-sm text-muted">Private to your account. Lyrics: up to 2,000 words. Written toward five minutes or less; your recording tool determines the final duration.</p>
+  <p className="mt-3 text-muted">Give BNL a direction, or leave everything blank and let him make a song from his public BARCODE knowledge. Create and refine lyrics and a Suno style prompt, then copy them to make your recording.</p>
+  <p className="mt-2 text-sm text-muted">Saved to your account. Lyrics: up to 2,000 words. Written toward five minutes or less; your recording tool determines the final duration.</p>
   {message && <p role="status" className="mt-4 rounded-lg border border-border p-3">{message}</p>}
   {!authorized ? <p role="status" className="mt-8">Checking your access. Return to your account if it is unavailable.</p> : <>
    <fieldset disabled={disabled} className="mt-8 grid gap-4 rounded-xl border border-border bg-surface p-5 sm:grid-cols-2">
@@ -190,7 +190,7 @@ export function BarcodeSongWorkspace({ access }: { access: MemberAccess }) {
     <div className="flex flex-wrap items-center gap-4"><a href="https://suno.com/create" target="_blank" rel="noopener noreferrer" className="rounded-lg bg-accent px-4 py-2 font-bold text-background">Open Suno ↗</a><button onClick={() => void copy(text.style, "Style prompt")} className="text-accent underline">Copy style prompt</button><button onClick={() => void copy(text.title + "\n\n" + text.lyrics + "\n\nSuno style prompt\n" + text.style, "Song")} className="text-accent underline">Copy whole song</button></div>
    </fieldset>}
    {draft && <section aria-labelledby="song-archive-heading" className="mt-8 rounded-xl border border-border bg-surface p-5">
-    <div className="flex flex-wrap items-center justify-between gap-3"><h2 id="song-archive-heading" className="text-lg font-bold">Your private song archive</h2><p className="text-sm text-muted">{tracks.length} / 40 tracks</p></div>
+    <div className="flex flex-wrap items-center justify-between gap-3"><h2 id="song-archive-heading" className="text-lg font-bold">Your song archive</h2><p className="text-sm text-muted">{tracks.length} / 40 tracks</p></div>
     <p className="mt-2 text-sm text-muted">Successful new songs are saved here automatically. Keep your newest 40 tracks; a new song replaces the oldest when the archive is full. Regeneration and Undo update the current track.</p>
     <label className="mt-4 flex flex-wrap items-center gap-3 text-sm">Sort saved songs<select aria-label="Sort saved songs" value={sort} onChange={event => setSort(event.target.value as ArchiveSort)} className="rounded border border-border bg-background p-2"><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="title">Title</option></select></label>
     {tracks.length === 0 ? <p className="mt-4 text-muted">Your saved tracks will appear here after BNL finishes your first song.</p> : <ul className="mt-4 divide-y divide-border">{tracks.map(track => <li key={track.id} className="flex flex-wrap items-center justify-between gap-3 py-3">

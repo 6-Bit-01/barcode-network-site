@@ -149,7 +149,7 @@ Rollback by removing the variable or setting it to anything other than exact `tr
 ## Owner and Crew account tools
 
 The account workspaces offer a read-only live show overview with artist introduction
-cards, show/community insights, and a private BARCODE song generator. Owners can
+cards, show/community insights, and a BARCODE song generator. Owners can
 use every available tool; Crew receive only the tools explicitly assigned in
 Accounts & Crew. Revenue is omitted from Crew API responses and its underlying
 payment records are never read for Crew requests.
@@ -168,7 +168,7 @@ recording preview. Crew does not receive publication access through this bridge.
 Song drafts belong to their exact creator, including when that creator is an
 Owner. Directions may all be empty. BNL returns selectable, read-only title, lyrics
 and Suno prompt, with independent lyric/style regeneration and Undo. Successful
-songs save automatically to the creator's private archive, which keeps the newest
+songs save automatically to the creator's account archive, which keeps the newest
 40 tracks. A successful new song replaces the oldest when full; regeneration and
 Undo update the selected track. Tracks can be sorted and reopened without a model
 call. Copy the text for editing outside BARCODE. Owner Home and the persistent Owner

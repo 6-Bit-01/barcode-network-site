@@ -154,6 +154,17 @@ use every available tool; Crew receive only the tools explicitly assigned in
 Accounts & Crew. Revenue is omitted from Crew API responses and its underlying
 payment records are never read for Crew requests.
 
+Sign-in checks current account authority and opens the Owner dashboard first,
+then Crew when assigned. Other accounts stay on their existing account page.
+Owner/Crew dashboard links are prominent above account settings. Signup separates
+details, Terms acceptance and email verification with visible action feedback;
+a successful request does not return to another signup form or certify delivery.
+
+Broadcast Ballads accepts a current verified Owner account on the canonical site
+or the existing show-admin sign-in. Same-origin mutations are required; account
+and permission revocations are refreshed for reads, writes, upload and private
+recording preview. Crew does not receive publication access through this bridge.
+
 Song drafts belong to their exact creator, including when that creator is an
 Owner. Directions may all be empty. BNL returns an editable title, lyrics and
 Suno prompt, with independent lyric/style regeneration and Undo. Lyrics are
@@ -165,6 +176,11 @@ The existing member-auth SQLite service owns drafts, pending requests, authority
 leases and audits. The bot processes only authorized commands through the existing
 website credential, creative budget, public context selector and heartbeat.
 It stores generation receipts in its existing database, outside factual memory.
+The generator uses the full shared Ballads songwriting requirements and BNL mind,
+with public canon/lore, original-backed show memories, public Moments and released
+creative references. Generated Style uses the existing 500-character ceiling;
+private producer feedback and unreleased drafts remain excluded. Episode coverage
+and community name drops are optional, rather than the purpose of the song.
 Broadcast Ballads retain their existing episode and publication rules.
 
 Release requires the website changes, an explicit member-auth migration using its

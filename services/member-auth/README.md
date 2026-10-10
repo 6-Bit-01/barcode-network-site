@@ -2,7 +2,7 @@
 
 The website owns Member identity in this separate service. Better Auth 1.7.7 supplies password hashing, verification, recovery and database-backed sessions. Node 24.15 or newer supplies built-in SQLite; no external native database binary or compiler is required. SQLite and the encrypted transactional-mail outbox share one dedicated website database. BNL, native queue state, payments, guest browser ownership and existing admin authentication retain their current owners.
 
-This release provides email/password registration, verification before Member activation, sign-in/out, editable unique account names, recovery revoking earlier sessions and sign-out across devices. It provides explicit Owner/Crew account consoles, audited account-management controls, separately reviewed Artist associations, private songwriting tools and aggregate account Insights. It does not provide automatic guest claims, support threads or game synchronization. It does not disclose hidden games. Member cookies do not authorize any existing admin API.
+This release provides email/password registration, verification before Member activation, sign-in/out, editable unique account names, recovery revoking earlier sessions and sign-out across devices. It provides explicit Owner/Crew account consoles, audited account-management controls, separately reviewed Artist associations, private songwriting tools and aggregate account Insights. It does not provide automatic guest claims, support threads or game synchronization. It does not disclose hidden games. A fresh verified Owner session can operate Broadcast Ballads; other existing show-control APIs retain their separate admin sign-in. Member/Artist/Crew accounts do not receive Ballad publication authority.
 
 ## Configuration
 

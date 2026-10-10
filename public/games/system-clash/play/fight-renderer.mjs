@@ -1835,6 +1835,23 @@ function createStaticLayers(owner) {
 }
 
 /** Draws intact fighter crops and code-native stage effects. No image pixels are edited. */
+/** Authoring review uses the same intact-body drawing path as the game. */
+export function createFightPosePreview(canvas) {
+  const ctx=canvas?.getContext?.('2d');
+  if(!ctx)throw new Error('An animation review canvas is required.');
+  const overlays=createPoseOverlays(canvas);
+  return {
+    draw(view,art,{scale=1,x=canvas.width/2,floor=canvas.height-18}={}) {
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      ctx.save();
+      ctx.translate(x,floor-FLOOR*scale);
+      ctx.scale(scale,scale);
+      fighter(ctx,{...view,x:0,y:0},art,overlays,null);
+      ctx.restore();
+    }
+  };
+}
+
 export function createFightRenderer(canvas) {
   if (!canvas?.getContext) throw new Error('A fight canvas is required.');
   canvas.width = WIDTH;

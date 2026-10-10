@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>System Clash — Animation approval sheet</title>
+  <link rel="stylesheet" href="animation-review.css">
+</head>
+<body>
+  <header>
+    <div class="heading"><div><p class="eyebrow">BARCODE · SYSTEM CLASH</p><h1>Animation approval sheet</h1></div><a href="index.html">Back to game</a></div>
+    <p>Every fighter, every loaded animation, both directions. Check ✓ to approve, − to reject, and write what needs changing underneath.</p>
+    <p class="save-note" id="save-status" role="status">Loading the current animation list…</p>
+    <div class="toolbar">
+      <label>Fighter<select id="fighter-filter"><option value="">All fighters</option></select></label>
+      <label>Animations<select id="bank-filter"><option value="">Everything</option><option value="fighters">Movement / basic attacks</option><option value="arcade">Other attacks / jumps</option><option value="deletions">Deletion poses</option><option value="scene">Complete Deletions</option></select></label>
+      <label>Review<select id="decision-filter"><option value="">All</option><option value="unreviewed">Not reviewed</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="noted">With notes</option></select></label>
+      <label>Find<input id="search" type="search" placeholder="Walk, punch, thrown…" autocomplete="off"></label>
+      <label>Speed<select id="speed"><option value="1">Normal</option><option value="0.5">Half speed</option><option value="0.25">Quarter speed</option></select></label>
+      <button id="pause" type="button">Pause loops</button>
+    </div>
+    <div class="review-actions">
+      <strong id="summary">Preparing sheet…</strong>
+      <button id="export" type="button" disabled>Download feedback</button>
+      <button id="copy" type="button" disabled>Copy feedback</button>
+      <label class="file-button">Import feedback<input id="import" type="file" accept=".json,application/json"></label>
+    </div>
+    <p class="help">Your decisions and notes save automatically in this browser. Download or copy feedback when ready so it can be used for the repairs. Only visible animations play; scroll to review the rest.</p>
+  </header>
+  <main id="sheet" aria-label="Looping animation review sheet"></main>
+  <p id="empty" hidden>No animations match these filters.</p>
+  <dialog id="detail">
+    <div class="detail-heading"><h2 id="detail-title"></h2><button id="close-detail" type="button">Close</button></div>
+    <div id="detail-content"></div>
+  </dialog>
+  <script type="module" src="animation-review.mjs"></script>
+</body>
+</html>

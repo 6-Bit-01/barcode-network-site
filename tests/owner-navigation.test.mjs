@@ -85,7 +85,7 @@ test('Owner Home opens the general song generator directly and keeps episode Bal
  assert.equal(links.find(link=>link.text.startsWith('Write with BNL')),undefined);
 });
 
-test('Owner song generator shows its current Owner section while Crew only gets its own return path',()=>{
+test('Song generator keeps role-specific navigation and marks its active section',()=>{
  const {BarcodeSongWorkspace}=load('components/BarcodeSongWorkspace.tsx');
  for(const owner of [true,false]){
   const access={user:{id:owner?'owner':'crew',name:owner?'Owner':'Crew'},session:{expiresAt:'2099-01-01T00:00:00Z'},access:{owner,crew:!owner,permissions:owner?[]:['song.generate'],availablePermissions:['song.generate']}};
@@ -97,7 +97,10 @@ test('Owner song generator shows its current Owner section while Crew only gets 
    assert.match(html,/<a[^>]*href="\/account\/owner"[^>]*>Owner Home<\/a>/);
    assert.match(html,/<span[^>]*aria-current="page"[^>]*>BNL song generator<\/span>/);
   }else{
-   assert.match(html,/<a[^>]*href="\/account\/crew"[^>]*>Back to Crew workspace<\/a>/);
+   assert.match(html,/<a[^>]*href="\/account\/crew"[^>]*>Crew Home<\/a>/);
+   const nav=html.match(/<nav[^>]*aria-label="Crew workspace"[\s\S]*?<\/nav>/)?.[0];assert.ok(nav);
+   assert.match(nav,/<span[^>]*aria-current="page"[^>]*>Songs<\/span>/);
+   assert.doesNotMatch(nav,/href="\/account\/crew\/songs"/);
    assert.doesNotMatch(html,/aria-label="Owner workspace"|href="\/account\/owner(?:\/|"|#)/);
   }
  }

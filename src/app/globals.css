@@ -1297,3 +1297,41 @@ body {
     transform: none !important;
   }
 }
+
+/* Account actions share a visible button treatment across assigned workspaces. */
+.account-workspace :is(.btn-primary, .btn-secondary) {
+  display: inline-flex;
+  min-height: 3rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 1px solid var(--color-border-light);
+  border-radius: 0.5rem;
+  padding: 0.65rem 1rem;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.account-workspace .btn-primary {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-background);
+}
+.account-workspace .btn-secondary {
+  background: var(--color-background);
+  color: var(--color-foreground);
+}
+.account-workspace .btn-primary:hover:not(:disabled) { background: var(--color-accent-dim); }
+.account-workspace .btn-secondary:hover:not(:disabled) { border-color: var(--color-accent); background: var(--color-surface-light); }
+.account-workspace :is(.btn-primary, .btn-secondary):active:not(:disabled) { transform: translateY(1px); }
+.account-workspace :is(.btn-primary, .btn-secondary, .account-action-card):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 4px;
+}
+.account-workspace :is(.btn-primary, .btn-secondary):disabled { cursor: not-allowed; opacity: 0.5; }
+.account-workspace .account-action-card { cursor: pointer; transition: border-color 120ms ease, background-color 120ms ease; }
+.account-workspace .account-action-card:hover { border-color: var(--color-accent); background: var(--color-surface-light); }
+.account-workspace .account-action-card:active { transform: translateY(1px); }

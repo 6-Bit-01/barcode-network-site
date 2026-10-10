@@ -24,7 +24,7 @@ export const OWNER_TOOL_SECTIONS = {
   bnl: {
     title: "BNL & music", description: "Work on BNL's songs and review his published output and current Relay.",
     tools: [
-      { title: "BNL song generator", description: "Create private lyrics and a Suno style prompt for any BARCODE song with BNL.", href: "/account/owner/songs" },
+      { title: "BNL song generator", description: "Create lyrics and a Suno style prompt for any BARCODE song with BNL.", href: "/account/owner/songs" },
       { title: "Broadcast Ballads", description: "Prepare episode-based Broadcast Ballads, Suno prompts, recordings, and releases.", href: "/admin/ballads" },
       { title: "Journals", description: "Review Journal publishing, saved runs, and automation status.", href: "/admin/journal" },
       { title: "Relay controls", description: "Review and manage BNL's current Relay and operator controls.", href: "/admin/relay" },

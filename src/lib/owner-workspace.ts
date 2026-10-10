@@ -12,6 +12,8 @@ export const OWNER_TOOL_SECTIONS = {
   radio: {
     title: "Radio & shows", description: "Prepare the broadcast, run the queue, and review past shows.",
     tools: [
+      { title: "Live show overview", description: "See current and upcoming songs, timing, and artist introduction cards.", href: "/account/owner/show" },
+      { title: "Show & community insights", description: "Review activity, pacing, account growth, and your confirmed payment records.", href: "/account/owner/insights" },
       { title: "Show management", description: "Set up a show, manage session options, and open submissions.", href: "/admin/show-management" },
       { title: "Queue control", description: "Run playback, manage the lanes, and use the existing broadcast controls.", href: "/admin/queue" },
       { title: "Archived shows", description: "Review completed broadcasts and their retained show records.", href: "/admin/show-management/archive" },
@@ -21,6 +23,7 @@ export const OWNER_TOOL_SECTIONS = {
   bnl: {
     title: "BNL & music", description: "Work on BNL's songs and review his published output and current Relay.",
     tools: [
+      { title: "BARCODE song generator", description: "Create your private lyrics and Suno style prompt with BNL.", href: "/account/owner/songs" },
       { title: "Broadcast Ballads", description: "Write with BNL, prepare Suno prompts, and manage recordings and releases.", href: "/admin/ballads" },
       { title: "Journals", description: "Review Journal publishing, saved runs, and automation status.", href: "/admin/journal" },
       { title: "Relay controls", description: "Review and manage BNL's current Relay and operator controls.", href: "/admin/relay" },

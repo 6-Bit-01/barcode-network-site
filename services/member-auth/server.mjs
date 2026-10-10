@@ -6,7 +6,7 @@ const configuration=loadConfiguration();
 const app=createMemberAuth(configuration);
 // Schema upgrades are explicit; startup never silently migrates.
 await app.assertReady();
-const handle=createMemberHandler(app.auth,{...configuration,access:app.access,artists:app.artists});
+const handle=createMemberHandler(app.auth,{...configuration,access:app.access,artists:app.artists,tools:app.tools});
 const server=createMemberHttpServer(handle,configuration.baseURL);
 server.listen(8788,'127.0.0.1',()=>console.info('member_auth_ready'));
 const delivery=setInterval(()=>{void app.outbox.flushOne().catch(()=>console.error('member_mail_worker_failed'));},1000);

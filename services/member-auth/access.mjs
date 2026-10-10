@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { runWithTransaction } from '@better-auth/core/context';
 import { checkedName } from './names.mjs';
 import { memberCookies } from './contract.mjs';
-const availablePermissions=Object.freeze([]);
+const availablePermissions=Object.freeze(['show.overview','song.generate','insights.read']);
 const fail=(status,code)=>{throw Object.assign(new Error(code),{status,code});};
 const jsonHeaders={'cache-control':'private, no-store','referrer-policy':'no-referrer'};
 function identity(value){return typeof value==='string'&&value.length>0&&value.length<=128&&/^[A-Za-z0-9_-]+$/.test(value);}

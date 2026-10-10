@@ -9,6 +9,7 @@ type Filters = { query: string; sort: string; verification: string; status: stri
 type Operation = { ownerId: string; targetId: string; action: string; body: string };
 const initialFilters: Filters = { query: "", sort: "name", verification: "all", status: "all", role: "all" };
 const fieldClass = "mt-2 w-full rounded border border-border bg-background px-3 py-2 text-foreground focus:outline-2 focus:outline-accent";
+const crewToolLabels: Record<string, string> = { "show.overview": "Live show overview & artist cards", "song.generate": "Private BARCODE song generator", "insights.read": "Show & community insights" };
 const confirmation: Record<string, string> = { "set-name": "Display name saved.", "set-crew": "Crew access saved.", suspend: "Account suspended.", reactivate: "Account reactivated. Previous sessions remain signed out.", "revoke-sessions": "Account sessions signed out.", "send-recovery": "Recovery email requested through the account recovery service." };
 function failureMessage(code: string | undefined, status: number) {
   if (code === "NAME_UNAVAILABLE") return "That display name is unavailable. Choose another name.";
@@ -165,7 +166,7 @@ export function OwnerAccountWorkspace({ access }: { access: MemberAccess }) {
             <section className="mt-5 border-t border-border pt-5" aria-labelledby="account-crew-heading">
               <h4 id="account-crew-heading" className="font-semibold">Crew access</h4>
               <form className="mt-3" onSubmit={event => { event.preventDefault(); void mutate("set-crew", { assigned: crew, permissions: crew ? permissions : [] }); }}><label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={crew} disabled={changesPaused} onChange={event => { setCrew(event.target.checked); if (!event.target.checked) setPermissions([]); }} />Crew access assigned</label>
-                {crew && availablePermissions.length > 0 && <fieldset className="mt-4 space-y-3"><legend className="mb-2 text-sm">Available Crew tools</legend>{availablePermissions.map(permission => <label key={permission} className="flex items-center gap-3 text-sm"><input type="checkbox" checked={permissions.includes(permission)} disabled={changesPaused} onChange={event => setPermissions(previous => event.target.checked ? [...previous, permission] : previous.filter(value => value !== permission))} />{permission}</label>)}</fieldset>}
+                {crew && availablePermissions.length > 0 && <fieldset className="mt-4 space-y-3"><legend className="mb-2 text-sm">Available Crew tools</legend>{availablePermissions.map(permission => <label key={permission} className="flex items-center gap-3 text-sm"><input type="checkbox" checked={permissions.includes(permission)} disabled={changesPaused} onChange={event => setPermissions(previous => event.target.checked ? [...previous, permission] : previous.filter(value => value !== permission))} />{crewToolLabels[permission] ?? "Assigned tool"}</label>)}</fieldset>}
                 {crew && availablePermissions.length === 0 && <p className="mt-3 text-xs text-muted">Crew tools will become available as they are ready.</p>}<button className="btn-secondary mt-3" disabled={changesPaused}>Save Crew access</button>
               </form>
             </section>

@@ -21,7 +21,7 @@ test('access requires a live verified account and explicit exact-ID grants',asyn
  const a=await fixture(t),member=await a.user('member@example.com','Member');
  assert.equal((await a.request('/api/member/access')).status,401);
  const response=await a.request('/api/member/access',undefined,member.cookie);assert.equal(response.status,200);
- const p=await response.json();assert.deepEqual(p.access,{owner:false,crew:false,permissions:[],availablePermissions:[]});assert.deepEqual(p.user,{id:member.id,name:'Member'});
+ const p=await response.json();assert.deepEqual(p.access,{owner:false,crew:false,permissions:[],availablePermissions:['show.overview','song.generate','insights.read']});assert.deepEqual(p.user,{id:member.id,name:'Member'});
  assert.equal((await a.request('/api/member/owner/accounts',undefined,member.cookie)).status,403);
  assert.equal((await a.request('/api/member/access',undefined,member.cookie,{'x-barcode-service-token':'wrong'})).status,403);
  await a.access.bootstrapOwner(member.id);
@@ -43,14 +43,14 @@ test('owner mutations enforce revisions, strict fields and permissions, and retr
  const directory=await a.request('/api/member/owner/accounts?limit=1&sort=name',undefined,owner.cookie);assert.equal(directory.status,200);const d=await directory.json();assert.equal(d.accounts.length,1);assert.ok(d.nextCursor);
  const req=action(member.id,0,'set-crew',{assigned:true,permissions:[]});
  assert.equal((await a.request('/api/member/owner/accounts/action',{...req,actorId:owner.id},owner.cookie)).status,400);
- assert.equal((await a.request('/api/member/owner/accounts/action',{...req,permissions:['song.generate']},owner.cookie)).status,400);
+ assert.equal((await a.request('/api/member/owner/accounts/action',{...req,permissions:['song.publish']},owner.cookie)).status,400);
  const result=await a.request('/api/member/owner/accounts/action',req,owner.cookie);assert.equal(result.status,200);const p=await result.json();assert.equal(p.account.crew,true);assert.equal(p.account.revision,1);
  assert.deepEqual(await (await a.request('/api/member/owner/accounts/action',req,owner.cookie)).json(),p);
  assert.equal(a.database.prepare("SELECT count(*) n FROM member_access_audit WHERE action='set-crew'").get().n,1);
  assert.equal((await a.request('/api/member/owner/accounts/action',action(member.id,0,'set-name',{name:'Stale'}),owner.cookie)).status,409);
  assert.equal((await a.request('/api/member/owner/accounts/action',action(member.id,1,'set-name',{name:'Fresh'}),owner.cookie,{origin:'https://evil.example'})).status,403);
  assert.equal((await a.request('/api/member/owner/accounts/action',action(owner.id,1,'suspend'),owner.cookie)).status,409);
- const crew=await (await a.request('/api/member/access',undefined,member.cookie)).json();assert.deepEqual(crew.access,{owner:false,crew:true,permissions:[],availablePermissions:[]});
+ const crew=await (await a.request('/api/member/access',undefined,member.cookie)).json();assert.deepEqual(crew.access,{owner:false,crew:true,permissions:[],availablePermissions:['show.overview','song.generate','insights.read']});
 });
 test('suspension revokes sessions, blocks password and verification auto-login, and recovery cannot reactivate',async t=>{
  const a=await fixture(t),owner=await a.user('owner@example.com','Founder'),member=await a.user('target@example.com','Target'),unverified=await a.user('unverified@example.com','Pending',false);await a.access.bootstrapOwner(owner.id);

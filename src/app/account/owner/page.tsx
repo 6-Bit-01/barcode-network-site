@@ -1,6 +1,6 @@
-import { OwnerAccountWorkspace } from "@/components/OwnerAccountWorkspace";
+import { OwnerHome } from "@/components/OwnerHome";
 import { requireMemberWorkspaceAccess } from "@/lib/member-access";
-export default async function OwnerAccountPage() {
-  const access = await requireMemberWorkspaceAccess("owner");
-  return <OwnerAccountWorkspace access={access} />;
+export default async function OwnerHomePage() {
+  await requireMemberWorkspaceAccess("owner");
+  return <OwnerHome />;
 }

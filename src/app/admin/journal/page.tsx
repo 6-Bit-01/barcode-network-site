@@ -1,6 +1,7 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
+import { OwnerWorkspaceNavigation } from "@/components/OwnerWorkspaceNavigation";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
@@ -261,15 +262,16 @@ export default function AdminJournalPage() {
   );
   return (
     <main className="min-h-screen pt-14">
+      {state && <div className="mx-auto max-w-6xl px-4 pt-6 sm:px-6"><OwnerWorkspaceNavigation section="bnl" /></div>}
       <section className="border-b border-border noise-bg">
         <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
           <p className="text-xs uppercase tracking-[0.45em] text-accent">
-            {"// BNL OBSERVATION CENTER"}
+            {"// BNL JOURNALS"}
           </p>
           <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <h1 className="text-3xl font-black text-foreground sm:text-5xl">
-                Journal automation
+                Journals
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">
                 Control BNL&apos;s daily observations and weekly continuity reports,
@@ -278,10 +280,10 @@ export default function AdminJournalPage() {
             </div>
             <div className="flex gap-3">
               <Link
-                href="/admin"
+                href="/account/owner/bnl"
                 className="border border-border px-4 py-2 text-xs uppercase tracking-widest text-muted"
               >
-                Admin
+                BNL &amp; music
               </Link>
               <Link
                 href="/journal"

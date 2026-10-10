@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import type { MemberAccess } from "@/lib/member-access";
+import { OwnerWorkspaceNavigation } from "@/components/OwnerWorkspaceNavigation";
 
 type Account = { id: string; name: string; email: string; emailVerified: boolean; suspended: boolean; owner: boolean; crew: boolean; permissions: string[]; revision: number; createdAt: string };
 type Filters = { query: string; sort: string; verification: string; status: string; role: string };
@@ -128,40 +129,58 @@ export function OwnerAccountWorkspace({ access }: { access: MemberAccess }) {
   function changeFilter(key: keyof Filters, value: string) { setCursors([]); setSelected(null); setError(""); setMessage(""); setFilters(previous => ({ ...previous, [key]: value })); }
   function submitSearch(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (search.trim().length > 100) { setError("Search accounts using up to 100 characters."); return; } changeFilter("query", search.trim()); }
 
-  return <section className="mx-auto max-w-6xl rounded-xl border border-border bg-surface p-5 sm:p-8">
-    <Link href="/account" className="text-accent underline">Back to your account</Link>
+  return <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><section className="rounded-xl border border-border bg-surface p-5 sm:p-8">
     <div role="status" aria-live="polite" className="mt-4 text-sm">{message}</div>
     {error && <p role="alert" className="mt-3 rounded border border-danger p-3 text-sm text-danger">{error}</p>}
-    {!authorized ? <p className="mt-4" role="status">Checking your access. Return to your account if it is unavailable.</p> : <>
-      <p className="public-kicker mt-5">BARCODE Network</p><h1 className="mt-2 text-3xl font-bold">Owner workspace</h1>
-      <nav className="mt-5 flex flex-wrap gap-4 text-sm" aria-label="Owner workspace"><a href="#accounts" className="text-accent underline">Accounts &amp; access</a><Link href="/account/owner/artists" className="text-accent underline">Artists &amp; show history</Link><Link href="/admin" className="text-accent underline">Existing admin workspace — separate access during transition</Link></nav>
+    {!authorized ? <div><p className="mt-4" role="status">Checking your access. Return to your account if it is unavailable.</p><Link href="/account" className="mt-4 inline-block text-accent underline">Back to your account</Link></div> : <>
+      <OwnerWorkspaceNavigation section="accounts" />
+      <p className="public-kicker">BARCODE Network</p>
+      <h1 className="mt-2 text-3xl font-bold">Accounts &amp; Crew</h1>
       {unconfirmedForOwner && <div className="mt-5 rounded border border-border p-4"><p className="text-sm">An account action is unconfirmed. Other account changes are paused until it is resolved.</p><button className="btn-secondary mt-3" disabled={busy || loading} onClick={() => executeOperation(unconfirmedForOwner)}>Retry unconfirmed action</button></div>}
       <section id="accounts" className="mt-8" aria-labelledby="account-directory-heading">
-        <h2 id="account-directory-heading" className="text-xl font-bold">Accounts &amp; access</h2>
+        <h2 id="account-directory-heading" className="text-xl font-bold">Account directory</h2>
         <p className="mt-2 text-sm text-muted">Members activate after email verification. Manage their name, account status and assigned Crew access here.</p>
         <form onSubmit={submitSearch} className="mt-5 flex flex-wrap items-end gap-3"><label className="min-w-0 flex-1 text-sm">Search accounts<input type="search" className={fieldClass} value={search} onChange={event => setSearch(event.target.value)} maxLength={100} disabled={busy} placeholder="Name or email" /></label><button className="btn-secondary" disabled={busy || loading}>Search</button></form>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <label className="text-sm">Sort<select className={fieldClass} value={filters.sort} disabled={busy} onChange={event => changeFilter("sort", event.target.value)}><option value="name">Name</option><option value="newest">Newest first</option></select></label>
-          <label className="text-sm">Verification<select className={fieldClass} value={filters.verification} disabled={busy} onChange={event => changeFilter("verification", event.target.value)}><option value="all">All verification states</option><option value="verified">Verified</option><option value="unverified">Unverified</option></select></label>
-          <label className="text-sm">Account status<select className={fieldClass} value={filters.status} disabled={busy} onChange={event => changeFilter("status", event.target.value)}><option value="all">All account states</option><option value="active">Active</option><option value="suspended">Suspended</option></select></label>
-          <label className="text-sm">Assigned access<select className={fieldClass} value={filters.role} disabled={busy} onChange={event => changeFilter("role", event.target.value)}><option value="all">All access</option><option value="member">Member</option><option value="crew">Crew</option><option value="owner">Owner</option></select></label>
-        </div>
+        <details className="mt-4 rounded border border-border p-4">
+          <summary className="cursor-pointer text-sm font-semibold">Advanced filters</summary>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <label className="text-sm">Sort<select className={fieldClass} value={filters.sort} disabled={busy} onChange={event => changeFilter("sort", event.target.value)}><option value="name">Name</option><option value="newest">Newest first</option></select></label>
+            <label className="text-sm">Verification<select className={fieldClass} value={filters.verification} disabled={busy} onChange={event => changeFilter("verification", event.target.value)}><option value="all">All verification states</option><option value="verified">Verified</option><option value="unverified">Unverified</option></select></label>
+            <label className="text-sm">Account status<select className={fieldClass} value={filters.status} disabled={busy} onChange={event => changeFilter("status", event.target.value)}><option value="all">All account states</option><option value="active">Active</option><option value="suspended">Suspended</option></select></label>
+            <label className="text-sm">Assigned access<select className={fieldClass} value={filters.role} disabled={busy} onChange={event => changeFilter("role", event.target.value)}><option value="all">All access</option><option value="member">Member</option><option value="crew">Crew</option><option value="owner">Owner</option></select></label>
+          </div>
+        </details>
         <div className="mt-6 grid gap-6 lg:grid-cols-2">
           <div aria-busy={loading}>
-            {loading ? <p role="status">Loading accounts…</p> : accounts.length === 0 ? <p className="text-muted">No accounts match these filters.</p> : <ul className="space-y-3" aria-label="Account directory">{accounts.map(account => <li key={account.id} className="rounded border border-border p-4"><p className="break-words font-semibold">{account.name}</p><p className="mt-1 break-all text-sm text-muted">{account.email}</p><p className="mt-2 text-xs text-muted">{account.suspended ? "Suspended" : "Active"} · {account.emailVerified ? "Verified" : "Unverified"} · {account.owner ? "Owner" : "Member"}{account.crew ? " · Crew" : ""}</p><button className="btn-secondary mt-3" disabled={busy} onClick={() => { choose(account); setError(""); setMessage(""); }} aria-label={`View account for ${account.name}`}>View account</button></li>)}</ul>}
+            {loading ? <p role="status">Loading accounts…</p> : accounts.length === 0 ? <p className="text-muted">No accounts match these filters.</p> : <ul className="space-y-3" aria-label="Account directory">{accounts.map(account => <li key={account.id} className="rounded border border-border p-4"><p className="break-words font-semibold">{account.name}</p><p className="mt-1 break-all text-sm text-muted">{account.email}</p><p className="mt-2 text-xs text-muted">{account.suspended ? "Suspended" : "Active"} · {account.emailVerified ? "Verified" : "Unverified"} · {account.owner ? "Owner" : "Member"}{account.crew ? " · Crew" : ""}</p><button className="btn-secondary mt-3" disabled={busy} onClick={() => { choose(account); setError(""); setMessage(""); }} aria-label={"View account for " + account.name}>View account</button></li>)}</ul>}
             <div className="mt-5 flex flex-wrap items-center gap-3"><button className="btn-secondary" disabled={busy || loading || cursors.length === 0} onClick={() => { setSelected(null); setCursors(previous => previous.slice(0, -1)); }}>Previous page</button><span className="text-sm text-muted">Page {cursors.length + 1}</span><button className="btn-secondary" disabled={busy || loading || !nextCursor} onClick={() => { if (nextCursor) { setSelected(null); setCursors(previous => [...previous, nextCursor]); } }}>Next page</button><button className="text-sm text-accent underline" disabled={busy || loading} onClick={() => { setError(""); setMessage(""); void loadDirectory(); }}>Refresh directory</button></div>
           </div>
           <div>{selected ? <section aria-labelledby="account-detail-heading" className="rounded border border-border p-4 sm:p-5">
-            <h3 id="account-detail-heading" className="break-words text-lg font-bold">{selected.name}</h3><p className="mt-2 break-all text-sm">{selected.email}</p><p className="mt-2 break-all text-xs text-muted">BARCODE ID: {selected.id}</p><p className="mt-2 text-xs text-muted">Created {selected.createdAt.slice(0, 10)} · {selected.emailVerified ? "Email verified" : "Email unverified"}</p>
-            <form className="mt-5" onSubmit={event => { event.preventDefault(); void mutate("set-name", { name }); }}><label className="text-sm">Display name<input className={fieldClass} value={name} onChange={event => setName(event.target.value)} minLength={1} maxLength={80} required disabled={changesPaused} /></label><p className="mt-2 text-xs text-muted">Names are unique. Changes keep the same BARCODE ID.</p><button className="btn-secondary mt-3" disabled={changesPaused || name === selected.name}>Save display name</button></form>
-            <form className="mt-5 border-t border-border pt-5" onSubmit={event => { event.preventDefault(); void mutate("set-crew", { assigned: crew, permissions: crew ? permissions : [] }); }}><label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={crew} disabled={changesPaused} onChange={event => { setCrew(event.target.checked); if (!event.target.checked) setPermissions([]); }} />Crew access assigned</label>
-              {crew && availablePermissions.length > 0 && <fieldset className="mt-4 space-y-3"><legend className="mb-2 text-sm">Available Crew tools</legend>{availablePermissions.map(permission => <label key={permission} className="flex items-center gap-3 text-sm"><input type="checkbox" checked={permissions.includes(permission)} disabled={changesPaused} onChange={event => setPermissions(previous => event.target.checked ? [...previous, permission] : previous.filter(value => value !== permission))} />{permission}</label>)}</fieldset>}
-              {crew && availablePermissions.length === 0 && <p className="mt-3 text-xs text-muted">Crew tools will become available as they are ready.</p>}<button className="btn-secondary mt-3" disabled={changesPaused}>Save Crew access</button>
-            </form>
-            <div className="mt-5 space-y-3 border-t border-border pt-5"><p className="text-sm">{selected.suspended ? "This account is suspended. Reactivation permits a fresh sign-in." : "Suspension signs this account out and blocks sign-in."}</p><button className="btn-secondary" disabled={changesPaused || (!selected.suspended && selected.id === access.user.id)} onClick={() => mutate(selected.suspended ? "reactivate" : "suspend")}>{selected.suspended ? "Reactivate account" : "Suspend account"}</button>{selected.id === access.user.id && <p className="text-xs text-muted">You cannot suspend your current Owner account.</p>}<div className="flex flex-wrap gap-3"><button className="btn-secondary" disabled={changesPaused} onClick={() => mutate("revoke-sessions")}>Sign out account sessions</button><button className="btn-secondary" disabled={changesPaused || !selected.emailVerified} onClick={() => mutate("send-recovery")}>Send recovery email</button></div><p className="text-xs text-muted">Recovery uses the account&apos;s existing verified address. It does not reactivate a suspended account.</p></div>
-          </section> : <p className="rounded border border-border p-5 text-sm text-muted">Choose an account to review its details and access.</p>}</div>
+            <h3 id="account-detail-heading" className="break-words text-lg font-bold">{selected.name}</h3>
+            <p className="mt-2 break-all text-sm">{selected.email}</p>
+            <section className="mt-5" aria-labelledby="account-profile-heading">
+              <h4 id="account-profile-heading" className="font-semibold">Profile</h4>
+              <form className="mt-3" onSubmit={event => { event.preventDefault(); void mutate("set-name", { name }); }}><label className="text-sm">Display name<input className={fieldClass} value={name} onChange={event => setName(event.target.value)} minLength={1} maxLength={80} required disabled={changesPaused} /></label><p className="mt-2 text-xs text-muted">Names are unique. Changes keep the same BARCODE ID.</p><button className="btn-secondary mt-3" disabled={changesPaused || name === selected.name}>Save display name</button></form>
+            </section>
+            <section className="mt-5 border-t border-border pt-5" aria-labelledby="account-crew-heading">
+              <h4 id="account-crew-heading" className="font-semibold">Crew access</h4>
+              <form className="mt-3" onSubmit={event => { event.preventDefault(); void mutate("set-crew", { assigned: crew, permissions: crew ? permissions : [] }); }}><label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={crew} disabled={changesPaused} onChange={event => { setCrew(event.target.checked); if (!event.target.checked) setPermissions([]); }} />Crew access assigned</label>
+                {crew && availablePermissions.length > 0 && <fieldset className="mt-4 space-y-3"><legend className="mb-2 text-sm">Available Crew tools</legend>{availablePermissions.map(permission => <label key={permission} className="flex items-center gap-3 text-sm"><input type="checkbox" checked={permissions.includes(permission)} disabled={changesPaused} onChange={event => setPermissions(previous => event.target.checked ? [...previous, permission] : previous.filter(value => value !== permission))} />{permission}</label>)}</fieldset>}
+                {crew && availablePermissions.length === 0 && <p className="mt-3 text-xs text-muted">Crew tools will become available as they are ready.</p>}<button className="btn-secondary mt-3" disabled={changesPaused}>Save Crew access</button>
+              </form>
+            </section>
+            <section className="mt-5 space-y-3 border-t border-border pt-5" aria-labelledby="account-security-heading">
+              <h4 id="account-security-heading" className="font-semibold">Security</h4>
+              <p className="text-sm">{selected.suspended ? "This account is suspended. Reactivation permits a fresh sign-in." : "Suspension signs this account out and blocks sign-in."}</p><button className="btn-secondary" disabled={changesPaused || (!selected.suspended && selected.id === access.user.id)} onClick={() => mutate(selected.suspended ? "reactivate" : "suspend")}>{selected.suspended ? "Reactivate account" : "Suspend account"}</button>{selected.id === access.user.id && <p className="text-xs text-muted">You cannot suspend your current Owner account.</p>}<div className="flex flex-wrap gap-3"><button className="btn-secondary" disabled={changesPaused} onClick={() => mutate("revoke-sessions")}>Sign out account sessions</button><button className="btn-secondary" disabled={changesPaused || !selected.emailVerified} onClick={() => mutate("send-recovery")}>Send recovery email</button></div><p className="text-xs text-muted">Recovery uses the account&apos;s existing verified address. It does not reactivate a suspended account.</p>
+            </section>
+            <details className="mt-5 border-t border-border pt-5">
+              <summary className="cursor-pointer text-sm font-semibold">Details</summary>
+              <p className="mt-3 break-all text-xs text-muted">BARCODE ID: {selected.id}</p>
+              <p className="mt-2 text-xs text-muted">Created {selected.createdAt.slice(0, 10)} · {selected.emailVerified ? "Email verified" : "Email unverified"}</p>
+            </details>
+          </section> : <p className="rounded border border-border p-5 text-sm text-muted">Choose an account to manage its profile and access.</p>}</div>
         </div>
       </section>
     </>}
-  </section>;
+  </section></div>;
 }

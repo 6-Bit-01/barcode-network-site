@@ -1,3 +1,4 @@
+import { OwnerWorkspaceNavigation } from "@/components/OwnerWorkspaceNavigation";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { cookies } from "next/headers";
@@ -75,6 +76,7 @@ export default async function PrivateBroadcastTestPage({
 
   return (
     <main className="min-h-screen pt-14">
+      <div className="mx-auto max-w-7xl px-4 pt-6 sm:px-6"><OwnerWorkspaceNavigation section="radio" /></div>
       <section className="border-b-2 border-cyan-200 bg-cyan-200/10">
         <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
           <p className="text-xs font-black uppercase tracking-[0.4em] text-cyan-200">PRIVATE BROADCAST TEST</p>

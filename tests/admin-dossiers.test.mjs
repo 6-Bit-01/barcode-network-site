@@ -2809,14 +2809,10 @@ test("taxonomy source types, entry annotations, and tag aliases are present", ()
   }
 });
 
-test("admin panel includes Dossier Control Center link", () => {
+test("shelved dossier tools stay out of the everyday Owner menu", () => {
   const adminPage = source("src/app/admin/page.tsx");
-  assert.match(adminPage, /Dossier Control Center/);
-  assert.match(
-    adminPage,
-    /Review dossier candidates, manage drafts, and prepare approved website dossier entries\./,
-  );
-  assert.match(adminPage, /href="\/admin\/dossiers"/);
+  assert.doesNotMatch(adminPage, /href="\/admin\/dossiers"|Dossier Control Center/);
+  assert.match(source("src/app/admin/dossiers/page.tsx"), /Dossier Control Center/);
 });
 
 test("admin dossier dashboard is a simplified subject sorting overview", () => {

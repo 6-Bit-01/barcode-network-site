@@ -14,34 +14,62 @@ const allowedUrls=new Set([
 ]);
 const object=(value:unknown):value is Record<string,unknown>=>value!==null&&typeof value==="object"&&!Array.isArray(value);
 const unavailable=()=>new Error("Realtime relay is temporarily unavailable.");
-
-async function boundedJson(response:Response):Promise<unknown>{
- if(!response.ok||!response.body||Number(response.headers.get("content-length")??0)>MAX_RESPONSE_BYTES){
-  await response.body?.cancel().catch(()=>{});
-  throw unavailable();
+type ValidationStage="provider"|"payload"|"schema"|"urls"|"username"|"credential";
+type ValidationCategory="body_missing"|"size_exceeded"|"read_failed"|"json_invalid"|"ice_servers_invalid"|"server_count_invalid"|"server_invalid"|"shape_invalid"|"count_invalid"|"value_invalid"|"endpoint_unsupported"|"long_term_token_match"|"key_id_match"|"relay_missing"|"status_unavailable"|"request_failed";
+type EndpointDetails={scheme:"stun"|"turn"|"turns"|"other";transport:"udp"|"tcp"|"missing"|"other";port:number;cloudflareHost:boolean};
+type ValidationDetails={responseBytes?:number;serverCount?:number;serverIndex?:number;urlCount?:number;urlIndex?:number;valueLength?:number;status?:number;blockedPort53Count?:number}&Partial<EndpointDetails>;
+class TurnValidationError extends Error{
+ readonly diagnostic:ValidationDetails&{stage:ValidationStage;category:ValidationCategory};
+ constructor(stage:ValidationStage,category:ValidationCategory,details:ValidationDetails={}){
+  super("Realtime relay is temporarily unavailable.");
+  this.diagnostic={stage,category,...details};
  }
- const reader=response.body.getReader(),chunks:Uint8Array[]=[];let size=0;
+}
+const invalid=(stage:ValidationStage,category:ValidationCategory,details:ValidationDetails={})=>new TurnValidationError(stage,category,details);
+
+const browserBlockedPort53=/^(?:stun:stun|turns?:turn)\.cloudflare\.com:53(?:\?transport=(?:udp|tcp))?$/;
+function endpointDetails(url:string):EndpointDetails{
+ const parsed=/^([A-Za-z][A-Za-z0-9+.-]*):(?:\/\/)?([^/?#]*)(?:\?([^#]*))?$/.exec(url);
+ const rawScheme=parsed?.[1],scheme=rawScheme==="stun"||rawScheme==="turn"||rawScheme==="turns"?rawScheme:"other";
+ const address=/^(?:[^@]*@)?([^:]+)(?::([0-9]+))?$/.exec(parsed?.[2]??"");
+ const candidatePort=Number(address?.[2]??0),port=Number.isSafeInteger(candidatePort)&&candidatePort>=0&&candidatePort<=65535?candidatePort:0;
+ const transports=new URLSearchParams(parsed?.[3]??"").getAll("transport");
+ const transport=transports.length===0?"missing":transports.length===1&&(transports[0]==="udp"||transports[0]==="tcp")?transports[0]:"other";
+ return {scheme,transport,port,cloudflareHost:address?.[1]==="stun.cloudflare.com"||address?.[1]==="turn.cloudflare.com"};
+}
+async function boundedJson(response:Response):Promise<unknown>{
+ if(!response.ok){await response.body?.cancel().catch(()=>{});throw invalid("provider","status_unavailable",{status:response.status});}
+ if(!response.body)throw invalid("payload","body_missing");
+ const declared=Number(response.headers.get("content-length")??0);
+ if(declared>MAX_RESPONSE_BYTES){await response.body.cancel().catch(()=>{});throw invalid("payload","size_exceeded",Number.isSafeInteger(declared)?{responseBytes:declared}:{});}
+ let reader:ReadableStreamDefaultReader<Uint8Array>;
+ try{reader=response.body.getReader();}catch{throw invalid("payload","read_failed");}
+ const chunks:Uint8Array[]=[];let size=0;
  try{
   while(true){
-   const {done,value}=await reader.read();if(done)break;
-   size+=value.byteLength;if(size>MAX_RESPONSE_BYTES)throw unavailable();chunks.push(value);
+   let chunk:ReadableStreamReadResult<Uint8Array>;
+   try{chunk=await reader.read();}catch{throw invalid("payload","read_failed");}
+   if(chunk.done)break;
+   size+=chunk.value.byteLength;if(size>MAX_RESPONSE_BYTES)throw invalid("payload","size_exceeded",{responseBytes:size});chunks.push(chunk.value);
   }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  try{return JSON.parse(Buffer.concat(chunks).toString("utf8"));}catch{throw invalid("payload","json_invalid",{responseBytes:size});}
  }finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
 }
 function normalize(value:unknown,secrets:string[]):SystemClashIceServer[]{
- if(!object(value)||!Array.isArray(value.iceServers)||value.iceServers.length<1||value.iceServers.length>8)throw unavailable();
+ if(!object(value)||!Array.isArray(value.iceServers))throw invalid("schema","ice_servers_invalid");
+ if(value.iceServers.length<1||value.iceServers.length>8)throw invalid("schema","server_count_invalid",{serverCount:value.iceServers.length});
  const result:SystemClashIceServer[]=[];let relay=false;
- for(const raw of value.iceServers){
-  if(!object(raw))throw unavailable();
+ for(const [serverIndex,raw]of value.iceServers.entries()){
+  if(!object(raw))throw invalid("schema","server_invalid",{serverIndex});
   const source=typeof raw.urls==="string"?[raw.urls]:raw.urls;
-  if(!Array.isArray(source)||source.length<1||source.length>8)throw unavailable();
+  if(!Array.isArray(source))throw invalid("urls","shape_invalid",{serverIndex});
+  if(source.length<1||source.length>8)throw invalid("urls","count_invalid",{serverIndex,urlCount:source.length,blockedPort53Count:source.filter(url=>typeof url==="string"&&browserBlockedPort53.test(url)).length});
   const urls:string[]=[];
-  for(const url of source){
-   if(typeof url!=="string"||url.length>256)throw unavailable();
+  for(const [urlIndex,url]of source.entries()){
+   if(typeof url!=="string"||url.length>256)throw invalid("urls","value_invalid",{serverIndex,urlIndex,...(typeof url==="string"?{valueLength:url.length}:{})});
    // Browsers block port53; retain only the documented Cloudflare browser endpoints.
-   if(/^(?:stun:stun|turns?:turn)\.cloudflare\.com:53(?:\?transport=(?:udp|tcp))?$/.test(url))continue;
-   if(!allowedUrls.has(url))throw unavailable();
+   if(browserBlockedPort53.test(url))continue;
+   if(!allowedUrls.has(url))throw invalid("urls","endpoint_unsupported",{serverIndex,urlIndex,...endpointDetails(url)});
    if(!urls.includes(url))urls.push(url);
   }
   if(!urls.length)continue;
@@ -49,14 +77,17 @@ function normalize(value:unknown,secrets:string[]):SystemClashIceServer[]{
   if(urls.some(url=>url.startsWith("turn:")||url.startsWith("turns:"))){
    for(const field of ["username","credential"] as const){
     const text=raw[field];
-    if(typeof text!=="string"||text.length<1||text.length>512||!/^[\x21-\x7e]+$/.test(text)||secrets.some(secret=>text.includes(secret)))throw unavailable();
+    const details={serverIndex,...(typeof text==="string"?{valueLength:text.length}:{})};
+    if(typeof text!=="string"||text.length<1||text.length>512||!/^[\x21-\x7e]+$/.test(text))throw invalid(field,"value_invalid",details);
+    if(text.includes(secrets[1]))throw invalid(field,"long_term_token_match",details);
+    if(text.includes(secrets[0]))throw invalid(field,"key_id_match",details);
     server[field]=text;
    }
    relay=true;
   }
   result.push(server);
  }
- if(!relay)throw unavailable();
+ if(!relay)throw invalid("schema","relay_missing");
  return result;
 }
 
@@ -71,5 +102,9 @@ export async function createOnlineTurnCredentials({fetch:fetcher=globalThis.fetc
    headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify({ttl:1260}),
   });
   return {iceServers:normalize(await boundedJson(response),[key,token]),realtimeRelay:true};
- }catch{throw unavailable();}
+ }catch(error){
+  // Only server-created labels and numeric metadata are logged, never provider values or errors.
+  console.error("System Clash TURN validation failed",error instanceof TurnValidationError?error.diagnostic:{stage:"provider",category:"request_failed"});
+  throw unavailable();
+ }
 }

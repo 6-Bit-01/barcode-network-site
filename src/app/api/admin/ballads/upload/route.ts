@@ -1,6 +1,6 @@
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { NextResponse } from "next/server";
-import { verifyAdminRequest } from "@/lib/auth";
+import { verifyBalladAdminRequest } from "@/lib/bnl-ballad-access";
 import { readBallad, requireBalladShow } from "@/lib/bnl-ballads-store";
 export const runtime = "nodejs";
 export async function POST(request: Request) {
@@ -8,7 +8,7 @@ export async function POST(request: Request) {
     const body = await request.json() as HandleUploadBody;
     const response = await handleUpload({ body, request,
       onBeforeGenerateToken: async (pathname, clientPayload) => {
-        if (!await verifyAdminRequest(request)) throw new Error("Unauthorized");
+        if (!await verifyBalladAdminRequest(request)) throw new Error("Unauthorized");
         const payload = JSON.parse(clientPayload || "{}");
         await requireBalladShow(payload.showId);
         const doc = await readBallad(payload.showId);

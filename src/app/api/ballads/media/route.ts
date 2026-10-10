@@ -1,5 +1,5 @@
 import { get } from "@vercel/blob";
-import { verifyAdminRequest } from "@/lib/auth";
+import { verifyBalladAdminRequest } from "@/lib/bnl-ballad-access";
 import { requireBalladShow, readBallad } from "@/lib/bnl-ballads-store";
 import { serveAdminQueueAudio } from "@/lib/queue-audio-response";
 import { publicBallad } from "@/lib/bnl-ballads";
@@ -26,7 +26,7 @@ export async function GET(req: Request) {
     // The public player must never inherit the owner's draft-preview permission.
     const publicOnly = params.get("public") === "1";
     if (publicOnly && (!audio || publicBallad(doc, show)?.audioId !== audio.id)) return new Response("Audio unavailable.", { status: 404, headers: { "Cache-Control": "no-store" } });
-    if (!audio || (doc.published?.audioId !== audio.id && !await verifyAdminRequest(req))) return new Response("Audio unavailable.", { status: 404 });
+    if (!audio || (doc.published?.audioId !== audio.id && !await verifyBalladAdminRequest(req))) return new Response("Audio unavailable.", { status: 404 });
     const download = params.get("download") === "1";
     const release = download ? publicBallad(doc, show) : null;
     if (download && (!release || release.audioId !== audio.id)) return new Response("Download unavailable.", { status: 404, headers: { "Cache-Control": "no-store" } });

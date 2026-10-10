@@ -113,7 +113,7 @@ function mediaRoute({ published = true, eligible = true, admin = false } = {}) {
   const doc = { versions: [song.version], audio: [{ id: song.audioId, versionId: song.version.id, url: "https://private.example/recording.wav", filename: "private-original.wav", contentType: "audio/wav" }], published: published ? { versionId: song.version.id, audioId: song.audioId, at: song.publishedAt, presentation: song.presentation, linerNotes: song.linerNotes, artistLinks: song.artistLinks } : null };
   let reads = 0;
   const route = load("src/app/api/ballads/media/route.ts", {
-    "@/lib/auth": { verifyAdminRequest: async () => admin },
+    "@/lib/bnl-ballad-access": { verifyBalladAdminRequest: async () => admin },
     "@/lib/bnl-ballads-store": { requireBalladShow: async () => { if (!eligible) throw Error("revoked"); return song.show; }, readBallad: async () => doc },
     "@vercel/blob": { get: async (_url, options) => { reads++; const range = options.headers?.range; return { statusCode: 200, stream: new ReadableStream({ start(c) { c.enqueue(new Uint8Array(range ? [1, 2] : [1, 2, 3, 4])); c.close(); } }), blob: { contentType: "audio/wav" }, headers: new Headers(range ? { "content-range": "bytes 0-1/4", "content-length": "2" } : { "content-length": "4" }) }; } },
   });

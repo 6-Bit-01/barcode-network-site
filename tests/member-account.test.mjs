@@ -5,11 +5,13 @@ import vm from 'node:vm';
 import { createRequire } from 'node:module';
 import ts from 'typescript';
 const require=createRequire(import.meta.url),React=require('react');
+const termsModule={exports:{}};
+vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../src/lib/member-terms.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{module:termsModule,exports:termsModule.exports});
 function render(mode='signin',token){
  const testModule={exports:{}};
  const source=fs.readFileSync(new URL('../src/components/MemberAccount.tsx',import.meta.url),'utf8');
  const mock={...React,useEffect:()=>{},useState:(initial)=>[initial,()=>{}]};
- vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText,{module:testModule,exports:testModule.exports,AbortController,require:(id)=>id==='react'?mock:id==='@/components/MemberAccessNavigation'?()=>null:id==='@/components/MemberRadioHistory'?{MemberRadioHistory:()=>null}:id==='next/link'?({children,...props})=>React.createElement('a',props,children):require(id)});
+ vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText,{module:testModule,exports:testModule.exports,AbortController,require:(id)=>id==='@/lib/member-terms'?termsModule.exports:id==='react'?mock:id==='@/components/MemberAccessNavigation'?()=>null:id==='@/components/MemberRadioHistory'?{MemberRadioHistory:()=>null}:id==='next/link'?({children,...props})=>React.createElement('a',props,children):require(id)});
  return require('react-dom/server').renderToStaticMarkup(React.createElement(testModule.exports.MemberAccount,{initialMode:mode,resetToken:token}));
 }
 test('account/reset pages are private and isolated from BNL and hidden games',()=>{

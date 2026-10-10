@@ -1,5 +1,6 @@
 import "server-only";
 import { isIP } from "node:net";
+import { MEMBER_TERMS_VERSION } from "@/lib/member-terms";
 import { AUTH_PATH, allowedEndpoint, memberCookies, normalizeBody, safeRedirect } from "../../services/member-auth/contract.mjs";
 
 export type MemberServiceConfiguration = { serviceUrl: string; serviceToken: string; canonicalOrigin: string };
@@ -45,7 +46,15 @@ export async function proxyMemberRequest(request: Request, path: string, configu
   if (request.method === "POST" && !request.headers.get("content-type")?.startsWith("application/json")) return problem(415, "JSON_REQUIRED");
   let body: string | undefined;
   try {
-    if (request.method === "POST") body = JSON.stringify(normalizeBody(path, JSON.parse(await boundedText(request, 16_384)), origin));
+    if (request.method === "POST") {
+      const submitted = JSON.parse(await boundedText(request, 16_384));
+      if (path === "sign-up/email") {
+        if (submitted?.termsAccepted !== true || submitted?.termsVersion !== MEMBER_TERMS_VERSION) return problem(400, "ACCOUNT_TERMS_REQUIRED");
+        const fields = { ...submitted };
+        delete fields.termsAccepted; delete fields.termsVersion;
+        body = JSON.stringify(normalizeBody(path, fields, origin));
+      } else body = JSON.stringify(normalizeBody(path, submitted, origin));
+    }
     for (const field of ["callbackURL", "redirectTo"]) {
       const value = requestURL.searchParams.get(field);
       if (value !== null && !safeRedirect(value, origin)) return problem(400, "INVALID_RETURN_LINK");

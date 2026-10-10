@@ -12,11 +12,12 @@ const allowedUrls=new Set([
  "turns:turn.cloudflare.com:5349?transport=tcp",
  "turns:turn.cloudflare.com:443?transport=tcp",
 ]);
+const discardedStun443Urls=new Set(['stun:stun.cloudflare.com:443','stun:turn.cloudflare.com:443']);
 const object=(value:unknown):value is Record<string,unknown>=>value!==null&&typeof value==="object"&&!Array.isArray(value);
 const unavailable=()=>new Error("Realtime relay is temporarily unavailable.");
 type ValidationStage="provider"|"payload"|"schema"|"urls"|"username"|"credential";
 type ValidationCategory="body_missing"|"size_exceeded"|"read_failed"|"json_invalid"|"ice_servers_invalid"|"server_count_invalid"|"server_invalid"|"shape_invalid"|"count_invalid"|"value_invalid"|"endpoint_unsupported"|"long_term_token_match"|"key_id_match"|"relay_missing"|"status_unavailable"|"request_failed";
-type EndpointDetails={scheme:"stun"|"turn"|"turns"|"other";transport:"udp"|"tcp"|"missing"|"other";port:number;cloudflareHost:boolean};
+type EndpointDetails={scheme:"stun"|"turn"|"turns"|"other";transport:"udp"|"tcp"|"missing"|"other";port:number;host:"stun"|"turn"|"other"};
 type ValidationDetails={responseBytes?:number;serverCount?:number;serverIndex?:number;urlCount?:number;urlIndex?:number;valueLength?:number;status?:number;blockedPort53Count?:number}&Partial<EndpointDetails>;
 class TurnValidationError extends Error{
  readonly diagnostic:ValidationDetails&{stage:ValidationStage;category:ValidationCategory};
@@ -35,7 +36,20 @@ function endpointDetails(url:string):EndpointDetails{
  const candidatePort=Number(address?.[2]??0),port=Number.isSafeInteger(candidatePort)&&candidatePort>=0&&candidatePort<=65535?candidatePort:0;
  const transports=new URLSearchParams(parsed?.[3]??"").getAll("transport");
  const transport=transports.length===0?"missing":transports.length===1&&(transports[0]==="udp"||transports[0]==="tcp")?transports[0]:"other";
- return {scheme,transport,port,cloudflareHost:address?.[1]==="stun.cloudflare.com"||address?.[1]==="turn.cloudflare.com"};
+ return {scheme,transport,port,host:address?.[1]==="stun.cloudflare.com"?"stun":address?.[1]==="turn.cloudflare.com"?"turn":"other"};
+}
+type FieldDetails={type:"string"|"missing"|"null"|"array"|"object"|"number"|"boolean"|"other";length:number;includesKeyId:boolean;includesApiToken:boolean};
+type ProviderSummary={serverCount:number;servers:{serverIndex:number;urlCount:number;endpoints:EndpointDetails[];username:FieldDetails;credential:FieldDetails}[]};
+function fieldDetails(value:unknown,secrets:string[]):FieldDetails{
+ const type=typeof value==="string"?"string":value===undefined?"missing":value===null?"null":Array.isArray(value)?"array":typeof value==="object"?"object":typeof value==="number"?"number":typeof value==="boolean"?"boolean":"other";
+ return {type,length:typeof value==="string"?value.length:0,includesKeyId:typeof value==="string"&&value.includes(secrets[0]),includesApiToken:typeof value==="string"&&value.includes(secrets[1])};
+}
+function summarizeProvider(value:unknown,secrets:string[]):ProviderSummary|undefined{
+ if(!object(value)||!Array.isArray(value.iceServers))return;
+ return {serverCount:value.iceServers.length,servers:value.iceServers.slice(0,8).map((raw,serverIndex)=>{
+  const row=object(raw)?raw:{},source=typeof row.urls==="string"?[row.urls]:Array.isArray(row.urls)?row.urls:[];
+  return {serverIndex,urlCount:source.length,endpoints:source.slice(0,8).map(url=>endpointDetails(typeof url==="string"?url:"")),username:fieldDetails(row.username,secrets),credential:fieldDetails(row.credential,secrets)};
+ })};
 }
 async function boundedJson(response:Response):Promise<unknown>{
  if(!response.ok){await response.body?.cancel().catch(()=>{});throw invalid("provider","status_unavailable",{status:response.status});}
@@ -67,8 +81,8 @@ function normalize(value:unknown,secrets:string[]):SystemClashIceServer[]{
   const urls:string[]=[];
   for(const [urlIndex,url]of source.entries()){
    if(typeof url!=="string"||url.length>256)throw invalid("urls","value_invalid",{serverIndex,urlIndex,...(typeof url==="string"?{valueLength:url.length}:{})});
-   // Browsers block port53; retain only the documented Cloudflare browser endpoints.
-   if(browserBlockedPort53.test(url))continue;
+   // Drop blocked port53 and known provider STUN443 extras; retain documented relay endpoints.
+   if(browserBlockedPort53.test(url)||discardedStun443Urls.has(url))continue;
    if(!allowedUrls.has(url))throw invalid("urls","endpoint_unsupported",{serverIndex,urlIndex,...endpointDetails(url)});
    if(!urls.includes(url))urls.push(url);
   }
@@ -96,15 +110,19 @@ export async function createOnlineTurnCredentials({fetch:fetcher=globalThis.fetc
  const key=env.SYSTEM_CLASH_TURN_KEY_ID??"",token=env.SYSTEM_CLASH_TURN_API_TOKEN??"";
  if(!key&&!token)return {iceServers:[],realtimeRelay:false};
  if(!/^[A-Za-z0-9_-]{1,128}$/.test(key)||!token||token.length>512||!/^[\x21-\x7e]+$/.test(token))throw new Error("Realtime relay configuration is unavailable.");
+ let payload:unknown;
  try{
   const response=await fetcher("https://rtc.live.cloudflare.com/v1/turn/keys/"+key+"/credentials/generate-ice-servers",{
    method:"POST",redirect:"error",cache:"no-store",signal:AbortSignal.timeout(5000),
    headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify({ttl:1260}),
   });
-  return {iceServers:normalize(await boundedJson(response),[key,token]),realtimeRelay:true};
+  payload=await boundedJson(response);
+  return {iceServers:normalize(payload,[key,token]),realtimeRelay:true};
  }catch(error){
-  // Only server-created labels and numeric metadata are logged, never provider values or errors.
-  console.error("System Clash TURN validation failed",error instanceof TurnValidationError?error.diagnostic:{stage:"provider",category:"request_failed"});
+  // Only fixed labels, bounded summaries, numbers and booleans; never provider values or errors.
+  const diagnostic=error instanceof TurnValidationError?error.diagnostic:{stage:"provider",category:"request_failed"};
+  const providerSummary=error instanceof TurnValidationError?summarizeProvider(payload,[key,token]):undefined;
+  console.error("System Clash TURN validation failed",JSON.stringify(providerSummary?{...diagnostic,providerSummary}:diagnostic));
   throw unavailable();
  }
 }

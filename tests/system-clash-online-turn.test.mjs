@@ -62,6 +62,8 @@ test('abort after response headers releases the body reader and never exposes pr
 // The provider boundary must identify a rejection without logging provider data.
 const privateDiagnosticMarkers=['fake-key-id','fake-long-term-provider-token','temporary-private-user','temporary-private-password','private-response-marker','turn:untrusted.invalid:3478?transport=udp'];
 const diagnosticProvider=()=>({iceServers:[{urls:['turn:turn.cloudflare.com:3478?transport=udp'],username:'temporary-private-user',credential:'temporary-private-password'}],private:'private-response-marker'});
+const captureDiagnostic=logs=>(tag,text)=>{assert.equal(tag,'System Clash TURN validation failed');assert.equal(typeof text,'string');logs.push([tag,JSON.parse(text)]);};
+const diagnosticDetails=record=>Object.fromEntries(Object.entries(record).filter(([key])=>key!=='providerSummary'));
 const diagnosticCases=[
  ['missing body','payload','body_missing',()=>new Response(null,{status:201})],
  ['declared payload bound','payload','size_exceeded',()=>new Response('private-response-marker',{status:201,headers:{'Content-Length':'16385'}})],
@@ -87,38 +89,80 @@ const diagnosticCases=[
  ['provider request failure','provider','request_failed',()=>{throw new Error('private-response-marker '+env.SYSTEM_CLASH_TURN_API_TOKEN);}],
 ];
 for(const [label,stage,category,response] of diagnosticCases)test('server-only TURN diagnostic classifies '+label+' without revealing values',async t=>{
- const logs=[];t.mock.method(console,'error',(...args)=>logs.push(args));
+ const logs=[];t.mock.method(console,'error',captureDiagnostic(logs));
  await assert.rejects(()=>invoke({env,fetch:async()=>response()}),error=>{
   assert.equal(error.constructor,Error);assert.match(error.message,/Realtime relay.*unavailable/);assert.deepEqual(Object.keys(error),[]);return unavailable(error);
  });
  assert.equal(logs.length,1,'One sanitized diagnostic is required for the rejected attempt');
- assert.equal(logs[0][0],'System Clash TURN validation failed');const record=logs[0][1];assert.equal(record.stage,stage);assert.equal(record.category,category);
- for(const [key,value]of Object.entries(record)){assert.ok(['stage','category','responseBytes','serverCount','serverIndex','urlCount','urlIndex','valueLength','status','scheme','transport','port','cloudflareHost','blockedPort53Count'].includes(key),'Unknown diagnostic field '+key);if(key==='scheme')assert.ok(['stun','turn','turns','other'].includes(value));else if(key==='transport')assert.ok(['udp','tcp','missing','other'].includes(value));else if(key==='cloudflareHost')assert.equal(typeof value,'boolean');else if(!['stage','category'].includes(key))assert.ok(Number.isSafeInteger(value)&&value>=0,'Diagnostic details must be nonnegative integers');}
- if(label==='unsupported endpoint')assert.deepEqual(record,{stage:'urls',category:'endpoint_unsupported',serverIndex:0,urlIndex:0,scheme:'turn',transport:'udp',port:3478,cloudflareHost:false});
- if(label==='URL count')assert.deepEqual(record,{stage:'urls',category:'count_invalid',serverIndex:0,urlCount:9,blockedPort53Count:0});
+ assert.equal(logs[0][0],'System Clash TURN validation failed');const record=logs[0][1];assert.equal(record.stage,stage);assert.equal(record.category,category);const details=diagnosticDetails(record);
+ for(const [key,value]of Object.entries(record)){assert.ok(['stage','category','responseBytes','serverCount','serverIndex','urlCount','urlIndex','valueLength','status','scheme','transport','port','host','blockedPort53Count','providerSummary'].includes(key),'Unknown diagnostic field '+key);if(key==='providerSummary')assertSafeProviderSummary(value);else if(key==='scheme')assert.ok(['stun','turn','turns','other'].includes(value));else if(key==='transport')assert.ok(['udp','tcp','missing','other'].includes(value));else if(key==='host')assert.ok(['stun','turn','other'].includes(value));else if(!['stage','category'].includes(key))assert.ok(Number.isSafeInteger(value)&&value>=0,'Diagnostic details must be nonnegative integers');}
+ if(label==='unsupported endpoint')assert.deepEqual(details,{stage:'urls',category:'endpoint_unsupported',serverIndex:0,urlIndex:0,scheme:'turn',transport:'udp',port:3478,host:'other'});
+ if(label==='URL count')assert.deepEqual(details,{stage:'urls',category:'count_invalid',serverIndex:0,urlCount:9,blockedPort53Count:0});
  const printed=JSON.stringify(logs);for(const marker of privateDiagnosticMarkers)assert.ok(!printed.includes(marker),'Private provider data must not be logged');assert.ok(!printed.includes('turn.cloudflare.com'));assert.ok(!printed.includes('https://'));assert.ok(!printed.includes('Error:'));
 });
 test('valid TURN credentials emit no validation diagnostic',async t=>{
- const logs=[];t.mock.method(console,'error',(...args)=>logs.push(args));const result=await invoke({env,fetch:async()=>Response.json(diagnosticProvider(),{status:201})});assert.equal(result.realtimeRelay,true);assert.equal(logs.length,0);
+ const logs=[];t.mock.method(console,'error',captureDiagnostic(logs));const result=await invoke({env,fetch:async()=>Response.json(diagnosticProvider(),{status:201})});assert.equal(result.realtimeRelay,true);assert.equal(logs.length,0);
 });
 
 test('unsupported Cloudflare endpoint logs only fixed transport and numeric port metadata',async t=>{
- const logs=[];t.mock.method(console,'error',(...args)=>logs.push(args));await assert.rejects(()=>invoke({env,fetch:async()=>Response.json({iceServers:[{...diagnosticProvider().iceServers[0],urls:['turns:turn.cloudflare.com:9999?transport=tcp']}]})}),unavailable);
- assert.deepEqual(logs, [['System Clash TURN validation failed',{stage:'urls',category:'endpoint_unsupported',serverIndex:0,urlIndex:0,scheme:'turns',transport:'tcp',port:9999,cloudflareHost:true}]]);
+ const logs=[];t.mock.method(console,'error',captureDiagnostic(logs));await assert.rejects(()=>invoke({env,fetch:async()=>Response.json({iceServers:[{...diagnosticProvider().iceServers[0],urls:['turns:turn.cloudflare.com:9999?transport=tcp']}]})}),unavailable);
+ assert.deepEqual(logs.map(([tag,record])=>[tag,diagnosticDetails(record)]), [['System Clash TURN validation failed',{stage:'urls',category:'endpoint_unsupported',serverIndex:0,urlIndex:0,scheme:'turns',transport:'tcp',port:9999,host:'turn'}]]);
 });
 test('rejected URL count logs only the number of browser-blocked port53 endpoints',async t=>{
- const logs=[];t.mock.method(console,'error',(...args)=>logs.push(args));await assert.rejects(()=>invoke({env,fetch:async()=>Response.json({iceServers:[{...diagnosticProvider().iceServers[0],urls:[...Array(8).fill('turn:turn.cloudflare.com:3478?transport=udp'),'turn:turn.cloudflare.com:53?transport=udp']}]})}),unavailable);
- assert.deepEqual(logs,[['System Clash TURN validation failed',{stage:'urls',category:'count_invalid',serverIndex:0,urlCount:9,blockedPort53Count:1}]]);
+ const logs=[];t.mock.method(console,'error',captureDiagnostic(logs));await assert.rejects(()=>invoke({env,fetch:async()=>Response.json({iceServers:[{...diagnosticProvider().iceServers[0],urls:[...Array(8).fill('turn:turn.cloudflare.com:3478?transport=udp'),'turn:turn.cloudflare.com:53?transport=udp']}]})}),unavailable);
+ assert.deepEqual(logs.map(([tag,record])=>[tag,diagnosticDetails(record)]),[['System Clash TURN validation failed',{stage:'urls',category:'count_invalid',serverIndex:0,urlCount:9,blockedPort53Count:1}]]);
 });
 
 
 test('endpoint metadata maps private scheme transport host and query to literal categories',async t=>{
- const logs=[];t.mock.method(console,'error',(...args)=>logs.push(args));const privateUrl='private-scheme:private-user:private-password@private-host.invalid:9999?transport=private-transport&private-query=private-value';
+ const logs=[];t.mock.method(console,'error',captureDiagnostic(logs));const privateUrl='private-scheme:private-user:private-password@private-host.invalid:9999?transport=private-transport&private-query=private-value';
  await assert.rejects(()=>invoke({env,fetch:async()=>Response.json({iceServers:[{...diagnosticProvider().iceServers[0],urls:[privateUrl]}]})}),unavailable);
- assert.deepEqual(logs,[['System Clash TURN validation failed',{stage:'urls',category:'endpoint_unsupported',serverIndex:0,urlIndex:0,scheme:'other',transport:'other',port:9999,cloudflareHost:false}]]);
+ assert.deepEqual(logs.map(([tag,record])=>[tag,diagnosticDetails(record)]),[['System Clash TURN validation failed',{stage:'urls',category:'endpoint_unsupported',serverIndex:0,urlIndex:0,scheme:'other',transport:'other',port:9999,host:'other'}]]);
  const printed=JSON.stringify(logs);for(const marker of ['private-scheme','private-user','private-password','private-host','private-transport','private-query','private-value',privateUrl])assert.ok(!printed.includes(marker));
 });
 test('endpoint metadata bounds ports to the valid network port range',async t=>{
- const logs=[];t.mock.method(console,'error',(...args)=>logs.push(args));await assert.rejects(()=>invoke({env,fetch:async()=>Response.json({iceServers:[{...diagnosticProvider().iceServers[0],urls:['turn:turn.cloudflare.com:65536?transport=udp']}]})}),unavailable);
- assert.deepEqual(logs,[['System Clash TURN validation failed',{stage:'urls',category:'endpoint_unsupported',serverIndex:0,urlIndex:0,scheme:'turn',transport:'udp',port:0,cloudflareHost:true}]]);
+ const logs=[];t.mock.method(console,'error',captureDiagnostic(logs));await assert.rejects(()=>invoke({env,fetch:async()=>Response.json({iceServers:[{...diagnosticProvider().iceServers[0],urls:['turn:turn.cloudflare.com:65536?transport=udp']}]})}),unavailable);
+ assert.deepEqual(logs.map(([tag,record])=>[tag,diagnosticDetails(record)]),[['System Clash TURN validation failed',{stage:'urls',category:'endpoint_unsupported',serverIndex:0,urlIndex:0,scheme:'turn',transport:'udp',port:0,host:'turn'}]]);
+});
+function assertSafeProviderSummary(value){
+ assert.deepEqual(Object.keys(value).sort(),['serverCount','servers']);assert.ok(Number.isSafeInteger(value.serverCount)&&value.serverCount>=0);assert.ok(value.servers.length<=8);
+ for(const server of value.servers){
+  assert.deepEqual(Object.keys(server).sort(),['credential','endpoints','serverIndex','urlCount','username']);assert.ok(Number.isSafeInteger(server.serverIndex)&&server.serverIndex>=0&&server.serverIndex<8);assert.ok(Number.isSafeInteger(server.urlCount)&&server.urlCount>=0);assert.ok(server.endpoints.length<=8);
+  for(const endpoint of server.endpoints){assert.deepEqual(Object.keys(endpoint).sort(),['host','port','scheme','transport']);assert.ok(['stun','turn','turns','other'].includes(endpoint.scheme));assert.ok(['stun','turn','other'].includes(endpoint.host));assert.ok(['udp','tcp','missing','other'].includes(endpoint.transport));assert.ok(Number.isSafeInteger(endpoint.port)&&endpoint.port>=0&&endpoint.port<=65535);}
+  for(const field of [server.username,server.credential]){assert.deepEqual(Object.keys(field).sort(),['includesApiToken','includesKeyId','length','type']);assert.ok(['string','missing','null','array','object','number','boolean','other'].includes(field.type));assert.ok(Number.isSafeInteger(field.length)&&field.length>=0);assert.equal(typeof field.includesKeyId,'boolean');assert.equal(typeof field.includesApiToken,'boolean');}
+ }
+}
+test('exact Cloudflare STUN443 extras are discarded while STUN3478 and relay settings remain',async t=>{
+ const logs=[];t.mock.method(console,'error',captureDiagnostic(logs));const value=provider();value.iceServers[0].urls.push('stun:stun.cloudflare.com:443','stun:turn.cloudflare.com:443');
+ const result=await invoke({env,fetch:async()=>Response.json(value,{status:201})});assert.deepEqual(result.iceServers[0],{urls:['stun:stun.cloudflare.com:3478']});assert.deepEqual(result.iceServers[1],{urls:provider().iceServers[1].urls.filter(url=>!url.includes(':53?')),username:'fake-short-username',credential:'fake-short-password'});assert.equal(result.realtimeRelay,true);assert.equal(logs.length,0);
+});
+test('STUN443 filtering preserves valid TURN and credentials in the same provider entry',async t=>{
+ const logs=[];t.mock.method(console,'error',captureDiagnostic(logs));const server={...diagnosticProvider().iceServers[0],urls:['stun:stun.cloudflare.com:443','turn:turn.cloudflare.com:3478?transport=udp','stun:turn.cloudflare.com:443']};
+ const result=await invoke({env,fetch:async()=>Response.json({iceServers:[server]})});assert.deepEqual(result,{iceServers:[{urls:['turn:turn.cloudflare.com:3478?transport=udp'],username:server.username,credential:server.credential}],realtimeRelay:true});assert.equal(logs.length,0);
+});
+test('STUN443-only entries cannot enable relay and their scalar URLs are summarized safely',async t=>{
+ const logs=[];t.mock.method(console,'error',captureDiagnostic(logs));await assert.rejects(()=>invoke({env,fetch:async()=>Response.json({iceServers:[{urls:'stun:stun.cloudflare.com:443'},{urls:'stun:turn.cloudflare.com:443'}]})}),unavailable);
+ assert.equal(logs.length,1);assert.equal(logs[0][1].category,'relay_missing');assertSafeProviderSummary(logs[0][1].providerSummary);assert.deepEqual(logs[0][1].providerSummary.servers.map(server=>server.endpoints),[[{scheme:'stun',transport:'missing',port:443,host:'stun'}],[{scheme:'stun',transport:'missing',port:443,host:'turn'}]]);
+});
+test('URL bounds apply before filtering STUN443 extras',async t=>{
+ const logs=[];t.mock.method(console,'error',captureDiagnostic(logs));await assert.rejects(()=>invoke({env,fetch:async()=>Response.json({iceServers:[{...diagnosticProvider().iceServers[0],urls:[...Array(8).fill('stun:stun.cloudflare.com:443'),'turn:turn.cloudflare.com:3478?transport=udp']}]})}),unavailable);assert.equal(logs[0][1].category,'count_invalid');assert.equal(logs[0][1].urlCount,9);assertSafeProviderSummary(logs[0][1].providerSummary);assert.equal(logs[0][1].providerSummary.servers[0].endpoints.length,8);
+});
+test('STUN443 filtering does not allow unknown hosts schemes ports or query variants',async t=>{
+ const logs=[];t.mock.method(console,'error',captureDiagnostic(logs));for(const url of ['stun:untrusted.invalid:443','stun:stun.cloudflare.com.untrusted.invalid:443','https://stun.cloudflare.com:443','STUN:stun.cloudflare.com:443','stun:STUN.cloudflare.com:443','stun:stun.cloudflare.com:0443','stun:turn.cloudflare.com:444','stun:stun.cloudflare.com:443?transport=udp','stun:turn.cloudflare.com:443?private-query=private-value','stun:stun.cloudflare.com:443#private-fragment'])await assert.rejects(()=>invoke({env,fetch:async()=>Response.json({iceServers:[{...diagnosticProvider().iceServers[0],urls:[url,'turn:turn.cloudflare.com:3478?transport=udp']}]})}),unavailable);assert.equal(logs.length,10);for(const [,record]of logs){assert.equal(record.category,'endpoint_unsupported');assertSafeProviderSummary(record.providerSummary);}
+});
+test('remaining validation rejection summarizes all bounded endpoint and field guards without values',async t=>{
+ const logs=[];t.mock.method(console,'error',captureDiagnostic(logs));const username='private-user-'+env.SYSTEM_CLASH_TURN_KEY_ID,credential='private-password-'+env.SYSTEM_CLASH_TURN_API_TOKEN,privateUrl='private-scheme:private-user:private-password@private-host.invalid:65536?transport=private-transport&private-query=private-value';
+ await assert.rejects(()=>invoke({env,fetch:async()=>Response.json({iceServers:[{urls:['stun:stun.cloudflare.com:443','stun:turn.cloudflare.com:443']},{urls:['turn:turn.cloudflare.com:3478?transport=udp',privateUrl],username,credential}],private:'private-body-marker'})}),error=>{assert.equal(error.constructor,Error);assert.deepEqual(Object.keys(error),[]);return unavailable(error);});
+ assert.equal(logs.length,1);const summary=logs[0][1].providerSummary;assertSafeProviderSummary(summary);assert.equal(summary.serverCount,2);assert.deepEqual(summary.servers[0].endpoints,[{scheme:'stun',transport:'missing',port:443,host:'stun'},{scheme:'stun',transport:'missing',port:443,host:'turn'}]);assert.deepEqual(summary.servers[1].endpoints,[{scheme:'turn',transport:'udp',port:3478,host:'turn'},{scheme:'other',transport:'other',port:0,host:'other'}]);assert.deepEqual(summary.servers[1].username,{type:'string',length:username.length,includesKeyId:true,includesApiToken:false});assert.deepEqual(summary.servers[1].credential,{type:'string',length:credential.length,includesKeyId:false,includesApiToken:true});
+ const printed=JSON.stringify(logs);for(const marker of [username,credential,privateUrl,'private-scheme','private-user','private-password','private-host','private-transport','private-query','private-value','private-body-marker',...privateDiagnosticMarkers])assert.ok(!printed.includes(marker));
+});
+test('failure summaries cap server and URL rows and map invalid values to fixed types',async t=>{
+ const logs=[];t.mock.method(console,'error',captureDiagnostic(logs));const fields=[undefined,null,['private-array'],{private:'private-object'},123,true,'private-string'];const servers=fields.map(username=>({urls:Array(9).fill({private:'private-url'}),username,credential:{private:'private-credential'}}));servers.push('private-invalid-server',servers[0]);
+ await assert.rejects(()=>invoke({env,fetch:async()=>Response.json({iceServers:servers})}),unavailable);assert.equal(logs.length,1);const summary=logs[0][1].providerSummary;assertSafeProviderSummary(summary);assert.equal(summary.serverCount,9);assert.equal(summary.servers.length,8);assert.deepEqual(summary.servers.slice(0,7).map(server=>server.username.type),['missing','null','array','object','number','boolean','string']);assert.equal(summary.servers[0].urlCount,9);assert.equal(summary.servers[0].endpoints.length,8);assert.deepEqual(summary.servers[0].endpoints[0],{scheme:'other',transport:'missing',port:0,host:'other'});assert.equal(summary.servers[7].urlCount,0);const printed=JSON.stringify(logs);for(const marker of ['private-array','private-object','private-url','private-credential','private-string','private-invalid-server'])assert.ok(!printed.includes(marker));
+});
+test('failure diagnostic emits parseable JSON containing only sanitized nested metadata',async t=>{
+ const logs=[];t.mock.method(console,'error',(tag,text)=>logs.push({tag,text}));const privateUrl='turn:private-host.invalid:3478?transport=private-transport&private-query=private-value';
+ await assert.rejects(()=>invoke({env,fetch:async()=>Response.json({iceServers:[{urls:[privateUrl],username:'private-user-'+env.SYSTEM_CLASH_TURN_KEY_ID,credential:'private-password-'+env.SYSTEM_CLASH_TURN_API_TOKEN}],private:'private-body-marker'})}),error=>{assert.equal(error.constructor,Error);assert.deepEqual(Object.keys(error),[]);return unavailable(error);});
+ assert.equal(logs.length,1);assert.equal(logs[0].tag,'System Clash TURN validation failed');assert.equal(typeof logs[0].text,'string');const record=JSON.parse(logs[0].text);assert.equal(record.category,'endpoint_unsupported');assertSafeProviderSummary(record.providerSummary);assert.deepEqual(record.providerSummary.servers[0].endpoints,[{scheme:'turn',transport:'other',port:3478,host:'other'}]);assert.equal(record.providerSummary.servers[0].username.includesKeyId,true);assert.equal(record.providerSummary.servers[0].credential.includesApiToken,true);
+ for(const marker of [privateUrl,'private-host','private-transport','private-query','private-value','private-user','private-password','private-body-marker',...privateDiagnosticMarkers,'[Object]'])assert.ok(!logs[0].text.includes(marker));
 });

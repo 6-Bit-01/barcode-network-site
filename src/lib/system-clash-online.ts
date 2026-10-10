@@ -1,6 +1,7 @@
 import {createHash,randomBytes,timingSafeEqual} from "node:crypto";
 export const ONLINE_ROOM_TTL=20*60*1000;
 export const ONLINE_HOST_TIMEOUT=60000;
+export const ONLINE_GUEST_TIMEOUT=60000;
 export const ONLINE_FIGHTERS=["6-bit","cache-back","cliff","dj-floppydisc","mac-modem","mr-nice-guy","ms-mayhem","stolz","kaveman-brown","dr3wbaby","ash-flowers","wittyf0x","doofnoobler","lyra","papa-oak","lost-marbles","mutilator","bnl-01","9-bit"] as const;
 export class OnlineRoomError extends Error { constructor(message:string,public status=400){super(message);} }
 type Seat={name:string;fighter:string;ready:boolean;lastSeen:number;tokenHash:string};
@@ -57,6 +58,8 @@ function sessionState(room:Room){return {wins:room.wins??[0,0],matchId:room.matc
 function publicRoom(room:Room,seat:"host"|"guest"){return {code:room.code,role:seat,expiresAt:room.expiresAt,host:publicSeat(room.host),guest:publicSeat(room.guest),description:seat==="host"?room.guestDescription:room.hostDescription,relay:!!room.relay,generation:room.generation??1,candidates:(seat==="host"?room.guestCandidates:room.hostCandidates)??[],...sessionState(room)};}
 function resetConnection(room:Room){room.host.ready=false;if(room.guest)room.guest.ready=false;room.generation=1;room.hostCandidates=[];room.guestCandidates=[];room.relay=null;room.hostDescription=null;room.guestDescription=null;}
 function selectScreen(room:Room){resetConnection(room);room.matchPhase="selection";room.selectionVersion=(room.selectionVersion??0)+1;}
+function releaseGuest(room:Room){room.guest=null;room.wins=[(room.wins??[0,0])[0],0];room.result=null;selectScreen(room);}
+function expireGuest(room:Room,time:number){if(room.guest&&time-room.guest.lastSeen>=ONLINE_GUEST_TIMEOUT)releaseGuest(room);}
 
 export function createOnlineRooms({store,now=Date.now,token=()=>randomBytes(24).toString("base64url"),code=()=>{const chars="ABCDEFGHJKLMNPQRSTUVWXYZ23456789",bytes=randomBytes(6);return Array.from(bytes,b=>chars[b%chars.length]).join("");}}:{store:OnlineRoomStore;now?:()=>number;token?:()=>string;code?:()=>string}){
  async function read(id:string){const raw=await store.read(roomCode(id));if(!raw)throw new OnlineRoomError("This session is no longer available.",404);const room=JSON.parse(raw) as Room;if(room.expiresAt<=now())throw new OnlineRoomError("This session expired. Create another.",410);return {raw,room};}
@@ -64,9 +67,9 @@ export function createOnlineRooms({store,now=Date.now,token=()=>randomBytes(24).
  async function mutate<T>(id:string,key:string,change:(room:Room,seat:"host"|"guest")=>T){for(let i=0;i<5;i++){const {raw,room}=await read(id),seat=role(room,key),result=change(room,seat);if(room[seat])room[seat]!.lastSeen=now();if(await store.cas(id,raw,JSON.stringify(room),now()))return result;}throw new OnlineRoomError("Session changed. Please retry.",409);}
  return {
  async create(value:unknown){const name=screenName(value),key=token(),time=now();for(let i=0;i<6;i++){const id=code();const room:Room={wins:[0,0],matchId:0,matchPhase:"selection",selectionVersion:0,result:null,code:id,createdAt:time,expiresAt:time+ONLINE_ROOM_TTL,host:{name,fighter:"6-bit",ready:false,lastSeen:time,tokenHash:hash(key)},guest:null,hostDescription:null,guestDescription:null,relay:null,generation:1,hostCandidates:[],guestCandidates:[]};if(await store.cas(id,null,JSON.stringify(room),time))return {code:id,role:"host" as const,token:key,expiresAt:room.expiresAt};}throw new OnlineRoomError("Sessions are busy. Please retry.",503);},
- async join(id:string,value:unknown){const name=screenName(value),key=token();for(let i=0;i<5;i++){const {raw,room}=await read(id);if(room.guest)throw new OnlineRoomError("This session already has two players.",409);if(now()-room.host.lastSeen>=ONLINE_HOST_TIMEOUT)throw new OnlineRoomError("The host is no longer here.",410);room.wins=[(room.wins??[0,0])[0],0];room.result=null;room.guest={name,fighter:"9-bit",ready:false,lastSeen:now(),tokenHash:hash(key)};if(await store.cas(id,raw,JSON.stringify(room),now()))return {code:id,role:"guest" as const,token:key,expiresAt:room.expiresAt};}throw new OnlineRoomError("Another player joined. Choose another session.",409);},
+ async join(id:string,value:unknown){const name=screenName(value),key=token();for(let i=0;i<5;i++){const {raw,room}=await read(id),time=now();if(room.guest&&time-room.guest.lastSeen<ONLINE_GUEST_TIMEOUT)throw new OnlineRoomError("This session already has two players.",409);if(time-room.host.lastSeen>=ONLINE_HOST_TIMEOUT)throw new OnlineRoomError("The host is no longer here.",410);expireGuest(room,time);room.wins=[(room.wins??[0,0])[0],0];room.result=null;room.guest={name,fighter:"9-bit",ready:false,lastSeen:now(),tokenHash:hash(key)};if(await store.cas(id,raw,JSON.stringify(room),now()))return {code:id,role:"guest" as const,token:key,expiresAt:room.expiresAt};}throw new OnlineRoomError("Another player joined. Choose another session.",409);},
  async list(){const time=now();return (await store.list()).map(raw=>JSON.parse(raw) as Room).filter(r=>!r.guest&&r.expiresAt>time&&time-r.host.lastSeen<ONLINE_HOST_TIMEOUT).sort((a,b)=>b.createdAt-a.createdAt).slice(0,20).map(r=>({code:r.code,hostName:r.host.name,fighter:r.host.fighter,createdAt:r.createdAt}));},
- async poll(id:string,key:string){return mutate(id,key,(room,seat)=>publicRoom(room,seat));},
+ async poll(id:string,key:string){return mutate(id,key,(room,seat)=>{if(seat==="host")expireGuest(room,now());return publicRoom(room,seat);});},
  async begin(id:string,key:string,value:{after?:unknown}){return mutate(id,key,(room,seat)=>{
   if(seat!=="host")throw new OnlineRoomError("Only the host starts a match.",403);
   if(!Number.isSafeInteger(value.after)||Number(value.after)<0)throw new OnlineRoomError("The match request is invalid.");
@@ -128,6 +131,6 @@ export function createOnlineRooms({store,now=Date.now,token=()=>randomBytes(24).
   if(room[field]&&room[field]!.sdp!==description.sdp)throw new OnlineRoomError("The connection signal changed. Retry the session.",409);
   room[field]={type:description.type,sdp:description.sdp,generation};return {ok:true};
  });},
- async leave(id:string,key:string){for(let i=0;i<5;i++){const {raw,room}=await read(id),seat=role(room,key);if(seat==="guest"){room.guest=null;room.wins=[(room.wins??[0,0])[0],0];room.result=null;selectScreen(room);}if(await store.cas(id,raw,seat==="host"?null:JSON.stringify(room),now()))return {ok:true};}throw new OnlineRoomError("Session changed. Please retry.",409);},
+ async leave(id:string,key:string){for(let i=0;i<5;i++){const {raw,room}=await read(id),seat=role(room,key);if(seat==="guest")releaseGuest(room);if(await store.cas(id,raw,seat==="host"?null:JSON.stringify(room),now()))return {ok:true};}throw new OnlineRoomError("Session changed. Please retry.",409);},
  };
 }

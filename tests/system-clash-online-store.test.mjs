@@ -142,3 +142,36 @@ test('cloud score projection must match the committed room tally and stays host-
  const response=await rooms.relay(host.code,host.token,{version,ack:0,packets:[packet({type:'setup',wins:[1,0]})]});assert.equal(response.accepted.control,1);
  const selected=await rooms.lobby(host.code,guest.token);await rooms.select(host.code,host.token,{fighter:'6-bit',ready:true});const duplicate=await rooms.lobby(host.code,guest.token);assert.equal(duplicate.selectionVersion,selected.selectionVersion);assert.equal(duplicate.host.ready,true);assert.deepEqual(duplicate.wins,[1,0]);
 });
+
+
+test('authenticated host polling releases a guest after sixty seconds without counting the unfinished match',async()=>{
+ const f=fixture(),host=await f.rooms.create('Host'),guest=await f.rooms.join(host.code,'Guest');
+ for(const seat of [host,guest])await f.rooms.select(host.code,seat.token,{fighter:seat.role==='host'?'6-bit':'9-bit',ready:true});
+ await f.rooms.begin(host.code,host.token,{after:0});await f.rooms.result(host.code,host.token,{matchId:1,winner:0});await f.rooms.begin(host.code,host.token,{after:1});await f.rooms.result(host.code,host.token,{matchId:2,winner:1});await f.rooms.begin(host.code,host.token,{after:2});await f.rooms.signal(host.code,host.token,{type:'offer',sdp:'v=0 host'});
+ f.setTime(60999);assert.equal((await f.rooms.poll(host.code,host.token)).guest.name,'Guest');f.setTime(61000);await fails(()=>f.rooms.poll(host.code,'forged'),401);assert.equal(JSON.parse(f.rows.get(host.code)).guest.name,'Guest');
+ const state=await f.rooms.poll(host.code,host.token);assert.equal(state.guest,null);assert.equal(state.host.ready,false);assert.equal(state.matchPhase,'selection');assert.equal(state.matchId,3);assert.equal(state.selectionVersion,1);assert.deepEqual(state.wins,[1,0]);assert.equal(state.result,null);assert.equal(state.description,null);assert.equal(state.relay,false);assert.deepEqual(state.candidates,[]);assert.equal((await f.rooms.list()).length,1);
+ await fails(()=>f.rooms.poll(host.code,guest.token),401);await fails(()=>f.rooms.result(host.code,host.token,{matchId:3,winner:0}),409);const replacement=await f.rooms.join(host.code,'Replacement');assert.deepEqual((await f.rooms.poll(host.code,replacement.token)).wins,[1,0]);assert.equal((await f.rooms.poll(host.code,replacement.token)).description,null);
+});
+test('active guest polling renews the inactivity lease across many minutes',async()=>{
+ const f=fixture(),host=await f.rooms.create('Host'),guest=await f.rooms.join(host.code,'Guest');
+ for(const time of [16000,31000,46000,61000,76000]){f.setTime(time);await f.rooms.poll(host.code,guest.token);assert.equal((await f.rooms.poll(host.code,host.token)).guest.name,'Guest');await fails(()=>f.rooms.join(host.code,'Replacement'),409);}
+ f.setTime(135999);assert.equal((await f.rooms.poll(host.code,host.token)).guest.name,'Guest');f.setTime(136000);assert.equal((await f.rooms.poll(host.code,host.token)).guest,null);
+});
+test('same-token reload recovery renews the guest lease and retains its recorded wins',async()=>{
+ const f=fixture(),host=await f.rooms.create('Host'),guest=await f.rooms.join(host.code,'Guest');
+ for(const seat of [host,guest])await f.rooms.select(host.code,seat.token,{fighter:seat.role==='host'?'6-bit':'9-bit',ready:true});await f.rooms.begin(host.code,host.token,{after:0});await f.rooms.result(host.code,host.token,{matchId:1,winner:1});
+ f.setTime(5000);const restored=await f.rooms.resume(host.code,guest.token);assert.deepEqual(restored.wins,[0,1]);assert.equal(restored.guest.name,'Guest');assert.equal(restored.matchPhase,'selection');f.setTime(64000);const current=await f.rooms.poll(host.code,host.token);assert.equal(current.guest.name,'Guest');assert.deepEqual(current.wins,[0,1]);
+});
+test('joining an active host replaces a stale guest through the same room CAS and revokes its token',async()=>{
+ const f=fixture(),host=await f.rooms.create('Host'),guest=await f.rooms.join(host.code,'Old guest');
+ for(const seat of [host,guest])await f.rooms.select(host.code,seat.token,{fighter:seat.role==='host'?'6-bit':'9-bit',ready:true});await f.rooms.begin(host.code,host.token,{after:0});await f.rooms.result(host.code,host.token,{matchId:1,winner:0});await f.rooms.begin(host.code,host.token,{after:1});await f.rooms.result(host.code,host.token,{matchId:2,winner:1});const version='system-clash-20261010-10';await f.rooms.relay(host.code,host.token,{version,ack:0,packets:[{lane:'control',data:JSON.stringify({scope:'system-clash-online-v1',version,seq:1,matchId:2,payload:{type:'setup',wins:[1,1]}})}]});
+ f.setTime(60000);await f.rooms.poll(host.code,host.token);f.setTime(61000);const replacement=await f.rooms.join(host.code,'New guest'),state=await f.rooms.poll(host.code,replacement.token);assert.equal(state.guest.name,'New guest');assert.equal(state.host.ready,false);assert.equal(state.guest.ready,false);assert.equal(state.matchPhase,'selection');assert.equal(state.matchId,2);assert.equal(state.selectionVersion,1);assert.deepEqual(state.wins,[1,0]);assert.equal(state.description,null);assert.equal(state.result,null);
+ await fails(()=>f.rooms.resume(host.code,guest.token),401);await fails(()=>f.rooms.select(host.code,guest.token,{fighter:'9-bit',ready:true}),401);await fails(()=>f.rooms.relay(host.code,guest.token,{version,ack:0,packets:[]}),401);await fails(()=>f.rooms.relay(host.code,host.token,{version,ack:0,packets:[]}),409);for(const seat of [host,replacement])await f.rooms.select(host.code,seat.token,{fighter:seat.role==='host'?'6-bit':'9-bit',ready:true});assert.deepEqual((await f.rooms.relay(host.code,replacement.token,{version,ack:0,packets:[]})).packets,[]);
+});
+test('concurrent joins can replace one stale guest with only one new authenticated seat',async()=>{
+ const f=fixture(),host=await f.rooms.create('Host'),guest=await f.rooms.join(host.code,'Old guest');f.setTime(60000);await f.rooms.poll(host.code,host.token);f.setTime(61000);
+ const results=await Promise.allSettled([f.rooms.join(host.code,'New one'),f.rooms.join(host.code,'New two')]);assert.equal(results.filter(result=>result.status==='fulfilled').length,1);assert.equal(results.find(result=>result.status==='rejected').reason.status,409);const replacement=results.find(result=>result.status==='fulfilled').value;assert.equal((await f.rooms.poll(host.code,replacement.token)).guest.name,'New one');await fails(()=>f.rooms.poll(host.code,guest.token),401);
+});
+test('a stale guest cannot make an absent host available for a replacement',async()=>{
+ const f=fixture(),host=await f.rooms.create('Host');await f.rooms.join(host.code,'Guest');f.setTime(61000);await fails(()=>f.rooms.join(host.code,'Replacement'),410);assert.equal(JSON.parse(f.rows.get(host.code)).guest.name,'Guest');
+});

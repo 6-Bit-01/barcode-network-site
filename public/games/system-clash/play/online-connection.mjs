@@ -8,7 +8,7 @@ class RelayEvents{
  emit(type,fields={}){for(const fn of [...(this.listeners.get(type)??[])])fn({type,...fields});}
 }
 /** Carries the existing two wire lanes through the same authenticated room. */
-export function createOnlineRelay({role,room,relayRequest,timers=globalThis,version=ONLINE_VERSION,onDisconnect=()=>{},...options}){
+export function createOnlineRelay({role,room,relayRequest,timers=globalThis,now=()=>performance.now(),version=ONLINE_VERSION,onDisconnect=()=>{},...options}){
  if(typeof relayRequest!=='function')throw new Error('Cloud connection is unavailable.');
  let closed=false,started=false,timer=null,errors=0,ack=0,state=null;
  const outgoing=[],channels={};
@@ -27,10 +27,11 @@ export function createOnlineRelay({role,room,relayRequest,timers=globalThis,vers
   open(){this.readyState='open';this.emit('open');}
  }
  const link=new RelayEvents();Object.assign(link,{connectionState:'new',createDataChannel(label,settings){const lane=label===labels.control?'control':'state';return channels[lane]=new Channel(label,settings);},close:cleanup});
- const peer=createOnlinePeer({role,room,peer:link,timers,version,...options,onDisconnect:reason=>onDisconnect(/^Connection lost\./.test(reason)?'Cloud connection lost contact. Leave this session and try again.':reason)});
+ const peer=createOnlinePeer({role,room,peer:link,timers,version,...options,now,onDisconnect:reason=>onDisconnect(/^Connection lost\./.test(reason)?'Cloud connection lost contact. Leave this session and try again.':reason)});
  if(role==='guest')for(const [lane,label]of Object.entries(labels)){const channel=new Channel(label,{ordered:lane==='control',...(lane==='state'?{maxRetransmits:0}:{})});channels[lane]=channel;link.emit('datachannel',{channel});}
  async function pump(){
   if(closed)return;
+  const startedAt=now();
   const controls=outgoing.slice(0,state?15:16),packets=[...controls];
   if(state&&packetBytes({version,ack,packets:[...packets,state]})<=74000)packets.push(state);
   try{
@@ -50,7 +51,7 @@ export function createOnlineRelay({role,room,relayRequest,timers=globalThis,vers
    if(closed)return;
    if(++errors>=3){channels.control.emit('error');return;}
   }
-  if(!closed)timer=timers.setTimeout(pump,250);
+  if(!closed)timer=timers.setTimeout(pump,Math.max(0,250-Math.max(0,now()-startedAt)));
  }
  return {get connected(){return peer.connected;},get transport(){return 'relay';},start(){if(started||closed)return;started=true;for(const channel of Object.values(channels))channel.open();void pump();},receiveDescription(){return Promise.resolve(false);},receiveCandidates(){return Promise.resolve(false);},setMatchId:peer.setMatchId,send:peer.send,close(){peer.close();cleanup();}};
 }

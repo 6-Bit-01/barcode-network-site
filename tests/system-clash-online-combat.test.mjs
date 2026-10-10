@@ -1,25 +1,31 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import Module,{createRequire} from 'node:module';
+import ts from 'typescript';
 import {createMatch,advanceMatch,getFighterView,performAction} from '../public/games/system-clash/play/fight-engine.mjs';
 import * as net from '../public/games/system-clash/play/fight-network-state.mjs';
+import {createOnlineRelay} from '../public/games/system-clash/play/online-connection.mjs';
+const require=createRequire(import.meta.url);
+Module._extensions['.ts']=(module,file)=>module._compile(ts.transpileModule(readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,file);
+const {createOnlineRooms}=require('../src/lib/system-clash-online.ts');
 const roster=['6-bit','9-bit'];
 const clipIds=[['idle','walk','crouch','block','punch','kick','high','low','knockdown','jump','delete-present'],['idle','walk','crouch','block','punch','kick','high','low','knockdown','jump','delete-present']];
 const options={roster,clipIds,matchId:1};
 const input={move:1,crouch:false,block:false};
 function match(){return createMatch({mode:'local',stage:'radio-studio',start:false});}
 function snapshot(value=match(),seq=1){return net.makeFightSnapshot(value,value.fighters.map((_,i)=>getFighterView(value,i)),{...options,seq,at:100});}
-function controller(seat=0){let time=0;const sent=[],starts=[],pauses=[],states=[],events=[],actions=[],disconnected=[];const control=net.createOnlineCombatController({...options,seat,now:()=>time,send:p=>{sent.push(p);return true;},onStart:p=>starts.push(p),onPause:p=>pauses.push(p),onState:s=>states.push(s),onEvents:e=>events.push(...e),onAction:a=>actions.push(a),onDisconnect:r=>disconnected.push(r)});return {control,sent,starts,pauses,states,events,actions,disconnected,setTime:v=>{time=v;}};}
+function controller(seat=0,extra={}){let time=0;const sent=[],starts=[],pauses=[],pauseReasons=[],states=[],events=[],actions=[],disconnected=[];const control=net.createOnlineCombatController({...options,...extra,seat,now:()=>time,send:p=>{sent.push(p);return true;},onStart:p=>starts.push(p),onPause:(value,reason)=>{pauses.push(value);pauseReasons.push(reason);},onState:s=>states.push(s),onEvents:e=>events.push(...e),onAction:a=>actions.push(a),onDisconnect:r=>disconnected.push(r)});return {control,sent,starts,pauses,pauseReasons,states,events,actions,disconnected,setTime:v=>{time=v;}};}
 const start={type:'start',matchId:1,seed:77};
 test('wire snapshots contain public render state without metadata, styles or credentials',()=>{const m=match();m.token='SECRET';m.fighters[0]._clips.image={};m.fighters[0]._style={...m.fighters[0]._style,secret:'PRIVATE'};const s=snapshot(m);assert.ok(s);const text=JSON.stringify(s);for(const secret of ['SECRET','PRIVATE','_clips','_style','image'])assert.ok(!text.includes(secret));assert.equal(s.state.stage.id,'radio-studio');assert.equal(s.state.fighters[0].id,'6-bit');});
 test('snapshot parser rejects unknown fighter/clip, invalid health and nonfinite coordinates',()=>{const good=snapshot();assert.ok(net.readFightSnapshot(good,options));for(const change of [s=>s.state.fighters[0].id='unknown',s=>s.views[1].clip='../../image',s=>s.state.fighters[0].hp=-1,s=>s.state.fighters[0].hp=101,s=>s.views[0].x=Infinity,s=>s.state.phase='admin']){const s=structuredClone(good);change(s);assert.equal(net.readFightSnapshot(s,options),null);}});
 test('snapshot limits reject oversized state and projectile spam',()=>{const s=snapshot();s.state.projectiles=Array.from({length:9},()=>({x:0,y:0}));assert.equal(net.readFightSnapshot(s,options),null);const large=snapshot();large.views[0].data='x'.repeat(70000);assert.equal(net.readFightSnapshot(large,options),null);});
 test('guest consumes only newer current-match snapshots and cannot publish authority',()=>{const h=controller(1);h.control.receive(start);h.control.receive({type:'snapshot',snapshot:snapshot(match(),2)});h.control.receive({type:'snapshot',snapshot:snapshot(match(),1)});const old=snapshot(match(),3);old.matchId=2;h.control.receive({type:'snapshot',snapshot:old});assert.equal(h.states.length,1);assert.equal(h.control.publish(match(),[]),false);assert.equal(h.control.publishEvents([{type:'hit'}]),false);});
-test('guest input is seat mapped and bounded to ten sends per second',()=>{const h=controller(1);h.control.receive(start);for(let i=0;i<100;i++){h.setTime(i*10);h.control.input({...input,airborne:true});}assert.equal(h.sent.filter(p=>p.type==='input').length,10);assert.deepEqual(h.sent[0].input,input);h.control.action('punch',{...input,airborne:true});assert.deepEqual(h.sent.at(-1),{type:'action',action:'punch',input});assert.equal(h.actions.length,0);});
+test('guest unchanged input is seat mapped with ten heartbeats per second',()=>{const h=controller(1);h.control.receive(start);for(let i=0;i<100;i++){h.setTime(i*10);h.control.input({...input,airborne:true});}assert.equal(h.sent.filter(p=>p.type==='input').length,10);assert.deepEqual(h.sent[0].input,input);h.control.action('punch',{...input,airborne:true});assert.deepEqual(h.sent.at(-1),{type:'action',action:'punch',input,inputSeq:11});assert.equal(h.actions.length,0);});
 test('host maps remote actions to fighter one and neutralizes stale remote controls',()=>{const h=controller();h.control.receive(start);h.control.receive({type:'input',input});assert.deepEqual(h.control.remoteInput,input);h.control.receive({type:'action',action:'punch',input});assert.equal(h.actions[0].index,1);h.setTime(1000);h.control.tick();assert.deepEqual(h.control.remoteInput,{move:0,crouch:false,block:false});assert.equal(h.control.paused,true);assert.ok(h.sent.some(p=>p.type==='pause'&&p.paused));});
 test('pause application never echoes; only host may request resume with fresh neutral peer',()=>{const host=controller(),guest=controller(1);host.control.receive(start);guest.control.receive(start);host.control.receive({type:'pause',paused:true});assert.equal(host.sent.length,0);assert.equal(host.control.requestPause(false),false);host.control.receive({type:'input',input:{move:0,crouch:false,block:false}});assert.equal(host.control.requestPause(false),true);guest.control.receive({type:'pause',paused:true});assert.equal(guest.control.requestPause(false),false);assert.equal(guest.sent.length,0);});
 test('host FX batches are replayed once and old rematch events are discarded',()=>{const guest=controller(1);guest.control.receive(start);const packet={type:'events',matchId:1,seq:1,events:[{type:'hit',x:100,y:200,attacker:0,target:1}]};guest.control.receive(packet);guest.control.receive(packet);guest.control.receive({...packet,seq:2,matchId:2});assert.equal(guest.events.length,1);});
-test('travel interpolation leaves contact poses, phases and Deletions discrete',()=>{const h=controller(1);h.control.receive(start);const first=snapshot(match(),1);first.state.phase='fight';first.views[0].poseIndex=0;first.views[0].x=500;h.control.receive({type:'snapshot',snapshot:first});h.setTime(40);const second=structuredClone(first);second.seq=2;second.views[0].x=600;h.control.receive({type:'snapshot',snapshot:second});h.setTime(60);assert.equal(h.control.views()[0].x,550);const contact=structuredClone(second);contact.seq=3;contact.views[0].poseIndex=2;contact.views[0].x=700;h.control.receive({type:'snapshot',snapshot:contact});assert.equal(h.control.views()[0].x,700);const deletion=structuredClone(contact);deletion.seq=4;deletion.state.phase='deletion';deletion.state.winner=0;deletion.state._deletionOrigin={direction:1,target:700,victimFacing:'left',near:500,winner:500,victim:700};deletion.views[0].x=800;h.control.receive({type:'snapshot',snapshot:deletion});assert.equal(h.control.views()[0].x,800);});
+test('travel interpolation leaves changed contact clips, phases and Deletions discrete',()=>{const h=controller(1);h.control.receive(start);const first=snapshot(match(),1);first.state.phase='fight';first.views[0].poseIndex=0;first.views[0].x=500;h.control.receive({type:'snapshot',snapshot:first});h.setTime(40);const second=structuredClone(first);second.seq=2;second.views[0].x=600;h.control.receive({type:'snapshot',snapshot:second});h.setTime(60);assert.equal(h.control.views()[0].x,550);const contact=structuredClone(second);contact.seq=3;contact.views[0].clip='punch';contact.views[0].poseIndex=2;contact.views[0].x=700;h.control.receive({type:'snapshot',snapshot:contact});assert.equal(h.control.views()[0].x,700);const deletion=structuredClone(contact);deletion.seq=4;deletion.state.phase='deletion';deletion.state.winner=0;deletion.state._deletionOrigin={direction:1,target:700,victimFacing:'left',near:500,winner:500,victim:700};deletion.views[0].x=800;h.control.receive({type:'snapshot',snapshot:deletion});assert.equal(h.control.views()[0].x,800);});
 test('a guest with stale snapshots pauses and cannot reset or rematch before result',()=>{const h=controller(1);h.control.receive(start);h.control.receive({type:'snapshot',snapshot:snapshot()});assert.equal(h.control.requestRematch('fight'),false);h.setTime(1200);h.control.tick();assert.equal(h.control.paused,true);assert.equal(h.control.requestRematch('over'),true);assert.equal(h.sent.at(-1).type,'rematch');assert.equal(h.starts.length,1);});
 test('disconnect neutralizes controls and stops every subsequent authority action',()=>{const h=controller();h.control.receive(start);h.control.receive({type:'input',input});h.control.disconnect('Gone');h.control.disconnect('Again');assert.equal(h.disconnected.length,1);assert.deepEqual(h.control.remoteInput,{move:0,crouch:false,block:false});assert.equal(h.control.action('punch',input),false);assert.equal(h.control.publish(match(),[]),false);});
 function sourceFunction(name,args){const source=readFileSync(new URL('../public/games/system-clash/play/fight.js',import.meta.url),'utf8');const body=source.match(new RegExp('function '+name+'\\([^)]*\\) \\{([\\s\\S]*?)\\n\\}'))?.[1];assert.ok(body);return new Function('env','with(env){return function('+args+'){'+body+'}}');}
@@ -105,4 +111,79 @@ test('guest frame acknowledges and releases controls only after reset and focus 
  const order=[];let time=0;const env={reset:(active,seed)=>{assert.equal(active,true);assert.equal(seed,77);time=1200;order.push('reset');},effects:{startAudio:()=>order.push('audio')},canvas:{focus:()=>order.push('focus')},onlineBridge:{seat:1,send:packet=>{assert.equal(time,1200);assert.deepEqual(packet,{type:'started',matchId:1});order.push('started');}},onlineCombat:{input:value=>{assert.deepEqual(value,{move:0,crouch:false,block:false});order.push('neutral');}}};
  sourceFunction('startOnlineFight','packet')(env)(start);assert.deepEqual(order,['reset','audio','focus','started','neutral']);
  order.length=0;env.onlineBridge.seat=0;sourceFunction('startOnlineFight','packet')(env)(start);assert.deepEqual(order,['reset','audio','focus']);
+});
+
+test('a one-second network stall freezes the host then fresh neutral peer input recovers it',()=>{
+ const h=controller();h.control.receive(start);h.control.receive({type:'input',input,inputSeq:1});h.setTime(1000);h.control.tick();
+ assert.equal(h.control.paused,true);assert.equal(h.control.pauseReason,'network');assert.deepEqual(h.control.remoteInput,{move:0,crouch:false,block:false});
+ assert.equal(h.sent.at(-1).reason,'network');h.setTime(1100);h.control.receive({type:'input',input,inputSeq:2});assert.equal(h.control.paused,true);
+ h.control.receive({type:'action',action:'punch',input:{move:0,crouch:false,block:false},inputSeq:3});assert.equal(h.actions.length,0);assert.equal(h.control.paused,true);
+ h.setTime(1200);h.control.receive({type:'input',input:{move:0,crouch:false,block:false},inputSeq:4});assert.equal(h.control.paused,false);
+ assert.equal(h.control.pauseReason,null);assert.deepEqual(h.pauseReasons,['network','network']);assert.equal(h.sent.at(-1).paused,false);assert.equal(h.sent.at(-1).reason,'network');assert.equal(h.actions.length,0);
+});
+test('manual pause takes precedence over a network stall and never automatically resumes',()=>{
+ const h=controller();h.control.receive(start);h.control.requestPause(true,'network');h.control.receive({type:'pause',paused:true,reason:'manual'});
+ h.control.receive({type:'pause',paused:true,reason:'network'});h.control.receive({type:'input',input:{move:0,crouch:false,block:false},inputSeq:1});h.control.tick();
+ assert.equal(h.control.paused,true);assert.equal(h.control.pauseReason,'manual');assert.equal(h.sent.filter(p=>p.type==='pause'&&!p.paused).length,0);
+ assert.equal(h.control.requestPause(false),true);assert.equal(h.control.paused,false);
+});
+test('authoritative resume waits for its next state without replaying an old pause or immediately stalling',()=>{
+ const g=controller(1);g.control.receive(start);g.control.receive({type:'snapshot',snapshot:snapshot(match(),1)});g.setTime(1000);g.control.tick();assert.equal(g.control.paused,true);
+ g.setTime(2000);g.control.receive({type:'pause',paused:false,reason:'network',snapshotSeq:2});g.control.tick();assert.equal(g.control.paused,false);
+ const stale=snapshot(match(),2);stale.state.paused=true;assert.equal(g.control.receive({type:'snapshot',snapshot:stale}),false);
+ g.setTime(3000);g.control.tick();assert.equal(g.control.paused,false);g.control.receive({type:'snapshot',snapshot:snapshot(match(),3)});
+ g.setTime(3999);g.control.tick();assert.equal(g.control.paused,false);g.setTime(4000);g.control.tick();assert.equal(g.control.paused,true);
+ const missing=controller(1);missing.control.receive(start);missing.control.receive({type:'pause',paused:true,reason:'network'});missing.setTime(2000);missing.control.receive({type:'pause',paused:false,reason:'network',snapshotSeq:0});missing.setTime(6999);missing.control.tick();assert.equal(missing.control.paused,false);missing.setTime(7000);missing.control.tick();assert.equal(missing.control.paused,true);
+});
+test('new movement sends immediately and input plus actions share a monotonic sequence',()=>{
+ const g=controller(1);g.control.receive(start);assert.equal(g.control.input(input),true);g.setTime(20);assert.equal(g.control.input({move:0,crouch:false,block:false}),true);
+ g.setTime(30);assert.equal(g.control.action('punch',{move:0,crouch:false,block:false}),true);g.setTime(119);assert.equal(g.control.input({move:0,crouch:false,block:false}),false);g.setTime(120);assert.equal(g.control.input({move:0,crouch:false,block:false}),true);
+ assert.deepEqual(g.sent.map(p=>[p.type,p.inputSeq]),[['input',1],['input',2],['action',3],['input',4]]);
+});
+test('real neutral input immediately replaces movement carried by a just-sent action',()=>{
+ const g=controller(1);g.control.receive(start);g.control.input({move:0,crouch:false,block:false});g.setTime(20);g.control.action('punch',input);g.setTime(30);
+ assert.equal(g.control.input({move:0,crouch:false,block:false}),true);assert.deepEqual(g.sent.at(-1),{type:'input',input:{move:0,crouch:false,block:false},inputSeq:3});
+ const h=controller();h.control.receive(start);for(const packet of g.sent)h.control.receive(packet);assert.deepEqual(h.control.remoteInput,{move:0,crouch:false,block:false});assert.equal(h.actions.length,1);
+});
+test('an older reliable action uses its command input without rewinding newer held controls or freshness',()=>{
+ const h=controller();h.control.receive(start);h.control.receive({type:'input',input:{move:0,crouch:false,block:false},inputSeq:10});h.setTime(500);
+ h.control.receive({type:'action',action:'punch',input,inputSeq:9});assert.equal(h.actions.length,1);assert.deepEqual(h.actions[0].input,input);assert.deepEqual(h.control.remoteInput,{move:0,crouch:false,block:false});
+ assert.equal(h.control.receive({type:'input',input,inputSeq:8}),false);assert.equal(h.control.receive({type:'input',input}),false);h.setTime(1000);h.control.tick();assert.equal(h.control.paused,true);
+});
+const visualTimings=[0,1].map(()=>({idle:{duration:400,loop:true,frames:[{index:0,start:0,end:200},{index:1,start:200,end:400}]},punch:{duration:500,loop:false,frames:[{index:0,start:0,end:250},{index:1,start:250,end:500}]}}));
+test('slow snapshots keep travel smooth across pose changes and advance only local visual timing',()=>{
+ const g=controller(1,{clipTimings:visualTimings});g.control.receive(start);const first=snapshot(match(),1);first.state.phase='fight';first.views[0].x=500;first.views[0].elapsed=0;first.views[0].poseIndex=0;g.control.receive({type:'snapshot',snapshot:first});
+ g.setTime(750);const next=structuredClone(first);next.seq=2;next.at=850;next.views[0].x=800;next.views[0].elapsed=100;next.views[0].poseIndex=1;g.control.receive({type:'snapshot',snapshot:next});
+ g.setTime(1125);const view=g.control.views()[0];assert.equal(view.x,650);assert.equal(view.elapsed,75);assert.equal(view.poseIndex,undefined);assert.equal(view.frameIndex,undefined);
+ g.setTime(1375);assert.equal(g.control.views()[0].x,750);assert.equal(g.states.at(-1).views[0].elapsed,100);assert.equal(g.states.at(-1).state.fighters[0].hp,100);assert.equal(g.states.at(-1).state.combatTime,0);
+});
+test('non-loop visual actions stop on their final pose while paused and fixed contact poses stay frozen',()=>{
+ const g=controller(1,{clipTimings:visualTimings});g.control.receive(start);const state=snapshot(match(),1);state.state.phase='fight';state.views[0].clip='punch';state.views[0].elapsed=400;g.control.receive({type:'snapshot',snapshot:state});g.setTime(300);assert.equal(g.control.views()[0].elapsed,499.999);
+ g.control.receive({type:'pause',paused:true,reason:'manual'});const frozen=g.control.views()[0].elapsed;g.setTime(600);assert.equal(g.control.views()[0].elapsed,frozen);
+ const contact=controller(1,{clipTimings:visualTimings});contact.control.receive(start);state.views[0].frameIndex=1;contact.control.receive({type:'snapshot',snapshot:state});contact.setTime(300);assert.equal(contact.control.views()[0].elapsed,400);assert.equal(contact.control.views()[0].frameIndex,1);
+ const deletion=controller(1,{clipTimings:visualTimings});deletion.control.receive(start);const cinematic=snapshot(match(),1);cinematic.state.phase='finish';cinematic.views[0].elapsed=100;deletion.control.receive({type:'snapshot',snapshot:cinematic});deletion.setTime(300);assert.equal(deletion.control.views()[0].elapsed,100);
+});
+class CombatTimers{
+ now=0;id=0;jobs=new Map();setTimeout=(fn,ms)=>{const id=++this.id;this.jobs.set(id,{fn,at:this.now+ms});return id;};clearTimeout=id=>this.jobs.delete(id);
+ setInterval=(fn,ms)=>{const id=++this.id;this.jobs.set(id,{fn,at:this.now+ms,ms});return id;};clearInterval=id=>this.jobs.delete(id);
+ async advance(ms){for(let elapsed=0;elapsed<ms;elapsed+=10){this.now+=10;for(const [id,j]of [...this.jobs])if(j.at<=this.now){if(j.ms)j.at=this.now+j.ms;else this.jobs.delete(id);j.fn();}for(let i=0;i<24;i++)await Promise.resolve();}}
+}
+for(const [label,profile]of [['800ms',()=>800],['jitter',(at,seat)=>seat===1&&at%4000<300?1600:800]])test(`actual cloud ${label} controls recover transient stalls without changing manual pause authority`,async t=>{
+ const timers=new CombatTimers(),rows=new Map(),store={async read(id){return rows.get(id)??null;},async cas(id,old,next){if((rows.get(id)??null)!==old)return false;if(next===null)rows.delete(id);else rows.set(id,next);return true;},async list(){return [...rows.values()];}};
+ const rooms=createOnlineRooms({store,now:()=>timers.now}),hostSeat=await rooms.create('Host'),guestSeat=await rooms.join(hostSeat.code,'Guest');await rooms.select(hostSeat.code,hostSeat.token,{fighter:'6-bit',ready:true});await rooms.select(guestSeat.code,guestSeat.token,{fighter:'9-bit',ready:true});
+ const pauses=[[],[]],ended=[[],[]],errors=[];let impaired=false,combats=[];
+ const clients=[hostSeat,guestSeat].map((seat,index)=>createOnlineRelay({role:seat.role,room:seat.code,timers,now:()=>timers.now,onPacket:p=>index===0&&p.type==='started'?combats[0]?.receive(start):combats[index]?.receive(p),onDisconnect:r=>ended[index].push(r),relayRequest:async value=>{
+  const delay=impaired?profile(timers.now,index):50,wait=ms=>new Promise(resolve=>timers.setTimeout(resolve,ms));try{await wait(delay/2);const result=await rooms.relay(seat.code,seat.token,value);await wait(delay/2);return result;}catch(error){errors.push(error.message);throw error;}
+ }}));
+ try{
+  clients.forEach(c=>c.start());await timers.advance(1500);assert.ok(clients.every(c=>c.connected));impaired=true;
+  combats=[0,1].map(seat=>net.createOnlineCombatController({...options,seat,now:()=>timers.now,send:p=>clients[seat].send(p),onStart:seat===1?()=>{clients[1].send({type:'started',matchId:1});combats[1].input({move:0,crouch:false,block:false});}:undefined,onPause:(value,reason)=>pauses[seat].push({value,reason,at:timers.now})}));combats[1].receive(start);
+  const current=match(),views=current.fighters.map((_,i)=>getFighterView(current,i));current.phase='fight';
+  for(let elapsed=0;elapsed<16000;elapsed+=20){combats[1].input({move:elapsed%4000<1000?1:0,crouch:false,block:false});if(elapsed%1000===0)combats[1].action('punch',input);combats.forEach(c=>c.tick());combats[0].publish(current,views);await timers.advance(20);}
+  impaired=false;for(let elapsed=0;elapsed<5000;elapsed+=20){combats[1].input({move:0,crouch:false,block:false});combats.forEach(c=>c.tick());combats[0].publish(current,views);await timers.advance(20);}
+  assert.deepEqual(ended,[[],[]]);assert.deepEqual(errors,[]);assert.ok(combats.every(c=>!c.paused));assert.deepEqual(combats[0].remoteInput,{move:0,crouch:false,block:false});
+  const summary=pauses.map(values=>{let stalledAt=null;const recovered=[];for(const pause of values){assert.equal(pause.reason,'network');if(pause.value)stalledAt=pause.at;else if(stalledAt!==null){recovered.push(pause.at-stalledAt);stalledAt=null;}}assert.equal(stalledAt,null);assert.ok(recovered.every(ms=>ms<=4000));return {stalls:values.filter(p=>p.value).length,maxRecoveryMs:Math.max(0,...recovered)};});
+  t.diagnostic(JSON.stringify({profile:label,seats:summary,disconnects:ended.map(v=>v.length),errors:errors.length}));if(label==='jitter')assert.ok(summary[0].stalls>0);else assert.ok(summary.every(seat=>seat.stalls===0));
+  combats[0].requestPause(true,'manual');for(let elapsed=0;elapsed<2000;elapsed+=20){combats[1].input({move:0,crouch:false,block:false});combats.forEach(c=>c.tick());combats[0].publish(current,views);await timers.advance(20);}assert.ok(combats.every(c=>c.paused&&c.pauseReason==='manual'));assert.equal(combats[0].requestPause(false),true);
+ }finally{clients.forEach(c=>c.close());await rooms.leave(guestSeat.code,guestSeat.token);await rooms.leave(hostSeat.code,hostSeat.token);}
 });

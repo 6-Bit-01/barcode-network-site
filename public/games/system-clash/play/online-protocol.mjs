@@ -1,6 +1,6 @@
 /** One bounded wire contract shared by the lobby, peers and game frame. */
 export const ONLINE_SCOPE='system-clash-online-v1';
-export const ONLINE_VERSION='system-clash-20261009-8';
+export const ONLINE_VERSION='system-clash-20261009-9';
 export const MAX_PACKET_BYTES=65536;
 export const ONLINE_STAGES=Object.freeze(['radio-studio','sheila-office','studio-rat-lair','containment','nature-simulation','witty-wasteland','interdimensional-station']);
 const actions=new Set(['punch','kick','low-punch','low-kick','uppercut','grab','jump','double-punch','power-kick','crouch-punch','crouch-kick','crouch-high-kick','jump-punch','jump-kick','weapon-throw','weapon-use','deletion']);
@@ -16,9 +16,9 @@ export function validPayload(payload){
   case 'setup':return payload.stage===undefined||ONLINE_STAGES.includes(payload.stage);
   case 'started':return Number.isSafeInteger(payload.matchId)&&payload.matchId>0;
   case 'start':return Number.isInteger(payload.seed)&&payload.seed>=0&&payload.seed<=0xffffffff&&Number.isSafeInteger(payload.matchId)&&payload.matchId>0;
-  case 'action':return actions.has(payload.action)&&validInput(payload.input);
-  case 'input':return validInput(payload.input);
-  case 'pause':return typeof payload.paused==='boolean';
+  case 'action':return actions.has(payload.action)&&validInput(payload.input)&&(payload.inputSeq===undefined||Number.isSafeInteger(payload.inputSeq)&&payload.inputSeq>0&&payload.inputSeq<=4294967295);
+  case 'input':return validInput(payload.input)&&(payload.inputSeq===undefined||Number.isSafeInteger(payload.inputSeq)&&payload.inputSeq>0&&payload.inputSeq<=4294967295);
+  case 'pause':return typeof payload.paused==='boolean'&&(payload.reason===undefined||['manual','network'].includes(payload.reason))&&(payload.snapshotSeq===undefined||Number.isSafeInteger(payload.snapshotSeq)&&payload.snapshotSeq>=0);
   case 'snapshot':return object(payload.snapshot);
   case 'events':return Array.isArray(payload.events)&&payload.events.length<=64&&payload.events.every(event=>object(event)&&typeof event.type==='string'&&event.type.length<=60);
   default:return false;

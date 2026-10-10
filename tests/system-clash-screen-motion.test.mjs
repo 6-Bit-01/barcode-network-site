@@ -59,7 +59,9 @@ function harness(){
   env.time=at;const match={...hostMatch,phase:'fight',paused:false,combatTime:at},views=match.fighters.map((_,i)=>getFighterView(match,i));
   Object.assign(views[0],{clip:'jump',elapsed:200,x:440,y,airborne:true,opacity:1});Object.assign(views[1],{clip:'idle',elapsed:0,x:950,y:0,airborne:false,opacity:1});
   const snapshot=makeFightSnapshot(match,views,{...schema,seq:++sequence,at});assert(snapshot,'Complete valid wire snapshot');
-  assert(env.onlineCombat.receive({type:'snapshot',snapshot}));return snapshot;
+  assert(env.onlineCombat.receive({type:'snapshot',snapshot}));
+  // The production RAF owns painting; snapshot delivery itself no longer draws.
+  env.draw();return snapshot;
  }
  function falling(){packet(env.time,-200);packet(env.time+40,-160);env.time+=16;screen.images.length=0;env.draw();assert(echoes().length>0,'Actual intact native draw gains a fall echo');}
  return {env,screen,source,packet,echoes,falling,clear(){screen.images.length=0;}};

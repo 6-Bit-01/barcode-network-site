@@ -26,7 +26,7 @@ export function createOnlinePeer({role,room,peer,RTCPeerConnection=globalThis.RT
   if(packet?.scope!==ONLINE_SCOPE||!Number.isSafeInteger(packet.seq)||packet.seq<=received[lane]||!validPayload(packet.payload))return;
   const payload=packet.payload;
   if(packet.version!==version||(payload.type==='hello'&&payload.version!==version)){fail('Game versions differ. Both players should refresh the game and create a new session.');return;}
-  if(lane==='state'&&payload.type!=='snapshot')return;
+  if(lane==='state'&&payload.type!==(role==='host'?'input':'snapshot'))return;
   if(payload.type==='hello'){
    if(lane!=='control'||payload.room!==room||payload.role===role){fail('The peer could not verify this session.');return;}
    received[lane]=packet.seq;lastIncoming=now();remoteHello=true;checkReady();return;
@@ -95,5 +95,5 @@ export function createOnlinePeer({role,room,peer,RTCPeerConnection=globalThis.RT
   if(pendingDescriptions.size>=2){fail('The session connection changed. Please create another.');return Promise.resolve(false);}
   const operation=remoteQueue.then(async()=>{try{if(closed||turn<generation)return false;if(role==='guest'&&turn>generation)nextGeneration(turn);await pc.setRemoteDescription({type:description.type,sdp:description.sdp});if(closed||turn!==generation)return false;remoteGeneration=turn;await drainCandidates();if(role==='guest'){onStatus(turn>1?'retrying':'connecting');await publish(await pc.createAnswer(),turn);}return !closed;}catch(error){if(!closed)fail(error.message??'Could not connect to the other player.');return false;}});
   remoteQueue=operation;pendingDescriptions.set(key,operation);return operation;
- },setMatchId(value){if(Number.isSafeInteger(value)&&value>=matchId)matchId=value;},send(payload){if(!connected||closed||!validPayload(payload)||(role==='guest'&&['snapshot','events','start','setup'].includes(payload.type)))return false;return wire(payload,payload.type==='snapshot'?'state':'control');},close(){close();}};
+ },setMatchId(value){if(Number.isSafeInteger(value)&&value>=matchId)matchId=value;},send(payload){if(!connected||closed||!validPayload(payload)||(role==='host'&&payload.type==='input')||(role==='guest'&&['snapshot','events','start','setup'].includes(payload.type)))return false;return wire(payload,['snapshot','input'].includes(payload.type)?'state':'control');},close(){close();}};
 }

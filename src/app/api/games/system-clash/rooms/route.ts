@@ -1,6 +1,7 @@
 import {NextResponse} from "next/server";
 import {createOnlineRooms,OnlineRoomError} from "@/lib/system-clash-online";
 import {onlineRoomStore} from "@/lib/system-clash-online-store";
+import {createOnlineTurnCredentials} from "@/lib/system-clash-turn";
 export const dynamic="force-dynamic";
 const headers={"Cache-Control":"no-store","X-Content-Type-Options":"nosniff"};
 function reply(value:unknown,status=200){return NextResponse.json(value,{status,headers});}
@@ -34,6 +35,11 @@ export async function POST(req:Request){
   if(action==="create")return reply(await rooms.create(body.name));
   if(action==="join")return reply(await rooms.join(body.code,body.name));
   if(action==="poll")return reply(await rooms.poll(body.code,key));
+  if(action==="ice"){
+   const room=await rooms.poll(body.code,key);
+   if(!room.host||!room.guest||!room.host.ready||!room.guest.ready)throw new OnlineRoomError("Both players must be ready for a realtime relay.",409);
+   return reply(await createOnlineTurnCredentials());
+  }
   if(action==="select")return reply(await rooms.select(body.code,key,{fighter:body.fighter,ready:body.ready}));
   if(action==="candidates")return reply(await rooms.candidates(body.code,key,body));
   if(action==="relay")return reply(await rooms.relay(body.code,key,body));

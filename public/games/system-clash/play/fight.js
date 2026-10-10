@@ -75,7 +75,7 @@ async function ensureStageArt(id){
  try{const selected=await loadStageArt({id,bundle:window.SYSTEM_CLASH_FIGHT_BUNDLE,baseURL:new URL('.',location.href)});if(revision!==stageArtRevision)return;stageArtPending=null;if(match?.stage?.id!==id)return;if(!window.SYSTEM_CLASH_FIGHT_BUNDLE&&(!selected.image||!selected.kit||!selected.layers))throw Error('Stage assets could not load. Retry loading.');stageArt=selected;ready=true;last=performance.now();accumulator=0;for(const node of document.querySelectorAll?.('header,main,footer')??[])node.inert=false;$('asset-loading').hidden=true;draw();}catch(error){if(revision===stageArtRevision){stageArtPending=null;loading(error.message,0,true);}}
 }
 const onlineBridge=createOnlineFightBridge({url:location.href,window,onPacket:packet=>onlineCombat?.receive(packet),onDisconnect:reason=>onlineCombat?.disconnect(reason)});
-function applyOnlinePause(value){paused=value;if(match)match.paused=value;clearInput();accumulator=0;syncAudioPause();$('pause-fight').textContent=value?(onlineBridge.seat===1?'Waiting for host':'Resume'):'Pause';$('pause-fight').setAttribute('aria-pressed',String(value));draw();}
+function applyOnlinePause(value,reason='manual'){paused=value;if(match)match.paused=value;clearInput();accumulator=0;syncAudioPause();$('pause-fight').textContent=value?(reason==='network'?'Reconnecting…':onlineBridge.seat===1?'Waiting for host':'Resume'):'Pause';$('pause-fight').disabled=value&&(reason==='network'||onlineBridge.seat===1);$('pause-fight').setAttribute('aria-pressed',String(value));draw();}
 function startOnlineFight(packet) {
   reset(true,packet.seed);void effects.startAudio();canvas.focus({preventScroll:true});
   if(onlineBridge.seat===1){onlineBridge.send({type:'started',matchId:packet.matchId});onlineCombat.input({move:0,crouch:false,block:false});}
@@ -83,9 +83,9 @@ function startOnlineFight(packet) {
 function initializeOnlineCombat(){
  if(!onlineBridge.enabled||onlineCombat)return;
  onlineCombat=createOnlineCombatController({seat:onlineBridge.seat,matchId:Number(launchParams.get('matchId'))||1,roster:activeRoster,fighterIds:art.map(f=>f.manifest.id),clipIds:art.map(f=>Object.keys(f.clips)),send:packet=>onlineBridge.send(packet),now:()=>performance.now(),
-  onStart:startOnlineFight,onPause:applyOnlinePause,
-  onAction:command=>{if(!ready||paused)return;performAction(match,command.index,command.action,command.input);dispatchEvents();draw();},
-  onState:snapshot=>{match=applyFightSnapshot(match,snapshot);paused=snapshot.state.paused;draw();},onEvents:events=>{for(const event of events)emitFightEvent(event);},
+  clipTimings:art.map(f=>Object.fromEntries(Object.entries(f.clips).map(([id,clip])=>[id,{duration:clip.timeline.duration,loop:clip.data.loop??['idle','walk'].includes(id),frames:clip.timeline.entries.map(({index,start,end})=>({index,start,end}))}]))),onStart:startOnlineFight,onPause:applyOnlinePause,
+  onAction:command=>{if(!ready||paused)return;performAction(match,command.index,command.action,command.input);dispatchEvents();},
+  onState:snapshot=>{match=applyFightSnapshot(match,snapshot);paused=snapshot.state.paused;},onEvents:events=>{for(const event of events)emitFightEvent(event);},
   onDisconnect:reason=>{clearInput();paused=true;if(match)match.paused=true;effects.setPaused(true);$('load-status').textContent=reason;$('start-fight').disabled=true;$('restart-fight').disabled=true;}
  });
  for(const id of ['fighter-one','fighter-two','mode-select','inspect-deletion','inspect-motion','deletion-scrub','pose-preset','deletion-facing','motion-clip','motion-facing','motion-weapon','motion-embedded','motion-damage','motion-scrub'])$(id).disabled=true;
@@ -233,9 +233,9 @@ function draw() {
   const motionLabel=motionTime!==null?'Move review: '+scene.poseLabel+' at '+(motionTime/1000).toFixed(2)+' seconds, hand: '+$('motion-weapon').selectedOptions[0].textContent+', chest: '+$('motion-embedded').selectedOptions[0].textContent+', wear: '+$('motion-damage').selectedOptions[0].textContent:null;
   const label=`${scene.fighters[0].name}: ${scene.fighters[0].hp} health, ${moveLabel(views[0])}, ${$('gear-0').textContent}. ${scene.fighters[1].name}: ${scene.fighters[1].hp} health, ${moveLabel(views[1])}, ${$('gear-1').textContent}. ${motionLabel??stageLabel}. ${inspectTime!==null?reviewLabel:paused?'Paused':match.status || match.phase}.`;
   if (label !== arenaLabel) {canvas.setAttribute('aria-label',label);arenaLabel=label;}
-  const state = motionLabel??(inspectTime!==null?reviewLabel:paused ? onlineBridge.enabled?(onlineBridge.seat===0?'Paused — release controls; host Options / P resumes.':'Paused — the host can resume after controls are released.'):'Paused — Options / × or P to resume; ○ returns to character select.' : match.phase==='fight'&&performance.now()<weaponFeedbackUntil?weaponFeedback:match.status || 'Fight');
+  const state = motionLabel??(inspectTime!==null?reviewLabel:paused ? onlineBridge.enabled?(onlineCombat?.pauseReason==='network'?'Connection interrupted — release controls while the match reconnects.':onlineBridge.seat===0?'Paused — release controls; host Options / P resumes.':'Paused — the host can resume after controls are released.'):'Paused — Options / × or P to resume; ○ returns to character select.' : match.phase==='fight'&&performance.now()<weaponFeedbackUntil?weaponFeedback:match.status || 'Fight');
   if (state !== statusText) {$('fight-status').textContent=state;statusText=state;}
-  if(onlineBridge.enabled){$('start-fight').disabled=match.phase!=='over'||!onlineCombat?.started;$('restart-fight').disabled=$('start-fight').disabled;$('pause-fight').disabled=!onlineCombat?.started||match.phase==='ready'||(paused&&onlineBridge.seat===1);}
+  if(onlineBridge.enabled){$('start-fight').disabled=match.phase!=='over'||!onlineCombat?.started;$('restart-fight').disabled=$('start-fight').disabled;$('pause-fight').disabled=!onlineCombat?.started||match.phase==='ready'||(paused&&(onlineCombat?.pauseReason==='network'||onlineBridge.seat===1));}
   updateRoundOutcome();if(tournamentOverlay?.active){$('restart-fight').disabled=match.phase!=='ready';$('start-fight').disabled=tournamentOverlay.blocking;}
 }
 

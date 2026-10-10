@@ -151,7 +151,7 @@ test('Mutilator keeps its selected identity in either online frame seat',()=>{
 });
 test('the previous seventeen-fighter build is rejected before gameplay',()=>{const p=peerPair({guestVersion:'system-clash-20261008-5'});p.open();assert.ok(p.disconnected.flat().some(r=>/version|refresh/i.test(r)));assert.equal(p.guest.send({type:'input',input}),false);p.host.close();p.guest.close();});
 
-test('nineteen-fighter wire generation excludes the earlier eighteen-fighter build',()=>{assert.equal(protocol.ONLINE_VERSION,'system-clash-20261010-10');assert.notEqual(protocol.ONLINE_VERSION,'system-clash-20261008-6');});
+test('nineteen-fighter wire generation excludes the earlier eighteen-fighter build',()=>{assert.equal(protocol.ONLINE_VERSION,'system-clash-20261010-11');assert.notEqual(protocol.ONLINE_VERSION,'system-clash-20261008-6');});
 
 test('online selectors keep corporate fighters locked locally while legitimate remote picks still launch',async()=>{const f=await mountedLobby({corporateUnlocked:false});try{for(const id of ['bnl-01','9-bit']){const b=f.elements.get('fighter-grid').children.find(b=>b.dataset.fighter===id);assert.ok(b);assert.equal(b.disabled,true,id);f.elements.get('create-room').click();await flushTasks();const before=f.requests.filter(r=>r.body?.action==='select').length;b.click();await flushTasks();assert.equal(f.requests.filter(r=>r.body?.action==='select').length,before);}const url=lobby.onlineFightURL('https://game.test/online.html',{role:'host'},{host:{fighter:'6-bit'},guest:{fighter:'bnl-01'}},{});assert.equal(url.searchParams.get('p2'),'bnl-01');}finally{f.mounted.destroy();}});
 
@@ -398,5 +398,18 @@ test('a lost rematch begin response keeps an idempotent retry available without 
   f.elements.get('rematch-button').click();await flushTasks();f.timers.advance(1500);await flushTasks();assert.equal(new URL(frame.src).searchParams.get('matchId'),'1');assert.equal(f.elements.get('rematch-button').disabled,false);
   f.elements.get('rematch-button').click();await flushTasks();assert.equal(new URL(frame.src).searchParams.get('matchId'),'2');assert.equal(new URL(frame.src).searchParams.get('winHost'),'1');assert.deepEqual(f.requests.filter(request=>request.body?.action==='begin').map(request=>request.body.after),[0,1,1]);assert.equal(f.requests.filter(request=>request.body?.action==='result').length,1);
   assert.deepEqual(control.sent.map(data=>JSON.parse(data).payload).filter(payload=>payload.type==='rematch'),[{type:'rematch',matchId:2,wins:[1,0]}]);
+ }finally{f.mounted.destroy();}
+});
+
+test('a legacy locked guest starts on available cards and cannot ready until choosing one',async()=>{
+ const fighters=JSON.parse(fs.readFileSync(new URL('../public/games/system-clash/play/assets/menu/roster.json',import.meta.url))).fighters,f=await mountedLobby({corporateUnlocked:false,rosterFighters:fighters,pollStates:[{host:{name:'A',fighter:'6-bit',ready:false},guest:{name:'B',fighter:'9-bit',ready:false}}]});
+ try{f.elements.get('join-code').value='ABC123';f.elements.get('join-form').emit('submit',{preventDefault(){}});await flushTasks();f.elements.get('session-select').click();const cards=f.elements.get('fighter-grid').children,available=cards.find(card=>card.dataset.fighter==='6-bit'),locked=cards.find(card=>card.dataset.fighter==='9-bit'),ready=f.elements.get('ready-button');
+  assert.equal(available.hidden,false);assert.equal(locked.hidden,true);assert.equal(locked.children.find(child=>child.tagName==='SPAN').textContent,'SEALED');assert.match(locked.children.find(child=>child.tagName==='IMG').src,/sealed-fighter-wire\.webp$/);assert.doesNotMatch(locked.attributes['aria-label'],/9 Bit|BNL/);assert.match(f.elements.get('fighter-page').textContent,/1.*3/);assert.equal(ready.disabled,true);ready.click();await flushTasks();assert.equal(f.requests.filter(request=>request.body?.action==='select').length,0);
+  available.click();await flushTasks();assert.equal(ready.disabled,false);ready.click();await flushTasks();assert.deepEqual(f.requests.filter(request=>request.body?.action==='select').map(request=>({fighter:request.body.fighter,ready:request.body.ready})),[{fighter:'6-bit',ready:false},{fighter:'6-bit',ready:true}]);
+ }finally{f.mounted.destroy();}
+});
+test('an unlocked corporate guest can open its own roster page and ready its chosen fighter',async()=>{
+ const fighters=JSON.parse(fs.readFileSync(new URL('../public/games/system-clash/play/assets/menu/roster.json',import.meta.url))).fighters,f=await mountedLobby({corporateUnlocked:true,rosterFighters:fighters,pollStates:[{host:{name:'A',fighter:'6-bit',ready:false},guest:{name:'B',fighter:'9-bit',ready:false}}]});
+ try{f.elements.get('join-code').value='ABC123';f.elements.get('join-form').emit('submit',{preventDefault(){}});await flushTasks();f.elements.get('session-select').click();const card=f.elements.get('fighter-grid').children.find(card=>card.dataset.fighter==='9-bit'),ready=f.elements.get('ready-button');assert.equal(card.hidden,false);assert.match(f.elements.get('fighter-page').textContent,/3.*3/);assert.equal(ready.disabled,false);ready.click();await flushTasks();assert.deepEqual(f.requests.filter(request=>request.body?.action==='select').map(request=>({fighter:request.body.fighter,ready:request.body.ready})),[{fighter:'9-bit',ready:true}]);
  }finally{f.mounted.destroy();}
 });

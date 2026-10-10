@@ -136,7 +136,7 @@ test('rematch, selection and reload recovery retain the tally without counting u
 
 test('cloud score projection must match the committed room tally and stays host-only',async()=>{
  const {rooms}=fixture(),host=await rooms.create('Host'),guest=await rooms.join(host.code,'Guest');for(const seat of [host,guest])await rooms.select(host.code,seat.token,{fighter:seat.role==='host'?'6-bit':'9-bit',ready:true});await rooms.begin(host.code,host.token,{after:0});await rooms.result(host.code,host.token,{matchId:1,winner:0});
- const version='system-clash-20261010-10',packet=(payload,seq=1)=>({lane:'control',data:JSON.stringify({scope:'system-clash-online-v1',version,seq,matchId:1,payload})});
+ const version='system-clash-20261010-11',packet=(payload,seq=1)=>({lane:'control',data:JSON.stringify({scope:'system-clash-online-v1',version,seq,matchId:1,payload})});
  await fails(()=>rooms.relay(host.code,guest.token,{version,ack:0,packets:[packet({type:'rematch',matchId:2,wins:[1,0]})]}),400);
  for(const wins of [[99,0],[1],[1,-1],[1,0.5]])await fails(()=>rooms.relay(host.code,host.token,{version,ack:0,packets:[packet({type:'setup',wins})]}),400);
  const response=await rooms.relay(host.code,host.token,{version,ack:0,packets:[packet({type:'setup',wins:[1,0]})]});assert.equal(response.accepted.control,1);
@@ -164,7 +164,7 @@ test('same-token reload recovery renews the guest lease and retains its recorded
 });
 test('joining an active host replaces a stale guest through the same room CAS and revokes its token',async()=>{
  const f=fixture(),host=await f.rooms.create('Host'),guest=await f.rooms.join(host.code,'Old guest');
- for(const seat of [host,guest])await f.rooms.select(host.code,seat.token,{fighter:seat.role==='host'?'6-bit':'9-bit',ready:true});await f.rooms.begin(host.code,host.token,{after:0});await f.rooms.result(host.code,host.token,{matchId:1,winner:0});await f.rooms.begin(host.code,host.token,{after:1});await f.rooms.result(host.code,host.token,{matchId:2,winner:1});const version='system-clash-20261010-10';await f.rooms.relay(host.code,host.token,{version,ack:0,packets:[{lane:'control',data:JSON.stringify({scope:'system-clash-online-v1',version,seq:1,matchId:2,payload:{type:'setup',wins:[1,1]}})}]});
+ for(const seat of [host,guest])await f.rooms.select(host.code,seat.token,{fighter:seat.role==='host'?'6-bit':'9-bit',ready:true});await f.rooms.begin(host.code,host.token,{after:0});await f.rooms.result(host.code,host.token,{matchId:1,winner:0});await f.rooms.begin(host.code,host.token,{after:1});await f.rooms.result(host.code,host.token,{matchId:2,winner:1});const version='system-clash-20261010-11';await f.rooms.relay(host.code,host.token,{version,ack:0,packets:[{lane:'control',data:JSON.stringify({scope:'system-clash-online-v1',version,seq:1,matchId:2,payload:{type:'setup',wins:[1,1]}})}]});
  f.setTime(60000);await f.rooms.poll(host.code,host.token);f.setTime(61000);const replacement=await f.rooms.join(host.code,'New guest'),state=await f.rooms.poll(host.code,replacement.token);assert.equal(state.guest.name,'New guest');assert.equal(state.host.ready,false);assert.equal(state.guest.ready,false);assert.equal(state.matchPhase,'selection');assert.equal(state.matchId,2);assert.equal(state.selectionVersion,1);assert.deepEqual(state.wins,[1,0]);assert.equal(state.description,null);assert.equal(state.result,null);
  await fails(()=>f.rooms.resume(host.code,guest.token),401);await fails(()=>f.rooms.select(host.code,guest.token,{fighter:'9-bit',ready:true}),401);await fails(()=>f.rooms.relay(host.code,guest.token,{version,ack:0,packets:[]}),401);await fails(()=>f.rooms.relay(host.code,host.token,{version,ack:0,packets:[]}),409);for(const seat of [host,replacement])await f.rooms.select(host.code,seat.token,{fighter:seat.role==='host'?'6-bit':'9-bit',ready:true});assert.deepEqual((await f.rooms.relay(host.code,replacement.token,{version,ack:0,packets:[]})).packets,[]);
 });
@@ -174,4 +174,8 @@ test('concurrent joins can replace one stale guest with only one new authenticat
 });
 test('a stale guest cannot make an absent host available for a replacement',async()=>{
  const f=fixture(),host=await f.rooms.create('Host');await f.rooms.join(host.code,'Guest');f.setTime(61000);await fails(()=>f.rooms.join(host.code,'Replacement'),410);assert.equal(JSON.parse(f.rows.get(host.code)).guest.name,'Guest');
+});
+
+test('a fresh guest starts with the available first-page fighter instead of a corporate lock',async()=>{
+ const {rooms}=fixture(),host=await rooms.create('Host'),guest=await rooms.join(host.code,'Guest'),state=await rooms.poll(host.code,guest.token);assert.equal(state.guest.fighter,'6-bit');assert.equal(state.guest.ready,false);
 });

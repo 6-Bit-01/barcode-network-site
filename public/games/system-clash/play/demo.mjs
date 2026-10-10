@@ -14,6 +14,7 @@ import {selectDemoStage,cycleDemoStage,demoRoster,DEMO_ROSTER_CAPACITY,createDem
 import {createGamepadInput} from './fight-gamepad.mjs';
 import {createMenuPreviews} from './menu-preview.mjs';
 import {createMenuPortraits} from './menu-portraits.mjs';
+import {isSealedFighter,appendSealedFighterCard,SEALED_FIGHTER_ART} from './sealed-fighter-card.mjs';
 import {createTournamentRun,launchTournamentMatch,saveTournamentRun} from './tournament.mjs';
 import {withControllerSeats,resolveInterfaceSettings} from './demo-flow.mjs';
 const $=id=>document.getElementById(id),params=new URL(location.href).searchParams;
@@ -51,7 +52,7 @@ function render(){
  $('select-mode').textContent=tournament?'TOURNAMENT / EIGHT-NODE CLIMB':state.mode==='local'?'LOCAL TWO-PLAYER':'SOLO VS CPU';
  $('opponent-tag').textContent=tournament?'FIRST CHALLENGER':state.mode==='local'?'PLAYER TWO':'CPU OPPONENT';
  $('select-heading').textContent=state.screen==='ready'?'READY TO CLASH':state.activePlayer===0?'CHOOSE YOUR FIGHTER':state.mode==='cpu'?'CHOOSE YOUR OPPONENT':'PLAYER TWO / CHOOSE YOUR FIGHTER';
- $('selection-instruction').textContent=tournament?(state.screen==='ready'?'Eight rivals. One climb. Enter when ready.':'Choose your fighter for all eight nodes. No mirror opponents.'):state.screen==='ready'?state.picks.map(id=>catalog.fighters.find(f=>f.id===id).name).join(' vs. '):state.activePlayer===0?'Player one selects.':state.mode==='cpu'?'Choose the CPU opponent, or use Random.':'Player two selects.';
+ $('selection-instruction').textContent=tournament?(state.screen==='ready'?'Eight rivals. One climb. Enter when ready.':'Choose your fighter. Six rivals lead to BNL and the final boss.'):state.screen==='ready'?state.picks.map(id=>catalog.fighters.find(f=>f.id===id).name).join(' vs. '):state.activePlayer===0?'Player one selects.':state.mode==='cpu'?'Choose the CPU opponent, or use Random.':'Player two selects.';
  for(let index=0;index<2;index++){
   const suffix=index?'two':'one',waiting=tournament&&index===1&&!tournamentRun,fighter=catalog.fighters.find(f=>f.id===(tournament&&index===1&&tournamentRun?tournamentRun.opponents[0]:state.picks[index]));
   document.querySelector('.player-'+suffix).classList.toggle('tournament-waiting',waiting);
@@ -77,18 +78,19 @@ function render(){
 }
 function focusSelection(){const active=$('fighter-grid').querySelector('[data-fighter="'+state.picks[state.activePlayer]+'"]');active?.focus({preventScroll:true});active?.scrollIntoView?.({block:'nearest',inline:'nearest'});}
 function choose(id){const next=previewDemoFighter(state,id);if(next===state)return;state=next;render();uiSound('ui-select');}
-function confirm(){if(state.screen!=='select')return;gamepads.reset();uiSound('ui-confirm');state=confirmDemoFighter(state);if(state.mode==='tournament')tournamentRun=createTournamentRun(state.roster,{fighterId:state.picks[0],settings:{muted,reducedMotion,controllerSeats:gamepads.seatIndices(),matchRules}});render();if(state.screen==='ready')$('enter-arena').focus({preventScroll:true});else focusSelection();}
+function confirm(){if(state.screen!=='select')return;gamepads.reset();uiSound('ui-confirm');state=confirmDemoFighter(state);if(state.mode==='tournament')tournamentRun=createTournamentRun(state.roster,{fighterId:state.picks[0],settings:{muted,reducedMotion,controllerSeats:gamepads.seatIndices(),matchRules,corporateUnlocked}});render();if(state.screen==='ready')$('enter-arena').focus({preventScroll:true});else focusSelection();}
 function begin(mode){gamepads.reset();tournamentRun=null;state=beginDemoSelection(state,mode);render();uiSound('ui-start');focusSelection();}
 function back(){if(!state)return;gamepads.reset();state=backDemoSelection(state);tournamentRun=null;audio.clear();uiSound('ui-back');render();if(state.screen==='title')$('solo-mode').focus();else focusSelection();}
 function buildGrid(){
  const grid=$('fighter-grid');grid.replaceChildren();
  for(const fighter of state.roster){
   const button=document.createElement('button');button.type='button';button.className='fighter-card'+(fighter.enabled?'':' future');button.dataset.fighter=fighter.id;button.dataset.enabled=String(fighter.enabled);
-  button.setAttribute('aria-label',fighter.name+(fighter.enabled?'':', locked. Enter a broadcast code in Options to unlock.'));
+  if(isSealedFighter(fighter)){button.disabled=true;appendSealedFighterCard(document,button,{baseURL:location.href});}
+  else {button.setAttribute('aria-label',fighter.name+(fighter.enabled?'':', locked. Enter a broadcast code in Options to unlock.'));
   const face=document.createElement('canvas');face.className='card-portrait';face.setAttribute('aria-hidden','true');button.append(face);void portraits.add(face,fighter).catch(()=>{button.dataset.portraitError='true';});
   if(fighter.enabled)button.addEventListener('click',()=>choose(fighter.id));
   else{const icon=document.createElement('span');icon.className='locked-mark';icon.textContent='LOCKED';icon.setAttribute('aria-hidden','true');button.append(icon);}
-  const label=document.createElement('span');label.className='fighter-name';label.textContent=fighter.name;button.append(label);
+  const label=document.createElement('span');label.className='fighter-name';label.textContent=fighter.name;button.append(label);}
   for(const [suffix,text]of [['one','P1'],['two','P2']]){const tag=document.createElement('span');tag.className='slot-tag '+suffix;tag.textContent=text;tag.hidden=true;button.append(tag);}
   grid.append(button);
  }
@@ -100,7 +102,7 @@ async function load(){
   const response=await fetch(new URL('assets/menu/roster.json',location.href),{cache:'no-store'});if(!response.ok)throw new Error('The fighter roster could not connect.');
   catalog=await response.json();if((catalog.fighters.length<1||catalog.fighters.length>DEMO_ROSTER_CAPACITY||new Set(catalog.fighters.map(f=>f.id)).size!==catalog.fighters.length)||catalog.fighters.some(f=>!FIGHTER_STYLES[f.id]||![f.portrait,f.standing].every(path=>/^assets\/menu\/[a-z0-9-]+\.webp$/.test(path))))throw new Error('The fighter roster needs its registered artwork.');
   state=createDemoSelection(catalog.fighters,{corporateUnlocked,p1:params.get('p1'),p2:params.get('p2'),stage:params.get('stage'),mode:params.get('mode'),screen:params.get('screen')});
-  const paths=[...new Set(['assets/menu/title-arena.webp','assets/console/system-clash-title.webp','assets/console/barcode-circuit-works.webp','assets/console/soft-signal-systems.webp','assets/console/channel-06-entertainment.webp','assets/menu/6-bit-standing.webp','assets/menu/9-bit-standing.webp',...catalog.fighters.flatMap(f=>[f.portrait,f.standing])])];let done=0;await Promise.all(paths.map(async path=>{await menuImage(path);if(failed)return;loading('Loading menu artwork · '+(++done)+' / '+paths.length,10+done/paths.length*90);}));
+  const paths=[...new Set([SEALED_FIGHTER_ART,'assets/menu/title-arena.webp','assets/console/system-clash-title.webp','assets/console/barcode-circuit-works.webp','assets/console/soft-signal-systems.webp','assets/console/channel-06-entertainment.webp','assets/menu/6-bit-standing.webp','assets/menu/9-bit-standing.webp',...catalog.fighters.flatMap(f=>[f.portrait,f.standing])])];let done=0;await Promise.all(paths.map(async path=>{await menuImage(path);if(failed)return;loading('Loading menu artwork · '+(++done)+' / '+paths.length,10+done/paths.length*90);}));
   menuReady=true;for(const node of document.querySelectorAll?.('header,main,footer')??[])node.inert=false;$('asset-loading').hidden=true;buildGrid();render();$('solo-mode').disabled=false;$('local-mode').disabled=false;$('tournament-mode').disabled=false;$('online-mode').disabled=false;$('demo-load').textContent='SIGNAL READY / '+catalog.fighters.length+' FIGHTERS ONLINE';
   let seen=false;try{seen=sessionStorage.getItem('system-clash-console-seen')==='1';}catch{}if(!seen&&state.screen==='title'){for(const node of document.querySelectorAll('header:not(.game-screen-bar),main,footer'))node.inert=true;music.setPaused(true);boot.start();if(!muted)void bootAudio.play().catch(()=>{});}
  }catch(error){failed=true;loading(error.message,0,true);$('demo-load').textContent=error.message;$('demo-load').classList.add('error');$('retry-demo').hidden=false;}

@@ -529,6 +529,7 @@ function fighter(ctx, view, art, overlays, weaponArt, hide = false, motion) {
   const points=overlays.attachments(asset,frame,view,art.manifest.id),geometry={dx,dy,scale,scaleX,scaleY};
   const walkingRig=walkRig(asset,view,frame);
   const sourceExclusions=[...(frame.sourceExclusions??[]),...floppyHairExclusions(ctx.canvas,asset,frame,view,art.manifest.id)];
+  const tweenExclusionsSafe=view.clip==='walk'&&sourceExclusions.every(([,y,,h])=>y+h<=(walkingRig?.rigidY??(points.torso.y+(points.legs.y-points.torso.y)*.52)));
   if(motion) {
     const native=motion.native?.frames?.[view.facing]?.[poseFrameIndex(asset,view)];
     const world=point=>point?{x:feetX+point.x,y:feetY+point.y}:null;
@@ -569,7 +570,7 @@ function fighter(ctx, view, art, overlays, weaponArt, hide = false, motion) {
   }
   // One complete source rectangle, shared calibrated geometry, and its own drawn facing.
   if(sourceExclusions.length) {
-    const pad=walkingRig?32:0;
+    const b=frame.opaqueBounds??[0,0,sw,sh],pad=walkingRig||tweenExclusionsSafe?Math.max(32,Math.ceil((b[3]-b[1])*scaleY*.13)):0;
     ctx.beginPath();ctx.rect(dx-pad,dy-pad,sw*scaleX+pad*2,sh*scaleY+pad*2);
     for(const [x,y,w,h]of sourceExclusions)ctx.rect(dx+x*scaleX,dy+y*scaleY,w*scaleX,h*scaleY);
     ctx.clip('evenodd');
@@ -580,7 +581,7 @@ function fighter(ctx, view, art, overlays, weaponArt, hide = false, motion) {
   }
   if(view.clip==='delete-hammer'&&!view.rotationPivotPoint) {ctx.beginPath();ctx.rect(-10000,-10000,20000,FLOOR+10001);ctx.clip();}
   if(!drawRemainsReveal(ctx,asset.image,view,{sx,sy,sw,sh,dx,dy,scale,scaleX,scaleY,frame})) {
-    const interpolated=(!sourceExclusions.length||walkingRig)&&drawPoseTween(ctx,asset,{...view,reducedMotion:motion?.reducedMotion??view.reducedMotion},{frame,transform,dx,dy,rig:walkingRig});
+    const interpolated=(!sourceExclusions.length||tweenExclusionsSafe)&&drawPoseTween(ctx,asset,{...view,reducedMotion:motion?.reducedMotion??view.reducedMotion},{frame,transform,dx,dy,rig:walkingRig});
     if(!interpolated)ctx.drawImage(asset.image,sx,sy,sw,sh,dx,dy,sw*scaleX,sh*scaleY);
   }
   overlays.drawDamage(ctx,asset,frame,view,art,geometry,points,weaponArt);

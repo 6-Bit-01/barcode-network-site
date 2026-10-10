@@ -214,7 +214,7 @@ export function createMatch(options = {}) {
     status: options.start === false ? 'READY TO CLASH' : 'ROUND '+roundNumber,
     hitstop: 0, events: [], combatTime:0,
     _seed: (Number(options.seed) || 0x6b19) >>> 0,
-    _cpuDecision: 0, _cpuControl: control(), _deletionOrigin: null,
+    _cpuDecision: 0, _cpuControl: control(), _cpuSight:[], _cpuVisible:null, _deletionOrigin: null,
     paused:false,stagePickups:[],projectiles:[],nextPickupAt:WEAPON_RULES.firstSpawn,
     _weaponSpawnIndex:0,_nextWeaponId:1,_nextProjectileId:1,_nextMarkId:1,
   };
@@ -1559,63 +1559,84 @@ function updateAction(match,index,dt){
   if(match.phase==='fight'||match.phase==='over')finishActionStep(match,index);
 }
 
+// Difficulty changes decisions, never fighter stats, native timing or contact.
+const CPU_LEVELS={
+  easy:{delay:300,jitter:100,reaction:200,guard:.5,guardAccuracy:.64,attack:.8,tactical:.4,combo:.86,error:.18},
+  normal:{delay:200,jitter:50,reaction:145,guard:.72,guardAccuracy:.83,attack:.86,tactical:.64,combo:.91,error:.12},
+  hard:{delay:85,jitter:40,reaction:70,guard:.94,guardAccuracy:.97,attack:.99,tactical:.97,combo:.99,error:.02},
+};
+function cpuObservation(match,player,level){
+  // Sample the visible pose before this step applies held player controls. A
+  // bounded delayed history prevents same-frame guard and tactical input reads.
+  match._cpuSight.push({at:match.combatTime,x:player.x,action:player.action,crouched:isCrouched(player),air:airOffset(player),
+    level:['low-kick','crouch-kick'].includes(player.action)?'low':player.action==='crouch-high-kick'?'overhead':'high'});
+  while(match._cpuSight[0]?.at<=match.combatTime-level.reaction)match._cpuVisible=match._cpuSight.shift();
+  return match._cpuVisible??{x:player.x,action:'idle',crouched:false,air:0,level:'high'};
+}
+function cpuStrikeReach(cpu,action){
+  const reach={punch:180,kick:220,'low-punch':165,'low-kick':195,uppercut:165,grab:130,'double-punch':220,'power-kick':275};
+  return (reach[action]??175)*(cpu._style.reach[attackCategory(action)]??1);
+}
 function cpuInput(match, dt) {
-  const cpu = match.fighters[1], player = match.fighters[0];
+  const cpu = match.fighters[1], player = match.fighters[0],level=CPU_LEVELS[match._difficulty??'normal'];
+  const visible=cpuObservation(match,player,level);
   match._cpuDecision -= dt;
   if (match._cpuDecision > 0) return match._cpuControl;
-  const level={easy:{delay:480,jitter:200,guard:.22,attack:.42},normal:{delay:230,jitter:170,guard:.4,attack:.22},hard:{delay:135,jitter:90,guard:.57,attack:.12}}[match._difficulty??'normal'];
   match._cpuDecision = level.delay + random(match) * level.jitter;
-  const gap = distance(cpu, player), toPlayer = sign(player.x - cpu.x);
-  const roll = random(match);
-  match._cpuControl = control();
+  const gap=Math.abs(cpu.x-visible.x),toPlayer=sign(visible.x-cpu.x),roll=random(match);
+  match._cpuControl=control();
+  const input=match._cpuControl;
   if(cpu._jump) {
-    if(cpu.action==='jump'&&!cpu._jump.attackUsed&&gap<=230&&roll>.2) {
-      performAction(match,1,roll<.6?'punch':'kick',match._cpuControl);
-    }
-    return match._cpuControl;
+    if(cpu.action==='jump'&&!cpu._jump.attackUsed&&gap<=230&&roll<level.attack)performAction(match,1,random(match)<.4?'punch':'kick',input);
+    return input;
   }
+  if(NEUTRAL.has(cpu.action)&&ATTACKS.has(visible.action)&&visible.action!=='grab'&&gap<300&&roll<level.guard){
+    input.block=true;
+    const low=visible.level==='low';input.crouch=random(match)<level.guardAccuracy?low:!low;
+    return input;
+  }
+  if(NEUTRAL.has(cpu.action)&&visible.action==='grab'&&gap<160&&roll<level.tactical){input.move=-toPlayer;return input;}
   const history=cpu._sequence,preferred=cpu._style.preferredSequence;
   const continuation=history.length>0&&history.length<3
     &&history.every((entry,index)=>entry.action===preferred[index]&&entry.connected)
     &&match.combatTime-history.at(-1).at<=600*(cpu._statScalars?.combinationWindowScale??1)?preferred[history.length]:null;
-  if(continuation&&!cpu.weapon&&cpu._chainCount<2&&roll>.15&&gap<=230
-    &&performAction(match,1,continuation,match._cpuControl))return match._cpuControl;
-  if(NEUTRAL.has(cpu.action)) {
-    const pickup=!cpu.weapon&&match.stagePickups[0];
-    if(pickup&&gap>150&&roll<.65) {
-      if(Math.abs(cpu.x-pickup.x)<=WEAPON_RULES.pickupReach)performAction(match,1,'grab',match._cpuControl);
-      else match._cpuControl.move=sign(pickup.x-cpu.x);
-      return match._cpuControl;
-    }
-    if(cpu.weapon&&gap>175) {
-      if(roll>.8){performAction(match,1,'weapon-throw',match._cpuControl);return match._cpuControl;}
-      if(cpu.weapon.charges>0&&WEAPON_TYPES[cpu.weapon.type].use==='ranged'&&roll<.45) {
-        performAction(match,1,'punch',match._cpuControl);return match._cpuControl;
-      }
-    }
+  if(continuation&&!cpu.weapon&&cpu._chainCount<2&&roll<level.combo&&gap<=230
+    &&performAction(match,1,continuation,input))return input;
+  if(!NEUTRAL.has(cpu.action))return input;
+  const pickup=!cpu.weapon&&match.stagePickups[0];
+  if(pickup&&gap>150&&roll<.65) {
+    if(Math.abs(cpu.x-pickup.x)<=WEAPON_RULES.pickupReach)performAction(match,1,'grab',input);
+    else input.move=sign(pickup.x-cpu.x);
+    return input;
   }
-  if (gap > 175) {
-    match._cpuControl.move = toPlayer * (gap > 225 ? 1 : 0.65);
-    if(gap<360&&roll<.1&&NEUTRAL.has(cpu.action)) {
-      cpu._control=match._cpuControl;
-      performAction(match,1,'jump');
-    }
+  if(cpu.weapon&&gap>175) {
+    if(roll>.8){performAction(match,1,'weapon-throw',input);return input;}
+    if(cpu.weapon.charges>0&&WEAPON_TYPES[cpu.weapon.type].use==='ranged'&&roll<.45){performAction(match,1,'punch',input);return input;}
   }
-  else if (gap < 120 && roll < 0.14) match._cpuControl.move = -toPlayer;
-  else if (ATTACKS.has(player.action) && roll < level.guard) {
-    match._cpuControl.block = true;
-    // React to visible attacks with an imperfect guard, never to held inputs.
-    match._cpuControl.crouch = random(match) < .5;
-  } else if (NEUTRAL.has(cpu.action) && roll > level.attack) {
-    const attackRoll=random(match);
-    let action=gap<135&&attackRoll>.97?'grab':cpu._style.preferredMoves[
-      Math.min(cpu._style.preferredMoves.length-1,Math.floor(attackRoll*cpu._style.preferredMoves.length))];
-    if(action==='grab'&&gap>130*cpu._style.reach.throw)action='low-punch';
-    match._cpuControl.crouch=action!=='grab'&&!CHORD_ATTACKS.has(action)&&random(match)<.2;
-    cpu._control=match._cpuControl;
-    performAction(match, 1, action);
+  const tactical=random(match)<level.tactical,mistake=random(match)<level.error;
+  if(gap>275||(gap>175&&!tactical)){
+    input.move=toPlayer*(gap>225?1:.8);
+    if(gap>250&&gap<360&&roll<.1){cpu._control=input;performAction(match,1,'jump');}
+    return input;
   }
-  return match._cpuControl;
+  if(!mistake&&tactical&&['grabbed','thrown','knockdown','getup'].includes(visible.action)){input.move=gap<155?-toPlayer:gap>200?toPlayer:0;return input;}
+  if(roll>=level.attack)return input;
+  if(mistake&&random(match)<.5)return input;
+  let moves=cpu._style.preferredMoves.filter(action=>cpuStrikeReach(cpu,action)>=gap);
+  let action;
+  if(!mistake&&tactical){
+    if(visible.action==='block'&&gap<=cpuStrikeReach(cpu,'grab'))action='grab';
+    else if(visible.air<-60&&gap<165)action='uppercut';
+    else if(visible.crouched&&gap<=200*cpu._style.reach.kick){action='kick';input.crouch=true;}
+    else if(visible.action==='block'&&gap<=cpuStrikeReach(cpu,'low-kick'))action='low-kick';
+    else if(gap>180&&moves.includes('power-kick'))action='power-kick';
+    else if(gap>150&&moves.includes('kick'))action='kick';
+  }
+  if(mistake)moves=cpu._style.preferredMoves;
+  if(!action&&moves.length)action=moves[Math.floor(random(match)*moves.length)];
+  if(!action){input.move=toPlayer;return input;}
+  cpu._control=input;performAction(match,1,action,input);
+  return input;
 }
 
 function applyNeutral(match, index, input, dt) {

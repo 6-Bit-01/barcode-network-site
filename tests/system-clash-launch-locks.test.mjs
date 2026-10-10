@@ -9,7 +9,7 @@ test('direct new local launches respect CORPORATE for both hidden fighters',()=>
 });
 test('valid online opponents use server catalog regardless of guest local preferences',()=>{assert.deepEqual(fightLaunchRoster('https://game.invalid/fight.html',roster,{online:true}),roster);});
 test('a legitimate saved unlocked climb preserves its player and opponent after preference reset',()=>{
- const store=storage(),run=createTournamentRun(demoRoster(roster,{corporateUnlocked:true}),{fighterId:'9-bit',seed:12,runId:'owned-climb'}),launch=launchTournamentMatch(run,'https://game.invalid/index.html');
+ const store=storage(),run=createTournamentRun(demoRoster(roster,{corporateUnlocked:true}),{fighterId:'9-bit',seed:12,runId:'owned-climb',settings:{corporateUnlocked:true}}),launch=launchTournamentMatch(run,'https://game.invalid/index.html');
  assert(saveTournamentRun(store,launch.run,roster));assert.equal(parseDemoLaunch(launch.url,fightLaunchRoster(launch.url,roster,{storage:store})).p1,'9-bit');
  const forged=new URL(launch.url);forged.searchParams.set('match','invalid');assert.notEqual(parseDemoLaunch(forged,fightLaunchRoster(forged,roster,{storage:store})).p1,'9-bit');
 });

@@ -4,6 +4,9 @@ const smooth=t=>t*t*(3-2*t);
 // Measured from the existing whole-body walk poses. The upper body remains rigid.
 const HIP_RATIO=Object.freeze({'papa-oak':.63,doofnoobler:.69,lyra:.55,'mutilator':.60,'ms-mayhem':.55,'ash-flowers':.57,'9-bit':.58,'6-bit':.57,'mr-nice-guy':.59,'lost-marbles':.57,'kaveman-brown':.62});
 const footCache=new WeakMap();
+const referenceCache=new WeakMap();
+// Native passing steps already articulate their legs; a second gait distorts them.
+const STANCE_WALKS=new Set(['9-bit','ash-flowers']);
 function footGeometry(asset,frame,facing){
   if(footCache.has(frame))return footCache.get(frame);
   const bounds=frame.opaqueBounds??[0,0,frame.rect[2],frame.rect[3]],height=bounds[3]-bounds[1];
@@ -22,25 +25,33 @@ function footGeometry(asset,frame,facing){
 }
 /** Serializable source geometry is shared by drawing and authoritative hurt contacts. */
 export function compileWalkGeometry(asset,frame,facing){
-  if(['bnl','bnl-01'].includes(asset.fighterId)||!frame)return null;
+  if(!frame||(!STANCE_WALKS.has(asset.fighterId)&&asset.fighterId!=='test'&&asset.fighterId!==undefined))return null;
   const native=footGeometry(asset,frame,facing);if(!native)return null;
   const transform=poseTransform(asset,frame);
-  return {...native,transform:{sx:transform.sx,sy:transform.sy,tx:transform.tx,ty:transform.ty}};
+  let references=referenceCache.get(asset);if(!references){references={};referenceCache.set(asset,references);}
+  if(!references[facing]){
+    const keys=[...new Set(asset.timeline.entries.map(e=>e.index))],samples=keys.map(index=>{const pose=asset.data.frames[facing][index],feet=footGeometry(asset,pose,facing),tr=poseTransform(asset,pose);return feet?.feet.map(foot=>({...tr.point(foot),width:(foot.right-foot.left)*tr.sx}));}).filter(Boolean);
+    if(!samples.length)return null;
+    const median=values=>values.toSorted((a,b)=>a-b)[Math.floor(values.length/2)];
+    references[facing]=[0,1].map(i=>({x:median(samples.map(feet=>feet[i].x)),initialX:samples[0][i].x,initialY:samples[0][i].y,width:Math.max(...samples.map(feet=>feet[i].width))}));
+  }
+  return {...native,reference:references[facing],transform:{sx:transform.sx,sy:transform.sy,tx:transform.tx,ty:transform.ty}};
 }
 function rigFromGeometry(native,elapsed,duration,facing){
   const transform=native.transform,point=p=>({x:p.x*transform.sx+transform.tx,y:p.y*transform.sy+transform.ty});
-  const phase=Math.floor((elapsed%duration)/duration*24)/24,strength=Math.min(8,Math.floor(elapsed/12.5))/8;
-  const direction=facing==='left'?-1:1,worldHeight=native.height*transform.sy;
-  const stride=Math.min(24,worldHeight*.05),lift=Math.min(25,worldHeight*.06);
-  const feet=native.feet.map((foot,i)=>{const angle=(phase+i*.5)*Math.PI*2,base=point(foot);
-    return {...foot,base,dx:-Math.cos(angle)*stride*direction*strength,dy:(-Math.max(0,Math.sin(angle))*lift-base.y)*strength};});
+  const step=Math.floor(Math.round(elapsed/duration*60*1e6)/1e6),phase=(step%60)/60,strength=smooth(Math.min(1,Math.floor(elapsed/100*12)/12));
+  const direction=facing==='left'?-1:1,worldHeight=native.height*transform.sy,reference=native.reference??native.feet.map(foot=>({...point(foot),initialX:point(foot).x,initialY:point(foot).y,width:(foot.right-foot.left)*transform.sx}));
+  const freeGap=reference[1].x-reference[0].x-(reference[0].width+reference[1].width)*.5;
+  const stride=Math.max(0,Math.min(24,worldHeight*.05,freeGap/3)),lift=Math.min(25,worldHeight*.06);
+  const feet=native.feet.map((foot,i)=>{const angle=(phase+i*.5)*Math.PI*2,base=point(foot),target=reference[i];
+    return {...foot,base,dx:target.initialX+(target.x-target.initialX)*strength-Math.cos(angle)*stride*direction*strength-base.x,dy:target.initialY*(1-strength)-Math.max(0,Math.sin(angle))*lift*strength-base.y};});
+  const left=Math.min(feet[0].right,(feet[0].x+feet[1].x)*.5),right=Math.max(feet[1].left,left+1);
+  // Whole boots translate rigidly. The empty gap blends linearly, so a sharp
+  // coverage shoulder cannot fold the native knee/ankle texture back on itself.
   const map=p=>{const base=point(p);if(p.y<=native.hip)return base;
-    const foot=feet[p.x<native.split?0:1],t=clamp((p.y-native.hip)/(foot.y-native.hip),0,1),weight=smooth(t);
-    const axis=native.split+(foot.x-native.split)*t,radius=Math.max(worldHeight*.045/transform.sx,(foot.right-foot.left)*1.25);
-    const distance=Math.abs(p.x-axis),coverage=smooth(clamp((radius-distance)/(radius*.20),0,1));
-    return {x:base.x+foot.dx*weight*coverage,y:base.y+foot.dy*weight*coverage};
-  };
-  return {map,feet,cacheKey:`gait:${phase}:${strength}`,phase,strength};
+    const mix=clamp((p.x-left)/(right-left),0,1),weights=feet.map(foot=>smooth(clamp((p.y-native.hip)/(foot.y-native.hip),0,1)));
+    return {x:base.x+feet[0].dx*weights[0]*(1-mix)+feet[1].dx*weights[1]*mix,y:base.y+feet[0].dy*weights[0]*(1-mix)+feet[1].dy*weights[1]*mix};
+  };  return {map,feet,rigidY:native.hip,cacheKey:`gait:${phase}:${strength}`,phase,strength};
 }
 /** Source texture, face, torso, body height and facing are retained. */
 export function walkRig(asset,view,frame){

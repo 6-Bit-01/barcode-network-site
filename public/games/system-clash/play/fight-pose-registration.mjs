@@ -51,6 +51,13 @@ export function poseRegistration(asset,frame) {
 /** Playback corrections use retained native key poses without rewriting atlas provenance. */
 export function clipPlayback(data,manifest,name) {
   const identity=manifest.fighterId??manifest.baseId??manifest.id;
+  if(name==='idle'&&['papa-oak','lost-marbles'].includes(identity)&&data.frames.right.length===4&&data.frames.left.length===4){
+    // Reviewed native keys2 (and Lost's3) read as an attack/drop, not a guard.
+    // Keep their atlas/provenance and the original six180ms playback slots.
+    const order=identity==='papa-oak'?[0,1,3,1,0,1]:[0,1,0,1,0,1],nativeOrder=data.order??[0,1,2,3,2,1];
+    const frameMs=nativeOrder.map((index,position)=>Array.isArray(data.frameMs)?data.frameMs[data.frameMs.length===nativeOrder.length?position:index]:data.frameMs??120);
+    return {order,frameMs};
+  }
   if(identity==='9-bit'&&name==='walk'&&data.frames.left.length===8&&data.frames.right.length===8)
     return {order:[0,2,4,6],frameMs:[150,150,150,150]};
   return undefined;

@@ -2,7 +2,7 @@
 
 **Effective Date:** June 13, 2026  
 **Last Updated:** October 9, 2026
-**Legal Center Version:** 1.3
+**Legal Center Version:** 1.4
 
 This Legal Center applies to BARCODE Network, including barcode-network.com, BARCODE Radio, the BARCODE Radio queue, music submission tools, Priority Signal, Signal Hold, stream tools, relay features, BNL-related systems, public database/dossier features, community features, payment features, uploads, and related services.
 
@@ -19,7 +19,7 @@ thebarcodenetwork@gmail.com
 
 ## 1. Acceptance of These Terms
 
-By accessing or using BARCODE Network, visiting barcode-network.com, submitting music, uploading files, using the queue, purchasing or requesting Priority Signal or Signal Hold, interacting with BNL-related systems, joining connected community features, or otherwise using BARCODE Network services, you agree to these Terms of Use.
+By accessing or using BARCODE Network, visiting barcode-network.com, creating a BARCODE account, submitting music, uploading files, using the queue, purchasing or requesting Priority Signal or Signal Hold, interacting with BNL-related systems, joining connected community features, or otherwise using BARCODE Network services, you agree to these Terms of Use.
 
 If you do not agree, do not use the site, submit music, upload files, provide information, or purchase Priority Signal or Signal Hold.
 
@@ -41,7 +41,7 @@ If you are a parent or guardian, you are responsible for deciding whether BARCOD
 
 ## 4. Age and Permission Requirements
 
-You must be at least 13 years old to submit music, upload files, provide personal information, or use submission features.
+You must be at least 13 years old to create a BARCODE account, submit music, upload files, provide personal information, or use submission features.
 
 If you are under 18, you may submit music only with permission from a parent or legal guardian.
 
@@ -58,6 +58,16 @@ You agree that any information you provide is accurate to the best of your knowl
 This may include artist names, stage names, usernames, handles, TikTok handles, song titles, collaborator names, track links, uploaded files, contact information, payment-related information, Priority Signal or Signal Hold status, queue activity, notes, takedown requests, or other submission details.
 
 You are responsible for keeping your own accounts, links, passwords, files, and contact information secure.
+
+### BARCODE Accounts and Access
+
+Creating a BARCODE account requires you to confirm that you are at least 13, agree to these Terms, and acknowledge the Privacy Policy before your signup request is accepted. Email verification is required before account access. Keep your password and verification or recovery links private.
+
+Display names are unique and editable; your permanent BARCODE ID remains the same when your display name changes. A matching name does not prove ownership of an artist, submission, or another account.
+
+A Member account does not automatically grant Artist, Crew, or Owner access. Artist project associations and staff permissions require their separate approval processes. Older songs are associated only after individual Owner review. Public song credits do not change because an account is approved. Approval may be revoked; it does not remove factual records of your own signed-in submissions.
+
+Guest music submissions remain available. Membership does not increase queue allowances or priority and does not guarantee airplay or promotion. Creating an account does not transfer ownership of your music or other content.
 
 ## 6. Ownership of Submitted Content
 
@@ -720,11 +730,11 @@ Do not submit information you want to keep private.
 
 ## BARCODE Accounts and Service Emails
 
-When you create a BARCODE account, we store your email address, editable display name, immutable account identifier, email verification state, securely hashed password, and session/security records. Verification is required before account access. Display names are not unique and do not establish ownership of an artist, submission, or another account. Guest music participation remains available; membership does not increase queue allowances or priority.
+When you create a BARCODE account, we store your email address, editable display name, immutable account identifier, email verification state, securely hashed password, and session/security records. Verification is required before account access. Display names are unique and editable and do not establish ownership of an artist, submission, or another account. Guest music participation remains available; membership does not increase queue allowances or priority.
 
 We use account information to authenticate you, manage your sessions, deliver verification/password recovery emails, and respond to account or privacy requests. Necessary account service emails are separate from marketing. Resend processes the recipient address and email content to deliver these messages. We do not enable open/click tracking for account emails. Passwords are never sent in emails. Recovery resets revoke earlier sessions.
 
-Account data is stored separately from BNL's conversation database and the public queue. Private account information and security emails are excluded from BNL public memory, Journals, Relays, artist profiles and other publications. Account information remains private unless a later feature clearly requests a separate public association. Contact the address above for account access, correction, removal, or privacy requests; retention needed for security, legal obligations and recovery may apply.
+Account data is stored separately from BNL's conversation database and the public queue. Private account information and security emails are excluded from BNL public memory, Journals, Relays, artist profiles and other publications. Private authentication details, session/security records, service emails and account-to-Artist identity mappings remain private. Authorized Owners may review account details to manage access and Artist associations. Your signed-in submissions and Owner-approved Artist history can appear in your private Account and Broadcast Deck across devices. Account names or Artist labels may be displayed where you use a public participation feature; approval does not publish your email or change public song credits. Public artist associations follow their separate request and review process. Contact the address above for account access, correction, removal, or privacy requests; retention needed for security, legal obligations and recovery may apply.
 
 Necessary secure account cookies maintain signed-in sessions. Signing out ends the current session; the account page also allows signing out all devices. Account pages and security links are excluded from search indexing. Keep verification/recovery links private.
 
@@ -756,7 +766,7 @@ If BARCODE Network discovers a security incident affecting personal information,
 
 ## 13. Children
 
-BARCODE Network submission features are not intended for children under 13.
+BARCODE Network account and submission features are not intended for children under 13.
 
 Do not submit information from or about a child under 13.
 
@@ -959,6 +969,14 @@ A broadcast may continue to echo after the original live moment has passed.
 These echoes may appear as replays, auto-generated platform clips, delayed previews, thumbnails, captions, recaps, social fragments, screenshots, cached pages, search results, or memory artifacts inside systems outside BARCODE Network’s direct control.
 
 BARCODE Network may attempt to collapse an echo it controls, but cannot guarantee erasure from every timeline, platform, cache, archive, repost, recording, or observer memory.
+
+## Account Arrival Protocol
+
+One account. Several timelines. Email verification still happens in your inbox.
+
+Creating an account does not appoint you captain of the broadcast, grant Crew or Owner access, or establish ownership of a parallel artist. Artist associations and staff permissions pass through the real approval process.
+
+Your music stays yours. No interdimensional ownership transfer occurs at signup. BNL does not need your password. Keep it on the official account page and out of chat.
 
 ## Duplicate Entity Containment
 

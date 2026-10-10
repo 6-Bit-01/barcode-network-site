@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { MemberAccessNavigation } from "@/components/MemberAccessNavigation";
 import { MemberRadioHistory } from "@/components/MemberRadioHistory";
+import { MEMBER_TERMS_VERSION } from "@/lib/member-terms";
 
 type Member = { id: string; name: string; email: string; emailVerified: boolean };
 type Mode = "signin" | "signup" | "recovery" | "reset";
@@ -12,13 +13,15 @@ async function accountRequest(path: string, body?: object, signal?: AbortSignal)
   const response = await fetch(`/api/member/auth/${path}`, { method:body ? "POST" : "GET", headers:body ? {"content-type":"application/json"} : undefined, body:body ? JSON.stringify(body) : undefined, credentials:"same-origin", cache:"no-store", signal });
   const data = await response.json();
   if (!response.ok) {
-    const message = data.code === "NAME_UNAVAILABLE" ? "That display name is unavailable. Choose another name." : data.code === "INVALID_NAME" ? "Use a display name of 1–80 visible characters. Staff and system names are reserved." : response.status === 429 ? "Too many attempts. Please wait before trying again." : data.code === "EMAIL_NOT_VERIFIED" ? "Verify your email before signing in. You can request another link below." : path === "sign-in/email" ? "Unable to sign in. Check your email and password." : response.status >= 500 ? "Accounts are temporarily unavailable. Please try again shortly." : "That request could not be completed. Check your details or request a fresh email link.";
+    const message = data.code === "ACCOUNT_TERMS_REQUIRED" ? "Please review the current Terms and confirm you are at least 13 before creating an account." : data.code === "NAME_UNAVAILABLE" ? "That display name is unavailable. Choose another name." : data.code === "INVALID_NAME" ? "Use a display name of 1–80 visible characters. Staff and system names are reserved." : response.status === 429 ? "Too many attempts. Please wait before trying again." : data.code === "EMAIL_NOT_VERIFIED" ? "Verify your email before signing in. You can request another link below." : path === "sign-in/email" ? "Unable to sign in. Check your email and password." : response.status >= 500 ? "Accounts are temporarily unavailable. Please try again shortly." : "That request could not be completed. Check your details or request a fresh email link.";
     throw Object.assign(new Error(message), { status: response.status });
   }
   return data;
 }
 export function MemberAccount({ initialMode="signin", resetToken }: { initialMode?:Mode; resetToken?:string }) {
   const [mode,setMode] = useState<Mode>(initialMode);
+  const [signupStep,setSignupStep] = useState<"details"|"terms">("details");
+  const [termsAccepted,setTermsAccepted] = useState(false);
   const [member,setMember] = useState<Member|null>(null);
   const [checking,setChecking] = useState(initialMode !== "reset");
   const [busy,setBusy] = useState(false);
@@ -39,12 +42,22 @@ export function MemberAccount({ initialMode="signin", resetToken }: { initialMod
     try {await action();} catch(reason) {if (reason instanceof Error && "status" in reason && (reason.status === 401 || reason.status === 403)) {setMember(null);setName("");setPassword("");} setError(reason instanceof Error ? reason.message : "Please try again shortly.");} finally {setBusy(false);}
   }
   async function refresh() {const data=await accountRequest("get-session");setMember(data?.user ?? null);setName(data?.user?.name ?? "");}
-  function changeMode(next:Mode) {setMode(next);setPassword("");setMessage("");setError("");}
+  function changeMode(next:Mode) {setMode(next);setSignupStep("details");setTermsAccepted(false);setPassword("");setMessage("");setError("");}
   async function submit(event:FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (busy) return;
+    if (mode === "signup" && signupStep === "details") {
+      setSignupStep("terms");setTermsAccepted(false);setMessage("");setError("");
+      return;
+    }
+    if (mode === "signup" && !termsAccepted) {
+      setError("Please review the current Terms and confirm you are at least 13 before creating an account.");
+      return;
+    }
     await perform(async () => {
       if (mode === "signup") {
-        await accountRequest("sign-up/email",{email,password,name});setPassword("");setMessage("Check your email for a verification link. Your account activates after you verify your email.");
+        await accountRequest("sign-up/email",{email,password,name,termsAccepted:true,termsVersion:MEMBER_TERMS_VERSION});
+        setPassword("");setTermsAccepted(false);setSignupStep("details");setMessage("Check your email for a verification link. Your account activates after you verify your email.");
       } else if (mode === "signin") {
         await accountRequest("sign-in/email",{email,password});setPassword("");await refresh();
       } else if (mode === "recovery") {
@@ -57,7 +70,7 @@ export function MemberAccount({ initialMode="signin", resetToken }: { initialMod
   return (
     <section className="mx-auto max-w-xl rounded-xl border border-border bg-surface p-5 sm:p-8" aria-label="BARCODE account">
       <p className="public-kicker">BARCODE Network</p>
-      <h1 className="mt-2 text-3xl font-bold">{member ? "Your account" : labels[mode]}</h1>
+      <h1 className="mt-2 text-3xl font-bold">{member ? "Your account" : mode === "signup" && signupStep === "terms" ? "Before you join the Network" : labels[mode]}</h1>
       <p className="mt-3 text-muted">A private account, activated by email verification. Music submissions remain open to guests.</p>
       <div role="status" aria-live="polite" className="mt-4 text-sm">{checking ? "Checking your session…" : message}</div>
       {error && <p role="alert" className="mt-3 rounded border border-danger p-3 text-sm text-danger">{error}</p>}
@@ -83,13 +96,32 @@ export function MemberAccount({ initialMode="signin", resetToken }: { initialMod
         <>
           {mode === "reset" && !resetToken ? <p className="mt-4">This reset link is missing or invalid. <Link href="/account" className="text-accent underline">Request a new link</Link>.</p> : (
             <form onSubmit={submit} className="mt-5 space-y-4">
-              {mode === "signup" && <label className="block text-sm">Display name<input className={`${fieldClass} mt-2`} value={name} onChange={event => setName(event.target.value)} autoComplete="nickname" maxLength={80} required /></label>}
-              {mode === "signup" && <p className="text-xs text-muted">Choose a unique display name. You can change it later; staff and system names are reserved.</p>}
-              {mode !== "reset" && <label className="block text-sm">Email<input className={`${fieldClass} mt-2`} type="email" value={email} onChange={event => setEmail(event.target.value)} autoComplete="email" maxLength={254} required /></label>}
-              {mode !== "recovery" && <label className="block text-sm">{mode === "reset" ? "New password" : "Password"}<input className={`${fieldClass} mt-2`} type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete={mode === "signin" ? "current-password" : "new-password"} minLength={mode === "signin" ? undefined : 12} maxLength={128} required /></label>}
-              {(mode === "signup" || mode === "reset") && <p className="text-xs text-muted">Use at least 12 characters.</p>}
-              {mode === "signup" && <label className="flex items-start gap-3 text-sm"><input type="checkbox" required className="mt-1" /><span>I am at least 13 and agree to the <Link href="/legal#terms" className="text-accent underline">Terms</Link> and <Link href="/legal#privacy" className="text-accent underline">Privacy Policy</Link>.</span></label>}
-              <button className="btn-primary" disabled={busy}>{busy ? "Please wait…" : labels[mode]}</button>
+              {mode === "signup" && signupStep === "terms" ? (
+                <>
+                  <p className="text-sm">By signing up, you agree to the <Link href="/legal#terms" target="_blank" rel="noopener noreferrer" className="text-accent underline">Terms of Use</Link> and acknowledge the <Link href="/legal#privacy" target="_blank" rel="noopener noreferrer" className="text-accent underline">Privacy Policy</Link>.</p>
+                  <div className="space-y-3 rounded border border-border p-4 text-sm">
+                    <p>One account. Several timelines. Verify your email in this one.</p>
+                    <p>Your music stays yours. No interdimensional ownership transfer.</p>
+                    <p className="text-muted">Member, Artist, Crew and Owner approvals are separate. Creating an account does not grant Artist, Crew or Owner access.</p>
+                    <p className="text-muted">Do not share passwords or recovery links with BNL.</p>
+                  </div>
+                  <p className="text-xs text-muted">Terms version {MEMBER_TERMS_VERSION}. Read the <Link href="/legal#dimensional-operating-conditions" target="_blank" rel="noopener noreferrer" className="text-accent underline">Dimensional Operating Conditions</Link> for the Network&apos;s interdimensional fine print.</p>
+                  <label className="flex items-start gap-3 text-sm"><input type="checkbox" required className="mt-1" checked={termsAccepted} onChange={event => {setTermsAccepted(event.target.checked);setError("");}} /><span>I confirm I am at least 13, agree to the Terms of Use and acknowledge the Privacy Policy.</span></label>
+                  <div className="flex flex-wrap gap-3">
+                    <button className="btn-primary" disabled={busy || !termsAccepted}>{busy ? "Please wait…" : "Agree and create account"}</button>
+                    <button type="button" className="btn-secondary" disabled={busy} onClick={() => {setSignupStep("details");setTermsAccepted(false);setMessage("");setError("");}}>Back to account details</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {mode === "signup" && <label className="block text-sm">Display name<input className={`${fieldClass} mt-2`} value={name} onChange={event => setName(event.target.value)} autoComplete="nickname" maxLength={80} required /></label>}
+                  {mode === "signup" && <p className="text-xs text-muted">Choose a unique display name. You can change it later; staff and system names are reserved.</p>}
+                  {mode !== "reset" && <label className="block text-sm">Email<input className={`${fieldClass} mt-2`} type="email" value={email} onChange={event => setEmail(event.target.value)} autoComplete="email" maxLength={254} required /></label>}
+                  {mode !== "recovery" && <label className="block text-sm">{mode === "reset" ? "New password" : "Password"}<input className={`${fieldClass} mt-2`} type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete={mode === "signin" ? "current-password" : "new-password"} minLength={mode === "signin" ? undefined : 12} maxLength={128} required /></label>}
+                  {(mode === "signup" || mode === "reset") && <p className="text-xs text-muted">Use at least 12 characters.</p>}
+                  <button className="btn-primary" disabled={busy}>{busy ? "Please wait…" : mode === "signup" ? "Continue to Terms" : labels[mode]}</button>
+                </>
+              )}
             </form>
           )}
           {mode !== "reset" && <div className="mt-5 flex flex-wrap gap-4 text-sm">

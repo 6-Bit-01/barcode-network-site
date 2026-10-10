@@ -6,9 +6,11 @@ import * as net from 'node:net';
 import ts from 'typescript';
 import * as contract from '../services/member-auth/contract.mjs';
 const testEnvironment={};
+const termsModule={exports:{}};
+vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../src/lib/member-terms.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{module:termsModule,exports:termsModule.exports});
 const testModule={exports:{}};
 const source=fs.readFileSync(new URL('../src/lib/member-service.ts',import.meta.url),'utf8');
-vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{module:testModule,exports:testModule.exports,Request,Response,Headers,URL,AbortSignal,TextDecoder,Buffer,process:{env:testEnvironment},require:(id)=>id==='server-only'?{}:id==='node:net'?net:id.endsWith('contract.mjs')?contract: (()=>{throw new Error(id)})()});
+vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{module:testModule,exports:testModule.exports,Request,Response,Headers,URL,AbortSignal,TextDecoder,Buffer,process:{env:testEnvironment},require:(id)=>id==='@/lib/member-terms'?termsModule.exports:id==='server-only'?{}:id==='node:net'?net:id.endsWith('contract.mjs')?contract: (()=>{throw new Error(id)})()});
 const {proxyMemberRequest,getMemberServiceConfiguration}=testModule.exports;
 const config={serviceUrl:'https://member-auth.barcode-network.com',serviceToken:'private-service-token-test-only-1234',canonicalOrigin:'https://www.barcode-network.com'};
 const call=(path,body,headers={})=>new Request(`${config.canonicalOrigin}/api/member/auth/${path}`,{method:body===undefined?'GET':'POST',headers:{origin:config.canonicalOrigin,'content-type':'application/json',...headers},...(body===undefined?{}:{body:JSON.stringify(body)})});
@@ -82,4 +84,23 @@ test('valid base64url connection values retain exact lower and upper boundaries'
   try{const configuration=getMemberServiceConfiguration();assert.equal(configuration.serviceUrl,'https://member-auth.barcode-network.com');assert.equal(configuration.serviceToken,serviceToken);assert.equal(configuration.canonicalOrigin,'https://www.barcode-network.com');}
   finally{delete testEnvironment.BARCODE_MEMBER_SERVICE_URL;delete testEnvironment.BARCODE_MEMBER_SERVICE_TOKEN;}
  }
+});
+
+test('signup requires explicit acceptance of the current terms before any upstream account request',async()=>{
+ let calls=0;
+ const upstream=async()=>{calls++;return Response.json({ok:true});};
+ const details={name:'Example Artist',email:'artist@example.invalid',password:'synthetic-test-password'};
+ for(const accepted of [{},{termsAccepted:false,termsVersion:'1.4'},{termsAccepted:'true',termsVersion:'1.4'},{termsAccepted:true,termsVersion:'1.3'},{termsAccepted:true}]){
+  const response=await proxyMemberRequest(call('sign-up/email',{...details,...accepted}),'sign-up/email',config,upstream);
+  assert.equal(response.status,400);
+  assert.deepEqual(await response.json(),{code:'ACCOUNT_TERMS_REQUIRED'});
+  assert.equal(response.headers.get('cache-control'),'private, no-store');
+  assert.equal(calls,0);
+ }
+});
+test('signup forwards only existing auth fields after current terms acceptance',async()=>{
+ let sent;
+ const response=await proxyMemberRequest(call('sign-up/email',{name:'Example Artist',email:'artist@example.invalid',password:'synthetic-test-password',termsAccepted:true,termsVersion:'1.4'}),'sign-up/email',config,async(_url,options)=>{sent=JSON.parse(options.body);return Response.json({ok:true});});
+ assert.equal(response.status,200);
+ assert.deepEqual(sent,{name:'Example Artist',email:'artist@example.invalid',password:'synthetic-test-password',callbackURL:config.canonicalOrigin+'/account'});
 });

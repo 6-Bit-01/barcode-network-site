@@ -59,7 +59,7 @@ The live projection is written inside the same fenced Lua commit as the full que
 
 An older deployment, stale rolling-deployment revision, or missing/corrupt projection safely falls back to the established full-store read. Ending or archiving the show atomically writes an empty live projection so permanent sources return to standby without scanning archives.
 
-The public queue’s submitter-specific state remains on its existing public snapshot path and was not copied into the shared visual projection. No new polling, write heartbeat, buyer record, or personalized shared cache was introduced.
+Current public queue snapshots also derive their submitter-specific state from the same fresh current-session projection and revision check. An explicit historical session still reads the full store, and missing, stale or unreadable projections retain the existing full-store recovery path. Owner details and public filtering remain request-local. No new polling, write heartbeat, buyer record, or personalized shared cache was introduced.
 
 ## Verification requirements
 

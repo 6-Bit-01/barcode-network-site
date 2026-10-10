@@ -37,13 +37,26 @@ function legacyCopy(value: string) {
  } catch { return false; }
  finally { field.remove(); try { previous?.focus?.({ preventScroll: true }); } catch { /* A removed control may no longer accept focus. */ } }
 }
-const errorMessage = (code: string | null) => code === "BUDGET_UNAVAILABLE" ? "BNL's creative budget is unavailable. Your saved song is safe."
- : code === "AUTHORITY_REVOKED" ? "Your tool access changed. Return to your account."
+const songRefusalMessages: Record<string, string> = {
+ BUDGET_DAILY_TOKENS: "BNL's daily token allowance cannot cover this pass. Your saved song is safe.",
+ BUDGET_DAILY_COST: "BNL's daily creative spending limit cannot cover this pass. Your saved song is safe.",
+ BUDGET_MONTHLY_COST: "BNL's monthly creative spending limit cannot cover this pass. Your saved song is safe.",
+ BUDGET_PRICING_UNAVAILABLE: "Creative cost checks are temporarily unavailable. Your saved song is safe. Try again later.",
+ PROVIDER_BILLING_REQUIRED: "Songwriting provider billing needs attention. Your saved song is safe. The owner needs to resolve billing before another pass.",
+ PROVIDER_UNAVAILABLE: "The songwriting service is temporarily unavailable. Your saved song is safe. Try again later.",
+ BUDGET_UNAVAILABLE: "BNL's creative budget is unavailable. Your saved song is safe.",
+};
+const errorMessage = (code: string | null, resetAt?: string | null) => {
+ const reset = resetAt && ["BUDGET_DAILY_TOKENS", "BUDGET_DAILY_COST", "BUDGET_MONTHLY_COST"].includes(code ?? "")
+  ? ` The allowance resets ${new Date(resetAt).toLocaleString(undefined, { timeZoneName: "short" })}.` : "";
+ if (code && songRefusalMessages[code]) return songRefusalMessages[code] + reset;
+ return code === "AUTHORITY_REVOKED" ? "Your tool access changed. Return to your account."
  : code === "LYRICS_TOO_LONG" ? "The result exceeded 2,000 lyric words. Your previous song is safe."
  : code === "GENERATION_INTERRUPTED" ? "Generation was interrupted. Your previous song is safe; you can request a new pass."
  : code === "TRACK_NOT_FOUND" ? "This saved track is no longer available. Refresh your archive."
  : code === "SONG_BASE_CONFLICT" ? "Your saved song changed. Refresh before requesting another pass."
  : "BNL couldn't finish this pass. Your previous song is safe. Try again.";
+};
 
 export function BarcodeSongWorkspace({ access }: { access: MemberAccess }) {
  const [draft, setDraft] = useState<SongDraft | null>(null);
@@ -94,7 +107,7 @@ export function BarcodeSongWorkspace({ access }: { access: MemberAccess }) {
    currentText.current = { title: data.title, lyrics: data.lyrics, style: data.style };
    setText(currentText.current);
    setOptions(data.options);
-   setMessage(data.errorCode ? errorMessage(data.errorCode) : "");
+   setMessage(data.errorCode ? errorMessage(data.errorCode, data.resetAt) : "");
   } catch {
    if (mounted.current && version === epoch.current && sequence === readSequence.current) setMessage("Your song workspace is temporarily unavailable. Refresh to try again.");
   }
@@ -172,7 +185,7 @@ export function BarcodeSongWorkspace({ access }: { access: MemberAccess }) {
    currentText.current = { title: next.title, lyrics: next.lyrics, style: next.style };
    setText(currentText.current);
    setOptions(next.options);
-   setMessage(next.errorCode ? errorMessage(next.errorCode) : "");
+   setMessage(next.errorCode ? errorMessage(next.errorCode, next.resetAt) : "");
   } catch {
    if (mounted.current && version === epoch.current) { setRetry(operation); setMessage("The request wasn't confirmed. Retry the same request safely."); }
   } finally {

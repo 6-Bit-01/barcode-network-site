@@ -3935,42 +3935,40 @@ export async function getRadioQueueState(sessionId?: string): Promise<QueueState
  * compact projection is committed atomically with the durable full store; a
  * missing pre-migration projection falls back to the established authority.
  */
-export async function getRadioLiveQueueState(): Promise<QueueState> {
+async function readCurrentQueueStore(sessionId?: string): Promise<QueueStore> {
+  // Mutation code must keep reading its fenced request-local store.
+  if (mutationLeaseStorage.getStore()) return readStore();
   let redis: Redis | null;
   try {
     redis = getRedis();
   } catch {
-    return getRadioQueueState();
+    return readStore();
   }
-  if (!redis) return getRadioQueueState();
-  let projection: QueueLiveStoreProjection | null;
+  if (!redis) return readStore();
   try {
     const [rawProjection, rawRevision] = await redis.mget<[
       QueueLiveStoreProjection | string | null,
       number | string | null,
     ]>(LIVE_STATE_KEY, MUTATION_REVISION_KEY);
-    projection = normalizeLiveStoreProjection(
+    const projection = normalizeLiveStoreProjection(
       typeof rawProjection === "string" ? JSON.parse(rawProjection) : rawProjection,
     );
-    if (!projection || projection.revision !== mutationRevision(rawRevision)) {
-      return getRadioQueueState();
+    if (!projection || projection.revision !== mutationRevision(rawRevision)
+      || (sessionId && sessionId !== projection.activeSessionId)) {
+      return readStore();
     }
+    return {
+      revision: projection.revision,
+      activeSessionId: projection.activeSessionId,
+      sessions: projection.session ? [projection.session] : [],
+    };
   } catch {
-    return getRadioQueueState();
+    return readStore();
   }
-  if (!projection.session || !projection.activeSessionId) {
-    return queueStateWithoutSession({ revision: projection.revision, activeSessionId: null, sessions: [] });
-  }
-  const session = normalizeSession(projection.session);
-  applyPreShowTimer(session);
-  applyCommercialBreakTimer(session);
-  pullNextInLine(session);
-  const store: QueueStore = {
-    revision: projection.revision,
-    activeSessionId: projection.activeSessionId,
-    sessions: [session],
-  };
-  return queueStateFromSession(session, store, projection.activeSessionId);
+}
+
+export async function getRadioLiveQueueState(): Promise<QueueState> {
+  return radioQueueStateFromStore(await readCurrentQueueStore());
 }
 
 function publicSourceUrlForTrack(entry: QueueEntry): string | null {
@@ -5518,7 +5516,7 @@ export async function getQueueAdminPreviewReadback(sessionId?: string | null, pl
 }
 
 export async function getPublicQueueSnapshot(sessionId?: string, identity?: { ownerHash?: string | null; submitterToken?: string | null; tiktokHandle?: string | null; contactEmail?: string | null; artist?: string | null }): Promise<QueuePublicSnapshot> {
-  const store = await readStore();
+  const store = await readCurrentQueueStore(sessionId);
   const found = findSession(store, sessionId) ?? (sessionId ? findSession(store) : null);
   if (!found) {
     return {

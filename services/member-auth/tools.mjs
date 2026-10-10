@@ -3,8 +3,9 @@ const privateHeaders={'cache-control':'private, no-store','referrer-policy':'no-
 const fail=(status,code)=>{throw Object.assign(new Error(code),{status,code});};
 const uuid=value=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 const fields=['idea','musicalDirection','mood','lengthStructure','revisionInstructions'];
-const errorCodes=new Set(['INVALID_COMMAND','BUDGET_UNAVAILABLE','PROVIDER_UNAVAILABLE','INVALID_RESULT','LYRICS_TOO_LONG','RESULT_TOO_LONG','CONTEXT_UNAVAILABLE','GENERATION_INTERRUPTED','AUTHORITY_REVOKED']);
+const errorCodes=new Set(['INVALID_COMMAND','BUDGET_UNAVAILABLE','BUDGET_DAILY_TOKENS','BUDGET_DAILY_COST','BUDGET_MONTHLY_COST','BUDGET_PRICING_UNAVAILABLE','PROVIDER_BILLING_REQUIRED','PROVIDER_UNAVAILABLE','INVALID_RESULT','LYRICS_TOO_LONG','RESULT_TOO_LONG','CONTEXT_UNAVAILABLE','GENERATION_INTERRUPTED','AUTHORITY_REVOKED']);
 const leaseMs=10*60*1000;
+const safeReset=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|\+00:00)$/.test(value)&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString().slice(0,19)===value.slice(0,19);
 const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 function object(value,allowed,required=[]){return !!value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).every(key=>allowed.includes(key))&&required.every(key=>Object.hasOwn(value,key));}
 function pair(value){
@@ -36,7 +37,11 @@ export function createMemberTools({database:db,authority,serial,baseURL}){
  function state(userId){
   const d=db.prepare('SELECT revision,title,lyrics,style,previous,error_code,selected_track_id,options FROM member_song_draft WHERE user_id=?').get(userId);if(!d)fail(503,'SONG_UNAVAILABLE');
   const c=db.prepare("SELECT id,status FROM member_song_command WHERE user_id=? AND status IN('pending','leased')").get(userId);
-  return{revision:d.revision,title:d.title,lyrics:d.lyrics,style:d.style,previous:d.previous?pair(JSON.parse(d.previous)):null,pending:c?{id:c.id,status:c.status==='pending'?'queued':'claimed'}:null,errorCode:d.error_code,selectedTrackId:d.selected_track_id,options:JSON.parse(d.options),tracks:db.prepare('SELECT id,title,created_at,updated_at FROM member_song_archive WHERE user_id=? ORDER BY created_at DESC,id DESC LIMIT 40').all(userId).map(track=>({id:track.id,title:track.title,createdAt:track.created_at,updatedAt:track.updated_at}))};
+  // The immutable receipt already owns failure metadata. Match the exact draft
+  // revision so old refusals cannot attach a reset time to newer work.
+  const failure=d.error_code?db.prepare("SELECT receipt_response FROM member_song_command WHERE user_id=? AND status='failed' AND json_extract(receipt_response,'$.draft.revision')=? AND json_extract(receipt_response,'$.draft.errorCode')=? LIMIT 1").get(userId,d.revision,d.error_code):null;
+  const resetAt=failure?JSON.parse(failure.receipt_response).draft.resetAt:undefined;
+  return{...(safeReset(resetAt)?{resetAt}:{}),revision:d.revision,title:d.title,lyrics:d.lyrics,style:d.style,previous:d.previous?pair(JSON.parse(d.previous)):null,pending:c?{id:c.id,status:c.status==='pending'?'queued':'claimed'}:null,errorCode:d.error_code,selectedTrackId:d.selected_track_id,options:JSON.parse(d.options),tracks:db.prepare('SELECT id,title,created_at,updated_at FROM member_song_archive WHERE user_id=? ORDER BY created_at DESC,id DESC LIMIT 40').all(userId).map(track=>({id:track.id,title:track.title,createdAt:track.created_at,updatedAt:track.updated_at}))};
  }
  function audit(c,action,before,after){db.prepare('INSERT INTO member_song_audit(user_id,command_id,action,created_at,previous_state,resulting_state) VALUES(?,?,?,?,?,?)').run(c.user_id,c.id,action,Date.now(),JSON.stringify(before),JSON.stringify(after));}
  function cancel(c){
@@ -81,8 +86,8 @@ export function createMemberTools({database:db,authority,serial,baseURL}){
   });
  }
  async function receipt(body){
-  if(!object(body,['commandId','leaseId','outcome','result','errorCode'],['commandId','leaseId','outcome'])||!uuid(body.commandId)||!uuid(body.leaseId)||!['applied','failed'].includes(body.outcome)||(body.outcome==='applied'&&(!Object.hasOwn(body,'result')||Object.hasOwn(body,'errorCode')))||(body.outcome==='failed'&&(Object.hasOwn(body,'result')||!errorCodes.has(body.errorCode))))fail(400,'INVALID_SONG_REQUEST');
-  const result=body.outcome==='applied'?pair(body.result):null,receiptHash=hash({commandId:body.commandId,leaseId:body.leaseId,outcome:body.outcome,...(result?{result}:{errorCode:body.errorCode})});
+  if(!object(body,['commandId','leaseId','outcome','result','errorCode','resetAt'],['commandId','leaseId','outcome'])||!uuid(body.commandId)||!uuid(body.leaseId)||!['applied','failed'].includes(body.outcome)||(body.outcome==='applied'&&(!Object.hasOwn(body,'result')||Object.hasOwn(body,'errorCode')||Object.hasOwn(body,'resetAt')))||(body.outcome==='failed'&&(Object.hasOwn(body,'result')||!errorCodes.has(body.errorCode)||(body.resetAt!==undefined&&!safeReset(body.resetAt)))))fail(400,'INVALID_SONG_REQUEST');
+  const result=body.outcome==='applied'?pair(body.result):null,receiptHash=hash({commandId:body.commandId,leaseId:body.leaseId,outcome:body.outcome,...(result?{result}:{errorCode:body.errorCode,...(body.resetAt===undefined?{}:{resetAt:body.resetAt})})});
   if(result&&(!result.lyrics.trim()||!result.style.trim()))fail(400,'INVALID_RESULT');
   const outcome=await authority.transaction(()=>{
    const c=db.prepare('SELECT * FROM member_song_command WHERE id=?').get(body.commandId);if(!c)fail(409,'LEASE_CONFLICT');
@@ -106,7 +111,7 @@ export function createMemberTools({database:db,authority,serial,baseURL}){
    }
    else db.prepare('UPDATE member_song_draft SET revision=revision+1,error_code=? WHERE user_id=?').run(body.errorCode,c.user_id);
    db.prepare('UPDATE member_song_command SET status=?,receipt_hash=?,lease_expires_at=NULL WHERE id=?').run(body.outcome,receiptHash,c.id);
-   const response={ok:true,draft:state(c.user_id)};db.prepare('UPDATE member_song_command SET receipt_response=? WHERE id=?').run(JSON.stringify(response),c.id);audit(c,body.outcome,before,response.draft);return{response};
+   const response={ok:true,draft:{...state(c.user_id),...(body.outcome==='failed'&&body.resetAt!==undefined?{resetAt:body.resetAt}:{})}};db.prepare('UPDATE member_song_command SET receipt_response=? WHERE id=?').run(JSON.stringify(response),c.id);audit(c,body.outcome,before,response.draft);return{response};
   });
   if(outcome.denied)fail(409,'AUTHORITY_REVOKED');return outcome.response;
  }

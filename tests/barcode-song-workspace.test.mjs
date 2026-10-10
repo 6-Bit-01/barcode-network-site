@@ -149,3 +149,12 @@ test("archive and saved-text conflicts show the service code without replacing c
   await openTrack(ui,"Saved song").props.onClick();await ui.settle();assert.ok(ui.text().includes(message));assert.equal(ui.nodes().find(n=>n.type==="textarea"&&n.props.rows===18).props.value,"Original lyrics");assert.equal(ui.find("button","Retry unconfirmed request"),undefined);
  }
 });
+
+test("Owner and Crew can open Suno beside the copy controls before or after generating a song",async()=>{
+ const crew={...owner,access:{...owner.access,owner:false,crew:true,permissions:["song.generate"]}};
+ for(const access of [owner,crew])for(const empty of [true,false]){
+  const ui=harness("BarcodeSongWorkspace",{access},async()=>response({draft:song(empty?{title:"",lyrics:"",style:""}:{})}));await ui.settle();
+  const link=ui.find("a","Open Suno");assert.ok(link,"Open Suno should be available without requiring generated text");assert.equal(link.props.href,"https://suno.com/create");assert.equal(link.props.target,"_blank");assert.equal(link.props.rel,"noopener noreferrer");
+  const controls=ui.nodes().find(n=>n.type==="div"&&Array.isArray(n.props.children)&&n.props.children.includes(link));assert.ok(controls);assert.match(ui.textOf(controls),/Copy style prompt/);assert.match(ui.textOf(controls),/Copy whole song/);
+ }
+});

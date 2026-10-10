@@ -1,10 +1,11 @@
 import test from 'node:test';import assert from 'node:assert/strict';import Module,{createRequire} from 'node:module';import fs from 'node:fs';import ts from 'typescript';
 const require=createRequire(import.meta.url),originalLoad=Module._load;
 Module._extensions['.ts']=(module,file)=>module._compile(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,file);
-const rows=new Map();let denied=false,unavailable=false,operations=0;
+const rows=new Map(),seatMembers=new Map();let memberCounter=0;let denied=false,unavailable=false,operations=0;
 const store={async allow(){operations++;if(unavailable)throw new Error('offline');return !denied;},async read(code){return rows.get(code)??null;},async cas(code,old,next){if((rows.get(code)??null)!==old)return false;if(next===null)rows.delete(code);else rows.set(code,next);return true;},async list(){return [...rows.values()];}};
 Module._load=function(id,parent,isMain){
- if(id==='@/lib/system-clash-online')return require('../src/lib/system-clash-online.ts');
+ if(id==='@/lib/system-clash-online'){const core=require('../src/lib/system-clash-online.ts');return {...core,createOnlineRooms:options=>{const rooms=core.createOnlineRooms(options);for(const action of ['create','join']){const enter=rooms[action];rooms[action]=async(...args)=>{const seat=await enter(...args);seatMembers.set(seat.token,options.member);return seat;};}return rooms;}};}
+  if(id==='@/lib/system-clash-member')return {SystemClashMemberError:class extends Error{},requireSystemClashMember:async request=>seatMembers.get(request.headers.get('authorization')?.replace(/^Bearer /,''))??{id:'fixture-member-'+(++memberCounter),name:'Verified fixture member '+memberCounter,sessionExpiresAt:new Date(Date.now()+3600000).toISOString()}};
  if(id==='@/lib/system-clash-online-store')return {onlineRoomStore:()=>store};
  if(id==='@/lib/system-clash-turn')return require('../src/lib/system-clash-turn.ts');
  if(id==='server-only')return {};

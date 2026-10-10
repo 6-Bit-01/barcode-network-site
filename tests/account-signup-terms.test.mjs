@@ -5,13 +5,13 @@ import vm from "node:vm";
 import { createRequire } from "node:module";
 import ts from "typescript";
 const require=createRequire(import.meta.url),React=require("react");
-function mount(initialMode="signup",respond=async url=>Response.json(url.endsWith("/get-session")?null:{ok:true})){
+function mount(initialMode="signup",respond=async url=>Response.json(url.endsWith("/get-session")?null:{ok:true}),props={}){
  const values=[],refs=[];let cursor=0,refCursor=0,effectCursor=0;const effects=new Map();
  let unmounted=false;const writesAfterUnmount=[];const calls=[],redirects=[];const router={replace:path=>redirects.push(path)};
  const react={...React,useState(initial){const i=cursor++;if(!(i in values))values[i]=initial;return[values[i],value=>{if(unmounted)writesAfterUnmount.push(i);values[i]=typeof value==="function"?value(values[i]):value;}];},useRef(initial){return refs[refCursor++]??={current:initial};},useEffect(fn,deps){const i=effectCursor++,previous=effects.get(i);if(!previous||deps.some((value,j)=>value!==previous.deps[j])){previous?.cleanup?.();effects.set(i,{deps,cleanup:fn()});}}};
  function load(file){const target={exports:{}};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL(file,import.meta.url),"utf8"),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText,{module:target,exports:target.exports,AbortController,fetch:async(url,options)=>{calls.push({url,options});return respond(url,options);},require:id=>id==="react"?react:id==="next/link"?({children,...props})=>React.createElement("a",props,children):id==="@/components/MemberAccessNavigation"?{...load("../src/components/MemberAccessNavigation.tsx"),MemberAccessNavigation:()=>null}:id==="next/navigation"?{useRouter:()=>router}:id==="@/components/MemberRadioHistory"?{MemberRadioHistory:()=>null}:id==="@/lib/member-terms"?load("../src/lib/member-terms.ts"):require(id)});return target.exports;}
  const component=load("../src/components/MemberAccount.tsx").MemberAccount;
- const render=()=>{cursor=refCursor=effectCursor=0;return component({initialMode});};
+ const render=()=>{cursor=refCursor=effectCursor=0;return component({initialMode,...props});};
  const settle=async()=>{for(let i=0;i<6;i++)await new Promise(resolve=>setImmediate(resolve));return render();};
  render();
  return{render,settle,calls,redirects,writesAfterUnmount,unmount(){unmounted=true;for(const effect of effects.values())effect.cleanup?.();}};
@@ -225,4 +225,12 @@ test("leaving during sign-in session refresh cannot restore a private name or be
  releaseSession(Response.json({user:signinMember}));await submission;
  assert.equal(ui.calls.filter(call=>call.url==="/api/member/access").length,0);
  assert.deepEqual(ui.redirects,[]);assert.deepEqual(ui.writesAfterUnmount,[]);
+});
+
+test("explicit game return survives accepted signup and verification resends",async()=>{
+ const returnTo="/games/system-clash/play/online.html?event=EVENT1&bout=bout-one&role=host",ui=mount("signup",undefined,{returnTo});await review(ui);accept(ui);await form(ui.render()).props.onSubmit({preventDefault(){}});await ui.settle();
+ const signup=JSON.parse(signupCalls(ui)[0].options.body);assert.equal(signup.callbackURL,"/account?returnTo="+encodeURIComponent(returnTo));button(ui.render(),"Request another verification link").props.onClick();await ui.settle();const resend=ui.calls.find(call=>call.url.endsWith("/send-verification-email"));assert.equal(JSON.parse(resend.options.body).callbackURL,signup.callbackURL);assert.deepEqual(ui.redirects,[]);
+});
+test("explicit game sign-in returns to the saved match without requiring an Owner or Crew workspace",async()=>{
+ const returnTo="/games/system-clash/play/online.html?event=EVENT1&bout=bout-one&role=host";let signedIn=false;const ui=mount("signin",async url=>{if(url.endsWith("/sign-in/email")){signedIn=true;return Response.json({ok:true});}if(url.endsWith("/get-session"))return Response.json(signedIn?{user:signinMember}:null);throw new Error("Unexpected workspace lookup");},{returnTo});await signIn(ui);assert.deepEqual(ui.redirects,[returnTo]);assert.equal(ui.calls.some(call=>call.url==="/api/member/access"),false);assert.match(markup(ui.render()),/Return to System Clash online/);
 });

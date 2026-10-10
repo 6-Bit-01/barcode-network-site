@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import Module,{createRequire} from 'node:module';
 import ts from 'typescript';
 import {createMatch,advanceMatch,getFighterView,performAction} from '../public/games/system-clash/play/fight-engine.mjs';
+import {createOnlineRoundProgression} from '../public/games/system-clash/play/fight-online-rounds.mjs';
 import * as net from '../public/games/system-clash/play/fight-network-state.mjs';
 import {createOnlineRelay} from '../public/games/system-clash/play/online-connection.mjs';
 const require=createRequire(import.meta.url);
@@ -108,7 +109,7 @@ test('freshness starts after slow synchronous frame initialization and keeps the
  }
 });
 test('guest frame acknowledges and releases controls only after reset and focus finish',()=>{
- const order=[];let time=0;const env={reset:(active,seed)=>{assert.equal(active,true);assert.equal(seed,77);time=1200;order.push('reset');},effects:{startAudio:()=>order.push('audio')},canvas:{focus:()=>order.push('focus')},onlineBridge:{seat:1,send:packet=>{assert.equal(time,1200);assert.deepEqual(packet,{type:'started',matchId:1});order.push('started');}},onlineCombat:{input:value=>{assert.deepEqual(value,{move:0,crouch:false,block:false});order.push('neutral');}}};
+ const order=[];let time=0;const env={matchRules:{rounds:1,time:99},onlineRounds:null,createOnlineRoundProgression,reset:(active,seed)=>{assert.equal(active,true);assert.equal(seed,77);time=1200;order.push('reset');},effects:{startAudio:()=>order.push('audio')},canvas:{focus:()=>order.push('focus')},onlineBridge:{seat:1,send:packet=>{assert.equal(time,1200);assert.deepEqual(packet,{type:'started',matchId:1});order.push('started');}},onlineCombat:{input:value=>{assert.deepEqual(value,{move:0,crouch:false,block:false});order.push('neutral');}}};
  sourceFunction('startOnlineFight','packet')(env)(start);assert.deepEqual(order,['reset','audio','focus','started','neutral']);
  order.length=0;env.onlineBridge.seat=0;sourceFunction('startOnlineFight','packet')(env)(start);assert.deepEqual(order,['reset','audio','focus']);
 });
@@ -199,3 +200,5 @@ for(const [label,profile]of [['800ms',()=>800],['jitter',(at,seat)=>seat===1&&at
   combats[0].requestPause(true,'manual');for(let elapsed=0;elapsed<2000;elapsed+=20){combats[1].input({move:0,crouch:false,block:false});combats.forEach(c=>c.tick());combats[0].publish(current,views);await timers.advance(20);}assert.ok(combats.every(c=>c.paused&&c.pauseReason==='manual'));assert.equal(combats[0].requestPause(false),true);
  }finally{clients.forEach(c=>c.close());await rooms.leave(guestSeat.code,guestSeat.token);await rooms.leave(hostSeat.code,hostSeat.token);}
 });
+
+

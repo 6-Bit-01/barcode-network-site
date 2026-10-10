@@ -27,7 +27,10 @@ export function normalizeBody(path, body, origin) {
     if (typeof result.name !== 'string' || !result.name.trim() || result.name.trim().length > 80 || /[\u0000-\u001f\u007f]/.test(result.name)) throw new Error('Display name must be 1 to 80 characters');
     result.name = result.name.trim();
   }
-  if (path === 'sign-up/email' || path === 'send-verification-email') result.callbackURL = `${origin}/account`;
+  if (path === 'sign-up/email' || path === 'send-verification-email') {
+    const callback = result.callbackURL ? new URL(safeRedirect(result.callbackURL,origin)) : null;
+    result.callbackURL = callback?.pathname === '/account' && !callback.hash ? callback.href : `${origin}/account`;
+  }
   if (path === 'request-password-reset') result.redirectTo = `${origin}/account/reset-password`;
   return result;
 }

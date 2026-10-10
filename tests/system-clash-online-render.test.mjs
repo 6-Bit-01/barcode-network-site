@@ -7,10 +7,10 @@ function initialize(){
  const source=readFileSync(new URL('../public/games/system-clash/play/fight.js',import.meta.url),'utf8');
  const body=source.match(/function initializeOnlineCombat\(\)\{([\s\S]*?)\n\}/)?.[1];assert.ok(body);
  const elements=new Map();let now=0,draws=0;
- const env={onlineBridge:{enabled:true,seat:1,send:()=>true},onlineCombat:null,launchParams:new URLSearchParams('matchId=1'),activeRoster:['6-bit','9-bit'],
+ const env={onlineBridge:{enabled:true,seat:1,send:()=>true},onlineCombat:null,roundNumber:1,previousTravelViews:null,previousTravelPhase:null,launchParams:new URLSearchParams('matchId=1'),activeRoster:['6-bit','9-bit'],
   art:['6-bit','9-bit'].map(id=>({manifest:{id},clips:{idle:{data:{loop:true},timeline:{duration:1000,entries:[{index:0,start:0,end:250},{index:1,start:250,end:500},{index:2,start:500,end:750},{index:3,start:750,end:1000}]}}}})),
   createOnlineCombatController,applyFightSnapshot,performance:{now:()=>now},startOnlineFight(){},applyOnlinePause(){},ready:true,paused:false,
-  match:createMatch({mode:'local',start:false}),performAction(){},dispatchEvents(){},draw:()=>draws++,emitFightEvent(){},clearInput(){},effects:{setPaused(){}},
+  match:createMatch({mode:'local',start:false}),performAction(){},dispatchEvents(){},draw:()=>draws++,emitFightEvent(){},clearInput(){},effects:{setPaused(){},clear(){}},
   $:id=>{if(!elements.has(id))elements.set(id,{});return elements.get(id);},onlineLoaded:false};
  new Function('env','with(env){'+body+'}')(env);
  const views=env.match.fighters.map((_,i)=>({...getFighterView(env.match,i),clip:'idle',elapsed:0,nativeElapsed:0,poseIndex:0}));

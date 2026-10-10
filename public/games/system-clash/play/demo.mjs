@@ -25,7 +25,7 @@ const screenHost=createGameScreenHost({onDisplayChange:()=>screenControls.sync()
 const screenControls=bindGameScreenControls(screenHost);
 const matchOptions=createMatchOptions({rules:matchRules,onApply:rules=>{matchRules=rules;saveMatchRules(localStorage,rules);gamepads.reset();},onClose:()=>gamepads.reset(),onCode:code=>{const result=enterCorporateCode(localStorage,code);if(result.accepted){corporateUnlocked=true;if(state){state={...state,roster:demoRoster(catalog.fighters,{corporateUnlocked})};buildGrid();render();}}return result;},onSound:uiSound});
 for(const id of ['options-open','title-options-open'])$(id).addEventListener('click',()=>{if(!menuReady)return;gamepads.reset();uiSound('ui-options');matchOptions.show(matchRules);});
-function titleChoices(){return availableControllerItems(['solo-mode','local-mode','tournament-mode','online-mode','title-options-open','controls-open','demo-sound','demo-fullscreen','demo-motion'].map($));}
+function titleChoices(){return availableControllerItems(['online-tournament-mode','solo-mode','local-mode','tournament-mode','online-mode','title-options-open','controls-open','demo-sound','demo-fullscreen','demo-motion'].map($));}
 function loading(text,progress=0,failed=false){for(const node of document.querySelectorAll?.('header:not(.game-screen-bar),main,footer')??[])node.inert=true;$('asset-loading').hidden=false;$('asset-loading-text').textContent=text;$('asset-loading-progress').value=progress;$('asset-loading-retry').hidden=!failed;}
 function menuImage(path){return new Promise((resolve,reject)=>{const image=new Image();image.onload=resolve;image.onerror=()=>reject(Error('A menu image could not load. Retry loading.'));image.src=new URL(path,location.href).href;});}
 const tournamentStorage={getItem:key=>sessionStorage.getItem(key),setItem:(key,value)=>sessionStorage.setItem(key,value)};
@@ -37,7 +37,7 @@ let {muted,reducedMotion}=resolveInterfaceSettings(params,{prefersReducedMotion:
 const audio=createFightAudio({muted,reducedMotion,baseUrl:location.href,uiSounds:true});
 const music=createGameMusic({muted});
 const bootAudio=new Audio(new URL('assets/audio/barcode-console-start.wav',location.href));bootAudio.preload='none';bootAudio.volume=.32;
-const boot=createConsoleBoot({element:$('console-boot'),image:$('console-mark'),caption:$('console-caption'),reducedMotion:()=>reducedMotion,onFinish:()=>{for(const node of document.querySelectorAll('header,main,footer'))node.inert=false;try{sessionStorage.setItem('system-clash-console-seen','1');}catch{}$('solo-mode').focus({preventScroll:true});music.setPaused(document.hidden||!windowActive||menuSuspended);void music.unlock();}});
+const boot=createConsoleBoot({element:$('console-boot'),image:$('console-mark'),caption:$('console-caption'),reducedMotion:()=>reducedMotion,onFinish:()=>{for(const node of document.querySelectorAll('header,main,footer'))node.inert=false;try{sessionStorage.setItem('system-clash-console-seen','1');}catch{}$('online-tournament-mode').focus({preventScroll:true});music.setPaused(document.hidden||!windowActive||menuSuspended);void music.unlock();}});
 const portraits=createMenuPortraits({baseURL:location.href});
 const previews=createMenuPreviews({baseURL:location.href,canvases:[$('idle-one'),$('idle-two')],fallbacks:[$('standing-one'),$('standing-two')],isActive:()=>!!state&&state.screen!=='title'&&windowActive&&!document.hidden});
 function uiSound(type){void audio.emitUISound(type);}
@@ -80,7 +80,7 @@ function focusSelection(){const active=$('fighter-grid').querySelector('[data-fi
 function choose(id){const next=previewDemoFighter(state,id);if(next===state)return;state=next;render();uiSound('ui-select');}
 function confirm(){if(state.screen!=='select')return;gamepads.reset();uiSound('ui-confirm');state=confirmDemoFighter(state);if(state.mode==='tournament')tournamentRun=createTournamentRun(state.roster,{fighterId:state.picks[0],settings:{muted,reducedMotion,controllerSeats:gamepads.seatIndices(),matchRules,corporateUnlocked}});render();if(state.screen==='ready')$('enter-arena').focus({preventScroll:true});else focusSelection();}
 function begin(mode){gamepads.reset();tournamentRun=null;state=beginDemoSelection(state,mode);render();uiSound('ui-start');focusSelection();}
-function back(){if(!state)return;gamepads.reset();state=backDemoSelection(state);tournamentRun=null;audio.clear();uiSound('ui-back');render();if(state.screen==='title')$('solo-mode').focus();else focusSelection();}
+function back(){if(!state)return;gamepads.reset();state=backDemoSelection(state);tournamentRun=null;audio.clear();uiSound('ui-back');render();if(state.screen==='title')$('online-tournament-mode').focus();else focusSelection();}
 function buildGrid(){
  const grid=$('fighter-grid');grid.replaceChildren();
  for(const fighter of state.roster){
@@ -103,13 +103,14 @@ async function load(){
   catalog=await response.json();if((catalog.fighters.length<1||catalog.fighters.length>DEMO_ROSTER_CAPACITY||new Set(catalog.fighters.map(f=>f.id)).size!==catalog.fighters.length)||catalog.fighters.some(f=>!FIGHTER_STYLES[f.id]||![f.portrait,f.standing].every(path=>/^assets\/menu\/[a-z0-9-]+\.webp$/.test(path))))throw new Error('The fighter roster needs its registered artwork.');
   state=createDemoSelection(catalog.fighters,{corporateUnlocked,p1:params.get('p1'),p2:params.get('p2'),stage:params.get('stage'),mode:params.get('mode'),screen:params.get('screen')});
   const paths=[...new Set([SEALED_FIGHTER_ART,'assets/menu/title-arena.webp','assets/console/system-clash-title.webp','assets/console/barcode-circuit-works.webp','assets/console/soft-signal-systems.webp','assets/console/channel-06-entertainment.webp','assets/menu/6-bit-standing.webp','assets/menu/9-bit-standing.webp',...catalog.fighters.flatMap(f=>[f.portrait,f.standing])])];let done=0;await Promise.all(paths.map(async path=>{await menuImage(path);if(failed)return;loading('Loading menu artwork · '+(++done)+' / '+paths.length,10+done/paths.length*90);}));
-  menuReady=true;for(const node of document.querySelectorAll?.('header,main,footer')??[])node.inert=false;$('asset-loading').hidden=true;buildGrid();render();$('solo-mode').disabled=false;$('local-mode').disabled=false;$('tournament-mode').disabled=false;$('online-mode').disabled=false;$('demo-load').textContent='SIGNAL READY / '+catalog.fighters.length+' FIGHTERS ONLINE';
+  menuReady=true;for(const node of document.querySelectorAll?.('header,main,footer')??[])node.inert=false;$('asset-loading').hidden=true;buildGrid();render();$('solo-mode').disabled=false;$('local-mode').disabled=false;$('tournament-mode').disabled=false;$('online-mode').disabled=false;$('online-tournament-mode').disabled=false;$('demo-load').textContent='SIGNAL READY / '+catalog.fighters.length+' FIGHTERS ONLINE';
   let seen=false;try{seen=sessionStorage.getItem('system-clash-console-seen')==='1';}catch{}if(!seen&&state.screen==='title'){for(const node of document.querySelectorAll('header:not(.game-screen-bar),main,footer'))node.inert=true;music.setPaused(true);boot.start();if(!muted)void bootAudio.play().catch(()=>{});}
  }catch(error){failed=true;loading(error.message,0,true);$('demo-load').textContent=error.message;$('demo-load').classList.add('error');$('retry-demo').hidden=false;}
 }
 for(const stage of STAGES){const option=document.createElement('option');option.value=stage.id;option.textContent=stage.name;$('demo-stage').append(option);}
 $('demo-stage').addEventListener('change',()=>{state=selectDemoStage(state,$('demo-stage').value);render();});
 $('tournament-mode').addEventListener('click',()=>begin('tournament'));
+$('online-tournament-mode').addEventListener('click',()=>{audio.clear();const url=new URL('tournament-online.html',location.href);url.searchParams.set('sound',muted?'0':'1');url.searchParams.set('motion',reducedMotion?'1':'0');screenHost.navigate(withControllerSeats(url,gamepads.seatIndices()));});
 $('online-mode').addEventListener('click',()=>{audio.clear();const url=new URL('online.html',location.href);url.searchParams.set('sound',muted?'0':'1');url.searchParams.set('motion',reducedMotion?'1':'0');screenHost.navigate(withMatchRules(withControllerSeats(url,gamepads.seatIndices()),matchRules));});
 $('solo-mode').addEventListener('click',()=>begin('cpu'));$('local-mode').addEventListener('click',()=>begin('local'));
 $('confirm-fighter').addEventListener('click',confirm);$('selection-back').addEventListener('click',back);

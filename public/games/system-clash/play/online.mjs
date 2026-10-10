@@ -3,6 +3,7 @@ import {normalizeMatchRules,loadMatchRules,loadClashPreferences,matchRulesFromUR
 import {createGameScreenHost} from './game-screen-host.mjs';
 import {ONLINE_SCOPE,ONLINE_STAGES,createFrameCoordinator,createFrameRouter,validPayload} from './online-protocol.mjs';
 import {createOnlineConnection} from './online-connection.mjs';
+import {DEFAULT_ICE_SERVERS} from './online-transport.mjs';
 import {createGamepadInput} from './fight-gamepad.mjs';
 import {controllerSeatsFromURL,withControllerSeats,resolveInterfaceSettings,demoRoster} from './demo-flow.mjs';
 const ENDPOINT='/api/games/system-clash/rooms';
@@ -38,7 +39,7 @@ export function createOnlineSession({seat,roomState,peer,settings={},postFrame=(
   if(packet.type==='started'&&!host&&pendingStart&&packet.matchId===matchId&&!started){pendingStart=null;started=true;peer.send(packet);onStatus('Clash!');return;}
   if(!started)return;
   if(['action','input'].includes(packet.type)){if(!host)peer.send(packet);return;}
-  if(packet.type==='pause'){if(!host&&!packet.paused)return;postFrame(packet);peer.send(packet);onStatus(packet.paused?'Paused by a player.':'Clash!');return;}
+  if(packet.type==='pause'){if(!host&&!packet.paused)return;postFrame(packet);peer.send(packet);onStatus(packet.paused?(packet.reason==='network'?'Connection interrupted. Waiting to reconnect…':'Paused by a player.'):'Clash!');return;}
   if(host&&['snapshot','events'].includes(packet.type)){rememberPhase(packet);peer.send(packet);}
  },receivePeer(packet){
   if(ended||!validPayload(packet))return;
@@ -49,7 +50,7 @@ export function createOnlineSession({seat,roomState,peer,settings={},postFrame=(
   if(packet.type==='start'&&!host&&frameLoaded&&!started&&!pendingStart&&packet.matchId===matchId){pendingStart=packet;postFrame(packet);onStatus('Starting your fighter…');return;}
   if(packet.type==='started'&&host&&pendingStart&&packet.matchId===matchId&&!started){const start=pendingStart;pendingStart=null;timers.clearTimeout(startTimer);started=true;postFrame(start);onStatus('Clash!');return;}
   if(!started)return;
-  if(packet.type==='pause'){if(host&&!packet.paused)return;postFrame(packet);if(host)peer.send(packet);onStatus(packet.paused?'Paused by a player.':'Clash!');return;}
+  if(packet.type==='pause'){if(host&&!packet.paused)return;postFrame(packet);if(host)peer.send(packet);onStatus(packet.paused?(packet.reason==='network'?'Connection interrupted. Waiting to reconnect…':'Paused by a player.'):'Clash!');return;}
   if((host&&['action','input'].includes(packet.type))||(!host&&['snapshot','events'].includes(packet.type))){if(!host)rememberPhase(packet);postFrame(packet);}
  },end,destroy(){ended=true;started=false;pendingStart=null;timers.clearTimeout(startTimer);}};
 }
@@ -67,7 +68,7 @@ export async function mountOnlineLobby({document=globalThis.document,window=glob
  const music=createGameMusic({window,document,muted:settings.muted});music.setScene({screen:'online'});music.setPaused(!document.hasFocus());
  const blur=()=>music.setPaused(true),focus=()=>music.setPaused(false);window.addEventListener('blur',blur);window.addEventListener('focus',focus);
  const pads=createGamepadInput({seats:settings.controllerSeats});
- let seat=null,state=null,peer=null,session=null,roster=[],busy=false,pollTimer=null,listTimer=null,expiryTimer=null,epoch=0,pollErrors=0,destroyed=false,connected=false,stopped=false,listing=false,suspended=false,raf=null,pendingJoinCode=null,pendingEntry=null;
+ let seat=null,state=null,peer=null,session=null,roster=[],busy=false,pollTimer=null,listTimer=null,expiryTimer=null,epoch=0,pollErrors=0,destroyed=false,connected=false,stopped=false,listing=false,suspended=false,raf=null,pendingJoinCode=null,pendingEntry=null,connecting=false;
  const status=(text,kind='info')=>{$('online-status').textContent=text==='Clash!'&&peer?.transport==='relay'?'Clash! · Cloud connection':text;$('online-status').setAttribute('data-kind',kind);};
  $('stage-choice').value=settings.stage;$('sound-setting').checked=!settings.muted;$('motion-setting').checked=settings.reducedMotion;
  const buttons=()=>[...document.querySelectorAll('button,input,a[href],select')].filter(el=>!el.disabled&&!el.closest('[hidden]'));
@@ -83,9 +84,9 @@ export async function mountOnlineLobby({document=globalThis.document,window=glob
  }
  function chooseJoin(code){pendingJoinCode=code;$('join-code').value=code;renderEntry();}
  function clearTimers(){window.clearTimeout(pollTimer);window.clearTimeout(listTimer);window.clearTimeout(expiryTimer);}
- function stop(reason){if(stopped)return;stopped=true;busy=false;++epoch;clearTimers();if(seat)client.request('leave').catch(()=>{});peer?.close();peer=null;connected=false;session?.end(reason);$('fight-frame').hidden=true;$('fight-frame').src='about:blank';$('match-actions').hidden=true;$('ready-button').disabled=true;$('ready-button').textContent='Connection ended';$('ready-button').setAttribute('aria-label','Connection ended');$('ready-button').setAttribute('aria-pressed','false');$('players').textContent='Connection ended. Leave this session to try again.';$('fighter-grid').setAttribute('aria-disabled','true');if(!destroyed&&!suspended){music.resume();music.setScene({screen:'online'});}status(reason);}
+ function stop(reason){if(stopped)return;stopped=true;busy=false;connecting=false;++epoch;clearTimers();if(seat)client.request('leave').catch(()=>{});peer?.close();peer=null;connected=false;session?.end(reason);$('fight-frame').hidden=true;$('fight-frame').src='about:blank';$('match-actions').hidden=true;$('ready-button').disabled=true;$('ready-button').textContent='Connection ended';$('ready-button').setAttribute('aria-label','Connection ended');$('ready-button').setAttribute('aria-pressed','false');$('players').textContent='Connection ended. Leave this session to try again.';$('fighter-grid').setAttribute('aria-disabled','true');if(!destroyed&&!suspended){music.resume();music.setScene({screen:'online'});}status(reason);}
  function resetRoom(){
-  ++epoch;clearTimers();postFrame({type:'leave'});peer?.send({type:'leave'});peer?.close();peer=null;session?.destroy();session=null;client.setSeat(null);seat=null;state=null;connected=false;stopped=false;busy=false;pollErrors=0;pendingJoinCode=null;pendingEntry=null;pads.reset();
+  ++epoch;clearTimers();postFrame({type:'leave'});peer?.send({type:'leave'});peer?.close();peer=null;session?.destroy();session=null;client.setSeat(null);seat=null;state=null;connected=false;stopped=false;busy=false;connecting=false;pollErrors=0;pendingJoinCode=null;pendingEntry=null;pads.reset();
   try{window.sessionStorage.removeItem('system-clash-online-seat');}catch{}
   $('room-panel').hidden=true;$('entry-panel').hidden=false;$('fight-frame').hidden=true;$('fight-frame').src='about:blank';$('match-actions').hidden=true;$('fighter-grid').removeAttribute('aria-disabled');$('stage-choice').disabled=false;$('ready-button').disabled=!roster.length;$('create-room').disabled=!roster.length;$('join-room').disabled=!roster.length;
   for(const button of $('fighter-grid').querySelectorAll('button'))button.disabled=roster.find(f=>f.id===button.dataset.fighter)?.enabled!==true;
@@ -97,11 +98,24 @@ export async function mountOnlineLobby({document=globalThis.document,window=glob
   $('ready-button').disabled=true;$('ready-button').textContent='Loading session…';$('ready-button').setAttribute('aria-label','Loading session.');$('ready-button').setAttribute('aria-pressed','false');$('stage-choice').disabled=true;
   for(const button of $('fighter-grid').querySelectorAll('button'))button.disabled=true;
   status('Loading your session…');return;
- }const own=state[seat.role],other=state[seat.role==='host'?'guest':'host'];$('room-code').textContent=seat.code;$('seat-label').textContent=(seat.role==='host'?'You host this session':'You joined this session')+(peer?.transport==='relay'?' · Cloud connection':'');$('players').textContent=state.host.name+' · '+(state.host.ready?'Ready':'Choosing')+' / '+(state.guest?state.guest.name+' · '+(state.guest.ready?'Ready':'Choosing'):'Waiting for another player');$('selected-fighter').textContent=roster.find(f=>f.id===own.fighter)?.name??own.fighter;$('ready-button').textContent=own.ready?'Ready ✓':'Ready to clash';$('ready-button').setAttribute('aria-pressed',String(own.ready));$('ready-button').setAttribute('aria-label',own.ready?peer||busy?'You are ready.':'You are ready. Press to cancel readiness.':'Ready to clash');$('ready-button').disabled=busy||!!peer;$('stage-choice').disabled=seat.role!=='host'||!!peer;for(const button of $('fighter-grid').querySelectorAll('button')){button.setAttribute('aria-pressed',String(button.dataset.fighter===own.fighter));button.disabled=busy||!!peer||roster.find(f=>f.id===button.dataset.fighter)?.enabled!==true;}if(!peer)status(other?(own.ready&&other.ready?'Both ready. Connecting…':'Choose your fighter, then press Ready.'):'Room '+seat.code+' is open. Share its code or wait for a player.');}
+ }const own=state[seat.role],other=state[seat.role==='host'?'guest':'host'];$('room-code').textContent=seat.code;$('seat-label').textContent=(seat.role==='host'?'You host this session':'You joined this session')+(peer?.transport==='relay'?' · Cloud connection':'');$('players').textContent=state.host.name+' · '+(state.host.ready?'Ready':'Choosing')+' / '+(state.guest?state.guest.name+' · '+(state.guest.ready?'Ready':'Choosing'):'Waiting for another player');$('selected-fighter').textContent=roster.find(f=>f.id===own.fighter)?.name??own.fighter;$('ready-button').textContent=own.ready?'Ready ✓':'Ready to clash';$('ready-button').setAttribute('aria-pressed',String(own.ready));$('ready-button').setAttribute('aria-label',own.ready?peer||busy||connecting?'You are ready.':'You are ready. Press to cancel readiness.':'Ready to clash');$('ready-button').disabled=busy||connecting||!!peer;$('stage-choice').disabled=seat.role!=='host'||connecting||!!peer;for(const button of $('fighter-grid').querySelectorAll('button')){button.setAttribute('aria-pressed',String(button.dataset.fighter===own.fighter));button.disabled=busy||connecting||!!peer||roster.find(f=>f.id===button.dataset.fighter)?.enabled!==true;}if(!peer)status(other?(own.ready&&other.ready?'Both ready. Connecting…':'Choose your fighter, then press Ready.'):'Room '+seat.code+' is open. Share its code or wait for a player.');}
  function postFrame(payload){const frame=$('fight-frame');if(!frame.contentWindow||!session)return;frame.contentWindow.postMessage({scope:ONLINE_SCOPE,matchId:session.matchId,payload},launch.origin);if(payload.type==='start'){frame.focus();frame.contentWindow.focus?.();frame.scrollIntoView?.({block:'start',behavior:settings.reducedMotion?'auto':'smooth'});}}
  function loadFrame(matchId,chosenSettings){music.suspend();$('stage-choice').value=chosenSettings.stage??'radio-studio';const url=onlineFightURL(launch.href,seat,state,chosenSettings);url.searchParams.set('matchId',String(matchId));$('fight-frame').src=url.href;$('fight-frame').hidden=false;$('match-actions').hidden=false;$('rematch-button').disabled=true;}
- function connect(){if(stopped||peer||!state?.guest||!state.host.ready||!state.guest.ready)return;const revision=epoch;peer=createOnlineConnection({role:seat.role,room:seat.code,RTCPeerConnection:window.RTCPeerConnection,onPacket:packet=>{if(revision===epoch)session?.receivePeer(packet);},sendSignal:description=>client.request('signal',{description}),sendCandidates:value=>client.request('candidates',value),relayRequest:value=>client.request('relay',value),onStatus:value=>{if(revision!==epoch)return;if(value==='connected'){connected=true;session?.connected();status(peer?.transport==='relay'?'Cloud connection. Loading the match…':'Connected. Loading the match…');}else if(value==='connecting')status('Connecting players…');else if(value==='relaying')status('Connecting through cloud…');else if(value==='retrying')status('Retrying the direct connection…');},onDisconnect:reason=>{if(revision===epoch)stop(reason);}});session=createOnlineSession({seat,roomState:state,peer,settings,postFrame,loadFrame,onStatus:status,onMatchPhase:phase=>{$('rematch-button').disabled=phase!=='over';},onEnd:reason=>{if(revision===epoch)stop(reason);},timers:window});renderSeat();if(seat.role==='host')peer.start();}
- async function poll(revision){if(destroyed||revision!==epoch||!seat)return;try{const result=await client.request('poll');if(revision!==epoch)return;state=result;pollErrors=0;if(seat.role==='host'&&connected&&!result.guest){stop('The other player left. Leave this room to create a new session.');return;}renderSeat();connect();if(result.relay&&peer&&!connected)peer.useRelay();if(result.candidates?.length&&peer)await peer.receiveCandidates({generation:result.generation,candidates:result.candidates});if(result.description&&peer)await peer.receiveDescription(result.description);}catch(error){if(revision!==epoch)return;pollErrors++;status(error.message);if(pollErrors>=3){stop('Session service lost contact. Leave this room and try again.');return;}}if(revision===epoch&&seat)pollTimer=window.setTimeout(()=>poll(revision),connected?15000:1500);}
+ async function connect(){
+  if(destroyed||suspended||stopped||connecting||peer||!seat||!state?.guest||!state.host.ready||!state.guest.ready)return;
+  const revision=epoch,previous=seat;connecting=true;renderSeat();
+  try{
+   let configuration;try{configuration=await client.request('ice');}catch{}
+   if(!currentSeatRequest(revision,previous)||stopped||!state?.guest||!state.host.ready||!state.guest.ready)return;
+   const relayServers=Array.isArray(configuration?.iceServers)&&configuration.iceServers.length<=8?configuration.iceServers.filter(server=>{
+    const urls=Array.isArray(server?.urls)?server.urls:[server?.urls];
+    return urls.length>0&&urls.length<=8&&urls.every(url=>typeof url==='string'&&/^turns?:turn\.cloudflare\.com:(3478|443|80|5349)\?transport=(udp|tcp)$/.test(url))&&typeof server.username==='string'&&server.username.length>0&&server.username.length<=2048&&typeof server.credential==='string'&&server.credential.length>0&&server.credential.length<=2048;
+   }):[];
+   const iceServers=[...DEFAULT_ICE_SERVERS,...relayServers];
+   peer=createOnlineConnection({role:seat.role,room:seat.code,iceServers,RTCPeerConnection:window.RTCPeerConnection,onPacket:packet=>{if(revision===epoch)session?.receivePeer(packet);},sendSignal:description=>client.request('signal',{description}),sendCandidates:value=>client.request('candidates',value),relayRequest:value=>client.request('relay',value),onStatus:value=>{if(revision!==epoch)return;if(value==='connected'){connected=true;session?.connected();status(peer?.transport==='relay'?'Cloud connection. Loading the match…':'Connected. Loading the match…');}else if(value==='connecting')status('Connecting players…');else if(value==='relaying')status('Connecting through cloud…');else if(value==='retrying')status('Retrying the direct connection…');},onDisconnect:reason=>{if(revision===epoch)stop(reason);}});session=createOnlineSession({seat,roomState:state,peer,settings,postFrame,loadFrame,onStatus:status,onMatchPhase:phase=>{$('rematch-button').disabled=phase!=='over';},onEnd:reason=>{if(revision===epoch)stop(reason);},timers:window});renderSeat();if(seat.role==='host')peer.start();
+  }finally{if(revision===epoch){connecting=false;if(!stopped)renderSeat();}}
+ }
+ async function poll(revision){if(destroyed||revision!==epoch||!seat)return;try{const result=await client.request('poll');if(revision!==epoch)return;state=result;pollErrors=0;if(seat.role==='host'&&connected&&!result.guest){stop('The other player left. Leave this room to create a new session.');return;}renderSeat();await connect();if(revision!==epoch||!seat)return;if(result.relay&&peer&&!connected)peer.useRelay();if(result.candidates?.length&&peer)await peer.receiveCandidates({generation:result.generation,candidates:result.candidates});if(result.description&&peer)await peer.receiveDescription(result.description);}catch(error){if(revision!==epoch)return;pollErrors++;status(error.message);if(pollErrors>=3){stop('Session service lost contact. Leave this room and try again.');return;}}if(revision===epoch&&seat)pollTimer=window.setTimeout(()=>poll(revision),connected?15000:1500);}
  async function enter(action,code){
   if(busy||seat||destroyed||suspended)return;
   if(action==='join'){
@@ -142,7 +156,7 @@ export async function mountOnlineLobby({document=globalThis.document,window=glob
  }
  function currentSeatRequest(revision,previous){return !destroyed&&!suspended&&revision===epoch&&seat===previous;}
  async function choose(id){
-  if(stopped||busy||peer||!seat||!state||destroyed||suspended||!roster.some(f=>f.id===id&&f.enabled===true))return;
+  if(stopped||busy||connecting||peer||!seat||!state||destroyed||suspended||!roster.some(f=>f.id===id&&f.enabled===true))return;
   const previous=seat,revision=epoch;busy=true;
   try{await client.request('select',{fighter:id,ready:false});if(currentSeatRequest(revision,previous)&&state)state[previous.role]={...state[previous.role],fighter:id,ready:false};}
   catch(error){if(currentSeatRequest(revision,previous))status(error.message);}
@@ -150,11 +164,11 @@ export async function mountOnlineLobby({document=globalThis.document,window=glob
  }
  $('create-room').addEventListener('click',()=>enter('create'));$('join-form').addEventListener('submit',event=>{event.preventDefault();enter('join',$('join-code').value);});$('entry-form').addEventListener('submit',event=>{event.preventDefault();if(pendingJoinCode)enter('join',pendingJoinCode);else{status('Choose an open session or enter its code to join. Use Create new session to host.');$('create-room').focus();}});$('refresh-rooms').addEventListener('click',refreshRooms);$('leave-room').addEventListener('click',leave);
  $('ready-button').addEventListener('click',async()=>{
-  if(busy||peer||!state||!seat||destroyed||suspended)return;
+  if(busy||connecting||peer||!state||!seat||destroyed||suspended)return;
   const previous=seat,revision=epoch,own=state[previous.role],nextReady=!own.ready;busy=true;
   try{await client.request('select',{fighter:own.fighter,ready:nextReady});if(currentSeatRequest(revision,previous)&&state)state[previous.role]={...state[previous.role],fighter:own.fighter,ready:nextReady};}
   catch(error){if(currentSeatRequest(revision,previous))status(error.message);}
-  finally{if(currentSeatRequest(revision,previous)){busy=false;renderSeat();connect();}}
+  finally{if(currentSeatRequest(revision,previous)){busy=false;renderSeat();void connect().catch(()=>{if(revision===epoch)stop('Could not prepare the connection. Leave this session and try again.');});}}
  });
  $('join-code').addEventListener('input',()=>{const code=$('join-code').value.trim().toUpperCase();pendingJoinCode=/^[A-Z0-9]{6}$/.test(code)?code:null;renderEntry();});
  $('rematch-button').addEventListener('click',()=>session?.receiveFrame({type:'rematch'}));$('sound-setting').addEventListener('change',()=>{settings.muted=!$('sound-setting').checked;music.setMuted(settings.muted);if(!settings.muted)void music.unlock();});$('motion-setting').addEventListener('change',()=>{settings.reducedMotion=$('motion-setting').checked;});$('stage-choice').addEventListener('change',()=>{settings.stage=$('stage-choice').value||undefined;});

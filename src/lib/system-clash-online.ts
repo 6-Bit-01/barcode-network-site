@@ -20,15 +20,17 @@ const relayActions=new Set(["punch","kick","low-punch","low-kick","uppercut","gr
 const relayStages=new Set(["radio-studio","sheila-office","studio-rat-lair","containment","nature-simulation","witty-wasteland","interdimensional-station"]);
 const relayObject=(value:unknown):value is Record<string,unknown>=>value!==null&&typeof value==="object"&&!Array.isArray(value);
 const positive=(value:unknown)=>Number.isSafeInteger(value)&&Number(value)>0;
+const relayInputSequence=(value:unknown)=>value===undefined||(positive(value)&&Number(value)<=4294967295);
 function relayInput(value:unknown){return relayObject(value)&&[-1,0,1].includes(Number(value.move))&&typeof value.move==="number"&&typeof value.crouch==="boolean"&&typeof value.block==="boolean"&&Object.keys(value).every(key=>["move","crouch","block"].includes(key));}
 function relaySequence(packet:RelayPacket){return JSON.parse(packet.data).seq as number;}
 function relayPacket(value:unknown,seat:"host"|"guest",room:Room,version:string):RelayPacket{
- if(!relayObject(value)||!["control","state"].includes(String(value.lane))||typeof value.data!=="string"||Buffer.byteLength(value.data,"utf8")>(value.lane==="state"?61440:8192))throw new OnlineRoomError("Cloud connection packet is invalid.");
+ if(!relayObject(value)||!["control","state"].includes(String(value.lane))||typeof value.data!=="string"||Buffer.byteLength(value.data,"utf8")>(value.lane==="state"&&seat==="host"?61440:8192))throw new OnlineRoomError("Cloud connection packet is invalid.");
  let wire;try{wire=JSON.parse(value.data);}catch{throw new OnlineRoomError("Cloud connection packet is invalid.");}
  if(!relayObject(wire)||wire.scope!=="system-clash-online-v1"||wire.version!==version||!positive(wire.seq)||!positive(wire.matchId)||!relayObject(wire.payload))throw new OnlineRoomError("Cloud connection packet is invalid.");
  const payload=wire.payload;
  if(value.lane==="state"){
-  if(seat!=="host"||payload.type!=="snapshot"||!relayObject(payload.snapshot))throw new OnlineRoomError("Only the host can send match state.");
+  const valid=seat==="host"?payload.type==="snapshot"&&relayObject(payload.snapshot):payload.type==="input"&&relayInput(payload.input)&&relayInputSequence(payload.inputSeq);
+  if(!valid)throw new OnlineRoomError("Cloud connection state is invalid for this seat.");
  }else{
   if(seat==="guest"&&["setup","start","events","snapshot"].includes(String(payload.type)))throw new OnlineRoomError("Only the host can control the match.");
   let valid=false;
@@ -40,8 +42,8 @@ function relayPacket(value:unknown,seat:"host"|"guest",room:Room,version:string)
    case "setup":valid=payload.stage===undefined||relayStages.has(String(payload.stage));break;
    case "start":valid=Number.isInteger(payload.seed)&&Number(payload.seed)>=0&&Number(payload.seed)<=4294967295&&positive(payload.matchId);break;
    case "pause":valid=typeof payload.paused==="boolean";break;
-   case "input":valid=relayInput(payload.input);break;
-   case "action":valid=relayActions.has(String(payload.action))&&relayInput(payload.input);break;
+   case "input":valid=relayInput(payload.input)&&relayInputSequence(payload.inputSeq);break;
+   case "action":valid=relayActions.has(String(payload.action))&&relayInput(payload.input)&&relayInputSequence(payload.inputSeq);break;
    case "events":valid=Array.isArray(payload.events)&&payload.events.length<=64&&payload.events.every(event=>relayObject(event)&&typeof event.type==="string"&&event.type.length<=60);break;
   }
   if(!valid)throw new OnlineRoomError("Cloud connection control is invalid.");

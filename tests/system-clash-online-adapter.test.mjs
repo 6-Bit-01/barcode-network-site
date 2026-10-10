@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import Module,{createRequire} from 'node:module';
 import fs from 'node:fs';
 import ts from 'typescript';
+import {ONLINE_VERSION} from '../public/games/system-clash/play/online-protocol.mjs';
 const require=createRequire(import.meta.url),originalLoad=Module._load;
 const PREFIX='barcode:system-clash:online:v1:';
 const rows=new Map(),calls=[],expires=new Map();let time=1000000;const realNow=Date.now;Date.now=()=>time;
@@ -87,7 +88,32 @@ test('occupied-room updates bypass lobby index work while retaining fixed expiry
  const marker='sealed-index-marker';rows.set(PREFIX+'index',marker);
  await rooms.select(host.code,host.token,{fighter:'6-bit',ready:true});
  await rooms.select(host.code,guest.token,{fighter:'9-bit',ready:true});
- await rooms.relay(host.code,host.token,{version:'system-clash-20261009-8',ack:0,packets:[]});
+ await rooms.relay(host.code,host.token,{version:ONLINE_VERSION,ack:0,packets:[]});
  assert.equal(rows.get(PREFIX+'index'),marker);
  assert.ok(GAME_ROOM_CAS.indexOf("if prior.guest")<GAME_ROOM_CAS.indexOf('local entries='));assert.equal(expires.get(PREFIX+'room:'+host.code),host.expiresAt);
+});
+test('guest continuous state replaces older inputs through the adapter without rewriting the lobby',async()=>{
+ const {rooms}=fixture(),h=await rooms.create('Host'),g=await rooms.join(h.code,'Guest');
+ await rooms.select(h.code,h.token,{fighter:'6-bit',ready:true});await rooms.select(h.code,g.token,{fighter:'9-bit',ready:true});
+ const version=ONLINE_VERSION,packet=(seq,move)=>({lane:'state',data:JSON.stringify({scope:'system-clash-online-v1',version,seq,matchId:1,payload:{type:'input',inputSeq:seq,input:{move,crouch:false,block:false}}})});
+ rows.set(PREFIX+'index','retained-index');
+ await rooms.relay(h.code,g.token,{version,ack:0,packets:[packet(1,1)]});
+ await rooms.relay(h.code,g.token,{version,ack:0,packets:[packet(3,0)]});
+ await rooms.relay(h.code,g.token,{version,ack:0,packets:[packet(2,-1)]});
+ const result=await rooms.relay(h.code,h.token,{version,ack:0,packets:[]});
+ assert.deepEqual(result.packets.map(p=>JSON.parse(p.data).payload),[{type:'input',inputSeq:3,input:{move:0,crouch:false,block:false}}]);
+ assert.equal(rows.get(PREFIX+'index'),'retained-index');assert.equal(expires.get(PREFIX+'room:'+h.code),h.expiresAt);
+});
+test('state lane preserves seat authority and rejects invalid control chronology',async()=>{
+ const {rooms}=fixture(),h=await rooms.create('Host'),g=await rooms.join(h.code,'Guest');
+ await rooms.select(h.code,h.token,{fighter:'6-bit',ready:true});await rooms.select(h.code,g.token,{fighter:'9-bit',ready:true});
+ const version=ONLINE_VERSION,input={move:0,crouch:false,block:false};
+ const send=(seat,lane,payload)=>rooms.relay(h.code,seat.token,{version,ack:0,packets:[{lane,data:JSON.stringify({scope:'system-clash-online-v1',version,seq:1,matchId:1,payload})}]});
+ for(const payload of [{type:'snapshot',snapshot:{seq:1}},{type:'events',events:[]},{type:'start',seed:1,matchId:1},{type:'setup',stage:'radio-studio'},{type:'action',action:'punch',input}])await assert.rejects(()=>send(g,'state',payload),e=>e.status===400);
+ await assert.rejects(()=>send(h,'state',{type:'input',input}),e=>e.status===400);
+ for(const inputSeq of [0,-1,1.5,'2',4294967296]){
+  await assert.rejects(()=>send(g,'state',{type:'input',input,inputSeq}),e=>e.status===400);
+  await assert.rejects(()=>send(g,'control',{type:'action',action:'punch',input,inputSeq}),e=>e.status===400);
+ }
+ const accepted=await send(g,'state',{type:'input',input,inputSeq:4294967295});assert.equal(accepted.accepted.state,1);
 });

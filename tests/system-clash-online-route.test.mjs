@@ -6,6 +6,8 @@ const store={async allow(){operations++;if(unavailable)throw new Error('offline'
 Module._load=function(id,parent,isMain){
  if(id==='@/lib/system-clash-online')return require('../src/lib/system-clash-online.ts');
  if(id==='@/lib/system-clash-online-store')return {onlineRoomStore:()=>store};
+ if(id==='@/lib/system-clash-turn')return require('../src/lib/system-clash-turn.ts');
+ if(id==='server-only')return {};
  if(id==='next/server')return {NextResponse:{json:(body,{status=200,headers={}}={})=>Response.json(body,{status,headers})}};
  return originalLoad.call(this,id,parent,isMain);
 };
@@ -67,4 +69,55 @@ test('authenticated endpoint carries private candidates and bounded cloud contro
  const relayed=await (await post(guest,{action:'relay',version:wire.version,ack:0,packets:[]})).json();assert.equal(relayed.packets.length,1);assert.equal(JSON.parse(relayed.packets[0].data).payload.role,'host');
  assert.equal((await POST(request({action:'relay',code:host.code,version:wire.version,ack:0,packets:[],token:guest.token}))).status,401);
  await post(host,{action:'leave'});
+});
+
+async function readyTurnRoom(){
+ rows.clear();const host=await (await POST(request({action:'create',name:'Host'}))).json(),guest=await (await POST(request({action:'join',code:host.code,name:'Guest'}))).json();
+ for(const seat of [host,guest])assert.equal((await POST(request({action:'select',code:host.code,fighter:seat.role==='host'?'6-bit':'9-bit',ready:true},{Authorization:'Bearer '+seat.token}))).status,200);
+ return {host,guest};
+}
+async function withTurnProvider(config,fetcher,run){
+ const oldFetch=globalThis.fetch,oldKey=process.env.SYSTEM_CLASH_TURN_KEY_ID,oldToken=process.env.SYSTEM_CLASH_TURN_API_TOKEN;
+ if(config){process.env.SYSTEM_CLASH_TURN_KEY_ID='fake-route-key';process.env.SYSTEM_CLASH_TURN_API_TOKEN='fake-route-provider-token';}else{delete process.env.SYSTEM_CLASH_TURN_KEY_ID;delete process.env.SYSTEM_CLASH_TURN_API_TOKEN;}
+ globalThis.fetch=fetcher;
+ try{await run();}finally{globalThis.fetch=oldFetch;if(oldKey===undefined)delete process.env.SYSTEM_CLASH_TURN_KEY_ID;else process.env.SYSTEM_CLASH_TURN_KEY_ID=oldKey;if(oldToken===undefined)delete process.env.SYSTEM_CLASH_TURN_API_TOKEN;else process.env.SYSTEM_CLASH_TURN_API_TOKEN=oldToken;}
+}
+test('ice credentials authenticate the existing ready seat before any provider request',async()=>{
+ let calls=0;await withTurnProvider(true,async()=>{calls++;return Response.json({iceServers:[{urls:['turn:turn.cloudflare.com:3478?transport=udp'],username:'short-route-user',credential:'short-route-password'}],private:'fake-route-provider-token'});},async()=>{
+  const {host,guest}=await readyTurnRoom(),ice={action:'ice',code:host.code};
+  assert.equal((await POST(request({...ice,token:host.token}))).status,401);assert.equal((await POST(request(ice,{Authorization:'Bearer forged'}))).status,401);assert.equal(calls,0);
+  for(const seat of [host,guest]){const response=await POST(request(ice,{Authorization:'Bearer '+seat.token}));assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'no-store');assert.deepEqual(await response.json(),{iceServers:[{urls:['turn:turn.cloudflare.com:3478?transport=udp'],username:'short-route-user',credential:'short-route-password'}],realtimeRelay:true});}
+  assert.equal(calls,2);const list=await (await GET(new Request(url))).text();assert.ok(!/short-route-user|short-route-password|fake-route-key|fake-route-provider-token/.test(list));
+  assert.ok(!JSON.stringify([...rows.values()]).includes('short-route-password'));await POST(request({action:'leave',code:host.code},{Authorization:'Bearer '+host.token}));
+ });
+});
+test('ice credentials require a guest and both ready seats without touching the provider',async()=>{
+ let calls=0;await withTurnProvider(true,async()=>{calls++;throw new Error('must not request');},async()=>{
+  rows.clear();const host=await (await POST(request({action:'create',name:'Host'}))).json(),ice={action:'ice',code:host.code},headers={Authorization:'Bearer '+host.token};
+  assert.equal((await POST(request(ice,headers))).status,409);
+  const guest=await (await POST(request({action:'join',code:host.code,name:'Guest'}))).json();
+  assert.equal((await POST(request(ice,headers))).status,409);
+  await POST(request({action:'select',code:host.code,fighter:'6-bit',ready:true},headers));assert.equal((await POST(request(ice,headers))).status,409);
+  await POST(request({action:'select',code:host.code,fighter:'9-bit',ready:true},{Authorization:'Bearer '+guest.token}));
+  await POST(request({action:'select',code:host.code,fighter:'6-bit',ready:false},headers));assert.equal((await POST(request(ice,{Authorization:'Bearer '+guest.token}))).status,409);assert.equal(calls,0);
+  await POST(request({action:'leave',code:host.code},headers));
+ });
+});
+test('dormant ice configuration returns empty settings to ready players and never calls external services',async()=>{
+ let calls=0;await withTurnProvider(false,async()=>{calls++;throw new Error('unreachable');},async()=>{
+  const {host}=await readyTurnRoom();const response=await POST(request({action:'ice',code:host.code},{Authorization:'Bearer '+host.token}));assert.equal(response.status,200);assert.deepEqual(await response.json(),{iceServers:[],realtimeRelay:false});assert.equal(response.headers.get('cache-control'),'no-store');assert.equal(calls,0);await POST(request({action:'leave',code:host.code},{Authorization:'Bearer '+host.token}));
+ });
+});
+test('ice requests retain origin, MIME and rate guards before provider access',async()=>{
+ let calls=0;await withTurnProvider(true,async()=>{calls++;throw new Error('unreachable');},async()=>{
+  const {host}=await readyTurnRoom(),ice={action:'ice',code:host.code},headers={Authorization:'Bearer '+host.token};
+  const before=operations;assert.equal((await POST(request(ice,{...headers,Origin:'https://foreign.example'}))).status,403);assert.equal((await POST(request(ice,{...headers,'Sec-Fetch-Site':'cross-site'}))).status,403);assert.equal((await POST(request(ice,{...headers,'Content-Type':'text/plain'}))).status,415);assert.equal(operations,before);
+  denied=true;try{assert.equal((await POST(request(ice,headers))).status,429);}finally{denied=false;}
+  assert.equal(calls,0);await POST(request({action:'leave',code:host.code},headers));
+ });
+});
+test('ice provider failure returns a noncached generic error without configuration or response secrets',async()=>{
+ await withTurnProvider(true,async()=>new Response('fake-route-key fake-route-provider-token private-provider-dump',{status:503}),async()=>{
+  const {host}=await readyTurnRoom();const response=await POST(request({action:'ice',code:host.code},{Authorization:'Bearer '+host.token}));assert.equal(response.status,503);assert.equal(response.headers.get('cache-control'),'no-store');const text=await response.text();assert.ok(!/fake-route-key|fake-route-provider-token|private-provider-dump/.test(text));await POST(request({action:'leave',code:host.code},{Authorization:'Bearer '+host.token}));
+ });
 });
